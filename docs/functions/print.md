@@ -34,34 +34,34 @@ print:
 
 以下字段均位于 `print:` 下：
 
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `input` | `.` | 输入图片文件或目录；相对路径相对于配置文件所在项目目录解析 |
-| `output` | None | 输出目录；未指定时自动创建，`pdf_name` 是其中的 PDF 文件名 |
-| `pdf_name` | `output.pdf` | 输出 PDF 文件名 |
-| `clean` | False | 统一配置字段；PDF 生成不会清空输入或输出目录 |
-| `paper_size` | `A4` | 纸张尺寸，仅支持 `A3`、`A4`、`A5`、`B5` |
-| `orientation` | `landscape` | 页面方向：`landscape` 横向、`portrait` 纵向 |
-| `page_margins` | `[20,20,20,20]` | 通用页边距，顺序为上、右、下、左，单位 mm |
-| `left_page_margins` | None | 左页专用页边距；与右页配置同时存在时启用左右页覆盖 |
-| `right_page_margins` | None | 右页专用页边距；格式同 `page_margins` |
-| `title_printing` | False | 是否打印标题 |
-| `title_text` | `""` | 默认标题；为空时不打印标题 |
-| `title_font_size` | 18 | 标题字号，单位 pt |
-| `title_color` | `0,0,0` | 标题颜色，格式为 `r,g,b`，范围 0 到 255 |
-| `title_position` | `top` | 标题位置：`top` 或 `bottom` |
-| `title_orientation` | `vertical` | 标题方向：`vertical` 或 `horizontal` |
-| `title_switch_nodes` | None | 标题切换节点，格式为 `[图片组数字, 标题, side]` |
-| `page_number_printing` | False | 是否打印页码 |
-| `page_number_start_page` | 1 | 从排序后第几张图片开始标注，1-based |
-| `page_number_end_page` | None | 标注结束的图片序号；为空表示到最后 |
-| `page_number_base` | 0 | 页码基数；显示页码为基数加图片序号 |
-| `page_number_font_size` | 18 | 页码字号，单位 pt |
-| `page_number_color` | `0,0,0` | 页码颜色，格式为 `r,g,b` |
-| `page_number_position` | `bottom` | 页码位置：`top` 或 `bottom` |
-| `page_number_orientation` | `vertical` | 页码方向：`vertical` 或 `horizontal` |
-| `skip_pages` | None | 跳过的文件名，可用逗号字符串或 YAML 列表，不含扩展名 |
-| `workers` | 4 | 图片加载线程数 |
+| 参数                      | 默认值          | 说明                                                       |
+| ------------------------- | --------------- | ---------------------------------------------------------- |
+| `input`                   | `.`             | 输入图片文件或目录；相对路径相对于配置文件所在项目目录解析 |
+| `output`                  | None            | 输出目录；未指定时自动创建，`pdf_name` 是其中的 PDF 文件名 |
+| `pdf_name`                | `output.pdf`    | 输出 PDF 文件名                                            |
+| `clean`                   | False           | 统一配置字段；PDF 生成不会清空输入或输出目录               |
+| `paper_size`              | `A4`            | 纸张尺寸，仅支持 `A3`、`A4`、`A5`、`B5`                    |
+| `orientation`             | `landscape`     | 页面方向：`landscape` 横向、`portrait` 纵向                |
+| `page_margins`            | `[20,20,20,20]` | 通用页边距，顺序为上、右、下、左，单位 mm                  |
+| `left_page_margins`       | None            | 左页专用页边距；与右页配置同时存在时启用左右页覆盖         |
+| `right_page_margins`      | None            | 右页专用页边距；格式同 `page_margins`                      |
+| `title_printing`          | False           | 是否打印标题                                               |
+| `title_text`              | `""`            | 默认标题；为空时不打印标题                                 |
+| `title_font_size`         | 18              | 标题字号，单位 pt                                          |
+| `title_color`             | `0,0,0`         | 标题颜色，格式为 `r,g,b`，范围 0 到 255                    |
+| `title_position`          | `top`           | 标题位置：`top` 或 `bottom`                                |
+| `title_orientation`       | `vertical`      | 标题方向：`vertical` 或 `horizontal`                       |
+| `title_switch_nodes`      | None            | 标题切换节点，格式为 `[图片组数字, 标题, side]`            |
+| `page_number_printing`    | False           | 是否打印页码                                               |
+| `page_number_start_page`  | 1               | 从排序后第几张图片开始标注，1-based                        |
+| `page_number_end_page`    | None            | 标注结束的图片序号；为空表示到最后                         |
+| `page_number_base`        | 0               | 页码基数；显示页码为基数加图片序号                         |
+| `page_number_font_size`   | 18              | 页码字号，单位 pt                                          |
+| `page_number_color`       | `0,0,0`         | 页码颜色，格式为 `r,g,b`                                   |
+| `page_number_position`    | `bottom`        | 页码位置：`top` 或 `bottom`                                |
+| `page_number_orientation` | `vertical`      | 页码方向：`vertical` 或 `horizontal`                       |
+| `skip_pages`              | None            | 跳过的文件名，可用逗号字符串或 YAML 列表，不含扩展名       |
+| `workers`                 | 4               | 图片加载线程数                                             |
 
 输出 PDF 默认创建在输入目录的自动输出目录中，也可以通过 `output` 指定输出目录。
 

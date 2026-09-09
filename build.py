@@ -228,6 +228,8 @@ def main():
     ensure_build_environment(project_root)
     mode = "onefile" if "--onefile" in sys.argv else "onedir"
 
+    print(f"项目版本: {VERSION}")
+
     # 清理旧产物
     for target in [
         project_root / "build",

@@ -22,11 +22,13 @@ guji extract --config ./book.yaml
 支持两种页码选择方式：
 
 **--pages 字符串**（优先级更高）：
+
 ```
 --pages "1,3-5,7"  → 提取第 1,3,4,5,7 页
 ```
 
 **--start / --end 整数对**：
+
 ```
 --start 3 --end 10  → 提取第 3~10 页
 ```
@@ -49,11 +51,13 @@ else:
 ### 3. 渲染模式
 
 **标准模式（quick=False，默认）**：
+
 - 使用 PyMuPDF 渲染整页为高质量图片
 - JPEG: quality=95, subsampling=0
 - PNG: 无损
 
 **快速模式（quick=True）**：
+
 - 优先提取 PDF 内嵌图片（速度快，分辨率取决于内嵌图片）
 - `--zoom` 对内嵌图片按**图片原始像素尺寸**缩放（而非 PDF 页面 pt 尺寸），并限制最大输出 6000px
   - 例：图片原始 2400px、zoom=2 → 输出 4800px（非页面 1800pt × 2 = 3600）
@@ -70,19 +74,19 @@ else:
 
 ## 参数说明
 
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| -i/--input | . | PDF 文件路径或包含 PDF 的目录 |
-| -o/--output | None | 输出目录名称 |
-| --zoom | 1 | 缩放因子（整数，如 2 表示 2 倍分辨率） |
-| --quick | True | 快速模式（优先提取内嵌图片） |
-| --ext | jpg | 输出格式（jpg/png/tiff） |
-| --pages | None | 页码字符串（如 "1,3-5,7"） |
-| --start | None | 起始页码（1-based） |
-| --end | None | 结束页码（1-based） |
-| --workers | CPU 核数 | 线程数 |
-| --batch-size | 4 | 每批次处理的页数 |
-| --clean | False | 清空输出目录 |
+| 参数         | 默认值   | 说明                                   |
+| ------------ | -------- | -------------------------------------- |
+| -i/--input   | .        | PDF 文件路径或包含 PDF 的目录          |
+| -o/--output  | None     | 输出目录名称                           |
+| --zoom       | 1        | 缩放因子（整数，如 2 表示 2 倍分辨率） |
+| --quick      | True     | 快速模式（优先提取内嵌图片）           |
+| --ext        | jpg      | 输出格式（jpg/png/tiff）               |
+| --pages      | None     | 页码字符串（如 "1,3-5,7"）             |
+| --start      | None     | 起始页码（1-based）                    |
+| --end        | None     | 结束页码（1-based）                    |
+| --workers    | CPU 核数 | 线程数                                 |
+| --batch-size | 4        | 每批次处理的页数                       |
+| --clean      | False    | 清空输出目录                           |
 
 ## 输出命名规则
 
