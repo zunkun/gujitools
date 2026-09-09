@@ -11,6 +11,7 @@
 """
 
 import sys
+import os
 import shutil
 import subprocess
 import time
@@ -18,9 +19,213 @@ from pathlib import Path
 
 from config import VERSION
 
+BUILD_ENV_NAME = "yolobuild"
+
+
+def run_conda(conda_exe, args, check=True, capture_output=False):
+    return subprocess.run(
+        [conda_exe, *args],
+        cwd=Path(__file__).resolve().parent,
+        check=check,
+        capture_output=capture_output,
+        text=True,
+    )
+
+
+def find_conda():
+    conda_exe = os.environ.get("CONDA_EXE") or shutil.which("conda")
+    if conda_exe:
+        return conda_exe
+
+    if sys.platform == "win32":
+        candidate = Path(sys.prefix).parent / "Scripts" / "conda.exe"
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
+def conda_environment_exists(conda_exe):
+    result = run_conda(conda_exe, ["env", "list", "--json"], capture_output=True)
+    if result.returncode != 0:
+        return False
+
+    import json
+
+    environments = json.loads(result.stdout).get("envs", [])
+    return any(
+        Path(environment).name.lower() == BUILD_ENV_NAME for environment in environments
+    )
+
+
+def install_build_dependencies(conda_exe, project_root):
+    check = run_conda(
+        conda_exe,
+        [
+            "run",
+            "--no-capture-output",
+            "-n",
+            BUILD_ENV_NAME,
+            "python",
+            "-c",
+            "import importlib.metadata as metadata; import cv2, PyInstaller, torch, ultralytics, yaml, fpdf; has_full_opencv=any(d.metadata['Name'].lower() == 'opencv-python' for d in metadata.distributions()); raise SystemExit(torch.version.cuda is not None or has_full_opencv)",
+        ],
+        check=False,
+    )
+    if check.returncode == 0:
+        return
+
+    print("安装 yolobuild 依赖（CPU PyTorch）...")
+    run_conda(
+        conda_exe,
+        [
+            "run",
+            "-n",
+            BUILD_ENV_NAME,
+            "python",
+            "-m",
+            "pip",
+            "install",
+            "--upgrade",
+            "pip",
+        ],
+    )
+    run_conda(
+        conda_exe,
+        [
+            "run",
+            "-n",
+            BUILD_ENV_NAME,
+            "python",
+            "-m",
+            "pip",
+            "uninstall",
+            "-y",
+            "torch",
+            "torchvision",
+            "torchaudio",
+        ],
+    )
+    run_conda(
+        conda_exe,
+        [
+            "run",
+            "-n",
+            BUILD_ENV_NAME,
+            "python",
+            "-m",
+            "pip",
+            "install",
+            "--index-url",
+            "https://download.pytorch.org/whl/cpu",
+            "torch",
+            "torchvision",
+            "torchaudio",
+        ],
+    )
+    run_conda(
+        conda_exe,
+        [
+            "run",
+            "-n",
+            BUILD_ENV_NAME,
+            "python",
+            "-m",
+            "pip",
+            "install",
+            "-i",
+            "https://mirrors.aliyun.com/pypi/simple/",
+            "-r",
+            str(project_root / "requirements.txt"),
+        ],
+    )
+    run_conda(
+        conda_exe,
+        [
+            "run",
+            "-n",
+            BUILD_ENV_NAME,
+            "python",
+            "-m",
+            "pip",
+            "uninstall",
+            "-y",
+            "opencv-python",
+        ],
+    )
+    run_conda(
+        conda_exe,
+        [
+            "run",
+            "-n",
+            BUILD_ENV_NAME,
+            "python",
+            "-m",
+            "pip",
+            "install",
+            "--force-reinstall",
+            "--no-deps",
+            "-i",
+            "https://mirrors.aliyun.com/pypi/simple/",
+            "opencv-python-headless",
+        ],
+    )
+
+
+def ensure_build_environment(project_root):
+    if os.environ.get("GUJI_BUILD_ENV_READY") == "1":
+        return
+
+    conda_exe = find_conda()
+    if not conda_exe:
+        print("⚠️ 未找到 Conda，使用当前 Python 环境继续打包")
+        return
+
+    current_environment = Path(os.environ.get("CONDA_PREFIX", "")).name.lower()
+    if current_environment == BUILD_ENV_NAME:
+        install_build_dependencies(conda_exe, project_root)
+        os.environ["GUJI_BUILD_ENV_READY"] = "1"
+        return
+
+    if not conda_environment_exists(conda_exe):
+        print(f"创建 Conda 环境: {BUILD_ENV_NAME}")
+        run_conda(
+            conda_exe,
+            [
+                "create",
+                "-n",
+                BUILD_ENV_NAME,
+                "python=3.10",
+                "-y",
+                "--override-channels",
+                "-c",
+                "https://repo.anaconda.com/pkgs/main",
+            ],
+        )
+
+    install_build_dependencies(conda_exe, project_root)
+    print(f"切换到 Conda 环境: {BUILD_ENV_NAME}")
+    child_environment = os.environ.copy()
+    child_environment["GUJI_BUILD_ENV_READY"] = "1"
+    result = subprocess.run(
+        [
+            conda_exe,
+            "run",
+            "--no-capture-output",
+            "-n",
+            BUILD_ENV_NAME,
+            "python",
+            str(Path(__file__).resolve()),
+            *sys.argv[1:],
+        ],
+        cwd=str(project_root),
+        env=child_environment,
+    )
+    raise SystemExit(result.returncode)
+
 
 def main():
     project_root = Path(__file__).resolve().parent
+    ensure_build_environment(project_root)
     mode = "onefile" if "--onefile" in sys.argv else "onedir"
 
     # 清理旧产物
@@ -51,6 +256,8 @@ def main():
         f"--add-data",
         f"weights{sep}weights",  # YOLO 权重 detect.pt
         f"--add-data",
+        "static" + sep + "static",  # GUI 静态资源
+        f"--add-data",
         f"docs/functions{sep}docs/functions",  # help 系统的 .md 文档
         # ultralytics: 不手动指定，靠 PyInstaller 自动分析 + 内置 hook
         # （手动 --collect-all/--hidden-import 会拉入训练模块→matplotlib/scipy）
@@ -60,6 +267,12 @@ def main():
         "functions",
         "--collect-submodules",
         "utils",
+        "--collect-all",
+        "torchvision",
+        "--hidden-import",
+        "torchvision._C_stable",
+        "--hidden-import",
+        "torchvision.extension",
         # 函数内延迟导入的第三方库
         "--hidden-import",
         "pymupdf",
@@ -117,6 +330,14 @@ def build_installer(project_root):
 
     iscc_candidates = [
         shutil.which("ISCC.exe"),
+        Path(os.environ.get("LOCALAPPDATA", ""))
+        / "Programs"
+        / "Inno Setup 7"
+        / "ISCC.exe",
+        Path(os.environ.get("LOCALAPPDATA", ""))
+        / "Programs"
+        / "Inno Setup 6"
+        / "ISCC.exe",
         Path(r"C:\Program Files\Inno Setup 7\ISCC.exe"),
         Path(r"C:\Program Files (x86)\Inno Setup 7\ISCC.exe"),
         Path(r"C:\Program Files\Inno Setup 6\ISCC.exe"),
@@ -148,7 +369,7 @@ def build_installer(project_root):
 
 
 def copy_to_software(project_root, mode):
-    """将 onedir 打包结果复制到 C:\Software\ 并做版本备份。"""
+    r"""将 onedir 打包结果复制到 C:\Software 并做版本备份。"""
     import time
 
     from config import VERSION

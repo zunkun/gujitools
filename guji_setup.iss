@@ -7,7 +7,7 @@
 [Setup]
 AppName=guji古籍工具
 AppVersion={#VERSION}
-DefaultDirName={sd}\Software\guji
+DefaultDirName={localappdata}\Software\guji
 PrivilegesRequired=lowest
 OutputDir=dist
 OutputBaseFilename=guji_setup_{#VERSION}_{#BUILD_TIMESTAMP}

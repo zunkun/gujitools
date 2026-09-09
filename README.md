@@ -35,17 +35,93 @@ Python 3.10
 pip install -r requirements.txt
 ```
 
+国内网络环境可以为普通 PyPI 依赖选择镜像源。清华源示例：
+
+```bash
+python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
+```
+
+阿里云源示例：
+
+```bash
+python -m pip install -i https://mirrors.aliyun.com/pypi/simple/ -r requirements.txt
+```
+
+### 创建 CPU 打包环境
+
+建议使用独立的 `yolobuild` 环境打包，避免继承开发环境中的 CUDA 版 PyTorch：
+
+```bash
+conda create -n yolobuild python=3.10 -y
+conda activate yolobuild
+python -m pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision torchaudio
+python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
+python -c "import torch; print(torch.__version__); print('torch cuda:', torch.version.cuda); print('cuda available:', torch.cuda.is_available())"
+python build.py
+```
+
+现在直接执行 `python build.py` 会自动检查并准备 `yolobuild`，然后在该环境中
+继续执行打包。如果没有安装 Conda，则直接使用当前 Python 环境继续打包；手动
+激活环境主要用于提前安装或检查依赖。
+
+PyTorch CPU wheel 建议使用官方 CPU 源；清华源或阿里云源用于安装其他 PyPI
+依赖。部分镜像不一定同步完整的 PyTorch CPU wheel，强行从镜像安装可能又装回
+CUDA 版本或找不到对应版本。
+
+项目不使用 OpenCV 的窗口、摄像头或 GUI 接口，因此依赖已使用
+`opencv-python-headless` 替代 `opencv-python`。它仍然提供 `import cv2` 和图像
+处理功能，但不会携带 GUI 相关库；如果以后增加 `imshow` 等窗口功能，再改回
+`opencv-python`。注意：`ultralytics` 的依赖声明可能再次安装完整的
+`opencv-python`，自动构建会在依赖安装后卸载它并重新固定为 headless 版本。
+
 主要依赖（详见 [requirements.txt](requirements.txt)）：
 
-| 依赖          | 用途          | 命令                      |
-| ------------- | ------------- | ------------------------- |
-| PyMuPDF       | PDF 渲染      | extract                   |
-| Pillow        | 图像读写      | 所有图像命令              |
-| opencv-python | 图像处理      | rembg / crop / cropremove |
-| numpy         | 数组运算      | rembg / crop / cropremove |
-| ultralytics   | YOLO 模型推理 | crop / cropremove         |
+| 依赖                   | 用途          | 命令                      |
+| ---------------------- | ------------- | ------------------------- |
+| PyMuPDF                | PDF 渲染      | extract                   |
+| PyYAML                 | YAML 配置读取 | run                       |
+| Pillow                 | 图像读写      | 所有图像命令              |
+| opencv-python-headless | 图像处理      | rembg / crop / cropremove |
+| numpy                  | 数组运算      | rembg / crop / cropremove |
+| ultralytics            | YOLO 模型推理 | crop / cropremove         |
+| fpdf2                  | PDF 生成      | run                       |
 
 YOLO 模型权重文件需放置于 `weights/detect.pt`。
+
+### Windows CPU 环境与打包体积
+
+`ultralytics` 使用的是 PyTorch。`pip install ultralytics` 会根据当前 Python
+软件源和环境安装 PyTorch；如果环境中安装的是 CUDA 版 PyTorch，`build.py`
+会把 CUDA 运行库一起收集到 `dist/guji`，安装包可能达到数 GB。
+
+可以用下面的命令确认当前环境：
+
+```bash
+python -c "import torch; print(torch.__version__); print('torch cuda:', torch.version.cuda); print('cuda available:', torch.cuda.is_available())"
+```
+
+如果输出的 `torch cuda` 不是 `None`，说明当前是 CUDA 版 PyTorch。仅使用 CPU
+进行 YOLO 推理时，应先安装 PyTorch CPU 版，再安装项目依赖：
+
+```bash
+python -m pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision torchaudio
+python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
+```
+
+再次确认时，`torch cuda` 应为 `None`。CPU 版仍会包含 `torch_cpu.dll`，所以安装
+包不会变成很小，但不应再包含 `torch_cuda.dll`、`cudnn*.dll`、`cublas*.dll`、
+`cudart*.dll` 等 CUDA 文件。
+
+使用 CPU 环境重新构建：
+
+```bash
+python build.py
+```
+
+`build.py` 默认生成 onedir 包，并在成功后调用 Inno Setup 生成带版本号和时间戳
+的安装包。构建前应确认 `ISCC.exe` 已安装且位于 Inno Setup 默认安装目录或
+`PATH` 中。不要只删除 `dist` 后重复打包；如果当前 Python 环境使用 CUDA 版
+PyTorch，PyInstaller 仍会把 CUDA 运行库收集进包中。
 
 ## 快速开始
 

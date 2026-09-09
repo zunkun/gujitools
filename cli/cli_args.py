@@ -276,7 +276,9 @@ class CliArgsParser:
 
         返回 argparse.Namespace。
         """
-        args = self.parser.parse_args()
+        args, unknown_args = self.parser.parse_known_args()
+        if unknown_args:
+            print(f"警告：忽略未定义参数: {' '.join(unknown_args)}")
 
         # -v/--version 标志
         if getattr(args, "version", False):

@@ -4,10 +4,11 @@
 
 # ---- PDF 提取 (extract) ----
 PyMuPDF>=1.23.0          # import pymupdf as fitz
+PyYAML>=6.0              # YAML 配置文件读取（import yaml）
 
 # ---- 图像处理 (所有图像命令) ----
 Pillow>=9.0.0            # PIL Image
-opencv-python>=4.5.0     # cv2
+opencv-python-headless>=4.5.0  # cv2（无 GUI 依赖，适合服务器和打包）
 numpy>=1.21.0            # 数组运算
 
 # ---- YOLO 文本框检测 (crop / cropremove) ----
@@ -18,3 +19,4 @@ pyinstaller>=6.0.0
 
 ruamel.yaml
 prompt-toolkit
+fpdf2>=2.7.0             # PDF 生成（import fpdf）
