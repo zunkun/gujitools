@@ -1,0 +1,42 @@
+# Python 编译文件
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# 图片目录（原始图片和处理后图片）
+img1/
+img2/
+
+# 生成的 PDF 文件
+*.pdf
+
+# 版本控制
+.git/
+
+# 日志文件
+*.log
+logs/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+test/docs/*
+test/images/*
+*pdf
+build/
+dist/
+*.spec
+
+tests/cover/cover_output/
+tests/cover/cover_output2/
+guji.yaml

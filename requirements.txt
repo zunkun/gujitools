@@ -1,0 +1,20 @@
+# gujitools 依赖
+# 安装: pip install -r requirements.txt
+
+
+# ---- PDF 提取 (extract) ----
+PyMuPDF>=1.23.0          # import pymupdf as fitz
+
+# ---- 图像处理 (所有图像命令) ----
+Pillow>=9.0.0            # PIL Image
+opencv-python>=4.5.0     # cv2
+numpy>=1.21.0            # 数组运算
+
+# ---- YOLO 文本框检测 (crop / cropremove) ----
+ultralytics>=8.0.0       # YOLO 模型推理（依赖 torch，pip 会自动安装）
+
+# ---- 打包 (build.py) ----
+pyinstaller>=6.0.0
+
+ruamel.yaml
+prompt-toolkit
