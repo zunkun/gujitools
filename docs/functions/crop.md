@@ -8,7 +8,11 @@
 
 ```bash
 guji crop -i <输入> -o <输出> [选项]
+guji crop --config ./book.yaml
 ```
+
+指定 `--config` 时读取配置文件中的 `crop:` 配置块；命令行显式提供的参数会
+覆盖配置值，例如 `guji crop --config ./book.yaml --area 2`。
 
 ## 核心算法
 

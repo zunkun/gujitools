@@ -8,7 +8,12 @@
 guji rembg -i <输入> -o <输出> [选项]
 # 别名
 guji -r -i <输入> -o <输出> [选项]
+# 使用 YAML 配置
+guji rembg --config ./book.yaml
 ```
+
+指定 `--config` 时读取配置文件中的 `rembg:` 配置块；命令行显式提供的参数会
+覆盖配置值。
 
 ## 核心算法
 

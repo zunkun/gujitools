@@ -8,7 +8,12 @@
 guji extract -i <输入> -o <输出> [选项]
 # 别名
 guji -e -i <输入> -o <输出> [选项]
+# 使用 YAML 配置
+guji extract --config ./book.yaml
 ```
+
+指定 `--config` 时读取配置文件中的 `extract:` 配置块；命令行显式提供的参数
+会覆盖配置值。
 
 ## 核心算法
 

@@ -125,22 +125,100 @@ PyTorch，PyInstaller 仍会把 CUDA 运行库收集进包中。
 
 ## 快速开始
 
+### 推荐工作流：先初始化配置
+
+首次使用时，建议先执行 `guji init` 生成 `guji.yaml`。初始化命令会引导设置
+项目元信息和原始 PDF 或图片目录，后续可以通过配置文件统一执行各个流程：
+
+```bash
+guji init
+```
+
+交互示例：
+
+```text
+guji.yaml 已存在，是否覆盖？(y/N) y
+请输入项目信息（直接回车使用默认值）：
+项目名称 (default: 我的古籍项目): 古籍处理
+项目描述 (default: 示例古籍数字化处理):
+版本号 (default: 1.0.0):
+原始 PDF 或图片目录 (default: ./sample.pdf): c:/a/b/c.pdf
+✅ 已生成配置文件: D:\workspace\gujitools\guji.yaml
+```
+
+生成 `guji.yaml` 后，按处理顺序执行对应子命令：
+
 ```bash
 # 1. 从 PDF 提取图片
-python main.py extract -i book.pdf -o ./images --zoom 2
+guji run extract
 
 # 2. 裁剪文本框
+guji run crop
+
+# 3. 去底色
+guji run rembg
+
+# 4. 裁剪并去底色
+guji run cropremove
+
+# 5. 生成 PDF
+guji run print
+```
+
+也可以指定配置文件：
+
+```bash
+guji run crop --config ./book.yaml
+guji run print --config ./book.yaml
+```
+
+`guji run <command>` 会读取配置文件中对应的配置块，例如 `run crop` 读取
+`guji.yaml` 的 `crop` 部分。执行 `print` 时必须使用 `guji run print`，不能
+直接执行 `guji print`。
+
+普通子命令也支持指定配置文件。此时 YAML 配置作为基础值，命令行中显式提供
+的参数优先级更高：
+
+```bash
+guji crop --config ./book.yaml
+guji crop --config ./book.yaml --area 2
+guji rembg --config ./book.yaml --type 3
+guji cropremove --config ./book.yaml --area 3 --border 30
+guji extract --config ./book.yaml --pages "1,3-5"
+```
+
+`--config` 会读取与命令同名的配置块，例如 `guji crop --config ./book.yaml`
+读取 `book.yaml` 中的 `crop:` 部分。`print` 仍然只能通过 `guji run print`
+执行。
+
+### 直接使用 CLI 子命令
+
+不需要配置文件时，也可以直接执行子命令，并通过参数指定输入、输出和处理选项：
+
+```bash
+# 从 PDF 提取图片
+python main.py extract -i book.pdf -o ./images --zoom 2
+
+# 裁剪文本框
 python main.py crop -i ./images -o ./cropped
 
-# 3. 去底色（二值化）
+# 去底色（二值化）
 python main.py rembg -i ./images -o ./output
 
 # 一步完成裁剪 + 去底色
 python main.py cropremove -i ./images -o ./output --area 1
-
-# 根据 guji.yaml 生成 PDF
-python main.py run print
 ```
+
+安装包或已加入 PATH 后，可以将 `python main.py` 替换为 `guji`：
+
+```bash
+guji extract -i book.pdf -o ./images --zoom 2
+guji crop -i ./images -o ./cropped
+guji rembg -i ./images -o ./output
+guji cropremove -i ./images -o ./output --area 1
+```
+
+详细参数和示例见 [CLI 使用说明](docs/cli.md) 及各功能手册。
 
 ## 帮助
 

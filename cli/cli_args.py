@@ -66,7 +66,7 @@ class CliArgsParser:
         extract_parser.add_argument("--workers", type=int, help="线程数")
         extract_parser.add_argument("--batch-size", type=int, help="批量大小")
         extract_parser.add_argument("--clean", action="store_true", help="清空输出目录")
-        # 注意：移除了 --config 参数，因为配置管理统一由 run 命令负责
+        extract_parser.add_argument("--config", type=Path, help="配置文件路径")
 
         # ============ crop ============
         crop_parser = subparsers.add_parser("crop", help="裁剪文字区域", add_help=False)
@@ -98,7 +98,7 @@ class CliArgsParser:
             "4. 四值20,30,20,25 → 上20 右30 下20 左25",
         )
         crop_parser.add_argument("--workers", type=int, help="线程数")
-        # 移除 --config
+        crop_parser.add_argument("--config", type=Path, help="配置文件路径")
 
         # ============ rembg ============
         rembg_parser = subparsers.add_parser(
@@ -139,7 +139,7 @@ class CliArgsParser:
             help="【红色颜色下限阈值】红色识别最低饱和度(范围0~255)，默认50",
         )
         rembg_parser.add_argument("--workers", type=int, help="线程数")
-        # 移除 --config
+        rembg_parser.add_argument("--config", type=Path, help="配置文件路径")
 
         # ============ cropremove ============
         cropremove_parser = subparsers.add_parser(
@@ -208,7 +208,7 @@ class CliArgsParser:
             help="【红色颜色下限阈值】红色识别最低饱和度(范围0~255)，默认50",
         )
         cropremove_parser.add_argument("--workers", type=int, help="线程数")
-        # 移除 --config
+        cropremove_parser.add_argument("--config", type=Path, help="配置文件路径")
 
         # ============ help ============
         # help 子命令：guji help [command] 查看命令手册，内容来自 docs/functions/<command>.md

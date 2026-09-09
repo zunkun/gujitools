@@ -7,8 +7,8 @@
 `print` 仅通过配置文件执行：
 
 ```bash
-python main.py run print
-python main.py run print --config ./guji.yaml
+guji run print
+guji run print --config ./guji.yaml
 ```
 
 配置文件默认是当前目录下的 `guji.yaml`。
@@ -17,8 +17,18 @@ python main.py run print --config ./guji.yaml
 
 ```yaml
 print:
-	input: ./rembg
-	pdf_name: book.pdf
+  input: ./rembg
+  pdf_name: book.pdf
+
+  paper_size: B5
+  orientation: portrait
+  page_margins: [20, 20, 20, 20]
+  title_printing: true
+  title_text: 古籍名称
+  page_number_printing: true
+  page_number_start_page: 2
+  page_number_base: 200
+```
 
 ## 配置参数
 
@@ -52,15 +62,6 @@ print:
 | `page_number_orientation` | `vertical` | 页码方向：`vertical` 或 `horizontal` |
 | `skip_pages` | None | 跳过的文件名，可用逗号字符串或 YAML 列表，不含扩展名 |
 | `workers` | 4 | 图片加载线程数 |
-	paper_size: B5
-	orientation: portrait
-	page_margins: [20, 20, 20, 20]
-	title_printing: true
-	title_text: 古籍名称
-	page_number_printing: true
-	page_number_start_page: 2
-	page_number_base: 200
-```
 
 输出 PDF 默认创建在输入目录的自动输出目录中，也可以通过 `output` 指定输出目录。
 

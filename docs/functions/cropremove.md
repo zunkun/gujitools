@@ -10,7 +10,12 @@
 guji cropremove -i <输入> -o <输出> [选项]
 # 别名
 guji -cr -i <输入> -o <输出> [选项]
+# 使用 YAML 配置
+guji cropremove --config ./book.yaml
 ```
+
+指定 `--config` 时读取配置文件中的 `cropremove:` 配置块；命令行显式提供的
+参数会覆盖配置值，例如 `guji cropremove --config ./book.yaml --area 3`。
 
 ## 核心算法
 

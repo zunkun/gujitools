@@ -2,6 +2,23 @@
 
 核心功能位于 `functions/` 包下，每个命令对应一个实现类，通过工厂方法 `get_function(command, command_args)` 进行映射。
 
+## 使用顺序
+
+推荐首次使用时先执行 `guji init` 生成 `guji.yaml`，再通过配置执行流程：
+
+```bash
+guji init
+guji run extract
+guji run crop
+guji run rembg
+guji run cropremove
+guji run print
+```
+
+临时处理或不需要配置文件时，可以直接执行 `guji extract`、`guji crop`、
+`guji rembg` 和 `guji cropremove`。`print` 需要从 YAML 读取较多排版参数，
+因此只能使用 `guji run print`。
+
 ## 模块清单
 
 | 模块             | 类名                  | 命令         | 别名  | 职责                                                                      |

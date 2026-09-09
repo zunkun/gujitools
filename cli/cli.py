@@ -18,8 +18,8 @@ CLI 启动逻辑：参数解析 → 功能分发 → 结果输出。
 注意: `functions` 包延迟导入（在 main() 内部），使 `guji help` 无需加载 cv2/ultralytics。
 
 配置行为约定：
-- run 命令从配置文件读取当前子命令配置块，命令行参数只有 --config 和子命令名。
-- 普通子命令（crop/extract等）直接从命令行读取参数，不再支持 --config。
+- run 命令从配置文件读取当前子命令配置块。
+- 普通子命令支持可选 --config；配置值作为基础值，命令行参数优先覆盖。
 """
 
 import sys
@@ -39,6 +39,21 @@ def load_yaml_config(path: Path) -> dict:
     except yaml.YAMLError as e:
         print(f"ERROR: YAML parse error in {path}: {e}")
         sys.exit(1)
+
+
+def load_command_config(path: Path, command: str) -> dict:
+    """读取指定命令的 YAML 配置块。"""
+    if not path.exists():
+        print(f"ERROR: config file not found: {path}")
+        print("You can create a default config with `guji init`.")
+        sys.exit(1)
+
+    full_config = load_yaml_config(path)
+    config_data = full_config.get(command)
+    if not isinstance(config_data, dict):
+        print(f"ERROR: config section '{command}' missing or not an object in {path}")
+        sys.exit(1)
+    return {key: value for key, value in config_data.items() if value is not None}
 
 
 def execute_command(command: str, command_args: CommandArgs):
@@ -88,21 +103,7 @@ def main():
         subcmd = args.subcommand
         cfg_path = args.config  # 已经是 Path 对象，默认 ./guji.yaml
 
-        if not cfg_path.exists():
-            print(f"ERROR: config file not found: {cfg_path}")
-            print("You can create a default config with `guji init`.")
-            sys.exit(1)
-
-        full_config = load_yaml_config(cfg_path)
-        config_data = full_config.get(subcmd)
-        if not isinstance(config_data, dict):
-            print(
-                f"ERROR: config section '{subcmd}' missing or not an object in {cfg_path}"
-            )
-            sys.exit(1)
-
-        # 过滤掉值为 None 的键（避免覆盖默认值）
-        config_data = {k: v for k, v in config_data.items() if v is not None}
+        config_data = load_command_config(cfg_path, subcmd)
 
         # 构造参数对象：命令为 subcmd，参数来自配置
         command_args = CommandArgs(command=subcmd, **config_data)
@@ -149,13 +150,23 @@ def main():
             sys.exit(1)
         return
 
-    # ---------- 其他普通子命令（extract/crop/rembg/cropremove/print） ----------
-    # 直接使用命令行参数，经过 CommandArgs 标准化（填充默认值）
+    # ---------- 其他普通子命令（extract/crop/rembg/cropremove） ----------
+    # --config 提供基础值；命令行中显式提供的值覆盖配置。
     cli_kwargs = {
         k: v
         for k, v in vars(args).items()
         if k not in ("command", "config") and v is not None
     }
+    config_path = getattr(args, "config", None)
+    if config_path is not None:
+        config_data = load_command_config(config_path, command)
+        cli_kwargs = {
+            key: value
+            for key, value in cli_kwargs.items()
+            if not isinstance(value, bool) or value
+        }
+        config_data.update(cli_kwargs)
+        cli_kwargs = config_data
     command_args = CommandArgs(command=command, **cli_kwargs)
 
     # 参数校验（init 已跳过）

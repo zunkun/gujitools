@@ -2,6 +2,72 @@
 
 程序入口：`python main.py <command> [options]`，或打包后的可执行文件 `guji <command> [options]`。
 
+## 推荐工作流
+
+首次使用时，先生成配置文件：
+
+```bash
+guji init
+```
+
+`guji init` 会交互式询问项目名称、描述、版本号和原始 PDF 或图片目录，不会单独
+询问输出目录。例如：
+
+```text
+guji.yaml 已存在，是否覆盖？(y/N) y
+请输入项目信息（直接回车使用默认值）：
+项目名称 (default: 我的古籍项目): 古籍处理
+项目描述 (default: 示例古籍数字化处理):
+版本号 (default: 1.0.0):
+原始 PDF 或图片目录 (default: ./sample.pdf): c:/a/b/c.pdf
+✅ 已生成配置文件: D:\workspace\gujitools\guji.yaml
+```
+
+然后按 `guji.yaml` 中对应的配置块执行命令：
+
+```bash
+guji run extract
+guji run crop
+guji run rembg
+guji run cropremove
+guji run print
+```
+
+也可以指定配置文件：
+
+```bash
+guji run crop --config ./book.yaml
+guji run print --config ./book.yaml
+```
+
+不需要配置文件时，可以直接执行 CLI 子命令，例如：
+
+```bash
+guji extract -i book.pdf -o ./images
+guji crop -i ./images -o ./cropped
+guji rembg -i ./images -o ./output
+guji cropremove -i ./images -o ./output --area 1
+```
+
+`print` 的业务参数来自 YAML 配置，必须使用 `guji run print`，不能直接使用
+`guji print`。
+
+普通子命令也支持 `--config`：
+
+```bash
+guji crop --config ./book.yaml
+guji crop --config ./book.yaml --area 2
+guji rembg --config ./book.yaml --type 3
+guji cropremove --config ./book.yaml --area 3 --border 30
+guji extract --config ./book.yaml --pages "1,3-5"
+```
+
+该选项读取 YAML 中与命令同名的配置块，配置值作为基础值；命令行显式提供的
+参数优先覆盖配置值。`print` 仍只能使用 `guji run print`。
+
+未定义的参数会输出警告并忽略；已定义参数仍会校验类型和取值。例如，`-b c`
+不会阻止命令执行，但 `--area x` 或 `--area` 缺少值仍会报错。
+
 ## 帮助
 
 ```bash
