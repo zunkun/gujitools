@@ -13,6 +13,7 @@ from PySide6.QtCore import QProcess, QProcessEnvironment, QTimer
 
 from ..utils.files import list_stage_images
 from ..store import STAGES, STAGE_LABELS
+from utils.sort_utils import pdf_custom_sort_key
 
 STATUS_LABELS = {
     "pending": "未执行",
@@ -117,25 +118,43 @@ class StageRunnerMixin:
                 args["pages"] = missing
                 args["clean"] = False
         elif stage == "print":
-            # print：左侧列表（顺序）+ YAML 参数；效果图合成在子进程内完成
+            # print：左侧列表顺序即 PDF 页序。图片以第三步「生成预览」的
+            # 去底图（stages/rembgpreview）为源，按第三步面板**当前**的
+            # area/border + 检测框在 worker 子进程内实时合成（与「提交本次
+            # 任务」完全相同的几何规则）——调整 border 后无需重新提交，
+            # 直接生成 PDF 即可生效；第四步的纸张/边距/标题/页码等自定义
+            # 参数继续传给 CLI print。
             entries, doc = self._print_entries()
             entries = [e for e in entries if Path(e["file"]).exists()]
-            if not entries:
+            rembg_panel = self.control_stack.widget(2)  # 第三步 rembg 面板
+            try:
+                rargs = rembg_panel.get_args()
+            except ValueError as exc:
+                self._toast("error", "第三步参数错误", str(exc))
+                return
+            area = int(rargs.get("area", 1))
+            border = rargs.get("border")
+            effects = self._build_print_effects(entries, area, border)
+            if not effects:
                 self._toast(
                     "warning", "无输入页面",
-                    "待打印列表为空，请先完成去底色，或在左侧列表插入图片。",
+                    "待打印列表为空，请先在第三步「生成预览」（必要时「提交"
+                    "本次任务」选页），或在左侧列表插入图片。",
                 )
                 return
             doc["pages"] = [
-                {k: e.get(k) for k in ("file", "label", "box", "parea")}
+                {k: e.get(k) for k in ("file", "label")}
                 for e in entries
             ]
             self.store.save_print_doc(self.task_id, doc)
-            args["_effects"] = [
-                {"file": e["file"], "effect": e.get("effect")} for e in entries
-            ]
+            args["_effects"] = effects
             args["input"] = str(self.store.workset_dir(self.task_id))
             args["output"] = str(self.store.stage_dir(self.task_id, "print"))
+            self.log_view.append(
+                f"区域合成：area={area}"
+                + (f"，border={border}" if border is not None else "，border=0")
+                + f"（{len(effects)} 页）"
+            )
         else:
             self._refresh_manifest()
             if not self._manifest_paths():
@@ -149,12 +168,19 @@ class StageRunnerMixin:
                 self._toast("info", "无需续跑", "该子任务的输出已完整。")
                 return
             args["input"] = str(workset)
-            # detect/rembg 的输出目录解析会在 output 后追加默认子目录名（detect/rembg）
-            args["output"] = str(self.store.task_dir(self.task_id) / "stages")
+            if stage == "rembg":
+                # 「生成预览」整页去底图固定写入 stages/rembgpreview；
+                # rembg CLI 会自行追加 "rembg" 子目录，故用 _outpath 精确覆盖
+                args["_outpath"] = str(
+                    self.store.rembg_preview_output_dir(self.task_id)
+                )
+            else:
+                # detect 的输出目录解析会在 output 后追加默认子目录名（detect）
+                args["output"] = str(self.store.task_dir(self.task_id) / "stages")
             args["clean"] = not resume
 
         if stage == "print":
-            # 记录最近一次执行的 YAML 参数（供面板「重置」恢复）
+            # 记录最近一次执行的表单参数（供面板「重置」恢复）
             try:
                 panel.mark_applied(args)
             except Exception:
@@ -258,6 +284,207 @@ class StageRunnerMixin:
             self.stage_status.setText("正在中断子任务...")
             self.log_view.append("已请求中断，正在终止 worker...")
             self.process.kill()
+
+    # ---------------------------------------------------------- rembg 提交
+    def _rembg_result_path(self, stem: str) -> Path | None:
+        """某页面对应的「生成预览」去底色结果（stages/rembgpreview）。"""
+        rembg_dir = self.store.rembg_preview_output_dir(self.task_id)
+        for ext in ("png", "jpg", "jpeg"):
+            candidate = rembg_dir / f"{stem}.{ext}"
+            if candidate.exists():
+                return candidate
+        return None
+
+    def _latest_print_pdf_path(self) -> Path | None:
+        """最近一次 print 执行产出的 PDF 路径（按 YAML pdf_name 解析）。"""
+        if not self.task_id:
+            return None
+        pdf_name = "print.pdf"
+        history = self.store.list_stage_runs(self.task_id, "print")
+        if history:
+            params = history[0].get("parameters", {})
+            if params.get("pdf_name"):
+                pdf_name = str(params["pdf_name"])
+        out_dir = self.store.stage_dir(self.task_id, "print")
+        candidate = out_dir / pdf_name
+        if candidate.exists():
+            return candidate
+        # 兜底：目录下任意 pdf
+        for cand in out_dir.glob("*.pdf"):
+            return cand
+        return None
+
+    def _rembg_submit_entries(self, area: int, border) -> list[dict]:
+        """预览结果 + 检测框 + area/border → 最终图片条目。
+
+        派生规则与 rembg 预览条目、print 待打印列表完全一致：
+        - area=1 双框：拆 <页>-r / <页>-l 两条（古籍阅读顺序 r 在前）；
+        - area=2/3 双框：取双框并集，单条输出；
+        - 单框：area=2/3 走对称画布（parea=2），area=1 按普通框；
+        - 无框：整页预览图透传。
+        最终按 CLI natural sort 排序（同页 r 在 l 前）。
+        """
+        entries: list[dict] = []
+        for path in self._manifest_paths():
+            result = self._rembg_result_path(path.stem)
+            if result is None:
+                continue  # 该页尚未生成预览
+            boxes = self._valid_boxes(self._detect_boxes_for(str(path)))
+            stem = path.stem
+            if area == 1 and len(boxes) == 2:
+                entries.append(
+                    {"file": str(result), "label": f"{stem}-r",
+                     "box": boxes[1], "parea": 1}
+                )
+                entries.append(
+                    {"file": str(result), "label": f"{stem}-l",
+                     "box": boxes[0], "parea": 1}
+                )
+            elif area in (2, 3) and len(boxes) == 2:
+                union = [
+                    min(b[0] for b in boxes), min(b[1] for b in boxes),
+                    max(b[2] for b in boxes), max(b[3] for b in boxes),
+                ]
+                entries.append(
+                    {"file": str(result), "label": stem,
+                     "box": union, "parea": 1}
+                )
+            elif len(boxes) == 1:
+                entries.append(
+                    {"file": str(result), "label": stem, "box": boxes[0],
+                     "parea": 2 if area in (2, 3) else 1}
+                )
+            else:
+                entries.append(
+                    {"file": str(result), "label": stem,
+                     "box": None, "parea": 1}
+                )
+        entries.sort(key=lambda e: pdf_custom_sort_key(e["label"]))
+        return entries
+
+    def _build_print_effects(
+        self, list_entries: list[dict], area: int, border
+    ) -> list[dict]:
+        """第四步列表 + 第三步当前 area/border → worker 合成规格。
+
+        与「提交本次任务」复用同一套派生规则（_rembg_submit_entries）：
+        源图为 stages/rembgpreview 去底图，effect 携带检测框/area/border，
+        由 run_print_stage 在子进程内实时合成后再排版为 PDF。
+
+        与用户在第四步保存的列表（拖动排序/删除/外部插入）按 label 对齐：
+        - 命中当前 area 派生集合的条目，按用户列表顺序输出合成规格；
+        - 用户插入的外部图片（不在 stages/rembg 目录）整图透传；
+        - area 模式切换后已失效的旧提交图（如旧 82-r/82-l 被新 82 取代）
+          丢弃，当前集合中新派生的条目按默认顺序补在末尾，避免漏页或重复。
+        """
+        composed = self._rembg_submit_entries(area, border)
+        dmap = {c["label"]: c for c in composed}
+        rembg_dir = self.store.rembg_output_dir(self.task_id)
+
+        def _spec(spec: dict) -> dict:
+            return {
+                "file": spec["file"],
+                "effect": (
+                    {
+                        "boxes": [spec["box"]],
+                        "area": spec.get("parea", 1),
+                        "border": border,
+                    }
+                    if spec.get("box")
+                    else None
+                ),
+            }
+
+        # 已提交产物的 label 集合：用于区分「用户删除」与「area 切换新派生」
+        submitted_labels = {p.stem for p in list_stage_images(rembg_dir)}
+        effects: list[dict] = []
+        used: set[str] = set()
+        for e in list_entries:
+            label = e.get("label") or Path(e["file"]).stem
+            spec = dmap.get(label)
+            if spec is not None:
+                effects.append(_spec(spec))
+                used.add(label)
+            elif Path(e["file"]).parent != rembg_dir:
+                # 用户手动插入的外部图片：不做区域合成，整页参与排版
+                effects.append({"file": e["file"], "effect": None})
+        # 仅补「当前 area 派生出、但提交产物里尚不存在」的条目（area 模式
+        # 切换后的新结构页）；已存在提交图却不在用户列表的，属于用户主动
+        # 删除，不得补回。
+        for spec in composed:
+            if spec["label"] not in used and spec["label"] not in submitted_labels:
+                effects.append(_spec(spec))
+        return effects
+
+    def run_rembg_submit(self) -> None:
+        """提交本次任务：把「生成预览」的去底色图片按 area/border 等
+        合成为真正想要的最终图片，输出到 stages/rembg 目录。"""
+        if not self.task_id or not self.source_path:
+            self._toast("warning", "提示", "请先导入 PDF")
+            return
+        if self.process and self.process.state() != QProcess.NotRunning:
+            self._toast("warning", "任务进行中", "当前子任务正在执行")
+            return
+        # 必须以最近一次「生成预览」成功为前提（旧图残留/失败/中断均拒绝提交）
+        preview_state = self.store.stage_states(self.task_id)["rembg"]["status"]
+        if preview_state != "success":
+            self._toast(
+                "warning", "请先生成预览",
+                "「生成预览」执行成功后才能提交本次任务"
+                + ("" if preview_state == "pending" else
+                   f"（当前状态：{STATUS_LABELS.get(preview_state, preview_state)}）"),
+            )
+            return
+        panel = self.control_stack.widget(2)  # rembg 面板
+        try:
+            args = panel.get_args()
+        except ValueError as exc:
+            self._toast("error", "参数错误", str(exc))
+            return
+        self._refresh_manifest()
+        if not self._manifest_paths():
+            self._toast(
+                "warning", "无输入页面",
+                "页面清单为空，请先完成上一步子任务，或在预览区插入图片。",
+            )
+            return
+        entries = self._rembg_submit_entries(args["area"], args.get("border"))
+        if not entries:
+            self._toast(
+                "warning", "尚未生成预览",
+                "请先点击「生成预览」生成去底色图片，再提交本次任务。",
+            )
+            return
+        args["_effects"] = [
+            {
+                "file": e["file"],
+                "label": e["label"],
+                "effect": (
+                    {
+                        "boxes": [e["box"]],
+                        "area": e.get("parea", 1),
+                        "border": args.get("border"),
+                    }
+                    if e.get("box")
+                    else None
+                ),
+            }
+            for e in entries
+        ]
+        args["output"] = str(self.store.rembg_output_dir(self.task_id))
+        args["clean"] = True
+        # 记录本次提交所基于的「生成预览」成功版本，用于判断预览是否又有新版本
+        preview_run = next(
+            (r for r in self.store.list_stage_runs(self.task_id, "rembg")
+             if r.get("status") == "success"),
+            None,
+        )
+        if preview_run:
+            args["_preview_run_id"] = preview_run.get("run_id")
+        self.log_view.append(
+            f"提交本次任务：{len(entries)} 张最终图片 → {args['output']}"
+        )
+        self._launch_stage_process("rembg_submit", args, resume=False)
 
     # ---------------------------------------------------------- 输出解析
     def _read_worker_output(self) -> None:
@@ -389,16 +616,43 @@ class StageRunnerMixin:
                         f"{STAGE_LABELS[stage]} 未产生任何图片，请查看日志（可能参数有误）。",
                     )
             if stage == "print":
-                output = self.store.print_output_pdf(self.task_id)
-                if output.exists():
-                    self.log_view.append(f"PDF 已生成：{output}")
+                pdf_path = self._latest_print_pdf_path()
+                if pdf_path and pdf_path.exists():
+                    self.log_view.append(f"PDF 已生成：{pdf_path}")
+                    self.print_preview.set_pdf_path(pdf_path)
+                else:
+                    self.print_preview.set_pdf_path(None)
         self._refresh_stage_views()
         self._refresh_preview()
         if stage == "extract":
             self._refresh_preview(1)  # 提取结果标签页
+        override_toast = None
+        if status == "success" and stage in ("rembg", "rembg_submit"):
+            version = self._rembg_submit_version_state()
+            if stage == "rembg":
+                # 新预览图已落盘：若与最近一次提交不一致，提示有新版本待提交
+                if version == "new_version":
+                    override_toast = (
+                        "info", "已生成新的预览版本",
+                        "去底预览图片已更新，请点击「提交本次任务」生成最终图片",
+                    )
+                elif version == "preview_stale":
+                    override_toast = (
+                        "info", "预览已生成",
+                        "提示：面板参数又有修改，请确认后重新「生成预览」",
+                    )
+            else:  # rembg_submit
+                self._refresh_preview(3)  # 最终图变化，同步刷新第四步列表
+                if version == "up_to_date":
+                    override_toast = (
+                        "success", "提交完成",
+                        "最终图片已是最新预览版本，可前往第四步生成 PDF",
+                    )
         if status == "failed":
             reason = self._last_error_line or "退出码 " + str(exit_code)
             self._toast("error", f"{STAGE_LABELS.get(stage, '')}失败", reason)
+        elif override_toast is not None:
+            self._toast(*override_toast)
         else:
             self._toast(
                 "success" if status == "success" else "error",

@@ -13,6 +13,8 @@ STAGE_LABELS = {
     "extract": "提取图片",
     "detect": "检测文本框(detect)",
     "rembg": "图片去底色",
+    # rembg 的「提交本次任务」动作：预览图按 area/border 合成最终图片
+    "rembg_submit": "提交去底色结果",
     "print": "生成PDF(print)",
 }
 
@@ -127,7 +129,12 @@ class TaskMixin:
         return self.stage_dir(task_id, "extract")
 
     def rembg_output_dir(self, task_id: str) -> Path:
+        """步骤三最终图片目录（「提交本次任务」产出，print 阶段从此取图）。"""
         return self.stage_dir(task_id, "rembg")
+
+    def rembg_preview_output_dir(self, task_id: str) -> Path:
+        """「生成预览」产出的整页去底预览图目录（中间产物，不参与 print）。"""
+        return self.stage_dir(task_id, "rembgpreview")
 
     def print_output_pdf(self, task_id: str) -> Path:
         return self.stage_dir(task_id, "print") / "print.pdf"
@@ -137,7 +144,10 @@ class TaskMixin:
             "extract": self.extract_output_dir(task_id),
             # detect 只检测不落盘；若有参考缩略图放 thumbnails/detect
             "detect": self.task_dir(task_id) / "thumbnails" / "detect",
-            "rembg": self.rembg_output_dir(task_id),
+            # rembg 阶段的执行产物是整页去底预览图（rembgpreview）；
+            # 「提交本次任务」(rembg_submit) 才把最终图片写入 rembg。
+            "rembg": self.rembg_preview_output_dir(task_id),
+            "rembg_submit": self.rembg_output_dir(task_id),
             "print": self.print_output_pdf(task_id).parent,
         }[stage]
 

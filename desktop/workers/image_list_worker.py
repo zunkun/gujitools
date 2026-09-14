@@ -72,12 +72,16 @@ class ImageListWorker(QObject):
                         dpi=int(effect.get("dpi", 300)),
                     )
                     image = compose_outputs_horizontal(outputs)
+                    if image.isNull():
+                        continue
                 if crop:
                     x1, y1, x2, y2 = (int(round(v)) for v in crop[:4])
                     image = image.copy(
                         max(x1, 0), max(y1, 0),
                         max(x2 - x1, 1), max(y2 - y1, 1),
                     )
+                    if image.isNull():
+                        continue
                 if image.width() > self.edge or image.height() > self.edge:
                     image = image.scaled(
                         self.edge,

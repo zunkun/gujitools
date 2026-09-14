@@ -22,6 +22,11 @@ from utils.pdf_utils import (
 from utils.string_utils import num_to_chinese
 from utils.sort_utils import pdf_custom_sort_key
 
+# 嵌入 PDF 前把超大扫描图缩放到的打印分辨率（仅缩小、不放大）。
+# 300DPI 对古籍扫描足够清晰，同时避免 fpdf 对数千像素原图逐页 zlib 压缩。
+MM_PER_INCH = 25.4
+PRINT_IMAGE_DPI = 300
+
 
 def _get_pdf_format(paper_size):
     """将纸张配置转换为毫米尺寸，避免依赖 FPDF 的格式表。"""
@@ -214,6 +219,24 @@ class PrintFunction(FunctionBase):
             return {"processed": 0, "output": str(output_pdf)}
 
         skip_set = set(skip_pages)
+
+        # 先按纸张/方向/边距算出页面可放置图片的实际显示尺寸，
+        # 在加载阶段把超大扫描图缩放到打印 DPI，避免 fpdf 对数千像素原图
+        # 逐页 zlib 压缩（163 页会长时间卡住并产生巨大 PDF）。
+        pdf = FPDF(
+            orientation=orientation,
+            unit="mm",
+            format=_get_pdf_format(paper_size),
+        )
+        page_w = pdf.w
+        page_h = pdf.h
+        text_margin = 8.0  # mm，与下方排版一致
+        _mt, _mr, _mb, _ml = margins
+        avail_w_mm = max(1.0, page_w - _ml - _mr - 2 * text_margin)
+        avail_h_mm = max(1.0, page_h - _mt - _mb)
+        max_w_px = int(avail_w_mm / MM_PER_INCH * PRINT_IMAGE_DPI)
+        max_h_px = int(avail_h_mm / MM_PER_INCH * PRINT_IMAGE_DPI)
+
         page_data = [None] * total
         with ThreadPoolExecutor(max_workers=workers) as executor:
             futures = {}
@@ -229,7 +252,11 @@ class PrintFunction(FunctionBase):
                         "skip": True,
                     }
                     continue
-                futures[executor.submit(self._load_image, i, path)] = i
+                futures[
+                    executor.submit(
+                        self._load_image, i, path, max_w_px, max_h_px
+                    )
+                ] = i
             for future in as_completed(futures):
                 res = future.result()
                 if res:
@@ -238,13 +265,6 @@ class PrintFunction(FunctionBase):
                 print(f"\r图片加载进度: {done}/{total}", end="")
         print()
 
-        pdf = FPDF(
-            orientation=orientation,
-            unit="mm",
-            format=_get_pdf_format(paper_size),
-        )
-        page_w = pdf.w
-        page_h = pdf.h
         font_name = register_fonts(pdf)
 
         # 将配置中的页名节点解析为排序后图片的序号，用于章节切换和书签。
@@ -292,8 +312,7 @@ class PrintFunction(FunctionBase):
             else:
                 mt, mr, mb, ml = margins
 
-            # ---- 图片左右留出空白，防止文字覆盖 ----
-            text_margin = 8.0  # mm
+            # ---- 图片左右留出空白，防止文字覆盖（text_margin 已在预缩放时定义）----
             avail_w_raw = page_w - ml - mr
             avail_h = page_h - mt - mb
             avail_w_for_img = max(0, avail_w_raw - 2 * text_margin)
@@ -409,13 +428,27 @@ class PrintFunction(FunctionBase):
         return {"processed": processed_count, "output": str(output_pdf)}
 
     @staticmethod
-    def _load_image(idx, path):
+    def _load_image(idx, path, max_w_px=0, max_h_px=0):
         try:
             img = Image.open(path)
             if img.mode == "RGBA":
                 bg = Image.new("RGB", img.size, (255, 255, 255))
                 bg.paste(img, mask=img.split()[3])
                 img = bg
+            # 超过打印所需像素时等比缩小（只缩不放），宽高比不变，
+            # 后续排版几何完全一致，但压缩速度与 PDF 体积大幅改善。
+            w, h = img.size
+            if (
+                max_w_px > 0
+                and max_h_px > 0
+                and (w > max_w_px or h > max_h_px)
+            ):
+                scale = min(max_w_px / w, max_h_px / h)
+                target = (
+                    max(1, int(w * scale)),
+                    max(1, int(h * scale)),
+                )
+                img = img.resize(target, Image.LANCZOS)
             return {"idx": idx, "img": img, "path": path, "size": img.size}
         except Exception as e:
             print(f"加载图片失败 {path}: {e}")

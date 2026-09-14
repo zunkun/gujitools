@@ -36,6 +36,7 @@ from ..components.viewers import (
 )
 from ..utils.files import list_stage_images
 from ..store import STAGES, STAGE_LABELS
+from utils.sort_utils import pdf_custom_sort_key
 from ..workers import WorkerHost
 from .detail_detect import DetectMixin
 from .detail_runner import STATUS_LABELS, StageRunnerMixin
@@ -127,9 +128,12 @@ class TaskDetailPage(StageRunnerMixin, DetectMixin, QWidget, WorkerHost):
         self.preview_stack.addWidget(self.rembg_viewer)
 
         # print：图片瀑布流列表（可拖动排序/删除/插入）
-        self.print_preview = PrintPreviewWidget()
+        self.print_preview = PrintPreviewWidget(
+            empty_hint="暂无图片，请先在第三步「生成预览」并「提交本次任务」"
+        )
         self.print_preview.order_changed.connect(self._save_print_order)
         self.print_preview.insert_requested.connect(self._insert_print_images)
+        self.print_preview.download_requested.connect(self._download_print_pdf)
         self.preview_stack.addWidget(self.print_preview)
 
         # ---- 右侧控制列 ----
@@ -146,12 +150,22 @@ class TaskDetailPage(StageRunnerMixin, DetectMixin, QWidget, WorkerHost):
 
         # rembg 面板的 area/border 决定检测框标注与去底色预览区域，变化时联动刷新
         rembg_panel = self.control_stack.widget(2)
-        rembg_panel.area.currentTextChanged.connect(
-            lambda *_: self._refresh_reference_boxes()
-        )
-        rembg_panel.border.textChanged.connect(
-            lambda *_: self._refresh_reference_boxes()
-        )
+
+        def _on_rembg_panel_changed(*_):
+            self._refresh_reference_boxes()
+            self._update_submit_button(
+                bool(self.process and self.process.state() != QProcess.NotRunning)
+            )
+
+        rembg_panel.area.currentTextChanged.connect(_on_rembg_panel_changed)
+        rembg_panel.border.textChanged.connect(_on_rembg_panel_changed)
+        # 去底参数变化会改变预览图 → 「提交」按钮的新版本提示需实时刷新
+        rembg_panel.type.currentTextChanged.connect(_on_rembg_panel_changed)
+        rembg_panel.offset.valueChanged.connect(_on_rembg_panel_changed)
+        rembg_panel.seal.toggled.connect(_on_rembg_panel_changed)
+        rembg_panel.sealcolor.toggled.connect(_on_rembg_panel_changed)
+        rembg_panel.sealarea.valueChanged.connect(_on_rembg_panel_changed)
+        rembg_panel.sealmin_sat.valueChanged.connect(_on_rembg_panel_changed)
 
         # ---- 历史执行配置选择 ----
         self.history_caption = CaptionLabel("历史执行配置（选择后回填到表单）")
@@ -167,23 +181,35 @@ class TaskDetailPage(StageRunnerMixin, DetectMixin, QWidget, WorkerHost):
 
         self.run_button = PrimaryPushButton(FIF.PLAY, "执行本子任务")
         self.run_button.clicked.connect(lambda: self.run_stage(resume=False))
+        # 步骤三（rembg）专用：把预览结果按 area/border 合成为最终图片
+        self.submit_button = PrimaryPushButton(FIF.ACCEPT, "提交本次任务")
+        self.submit_button.setToolTip(
+            "将「生成预览」的去底色图片按 area/border 等合成为真正想要的最终图片"
+        )
+        self.submit_button.clicked.connect(self.run_rembg_submit)
+        self.submit_button.setVisible(False)
+        # 新版本提示：生成预览参数/结果变化后、提交前常驻提醒（位于提交按钮下方）
+        self.submit_hint = CaptionLabel("")
+        self.submit_hint.setWordWrap(True)
+        self.submit_hint.hide()
         self.resume_button = PushButton(FIF.UPDATE, "继续执行（跳过已完成）")
         self.resume_button.clicked.connect(lambda: self.run_stage(resume=True))
         self.cancel_button = PushButton(FIF.CLOSE, "中断执行")
         self.cancel_button.setEnabled(False)
         self.cancel_button.clicked.connect(self.cancel_stage)
         control.addWidget(self.run_button)
+        control.addWidget(self.submit_button)
+        control.addWidget(self.submit_hint)
         control.addWidget(self.resume_button)
         control.addWidget(self.cancel_button)
         control.addStretch()
 
-        # 控制面板限宽：参数表单不需要太宽，把空间留给预览区
-        control_widget = QWidget()
-        control_widget.setLayout(control)
-        control_widget.setMaximumWidth(300)
-        control_widget.setMinimumWidth(260)
+        # 控制面板限宽：参数表单需要舒适宽度，第四步 YAML 编辑器尤甚
+        self.control_widget = QWidget()
+        self.control_widget.setLayout(control)
+        self._apply_control_width()
         body.addWidget(self.preview_stack, 1)
-        body.addWidget(control_widget)
+        body.addWidget(self.control_widget)
 
         root.addLayout(body, 1)
 
@@ -205,6 +231,9 @@ class TaskDetailPage(StageRunnerMixin, DetectMixin, QWidget, WorkerHost):
         self.source_path = Path(task["source_path"])
         self.detail_title.setText(task["name"])
         self.source_label.setText(self.source_path.name)
+        # 第四步默认 PDF 名/古籍名随源 PDF 名派生（xxx[重制].pdf / xxx）；
+        # 若该任务已有 print 历史，进入第四步时会再回填历史配置
+        self.control_stack.widget(3).set_source_defaults(self.source_path.stem)
         self.log_view.clear()
         self.detect_cache.clear()
         self.pdf_page_count = 0
@@ -252,6 +281,7 @@ class TaskDetailPage(StageRunnerMixin, DetectMixin, QWidget, WorkerHost):
             return None
         allowed = {
             self.store.extract_output_dir(self.task_id),
+            self.store.rembg_preview_output_dir(self.task_id),
             self.store.rembg_output_dir(self.task_id),
         }
         if p.parent not in allowed:
@@ -303,12 +333,38 @@ class TaskDetailPage(StageRunnerMixin, DetectMixin, QWidget, WorkerHost):
         self.step_bar.set_current(index)
         self.control_stack.setCurrentIndex(index)
         self.preview_stack.setCurrentIndex(index)
+        # 步骤三：主按钮为「生成预览」，下方另有「提交本次任务」；
+        # 其他阶段保持「执行本子任务」，提交按钮隐藏。
+        is_rembg = STAGES[index] == "rembg"
+        self.run_button.setText("生成预览" if is_rembg else "执行本子任务")
+        self.submit_button.setVisible(is_rembg)
+        self._apply_control_width()
         self._refresh_stage_views()
         self._refresh_preview(index)
         self._restore_last_run_params(index)
         self._refresh_history_options()
 
+    def _apply_control_width(self) -> None:
+        """按当前阶段调整右侧控制面板宽度：
+        第四步 YAML 编辑器需要更宽的编辑区，其余步骤保持舒适表单宽度。"""
+        stage = self.current_stage()
+        if stage == "print":
+            self.control_widget.setMinimumWidth(380)
+            self.control_widget.setMaximumWidth(560)
+        else:
+            self.control_widget.setMinimumWidth(320)
+            self.control_widget.setMaximumWidth(420)
+
     # ------------------------------------------------------------------ 历史执行配置
+    # 各阶段历史回填时要跳过的字段（临时/派生/运行时覆盖）
+    _HISTORY_SKIP = frozenset(
+        {"input", "output", "workers", "clean", "resume",
+         "_effects", "_outpath", "_preview_run_id"}
+    )
+    # print 阶段：pdf_name / title_text 始终从源 PDF 名派生，
+    # 历史里存的是旧值或用户曾经填的自定义名，不应覆盖当前任务的规则值
+    _PRINT_FIXED_KEYS = frozenset({"pdf_name", "title_text"})
+
     def _restore_last_run_params(self, index: int) -> None:
         """进入页面/切换阶段时，回填该阶段最近一次执行的参数。"""
         if not self.task_id:
@@ -319,9 +375,12 @@ class TaskDetailPage(StageRunnerMixin, DetectMixin, QWidget, WorkerHost):
         self._history_prefilled.add(stage)
         history = self.store.list_stage_runs(self.task_id, stage)
         if history:
+            skip = set(self._HISTORY_SKIP)
+            if stage == "print":
+                skip |= self._PRINT_FIXED_KEYS
             params = {
                 k: v for k, v in history[0].get("parameters", {}).items()
-                if k not in ("input", "output", "workers", "clean", "resume", "_effects")
+                if k not in skip
             }
             self.control_stack.widget(index).apply_args(params)
 
@@ -352,9 +411,12 @@ class TaskDetailPage(StageRunnerMixin, DetectMixin, QWidget, WorkerHost):
         if index < 0 or index >= len(getattr(self, "_history_params", [])):
             return
         stage = STAGES[max(self.step_bar._current, 0)]
+        skip = set(self._HISTORY_SKIP)
+        if stage == "print":
+            skip |= self._PRINT_FIXED_KEYS
         params = {
             k: v for k, v in self._history_params[index].items()
-            if k not in ("input", "output", "workers", "clean", "resume", "_effects")
+            if k not in skip
         }
         self.control_stack.widget(self.step_bar._current).apply_args(params)
         self._toast("info", "已回填历史配置", STAGE_LABELS[stage])
@@ -395,6 +457,120 @@ class TaskDetailPage(StageRunnerMixin, DetectMixin, QWidget, WorkerHost):
             not running and state["status"] in ("cancelled", "failed", "success")
         )
         self.cancel_button.setEnabled(running)
+        self._update_submit_button(running)
+
+    # 影响「生成预览」产物（去底预览图）的参数；变化后预览图即过期
+    PREVIEW_PARAM_KEYS = (
+        "type", "offset", "seal", "sealcolor", "sealarea", "sealmin_sat",
+    )
+
+    def _latest_success_run(self, stage: str) -> dict | None:
+        if not self.task_id:
+            return None
+        for record in self.store.list_stage_runs(self.task_id, stage):
+            if record.get("status") == "success":
+                return record
+        return None
+
+    def _rembg_submit_version_state(self) -> str:
+        """提交按钮版本状态：
+
+        - no_preview   ：从未成功生成预览（或最近一次失败/中断）→ 禁止提交；
+        - preview_stale：面板去底参数相对最近一次成功预览已修改，
+                         磁盘上的预览图不是最新 → 建议重新生成预览；
+        - new_version  ：预览有新版本（重新生成过、或 area/border 已改），
+                         最终图片落后于预览 → 提示需要提交；
+        - up_to_date   ：最终图片已是最新预览版本。
+        """
+        preview = self._latest_success_run("rembg")
+        if preview is None:
+            return "no_preview"
+        panel_args = self.control_stack.widget(2).get_args()
+        prev_params = preview.get("parameters", {})
+        if any(prev_params.get(k) != panel_args.get(k)
+               for k in self.PREVIEW_PARAM_KEYS):
+            return "preview_stale"
+        submit = self._latest_success_run("rembg_submit")
+        if submit is None:
+            return "new_version"
+        sub_params = submit.get("parameters", {})
+        if sub_params.get("_preview_run_id") != preview.get("run_id"):
+            return "new_version"  # 预览已用新参数重新生成
+        if (sub_params.get("area") != panel_args.get("area")
+                or sub_params.get("border") != panel_args.get("border")):
+            return "new_version"  # area/border 变了，最终图需要重新合成
+        return "up_to_date"
+
+    def _update_submit_button(self, running: bool) -> None:
+        """步骤三「提交本次任务」：最近一次「生成预览」成功后才可用；
+        预览产生新版本（重跑/参数变更）时按钮高亮提示需要重新提交。"""
+        if not self.task_id or self.current_stage() != "rembg":
+            self.submit_hint.hide()
+            return
+        preview_state = self.store.stage_states(self.task_id)["rembg"]["status"]
+        has_preview = bool(
+            list_stage_images(self.store.rembg_preview_output_dir(self.task_id))
+        )
+        if running:
+            version = None
+            tip = "当前有任务正在执行，请等待完成后再提交"
+        elif preview_state != "success":
+            version = "no_preview"
+            if preview_state in ("failed", "cancelled"):
+                tip = (
+                    f"上次「生成预览」{STATUS_LABELS.get(preview_state, preview_state)}，"
+                    "请重新执行并成功后再提交本次任务"
+                )
+            else:
+                tip = "请先点击「生成预览」，执行成功后才能提交本次任务"
+        elif not has_preview:
+            version = "no_preview"
+            tip = "预览结果缺失，请重新点击「生成预览」"
+        else:
+            version = self._rembg_submit_version_state()
+            tip = {
+                "new_version": "预览已产生新版本（重新生成或参数已变更），"
+                               "请点击「提交本次任务」更新最终图片",
+                "preview_stale": "面板去底参数已修改，当前预览图不是最新；"
+                                 "建议先重新「生成预览」，再提交本次任务",
+                "up_to_date": "最终图片已是最新预览版本；参数变更或重新生成预览后需再次提交",
+                "no_preview": "请先点击「生成预览」，执行成功后才能提交本次任务",
+            }[version]
+        self.submit_button.setToolTip(tip)
+
+        # 按钮文案/高亮
+        self.submit_button.setEnabled(version not in (None, "no_preview"))
+        if version == "new_version":
+            self.submit_button.setText("提交本次任务（有新版本）")
+            self.submit_button.setStyleSheet(
+                "PrimaryPushButton{font-weight:bold;}"
+            )
+            self._show_submit_hint(
+                "● 预览有新版本，请提交本次任务", "#c0392b"
+            )
+        elif version == "preview_stale":
+            self.submit_button.setText("提交本次任务")
+            self.submit_button.setStyleSheet("")
+            self._show_submit_hint(
+                "● 去底参数已修改，请重新「生成预览」后再提交", "#b8860b"
+            )
+        elif version == "up_to_date":
+            self.submit_button.setText("提交本次任务")
+            self.submit_button.setStyleSheet("")
+            self._show_submit_hint("最终图片已是最新版本", "#3a8a3e")
+        elif version == "no_preview":
+            self.submit_button.setText("提交本次任务")
+            self.submit_button.setStyleSheet("")
+            self.submit_hint.hide()
+        else:  # 执行中
+            self.submit_button.setText("提交本次任务")
+            self.submit_button.setStyleSheet("")
+            self.submit_hint.hide()
+
+    def _show_submit_hint(self, text: str, color: str) -> None:
+        self.submit_hint.setText(text)
+        self.submit_hint.setStyleSheet(f"color:{color}; font-weight:bold;")
+        self.submit_hint.show()
 
     def _refresh_preview(self, index: int | None = None) -> None:
         if not self.task_id:
@@ -408,7 +584,7 @@ class TaskDetailPage(StageRunnerMixin, DetectMixin, QWidget, WorkerHost):
         elif stage == "rembg":
             self.rembg_viewer.set_images(
                 self._manifest_paths(),
-                self.store.rembg_output_dir(self.task_id),
+                self.store.rembg_preview_output_dir(self.task_id),
                 boxes_provider=self._detect_boxes_for,
                 region_params_provider=self._current_detect_params,
                 thumb_provider=self._page_thumb_for,
@@ -416,6 +592,8 @@ class TaskDetailPage(StageRunnerMixin, DetectMixin, QWidget, WorkerHost):
         elif stage == "print":
             entries, _doc = self._print_entries()
             self.print_preview.set_entries(entries)
+            # 若此前已生成过 PDF，恢复下载按钮状态
+            self.print_preview.set_pdf_path(self._latest_print_pdf_path())
 
     # ------------------------------------------------------------------ 图片选择（extract 结果大图）
     def _image_selected(self, index: int, path_text: str) -> None:
@@ -423,60 +601,63 @@ class TaskDetailPage(StageRunnerMixin, DetectMixin, QWidget, WorkerHost):
 
     # ------------------------------------------------------------------ 生成 PDF 列表
     def _print_entries(self) -> tuple[list[dict], dict]:
-        """待打印条目（与 PDF 页一一对应）+ 布局快照文档。
+        """第四步待打印图片：直接使用第三步「提交本次任务」产出的
+        stages/rembg 最终图片（已按 area/border 合成），按古籍阅读
+        顺序（cover/menu 优先、同编号 r→l、数字自然序）排列。
 
-        print.json 缺失或 area/border 快照与当前面板不一致时，
-        从去底色结果 + 检测框重新派生（area=1 每框一条 -r/-l，
-        area=2/3 双框取并集、单框对称）。"""
-        area, border = self._current_detect_params()
+        列表不再使用源 PDF 缩略图，直接显示 rembg 最终图片本身；
+        print.json 仅持久化用户的拖动/删除/插入顺序。
+        """
+        rembg_files = sorted(
+            list_stage_images(self.store.rembg_output_dir(self.task_id)),
+            key=lambda p: pdf_custom_sort_key(p.name),
+        )
+        current_rembg = [str(p) for p in rembg_files]
+        current_set = set(current_rembg)
         doc = self.store.load_print_doc(self.task_id)
-        if not doc or doc.get("area") != area or doc.get("border") != border or not doc.get("pages"):
-            entries = []
-            for p in list_stage_images(self.store.rembg_output_dir(self.task_id)):
-                boxes = self._valid_boxes(self._detect_boxes_for(str(p)))
-                stem = p.stem
-                if area == 1 and len(boxes) == 2:
-                    # 右框在前（古籍阅读顺序 r → l）
-                    entries.append({"file": str(p), "label": f"{stem}-r", "box": boxes[1], "parea": 1})
-                    entries.append({"file": str(p), "label": f"{stem}-l", "box": boxes[0], "parea": 1})
-                elif area in (2, 3) and len(boxes) == 2:
-                    union = [min(b[0] for b in boxes), min(b[1] for b in boxes),
-                             max(b[2] for b in boxes), max(b[3] for b in boxes)]
-                    entries.append({"file": str(p), "label": stem, "box": union, "parea": 1})
-                elif len(boxes) == 1:
-                    entries.append({"file": str(p), "label": stem, "box": boxes[0],
-                                    "parea": 2 if area in (2, 3) else 1})
-                else:
-                    entries.append({"file": str(p), "label": stem, "box": None, "parea": 1})
-            doc = {"area": area, "border": border, "pages": entries}
-            self._print_doc_snapshot = doc
-            self.store.save_print_doc(self.task_id, doc)
-        self._print_doc_snapshot = doc
-        entries = []
-        for p in doc["pages"]:
-            entry = dict(p)
-            if p.get("box"):
-                entry["effect"] = {"boxes": [p["box"]], "area": p.get("parea", 1),
-                                   "border": doc.get("border")}
-                entry["thumb"] = self._page_thumb_for(
-                    p["file"], p["box"], p.get("parea", 1), doc.get("border")
-                )
-            else:
-                entry["effect"] = None
-                entry["thumb"] = self._page_thumb_for(p["file"])
-            entries.append(entry)
-        return entries, doc
+        snapshot = set(doc.get("rembg_snapshot") or []) if doc else set()
+        entries: list[dict] = []
+
+        def _existing(pages) -> list[dict]:
+            out, seen = [], set()
+            for p in pages or []:
+                file_text = p.get("file")
+                if not file_text or file_text in seen or not Path(file_text).exists():
+                    continue
+                out.append({"file": file_text,
+                            "label": p.get("label") or Path(file_text).stem})
+                seen.add(file_text)
+            return out
+
+        if doc and snapshot == current_set and current_set:
+            # rembg 产物未变化：沿用用户保存的顺序（拖动/删除/插入结果）
+            entries = _existing(doc.get("pages"))
+        else:
+            # 首次进入，或重新提交后 rembg 产物集合变化：
+            # rembg 最终图按阅读顺序排列；旧列表中用户插入的外部图片
+            # （不在 rembg 目录）按原顺序追加在末尾
+            external = [
+                e for e in _existing(doc.get("pages") if doc else None)
+                if e["file"] not in current_set
+            ]
+            entries = [{"file": str(p), "label": p.stem} for p in rembg_files]
+            entries.extend(external)
+        new_doc = {"rembg_snapshot": current_rembg, "pages": entries}
+        self._print_doc_snapshot = new_doc
+        if not doc or snapshot != current_set:
+            self.store.save_print_doc(self.task_id, new_doc)
+        return list(entries), new_doc
 
     def _save_print_order(self) -> None:
-        """列表拖动/删除后持久化顺序（保留条目的框/parea 元数据）。"""
+        """列表拖动/删除后持久化顺序。"""
         if not self.task_id:
             return
         entries = self.print_preview.entries()
         doc = getattr(self, "_print_doc_snapshot", None) or {
-            "area": 1, "border": None, "pages": [],
+            "rembg_snapshot": [], "pages": [],
         }
         doc["pages"] = [
-            {k: e.get(k) for k in ("file", "label", "box", "parea")}
+            {k: e.get(k) for k in ("file", "label")}
             for e in entries
         ]
         self.store.save_print_doc(self.task_id, doc)
@@ -498,6 +679,35 @@ class TaskDetailPage(StageRunnerMixin, DetectMixin, QWidget, WorkerHost):
         self.store.save_print_pages(self.task_id, entries)
         self.print_preview.set_entries(self._print_entries())
         self.log_view.append(f"已插入 {len(filenames)} 张图片到待打印列表。")
+
+    def _download_print_pdf(self) -> None:
+        """将已生成的 PDF 另存到用户选择的位置（默认下载目录、同名文件）。"""
+        if not self.task_id:
+            return
+        # 优先用下载按钮当前绑定的 PDF；否则按最近一次 print 参数解析
+        source = getattr(self.print_preview, "_pdf_path", None)
+        if source is None or not Path(source).exists():
+            source = self._latest_print_pdf_path()
+        if source is None or not Path(source).exists():
+            self._toast("warning", "无可下载 PDF", "请先执行「生成 PDF」。")
+            return
+        source = Path(source)
+        # 默认保存到系统「下载」目录，文件名与生成的 PDF 一致
+        downloads = Path.home() / "Downloads"
+        default_dir = downloads if downloads.exists() else Path.home()
+        target, _ = QFileDialog.getSaveFileName(
+            self, "下载 PDF", str(default_dir / source.name), "PDF 文件 (*.pdf)",
+        )
+        if not target:
+            return
+        import shutil
+        try:
+            shutil.copy2(source, target)
+        except OSError as exc:
+            self._toast("error", "下载失败", str(exc))
+            return
+        self._toast("success", "下载完成", f"已保存到：{target}")
+        self.log_view.append(f"PDF 已下载到：{target}")
 
     # ------------------------------------------------------------------ 页面增删
     def delete_selected_page(self) -> None:

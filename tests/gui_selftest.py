@@ -147,6 +147,41 @@ def main() -> int:
     mtimes2 = {f.name: f.stat().st_mtime_ns for f in cache_dir.glob("*.jpg")}
     ok("再次打开复用缓存", mtimes == mtimes2)
 
+    # 第四步默认 PDF 名/古籍名随源 PDF（古籍样例.pdf）派生
+    _pp = d.control_stack.widget(3)
+    ok("默认 PDF 名取源 PDF 名加[重制]",
+       _pp.pdf_name.text() == "古籍样例[重制].pdf", _pp.pdf_name.text())
+    ok("默认古籍名称取源 PDF 名",
+       _pp.title_text.text() == "古籍样例", _pp.title_text.text())
+    ok("默认参数收集含派生 PDF 名",
+       _pp.get_args()["pdf_name"] == "古籍样例[重制].pdf"
+       and _pp.get_args()["title_text"] == "古籍样例")
+    _pp.pdf_name.setText("自定义.pdf")
+    _pp.title_text.setText("自定义书名")
+    _pp.reset_to_default()
+    ok("恢复默认仍按源 PDF 名派生",
+       _pp.pdf_name.text() == "古籍样例[重制].pdf"
+       and _pp.title_text.text() == "古籍样例")
+    # title_text ↔ pdf_name 联动测试
+    ok("初始为自动态", _pp._pdf_name_auto is True)
+    _pp.title_text.setText("红楼梦")
+    _pp._on_title_text_edited("红楼梦")
+    ok("编辑 title_text 时 pdf_name 联动更新",
+       _pp.pdf_name.text() == "红楼梦[重制].pdf", _pp.pdf_name.text())
+    ok("联动后仍为自动态", _pp._pdf_name_auto is True)
+    _pp.pdf_name.setText("xxx.pdf")
+    _pp._refresh_pdf_name_auto()  # 模拟用户直接改 pdf_name 后的状态
+    ok("用户直接改 pdf_name 后联动解除", _pp._pdf_name_auto is False)
+    _pp.title_text.setText("不再联动")
+    _pp._on_title_text_edited("不再联动")
+    ok("联动解除后改 title_text 不再影响 pdf_name",
+       _pp.pdf_name.text() == "xxx.pdf", _pp.pdf_name.text())
+    _pp.reset_to_default()
+    ok("恢复默认后联动重新建立",
+       _pp._pdf_name_auto is True
+       and _pp.pdf_name.text() == "古籍样例[重制].pdf"
+       and _pp.title_text.text() == "古籍样例")
+
     # ================= 4. extract 全量执行 =================
     print("== extract ==")
     d._select_stage(0)
@@ -295,27 +330,179 @@ def main() -> int:
     ws2 = d._build_workset("detect", resume=True)
     ok("detect 续跑跳过已完成", len(list(ws2.iterdir())) <= n_before)
 
-    # ================= 9. rembg 执行 =================
+    # ================= 9. rembg 生成预览 + 提交 =================
     print("== rembg ==")
     d._select_stage(2)
+    ok("步骤三主按钮为生成预览", d.run_button.text() == "生成预览")
+    ok("未生成预览前提交按钮禁用", not d.submit_button.isEnabled())
+    d.run_rembg_submit()  # 直接调用也必须被拦截，不启动子进程
+    ok("未成功生成预览时提交不启动", d.process is None)
     d.run_stage(resume=False)
     wait_worker(d, app, timeout=300)
     state = repo.stage_states(tid)["rembg"]
-    ok("rembg 成功", state["status"] == "success", str(state))
-    rembg_out = repo.rembg_output_dir(tid)
-    ok("rembg 有输出", rembg_out.exists() and any(rembg_out.glob("*.png")))
+    ok("rembg 预览成功", state["status"] == "success", str(state))
+    preview_dir = repo.rembg_preview_output_dir(tid)
+    ok("预览图落在 stages/rembgpreview",
+       preview_dir.exists() and len(list(preview_dir.glob("*.png"))) == 6,
+       str(preview_dir))
+    final_dir = repo.rembg_output_dir(tid)
+    ok("提交前 stages/rembg 为空",
+       not final_dir.exists() or not any(final_dir.glob("*.png")))
+    ok("预览成功后提交按钮可用", d.submit_button.isEnabled())
+    ok("预览成功即提示有新版本待提交",
+       d._rembg_submit_version_state() == "new_version"
+       and "有新版本" in d.submit_button.text()
+       and not d.submit_hint.isHidden() and "#c0392b" in d.submit_hint.styleSheet())
+
+    # 最近一次预览失败/中断：即使目录里残留图片也不允许提交
+    bad_run = repo.create_stage_run(tid, "rembg", {"area": 1})
+    repo.finish_stage(tid, bad_run, "failed")
+    d._refresh_stage_views()
+    ok("预览失败后提交按钮禁用（有旧图也不行）", not d.submit_button.isEnabled())
+    d.run_rembg_submit()
+    ok("预览失败时提交不启动", d.process is None)
+    # 模拟用当前面板参数重新生成预览并成功 → 新版本提示恢复
+    ok_run = repo.create_stage_run(
+        tid, "rembg", d.control_stack.widget(2).get_args()
+    )
+    repo.finish_stage(tid, ok_run, "success")
+    d._refresh_stage_views()
+    ok("重新生成预览成功后提交恢复可用并提示新版本",
+       d.submit_button.isEnabled()
+       and d._rembg_submit_version_state() == "new_version")
+
+    # 面板去底参数改了但没重新生成 → preview_stale（提示先重新生成预览）
+    panel3 = d.control_stack.widget(2)
+    _old_offset = panel3.offset.value()
+    panel3.offset.setValue(_old_offset + 1)
+    d._update_submit_button(False)
+    ok("改去底参数未重跑预览 → preview_stale",
+       d._rembg_submit_version_state() == "preview_stale"
+       and "#b8860b" in d.submit_hint.styleSheet())
+    panel3.offset.setValue(_old_offset)
+
+    # 提交本次任务：预览图按 area/border 合成为最终图片到 stages/rembg
+    d.run_rembg_submit()
+    wait_worker(d, app, timeout=300)
+    state = repo.list_stage_runs(tid, "rembg_submit")[0]
+    ok("提交成功", state["status"] == "success", str(state))
+    ok("最终图落在 stages/rembg",
+       final_dir.exists() and len(list(final_dir.glob("*.png"))) == 6,
+       str(final_dir))
+    ok("提交成功后版本状态为最新、按钮徽标消失",
+       d._rembg_submit_version_state() == "up_to_date"
+       and d.submit_button.text() == "提交本次任务"
+       and "#3a8a3e" in d.submit_hint.styleSheet())
+    # 提交记录了所基于的预览版本号（不加载 YOLO，纯框坐标合成）
+    _sub = next(r for r in repo.list_stage_runs(tid, "rembg_submit")
+                if r["status"] == "success")
+    ok("提交记录包含预览版本号",
+       _sub["parameters"].get("_preview_run_id") == ok_run)
+    # 再次「生成预览」成功（新版本）→ 又提示需要提交
+    newer = repo.create_stage_run(
+        tid, "rembg", d.control_stack.widget(2).get_args()
+    )
+    repo.finish_stage(tid, newer, "success")
+    d._refresh_stage_views()
+    ok("再次生成预览后重新提示新版本",
+       d._rembg_submit_version_state() == "new_version"
+       and "有新版本" in d.submit_button.text())
 
     # ================= 10. print 执行 + 输出预览 =================
     print("== print ==")
     d._select_stage(3)
-    ok("print 列表从去底色结果初始化", d.print_preview.count() == 6,
+    ok("print 列表直接使用 stages/rembg 最终图",
+       d.print_preview.count() == 6, str(d.print_preview.count()))
+    _entries, _pdoc = d._print_entries()
+    _rembg_final = repo.rembg_output_dir(tid)
+    ok("列表条目全部来自 stages/rembg 且无缩略图/区域字段",
+       all(Path(e["file"]).parent == _rembg_final
+           and "thumb" not in e and "effect" not in e
+           and "box" not in e for e in _entries),
+       str([(Path(e["file"]).parent.name, sorted(e.keys())) for e in _entries]))
+    # 删除后重新派生不复活（rembg 集合快照不变）
+    d.print_preview.list.item(2).setSelected(True)
+    d.print_preview.remove_selected()
+    for _ in range(10):
+        app.processEvents(); time.sleep(0.05)
+    _entries2, _ = d._print_entries()
+    ok("删除的图片重新进入第四步不复活", len(_entries2) == 5, str(len(_entries2)))
+    # 恢复初始列表再往下走正式用例
+    d.store.save_print_doc(tid, {"rembg_snapshot": [], "pages": []})
+    d._refresh_preview(3)
+    ok("列表恢复 6 张", d.print_preview.count() == 6,
        str(d.print_preview.count()))
+
+    # --- 生成 PDF 时第三步 area/border 实时生效（无需重新提交）---
+    # 给一页注入确定性检测框（单框），模拟 YOLO 检出
+    _comp0 = d._rembg_submit_entries(1, None)
+    _anchor = next((c for c in _comp0 if c.get("box") is None), _comp0[0])
+    _anchor_stem = Path(_anchor["file"]).stem
+    _aw, _ah = repo.image_size(tid, _anchor_stem)
+    _injected = [round(_aw * 0.10), round(_ah * 0.10),
+                 round(_aw * 0.55), round(_ah * 0.90)]
+    repo.save_detect_boxes(tid, _anchor_stem, [_injected, None], origin="manual")
+    _anchor_src = next(p for p in d._manifest_paths() if p.stem == _anchor_stem)
+    d.detect_cache[str(_anchor_src)] = [_injected, None]
+
+    panel3.border.setText("10")
+    _entries_b, _ = d._print_entries()
+    _fx10 = d._build_print_effects(_entries_b, 1, "10")
+    _preview_dir = preview_dir
+    ok("print 合成规格与列表一一对应且源为 rembgpreview 去底图",
+       len(_fx10) == 6
+       and all(Path(s["file"]).parent == _preview_dir for s in _fx10),
+       str([Path(s["file"]).name for s in _fx10]))
+    _a_spec = next(s for s in _fx10
+                   if Path(s["file"]).stem == _anchor_stem)
+    ok("print 合成规格携带检测框/area/border",
+       _a_spec["effect"] == {"boxes": [_injected], "area": 1, "border": "10"},
+       str(_a_spec))
+    # 仅改 border 不重新提交：合成规格立即变为新值
+    panel3.border.setText("25")
+    _fx25 = d._build_print_effects(d._print_entries()[0], 1, "25")
+    _a25 = next(s for s in _fx25 if Path(s["file"]).stem == _anchor_stem)
+    ok("调整 border 后无需重新提交即生效",
+       _a25["effect"]["border"] == "25"
+       and _a25["effect"]["boxes"] == [_injected],
+       str(_a25))
+    # 外部插入图整图透传；area 结构变更后旧提交图被丢弃、新条目补尾
+    _mixed = _entries_b + [{"file": str(img), "label": "external_page"}]
+    _stale = {"file": str(repo.rembg_output_dir(tid) / "999-r.png"),
+              "label": "999-r"}
+    _fx_mix = d._build_print_effects(_mixed + [_stale], 1, "25")
+    ok("外部插入图透传、旧 area 提交图不混入 PDF",
+       any(s["file"] == str(img) and s["effect"] is None for s in _fx_mix)
+       and not any(Path(s["file"]).name == "999-r.png" for s in _fx_mix))
+    panel3.border.setText("10")  # 正式 print 使用 10mm
+
     panel = d.control_stack.widget(3)
-    import yaml as _yaml
-    panel.yaml_edit.setPlainText(_yaml.safe_dump({
-        "paper_size": "A4", "orientation": "landscape",
-        "title_printing": True, "title_text": "测试古籍",
-    }, allow_unicode=True, sort_keys=False))
+    # 进入第四步触发历史回填后，pdf_name/title_text 仍应保持源 PDF 名派生值
+    # （历史里存的旧/自定义 pdf_name 不应覆盖规则值）
+    ok("历史回填不覆盖 pdf_name 派生值",
+       panel.pdf_name.text() == "古籍样例[重制].pdf", panel.pdf_name.text())
+    ok("历史回填不覆盖 title_text 派生值",
+       panel.title_text.text() == "古籍样例", panel.title_text.text())
+    # UI 表单设置 print 参数（不再编辑 YAML）
+    panel.paper_size.setCurrentText("A4")
+    panel.orientation.setCurrentIndex(panel.orientation.findData("landscape"))
+    # 中文显示 / 英文参数值
+    ok("方向下拉中文显示英文值",
+       panel.orientation.currentText() == "横版"
+       and panel.orientation.currentData() == "landscape")
+    panel.title_printing.setChecked(True)
+    panel.title_text.setText("测试古籍")
+    panel.pdf_name.setText("print.pdf")
+    _pargs = panel.get_args()
+    ok("print 表单参数收集正确",
+       _pargs["paper_size"] == "A4"
+       and _pargs["orientation"] == "landscape"
+       and _pargs["title_printing"] is True
+       and _pargs["title_text"] == "测试古籍"
+       and _pargs["pdf_name"] == "print.pdf"
+       and _pargs["page_margins"] == [20, 20, 20, 20]
+       and "input" not in _pargs and "output" not in _pargs,
+       str(_pargs))
     d.run_stage(resume=False)
     wait_worker(d, app, timeout=300)
     state = repo.stage_states(tid)["print"]
@@ -328,6 +515,23 @@ def main() -> int:
     ok("输出 PDF 页数与列表一致", doc.page_count == 6, str(doc.page_count))
     doc.close()
     ok("print.json 已保存", len(repo.load_print_pages(tid)) == 6)
+    # 运行配置中的 _effects 必须携带第三步当前 border（worker 据此实时合成）
+    _saved_fx = repo.list_stage_runs(tid, "print")[0]["parameters"].get("_effects") or []
+    _saved_boxed = [s for s in _saved_fx if s.get("effect")]
+    ok("print 运行配置携带实时合成规格（源 rembgpreview，border=10）",
+       len(_saved_fx) == 6
+       and all(Path(s["file"]).parent == preview_dir for s in _saved_fx)
+       and len(_saved_boxed) >= 1
+       and all(s["effect"]["border"] == "10" for s in _saved_boxed)
+       and any(s["effect"]["boxes"] == [_injected] for s in _saved_boxed),
+       f"total={len(_saved_fx)} boxed={len(_saved_boxed)}")
+    # PDF 生成成功后下载按钮可用，且路径指向实际 PDF
+    _pdf = d._latest_print_pdf_path()
+    ok("生成 PDF 后下载按钮可用",
+       d.print_preview.download_button.isEnabled()
+       and _pdf is not None and _pdf.exists()
+       and d.print_preview._pdf_path == _pdf,
+       str(_pdf))
 
     # 删除一条 → 列表与 print.json 同步，再重新生成
     d.print_preview.list.item(2).setSelected(True)
