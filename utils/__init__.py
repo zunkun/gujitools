@@ -29,7 +29,8 @@ _LAZY = {
     "apply_otsu_to_region": (".image_utils", "apply_otsu_to_region"),
     "apply_otsu_whole": (".image_utils", "apply_otsu_whole"),
     "parse_border": (".image_utils", "parse_border"),
-    "parse_border_mm": (".image_utils", "parse_border_mm"),
+    "parse_border_mm": (".box_geometry", "parse_border_mm"),
+    "compute_final_boxes": (".box_geometry", "compute_final_boxes"),
 }
 
 

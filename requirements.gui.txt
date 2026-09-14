@@ -1,0 +1,27 @@
+# gujitools GUI runtime and packaging dependencies
+# Install with: python -m pip install -r requirements.gui.txt
+
+# Desktop UI
+PySide6>=6.6.0
+PySide6-Fluent-Widgets>=1.5.0
+
+# PDF preview and extract
+PyMuPDF>=1.23.0
+
+# Image preview and output
+Pillow>=9.0.0
+numpy>=1.21.0
+
+# Configuration and PDF generation
+PyYAML>=6.0
+fpdf2>=2.7.0
+
+# crop / rembg / cropremove runtime
+opencv-python-headless>=4.5.0
+ultralytics>=8.0.0
+
+# GUI packaging
+pyinstaller>=6.0.0
+
+
+hupper

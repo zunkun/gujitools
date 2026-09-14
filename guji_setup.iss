@@ -4,6 +4,7 @@
 #ifndef BUILD_TIMESTAMP
 #define BUILD_TIMESTAMP "dev"
 #endif
+
 [Setup]
 AppName=guji古籍工具
 AppVersion={#VERSION}
@@ -16,11 +17,6 @@ SolidCompression=yes
 
 [Files]
 Source: "dist\guji\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
-
-[Icons]
-Name: "{autodesktop}\guji"; Filename: "{app}\guji.exe"
-Name: "{group}\guji"; Filename: "{app}\guji.exe"
-Name: "{group}\卸载"; Filename: "{uninstallexe}"
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"
@@ -55,7 +51,6 @@ begin
       CurrentEntry := Copy(Remaining, 1, SeparatorPosition - 1);
       Delete(Remaining, 1, SeparatorPosition);
     end;
-
     if CompareText(Trim(CurrentEntry), Entry) = 0 then
     begin
       Result := True;
@@ -84,7 +79,6 @@ begin
       CurrentEntry := Copy(Remaining, 1, SeparatorPosition - 1);
       Delete(Remaining, 1, SeparatorPosition);
     end;
-
     if (Trim(CurrentEntry) <> '') and (CompareText(Trim(CurrentEntry), Entry) <> 0) then
     begin
       if Result <> '' then
@@ -108,7 +102,6 @@ var
 begin
   if not RegQueryStringValue(HKCU, UserEnvironmentKey, 'Path', PathValue) then
     PathValue := '';
-
   if not PathContains(PathValue, ExpandConstant('{app}')) then
   begin
     if PathValue <> '' then
@@ -138,7 +131,7 @@ procedure RefreshEnvironment;
 var
   Msg: string;
 begin
-  Msg := '安装完成！guji.exe 已注册到当前用户 PATH。请关闭并重新打开终端后使用 guji 命令。';
+  Msg := '安装完成！guji 命令已添加至当前用户PATH。\n关闭所有终端窗口，重新打开后即可直接运行 guji';
   MsgBox(Msg, mbInformation, MB_OK);
 end;
 

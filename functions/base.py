@@ -21,7 +21,7 @@ from cli.command_args import CommandArgs
 # 图片处理默认路径 Map
 DEFAULT_TEMP_NAME_MAP = {
     "extract": "images",
-    "crop": "crop",
+    "crop": "detect",
     "rembg": "rembg",
     "cropremove": "rembg",
     "print": "pdf",

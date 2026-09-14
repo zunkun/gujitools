@@ -125,6 +125,26 @@ PyTorch，PyInstaller 仍会把 CUDA 运行库收集进包中。
 
 ## 快速开始
 
+### GUI 管理平台
+
+GUI 与 CLI 使用独立入口和独立打包配置。GUI 的任务数据库、阶段日志、预览和临时文件统一保存到 `~/Documents/guji`。
+
+```bash
+# 安装 GUI 依赖
+python -m pip install -r requirements.gui.txt
+
+# 启动 GUI
+python desktop.py
+
+# 开发热重载（可选）
+hupper -m desktop
+
+# 独立打包 GUI，不使用 requirements.txt 或 CLI 的 build.py
+python build_gui.py
+```
+
+GUI 支持 PDF 缩略图预览、extract/crop/rembg/cropremove/print 阶段管理，以及单图预览任务。重处理在独立 Worker 中运行，主界面不直接执行批量 PDF 或图片处理。
+
 ### 推荐工作流：先初始化配置
 
 首次使用时，建议先执行 `guji init` 生成 `guji.yaml`。初始化命令会引导设置

@@ -298,37 +298,9 @@ def parse_border(border_value) -> Optional[List[int]]:
 def parse_border_mm(border_value, dpi: int = 300) -> Optional[List[int]]:
     """解析 border 参数（毫米单位），按 DPI 转换为像素。
 
-    与 `parse_border` 的写法规则相同，但最终值经过 mm→px 换算。
-    换算公式: px = mm × dpi / 25.4（25.4mm = 1inch）。
-
-    参数:
-        border_value: None / int / 逗号分隔字符串（单位 mm）。
-        dpi: 扫描分辨率，默认 300（古籍扫描常用值）。
-
-    返回:
-        [top, right, bottom, left] 像素列表，或 None。
+    实现已迁移到 `utils.box_geometry.parse_border_mm`（无重依赖，GUI 共用），
+    此处保留 re-export 以兼容 `utils.parse_border_mm` 的延迟加载入口。
     """
-    if border_value is None:
-        return None
-    if isinstance(border_value, int):
-        values = [border_value] * 4
-    elif isinstance(border_value, str):
-        parts = [p.strip() for p in border_value.split(",") if p.strip()]
-        if not parts:
-            return None
-        values = [int(p) for p in parts]
-        if len(values) == 1:
-            values = [values[0]] * 4
-        elif len(values) == 2:
-            values = [values[0], values[1], values[0], values[1]]
-        elif len(values) == 3:
-            values = [values[0], values[1], values[2], values[1]]
-        elif len(values) == 4:
-            pass
-        else:
-            raise ValueError("border 格式错误，支持1~4个逗号分隔整数")
-    else:
-        raise ValueError("border 必须为整数或字符串")
-    # mm → px 换算：25.4mm = 1 英寸
-    mm_to_px = dpi / 25.4
-    return [int(round(v * mm_to_px)) for v in values]
+    from .box_geometry import parse_border_mm as _parse
+
+    return _parse(border_value, dpi)

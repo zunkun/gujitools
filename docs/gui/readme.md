@@ -1,0 +1,45 @@
+# gujitools 桌面端（desktop）文档索引
+
+本目录文档与 `desktop/` 当前实现保持同步（2026-09）。历史设计稿中与实现不符的
+内容（SQLite 存储、crop 阶段、版本树等）已移除。
+
+## 术语
+
+| 术语 | 含义 |
+| --- | --- |
+| Task / 任务 | 一个 PDF 一个任务，顺序任务号 `0001`、`0002`… 即任务目录名 |
+| Stage / 阶段（子任务） | `extract` → `detect` → `rembg` → `print`，固定顺序 |
+| StageRun / 运行记录 | 某阶段的一次执行（状态、进度、参数），存于任务目录 `runs.json` |
+| 检测框 | YOLO（`detect_left_right_boxes`）识别的左右文本框，存于 `boxes.json` |
+
+## 文档
+
+| 文档 | 内容 |
+| --- | --- |
+| [gui-requirements.md](gui-requirements.md) | 功能需求与非功能需求（与当前实现对齐） |
+| [gui-architecture.md](gui-architecture.md) | 模块结构、进程模型、文件存储与任务目录布局 |
+| [gui-technical-spec.md](gui-technical-spec.md) | Worker 消息协议、JSON 数据格式、area/border 合成几何、缩略图规范 |
+| [gui-design.md](gui-design.md) | 交互设计：导入流程、步骤条、历史配置、检测框编辑、去底色预览 |
+| [gui-layout.md](gui-layout.md) | 窗口布局：预览区 / 控制面板 / 日志 |
+
+## 快速开始
+
+```powershell
+# 启动 GUI（开发热重载）
+hupper -m desktop
+# 或
+python desktop.py
+
+# 运行全功能自测（60 项断言）
+QT_QPA_PLATFORM=offscreen python tests/gui_selftest.py
+```
+
+## 当前实现要点（速览）
+
+- **存储**：纯 JSON 文件（`tasks.json` / `runs.json` / `pages.json` / `boxes.json` /
+  `sizes.json`），无数据库；旧 `guji.db` 启动时自动迁移。
+- **阶段**：`extract`（PDF → 图片，直接输出 `stages/extract`）、`detect`（只检测
+  文本框坐标，不生成文件）、`rembg`（整页去底色）、`print`（合成 PDF）。
+- **area/border**：属于第三步 rembg，决定预览与裁剪区域；规则与 CLI
+  `crop`/`cropremove` 完全一致（见 technical-spec）。
+- **检测框**：入库持久化、预览可拖拽/缩放/删除/手绘，手动结果不被自动结果覆盖。

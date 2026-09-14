@@ -29,6 +29,7 @@ import math
 import shutil
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import List, Optional, Union, Tuple
 from unittest.mock import DEFAULT
 
@@ -122,6 +123,11 @@ def calculate_zoom(page_width: float, requested_zoom: float = 1) -> float:
     return requested_zoom
 
 
+def report_image_size(img_path, width: int, height: int) -> None:
+    """输出机器可读的图片尺寸行，供 GUI 子进程解析入库（extract 阶段）。"""
+    print(f"[imgsize] {Path(img_path).stem} {int(width)},{int(height)}")
+
+
 def process_page_batch(
     pdf_path: str,
     page_indices: List[int],
@@ -177,6 +183,7 @@ def process_page_batch(
                         pix = page.get_pixmap(matrix=mat, alpha=False)
                         img_path = os.path.join(out_dir, f"{page_idx+1}.{ext}")
                         pix.save(img_path)
+                        report_image_size(img_path, pix.width, pix.height)
                     else:
                         for idx, img_info in enumerate(images):
                             xref = img_info[0]
@@ -206,6 +213,7 @@ def process_page_batch(
                                 pil_img.save(img_path, "JPEG", quality=85)
                             else:
                                 pil_img.save(img_path, ext.upper())
+                            report_image_size(img_path, pil_img.width, pil_img.height)
 
                 else:
                     # 标准模式：渲染整页为高质量图片
@@ -216,6 +224,7 @@ def process_page_batch(
                     save_kw = {"quality": 95, "subsampling": 0} if ext == "jpg" else {}
                     img_path = os.path.join(out_dir, f"{page_idx+1}.{ext}")
                     img.save(img_path, fmt, **save_kw)
+                    report_image_size(img_path, pix.width, pix.height)
 
                 page_elapsed = time.time() - page_start
                 results.append(True)

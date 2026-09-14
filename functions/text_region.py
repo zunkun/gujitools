@@ -65,6 +65,7 @@ class TextRegionProcessor(FunctionBase):
         left_box = left_boxes[0][:4] if left_boxes else None
         right_box = right_boxes[0][:4] if right_boxes else None
         boxes = [b for b in (left_box, right_box) if b is not None]
+        self._report_boxes(image_path, left_box, right_box)
 
         # 无检测框
         if not boxes:
@@ -209,6 +210,15 @@ class TextRegionProcessor(FunctionBase):
             out_arr[oy : oy + h, ox : ox + w] = roi
 
     # ---- 子类必须实现 ----
+    def _report_boxes(self, image_path, left_box, right_box) -> None:
+        """输出机器可读的框坐标行，供 GUI 子进程解析入库（人类日志不受影响）。"""
+        def fmt(box):
+            if box is None:
+                return "none"
+            return ",".join(str(int(round(float(v)))) for v in box[:4])
+
+        print(f"[boxes] {image_path.stem} left={fmt(left_box)} right={fmt(right_box)}")
+
     def _on_boxes_detected(self, img_bgr, boxes):
         """检测到框后的预处理 hook。返回上下文 ctx（供 _process_roi 使用）。默认返回 None。"""
         return None

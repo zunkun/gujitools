@@ -16,6 +16,16 @@
 | [functions/cropremove.md](functions/cropremove.md) | 复合流程：area 区域模式、border 边框控制                       |
 | [functions/print.md](functions/print.md)           | 图片生成 PDF：纸张、排序、标题和页码                           |
 
+## GUI 管理平台设计（AI编写，尚未实现）
+
+| 文档                                                   | 内容                                      |
+| ------------------------------------------------------ | ----------------------------------------- |
+| [gui/gui-architecture.md](gui/gui-architecture.md)     | 模块结构、进程模型、文件存储与任务目录    |
+| [gui/gui-technical-spec.md](gui/gui-technical-spec.md) | Worker 消息协议、JSON 数据格式、区域合成几何、缩略图规范 |
+| [gui/gui-design.md](gui/gui-design.md)                 | 交互设计：导入流程、步骤条、历史配置、检测框编辑、去底色预览 |
+| [gui/gui-requirements.md](gui/gui-requirements.md)     | 功能需求、非功能需求（与 desktop/ 实现对齐） |
+| [gui/gui-layout.md](gui/gui-layout.md)                 | 主窗口、预览区、控制面板与日志布局        |
+
 ## 快速开始
 
 ```bash
