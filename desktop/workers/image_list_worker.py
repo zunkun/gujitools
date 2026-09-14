@@ -8,7 +8,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QSize, Qt, Signal, Slot
 from PySide6.QtGui import QImage, QImageReader
 
-from .preview_worker import compose_outputs_horizontal, compose_region_output
+from desktop.workers.preview_worker import compose_outputs_horizontal, compose_region_output
 
 
 class ImageListWorker(QObject):
@@ -30,6 +30,12 @@ class ImageListWorker(QObject):
         effects: list | None = None,
         crops: list | None = None,
     ):
+        """构造图片清单缩略图 worker。
+
+        paths 为目标图片；edge 为缩略图最长边（默认 96）。effects/crops
+        与 paths 对齐：非空时先按 area/border 合成效果或按像素框裁剪，
+        再缩放到 edge（用于 print 列表效果预览）。
+        """
         super().__init__()
         self.paths = paths
         self.edge = edge
@@ -39,6 +45,7 @@ class ImageListWorker(QObject):
 
     @Slot()
     def run(self) -> None:
+        """逐图生成缩略图，发 thumbnail_ready(index, image, path)，结束发 completed。"""
         try:
             for index, path in enumerate(self.paths):
                 crop = self.crops[index] if getattr(self, "crops", None) else None

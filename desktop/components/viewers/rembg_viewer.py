@@ -17,10 +17,10 @@ from PySide6.QtGui import QImage, QPainter
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 from qfluentwidgets import CaptionLabel, PushButton
 
-from ...workers import ImageListWorker, PreviewWorker
-from .image_view import ImageView
-from .thumb_strip import ThumbStrip
-from .thumbs_loader import ThumbsMixin
+from desktop.workers import ImageListWorker, PreviewWorker
+from desktop.components.viewers.image_view import ImageView
+from desktop.components.viewers.thumb_strip import ThumbStrip
+from desktop.components.viewers.thumbs_loader import ThumbsMixin
 from utils.sort_utils import pdf_custom_sort_key
 
 _ACTIVE_STYLE = """
@@ -40,6 +40,7 @@ class RembgPreviewWidget(QWidget, ThumbsMixin):
     current_changed = Signal(int, str)
 
     def __init__(self, empty_hint: str = "暂无图片", parent=None):
+        """构建缩略图条与「去底色结果 / 原图」切换行，默认显示去底色结果。"""
         super().__init__(parent)
         self._init_thumbs()
         self._paths: list[Path] = []
@@ -88,6 +89,12 @@ class RembgPreviewWidget(QWidget, ThumbsMixin):
         region_params_provider=None,
         thumb_provider=None,
     ) -> None:
+        """设置图片清单与去底色目录，重建输出条目并加载显示。
+
+        paths 为源图；rembg_dir 为去底色结果目录（存在才显示结果）；
+        各 provider 给出检测框 / 区域参数 / 缩略图来源。清单变化时重建
+        缩略图条，否则按最新区域重加载当前显示。
+        """
         self._boxes_provider = boxes_provider  # (path_text) -> list[检测框]
         self._region_params_provider = region_params_provider  # () -> (area, border)
         self._border_mm = None

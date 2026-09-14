@@ -26,6 +26,7 @@ class ExtractFunction(FunctionBase):
     """
 
     def __init__(self, command_args):
+        """调用基类完成输入解析后，立即计算输出根目录。"""
         super().__init__(command_args)
         self._calc_outpath()
 
@@ -79,4 +80,6 @@ class ExtractFunction(FunctionBase):
                 subdir_name=self.default_temp_name,  # 传递图片子目录名
             )
         except Exception as e:
-            print(f"❌ 提取失败: {e}")
+            # 必须向上抛：原来只 print 后正常返回，CLI 会打印
+            # "Process completed!" 并以退出码 0 结束，脚本里无法感知失败
+            raise RuntimeError(f"提取失败：{e}") from e

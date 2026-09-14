@@ -19,7 +19,9 @@ from PySide6.QtWidgets import (
 from qfluentwidgets import CaptionLabel, PrimaryPushButton, PushButton, ToolButton
 from qfluentwidgets import FluentIcon as FIF
 
-from ...workers import ImageListWorker, WorkerHost
+from desktop.ui import theme as T
+from desktop.ui import widgets as ui
+from desktop.workers import ImageListWorker, WorkerHost
 
 
 class PrintPreviewWidget(QWidget, WorkerHost):
@@ -28,6 +30,7 @@ class PrintPreviewWidget(QWidget, WorkerHost):
     order_changed = Signal()        # 列表内容/顺序变化（含拖动与删除）
     insert_requested = Signal()     # 请求插入图片
     download_requested = Signal()   # 请求下载已生成的 PDF
+    hint = Signal(str)              # 需要宿主提示用户（如"未选中任何图片"）
 
     # 图标区：横向留足整页宽图的展示空间，高度覆盖常见古籍页比例
     ICON_SIZE = QSize(180, 240)
@@ -37,6 +40,12 @@ class PrintPreviewWidget(QWidget, WorkerHost):
     THUMB_EDGE = 360
 
     def __init__(self, empty_hint: str = "暂无图片，请先完成去底色", parent=None):
+        """
+        构建待打印列表与空状态占位。
+
+        列表开启 InternalMove 以支持拖动排序；提示类反馈通过 hint 信号
+        交给宿主弹 toast，而不是在控件内直接弹窗。
+        """
         super().__init__(parent)
         self._init_worker_host()
         self._empty_hint = empty_hint
@@ -92,9 +101,10 @@ class PrintPreviewWidget(QWidget, WorkerHost):
         layout.addWidget(self.list, 1)
 
         self.empty_label = QLabel(empty_hint)
-        self.empty_label.setStyleSheet("color:#8b949e;")
-        self.empty_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(self.empty_label)
+        self.empty_label.setWordWrap(True)
+        ui.apply_to(self.empty_label, T.SIZE_LABEL, color=T.INK_FAINT)
+        self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.empty_label, 1)
         self.empty_label.hide()
 
     # ------------------------------------------------------------------ API
@@ -134,6 +144,7 @@ class PrintPreviewWidget(QWidget, WorkerHost):
         return result
 
     def count(self) -> int:
+        """列表当前条目数。"""
         return self.list.count()
 
     def set_pdf_path(self, path: str | Path | None) -> None:
@@ -147,11 +158,18 @@ class PrintPreviewWidget(QWidget, WorkerHost):
             self.download_button.setToolTip("请先执行「生成 PDF」后再下载")
 
     def remove_selected(self) -> None:
+        """删除所有选中条目，未选中则通过 hint 信号提示。
+
+        多选用 ExtendedSelection，按行倒序移除避免下标错位；删除后同步
+        缓存顺序并 emit order_changed。
+        """
         rows = sorted(
             (self.list.row(item) for item in self.list.selectedItems()),
             reverse=True,
         )
         if not rows:
+            # 之前是静默 return，用户点了"删除选中"却没有任何反馈
+            self.hint.emit("请先在列表中选中要删除的图片。")
             return
         for row in rows:
             self.list.takeItem(row)

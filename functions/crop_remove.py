@@ -26,6 +26,12 @@ class CropRemoveFunction(TextRegionProcessor):
     """裁剪 + Otsu 去底色。"""
 
     def __init__(self, command_args):
+        """初始化裁剪+去底色功能，固化去底色参数并推导输出目录。
+
+        将 default_temp_name 设为 "rembg"，并将 offset/type/seal/sealcolor/
+        sealarea/sealmin_sat 等命令级常量只读存入实例（线程安全）。最后重新计算
+        self.outpath，使输出落入 rembg 目录。
+        """
         super().__init__(command_args)
         self.default_temp_name = "rembg"
         # 这些是命令级常量，线程间共享只读，安全

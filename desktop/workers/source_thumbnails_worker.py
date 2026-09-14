@@ -11,7 +11,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal, Slot
 
-from ..utils.files import THUMBNAIL_EDGE
+from desktop.utils.files import THUMBNAIL_EDGE
 
 
 class SourceThumbnailsWorker(QObject):
@@ -21,6 +21,11 @@ class SourceThumbnailsWorker(QObject):
     failed = Signal(str)
 
     def __init__(self, pdf_path: Path, out_dir: Path, edge: int = THUMBNAIL_EDGE):
+        """构造源 PDF 页缩略图 worker。
+
+        pdf_path 为源文件；out_dir 为 thumbnails/source/；edge 最长边
+        （默认 256）。缩略图命名 {page+1:04d}.jpg，与预览缓存一致。
+        """
         super().__init__()
         self.pdf_path = pdf_path
         self.out_dir = out_dir
@@ -28,6 +33,7 @@ class SourceThumbnailsWorker(QObject):
 
     @Slot()
     def run(self) -> None:
+        """逐页渲染缩略图落盘；任务目录被删时中止并报 failed。"""
         try:
             import fitz
 

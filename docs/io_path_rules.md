@@ -144,6 +144,47 @@
 
 ---
 
+### 5. 实现位置与默认子目录对照
+
+| 功能类               | 文件                       | 使用的工具函数                                                        | 默认子目录名 |
+| -------------------- | -------------------------- | --------------------------------------------------------------------- | ------------ |
+| `ExtractFunction`    | `functions/extract.py`     | `get_extract_output_root` + `run_on_input_directory` 的 `subdir_name` | `images`     |
+| `CropFunction`       | `functions/crop.py`        | `resolve_final_output_dir`                                            | `crop`       |
+| `RembgFunction`      | `functions/rembg.py`       | `resolve_final_output_dir`                                            | `rembg`      |
+| `CropRemoveFunction` | `functions/crop_remove.py` | `resolve_final_output_dir`                                            | `rembg`      |
+
+子目录名来自 `functions/base.py` 的 `DEFAULT_TEMP_NAME_MAP`（键为命令名），
+`FunctionBase.__init__` 把它取到实例属性 `self.default_temp_name`。
+**新增命令时只需在这个映射里加一行**，路径层不需要改。
+
+### 6. 常见调用示例
+
+```bash
+# 输入为单个 PDF，未指定 -o → 输出在 PDF 同目录
+python main.py extract -i /path/to/file.pdf
+#   → /path/to/file_stem/images/1.jpg ...
+
+# 输入为单个 PDF，-o 为纯名称
+python main.py extract -i /path/to/file.pdf -o preview
+#   → /path/to/preview/file_stem/images/1.jpg ...
+
+# 输入为目录，未指定 -o → 每个 PDF 一个子目录，输出与输入目录并列
+python main.py extract -i /path/to/pdfs/
+#   → /path/to/pdfs/pdf1_stem/images/... , /path/to/pdfs/pdf2_stem/images/...
+
+# crop / rembg / cropremove：目录输入时输出与输入目录并列
+python main.py crop -i /path/to/images/
+#   → /path/to/crop/
+
+python main.py crop -i /path/to/images/ -o out
+#   → /path/to/out/crop/
+
+python main.py rembg -i /path/to/images/ -o D:\output
+#   → D:\output\rembg\
+```
+
+---
+
 ## 五、执行时序约束（关键，避免报错）
 
 1. **`CommandArgs` 参数容器阶段**：**禁止任何文件存在性校验、禁止计算 `outpath`、禁止调用 `mkdir` 创建目录**。
@@ -178,7 +219,9 @@
 
 ## 八、历史变更与版本记录
 
-- **v2.0**（当前）：统一 `crop`/`rembg`/`cropremove` 路径规则，引入 `resolve_final_output_dir`，目录输入时输出与输入并列；`extract` 增加 `images` 子目录层，`-o` 对目录输入生效。
+- **v2.1**（当前）：把原 `docs/outputpath说明.md` 的内容并入本文（该文件与本文重复，
+  已删除），补充「实现位置与默认子目录对照」与常见调用示例。
+- **v2.0**：统一 `crop`/`rembg`/`cropremove` 路径规则，引入 `resolve_final_output_dir`，目录输入时输出与输入并列；`extract` 增加 `images` 子目录层，`-o` 对目录输入生效。
 - **v1.x**：旧版 `rembg` 在目录输入且未指定 `-o` 时，输出在输入目录内部（`input/rembg`），现已修正。
 
 ---

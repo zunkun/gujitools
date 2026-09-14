@@ -18,13 +18,15 @@
 
 from __future__ import annotations
 
-import json
+import json  # 仅用于解析 SQLite 里的 TEXT 列，文件读写统一走 json_io
 import shutil
 import sqlite3
 from pathlib import Path
 
-from .runs import MAX_RUN_HISTORY
-from ..utils.files import THUMBNAIL_EDGE
+from desktop.store.json_io import read_json, write_json
+
+from desktop.store.runs import MAX_RUN_HISTORY
+from desktop.utils.files import THUMBNAIL_EDGE
 
 _TASK_FIELDS = (
     "id", "name", "source_path", "source_hash", "status",
@@ -33,6 +35,13 @@ _TASK_FIELDS = (
 
 
 def migrate_legacy(root: Path) -> None:
+    """一次性迁移旧数据（SQLite + 旧目录布局）→ 纯文件新布局。
+
+    存在 guji.db 时导出 tasks/runs/boxes/sizes 的 JSON 并改名
+    guji.db.migrated 备份；uuid 任务目录重编号为 0001… 顺序号；
+    旧嵌套 extract、散落配置等按本模块规则归位。迁移失败（sqlite3.Error）
+    不抛异常，旧库保留、启动不阻塞。
+    """
     db_path = root / "guji.db"
     if db_path.exists():
         try:
@@ -50,9 +59,8 @@ def _renumber_uuid_tasks(root: Path) -> None:
     tasks_path = root / "tasks.json"
     if not tasks_path.exists():
         return
-    try:
-        tasks = json.loads(tasks_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
+    tasks = read_json(tasks_path, None)
+    if not isinstance(tasks, list):
         return
     if all(str(t.get("id", "")).isdigit() for t in tasks):
         return  # 全部已是任务号
@@ -84,9 +92,7 @@ def _renumber_uuid_tasks(root: Path) -> None:
         changed = True
     if changed:
         tasks.sort(key=lambda t: t.get("created_at", 0))
-        tasks_path.write_text(
-            json.dumps(tasks, ensure_ascii=False, indent=1), encoding="utf-8"
-        )
+        write_json(tasks_path, tasks)
 
 
 def _migrate_sqlite(root: Path, db_path: Path) -> None:
@@ -101,9 +107,7 @@ def _migrate_sqlite(root: Path, db_path: Path) -> None:
         ]
         if not tasks:
             return
-        (root / "tasks.json").write_text(
-            json.dumps(tasks, ensure_ascii=False, indent=1), encoding="utf-8"
-        )
+        write_json(root / "tasks.json", tasks)
 
         # stage_runs：每个 (task, stage) 保留完整历史，最新在前
         history: dict[tuple[str, str], list] = {}
@@ -151,12 +155,11 @@ def _migrate_sqlite(root: Path, db_path: Path) -> None:
 def _merge_json(path: Path, key: str, value) -> None:
     if not path.parent.exists():
         return  # 任务目录已删除，跳过
-    try:
-        data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-    except (json.JSONDecodeError, OSError):
+    data = read_json(path, {})
+    if not isinstance(data, dict):
         data = {}
     data[key] = value
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+    write_json(path, data)
 
 
 def _migrate_task_dir(task_dir: Path) -> None:
@@ -189,9 +192,8 @@ def _migrate_task_dir(task_dir: Path) -> None:
         imported.rmdir()
         pages_path = task_dir / "pages.json"
         if pages_path.exists():
-            try:
-                pages = json.loads(pages_path.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError):
+            pages = read_json(pages_path, [])
+            if not isinstance(pages, list):
                 pages = []
             changed = False
             for entry in pages:
@@ -202,9 +204,7 @@ def _migrate_task_dir(task_dir: Path) -> None:
                     )
                     changed = True
             if changed:
-                pages_path.write_text(
-                    json.dumps(pages, ensure_ascii=False, indent=1), encoding="utf-8"
-                )
+                write_json(pages_path, pages)
 
     # 散落的运行配置 → runs/
     runs_dir = task_dir / "runs"

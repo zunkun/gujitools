@@ -51,7 +51,14 @@ def safe_input(prompt_text: str, use_path_completer: bool = False) -> str:
 
 
 class InitFunction:
+    """交互式生成 guji.yaml 配置文件的命令实现。
+
+    根据用户输入或命令行 -i/--input 计算各子命令的 input 路径，并写入由
+    static/guji.yaml 模板派生的配置，保留原模板的注释与键顺序。
+    """
+
     def __init__(self, command_args):
+        """读取 --force 与 -i/--input，供 execute 生成配置。"""
         self.args = command_args
         self.force = self.args.get("force", False)
         self.cli_input = self.args.get("input")  # 用户通过 -i 提供的输入路径（或 None）
@@ -66,6 +73,12 @@ class InitFunction:
         return s
 
     def execute(self):
+        """
+        在进程当前目录生成 guji.yaml。
+
+        文件已存在且未加 --force 时交互确认；用户回答 n 则原样返回
+        ``{"status": "cancelled"}`` 不做任何写入。
+        """
         target = Path.cwd() / "guji.yaml"
 
         # 覆盖检查

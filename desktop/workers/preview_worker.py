@@ -12,7 +12,7 @@ from PySide6.QtCore import QObject, Qt, Signal, Slot
 from PySide6.QtGui import QImage, QPainter
 
 from utils.box_geometry import parse_border_mm
-from ..utils.files import THUMBNAIL_EDGE
+from desktop.utils.files import THUMBNAIL_EDGE
 
 SYMMETRIC_GAP_MM = 10  # 与 functions/text_region.py 一致
 
@@ -135,6 +135,12 @@ class PreviewWorker(QObject):
         cache_dir: Path | None = None,
         effect: dict | None = None,
     ):
+        """构造预览渲染 worker。
+
+        PDF 渲染第 page 页（最长边 longest_edge，0 表示不缩放）；
+        thumbnails=True 时渲染全部页缩略图到 cache_dir（命中则复用缓存）。
+        effect 为去底色合成参数 {boxes, area, border}，仅对单图生效。
+        """
         super().__init__()
         self.path = path
         self.page = page
@@ -147,6 +153,7 @@ class PreviewWorker(QObject):
 
     @Slot()
     def run(self) -> None:
+        """按构造参数渲染单页大图或批量页缩略图，发出 finished/thumbnail_ready。"""
         try:
             if self.path.suffix.lower() == ".pdf" and self.thumbnails:
                 self._render_all_thumbnails()

@@ -116,7 +116,8 @@ def main() -> int:
     # 行内按钮存在
     from qfluentwidgets import PushButton
 
-    action_cell = w.list_page.table.table.cellWidget(0, 5)
+    table = w.list_page.table.table
+    action_cell = table.cellWidget(0, table.columnCount() - 1)
     buttons = action_cell.findChildren(PushButton)
     ok("行内详情/删除按钮存在", len(buttons) == 2)
 

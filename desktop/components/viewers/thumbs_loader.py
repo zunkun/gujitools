@@ -5,8 +5,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..viewers.thumb_strip import ThumbStrip
-from ...workers import ImageListWorker, WorkerHost
+from desktop.components.viewers.thumb_strip import ThumbStrip
+from desktop.workers import ImageListWorker, WorkerHost
 
 
 class ThumbsMixin(WorkerHost):

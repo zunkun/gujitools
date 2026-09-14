@@ -1,5 +1,10 @@
 # -*- coding: utf-8 -*-
-"""任务详情页的阶段执行控制器：构建参数、启动 worker 子进程、解析进度日志。"""
+"""任务详情页的阶段执行控制器：构建参数、启动 worker 子进程、解析进度日志。
+
+纯业务派生规则见 desktop/services/print_plan.py，
+rembg 提交控制器见 desktop/pages/taskdetail/submit.py，
+历史配置回填见 desktop/pages/taskdetail/history.py。
+"""
 
 from __future__ import annotations
 
@@ -11,9 +16,10 @@ from pathlib import Path
 
 from PySide6.QtCore import QProcess, QProcessEnvironment, QTimer
 
-from ..utils.files import list_stage_images
-from ..store import STAGES, STAGE_LABELS
-from utils.sort_utils import pdf_custom_sort_key
+from desktop.services.print_plan import missing_extract_pages_spec
+from desktop.store.json_io import write_json
+from desktop.utils.files import list_stage_images, project_root
+from desktop.store import STAGE_LABELS
 
 STATUS_LABELS = {
     "pending": "未执行",
@@ -29,36 +35,6 @@ class StageRunnerMixin:
     control_stack、stage_* 控件、log_view、process/run_id 等。"""
 
     # ---------------------------------------------------------- 参数与 workset
-    def _missing_extract_pages(self, ext: str) -> str | None:
-        output_dir = self.store.extract_output_dir(self.task_id)
-        present = set()
-        if output_dir.exists():
-            for f in output_dir.iterdir():
-                digits = ""
-                for ch in f.stem:
-                    if ch.isdigit():
-                        digits += ch
-                    else:
-                        break
-                if digits:
-                    present.add(int(digits))
-        total = self.pdf_page_count or 0
-        missing = [n for n in range(1, total + 1) if n not in present]
-        if not missing or not total:
-            return None
-        parts, start, prev = [], None, None
-        for n in missing:
-            if start is None:
-                start = prev = n
-            elif n == prev + 1:
-                prev = n
-            else:
-                parts.append(f"{start}-{prev}" if prev > start else f"{start}")
-                start = prev = n
-        if start is not None:
-            parts.append(f"{start}-{prev}" if prev > start else f"{start}")
-        return ",".join(parts)
-
     def _build_workset(self, stage: str, resume: bool) -> Path:
         """按页面清单物化执行输入目录。
 
@@ -89,6 +65,12 @@ class StageRunnerMixin:
 
     # ---------------------------------------------------------- 执行/中断
     def run_stage(self, resume: bool = False) -> None:
+        """启动当前阶段的 worker 子进程。
+
+        resume=True 表示续跑：extract 只补缺失页、其余阶段跳过已有输出，
+        否则 clean=True 全量重跑。会取面板参数、写运行配置、起子进程并连接
+        输出/错误/完成信号，再挂看门狗兜底 Windows 偶发的 finished 丢失。
+        """
         if not self.task_id or not self.source_path:
             self._toast("warning", "提示", "请先导入 PDF")
             return
@@ -97,6 +79,9 @@ class StageRunnerMixin:
             return
         stage = self.current_stage()
         task = self.store.get_task(self.task_id)
+        if not task:
+            self._toast("error", "任务不存在", "该任务可能已被删除，请返回列表刷新。")
+            return
         if stage == "extract" and not Path(task["source_path"]).exists():
             self._toast("error", "源文件缺失", f"源 PDF 不存在：{task['source_path']}")
             return
@@ -111,7 +96,10 @@ class StageRunnerMixin:
             args["input"] = str(self.source_path)
             args["output"] = str(self.store.stage_dir(self.task_id, "extract"))
             if resume:
-                missing = self._missing_extract_pages(args.get("ext", "jpg"))
+                missing = missing_extract_pages_spec(
+                    self.store.extract_output_dir(self.task_id),
+                    self.pdf_page_count or 0,
+                )
                 if not missing:
                     self._toast("info", "无需续跑", "提取输出已完整。")
                     return
@@ -194,12 +182,9 @@ class StageRunnerMixin:
         runs_dir = self.store.runs_config_dir(self.task_id)
         runs_dir.mkdir(parents=True, exist_ok=True)
         config_path = runs_dir / f"run-{self.run_id}.json"
-        config_path.write_text(
-            json.dumps(
-                {"task_id": self.task_id, "stage": stage, "run_id": self.run_id, "args": args},
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
+        write_json(
+            config_path,
+            {"task_id": self.task_id, "stage": stage, "run_id": self.run_id, "args": args},
         )
         self.cancel_requested = False
         self.running_stage = stage
@@ -215,9 +200,10 @@ class StageRunnerMixin:
             # 打包环境：主程序即入口，--worker 路由到子任务执行
             arguments = ["--worker", "--config", str(config_path)]
         else:
-            # 源码环境：按模块启动，不依赖入口文件名（desktop.py 改名无影响）
+            # 源码环境：按模块启动，不依赖入口文件名（desktop.py 改名无影响），
+            # 工作目录必须是项目根（能解析出 desktop 包的那一级）
             arguments = ["-m", "desktop.worker", "--config", str(config_path)]
-            self.process.setWorkingDirectory(str(Path(__file__).parents[2]))
+            self.process.setWorkingDirectory(str(project_root()))
         self.process.setArguments(arguments)
         self.process.readyReadStandardOutput.connect(self._read_worker_output)
         self.process.readyReadStandardError.connect(self._read_worker_error)
@@ -227,6 +213,7 @@ class StageRunnerMixin:
         # 看门狗轮询兜底——Qt 状态滞留 Running 但 OS 进程已退出时，
         # 直接用 Win32 探测并手动驱动完成流程。
         self._finish_delivered = False
+        self._proc_started = False
         proc = self.process
         watchdog = QTimer(self)
 
@@ -262,11 +249,19 @@ class StageRunnerMixin:
                 watchdog.stop()
                 return
             if proc.state() == QProcess.NotRunning:
-                _finish_once(proc.exitCode(), proc.exitStatus())
+                code = proc.exitCode()
+                # 从未成功启动时 exitCode() 仍是 0，直接当成功会误报"执行成功"
+                if not self._proc_started and code == 0:
+                    code = 1
+                _finish_once(code, proc.exitStatus())
             elif not _process_alive(proc.processId()):
                 # OS 进程已退出而 Qt 未感知
                 _finish_once(0, QProcess.NormalExit)
 
+        def _mark_started() -> None:
+            self._proc_started = True
+
+        proc.started.connect(_mark_started)
         proc.finished.connect(_finish_once)
         watchdog.timeout.connect(_watchdog)
         watchdog.start(300)
@@ -274,217 +269,27 @@ class StageRunnerMixin:
 
         self.store.update_task(self.task_id, "running")
         self._refresh_stage_views()
+        # 开始执行时自动展开日志：用户此刻最需要看到实时输出
+        self.log_panel.set_expanded(True)
         self.log_view.append(
             f"=== 开始执行 {STAGE_LABELS[stage]}{'（续跑）' if resume else ''} ==="
         )
 
     def cancel_stage(self) -> None:
+        """中断正在执行的阶段：先落 cancelled 再 kill 子进程。
+
+        先立即把运行记录置为 cancelled——防止进程被强杀来不及回调时状态永远
+        停留 running（重启后按钮状态错乱）；随后置 cancel_requested 并 kill。
+        """
         if self.process and self.process.state() != QProcess.NotRunning:
             self.cancel_requested = True
             self.stage_status.setText("正在中断子任务...")
             self.log_view.append("已请求中断，正在终止 worker...")
+            # 立即把运行记录置为已中断：进程被强杀来不及回调时，
+            # 状态不会永远停留在 "running"（否则重启后按钮状态是错的）
+            if self.run_id:
+                self.store.finish_stage(self.task_id, self.run_id, "cancelled")
             self.process.kill()
-
-    # ---------------------------------------------------------- rembg 提交
-    def _rembg_result_path(self, stem: str) -> Path | None:
-        """某页面对应的「生成预览」去底色结果（stages/rembgpreview）。"""
-        rembg_dir = self.store.rembg_preview_output_dir(self.task_id)
-        for ext in ("png", "jpg", "jpeg"):
-            candidate = rembg_dir / f"{stem}.{ext}"
-            if candidate.exists():
-                return candidate
-        return None
-
-    def _latest_print_pdf_path(self) -> Path | None:
-        """最近一次 print 执行产出的 PDF 路径（按 YAML pdf_name 解析）。"""
-        if not self.task_id:
-            return None
-        pdf_name = "print.pdf"
-        history = self.store.list_stage_runs(self.task_id, "print")
-        if history:
-            params = history[0].get("parameters", {})
-            if params.get("pdf_name"):
-                pdf_name = str(params["pdf_name"])
-        out_dir = self.store.stage_dir(self.task_id, "print")
-        candidate = out_dir / pdf_name
-        if candidate.exists():
-            return candidate
-        # 兜底：目录下任意 pdf
-        for cand in out_dir.glob("*.pdf"):
-            return cand
-        return None
-
-    def _rembg_submit_entries(self, area: int, border) -> list[dict]:
-        """预览结果 + 检测框 + area/border → 最终图片条目。
-
-        派生规则与 rembg 预览条目、print 待打印列表完全一致：
-        - area=1 双框：拆 <页>-r / <页>-l 两条（古籍阅读顺序 r 在前）；
-        - area=2/3 双框：取双框并集，单条输出；
-        - 单框：area=2/3 走对称画布（parea=2），area=1 按普通框；
-        - 无框：整页预览图透传。
-        最终按 CLI natural sort 排序（同页 r 在 l 前）。
-        """
-        entries: list[dict] = []
-        for path in self._manifest_paths():
-            result = self._rembg_result_path(path.stem)
-            if result is None:
-                continue  # 该页尚未生成预览
-            boxes = self._valid_boxes(self._detect_boxes_for(str(path)))
-            stem = path.stem
-            if area == 1 and len(boxes) == 2:
-                entries.append(
-                    {"file": str(result), "label": f"{stem}-r",
-                     "box": boxes[1], "parea": 1}
-                )
-                entries.append(
-                    {"file": str(result), "label": f"{stem}-l",
-                     "box": boxes[0], "parea": 1}
-                )
-            elif area in (2, 3) and len(boxes) == 2:
-                union = [
-                    min(b[0] for b in boxes), min(b[1] for b in boxes),
-                    max(b[2] for b in boxes), max(b[3] for b in boxes),
-                ]
-                entries.append(
-                    {"file": str(result), "label": stem,
-                     "box": union, "parea": 1}
-                )
-            elif len(boxes) == 1:
-                entries.append(
-                    {"file": str(result), "label": stem, "box": boxes[0],
-                     "parea": 2 if area in (2, 3) else 1}
-                )
-            else:
-                entries.append(
-                    {"file": str(result), "label": stem,
-                     "box": None, "parea": 1}
-                )
-        entries.sort(key=lambda e: pdf_custom_sort_key(e["label"]))
-        return entries
-
-    def _build_print_effects(
-        self, list_entries: list[dict], area: int, border
-    ) -> list[dict]:
-        """第四步列表 + 第三步当前 area/border → worker 合成规格。
-
-        与「提交本次任务」复用同一套派生规则（_rembg_submit_entries）：
-        源图为 stages/rembgpreview 去底图，effect 携带检测框/area/border，
-        由 run_print_stage 在子进程内实时合成后再排版为 PDF。
-
-        与用户在第四步保存的列表（拖动排序/删除/外部插入）按 label 对齐：
-        - 命中当前 area 派生集合的条目，按用户列表顺序输出合成规格；
-        - 用户插入的外部图片（不在 stages/rembg 目录）整图透传；
-        - area 模式切换后已失效的旧提交图（如旧 82-r/82-l 被新 82 取代）
-          丢弃，当前集合中新派生的条目按默认顺序补在末尾，避免漏页或重复。
-        """
-        composed = self._rembg_submit_entries(area, border)
-        dmap = {c["label"]: c for c in composed}
-        rembg_dir = self.store.rembg_output_dir(self.task_id)
-
-        def _spec(spec: dict) -> dict:
-            return {
-                "file": spec["file"],
-                "effect": (
-                    {
-                        "boxes": [spec["box"]],
-                        "area": spec.get("parea", 1),
-                        "border": border,
-                    }
-                    if spec.get("box")
-                    else None
-                ),
-            }
-
-        # 已提交产物的 label 集合：用于区分「用户删除」与「area 切换新派生」
-        submitted_labels = {p.stem for p in list_stage_images(rembg_dir)}
-        effects: list[dict] = []
-        used: set[str] = set()
-        for e in list_entries:
-            label = e.get("label") or Path(e["file"]).stem
-            spec = dmap.get(label)
-            if spec is not None:
-                effects.append(_spec(spec))
-                used.add(label)
-            elif Path(e["file"]).parent != rembg_dir:
-                # 用户手动插入的外部图片：不做区域合成，整页参与排版
-                effects.append({"file": e["file"], "effect": None})
-        # 仅补「当前 area 派生出、但提交产物里尚不存在」的条目（area 模式
-        # 切换后的新结构页）；已存在提交图却不在用户列表的，属于用户主动
-        # 删除，不得补回。
-        for spec in composed:
-            if spec["label"] not in used and spec["label"] not in submitted_labels:
-                effects.append(_spec(spec))
-        return effects
-
-    def run_rembg_submit(self) -> None:
-        """提交本次任务：把「生成预览」的去底色图片按 area/border 等
-        合成为真正想要的最终图片，输出到 stages/rembg 目录。"""
-        if not self.task_id or not self.source_path:
-            self._toast("warning", "提示", "请先导入 PDF")
-            return
-        if self.process and self.process.state() != QProcess.NotRunning:
-            self._toast("warning", "任务进行中", "当前子任务正在执行")
-            return
-        # 必须以最近一次「生成预览」成功为前提（旧图残留/失败/中断均拒绝提交）
-        preview_state = self.store.stage_states(self.task_id)["rembg"]["status"]
-        if preview_state != "success":
-            self._toast(
-                "warning", "请先生成预览",
-                "「生成预览」执行成功后才能提交本次任务"
-                + ("" if preview_state == "pending" else
-                   f"（当前状态：{STATUS_LABELS.get(preview_state, preview_state)}）"),
-            )
-            return
-        panel = self.control_stack.widget(2)  # rembg 面板
-        try:
-            args = panel.get_args()
-        except ValueError as exc:
-            self._toast("error", "参数错误", str(exc))
-            return
-        self._refresh_manifest()
-        if not self._manifest_paths():
-            self._toast(
-                "warning", "无输入页面",
-                "页面清单为空，请先完成上一步子任务，或在预览区插入图片。",
-            )
-            return
-        entries = self._rembg_submit_entries(args["area"], args.get("border"))
-        if not entries:
-            self._toast(
-                "warning", "尚未生成预览",
-                "请先点击「生成预览」生成去底色图片，再提交本次任务。",
-            )
-            return
-        args["_effects"] = [
-            {
-                "file": e["file"],
-                "label": e["label"],
-                "effect": (
-                    {
-                        "boxes": [e["box"]],
-                        "area": e.get("parea", 1),
-                        "border": args.get("border"),
-                    }
-                    if e.get("box")
-                    else None
-                ),
-            }
-            for e in entries
-        ]
-        args["output"] = str(self.store.rembg_output_dir(self.task_id))
-        args["clean"] = True
-        # 记录本次提交所基于的「生成预览」成功版本，用于判断预览是否又有新版本
-        preview_run = next(
-            (r for r in self.store.list_stage_runs(self.task_id, "rembg")
-             if r.get("status") == "success"),
-            None,
-        )
-        if preview_run:
-            args["_preview_run_id"] = preview_run.get("run_id")
-        self.log_view.append(
-            f"提交本次任务：{len(entries)} 张最终图片 → {args['output']}"
-        )
-        self._launch_stage_process("rembg_submit", args, resume=False)
 
     # ---------------------------------------------------------- 输出解析
     def _read_worker_output(self) -> None:
@@ -523,7 +328,7 @@ class StageRunnerMixin:
                 self.log_view.append("worker 已被中断。")
 
     def _store_page_size(self, event: dict) -> None:
-        """extract 阶段上报的页面图片原始尺寸入库（框坐标的坐标系基准）。"""
+        """extract 阶段上报的页面图片原始尺寸写入 sizes.json（框坐标的坐标系基准）。"""
         if not self.task_id:
             return
         self.store.save_image_size(
@@ -532,7 +337,7 @@ class StageRunnerMixin:
         )
 
     def _store_stage_boxes(self, event: dict) -> None:
-        """detect 阶段上报的框坐标实时入库（origin=auto）；手动框不被覆盖。
+        """detect 阶段上报的框坐标实时写回 boxes.json（origin=auto）；手动框不被覆盖。
 
         存储保留左右身份：[左框, 右框]，缺失一侧为 null，
         以便 area=1 输出条目按 -r/-l 规范排序。
@@ -572,6 +377,9 @@ class StageRunnerMixin:
         if self.cancel_requested:
             return
         self.log_view.append(f"[进程错误] {error}")
+        if error == QProcess.ProcessError.FailedToStart:
+            program = self.process.program() if self.process else "worker"
+            self._last_error_line = f"子进程启动失败：{program}"
 
     def _poll_extract_results(self) -> None:
         """提取过程中：一旦输出目录出现新图片，立即在「提取结果」里展示。"""

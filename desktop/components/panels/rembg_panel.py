@@ -6,10 +6,16 @@ from __future__ import annotations
 from PySide6.QtWidgets import QFormLayout
 from qfluentwidgets import CheckBox, ComboBox, LineEdit, SpinBox
 
-from .base import StagePanel
+from desktop.components.panels.base import StagePanel
 
 
 class RembgPanel(StagePanel):
+    """图片去底色阶段面板：area/border/印章等参数。
+
+    整图 Otsu 二值化/灰度化去底（可保留印章）；area 决定裁剪方式、
+    border 决定四周留白，参数经 get_args 收集后传给子进程。
+    """
+
     stage = "rembg"
     title = "图片去底色 (rembg)"
     description = (
@@ -44,6 +50,11 @@ class RembgPanel(StagePanel):
         self._add_row(form, "", self.sealcolor)
 
     def get_args(self) -> dict:
+        """收集去底色参数：area/type/offset/seal/border 等。
+
+        area/type 取下拉首字符数字；border 留空表示 0，由 runner 在续跑时
+        与 detect 框坐标实时合成裁剪区域。
+        """
         args = {
             "area": int(self.area.currentText()[0]),
             "type": int(self.type.currentText()[0]),

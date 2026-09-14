@@ -56,7 +56,7 @@ print:
 | `page_number_start_page`  | 1               | 从排序后第几张图片开始标注，1-based                        |
 | `page_number_end_page`    | None            | 标注结束的图片序号；为空表示到最后                         |
 | `page_number_base`        | 0               | 页码基数；显示页码为基数加图片序号                         |
-| `page_number_font_size`   | 18              | 页码字号，单位 pt                                          |
+| `page_number_font_size`   | 12              | 页码字号，单位 pt                                          |
 | `page_number_color`       | `0,0,0`         | 页码颜色，格式为 `r,g,b`                                   |
 | `page_number_position`    | `bottom`        | 页码位置：`top` 或 `bottom`                                |
 | `page_number_orientation` | `vertical`      | 页码方向：`vertical` 或 `horizontal`                       |
@@ -166,14 +166,14 @@ right_page_margins:
 
 ## 图片过滤与其他参数
 
-| 参数         | 默认值       | 说明                                         |
-| ------------ | ------------ | -------------------------------------------- |
-| `input`      | `.`          | 图片文件或目录                               |
-| `output`     | None         | PDF 输出目录                                 |
-| `pdf_name`   | `output.pdf` | PDF 文件名                                   |
-| `clean`      | False        | 保留统一配置字段，对 PDF 输出无清空作用      |
-| `skip_pages` | None         | 跳过的文件名，可用逗号分隔或列表，不含扩展名 |
-| `workers`    | 4            | 图片加载线程数                               |
+`input` / `output` / `pdf_name` / `clean` 见上方
+
+[配置参数](#配置参数)表；图片过滤与并发相关的补充项：
+
+| 参数         | 默认值 | 说明                                         |
+| ------------ | ------ | -------------------------------------------- |
+| `skip_pages` | None   | 跳过的文件名，可用逗号分隔或列表，不含扩展名 |
+| `workers`    | 4      | 图片加载线程数                               |
 
 示例：
 

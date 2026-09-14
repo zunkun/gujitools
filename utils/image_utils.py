@@ -301,6 +301,6 @@ def parse_border_mm(border_value, dpi: int = 300) -> Optional[List[int]]:
     实现已迁移到 `utils.box_geometry.parse_border_mm`（无重依赖，GUI 共用），
     此处保留 re-export 以兼容 `utils.parse_border_mm` 的延迟加载入口。
     """
-    from .box_geometry import parse_border_mm as _parse
+    from utils.box_geometry import parse_border_mm as _parse
 
     return _parse(border_value, dpi)

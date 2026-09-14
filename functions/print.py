@@ -1,4 +1,10 @@
-# functions/print.py
+"""
+图片目录 → PDF：纸张/方向/页边距、标题与页码、双页左右标注。
+
+本模块同时被 CLI（``guji run print``）与 GUI 的 print 阶段复用：GUI 会先
+把待打印列表按顺序物化成顺序命名硬链接，再由这里按文件名排序生成 PDF。
+"""
+
 import os
 import re
 from pathlib import Path
@@ -83,7 +89,14 @@ def _resolve_title_nodes(image_files, title_switch_nodes):
 
 
 class PrintFunction(FunctionBase):
+    """把图片目录合成 PDF 的命令实现。
+
+    直接重写 ``execute()``：参数全部来自命令行 / YAML 配置块，实际排版由
+    ``_generate_pdf`` 完成，不使用基类的并发图片处理引擎。
+    """
+
     def __init__(self, command_args):
+        """调用基类完成输入解析后，立即计算输出 PDF 路径。"""
         super().__init__(command_args)
         self._calc_output_path()
 
@@ -100,6 +113,13 @@ class PrintFunction(FunctionBase):
         self.outpath.parent.mkdir(parents=True, exist_ok=True)
 
     def execute(self) -> dict:
+        """收集打印参数并委托 _generate_pdf 生成 PDF。
+
+        从 command_args 读取纸张尺寸（默认 A4）、方向（默认 landscape）、
+        页边距、标题与页码相关配置，以及 skip_pages（默认空列表）与
+        workers（默认 4）。将参数透传给 _generate_pdf，返回其
+        {"processed": N, "output": path} 结果字典。
+        """
         input_dir = self.input
         output_pdf = self.outpath
 

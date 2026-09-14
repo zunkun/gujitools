@@ -23,6 +23,12 @@ class CommandArgs:
     """
 
     def __init__(self, **kwargs):
+        """构造参数容器并标准化全部参数。
+
+        接收任意关键字参数（常来自 argparse.Namespace 或配置字典），提取
+        command 后调用 _build_args 注入默认值并标准化 input/output/workers 等。
+        所有默认值集中在此维护，命令行解析器不再设置 default。
+        """
         command = kwargs.get("command", None)
         self.command = command
         self.args: Dict[str, Any] = {"command": command}

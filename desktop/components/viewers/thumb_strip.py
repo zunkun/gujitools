@@ -16,6 +16,7 @@ class ThumbStrip(QListWidget):
     current_path_changed = Signal(int, str)
 
     def __init__(self, parent=None):
+        """初始化条目尺寸与流式布局；点击条目发出 current_path_changed(行号, 路径)。"""
         super().__init__(parent)
         self.setFixedWidth(132)
         self.setViewMode(QListWidget.ViewMode.IconMode)
@@ -47,6 +48,7 @@ class ThumbStrip(QListWidget):
         return QIcon(pixmap)
 
     def add_placeholder(self, text: str) -> None:
+        """追加一个纯文字占位条目（无图标，如"缩略图加载中…"）。"""
         self.addItem(QListWidgetItem(text))
 
     def add_page_item(self, label: str, path: str = "") -> None:
@@ -56,6 +58,7 @@ class ThumbStrip(QListWidget):
         self.addItem(item)
 
     def set_item_icon(self, index: int, image, path: str, label: str) -> None:
+        """替换某条目的图标/文字/路径（缩略图异步就绪后回调）。"""
         if index >= self.count():
             return
         item = self.item(index)

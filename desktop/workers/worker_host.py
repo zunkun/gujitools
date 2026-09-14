@@ -14,6 +14,12 @@ class WorkerHost:
         self._workers: list[QObject] = []
 
     def run_worker(self, factory, wire) -> None:
+        """
+        启动一次性 worker 线程并登记引用以便回收。
+
+        factory() 负责造 worker，wire(worker, thread) 负责连信号；线程结束后
+        worker 自动 deleteLater 并移出引用表，避免长会话下线程对象堆积。
+        """
         thread = QThread(self)
         worker = factory()
         worker.moveToThread(thread)
@@ -35,6 +41,7 @@ class WorkerHost:
                 container.remove(thread)
 
     def shutdown_workers(self) -> None:
+        """退出并等待所有后台线程（最多 800ms/线程），随后清空引用。"""
         for thread in self._threads:
             thread.quit()
             thread.wait(800)

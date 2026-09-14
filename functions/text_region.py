@@ -16,7 +16,6 @@ ctx 通过参数传递（而非 self 实例变量），保证 ThreadPoolExecutor
 """
 
 from pathlib import Path
-import cv2
 import numpy as np
 import utils
 from functions.base import FunctionBase
@@ -28,6 +27,7 @@ class TextRegionProcessor(FunctionBase):
     SYMMETRIC_GAP_MM = 10  # 单框对称输出时，实际框与空白镜像之间的间隔（mm）
 
     def __init__(self, command_args):
+        """计算输出目录并加载 YOLO 模型（单例，进程内复用）。"""
         super().__init__(command_args)
         self._calc_outpath()
         self._model = utils.load_yolo_model()
@@ -53,7 +53,8 @@ class TextRegionProcessor(FunctionBase):
                 "reason": "file too small",
             }
 
-        img_bgr = cv2.imread(str(image_path))
+        # 走 utils.imread（np.fromfile + imdecode）：cv2.imread 遇中文路径返回 None
+        img_bgr = utils.imread(image_path)
         if img_bgr is None:
             raise ValueError(f"无法读取图片: {image_path}")
 
@@ -236,4 +237,9 @@ class TextRegionProcessor(FunctionBase):
         raise NotImplementedError
 
     def execute(self):
+        """执行文本区域处理：委托基类并发引擎逐图处理。
+
+        复用 FunctionBase.execute() 的线程池、重试与日志；单图完整流程
+        （读取→YOLO 检测→area/border 规则→输出）在 _process_single_image 中。
+        """
         return super().execute()

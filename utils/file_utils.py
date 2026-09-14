@@ -8,7 +8,7 @@
 
 from pathlib import Path
 from typing import List
-from .sort_utils import natural_sort_key
+from utils.sort_utils import natural_sort_key
 
 # 支持的图片扩展名（小写比较，不含 . 号）
 # 用于 collect_image_files 中的扩展名过滤

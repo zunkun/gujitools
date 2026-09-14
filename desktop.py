@@ -12,6 +12,11 @@ os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
 
 def main() -> int:
+    """桌面端统一入口：按参数路由到 GUI 或 worker 子进程。
+
+    若命令行含 --worker 则作为 GUI 子进程执行 desktop.worker.main()，
+    否则启动 GUI（desktop.app.main()）。返回值为进程退出码。
+    """
     if "--worker" in sys.argv:
         from desktop.worker import main as worker_main
 

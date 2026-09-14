@@ -8,9 +8,9 @@ from pathlib import Path
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QHBoxLayout, QWidget
 
-from ...workers import PreviewWorker, WorkerHost
-from .image_view import ImageView
-from .thumb_strip import ThumbStrip
+from desktop.workers import PreviewWorker, WorkerHost
+from desktop.components.viewers.image_view import ImageView
+from desktop.components.viewers.thumb_strip import ThumbStrip
 
 
 class PdfViewerWidget(QWidget, WorkerHost):
@@ -19,6 +19,11 @@ class PdfViewerWidget(QWidget, WorkerHost):
     page_count_changed = Signal(int)
 
     def __init__(self, placeholder: str = "暂无 PDF", parent=None):
+        """初始化 PDF 查看器：左侧页缩略图条 + 右侧大图。
+
+        placeholder 为无 PDF 时的占位文案；缩略图/大图经 WorkerHost 异步
+        加载，并用缓存目录避免重复渲染。
+        """
         super().__init__(parent)
         self._init_worker_host()
         self._pdf_path: Path | None = None

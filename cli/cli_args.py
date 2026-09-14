@@ -27,6 +27,11 @@ class CliArgsParser:
     """包装 argparse，定义程序支持的子命令与参数。"""
 
     def __init__(self):
+        """构造 CLI 参数解析器。
+
+        创建 CliArgsParser 实例时即构建并配置好 argparse.ArgumentParser
+        及全部子命令（extract/crop/rembg/cropremove/init/run/print/help）。
+        """
         self.parser: argparse.ArgumentParser = self.create_parser()
 
     def create_parser(self) -> argparse.ArgumentParser:
@@ -269,6 +274,18 @@ class CliArgsParser:
             add_help=False,
         )
 
+        # 子命令也补上 -h/--help：主 parser 用 add_help=False 关掉了 argparse
+        # 自带的说明，若不在子命令上显式声明，`guji extract -h` 会被当成
+        # 未知参数忽略，然后带着缺失参数继续执行
+        seen_parsers: set[int] = set()
+        for sub in subparsers.choices.values():
+            if id(sub) in seen_parsers:
+                continue  # 别名与主命令共用同一个 parser 对象
+            seen_parsers.add(id(sub))
+            if any("-h" in a.option_strings for a in sub._actions):
+                continue  # 该子命令已自带 -h（如 help），不重复添加
+            sub.add_argument("-h", "--help", action="store_true", help="显示本命令帮助")
+
         return parser
 
     def parse_args(self):
@@ -284,12 +301,17 @@ class CliArgsParser:
         if getattr(args, "version", False):
             process_help_command("version")
 
+        # -h/--help 标志：全局显示总览，子命令上下文显示该命令手册
+        if getattr(args, "help", False):
+            topic = args.command if args.command not in (None, "help") else None
+            process_help_command("help" if topic else "-h", topic)
+
         # help 子命令：提取 topic 传给帮助系统（docs/functions/<topic>.md）
         if args.command == "help":
             topic = getattr(args, "topic", None)
             process_help_command(args.command, topic)
 
-            sys.exit(1)
+            sys.exit(0)
         # 处理命令别名映射，保持内部使用标准命令名
         alias_map = {
             "-e": "extract",

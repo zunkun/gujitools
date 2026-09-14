@@ -101,7 +101,9 @@ guji -v                  # 显示版本
 | `cropremove` | `-cr` | 复合流程：裁剪 + 去底色    | [cropremove.md](functions/cropremove.md) |
 | `print`      | —     | 将图片目录生成为 PDF       | [print.md](functions/print.md)           |
 
-> 注：`detect` 命令在 CLI 中已定义但功能尚未实现（`get_function` 未映射），调用会返回"未知命令"错误。
+> 注：不存在 `detect` 子命令——文本框检测在 CLI 中属于 `crop` / `cropremove` 的内部
+> 步骤，不单独暴露命令。桌面端把它拆成了独立的「检测文本框（detect）」子任务，
+> 只输出坐标、不生成文件，详见 [gui/gui-design.md](gui/gui-design.md)。
 
 ## 通用参数
 
@@ -111,8 +113,12 @@ guji -v                  # 显示版本
 | ------------- | -------- | --------------------------------------------------------- |
 | `-i/--input`  | `.`      | 输入路径（文件或目录），内部自动 `expanduser().resolve()` |
 | `-o/--output` | None     | 输出目录名称（纯名称或完整路径）                          |
-| `--clean`     | 命令相关 | 清空输出目录（extract 默认 False，其余默认 True）         |
+| `--clean`     | False    | 处理前清空输出目录；CLI 下所有命令默认 False（保留既有输出） |
 | `--workers`   | CPU 核数 | 并行线程数                                                |
+
+> `--clean` 是 `store_true` 开关，不传即 False。注意 `FunctionBase.execute()` 内部
+> 取该键时兜底为 `True`，因此**自建参数字典（不经 `CommandArgs`）时必须显式给
+> `clean`**，否则会意外清空输出目录。
 
 ## 路径规则
 
@@ -184,7 +190,7 @@ guji -v                  # 显示版本
 | 参数                     | 默认值          | 说明                               |
 | ------------------------ | --------------- | ---------------------------------- |
 | `paper_size`             | A4              | A3、A4、A5 或 B5                   |
-| `orientation`            | portrait        | `portrait` 纵向或 `landscape` 横向 |
+| `orientation`            | landscape       | `portrait` 纵向或 `landscape` 横向 |
 | `page_margins`           | `[20,20,20,20]` | 上、右、下、左，单位 mm            |
 | `title_printing`         | False           | 是否打印标题                       |
 | `title_switch_nodes`     | None            | 章节节点 `[图片序号, 标题, side]`  |
@@ -193,6 +199,9 @@ guji -v                  # 显示版本
 | `page_number_base`       | 0               | 显示页码基数                       |
 | `skip_pages`             | None            | 跳过的文件名（不含扩展名）         |
 | `workers`                | 4               | 图片加载线程数                     |
+
+> 以上只是常用键；完整参数表（`left_page_margins`、`title_text`、字号/颜色/方向、
+> `page_number_end_page` 等）见 [print.md](functions/print.md)。
 
 详细的排序、双页左右标注和 YAML 示例见 [print.md](functions/print.md)。
 
@@ -358,4 +367,4 @@ main.py                 入口：注册 SIGINT，委托 cli_main()
           └─ print.py          图片生成 PDF
 ```
 
-更多参数细节请参阅 [cli/cli_args.py](cli_args.py) 源码。
+更多参数细节请参阅 [cli/cli_args.py](../cli/cli_args.py) 源码。

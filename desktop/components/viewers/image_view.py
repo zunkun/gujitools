@@ -19,6 +19,9 @@ from PySide6.QtCore import QPointF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QLabel
 
+from desktop.ui import theme as T
+
+# 框颜色：绿/蓝/琥珀对应左框/右框/合并框，与检测语义一致
 BOX_COLORS = [QColor("#21c178"), QColor("#3b82f6"), QColor("#f59e0b")]
 BOX_NAMES = ["左框", "右框", "合并框"]
 REFERENCE_COLOR = QColor("#f97316")
@@ -37,11 +40,17 @@ class ImageView(QLabel):
     boxes_edited = Signal(list)  # 移动/缩放/删除/新增后：全部框（图片像素坐标）
 
     def __init__(self, placeholder: str = "无预览", parent=None):
+        """初始化画布与框编辑状态；placeholder 为空图时的占位文案。"""
         super().__init__(parent)
         self.setAlignment(Qt.AlignCenter)
         self.setMinimumSize(320, 300)
         self.setText(placeholder)
-        self.setStyleSheet("background:#1f242b;color:#8b949e;border-radius:8px;")
+        # 浅色画布：古籍页面本身是白底，深色底会把页面衬得像悬浮贴片；
+        # 空状态也用同一底色，避免出现一大块"黑屏"观感
+        self.setStyleSheet(
+            f"background:{T.SURFACE_SOFT}; color:{T.INK_FAINT};"
+            f" border:1px solid {T.BORDER}; border-radius:{T.RADIUS_MD}px;"
+        )
         self._pixmap: QPixmap | None = None
         self._boxes: list[list[int]] = []  # [(x1,y1,x2,y2)] 图片像素坐标
         self._reference_boxes: list = []  # 参考框（最终裁剪大框），虚线显示
@@ -65,18 +74,27 @@ class ImageView(QLabel):
 
     @property
     def has_image(self) -> bool:
+        """当前是否已装入图片。"""
         return self._pixmap is not None
 
     # ------------------------------------------------------------------ API
     def set_boxes_editable(self, editable: bool) -> None:
+        """开关框编辑；开启时接受点击焦点以响应键盘删除。"""
         self._boxes_editable = editable
         self.setFocusPolicy(Qt.ClickFocus if editable else Qt.NoFocus)
 
     def set_reference_boxes(self, boxes: list) -> None:
+        """设置参考框（橙色虚线，不参与编辑）并重绘。"""
         self._reference_boxes = [list(box) for box in (boxes or [])]
         self._rerender()
 
     def set_image(self, image, boxes=None, image_size: QSize | None = None) -> None:
+        """
+        装入图片并重置编辑状态。
+
+        image 为 QImage；image_size 非空时作为框坐标的坐标系基准（大图可能被
+        降采样显示，坐标必须按原始尺寸算）。
+        """
         self._image_size = image_size or image.size()
         self._boxes = [list(box) for box in (boxes or [])]
         self._pixmap = QPixmap.fromImage(image)
@@ -87,6 +105,10 @@ class ImageView(QLabel):
         self._rerender()
 
     def set_boxes(self, boxes: list, image_size: QSize) -> None:
+        """仅更新切割框与图片原始尺寸并重绘（不换图）。
+
+        boxes 为图片像素坐标；image_size 为坐标映射基准，与显示缩放无关。
+        """
         self._boxes = [list(box) for box in boxes]
         self._image_size = image_size
         self._selected = None
@@ -94,6 +116,7 @@ class ImageView(QLabel):
         self._rerender()
 
     def clear_image(self, text: str = "无预览") -> None:
+        """清空图片与全部框（含参考框），显示占位文案。"""
         self._pixmap = None
         self._boxes = []
         self._reference_boxes = []

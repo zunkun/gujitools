@@ -40,6 +40,11 @@ class RembgFunction(FunctionBase):
     """
 
     def __init__(self, command_args):
+        """初始化并推导去底色输出目录。
+
+        先调用基类解析输入/输出路径，再经 _calc_outpath 计算 self.outpath
+        （规则见 _calc_outpath：未指定 --output 时与输入并列，否则按用户输出解析）。
+        """
         super().__init__(command_args)
         self._calc_outpath()
 
@@ -151,4 +156,5 @@ class RembgFunction(FunctionBase):
             }
 
     def execute(self):
+        """执行整图去底色：直接复用基类的并发图片处理引擎。"""
         return super().execute()

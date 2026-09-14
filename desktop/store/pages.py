@@ -3,31 +3,29 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
-from ..utils.files import IMAGE_SUFFIXES, natural_key
+from desktop.utils.files import IMAGE_SUFFIXES, natural_key
+from desktop.store.json_io import read_json, write_json
 
 
 class PageManifestMixin:
     """pages.json 的读写与按阶段输出目录重建。"""
 
     def pages_path(self, task_id: str) -> Path:
+        """当前任务的页面清单文件：任务目录下的 pages.json。"""
         return self.task_dir(task_id) / "pages.json"
 
     def load_pages(self, task_id: str) -> list[dict]:
-        path = self.pages_path(task_id)
-        if not path.exists():
-            return []
-        try:
-            return json.loads(path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            return []
+        """读取页面清单；文件缺失或格式异常时返回空列表。"""
+        data = read_json(self.pages_path(task_id), [])
+        return data if isinstance(data, list) else []
 
     def save_pages(self, task_id: str, pages: list[dict]) -> None:
-        self.pages_path(task_id).write_text(
-            json.dumps(pages, ensure_ascii=False, indent=1), encoding="utf-8"
-        )
+        """写回页面清单；任务目录已删除时跳过（不重建目录）。"""
+        if not self.task_dir(task_id).exists():
+            return
+        write_json(self.pages_path(task_id), pages)
 
     def refresh_pages_from_dir(self, task_id: str, directory: Path) -> list[dict]:
         """用某阶段输出目录重建页面清单（大任务当前的页集合）。"""
@@ -47,28 +45,27 @@ class PageManifestMixin:
     # （1=普通框+border 裁剪，2=对称画布）；None 表示整页透传。
 
     def print_pages_path(self, task_id: str) -> Path:
+        """待打印列表文件：任务目录下的 print.json。"""
         return self.task_dir(task_id) / "print.json"
 
     def load_print_doc(self, task_id: str) -> dict | None:
-        path = self.print_pages_path(task_id)
-        if not path.exists():
-            return None
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            return None
+        """读取 print.json 全文（含 area/border/pages）；缺失或非字典时返回 None。"""
+        data = read_json(self.print_pages_path(task_id), None)
         return data if isinstance(data, dict) and "pages" in data else None
 
     def save_print_doc(self, task_id: str, doc: dict) -> None:
-        self.print_pages_path(task_id).write_text(
-            json.dumps(doc, ensure_ascii=False, indent=1), encoding="utf-8"
-        )
+        """写回 print.json；任务目录已被删除时静默跳过（不重建目录）。"""
+        if not self.task_dir(task_id).exists():
+            return
+        write_json(self.print_pages_path(task_id), doc)
 
     def load_print_pages(self, task_id: str) -> list[dict]:
+        """只取 print.json 的 pages 列表；无文档时返回空列表。"""
         doc = self.load_print_doc(task_id)
         return doc.get("pages", []) if doc else []
 
     def save_print_pages(self, task_id: str, entries: list[dict]) -> None:
+        """只替换 print.json 的 pages 字段，保留 area/border 等其它配置。"""
         doc = self.load_print_doc(task_id) or {"area": 1, "border": None, "pages": []}
         doc["pages"] = entries
         self.save_print_doc(task_id, doc)

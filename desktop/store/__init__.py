@@ -5,7 +5,7 @@
 runs.json（阶段运行状态）、boxes.json（检测框）、sizes.json（页面尺寸）。
 """
 
-from .store import TaskStore
-from .tasks import STAGES, STAGE_LABELS
+from desktop.store.store import TaskStore
+from desktop.store.tasks import STAGES, STAGE_LABELS, STAGE_SHORT
 
-__all__ = ["TaskStore", "STAGES", "STAGE_LABELS"]
+__all__ = ["TaskStore", "STAGES", "STAGE_LABELS", "STAGE_SHORT"]

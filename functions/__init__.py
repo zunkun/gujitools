@@ -19,14 +19,14 @@ File: functions/__init__.py
 
 from cli.command_args import CommandArgs
 
-# 命令名 → (相对模块路径, 类名) 映射
+# 命令名 → (模块路径, 类名) 映射
 _COMMAND_MAP = {
-    "extract": (".extract", "ExtractFunction"),
-    "crop": (".crop", "CropFunction"),
-    "rembg": (".rembg", "RembgFunction"),
-    "cropremove": (".crop_remove", "CropRemoveFunction"),
-    "print": (".print", "PrintFunction"),
-    "init": (".init", "InitFunction"),
+    "extract": ("functions.extract", "ExtractFunction"),
+    "crop": ("functions.crop", "CropFunction"),
+    "rembg": ("functions.rembg", "RembgFunction"),
+    "cropremove": ("functions.crop_remove", "CropRemoveFunction"),
+    "print": ("functions.print", "PrintFunction"),
+    "init": ("functions.init", "InitFunction"),
 }
 
 
@@ -47,8 +47,8 @@ def get_function(command: str, command_args: CommandArgs):
         return None
     import importlib
 
-    rel_module, class_name = entry
-    mod = importlib.import_module(rel_module, __name__)
+    module_path, class_name = entry
+    mod = importlib.import_module(module_path)
     cls = getattr(mod, class_name)
     return cls(command_args)
 
@@ -56,7 +56,7 @@ def get_function(command: str, command_args: CommandArgs):
 # 延迟加载 base.FunctionBase（外部需要继承时才导入）
 def __getattr__(name):
     if name == "FunctionBase":
-        from .base import FunctionBase
+        from functions.base import FunctionBase
 
         return FunctionBase
     raise AttributeError(f"module 'functions' has no attribute {name!r}")

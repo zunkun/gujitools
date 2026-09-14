@@ -17,6 +17,11 @@ class CropFunction(TextRegionProcessor):
     """裁剪功能：输出原始彩色像素。"""
 
     def __init__(self, *args, output_suffix: str = ".png", **kwargs):
+        """初始化裁剪功能并覆盖输出后缀与输出目录。
+
+        output_suffix 为全局输出文件后缀（默认 ".png"，自动转小写）。构造时
+        重新计算 self.outpath（覆盖基类/父类的计算），确保裁剪结果按配置后缀保存。
+        """
         super().__init__(*args, **kwargs)
         # 全局输出后缀，统一小写
         self.output_suffix = output_suffix.lower()

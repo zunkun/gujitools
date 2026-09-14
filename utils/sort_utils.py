@@ -1,5 +1,4 @@
 """
-File: utils/sort_utils.py
 自然排序工具：支持封面/菜单优先与数字感知排序。
 
 用于文件列表排序，使 "page2, page10" 按数值 2 < 10 排序而非字典序 "10" < "2"。
@@ -44,12 +43,21 @@ def natural_sort_key(filename: str) -> tuple:
 
 
 def pdf_custom_sort_key(file_path: str) -> tuple:
-    """
-    专用于古籍PDF排序：
-    1. cover* 优先
-    2. menu 次之
-    3. 数字-l/r/纯数字按页面和侧边排序（r 在 l 前，纯数字最后）
-    6. 其余按文件名
+    """生成 PDF 页面排序键（古籍双页扫描件的阅读顺序）。
+
+    分级规则，逐级比较：
+
+    1. ``cover*`` 优先，编号小的在前；
+    2. ``menu`` 次之；
+    3. 形如 ``<页号>`` / ``<页号>-l`` / ``<页号>-r``（``_`` 亦可）的图片：
+       先按页号数值，再按侧边 ``r → l → 无后缀``——双页扫描件右侧页先读；
+    4. 其余文件按文件名排在最后。
+
+    参数:
+        file_path: 文件路径或文件名，内部只取 basename。
+
+    返回:
+        ``(优先级, 页号, 侧边)`` 或 ``(999, 0, 文件名)`` 元组。
     """
     filename = os.path.basename(file_path)
     name = os.path.splitext(filename)[0]

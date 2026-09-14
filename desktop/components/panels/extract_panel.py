@@ -6,10 +6,16 @@ from __future__ import annotations
 from PySide6.QtWidgets import QFormLayout
 from qfluentwidgets import ComboBox, LineEdit, SpinBox
 
-from .base import StagePanel
+from desktop.components.panels.base import StagePanel
 
 
 class ExtractPanel(StagePanel):
+    """提取图片阶段面板：设置缩放、格式与页码范围。
+
+    extract 阶段把源 PDF 每页渲染为图片；参数经 get_args 收集后由 runner
+    写入子进程配置，input/output 由系统接管。
+    """
+
     stage = "extract"
     title = "提取图片 (extract)"
     description = "将源 PDF 每页渲染为图片。左侧可切换「PDF 预览 / 提取结果」两个标签页。"
@@ -26,6 +32,10 @@ class ExtractPanel(StagePanel):
         self._add_row(form, "页码范围 pages", self.pages_edit)
 
     def get_args(self) -> dict:
+        """收集提取参数：zoom/ext/pages（不含 input/output）。
+
+        pages 留空表示全部页；非法页码由 runner 在取参时以 ValueError 拦截。
+        """
         args = {"zoom": self.zoom.value(), "ext": self.ext.currentText()}
         if self.pages_edit.text().strip():
             args["pages"] = self.pages_edit.text().strip()

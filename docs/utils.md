@@ -1,17 +1,52 @@
 # 工具模块说明 (`utils/`)
 
-`utils/` 包含通用工具函数，按职责拆分为 6 个模块。所有公共函数通过 `utils/__init__.py` 统一导出，功能模块通过 `import utils` 后直接调用。
+`utils/` 包含通用工具函数，按职责拆分为 10 个模块。所有公共函数通过
+`utils/__init__.py` 统一导出，功能模块通过 `import utils` 后直接调用。
+
+> 本文件讲**算法与设计**；逐个函数的签名、参数与 docstring 见自动生成的
+> [API 参考 · utils](api/utils.md)（由 `tools/gen_api_docs.py` 从源码提取）。
 
 ## 模块总览
 
-| 模块             | 职责                | 主要函数                                                                                                                        |
-| ---------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `image_utils.py` | 图像处理核心算法    | `calculate_auto_threshold`, `extract_red_seal`, `apply_otsu_to_region`, `apply_otsu_whole`, `parse_border`, `parse_border_mm`   |
-| `file_utils.py`  | 文件收集与校验      | `collect_image_files`, `is_valid_image_size`, `IMAGE_EXTS`                                                                      |
-| `yolo_utils.py`  | YOLO 模型加载与检测 | `load_yolo_model`, `detect_left_right_boxes`                                                                                    |
-| `pdf_utils.py`   | PDF 渲染与提取      | `parse_pages`, `validate_page_range`, `calculate_zoom`, `process_page_batch`, `extract_pdf_optimized`, `run_on_input_directory` |
-| `sort_utils.py`  | 自然排序            | `natural_sort_key`                                                                                                              |
-| `help.py`        | 帮助文本与分页显示  | `process_help_command`                                                                                                          |
+| 模块             | 职责                            | 主要函数 / 常量                                                                                                                |
+| ---------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `box_geometry.py`| 文本框几何规则（GUI/CLI 共用）  | `parse_border_mm`, `compute_final_boxes`                                                                                       |
+| `image_utils.py` | 图像处理核心算法                | `calculate_auto_threshold`, `extract_red_seal`, `apply_otsu_to_region`, `apply_otsu_whole`, `parse_border`, `parse_border_mm`   |
+| `image_io.py`    | OpenCV 读写（中文路径安全）     | `imread`, `imwrite`                                                                                                            |
+| `file_utils.py`  | 文件收集与校验                  | `collect_image_files`, `is_valid_image_size`, `IMAGE_EXTS`                                                                      |
+| `yolo_utils.py`  | YOLO 模型加载与检测             | `load_yolo_model`, `detect_left_right_boxes`                                                                                    |
+| `pdf_utils.py`   | PDF 渲染与提取                  | `parse_pages`, `validate_page_range`, `calculate_zoom`, `process_page_batch`, `extract_pdf_optimized`, `run_on_input_directory` |
+| `path_utils.py`  | 输出目录解析                    | `resolve_final_output_dir`, `get_extract_output_root`                                                                          |
+| `sort_utils.py`  | 自然排序                        | `natural_sort_key`, `pdf_custom_sort_key`                                                                                       |
+| `string_utils.py`| 字符串辅助                      | `num_to_chinese`                                                                                                               |
+| `help.py`        | 帮助文本与分页显示              | `process_help_command`                                                                                                         |
+
+---
+
+## box_geometry.py — 文本框几何规则（GUI/CLI 共用）
+
+本模块**不导入 cv2/numpy**，因此可以被 GUI 主进程、desktop worker 与 CLI
+`functions/` 同时复用——这保证了 detect 阶段预览里画出的"最终大框"与 `crop`
+实际切割的区域完全一致（单一实现，不各写一份）。
+
+坐标系一律是原始图片像素 `[x1, y1, x2, y2]`。
+
+### `parse_border_mm(border_value, dpi=300) -> [top, right, bottom, left] | None`
+
+border 参数的**唯一权威实现**：CSS 风格 1~4 值写法，按 DPI 换算为像素
+（`px = mm × dpi / 25.4`，默认 300dpi）。
+
+`utils.image_utils.parse_border_mm` 是本函数的向后兼容转发入口，实现已迁移到这里。
+
+### `compute_final_boxes(boxes, area, border_mm) -> list`
+
+由检测框 + `area` + `border` 推导最终裁剪框：
+
+- `area=1`：逐框各出一个框（框本身 + border）；
+- `area=2`：左右框的**并集**画布 + border（框间内容丢弃）；
+- `area=3`：并集区域**整块**作为 ROI（框间内容保留）+ border。
+
+返回值供 GUI 画参考轮廓、供 `crop`/`cropremove` 实际裁剪，两边共用同一份几何。
 
 ---
 
@@ -90,6 +125,24 @@
 与 `parse_border` 写法规则相同，但最终值按 DPI 转换为像素：`px = mm × dpi / 25.4`。
 
 默认 dpi=300（古籍扫描常用值）。`cropremove --border` 使用此函数。
+
+> 实现已迁移到 `utils.box_geometry.parse_border_mm`（无重依赖，GUI 共用），
+> 本模块的同名函数只是转发，保留是为了不破坏既有调用点。
+
+---
+
+## image_io.py — OpenCV 读写（中文路径安全）
+
+### `imread(path, flags=cv2.IMREAD_COLOR) -> np.ndarray | None`
+
+### `imwrite(path, image) -> bool`
+
+`cv2.imread` / `cv2.imwrite` 在 Windows 上遇到**中文路径会静默失败**（返回
+`None` / 不写文件，且不抛异常），而古籍文件名几乎必然含中文。这两个封装改用
+`np.fromfile` + `cv2.imdecode` 读、`cv2.imencode` + `tofile` 写，行为与原生
+一致但支持任意路径。
+
+**约定：项目内不要再直接调用 `cv2.imread` / `cv2.imwrite`。**
 
 ---
 
@@ -172,6 +225,25 @@
 
 处理输入路径（文件或目录），对每个 PDF 调用 `extract_pdf_optimized`。目录输入时按 PDF 文件名创建子目录。
 
+缺失路径或空目录会抛 `ValueError`；单页失败会汇总为 `RuntimeError`，不再静默返回成功。
+
+---
+
+## path_utils.py — 输出目录解析
+
+### `resolve_final_output_dir(input_path, raw_out, is_file, temp_name) -> Path`
+
+解析 `--output` 的最终落点，是各功能模块共用的输出目录规则：
+
+- 未指定 `--output`：文件输入用父目录下的 `temp_name`，目录输入用输入目录下的
+  `temp_name`；
+- 只给一个名称（不含路径分隔符）：相对输入目录创建；
+- 含路径分隔符：按绝对/相对路径解析。
+
+### `get_extract_output_root(input_path, raw_out, is_file) -> Path`
+
+`extract` 专用的输出根目录：多 PDF 时按文件名分子目录，单文件直接落一层。
+
 ---
 
 ## sort_utils.py — 自然排序
@@ -186,6 +258,27 @@
 2. 数字感知：将文件名拆分为 [文字, 数字, 文字, ...] 序列，数字部分按整数值比较。
 
 **示例**：`["page10.png", "page2.png", "cover.png"]` → `["cover.png", "page2.png", "page10.png"]`
+
+### `pdf_custom_sort_key(file_path) -> tuple`
+
+**PDF 页面专用排序键**（`natural_sort_key` 不区分左右页，不足以表达双页扫描件的
+阅读顺序）。逐级比较：
+
+1. `cover*` 优先，编号小的在前；
+2. `menu` 次之；
+3. `<页号>` / `<页号>-l` / `<页号>-r`：先按页号数值，再按侧边 **r → l → 无后缀**；
+4. 其余按文件名排在最后。
+
+GUI 的待打印列表与 CLI `print` 都使用它，保证页序一致。
+
+---
+
+## string_utils.py — 字符串辅助
+
+### `num_to_chinese(num) -> str`
+
+整数 → 中文数字（支持到万以内）。用于 PDF 页码的「第X頁」标注，例如
+`2` → `二`、`12` → `十二`。负数会加「負」前缀。
 
 ---
 

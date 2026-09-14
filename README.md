@@ -1,8 +1,17 @@
 # gujitools
 
-古籍处理命令行工具——从 PDF 提取图片、检测裁剪文本区域、去底色二值化、印章保留并生成 PDF。
+古籍处理工具——从 PDF 提取图片、检测裁剪文本区域、去底色二值化、印章保留并生成 PDF。
 
-## 功能一览
+提供**桌面端 GUI**与**命令行 CLI**两套入口，共用同一套图像处理算法：
+
+| 入口 | 启动 | 适合 |
+| --- | --- | --- |
+| 桌面端（推荐） | `python desktop.py` | 图形化分步处理：导入 PDF → 提取 → 检测 → 去底色 → 生成 PDF，带预览与执行记录 |
+| 命令行 | `python main.py <命令>` / `guji <命令>` | 批处理、脚本集成、无界面环境 |
+
+桌面端文档见 [`docs/gui/`](docs/gui/readme.md)；命令行文档见本文与 [`docs/cli.md`](docs/cli.md)。
+
+## 命令行功能一览
 
 | 命令         | 别名  | 功能                                    |
 | ------------ | ----- | --------------------------------------- |
@@ -125,9 +134,10 @@ PyTorch，PyInstaller 仍会把 CUDA 运行库收集进包中。
 
 ## 快速开始
 
-### GUI 管理平台
+### 桌面端（GUI）
 
-GUI 与 CLI 使用独立入口和独立打包配置。GUI 的任务数据库、阶段日志、预览和临时文件统一保存到 `~/Documents/guji`。
+GUI 与 CLI 使用独立入口和独立打包配置。GUI 的任务数据、阶段日志、预览和临时文件
+统一保存到 `~/Documents/guji`（纯 JSON 文件，无数据库）。
 
 ```bash
 # 安装 GUI 依赖
@@ -143,7 +153,33 @@ hupper -m desktop
 python build_gui.py
 ```
 
-GUI 支持 PDF 缩略图预览、extract/crop/rembg/cropremove/print 阶段管理，以及单图预览任务。重处理在独立 Worker 中运行，主界面不直接执行批量 PDF 或图片处理。
+**使用流程**：任务列表页「导入 PDF」→ 进入任务详情页，按顶部步骤条依次执行四个
+子任务：
+
+1. **提取图片（extract）**——PDF 逐页转为图片；
+2. **检测文本框（detect）**——YOLO 标注左右文本框坐标，预览可拖拽/缩放/手绘修正；
+3. **图片去底色（rembg）**——整页去底色/二值化，支持保留印章；
+4. **生成 PDF（print）**——设置纸张、边距、标题、页码后合成 PDF。
+
+每个阶段都有预览、参数表单、历史执行记录回填，以及实时执行日志。重处理在独立
+Worker 子进程运行，主界面不直接执行批量 PDF 或图片处理，因此界面始终可响应。
+
+回归自测与界面截图：
+
+```bash
+# 功能自测（102 项断言）
+QT_QPA_PLATFORM=offscreen python tests/gui_selftest.py
+
+# 离屏渲染界面截图（视觉自查）
+QT_QPA_PLATFORM=offscreen python tests/gui_shot.py D:/tmp/shots
+```
+
+改动源码后同步 API 参考（`docs/api/` 为自动生成，不要手工编辑）：
+
+```bash
+python tools/gen_api_docs.py          # 重新生成
+python tools/gen_api_docs.py --check  # 校验是否与源码一致（退出码非 0 表示过期）
+```
 
 ### 推荐工作流：先初始化配置
 
@@ -354,7 +390,18 @@ python main.py run print --config ./book.yaml
 
 ## 文档
 
-详细文档位于 [`docs/`](docs/)：
+详细文档位于 [`docs/`](docs/)。
+
+桌面端（GUI）：
+
+- [桌面端文档索引](docs/gui/readme.md) — 术语、速览、快速开始
+- [界面系统](docs/gui/gui-ui-system.md) — 设计令牌、基础控件、自绘约束
+- [架构](docs/gui/gui-architecture.md) — 模块结构、进程模型、文件存储与任务目录布局
+- [技术规范](docs/gui/gui-technical-spec.md) — Worker 消息协议、JSON 格式、area/border 几何
+- [交互设计](docs/gui/gui-design.md) — 导入流程、步骤条、历史配置、检测框编辑
+- [布局](docs/gui/gui-layout.md) — 窗口布局与组件尺寸约定
+
+命令行（CLI）：
 
 - [CLI 使用说明](docs/cli.md) — 命令、参数、示例、退出码、架构
 - [功能模块概览](docs/functions/overview.md) — 模块清单与命令关系
@@ -364,3 +411,10 @@ python main.py run print --config ./book.yaml
 - [cropremove 手册](docs/functions/cropremove.md) — area 区域模式、border 边框控制
 - [print 手册](docs/functions/print.md) — 纸张、排序、标题和页码
 - [工具函数 API](docs/utils.md) — Otsu、印章、border 解析、YOLO、PDF 渲染
+
+API 参考（由 `tools/gen_api_docs.py` 从源码自动生成，随代码同步）：
+
+- [API 参考索引](docs/api/README.md) — 收录范围与同步方式
+- [desktop API](docs/api/desktop.md) — 桌面端全部公开类与函数
+- [cli API](docs/api/cli.md) / [functions API](docs/api/functions.md) / [utils API](docs/api/utils.md)
+- [入口脚本 API](docs/api/entrypoints.md) — main.py / desktop.py / config.py

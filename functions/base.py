@@ -21,7 +21,7 @@ from cli.command_args import CommandArgs
 # 图片处理默认路径 Map
 DEFAULT_TEMP_NAME_MAP = {
     "extract": "images",
-    "crop": "detect",
+    "crop": "crop",
     "rembg": "rembg",
     "cropremove": "rembg",
     "print": "pdf",
@@ -38,6 +38,11 @@ class FunctionBase:
     """
 
     def __init__(self, command_args: CommandArgs):
+        """
+        解析输入路径与输出占位，输入不存在时直接抛 FileNotFoundError。
+
+        is_file 以「是文件或带扩展名」判断；outpath 留待子类在自身初始化里算。
+        """
         self.command_args = command_args
         self.cmd = command_args.get("command")
         self.default_temp_name = DEFAULT_TEMP_NAME_MAP.get(self.cmd, "temp")
@@ -87,6 +92,15 @@ class FunctionBase:
         return self._parse_path(out_str)
 
     def make_out_dir(self):
+        """创建最终输出目录 self.outpath。
+
+        必须在 self.outpath 已由子类初始化阶段计算完成后调用，否则抛出
+        RuntimeError。目录以 parents=True, exist_ok=True 创建，已存在时不会报错。
+
+        注意：--clean 的清空逻辑在 execute() 中（先 rmtree 再 mkdir），本方法
+        不处理 clean，仅确保目录存在。输出目录的推导规则由子类 __init__ 中的
+        _calc_outpath / parse_user_output 负责，不在本方法内。
+        """
         if self.outpath is None:
             raise RuntimeError("未计算最终输出路径 self.outpath")
         self.outpath.mkdir(parents=True, exist_ok=True)

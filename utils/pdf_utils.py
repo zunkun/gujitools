@@ -1,5 +1,4 @@
 """
-File: utils/pdf_utils.py
 PDF 页面提取工具：将 PDF 每页渲染为图片并保存。
 
 此模块是 `extract` 功能的核心实现层，负责：
@@ -312,10 +311,12 @@ def extract_pdf_optimized(
         else:
             page_indices = list(range(total_pages))
 
-        # 用首页宽度计算实际缩放因子
-        first_page = doc.load_page(0)
-        page_width = first_page.rect.width
-        doc.close()
+        # 用首页宽度计算实际缩放因子（异常时也要关闭文档，避免句柄泄漏）
+        try:
+            first_page = doc.load_page(0)
+            page_width = first_page.rect.width
+        finally:
+            doc.close()
         actual_zoom = calculate_zoom(page_width, zoom)
 
         total_selected = len(page_indices)
@@ -392,8 +393,7 @@ def run_on_input_directory(
         f"[debug] run_on_input_directory called with: {input_path}, out_root={out_root}, subdir_name={subdir_name}"
     )
     if not os.path.exists(input_path):
-        print(f"❌ 错误: 路径不存在: {input_path}")
-        return
+        raise ValueError(f"路径不存在: {input_path}")
 
     if os.path.isfile(input_path):
         pdfs = [input_path]
@@ -406,12 +406,14 @@ def run_on_input_directory(
 
     print(f"[debug] Found {len(pdfs)} pdf(s) to process")
     if not pdfs:
-        print("❌ 未找到 PDF")
-        return
+        raise ValueError(f"目录中没有 PDF 文件: {input_path}")
 
     # 确保输出根目录存在
     os.makedirs(out_root, exist_ok=True)
 
+    # 单个 PDF 失败不打断批量处理，但必须让调用方最终知道"有失败"，
+    # 否则脚本/子进程会把失败当成功（退出码 0）
+    failures: list[str] = []
     for pdf in sorted(pdfs):
         try:
             fname = os.path.basename(pdf)
@@ -419,7 +421,7 @@ def run_on_input_directory(
             # 使用 subdir_name 拼接最终输出目录
             out_dir = os.path.join(out_root, folder_name, subdir_name)
             print(f"[debug] processing {pdf} -> {out_dir}")
-            extract_pdf_optimized(
+            ok = extract_pdf_optimized(
                 pdf,
                 out_dir,
                 zoom,
@@ -432,11 +434,17 @@ def run_on_input_directory(
                 batch_size,
                 clean=clean,
             )
+            if ok is False:
+                failures.append(fname)
         except KeyboardInterrupt:
             print("\n⚠️  用户中断")
             raise
         except Exception as e:
             print(f"❌ 处理失败: {e}")
+            failures.append(os.path.basename(pdf))
+
+    if failures:
+        raise RuntimeError("以下 PDF 提取失败：" + "、".join(failures))
 
 
 def parse_margins(val) -> Optional[List[float]]:

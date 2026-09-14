@@ -8,24 +8,34 @@ import sys
 from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget
 from qfluentwidgets import setTheme, Theme
 
-from .pages.task_detail_page import TaskDetailPage
-from .pages.task_list_page import TaskListPage
-from .store import TaskStore
+from desktop.pages import TaskDetailPage, TaskListPage
+from desktop.store import TaskStore
+from desktop.ui import theme as T
+from desktop.ui.style import apply_app_style
 
 
 class MainWindow(QMainWindow):
+    """主窗口：在任务列表页与任务详情页之间切换。
+
+    创建时设定窗口最小尺寸并套用全局底色；通过 QStackedWidget 持有两页，
+    并连接列表页「打开详情」与详情页「返回」信号完成页面跳转。
+    """
+
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("guji 古籍处理平台")
-        self.resize(1400, 900)
+        self.resize(1440, 920)
+        self.setMinimumSize(1080, 720)
         self.store = TaskStore()
 
         self.pages = QStackedWidget()
+        self.pages.setObjectName("pageRoot")
         self.list_page = TaskListPage(self.store)
         self.detail_page = TaskDetailPage(self.store)
         self.pages.addWidget(self.list_page)
         self.pages.addWidget(self.detail_page)
         self.setCentralWidget(self.pages)
+        self.setStyleSheet(f"QMainWindow {{ background: {T.CANVAS}; }}")
 
         self.list_page.open_detail.connect(self._open_detail)
         self.detail_page.back_requested.connect(self._back_to_list)
@@ -39,6 +49,11 @@ class MainWindow(QMainWindow):
         self.pages.setCurrentWidget(self.list_page)
 
     def closeEvent(self, event) -> None:
+        """关闭窗口时先让详情页收尾 worker 子进程。
+
+        详情页持有 worker 子进程与后台线程的引用，直接退出会让进程被强杀；
+        这里把事件转交给详情页的 closeEvent 完成 kill/等待/清理后再接受关闭。
+        """
         self.detail_page.closeEvent(event)
         event.accept()  # 文件存储无需关闭
 
@@ -67,8 +82,10 @@ def _install_sigint_handler(app: QApplication) -> None:
 
 
 def main() -> int:
+    """创建 QApplication、套用样式并显示主窗口，返回退出码。"""
     app = QApplication(sys.argv)
     setTheme(Theme.LIGHT)
+    apply_app_style(app)  # 统一字体、主题色、底色与滚动条
     window = MainWindow()
     window.show()
     _install_sigint_handler(app)

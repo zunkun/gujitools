@@ -10,10 +10,10 @@ from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 from qfluentwidgets import CaptionLabel, ToolButton
 from qfluentwidgets import FluentIcon as FIF
 
-from ...workers import ImageListWorker, PreviewWorker
-from .image_view import ImageView
-from .thumb_strip import ThumbStrip
-from .thumbs_loader import ThumbsMixin
+from desktop.workers import ImageListWorker, PreviewWorker
+from desktop.components.viewers.image_view import ImageView
+from desktop.components.viewers.thumb_strip import ThumbStrip
+from desktop.components.viewers.thumbs_loader import ThumbsMixin
 
 
 class ImageViewerWidget(QWidget, ThumbsMixin):
@@ -33,6 +33,12 @@ class ImageViewerWidget(QWidget, ThumbsMixin):
         thumb_provider=None,
         parent=None,
     ):
+        """
+        构建左侧缩略图条与右侧大图；editable 时追加删除/插入按钮。
+
+        image_size_provider 供大图降采样时还原原始像素尺寸；thumb_provider
+        让缩略图条改用预生成小图，避免反复解码原图。
+        """
         super().__init__(parent)
         self._init_thumbs()
         self._paths: list[Path] = []
@@ -76,15 +82,22 @@ class ImageViewerWidget(QWidget, ThumbsMixin):
 
     @property
     def paths(self) -> list[Path]:
+        """当前页面清单（按显示顺序）。"""
         return self._paths
 
     def current_path(self) -> Path | None:
+        """当前选中的页面路径；无选中或无清单时为 None。"""
         row = max(self.strip.currentRow(), 0)
         if row < len(self._paths):
             return self._paths[row]
         return None
 
     def set_images(self, paths: list[Path], boxes_map: dict | None = None) -> None:
+        """设置页面清单并重建缩略图条；清单未变则仅通知宿主重读。
+
+        paths 为 Path 列表；boxes_map 预留（当前未用）。清单不变时跳过
+        重建，但仍 emit current_changed 让宿主重新读取该页检测框/参数。
+        """
         if (
             paths == self._paths
             and self.strip.count() == len(paths)

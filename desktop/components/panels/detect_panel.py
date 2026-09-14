@@ -7,10 +7,16 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QFormLayout
 from qfluentwidgets import BodyLabel, PrimaryPushButton
 
-from .base import StagePanel
+from desktop.components.panels.base import StagePanel
 
 
 class DetectPanel(StagePanel):
+    """检测文本框阶段面板：仅识别坐标，不生成文件。
+
+    YOLO 检测每张图的左右文本框坐标，供预览标注与去底色/裁剪使用；
+    本阶段无表单参数，get_args 返回空字典，手动检测经信号触发。
+    """
+
     stage = "detect"
     title = "检测文本框 (detect)"
     description = (
@@ -28,6 +34,7 @@ class DetectPanel(StagePanel):
         form.addRow(button)
 
     def get_args(self) -> dict:
+        """返回空参数字典（detect 阶段无表单参数）。"""
         return {}
 
     def _apply_args(self, parameters: dict) -> None:
