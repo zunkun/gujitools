@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 52 个模块、50 个公开类、233 个公开函数/方法（生成于 2026-09-15）。
+覆盖 51 个模块、50 个公开类、233 个公开函数/方法（生成于 2026-09-15）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -49,7 +49,6 @@
 | [`desktop.stages.rembg_stage`](#desktopstagesrembg_stage) | 0 | 1 |
 | [`desktop.store.annotations`](#desktopstoreannotations) | 1 | 6 |
 | [`desktop.store.json_io`](#desktopstorejson_io) | 0 | 2 |
-| [`desktop.store.migrate`](#desktopstoremigrate) | 0 | 1 |
 | [`desktop.store.pages`](#desktopstorepages) | 1 | 9 |
 | [`desktop.store.runs`](#desktopstoreruns) | 1 | 6 |
 | [`desktop.store.store`](#desktopstorestore) | 1 | 1 |
@@ -57,7 +56,7 @@
 | [`desktop.ui.style`](#desktopuistyle) | 0 | 3 |
 | [`desktop.ui.theme`](#desktopuitheme) | 0 | 2 |
 | [`desktop.ui.widgets`](#desktopuiwidgets) | 9 | 45 |
-| [`desktop.utils.files`](#desktoputilsfiles) | 0 | 5 |
+| [`desktop.utils.files`](#desktoputilsfiles) | 0 | 6 |
 | [`desktop.worker`](#desktopworker) | 0 | 1 |
 | [`desktop.workers.hash_worker`](#desktopworkershash_worker) | 1 | 2 |
 | [`desktop.workers.image_list_worker`](#desktopworkersimage_list_worker) | 1 | 2 |
@@ -96,6 +95,15 @@ gujitools 桌面端主窗口：任务列表页 + 任务详情页切换。
 | 函数 | 说明 |
 | --- | --- |
 | `main() -> int` | 创建 QApplication、套用样式并显示主窗口，返回退出码。 |
+
+#### `main() -> int`
+
+创建 QApplication、套用样式并显示主窗口，返回退出码。
+
+设环境变量 ``GUJI_GUI_SELFTEST=1`` 时，主窗口构造并短暂跑过事件循环后
+自动退出（退出码 0）。仅供打包后冒烟使用——GUI 是 windowed 程序，没有
+控制台，导入期崩溃会弹错误框并一直挂住，靠"进程还活着"根本判断不了
+成败；有了这个开关就能用**退出码**判定。
 
 ---
 
@@ -1492,43 +1500,6 @@ JSON 持久化的原子读写工具。
 
 ---
 
-## `desktop.store.migrate`
-
-源码：[`desktop/store/migrate.py`](../../desktop/store/migrate.py)
-
-旧数据一次性迁移：SQLite（guji.db）与旧目录布局 → 纯文件 + 新目录布局。
-
-旧布局：
-- 数据根目录 guji.db（tasks / stage_runs / stage_settings / detect_boxes / image_meta 表）
-- 任务目录：stages/extract/<pdf名>/images、stages/detect（旧 crop 切图）、
-  previews/（PDF 预览缓存）、imported/（手动插入图片）、logs/、
-  根下散落的 run-*.json / detect-config.json
-
-迁移规则：
-- SQLite 各表 → tasks.json / runs.json / boxes.json / sizes.json，完成后
-  guji.db 改名为 guji.db.migrated 保留备份；
-- stages/extract/<pdf名>/images/* 上移到 stages/extract/；
-- stages/detect、previews、logs 删除（可重新生成或已无用）；
-- imported/* 的图片移到 stages/extract/，pages.json 中对应路径同步改写；
-- run-*.json / detect-config.json 移入 runs/ 子目录。
-
-### 模块函数
-
-| 函数 | 说明 |
-| --- | --- |
-| `migrate_legacy(root: Path) -> None` | 一次性迁移旧数据（SQLite + 旧目录布局）→ 纯文件新布局。 |
-
-#### `migrate_legacy(root: Path) -> None`
-
-一次性迁移旧数据（SQLite + 旧目录布局）→ 纯文件新布局。
-
-存在 guji.db 时导出 tasks/runs/boxes/sizes 的 JSON 并改名
-guji.db.migrated 备份；uuid 任务目录重编号为 0001… 顺序号；
-旧嵌套 extract、散落配置等按本模块规则归位。迁移失败（sqlite3.Error）
-不抛异常，旧库保留、启动不阻塞。
-
----
-
 ## `desktop.store.pages`
 
 源码：[`desktop/store/pages.py`](../../desktop/store/pages.py)
@@ -1634,7 +1605,8 @@ TaskStore：任务、阶段、页面标注的统一文件存储入口。
 初始化数据根。
 
 root 省略时默认用 guji_data_dir()（~/Documents/guji）；传入自定义
-root 主要用于测试隔离。构造时确保 tasks/ 存在并自动执行旧数据迁移。
+root 主要用于测试隔离。构造时只确保 tasks/ 存在——存储一直是纯
+JSON 文件，没有旧数据（SQLite）需要迁移。
 
 ---
 
@@ -2026,6 +1998,7 @@ qfluentwidgets 的 ``SegmentedWidget``——后者是给页面导航设计的
 | --- | --- |
 | `guji_data_dir() -> Path` | GUI 数据根目录：用户文档目录下的 guji。 |
 | `project_root() -> Path` | 项目根目录（`desktop` 包的上一级）。 |
+| `package_dir() -> Path` | `desktop` 包目录（源码与 PyInstaller 打包两种模式下都可用）。 |
 | `file_hash(path: Path, chunk_size: int=1024 * 1024) -> str` | 流式计算文件 SHA-256（分块读取，避免大 PDF 撑爆内存）。 |
 | `natural_key(name: str)` | 生成自然排序键：数字段按整数、其余转小写，使 2 排在 10 前。 |
 | `list_stage_images(directory: Path) -> list[Path]` | 某阶段输出目录中的图片（自然排序）。 |
@@ -2037,6 +2010,14 @@ qfluentwidgets 的 ``SegmentedWidget``——后者是给页面导航设计的
 源码模式下 worker 子进程用 `-m desktop.worker` 启动，工作目录必须是
 能解析出 `desktop` 包的那一级；用本函数取，避免依赖某个文件的层数
 （文件挪一层就会算错）。
+
+#### `package_dir() -> Path`
+
+`desktop` 包目录（源码与 PyInstaller 打包两种模式下都可用）。
+
+打包后 `desktop` 作为 PYZ 内的字节码存档存在，磁盘上没有真正的
+``desktop/static/icon.png``；数据文件由 spec 的 ``datas`` 额外落到
+``_internal/desktop/``，因此 frozen 下直接指向 ``sys._MEIPASS``。
 
 ---
 

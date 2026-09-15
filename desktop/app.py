@@ -2,6 +2,7 @@
 """gujitools 桌面端主窗口：任务列表页 + 任务详情页切换。"""
 
 from __future__ import annotations
+import os
 import sys
 from pathlib import Path
 from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget
@@ -11,6 +12,7 @@ from desktop.pages import TaskDetailPage, TaskListPage
 from desktop.store import TaskStore
 from desktop.ui import theme as T
 from desktop.ui.style import apply_app_style
+from desktop.utils.files import package_dir
 
 
 class MainWindow(QMainWindow):
@@ -21,13 +23,14 @@ class MainWindow(QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("古籍重製")
+        self.setWindowTitle("古籍重製助手")
         self.resize(1440, 920)
         self.setMinimumSize(1080, 720)
 
         # ========== 加载窗口图标 desktop/static/icon.png ==========
-        base_dir = Path(__file__).resolve().parent  # desktop文件夹
-        icon_path = base_dir / "static" / "icon.png"
+        # 打包后 desktop/ 是 PYZ 内字节码，磁盘上无此路径，改从
+        # _internal/desktop/static 取（spec datas 已收集）——用 package_dir()
+        icon_path = package_dir() / "static" / "icon.png"
         if icon_path.exists():
             self.setWindowIcon(QIcon(str(icon_path)))
         # ==========================================================
@@ -83,11 +86,22 @@ def _install_sigint_handler(app: QApplication) -> None:
 
 
 def main() -> int:
-    """创建 QApplication、套用样式并显示主窗口，返回退出码。"""
+    """创建 QApplication、套用样式并显示主窗口，返回退出码。
+
+    设环境变量 ``GUJI_GUI_SELFTEST=1`` 时，主窗口构造并短暂跑过事件循环后
+    自动退出（退出码 0）。仅供打包后冒烟使用——GUI 是 windowed 程序，没有
+    控制台，导入期崩溃会弹错误框并一直挂住，靠"进程还活着"根本判断不了
+    成败；有了这个开关就能用**退出码**判定。
+    """
     app = QApplication(sys.argv)
     setTheme(Theme.LIGHT)
     apply_app_style(app)  # 统一字体、主题色、底色与滚动条
     window = MainWindow()
     window.show()
     _install_sigint_handler(app)
+    if os.environ.get("GUJI_GUI_SELFTEST"):
+        from PySide6.QtCore import QTimer
+
+        # 延迟一拍再退出：让事件循环真正转起来，能抓到构造期之外的错误
+        QTimer.singleShot(500, app.quit)
     return app.exec()

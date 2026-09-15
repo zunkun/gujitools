@@ -51,7 +51,7 @@ print     ── 图片目录 → PDF（支持 A3/A4/A5/B5、标题和页码）
 - `crop` 与 `cropremove` 共享相同的 area/border 规则（继承 `TextRegionProcessor`），区别仅是 crop 不做 Otsu 去底色；
 - `rembg` 对整图去底，不依赖文本框检测；
 - `cropremove` 结合 crop 与 rembg，通过 `--area` 控制 Otsu 作用区域与输出方式，`--border` 控制裁剪与外扩边距。
-- `print` 从 YAML 配置读取参数，按图片文件名排序生成 PDF，并支持标题节点和页码左右交替标注。
+- `print` 从 YAML 配置读取参数生成 PDF，支持标题节点和页码左右交替标注；页序优先取 `files:` 清单（桌面端列表顺序），清单为空时才按文件名排序。
 
 ## FunctionBase 执行引擎
 

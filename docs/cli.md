@@ -189,21 +189,24 @@ guji -v                  # 显示版本
 
 | 参数                     | 默认值          | 说明                               |
 | ------------------------ | --------------- | ---------------------------------- |
+| `files`                  | None            | 显式页序清单（图片路径数组），非空时直接采用其顺序 |
 | `paper_size`             | A4              | A3、A4、A5 或 B5                   |
 | `orientation`            | landscape       | `portrait` 纵向或 `landscape` 横向 |
 | `page_margins`           | `[20,20,20,20]` | 上、右、下、左，单位 mm            |
 | `title_printing`         | False           | 是否打印标题                       |
-| `title_switch_nodes`     | None            | 章节节点 `[图片序号, 标题, side]`  |
+| `title_switch_nodes`     | None            | 章节节点 `[原始页码, 标题, side]`  |
 | `page_number_printing`   | False           | 是否打印页码                       |
 | `page_number_start_page` | 1               | 从排序后第几张图片开始标注         |
 | `page_number_base`       | 0               | 显示页码基数                       |
-| `skip_pages`             | None            | 跳过的文件名（不含扩展名）         |
+| `skip_pages`             | None            | 纯数字按清单序号（1 起），其余按文件名 |
 | `workers`                | 4               | 图片加载线程数                     |
 
 > 以上只是常用键；完整参数表（`left_page_margins`、`title_text`、字号/颜色/方向、
 > `page_number_end_page` 等）见 [print.md](functions/print.md)。
 
-详细的排序、双页左右标注和 YAML 示例见 [print.md](functions/print.md)。
+**页序**：`files` 非空时完全按清单顺序生成，不再解析文件名；为空时才按文件名排序。
+桌面端第四步的列表顺序就是通过 `files` 传给本命令的。详细的排序、双页左右标注和
+YAML 示例见 [print.md](functions/print.md)。
 
 ### cropremove — 裁剪 + 去底色
 

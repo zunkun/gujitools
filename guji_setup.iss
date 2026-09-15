@@ -6,17 +6,45 @@
 #endif
 
 [Setup]
-AppName=guji古籍工具
+AppName=古籍重製助手
 AppVersion={#VERSION}
+AppVerName=古籍重製助手 {#VERSION}
 DefaultDirName={localappdata}\Software\guji
+DefaultGroupName=古籍重製助手
 PrivilegesRequired=lowest
 OutputDir=dist
 OutputBaseFilename=guji_setup_{#VERSION}_{#BUILD_TIMESTAMP}
 Compression=lzma2
 SolidCompression=yes
+; 程序显示图标（EXE 内嵌的 .ico 由 PyInstaller icon= 写入）
+#ifdef ICON_FILE
+SetupIconFile={#ICON_FILE}
+#endif
+UninstallDisplayName=古籍重製助手 {#VERSION}
+UninstallDisplayIcon={app}\guji-gui.exe
+
+[Languages]
+Name: "chinesesimplified"; MessagesFile: "compiler:Default.isl"
 
 [Files]
 Source: "dist\guji\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
+
+[Icons]
+; 开始菜单：GUI 主程序 + 卸载入口
+Name: "{autoprograms}\古籍重製助手"; Filename: "{app}\guji-gui.exe"; IconFilename: "{app}\guji-gui.exe"
+Name: "{autoprograms}\卸载 古籍重製助手"; Filename: "{uninstallexe}"
+; 桌面快捷方式（可选安装，默认不勾选）
+Name: "{autodesktop}\古籍重製助手"; Filename: "{app}\guji-gui.exe"; IconFilename: "{app}\guji-gui.exe"; Tasks: desktopicon
+
+[Tasks]
+Name: desktopicon; Description: "创建桌面快捷方式"; GroupDescription: "附加图标:"; Flags: unchecked
+
+[InstallDelete]
+; 程序改名遗留：旧版本快捷方式名为「guji古籍工具」，升级后不会自动消失，
+; 安装时显式清掉，避免开始菜单出现新旧两套快捷方式。
+Type: files; Name: "{autoprograms}\guji古籍工具.lnk"
+Type: files; Name: "{autoprograms}\卸载 guji古籍工具.lnk"
+Type: files; Name: "{autodesktop}\guji古籍工具.lnk"
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"
@@ -131,7 +159,10 @@ procedure RefreshEnvironment;
 var
   Msg: string;
 begin
-  Msg := '安装完成！guji 命令已添加至当前用户PATH。\n关闭所有终端窗口，重新打开后即可直接运行 guji';
+  Msg := '古籍重製助手 安装完成！' + #13#10 + #13#10 +
+         '• 命令行：guji 命令已添加至当前用户 PATH，' +
+         '关闭所有终端窗口重新打开后即可直接运行 guji。' + #13#10 +
+         '• 图形界面：已创建「古籍重製助手」开始菜单项，可直接启动。';
   MsgBox(Msg, mbInformation, MB_OK);
 end;
 

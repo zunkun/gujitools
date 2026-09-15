@@ -1,17 +1,25 @@
-# gujitools
+# gujitools（古籍重製助手）
 
 古籍处理工具——从 PDF 提取图片、检测裁剪文本区域、去底色二值化、印章保留并生成 PDF。
+程序安装后的显示名称与开始菜单项为**古籍重製助手**。
 
-提供**桌面端 GUI**与**命令行 CLI**两套入口，共用同一套图像处理算法：
+## 两种使用方式
 
-| 入口 | 启动 | 适合 |
+同一个安装包提供**桌面端**与**命令行**两套入口，共用同一套图像处理算法，处理结果完全一致。按场景二选一：
+
+| | 桌面端（GUI） | 命令行（CLI） |
 | --- | --- | --- |
-| 桌面端（推荐） | `python desktop.py` | 图形化分步处理：导入 PDF → 提取 → 检测 → 去底色 → 生成 PDF，带预览与执行记录 |
-| 命令行 | `python main.py <命令>` / `guji <命令>` | 批处理、脚本集成、无界面环境 |
+| 启动 | 开始菜单「古籍重製助手」，或 `python desktop.py` | 终端 `guji <命令>`，或 `python main.py <命令>` |
+| 适合 | 手工逐本处理，需要看预览、手绘修正 | 批量处理、脚本集成、无界面环境 |
+| 参数方式 | 表单填写，上次执行的参数自动回填 | 命令行参数，或 `guji.yaml` 配置文件 |
+| 中间结果 | 每一步都有预览图可回看 | 直接落盘到输出目录 |
 
-桌面端文档见 [`docs/gui/`](docs/gui/readme.md)；命令行文档见本文与 [`docs/cli.md`](docs/cli.md)。
+- **处理一两本书、想边看效果边调参数** → 看下面的「使用方式一：桌面端（GUI）」。
+- **批量跑几十本、或要集成进脚本 / 定时任务** → 看「使用方式二：命令行（CLI）」。
 
-## 命令行功能一览
+桌面端的深入文档见 [`docs/gui/`](docs/gui/readme.md)；命令行完整参数见 [`docs/cli.md`](docs/cli.md)。
+
+## 功能一览
 
 | 命令         | 别名  | 功能                                    |
 | ------------ | ----- | --------------------------------------- |
@@ -127,47 +135,179 @@ python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirement
 python build.py
 ```
 
-`build.py` 默认生成 onedir 包，并在成功后调用 Inno Setup 生成带版本号和时间戳
-的安装包。构建前应确认 `ISCC.exe` 已安装且位于 Inno Setup 默认安装目录或
+`build.py` 生成 onedir 包，并在成功后调用 Inno Setup 生成带版本号和时间戳的
+安装包。构建前应确认 `ISCC.exe` 已安装且位于 Inno Setup 默认安装目录或
 `PATH` 中。不要只删除 `dist` 后重复打包；如果当前 Python 环境使用 CUDA 版
 PyTorch，PyInstaller 仍会把 CUDA 运行库收集进包中。
 
-## 快速开始
+> **一次完整构建约 15~20 分钟**，属正常现象（实测 18m32s）：PyInstaller 约
+> 9~10 分钟（两次 Analysis + COLLECT 落地 650MB），复制到 `C:\Software\guji`
+> 约 3~4 分钟（含旧版备份），Inno Setup 压缩约 110 秒。每个阶段结束会打印
+> `⏱️ … 耗时 …`，**长时间无输出不等于卡死**。若把输出接给 `tail`/`grep`
+> 之类的过滤器，中间过程会被缓冲到进程结束才显示，看起来像假死。
 
-### 桌面端（GUI）
+### CLI 与 GUI 一体打包
 
-GUI 与 CLI 使用独立入口和独立打包配置。GUI 的任务数据、阶段日志、预览和临时文件
-统一保存到 `~/Documents/guji`（纯 JSON 文件，无数据库）。
+程序名为**古籍重製助手**。`python build.py` 一次构建产出**两个可执行文件**，
+放进同一个目录并共享同一份 `_internal`：
+
+| 入口           | 产物                     | 类型     | 说明                                      |
+| -------------- | ------------------------ | -------- | ----------------------------------------- |
+| `main.py`      | `dist/guji/guji.exe`     | console  | 命令行工具，安装后 PATH 中可直接用 `guji`  |
+| `desktop.py`   | `dist/guji/guji-gui.exe` | windowed | 桌面 GUI，无控制台窗口，安装包建快捷方式  |
+
+两者由 `guji.spec` 的两次 `Analysis` + 一次 `COLLECT` 合并产出。这样 torch/cv2/Qt
+等数百 MB 的二进制只在 `_internal` 里落地一份；若分两次独立打包再塞进同一个
+安装包，torch 会出现两份（约 +600MB）。
+
+**不重复打包组件**：每个入口只收集自己真正用到的东西。
+
+- 两边共用：`functions` / `utils` / `weights` / `static` / `docs`（GUI 的 worker
+  子进程要跑同样的 CLI 功能）；
+- **只进 GUI**：`desktop` 子模块与 `desktop/static` 图标——CLI 完全不碰 desktop，
+  若一起收集会把 66 个 desktop 模块 + 103 个 Qt 模块白白塞进 CLI 的字节码包；
+- PYZ（纯 Python 字节码）是每个 EXE 各自内嵌的，torch 等的 `.py` 无法跨 EXE
+  共享，这属于双 EXE 结构的固有开销。
+
+GUI 依赖（PySide6 / PySide6-Fluent-Widgets）也装在 `yolobuild` 里——构建时
+只补装 `requirements.txt` 之外的 GUI 增量，不整表重装 `requirements.gui.txt`，
+以免 pip 重新解析依赖链时把 CPU 版 torch 顶掉。
+
+安装后：
+
+- **CLI**：`{app}` 已加入当前用户 PATH，重开终端即可 `guji --help`；
+- **GUI**：开始菜单「古籍重製助手」（安装时可选桌面快捷方式）；
+- GUI 的重处理子进程在打包环境下以 `guji-gui.exe --worker --config …` 启动
+  自身（`desktop.py` 负责路由），因此不需要额外的可执行文件。
+
+打包后 `desktop` 包位于 PYZ 字节存档内，磁盘上没有 `desktop/static/icon.png`；
+窗口图标改由 `desktop/utils/files.py` 的 `package_dir()` 指向
+`_internal/desktop/static`（spec 的 `datas` 已收集该目录）。
+
+### 体积瘦身
+
+`python build.py` 在 PyInstaller 结束后会执行 `prune_bloat()`，并跑
+`python tools/check_bloat.py` 复核。清理的是确定用不到的部分：
+
+| 内容 | 约省 | 说明 |
+| --- | --- | --- |
+| `torch` 源码副本 | 48 MB | `hook-torch.py` 把整个 torch 源码树当 data 收进 `_internal`，而运行时由 FrozenImporter 从 PYZ 加载——磁盘这份是纯重复 |
+| `cv2/opencv_videoio_ffmpeg500_64.dll` | 29 MB | 视频编解码，项目只用 `imread`/`imwrite` 等图像 API |
+| `PySide6/opengl32sw.dll` | 20 MB | Qt 软件 OpenGL 回退，界面不依赖 OpenGL |
+| `torch/bin/protoc.exe` | 3 MB | 构建期工具，运行期不执行 |
+| `sqlite3.dll` / `_sqlite3.pyd` | 1.6 MB | 旧数据迁移已移除 |
+
+删 torch 源码时**必须保留少数几个会被 `inspect.getsource()` 读回的文件**
+（任意 `config.py`、`config_comms.py`，以及 `utils/_config_module.py`、
+`_sources.py`、`fx/experimental/` 下三个内省模块）——否则 `import torch` 会
+`OSError: could not get source code`。规则见 `build.py` 的 `_keep_torch_source()`。
+
+`guji.spec` 的 `excludes` 只额外排除了 `sqlite3` 与 pywin32
+（`win32com`/`win32api`/`pythoncom`/`pywintypes`，只在 torch 取用户目录的函数内分支用到）。
+
+> ⚠️ **不要再往 `excludes` 里加 `torch.*` 子模块**——实测一个都排不掉：
+> `torch.distributions`、`torch._prims`、`torch._inductor`、`torch.distributed`
+> 都在 `import torch` 时被顶层引用，`torch.onnx` 更是 `torchvision/ops` 引入的
+> （我们正用 `torchvision.ops.nms`）。加了会让 `guji crop` 直接
+> `ModuleNotFoundError`。新增排除项前先跑 `python tools/probe_excludes.py <模块名>`。
+
+体积下限由 `torch/lib/torch_cpu.dll`（约 292MB）锁定，不换推理引擎就无法再降。
+
+打包后自检：
 
 ```bash
-# 安装 GUI 依赖
+python tools/check_bloat.py    # 确认无用内容没被打回来
+python tools/smoke_frozen.py   # frozen 端到端冒烟（含 YOLO 推理）
+```
+
+## 使用方式一：桌面端（GUI）
+
+### 启动
+
+安装版直接点开始菜单「古籍重製助手」。从源码启动时：
+
+```bash
+# 安装 GUI 依赖（安装版不需要）
 python -m pip install -r requirements.gui.txt
 
-# 启动 GUI
+# 启动
 python desktop.py
 
 # 开发热重载（可选）
 hupper -m desktop
-
-# 独立打包 GUI，不使用 requirements.txt 或 CLI 的 build.py
-python build_gui.py
 ```
 
-**使用流程**：任务列表页「导入 PDF」→ 进入任务详情页，按顶部步骤条依次执行四个
-子任务：
+主窗口标题为**古籍重製助手**。所有任务数据、阶段日志、预览图和缩略图统一保存在
+`~/Documents/guji`（纯 JSON 文件，无数据库），卸载后不会被安装包清理。
 
-1. **提取图片（extract）**——PDF 逐页转为图片；
-2. **检测文本框（detect）**——YOLO 标注左右文本框坐标，预览可拖拽/缩放/手绘修正；
-3. **图片去底色（rembg）**——整页去底色/二值化，支持保留印章；
-4. **生成 PDF（print）**——设置纸张、边距、标题、页码后合成 PDF。
+### 操作步骤
 
-每个阶段都有预览、参数表单、历史执行记录回填，以及实时执行日志。重处理在独立
-Worker 子进程运行，主界面不直接执行批量 PDF 或图片处理，因此界面始终可响应。
+#### 第 0 步：导入 PDF，建立任务
 
-回归自测与界面截图：
+在**任务管理页**点右上角「导入 PDF」，选择一本书：
+
+- 系统先后台计算内容指纹做查重——同一本书重复导入会提示确认；
+- 确认后自动分配任务号（`0001`、`0002`…），复制源 PDF 到任务目录，并生成逐页缩略图；
+- 表格里每行一个任务，显示任务名、页数与各子任务状态；右侧可删除任务（会清空该任务目录）。
+
+点某一行进入**任务详情页**，顶部步骤条即为下面四步。
+
+#### 第 1 步：提取图片（extract）
+
+把 PDF 逐页渲染成图片，输出到任务目录 `stages/extract/`。
+
+- 面板可选渲染倍率（zoom）等参数；
+- 若中断过，可用「继续执行（跳过已完成）」只补缺失的页。
+
+#### 第 2 步：检测文本框（detect）
+
+YOLO 识别每页的**左、右文本框**，结果存入 `boxes.json`（不生成图片文件）。
+
+- 预览区可**拖拽、缩放、删除、手绘**调整检测框，手动结果不会被自动检测覆盖；
+- 这一步只记坐标，是第 3 步裁剪的依据。
+
+#### 第 3 步：图片去底色（rembg）
+
+整页去底色 / 二值化，支持保留红色印章。这一步是**两段式**，务必按顺序点：
+
+1. 点「**生成预览**」——先产出去底预览图，填好 `area`（区域模式）与 `border`（外扩边距）等参数后生成；
+2. 在预览区确认效果，可逐页查看、勾选要保留的页；
+3. 点「**提交本次任务**」——按 `area`/`border` + 检测框合成**最终图片**，这才是第 4 步的输入。
+
+> 参数改动后预览图会标记为过期，需重新「生成预览」再提交。
+
+#### 第 4 步：生成 PDF（print）
+
+设置纸张、边距、标题、页码后合成 PDF，产物落在任务目录 `stages/print/`。
+
+- PDF 文件名默认由书名派生为 `书名[重制].pdf`（与标题文字联动，可手工改写）；
+- 左侧**待打印列表**的顺序就是 PDF 的页序，**直接拖拽即可调整**（只改数据，不产生任何副本文件）；
+- 列表支持「插入图片」（在指定位置插入外部图片）与「删除选中」；
+- 右侧表单设置纸张（A3/A4/A5/B5）、横竖方向、页边距、标题文字、页码、跳过的页等；
+- 生成完成后「下载 PDF」按钮可用，默认另存到系统「下载」目录。
+
+### 每个阶段都有的能力
+
+- **实时日志**：右下日志区显示子进程输出；可展开为浮层查看完整记录。
+- **历史执行记录**：每次运行的参数会被保存，切换阶段时自动回填上次的参数；可从历史里挑一条恢复。
+- **预览**：除第 2 步外每步都有预览图，随执行结果刷新。
+- **界面不卡**：所有重处理都在独立 Worker 子进程里跑，主界面始终可响应。
+
+界面截图见 [`docs/gui/screenshots/`](docs/gui/screenshots/)：
+
+| 截图 | 内容 |
+| --- | --- |
+| `01-任务列表页.png` | 任务管理、导入 PDF |
+| `02-详情页-提取.png` | 第 1 步 提取图片 |
+| `03-详情页-检测.png` | 第 2 步 检测文本框 |
+| `04-详情页-去底色.png` | 第 3 步 图片去底色 |
+| `05-详情页-生成PDF.png` | 第 4 步 生成 PDF |
+| `06-详情页-日志浮层.png` | 日志浮层（完整执行记录） |
+
+### 桌面端开发相关
 
 ```bash
-# 功能自测（102 项断言）
+# 功能自测（147 项断言）
 QT_QPA_PLATFORM=offscreen python tests/gui_selftest.py
 
 # 离屏渲染界面截图（视觉自查）
@@ -180,6 +320,11 @@ QT_QPA_PLATFORM=offscreen python tests/gui_shot.py D:/tmp/shots
 python tools/gen_api_docs.py          # 重新生成
 python tools/gen_api_docs.py --check  # 校验是否与源码一致（退出码非 0 表示过期）
 ```
+
+## 使用方式二：命令行（CLI）
+
+下面「帮助」「通用参数」「各命令参数」「常用示例」四节均为命令行参数速查；
+完整说明见 [CLI 使用说明](docs/cli.md)。
 
 ### 推荐工作流：先初始化配置
 
@@ -276,7 +421,7 @@ guji cropremove -i ./images -o ./output --area 1
 
 详细参数和示例见 [CLI 使用说明](docs/cli.md) 及各功能手册。
 
-## 帮助
+### 帮助
 
 ```bash
 python main.py help                # 功能模块概览
@@ -288,7 +433,7 @@ python main.py -v                  # 版本信息
 
 帮助内容直接读取 `docs/functions/*.md`，终端内分页显示。
 
-## 通用参数
+### 通用参数
 
 | 参数          | 默认值   | 说明                             |
 | ------------- | -------- | -------------------------------- |
@@ -297,9 +442,9 @@ python main.py -v                  # 版本信息
 | `--clean`     | 命令相关 | 清空输出目录                     |
 | `--workers`   | CPU 核数 | 并行线程数                       |
 
-## 各命令参数
+### 各命令参数
 
-### extract
+#### extract
 
 | 参数           | 默认值 | 说明                         |
 | -------------- | ------ | ---------------------------- |
@@ -311,7 +456,7 @@ python main.py -v                  # 版本信息
 | `--end`        | None   | 结束页码（1-based）          |
 | `--batch-size` | 4      | 每批次处理的页数             |
 
-### rembg
+#### rembg
 
 | 参数            | 默认值 | 说明                                     |
 | --------------- | ------ | ---------------------------------------- |
@@ -322,7 +467,7 @@ python main.py -v                  # 版本信息
 | `--sealarea`    | 80     | 印章最小连通域像素面积                   |
 | `--sealmin-sat` | 50     | 红色识别最低饱和度（0~255）              |
 
-### cropremove
+#### cropremove
 
 包含 rembg 全部参数，另加：
 
@@ -331,9 +476,9 @@ python main.py -v                  # 版本信息
 | `--area`   | 1      | 区域模式（见下表）                  |
 | `--border` | None   | 边框控制（mm），CSS 风格 1~4 值写法 |
 
-### print
+#### print
 
-`print` 通过 `guji.yaml` 配置，使用 `python main.py run print` 执行。支持 A3、A4、A5、B5 纸张，图片按文件名排序生成 PDF，并可配置标题节点、页码和双页左右标注。
+`print` 通过 `guji.yaml` 配置，使用 `python main.py run print` 执行。支持 A3、A4、A5、B5 纸张，可配置标题节点、页码和双页左右标注。页序优先取 `files:` 清单（桌面端列表顺序），清单为空时才按文件名排序。
 
 ```yaml
 print:
@@ -366,7 +511,7 @@ print:
 --border 10,20,30,40     # 上右下左
 ```
 
-## 常用示例
+### 常用示例
 
 ```bash
 # 高分辨率提取指定页码

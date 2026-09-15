@@ -7,7 +7,6 @@ from pathlib import Path
 
 from desktop.utils.files import guji_data_dir
 from desktop.store.annotations import AnnotationMixin
-from desktop.store.migrate import migrate_legacy
 from desktop.store.pages import PageManifestMixin
 from desktop.store.runs import RunMixin
 from desktop.store.tasks import TaskMixin
@@ -24,8 +23,8 @@ class TaskStore(TaskMixin, RunMixin, PageManifestMixin, AnnotationMixin):
         """初始化数据根。
 
         root 省略时默认用 guji_data_dir()（~/Documents/guji）；传入自定义
-        root 主要用于测试隔离。构造时确保 tasks/ 存在并自动执行旧数据迁移。
+        root 主要用于测试隔离。构造时只确保 tasks/ 存在——存储一直是纯
+        JSON 文件，没有旧数据（SQLite）需要迁移。
         """
         self.root = root or guji_data_dir()
         (self.root / "tasks").mkdir(parents=True, exist_ok=True)
-        migrate_legacy(self.root)

@@ -43,7 +43,7 @@ QT_QPA_PLATFORM=offscreen python tests/gui_shot.py D:/tmp/shots
 ## 当前实现要点（速览）
 
 - **存储**：纯 JSON 文件（`tasks.json` / `runs.json` / `pages.json` / `boxes.json` /
-  `sizes.json`），无数据库；旧 `guji.db` 启动时自动迁移。所有写入走
+  `sizes.json`），无数据库、无旧数据迁移。所有写入走
   `store/json_io.py`（临时文件 + `os.replace` 原子落盘，损坏文件自动备份）。
 - **界面**：视觉常量集中在 `desktop/ui/theme.py`，基础控件（卡片/状态胶囊/进度条/
   空状态等）为 `desktop/ui/widgets.py` 的**自绘控件**；详见

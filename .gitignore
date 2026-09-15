@@ -43,3 +43,6 @@ guji.yaml
 
 # gui_shot.py 默认的截图输出目录（生成后需手动覆盖到 docs/gui/screenshots/）
 shots/
+
+# 构建时由 desktop/static/icon.png 生成的 Windows 图标
+desktop/static/icon.ico

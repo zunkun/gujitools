@@ -28,6 +28,20 @@ def project_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+def package_dir() -> Path:
+    """`desktop` 包目录（源码与 PyInstaller 打包两种模式下都可用）。
+
+    打包后 `desktop` 作为 PYZ 内的字节码存档存在，磁盘上没有真正的
+    ``desktop/static/icon.png``；数据文件由 spec 的 ``datas`` 额外落到
+    ``_internal/desktop/``，因此 frozen 下直接指向 ``sys._MEIPASS``。
+    """
+    import sys
+
+    if getattr(sys, "frozen", False):
+        return Path(sys._MEIPASS) / "desktop"
+    return Path(__file__).resolve().parents[1]
+
+
 def file_hash(path: Path, chunk_size: int = 1024 * 1024) -> str:
     """流式计算文件 SHA-256（分块读取，避免大 PDF 撑爆内存）。"""
     digest = hashlib.sha256()

@@ -120,12 +120,10 @@ guji/
   让整个界面崩掉；
 - **删除任务竞态**：任务目录已被删除时，写入直接跳过（回调晚于删除时不报错）。
 
-旧数据迁移（`store/migrate.py`，启动时自动执行）：
-
-- `guji.db`（SQLite）→ 各 JSON 文件，保留运行历史与手动框，旧库改名备份；
-- uuid 任务目录 → 按创建时间重编号为任务号；
-- 旧目录布局：extract 嵌套上移、imported 并入 extract、previews/logs/detect 删除、
-  散落 run-*.json 归档、低分辨率/旧命名缩略图清理。
+存储一直是纯 JSON 文件，**没有旧数据需要迁移**：`TaskStore` 构造时只确保
+`tasks/` 存在（`store/store.py`）。曾经的 `store/migrate.py`（SQLite `guji.db`
+与旧目录布局的一次性迁移）已随 SQLite 一并移除，因此打包产物不再包含
+`sqlite3.dll`。
 
 ## 4. 关键算法位置
 
