@@ -264,11 +264,11 @@ extract 阶段把源 PDF 每页渲染为图片；参数经 get_args 收集后由
 
 | 方法 | 说明 |
 | --- | --- |
-| `get_args() -> dict` | 收集提取参数：zoom/ext/pages（不含 input/output）。 |
+| `get_args() -> dict` | 收集提取参数：zoom/ext/quick/pages（不含 input/output）。 |
 
 ##### `get_args() -> dict`
 
-收集提取参数：zoom/ext/pages（不含 input/output）。
+收集提取参数：zoom/ext/quick/pages（不含 input/output）。
 
 pages 留空表示全部页；非法页码由 runner 在取参时以 ValueError 拦截。
 
@@ -1354,7 +1354,7 @@ stream 缺省写真实 stdout；窗口化打包运行时 sys.stdout 可能为 No
 | 函数 | 说明 |
 | --- | --- |
 | `run_stage(config: dict) -> int` | 在子进程中执行一个 CLI 功能阶段，返回进程退出码（0/130/1）。 |
-| `run_extract_stage(config: dict) -> int` | extract 阶段：直接把 PDF 渲染到任务目录 stages/extract/（无嵌套布局）。 |
+| `run_extract_stage(config: dict) -> int` | extract 阶段：直接把 PDF 提取到任务目录 stages/extract/（无嵌套布局）。 |
 
 #### `run_stage(config: dict) -> int`
 
@@ -1366,10 +1366,13 @@ config 需含 task_id/stage/run_id/args。期间用 ProgressStream 拦截
 
 #### `run_extract_stage(config: dict) -> int`
 
-extract 阶段：直接把 PDF 渲染到任务目录 stages/extract/（无嵌套布局）。
+extract 阶段：直接把 PDF 提取到任务目录 stages/extract/（无嵌套布局）。
 
-复用 utils.pdf_utils.process_page_batch 的渲染/并发实现，
+复用 utils.pdf_utils.render_pages_parallel 的提取/并发实现（与 CLI 同一份），
 但不走 CLI 的 <out_root>/<pdf名>/images 输出规则。
+
+⚠️ 这里曾经直接调 process_page_batch(全部页码) —— 那是**串行**的，
+GUI 提取因此比 CLI 慢数倍。并发逻辑在 render_pages_parallel 里。
 
 ---
 

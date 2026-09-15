@@ -19,7 +19,16 @@ def run(ctx) -> None:
     # 提高渲染分辨率拖慢速度，保证有可靠的中断窗口
     d.control_stack.widget(0).zoom.setValue(4)
     d.run_stage(resume=False)
-    time.sleep(1.5)
+    # 等到确实有页产出再中断。原来是固定 sleep 1.5s——GUI 提取改成多线程后
+    # 80 页可能整轮都跑完了，中断窗口就没了（表现为状态是 success 而非 cancelled）。
+    # 这里按"进度 > 0"判断，与提取快慢无关。
+    deadline = time.time() + 15
+    while time.time() < deadline:
+        app.processEvents()
+        _cur = repo.stage_states(tid_big)["extract"]
+        if _cur.get("done", 0) >= 1 or _cur["status"] != "running":
+            break
+        time.sleep(0.01)
     app.processEvents()
     d.cancel_stage()
     # 持续补发 kill，防止偶发的终止延迟导致旧进程跑完
@@ -30,8 +39,9 @@ def run(ctx) -> None:
         if d.process and d.process.state() != 0:
             d.process.kill()
     app.processEvents()
-    ok("中断后状态 cancelled",
-       repo.stage_states(tid_big)["extract"]["status"] == "cancelled")
+    # 详情带上真实状态：否则失败时只有一个断言名，看不出是"跑完了"还是"报错了"
+    _st = repo.stage_states(tid_big)["extract"]
+    ok("中断后状态 cancelled", _st["status"] == "cancelled", str(_st))
 
     # 续跑：只补缺失页
     partial = repo.extract_output_dir(tid_big)

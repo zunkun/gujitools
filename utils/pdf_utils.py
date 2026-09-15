@@ -9,10 +9,14 @@ PDF 页面提取工具：将 PDF 每页渲染为图片并保存。
 2. **缩放计算** (`calculate_zoom`)
    根据页面宽度限制最大输出尺寸（6000px），避免内存溢出。
 
-3. **批量渲染** (`process_page_batch` / `extract_pdf_optimized`)
+3. **批量渲染** (`process_page_batch` / `render_pages_parallel` / `extract_pdf_optimized`)
    使用 PyMuPDF (fitz) 渲染页面，支持两种模式：
-   - quick=True：优先提取 PDF 内嵌图片（快但可能低分辨率）；
+   - quick=True：优先取 PDF 内嵌图片（**自适应**，不满足条件自动降级整页渲染）；
    - quick=False：直接渲染页面为高质量图片。
+
+   quick 的判定见 `_embedded_page_image()`：只有「单张内嵌图 + jpg/png 格式 +
+   像素不低于整页渲染尺寸」才走快路径，否则降级。这样 jp2/jbig2/CCITT 压缩、
+   一页多图、内嵌缩略图这三类情况不会"为了快而变慢或变糊"。
 
 4. **目录遍历** (`run_on_input_directory`)
    支持输入为单个 PDF 文件或包含多个 PDF 的目录。
@@ -34,6 +38,16 @@ from unittest.mock import DEFAULT
 
 DEFAULT_PAGE_MARGINS: List[float] = [20, 20, 20, 20]  # 上右下左 (mm)
 POINTS_PER_MM = 72.0 / 25.4
+
+# ------------------------------------------------------------------ quick
+# quick 模式只在这几种内嵌格式上取巧：它们可以「原样落盘」，零解码零重编码。
+# jp2/jbig2/CCITT/tiff 等必须解码再重编码，未必比整页渲染快，且 PIL 缺对应
+# 解码器时会整页失败 —— 一律降级为整页渲染。
+QUICK_SOURCE_EXTS = {"jpeg", "jpg", "png"}
+
+# 内嵌图尺寸低于整页渲染尺寸的这个比例，就认为它是低清缩略图，改用整页渲染
+# （渲染不会凭空增加细节，但至少不会比内嵌图更糊）。
+QUICK_MIN_COVERAGE = 0.9
 
 
 def parse_pages(pages_str: str, total_pages: int) -> List[int]:
@@ -127,6 +141,93 @@ def report_image_size(img_path, width: int, height: int) -> None:
     print(f"[imgsize] {Path(img_path).stem} {int(width)},{int(height)}")
 
 
+def _save_pil(img, img_path: str, ext: str):
+    """按目标格式保存 PIL 图。参数与整页渲染路径保持一致（避免两种模式质量不同）。"""
+    if ext.lower() == "jpg":
+        # JPG 不支持透明通道
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+        img.save(img_path, "JPEG", quality=95, subsampling=0)
+    else:
+        img.save(img_path, ext.upper())
+    return img
+
+
+def _render_page(page, out_dir: str, page_idx: int, ext: str, actual_zoom: float):
+    """整页渲染落盘，返回 (路径, 宽, 高)。quick 降级与非 quick 都走这里。"""
+    import pymupdf as fitz
+    from PIL import Image
+
+    mat = fitz.Matrix(actual_zoom, actual_zoom)
+    pix = page.get_pixmap(matrix=mat, alpha=False)
+    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+    img_path = os.path.join(out_dir, f"{page_idx + 1}.{ext}")
+    _save_pil(img, img_path, ext)
+    return img_path, pix.width, pix.height
+
+
+def _embedded_page_image(doc, page, page_rect, ext: str, actual_zoom: float):
+    """判断本页能否走 quick（直接取内嵌图）。
+
+    返回 (info, None) 可取；(None, 原因) 需降级为整页渲染。判定顺序：
+
+    1. **内嵌图必须只有一张**。一页多图时老实现会产出 ``1_1.jpg``/``1_2.jpg``
+       多个文件，而 detect/rembg/print 全部按「一页一图」工作，多出来的文件会
+       被打成孤儿页。
+    2. **格式必须是 jpg/png**。jp2/jbig2/CCITT 之类要解码再重编码，很可能比
+       整页渲染还慢（"quick" 名不副实），而且 PIL 缺解码器时整页直接失败。
+    3. **像素不得低于整页渲染尺寸**。否则是低清缩略图/装饰图，取它只会更糊。
+    """
+    images = page.get_images(full=True)
+    if len(images) != 1:
+        return None, f"内嵌 {len(images)} 张图（多图不取，避免破坏一页一图）"
+    try:
+        info = doc.extract_image(images[0][0])
+    except Exception as exc:  # noqa: BLE001
+        return None, f"extract_image 失败（{type(exc).__name__}）"
+
+    src_ext = (info.get("ext") or "").lower().lstrip(".")
+    if src_ext not in QUICK_SOURCE_EXTS:
+        return None, f"内嵌格式 .{src_ext}（非 jpg/png，解码重编码不划算）"
+
+    w, h = int(info.get("width") or 0), int(info.get("height") or 0)
+    if not w or not h:
+        return None, "取不到内嵌图尺寸"
+
+    target_w = max(1.0, page_rect.width * actual_zoom)
+    target_h = max(1.0, page_rect.height * actual_zoom)
+    if min(w / target_w, h / target_h) < QUICK_MIN_COVERAGE:
+        return None, f"内嵌图 {w}x{h} 小于渲染尺寸 {int(target_w)}x{int(target_h)}（低清）"
+    return info, None
+
+
+def _save_embedded_image(info, out_dir: str, page_idx: int, ext: str,
+                         actual_zoom: float):
+    """保存内嵌图：能原样落盘就直接写字节，否则解码转码。返回 (路径, 宽, 高)。"""
+    src_ext = (info.get("ext") or "").lower().lstrip(".")
+    img_path = os.path.join(out_dir, f"{page_idx + 1}.{ext}")
+
+    same_format = (src_ext in ("jpeg", "jpg") and ext.lower() == "jpg") or (
+        src_ext == "png" and ext.lower() == "png"
+    )
+    if same_format and math.isclose(actual_zoom, 1.0):
+        # 最快的路径：直接把 PDF 里的压缩字节写成文件，零解码零重编码
+        with open(img_path, "wb") as fh:
+            fh.write(info["image"])
+        return img_path, int(info["width"]), int(info["height"])
+
+    from PIL import Image
+
+    img = Image.open(io.BytesIO(info["image"]))
+    if not math.isclose(actual_zoom, 1.0):
+        img = img.resize(
+            (max(1, int(img.width * actual_zoom)), max(1, int(img.height * actual_zoom))),
+            Image.LANCZOS,
+        )
+    _save_pil(img, img_path, ext)
+    return img_path, img.width, img.height
+
+
 def process_page_batch(
     pdf_path: str,
     page_indices: List[int],
@@ -143,9 +244,11 @@ def process_page_batch(
         page_indices: 0-based 页码列表。
         out_dir: 输出目录。
         zoom: 缩放因子。
-        ext: 输出格式（jpg/png/tiff）。
-        quick: True=优先提取内嵌图片（zoom 按图片原始像素缩放），False=渲染页面。
-        progress: 共享进度字典（含 lock, done, total），用于线程安全打印进度。
+        ext: 输出格式（jpg/png）。
+        quick: True=优先取内嵌图（不满足条件会自动降级整页渲染，见
+              `_embedded_page_image`），False=始终整页渲染。
+        progress: 共享进度字典（含 lock, done, total），用于线程安全打印进度；
+              额外用 reasons/fallback 记录 quick 降级原因（不逐页刷屏）。
 
     返回:
         每页成功/失败的 bool 列表。
@@ -159,7 +262,7 @@ def process_page_batch(
                 "依赖缺失: PyMuPDF 未安装。请运行: pip install PyMuPDF"
             ) from e
         try:
-            from PIL import Image
+            from PIL import Image  # noqa: F401
         except ImportError as e:
             raise RuntimeError(
                 "依赖缺失: Pillow 未安装。请运行: pip install Pillow"
@@ -175,55 +278,31 @@ def process_page_batch(
                 page_start = time.time()
 
                 if quick:
-                    images = page.get_images(full=True)
-                    if not images:
-                        # 当前页面没有内嵌图片，降级整页渲染
-                        mat = fitz.Matrix(actual_zoom, actual_zoom)
-                        pix = page.get_pixmap(matrix=mat, alpha=False)
-                        img_path = os.path.join(out_dir, f"{page_idx+1}.{ext}")
-                        pix.save(img_path)
-                        report_image_size(img_path, pix.width, pix.height)
+                    # 自适应 quick：不满足条件时 _embedded_page_image 给出原因，
+                    # 直接降级整页渲染，不再"为了快而变慢/变糊"。
+                    info, why = _embedded_page_image(
+                        doc, page, page_rect, ext, actual_zoom
+                    )
+                    if info is None:
+                        img_path, iw, ih = _render_page(
+                            page, out_dir, page_idx, ext, actual_zoom
+                        )
+                        if progress is not None:
+                            with progress["lock"]:
+                                reasons = progress.setdefault("reasons", {})
+                                reasons[why] = reasons.get(why, 0) + 1
+                                progress["fallback"] = progress.get("fallback", 0) + 1
                     else:
-                        for idx, img_info in enumerate(images):
-                            xref = img_info[0]
-                            img_dict = doc.extract_image(xref)
-                            img_bytes = img_dict["image"]
-                            # 载入原始图像
-                            stream = io.BytesIO(img_bytes)
-                            pil_img = Image.open(stream)
-
-                            # 内嵌图缩放直接使用用户传入zoom
-                            img_zoom = zoom
-                            if not math.isclose(img_zoom, 1.0):
-                                nw = int(pil_img.width * img_zoom)
-                                nh = int(pil_img.height * img_zoom)
-                                pil_img = pil_img.resize((nw, nh), Image.LANCZOS)
-
-                            suffix = f"_{idx+1}" if len(images) > 1 else ""
-                            img_path = os.path.join(
-                                out_dir, f"{page_idx+1}{suffix}.{ext}"
-                            )
-
-                            # 根据目标格式保存
-                            if ext.lower() == "jpg":
-                                # JPG不支持透明通道
-                                if pil_img.mode in ("RGBA", "P"):
-                                    pil_img = pil_img.convert("RGB")
-                                pil_img.save(img_path, "JPEG", quality=85)
-                            else:
-                                pil_img.save(img_path, ext.upper())
-                            report_image_size(img_path, pil_img.width, pil_img.height)
-
+                        img_path, iw, ih = _save_embedded_image(
+                            info, out_dir, page_idx, ext, actual_zoom
+                        )
+                    report_image_size(img_path, iw, ih)
                 else:
                     # 标准模式：渲染整页为高质量图片
-                    mat = fitz.Matrix(actual_zoom, actual_zoom)
-                    pix = page.get_pixmap(matrix=mat, alpha=False)
-                    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-                    fmt = "JPEG" if ext == "jpg" else "PNG"
-                    save_kw = {"quality": 95, "subsampling": 0} if ext == "jpg" else {}
-                    img_path = os.path.join(out_dir, f"{page_idx+1}.{ext}")
-                    img.save(img_path, fmt, **save_kw)
-                    report_image_size(img_path, pix.width, pix.height)
+                    img_path, iw, ih = _render_page(
+                        page, out_dir, page_idx, ext, actual_zoom
+                    )
+                    report_image_size(img_path, iw, ih)
 
                 page_elapsed = time.time() - page_start
                 results.append(True)
@@ -244,6 +323,66 @@ def process_page_batch(
     except Exception as e:
         print(f"❌ 处理批次失败: {e}")
         return [False] * len(page_indices)
+
+
+def render_pages_parallel(
+    pdf_path: str,
+    page_indices: List[int],
+    out_dir: str,
+    zoom: float,
+    ext: str,
+    quick: bool = False,
+    workers: int = 4,
+    batch_size: int = 4,
+    progress: dict = None,
+) -> List[bool]:
+    """多线程提取指定页，返回每页成功状态。
+
+    CLI（`extract_pdf_optimized`）与 GUI（`run_extract_stage`）共用这一份并发
+    实现——GUI 曾经直接调 `process_page_batch` 串行跑全部页，是提取慢的主因。
+
+    每批一个 `fitz.open`（PyMuPDF 的 Document 非线程安全，必须各自打开）。
+    """
+    if not page_indices:
+        return []
+    if progress is None:
+        progress = {"lock": threading.Lock(), "done": 0, "total": len(page_indices)}
+    progress.setdefault("reasons", {})
+    progress.setdefault("fallback", 0)
+
+    batches = [
+        page_indices[i : i + batch_size]
+        for i in range(0, len(page_indices), batch_size)
+    ]
+    all_results: List[bool] = []
+    with ThreadPoolExecutor(max_workers=max(1, int(workers or 1))) as executor:
+        futures = [
+            executor.submit(
+                process_page_batch,
+                pdf_path,
+                batch,
+                out_dir,
+                zoom,
+                ext,
+                quick,
+                progress,
+            )
+            for batch in batches
+        ]
+        for f in futures:
+            all_results.extend(f.result())
+
+    if quick:
+        reasons: dict = progress.get("reasons") or {}
+        fallback = progress.get("fallback", 0)
+        if fallback:
+            detail = "；".join(
+                f"{k} ×{v}" for k, v in sorted(reasons.items(), key=lambda kv: -kv[1])
+            )
+            print(f"ℹ️  quick：{fallback}/{len(page_indices)} 页降级整页渲染（{detail}）")
+        else:
+            print(f"ℹ️  quick：全部 {len(page_indices)} 页直接取内嵌图")
+    return all_results
 
 
 def extract_pdf_optimized(
@@ -334,24 +473,11 @@ def extract_pdf_optimized(
         # 线程安全的进度计数器
         progress = {"total": total_selected, "done": 0, "lock": threading.Lock()}
 
-        # 多线程处理各批次
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = [
-                executor.submit(
-                    process_page_batch,
-                    pdf_path,
-                    batch,
-                    out_dir,
-                    zoom,
-                    ext,
-                    quick,
-                    progress,
-                )
-                for batch in batches
-            ]
-            all_results = []
-            for f in futures:
-                all_results.extend(f.result())
+        # 多线程处理各批次（与 GUI 的 run_extract_stage 共用同一份实现）
+        all_results = render_pages_parallel(
+            pdf_path, page_indices, out_dir, zoom, ext,
+            quick=quick, workers=workers, batch_size=batch_size, progress=progress,
+        )
 
         success_count = sum(all_results)
         elapsed_time = time.time() - start_time

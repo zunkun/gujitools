@@ -52,7 +52,8 @@ class ExtractFunction(FunctionBase):
 
         # 收集命令行参数
         zoom = self.command_args.get("zoom", 1)
-        quick = self.command_args.get("quick", False)
+        # 默认与 CommandArgs 一致：True（自适应降级，见 pdf_utils._embedded_page_image）
+        quick = self.command_args.get("quick", True)
         ext = self.command_args.get("ext", "jpg")
         pages = self.command_args.get("pages")
         start = self.command_args.get("start")

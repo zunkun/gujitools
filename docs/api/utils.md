@@ -4,7 +4,7 @@
 
 通用工具函数：几何、排序、图像 IO、PDF、YOLO
 
-覆盖 10 个模块、0 个公开类、39 个公开函数/方法（生成于 2026-09-15）。
+覆盖 10 个模块、0 个公开类、40 个公开函数/方法（生成于 2026-09-15）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -18,7 +18,7 @@
 | [`utils.image_io`](#utilsimage_io) | 0 | 2 |
 | [`utils.image_utils`](#utilsimage_utils) | 0 | 6 |
 | [`utils.path_utils`](#utilspath_utils) | 0 | 2 |
-| [`utils.pdf_utils`](#utilspdf_utils) | 0 | 13 |
+| [`utils.pdf_utils`](#utilspdf_utils) | 0 | 14 |
 | [`utils.sort_utils`](#utilssort_utils) | 0 | 2 |
 | [`utils.string_utils`](#utilsstring_utils) | 0 | 1 |
 | [`utils.yolo_utils`](#utilsyolo_utils) | 0 | 2 |
@@ -443,16 +443,26 @@ PDF 页面提取工具：将 PDF 每页渲染为图片并保存。
 2. **缩放计算** (`calculate_zoom`)
    根据页面宽度限制最大输出尺寸（6000px），避免内存溢出。
 
-3. **批量渲染** (`process_page_batch` / `extract_pdf_optimized`)
+3. **批量渲染** (`process_page_batch` / `render_pages_parallel` / `extract_pdf_optimized`)
    使用 PyMuPDF (fitz) 渲染页面，支持两种模式：
-   - quick=True：优先提取 PDF 内嵌图片（快但可能低分辨率）；
+   - quick=True：优先取 PDF 内嵌图片（**自适应**，不满足条件自动降级整页渲染）；
    - quick=False：直接渲染页面为高质量图片。
+
+   quick 的判定见 `_embedded_page_image()`：只有「单张内嵌图 + jpg/png 格式 +
+   像素不低于整页渲染尺寸」才走快路径，否则降级。这样 jp2/jbig2/CCITT 压缩、
+   一页多图、内嵌缩略图这三类情况不会"为了快而变慢或变糊"。
 
 4. **目录遍历** (`run_on_input_directory`)
    支持输入为单个 PDF 文件或包含多个 PDF 的目录。
    统一为每个 PDF 在输出根目录下创建以 PDF 文件名命名的子目录，并在其下创建 images 子目录存放图片。
 
 依赖: PyMuPDF (pymupdf), Pillow (PIL)。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| QUICK_MIN_COVERAGE | `0.9` |
 
 ### 模块函数
 
@@ -463,6 +473,7 @@ PDF 页面提取工具：将 PDF 每页渲染为图片并保存。
 | `calculate_zoom(page_width: float, requested_zoom: float=1) -> float` | 计算实际缩放因子，限制最大输出宽度为 6000px。 |
 | `report_image_size(img_path, width: int, height: int) -> None` | 输出机器可读的图片尺寸行，供 GUI 子进程解析入库（extract 阶段）。 |
 | `process_page_batch(pdf_path: str, page_indices: List[int], out_dir: str, zoom: float, ext: str, quick: bool=False, progress: dict=None) -> List[bool]` | 处理一批 PDF 页面，返回每页的成功状态。 |
+| `render_pages_parallel(pdf_path: str, page_indices: List[int], out_dir: str, zoom: float, ext: str, quick: bool=False, workers: int=4, batch_size: int=4, progress: dict=None) -> List[bool]` | 多线程提取指定页，返回每页成功状态。 |
 | `extract_pdf_optimized(pdf_path: str, out_dir: str, zoom: float=2, ext: str='jpg', workers: int=4, quick: bool=False, pages: str=None, start: int=None, end: int=None, batch_size: int=4, clean: bool=False) -> bool` | 提取 PDF 页面为图片，支持多线程批次处理。 |
 | `run_on_input_directory(input_path: str, out_root: str, zoom: float=1, ext: str='jpg', workers: int=4, quick: bool=False, pages: str=None, start: int=None, end: int=None, batch_size: int=4, clean: bool=False, subdir_name: str='images')` | 处理输入路径（文件或目录），对每个 PDF 在 out_root 下创建以其文件名命名的子目录， |
 | `parse_margins(val) -> Optional[List[float]]` | 解析边距为 [上,右,下,左] (mm) |
@@ -521,12 +532,23 @@ PDF 页面提取工具：将 PDF 每页渲染为图片并保存。
     page_indices: 0-based 页码列表。
     out_dir: 输出目录。
     zoom: 缩放因子。
-    ext: 输出格式（jpg/png/tiff）。
-    quick: True=优先提取内嵌图片（zoom 按图片原始像素缩放），False=渲染页面。
-    progress: 共享进度字典（含 lock, done, total），用于线程安全打印进度。
+    ext: 输出格式（jpg/png）。
+    quick: True=优先取内嵌图（不满足条件会自动降级整页渲染，见
+          `_embedded_page_image`），False=始终整页渲染。
+    progress: 共享进度字典（含 lock, done, total），用于线程安全打印进度；
+          额外用 reasons/fallback 记录 quick 降级原因（不逐页刷屏）。
 
 返回:
     每页成功/失败的 bool 列表。
+
+#### `render_pages_parallel(pdf_path: str, page_indices: List[int], out_dir: str, zoom: float, ext: str, quick: bool=False, workers: int=4, batch_size: int=4, progress: dict=None) -> List[bool]`
+
+多线程提取指定页，返回每页成功状态。
+
+CLI（`extract_pdf_optimized`）与 GUI（`run_extract_stage`）共用这一份并发
+实现——GUI 曾经直接调 `process_page_batch` 串行跑全部页，是提取慢的主因。
+
+每批一个 `fitz.open`（PyMuPDF 的 Document 非线程安全，必须各自打开）。
 
 #### `extract_pdf_optimized(pdf_path: str, out_dir: str, zoom: float=2, ext: str='jpg', workers: int=4, quick: bool=False, pages: str=None, start: int=None, end: int=None, batch_size: int=4, clean: bool=False) -> bool`
 
