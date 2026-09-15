@@ -4,9 +4,10 @@
 from __future__ import annotations
 
 from PySide6.QtWidgets import QFormLayout
-from qfluentwidgets import ComboBox, LineEdit, SpinBox
+from qfluentwidgets import LineEdit, SpinBox
 
 from desktop.components.panels.base import StagePanel
+from desktop.ui.widgets import combo_box
 
 
 class ExtractPanel(StagePanel):
@@ -23,8 +24,7 @@ class ExtractPanel(StagePanel):
     def _build_form(self, form: QFormLayout) -> None:
         self.zoom = SpinBox()
         self.zoom.setRange(1, 8)
-        self.ext = ComboBox()
-        self.ext.addItems(["jpg", "png"])
+        self.ext = combo_box(["jpg", "png"])
         self.pages_edit = LineEdit()
         self.pages_edit.setPlaceholderText("留空=全部页，示例：1,2,5-7")
         self._add_row(form, "缩放因子 zoom", self.zoom)

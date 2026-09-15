@@ -103,7 +103,6 @@ guji/
     boxes.json          # 检测框 {页stem: {boxes:[左,右], origin: auto|manual}}
     sizes.json          # 页面图片原始尺寸 {页stem: [w, h]}
     runs/               # 子进程执行配置 run-*.json / detect-config.json
-    workset/            # 阶段执行输入物化（硬链接，不复制图片）
     thumbnails/
       source/0001.jpg…  # 源 PDF 页缩略图（256px，导入即生成，永不清理）
       print/            # 输出 PDF 预览缩略图（print 成功后重建）

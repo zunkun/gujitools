@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 52 个模块、49 个公开类、221 个公开函数/方法（生成于 2026-09-15）。
+覆盖 52 个模块、50 个公开类、233 个公开函数/方法（生成于 2026-09-15）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -56,7 +56,7 @@
 | [`desktop.store.tasks`](#desktopstoretasks) | 1 | 17 |
 | [`desktop.ui.style`](#desktopuistyle) | 0 | 3 |
 | [`desktop.ui.theme`](#desktopuitheme) | 0 | 2 |
-| [`desktop.ui.widgets`](#desktopuiwidgets) | 8 | 33 |
+| [`desktop.ui.widgets`](#desktopuiwidgets) | 9 | 45 |
 | [`desktop.utils.files`](#desktoputilsfiles) | 0 | 5 |
 | [`desktop.worker`](#desktopworker) | 0 | 1 |
 | [`desktop.workers.hash_worker`](#desktopworkershash_worker) | 1 | 2 |
@@ -76,7 +76,6 @@ gujitools 桌面端主窗口：任务列表页 + 任务详情页切换。
 ### `class MainWindow(QMainWindow)`
 
 主窗口：在任务列表页与任务详情页之间切换。
-
 创建时设定窗口最小尺寸并套用全局底色；通过 QStackedWidget 持有两页，
 并连接列表页「打开详情」与详情页「返回」信号完成页面跳转。
 
@@ -89,7 +88,6 @@ gujitools 桌面端主窗口：任务列表页 + 任务详情页切换。
 ##### `closeEvent(event) -> None`
 
 关闭窗口时先让详情页收尾 worker 子进程。
-
 详情页持有 worker 子进程与后台线程的引用，直接退出会让进程被强杀；
 这里把事件转交给详情页的 closeEvent 完成 kill/等待/清理后再接受关闭。
 
@@ -190,7 +188,7 @@ qfluentwidgets 的 `TextEdit` 在构造时会给控件设置自己的样式表�
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(parent=None)` | 构建面板骨架：标题 + 说明 + 参数表单容器。 |
-| `build_form() -> QWidget` | 参数表单容器（子类可整体替换，如 print 面板换成滚动区）。 |
+| `build_form() -> QWidget` | 参数表单容器：统一装进透明滚动区，窗口过矮时出滚动条而非压扁表单。 |
 | `get_args() -> dict` | 从表单收集该阶段参数（不含 input/output/clean）。 |
 | `apply_args(parameters: dict) -> None` | 把一次历史执行的参数回填到表单（多余键忽略）。 |
 | `reset_to_default() -> None` | 恢复控件初始默认值。 |
@@ -201,6 +199,15 @@ qfluentwidgets 的 `TextEdit` 在构造时会给控件设置自己的样式表�
 
 title/description 来自子类类属性并开启换行，避免窄面板被长说明撑破；
 随后调用 build_form 生成子类表单并占满剩余垂直空间。
+
+##### `build_form() -> QWidget`
+
+参数表单容器：统一装进透明滚动区，窗口过矮时出滚动条而非压扁表单。
+
+控制卡片把剩余高度分给 QStackedWidget，窗口一矮表单行就被压得错位
+（rembg 的复选框会挤进表单行、说明与行间距被吞掉）。滚动区让表单
+始终保持自然高度，高度不足时纵向滚动。print 面板自带分区滚动区，
+整体覆盖本方法，不受影响。
 
 ##### `reset_to_default() -> None`
 
@@ -606,8 +613,8 @@ status 为失败/中断时，徽标保持对勾、副标题仍显示最近一次
 
 初始化表格：5 列布局、行高与表头对齐。
 
-表头对齐跟随各列内容（序号/时间居中、名称/状态左对齐）；
-子任务状态列自适应拉伸，其余列按 _COLUMN_WIDTHS 固定宽度。
+表头对齐跟随各列内容（序号/时间居中、名称/状态左对齐，均垂直居中）；
+任务名称列自适应拉伸（占主要宽度），其余列按 _COLUMN_WIDTHS 固定宽度。
 
 ##### `set_data(rows: list[dict]) -> None`
 
@@ -789,19 +796,13 @@ cache_dir：页缩略图缓存目录（如 thumbnails/source、thumbnails/print�
 
 源码：[`desktop/components/viewers/rembg_viewer.py`](../../desktop/components/viewers/rembg_viewer.py)
 
-去底色预览：单视图显示，去底色结果优先，顶部可切换查看原图。
+去底色预览：单视图显示，去底色结果优先，顶部用分段开关切换原图。
 
 左侧缩略图条按"输出条目"组织：
 - area=1：每个文本框一条（标签 <页>-l / <页>-r），右侧显示该框 + border 区域；
 - area=2/3：每页一条，右侧显示按 crop/cropremove 规则合成的效果区域。
 
 区域合成在 worker 线程完成，不生成文件；通过请求令牌避免快速切换串台。
-
-### 模块常量
-
-| 名称 | 值 |
-| --- | --- |
-| _ACTIVE_STYLE | `" PushButton {     background-color: #0078d4;     color: w…"` |
 
 ### `class RembgPreviewWidget(QWidget, ThumbsMixin)`
 
@@ -1368,22 +1369,34 @@ extract 阶段：直接把 PDF 渲染到任务目录 stages/extract/（无嵌套
 
 源码：[`desktop/stages/print_stage.py`](../../desktop/stages/print_stage.py)
 
-print 阶段执行器：先在子进程内合成效果图（顺序编号），再用 CLI print 生成 PDF。
+print 阶段执行器：合成效果图后按**有序清单**生成 PDF。
+
+页序完全由 ``args["files"]``（GUI 第四步列表顺序）决定，不再依赖文件名
+排序——因此不再需要把顺序「烧」进文件名的 workset 目录。合成结果写入
+一次性临时目录，交给 print 时同时给出有序清单，执行结束即随临时目录删除。
 
 ### 模块函数
 
 | 函数 | 说明 |
 | --- | --- |
-| `run_print_stage(config: dict) -> int` | print 阶段：先在子进程内把 rembg 结果按 area/border 合成为 |
+| `run_print_stage(config: dict) -> int` | print 阶段：把 rembg 结果按 area/border 合成为效果图，再生成 PDF。 |
 
 #### `run_print_stage(config: dict) -> int`
 
-print 阶段：先在子进程内把 rembg 结果按 area/border 合成为
-效果图（顺序编号），再用 CLI print 生成 PDF。
+print 阶段：把 rembg 结果按 area/border 合成为效果图，再生成 PDF。
 
-效果合成放在子进程而非 GUI 线程：既不阻塞界面，也避免
-GUI 侧 QProcess 从回调链启动时 Windows 下通知丢失的问题。
-args["_effects"] = [{"file": rembg结果, "effect": {boxes,area,border}|None}, …]
+效果合成放在子进程而非 GUI 线程：既不阻塞界面，也避免 GUI 侧
+QProcess 从回调链启动时 Windows 下通知丢失的问题。
+
+args["_effects"] = [
+    {"file": 源图路径, "label": 输出条目名,
+     "effect": {"boxes": [[x1,y1,x2,y2]], "area": int, "border": str|None}},
+    …
+]
+
+合成结果按**列表顺序**以 ``0001.png`` 命名写入临时暂存目录，并把
+``args["files"]`` 设为这份有序清单——CLI 侧不再读目录、不再解析
+文件名，页序与第四步列表严格一致（拖拽重排无需任何物理文件改动）。
 
 ---
 
@@ -1406,7 +1419,7 @@ rembg 提交：把「生成预览」产出的整页去底图，按 area/border +
 
 与 run_print_stage 的效果合成复用同一套几何规则
 （desktop/workers/preview_worker.compose_region_output），
-但结果是持久化的交付图片而非临时 workset，且不再生成 PDF。
+但结果是持久化的交付图片而非一次性暂存，且不再生成 PDF。
 
 args["_effects"] = [
     {"file": 预览结果路径, "label": 输出文件名(无扩展名),
@@ -1423,8 +1436,8 @@ args["_effects"] = [
 页面标注数据：boxes.json（检测框）与 sizes.json（页面图片原始尺寸）。
 
 坐标均为原始图片像素坐标 [x1, y1, x2, y2]，按阅读顺序存 [左框, 右框]。
-image_key 取页面文件名去后缀（stem），workset 副本与 extract 清单里的
-同名页面共享同一份数据。
+image_key 取页面文件名去后缀（stem）——检测/去底直接以 extract 目录为
+输入，不再物化副本，故同一 stem 恒指向同一页。
 
 ### `class AnnotationMixin`
 
@@ -1652,7 +1665,7 @@ root 主要用于测试隔离。构造时确保 tasks/ 存在并自动执行旧�
 | `rembg_preview_output_dir(task_id: str) -> Path` | 「生成预览」产出的整页去底预览图目录（中间产物，不参与 print）。 |
 | `print_output_pdf(task_id: str) -> Path` | print 阶段产物 print.pdf 的完整路径。 |
 | `stage_output_dir(task_id: str, stage: str) -> Path` | 返回某阶段（GUI）应写入的输出目录。 |
-| `workset_dir(task_id: str) -> Path` | 阶段执行的输入物化目录（用硬链接指向源图，不复制文件）。 |
+| `workset_dir(task_id: str) -> Path` | 已废弃：检测/去底直接读 extract 输出目录，不再物化输入副本。 |
 | `runs_config_dir(task_id: str) -> Path` | 子进程执行配置（run-*.json / detect-config.json）。 |
 | `source_thumbnails_dir(task_id: str) -> Path` | 源 PDF 页缩略图：导入即生成，PDF 预览直接复用，永不清理。 |
 | `copy_source_to_task(task_id: str, source_path: Path) -> Path` | 导入时在任务目录下保留一份源文件副本。 |
@@ -1662,7 +1675,7 @@ root 主要用于测试隔离。构造时确保 tasks/ 存在并自动执行旧�
 新建任务并返回任务号（四位零填充）。
 
 任务号取当前最大号 +1，同时参考索引与磁盘目录；若两者不一致导致号被
-占用则继续顺延。创建时会预建 stages/workset/runs/thumbnails/source
+占用则继续顺延。创建时会预建 stages/runs/thumbnails/source
 子目录，但不复制源文件（由 copy_source_to_task 负责）。
 
 ##### `stage_output_dir(task_id: str, stage: str) -> Path`
@@ -1671,6 +1684,12 @@ root 主要用于测试隔离。构造时确保 tasks/ 存在并自动执行旧�
 
 注意 rembg 阶段返回 rembgpreview 预览目录，rembg_submit 才指向
 rembg 最终目录；print 返回 print.pdf 所在目录。
+
+##### `workset_dir(task_id: str) -> Path`
+
+已废弃：检测/去底直接读 extract 输出目录，不再物化输入副本。
+
+仅为清理历史遗留目录保留（老版本任务目录下可能仍有 workset/）。
 
 ---
 
@@ -1735,6 +1754,7 @@ QSS 里不会生效；它由 `desktop.components.log_panel.apply_log_view_style`
 | SURFACE | `"#FFFFFF"` |
 | SURFACE_SOFT | `"#F7F9FB"` |
 | SURFACE_HOVER | `"#EEF3F6"` |
+| SURFACE_SUNKEN | `"#E4EAEF"` |
 | BORDER | `"#E2E7EC"` |
 | BORDER_SOFT | `"#EDF1F4"` |
 | BORDER_STRONG | `"#C9D1D8"` |
@@ -1746,6 +1766,8 @@ QSS 里不会生效；它由 `desktop.components.log_panel.apply_log_view_style`
 | WARNING | `"#B9760A"` |
 | WARNING_SOFT | `"#FBF2E2"` |
 | DANGER | `"#C93A3A"` |
+| DANGER_HOVER | `"#B03333"` |
+| DANGER_PRESSED | `"#962B2B"` |
 | DANGER_SOFT | `"#FBEAEA"` |
 | NEUTRAL | `"#7A838C"` |
 | NEUTRAL_SOFT | `"#EFF2F4"` |
@@ -1757,6 +1779,8 @@ QSS 里不会生效；它由 `desktop.components.log_panel.apply_log_view_style`
 | RADIUS_SM | `6` |
 | RADIUS_MD | `10` |
 | RADIUS_LG | `14` |
+| SCROLLBAR_WIDTH | `10` |
+| SCROLLBAR_MARGIN | `2` |
 | FONT_FAMILY | `"Microsoft YaHei UI"` |
 | SIZE_CAPTION | `12` |
 | SIZE_BODY | `13` |
@@ -1790,11 +1814,15 @@ QSS 里不会生效；它由 `desktop.components.log_panel.apply_log_view_style`
 时把 QFrame 底色刷成白色，之前步骤条的卡片底就因此被整片盖掉过。自绘
 （``paintEvent``）不受此影响，颜色完全可控，也不会污染子控件。
 
+表单控件则相反，一律用 qfluentwidgets 的现成控件（它们自带绘制与焦点
+动画），只把高度对齐到 ``CONTROL_HEIGHT``——见 ``combo_box()``。
+
 ### 模块常量
 
 | 名称 | 值 |
 | --- | --- |
 | _FONT_FAMILY | `None` |
+| CONTROL_HEIGHT | `33` |
 
 ### `class Card(QFrame)`
 
@@ -1883,6 +1911,42 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 | `minimumSizeHint() -> QSize` | Qt 覆写：最小建议尺寸。 |
 | `paintEvent(event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
 
+### `class SegmentedToggle(QWidget)`
+
+分段开关：一行内互斥选择几个视图形态。
+
+用于「去底色结果 / 原图」这类同一视图的形态切换。自绘而非用
+qfluentwidgets 的 ``SegmentedWidget``——后者是给页面导航设计的
+（底部指示条、无法单独禁用某一项），而这里需要「还没有去底色结果时
+禁用其中一项」的语义。
+
+**选中态要一眼看得出**，所以三处一起给对比度（只靠白底滑块是不够的，
+浅底卡片上白滑块几乎看不出来）：
+
+- 轨道用 ``SURFACE_SUNKEN``（比 ``SURFACE_SOFT`` 明显重一档的灰底），
+  白滑块压在上面才有边界；
+- 选中项文字用主色 ``ACCENT`` 且加粗，未选中项用 ``INK_SOFT``；
+- 禁用项转 ``INK_DISABLED``，比「未选中但可用」再淡一档，不会混淆。
+
+只有用户点击才发 ``current_changed``；``set_current`` 是程序化切换，
+不发信号（否则回流切换会自我递归）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(items: Sequence[Sequence[str]], parent=None)` | items 为 ``[(键, 文案), ...]``，默认选中第一项。 |
+| `current() -> str` | 当前选中项的键。 |
+| `set_current(key: str) -> None` | 程序化切换选中项，不发 ``current_changed``。 |
+| `set_item_enabled(key: str, enabled: bool) -> None` | 启用/禁用某一项；禁用项不可悬停、不可点击，文案变灰。 |
+| `is_item_enabled(key: str) -> bool` | 某一项当前是否可用。 |
+| `sizeHint() -> QSize` | Qt 覆写：建议尺寸。 |
+| `minimumSizeHint() -> QSize` | Qt 覆写：最小建议尺寸。 |
+| `mouseMoveEvent(event) -> None` | Qt 事件覆写：移动（拖拽 / 缩放中的实时更新）。 |
+| `leaveEvent(event) -> None` | Qt 事件覆写：鼠标移出时恢复常态。 |
+| `mousePressEvent(event) -> None` | Qt 事件覆写：按下（选中 / 开始拖拽或绘制）。 |
+| `paintEvent(event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
+
 ### `class EmptyState(QWidget)`
 
 浅色空状态：图标 + 主文案 + 补充说明 + 可选提示。
@@ -1919,6 +1983,7 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 | --- | --- |
 | `ui_font(size: int=T.SIZE_BODY, bold: bool=False) -> QFont` | 统一的界面字体（族名 + 像素字号）。 |
 | `apply_to(widget: QWidget, size: int=T.SIZE_BODY, bold: bool=False, color: str \| None=None) -> QLabel` | 给 QLabel 统一设置字体与颜色（颜色用调色板，不用样式表）。 |
+| `combo_box(items: Iterable[str \| Sequence[Any]] \| None=None, width: int \| None=None) -> ComboBox` | 创建与输入框同高的下拉框（统一表单的行高节奏）。 |
 | `icon_pixmap(icon, size: int=24, color: str=T.INK_FAINT) -> QPixmap` | 把 FluentIcon 渲染成指定颜色的 pixmap（用于空状态插画）。 |
 
 #### `ui_font(size: int=T.SIZE_BODY, bold: bool=False) -> QFont`
@@ -1929,6 +1994,17 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 ``apply_app_style`` 给整个应用设置的字体保持一致；否则在没有
 ``Microsoft YaHei UI`` 的机器上，这些控件会各自回退到默认字体，
 和应用其它文字对不上。
+
+#### `combo_box(items: Iterable[str | Sequence[Any]] | None=None, width: int | None=None) -> ComboBox`
+
+创建与输入框同高的下拉框（统一表单的行高节奏）。
+
+直接在表单里 ``ComboBox()`` 会比同列的 ``LineEdit``/``SpinBox`` 矮
+6px（见 ``CONTROL_HEIGHT`` 的说明），所以下拉框一律用本函数建。
+
+``items`` 传字符串序列时只填显示文案；传 ``(文案, 值)`` 二元组序列时
+值写进 ``itemData``，读出用 ``currentData()``。``width`` 非空则固定宽度
+（用于节点行这类需要横向对齐的窄列）。
 
 ---
 

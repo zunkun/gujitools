@@ -50,8 +50,12 @@ def load_fonts(app) -> list[str]:
     return sorted(set(families))
 
 
-def make_fake_page_image(path: Path, text: str, size=(560, 800), tone="#f3ead6"):
-    """造一张"古籍页面"占位图，让预览区有内容可看。"""
+def make_fake_page_image(path: Path, text: str, size=(560, 800), tone="#f3ead6",
+                         frame: bool = True):
+    """造一张"古籍页面"占位图，让预览区有内容可看。
+
+    frame=False 用于去底色结果：不再画红色文本框边线。
+    """
     from PySide6.QtCore import QRect, Qt
     from PySide6.QtGui import QColor, QFont, QImage, QPainter
 
@@ -66,8 +70,9 @@ def make_fake_page_image(path: Path, text: str, size=(560, 800), tone="#f3ead6")
         int(Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap),
         text,
     )
-    painter.setPen(QColor("#c0392b"))
-    painter.drawRect(28, 28, size[0] - 56, size[1] - 56)
+    if frame:
+        painter.setPen(QColor("#c0392b"))
+        painter.drawRect(28, 28, size[0] - 56, size[1] - 56)
     painter.end()
     image.save(str(path))
     return path
@@ -114,6 +119,16 @@ def seed(repo) -> list[str]:
 
     # 第一条任务铺满各阶段产物，供详情页预览
     main_id = task_ids[0]
+    # 文字要铺满整页：半页缩略图会按"覆盖填充"居中裁切，只画顶部一行会裁成空白
+    passages = [
+        "道可道，非常道。名可名，非常名。无名天地之始，有名万物之母。",
+        "故常无欲，以观其妙；常有欲，以观其徼。此两者同出而异名，同谓之玄。",
+        "玄之又玄，众妙之门。天下皆知美之为美，斯恶已；皆知善之为善，斯不善已。",
+        "有无相生，难易相成，长短相形，高下相倾，音声相和，前后相随。",
+        "是以圣人处无为之事，行不言之教；万物作焉而不辞，生而不有，为而不恃。",
+        "功成而弗居。夫唯弗居，是以不去。不尚贤，使民不争；不贵难得之货。",
+    ]
+    page_text = "\n".join(passages) * 2
     for stage in ("extract", "rembgpreview", "rembg"):
         directory = (
             repo.extract_output_dir(main_id)
@@ -122,13 +137,37 @@ def seed(repo) -> list[str]:
         )
         directory.mkdir(parents=True, exist_ok=True)
         for page in range(1, 7):
+            # 去底色结果用白底无框，和原图区分开
+            white = stage != "extract"
             make_fake_page_image(
                 directory / f"{page:03d}.jpg",
-                f"第 {page} 页\n\n道可道，非常道。名可名，非常名。\n无名天地之始，有名万物之母。",
+                f"第 {page} 页\n\n{page_text}",
+                tone="#ffffff" if white else "#f3ead6",
+                frame=not white,
             )
+    # 源页缩略图：命名必须 4 位补零（0001.jpg），与 _page_thumb_for 的约定一致。
+    # 内容也要铺满——第三步条目缩略图是"源缩略图 + 检测框"裁出来的，
+    # 只画一行字会被居中裁成空白。
     source_thumbs = repo.source_thumbnails_dir(main_id)
     for page in range(1, 7):
-        make_fake_page_image(source_thumbs / f"{page:03d}.jpg", f"源 PDF 第 {page} 页")
+        make_fake_page_image(
+            source_thumbs / f"{page:04d}.jpg",
+            f"源 PDF 第 {page} 页\n\n{page_text}",
+        )
+    # 页面清单 / 尺寸 / 检测框：缺了这三样，详情页第 1~3 步预览会全是"暂无图片"
+    extract_dir = repo.extract_output_dir(main_id)
+    repo.save_pages(
+        main_id,
+        [{"file": str(extract_dir / f"{page:03d}.jpg"), "label": f"{page:03d}"}
+         for page in range(1, 7)],
+    )
+    for page in range(1, 7):
+        key = f"{page:03d}"
+        repo.save_image_size(main_id, key, 560, 800)
+        # 左右文本框各占半页 → 第三步 area=1 时拆成 -r / -l 两条目
+        repo.save_detect_boxes(
+            main_id, key, [[40, 40, 270, 760], [290, 40, 520, 760]], origin="auto"
+        )
     return task_ids
 
 
@@ -183,6 +222,10 @@ def main() -> int:
     labels = ("提取", "检测", "去底色", "生成PDF")
     for order, (stage, label) in enumerate(zip(stages, labels), start=2):
         detail._select_stage(stages.index(stage))
+        if stage == "extract":
+            # 演示任务的源 PDF 是伪造路径，PDF 预览必然是空占位；
+            # 切到「提取结果」标签页，截图里才有实际内容可看。
+            detail.extract_tabs.setCurrentIndex(1)
         pump(app, 10)
         png = out_dir / f"0{order}-详情页-{label}.png"
         window.grab().save(str(png))

@@ -2,8 +2,8 @@
 """页面标注数据：boxes.json（检测框）与 sizes.json（页面图片原始尺寸）。
 
 坐标均为原始图片像素坐标 [x1, y1, x2, y2]，按阅读顺序存 [左框, 右框]。
-image_key 取页面文件名去后缀（stem），workset 副本与 extract 清单里的
-同名页面共享同一份数据。
+image_key 取页面文件名去后缀（stem）——检测/去底直接以 extract 目录为
+输入，不再物化副本，故同一 stem 恒指向同一页。
 """
 
 from __future__ import annotations

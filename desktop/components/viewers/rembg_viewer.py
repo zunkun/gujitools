@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""去底色预览：单视图显示，去底色结果优先，顶部可切换查看原图。
+"""去底色预览：单视图显示，去底色结果优先，顶部用分段开关切换原图。
 
 左侧缩略图条按"输出条目"组织：
 - area=1：每个文本框一条（标签 <页>-l / <页>-r），右侧显示该框 + border 区域；
@@ -15,23 +15,14 @@ from pathlib import Path
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QImage, QPainter
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
-from qfluentwidgets import CaptionLabel, PushButton
+from qfluentwidgets import CaptionLabel
 
 from desktop.workers import ImageListWorker, PreviewWorker
 from desktop.components.viewers.image_view import ImageView
 from desktop.components.viewers.thumb_strip import ThumbStrip
 from desktop.components.viewers.thumbs_loader import ThumbsMixin
+from desktop.ui.widgets import SegmentedToggle
 from utils.sort_utils import pdf_custom_sort_key
-
-_ACTIVE_STYLE = """
-PushButton {
-    background-color: #0078d4;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    font-weight: 600;
-}
-"""
 
 
 class RembgPreviewWidget(QWidget, ThumbsMixin):
@@ -63,14 +54,11 @@ class RembgPreviewWidget(QWidget, ThumbsMixin):
 
         right = QVBoxLayout()
         toggle_row = QHBoxLayout()
-        self.result_button = PushButton("去底色结果")
-        self.result_button.setCheckable(True)
-        self.result_button.clicked.connect(lambda: self._set_mode("result"))
-        self.original_button = PushButton("原图")
-        self.original_button.setCheckable(True)
-        self.original_button.clicked.connect(lambda: self._set_mode("original"))
-        toggle_row.addWidget(self.result_button)
-        toggle_row.addWidget(self.original_button)
+        self.toggle = SegmentedToggle(
+            [("result", "去底色结果"), ("original", "原图")]
+        )
+        self.toggle.current_changed.connect(self._set_mode)
+        toggle_row.addWidget(self.toggle)
         toggle_row.addStretch()
         right.addLayout(toggle_row)
         self.toggle_caption = CaptionLabel("")
@@ -194,13 +182,18 @@ class RembgPreviewWidget(QWidget, ThumbsMixin):
                     break
 
     def _load_page_thumbs(self, entries: list[dict]) -> None:
-        """加载各条目缩略图：area=1 条目按检测框裁剪页缩略图，只显示所属一半。
+        """加载各条目缩略图：按检测框 + area/border 合成，只显示所属部分。
 
-        裁剪后的半幅图按"覆盖填充"放大到条目图标尺寸并居中裁切，
+        条目缩略图不是整页缩略图——area=1 时要显示"该条目那半页"，
+        所以这里必须把 ``_page_thumb_for`` 返回的 ``effect`` 交给
+        ``ImageListWorker`` 走 ``compose_region_output`` 合成，而不是
+        传像素裁剪框 ``crops``（那会整页原样显示）。
+
+        合成后的图按"覆盖填充"放大到条目图标尺寸并居中裁切，
         保证占满整个图标宽度（避免半幅图旁边留白）。
         """
         thumb_paths = []
-        crops = []
+        effects = []
         labels = []
         border_mm = None
         if self._region_params_provider:
@@ -217,16 +210,16 @@ class RembgPreviewWidget(QWidget, ThumbsMixin):
                 )
             if isinstance(spec, dict):
                 thumb_paths.append(Path(spec["path"]))
-                crops.append(spec.get("crop"))
+                effects.append(spec.get("effect"))
             elif spec:
                 thumb_paths.append(Path(spec))
-                crops.append(None)
+                effects.append(None)
             else:
                 thumb_paths.append(Path(real))
-                crops.append(None)
+                effects.append(None)
             labels.append(entry["title"])
         self.run_worker(
-            lambda: ImageListWorker(thumb_paths, edge=96, crops=crops),
+            lambda: ImageListWorker(thumb_paths, edge=96, effects=effects),
             lambda worker, thread: (
                 worker.thumbnail_ready.connect(
                     lambda i, img, _p: self.strip.set_item_icon(
@@ -280,10 +273,10 @@ class RembgPreviewWidget(QWidget, ThumbsMixin):
         self._load_display()
 
     def _set_mode(self, mode: str) -> None:
+        """用户切换显示形态（分段开关回调，仅在点击时到达）。"""
         if self._mode != mode:
             self._mode = mode
             self._load_display()
-        self._sync_toggle(self._result_full_image() is not None)
 
     def _result_full_image(self) -> Path | None:
         entry = self._current_entry()
@@ -357,7 +350,12 @@ class RembgPreviewWidget(QWidget, ThumbsMixin):
         self.view.set_image(image, image_size=image.size())
 
     def _sync_toggle(self, has_result: bool) -> None:
-        active = self._mode if (self._mode == "original" or has_result) else "original"
-        self.result_button.setEnabled(has_result)
-        self.result_button.setStyleSheet(_ACTIVE_STYLE if active == "result" else "")
-        self.original_button.setStyleSheet(_ACTIVE_STYLE if active == "original" else "")
+        """刷新分段开关：无去底色结果时禁用「去底色结果」项并停在「原图」。
+
+        ``_mode`` 只记用户偏好，不因缺少结果被改写——所以结果一生成，
+        开关会自动回到用户原来选的那一项。
+        """
+        self.toggle.set_item_enabled("result", has_result)
+        self.toggle.set_current(
+            self._mode if (self._mode == "original" or has_result) else "original"
+        )

@@ -254,6 +254,9 @@ class CommandArgs:
                         "page_number_orientation", "vertical", kwargs
                     ),
                     "skip_pages": self._get_with_default("skip_pages", None, kwargs),
+                    # 有序文件清单（GUI 第四步列表顺序）。有值时 print 不再
+                    # 解析文件名决定页序，顺序完全由数据层给出。
+                    "files": self._get_with_default("files", None, kwargs),
                 }
             )
 

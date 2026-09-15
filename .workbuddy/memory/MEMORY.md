@@ -1,42 +1,46 @@
 # 项目长期记忆（gujitools）
 
 ## 环境与命令
-- 完整依赖（PySide6 + cv2 + torch）在 conda `py310`；anaconda base 现也可（实测含 torch 2.14+cpu），`yolobuild` 无 PySide6。
-- GUI 自测：`QT_QPA_PLATFORM=offscreen KMP_DUPLICATE_LIB_OK=TRUE C:/Users/liuzu/anaconda3/envs/py310/python.exe -u tests/gui_selftest.py`（102 项断言）。历史上正常结束退出码为 127，但用 anaconda3 base 直跑时为 0；判据以输出「全部 102 项断言通过 ✅」为准，不要只看退出码。
-- 无回归验证方式：`git worktree add ../gujitools-baseline HEAD` 拉基线，两侧跑同一自测比对输出。
-- **文档工具**：`python tools/gen_api_docs.py`（生成 `docs/api/*.md`，AST 静态解析、离线可跑）、`python tools/gen_api_docs.py --check`（与源码比对，CI 用）、`python tools/check_docs.py`（校验全部 Markdown 的相对链接、锚点、GFM 表格列数）。改完源码/docstring 后重跑这三条。
+- 完整依赖（PySide6 + cv2 + torch）在 conda `py310`；anaconda base 也可；`yolobuild` 无 PySide6。
+- GUI 自测（已拆成功能模块）：`QT_QPA_PLATFORM=offscreen KMP_DUPLICATE_LIB_OK=TRUE C:/Users/liuzu/anaconda3/envs/py310/python.exe -u tests/gui_selftest.py`（**135 项断言，全量约 37s**）。`--list` / `--only a,b`（自动补依赖）/ `--skip a,b` / `--module-timeout N`。判据以「全部 N 项断言通过 ✅」为准；增删用例 = 增删 `tests/selftests/*.py`（`_` 开头跳过），约定 `NAME/DEPENDS/TITLE/run(ctx)` + 可选 `TEARDOWN`（清场模块恒排最后）。
+- **文档工具**：`python tools/gen_api_docs.py`（`--check` 比对）、`python tools/check_docs.py`（链接/锚点/表格）。改完源码/docstring 重跑。
+- **改界面的标准回归流程**：①离屏探针渲染 PNG 对比（先 `tests/gui_shot.load_fonts(app)` 注册中文字体，否则全是方框）；②实现 + 自测断言（守卫要**双向验证**：注入回归形态确认断言真会失败）；③`tests/gui_shot.py` 出图覆盖 `docs/gui/screenshots/`（**文件名是中文，用 Python 脚本复制，别在 bash 写中文路径**；Python 脚本参数用 Windows 原生路径，`/d/...` 会被当字面量）；④重跑三条文档工具。探针放 `D:\tmp`，用完删。
 
-## 危险操作红线（血泪教训）
-- **不要在 bash/shell 命令里直接写含中文或任何非 ASCII 的路径**。曾因 `git rm "docs/outputpath说明.md"` 导致整个 `docs/` 目录被 shell/沙箱误回收。要操作这类文件，改用 Python 脚本（`pathlib` + UTF-8）或先重命名为 ASCII。
-- 误删先别慌：Windows 回收站 `D:\$RECYCLE.BIN\<SID>\` 下 `$R<id>` 是内容、`$I<id>` 是元数据（内含 UTF-16LE 原始路径）。`ls -lat` 按时间找到条目，`cp -r` 即可恢复。
+## 测试断言的坑（血泪教训）
+- **`wait_worker()` 后别立刻读状态**：最后的 `finished` 事件（带最终 `done`）可能还在队列里，先 `processEvents()` 轮询到目标值。
+- **别在 QStackedWidget 未选中页面上量几何**：qfluent `ScrollArea` 懒构建，未显示时 `layout()` 为 None、viewport/inner 全是 480×640 脏值。测布局先走 `_context.show_detail()`。
+- **自测模块间无残留**：拆分后 `set_task()`/历史回填会重置控件（如 rembg `border` 清空），每个模块自己显式设好前置条件。
+- **没 `setFixedHeight` 的控件未 `show()` 时 `height()` 返回 480**；断言用 `LineEdit().height()`（33）当基准。
+- **像素断言踩空白页陷阱**：自测 PDF 渲染不出中文 → 两半裁切后像素相同、假失败。改用确定性契约断言（monkeypatch 抓参数/坐标）。
+- **双向验证注入前，先确认真实旧实现的路径/行为**：曾把「删除 workset」的回归注入写到 `output.parent/workset`（= `stages/workset`），而真实旧位置是 `output.parents[1]/workset`（= `tasks/<id>/workset`）→ 守卫不报错，差点误判「守卫失灵」。**注入无效 ≠ 守卫有效**，先让注入确实产生副作用再断言。
+- **阶段子进程用 `TaskStore()` 默认根（`~/Documents/guji`）**：GUI 测试只重定向了主进程的 store（`w.store = repo`），子进程读 `config["args"]` 里的绝对路径。凡是「子进程内计算出的路径」都不会落在临时目录——注入回归时可能污染**真实用户数据**。
+- **守卫断言要拆开、别串成一条**：`a == b == 0` 里 `==0` 会掩盖「拖拽是否产生文件」的真实语义，拆成「前后相等」+「恒为 0」两条。
+
+## 危险操作红线
+- **别在 bash 命令里写含中文/非 ASCII 的路径**（曾致整个 `docs/` 被误回收）。操作这类文件用 Python 脚本（`pathlib` + UTF-8）。
+- 误删恢复：回收站 `D:\$RECYCLE.BIN\<SID>\` 下 `$R<id>` 是内容、`$I<id>` 是元数据（含 UTF-16LE 原始路径），`ls -lat` 找到后 `cp -r`。
 
 ## 架构约定（desktop 包分层）
-- 每层职责：pages 页面骨架 + 控制器 Mixin / services 纯业务规则（无 Qt）/ store 数据 / workers 后台线程 / stages 子进程阶段执行器。
-- 页面层按**页面分子包**：`desktop/pages/tasklist/page.py`、`desktop/pages/taskdetail/{page,view,manifest,history,submit,print_list,runner,detect}.py`。
-- `desktop/worker.py` 仅做初始化与阶段路由，阶段实现在 `desktop/stages/`；必须保持 `python -m desktop.worker` 与 `desktop.worker.run_*` 可用。
-- Mixin 依赖宿主页面的属性/方法，跨文件引用 self.* 是本项目既定模式（新增职责优先加 Mixin 而非塞进页面骨架）。
-- 新增纯业务规则放 `desktop/services/`，便于脱离 Qt 测试。
+- 职责：pages 页面骨架 + Mixin / services 纯业务规则（无 Qt）/ store 数据 / workers 后台线程 / stages 子进程阶段执行器。纯业务规则放 `services/` 便于脱离 Qt 测试。
+- 页面层按页面分子包（tasklist/page.py、taskdetail/{page,view,manifest,history,submit,print_list,runner,detect}.py）；新增职责优先加 Mixin。
+- `desktop/worker.py` 只做初始化与路由（实现在 `stages/`）；保持 `python -m desktop.worker` 可用。子进程：`sys.executable -m desktop.worker --config <json>` + `setWorkingDirectory(project_root())`。
+- **desktop 包内一律绝对导入**（`from desktop.ui import theme as T`），相对导入挪目录会静默指错；**项目根用 `desktop.utils.files.project_root()`**，别用 `Path(__file__).parents[N]`。
+- **print 页序 = 数据层**：`print.json` 的 `pages` 数组顺序是唯一事实来源，执行时作为 `args["files"]` 传给 CLI（**不读目录、不解析文件名**）；**已废弃 workset**（不再把顺序烧进文件名）。新增/删除/重排只改数组，零物理文件。不传 `files` 时 CLI 回退 `pdf_custom_sort_key` 文件名排序（独立用法兼容）。`title_switch_nodes` 填**原始页码**、`skip_pages` 纯数字按**清单序号**（1 起）。
 
-## 导入与路径约定（强制）
-- **desktop 包内一律绝对导入**，不用 `from .x` / `from ..x`：写 `from desktop.ui import theme as T`、`from desktop.pages.taskdetail.page import TaskDetailPage`。相对导入层数绑定文件位置，挪目录会静默指向错模块（pages 拆子包时已踩坑）。
-- **不要用 `Path(__file__).parents[N]` 推算项目根**，挪一层就错（worker 子进程 cwd 因此坏过）。用 `desktop.utils.files.project_root()`。
-- worker 子进程源码模式：`sys.executable -m desktop.worker --config <json>`，`setWorkingDirectory(project_root())`。
+## 界面样式约定（详见 docs/gui/gui-ui-system.md）
+- 视觉常量只在 `desktop/ui/theme.py`（`SCROLLBAR_*`、`DANGER_*`、`SURFACE_SUNKEN`、`BORDER_STRONG` 等），不写魔法值；状态颜色走 `theme.status_colors/label`。
+- **基础视觉控件自绘 `paintEvent`，不用样式表**；全局 QSS 只选 `QMainWindow`、`QWidget#pageRoot`（+滚动条+`#taskTable`）。实例级 setStyleSheet 会顶掉库样式，按钮四态写全。
+- **qfluent 控件自带控件级样式表**，优先级高于应用级 QSS；定制必须设控件自身（见 `log_panel.apply_log_view_style`）。
+- **表单控件高统一 `widgets.CONTROL_HEIGHT = 33`**：下拉框用 `widgets.combo_box()` 建；qfluent `ComboBox` 继承 `QPushButton` 默认 27px，类名判断单独列出。
+- 形态切换用 `widgets.SegmentedToggle`（高 30）：轨道 `SURFACE_SUNKEN` + 选中文字 `ACCENT` 加粗 + 滑块投影；`set_current()` 不发信号；别用两个 PushButton 或 qfluent `SegmentedWidget` 拼。
+- 各阶段参数表单由 `StagePanel.build_form()` 统一装进透明 `ScrollArea`（可滚动不压扁）；print 面板自带滚动区、覆盖此法。
+- 别硬编码表格行高：qfluent TableWidget `defaultSectionSize()` 实测 38px，按实测 API 算。
+- **表格单元格容器必须 `setFixedHeight(ROW_HEIGHT)` 锁整行高**：qfluent `TableItemDelegate.updateEditorGeometry` 用「改高度前」的容器高算居中偏移、随后又把高度改成整格高，高度≠行高时位置随几何更新时序漂移（运行中胶囊/按钮偏到行底、行与行还不一致），且离屏探针因时序不同**未必能复现**——别相信"探针里是居中的"就断定没问题。tasklist.py 有直调 delegate 的守卫断言。
 
-## 界面样式约定（desktop/ui/）
-- 视觉常量只在 `desktop/ui/theme.py` 定义，页面/组件一律引用（`from ...ui import theme as T`），不写魔法色值/间距；状态颜色统一走 `theme.status_colors/label`。
-- **基础视觉控件一律自绘 `paintEvent`，不用样式表**。Qt 样式表引擎在子树出现任何 `setStyleSheet` 时会接管背景：把 `QFrame` 刷白、把 `QStackedWidget` 刷成 QSS 指定色。
-- **全局 QSS 只选中 `QMainWindow` 和 `QWidget#pageRoot`**，不要再写 `QStackedWidget`（会导致卡片内嵌套栈露出灰块）+ 滚动条 + `#logView`/`#taskTable`。详见 `docs/gui/gui-ui-system.md`。
-- 图片预览画布用浅色底（`SURFACE_SOFT`+`BORDER`），古籍白底页面配深底会像悬浮贴片。
-- 需要「按需出现且**不改变布局**」的面板（如执行日志浮层）用**覆盖式子控件**：挂在页面（不是窗口）上、`raise_()` 提到最前，描边用 `BORDER_STRONG`（`#C9D1D8`）才压得住底下的白卡片；内部字段用 `SURFACE_SOFT` 浅底与浮层白底分层。开合用 `QApplication` eventFilter 处理 Esc / 点击外部关闭，收起时务必卸载过滤器。
-
-## PySide6 / qfluentwidgets 注意点
-- **不要硬编码表格行高/表头高度**：qfluent TableWidget 的 `verticalHeader().defaultSectionSize()` 实测为 38px，与写死的 30px 不一致会导致 setFixedHeight 算出的高度不足、单元格控件被压扁或裁掉。应按 `defaultSectionSize()` / cellWidget `sizeHint()` / `horizontalHeader().sizeHint()` / `frameWidth()` 实测计算。
-- qfluent `ComboBox` 不是 `QComboBox` 子类，焦点/类型判断需单独检查。
-- `ToolButton` 的样式表不识别类选择器（会告警 "Could not parse stylesheet"），直接设属性。
-- **qfluentwidgets 控件自带控件级样式表**（如 `TextEdit.__init__` 里 `FluentStyleSheet.LINE_EDIT.apply(self)`）：控件级优先级高于应用级，**写在 `style.py` 全局 QSS 里的规则会被它盖掉**——`QTextEdit#logView` 的底色/描边曾因此长期不生效（底色始终纯白）。要定制这类控件的样式，必须 `setStyleSheet` 设在控件自身（见 `log_panel.apply_log_view_style`）。
+## 缩略图/预览数据供给链
+- `_page_thumb_for(...)` spec 唯一有效键 **`effect`**（boxes/area/border/dpi）；`ImageListWorker` 互斥入参 `crops=`/`effects=`。凡「区域/边框/DPI 参与渲染」一律传 `effect`（曾误读 `crop` 致 area=1 显示整页）。
+- `gui_shot.py` 演示数据：缩略图 4 位名、调 `save_pages()/save_image_size()/save_detect_boxes()`、文字铺满整页。
 
 ## 文档约定
-- **docstring**：模块与公开类/函数一律写中文 docstring；首行一句话概括、以「。」结尾（≤40 字），多行细节与「参数/返回」跟在空行之后。Qt 事件覆写（`paintEvent`/`mouse*Event`/`resizeEvent`）不必手写，`gen_api_docs.py` 会按方法名自动标注。
-- **API 参考是生成的**：`docs/api/*.md` 顶部有「请勿手工编辑」标记，改源码后重跑生成器；不要手改。
-- **Markdown 表格**：单元格里出现 `|` 必须转义为 `\|`，否则整行错格（`check_docs.py` 会报列数不一致）。
-- **单一事实来源**：路径规则只在 `docs/io_path_rules.md`，不要另建重复文档（`outputpath说明.md` 曾与它完全重复，已删）。
+- docstring：中文，首行一句话以「。」结尾（≤40 字）；Qt 事件覆写不必手写（生成器自动标注）。
+- `docs/api/*.md` 生成物勿手改；表格单元格 `|` 转义 `\|`；路径规则单一来源 `docs/io_path_rules.md`。

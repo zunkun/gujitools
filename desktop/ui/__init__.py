@@ -7,14 +7,16 @@
 from desktop.ui import theme
 from desktop.ui.style import apply_app_style, resolve_font_family
 from desktop.ui.widgets import (
-    Card, Divider, EmptyState, PageHeader, Pill, ProgressLine, SectionTitle,
-    StatusChip, apply_to, icon_pixmap, ui_font,
+    CONTROL_HEIGHT, Card, Divider, EmptyState, PageHeader, Pill, ProgressLine,
+    SectionTitle, SegmentedToggle, StatusChip, apply_to, combo_box, icon_pixmap,
+    ui_font,
 )
 
 __all__ = [
     "theme",
     "apply_app_style",
     "resolve_font_family",
+    "CONTROL_HEIGHT",
     "Card",
     "Divider",
     "EmptyState",
@@ -22,8 +24,10 @@ __all__ = [
     "Pill",
     "ProgressLine",
     "SectionTitle",
+    "SegmentedToggle",
     "StatusChip",
     "apply_to",
+    "combo_box",
     "icon_pixmap",
     "ui_font",
 ]

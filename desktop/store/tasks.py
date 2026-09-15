@@ -90,7 +90,7 @@ class TaskMixin:
         新建任务并返回任务号（四位零填充）。
 
         任务号取当前最大号 +1，同时参考索引与磁盘目录；若两者不一致导致号被
-        占用则继续顺延。创建时会预建 stages/workset/runs/thumbnails/source
+        占用则继续顺延。创建时会预建 stages/runs/thumbnails/source
         子目录，但不复制源文件（由 copy_source_to_task 负责）。
         """
         task_id = self._next_task_no()  # 顺序任务号，目录即 0001、0002…
@@ -114,7 +114,7 @@ class TaskMixin:
         )
         self._save_tasks_index(tasks)
         task_dir = self.task_dir(task_id)
-        for sub in ("stages", "workset", "runs", "thumbnails/source"):
+        for sub in ("stages", "runs", "thumbnails/source"):
             (task_dir / sub).mkdir(parents=True, exist_ok=True)
         return task_id
 
@@ -179,7 +179,10 @@ class TaskMixin:
         }[stage]
 
     def workset_dir(self, task_id: str) -> Path:
-        """阶段执行的输入物化目录（用硬链接指向源图，不复制文件）。"""
+        """已废弃：检测/去底直接读 extract 输出目录，不再物化输入副本。
+
+        仅为清理历史遗留目录保留（老版本任务目录下可能仍有 workset/）。
+        """
         return self.task_dir(task_id) / "workset"
 
     def runs_config_dir(self, task_id: str) -> Path:

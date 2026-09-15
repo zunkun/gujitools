@@ -40,3 +40,6 @@ dist/
 tests/cover/cover_output/
 tests/cover/cover_output2/
 guji.yaml
+
+# gui_shot.py 默认的截图输出目录（生成后需手动覆盖到 docs/gui/screenshots/）
+shots/

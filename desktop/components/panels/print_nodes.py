@@ -20,6 +20,7 @@ from qfluentwidgets import CaptionLabel, ComboBox, LineEdit, SpinBox, ToolButton
 from qfluentwidgets import FluentIcon as FIF
 
 from desktop.components.panels.print_params import SIDES
+from desktop.ui.widgets import combo_box
 
 PAGE_MIN = 1
 PAGE_MAX = 100000
@@ -33,12 +34,7 @@ _GAP = 6       # 行内/行间间距
 
 def _make_side_combo(side: str) -> ComboBox:
     """侧别下拉：中文显示、英文值（存于 itemData）。"""
-    combo = ComboBox()
-    # qfluent 下拉的 minimumSizeHint 偏大，窄面板里必须允许压缩
-    combo.setMinimumWidth(0)
-    combo.setFixedWidth(_SIDE_W)
-    for label, value in SIDES:
-        combo.addItem(label, userData=value)
+    combo = combo_box(SIDES, width=_SIDE_W)
     idx = combo.findData(side)
     if idx < 0:
         idx = combo.findData("left")

@@ -34,35 +34,6 @@ class StageRunnerMixin:
     """依赖宿主页面提供的属性：store/task_id/source_path/pages、
     control_stack、stage_* 控件、log_view、process/run_id 等。"""
 
-    # ---------------------------------------------------------- 参数与 workset
-    def _build_workset(self, stage: str, resume: bool) -> Path:
-        """按页面清单物化执行输入目录。
-
-        与 stages/extract 同卷时使用硬链接，不产生图片副本；
-        跨卷或链接失败时回退为复制。
-        """
-        workset = self.store.workset_dir(self.task_id)
-        if workset.exists():
-            shutil.rmtree(workset)
-        workset.mkdir(parents=True, exist_ok=True)
-        output_dir = self.store.stage_output_dir(self.task_id, stage)
-        for entry in self.pages:
-            source = Path(entry["file"])
-            if not source.exists():
-                continue
-            if resume and stage == "rembg":
-                # rembg 续跑：已有去底色结果的页跳过
-                if (output_dir / f"{source.stem}.png").exists():
-                    continue
-            target = workset / source.name
-            if target.exists():
-                continue
-            try:
-                os.link(source, target)
-            except OSError:
-                shutil.copy2(source, target)
-        return workset
-
     # ---------------------------------------------------------- 执行/中断
     def run_stage(self, resume: bool = False) -> None:
         """启动当前阶段的 worker 子进程。
@@ -136,7 +107,10 @@ class StageRunnerMixin:
             ]
             self.store.save_print_doc(self.task_id, doc)
             args["_effects"] = effects
-            args["input"] = str(self.store.workset_dir(self.task_id))
+            # 有序清单即页序：拖拽重排只改 print.json，不再物化任何文件。
+            # input 仅供 CLI 作默认目录兜底，实际顺序由 files 决定。
+            args["files"] = [str(Path(e["file"])) for e in entries]
+            args["input"] = str(self.store.task_dir(self.task_id))
             args["output"] = str(self.store.stage_dir(self.task_id, "print"))
             self.log_view.append(
                 f"区域合成：area={area}"
@@ -151,11 +125,9 @@ class StageRunnerMixin:
                     "页面清单为空，请先完成上一步子任务，或在预览区插入图片。",
                 )
                 return
-            workset = self._build_workset(stage, resume)
-            if not any(workset.iterdir()):
-                self._toast("info", "无需续跑", "该子任务的输出已完整。")
-                return
-            args["input"] = str(workset)
+            # detect/rembg 都是逐图独立处理（不依赖顺序与命名），直接以
+            # extract 输出目录为输入，不再物化 workset 副本。
+            args["input"] = str(self.store.extract_output_dir(self.task_id))
             if stage == "rembg":
                 # 「生成预览」整页去底图固定写入 stages/rembgpreview；
                 # rembg CLI 会自行追加 "rembg" 子目录，故用 _outpath 精确覆盖

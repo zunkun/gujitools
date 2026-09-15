@@ -23,6 +23,28 @@ from desktop.ui import theme as T
 
 ROW_HEIGHT = 56
 
+# 危险操作按钮（删除）：实例级样式表顶掉 qfluent 默认按钮外观，让删除
+# 在一排灰白按钮里一眼可辨。四个状态必须写全——实例样式表会把库自带的
+# 按钮样式整体顶掉，缺哪态哪态就退回默认渲染、没有视觉反馈。
+_DANGER_BUTTON_QSS = f"""
+QPushButton {{
+    background-color: {T.DANGER};
+    color: {T.SURFACE};
+    border: none;
+    border-radius: {T.RADIUS_SM}px;
+}}
+QPushButton:hover {{
+    background-color: {T.DANGER_HOVER};
+}}
+QPushButton:pressed {{
+    background-color: {T.DANGER_PRESSED};
+}}
+QPushButton:disabled {{
+    background-color: {T.DANGER_SOFT};
+    color: {T.INK_DISABLED};
+}}
+"""
+
 
 class StageChips(QWidget):
     """一行 4 个阶段状态胶囊。"""
@@ -30,6 +52,11 @@ class StageChips(QWidget):
     def __init__(self, stages: list[dict], parent=None):
         """按 stages 逐项生成状态胶囊；每项需含 short/status/tip。"""
         super().__init__(parent)
+        # 锁定为整行高：qfluent 的 TableItemDelegate.updateEditorGeometry 用
+        # 「设geometry前」的控件高度算垂直居中偏移、随后又把高度改成整格高，
+        # 容器高度不等于行高时位置随时序漂移（胶囊/按钮偏到行底）。
+        # 高度恒等于 ROW_HEIGHT 后 y = rect.y 恒成立，任何时序都收敛为填满单元格。
+        self.setFixedHeight(ROW_HEIGHT)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(T.SPACE_SM, 0, T.SPACE_SM, 0)
         layout.setSpacing(T.SPACE_XS)
@@ -53,22 +80,26 @@ class TaskTable(QWidget):
 
     COLUMNS = ["序号", "任务名称", "创建时间", "子任务状态", "操作"]
 
-    # 各列宽度；None 表示该列自适应拉伸
-    _COLUMN_WIDTHS = [56, 240, 168, None, 132]
-    # 各列对齐：与内容保持一致，否则表头和数据看着"错位"
+    # 各列宽度；None 表示该列自适应拉伸。
+    # 「任务名称」是主体信息，拉伸列给它；「子任务状态」4 个胶囊的
+    # 实际宽度约 244px（4×54 + 间隙/边距），固定 256 留少量余量。
+    _COLUMN_WIDTHS = [56, None, 168, 256, 132]
+    # 各列对齐：与内容保持一致，否则表头和数据看着"错位"。
+    # 水平对齐必须再或上 AlignVCenter——只给水平分量时垂直分量为 0，
+    # 表头文字会顶到上沿（qfluent 的 section 样式只有左右 padding）。
     _HEADER_ALIGN = {
-        0: Qt.AlignmentFlag.AlignCenter,
-        1: Qt.AlignmentFlag.AlignLeft,
-        2: Qt.AlignmentFlag.AlignCenter,
-        3: Qt.AlignmentFlag.AlignLeft,
-        4: Qt.AlignmentFlag.AlignCenter,
+        0: Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter,
+        1: Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+        2: Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter,
+        3: Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+        4: Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter,
     }
 
     def __init__(self, parent=None):
         """初始化表格：5 列布局、行高与表头对齐。
 
-        表头对齐跟随各列内容（序号/时间居中、名称/状态左对齐）；
-        子任务状态列自适应拉伸，其余列按 _COLUMN_WIDTHS 固定宽度。
+        表头对齐跟随各列内容（序号/时间居中、名称/状态左对齐，均垂直居中）；
+        任务名称列自适应拉伸（占主要宽度），其余列按 _COLUMN_WIDTHS 固定宽度。
         """
         super().__init__(parent)
         layout = QVBoxLayout(self)
@@ -145,6 +176,9 @@ class TaskTable(QWidget):
     # ------------------------------------------------------------------ 操作列
     def _action_widget(self, task_id: str) -> QWidget:
         w = QWidget()
+        # 锁定为整行高，原理见 StageChips：否则容器高度随布局时序漂移，
+        # 详情/删除按钮在真实运行中会偏到行底（离屏探针因时序不同无法复现）。
+        w.setFixedHeight(ROW_HEIGHT)
         layout = QHBoxLayout(w)
         layout.setContentsMargins(T.SPACE_SM, 0, T.SPACE_SM, 0)
         layout.setSpacing(T.SPACE_SM)
@@ -156,6 +190,7 @@ class TaskTable(QWidget):
         delete_btn = PushButton("删除")
         delete_btn.setFixedSize(QSize(52, 30))
         delete_btn.setToolTip("删除任务及其全部中间产物")
+        delete_btn.setStyleSheet(_DANGER_BUTTON_QSS)
         delete_btn.clicked.connect(lambda: self.delete_request.emit(task_id))
         layout.addWidget(delete_btn)
         return w

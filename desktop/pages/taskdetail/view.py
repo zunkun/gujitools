@@ -29,7 +29,9 @@ from desktop.components.viewers import (
 )
 from desktop.store import STAGES, STAGE_LABELS
 from desktop.ui import theme as T
-from desktop.ui.widgets import Card, Divider, ProgressLine, SectionTitle, apply_to
+from desktop.ui.widgets import (
+    Card, Divider, ProgressLine, SectionTitle, apply_to, combo_box,
+)
 
 
 class DetailViewMixin:
@@ -207,7 +209,7 @@ class DetailViewMixin:
         control.addWidget(self.stage_progress)
 
     def _make_history_combo(self) -> ComboBox:
-        combo = ComboBox()
+        combo = combo_box()
         combo.currentIndexChanged.connect(self._on_history_selected)
         return combo
 

@@ -87,9 +87,12 @@ worker 子进程 stdout 每行一个 JSON 对象，均含 `type` 与 `task_id/st
 ## 6. print 页面列表与 YAML 参数
 
 - **print.json**（任务目录）：`[{"file": "…/stages/rembg/1.png", "label": "1"}]`，
-  首次进入 print 阶段由 rembg 输出目录（自然排序）初始化。
-- **顺序物化**：执行时按列表顺序在 workset 生成顺序命名硬链接
-  （`0001.png`…），CLI 的 `pdf_custom_sort_key` 输出顺序与列表严格一致。
+  首次进入 print 阶段由 rembg 输出目录（自然排序）初始化。**该数组顺序即页序**
+  （唯一事实来源）：拖拽重排 / 删除条目只改数组，不落地任何物理文件。
+- **有序清单**：执行时把数组顺序作为 `args["files"]` 交给 CLI，效果图按该
+  顺序在一次性临时目录中合成（`0001.png`…），CLI 直接按清单加载、不再读
+  目录解析文件名。因此不需要 workset 这类「把顺序烧进文件名」的物化目录。
+  不传清单时 CLI 仍回退到 `pdf_custom_sort_key` 文件名排序（独立用法兼容）。
 - **YAML 参数**（阶段面板文本编辑）：键集与 CLI `print` 命令一致
   （pdf_name、paper_size、orientation、page_margins、title_*、
   title_switch_nodes、page_number_*、skip_pages）；

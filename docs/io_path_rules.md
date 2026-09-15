@@ -36,6 +36,10 @@
 
 - `extract`：强制要求 `input` 为 **PDF 文件或包含 PDF 的目录**；若输入为单个文件，则必须为 PDF；若输入为目录，则遍历目录下所有 `.pdf` 文件。
 - `crop`、`rembg`、`cropremove`：支持输入为图片文件或目录（目录下可包含多种图片格式），无强制文件类型限制。
+- `print`：额外支持可选参数 `files`（图片绝对路径列表），**该列表顺序即最终 PDF 页序**。
+  - 传入时：按列表顺序加载图片（仅过滤不存在的路径），完全**不读目录、不解析文件名**——因此拖拽重排 / 删除条目无需改动任何物理文件；
+  - 不传时：回退为遍历 `input` 目录并按 `pdf_custom_sort_key`（`utils/sort_utils.py`）排序，保持 CLI 独立用法不变；
+  - `skip_pages` 与 `title_switch_nodes` 中的纯页码按**清单序号**（1 起）匹配，与文件名无关。
 
 ---
 
@@ -219,7 +223,10 @@ python main.py rembg -i /path/to/images/ -o D:\output
 
 ## 八、历史变更与版本记录
 
-- **v2.1**（当前）：把原 `docs/outputpath说明.md` 的内容并入本文（该文件与本文重复，
+- **v2.2**（当前）：`print` 新增可选入参 `files`（图片路径有序清单），页序由数据层
+  决定，彻底移除 GUI 侧为「顺序物化」而建的 `workset` 目录；不传 `files` 时保持
+  原有文件名排序行为。
+- **v2.1**：把原 `docs/outputpath说明.md` 的内容并入本文（该文件与本文重复，
   已删除），补充「实现位置与默认子目录对照」与常见调用示例。
 - **v2.0**：统一 `crop`/`rembg`/`cropremove` 路径规则，引入 `resolve_final_output_dir`，目录输入时输出与输入并列；`extract` 增加 `images` 子目录层，`-o` 对目录输入生效。
 - **v1.x**：旧版 `rembg` 在目录输入且未指定 `-o` 时，输出在输入目录内部（`input/rembg`），现已修正。

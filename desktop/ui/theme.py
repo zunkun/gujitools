@@ -21,6 +21,7 @@ CANVAS = "#F3F5F7"        # 窗口底色
 SURFACE = "#FFFFFF"       # 卡片
 SURFACE_SOFT = "#F7F9FB"  # 次级面：表头、代码块、空状态
 SURFACE_HOVER = "#EEF3F6"  # 悬停
+SURFACE_SUNKEN = "#E4EAEF"  # 内凹底：分段开关轨道等「容器槽」
 BORDER = "#E2E7EC"        # 常规描边
 BORDER_SOFT = "#EDF1F4"   # 分隔线
 BORDER_STRONG = "#C9D1D8"  # 浮层/悬浮面板描边（需要压过底下卡片时用）
@@ -34,6 +35,8 @@ SUCCESS_SOFT = "#E7F4EC"
 WARNING = "#B9760A"
 WARNING_SOFT = "#FBF2E2"
 DANGER = "#C93A3A"
+DANGER_HOVER = "#B03333"    # 危险按钮悬停（比 DANGER 深一档）
+DANGER_PRESSED = "#962B2B"  # 危险按钮按下（再深一档）
 DANGER_SOFT = "#FBEAEA"
 NEUTRAL = "#7A838C"
 NEUTRAL_SOFT = "#EFF2F4"
@@ -83,6 +86,10 @@ SPACE_XL = 24
 RADIUS_SM = 6
 RADIUS_MD = 10
 RADIUS_LG = 14
+
+# ---------------------------------------------------------------- 滚动条
+SCROLLBAR_WIDTH = 10        # 纵向滚动条宽度 / 横向滚动条高度
+SCROLLBAR_MARGIN = 2        # 滚动条与容器边缘的留白
 
 # ---------------------------------------------------------------- 字体
 FONT_FAMILY = "Microsoft YaHei UI"

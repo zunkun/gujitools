@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFormLayout, QLabel, QVBoxLayout, QWidget
+from qfluentwidgets import ScrollArea
 
 from desktop.ui import theme as T
 from desktop.ui.widgets import apply_to
@@ -46,7 +47,13 @@ class StagePanel(QWidget):
         layout.addStretch()
 
     def build_form(self) -> QWidget:
-        """参数表单容器（子类可整体替换，如 print 面板换成滚动区）。"""
+        """参数表单容器：统一装进透明滚动区，窗口过矮时出滚动条而非压扁表单。
+
+        控制卡片把剩余高度分给 QStackedWidget，窗口一矮表单行就被压得错位
+        （rembg 的复选框会挤进表单行、说明与行间距被吞掉）。滚动区让表单
+        始终保持自然高度，高度不足时纵向滚动。print 面板自带分区滚动区，
+        整体覆盖本方法，不受影响。
+        """
         container = QWidget()
         form = QFormLayout(container)
         form.setContentsMargins(0, T.SPACE_XS, 0, 0)
@@ -58,7 +65,15 @@ class StagePanel(QWidget):
             QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow
         )
         self._build_form(form)
-        return container
+
+        scroll = ScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # 去掉滚动区自带的白底与描边：它嵌在参数卡片里，
+        # 再画一层边框就成了"卡片套卡片"（同 print 面板的做法）
+        scroll.enableTransparentBackground()
+        scroll.setWidget(container)
+        return scroll
 
     def _add_row(self, form: QFormLayout, label: str, widget) -> None:
         form.addRow(label, widget)

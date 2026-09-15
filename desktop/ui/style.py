@@ -64,10 +64,14 @@ def global_stylesheet() -> str:
 
     /* ---- 滚动条：细一点，不要默认那种宽灰条 ---- */
     QScrollBar:vertical {{
-        background: transparent; width: 10px; margin: 2px 2px 2px 0;
+        background: transparent;
+        width: {T.SCROLLBAR_WIDTH}px;
+        margin: {T.SCROLLBAR_MARGIN}px {T.SCROLLBAR_MARGIN}px {T.SCROLLBAR_MARGIN}px 0;
     }}
     QScrollBar:horizontal {{
-        background: transparent; height: 10px; margin: 0 2px 2px 2px;
+        background: transparent;
+        height: {T.SCROLLBAR_WIDTH}px;
+        margin: 0 {T.SCROLLBAR_MARGIN}px {T.SCROLLBAR_MARGIN}px {T.SCROLLBAR_MARGIN}px;
     }}
     QScrollBar::handle:vertical, QScrollBar::handle:horizontal {{
         background: #C9D1D8; border-radius: 4px; min-height: 32px; min-width: 32px;

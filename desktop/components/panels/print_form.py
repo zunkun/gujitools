@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QColorDialog, QFormLayout, QHBoxLayout, QLabel, QVBoxLayout, QWidget,
 )
 from qfluentwidgets import (
-    CaptionLabel, CheckBox, LineEdit, PushButton, ScrollArea, SpinBox,
+    CaptionLabel, CheckBox, ComboBox, LineEdit, PushButton, ScrollArea, SpinBox,
     StrongBodyLabel, ToolButton,
 )
 from qfluentwidgets import FluentIcon as FIF
@@ -22,6 +22,7 @@ from desktop.components.panels.print_params import (
     DIRECTIONS, PAPER_SIZES, POSITIONS, TEXT_ORIENTATIONS,
     parse_color,
 )
+from desktop.ui.widgets import combo_box
 
 
 class PrintFormMixin:
@@ -82,24 +83,17 @@ class PrintFormMixin:
         """遍历 root 下所有控件，按类型设焦点策略。
 
         - LineEdit → StrongFocus：点击可聚焦，也支持 Tab 键切换
-        - SpinBox / ComboBox（含 qfluent 的 ComboBox 子类）→ ClickFocus
+        - SpinBox / ComboBox → ClickFocus
         - 其他 → NoFocus
         """
-        from PySide6.QtWidgets import QLineEdit, QSpinBox
-        from PySide6.QtWidgets import QComboBox as _PyCombo
-        try:
-            from qfluentwidgets import ComboBox as _QFCombo
-        except ImportError:
-            _QFCombo = None
+        from PySide6.QtWidgets import QComboBox, QLineEdit, QSpinBox
+
+        # 注意 qfluent 的 ComboBox 继承 QPushButton（不是 QComboBox），
+        # 必须单独判定，否则会落到 else 分支被设成 NoFocus。
         for w in root.findChildren(QWidget):
             if isinstance(w, QLineEdit):
                 w.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-            elif isinstance(w, QSpinBox):
-                w.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
-            elif isinstance(w, _PyCombo) or (
-                _QFCombo is not None and isinstance(w, _QFCombo)
-            ):
-                # qfluent ComboBox 不是 QComboBox 子类，必须单独检查
+            elif isinstance(w, (QSpinBox, QComboBox, ComboBox)):
                 w.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
             else:
                 w.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -115,17 +109,9 @@ class PrintFormMixin:
         return form
 
     @staticmethod
-    def _make_combo(items: list[tuple[str, str]]) -> "object":
+    def _make_combo(items: list[tuple[str, str]]) -> "ComboBox":
         """中文显示、英文值（存于 itemData）的下拉框。"""
-        from qfluentwidgets import ComboBox
-
-        combo = ComboBox()
-        # qfluent 下拉默认 minimumSizeHint 偏大，会把窄面板撑出横向边界；
-        # 主表单中字段列会自动拉伸，表格单元格内则按列宽收纳
-        combo.setMinimumWidth(0)
-        for label, value in items:
-            combo.addItem(label, userData=value)
-        return combo
+        return combo_box(items)
 
     @staticmethod
     def _set_combo(combo, value, default: str) -> None:
@@ -166,11 +152,7 @@ class PrintFormMixin:
         # title_text 放 PDF 文件名 上面：两者联动，挨在一起最直观
         self.title_text = self._line_edit("古籍名称（同时作为 PDF 文件名前缀）")
         self.pdf_name = self._line_edit("xxx[重制].pdf")
-        from qfluentwidgets import ComboBox
-
-        self.paper_size = ComboBox()
-        self.paper_size.setMinimumWidth(0)
-        self.paper_size.addItems(PAPER_SIZES)
+        self.paper_size = combo_box(PAPER_SIZES)
         self.orientation = self._make_combo(DIRECTIONS)
         self._add_row(form, "古籍名称", self.title_text)
         self._add_row(form, "PDF 文件名", self.pdf_name)

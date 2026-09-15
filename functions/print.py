@@ -60,19 +60,34 @@ def _image_name_parts(path):
 
 
 def _resolve_title_nodes(image_files, title_switch_nodes):
-    """将配置中的 [页名, 标题, side] 解析为排序后图片的序号。"""
+    """将配置中的 [页名, 标题, side] 解析为排序后图片的序号。
+
+    ``页名`` 为**原始页码**（extract 里的数字页号，如 ``5``、``5-r`` 的
+    ``5``），不是列表下标——用户填「15」时想的是原书第 15 页，即使该页
+    被拖到列表别处，标题切换仍要跟着这一页走。因此这里按**同名**回查
+    图片在最终清单中的下标，与页序是否等于文件名序无关。
+    """
     resolved = {}
     for node in title_switch_nodes:
         if len(node) < 2:
             continue
-        page = int(node[0])
+        anchor_spec = str(node[0]).strip()
         title = node[1]
         requested_side = str(node[2]).lower() if len(node) > 2 else "left"
-        candidates = [
-            (index, _image_name_parts(path)[1])
-            for index, path in enumerate(image_files)
-            if _image_name_parts(path)[0] == page
-        ]
+        # 页名支持 <页号> / <页号>-l / <页号>-r；带侧别时只认该侧
+        page, node_side = _image_name_parts(anchor_spec)
+        if page is None and anchor_spec.isdigit():
+            page, node_side = int(anchor_spec), None
+        if page is None:
+            continue
+        candidates = []
+        for index, path in enumerate(image_files):
+            file_page, file_side = _image_name_parts(path)
+            if file_page != page:
+                continue
+            if node_side and file_side != node_side:
+                continue
+            candidates.append((index, file_side))
         if not candidates:
             continue
         if requested_side in ("left", "right"):
@@ -86,6 +101,35 @@ def _resolve_title_nodes(image_files, title_switch_nodes):
             anchor = candidates[0][0]
         resolved[anchor] = (title, requested_side)
     return sorted(resolved.items())
+
+
+def _collect_image_files(input_dir: Path, files: Optional[List[str]] = None) -> List[str]:
+    """收集待打印图片，返回**按最终页序排列**的路径列表。
+
+    页序规则（二选一）：
+    - ``files`` 非空：直接采用该清单顺序（GUI 第四步的列表顺序，即
+      ``print.json`` 的 pages 数组序）。**不再解析文件名**——文件名只是
+      标识，顺序完全由数据层决定，拖拽重排无需改动任何物理文件。
+    - ``files`` 为空：退回 CLI 独立用法——扫描目录并按
+      ``pdf_custom_sort_key``（cover/menu 优先、同编号 r→l、数字自然序）
+      推导顺序。
+
+    清单中不存在的路径会被跳过，让「数据表里有记录但物理文件已删」的
+    条目静默失效，而不是让整次打印失败。
+    """
+    if files:
+        out = []
+        for text in files:
+            p = Path(text)
+            if p.is_file():
+                out.append(str(p))
+        return out
+    image_files = []
+    for name in os.listdir(input_dir):
+        if name.lower().endswith((".png", ".jpg", ".jpeg", ".bmp", ".gif")):
+            image_files.append(os.path.join(str(input_dir), name))
+    image_files.sort(key=pdf_custom_sort_key)
+    return image_files
 
 
 class PrintFunction(FunctionBase):
@@ -164,6 +208,9 @@ class PrintFunction(FunctionBase):
 
         workers = self.command_args.get("workers", 4)
 
+        # 有序文件清单（GUI 第四步的列表顺序）；为空时按目录扫描 + 文件名排序
+        files = self.command_args.get("files") or []
+
         return self._generate_pdf(
             input_dir,
             output_pdf,
@@ -189,6 +236,7 @@ class PrintFunction(FunctionBase):
             page_number_orientation=page_number_orientation,
             skip_pages=skip_pages,
             workers=workers,
+            files=files,
         )
 
     def _generate_pdf(
@@ -217,6 +265,7 @@ class PrintFunction(FunctionBase):
         page_number_orientation: str,
         skip_pages: List[str],
         workers: int,
+        files: Optional[List[str]] = None,
     ) -> dict:
         if skip_pages is None:
             skip_pages = []
@@ -228,17 +277,30 @@ class PrintFunction(FunctionBase):
         print(f"输入目录: {input_dir}")
         print(f"输出 PDF: {output_pdf}")
 
-        image_files = []
-        for f in os.listdir(input_dir):
-            if f.lower().endswith((".png", ".jpg", ".jpeg", ".bmp", ".gif")):
-                image_files.append(os.path.join(input_dir, f))
-        image_files.sort(key=pdf_custom_sort_key)
+        image_files = _collect_image_files(input_dir, files)
         total = len(image_files)
         if total == 0:
             print("未找到任何图片")
             return {"processed": 0, "output": str(output_pdf)}
 
-        skip_set = set(skip_pages)
+        # skip_pages 按**最终清单序号**（1 起）匹配：拖拽重排后仍指向
+        # 同一位置。兼容旧写法——纯数字串既可能是序号也可能是原始页码，
+        # 这里优先按序号解释（第 N 页），与 GUI 表单的提示语一致。
+        skip_indices: set[int] = set()
+        for spec in skip_pages:
+            text = str(spec).strip()
+            if text.isdigit():
+                skip_indices.add(int(text))
+            else:
+                # 带侧别的写法（如 "5-r"）：按同名回查清单下标
+                page, side = _image_name_parts(text)
+                if page is None:
+                    continue
+                for index, path in enumerate(image_files, start=1):
+                    file_page, file_side = _image_name_parts(path)
+                    if file_page == page and (side is None or file_side == side):
+                        skip_indices.add(index)
+                        break
 
         # 先按纸张/方向/边距算出页面可放置图片的实际显示尺寸，
         # 在加载阶段把超大扫描图缩放到打印 DPI，避免 fpdf 对数千像素原图
@@ -261,9 +323,7 @@ class PrintFunction(FunctionBase):
         with ThreadPoolExecutor(max_workers=workers) as executor:
             futures = {}
             for i, path in enumerate(image_files):
-                fname = os.path.basename(path)
-                name_no_ext = os.path.splitext(fname)[0]
-                if name_no_ext in skip_set:
+                if (i + 1) in skip_indices:  # 序号从 1 起，与表单一致
                     page_data[i] = {
                         "idx": i,
                         "img": None,

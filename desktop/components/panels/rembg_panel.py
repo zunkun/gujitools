@@ -4,9 +4,10 @@
 from __future__ import annotations
 
 from PySide6.QtWidgets import QFormLayout
-from qfluentwidgets import CheckBox, ComboBox, LineEdit, SpinBox
+from qfluentwidgets import CheckBox, LineEdit, SpinBox
 
 from desktop.components.panels.base import StagePanel
+from desktop.ui.widgets import combo_box
 
 
 class RembgPanel(StagePanel):
@@ -24,12 +25,10 @@ class RembgPanel(StagePanel):
     )
 
     def _build_form(self, form: QFormLayout) -> None:
-        self.area = ComboBox()
-        self.area.addItems(["1 (左右分开)", "2 (合并单图)", "3 (整页合并)"])
+        self.area = combo_box(["1 (左右分开)", "2 (合并单图)", "3 (整页合并)"])
         self.border = LineEdit()
         self.border.setPlaceholderText("留空 或 30 / 20,30 / 20,30,25,35")
-        self.type = ComboBox()
-        self.type.addItems(["1 (二值)", "2 (1bit)", "3 (灰度)"])
+        self.type = combo_box(["1 (二值)", "2 (1bit)", "3 (灰度)"])
         self.offset = SpinBox()
         self.offset.setRange(0, 100)
         self.seal = CheckBox("保留印章 (seal)")

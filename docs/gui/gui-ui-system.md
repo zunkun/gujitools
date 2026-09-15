@@ -30,6 +30,7 @@ desktop/ui/
 | | `SURFACE` | `#FFFFFF` | 卡片 |
 | | `SURFACE_SOFT` | `#F7F9FB` | 表头 / 空状态 / 图片画布 |
 | | `SURFACE_HOVER` | `#EEF3F6` | 悬停 |
+| | `SURFACE_SUNKEN` | `#E4EAEF` | 内凹底：分段开关轨道等「容器槽」（要衬得出白滑块） |
 | | `BORDER` | `#E2E7EC` | 常规描边 |
 | | `BORDER_SOFT` | `#EDF1F4` | 分隔线 |
 | | `BORDER_STRONG` | `#C9D1D8` | 浮层 / 悬浮面板描边（需压过底下卡片时） |
@@ -61,6 +62,24 @@ status_label(status)   # -> 中文文案，未知状态原样返回
 - 圆角三档：`RADIUS_SM=6`（控件）、`RADIUS_MD=10`（卡片）、`RADIUS_LG=14`（大容器）
 - 字号六级：`SIZE_CAPTION=12`、`SIZE_BODY=13`、`SIZE_LABEL=14`、`SIZE_SUBTITLE=16`、`SIZE_TITLE=22`、`SIZE_HERO=26`
 
+### 控件高度
+
+表单控件统一 `CONTROL_HEIGHT=33`（在 `widgets.py`）：
+
+- qfluentwidgets 的 `LineEdit` 在构造里写死 `setFixedHeight(33)`，`SpinBox` /
+  `DoubleSpinBox` / `EditableComboBox` 都继承它，所以输入类天然同高；
+- 而 **`ComboBox` 继承的是 `QPushButton`，没有这个约束，实测只有 27px**——
+  和同列输入框并排会明显矮一截（`PushButton` 同理）。所以
+  **下拉框一律用 `widgets.combo_box()` 创建**，由它抬到 `CONTROL_HEIGHT`；
+  表单里单独出现的按钮也要显式 `setFixedHeight(CONTROL_HEIGHT)`。
+- `tests/gui_selftest.py` 有断言锁住这点：所有阶段面板的下拉框高度必须等于
+  `LineEdit().height()`，且 `CONTROL_HEIGHT` 常量不能和库里的实际高度脱节。
+- `CheckBox` / `SwitchButton`（均 22px）是行内开关，**不**参与表单行高对齐。
+
+> 另一个相关坑：裸 `ComboBox` 在未布局时 `height()` 返回 480（默认窗口高），
+> 只有 `setFixedHeight` 过的控件才能在不 `show()` 的情况下取到真实高度。
+> 写自测断言时不能拿裸 `ComboBox().height()` 当基准。
+
 ## 2. 基础控件（`widgets.py`）
 
 | 控件 | 说明 |
@@ -71,11 +90,38 @@ status_label(status)   # -> 中文文案，未知状态原样返回
 | `StatusChip` | 状态胶囊：圆点 + 文案 + 淡色底，`set_state(text, status)` |
 | `ProgressLine` | 细进度条，`setRange/setValue/ratio`，`height` 可调 |
 | `Pill` | 文本自适应宽度的信息胶囊（超长省略） |
+| `SegmentedToggle` | 分段开关：一行内互斥选择视图形态，`current/set_current/set_item_enabled`，点击发 `current_changed` |
 | `EmptyState` | 空状态：图标 + 主文案 + 提示行，`set_text/set_hint` |
 | `PageHeader` | 页面头：标题 + 副标题，右侧可放操作按钮 |
+| `combo_box(items, width)` | 与输入框同高的下拉框；`items` 可传 `(文案, 值)` 二元组（值入 `itemData`） |
+| `CONTROL_HEIGHT` | 表单控件统一高度常量（33） |
 | `ui_font(size, bold)` | 生成统一字体的 `QFont` |
 | `apply_to(widget, size, bold, color)` | 给控件套统一字体/颜色 |
 | `icon_pixmap(icon, size, color)` | 把 `FluentIcon` 渲染成指定颜色的 `QPixmap` |
+
+### 分段开关（`SegmentedToggle`）
+
+同一视图的形态切换（如去底色预览的「去底色结果 / 原图」）用 `SegmentedToggle`，
+**不要用两个 `PushButton` 拼一个开关**：
+
+- 自绘胶囊，颜色全部取自 `theme`。之前用 `PushButton` 加一段写死 `#0078d4` 的样式表：
+  饱和蓝和主题色（深青 `ACCENT`）打架，两个按钮之间还留着一道缝，看着像两颗不相干的
+  按钮而不是一组开关；启用态还各自带白字粗体，一块实心色块压在浅色预览区上方很突兀。
+- **选中态必须一眼看得出**，靠三处一起给对比度（只做「白滑块」是不够的）：
+  1. 轨道用 `SURFACE_SUNKEN`（`#E4EAEF`）——**不是** `SURFACE_SOFT`。后者近白，
+     白滑块压上去几乎分不出哪边是选中的（实测评均亮度差只有 6，等于没有对比度）；
+  2. 选中项文字用主色 `ACCENT` 且**加粗**，未选中项用 `INK_SOFT`，禁用项 `INK_DISABLED`；
+  3. 白滑块垫一层 `rgba(26,29,33,28)` 投影，滑块边界不靠色差硬撑。
+  段宽按**粗体**度量算，否则选中项变粗后文字会顶到滑块边缘。
+- 不用 qfluentwidgets 的 `SegmentedWidget`：那是给页面导航设计的（底部指示条），
+  而且**无法单独禁用某一项**——这里需要「还没有去底色结果时禁用结果项」的语义。
+- 高度 `SegmentedToggle.HEIGHT = 30`：比表单控件（`CONTROL_HEIGHT=33`）略矮，
+  它不在表单里，是压在预览视图上的一条轻量开关。
+- 只有用户点击才发 `current_changed`；`set_current()` 是程序化切换、不发信号
+  （否则「回流刷新选中项」会自我递归）。
+- `tests/gui_selftest.py` 锁住三点：去底色预览里不许再出现 `QPushButton` 子控件、
+  不许有 `#0078d4` 这类硬编码样式表，以及**离屏渲染采样像素**确认轨道比白滑块
+  明显更深（平均亮度差 ≥ 12）——最后这条是防止「选中态没对比度」回归。
 
 ## 3. 关键约束：自绘控件，慎用样式表
 
@@ -135,6 +181,8 @@ apply_app_style(app)
 - 分区用 `Card`；卡片内部按 `SPACE_*` 排布，标题用 `SectionTitle`。
 - 任何"状态"展示都走 `StatusChip` + `theme.status_colors/label`，不要各页自造。
 - 空列表统一 `EmptyState`，给出下一步提示（如"请先完成提取"）。
+- 阶段参数表单里，**下拉框用 `combo_box()`、单独出现的按钮设 `CONTROL_HEIGHT`**，
+  别直接 `ComboBox()` / `PushButton()`——否则会比同列输入框矮 6px（见 §1 控件高度）。
 - 预览图片画布用浅色底（`SURFACE_SOFT` + `BORDER`）：古籍页面本身是白底，
   深色底会把页面衬得像悬浮贴片。
 - 需要"按需出现、且不改变布局"的面板（如执行日志浮层）用**覆盖式子控件**：

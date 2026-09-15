@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QFormLayout
 from qfluentwidgets import BodyLabel, PrimaryPushButton
 
 from desktop.components.panels.base import StagePanel
+from desktop.ui.widgets import CONTROL_HEIGHT
 
 
 class DetectPanel(StagePanel):
@@ -29,6 +30,8 @@ class DetectPanel(StagePanel):
 
     def _build_form(self, form: QFormLayout) -> None:
         button = PrimaryPushButton("检测本页")
+        # 与其它阶段面板的表单控件同高（qfluent 按钮默认只有 27px）
+        button.setFixedHeight(CONTROL_HEIGHT)
         button.setToolTip("对当前选中的页面执行一次文本框检测（加载 YOLO 模型，耗时较长）")
         button.clicked.connect(self.detect_page_requested.emit)
         form.addRow(button)

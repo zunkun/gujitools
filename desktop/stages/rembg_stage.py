@@ -15,7 +15,7 @@ def run_rembg_submit_stage(config: dict) -> int:
 
     与 run_print_stage 的效果合成复用同一套几何规则
     （desktop/workers/preview_worker.compose_region_output），
-    但结果是持久化的交付图片而非临时 workset，且不再生成 PDF。
+    但结果是持久化的交付图片而非一次性暂存，且不再生成 PDF。
 
     args["_effects"] = [
         {"file": 预览结果路径, "label": 输出文件名(无扩展名),
