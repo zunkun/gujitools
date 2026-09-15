@@ -6,11 +6,11 @@
 #endif
 
 [Setup]
-AppName=古籍重製助手
+AppName=古籍重製
 AppVersion={#VERSION}
-AppVerName=古籍重製助手 {#VERSION}
+AppVerName=古籍重製 {#VERSION}
 DefaultDirName={localappdata}\Software\guji
-DefaultGroupName=古籍重製助手
+DefaultGroupName=古籍重製
 PrivilegesRequired=lowest
 OutputDir=dist
 OutputBaseFilename=guji_setup_{#VERSION}_{#BUILD_TIMESTAMP}
@@ -20,7 +20,7 @@ SolidCompression=yes
 #ifdef ICON_FILE
 SetupIconFile={#ICON_FILE}
 #endif
-UninstallDisplayName=古籍重製助手 {#VERSION}
+UninstallDisplayName=古籍重製 {#VERSION}
 UninstallDisplayIcon={app}\guji-gui.exe
 
 [Languages]
@@ -31,10 +31,10 @@ Source: "dist\guji\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
 
 [Icons]
 ; 开始菜单：GUI 主程序 + 卸载入口
-Name: "{autoprograms}\古籍重製助手"; Filename: "{app}\guji-gui.exe"; IconFilename: "{app}\guji-gui.exe"
-Name: "{autoprograms}\卸载 古籍重製助手"; Filename: "{uninstallexe}"
+Name: "{autoprograms}\古籍重製"; Filename: "{app}\guji-gui.exe"; IconFilename: "{app}\guji-gui.exe"
+Name: "{autoprograms}\卸载 古籍重製"; Filename: "{uninstallexe}"
 ; 桌面快捷方式（可选安装，默认不勾选）
-Name: "{autodesktop}\古籍重製助手"; Filename: "{app}\guji-gui.exe"; IconFilename: "{app}\guji-gui.exe"; Tasks: desktopicon
+Name: "{autodesktop}\古籍重製"; Filename: "{app}\guji-gui.exe"; IconFilename: "{app}\guji-gui.exe"; Tasks: desktopicon
 
 [Tasks]
 Name: desktopicon; Description: "创建桌面快捷方式"; GroupDescription: "附加图标:"; Flags: unchecked
@@ -159,10 +159,10 @@ procedure RefreshEnvironment;
 var
   Msg: string;
 begin
-  Msg := '古籍重製助手 安装完成！' + #13#10 + #13#10 +
+  Msg := '古籍重製 安装完成！' + #13#10 + #13#10 +
          '• 命令行：guji 命令已添加至当前用户 PATH，' +
          '关闭所有终端窗口重新打开后即可直接运行 guji。' + #13#10 +
-         '• 图形界面：已创建「古籍重製助手」开始菜单项，可直接启动。';
+         '• 图形界面：已创建「古籍重製」开始菜单项，可直接启动。';
   MsgBox(Msg, mbInformation, MB_OK);
 end;
 

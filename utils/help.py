@@ -6,7 +6,7 @@
 实现 man 风格帮助：从 `docs/functions/<command>.md` 加载 Markdown 文档，
 轻量转换为终端可读纯文本后，通过 less/more 分页显示。
 
-文档来源单一：`docs/functions/` 下的 .md 文件即为帮助手册内容，无需维护额外 .txt 副本。
+文档来源单一：`docs/functions/` 下的 .md 文件即为帮册内容，无需维护额外 .txt 副本。
 
 支持的帮助主题:
     guji help                # 显示命令总览

@@ -258,7 +258,9 @@ def prepare_icon(project_root):
     """把 desktop/static/icon.png 转成 Windows 图标 icon.ico。
 
     PyInstaller 的 ``icon=``（Windows）只认 .ico；仓库里只保留 PNG 源图，
-    .ico 在构建时生成。返回生成出的 .ico 路径，失败则返回 None（不致命）。
+    .ico 在构建时生成——**顺便烧上圆角**：图标形状由像素决定，源图不必
+    手工修圆角（详见 tools/make_icon.py）。
+    返回生成出的 .ico 路径，失败则返回 None（不致命）。
     """
     png = project_root / "desktop" / "static" / "icon.png"
     ico = png.with_suffix(".ico")
@@ -266,13 +268,11 @@ def prepare_icon(project_root):
         print("⚠️ 未找到 desktop/static/icon.png，跳过图标生成")
         return None
     try:
-        from PIL import Image
+        from tools.make_icon import DEFAULT_RADIUS_PCT, make_ico
 
-        image = Image.open(png)
-        # .ico 需包含多尺寸，Windows 资源管理器/任务栏会按场景挑选
-        sizes = [(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
-        image.save(ico, format="ICO", sizes=sizes)
-        print(f"✅ 生成图标: {ico.relative_to(project_root)}")
+        make_ico(png, ico, DEFAULT_RADIUS_PCT)
+        print(f"✅ 生成图标: {ico.relative_to(project_root)}"
+              f"（圆角 {DEFAULT_RADIUS_PCT}%）")
         return ico
     except Exception as exc:
         print(f"⚠️ 图标生成失败（不影响打包）: {exc}")

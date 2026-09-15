@@ -11,6 +11,7 @@ from qfluentwidgets import setTheme, Theme
 from desktop.pages import TaskDetailPage, TaskListPage
 from desktop.store import TaskStore
 from desktop.ui import theme as T
+from desktop.utils.icon import rounded_window_icon
 from desktop.ui.style import apply_app_style
 from desktop.utils.files import package_dir
 
@@ -23,16 +24,20 @@ class MainWindow(QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("古籍重製助手")
+        self.setWindowTitle("古籍重製")
         self.resize(1440, 920)
         self.setMinimumSize(1080, 720)
 
         # ========== 加载窗口图标 desktop/static/icon.png ==========
         # 打包后 desktop/ 是 PYZ 内字节码，磁盘上无此路径，改从
         # _internal/desktop/static 取（spec datas 已收集）——用 package_dir()
+        #
+        # 源图保持直角原图即可：形状由像素决定，圆角在这里统一裁
+        # （ICON_RADIUS_RATIO，与打包脚本 tools/make_icon.py 同一套规则）。
         icon_path = package_dir() / "static" / "icon.png"
         if icon_path.exists():
-            self.setWindowIcon(QIcon(str(icon_path)))
+            icon = rounded_window_icon(icon_path)
+            self.setWindowIcon(icon if icon else QIcon(str(icon_path)))
         # ==========================================================
 
         self.store = TaskStore()
