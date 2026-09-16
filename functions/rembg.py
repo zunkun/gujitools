@@ -39,13 +39,13 @@ class RembgFunction(FunctionBase):
     继承 FunctionBase 的并发执行引擎，只需实现 `_process_single_image`。
     """
 
-    def __init__(self, command_args):
+    def __init__(self, command_args, reporter=None):
         """初始化并推导去底色输出目录。
 
         先调用基类解析输入/输出路径，再经 _calc_outpath 计算 self.outpath
         （规则见 _calc_outpath：未指定 --output 时与输入并列，否则按用户输出解析）。
         """
-        super().__init__(command_args)
+        super().__init__(command_args, reporter)
         self._calc_outpath()
 
     def _calc_outpath(self):
@@ -126,6 +126,10 @@ class RembgFunction(FunctionBase):
             )
 
             # 保存为 PNG（300 DPI）
+            # 注意：rembg 的输出格式**固定为 PNG**，不读 ext 参数。
+            # type=2 是 1bit 单色位图，只有 PNG 能无损承载；JPEG 是 8bit
+            # 有损格式，会把二值图重新糊成灰阶，二值化的意义就没了。
+            # （历史模板里曾有一个 rembg.ext 键，那是无效配置，已删除。）
             out_path = self.outpath / f"{image_path.stem}.png"
             if final_arr.ndim == 3:
                 # 彩色输出（印章原色保留）

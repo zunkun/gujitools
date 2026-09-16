@@ -32,7 +32,7 @@ def run(ctx) -> None:
 
     # ---------------------------------------------------------- 纯清单页序
     # 直接对 CLI 层验证：清单顺序 = PDF 页序，且无需任何中间文件
-    from cli.command_args import CommandArgs
+    from core.args import CommandArgs
     from functions.print import PrintFunction
 
     tmp = ctx.tmp / "order_case"

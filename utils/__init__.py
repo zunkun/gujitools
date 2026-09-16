@@ -9,17 +9,29 @@
 - `pdf_utils`: PDF 页面渲染为图片（多线程批量处理）。
 - `sort_utils`: 自然排序（封面/菜单优先，数字感知）。
 - `path_utils`: 输出路径解析（extract 根目录、各命令最终输出目录）。
+- `color_utils`: 颜色 'r,g,b' 解析（非法值抛错，不静默降级为黑）。
+- `margin_utils`: 边距 CSS 简写标准化（单/两/三/四值 → [上,右,下,左]）。
 - `help`: man 风格帮助文本加载与分页显示。
 
+`color_utils` 与 `margin_utils` 位于最低层，供 core 与 functions 共用，
+以保证命令行、GUI 表单、PDF 生成三处对同一参数的解释完全一致。
+
 加载策略:
-- `sort_utils`、`file_utils`、`path_utils` 无重依赖，在包初始化时直接导入；
+- `path_utils`、`file_utils`、`sort_utils` 无重依赖，在包初始化时直接导入，
+  以同时支持 `from utils import xxx` 与 `utils.xxx` 两种取用方式；
+- 其余模块一律通过 `from utils.<module> import <name>` 直接导入；
 - `yolo_utils`（依赖 cv2/ultralytics）和 `image_utils`（依赖 cv2/numpy）
   使用 `__getattr__` 延迟加载，避免 `from utils.help import ...` 时触发不必要的导入。
 """
 
+# 无重依赖的模块在包初始化时直接导入，使 `utils.xxx` 与 `from utils import xxx`
+# 两种取用方式都成立（functions/base.py、functions/rembg.py、
+# desktop/stages/detect_stage.py 等均以 `utils.xxx` 形式取用）。
+# 这些名字是包对外的公开别名，pyflakes 会报「未使用」——属预期，故整体禁用该检查。
+# flake8: noqa: F401
+from utils.file_utils import IMAGE_EXTS, collect_image_files, is_valid_image_size
+from utils.path_utils import get_extract_output_root, resolve_final_output_dir
 from utils.sort_utils import natural_sort_key
-from utils.file_utils import collect_image_files, is_valid_image_size, IMAGE_EXTS
-from utils.path_utils import resolve_final_output_dir, get_extract_output_root
 
 # 重依赖模块的函数名 → (模块路径, 函数名) 映射，首次访问时按需加载
 _LAZY = {
@@ -34,6 +46,7 @@ _LAZY = {
     "compute_final_boxes": ("utils.box_geometry", "compute_final_boxes"),
     "imread": ("utils.image_io", "imread"),
     "imwrite": ("utils.image_io", "imwrite"),
+    "draw_boxes": ("utils.box_draw", "draw_boxes"),
 }
 
 

@@ -1,41 +1,29 @@
 # -*- coding: utf-8 -*-
 """worker 子进程的事件输出层。
 
-- emit：向 GUI 输出一条 JSON Lines 事件；
-- ProgressStream：拦截功能模块的 print 输出，解析进度并转发日志。
+分两层职责，**顺序很重要**：
 
-The worker emits JSON Lines on stdout so the GUI remains independent from heavy
-libraries. While the stage function runs, sys.stdout is intercepted so that:
-- progress messages produced by functions/* (处理完成 / 进度: d/t / 写入进度 等)
-  are converted into {"type": "progress"} events;
-- every other text line is forwarded as {"type": "log"} events for the GUI log view.
+1. **结构化通道**（主）：`JsonLinesReporter` 实现 `core.reporter.Reporter` 协议，
+   由阶段执行器注入给功能模块。进度、检测框、页尺寸等「给程序读的信号」直接
+   以字典形式写成 JSON Lines，不经过任何字符串解析 —— 改文案不会再静默打断
+   GUI 进度条。
+2. **兜底通道**（辅）：`ProgressStream` 拦截功能模块（以及第三方库）的 print，
+   把**人读日志**转发为 ``{"type": "log"}`` 事件。它不再做正则解析。
+
+历史包袱说明：以前没有结构化通道，所有信号都靠 ProgressStream 跑正则从中文
+提示里捞（`进度: d/t`、`图片总数: n`、`[boxes] …`、`[imgsize] …`）。那种
+「文案即契约」的耦合已移除；`[boxes]`/`[imgsize]` 两行文本仍在 functions 侧
+兼容保留一个版本，便于对照验证，但本文件不再解析它们。
 """
 
 from __future__ import annotations
 
 import io
 import json
-import re
 import sys
+from typing import Any, Dict
 
-# 各功能模块的进度输出模式 → (done, total)
-_PROGRESS_PAIR = re.compile(r"(?:进度|图片加载进度|写入进度)\s*[:：]?\s*(\d+)\s*/\s*(\d+)")
-# base.py 引擎：先输出总数，再逐文件输出 完成/失败
-_TOTAL_ONLY = re.compile(r"图片总数\s*[:：]\s*(\d+)")
-_DONE_ONE = re.compile(r"处理(?:完成|失败)\s*[:：]")
-# text_region 检测到的文本框坐标行：[boxes] 0001 left=10,20,300,400 right=none
-_BOXES_LINE = re.compile(r"^\[boxes\]\s+(\S+)\s+left=(\S+)\s+right=(\S+)\s*$")
-# extract 渲染的页面图片尺寸行：[imgsize] 1 2481,3508
-_IMG_SIZE_LINE = re.compile(r"^\[imgsize\]\s+(\S+)\s+(\d+),(\d+)\s*$")
-
-
-def _parse_box(text: str):
-    if text == "none":
-        return None
-    try:
-        return [int(v) for v in text.split(",")]
-    except ValueError:
-        return None
+from core.reporter import EVENT_PAGE_BOXES, EVENT_PAGE_SIZE, EVENT_PROGRESS
 
 
 def _real_stdout():
@@ -60,8 +48,54 @@ def emit(payload: dict, stream=None) -> None:
     target.flush()
 
 
+class JsonLinesReporter:
+    """把功能模块的结构化汇报写成 JSON Lines（worker → GUI 的正式协议）。
+
+    context 提供 task_id/stage/run_id，附加到每条事件上供 GUI 归位到具体任务。
+    """
+
+    __slots__ = ("_context", "_stream")
+
+    def __init__(self, context: dict, stream=None):
+        self._context = dict(context)
+        self._stream = stream
+
+    def _send(self, payload: Dict[str, Any]) -> None:
+        emit(payload, stream=self._stream)
+
+    def progress(self, done: int, total: int) -> None:
+        self._send(
+            {
+                "type": EVENT_PROGRESS,
+                **self._context,
+                "done": int(done),
+                "total": int(total),
+            }
+        )
+
+    def event(self, name: str, **payload: Any) -> None:
+        """转发具名事件。
+
+        `progress_total`（引擎先给出总数、尚无完成量）在协议上仍是一条
+        progress 事件：GUI 只关心 total 用来设进度条 range，因此这里
+        统一映射为 done=0 的 progress，避免新增一种 GUI 不认识的事件类型。
+        """
+        if name == "progress_total":
+            self.progress(0, int(payload.get("total", 0)))
+            return
+        self._send({"type": name, **self._context, **payload})
+
+    def log(self, message: str) -> None:
+        self._send({"type": "log", **self._context, "message": message})
+
+
 class ProgressStream(io.TextIOBase):
-    """拦截功能模块的 print 输出，解析进度并转发日志。"""
+    """拦截功能模块的 print 输出，原样转发为人读日志事件。
+
+    ⚠️ 这里**刻意不做任何解析**。以前它跑四条正则从中文提示里捞进度与结构化
+    数据，属于「文案即契约」——改一句提示就静默断掉 GUI 进度条。现在信号走
+    `JsonLinesReporter`，本类只负责让日志视图不漏行（含第三方库的 print）。
+    """
 
     def __init__(self, real_stdout, context: dict):
         """
@@ -71,6 +105,8 @@ class ProgressStream(io.TextIOBase):
         self.real = real_stdout
         self.context = context  # {"task_id", "stage", "run_id"}
         self.buffer = ""
+        # 兼容旧调用方：阶段执行器以前从解析结果里取 done/total 组装 finished。
+        # 现在由 JsonLinesReporter 负责进度，这里不再维护计数，恒为 0。
         self.done = 0
         self.total = 0
 
@@ -79,7 +115,7 @@ class ProgressStream(io.TextIOBase):
         return True
 
     def write(self, text: str) -> int:
-        """按换行或回车切分输出边界，逐行解析成事件；返回本次写入的字符数（满足 io.TextIOBase 约定）。"""
+        """按换行或回车切分输出边界，逐行转发日志；返回写入字符数（满足 io.TextIOBase 约定）。"""
         if not isinstance(text, str):
             text = str(text)
         self.buffer += text
@@ -102,57 +138,15 @@ class ProgressStream(io.TextIOBase):
         pass
 
     def _consume(self, line: str) -> None:
-        match = _BOXES_LINE.match(line)
-        if match:
-            # 框坐标是结构化数据，转发为独立事件，不进日志视图
-            emit(
-                {
-                    "type": "page_boxes",
-                    **self.context,
-                    "image": match.group(1),
-                    "left": _parse_box(match.group(2)),
-                    "right": _parse_box(match.group(3)),
-                },
-                stream=self.real,
-            )
-            return
-        match = _IMG_SIZE_LINE.match(line)
-        if match:
-            emit(
-                {
-                    "type": "page_size",
-                    **self.context,
-                    "image": match.group(1),
-                    "width": int(match.group(2)),
-                    "height": int(match.group(3)),
-                },
-                stream=self.real,
-            )
-            return
-        emit(
-            {"type": "log", **self.context, "message": line},
-            stream=self.real,
-        )
-        changed = False
-        match = _PROGRESS_PAIR.search(line)
-        if match:
-            self.done, self.total = int(match.group(1)), int(match.group(2))
-            changed = True
-        else:
-            match = _TOTAL_ONLY.search(line)
-            if match and not self.total:
-                self.total = int(match.group(1))
-                changed = True
-            elif _DONE_ONE.search(line):
-                self.done += 1
-                changed = True
-        if changed:
-            emit(
-                {
-                    "type": "progress",
-                    **self.context,
-                    "done": self.done,
-                    "total": self.total,
-                },
-                stream=self.real,
-            )
+        """把一行人读输出转发为 log 事件。"""
+        emit({"type": "log", **self.context, "message": line}, stream=self.real)
+
+
+__all__ = [
+    "EVENT_PAGE_BOXES",
+    "EVENT_PAGE_SIZE",
+    "EVENT_PROGRESS",
+    "JsonLinesReporter",
+    "ProgressStream",
+    "emit",
+]

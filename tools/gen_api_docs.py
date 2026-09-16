@@ -49,6 +49,7 @@ TARGETS: list[tuple[str, str | None, str, str]] = [
     ("cli", "cli", "cli", "命令行入口层：参数解析、子命令调度"),
     ("functions", "functions", "functions", "图像处理功能模块：GUI 与 CLI 共用同一套算法"),
     ("utils", "utils", "utils", "通用工具函数：几何、排序、图像 IO、PDF、YOLO"),
+    ("core", "core", "core", "中立共享层：CLI 与 desktop 都依赖且语义必须一致的契约"),
     ("entrypoints", None, "入口脚本", "仓库顶层的可执行入口与配置读取"),
 ]
 

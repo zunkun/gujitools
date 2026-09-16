@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 51 个模块、50 个公开类、233 个公开函数/方法（生成于 2026-09-15）。
+覆盖 52 个模块、51 个公开类、240 个公开函数/方法（生成于 2026-09-16）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -43,7 +43,7 @@
 | [`desktop.services.print_plan`](#desktopservicesprint_plan) | 0 | 5 |
 | [`desktop.services.submit_state`](#desktopservicessubmit_state) | 0 | 1 |
 | [`desktop.stages.detect_stage`](#desktopstagesdetect_stage) | 0 | 2 |
-| [`desktop.stages.events`](#desktopstagesevents) | 1 | 5 |
+| [`desktop.stages.events`](#desktopstagesevents) | 2 | 9 |
 | [`desktop.stages.generic_stage`](#desktopstagesgeneric_stage) | 0 | 2 |
 | [`desktop.stages.print_stage`](#desktopstagesprint_stage) | 0 | 1 |
 | [`desktop.stages.rembg_stage`](#desktopstagesrembg_stage) | 0 | 1 |
@@ -57,6 +57,7 @@
 | [`desktop.ui.theme`](#desktopuitheme) | 0 | 2 |
 | [`desktop.ui.widgets`](#desktopuiwidgets) | 9 | 45 |
 | [`desktop.utils.files`](#desktoputilsfiles) | 0 | 6 |
+| [`desktop.utils.icon`](#desktoputilsicon) | 0 | 3 |
 | [`desktop.worker`](#desktopworker) | 0 | 1 |
 | [`desktop.workers.hash_worker`](#desktopworkershash_worker) | 1 | 2 |
 | [`desktop.workers.image_list_worker`](#desktopworkersimage_list_worker) | 1 | 2 |
@@ -1290,8 +1291,9 @@ detect 阶段执行器：单图检测 + 批量检测（重依赖只在本子进�
 
 detect 阶段：逐图检测左右文本框并上报坐标，不切割、不生成任何文件。
 
-最终裁剪框由 GUI 按同一套规则（utils.box_geometry.compute_final_boxes）
-从检测框实时推导，用于预览标注。
+检测算法复用 `functions.detect.detect_page_boxes`（与 CLI crop /
+cropremove 同源），最终裁剪框由 GUI 按同一套规则
+（utils.box_geometry.compute_final_boxes）从检测框实时推导，用于预览标注。
 
 ---
 
@@ -1301,18 +1303,50 @@ detect 阶段：逐图检测左右文本框并上报坐标，不切割、不生�
 
 worker 子进程的事件输出层。
 
-- emit：向 GUI 输出一条 JSON Lines 事件；
-- ProgressStream：拦截功能模块的 print 输出，解析进度并转发日志。
+分两层职责，**顺序很重要**：
 
-The worker emits JSON Lines on stdout so the GUI remains independent from heavy
-libraries. While the stage function runs, sys.stdout is intercepted so that:
-- progress messages produced by functions/* (处理完成 / 进度: d/t / 写入进度 等)
-  are converted into {"type": "progress"} events;
-- every other text line is forwarded as {"type": "log"} events for the GUI log view.
+1. **结构化通道**（主）：`JsonLinesReporter` 实现 `core.reporter.Reporter` 协议，
+   由阶段执行器注入给功能模块。进度、检测框、页尺寸等「给程序读的信号」直接
+   以字典形式写成 JSON Lines，不经过任何字符串解析 —— 改文案不会再静默打断
+   GUI 进度条。
+2. **兜底通道**（辅）：`ProgressStream` 拦截功能模块（以及第三方库）的 print，
+   把**人读日志**转发为 ``{"type": "log"}`` 事件。它不再做正则解析。
+
+历史包袱说明：以前没有结构化通道，所有信号都靠 ProgressStream 跑正则从中文
+提示里捞（`进度: d/t`、`图片总数: n`、`[boxes] …`、`[imgsize] …`）。那种
+「文案即契约」的耦合已移除；`[boxes]`/`[imgsize]` 两行文本仍在 functions 侧
+兼容保留一个版本，便于对照验证，但本文件不再解析它们。
+
+### `class JsonLinesReporter`
+
+把功能模块的结构化汇报写成 JSON Lines（worker → GUI 的正式协议）。
+
+context 提供 task_id/stage/run_id，附加到每条事件上供 GUI 归位到具体任务。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(context: dict, stream=None)` | — |
+| `progress(done: int, total: int) -> None` | — |
+| `event(name: str, **payload: Any) -> None` | 转发具名事件。 |
+| `log(message: str) -> None` | — |
+
+##### `event(name: str, **payload: Any) -> None`
+
+转发具名事件。
+
+`progress_total`（引擎先给出总数、尚无完成量）在协议上仍是一条
+progress 事件：GUI 只关心 total 用来设进度条 range，因此这里
+统一映射为 done=0 的 progress，避免新增一种 GUI 不认识的事件类型。
 
 ### `class ProgressStream(io.TextIOBase)`
 
-拦截功能模块的 print 输出，解析进度并转发日志。
+拦截功能模块的 print 输出，原样转发为人读日志事件。
+
+⚠️ 这里**刻意不做任何解析**。以前它跑四条正则从中文提示里捞进度与结构化
+数据，属于「文案即契约」——改一句提示就静默断掉 GUI 进度条。现在信号走
+`JsonLinesReporter`，本类只负责让日志视图不漏行（含第三方库的 print）。
 
 #### 方法
 
@@ -1320,7 +1354,7 @@ libraries. While the stage function runs, sys.stdout is intercepted so that:
 | --- | --- |
 | `__init__(real_stdout, context: dict)` | real_stdout 为真实输出流；context 提供 task_id/stage/run_id，会附加到 |
 | `writable() -> bool` | 恒为 True：本流始终接受写入。 |
-| `write(text: str) -> int` | 按换行或回车切分输出边界，逐行解析成事件；返回本次写入的字符数（满足 io.TextIOBase 约定）。 |
+| `write(text: str) -> int` | 按换行或回车切分输出边界，逐行转发日志；返回写入字符数（满足 io.TextIOBase 约定）。 |
 | `flush() -> None` | 空实现（行缓冲已在 write 中处理，无需真正刷盘）。 |
 
 ##### `__init__(real_stdout, context: dict)`
@@ -1360,9 +1394,15 @@ stream 缺省写真实 stdout；窗口化打包运行时 sys.stdout 可能为 No
 
 在子进程中执行一个 CLI 功能阶段，返回进程退出码（0/130/1）。
 
-config 需含 task_id/stage/run_id/args。期间用 ProgressStream 拦截
-功能模块的 print 输出并转为进度/日志事件；通过 args['_outpath']
-可覆盖功能模块计算出的输出目录。异常以 error 事件回报，不抛到上层。
+config 需含 task_id/stage/run_id/args。结构与人类日志走两条通道：
+
+- **结构化**：`JsonLinesReporter` 注入给功能模块，进度 / 检测框 / 页尺寸
+  直接以字典写成 JSON Lines（不再靠正则解析中文提示）；
+- **人读日志**：ProgressStream 仍拦截 stdout 转发为 log 事件，保证日志
+  视图一行不漏（含第三方库的输出）。
+
+通过 args['_outpath'] 可覆盖功能模块计算出的输出目录。异常以 error 事件
+回报，不抛到上层。
 
 #### `run_extract_stage(config: dict) -> int`
 
@@ -1556,7 +1596,7 @@ runs.json 读写。
 | `runs_path(task_id: str) -> Path` | 运行历史文件：任务目录下的 runs.json。 |
 | `create_stage_run(task_id: str, stage: str, parameters: dict, resume: bool=False) -> str` | 登记一次新的阶段执行并返回 run_id。 |
 | `set_progress(task_id: str, run_id: str, done: int, total: int) -> None` | 按 run_id 更新 done/total；run_id 不在任何阶段时静默忽略。 |
-| `finish_stage(task_id: str, run_id: str, status: str, output_path: str \| None=None) -> None` | 结束某次运行：写入 status/finished_at/output_path。 |
+| `finish_stage(task_id: str, run_id: str, status: str, output_path: str \| None=None, progress: tuple[int, int] \| None=None) -> None` | 结束某次运行：写入 status/finished_at/output_path。 |
 | `list_stage_runs(task_id: str, stage: str) -> list[dict]` | 某阶段的历史执行记录，最新在前。 |
 | `stage_states(task_id: str) -> dict[str, dict]` | 每个阶段最近一次运行的状态与进度（页面步骤条渲染用）。 |
 
@@ -1567,13 +1607,17 @@ runs.json 读写。
 新记录插在该阶段历史最前，初始状态 running、进度 0/0；每阶段只保留
 最近 MAX_RUN_HISTORY 条。resume 标记本次是否为续跑。
 
-##### `finish_stage(task_id: str, run_id: str, status: str, output_path: str | None=None) -> None`
+##### `finish_stage(task_id: str, run_id: str, status: str, output_path: str | None=None, progress: tuple[int, int] | None=None) -> None`
 
 结束某次运行：写入 status/finished_at/output_path。
 
 status 取 success/failed/cancelled 等；output_path 为该次执行的
 主产物路径（如 print.pdf、rembg 输出目录），供历史面板回链。
 任务目录已删除时静默跳过。
+
+progress 为 (done, total)，用于补齐最终计数。worker 的 finished 事件
+不再携带 done/total（进度由结构化 progress 事件实时汇报），因此调用方
+传入「最近一次进度」即可让历史记录落到真实完成数，而不是停在中间值。
 
 ##### `stage_states(task_id: str) -> dict[str, dict]`
 
@@ -2024,6 +2068,46 @@ qfluentwidgets 的 ``SegmentedWidget``——后者是给页面导航设计的
 
 ---
 
+## `desktop.utils.icon`
+
+源码：[`desktop/utils/icon.py`](../../desktop/utils/icon.py)
+
+窗口图标的圆角渲染。
+
+图标的**形状由像素决定**——窗口标题栏/任务栏/Alt-Tab 都是 Windows 拿
+Qt 给的位图去画，Qt 管不了圆不圆角。所以要在交给 ``setWindowIcon`` 之前
+把源图裁成圆角，这样：
+
+* 源图（``desktop/static/icon.png``）保持直角原图，**换图标不用手工修图**；
+* 圆角比例只有一处定义（``ICON_RADIUS_RATIO``），与打包用的
+  ``tools/make_icon.py::DEFAULT_RADIUS_PCT`` 保持一致；
+* 同时往 QIcon 里塞多个尺寸帧——Windows 会按场景挑帧，避免它自己把
+  295px 缩到 16px 时把圆角外的透明平均成半透明（浅色标题栏上会显出一圈淡边）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| ICON_RADIUS_RATIO | `0.08` |
+| MIN_CORNER_PX | `2.0` |
+| _ALPHA_CUT | `140` |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `effective_ratio(size: int, ratio: float=ICON_RADIUS_RATIO) -> float` | 按帧尺寸自适应圆角比例（16px 需 ~12.5% 才能真正裁掉四角）。 |
+| `rounded_pixmap(source: QPixmap, size: int, ratio: float=ICON_RADIUS_RATIO) -> QPixmap` | 把源图等比居中裁成 ``size × size`` 的圆角图（圆角外透明）。 |
+| `rounded_window_icon(path: Path \| str, ratio: float=ICON_RADIUS_RATIO) -> QIcon \| None` | 读取图片并生成圆角窗口图标；读取失败返回 None。 |
+
+#### `rounded_window_icon(path: Path | str, ratio: float=ICON_RADIUS_RATIO) -> QIcon | None`
+
+读取图片并生成圆角窗口图标；读取失败返回 None。
+
+返回的 QIcon 内含 16~256 多帧，小帧已做 alpha 二值化。
+
+---
+
 ## `desktop.worker`
 
 源码：[`desktop/worker.py`](../../desktop/worker.py)
@@ -2119,12 +2203,6 @@ PDF/图片渲染：整页大图、页缩略图（带磁盘缓存）与去底色�
 
 区域合成（rembg 预览）在本线程内完成，避免主线程处理原始分辨率大图导致卡顿。
 
-### 模块常量
-
-| 名称 | 值 |
-| --- | --- |
-| SYMMETRIC_GAP_MM | `10` |
-
 ### `class PreviewWorker(QObject)`
 
 渲染 PDF 某一页，或 PDF 全部页缩略图（带磁盘缓存）。
@@ -2155,13 +2233,13 @@ effect 为去底色合成参数 {boxes, area, border}，仅对单图生效。
 
 按 crop/cropremove 的 area/border 规则，合成"效果预览图"列表。
 
-与 functions/text_region.py 的输出几何完全一致：
-- area=1：每个文本框各一张（框 + border，border 缺省为 0）；
-- area=2 双框：并集画布 + border，两框内容按原位置粘贴，
-  **框之间的内容丢弃（留白）**；
-- area=3 双框：并集区域**整块**作为一个 ROI 取出（框间内容保留）+ border；
-- area=2/3 单框：对称画布（框宽×2 + 10mm 间隔，内容在一侧）；
-- area=2/3 border 未填：整页尺寸画布，仅框内（area=3 为并集内）保留内容。
+**几何规则来自 utils.box_geometry**（与 functions/text_region.py 的 CLI
+输出共用同一份实现），本函数只负责用 QImage 把布局画出来——这样规则
+不会因数像素后端不同而被复制成两份。
+
+与原实现的一处行为修正：area=3 + 双框 + border=None 时，并集区域现在
+**写回原位置**（此前被搬到画布左上角）。规格见
+docs/functions/cropremove.md:57「area=3 → 单图，ROI 写回原位置」。
 
 ---
 

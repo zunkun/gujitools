@@ -88,13 +88,22 @@ class RunMixin:
         self._save_runs(task_id, runs)
 
     def finish_stage(
-        self, task_id: str, run_id: str, status: str, output_path: str | None = None
+        self,
+        task_id: str,
+        run_id: str,
+        status: str,
+        output_path: str | None = None,
+        progress: tuple[int, int] | None = None,
     ) -> None:
         """结束某次运行：写入 status/finished_at/output_path。
 
         status 取 success/failed/cancelled 等；output_path 为该次执行的
         主产物路径（如 print.pdf、rembg 输出目录），供历史面板回链。
         任务目录已删除时静默跳过。
+
+        progress 为 (done, total)，用于补齐最终计数。worker 的 finished 事件
+        不再携带 done/total（进度由结构化 progress 事件实时汇报），因此调用方
+        传入「最近一次进度」即可让历史记录落到真实完成数，而不是停在中间值。
         """
         runs = self._load_runs(task_id)
         for records in runs.values():
@@ -103,6 +112,8 @@ class RunMixin:
                     record["status"] = status
                     record["finished_at"] = time.time()
                     record["output_path"] = output_path
+                    if progress is not None:
+                        record["done"], record["total"] = progress
         self._save_runs(task_id, runs)
 
     def list_stage_runs(self, task_id: str, stage: str) -> list[dict]:

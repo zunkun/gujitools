@@ -1,6 +1,6 @@
 # 工具模块说明 (`utils/`)
 
-`utils/` 包含通用工具函数，按职责拆分为 10 个模块。所有公共函数通过
+`utils/` 包含通用工具函数，按职责拆分为 11 个模块。所有公共函数通过
 `utils/__init__.py` 统一导出，功能模块通过 `import utils` 后直接调用。
 
 > 本文件讲**算法与设计**；逐个函数的签名、参数与 docstring 见自动生成的
@@ -11,6 +11,7 @@
 | 模块             | 职责                            | 主要函数 / 常量                                                                                                                |
 | ---------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | `box_geometry.py`| 文本框几何规则（GUI/CLI 共用）  | `parse_border_mm`, `compute_final_boxes`                                                                                       |
+| `box_draw.py`    | 检测框标注绘制（GUI/CLI 共用）  | `draw_boxes`, `box_color`, `box_name`, `find_cjk_font`                                                                         |
 | `image_utils.py` | 图像处理核心算法                | `calculate_auto_threshold`, `extract_red_seal`, `apply_otsu_to_region`, `apply_otsu_whole`, `parse_border`, `parse_border_mm`   |
 | `image_io.py`    | OpenCV 读写（中文路径安全）     | `imread`, `imwrite`                                                                                                            |
 | `file_utils.py`  | 文件收集与校验                  | `collect_image_files`, `is_valid_image_size`, `IMAGE_EXTS`                                                                      |
@@ -47,6 +48,33 @@ border 参数的**唯一权威实现**：CSS 风格 1~4 值写法，按 DPI 换�
 - `area=3`：并集区域**整块**作为 ROI（框间内容保留）+ border。
 
 返回值供 GUI 画参考轮廓、供 `crop`/`cropremove` 实际裁剪，两边共用同一份几何。
+
+---
+
+## box_draw.py — 检测框标注绘制（GUI/CLI 共用）
+
+**为什么放在 utils**：CLI 的 `guji detect --save` 要把左右框画到图片上落地，
+GUI 的预览控件也要画同样的框。配色与命名必须一致，否则「命令行看到的」和
+「界面看到的」是两套东西。视觉约定集中在这里：
+
+- 左框 `#21c178`（绿）、右框 `#3b82f6`（蓝）、合并框 `#f59e0b`（橙）；
+- 标注文字为「左框 (x1,y1,x2,y2)」。
+
+**中文字体**：OpenCV 的 `putText` 不支持中文（会画成 `????`），因此文字用 PIL
+绘制。字体按 `utils.pdf_utils.register_fonts` 相同的候选顺序探测 Windows 系统中
+文字体（fsgb2312 → simfang → simsun → msyh）；全部缺失时退化为 ASCII 标签
+（`L` / `R` / `U`），保证任何环境下都不会崩。
+
+与 `box_geometry.py` 一样，本模块**不参与实际裁剪**，只负责「把框画出来」。
+
+### `draw_boxes(img_bgr, boxes, thickness=4, show_label=True, color=None)`
+
+- **跳过 `None` 项**：只画真正检出的框，避免「只检出左框」时在猜测位置画出错误右框；
+- 线宽按图像短边自适应（`min(2..10)`），大图小图都看得清；
+- **返回新数组，不修改入参**（便于调用方复用原图）。
+
+颜色常量 `BOX_COLORS_BGR` / `BOX_NAMES` 与
+`desktop/components/viewers/image_view.py` 保持一致。
 
 ---
 
@@ -192,6 +220,13 @@ border 参数的**唯一权威实现**：CSS 风格 1~4 值写法，按 DPI 换�
 2. 遍历所有检测框，计算水平中心 `cx = (x1 + x2) / 2`；
 3. `cx < mid_x` → left，否则 → right；
 4. 每组按面积降序排序，调用方取 `[0]` 即可获得最大候选框。
+
+> ⚠️ **唯一调用方是 `functions/detect.py`**：`functions.detect.detect_page_boxes()`
+> 是本原语的封装（它负责「取最大框的前 4 个坐标」这一步），也是全仓库**唯一**
+> 调用 `detect_left_right_boxes` 的地方。`crop` / `cropremove`（经
+> `TextRegionProcessor`）与 GUI 的 detect 阶段都必须走 `detect_page_boxes`，
+> **不得直接调用本文件的原语**。
+> `tests/selftests/detect_shared.py` 会扫描全仓库守卫这条约束，违反即测试红。
 
 ---
 

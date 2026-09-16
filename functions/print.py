@@ -140,21 +140,27 @@ class PrintFunction(FunctionBase):
     ``_generate_pdf`` 完成，不使用基类的并发图片处理引擎。
     """
 
-    def __init__(self, command_args):
+    def __init__(self, command_args, reporter=None):
         """调用基类完成输入解析后，立即计算输出 PDF 路径。"""
-        super().__init__(command_args)
+        super().__init__(command_args, reporter)
         self._calc_output_path()
 
     def _calc_output_path(self):
-        pdf_name = self.command_args.get("pdf_name", "output.pdf")
+        """计算最终 PDF 路径。
+
+        注意：不能依赖 `get("pdf_name", "output.pdf")` 的兜底——CommandArgs
+        总会注入 pdf_name 键（默认值为 None），键存在时 dict.get 的默认值
+        不生效，结果 pdf_name 为 None，`out_dir / None` 直接抛 TypeError。
+        因此此处显式判空后再取名。
+        """
+        pdf_name = self.command_args.get("pdf_name") or "output.pdf"
         if self.output_raw:
             out_dir = Path(self.output_raw)
-            self.outpath = out_dir / pdf_name
         else:
             out_dir = resolve_final_output_dir(
                 self.input, None, self.is_file, self.default_temp_name
             )
-            self.outpath = out_dir / pdf_name
+        self.outpath = out_dir / pdf_name
         self.outpath.parent.mkdir(parents=True, exist_ok=True)
 
     def execute(self) -> dict:

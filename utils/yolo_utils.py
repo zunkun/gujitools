@@ -22,7 +22,6 @@ import threading
 from pathlib import Path
 from importlib.machinery import ModuleSpec
 import numpy as np
-import cv2
 from typing import List, Tuple
 
 # 跳过 ultralytics 启动时的版本检查提示，减少日志噪音
@@ -116,7 +115,9 @@ def load_yolo_model() -> object:
             return _YOLO_MODEL
 
         _stub_unneeded_modules()
-        from ultralytics import YOLO
+        # 在此处导入而非模块顶层：ultralytics 导入开销大且需先执行 _stub_unneeded_modules()，
+        # 保证 utils 包被导入时不会连带加载深度学习依赖。
+        from ultralytics import YOLO  # noqa: PLC0415
 
         # 权重文件候选路径（按优先级排列）
         current_dir = Path(__file__).resolve()  # gujitools/utils/yolo_utils.py

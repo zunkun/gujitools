@@ -23,6 +23,10 @@ guji cropremove --config ./book.yaml
 
 使用 YOLO 模型对图片推理，检测到的框按**水平中心**（cx = (x1+x2)/2）与图像中线（w/2）的关系分为 left / right 两组。每组取面积最大的候选框。
 
+> **检测来自 `functions/detect.py`**：与 `crop` 一样，`cropremove` 调用
+> `functions.detect.detect_page_boxes(img, model)` 取框，不自己实现检测
+> （`cropremove` = `detect` + 裁剪 + 去底色）。GUI 第 2 步用的是同一个函数。
+
 ### 2. 阈值计算
 
 从 left + right 两个文本框区域提取灰度像素，合并后调用 `calculate_auto_threshold`（Otsu 大津法）计算**共享阈值**。

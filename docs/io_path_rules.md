@@ -49,9 +49,12 @@
 2. 最终输出字段：`self.outpath: Path`，是程序最终需要创建的业务目录，所有文件输出到此目录。
 3. **所有命令的最终输出目录均包含一个固定的默认子目录名**，该名称由各命令类的 `default_temp_name` 类属性控制：
    - `extract`：`images`（不可覆盖）
+   - `detect`：`detect`（**仅落盘时**才计算，命令行必须给 `--save`；
+     不落盘时 `outpath = None`，无输出目录——这种用法只允许代码调用与 GUI）
    - `crop`：`crop`
    - `rembg`：`rembg`
    - `cropremove`：`rembg`（复用 rembg 的默认子目录名）
+   - `print`：`pdf`
 4. `-o` 参数的含义：**指定输出根目录**，实际最终目录会在根目录下追加默认子目录（`extract` 略有不同，详见分命令说明）。
 5. `output` 输入分两类：
    - **纯名称字符串**：无 `/ \` 路径分隔符，如 `out`。输出根目录 = `输入路径的父目录 / 名称`（`extract` 对目录输入有特殊处理，见下文）。
@@ -91,7 +94,36 @@
 
 ---
 
-### 2. crop（裁剪功能）
+### 2. detect（文本框检测功能，非必要步骤）
+
+**输出结构**：`<根目录>/detect/标注图`
+
+- **默认子目录名**：`detect`（`DetectFunction.default_temp_name = "detect"`）。
+- **根目录计算**：与 `crop` **完全同源**——`DetectFunction._resolve_outpath()`
+  直接调用 `resolve_final_output_dir`，因此 detect 与 crop 是同级步骤，
+  输出都落在输入目录**旁边**。
+
+**⚠️ 只有落盘时才计算路径**：`outpath` 的取值取决于 `save`。
+
+- `save=True`（命令行必给 `--save`）→ 按上表计算输出目录；
+- `save=False` → `outpath = None`，程序**不计算路径、不创建目录、不写任何文件**，
+  只上报坐标。**命令行下这种用法会被直接拒绝**（见 `cli.cli._reject_dry_run`），
+  因为没有任何产出去处；只有**代码调用**（中间步骤）与 **GUI detect 阶段**
+  才允许不落盘。
+
+**示例**（输入为 `/a/images/` 目录）：
+
+| 命令                              | 输出目录                                |
+| --------------------------------- | --------------------------------------- |
+| `detect -i /a/images/`            | ❌ 命令行拒绝（代码调用可无输出）        |
+| `detect -i /a/images/ --save`     | `/a/detect/`（与 images 并列）          |
+| `detect -i /a/images/ --save -o out` | `/a/out/detect/`                     |
+| `detect -i /a/images/ --save -o /abs/out` | `/abs/out/detect/`               |
+| `detect -i /a/photo.jpg --save`   | `/a/detect/`（与 photo.jpg 同目录）     |
+
+---
+
+### 3. crop（裁剪功能）
 
 **输出结构**：`<根目录>/crop/图片文件`
 
@@ -118,7 +150,7 @@
 
 ---
 
-### 3. rembg（去底色功能）
+### 4. rembg（去底色功能）
 
 **输出结构**：`<根目录>/rembg/图片文件`
 
@@ -137,7 +169,7 @@
 
 ---
 
-### 4. cropremove（裁剪 + 去底色复合流程）
+### 5. cropremove（裁剪 + 去底色复合流程）
 
 **输出结构**：`<根目录>/rembg/图片文件`
 
@@ -148,11 +180,12 @@
 
 ---
 
-### 5. 实现位置与默认子目录对照
+### 6. 实现位置与默认子目录对照
 
 | 功能类               | 文件                       | 使用的工具函数                                                        | 默认子目录名 |
 | -------------------- | -------------------------- | --------------------------------------------------------------------- | ------------ |
 | `ExtractFunction`    | `functions/extract.py`     | `get_extract_output_root` + `run_on_input_directory` 的 `subdir_name` | `images`     |
+| `DetectFunction`     | `functions/detect.py`      | `resolve_final_output_dir`（**仅落盘时**，命令行强制 `--save`）       | `detect`     |
 | `CropFunction`       | `functions/crop.py`        | `resolve_final_output_dir`                                            | `crop`       |
 | `RembgFunction`      | `functions/rembg.py`       | `resolve_final_output_dir`                                            | `rembg`      |
 | `CropRemoveFunction` | `functions/crop_remove.py` | `resolve_final_output_dir`                                            | `rembg`      |
@@ -161,7 +194,7 @@
 `FunctionBase.__init__` 把它取到实例属性 `self.default_temp_name`。
 **新增命令时只需在这个映射里加一行**，路径层不需要改。
 
-### 6. 常见调用示例
+### 7. 常见调用示例
 
 ```bash
 # 输入为单个 PDF，未指定 -o → 输出在 PDF 同目录

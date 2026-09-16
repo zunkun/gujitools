@@ -9,8 +9,6 @@ rembg 提交控制器见 desktop/pages/taskdetail/submit.py，
 from __future__ import annotations
 
 import json
-import os
-import shutil
 import sys
 from pathlib import Path
 
@@ -161,6 +159,9 @@ class StageRunnerMixin:
         self.cancel_requested = False
         self.running_stage = stage
         self._last_error_line = None
+        # 最近一次 progress 事件 (done, total)：worker 结束时不带计数，
+        # 用它把最终进度落到历史记录里（见 _worker_finished）。
+        self._last_progress = (0, 0)
         if stage == "extract":
             self._extract_seen = len(
                 list_stage_images(self.store.extract_output_dir(self.task_id))
@@ -272,7 +273,11 @@ class StageRunnerMixin:
             try:
                 event = json.loads(line)
             except json.JSONDecodeError:
-                self.log_view.append(line)
+                # 非 JSON 行：worker 侧已用 ProgressStream 拦下大部分库输出，
+                # 这里是最后的兜底（协议外的裸 print / 半行撕裂）。当日志收下，
+                # 总比静默丢掉让用户「日志里什么都没有」要好。
+                if line.strip():
+                    self.log_view.append(line)
                 continue
             etype = event.get("type")
             if etype == "progress":
@@ -283,6 +288,8 @@ class StageRunnerMixin:
                     self.stage_progress.setRange(0, total)
                     self.stage_progress.setValue(min(done, total))
                     self.stage_status.setText(f"进度 {done}/{total}")
+                # 记住最近一次进度：finish_stage 用它补齐最终计数（见 _worker_finished）
+                self._last_progress = (done, total)
                 self._refresh_stage_views()
                 if self.running_stage == "extract":
                     self._poll_extract_results()
@@ -371,9 +378,12 @@ class StageRunnerMixin:
         else:
             status = "failed"
         if self.run_id:
+            # worker 的 finished 事件不带 done/total（进度由结构化事件实时汇报），
+            # 用最近一次进度补齐，否则历史记录会停在中间的 done 值上。
             self.store.finish_stage(
                 self.task_id, self.run_id, status,
                 str(self.store.stage_output_dir(self.task_id, stage)) if stage else None,
+                progress=self._last_progress,
             )
         if self.task_id:
             self.store.update_task(

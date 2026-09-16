@@ -11,16 +11,20 @@ Function 基类与并行执行引擎。
 """
 
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import shutil
 import utils
 
-from cli.command_args import CommandArgs
+# 依赖中立层的只读协议，而非 cli 的具体容器类：
+# 这样 functions 不再反向依赖 cli，命令行与桌面端都可直接复用。
+from core.args import ArgsProvider
+from core.reporter import Reporter, normalize_reporter
 
 # 图片处理默认路径 Map
 DEFAULT_TEMP_NAME_MAP = {
     "extract": "images",
+    "detect": "detect",
     "crop": "crop",
     "rembg": "rembg",
     "cropremove": "rembg",
@@ -37,13 +41,19 @@ class FunctionBase:
     - `execute()`：负责并发调度、重试、日志写入与最终统计。
     """
 
-    def __init__(self, command_args: CommandArgs):
+    def __init__(self, command_args: ArgsProvider, reporter: Reporter = None):
         """
         解析输入路径与输出占位，输入不存在时直接抛 FileNotFoundError。
 
         is_file 以「是文件或带扩展名」判断；outpath 留待子类在自身初始化里算。
+        command_args 只需满足 ArgsProvider 协议（有 get 方法），不限定具体类型。
+
+        reporter 是结构化汇报通道（进度 / 检测框 / 尺寸）：CLI 不传 → 空实现，
+        实际输出与人读日志逐字不变；desktop 传 JSON Lines 实现 → 不必再跑正则
+        去解析中文提示文案。
         """
         self.command_args = command_args
+        self.reporter = normalize_reporter(reporter)
         self.cmd = command_args.get("command")
         self.default_temp_name = DEFAULT_TEMP_NAME_MAP.get(self.cmd, "temp")
 
@@ -129,10 +139,14 @@ class FunctionBase:
         image_files = self._collect_input_files()
         if not image_files:
             print("未找到图片文件")
+            # 0/0 是明确信号：GUI 据此把进度条归零，而不是停在上一轮的残值
+            self.reporter.progress(0, 0)
             return {"processed": 0, "output": str(self.outpath)}
 
-        # 清理输出目录（如果用户指定 clean）
-        clean = self.command_args.get("clean", True)
+        # 清理输出目录（仅当用户显式指定 clean=True）。
+        # 默认值 False 与 core.command_spec 保持一致——绝不能在缺省情况下
+        # 静默删除用户已有输出（CommandArgs 总会注入该键，此处兜底值同理）。
+        clean = self.command_args.get("clean", False)
         if clean and self.outpath.exists():
             shutil.rmtree(self.outpath)
         self.outpath.mkdir(parents=True, exist_ok=True)
@@ -151,11 +165,16 @@ class FunctionBase:
         self._write_log(f"输出目录: {self.outpath}")
         self._write_log(f"线程数: {workers}")
         self._write_log(f"图片总数: {len(image_files)}")
+        # 结构化汇报：总数先落地，GUI 进度条据此把 range 设成 0..total
+        # （历史上靠正则抓「图片总数: N」这一行，改文案就会静默失效）。
+        self.reporter.event("progress_total", total=len(image_files))
 
         def _run_round(current_files):
             """对一轮文件集合并行处理，返回每文件的结果列表。"""
             if not current_files:
                 return []
+            total = len(image_files)
+            finished = 0
             round_results = []
             with ThreadPoolExecutor(max_workers=workers) as executor:
                 future_map = {
@@ -177,6 +196,9 @@ class FunctionBase:
                         )
                         self._write_log(f"[失败] {p.name} -> {exc}")
                         self._write_fail_log(f"{p.name}: {exc}")
+                    # 结构化进度：完成数可能因重试超过总数，上限截断到 total
+                    finished += 1
+                    self.reporter.progress(min(finished, total), total)
             return round_results
 
         pending_files = list(image_files)
@@ -207,7 +229,7 @@ class FunctionBase:
             status = item.get("status", "unknown")
             status_counts[status] = status_counts.get(status, 0) + 1
 
-        self._write_log(f"===== 最终统计 =====")
+        self._write_log("===== 最终统计 =====")
         for status, count in status_counts.items():
             self._write_log(f"{status}: {count}")
         self._write_log(f"日志文件: {self.log_path}")
@@ -220,11 +242,21 @@ class FunctionBase:
         }
 
     def _write_log(self, msg: str):
-        if self.log_path:
-            with open(self.log_path, "a", encoding="utf-8") as f:
-                f.write(msg + "\n")
+        """向主日志追加一行（日志句柄不存在时静默忽略）。"""
+        self._append_line(self.log_path, msg)
 
     def _write_fail_log(self, msg: str):
-        if self.fail_log_path:
-            with open(self.fail_log_path, "a", encoding="utf-8") as f:
-                f.write(msg + "\n")
+        """向失败清单追加一行（句柄不存在时静默忽略）。"""
+        self._append_line(self.fail_log_path, msg)
+
+    @staticmethod
+    def _append_line(path: Optional[Path], msg: str):
+        """统一的追加写实现，避免两处重复 open/close 逻辑。"""
+        if not path:
+            return
+        try:
+            with open(path, "a", encoding="utf-8") as handle:
+                handle.write(msg + "\n")
+        except OSError as exc:
+            # 日志写入失败不应中断处理流程（磁盘满 / 权限 / 目录被删）
+            print(f"[warn] 日志写入失败 {path}: {exc}")

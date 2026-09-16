@@ -35,7 +35,10 @@
 
 ### FR-04 detect（检测文本框）
 
-- YOLO（`detect_left_right_boxes`）识别每页左右文本框坐标；**只检测，不生成文件**。
+- YOLO（`functions.detect.detect_page_boxes`，底层 `utils.yolo_utils.detect_left_right_boxes`）
+  识别每页左右文本框坐标；**只检测，不生成文件**。
+- 检测算法与 CLI 的 `detect` / `crop` / `cropremove` **同源**，因此两个入口
+  看到的框完全一致（没有第二份实现）。
 - 检测结果实时写入 `boxes.json`（保留左/右身份）；预览叠加显示，可编辑。
 - 切换到本阶段**不自动执行检测**（重负载）；提供「检测本页」按钮手动触发，
   或执行本子任务批量检测。

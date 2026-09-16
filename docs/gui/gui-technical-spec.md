@@ -11,15 +11,29 @@ worker 子进程 stdout 每行一个 JSON 对象，均含 `type` 与 `task_id/st
 | `log` | 日志行（进日志视图） | message |
 | `page_boxes` | detect 阶段逐页文本框坐标（入 boxes.json） | image(stem), left, right |
 | `page_size` | extract 阶段逐页图片原始尺寸（入 sizes.json） | image(stem), width, height |
-| `finished` | 子任务完成 | done, total, output |
+| `finished` | 子任务完成 | output, result |
 | `error` | 失败（原因进日志） | message |
 | `cancelled` | 被中断 | — |
 | `boxes` | 预览单图检测结果（mode=detect） | image, left, right |
 | `detect_error` | 单图检测失败 | image, message |
 
-标记行解析：功能模块 print 的 `进度: d/t`、`图片总数: n` 等由 `ProgressStream`
-解析为 progress 事件；`[boxes] <stem> left=… right=…`（text_region）与
-`[imgsize] <stem> w,h`（pdf_utils）解析为结构化事件，不进日志视图。
+**信号来源（重要）**：`progress` / `page_boxes` / `page_size` 不再由解析中文
+提示文案得到，而是功能模块通过 `core.reporter.Reporter` **结构化上报**：
+
+- `functions/` 在关键节点调 `self.reporter.progress(done, total)` /
+  `reporter.event("page_boxes", …)`；
+- `utils/pdf_utils.py` 接受可选 `reporter`，上报 `page_size` 与 `progress`；
+- CLI **不注入** reporter → 落到 `core.reporter.CoreReporter` 空实现，
+  输出与人读日志逐字不变；
+- desktop 注入 `desktop.stages.events.JsonLinesReporter` → 直接写 JSON Lines。
+
+`ProgressStream` 现在**只**把 print 转发为 `log` 事件（含第三方库输出），
+不再做任何正则解析 —— 改一句中文提示不会再静默打断 GUI 进度条。
+`[boxes]`/`[imgsize]` 两行文本在 functions 侧兼容保留一个版本，便于对照核验，
+但 worker 已不解析它们。
+
+⚠️ `finished` 不再携带 `done/total`：进度由 `progress` 事件实时汇报，
+GUI 侧用「最近一次 progress」在 `finish_stage` 时补齐最终计数。
 
 阶段路由（`desktop/worker.py`）：`mode=detect` → 单图检测；
 `stage=detect` → `run_detect_stage`（只检测不落盘）；
@@ -50,7 +64,10 @@ worker 子进程 stdout 每行一个 JSON 对象，均含 `type` 与 `task_id/st
 
 ## 3. area/border 效果区域合成（compose_region_output）
 
-与 `functions/text_region.py` 输出几何完全一致（CLI crop/cropremove 同规范）：
+几何规则**只在 `utils/box_geometry` 布局层定义一次**，CLI（numpy 渲染）与
+GUI（QImage 渲染）共同消费同一份 `OutputLayout`，不得各自推导
+（历史上两处各自实现并硬编码同一个 `SYMMETRIC_GAP_MM = 10`，漂移后产生过
+真实 bug：`area=3 + 双框 + border=None` 时 GUI 把并集搬到了画布左上角）：
 
 | 场景 | 输出 |
 | --- | --- |
@@ -58,13 +75,18 @@ worker 子进程 stdout 每行一个 JSON 对象，均含 `type` 与 `task_id/st
 | area=2 双框 | 一张：并集画布 + border，两框内容按原位置粘贴，**框间内容丢弃（留白）** |
 | area=3 双框 | 一张：并集区域**整块**作为 ROI（框间内容保留）+ border |
 | area=2/3 单框 + border | 对称画布：宽 = 左 + 框宽×2 + 10mm 间隔 + 右，内容在一侧 |
-| area=2/3 border 未填 | 整页尺寸画布，仅框内（area=3 为并集内）保留内容，其余留白 |
+| area=2/3 border 未填 | 整页尺寸画布，仅框内（area=3 为并集内）保留内容，其余留白；**ROI 写回原位置** |
 
+- 布局层入口：`utils.box_geometry.build_output_layout` /
+  `build_symmetric_layout`（返回冻结 dataclass `OutputLayout` / `Canvas`）。
+  单框对称输出必须由调用方用 `symmetric=True` 显式选择 —— 合并后的单框
+  （area=3）走普通布局，布局层不猜。
 - border 解析：`utils.box_geometry.parse_border_mm`（mm→px @300dpi，
   CSS 风格 1~4 值，返回 [top, right, bottom, left]）。
 - 合成在 worker 线程完成（`compose_region_output` + `compose_outputs_horizontal`），
   多输出横向拼接展示；不生成文件。
 - rembg 预览默认显示去底色结果，可切换原图；两者均按上述规则裁剪显示。
+- 回归防护：`tests/selftests/box_geometry.py`（规格一致 + 两侧同源）。
 
 ## 4. 检测框规范
 

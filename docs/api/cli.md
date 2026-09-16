@@ -4,7 +4,7 @@
 
 命令行入口层：参数解析、子命令调度
 
-覆盖 4 个模块、3 个公开类、12 个公开函数/方法（生成于 2026-09-15）。
+覆盖 3 个模块、2 个公开类、8 个公开函数/方法（生成于 2026-09-16）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -12,10 +12,9 @@
 
 | 模块 | 类 | 函数 |
 | --- | --- | --- |
-| [`cli.cli`](#clicli) | 0 | 4 |
+| [`cli.cli`](#clicli) | 0 | 3 |
 | [`cli.cli_args`](#clicli_args) | 1 | 3 |
-| [`cli.command_args`](#clicommand_args) | 1 | 3 |
-| [`cli.init_args`](#cliinit_args) | 1 | 2 |
+| [`cli.config_io`](#cliconfig_io) | 1 | 2 |
 
 ---
 
@@ -25,34 +24,46 @@
 
 File: cli/cli.py
 CLI 启动逻辑：参数解析 → 功能分发 → 结果输出。
+
 流程:
 1. `CliArgsParser` 构建 argparse 解析器并解析命令行参数；
 2. 如果命令是 run：加载配置文件中的子命令配置块，构造参数对象；
    否则直接使用命令行解析结果（过滤掉 None 值）；
-3. 将参数包装为 `CommandArgs`（标准化参数，不做文件 I/O）；
+3. 将参数包装为 `core.args.CommandArgs`（标准化参数，不做文件 I/O）；
 4. 通过 `get_function()` 工厂方法获取对应功能实例；
 5. 调用 `func.execute()` 执行功能；
 6. 顶层捕获异常并设置退出码。
 
-退出码约定:
+退出码约定（与 `core.result.StageStatus` 对齐）:
 - 0: 正常完成
 - 1: 错误（未知命令、参数错误、配置错误、功能执行失败）
 - 130: 用户中断（Ctrl+C）
 
+本模块只保留「命令行外壳」独有的职责：argparse、YAML 覆盖语义、退出码。
+参数默认值/校验规则在 `core.command_spec`，执行引擎在 `functions`，
+均与 desktop 入口共用，不再各自维护。
+
 注意: `functions` 包延迟导入（在 main() 内部），使 `guji help` 无需加载 cv2/ultralytics。
 
-配置行为约定：
-- run 命令从配置文件读取当前子命令配置块。
-- 普通子命令支持可选 --config；配置值作为基础值，命令行参数优先覆盖。
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| _DRY_RUN_HINT | `"ERROR: 'detect' 不接受空跑（既未指定 --save，就不会产生任何文件）。      命令行执行 …"` |
 
 ### 模块函数
 
 | 函数 | 说明 |
 | --- | --- |
-| `load_yaml_config(path: Path) -> dict` | 加载 YAML 配置文件，支持 .yaml/.yml，返回 dict。 |
-| `load_command_config(path: Path, command: str) -> dict` | 读取指定命令的 YAML 配置块。 |
-| `execute_command(command: str, command_args: CommandArgs)` | 通用命令执行器：获取功能实例并执行。 |
-| `main()` | 命令行主入口函数。 |
+| `execute_function(func) -> int` | 执行已构造的功能实例，统一处理退出码与异常。 |
+| `execute_command(command: str, command_args) -> int` | 按命令名获取功能实例并执行，返回退出码。 |
+| `main() -> int` | 命令行主入口函数，返回进程退出码。 |
+
+#### `execute_function(func) -> int`
+
+执行已构造的功能实例，统一处理退出码与异常。
+
+返回进程退出码；不再直接 sys.exit，便于上层组合与测试。
 
 ---
 
@@ -67,6 +78,7 @@ File: cli/cli_args.py
 
 子命令与别名:
 - extract (-e): 从 PDF 提取页面图片
+- detect: 检测图片左右文本框坐标（默认不落盘，--save 输出标注图）
 - crop: 基于 YOLO 检测裁剪左右文本框
 - rembg (-r): 整图去底色/二值化/印章保留
 - cropremove (-cr): 复合流程（crop + rembg）
@@ -109,78 +121,32 @@ File: cli/cli_args.py
 
 ---
 
-## `cli.command_args`
+## `cli.config_io`
 
-源码：[`cli/command_args.py`](../../cli/command_args.py)
+源码：[`cli/config_io.py`](../../cli/config_io.py)
 
-File: cli/command_args.py
-命令行参数标准化容器。
-将 argparse.Namespace 或 config 字典中的参数统一为功能模块可直接使用的字典结构。
-约定:
-- 不在此阶段进行文件系统创建/校验（如创建输出目录）；
-- `input` 标准化为 Path 并 expanduser().resolve()；
-- `output` 保留为原始字符串，由上层功能决定如何解析；
-- 各命令的特定参数按默认值注入；
-- **所有默认值统一在此维护**，命令行解析器不再设置 default。
-- 从 kwargs 取值时，若键不存在或值为 None，则使用默认值。
+File: cli/config_io.py
+YAML 配置读取：把从 `cli.py` 抽出的配置解析逻辑集中于此。
 
-### `class CommandArgs`
+抽出原因：原实现把文件读取、YAML 解析、错误退出（sys.exit）与命令分发
+混在 cli.py 中，使「配置加载」无法被单独测试或复用。现在错误以异常抛出，
+由入口层决定如何退出，职责更清晰。
 
-解析后参数的轻量容器。
-通过 `get(key, default)` 按字典风格获取参数，兼容 FunctionBase 的使用方式。
+### `class ConfigError(Exception)`
 
-#### 方法
+配置文件缺失、格式错误或缺少对应命令块。
 
-| 方法 | 说明 |
+### 模块函数
+
+| 函数 | 说明 |
 | --- | --- |
-| `__init__(**kwargs)` | 构造参数容器并标准化全部参数。 |
-| `get(key: str, default: Any=None) -> Any` | 按字典风格获取参数。 |
-| `validate() -> None` | 参数语义校验；全部来源(命令行/config json)统一校验。 |
+| `load_yaml_config(path: Path) -> dict` | 加载 YAML 配置文件，返回 dict；解析失败抛 ConfigError。 |
+| `load_command_config(path: Path, command: str) -> dict` | 读取指定命令的 YAML 配置块，过滤 None 值。 |
 
-##### `__init__(**kwargs)`
+#### `load_command_config(path: Path, command: str) -> dict`
 
-构造参数容器并标准化全部参数。
+读取指定命令的 YAML 配置块，过滤 None 值。
 
-接收任意关键字参数（常来自 argparse.Namespace 或配置字典），提取
-command 后调用 _build_args 注入默认值并标准化 input/output/workers 等。
-所有默认值集中在此维护，命令行解析器不再设置 default。
-
-##### `validate() -> None`
-
-参数语义校验；全部来源(命令行/config json)统一校验。
-校验不通过抛出 ValueError，上层捕获并退出程序。
-不做IO写操作，不创建目录。
-
----
-
-## `cli.init_args`
-
-源码：[`cli/init_args.py`](../../cli/init_args.py)
-
-File: cli/init_args.py
-init 命令的原始参数容器。
-
-与 `CommandArgs` 不同，此容器不添加任何默认值，仅保留用户显式传入的参数。
-这样 `InitFunction` 能正确区分用户是否提供了 `-i/--input` 和 `-o/--output`，
-从而决定是否交互式询问。
-
-提供简单的 `.get()` 方法，兼容 `InitFunction` 的使用方式。
-
-### `class InitArgs`
-
-init 命令的原始参数容器，不填充默认值。
-
-#### 方法
-
-| 方法 | 说明 |
-| --- | --- |
-| `__init__(raw_kwargs: Dict[str, Any])` | 参数: |
-| `get(key: str, default: Any=None) -> Any` | 获取参数，若不存在则返回默认值。 |
-
-##### `__init__(raw_kwargs: Dict[str, Any])`
-
-参数:
-    raw_kwargs: 从 argparse.Namespace 提取的原始参数字典
-                （已过滤掉 command、config 等无关字段）。
+配置缺失时抛 ConfigError，由调用方决定退出方式。
 
 ---

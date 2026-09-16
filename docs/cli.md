@@ -33,6 +33,10 @@ guji run cropremove
 guji run print
 ```
 
+配置模板里还有一段 `detect`（非必要）——它默认关闭（`save: false`），
+只在你**想单独查看检测结果**时才需要执行 `guji run detect`。
+`crop` / `cropremove` 内部已含检测，日常流程删掉整段 `detect:` 也不影响。
+
 也可以指定配置文件：
 
 ```bash
@@ -84,6 +88,7 @@ guji -v                  # 显示版本
 | ---------------------- | ----------------- |
 | `guji help overview`   | 功能模块概览      |
 | `guji help extract`    | PDF 提取手册      |
+| `guji help detect`     | 文本框检测手册    |
 | `guji help crop`       | 文本框裁剪手册    |
 | `guji help rembg`      | 去底色手册        |
 | `guji help cropremove` | 复合流程手册      |
@@ -96,14 +101,16 @@ guji -v                  # 显示版本
 | 命令         | 别名  | 功能                       | 详细文档                                 |
 | ------------ | ----- | -------------------------- | ---------------------------------------- |
 | `extract`    | `-e`  | 从 PDF 提取页面为图片      | [extract.md](functions/extract.md)       |
+| `detect`     | —     | 检测左右文本框坐标         | [detect.md](functions/detect.md)         |
 | `crop`       | —     | 基于 YOLO 裁剪左右文本框   | [crop.md](functions/crop.md)             |
 | `rembg`      | `-r`  | 整图去底色/二值化/印章保留 | [rembg.md](functions/rembg.md)           |
 | `cropremove` | `-cr` | 复合流程：裁剪 + 去底色    | [cropremove.md](functions/cropremove.md) |
 | `print`      | —     | 将图片目录生成为 PDF       | [print.md](functions/print.md)           |
 
-> 注：不存在 `detect` 子命令——文本框检测在 CLI 中属于 `crop` / `cropremove` 的内部
-> 步骤，不单独暴露命令。桌面端把它拆成了独立的「检测文本框（detect）」子任务，
-> 只输出坐标、不生成文件，详见 [gui/gui-design.md](gui/gui-design.md)。
+> 注：`detect` 是**非必要**步骤。`crop = detect + 裁剪`、`cropremove = detect + 裁剪 + 去底色`，
+> 两者内部已自动调用同一套检测算法，因此日常流程不必单独执行 `detect`。
+> 该命令用于**单独查看检测结果**：默认只输出坐标、不生成任何文件；
+> 加 `--save` 才会把标注图画到原图上落地（视觉与桌面端 detect 阶段一致）。
 
 ## 通用参数
 
@@ -128,7 +135,8 @@ guji -v                  # 显示版本
 - **纯名称**（无 `/` `\`）：相对于 `parent_path` 创建
 - **完整路径**：直接作为绝对输出目录
 
-默认输出目录名：extract=PDF文件名、crop=`crop`、rembg=`rembg`、cropremove=`rembg`
+默认输出目录名：extract=PDF文件名、detect=`detect`（仅 `--save` 时）、
+crop=`crop`、rembg=`rembg`、cropremove=`rembg`
 
 ## 各命令参数
 
@@ -145,6 +153,41 @@ guji -v                  # 显示版本
 | `--end`        | None   | 结束页码（1-based）                                |
 | `--batch-size` | 4      | 每批次处理的页数                                   |
 | `--clean`      | False  | 清空输出目录                                       |
+
+### detect — 文本框检测（非必要）
+
+检测整页图片中的左右文本框，并把标注图（左框绿色、右框蓝色 + 坐标文字）
+落地。**命令行下 `--save` 必须给**，否则命令被直接拒绝：
+
+```bash
+$ guji detect -i ./images
+ERROR: 'detect' 不接受空跑（既未指定 --save，就不会产生任何文件）。
+```
+
+原因：命令行执行 detect 的唯一目的就是落地标注图；不落盘时坐标只会打到
+stdout，没有任何产出去处（`crop` / `cropremove` 内部各自都会重新检测）。
+作为**代码调用**（`functions.detect.detect_page_boxes`）不受此限制，
+可以只取坐标不落盘。
+
+`crop` / `cropremove` 内部已经包含这一步，因此日常流程不必单独执行 `detect`；
+本命令用于单独查看检测结果、排查「框检不到 / 框位置不对」的问题。
+
+| 参数        | 默认值 | 说明                                          |
+| ----------- | ------ | --------------------------------------------- |
+| `--save`    | False  | 把检测结果画到图片上并保存（**命令行必填**）   |
+| `--ext`     | png    | 标注图格式（jpg/png/tiff）                    |
+| `--clean`   | False  | 清空输出目录                                  |
+
+`-o/--output` 指定输出根目录，其下自动追加 `detect` 子目录。
+
+```bash
+# 落地标注图：左框绿色、右框蓝色，各带坐标文字
+# 默认输出到 <输入父目录>/detect（与 crop 同级、和输入目录并列）
+guji detect -i ./images --save
+guji detect -i ./images --save -o ./detect-out --ext png
+```
+
+详见 [functions/detect.md](functions/detect.md)。
 
 ### crop — 文本框裁剪
 
@@ -183,6 +226,9 @@ guji -v                  # 显示版本
 | `--sealcolor`   | False  | 检测到印章时输出 RGB 彩色图保留红色                |
 | `--sealarea`    | 80     | 印章最小连通域像素面积                             |
 | `--sealmin-sat` | 50     | 红色识别最低饱和度（0~255）                        |
+
+> 输出格式固定为 **PNG**（不可配置）：`type=2` 的 1bit 单色位图只有 PNG 能无损
+> 承载，JPEG 会把它重新糊成灰阶。因此 `rembg` 没有 `--ext` 参数。
 
 ### print — 图片生成 PDF
 

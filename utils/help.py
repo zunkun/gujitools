@@ -17,7 +17,6 @@
     guji help overview       # 查看功能模块概览
 """
 
-import os
 import re
 import sys
 import shutil
@@ -118,6 +117,7 @@ def print_quick_help():
 
 可用命令:
   extract  (-e)   从 PDF 提取页面为图片
+  detect         检测左右文本框坐标（--save 可输出标注图）
   crop           基于 YOLO 裁剪左右文本框
   rembg    (-r)   整图去底色 / 二值化 / 印章保留
   cropremove (-cr)  裁剪 + 去底色（复合流程）
@@ -129,11 +129,13 @@ def print_quick_help():
 获取详细帮助:
   guji help                显示命令总览
   guji help extract        查看 extract 手册
+  guji help detect         查看 detect 手册
   guji help cropremove     查看 cropremove 手册
   guji help overview       查看功能模块概览
 
 常用示例:
   guji extract -i book.pdf -o ./images --zoom 2
+  guji detect -i ./images
   guji crop -i ./images -o ./cropped
   guji rembg -i ./images -o ./output --seal --sealcolor
   guji cropremove -i ./images -o ./output --area 1
@@ -153,6 +155,7 @@ def print_version():
 # 命令名 → docs/functions 下的文档文件名映射
 _DOC_MAP = {
     "extract": "extract.md",
+    "detect": "detect.md",
     "crop": "crop.md",
     "rembg": "rembg.md",
     "cropremove": "cropremove.md",

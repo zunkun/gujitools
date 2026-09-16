@@ -17,7 +17,8 @@
 | [io_path_rules.md](io_path_rules.md)               | 输入/输出路径规则（供开发参考）                                |
 | [functions/overview.md](functions/overview.md)     | 功能模块概览与命令关系                                         |
 | [functions/extract.md](functions/extract.md)       | PDF 提取：页码解析、缩放计算、渲染模式                         |
-| [functions/crop.md](functions/crop.md)             | 文本框裁剪：YOLO 检测、area/border 规则、左右分割算法          |
+| [functions/detect.md](functions/detect.md)         | 文本框检测：YOLO 推理、左右分割、坐标上报、`--save` 标注图     |
+| [functions/crop.md](functions/crop.md)             | 文本框裁剪：area/border 规则、左右分割算法                     |
 | [functions/rembg.md](functions/rembg.md)           | 去底色：Otsu 阈值、HSV 印章提取、形态学去噪                    |
 | [functions/cropremove.md](functions/cropremove.md) | 复合流程：area 区域模式、border 边框控制                       |
 | [functions/print.md](functions/print.md)           | 图片生成 PDF：纸张、排序、标题和页码                           |
@@ -67,6 +68,9 @@ python tools/check_docs.py            # 校验全部文档：相对链接、锚�
 # 从 PDF 提取图片
 guji extract -i book.pdf -o ./images
 
+# 只看检测结果（不落盘）
+guji detect -i ./images
+
 # 裁剪文本框
 guji crop -i ./images -o ./cropped
 
@@ -82,10 +86,14 @@ guji run print
 
 ## 命令一览
 
-| 命令         | 别名  | 功能                                     |
-| ------------ | ----- | ---------------------------------------- |
-| `extract`    | `-e`  | 从 PDF 提取页面为图片                    |
-| `crop`       | —     | 基于 YOLO 裁剪文本框（支持 area/border） |
-| `rembg`      | `-r`  | 整图去底色/二值化/印章保留               |
-| `cropremove` | `-cr` | 复合流程：裁剪 + 去底色                  |
-| `print`      | —     | 将图片目录生成为 PDF                     |
+| 命令         | 别名  | 功能                                           |
+| ------------ | ----- | ---------------------------------------------- |
+| `extract`    | `-e`  | 从 PDF 提取页面为图片                          |
+| `detect`     | —     | 检测左右文本框坐标（**非必要**，默认不落盘）   |
+| `crop`       | —     | 基于 YOLO 裁剪文本框（支持 area/border）       |
+| `rembg`      | `-r`  | 整图去底色/二值化/印章保留（输出固定 PNG）     |
+| `cropremove` | `-cr` | 复合流程：裁剪 + 去底色                        |
+| `print`      | —     | 将图片目录生成为 PDF                           |
+
+`detect` 是**非必要**步骤：`crop` / `cropremove` 内部已调用同一套检测算法，
+配置模板里的 `detect:` 段落可以整段删除。它只在需要单独查看检测结果时使用。

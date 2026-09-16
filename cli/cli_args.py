@@ -6,6 +6,7 @@ File: cli/cli_args.py
 
 子命令与别名:
 - extract (-e): 从 PDF 提取页面图片
+- detect: 检测图片左右文本框坐标（默认不落盘，--save 输出标注图）
 - crop: 基于 YOLO 检测裁剪左右文本框
 - rembg (-r): 整图去底色/二值化/印章保留
 - cropremove (-cr): 复合流程（crop + rembg）
@@ -82,6 +83,30 @@ class CliArgsParser:
         extract_parser.add_argument("--batch-size", type=int, help="批量大小")
         extract_parser.add_argument("--clean", action="store_true", help="清空输出目录")
         extract_parser.add_argument("--config", type=Path, help="配置文件路径")
+
+        # ============ detect ============
+        # 默认只检测并输出坐标，不产出文件；--save 时把标注图落地。
+        # crop / cropremove 内部的检测与这里同源（functions.detect）。
+        detect_parser = subparsers.add_parser(
+            "detect", help="检测图片左右文本框坐标（可选落地标注图）", add_help=False
+        )
+        detect_parser.add_argument("-i", "--input", type=Path, help="图片文件或目录")
+        detect_parser.add_argument(
+            "-o",
+            "--output",
+            help="标注图输出根目录（仅 --save 时生效；其下自动追加 detect 子目录）",
+        )
+        detect_parser.add_argument(
+            "--save",
+            action="store_true",
+            help="把检测结果画到图片上并保存（默认关闭，只输出坐标不落盘）",
+        )
+        detect_parser.add_argument(
+            "--ext", choices=["jpg", "png", "tiff"], help="标注图格式（默认 png）"
+        )
+        detect_parser.add_argument("--workers", type=int, help="线程数")
+        detect_parser.add_argument("--clean", action="store_true", help="清空输出目录")
+        detect_parser.add_argument("--config", type=Path, help="配置文件路径")
 
         # ============ crop ============
         crop_parser = subparsers.add_parser("crop", help="裁剪文字区域", add_help=False)
@@ -266,7 +291,7 @@ class CliArgsParser:
         )
         run_parser.add_argument(
             "subcommand",
-            choices=["extract", "crop", "rembg", "cropremove", "print"],
+            choices=["extract", "detect", "crop", "rembg", "cropremove", "print"],
             help="要执行的子命令名称",
         )
         run_parser.add_argument(
@@ -277,8 +302,10 @@ class CliArgsParser:
         )
         # 注意：run 不接受其他业务参数，全部从配置读取
 
-        # 在 create_parser 中添加 print 子命令
-        print_parser = subparsers.add_parser(
+        # 在 create_parser 中添加 print 子命令。
+        # 注意：这个 parser 只为「注册到 subparsers」而创建（副作用），
+        # 后面统一补 -h 的逻辑会自动覆盖到它，故不需要保留变量引用。
+        subparsers.add_parser(
             "print",
             help="打印PDF（仅支持通过 run 命令执行）",
             add_help=False,

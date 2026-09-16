@@ -24,6 +24,7 @@
 | 命令         | 别名  | 功能                                    |
 | ------------ | ----- | --------------------------------------- |
 | `extract`    | `-e`  | 从 PDF 批量提取页面为图片               |
+| `detect`     | —     | 检测左右文本框并输出标注图（**非必要**，命令行须 `--save`） |
 | `crop`       | —     | 基于 YOLO 检测裁剪左右文本框            |
 | `rembg`      | `-r`  | 整图去底色 / 二值化 / 印章保留          |
 | `cropremove` | `-cr` | 复合流程：裁剪 + 区域去底色（一步完成） |
@@ -33,16 +34,24 @@
 extract   ── PDF → 图片（前置步骤）
    │
    ▼
-crop      ── 仅裁剪文本框（保留原图质量）
+detect    ── 检测左右文本框坐标（唯一实现；命令行须 --save 落地标注图）
+   │            ↑ 由 crop / cropremove 内部自动调用，不必单独执行
+   ├──────────► crop        ── 仅裁剪文本框（保留原图质量）
    │
-   ▼
-rembg     ── 整图去底色（无文本框检测）
+   └──────────► cropremove  ── 裁剪 + 去底色（一步完成）
+                                （支持 area/border 精细控制）
 
-cropremove = crop + rembg（支持 area/border 精细控制）
+rembg     ── 整图去底色（无文本框检测）
    │
    ▼
 print     ── 图片目录 → PDF（支持 A3/A4/A5/B5、标题和页码）
 ```
+
+`detect` 是**非必要**步骤：`crop` / `cropremove` 内部已自动调用同一套检测算法，
+日常流程不必单独执行它。它用于**单独查看检测结果**——把左右框画到原图上落地
+（视觉与桌面端第 2 步一致），因此命令行下**必须给 `--save`**；不带会被直接
+拒绝并提示替代方案（命令行里检测不落盘没有任何产出去处）。作为**代码调用**
+（`functions.detect.detect_page_boxes`）时不受此限制，可以只取坐标不落盘。
 
 ## 安装
 
@@ -93,15 +102,15 @@ CUDA 版本或找不到对应版本。
 
 主要依赖（详见 [requirements.txt](requirements.txt)）：
 
-| 依赖                   | 用途          | 命令                      |
-| ---------------------- | ------------- | ------------------------- |
-| PyMuPDF                | PDF 渲染      | extract                   |
-| PyYAML                 | YAML 配置读取 | run                       |
-| Pillow                 | 图像读写      | 所有图像命令              |
-| opencv-python-headless | 图像处理      | rembg / crop / cropremove |
-| numpy                  | 数组运算      | rembg / crop / cropremove |
-| ultralytics            | YOLO 模型推理 | crop / cropremove         |
-| fpdf2                  | PDF 生成      | run                       |
+| 依赖                   | 用途          | 命令                                    |
+| ---------------------- | ------------- | --------------------------------------- |
+| PyMuPDF                | PDF 渲染      | extract                                 |
+| PyYAML                 | YAML 配置读取 | run                                     |
+| Pillow                 | 图像读写      | 所有图像命令（含 detect --save 标注）   |
+| opencv-python-headless | 图像处理      | detect / rembg / crop / cropremove      |
+| numpy                  | 数组运算      | detect / rembg / crop / cropremove      |
+| ultralytics            | YOLO 模型推理 | detect / crop / cropremove              |
+| fpdf2                  | PDF 生成      | run                                     |
 
 YOLO 模型权重文件需放置于 `weights/detect.pt`。
 
@@ -311,8 +320,12 @@ YOLO 识别每页的**左、右文本框**，结果存入 `boxes.json`（不生�
 ### 桌面端开发相关
 
 ```bash
-# 功能自测（147 项断言）
+# 功能自测（322 项断言）
 QT_QPA_PLATFORM=offscreen python tests/gui_selftest.py
+
+# 只跑某功能 / 列出模块 / 跳过模块
+QT_QPA_PLATFORM=offscreen python tests/gui_selftest.py --only detect_shared
+QT_QPA_PLATFORM=offscreen python tests/gui_selftest.py --list
 
 # 离屏渲染界面截图（视觉自查）
 QT_QPA_PLATFORM=offscreen python tests/gui_shot.py D:/tmp/shots
@@ -404,6 +417,9 @@ guji extract --config ./book.yaml --pages "1,3-5"
 # 从 PDF 提取图片
 python main.py extract -i book.pdf -o ./images --zoom 2
 
+# 把检测结果画到图片上落地（命令行必须给 --save）
+python main.py detect -i ./images --save
+
 # 裁剪文本框
 python main.py crop -i ./images -o ./cropped
 
@@ -418,6 +434,7 @@ python main.py cropremove -i ./images -o ./output --area 1
 
 ```bash
 guji extract -i book.pdf -o ./images --zoom 2
+guji detect -i ./images --save
 guji crop -i ./images -o ./cropped
 guji rembg -i ./images -o ./output
 guji cropremove -i ./images -o ./output --area 1
@@ -430,6 +447,7 @@ guji cropremove -i ./images -o ./output --area 1
 ```bash
 python main.py help                # 功能模块概览
 python main.py help extract        # extract 命令手册
+python main.py help detect         # detect 命令手册
 python main.py help cropremove    # cropremove 命令手册
 python main.py help print         # print 命令手册
 python main.py -v                  # 版本信息
@@ -461,6 +479,24 @@ python main.py -v                  # 版本信息
 | `--end`        | None   | 结束页码（1-based）                           |
 | `--batch-size` | 4      | 每批次处理的页数                              |
 
+#### detect（非必要）
+
+检测左右文本框并把标注图落地。**命令行下 `--save` 必须给**，不带会被拒绝：
+
+```bash
+$ python main.py detect -i ./images
+ERROR: 'detect' 不接受空跑（既未指定 --save，就不会产生任何文件）。
+```
+
+| 参数      | 默认值 | 说明                                            |
+| --------- | ------ | ----------------------------------------------- |
+| `--save`  | False  | 把检测结果画到图片上并保存（**命令行必填**）     |
+| `--ext`   | png    | 标注图格式（jpg/png/tiff）                      |
+
+`crop` / `cropremove` 内部已含这一步，因此日常流程不必单独执行；本命令用于
+排查「框检不到 / 框位置不对」。**代码调用**不受 `--save` 限制，可只取坐标。
+详见 [detect 手册](docs/functions/detect.md)。
+
 #### rembg
 
 | 参数            | 默认值 | 说明                                     |
@@ -471,6 +507,9 @@ python main.py -v                  # 版本信息
 | `--sealcolor`   | False  | 检测到印章时输出 RGB 彩色图              |
 | `--sealarea`    | 80     | 印章最小连通域像素面积                   |
 | `--sealmin-sat` | 50     | 红色识别最低饱和度（0~255）              |
+
+> 输出格式固定为 **PNG**（没有 `--ext` 参数）：`--type 2` 的 1bit 单色位图只有
+> PNG 能无损承载，JPEG 会把它重新糊成灰阶。
 
 #### cropremove
 
@@ -522,6 +561,9 @@ print:
 # 高分辨率提取指定页码
 python main.py extract -i book.pdf -o ./images --zoom 2 --pages "1,3-5,7"
 
+# 输出检测标注图，确认左右框是否准确（不带 --save 会被拒绝）
+python main.py detect -i ./images --save -o ./detect
+
 # 裁剪 + 去底色，合并模式 + 外扩 30mm 边距
 python main.py cropremove -i ./images -o ./output --area 3 --border 30
 
@@ -556,6 +598,7 @@ python main.py run print --config ./book.yaml
 - [CLI 使用说明](docs/cli.md) — 命令、参数、示例、退出码、架构
 - [功能模块概览](docs/functions/overview.md) — 模块清单与命令关系
 - [extract 手册](docs/functions/extract.md) — 页码解析、缩放计算、渲染模式
+- [detect 手册](docs/functions/detect.md) — 左右文本框检测、坐标上报、`--save` 标注图
 - [crop 手册](docs/functions/crop.md) — YOLO 检测、左右分割算法
 - [rembg 手册](docs/functions/rembg.md) — Otsu 阈值、HSV 印章提取
 - [cropremove 手册](docs/functions/cropremove.md) — area 区域模式、border 边框控制

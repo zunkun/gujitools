@@ -173,7 +173,9 @@ class InitFunction:
             data["extract"]["output"] = None  # 显式设为 null
 
         # 更新 crop / rembg / cropremove（它们共用 images 目录）
-        for cmd in ["crop", "rembg", "cropremove"]:
+        # detect 与它们同源（同一份 images 输入），一并更新。
+        # 注意：detect 是**非必要**步骤，此处只填 input，不启用 save。
+        for cmd in ["detect", "crop", "rembg", "cropremove"]:
             if cmd in data and isinstance(data[cmd], dict):
                 data[cmd]["input"] = post_input
 

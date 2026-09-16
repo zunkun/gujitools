@@ -10,7 +10,7 @@
 | Task / 任务 | 一个 PDF 一个任务，顺序任务号 `0001`、`0002`… 即任务目录名 |
 | Stage / 阶段（子任务） | `extract` → `detect` → `rembg` → `print`，固定顺序 |
 | StageRun / 运行记录 | 某阶段的一次执行（状态、进度、参数），存于任务目录 `runs.json` |
-| 检测框 | YOLO（`detect_left_right_boxes`）识别的左右文本框，存于 `boxes.json` |
+| 检测框 | YOLO（`functions.detect.detect_page_boxes`，与 CLI 同源）识别的左右文本框，存于 `boxes.json` |
 
 ## 文档
 

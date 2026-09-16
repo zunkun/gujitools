@@ -14,7 +14,6 @@ File: functions/extract.py
 """
 
 from functions.base import FunctionBase
-from pathlib import Path
 from utils.pdf_utils import run_on_input_directory
 from utils.path_utils import get_extract_output_root
 
@@ -25,9 +24,9 @@ class ExtractFunction(FunctionBase):
     直接重写 execute()，不使用基类的并发图片处理引擎。
     """
 
-    def __init__(self, command_args):
+    def __init__(self, command_args, reporter=None):
         """调用基类完成输入解析后，立即计算输出根目录。"""
-        super().__init__(command_args)
+        super().__init__(command_args, reporter)
         self._calc_outpath()
 
     def _calc_outpath(self):
@@ -79,6 +78,7 @@ class ExtractFunction(FunctionBase):
                 batch_size=batch_size,
                 clean=clean,
                 subdir_name=self.default_temp_name,  # 传递图片子目录名
+                reporter=self.reporter,  # 结构化汇报：进度 + 页尺寸
             )
         except Exception as e:
             # 必须向上抛：原来只 print 后正常返回，CLI 会打印

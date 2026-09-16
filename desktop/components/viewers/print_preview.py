@@ -7,16 +7,15 @@
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt, Signal, QTimer
 from PySide6.QtGui import QKeySequence, QIcon, QPixmap, QShortcut
 from PySide6.QtWidgets import (
-    QAbstractItemView, QFileDialog, QHBoxLayout, QLabel, QListWidget,
+    QAbstractItemView, QHBoxLayout, QLabel, QListWidget,
     QListWidgetItem, QVBoxLayout, QWidget,
 )
-from qfluentwidgets import CaptionLabel, PrimaryPushButton, PushButton, ToolButton
+from qfluentwidgets import CaptionLabel, PrimaryPushButton, PushButton
 from qfluentwidgets import FluentIcon as FIF
 
 from desktop.ui import theme as T
@@ -34,8 +33,13 @@ class PrintPreviewWidget(QWidget, WorkerHost):
 
     # 图标区：横向留足整页宽图的展示空间，高度覆盖常见古籍页比例
     ICON_SIZE = QSize(180, 240)
-    # 网格：图标 + 下方文件名（约 2 行）+ 间距
-    GRID_SIZE = QSize(200, 290)
+    # 文件名区高度（约 2 行 + 行距）。图标区与文字区**紧邻**，不再在
+    # 两者之间留出固定空档——此前 GRID 高 290 而图标高 240，配合
+    # AlignBottom 会把文字钉在网格底部，图片与文字之间恒定空出 50px
+    # 死区（area=2 + border=None 的整页图恰好占满图标框，观感最明显）。
+    LABEL_H = 44
+    # 网格：图标 + 紧跟其下的文件名，无中间留白
+    GRID_SIZE = QSize(200, ICON_SIZE.height() + LABEL_H)
     # 缩略图解码最长边（与 ICON_SIZE 宽度匹配，留余量给高 DPI 缩放）
     THUMB_EDGE = 360
 
@@ -128,8 +132,10 @@ class PrintPreviewWidget(QWidget, WorkerHost):
             item = QListWidgetItem(label)
             item.setData(Qt.UserRole, entry["file"])
             item.setData(Qt.UserRole + 1, index)  # 指向 _entries_cache 下标
-            # 文字在图标正下方居中；SizeHint 给到网格高度，避免文字被裁
-            item.setTextAlignment(Qt.AlignHCenter | Qt.AlignBottom)
+            # 文字紧贴图标下沿居中对齐。用 AlignVCenter（而非 AlignBottom）
+            # 让文字落在网格内的文字区中部，避免被钉到网格最底部而在
+            # 图片与文字间产生固定空档。
+            item.setTextAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
             item.setSizeHint(QSize(self.GRID_SIZE.width(), self.GRID_SIZE.height()))
             self.list.addItem(item)
         self._load_thumbs(entries, gen)

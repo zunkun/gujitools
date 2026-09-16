@@ -34,9 +34,10 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import List, Optional, Union, Tuple
-from unittest.mock import DEFAULT
 
-DEFAULT_PAGE_MARGINS: List[float] = [20, 20, 20, 20]  # 上右下左 (mm)
+from utils.color_utils import parse_color as _parse_color_impl
+from utils.margin_utils import DEFAULT_PAGE_MARGINS, normalize_margin
+
 POINTS_PER_MM = 72.0 / 25.4
 
 # ------------------------------------------------------------------ quick
@@ -136,8 +137,19 @@ def calculate_zoom(page_width: float, requested_zoom: float = 1) -> float:
     return requested_zoom
 
 
-def report_image_size(img_path, width: int, height: int) -> None:
-    """输出机器可读的图片尺寸行，供 GUI 子进程解析入库（extract 阶段）。"""
+def report_image_size(img_path, width: int, height: int, reporter=None) -> None:
+    """汇报一页输出图片的尺寸。
+
+    结构化通道 `page_size` 供 GUI 子进程入库（sizes.json 是框坐标的坐标系基准）；
+    `[imgsize]` 文本行仅为**兼容保留**。
+
+    reporter 缺省为 None —— CLI 不注入，行为与原先「只 print 一行」完全一致。
+    """
+    if reporter is not None:
+        reporter.event(
+            "page_size", image=Path(img_path).stem,
+            width=int(width), height=int(height),
+        )
     print(f"[imgsize] {Path(img_path).stem} {int(width)},{int(height)}")
 
 
@@ -236,6 +248,7 @@ def process_page_batch(
     ext: str,
     quick: bool = False,
     progress: dict = None,
+    reporter=None,
 ) -> List[bool]:
     """处理一批 PDF 页面，返回每页的成功状态。
 
@@ -249,6 +262,7 @@ def process_page_batch(
               `_embedded_page_image`），False=始终整页渲染。
         progress: 共享进度字典（含 lock, done, total），用于线程安全打印进度；
               额外用 reasons/fallback 记录 quick 降级原因（不逐页刷屏）。
+        reporter: 结构化汇报通道（进度 + 页尺寸）。None → 只 print，CLI 不受影响。
 
     返回:
         每页成功/失败的 bool 列表。
@@ -296,13 +310,13 @@ def process_page_batch(
                         img_path, iw, ih = _save_embedded_image(
                             info, out_dir, page_idx, ext, actual_zoom
                         )
-                    report_image_size(img_path, iw, ih)
+                    report_image_size(img_path, iw, ih, reporter)
                 else:
                     # 标准模式：渲染整页为高质量图片
                     img_path, iw, ih = _render_page(
                         page, out_dir, page_idx, ext, actual_zoom
                     )
-                    report_image_size(img_path, iw, ih)
+                    report_image_size(img_path, iw, ih, reporter)
 
                 page_elapsed = time.time() - page_start
                 results.append(True)
@@ -312,6 +326,9 @@ def process_page_batch(
                         progress["done"] += 1
                         done = progress["done"]
                         total = progress["total"]
+                    # 结构化进度在锁外发：多次汇报是幂等/单调的，不必占着锁做 IO
+                    if reporter is not None:
+                        reporter.progress(done, total)
                     print(
                         f"进度: {done}/{total} 页 - 第 {page_idx+1} 页 用时: {page_elapsed:.2f}s"
                     )
@@ -335,6 +352,7 @@ def render_pages_parallel(
     workers: int = 4,
     batch_size: int = 4,
     progress: dict = None,
+    reporter=None,
 ) -> List[bool]:
     """多线程提取指定页，返回每页成功状态。
 
@@ -342,6 +360,8 @@ def render_pages_parallel(
     实现——GUI 曾经直接调 `process_page_batch` 串行跑全部页，是提取慢的主因。
 
     每批一个 `fitz.open`（PyMuPDF 的 Document 非线程安全，必须各自打开）。
+
+    reporter 为结构化汇报通道（进度 + 页尺寸）；None → 保持纯 print 行为。
     """
     if not page_indices:
         return []
@@ -366,6 +386,7 @@ def render_pages_parallel(
                 ext,
                 quick,
                 progress,
+                reporter,
             )
             for batch in batches
         ]
@@ -397,6 +418,7 @@ def extract_pdf_optimized(
     end: int = None,
     batch_size: int = 4,
     clean: bool = False,
+    reporter=None,
 ) -> bool:
     """提取 PDF 页面为图片，支持多线程批次处理。
 
@@ -412,6 +434,7 @@ def extract_pdf_optimized(
         end: 结束页（1-based）。
         batch_size: 每批次处理的页数。
         clean: True=清空输出目录后重新提取。
+        reporter: 结构化汇报通道；None → 只 print（CLI 默认）。
 
     返回:
         True=处理完成（部分页面可能失败，查看日志），False=整体失败。
@@ -459,11 +482,6 @@ def extract_pdf_optimized(
         actual_zoom = calculate_zoom(page_width, zoom)
 
         total_selected = len(page_indices)
-        # 将页码列表切分为批次
-        batches = [
-            page_indices[i : i + batch_size]
-            for i in range(0, total_selected, batch_size)
-        ]
         print(f"\n📄 开始处理: {os.path.basename(pdf_path)}")
         print(f"📂 输出目录: {out_dir}")
         print(f"📏 总页数: {total_pages}")
@@ -477,6 +495,7 @@ def extract_pdf_optimized(
         all_results = render_pages_parallel(
             pdf_path, page_indices, out_dir, zoom, ext,
             quick=quick, workers=workers, batch_size=batch_size, progress=progress,
+            reporter=reporter,
         )
 
         success_count = sum(all_results)
@@ -503,6 +522,7 @@ def run_on_input_directory(
     batch_size: int = 4,
     clean: bool = False,
     subdir_name: str = "images",  # 新增参数，默认保持兼容
+    reporter=None,
 ):
     """
     处理输入路径（文件或目录），对每个 PDF 在 out_root 下创建以其文件名命名的子目录，
@@ -514,6 +534,7 @@ def run_on_input_directory(
         zoom, ext, workers, quick, pages, start, end, batch_size, clean:
             透传给 extract_pdf_optimized 的参数。
         subdir_name: 每个 PDF 子目录下存放图片的子目录名。
+        reporter: 结构化汇报通道；None → 只 print（CLI 默认）。
     """
     print(
         f"[debug] run_on_input_directory called with: {input_path}, out_root={out_root}, subdir_name={subdir_name}"
@@ -559,6 +580,7 @@ def run_on_input_directory(
                 end,
                 batch_size,
                 clean=clean,
+                reporter=reporter,
             )
             if ok is False:
                 failures.append(fname)
@@ -574,44 +596,24 @@ def run_on_input_directory(
 
 
 def parse_margins(val) -> Optional[List[float]]:
-    """解析边距为 [上,右,下,左] (mm)"""
-    if val is None:
-        return None
-    if isinstance(val, (int, float)):
-        return [float(val)] * 4
-    if isinstance(val, list):
-        if not val:
-            return DEFAULT_PAGE_MARGINS
-        if len(val) == 1:
-            return [float(val[0])] * 4
-        if len(val) == 2:
-            tb, lr = float(val[0]), float(val[1])
-            return [tb, lr, tb, lr]
-        if len(val) >= 4:
-            return [float(x) for x in val[:4]]
-        return DEFAULT_PAGE_MARGINS
-    if isinstance(val, str):
-        parts = [float(x.strip()) for x in val.split(",") if x.strip()]
-        if not parts:
-            return DEFAULT_PAGE_MARGINS
-        if len(parts) == 1:
-            return [parts[0]] * 4
-        if len(parts) == 2:
-            return [parts[0], parts[1], parts[0], parts[1]]
-        if len(parts) >= 4:
-            return parts[:4]
-    return DEFAULT_PAGE_MARGINS
+    """解析边距为 [上,右,下,左] (mm)。
+
+    实现委托 utils.margin_utils.normalize_margin，与命令行/GUI 共用同一份
+    规则：原先此处对 3 值静默回落到默认、对非数字串直接抛 ValueError，
+    与其他两处实现行为不一致。
+    """
+    return normalize_margin(val, default=DEFAULT_PAGE_MARGINS)
 
 
 def parse_color(color_str: Union[str, tuple]) -> Tuple[int, int, int]:
-    """解析颜色 'r,g,b' 或 (r,g,b) 为整数元组"""
-    if isinstance(color_str, (tuple, list)) and len(color_str) >= 3:
-        return (int(color_str[0]), int(color_str[1]), int(color_str[2]))
-    if isinstance(color_str, str):
-        parts = [int(x.strip()) for x in color_str.split(",") if x.strip()]
-        if len(parts) >= 3:
-            return tuple(parts[:3])
-    return (0, 0, 0)
+    """解析颜色 'r,g,b' 或 (r,g,b) 为整数元组，取值域 [0,255]。
+
+    非法输入抛 ValueError（不再静默返回黑色）——否则用户把 "0,0" 写错
+    只会得到一张黑字 PDF 却毫无提示；超范围分量写进 PDF 会产生损坏输出。
+
+    实现委托 utils.color_utils.parse_color，使 core 层可复用同一份逻辑。
+    """
+    return _parse_color_impl(color_str)
 
 
 def register_fonts(pdf):

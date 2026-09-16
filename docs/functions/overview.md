@@ -15,9 +15,17 @@ guji run cropremove
 guji run print
 ```
 
-临时处理或不需要配置文件时，可以直接执行 `guji extract`、`guji crop`、
-`guji rembg` 和 `guji cropremove`。`print` 需要从 YAML 读取较多排版参数，
-因此只能使用 `guji run print`。
+临时处理或不需要配置文件时，可以直接执行 `guji extract`、`guji detect`、
+`guji crop`、`guji rembg` 和 `guji cropremove`。`print` 需要从 YAML 读取较多
+排版参数，因此只能使用 `guji run print`。
+
+其中 `detect` 是**非必要**步骤（`crop` / `cropremove` 内部已含检测），
+配置模板里可以整段删除它。需要单独查看检测结果时才执行：
+
+```bash
+guji detect -i ./images            # 只输出坐标，不落盘
+guji detect -i ./images --save     # 落地标注图
+```
 
 ## 模块清单
 
@@ -26,6 +34,7 @@ guji run print
 | `base.py`        | `FunctionBase`        | —            | —     | 基类：输入/输出路径解析、并发执行引擎、日志与重试                         |
 | `text_region.py` | `TextRegionProcessor` | —            | —     | 中间基类：YOLO 检测 + area/border 规则 + 输出构建（crop/cropremove 共享） |
 | `extract.py`     | `ExtractFunction`     | `extract`    | `-e`  | 从 PDF 批量提取页面为图片                                                 |
+| `detect.py`      | `DetectFunction`      | `detect`     | —     | 检测左右文本框坐标（默认不落盘，`--save` 输出标注图；crop/cropremove/GUI 的检测均复用此处） |
 | `crop.py`        | `CropFunction`        | `crop`       | —     | 基于 YOLO 检测裁剪文本框，支持 area/border，输出原图像素                  |
 | `rembg.py`       | `RembgFunction`       | `rembg`      | `-r`  | 整图 Otsu 去底色/二值化/印章保留                                          |
 | `crop_remove.py` | `CropRemoveFunction`  | `cropremove` | `-cr` | 复合流程：YOLO 裁剪 + 区域 Otsu 去底色，支持 area/border                  |
@@ -37,17 +46,21 @@ guji run print
 extract   ── PDF → 图片（前置步骤）
    │
    ▼
-crop      ── 裁剪文本框原图像素（支持 area/border，不做去底色）
+detect    ── 检测左右文本框坐标（唯一实现；默认不落盘，--save 输出标注图）
    │
-   ▼
-rembg     ── 整图去底色（无文本框检测）
+   ├──────────► crop      ── detect + 裁剪文本框原图像素（支持 area/border，不去底色）
+   │
+   └──────────► cropremove ── detect + 裁剪 + 去底色（一步完成，支持 area/border）
 
-cropremove = crop + rembg（一步完成，支持 area/border 精细控制）
+rembg     ── 整图去底色（无文本框检测）
    │
    ▼
 print     ── 图片目录 → PDF（支持 A3/A4/A5/B5、标题和页码）
 ```
 
+- `detect` 是检测的**唯一实现**：`crop` / `cropremove` 内部通过
+  `functions.detect.detect_page_boxes` 取框，GUI 的 detect 阶段复用同一函数。
+  把「检测」与「裁剪」拆开后，`crop = detect + 裁剪` 这一关系在代码里是字面成立的；
 - `crop` 与 `cropremove` 共享相同的 area/border 规则（继承 `TextRegionProcessor`），区别仅是 crop 不做 Otsu 去底色；
 - `rembg` 对整图去底，不依赖文本框检测；
 - `cropremove` 结合 crop 与 rembg，通过 `--area` 控制 Otsu 作用区域与输出方式，`--border` 控制裁剪与外扩边距。
@@ -91,11 +104,15 @@ area/border 规则由基类统一处理，详见各命令文档：
 - 传纯名称：相对于 `parent_path` 创建；
 - 传完整路径：直接作为绝对输出目录。
 
-各命令的默认输出目录名（`default_temp_name`）：extract=文件名、crop=`crop`、rembg=`rembg`、cropremove=`rembg`。
+各命令的默认输出目录名（`default_temp_name`）：extract=文件名、crop=`crop`、
+rembg=`rembg`、cropremove=`rembg`、print=`pdf`。
+`detect` 只在 `--save` 时才产出文件，默认目录名为 `detect`；不带 `--save` 时
+**没有输出目录**，也不会创建任何目录。
 
 ## 各功能详细文档
 
 - [extract.md](extract.md) — PDF 提取：页码解析、缩放计算、渲染模式
+- [detect.md](detect.md) — 文本框检测：YOLO 推理、左右分割、坐标上报
 - [crop.md](crop.md) — 文本框裁剪：YOLO 检测、左右分割算法
 - [rembg.md](rembg.md) — 去底色：Otsu 阈值、HSV 印章提取、形态学去噪
 - [cropremove.md](cropremove.md) — 复合流程：area 区域模式、border 边框控制

@@ -13,22 +13,27 @@ crop 和 cropremove 共享相同的检测与裁剪规则，唯一区别是 ROI �
 - `_save_output(arr, out_path)`：保存输出图片
 
 ctx 通过参数传递（而非 self 实例变量），保证 ThreadPoolExecutor 并发安全。
+
+**几何规则来源**：area/border 的画布尺寸与粘贴落点由
+`utils.box_geometry.build_output_layout` / `build_symmetric_layout` 统一计算
+（与 desktop 侧预览共用同一份规则）。本模块只负责用 numpy 把布局"画"出来，
+不再自行推导几何。
 """
 
 from pathlib import Path
 import numpy as np
 import utils
 from functions.base import FunctionBase
+from functions.detect import detect_page_boxes
+from utils.box_geometry import build_output_layout, build_symmetric_layout
 
 
 class TextRegionProcessor(FunctionBase):
     """文本区域处理基类：封装 YOLO 检测 + area/border 规则 + 输出构建。"""
 
-    SYMMETRIC_GAP_MM = 10  # 单框对称输出时，实际框与空白镜像之间的间隔（mm）
-
-    def __init__(self, command_args):
+    def __init__(self, command_args, reporter=None):
         """计算输出目录并加载 YOLO 模型（单例，进程内复用）。"""
-        super().__init__(command_args)
+        super().__init__(command_args, reporter)
         self._calc_outpath()
         self._model = utils.load_yolo_model()
 
@@ -61,10 +66,9 @@ class TextRegionProcessor(FunctionBase):
         area_mode = self.command_args.get("area", 1)
         ext = self.command_args.get("ext", "png")
 
-        # YOLO 检测
-        left_boxes, right_boxes = utils.detect_left_right_boxes(img_bgr, self._model)
-        left_box = left_boxes[0][:4] if left_boxes else None
-        right_box = right_boxes[0][:4] if right_boxes else None
+        # YOLO 检测：唯一入口在 functions.detect，保证 crop / cropremove /
+        # GUI detect 阶段拿到的框完全一致（此前三处各自调 utils 原语）。
+        left_box, right_box = detect_page_boxes(img_bgr, self._model)
         boxes = [b for b in (left_box, right_box) if b is not None]
         self._report_boxes(image_path, left_box, right_box)
 
@@ -93,7 +97,8 @@ class TextRegionProcessor(FunctionBase):
         border_padding = utils.parse_border_mm(border_mm, dpi=300)
 
         # 特殊处理：area=2/3 + border有值 + 仅一个文本框 → 对称输出
-        # 实际框 + border 组成一半，另一边为空白镜像，中间间隔 SYMMETRIC_GAP_MM
+        # 实际框 + border 组成一半，另一边为空白镜像，中间间隔
+        # utils.box_geometry.SYMMETRIC_GAP_MM（10mm）
         if single_box_detected and border_padding is not None and area_mode in (2, 3):
             is_left = left_box is not None
             actual_box = left_box if is_left else right_box
@@ -135,34 +140,22 @@ class TextRegionProcessor(FunctionBase):
     def _build_output(self, img_bgr, boxes, border_padding, ctx):
         """构建输出图像：框内为处理后像素，框外白色。
 
-        - border_padding=None → 原图尺寸
-        - border_padding=[t,r,b,l] → 裁剪到联合外边界 + 边距
+        几何（画布尺寸与粘贴落点）来自 utils.box_geometry.build_output_layout，
+        与 desktop 侧预览共用同一份规则；此处只负责 numpy 渲染。
+
+        传入的 boxes 已经是「最终参与布局的框」：caller 在 area=3 时已把
+        左右框合并为一个并集框。symmetry=False —— 对称输出只由
+        `_build_symmetric_output` 负责，本方法不做镜像。
         """
         H, W = img_bgr.shape[:2]
-
-        all_x1 = min(b[0] for b in boxes)
-        all_y1 = min(b[1] for b in boxes)
-        all_x2 = max(b[2] for b in boxes)
-        all_y2 = max(b[3] for b in boxes)
-
-        if border_padding is None:
-            out_arr = self._new_blank(H, W)
-            for x1, y1, x2, y2 in boxes:
-                roi = self._process_roi(img_bgr, (x1, y1, x2, y2), ctx)
-                self._paste(out_arr, roi, x1, y1)
-            return out_arr
-
-        top, right, bottom, left = border_padding
-        new_h = (all_y2 - all_y1) + top + bottom
-        new_w = (all_x2 - all_x1) + left + right
-
-        out_arr = self._new_blank(new_h, new_w)
-        for x1, y1, x2, y2 in boxes:
-            roi = self._process_roi(img_bgr, (x1, y1, x2, y2), ctx)
-            ox = x1 - all_x1 + left
-            oy = y1 - all_y1 + top
-            self._paste(out_arr, roi, ox, oy)
-        return out_arr
+        layout = build_output_layout(
+            boxes=boxes,
+            area=2,
+            border_padding=border_padding,
+            image_size=(W, H),
+            symmetric=False,
+        )
+        return self._render_layout(img_bgr, layout, ctx)
 
     def _build_symmetric_output(self, img_bgr, box, border_padding, ctx, is_left):
         """单框对称输出：检测到的框 + border 组成一半，另一边为空白镜像，中间有间隔。
@@ -175,27 +168,28 @@ class TextRegionProcessor(FunctionBase):
 
         - 实际框（box）经 _process_roi 处理后粘贴到对应半边
         - 另一半为空白（由 _new_blank 初始化为白色）
-        - gap = SYMMETRIC_GAP_MM 按 300 DPI 换算为像素
+        - 几何来自 utils.box_geometry.build_symmetric_layout（与 desktop 共用）
         """
-        x1, y1, x2, y2 = box
-        top, right, bottom, left = border_padding
+        H, W = img_bgr.shape[:2]
+        layout = build_symmetric_layout(
+            box=box,
+            border_padding=border_padding,
+            image_size=(W, H),
+            is_left=is_left,
+        )
+        return self._render_layout(img_bgr, layout, ctx)
 
-        gap_px = round(self.SYMMETRIC_GAP_MM * 300 / 25.4)
-        box_w = x2 - x1
-        box_h = y2 - y1
+    def _render_layout(self, img_bgr, layout, ctx):
+        """把几何布局渲染为 numpy 图像（单画布）。
 
-        new_h = top + box_h + bottom
-        new_w = left + box_w + gap_px + box_w + right
-
-        out_arr = self._new_blank(new_h, new_w)
-        roi = self._process_roi(img_bgr, (x1, y1, x2, y2), ctx)
-
-        if is_left:
-            ox = left
-        else:
-            ox = left + box_w + gap_px
-        oy = top
-        self._paste(out_arr, roi, ox, oy)
+        布局可能含多个落点（如 area=2 双框无 border 时两框写回同一整页画布），
+        全部按各自坐标粘贴到同一张输出数组上。
+        """
+        canvas = layout.canvases[0]
+        out_arr = self._new_blank(canvas.size[1], canvas.size[0])
+        for source, ox, oy in canvas.sources:
+            roi = self._process_roi(img_bgr, tuple(source), ctx)
+            self._paste(out_arr, roi, ox, oy)
         return out_arr
 
     def _new_blank(self, h, w):
@@ -212,7 +206,20 @@ class TextRegionProcessor(FunctionBase):
 
     # ---- 子类必须实现 ----
     def _report_boxes(self, image_path, left_box, right_box) -> None:
-        """输出机器可读的框坐标行，供 GUI 子进程解析入库（人类日志不受影响）。"""
+        """汇报本图检测到的左右框。
+
+        主通道是结构化事件 `page_boxes`（GUI 据此把框写回 boxes.json）；
+        `[boxes]` 文本行仅为**兼容保留**——后续可从 stderr 观察：
+        若桌面端日志中不再出现该行且框入库正常，即可安全删除。
+        """
+        # 结构化通道：坐标原样传递，不做字符串往返（避免 int(float(str)) 的精度绕路）
+        self.reporter.event(
+            "page_boxes",
+            image=image_path.stem,
+            left=None if left_box is None else [int(round(float(v))) for v in left_box[:4]],
+            right=None if right_box is None else [int(round(float(v))) for v in right_box[:4]],
+        )
+
         def fmt(box):
             if box is None:
                 return "none"

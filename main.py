@@ -15,15 +15,11 @@ gujitools 程序主入口。
 
 import signal
 import sys
-from typing import TextIO
 
 # Windows 上 stdout/stderr 默认编码为 cp936(GBK)，IDE 集成终端按 UTF-8 解码
 # 会导致中文乱码。启动时强制重配置为 UTF-8。
 if sys.platform == "win32":
     for _stream in (sys.stdout, sys.stderr):
-        # if not isinstance(_stream, TextIO):
-        #     continue
-
         if hasattr(_stream, "reconfigure"):
             _stream.reconfigure(encoding="utf-8", errors="replace")
 
@@ -36,7 +32,7 @@ def main() -> None:
     # 捕获 Ctrl+C，避免打印 traceback
     def _handle_sigint(signum, frame):
         print("\n中断：已收到退出信号，正在终止...")
-        sys.exit(1)
+        sys.exit(130)
 
     try:
         signal.signal(signal.SIGINT, _handle_sigint)
@@ -44,8 +40,8 @@ def main() -> None:
         # 某些平台（如部分 Windows 控制台）不支持 signal 注册
         pass
 
-    # 委托给 CLI 层执行命令解析与功能分发
-    cli_main()
+    # 委托给 CLI 层执行命令解析与功能分发，并将其退出码透传给进程
+    sys.exit(cli_main())
 
 
 if __name__ == "__main__":

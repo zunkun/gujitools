@@ -18,6 +18,12 @@ guji crop --config ./book.yaml
 
 ### YOLO 检测 + 左右分割
 
+> **检测来自 `functions/detect.py`**：`crop` 不自己实现检测，而是调用
+> `functions.detect.detect_page_boxes(img, model)` 取左右框——这正是
+> 「`crop` = `detect` + 裁剪」在代码里字面成立的原因。GUI 的第 2 步
+> （detect 阶段）走的是同一个函数，所以命令行与界面看到的框完全一致。
+> 需要单独查看检测结果时用 `guji detect -i ./images --save`。
+
 1. 使用 YOLO 模型对图片推理，获取所有文本框；
 2. 计算每个框的水平中心 `cx = (x1 + x2) / 2`；
 3. 以图像宽度一半 `w/2` 为分界线：

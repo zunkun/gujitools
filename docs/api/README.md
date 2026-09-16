@@ -20,7 +20,7 @@ python tools/gen_api_docs.py --check  # 校验是否与源码一致（CI 用）
 
 生成器只读源码（`ast` 静态解析），**不导入任何模块**，因此离线可跑、不会拉起 cv2 / torch / PySide6 等重依赖。
 
-生成时间：2026-09-15
+生成时间：2026-09-16
 
 | 文档 | 内容 |
 | --- | --- |
@@ -28,4 +28,5 @@ python tools/gen_api_docs.py --check  # 校验是否与源码一致（CI 用）
 | [cli](cli.md) | 命令行入口层：参数解析、子命令调度 |
 | [functions](functions.md) | 图像处理功能模块：GUI 与 CLI 共用同一套算法 |
 | [utils](utils.md) | 通用工具函数：几何、排序、图像 IO、PDF、YOLO |
+| [core](core.md) | 中立共享层：CLI 与 desktop 都依赖且语义必须一致的契约 |
 | [入口脚本](entrypoints.md) | 仓库顶层的可执行入口与配置读取 |

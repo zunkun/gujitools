@@ -16,8 +16,15 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from PySide6.QtCore import QEvent, QPoint, QRectF, Qt
 from PySide6.QtGui import QColor, QPainter
+
+if TYPE_CHECKING:
+    # 仅用于类型标注；`from __future__ import annotations` 下注解不求值，
+    # 但名字仍需存在，否则 pyflakes 报 undefined name。
+    from PySide6.QtWidgets import QTextEdit
 from PySide6.QtWidgets import (
     QApplication, QHBoxLayout, QLabel, QSizePolicy, QWidget,
 )

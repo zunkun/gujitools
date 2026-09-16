@@ -6,15 +6,21 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from desktop.stages.events import ProgressStream, emit, _real_stdout
+from desktop.stages.events import JsonLinesReporter, ProgressStream, emit, _real_stdout
 
 
 def run_stage(config: dict) -> int:
     """在子进程中执行一个 CLI 功能阶段，返回进程退出码（0/130/1）。
 
-    config 需含 task_id/stage/run_id/args。期间用 ProgressStream 拦截
-    功能模块的 print 输出并转为进度/日志事件；通过 args['_outpath']
-    可覆盖功能模块计算出的输出目录。异常以 error 事件回报，不抛到上层。
+    config 需含 task_id/stage/run_id/args。结构与人类日志走两条通道：
+
+    - **结构化**：`JsonLinesReporter` 注入给功能模块，进度 / 检测框 / 页尺寸
+      直接以字典写成 JSON Lines（不再靠正则解析中文提示）；
+    - **人读日志**：ProgressStream 仍拦截 stdout 转发为 log 事件，保证日志
+      视图一行不漏（含第三方库的输出）。
+
+    通过 args['_outpath'] 可覆盖功能模块计算出的输出目录。异常以 error 事件
+    回报，不抛到上层。
     """
     task_id = config["task_id"]
     stage = config["stage"]
@@ -29,10 +35,11 @@ def run_stage(config: dict) -> int:
         command = stage
         command_args = CommandArgs(command=command, **args)
         interceptor = ProgressStream(_real_stdout(), context)
+        reporter = JsonLinesReporter(context, stream=_real_stdout())
         original_stdout = sys.stdout
         sys.stdout = interceptor
         try:
-            function = get_function(command, command_args)
+            function = get_function(command, command_args, reporter)
             if function is None:
                 raise ValueError(f"未知阶段: {stage}")
             # GUI 精确输出目录：rembg CLI 默认会在 output 后再追加 "rembg"
@@ -51,8 +58,6 @@ def run_stage(config: dict) -> int:
             {
                 "type": "finished",
                 **context,
-                "done": interceptor.done,
-                "total": interceptor.total,
                 "result": result,
                 "output": output,
             }
@@ -113,7 +118,9 @@ def run_extract_stage(config: dict) -> int:
                 else:
                     child.unlink()
 
-        # 进度输出经 ProgressStream 拦截后转为 progress/log 事件
+        # 结构化汇报直接交给 utils：进度 + 每页尺寸（GUI 据此写 sizes.json，
+        # 那是框坐标的坐标系基准）。人类日志经 ProgressStream 转发。
+        reporter = JsonLinesReporter(context, stream=_real_stdout())
         interceptor = ProgressStream(_real_stdout(), context)
         original_stdout = sys.stdout
         sys.stdout = interceptor
@@ -130,6 +137,7 @@ def run_extract_stage(config: dict) -> int:
                 workers=workers,
                 progress={"lock": threading.Lock(), "done": 0,
                           "total": len(page_indices)},
+                reporter=reporter,
             )
         finally:
             sys.stdout = original_stdout
@@ -139,15 +147,13 @@ def run_extract_stage(config: dict) -> int:
             {
                 "type": "log",
                 **context,
-                "message": f"🎉 处理完成！ 成功: {interceptor.done}/{len(page_indices)} 页",
+                "message": f"🎉 处理完成！ 成功: {len(page_indices)} 页",
             }
         )
         emit(
             {
                 "type": "finished",
                 **context,
-                "done": interceptor.done,
-                "total": interceptor.total,
                 "result": None,
                 "output": str(out_dir),
             }

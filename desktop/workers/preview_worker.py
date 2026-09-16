@@ -11,91 +11,82 @@ from pathlib import Path
 from PySide6.QtCore import QObject, Qt, Signal, Slot
 from PySide6.QtGui import QImage, QPainter
 
-from utils.box_geometry import parse_border_mm
+from utils.box_geometry import (
+    build_output_layout,
+    build_symmetric_layout,
+    parse_border_mm,
+)
 from desktop.utils.files import THUMBNAIL_EDGE
-
-SYMMETRIC_GAP_MM = 10  # 与 functions/text_region.py 一致
 
 
 def compose_region_output(image: QImage, boxes: list, area: int, border_mm, dpi: int = 300) -> list:
     """按 crop/cropremove 的 area/border 规则，合成"效果预览图"列表。
 
-    与 functions/text_region.py 的输出几何完全一致：
-    - area=1：每个文本框各一张（框 + border，border 缺省为 0）；
-    - area=2 双框：并集画布 + border，两框内容按原位置粘贴，
-      **框之间的内容丢弃（留白）**；
-    - area=3 双框：并集区域**整块**作为一个 ROI 取出（框间内容保留）+ border；
-    - area=2/3 单框：对称画布（框宽×2 + 10mm 间隔，内容在一侧）；
-    - area=2/3 border 未填：整页尺寸画布，仅框内（area=3 为并集内）保留内容。
+    **几何规则来自 utils.box_geometry**（与 functions/text_region.py 的 CLI
+    输出共用同一份实现），本函数只负责用 QImage 把布局画出来——这样规则
+    不会因数像素后端不同而被复制成两份。
+
+    与原实现的一处行为修正：area=3 + 双框 + border=None 时，并集区域现在
+    **写回原位置**（此前被搬到画布左上角）。规格见
+    docs/functions/cropremove.md:57「area=3 → 单图，ROI 写回原位置」。
     """
-    present = [list(b) for b in boxes if b]
     W, H = image.width(), image.height()
+    padding = parse_border_mm(border_mm, dpi)
+    present = [list(b) for b in boxes if b]
 
     def blank(w: int, h: int) -> QImage:
         canvas = QImage(max(w, 1), max(h, 1), QImage.Format_RGB32)
         canvas.fill(Qt.white)
         return canvas
 
-    def paste_source(canvas: QImage, box, ox: int, oy: int) -> None:
-        x1, y1, x2, y2 = box
-        sx1, sy1 = max(0, x1), max(0, y1)
-        sx2, sy2 = min(W, x2), min(H, y2)
-        if sx2 > sx1 and sy2 > sy1:
-            painter = QPainter(canvas)
-            painter.drawImage(
-                ox + sx1 - x1, oy + sy1 - y1, image, sx1, sy1, sx2 - sx1, sy2 - sy1
-            )
-            painter.end()
+    def render(layout) -> list:
+        result = []
+        for canvas_spec in layout.canvases:
+            canvas = blank(canvas_spec.size[0], canvas_spec.size[1])
+            for source, ox, oy in canvas_spec.sources:
+                x1, y1, x2, y2 = source
+                sx1, sy1 = max(0, x1), max(0, y1)
+                sx2, sy2 = min(W, x2), min(H, y2)
+                if sx2 > sx1 and sy2 > sy1:
+                    painter = QPainter(canvas)
+                    painter.drawImage(
+                        ox + sx1 - x1,
+                        oy + sy1 - y1,
+                        image,
+                        sx1,
+                        sy1,
+                        sx2 - sx1,
+                        sy2 - sy1,
+                    )
+                    painter.end()
+            result.append(canvas)
+        return result
 
-    padding = parse_border_mm(border_mm, dpi)
-
-    if area == 1:
-        t, r, btm, l = padding or [0, 0, 0, 0]
-        outputs = []
-        for b in present:
-            canvas = blank((b[2] - b[0]) + l + r, (b[3] - b[1]) + t + btm)
-            paste_source(canvas, b, l, t)
-            outputs.append(canvas)
-        return outputs
-
-    if len(present) == 2:
-        ux1 = min(b[0] for b in present)
-        uy1 = min(b[1] for b in present)
-        ux2 = max(b[2] for b in present)
-        uy2 = max(b[3] for b in present)
-        if padding is None:
-            canvas = blank(W, H)
-            if area == 3:
-                paste_source(canvas, [ux1, uy1, ux2, uy2], 0, 0)
-            else:
-                for b in present:
-                    paste_source(canvas, b, b[0], b[1])
-            return [canvas]
-        t, r, btm, l = padding
-        canvas = blank((ux2 - ux1) + l + r, (uy2 - uy1) + t + btm)
-        if area == 3:
-            paste_source(canvas, [ux1, uy1, ux2, uy2], l, t)
-        else:
-            for b in present:
-                paste_source(canvas, b, l + (b[0] - ux1), t + (b[1] - uy1))
-        return [canvas]
-
+    # 无检测框：整页原图
     if not present:
         return [blank(W, H)]
 
-    # area=2/3 单框：对称输出
-    single = present[0]
-    if padding is None:
-        canvas = blank(W, H)
-        paste_source(canvas, single, single[0], single[1])
-        return [canvas]
-    t, r, btm, l = padding
-    gap = round(SYMMETRIC_GAP_MM * dpi / 25.4)
-    bw = single[2] - single[0]
-    bh = single[3] - single[1]
-    canvas = blank(l + bw * 2 + gap + r, t + bh + btm)
-    paste_source(canvas, single, l, t)  # 内容置于左半，右半为空白镜像
-    return [canvas]
+    # 单框 + border + area=2/3：对称输出（实际框 + 空白镜像）
+    if len(present) == 1 and padding is not None and area in (2, 3):
+        return render(
+            build_symmetric_layout(
+                box=present[0],
+                border_padding=padding,
+                image_size=(W, H),
+                is_left=True,  # 内容置于左半，右半为空白镜像
+                dpi=dpi,
+            )
+        )
+
+    return render(
+        build_output_layout(
+            boxes=present,
+            area=area,
+            border_padding=padding,
+            image_size=(W, H),
+            dpi=dpi,
+        )
+    )
 
 
 def compose_outputs_horizontal(outputs: list, gap: int = 12) -> QImage:
