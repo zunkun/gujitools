@@ -75,7 +75,10 @@ def install_build_dependencies(conda_exe, project_root):
             BUILD_ENV_NAME,
             "python",
             "-c",
-            "import importlib.metadata as metadata; import cv2, PyInstaller, torch, ultralytics, yaml, fpdf, PySide6, qfluentwidgets; has_full_opencv=any(d.metadata['Name'].lower() == 'opencv-python' for d in metadata.distributions()); raise SystemExit(torch.version.cuda is not None or has_full_opencv)",
+            # ⚠️ 探针里的包清单必须覆盖 requirements.txt 的全部运行时依赖：
+            # 自检通过会**直接 return**，后面的 pip install 一次都不跑。
+            # 曾经漏掉 markdown → 已有环境永远装不上它，手册在打包后静默退化。
+            "import importlib.metadata as metadata; import cv2, PyInstaller, torch, ultralytics, yaml, fpdf, PySide6, qfluentwidgets, markdown; has_full_opencv=any(d.metadata['Name'].lower() == 'opencv-python' for d in metadata.distributions()); raise SystemExit(torch.version.cuda is not None or has_full_opencv)",
         ],
         check=False,
     )
@@ -177,29 +180,18 @@ def install_build_dependencies(conda_exe, project_root):
             "opencv-python-headless",
         ],
     )
-    # GUI 依赖：GUI 与 CLI 打进同一个目录（共享 _internal），
-    # 因此构建环境必须同时具备 PySide6 / qfluentwidgets。
+    # 依赖只有 requirements.txt 一份（CLI + GUI 全量），上面的
+    # `pip install -r requirements.txt` 已包含 PySide6 / markdown 等 GUI 依赖。
     #
-    # 只补装「requirements.txt 之外的 GUI 增量」，**不用 requirements.gui.txt 整表**：
-    # 整表含 ultralytics/opencv 等已装包，pip 重新解析时可能顺带升级依赖链、
-    # 把上面好不容易装好的 CPU 版 torch 顶掉（换成 CUDA 版会让产物暴增数 GB）。
-    print("安装 GUI 依赖（PySide6 / PySide6-Fluent-Widgets）...")
-    run_conda(
-        conda_exe,
-        [
-            "run",
-            "-n",
-            BUILD_ENV_NAME,
-            "python",
-            "-m",
-            "pip",
-            "install",
-            "-i",
-            "https://mirrors.aliyun.com/pypi/simple/",
-            "PySide6>=6.6.0",
-            "PySide6-Fluent-Widgets>=1.5.0",
-        ],
-    )
+    # ⚠️⚠️ 不要再在下面补一份「GUI 增量」手写清单。曾经有过：怕 pip 重解析把
+    # CPU 版 torch 顶掉，所以只手写 PySide6 + qfluentwidgets 两个包、不装
+    # requirements.gui.txt 整表。代价是那份手写清单成了**第二处事实来源**——
+    # 漏掉 markdown 时源码模式正常、打包后手册退化成 <pre> 包裹的原始 markdown
+    # （`_md_to_fragment` 的 ImportError 兜底），而 `collect_submodules('markdown')`
+    # 对缺失的包**静默返回空**，PyInstaller 全程不报错，只有用户点了「用户手册」
+    # 才看见。现在一次装全，torch 的风险由「只跑一次 -r requirements.txt」规避。
+    # 护栏：tests/selftests/manual_dialog.py 从 help_dialog.py 的 import 反推
+    # 依赖，逐个比对 requirements.txt。
 
 
 def ensure_build_environment(project_root):

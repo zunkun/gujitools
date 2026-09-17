@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 52 个模块、51 个公开类、240 个公开函数/方法（生成于 2026-09-17）。
+覆盖 53 个模块、51 个公开类、243 个公开函数/方法（生成于 2026-09-17）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -53,6 +53,7 @@
 | [`desktop.store.runs`](#desktopstoreruns) | 1 | 6 |
 | [`desktop.store.store`](#desktopstorestore) | 1 | 1 |
 | [`desktop.store.tasks`](#desktopstoretasks) | 1 | 17 |
+| [`desktop.ui.help_dialog`](#desktopuihelp_dialog) | 0 | 3 |
 | [`desktop.ui.style`](#desktopuistyle) | 0 | 3 |
 | [`desktop.ui.theme`](#desktopuitheme) | 0 | 2 |
 | [`desktop.ui.widgets`](#desktopuiwidgets) | 9 | 45 |
@@ -1709,6 +1710,89 @@ rembg 最终目录；print 返回 print.pdf 所在目录。
 已废弃：检测/去底直接读 extract 输出目录，不再物化输入副本。
 
 仅为清理历史遗留目录保留（老版本任务目录下可能仍有 workset/）。
+
+---
+
+## `desktop.ui.help_dialog`
+
+源码：[`desktop/ui/help_dialog.py`](../../desktop/ui/help_dialog.py)
+
+用户手册：Markdown → HTML → 系统默认浏览器渲染。
+
+为什么不再用 ``QTextBrowser`` / ``QTextDocument`` 直接渲染 Markdown：
+
+- Qt 的 ``setMarkdown()`` 只支持 GFM 的**子集**，表格、围栏代码块、深层嵌套
+  列表的渲染都很勉强，长文档读起来发闷；
+- ``setHtml()`` 走的是**同一条富文本引擎**，CSS 只是 HTML 的一个小子集
+  （没有 flex、没有伪元素、 ``nth-child`` 之类选择器也不全），多绕一圈
+  换不来真正的样式自由度；
+- ``QWebEngineView`` 能彻底解决，但会拖进 ``QtWebEngineProcess.exe`` 与
+  百 MB 级资源包，和 ``guji.spec`` 现有的 excludes 裁剪策略直接冲突。
+
+于是走第三条路：**用 Python 的 ``markdown`` 库（纯 Python、无二进制依赖）
+把 ``docs/guide/*.md`` 转成完整 HTML，内嵌匹配应用主题的 CSS，写到临时文件
+后用系统默认浏览器打开。**
+
+这样做的好处：
+
+1. **零重量依赖** —— ``markdown`` 是纯 Python 单包，不引入 Qt 之外的二进制；
+2. **完整 GFM** —— 表格、围栏代码块、嵌套列表都按规范渲染；
+3. **图片照旧可用** —— 靠 ``<base>`` 把文档基准指向 ``docs/guide/``，
+   12 张相对路径的中文名截图正常加载，Markdown 里的写法一个字都不用改；
+4. **样式自由** —— 真实浏览器渲染，CSS 不受 Qt 富文本子集限制；
+5. **不做构建步骤** —— HTML 是**运行时**生成的，改了 Markdown 重新打开
+   手册就是新的，不存在产物与源漂移的问题。
+
+两条关键实现约束（改动时别踩）：
+
+- **``<base>`` 必须指向手册目录且带结尾斜杠**：否则
+  ``screenshots/guide/*.png`` 会相对临时文件解析，全变成碎图。
+- **指南之间的互链要改成页内 tab 跳转**：``gui-guide.md`` 里有
+  ``[cli.md]\(cli.md)``，浏览器会把 .md 当纯文本显示，必须改写为
+  ``#tab-cli`` 交给 JS 切页。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| _HTML_NAME | `"guji_manual.html"` |
+| _JS | `" (function () {   function activate(tabId) {     var tabs…"` |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `manual_dir() -> Path` | 手册目录（源码与打包两种模式下都可用）。 |
+| `generate_manual_html(entry: str \| None=None) -> Path` | 把全部手册渲染成一个带分段开关的 HTML 文件，返回其路径。 |
+| `open_manual(entry: str \| None=None) -> Path` | 生成手册 HTML 并用系统默认浏览器打开，返回该文件路径。 |
+
+#### `manual_dir() -> Path`
+
+手册目录（源码与打包两种模式下都可用）。
+
+与 ``package_dir()`` 同源：源码模式下 ``desktop/`` 的上一级就是仓库根，
+打包后数据文件由 ``guji.spec`` 的 ``gui_datas`` 落到 ``_internal/``，
+``package_dir()`` 在 frozen 下返回 ``_MEIPASS/desktop``，再上一级同样是
+资源根，因此 ``package_dir().parent / "docs" / "guide"`` 两种模式通用。
+
+#### `generate_manual_html(entry: str | None=None) -> Path`
+
+把全部手册渲染成一个带分段开关的 HTML 文件，返回其路径。
+
+entry 为 ``MANUAL_ENTRIES`` 里的键，决定默认激活哪个标签页；
+不传则激活第一项。
+
+⚠️ ``<base>`` 指向手册目录（带结尾斜杠）是图片能加载的唯一保证：
+Markdown 里写的是 ``screenshots/guide/xxx.png`` 这样的相对路径，
+而 HTML 落在临时目录，不设 base 就会相对临时目录解析成碎图。
+
+#### `open_manual(entry: str | None=None) -> Path`
+
+生成手册 HTML 并用系统默认浏览器打开，返回该文件路径。
+
+返回路径是为了调用方（或测试）能拿到产物做进一步处理。
+浏览器打不开时 ``webbrowser.open`` 只是返回 False，不抛异常——
+手册文件仍然生成好了，用户可以手动打开。
 
 ---
 

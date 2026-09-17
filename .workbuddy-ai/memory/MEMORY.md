@@ -119,7 +119,7 @@ denied（改 `cp -r` + `rm -rf`）；迁完扫全库相对链接（当时 54 处
 
 ## 验证方式
 
-- 全量 GUI 自测：`QT_QPA_PLATFORM=offscreen python tests/gui_selftest.py`（**409 断言**）
+- 全量 GUI 自测：`QT_QPA_PLATFORM=offscreen python tests/gui_selftest.py`（**444 断言**）
   - `--only reporter,box_geometry` / `--list` / `--skip`
 - CLI 输出一致性 `tests/reporter_cli_parity.py`；worker 端到端 `tests/reporter_worker_e2e.py`
 - **解释器用 `C:\Users\liuzu\anaconda3\python`**（系统 python 缺 cv2/numpy/PySide6）
@@ -145,3 +145,39 @@ denied（改 `cp -r` + `rm -rf`）；迁完扫全库相对链接（当时 54 处
 - `functions` 层人类日志仍走 print（经 ProgressStream 转发为 log 事件）；
   将来可把高频日志搬到 `reporter.log()`。
 - `guji init` 缺 `--yes` 非交互开关（见 commands-notes.md）。
+
+### ⚠️ 桌面端用户手册（MD → HTML → 系统浏览器）
+
+**2026-09-17 换血**：原先 `QTextBrowser` + `QTextDocument` 直接吃 Markdown
+（方案 A），实测 Qt 富文本引擎对 GFM 只是子集，表格/围栏代码块/深层嵌套列表
+排版勉强；`setHtml()` 走同一条渲染管线，换不来样式自由度。现改为
+**运行时用 `markdown` 库把 `docs/guide/*.md` 转成完整 HTML（内嵌 CSS），
+写到临时文件后用系统默认浏览器打开**。
+
+- `desktop/ui/help_dialog.py` 导出 `generate_manual_html()` / `open_manual()` /
+  `manual_dir()` / `MANUAL_ENTRIES`（**`ManualDialog` 类已删除**）。
+  新加手册只改 `MANUAL_ENTRIES` 元组。
+- **不是构建步骤**：HTML 每次打开时生成，无产物漂移。一个 HTML 装全部手册，
+  顶部吸顶分段开关（JS 切 tab），落在固定临时文件名上让浏览器复用标签页。
+- **CSS 用 `string.Template`（`$TOKEN`）不用 f-string** —— CSS 花括号极多，
+  f-string 要全写 `{{ }}`。色值一律取 `theme.py` 令牌，不重复硬编码。
+- **⚠️ `<base>` 必须指向手册目录且带结尾斜杠**：Markdown 里是
+  `screenshots/guide/*.png` 相对路径，HTML 却在临时目录，没 base 就 12 张图全碎。
+  这是旧方案 baseUrl 坑的同款换皮。护栏断言 `base.endswith("docs/guide/")`。
+- **⚠️ 图片光有 `<base>` 还不够，src 必须改写成绝对路径并预编码**：截图名带
+  中文（`s0-任务列表.png`），靠 base 拼接后浏览器未必正确百分号编码 → **有框无图**。
+  用 `_absolutize_image_srcs()` + `Path.as_uri()` 编成
+  `s0-%E4%BB%BB%E5%8A%A1...png`。护栏断言「src 全是 `file:///`」+「都命中真文件」。
+- **⚠️ `open_manual()` 的 URL 要带 `?v=<时间戳>` 防缓存**：临时文件名固定，
+  浏览器按 URL 强缓存 file:// 页面，改了内容用户可能还看到旧版（曾显示成
+  原始 markdown）。
+- **⚠️ markdown 扩展必须静态 import 类再传实例**（`TableExtension()` 等），
+  不能传字符串名 —— 按名字加载走 entry point（`importlib.metadata`），
+  frozen 下 `.dist-info` 未必打包，会退化成 `import_module("tables")` 报
+  ImportError，**源码模式正常、一打包就碎**。实测传实例与传字符串产出逐字一致。
+- 指南间互链（`[cli.md](cli.md)`）要改写成 `#tab-cli`，否则浏览器把 .md 当纯文本。
+- `guji.spec` 的 `gui_datas` 含 `('docs/guide','docs/guide')` 仍是冻结态必需；
+  `gui_hiddenimports` 追加 `collect_submodules('markdown')`。
+  护栏 `tests/selftests/manual_dialog.py`（**35 断言**）会盯住。
+- 资源定位复用 `package_dir()`（`desktop/utils/files.py:31-42`）：
+  `manual_dir() = package_dir().parent/"docs"/"guide"`，源码/frozen 两态通用。

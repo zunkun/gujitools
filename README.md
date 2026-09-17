@@ -178,9 +178,20 @@ PyTorch，PyInstaller 仍会把 CUDA 运行库收集进包中。
 - PYZ（纯 Python 字节码）是每个 EXE 各自内嵌的，torch 等的 `.py` 无法跨 EXE
   共享，这属于双 EXE 结构的固有开销。
 
-GUI 依赖（PySide6 / PySide6-Fluent-Widgets）也装在 `yolobuild` 里——构建时
-只补装 `requirements.txt` 之外的 GUI 增量，不整表重装 `requirements.gui.txt`，
-以免 pip 重新解析依赖链时把 CPU 版 torch 顶掉。
+依赖只有 `requirements.txt` **一份**（CLI + GUI 全量）：CLI 与 GUI 打进同一个
+目录、共享同一份 `_internal`，构建环境本来就必须同时具备两边的依赖，拆两份
+文件只会造成「两处事实来源」。
+
+`yolobuild` 里装的是这份全量表（PySide6 / PySide6-Fluent-Widgets / markdown
+都在里面）。**只跑一次 `pip install -r requirements.txt`**——不要再加一份
+「GUI 增量」手写清单：那份清单曾漏掉 `markdown`，导致源码模式下手册是结构化
+HTML、安装版里退化成 `<pre>` 包裹的原始 markdown，而 `collect_submodules()`
+对缺失的包静默返回空，PyInstaller 全程不报错，只有点了「用户手册」才暴露。
+
+> ⚠️ `build.py` 的 `install_build_dependencies()` 开头有个**环境自检探针**
+> （import 一串包），通过就直接 return、后面的 pip install 一次都不跑。
+> 所以**往 requirements.txt 加包时必须同步加进探针**，否则已有的
+> `yolobuild` 环境永远装不上它。
 
 安装后：
 
@@ -236,8 +247,8 @@ python tools/smoke_frozen.py   # frozen 端到端冒烟（含 YOLO 推理）
 安装版直接点开始菜单「古籍重製」。从源码启动时：
 
 ```bash
-# 安装 GUI 依赖（安装版不需要）
-python -m pip install -r requirements.gui.txt
+# 安装依赖（安装版不需要；依赖就一份 requirements.txt，含 GUI 部分）
+python -m pip install -r requirements.txt
 
 # 启动
 python desktop.py

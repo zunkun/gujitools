@@ -1,5 +1,15 @@
-# gujitools 依赖
+# gujitools 依赖（CLI + GUI 全量）
 # 安装: pip install -r requirements.txt
+#
+# ⚠️ 只有这一份。CLI 与 GUI 现在打进同一个目录、共享同一份 _internal
+# （见 build.py），构建环境本来就必须同时具备两边的依赖，拆两份文件只会
+# 造成「两处事实来源」。
+# 曾有两份（requirements.txt / requirements.gui.txt），而 build.py 因怕 pip
+# 重解析把 CPU 版 torch 顶掉，只手写了「GUI 增量」清单、并不装
+# requirements.gui.txt —— 结果往 gui 那份里加的依赖对打包毫无作用，
+# `collect_submodules()` 对缺失的包静默返回空，PyInstaller 全程不报错，
+# 只有运行到对应功能才炸（markdown 就因此让手册退化成原始文本）。
+# 现在全量装这一份，build.py 只跑一次 pip install。
 
 
 # ---- PDF 提取 (extract) ----
@@ -17,6 +27,14 @@ ultralytics>=8.0.0       # YOLO 模型推理（依赖 torch，pip 会自动安�
 # ---- 打包 (build.py) ----
 pyinstaller>=6.0.0
 
+# ---- CLI 交互 ----
 ruamel.yaml
 prompt-toolkit
 fpdf2>=2.7.0             # PDF 生成（import fpdf）
+
+# ---- 桌面端 GUI (desktop/) ----
+PySide6>=6.6.0                  # Qt 绑定
+PySide6-Fluent-Widgets>=1.5.0   # import qfluentwidgets
+
+# ---- 用户手册：docs/guide/*.md → HTML → 系统浏览器 ----
+markdown>=3.4            # import markdown（纯 Python，无二进制依赖）

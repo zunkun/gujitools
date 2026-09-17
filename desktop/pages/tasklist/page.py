@@ -21,7 +21,7 @@ from qfluentwidgets import (
 
 from desktop import ui
 from desktop.ui import theme as T
-from desktop.ui.help_dialog import ManualDialog
+from desktop.ui.help_dialog import open_manual
 from desktop.workers import HashWorker, SourceThumbnailsWorker
 from desktop.store import STAGES, STAGE_LABELS, STAGE_SHORT, TaskStore
 from desktop.components.task_table import TaskTable
@@ -50,7 +50,6 @@ class TaskListPage(QWidget):
         self.hash_thread: QThread | None = None
         self.hash_worker: HashWorker | None = None
         self._import_button: PrimaryPushButton | None = None
-        self._manual_dialog: ManualDialog | None = None
         self._init_ui()
         self.refresh()
 
@@ -109,15 +108,16 @@ class TaskListPage(QWidget):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.store.root)))
 
     def _open_manual(self) -> None:
-        """打开用户手册（非模态，方便边看边操作）。
+        """在系统默认浏览器里打开用户手册。
 
-        复用同一个实例：重复点按钮只是把它提到前台，不会叠出多个窗口。
+        手册是运行时由 Markdown 渲染出来的完整 HTML（见
+        ``desktop.ui.help_dialog``）：交给真实浏览器渲染，表格/代码块/截图
+        的排版才能到位，Qt 富文本引擎渲染长文档的效果太勉强。
+
+        HTML 落在临时目录的固定文件名上，浏览器会复用同一个标签页，
+        重复点按钮不会叠出一堆窗口。
         """
-        if self._manual_dialog is None:
-            self._manual_dialog = ManualDialog(self)
-        self._manual_dialog.show()
-        self._manual_dialog.raise_()
-        self._manual_dialog.activateWindow()
+        open_manual()
 
     # ------------------------------------------------------------------ 数据
     def refresh(self) -> None:
