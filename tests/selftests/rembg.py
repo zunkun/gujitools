@@ -45,6 +45,40 @@ def run(ctx) -> None:
     _p3.apply_args({})
     ok("复位后 offset 回到 0", _p3.offset.value() == 0,
        str(_p3.offset.value()))
+
+    # --- area=4「整页/不检测」：普通 PDF / 检测失败时跳过 YOLO，整页即唯一框 ---
+    _items = [_p3.area.itemText(i) for i in range(_p3.area.count())]
+    ok("area 下拉提供「4 (整页/不检测)」",
+       "4 (整页/不检测)" in _items, str(_items))
+    _p3.area.setCurrentText("4 (整页/不检测)")
+    ok("选 area=4 后 get_args 为 4",
+       _p3.get_args()["area"] == 4, str(_p3.get_args().get("area")))
+    _p3.apply_args({"area": 4})
+    ok("历史参数回填 area=4",
+       _p3.area.currentText() == "4 (整页/不检测)", _p3.area.currentText())
+    # 第二步「整页模式」开关与 area=4 双向联动（开关只是 area 的入口）
+    _p2 = d.control_stack.widget(1)
+    ok("第二步提供整页模式开关", hasattr(_p2, "whole_page"))
+    d._sync_whole_page_checkbox()
+    ok("area=4 时第二步整页开关自动勾上", _p2.whole_page.isChecked())
+    _p2.whole_page.setChecked(False)
+    ok("取消整页开关 → area 回到 1",
+       _p3.get_args()["area"] == 1, str(_p3.get_args().get("area")))
+    _p2.whole_page.setChecked(True)
+    ok("重新勾上整页开关 → area 切到 4",
+       _p3.get_args()["area"] == 4, str(_p3.get_args().get("area")))
+    # 整页框兜底：整页模式只认手动框，自动检测结果一律不生效
+    _page = next(iter(d._manifest_paths()), None)
+    ok("清单非空（整页框兜底断言前提）", _page is not None)
+    if _page is not None:
+        _w, _h = repo.image_size(tid, _page.stem)
+        ok("整页模式无手动框时兜底为整页边界",
+           d._detect_boxes_for(str(_page)) == [[0, 0, _w, _h]],
+           str(d._detect_boxes_for(str(_page))))
+    _p2.whole_page.setChecked(False)
+    ok("收尾复位 area=1（后续断言按 area=1 契约）",
+       _p3.get_args()["area"] == 1, str(_p3.get_args().get("area")))
+
     ok("未生成预览前提交按钮禁用", not d.submit_button.isEnabled())
     d.run_rembg_submit()  # 直接调用也必须被拦截，不启动子进程
     ok("未成功生成预览时提交不启动", d.process is None)

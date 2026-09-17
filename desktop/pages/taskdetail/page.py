@@ -162,6 +162,9 @@ class TaskDetailPage(
         self._refresh_preview(index)
         self._restore_last_run_params(index)
         self._refresh_history_options()
+        if STAGES[index] == "detect":
+            # 整页开关是 area=4 的入口，切回第二步时按当前 area 回填
+            self._sync_whole_page_checkbox()
 
     def _refresh_stage_views(self) -> None:
         if not self.task_id:

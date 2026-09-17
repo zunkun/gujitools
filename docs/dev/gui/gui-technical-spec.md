@@ -76,6 +76,7 @@ GUI（QImage 渲染）共同消费同一份 `OutputLayout`，不得各自推导
 | area=3 双框 | 一张：并集区域**整块**作为 ROI（框间内容保留）+ border |
 | area=2/3 单框 + border | 对称画布：宽 = 左 + 框宽×2 + 10mm 间隔 + 右，内容在一侧 |
 | area=2/3 border 未填 | 整页尺寸画布，仅框内（area=3 为并集内）保留内容，其余留白；**ROI 写回原位置** |
+| area=4 整页 | 一张：**不调用 YOLO**，整页 `[0,0,W,H]`（或用户手画的框）作为一个整体 + border；**不做对称镜像** |
 
 - 布局层入口：`utils.box_geometry.build_output_layout` /
   `build_symmetric_layout`（返回冻结 dataclass `OutputLayout` / `Canvas`）。

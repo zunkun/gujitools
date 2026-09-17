@@ -172,11 +172,15 @@ class DetailViewMixin:
         # detect 面板「检测本页」：手动触发当前页的 YOLO 检测（不自动执行）
         detect_panel = self.control_stack.widget(1)
         detect_panel.detect_page_requested.connect(self._detect_current_page)
+        # 整页模式：等价于把第三步 area 切到 4（跳过 YOLO，整页作为一个框）
+        detect_panel.whole_page_toggled.connect(self._set_whole_page_mode)
 
         # rembg 面板的参数变化决定检测框标注与去底色预览区域，联动刷新
         rembg_panel = self.control_stack.widget(2)
 
         def _on_rembg_panel_changed(*_):
+            # area 可能被第二步的整页开关改动，勾选状态需回填
+            self._sync_whole_page_checkbox()
             self._refresh_reference_boxes()
             self._update_submit_button(
                 bool(self.process and self.process.state() != QProcess.NotRunning)

@@ -6,6 +6,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from core.command_spec import WHOLE_PAGE_AREA
 from desktop.stages.events import ProgressStream, emit, _real_stdout
 
 
@@ -16,6 +17,22 @@ def run_detect(config: dict) -> int:
     try:
         import utils
         from functions.detect import detect_page_boxes
+
+        if int(config.get("area") or 1) == WHOLE_PAGE_AREA:
+            # 整页模式：不加载 YOLO，整页即唯一文本框
+            img = utils.imread(image_path)
+            if img is None:
+                raise ValueError(f"无法读取图片: {image_path}")
+            h, w = img.shape[:2]
+            emit(
+                {
+                    "type": "boxes",
+                    "image": image_path,
+                    "left": [0, 0, int(w), int(h)],
+                    "right": None,
+                }
+            )
+            return 0
 
         img = utils.imread(image_path)
         if img is None:
@@ -62,8 +79,32 @@ def run_detect_stage(config: dict) -> int:
         if not total:
             emit({"type": "error", **context, "message": "输入目录中没有图片"})
             return 1
-        model = utils.load_yolo_model()
         done = 0
+        if int(args.get("area") or 1) == WHOLE_PAGE_AREA:
+            # 整页模式：不加载 YOLO、不写 boxes.json（框由主进程按整页合成）。
+            # 仍逐页报进度，界面上「本子任务」能正常走完，日志说明为何没有框。
+            emit(
+                {
+                    "type": "log",
+                    **context,
+                    "message": "整页模式（area=4）：跳过 YOLO 检测，整页作为一个文本框",
+                }
+            )
+            for _path in files:
+                done += 1
+                emit({"type": "progress", **context, "done": done, "total": total})
+            emit(
+                {
+                    "type": "finished",
+                    **context,
+                    "done": done,
+                    "total": total,
+                    "result": None,
+                    "output": None,
+                }
+            )
+            return 0
+        model = utils.load_yolo_model()
         for path in files:
             img = utils.imread(path)
             if img is None:

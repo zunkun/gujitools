@@ -31,7 +31,9 @@ TEXT_ORIENTATIONS: Tuple[str, ...] = ("vertical", "horizontal")
 TITLE_SIDES: Tuple[str, ...] = ("left", "right", "both")
 IMAGE_EXTS: Tuple[str, ...] = ("jpg", "png")
 REMBG_TYPES: Tuple[int, ...] = (1, 2, 3)
-CROP_AREAS: Tuple[int, ...] = (1, 2, 3)
+# area=4「整页」：不调用 YOLO，整页作为一个文本框（普通文档/检测失败时的兜底）
+CROP_AREAS: Tuple[int, ...] = (1, 2, 3, 4)
+WHOLE_PAGE_AREA: int = 4
 
 # 边距默认值（print）
 DEFAULT_PAGE_MARGINS: List[int] = [int(v) for v in _DEFAULT_PAGE_MARGINS]

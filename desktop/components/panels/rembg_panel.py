@@ -25,7 +25,13 @@ class RembgPanel(StagePanel):
     )
 
     def _build_form(self, form: QFormLayout) -> None:
-        self.area = combo_box(["1 (左右分开)", "2 (合并单图)", "3 (整页合并)"])
+        self.area = combo_box(
+            ["1 (左右分开)", "2 (合并单图)", "3 (整页合并)", "4 (整页/不检测)"]
+        )
+        self.area.setToolTip(
+            "4 = 整页：把整页当作唯一文本框（不调用 YOLO），边框画在页面边界，"
+            "仍可在第二步拖动/重画；适合普通文档或古籍检测失败时整页去底色"
+        )
         self.border = LineEdit()
         self.border.setPlaceholderText("留空 或 30 / 20,30 / 20,30,25,35")
         self.type = combo_box(["1 (二值)", "2 (1bit)", "3 (灰度)"])

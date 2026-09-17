@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from core.command_spec import WHOLE_PAGE_AREA
+
 
 # ---------------------------------------------------------------- extract 缺页
 def missing_extract_pages_spec(output_dir: Path, total: int) -> str | None:
@@ -98,6 +100,15 @@ def plan_rembg_submit_entries(
             entries.append(
                 {"file": str(result), "label": stem,
                  "box": union, "parea": 1}
+            )
+        elif area == WHOLE_PAGE_AREA and len(boxes) >= 2:
+            # 整页模式：整页（或用户手画的多个框）合成一个整体，不拆左右页
+            union = [
+                min(b[0] for b in boxes), min(b[1] for b in boxes),
+                max(b[2] for b in boxes), max(b[3] for b in boxes),
+            ]
+            entries.append(
+                {"file": str(result), "label": stem, "box": union, "parea": 1}
             )
         elif len(boxes) == 1:
             entries.append(

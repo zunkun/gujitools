@@ -21,8 +21,17 @@ from desktop.workers import ImageListWorker, PreviewWorker
 from desktop.components.viewers.image_view import ImageView
 from desktop.components.viewers.thumb_strip import ThumbStrip
 from desktop.components.viewers.thumbs_loader import ThumbsMixin
+from core.command_spec import WHOLE_PAGE_AREA
 from desktop.ui.widgets import SegmentedToggle
 from utils.sort_utils import pdf_custom_sort_key
+
+
+def _union_box(valid: list) -> list:
+    """多个框的外接矩形（整页模式下把用户画的多个框合成一个整体）。"""
+    return [
+        min(b[0] for b in valid), min(b[1] for b in valid),
+        max(b[2] for b in valid), max(b[3] for b in valid),
+    ]
 
 
 class RembgPreviewWidget(QWidget, ThumbsMixin):
@@ -143,6 +152,12 @@ class RembgPreviewWidget(QWidget, ThumbsMixin):
                         # 对称画布
                         page_entries = [
                             {"label": stem, "path": path_text, "box": valid[0], "parea": 2}
+                        ]
+                    elif area == WHOLE_PAGE_AREA and valid:
+                        # 整页模式：整页（或用户手画的框）作为一个整体，不拆左右页
+                        page_entries = [
+                            {"label": stem, "path": path_text,
+                             "box": _union_box(valid), "parea": 1}
                         ]
                 except Exception:
                     page_entries = None

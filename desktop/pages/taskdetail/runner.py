@@ -129,6 +129,12 @@ class StageRunnerMixin:
             # detect/rembg 都是逐图独立处理（不依赖顺序与命名），直接以
             # extract 输出目录为输入，不再物化 workset 副本。
             args["input"] = str(self.store.extract_output_dir(self.task_id))
+            if stage == "detect":
+                # 整页模式（area=4）：区域参数归第三步面板所有，detect 只是
+                # 借来判定「要不要加载 YOLO」，worker 侧据此整页跳过检测。
+                args["area"] = int(
+                    self.control_stack.widget(2).get_args().get("area", 1)
+                )
             if stage == "rembg":
                 # 「生成预览」整页去底图固定写入 stages/rembgpreview；
                 # rembg CLI 会自行追加 "rembg" 子目录，故用 _outpath 精确覆盖

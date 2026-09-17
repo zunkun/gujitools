@@ -13,9 +13,10 @@ import json
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QProcess, QProcessEnvironment
+from PySide6.QtCore import QProcess, QProcessEnvironment, QSize
 from PySide6.QtGui import QImageReader
 
+from core.command_spec import WHOLE_PAGE_AREA
 from utils.box_geometry import compute_final_boxes
 from desktop.store.json_io import write_json
 from desktop.utils.files import project_root
@@ -32,11 +33,74 @@ class DetectMixin:
             return []
         return [b for b in boxes if b]
 
+    # ------------------------------------------------------------ 整页模式
+    def _current_area(self) -> int:
+        """当前 area（区域模式参数位于第三步 rembg 面板）。"""
+        return int(self._current_detect_params()[0])
+
+    def _image_size_for(self, path_text: str):
+        """页面图片原始尺寸 (w, h)：优先 sizes.json，回退读图头。"""
+        if self.task_id:
+            size = self.store.image_size(self.task_id, Path(path_text).stem)
+            if size and size[0] > 0 and size[1] > 0:
+                return int(size[0]), int(size[1])
+        head = QImageReader(str(path_text)).size()
+        if head.isValid() and head.width() > 0:
+            return head.width(), head.height()
+        return None
+
+    def _whole_page_boxes(self, path_text: str) -> list:
+        """整页模式的默认框：整页边界 [0, 0, W, H]（与图片一样大）。"""
+        size = self._image_size_for(path_text)
+        if not size:
+            return []
+        return [[0, 0, size[0], size[1]]]
+
+    def _whole_page_entry(self, path_text: str) -> tuple[list, str]:
+        """整页模式下应展示的 (框, 来源)。
+
+        只认人工框（origin=manual）：自动检测结果在整页模式下不生效——
+        语义上整页模式就是「不检测」，旧 YOLO 结果留着只会让切换后画面困惑。
+        用户手动画过框则沿用，其余一律整页。
+        """
+        entry = (
+            self.store.detect_boxes_entry(self.task_id, Path(path_text).stem)
+            if self.task_id
+            else None
+        )
+        if entry and entry[1] == "manual":
+            boxes = self._valid_boxes(entry[0])
+            if boxes:
+                return boxes, "manual"
+        return self._whole_page_boxes(path_text), "fullpage"
+
+    def _current_boxes_for(self, path_text: str) -> list:
+        """当前应展示的框（整页模式忽略自动检测结果）。"""
+        if self._current_area() == WHOLE_PAGE_AREA:
+            return self._whole_page_entry(path_text)[0]
+        return self._valid_boxes(self.detect_cache.get(str(path_text)) or [])
+
     def _detect_image_selected(self, index: int, path_text: str) -> None:
         """选中图片：只展示已有检测结果，绝不自动执行检测（重负载操作需用户触发）。"""
         path = Path(path_text)
         key = str(path)
         self.detect_viewer.set_reference_boxes([])
+        if self._current_area() == WHOLE_PAGE_AREA:
+            boxes, origin = self._whole_page_entry(key)
+            if not boxes:
+                self.detect_viewer.info_label.setText(
+                    "整页模式：读取不到页面尺寸，请先完成第一步提取。"
+                )
+                return
+            # 整页框是**派生**出来的：既不入库也不进缓存，避免切回 area=1
+            # 时把整页框当成真实检测结果去拆左右页。
+            self._show_boxes_info(boxes, origin)
+            size = self._image_size_for(key) or (0, 0)
+            self.detect_viewer.apply_boxes(
+                boxes, QSize(size[0], size[1]), self._describe_boxes(boxes)
+            )
+            self._refresh_reference_boxes()
+            return
         if key in self.detect_cache:
             boxes = self._valid_boxes(self.detect_cache[key])
             self._show_boxes_info(boxes)
@@ -72,6 +136,23 @@ class DetectMixin:
             self._toast("warning", "提示", "请先完成提取，再执行检测。")
             return
         key = str(path)
+        if self._current_area() == WHOLE_PAGE_AREA:
+            # 整页模式：不启 YOLO 子进程，直接用整页框（可继续拖动/重画）
+            boxes, origin = self._whole_page_entry(key)
+            if not boxes:
+                self._toast("warning", "提示", "读取不到页面尺寸，请先完成第一步提取。")
+                return
+            self._show_boxes_info(boxes, origin)
+            size = self._image_size_for(key) or (0, 0)
+            self.detect_viewer.apply_boxes(
+                boxes, QSize(size[0], size[1]), self._describe_boxes(boxes)
+            )
+            self._refresh_reference_boxes()
+            self._toast(
+                "info", "整页模式",
+                "未调用 YOLO：整页作为一个文本框，可拖动四角调整或重画。",
+            )
+            return
         entry = self.store.detect_boxes_entry(self.task_id, Path(path).stem)
         if entry is not None and any(entry[0] or []):
             display = self._valid_boxes(entry[0])
@@ -85,7 +166,13 @@ class DetectMixin:
         self._start_detect(path)
 
     def _detect_boxes_for(self, path_text: str) -> list:
-        """某页的检测框（内存缓存优先，其次 boxes.json）。"""
+        """某页的检测框（内存缓存优先，其次 boxes.json）。
+
+        整页模式（area=4）没有存档框时兜底为整页边界，使 rembg 预览/提交
+        与第四步打印都按整页走，无需真的检测。
+        """
+        if self._current_area() == WHOLE_PAGE_AREA:
+            return self._whole_page_entry(path_text)[0]
         boxes = self.detect_cache.get(str(path_text))
         if boxes is None:
             entry = self.store.detect_boxes_entry(
@@ -99,6 +186,29 @@ class DetectMixin:
         args = self.control_stack.widget(2).get_args()
         return args.get("area", 1), args.get("border")
 
+    # ------------------------------------------------------ 整页模式开关联动
+    def _set_whole_page_mode(self, on: bool) -> None:
+        """第二步「整页模式」开关 → 第三步 area（4 ↔ 1）。
+
+        area 的唯一事实来源是第三步面板，本开关只是它的入口：勾选即把 area
+        切到 4，取消则回到 1，随后刷新检测预览（整页框立即画在边界上）。
+        """
+        panel = self.control_stack.widget(2)
+        target = WHOLE_PAGE_AREA if on else 1
+        if int(str(panel.area.currentText())[0]) != target:
+            panel.area.setCurrentIndex(target - 1)  # 触发 _refresh_reference_boxes
+            return
+        path = self.detect_viewer.current_path()
+        if path:
+            self._detect_image_selected(0, str(path))
+
+    def _sync_whole_page_checkbox(self) -> None:
+        """第二步勾选状态回填自第三步 area（切阶段/改 area 时保持一致）。"""
+        panel = self.control_stack.widget(1)
+        setter = getattr(panel, "set_whole_page", None)
+        if callable(setter):
+            setter(self._current_area() == WHOLE_PAGE_AREA)
+
     def _refresh_reference_boxes(self) -> None:
         """按当前 area 参数重算参考框（虚线标注）。
 
@@ -107,7 +217,7 @@ class DetectMixin:
         """
         path = self.detect_viewer.current_path()
         if path:
-            boxes = self._valid_boxes(self.detect_cache.get(str(path)))
+            boxes = self._current_boxes_for(str(path))
             if not boxes:
                 self.detect_viewer.set_reference_boxes([])
             else:
@@ -122,7 +232,9 @@ class DetectMixin:
         if boxes is None:
             self.detect_viewer.info_label.setText("正在检测文本框位置...")
             return
-        suffix = {"manual": "（手动）", "auto": ""}.get(origin, "")
+        suffix = {
+            "manual": "（手动）", "auto": "", "fullpage": "（整页，未检测）",
+        }.get(origin, "")
         self.detect_viewer.info_label.setText(self._describe_boxes(boxes) + suffix)
 
     @staticmethod
@@ -166,7 +278,10 @@ class DetectMixin:
         runs_dir = self.store.runs_config_dir(self.task_id)
         runs_dir.mkdir(parents=True, exist_ok=True)
         config_path = runs_dir / "detect-config.json"
-        write_json(config_path, {"mode": "detect", "image": str(path)})
+        write_json(
+            config_path,
+            {"mode": "detect", "image": str(path), "area": self._current_area()},
+        )
         self.detect_process = QProcess(self)
         self.detect_process.setProgram(sys.executable)
         self.detect_process.setProcessEnvironment(self._worker_env())

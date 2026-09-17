@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 55 个模块、56 个公开类、268 个公开函数/方法（生成于 2026-09-17）。
+覆盖 55 个模块、56 个公开类、269 个公开函数/方法（生成于 2026-09-18）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -16,7 +16,7 @@
 | [`desktop.components.log_panel`](#desktopcomponentslog_panel) | 1 | 9 |
 | [`desktop.components.pagination`](#desktopcomponentspagination) | 2 | 12 |
 | [`desktop.components.panels.base`](#desktopcomponentspanelsbase) | 1 | 5 |
-| [`desktop.components.panels.detect_panel`](#desktopcomponentspanelsdetect_panel) | 1 | 1 |
+| [`desktop.components.panels.detect_panel`](#desktopcomponentspanelsdetect_panel) | 1 | 2 |
 | [`desktop.components.panels.extract_panel`](#desktopcomponentspanelsextract_panel) | 1 | 1 |
 | [`desktop.components.panels.print_form`](#desktopcomponentspanelsprint_form) | 1 | 1 |
 | [`desktop.components.panels.print_nodes`](#desktopcomponentspanelsprint_nodes) | 2 | 9 |
@@ -313,11 +313,22 @@ title/description 来自子类类属性并开启换行，避免窄面板被长�
 YOLO 检测每张图的左右文本框坐标，供预览标注与去底色/裁剪使用；
 本阶段无表单参数，get_args 返回空字典，手动检测经信号触发。
 
+「整页模式」是第三步 area=4 的入口开关：勾选后整页即唯一文本框，
+**不加载也不调用 YOLO**，预览里框画在页面边界，仍可手动拖动/重画。
+
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
 | `get_args() -> dict` | 返回空参数字典（detect 阶段无表单参数）。 |
+| `set_whole_page(on: bool) -> None` | 外部（第三步 area）回填勾选状态；blockSignals 避免回抛造成循环。 |
+
+##### `get_args() -> dict`
+
+返回空参数字典（detect 阶段无表单参数）。
+
+整页模式不在这里上报：area 归第三步 rembg 面板所有，本开关只负责
+把 area 切到 4 / 切回 1（见宿主的 _set_whole_page_mode）。
 
 ---
 
