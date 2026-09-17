@@ -70,7 +70,7 @@ YOLO 推理，程序直接拒绝并给出替代方案。
 右框位置。
 
 输出路径规则与 `crop` **完全相同**（都用
-`utils.path_utils.resolve_final_output_dir`，见 `docs/io_path_rules.md`）——
+`utils.path_utils.resolve_final_output_dir`，见 `docs/dev/io_path_rules.md`）——
 detect 与 crop 是同级步骤，输出都落在**输入目录的旁边**：
 
 - 未传 `-o`：`<输入目录的父目录>/detect/`

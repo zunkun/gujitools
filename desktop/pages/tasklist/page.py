@@ -21,6 +21,7 @@ from qfluentwidgets import (
 
 from desktop import ui
 from desktop.ui import theme as T
+from desktop.ui.help_dialog import ManualDialog
 from desktop.workers import HashWorker, SourceThumbnailsWorker
 from desktop.store import STAGES, STAGE_LABELS, STAGE_SHORT, TaskStore
 from desktop.components.task_table import TaskTable
@@ -49,6 +50,7 @@ class TaskListPage(QWidget):
         self.hash_thread: QThread | None = None
         self.hash_worker: HashWorker | None = None
         self._import_button: PrimaryPushButton | None = None
+        self._manual_dialog: ManualDialog | None = None
         self._init_ui()
         self.refresh()
 
@@ -59,6 +61,10 @@ class TaskListPage(QWidget):
 
         # ---- 页头：标题 + 任务数 + 操作 ----
         header = ui.PageHeader("任务管理", "导入 PDF 后按四个子任务依次处理")
+        manual_button = PushButton(FIF.QUESTION, "用户手册")
+        manual_button.setFixedHeight(34)
+        manual_button.clicked.connect(self._open_manual)
+        header.actions.addWidget(manual_button)
         import_button = PrimaryPushButton(FIF.DOWNLOAD, "导入 PDF")
         import_button.setFixedHeight(34)
         import_button.clicked.connect(self.import_pdf)
@@ -101,6 +107,17 @@ class TaskListPage(QWidget):
     def _open_data_dir(self) -> None:
         self.store.root.mkdir(parents=True, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.store.root)))
+
+    def _open_manual(self) -> None:
+        """打开用户手册（非模态，方便边看边操作）。
+
+        复用同一个实例：重复点按钮只是把它提到前台，不会叠出多个窗口。
+        """
+        if self._manual_dialog is None:
+            self._manual_dialog = ManualDialog(self)
+        self._manual_dialog.show()
+        self._manual_dialog.raise_()
+        self._manual_dialog.activateWindow()
 
     # ------------------------------------------------------------------ 数据
     def refresh(self) -> None:

@@ -14,12 +14,12 @@
 2. 模板小节的键名必须都在该命令的 `CommandSpec.defaults` 里（无拼写漂移）；
 3. 模板里必须显式标注 `detect` 是**非必要**步骤（用户在模板里就能看到）；
 4. 模板小节的取值能直接构造 `CommandArgs` 并通过 `validate()`；
-5. **索引型文档（README / docs/README / docs/cli / overview）不得漏记任何命令**，
+5. **索引型文档（README / docs/README / docs/guide/cli / overview）不得漏记任何命令**，
    且都要说明 detect 是非必要的；
-6. **docs/cli.md 里列出的 CLI 参数必须真实存在于对应 parser**。
+6. **docs/guide/cli.md 里列出的 CLI 参数必须真实存在于对应 parser**。
 
 第 5、6 条是同一类漂移的另一半：命令加进代码后，文档常被留在旧状态——
-detect 落地时 `docs/cli.md` 甚至写着「不存在 detect 子命令」。
+detect 落地时 `docs/guide/cli.md` 甚至写着「不存在 detect 子命令」。
 """
 
 NAME = "config_template"
@@ -48,7 +48,7 @@ def subs_map(parser) -> dict:
 
 
 def _extract_section(text: str, cmd: str):
-    """截取 docs/cli.md 里 `### <cmd> — ...` 到下一个 `### ` 之间的内容。
+    """截取 docs/guide/cli.md 里 `### <cmd> — ...` 到下一个 `### ` 之间的内容。
 
     找不到小节时返回 None。小节标题形如 `### detect — 文本框检测（非必要）`。
     """
@@ -207,7 +207,7 @@ def run(ctx) -> None:
     doc_files = {
         "README.md": root / "README.md",
         "docs/README.md": root / "docs" / "README.md",
-        "docs/cli.md": root / "docs" / "cli.md",
+        "docs/guide/cli.md": root / "docs" / "guide" / "cli.md",
         "docs/functions/overview.md": root / "docs" / "functions" / "overview.md",
     }
     for label, path in doc_files.items():
@@ -228,7 +228,7 @@ def run(ctx) -> None:
     # 不扫正文——正文里会有「rembg 没有 `--ext` 参数」这类正常提及。
     import re as _re
 
-    docs_text = (root / "docs" / "cli.md").read_text(encoding="utf-8")
+    docs_text = (root / "docs" / "guide" / "cli.md").read_text(encoding="utf-8")
     for cmd_name, sp in subs_map(parser).items():
         if cmd_name not in COMMAND_SPECS:
             continue
@@ -240,12 +240,12 @@ def run(ctx) -> None:
         }
         section = _extract_section(docs_text, cmd_name)
         if section is None:
-            ok(f"docs/cli.md 有 {cmd_name} 参数小节", False, "未找到小节标题")
+            ok(f"docs/guide/cli.md 有 {cmd_name} 参数小节", False, "未找到小节标题")
             continue
         # 只认表格行的第一个单元格里被反引号包住的 `--xxx`
         mentioned = set(
             _re.findall(r"^\|\s*`--([a-z][a-z0-9-]*)`", section, _re.MULTILINE)
         )
         bogus = sorted(m for m in mentioned if m not in real)
-        ok(f"docs/cli.md 中 {cmd_name} 的参数都存在",
+        ok(f"docs/guide/cli.md 中 {cmd_name} 的参数都存在",
            not bogus, f"文档写了但代码没有={bogus}；实际={sorted(real)}")

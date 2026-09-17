@@ -106,7 +106,7 @@ GUI（QImage 渲染）共同消费同一份 `OutputLayout`，不得各自推导
 - 预览条图标 96×128：整页条目缩放解码；area=1 条目按框裁剪后覆盖填充。
 - 排序：条目按 `pdf_custom_sort_key`（数字感知、同页 r→l、cover/menu 优先）。
 
-## 6. print 页面列表与 YAML 参数
+## 6. print 页面列表与参数表单
 
 - **print.json**（任务目录）：`[{"file": "…/stages/rembg/1.png", "label": "1"}]`，
   首次进入 print 阶段由 rembg 输出目录（自然排序）初始化。**该数组顺序即页序**
@@ -115,11 +115,13 @@ GUI（QImage 渲染）共同消费同一份 `OutputLayout`，不得各自推导
   顺序在一次性临时目录中合成（`0001.png`…），CLI 直接按清单加载、不再读
   目录解析文件名。因此不需要 workset 这类「把顺序烧进文件名」的物化目录。
   不传清单时 CLI 仍回退到 `pdf_custom_sort_key` 文件名排序（独立用法兼容）。
-- **YAML 参数**（阶段面板文本编辑）：键集与 CLI `print` 命令一致
+- **参数表单**（阶段面板控件，**不是文本编辑框**）：键集与 CLI `print` 命令一致
   （pdf_name、paper_size、orientation、page_margins、title_*、
   title_switch_nodes、page_number_*、skip_pages）；
-  `input/output/workers/clean` 由系统管理，编辑器中出现也会被剥离；
+  `input/output/workers/clean` 由系统管理，不在表单范围内；
   `pdf_name` 缺省兜底为 `print.pdf`。
+  控件创建见 `desktop/components/panels/print_form.py`，
+  取值/回填见同目录 `print_params.py`。
 
 ## 7. 任务号
 

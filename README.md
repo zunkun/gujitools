@@ -17,7 +17,7 @@
 - **处理一两本书、想边看效果边调参数** → 看下面的「使用方式一：桌面端（GUI）」。
 - **批量跑几十本、或要集成进脚本 / 定时任务** → 看「使用方式二：命令行（CLI）」。
 
-桌面端的深入文档见 [`docs/gui/`](docs/gui/readme.md)；命令行完整参数见 [`docs/cli.md`](docs/cli.md)。
+桌面端的深入文档见 [`docs/dev/gui/`](docs/dev/gui/readme.md)；命令行完整参数见 [`docs/guide/cli.md`](docs/guide/cli.md)。
 
 ## 功能一览
 
@@ -306,7 +306,7 @@ YOLO 识别每页的**左、右文本框**，结果存入 `boxes.json`（不生�
 - **预览**：除第 2 步外每步都有预览图，随执行结果刷新。
 - **界面不卡**：所有重处理都在独立 Worker 子进程里跑，主界面始终可响应。
 
-界面截图见 [`docs/gui/screenshots/`](docs/gui/screenshots/)：
+界面截图见 [`docs/guide/screenshots/`](docs/guide/screenshots/)：
 
 | 截图                     | 内容                     |
 | ------------------------ | ------------------------ |
@@ -341,7 +341,7 @@ python tools/gen_api_docs.py --check  # 校验是否与源码一致（退出码�
 ## 使用方式二：命令行（CLI）
 
 下面「帮助」「通用参数」「各命令参数」「常用示例」四节均为命令行参数速查；
-完整说明见 [CLI 使用说明](docs/cli.md)。
+完整说明见 [CLI 使用说明](docs/guide/cli.md)。
 
 ### 推荐工作流：先初始化配置
 
@@ -440,7 +440,7 @@ guji rembg -i ./images -o ./output
 guji cropremove -i ./images -o ./output --area 1
 ```
 
-详细参数和示例见 [CLI 使用说明](docs/cli.md) 及各功能手册。
+详细参数和示例见 [CLI 使用说明](docs/guide/cli.md) 及各功能手册。
 
 ### 帮助
 
@@ -582,20 +582,34 @@ python main.py run print --config ./book.yaml
 
 ## 文档
 
-详细文档位于 [`docs/`](docs/)。
+详细文档位于 [`docs/`](docs/README.md)，按**读者**分三类目录：
+[`docs/guide/`](docs/guide/) 给使用者、[`docs/dev/`](docs/dev/) 给开发者、
+[`docs/functions/`](docs/functions/) 是 `guji help` 的命令手册。
+
+### 使用指南（照着做）
+
+- [桌面端操作指南](docs/guide/gui-guide.md) — 从导入 PDF 到出 PDF 的完整步骤（配操作截图）
+- [CLI 使用说明](docs/guide/cli.md) — 命令、参数、示例、退出码、架构
+
+### 技术细节（给开发者）
 
 桌面端（GUI）：
 
-- [桌面端文档索引](docs/gui/readme.md) — 术语、速览、快速开始
-- [界面系统](docs/gui/gui-ui-system.md) — 设计令牌、基础控件、自绘约束
-- [架构](docs/gui/gui-architecture.md) — 模块结构、进程模型、文件存储与任务目录布局
-- [技术规范](docs/gui/gui-technical-spec.md) — Worker 消息协议、JSON 格式、area/border 几何
-- [交互设计](docs/gui/gui-design.md) — 导入流程、步骤条、历史配置、检测框编辑
-- [布局](docs/gui/gui-layout.md) — 窗口布局与组件尺寸约定
+- [桌面端文档索引](docs/dev/gui/readme.md) — 术语、速览、快速开始
+- [界面系统](docs/dev/gui/gui-ui-system.md) — 设计令牌、基础控件、自绘约束
+- [架构](docs/dev/gui/gui-architecture.md) — 模块结构、进程模型、文件存储与任务目录布局
+- [技术规范](docs/dev/gui/gui-technical-spec.md) — Worker 消息协议、JSON 格式、area/border 几何
+- [交互设计](docs/dev/gui/gui-design.md) — 导入流程、步骤条、历史配置、检测框编辑
+- [布局](docs/dev/gui/gui-layout.md) — 窗口布局与组件尺寸约定
+- [需求](docs/dev/gui/gui-requirements.md) — 功能需求与非功能需求
 
-命令行（CLI）：
+通用：
 
-- [CLI 使用说明](docs/cli.md) — 命令、参数、示例、退出码、架构
+- [工具函数说明](docs/dev/utils.md) — Otsu、印章、border 解析、YOLO、PDF 渲染
+- [输入 / 输出路径规则](docs/dev/io_path_rules.md) — 输出目录解析规则
+
+### 命令手册（`guji help` 读取）
+
 - [功能模块概览](docs/functions/overview.md) — 模块清单与命令关系
 - [extract 手册](docs/functions/extract.md) — 页码解析、缩放计算、渲染模式
 - [detect 手册](docs/functions/detect.md) — 左右文本框检测、坐标上报、`--save` 标注图
@@ -603,7 +617,6 @@ python main.py run print --config ./book.yaml
 - [rembg 手册](docs/functions/rembg.md) — Otsu 阈值、HSV 印章提取
 - [cropremove 手册](docs/functions/cropremove.md) — area 区域模式、border 边框控制
 - [print 手册](docs/functions/print.md) — 纸张、排序、标题和页码
-- [工具函数 API](docs/utils.md) — Otsu、印章、border 解析、YOLO、PDF 渲染
 
 API 参考（由 `tools/gen_api_docs.py` 从源码自动生成，随代码同步）：
 

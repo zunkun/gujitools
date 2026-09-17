@@ -98,7 +98,7 @@ area/border 规则由基类统一处理，详见各命令文档：
 
 ## 输出路径规则
 
-所有命令统一遵循 `docs/io_path_rules.md`：
+所有命令统一遵循 `docs/dev/io_path_rules.md`：
 
 - 未传 `-o`：文件输入 → 父目录/默认目录；目录输入 → 输入目录/默认目录；
 - 传纯名称：相对于 `parent_path` 创建；
