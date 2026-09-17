@@ -8,7 +8,9 @@ from pathlib import Path
 from PySide6.QtCore import QThread, Qt, Signal, Slot
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtCore import QUrl
-from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QFileDialog, QHBoxLayout, QLabel, QStackedWidget, QVBoxLayout, QWidget,
+)
 from qfluentwidgets import (
     CaptionLabel,
     Dialog,
@@ -17,6 +19,7 @@ from qfluentwidgets import (
     InfoBarPosition,
     PrimaryPushButton,
     PushButton,
+    SearchLineEdit,
 )
 
 from desktop import ui
@@ -24,6 +27,7 @@ from desktop.ui import theme as T
 from desktop.ui.help_dialog import open_manual
 from desktop.workers import HashWorker, SourceThumbnailsWorker
 from desktop.store import STAGES, STAGE_LABELS, STAGE_SHORT, TaskStore
+from desktop.components.pagination import DEFAULT_PAGE_SIZE, Pager, Pagination
 from desktop.components.task_table import TaskTable
 
 # 状态文案统一取自 ui.theme，避免各处各自维护一份
@@ -31,7 +35,11 @@ STATUS_LABELS = T.STATUS_LABELS
 
 
 class TaskListPage(QWidget):
-    """任务管理页：列表展示任务并支持导入 PDF 与删除。
+    """任务管理页：搜索 + 分页的任务列表，支持导入 PDF 与删除。
+
+    数据流是单向的：``refresh()`` 从 store 读出**全量**行并缓存，
+    ``_render()`` 负责「按关键词过滤 → 分页切片 → 填表」。搜索框只触发
+    ``_render()``（不再读盘），所以打字时不会每次都去扫一遍任务目录。
 
     含表格/空状态二选一的内容区；导入走「后台算指纹→查重→确认建任务」
     流程，缩略图另行后台生成，全程不阻塞界面。
@@ -50,6 +58,12 @@ class TaskListPage(QWidget):
         self.hash_thread: QThread | None = None
         self.hash_worker: HashWorker | None = None
         self._import_button: PrimaryPushButton | None = None
+        # ---- 列表状态：全量行 / 关键词 / 页码 / 每页条数 ----
+        self._all_rows: list[dict] = []
+        self._filtered: list[dict] = []
+        self._keyword = ""
+        self._page = 1
+        self._page_size = DEFAULT_PAGE_SIZE
         self._init_ui()
         self.refresh()
 
@@ -71,6 +85,21 @@ class TaskListPage(QWidget):
         self._import_button = import_button
         layout.addWidget(header)
 
+        # ---- 搜索条：关键词过滤（只影响展示，不改数据）----
+        toolbar = QHBoxLayout()
+        toolbar.setSpacing(T.SPACE_SM)
+        self.search_edit = SearchLineEdit()
+        self.search_edit.setPlaceholderText("搜索任务名或源文件名")
+        self.search_edit.setFixedWidth(280)
+        self.search_edit.setClearButtonEnabled(True)
+        self.search_edit.textChanged.connect(self._on_keyword_changed)
+        toolbar.addWidget(self.search_edit)
+        self.hint_label = QLabel()
+        ui.apply_to(self.hint_label, T.SIZE_CAPTION, color=T.INK_FAINT)
+        toolbar.addWidget(self.hint_label)
+        toolbar.addStretch()
+        layout.addLayout(toolbar)
+
         # ---- 内容区：表格 / 空状态 二选一 ----
         self.content_stack = QStackedWidget()
         table_card = ui.Card(padding=T.SPACE_SM, spacing=0)
@@ -78,6 +107,14 @@ class TaskListPage(QWidget):
         self.table.open_detail.connect(self.open_detail)
         self.table.delete_request.connect(self.delete_task)
         table_card.box.addWidget(self.table)
+        # 分页条跟着表格一起在卡片里，空状态时随整块一起隐藏
+        self.pagination = Pagination(self._page_size)
+        self.pagination.changed.connect(self._on_page_changed)
+        self.pagination.page_size_changed.connect(self._on_page_size_changed)
+        pager_row = QHBoxLayout()
+        pager_row.setContentsMargins(T.SPACE_MD, 0, T.SPACE_MD, T.SPACE_SM)
+        pager_row.addWidget(self.pagination)
+        table_card.box.addLayout(pager_row)
         self.content_stack.addWidget(table_card)
 
         empty_card = ui.Card(padding=0, spacing=0)
@@ -121,10 +158,10 @@ class TaskListPage(QWidget):
 
     # ------------------------------------------------------------------ 数据
     def refresh(self) -> None:
-        """重建任务表格与状态摘要，并切换空状态。
+        """从 store 重新读出全量任务行并渲染（会读盘，不要在打字时调）。
 
-        遍历各任务取四个阶段的 status/done/total 生成摘要行，列表为空时
-        切到空状态卡片，并更新底部数据目录提示文案。
+        遍历各任务取四个阶段的 status/done/total 生成摘要行，结果缓存在
+        ``_all_rows``；随后走 ``_render()`` 做过滤与分页。
         """
         tasks = self.store.list_tasks()
         rows = []
@@ -153,12 +190,94 @@ class TaskListPage(QWidget):
                     "stages": stages,
                 }
             )
-        self.table.set_data(rows)
-        self.content_stack.setCurrentIndex(0 if rows else 1)
+        self._all_rows = rows
+        self._render()
+
+    # ------------------------------------------------------- 过滤 / 分页渲染
+    @staticmethod
+    def _matches(row: dict, keyword: str) -> bool:
+        """模糊匹配：任务名或源文件名（不含目录）包含关键词，大小写不敏感。
+
+        只做**子串**匹配就够了——任务名是用户自己起或 PDF 文件名，长度短、
+        没有拼写容错的需求；上 difflib 之类的模糊算法反而会让「搜 A 出来 B」
+        变得不可预期。
+        """
+        if not keyword:
+            return True
+        haystack = " ".join(
+            [
+                str(row.get("name") or ""),
+                # 只取文件名，避免用户磁盘上带关键词的父目录导致误命中
+                Path(str(row.get("source_path") or "")).name,
+            ]
+        ).lower()
+        return keyword.lower() in haystack
+
+    def _render(self) -> None:
+        """过滤 → 分页 → 填表，并同步空状态、分页条与提示文案。
+
+        只依赖缓存的 ``_all_rows``，不读盘，所以搜索时可以逐字符调用。
+        """
+        keyword = self._keyword.strip()
+        self._filtered = [r for r in self._all_rows if self._matches(r, keyword)]
+
+        pager = Pager(len(self._filtered), self._page_size, self._page)
+        # ⚠️ 页码可能越界（删了末页最后一条 / 搜索后结果变少），
+        #    一律用钳制后的页码算切片，否则会渲染出空白页。
+        self._page = pager.clamped_page
+        page_rows = pager.page_slice(self._filtered)
+
+        self.table.set_data(page_rows, start_index=pager.first_index())
+        self.pagination.set_pager(pager)
+        has_rows = bool(page_rows)
+        self.content_stack.setCurrentIndex(0 if has_rows else 1)
+
+        total = len(self._all_rows)
+        if keyword and total != len(self._filtered):
+            self.hint_label.setText(f"匹配 {len(self._filtered)} / {total} 个任务")
+        elif keyword:
+            self.hint_label.setText(f"匹配 {len(self._filtered)} 个任务")
+        else:
+            self.hint_label.setText("")
+
         self.tip_label.setText(
-            f"共 {len(rows)} 个任务 · 数据目录 {self.store.root}" if rows
+            f"共 {total} 个任务 · 数据目录 {self.store.root}" if total
             else f"数据目录 {self.store.root}"
         )
+
+    def focus_task(self, task_id: str) -> bool:
+        """翻到任务所在页并选中它；不在当前过滤结果里则返回 False。
+
+        ⚠️ 分页后不能直接用 ``table.select_task``：任务可能不在当前页，
+        表格里根本没有那一行。要先按**过滤后**的下标算出页码、切过去，
+        再在表格里选中。
+        """
+        index = next(
+            (i for i, r in enumerate(self._filtered) if r["id"] == task_id), None
+        )
+        if index is None:
+            return False
+        self._page = index // self._page_size + 1
+        self._render()
+        return self.table.select_task(task_id)
+
+    # ------------------------------------------------------------ 搜索 / 分页
+    def _on_keyword_changed(self, text: str) -> None:
+        """搜索框变化：重置到第 1 页再渲染（否则会停在越界的旧页码上）。"""
+        self._keyword = text or ""
+        self._page = 1
+        self._render()
+
+    def _on_page_changed(self, page: int) -> None:
+        self._page = page
+        self._render()
+
+    def _on_page_size_changed(self, page_size: int) -> None:
+        """换每页条数时按当前页第一条换算页码，别让用户看着列表乱跳。"""
+        pager = Pager(len(self._filtered), self._page_size, self._page)
+        self._page = pager.with_page_size(page_size).page
+        self._page_size = page_size
+        self._render()
 
     # ------------------------------------------------------------------ 导入
     def import_pdf(self) -> None:
@@ -200,7 +319,8 @@ class TaskListPage(QWidget):
                 self._create_imported_task(path, source_hash, duplicate_confirmed=True)
             else:
                 first = duplicates[0]
-                if self.table.select_task(first["id"]):
+                # 走 focus_task 而不是 table.select_task：命中项可能在别的页上
+                if self.focus_task(first["id"]):
                     self._toast(
                         "info", "已定位到已有任务",
                         f"「{first['name']}」已在列表中选中",

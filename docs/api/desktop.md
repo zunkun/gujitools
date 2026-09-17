@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 53 个模块、51 个公开类、243 个公开函数/方法（生成于 2026-09-17）。
+覆盖 54 个模块、53 个公开类、256 个公开函数/方法（生成于 2026-09-17）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -14,6 +14,7 @@
 | --- | --- | --- |
 | [`desktop.app`](#desktopapp) | 1 | 2 |
 | [`desktop.components.log_panel`](#desktopcomponentslog_panel) | 1 | 9 |
+| [`desktop.components.pagination`](#desktopcomponentspagination) | 2 | 12 |
 | [`desktop.components.panels.base`](#desktopcomponentspanelsbase) | 1 | 5 |
 | [`desktop.components.panels.detect_panel`](#desktopcomponentspanelsdetect_panel) | 1 | 1 |
 | [`desktop.components.panels.extract_panel`](#desktopcomponentspanelsextract_panel) | 1 | 1 |
@@ -39,7 +40,7 @@
 | [`desktop.pages.taskdetail.runner`](#desktoppagestaskdetailrunner) | 1 | 2 |
 | [`desktop.pages.taskdetail.submit`](#desktoppagestaskdetailsubmit) | 1 | 1 |
 | [`desktop.pages.taskdetail.view`](#desktoppagestaskdetailview) | 1 | 0 |
-| [`desktop.pages.tasklist.page`](#desktoppagestasklistpage) | 1 | 4 |
+| [`desktop.pages.tasklist.page`](#desktoppagestasklistpage) | 1 | 5 |
 | [`desktop.services.print_plan`](#desktopservicesprint_plan) | 0 | 5 |
 | [`desktop.services.submit_state`](#desktopservicessubmit_state) | 0 | 1 |
 | [`desktop.stages.detect_stage`](#desktopstagesdetect_stage) | 0 | 2 |
@@ -177,6 +178,76 @@ gujitools 桌面端主窗口：任务列表页 + 任务详情页切换。
 qfluentwidgets 的 `TextEdit` 在构造时会给控件设置自己的样式表，而控件级
 样式表的优先级高于应用级，写在全局 QSS 里的 `#logView` 规则会被它盖掉
 （实测底色始终是白的、描边也不生效）。
+
+---
+
+## `desktop.components.pagination`
+
+源码：[`desktop/components/pagination.py`](../../desktop/components/pagination.py)
+
+分页控件：纯计算 Pager + Qt 控件 Pagination。
+
+拆成两层的理由和项目里其它地方一样：**几何/数值计算不要和渲染混在一起**。
+``Pager`` 不 import Qt，能直接在自测里当普通对象断言（切片区间、页码钳制、
+末页删空后的回退）；``Pagination`` 只负责把 Pager 的状态画出来、把点击翻译
+成 ``set_page`` 调用。
+
+页码一律 **1-based**——直接显示在界面上的东西就跟人看到的保持一致，
+0-based 只在内部切片时用一次（``_offset``）。
+
+### `class Pager`
+
+分页状态与派生量（不可变，改页码/每页条数就换一个新实例）。
+
+total      总条数（**过滤后**的条数，不是全量）
+page_size  每页条数
+page       当前页码，1-based；越界会在读取时被钳制
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `total_pages() -> int` | 总页数；0 条时也是 1 页（界面上显示「第 1 / 1 页」比「第 1 / 0 页」自然）。 |
+| `clamped_page() -> int` | 钳制到 [1, total_pages] 的页码。 |
+| `slice_bounds() -> tuple[int, int]` | 当前页在整表里的 [start, end) 下标区间（左闭右开，直接喂 list 切片）。 |
+| `page_slice(items: list) -> list` | 取当前页的切片；越界页码已钳制，不会返回空页。 |
+| `first_index() -> int` | 当前页第一条在整表中的序号（1-based，给表格「序号」列用）。 |
+| `with_page(page: int) -> 'Pager'` | — |
+| `with_page_size(page_size: int) -> 'Pager'` | 换每页条数：页码按比例换算，尽量停在原来看到的那一条附近。 |
+| `with_total(total: int) -> 'Pager'` | — |
+
+##### `clamped_page() -> int`
+
+装饰器：`property`
+
+钳制到 [1, total_pages] 的页码。
+
+⚠️ 必须每次读都用这个值：删掉末页最后一条、或搜索后结果变少，
+当前页码就会越界，读原始 page 会切出空列表、界面变成空白页。
+
+##### `with_page_size(page_size: int) -> 'Pager'`
+
+换每页条数：页码按比例换算，尽量停在原来看到的那一条附近。
+
+不这么换算的话，从第 3 页（每页 10 条）切到每页 50 条会直接跳到第 3 页
+的第 101~150 条，用户感觉列表「乱跳」。换算后落在第 1 页第 21~50 条。
+
+### `class Pagination(QWidget)`
+
+分页条：总数 + 每页条数 + 上/下一页 + 页码。
+
+只做展示与事件转发，**不持有数据**：宿主页面把算好的 Pager 传进来，
+用户操作时由本控件算出新页码并通过 ``changed`` 抛回去，宿主再重算并
+``set_pager`` 刷新。这样「过滤 → 分页 → 渲染」只有一条数据流向。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(page_size: int=DEFAULT_PAGE_SIZE, parent=None)` | — |
+| `pager() -> Pager` | — |
+| `set_pager(pager: Pager) -> None` | 用新的分页状态刷新显示（宿主算完过滤/切片后调它）。 |
+| `set_visible_for(total: int) -> None` | 总数为 0 时隐藏（配合空状态卡片，避免「共 0 条 第 1/1 页」的噪音）。 |
 
 ---
 
@@ -616,7 +687,7 @@ status 为失败/中断时，徽标保持对勾、副标题仍显示最近一次
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(parent=None)` | 初始化表格：5 列布局、行高与表头对齐。 |
-| `set_data(rows: list[dict]) -> None` | rows: [{id, name, source_path, created_at, stages}] |
+| `set_data(rows: list[dict], start_index: int=1) -> None` | rows: [{id, name, source_path, created_at, stages}] |
 | `select_task(task_id: str) -> bool` | 选中并滚动到指定任务所在行，返回是否找到。 |
 
 ##### `__init__(parent=None)`
@@ -626,12 +697,16 @@ status 为失败/中断时，徽标保持对勾、副标题仍显示最近一次
 表头对齐跟随各列内容（序号/时间居中、名称/状态左对齐，均垂直居中）；
 任务名称列自适应拉伸（占主要宽度），其余列按 _COLUMN_WIDTHS 固定宽度。
 
-##### `set_data(rows: list[dict]) -> None`
+##### `set_data(rows: list[dict], start_index: int=1) -> None`
 
 rows: [{id, name, source_path, created_at, stages}]
 
 stages 为 ``[{"short": "提取", "status": "success", "tip": "..."}]``；
 source_path 不单独成列，仅作任务名的悬浮提示。
+
+⚠️ ``start_index`` 是本页第一条在**整表**里的序号（1-based）。
+分页后「序号」列要显示全局序号，不能是页内行号——否则第二页又是
+从 1 开始，看着像数据重复。默认 1 保持不分页时的行为。
 
 ---
 
@@ -1122,7 +1197,11 @@ current_stage()、_update_run_buttons() 等。
 
 ### `class TaskListPage(QWidget)`
 
-任务管理页：列表展示任务并支持导入 PDF 与删除。
+任务管理页：搜索 + 分页的任务列表，支持导入 PDF 与删除。
+
+数据流是单向的：``refresh()`` 从 store 读出**全量**行并缓存，
+``_render()`` 负责「按关键词过滤 → 分页切片 → 填表」。搜索框只触发
+``_render()``（不再读盘），所以打字时不会每次都去扫一遍任务目录。
 
 含表格/空状态二选一的内容区；导入走「后台算指纹→查重→确认建任务」
 流程，缩略图另行后台生成，全程不阻塞界面。
@@ -1132,7 +1211,8 @@ current_stage()、_update_run_buttons() 等。
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(store: TaskStore, parent=None)` | 初始化页面：构建 UI、绑定信号并刷新首次列表。 |
-| `refresh() -> None` | 重建任务表格与状态摘要，并切换空状态。 |
+| `refresh() -> None` | 从 store 重新读出全量任务行并渲染（会读盘，不要在打字时调）。 |
+| `focus_task(task_id: str) -> bool` | 翻到任务所在页并选中它；不在当前过滤结果里则返回 False。 |
 | `import_pdf() -> None` | 导入 PDF：选文件后后台算指纹并查重确认建任务。 |
 | `delete_task(task_id: str) -> None` | 删除指定任务及其全部中间产物（带确认弹窗）。 |
 
@@ -1145,10 +1225,18 @@ parent 一般为 MainWindow；会创建 store 引用与导入按钮状态占位�
 
 ##### `refresh() -> None`
 
-重建任务表格与状态摘要，并切换空状态。
+从 store 重新读出全量任务行并渲染（会读盘，不要在打字时调）。
 
-遍历各任务取四个阶段的 status/done/total 生成摘要行，列表为空时
-切到空状态卡片，并更新底部数据目录提示文案。
+遍历各任务取四个阶段的 status/done/total 生成摘要行，结果缓存在
+``_all_rows``；随后走 ``_render()`` 做过滤与分页。
+
+##### `focus_task(task_id: str) -> bool`
+
+翻到任务所在页并选中它；不在当前过滤结果里则返回 False。
+
+⚠️ 分页后不能直接用 ``table.select_task``：任务可能不在当前页，
+表格里根本没有那一行。要先按**过滤后**的下标算出页码、切过去，
+再在表格里选中。
 
 ##### `import_pdf() -> None`
 
@@ -1755,7 +1843,8 @@ rembg 最终目录；print 返回 print.pdf 所在目录。
 
 | 名称 | 值 |
 | --- | --- |
-| _HTML_NAME | `"guji_manual.html"` |
+| _HTML_PREFIX | `"guji_manual_"` |
+| _KEEP_RECENT | `3` |
 | _JS | `" (function () {   function activate(tabId) {     var tabs…"` |
 
 ### 模块函数
@@ -1793,6 +1882,11 @@ Markdown 里写的是 ``screenshots/guide/xxx.png`` 这样的相对路径，
 返回路径是为了调用方（或测试）能拿到产物做进一步处理。
 浏览器打不开时 ``webbrowser.open`` 只是返回 False，不抛异常——
 手册文件仍然生成好了，用户可以手动打开。
+
+⚠️ 不要给 URL 加 ``?v=<时间戳>`` 去防缓存：Windows 上
+``webbrowser.open`` 最终走 ``os.startfile``，查询串会被当成路径的
+一部分，实测地址栏里根本不出现。防缓存靠的是**文件名本身带时间戳**
+（见 ``_HTML_PREFIX``），每次都是新 URL。
 
 ---
 

@@ -136,16 +136,20 @@ class TaskTable(QWidget):
         layout.addWidget(self.table)
 
     # ------------------------------------------------------------------ 数据
-    def set_data(self, rows: list[dict]) -> None:
+    def set_data(self, rows: list[dict], start_index: int = 1) -> None:
         """rows: [{id, name, source_path, created_at, stages}]
 
         stages 为 ``[{"short": "提取", "status": "success", "tip": "..."}]``；
         source_path 不单独成列，仅作任务名的悬浮提示。
+
+        ⚠️ ``start_index`` 是本页第一条在**整表**里的序号（1-based）。
+        分页后「序号」列要显示全局序号，不能是页内行号——否则第二页又是
+        从 1 开始，看着像数据重复。默认 1 保持不分页时的行为。
         """
         self.table.setRowCount(len(rows))
         for row, task in enumerate(rows):
             values = [
-                str(row + 1),
+                str(start_index + row),
                 task["name"],
                 datetime.fromtimestamp(task["created_at"]).strftime("%Y-%m-%d %H:%M"),
             ]
