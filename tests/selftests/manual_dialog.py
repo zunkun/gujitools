@@ -53,6 +53,59 @@ def run(ctx) -> None:
            "ManualDialog" not in page_src,
            "仍残留 ManualDialog 引用")
 
+    # ---- 1b. 「用户手册」按钮的图标：带圆圈的问号（自绘 SVG）----
+    # 内置 FIF.QUESTION 是**被裁到边框上的裸问号**（内置 HELP 更是糊成一团），
+    # 且 qfluentwidgets 对「path() 返回 SVG 源码」的支持是残缺的：
+    # `icon()` 只在 `path.endswith('.svg') and color` 时包 SvgIconEngine，
+    # `render()` 只在 endswith('.svg') 时走内存渲染 —— 其余一律按**文件名**
+    # 处理，得到空图标。而 PushButton.paintEvent 在 icon().isNull() 时直接
+    # return，界面上就只剩文字、图标凭空消失（只重写一个方法就会踩到）。
+    # 静态检查抓不到，下面全是行为断言。
+    icons_py = root / "desktop" / "ui" / "icons.py"
+    ok("desktop/ui/icons.py 存在（自绘图标）", icons_py.exists(), str(icons_py))
+    if tasklist_page.exists():
+        ok("「用户手册」用自绘带圆圈问号，不是内置裸问号 FIF.QUESTION",
+           "HELP_CIRCLE" in page_src and "FIF.QUESTION" not in page_src,
+           "仍在使用 FIF.QUESTION")
+
+    try:
+        from PySide6.QtCore import QRectF, Qt
+        from PySide6.QtGui import QImage, QPainter, QPixmap
+
+        from desktop.ui.icons import HELP_CIRCLE
+    except Exception as exc:
+        ok("desktop.ui.icons 可导入", False, f"{exc!r}")
+        return
+
+    def _ink(img, n=32) -> int:
+        return sum(1 for y in range(n) for x in range(n)
+                   if img.pixelColor(x, y).alpha() > 40)
+
+    ok("desktop.ui.icons 可导入", True, "")
+    _ic = HELP_CIRCLE.icon()
+    ok("HELP_CIRCLE.icon() 非空（空图标 → 按钮只剩文字）", not _ic.isNull(), "")
+    _pma = _ic.pixmap(32, 32)
+    ok("HELP_CIRCLE 能出图", not _pma.isNull(), "")
+    ok("HELP_CIRCLE 有可见笔画（不是空白画布）",
+       _ink(_pma.toImage().convertToFormat(QImage.Format_ARGB32)) > 100,
+       "画出来是空的")
+
+    # render() 才是按钮自绘真正走的那条路径（paintEvent → _drawIcon → render）
+    _canvas = QPixmap(32, 32)
+    _canvas.fill(Qt.transparent)
+    _painter = QPainter(_canvas)
+    HELP_CIRCLE.render(_painter, QRectF(0, 0, 32, 32))
+    _painter.end()
+    _rimg = _canvas.toImage().convertToFormat(QImage.Format_ARGB32)
+    ok("HELP_CIRCLE.render() 也画得出（按钮自绘走这条）", _ink(_rimg) > 100,
+       f"不透明像素={_ink(_rimg)}")
+    # 结构：必须是「环」而不是实心饼（圆内镂空），且外圈确实有笔画
+    ok("图标是圆环不是实心饼（圆内镂空）",
+       _rimg.pixelColor(9, 9).alpha() < 40,
+       f"圆内 alpha={_rimg.pixelColor(9, 9).alpha()}")
+    ok("外圈有笔画", _rimg.pixelColor(16, 3).alpha() > 40,
+       f"圆环顶部 alpha={_rimg.pixelColor(16, 3).alpha()}")
+
     # ---- 2. 文档源文件必须在 ----
     guide_dir = root / "docs" / "guide"
     ok("docs/guide/ 存在", guide_dir.is_dir(), str(guide_dir))

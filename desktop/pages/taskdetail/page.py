@@ -89,7 +89,20 @@ class TaskDetailPage(
         if not task:
             return
         self.task_id = task_id
-        self.source_path = Path(task["source_path"])
+        # ⚠️ 一律用任务目录里的**备份** PDF，不用索引里的 source_path：
+        # 源文件在用户磁盘上会被移动/改名/删除，一走就「渲染失败」；
+        # 备份随任务走，删除任务时一起清掉，任务才是自包含的。
+        # 备份缺失但源还在（老任务/复制失败）时 ensure_source_copy 顺手补一份。
+        self.source_path = self.store.ensure_source_copy(task_id) or Path(
+            task["source_path"]
+        )
+        if not self.source_path.exists():
+            self._toast(
+                "error",
+                "PDF 缺失",
+                f"任务备份与源文件都不存在：{task['source_path']}\n"
+                "请重新导入该 PDF（或把原文件放回原处后重开任务）。",
+            )
         self.detail_title.setText(task["name"])
         self.source_label.setText(self.source_path.name)
         # 切任务时先把各阶段面板复位到默认：这些面板是长生命周期控件，
@@ -123,6 +136,8 @@ class TaskDetailPage(
             return
         self.task_id = None
         self.source_path = None
+        # 释放 PDF：不释放的话回到列表删除该任务时，rmtree 可能撞上文件占用
+        self.source_pdf_viewer.set_pdf(None)
         self.back_requested.emit()
 
     # ------------------------------------------------------------------ 阶段切换/状态

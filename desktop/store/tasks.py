@@ -128,13 +128,35 @@ class TaskMixin:
                 break
         self._save_tasks_index(tasks)
 
-    def delete_task(self, task_id: str) -> None:
-        """从索引移除任务并删除整个任务目录；目录不存在时只改索引。"""
+    def delete_task(self, task_id: str) -> bool:
+        """删除任务及其中间产物，返回是否真的删掉。
+
+        ⚠️ 顺序是「**先删目录、成功才删索引**」：反过来的话目录一旦被占用
+        没删掉、索引却先没了，任务目录就变成没人认领的孤儿，用户还看不见。
+
+        ⚠️ Windows 上 PDF 被后台渲染线程打开时 ``rmtree`` 抛 PermissionError，
+        原先 ``ignore_errors=True`` 会让它**静默残留**——列表里显示已删除，
+        磁盘上目录还在。这里重试若干次再判定失败，失败时保留任务让用户重试。
+        """
+        task_dir = self.task_dir(task_id)
+        if task_dir.exists() and not self._rmtree_with_retry(task_dir):
+            return False
         tasks = [t for t in self._load_tasks_index() if t.get("id") != task_id]
         self._save_tasks_index(tasks)
-        task_dir = self.task_dir(task_id)
-        if task_dir.exists():
-            shutil.rmtree(task_dir, ignore_errors=True)
+        return True
+
+    @staticmethod
+    def _rmtree_with_retry(path: Path, tries: int = 8, delay: float = 0.06) -> bool:
+        """反复尝试删除目录；文件被短暂占用（后台渲染）时等一会儿再试。"""
+        for attempt in range(tries):
+            try:
+                shutil.rmtree(path)
+                return True
+            except OSError:
+                if attempt == tries - 1:
+                    return False
+                time.sleep(delay)
+        return False
 
     # ---------- 任务目录布局 ----------
     def task_dir(self, task_id: str) -> Path:
@@ -198,3 +220,40 @@ class TaskMixin:
         target = self.task_dir(task_id) / source_path.name
         shutil.copy2(source_path, target)
         return target
+
+    def source_copy_path(self, task_id: str) -> Path | None:
+        """任务目录里的 PDF 备份路径；没有备份返回 None。
+
+        ⚠️ 后续所有操作（详情页预览、extract 入参…）**都必须用它**，不能用
+        ``task['source_path']``：源文件在用户磁盘上，会被移动/改名/删除，
+        一走就「渲染失败」。备份随任务走，任务才是自包含的。
+        """
+        task_dir = self.task_dir(task_id)
+        task = self.get_task(task_id)
+        if task:
+            candidate = task_dir / Path(str(task.get("source_path") or "")).name
+            if candidate.is_file():
+                return candidate
+        # 兜底：源被改名过（文件名对不上）时，任务目录下唯一的 PDF 就是备份
+        pdfs = sorted(task_dir.glob("*.pdf")) if task_dir.exists() else []
+        return pdfs[0] if pdfs else None
+
+    def ensure_source_copy(self, task_id: str) -> Path | None:
+        """保证任务目录里有 PDF 备份；缺了就按索引里的 source_path 补一份。
+
+        老任务（导入时复制失败）或备份被误删时靠它自愈；源也一起没了就
+        返回 None，调用方负责提示。
+        """
+        existing = self.source_copy_path(task_id)
+        if existing:
+            return existing
+        task = self.get_task(task_id)
+        if not task:
+            return None
+        source = Path(str(task.get("source_path") or ""))
+        if not source.is_file():
+            return None
+        try:
+            return self.copy_source_to_task(task_id, source)
+        except OSError:
+            return None

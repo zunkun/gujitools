@@ -158,8 +158,11 @@ def run(ctx) -> None:
         ok("提示文案显示 匹配/总数",
            "匹配 10 / 25" in page.hint_label.text(),
            page.hint_label.text())
+        # 任务名由单元格里的 QLabel 呈现（item 文本留空，避免和标签重影）
+        from PySide6.QtWidgets import QLabel
+
         names = [
-            page.table.table.item(r, 1).text()
+            page.table.table.cellWidget(r, 1).findChildren(QLabel)[0].text()
             for r in range(page.table.table.rowCount())
         ]
         ok("命中行都是匹配项", all("分页样本0" in n for n in names), str(names[:3]))

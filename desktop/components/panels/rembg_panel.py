@@ -30,7 +30,12 @@ class RembgPanel(StagePanel):
         self.border.setPlaceholderText("留空 或 30 / 20,30 / 20,30,25,35")
         self.type = combo_box(["1 (二值)", "2 (1bit)", "3 (灰度)"])
         self.offset = SpinBox()
-        self.offset.setRange(0, 100)
+        # offset 允许为负：最终阈值 = Otsu 自动阈值 + offset（再夹到 30~240），
+        # 负数让文字变细变淡，正数变粗变深，因此下界必须是负数。
+        self.offset.setRange(-100, 100)
+        self.offset.setToolTip(
+            "正数文字更粗更深，负数更细更淡；默认 0（自动阈值）"
+        )
         self.seal = CheckBox("保留印章 (seal)")
         self.sealcolor = CheckBox("印章彩色 (sealcolor)")
         self.sealarea = SpinBox()

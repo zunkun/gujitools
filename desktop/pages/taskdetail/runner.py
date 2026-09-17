@@ -51,8 +51,11 @@ class StageRunnerMixin:
         if not task:
             self._toast("error", "任务不存在", "该任务可能已被删除，请返回列表刷新。")
             return
-        if stage == "extract" and not Path(task["source_path"]).exists():
-            self._toast("error", "源文件缺失", f"源 PDF 不存在：{task['source_path']}")
+        if stage == "extract" and not Path(self.source_path).exists():
+            # self.source_path 已是任务目录里的备份（见 page.set_task）
+            self._toast(
+                "error", "PDF 缺失", f"任务备份 PDF 不存在：{self.source_path}"
+            )
             return
 
         panel = self.control_stack.currentWidget()

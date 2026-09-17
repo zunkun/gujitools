@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 54 个模块、53 个公开类、256 个公开函数/方法（生成于 2026-09-17）。
+覆盖 55 个模块、56 个公开类、268 个公开函数/方法（生成于 2026-09-17）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -24,7 +24,7 @@
 | [`desktop.components.panels.print_params`](#desktopcomponentspanelsprint_params) | 0 | 5 |
 | [`desktop.components.panels.rembg_panel`](#desktopcomponentspanelsrembg_panel) | 1 | 1 |
 | [`desktop.components.step_bar`](#desktopcomponentsstep_bar) | 2 | 15 |
-| [`desktop.components.task_table`](#desktopcomponentstask_table) | 2 | 4 |
+| [`desktop.components.task_table`](#desktopcomponentstask_table) | 3 | 10 |
 | [`desktop.components.viewers.image_view`](#desktopcomponentsviewersimage_view) | 1 | 12 |
 | [`desktop.components.viewers.image_viewer`](#desktopcomponentsviewersimage_viewer) | 1 | 6 |
 | [`desktop.components.viewers.pdf_viewer`](#desktopcomponentsviewerspdf_viewer) | 1 | 2 |
@@ -53,8 +53,9 @@
 | [`desktop.store.pages`](#desktopstorepages) | 1 | 9 |
 | [`desktop.store.runs`](#desktopstoreruns) | 1 | 6 |
 | [`desktop.store.store`](#desktopstorestore) | 1 | 1 |
-| [`desktop.store.tasks`](#desktopstoretasks) | 1 | 17 |
+| [`desktop.store.tasks`](#desktopstoretasks) | 1 | 19 |
 | [`desktop.ui.help_dialog`](#desktopuihelp_dialog) | 0 | 3 |
+| [`desktop.ui.icons`](#desktopuiicons) | 2 | 4 |
 | [`desktop.ui.style`](#desktopuistyle) | 0 | 3 |
 | [`desktop.ui.theme`](#desktopuitheme) | 0 | 2 |
 | [`desktop.ui.widgets`](#desktopuiwidgets) | 9 | 45 |
@@ -652,7 +653,6 @@ status 为失败/中断时，徽标保持对勾、副标题仍显示最近一次
 源码：[`desktop/components/task_table.py`](../../desktop/components/task_table.py)
 
 任务列表表格组件：每行带阶段状态胶囊与 详情/删除 操作按钮。
-
 「子任务状态」原来是一整串 ``提取图片:成功  检测文本框:成功 …`` 纯文本，
 列宽一紧就被截断、颜色上也没法区分成败。现在改为 4 个状态胶囊
 （提取 / 检测 / 去底 / PDF），颜色来自统一的语义色，鼠标悬停能看到
@@ -663,6 +663,44 @@ status 为失败/中断时，徽标保持对勾、副标题仍显示最近一次
 | 名称 | 值 |
 | --- | --- |
 | ROW_HEIGHT | `56` |
+
+### `class NameLabel(QLabel)`
+
+任务名标签：按可用宽度自动省略中间部分。
+
+``QTableWidgetItem`` 会自己省略，换成 QLabel 后得自己来——否则长名字
+把拉伸列越撑越宽、表格被挤出横向滚动条。
+⚠️ 省略时机放在 ``resizeEvent`` 而不是建表时：那时表格还没布局、
+``columnWidth()`` 只有几十像素，会把名字截成空串（已踩，表现为「名称列空白」）。
+宽度不足 ``_MIN_ELIDE_WIDTH`` 时一律显示全名，等真实宽度来了再收。
+
+下划线改为 ``paintEvent`` 自绘：字体原生下划线紧贴字形底部，间距不可调；
+自绘后用 ``_UNDERLINE_GAP`` 控制【基线】到下划线的留白，线宽 1px，颜色跟随
+``linkColor``（hover 切换时同步更新）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(text: str, parent=None)` | 记下完整名字，先按全名显示，等布局给出真实宽度再省略。 |
+| `setLinkColor(color: QColor) -> None` | 同步文字颜色与下划线颜色。 |
+| `linkColor() -> QColor` | — |
+| `full_text() -> str` | 完整任务名（省略后的 ``text()`` 可能带 …）。 |
+| `resizeEvent(event)` | 宽度变化时重算省略；宽度还没定（未布局）就保持全名。 |
+| `paintEvent(event)` | 先让父类画文字，再在文字下方自绘一条同色下划线。 |
+
+##### `setLinkColor(color: QColor) -> None`
+
+同步文字颜色与下划线颜色。
+
+不再依赖 stylesheet 里的 ``color:``（paintEvent 解析不了），
+统一走这个方法——hover 进入/离开都调它。
+
+##### `paintEvent(event)`
+
+先让父类画文字，再在文字下方自绘一条同色下划线。
+✅ 使用字体基线计算位置，不再依赖boundingRect，gap修改生效。
+下划线只覆盖**实际文字宽度**（不铺满整个 label），和网页 <a> 行为一致；
 
 ### `class StageChips(QWidget)`
 
@@ -703,7 +741,6 @@ rows: [{id, name, source_path, created_at, stages}]
 
 stages 为 ``[{"short": "提取", "status": "success", "tip": "..."}]``；
 source_path 不单独成列，仅作任务名的悬浮提示。
-
 ⚠️ ``start_index`` 是本页第一条在**整表**里的序号（1-based）。
 分页后「序号」列要显示全局序号，不能是页内行号——否则第二页又是
 从 1 开始，看着像数据重复。默认 1 保持不分页时的行为。
@@ -1765,7 +1802,7 @@ JSON 文件，没有旧数据（SQLite）需要迁移。
 | `get_task(task_id: str) -> dict \| None` | 按任务号取任务记录；不存在返回 None。 |
 | `create_task(source_path: Path, source_hash: str, name: str, duplicate_confirmed: bool=False) -> str` | 新建任务并返回任务号（四位零填充）。 |
 | `update_task(task_id: str, status: str) -> None` | 更新任务状态与 updated_at；任务号不存在时静默忽略。 |
-| `delete_task(task_id: str) -> None` | 从索引移除任务并删除整个任务目录；目录不存在时只改索引。 |
+| `delete_task(task_id: str) -> bool` | 删除任务及其中间产物，返回是否真的删掉。 |
 | `task_dir(task_id: str) -> Path` | 任务根目录：tasks/<任务号>。 |
 | `stage_dir(task_id: str, stage: str) -> Path` | 某阶段的输出目录：tasks/<任务号>/stages/<阶段>。 |
 | `extract_output_dir(task_id: str) -> Path` | 提取图片直接位于 stages/extract（无 PDF 名/嵌套子目录）。 |
@@ -1777,6 +1814,8 @@ JSON 文件，没有旧数据（SQLite）需要迁移。
 | `runs_config_dir(task_id: str) -> Path` | 子进程执行配置（run-*.json / detect-config.json）。 |
 | `source_thumbnails_dir(task_id: str) -> Path` | 源 PDF 页缩略图：导入即生成，PDF 预览直接复用，永不清理。 |
 | `copy_source_to_task(task_id: str, source_path: Path) -> Path` | 导入时在任务目录下保留一份源文件副本。 |
+| `source_copy_path(task_id: str) -> Path \| None` | 任务目录里的 PDF 备份路径；没有备份返回 None。 |
+| `ensure_source_copy(task_id: str) -> Path \| None` | 保证任务目录里有 PDF 备份；缺了就按索引里的 source_path 补一份。 |
 
 ##### `create_task(source_path: Path, source_hash: str, name: str, duplicate_confirmed: bool=False) -> str`
 
@@ -1785,6 +1824,17 @@ JSON 文件，没有旧数据（SQLite）需要迁移。
 任务号取当前最大号 +1，同时参考索引与磁盘目录；若两者不一致导致号被
 占用则继续顺延。创建时会预建 stages/runs/thumbnails/source
 子目录，但不复制源文件（由 copy_source_to_task 负责）。
+
+##### `delete_task(task_id: str) -> bool`
+
+删除任务及其中间产物，返回是否真的删掉。
+
+⚠️ 顺序是「**先删目录、成功才删索引**」：反过来的话目录一旦被占用
+没删掉、索引却先没了，任务目录就变成没人认领的孤儿，用户还看不见。
+
+⚠️ Windows 上 PDF 被后台渲染线程打开时 ``rmtree`` 抛 PermissionError，
+原先 ``ignore_errors=True`` 会让它**静默残留**——列表里显示已删除，
+磁盘上目录还在。这里重试若干次再判定失败，失败时保留任务让用户重试。
 
 ##### `stage_output_dir(task_id: str, stage: str) -> Path`
 
@@ -1798,6 +1848,21 @@ rembg 最终目录；print 返回 print.pdf 所在目录。
 已废弃：检测/去底直接读 extract 输出目录，不再物化输入副本。
 
 仅为清理历史遗留目录保留（老版本任务目录下可能仍有 workset/）。
+
+##### `source_copy_path(task_id: str) -> Path | None`
+
+任务目录里的 PDF 备份路径；没有备份返回 None。
+
+⚠️ 后续所有操作（详情页预览、extract 入参…）**都必须用它**，不能用
+``task['source_path']``：源文件在用户磁盘上，会被移动/改名/删除，
+一走就「渲染失败」。备份随任务走，任务才是自包含的。
+
+##### `ensure_source_copy(task_id: str) -> Path | None`
+
+保证任务目录里有 PDF 备份；缺了就按索引里的 source_path 补一份。
+
+老任务（导入时复制失败）或备份被误删时靠它自愈；源也一起没了就
+返回 None，调用方负责提示。
 
 ---
 
@@ -1887,6 +1952,62 @@ Markdown 里写的是 ``screenshots/guide/xxx.png`` 这样的相对路径，
 ``webbrowser.open`` 最终走 ``os.startfile``，查询串会被当成路径的
 一部分，实测地址栏里根本不出现。防缓存靠的是**文件名本身带时间戳**
 （见 ``_HTML_PREFIX``），每次都是新 URL。
+
+---
+
+## `desktop.ui.icons`
+
+源码：[`desktop/ui/icons.py`](../../desktop/ui/icons.py)
+
+自定义矢量图标：补 qfluentwidgets 内置图标里没有的图形（带圆圈的问号）。
+
+为什么不能直接继承 ``FluentIconBase`` 了事
+----------------------------------------
+``FluentIcon.path()`` 返回的是 **Qt 资源里的文件路径**
+``:/qfluentwidgets/images/icons/Xxx_black.svg``，基类两条渲染链都靠
+``path.endswith('.svg')`` 判断「是文件还是源码」：
+
+* ``FluentIconBase.icon()``：只有 ``path.endswith('.svg') and color`` 时才包
+  ``SvgIconEngine``，否则 ``QIcon(path)`` —— 把 SVG **源码字符串** 当文件名，
+  得到一个空图标；
+* ``FluentIconBase.render()``：只有 ``endswith('.svg')`` 时才 ``drawSvgIcon``
+  （内存渲染），否则同样按文件走 ``QIcon(path).pixmap()``。
+
+所以自绘 SVG 必须 **两个方法都重写**：只重写 ``icon()`` 的话，按钮自绘走的是
+``paintEvent → _drawIcon → render()``，而 ``PushButton.paintEvent`` 在
+``icon().isNull()`` 时直接 return，结果就是「只剩文字、图标不见了」。
+
+几何
+----
+24×24 视图，外圈直径与内置 ``INFO`` 图标一致（几乎满幅，r=10、描边 1.6），
+问号高度 ~12（与 INFO 里 ``i`` 的高度相当），整体上下居中，不出现内置
+``HELP`` / ``QUESTION`` 那种被裁到边框上的偏移。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| QUESTION_CIRCLE | `"<svg xmlns="http://www.w3.org/2000/svg" width="24" height…"` |
+
+### `class SvgIcon(FluentIconBase)`
+
+用**内存里的 SVG 源码**造图标（内置 FluentIcon 没有的图形）。
+
+模板里用 ``{c}`` 占位颜色，由 ``getIconColor(theme)``（black/white）或
+调用方显式给的 ``color`` 填入；深浅色主题自动跟随。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(template: str)` | — |
+| `path(theme: Theme=Theme.AUTO) -> str` | 返回填好颜色的 SVG 源码（不是文件路径）。 |
+| `icon(theme: Theme=Theme.AUTO, color: QColor \| str \| None=None) -> QIcon` | 包成 ``QIcon``：必须走 ``SvgIconEngine``，否则得到空图标。 |
+| `render(painter, rect, theme: Theme=Theme.AUTO, indexes=None, **attributes) -> None` | 自绘入口（按钮/菜单走这条）：直接把源码交给 ``QSvgRenderer``。 |
+
+### `class CustomIcon`
+
+自定义图标集合：用法与 ``FluentIcon`` 一致（直接传给按钮等控件）。
 
 ---
 

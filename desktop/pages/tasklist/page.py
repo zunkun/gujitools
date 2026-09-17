@@ -5,11 +5,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QThread, Qt, Signal, Slot
+from PySide6.QtCore import QThread, Qt, Signal, Slot, QSize
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import (
-    QFileDialog, QHBoxLayout, QLabel, QStackedWidget, QVBoxLayout, QWidget,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
 )
 from qfluentwidgets import (
     CaptionLabel,
@@ -25,6 +30,7 @@ from qfluentwidgets import (
 from desktop import ui
 from desktop.ui import theme as T
 from desktop.ui.help_dialog import open_manual
+from desktop.ui.icons import HELP_CIRCLE
 from desktop.workers import HashWorker, SourceThumbnailsWorker
 from desktop.store import STAGES, STAGE_LABELS, STAGE_SHORT, TaskStore
 from desktop.components.pagination import DEFAULT_PAGE_SIZE, Pager, Pagination
@@ -74,8 +80,10 @@ class TaskListPage(QWidget):
 
         # ---- 页头：标题 + 任务数 + 操作 ----
         header = ui.PageHeader("任务管理", "导入 PDF 后按四个子任务依次处理")
-        manual_button = PushButton(FIF.QUESTION, "用户手册")
+        # 内置的裸问号图标被裁到边框上，这里用自绘的「带圆圈的问号」
+        manual_button = PushButton(HELP_CIRCLE, "用户手册")
         manual_button.setFixedHeight(34)
+        manual_button.setIconSize(QSize(18, 18))
         manual_button.clicked.connect(self._open_manual)
         header.actions.addWidget(manual_button)
         import_button = PrimaryPushButton(FIF.DOWNLOAD, "导入 PDF")
@@ -241,7 +249,8 @@ class TaskListPage(QWidget):
             self.hint_label.setText("")
 
         self.tip_label.setText(
-            f"共 {total} 个任务 · 数据目录 {self.store.root}" if total
+            f"共 {total} 个任务 · 数据目录 {self.store.root}"
+            if total
             else f"数据目录 {self.store.root}"
         )
 
@@ -322,7 +331,8 @@ class TaskListPage(QWidget):
                 # 走 focus_task 而不是 table.select_task：命中项可能在别的页上
                 if self.focus_task(first["id"]):
                     self._toast(
-                        "info", "已定位到已有任务",
+                        "info",
+                        "已定位到已有任务",
                         f"「{first['name']}」已在列表中选中",
                     )
                 self.refresh()
@@ -346,7 +356,9 @@ class TaskListPage(QWidget):
     def _hash_failed(self, message: str) -> None:
         self._toast("warning", "指纹计算失败", f"{message}（未创建任务）")
 
-    def _create_imported_task(self, path: Path, source_hash: str, duplicate_confirmed: bool = False) -> None:
+    def _create_imported_task(
+        self, path: Path, source_hash: str, duplicate_confirmed: bool = False
+    ) -> None:
         task_id = self.store.create_task(
             path, source_hash, path.stem, duplicate_confirmed=duplicate_confirmed
         )
@@ -360,12 +372,13 @@ class TaskListPage(QWidget):
         # 逐页缩略图后台生成，落到任务目录 thumbnails/ 子文件夹，之后不再清理
         thumbnails_dir = self.store.source_thumbnails_dir(task_id)
         thread = QThread(self)
-        worker = SourceThumbnailsWorker(path, thumbnails_dir)
+        # 缩略图也从**备份**渲染：源文件随后被移动/删除不影响已导入的任务
+        worker = SourceThumbnailsWorker(
+            self.store.ensure_source_copy(task_id) or path, thumbnails_dir
+        )
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
-        worker.failed.connect(
-            lambda msg: self._toast("warning", "缩略图生成失败", msg)
-        )
+        worker.failed.connect(lambda msg: self._toast("warning", "缩略图生成失败", msg))
         worker.finished.connect(thread.quit)
         worker.failed.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
@@ -390,7 +403,10 @@ class TaskListPage(QWidget):
         )
         if not dialog.exec():
             return
-        self.store.delete_task(task_id)
+        if not self.store.delete_task(task_id):
+            # 目录被占用时 store 会保留任务记录，不留孤儿目录
+            self._toast("error", "删除未完成", "文件正被占用，请稍后重试。")
+            return
         self.refresh()
         self._toast("success", "删除成功", task["name"])
 

@@ -134,6 +134,116 @@ def run(ctx) -> None:
         f"y={g.y()} h={g.height()} 期望 y={opt.rect.y()} h={ROW_HEIGHT}",
     )
 
+    # 任务名称 = 可点击的链接样式（下划线 + 主色 + hover 变深 + 手型光标）
+    from PySide6.QtCore import QEvent, QPointF
+    from PySide6.QtGui import QEnterEvent, QMouseEvent
+    from PySide6.QtWidgets import QLabel
+
+    # ⚠️ 窗口没 show 时单元格控件被布局压成 10px 宽（列宽还没算出来），
+    # 名字会被省略成一串「…」，像素级断言全是假的。先 show 让布局落定。
+    w.show()
+    app.processEvents()
+
+    name_cell = table.cellWidget(0, 1)
+    ok("任务名称格有链接标签", name_cell is not None)
+    name_labels = name_cell.findChildren(QLabel) if name_cell else []
+    ok("任务名称用 QLabel 渲染", len(name_labels) == 1, str(len(name_labels)))
+    name_label = name_labels[0]
+    # 下划线是 paintEvent 自绘的（字体下划线间距不可调），只能按像素验：
+    # 把标签渲染出来，找「主色像素最多的一行」——那必是那条横线。
+    from PySide6.QtGui import QFontMetrics, QPixmap
+
+    # 离屏下标签还没参与布局（高度只有字高），下划线会被裁在框外；
+    # 先按真实行高给它尺寸，再渲染
+    name_label.resize(max(name_label.width(), 160), ROW_HEIGHT)
+    pm = QPixmap(name_label.size())
+    pm.fill(Qt.white)
+    name_label.render(pm)
+    img = pm.toImage()
+    # ⚠️ 按「非白像素」而不是「等于主色」统计：1px 的线落在半像素上会被
+    # 抗锯齿摊成两行半透明，颜色早就不是纯主色了，比颜色必然假失败。
+    longest = 0
+    for y in range(img.height()):
+        hits = 0
+        for x in range(img.width()):
+            p = img.pixel(x, y)
+            if (
+                abs(((p >> 16) & 255) - 255)
+                + abs(((p >> 8) & 255) - 255)
+                + abs((p & 255) - 255)
+                > 60
+            ):
+                hits += 1
+        longest = max(longest, hits)
+    text_w = QFontMetrics(name_label.font()).horizontalAdvance(name_label.text())
+    ok(
+        "任务名称下方有自绘下划线",
+        longest >= max(12, text_w * 0.9),
+        f"最长着色行 {longest}px 文字宽 {text_w}px "
+        f"label={name_label.width()}x{name_label.height()} pm={pm.size().toTuple()}",
+    )
+    ok(
+        "任务名称用主色",
+        name_label.linkColor().name().lower() == T.ACCENT.lower(),
+        name_label.linkColor().name(),
+    )
+    ok(
+        "任务名称是手型光标",
+        name_label.cursor().shape() == Qt.CursorShape.PointingHandCursor,
+    )
+    ok(
+        "任务名称容器锁定整行高",
+        name_cell.height() == ROW_HEIGHT,
+        f"{name_cell.height()} 期望 {ROW_HEIGHT}",
+    )
+    # ⚠️ 名称格的 item 不能省：select_task() 靠它取 UserRole 定位行
+    ok(
+        "名称格仍保留数据项（select_task 依赖）",
+        table.item(0, 1) is not None
+        and table.item(0, 1).data(Qt.UserRole) is not None,
+    )
+    # ⚠️ 单元格控件是透明的：item 里再写一遍名字就是「一条名字显示两次」
+    ok(
+        "名称只在标签里画一次（item 文本为空）",
+        table.item(0, 1).text() == "" and name_label.text() != "",
+        f"item={table.item(0, 1).text()!r} label={name_label.text()!r}",
+    )
+
+    # 点击标签 → 用**该行**的 id 跳详情（不是写死的某一个）
+    got: list[str] = []
+    w.list_page.table.open_detail.connect(got.append)
+    press = QMouseEvent(
+        QEvent.Type.MouseButtonPress,
+        QPointF(5.0, 5.0),
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    name_label.mousePressEvent(press)
+    ok(
+        "点击任务名称跳详情",
+        got == [table.item(0, 1).data(Qt.UserRole)],
+        str(got),
+    )
+    # 不 accept 的话事件会冒泡到视口，cellClicked 再跳一次
+    ok("标签点击已 accept（不会重复触发）", press.isAccepted())
+    w.list_page.table.open_detail.disconnect(got.append)
+
+    name_label.enterEvent(QEnterEvent(QPointF(1, 1), QPointF(2, 2), QPointF(3, 3)))
+    ok(
+        "hover 变深",
+        name_label.linkColor().name().lower() == T.ACCENT_HOVER.lower(),
+        name_label.linkColor().name(),
+    )
+    name_label.leaveEvent(QEvent(QEvent.Type.Leave))
+    ok(
+        "移出恢复主色",
+        name_label.linkColor().name().lower() == T.ACCENT.lower(),
+        name_label.linkColor().name(),
+    )
+    # 验完立刻收起：窗口一直可见会改变后续模块（extract 读子进程日志）的事件时序
+    w.hide()
+
     # 详情打开（后续模块都基于这个已打开的详情页）
     w._open_detail(tid)
     ok("点击详情进入任务页", d.task_id == tid)

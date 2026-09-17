@@ -29,6 +29,22 @@ def run(ctx) -> None:
     d.set_task(tid)
     d._select_stage(2)
     ok("步骤三主按钮为生成预览", d.run_button.text() == "生成预览")
+
+    # --- offset 必须能设成负值（阈值 = Otsu + offset，负数让文字更细更淡）---
+    # 曾出错：SpinBox 下限写死 0，界面完全无法输入负数，而 CLI/functions 一直支持。
+    _p3 = d.control_stack.widget(2)
+    ok("offset 可设为负值（下限 < 0）", _p3.offset.minimum() < 0,
+       f"min={_p3.offset.minimum()}")
+    _p3.offset.setValue(-20)
+    ok("offset 取到负值", _p3.offset.value() == -20, str(_p3.offset.value()))
+    ok("get_args 透传负 offset", _p3.get_args()["offset"] == -20,
+       str(_p3.get_args().get("offset")))
+    _p3.apply_args({"offset": -35})
+    ok("历史参数回填负 offset 不丢", _p3.offset.value() == -35,
+       str(_p3.offset.value()))
+    _p3.apply_args({})
+    ok("复位后 offset 回到 0", _p3.offset.value() == 0,
+       str(_p3.offset.value()))
     ok("未生成预览前提交按钮禁用", not d.submit_button.isEnabled())
     d.run_rembg_submit()  # 直接调用也必须被拦截，不启动子进程
     ok("未成功生成预览时提交不启动", d.process is None)
