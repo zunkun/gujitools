@@ -9,7 +9,20 @@
 AppName=古籍重製
 AppVersion={#VERSION}
 AppVerName=古籍重製 {#VERSION}
-DefaultDirName={localappdata}\Software\guji
+; ⚠️ 安装目录：**用户级程序目录**，不装到 C:\Software 下面。
+;   {localappdata}\Programs\guji
+;   = C:\Users\<你>\AppData\Local\Programs\guji
+; 为什么是这里：PrivilegesRequired=lowest（纯用户级安装、免 UAC）下，
+; Windows 的惯例就是装到 Programs（Chrome / VS Code 的用户级安装同款）；
+; 不要往系统盘根的公共 C:\Software 里塞，那是"谁装的都说不清"的位置。
+;
+; ⚠️ 安装目录一旦改动，PATH 注册必须跟着动 —— [Code] 里一律用 {app}
+; （= 用户实际选定的安装目录）拼路径，**不写死任何绝对路径**。
+DefaultDirName={localappdata}\Programs\guji
+; ⚠️ 必须 no：旧版默认目录是 {localappdata}\Software\guji，而 Inno 默认
+; (UsePreviousAppDir=yes) 会记住上次的目录 —— 老用户升级时会被"粘"在
+; 旧目录里，永远迁不到新位置。代价是用户自定义的安装目录不再被记住。
+UsePreviousAppDir=no
 DefaultGroupName=古籍重製
 PrivilegesRequired=lowest
 OutputDir=dist
@@ -128,6 +141,54 @@ begin
     'Environment', AbortIfHung, 5000, SendResult);
 end;
 
+// ---- 历史安装目录的清理 ----------------------------------------------
+// 下面几个目录都不该再出现在用户 PATH 里（都是曾经的 {app}，PATH 就是
+// 按它注册的；目录搬了，PATH 里的旧条目就成了死路径）：
+//
+//   0) {localappdata}\Software\guji —— 上一版默认目录。带
+//      UsePreviousAppDir=no 升级时 Inno 会先跑旧卸载程序，通常已把这条
+//      清掉；这里再兜一次底。
+//   1) {sd}\Software\guji —— **最早的默认目录**，即 C:\Software\guji。
+//      当年 build.py 还会把产物「部署」复制到那里（安装包之外的野路子），
+//      那个行为已删除（构建只出安装包），但 PATH 里可能还留着旧条目。
+//
+// 注意顺序：先清历史、再加 {app}。若用户恰好把 {app} 选在历史目录上，
+// 这样也能保证最终 PATH 里留下的是它。
+//
+// ⚠️ 本段用 // 注释而不是 { }：{ } 注释里只要出现 {app} 就会被提前闭合。
+function LegacyDir(Index: Integer): string;
+begin
+  if Index = 0 then
+    Result := ExpandConstant('{localappdata}\Software\guji')
+  else if Index = 1 then
+    Result := ExpandConstant('{sd}\Software\guji')
+  else
+    Result := '';
+end;
+
+procedure RemoveLegacyPathEntries;
+var
+  Index: Integer;
+  Dir, PathValue, UpdatedPathValue: string;
+begin
+  if not RegQueryStringValue(HKCU, UserEnvironmentKey, 'Path', PathValue) then
+    Exit;
+  UpdatedPathValue := PathValue;
+  for Index := 0 to 1 do
+  begin
+    Dir := LegacyDir(Index);
+    if Dir <> '' then
+      UpdatedPathValue := RemovePathEntry(UpdatedPathValue, Dir);
+  end;
+  if UpdatedPathValue <> PathValue then
+  begin
+    RegWriteExpandStringValue(HKCU, UserEnvironmentKey, 'Path', UpdatedPathValue);
+    NotifyEnvironmentChanged;
+  end;
+end;
+
+// 把「实际安装目录」（{app}）加进用户 PATH：命令行的 guji.exe 就在 {app}
+// 里，所以 PATH 条目必须跟着安装目录走，不能写死某个绝对路径。
 procedure AddToUserPath;
 var
   PathValue: string;
@@ -161,12 +222,23 @@ end;
 
 procedure RefreshEnvironment;
 var
-  Msg: string;
+  Msg, AppDir: string;
 begin
+  AppDir := ExpandConstant('{app}');
   Msg := '古籍重製 安装完成！' + #13#10 + #13#10 +
-         '• 命令行：guji 命令已添加至当前用户 PATH，' +
+         '• 安装目录：' + AppDir + #13#10 +
+         '• 命令行：guji 命令已加入当前用户 PATH（' + AppDir + '），' +
          '关闭所有终端窗口重新打开后即可直接运行 guji。' + #13#10 +
          '• 图形界面：已创建「古籍重製」开始菜单项，可直接启动。';
+  { 旧目录若还在（没被旧卸载程序带走），提示一句——不代删，避免误删。 }
+  { ⚠️ #13#10 不可写成行首：ISPP 会把行首的 # 当成预处理指令报
+    "Unknown preprocessor directive"（真踩过）。续行必须以字符串开头。 }
+  if DirExists(ExpandConstant('{localappdata}\Software\guji'))
+     and (CompareText(AppDir, ExpandConstant('{localappdata}\Software\guji')) <> 0) then
+    Msg := Msg + #13#10 + #13#10 +
+           '提示：检测到旧版本目录仍在：' +
+           ExpandConstant('{localappdata}\Software\guji') + #13#10 +
+           '它已不再使用，可手动删除以释放约 650 MB 空间。';
   MsgBox(Msg, mbInformation, MB_OK);
 end;
 
@@ -174,6 +246,7 @@ procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
   begin
+    RemoveLegacyPathEntries;
     AddToUserPath;
     RefreshEnvironment;
   end;
@@ -182,5 +255,8 @@ end;
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usUninstall then
+  begin
     RemoveFromUserPath;
+    RemoveLegacyPathEntries;
+  end;
 end;

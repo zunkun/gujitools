@@ -5,12 +5,18 @@
     python build.py
 
 会通过 conda 环境 ``yolobuild`` 构建（缺依赖时自动安装），产出
-**一个目录内同时含 CLI 与 GUI 两个可执行文件**，随后复制并生成安装包。
+**一个目录内同时含 CLI 与 GUI 两个可执行文件**，随后生成安装包。
 
-输出:
+输出（**就这两样：一份可执行目录 + 一个安装包**）:
     dist/guji/guji.exe       命令行工具（console，安装后 PATH 可直接用 guji）
     dist/guji/guji-desktop.exe   桌面 GUI（windowed，安装包会建快捷方式）
     dist/guji_setup_<版本>_<时间戳>.exe   安装包
+
+⚠️ **构建脚本不负责部署**：本脚本只把产物落到 ``dist/``，**不再往
+``C:\Software\guji`` 之类的地方复制一份**——那是历史行为，会让人分不清
+"到底装在哪、跑的是哪一份"。要部署就走安装包（安装目录由
+``guji_setup.iss`` 的 ``DefaultDirName`` 决定，PATH 也随之指向实际安装
+目录）；只想就地跑一下，双击 ``dist/guji/guji-desktop.exe`` 即可。
 
 两者共享同一份 dist/guji/_internal：torch/cv2 等大二进制只落地一份。
 
@@ -373,8 +379,10 @@ def refresh_manual_only(project_root) -> int:
 
     steps: list[tuple[str, object]] = [("预生成手册", lambda: build_manual_html(dist_dir))]
     if IS_WINDOWS:
+        # ⚠️ 这里曾经还有一步「复制到 C:\Software」把产物部署一份出去。
+        # 已删除：构建只产出安装包，部署由安装包负责（否则本机同时存在
+        # dist/、C:\Software\guji、安装目录三份，跑的是哪一份都说不清）。
         steps += [
-            ("复制到 C:\\Software", lambda: copy_to_software(project_root, "onedir")),
             ("生成安装包",
              lambda: build_installer(project_root, project_root / "desktop" / "static" / "icon.ico")),
         ]
@@ -455,11 +463,9 @@ def main():
             ("瘦身检查", lambda: run_bloat_check(project_root)),
         ]
         if IS_WINDOWS:
+            # ⚠️ 构建只出安装包，不再往 C:\Software\guji 复制一份部署副本
+            # （见模块 docstring）。dist/guji/ 本身可直接分发/就地运行。
             steps += [
-                (
-                    "复制到 C:\\Software",
-                    lambda: copy_to_software(project_root, "onedir"),
-                ),
                 ("生成安装包", lambda: build_installer(project_root, icon)),
             ]
         else:
@@ -777,80 +783,20 @@ def print_font_hint():
         print(f"   {line}" if line.strip() else "")
 
 
-def copy_to_software(project_root, mode):
-    r"""将 onedir 打包结果复制到 C:\Software 并做版本备份。"""
-    if not IS_WINDOWS:
-        print("⚠️ 非 Windows：跳过复制到 C:\\Software")
-        return
-    import time
-
-    from config import VERSION
-
-    source = project_root / "dist" / "guji"
-    target = Path(r"C:\Software\guji")
-    backup_dir = Path(r"C:\Software\guji_backup")
-    max_backups = 5
-
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
-    backup_name = f"guji_v{VERSION}_{timestamp}"
-    backup_path = backup_dir / backup_name
-
-    print("\n📦 复制到 C:\\Software\\guji...")
-    if target.exists():
-        backup_dir.mkdir(parents=True, exist_ok=True)
-
-        if backup_path.exists():
-            suffix = 2
-            while True:
-                backup_path = backup_dir / f"{backup_name}_{suffix}"
-                if not backup_path.exists():
-                    break
-                suffix += 1
-
-        # ⚠️ 这里是**移动**，而不是原先的「先复制一份备份、再 rmtree 掉目标」：
-        # ① 复制 665MB 再删 1168 项要好几分钟，同盘 rename 是瞬时的；
-        # ② `shutil.rmtree(target)` 上千项会被批量删除安全钩子拦下——
-        #    实测整轮 16 分钟的构建就栽在这最后一步。
-        # 语义完全一样：旧目录整体搬进备份目录，一个字节都没少。
-        print("   目标目录已存在，先把旧版移到备份目录...")
-        try:
-            shutil.move(str(target), str(backup_path))
-            print(f"   ✅ 备份到: {backup_path}")
-        except Exception as e:
-            print(f"   ❌ 备份失败（不覆盖现有部署）: {e}")
-            return
-
-        clean_old_backups(backup_dir, max_backups)
-
-    try:
-        shutil.copytree(str(source), str(target))
-        print(f"   ✅ 复制完成: {target}")
-    except Exception as e:
-        print(f"   ❌ 复制失败: {e}")
-
-
-def clean_old_backups(backup_dir, max_backups):
-    """列出保留数量之外的旧备份（**不代删**）。
-
-    ⚠️ 以前这里直接 `shutil.rmtree`：几百 MB 的旧包说删就删，而且上千项会被
-    批量删除安全钩子拦下，把整轮 16 分钟的构建判成失败。备份的价值就在于
-    "还在"，所以只列出超额的那些，交给你自己清。
-    """
-    if not backup_dir.exists():
-        return
-
-    backups = sorted(
-        [d for d in backup_dir.iterdir() if d.is_dir()],
-        key=lambda x: x.stat().st_mtime,
-        reverse=True,
-    )
-
-    if len(backups) <= max_backups:
-        return
-
-    print(f"   备份数已超过 {max_backups}，以下可自行删除：")
-    for backup in backups[max_backups:]:
-        print(f"   🗑️ {backup}")
+# ------------------------------------------------------------------ 部署
+# ⚠️ 这里曾经有 ``copy_to_software()`` / ``clean_old_backups()``：把 dist/guji
+# 复制到 ``C:\Software\guji``（带版本备份）当作"部署"。已**整块删除**，理由：
+#
+# 1. 构建的职责是**产出可分发的东西**（dist/ + 安装包），不是替用户决定
+#    装到哪。部署是安装包的事，安装目录写在 ``guji_setup.iss`` 的
+#    ``DefaultDirName`` 里，用户还可以在向导里改。
+# 2. 留着会导致本机同时存在 dist/guji、C:\Software\guji、以及安装后的
+#    ``{app}`` 三份 650MB 的副本（约 2GB），排障时根本分不清跑的是哪一份。
+# 3. 那一步还是整条构建最脆弱的环节（上千文件跨盘复制 + 删除，曾被批量
+#    删除钩子拦下，把 16 分钟的构建判成失败）。
+#
+# 想在本机跑一份：直接双击 ``dist/guji/guji-desktop.exe``，或装一次安装包。
+# 守卫：``tests/selftests/installer_paths.py``。
 
 
 if __name__ == "__main__":

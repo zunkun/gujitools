@@ -160,16 +160,19 @@ python build.py
 ```
 
 `build.py` 生成 onedir 包，并在成功后调用 Inno Setup 生成带版本号和时间戳的
-安装包。构建前应确认 `ISCC.exe` 已安装且位于 Inno Setup 默认安装目录或
-`PATH` 中（没装也不会让构建失败，只会跳过安装包，`dist/guji/` 照样可用）。
-不要只删除 `dist` 后重复打包；如果当前 Python 环境使用 CUDA 版
-PyTorch，PyInstaller 仍会把 CUDA 运行库收集进包中。
+安装包。**构建只产出 `dist/` 下的两样东西——一份可执行目录 + 一个安装包**：
+它不会（也不该）把程序复制到 `C:\Software` 之类的地方去"部署"，装到哪、PATH
+指向哪，由安装包决定（见下文「安装后」）。构建前应确认 `ISCC.exe` 已安装且
+位于 Inno Setup 默认安装目录或 `PATH` 中（没装也不会让构建失败，只会跳过
+安装包，`dist/guji/` 照样可用）。不要只删除 `dist` 后重复打包；如果当前
+Python 环境使用 CUDA 版 PyTorch，PyInstaller 仍会把 CUDA 运行库收集进包中。
 
-> **一次完整构建约 15~20 分钟**，属正常现象（实测 18m32s）：PyInstaller 约
-> 9~10 分钟（两次 Analysis + COLLECT 落地 650MB），复制到 `C:\Software\guji`
-> 约 3~4 分钟（含旧版备份），Inno Setup 压缩约 110 秒。每个阶段结束会打印
-> `⏱️ … 耗时 …`，**长时间无输出不等于卡死**。若把输出接给 `tail`/`grep`
-> 之类的过滤器，中间过程会被缓冲到进程结束才显示，看起来像假死。
+> **一次完整构建约 11~15 分钟**，属正常现象：PyInstaller 约 9~10 分钟（两次
+> Analysis + COLLECT 落地 650MB），体积瘦身 1~8 分钟（视磁盘而定），Inno Setup
+> 压缩约 110 秒。（还带着「复制到 `C:\Software\guji`」那个旧步骤时实测
+> 18m32s，其中约 3.5 分钟花在那一步。）每个阶段结束会打印 `⏱️ … 耗时 …`，
+> **长时间无输出不等于卡死**。若把输出接给 `tail`/`grep` 之类的过滤器，中间
+> 过程会被缓冲到进程结束才显示，看起来像假死。
 
 ### Linux / Ubuntu 打包
 
@@ -267,8 +270,8 @@ fc-cache -f
 都会变成碎图。`tools/smoke_frozen.py` 会核对「12 张内联图 + 无外部引用 +
 包内没有 `docs/guide` 与 `markdown`」。
 
-调手册的文案/版式时**不必跑完整打包**（19 分钟），用这条只重生成手册并刷新
-部署与安装包（约 2.5 分钟）：
+调手册的文案/版式时**不必跑完整打包**（十几分钟），用这条只重生成手册并
+重压安装包（约 2.5 分钟）：
 
 ```bash
 python build.py --manual-only     # 改了 .py 仍然必须完整打包
@@ -291,7 +294,13 @@ HTML、安装版里退化成 `<pre>` 包裹的原始 markdown，而 `collect_sub
 
 安装后：
 
-- **CLI**：`{app}` 已加入当前用户 PATH，重开终端即可 `guji --help`；
+- **安装目录**：`{localappdata}\Programs\guji`，即
+  `C:\Users\<你>\AppData\Local\Programs\guji`。纯用户级安装（`PrivilegesRequired=lowest`，
+  不弹 UAC），也不往系统盘根的公共 `C:\Software` 里塞东西；向导里可以改目录。
+- **CLI**：**实际安装目录**（`{app}`）会加入当前用户 PATH，重开终端即可
+  `guji --help`。目录改了 PATH 条目跟着改，安装脚本里不写死任何绝对路径；
+  安装/卸载时会顺带把历史遗留的旧目录条目（`{sd}\Software\guji`、
+  `{localappdata}\Software\guji`）从 PATH 里清掉，不留死路径。
 - **GUI**：开始菜单「古籍重製」（安装时可选桌面快捷方式）；
 - GUI 的重处理子进程在打包环境下以 `guji-desktop.exe --worker --config …` 启动
   自身（`desktop.py` 负责路由），因此不需要额外的可执行文件。
