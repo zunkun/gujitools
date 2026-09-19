@@ -16,7 +16,7 @@
 
 NAME = "exe_names"
 DEPENDS: list[str] = []
-TITLE = "可执行文件命名四处一致"
+TITLE = "可执行文件命名四处一致 + README 下载入口"
 
 #: 改名前的旧名。除「安装脚本清理旧文件」那一行外，任何地方都不该再出现。
 LEGACY = "guji-gui"
@@ -121,3 +121,20 @@ def run(ctx) -> None:
         if LEGACY in line
     ]
     ok("docs/guide/*.md 里没有旧产物名", not guide_hits, "; ".join(guide_hits))
+
+    # ---- 7. README 的下载入口：指向「最新 Release 页」，让人自己去下 ----
+    # README 顶部「下载（Windows）」是普通用户唯一的入口。用 releases/latest
+    # 而不是某个具体版本的直链：写死版本号会随发版过期（用户会去找一个不存在的
+    # 旧文件）。这里只钉「入口在不在」与「安装包命名规则是否同源」。
+    readme = texts["README.md"]
+    ok("README：有指向最新 Release 页的下载入口（第一屏就能下）",
+       "releases/latest" in readme,
+       "README 里找不到 releases/latest 链接")
+    ok("README：说的是自己去 Release 页下载（不写死具体版本直链）",
+       "releases/download/" not in readme,
+       "README 里出现了某个具体版本的直链，发版后会过期")
+    ok("README：安装包说明与 iss 命名规则同源（都是 guji_setup_ 前缀）",
+       "guji_setup_" in readme
+       and "OutputBaseFilename=guji_setup_{#VERSION}_{#BUILD_TIMESTAMP}" in iss,
+       "README 里的安装包名与 guji_setup.iss 对不上")
+
