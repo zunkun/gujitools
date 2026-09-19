@@ -70,6 +70,8 @@ def run(ctx) -> None:
     panel.title_printing.setChecked(True)
     panel.title_text.setText("测试古籍")
     panel.pdf_name.setText("print.pdf")
+    # 第三步 border 已在上面设为 "10"（非 0）→ 第四步通用边距默认级联为 0，
+    # 避免「图片内留白 + 页面边距」双重留白（feature: border→边距级联）
     _pargs = panel.get_args()
     ok("print 表单参数收集正确",
        _pargs["paper_size"] == "A4"
@@ -77,9 +79,22 @@ def run(ctx) -> None:
        and _pargs["title_printing"] is True
        and _pargs["title_text"] == "测试古籍"
        and _pargs["pdf_name"] == "print.pdf"
-       and _pargs["page_margins"] == [20, 20, 20, 20]
+       and _pargs["page_margins"] == [0, 0, 0, 0]
        and "input" not in _pargs and "output" not in _pargs,
        str(_pargs))
+
+    # 显式验证 border→边距级联（GUI 接线，而非只靠纯函数守卫）：
+    # 清掉 border（视为 0）→ 默认回落 20；再设回 10 → 级联为 0
+    _rembg_panel.border.setText("")
+    app.processEvents()
+    ok("第三步 border 清掉 → 第四步默认边距回落 20",
+       panel.get_args()["page_margins"] == [20, 20, 20, 20],
+       str(panel.get_args()["page_margins"]))
+    _rembg_panel.border.setText("10")
+    app.processEvents()
+    ok("第三步 border=10 → 第四步默认边距级联为 0",
+       panel.get_args()["page_margins"] == [0, 0, 0, 0],
+       str(panel.get_args()["page_margins"]))
     d.run_stage(resume=False)
     wait_worker(d, app, timeout=300)
     state = repo.stage_states(tid)["print"]

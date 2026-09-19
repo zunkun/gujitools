@@ -1,5 +1,10 @@
 # -*- coding: utf-8 -*-
-"""生成 PDF（print）阶段的参数定义与解析/序列化纯函数。
+"""生成 PDF（print）阶段的参数解析/序列化纯函数。
+
+⚠️ 默认值（``DEFAULT_PARAMS``）与下拉候选表的**唯一事实来源**已上移到
+``panels/params_spec.py``（各阶段共用一张表，避免同一参数在「控件初值 /
+``_apply_args`` 兜底 / ``reset_to_default``」三处各写一遍而漂移）。本模块只保留
+print 专用的解析/序列化纯函数，并把 ``DEFAULT_PARAMS`` 重新导出以兼容既有导入。
 
 表单 UI 见 print_form.py，面板状态见 print_panel.py。
 """
@@ -8,41 +13,48 @@ from __future__ import annotations
 
 from PySide6.QtGui import QColor
 
-# 默认参数（pdf_name 与 store.print_output_pdf 对齐）
-DEFAULT_PARAMS: dict = {
-    "title_text": "古籍名称",
-    "pdf_name": "print.pdf",
-    "paper_size": "A4",
-    "orientation": "landscape",
-    "page_margins": [20, 20, 20, 20],
-    "left_page_margins": None,
-    "right_page_margins": None,
-    "title_printing": True,
-    "title_font_size": 18,
-    "title_color": "0,0,0",
-    "title_position": "top",
-    "title_orientation": "vertical",
-    "title_switch_nodes": [],
-    "page_number_printing": True,
-    "page_number_start_page": 1,
-    "page_number_end_page": None,
-    "page_number_base": 0,
-    "page_number_font_size": 18,
-    "page_number_color": "0,0,0",
-    "page_number_position": "bottom",
-    "page_number_orientation": "vertical",
-    "skip_pages": [],
-}
+from desktop.components.panels.params_spec import (
+    DIRECTIONS,
+    EXCLUDED_KEYS,
+    PAPER_SIZES,
+    POSITIONS,
+    PRINT_DEFAULTS,
+    SIDES,
+    TEXT_ORIENTATIONS,
+)
 
-# 不允许在表单中配置的键（系统管理）
-EXCLUDED_KEYS = ("input", "output", "workers", "clean", "_outpath")
+__all__ = [
+    "DEFAULT_PARAMS", "DIRECTIONS", "EXCLUDED_KEYS", "PAPER_SIZES",
+    "POSITIONS", "SIDES", "TEXT_ORIENTATIONS",
+    "parse_color", "parse_margin4", "margin_to_text",
+    "skip_pages_to_text", "text_to_skip_pages",
+]
 
-PAPER_SIZES = ["A3", "A4", "A5", "B5"]
-# 下拉项：(中文显示, 实际参数值)
-DIRECTIONS = [("横版", "landscape"), ("竖版", "portrait")]
-POSITIONS = [("上边", "top"), ("下边", "bottom")]
-TEXT_ORIENTATIONS = [("竖排", "vertical"), ("横排", "horizontal")]
-SIDES = [("双面", "both"), ("左页", "left"), ("右页", "right")]
+# 桌面表单的默认参数（= params_spec.PRINT_DEFAULTS）。
+# ⚠️ 这里**故意不放** title_position / title_orientation /
+# page_number_position / page_number_orientation：第四步表单已不再提供
+# 这四项（标题恒上、页码恒下、两者恒竖排，见 PrintFormMixin.FIXED_TEXT_LAYOUT）。
+# 留着它们等于「恢复默认」时把四个界面外的值写进参数；不放，`get_args()`
+# 才会真正走固定表。老任务配置里带这些键时，回填会原样回显
+# （`_fixed_layout_echo`），不会被静默改成固定值——两边合起来才是
+# 「界面不管、参数不动」。
+#
+# 注：params_spec.PRINT_DEFAULTS 引用的是 core.command_spec.PRINT_FORM_DEFAULTS，
+# 其中确实带这四个键（命令行语义需要）。因此这里按**表单可见键**挑出一份，
+# 既保住上面那条前提，也让「界面不管」的语义不被默认表灌回。
+_FORM_KEYS = (
+    "title_text", "pdf_name", "paper_size", "orientation",
+    "page_margins", "left_page_margins", "right_page_margins",
+    "title_printing", "title_font_size", "title_color",
+    "title_margins", "title_switch_nodes",
+    "page_number_printing", "page_number_start_page",
+    "page_number_end_page", "page_number_base",
+    "page_number_font_size", "page_number_color", "page_number_margins",
+    "skip_pages", "annotate_margins",
+)
+DEFAULT_PARAMS: dict = {k: v for k, v in PRINT_DEFAULTS.items() if k in _FORM_KEYS}
+assert set(DEFAULT_PARAMS) == set(_FORM_KEYS), "PRINT_DEFAULTS 缺少表单可见键"
+del _FORM_KEYS
 
 
 def parse_color(text: str) -> QColor:

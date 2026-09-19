@@ -8,7 +8,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QHBoxLayout, QWidget
 
-from desktop.workers import PreviewWorker, WorkerHost
+from desktop.workers import PreviewWorker, WorkerHost, connect_queued
 from desktop.components.viewers.image_view import ImageView
 from desktop.components.viewers.thumb_strip import ThumbStrip
 
@@ -71,7 +71,7 @@ class PdfViewerWidget(QWidget, WorkerHost):
         worker.thumbnail_ready.connect(self._thumb_ready)
         worker.completed.connect(self._thumbs_completed)
         worker.completed.connect(thread.quit)
-        worker.failed.connect(lambda *_: thread.quit())
+        worker.failed.connect(thread.quit)
 
     def _metadata_ready(self, page_count: int, _path: str) -> None:
         self.strip.clear()
@@ -114,10 +114,18 @@ class PdfViewerWidget(QWidget, WorkerHost):
         self.run_worker(
             lambda: PreviewWorker(self._pdf_path, page, longest_edge=1600),
             lambda worker, thread: (
-                worker.finished.connect(
-                    lambda p, image, _s: self.view.set_image(image)
+                connect_queued(
+                    self,
+                    worker.finished,
+                    lambda p, image, _s: self.view.set_image(image),
+                    thread,
                 ),
-                worker.failed.connect(lambda _p, msg: self.view.clear_image(f"渲染失败：{msg}")),
+                connect_queued(
+                    self,
+                    worker.failed,
+                    lambda _p, msg: self.view.clear_image(f"渲染失败：{msg}"),
+                    thread,
+                ),
                 worker.finished.connect(thread.quit),
                 worker.failed.connect(thread.quit),
             ),

@@ -5,7 +5,7 @@ from desktop.workers.hash_worker import HashWorker
 from desktop.workers.image_list_worker import ImageListWorker
 from desktop.workers.preview_worker import PreviewWorker
 from desktop.workers.source_thumbnails_worker import SourceThumbnailsWorker
-from desktop.workers.worker_host import WorkerHost
+from desktop.workers.worker_host import WorkerHost, connect_queued
 
 __all__ = [
     "HashWorker",
@@ -13,4 +13,5 @@ __all__ = [
     "PreviewWorker",
     "SourceThumbnailsWorker",
     "WorkerHost",
+    "connect_queued",
 ]

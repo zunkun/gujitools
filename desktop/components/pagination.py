@@ -77,10 +77,6 @@ class Pager:
         start, end = self.slice_bounds()
         return list(items[start:end])
 
-    def first_index(self) -> int:
-        """当前页第一条在整表中的序号（1-based，给表格「序号」列用）。"""
-        return self._offset + 1
-
     def with_page(self, page: int) -> "Pager":
         return Pager(self.total, self.page_size, page)
 

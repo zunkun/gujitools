@@ -15,6 +15,10 @@ def run_detect(config: dict) -> int:
     image_path = config["image"]
     emit({"type": "detect_started", "image": image_path})
     try:
+        # 跨层复用（登记在案，见 docs/dev/refactor-modularity.md §3.C）：
+        # GUI 检测阶段必须跑与 CLI **完全相同**的检测算法，否则界面预览与
+        # 命令行产物会对不上；下沉到 core 不合适（检测属业务层）。
+        # 放在函数内是刻意的——避免主进程加载 YOLO。
         import utils
         from functions.detect import detect_page_boxes
 
@@ -71,6 +75,7 @@ def run_detect_stage(config: dict) -> int:
     original_stdout = sys.stdout
     sys.stdout = interceptor
     try:
+        # 同上：跨层复用 detect_page_boxes 是登记在案的有意依赖。
         import utils
         from functions.detect import detect_page_boxes
 

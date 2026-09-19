@@ -12,7 +12,7 @@ File: utils/margin_utils.py
     - 四值 "20,30,25,35" → 原样              （上, 右, 下, 左）
 
 本模块统一了原先散落在三处的实现（core.command_spec.normalize_margin、
-utils.pdf_utils.parse_margins、desktop 面板 parse_margin4），消除了
+utils.pdf_utils.parse_margins（已废弃）、desktop 面板 parse_margin4），消除了
 「三值在 A 处补成四值、在 B 处静默丢弃、在 C 处报错」的行为分叉。
 """
 

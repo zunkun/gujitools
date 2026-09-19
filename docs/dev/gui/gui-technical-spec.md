@@ -62,6 +62,17 @@ GUI 侧用「最近一次 progress」在 `finish_stage` 时补齐最终计数。
 
 **pages.json**：`[{"file": "…/stages/extract/1.jpg", "label": "1"}]`（自然排序）。
 
+**竖排分段**：`utils.page_layout.vertical_runs(text) -> [(片段, 是否旋转)]`。
+汉字/全角等宽字符每字一格；ASCII 可打印字符连成一段，预览与成品各用
+`painter.rotate(90)` / `pdf.rotation(-90, x, y)` 把该段旋转 90°（字头朝右、
+自上而下读）。竖排高度用 `vertical_extent_mm`（拉丁段按 0.55 字宽折算）。
+
+**drafts/<阶段>.json**：`{参数名: 值}`，内容是 `PrintPanel.get_args()` 那一套键
+（已归一化）。用途是「参数暂存」——改了参数没执行就切阶段/切任务/关程序时，
+改动落在这里，下次进入该阶段按 **暂存 > 最近一次执行参数 > 内置默认** 回填。
+用户改动经 `StagePanel.param_edited` 上报、400ms 防抖写盘；**程序化回填不算**
+（面板 `_applying` 期间不转发），参数非法时不覆盖上一份有效暂存。
+
 ## 3. area/border 效果区域合成（compose_region_output）
 
 几何规则**只在 `utils/box_geometry` 布局层定义一次**，CLI（numpy 渲染）与
@@ -104,7 +115,10 @@ GUI（QImage 渲染）共同消费同一份 `OutputLayout`，不得各自推导
   与预览查看器缓存同名，导入即生成、永不清理。
 - 分辨率：最长边 `THUMBNAIL_EDGE=256`（`desktop/utils/files.py`）；
   目录 `.meta` 标记记录生成时分辨率，启动迁移仅在不匹配时清理重建。
-- 预览条图标 96×128：整页条目缩放解码；area=1 条目按框裁剪后覆盖填充。
+- 预览条图标框 116×156（`ThumbStrip.ICON_SIZE`）：整页条目按最长边
+  `ThumbStrip.DECODE_EDGE`（= 框长边）**等比缩放解码**；area=1 条目按框裁剪后
+  覆盖填充。⚠️ 解码边长必须取框的**长边**：竖开本页面受高度约束，取框宽会让
+  缩略图只占条目宽度的一半。
 - 排序：条目按 `pdf_custom_sort_key`（数字感知、同页 r→l、cover/menu 优先）。
 
 ## 6. print 页面列表与参数表单

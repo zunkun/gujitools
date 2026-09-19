@@ -29,7 +29,9 @@ def run_stage(config: dict) -> int:
     context = {"task_id": task_id, "stage": stage, "run_id": run_id}
     emit({"type": "started", **context})
     try:
-        from cli.command_args import CommandArgs
+        # ⚠️ 走 core.args，不要用 cli.command_args（那是 deprecated 转发壳）——
+        # 否则 desktop 阶段执行器会反向依赖命令行入口，GUI 就没法脱离 CLI 单独演进。
+        from core.args import CommandArgs
         from functions import get_function
 
         command = stage
@@ -74,7 +76,7 @@ def run_stage(config: dict) -> int:
 def run_extract_stage(config: dict) -> int:
     """extract 阶段：直接把 PDF 提取到任务目录 stages/extract/（无嵌套布局）。
 
-    复用 utils.pdf_utils.render_pages_parallel 的提取/并发实现（与 CLI 同一份），
+    复用 utils.pdf_extract.render_pages_parallel 的提取/并发实现（与 CLI 同一份），
     但不走 CLI 的 <out_root>/<pdf名>/images 输出规则。
 
     ⚠️ 这里曾经直接调 process_page_batch(全部页码) —— 那是**串行**的，
@@ -91,7 +93,7 @@ def run_extract_stage(config: dict) -> int:
         import threading
 
         import pymupdf as fitz
-        from utils.pdf_utils import parse_pages, render_pages_parallel
+        from utils.pdf_extract import parse_pages, render_pages_parallel
 
         pdf_path = Path(args["input"])
         out_dir = Path(args["output"])
@@ -138,6 +140,7 @@ def run_extract_stage(config: dict) -> int:
                 progress={"lock": threading.Lock(), "done": 0,
                           "total": len(page_indices)},
                 reporter=reporter,
+                dpi=float(args.get("dpi") or 300),
             )
         finally:
             sys.stdout = original_stdout

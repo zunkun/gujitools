@@ -49,21 +49,25 @@ print:
 | `page_margins`            | `[20,20,20,20]` | 通用页边距，顺序为上、右、下、左，单位 mm                  |
 | `left_page_margins`       | None            | 左页专用页边距；与右页配置同时存在时启用左右页覆盖         |
 | `right_page_margins`      | None            | 右页专用页边距；格式同 `page_margins`                      |
+| `annotate_margins`       | `false`         | 预览辅助：第四步「打印效果」预览里用虚线框出图片位置、四边标注边距（mm）；只画在预览，不进入成品 PDF |
+| `page_rects`             | None            | 第四步「版面编辑器」逐图坐标覆盖：`{页号(1-based): [x,y,w,h]}`，单位 mm，页面坐标系（左上原点）。GUI 从 `print.json` 的 `pages[].rect` 收集后注入；给定页直接作图片框（所见即所得），未编辑的页走 `page_margins` 自动排版。CLI 不传 |
 | `title_printing`          | False           | 是否打印标题                                               |
 | `title_text`              | `""`            | 默认标题；为空时不打印标题                                 |
-| `title_font_size`         | 18              | 标题字号，单位 pt                                          |
+| `title_font_size`         | 20              | 标题字号，单位 pt                                          |
 | `title_color`             | `0,0,0`         | 标题颜色，格式为 `r,g,b`，范围 0 到 255                    |
 | `title_position`          | `top`           | 标题位置：`top` 或 `bottom`                                |
 | `title_orientation`       | `vertical`      | 标题方向：`vertical` 或 `horizontal`                       |
+| `title_margins`           | `[20,10,0,10]`  | 标题**距纸张边界**的距离（mm），顺序上、右、下、左。纵向跟随 `page_margins[0]`，左右各 10mm；写 `null` 才回落到旧行为。填了就按距离画，**允许压在图片上** |
 | `title_switch_nodes`      | None            | 标题切换节点，格式为 `[原始页码, 标题, side]`              |
 | `page_number_printing`    | False           | 是否打印页码                                               |
 | `page_number_start_page`  | 1               | 从排序后第几张图片开始标注，1-based                        |
 | `page_number_end_page`    | None            | 标注结束的图片序号；为空表示到最后                         |
 | `page_number_base`        | 0               | 页码基数；显示页码为基数加图片序号                         |
-| `page_number_font_size`   | 12              | 页码字号，单位 pt                                          |
+| `page_number_font_size`   | 20              | 页码字号，单位 pt（与标题字号同默认，桌面端两处同源）      |
 | `page_number_color`       | `0,0,0`         | 页码颜色，格式为 `r,g,b`                                   |
 | `page_number_position`    | `bottom`        | 页码位置：`top` 或 `bottom`                                |
 | `page_number_orientation` | `vertical`      | 页码方向：`vertical` 或 `horizontal`                       |
+| `page_number_margins`     | `[0,10,20,10]`  | 页码**距纸张边界**的距离（mm），顺序上、右、下、左。纵向跟随 `page_margins[2]`，左右与标题一致；写 `null` 才回落到旧行为。填了就按距离画，**允许压在图片上** |
 | `skip_pages`              | None            | 跳过的页：纯数字按**清单序号**（1 起），其余按文件名匹配   |
 | `workers`                 | 4               | 图片加载线程数                                             |
 
@@ -85,7 +89,57 @@ paper_size: B5
 orientation: portrait
 ```
 
-图片会在页边距以内按比例缩放，并为标题和页码预留左右空白。页面尺寸不会写死为 A4，标题、页码和图片布局会根据实际纸张尺寸计算。
+图片会在页边距以内按比例缩放，不再为标题和页码额外预留左右空白。页面尺寸不会写死为 A4，标题、页码和图片布局会根据实际纸张尺寸计算。
+
+## 标题 / 页码「距页边」
+
+标题和页码的落点由 `title_margins` / `page_number_margins` 给出——它们是
+**距纸张边界**的距离（mm），填法与 `page_margins` 一样：
+
+- **默认值只有两处输入**：横向左右各 10mm；纵向跟随 `page_margins` ——
+  标题的「上」= `page_margins[0]`、页码的「下」= `page_margins[2]`，
+  于是文字与图片**贴同一条边**（改 `page_margins` 会带着它们一起变）。
+
+```yaml
+title_margins: 10            # 四边都距边 10mm
+title_margins: 2,14          # 上下 2mm，左右 14mm
+title_margins: 2,14,2,10     # 上,右,下,左 —— 左右可以不一样
+```
+
+- **左页（奇数页）取「左」值，右页（偶数页）取「右」值**，所以左右天然
+  可以设成不同距离（书口/书脑两侧本来就该不一样）；
+- ⚠️ **口径是"文字轮廓边缘"到纸边**（不是字格/落点）：左页文字从落点往右画，
+  轮廓左缘就是落点，`左 10mm` 就是 10mm；右页文字同样从落点往右画，所以落点
+  要**再往左退一个文字的宽度**，保证的是**轮廓右缘**离右纸边正好 10mm。
+  不这样做的话，右页的空白会比左页多出一个字宽（写 10mm 实际得到 10mm+字宽），
+  左右看着不对称。竖排的文字宽度 = 一个字宽；横排取整串宽度（粗估）。
+- 纵向：位置是 `top` 时取「上」值，`bottom` 时取「下」值；
+- ⚠️ **图片不再为文字让位**：填了「距页边」就按这个距离画文字，
+  **允许压在图片上**（用户明确要求取消"自动避让图片"这条限制）。
+  图片左右不再额外留白（`TEXT_MARGIN_MM` 已归零），落点就是「距页边」本身；
+- ⚠️ **显式写 `null`** 才回落到旧行为（横向落在页边距中缝、纵向再内缩 2mm）；
+  老配置这么写的话，输出一个像素都不会变。
+
+> 桌面端不让你手写这一串数字：第四步表单里是**勾选框 + 两行**，每行**一个通栏
+> 输入框**——第一行「左右边距：」（一个值同时管两边，左右对称），第二行
+> 「上边距：」/「下边距：」（标题贴纸张上边、页码贴下边）。只摆**用得上的**
+> 两个分量：标题在上边就永远读不到「距下」，页码在下边也永远读不到「距上」，
+> 四个框全摆出来只会让人以为四个都得填。下面那行会实时写明
+> "文字轮廓距左右纸边各 …mm｜距上/距下 …mm"。命令行/YAML 仍是上面的四值简写
+> （用不到的分量随便填，不影响落点）。
+
+## 竖排里的拉丁字符
+
+竖排标题/页码里的汉字等宽字符**一字一格**，而 ASCII 段（拉丁字母、数字、
+半角符号）**连成一段整体旋转 90°**——这是竖排惯例：`呵呵Happiness` 里的
+英文是一个自上而下读的竖条，而不是 9 个字母各占一格（那样会挤成一条竖线、
+根本认不出来）。
+
+- 分段规则在 `utils.page_layout.vertical_runs`：生成 PDF（fpdf）与桌面端
+  效果预览（QPainter）**共用同一份**，两边排版不会不一致；
+- 竖排高度也按它算（`vertical_extent_mm`）：拉丁段按平均字宽折算，
+  不再按"每字符一格"高估，底部对齐的标题/页码位置才准；
+- 旋转方向固定：**自上而下读出、字头朝右**（把纸转 90° 顺时针即可按横排读）。
 
 ## 图片排序
 
@@ -134,7 +188,7 @@ page_number_printing: true
 page_number_start_page: 2
 page_number_end_page:
 page_number_base: 200
-page_number_font_size: 18
+page_number_font_size: 20
 page_number_color: 0,0,0
 page_number_position: bottom
 page_number_orientation: vertical
@@ -151,12 +205,19 @@ page_number_orientation: vertical
 
 页码位置支持 `top`、`bottom`，文字方向支持 `vertical`、`horizontal`。
 
+> **桌面端不提供这两项**：第四步表单里页码恒在纸张**下边**、恒**竖排**
+> （标题同理恒在上边、恒竖排），界面上没有「位置」「文字方向」两个下拉——
+> 古籍的书名在版框之上、页码在版心之下本就是定式，摆成可选项既与
+> 「距页边」的「上边距/下边距」两行自相矛盾，也容易被误选。
+> 要用别的位置/方向，请直接在本配置文件里写这两个键（默认值见上）；
+> 桌面端回填到这样的老配置时**原样保留**，不会替你改回默认。
+
 ## 标题与章节节点
 
 ```yaml
 title_printing: true
 title_text: 古籍名称
-title_font_size: 18
+title_font_size: 20
 title_color: 0,0,0
 title_position: top
 title_orientation: vertical
@@ -222,7 +283,7 @@ print:
 	page_margins: [20, 20, 20, 20]
 	title_printing: true
 	title_text: 古籍名称
-	title_font_size: 18
+	title_font_size: 20
 	title_color: 0,0,0
 	title_position: top
 	title_orientation: vertical
@@ -234,7 +295,7 @@ print:
 	page_number_start_page: 2
 	page_number_end_page:
 	page_number_base: 200
-	page_number_font_size: 18
+	page_number_font_size: 20
 	page_number_color: 0,0,0
 	page_number_position: bottom
 	page_number_orientation: vertical

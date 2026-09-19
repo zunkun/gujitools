@@ -31,7 +31,7 @@ from desktop import ui
 from desktop.ui import theme as T
 from desktop.ui.help_dialog import open_manual
 from desktop.ui.icons import HELP_CIRCLE
-from desktop.workers import HashWorker, SourceThumbnailsWorker
+from desktop.workers import HashWorker, SourceThumbnailsWorker, connect_queued
 from desktop.store import STAGES, STAGE_LABELS, STAGE_SHORT, TaskStore
 from desktop.components.pagination import DEFAULT_PAGE_SIZE, Pager, Pagination
 from desktop.components.task_table import TaskTable
@@ -235,7 +235,8 @@ class TaskListPage(QWidget):
         self._page = pager.clamped_page
         page_rows = pager.page_slice(self._filtered)
 
-        self.table.set_data(page_rows, start_index=pager.first_index())
+        # 「序号」列由任务自己的编号填充（表格从 rows 里的 id 取），与分页无关
+        self.table.set_data(page_rows)
         self.pagination.set_pager(pager)
         has_rows = bool(page_rows)
         self.content_stack.setCurrentIndex(0 if has_rows else 1)
@@ -378,7 +379,13 @@ class TaskListPage(QWidget):
         )
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
-        worker.failed.connect(lambda msg: self._toast("warning", "缩略图生成失败", msg))
+        # worker 在子线程 emit → 排队回主线程再弹 toast（connect_queued）
+        connect_queued(
+            self,
+            worker.failed,
+            lambda msg: self._toast("warning", "缩略图生成失败", msg),
+            thread,
+        )
         worker.finished.connect(thread.quit)
         worker.failed.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)

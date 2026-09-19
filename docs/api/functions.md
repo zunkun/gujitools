@@ -4,7 +4,7 @@
 
 图像处理功能模块：GUI 与 CLI 共用同一套算法
 
-覆盖 10 个模块、9 个公开类、22 个公开函数/方法（生成于 2026-09-18）。
+覆盖 10 个模块、9 个公开类、22 个公开函数/方法（生成于 2026-09-19）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -326,10 +326,10 @@ File: functions/extract.py
 处理流程：
 1. 计算输出根目录（支持文件/目录两种输入，--output 统一作为根目录）；
 2. 从命令参数收集 zoom、ext、pages、workers 等选项；
-3. 委托给 `utils.pdf_utils.run_on_input_directory` 执行实际渲染。
+3. 委托给 `utils.pdf_extract.run_on_input_directory` 执行实际渲染。
 
 注意：此功能不使用 FunctionBase 的并发执行引擎（不需要 _process_single_image），
-因为 PDF 渲染的并发逻辑在 `pdf_utils` 内部实现。
+因为 PDF 渲染的并发逻辑在 `utils.pdf_extract` 内部实现。
 
 ### `class ExtractFunction(FunctionBase)`
 
@@ -342,11 +342,11 @@ PDF 提取功能实现类。
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(command_args, reporter=None)` | 调用基类完成输入解析后，立即计算输出根目录。 |
-| `execute()` | 执行 PDF 提取：收集参数并委托给 pdf_utils。 |
+| `execute()` | 执行 PDF 提取：收集参数并委托给 utils.pdf_extract。 |
 
 ##### `execute()`
 
-执行 PDF 提取：收集参数并委托给 pdf_utils。
+执行 PDF 提取：收集参数并委托给 utils.pdf_extract。
 
 输出规则：
 - 每个 PDF 的输出位置为 <out_root>/<pdf_name>/<default_temp_name>/，
@@ -421,7 +421,6 @@ static/guji.yaml 模板派生的配置，保留原模板的注释与键顺序。
 
 | 名称 | 值 |
 | --- | --- |
-| MM_PER_INCH | `25.4` |
 | PRINT_IMAGE_DPI | `300` |
 
 ### `class PrintFunction(FunctionBase)`

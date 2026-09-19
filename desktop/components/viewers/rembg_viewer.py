@@ -17,7 +17,7 @@ from PySide6.QtGui import QImage, QPainter
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 from qfluentwidgets import CaptionLabel
 
-from desktop.workers import ImageListWorker, PreviewWorker
+from desktop.workers import ImageListWorker, PreviewWorker, connect_queued
 from desktop.components.viewers.image_view import ImageView
 from desktop.components.viewers.thumb_strip import ThumbStrip
 from desktop.components.viewers.thumbs_loader import ThumbsMixin
@@ -135,8 +135,10 @@ class RembgPreviewWidget(QWidget, ThumbsMixin):
                     if area == 1 and len(valid) == 2:
                         # 右框在前（古籍阅读顺序：r → l）
                         page_entries = [
-                            {"label": f"{stem}-r", "path": path_text, "box": valid[1], "parea": 1},
-                            {"label": f"{stem}-l", "path": path_text, "box": valid[0], "parea": 1},
+                            {"label": f"{stem}-r", "path": path_text,
+                             "box": valid[1], "boxes": [valid[1]], "parea": 1},
+                            {"label": f"{stem}-l", "path": path_text,
+                             "box": valid[0], "boxes": [valid[0]], "parea": 1},
                         ]
                     elif area == 1 and len(valid) == 1:
                         page_entries = [
@@ -145,19 +147,25 @@ class RembgPreviewWidget(QWidget, ThumbsMixin):
                     elif area in (2, 3) and len(valid) == 2:
                         union = [min(b[0] for b in valid), min(b[1] for b in valid),
                                  max(b[2] for b in valid), max(b[3] for b in valid)]
+                        # ⚠️ parea 必须是**原始 area**、boxes 必须是**原始框**：
+                        # 只给并集框 + area=1 会在 border 为空时把整页画布
+                        # （area=2/3 的语义）退化成紧裁，与预览不一致。
                         page_entries = [
-                            {"label": stem, "path": path_text, "box": union, "parea": 1}
+                            {"label": stem, "path": path_text, "box": union,
+                             "boxes": list(valid), "parea": area}
                         ]
                     elif area in (2, 3) and len(valid) == 1:
                         # 对称画布
                         page_entries = [
-                            {"label": stem, "path": path_text, "box": valid[0], "parea": 2}
+                            {"label": stem, "path": path_text, "box": valid[0],
+                             "boxes": list(valid), "parea": area}
                         ]
                     elif area == WHOLE_PAGE_AREA and valid:
                         # 整页模式：整页（或用户手画的框）作为一个整体，不拆左右页
                         page_entries = [
                             {"label": stem, "path": path_text,
-                             "box": _union_box(valid), "parea": 1}
+                             "box": _union_box(valid), "boxes": list(valid),
+                             "parea": area}
                         ]
                 except Exception:
                     page_entries = None
@@ -222,6 +230,7 @@ class RembgPreviewWidget(QWidget, ThumbsMixin):
             if self._thumb_provider:
                 spec = self._thumb_provider(
                     real, entry.get("box"), entry.get("parea", 1), border_mm,
+                    boxes=entry.get("boxes"),
                 )
             if isinstance(spec, dict):
                 thumb_paths.append(Path(spec["path"]))
@@ -234,15 +243,20 @@ class RembgPreviewWidget(QWidget, ThumbsMixin):
                 effects.append(None)
             labels.append(entry["title"])
         self.run_worker(
-            lambda: ImageListWorker(thumb_paths, edge=96, effects=effects),
+            lambda: ImageListWorker(
+                thumb_paths, edge=ThumbStrip.DECODE_EDGE, effects=effects
+            ),
             lambda worker, thread: (
-                worker.thumbnail_ready.connect(
+                connect_queued(
+                    self,
+                    worker.thumbnail_ready,
                     lambda i, img, _p: self.strip.set_item_icon(
                         i, self._fill_icon(img), "", labels[i]
-                    )
+                    ),
+                    thread,
                 ),
                 worker.completed.connect(thread.quit),
-                worker.failed.connect(lambda *_: thread.quit()),
+                worker.failed.connect(thread.quit),
             ),
         )
 
@@ -343,11 +357,17 @@ class RembgPreviewWidget(QWidget, ThumbsMixin):
         self.run_worker(
             lambda: PreviewWorker(source, longest_edge=1600, effect=effect),
             lambda worker, thread: (
-                worker.finished.connect(
-                    lambda _p, image, _s, t=token: self._display(t, image)
+                connect_queued(
+                    self,
+                    worker.finished,
+                    lambda _p, image, _s, t=token: self._display(t, image),
+                    thread,
                 ),
-                worker.failed.connect(
-                    lambda _p, msg, t=token: self._load_failed(t, msg)
+                connect_queued(
+                    self,
+                    worker.failed,
+                    lambda _p, msg, t=token: self._load_failed(t, msg),
+                    thread,
                 ),
                 worker.finished.connect(thread.quit),
                 worker.failed.connect(thread.quit),

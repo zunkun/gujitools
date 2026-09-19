@@ -69,10 +69,16 @@ def plan_rembg_submit_entries(
 
     派生规则与 rembg 预览条目、print 待打印列表完全一致：
     - area=1 双框：拆 <页>-r / <页>-l 两条（古籍阅读顺序 r 在前）；
-    - area=2/3 双框：取双框并集，单条输出；
-    - 单框：area=2/3 走对称画布（parea=2），area=1 按普通框；
+    - area=2/3 双框：合成一条（不再分栏）；
+    - 单框：area=2/3 走对称画布，其余按普通框；
     - 无框：整页预览图透传。
     最终按 CLI natural sort 排序（同页 r 在 l 前）。
+
+    ⚠️ ``parea`` 是**原始 area**（不是"降级"后的合成 area），``boxes`` 是
+    **原始检测框**（不是并集后的单框）——两者必须原样交给
+    ``compose_region_output``。原因见 ``entry_to_effect_spec``：并集框 +
+    area=1 与「双框 + area=2/3」在 border 为空时**不等价**，曾导致第三步
+    预览是整页、而提交产物与 PDF 被紧裁（用户报的「PDF 成了 area=1 效果」）。
     """
     from utils.sort_utils import pdf_custom_sort_key
 
@@ -86,11 +92,11 @@ def plan_rembg_submit_entries(
         if area == 1 and len(boxes) == 2:
             entries.append(
                 {"file": str(result), "label": f"{stem}-r",
-                 "box": boxes[1], "parea": 1}
+                 "box": boxes[1], "boxes": [boxes[1]], "parea": 1}
             )
             entries.append(
                 {"file": str(result), "label": f"{stem}-l",
-                 "box": boxes[0], "parea": 1}
+                 "box": boxes[0], "boxes": [boxes[0]], "parea": 1}
             )
         elif area in (2, 3) and len(boxes) == 2:
             union = [
@@ -99,7 +105,7 @@ def plan_rembg_submit_entries(
             ]
             entries.append(
                 {"file": str(result), "label": stem,
-                 "box": union, "parea": 1}
+                 "box": union, "boxes": list(boxes), "parea": area}
             )
         elif area == WHOLE_PAGE_AREA and len(boxes) >= 2:
             # 整页模式：整页（或用户手画的多个框）合成一个整体，不拆左右页
@@ -108,34 +114,51 @@ def plan_rembg_submit_entries(
                 max(b[2] for b in boxes), max(b[3] for b in boxes),
             ]
             entries.append(
-                {"file": str(result), "label": stem, "box": union, "parea": 1}
+                {"file": str(result), "label": stem, "box": union,
+                 "boxes": list(boxes), "parea": area}
             )
         elif len(boxes) == 1:
             entries.append(
                 {"file": str(result), "label": stem, "box": boxes[0],
-                 "parea": 2 if area in (2, 3) else 1}
+                 "boxes": [boxes[0]], "parea": area}
             )
         else:
             entries.append(
                 {"file": str(result), "label": stem,
-                 "box": None, "parea": 1}
+                 "box": None, "boxes": [], "parea": area}
             )
     entries.sort(key=lambda e: pdf_custom_sort_key(e["label"]))
     return entries
 
 
 def entry_to_effect_spec(entry: dict, border) -> dict:
-    """提交条目 → worker 效果合成规格（run_print_stage/run_rembg_submit_stage 用）。"""
+    """提交条目 → worker 效果合成规格（run_print_stage/run_rembg_submit_stage 用）。
+
+    ⚠️ 必须把**原始检测框 + 原始 area** 交给 ``compose_region_output``，
+    不能擅自"化简"成并集框 + area=1。``utils.box_geometry.build_output_layout``
+    在 border 为空（padding=None）时两条分支并不等价：
+
+    - area=2/3（含多框）→ ``full_page=True``：整页画布，各框**写回原位置**；
+    - area=1            → 紧裁成「框 + border」的小画布。
+
+    此前双框 area=2/3 被记成"并集框 + parea=1"，于是第三步预览（用原始框
+    + 原始 area）显示整页、提交产物与 PDF 却是紧裁——用户报的「第三步 area=2、
+    预览也是 area=2，生成的 PDF 却是 area=1 的效果」就是这么来的（紧裁观感
+    与 area=1 的半页裁剪一致）。
+    """
+    raw = [b for b in (entry.get("boxes") or []) if b]
+    if not raw and entry.get("box"):
+        raw = [entry["box"]]  # 兼容只带 box 的旧条目/手写条目
     return {
         "file": entry["file"],
         "label": entry.get("label"),
         "effect": (
             {
-                "boxes": [entry["box"]],
-                "area": entry.get("parea", 1),
+                "boxes": raw,
+                "area": int(entry.get("parea", 1) or 1),
                 "border": border,
             }
-            if entry.get("box")
+            if raw
             else None
         ),
     }
@@ -205,8 +228,13 @@ def plan_print_entries(rembg_files: list[Path], doc: dict | None) -> tuple[list[
             file_text = p.get("file")
             if not file_text or file_text in seen or not Path(file_text).exists():
                 continue
-            out.append({"file": file_text,
-                        "label": p.get("label") or Path(file_text).stem})
+            entry = {"file": file_text,
+                     "label": p.get("label") or Path(file_text).stem}
+            # 第四步「版面编辑器」逐图坐标：存在则随条目保留（与 file/label 同级）
+            rect = p.get("rect")
+            if rect is not None:
+                entry["rect"] = list(rect)
+            out.append(entry)
             seen.add(file_text)
         return out
 

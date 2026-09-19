@@ -119,13 +119,19 @@ def run(ctx) -> None:
             area=area,
         )
 
+    # ⚠️ parea 必须是**原始 area**（4），不能被降级成 1：area=1 的语义是
+    # 「紧裁成框」，而整页模式要的是整页——降级会让产物与预览不符。
     one = _entries([[0, 0, W, H]], 4)
-    ok("整页模式单框 → 单条且 parea=1（非对称）",
-       len(one) == 1 and one[0]["box"] == [0, 0, W, H] and one[0]["parea"] == 1,
+    ok("整页模式单框 → 单条，parea 保留原始 area=4（非对称、非紧裁）",
+       len(one) == 1 and one[0]["box"] == [0, 0, W, H]
+       and one[0]["parea"] == 4
+       and one[0]["boxes"] == [[0, 0, W, H]],
        str(one))
     two = _entries([[0, 0, 50, H], [60, 0, W, H]], 4)
-    ok("整页模式多框 → 并集单条，不拆 -r/-l",
-       len(two) == 1 and two[0]["box"] == [0, 0, W, H] and two[0]["parea"] == 1,
+    ok("整页模式多框 → 并集单条，不拆 -r/-l，且携带原始双框",
+       len(two) == 1 and two[0]["box"] == [0, 0, W, H]
+       and two[0]["parea"] == 4
+       and len(two[0]["boxes"]) == 2,
        str(two))
     none = _entries([], 4)
     ok("整页模式无框 → 整页透传（兜底）",
@@ -139,8 +145,9 @@ def run(ctx) -> None:
     viewer._boxes_provider = lambda _p: [[0, 0, W, H]]
     viewer._region_params_provider = lambda: (4, None)
     built = viewer._build_entries()
-    ok("预览条目：整页模式单条、带整页框",
-       len(built) == 1 and built[0]["box"] == [0, 0, W, H] and built[0]["parea"] == 1,
+    ok("预览条目：整页模式单条、带整页框，parea 同样保留原始 area",
+       len(built) == 1 and built[0]["box"] == [0, 0, W, H]
+       and built[0]["parea"] == 4,
        str(built))
 
     # ---- 5. CLI 层：area=4 在检测之前分流（源码守卫）----

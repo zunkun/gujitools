@@ -20,6 +20,8 @@ docs/functions/cropremove.md:57）。布局层统一后该分歧由本模块消�
 from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
 
+from utils.units import MM_PER_INCH, mm_to_px
+
 # 单框对称输出时，实际框与空白镜像之间的间隔（mm）
 SYMMETRIC_GAP_MM = 10
 
@@ -53,7 +55,7 @@ def parse_border_mm(border_value, dpi: int = 300) -> Optional[List[int]]:
             raise ValueError("border 格式错误，支持1~4个逗号分隔整数")
     else:
         raise ValueError("border 必须为整数或字符串")
-    mm_to_px = dpi / 25.4
+    mm_to_px = dpi / MM_PER_INCH
     return [int(round(v * mm_to_px)) for v in values]
 
 
@@ -218,7 +220,7 @@ def build_output_layout(
         bw, bh = x2 - x1, y2 - y1
         if symmetric:
             # 对称输出：实际框 + 空白镜像 + 中间间隔
-            gap_px = round(SYMMETRIC_GAP_MM * dpi / 25.4)
+            gap_px = round(mm_to_px(SYMMETRIC_GAP_MM, dpi))
             size = (l + bw * 2 + gap_px + r, t + bh + b)
         else:
             # 普通单框：画布 = 框 + 四周 border
@@ -283,7 +285,7 @@ def build_symmetric_layout(
         )
 
     t, r, b, l = (int(v) for v in border_padding)
-    gap_px = round(SYMMETRIC_GAP_MM * dpi / 25.4)
+    gap_px = round(mm_to_px(SYMMETRIC_GAP_MM, dpi))
     bw, bh = x2 - x1, y2 - y1
     # 实际框在左 -> 落点 left；在右 -> 跳过镜像宽度与间隔
     ox = l if is_left else l + bw + gap_px

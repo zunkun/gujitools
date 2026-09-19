@@ -452,8 +452,18 @@ def set_combo(combo, value: str) -> bool:
 
 
 def pump(app, times: int = 6) -> None:
+    """驱动事件循环，并**清掉 deleteLater 的旧控件**。
+
+    ⚠️ 必须显式清 DeferredDelete：`setCellWidget` 换掉旧单元格控件走的是
+    `deleteLater()`，而 `processEvents()` 不处理 DeferredDelete 事件——截图
+    进程又从不真正回到主事件循环。不清的话旧标签会和新标签叠在同一格里，
+    截图上就是"任务名重影"（两段文字互相压着，看着像界面坏了）。
+    """
+    from PySide6.QtCore import QCoreApplication, QEvent
+
     for _ in range(times):
         app.processEvents()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
         time.sleep(0.05)
 
 
@@ -496,14 +506,17 @@ def wait_for_thumbnails(
         time.sleep(0.05)
         pending = 0
         for strip in strips:
-            # 占位图是模块级静态方法造的，cacheKey 与真实缩略图必然不同
-            placeholder_key = strip._placeholder.pixmap(96, 128).cacheKey()
+            # 占位图是模块级静态方法造的，cacheKey 与真实缩略图必然不同。
+            # 尺寸取控件自己的 iconSize（别再写字面量：ThumbStrip 改过框尺寸，
+            # 写死会让比对窗口与真实渲染尺寸不一致）。
+            icon_size = strip.iconSize()
+            placeholder_key = strip._placeholder.pixmap(icon_size).cacheKey()
             for row in range(strip.count()):
                 item = strip.item(row)
                 icon = item.icon()
                 if icon.isNull():
                     continue  # 纯文字条目（如「缩略图加载中…」）不参与判定
-                if icon.pixmap(96, 128).cacheKey() == placeholder_key:
+                if icon.pixmap(icon_size).cacheKey() == placeholder_key:
                     pending += 1
         total = sum(s.count() for s in strips)
         if min_loaded is not None:
@@ -599,7 +612,7 @@ def shoot_guide(app, window, out_dir: Path, task_id: str,
     extract_panel.zoom.setValue(2)
     extract_panel.ext.setCurrentText("png")
     detail.extract_tabs.setCurrentIndex(0)  # 切回 PDF 预览，展示参数与源文件对照
-    snap("s1-提取-参数.png", "第一步：调 zoom / ext 参数")
+    snap("s1-提取-参数.png", "第一步：调 zoom / dpi / ext 参数")
 
     # ---- 步骤 2：检测文本框 ----
     detail.extract_tabs.setCurrentIndex(0)
@@ -662,7 +675,7 @@ def shoot_guide(app, window, out_dir: Path, task_id: str,
     # ---- 步骤 4：生成 PDF ----
     detail._select_stage(3)
     print_panel = detail.control_stack.widget(3)
-    snap("s4-生成PDF-默认.png", "第四步：图片瀑布流 + 参数表单")
+    snap("s4-生成PDF-默认.png", "第四步：左侧待打印缩略图条 + 右侧打印效果预览")
 
     # 第四步的参数是**表单控件**（不是 YAML 文本框）：驱动真实控件，
     # 展示「填过参数之后」的样子。字段名来自 print_form.py 的构建代码。
@@ -678,6 +691,12 @@ def shoot_guide(app, window, out_dir: Path, task_id: str,
         print_panel.page_number_printing.setChecked(True)
         print_panel.page_number_base.setValue(1)
         print_panel.page_number_start.setValue(1)
+        # 「距页边」：勾选"自定义"后按**两行、每行一个通栏输入框**填——
+        # 第一行「左右边距：」（一个值管左页+右页），第二行「上边距：」/
+        # 「下边距：」（标题填上、页码填下）。填了之后**不再收窄图片**，
+        # 距离只决定文字画在哪儿（允许压在图上）。
+        print_panel.set_inset("title", [2, 14, 2, 10])
+        print_panel.set_inset("page_number", [2, 14, 2, 10])
 
     snap("s4-生成PDF-参数.png", "第四步：填好输出 / 纸张 / 边距 / 标题 / 页码",
          before=_fill_print_form)

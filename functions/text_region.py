@@ -107,8 +107,14 @@ class TextRegionProcessor(FunctionBase):
             cy2 = max(ly2, ry2)
             boxes = [(cx1, cy1, cx2, cy2)]
 
-        # border 参数
+        # border 参数：没给（None/空）时按 area 取默认——area=1/2/3 → "0"
+        # （不加留白，第四步会在 A4 上重新排版），area=4（整页）→ None。
+        # 规则只有一份，见 core.command_spec.effective_border_default。
+        from core.command_spec import effective_border_default
+
         border_mm = self.command_args.get("border")
+        if border_mm is None or not str(border_mm).strip():
+            border_mm = effective_border_default(area_mode)
         border_padding = utils.parse_border_mm(border_mm, dpi=300)
 
         # 特殊处理：area=2/3 + border有值 + 仅一个文本框 → 对称输出

@@ -95,6 +95,9 @@ class StageRunnerMixin:
             area = int(rargs.get("area", 1))
             border = rargs.get("border")
             effects = self._build_print_effects(entries, area, border)
+            # 第三步 border 级联第四步默认边距：把上游 border 透传给 print，
+            # 让其「通用边距默认」在 border 非 0 时回落为 0（避免双重留白）。
+            args["upstream_border"] = border
             if not effects:
                 self._toast(
                     "warning", "无输入页面",
@@ -103,7 +106,12 @@ class StageRunnerMixin:
                 )
                 return
             doc["pages"] = [
-                {k: e.get(k) for k in ("file", "label")}
+                (
+                    {"file": e.get("file"), "label": e.get("label"),
+                     "rect": e["rect"]}
+                    if e.get("rect") is not None
+                    else {"file": e.get("file"), "label": e.get("label")}
+                )
                 for e in entries
             ]
             self.store.save_print_doc(self.task_id, doc)
@@ -111,8 +119,23 @@ class StageRunnerMixin:
             # 有序清单即页序：拖拽重排只改 print.json，不再物化任何文件。
             # input 仅供 CLI 作默认目录兜底，实际顺序由 files 决定。
             args["files"] = [str(Path(e["file"])) for e in entries]
+            # 逐图坐标覆盖：把版面编辑器里记录的 rect 按 1-based 页序注入，
+            # 生成 PDF 时直接作图片框（所见即所得），未编辑的页走自动排版。
+            page_rects = {
+                i + 1: list(e["rect"])
+                for i, e in enumerate(entries)
+                if e.get("rect") is not None
+            }
+            if page_rects:
+                args["page_rects"] = page_rects
             args["input"] = str(self.store.task_dir(self.task_id))
             args["output"] = str(self.store.stage_dir(self.task_id, "print"))
+            # 开始重新生成即清除「版面已修改」标脏
+            self._print_dirty = False
+            try:
+                self.stage_status.setText("未执行")
+            except Exception:
+                pass
             self.log_view.append(
                 f"区域合成：area={area}"
                 + (f"，border={border}" if border is not None else "，border=0")
@@ -421,6 +444,12 @@ class StageRunnerMixin:
                     self.print_preview.set_pdf_path(pdf_path)
                 else:
                     self.print_preview.set_pdf_path(None)
+                # 重新生成完成，清除「版面已修改」标脏
+                self._print_dirty = False
+                try:
+                    self.stage_status.setText("成功")
+                except Exception:
+                    pass
         self._refresh_stage_views()
         self._refresh_preview()
         if stage == "extract":

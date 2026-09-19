@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 55 个模块、56 个公开类、269 个公开函数/方法（生成于 2026-09-18）。
+覆盖 65 个模块、68 个公开类、309 个公开函数/方法（生成于 2026-09-19）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -13,29 +13,36 @@
 | 模块 | 类 | 函数 |
 | --- | --- | --- |
 | [`desktop.app`](#desktopapp) | 1 | 2 |
+| [`desktop.components.common.safecomment`](#desktopcomponentscommonsafecomment) | 6 | 12 |
 | [`desktop.components.log_panel`](#desktopcomponentslog_panel) | 1 | 9 |
-| [`desktop.components.pagination`](#desktopcomponentspagination) | 2 | 12 |
-| [`desktop.components.panels.base`](#desktopcomponentspanelsbase) | 1 | 5 |
+| [`desktop.components.pagination`](#desktopcomponentspagination) | 2 | 11 |
+| [`desktop.components.panels.base`](#desktopcomponentspanelsbase) | 1 | 7 |
 | [`desktop.components.panels.detect_panel`](#desktopcomponentspanelsdetect_panel) | 1 | 2 |
 | [`desktop.components.panels.extract_panel`](#desktopcomponentspanelsextract_panel) | 1 | 1 |
+| [`desktop.components.panels.params_spec`](#desktopcomponentspanelsparams_spec) | 0 | 2 |
 | [`desktop.components.panels.print_form`](#desktopcomponentspanelsprint_form) | 1 | 1 |
+| [`desktop.components.panels.print_inset`](#desktopcomponentspanelsprint_inset) | 1 | 0 |
 | [`desktop.components.panels.print_nodes`](#desktopcomponentspanelsprint_nodes) | 2 | 9 |
-| [`desktop.components.panels.print_panel`](#desktopcomponentspanelsprint_panel) | 1 | 6 |
+| [`desktop.components.panels.print_panel`](#desktopcomponentspanelsprint_panel) | 1 | 9 |
 | [`desktop.components.panels.print_params`](#desktopcomponentspanelsprint_params) | 0 | 5 |
+| [`desktop.components.panels.print_sections`](#desktopcomponentspanelsprint_sections) | 1 | 0 |
+| [`desktop.components.panels.print_text_layout`](#desktopcomponentspanelsprint_text_layout) | 1 | 0 |
 | [`desktop.components.panels.rembg_panel`](#desktopcomponentspanelsrembg_panel) | 1 | 1 |
 | [`desktop.components.step_bar`](#desktopcomponentsstep_bar) | 2 | 15 |
 | [`desktop.components.task_table`](#desktopcomponentstask_table) | 3 | 10 |
 | [`desktop.components.viewers.image_view`](#desktopcomponentsviewersimage_view) | 1 | 12 |
 | [`desktop.components.viewers.image_viewer`](#desktopcomponentsviewersimage_viewer) | 1 | 6 |
 | [`desktop.components.viewers.pdf_viewer`](#desktopcomponentsviewerspdf_viewer) | 1 | 2 |
-| [`desktop.components.viewers.print_preview`](#desktopcomponentsviewersprint_preview) | 1 | 6 |
+| [`desktop.components.viewers.print_layout_canvas`](#desktopcomponentsviewersprint_layout_canvas) | 1 | 9 |
+| [`desktop.components.viewers.print_preview`](#desktopcomponentsviewersprint_preview) | 1 | 8 |
 | [`desktop.components.viewers.rembg_viewer`](#desktopcomponentsviewersrembg_viewer) | 1 | 3 |
-| [`desktop.components.viewers.thumb_strip`](#desktopcomponentsviewersthumb_strip) | 1 | 4 |
+| [`desktop.components.viewers.thumb_strip`](#desktopcomponentsviewersthumb_strip) | 1 | 5 |
 | [`desktop.components.viewers.thumbs_loader`](#desktopcomponentsviewersthumbs_loader) | 1 | 0 |
 | [`desktop.pages.taskdetail.detect`](#desktoppagestaskdetaildetect) | 1 | 0 |
 | [`desktop.pages.taskdetail.history`](#desktoppagestaskdetailhistory) | 1 | 0 |
 | [`desktop.pages.taskdetail.manifest`](#desktoppagestaskdetailmanifest) | 1 | 2 |
 | [`desktop.pages.taskdetail.page`](#desktoppagestaskdetailpage) | 1 | 5 |
+| [`desktop.pages.taskdetail.params_draft`](#desktoppagestaskdetailparams_draft) | 1 | 1 |
 | [`desktop.pages.taskdetail.print_list`](#desktoppagestaskdetailprint_list) | 1 | 0 |
 | [`desktop.pages.taskdetail.runner`](#desktoppagestaskdetailrunner) | 1 | 2 |
 | [`desktop.pages.taskdetail.submit`](#desktoppagestaskdetailsubmit) | 1 | 1 |
@@ -49,24 +56,27 @@
 | [`desktop.stages.print_stage`](#desktopstagesprint_stage) | 0 | 1 |
 | [`desktop.stages.rembg_stage`](#desktopstagesrembg_stage) | 0 | 1 |
 | [`desktop.store.annotations`](#desktopstoreannotations) | 1 | 6 |
+| [`desktop.store.drafts`](#desktopstoredrafts) | 1 | 5 |
 | [`desktop.store.json_io`](#desktopstorejson_io) | 0 | 2 |
 | [`desktop.store.pages`](#desktopstorepages) | 1 | 9 |
 | [`desktop.store.runs`](#desktopstoreruns) | 1 | 6 |
 | [`desktop.store.store`](#desktopstorestore) | 1 | 1 |
 | [`desktop.store.tasks`](#desktopstoretasks) | 1 | 19 |
+| [`desktop.ui.fonts`](#desktopuifonts) | 0 | 1 |
 | [`desktop.ui.help_dialog`](#desktopuihelp_dialog) | 0 | 3 |
 | [`desktop.ui.icons`](#desktopuiicons) | 2 | 4 |
+| [`desktop.ui.segmented_toggle`](#desktopuisegmented_toggle) | 1 | 11 |
 | [`desktop.ui.style`](#desktopuistyle) | 0 | 3 |
 | [`desktop.ui.theme`](#desktopuitheme) | 0 | 2 |
-| [`desktop.ui.widgets`](#desktopuiwidgets) | 9 | 45 |
+| [`desktop.ui.widgets`](#desktopuiwidgets) | 8 | 33 |
 | [`desktop.utils.files`](#desktoputilsfiles) | 0 | 6 |
 | [`desktop.utils.icon`](#desktoputilsicon) | 0 | 3 |
 | [`desktop.worker`](#desktopworker) | 0 | 1 |
 | [`desktop.workers.hash_worker`](#desktopworkershash_worker) | 1 | 2 |
 | [`desktop.workers.image_list_worker`](#desktopworkersimage_list_worker) | 1 | 2 |
-| [`desktop.workers.preview_worker`](#desktopworkerspreview_worker) | 1 | 4 |
+| [`desktop.workers.preview_worker`](#desktopworkerspreview_worker) | 1 | 7 |
 | [`desktop.workers.source_thumbnails_worker`](#desktopworkerssource_thumbnails_worker) | 1 | 2 |
-| [`desktop.workers.worker_host`](#desktopworkersworker_host) | 1 | 2 |
+| [`desktop.workers.worker_host`](#desktopworkersworker_host) | 1 | 3 |
 
 ---
 
@@ -108,6 +118,86 @@ gujitools 桌面端主窗口：任务列表页 + 任务详情页切换。
 自动退出（退出码 0）。仅供打包后冒烟使用——GUI 是 windowed 程序，没有
 控制台，导入期崩溃会弹错误框并一直挂住，靠"进程还活着"根本判断不了
 成败；有了这个开关就能用**退出码**判定。
+
+---
+
+## `desktop.components.common.safecomment`
+
+源码：[`desktop/components/common/safecomment.py`](../../desktop/components/common/safecomment.py)
+
+File: safecomponents.py
+修复 QFluentWidgets SpinBox / LineEdit 悬浮滚轮直接修改数值、hover自动抢焦点问题
+规则：只有控件获得焦点后，滚轮才响应；无焦点时滚轮透传给外层滚动区域
+
+### `class SafeLineEdit(QLineEdit)`
+
+普通文本输入框：悬浮不自动聚焦，无焦点时滚轮透传
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(parent=None)` | — |
+| `enterEvent(event)` | Qt 事件覆写：鼠标移入时进入高亮态。 |
+| `wheelEvent(event)` | Qt 事件覆写：滚轮（缩放 / 滚动）。 |
+
+### `class SafeSpinBox(SpinBox)`
+
+QFluentWidgets 整数SpinBox，修复悬浮滚轮修改数值
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(parent=None)` | — |
+| `wheelEvent(event)` | Qt 事件覆写：滚轮（缩放 / 滚动）。 |
+
+### `class SafeDoubleSpinBox(DoubleSpinBox)`
+
+QFluentWidgets 浮点数SpinBox（用于带 mm 单位边距控件）
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(parent=None)` | — |
+| `wheelEvent(event)` | Qt 事件覆写：滚轮（缩放 / 滚动）。 |
+
+### `class SafeCompactSpinBox(CompactSpinBox)`
+
+QFluentWidgets 紧凑版整数SpinBox
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(parent=None)` | — |
+| `wheelEvent(event)` | Qt 事件覆写：滚轮（缩放 / 滚动）。 |
+
+### `class SafeCompactDoubleSpinBox(CompactDoubleSpinBox)`
+
+QFluentWidgets 紧凑版浮点数SpinBox
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(parent=None)` | — |
+| `wheelEvent(event)` | Qt 事件覆写：滚轮（缩放 / 滚动）。 |
+
+### `class FluentSpinWheelFilter(QObject)`
+
+全局事件过滤器（存量界面不想替换控件类时使用）
+一次性拦截所有 fluent spinbox 无焦点滚轮事件
+使用：
+_filter = FluentSpinWheelFilter()
+widget.installEventFilter(_filter)
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `eventFilter(obj, event)` | Qt 事件过滤器。 |
 
 ---
 
@@ -212,7 +302,6 @@ page       当前页码，1-based；越界会在读取时被钳制
 | `clamped_page() -> int` | 钳制到 [1, total_pages] 的页码。 |
 | `slice_bounds() -> tuple[int, int]` | 当前页在整表里的 [start, end) 下标区间（左闭右开，直接喂 list 切片）。 |
 | `page_slice(items: list) -> list` | 取当前页的切片；越界页码已钳制，不会返回空页。 |
-| `first_index() -> int` | 当前页第一条在整表中的序号（1-based，给表格「序号」列用）。 |
 | `with_page(page: int) -> 'Pager'` | — |
 | `with_page_size(page_size: int) -> 'Pager'` | 换每页条数：页码按比例换算，尽量停在原来看到的那一条附近。 |
 | `with_total(total: int) -> 'Pager'` | — |
@@ -270,9 +359,10 @@ page       当前页码，1-based；越界会在读取时被钳制
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(parent=None)` | 构建面板骨架：标题 + 说明 + 参数表单容器。 |
+| `mark_params_edited() -> None` | 补一次"用户改了参数"通知——给**按钮**这类不经过控件信号的入口用。 |
 | `build_form() -> QWidget` | 参数表单容器：统一装进透明滚动区，窗口过矮时出滚动条而非压扁表单。 |
 | `get_args() -> dict` | 从表单收集该阶段参数（不含 input/output/clean）。 |
-| `apply_args(parameters: dict) -> None` | 把一次历史执行的参数回填到表单（多余键忽略）。 |
+| `apply_args(parameters: dict) -> None` | 把一次历史执行/暂存的参数回填到表单（多余键忽略）。 |
 | `reset_to_default() -> None` | 恢复控件初始默认值。 |
 
 ##### `__init__(parent=None)`
@@ -280,7 +370,15 @@ page       当前页码，1-based；越界会在读取时被钳制
 构建面板骨架：标题 + 说明 + 参数表单容器。
 
 title/description 来自子类类属性并开启换行，避免窄面板被长说明撑破；
-随后调用 build_form 生成子类表单并占满剩余垂直空间。
+随后调用 build_form 生成子类表单并占满剩余垂直空间，最后统一把表单
+里输入控件的信号接到 ``param_edited``（供参数暂存）。
+
+##### `mark_params_edited() -> None`
+
+补一次"用户改了参数"通知——给**按钮**这类不经过控件信号的入口用。
+
+例：「恢复默认」是把默认值 set 回控件（走 ``_apply_args``），信号会被
+``_applying`` 挡掉，但用户确实改动了参数，得让宿主把新值暂存下来。
 
 ##### `build_form() -> QWidget`
 
@@ -297,6 +395,22 @@ title/description 来自子类类属性并开启换行，避免窄面板被长�
 
 各子类的 ``_apply_args`` 对缺失键都取自身默认值，因此传空字典
 即可复位——用于切换任务时清掉上一个任务残留的手改参数。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `default_for(parameters: dict, defaults: dict, key: str)` | 取回填值：``parameters`` 里有且**不为 None** 时用它，否则回落 ``defaults[key]``。 |
+
+#### `default_for(parameters: dict, defaults: dict, key: str)`
+
+取回填值：``parameters`` 里有且**不为 None** 时用它，否则回落 ``defaults[key]``。
+
+⚠️ 不能写成 ``parameters.get(key, defaults[key])``——历史配置里存着
+``{"dpi": null}`` 时，``get`` 会返回 ``None``，兜底**永不生效**，直接
+``setValue(None)`` 就崩（这是本仓库反复踩到的 None 默认值陷阱）。
+也不能写成 ``parameters.get(key) or ...``——布尔键的合法值 ``False``
+与数值键的合法值 ``0`` 会被误判成"没值"而回落到默认。
 
 ---
 
@@ -340,22 +454,65 @@ YOLO 检测每张图的左右文本框坐标，供预览标注与去底色/裁�
 
 ### `class ExtractPanel(StagePanel)`
 
-提取图片阶段面板：设置缩放、格式与页码范围。
+提取图片阶段面板：设置缩放、目标 DPI、格式与页码范围。
 
 extract 阶段把源 PDF 每页渲染为图片；参数经 get_args 收集后由 runner
-写入子进程配置，input/output 由系统接管。
+写入子进程配置，input/output 由系统接管。默认值统一取
+``params_spec.DEFAULTS["extract"]``（控件初值与回填兜底同一份）。
 
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
-| `get_args() -> dict` | 收集提取参数：zoom/ext/quick/pages（不含 input/output）。 |
+| `get_args() -> dict` | 收集提取参数：zoom/dpi/ext/quick/pages（不含 input/output）。 |
 
 ##### `get_args() -> dict`
 
-收集提取参数：zoom/ext/quick/pages（不含 input/output）。
+收集提取参数：zoom/dpi/ext/quick/pages（不含 input/output）。
 
 pages 留空表示全部页；非法页码由 runner 在取参时以 ValueError 拦截。
+dpi 默认 300，是**整页渲染**的 DPI 下限（内嵌图路径不生效）。
+
+---
+
+## `desktop.components.panels.params_spec`
+
+源码：[`desktop/components/panels/params_spec.py`](../../desktop/components/panels/params_spec.py)
+
+desktop 各阶段面板的**默认参数**集中定义（唯一事实来源）。
+
+面板散着写默认值会漂移：同一个参数在「构建控件初值」「``_apply_args`` 缺省
+兜底」「``reset_to_default``」三处各写一遍，改一处漏两处（`page_number_font_size`
+就曾出现「兜底 12 / 默认 18」两套值）。这里按阶段收成一张表，各消费方统一取用：
+
+1. ``DEFAULTS[stage]`` —— 面板 ``_apply_args()`` 的缺键兜底与控件初值；
+2. ``StagePanel.reset_to_default()`` —— 复位到本表；
+3. 表单下拉的「中文显示 ↔ 参数值」候选表也在此登记。
+
+## 与 core.command_spec 的关系
+
+``core/command_spec.py`` 是**命令行**参数的唯一事实来源，本模块是**桌面表单**的
+那一份。两者刻意分开：CLI 的 print 默认是「空表单」（不打印标题、pdf_name=None），
+而桌面表单打开就该是一份能直接出 PDF 的配置（有书名、有页码）。print 段的差异
+由 ``core.command_spec.PRINT_FORM_DEFAULTS`` 显式表达，这里直接引用，不再抄一份。
+
+其余阶段（extract/detect/rembg）桌面与 CLI 语义一致，因此**以 command_spec 的
+defaults 为底**，只覆盖表单侧特有的键（如 ``pages`` 表单里是空串而非 None），
+见各表的 ``_base`` 调用。这样 CLI 改默认值时桌面自动跟随，不会再出现两份值。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `stage_defaults(stage: str) -> dict` | 取某阶段的默认参数（副本，可安全改写）。 |
+| `default_value(stage: str, key: str, fallback=None)` | 取某阶段某键的默认值；未登记时返回 ``fallback``。 |
+
+#### `default_value(stage: str, key: str, fallback=None)`
+
+取某阶段某键的默认值；未登记时返回 ``fallback``。
+
+⚠️ 默认值可能是 ``None``（如 print 的 ``title_margins``），这里**不做**
+``or`` 兜底——调用方要区分「默认就是 None」与「没登记」。
 
 ---
 
@@ -363,13 +520,28 @@ pages 留空表示全部页；非法页码由 runner 在取参时以 ValueError 
 
 源码：[`desktop/components/panels/print_form.py`](../../desktop/components/panels/print_form.py)
 
-生成 PDF（print）阶段的表单构建 Mixin：控件创建、标题切换节点表、焦点策略。
+生成 PDF（print）阶段的表单构建 Mixin：编排、通用控件工厂、节点表、焦点策略。
+
+本类是**编排层**，按依赖从少到多继承三个专职 Mixin：
+
+* :mod:`desktop.components.panels.print_text_layout` —— 「位置/文字方向」固定取值
+* :mod:`desktop.components.panels.print_inset` —— 「距页边」控件组
+* :mod:`desktop.components.panels.print_sections` —— 五个分区的控件
 
 参数定义/解析见 print_params.py，面板状态见 print_panel.py。
 
-### `class PrintFormMixin`
+⚠️ 拆分只改**代码落在哪个文件**，不改任何行为：四个类的成员名对外一律从
+``PrintFormMixin`` 可见（``PrintPanel`` 只继承它一个），
+``tests/selftests/print_form_split.py`` 钉住这条不变量。
+
+### `class PrintFormMixin(PrintSectionsMixin, PrintTextLayoutMixin)`
 
 print 面板的表单构建（由 PrintPanel 继承）。
+
+MRO：``PrintFormMixin → PrintSectionsMixin → PrintInsetMixin →
+PrintTextLayoutMixin``。前三者都只依赖 ``self`` 上的成员，最终由
+``PrintPanel(PrintFormMixin, StagePanel)`` 线性化到 ``StagePanel``
+提供的 ``_add_row`` 等基础能力。
 
 #### 方法
 
@@ -382,8 +554,32 @@ print 面板的表单构建（由 PrintPanel 继承）。
 构建 print 面板表单：滚动区 + 各分区控件 + 节点表。
 
 用 ScrollArea 承载全部分区（输出/边距/标题/页码/过滤），顶部放恢复
-默认/重置按钮，构建后连接 pdf_name 与 title 联动信号；焦点策略延后到
+默认配置/放弃修改按钮，构建后连接 pdf_name 与 title 联动信号；焦点策略延后到
 面板 __init__ 末尾统一设置。
+
+---
+
+## `desktop.components.panels.print_inset`
+
+源码：[`desktop/components/panels/print_inset.py`](../../desktop/components/panels/print_inset.py)
+
+「距页边」控件组：标题 / 页码两段文字各自的两行输入框。
+
+从 ``print_form.PrintFormMixin`` 拆出。这一段是**完整内聚**的一块：
+造控件 → 加行 → 取值 → 回填 → 刷新释义，都只围着 ``block`` 字典转。
+
+* 依赖：`self._add_row`（``base.StagePanel``）、
+  `self._title_inset` / `self._page_number_inset`（由 ``print_sections`` 创建）
+* 被依赖：``PrintSectionsMixin``（造行）、``PrintPanel``（取值 / 回填）
+
+⚠️ **拆出后仍然靠 `self._xxx` 共享状态**——这是 Mixin 拆分的固有代价，
+不要为了"看起来独立"去加构造参数：面板的 MRO 是线性的，共享 self
+反而是这里最简单正确的做法。共享点全部登记在
+``tests/selftests/print_form_split.py`` 的白名单里。
+
+### `class PrintInsetMixin`
+
+print 面板「距页边」控件组（由 PrintFormMixin 继承）。
 
 ---
 
@@ -470,7 +666,8 @@ print 面板的表单构建（由 PrintPanel 继承）。
 
 生成 PDF（print）阶段面板：表单状态（取值/回填/重置）。
 
-表单控件构建见 print_form.py，参数定义/解析见 print_params.py。
+表单控件构建见 print_form.py，参数解析见 print_params.py，
+默认值统一取 params_spec.DEFAULTS["print"]。
 input/output/workers/clean 由系统管理，不出现在表单中。
 
 ### `class PrintPanel(PrintFormMixin, StagePanel)`
@@ -486,9 +683,12 @@ input/output/workers/clean 由系统管理；表单构建见 print_form，取值
 | --- | --- |
 | `__init__(parent=None)` | 构建 print 面板：设滚动拉伸、联动标志并复位到默认。 |
 | `set_source_defaults(source_stem: str) -> None` | 切换任务时调用：以源 PDF 名派生默认值并重置表单。 |
+| `set_upstream_border(border) -> None` | 写入上游（第三步 rembg/crop）border，并刷新通用边距默认值显示。 |
 | `reset_to_default() -> None` | 恢复为该面板的内置默认参数（不依赖任何历史执行）。 |
 | `reset_edits() -> None` | 撤销本次修改：恢复到最近一次执行的参数。 |
-| `mark_applied(parameters: dict) -> None` | 记录最近一次执行使用的参数（供「重置」恢复）。 |
+| `mark_applied(parameters: dict) -> None` | 记录最近一次执行使用的参数（供「放弃本次修改」恢复）。 |
+| `set_inset(which: str, values) -> None` | 程序化设置某段文字的「距页边」（which=title / page_number）。 |
+| `inset(which: str) -> list \| None` | 读当前「距页边」：``[上,右,下,左]``；未勾选"自定义"时是 None。 |
 | `get_args() -> dict` | 收集 PDF 生成参数（校验颜色/边距，缺省回落内置默认）。 |
 
 ##### `__init__(parent=None)`
@@ -506,12 +706,26 @@ pdf_name 联动标志、记录最近应用参数占位，并调 reset_to_default
 - 古籍名称（标题文本）：xxx
 有历史执行记录时，进入第四步仍会回填最近一次配置，覆盖此默认值。
 
+##### `set_upstream_border(border) -> None`
+
+写入上游（第三步 rembg/crop）border，并刷新通用边距默认值显示。
+
+仅当用户尚未手动改过通用边距时，才把表单里的边距默认值同步为级联
+结果（上游非 0 → 0，否则 20），让用户「看见」默认值已变化；
+用户一旦手动改过，上游 border 变化不再覆盖其选择。
+
 ##### `reset_edits() -> None`
 
 撤销本次修改：恢复到最近一次执行的参数。
 
 与 reset_to_default（恢复内置默认）不同，本方法回到 mark_applied
 记录的上一轮执行参数；若从未执行过则退化为恢复默认。
+
+##### `set_inset(which: str, values) -> None`
+
+程序化设置某段文字的「距页边」（which=title / page_number）。
+
+values = [上,右,下,左]（mm）表示启用并填值；None 表示不启用（老行为）。
 
 ##### `get_args() -> dict`
 
@@ -526,7 +740,12 @@ input/output/workers/clean 不在此列；颜色或边距非法会抛 ValueError
 
 源码：[`desktop/components/panels/print_params.py`](../../desktop/components/panels/print_params.py)
 
-生成 PDF（print）阶段的参数定义与解析/序列化纯函数。
+生成 PDF（print）阶段的参数解析/序列化纯函数。
+
+⚠️ 默认值（``DEFAULT_PARAMS``）与下拉候选表的**唯一事实来源**已上移到
+``panels/params_spec.py``（各阶段共用一张表，避免同一参数在「控件初值 /
+``_apply_args`` 兜底 / ``reset_to_default``」三处各写一遍而漂移）。本模块只保留
+print 专用的解析/序列化纯函数，并把 ``DEFAULT_PARAMS`` 重新导出以兼容既有导入。
 
 表单 UI 见 print_form.py，面板状态见 print_panel.py。
 
@@ -542,6 +761,58 @@ input/output/workers/clean 不在此列；颜色或边距非法会抛 ValueError
 
 ---
 
+## `desktop.components.panels.print_sections`
+
+源码：[`desktop/components/panels/print_sections.py`](../../desktop/components/panels/print_sections.py)
+
+print 表单的五个分区（输出与纸张 / 页边距 / 标题 / 页码 / 过滤）。
+
+从 ``print_form.PrintFormMixin`` 拆出。每个 ``_build_xxx_section`` 只负责
+"往 root 里加一节的控件并把控件挂到 self 上"，**取值与回填不在这里**
+（见 print_panel）。
+
+* 依赖（均来自 ``PrintFormMixin`` / ``PrintPanel``）：
+  ``_section`` ``_add_row`` ``_line_edit`` ``_make_combo`` ``_spin_with_unit``
+  ``_color_row`` ``_add_node_row`` ``_clear_node_rows`` ``_sync_enabled``
+* 被依赖：``PrintFormMixin.build_form`` 依次调用本模块的五个 builder
+
+⚠️ 控件在**本模块**创建、却在 ``PrintPanel`` 里读写（``get_args`` /
+``_apply_args`` / ``_connect_preview_signals``）——这条跨模块的隐式契约由
+``tests/selftests/print_form_split.py`` 钉住：新增分区必须同时登记它挂到
+self 上的控件名，否则漏挂没人会发现。
+
+### `class PrintSectionsMixin(PrintInsetMixin)`
+
+print 面板的分区构建（由 PrintFormMixin 继承）。
+
+继承 ``PrintInsetMixin`` 是因为标题节/页码节都要调 ``_make_inset`` /
+``_add_inset_rows``；MRO 上它排在 ``PrintFormMixin`` 之后，通用工具
+（``_section`` 等）由最终类 ``PrintPanel`` 的线性化解析到，无需再继承。
+
+---
+
+## `desktop.components.panels.print_text_layout`
+
+源码：[`desktop/components/panels/print_text_layout.py`](../../desktop/components/panels/print_text_layout.py)
+
+「位置 / 文字方向」的固定取值：桌面端不给选，但历史参数要原样回显。
+
+从 ``print_form.PrintFormMixin`` 拆出。这一段**不碰任何控件**，只回答
+"这段文字的位置 / 方向该导出成什么"，是全类里依赖最少的一块：
+
+* 依赖：`self._fixed_layout_echo`（由 ``PrintPanel.__init__`` 初始化）
+* 被依赖：``PrintFormMixin``（从而 ``PrintPanel``）；``print_panel.get_args``
+  经 ``_fixed_layout`` 取值，但不 import 本模块
+
+拆出来的理由：它是**纯取值规则**（界面删了控件、参数键还在），和控件构建
+没有任何共同点；留在表单 Mixin 里只会让人以为"改界面会改到它"。
+
+### `class PrintTextLayoutMixin`
+
+print 面板「位置」「文字方向」的固定取值（由 PrintFormMixin 继承）。
+
+---
+
 ## `desktop.components.panels.rembg_panel`
 
 源码：[`desktop/components/panels/rembg_panel.py`](../../desktop/components/panels/rembg_panel.py)
@@ -553,7 +824,8 @@ input/output/workers/clean 不在此列；颜色或边距非法会抛 ValueError
 图片去底色阶段面板：area/border/印章等参数。
 
 整图 Otsu 二值化/灰度化去底（可保留印章）；area 决定裁剪方式、
-border 决定四周留白，参数经 get_args 收集后传给子进程。
+border 决定四周留白，参数经 get_args 收集后传给子进程。默认值统一取
+``params_spec.DEFAULTS["rembg"]``。
 
 #### 方法
 
@@ -565,8 +837,8 @@ border 决定四周留白，参数经 get_args 收集后传给子进程。
 
 收集去底色参数：area/type/offset/seal/border 等。
 
-area/type 取下拉首字符数字；border 留空表示 0，由 runner 在续跑时
-与 detect 框坐标实时合成裁剪区域。
+border 留空时按 area 取默认（area=1/2/3 → 0、area=4 → 不设），
+由 runner 在续跑时与 detect 框坐标实时合成裁剪区域。
 
 ---
 
@@ -731,12 +1003,15 @@ status 为失败/中断时，徽标保持对勾、副标题仍显示最近一次
 不成列，仅作为任务名 tooltip。open_detail / delete_request 信号
 分别携带任务 id。
 
+「序号」列 = **任务编号**（``0001``、``0002``…，即 ``task["id"]`` 与
+任务目录名），不是行号——排序/搜索/翻页都不改变它。
+
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(parent=None)` | 初始化表格：5 列布局、行高与表头对齐。 |
-| `set_data(rows: list[dict], start_index: int=1) -> None` | rows: [{id, name, source_path, created_at, stages}] |
+| `set_data(rows: list[dict]) -> None` | rows: [{id, name, source_path, created_at, stages}] |
 | `select_task(task_id: str) -> bool` | 选中并滚动到指定任务所在行，返回是否找到。 |
 
 ##### `__init__(parent=None)`
@@ -746,15 +1021,18 @@ status 为失败/中断时，徽标保持对勾、副标题仍显示最近一次
 表头对齐跟随各列内容（序号/时间居中、名称/状态左对齐，均垂直居中）；
 任务名称列自适应拉伸（占主要宽度），其余列按 _COLUMN_WIDTHS 固定宽度。
 
-##### `set_data(rows: list[dict], start_index: int=1) -> None`
+##### `set_data(rows: list[dict]) -> None`
 
 rows: [{id, name, source_path, created_at, stages}]
 
 stages 为 ``[{"short": "提取", "status": "success", "tip": "..."}]``；
 source_path 不单独成列，仅作任务名的悬浮提示。
-⚠️ ``start_index`` 是本页第一条在**整表**里的序号（1-based）。
-分页后「序号」列要显示全局序号，不能是页内行号——否则第二页又是
-从 1 开始，看着像数据重复。默认 1 保持不分页时的行为。
+
+⚠️ 「序号」列显示的是**任务自己的编号**（``task["id"]``，如 ``0001``），
+不是行号/页内序号：任务号是任务目录名、也是索引里的主键，与排序、
+搜索、分页都无关，用户拿它去 ``tasks/0001`` 就能对上号。
+（早先用「页内行号 + 全局偏移」，翻页/搜索后同一条任务的号会变，
+用户按号找目录会对不上。）
 
 ---
 
@@ -885,43 +1163,114 @@ cache_dir：页缩略图缓存目录（如 thumbnails/source、thumbnails/print�
 
 ---
 
-## `desktop.components.viewers.print_preview`
+## `desktop.components.viewers.print_layout_canvas`
 
-源码：[`desktop/components/viewers/print_preview.py`](../../desktop/components/viewers/print_preview.py)
+源码：[`desktop/components/viewers/print_layout_canvas.py`](../../desktop/components/viewers/print_layout_canvas.py)
 
-生成 PDF 预览：图片列表（IconMode 流式排列）。
+第四步「版面编辑器」交互画布：在 A4 纸上拖拽 / 缩放图片。
 
-展示待打印图片列表（第三步「提交本次任务」产出的最终图片），
-支持拖动排序、删除选中、插入图片；仅操作列表数据，不生成/删除图片文件。
+坐标体系与 ``utils.page_layout.plan_print_page`` 算出的 ``plan.image`` 完全一致
+——**页面毫米，左上原点，x 向右、y 向下**。控件把页面等比缩放到可视区，
+用 ``px_per_mm`` 在「页面 mm」与「控件像素」之间换算；用户拖拽/缩放得到的
+``[x_mm, y_mm, w_mm, h_mm]`` 直接写回 ``print.json`` 的 ``pages[].rect``，
+生成 PDF 时由 ``plan_print_page(image_rect=...)`` 原样采用——所见即所得。
 
-### `class PrintPreviewWidget(QWidget, WorkerHost)`
+交互（与 detect/rembg 的裁剪框编辑同款手感）：
+- 框内拖动 → 整体移动；四角手柄拖动 → 缩放；松手 emit ``rect_changed``；
+- 框始终被夹在页面内（夹到纸边即停），不会拖出页面；
+- 悬停手柄/框时显示对应光标。
 
-生成 PDF 页面列表：可拖动排序、删除选中、请求插入。
+**标题与页码照画**：它们是「版面」的一部分，去掉就无从判断图片挪动后会不会
+压到字（曾误判为「标题页码被去除」）。绘制复用 ``preview_worker`` 的
+``_draw_print_text``——与成品 PDF 同源，只是多了画布自身的居中偏移。
+标题/页码的落点只取决于 ``page_margins``，**不随图片框移动**，与 PDF 一致。
+
+图片在框内按目标矩形**拉伸**绘制，与成品 ``pdf.image(img, x, y, w, h)`` 的
+拉伸规则一致（PDF 用 w/h 直接定最终尺寸，不保比例）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| HANDLE_RADIUS | `6` |
+
+### `class PrintLayoutCanvas(QWidget)`
+
+A4 纸上的图片拖拽/缩放画布；rect_changed 发出页面 mm 坐标。
 
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(empty_hint: str='暂无图片，请先完成去底色', parent=None)` | 构建待打印列表与空状态占位。 |
-| `set_entries(entries: list[dict]) -> None` | 重建列表：entries = [{file, label}]。 |
+| `__init__(parent=None)` | — |
+| `set_page(page_w_mm: float, page_h_mm: float, image: QImage \| None, rect_mm: Sequence[float], plan=None) -> None` | 设置页面尺寸、待绘制图片与初始图片框（页面 mm）。 |
+| `current_rect() -> list[float]` | 当前图片框（页面 mm），供宿主落盘前读取。 |
+| `resizeEvent(event) -> None` | Qt 事件覆写：尺寸变化时重算布局 / 重新缩放。 |
+| `showEvent(event) -> None` | 显示时重算：首次进入第四步可能在布局完成前就 ``set_page`` 过， |
+| `mousePressEvent(event) -> None` | Qt 事件覆写：按下（选中 / 开始拖拽或绘制）。 |
+| `mouseMoveEvent(event) -> None` | Qt 事件覆写：移动（拖拽 / 缩放中的实时更新）。 |
+| `mouseReleaseEvent(event) -> None` | Qt 事件覆写：松开（提交本次编辑）。 |
+| `paintEvent(event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
+
+##### `set_page(page_w_mm: float, page_h_mm: float, image: QImage | None, rect_mm: Sequence[float], plan=None) -> None`
+
+设置页面尺寸、待绘制图片与初始图片框（页面 mm）。
+
+``plan`` 为 ``utils.page_layout.PrintPagePlan``：本控件据它画标题/
+页码与「已跳过」提示——版面编辑不能只看图片，否则无从判断挪动后
+会不会压到字。传 None 表示纯图片编辑（无标题/页码）。
+
+##### `showEvent(event) -> None`
+
+显示时重算：首次进入第四步可能在布局完成前就 ``set_page`` 过，
+那时 ``width()/height()`` 还是 0，``_px_per_mm`` 会退化为 1.0。
+仅靠 resizeEvent 兜不住「已分配尺寸但从未显示」的情况。
+
+---
+
+## `desktop.components.viewers.print_preview`
+
+源码：[`desktop/components/viewers/print_preview.py`](../../desktop/components/viewers/print_preview.py)
+
+生成 PDF（print）预览：左侧缩略图条 + 右侧单页效果预览。
+
+布局与前三步保持一致（``ImageViewerWidget`` / ``RembgPreviewWidget`` 的
+「左缩略图 + 右大图」），右侧不再是网格瀑布流：
+
+- **打印效果**：按右侧表单参数（纸张/方向/边距/标题/页码）把图片排进一
+  张纸里给用户在屏幕上看到——**只是效果，不执行、不提交、不生成 PDF**；
+- **原图**：待打印图片本身（第三步「提交本次任务」的最终图）。
+
+几何全部来自 ``utils.page_layout.plan_print_page``，而真正生成 PDF 的
+``functions/print.py`` 用的是同一个函数，所以预览与成品不会漂移。
+
+缩略图默认用条目图片本身（``ImageListWorker`` 走 QImageReader 缩放解码，
+等于现算缩略图）；传入 ``thumb_provider`` 时改用它给出的预生成小图。
+
+### `class PrintPreviewWidget(QWidget, ThumbsMixin)`
+
+生成 PDF 预览：左侧待打印缩略图条（可拖动排序）+ 右侧单页效果。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(empty_hint: str='暂无图片，请先完成去底色', params_provider=None, thumb_provider=None, parent=None)` | 构建工具栏 + 左缩略图条 + 右效果预览。 |
+| `set_entries(entries: list[dict]) -> None` | 重建列表：entries = [{file, label}]，可按条目自带 thumb 指定小图。 |
 | `entries() -> list[dict]` | 当前视觉顺序的富条目列表。 |
 | `count() -> int` | 列表当前条目数。 |
 | `set_pdf_path(path: str \| Path \| None) -> None` | 设置已生成 PDF 的路径；存在则启用下载按钮，否则禁用。 |
 | `remove_selected() -> None` | 删除所有选中条目，未选中则通过 hint 信号提示。 |
+| `refresh_display() -> None` | 右侧参数变化后按最新参数重画当前页（不生成任何文件）。 |
+| `refresh_layout() -> None` | 参数（纸张/方向）变化后刷新画布：保留已存坐标，仅重算页面尺寸。 |
 
-##### `__init__(empty_hint: str='暂无图片，请先完成去底色', parent=None)`
+##### `__init__(empty_hint: str='暂无图片，请先完成去底色', params_provider=None, thumb_provider=None, parent=None)`
 
-构建待打印列表与空状态占位。
+构建工具栏 + 左缩略图条 + 右效果预览。
 
-列表开启 InternalMove 以支持拖动排序；提示类反馈通过 hint 信号
-交给宿主弹 toast，而不是在控件内直接弹窗。
-
-##### `remove_selected() -> None`
-
-删除所有选中条目，未选中则通过 hint 信号提示。
-
-多选用 ExtendedSelection，按行倒序移除避免下标错位；删除后同步
-缓存顺序并 emit order_changed。
+params_provider: () -> print 参数字典；非法时抛异常（由本控件捕获
+    并退回「原图」显示）。为 None 时关闭「打印效果」项。
+thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 
 ---
 
@@ -969,14 +1318,40 @@ paths 为源图；rembg_dir 为去底色结果目录（存在才显示结果）�
 
 垂直缩略图条：图标在上、标签在下，加载完成前显示占位图。
 
+默认**不可拖动**（前三步的页面顺序由数据层决定）；第四步的待打印
+列表调 ``set_reorderable(True)`` 打开内部拖放排序，顺序变化发
+``order_changed``。
+
+⚠️ 条目尺寸只有一个事实来源（本类的 ``ICON_SIZE`` / ``GRID_SIZE`` /
+``STRIP_WIDTH`` / ``DECODE_EDGE``）：调用方解码缩略图时必须用
+``DECODE_EDGE`` 当"最长边"，不要写字面量 96——竖开本页面受**高度**
+约束，解码边取小了缩略图就只剩条目宽度的一半（缩略图看起来"没占满"）。
+
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(parent=None)` | 初始化条目尺寸与流式布局；点击条目发出 current_path_changed(行号, 路径)。 |
+| `__init__(parent=None)` | 初始化条目尺寸与流式布局；当前行变化发出 current_path_changed(行号, 路径)。 |
+| `set_reorderable(on: bool) -> None` | 打开/关闭条目内部拖放排序（第四步待打印列表用）。 |
 | `add_placeholder(text: str) -> None` | 追加一个纯文字占位条目（无图标，如"缩略图加载中…"）。 |
 | `add_page_item(label: str, path: str='') -> None` | 新增一个带占位图的条目，缩略图就绪后由 set_item_icon 替换。 |
 | `set_item_icon(index: int, image, path: str, label: str) -> None` | 替换某条目的图标/文字/路径（缩略图异步就绪后回调）。 |
+
+##### `__init__(parent=None)`
+
+初始化条目尺寸与流式布局；当前行变化发出 current_path_changed(行号, 路径)。
+
+⚠️ 必须监听 ``currentRowChanged`` 而不是只接 ``itemClicked``：
+键盘翻页（方向键 / PageUp / PageDown）与程序化 ``setCurrentRow``
+只会改 currentRow、**不产生点击**，只接 itemClicked 就会出现
+「翻页了但右侧预览不更新，切到别的视图模式再切回来才正常」。
+
+##### `add_page_item(label: str, path: str='') -> None`
+
+新增一个带占位图的条目，缩略图就绪后由 set_item_icon 替换。
+
+占位图按满框（ICON_SIZE）给 sizeHint——此时还不知道这张图的宽高比；
+真实缩略图一到就由 set_item_icon 按实际比例改小。
 
 ---
 
@@ -1074,13 +1449,14 @@ manifest 插入锚点；文件缺失时查看器行号与清单下标会错位�
 其余职责按功能分文件（均位于 desktop/pages/taskdetail/）：
 - view.DetailViewMixin       UI 组装（头部/步骤条/预览区/控制列/日志）
 - manifest.PageListMixin     页面清单、缩略图、页面增删
-- history.HistoryMixin       历史执行配置回填
+- history.HistoryMixin       历史执行配置回填（暂存优先）
+- params_draft.ParamDraftMixin 参数暂存（改过没执行也不丢）
 - submit.SubmitMixin         rembg 提交控制器与按钮状态
 - print_list.PrintListMixin  第四步待打印列表
 - runner.StageRunnerMixin    阶段执行（worker 子进程编排）
 - detect.DetectMixin         detect 检测控制
 
-### `class TaskDetailPage(StageRunnerMixin, SubmitMixin, PrintListMixin, HistoryMixin, DetectMixin, PageListMixin, DetailViewMixin, QWidget, WorkerHost)`
+### `class TaskDetailPage(StageRunnerMixin, SubmitMixin, PrintListMixin, ParamDraftMixin, HistoryMixin, DetectMixin, PageListMixin, DetailViewMixin, QWidget, WorkerHost)`
 
 任务详情页：由多个 Mixin 组合，固定四阶段流程。
 
@@ -1131,6 +1507,39 @@ detect 缓存/运行态引用并刷新清单与预览；防止参数或 run_id �
 
 页面自身、PDF 预览、打印预览、缩略图条分别持有 WorkerHost 的线程，
 只停页面的会让其余线程在解释器退出时被强杀（偶发崩溃/卡顿）。
+
+---
+
+## `desktop.pages.taskdetail.params_draft`
+
+源码：[`desktop/pages/taskdetail/params_draft.py`](../../desktop/pages/taskdetail/params_draft.py)
+
+任务详情页的「参数暂存」：用户改过、但还没执行的阶段参数，切走也还在。
+
+问题：进入某阶段时表单按**最近一次执行参数**回填（``history.py``）。用户改完
+参数却没执行就切阶段、切任务或关程序，改动全丢——再回来看到的还是上一次执行
+的值，等于白调一遍（尤其第四步参数多）。
+
+做法：
+- 面板把"用户改了参数"通过 ``StagePanel.param_edited`` 报上来（程序化回填由
+  面板自己的 ``_applying`` 挡住，不会误报）；
+- 这里按 400ms 防抖写 ``tasks/<任务号>/drafts/<阶段>.json``（``store.DraftMixin``）；
+- 进入阶段回填时的优先级是 **暂存 > 最近一次执行参数 > 内置默认**，
+  实现在 ``HistoryMixin._restore_stage_params``。
+
+为什么参数非法时不覆盖暂存：颜色/边距是逐字符输入的，"0,0" 这种半截状态
+``get_args()`` 会抛 ValueError；此时保留上一份**有效**暂存，比写进去一份
+用不了的值更合理（面板本来也会在说明行提示参数不合法）。
+
+### `class ParamDraftMixin`
+
+依赖宿主提供：store、task_id、control_stack。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `save_stage_draft(index: int) -> bool` | 暂存某阶段当前表单值；参数非法/没有任务时返回 False（不覆盖旧暂存）。 |
 
 ---
 
@@ -1343,10 +1752,32 @@ area             : 区域模式（1=左右分页，2/3=并集/对称画布）
 
 派生规则与 rembg 预览条目、print 待打印列表完全一致：
 - area=1 双框：拆 <页>-r / <页>-l 两条（古籍阅读顺序 r 在前）；
-- area=2/3 双框：取双框并集，单条输出；
-- 单框：area=2/3 走对称画布（parea=2），area=1 按普通框；
+- area=2/3 双框：合成一条（不再分栏）；
+- 单框：area=2/3 走对称画布，其余按普通框；
 - 无框：整页预览图透传。
 最终按 CLI natural sort 排序（同页 r 在 l 前）。
+
+⚠️ ``parea`` 是**原始 area**（不是"降级"后的合成 area），``boxes`` 是
+**原始检测框**（不是并集后的单框）——两者必须原样交给
+``compose_region_output``。原因见 ``entry_to_effect_spec``：并集框 +
+area=1 与「双框 + area=2/3」在 border 为空时**不等价**，曾导致第三步
+预览是整页、而提交产物与 PDF 被紧裁（用户报的「PDF 成了 area=1 效果」）。
+
+#### `entry_to_effect_spec(entry: dict, border) -> dict`
+
+提交条目 → worker 效果合成规格（run_print_stage/run_rembg_submit_stage 用）。
+
+⚠️ 必须把**原始检测框 + 原始 area** 交给 ``compose_region_output``，
+不能擅自"化简"成并集框 + area=1。``utils.box_geometry.build_output_layout``
+在 border 为空（padding=None）时两条分支并不等价：
+
+- area=2/3（含多框）→ ``full_page=True``：整页画布，各框**写回原位置**；
+- area=1            → 紧裁成「框 + border」的小画布。
+
+此前双框 area=2/3 被记成"并集框 + parea=1"，于是第三步预览（用原始框
++ 原始 area）显示整页、提交产物与 PDF 却是紧裁——用户报的「第三步 area=2、
+预览也是 area=2，生成的 PDF 却是 area=1 的效果」就是这么来的（紧裁观感
+与 area=1 的半页裁剪一致）。
 
 #### `plan_print_effects(list_entries: list[dict], composed: list[dict], rembg_dir: Path, submitted_labels: set[str], border) -> list[dict]`
 
@@ -1545,7 +1976,7 @@ config 需含 task_id/stage/run_id/args。结构与人类日志走两条通道�
 
 extract 阶段：直接把 PDF 提取到任务目录 stages/extract/（无嵌套布局）。
 
-复用 utils.pdf_utils.render_pages_parallel 的提取/并发实现（与 CLI 同一份），
+复用 utils.pdf_extract.render_pages_parallel 的提取/并发实现（与 CLI 同一份），
 但不走 CLI 的 <out_root>/<pdf名>/images 输出规则。
 
 ⚠️ 这里曾经直接调 process_page_batch(全部页码) —— 那是**串行**的，
@@ -1641,6 +2072,48 @@ boxes.json / sizes.json 读写。
 | `sizes_path(task_id: str) -> Path` | 页面原始尺寸文件：任务目录下的 sizes.json。 |
 | `save_image_size(task_id: str, image_key: str, width: int, height: int) -> None` | 记录某页图片的原始像素尺寸，作为框坐标与预览映射的坐标系基准。 |
 | `image_size(task_id: str, image_key: str) -> tuple[int, int] \| None` | 返回某页原始像素尺寸 (width, height)；无记录时返回 None。 |
+
+---
+
+## `desktop.store.drafts`
+
+源码：[`desktop/store/drafts.py`](../../desktop/store/drafts.py)
+
+参数暂存（``drafts/<阶段>.json``）：用户改过、但**还没执行**的阶段参数。
+
+为什么需要它：进入某个阶段时表单按「最近一次执行参数」回填（见
+``desktop/pages/taskdetail/history.py``），用户改完参数却没执行就切阶段 /
+切任务 / 关程序，改动全部丢失——再回来看到的还是上一次执行的值，等于白调。
+
+存什么：``get_args()`` 的结果（已归一化：边距是列表、颜色是 "r,g,b"、
+跳过页是列表…）。读取方是同一个面板的 ``apply_args()``，所以"存—取"天然
+按同一套键名对称，不需要第二份字段表。
+
+- 与 ``pages.json``/``print.json`` 一样是任务目录下的 JSON，删除任务即清掉；
+- 系统管理字段（input/output/workers/clean…）不入暂存，与历史回填的跳过
+  清单一致；
+- 参数非法时调用方**不写**（见 ``save_draft`` 的返回值），保留上一份有效暂存。
+
+### `class DraftMixin`
+
+``drafts/<阶段>.json`` 的读写。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `drafts_dir(task_id: str) -> Path` | 暂存目录：``tasks/<任务号>/drafts``。 |
+| `draft_path(task_id: str, stage: str) -> Path` | 某阶段的暂存文件：``drafts/<阶段>.json``。 |
+| `load_draft(task_id: str, stage: str) -> dict \| None` | 读取暂存参数；没有/格式不对返回 None。 |
+| `save_draft(task_id: str, stage: str, params: dict) -> bool` | 写入暂存参数，返回是否真的写了。 |
+| `clear_draft(task_id: str, stage: str) -> None` | 删除某阶段的暂存（用户点「恢复默认配置」并执行后想彻底归零时用）。 |
+
+##### `save_draft(task_id: str, stage: str, params: dict) -> bool`
+
+写入暂存参数，返回是否真的写了。
+
+任务目录已删除时跳过（与 ``save_pages`` 同规矩：不把已删任务重新
+创建出来）；``params`` 为空则视为"没有可暂存的内容"，返回 False。
 
 ---
 
@@ -1771,12 +2244,13 @@ progress 为 (done, total)，用于补齐最终计数。worker 的 finished 事�
 
 TaskStore：任务、阶段、页面标注的统一文件存储入口。
 
-### `class TaskStore(TaskMixin, RunMixin, PageManifestMixin, AnnotationMixin)`
+### `class TaskStore(TaskMixin, RunMixin, PageManifestMixin, AnnotationMixin, DraftMixin)`
 
-唯一数据入口：组合任务/运行/页面/标注四个 Mixin，统一读写文件存储。
+唯一数据入口：组合任务/运行/页面/标注/暂存五个 Mixin，统一读写文件存储。
 
 数据根目录下含 tasks/（每任务一子目录）及各 JSON 清单
-（tasks.json/runs.json/boxes.json/sizes.json/pages.json/print.json）。
+（tasks.json/runs.json/boxes.json/sizes.json/pages.json/print.json）；
+每任务目录下另有 drafts/<阶段>.json（用户改过但未执行的参数暂存）。
 
 #### 方法
 
@@ -1874,6 +2348,39 @@ rembg 最终目录；print 返回 print.pdf 所在目录。
 
 老任务（导入时复制失败）或备份被误删时靠它自愈；源也一起没了就
 返回 None，调用方负责提示。
+
+---
+
+## `desktop.ui.fonts`
+
+源码：[`desktop/ui/fonts.py`](../../desktop/ui/fonts.py)
+
+界面字体：统一的字体族解析与构造。
+
+从 `desktop/ui/widgets.py` 拆出（见 docs/dev/refactor-modularity.md §3.B）。
+`ui_font` 跟「控件」没什么关系，却被日志面板、分段开关等多处共用；留在
+widgets 里会让 `segmented_toggle` 反向 import widgets，形成循环导入。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| _FONT_FAMILY | `None` |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `ui_font(size: int=T.SIZE_BODY, bold: bool=False) -> QFont` | 统一的界面字体（族名 + 像素字号）。 |
+
+#### `ui_font(size: int=T.SIZE_BODY, bold: bool=False) -> QFont`
+
+统一的界面字体（族名 + 像素字号）。
+
+族名走 ``resolve_font_family()`` 解析出的系统实际字体，与
+``apply_app_style`` 给整个应用设置的字体保持一致；否则在没有
+``Microsoft YaHei UI`` 的机器上，这些控件会各自回退到默认字体，
+和应用其它文字对不上。
 
 ---
 
@@ -2022,6 +2529,56 @@ Markdown 里写的是 ``screenshots/guide/xxx.png`` 这样的相对路径，
 
 ---
 
+## `desktop.ui.segmented_toggle`
+
+源码：[`desktop/ui/segmented_toggle.py`](../../desktop/ui/segmented_toggle.py)
+
+分段开关控件：一行内互斥选择几个视图形态。
+
+从 `desktop/ui/widgets.py` 拆出（见 docs/dev/refactor-modularity.md §3.B）——
+它独占 170 行，且只被「去底色结果 / 原图」这类视图切换用到，与 widgets 里
+其余通用控件不是一回事。
+
+原 widgets.py 仍 re-export 本类，调用点无需改动。
+
+### `class SegmentedToggle(QWidget)`
+
+分段开关：一行内互斥选择几个视图形态。
+
+用于「去底色结果 / 原图」这类同一视图的形态切换。自绘而非用
+qfluentwidgets 的 ``SegmentedWidget``——后者是给页面导航设计的
+（底部指示条、无法单独禁用某一项），而这里需要「还没有去底色结果时
+禁用其中一项」的语义。
+
+**选中态要一眼看得出**，所以三处一起给对比度（只靠白底滑块是不够的，
+浅底卡片上白滑块几乎看不出来）：
+
+- 轨道用 ``SURFACE_SUNKEN``（比 ``SURFACE_SOFT`` 明显重一档的灰底），
+  白滑块压在上面才有边界；
+- 选中项文字用主色 ``ACCENT`` 且加粗，未选中项用 ``INK_SOFT``；
+- 禁用项转 ``INK_DISABLED``，比「未选中但可用」再淡一档，不会混淆。
+
+只有用户点击才发 ``current_changed``；``set_current`` 是程序化切换，
+不发信号（否则回流切换会自我递归）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(items: Sequence[Sequence[str]], parent=None)` | items 为 ``[(键, 文案), ...]``，默认选中第一项。 |
+| `current() -> str` | 当前选中项的键。 |
+| `set_current(key: str) -> None` | 程序化切换选中项，不发 ``current_changed``。 |
+| `set_item_enabled(key: str, enabled: bool) -> None` | 启用/禁用某一项；禁用项不可悬停、不可点击，文案变灰。 |
+| `is_item_enabled(key: str) -> bool` | 某一项当前是否可用。 |
+| `sizeHint() -> QSize` | Qt 覆写：建议尺寸。 |
+| `minimumSizeHint() -> QSize` | Qt 覆写：最小建议尺寸。 |
+| `mouseMoveEvent(event) -> None` | Qt 事件覆写：移动（拖拽 / 缩放中的实时更新）。 |
+| `leaveEvent(event) -> None` | Qt 事件覆写：鼠标移出时恢复常态。 |
+| `mousePressEvent(event) -> None` | Qt 事件覆写：按下（选中 / 开始拖拽或绘制）。 |
+| `paintEvent(event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
+
+---
+
 ## `desktop.ui.style`
 
 源码：[`desktop/ui/style.py`](../../desktop/ui/style.py)
@@ -2150,7 +2707,6 @@ QSS 里不会生效；它由 `desktop.components.log_panel.apply_log_view_style`
 
 | 名称 | 值 |
 | --- | --- |
-| _FONT_FAMILY | `None` |
 | CONTROL_HEIGHT | `33` |
 
 ### `class Card(QFrame)`
@@ -2240,42 +2796,6 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 | `minimumSizeHint() -> QSize` | Qt 覆写：最小建议尺寸。 |
 | `paintEvent(event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
 
-### `class SegmentedToggle(QWidget)`
-
-分段开关：一行内互斥选择几个视图形态。
-
-用于「去底色结果 / 原图」这类同一视图的形态切换。自绘而非用
-qfluentwidgets 的 ``SegmentedWidget``——后者是给页面导航设计的
-（底部指示条、无法单独禁用某一项），而这里需要「还没有去底色结果时
-禁用其中一项」的语义。
-
-**选中态要一眼看得出**，所以三处一起给对比度（只靠白底滑块是不够的，
-浅底卡片上白滑块几乎看不出来）：
-
-- 轨道用 ``SURFACE_SUNKEN``（比 ``SURFACE_SOFT`` 明显重一档的灰底），
-  白滑块压在上面才有边界；
-- 选中项文字用主色 ``ACCENT`` 且加粗，未选中项用 ``INK_SOFT``；
-- 禁用项转 ``INK_DISABLED``，比「未选中但可用」再淡一档，不会混淆。
-
-只有用户点击才发 ``current_changed``；``set_current`` 是程序化切换，
-不发信号（否则回流切换会自我递归）。
-
-#### 方法
-
-| 方法 | 说明 |
-| --- | --- |
-| `__init__(items: Sequence[Sequence[str]], parent=None)` | items 为 ``[(键, 文案), ...]``，默认选中第一项。 |
-| `current() -> str` | 当前选中项的键。 |
-| `set_current(key: str) -> None` | 程序化切换选中项，不发 ``current_changed``。 |
-| `set_item_enabled(key: str, enabled: bool) -> None` | 启用/禁用某一项；禁用项不可悬停、不可点击，文案变灰。 |
-| `is_item_enabled(key: str) -> bool` | 某一项当前是否可用。 |
-| `sizeHint() -> QSize` | Qt 覆写：建议尺寸。 |
-| `minimumSizeHint() -> QSize` | Qt 覆写：最小建议尺寸。 |
-| `mouseMoveEvent(event) -> None` | Qt 事件覆写：移动（拖拽 / 缩放中的实时更新）。 |
-| `leaveEvent(event) -> None` | Qt 事件覆写：鼠标移出时恢复常态。 |
-| `mousePressEvent(event) -> None` | Qt 事件覆写：按下（选中 / 开始拖拽或绘制）。 |
-| `paintEvent(event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
-
 ### `class EmptyState(QWidget)`
 
 浅色空状态：图标 + 主文案 + 补充说明 + 可选提示。
@@ -2310,25 +2830,15 @@ qfluentwidgets 的 ``SegmentedWidget``——后者是给页面导航设计的
 
 | 函数 | 说明 |
 | --- | --- |
-| `ui_font(size: int=T.SIZE_BODY, bold: bool=False) -> QFont` | 统一的界面字体（族名 + 像素字号）。 |
 | `apply_to(widget: QWidget, size: int=T.SIZE_BODY, bold: bool=False, color: str \| None=None) -> QLabel` | 给 QLabel 统一设置字体与颜色（颜色用调色板，不用样式表）。 |
 | `combo_box(items: Iterable[str \| Sequence[Any]] \| None=None, width: int \| None=None) -> ComboBox` | 创建与输入框同高的下拉框（统一表单的行高节奏）。 |
 | `icon_pixmap(icon, size: int=24, color: str=T.INK_FAINT) -> QPixmap` | 把 FluentIcon 渲染成指定颜色的 pixmap（用于空状态插画）。 |
-
-#### `ui_font(size: int=T.SIZE_BODY, bold: bool=False) -> QFont`
-
-统一的界面字体（族名 + 像素字号）。
-
-族名走 ``resolve_font_family()`` 解析出的系统实际字体，与
-``apply_app_style`` 给整个应用设置的字体保持一致；否则在没有
-``Microsoft YaHei UI`` 的机器上，这些控件会各自回退到默认字体，
-和应用其它文字对不上。
 
 #### `combo_box(items: Iterable[str | Sequence[Any]] | None=None, width: int | None=None) -> ComboBox`
 
 创建与输入框同高的下拉框（统一表单的行高节奏）。
 
-直接在表单里 ``ComboBox()`` 会比同列的 ``LineEdit``/``SpinBox`` 矮
+直接在表单里 ``ComboBox()`` 会比同列的 ``LineEdit``/``SafeSpinBox`` 矮
 6px（见 ``CONTROL_HEIGHT`` 的说明），所以下拉框一律用本函数建。
 
 ``items`` 传字符串序列时只填显示文案；传 ``(文案, 值)`` 二元组序列时
@@ -2513,6 +3023,14 @@ PDF/图片渲染：整页大图、页缩略图（带磁盘缓存）与去底色�
 
 区域合成（rembg 预览）在本线程内完成，避免主线程处理原始分辨率大图导致卡顿。
 
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| PRINT_PREVIEW_TARGET_EDGE | `1600` |
+| PRINT_PREVIEW_MIN_PX_PER_MM | `2.0` |
+| PRINT_PREVIEW_MAX_PX_PER_MM | `8.0` |
+
 ### `class PreviewWorker(QObject)`
 
 渲染 PDF 某一页，或 PDF 全部页缩略图（带磁盘缓存）。
@@ -2521,22 +3039,28 @@ PDF/图片渲染：整页大图、页缩略图（带磁盘缓存）与去底色�
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(path: Path, page: int=0, longest_edge: int \| None=1200, thumbnails: bool=False, cache_dir: Path \| None=None, effect: dict \| None=None)` | 构造预览渲染 worker。 |
+| `__init__(path: Path, page: int=0, longest_edge: int \| None=1200, thumbnails: bool=False, cache_dir: Path \| None=None, effect: dict \| None=None, print_spec: dict \| None=None)` | 构造预览渲染 worker。 |
 | `run() -> None` | 按构造参数渲染单页大图或批量页缩略图，发出 finished/thumbnail_ready。 |
 
-##### `__init__(path: Path, page: int=0, longest_edge: int | None=1200, thumbnails: bool=False, cache_dir: Path | None=None, effect: dict | None=None)`
+##### `__init__(path: Path, page: int=0, longest_edge: int | None=1200, thumbnails: bool=False, cache_dir: Path | None=None, effect: dict | None=None, print_spec: dict | None=None)`
 
 构造预览渲染 worker。
 
 PDF 渲染第 page 页（最长边 longest_edge，0 表示不缩放）；
 thumbnails=True 时渲染全部页缩略图到 cache_dir（命中则复用缓存）。
 effect 为去底色合成参数 {boxes, area, border}，仅对单图生效。
+print_spec 为第四步「打印效果」参数
+{"args": print 参数, "index": 0-based 页序, "total": 总页数, "name": 文件名}，
+非空时把图片按 utils.page_layout 的几何排进一张纸（仅内存，不落盘）。
 
 ### 模块函数
 
 | 函数 | 说明 |
 | --- | --- |
 | `compose_region_output(image: QImage, boxes: list, area: int, border_mm, dpi: int=300) -> list` | 按 crop/cropremove 的 area/border 规则，合成"效果预览图"列表。 |
+| `preview_px_per_mm(page_w_mm: float, page_h_mm: float, target_edge: int=PRINT_PREVIEW_TARGET_EDGE) -> float` | 按纸张尺寸给出效果预览的像素密度（px/mm）。 |
+| `preview_text_font(spec, px_per_mm: float) -> QFont` | 按 PrintTextSpec 与像素密度给出**已设好像素大小**的字体。 |
+| `compose_print_page(image: QImage, plan, px_per_mm: float \| None=None, annotate: bool=False) -> QImage` | 按 ``utils.page_layout.PrintPagePlan`` 合成"打印效果"位图。 |
 | `compose_outputs_horizontal(outputs: list, gap: int=12) -> QImage` | 多张输出横向拼接为一张展示图（灰底间隔，便于区分各框输出）。 |
 
 #### `compose_region_output(image: QImage, boxes: list, area: int, border_mm, dpi: int=300) -> list`
@@ -2550,6 +3074,28 @@ effect 为去底色合成参数 {boxes, area, border}，仅对单图生效。
 与原实现的一处行为修正：area=3 + 双框 + border=None 时，并集区域现在
 **写回原位置**（此前被搬到画布左上角）。规格见
 docs/functions/cropremove.md:57「area=3 → 单图，ROI 写回原位置」。
+
+#### `preview_text_font(spec, px_per_mm: float) -> QFont`
+
+按 PrintTextSpec 与像素密度给出**已设好像素大小**的字体。
+
+⚠️ 不能直接用 ``setPointSizeF(spec.font_size_pt)``：那是固定像素大小，
+而逐字步进是 ``char_h_mm × px_per_mm``（随密度缩放）。两处口径不同时，
+密度一变小（第四步版面编辑画布把整页缩到可视区，≈2 px/mm，远小于效果
+预览的 ≈5.4 px/mm），字仍是原大小、步进却按比例缩小 → **字叠在一起**。
+
+统一口径后：字高 = 字号(mm) × 密度，与步进同源，任何密度下都不重叠，
+且与成品 PDF 的真实字号（pt → mm）一致。
+
+#### `compose_print_page(image: QImage, plan, px_per_mm: float | None=None, annotate: bool=False) -> QImage`
+
+按 ``utils.page_layout.PrintPagePlan`` 合成"打印效果"位图。
+
+**只画内存位图，不写任何文件**——第四步的效果预览就是它；真正生成
+PDF 仍要走「生成 PDF」按钮（functions/print.py）。
+
+几何全部取自 ``plan``，而 ``plan`` 由 PDF 生成与预览共用，所以用户
+按预览调好的边距/纸张/标题，与最终 PDF 必然一致。
 
 ---
 
@@ -2605,5 +3151,26 @@ Mixin：在拥有者 widget 内启动一次性后台 worker 线程。
 
 factory() 负责造 worker，wire(worker, thread) 负责连信号；线程结束后
 worker 自动 deleteLater 并移出引用表，避免长会话下线程对象堆积。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `connect_queued(owner, signal, slot, thread=None) -> QObject` | worker 信号 → 主线程闭包的**唯一正确写法**，返回中继对象。 |
+
+#### `connect_queued(owner, signal, slot, thread=None) -> QObject`
+
+worker 信号 → 主线程闭包的**唯一正确写法**，返回中继对象。
+
+⚠️ 直接 ``signal.connect(lambda ...)`` 会让闭包在 **worker 线程**执行。
+里面一旦碰 widget（``strip.set_item_icon``、``view.clear_image``、
+``set_image``…），Qt 内部就在子线程启动定时器，控制台刷屏
+``QBasicTimer::start: Timers cannot be started from another thread``
+（每张缩略图一条——用户报告的就是这个）。连到**宿主 QObject 的绑定
+方法**（``worker.finished.connect(self._ready)``）本来就安全，无需本
+助手；闭包 / lambda 一律走这里。
+
+owner 为宿主 widget（主线程），thread 给了就在线程结束时回收中继，
+避免长会话反复加载累积出一批中继对象。
 
 ---

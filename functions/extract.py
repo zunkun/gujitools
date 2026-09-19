@@ -7,14 +7,14 @@ File: functions/extract.py
 处理流程：
 1. 计算输出根目录（支持文件/目录两种输入，--output 统一作为根目录）；
 2. 从命令参数收集 zoom、ext、pages、workers 等选项；
-3. 委托给 `utils.pdf_utils.run_on_input_directory` 执行实际渲染。
+3. 委托给 `utils.pdf_extract.run_on_input_directory` 执行实际渲染。
 
 注意：此功能不使用 FunctionBase 的并发执行引擎（不需要 _process_single_image），
-因为 PDF 渲染的并发逻辑在 `pdf_utils` 内部实现。
+因为 PDF 渲染的并发逻辑在 `utils.pdf_extract` 内部实现。
 """
 
 from functions.base import FunctionBase
-from utils.pdf_utils import run_on_input_directory
+from utils.pdf_extract import run_on_input_directory
 from utils.path_utils import get_extract_output_root
 
 
@@ -39,7 +39,7 @@ class ExtractFunction(FunctionBase):
         print(f"输出根目录：{self.outpath}")
 
     def execute(self):
-        """执行 PDF 提取：收集参数并委托给 pdf_utils。
+        """执行 PDF 提取：收集参数并委托给 utils.pdf_extract。
 
         输出规则：
         - 每个 PDF 的输出位置为 <out_root>/<pdf_name>/<default_temp_name>/，
@@ -51,7 +51,10 @@ class ExtractFunction(FunctionBase):
 
         # 收集命令行参数
         zoom = self.command_args.get("zoom", 1)
-        # 默认与 CommandArgs 一致：True（自适应降级，见 pdf_utils._embedded_page_image）
+        # 整页渲染的 DPI 下限：只影响渲染路径（内嵌图按原图落盘）。
+        # 用 `or` 兜底 —— 配置里显式写 dpi: null 时 get(k, 300) 会拿到 None。
+        dpi = self.command_args.get("dpi") or 300
+        # 默认与 CommandArgs 一致：True（自适应降级，见 pdf_extract._embedded_page_image）
         quick = self.command_args.get("quick", True)
         ext = self.command_args.get("ext", "jpg")
         pages = self.command_args.get("pages")
@@ -79,6 +82,7 @@ class ExtractFunction(FunctionBase):
                 clean=clean,
                 subdir_name=self.default_temp_name,  # 传递图片子目录名
                 reporter=self.reporter,  # 结构化汇报：进度 + 页尺寸
+                dpi=dpi,
             )
         except Exception as e:
             # 必须向上抛：原来只 print 后正常返回，CLI 会打印

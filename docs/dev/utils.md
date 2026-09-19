@@ -248,6 +248,15 @@ GUI 的预览控件也要画同样的框。配色与命名必须一致，否则�
 - 页面宽度 × zoom > 6000 → zoom = 6000 / 页面宽度；
 - 否则 → 使用用户指定值。
 
+### `render_zoom(page_width, requested_zoom=1, dpi=300) -> float`
+
+**整页渲染**实际使用的缩放因子 = `max(calculate_zoom(...), dpi/72)`，
+再受 6000px 封顶。解决「72 DPI 陷阱」：zoom=1 时 1pt 渲染成 1px（=72 DPI），
+矢量 PDF 这样提取出来必糊。
+
+⚠️ 只有渲染路径用它。内嵌图（quick）路径仍用 `calculate_zoom`：原图字节
+直拷，不按 DPI 重采样，也不该因为下限变严而被判成低清降级。
+
 ### `process_page_batch(pdf_path, page_indices, out_dir, zoom, ext, quick, progress) -> List[bool]`
 
 处理一批 PDF 页面，返回每页成功状态。支持 quick 模式（优先提取内嵌图片）和标准模式（渲染整页）。

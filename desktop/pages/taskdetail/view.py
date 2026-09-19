@@ -12,7 +12,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QProcess, Qt
+from PySide6.QtCore import QProcess, QTimer
 from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QStackedWidget, QTabWidget, QVBoxLayout, QWidget,
 )
@@ -134,13 +134,19 @@ class DetailViewMixin:
         self.rembg_viewer = RembgPreviewWidget()
         self.preview_stack.addWidget(self.rembg_viewer)
 
-        # print：图片瀑布流列表（可拖动排序/删除/插入）
+        # print：左缩略图条 + 右「打印效果」预览（可拖动排序/删除/插入）
+        # ⚠️ params_provider 必须传：缺了它预览永远显示"未接入打印参数，已显示原图"，
+        # 标题/页码/纸张效果一概看不到（组件自测传了参数，测不出宿主漏接线）。
+        self._print_dirty = False  # 版面编辑器改过坐标、尚未重新生成 PDF
         self.print_preview = PrintPreviewWidget(
-            empty_hint="暂无图片，请先在第三步「生成预览」并「提交本次任务」"
+            empty_hint="暂无图片，请先在第三步「生成预览」并「提交本次任务」",
+            params_provider=self._print_params,
         )
         self.print_preview.order_changed.connect(self._save_print_order)
         self.print_preview.insert_requested.connect(self._insert_print_images)
         self.print_preview.download_requested.connect(self._download_print_pdf)
+        # 版面编辑：某一页图片坐标被拖拽/缩放后落盘 print.json 并标脏
+        self.print_preview.layout_changed.connect(self._on_print_layout_changed)
         self.print_preview.hint.connect(
             lambda message: self._toast("info", "提示", message)
         )
@@ -185,6 +191,9 @@ class DetailViewMixin:
             self._update_submit_button(
                 bool(self.process and self.process.state() != QProcess.NotRunning)
             )
+            # 第三步 border 级联第四步默认边距：border 变化时把上游 border
+            # 同步给 print 面板（用户未手动改边距时，默认值随级联变 0/20）
+            self._sync_print_margin_default()
 
         rembg_panel.area.currentTextChanged.connect(_on_rembg_panel_changed)
         rembg_panel.border.textChanged.connect(_on_rembg_panel_changed)
@@ -195,6 +204,61 @@ class DetailViewMixin:
         rembg_panel.sealcolor.toggled.connect(_on_rembg_panel_changed)
         rembg_panel.sealarea.valueChanged.connect(_on_rembg_panel_changed)
         rembg_panel.sealmin_sat.valueChanged.connect(_on_rembg_panel_changed)
+
+        # print 面板：参数变化 → 效果预览按新参数重画（只是重画内存位图，
+        # 不执行、不提交、不生成 PDF）。防抖 250ms：边距/颜色是逐字符输入，
+        # 每次都重载一遍大图会明显卡顿。
+        print_panel = self.control_stack.widget(3)
+        self._print_preview_timer = QTimer(self)
+        self._print_preview_timer.setSingleShot(True)
+        self._print_preview_timer.setInterval(250)
+        self._print_preview_timer.timeout.connect(self.print_preview.refresh_display)
+        print_panel.params_changed.connect(self._print_preview_timer.start)
+        # 初次进入第四步前，先按当前第三步 border 把默认边距级联一次
+        self._sync_print_margin_default()
+
+    def _print_params(self) -> dict:
+        """第四步打印参数（供「打印效果」预览）：直接读面板表单。
+
+        颜色/边距填到一半时 ``get_args()`` 会抛 ValueError，这里**不吞**——
+        由 ``PrintPreviewWidget`` 捕获后退回「原图」并在说明行给出原因，
+        避免用户每敲一个字符就弹窗。
+        """
+        return self.control_stack.widget(3).get_args()
+
+    def _sync_print_margin_default(self) -> None:
+        """把第三步 rembg 面板的当前 border 同步给第四步面板做默认级联。
+
+        读取 rembg 面板的 border 原始文本（不触发其 get_args 校验，避免
+        填写中途的非法值抛错），交给 print 面板自行决定是否覆盖默认边距。
+        """
+        try:
+            rembg_panel = self.control_stack.widget(2)
+            border = (rembg_panel.border.text() or "").strip() or None
+        except Exception:
+            border = None
+        try:
+            self.control_stack.widget(3).set_upstream_border(border)
+        except Exception:
+            pass
+
+    def _on_print_layout_changed(self, index: int, rect: list) -> None:
+        """版面编辑器改了某页坐标：落盘 print.json 并标脏，提示可重新生成 PDF。
+
+        落盘走 ``_save_print_order``（直接序列化当前条目，rect 已随条目携带），
+        下次点「生成 PDF」时 runner 会从 print.json 收集 page_rects 注入生成。
+        """
+        if not self.task_id:
+            return
+        self._save_print_order(silent=True)  # 拖拽频繁落盘，不打列表日志
+        self._print_dirty = True
+        self.stage_status.setText("● 版面已修改，点击「生成 PDF」生效")
+        apply_to(self.stage_status, T.SIZE_CAPTION, color=T.INK_SOFT)
+        rx, ry, rw, rh = (list(rect) + [0, 0, 0, 0])[:4]
+        self.log_view.append(
+            f"第 {index + 1} 页版面已更新（x={rx:.0f}, y={ry:.0f}, "
+            f"w={rw:.0f}, h={rh:.0f} mm），点击「生成 PDF」生效"
+        )
 
     def _build_history_controls(self, control: QVBoxLayout) -> None:
         # ---- 历史执行配置选择 ----

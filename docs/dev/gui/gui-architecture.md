@@ -28,7 +28,8 @@ desktop/
       page.py           #     骨架（任务切换/阶段切换/状态刷新），组合下列 Mixin
       view.py           #     UI 组装（头部/步骤条/预览区/控制列/日志）
       manifest.py       #     页面清单、缩略图、页面增删
-      history.py        #     历史执行配置回填
+      history.py        #     历史执行配置回填（暂存优先）
+      params_draft.py   #     参数暂存：改过没执行也不丢
       submit.py         #     rembg 提交控制器与按钮状态
       print_list.py     #     第四步待打印列表
       runner.py         #     阶段执行（worker 子进程编排）
@@ -42,7 +43,8 @@ desktop/
     step_bar.py             # 顶部步骤条：编号/对勾徽标 + 连接箭头 + 状态色（自绘，不用样式表）
     task_table.py           # 任务表格：子任务状态用状态胶囊组显示
     log_panel.py            # 执行日志：底部状态条 + 点击唤出的浮层（出错自动标红）
-    panels/print_params.py  # print 参数定义与解析/序列化纯函数
+    panels/params_spec.py   # 各阶段默认参数与下拉候选表（唯一默认值来源，见下）
+    panels/print_params.py  # print 参数解析/序列化纯函数（默认值转发自 params_spec）
     panels/print_form.py    # print 表单控件构建（分区与控件组装）
     panels/print_nodes.py   # 标题切换节点列表（逐行堆叠，高度随行数自适应）
     panels/print_panel.py   # print 面板状态（取值/回填/重置）
@@ -62,7 +64,34 @@ desktop/
   不过 **`detect` 的检测算法仍复用 `functions.detect.detect_page_boxes`**——
   只有「输出目录规则」被绕开，算法没有第二份实现。
 
-### 2.1 导入约定：一律使用绝对导入
+### 2.1 阶段参数默认值：`panels/params_spec.py` 是唯一来源
+
+四个阶段面板的**默认参数**与**下拉候选表**集中在 `components/panels/params_spec.py`：
+面板的「控件初值」「`_apply_args` 缺键兜底」「`reset_to_default`」三处都从
+`DEFAULTS[stage]` 取，不再各写一份字面量。
+
+散着写的代价是漂移——`page_number_font_size` 曾真的存在两套值：默认表 18、
+`_apply_args` 兜底 12（源头还是 `docs/functions/print.md` 的参数表写着 12，
+面板照抄了文档）。用户点「恢复默认」得到 18，历史配置缺这个键时回填成 12。
+
+`params_spec` 与 `core.command_spec` 的分工：
+
+- `core/command_spec.py` 是**命令行**参数的唯一事实来源；
+- `params_spec.DEFAULTS` 是**桌面表单**的那一份。extract/rembg 直接以
+  `COMMAND_SPECS[stage].defaults` 为底、只覆盖表单侧特有的键（如 `pages` 的
+  `None` → 空串），CLI 改默认值时桌面自动跟随；
+- print 段刻意取 `PRINT_FORM_DEFAULTS`（比 CLI 更"已开启"：有书名、有页码）。
+
+配套便利函数 `base.default_for(parameters, defaults, key)`：缺键**或值为 `None`**
+时回落默认。不能写成 `parameters.get(key, defaults[key])`（存着 `{"dpi": null}`
+时兜底永不生效），也不能写成 `parameters.get(key) or 默认`（合法的 `False`/`0`
+会被误判成"没值"）。
+
+守卫见 `tests/selftests/params_spec.py`：源码层（不许再写 `p.get("键", 字面量)`）、
+覆盖层（`get_args()` 的键必须登记）、行为层（恢复默认 == 默认表）、
+文档层（`docs/functions/print.md` 的数值默认值与 `command_spec` 一致）。
+
+### 2.2 导入约定：一律使用绝对导入
 
 全项目（`desktop/`、`cli/`、`functions/`、`utils/`）**不使用相对导入**
 （`from .x` / `from ..x`），统一写自顶向下的完整路径：
@@ -105,6 +134,7 @@ guji/
     runs.json           # 各阶段执行历史（最新在前，≤20 条）
     boxes.json          # 检测框 {页stem: {boxes:[左,右], origin: auto|manual}}
     sizes.json          # 页面图片原始尺寸 {页stem: [w, h]}
+    drafts/<阶段>.json  # 参数暂存：用户改过但还没执行的阶段参数（进页面时优先回填）
     runs/               # 子进程执行配置 run-*.json / detect-config.json
     thumbnails/
       source/0001.jpg…  # 源 PDF 页缩略图（256px，导入即生成，永不清理）
@@ -144,6 +174,13 @@ guji/
 
 - **重负载隔离**：图像解码、区域合成、YOLO 推理全部在 worker 线程/子进程；
   主线程只接收最终小图。
+- **⚠️ 跨线程连接必须走 `connect_queued`**：PySide6 里
+  `signal.connect(lambda)` 是**直接连接**（lambda 没有接收者 QObject），
+  槽会跑在 worker 线程；加 `QueuedConnection` 也没用（functor 连接的接收者
+  仍记成 sender，事件照样排回 worker 线程）。闭包里一旦碰 widget，Qt 就在
+  子线程启动定时器 → 刷屏 `QBasicTimer::start: Timers cannot be started
+  from another thread`。连到宿主 QObject 的**绑定方法**本来就是安全的，
+  闭包一律用 `desktop.workers.connect_queued(owner, signal, slot, thread)`。
 - **缩略图直读**：列表条目图标读取 256px 预生成缩略图（QImageReader 缩放解码），
   不解码原始扫描图；rembg 预览的区域合成也以缩略图/worker 完成为主。
 - **防重复**：阶段切换时页面清单未变化则跳过重建；加载请求带令牌，

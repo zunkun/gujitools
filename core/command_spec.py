@@ -41,7 +41,10 @@ DEFAULT_PAGE_MARGINS: List[int] = [int(v) for v in _DEFAULT_PAGE_MARGINS]
 
 # ---------------------------------------------------------------- CSS 简写
 
-def normalize_margin(value: Any, default: Optional[List[float]] = None) -> Optional[List[float]]:
+
+def normalize_margin(
+    value: Any, default: Optional[List[float]] = None
+) -> Optional[List[float]]:
     """把 CSS 风格的 margin 简写标准化为 [上, 右, 下, 左]。
 
     实现委托 utils.margin_utils.normalize_margin（最低层），使命令行、
@@ -93,6 +96,7 @@ def _check_choice(value: Any, allowed: Tuple, label: str) -> None:
 
 # ---------------------------------------------------------------- 规格描述
 
+
 @dataclass(frozen=True)
 class CommandSpec:
     """单个命令的参数规格。
@@ -111,9 +115,13 @@ class CommandSpec:
 
 # ---------------------------------------------------------------- 各命令校验器
 
+
 def _validate_extract(args) -> None:
     if args.get("zoom") < 1:
         raise ValueError(f"zoom 缩放因子必须 >=1，当前={args.get('zoom')}")
+    dpi = args.get("dpi")
+    if dpi is not None and not (72 <= float(dpi) <= 1200):
+        raise ValueError(f"dpi 必须在 72~1200 之间，当前={dpi}")
     if args.get("batch_size") < 1:
         raise ValueError(f"batch‑size 必须 >=1，当前={args.get('batch_size')}")
     _check_choice(args.get("ext"), IMAGE_EXTS, "ext")
@@ -171,16 +179,15 @@ def _validate_detect(args) -> None:
     （`functions.detect.DetectFunction` / `detect_page_boxes`）当中间步骤
     使用时必须保持可用。
     """
-    _check_choice(str(args.get("ext") or "png").lower().lstrip("."),
-                  ("jpg", "png", "tiff"), "ext")
+    _check_choice(
+        str(args.get("ext") or "png").lower().lstrip("."), ("jpg", "png", "tiff"), "ext"
+    )
 
 
 def _validate_print(args) -> None:
     paper = args.get("paper_size")
     if not isinstance(paper, str) or paper.strip().upper() not in PAPER_SIZES:
-        raise ValueError(
-            f"paper_size 仅支持 {'、'.join(PAPER_SIZES)}，当前={paper}"
-        )
+        raise ValueError(f"paper_size 仅支持 {'、'.join(PAPER_SIZES)}，当前={paper}")
     _check_choice(args.get("orientation"), ORIENTATIONS, "orientation")
 
     pdf_name = args.get("pdf_name")
@@ -199,6 +206,17 @@ def _validate_print(args) -> None:
     _check_choice(args.get("page_number_position"), POSITIONS, "page_number_position")
     for key in ("title_orientation", "page_number_orientation"):
         _check_choice(args.get(key), TEXT_ORIENTATIONS, key)
+
+    # 标题/页码「距页边」：与 page_margins 同一套校验，但允许为空（未配置）
+    for key in ("title_margins", "page_number_margins"):
+        val = args.get(key)
+        if val is None or (isinstance(val, str) and not val.strip()):
+            continue
+        parsed = normalize_margin(val, default=None)
+        if parsed is None:
+            raise ValueError(f"{key} 应为 1/2/3/4 个数字（mm），当前={val}")
+        if any(v < 0 for v in parsed):
+            raise ValueError(f"{key} 中的值不能为负数")
 
     start, end = args.get("page_number_start_page"), args.get("page_number_end_page")
     if start is not None and (not isinstance(start, int) or start < 1):
@@ -232,6 +250,97 @@ def _validate_print(args) -> None:
 
 # ---------------------------------------------------------------- print 默认值
 
+# 标题/页码「距纸张边界」的默认值（mm，[上,右,下,左]）。
+#
+# 只有**两处**输入，别再散出第三个数字：
+#   - 横向（左/右）：用户指定 10mm —— 不再跟页边距走除法（旧行为是左页
+#     left/2、右页 right-6）。
+#   - 纵向：跟随 `DEFAULT_PAGE_MARGINS` —— 标题的上边距 = page_margins[0]、页码的
+#     下边距 = page_margins[2]，这样文字与图片**贴同一条边**（用户要求）。
+#     缺席的那一侧填 0（标题不涉外边距、页码不涉上边距），底层读不到它。
+#
+# ⚠️ 改 `page_margins` 的默认值，这里的纵向会跟着变——这是刻意的，只有一份定义。
+TEXT_SIDE_MARGIN_MM: float = 10.0
+
+# 标题：上跟 page_margins[0]，左右各 TEXT_SIDE_MARGIN_MM，下缺席。
+TITLE_MARGIN_DEFAULTS: List[float] = [
+    float(_DEFAULT_PAGE_MARGINS[0]),
+    TEXT_SIDE_MARGIN_MM,
+    0.0,
+    TEXT_SIDE_MARGIN_MM,
+]
+
+# 页码：下跟 page_margins[2]，左右同标题，上缺席。
+PAGE_NUMBER_MARGIN_DEFAULTS: List[float] = [
+    0.0,
+    TEXT_SIDE_MARGIN_MM,
+    float(_DEFAULT_PAGE_MARGINS[2]),
+    TEXT_SIDE_MARGIN_MM,
+]
+
+def border_has_padding(border) -> bool:
+    """上游 crop/rembg 的 border 是否真正加过留白（非 None/空/全 0）。
+
+    用于 print 第四步的边距级联：上游已设真实留白时，第四步的通用边距
+    默认回落为 0，避免「图片内留白 + 页面边距」双重留白。border 的取值
+    形态同 ``validate_border``：``None`` / ``""`` / ``"30"`` / ``"20,30"`` /
+    ``"20,30,25,35"``（逗号可用中文逗号）。
+    """
+    if border is None:
+        return False
+    text = str(border).strip()
+    if not text:
+        return False
+    parts = [p for p in text.replace("，", ",").split(",") if p.strip()]
+    if not parts:
+        return False
+    try:
+        return any(float(p) > 0 for p in parts)
+    except ValueError:
+        return False
+
+
+#: area=4「整页 / 不检测」：整页 `[0,0,W,H]` 即唯一文本框
+AREA_WHOLE_PAGE = 4
+
+
+def effective_border_default(area=None):
+    """第三步（crop / rembg / cropremove）``border`` 的默认值——**随 area 变**。
+
+    - ``area ∈ {1,2,3}`` → ``"0"``：第四步会把图重新排进 A4，第三步再外扩
+      留白（如 30mm）等于「图片内留白 + 页面边距」双重留白，还会让第四步
+      拿到的图尺寸失真，因此默认**不加留白**；
+    - ``area = 4``（整页不检测）→ ``None``：整页输出既不裁剪也无留白可言，
+      border 对它没有意义，保持原默认。
+
+    ⚠️ 只在用户**没给** border（None / 空串）时生效；显式给值一律以用户为准。
+    ⚠️ ``area=2/3`` 下 ``"0"`` 与 ``None`` **不等价**：``"0"`` 输出「文本框
+    联合外边界」的紧裁，``None`` 输出整页原尺寸——这是用户确认过的取舍
+    （第四步会重新排版，紧裁后的图在 A4 上更好排，见 docs/functions/crop.md）。
+    """
+    try:
+        value = int(area)
+    except (TypeError, ValueError):
+        return "0"
+    if value == AREA_WHOLE_PAGE:
+        return None
+    return "0"
+
+
+def effective_page_margin_default(upstream_border=None) -> List[float]:
+    """print 第四步的通用边距默认值（受上游 border 级联）。
+
+    - 上游 crop/rembg 已设真实留白（``border_has_padding`` 为真）→ 默认 ``[0,0,0,0]``；
+    - 否则（第四步独立运行、CLI、或上游 border 为 None/0）→ 保持内置默认 20。
+
+    ⚠️ 只决定「默认值」：用户在表单/CLI 显式给了 ``page_margins`` 时一律以
+    用户值为准（见 ``functions/print.py`` 的 ``or`` 兜底）。
+    """
+    if border_has_padding(upstream_border):
+        return [0.0, 0.0, 0.0, 0.0]
+    return list(DEFAULT_PAGE_MARGINS)
+
+
 # GUI 表单与命令行共用的 print 默认参数。
 # 注意：pdf_name 与 store.print_output_pdf 的默认文件名保持一致。
 PRINT_DEFAULTS: Dict[str, Any] = {
@@ -243,26 +352,49 @@ PRINT_DEFAULTS: Dict[str, Any] = {
     "right_page_margins": None,
     "title_printing": False,
     "title_text": "",
-    "title_font_size": 18,
+    "title_font_size": 20,
     "title_color": "0,0,0",
     "title_position": "top",
     "title_orientation": "vertical",
+    # 标题/页码「距纸张边界」的距离（mm，[上,右,下,左]）。
+    # 默认值见上方 TITLE_MARGIN_DEFAULTS / PAGE_NUMBER_MARGIN_DEFAULTS：
+    # 横向 10mm，纵向跟随 page_margins（标题贴 top、页码贴 bottom）。
+    # ⚠️ 显式写 `null` 才走旧行为分支（`utils.page_layout._text_anchor`
+    # 的 `insets is None`），老配置若想保持原样就写 null。
+    "title_margins": list(TITLE_MARGIN_DEFAULTS),
+    "page_number_margins": list(PAGE_NUMBER_MARGIN_DEFAULTS),
     "title_switch_nodes": None,
     "page_number_printing": False,
     "page_number_start_page": 1,
     "page_number_end_page": None,
     "page_number_base": 0,
-    "page_number_font_size": 18,
+    "page_number_font_size": 20,
     "page_number_color": "0,0,0",
     "page_number_position": "bottom",
     "page_number_orientation": "vertical",
     "skip_pages": None,
     "files": None,
+    # 预览辅助：在 GUI 第四步「打印效果」预览里用虚线框出图片位置，
+    # 并在四边标注边距（mm）。只画在预览，不进入成品 PDF（交付书保持干净）。
+    "annotate_margins": False,
+    # 运行时由 GUI runner 注入的上游（第三步 rembg/crop）border：用于 print
+    # 第四步的通用边距级联默认（border 非 0 → 默认 0）。CLI 不传（默认 None），
+    # 故 CLI 第四步普通边距保持内置默认 20。不出现在表单/模板里。
+    "upstream_border": None,
+    # 第四步「版面编辑器」逐图坐标覆盖：{页号(1-based): [x_mm, y_mm, w_mm, h_mm]}。
+    # 由 GUI 从 print.json 的 pages[].rect 收集后注入；给定页直接用它作图片框，
+    # 不再由 page_margins 推导。CLI 不传（默认 None）→ 全部走自动排版。
+    "page_rects": None,
 }
 
 # GUI 表单的初次默认值（面向用户，比 CLI 更「已开启」一些）
+#
+# 与 CLI 的差异**只有「开关类」**：标题/页码默认开启、给一个示例书名和文件名。
+# 数值类参数（字号、边距等）一律**不在这里重复**——直接吃 `PRINT_DEFAULTS`，
+# 改一处两边同时生效（用户要求：默认值只保留一份，三层保持一致）。
 PRINT_FORM_DEFAULTS: Dict[str, Any] = {
-    **PRINT_DEFAULTS,
+    # 列表值单独拷一份：两个表不再共享同一个 list 对象，避免就地修改串味
+    **{k: (list(v) if isinstance(v, list) else v) for k, v in PRINT_DEFAULTS.items()},
     "title_text": "古籍名称",
     "pdf_name": "print.pdf",
     "title_printing": True,
@@ -279,6 +411,10 @@ COMMAND_SPECS: Dict[str, CommandSpec] = {
         name="extract",
         defaults={
             "zoom": 1,
+            # 整页渲染的 DPI 下限。矢量 PDF（没有内嵌图）在 zoom=1 时只会
+            # 渲染出 72 DPI，去底色后打回 PDF 必然发虚，因此默认补到 300。
+            # 取内嵌图时按原图字节落盘，不受这个值影响。
+            "dpi": 300,
             "quick": True,
             "ext": "jpg",
             "pages": None,

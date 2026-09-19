@@ -29,7 +29,15 @@ def run(ctx) -> None:
 
     panels = [d.control_stack.widget(i) for i in range(d.control_stack.count())]
     combos = [(p.stage, wdg) for p in panels for wdg in p.findChildren(_QFComboBox)]
-    ok("阶段面板内存在下拉框", len(combos) >= 6, f"实际 {len(combos)} 个")
+    # print 面板原有「纸张尺寸/纸张方向/位置/文字方向×2」共 6 个下拉；
+    # 标题与页码的「位置」「文字方向」已删除（固定为上/下 + 竖排，
+    # 见 PrintFormMixin.FIXED_TEXT_LAYOUT），只剩纸张那 2 个。
+    # 下限取 4（= 各面板至少还有自己的下拉），同时精确钉住 print 面板的数量。
+    ok("阶段面板内存在下拉框", len(combos) >= 4, f"实际 {len(combos)} 个")
+    _print_combos = [wdg for stage, wdg in combos if stage == "print"]
+    ok("print 面板只剩纸张尺寸/纸张方向两个下拉（位置/文字方向已删除）",
+       len(_print_combos) == 2,
+       f"实际 {len(_print_combos)} 个：{[c.currentText() for c in _print_combos]}")
     tall_wrong = {f"{s}:{wdg.currentText()}": wdg.height() for s, wdg in combos
                   if wdg.height() != base_h}
     ok("面板下拉框与同列输入框等高", not tall_wrong, f"偏离：{tall_wrong}")

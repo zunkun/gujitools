@@ -6,7 +6,9 @@
 - `image_io`: cv2 读写封装，规避中文路径下 `cv2.imread` 返回 None 的问题。
 - `file_utils`: 图片文件收集与尺寸校验。
 - `yolo_utils`: YOLO 模型加载与左右文本框检测。
-- `pdf_utils`: PDF 页面渲染为图片（多线程批量处理）。
+- `pdf_extract`: PDF 页面渲染为图片（多线程批量处理）。
+- `pdf_draw`: 生成 PDF 的绘制辅助（字体注册、竖排文字、页侧判定）。
+- `pdf_utils`: 上两者的**兼容 re-export 壳**，新代码请直接 import 具体模块。
 - `sort_utils`: 自然排序（封面/菜单优先，数字感知）。
 - `path_utils`: 输出路径解析（extract 根目录、各命令最终输出目录）。
 - `color_utils`: 颜色 'r,g,b' 解析（非法值抛错，不静默降级为黑）。

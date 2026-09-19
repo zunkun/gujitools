@@ -10,7 +10,7 @@ GUI 的预览控件也要画同样的框。配色与命名必须一致，否则�
 - 标注文字为「左框 (x1,y1,x2,y2)」。
 
 **中文字体**：OpenCV 的 `putText` 不支持中文（会画成 `????`），因此文字用
-PIL 绘制。字体按 `utils.pdf_utils.register_fonts` 相同的候选顺序探测
+PIL 绘制。字体按 `utils.pdf_draw.register_fonts` 相同的候选顺序探测
 Windows 系统中文字体；全部缺失时退化为 ASCII 标签（`L` / `R` / `U`），
 保证任何环境下都不会崩。
 """
@@ -29,7 +29,7 @@ BOX_NAMES: Tuple[str, ...] = ("左框", "右框", "合并框")
 # 无中文字体时的 ASCII 兜底标签
 BOX_NAMES_ASCII: Tuple[str, ...] = ("L", "R", "U")
 
-# 中文字体候选路径，与 utils/pdf_utils.register_fonts 保持一致
+# 中文字体候选路径，与 utils/pdf_draw.register_fonts 保持一致
 _FONT_CANDIDATES = (
     r"C:\Windows\Fonts\fsgb2312.ttf",
     r"C:\Windows\Fonts\simfang.ttf",

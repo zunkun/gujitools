@@ -28,14 +28,24 @@ class HistoryMixin:
             skip |= self._PRINT_FIXED_KEYS
         return skip
 
-    def _restore_last_run_params(self, index: int) -> None:
-        """进入页面/切换阶段时，回填该阶段最近一次执行的参数。"""
+    def _restore_stage_params(self, index: int) -> None:
+        """进入页面/切换阶段时回填参数：**暂存优先**，其次最近一次执行。
+
+        优先级 = 暂存 > 最近一次执行参数 > 内置默认：暂存是"用户最后的手动
+        意图"（还没执行就切走了），比"上一次跑过的参数"更新；两者都没有时
+        表单保持 `set_task` 复位后的内置默认（print 的 PDF 名/古籍名另由
+        `set_source_defaults` 从源 PDF 名派生）。
+        """
         if not self.task_id:
             return
         stage = STAGES[index]
         if stage in self._history_prefilled:
             return
         self._history_prefilled.add(stage)
+        draft = self.store.load_draft(self.task_id, stage)
+        if draft:
+            self.control_stack.widget(index).apply_args(draft)
+            return
         history = self.store.list_stage_runs(self.task_id, stage)
         if history:
             params = {

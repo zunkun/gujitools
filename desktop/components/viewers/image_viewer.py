@@ -10,7 +10,7 @@ from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 from qfluentwidgets import CaptionLabel, ToolButton
 from qfluentwidgets import FluentIcon as FIF
 
-from desktop.workers import ImageListWorker, PreviewWorker
+from desktop.workers import ImageListWorker, PreviewWorker, connect_queued
 from desktop.components.viewers.image_view import ImageView
 from desktop.components.viewers.thumb_strip import ThumbStrip
 from desktop.components.viewers.thumbs_loader import ThumbsMixin
@@ -157,15 +157,18 @@ class ImageViewerWidget(QWidget, ThumbsMixin):
         thumb_paths = [self._thumb_for(str(p)) for p in real_paths]
         labels = [Path(p).stem for p in real_paths]
         self.run_worker(
-            lambda: ImageListWorker(thumb_paths, edge=96),
+            lambda: ImageListWorker(thumb_paths, edge=ThumbStrip.DECODE_EDGE),
             lambda worker, thread: (
-                worker.thumbnail_ready.connect(
+                connect_queued(
+                    self,
+                    worker.thumbnail_ready,
                     lambda i, img, _p: strip.set_item_icon(
                         i, img, str(real_paths[i]), labels[i]
-                    )
+                    ),
+                    thread,
                 ),
                 worker.completed.connect(thread.quit),
-                worker.failed.connect(lambda *_: thread.quit()),
+                worker.failed.connect(thread.quit),
             ),
         )
 
@@ -180,7 +183,12 @@ class ImageViewerWidget(QWidget, ThumbsMixin):
             lambda: PreviewWorker(path, longest_edge=1600),
             lambda worker, thread: (
                 worker.finished.connect(self._image_ready),
-                worker.failed.connect(lambda _p, msg: self.view.clear_image(f"加载失败：{msg}")),
+                connect_queued(
+                    self,
+                    worker.failed,
+                    lambda _p, msg: self.view.clear_image(f"加载失败：{msg}"),
+                    thread,
+                ),
                 worker.finished.connect(thread.quit),
                 worker.failed.connect(thread.quit),
             ),

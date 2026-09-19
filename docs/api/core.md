@@ -4,7 +4,7 @@
 
 中立共享层：CLI 与 desktop 都依赖且语义必须一致的契约
 
-覆盖 4 个模块、9 个公开类、31 个公开函数/方法（生成于 2026-09-18）。
+覆盖 4 个模块、9 个公开类、34 个公开函数/方法（生成于 2026-09-19）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -13,7 +13,7 @@
 | 模块 | 类 | 函数 |
 | --- | --- | --- |
 | [`core.args`](#coreargs) | 3 | 8 |
-| [`core.command_spec`](#corecommand_spec) | 1 | 6 |
+| [`core.command_spec`](#corecommand_spec) | 1 | 9 |
 | [`core.reporter`](#corereporter) | 3 | 11 |
 | [`core.result`](#coreresult) | 2 | 6 |
 
@@ -125,6 +125,8 @@ File: core/command_spec.py
 | 名称 | 值 |
 | --- | --- |
 | WHOLE_PAGE_AREA | `4` |
+| TEXT_SIDE_MARGIN_MM | `10.0` |
+| AREA_WHOLE_PAGE | `4` |
 
 ### `class CommandSpec`
 
@@ -144,6 +146,9 @@ File: core/command_spec.py
 | `validate_border(border: Any) -> None` | 校验 border 参数；支持 None / "30" / "20,30" / "20,30,25" / "20,30,20,25"。 |
 | `parse_color(value: Any) -> Tuple[int, int, int]` | 解析颜色为 (r, g, b) 整数元组，取值域 [0,255]。 |
 | `validate_color_fields(args) -> None` | 校验 print 命令中的颜色参数（title_color / page_number_color）。 |
+| `border_has_padding(border) -> bool` | 上游 crop/rembg 的 border 是否真正加过留白（非 None/空/全 0）。 |
+| `effective_border_default(area=None)` | 第三步（crop / rembg / cropremove）``border`` 的默认值——**随 area 变**。 |
+| `effective_page_margin_default(upstream_border=None) -> List[float]` | print 第四步的通用边距默认值（受上游 border 级联）。 |
 | `get_spec(command: Optional[str]) -> Optional[CommandSpec]` | 按命令名取规格；未登记的命令返回 None。 |
 | `supported_commands() -> Tuple[str, ...]` | 返回所有已登记的命令名。 |
 
@@ -160,6 +165,40 @@ GUI 表单与 PDF 生成三方共用同一份规则，不再各自实现。
 
 实现委托 utils.color_utils.parse_color（最低层），命令行与 GUI 共用，
 非法输入抛 ValueError，不做静默降级。
+
+#### `border_has_padding(border) -> bool`
+
+上游 crop/rembg 的 border 是否真正加过留白（非 None/空/全 0）。
+
+用于 print 第四步的边距级联：上游已设真实留白时，第四步的通用边距
+默认回落为 0，避免「图片内留白 + 页面边距」双重留白。border 的取值
+形态同 ``validate_border``：``None`` / ``""`` / ``"30"`` / ``"20,30"`` /
+``"20,30,25,35"``（逗号可用中文逗号）。
+
+#### `effective_border_default(area=None)`
+
+第三步（crop / rembg / cropremove）``border`` 的默认值——**随 area 变**。
+
+- ``area ∈ {1,2,3}`` → ``"0"``：第四步会把图重新排进 A4，第三步再外扩
+  留白（如 30mm）等于「图片内留白 + 页面边距」双重留白，还会让第四步
+  拿到的图尺寸失真，因此默认**不加留白**；
+- ``area = 4``（整页不检测）→ ``None``：整页输出既不裁剪也无留白可言，
+  border 对它没有意义，保持原默认。
+
+⚠️ 只在用户**没给** border（None / 空串）时生效；显式给值一律以用户为准。
+⚠️ ``area=2/3`` 下 ``"0"`` 与 ``None`` **不等价**：``"0"`` 输出「文本框
+联合外边界」的紧裁，``None`` 输出整页原尺寸——这是用户确认过的取舍
+（第四步会重新排版，紧裁后的图在 A4 上更好排，见 docs/functions/crop.md）。
+
+#### `effective_page_margin_default(upstream_border=None) -> List[float]`
+
+print 第四步的通用边距默认值（受上游 border 级联）。
+
+- 上游 crop/rembg 已设真实留白（``border_has_padding`` 为真）→ 默认 ``[0,0,0,0]``；
+- 否则（第四步独立运行、CLI、或上游 border 为 None/0）→ 保持内置默认 20。
+
+⚠️ 只决定「默认值」：用户在表单/CLI 显式给了 ``page_margins`` 时一律以
+用户值为准（见 ``functions/print.py`` 的 ``or`` 兜底）。
 
 ---
 

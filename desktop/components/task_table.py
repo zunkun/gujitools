@@ -171,6 +171,9 @@ class TaskTable(QWidget):
     列固定为 序号 / 任务名 / 创建时间 / 子任务状态 / 操作；源文件路径
     不成列，仅作为任务名 tooltip。open_detail / delete_request 信号
     分别携带任务 id。
+
+    「序号」列 = **任务编号**（``0001``、``0002``…，即 ``task["id"]`` 与
+    任务目录名），不是行号——排序/搜索/翻页都不改变它。
     """
 
     open_detail = Signal(str)
@@ -179,9 +182,17 @@ class TaskTable(QWidget):
     COLUMNS = ["序号", "任务名称", "创建时间", "子任务状态", "操作"]
 
     # 各列宽度；None 表示该列自适应拉伸。
+    # ⚠️ 「序号」列**不用**这里的值：它按字体实测（见 `_number_column_width`）。
+    # 任务号是 4 位数字（`0001`），写死 56px 会被省略成「…」（已踩）。
     # 「任务名称」是主体信息，拉伸列给它；「子任务状态」4 个胶囊的
     # 实际宽度约 244px（4×54 + 间隙/边距），固定 256 留少量余量。
-    _COLUMN_WIDTHS = [56, None, 168, 256, 132]
+    _COLUMN_WIDTHS = [None, None, 168, 256, 132]
+
+    # 单元格文字的左右内边距（QCommonStyle 的 SE_ItemViewItemText 实测每个
+    # 方向约 16px：56px 的列只剩 24px 能放字）
+    _CELL_TEXT_MARGIN = 16
+    # 「序号」列宽下限（够放 4 位任务号并留余量）
+    _NUMBER_COLUMN_MIN = 72
 
     # 各列对齐：与内容保持一致，否则表头和数据看着"错位"。
     # 水平对齐必须再或上 AlignVCenter——只给水平分量时垂直分量为 0，
@@ -229,7 +240,9 @@ class TaskTable(QWidget):
         header.setFixedHeight(38)
         header.setHighlightSections(False)
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        for col, width in enumerate(self._COLUMN_WIDTHS):
+        widths = list(self._COLUMN_WIDTHS)
+        widths[0] = self._number_column_width()
+        for col, width in enumerate(widths):
             if width is None:
                 header.setSectionResizeMode(col, QHeaderView.ResizeMode.Stretch)
             else:
@@ -237,6 +250,22 @@ class TaskTable(QWidget):
 
         self.table.setMinimumHeight(360)
         layout.addWidget(self.table)
+
+    def _number_column_width(self) -> int:
+        """「序号」列宽 = 4 位任务号的字宽 + 单元格左右内边距（+ 余量）。
+
+        ⚠️ 不能只按字宽算：列宽 56px 时单元格真正能放字的宽度只有 ~24px
+        （`SE_ItemViewItemText` 左右各扣 ~16px），32px 宽的 `0001` 会被
+        委托省略成「…」——"序号列显示不出来"就是这么来的。这里直接按
+        字体实测，字号/DPI 变了也跟得上。
+        """
+        metrics = QFontMetrics(self.table.font())
+        needed = (
+            metrics.horizontalAdvance("0000")
+            + 2 * self._CELL_TEXT_MARGIN
+            + 4  # 余量：不同字体/DPI 下的字宽差
+        )
+        return max(self._NUMBER_COLUMN_MIN, needed)
 
     def _on_cell_clicked(self, row: int, column: int) -> None:
         """点击「任务名称」单元格跳详情。
@@ -305,19 +334,22 @@ class TaskTable(QWidget):
         return w
 
     # ------------------------------------------------------------------ 数据
-    def set_data(self, rows: list[dict], start_index: int = 1) -> None:
+    def set_data(self, rows: list[dict]) -> None:
         """rows: [{id, name, source_path, created_at, stages}]
 
         stages 为 ``[{"short": "提取", "status": "success", "tip": "..."}]``；
         source_path 不单独成列，仅作任务名的悬浮提示。
-        ⚠️ ``start_index`` 是本页第一条在**整表**里的序号（1-based）。
-        分页后「序号」列要显示全局序号，不能是页内行号——否则第二页又是
-        从 1 开始，看着像数据重复。默认 1 保持不分页时的行为。
+
+        ⚠️ 「序号」列显示的是**任务自己的编号**（``task["id"]``，如 ``0001``），
+        不是行号/页内序号：任务号是任务目录名、也是索引里的主键，与排序、
+        搜索、分页都无关，用户拿它去 ``tasks/0001`` 就能对上号。
+        （早先用「页内行号 + 全局偏移」，翻页/搜索后同一条任务的号会变，
+        用户按号找目录会对不上。）
         """
         self.table.setRowCount(len(rows))
         for row, task in enumerate(rows):
             values = [
-                str(start_index + row),
+                str(task["id"]),
                 # ⚠️ 名称列 item **必须留空文本**：文字交给 _name_widget 的 QLabel，
                 # 单元格控件是透明的，item 再画一遍就是「同一条名字显示两次」的重影。
                 # item 只保留一件事：UserRole 存任务 id。Tooltip交给NameLabel。

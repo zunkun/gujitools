@@ -60,9 +60,11 @@ def run(ctx) -> None:
     ok("第 3 页切片 [20,25)（末页不满）",
        p.with_page(3).slice_bounds() == (20, 25),
        str(p.with_page(3).slice_bounds()))
-    ok("第 1 页首条序号为 1", p.first_index() == 1)
-    ok("第 2 页首条序号为 11", p.with_page(2).first_index() == 11,
-       str(p.with_page(2).first_index()))
+    # 「序号」列现在显示**任务自己的编号**（0001 / fake-001 …），不再是
+    # 「页内行号 + 全局偏移」：任务号与排序/搜索/翻页无关，用户按号找
+    # tasks/<号> 目录才对得上。
+    ok("Pager 不再提供「全局行号」入口（序号列改用任务号）",
+       not hasattr(Pager, "first_index"))
 
     ok("页码超过总页数时钳制", p.with_page(99).clamped_page == 3,
        str(p.with_page(99).clamped_page))
@@ -117,13 +119,13 @@ def run(ctx) -> None:
                 for r in range(page.table.table.rowCount())
             ]
 
-        ok("第 1 页序号为 1..10",
-           col0() == [str(i) for i in range(1, 11)], str(col0()))
+        ok("第 1 页序号列 = 前 10 条任务号（不是 1..10 的行号）",
+           col0() == [f"fake-{i:03d}" for i in range(10)], str(col0()))
 
         # ---- 翻页 ----
         page._on_page_changed(2)
-        ok("第 2 页序号为 11..20（全局序号，不是页内行号）",
-           col0() == [str(i) for i in range(11, 21)], str(col0()))
+        ok("第 2 页序号列 = 后 10 条任务号（翻页不改任务号）",
+           col0() == [f"fake-{i:03d}" for i in range(10, 20)], str(col0()))
         ok("第 2 页页码显示正确",
            page.pagination.page_label.text() == "第 2 / 3 页",
            page.pagination.page_label.text())

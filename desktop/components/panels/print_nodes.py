@@ -16,20 +16,21 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
-from qfluentwidgets import CaptionLabel, ComboBox, LineEdit, SpinBox, ToolButton
+from qfluentwidgets import CaptionLabel, ComboBox, LineEdit, ToolButton
 from qfluentwidgets import FluentIcon as FIF
 
+from desktop.components.common.safecomment import SafeSpinBox
 from desktop.components.panels.print_params import SIDES
 from desktop.ui.widgets import combo_box
 
 PAGE_MIN = 1
 PAGE_MAX = 100000
 
-_SPIN_W = 120  # 触发页码控件宽度：qfluent SpinBox 的上下按钮覆盖右侧约 71px，
-               # 低于 120 时数字会被按钮压住看不清
-_SIDE_W = 76   # 侧别下拉宽度
-_DEL_W = 30    # 行内删除按钮宽度
-_GAP = 6       # 行内/行间间距
+_SPIN_W = 120  # 触发页码控件宽度：qfluent SafeSpinBox 的上下按钮覆盖右侧约 71px，
+# 低于 120 时数字会被按钮压住看不清
+_SIDE_W = 76  # 侧别下拉宽度
+_DEL_W = 30  # 行内删除按钮宽度
+_GAP = 6  # 行内/行间间距
 
 
 def _make_side_combo(side: str) -> ComboBox:
@@ -59,7 +60,7 @@ class NodeRow(QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(_GAP)
 
-        self.page_spin = SpinBox()
+        self.page_spin = SafeSpinBox()
         self.page_spin.setRange(PAGE_MIN, PAGE_MAX)
         self.page_spin.setValue(int(page))
         self.page_spin.setFixedWidth(_SPIN_W)

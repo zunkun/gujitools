@@ -67,7 +67,13 @@ threshold = Otsu(left_pixels + right_pixels) + offset
 
 ### --border（边框控制，单位 mm）
 
-控制输出图像的裁剪与外扩边距，对 area=1/2/3 均生效，默认 None。
+控制输出图像的裁剪与外扩边距，对 area=1/2/3 均生效。默认**随 area 变**
+（规则见 `core.command_spec.effective_border_default`）：`area=1/2/3` → **0**
+（不加留白，第四步会在 A4 上重新排版）；`area=4`（整页不检测）→ **None**
+（整页输出 border 无意义）。
+
+> ⚠️ 留空会被解析成上面的默认值：area=2/3 实际取到 0 = **紧裁到文本框联合
+> 外边界**，不是整页原尺寸（下表「None」一行只作语义对照）。
 
 | border 值     | area=1              | area=2/3               |
 | ------------- | ------------------- | ---------------------- |

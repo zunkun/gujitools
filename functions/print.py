@@ -7,7 +7,6 @@
 """
 
 import os
-import re
 from pathlib import Path
 from typing import List, Optional, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -16,92 +15,93 @@ from fpdf import FPDF
 from fpdf.syntax import DestinationXYZ
 from PIL import Image
 
+from core.command_spec import PRINT_DEFAULTS
 from functions.base import FunctionBase
-from utils.path_utils import resolve_final_output_dir
-from utils.pdf_utils import (
-    parse_margins,
-    parse_color,
-    register_fonts,
-    draw_vertical_text,
-    DEFAULT_PAGE_MARGINS,
-    POINTS_PER_MM,
+from utils.color_utils import parse_color
+from utils.margin_utils import DEFAULT_PAGE_MARGINS, normalize_margin
+from utils.units import MM_PER_INCH
+from utils.page_layout import (
+    PrintTextSpec,
+    image_name_parts,
+    paper_size_mm,
+    plan_print_page,
+    resolve_title_nodes,
+    sides_for_pages,
+    text_insets,
+    TEXT_MARGIN_MM,
 )
-from utils.string_utils import num_to_chinese
+from utils.path_utils import resolve_final_output_dir
+from utils.pdf_draw import draw_vertical_text, register_fonts
 from utils.sort_utils import pdf_custom_sort_key
 
 # 嵌入 PDF 前把超大扫描图缩放到的打印分辨率（仅缩小、不放大）。
 # 300DPI 对古籍扫描足够清晰，同时避免 fpdf 对数千像素原图逐页 zlib 压缩。
-MM_PER_INCH = 25.4
 PRINT_IMAGE_DPI = 300
 
 
+def _normalize_page_rects(raw) -> dict:
+    """把逐图坐标覆盖的页号键归一为 int。
+
+    ⚠️ 这条归一不能省：GUI 把 ``{1: [x,y,w,h]}`` 写进运行配置，而运行配置
+    要落盘成 JSON（``write_json``）——**JSON 对象的键只能是字符串**——
+    子进程读回来就成了 ``{"1": [...]}``。若仍用 int 查表（``get(i + 1)``）
+    永远查不到，坐标覆盖静默失效，PDF 依旧按 page_margins 自动排版：
+    表现为「预览里拖好了位置和大小，生成的 PDF 却还是原来那样」。
+
+    同时兼容 CLI/模板里写成字符串键（``page_rects: {"1": [...]}``）的用法。
+    解析不了的键直接丢弃（对应页回退自动排版）。
+    """
+    out: dict = {}
+    if not isinstance(raw, dict):
+        return out
+    for key, value in raw.items():
+        try:
+            out[int(key)] = value
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _draw_plan_text(pdf, spec: PrintTextSpec, font_name: str) -> None:
+    """把 `plan_print_page` 算好的一段文字画到当前页。
+
+    竖排走 `draw_vertical_text`（逐字下移），横排用 fpdf 的 `text` ——
+    横排的基线在 `baseline_mm`（竖排不需要，逐字用 `y_start_mm`）。
+    """
+    if spec.vertical:
+        draw_vertical_text(
+            pdf,
+            spec.text,
+            spec.x_mm,
+            spec.y_start_mm,
+            font_name,
+            spec.font_size_pt,
+            spec.color,
+            direction=spec.direction,
+        )
+        return
+    pdf.set_font(font_name, "", spec.font_size_pt)
+    pdf.set_text_color(*spec.color)
+    y_text = spec.y_start_mm if spec.baseline_mm is None else spec.baseline_mm
+    pdf.text(spec.x_mm, y_text, spec.text)
+
+
 def _get_pdf_format(paper_size):
-    """将纸张配置转换为毫米尺寸，避免依赖 FPDF 的格式表。"""
-    formats = {
-        "a3": (297, 420),
-        "a4": (210, 297),
-        "a5": (148, 210),
-        "b5": (176, 250),
-    }
-    if not isinstance(paper_size, str):
-        raise ValueError("paper_size 仅支持 A3、A4、A5、B5")
-    format_name = paper_size.strip().lower()
-    if format_name not in formats:
-        raise ValueError(f"paper_size 仅支持 A3、A4、A5、B5，当前={paper_size}")
-    return formats[format_name]
+    """将纸张配置转换为毫米尺寸，避免依赖 FPDF 的格式表。
 
-
-def _image_name_parts(path):
-    """解析数字页名，返回 (页名数字, side)；side 可能为空。"""
-    name = os.path.splitext(os.path.basename(path))[0].lower()
-    match = re.fullmatch(r"(\d+)(?:[_-](l|r))?", name)
-    if not match:
-        return None, None
-    return int(match.group(1)), match.group(2)
+    几何真源已搬到 ``utils.page_layout.paper_size_mm``（第四步的「打印
+    效果预览」与这里共用同一份纸张表），本函数保留为兼容入口。
+    """
+    return paper_size_mm(paper_size)
 
 
 def _resolve_title_nodes(image_files, title_switch_nodes):
-    """将配置中的 [页名, 标题, side] 解析为排序后图片的序号。
+    """（兼容入口）章节节点解析，规则见 ``utils.page_layout``。
 
-    ``页名`` 为**原始页码**（extract 里的数字页号，如 ``5``、``5-r`` 的
-    ``5``），不是列表下标——用户填「15」时想的是原书第 15 页，即使该页
-    被拖到列表别处，标题切换仍要跟着这一页走。因此这里按**同名**回查
-    图片在最终清单中的下标，与页序是否等于文件名序无关。
+    ``页名`` 为**原始页码**（如 ``5`` / ``5-r`` 的 ``5``），不是列表下标，
+    因此规则里按同名回查图片在最终清单中的下标。
     """
-    resolved = {}
-    for node in title_switch_nodes:
-        if len(node) < 2:
-            continue
-        anchor_spec = str(node[0]).strip()
-        title = node[1]
-        requested_side = str(node[2]).lower() if len(node) > 2 else "left"
-        # 页名支持 <页号> / <页号>-l / <页号>-r；带侧别时只认该侧
-        page, node_side = _image_name_parts(anchor_spec)
-        if page is None and anchor_spec.isdigit():
-            page, node_side = int(anchor_spec), None
-        if page is None:
-            continue
-        candidates = []
-        for index, path in enumerate(image_files):
-            file_page, file_side = _image_name_parts(path)
-            if file_page != page:
-                continue
-            if node_side and file_side != node_side:
-                continue
-            candidates.append((index, file_side))
-        if not candidates:
-            continue
-        if requested_side in ("left", "right"):
-            matching = [
-                index for index, side in candidates if side == requested_side[0]
-            ]
-            if not matching:
-                matching = [index for index, side in candidates if side is None]
-            anchor = matching[0] if matching else candidates[0][0]
-        else:
-            anchor = candidates[0][0]
-        resolved[anchor] = (title, requested_side)
-    return sorted(resolved.items())
+    return resolve_title_nodes(image_files, title_switch_nodes)
 
 
 def _collect_image_files(input_dir: Path, files: Optional[List[str]] = None) -> List[str]:
@@ -180,15 +180,44 @@ class PrintFunction(FunctionBase):
             self.command_args.get("orientation", "landscape").lower(), "L"
         )
 
-        margins = parse_margins(
-            self.command_args.get("page_margins", DEFAULT_PAGE_MARGINS)
+        # 第三步 crop/rembg 的 border 级联：上游已设真实留白时，第四步通用
+        # 边距默认回落为 0，避免「图片内留白 + 页面边距」双重留白。
+        # GUI 在 runner 里把上游 border 作为 upstream_border 传进来；CLI 不传
+        # （默认 None）→ 保持内置默认 20。用户显式给了 page_margins 时一律优先。
+        from core.command_spec import effective_page_margin_default
+
+        margin_default = effective_page_margin_default(
+            self.command_args.get("upstream_border")
         )
-        left_margins = parse_margins(self.command_args.get("left_page_margins"))
-        right_margins = parse_margins(self.command_args.get("right_page_margins"))
+        margins = normalize_margin(
+            self.command_args.get("page_margins") or margin_default,
+            default=margin_default,
+        )
+        # ⚠️ normalize_margin(None) 会回落默认 [20,20,20,20]，直接对左右页调用
+        # 会让「未填左右页」变成「左右页都是默认 20」——于是通用页边距
+        # 永远不生效（曾经的实际行为）。只在用户真的填了才解析。
+        left_raw = self.command_args.get("left_page_margins")
+        right_raw = self.command_args.get("right_page_margins")
+        left_margins = (
+            normalize_margin(left_raw, default=DEFAULT_PAGE_MARGINS)
+            if left_raw not in (None, "")
+            else None
+        )
+        right_margins = (
+            normalize_margin(right_raw, default=DEFAULT_PAGE_MARGINS)
+            if right_raw not in (None, "")
+            else None
+        )
 
         title_printing = self.command_args.get("title_printing", False)
         title_text = self.command_args.get("title_text", "") or ""
-        title_font_size = self.command_args.get("title_font_size", 18)
+        # ⚠️ 兜底值一律取 PRINT_DEFAULTS，别写字面量：这里曾写着 18，
+        # 而 CLI 默认已是 20——同一参数两套默认值，改一处漏一处。
+        # 用 `or`（不是 get 的第二参数）：显式传 None 时兜底才生效。
+        title_font_size = (
+            self.command_args.get("title_font_size")
+            or PRINT_DEFAULTS["title_font_size"]
+        )
         title_color = parse_color(self.command_args.get("title_color", "0,0,0"))
         title_position = self.command_args.get("title_position", "top")
         title_orientation = self.command_args.get("title_orientation", "vertical")
@@ -198,7 +227,10 @@ class PrintFunction(FunctionBase):
         page_number_start_page = self.command_args.get("page_number_start_page", 1)
         page_number_end_page = self.command_args.get("page_number_end_page", None)
         page_number_base = self.command_args.get("page_number_base", 0)
-        page_number_font_size = self.command_args.get("page_number_font_size", 12)
+        page_number_font_size = (
+            self.command_args.get("page_number_font_size")
+            or PRINT_DEFAULTS["page_number_font_size"]
+        )
         page_number_color = parse_color(
             self.command_args.get("page_number_color", "0,0,0")
         )
@@ -206,12 +238,29 @@ class PrintFunction(FunctionBase):
         page_number_orientation = self.command_args.get(
             "page_number_orientation", "vertical"
         )
+        # 标题/页码「距纸张边界」的距离（mm，[上,右,下,左]）；None = 旧行为。
+        # ⚠️ 与 page_margins 不同：这里 None 是**合法值**（表示没配置），
+        # 不能走 parse_margins —— 它会把 None 回落成默认 [20,20,20,20]。
+        title_margins = text_insets(self.command_args.get("title_margins"))
+        page_number_margins = text_insets(
+            self.command_args.get("page_number_margins")
+        )
 
         skip_pages = self.command_args.get("skip_pages", [])
         if skip_pages is None:
             skip_pages = []
         elif isinstance(skip_pages, str):
             skip_pages = [p.strip() for p in skip_pages.split(",") if p.strip()]
+
+        # 第四步「版面编辑器」逐图坐标覆盖：{页号(1-based): [x,y,w,h] mm}。
+        # GUI 从 print.json 的 pages[].rect 收集后注入；给定页直接用其坐标作
+        # 图片框，不走 page_margins 自动排版。消费处用 `or {}` 兜底空值。
+        # ⚠️ 键必须归一：运行配置要过一遍 JSON，而 JSON 对象的键只能是
+        # 字符串——GUI 写的 {1: [...]} 到本进程手里是 {"1": [...]}，
+        # 直接用 int 查表永远查不到，坐标覆盖会静默失效（PDF 回到自动排版）。
+        page_rects = _normalize_page_rects(
+            self.command_args.get("page_rects")
+        )
 
         workers = self.command_args.get("workers", 4)
 
@@ -241,8 +290,11 @@ class PrintFunction(FunctionBase):
             page_number_color=page_number_color,
             page_number_position=page_number_position,
             page_number_orientation=page_number_orientation,
+            title_margins=title_margins,
+            page_number_margins=page_number_margins,
             skip_pages=skip_pages,
             workers=workers,
+            page_rects=page_rects,
             files=files,
         )
 
@@ -272,7 +324,10 @@ class PrintFunction(FunctionBase):
         page_number_orientation: str,
         skip_pages: List[str],
         workers: int,
+        page_rects: Optional[dict] = None,
         files: Optional[List[str]] = None,
+        title_margins: Optional[List[float]] = None,
+        page_number_margins: Optional[List[float]] = None,
     ) -> dict:
         if skip_pages is None:
             skip_pages = []
@@ -280,6 +335,12 @@ class PrintFunction(FunctionBase):
             title_switch_nodes = []
         if margins is None:
             margins = DEFAULT_PAGE_MARGINS
+        # 与 execute() 侧同样归一（幂等）：本方法也供 CLI/测试直接调用，
+        # 键可能是 YAML/JSON 里的字符串形态。
+        page_rects = _normalize_page_rects(page_rects)
+        if page_rects:
+            print(f"采用版面编辑器坐标：{len(page_rects)} 页"
+                  f"（第 {min(page_rects)}–{max(page_rects)} 页）")
 
         print(f"输入目录: {input_dir}")
         print(f"输出 PDF: {output_pdf}")
@@ -300,11 +361,11 @@ class PrintFunction(FunctionBase):
                 skip_indices.add(int(text))
             else:
                 # 带侧别的写法（如 "5-r"）：按同名回查清单下标
-                page, side = _image_name_parts(text)
+                page, side = image_name_parts(text)
                 if page is None:
                     continue
                 for index, path in enumerate(image_files, start=1):
-                    file_page, file_side = _image_name_parts(path)
+                    file_page, file_side = image_name_parts(path)
                     if file_page == page and (side is None or file_side == side):
                         skip_indices.add(index)
                         break
@@ -312,6 +373,35 @@ class PrintFunction(FunctionBase):
         # 先按纸张/方向/边距算出页面可放置图片的实际显示尺寸，
         # 在加载阶段把超大扫描图缩放到打印 DPI，避免 fpdf 对数千像素原图
         # 逐页 zlib 压缩（163 页会长时间卡住并产生巨大 PDF）。
+        # 排版参数打包成一份 dict 交给 utils.page_layout —— 图片落点、标题
+        # 与页码的位置**只在那儿算一次**，这里不再抄第二份公式（抄一份就
+        # 意味着预览与成品迟早漂移）。
+        plan_args = {
+            "paper_size": paper_size,
+            "orientation": orientation,
+            "page_margins": list(margins),
+            "left_page_margins": left_margins,
+            "right_page_margins": right_margins,
+            "title_printing": title_printing,
+            "title_text": title_text,
+            "title_font_size": title_font_size,
+            "title_color": title_color,
+            "title_position": title_position,
+            "title_orientation": title_orientation,
+            "title_switch_nodes": title_switch_nodes,
+            "page_number_printing": page_number_printing,
+            "page_number_start_page": page_number_start_page,
+            "page_number_end_page": page_number_end_page,
+            "page_number_base": page_number_base,
+            "page_number_font_size": page_number_font_size,
+            "page_number_color": page_number_color,
+            "page_number_position": page_number_position,
+            "page_number_orientation": page_number_orientation,
+            "title_margins": title_margins,
+            "page_number_margins": page_number_margins,
+            "skip_pages": skip_pages,
+        }
+
         pdf = FPDF(
             orientation=orientation,
             unit="mm",
@@ -319,7 +409,9 @@ class PrintFunction(FunctionBase):
         )
         page_w = pdf.w
         page_h = pdf.h
-        text_margin = 8.0  # mm，与下方排版一致
+        # 图片左右固定留白（与预览同一份：utils.page_layout.TEXT_MARGIN_MM）。
+        # 「距页边」不再收窄图片——用户设的距离只决定文字画在哪儿。
+        text_margin = TEXT_MARGIN_MM
         _mt, _mr, _mb, _ml = margins
         avail_w_mm = max(1.0, page_w - _ml - _mr - 2 * text_margin)
         avail_h_mm = max(1.0, page_h - _mt - _mb)
@@ -357,26 +449,11 @@ class PrintFunction(FunctionBase):
         # 将配置中的页名节点解析为排序后图片的序号，用于章节切换和书签。
         sorted_nodes = _resolve_title_nodes(image_files, title_switch_nodes)
 
-        end_page = page_number_end_page if page_number_end_page is not None else total
         processed_count = 0
 
-        # ---- 辅助函数：从起始标注页或章节节点开始按图片序号交替左右 ----
-        def get_side_for_page(image_index):
-            anchor_index = page_number_start_page - 1
-            anchor_side = "left"
-            for node_index, (_, node_side) in sorted_nodes:
-                if anchor_index <= node_index <= image_index and node_side in (
-                    "left",
-                    "right",
-                ):
-                    anchor_index = node_index
-                    anchor_side = node_side
-            offset = image_index - anchor_index
-            return (
-                anchor_side
-                if offset % 2 == 0
-                else ("right" if anchor_side == "left" else "left")
-            )
+        # ---- 逐页左右侧：从起始标注页或章节节点开始按图片序号交替 ----
+        # 规则在 utils.page_layout.sides_for_pages（预览与 PDF 同一份）
+        sides = sides_for_pages(total, sorted_nodes, page_number_start_page)
 
         for i, data in enumerate(page_data):
             if not data or data.get("skip"):
@@ -386,27 +463,20 @@ class PrintFunction(FunctionBase):
             if img is None:
                 continue
             w_img, h_img = data["size"]
-            current_page = i + 1  # 物理页码（1-based）
 
             pdf.add_page()
 
-            # 布局图片
-            if left_margins is not None and right_margins is not None:
-                if current_page % 2 == 1:
-                    mt, mr, mb, ml = left_margins
-                else:
-                    mt, mr, mb, ml = right_margins
-            else:
-                mt, mr, mb, ml = margins
-
-            # ---- 图片左右留出空白，防止文字覆盖（text_margin 已在预缩放时定义）----
-            avail_w_raw = page_w - ml - mr
-            avail_h = page_h - mt - mb
-            avail_w_for_img = max(0, avail_w_raw - 2 * text_margin)
-            scale = min(avail_w_for_img / w_img, avail_h / h_img)
-            new_w, new_h = w_img * scale, h_img * scale
-            x_img = ml + text_margin + (avail_w_for_img - new_w) / 2
-            y_img = mt + (avail_h - new_h) / 2
+            # ---- 布局：几何全部来自 utils.page_layout（预览与 PDF 同一份）----
+            # page_rects 由 GUI 从 print.json pages[].rect 收集：给定页直接用
+            # 其坐标作图片框（所见即所得），否则走 page_margins 自动排版。
+            image_rect = page_rects.get(i + 1)
+            plan = plan_print_page(
+                (w_img, h_img), plan_args, i, total,
+                sides=sides, sorted_nodes=sorted_nodes,
+                image_name=Path(image_files[i]).stem,
+                image_rect=image_rect,
+            )
+            x_img, y_img, new_w, new_h = plan.image
             pdf.image(img, x=x_img, y=y_img, w=new_w, h=new_h)
 
             # 书签在章节节点对应的具体图片上创建。
@@ -418,93 +488,13 @@ class PrintFunction(FunctionBase):
                     )
                     break
 
-            # ----- 标题（与页码同步起始页）-----
-            if title_printing and current_page >= page_number_start_page:
-                # 计算当前标题：从 title_text 开始，取最后一个已到达的标题节点
-                current_title = title_text
-                for node_index, (node_title, _) in sorted_nodes:
-                    if node_index <= i:
-                        current_title = node_title
-
-                if current_title:
-                    char_height_mm = title_font_size / POINTS_PER_MM
-                    side = get_side_for_page(i)
-                    if side == "left":
-                        x_pos = ml / 2.0
-                    else:
-                        x_pos = page_w - mr + 6
-
-                    if title_position == "top":
-                        y_start = mt + 2.0
-                        direction = "up"
-                    else:
-                        total_h = len(current_title) * char_height_mm
-                        y_start = page_h - mb - total_h - 2.0
-                        direction = "up"
-
-                    if title_orientation == "vertical":
-                        draw_vertical_text(
-                            pdf,
-                            current_title,
-                            x_pos,
-                            y_start,
-                            font_name,
-                            title_font_size,
-                            title_color,
-                            direction=direction,
-                        )
-                    else:
-                        pdf.set_font(font_name, "", title_font_size)
-                        pdf.set_text_color(*title_color)
-                        if title_position == "top":
-                            y_text = y_start + char_height_mm
-                        else:
-                            y_text = y_start - char_height_mm
-                        pdf.text(x_pos, y_text, current_title)
+            # ----- 标题（与页码同步起始页；内容与几何都在 plan 里）-----
+            if plan.title is not None:
+                _draw_plan_text(pdf, plan.title, font_name)
 
             # ----- 页码 -----
-            if (
-                page_number_printing
-                and page_number_start_page <= current_page <= end_page
-            ):
-                actual_num = page_number_base + current_page  # 显示页码
-                page_chinese = num_to_chinese(actual_num)
-                page_text = f"第{page_chinese}頁"
-
-                char_height_mm = page_number_font_size / POINTS_PER_MM
-                side = get_side_for_page(i)
-                if side == "left":
-                    x_pos = ml / 2.0
-                else:
-                    x_pos = page_w - mr + 6
-
-                if page_number_position == "bottom":
-                    total_h = len(page_text) * char_height_mm
-                    y_start = page_h - mb - total_h - 2.0
-                    direction = "up"
-                else:
-                    y_start = mt + 2.0
-                    direction = "up"
-
-                if page_number_orientation == "vertical":
-                    draw_vertical_text(
-                        pdf,
-                        page_text,
-                        x_pos,
-                        y_start,
-                        font_name,
-                        page_number_font_size,
-                        page_number_color,
-                        direction=direction,
-                    )
-                else:
-                    pdf.set_font(font_name, "", page_number_font_size)
-                    pdf.set_text_color(*page_number_color)
-                    if page_number_position == "bottom":
-                        y_text = y_start - char_height_mm
-                    else:
-                        y_text = y_start + char_height_mm
-                    pdf.text(x_pos, y_text, page_text)
+            if plan.page_number is not None:
+                _draw_plan_text(pdf, plan.page_number, font_name)
 
             processed_count += 1
             if processed_count % 10 == 0 or processed_count == total:

@@ -62,6 +62,9 @@ class CliArgsParser:
         extract_parser.add_argument("-i", "--input", type=Path, help="PDF文件路径")
         extract_parser.add_argument("-o", "--output", help="输出目录名称")
         extract_parser.add_argument("--zoom", type=int, help="缩放因子")
+        extract_parser.add_argument(
+            "--dpi", type=int, help="整页渲染的 DPI 下限（默认 300，内嵌图路径不生效）"
+        )
         # default=None 很关键：argparse 的 store_true 自带 default=False，
         # 会把 CommandArgs 里 quick 的默认值 True 顶掉（结果 CLI 恒为 quick=False，
         # 与文档不符）。留 None 才能让"默认开启"生效。

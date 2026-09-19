@@ -46,3 +46,7 @@ shots/
 
 # 构建时由 desktop/static/icon.png 生成的 Windows 图标
 desktop/static/icon.ico
+
+.workbuddy/
+.workbuddy-ai/
+.trae/

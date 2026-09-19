@@ -30,8 +30,12 @@ class PrintListMixin:
             self.store.save_print_doc(self.task_id, new_doc)
         return entries, new_doc
 
-    def _save_print_order(self) -> None:
-        """列表拖动/删除后持久化顺序。"""
+    def _save_print_order(self, silent: bool = False) -> None:
+        """列表拖动/删除后持久化顺序。
+
+        ``silent=True`` 供版面编辑器复用：拖拽会频繁落盘，若每次都打一条
+        「列表已更新」日志会淹没「第 N 页版面已更新」这条真正有用的信息。
+        """
         if not self.task_id:
             return
         entries = self.print_preview.entries()
@@ -39,11 +43,19 @@ class PrintListMixin:
             "rembg_snapshot": [], "pages": [],
         }
         doc["pages"] = [
-            {k: e.get(k) for k in ("file", "label")}
+            (
+                {"file": e.get("file"), "label": e.get("label"),
+                 "rect": e["rect"]}
+                if e.get("rect") is not None
+                else {"file": e.get("file"), "label": e.get("label")}
+            )
             for e in entries
         ]
         self.store.save_print_doc(self.task_id, doc)
-        self.log_view.append(f"待打印列表已更新（{self.print_preview.count()} 页）。")
+        if not silent:
+            self.log_view.append(
+                f"待打印列表已更新（{self.print_preview.count()} 页）。"
+            )
 
     def _insert_print_images(self) -> None:
         """插入外部图片到待打印列表末尾。"""

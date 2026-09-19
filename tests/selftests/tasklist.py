@@ -82,6 +82,31 @@ def run(ctx) -> None:
         and header_view.sectionSize(3) == 256,
         str(header_view.sectionSize(3)),
     )
+
+    # 「序号」列 = 任务自己的编号（0001、0002…），不是行号；且列宽必须真的
+    # 放得下 4 位数字——委托按 SE_ItemViewItemText 扣掉左右各 ~16px 内边距，
+    # 光按字宽设 56px 时 32px 宽的 "0001" 会被省略成「…」，界面等于"序号没了"。
+    from PySide6.QtGui import QFontMetrics
+
+    from desktop.components.task_table import TaskTable
+
+    # 先刷新：本模块前面删过一条任务，表格还停在旧数据上
+    w.list_page.refresh()
+    shown_numbers = [
+        table.item(r, 0).text() for r in range(table.rowCount())
+    ]
+    ok(
+        "序号列显示任务自己的编号",
+        shown_numbers == [t["id"] for t in repo.list_tasks()],
+        f"{shown_numbers} vs {[t['id'] for t in repo.list_tasks()]}",
+    )
+    needed = QFontMetrics(table.font()).horizontalAdvance("0001")
+    usable = header_view.sectionSize(0) - 2 * TaskTable._CELL_TEXT_MARGIN
+    ok(
+        "序号列宽放得下 4 位任务号（不会被省略成 …）",
+        usable >= needed and header_view.sectionSize(0) > 0,
+        f"可用 {usable}px，需要 {needed}px",
+    )
     delete_btn = next(b for b in buttons if b.text() == "删除")
     danger_qss = delete_btn.styleSheet()
     ok(

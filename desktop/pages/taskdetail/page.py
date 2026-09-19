@@ -11,7 +11,8 @@
 其余职责按功能分文件（均位于 desktop/pages/taskdetail/）：
 - view.DetailViewMixin       UI 组装（头部/步骤条/预览区/控制列/日志）
 - manifest.PageListMixin     页面清单、缩略图、页面增删
-- history.HistoryMixin       历史执行配置回填
+- history.HistoryMixin       历史执行配置回填（暂存优先）
+- params_draft.ParamDraftMixin 参数暂存（改过没执行也不丢）
 - submit.SubmitMixin         rembg 提交控制器与按钮状态
 - print_list.PrintListMixin  第四步待打印列表
 - runner.StageRunnerMixin    阶段执行（worker 子进程编排）
@@ -30,6 +31,7 @@ from desktop.workers import WorkerHost
 from desktop.pages.taskdetail.detect import DetectMixin
 from desktop.pages.taskdetail.history import HistoryMixin
 from desktop.pages.taskdetail.manifest import PageListMixin
+from desktop.pages.taskdetail.params_draft import ParamDraftMixin
 from desktop.pages.taskdetail.print_list import PrintListMixin
 from desktop.pages.taskdetail.runner import STATUS_LABELS, StageRunnerMixin
 from desktop.pages.taskdetail.submit import SubmitMixin
@@ -40,6 +42,7 @@ class TaskDetailPage(
     StageRunnerMixin,
     SubmitMixin,
     PrintListMixin,
+    ParamDraftMixin,
     HistoryMixin,
     DetectMixin,
     PageListMixin,
@@ -77,6 +80,8 @@ class TaskDetailPage(
         self._last_error_line: str | None = None
         self._extract_seen = 0  # 提取过程中已展示的结果页数
         self._init_ui()
+        # 参数暂存：面板报到"用户改了参数"就防抖写 drafts/<阶段>.json
+        self._install_draft_hooks()
 
     # ------------------------------------------------------------------ 任务切换
     def set_task(self, task_id: str) -> None:
@@ -88,6 +93,8 @@ class TaskDetailPage(
         task = self.store.get_task(task_id)
         if not task:
             return
+        # ⚠️ 必须在覆盖 task_id 之前落盘：暂存要写进"上一个任务"的目录
+        self._flush_param_drafts()
         self.task_id = task_id
         # ⚠️ 一律用任务目录里的**备份** PDF，不用索引里的 source_path：
         # 源文件在用户磁盘上会被移动/改名/删除，一走就「渲染失败」；
@@ -134,6 +141,8 @@ class TaskDetailPage(
         if self.process and self.process.state() != QProcess.NotRunning:
             self._toast("warning", "任务进行中", "请先中断当前子任务再返回。")
             return
+        # 离开前把待写暂存落盘：task_id 马上被清掉，之后再写就找不到任务了
+        self._flush_param_drafts()
         self.task_id = None
         self.source_path = None
         # 释放 PDF：不释放的话回到列表删除该任务时，rmtree 可能撞上文件占用
@@ -149,18 +158,26 @@ class TaskDetailPage(
         return STAGES[max(self.step_bar._current, 0)]
 
     def _select_stage(self, index: int) -> None:
+        # 离开当前阶段前把待写暂存落盘（防抖未到期就走人不该丢改动）
+        self._flush_param_drafts()
         self.step_bar.set_current(index)
         self.control_stack.setCurrentIndex(index)
         self.preview_stack.setCurrentIndex(index)
         # 步骤三：主按钮为「生成预览」，下方另有「提交本次任务」；
-        # 其他阶段保持「执行本子任务」，提交按钮隐藏。
-        is_rembg = STAGES[index] == "rembg"
-        self.run_button.setText("生成预览" if is_rembg else "执行本子任务")
-        self.submit_button.setVisible(is_rembg)
+        # 步骤四：主按钮为「生成 PDF」（按版面编辑器里的逐图坐标生成）；
+        # 其余阶段保持「执行本子任务」，提交按钮隐藏。
+        stage = STAGES[index]
+        if stage == "rembg":
+            self.run_button.setText("生成预览")
+        elif stage == "print":
+            self.run_button.setText("生成PDF")
+        else:
+            self.run_button.setText("执行本子任务")
+        self.submit_button.setVisible(stage == "rembg")
         self._apply_control_width()
         self._refresh_stage_views()
         self._refresh_preview(index)
-        self._restore_last_run_params(index)
+        self._restore_stage_params(index)
         self._refresh_history_options()
         if STAGES[index] == "detect":
             # 整页开关是 area=4 的入口，切回第二步时按当前 area 回填
@@ -253,6 +270,7 @@ class TaskDetailPage(
             self.process.waitForFinished(1500)
         if self.detect_process and self.detect_process.state() != QProcess.NotRunning:
             self.detect_process.kill()
+        self._flush_param_drafts()
         self.shutdown_all_workers()
         event.accept()
 

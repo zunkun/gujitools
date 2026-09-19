@@ -16,10 +16,15 @@
 4. 模板小节的取值能直接构造 `CommandArgs` 并通过 `validate()`；
 5. **索引型文档（README / docs/README / docs/guide/cli / overview）不得漏记任何命令**，
    且都要说明 detect 是非必要的；
-6. **docs/guide/cli.md 里列出的 CLI 参数必须真实存在于对应 parser**。
+6. **docs/guide/cli.md 里列出的 CLI 参数必须真实存在于对应 parser**；
+7. **模板里 print 的「数值型」默认值必须与 CLI 的 `PRINT_DEFAULTS` 逐值相等**。
 
 第 5、6 条是同一类漂移的另一半：命令加进代码后，文档常被留在旧状态——
 detect 落地时 `docs/guide/cli.md` 甚至写着「不存在 detect 子命令」。
+
+第 7 条补的是另一类盲区：本模块原来只校验**键名**存在，于是
+`title_font_size` 模板写 18、CLI 已是 20 这种**数值漂移**照样全绿——
+三层默认值（CLI / desktop 面板 / guji.yaml）就此悄悄分叉。
 """
 
 NAME = "config_template"
@@ -249,3 +254,66 @@ def run(ctx) -> None:
         bogus = sorted(m for m in mentioned if m not in real)
         ok(f"docs/guide/cli.md 中 {cmd_name} 的参数都存在",
            not bogus, f"文档写了但代码没有={bogus}；实际={sorted(real)}")
+
+    # ---- 9. 模板各段的默认值必须与 CLI 逐值相等 ----
+    #
+    # 背景：本模块原来只校验**键名**存在，于是 yaml 写 18、CLI 已是 20 这种
+    # **数值漂移**照样全绿——三层默认值（CLI / desktop / guji.yaml）就此悄悄
+    # 分叉。这里改成按值比对，覆盖全部命令段。
+    #
+    # 用户原则：「CLI 与 desktop 原则上保持一致，因步骤或界面不同会有稍微
+    # 差异」。模板同理——它有两处**登记在案**的例外，不能一刀切：
+    #   - `_INTENTIONAL`：模板是给用户照抄的「已开启」样例，个别键刻意与
+    #     CLI 的空表单不同（改它请先改这里并写明理由）；
+    #   - `_OPTIONAL`：运行时才填的键，模板里不该出现。
+    from core.command_spec import COMMAND_SPECS, normalize_margin
+
+    _INTENTIONAL = {
+        ("detect", "save"):
+            "模板存在的意义就是落地标注图；save=false 会被 CLI 空跑拦截直接拒绝",
+        ("print", "pdf_name"):
+            "演示用的输出文件名；CLI 默认 None（自动按书名取）",
+        ("print", "title_printing"):
+            "模板是「已开启」样例；CLI 默认空表单",
+        ("print", "title_text"):
+            "示例书名；CLI 默认空",
+        ("print", "title_switch_nodes"):
+            "演示章节切换节点；CLI 默认无",
+        ("print", "page_number_printing"):
+            "模板是「已开启」样例；CLI 默认空表单",
+    }
+    _OPTIONAL = {
+        ("print", "files"): "页序清单，运行时由程序作为 args['files'] 填入",
+    }
+    #: 不参与数值比对的通用键：input/output 是路径占位，
+    #: workers 的 CLI 默认 = CPU 核数（机器相关，模板写示例数字即可）。
+    _SKIP_VALUE_CHECK = {"input", "output", "workers"}
+    #: clean 由 core/args.py 兜底，默认 False；模板若写 true，用户照抄就会
+    #: 默认清空输出目录——这属于危险漂移，必须钉住。
+    _CLEAN_DEFAULT = False
+
+    for cmd in _REQUIRED_SECTIONS:
+        block = data[cmd]
+        pairs = list(COMMAND_SPECS[cmd].defaults.items()) + [("clean", _CLEAN_DEFAULT)]
+        for key, want in pairs:
+            if key in _SKIP_VALUE_CHECK:
+                continue
+            if (cmd, key) in _OPTIONAL:
+                continue
+            present = key in block
+            ok(f"模板 {cmd} 段显式给出 {key}",
+               present, f"缺失；现有键={sorted(block)}")
+            if not present:
+                continue
+            got = block[key]
+            # margins 在模板里可能是 "20,10" 这类简写，标准化后再比
+            if key.endswith("margins"):
+                got = normalize_margin(got, default=None)
+                want = normalize_margin(want, default=None)
+            if got == want:
+                continue
+            reason = _INTENTIONAL.get((cmd, key))
+            ok(f"模板 {cmd}.{key} 与 CLI 默认值一致",
+               reason is not None,
+               f"模板={got}；CLI 默认={want}"
+               + ("" if reason is None else f"（登记为故意差异：{reason}）"))
