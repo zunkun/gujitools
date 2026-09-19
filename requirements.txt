@@ -43,4 +43,7 @@ PySide6>=6.6.0,<6.13              # Qt 绑定
 PySide6-Fluent-Widgets>=1.5.0     # import qfluentwidgets（GPLv3，商用另购授权）
 
 # ---- 用户手册：docs/guide/*.md → HTML → 系统浏览器 ----
+# ⚠️ 只有**开发与构建**需要它：打包时 `build.py` 用它渲染一份自包含 HTML
+# （截图内联）放进产物，运行时只是打开现成的文件，因此 `guji.spec` 的
+# excludes 里把 markdown 排掉了——别因为它不在包里就从这份清单删掉。
 markdown>=3.4            # import markdown（纯 Python，无二进制依赖）

@@ -65,3 +65,61 @@ def run(ctx) -> None:
     ]
     ok("detect 不再产生 workset 副本", not _ws_leaks, f"泄漏={_ws_leaks or '无'}")
 
+    # ---- 回归：第二步预览的框必须画得住（2026-09-19 重跑手册截图时抓到）----
+    # 症状：第二步预览「一个框都没有」，信息条只剩像素尺寸；三张检测截图
+    # md5 完全相同。根因：`_select_image()` 里的 `strip.setCurrentRow()` 会经
+    # ThumbStrip 的 currentRowChanged **递归回调**回本函数 → 同一张图起了两个
+    # PreviewWorker，两个都走 `_image_ready` → `view.set_image()`，后到的那个
+    # 把已经画好的框清成 `[]`。这里用「一次选页只起一个加载任务」+「框与信息条
+    # 真的上屏」两条断言钉住（框走内存缓存注入，不落盘、不影响后续模块）。
+    from desktop.components.viewers import image_viewer as _iv
+
+    from tests.selftests._context import pump
+
+    control = d.control_stack.widget(2)  # area 属第三步面板，此处只借来定档
+    control.area.setCurrentIndex(control._index_of(control.area, 1))
+    pump(app, 4)
+
+    view = d.detect_viewer
+    page_path = view.paths[0]
+    injected = [[30, 500, 1100, 2000], [1270, 520, 2360, 2070]]
+    d.detect_cache[str(page_path)] = injected
+    d._select_stage(1)
+    pump(app, 6)
+
+    # ⚠️ 先把缩略图条的当前行挪到第 2 张，再选回第 1 张——只有「行真的变了」
+    # 才会经 currentRowChanged 递归回调回 _select_image。若停在当前行不动，
+    # setCurrentRow 不发信号，重复加载的 bug 就复现不出来（会假绿）。
+    view.strip.setCurrentRow(1)
+    pump(app, 4)
+
+    maker = {"n": 0}
+    real_worker = _iv.PreviewWorker
+
+    class _CountingWorker(real_worker):
+        def __init__(self, *a, **kw):
+            maker["n"] += 1
+            super().__init__(*a, **kw)
+
+    _iv.PreviewWorker = _CountingWorker
+    try:
+        view._select_image(0, str(page_path))
+        pump(app, 2)
+    finally:
+        _iv.PreviewWorker = real_worker
+    ok("一次选页只起一个预览加载任务（不重复加载同一张图）",
+       maker["n"] == 1, f"起了 {maker['n']} 个 PreviewWorker")
+
+    deadline = time.time() + 15
+    while [list(b) for b in view.view._boxes] != injected and time.time() < deadline:
+        app.processEvents()
+        time.sleep(0.05)
+    pump(app, 4)
+    ok("第二步预览的检测框真的画上了（不是空画面）",
+       [list(b) for b in view.view._boxes] == injected,
+       f"_boxes={view.view._boxes}")
+    ok("信息条显示框坐标而不是像素尺寸",
+       "左框" in view.info_label.text() and "px" not in view.info_label.text(),
+       repr(view.info_label.text()))
+    d.detect_cache.pop(str(page_path), None)
+

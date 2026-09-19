@@ -79,6 +79,10 @@ class ImageViewerWidget(QWidget, ThumbsMixin):
         self.view.set_boxes_editable(show_boxes)
         self.view.boxes_edited.connect(self._boxes_edited)
         self._pending_boxes: tuple | None = None  # (boxes, image_size, info)，等大图加载后应用
+        #: 每次选页递增的加载令牌，只有最新一次选择的渲染结果允许上屏。
+        #: ⚠️ 不能改用「路径是否相同」判断：同一页也会被重复选择（见
+        #: ``_select_image`` 的递归回调），路径一样但加载任务有两个。
+        self._load_token = 0
 
     @property
     def paths(self) -> list[Path]:
@@ -173,20 +177,43 @@ class ImageViewerWidget(QWidget, ThumbsMixin):
         )
 
     def _select_image(self, index: int, _path: str) -> None:
+        """选中某页并异步加载大图；同一页被重复选中时只加载一次。
+
+        ⚠️ ``self.strip.setCurrentRow(index)`` 会经 ``ThumbStrip`` 的
+        ``currentRowChanged`` **递归回调**回本函数（ThumbStrip 必须监听
+        currentRowChanged 才能响应键盘翻页，见其 ``__init__``）。若不设防，
+        同一张图会起**两个** ``PreviewWorker``，两个都走 ``_image_ready`` →
+        ``view.set_image()``，而后到的那个会把已经画好的检测框清成 ``[]``、
+        信息条也从「左框(…)｜右框(…)」退化成像素尺寸文案——用户看到的就是
+        「第二步预览里一个框都没有」（2026-09-19 重跑手册截图时抓到）。
+        令牌让**权限归最新一次选择**：递归那次会递增令牌，外层回到这里时
+        发现已被顶替就直接退出，只留一个加载任务。
+        """
         if not self._paths or index >= len(self._paths):
             return
+        self._load_token += 1
+        token = self._load_token
         path = self._paths[index]
         self.strip.setCurrentRow(index)
+        if token != self._load_token:
+            return  # 已被递归的那次选择接手，本次不再另起加载
         self._pending_boxes = None
         self.view.clear_image("正在加载图片...")
         self.run_worker(
             lambda: PreviewWorker(path, longest_edge=1600),
             lambda worker, thread: (
-                worker.finished.connect(self._image_ready),
+                connect_queued(
+                    self,
+                    worker.finished,
+                    lambda page, image, p: self._image_ready_if_current(
+                        token, page, image, p
+                    ),
+                    thread,
+                ),
                 connect_queued(
                     self,
                     worker.failed,
-                    lambda _p, msg: self.view.clear_image(f"加载失败：{msg}"),
+                    lambda _p, msg: self._load_failed_if_current(token, msg),
                     thread,
                 ),
                 worker.finished.connect(thread.quit),
@@ -194,6 +221,16 @@ class ImageViewerWidget(QWidget, ThumbsMixin):
             ),
         )
         self.current_changed.emit(index, str(path))
+
+    def _image_ready_if_current(self, token: int, page: int, image, path: str) -> None:
+        """只接受最新一次选择的渲染结果，迟到的旧图直接丢弃。"""
+        if token == self._load_token:
+            self._image_ready(page, image, path)
+
+    def _load_failed_if_current(self, token: int, msg: str) -> None:
+        """同上：只有最新一次选择的失败才允许清屏报错。"""
+        if token == self._load_token:
+            self.view.clear_image(f"加载失败：{msg}")
 
     def _original_size(self, path_text: str):
         """图片原始尺寸：优先 size_provider，否则回退读文件头。"""

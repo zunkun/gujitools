@@ -201,3 +201,97 @@ QT_QPA_PLATFORM=offscreen python tests/gui_shot.py D:/tmp/shots
 详情页、以及点击日志状态条唤出的日志浮层），文件名与 `docs/guide/screenshots/` 下的
 文件一致，可直接覆盖使用。便于逐张核对排版；改完界面后建议至少跑一次，配合
 `tests/gui_selftest.py`（功能断言）一起作为回归。
+
+## 7. 用户手册页（浏览器里渲染的那一页）
+
+手册不是 Qt 界面，但**视觉仍属本系统**：`desktop/ui/help_dialog.py` 把
+`docs/guide/*.md` 转成 HTML + 内嵌 CSS，交系统浏览器打开。CSS 用
+`string.Template`（`$TOKEN`）从 `theme.py` 注入令牌，**色值不许在
+help_dialog.py 里硬编码**。
+
+### 7.0 两条路：开发现渲染，生产预生成（判据是 frozen，不是"文件在不在"）
+
+| 模式 | 渲染时机 | 产物 | 截图 |
+| --- | --- | --- | --- |
+| 开发（源码运行） | 每次点按钮现渲染 | `%TEMP%/guji_manual_<毫秒>.html` | 绝对 `file://` URL |
+| 打包（生产） | **构建期一次** | `desktop/static/manual.html` | **内联 data URI** |
+
+判据在 `prefer_static_manual()`：看 `sys.frozen`（`GUJI_MANUAL_STATIC=1/0`
+可强制）。**不能按"静态文件在不在"判断**——那样仓库里残留一个 `manual.html`
+就会让开发者改完 md 仍看到旧内容。
+
+生产侧为什么必须预生成：`docs/guide/` 整目录**不进安装包**（md 与 6MB 截图对
+最终用户没用），安装后既没有 md 也没有 `screenshots/`，所以手册必须被压成
+**单个自包含 HTML**（12 张截图内联，约 8MB）才拿得出手；顺带把运行时的
+markdown 渲染、临时文件、防缓存文件名、旧文件清理整套绕法都省掉了。
+`guji.spec` 因此有两个配套动作：`gui_datas` **不再**收 `docs/guide`，
+`excludes` 里加上 `markdown`（只有构建环境需要它，缺了它运行时只是退化成
+占位提示，而生产根本不需要渲染）。
+
+版式（从外到内）：
+
+- **吸顶栏**：品牌（古籍重製 / 用户手册）+ 分段开关（`桌面端操作` / `命令行`，
+  沿用 `SURFACE_SUNKEN` 轨道 + 白滑块那套）+ 右侧 `打印 / 另存为 PDF`；
+- **版心 1200px**：左侧「纸面」卡片（`SURFACE` + `BORDER` + 大圆角 + 浅阴影，
+  正文行宽约 900px，长文档才读得下去），右侧**吸顶「本页目录」**（`< 1260px` 收掉）；
+- **右栏目录的版式**（返工过两次：先是 196px 太窄、中文标题普遍折两行，后来用户
+  还要求再宽一点）：
+  - 宽度 `--toc-w: 272px`，与正文的 `gap` 收到 32px；窄屏断点 `1260px`；
+  - 整列一条 2px 引导线（`#toc-nav::before`），当前小节在引导线上叠一段主色
+    （条目里的 `::before` 用 `left: -12px` 压回去）——读起来像大纲，而不是一堆
+    孤立文字；
+  - 二级条目（`lv3`）更小更淡、多缩进，前面加一小段短横（`::after`），层级一眼分得开；
+  - 「本页目录」标题右侧拉一条渐隐细线，与条目分隔；
+  - 到顶时**第一条自动高亮**（否则页面刚打开、还没越过任何小节时目录一片灰）;
+- **目录与锚点由页面 JS 现采**当前激活分段的 `h2/h3`（两份手册各自成目录），
+  滚动高亮，`#tab-cli` 这样的深链可直达；标题 hover 出 `#` 锚点；
+  ⚠️ **目录条目的 `id` 必须按页签加前缀**：两份手册都从 `sec-0` 起编，无前缀
+  时 id 跨页签撞车 —— 在 CLI 页签点目录，浏览器会按文档顺序跳到**隐藏的**
+  GUI 页签里同名元素（`display:none` 无法滚动），表现出来就是「点目录跳到
+  别处 / 没定位」。另外标题要有 `scroll-margin-top`（吸顶栏高度），否则跳过去
+  标题被顶栏盖住，同样像"没定位"；
+  ⚠️ **`history.replaceState` 在 `file://` 下会抛 `SecurityError`**（origin 是
+  opaque），必须 `try/catch` 接住——曾经的调用顺序是
+  `preventDefault() → replaceState() → scrollIntoView()`，异常一抛，原生跳转已被
+  取消、滚动又执行不到，用户看到的就是**点目录完全没反应**。现在统一收进
+  `setHash()`，且**先滚动后改 hash**；
+- **手册页 JS 用 `let`/`const`**（不再用 `var`），且**记住上次看的分段**：
+  `file://` 页面在 Edge/Chrome 下同样能读写 `localStorage`（实测跨次打开生效），
+  于是下次点「用户手册」落回上次那一页，而不是每次都被打回第一页；
+  存储被禁用时静默降级；
+- **截图可点开看原图**：1500px 宽的界面截图在 900px 行宽里必然被压缩；
+  ⚠️ 放大浮层的 `img` **必须由 JS 动态创建**——在 HTML 里静态写一个空
+  `<img ...>` 会让护栏「12 张截图都被引用」的计数变成 13 而报红
+  （见 `tests/selftests/manual_dialog.py` 第 7 节）；
+- **`@media print`** 去掉吸顶栏/目录，只留正文，配合顶栏的「另存为 PDF」；
+- ⚠️ **绝对不要给手册页加 `<base>` 标签**（曾经加过，为的是让相对截图路径能解析）：
+  **片段链接是按 base 解析的**，base 一旦指向 `docs/guide/`，点标题旁那个 `#`
+  锚点就等于「打开手册目录」——浏览器把**目录列表**当页面显示（用户直接截图报过）。
+  现在开发模式的截图写成绝对 `file://` URL、生产模式内联成 data URI，两边都不需要
+  base。护栏：`tests/selftests/manual_dialog.py` 第 8 节（断言页面里没有 base 标签，
+  并对照"塞回 base 后点击会导航走"的真机实验）。
+
+护栏在 `tests/selftests/manual_dialog.py` 第 8 / 14 / 15 / 19 节：钉住"没有 base 标签"
+"开发不启用静态" "打包打开静态文件" "静态页自包含（12 张 data URI、无外部引用）"
+"目录 id 带页签前缀 + 有滚动处理" "replaceState 被接住且滚动在前"。
+
+### 7.1 ⚠️ 打开方式：只把「原生路径」交给系统，别传 `file:///` URI
+
+`open_manual()` 打开手册走 `help_dialog._open_with_system()`，**第一跳是
+`os.startfile(str(path))`（原生路径）**，之后才会回退到 Qt
+`QDesktopServices` → `cmd /c start`。这条约束是拿真实故障换来的：
+
+- 症状：点「用户手册」按钮，界面冻住、浏览器永远不出现；
+- 原因：原来写的是 `webbrowser.open(html_path.as_uri())`。Windows 上
+  `ShellExecute` 拿到 `file:///...` 会走 **file: 协议处理器**
+  （`HKCR\file` → `CLSID {00000303-0000-0000-C000-000000000046}`），该 CLSID
+  在部分机器上没注册成功，`os.startfile` 于是**卡死不返回**（实测 >8s 仍未返回）；
+- 对照：同一台机器上把**原生路径**交给 `os.startfile`，0.3s 秒开 Edge —— 原生
+  路径走的是扩展名关联（`.html` → 默认浏览器），跟 file: 协议无关；
+- 回退链里**刻意不放 `webbrowser.open`**：它在 Windows 上就是 `os.startfile`，
+  且同样会挂；只有非 Windows 平台才用它。
+
+护栏在 `tests/selftests/manual_dialog.py` 第 13 节：拦 `os.startfile` /
+`webbrowser.open`，行为断言「第一跳是原生路径、且不出现 `file:` 前缀」。
+全部打开方式都失败时会弹一个带路径的提示框（可选中复制），别让用户对着
+按钮干瞪眼。

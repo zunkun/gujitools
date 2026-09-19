@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""桌面端操作指南自测：文档、截图、界面控件三者不得互相脱节。
+"""用户操作手册自测：文档、截图、界面控件三者不得互相脱节。
 
-背景：`docs/guide/gui-guide.md` 是给最终用户看的操作手册，它最容易悄悄失效：
+背景：`docs/guide/user-guide.md` 是给最终用户看的操作手册，它最容易悄悄失效：
 
 1. **引用的截图文件不存在** —— 重命名界面或换目录后，文档里全是裂图；
 2. **写到的按钮文案在界面上找不到** —— 改了按钮文字，用户按图索骥点不着；
@@ -14,7 +14,7 @@
 
 NAME = "gui_guide"
 DEPENDS: list[str] = []
-TITLE = "操作指南一致性"
+TITLE = "用户操作手册一致性"
 
 
 def run(ctx) -> None:
@@ -24,9 +24,9 @@ def run(ctx) -> None:
     from tests.selftests._context import ok
 
     root = Path(__file__).resolve().parents[2]
-    guide_path = root / "docs" / "guide" / "gui-guide.md"
+    guide_path = root / "docs" / "guide" / "user-guide.md"
 
-    ok("操作指南存在", guide_path.exists(), str(guide_path))
+    ok("用户操作手册存在", guide_path.exists(), str(guide_path))
     if not guide_path.exists():
         return
     guide = guide_path.read_text(encoding="utf-8")
@@ -102,7 +102,7 @@ def run(ctx) -> None:
     # 这里断言「三份索引都收录了指南」，一旦目录再迁，索引漏改就会红。
     for index in ("README.md", "docs/README.md", "docs/dev/gui/readme.md"):
         text = (root / index).read_text(encoding="utf-8")
-        ok(f"{index} 索引了操作指南", "gui-guide.md" in text, f"{index} 未收录")
+        ok(f"{index} 索引了用户操作手册", "user-guide.md" in text, f"{index} 未收录")
 
     # ---- 6. 演示数据契约：真实古籍优先 + 演示页常量 ----
     ok("截图脚本会优先使用真实古籍 PDF",
@@ -145,6 +145,27 @@ def run(ctx) -> None:
     # 这类故障不抛异常、不留日志，只有看图才发现，所以必须用行为断言钉住。
     _assert_demo_thumbs_not_blank(ctx, root, ok)
 
+
+
+    # ---- 8. 手册里不许出现技术说明（2026-09-19 按用户要求清理过一次）----
+    # 读者是不懂命令行的使用者：内部文件名、旧版本行为、配置字段、实现口径、
+    # 截图工具说明，全部该留在 docs/dev/gui/user-guide-and-shots.md。
+    # 判断标准：**用户能不能照着一句话去做一件事**；不能就是技术说明。
+    forbidden = {
+        "boxes.json": "内部文件名",
+        "print.json": "内部文件名",
+        "stages/pdf": "内部路径",
+        "title_position": "配置字段",
+        "title_orientation": "配置字段",
+        "docs/functions": "开发文档链接",
+        "gui_shot.py": "截图工具（维护说明）",
+        "72 DPI": "旧版本行为",
+        "user-guide-and-shots": "开发文档名",
+        "gui-guide": "旧文件名",
+    }
+    hits = [f"{token}（{why}）" for token, why in forbidden.items() if token in guide]
+    ok("用户操作手册里没有技术说明（内部文件名/旧行为/实现口径）",
+       not hits, "命中=" + "; ".join(hits))
 
 def _assert_demo_thumbs_not_blank(ctx, root, ok) -> None:
     """跑一遍演示数据灌入 + 缩略图合成，确认没有「全白缩略图」。
@@ -255,3 +276,4 @@ def _assert_demo_thumbs_not_blank(ctx, root, ok) -> None:
         import sys
 
         sys.path.remove(str(root / "tests"))
+

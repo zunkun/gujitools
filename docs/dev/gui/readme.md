@@ -1,7 +1,7 @@
 # gujitools 桌面端（desktop）技术文档索引
 
 > **面向开发者**：日常使用者请看
-> [操作指南 `docs/guide/gui-guide.md`](../../guide/gui-guide.md)。
+> [用户操作手册 `docs/guide/user-guide.md`](../../guide/user-guide.md)。
 > 本目录及其下的 6 份文档讲的都是实现细节（架构、协议、布局、需求），
 > 使用者无需阅读。
 
@@ -29,12 +29,12 @@
 | [gui-ui-system.md](gui-ui-system.md) | 界面系统：设计令牌、基础自绘控件、全局样式与自绘约束 |
 | [../../api/desktop.md](../../api/desktop.md) | 桌面端全部公开 API（由 `tools/gen_api_docs.py` 自动生成） |
 
-配图不在本目录（已随操作指南迁走）：
+配图不在本目录（已随用户操作手册迁走）：
 
 | 资源 | 说明 |
 | --- | --- |
 | [../../guide/screenshots/](../../guide/screenshots/) | 界面总览截图（`tests/gui_shot.py` 离屏生成） |
-| [../../guide/screenshots/guide/](../../guide/screenshots/guide/) | 操作指南配图（`tests/gui_shot.py --guide` 生成） |
+| [../../guide/screenshots/guide/](../../guide/screenshots/guide/) | 用户操作手册配图（`tests/gui_shot.py --guide` 生成） |
 
 ## 快速开始
 
@@ -50,7 +50,7 @@ QT_QPA_PLATFORM=offscreen python tests/gui_selftest.py
 # 离屏渲染界面截图（视觉自查，输出到指定目录）
 QT_QPA_PLATFORM=offscreen python tests/gui_shot.py D:/tmp/shots
 
-# 生成操作指南配图（写入 <目录>/guide/）
+# 生成用户操作手册配图（写入 <目录>/guide/）
 QT_QPA_PLATFORM=offscreen python tests/gui_shot.py --guide D:/tmp/shots
 ```
 

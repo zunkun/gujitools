@@ -9,7 +9,7 @@
 
 输出:
     dist/guji/guji.exe       命令行工具（console，安装后 PATH 可直接用 guji）
-    dist/guji/guji-gui.exe   桌面 GUI（windowed，安装包会建快捷方式）
+    dist/guji/guji-desktop.exe   桌面 GUI（windowed，安装包会建快捷方式）
     dist/guji_setup_<版本>_<时间戳>.exe   安装包
 
 两者共享同一份 dist/guji/_internal：torch/cv2 等大二进制只落地一份。
@@ -19,7 +19,7 @@
 ``build.py`` 在 Ubuntu 上执行即可，差异由脚本自动处理：
 
     dist/guji/guji            （无 .exe 后缀）
-    dist/guji/guji-gui
+    dist/guji/guji-desktop
     dist/guji_<版本>_<时间戳>_linux-x86_64.tar.gz
 
 Linux 侧**没有安装包**（Inno Setup 是 Windows 专属），改用 tar.gz 分发；
@@ -47,7 +47,7 @@ IS_WINDOWS = sys.platform == "win32"
 
 #: 可执行文件名（Linux 无后缀）
 CLI_EXE = "guji.exe" if IS_WINDOWS else "guji"
-GUI_EXE = "guji-gui.exe" if IS_WINDOWS else "guji-gui"
+GUI_EXE = "guji-desktop.exe" if IS_WINDOWS else "guji-desktop"
 
 
 def run_conda(conda_exe, args, check=True, capture_output=False):
@@ -302,15 +302,17 @@ def retire(path: Path, trash: Path) -> Path | None:
 
 
 def discard(path: Path, trash: Path, anchor: Path | None = None) -> bool:
-    """把瘦身命中的单个文件搬进归档目录（同样不删），成功返回 True。"""
+    """把瘦身命中的单个文件搬进归档目录（同样不删），成功返回 True。
+
+    ``trash`` 必须是**每次构建独有**的子目录：同名目标已存在时，旧代码会先
+    ``unlink`` 再搬——单次构建里 2332 个文件累计起来照样撞上批量删除阈值
+    （实测 count=50 就红）。让目标永不冲突，就一次删除都不需要。
+    """
     try:
-        if anchor is not None:
-            dest = trash / "pruned" / path.relative_to(anchor)
-        else:
-            dest = trash / "pruned" / path.name
+        dest = (trash / path.relative_to(anchor)) if anchor is not None else (trash / path.name)
         dest.parent.mkdir(parents=True, exist_ok=True)
         if dest.exists():
-            dest.unlink()
+            return False
         shutil.move(str(path), str(dest))
         return True
     except OSError:
@@ -338,8 +340,10 @@ def prepare_icon(project_root):
         from tools.make_icon import DEFAULT_RADIUS_PCT, make_ico
 
         make_ico(png, ico, DEFAULT_RADIUS_PCT)
-        print(f"✅ 生成图标: {ico.relative_to(project_root)}"
-              f"（圆角 {DEFAULT_RADIUS_PCT}%）")
+        print(
+            f"✅ 生成图标: {ico.relative_to(project_root)}"
+            f"（圆角 {DEFAULT_RADIUS_PCT}%）"
+        )
         return ico
     except Exception as exc:
         print(f"⚠️ 图标生成失败（不影响打包）: {exc}")
@@ -355,8 +359,38 @@ def elapsed(start: float, label: str) -> None:
         print(f"⏱️  {label} 耗时 {int(secs // 60)}m{secs % 60:04.1f}s")
 
 
+def refresh_manual_only(project_root) -> int:
+    """只重生成手册并刷新部署与安装包（`python build.py --manual-only`）。
+
+    为什么单开一条：完整打包要 19 分钟（PyInstaller 7m + 瘦身 8m），而调手册
+    版式/文案时 Python 侧一个字节都没变——重生成 `manual.html`、刷一次部署、
+    重压一次安装包，两分半就够了。**改了 `.py` 仍然必须完整打包。**
+    """
+    dist_dir = project_root / "dist" / "guji"
+    if not dist_dir.is_dir():
+        print("❌ 没有 dist/guji，请先跑一次完整打包：python build.py")
+        return 1
+
+    steps: list[tuple[str, object]] = [("预生成手册", lambda: build_manual_html(dist_dir))]
+    if IS_WINDOWS:
+        steps += [
+            ("复制到 C:\\Software", lambda: copy_to_software(project_root, "onedir")),
+            ("生成安装包",
+             lambda: build_installer(project_root, project_root / "desktop" / "static" / "icon.ico")),
+        ]
+    for label, fn in steps:
+        mark = time.monotonic()
+        print(f"\n▶ {label} ...")
+        fn()
+        elapsed(mark, label)
+    print("\n✅ 手册已刷新（Python 代码未变，无需完整重建）")
+    return 0
+
+
 def main():
     project_root = Path(__file__).resolve().parent
+    if "--manual-only" in sys.argv:
+        return refresh_manual_only(project_root)
     ensure_build_environment(project_root)
 
     print(f"项目版本: {VERSION}")
@@ -374,7 +408,7 @@ def main():
         print(f"❌ 缺少打包规格文件: {spec}")
         sys.exit(1)
 
-    # 用 spec 构建：一个目录内同时产出 guji.exe(CLI) 与 guji-gui.exe(GUI)，
+    # 用 spec 构建：一个目录内同时产出 guji.exe(CLI) 与 guji-desktop.exe(GUI)，
     # 共享同一份 _internal（torch 等大二进制只落地一次）。
     # ⚠️ 不再加 --clean：它会 rmtree 掉整个 workpath（上千项，会被批量删除
     # 钩子拦下）。改成每次用一个新的 workpath，天然干净、无须清理。
@@ -393,8 +427,10 @@ def main():
 
     print(f"工作目录: {project_root}")
     print(f"命令: {' '.join(cmd)}")
-    print("（PyInstaller 全程约 10 分钟：两次 Analysis + COLLECT 落地 650MB，"
-          "期间进度由子进程逐行打印）\n")
+    print(
+        "（PyInstaller 全程约 10 分钟：两次 Analysis + COLLECT 落地 650MB，"
+        "期间进度由子进程逐行打印）\n"
+    )
 
     t0 = time.monotonic()
     result = subprocess.run(cmd, cwd=str(project_root))
@@ -402,9 +438,11 @@ def main():
 
     if result.returncode == 0:
         dist_dir = project_root / "dist" / "guji"
-        built = [
-            p.name for p in dist_dir.iterdir() if p.name in (CLI_EXE, GUI_EXE)
-        ] if dist_dir.is_dir() else []
+        built = (
+            [p.name for p in dist_dir.iterdir() if p.name in (CLI_EXE, GUI_EXE)]
+            if dist_dir.is_dir()
+            else []
+        )
         if built:
             print(f"\n✅ 打包完成: dist/guji/  →  {', '.join(sorted(built))}")
         else:
@@ -412,13 +450,16 @@ def main():
 
         steps: list[tuple[str, object]] = [
             ("校验产物", lambda: verify_outputs(dist_dir)),
+            ("预生成手册", lambda: build_manual_html(dist_dir)),
             ("体积瘦身", lambda: prune_bloat(dist_dir)),
             ("瘦身检查", lambda: run_bloat_check(project_root)),
         ]
         if IS_WINDOWS:
             steps += [
-                ("复制到 C:\\Software",
-                 lambda: copy_to_software(project_root, "onedir")),
+                (
+                    "复制到 C:\\Software",
+                    lambda: copy_to_software(project_root, "onedir"),
+                ),
                 ("生成安装包", lambda: build_installer(project_root, icon)),
             ]
         else:
@@ -485,12 +526,18 @@ def prune_bloat(dist_dir):
     if IS_WINDOWS:
         # Windows 特有：视频编解码、软件 OpenGL 回退、构建工具、SQLite
         targets += [
-            (internal / "cv2" / "opencv_videoio_ffmpeg500_64.dll",
-             "cv2 视频编解码（项目只用 imread/imwrite 等图像 API）"),
-            (internal / "PySide6" / "opengl32sw.dll",
-             "Qt 软件 OpenGL 回退（界面不依赖 OpenGL）"),
-            (internal / "torch" / "bin" / "protoc.exe",
-             "protobuf 编译器（构建期工具，运行期不执行）"),
+            (
+                internal / "cv2" / "opencv_videoio_ffmpeg500_64.dll",
+                "cv2 视频编解码（项目只用 imread/imwrite 等图像 API）",
+            ),
+            (
+                internal / "PySide6" / "opengl32sw.dll",
+                "Qt 软件 OpenGL 回退（界面不依赖 OpenGL）",
+            ),
+            (
+                internal / "torch" / "bin" / "protoc.exe",
+                "protobuf 编译器（构建期工具，运行期不执行）",
+            ),
             (internal / "sqlite3.dll", "SQLite（旧数据迁移已移除）"),
             (internal / "_sqlite3.pyd", "SQLite（旧数据迁移已移除）"),
         ]
@@ -510,6 +557,8 @@ def prune_bloat(dist_dir):
             print(f"   保留 {kept} 个 torch 源文件（运行时需读回源码）")
 
     saved = 0
+    # 每次构建一个独立的归档子目录：目标名不冲突，就永远不需要先删后搬
+    run_trash = trash_root() / "pruned" / time.strftime("%Y%m%d_%H%M%S")
     for path, reason in targets:
         if not path.exists():
             continue
@@ -517,7 +566,7 @@ def prune_bloat(dist_dir):
             size = path.stat().st_size if path.is_file() else 0
         except OSError:
             continue
-        if discard(path, trash_root(), anchor=internal):
+        if discard(path, run_trash, anchor=internal):
             saved += size
             removed_files += 1
         else:
@@ -535,8 +584,10 @@ def prune_bloat(dist_dir):
                     pass
 
     if saved:
-        print(f"🧹 瘦身完成：归档 {removed_files} 个文件、清理 {removed_dirs} 个空目录，"
-              f"腾出 {saved / MB:.1f} MB（文件已移到 {trash_root()}，未删除）")
+        print(
+            f"🧹 瘦身完成：归档 {removed_files} 个文件、清理 {removed_dirs} 个空目录，"
+            f"腾出 {saved / MB:.1f} MB（文件已移到 {run_trash}，未删除）"
+        )
     else:
         print("🧹 瘦身：没有匹配到可删除的内容")
     return saved
@@ -570,8 +621,7 @@ def verify_outputs(dist_dir):
     if not dist_dir.is_dir():
         print(f"⚠️ 未找到输出目录: {dist_dir}")
         return
-    missing = [name for name in (CLI_EXE, GUI_EXE)
-               if not (dist_dir / name).is_file()]
+    missing = [name for name in (CLI_EXE, GUI_EXE) if not (dist_dir / name).is_file()]
     if missing:
         print(f"⚠️ 输出目录缺少可执行文件: {', '.join(missing)}")
     else:
@@ -614,8 +664,10 @@ def build_installer(project_root, icon=None):
         # ⚠️ 曾经这里直接 raise → PyInstaller 跑了 15 分钟后整个构建失败，
         # 安装包缺席却把 dist/ 里的成果判了死刑。装不上 Inno Setup 只是没
         # 安装包，dist/guji/ 本身完全可用（拷出去就能用），所以改成警告。
-        print("\n⚠️ 未找到 ISCC.exe（Inno Setup），跳过安装包生成\n"
-              "   dist/guji/ 已可直接分发；要出安装包请安装 Inno Setup 6/7")
+        print(
+            "\n⚠️ 未找到 ISCC.exe（Inno Setup），跳过安装包生成\n"
+            "   dist/guji/ 已可直接分发；要出安装包请安装 Inno Setup 6/7"
+        )
         return
 
     timestamp = time.strftime("%Y%m%d_%H%M%S")
@@ -632,6 +684,42 @@ def build_installer(project_root, icon=None):
     if result.returncode != 0:
         raise RuntimeError("安装包生成失败")
     print(f"✅ 安装包生成完成: dist/guji_setup_{VERSION}_{timestamp}.exe")
+
+
+def build_manual_html(dist_dir):
+    """把用户手册预渲染成**自包含**静态 HTML 放进产物（`_internal/desktop/static/`）。
+
+    为什么在构建期做：运行时渲染要先读 md、跑 markdown 库、写临时文件、再开
+    浏览器；手册内容是构建那一刻就定死的，运行时再算一遍毫无意义。
+    ⚠️ 截图必须**内联**（data URI）：安装包不含 ``docs/guide``，任何外部引用
+    在用户机器上都会变成碎图（详见 ``desktop/ui/help_dialog.py``）。
+
+    失败只警告：程序运行时会退回"现渲染到临时目录"，功能不受影响。
+    """
+    static_dir = dist_dir / "_internal" / "desktop" / "static"
+    if not static_dir.is_dir():
+        print("⚠️ 产物里没有 desktop/static，跳过手册预生成")
+        return
+    try:
+        from desktop.ui.help_dialog import generate_static_manual
+
+        out = generate_static_manual(static_dir / "manual.html")
+    except Exception as exc:  # 打包脚本不该因为手册而整体失败
+        print(f"⚠️ 手册预生成失败（程序会退回运行时渲染）: {exc}")
+        return
+
+    document = out.read_text(encoding="utf-8")
+    inlined = document.count("data:image/")
+    problems = []
+    if inlined != 12:
+        problems.append(f"内联截图 {inlined} 张（期望 12）")
+    if 'src="file:' in document or 'src="screenshots/' in document:
+        problems.append("仍存在外部图片引用（装机后会碎图）")
+    size_mb = out.stat().st_size / 1024 / 1024
+    if problems:
+        print(f"   ⚠️ 手册自包含检查异常：{'；'.join(problems)}")
+    print(f"   手册已预生成为自包含 HTML：manual.html（{size_mb:.1f} MB，"
+          f"内联 {inlined} 张截图）")
 
 
 def pack_tarball(project_root, dist_dir):
@@ -652,9 +740,7 @@ def pack_tarball(project_root, dist_dir):
 
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     arch = platform.machine() or "unknown"
-    target = (
-        project_root / "dist" / f"guji_{VERSION}_{timestamp}_linux-{arch}.tar.gz"
-    )
+    target = project_root / "dist" / f"guji_{VERSION}_{timestamp}_linux-{arch}.tar.gz"
     try:
         with tarfile.open(target, "w:gz") as archive:
             archive.add(str(dist_dir), arcname=dist_dir.name)
@@ -680,8 +766,10 @@ def print_font_hint():
 
     check = check_cjk_font()
     if check.found:
-        print(f"   本机有中文字体（{Path(check.path).name}），目标机若缺替代也没问题："
-              "程序会在首次启动时提示安装")
+        print(
+            f"   本机有中文字体（{Path(check.path).name}），目标机若缺替代也没问题："
+            "程序会在首次启动时提示安装"
+        )
         return
     print("⚠️ 本机没有中文字体：目标机很可能同样缺，PDF 的标题会变成方块。")
     print("   —— 可以先在这里装好，也可以让程序在目标机上提示用户一键安装 ——")
@@ -766,4 +854,4 @@ def clean_old_backups(backup_dir, max_backups):
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

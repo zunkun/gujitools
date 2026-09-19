@@ -21,14 +21,14 @@
 
 ## 功能一览
 
-| 命令         | 别名  | 功能                                    |
-| ------------ | ----- | --------------------------------------- |
-| `extract`    | `-e`  | 从 PDF 批量提取页面为图片               |
+| 命令         | 别名  | 功能                                                        |
+| ------------ | ----- | ----------------------------------------------------------- |
+| `extract`    | `-e`  | 从 PDF 批量提取页面为图片                                   |
 | `detect`     | —     | 检测左右文本框并输出标注图（**非必要**，命令行须 `--save`） |
-| `crop`       | —     | 基于 YOLO 检测裁剪左右文本框            |
-| `rembg`      | `-r`  | 整图去底色 / 二值化 / 印章保留          |
-| `cropremove` | `-cr` | 复合流程：裁剪 + 区域去底色（一步完成） |
-| `print`      | —     | 将图片目录生成为 PDF                    |
+| `crop`       | —     | 基于 YOLO 检测裁剪左右文本框                                |
+| `rembg`      | `-r`  | 整图去底色 / 二值化 / 印章保留                              |
+| `cropremove` | `-cr` | 复合流程：裁剪 + 区域去底色（一步完成）                     |
+| `print`      | —     | 将图片目录生成为 PDF                                        |
 
 ```
 extract   ── PDF → 图片（前置步骤）
@@ -102,15 +102,15 @@ CUDA 版本或找不到对应版本。
 
 主要依赖（详见 [requirements.txt](requirements.txt)）：
 
-| 依赖                   | 用途          | 命令                                    |
-| ---------------------- | ------------- | --------------------------------------- |
-| PyMuPDF                | PDF 渲染      | extract                                 |
-| PyYAML                 | YAML 配置读取 | run                                     |
-| Pillow                 | 图像读写      | 所有图像命令（含 detect --save 标注）   |
-| opencv-python-headless | 图像处理      | detect / rembg / crop / cropremove      |
-| numpy                  | 数组运算      | detect / rembg / crop / cropremove      |
-| ultralytics            | YOLO 模型推理 | detect / crop / cropremove              |
-| fpdf2                  | PDF 生成      | run                                     |
+| 依赖                   | 用途          | 命令                                  |
+| ---------------------- | ------------- | ------------------------------------- |
+| PyMuPDF                | PDF 渲染      | extract                               |
+| PyYAML                 | YAML 配置读取 | run                                   |
+| Pillow                 | 图像读写      | 所有图像命令（含 detect --save 标注） |
+| opencv-python-headless | 图像处理      | detect / rembg / crop / cropremove    |
+| numpy                  | 数组运算      | detect / rembg / crop / cropremove    |
+| ultralytics            | YOLO 模型推理 | detect / crop / cropremove            |
+| fpdf2                  | PDF 生成      | run                                   |
 
 YOLO 模型权重文件需放置于 `weights/detect.pt`。
 
@@ -180,7 +180,7 @@ python3 build.py
 
 ```
 dist/guji/guji        命令行
-dist/guji/guji-gui    桌面 GUI
+dist/guji/guji-desktop    桌面 GUI
 dist/guji_<版本>_<时间戳>_linux-x86_64.tar.gz
 ```
 
@@ -189,11 +189,11 @@ AppImage 或 `.desktop` 再另行打包。
 
 版本下限与 PyQt/PySide 版本绑定：
 
-| 目标系统       | 要求                                                            |
-| -------------- | --------------------------------------------------------------- |
-| **Ubuntu 22.04+** | 直接可跑（现役 PySide6 6.11 的 wheel 是 manylinux_2_34）      |
-| Ubuntu 20.04   | glibc 2.31 不够，需把 PySide6 降到 `6.8.x`（manylinux_2_28）    |
-| Windows 10 / 11 | Qt 官方支持 **Win10 1809（17763）+**；`requirements.txt` 已把 PySide6 锁在 `<6.13`（6.12 是最后一个支持 Win10 的版本） |
+| 目标系统          | 要求                                                                                                                   |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| **Ubuntu 22.04+** | 直接可跑（现役 PySide6 6.11 的 wheel 是 manylinux_2_34）                                                               |
+| Ubuntu 20.04      | glibc 2.31 不够，需把 PySide6 降到 `6.8.x`（manylinux_2_28）                                                           |
+| Windows 10 / 11   | Qt 官方支持 **Win10 1809（17763）+**；`requirements.txt` 已把 PySide6 锁在 `<6.13`（6.12 是最后一个支持 Win10 的版本） |
 
 **中文字体**：Ubuntu 最小安装通常一个中文字体都没有，缺字体时 PDF 的标题会
 静默变成方块。GUI 启动时会体检——没有就直接问要不要从软件源装（首选仿宋
@@ -214,10 +214,10 @@ fc-cache -f
 程序名为**古籍重製**。`python build.py` 一次构建产出**两个可执行文件**，
 放进同一个目录并共享同一份 `_internal`：
 
-| 入口         | 产物                     | 类型     | 说明                                      |
-| ------------ | ------------------------ | -------- | ----------------------------------------- |
-| `main.py`    | `dist/guji/guji.exe`     | console  | 命令行工具，安装后 PATH 中可直接用 `guji` |
-| `desktop.py` | `dist/guji/guji-gui.exe` | windowed | 桌面 GUI，无控制台窗口，安装包建快捷方式  |
+| 入口         | 产物                         | 类型     | 说明                                      |
+| ------------ | ---------------------------- | -------- | ----------------------------------------- |
+| `main.py`    | `dist/guji/guji.exe`         | console  | 命令行工具，安装后 PATH 中可直接用 `guji` |
+| `desktop.py` | `dist/guji/guji-desktop.exe` | windowed | 桌面 GUI，无控制台窗口，安装包建快捷方式  |
 
 两者由 `guji.spec` 的两次 `Analysis` + 一次 `COLLECT` 合并产出。这样 torch/cv2/Qt
 等数百 MB 的二进制只在 `_internal` 里落地一份；若分两次独立打包再塞进同一个
@@ -225,12 +225,39 @@ fc-cache -f
 
 **不重复打包组件**：每个入口只收集自己真正用到的东西。
 
-- 两边共用：`functions` / `utils` / `weights` / `static` / `docs`（GUI 的 worker
-  子进程要跑同样的 CLI 功能）；
-- **只进 GUI**：`desktop` 子模块与 `desktop/static` 图标——CLI 完全不碰 desktop，
+- 两边共用：`functions` / `utils` / `weights` / `static` / `docs/functions`（GUI 的
+  worker 子进程要跑同样的 CLI 功能；`guji help` 读的是 `docs/functions/`）；
+- **只进 GUI**：`desktop` 子模块与 `desktop/static`——CLI 完全不碰 desktop，
   若一起收集会把 66 个 desktop 模块 + 103 个 Qt 模块白白塞进 CLI 的字节码包；
 - PYZ（纯 Python 字节码）是每个 EXE 各自内嵌的，torch 等的 `.py` 无法跨 EXE
   共享，这属于双 EXE 结构的固有开销。
+
+### 用户手册：构建期预生成一个自包含 HTML
+
+手册有两条路，判据是**打包与否**（不是"文件在不在"）：
+
+| 模式 | 手册从哪来 | 截图 |
+| --- | --- | --- |
+| 开发（`python desktop.py`） | 点按钮时现渲染 `docs/guide/*.md` 到 `%TEMP%` | 绝对 `file://` |
+| 打包（安装版） | 构建期已生成 `desktop/static/manual.html`，点开即用 | **内联 data URI** |
+
+构建时 `build.py` 会额外跑一步「预生成手册」：把 `user-guide.md` / `cli.md` 连同
+12 张截图**压进一个约 8MB 的自包含 HTML**。所以——
+
+- `docs/guide/` 整目录**不进安装包**（md 与 6MB 截图对最终用户没用）；
+- `markdown` 库也被 `guji.spec` 的 `excludes` 排掉：只有构建环境需要它；
+- 改了手册必须**重新打包**才会生效（开发模式则改完即见）。
+
+自包含是硬要求：装到用户机器上既没有 md 也没有 `screenshots/`，任何外部引用
+都会变成碎图。`tools/smoke_frozen.py` 会核对「12 张内联图 + 无外部引用 +
+包内没有 `docs/guide` 与 `markdown`」。
+
+调手册的文案/版式时**不必跑完整打包**（19 分钟），用这条只重生成手册并刷新
+部署与安装包（约 2.5 分钟）：
+
+```bash
+python build.py --manual-only     # 改了 .py 仍然必须完整打包
+```
 
 依赖只有 `requirements.txt` **一份**（CLI + GUI 全量）：CLI 与 GUI 打进同一个
 目录、共享同一份 `_internal`，构建环境本来就必须同时具备两边的依赖，拆两份
@@ -251,7 +278,7 @@ HTML、安装版里退化成 `<pre>` 包裹的原始 markdown，而 `collect_sub
 
 - **CLI**：`{app}` 已加入当前用户 PATH，重开终端即可 `guji --help`；
 - **GUI**：开始菜单「古籍重製」（安装时可选桌面快捷方式）；
-- GUI 的重处理子进程在打包环境下以 `guji-gui.exe --worker --config …` 启动
+- GUI 的重处理子进程在打包环境下以 `guji-desktop.exe --worker --config …` 启动
   自身（`desktop.py` 负责路由），因此不需要额外的可执行文件。
 
 打包后 `desktop` 包位于 PYZ 字节存档内，磁盘上没有 `desktop/static/icon.png`；
@@ -553,10 +580,10 @@ $ python main.py detect -i ./images
 ERROR: 'detect' 不接受空跑（既未指定 --save，就不会产生任何文件）。
 ```
 
-| 参数      | 默认值 | 说明                                            |
-| --------- | ------ | ----------------------------------------------- |
-| `--save`  | False  | 把检测结果画到图片上并保存（**命令行必填**）     |
-| `--ext`   | png    | 标注图格式（jpg/png/tiff）                      |
+| 参数     | 默认值 | 说明                                         |
+| -------- | ------ | -------------------------------------------- |
+| `--save` | False  | 把检测结果画到图片上并保存（**命令行必填**） |
+| `--ext`  | png    | 标注图格式（jpg/png/tiff）                   |
 
 `crop` / `cropremove` 内部已含这一步，因此日常流程不必单独执行；本命令用于
 排查「框检不到 / 框位置不对」。**代码调用**不受 `--save` 限制，可只取坐标。
@@ -653,7 +680,7 @@ python main.py run print --config ./book.yaml
 
 ### 使用指南（照着做）
 
-- [桌面端操作指南](docs/guide/gui-guide.md) — 从导入 PDF 到出 PDF 的完整步骤（配操作截图）
+- [用户操作手册](docs/guide/user-guide.md) — 从导入 PDF 到出 PDF 的完整步骤（配操作截图）
 - [CLI 使用说明](docs/guide/cli.md) — 命令、参数、示例、退出码、架构
 
 ### 技术细节（给开发者）

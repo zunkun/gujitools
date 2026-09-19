@@ -7,7 +7,7 @@
 
 | 入口 | 适合谁 | 文档 |
 | --- | --- | --- |
-| **桌面端（GUI）** | 手工处理一两本，想边看预览边调参数、手绘修正框 | [gui-guide.md](gui-guide.md) |
+| **桌面端（GUI）** | 手工处理一两本，想边看预览边调参数、手绘修正框 | [user-guide.md](user-guide.md) |
 | **命令行（CLI）** | 批量处理几十本、集成进脚本 / 定时任务、无界面环境 | [cli.md](cli.md) |
 
 两者共用同一套算法，处理结果完全一致，按场景二选一即可。
@@ -16,13 +16,13 @@
 
 | 文档 | 内容 |
 | --- | --- |
-| [gui-guide.md](gui-guide.md) | **桌面端操作指南**：导入 PDF → 提取 → 检测 → 去底色 → 生成 PDF，全程配真实截图 |
+| [user-guide.md](user-guide.md) | **用户操作手册**：导入 PDF → 提取 → 检测 → 去底色 → 生成 PDF，全程配真实截图 |
 | [cli.md](cli.md) | **命令行使用说明**：命令、参数表、示例、退出码、架构 |
 
 ## 配图
 
 - [screenshots/](screenshots/) — 界面总览截图（6 张）
-- [screenshots/guide/](screenshots/guide/) — 操作指南配图（12 张）
+- [screenshots/guide/](screenshots/guide/) — 用户操作手册配图（12 张）
 
 截图以《龍譚精舍叢刻》真实扫描件演示（第 4 页），由 `tests/gui_shot.py`
 离屏渲染生成，改界面后重跑即可刷新。

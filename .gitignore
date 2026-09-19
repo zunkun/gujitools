@@ -47,6 +47,10 @@ shots/
 # 构建时由 desktop/static/icon.png 生成的 Windows 图标
 desktop/static/icon.ico
 
+# 构建期预生成的自包含手册页：正常只落在 dist/ 里；source 模式手动生成过一次
+# 就会留在这个位置（打包版会优先打开它），别让它进仓库
+desktop/static/manual.html
+
 .workbuddy/
 .workbuddy-ai/
 .trae/

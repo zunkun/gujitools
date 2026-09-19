@@ -41,10 +41,10 @@ def run(ctx) -> None:
     ok("docs/functions/ 存在（help 依赖）", (docs / "functions").is_dir(),
        str(docs / "functions"))
 
-    # 操作指南与命令行说明属于「给使用者」
-    ok("操作指南在 docs/guide/ 下",
-       (docs / "guide" / "gui-guide.md").exists(),
-       "gui-guide.md 不在 guide/")
+    # 用户操作手册与命令行说明属于「给使用者」
+    ok("用户操作手册在 docs/guide/ 下",
+       (docs / "guide" / "user-guide.md").exists(),
+       "user-guide.md 不在 guide/")
     ok("命令行说明在 docs/guide/ 下",
        (docs / "guide" / "cli.md").exists(),
        "cli.md 不在 guide/")
@@ -65,7 +65,7 @@ def run(ctx) -> None:
 
     # ⚠️ 关键：技术细节不得出现在 docs/guide/ 下（使用者会误入）
     guide_only = {
-        "gui-guide.md", "cli.md", "readme.md", "screenshots",
+        "user-guide.md", "cli.md", "readme.md", "screenshots",
     }
     guide_root = docs / "guide"
     leaked = sorted(
@@ -114,7 +114,7 @@ def run(ctx) -> None:
     # ---- 5. 三份索引文档都要能找到指南 ----
     for index in ("README.md", "docs/README.md"):
         text = (root / index).read_text(encoding="utf-8")
-        ok(f"{index} 索引了操作指南", "gui-guide.md" in text,
+        ok(f"{index} 索引了用户操作手册", "user-guide.md" in text,
            f"{index} 未收录，用户会找不到")
 
     # ---- 6. 真跑一遍 help 加载（行为断言，不只是文件存在）----

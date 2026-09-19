@@ -21,7 +21,7 @@ SolidCompression=yes
 SetupIconFile={#ICON_FILE}
 #endif
 UninstallDisplayName=古籍重製 {#VERSION}
-UninstallDisplayIcon={app}\guji-gui.exe
+UninstallDisplayIcon={app}\guji-desktop.exe
 
 [Languages]
 Name: "chinesesimplified"; MessagesFile: "compiler:Default.isl"
@@ -31,10 +31,10 @@ Source: "dist\guji\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
 
 [Icons]
 ; 开始菜单：GUI 主程序 + 卸载入口
-Name: "{autoprograms}\古籍重製"; Filename: "{app}\guji-gui.exe"; IconFilename: "{app}\guji-gui.exe"
+Name: "{autoprograms}\古籍重製"; Filename: "{app}\guji-desktop.exe"; IconFilename: "{app}\guji-desktop.exe"
 Name: "{autoprograms}\卸载 古籍重製"; Filename: "{uninstallexe}"
 ; 桌面快捷方式（可选安装，默认不勾选）
-Name: "{autodesktop}\古籍重製"; Filename: "{app}\guji-gui.exe"; IconFilename: "{app}\guji-gui.exe"; Tasks: desktopicon
+Name: "{autodesktop}\古籍重製"; Filename: "{app}\guji-desktop.exe"; IconFilename: "{app}\guji-desktop.exe"; Tasks: desktopicon
 
 [Tasks]
 Name: desktopicon; Description: "创建桌面快捷方式"; GroupDescription: "附加图标:"; Flags: unchecked
@@ -45,6 +45,10 @@ Name: desktopicon; Description: "创建桌面快捷方式"; GroupDescription: "�
 Type: files; Name: "{autoprograms}\guji古籍工具.lnk"
 Type: files; Name: "{autoprograms}\卸载 guji古籍工具.lnk"
 Type: files; Name: "{autodesktop}\guji古籍工具.lnk"
+; GUI 可执行文件改名过：guji-gui.exe → guji-desktop.exe。
+; 它已经不在 [Files] 的载荷里，Inno 不会替你删，于是旧版升级后
+; {app} 里会永久留着一个旧 EXE，旧快捷方式还照样能启动它（跑的是老版本）。
+Type: files; Name: "{app}\guji-gui.exe"
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"

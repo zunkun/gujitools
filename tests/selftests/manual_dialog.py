@@ -16,6 +16,7 @@
 baseUrl 配错的同款坑，只是换了层皮）。
 """
 
+import base64
 import re
 import urllib.parse
 
@@ -109,9 +110,9 @@ def run(ctx) -> None:
     # ---- 2. 文档源文件必须在 ----
     guide_dir = root / "docs" / "guide"
     ok("docs/guide/ 存在", guide_dir.is_dir(), str(guide_dir))
-    ok("docs/guide/gui-guide.md 存在",
-       (guide_dir / "gui-guide.md").exists(),
-       "操作指南缺失")
+    ok("docs/guide/user-guide.md 存在",
+       (guide_dir / "user-guide.md").exists(),
+       "用户操作手册缺失")
     ok("docs/guide/cli.md 存在",
        (guide_dir / "cli.md").exists(),
        "命令行说明缺失")
@@ -171,23 +172,26 @@ def run(ctx) -> None:
            re.search(rf"import[^;\"']*\b{re.escape(pkg)}\b", build_src) is not None,
            f"探针缺 {pkg} —— 已有 yolobuild 环境会跳过安装")
 
-    # ---- 3. guji.spec 必须把 docs/guide 打进 GUI 安装包 ----
+    # ---- 3. 打包策略：**docs/guide 不进包**，手册改成构建期预生成的自包含 HTML ----
+    # 方案演进（2026-09-19）：原先把 docs/guide 整目录（md + 6MB 截图）打进包、
+    # 运行时再渲染。现在改成构建期渲染一次、截图内联成 data URI，产物只有一个
+    # desktop/static/manual.html；md 与截图对最终用户没用，不再进安装包。
     spec = root / "guji.spec"
     spec_src = spec.read_text(encoding="utf-8") if spec.exists() else ""
     ok("guji.spec 存在", spec.exists(), str(spec))
-    ok("gui_datas 含 docs/guide 目录",
-       "('docs/guide', 'docs/guide')" in spec_src,
-       "spec 未打包 docs/guide —— frozen 模式手册找不到文件")
-    # ⚠️ 手册的图片在 docs/guide/screenshots/guide/ 子目录下。spec 里写的是
-    # 目录元组 `('docs/guide', 'docs/guide')`，靠 PyInstaller 的 os.walk()
-    # 递归收集（见 PyInstaller/building/utils.py 的 format_binaries_and_datas）——
-    # 所以**不需要**额外写一条 screenshots 的 datas，但也绝不能把这条改成
-    # 只收 *.md 的 glob，否则 12 张 PNG 全丢。这条断言钉住「按目录收、不按
-    # 后缀收」。
-    ok("gui_datas 按整个目录收 docs/guide（不是只收 *.md）",
-       re.search(r"\(\s*'docs/guide'\s*,\s*'docs/guide'\s*\)", spec_src) is not None
-       and not re.search(r"\(\s*'docs/guide[^']*\*", spec_src),
-       "spec 里 docs/guide 的 datas 被改成了 glob —— 子目录截图会丢")
+    ok("gui_datas 不再打包 docs/guide（改由构建期预生成自包含手册）",
+       "('docs/guide', 'docs/guide')" not in spec_src,
+       "spec 仍在打包 docs/guide —— 安装包会白带 6MB 截图")
+    ok("gui_datas 收 desktop/static（预生成的手册落在这里）",
+       "('desktop/static', 'desktop/static')" in spec_src)
+    # 只看代码行：注释里会解释"为什么不再收集 markdown"，别把注释当代码
+    spec_code = "\n".join(
+        ln for ln in spec_src.splitlines() if not ln.lstrip().startswith("#")
+    )
+    ok("excludes 排掉了 markdown（只有构建期渲染需要它）",
+       "'markdown'" in spec_code
+       and "collect_submodules('markdown')" not in spec_code,
+       "spec 仍在收集 markdown")
 
     pre_gui_datas = spec_src.split("gui_datas =")[0]
     # 只数元组条目（以 ( 开头且含 'docs/guide'），不要把注释也统计进来
@@ -195,9 +199,17 @@ def run(ctx) -> None:
         1 for ln in pre_gui_datas.splitlines()
         if ln.lstrip().startswith("(") and "'docs/guide'" in ln
     )
-    ok("CLI datas 没有 docs/guide（避免给 CLI 重复打资源）",
+    ok("CLI datas 从来没有 docs/guide（避免给 CLI 重复打资源）",
        cli_docs_guide == 0,
        f"CLI datas 多带了 {cli_docs_guide} 条 docs/guide")
+
+    build_src = (root / "build.py").read_text(encoding="utf-8")
+    ok("build.py 在构建流程里预生成手册",
+       "build_manual_html" in build_src and "generate_static_manual" in build_src,
+       "build.py 没有调用 generate_static_manual —— 打包版会退化成运行时渲染")
+    ok("build.py 预生成的是自包含版本（落 desktop/static）",
+       '"desktop" / "static"' in build_src.replace("_internal", ""),
+       "预生成路径不在 desktop/static 下")
 
     # ---- 4. 真跑一遍 HTML 生成：这是行为断言，静态检查抓不到 ----
     # ⚠️ 一定要断言「扩展类能静态导入」而不是只断言 import markdown：
@@ -244,13 +256,13 @@ def run(ctx) -> None:
     html = html_path.read_text(encoding="utf-8")
 
     # ---- 5. 两份指南都得**真正**渲染出来 ----
-    # ⚠️ 断言「『桌面端操作指南』这串字在产物里」是不够的：fallback 兜底
+    # ⚠️ 断言「『用户操作手册』这串字在产物里」是不够的：fallback 兜底
     # 把它原样塞进 <pre>{escaped}</pre> 也会通过。必须再断言「# 原文 / ** 加粗
     # / 围栏 ``` 三种 markdown 标记都不在产物里」——否则 `_md_to_fragment`
     # 在 markdown 库不可用时静默走兜底，产出的 HTML 浏览器渲染出来还是
     # 原始 markdown 文本（用户两轮反馈的核心症状），护栏却一路绿灯。
-    ok("产物含 gui-guide.md 的标题「桌面端操作指南」",
-       "桌面端操作指南" in html, "")
+    ok("产物含 user-guide.md 的标题「用户操作手册」",
+       "用户操作手册" in html, "")
     ok("产物含 cli.md 的标题「CLI 使用说明」",
        "CLI 使用说明" in html, "")
 
@@ -285,7 +297,7 @@ def run(ctx) -> None:
        "{escaped}" not in gui_section,
        "fallback 模板未替换")
     ok("gui 段落含真实 <h1>",
-       re.search(r'<h1[^>]*>[^<]*桌面端操作指南', gui_section) is not None,
+       re.search(r'<h1[^>]*>[^<]*用户操作手册', gui_section) is not None,
        "<h1> 缺失")
     # cli 段落同样不能被兜底（两份手册共用同一条转换路径，但历史上
     # 出现过「只有一份用了真解析」的偏差，所以两边都查）
@@ -324,19 +336,32 @@ def run(ctx) -> None:
        hits == len(img_srcs) == 12,
        f"命中 {hits}/{len(img_srcs)}")
 
-    # ---- 8. ⚠️ <base> 是图片能加载的唯一保证 ----
-    # 不加 base（或少了结尾斜杠），screenshots/guide/*.png 会相对临时目录
-    # 解析 → 12 张图全碎。这条是新方案里最容易被改坏的地方。
-    m = re.search(r'<base href="([^"]+)"', html)
-    base = m.group(1) if m else ""
-    ok("存在 <base> 标签", bool(base), "缺 <base>，截图必然全碎")
-    ok("base 是 file:// URL", base.startswith("file:///"), base)
-    ok("base 指向 docs/guide/ 且带结尾斜杠（防截图全碎）",
-       base.endswith("docs/guide/"),
-       base or "<空>")
-    ok("base 指向的手册目录真实存在",
-       manual_dir().resolve().is_dir(),
-       str(manual_dir()))
+    # ---- 8. ⚠️ 绝对不要 <base>：片段链接会被解析到目录上 ----
+    # 曾经为"让相对截图路径能解析"加过 <base href="file:///…/docs/guide/">，
+    # 结果片段链接（#sec-8 这种）按 base 解析 → 点标题旁的 # 锚点等于打开
+    # **docs/guide 目录**，浏览器直接把目录列表当页面显示（用户真的截了图来报）。
+    # 图片不靠 base：开发模式写绝对 file:// URL（下面第 8b 节验），生产内联。
+    ok("页面里没有 base 标签（有它就会把 #锚点 解析成目录 URL）",
+       re.search(r"<base\b", html) is None,
+       "出现了 base 标签 —— 点标题会跳到目录列表")
+    # 旧 bug 的特征串：片段链接被解析到手册目录上（→ 浏览器列目录）
+    ok("页面里没有指向目录的片段链接（旧 bug 的特征串）",
+       "docs/guide/#" not in html and "guide/#" not in html)
+    from desktop.ui import help_dialog as _hd8
+    ok("标题锚点是纯片段链接（JS 里以 '#' 开头赋值，不经 base 解析）",
+       "link.href = '#'" in _hd8._JS and "mark.href = '#'" in _hd8._JS)
+
+    # ---- 8b. 开发模式的截图必须是绝对 file:// 且真能打开 ----
+    # 没有 base 之后，图片路径只能靠绝对 URL——这条是 8 节的配套保证。
+    dev_srcs = re.findall(r'<img[^>]*?\ssrc="([^"]+)"', html)
+    ok("开发模式 12 张截图都是绝对 file:// URL",
+       len(dev_srcs) == 12 and all(s.startswith("file:///") for s in dev_srcs),
+       "; ".join(s[:36] for s in dev_srcs[:3]))
+    ok("这些绝对 URL 都能命中真实文件",
+       all(Path(urllib.parse.unquote(s[8:])).is_file() for s in dev_srcs),
+       "; ".join(s[:60] for s in dev_srcs
+                 if not Path(urllib.parse.unquote(s[8:])).is_file())[:120])
+    ok("手册目录真实存在", manual_dir().resolve().is_dir(), str(manual_dir()))
 
     # ---- 9. 分段开关与互链改写 ----
     ok("分段开关含 gui 标签", 'data-tab="gui"' in html, "")
@@ -344,7 +369,7 @@ def run(ctx) -> None:
     ok("默认激活 gui 标签页",
        'class="tab active" data-tab="gui"' in html, "")
     # ⚠️ 互链改写要**测机制**，不能测「当前文档里恰好有这个链接」：
-    # gui-guide.md 曾被整篇重写、[cli.md](cli.md) 那行被顺手删掉，护栏立刻红了
+    # user-guide.md 曾被整篇重写、[cli.md](cli.md) 那行被顺手删掉，护栏立刻红了
     # 但代码一点没坏——那是内容变动，不是回归。改成拿一段合成 markdown 喂
     # _md_to_fragment，直接断言改写规则生效。
     from desktop.ui.help_dialog import _md_to_fragment
@@ -389,3 +414,211 @@ def run(ctx) -> None:
     ok("entry='cli' 时激活 cli 标签页",
        'class="tab active" data-tab="cli"' in html_cli,
        "默认标签页没跟着 entry 走")
+
+    # ---- 13. ⚠️ 打开方式：交给系统的必须是**原生路径**，不是 file:// URI ----
+    # 真实故障（2026-09-19）：`open_manual` 一直用
+    # `webbrowser.open(html_path.as_uri())`，ShellExecute 拿到 file:// URI 会走
+    # **file: 协议处理器**（HKCR\file → CLSID {00000303-...}），那东西在部分机器上
+    # 没注册成功 → `os.startfile` **卡死不返回**：界面冻住、浏览器永远不出现
+    # （用户报「点用户手册按钮不打开浏览器了」）。同一台机器上传原生路径秒开。
+    # 这条护栏钉住「Windows 上第一跳必须是 os.startfile(原生路径)，且不再调用
+    # 会挂的 webbrowser.open」——纯注释挡不住回归，这里用行为断言。
+    import os as _os
+    import sys as _sys
+
+    from desktop.ui import help_dialog as _hd
+
+    if _sys.platform == "win32" and hasattr(_os, "startfile"):
+        calls: dict[str, str] = {}
+        real_startfile = _hd.os.startfile
+        real_wb_open = _hd.webbrowser.open
+
+        def _fake_startfile(target, *a, **kw):
+            calls["startfile"] = str(target)
+
+        def _fake_wb_open(url, *a, **kw):
+            calls["webbrowser"] = str(url)
+            return True
+
+        _hd.os.startfile = _fake_startfile
+        _hd.webbrowser.open = _fake_wb_open
+        try:
+            opened_path = _hd.open_manual()
+        finally:
+            _hd.os.startfile = real_startfile
+            _hd.webbrowser.open = real_wb_open
+
+        target = calls.get("startfile", "")
+        ok("Windows 上第一跳是 os.startfile", bool(target), "压根没调用 os.startfile")
+        ok("传给系统的不是 file:// URI（file: 协议处理器会卡死）",
+           bool(target) and not target.lower().startswith("file:"),
+           f"实际={target!r}")
+        ok("传的是真实存在的原生路径",
+           bool(target) and Path(target).is_file(),
+           f"实际={target!r}")
+        ok("不再走 webbrowser.open（Windows 上它会挂）",
+           "webbrowser" not in calls,
+           f"意外调用={calls.get('webbrowser')!r}")
+        ok("open_manual 返回的正是被打开的那个文件",
+           str(opened_path) == target,
+           f"返回={opened_path} 打开={target}")
+    else:
+        ok("非 Windows 平台仍用 webbrowser（本机是 Windows，跳过行为断言）",
+           True, _sys.platform)
+
+
+    # ---- 14. 生产/开发分流：打包版打开**预生成的静态手册** ----
+    # 开发时 docs 随时在改，必须每次现渲染；打包后内容已定死，直接打开静态页。
+    # 判据是 frozen（不是"静态文件在不在"），否则仓库里残留一个 manual.html
+    # 就会让开发者一直看到旧内容。
+    import os
+    import tempfile
+
+    from desktop.ui import help_dialog as hd
+
+    ok("开发（非 frozen）模式不启用静态手册", hd.prefer_static_manual() is False,
+       f"frozen={getattr(__import__('sys'), 'frozen', False)}")
+    os.environ["GUJI_MANUAL_STATIC"] = "1"
+    try:
+        ok("GUJI_MANUAL_STATIC=1 可强制走静态（冒烟/自测用）",
+           hd.prefer_static_manual() is True)
+    finally:
+        os.environ.pop("GUJI_MANUAL_STATIC", None)
+
+    tmpdir = Path(tempfile.mkdtemp(prefix="guji_static_manual_"))
+    static_file = tmpdir / "manual.html"
+    hd.generate_static_manual(static_file)
+    static_html = static_file.read_text(encoding="utf-8")
+
+    ok("静态手册生成成功且非空", static_html.startswith("<!DOCTYPE html>"),
+       static_html[:40])
+    ok("静态手册也不带 base 标签（同 8 节：它会把 #锚点 变成目录 URL）",
+       re.search(r"<base\b", static_html) is None)
+    ok("静态手册标注了「构建时预生成」",
+       "构建时预生成" in static_html)
+
+    static_srcs = re.findall(r'<img[^>]*?\ssrc="([^"]+)"', static_html)
+    ok("静态手册 12 张截图都在", len(static_srcs) == 12, f"{len(static_srcs)} 张")
+    # ⚠️ 核心不变量：安装包不含 docs/guide，图片必须**内联**，任何外部引用
+    # （相对路径 / 构建机绝对路径）到了用户机器上都是碎图。
+    ok("静态手册截图全部内联（data: URI）",
+       all(s.startswith("data:image/") for s in static_srcs),
+       "; ".join(s[:40] for s in static_srcs if not s.startswith("data:image/")))
+    ok("静态手册没有任何外部图片引用",
+       'src="file:' not in static_html and "src=\"screenshots/" not in static_html)
+    ok("静态手册没有引用 md 文档（安装包里没有 docs/guide）",
+       'href="cli.md"' not in static_html
+       and 'href="user-guide.md"' not in static_html)
+    ok("内联图片是真 PNG（base64 解码后校验文件头）",
+       all(base64.b64decode(s.split(",", 1)[1]).startswith(b"\x89PNG")
+           for s in static_srcs),
+       "有内联图片不是 PNG")
+
+    # 打包模式：open_manual 必须直接打开静态文件；文件缺失时退回现渲染
+    _real_static_path = hd.static_manual_path
+    _real_open = hd._open_with_system
+    opened: dict = {}
+    hd.static_manual_path = lambda: static_file
+    hd._open_with_system = lambda p: opened.setdefault("path", p) or True
+    os.environ["GUJI_MANUAL_STATIC"] = "1"
+    try:
+        got = hd.open_manual()
+        ok("打包模式：open_manual 直接打开预生成的静态手册",
+           got == static_file and opened.get("path") == static_file,
+           f"返回={got} 打开={opened.get('path')}")
+
+        static_file.unlink()
+        opened.clear()
+        fallback = hd.open_manual()
+        ok("打包模式但产物里没静态手册：退回运行时临时渲染（不留白屏）",
+           fallback.name.startswith(hd._HTML_PREFIX) and fallback.is_file(),
+           str(fallback))
+    finally:
+        hd.static_manual_path = _real_static_path
+        hd._open_with_system = _real_open
+        os.environ.pop("GUJI_MANUAL_STATIC", None)
+
+    # ---- 15. 右侧目录定位（点目录必须滚到对应小节）----
+    # 曾经的 bug：标题 id 是 JS 按 'sec-' + 序号 现赋的，两份手册都从 sec-0 开始
+    # → id 跨页签撞车。在 CLI 页签点目录，浏览器跳到**隐藏的 GUI 页签**里同名
+    # 元素（display:none 无法滚动）→ 表现为「跳到别处 / 没定位」。
+    source = help_dialog_py.read_text(encoding="utf-8")
+    # 只看代码行：注释里为了说明来龙去脉会引用旧写法，不该被当成"还在用"
+    code_only = "\n".join(
+        line for line in source.splitlines()
+        if not line.lstrip().startswith(("//", "*", "#"))
+    )
+    ok("目录 id 按页签加前缀（避免跨页签撞 id）",
+       "'-sec-'" in code_only and "prefix + i" in code_only,
+       "仍在使用无前缀的 sec-N")
+    ok("目录点击有显式滚动处理（原生锚点会被吸顶栏盖住）",
+       "tocNav.addEventListener('click'" in code_only
+       and "scrollIntoView" in code_only)
+    ok("标题留了吸顶栏的偏移量（scroll-margin-top）",
+       code_only.count("scroll-margin-top") >= 2,
+       f"出现 {code_only.count('scroll-margin-top')} 次")
+
+    # ---- 16. 手册页 JS：let/const、页签记忆、外链新开 ----
+    js = hd._JS
+    ok("手册页 JS 用 let/const（不再出现 var）", "var " not in js,
+       "仍有 var 声明")
+    ok("手册页记住上次看的分段（localStorage 读写）",
+       "localStorage.setItem" in js and "localStorage.getItem" in js,
+       "没有页签记忆逻辑")
+    ok("启动定页签的优先级：深链 > 记忆 > 默认",
+       "const deep" in js.replace("#tab-(.+)", "const deep")
+       or ("location.hash.match" in js and "remembered" in js),
+       "缺少启动定页签逻辑")
+
+    # 外链必须新标签打开（浏览器里把手册页顶掉会很烦）；手册之间的互链走页内跳转
+    fragment = hd._md_to_fragment(
+        "[外部站点](https://example.com/doc)\n\n[命令行手册](cli.md)\n"
+    )
+    ok("外链带上 target=_blank（不在当前页打开）",
+       'href="https://example.com/doc"' in fragment
+       and 'target="_blank"' in fragment,
+       fragment[:160])
+    ok("手册互链改写成页内 tab 跳转（浏览器打开 .md 只会显示纯文本）",
+       'href="#tab-cli"' in fragment, fragment[:160])
+
+    # ---- 17. 右栏版式：宽度、引导线、二级标记（都因"太窄/层级弱"返工过）----
+    css = hd._css()
+    # 不用正则：这行要的就是 "--toc-w: 236px"，切一刀最直观
+    toc_width = (
+        css.split("--toc-w:", 1)[1].split(";", 1)[0].strip()
+        if "--toc-w:" in css else ""
+    )
+    ok("目录栏够宽（>= 220px，中文标题才不会普遍折成两行）",
+       toc_width.endswith("px") and int(toc_width[:-2]) >= 220,
+       f"实际 {toc_width or '未定义'}")
+    ok("整列有引导线（否则一堆孤立条目看不出层级）",
+       "#toc-nav::before" in css and "#toc-nav { position: relative" in css)
+    ok("二级条目有独立标记（短横 + 更小字号）",
+       ".toc a.lv3::after" in css and ".toc a.lv3 {" in css)
+    ok("窄屏会收掉目录（加宽后断点也要跟着提）",
+       re.search(r"@media \(max-width: 12\d\dpx\)", css) is not None,
+       "断点没跟着目录宽度调整")
+
+    # ---- 18. 调版式不必跑 19 分钟完整打包 ----
+    ok("build.py 提供 --manual-only（只重生成手册 + 刷新部署/安装包）",
+       "--manual-only" in build_src and "refresh_manual_only" in build_src,
+       "缺少只刷手册的入口")
+
+    # ---- 19. 目录点击：file:// 下 replaceState 会抛，绝不能让它中断滚动 ----
+    # 实测：file:// 文档 origin 是 opaque，history.replaceState 抛 SecurityError。
+    # 曾经的顺序是 preventDefault → replaceState → scrollIntoView，异常一来
+    # 滚动就永远执行不到（用户看到的正是"点目录没反应"）。
+    # 只看代码行：注释里解释"file:// 下 replaceState 会抛"不该被当成调用
+    js_code = "\n".join(
+        line for line in js.splitlines() if not line.lstrip().startswith("//")
+    )
+    ok("replaceState 只出现在 setHash 里（统一接住 file:// 的 SecurityError）",
+       js_code.count("history.replaceState") == 1
+       and "catch (err)" in js_code.split("history.replaceState")[0][-260:],
+       f"出现 {js_code.count('history.replaceState')} 次")
+    handler = js_code[js_code.index("tocNav.addEventListener"):]
+    handler = handler[:handler.index("setHash('#'")]
+    ok("目录点击先 scrollIntoView、再动 hash（顺序反了会丢滚动）",
+       "scrollIntoView" in handler, "scrollIntoView 不在 setHash 之前")
+    ok("scrollIntoView 有绝对位置兜底（不支持平滑滚动时也能跳）",
+       "window.scrollTo(0, el.getBoundingClientRect().top" in js)

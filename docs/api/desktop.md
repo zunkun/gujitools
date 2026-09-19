@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 66 个模块、70 个公开类、317 个公开函数/方法（生成于 2026-09-19）。
+覆盖 66 个模块、70 个公开类、320 个公开函数/方法（生成于 2026-09-19）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -64,7 +64,7 @@
 | [`desktop.store.tasks`](#desktopstoretasks) | 1 | 19 |
 | [`desktop.ui.font_setup`](#desktopuifont_setup) | 2 | 8 |
 | [`desktop.ui.fonts`](#desktopuifonts) | 0 | 1 |
-| [`desktop.ui.help_dialog`](#desktopuihelp_dialog) | 0 | 3 |
+| [`desktop.ui.help_dialog`](#desktopuihelp_dialog) | 0 | 6 |
 | [`desktop.ui.icons`](#desktopuiicons) | 2 | 4 |
 | [`desktop.ui.segmented_toggle`](#desktopuisegmented_toggle) | 1 | 11 |
 | [`desktop.ui.style`](#desktopuistyle) | 0 | 3 |
@@ -2476,26 +2476,41 @@ widgets 里会让 `segmented_toggle` 反向 import widgets，形成循环导入�
   百 MB 级资源包，和 ``guji.spec`` 现有的 excludes 裁剪策略直接冲突。
 
 于是走第三条路：**用 Python 的 ``markdown`` 库（纯 Python、无二进制依赖）
-把 ``docs/guide/*.md`` 转成完整 HTML，内嵌匹配应用主题的 CSS，写到临时文件
-后用系统默认浏览器打开。**
+把 ``docs/guide/*.md`` 转成完整 HTML，内嵌匹配应用主题的 CSS，交给系统默认
+浏览器打开。**
+
+**两条路，按模式分流**（判据见 ``prefer_static_manual``，是"打包与否"而不是
+"文件在不在"）：
+
+| 模式 | 手册来源 | 截图 | 何时用 |
+| --- | --- | --- | --- |
+| 开发（源码运行） | 每次现渲染到 %TEMP% | 绝对 ``file://`` URL | md 随时在改，改完立刻可见 |
+| 打包（生产） | 构建期预生成的 ``desktop/static/manual.html`` | **内联 data URI** | 内容已定死，点开即用 |
+
+生产侧预生成是必须的，不只是"快一点"：``docs/guide/`` 整目录**不进安装包**
+（对最终用户无用的 md 与截图，白占体积），所以安装后既读不到 md、也找不到
+截图——只有把手册连同截图压成一个自包含 HTML 放进包里才成立。
 
 这样做的好处：
 
-1. **零重量依赖** —— ``markdown`` 是纯 Python 单包，不引入 Qt 之外的二进制；
+1. **零重量依赖** —— ``markdown`` 纯 Python 单包；且**只有构建环境需要它**，
+   打包产物里已把它排除（运行时不渲染 md，缺了它也只是退化成占位提示）；
 2. **完整 GFM** —— 表格、围栏代码块、嵌套列表都按规范渲染；
-3. **图片照旧可用** —— 靠 ``<base>`` 把文档基准指向 ``docs/guide/``，
-   12 张相对路径的中文名截图正常加载，Markdown 里的写法一个字都不用改；
+3. **图片永远不碎** —— 开发靠 ``<base>`` 指回 ``docs/guide/``，生产靠内联，
+   两种模式都不存在"相对路径解析错"的可能；
 4. **样式自由** —— 真实浏览器渲染，CSS 不受 Qt 富文本子集限制；
-5. **不做构建步骤** —— HTML 是**运行时**生成的，改了 Markdown 重新打开
-   手册就是新的，不存在产物与源漂移的问题。
+5. **性能与产物一致** —— 生产端点开就是浏览器那一下，没有首次渲染延迟，
+   也不再有"临时文件堆积 + 防缓存文件名"那套绕法。
 
-两条关键实现约束（改动时别踩）：
+三条关键实现约束（改动时别踩）：
 
-- **``<base>`` 必须指向手册目录且带结尾斜杠**：否则
-  ``screenshots/guide/*.png`` 会相对临时文件解析，全变成碎图。
-- **指南之间的互链要改成页内 tab 跳转**：``gui-guide.md`` 里有
+- **开发模式的 ``<base>`` 必须指向手册目录且带结尾斜杠**：HTML 落在临时目录，
+  不设 base 就会把 ``screenshots/guide/*.png`` 解析成碎图；
+- **指南之间的互链要改成页内 tab 跳转**：``user-guide.md`` 里有
   ``[cli.md]\(cli.md)``，浏览器会把 .md 当纯文本显示，必须改写为
-  ``#tab-cli`` 交给 JS 切页。
+  ``#tab-cli`` 交给 JS 切页；
+- **打开时只把「原生路径」交给系统，绝不传 ``file:///`` URI**：见
+  ``_open_with_system`` 的注释，这是「点了按钮没反应」的元凶。
 
 ### 模块常量
 
@@ -2503,15 +2518,19 @@ widgets 里会让 `segmented_toggle` 反向 import widgets，形成循环导入�
 | --- | --- |
 | _HTML_PREFIX | `"guji_manual_"` |
 | _KEEP_RECENT | `3` |
-| _JS | `" (function () {   function activate(tabId) {     var tabs…"` |
+| STATIC_MANUAL_NAME | `"manual.html"` |
+| _JS | `" (function () {   const tocNav = document.getElementById(…"` |
 
 ### 模块函数
 
 | 函数 | 说明 |
 | --- | --- |
 | `manual_dir() -> Path` | 手册目录（源码与打包两种模式下都可用）。 |
-| `generate_manual_html(entry: str \| None=None) -> Path` | 把全部手册渲染成一个带分段开关的 HTML 文件，返回其路径。 |
-| `open_manual(entry: str \| None=None) -> Path` | 生成手册 HTML 并用系统默认浏览器打开，返回该文件路径。 |
+| `static_manual_path() -> Path` | 构建期预生成的自包含手册路径（**只有打包版才有**；可能不存在）。 |
+| `prefer_static_manual() -> bool` | 当前是否该走「构建期静态手册」这条路。 |
+| `generate_manual_html(entry: str \| None=None) -> Path` | 把手册渲染成一个带分段开关的 HTML 文件（临时目录），返回其路径。 |
+| `generate_static_manual(output_path: Path \| None=None) -> Path` | **构建期**把手册渲染成单个自包含 HTML（默认 ``desktop/static/manual.html``）。 |
+| `open_manual(entry: str \| None=None) -> Path` | 打开用户手册，返回被打开的 HTML 路径。 |
 
 #### `manual_dir() -> Path`
 
@@ -2522,29 +2541,66 @@ widgets 里会让 `segmented_toggle` 反向 import widgets，形成循环导入�
 ``package_dir()`` 在 frozen 下返回 ``_MEIPASS/desktop``，再上一级同样是
 资源根，因此 ``package_dir().parent / "docs" / "guide"`` 两种模式通用。
 
+#### `prefer_static_manual() -> bool`
+
+当前是否该走「构建期静态手册」这条路。
+
+判据是**打包与否（frozen）**，不是「静态文件在不在」：
+
+- 开发模式：``docs/guide/*.md`` 随时在改，必须每次现渲染，改完立刻能看到
+  效果；若按「文件存在」判断，仓库里哪天留了一个 ``manual.html``（手动生成
+  过一次、或从安装包里拷回来的），开发者就会一直看到旧内容；
+- 生产模式（PyInstaller 打包后）：手册内容在构建那一刻就定死了，直接打开
+  预生成的静态 HTML，不渲染、不写临时文件。
+
+``GUJI_MANUAL_STATIC=1`` / ``=0`` 可强制指定，供冒烟与自测用。
+
 #### `generate_manual_html(entry: str | None=None) -> Path`
 
-把全部手册渲染成一个带分段开关的 HTML 文件，返回其路径。
+把手册渲染成一个带分段开关的 HTML 文件（临时目录），返回其路径。
 
 entry 为 ``MANUAL_ENTRIES`` 里的键，决定默认激活哪个标签页；
-不传则激活第一项。
+不传则激活第一项。**这是打包版用不到的老路**：打包版读
+``docs/guide/manual.html``（见 ``generate_static_manual``），只有源码模式
+（没有静态文件）才现渲染到这里。
 
 ⚠️ ``<base>`` 指向手册目录（带结尾斜杠）是图片能加载的唯一保证：
 Markdown 里写的是 ``screenshots/guide/xxx.png`` 这样的相对路径，
 而 HTML 落在临时目录，不设 base 就会相对临时目录解析成碎图。
 
+#### `generate_static_manual(output_path: Path | None=None) -> Path`
+
+**构建期**把手册渲染成单个自包含 HTML（默认 ``desktop/static/manual.html``）。
+
+打包版点「用户手册」时直接打开这个文件：不渲染 md、不读截图、不写临时文件。
+自包含（截图内联成 data URI）是硬要求——``docs/guide/`` 整目录**不进安装包**，
+安装后既没有 md 也没有 screenshots，任何外部引用都会变成碎图。
+
+⚠️ 源码模式下调用**务必传 ``output_path``**（写进待打包目录），别默认写到
+``desktop/static/manual.html``——那个位置会被打包版优先打开，万一留在仓库里
+容易让人以为改了 md 就生效（实际必须重新打包）。
+
 #### `open_manual(entry: str | None=None) -> Path`
 
-生成手册 HTML 并用系统默认浏览器打开，返回该文件路径。
+打开用户手册，返回被打开的 HTML 路径。
+
+**按模式分流**（见 ``prefer_static_manual``）：
+
+- 打包版（frozen）：直接打开构建期预生成的 ``docs/guide/manual.html``——
+  不渲染、不写临时文件，点下去就只剩开浏览器那一下；万一产物里没有这个
+  文件（老包 / 构建步骤没跑到），退回现渲染，功能不受影响；
+- 开发模式：**一律现渲染**到临时目录，改完 md 立刻看到新内容，不会被仓库里
+  可能存在的旧静态文件顶掉。
 
 返回路径是为了调用方（或测试）能拿到产物做进一步处理。
-浏览器打不开时 ``webbrowser.open`` 只是返回 False，不抛异常——
-手册文件仍然生成好了，用户可以手动打开。
+打不开浏览器时不抛异常——手册文件仍然在，用户可以手动打开，
+界面上会弹一个带路径的提示框。
 
-⚠️ 不要给 URL 加 ``?v=<时间戳>`` 去防缓存：Windows 上
-``webbrowser.open`` 最终走 ``os.startfile``，查询串会被当成路径的
-一部分，实测地址栏里根本不出现。防缓存靠的是**文件名本身带时间戳**
-（见 ``_HTML_PREFIX``），每次都是新 URL。
+⚠️ 不要给 URL 加 ``?v=<时间戳>`` 去防缓存：Windows 上最终还是要走系统 shell，
+查询串会被当成路径的一部分，实测地址栏里根本不出现。临时文件靠**文件名本身
+带时间戳**（见 ``_HTML_PREFIX``）保证 URL 唯一；静态文件靠"重装即替换"。
+
+⚠️ 不要把 ``html_path.as_uri()`` 直接丢给系统（见 ``_open_with_system``）。
 
 ---
 
