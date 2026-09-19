@@ -10,9 +10,9 @@ GUI 的预览控件也要画同样的框。配色与命名必须一致，否则�
 - 标注文字为「左框 (x1,y1,x2,y2)」。
 
 **中文字体**：OpenCV 的 `putText` 不支持中文（会画成 `????`），因此文字用
-PIL 绘制。字体按 `utils.pdf_draw.register_fonts` 相同的候选顺序探测
-Windows 系统中文字体；全部缺失时退化为 ASCII 标签（`L` / `R` / `U`），
-保证任何环境下都不会崩。
+PIL 绘制。字体候选路径来自 `utils.fonts`（Windows/Linux/macOS 三份候选 +
+`GUJI_CJK_FONT` 逃生口，见那里的说明——**别在本文件再写一遍**）；全部缺失
+时退化为 ASCII 标签（`L` / `R` / `U`），保证任何环境下都不会崩。
 """
 
 from pathlib import Path
@@ -29,24 +29,20 @@ BOX_NAMES: Tuple[str, ...] = ("左框", "右框", "合并框")
 # 无中文字体时的 ASCII 兜底标签
 BOX_NAMES_ASCII: Tuple[str, ...] = ("L", "R", "U")
 
-# 中文字体候选路径，与 utils/pdf_draw.register_fonts 保持一致
-_FONT_CANDIDATES = (
-    r"C:\Windows\Fonts\fsgb2312.ttf",
-    r"C:\Windows\Fonts\simfang.ttf",
-    r"C:\Windows\Fonts\simsun.ttc",
-    r"C:\Windows\Fonts\msyh.ttc",
-)
-
 _font_cache: dict = {}
+
+
+def reset_font_cache() -> None:
+    """清空字体探测缓存（`GUJI_CJK_FONT` 改指向后需要重探测）。"""
+    _font_cache.clear()
 
 
 def find_cjk_font() -> Optional[str]:
     """返回可用的中文字体路径；都没有则返回 None。结果会缓存。"""
     if "path" not in _font_cache:
-        found = next(
-            (p for p in _FONT_CANDIDATES if Path(p).exists()), None
-        )
-        _font_cache["path"] = found
+        from utils.fonts import first_existing_cjk_font
+
+        _font_cache["path"] = first_existing_cjk_font()
     return _font_cache["path"]
 
 

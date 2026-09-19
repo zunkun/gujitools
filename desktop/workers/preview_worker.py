@@ -113,13 +113,14 @@ def _pick_preview_font(point_size: float) -> QFont:
     ⚠️ 别用裸 `QFont()`：它落到平台的 generic "Sans Serif" 上，在离屏
     （`QT_QPA_PLATFORM=offscreen`）或字体缺失的环境里中文会渲染成空心
     方框；而且它的字宽度量恰好等于字号，横向文字的占宽会被严重高估。
-    这里按 fpdf 那套中文字体表（`utils.pdf_draw.register_fonts`）找同源
-    的字体族，找不到再交给 Qt 兜底。
+    这里按 `utils.fonts.cjk_font_families()`（与 PDF 侧 `register_fonts`
+    同源的一份候选）找能画中文的字体族，找不到再交给 Qt 兜底。
     """
     from PySide6.QtGui import QFontDatabase
+    from utils.fonts import cjk_font_families
 
     families = set(QFontDatabase.families())
-    for candidate in ("SimFang", "FangSong", "SimSun", "Microsoft YaHei", "SimHei"):
+    for candidate in cjk_font_families():
         if candidate in families:
             font = QFont(candidate)
             break

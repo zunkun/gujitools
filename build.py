@@ -14,6 +14,19 @@
 
 两者共享同一份 dist/guji/_internal：torch/cv2 等大二进制只落地一份。
 
+⚠️ **PyInstaller 不能交叉编译**，所以 Linux 产物只能在 Linux 上构建
+（物理机 / WSL2 / CI runner），Windows 上怎么配置都变不出 ELF。同一份
+``build.py`` 在 Ubuntu 上执行即可，差异由脚本自动处理：
+
+    dist/guji/guji            （无 .exe 后缀）
+    dist/guji/guji-gui
+    dist/guji_<版本>_<时间戳>_linux-x86_64.tar.gz
+
+Linux 侧**没有安装包**（Inno Setup 是 Windows 专属），改用 tar.gz 分发；
+需要 AppImage / .desktop 再另行打包。另外 Linux 目标机往往没有中文字体，
+构建结束脚本会打印安装提示（程序运行时也会自行体检并弹安装引导，
+见 ``utils/font_setup.py``）。
+
 注意：GUI 依赖（PySide6 / qfluentwidgets）也在 yolobuild 内安装，
 因为两个 EXE 必须同一次构建产出才能合并 _internal。
 """
@@ -28,6 +41,13 @@ from pathlib import Path
 from config import VERSION
 
 BUILD_ENV_NAME = "yolobuild"
+
+#: Windows 特有行为的开关（ico 图标、Inno Setup 安装包、D:\... 瘦身清单）
+IS_WINDOWS = sys.platform == "win32"
+
+#: 可执行文件名（Linux 无后缀）
+CLI_EXE = "guji.exe" if IS_WINDOWS else "guji"
+GUI_EXE = "guji-gui.exe" if IS_WINDOWS else "guji-gui"
 
 
 def run_conda(conda_exe, args, check=True, capture_output=False):
@@ -246,6 +266,57 @@ def ensure_build_environment(project_root):
     raise SystemExit(result.returncode)
 
 
+def trash_root() -> Path:
+    """旧产物与瘦身后文件的**归档目录**（仓库外同级：`../.guji_build_trash`）。
+
+    ⚠️ 为什么构建里一律「只移不删」：
+
+    1. `dist/guji` 动辄上千项，`rmtree` 会被批量删除安全钩子按条数拦下
+       （实测 count=1168 > 阈值 50），一次拦下整轮 15 分钟的构建就白跑了；
+    2. 构建产物删了就没了——万一新包有问题，旧包也回不来。
+
+    移到同盘的归档目录（同盘 = rename，秒级、不复制数据），需要腾空间时
+    手动清即可。
+    """
+    root = Path(__file__).resolve().parent.parent / ".guji_build_trash"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def retire(path: Path, trash: Path) -> Path | None:
+    """把旧的 build/ 或 dist/ 整体搬进归档目录，返回落点。"""
+    if not path.exists():
+        return None
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    dest = trash / f"{path.name}_{stamp}"
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if dest.exists():  # 同一秒内重复跑
+            dest = trash / f"{path.name}_{stamp}_{os.getpid()}"
+        shutil.move(str(path), str(dest))
+    except OSError as exc:
+        print(f"   ⚠️ 旧 {path.name} 归档失败（继续构建）: {exc}")
+        return None
+    print(f"   ♻️  旧 {path.name}/ → {dest}")
+    return dest
+
+
+def discard(path: Path, trash: Path, anchor: Path | None = None) -> bool:
+    """把瘦身命中的单个文件搬进归档目录（同样不删），成功返回 True。"""
+    try:
+        if anchor is not None:
+            dest = trash / "pruned" / path.relative_to(anchor)
+        else:
+            dest = trash / "pruned" / path.name
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if dest.exists():
+            dest.unlink()
+        shutil.move(str(path), str(dest))
+        return True
+    except OSError:
+        return False
+
+
 def prepare_icon(project_root):
     """把 desktop/static/icon.png 转成 Windows 图标 icon.ico。
 
@@ -253,7 +324,11 @@ def prepare_icon(project_root):
     .ico 在构建时生成——**顺便烧上圆角**：图标形状由像素决定，源图不必
     手工修圆角（详见 tools/make_icon.py）。
     返回生成出的 .ico 路径，失败则返回 None（不致命）。
+
+    Linux 的可执行文件不带图标资源，跳过这一步。
     """
+    if not IS_WINDOWS:
+        return None
     png = project_root / "desktop" / "static" / "icon.png"
     ico = png.with_suffix(".ico")
     if not png.is_file():
@@ -286,12 +361,11 @@ def main():
 
     print(f"项目版本: {VERSION}")
 
-    # 清理旧产物（guji.spec 现在是构建输入，不能删）
+    # 归档旧产物（guji.spec 现在是构建输入，不能删）
+    # ⚠️ 这里**只移不删**：详见 trash_root() 的说明。
+    trash = trash_root()
     for target in [project_root / "build", project_root / "dist"]:
-        if target.is_dir():
-            shutil.rmtree(target)
-        elif target.exists():
-            target.unlink()
+        retire(target, trash)
 
     icon = prepare_icon(project_root)
 
@@ -302,17 +376,19 @@ def main():
 
     # 用 spec 构建：一个目录内同时产出 guji.exe(CLI) 与 guji-gui.exe(GUI)，
     # 共享同一份 _internal（torch 等大二进制只落地一次）。
+    # ⚠️ 不再加 --clean：它会 rmtree 掉整个 workpath（上千项，会被批量删除
+    # 钩子拦下）。改成每次用一个新的 workpath，天然干净、无须清理。
+    workpath = project_root / "build" / f"pyi_{time.strftime('%Y%m%d_%H%M%S')}"
     cmd = [
         sys.executable,
         "-m",
         "PyInstaller",
         str(spec),
         "--noconfirm",
-        "--clean",
         "--distpath",
         str(project_root / "dist"),
         "--workpath",
-        str(project_root / "build"),
+        str(workpath),
     ]
 
     print(f"工作目录: {project_root}")
@@ -326,19 +402,32 @@ def main():
 
     if result.returncode == 0:
         dist_dir = project_root / "dist" / "guji"
-        exes = sorted(p.name for p in dist_dir.glob("*.exe")) if dist_dir.is_dir() else []
-        if exes:
-            print(f"\n✅ 打包完成: dist/guji/  →  {', '.join(exes)}")
+        built = [
+            p.name for p in dist_dir.iterdir() if p.name in (CLI_EXE, GUI_EXE)
+        ] if dist_dir.is_dir() else []
+        if built:
+            print(f"\n✅ 打包完成: dist/guji/  →  {', '.join(sorted(built))}")
         else:
             print("\n✅ 打包完成: dist/guji/")
 
-        for label, fn in [
+        steps: list[tuple[str, object]] = [
             ("校验产物", lambda: verify_outputs(dist_dir)),
             ("体积瘦身", lambda: prune_bloat(dist_dir)),
             ("瘦身检查", lambda: run_bloat_check(project_root)),
-            ("复制到 C:\\Software", lambda: copy_to_software(project_root, "onedir")),
-            ("生成安装包", lambda: build_installer(project_root, icon)),
-        ]:
+        ]
+        if IS_WINDOWS:
+            steps += [
+                ("复制到 C:\\Software",
+                 lambda: copy_to_software(project_root, "onedir")),
+                ("生成安装包", lambda: build_installer(project_root, icon)),
+            ]
+        else:
+            steps += [
+                ("打 tar.gz", lambda: pack_tarball(project_root, dist_dir)),
+                ("中文字体提示", lambda: print_font_hint()),
+            ]
+
+        for label, fn in steps:
             mark = time.monotonic()
             print(f"\n▶ {label} ...")
             fn()
@@ -390,17 +479,21 @@ def prune_bloat(dist_dir):
 
     internal = dist_dir / "_internal"
     MB = 1024 * 1024
+    removed_files = 0
 
     targets = []
-    # 1) 单个明确无用的二进制
-    targets.append((internal / "cv2" / "opencv_videoio_ffmpeg500_64.dll",
-                    "cv2 视频编解码（项目只用 imread/imwrite 等图像 API）"))
-    targets.append((internal / "PySide6" / "opengl32sw.dll",
-                    "Qt 软件 OpenGL 回退（界面不依赖 OpenGL）"))
-    targets.append((internal / "torch" / "bin" / "protoc.exe",
-                    "protobuf 编译器（构建期工具，运行期不执行）"))
-    targets.append((internal / "sqlite3.dll", "SQLite（旧数据迁移已移除）"))
-    targets.append((internal / "_sqlite3.pyd", "SQLite（旧数据迁移已移除）"))
+    if IS_WINDOWS:
+        # Windows 特有：视频编解码、软件 OpenGL 回退、构建工具、SQLite
+        targets += [
+            (internal / "cv2" / "opencv_videoio_ffmpeg500_64.dll",
+             "cv2 视频编解码（项目只用 imread/imwrite 等图像 API）"),
+            (internal / "PySide6" / "opengl32sw.dll",
+             "Qt 软件 OpenGL 回退（界面不依赖 OpenGL）"),
+            (internal / "torch" / "bin" / "protoc.exe",
+             "protobuf 编译器（构建期工具，运行期不执行）"),
+            (internal / "sqlite3.dll", "SQLite（旧数据迁移已移除）"),
+            (internal / "_sqlite3.pyd", "SQLite（旧数据迁移已移除）"),
+        ]
 
     # 2) torch 源码副本：只删 .py，保留 lib/bin/share 下的二进制与数据，
     #    以及会被 inspect.getsource 读回的那几个 config/内省文件
@@ -417,19 +510,20 @@ def prune_bloat(dist_dir):
             print(f"   保留 {kept} 个 torch 源文件（运行时需读回源码）")
 
     saved = 0
-    removed_files = 0
     for path, reason in targets:
         if not path.exists():
             continue
         try:
             size = path.stat().st_size if path.is_file() else 0
-            path.unlink()
+        except OSError:
+            continue
+        if discard(path, trash_root(), anchor=internal):
             saved += size
             removed_files += 1
-        except OSError as exc:
-            print(f"   ⚠️ 删除失败 {path.name}: {exc}")
+        else:
+            print(f"   ⚠️ 归档失败（跳过）{path}")
 
-    # 删空 .py 后剩下的空目录也一并清理
+    # 删（归档）完 .py 后剩下的空目录也一并清理；清不掉无所谓，空目录不占体积
     removed_dirs = 0
     if torch_dir.is_dir():
         for d in sorted(torch_dir.rglob("*"), key=lambda p: -len(p.parts)):
@@ -441,8 +535,8 @@ def prune_bloat(dist_dir):
                     pass
 
     if saved:
-        print(f"🧹 瘦身完成：删除 {removed_files} 个文件、{removed_dirs} 个空目录，"
-              f"节省 {saved / MB:.1f} MB")
+        print(f"🧹 瘦身完成：归档 {removed_files} 个文件、清理 {removed_dirs} 个空目录，"
+              f"腾出 {saved / MB:.1f} MB（文件已移到 {trash_root()}，未删除）")
     else:
         print("🧹 瘦身：没有匹配到可删除的内容")
     return saved
@@ -476,7 +570,7 @@ def verify_outputs(dist_dir):
     if not dist_dir.is_dir():
         print(f"⚠️ 未找到输出目录: {dist_dir}")
         return
-    missing = [name for name in ("guji.exe", "guji-gui.exe")
+    missing = [name for name in (CLI_EXE, GUI_EXE)
                if not (dist_dir / name).is_file()]
     if missing:
         print(f"⚠️ 输出目录缺少可执行文件: {', '.join(missing)}")
@@ -517,7 +611,12 @@ def build_installer(project_root, icon=None):
         None,
     )
     if iscc is None:
-        raise FileNotFoundError("未找到 ISCC.exe，请安装 Inno Setup")
+        # ⚠️ 曾经这里直接 raise → PyInstaller 跑了 15 分钟后整个构建失败，
+        # 安装包缺席却把 dist/ 里的成果判了死刑。装不上 Inno Setup 只是没
+        # 安装包，dist/guji/ 本身完全可用（拷出去就能用），所以改成警告。
+        print("\n⚠️ 未找到 ISCC.exe（Inno Setup），跳过安装包生成\n"
+              "   dist/guji/ 已可直接分发；要出安装包请安装 Inno Setup 6/7")
+        return
 
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     cmd = [
@@ -535,8 +634,66 @@ def build_installer(project_root, icon=None):
     print(f"✅ 安装包生成完成: dist/guji_setup_{VERSION}_{timestamp}.exe")
 
 
+def pack_tarball(project_root, dist_dir):
+    """Linux 产物打成 tar.gz（Windows 安装包之外的分发方式）。
+
+    用 Python 的 ``tarfile`` 而不是 subprocess 调 tar：tar 需要额外传参才能
+    保留可执行位，各发行版行为也不一致；纯 Python 路径在哪都一样。
+    """
+    import platform
+    import tarfile
+    import time
+
+    from config import VERSION
+
+    if not dist_dir.is_dir():
+        print("⚠️ 未找到输出目录，跳过打包")
+        return None
+
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    arch = platform.machine() or "unknown"
+    target = (
+        project_root / "dist" / f"guji_{VERSION}_{timestamp}_linux-{arch}.tar.gz"
+    )
+    try:
+        with tarfile.open(target, "w:gz") as archive:
+            archive.add(str(dist_dir), arcname=dist_dir.name)
+    except OSError as exc:
+        print(f"⚠️ 打包 tar.gz 失败: {exc}")
+        return None
+    size_mb = target.stat().st_size / 1024 / 1024 if target.exists() else 0
+    print(f"📦 {target.name}（{size_mb:.0f} MB）")
+    return target
+
+
+def print_font_hint():
+    """Linux 目标机常缺中文字体，构建完打印一次该怎么办。
+
+    程序运行时也会自己体检并弹安装引导（``utils/font_setup.py``），这里只是
+    给打包者一句提示——不然很容易做出一个"能跑但 PDF 中文全是方块"的包。
+    """
+    try:
+        from utils.font_setup import check_cjk_font, install_plan, manual_install_text
+    except Exception as exc:  # 打包脚本不该因为提示而失败
+        print(f"⚠️ 字体体检不可用: {exc}")
+        return
+
+    check = check_cjk_font()
+    if check.found:
+        print(f"   本机有中文字体（{Path(check.path).name}），目标机若缺替代也没问题："
+              "程序会在首次启动时提示安装")
+        return
+    print("⚠️ 本机没有中文字体：目标机很可能同样缺，PDF 的标题会变成方块。")
+    print("   —— 可以先在这里装好，也可以让程序在目标机上提示用户一键安装 ——")
+    for line in manual_install_text(install_plan()).splitlines():
+        print(f"   {line}" if line.strip() else "")
+
+
 def copy_to_software(project_root, mode):
     r"""将 onedir 打包结果复制到 C:\Software 并做版本备份。"""
+    if not IS_WINDOWS:
+        print("⚠️ 非 Windows：跳过复制到 C:\\Software")
+        return
     import time
 
     from config import VERSION
@@ -550,9 +707,8 @@ def copy_to_software(project_root, mode):
     backup_name = f"guji_v{VERSION}_{timestamp}"
     backup_path = backup_dir / backup_name
 
-    print(f"\n📦 复制到 C:\\Software\\guji...")
+    print("\n📦 复制到 C:\\Software\\guji...")
     if target.exists():
-        print(f"   目标目录已存在，先备份...")
         backup_dir.mkdir(parents=True, exist_ok=True)
 
         if backup_path.exists():
@@ -563,13 +719,18 @@ def copy_to_software(project_root, mode):
                     break
                 suffix += 1
 
+        # ⚠️ 这里是**移动**，而不是原先的「先复制一份备份、再 rmtree 掉目标」：
+        # ① 复制 665MB 再删 1168 项要好几分钟，同盘 rename 是瞬时的；
+        # ② `shutil.rmtree(target)` 上千项会被批量删除安全钩子拦下——
+        #    实测整轮 16 分钟的构建就栽在这最后一步。
+        # 语义完全一样：旧目录整体搬进备份目录，一个字节都没少。
+        print("   目标目录已存在，先把旧版移到备份目录...")
         try:
-            shutil.copytree(str(target), str(backup_path))
+            shutil.move(str(target), str(backup_path))
             print(f"   ✅ 备份到: {backup_path}")
         except Exception as e:
-            print(f"   ⚠️  备份失败: {e}")
-
-        shutil.rmtree(str(target))
+            print(f"   ❌ 备份失败（不覆盖现有部署）: {e}")
+            return
 
         clean_old_backups(backup_dir, max_backups)
 
@@ -581,7 +742,12 @@ def copy_to_software(project_root, mode):
 
 
 def clean_old_backups(backup_dir, max_backups):
-    """清理超过保留数量限制的旧备份。"""
+    """列出保留数量之外的旧备份（**不代删**）。
+
+    ⚠️ 以前这里直接 `shutil.rmtree`：几百 MB 的旧包说删就删，而且上千项会被
+    批量删除安全钩子拦下，把整轮 16 分钟的构建判成失败。备份的价值就在于
+    "还在"，所以只列出超额的那些，交给你自己清。
+    """
     if not backup_dir.exists():
         return
 
@@ -594,14 +760,9 @@ def clean_old_backups(backup_dir, max_backups):
     if len(backups) <= max_backups:
         return
 
-    to_delete = backups[max_backups:]
-    print(f"   清理旧备份（保留最近{max_backups}个）...")
-    for backup in to_delete:
-        try:
-            shutil.rmtree(str(backup))
-            print(f"   🗑️ 删除: {backup.name}")
-        except Exception as e:
-            print(f"   ⚠️ 删除失败 {backup.name}: {e}")
+    print(f"   备份数已超过 {max_backups}，以下可自行删除：")
+    for backup in backups[max_backups:]:
+        print(f"   🗑️ {backup}")
 
 
 if __name__ == "__main__":

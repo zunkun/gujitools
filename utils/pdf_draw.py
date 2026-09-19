@@ -15,14 +15,18 @@ from utils.units import POINTS_PER_MM
 
 
 def register_fonts(pdf):
-    """尝试注册系统中文字体，返回第一个成功注册的字体名。"""
-    font_paths = [
-        r"C:\Windows\Fonts\fsgb2312.ttf",
-        r"C:\Windows\Fonts\simfang.ttf",
-        r"C:\Windows\Fonts\simsun.ttc",
-        r"C:\Windows\Fonts\msyh.ttc",
-    ]
-    for path in font_paths:
+    """尝试注册系统中文字体，返回第一个成功注册的字体名。
+
+    候选路径来自 `utils.fonts`（Windows/Linux/macOS 三份候选 + `GUJI_CJK_FONT`
+    环境变量）——**中文字体路径不许在本文件硬编码**：曾经这么做过，换到非
+    Windows 平台后探测全部落空，标题/页码静默退回 Helvetica（方块、丢字）。
+
+    一个都注册不上时返回 `"Helvetica"`（fpdf 内置字体，不含中文字形），
+    由调用方决定是否告警，这里不抛异常。
+    """
+    from utils.fonts import cjk_font_paths
+
+    for path in cjk_font_paths():
         if os.path.exists(path):
             font_name = os.path.splitext(os.path.basename(path))[0]
             try:

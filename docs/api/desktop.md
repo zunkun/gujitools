@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 65 个模块、68 个公开类、309 个公开函数/方法（生成于 2026-09-19）。
+覆盖 66 个模块、70 个公开类、317 个公开函数/方法（生成于 2026-09-19）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -62,6 +62,7 @@
 | [`desktop.store.runs`](#desktopstoreruns) | 1 | 6 |
 | [`desktop.store.store`](#desktopstorestore) | 1 | 1 |
 | [`desktop.store.tasks`](#desktopstoretasks) | 1 | 19 |
+| [`desktop.ui.font_setup`](#desktopuifont_setup) | 2 | 8 |
 | [`desktop.ui.fonts`](#desktopuifonts) | 0 | 1 |
 | [`desktop.ui.help_dialog`](#desktopuihelp_dialog) | 0 | 3 |
 | [`desktop.ui.icons`](#desktopuiicons) | 2 | 4 |
@@ -2351,6 +2352,80 @@ rembg 最终目录；print 返回 print.pdf 所在目录。
 
 ---
 
+## `desktop.ui.font_setup`
+
+源码：[`desktop/ui/font_setup.py`](../../desktop/ui/font_setup.py)
+
+缺中文字体时的启动引导：体检 → 一键从软件源安装 → 失败给手装命令。
+
+为什么必须是"阻塞式引导"而不是一句 warning：缺中文字体时 PDF 里的标题、
+页码会静默退回 Helvetica，检测框标注退回 ASCII 的 ``L``/``R``/``U``——
+**产物已经错了，而流程一路绿灯**。与其让用户加工到第四步才发现汉字是方块，
+不如在进门前把话说清楚。
+
+分工严格遵守分层：
+
+- 「有没有字体、该装哪个包、失败算网络还是权限」全部在
+  ``utils.font_setup``（纯标准库，可自测、可命令行复用）；
+- 本模块只管 **Qt 外壳**：体检结果要不要弹窗、按钮状态、流式日志、用户勾选
+  "以后不提示"。判断逻辑一行都不在这里。
+
+线程：安装要跑 apt/dnf 并可能弹系统的 pkexec 授权框，必须进子线程，
+否则界面卡死；日志与结果都通过 **绑到本对话框方法**的信号回到主线程
+（跨线程自动排队，不需要 connect_queued 中继——接收者是主线程的 QObject）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| SKIP_ENV | `"GUJI_SKIP_FONT_CHECK"` |
+| _SETTINGS_KEY | `"fontCheck/skip"` |
+| _MONO_FONT | `"Consolas, 'Courier New', monospace"` |
+
+### `class FontInstallWorker(QThread)`
+
+子线程里跑 `install_cjk_fonts`，把输出逐行抛回主线程。
+
+单独一个类的原因：`utils.font_setup.install_cjk_fonts` 里会有 pkexec
+授权框阻塞十几秒到几分钟（`fonts-noto-cjk` 有上百 MB），放进主线程会
+直接把窗口画成"未响应"。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(packages=None, parent=None)` | — |
+| `run() -> None` | — |
+
+### `class FontFixDialog(QDialog)`
+
+缺字体引导框：自动安装 / 复制手装命令 / 暂时跳过。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(plan, parent=None)` | plan 是 `utils.font_setup.install_plan()` 的候选（可能为空 = 无法自动装）。 |
+| `closeEvent(event) -> None` | 关窗前先停掉还在跑的安装线程，避免子进程变成孤儿。 |
+| `installed() -> bool` | 本次会话里是否真的装上了中文字体。 |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `font_check_suppressed() -> bool` | 用户是否勾过「不再提示」。 |
+| `reset_font_check() -> None` | 清掉「不再提示」，下次启动重新体检（自测 / 排错用）。 |
+| `ensure_cjk_fonts(parent=None) -> bool` | 启动体检：没有中文字体就弹引导框。 |
+
+#### `ensure_cjk_fonts(parent=None) -> bool`
+
+启动体检：没有中文字体就弹引导框。
+
+正常情况（Windows、装了中文字体的 Linux）会**立刻静默返回 True**；
+``GUJI_SKIP_FONT_CHECK=1`` 可整体跳过（打包冒烟与 GUI 自测）。
+
+---
+
 ## `desktop.ui.fonts`
 
 源码：[`desktop/ui/fonts.py`](../../desktop/ui/fonts.py)
@@ -2667,7 +2742,6 @@ QSS 里不会生效；它由 `desktop.components.log_panel.apply_log_view_style`
 | RADIUS_LG | `14` |
 | SCROLLBAR_WIDTH | `10` |
 | SCROLLBAR_MARGIN | `2` |
-| FONT_FAMILY | `"Microsoft YaHei UI"` |
 | SIZE_CAPTION | `12` |
 | SIZE_BODY | `13` |
 | SIZE_LABEL | `14` |

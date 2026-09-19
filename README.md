@@ -146,7 +146,8 @@ python build.py
 
 `build.py` 生成 onedir 包，并在成功后调用 Inno Setup 生成带版本号和时间戳的
 安装包。构建前应确认 `ISCC.exe` 已安装且位于 Inno Setup 默认安装目录或
-`PATH` 中。不要只删除 `dist` 后重复打包；如果当前 Python 环境使用 CUDA 版
+`PATH` 中（没装也不会让构建失败，只会跳过安装包，`dist/guji/` 照样可用）。
+不要只删除 `dist` 后重复打包；如果当前 Python 环境使用 CUDA 版
 PyTorch，PyInstaller 仍会把 CUDA 运行库收集进包中。
 
 > **一次完整构建约 15~20 分钟**，属正常现象（实测 18m32s）：PyInstaller 约
@@ -154,6 +155,59 @@ PyTorch，PyInstaller 仍会把 CUDA 运行库收集进包中。
 > 约 3~4 分钟（含旧版备份），Inno Setup 压缩约 110 秒。每个阶段结束会打印
 > `⏱️ … 耗时 …`，**长时间无输出不等于卡死**。若把输出接给 `tail`/`grep`
 > 之类的过滤器，中间过程会被缓冲到进程结束才显示，看起来像假死。
+
+### Linux / Ubuntu 打包
+
+> ⚠️ **PyInstaller 不能交叉编译**：Windows 上只能产出 `.exe`，Linux 上只能产出
+> ELF。想要 Ubuntu 的包，就**必须在 Linux 本机**（物理机 / WSL2 / CI runner）
+> 执行同样的命令，Windows 侧无论怎么配置都变不出来。
+
+```bash
+# 1) 系统依赖（Ubuntu 22.04 / 24.04）
+sudo apt-get update
+sudo apt-get install -y python3.10 python3-pip python3-venv \
+    libgl1 libglib2.0-0 libfontconfig1 fontconfig \
+    libxcb-cursor0 libxkbcommon-x11-0 libegl1 libdbus-1-3 xdg-utils
+
+# 2) Python 依赖（与普通安装完全同一份 requirements.txt）
+python3 -m pip install -r requirements.txt
+
+# 3) 构建
+python3 build.py
+```
+
+产物在 `dist/guji/`（**无 `.exe` 后缀**）：
+
+```
+dist/guji/guji        命令行
+dist/guji/guji-gui    桌面 GUI
+dist/guji_<版本>_<时间戳>_linux-x86_64.tar.gz
+```
+
+Linux 没有安装包（Inno Setup 是 Windows 专属），改为 `tar.gz` 分发；需要
+AppImage 或 `.desktop` 再另行打包。
+
+版本下限与 PyQt/PySide 版本绑定：
+
+| 目标系统       | 要求                                                            |
+| -------------- | --------------------------------------------------------------- |
+| **Ubuntu 22.04+** | 直接可跑（现役 PySide6 6.11 的 wheel 是 manylinux_2_34）      |
+| Ubuntu 20.04   | glibc 2.31 不够，需把 PySide6 降到 `6.8.x`（manylinux_2_28）    |
+| Windows 10 / 11 | Qt 官方支持 **Win10 1809（17763）+**；`requirements.txt` 已把 PySide6 锁在 `<6.13`（6.12 是最后一个支持 Win10 的版本） |
+
+**中文字体**：Ubuntu 最小安装通常一个中文字体都没有，缺字体时 PDF 的标题会
+静默变成方块。GUI 启动时会体检——没有就直接问要不要从软件源装（首选仿宋
+`fonts-cwtex-fs`，装不了才提示手动装）。要提前装好也可以：
+
+```bash
+sudo apt-get install -y fonts-cwtex-fs fonts-noto-cjk   # 或 fonts-arphic-uming
+fc-cache -f
+```
+
+详见 [`docs/dev/utils.md`](docs/dev/utils.md) 的「中文字体层」一节。
+
+> `build.py` 不会删除旧产物：旧的 `dist/`、`build/` 与瘦身归档都移到仓库外的
+> `../.guji_build_trash/`（按时间戳重命名），需要腾空间时手动清理即可。
 
 ### CLI 与 GUI 一体打包
 
@@ -331,7 +385,7 @@ YOLO 识别每页的**左、右文本框**，结果存入 `boxes.json`（不生�
 ### 桌面端开发相关
 
 ```bash
-# 功能自测（322 项断言）
+# 功能自测（1074 项断言）
 QT_QPA_PLATFORM=offscreen python tests/gui_selftest.py
 
 # 只跑某功能 / 列出模块 / 跳过模块

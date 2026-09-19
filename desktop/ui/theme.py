@@ -11,6 +11,8 @@
 
 from __future__ import annotations
 
+from utils.fonts import cjk_font_families
+
 # ---------------------------------------------------------------- 中性色
 INK = "#1A1D21"           # 正文
 INK_SOFT = "#4E5862"      # 次要说明
@@ -92,8 +94,13 @@ SCROLLBAR_WIDTH = 10        # 纵向滚动条宽度 / 横向滚动条高度
 SCROLLBAR_MARGIN = 2        # 滚动条与容器边缘的留白
 
 # ---------------------------------------------------------------- 字体
-FONT_FAMILY = "Microsoft YaHei UI"
-FONT_FALLBACK = ("Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "SimHei")
+# ⚠️ 候选字体族只此一份：按平台从 `utils.fonts.cjk_font_families()` 派生。
+# 曾经这里写死 Windows 的 Microsoft YaHei UI + 三个 fallback，换平台后
+# Linux/macOS 上一个都命中不了 → 整个界面落到无衬线默认字体，中文好不好看
+# 全凭运气。resolve_font_family() 会取第一个系统里真实存在的族。
+_CJK_FAMILIES = cjk_font_families()
+FONT_FAMILY = _CJK_FAMILIES[0]
+FONT_FALLBACK = tuple(_CJK_FAMILIES[1:])
 
 SIZE_CAPTION = 12   # 辅助说明
 SIZE_BODY = 13      # 正文/表格

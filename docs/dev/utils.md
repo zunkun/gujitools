@@ -1,6 +1,6 @@
 # 工具模块说明 (`utils/`)
 
-`utils/` 包含通用工具函数，按职责拆分为 11 个模块。所有公共函数通过
+`utils/` 包含通用工具函数，按职责拆分为 13 个模块。所有公共函数通过
 `utils/__init__.py` 统一导出，功能模块通过 `import utils` 后直接调用。
 
 > 本文件讲**算法与设计**；逐个函数的签名、参数与 docstring 见自动生成的
@@ -20,6 +20,8 @@
 | `path_utils.py`  | 输出目录解析                    | `resolve_final_output_dir`, `get_extract_output_root`                                                                          |
 | `sort_utils.py`  | 自然排序                        | `natural_sort_key`, `pdf_custom_sort_key`                                                                                       |
 | `string_utils.py`| 字符串辅助                      | `num_to_chinese`                                                                                                               |
+| `fonts.py`      | 中文字体候选（跨平台）           | `cjk_font_paths`, `cjk_font_families`, `first_existing_cjk_font`, `GUJI_FONT_ENV`                                              |
+| `font_setup.py` | 中文字体体检与 Linux 补装        | `check_cjk_font`, `install_plan`, `install_cjk_fonts`, `classify_failure`, `manual_install_text`                               |
 | `help.py`        | 帮助文本与分页显示              | `process_help_command`                                                                                                         |
 
 ---
@@ -331,6 +333,61 @@ GUI 的待打印列表与 CLI `print` 都使用它，保证页序一致。
 ### `process_help_command(command)`
 
 根据命令名加载对应的 man 风格帮助文本并分页显示。定义在 `utils/help.py` 中，被 CLI 层调用。
+
+---
+
+## fonts.py + font_setup.py — 中文字体：候选、体检、补装
+
+字体分成两层，边界是**有没有副作用**：
+
+| 模块           | 职责                       | 副作用                                   |
+| -------------- | -------------------------- | ---------------------------------------- |
+| `fonts.py`     | 跨平台候选路径 / 字体族名  | 无（纯查表），被 PDF 绘制、GUI 主题共用  |
+| `font_setup.py`| 体检 + Linux 自动安装      | 有（跑 apt/dnf、可能弹 pkexec 提权框）   |
+
+### 为什么必须体检
+
+Windows 自带仿宋 / 宋体，候选表必然命中；而 Ubuntu / Debian 的最小安装
+**一个中文字体都没有**。缺字体时代码不会抛错，只会静默降级：
+
+- PDF 标题与页码（`pdf_draw.register_fonts`）退回 `Helvetica` → 中文变方块；
+- 检测框标注（`box_draw.find_cjk_font`）退回 ASCII 的 `L` / `R` / `U`。
+
+产物已经是错的，流程却一路绿灯。所以 GUI 在 `desktop/app.py` 的 `main()` 里
+（**主窗口构造之前**）调 `ensure_cjk_fonts()`：有字体就静默通过，
+没有就弹 `desktop/ui/font_setup.py` 的引导框。
+
+### 安装顺序：先仿宋
+
+`install_plan()` 按包管理器给出候选，**顺序即优先级**，
+apt 下第一个是 `fonts-cwtex-fs`（cwTeX 仿宋體，Windows 仿宋的最接近品），
+其后才是 `fonts-arphic-uming`（文鼎明體）、`fonts-noto-cjk`、文泉驿。
+dnf / pacman / zypper 有各自的包名表（ Fedora 叫
+`google-noto-serif-cjk-fonts`，不是 Debian 那套）。
+
+### 失败要能归因
+
+`classify_failure(returncode, output)` 把失败分成四类，界面据此给不同建议：
+
+| status       | 含义                       | 界面动作                       |
+| ------------ | -------------------------- | ------------------------------ |
+| `network`    | 连不上软件源 / 下载失败    | 提示手动安装（离线环境常见）   |
+| `permission` | 授权被取消 / 没有提权手段  | 提示手动安装                   |
+| `refresh`    | 仓库索引过期（内部用）     | **刷一次元数据后重试同一个包** |
+| `failed`     | 其它                       | 贴出日志尾部                   |
+
+关键词表是**中英双语**的：用户在 `zh_CN` 的机器上，apt 会输出「不能解析域名」
+而不是 `Temporary failure resolving`，只认英文会把网络问题误判成未知失败。
+
+三条硬约束（改动时别踩）：
+
+1. **非 Linux 一律走 `unsupported` 早退**，`_run` 一次都不能调——Windows 上
+   若误进了安装分支，用户点一下就会弹 sudo/pkexec，是最难查的那种 bug
+   （`tests/selftests/font_setup.py` 用 `_run` 探针钉住"零子进程"）；
+2. **pkexec 优先于 sudo**：GUI 里没有终端，`sudo` 会直接报
+   `no tty present and no askpass program`；
+3. apt 必须带 `-y` 并设 `DEBIAN_FRONTEND=noninteractive`，否则 debconf
+   会在无终端时把安装线程整个卡住。
 
 ---
 

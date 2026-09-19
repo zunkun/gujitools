@@ -44,7 +44,7 @@ hupper -m desktop
 # 或
 python desktop.py
 
-# 运行全功能自测（361 项断言）
+# 运行全功能自测（1074 项断言）
 QT_QPA_PLATFORM=offscreen python tests/gui_selftest.py
 
 # 离屏渲染界面截图（视觉自查，输出到指定目录）
@@ -87,7 +87,7 @@ QT_QPA_PLATFORM=offscreen python tests/gui_shot.py --guide D:/tmp/shots
 - **改完源码同步文档**：
 
   ```bash
-  # 功能回归（361 项断言，含真实 worker 子进程全流程）
+  # 功能回归（1074 项断言，含真实 worker 子进程全流程）
   QT_QPA_PLATFORM=offscreen python tests/gui_selftest.py
 
   # 重新生成 / 校验 API 参考

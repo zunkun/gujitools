@@ -33,8 +33,14 @@ prompt-toolkit
 fpdf2>=2.7.0             # PDF 生成（import fpdf）
 
 # ---- 桌面端 GUI (desktop/) ----
-PySide6>=6.6.0                  # Qt 绑定
-PySide6-Fluent-Widgets>=1.5.0   # import qfluentwidgets
+# ⚠️ PySide6 **必须带上限**：Qt 官方写明「Qt 6.12 是最后一个支持 Windows 10
+# 的版本」，而 Qt 对 Win 的下限就是 Qt 版本说了算（当前 6.11 官方支持
+# Win10 1809+ / Win11；Win7、8 从 Qt 6 起一律不支持）。放开上限后哪天重建
+# 构建环境装到 6.13+，Win10 用户的支持就没了，而且不会有任何人报错。
+# 另一个上限理由：6.11 的 Linux wheel 是 manylinux_2_34，对应 Ubuntu 22.04+；
+# 若要支持 Ubuntu 20.04（glibc 2.31），需降到 6.8.x（manylinux_2_28）。
+PySide6>=6.6.0,<6.13              # Qt 绑定
+PySide6-Fluent-Widgets>=1.5.0     # import qfluentwidgets（GPLv3，商用另购授权）
 
 # ---- 用户手册：docs/guide/*.md → HTML → 系统浏览器 ----
 markdown>=3.4            # import markdown（纯 Python，无二进制依赖）

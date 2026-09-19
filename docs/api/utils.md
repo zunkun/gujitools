@@ -4,7 +4,7 @@
 
 通用工具函数：几何、排序、图像 IO、PDF、YOLO
 
-覆盖 16 个模块、4 个公开类、64 个公开函数/方法（生成于 2026-09-19）。
+覆盖 18 个模块、7 个公开类、79 个公开函数/方法（生成于 2026-09-19）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -12,10 +12,12 @@
 
 | 模块 | 类 | 函数 |
 | --- | --- | --- |
-| [`utils.box_draw`](#utilsbox_draw) | 0 | 4 |
+| [`utils.box_draw`](#utilsbox_draw) | 0 | 5 |
 | [`utils.box_geometry`](#utilsbox_geometry) | 2 | 4 |
 | [`utils.color_utils`](#utilscolor_utils) | 0 | 2 |
 | [`utils.file_utils`](#utilsfile_utils) | 0 | 2 |
+| [`utils.font_setup`](#utilsfont_setup) | 3 | 11 |
+| [`utils.fonts`](#utilsfonts) | 0 | 3 |
 | [`utils.help`](#utilshelp) | 0 | 7 |
 | [`utils.image_io`](#utilsimage_io) | 0 | 2 |
 | [`utils.image_utils`](#utilsimage_utils) | 0 | 6 |
@@ -46,14 +48,15 @@ GUI 的预览控件也要画同样的框。配色与命名必须一致，否则�
 - 标注文字为「左框 (x1,y1,x2,y2)」。
 
 **中文字体**：OpenCV 的 `putText` 不支持中文（会画成 `????`），因此文字用
-PIL 绘制。字体按 `utils.pdf_draw.register_fonts` 相同的候选顺序探测
-Windows 系统中文字体；全部缺失时退化为 ASCII 标签（`L` / `R` / `U`），
-保证任何环境下都不会崩。
+PIL 绘制。字体候选路径来自 `utils.fonts`（Windows/Linux/macOS 三份候选 +
+`GUJI_CJK_FONT` 逃生口，见那里的说明——**别在本文件再写一遍**）；全部缺失
+时退化为 ASCII 标签（`L` / `R` / `U`），保证任何环境下都不会崩。
 
 ### 模块函数
 
 | 函数 | 说明 |
 | --- | --- |
+| `reset_font_cache() -> None` | 清空字体探测缓存（`GUJI_CJK_FONT` 改指向后需要重探测）。 |
 | `find_cjk_font() -> Optional[str]` | 返回可用的中文字体路径；都没有则返回 None。结果会缓存。 |
 | `box_color(index: int) -> Tuple[int, int, int]` | 按框序号取 BGR 颜色。 |
 | `box_name(index: int) -> str` | 按框序号取中文名（左框/右框/合并框）。 |
@@ -274,6 +277,206 @@ File: utils/color_utils.py
 
 返回:
     True = 文件大小合格，False = 文件过小。
+
+---
+
+## `utils.font_setup`
+
+源码：[`utils/font_setup.py`](../../utils/font_setup.py)
+
+中文字体体检与 Linux 自动补装。
+
+为什么需要这一层
+----------------
+Windows 自带仿宋 / 宋体，`utils.fonts` 的候选表几乎必然命中；而
+Ubuntu / Debian 的最小安装**一个中文字体都没有**。问题是：缺字体时代码
+不会报错，只会静默降级——
+
+- PDF 标题与页码（`utils.pdf_draw.register_fonts`）退回 ``Helvetica`` →
+  中文变方块或整段消失；
+- 检测框标注（`utils.box_draw.find_cjk_font`）退回 ASCII 的 ``L`` / ``R`` / ``U``。
+
+**产物是错的，界面却毫无提示**。所以 GUI 启动时先体检一次：
+
+1. 找到中文字体 → 静默通过（Windows / macOS 基本都是这条路）；
+2. 没找到 → 弹窗。Linux 上给「自动安装」：从发行版仓库拉一个中文字体包，
+   **首选真正的仿宋** ``fonts-cwtex-fs``，其次 AR PL UMing、Noto CJK、文泉驿；
+3. 自动装不上（无网络 / 无管理员权限 / 没有已知包管理器）→ 退回提示，
+   给出可直接复制的手装命令。
+
+依赖方向：只用标准库 + `utils.fonts`，属 `utils` 最底层，任何层都能引用。
+**刻意不依赖 Qt**：安装要跑漫长的子进程并sudo/pkexec 提权，把它做成纯函数，
+命令行、自测、GUI 三条路才能共用同一份判断（ GUI 侧只负责套壳与流式日志）。
+
+### `class FontPackage`
+
+一个可安装的中文字体包。
+
+- ``name``：包管理器里的包名；
+- ``label``：给用户看的一行说明（为什么要装它）；
+- ``families``：装完后得到的字体族名（`fc-list` 里显示的名字）。
+
+### `class FontCheck`
+
+体检结果。
+
+- ``found``：本机是否有可用的中文字体；
+- ``path``：命中的字体文件（``found`` 为假时是 ``None``）；
+- ``source``：命中来源，``env``（``GUJI_CJK_FONT``）/ ``table``（内置候选表）
+  / ``scan``（扫描字体目录）/ ``none``；
+- ``platform``：``windows`` / ``macos`` / ``linux`` / 其它（``sys.platform``）。
+
+### `class InstallResult`
+
+安装尝试的结果。
+
+``status`` 取值
+- ``ok``：装上了，且重新体检确实能找到中文字体；
+- ``network``：软件源不可达 / 下载失败 → 应提示用户手动安装；
+- ``permission``：提权失败或用户取消 → 同上；
+- ``unsupported``：非 Linux 或没有已知包管理器 → 同上；
+- ``failed``：其它失败（``output`` 里留了日志尾部，供排查）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `ok() -> bool` | 是否成功装上并被系统识别。 |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `platform_name() -> str` | 把 ``sys.platform`` 归一成 ``windows`` / ``macos`` / ``linux`` 三类。 |
+| `scan_font_dirs(limit: int=8) -> tuple[str, ...]` | 扫描常见字体目录里**看起来是中文**的字体文件（Linux 为主）。 |
+| `check_cjk_font() -> FontCheck` | 体检本机有没有可用的中文字体（不弹任何 UI，纯判断）。 |
+| `detect_package_manager() -> str \| None` | 返回可用的包管理器键名（``apt`` / ``dnf`` / ``yum`` / ``pacman`` / ``zypper``）。 |
+| `install_plan(manager: str \| None=None) -> tuple[FontPackage, ...]` | 返回该平台的字体安装候选（顺序即优先级）；未知包管理器返回空元组。 |
+| `available_packages(plan: tuple[FontPackage, ...], manager: str, timeout: float=10.0) -> tuple[FontPackage, ...]` | 筛掉仓库里**确实没有**的包，避免浪费一次提权。 |
+| `repo_reachable(timeout: float=4.0) -> bool \| None` | 探测软件源是否可达。 |
+| `classify_failure(returncode: int, output: str) -> str` | 把一次安装命令的失败归类成 ``network`` / ``permission`` / ``refresh`` / ``failed``。 |
+| `install_cjk_fonts(packages: tuple[str, ...] \| None=None, manager: str \| None=None, probe_network: bool=True, timeout: float=900.0, on_line=None) -> InstallResult` | 从发行版仓库安装中文字体（Linux 专用，其它平台直接返回 ``unsupported``）。 |
+| `manual_install_text(plan: tuple[FontPackage, ...] \| None=None) -> str` | 返回可直接照抄的手动安装说明（自动安装失败时给用户看）。 |
+
+#### `scan_font_dirs(limit: int=8) -> tuple[str, ...]`
+
+扫描常见字体目录里**看起来是中文**的字体文件（Linux 为主）。
+
+为什么要扫：静态候选表只能覆盖"发行版把 Noto/文泉驿装在标准位置"这一种
+情况。用户从 Windows 拷来的 ``simfang.ttf``、装到 ``~/.local/share/fonts``
+的自定义字体都不在表里——不扫就会明明有字体却提示缺字体。
+
+判定只按**文件名关键词**（见 ``_CJK_NAME_HINTS``）：读字体内部元数据要额外
+依赖。这里是"决定要不要弹窗"的启发式，宁可宽松也不漏报。
+
+#### `check_cjk_font() -> FontCheck`
+
+体检本机有没有可用的中文字体（不弹任何 UI，纯判断）。
+
+三级判定：``GUJI_CJK_FONT`` 环境变量 → 内置候选表 → 扫描字体目录。
+任何一级命中即认为可用。
+
+#### `available_packages(plan: tuple[FontPackage, ...], manager: str, timeout: float=10.0) -> tuple[FontPackage, ...]`
+
+筛掉仓库里**确实没有**的包，避免浪费一次提权。
+
+只有 apt 能廉价地先问一次（`apt-cache policy` 不需要 root）；dnf/pacman/
+zypper 会自己刷新元数据，直接尝试即可。若一个都查不出来（索引为空的容器镜像
+很常见），原样返回——交给 `install_cjk_fonts` 先刷新再重试，别在这里把路堵死。
+
+#### `repo_reachable(timeout: float=4.0) -> bool | None`
+
+探测软件源是否可达。
+
+返回 ``True`` / ``False``；**判断不了**（非 Linux、认不出发行版）返回
+``None``——此时不该拦人，直接尝试安装即可。
+
+为什么先探一次：apt 的 DNS 失败要等 30 秒以上才超时，用户会以为卡死了；
+主动探一下能在 4 秒内给出「连不上软件源」的明确结论。
+
+#### `classify_failure(returncode: int, output: str) -> str`
+
+把一次安装命令的失败归类成 ``network`` / ``permission`` / ``refresh`` / ``failed``。
+
+``refresh`` 是一个特例：它不是真失败，而是「仓库索引过期，刷新一次就好了」，
+调用方据此重试而不是直接劝退用户。
+
+先判权限再判网络：polkit 撤销 / sudo 密码错误的输出最具体，
+且 apt 在得不到写权限时会先报一堆无关的话，顺序反了会误归因。
+
+#### `install_cjk_fonts(packages: tuple[str, ...] | None=None, manager: str | None=None, probe_network: bool=True, timeout: float=900.0, on_line=None) -> InstallResult`
+
+从发行版仓库安装中文字体（Linux 专用，其它平台直接返回 ``unsupported``）。
+
+流程：候选包 →（apt）筛掉仓库里没有的 → 探网络 → 提权 → 逐个安装；
+中途遇到「索引过期」会先刷一次元数据再重试同一个包。任何一个包装上、
+且重新体检能在系统里找到中文字体，即返回 ``ok``。
+
+``packages`` 可用来收敛到指定包（自测 / 命令行）；省略则用 `install_plan`。
+
+⚠️ 本函数**会阻塞并可能弹文件外的系统授权框**（pkexec/sudo），GUI 里必须
+放进子线程，回调回控件要排队回主线程。
+
+#### `manual_install_text(plan: tuple[FontPackage, ...] | None=None) -> str`
+
+返回可直接照抄的手动安装说明（自动安装失败时给用户看）。
+
+内容包含三条路：包管理器装、手动放字体文件到用户目录、用环境变量指定。
+前两条按主次给出命令，最后一条是因为容器 / 精简镜像往往连 root 都没有，
+``~/.local/share/fonts`` 是唯一不求人的路。
+
+---
+
+## `utils.fonts`
+
+源码：[`utils/fonts.py`](../../utils/fonts.py)
+
+中文字体探测：跨平台候选路径 / 字体族名的**唯一定义处**。
+
+为什么要抽这一层
+----------------
+PDF 的标题与页码（`utils.pdf_draw.register_fonts`）和检测框标注
+（`utils.box_draw.find_cjk_font`）都要画中文，此前两处各自硬编码了四条
+``C:\Windows\Fonts\*``。Windows 上一切正常；换到 Linux / macOS 时探测
+全部落空 → PDF 里的中文退回 ``Helvetica``（方块或丢字）、框标注退回
+ASCII 的 ``L`` / ``R`` / ``U``——**输出内容是错的却不报任何错**。
+
+依赖方向：只 import 标准库，是 ``utils`` 的最底层（与 ``utils/units.py``
+同级），任何层都可引用。
+
+设计取舍
+--------
+- **不做 fontconfig / ``fc-match`` 动态查询**：静态路径已覆盖主流发行版
+  的默认字体，而 spawn 子进程会让打包产物和自测行为都变复杂。
+- **留了环境变量逃生口 ``GUJI_CJK_FONT``**：精简镜像 / CI / AppImage 里常常
+  没有系统 CJK 字体，指向随包自带的 .ttf / .ttc 即可，它**永远排在最前**。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| GUJI_FONT_ENV | `"GUJI_CJK_FONT"` |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `cjk_font_paths() -> tuple` | 中文字体文件候选路径（按优先级）。 |
+| `first_existing_cjk_font() -> str \| None` | 返回第一个真实存在的中文字体文件路径；全部缺失返回 None。 |
+| `cjk_font_families() -> tuple` | 按当前平台返回中文字体族名（按优先级），供 Qt 侧挑选。 |
+
+#### `cjk_font_paths() -> tuple`
+
+中文字体文件候选路径（按优先级）。
+
+``GUJI_CJK_FONT`` 指定的文件排在最前且只出现一次；其后是本平台的
+内置候选。返回的可能全都不存在——调用方必须自己 ``Path.exists()``。
+
+#### `cjk_font_families() -> tuple`
+
+按当前平台返回中文字体族名（按优先级），供 Qt 侧挑选。
+
+调用方（如第四步预览）再与 `QFontDatabase.families()` 求交集取第一个命中的。
 
 ---
 
@@ -859,6 +1062,17 @@ PDF → 图片的部分在 `utils/pdf_extract.py`。
 | `draw_vertical_text(pdf, text, x, y_start, font_name, font_size, color, direction='down')` | 在PDF上绘制竖排文字：宽字符一字一格，拉丁段整体旋转 90°。 |
 | `get_page_side_from_name(name_without_ext)` | 根据文件名末尾 '-l' 或 '-r' 判断左右页。 |
 | `get_page_side_by_start(image_files, current_index, start_page, default_side='left')` | 根据起始页的左右属性推断当前页是左还是右。 |
+
+#### `register_fonts(pdf)`
+
+尝试注册系统中文字体，返回第一个成功注册的字体名。
+
+候选路径来自 `utils.fonts`（Windows/Linux/macOS 三份候选 + `GUJI_CJK_FONT`
+环境变量）——**中文字体路径不许在本文件硬编码**：曾经这么做过，换到非
+Windows 平台后探测全部落空，标题/页码静默退回 Helvetica（方块、丢字）。
+
+一个都注册不上时返回 `"Helvetica"`（fpdf 内置字体，不含中文字形），
+由调用方决定是否告警，这里不抛异常。
 
 #### `draw_vertical_text(pdf, text, x, y_start, font_name, font_size, color, direction='down')`
 

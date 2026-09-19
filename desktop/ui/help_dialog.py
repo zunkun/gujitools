@@ -198,7 +198,7 @@ _CSS_TEMPLATE = Template("""
 
 body {
   font-family: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC",
-               "Noto Sans CJK SC", "SimHei", sans-serif;
+               "Noto Sans CJK SC", "WenQuanYi Zen Hei", "SimHei", sans-serif;
   font-size: 14px;
   line-height: 1.75;
   color: var(--ink);
