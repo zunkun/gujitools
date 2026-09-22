@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 66 个模块、70 个公开类、320 个公开函数/方法（生成于 2026-09-19）。
+覆盖 70 个模块、74 个公开类、337 个公开函数/方法（生成于 2026-09-22）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -12,7 +12,7 @@
 
 | 模块 | 类 | 函数 |
 | --- | --- | --- |
-| [`desktop.app`](#desktopapp) | 1 | 2 |
+| [`desktop.app`](#desktopapp) | 1 | 3 |
 | [`desktop.components.common.safecomment`](#desktopcomponentscommonsafecomment) | 6 | 12 |
 | [`desktop.components.log_panel`](#desktopcomponentslog_panel) | 1 | 9 |
 | [`desktop.components.pagination`](#desktopcomponentspagination) | 2 | 11 |
@@ -35,20 +35,22 @@
 | [`desktop.components.viewers.pdf_viewer`](#desktopcomponentsviewerspdf_viewer) | 1 | 2 |
 | [`desktop.components.viewers.print_layout_canvas`](#desktopcomponentsviewersprint_layout_canvas) | 1 | 9 |
 | [`desktop.components.viewers.print_preview`](#desktopcomponentsviewersprint_preview) | 1 | 8 |
-| [`desktop.components.viewers.rembg_viewer`](#desktopcomponentsviewersrembg_viewer) | 1 | 3 |
+| [`desktop.components.viewers.rembg_viewer`](#desktopcomponentsviewersrembg_viewer) | 1 | 7 |
 | [`desktop.components.viewers.thumb_strip`](#desktopcomponentsviewersthumb_strip) | 1 | 5 |
-| [`desktop.components.viewers.thumbs_loader`](#desktopcomponentsviewersthumbs_loader) | 1 | 0 |
+| [`desktop.components.viewers.thumbs_loader`](#desktopcomponentsviewersthumbs_loader) | 1 | 1 |
 | [`desktop.pages.taskdetail.detect`](#desktoppagestaskdetaildetect) | 1 | 0 |
 | [`desktop.pages.taskdetail.history`](#desktoppagestaskdetailhistory) | 1 | 0 |
 | [`desktop.pages.taskdetail.manifest`](#desktoppagestaskdetailmanifest) | 1 | 2 |
 | [`desktop.pages.taskdetail.page`](#desktoppagestaskdetailpage) | 1 | 5 |
 | [`desktop.pages.taskdetail.params_draft`](#desktoppagestaskdetailparams_draft) | 1 | 1 |
 | [`desktop.pages.taskdetail.print_list`](#desktoppagestaskdetailprint_list) | 1 | 0 |
+| [`desktop.pages.taskdetail.rembg_live`](#desktoppagestaskdetailrembg_live) | 1 | 0 |
 | [`desktop.pages.taskdetail.runner`](#desktoppagestaskdetailrunner) | 1 | 2 |
 | [`desktop.pages.taskdetail.submit`](#desktoppagestaskdetailsubmit) | 1 | 1 |
-| [`desktop.pages.taskdetail.view`](#desktoppagestaskdetailview) | 1 | 0 |
+| [`desktop.pages.taskdetail.view`](#desktoppagestaskdetailview) | 2 | 4 |
 | [`desktop.pages.tasklist.page`](#desktoppagestasklistpage) | 1 | 5 |
 | [`desktop.services.print_plan`](#desktopservicesprint_plan) | 0 | 5 |
+| [`desktop.services.rembg_live`](#desktopservicesrembg_live) | 0 | 3 |
 | [`desktop.services.submit_state`](#desktopservicessubmit_state) | 0 | 1 |
 | [`desktop.stages.detect_stage`](#desktopstagesdetect_stage) | 0 | 2 |
 | [`desktop.stages.events`](#desktopstagesevents) | 2 | 9 |
@@ -76,7 +78,9 @@
 | [`desktop.workers.hash_worker`](#desktopworkershash_worker) | 1 | 2 |
 | [`desktop.workers.image_list_worker`](#desktopworkersimage_list_worker) | 1 | 2 |
 | [`desktop.workers.preview_worker`](#desktopworkerspreview_worker) | 1 | 7 |
+| [`desktop.workers.rembg_live_worker`](#desktopworkersrembg_live_worker) | 1 | 2 |
 | [`desktop.workers.source_thumbnails_worker`](#desktopworkerssource_thumbnails_worker) | 1 | 2 |
+| [`desktop.workers.task_rows_worker`](#desktopworkerstask_rows_worker) | 1 | 2 |
 | [`desktop.workers.worker_host`](#desktopworkersworker_host) | 1 | 3 |
 
 ---
@@ -97,13 +101,26 @@ gujitools 桌面端主窗口：任务列表页 + 任务详情页切换。
 
 | 方法 | 说明 |
 | --- | --- |
+| `detail_page()` | 详情页实例（惰性构造）。 |
 | `closeEvent(event) -> None` | 关闭窗口时先让详情页收尾 worker 子进程。 |
+
+##### `detail_page()`
+
+装饰器：`property`
+
+详情页实例（惰性构造）。
+
+保留这个公开属性名：``tests/selftests/_context.py`` 与
+``tests/gui_shot.py`` 都按 ``window.detail_page`` 取页面来操作控件。
+读它本身就等于声明「现在就需要详情页」，因此访问即构造——与启动期
+惰性并不冲突。
 
 ##### `closeEvent(event) -> None`
 
 关闭窗口时先让详情页收尾 worker 子进程。
 详情页持有 worker 子进程与后台线程的引用，直接退出会让进程被强杀；
 这里把事件转交给详情页的 closeEvent 完成 kill/等待/清理后再接受关闭。
+详情页是惰性的——没建过就说明没有 worker 需要收尾。
 
 ### 模块函数
 
@@ -1298,6 +1315,10 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 | `__init__(empty_hint: str='暂无图片', parent=None)` | 构建缩略图条与「去底色结果 / 原图」切换行，默认显示去底色结果。 |
 | `set_images(paths: list[Path], rembg_dir: Path \| None, boxes_provider=None, region_params_provider=None, thumb_provider=None) -> None` | 设置图片清单与去底色目录，重建输出条目并加载显示。 |
 | `refresh_display() -> None` | detect 框/area/border 变化后，重建输出条目并按新区域重新加载。 |
+| `set_live_dir(path: Path \| None) -> None` | 设置（或传 None 清除）「实时预览」暂存目录。 |
+| `live_dir() -> Path \| None` | 当前生效的实时预览暂存目录（未启用为 None）。 |
+| `current_entry_path() -> str \| None` | 当前选中条目的源图路径（无条目时为 None）。 |
+| `show_live_pending() -> None` | 实时预览正在计算：先给个即时反馈，别让界面看起来没反应。 |
 
 ##### `set_images(paths: list[Path], rembg_dir: Path | None, boxes_provider=None, region_params_provider=None, thumb_provider=None) -> None`
 
@@ -1306,6 +1327,14 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 paths 为源图；rembg_dir 为去底色结果目录（存在才显示结果）；
 各 provider 给出检测框 / 区域参数 / 缩略图来源。清单变化时重建
 缩略图条，否则按最新区域重加载当前显示。
+
+##### `set_live_dir(path: Path | None) -> None`
+
+设置（或传 None 清除）「实时预览」暂存目录。
+
+非 None 时结果图优先从这里取：它是按**此刻**面板参数现算的当前页；
+而 ``_rembg_dir``（stages/rembgpreview）是上一次「生成预览」的全量产物，
+参数可能已经改过。
 
 ---
 
@@ -1360,11 +1389,30 @@ paths 为源图；rembg_dir 为去底色结果目录（存在才显示结果）�
 
 源码：[`desktop/components/viewers/thumbs_loader.py`](../../desktop/components/viewers/thumbs_loader.py)
 
-缩略图异步装载混入：为 ThumbStrip 批量加载图片缩略图。
+缩略图异步装载混入：为 ThumbStrip **分批**加载图片缩略图。
+
+⚠️ 为什么必须分批
+    一次性把全部页面丢给一个 worker，worker 会在紧循环里连续做
+    「QImageReader 缩放解码 + SmoothTransformation」，一个核直接打满——
+    用户感知是「刚点进详情页，风扇突然转快」。而首屏真正看得见的只有
+    最上面几行缩略图，其余几十张晚一两秒补齐完全不影响使用。
+
+    分批后 CPU 从「连续满负载几秒」变成「一小段脉冲 + 间隙 + 若干小脉冲」，
+    风扇不会明显起转；界面反而更早可交互（首批只做十几张的分量）。
 
 ### `class ThumbsMixin(WorkerHost)`
 
-为持有 ThumbStrip 的查看器提供批量缩略图加载。
+为持有 ThumbStrip 的查看器提供分批缩略图加载。
+
+子类可以直接用基类的 :meth:`_load_thumbs`，也可以走
+:meth:`_load_thumbs_chunked` 自带 worker 工厂与回调（print/rembg 需要
+带 edge / effects / 自定义标签，都是走后者）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `shutdown_workers() -> None` | 停掉分批定时器与未完成的批次，再走基类的线程收尾。 |
 
 ---
 
@@ -1456,8 +1504,9 @@ manifest 插入锚点；文件缺失时查看器行号与清单下标会错位�
 - print_list.PrintListMixin  第四步待打印列表
 - runner.StageRunnerMixin    阶段执行（worker 子进程编排）
 - detect.DetectMixin         detect 检测控制
+- rembg_live.RembgLiveMixin  第三步改参数/翻页时只重算当前页的实时预览
 
-### `class TaskDetailPage(StageRunnerMixin, SubmitMixin, PrintListMixin, ParamDraftMixin, HistoryMixin, DetectMixin, PageListMixin, DetailViewMixin, QWidget, WorkerHost)`
+### `class TaskDetailPage(StageRunnerMixin, SubmitMixin, RembgLiveMixin, PrintListMixin, ParamDraftMixin, HistoryMixin, DetectMixin, PageListMixin, DetailViewMixin, QWidget, WorkerHost)`
 
 任务详情页：由多个 Mixin 组合，固定四阶段流程。
 
@@ -1557,6 +1606,36 @@ _toast()。
 
 ---
 
+## `desktop.pages.taskdetail.rembg_live`
+
+源码：[`desktop/pages/taskdetail/rembg_live.py`](../../desktop/pages/taskdetail/rembg_live.py)
+
+第三步「图片去底色」的实时预览控制器。
+
+用户改 offset / type / 印章等参数时，**只重算当前页**并立刻显示，不必等
+「生成预览」的全量任务；预览区翻页时，若那一页还没按当前参数算过，也算它。
+
+三条边界（都是刻意的）：
+
+1. **只在参数与「原本去底色参数」不同时才重算**。原本参数 = 最近一次成功
+   「生成预览」所用的参数；一致就说明正式产物就是当前参数的结果，直接用它，
+   不做无谓计算。
+2. **一次只算一页**。全量是「生成预览」按钮的职责。
+3. **只影响显示，不落正式产物**。结果写系统临时目录（``services.rembg_live``），
+   绝不碰 ``stages/rembgpreview`` —— 那里一旦被单页结果覆盖，「提交本次任务」
+   就会把不同参数下算出来的图混在一起。
+
+滑块拖动时 ``valueChanged`` 会连发，所以统一走 ``LIVE_DEBOUNCE_MS`` 防抖；
+每次请求带 token，迟到的旧结果直接丢弃（否则慢的旧结果会盖掉新的）。
+
+### `class RembgLiveMixin`
+
+依赖宿主页面提供：store / task_id / process / control_stack /
+rembg_viewer / log_view / current_stage() / run_worker /
+_latest_success_run() / PREVIEW_PARAM_KEYS。
+
+---
+
 ## `desktop.pages.taskdetail.runner`
 
 源码：[`desktop/pages/taskdetail/runner.py`](../../desktop/pages/taskdetail/runner.py)
@@ -1576,16 +1655,20 @@ control_stack、stage_* 控件、log_view、process/run_id 等。
 
 | 方法 | 说明 |
 | --- | --- |
-| `run_stage(resume: bool=False) -> None` | 启动当前阶段的 worker 子进程。 |
+| `run_stage(resume: bool=False) -> None` | 启动当前阶段的 worker 子进程（带执行权守卫，防连点起两个）。 |
 | `cancel_stage() -> None` | 中断正在执行的阶段：先落 cancelled 再 kill 子进程。 |
 
 ##### `run_stage(resume: bool=False) -> None`
 
-启动当前阶段的 worker 子进程。
+启动当前阶段的 worker 子进程（带执行权守卫，防连点起两个）。
 
-resume=True 表示续跑：extract 只补缺失页、其余阶段跳过已有输出，
-否则 clean=True 全量重跑。会取面板参数、写运行配置、起子进程并连接
-输出/错误/完成信号，再挂看门狗兜底 Windows 偶发的 finished 丢失。
+⚠️ 守卫必须包在**最外层**：下面要做参数校验、effects 组装、写运行配置，
+这些都是同步重活，做完才 ``QProcess.start()``。若只在 start 之前判断
+``self.process``，那段时间它还是 None，连点第二下就能再起一个 worker，
+两个 torch 同时加载、同时写同一批输出目录。
+
+守卫由 :meth:`TaskDetailPage._acquire_run` 提供（受理标记 + 防抖窗口）；
+真正干活的是 :meth:`_run_stage_unchecked`。
 
 ##### `cancel_stage() -> None`
 
@@ -1624,6 +1707,10 @@ control_stack、submit_button/submit_hint、log_view、_toast()。
 提交本次任务：把「生成预览」的去底色图片按 area/border 等
 合成为真正想要的最终图片，输出到 stages/rembg 目录。
 
+⚠️ 与「执行本子任务」共用同一份执行权（``_acquire_run``）：提交与
+生成预览抢的是同一个 worker 槽位与同一批输出目录，同时在跑只会互相
+覆盖；连点两下同样由防抖窗口吞掉。
+
 ---
 
 ## `desktop.pages.taskdetail.view`
@@ -1640,6 +1727,34 @@ control_stack、submit_button/submit_hint、log_view、_toast()。
 3. 主体：左侧预览卡片（自适应）+ 右侧参数卡片（固定宽度区间）；
 4. 底部：执行日志状态条（常驻一行，点击唤出不挤压布局的日志浮层）。
 
+### `class LazyPanelHost(QWidget)`
+
+阶段面板的**惰性宿主**：真正被取用时才构造内部面板。
+
+为什么需要：详情页一进来停在第一步，而第四步的 ``PrintPanel`` 构造要
+~128 ms（占整个详情页构造的**一半**——它那张参数表单 ``build_form`` 单项
+就 106 ms）。用户可能从头到尾都不点第四步，却每次进详情页都在为它买单。
+
+属性访问一律转发给内部面板，所以 ``control_stack.widget(3).get_args()``
+这类既有写法照常工作。Qt 自己的 ``sizeHint`` / ``paintEvent`` 等由 C++
+层调用，**不走 Python 的 __getattr__**，不会误触发构造。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(factory, hooks=(), parent=None)` | factory() 造真面板；hooks 是"内部面板构造完成"后的回调（接线用）。 |
+| `add_created_hook(fn) -> None` | 注册"内部面板构造完成"回调；**若已构造则立刻执行**。 |
+| `peek() -> QWidget \| None` | **不触发构造**地看内部面板；尚未构造时返回 None。 |
+| `panel() -> QWidget` | 内部真面板，首次访问时构造（并把挂着的回调全部执行一遍）。 |
+
+##### `add_created_hook(fn) -> None`
+
+注册"内部面板构造完成"回调；**若已构造则立刻执行**。
+
+⚠️ 必须支持挂多个回调：视图层要接预览刷新、暂存层要接 param_edited，
+它们分属不同 Mixin，各自只知道自己的接线，不能互相覆盖。
+
 ### `class DetailViewMixin`
 
 依赖宿主页面提供的方法：_on_back、_select_stage、各预览联动槽、
@@ -1653,7 +1768,7 @@ current_stage()、_update_run_buttons() 等。
 
 任务管理页：表格列表 + 导入PDF（先算指纹查重，确认后建任务并落副本/缩略图）。
 
-### `class TaskListPage(QWidget)`
+### `class TaskListPage(QWidget, WorkerHost)`
 
 任务管理页：搜索 + 分页的任务列表，支持导入 PDF 与删除。
 
@@ -1669,7 +1784,7 @@ current_stage()、_update_run_buttons() 等。
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(store: TaskStore, parent=None)` | 初始化页面：构建 UI、绑定信号并刷新首次列表。 |
-| `refresh() -> None` | 从 store 重新读出全量任务行并渲染（会读盘，不要在打字时调）。 |
+| `refresh() -> None` | 刷新任务行：**读盘放后台线程**，读完回主线程渲染。 |
 | `focus_task(task_id: str) -> bool` | 翻到任务所在页并选中它；不在当前过滤结果里则返回 False。 |
 | `import_pdf() -> None` | 导入 PDF：选文件后后台算指纹并查重确认建任务。 |
 | `delete_task(task_id: str) -> None` | 删除指定任务及其全部中间产物（带确认弹窗）。 |
@@ -1683,10 +1798,15 @@ parent 一般为 MainWindow；会创建 store 引用与导入按钮状态占位�
 
 ##### `refresh() -> None`
 
-从 store 重新读出全量任务行并渲染（会读盘，不要在打字时调）。
+刷新任务行：**读盘放后台线程**，读完回主线程渲染。
 
-遍历各任务取四个阶段的 status/done/total 生成摘要行，结果缓存在
-``_all_rows``；随后走 ``_render()`` 做过滤与分页。
+⚠️ 读盘不能占着 UI 线程：这里要遍历全部任务、逐个读它的 runs.json
+（任务一多就是几十次文件 IO），同步做会把已经画出来的窗口卡住。行的
+组装挪进了 ``TaskRowsWorker``，结果走 ``_on_rows_ready`` 回来渲染。
+
+⚠️ 每次刷新带一个**代际令牌**：连续调用（导入任务后紧跟着又刷新）会让
+多个 worker 并发跑，先发的可能后回来，把新数据盖成旧的——只认最后
+一次发出的那个令牌，其余结果直接丢弃。
 
 ##### `focus_task(task_id: str) -> bool`
 
@@ -1809,6 +1929,44 @@ print.json 仅持久化用户的拖动/删除/插入顺序。
 
 ---
 
+## `desktop.services.rembg_live`
+
+源码：[`desktop/services/rembg_live.py`](../../desktop/services/rembg_live.py)
+
+第三步「改参数实时预览当前页」的计算与落盘。
+
+与「生成预览」的分工
+--------------------
+- **「生成预览」**：全量正式产物，写 ``stages/rembgpreview``，会被「提交本次
+  任务」读取。参数一变它就过期（见 ``services/submit_state`` 的 PREVIEW_STALE）。
+- **本模块**：只算用户当前看着的**那一页**，落到系统临时目录，仅供预览区显示。
+  **绝不碰 rembgpreview** —— 否则各页是不同参数下算出来的，提交时新旧混用，
+  成品会不自洽。
+
+计算入口统一走 ``utils.rembg_page``，与 CLI 产物逐像素同源（``functions.rembg``
+用的是同一个函数）。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `live_dir(task_id: str) -> Path` | 该任务的实时预览暂存目录（系统临时目录下，按 task_id 隔离）。 |
+| `reset(task_id: str) -> None` | 清空该任务的实时暂存（参数回到「生成预览」状态时调用）。 |
+| `render_page(image_path: str, args: dict, out_dir: str \| Path) -> str` | 对单页执行去底色并写入 ``out_dir``，返回结果文件路径。 |
+
+#### `render_page(image_path: str, args: dict, out_dir: str | Path) -> str`
+
+对单页执行去底色并写入 ``out_dir``，返回结果文件路径。
+
+⚠️ 重依赖（numpy / PIL，以及 ``utils.image_utils`` 背后的 cv2）在这里
+**延迟导入**：GUI 主进程只有在用户真的动了参数时才付出这点加载成本，
+启动路径不受影响。
+
+PNG 用 ``compress_level=1``：这是**临时预览**，编码速度比压缩率重要
+（正式产物走 ``functions.rembg``，那里仍是 level=9）。
+
+---
+
 ## `desktop.services.submit_state`
 
 源码：[`desktop/services/submit_state.py`](../../desktop/services/submit_state.py)
@@ -1847,22 +2005,30 @@ rembg「提交本次任务」按钮的版本状态机（纯函数）。
 
 源码：[`desktop/stages/detect_stage.py`](../../desktop/stages/detect_stage.py)
 
-detect 阶段执行器：单图检测 + 批量检测（重依赖只在本子进程加载）。
+detect 阶段执行器：单图检测 + 批量检测。
+
+重依赖（torch/ultralytics）由**常驻 YOLO 服务**承担（见
+`functions/yolo_service.py`）：本进程只发「图片路径」过去等结果，因此一个
+worker 起来只需几百毫秒，模型全局只加载一次、多次检测共用。
+
+日志按用户要求逐张留痕——「模型加载用时」+「每张 detect 了哪个文件、结果
+如何、花了多久」+「总计用时」。没有这些，一次检测跑完日志里只有进度条在动，
+用户根本不知道到底执行了什么。
 
 ### 模块函数
 
 | 函数 | 说明 |
 | --- | --- |
-| `run_detect(config: dict) -> int` | 检测单张图片的左右文本框，返回像素坐标（重依赖只在本子进程加载）。 |
+| `run_detect(config: dict) -> int` | 检测单张图片的左右文本框，返回像素坐标（重依赖由常驻服务承担）。 |
 | `run_detect_stage(config: dict) -> int` | detect 阶段：逐图检测左右文本框并上报坐标，不切割、不生成任何文件。 |
 
 #### `run_detect_stage(config: dict) -> int`
 
 detect 阶段：逐图检测左右文本框并上报坐标，不切割、不生成任何文件。
 
-检测算法复用 `functions.detect.detect_page_boxes`（与 CLI crop /
-cropremove 同源），最终裁剪框由 GUI 按同一套规则
-（utils.box_geometry.compute_final_boxes）从检测框实时推导，用于预览标注。
+检测算法复用 `functions.detect.detect_page_boxes_by_path`（内部即 CLI crop /
+cropremove 用的同一入口），最终裁剪框由 GUI 按同一套规则
+（`utils.box_geometry.compute_final_boxes`）从检测框实时推导，用于预览标注。
 
 ---
 
@@ -3132,16 +3298,22 @@ effects 与 paths 对齐：非空时先按 area/border 规则合成效果再缩�
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(paths: list[Path], edge: int=96, effects: list \| None=None, crops: list \| None=None)` | 构造图片清单缩略图 worker。 |
+| `__init__(paths: list[Path], edge: int=96, effects: list \| None=None, crops: list \| None=None, cache_dir: Path \| None=None)` | 构造图片清单缩略图 worker。 |
 | `run() -> None` | 逐图生成缩略图，发 thumbnail_ready(index, image, path)，结束发 completed。 |
 
-##### `__init__(paths: list[Path], edge: int=96, effects: list | None=None, crops: list | None=None)`
+##### `__init__(paths: list[Path], edge: int=96, effects: list | None=None, crops: list | None=None, cache_dir: Path | None=None)`
 
 构造图片清单缩略图 worker。
 
 paths 为目标图片；edge 为缩略图最长边（默认 96）。effects/crops
 与 paths 对齐：非空时先按 area/border 合成效果或按像素框裁剪，
 再缩放到 edge（用于 print 列表效果预览）。
+
+cache_dir 给定时启用**磁盘缩略图缓存**（``<stem>.jpg``）。只有
+「既无 effect 也无 crop」的纯缩放结果才走缓存——带参数的合成结果
+尺寸取决于参数，缓存下来会串味。命中且不比源图旧就直接读小图，
+省掉整张原图的解码：详情页每次切阶段都会重建图条，而源图动辄
+两三千像素。
 
 ---
 
@@ -3209,6 +3381,9 @@ docs/functions/cropremove.md:57「area=3 → 单图，ROI 写回原位置」。
 
 按 PrintTextSpec 与像素密度给出**已设好像素大小**的字体。
 
+字体族走 ``_pick_content_font``（内容是标题 / 页码，仿宋优先）——与
+``pdf_draw.register_fonts`` 取到的字体同一种，预览与成品才对得上。
+
 ⚠️ 不能直接用 ``setPointSizeF(spec.font_size_pt)``：那是固定像素大小，
 而逐字步进是 ``char_h_mm × px_per_mm``（随密度缩放）。两处口径不同时，
 密度一变小（第四步版面编辑画布把整页缩到可视区，≈2 px/mm，远小于效果
@@ -3226,6 +3401,41 @@ PDF 仍要走「生成 PDF」按钮（functions/print.py）。
 
 几何全部取自 ``plan``，而 ``plan`` 由 PDF 生成与预览共用，所以用户
 按预览调好的边距/纸张/标题，与最终 PDF 必然一致。
+
+---
+
+## `desktop.workers.rembg_live_worker`
+
+源码：[`desktop/workers/rembg_live_worker.py`](../../desktop/workers/rembg_live_worker.py)
+
+单页实时去底色的后台 worker（第三步「改参数实时预览」专用）。
+
+与 ``PreviewWorker`` 的分工：那个只负责**显示**（读图 / 按区域裁剪 / 缩放），
+本 worker 负责**计算**（真正的去底色）。二者接力：本 worker 先把结果落到
+临时目录，预览区再按 ``live_dir`` 找到它并走原有的显示管线。
+
+去底色对整页图（数千像素）要百毫秒级 CPU，放主线程会卡住界面，因此一律
+丢到 QThread 里跑。结果通过 token 回传，宿主据此丢弃"已经过期的"结果
+（用户连拖两次滑块时，慢的那次回来得晚，不能覆盖新的）。
+
+### `class RembgLiveWorker(QObject)`
+
+一次性 worker：单页去底色 → 写临时文件。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(image_path: str, args: dict, out_dir: str, token: object) -> None` | 参数: |
+| `run() -> None` | 线程入口：算完发 finished，异常发 failed（不抛到线程外）。 |
+
+##### `__init__(image_path: str, args: dict, out_dir: str, token: object) -> None`
+
+参数:
+image_path: 待去底色的源图（extract 产物）。
+args: rembg 面板收集的参数（offset/type/seal/…）。
+out_dir: 实时暂存目录（``services.rembg_live.live_dir``）。
+token: 本次请求的标识，供宿主判断结果是否已过期。
 
 ---
 
@@ -3255,6 +3465,43 @@ PDF 仍要走「生成 PDF」按钮（functions/print.py）。
 
 pdf_path 为源文件；out_dir 为 thumbnails/source/；edge 最长边
 （默认 256）。缩略图命名 {page+1:04d}.jpg，与预览缓存一致。
+
+##### `run() -> None`
+
+装饰器：`Slot()`
+
+逐页渲染缩略图落盘；任务目录被删时中止并报 failed。
+
+⚠️ **每页先查缓存**：命名与预览查看器的缓存一致（``0001.jpg``），
+已存在且不比源 PDF 旧的直接跳过。否则重复导入同一份 PDF（或把任务
+目录复制过来）时，80 页的书要白渲染 80 页——用户看到的正是「明明
+已经有缩略图了还在重新生成」。
+
+---
+
+## `desktop.workers.task_rows_worker`
+
+源码：[`desktop/workers/task_rows_worker.py`](../../desktop/workers/task_rows_worker.py)
+
+任务列表行的读取（后台线程）。
+
+列表页刷新要遍历全部任务、逐个读它的 ``runs.json`` 才能拿到四个阶段的状态。
+任务一多、或单个任务的 runs 记录一多，这串读盘就会把 **UI 线程**占住——窗口
+明明已经画出来了，内容却要再等一截才出现。
+
+放到这里在后台线程读，读完一次性把整批行回传主线程渲染。只读不写，因此
+与主线程的 store 访问不冲突。
+
+### `class TaskRowsWorker(QObject)`
+
+读全量任务行（只读，不落任何盘）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(store) -> None` | store 只用于读（list_tasks / stage_states），不写。 |
+| `run() -> None` | 遍历任务生成摘要行；异常回传 failed，不抛到线程外。 |
 
 ---
 

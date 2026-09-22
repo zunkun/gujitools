@@ -209,7 +209,7 @@ def run(ctx) -> None:
     # 命令行下 detect 不落盘 = 没有任何产出，纯属白算一趟；
     # 但代码调用（crop/cropremove 的中间步骤、GUI detect 阶段）必须照常可用，
     # 所以拦截只放在 CLI 入口，不进 CommandArgs.validate()。
-    from cli.cli import _reject_dry_run
+    from cli.__main__ import _reject_dry_run
 
     # 拦截会打印一大段中文提示，压掉以免污染自测输出
     import contextlib as _ctx

@@ -34,6 +34,62 @@ from desktop.ui.widgets import (
 )
 
 
+class LazyPanelHost(QWidget):
+    """阶段面板的**惰性宿主**：真正被取用时才构造内部面板。
+
+    为什么需要：详情页一进来停在第一步，而第四步的 ``PrintPanel`` 构造要
+    ~128 ms（占整个详情页构造的**一半**——它那张参数表单 ``build_form`` 单项
+    就 106 ms）。用户可能从头到尾都不点第四步，却每次进详情页都在为它买单。
+
+    属性访问一律转发给内部面板，所以 ``control_stack.widget(3).get_args()``
+    这类既有写法照常工作。Qt 自己的 ``sizeHint`` / ``paintEvent`` 等由 C++
+    层调用，**不走 Python 的 __getattr__**，不会误触发构造。
+    """
+
+    def __init__(self, factory, hooks=(), parent=None):
+        """factory() 造真面板；hooks 是"内部面板构造完成"后的回调（接线用）。"""
+        super().__init__(parent)
+        self._factory = factory
+        self._hooks = list(hooks)
+        self._inner: QWidget | None = None
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self._host_layout = layout
+
+    def add_created_hook(self, fn) -> None:
+        """注册"内部面板构造完成"回调；**若已构造则立刻执行**。
+
+        ⚠️ 必须支持挂多个回调：视图层要接预览刷新、暂存层要接 param_edited，
+        它们分属不同 Mixin，各自只知道自己的接线，不能互相覆盖。
+        """
+        if self._inner is not None:
+            fn(self._inner)
+        else:
+            self._hooks.append(fn)
+
+    def peek(self) -> QWidget | None:
+        """**不触发构造**地看内部面板；尚未构造时返回 None。"""
+        return self._inner
+
+    @property
+    def panel(self) -> QWidget:
+        """内部真面板，首次访问时构造（并把挂着的回调全部执行一遍）。"""
+        if self._inner is None:
+            self._inner = self._factory()
+            self._host_layout.addWidget(self._inner)
+            hooks, self._hooks = self._hooks, []
+            for hook in hooks:
+                hook(self._inner)
+        return self._inner
+
+    def __getattr__(self, name: str):
+        # 只有在类上找不到该属性时才会走到这里；_factory/_inner 都在 __dict__
+        factory = self.__dict__.get("_factory")
+        if factory is None:
+            raise AttributeError(name)
+        return getattr(self.panel, name)
+
+
 class DetailViewMixin:
     """依赖宿主页面提供的方法：_on_back、_select_stage、各预览联动槽、
     current_stage()、_update_run_buttons() 等。"""
@@ -158,8 +214,15 @@ class DetailViewMixin:
         column = card.box
 
         self.control_stack = QStackedWidget()
-        for panel_class in PANEL_CLASSES:
-            self.control_stack.addWidget(panel_class())
+        for index, panel_class in enumerate(PANEL_CLASSES):
+            if index == 3:
+                # 第四步 PrintPanel 最重（构造 ~128 ms，占详情页构造的一半），
+                # 而用户进来只看第一步 → 等真切到第四步再建（见 LazyPanelHost）。
+                self.control_stack.addWidget(
+                    LazyPanelHost(panel_class, hooks=[self._wire_print_panel])
+                )
+            else:
+                self.control_stack.addWidget(panel_class())
         column.addWidget(self.control_stack, 1)
         self._connect_stage_panels()
 
@@ -205,17 +268,27 @@ class DetailViewMixin:
         rembg_panel.sealarea.valueChanged.connect(_on_rembg_panel_changed)
         rembg_panel.sealmin_sat.valueChanged.connect(_on_rembg_panel_changed)
 
-        # print 面板：参数变化 → 效果预览按新参数重画（只是重画内存位图，
-        # 不执行、不提交、不生成 PDF）。防抖 250ms：边距/颜色是逐字符输入，
-        # 每次都重载一遍大图会明显卡顿。
-        print_panel = self.control_stack.widget(3)
+        # print 面板的接线**推迟**到它真正被构造时（见 _wire_print_panel）：
+        # 第四步面板是惰性的，这里一碰它就等于立刻把它建出来，白惰性了。
+        # 边距级联只记下当前值，等面板建好时再补一次。
+        self._pending_print_border = None
+        self._sync_print_margin_default()
+
+    def _wire_print_panel(self, panel) -> None:
+        """第四步面板**首次构造后**的接线（LazyPanelHost 的 on_created 回调）。"""
+        # 参数变化 → 效果预览按新参数重画（只是重画内存位图，不执行、不提交、
+        # 不生成 PDF）。防抖 250ms：边距/颜色是逐字符输入，每次都重载一遍大图
+        # 会明显卡顿。
         self._print_preview_timer = QTimer(self)
         self._print_preview_timer.setSingleShot(True)
         self._print_preview_timer.setInterval(250)
         self._print_preview_timer.timeout.connect(self.print_preview.refresh_display)
-        print_panel.params_changed.connect(self._print_preview_timer.start)
-        # 初次进入第四步前，先按当前第三步 border 把默认边距级联一次
-        self._sync_print_margin_default()
+        panel.params_changed.connect(self._print_preview_timer.start)
+        # 补一次"面板还没建时"挂起的边距级联
+        try:
+            panel.set_upstream_border(getattr(self, "_pending_print_border", None))
+        except Exception:
+            pass
 
     def _print_params(self) -> dict:
         """第四步打印参数（供「打印效果」预览）：直接读面板表单。
@@ -237,8 +310,17 @@ class DetailViewMixin:
             border = (rembg_panel.border.text() or "").strip() or None
         except Exception:
             border = None
+        host = self.control_stack.widget(3)
+        peek = getattr(host, "peek", None)
+        panel = peek() if callable(peek) else host
+        if panel is None:
+            # 第四步面板还没构造：先记住，等它建好时由 _wire_print_panel 补同步。
+            # ⚠️ 这里绝不能走属性转发——rembg 参数一变就会把它建出来，
+            #    惰性就白做了。
+            self._pending_print_border = border
+            return
         try:
-            self.control_stack.widget(3).set_upstream_border(border)
+            panel.set_upstream_border(border)
         except Exception:
             pass
 

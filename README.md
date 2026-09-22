@@ -21,7 +21,7 @@
 
 |          | 桌面端（GUI）                                | 命令行（CLI）                                  |
 | -------- | -------------------------------------------- | ---------------------------------------------- |
-| 启动     | 开始菜单「古籍重製」，或 `python desktop.py` | 终端 `guji <命令>`，或 `python main.py <命令>` |
+| 启动     | 开始菜单「古籍重製」，或 `python desktop.py` | 终端 `guji <命令>`，或 `python cli.py <命令>` |
 | 适合     | 手工逐本处理，需要看预览、手绘修正           | 批量处理、脚本集成、无界面环境                 |
 | 参数方式 | 表单填写，上次执行的参数自动回填             | 命令行参数，或 `guji.yaml` 配置文件            |
 | 中间结果 | 每一步都有预览图可回看                       | 直接落盘到输出目录                             |
@@ -234,7 +234,7 @@ fc-cache -f
 
 | 入口         | 产物                         | 类型     | 说明                                      |
 | ------------ | ---------------------------- | -------- | ----------------------------------------- |
-| `main.py`    | `dist/guji/guji.exe`         | console  | 命令行工具，安装后 PATH 中可直接用 `guji` |
+| `cli.py`     | `dist/guji/guji.exe`         | console  | 命令行工具，安装后 PATH 中可直接用 `guji` |
 | `desktop.py` | `dist/guji/guji-desktop.exe` | windowed | 桌面 GUI，无控制台窗口，安装包建快捷方式  |
 
 两者由 `guji.spec` 的两次 `Analysis` + 一次 `COLLECT` 合并产出。这样 torch/cv2/Qt
@@ -531,22 +531,22 @@ guji extract --config ./book.yaml --pages "1,3-5"
 
 ```bash
 # 从 PDF 提取图片
-python main.py extract -i book.pdf -o ./images --zoom 2
+python cli.py extract -i book.pdf -o ./images --zoom 2
 
 # 把检测结果画到图片上落地（命令行必须给 --save）
-python main.py detect -i ./images --save
+python cli.py detect -i ./images --save
 
 # 裁剪文本框
-python main.py crop -i ./images -o ./cropped
+python cli.py crop -i ./images -o ./cropped
 
 # 去底色（二值化）
-python main.py rembg -i ./images -o ./output
+python cli.py rembg -i ./images -o ./output
 
 # 一步完成裁剪 + 去底色
-python main.py cropremove -i ./images -o ./output --area 1
+python cli.py cropremove -i ./images -o ./output --area 1
 ```
 
-安装包或已加入 PATH 后，可以将 `python main.py` 替换为 `guji`：
+安装包或已加入 PATH 后，可以将 `python cli.py` 替换为 `guji`：
 
 ```bash
 guji extract -i book.pdf -o ./images --zoom 2
@@ -561,12 +561,12 @@ guji cropremove -i ./images -o ./output --area 1
 ### 帮助
 
 ```bash
-python main.py help                # 功能模块概览
-python main.py help extract        # extract 命令手册
-python main.py help detect         # detect 命令手册
-python main.py help cropremove    # cropremove 命令手册
-python main.py help print         # print 命令手册
-python main.py -v                  # 版本信息
+python cli.py help                # 功能模块概览
+python cli.py help extract        # extract 命令手册
+python cli.py help detect         # detect 命令手册
+python cli.py help cropremove    # cropremove 命令手册
+python cli.py help print         # print 命令手册
+python cli.py -v                  # 版本信息
 ```
 
 帮助内容直接读取 `docs/functions/*.md`，终端内分页显示。
@@ -600,7 +600,7 @@ python main.py -v                  # 版本信息
 检测左右文本框并把标注图落地。**命令行下 `--save` 必须给**，不带会被拒绝：
 
 ```bash
-$ python main.py detect -i ./images
+$ python cli.py detect -i ./images
 ERROR: 'detect' 不接受空跑（既未指定 --save，就不会产生任何文件）。
 ```
 
@@ -638,7 +638,7 @@ ERROR: 'detect' 不接受空跑（既未指定 --save，就不会产生任何文
 
 #### print
 
-`print` 通过 `guji.yaml` 配置，使用 `python main.py run print` 执行。支持 A3、A4、A5、B5 纸张，可配置标题节点、页码和双页左右标注。页序优先取 `files:` 清单（桌面端列表顺序），清单为空时才按文件名排序。
+`print` 通过 `guji.yaml` 配置，使用 `python cli.py run print` 执行。支持 A3、A4、A5、B5 纸张，可配置标题节点、页码和双页左右标注。页序优先取 `files:` 清单（桌面端列表顺序），清单为空时才按文件名排序。
 
 ```yaml
 print:
@@ -675,25 +675,25 @@ print:
 
 ```bash
 # 高分辨率提取指定页码
-python main.py extract -i book.pdf -o ./images --zoom 2 --pages "1,3-5,7"
+python cli.py extract -i book.pdf -o ./images --zoom 2 --pages "1,3-5,7"
 
 # 输出检测标注图，确认左右框是否准确（不带 --save 会被拒绝）
-python main.py detect -i ./images --save -o ./detect
+python cli.py detect -i ./images --save -o ./detect
 
 # 裁剪 + 去底色，合并模式 + 外扩 30mm 边距
-python main.py cropremove -i ./images -o ./output --area 3 --border 30
+python cli.py cropremove -i ./images -o ./output --area 3 --border 30
 
 # 分框模式 + 保留红色印章
-python main.py cropremove -i ./images -o ./output --area 1 --seal --sealcolor
+python cli.py cropremove -i ./images -o ./output --area 1 --seal --sealcolor
 
 # 灰度输出 + 文字变细
-python main.py rembg -i ./images -o ./output --type 3 --offset -5
+python cli.py rembg -i ./images -o ./output --type 3 --offset -5
 
 # 1bit 单色位图（最小体积）
-python main.py rembg -i ./images -o ./output --type 2
+python cli.py rembg -i ./images -o ./output --type 2
 
 # 使用指定配置文件生成 PDF
-python main.py run print --config ./book.yaml
+python cli.py run print --config ./book.yaml
 ```
 
 ## 文档
@@ -739,4 +739,4 @@ API 参考（由 `tools/gen_api_docs.py` 从源码自动生成，随代码同步
 - [API 参考索引](docs/api/README.md) — 收录范围与同步方式
 - [desktop API](docs/api/desktop.md) — 桌面端全部公开类与函数
 - [cli API](docs/api/cli.md) / [functions API](docs/api/functions.md) / [utils API](docs/api/utils.md)
-- [入口脚本 API](docs/api/entrypoints.md) — main.py / desktop.py / config.py
+- [入口脚本 API](docs/api/entrypoints.md) — cli.py / desktop.py / config.py

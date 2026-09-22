@@ -107,7 +107,7 @@
 
 - `save=True`（命令行必给 `--save`）→ 按上表计算输出目录；
 - `save=False` → `outpath = None`，程序**不计算路径、不创建目录、不写任何文件**，
-  只上报坐标。**命令行下这种用法会被直接拒绝**（见 `cli.cli._reject_dry_run`），
+  只上报坐标。**命令行下这种用法会被直接拒绝**（见 `cli.__main__._reject_dry_run`），
   因为没有任何产出去处；只有**代码调用**（中间步骤）与 **GUI detect 阶段**
   才允许不落盘。
 
@@ -198,25 +198,25 @@
 
 ```bash
 # 输入为单个 PDF，未指定 -o → 输出在 PDF 同目录
-python main.py extract -i /path/to/file.pdf
+python cli.py extract -i /path/to/file.pdf
 #   → /path/to/file_stem/images/1.jpg ...
 
 # 输入为单个 PDF，-o 为纯名称
-python main.py extract -i /path/to/file.pdf -o preview
+python cli.py extract -i /path/to/file.pdf -o preview
 #   → /path/to/preview/file_stem/images/1.jpg ...
 
 # 输入为目录，未指定 -o → 每个 PDF 一个子目录，输出与输入目录并列
-python main.py extract -i /path/to/pdfs/
+python cli.py extract -i /path/to/pdfs/
 #   → /path/to/pdfs/pdf1_stem/images/... , /path/to/pdfs/pdf2_stem/images/...
 
 # crop / rembg / cropremove：目录输入时输出与输入目录并列
-python main.py crop -i /path/to/images/
+python cli.py crop -i /path/to/images/
 #   → /path/to/crop/
 
-python main.py crop -i /path/to/images/ -o out
+python cli.py crop -i /path/to/images/ -o out
 #   → /path/to/out/crop/
 
-python main.py rembg -i /path/to/images/ -o D:\output
+python cli.py rembg -i /path/to/images/ -o D:\output
 #   → D:\output\rembg\
 ```
 

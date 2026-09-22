@@ -18,20 +18,25 @@ def run(ctx) -> None:
     from PySide6.QtWidgets import QHeaderView
 
     from desktop.ui import theme as T
-    from tests.selftests._context import ok
+    from tests.selftests._context import ok, wait_until
 
     app, w, d, repo = ctx.app, ctx.w, ctx.d, ctx.repo
 
     tid = repo.create_task(ctx.pdf, "hashA", "古籍样例")
     ctx.tid = tid
     w.list_page.refresh()
-    ok("导入后立即出条目", w.list_page.table.table.rowCount() == 1)
+    # refresh 是异步的（后台线程读 tasks.json + 各任务 runs.json），必须等它回来
+    ok("导入后立即出条目",
+       wait_until(app, lambda: w.list_page.table.table.rowCount() == 1),
+       f"实际 {w.list_page.table.table.rowCount()} 行")
     ok("创建任务带指纹", repo.get_task(tid)["source_hash"] == "hashA")
 
     tid_dup = repo.create_task(ctx.big_pdf, "hashA", "大部头")
     ctx.tid_dup = tid_dup
     w.list_page.refresh()
-    ok("列表条目数正确", w.list_page.table.table.rowCount() == 2)
+    ok("列表条目数正确",
+       wait_until(app, lambda: w.list_page.table.table.rowCount() == 2),
+       f"实际 {w.list_page.table.table.rowCount()} 行")
 
     # 查重：取消 → 不新建，定位到已有任务
     w.list_page._confirm_duplicate = lambda path, dups: False
@@ -90,8 +95,10 @@ def run(ctx) -> None:
 
     from desktop.components.task_table import TaskTable
 
-    # 先刷新：本模块前面删过一条任务，表格还停在旧数据上
+    # 先刷新：本模块前面删过一条任务，表格还停在旧数据上。
+    # ⚠️ refresh 是**异步**的（后台线程读盘），必须等表格行数跟上再取值。
     w.list_page.refresh()
+    wait_until(app, lambda: table.rowCount() == len(repo.list_tasks()), timeout=5.0)
     shown_numbers = [
         table.item(r, 0).text() for r in range(table.rowCount())
     ]

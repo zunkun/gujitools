@@ -40,8 +40,18 @@ class ParamDraftMixin:
         self._draft_timer.setInterval(self._DRAFT_DEBOUNCE_MS)
         self._draft_timer.timeout.connect(self._flush_param_drafts)
         for index in range(self.control_stack.count()):
-            panel = self.control_stack.widget(index)
-            panel.param_edited.connect(partial(self._on_param_edited, index))
+            host = self.control_stack.widget(index)
+            register = getattr(host, "add_created_hook", None)
+            if callable(register):
+                # 惰性宿主（第四步面板）：⚠️ 这里**不能**读面板的任何属性，
+                # 属性转发会立刻把面板建出来、惰性就白做了。挂个回调等它建好。
+                register(partial(self._connect_panel_draft, index))
+            else:
+                self._connect_panel_draft(index, host)
+
+    def _connect_panel_draft(self, index: int, panel) -> None:
+        """给某个阶段面板接上「用户改了参数」→ 防抖暂存。"""
+        panel.param_edited.connect(partial(self._on_param_edited, index))
 
     def _on_param_edited(self, index: int) -> None:
         """某阶段有改动：记下待写并重启防抖计时。"""

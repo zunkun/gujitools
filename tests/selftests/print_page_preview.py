@@ -852,6 +852,26 @@ def run(ctx) -> None:
     ok("预览字体优先选中文字体，而非 generic 兜底",
        chosen_ok, f"family={fam!r} 可用族={sorted(available)[:5]}")
 
+    # ---- 8b'. PDF 内容（标题/页码）字体必须**仿宋优先** ----
+    # 必须与 PDF 侧 register_fonts 按**文件路径**取到的 simfang.ttf 对齐；
+    # 若沿用界面候选（Windows 上雅黑打头），就会出现"预览是雅黑、导出是仿宋"，
+    # 所见即所得直接破掉。两份候选用途不同，不许合并。
+    from desktop.workers.preview_worker import _pick_content_font
+    from utils.fonts import cjk_font_families, content_font_families
+
+    first_content = content_font_families()[0]
+    ok("内容字体候选以仿宋/衬线打头",
+       first_content in ("FangSong", "Noto Serif CJK SC", "Songti SC"),
+       f"{content_font_families()[:3]}")
+    ok("内容候选与界面候选是两份独立列表（防被合并）",
+       tuple(content_font_families()) != tuple(cjk_font_families()),
+       f"内容 {content_font_families()[:2]} / 界面 {cjk_font_families()[:2]}")
+    # 本机装了仿宋时，内容字体必须真的挑到它（离屏环境无字体库时跳过）
+    if available:
+        content_fam = _pick_content_font(18).family()
+        ok("内容字体实际挑到仿宋", content_fam in ("FangSong", "FangSong_GB2312", "SimFang"),
+           f"family={content_fam!r}")
+
     # ---- 8c. 竖排里的拉丁字符：整段旋转 90°，不拆成"每字母一格" ----
     # 竖排惯例：汉字等宽字符一字一格；`Happiness` 这类 ASCII 段整体旋转 90°
     # （读起来是自上而下的一个竖条）。拆成九格会挤成一条竖线且认不出来。

@@ -21,9 +21,17 @@ from __future__ import annotations
 import io
 import json
 import sys
+import threading
 from typing import Any, Dict
 
 from core.reporter import EVENT_PAGE_BOXES, EVENT_PAGE_SIZE, EVENT_PROGRESS
+
+#: 保护"写一行 JSON 到 stdout"这个动作。
+#: ⚠️ worker 里的功能模块是**线程池**并发跑的（crop/rembg/detect 都是），
+#: 多线程同时 `write` + `flush` 会让两条事件的字节交错，GUI 那边 `json.loads`
+#: 直接解析失败、整行被当成人读日志丢掉——表现为"进度/框偶尔丢一条"，
+#: 极难复现。写一行是极短的操作，加锁的代价可以忽略。
+_EMIT_LOCK = threading.Lock()
 
 
 def _real_stdout():
@@ -38,14 +46,19 @@ def _real_stdout():
 
 def emit(payload: dict, stream=None) -> None:
     """
-    向 GUI 输出一条 JSON Lines 事件。
+    向 GUI 输出一条 JSON Lines 事件（线程安全）。
 
     stream 缺省写真实 stdout；窗口化打包运行时 sys.stdout 可能为 None，
     此时由 _real_stdout() 兜底到文件描述符 1。
+
+    ⚠️ 序列化与写入必须在同一把锁里：先序列化再抢锁会让两个线程的
+    payload 交替入队、输出的仍是交错行。
     """
     target = stream if stream is not None else _real_stdout()
-    target.write(json.dumps(payload, ensure_ascii=False) + "\n")
-    target.flush()
+    line = json.dumps(payload, ensure_ascii=False) + "\n"
+    with _EMIT_LOCK:
+        target.write(line)
+        target.flush()
 
 
 class JsonLinesReporter:

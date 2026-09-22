@@ -4,7 +4,7 @@
 
 图像处理功能模块：GUI 与 CLI 共用同一套算法
 
-覆盖 10 个模块、9 个公开类、22 个公开函数/方法（生成于 2026-09-19）。
+覆盖 11 个模块、11 个公开类、33 个公开函数/方法（生成于 2026-09-22）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -16,12 +16,13 @@
 | [`functions.base`](#functionsbase) | 1 | 4 |
 | [`functions.crop`](#functionscrop) | 1 | 1 |
 | [`functions.crop_remove`](#functionscrop_remove) | 1 | 1 |
-| [`functions.detect`](#functionsdetect) | 1 | 4 |
+| [`functions.detect`](#functionsdetect) | 2 | 8 |
 | [`functions.extract`](#functionsextract) | 1 | 2 |
 | [`functions.init`](#functionsinit) | 1 | 3 |
 | [`functions.print`](#functionsprint) | 1 | 2 |
 | [`functions.rembg`](#functionsrembg) | 1 | 2 |
 | [`functions.text_region`](#functionstext_region) | 1 | 2 |
+| [`functions.yolo_service`](#functionsyolo_service) | 1 | 7 |
 
 ---
 
@@ -229,13 +230,17 @@ detect + 裁剪 + 去底色`，两者都通过本模块拿到左右框，而不�
   的前置中间步骤，供代码调用或 GUI 的 detect 阶段使用。
 - **命令行下必须给 `--save`**：不落盘时命令行没有任何产出去处（坐标只打到
   stdout，下游 `crop` / `cropremove` 各自会重新检测），属于白算一趟，因此
-  CLI 入口会直接拒绝（`cli.cli._reject_dry_run`）。本模块**不**做这个限制——
+  CLI 入口会直接拒绝（`cli.__main__._reject_dry_run`）。本模块**不**做这个限制——
   它是可复用的库层，`DetectFunction` 作为中间步骤被代码调用时必须保持可用。
 - **落地时**输出标注图（框 + 坐标文字），输出目录规则与 `crop`
   **完全一致**（都调 `utils.path_utils.resolve_final_output_dir`）：
   `<输入父目录>/detect`，即与 crop 同级、落在输入目录旁边。
 - **`execute()` 被重写**：基类语义是「建目录 → 处理 → 落盘 → 统计」，
   对不落盘的检测无意义。
+
+### `class DetectReport(NamedTuple)`
+
+一次「按路径检测」的模型来源信息（只为日志服务，不参与任何决策）。
 
 ### `class DetectFunction(FunctionBase)`
 
@@ -252,15 +257,21 @@ GUI detect 阶段当中间步骤），开启时把标注图（框 + 坐标文字
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(command_args, reporter=None)` | 初始化并加载 YOLO 模型（单例，进程内复用）。 |
+| `__init__(command_args, reporter=None)` | 初始化检测功能（本对象**不持有**模型）。 |
 | `execute() -> dict` | 逐图检测，返回汇总结果。 |
 
 ##### `__init__(command_args, reporter=None)`
 
-初始化并加载 YOLO 模型（单例，进程内复用）。
+初始化检测功能（本对象**不持有**模型）。
 
 `save`（默认关闭）决定是否把标注图落地，落地目录同 crop 的
 输出规则（`-o` 或默认 `detect` 目录），仅在开启时才创建。
+
+⚠️ 这里刻意不保存模型实例：检测统一走
+`detect_page_boxes_by_path`——优先交给常驻 YOLO 服务（服务自己读图、
+模型全局只加载一次），服务不可用时它自己在本进程内加载一次单例即可
+（`utils.load_yolo_model()` 本身就有双重检查锁）。早先构造期就
+`load_yolo_model()` 会让每一次"服务可用"的检测白付 5 秒。
 
 ##### `execute() -> dict`
 
@@ -281,6 +292,10 @@ GUI detect 阶段当中间步骤），开启时把标注图（框 + 坐标文字
 | 函数 | 说明 |
 | --- | --- |
 | `extract_first_box(boxes) -> Optional[Box]` | 从 `detect_left_right_boxes` 的返回里取面积最大的框的 4 个坐标。 |
+| `last_detect_report() -> DetectReport` | 取本线程最近一次按路径检测的来源信息（默认 in-process/0.0）。 |
+| `backend_log_line(report: DetectReport) -> str` | 把「模型从哪来、加载用了多久」说成一句人读日志（GUI 与 CLI 共用措辞）。 |
+| `detect_page_boxes_by_path(image_path, model=None) -> Tuple[Optional[Box], Optional[Box]]` | 按**路径**检测左右文本框：优先常驻 YOLO 服务，失败回落本进程内。 |
+| `format_box(box) -> str` | 把框格式化为 `x1,y1,x2,y2`，None 显示为 `-`（日志用，CLI/GUI 共用一份）。 |
 | `detect_page_boxes(img_bgr, model=None) -> Tuple[Optional[Box], Optional[Box]]` | 检测一页图片的左右文本框，返回 (left_box, right_box)。 |
 
 #### `extract_first_box(boxes) -> Optional[Box]`
@@ -297,6 +312,42 @@ GUI detect 阶段当中间步骤），开启时把标注图（框 + 坐标文字
 
 返回:
     (x1, y1, x2, y2)，或 None（该侧无框）。
+
+#### `backend_log_line(report: DetectReport) -> str`
+
+把「模型从哪来、加载用了多久」说成一句人读日志（GUI 与 CLI 共用措辞）。
+
+用户明确要求能看到「加载 yolo … 用时 xx s」：服务化之后模型加载发生在
+**常驻服务进程**里，而那边没有控制台（输出进 `%TEMP%/guji-yolo-service.log`），
+所以只能由调用方把服务回报的耗时转发到自己的日志里——否则用户完全看不出
+模型到底加载了没有、用了几秒。
+
+#### `detect_page_boxes_by_path(image_path, model=None) -> Tuple[Optional[Box], Optional[Box]]`
+
+按**路径**检测左右文本框：优先常驻 YOLO 服务，失败回落本进程内。
+
+给"手上有路径"的调用方用（CLI 的 detect/crop/cropremove、GUI 的 detect
+阶段）。服务化只改**模型住在哪个进程**，不改算法：
+
+- 服务可用 → 模型全局只有一份，多个 worker、多次执行、多个线程共用，
+  日志里「加载 YOLO 模型完成」只出现一次（在服务进程里）；
+- 服务不可用 → 回落到 ``detect_page_boxes(imread(path), model)``，行为与
+  引入服务之前**完全一致**（最坏就是慢那几秒）。
+
+⚠️ 与 `detect_page_boxes` 的分工：那个是**算法入口**（吃 ndarray，
+crop/GUI 都靠它保证框一致，不要绕过）；本函数是**取图方式的选择**，
+内部最终仍然调它。
+
+副作用：把本次的模型来源写进线程内的 :func:`last_detect_report`，
+调用方据此打「加载 YOLO 模型完成: 用时 X s」这类日志。
+
+参数:
+    image_path: 图片路径（服务侧同样走 `utils.imread`，支持中文路径）。
+    model: 本进程内已加载的模型；非 None 时说明调用方已经付过加载成本，
+        直接用它在进程内算，不再绕服务。
+
+返回:
+    (left_box, right_box)，各为 (x1, y1, x2, y2) 或 None。
 
 #### `detect_page_boxes(img_bgr, model=None) -> Tuple[Optional[Box], Optional[Box]]`
 
@@ -531,15 +582,19 @@ ctx 通过参数传递（而非 self 实例变量），保证 ThreadPoolExecutor
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(command_args, reporter=None)` | 计算输出目录；YOLO 模型延迟到真正需要检测时才加载。 |
+| `__init__(command_args, reporter=None)` | 计算输出目录；YOLO 模型**延迟**到真正需要检测时才加载。 |
 | `execute()` | 执行文本区域处理：委托基类并发引擎逐图处理。 |
 
 ##### `__init__(command_args, reporter=None)`
 
-计算输出目录；YOLO 模型延迟到真正需要检测时才加载。
+计算输出目录；YOLO 模型**延迟**到真正需要检测时才加载。
 
 area=4「整页」模式下完全不检测，模型也就不会被加载——这既省掉了
 非古籍文档白白等模型初始化，也让「没有 YOLO 权重」的环境仍能跑整页流程。
+
+检测本身走 `detect_page_boxes_by_path`：优先交给**常驻 YOLO 服务**
+（模型全局只加载一次、多进程共用），服务不可用时它自己在本进程内
+加载单例。因此本对象不持有模型。
 
 ##### `execute()`
 
@@ -547,5 +602,87 @@ area=4「整页」模式下完全不检测，模型也就不会被加载——�
 
 复用 FunctionBase.execute() 的线程池、重试与日志；单图完整流程
 （读取→YOLO 检测→area/border 规则→输出）在 _process_single_image 中。
+
+---
+
+## `functions.yolo_service`
+
+源码：[`functions/yolo_service.py`](../../functions/yolo_service.py)
+
+常驻 YOLO 服务：让**所有进程与线程共用同一份已加载的模型**。
+
+## 为什么需要它
+
+frozen 打包下 `import torch` + 首次 `YOLO(weights)` 要 **约 5.4 秒**，而**每次
+点「检测」都是一个全新的 worker 子进程**——进程一退，模型连同 torch 运行时
+（工作集约 350MB）一起被系统回收，下一次又从头付一遍。用户看到的就是日志里
+「加载 YOLO 模型: …」第二次出现、以及"第二次点还是要等五秒"。
+
+把模型搬进一个**独立的常驻进程**后，任何需要 YOLO 的进程都把「图片路径」发给
+它，模型只加载一次、被所有 worker（GUI 的每次执行、CLI 的 crop/cropremove/detect）
+共用——这就是「全局只加载一次」。空闲 ``TTL``（默认 5 分钟）没人用，服务自行
+退出，把那 350MB 还给系统。
+
+## 两个关键设计
+
+1. **过 socket 的是路径，不是像素**。检测只需要路径，服务自己读图。既省掉把
+   几十 MB 图像编码/解码两趟的开销，也让调用方在只做检测时**根本不必解码**
+   （比原来还少一次 `imread`）。一条请求一行 JSON，开销约 1ms，相对单页推理的
+   一两百毫秒可忽略。
+2. **失败一律回落**。连不上 / 握手失败 / 超时 / 协议错 / 服务报错 → 客户端返回
+   `None`，调用方在本进程内加载模型继续做（见 `functions/detect.py::
+   detect_page_boxes_by_path`）。**任何情况下检测都不会不可用**，最坏就是慢那
+   5 秒——与引入本模块之前完全一致。
+
+## 发现与生命周期
+
+服务把 `{port, fp, pid}` 写进 ``%TEMP%/guji-yolo-service.json``，客户端读它来
+连接；``fp`` 是**身份指纹**（版本 + 权重路径 + 权重大小/修改时间），不一致就
+（多半是升级后残留的旧服务）忽略并另起一个，旧的靠 TTL 自灭——**不做互相驱逐**，
+免得两个版本互相杀。
+
+服务端**允许并发连接**（每个客户端线程一条）：CLI 的 `detect` 本来就是
+8 线程共享一个模型并发推理，服务里也必须保持同样的并发度，否则等于把 CLI 的
+并行度砍成 1。模型加载本身仍然只做一次（双重检查锁在 `yolo_utils` 里）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| SERVICE_FILE_NAME | `"guji-yolo-service.json"` |
+| DEFAULT_TTL_SECONDS | `300.0` |
+| CONNECT_TIMEOUT | `3.0` |
+| DETECT_TIMEOUT | `300.0` |
+| SPAWN_WAIT | `25.0` |
+
+### `class ServiceDetect(NamedTuple)`
+
+一次「经服务完成」的检测结果。
+
+`model_load_seconds > 0` 表示**这一张**把模型加载起来了（服务刚被拉起、
+或刚被 TTL 收走后又拉起）；为 0 表示服务里已有模型、直接复用。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `service_file() -> Path` | 发现文件的完整路径。 |
+| `log_file() -> Path` | 服务日志路径（服务是分离进程、没有控制台，日志必须落文件才可诊断）。 |
+| `serve() -> int` | 服务主循环：绑定回环端口、写发现文件、按 TTL 空闲自退。返回进程退出码。 |
+| `service_in_use() -> bool` | 本线程是否已经在用常驻服务（日志里说明"模型住在哪"用）。 |
+| `detect_boxes_via_service(image_path, area: int=1) -> ServiceDetect \| None` | 把一张图交给常驻服务检测，返回 :class:`ServiceDetect`。 |
+| `service_status(timeout: float=CONNECT_TIMEOUT)` | 查询当前服务的状态（测试与排障用）；没有服务返回 None。 |
+| `shutdown_service(timeout: float=CONNECT_TIMEOUT) -> bool` | 让当前服务退出（测试收尾用；正常运行时靠 TTL 自己退）。 |
+
+#### `detect_boxes_via_service(image_path, area: int=1) -> ServiceDetect | None`
+
+把一张图交给常驻服务检测，返回 :class:`ServiceDetect`。
+
+**`None` 表示"这次没走成服务"**（服务关着、拉不起来、连不上、协议错、
+服务端报错都算），调用方应当回落到本进程内加载模型。注意它与"服务算完
+但没检到框"不同——后者返回 ``ServiceDetect(None, None, 0.0)``。
+
+`area` 只为兼容调用方签名保留：整页模式（area=4）在上层就已分流、根本不会
+走到这里，因此服务协议里不带它。
 
 ---

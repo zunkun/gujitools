@@ -21,10 +21,12 @@ ctx 通过参数传递（而非 self 实例变量），保证 ThreadPoolExecutor
 """
 
 from pathlib import Path
+import time
+
 import numpy as np
 import utils
 from functions.base import FunctionBase
-from functions.detect import detect_page_boxes
+from functions.detect import detect_page_boxes_by_path, warm_up_detect_model
 from utils.box_geometry import build_output_layout, build_symmetric_layout
 
 
@@ -32,20 +34,17 @@ class TextRegionProcessor(FunctionBase):
     """文本区域处理基类：封装 YOLO 检测 + area/border 规则 + 输出构建。"""
 
     def __init__(self, command_args, reporter=None):
-        """计算输出目录；YOLO 模型延迟到真正需要检测时才加载。
+        """计算输出目录；YOLO 模型**延迟**到真正需要检测时才加载。
 
         area=4「整页」模式下完全不检测，模型也就不会被加载——这既省掉了
         非古籍文档白白等模型初始化，也让「没有 YOLO 权重」的环境仍能跑整页流程。
+
+        检测本身走 `detect_page_boxes_by_path`：优先交给**常驻 YOLO 服务**
+        （模型全局只加载一次、多进程共用），服务不可用时它自己在本进程内
+        加载单例。因此本对象不持有模型。
         """
         super().__init__(command_args, reporter)
         self._calc_outpath()
-        self._model = None
-
-    def _ensure_model(self):
-        """按需加载 YOLO 模型（单例，进程内复用）。"""
-        if self._model is None:
-            self._model = utils.load_yolo_model()
-        return self._model
 
     def _calc_outpath(self):
         """计算输出目录。"""
@@ -75,6 +74,8 @@ class TextRegionProcessor(FunctionBase):
 
         area_mode = self.command_args.get("area", 1)
         ext = self.command_args.get("ext", "png")
+        # 整页模式不检测，耗时无意义；只有真正跑了 YOLO 的那条路才有值
+        detect_elapsed = None
 
         if area_mode == 4:
             # 整页模式：不调用 YOLO，整页即唯一文本框（普通文档 / 检测失败兜底）
@@ -83,9 +84,13 @@ class TextRegionProcessor(FunctionBase):
         else:
             # YOLO 检测：唯一入口在 functions.detect，保证 crop / cropremove /
             # GUI detect 阶段拿到的框完全一致（此前三处各自调 utils 原语）。
-            left_box, right_box = detect_page_boxes(img_bgr, self._ensure_model())
+            # ⚠️ 走**按路径**的入口：检测优先交给常驻 YOLO 服务（服务自己读图），
+            # 模型全局只加载一次；服务不可用时它内部回落到本进程内加载。
+            detect_started = time.perf_counter()
+            left_box, right_box = detect_page_boxes_by_path(image_path)
+            detect_elapsed = time.perf_counter() - detect_started
         boxes = [b for b in (left_box, right_box) if b is not None]
-        self._report_boxes(image_path, left_box, right_box)
+        self._report_boxes(image_path, left_box, right_box, detect_elapsed)
 
         # 无检测框
         if not boxes:
@@ -226,7 +231,7 @@ class TextRegionProcessor(FunctionBase):
             out_arr[oy : oy + h, ox : ox + w] = roi
 
     # ---- 子类必须实现 ----
-    def _report_boxes(self, image_path, left_box, right_box) -> None:
+    def _report_boxes(self, image_path, left_box, right_box, elapsed=None) -> None:
         """汇报本图检测到的左右框。
 
         主通道是结构化事件 `page_boxes`（GUI 据此把框写回 boxes.json）；
@@ -246,7 +251,13 @@ class TextRegionProcessor(FunctionBase):
                 return "none"
             return ",".join(str(int(round(float(v)))) for v in box[:4])
 
-        print(f"[boxes] {image_path.stem} left={fmt(left_box)} right={fmt(right_box)}")
+        # ⚠️ 只在行尾追加耗时，**不要改动行内既有字段**：
+        # `tests/reporter_cli_parity.py` 会按 `left=<nums>` 子串比对两通道同源。
+        cost = "" if elapsed is None else f" cost={elapsed * 1000:.0f}ms"
+        print(
+            f"[boxes] {image_path.stem} left={fmt(left_box)} "
+            f"right={fmt(right_box)}{cost}"
+        )
 
     def _on_boxes_detected(self, img_bgr, boxes):
         """检测到框后的预处理 hook。返回上下文 ctx（供 _process_roi 使用）。默认返回 None。"""
@@ -269,5 +280,12 @@ class TextRegionProcessor(FunctionBase):
 
         复用 FunctionBase.execute() 的线程池、重试与日志；单图完整流程
         （读取→YOLO 检测→area/border 规则→输出）在 _process_single_image 中。
+
+        ⚠️ 在进入并发引擎**之前**先把模型备好（`warm_up_detect_model`）：
+        area=4 整页模式完全不用 YOLO，故先判断再预热，避免白加载；非整页时
+        这笔开销被单独计时、单独报出，不会压在"第一张图"的耗时上。
         """
+        if int(self.command_args.get("area", 1) or 1) != 4:
+            load_line, _seconds = warm_up_detect_model()
+            print(load_line)
         return super().execute()

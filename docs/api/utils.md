@@ -4,7 +4,7 @@
 
 通用工具函数：几何、排序、图像 IO、PDF、YOLO
 
-覆盖 18 个模块、7 个公开类、79 个公开函数/方法（生成于 2026-09-19）。
+覆盖 18 个模块、7 个公开类、84 个公开函数/方法（生成于 2026-09-22）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -17,10 +17,10 @@
 | [`utils.color_utils`](#utilscolor_utils) | 0 | 2 |
 | [`utils.file_utils`](#utilsfile_utils) | 0 | 2 |
 | [`utils.font_setup`](#utilsfont_setup) | 3 | 11 |
-| [`utils.fonts`](#utilsfonts) | 0 | 3 |
+| [`utils.fonts`](#utilsfonts) | 0 | 4 |
 | [`utils.help`](#utilshelp) | 0 | 7 |
 | [`utils.image_io`](#utilsimage_io) | 0 | 2 |
-| [`utils.image_utils`](#utilsimage_utils) | 0 | 6 |
+| [`utils.image_utils`](#utilsimage_utils) | 0 | 7 |
 | [`utils.margin_utils`](#utilsmargin_utils) | 0 | 2 |
 | [`utils.page_layout`](#utilspage_layout) | 2 | 13 |
 | [`utils.path_utils`](#utilspath_utils) | 0 | 2 |
@@ -29,7 +29,7 @@
 | [`utils.sort_utils`](#utilssort_utils) | 0 | 2 |
 | [`utils.string_utils`](#utilsstring_utils) | 0 | 1 |
 | [`utils.units`](#utilsunits) | 0 | 2 |
-| [`utils.yolo_utils`](#utilsyolo_utils) | 0 | 2 |
+| [`utils.yolo_utils`](#utilsyolo_utils) | 0 | 5 |
 
 ---
 
@@ -464,6 +464,7 @@ ASCII 的 ``L`` / ``R`` / ``U``——**输出内容是错的却不报任何错**
 | `cjk_font_paths() -> tuple` | 中文字体文件候选路径（按优先级）。 |
 | `first_existing_cjk_font() -> str \| None` | 返回第一个真实存在的中文字体文件路径；全部缺失返回 None。 |
 | `cjk_font_families() -> tuple` | 按当前平台返回中文字体族名（按优先级），供 Qt 侧挑选。 |
+| `content_font_families() -> tuple` | 第四步 PDF 内容（标题 / 页码）的字体族名候选：**仿宋（衬线）优先**。 |
 
 #### `cjk_font_paths() -> tuple`
 
@@ -477,6 +478,18 @@ ASCII 的 ``L`` / ``R`` / ``U``——**输出内容是错的却不报任何错**
 按当前平台返回中文字体族名（按优先级），供 Qt 侧挑选。
 
 调用方（如第四步预览）再与 `QFontDatabase.families()` 求交集取第一个命中的。
+
+#### `content_font_families() -> tuple`
+
+第四步 PDF 内容（标题 / 页码）的字体族名候选：**仿宋（衬线）优先**。
+
+与 `cjk_font_families()` 的分工：
+
+- `cjk_font_families()` → **界面**文字（Windows 上雅黑打头，界面更清爽）；
+- `content_font_families()` → **印刷内容**，顺序刻意与 `cjk_font_paths()`
+  对齐，保证预览和最终 PDF 选到同一种字。
+
+两份不能互换——换了就会出现"预览与成品字体不一致"。
 
 ---
 
@@ -624,6 +637,7 @@ cv2 / numpy 体积大且加载慢，故在函数内延迟导入——GUI 主进�
 | `extract_red_seal(rgb_img: np.ndarray, min_seal_area: int, min_saturation: int) -> Tuple[np.ndarray, bool]` | 从 RGB 图像中提取红色印章掩码。 |
 | `apply_otsu_to_region(img_rgb: np.ndarray, gray: np.ndarray, roi_box: tuple, threshold: int, enable_seal: bool, seal_color: bool, red_mask: Optional[np.ndarray], img_type: int=1) -> np.ndarray` | 对图像中指定矩形区域执行去底色处理，返回 ROI 大小的结果数组。 |
 | `apply_otsu_whole(img_rgb: np.ndarray, gray: np.ndarray, threshold: int, red_mask: Optional[np.ndarray], seal_color: bool, img_type: int=1) -> np.ndarray` | 对整张图执行去底色处理，返回与输入同尺寸的结果数组。 |
+| `rembg_page(img_rgb: np.ndarray, gray: np.ndarray, *, offset: int=0, img_type: int=1, enable_seal: bool=False, seal_color: bool=False, seal_area: int=80, seal_min_sat: int=50) -> np.ndarray` | 整页去底色的**唯一实现**：算阈值 → 叠加 offset → 整图去底。 |
 | `parse_border(border_value) -> Optional[List[int]]` | 解析 border 参数（像素单位），支持 CSS 风格 1~4 值写法。 |
 | `parse_border_mm(border_value, dpi: int=300) -> Optional[List[int]]` | 解析 border 参数（毫米单位），按 DPI 转换为像素。 |
 
@@ -702,6 +716,23 @@ cv2 / numpy 体积大且加载慢，故在函数内延迟导入——GUI 主进�
 
 返回:
     (H, W, 3) 彩色 或 (H, W) 单通道数组。
+
+#### `rembg_page(img_rgb: np.ndarray, gray: np.ndarray, *, offset: int=0, img_type: int=1, enable_seal: bool=False, seal_color: bool=False, seal_area: int=80, seal_min_sat: int=50) -> np.ndarray`
+
+整页去底色的**唯一实现**：算阈值 → 叠加 offset → 整图去底。
+
+CLI（``functions.rembg``）与桌面端第三步的「实时预览」都调这里，保证界面
+所见与最终产物逐像素一致——两处各写一份组装逻辑迟早会漂移。
+
+参数:
+    img_rgb / gray: RGB 数组与灰度数组（同尺寸，H×W）。
+    offset: 阈值偏移（-100~100）。正数阈值更高 → 文字更粗更深。
+    img_type: 1=二值 / 2=1bit / 3=灰度（1bit 的转换由保存方负责）。
+    enable_seal / seal_color / seal_area / seal_min_sat: 印章相关参数。
+
+返回:
+    与输入同尺寸的去底结果数组：(H, W, 3) 彩色（保留印章原色）
+    或 (H, W) 单通道。
 
 #### `parse_border(border_value) -> Optional[List[int]]`
 
@@ -1402,13 +1433,38 @@ YOLO 检测封装：模型加载与左右文本框分割。
 | 名称 | 值 |
 | --- | --- |
 | _YOLO_MODEL | `None` |
+| _LOAD_SECONDS | `0.0` |
 
 ### 模块函数
 
 | 函数 | 说明 |
 | --- | --- |
+| `model_path() -> Path` | YOLO 权重文件路径（候选表只保留这一份）。 |
+| `is_model_loaded() -> bool` | 本进程是否已加载过 YOLO（常驻服务用它对外汇报，便于确认复用）。 |
+| `load_seconds_used() -> float` | 本进程**实际执行**加载模型时花掉的秒数；没加载过则为 0.0。 |
 | `load_yolo_model() -> object` | 延迟加载 YOLO 模型并返回单例实例。 |
 | `detect_left_right_boxes(image_bgr: np.ndarray, model: object) -> Tuple[List[tuple], List[tuple]]` | 使用 YOLO 检测文本框并按水平中心分为左右两组。 |
+
+#### `model_path() -> Path`
+
+YOLO 权重文件路径（候选表只保留这一份）。
+
+权重路径同时被三处用到——真正加载模型、给用户打印、以及常驻 YOLO 服务的
+身份指纹（见 `functions/yolo_service.py`）。三处各写一遍候选列表迟早会
+漂移，所以统一收在这里。
+
+返回:
+    `gujitools/weights/detect.pt` 的绝对路径。
+
+异常:
+    FileNotFoundError: 权重文件不存在（打包遗漏或安装损坏）。
+
+#### `load_seconds_used() -> float`
+
+本进程**实际执行**加载模型时花掉的秒数；没加载过则为 0.0。
+
+调用方（常驻服务）据此把这笔开销**单独报一次**，而不是算进某一张图的
+检测耗时——"第一张图要 5 秒"看起来像图的问题，其实是模型在加载。
 
 #### `load_yolo_model() -> object`
 
@@ -1416,6 +1472,10 @@ YOLO 检测封装：模型加载与左右文本框分割。
 
 使用双重检查锁定（double-checked locking）确保线程安全：
 先无锁检查 → 再加锁检查 → 最后加载，避免每次调用都竞争锁。
+
+⚠️ 单例只保证**进程内**复用。跨进程复用模型要靠常驻服务
+（`functions/yolo_service.py`）——每次点「检测」都是新的 worker 子进程，
+进程一退模型就没了，这里再单例也救不了第二次调用。
 
 返回:
     ultralytics.YOLO 实例（CPU 模式）。

@@ -17,10 +17,12 @@
 - print_list.PrintListMixin  第四步待打印列表
 - runner.StageRunnerMixin    阶段执行（worker 子进程编排）
 - detect.DetectMixin         detect 检测控制
+- rembg_live.RembgLiveMixin  第三步改参数/翻页时只重算当前页的实时预览
 """
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from PySide6.QtCore import QProcess, Signal
@@ -33,6 +35,7 @@ from desktop.pages.taskdetail.history import HistoryMixin
 from desktop.pages.taskdetail.manifest import PageListMixin
 from desktop.pages.taskdetail.params_draft import ParamDraftMixin
 from desktop.pages.taskdetail.print_list import PrintListMixin
+from desktop.pages.taskdetail.rembg_live import RembgLiveMixin
 from desktop.pages.taskdetail.runner import STATUS_LABELS, StageRunnerMixin
 from desktop.pages.taskdetail.submit import SubmitMixin
 from desktop.pages.taskdetail.view import DetailViewMixin
@@ -41,6 +44,7 @@ from desktop.pages.taskdetail.view import DetailViewMixin
 class TaskDetailPage(
     StageRunnerMixin,
     SubmitMixin,
+    RembgLiveMixin,
     PrintListMixin,
     ParamDraftMixin,
     HistoryMixin,
@@ -76,12 +80,27 @@ class TaskDetailPage(
         self.running_stage: str | None = None
         self.cancel_requested = False
         self.detect_process: QProcess | None = None
+        #: 「执行权」占用标记。**必须**独立于 self.process：run_stage 收到点击后
+        #: 还要校验参数、组装 effects、写运行配置，做完才 QProcess.start()，
+        #: 这段同步重活里 self.process 仍是 None——没有这个标记，连点第二下
+        #: 就能溜过守卫、起出第二个 worker 子进程（torch 各自加载一遍）。
+        #: 存名字（"子任务"/"单页检测"）而非 bool，提示里能直接说清"什么在跑"。
+        self._run_claim: str | None = None
+        #: 上次**真正启动进程**的时刻（monotonic）。⚠️ 防抖量的是"距上次启动"，
+        #: 而**不是**"距上次受理"：一次没跑起来的尝试（参数错、无输出、无需续跑、
+        #: 提交被前置条件拒绝）不该罚掉用户紧接着的下一次点击——"提交被拒 →
+        #: 马上点生成预览"就会踩到（rembg 自测真的红了）。
+        self._run_launched_at = 0.0
+        #: 最近一次的阶段状态：执行权变化时要重刷按钮，但不值得为此再读一次盘
+        self._last_stage_state: dict = {"status": "pending"}
         self.detect_cache: dict[str, list[tuple] | None] = {}
         self._last_error_line: str | None = None
         self._extract_seen = 0  # 提取过程中已展示的结果页数
         self._init_ui()
         # 参数暂存：面板报到"用户改了参数"就防抖写 drafts/<阶段>.json
         self._install_draft_hooks()
+        # 第三步实时预览：改参数/翻页时只重算当前页（见 rembg_live.RembgLiveMixin）
+        self._init_rembg_live()
 
     # ------------------------------------------------------------------ 任务切换
     def set_task(self, task_id: str) -> None:
@@ -122,6 +141,8 @@ class TaskDetailPage(
         self.control_stack.widget(3).set_source_defaults(self.source_path.stem)
         self.log_view.clear()
         self.detect_cache.clear()
+        # 实时预览状态跨任务必须清干净：临时目录里的旧图 + "哪些页算过"的记忆
+        self._reset_rembg_live()
         self.pdf_page_count = 0
         self._history_prefilled: set[str] = set()
         self._history_params: list[dict] = []
@@ -129,6 +150,10 @@ class TaskDetailPage(
         self.run_id = None
         self.running_stage = None
         self.cancel_requested = False
+        # 执行权也要清：切任务时上一个任务若卡在"已受理未启动"，标记不清会
+        # 让新任务的执行按钮一直是灰的（且没有任何进程能来释放它）
+        self._run_claim = None
+        self._run_launched_at = 0.0
         self._last_error_line = None
         self.source_pdf_viewer.set_pdf(
             self.source_path, cache_dir=self.store.source_thumbnails_dir(task_id)
@@ -212,13 +237,93 @@ class TaskDetailPage(
             f"{STAGE_LABELS[stage]}：{STATUS_LABELS.get(state['status'], state['status'])}"
         )
 
+    #: 执行按钮的防抖窗口(ms)：连击/双击在窗口内的第二次直接**静默**吞掉
+    #: （不弹提示——手快的人否则会看到一串"任务进行中"）。取 400ms：够盖住
+    #: 鼠标双击间隔（通常 ≤250ms），又不至于让人感觉"点了没反应"。
+    RUN_DEBOUNCE_MS = 400
+
+    def _busy_label(self) -> str | None:
+        """当前有执行在跑就返回它的名字，空闲返回 None（按钮状态的唯一判据）。
+
+        ⚠️ 只看 ``self.process`` 会有两个盲区，所以这里分两步判断：
+
+        1. **先看进程实况**（硬事实）：子任务进程、单页检测进程任一在跑就是在忙。
+        2. **再看受理标记**，且**只在还没有任何进程对象时**才算数：
+           - 受理窗口期（点下去了，进程还没 start）→ 拦住，这正是漏点；
+           - 进程刚结束、``finished`` 尚未派发完的瞬间 → 此时 ``self.process``
+             已存在，直接放行——否则"中断后续跑"这类连招会像点了没反应。
+        """
+        for attr, label in (("process", "子任务"), ("detect_process", "单页检测")):
+            proc = getattr(self, attr, None)
+            if proc is not None and proc.state() != QProcess.NotRunning:
+                return label
+        if self._run_claim and self.process is None and self.detect_process is None:
+            return self._run_claim
+        return None
+
+    def _stage_running(self) -> bool:
+        """阶段子任务（含"已受理、进程尚未 start"的窗口期）是否在跑。
+
+        比 :meth:`_busy_label` 更窄：单页检测**不算**，因为「中断」按钮只杀
+        子任务进程，检测在跑时给它点亮的会是个杀不掉东西的按钮。
+        """
+        if self.process is not None and self.process.state() != QProcess.NotRunning:
+            return True
+        return bool(
+            self._run_claim == "子任务"
+            and self.process is None
+            and self.detect_process is None
+        )
+
+    def _acquire_run(self, what: str, *, replace: tuple = ()) -> bool:
+        """领取执行权；拿不到返回 False，调用方直接 ``return``。
+
+        三种拒绝情形：
+
+        - 已有别的执行在跑 → 提示后拒绝（这是"不要二次执行"的正题）；
+        - ``replace`` 里列出的执行在跑 → **允许顶替**。单页检测换一页重检就是
+          这样：旧进程由 ``_start_detect`` 先断信号再杀，始终只有一个在跑；
+        - 距上次受理不足 :data:`RUN_DEBOUNCE_MS` → 静默拒绝（连击的第二下）。
+        """
+        busy = self._busy_label()
+        if busy and busy not in replace:
+            self._toast(
+                "warning", "任务进行中", f"{busy}正在执行，请等待完成或先中断。"
+            )
+            return False
+        now = time.monotonic()
+        if (now - self._run_launched_at) * 1000 < self.RUN_DEBOUNCE_MS:
+            return False
+        self._run_claim = what
+        # 立刻把按钮置灰：别等 proc.start() 之后那次 _refresh_stage_views
+        self._refresh_run_buttons()
+        return True
+
+    def _mark_run_launched(self) -> None:
+        """记下"进程真的起来了"——防抖窗口从这里开始计时（见 `_run_launched_at`）。
+
+        在 ``QProcess.start()`` 之后调用。放在这里而不是受理处，是为了让
+        "没能跑起来的受理"完全不占用防抖预算。
+        """
+        self._run_launched_at = time.monotonic()
+
+    def _release_run(self) -> None:
+        """释放执行权（进程结束 / 被中断 / 启动失败都要调）。"""
+        self._run_claim = None
+        self._refresh_run_buttons()
+
+    def _refresh_run_buttons(self) -> None:
+        """执行权变化后重刷按钮；复用最近一次的阶段状态，不额外读盘。"""
+        self._update_run_buttons(self._last_stage_state)
+
     def _update_run_buttons(self, state: dict) -> None:
-        running = bool(self.process and self.process.state() != QProcess.NotRunning)
+        self._last_stage_state = state
+        running = self._busy_label() is not None
         self.run_button.setEnabled(not running)
         self.resume_button.setEnabled(
             not running and state["status"] in ("cancelled", "failed", "success")
         )
-        self.cancel_button.setEnabled(running)
+        self.cancel_button.setEnabled(self._stage_running())
         self._update_submit_button(running)
 
     # ------------------------------------------------------------------ 预览刷新

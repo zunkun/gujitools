@@ -41,7 +41,7 @@ def check(name: str, cond: bool, detail: str = "") -> None:
 
 def run(args: list[str]) -> tuple[int, str, str]:
     p = subprocess.run(
-        [PY, "main.py"] + args, cwd=str(ROOT),
+        [PY, "cli.py"] + args, cwd=str(ROOT),
         capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
     return p.returncode, p.stdout, p.stderr

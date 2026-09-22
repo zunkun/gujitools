@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QLabel, QLineEdit,
     QSpinBox, QVBoxLayout, QWidget,
@@ -31,6 +31,25 @@ def default_for(parameters: dict, defaults: dict, key: str):
     if value is None:
         return defaults.get(key)
     return value
+
+
+class _ShrinkableForm(QWidget):
+    """参数表单容器：**水平方向允许被压缩到 0**。
+
+    为什么需要它：qfluentwidgets 的滚动条是**浮在内容上**的（overlay），而
+    QFormLayout 的最小宽度 = 各行 field 的 minimumSizeHint 之和，qfluent 的
+    SpinBox / ComboBox 自带 170px 量级的 minimumSizeHint，很容易超过窄卡片里的
+    视口宽度。容器一旦被撑宽，最右侧控件就滑到视口之外；横向滚动条又在
+    ``build_form`` 里关掉了，于是看起来正像「被垂直滚动条盖住」。
+
+    只调 ``container.setMinimumWidth(0)`` **不管用**：Qt 取 ``minimumSize`` 与
+    ``minimumSizeHint`` 的**较大值**，后者由 layout 算出，改前者无效。
+    所以这里直接收窄 minimumSizeHint —— 只收宽度，高度保持自然（纵向靠滚动）。
+    """
+
+    def minimumSizeHint(self) -> QSize:
+        hint = super().minimumSizeHint()
+        return QSize(0, hint.height())
 
 
 class StagePanel(QWidget):
@@ -119,9 +138,13 @@ class StagePanel(QWidget):
         始终保持自然高度，高度不足时纵向滚动。print 面板自带分区滚动区，
         整体覆盖本方法，不受影响。
         """
-        container = QWidget()
+        # 用可压缩容器：否则表单最小宽度会把容器撑出视口，右侧控件被裁掉
+        # （详见 _ShrinkableForm 的说明）
+        container = _ShrinkableForm()
         form = QFormLayout(container)
-        form.setContentsMargins(0, T.SPACE_XS, 0, 0)
+        # 右侧留出垂直滚动条的宽度：qfluentwidgets 的滚动条是**浮在内容上**的，
+        # 不留白它就会盖住最右侧控件（offset 滑块右端 + 数字框曾被压掉一截）。
+        form.setContentsMargins(0, T.SPACE_XS, T.SCROLLBAR_WIDTH, 0)
         form.setSpacing(T.SPACE_SM)
         form.setLabelAlignment(
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter

@@ -161,6 +161,12 @@ class DetectMixin:
             self._refresh_reference_boxes()
             self._toast("info", "已有检测结果", "该页检测结果已存在，直接展示。")
             return
+        # 执行权守卫：单页检测同样要抢 worker 槽位（一次 torch 冷启动 5 秒以上）。
+        # ``replace=("单页检测",)`` 是刻意留的口子——连点不同页面时应该「换一页重检」
+        # （_start_detect 会先断旧进程信号再杀），而不是弹一句"正在执行"卡住用户；
+        # 但子任务在跑时必须拦住，那种情况下再塞一个检测只会两个 torch 抢内存。
+        if not self._acquire_run("单页检测", replace=("单页检测",)):
+            return
         self.detect_viewer.info_label.setText("正在检测文本框位置...")
         self.detect_cache[key] = None  # 防止重复派发
         self._start_detect(path)
@@ -295,6 +301,8 @@ class DetectMixin:
         self.detect_process.readyReadStandardError.connect(self._read_worker_error)
         self.detect_process.finished.connect(self._detect_finished)
         self.detect_process.start()
+        # 进程真的起来了 → 防抖窗口从这里开始计时（见 _run_launched_at）
+        self._mark_run_launched()
 
     def _read_detect_output(self) -> None:
         if not self.detect_process:
@@ -317,6 +325,10 @@ class DetectMixin:
                         self.task_id, Path(event["image"]).stem, boxes, origin="auto"
                     )
                 self._apply_detect_result(Path(event["image"]), boxes)
+            elif event.get("type") == "log":
+                # 单页检测路径原先只认 boxes/detect_error，于是「模型加载用时」
+                # 「detect xx.jpg …」这些记录全被丢掉，用户看不出执行了什么
+                self.log_view.append(event.get("message", ""))
             elif event.get("type") == "detect_error":
                 self.log_view.append(f"检测失败：{event.get('message')}")
 
@@ -324,8 +336,11 @@ class DetectMixin:
         # sender() 是真正发出信号的那个进程：只有它仍是"当前进程"时才清空引用
         proc = self.sender()
         if proc is not None and proc is not self.detect_process:
+            # 被顶替的旧进程（_start_detect 已断其信号，理论上到不了这里）：
+            # 绝不能顺手释放执行权——新进程才持有它
             return
         self.detect_process = None
+        self._release_run()
 
     def _apply_detect_result(self, path: Path, boxes) -> None:
         if self.current_stage() != "detect":

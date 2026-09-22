@@ -46,6 +46,9 @@ class RembgPreviewWidget(QWidget, ThumbsMixin):
         self._paths: list[Path] = []
         self._entries: list[dict] = []  # [{label, path, box}]; box=None 表示整页规则
         self._rembg_dir: Path | None = None
+        # 实时预览暂存目录（第三步改参数后按**当前页**现算的结果）。查找时优先于
+        # _rembg_dir：它才是"此刻参数下"的样子，而正式产物可能已经过期。
+        self._live_dir: Path | None = None
         self._boxes_provider = None  # (path_text) -> list[检测框]
         self._region_params_provider = None  # () -> (area, border)
         self._thumb_provider = None  # (path_text) -> Path | None
@@ -113,6 +116,29 @@ class RembgPreviewWidget(QWidget, ThumbsMixin):
         """detect 框/area/border 变化后，重建输出条目并按新区域重新加载。"""
         self._rebuild_entries()
         self._load_display()
+
+    def set_live_dir(self, path: Path | None) -> None:
+        """设置（或传 None 清除）「实时预览」暂存目录。
+
+        非 None 时结果图优先从这里取：它是按**此刻**面板参数现算的当前页；
+        而 ``_rembg_dir``（stages/rembgpreview）是上一次「生成预览」的全量产物，
+        参数可能已经改过。
+        """
+        self._live_dir = Path(path) if path else None
+
+    @property
+    def live_dir(self) -> Path | None:
+        """当前生效的实时预览暂存目录（未启用为 None）。"""
+        return self._live_dir
+
+    def current_entry_path(self) -> str | None:
+        """当前选中条目的源图路径（无条目时为 None）。"""
+        entry = self._current_entry()
+        return entry["path"] if entry else None
+
+    def show_live_pending(self) -> None:
+        """实时预览正在计算：先给个即时反馈，别让界面看起来没反应。"""
+        self.view.clear_image("正在按新参数去底色…")
 
     # ------------------------------------------------------------------ 条目
     def _build_entries(self) -> list[dict]:
@@ -242,21 +268,15 @@ class RembgPreviewWidget(QWidget, ThumbsMixin):
                 thumb_paths.append(Path(real))
                 effects.append(None)
             labels.append(entry["title"])
-        self.run_worker(
-            lambda: ImageListWorker(
-                thumb_paths, edge=ThumbStrip.DECODE_EDGE, effects=effects
+        self._load_thumbs_chunked(
+            len(thumb_paths),
+            make_worker=lambda start, end: ImageListWorker(
+                thumb_paths[start:end],
+                edge=ThumbStrip.DECODE_EDGE,
+                effects=effects[start:end],
             ),
-            lambda worker, thread: (
-                connect_queued(
-                    self,
-                    worker.thumbnail_ready,
-                    lambda i, img, _p: self.strip.set_item_icon(
-                        i, self._fill_icon(img), "", labels[i]
-                    ),
-                    thread,
-                ),
-                worker.completed.connect(thread.quit),
-                worker.failed.connect(thread.quit),
+            sink=lambda index, image, _path: self.strip.set_item_icon(
+                index, self._fill_icon(image), "", labels[index]
             ),
         )
 
@@ -308,14 +328,18 @@ class RembgPreviewWidget(QWidget, ThumbsMixin):
             self._load_display()
 
     def _result_full_image(self) -> Path | None:
+        """当前页的去底色结果图：**实时暂存优先**，其次「生成预览」的正式产物。"""
         entry = self._current_entry()
-        if not entry or not self._rembg_dir:
+        if not entry:
             return None
         stem = Path(entry["path"]).stem
-        for ext in ("png", "jpg", "jpeg"):
-            candidate = self._rembg_dir / f"{stem}.{ext}"
-            if candidate.exists():
-                return candidate
+        for base in (self._live_dir, self._rembg_dir):
+            if not base:
+                continue
+            for ext in ("png", "jpg", "jpeg"):
+                candidate = base / f"{stem}.{ext}"
+                if candidate.exists():
+                    return candidate
         return None
 
     def _load_display(self) -> None:

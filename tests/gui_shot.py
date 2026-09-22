@@ -355,11 +355,12 @@ def seed(repo) -> list[str]:
             if used_real:
                 print(f"✓ 演示数据：{real_pdf.name} 第 {DEMO_PAGE} 页起（真实版面）")
 
-    # 去底色结果：无论真假数据都从 extract 真图派生（白底黑字），
-    # 这样第三步预览与第四步瀑布流都有内容；真实图做一次二值化比占位图可信。
-    _seed_rembg_outputs(repo, main_id)
-
     if used_real:
+        # 真实数据已铺好 extract：派生去底色结果后收工。
+        # ⚠️ 这句**必须待在 extract 就绪之后**。原先它写在 if 之外、无条件调用，
+        #    而回退分支要到下面才 mkdir(extract)，于是「真实数据灌入失败 →
+        #    used_real=False」时必然 FileNotFoundError 把整个用例炸掉。
+        _seed_rembg_outputs(repo, main_id)
         return task_ids
 
     # ---- 回退：合成占位页 ----
@@ -403,6 +404,9 @@ def seed(repo) -> list[str]:
         repo.save_detect_boxes(
             main_id, key, [[40, 40, 270, 760], [290, 40, 520, 760]], origin="auto"
         )
+    # 去底色结果：从上面刚生成的 extract 真图派生（白底黑字），
+    # 这样第三步预览与第四步瀑布流都有内容。
+    _seed_rembg_outputs(repo, main_id)
     return task_ids
 
 
@@ -415,6 +419,10 @@ def _seed_rembg_outputs(repo, task_id: str) -> None:
     import cv2
 
     extract_dir = repo.extract_output_dir(task_id)
+    if not extract_dir.is_dir():
+        # 防御：万一调用方在 extract 就绪前调过来，安静跳过而不是抛
+        # FileNotFoundError（真数据分支不保证有该目录）。
+        return
     sources = sorted(
         (p for p in extract_dir.iterdir()
          if p.suffix.lower() in (".jpg", ".jpeg", ".png") and p.stem.isdigit()),

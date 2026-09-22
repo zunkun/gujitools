@@ -261,6 +261,50 @@ def apply_otsu_whole(
     return out_arr
 
 
+# ---------- 整页去底（CLI 与 GUI 共用的唯一实现）----------
+def rembg_page(
+    img_rgb: np.ndarray,
+    gray: np.ndarray,
+    *,
+    offset: int = 0,
+    img_type: int = 1,
+    enable_seal: bool = False,
+    seal_color: bool = False,
+    seal_area: int = 80,
+    seal_min_sat: int = 50,
+) -> np.ndarray:
+    """整页去底色的**唯一实现**：算阈值 → 叠加 offset → 整图去底。
+
+    CLI（``functions.rembg``）与桌面端第三步的「实时预览」都调这里，保证界面
+    所见与最终产物逐像素一致——两处各写一份组装逻辑迟早会漂移。
+
+    参数:
+        img_rgb / gray: RGB 数组与灰度数组（同尺寸，H×W）。
+        offset: 阈值偏移（-100~100）。正数阈值更高 → 文字更粗更深。
+        img_type: 1=二值 / 2=1bit / 3=灰度（1bit 的转换由保存方负责）。
+        enable_seal / seal_color / seal_area / seal_min_sat: 印章相关参数。
+
+    返回:
+        与输入同尺寸的去底结果数组：(H, W, 3) 彩色（保留印章原色）
+        或 (H, W) 单通道。
+    """
+    red_mask = None
+    if enable_seal:
+        red_mask, _ = extract_red_seal(img_rgb, seal_area, seal_min_sat)
+
+    # 只让「非白像素」参与 Otsu：整页有大片白底，全图直算会把阈值拉偏。
+    # 非白像素不足 500 视为近似空白页，退化为固定 128。
+    non_white = gray < 250
+    if np.count_nonzero(non_white) > 500:
+        threshold = calculate_auto_threshold(gray[non_white]) + offset
+    else:
+        threshold = 128
+    # 夹紧阈值，避免极端 offset 把整页推成全黑或全白
+    threshold = min(max(threshold, 30), 240)
+
+    return apply_otsu_whole(img_rgb, gray, threshold, red_mask, seal_color, img_type)
+
+
 # ---------- border 参数解析 ----------
 def parse_border(border_value) -> Optional[List[int]]:
     """解析 border 参数（像素单位），支持 CSS 风格 1~4 值写法。

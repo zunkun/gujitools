@@ -34,7 +34,29 @@ class StageRunnerMixin:
 
     # ---------------------------------------------------------- 执行/中断
     def run_stage(self, resume: bool = False) -> None:
-        """启动当前阶段的 worker 子进程。
+        """启动当前阶段的 worker 子进程（带执行权守卫，防连点起两个）。
+
+        ⚠️ 守卫必须包在**最外层**：下面要做参数校验、effects 组装、写运行配置，
+        这些都是同步重活，做完才 ``QProcess.start()``。若只在 start 之前判断
+        ``self.process``，那段时间它还是 None，连点第二下就能再起一个 worker，
+        两个 torch 同时加载、同时写同一批输出目录。
+
+        守卫由 :meth:`TaskDetailPage._acquire_run` 提供（受理标记 + 防抖窗口）；
+        真正干活的是 :meth:`_run_stage_unchecked`。
+        """
+        if not self._acquire_run("子任务"):
+            return
+        try:
+            self._run_stage_unchecked(resume)
+        finally:
+            # ``running_stage`` 仍是 None 说明这次受理没落到进程上（参数错、
+            # 无输入、无需续跑…）——立刻释放，否则按钮会一直灰着没人来解锁。
+            # 一旦进程起来了，生命周期改由 _worker_finished 释放。
+            if self.running_stage is None:
+                self._release_run()
+
+    def _run_stage_unchecked(self, resume: bool = False) -> None:
+        """启动当前阶段的 worker 子进程（不含执行权守卫，勿直接调用）。
 
         resume=True 表示续跑：extract 只补缺失页、其余阶段跳过已有输出，
         否则 clean=True 全量重跑。会取面板参数、写运行配置、起子进程并连接
@@ -271,6 +293,8 @@ class StageRunnerMixin:
         watchdog.timeout.connect(_watchdog)
         watchdog.start(300)
         self.process.start()
+        # 进程真的起来了 → 防抖窗口从这里开始计时（见 _run_launched_at）
+        self._mark_run_launched()
 
         self.store.update_task(self.task_id, "running")
         self._refresh_stage_views()
@@ -424,6 +448,9 @@ class StageRunnerMixin:
         self.process = None
         self.run_id = None
         self.running_stage = None
+        # 进程收尾 = 释放执行权（按钮恢复可用、下一次点击可受理）。
+        # 放在这里是唯一出口：正常结束、被杀、看门狗兜底都汇到本方法。
+        self._release_run()
         if status == "success" and self.task_id:
             if stage == "extract":
                 # 页面清单只由 extract 输出决定；detect/rembg 结果留在各自目录，

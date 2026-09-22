@@ -161,7 +161,7 @@ def main() -> int:
     print("== 4. CLI 侧不注入 reporter 时协议无副作用 ==")
     # CLI 直接调 functions，stdout 里不应该出现任何 JSON Lines 事件
     proc = subprocess.run(
-        [PY, "main.py", "extract", "-i", str(pdf), "-o", str(tmp / "cli_out")],
+        [PY, "cli.py", "extract", "-i", str(pdf), "-o", str(tmp / "cli_out")],
         cwd=str(ROOT), capture_output=True, text=True, encoding="utf-8",
         errors="replace", timeout=300,
         env={**__import__("os").environ, "PYTHONIOENCODING": "utf-8"},

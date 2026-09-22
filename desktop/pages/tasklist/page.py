@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QThread, Qt, Signal, Slot, QSize
+from PySide6.QtCore import QThread, Signal, Slot, QSize
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import (
@@ -31,8 +31,14 @@ from desktop import ui
 from desktop.ui import theme as T
 from desktop.ui.help_dialog import open_manual
 from desktop.ui.icons import HELP_CIRCLE
-from desktop.workers import HashWorker, SourceThumbnailsWorker, connect_queued
-from desktop.store import STAGES, STAGE_LABELS, STAGE_SHORT, TaskStore
+from desktop.workers import (
+    HashWorker,
+    SourceThumbnailsWorker,
+    TaskRowsWorker,
+    WorkerHost,
+    connect_queued,
+)
+from desktop.store import TaskStore
 from desktop.components.pagination import DEFAULT_PAGE_SIZE, Pager, Pagination
 from desktop.components.task_table import TaskTable
 
@@ -40,7 +46,7 @@ from desktop.components.task_table import TaskTable
 STATUS_LABELS = T.STATUS_LABELS
 
 
-class TaskListPage(QWidget):
+class TaskListPage(QWidget, WorkerHost):
     """任务管理页：搜索 + 分页的任务列表，支持导入 PDF 与删除。
 
     数据流是单向的：``refresh()`` 从 store 读出**全量**行并缓存，
@@ -60,6 +66,7 @@ class TaskListPage(QWidget):
         随后调用 refresh 重建表格与空状态。
         """
         super().__init__(parent)
+        self._init_worker_host()
         self.store = store
         self.hash_thread: QThread | None = None
         self.hash_worker: HashWorker | None = None
@@ -71,7 +78,11 @@ class TaskListPage(QWidget):
         self._page = 1
         self._page_size = DEFAULT_PAGE_SIZE
         self._init_ui()
-        self.refresh()
+        # ⚠️ 这里**刻意不刷新**。首次列表渲染实测约 74 ms（每行要建名称标签 +
+        # 操作按钮，还会读每个任务的 runs.json），它由 `desktop/app.py::main()`
+        # 在窗口 `show()` **之后**的下一拍触发——先让空壳窗口出现在屏幕上，再
+        # 填内容，用户感知的「启动到窗口出现」就少了这一段。
+        # 空表与空状态的初始形态由 _init_ui 建好，refresh 只负责填数据。
 
     def _init_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -166,40 +177,50 @@ class TaskListPage(QWidget):
 
     # ------------------------------------------------------------------ 数据
     def refresh(self) -> None:
-        """从 store 重新读出全量任务行并渲染（会读盘，不要在打字时调）。
+        """刷新任务行：**读盘放后台线程**，读完回主线程渲染。
 
-        遍历各任务取四个阶段的 status/done/total 生成摘要行，结果缓存在
-        ``_all_rows``；随后走 ``_render()`` 做过滤与分页。
+        ⚠️ 读盘不能占着 UI 线程：这里要遍历全部任务、逐个读它的 runs.json
+        （任务一多就是几十次文件 IO），同步做会把已经画出来的窗口卡住。行的
+        组装挪进了 ``TaskRowsWorker``，结果走 ``_on_rows_ready`` 回来渲染。
+
+        ⚠️ 每次刷新带一个**代际令牌**：连续调用（导入任务后紧跟着又刷新）会让
+        多个 worker 并发跑，先发的可能后回来，把新数据盖成旧的——只认最后
+        一次发出的那个令牌，其余结果直接丢弃。
         """
-        tasks = self.store.list_tasks()
-        rows = []
-        for task in tasks:
-            states = self.store.stage_states(task["id"])
-            stages = []
-            for stage in STAGES:
-                state = states[stage]
-                status = state["status"]
-                progress = (
-                    f" {state['done']}/{state['total']}" if state["total"] else ""
-                )
-                stages.append(
-                    {
-                        "short": STAGE_SHORT[stage],
-                        "status": status,
-                        "tip": f"{STAGE_LABELS[stage]}：{STATUS_LABELS.get(status, status)}{progress}",
-                    }
-                )
-            rows.append(
-                {
-                    "id": task["id"],
-                    "name": task["name"],
-                    "source_path": task["source_path"],
-                    "created_at": task["created_at"],
-                    "stages": stages,
-                }
-            )
+        token = object()
+        self._refresh_token = token
+        self.run_worker(
+            lambda: TaskRowsWorker(self.store),
+            lambda worker, thread: (
+                connect_queued(
+                    self,
+                    worker.completed,
+                    lambda rows, t=token: self._on_rows_ready(t, rows),
+                    thread,
+                ),
+                connect_queued(
+                    self,
+                    worker.failed,
+                    lambda message, t=token: self._on_rows_failed(t, message),
+                    thread,
+                ),
+                worker.completed.connect(thread.quit),
+                worker.failed.connect(thread.quit),
+            ),
+        )
+
+    def _on_rows_ready(self, token, rows: list) -> None:
+        """后台读完 → 主线程：更新缓存，再走过滤/分页/填表（过期结果丢弃）。"""
+        if token is not self.__dict__.get("_refresh_token"):
+            return
         self._all_rows = rows
         self._render()
+
+    def _on_rows_failed(self, token, message: str) -> None:
+        """读失败（任务目录被删/权限不足等）：保留原列表，别把界面清空。"""
+        if token is not self.__dict__.get("_refresh_token"):
+            return
+        print(f"任务列表刷新失败：{message}")
 
     # ------------------------------------------------------- 过滤 / 分页渲染
     @staticmethod

@@ -12,7 +12,7 @@ TEARDOWN = True
 
 
 def run(ctx) -> None:
-    from tests.selftests._context import ok
+    from tests.selftests._context import ok, wait_until
 
     repo, w = ctx.repo, ctx.w
 
@@ -20,6 +20,12 @@ def run(ctx) -> None:
     ok("删除任务", repo.get_task(ctx.tid_dup) is None)
     ok("任务目录已清理", not repo.task_dir(ctx.tid_dup).exists())
     w.list_page.refresh()
+    # refresh 是异步的（后台线程读盘）：等表格行数追上真实任务数再断言
+    wait_until(
+        ctx.app,
+        lambda: w.list_page.table.table.rowCount() == len(repo.list_tasks()),
+        timeout=5.0,
+    )
     ok("列表同步刷新", w.list_page.table.table.rowCount() == len(repo.list_tasks()))
 
     # ⚠️ 文件被占用时不能「列表显示已删、磁盘却留着孤儿目录」：

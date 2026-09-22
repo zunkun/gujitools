@@ -153,26 +153,24 @@ class ImageViewerWidget(QWidget, ThumbsMixin):
         return Path(path_text)
 
     def _load_thumbs(self, strip, paths: list[Path]) -> None:
-        """带提供者时加载映射后的缩略图，标签仍使用真实页面名。"""
+        """带提供者时加载映射后的缩略图，标签仍使用真实页面名。
+
+        ⚠️ 分批调度走基类的 ``_load_thumbs_chunked``（首批立即、其余延后），
+        这里只负责给出「切片 → worker」与「全局下标 → 条目」两个函数。
+        """
         if not self._thumb_provider:
             super()._load_thumbs(strip, paths)
             return
         real_paths = list(paths)
         thumb_paths = [self._thumb_for(str(p)) for p in real_paths]
         labels = [Path(p).stem for p in real_paths]
-        self.run_worker(
-            lambda: ImageListWorker(thumb_paths, edge=ThumbStrip.DECODE_EDGE),
-            lambda worker, thread: (
-                connect_queued(
-                    self,
-                    worker.thumbnail_ready,
-                    lambda i, img, _p: strip.set_item_icon(
-                        i, img, str(real_paths[i]), labels[i]
-                    ),
-                    thread,
-                ),
-                worker.completed.connect(thread.quit),
-                worker.failed.connect(thread.quit),
+        self._load_thumbs_chunked(
+            len(real_paths),
+            make_worker=lambda start, end: ImageListWorker(
+                thumb_paths[start:end], edge=ThumbStrip.DECODE_EDGE
+            ),
+            sink=lambda index, image, _path: strip.set_item_icon(
+                index, image, str(real_paths[index]), labels[index]
             ),
         )
 

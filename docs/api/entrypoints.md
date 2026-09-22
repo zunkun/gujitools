@@ -4,7 +4,7 @@
 
 仓库顶层的可执行入口与配置读取
 
-覆盖 3 个模块、0 个公开类、2 个公开函数/方法（生成于 2026-09-19）。
+覆盖 3 个模块、0 个公开类、2 个公开函数/方法（生成于 2026-09-22）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -12,17 +12,17 @@
 
 | 模块 | 类 | 函数 |
 | --- | --- | --- |
-| [`main`](#main) | 0 | 1 |
+| [`cli`](#cli) | 0 | 1 |
 | [`desktop`](#desktop) | 0 | 1 |
 | [`config`](#config) | 0 | 0 |
 
 ---
 
-## `main`
+## `cli`
 
-源码：[`main.py`](../../main.py)
+源码：[`cli.py`](../../cli.py)
 
-gujitools 程序主入口。
+gujitools 命令行入口（CLI entry）。
 
 古籍处理命令行工具（gujitools），提供 PDF 提取、文本区域检测/裁剪、去底色等功能。
 
@@ -31,8 +31,13 @@ gujitools 程序主入口。
 - 调用 CLI 层的 `cli_main()` 进行命令解析与功能分发。
 
 启动方式:
-    python main.py <command> [options]
+    python cli.py <command> [options]
+    或 `python -m cli <command> [options]`（走 cli/__main__.py，同一份实现）
     或打包后: guji <command> [options]
+
+命名说明：顶层入口与 GUI 侧对齐——`cli.py` / `desktop.py` 是**两个平行的可执行
+入口**，CLI 的实现体在 `cli/` 包里（`cli/__main__.py`），桌面端在 `desktop/` 包里。
+不叫 `main.py` 是因为本程序有 cli 与 desktop 两个入口，"main" 说不清是哪一个。
 
 ### 模块函数
 
@@ -79,6 +84,6 @@ gujitools 全局配置常量。
 
 | 名称 | 值 |
 | --- | --- |
-| VERSION | `"1.1"` |
+| VERSION | `"1.2"` |
 
 ---

@@ -67,6 +67,21 @@ def pump(app, times: int = 6, interval: float = 0.05) -> None:
         time.sleep(interval)
 
 
+def wait_until(app, condition, timeout: float = 5.0, interval: float = 0.02) -> bool:
+    """驱动事件循环直到 ``condition()`` 成立或超时，返回最终是否成立。
+
+    列表刷新这类**后台线程读盘**的流程是异步的，断言前必须等它回来；
+    固定 pump 若干次在慢机器上会偶发失败。
+    """
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        app.processEvents()
+        if condition():
+            return True
+        time.sleep(interval)
+    return condition()
+
+
 class Context:
     """跨模块共享的夹具与状态。
 

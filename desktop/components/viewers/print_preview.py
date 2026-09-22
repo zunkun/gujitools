@@ -232,6 +232,9 @@ class PrintPreviewWidget(QWidget, ThumbsMixin):
 
         名字带 page 是为了与 ThumbsMixin 的 ``_load_thumbs(strip, paths)``
         区分——后者签名不同，两者互不覆盖。
+
+        ⚠️ 走基类 ``_load_thumbs_chunked`` 分批：页面多时一次性解码会把
+        一个核打满（风扇起转），分批后首批立刻可见、其余按间隙补齐。
         """
         entries = self._entries_cache
         if not entries:
@@ -240,19 +243,13 @@ class PrintPreviewWidget(QWidget, ThumbsMixin):
         labels = [
             str(e.get("label") or Path(str(e["file"])).stem) for e in entries
         ]
-        self.run_worker(
-            lambda: ImageListWorker(paths, edge=self.THUMB_EDGE),
-            lambda worker, thread: (
-                connect_queued(
-                    self,
-                    worker.thumbnail_ready,
-                    lambda i, img, _p: self.strip.set_item_icon(
-                        i, img, str(entries[i]["file"]), labels[i]
-                    ),
-                    thread,
-                ),
-                worker.completed.connect(thread.quit),
-                worker.failed.connect(thread.quit),
+        self._load_thumbs_chunked(
+            len(paths),
+            make_worker=lambda start, end: ImageListWorker(
+                paths[start:end], edge=self.THUMB_EDGE
+            ),
+            sink=lambda index, image, _path: self.strip.set_item_icon(
+                index, image, str(entries[index]["file"]), labels[index]
             ),
         )
 

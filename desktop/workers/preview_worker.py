@@ -107,27 +107,43 @@ def preview_px_per_mm(page_w_mm: float, page_h_mm: float,
                min(PRINT_PREVIEW_MAX_PX_PER_MM, value))
 
 
-def _pick_preview_font(point_size: float) -> QFont:
-    """挑一个能真正画出中文的字体。
+def _pick_font(candidates, point_size: float) -> QFont:
+    """从给定族名候选里挑第一个系统真装了的；都没命中则交给 Qt 兜底。
 
     ⚠️ 别用裸 `QFont()`：它落到平台的 generic "Sans Serif" 上，在离屏
     （`QT_QPA_PLATFORM=offscreen`）或字体缺失的环境里中文会渲染成空心
     方框；而且它的字宽度量恰好等于字号，横向文字的占宽会被严重高估。
-    这里按 `utils.fonts.cjk_font_families()`（与 PDF 侧 `register_fonts`
-    同源的一份候选）找能画中文的字体族，找不到再交给 Qt 兜底。
     """
     from PySide6.QtGui import QFontDatabase
-    from utils.fonts import cjk_font_families
 
-    families = set(QFontDatabase.families())
-    for candidate in cjk_font_families():
-        if candidate in families:
+    available = set(QFontDatabase.families())
+    for candidate in candidates:
+        if candidate in available:
             font = QFont(candidate)
             break
     else:
         font = QFont()
     font.setPointSizeF(max(1.0, float(point_size)))
     return font
+
+
+def _pick_preview_font(point_size: float) -> QFont:
+    """**界面**文字（效果预览的边距标注等）用的字体：走界面族名候选。"""
+    from utils.fonts import cjk_font_families
+
+    return _pick_font(cjk_font_families(), point_size)
+
+
+def _pick_content_font(point_size: float) -> QFont:
+    """**PDF 内容**（标题 / 页码）用的字体：走内容族名候选，**仿宋优先**。
+
+    必须与 `pdf_draw.register_fonts` 实际选中的字体对齐——那一侧按**文件路径**
+    取（Windows 上命中 simfang.ttf = 仿宋），这一侧若按界面候选（雅黑打头）
+    取，就会出现「预览是雅黑、导出是仿宋」，所见即所得直接破掉。
+    """
+    from utils.fonts import content_font_families
+
+    return _pick_font(content_font_families(), point_size)
 
 
 #: 1pt = 25.4/72 mm。字体像素大小必须走「pt → mm → px」这条换算，
@@ -138,6 +154,9 @@ MM_PER_PT = 25.4 / 72.0
 def preview_text_font(spec, px_per_mm: float) -> QFont:
     """按 PrintTextSpec 与像素密度给出**已设好像素大小**的字体。
 
+    字体族走 ``_pick_content_font``（内容是标题 / 页码，仿宋优先）——与
+    ``pdf_draw.register_fonts`` 取到的字体同一种，预览与成品才对得上。
+
     ⚠️ 不能直接用 ``setPointSizeF(spec.font_size_pt)``：那是固定像素大小，
     而逐字步进是 ``char_h_mm × px_per_mm``（随密度缩放）。两处口径不同时，
     密度一变小（第四步版面编辑画布把整页缩到可视区，≈2 px/mm，远小于效果
@@ -146,7 +165,7 @@ def preview_text_font(spec, px_per_mm: float) -> QFont:
     统一口径后：字高 = 字号(mm) × 密度，与步进同源，任何密度下都不重叠，
     且与成品 PDF 的真实字号（pt → mm）一致。
     """
-    font = _pick_preview_font(float(spec.font_size_pt))
+    font = _pick_content_font(float(spec.font_size_pt))
     font.setPixelSize(
         max(1, int(round(float(spec.font_size_pt) * MM_PER_PT * px_per_mm)))
     )

@@ -1,6 +1,6 @@
 # CLI 使用说明
 
-程序入口：`python main.py <command> [options]`，或打包后的可执行文件 `guji <command> [options]`。
+程序入口：`python cli.py <command> [options]`，或打包后的可执行文件 `guji <command> [options]`。
 
 ## 推荐工作流
 
@@ -404,8 +404,8 @@ guji run print --config ./book.yaml
 ## 架构
 
 ```
-main.py                 入口：注册 SIGINT，委托 cli_main()
-  └─ cli/cli.py         参数解析 → CommandArgs → get_function() → execute()
+cli.py                  入口：注册 SIGINT，委托 cli_main()
+  └─ cli/__main__.py    参数解析 → CommandArgs → get_function() → execute()
       ├─ cli/cli_args.py    argparse 配置（子命令、参数、别名）
       ├─ cli/command_args.py 标准化参数容器（input→Path，不做 I/O）
       └─ functions/         功能实现

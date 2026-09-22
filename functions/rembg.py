@@ -105,24 +105,19 @@ class RembgFunction(FunctionBase):
             offset = self.command_args.get("offset", 0)
             img_type = self.command_args.get("type", 1)
 
-            # 红色印章掩码提取（可选）
-            red_mask = None
-            if enable_seal:
-                red_mask, _ = utils.extract_red_seal(img_arr, seal_area, seal_min_sat)
-
-            # 阈值计算：取非白像素子集计算 Otsu，叠加 offset
-            # 非白像素不足 500 时退化为 128（近似空白页）
-            non_white = gray_arr < 250
-            if np.count_nonzero(non_white) > 500:
-                threshold = utils.calculate_auto_threshold(gray_arr[non_white]) + offset
-            else:
-                threshold = 128
-            # 限制阈值范围，避免极端值导致全黑或全白
-            threshold = min(max(threshold, 30), 240)
-
-            # 执行整图去底，生成输出数组
-            final_arr = utils.apply_otsu_whole(
-                img_arr, gray_arr, threshold, red_mask, seal_color, img_type
+            # 整图去底：阈值计算 + offset + 印章处理全部收在 utils.rembg_page。
+            # ⚠️ 必须走这个函数而不是自己拼 utils 的底层调用——桌面端第三步的
+            # 实时预览调的是同一个入口，两处组装逻辑分开写必然漂移，
+            # 界面就会和最终产物对不上。
+            final_arr = utils.rembg_page(
+                img_arr,
+                gray_arr,
+                offset=int(offset),
+                img_type=int(img_type),
+                enable_seal=bool(enable_seal),
+                seal_color=bool(seal_color),
+                seal_area=int(seal_area),
+                seal_min_sat=int(seal_min_sat),
             )
 
             # 保存为 PNG（300 DPI）

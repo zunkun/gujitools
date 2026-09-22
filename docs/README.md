@@ -88,7 +88,7 @@ python tools/check_docs.py            # 校验全部文档：相对链接、锚�
 | [api/cli.md](api/cli.md) | 命令行层公开 API |
 | [api/functions.md](api/functions.md) | 图像处理功能模块公开 API |
 | [api/utils.md](api/utils.md) | 通用工具函数公开 API |
-| [api/entrypoints.md](api/entrypoints.md) | 顶层入口脚本（main.py / desktop.py / config.py） |
+| [api/entrypoints.md](api/entrypoints.md) | 顶层入口脚本（cli.py / desktop.py / config.py） |
 
 ## 快速开始
 

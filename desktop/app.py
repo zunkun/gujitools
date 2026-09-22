@@ -4,16 +4,18 @@
 from __future__ import annotations
 import os
 import sys
-from pathlib import Path
-from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget
+from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget, QWidget
 from PySide6.QtGui import QIcon
 from qfluentwidgets import setTheme, Theme
-from desktop.pages import TaskDetailPage, TaskListPage
+from desktop.pages import TaskListPage
 from desktop.store import TaskStore
 from desktop.ui import theme as T
 from desktop.utils.icon import rounded_window_icon
 from desktop.ui.style import apply_app_style
 from desktop.utils.files import package_dir
+
+#: 主窗口标题（单例守卫按它找已有实例的窗口，见 desktop/single_instance.py）
+WINDOW_TITLE = "古籍重製"
 
 
 class MainWindow(QMainWindow):
@@ -24,7 +26,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("古籍重製")
+        self.setWindowTitle(WINDOW_TITLE)
         self.resize(1440, 920)
         self.setMinimumSize(1080, 720)
 
@@ -44,17 +46,45 @@ class MainWindow(QMainWindow):
         self.pages = QStackedWidget()
         self.pages.setObjectName("pageRoot")
         self.list_page = TaskListPage(self.store)
-        self.detail_page = TaskDetailPage(self.store)
         self.pages.addWidget(self.list_page)
-        self.pages.addWidget(self.detail_page)
+        # 详情页**惰性创建**（见 _ensure_detail_page）：它带着第四步打印参数
+        # 面板等一大批控件，构造实测约 400ms。启动时用户还停在列表页，先不付
+        # 这笔钱——首次点开任务再建。
+        self._detail_page: "QWidget | None" = None
         self.setCentralWidget(self.pages)
         self.setStyleSheet(f"QMainWindow {{ background: {T.CANVAS}; }}")
         self.list_page.open_detail.connect(self._open_detail)
-        self.detail_page.back_requested.connect(self._back_to_list)
+
+    def _ensure_detail_page(self):
+        """首次需要时创建详情页，挂进堆栈并接上「返回」信号。
+
+        惰性化的收益只在启动那一刻：构造详情页要 ~400ms，而它内部的
+        打印参数面板（print_form / print_panel）在启动时完全用不到。
+        """
+        if self._detail_page is None:
+            from desktop.pages import TaskDetailPage
+
+            page = TaskDetailPage(self.store)
+            page.back_requested.connect(self._back_to_list)
+            self.pages.addWidget(page)
+            self._detail_page = page
+        return self._detail_page
+
+    @property
+    def detail_page(self):
+        """详情页实例（惰性构造）。
+
+        保留这个公开属性名：``tests/selftests/_context.py`` 与
+        ``tests/gui_shot.py`` 都按 ``window.detail_page`` 取页面来操作控件。
+        读它本身就等于声明「现在就需要详情页」，因此访问即构造——与启动期
+        惰性并不冲突。
+        """
+        return self._ensure_detail_page()
 
     def _open_detail(self, task_id: str) -> None:
-        self.detail_page.set_task(task_id)
-        self.pages.setCurrentWidget(self.detail_page)
+        page = self._ensure_detail_page()
+        page.set_task(task_id)
+        self.pages.setCurrentWidget(page)
 
     def _back_to_list(self) -> None:
         self.list_page.refresh()
@@ -64,8 +94,10 @@ class MainWindow(QMainWindow):
         """关闭窗口时先让详情页收尾 worker 子进程。
         详情页持有 worker 子进程与后台线程的引用，直接退出会让进程被强杀；
         这里把事件转交给详情页的 closeEvent 完成 kill/等待/清理后再接受关闭。
+        详情页是惰性的——没建过就说明没有 worker 需要收尾。
         """
-        self.detail_page.closeEvent(event)
+        if self._detail_page is not None:
+            self._detail_page.closeEvent(event)
         event.accept()  # 文件存储无需关闭
 
 
@@ -105,12 +137,40 @@ def main() -> int:
 
     ensure_cjk_fonts()  # 没有中文字体时先弹安装引导，再进主界面
 
+    # ---- 单例守卫：同一个构建只允许一个 GUI 实例 ----
+    # 已有本构建实例在跑 → 把那个窗口恢复并带到前台，本进程直接退出。
+    # 身份是 **desktop 包目录**：开发版与正式版的目录不同，因此两个程序可以
+    # 同时存在、互不阻拦（用户原则）。冒烟模式（GUJI_GUI_SELFTEST）不检查：
+    # 打包冒烟可能在 GUI 开着时运行，不该让它被单例挡住而"空过"。
+    if not os.environ.get("GUJI_GUI_SELFTEST"):
+        from desktop.single_instance import acquire, activate_existing_window
+
+        if not acquire(str(package_dir())):
+            activate_existing_window(WINDOW_TITLE)
+            return 0
+
     window = MainWindow()
     window.show()
+    # 列表数据推迟到窗口显示之后的**下一拍**：TaskListPage 首次渲染要建每行的
+    # 控件、还要读各任务的 runs.json（实测 ~74 ms），放在 show() 之前等于推迟
+    # 窗口出现。先给用户一个空壳窗口，再填内容。
+    from PySide6.QtCore import QTimer
+
+    QTimer.singleShot(0, window.list_page.refresh)
     _install_sigint_handler(app)
     if os.environ.get("GUJI_GUI_SELFTEST"):
         from PySide6.QtCore import QTimer
 
         # 延迟一拍再退出：让事件循环真正转起来，能抓到构造期之外的错误
         QTimer.singleShot(500, app.quit)
-    return app.exec()
+    try:
+        code = app.exec()
+    finally:
+        # desktop 关闭 → 释放常驻 YOLO 服务（模型 + torch 运行时约 350MB）。
+        # ⚠️ 只在 GUI 路径做：worker 子进程不拥有服务，不该替 GUI 去关它。
+        # 用户原则：desktop 关闭，YOLO 就释放；关掉之后下次检测重新拉起服务
+        # （约 5 秒）。`shutdown_service` 内部吞掉所有异常，finally 里安全。
+        from functions.yolo_service import shutdown_service
+
+        shutdown_service()
+    return code

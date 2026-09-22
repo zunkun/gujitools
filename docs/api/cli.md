@@ -4,7 +4,7 @@
 
 命令行入口层：参数解析、子命令调度
 
-覆盖 3 个模块、2 个公开类、8 个公开函数/方法（生成于 2026-09-19）。
+覆盖 3 个模块、2 个公开类、8 个公开函数/方法（生成于 2026-09-22）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -12,17 +12,17 @@
 
 | 模块 | 类 | 函数 |
 | --- | --- | --- |
-| [`cli.cli`](#clicli) | 0 | 3 |
+| [`cli.__main__`](#cli__main__) | 0 | 3 |
 | [`cli.cli_args`](#clicli_args) | 1 | 3 |
 | [`cli.config_io`](#cliconfig_io) | 1 | 2 |
 
 ---
 
-## `cli.cli`
+## `cli.__main__`
 
-源码：[`cli/cli.py`](../../cli/cli.py)
+源码：[`cli/__main__.py`](../../cli/__main__.py)
 
-File: cli/cli.py
+File: cli/__main__.py
 CLI 启动逻辑：参数解析 → 功能分发 → 结果输出。
 
 流程:

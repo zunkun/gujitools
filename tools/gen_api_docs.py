@@ -54,7 +54,7 @@ TARGETS: list[tuple[str, str | None, str, str]] = [
 ]
 
 #: 顶层入口脚本的收集名单（排除打包脚本等与运行时无关的文件）。
-ROOT_SCRIPTS = ("main.py", "desktop.py", "config.py")
+ROOT_SCRIPTS = ("cli.py", "desktop.py", "config.py")
 
 GENERATED_BANNER = (
     "<!-- 本文件由 tools/gen_api_docs.py 自动生成，请勿手工编辑。"

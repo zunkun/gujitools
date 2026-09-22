@@ -39,10 +39,18 @@ from utils.sort_utils import natural_sort_key
 _LAZY = {
     "load_yolo_model": ("utils.yolo_utils", "load_yolo_model"),
     "detect_left_right_boxes": ("utils.yolo_utils", "detect_left_right_boxes"),
+    # ⚠️ 下面三个是"状态查询"，也必须登记：否则调用方只能写
+    # `utils.yolo_utils.is_model_loaded()`，而那是**靠偶然才成立**的——
+    # 只有在某处恰好 `from utils.yolo_utils import ...` 过之后，子模块才会成为
+    # utils 包的属性；没跑过那条路径就直接 AttributeError（真实踩过）。
+    "model_path": ("utils.yolo_utils", "model_path"),
+    "is_model_loaded": ("utils.yolo_utils", "is_model_loaded"),
+    "load_seconds_used": ("utils.yolo_utils", "load_seconds_used"),
     "calculate_auto_threshold": ("utils.image_utils", "calculate_auto_threshold"),
     "extract_red_seal": ("utils.image_utils", "extract_red_seal"),
     "apply_otsu_to_region": ("utils.image_utils", "apply_otsu_to_region"),
     "apply_otsu_whole": ("utils.image_utils", "apply_otsu_whole"),
+    "rembg_page": ("utils.image_utils", "rembg_page"),
     "parse_border": ("utils.image_utils", "parse_border"),
     "parse_border_mm": ("utils.box_geometry", "parse_border_mm"),
     "compute_final_boxes": ("utils.box_geometry", "compute_final_boxes"),

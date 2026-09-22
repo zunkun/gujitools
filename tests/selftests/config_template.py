@@ -159,7 +159,7 @@ def run(ctx) -> None:
            func.outpath == work.parent / "detect", str(func.outpath))
 
         # 模板不得让用户掉进「空跑被拒」的坑：用 CLI 的同一判据验一遍
-        from cli.cli import _reject_dry_run
+        from cli.__main__ import _reject_dry_run
 
         import contextlib as _ctx
         import io as _io

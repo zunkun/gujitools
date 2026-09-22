@@ -134,3 +134,50 @@ def cjk_font_families() -> tuple:
     if sys.platform == "darwin":
         return _MACOS_FAMILIES
     return _LINUX_FAMILIES
+
+
+# ------------------------------------------------------------------ 内容字体族名
+# 「印刷内容」——第四步 PDF 里的标题与页码——用的族名候选。
+#
+# ⚠️ **顺序必须与上面的 _WINDOWS_PATHS / _LINUX_PATHS / _MACOS_PATHS 对齐**：
+# PDF 侧 `pdf_draw.register_fonts` 是按**文件路径**取的（Windows 上命中
+# simfang.ttf = 仿宋），而预览如果按**界面**候选（cjk_font_families，Windows
+# 上雅黑打头）取，就会出现「预览显示雅黑、导出却是仿宋」——所见即所得直接破掉。
+# 两份候选用途不同，不能互换，也不要合并成一份。
+_WINDOWS_CONTENT_FAMILIES = (
+    "FangSong",  # 仿宋（= simfang.ttf 的族名）
+    "FangSong_GB2312",  # 仿宋 GB2312（= fsgb2312.ttf）
+    "SimFang",
+    "SimSun",  # 宋体
+    "Microsoft YaHei",
+)
+_LINUX_CONTENT_FAMILIES = (
+    "Noto Serif CJK SC",  # 与 _LINUX_PATHS 的 NotoSerifCJK 对齐
+    "Source Han Serif SC",
+    "AR PL UMing CN",
+    "Noto Sans CJK SC",
+    "WenQuanYi Zen Hei",
+)
+_MACOS_CONTENT_FAMILIES = (
+    "Songti SC",
+    "STSong",
+    "PingFang SC",
+)
+
+
+def content_font_families() -> tuple:
+    """第四步 PDF 内容（标题 / 页码）的字体族名候选：**仿宋（衬线）优先**。
+
+    与 `cjk_font_families()` 的分工：
+
+    - `cjk_font_families()` → **界面**文字（Windows 上雅黑打头，界面更清爽）；
+    - `content_font_families()` → **印刷内容**，顺序刻意与 `cjk_font_paths()`
+      对齐，保证预览和最终 PDF 选到同一种字。
+
+    两份不能互换——换了就会出现"预览与成品字体不一致"。
+    """
+    if sys.platform == "win32":
+        return _WINDOWS_CONTENT_FAMILIES
+    if sys.platform == "darwin":
+        return _MACOS_CONTENT_FAMILIES
+    return _LINUX_CONTENT_FAMILIES

@@ -174,7 +174,7 @@ def _validate_detect(args) -> None:
     与 GUI **共用**的。GUI 的 detect 阶段本来就不落盘（坐标经事件通道交给
     界面画框），若在此处强制 save，会把 GUI 一并拦死。
 
-    「命令行空跑」的拒绝放在 CLI 入口（`cli.cli._reject_dry_run`），
+    「命令行空跑」的拒绝放在 CLI 入口（`cli.__main__._reject_dry_run`），
     因为只有命令行语境下「不落盘」才等于「白算一趟」；作为代码调用
     （`functions.detect.DetectFunction` / `detect_page_boxes`）当中间步骤
     使用时必须保持可用。
@@ -470,7 +470,7 @@ COMMAND_SPECS: Dict[str, CommandSpec] = {
     ),
     # detect：检测左右文本框并上报坐标。
     # 不带 save 时是**无产出的中间步骤**（仅代码调用有意义）；
-    # 命令行下无 save 的空跑会被 CLI 入口直接拒绝（见 cli.cli._reject_dry_run）。
+    # 命令行下无 save 的空跑会被 CLI 入口直接拒绝（见 cli.__main__._reject_dry_run）。
     # 命令行用 --save 时不产出文件，故必须显式 --save 落地标注图，目录规则同 crop。
     "detect": CommandSpec(
         name="detect",

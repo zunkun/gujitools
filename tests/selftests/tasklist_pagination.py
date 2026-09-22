@@ -43,7 +43,7 @@ def _fake_rows(n: int) -> list[dict]:
 
 
 def run(ctx) -> None:
-    from tests.selftests._context import ok
+    from tests.selftests._context import ok, wait_until
 
     from desktop.components.pagination import (
         DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS, Pager,
@@ -214,6 +214,12 @@ def run(ctx) -> None:
         ]
         try:
             page.refresh()
+            # refresh 是异步的（后台线程读盘），等 _all_rows 追上再断言
+            wait_until(
+                ctx.app,
+                lambda: len(page._all_rows) == before + 12,
+                timeout=5.0,
+            )
             ok("refresh() 后总数含新增的 12 条",
                len(page._all_rows) == before + 12,
                f"{len(page._all_rows)} vs {before + 12}")
@@ -232,6 +238,12 @@ def run(ctx) -> None:
         page._page = 1
         page._page_size = DEFAULT_PAGE_SIZE
         page.refresh()
+        # refresh 是异步的：等后台读盘落地再断言，否则读到的还是旧集合
+        wait_until(
+            ctx.app,
+            lambda: len(page._all_rows) == len(page.store.list_tasks()),
+            timeout=5.0,
+        )
 
     ok("收尾后界面回到真实任务集合",
        len(page._all_rows) == len(page.store.list_tasks()),

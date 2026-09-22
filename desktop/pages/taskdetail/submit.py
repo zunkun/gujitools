@@ -12,15 +12,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QProcess
-
 from desktop.services.print_plan import entry_to_effect_spec, plan_rembg_submit_entries
 from desktop.services.submit_state import (
     NEW_VERSION, NO_PREVIEW, PREVIEW_STALE, UP_TO_DATE,
     rembg_submit_version_state,
 )
 from desktop.utils.files import list_stage_images
-from desktop.store import STAGE_LABELS
 from desktop.pages.taskdetail.runner import STATUS_LABELS
 
 
@@ -85,12 +82,24 @@ class SubmitMixin:
     # ---------------------------------------------------------- 提交动作
     def run_rembg_submit(self) -> None:
         """提交本次任务：把「生成预览」的去底色图片按 area/border 等
-        合成为真正想要的最终图片，输出到 stages/rembg 目录。"""
+        合成为真正想要的最终图片，输出到 stages/rembg 目录。
+
+        ⚠️ 与「执行本子任务」共用同一份执行权（``_acquire_run``）：提交与
+        生成预览抢的是同一个 worker 槽位与同一批输出目录，同时在跑只会互相
+        覆盖；连点两下同样由防抖窗口吞掉。
+        """
+        if not self._acquire_run("子任务"):
+            return
+        try:
+            self._run_rembg_submit_unchecked()
+        finally:
+            if self.running_stage is None:
+                self._release_run()
+
+    def _run_rembg_submit_unchecked(self) -> None:
+        """提交本次任务的实现体（不含执行权守卫，勿直接调用）。"""
         if not self.task_id or not self.source_path:
             self._toast("warning", "提示", "请先导入 PDF")
-            return
-        if self.process and self.process.state() != QProcess.NotRunning:
-            self._toast("warning", "任务进行中", "当前子任务正在执行")
             return
         # 必须以最近一次「生成预览」成功为前提（旧图残留/失败/中断均拒绝提交）
         preview_state = self.store.stage_states(self.task_id)["rembg"]["status"]

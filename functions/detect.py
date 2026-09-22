@@ -13,7 +13,7 @@ detect + 裁剪 + 去底色`，两者都通过本模块拿到左右框，而不�
   的前置中间步骤，供代码调用或 GUI 的 detect 阶段使用。
 - **命令行下必须给 `--save`**：不落盘时命令行没有任何产出去处（坐标只打到
   stdout，下游 `crop` / `cropremove` 各自会重新检测），属于白算一趟，因此
-  CLI 入口会直接拒绝（`cli.cli._reject_dry_run`）。本模块**不**做这个限制——
+  CLI 入口会直接拒绝（`cli.__main__._reject_dry_run`）。本模块**不**做这个限制——
   它是可复用的库层，`DetectFunction` 作为中间步骤被代码调用时必须保持可用。
 - **落地时**输出标注图（框 + 坐标文字），输出目录规则与 `crop`
   **完全一致**（都调 `utils.path_utils.resolve_final_output_dir`）：
@@ -23,9 +23,11 @@ detect + 裁剪 + 去底色`，两者都通过本模块拿到左右框，而不�
 """
 
 import shutil
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import NamedTuple, Optional, Tuple
 
 import utils
 from functions.base import FunctionBase
@@ -52,6 +54,118 @@ def extract_first_box(boxes) -> Optional[Box]:
     if not boxes:
         return None
     return tuple(int(v) for v in boxes[0][:4])
+
+
+#: 最近一次「按路径检测」的附加信息，供调用方打日志。**按线程存**：
+#: CLI 的 detect 用 8 个线程并发，共享一个全局变量会串台。
+_local_report = threading.local()
+
+
+class DetectReport(NamedTuple):
+    """一次「按路径检测」的模型来源信息（只为日志服务，不参与任何决策）。"""
+
+    #: "service"（常驻服务算的）/ "in-process"（本进程加载模型算的）
+    backend: str
+    #: 本次调用**真的把模型加载起来**时耗（秒）；复用已有模型时为 0
+    model_load_seconds: float
+
+
+def last_detect_report() -> DetectReport:
+    """取本线程最近一次按路径检测的来源信息（默认 in-process/0.0）。"""
+    return getattr(_local_report, "value", DetectReport("in-process", 0.0))
+
+
+def _set_detect_report(backend: str, load_seconds: float) -> None:
+    _local_report.value = DetectReport(backend, float(load_seconds))
+
+
+def backend_log_line(backend: str, load_seconds: float) -> str:
+    """把「模型从哪来、加载用了多久」说成一句人读日志（GUI 与 CLI 共用措辞）。
+
+    用户明确要求能看到「加载 yolo … 用时 xx s」：服务化之后模型加载发生在
+    **常驻服务进程**里，而那边没有控制台（输出进 `%TEMP%/guji-yolo-service.log`），
+    所以只能由调用方把服务回报的耗时转发到自己的日志里——否则用户完全看不出
+    模型到底加载了没有、用了几秒。
+
+    ⚠️ in-process 时**不要**再以「加载 YOLO 模型完成」开头：`load_yolo_model()`
+    自己已经打印过一行带明细的（导入/读权重各多少），再说一遍就是重复噪音。
+    这里的措辞重点是**归属**——cli 一次性任务用完即释放、desktop 交给常驻服务。
+    """
+    if backend == "service":
+        if load_seconds > 0:
+            return f"加载 YOLO 模型完成: 用时 {load_seconds:.1f} s（常驻服务内，全局只加载一次）"
+        return "检测后端: 常驻 YOLO 服务（模型已在内存中，直接复用、未重新加载）"
+    if load_seconds > 0:
+        return f"检测后端: 本进程内加载模型（用时 {load_seconds:.1f} s，进程退出即释放）"
+    return "检测后端: 本进程内（模型已在内存中，未重新加载）"
+
+
+def warm_up_detect_model() -> Tuple[str, float]:
+    """准备好检测模型，返回 ``(可写进日志的说明, 本次加载耗时秒)``。
+
+    ⚠️ 调用方应在**开始逐张检测之前**调它：模型加载的耗时必须单独计时、单独报出，
+    不能落到"第一张图"的耗时里——用户明确提过那样看起来不合理（第一张 5 秒、
+    其余 200 毫秒，像是某张图有问题，其实是模型在加载）。
+    """
+    from functions.yolo_service import warm_up  # noqa: PLC0415 - 延迟导入避免成环
+
+    backend, seconds = warm_up()
+    return backend_log_line(backend, seconds), seconds
+
+
+def detect_page_boxes_by_path(
+    image_path, model=None
+) -> Tuple[Optional[Box], Optional[Box]]:
+    """按**路径**检测左右文本框：优先常驻 YOLO 服务，失败回落本进程内。
+
+    给"手上有路径"的调用方用（CLI 的 detect/crop/cropremove、GUI 的 detect
+    阶段）。服务化只改**模型住在哪个进程**，不改算法：
+
+    - 服务可用 → 模型全局只有一份，多个 worker、多次执行、多个线程共用，
+      日志里「加载 YOLO 模型完成」只出现一次（在服务进程里）；
+    - 服务不可用 → 回落到 ``detect_page_boxes(imread(path), model)``，行为与
+      引入服务之前**完全一致**（最坏就是慢那几秒）。
+
+    ⚠️ 与 `detect_page_boxes` 的分工：那个是**算法入口**（吃 ndarray，
+    crop/GUI 都靠它保证框一致，不要绕过）；本函数是**取图方式的选择**，
+    内部最终仍然调它。
+
+    副作用：把本次的模型来源写进线程内的 :func:`last_detect_report`，
+    调用方据此打「加载 YOLO 模型完成: 用时 X s」这类日志。
+
+    参数:
+        image_path: 图片路径（服务侧同样走 `utils.imread`，支持中文路径）。
+        model: 本进程内已加载的模型；非 None 时说明调用方已经付过加载成本，
+            直接用它在进程内算，不再绕服务。
+
+    返回:
+        (left_box, right_box)，各为 (x1, y1, x2, y2) 或 None。
+    """
+    if model is None:
+        # 函数内延迟导入：yolo_service 的检测处理器要反过来 import 本模块，
+        # 模块级互相 import 会成环。
+        from functions.yolo_service import detect_boxes_via_service  # noqa: PLC0415
+
+        outcome = detect_boxes_via_service(image_path)
+        if outcome is not None:
+            # 能拿到 outcome 就说明这次是服务算的（拿不到才回落，见下）
+            _set_detect_report("service", outcome.model_load_seconds)
+            return outcome.left, outcome.right
+    img_bgr = utils.imread(image_path)
+    if img_bgr is None:
+        raise ValueError(f"无法读取图片: {image_path}")
+    already = utils.is_model_loaded() if model is None else True
+    started = time.perf_counter()
+    boxes = detect_page_boxes(img_bgr, model)
+    _set_detect_report(
+        "in-process", 0.0 if already else time.perf_counter() - started
+    )
+    return boxes
+
+
+def format_box(box) -> str:
+    """把框格式化为 `x1,y1,x2,y2`，None 显示为 `-`（日志用，CLI/GUI 共用一份）。"""
+    return "-" if box is None else ",".join(str(int(v)) for v in box)
 
 
 def detect_page_boxes(
@@ -87,19 +201,24 @@ class DetectFunction(FunctionBase):
     """
 
     def __init__(self, command_args, reporter=None):
-        """初始化并加载 YOLO 模型（单例，进程内复用）。
+        """初始化检测功能（本对象**不持有**模型）。
 
         `save`（默认关闭）决定是否把标注图落地，落地目录同 crop 的
         输出规则（`-o` 或默认 `detect` 目录），仅在开启时才创建。
+
+        ⚠️ 这里刻意不保存模型实例：检测统一走
+        `detect_page_boxes_by_path`——优先交给常驻 YOLO 服务（服务自己读图、
+        模型全局只加载一次），服务不可用时它自己在本进程内加载一次单例即可
+        （`utils.load_yolo_model()` 本身就有双重检查锁）。早先构造期就
+        `load_yolo_model()` 会让每一次"服务可用"的检测白付 5 秒。
         """
         super().__init__(command_args, reporter)
-        self._model = utils.load_yolo_model()
         self.save = bool(command_args.get("save", False))
         # 标注图后缀，与 crop 的 ext 语义一致（png 无损，适合线框标注）
         self.output_suffix = "." + str(command_args.get("ext") or "png").lower().lstrip(".")
         # 落地时才计算输出目录：关闭时不产生目录、也不打印「输出目录」。
         # 这是库层的中立行为（代码调用 / GUI 都需要），
-        # 命令行「不落盘就拒绝」由 cli.cli._reject_dry_run 负责。
+        # 命令行「不落盘就拒绝」由 cli.__main__._reject_dry_run 负责。
         self.outpath = self._resolve_outpath() if self.save else None
 
     def _resolve_outpath(self) -> Path:
@@ -121,13 +240,16 @@ class DetectFunction(FunctionBase):
         )
 
     def _process_single_image(self, image_path: Path) -> dict:
-        """检测单图并上报框；仅在 `--save` 时把标注图落地。"""
-        img_bgr = utils.imread(image_path)
-        if img_bgr is None:
-            raise ValueError(f"无法读取图片: {image_path}")
+        """检测单图并上报框；仅在 `--save` 时把标注图落地。
 
-        left_box, right_box = detect_page_boxes(img_bgr, self._model)
-        self._report_boxes(image_path, left_box, right_box)
+        ⚠️ 走**按路径**的检测入口：常驻服务可用时由服务自己读图，本进程连
+        解码都省了（比服务化之前还少一次 `imread`）。只有 `--save` 要把框画
+        到图上时，才在本进程里再读一次。
+        """
+        started = time.perf_counter()
+        left_box, right_box = detect_page_boxes_by_path(image_path)
+        elapsed = time.perf_counter() - started
+        self._report_boxes(image_path, left_box, right_box, elapsed)
 
         result = {
             "status": "success" if (left_box or right_box) else "no_detect",
@@ -137,7 +259,12 @@ class DetectFunction(FunctionBase):
             "outputs": [],
         }
         if self.save:
-            result["outputs"] = self._save_annotated(image_path, img_bgr, left_box, right_box)
+            img_bgr = utils.imread(image_path)
+            if img_bgr is None:
+                raise ValueError(f"无法读取图片: {image_path}")
+            result["outputs"] = self._save_annotated(
+                image_path, img_bgr, left_box, right_box
+            )
         return result
 
     def _save_annotated(self, image_path, img_bgr, left_box, right_box):
@@ -152,11 +279,14 @@ class DetectFunction(FunctionBase):
             raise OSError(f"标注图写出失败: {out_path}")
         return [str(out_path)]
 
-    def _report_boxes(self, image_path: Path, left_box, right_box) -> None:
+    def _report_boxes(self, image_path: Path, left_box, right_box,
+                      elapsed: float | None = None) -> None:
         """经 reporter 上报本页检测框（结构化事件 + 一行人读日志）。
 
         事件名与 `functions/text_region.py` 完全一致（`page_boxes`），
         因此 desktop 侧对 detect 阶段与 crop 阶段看到的是同一种事件。
+        日志带上**本页耗时**：用户要能看出"这一页实际干了什么、花了多久"，
+        否则一次检测跑完日志里只有进度、看不出每张图的结果。
         """
         self.reporter.event(
             "page_boxes",
@@ -164,9 +294,10 @@ class DetectFunction(FunctionBase):
             left=list(left_box) if left_box else None,
             right=list(right_box) if right_box else None,
         )
+        cost = "" if elapsed is None else f"（{elapsed * 1000:.0f} ms）"
         self.reporter.log(
             f"检测完成: {image_path.name} "
-            f"左={_fmt_box(left_box)} 右={_fmt_box(right_box)}"
+            f"左={format_box(left_box)} 右={format_box(right_box)}{cost}"
         )
 
     def execute(self) -> dict:
@@ -206,12 +337,20 @@ class DetectFunction(FunctionBase):
 
         print(f"图片总数: {total}")
 
+        # ⚠️ 模型准备**单独一步、单独计时**：把它和"逐张检测"彻底分开，
+        # 否则那几秒会落到第一张图上，看起来像那张图特别慢（用户提过这点）。
+        # 用 print 而不是 reporter.log：`functions` 默认注入的是 CoreReporter，
+        # 它的 log() 是**空实现**，写进去用户在命令行上看不到任何东西。
+        load_line, load_seconds = warm_up_detect_model()
+        print(load_line)
+
         workers = max(
             1, int(self.command_args.get("workers", max(1, min(8, total))))
         )
         max_retries = 2
         results_by_file: dict = {}
         finished = 0
+        started_all = time.perf_counter()
 
         def _run_round(current_files):
             """对一轮文件集合并行检测，返回每文件的结果。"""
@@ -264,6 +403,13 @@ class DetectFunction(FunctionBase):
             f"检测完成: 共 {total} 页，左框 {hit_left} 页，"
             f"右框 {hit_right} 页，失败 {failed} 页"
         )
+        total_elapsed = time.perf_counter() - started_all
+        load_note = f"，模型加载另计 {load_seconds:.1f} s" if load_seconds > 0 else ""
+        print(
+            f"总计用时 {total_elapsed:.1f} s"
+            f"（共 {total} 张，平均 {total_elapsed / max(total, 1) * 1000:.0f} ms/张）"
+            f"{load_note}"
+        )
         if self.save:
             saved = sum(len(r.get("outputs") or []) for r in results)
             print(f"标注图已保存: {saved} 张 -> {self.outpath}")
@@ -273,8 +419,3 @@ class DetectFunction(FunctionBase):
             "right": hit_right,
             "output": str(self.outpath) if self.save else None,
         }
-
-
-def _fmt_box(box) -> str:
-    """把框格式化为 `x1,y1,x2,y2`，None 显示为 `-`。"""
-    return "-" if box is None else ",".join(str(int(v)) for v in box)

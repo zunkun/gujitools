@@ -51,7 +51,7 @@ YOLO 推理，程序直接拒绝并给出替代方案。
 | 代码 `detect_page_boxes(img)` | ✅ 可用 | 纯函数，crop/cropremove 在用 |
 | GUI detect 阶段 | ✅ 可用 | 坐标经事件通道交给界面画框 |
 
-拦截放在 CLI 入口（`cli.cli._reject_dry_run`）而非
+拦截放在 CLI 入口（`cli.__main__._reject_dry_run`）而非
 `CommandArgs.validate()`，因为后者是 CLI 与 GUI **共用**的——若在校验层
 强制 `save`，会把 GUI 的 detect 阶段一并拦死（它本来就不落盘）。
 
