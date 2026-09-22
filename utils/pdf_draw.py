@@ -11,34 +11,146 @@ PDF → 图片的部分在 `utils/pdf_extract.py`。
 
 import os
 
+from utils.fonts import pick_font
 from utils.units import POINTS_PER_MM
 
 
-def register_fonts(pdf):
-    """尝试注册系统中文字体，返回第一个成功注册的字体名。
+def _used_names(pdf) -> set:
+    """该 PDF 实例上已用过的字体注册名（挂在实例上，跨多条链共享）。"""
+    used = getattr(pdf, "_guji_font_used", None)
+    if used is None:
+        used = set()
+        pdf._guji_font_used = used
+    return used
 
-    候选路径来自 `utils.fonts`（Windows/Linux/macOS 三份候选 + `GUJI_CJK_FONT`
-    环境变量）——**中文字体路径不许在本文件硬编码**：曾经这么做过，换到非
-    Windows 平台后探测全部落空，标题/页码静默退回 Helvetica（方块、丢字）。
 
-    一个都注册不上时返回 `"Helvetica"`（fpdf 内置字体，不含中文字形），
-    由调用方决定是否告警，这里不抛异常。
+def _register_one(pdf, entry, used: set) -> str | None:
+    """把单个字体注册进 pdf，返回注册名；失败返回 None。
+
+    注册名取文件主名；重名时加序号——不同目录下可以有同名文件（比如
+    `Fonts/simfang.ttf` 与用户自带的 `simfang.ttf`），撞名会让后一个
+    把前一个悄悄顶掉。
     """
-    from utils.fonts import cjk_font_paths
+    base = os.path.splitext(os.path.basename(entry.path))[0] or "cjk"
+    name = base
+    index = 1
+    while name in used:
+        index += 1
+        name = f"{base}_{index}"
+    try:
+        pdf.add_font(name, "", entry.path)
+    except Exception:
+        # 字体文件损坏 / fpdf 不支持的格式（个别 .ttc）：跳过即可，
+        # 链条上还有别的字体
+        return None
+    used.add(name)
+    return name
 
-    for path in cjk_font_paths():
-        if os.path.exists(path):
-            font_name = os.path.splitext(os.path.basename(path))[0]
-            try:
-                pdf.add_font(font_name, "", path)
-                return font_name
-            except Exception:
-                continue
-    return "Helvetica"
+
+class FontChain:
+    """一组已注册到某个 FPDF 实例的字体，可按字符挑名字。
+
+    为什么需要它
+    ------------
+    古籍标题常有异体字 / 生僻字，而**没有任何单一字体**能覆盖它们：仿宋
+    缺扩展 B 的字，Windows 自带的宋体-ExtB 有那些字却没有常用字。所以
+    ``name_for(ch)`` 按优先级链挑第一个"有这个字"的字体——常用字仍是仿宋，
+    只有仿宋真没有的那个字才落到补字字体上。
+
+    ⚠️ 只注册**实际会用到**的字体（构造时传入全部待排文字来算）：
+    把整条链二十来个字体全注册进去，每页 PDF 都要多嵌几个字体子集，
+    体积与生成时间都白涨。
+    """
+
+    def __init__(self, entries, names: dict, primary: str):
+        self._entries = list(entries)
+        self._names = dict(names)
+        self.primary = primary
+
+    @property
+    def entries(self) -> list:
+        """参与本链条的字体条目（按优先级）。"""
+        return list(self._entries)
+
+    def name_for(self, char: str) -> str:
+        """这个字符该用哪个已注册字体名（找不到时回落主字体）。"""
+        entry = pick_font(self._entries, char)
+        if entry is None:
+            return self.primary
+        return self._names.get(entry.path, self.primary)
+
+
+def build_font_chain(pdf, texts=(), preferred=None) -> FontChain:
+    """按优先级注册字体，返回可按字符取名的 `FontChain`。
+
+    - ``preferred``：用户指定的字体（显示名 / 路径 / 文件名）；本机没有时
+      忽略，链条仍从"仿宋优先"开始。
+    - ``texts``：本次要排印的全部文字（标题、各章节标题…）。据此只注册
+      真正需要的字体。
+
+    一个都注册不上时链条为空、主字体为 `"Helvetica"`（fpdf 内置字体，不含
+    中文字形），由调用方决定是否告警，这里不抛异常。
+    """
+    from utils.fonts import pick_font, resolve_chain
+
+    chain = resolve_chain(preferred)
+    needed: list = []
+    seen: set[str] = set()
+    for entry in chain:
+        if entry.path in seen:
+            continue
+        seen.add(entry.path)
+        # 主字体与补字字体都先记下：主字体必注册；补字字体按需注册
+        needed.append(entry)
+
+    # 按需：先把每个字符该用哪个字体算出来，再只注册被用到的
+    primary_entry = chain[0] if chain else None
+    used_paths: list = []
+    if primary_entry is not None:
+        used_paths.append(primary_entry)
+    for text in texts or ():
+        for char in str(text):
+            entry = pick_font(chain, char)
+            if entry is not None and entry.path not in {e.path for e in used_paths}:
+                used_paths.append(entry)
+
+    names: dict = {}
+    # ⚠️ 已用注册名挂在 pdf 实例上：标题与页码各建一条链，两条链可能都要
+    # 注册 simfang——各自持有一个 set 的话，第二条链会重新注册同名字体，
+    # 把第一条的映射悄悄顶掉。
+    used = _used_names(pdf)
+    registered: list = []
+    for entry in used_paths:
+        name = _register_one(pdf, entry, used)
+        if name:
+            names[entry.path] = name
+            registered.append(entry)
+    if not names:
+        return FontChain([], {}, "Helvetica")
+    primary_name = names.get(primary_entry.path) if primary_entry else None
+    if not primary_name:
+        # 主字体注册失败（文件损坏）→ 用第一个注册成功的顶上
+        first = registered[0]
+        primary_name = names[first.path]
+    return FontChain(registered, names, primary_name)
+
+
+def register_fonts(pdf, preferred=None, texts=()):
+    """注册系统中文字体，返回第一个成功注册的字体名。
+
+    候选来自 `utils.fonts`（跨平台候选表 + `GUJI_CJK_FONT` 环境变量）——
+    **中文字体路径不许在本文件硬编码**：曾经这么做过，换到非 Windows 平台
+    后探测全部落空，标题/页码静默退回 Helvetica（方块、丢字）。
+
+    需要**逐字降级**（生僻字）时请改用 `build_font_chain`：本函数只返回主
+    字体名，画不出来就是画不出来。
+    """
+    return build_font_chain(pdf, texts=texts, preferred=preferred).primary
 
 
 def draw_vertical_text(
-    pdf, text, x, y_start, font_name, font_size, color, direction="down"
+    pdf, text, x, y_start, font_name, font_size, color, direction="down",
+    chain=None,
 ):
     """在PDF上绘制竖排文字：宽字符一字一格，拉丁段整体旋转 90°。
 
@@ -46,6 +158,10 @@ def draw_vertical_text(
     汉字等宽字符逐字下移，ASCII 可打印字符连成一段用 `pdf.rotation(90, …)`
     整体旋转——按竖排惯例，「呵呵Happiness」里的英文是一个转 90° 的竖条，
     而不是九个字母各占一格（那样既挤又认不出来）。
+
+    ``chain``（`FontChain`）给出时**逐字挑选字体**：主字体缺这个字的字形
+    就顺位落到下一个（生僻字因此落到宋体-ExtB 之类的补字字体上），
+    而不是画出空白。不给则整段用 ``font_name``（历史行为）。
     """
     from utils.page_layout import (
         vertical_chunk_advance_mm, vertical_runs,
@@ -59,6 +175,9 @@ def draw_vertical_text(
     char_height_mm = font_size / POINTS_PER_MM  # 点数转毫米
     y = y_start
     for chunk, rotated in vertical_runs(text):
+        # 一段里可能换字体（生僻字）：旋转段整段用同一个字体即可
+        if chain is not None:
+            pdf.set_font(chain.name_for(chunk[0]), "", font_size)
         if rotated:
             # ⚠️ 旋转段占高必须用**当前字体实测**的串宽，不能用
             # LATIN_ADVANCE_RATIO 估算——数字/下划线长段（如
@@ -84,8 +203,38 @@ def draw_vertical_text(
             # 视觉方向相反，别顺手"修正"。
             step = -char_height_mm if direction == "down" else char_height_mm
             for index, ch in enumerate(chunk):
+                if chain is not None:
+                    pdf.set_font(chain.name_for(ch), "", font_size)
                 pdf.text(x, y + index * step, ch)
+            # ⚠️ 逐字换过字体后要把"当前字体"还原成主字体：advance 之后
+            # 的下一段可能直接走 rotated 分支，那里读的是当前字体宽度。
+            if chain is not None:
+                pdf.set_font(font_name, "", font_size)
         y += -advance if direction == "down" else advance
+
+
+def draw_horizontal_text(
+    pdf, text, x, y, font_name, font_size, color, chain=None
+):
+    """在 PDF 上绘制横排文字；``chain`` 给出时逐字降级选字体。
+
+    逐字降级必然要**逐字落笔**（每个字可能来自不同字体），宽度也必须用
+    **该字所在字体**实测——用主字体量全串的宽度会在换字体处错位。
+    """
+    r, g, b = color
+    if isinstance(r, float) and r <= 1:
+        r, g, b = int(r * 255), int(g * 255), int(b * 255)
+    pdf.set_font(font_name, "", font_size)
+    pdf.set_text_color(r, g, b)
+    if chain is None:
+        pdf.text(x, y, text)
+        return
+    cursor = x
+    for ch in str(text):
+        pdf.set_font(chain.name_for(ch), "", font_size)
+        pdf.text(cursor, y, ch)
+        cursor += pdf.get_string_width(ch)
+    pdf.set_font(font_name, "", font_size)
 
 
 def get_page_side_from_name(name_without_ext):

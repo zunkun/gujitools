@@ -49,10 +49,10 @@ print:
 | `page_margins`            | `[20,20,20,20]` | 通用页边距，顺序为上、右、下、左，单位 mm                  |
 | `left_page_margins`       | None            | 左页专用页边距；与右页配置同时存在时启用左右页覆盖         |
 | `right_page_margins`      | None            | 右页专用页边距；格式同 `page_margins`                      |
-| `annotate_margins`       | `false`         | 预览辅助：第四步「打印效果」预览里用虚线框出图片位置、四边标注边距（mm）；只画在预览，不进入成品 PDF |
 | `page_rects`             | None            | 第四步「版面编辑器」逐图坐标覆盖：`{页号(1-based): [x,y,w,h]}`，单位 mm，页面坐标系（左上原点）。GUI 从 `print.json` 的 `pages[].rect` 收集后注入；给定页直接作图片框（所见即所得），未编辑的页走 `page_margins` 自动排版。CLI 不传 |
 | `title_printing`          | False           | 是否打印标题                                               |
 | `title_text`              | `""`            | 默认标题；为空时不打印标题                                 |
+| `title_font`              | None            | 标题字体：字体显示名 / 文件路径 / 文件名（如 `仿宋`、`微软雅黑`）。留空 = **自动**（有仿宋用仿宋，否则依次降级到宋体、微软雅黑、黑体、其它中文字体）。本机没这个字体时自动回落，不会报错 |
 | `title_font_size`         | 20              | 标题字号，单位 pt                                          |
 | `title_color`             | `0,0,0`         | 标题颜色，格式为 `r,g,b`，范围 0 到 255                    |
 | `title_position`          | `top`           | 标题位置：`top` 或 `bottom`                                |
@@ -63,6 +63,10 @@ print:
 | `page_number_start_page`  | 1               | 从排序后第几张图片开始标注，1-based                        |
 | `page_number_end_page`    | None            | 标注结束的图片序号；为空表示到最后                         |
 | `page_number_base`        | 0               | 页码基数；显示页码为基数加图片序号                         |
+| `page_number_font`        | None            | 页码字体：与 `title_font` 同规则、互不影响（常见搭配：书名仿宋、页码黑体）。留空 = 自动 |
+| `page_number_format`      | `chinese`       | 页码数字样式：`chinese` 中文数字（五）、`arabic` 阿拉伯数字（5）、`ganzhi` 干支（甲子，按六十甲子循环） |
+| `page_number_prefix`      | `第`            | 页码前缀，与数字原样拼接；留空则不加（程序不补空格） |
+| `page_number_suffix`      | `頁`            | 页码后缀，规则同前缀；前后缀都留空则只印数字本身 |
 | `page_number_font_size`   | 20              | 页码字号，单位 pt（与标题字号同默认，桌面端两处同源）      |
 | `page_number_color`       | `0,0,0`         | 页码颜色，格式为 `r,g,b`                                   |
 | `page_number_position`    | `bottom`        | 页码位置：`top` 或 `bottom`                                |

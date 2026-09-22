@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QPointF, Qt, QRectF, Signal, Slot
-from PySide6.QtGui import QColor, QFont, QImage, QFontMetrics, QPainter, QPen
+from PySide6.QtCore import QObject, QPointF, Qt, Signal, Slot
+from PySide6.QtGui import QColor, QFont, QImage, QFontMetrics, QPainter
 
 from utils.box_geometry import (
     build_output_layout,
@@ -134,15 +134,61 @@ def _pick_preview_font(point_size: float) -> QFont:
     return _pick_font(cjk_font_families(), point_size)
 
 
-def _pick_content_font(point_size: float) -> QFont:
-    """**PDF 内容**（标题 / 页码）用的字体：走内容族名候选，**仿宋优先**。
+#: 字体文件 → Qt 族名的缓存。``addApplicationFont`` 每次调用都会再占一个
+#: 字体 id，重复加载同一个文件纯属浪费；而且 worker 线程每次都去加载会让
+#: 预览刷新明显变卡。
+_QT_FONT_FILES: dict[str, str | None] = {}
+
+
+def qt_family_for_file(path: str) -> str | None:
+    """按**字体文件**加载并取回 Qt 族名；失败返回 None。
+
+    为什么要按文件而不是按族名：PDF 侧（`utils.pdf_draw.build_font_chain`）
+    也是按文件注册字体的，两边用同一个文件才能保证「预览 = 成品」。按族名
+    查表在离屏/精简环境下会落空（那时 `QFontDatabase.families()` 几乎是
+    空的），预览就退回默认字体，与成品对不上。
+    """
+    key = str(path)
+    if key in _QT_FONT_FILES:
+        return _QT_FONT_FILES[key]
+    family: str | None = None
+    try:
+        from PySide6.QtGui import QFontDatabase
+
+        font_id = QFontDatabase.addApplicationFont(key)
+        families = QFontDatabase.applicationFontFamilies(font_id)
+        if families:
+            family = families[0]
+    except Exception:
+        family = None
+    _QT_FONT_FILES[key] = family
+    return family
+
+
+def _pick_content_font(point_size: float, preferred=None) -> QFont:
+    """**PDF 内容**（标题 / 页码）用的字体：**仿宋优先**，可被指定覆盖。
+
+    ``preferred`` 是用户选的字体（显示名 / 路径 / 文件名），能解析到真实文件
+    时按**该文件**加载——与 PDF 侧同一个文件，预览与成品才对得上；解析不到
+    （本机没这个字体）就回落到自动候选，不会因为一条配置失效而预览不出来。
 
     必须与 `pdf_draw.register_fonts` 实际选中的字体对齐——那一侧按**文件路径**
     取（Windows 上命中 simfang.ttf = 仿宋），这一侧若按界面候选（雅黑打头）
     取，就会出现「预览是雅黑、导出是仿宋」，所见即所得直接破掉。
     """
-    from utils.fonts import content_font_families
+    from utils.fonts import content_font_families, resolve_chain
 
+    # ⚠️ 一律**按文件**加载，与 PDF 侧 `build_font_chain` 的链首是同一个
+    # 文件——这是「预览 = 成品」唯一可靠的保证。早先默认走族名查表
+    # （content_font_families），离屏/精简环境下 `QFontDatabase.families()`
+    # 里根本没有那些族，QFont 静默落到 "Sans Serif"，预览与成品对不上。
+    chain = resolve_chain(preferred)
+    if chain:
+        family = qt_family_for_file(chain[0].path)
+        if family:
+            font = QFont(family)
+            font.setPointSizeF(max(1.0, float(point_size)))
+            return font
     return _pick_font(content_font_families(), point_size)
 
 
@@ -164,8 +210,11 @@ def preview_text_font(spec, px_per_mm: float) -> QFont:
 
     统一口径后：字高 = 字号(mm) × 密度，与步进同源，任何密度下都不重叠，
     且与成品 PDF 的真实字号（pt → mm）一致。
+
+    ``spec.font`` 是用户为这段文字（标题 / 页码各自独立）指定的字体，
+    能解析到文件就按文件加载——与成品 PDF 用同一个字体文件。
     """
-    font = _pick_content_font(float(spec.font_size_pt))
+    font = _pick_content_font(float(spec.font_size_pt), getattr(spec, "font", None))
     font.setPixelSize(
         max(1, int(round(float(spec.font_size_pt) * MM_PER_PT * px_per_mm)))
     )
@@ -229,7 +278,6 @@ def compose_print_page(
     image: QImage,
     plan,
     px_per_mm: float | None = None,
-    annotate: bool = False,
 ) -> QImage:
     """按 ``utils.page_layout.PrintPagePlan`` 合成"打印效果"位图。
 
@@ -266,55 +314,8 @@ def compose_print_page(
     for spec in (plan.title, plan.page_number):
         if spec is not None:
             _draw_print_text(painter, spec, density)
-    if annotate:
-        _draw_margin_annotation(painter, plan, density)
     painter.end()
     return page
-
-
-def _draw_margin_annotation(painter: QPainter, plan, density: float) -> None:
-    """在「打印效果」预览里用虚线框出图片位置，并在四边标注边距（mm）。
-
-    只画在预览，不进入成品 PDF（交付书保持干净）。标注的是**图片到页面
-    四边的真实间距**，单位 mm，与第四步表单里填的 page_margins 同源。
-    """
-    x_mm, y_mm, w_mm, h_mm = plan.image
-    pw_mm, ph_mm = plan.page_w_mm, plan.page_h_mm
-    px = density
-    # 虚线图框
-    pen = QPen(QColor("#e0533d"))
-    pen.setStyle(Qt.DashLine)
-    pen.setWidthF(max(1.0, 1.2))
-    painter.setPen(pen)
-    rx = x_mm * px
-    ry = y_mm * px
-    rw = w_mm * px
-    rh = h_mm * px
-    painter.drawRect(round(rx), round(ry), round(rw), round(rh))
-    # 四边距标签（mm）
-    painter.setFont(_pick_preview_font(10))
-    painter.setPen(QColor("#b4331f"))
-    pw_px, ph_px = pw_mm * px, ph_mm * px
-    painter.drawText(
-        QRectF(0, 0, pw_px, ry),
-        Qt.AlignHCenter | Qt.AlignBottom,
-        f"上 {y_mm:.0f}",
-    )
-    painter.drawText(
-        QRectF(0, ry + rh, pw_px, ph_px - (ry + rh)),
-        Qt.AlignHCenter | Qt.AlignTop,
-        f"下 {ph_mm - (y_mm + h_mm):.0f}",
-    )
-    painter.drawText(
-        QRectF(0, ry, rx, rh),
-        Qt.AlignRight | Qt.AlignVCenter,
-        f"左 {x_mm:.0f}",
-    )
-    painter.drawText(
-        QRectF(rx + rw, ry, pw_px - (rx + rw), rh),
-        Qt.AlignLeft | Qt.AlignVCenter,
-        f"右 {pw_mm - (x_mm + w_mm):.0f}",
-    )
 
 
 def compose_outputs_horizontal(outputs: list, gap: int = 12) -> QImage:
@@ -465,10 +466,7 @@ class PreviewWorker(QObject):
                 image_name=self.print_spec.get("name"),
                 image_rect=self.print_spec.get("rect"),
             )
-            annotate = bool(
-                (self.print_spec.get("args") or {}).get("annotate_margins")
-            )
-            image = compose_print_page(image, plan, annotate=annotate)
+            image = compose_print_page(image, plan)
         if not self.longest_edge:
             return image  # 不缩放：调用方需要原始分辨率
         return image.scaled(

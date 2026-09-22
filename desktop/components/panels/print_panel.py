@@ -14,6 +14,7 @@ from desktop.components.panels.base import StagePanel, default_for
 from desktop.components.panels.params_spec import DEFAULTS
 from core.command_spec import border_has_padding
 from desktop.components.panels.print_form import PrintFormMixin
+from desktop.services.font_catalog import AUTO_VALUE, catalog
 from desktop.components.panels.print_params import (
     DEFAULT_PARAMS, EXCLUDED_KEYS, PAPER_SIZES,
     margin_to_text, parse_color, parse_margin4,
@@ -76,6 +77,7 @@ class PrintPanel(PrintFormMixin, StagePanel):
         # 会覆盖 setFocusPolicy
         self._apply_focus_policy(self)
         self._connect_preview_signals()
+        self._connect_font_catalog()
 
     def _extra_param_signals(self) -> list:
         """节点表不是标准控件：它自己的 ``changed`` 也要算"用户改了参数"。
@@ -84,6 +86,31 @@ class PrintPanel(PrintFormMixin, StagePanel):
         「节点表改了、暂存里没有」这种半截状态。
         """
         return [self.nodes_list.changed]
+
+    def _connect_font_catalog(self) -> None:
+        """接上字体目录：启动后台扫描（全局只一次）+ 扫完刷新两个下拉。
+
+        扫描在**后台线程**跑（本机约 7 秒），这里只是发起，不等待；列表先
+        用静态候选（仿宋/宋体/雅黑/黑体…），扫完自动把用户自己装的字体补
+        进来，用户的选择始终保留。
+        """
+        font_catalog = catalog()
+        font_catalog.scan_finished.connect(self._refresh_font_combos)
+        font_catalog.start_scan()
+
+    def _refresh_font_combos(self, items) -> None:
+        """后台扫描完成后：重建两个字体下拉，保住当前选择。"""
+        for combo in (self.title_font, self.page_number_font):
+            current = combo.currentData()
+            combo.blockSignals(True)
+            combo.clear()
+            for label, value in items or ():
+                combo.addItem(label, userData=value)
+            # 列表里没有当前值（配置来自别的机器）→ 补一项，别悄悄改回自动
+            if current and combo.findData(current) < 0:
+                combo.addItem(str(current), userData=current)
+            combo.blockSignals(False)
+            self._set_combo(combo, current, AUTO_VALUE)
 
     def _connect_preview_signals(self) -> None:
         """把影响排版的控件接到 params_changed（供第四步效果预览刷新）。
@@ -96,12 +123,14 @@ class PrintPanel(PrintFormMixin, StagePanel):
 
         for combo in (
             self.paper_size, self.orientation,
+            self.title_font, self.page_number_font, self.page_number_format,
         ):
             combo.currentTextChanged.connect(emit)
         for edit in (
             self.page_margins, self.left_margins, self.right_margins,
             self.title_text, self.title_color,
             self.page_number_color, self.skip_pages,
+            self.page_number_prefix, self.page_number_suffix,
         ):
             edit.textChanged.connect(emit)
         # 「距页边」是勾选框 + 四个距离输入（不再是"上,右,下,左"文本框）
@@ -125,8 +154,6 @@ class PrintPanel(PrintFormMixin, StagePanel):
         self.nodes_list.changed.connect(emit)
         # 通用边距被用户手动改动后，上游 border 级联不再覆盖其值
         self.page_margins.textEdited.connect(self._on_margin_edited)
-        # 预览标注开关：切换即刷新第四步效果预览
-        self.annotate_margins.toggled.connect(emit)
 
     def set_source_defaults(self, source_stem: str) -> None:
         """切换任务时调用：以源 PDF 名派生默认值并重置表单。
@@ -206,7 +233,7 @@ class PrintPanel(PrintFormMixin, StagePanel):
         # title_text（古籍名称）不跟着打印标题开关禁用——它挪到了输出与纸张
         # 组，还作为 pdf_name 联动的派生源，任何时候都应该可编辑
         for w in (
-            self.title_font_size, self.title_color,
+            self.title_font, self.title_font_size, self.title_color,
             self._title_inset["enabled"], self.nodes_list,
         ):
             w.setEnabled(title_on)
@@ -214,7 +241,10 @@ class PrintPanel(PrintFormMixin, StagePanel):
         for w in (
             self.page_number_start, self.page_number_end,
             self.page_number_end_to_last, self.page_number_base,
-            self.page_number_font_size, self.page_number_color,
+            self.page_number_format, self.page_number_prefix,
+            self.page_number_suffix,
+            self.page_number_font, self.page_number_font_size,
+            self.page_number_color,
             self._page_number_inset["enabled"],
         ):
             w.setEnabled(num_on)
@@ -279,6 +309,8 @@ class PrintPanel(PrintFormMixin, StagePanel):
             "page_margins": page_margins,
             "title_printing": self.title_printing.isChecked(),
             "title_text": self.title_text.text().strip(),
+            # 空串 = 「自动（仿宋优先）」：存 None，与 CLI/模板的默认值一致
+            "title_font": self.title_font.currentData() or None,
             "title_font_size": self.title_font_size.value(),
             "title_color": self.title_color.text().strip(),
             "title_position": self._fixed_layout("title", "position"),
@@ -288,13 +320,21 @@ class PrintPanel(PrintFormMixin, StagePanel):
             "page_number_printing": self.page_number_printing.isChecked(),
             "page_number_start_page": self.page_number_start.value(),
             "page_number_base": self.page_number_base.value(),
+            # ⚠️ 前缀/后缀**不能**用 `or` 兜底：空串是合法值（用户只要数字），
+            # `or` 会把它悄悄变回默认的「第/頁」。
+            "page_number_prefix": self.page_number_prefix.text(),
+            "page_number_suffix": self.page_number_suffix.text(),
+            "page_number_format": (
+                self.page_number_format.currentData()
+                or DEFAULT_PARAMS["page_number_format"]
+            ),
+            "page_number_font": self.page_number_font.currentData() or None,
             "page_number_font_size": self.page_number_font_size.value(),
             "page_number_color": self.page_number_color.text().strip(),
             "page_number_position": self._fixed_layout("page_number", "position"),
             "page_number_orientation": self._fixed_layout("page_number", "orientation"),
             "page_number_margins": self._inset_values("page_number"),
             "skip_pages": text_to_skip_pages(self.skip_pages.text()),
-            "annotate_margins": self.annotate_margins.isChecked(),
         }
         if not self.page_number_end_to_last.isChecked():
             args["page_number_end_page"] = self.page_number_end.value()
@@ -344,6 +384,7 @@ class PrintPanel(PrintFormMixin, StagePanel):
         self.right_margins.setText(margin_to_text(p.get("right_page_margins")))
 
         self.title_printing.setChecked(bool(default_for(p, d, "title_printing")))
+        self._set_font_combo(self.title_font, p.get("title_font"))
         self.title_font_size.setValue(int(default_for(p, d, "title_font_size")))
         self.title_color.setText(str(default_for(p, d, "title_color")))
         # ⚠️ 「位置」「文字方向」界面已删除（见 PrintFormMixin.FIXED_TEXT_LAYOUT）：
@@ -377,16 +418,26 @@ class PrintPanel(PrintFormMixin, StagePanel):
             self.page_number_end_to_last.setChecked(False)
             self.page_number_end.setValue(int(end_page))
         self.page_number_base.setValue(int(default_for(p, d, "page_number_base")))
+        # 前缀/后缀用 default_for（只在缺键或 None 时回落）：用户清空输入框
+        # 表示"只要数字"，不能被兜底成默认的「第/頁」
+        self.page_number_prefix.setText(
+            str(default_for(p, d, "page_number_prefix") or "")
+        )
+        self.page_number_suffix.setText(
+            str(default_for(p, d, "page_number_suffix") or "")
+        )
+        self._set_combo(
+            self.page_number_format,
+            p.get("page_number_format"),
+            DEFAULT_PARAMS["page_number_format"],
+        )
+        self._set_font_combo(self.page_number_font, p.get("page_number_font"))
         self.page_number_font_size.setValue(int(default_for(p, d, "page_number_font_size")))
         self.page_number_color.setText(str(default_for(p, d, "page_number_color")))
         # 同标题：「位置」「文字方向」已在桌面端删除，不回填、不改写。
         self._set_inset_values("page_number", p.get("page_number_margins"))
 
         self.skip_pages.setText(skip_pages_to_text(p.get("skip_pages")))
-
-        self.annotate_margins.setChecked(
-            bool(default_for(p, d, "annotate_margins"))
-        )
 
         self._sync_enabled()
         # 历史回填/恢复默认也要刷新第四步的效果预览（此时可能还没人监听）

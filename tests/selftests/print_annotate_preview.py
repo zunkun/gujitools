@@ -1,32 +1,26 @@
 # -*- coding: utf-8 -*-
-"""第四步「预览标注图框与边距」自测：只画在预览、不进 PDF。
+"""「预览标注图框与边距」已移除的回归守卫。
 
-背景：需求②要求第四步用虚线框出图片位置、四边标注边距（mm），作为作图
-标识；用户拍板「只画在预览」——即只在第四步「打印效果」预览里画，不进入
-成品 PDF。本模块钉住这条边界不变量：
+背景：原先第四步有个 ``annotate_margins`` 开关——在「打印效果」预览里用
+虚线框出图片位置、四边标注边距（mm）。用户后来**删掉了这个参数**：第四步
+版面编辑器里可以直接拖拽图框，边框本来就看得到，再画一层红色标注既冗余
+又碍眼（2026-09-22 移除）。
 
-1. 入口与唯一绘制函数：``compose_print_page`` 接受 ``annotate`` 开关，
-   ``_draw_margin_annotation`` 是唯一画标注的函数；
-2. 行为隔离（双向）：``annotate=False`` 不画任何标注（预览里没有红框/红字），
-   ``annotate=True`` 画出虚线图框 + 四边 mm 标注；
-3. 不污染成品：``functions/print.py`` 的 PDF 生成路径**完全不碰**标注绘制
-   （不引用 ``_draw_margin_annotation`` / ``compose_print_page`` / 标注开关），
-   带着 ``annotate_margins=True`` 也能正常出 PDF、几何不受影响；
-4. 开关接线：``core.command_spec.PRINT_DEFAULTS["annotate_margins"]`` 默认
-   False；``preview_worker`` 从 ``print_spec["args"]`` 读该键传给
-   ``compose_print_page``。
+本模块钉住"确实移除干净"，防止哪天有人又把它加回来：
 
-判据（双向）：标注像素计数，``annotate=False`` 必为 0、``annotate=True`` 必
-大于 0——把 ``_draw_margin_annotation`` 改成空函数会红（True 分支不再有红
-像素），把开关焊死成「总是画」也会红（False 分支冒出红像素），故守卫不会
-「注入后全绿」失效。
+1. ``compose_print_page`` 不再接受 ``annotate`` 开关，预览里**不再出现**
+   任何标注红像素；
+2. 绘制函数 ``_draw_margin_annotation`` 已不存在；
+3. 参数三层（CLI 默认 / 桌面表单 / guji.yaml 模板）都不再有这个键；
+4. 成品 PDF 的生成路径不碰它（这条原本就有，保留）；
+5. 顺带保留一条有价值的几何断言：**PDF 与预览同几何**（≤1.5pt）。
 """
 
 import inspect
 
 NAME = "print_annotate_preview"
 DEPENDS: list[str] = []
-TITLE = "第四步预览标注只画预览不进PDF"
+TITLE = "预览标注已移除（图框可拖拽，不再画红框）"
 
 from tests.selftests._context import ok
 
@@ -56,54 +50,57 @@ class _StubPlan:
 
 
 def run(ctx) -> None:
+    import os
     from pathlib import Path
 
-    from PySide6.QtGui import QColor, QImage, QPainter
+    from PySide6.QtGui import QColor, QImage
 
+    import desktop.workers.preview_worker as pw
     from core.command_spec import PRINT_DEFAULTS
-    from desktop.workers.preview_worker import (
-        _draw_margin_annotation,
-        compose_print_page,
-    )
+    from desktop.workers.preview_worker import compose_print_page
 
-    # ---- 1. 入口与唯一绘制函数 ----
+    # ---- 1. 开关与绘制函数都已消失 ----
     sig = inspect.signature(compose_print_page)
-    ok("compose_print_page 接受 annotate 开关",
-       "annotate" in sig.parameters, str(list(sig.parameters)))
-    ok("_draw_margin_annotation 存在且签名为 (painter, plan, density)",
-       callable(_draw_margin_annotation)
-       and len(inspect.signature(_draw_margin_annotation).parameters) == 3)
+    ok("compose_print_page 不再接受 annotate 开关",
+       "annotate" not in sig.parameters, str(list(sig.parameters)))
+    ok("标注绘制函数 _draw_margin_annotation 已删除",
+       not hasattr(pw, "_draw_margin_annotation"))
+    ok("preview_worker 源码里不再有 annotate_margins",
+       "annotate_margins" not in Path(pw.__file__).read_text(encoding="utf-8"))
 
-    # ---- 2. 行为隔离（双向）----
+    # ---- 2. 预览里不再出现标注红像素 ----
     plan = _StubPlan()
     density = 4.0  # 20mm×4 = 80×80px，像素计数的迭代量可接受
-    # 纯白源图，避免任何非白像素干扰红像素计数
     white = QImage(100, 100, QImage.Format_RGB32)
     white.fill(QColor("#ffffff"))
+    rendered = compose_print_page(white, plan, px_per_mm=density)
+    ok("预览位图里没有标注红框/红字",
+       _count_annotation_pixels(rendered) == 0,
+       str(_count_annotation_pixels(rendered)))
 
-    off = compose_print_page(white, plan, px_per_mm=density, annotate=False)
-    on = compose_print_page(white, plan, px_per_mm=density, annotate=True)
-    cnt_off = _count_annotation_pixels(off)
-    cnt_on = _count_annotation_pixels(on)
-    ok("annotate=False → 预览无标注红像素", cnt_off == 0, str(cnt_off))
-    ok("annotate=True → 预览画出标注（虚线框 + 四边距）", cnt_on > 0, str(cnt_on))
+    # ---- 3. 参数三层都不再有这个键 ----
+    ok("CLI 默认不含 annotate_margins",
+       "annotate_margins" not in PRINT_DEFAULTS,
+       f"{sorted(PRINT_DEFAULTS)[:4]}…")
 
-    # 直接调用 _draw_margin_annotation 也应产出红像素（证明其确为绘制者）
-    direct = QImage(80, 80, QImage.Format_RGB32)
-    direct.fill(QColor("#ffffff"))
-    p = QPainter(direct)
-    _draw_margin_annotation(p, plan, density)
-    p.end()
-    ok("直接调用 _draw_margin_annotation 即画出标注",
-       _count_annotation_pixels(direct) > 0, str(_count_annotation_pixels(direct)))
+    from desktop.components.panels.print_params import DEFAULT_PARAMS
 
-    # ---- 3. 不污染成品 PDF ----
-    pw_src = Path(__import__(
-        "desktop.workers.preview_worker", fromlist=["x"]
-    ).__file__).read_text(encoding="utf-8")
-    ok("preview_worker 从 print_spec['args'] 读 annotate_margins",
-       "annotate_margins" in pw_src)
+    ok("桌面表单默认不含 annotate_margins",
+       "annotate_margins" not in DEFAULT_PARAMS)
 
+    import yaml
+
+    root = ctx.project_root if hasattr(ctx, "project_root") else None
+    if root is None:
+        root = os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))))
+    template = yaml.safe_load(
+        open(os.path.join(str(root), "static", "guji.yaml"), encoding="utf-8")
+    )
+    ok("模板 print 段不含 annotate_margins",
+       "annotate_margins" not in template.get("print", {}))
+
+    # ---- 4. 成品 PDF 的生成路径不碰它 ----
     fp_src = Path(__import__(
         "functions.print", fromlist=["x"]
     ).__file__).read_text(encoding="utf-8")
@@ -113,26 +110,21 @@ def run(ctx) -> None:
     ok("functions/print.py 不把 annotate_margins 当绘制开关",
        "annotate_margins" not in fp_src)
 
-    # 带着 annotate_margins=True（预览专属键）也必须能正常出 PDF，且几何不受影响
+    # ---- 5. PDF 与预览同几何（保留下来的有价值断言）----
     import pymupdf
 
     from functions.print import PrintFunction
     from utils.page_layout import plan_print_page
 
-    tmp = Path(ctx.tmp) / "annotate_clean"
+    tmp = Path(ctx.tmp) / "annotate_removed"
     img_dir = tmp / "imgs"
     img_dir.mkdir(parents=True, exist_ok=True)
     src_png = img_dir / "0001.png"
     _q = QImage(800, 1200, QImage.Format_RGB32)
     _q.fill(QColor("#f2f2f2"))
-    _qp = QPainter(_q)
-    _qp.setPen(QColor("#333333"))
-    _qp.drawRect(10, 10, 780, 1180)
-    _qp.end()
     _q.save(str(src_png))
 
     pdf_args = {
-        # 与 CommandArgs 一致：input/output 必须是 Path
         "input": img_dir,
         "output": tmp / "out",
         "pdf_name": "clean.pdf",
@@ -141,12 +133,11 @@ def run(ctx) -> None:
         "page_margins": [15.0, 10.0, 20.0, 10.0],
         "title_printing": False,
         "page_number_printing": False,
-        "annotate_margins": True,  # 预览专属键，PDF 不应受影响
         "workers": 1,
     }
     PrintFunction(dict(pdf_args)).execute()
     pdf_path = tmp / "out" / "clean.pdf"
-    ok("带 annotate_margins 也能正常生成 PDF", pdf_path.exists(), str(pdf_path))
+    ok("不带预览专属键也能正常生成 PDF", pdf_path.exists(), str(pdf_path))
     doc = pymupdf.open(str(pdf_path))
     try:
         ok("PDF 页数与条目一致", doc.page_count == 1, str(doc.page_count))
@@ -162,7 +153,7 @@ def run(ctx) -> None:
             0, 1,
         )
         ex, ey, ew, eh = expect.image
-        ok("带 annotate_margins 的 PDF 几何与预览一致（≤1.5pt）",
+        ok("PDF 几何与预览一致（≤1.5pt）",
            abs(bx0 - ex * pt) < 1.5
            and abs(by0 - ey * pt) < 1.5
            and abs((bx1 - bx0) - ew * pt) < 1.5
@@ -171,7 +162,3 @@ def run(ctx) -> None:
            f"plan={tuple(round(v * pt, 2) for v in expect.image)}")
     finally:
         doc.close()
-
-    # ---- 4. 开关接线 ----
-    ok("PRINT_DEFAULTS.annotate_margins 默认 False",
-       PRINT_DEFAULTS.get("annotate_margins") is False)

@@ -4,7 +4,7 @@
 
 图像处理功能模块：GUI 与 CLI 共用同一套算法
 
-覆盖 11 个模块、11 个公开类、33 个公开函数/方法（生成于 2026-09-22）。
+覆盖 11 个模块、11 个公开类、35 个公开函数/方法（生成于 2026-09-22）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -16,13 +16,13 @@
 | [`functions.base`](#functionsbase) | 1 | 4 |
 | [`functions.crop`](#functionscrop) | 1 | 1 |
 | [`functions.crop_remove`](#functionscrop_remove) | 1 | 1 |
-| [`functions.detect`](#functionsdetect) | 2 | 8 |
+| [`functions.detect`](#functionsdetect) | 2 | 9 |
 | [`functions.extract`](#functionsextract) | 1 | 2 |
 | [`functions.init`](#functionsinit) | 1 | 3 |
 | [`functions.print`](#functionsprint) | 1 | 2 |
 | [`functions.rembg`](#functionsrembg) | 1 | 2 |
 | [`functions.text_region`](#functionstext_region) | 1 | 2 |
-| [`functions.yolo_service`](#functionsyolo_service) | 1 | 7 |
+| [`functions.yolo_service`](#functionsyolo_service) | 1 | 8 |
 
 ---
 
@@ -293,7 +293,8 @@ GUI detect 阶段当中间步骤），开启时把标注图（框 + 坐标文字
 | --- | --- |
 | `extract_first_box(boxes) -> Optional[Box]` | 从 `detect_left_right_boxes` 的返回里取面积最大的框的 4 个坐标。 |
 | `last_detect_report() -> DetectReport` | 取本线程最近一次按路径检测的来源信息（默认 in-process/0.0）。 |
-| `backend_log_line(report: DetectReport) -> str` | 把「模型从哪来、加载用了多久」说成一句人读日志（GUI 与 CLI 共用措辞）。 |
+| `backend_log_line(backend: str, load_seconds: float) -> str` | 把「模型从哪来、加载用了多久」说成一句人读日志（GUI 与 CLI 共用措辞）。 |
+| `warm_up_detect_model() -> Tuple[str, float]` | 准备好检测模型，返回 ``(可写进日志的说明, 本次加载耗时秒)``。 |
 | `detect_page_boxes_by_path(image_path, model=None) -> Tuple[Optional[Box], Optional[Box]]` | 按**路径**检测左右文本框：优先常驻 YOLO 服务，失败回落本进程内。 |
 | `format_box(box) -> str` | 把框格式化为 `x1,y1,x2,y2`，None 显示为 `-`（日志用，CLI/GUI 共用一份）。 |
 | `detect_page_boxes(img_bgr, model=None) -> Tuple[Optional[Box], Optional[Box]]` | 检测一页图片的左右文本框，返回 (left_box, right_box)。 |
@@ -313,7 +314,7 @@ GUI detect 阶段当中间步骤），开启时把标注图（框 + 坐标文字
 返回:
     (x1, y1, x2, y2)，或 None（该侧无框）。
 
-#### `backend_log_line(report: DetectReport) -> str`
+#### `backend_log_line(backend: str, load_seconds: float) -> str`
 
 把「模型从哪来、加载用了多久」说成一句人读日志（GUI 与 CLI 共用措辞）。
 
@@ -321,6 +322,18 @@ GUI detect 阶段当中间步骤），开启时把标注图（框 + 坐标文字
 **常驻服务进程**里，而那边没有控制台（输出进 `%TEMP%/guji-yolo-service.log`），
 所以只能由调用方把服务回报的耗时转发到自己的日志里——否则用户完全看不出
 模型到底加载了没有、用了几秒。
+
+⚠️ in-process 时**不要**再以「加载 YOLO 模型完成」开头：`load_yolo_model()`
+自己已经打印过一行带明细的（导入/读权重各多少），再说一遍就是重复噪音。
+这里的措辞重点是**归属**——cli 一次性任务用完即释放、desktop 交给常驻服务。
+
+#### `warm_up_detect_model() -> Tuple[str, float]`
+
+准备好检测模型，返回 ``(可写进日志的说明, 本次加载耗时秒)``。
+
+⚠️ 调用方应在**开始逐张检测之前**调它：模型加载的耗时必须单独计时、单独报出，
+不能落到"第一张图"的耗时里——用户明确提过那样看起来不合理（第一张 5 秒、
+其余 200 毫秒，像是某张图有问题，其实是模型在加载）。
 
 #### `detect_page_boxes_by_path(image_path, model=None) -> Tuple[Optional[Box], Optional[Box]]`
 
@@ -603,25 +616,36 @@ area=4「整页」模式下完全不检测，模型也就不会被加载——�
 复用 FunctionBase.execute() 的线程池、重试与日志；单图完整流程
 （读取→YOLO 检测→area/border 规则→输出）在 _process_single_image 中。
 
+⚠️ 在进入并发引擎**之前**先把模型备好（`warm_up_detect_model`）：
+area=4 整页模式完全不用 YOLO，故先判断再预热，避免白加载；非整页时
+这笔开销被单独计时、单独报出，不会压在"第一张图"的耗时上。
+
 ---
 
 ## `functions.yolo_service`
 
 源码：[`functions/yolo_service.py`](../../functions/yolo_service.py)
 
-常驻 YOLO 服务：让**所有进程与线程共用同一份已加载的模型**。
+常驻 YOLO 服务：**desktop 侧**多次检测共用同一份已加载的模型。
+
+## 归属：只属于 desktop，CLI 不用
+
+原则（用户定）：**cli 与 desktop 是两套系统，内存不互通**。
+
+- **desktop**：GUI 每点一次「检测」都是新的 worker 子进程，进程一退模型就没了，
+  下一次又从头付一遍——所以模型放进这里这个常驻进程，desktop 的多次执行共用，
+  空闲 `TTL`（默认 5 分钟）没人用就自行退出、把约 350MB 还给系统。
+  `desktop.py` 会把 ``GUJI_YOLO_SERVICE`` 置 ``1`` 并传给它派生的全部 worker。
+- **CLI**：一次性任务，模型在本进程内加载、进程退出即释放，**不占常驻内存**。
+  `cli.py` 显式把 ``GUJI_YOLO_SERVICE`` 置 ``0``，因此 CLI 的 crop/detect/cropremove
+  完全不经过本模块（直接走 `functions.detect.detect_page_boxes` 的进程内路径），
+  行为与本模块引入之前完全一致。
 
 ## 为什么需要它
 
-frozen 打包下 `import torch` + 首次 `YOLO(weights)` 要 **约 5.4 秒**，而**每次
-点「检测」都是一个全新的 worker 子进程**——进程一退，模型连同 torch 运行时
-（工作集约 350MB）一起被系统回收，下一次又从头付一遍。用户看到的就是日志里
-「加载 YOLO 模型: …」第二次出现、以及"第二次点还是要等五秒"。
-
-把模型搬进一个**独立的常驻进程**后，任何需要 YOLO 的进程都把「图片路径」发给
-它，模型只加载一次、被所有 worker（GUI 的每次执行、CLI 的 crop/cropremove/detect）
-共用——这就是「全局只加载一次」。空闲 ``TTL``（默认 5 分钟）没人用，服务自行
-退出，把那 350MB 还给系统。
+frozen 打包下 `import torch` + 首次 `YOLO(weights)` 要 **约 5.4 秒**，desktop 侧
+不常驻的话，每次点「检测」都要重付。把模型搬进独立常驻进程，desktop 的多次
+执行只加载一次。
 
 ## 两个关键设计
 
@@ -641,15 +665,15 @@ frozen 打包下 `import torch` + 首次 `YOLO(weights)` 要 **约 5.4 秒**，�
 （多半是升级后残留的旧服务）忽略并另起一个，旧的靠 TTL 自灭——**不做互相驱逐**，
 免得两个版本互相杀。
 
-服务端**允许并发连接**（每个客户端线程一条）：CLI 的 `detect` 本来就是
-8 线程共享一个模型并发推理，服务里也必须保持同样的并发度，否则等于把 CLI 的
-并行度砍成 1。模型加载本身仍然只做一次（双重检查锁在 `yolo_utils` 里）。
+服务端**允许并发连接**（每个客户端线程一条）：desktop 的批量检测本来就是
+多线程共享一个模型并发推理，服务里也必须保持同样的并发度，否则等于把并行度
+砍成 1。模型加载本身仍然只做一次（双重检查锁在 `yolo_utils` 里）。
 
 ### 模块常量
 
 | 名称 | 值 |
 | --- | --- |
-| SERVICE_FILE_NAME | `"guji-yolo-service.json"` |
+| SERVICE_FILE_PREFIX | `"guji-yolo-service-"` |
 | DEFAULT_TTL_SECONDS | `300.0` |
 | CONNECT_TIMEOUT | `3.0` |
 | DETECT_TIMEOUT | `300.0` |
@@ -666,13 +690,14 @@ frozen 打包下 `import torch` + 首次 `YOLO(weights)` 要 **约 5.4 秒**，�
 
 | 函数 | 说明 |
 | --- | --- |
-| `service_file() -> Path` | 发现文件的完整路径。 |
+| `service_file(fp: str) -> Path` | 发现文件的完整路径（**按指纹区分**，开发版与正式版各用各的）。 |
 | `log_file() -> Path` | 服务日志路径（服务是分离进程、没有控制台，日志必须落文件才可诊断）。 |
 | `serve() -> int` | 服务主循环：绑定回环端口、写发现文件、按 TTL 空闲自退。返回进程退出码。 |
 | `service_in_use() -> bool` | 本线程是否已经在用常驻服务（日志里说明"模型住在哪"用）。 |
 | `detect_boxes_via_service(image_path, area: int=1) -> ServiceDetect \| None` | 把一张图交给常驻服务检测，返回 :class:`ServiceDetect`。 |
+| `warm_up() -> tuple[str, float]` | 确保模型就绪，返回 ``(backend, 本次加载耗时秒)``。 |
 | `service_status(timeout: float=CONNECT_TIMEOUT)` | 查询当前服务的状态（测试与排障用）；没有服务返回 None。 |
-| `shutdown_service(timeout: float=CONNECT_TIMEOUT) -> bool` | 让当前服务退出（测试收尾用；正常运行时靠 TTL 自己退）。 |
+| `shutdown_service(timeout: float=CONNECT_TIMEOUT) -> bool` | 让**本构建**的服务退出（desktop 关闭时调用；测试收尾也用它）。 |
 
 #### `detect_boxes_via_service(image_path, area: int=1) -> ServiceDetect | None`
 
@@ -684,5 +709,21 @@ frozen 打包下 `import torch` + 首次 `YOLO(weights)` 要 **约 5.4 秒**，�
 
 `area` 只为兼容调用方签名保留：整页模式（area=4）在上层就已分流、根本不会
 走到这里，因此服务协议里不带它。
+
+#### `warm_up() -> tuple[str, float]`
+
+确保模型就绪，返回 ``(backend, 本次加载耗时秒)``。
+
+**单独成一步**的意义：模型加载（frozen 下约 5 秒）必须被单独计时、单独报出，
+否则会落到"第一张图"的耗时里，看起来像某一张特别慢。
+
+backend 为 ``"service"``（常驻服务里就绪）或 ``"in-process"``（服务不可用，
+本进程内加载）。耗时 0.0 表示模型本来就绪、这次没花时间——正常复用时的样子。
+
+#### `shutdown_service(timeout: float=CONNECT_TIMEOUT) -> bool`
+
+让**本构建**的服务退出（desktop 关闭时调用；测试收尾也用它）。
+
+只动自己指纹的服务——开发版与正式版可同时存在，互不驱逐。
 
 ---

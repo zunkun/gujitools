@@ -16,6 +16,7 @@ from PySide6.QtGui import QColor
 from desktop.components.panels.params_spec import (
     DIRECTIONS,
     EXCLUDED_KEYS,
+    PAGE_NUMBER_FORMATS,
     PAPER_SIZES,
     POSITIONS,
     PRINT_DEFAULTS,
@@ -24,7 +25,8 @@ from desktop.components.panels.params_spec import (
 )
 
 __all__ = [
-    "DEFAULT_PARAMS", "DIRECTIONS", "EXCLUDED_KEYS", "PAPER_SIZES",
+    "DEFAULT_PARAMS", "DIRECTIONS", "EXCLUDED_KEYS", "PAGE_NUMBER_FORMATS",
+    "PAPER_SIZES",
     "POSITIONS", "SIDES", "TEXT_ORIENTATIONS",
     "parse_color", "parse_margin4", "margin_to_text",
     "skip_pages_to_text", "text_to_skip_pages",
@@ -45,12 +47,14 @@ __all__ = [
 _FORM_KEYS = (
     "title_text", "pdf_name", "paper_size", "orientation",
     "page_margins", "left_page_margins", "right_page_margins",
-    "title_printing", "title_font_size", "title_color",
+    "title_printing", "title_font", "title_font_size", "title_color",
     "title_margins", "title_switch_nodes",
     "page_number_printing", "page_number_start_page",
     "page_number_end_page", "page_number_base",
-    "page_number_font_size", "page_number_color", "page_number_margins",
-    "skip_pages", "annotate_margins",
+    "page_number_font", "page_number_font_size", "page_number_color",
+    "page_number_margins",
+    "page_number_format", "page_number_prefix", "page_number_suffix",
+    "skip_pages",
 )
 DEFAULT_PARAMS: dict = {k: v for k, v in PRINT_DEFAULTS.items() if k in _FORM_KEYS}
 assert set(DEFAULT_PARAMS) == set(_FORM_KEYS), "PRINT_DEFAULTS 缺少表单可见键"

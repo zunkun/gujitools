@@ -77,13 +77,13 @@ gujitools 桌面端与 worker 统一入口。
 
 gujitools 全局配置常量。
 
-当前仅暴露 VERSION（程序版本号 "1.1"），供 CLI/GUI 的 --version 等场景读取。
+当前仅暴露 VERSION（程序版本号），供 CLI/DESKTOP 的 --version 等场景读取。
 各功能的运行时配置主要来自命令行参数与 guji.yaml，不在本模块维护。
 
 ### 模块常量
 
 | 名称 | 值 |
 | --- | --- |
-| VERSION | `"1.2"` |
+| VERSION | `"1.3"` |
 
 ---

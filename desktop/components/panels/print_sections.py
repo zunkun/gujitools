@@ -25,7 +25,10 @@ from qfluentwidgets import FluentIcon as FIF
 from desktop.components.common.safecomment import SafeSpinBox
 from desktop.components.panels.print_inset import PrintInsetMixin
 from desktop.components.panels.print_nodes import NodeListWidget
-from desktop.components.panels.print_params import DIRECTIONS, PAPER_SIZES
+from desktop.components.panels.print_params import (
+    DIRECTIONS, PAGE_NUMBER_FORMATS, PAPER_SIZES,
+)
+from desktop.services.font_catalog import catalog
 from desktop.ui.widgets import combo_box
 
 
@@ -62,14 +65,6 @@ class PrintSectionsMixin(PrintInsetMixin):
         self._add_row(form, "通用边距", self.page_margins)
         self._add_row(form, "左页边距", self.left_margins)
         self._add_row(form, "右页边距", self.right_margins)
-        # 预览辅助：勾选后在「打印效果」预览里用虚线框出图片位置，并在四边
-        # 标注边距（mm）。只画在预览、不进入成品 PDF（交付书保持干净）。
-        self.annotate_margins = CheckBox("预览标注图框与边距")
-        self.annotate_margins.setToolTip(
-            "仅在第四步效果预览里用虚线标出图片边框、并在四边标注边距毫米数；"
-            "不影响生成的 PDF"
-        )
-        form.addRow(self.annotate_margins)
 
     def _build_title_section(self, root: QVBoxLayout) -> None:
         form = self._section(root, "标题排版")
@@ -77,6 +72,15 @@ class PrintSectionsMixin(PrintInsetMixin):
         form.addRow(self.title_printing)
         self.title_printing.toggled.connect(self._sync_enabled)
 
+        # 字体：默认「自动（仿宋优先）」。列表来自 font_catalog（静态候选 +
+        # 后台扫描到的系统字体），用户在下拉里挑的那一个会随参数一起保存。
+        self.title_font = self._make_combo(catalog().choices())
+        self.title_font.setToolTip(
+            "标题用哪种字体；默认为「自动」——有仿宋就用仿宋，没有则依次"
+            "降级到宋体、微软雅黑、黑体。"
+            "个别异体字/生僻字当前字体没有时，会自动用系统里其它字体补上，"
+            "不会画出空白。"
+        )
         title_size_box, self.title_font_size = self._spin_with_unit(200, "pt（磅）")
         self.title_color, title_color_btn = self._color_row()
         self._title_inset = self._make_inset("标题")
@@ -86,6 +90,7 @@ class PrintSectionsMixin(PrintInsetMixin):
         # 「有位置：上面/下面，如果是上面，只能有上面距离」——与其做动态
         # 联动，不如直接不给选：古籍书名在版框之上、竖排，本就是定式）。
         # 命令行/YAML 仍可用这两个键（默认值不变，见 core.command_spec）。
+        self._add_row(form, "字体", self.title_font)
         self._add_row(form, "字体大小", title_size_box)
         self._add_row(form, "颜色", title_color_btn)
         self._add_inset_rows(form, self._title_inset)
@@ -142,12 +147,32 @@ class PrintSectionsMixin(PrintInsetMixin):
         self.page_number_base.setRange(-100000, 100000)
         self.page_number_base.setMinimumWidth(80)
         self.page_number_base.setToolTip("用于跨书连续编号：实际页码 = 基数 + 当前页")
+        # 页码字体独立于标题：常见搭配是「书名仿宋、页码黑体」
+        self.page_number_font = self._make_combo(catalog().choices())
+        self.page_number_font.setToolTip(
+            "页码用哪种字体；默认为「自动」（仿宋优先，缺则逐级降级）。"
+            "与标题字体互不影响。"
+        )
         num_size_box, self.page_number_font_size = self._spin_with_unit(200, "pt（磅）")
         self.page_number_color, page_number_color_btn = self._color_row()
         self._page_number_inset = self._make_inset("页码")
         self._add_row(form, "起始页码", self.page_number_start)
         self._add_row(form, "结束页码", end_row)
         self._add_row(form, "页码基数", self.page_number_base)
+        # 页码样式：数字怎么排（中文/阿拉伯/干支）+ 前后缀（默认「第X頁」）。
+        # 想排「第 5 页」就把前缀写成「第 」、后缀写成「 页」——空格自己加，
+        # 程序不做任何补全，免得用户想要紧凑排版时被强行塞空格。
+        self.page_number_format = self._make_combo(PAGE_NUMBER_FORMATS)
+        self.page_number_format.setToolTip(
+            "页码数字的样式：中文数字（五）、阿拉伯数字（5）、"
+            "干支（甲子，按六十甲子循环）"
+        )
+        self.page_number_prefix = self._line_edit("数字前的字，如「第」")
+        self.page_number_suffix = self._line_edit("数字后的字，如「頁」")
+        self._add_row(form, "页码样式", self.page_number_format)
+        self._add_row(form, "前缀", self.page_number_prefix)
+        self._add_row(form, "后缀", self.page_number_suffix)
+        self._add_row(form, "字体", self.page_number_font)
         self._add_row(form, "字体大小", num_size_box)
         self._add_row(form, "颜色", page_number_color_btn)
         # 「位置」「文字方向」同标题：已在桌面端删除，页码恒在纸张**下边**、

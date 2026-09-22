@@ -28,6 +28,7 @@ from pathlib import Path
 from PySide6.QtCore import QProcess, Signal
 from PySide6.QtWidgets import QWidget
 
+from desktop.services.font_catalog import start_background_scan
 from desktop.store import STAGES, STAGE_LABELS
 from desktop.workers import WorkerHost
 from desktop.pages.taskdetail.detect import DetectMixin
@@ -101,6 +102,10 @@ class TaskDetailPage(
         self._install_draft_hooks()
         # 第三步实时预览：改参数/翻页时只重算当前页（见 rembg_live.RembgLiveMixin）
         self._init_rembg_live()
+        # 字体列表后台预热：一进任务（还在第一/二/三步）就起后台线程扫系统
+        # 字体，等用户翻到第四步时列表已就绪。扫描全局只跑一次、结果写磁盘
+        # 缓存，且**不阻塞**任何界面操作（详见 desktop.services.font_catalog）。
+        start_background_scan()
 
     # ------------------------------------------------------------------ 任务切换
     def set_task(self, task_id: str) -> None:

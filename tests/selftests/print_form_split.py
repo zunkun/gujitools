@@ -111,15 +111,18 @@ _CROSS_DEPS = {
         "_sync_enabled",         # PrintPanel
         "title_text", "pdf_name", "paper_size", "orientation",
         "page_margins", "left_margins", "right_margins",
-        "title_printing", "title_font_size", "title_color", "_title_inset",
+        "title_printing", "title_font", "title_font_size", "title_color",
+        "_title_inset",
         "nodes_list",
         "page_number_printing", "page_number_start", "page_number_end",
-        "page_number_end_to_last", "page_number_base", "page_number_font_size",
+        "page_number_end_to_last", "page_number_base",
+        "page_number_font", "page_number_font_size",
         "page_number_color", "_page_number_inset",
+        # 页码样式与前后缀（PAGE_NUMBER_FORMATS 的下拉 + 两个输入框）
+        "page_number_format", "page_number_prefix", "page_number_suffix",
         "skip_pages",
         # 本类继承 PrintInsetMixin，这两个是本类的"自己人"，但静态扫不到
         "_make_inset", "_add_inset_rows",
-        "annotate_margins",    # 本类 _build_margin_section 建的预览标注勾选框
     },
     "PrintInsetMixin": {
         "_add_row",              # base.StagePanel

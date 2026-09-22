@@ -31,6 +31,7 @@ from core.command_spec import (
     REMBG_TYPES as _REMBG_TYPES,
     TEXT_SIDE_MARGIN_MM,
 )
+from utils.page_layout import PAGE_NUMBER_FORMATS as _PAGE_NUMBER_FORMAT_VALUES
 
 # 不允许在表单中配置的键（系统管理：由 runner 按任务/阶段拼装）
 EXCLUDED_KEYS = ("input", "output", "workers", "clean", "resume", "_outpath")
@@ -65,6 +66,16 @@ REMBG_TYPES = [(f"{v} ({name})", v) for v, name in zip(_REMBG_TYPES, ("二值", 
 # print
 PAPER_SIZES = list(_PAPER_SIZES)
 DIRECTIONS = [("横版", "landscape"), ("竖版", "portrait")]
+# 页码数字样式：值必须来自 utils.page_layout（那里是唯一定义处），
+# 这里只补中文显示名——顺序/取值漂移会直接改变成品页码。
+PAGE_NUMBER_FORMATS = [
+    ("中文数字（五）", "chinese"),
+    ("阿拉伯数字（5）", "arabic"),
+    ("干支（甲子，60 循环）", "ganzhi"),
+]
+assert tuple(v for _, v in PAGE_NUMBER_FORMATS) == _PAGE_NUMBER_FORMAT_VALUES, (
+    "页码样式与 utils.page_layout.PAGE_NUMBER_FORMATS 不一致"
+)
 POSITIONS = [("上边", "top"), ("下边", "bottom")]
 TEXT_ORIENTATIONS = [("竖排", "vertical"), ("横排", "horizontal")]
 SIDES = [("双面", "both"), ("左页", "left"), ("右页", "right")]

@@ -4,7 +4,7 @@
 
 通用工具函数：几何、排序、图像 IO、PDF、YOLO
 
-覆盖 18 个模块、7 个公开类、84 个公开函数/方法（生成于 2026-09-22）。
+覆盖 19 个模块、9 个公开类、104 个公开函数/方法（生成于 2026-09-22）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -16,18 +16,19 @@
 | [`utils.box_geometry`](#utilsbox_geometry) | 2 | 4 |
 | [`utils.color_utils`](#utilscolor_utils) | 0 | 2 |
 | [`utils.file_utils`](#utilsfile_utils) | 0 | 2 |
+| [`utils.font_scan`](#utilsfont_scan) | 0 | 4 |
 | [`utils.font_setup`](#utilsfont_setup) | 3 | 11 |
-| [`utils.fonts`](#utilsfonts) | 0 | 4 |
+| [`utils.fonts`](#utilsfonts) | 1 | 13 |
 | [`utils.help`](#utilshelp) | 0 | 7 |
 | [`utils.image_io`](#utilsimage_io) | 0 | 2 |
 | [`utils.image_utils`](#utilsimage_utils) | 0 | 7 |
 | [`utils.margin_utils`](#utilsmargin_utils) | 0 | 2 |
 | [`utils.page_layout`](#utilspage_layout) | 2 | 13 |
 | [`utils.path_utils`](#utilspath_utils) | 0 | 2 |
-| [`utils.pdf_draw`](#utilspdf_draw) | 0 | 4 |
+| [`utils.pdf_draw`](#utilspdf_draw) | 1 | 9 |
 | [`utils.pdf_extract`](#utilspdf_extract) | 0 | 9 |
 | [`utils.sort_utils`](#utilssort_utils) | 0 | 2 |
-| [`utils.string_utils`](#utilsstring_utils) | 0 | 1 |
+| [`utils.string_utils`](#utilsstring_utils) | 0 | 3 |
 | [`utils.units`](#utilsunits) | 0 | 2 |
 | [`utils.yolo_utils`](#utilsyolo_utils) | 0 | 5 |
 
@@ -280,6 +281,55 @@ File: utils/color_utils.py
 
 ---
 
+## `utils.font_scan`
+
+源码：[`utils/font_scan.py`](../../utils/font_scan.py)
+
+扫描系统字体目录，找出所有含中文的字体文件。
+
+与 `utils.fonts` 的分工
+-----------------------
+`utils.fonts` 是**纯查表**：一张跨平台候选清单，查它永远很快（只 stat 几个
+已知路径），覆盖日常要用的字体。`utils.fonts` 因此是生成 PDF 的唯一入口——
+**出 PDF 的路上绝不做全盘扫描**，那会白白多花好几秒。
+
+本模块是**真扫描**：遍历系统字体目录、逐个文件读 cmap 判断有没有汉字。用户
+自己装的补字字体（花园明朝、BabelStone Han…）只有扫描才能发现，而它们恰恰是
+古籍异体字最需要的字体。代价是慢（本机 200+ 字体约 7 秒），因此：
+
+- 结果**缓存到磁盘**，第二次起毫秒级返回；
+- 只在 GUI 空闲时由后台线程跑（`desktop.services.font_catalog`），
+  绝不出现在主线程与生成 PDF 的路径上。
+
+扫描失败（没装 fontTools、目录不可读、文件损坏）一律返回空元组——调用方
+把它当"没有额外字体"，仍然有 `utils.fonts` 的候选表可用。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| _CACHE_NAME | `"guji-cjk-font-cache.json"` |
+| _MAX_DEPTH | `4` |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `font_directories() -> tuple[str, ...]` | 按平台给出要扫描的字体目录（可能不存在，调用方自己判空）。 |
+| `scan_system_fonts(force: bool=False) -> tuple[FontEntry, ...]` | 扫描系统里的中文字体，返回按显示名排序的条目。 |
+| `scan_seconds_hint() -> float` | 上一次扫描的耗时（秒）；没有记录返回 0.0（调试用）。 |
+| `timed_scan(force: bool=False) -> tuple[tuple[FontEntry, ...], float]` | 带计时的扫描（调试与自测用）：返回 (条目, 耗时秒)。 |
+
+#### `scan_system_fonts(force: bool=False) -> tuple[FontEntry, ...]`
+
+扫描系统里的中文字体，返回按显示名排序的条目。
+
+⚠️ 首次调用要遍历整个字体目录、逐个读 cmap，**本机约 7 秒**——
+只能在后台线程里调（见 `desktop.services.font_catalog`）。结果会写
+磁盘缓存，之后每次调用毫秒级返回。
+
+---
+
 ## `utils.font_setup`
 
 源码：[`utils/font_setup.py`](../../utils/font_setup.py)
@@ -431,7 +481,7 @@ zypper 会自己刷新元数据，直接尝试即可。若一个都查不出来�
 
 源码：[`utils/fonts.py`](../../utils/fonts.py)
 
-中文字体探测：跨平台候选路径 / 字体族名的**唯一定义处**。
+中文字体探测与降级：候选表、优先级链、字形覆盖查询的唯一定义处。
 
 为什么要抽这一层
 ----------------
@@ -441,8 +491,25 @@ PDF 的标题与页码（`utils.pdf_draw.register_fonts`）和检测框标注
 全部落空 → PDF 里的中文退回 ``Helvetica``（方块或丢字）、框标注退回
 ASCII 的 ``L`` / ``R`` / ``U``——**输出内容是错的却不报任何错**。
 
+为什么不能"指定死一个字体"（本层存在的根本原因）
+------------------------------------------------
+古籍标题里常有**异体字 / 生僻字**：仿宋只覆盖 GB2312 与扩展 A，遇到
+扩展 B（`U+20000` 起）的字就没有字形，fpdf 会静默画出空白（控制台只留一行
+"missing the following glyphs"）。系统里并非没有这些字——Windows 自带
+``simsunb.ttf``（宋体-ExtB）、``mingliub.ttc``——只是它们**不是仿宋**。
+
+因此这里提供三件事：
+
+1. **候选表**：跨平台的中文字体清单，带中文显示名与优先级分组
+   （仿宋 → 宋体 → 微软雅黑 → 黑体 → 其它），供用户挑选；
+2. **降级链**：把候选按优先级串成一条链，逐个字挑第一个"有这个字"的字体，
+   生僻字因此自动落到 ExtB 补字字体上，仿宋该用的地方仍是仿宋；
+3. **补字字体**（``fallback_only``）：只有扩展区生僻字的字体（宋体-ExtB 等）
+   只补字、不做主字体——它连常用字都没有，选它当主字体整页都会空。
+
 依赖方向：只 import 标准库，是 ``utils`` 的最底层（与 ``utils/units.py``
-同级），任何层都可引用。
+同级），任何层都可引用。字形查询按需 import ``fontTools``（缺失时退化为
+"假定全部支持"，只是不再逐字降级，不会崩）。
 
 设计取舍
 --------
@@ -456,40 +523,88 @@ ASCII 的 ``L`` / ``R`` / ``U``——**输出内容是错的却不报任何错**
 | 名称 | 值 |
 | --- | --- |
 | GUJI_FONT_ENV | `"GUJI_CJK_FONT"` |
+| GROUP_FANGSONG | `0` |
+| GROUP_SONG | `1` |
+| GROUP_YAHEI | `2` |
+| GROUP_HEI | `3` |
+| GROUP_OTHER | `4` |
+| GROUP_SUPPLEMENT | `9` |
+
+### `class FontEntry`
+
+一个可用的中文字体：显示名 + 文件路径 + 优先级组。
+
+``fallback_only`` 为真的条目只用于补字（缺字时才用），不作为主字体、
+也不出现在用户的选择列表里。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `exists() -> bool` | 字体文件是否真实存在（构造时不校验，用到才探测）。 |
 
 ### 模块函数
 
 | 函数 | 说明 |
 | --- | --- |
-| `cjk_font_paths() -> tuple` | 中文字体文件候选路径（按优先级）。 |
+| `known_entries() -> tuple[FontEntry, ...]` | 全部已知候选（按优先级），含不存在的。 |
+| `available_entries(with_supplement: bool=True) -> tuple[FontEntry, ...]` | 系统里真实存在的候选，按优先级排序（仿宋 → 宋体 → …）。 |
+| `selectable_entries() -> tuple[FontEntry, ...]` | 给用户挑的字体列表：不含"仅补字"字体，按优先级排序。 |
+| `find_entry(value) -> FontEntry \| None` | 按显示名 / 文件路径 / 文件名反查条目（用户配置回填用）。 |
+| `resolve_chain(preferred=None) -> list[FontEntry]` | 按优先级串出降级链：首选字体在前，补字字体垫底。 |
+| `glyphs(entry: FontEntry) -> frozenset \| None` | 该字体覆盖的码位集合；解析失败或没有 fontTools 时返回 None。 |
+| `supports(entry: FontEntry, char: str) -> bool` | 该字体是否有这个字符的字形（读不出 cmap 时按"有"处理）。 |
+| `pick_font(chain, char: str) -> FontEntry \| None` | 从降级链里挑第一个有这个字的字体；都没有则返回链首。 |
+| `cjk_font_paths() -> tuple` | 中文字体文件候选路径（按优先级）。返回的可能全都不存在。 |
 | `first_existing_cjk_font() -> str \| None` | 返回第一个真实存在的中文字体文件路径；全部缺失返回 None。 |
-| `cjk_font_families() -> tuple` | 按当前平台返回中文字体族名（按优先级），供 Qt 侧挑选。 |
-| `content_font_families() -> tuple` | 第四步 PDF 内容（标题 / 页码）的字体族名候选：**仿宋（衬线）优先**。 |
+| `cjk_font_families() -> tuple` | 按当前平台返回中文字体族名（按优先级），供 Qt 侧挑**界面**文字。 |
+| `content_font_families() -> tuple` | 第四步 PDF 内容（标题 / 页码）的字体族名候选：仿宋（衬线）优先。 |
 
-#### `cjk_font_paths() -> tuple`
+#### `known_entries() -> tuple[FontEntry, ...]`
 
-中文字体文件候选路径（按优先级）。
+全部已知候选（按优先级），含不存在的。
 
-``GUJI_CJK_FONT`` 指定的文件排在最前且只出现一次；其后是本平台的
-内置候选。返回的可能全都不存在——调用方必须自己 ``Path.exists()``。
+``GUJI_CJK_FONT`` 指定的文件排在最前且只出现一次——它是用户/CI 的
+显式指定，优先级高于"仿宋优先"。
 
-#### `cjk_font_families() -> tuple`
+#### `available_entries(with_supplement: bool=True) -> tuple[FontEntry, ...]`
 
-按当前平台返回中文字体族名（按优先级），供 Qt 侧挑选。
+系统里真实存在的候选，按优先级排序（仿宋 → 宋体 → …）。
 
-调用方（如第四步预览）再与 `QFontDatabase.families()` 求交集取第一个命中的。
+``with_supplement=False`` 时不含"仅补字"字体——那种字体不能当主字体。
 
-#### `content_font_families() -> tuple`
+⚠️ 排序**只按组**、组内保持候选表里的书写顺序（Python 的 sort 是稳定的）：
+早先按 display 排序，结果"华文中宋"跑到"宋体"前面、"华文彩云"跑到
+"楷体"前面——缺字降级会先落到装饰字体上，视觉上很突兀。
 
-第四步 PDF 内容（标题 / 页码）的字体族名候选：**仿宋（衬线）优先**。
+#### `find_entry(value) -> FontEntry | None`
 
-与 `cjk_font_families()` 的分工：
+按显示名 / 文件路径 / 文件名反查条目（用户配置回填用）。
 
-- `cjk_font_families()` → **界面**文字（Windows 上雅黑打头，界面更清爽）；
-- `content_font_families()` → **印刷内容**，顺序刻意与 `cjk_font_paths()`
-  对齐，保证预览和最终 PDF 选到同一种字。
+找不到返回 None——用户的机器上可能没有配置里记的那个字体（换机器、
+卸载字体），此时应当回落到自动选择而不是报错。
 
-两份不能互换——换了就会出现"预览与成品字体不一致"。
+#### `resolve_chain(preferred=None) -> list[FontEntry]`
+
+按优先级串出降级链：首选字体在前，补字字体垫底。
+
+``preferred`` 可以是显示名 / 路径 / 文件名（用户选择或配置里的值）；
+找不到就忽略，链条从"仿宋优先"的自动顺序开始——**不会因为配置里记了
+一个本机没有的字体就整条链失效**。
+
+#### `glyphs(entry: FontEntry) -> frozenset | None`
+
+该字体覆盖的码位集合；解析失败或没有 fontTools 时返回 None。
+
+None 表示"不知道"，调用方应按"支持"处理（乐观）——宁可画出空白，
+也不要因为读不出 cmap 就把整段文字降级成另一种字体。
+
+#### `pick_font(chain, char: str) -> FontEntry | None`
+
+从降级链里挑第一个有这个字的字体；都没有则返回链首。
+
+返回链首（而非 None）是刻意的：此时无论选谁都画不出这个字，但至少
+字体是确定的（不会因为返回 None 让调用方崩）。
 
 ---
 
@@ -864,6 +979,9 @@ print.py 里的裸字面量 `8.0`，现在提为 `TEXT_MARGIN_MM`。
 | TEXT_MARGIN_MM | `0.0` |
 | TEXT_INSET_MM | `0.0` |
 | TEXT_SIDE_OFFSET_MM | `0.0` |
+| DEFAULT_PAGE_NUMBER_FORMAT | `"chinese"` |
+| DEFAULT_PAGE_NUMBER_PREFIX | `"第"` |
+| DEFAULT_PAGE_NUMBER_SUFFIX | `"頁"` |
 | LATIN_ADVANCE_RATIO | `0.55` |
 
 ### `class PrintTextSpec`
@@ -884,6 +1002,9 @@ print.py 里的裸字面量 `8.0`，现在提为 `TEXT_MARGIN_MM`。
         各自占一格，ASCII（拉丁字母/数字/半角符号）连成一段**整体旋转
         90°**（`Happiness` 不会拆成九个字母格）。
     baseline_mm: 横排时的基线 y（竖排逐字用 y_start_mm，忽略本值）。
+    font: 字体指定值（显示名 / 文件路径 / 文件名）；None = 自动
+        （仿宋优先）。只用于**选字体**，不参与几何计算——渲染端据此
+        挑字体，PDF 端还要按字形降级（见 `utils.pdf_draw.FontChain`）。
 
 ### `class PrintPagePlan`
 
@@ -1085,27 +1206,64 @@ PDF → 图片的部分在 `utils/pdf_extract.py`。
 `functions/print.py`（fpdf 出 PDF）与 desktop 第四步「打印效果预览」
 （QPainter）共用同一份，改分段只改那里。
 
+### `class FontChain`
+
+一组已注册到某个 FPDF 实例的字体，可按字符挑名字。
+
+为什么需要它
+------------
+古籍标题常有异体字 / 生僻字，而**没有任何单一字体**能覆盖它们：仿宋
+缺扩展 B 的字，Windows 自带的宋体-ExtB 有那些字却没有常用字。所以
+``name_for(ch)`` 按优先级链挑第一个"有这个字"的字体——常用字仍是仿宋，
+只有仿宋真没有的那个字才落到补字字体上。
+
+⚠️ 只注册**实际会用到**的字体（构造时传入全部待排文字来算）：
+把整条链二十来个字体全注册进去，每页 PDF 都要多嵌几个字体子集，
+体积与生成时间都白涨。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(entries, names: dict, primary: str)` | — |
+| `entries() -> list` | 参与本链条的字体条目（按优先级）。 |
+| `name_for(char: str) -> str` | 这个字符该用哪个已注册字体名（找不到时回落主字体）。 |
+
 ### 模块函数
 
 | 函数 | 说明 |
 | --- | --- |
-| `register_fonts(pdf)` | 尝试注册系统中文字体，返回第一个成功注册的字体名。 |
-| `draw_vertical_text(pdf, text, x, y_start, font_name, font_size, color, direction='down')` | 在PDF上绘制竖排文字：宽字符一字一格，拉丁段整体旋转 90°。 |
+| `build_font_chain(pdf, texts=(), preferred=None) -> FontChain` | 按优先级注册字体，返回可按字符取名的 `FontChain`。 |
+| `register_fonts(pdf, preferred=None, texts=())` | 注册系统中文字体，返回第一个成功注册的字体名。 |
+| `draw_vertical_text(pdf, text, x, y_start, font_name, font_size, color, direction='down', chain=None)` | 在PDF上绘制竖排文字：宽字符一字一格，拉丁段整体旋转 90°。 |
+| `draw_horizontal_text(pdf, text, x, y, font_name, font_size, color, chain=None)` | 在 PDF 上绘制横排文字；``chain`` 给出时逐字降级选字体。 |
 | `get_page_side_from_name(name_without_ext)` | 根据文件名末尾 '-l' 或 '-r' 判断左右页。 |
 | `get_page_side_by_start(image_files, current_index, start_page, default_side='left')` | 根据起始页的左右属性推断当前页是左还是右。 |
 
-#### `register_fonts(pdf)`
+#### `build_font_chain(pdf, texts=(), preferred=None) -> FontChain`
 
-尝试注册系统中文字体，返回第一个成功注册的字体名。
+按优先级注册字体，返回可按字符取名的 `FontChain`。
 
-候选路径来自 `utils.fonts`（Windows/Linux/macOS 三份候选 + `GUJI_CJK_FONT`
-环境变量）——**中文字体路径不许在本文件硬编码**：曾经这么做过，换到非
-Windows 平台后探测全部落空，标题/页码静默退回 Helvetica（方块、丢字）。
+- ``preferred``：用户指定的字体（显示名 / 路径 / 文件名）；本机没有时
+  忽略，链条仍从"仿宋优先"开始。
+- ``texts``：本次要排印的全部文字（标题、各章节标题…）。据此只注册
+  真正需要的字体。
 
-一个都注册不上时返回 `"Helvetica"`（fpdf 内置字体，不含中文字形），
-由调用方决定是否告警，这里不抛异常。
+一个都注册不上时链条为空、主字体为 `"Helvetica"`（fpdf 内置字体，不含
+中文字形），由调用方决定是否告警，这里不抛异常。
 
-#### `draw_vertical_text(pdf, text, x, y_start, font_name, font_size, color, direction='down')`
+#### `register_fonts(pdf, preferred=None, texts=())`
+
+注册系统中文字体，返回第一个成功注册的字体名。
+
+候选来自 `utils.fonts`（跨平台候选表 + `GUJI_CJK_FONT` 环境变量）——
+**中文字体路径不许在本文件硬编码**：曾经这么做过，换到非 Windows 平台
+后探测全部落空，标题/页码静默退回 Helvetica（方块、丢字）。
+
+需要**逐字降级**（生僻字）时请改用 `build_font_chain`：本函数只返回主
+字体名，画不出来就是画不出来。
+
+#### `draw_vertical_text(pdf, text, x, y_start, font_name, font_size, color, direction='down', chain=None)`
 
 在PDF上绘制竖排文字：宽字符一字一格，拉丁段整体旋转 90°。
 
@@ -1113,6 +1271,17 @@ Windows 平台后探测全部落空，标题/页码静默退回 Helvetica（方�
 汉字等宽字符逐字下移，ASCII 可打印字符连成一段用 `pdf.rotation(90, …)`
 整体旋转——按竖排惯例，「呵呵Happiness」里的英文是一个转 90° 的竖条，
 而不是九个字母各占一格（那样既挤又认不出来）。
+
+``chain``（`FontChain`）给出时**逐字挑选字体**：主字体缺这个字的字形
+就顺位落到下一个（生僻字因此落到宋体-ExtB 之类的补字字体上），
+而不是画出空白。不给则整段用 ``font_name``（历史行为）。
+
+#### `draw_horizontal_text(pdf, text, x, y, font_name, font_size, color, chain=None)`
+
+在 PDF 上绘制横排文字；``chain`` 给出时逐字降级选字体。
+
+逐字降级必然要**逐字落笔**（每个字可能来自不同字体），宽度也必须用
+**该字所在字体**实测——用主字体量全串的宽度会在换字体处错位。
 
 ---
 
@@ -1368,14 +1537,41 @@ reporter 为结构化汇报通道（进度 + 页尺寸）；None → 保持纯 p
 
 数字转中文等字符串辅助工具。
 
-当前提供 num_to_chinese：将整数转换为中文数字（支持到万以内），用于 PDF 页码
-「第X頁」等场景。
+当前提供：
+
+- ``num_to_chinese``：整数转中文数字（支持万以内）；
+- ``num_to_ganzhi``：整数转**干支**（六十甲子，古籍册次/卷次常用）；
+- ``format_page_number``：按「样式 + 前缀 + 后缀」拼出页码文本——第四步
+  页码样式的**唯一组装处**（PDF 与预览共用同一份）。
 
 ### 模块函数
 
 | 函数 | 说明 |
 | --- | --- |
 | `num_to_chinese(num: int) -> str` | 将整数转换为中文数字（支持万以内）。 |
+| `num_to_ganzhi(num: int) -> str` | 将整数转换为干支纪序（六十甲子）：1 → 甲子，2 → 乙丑，61 → 甲子。 |
+| `format_page_number(num: int, style: str='chinese', prefix: str='', suffix: str='') -> str` | 按「样式 + 前缀 + 后缀」拼出页码文本（第四步页码的唯一组装处）。 |
+
+#### `num_to_ganzhi(num: int) -> str`
+
+将整数转换为干支纪序（六十甲子）：1 → 甲子，2 → 乙丑，61 → 甲子。
+
+古籍的册次/卷次常用干支编号。天干 10 与地支 12 的最小公倍数是 60，
+所以序号按 60 循环（超过 60 从头再来，不会越界）。非正整数退化为
+阿拉伯数字，保证任何输入都有可打印的结果。
+
+#### `format_page_number(num: int, style: str='chinese', prefix: str='', suffix: str='') -> str`
+
+按「样式 + 前缀 + 后缀」拼出页码文本（第四步页码的唯一组装处）。
+
+- ``chinese``：中文数字（五），``num_to_chinese``；
+- ``arabic``：阿拉伯数字（5）；
+- ``ganzhi``：干支（甲子，60 循环）；
+- 认不出的样式按中文数字处理——老配置里可能存着别的值，回落成中文
+  比抛异常或印出空串都好。
+
+前缀/后缀是**原样拼接**的（不做空格补全）：想排「第 5 页」就把前缀写成
+``"第 "``。空前缀/后缀表示只要数字本身。
 
 ---
 

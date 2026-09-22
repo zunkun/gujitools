@@ -21,6 +21,11 @@ from utils.margin_utils import (
     DEFAULT_PAGE_MARGINS as _DEFAULT_PAGE_MARGINS,
     normalize_margin as _normalize_margin_impl,
 )
+from utils.page_layout import (
+    DEFAULT_PAGE_NUMBER_FORMAT as _DEFAULT_NUMBER_FORMAT,
+    DEFAULT_PAGE_NUMBER_PREFIX as _DEFAULT_NUMBER_PREFIX,
+    DEFAULT_PAGE_NUMBER_SUFFIX as _DEFAULT_NUMBER_SUFFIX,
+)
 
 # ---------------------------------------------------------------- 通用枚举
 
@@ -353,6 +358,9 @@ PRINT_DEFAULTS: Dict[str, Any] = {
     "title_printing": False,
     "title_text": "",
     "title_font_size": 20,
+    # 标题字体：字体显示名 / 文件路径 / 文件名（如 "仿宋"），
+    # None = 自动（仿宋优先），缺字沿降级链顺延到宋体-ExtB 等补字字体。
+    "title_font": None,
     "title_color": "0,0,0",
     "title_position": "top",
     "title_orientation": "vertical",
@@ -369,14 +377,19 @@ PRINT_DEFAULTS: Dict[str, Any] = {
     "page_number_end_page": None,
     "page_number_base": 0,
     "page_number_font_size": 20,
+    # 页码字体：与 title_font 同规则，两者互不影响
+    "page_number_font": None,
+    # 页码样式与前后缀：默认「第X頁」（历史形态）。
+    # chinese=中文数字 / arabic=阿拉伯数字 / ganzhi=干支（六十甲子）；
+    # 前缀后缀原样拼接，想排「第 5 页」就把前缀写成 "第 "。
+    "page_number_format": _DEFAULT_NUMBER_FORMAT,
+    "page_number_prefix": _DEFAULT_NUMBER_PREFIX,
+    "page_number_suffix": _DEFAULT_NUMBER_SUFFIX,
     "page_number_color": "0,0,0",
     "page_number_position": "bottom",
     "page_number_orientation": "vertical",
     "skip_pages": None,
     "files": None,
-    # 预览辅助：在 GUI 第四步「打印效果」预览里用虚线框出图片位置，
-    # 并在四边标注边距（mm）。只画在预览，不进入成品 PDF（交付书保持干净）。
-    "annotate_margins": False,
     # 运行时由 GUI runner 注入的上游（第三步 rembg/crop）border：用于 print
     # 第四步的通用边距级联默认（border 非 0 → 默认 0）。CLI 不传（默认 None），
     # 故 CLI 第四步普通边距保持内置默认 20。不出现在表单/模板里。

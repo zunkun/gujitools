@@ -31,7 +31,9 @@ from utils.page_layout import (
     TEXT_MARGIN_MM,
 )
 from utils.path_utils import resolve_final_output_dir
-from utils.pdf_draw import draw_vertical_text, register_fonts
+from utils.pdf_draw import (
+    build_font_chain, draw_horizontal_text, draw_vertical_text,
+)
 from utils.sort_utils import pdf_custom_sort_key
 
 # 嵌入 PDF 前把超大扫描图缩放到的打印分辨率（仅缩小、不放大）。
@@ -62,11 +64,15 @@ def _normalize_page_rects(raw) -> dict:
     return out
 
 
-def _draw_plan_text(pdf, spec: PrintTextSpec, font_name: str) -> None:
+def _draw_plan_text(pdf, spec: PrintTextSpec, font_name: str, chain=None) -> None:
     """把 `plan_print_page` 算好的一段文字画到当前页。
 
     竖排走 `draw_vertical_text`（逐字下移），横排用 fpdf 的 `text` ——
     横排的基线在 `baseline_mm`（竖排不需要，逐字用 `y_start_mm`）。
+
+    ``chain`` 是 `utils.pdf_draw.FontChain`：给出时**逐字挑选字体**，主字体
+    缺这个字的字形就顺位降级（古籍标题里的异体字因此落到宋体-ExtB 这类补字
+    字体上，而不是画出空白）。
     """
     if spec.vertical:
         draw_vertical_text(
@@ -78,11 +84,24 @@ def _draw_plan_text(pdf, spec: PrintTextSpec, font_name: str) -> None:
             spec.font_size_pt,
             spec.color,
             direction=spec.direction,
+            chain=chain,
+        )
+        return
+    y_text = spec.y_start_mm if spec.baseline_mm is None else spec.baseline_mm
+    if chain is not None:
+        draw_horizontal_text(
+            pdf,
+            spec.text,
+            spec.x_mm,
+            y_text,
+            font_name,
+            spec.font_size_pt,
+            spec.color,
+            chain=chain,
         )
         return
     pdf.set_font(font_name, "", spec.font_size_pt)
     pdf.set_text_color(*spec.color)
-    y_text = spec.y_start_mm if spec.baseline_mm is None else spec.baseline_mm
     pdf.text(spec.x_mm, y_text, spec.text)
 
 
@@ -218,6 +237,10 @@ class PrintFunction(FunctionBase):
             self.command_args.get("title_font_size")
             or PRINT_DEFAULTS["title_font_size"]
         )
+        # 字体：None / 空 = 自动（仿宋优先，缺字沿降级链顺延）。
+        # 标题与页码各一个——古籍常见"书名用仿宋、页码用黑体"的搭配。
+        title_font = self.command_args.get("title_font")
+        page_number_font = self.command_args.get("page_number_font")
         title_color = parse_color(self.command_args.get("title_color", "0,0,0"))
         title_position = self.command_args.get("title_position", "top")
         title_orientation = self.command_args.get("title_orientation", "vertical")
@@ -296,6 +319,8 @@ class PrintFunction(FunctionBase):
             workers=workers,
             page_rects=page_rects,
             files=files,
+            title_font=title_font,
+            page_number_font=page_number_font,
         )
 
     def _generate_pdf(
@@ -328,6 +353,8 @@ class PrintFunction(FunctionBase):
         files: Optional[List[str]] = None,
         title_margins: Optional[List[float]] = None,
         page_number_margins: Optional[List[float]] = None,
+        title_font: Optional[str] = None,
+        page_number_font: Optional[str] = None,
     ) -> dict:
         if skip_pages is None:
             skip_pages = []
@@ -400,6 +427,16 @@ class PrintFunction(FunctionBase):
             "title_margins": title_margins,
             "page_number_margins": page_number_margins,
             "skip_pages": skip_pages,
+            # ⚠️ 下面五个键**必须**转进来：`plan_print_page` 靠它们决定
+            # 页码文本（样式/前后缀）与 PrintTextSpec.font（标题/页码字体）。
+            # 漏掉字体键的后果最隐蔽——PDF 侧另按 command_args 建链，用的
+            # 是用户选的字体；而预览只读 spec.font，取不到就退回自动，
+            # 于是「预览一种字体、成品另一种」。
+            "title_font": title_font,
+            "page_number_font": page_number_font,
+            "page_number_format": self.command_args.get("page_number_format"),
+            "page_number_prefix": self.command_args.get("page_number_prefix"),
+            "page_number_suffix": self.command_args.get("page_number_suffix"),
         }
 
         pdf = FPDF(
@@ -444,7 +481,21 @@ class PrintFunction(FunctionBase):
                 print(f"\r图片加载进度: {done}/{total}", end="")
         print()
 
-        font_name = register_fonts(pdf)
+        # ----- 字体链：标题与页码各一条 -----
+        # 用户可分别指定字体（title_font / page_number_font），未指定则按
+        # 仿宋 → 宋体 → 微软雅黑 → 黑体 → 其它 的优先级自动选。
+        # ⚠️ 建链时传入待排文字，只为**实际用到的**字体注册：古籍标题里的
+        # 异体字会顺位落到宋体-ExtB 这类补字字体，常用字仍是仿宋，而 PDF
+        # 里不会白白多嵌十几个字体子集。
+        title_texts = [title_text] + [
+            str(node[1]) for node in title_switch_nodes if len(node) >= 2
+        ]
+        title_chain = build_font_chain(pdf, texts=title_texts, preferred=title_font)
+        # 页码是数字（ASCII），任何中文字体都有字形；仍建链是为了尊重
+        # 用户"页码用另一种字体"的选择。
+        number_chain = build_font_chain(
+            pdf, texts=["0123456789"], preferred=page_number_font
+        )
 
         # 将配置中的页名节点解析为排序后图片的序号，用于章节切换和书签。
         sorted_nodes = _resolve_title_nodes(image_files, title_switch_nodes)
@@ -490,11 +541,15 @@ class PrintFunction(FunctionBase):
 
             # ----- 标题（与页码同步起始页；内容与几何都在 plan 里）-----
             if plan.title is not None:
-                _draw_plan_text(pdf, plan.title, font_name)
+                _draw_plan_text(
+                    pdf, plan.title, title_chain.primary, chain=title_chain
+                )
 
             # ----- 页码 -----
             if plan.page_number is not None:
-                _draw_plan_text(pdf, plan.page_number, font_name)
+                _draw_plan_text(
+                    pdf, plan.page_number, number_chain.primary, chain=number_chain
+                )
 
             processed_count += 1
             if processed_count % 10 == 0 or processed_count == total:

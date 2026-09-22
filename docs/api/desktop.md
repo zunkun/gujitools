@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 70 个模块、74 个公开类、337 个公开函数/方法（生成于 2026-09-22）。
+覆盖 72 个模块、75 个公开类、347 个公开函数/方法（生成于 2026-09-22）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -49,9 +49,11 @@
 | [`desktop.pages.taskdetail.submit`](#desktoppagestaskdetailsubmit) | 1 | 1 |
 | [`desktop.pages.taskdetail.view`](#desktoppagestaskdetailview) | 2 | 4 |
 | [`desktop.pages.tasklist.page`](#desktoppagestasklistpage) | 1 | 5 |
+| [`desktop.services.font_catalog`](#desktopservicesfont_catalog) | 1 | 6 |
 | [`desktop.services.print_plan`](#desktopservicesprint_plan) | 0 | 5 |
 | [`desktop.services.rembg_live`](#desktopservicesrembg_live) | 0 | 3 |
 | [`desktop.services.submit_state`](#desktopservicessubmit_state) | 0 | 1 |
+| [`desktop.single_instance`](#desktopsingle_instance) | 0 | 3 |
 | [`desktop.stages.detect_stage`](#desktopstagesdetect_stage) | 0 | 2 |
 | [`desktop.stages.events`](#desktopstagesevents) | 2 | 9 |
 | [`desktop.stages.generic_stage`](#desktopstagesgeneric_stage) | 0 | 2 |
@@ -77,7 +79,7 @@
 | [`desktop.worker`](#desktopworker) | 0 | 1 |
 | [`desktop.workers.hash_worker`](#desktopworkershash_worker) | 1 | 2 |
 | [`desktop.workers.image_list_worker`](#desktopworkersimage_list_worker) | 1 | 2 |
-| [`desktop.workers.preview_worker`](#desktopworkerspreview_worker) | 1 | 7 |
+| [`desktop.workers.preview_worker`](#desktopworkerspreview_worker) | 1 | 8 |
 | [`desktop.workers.rembg_live_worker`](#desktopworkersrembg_live_worker) | 1 | 2 |
 | [`desktop.workers.source_thumbnails_worker`](#desktopworkerssource_thumbnails_worker) | 1 | 2 |
 | [`desktop.workers.task_rows_worker`](#desktopworkerstask_rows_worker) | 1 | 2 |
@@ -90,6 +92,12 @@
 源码：[`desktop/app.py`](../../desktop/app.py)
 
 gujitools 桌面端主窗口：任务列表页 + 任务详情页切换。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| WINDOW_TITLE | `"古籍重製"` |
 
 ### `class MainWindow(QMainWindow)`
 
@@ -1831,6 +1839,76 @@ parent 一般为 MainWindow；会创建 store 引用与导入按钮状态占位�
 
 ---
 
+## `desktop.services.font_catalog`
+
+源码：[`desktop/services/font_catalog.py`](../../desktop/services/font_catalog.py)
+
+第四步的字体候选目录：已知候选 + 后台扫一次的系统字体。
+
+为什么要这个模块
+----------------
+`utils.fonts.selectable_entries()` 是一张**静态候选表**，查它只花几毫秒，
+足以覆盖日常字体。但用户自己装的补字字体（花园明朝、BabelStone Han…）只有
+真扫描才能发现，而它们恰恰是古籍异体字最需要的。
+
+扫描的代价是**慢**（本机 200+ 字体约 7 秒），所以规矩有两条：
+
+1. **只在后台线程扫**（`_ScanThread`），且**全局只启动一次**——扫完的结果
+   写磁盘缓存，之后每次都是毫秒级；
+2. **绝不挡住出 PDF 的路**：生成 PDF 只用 `utils.fonts` 的静态候选表，
+   本模块纯粹服务于"给用户看的字体列表"。
+
+用户在前三步干活的那点空闲，足够后台把列表补全；直接进第四步也能用，
+只是列表是静态候选（扫描完成后会自动补进来）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| AUTO_LABEL | `"自动（仿宋优先）"` |
+| AUTO_VALUE | `""` |
+| _CATALOG | `None` |
+
+### `class FontCatalog(QObject)`
+
+字体候选目录（进程内单例，见 `catalog()`）。
+
+- ``choices()``：立刻给出可用列表（静态候选 + 已扫到的），**不阻塞**；
+- ``start_scan()``：后台扫一次系统字体，完成后发 ``scan_finished``，
+  界面据此把新字体补进下拉。重复调用直接返回。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(parent=None)` | — |
+| `choices() -> list[tuple[str, str]]` | 下拉候选 ``(中文显示, 参数值)``：自动 + 已知 + 扫描到的。 |
+| `is_scanning() -> bool` | 后台扫描是否在跑（界面可据此显示"扫描中"）。 |
+| `start_scan() -> None` | 启动后台扫描；**只启动一次**。 |
+
+##### `choices() -> list[tuple[str, str]]`
+
+下拉候选 ``(中文显示, 参数值)``：自动 + 已知 + 扫描到的。
+
+⚠️ 按**显示名**去重：扫描结果里常出现与已知候选同名的字体（都叫
+"楷体"），留两个同名项对用户没有意义，还容易选错。
+
+##### `start_scan() -> None`
+
+启动后台扫描；**只启动一次**。
+
+调用时机无所谓（进第四步、回到第一步都行）——扫描在后台线程里跑，
+主线程不被拖住。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `catalog() -> FontCatalog` | 进程内唯一的字体目录（首次调用时创建，需要已有 QApplication）。 |
+| `start_background_scan() -> None` | 在空闲时把系统字体列表补齐（只跑一次，后台线程）。 |
+
+---
+
 ## `desktop.services.print_plan`
 
 源码：[`desktop/services/print_plan.py`](../../desktop/services/print_plan.py)
@@ -2001,6 +2079,53 @@ rembg「提交本次任务」按钮的版本状态机（纯函数）。
 
 ---
 
+## `desktop.single_instance`
+
+源码：[`desktop/single_instance.py`](../../desktop/single_instance.py)
+
+desktop 单例守卫：**同一个构建**同时只允许一个 GUI 实例。
+
+用户原则：开发版（源码 / hupper 启动）与正式版（安装的 guji-desktop.exe）是
+两个不同的程序，**可以同时存在**——所以互斥体按「构建身份」区分：
+
+- 同一个构建第二次启动 → 检测到已有实例，把已有窗口带到前台、自己退出；
+- 两个构建各跑各的，互不阻拦（即便它们共用 `~/Documents/guji` 数据区）。
+
+实现（win32）：
+- **互斥体**判定"是否已有本构建实例"：`CreateMutexW`，若 `GetLastError` 返回
+  ERROR_ALREADY_EXISTS 则说明已有。句柄必须**存进模块级变量**——句柄被垃圾回收
+  互斥体就销毁了，守卫随之失效（活到进程退出，正合需求）。
+- **把已有窗口带到前台**：`FindWindowW` 按窗口标题找，`ShowWindow(SW_RESTORE)`
+  + `SetForegroundWindow`。不做跨进程消息通道，够用且零依赖。
+
+⚠️ 仅 win32 生效；其它平台直接放行（本项目只在 Windows 打包发行）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| _MUTEX_PREFIX | `"Local\GujiZhiZuo-Desktop-"` |
+| _ERROR_ALREADY_EXISTS | `183` |
+| _SW_RESTORE | `9` |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `mutex_name(identity: str) -> str` | 由构建身份推出互斥体名。 |
+| `acquire(identity: str) -> bool` | 尝试持有本构建的单例互斥体。False = 已有本构建实例（调用方应退出）。 |
+| `activate_existing_window(title: str) -> bool` | 把已有实例的窗口恢复并带到前台。找不到（返回 False）也不影响退出。 |
+
+#### `mutex_name(identity: str) -> str`
+
+由构建身份推出互斥体名。
+
+identity 用 **desktop 包目录**（`desktop.utils.files.package_dir()`）：
+源码是 `D:\...\desktop`，打包是 `...\guji\_internal\desktop`——同一构建
+稳定不变，两个构建互不相同。
+
+---
+
 ## `desktop.stages.detect_stage`
 
 源码：[`desktop/stages/detect_stage.py`](../../desktop/stages/detect_stage.py)
@@ -2101,14 +2226,17 @@ real_stdout 为真实输出流；context 提供 task_id/stage/run_id，会附加
 
 | 函数 | 说明 |
 | --- | --- |
-| `emit(payload: dict, stream=None) -> None` | 向 GUI 输出一条 JSON Lines 事件。 |
+| `emit(payload: dict, stream=None) -> None` | 向 GUI 输出一条 JSON Lines 事件（线程安全）。 |
 
 #### `emit(payload: dict, stream=None) -> None`
 
-向 GUI 输出一条 JSON Lines 事件。
+向 GUI 输出一条 JSON Lines 事件（线程安全）。
 
 stream 缺省写真实 stdout；窗口化打包运行时 sys.stdout 可能为 None，
 此时由 _real_stdout() 兜底到文件描述符 1。
+
+⚠️ 序列化与写入必须在同一把锁里：先序列化再抢锁会让两个线程的
+payload 交替入队、输出的仍是交错行。
 
 ---
 
@@ -3361,8 +3489,9 @@ print_spec 为第四步「打印效果」参数
 | --- | --- |
 | `compose_region_output(image: QImage, boxes: list, area: int, border_mm, dpi: int=300) -> list` | 按 crop/cropremove 的 area/border 规则，合成"效果预览图"列表。 |
 | `preview_px_per_mm(page_w_mm: float, page_h_mm: float, target_edge: int=PRINT_PREVIEW_TARGET_EDGE) -> float` | 按纸张尺寸给出效果预览的像素密度（px/mm）。 |
+| `qt_family_for_file(path: str) -> str \| None` | 按**字体文件**加载并取回 Qt 族名；失败返回 None。 |
 | `preview_text_font(spec, px_per_mm: float) -> QFont` | 按 PrintTextSpec 与像素密度给出**已设好像素大小**的字体。 |
-| `compose_print_page(image: QImage, plan, px_per_mm: float \| None=None, annotate: bool=False) -> QImage` | 按 ``utils.page_layout.PrintPagePlan`` 合成"打印效果"位图。 |
+| `compose_print_page(image: QImage, plan, px_per_mm: float \| None=None) -> QImage` | 按 ``utils.page_layout.PrintPagePlan`` 合成"打印效果"位图。 |
 | `compose_outputs_horizontal(outputs: list, gap: int=12) -> QImage` | 多张输出横向拼接为一张展示图（灰底间隔，便于区分各框输出）。 |
 
 #### `compose_region_output(image: QImage, boxes: list, area: int, border_mm, dpi: int=300) -> list`
@@ -3376,6 +3505,15 @@ print_spec 为第四步「打印效果」参数
 与原实现的一处行为修正：area=3 + 双框 + border=None 时，并集区域现在
 **写回原位置**（此前被搬到画布左上角）。规格见
 docs/functions/cropremove.md:57「area=3 → 单图，ROI 写回原位置」。
+
+#### `qt_family_for_file(path: str) -> str | None`
+
+按**字体文件**加载并取回 Qt 族名；失败返回 None。
+
+为什么要按文件而不是按族名：PDF 侧（`utils.pdf_draw.build_font_chain`）
+也是按文件注册字体的，两边用同一个文件才能保证「预览 = 成品」。按族名
+查表在离屏/精简环境下会落空（那时 `QFontDatabase.families()` 几乎是
+空的），预览就退回默认字体，与成品对不上。
 
 #### `preview_text_font(spec, px_per_mm: float) -> QFont`
 
@@ -3392,7 +3530,10 @@ docs/functions/cropremove.md:57「area=3 → 单图，ROI 写回原位置」。
 统一口径后：字高 = 字号(mm) × 密度，与步进同源，任何密度下都不重叠，
 且与成品 PDF 的真实字号（pt → mm）一致。
 
-#### `compose_print_page(image: QImage, plan, px_per_mm: float | None=None, annotate: bool=False) -> QImage`
+``spec.font`` 是用户为这段文字（标题 / 页码各自独立）指定的字体，
+能解析到文件就按文件加载——与成品 PDF 用同一个字体文件。
+
+#### `compose_print_page(image: QImage, plan, px_per_mm: float | None=None) -> QImage`
 
 按 ``utils.page_layout.PrintPagePlan`` 合成"打印效果"位图。
 

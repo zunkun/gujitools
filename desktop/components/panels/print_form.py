@@ -145,6 +145,23 @@ class PrintFormMixin(PrintSectionsMixin, PrintTextLayoutMixin):
             idx = combo.findData(default)
         combo.setCurrentIndex(max(idx, 0))
 
+    def _set_font_combo(self, combo, value) -> None:
+        """回填字体下拉；列表里没有这个字体时**临时加一项**保住选择。
+
+        列表未含该项有两种可能：后台扫描还没跑完，或者这份配置来自另一台
+        机器（那台有这个字体）。两种都不该把用户的设置悄悄改回"自动"——
+        字体选择是显式配置，静默回落属于最难查的那类漂移。
+        """
+        from desktop.services.font_catalog import AUTO_VALUE
+
+        text = str(value or "").strip()
+        if not text:
+            self._set_combo(combo, AUTO_VALUE, AUTO_VALUE)
+            return
+        if combo.findData(text) < 0:
+            combo.addItem(text, userData=text)
+        self._set_combo(combo, text, AUTO_VALUE)
+
     def _reset_default_clicked(self) -> None:
         """「恢复默认配置」按钮：复位后补一次用户改动通知（参数要暂存新值）。"""
         self.reset_to_default()

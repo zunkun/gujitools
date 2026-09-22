@@ -73,6 +73,16 @@ TEXT_MARGIN_MM = 0.0
 TEXT_INSET_MM = 0.0
 TEXT_SIDE_OFFSET_MM = 0.0
 
+# ---------------------------------------------------------------- 页码样式
+#: 页码数字的样式（下拉顺序即界面顺序）
+PAGE_NUMBER_FORMATS = ("chinese", "arabic", "ganzhi")
+#: 三者是**唯一定义处**：``core.command_spec.PRINT_DEFAULTS`` 从这里取，
+#: 桌面表单与 guji.yaml 再跟着 CLI 走（默认值只保留一份）。
+#: 默认「第X頁」是历史形态，改它会改变老任务的成品。
+DEFAULT_PAGE_NUMBER_FORMAT = "chinese"
+DEFAULT_PAGE_NUMBER_PREFIX = "第"
+DEFAULT_PAGE_NUMBER_SUFFIX = "頁"
+
 # 纸张短边 × 长边（mm），小写键
 PAPER_SIZES_MM = {
     "a3": (297.0, 420.0),
@@ -100,6 +110,9 @@ class PrintTextSpec:
             各自占一格，ASCII（拉丁字母/数字/半角符号）连成一段**整体旋转
             90°**（`Happiness` 不会拆成九个字母格）。
         baseline_mm: 横排时的基线 y（竖排逐字用 y_start_mm，忽略本值）。
+        font: 字体指定值（显示名 / 文件路径 / 文件名）；None = 自动
+            （仿宋优先）。只用于**选字体**，不参与几何计算——渲染端据此
+            挑字体，PDF 端还要按字形降级（见 `utils.pdf_draw.FontChain`）。
     """
 
     text: str
@@ -111,6 +124,7 @@ class PrintTextSpec:
     color: Tuple[int, int, int]
     direction: str = "up"
     baseline_mm: Optional[float] = None
+    font: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -469,7 +483,7 @@ def plan_print_page(
             按页名回查；不传则只能按序号匹配。
     """
     from utils.color_utils import parse_color
-    from utils.string_utils import num_to_chinese
+    from utils.string_utils import format_page_number
 
     page_w, page_h = print_page_size_mm(
         args.get("paper_size", "A4"), args.get("orientation", "landscape")
@@ -560,6 +574,7 @@ def plan_print_page(
                 color=parse_color(args.get("title_color") or "0,0,0"),
                 # 横排基线：顶部 +1 字高、底部 -1 字高（与 print.py 一致）
                 baseline_mm=None if vertical else y_start + (char_h if is_top else -char_h),
+                font=args.get("title_font"),
             )
 
     # ---- 页码 ----
@@ -568,7 +583,18 @@ def plan_print_page(
     end_page = total if end_page is None else int(end_page)
     if args.get("page_number_printing") and start_page <= current_page <= end_page:
         base = int(args.get("page_number_base", 0) or 0)
-        number_text = f"第{num_to_chinese(base + current_page)}頁"
+        # ⚠️ 前缀/后缀用 `is None` 判断、不能 `or` 兜底：用户想"只要数字"时
+        # 会把前缀填成空串，用 `or` 会把它悄悄变回默认的「第」。
+        prefix = args.get("page_number_prefix")
+        prefix = DEFAULT_PAGE_NUMBER_PREFIX if prefix is None else prefix
+        suffix = args.get("page_number_suffix")
+        suffix = DEFAULT_PAGE_NUMBER_SUFFIX if suffix is None else suffix
+        number_text = format_page_number(
+            base + current_page,
+            args.get("page_number_format") or DEFAULT_PAGE_NUMBER_FORMAT,
+            prefix,
+            suffix,
+        )
         font_size = float(args.get("page_number_font_size", 12) or 12)
         char_h = font_size / POINTS_PER_MM
         vertical = args.get("page_number_orientation", "vertical") == "vertical"
@@ -588,6 +614,7 @@ def plan_print_page(
             font_size_pt=font_size,
             color=parse_color(args.get("page_number_color") or "0,0,0"),
             baseline_mm=None if vertical else y_start + (char_h if is_top else -char_h),
+            font=args.get("page_number_font"),
         )
 
     return PrintPagePlan(
