@@ -4,7 +4,7 @@
 
 1. **模型加载** (`load_yolo_model`)
    延迟加载 + 模块级单例 + 双重检查锁，确保多线程下模型只加载一次。
-   权重文件查找路径: `gujitools/weights/detect.pt`。
+   权重文件查找路径: `gujitools/weights/bookcontent.pt`。
 
 2. **左右文本框检测** (`detect_left_right_boxes`)
    对古籍扫描图（通常左页 + 右页双栏排版）执行检测后，按检测框水平中心点
@@ -137,17 +137,17 @@ def model_path() -> Path:
     漂移，所以统一收在这里。
 
     返回:
-        `gujitools/weights/detect.pt` 的绝对路径。
+        `gujitools/weights/bookcontent.pt` 的绝对路径。
 
     异常:
         FileNotFoundError: 权重文件不存在（打包遗漏或安装损坏）。
     """
     project_root = Path(__file__).resolve().parents[1]
-    candidate = project_root / "weights" / "detect.pt"
+    candidate = project_root / "weights" / "bookcontent.pt"
     if not candidate.exists():
         raise FileNotFoundError(
-            "未找到 YOLO 模型权重文件 detect.pt。\n"
-            "请将 detect.pt 放置在以下位置：\n"
+            "未找到 YOLO 模型权重文件 bookcontent.pt。\n"
+            "请将 bookcontent.pt 放置在以下位置：\n"
             f"  - {candidate}"
         )
     return candidate
@@ -181,7 +181,7 @@ def load_yolo_model() -> object:
         ultralytics.YOLO 实例（CPU 模式）。
 
     异常:
-        FileNotFoundError: 未在候选路径找到 weights/detect.pt。
+        FileNotFoundError: 未在候选路径找到 weights/bookcontent.pt。
     """
     global _YOLO_MODEL
     if _YOLO_MODEL is not None:
@@ -218,9 +218,7 @@ def load_yolo_model() -> object:
         #    bn 删了、后做的还去取 `m.bn` → `AttributeError: bn`（实测 4~8 线程
         #    首轮偶发，上层靠重试侥幸通过，日志里表现为莫名其妙的"检测失败 -> bn"）。
         #    这里预热一次，之后并发预测就不会再撞上。
-        _YOLO_MODEL.predict(
-            np.zeros((64, 64, 3), dtype=np.uint8), verbose=False
-        )
+        _YOLO_MODEL.predict(np.zeros((64, 64, 3), dtype=np.uint8), verbose=False)
         elapsed = time.perf_counter() - started
         # 记下来供调用方单独报出（常驻服务把它回给客户端，见 load_seconds_used）：
         # 忘了这一句，服务就会永远报"加载 0 秒"，客户端于是以为模型早就在内存里，

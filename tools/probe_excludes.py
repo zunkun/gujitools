@@ -69,8 +69,17 @@ def _import_gui_chain() -> None:
     # 组件树：button → menu → qframelesswindow → win32_utils（win32api 在这里）
     import qfluentwidgets  # noqa: F401
     from qfluentwidgets import (  # noqa: F401
-        FluentWindow, PushButton, ComboBox, LineEdit, SpinBox, TableWidget,
-        CardWidget, MessageBox, InfoBar, SubtitleLabel, BodyLabel,
+        FluentWindow,
+        PushButton,
+        ComboBox,
+        LineEdit,
+        SpinBox,
+        TableWidget,
+        CardWidget,
+        MessageBox,
+        InfoBar,
+        SubtitleLabel,
+        BodyLabel,
     )
     from PySide6.QtWidgets import QApplication  # noqa: F401
 
@@ -88,7 +97,7 @@ def run_chain() -> tuple[bool, str]:
         import torchvision  # noqa: F401
         from ultralytics import YOLO
 
-        weights = Path("weights/detect.pt")
+        weights = Path("weights/bookcontent.pt")
         if weights.is_file():
             model = YOLO(str(weights))
             model.predict(np.zeros((640, 640, 3), dtype=np.uint8), verbose=False)
@@ -111,8 +120,9 @@ def run_chain() -> tuple[bool, str]:
 def run_one(blocked: list[str]) -> tuple[bool, str]:
     """在独立子进程里测一组排除项。"""
     cmd = [sys.executable, str(Path(__file__).resolve()), "--one", ",".join(blocked)]
-    proc = subprocess.run(cmd, capture_output=True, text=True,
-                          encoding="utf-8", errors="replace")
+    proc = subprocess.run(
+        cmd, capture_output=True, text=True, encoding="utf-8", errors="replace"
+    )
     out = (proc.stdout or "").strip()
     return proc.returncode == 0, out
 
@@ -127,15 +137,21 @@ def main() -> int:
         print(detail)
         return 0 if ok else 1
 
-    candidates = ([x.strip() for x in args[0].split(",") if x.strip()]
-                  if args else list(DEFAULT_CANDIDATES))
+    candidates = (
+        [x.strip() for x in args[0].split(",") if x.strip()]
+        if args
+        else list(DEFAULT_CANDIDATES)
+    )
 
     print(f"待测排除项（{len(candidates)} 个），每项独立子进程：")
     print(f"  {', '.join(candidates)}\n")
 
     print("[1] 全部一起排除：")
     ok_all, detail_all = run_one(candidates)
-    print(f"    {'✅ 通过' if ok_all else '❌ 失败'}" + (f"  {detail_all}" if detail_all else ""))
+    print(
+        f"    {'✅ 通过' if ok_all else '❌ 失败'}"
+        + (f"  {detail_all}" if detail_all else "")
+    )
 
     print("\n[2] 逐项独立排除：")
     bad = []

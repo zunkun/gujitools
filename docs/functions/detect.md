@@ -43,13 +43,13 @@ YOLO 推理，程序直接拒绝并给出替代方案。
 
 **只在 CLI 层拒绝**，因为只有命令行语境下「不落盘」才等于「白算」：
 
-| 调用方式 | 不带 `--save` | 原因 |
-|---|---|---|
-| 命令行 `guji detect` | ❌ 拒绝 | 无产出去处，纯浪费资源 |
-| `guji run detect`（配置 `save: false`） | ❌ 拒绝 | 同上 |
-| 代码 `DetectFunction(...)` | ✅ 可用 | 中间步骤，坐标由调用方消费 |
-| 代码 `detect_page_boxes(img)` | ✅ 可用 | 纯函数，crop/cropremove 在用 |
-| GUI detect 阶段 | ✅ 可用 | 坐标经事件通道交给界面画框 |
+| 调用方式                                | 不带 `--save` | 原因                         |
+| --------------------------------------- | ------------- | ---------------------------- |
+| 命令行 `guji detect`                    | ❌ 拒绝       | 无产出去处，纯浪费资源       |
+| `guji run detect`（配置 `save: false`） | ❌ 拒绝       | 同上                         |
+| 代码 `DetectFunction(...)`              | ✅ 可用       | 中间步骤，坐标由调用方消费   |
+| 代码 `detect_page_boxes(img)`           | ✅ 可用       | 纯函数，crop/cropremove 在用 |
+| GUI detect 阶段                         | ✅ 可用       | 坐标经事件通道交给界面画框   |
 
 拦截放在 CLI 入口（`cli.__main__._reject_dry_run`）而非
 `CommandArgs.validate()`，因为后者是 CLI 与 GUI **共用**的——若在校验层
@@ -99,7 +99,7 @@ detect 与 crop 是同级步骤，输出都落在**输入目录的旁边**：
 
 ### 模型加载
 
-- 权重文件路径：`gujitools/weights/detect.pt`
+- 权重文件路径：`gujitools/weights/bookcontent.pt`
 - 进程内单例加载（双重检查锁定），多线程复用同一实例。
 
 ## 输出
@@ -135,14 +135,14 @@ detect 与 crop 是同级步骤，输出都落在**输入目录的旁边**：
 
 ## 与 crop 的关系
 
-| | detect | crop |
-| --- | --- | --- |
-| 检测 | ✅ | ✅（复用 detect） |
-| 裁剪导出 | ❌ | ✅ |
-| 产出文件 | 总是（标注图，命令行强制 `--save`） | 总是（裁剪图） |
-| 默认输出目录 | `<输入父目录>/detect` | `<输入父目录>/crop` |
-| `--output` | 总是生效 | 总是生效 |
-| area/border | 不涉及 | ✅ |
+|              | detect                              | crop                |
+| ------------ | ----------------------------------- | ------------------- |
+| 检测         | ✅                                  | ✅（复用 detect）   |
+| 裁剪导出     | ❌                                  | ✅                  |
+| 产出文件     | 总是（标注图，命令行强制 `--save`） | 总是（裁剪图）      |
+| 默认输出目录 | `<输入父目录>/detect`               | `<输入父目录>/crop` |
+| `--output`   | 总是生效                            | 总是生效            |
+| area/border  | 不涉及                              | ✅                  |
 
 两者是**同级步骤**，输出路径规则同源（都调
 `utils.path_utils.resolve_final_output_dir`），因此默认目录只差最后的
@@ -165,4 +165,3 @@ detect 本身只是如实上报 `left` / `right` 为 `null`，不做任何兜底
 - 使用 `ThreadPoolExecutor` 并行检测，默认线程数 = `min(8, 图片数)`；
 - 出错图片最多重试 2 轮；仍失败则计入统计的「失败」项，不影响其它图片；
 - 进度通过 `reporter.progress(done, total)` 实时上报。
-

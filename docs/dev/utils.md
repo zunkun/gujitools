@@ -8,21 +8,21 @@
 
 ## 模块总览
 
-| 模块             | 职责                            | 主要函数 / 常量                                                                                                                |
-| ---------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `box_geometry.py`| 文本框几何规则（GUI/CLI 共用）  | `parse_border_mm`, `compute_final_boxes`                                                                                       |
-| `box_draw.py`    | 检测框标注绘制（GUI/CLI 共用）  | `draw_boxes`, `box_color`, `box_name`, `find_cjk_font`                                                                         |
-| `image_utils.py` | 图像处理核心算法                | `calculate_auto_threshold`, `extract_red_seal`, `apply_otsu_to_region`, `apply_otsu_whole`, `parse_border`, `parse_border_mm`   |
-| `image_io.py`    | OpenCV 读写（中文路径安全）     | `imread`, `imwrite`                                                                                                            |
-| `file_utils.py`  | 文件收集与校验                  | `collect_image_files`, `is_valid_image_size`, `IMAGE_EXTS`                                                                      |
-| `yolo_utils.py`  | YOLO 模型加载与检测             | `load_yolo_model`, `detect_left_right_boxes`                                                                                    |
-| `pdf_utils.py`   | PDF 渲染与提取                  | `parse_pages`, `validate_page_range`, `calculate_zoom`, `process_page_batch`, `extract_pdf_optimized`, `run_on_input_directory` |
-| `path_utils.py`  | 输出目录解析                    | `resolve_final_output_dir`, `get_extract_output_root`                                                                          |
-| `sort_utils.py`  | 自然排序                        | `natural_sort_key`, `pdf_custom_sort_key`                                                                                       |
-| `string_utils.py`| 字符串辅助                      | `num_to_chinese`                                                                                                               |
-| `fonts.py`      | 中文字体候选（跨平台）           | `cjk_font_paths`, `cjk_font_families`, `first_existing_cjk_font`, `GUJI_FONT_ENV`                                              |
-| `font_setup.py` | 中文字体体检与 Linux 补装        | `check_cjk_font`, `install_plan`, `install_cjk_fonts`, `classify_failure`, `manual_install_text`                               |
-| `help.py`        | 帮助文本与分页显示              | `process_help_command`                                                                                                         |
+| 模块              | 职责                           | 主要函数 / 常量                                                                                                                 |
+| ----------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| `box_geometry.py` | 文本框几何规则（GUI/CLI 共用） | `parse_border_mm`, `compute_final_boxes`                                                                                        |
+| `box_draw.py`     | 检测框标注绘制（GUI/CLI 共用） | `draw_boxes`, `box_color`, `box_name`, `find_cjk_font`                                                                          |
+| `image_utils.py`  | 图像处理核心算法               | `calculate_auto_threshold`, `extract_red_seal`, `apply_otsu_to_region`, `apply_otsu_whole`, `parse_border`, `parse_border_mm`   |
+| `image_io.py`     | OpenCV 读写（中文路径安全）    | `imread`, `imwrite`                                                                                                             |
+| `file_utils.py`   | 文件收集与校验                 | `collect_image_files`, `is_valid_image_size`, `IMAGE_EXTS`                                                                      |
+| `yolo_utils.py`   | YOLO 模型加载与检测            | `load_yolo_model`, `detect_left_right_boxes`                                                                                    |
+| `pdf_utils.py`    | PDF 渲染与提取                 | `parse_pages`, `validate_page_range`, `calculate_zoom`, `process_page_batch`, `extract_pdf_optimized`, `run_on_input_directory` |
+| `path_utils.py`   | 输出目录解析                   | `resolve_final_output_dir`, `get_extract_output_root`                                                                           |
+| `sort_utils.py`   | 自然排序                       | `natural_sort_key`, `pdf_custom_sort_key`                                                                                       |
+| `string_utils.py` | 字符串辅助                     | `num_to_chinese`                                                                                                                |
+| `fonts.py`        | 中文字体候选（跨平台）         | `cjk_font_paths`, `cjk_font_families`, `first_existing_cjk_font`, `GUJI_FONT_ENV`                                               |
+| `font_setup.py`   | 中文字体体检与 Linux 补装      | `check_cjk_font`, `install_plan`, `install_cjk_fonts`, `classify_failure`, `manual_install_text`                                |
+| `help.py`         | 帮助文本与分页显示             | `process_help_command`                                                                                                          |
 
 ---
 
@@ -202,7 +202,7 @@ GUI 的预览控件也要画同样的框。配色与命名必须一致，否则�
 
 **延迟加载 YOLO 模型单例**：双重检查锁定（double-checked locking）确保多线程下只加载一次。
 
-- 权重文件路径：`gujitools/weights/detect.pt`
+- 权重文件路径：`gujitools/weights/bookcontent.pt`
 - 强制 CPU 模式（兼容无 GPU 环境）
 - 找不到权重文件时抛出 `FileNotFoundError`
 
@@ -340,10 +340,10 @@ GUI 的待打印列表与 CLI `print` 都使用它，保证页序一致。
 
 字体分成两层，边界是**有没有副作用**：
 
-| 模块           | 职责                       | 副作用                                   |
-| -------------- | -------------------------- | ---------------------------------------- |
-| `fonts.py`     | 跨平台候选路径 / 字体族名  | 无（纯查表），被 PDF 绘制、GUI 主题共用  |
-| `font_setup.py`| 体检 + Linux 自动安装      | 有（跑 apt/dnf、可能弹 pkexec 提权框）   |
+| 模块            | 职责                      | 副作用                                  |
+| --------------- | ------------------------- | --------------------------------------- |
+| `fonts.py`      | 跨平台候选路径 / 字体族名 | 无（纯查表），被 PDF 绘制、GUI 主题共用 |
+| `font_setup.py` | 体检 + Linux 自动安装     | 有（跑 apt/dnf、可能弹 pkexec 提权框）  |
 
 ### 为什么必须体检
 
@@ -369,12 +369,12 @@ dnf / pacman / zypper 有各自的包名表（ Fedora 叫
 
 `classify_failure(returncode, output)` 把失败分成四类，界面据此给不同建议：
 
-| status       | 含义                       | 界面动作                       |
-| ------------ | -------------------------- | ------------------------------ |
-| `network`    | 连不上软件源 / 下载失败    | 提示手动安装（离线环境常见）   |
-| `permission` | 授权被取消 / 没有提权手段  | 提示手动安装                   |
-| `refresh`    | 仓库索引过期（内部用）     | **刷一次元数据后重试同一个包** |
-| `failed`     | 其它                       | 贴出日志尾部                   |
+| status       | 含义                      | 界面动作                       |
+| ------------ | ------------------------- | ------------------------------ |
+| `network`    | 连不上软件源 / 下载失败   | 提示手动安装（离线环境常见）   |
+| `permission` | 授权被取消 / 没有提权手段 | 提示手动安装                   |
+| `refresh`    | 仓库索引过期（内部用）    | **刷一次元数据后重试同一个包** |
+| `failed`     | 其它                      | 贴出日志尾部                   |
 
 关键词表是**中英双语**的：用户在 `zh_CN` 的机器上，apt 会输出「不能解析域名」
 而不是 `Temporary failure resolving`，只认英文会把网络问题误判成未知失败。

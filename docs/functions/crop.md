@@ -33,7 +33,7 @@ guji crop --config ./book.yaml
 
 ### 模型加载
 
-- 权重文件路径：`gujitools/weights/detect.pt`
+- 权重文件路径：`gujitools/weights/bookcontent.pt`
 - 延迟加载 + 模块级单例 + 双重检查锁，确保多线程下只加载一次
 - 强制 CPU 模式运行
 
