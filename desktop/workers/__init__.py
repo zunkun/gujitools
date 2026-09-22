@@ -16,12 +16,14 @@ import 了一遍，于是详情页的活——``preview_worker``（PDF 渲染 + 
 """
 
 from desktop.workers.worker_host import WorkerHost, connect_queued
+from desktop.workers.serial_jobs import SerialJobQueue
 
 __all__ = [
     "HashWorker",
     "ImageListWorker",
     "PreviewWorker",
     "RembgLiveWorker",
+    "SerialJobQueue",
     "SourceThumbnailsWorker",
     "TaskRowsWorker",
     "WorkerHost",

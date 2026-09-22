@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 from desktop.store.json_io import read_json, write_json
+from desktop.utils.files import copy_file_atomic
 
 STAGES = ("extract", "detect", "rembg", "print")
 STAGE_LABELS = {
@@ -216,10 +217,15 @@ class TaskMixin:
         return self.task_dir(task_id) / "thumbnails" / "source"
 
     def copy_source_to_task(self, task_id: str, source_path: Path) -> Path:
-        """导入时在任务目录下保留一份源文件副本。"""
+        """导入时在任务目录下保留一份源文件副本（原子落地）。
+
+        ⚠️ 复制本身可能是在**后台线程**里做的（见
+        ``desktop/workers/serial_jobs.py``），而详情页/预览随时会来读这份
+        副本，所以走 ``copy_file_atomic``：写 ``.part`` 再 ``os.replace``，
+        别人不会读到半截 PDF。
+        """
         target = self.task_dir(task_id) / source_path.name
-        shutil.copy2(source_path, target)
-        return target
+        return copy_file_atomic(source_path, target)
 
     def source_copy_path(self, task_id: str) -> Path | None:
         """任务目录里的 PDF 备份路径；没有备份返回 None。

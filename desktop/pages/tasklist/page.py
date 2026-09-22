@@ -33,6 +33,7 @@ from desktop.ui.help_dialog import open_manual
 from desktop.ui.icons import HELP_CIRCLE
 from desktop.workers import (
     HashWorker,
+    SerialJobQueue,
     SourceThumbnailsWorker,
     TaskRowsWorker,
     WorkerHost,
@@ -45,6 +46,9 @@ from desktop.components.task_table import TaskTable
 # 状态文案统一取自 ui.theme，避免各处各自维护一份
 STATUS_LABELS = T.STATUS_LABELS
 
+#: 页头副标题的默认文案；导入期间会被「正在导入 · …」临时顶掉（见 _show_import_status）
+HEADER_SUBTITLE = "导入 PDF 后按四个子任务依次处理"
+
 
 class TaskListPage(QWidget, WorkerHost):
     """任务管理页：搜索 + 分页的任务列表，支持导入 PDF 与删除。
@@ -53,8 +57,10 @@ class TaskListPage(QWidget, WorkerHost):
     ``_render()`` 负责「按关键词过滤 → 分页切片 → 填表」。搜索框只触发
     ``_render()``（不再读盘），所以打字时不会每次都去扫一遍任务目录。
 
-    含表格/空状态二选一的内容区；导入走「后台算指纹→查重→确认建任务」
-    流程，缩略图另行后台生成，全程不阻塞界面。
+    含表格/空状态二选一的内容区。导入刻意分两段：**主线程**只做「算指纹 →
+    查重 → 确认 → 建任务 → 刷新列表」（毫秒级，用户立刻看到新行）；**后台**
+    串行做「复制源文件 + 生成整本缩略图」，且等列表画完才开工，期间挂一条
+    「正在导入」提示条。
     """
 
     open_detail = Signal(str)
@@ -71,6 +77,13 @@ class TaskListPage(QWidget, WorkerHost):
         self.hash_thread: QThread | None = None
         self.hash_worker: HashWorker | None = None
         self._import_button: PrimaryPushButton | None = None
+        # ---- 导入后的后台活（复制源文件 + 整本缩略图）：串行队列 ----
+        self._thumb_queue = SerialJobQueue(self)
+        self._thumb_queue.job_started.connect(self._on_import_job_started)
+        self._thumb_queue.progress.connect(self._on_import_progress)
+        self._thumb_queue.job_finished.connect(self._on_import_job_finished)
+        #: 导入进度（缩略图 done/total）；没有后台活在跑时是 None
+        self._import_progress: tuple[int, int] | None = None
         # ---- 列表状态：全量行 / 关键词 / 页码 / 每页条数 ----
         self._all_rows: list[dict] = []
         self._filtered: list[dict] = []
@@ -90,7 +103,8 @@ class TaskListPage(QWidget, WorkerHost):
         layout.setSpacing(T.SPACE_LG)
 
         # ---- 页头：标题 + 任务数 + 操作 ----
-        header = ui.PageHeader("任务管理", "导入 PDF 后按四个子任务依次处理")
+        header = ui.PageHeader("任务管理", HEADER_SUBTITLE)
+        self._header = header
         # 内置的裸问号图标被裁到边框上，这里用自绘的「带圆圈的问号」
         manual_button = PushButton(HELP_CIRCLE, "用户手册")
         manual_button.setFixedHeight(34)
@@ -215,12 +229,16 @@ class TaskListPage(QWidget, WorkerHost):
             return
         self._all_rows = rows
         self._render()
+        # 列表行已经画出来了，这时候才放后台的复制/缩略图开工——否则它们
+        # 会和上面这几个读盘动作抢 GIL，新行要等 0.5~2.5s 才出现
+        self._thumb_queue.release()
 
     def _on_rows_failed(self, token, message: str) -> None:
         """读失败（任务目录被删/权限不足等）：保留原列表，别把界面清空。"""
         if token is not self.__dict__.get("_refresh_token"):
             return
         print(f"任务列表刷新失败：{message}")
+        self._thumb_queue.release()  # 列表虽然没画成，后台活也不能一直扣着
 
     # ------------------------------------------------------- 过滤 / 分页渲染
     @staticmethod
@@ -381,41 +399,98 @@ class TaskListPage(QWidget, WorkerHost):
     def _create_imported_task(
         self, path: Path, source_hash: str, duplicate_confirmed: bool = False
     ) -> None:
+        """建任务 → 立刻出列表行 → 源文件副本与缩略图交给后台队列。
+
+        ⚠️ **主线程只做「写一个 tasks.json」这一件事**（实测 ~5ms）。复制源
+        文件（一本书几十 MB）和渲染整本缩略图（2400 页要 69s）都进后台：
+        它们由 ``_thumb_queue`` 串行跑，**并且等列表行画完再放行**。
+
+        为什么顺序这么讲究（实测见 ``.workbuddy/perf/``）：
+        - 列表回程要读 N 个任务的 runs.json，无争抢时 7.5ms；一旦和渲染线程
+          撞上，每次文件操作都要排 GIL 队列，「导入 → 看见新行」从 0.2s
+          变成 0.5~2.5s；
+        - 多个渲染线程并行时主线程 ``create_task`` 中位从 5ms 涨到 929ms。
+        所以：**先出行，再放后台干活**，且一次只跑一个。
+        """
         task_id = self.store.create_task(
             path, source_hash, path.stem, duplicate_confirmed=duplicate_confirmed
         )
-        # 源文件副本留在任务目录下，任务自包含
-        try:
-            self.store.copy_source_to_task(task_id, path)
-        except OSError as exc:
-            self._toast("warning", "副本保存失败", str(exc))
         self.refresh()
-        self._toast("success", "导入成功", f"{path.name} 已加入任务列表")
-        # 逐页缩略图后台生成，落到任务目录 thumbnails/ 子文件夹，之后不再清理
-        thumbnails_dir = self.store.source_thumbnails_dir(task_id)
-        thread = QThread(self)
-        # 缩略图也从**备份**渲染：源文件随后被移动/删除不影响已导入的任务
+        # 逐页缩略图 + 源文件副本：后台生成，落到任务目录 thumbnails/ 与根目录，
+        # 之后不再清理。渲染的是**副本**，源文件随后被移动/删除都不影响本任务。
         worker = SourceThumbnailsWorker(
-            self.store.ensure_source_copy(task_id) or path, thumbnails_dir
+            path,
+            self.store.source_thumbnails_dir(task_id),
+            copy_to=self.store.task_dir(task_id) / path.name,
         )
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)
-        # worker 在子线程 emit → 排队回主线程再弹 toast（connect_queued）
-        connect_queued(
-            self,
-            worker.failed,
-            lambda msg: self._toast("warning", "缩略图生成失败", msg),
-            thread,
+        self._thumb_queue.submit(
+            worker,
+            label=path.name,
+            on_warning=lambda msg: self._toast("warning", "副本保存失败", msg),
+            on_failed=lambda msg: self._toast("warning", "缩略图生成失败", msg),
         )
-        worker.finished.connect(thread.quit)
-        worker.failed.connect(thread.quit)
-        thread.finished.connect(worker.deleteLater)
-        # 持有 (thread, worker) 引用，防止线程启动前被垃圾回收
-        self._thumbnail_jobs = [
-            (t, w) for t, w in getattr(self, "_thumbnail_jobs", []) if t.isRunning()
-        ]
-        self._thumbnail_jobs.append((thread, worker))
-        thread.start()
+
+    # ------------------------------------------------------ 导入进度提示
+    def _on_import_job_started(self, label: str) -> None:
+        """后台活开工：把「正在导入」写进页头副标题。"""
+        self._import_progress = None
+        self._show_import_status(self._import_status_text(0))
+
+    def _on_import_progress(self, done: int, total: int) -> None:
+        """缩略图渲染进度：把「12/123」写进页头。"""
+        self._import_progress = (done, total)
+        self._show_import_status(self._import_status_text(done))
+
+    def _on_import_job_finished(self, label: str) -> None:
+        """一个后台活结束：还有排队的就继续显示，全干完才恢复页头。"""
+        if self._thumb_queue.busy():
+            self._show_import_status(self._import_status_text(0))
+            return
+        self._import_progress = None
+        self._show_import_status("")
+        self._toast("success", "导入完成", f"{label} 已可处理")
+
+    #: 提示文案里文件名的最大展示长度（页头是一行，长名会顶到右侧按钮）
+    _IMPORT_NAME_LIMIT = 12
+
+    def _import_status_text(self, done: int) -> str:
+        """拼「正在导入」文案：干到哪、哪一本、后面还排了几个。"""
+        name = self._thumb_queue.current_label() or "文件"
+        if len(name) > self._IMPORT_NAME_LIMIT:
+            name = name[: self._IMPORT_NAME_LIMIT] + "…"
+        waiting = self._thumb_queue.pending_count()
+        total = self._import_progress[1] if self._import_progress else 0
+        if done and total:
+            body = f"正在导入 · 缩略图 {done}/{total}"
+        elif total:
+            body = f"正在导入 · 已复制，共 {total} 页"
+        else:
+            body = "正在导入 · 复制源文件"
+        body += f" · {name}"
+        if waiting:
+            body += f" +{waiting} 排队"
+        return body
+
+    def _show_import_status(self, text: str) -> None:
+        """把「正在导入」写进**页头副标题**；空串则恢复默认说明。
+
+        为什么不用 InfoBar 常驻条：qfluentwidgets 的 InfoBarManager 在
+        ``showEvent`` 里登记，控件被隐藏再显示时会重复登记，列表里留下悬垂
+        条目——之后任何一条 toast 自动关闭都会在 ``_updateDropAni`` 里对
+        已销毁对象取属性，控制台刷 ``Internal C++ object already deleted``。
+        页头是固定高度的，改副标题不会顶动右侧按钮，长驻状态放这里最稳。
+        """
+        if text:
+            ui.apply_to(self._header.subtitle_label, T.SIZE_CAPTION, color=T.ACCENT)
+            self._header.set_subtitle(text)
+        else:
+            ui.apply_to(self._header.subtitle_label, T.SIZE_CAPTION, color=T.INK_FAINT)
+            self._header.set_subtitle(HEADER_SUBTITLE)
+
+    def shutdown_workers(self) -> None:
+        """关程序前的收尾：先停导入后台队列（复制/缩略图），再走基类线程。"""
+        self._thumb_queue.shutdown()
+        super().shutdown_workers()
 
     # ------------------------------------------------------------------ 删除
     def delete_task(self, task_id: str) -> None:

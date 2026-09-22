@@ -95,7 +95,11 @@ class MainWindow(QMainWindow):
         详情页持有 worker 子进程与后台线程的引用，直接退出会让进程被强杀；
         这里把事件转交给详情页的 closeEvent 完成 kill/等待/清理后再接受关闭。
         详情页是惰性的——没建过就说明没有 worker 需要收尾。
+
+        列表页也要收尾：导入后的「复制源文件 + 生成缩略图」在后台队列里，
+        整本可能几千页（实测 2400 页要 69s），退出时让它尽快收手。
         """
+        self.list_page.shutdown_workers()
         if self._detail_page is not None:
             self._detail_page.closeEvent(event)
         event.accept()  # 文件存储无需关闭

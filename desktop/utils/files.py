@@ -4,7 +4,10 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import re
+import shutil
+import threading
 from pathlib import Path
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
@@ -49,6 +52,38 @@ def file_hash(path: Path, chunk_size: int = 1024 * 1024) -> str:
         while chunk := source.read(chunk_size):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def copy_file_atomic(source: Path, target: Path) -> Path:
+    """把 source 复制到 target，**要么没有、要么完整**。
+
+    ⚠️ 不能用裸 ``shutil.copy2(source, target)``：导入后的复制是在**后台
+    线程**里跑的，而详情页/PDF 预览随时会来看任务目录里的副本。直接往
+    target 写，复制途中它就 ``is_file() == True`` 了，读到的却是半截
+    PDF——渲染失败、甚至静默出一张残缺页。
+
+    所以先写同目录的临时文件，落盘后再 ``os.replace`` 原子改名。临时名带
+    .part 后缀，``glob("*.pdf")`` 之类的兜底查找也扫不到它。
+
+    ⚠️ 临时名里要带 **pid + 线程号**：同一个副本可能被两个地方同时复制
+    （后台队列复制中，用户已经点进详情页 → ``ensure_source_copy`` 又复制
+    一遍）。共用一个临时名的话两边会交叉写同一个文件；各自写自己的临时
+    文件则内容相同，谁最后 replace 都对。
+    """
+    temp = target.with_name(
+        f"{target.name}.{os.getpid():x}{threading.get_ident():x}.part"
+    )
+    try:
+        shutil.copy2(source, temp)
+    except OSError:
+        # 失败别留下半截临时文件，否则会被当成"下次可复用"
+        try:
+            temp.unlink()
+        except OSError:
+            pass
+        raise
+    os.replace(temp, target)
+    return target
 
 
 def natural_key(name: str):

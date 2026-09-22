@@ -51,7 +51,16 @@ def run(ctx) -> None:
     ok("重复文件确认后新建一条", len(repo.list_tasks()) == rows_before + 1)
     newest = repo.list_tasks()[0]
     ok("新建任务标记 duplicate_confirmed", newest["duplicate_confirmed"] == 1)
-    ok("新建任务保留副本", (repo.task_dir(newest["id"]) / ctx.big_pdf.name).exists())
+    # ⚠️ 源文件副本是**后台**落的（导入只保证"立刻出一行"，复制/缩略图都在
+    #    串行队列里跑），所以这里必须等，不能同步断言——等待期间要 processEvents
+    ok(
+        "新建任务保留副本",
+        wait_until(
+            app,
+            lambda: (repo.task_dir(newest["id"]) / ctx.big_pdf.name).exists(),
+            timeout=10.0,
+        ),
+    )
     thumbs_dir = repo.source_thumbnails_dir(newest["id"])
     for _ in range(100):
         if thumbs_dir.exists() and len(list(thumbs_dir.glob("*.jpg"))) == 80:
