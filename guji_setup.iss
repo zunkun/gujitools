@@ -222,23 +222,25 @@ end;
 
 procedure RefreshEnvironment;
 var
-  Msg, AppDir: string;
+  Msg, AppDir, OldDir: string;
 begin
   AppDir := ExpandConstant('{app}');
+  OldDir := ExpandConstant('{localappdata}\Software\guji');
+  { 提示要短句多行：MsgBox 不给中文断行，一行太长会横向溢出被截。 }
+  { 安装目录不写出来——用户不关心装在哪，只关心怎么用。 }
   Msg := '古籍重製 安装完成！' + #13#10 + #13#10 +
-         '• 安装目录：' + AppDir + #13#10 +
-         '• 命令行：guji 命令已加入当前用户 PATH（' + AppDir + '），' +
-         '关闭所有终端窗口重新打开后即可直接运行 guji。' + #13#10 +
+         '• 命令行：guji 命令已加入当前用户 PATH。' + #13#10 +
+         '  关闭所有终端窗口重新打开后，即可直接运行 guji。' + #13#10 +
          '• 图形界面：已创建「古籍重製」开始菜单项，可直接启动。';
   { 旧目录若还在（没被旧卸载程序带走），提示一句——不代删，避免误删。 }
   { ⚠️ #13#10 不可写成行首：ISPP 会把行首的 # 当成预处理指令报
     "Unknown preprocessor directive"（真踩过）。续行必须以字符串开头。 }
-  if DirExists(ExpandConstant('{localappdata}\Software\guji'))
-     and (CompareText(AppDir, ExpandConstant('{localappdata}\Software\guji')) <> 0) then
+  if DirExists(OldDir)
+     and (CompareText(AppDir, OldDir) <> 0) then
     Msg := Msg + #13#10 + #13#10 +
-           '提示：检测到旧版本目录仍在：' +
-           ExpandConstant('{localappdata}\Software\guji') + #13#10 +
-           '它已不再使用，可手动删除以释放约 650 MB 空间。';
+           '提示：检测到旧版本目录仍在（已不再使用，可手动删除）：' + #13#10 +
+           OldDir + #13#10 +
+           '删除它可释放约 650 MB 空间。';
   MsgBox(Msg, mbInformation, MB_OK);
 end;
 

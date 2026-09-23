@@ -41,7 +41,7 @@ def run(ctx) -> None:
     )
     from desktop.store import STAGE_LABELS
     from desktop.ui import theme as T
-    from tests.selftests._context import ok, pump
+    from tests.selftests._context import is_reddish, ok, painted_color, pump
 
     app, d, repo = ctx.app, ctx.d, ctx.repo
 
@@ -113,19 +113,24 @@ def run(ctx) -> None:
         text = d.stage_status.text()
 
         def status_color() -> str:
-            """状态行当前的前景色（调色板，不是样式表）。"""
-            return d.stage_status.palette().color(
-                d.stage_status.foregroundRole()
-            ).name().lower()
+            """状态行的**实际渲染色**（不是调色板）。
+
+            ⚠️ 这里必须看渲染结果：状态行是 qfluentwidgets 的 ``CaptionLabel``，
+            它不读调色板。第一版查 ``palette().color(foregroundRole())``，
+            调色板里是红的、画出来是黑的，断言却一直是绿的——用户 2026-09-23
+            截图报「这个红色没有修改过来」就是这么漏过去的。
+            """
+            rgb = painted_color(d.stage_status)
+            return "#000000" if rgb is None else "#%02x%02x%02x" % rgb
 
         ok("第四步状态行提示上游已重新执行（并点出是「提交去底色结果」）",
            text.startswith("● 上游已重新执行")
            and STAGE_LABELS["rembg_submit"] in text,
            text)
         ok("提示里带上上游执行的时间（时:分）", ":" in text, text)
-        ok("过期提示用警示色（红色）标识",
-           status_color() == T.DANGER.lower(),
-           f"{status_color()} vs {T.DANGER}")
+        ok("过期提示**真的画成红字**（不是只在调色板里红）",
+           is_reddish(painted_color(d.stage_status)),
+           f"实际渲染 {status_color()}；调色板 {d.stage_status.palette().color(d.stage_status.foregroundRole()).name()}")
         ok("「生成PDF」按钮被加粗高亮",
            "font-weight" in d.run_button.styleSheet(),
            d.run_button.styleSheet())
@@ -137,7 +142,8 @@ def run(ctx) -> None:
         ok("改过版面时显示「版面已修改」而不是上游提示",
            d.stage_status.text().startswith("● 版面已修改"), d.stage_status.text())
         ok("版面提示同样是警示色（同一类「需重新生成」）",
-           status_color() == T.DANGER.lower(), status_color())
+           is_reddish(painted_color(d.stage_status)),
+           f"实际渲染 {status_color()}")
         d._print_dirty = False
 
         # 重新生成 PDF（写入更新的成功记录）→ 提示与高亮一起消失、颜色复位
@@ -154,8 +160,8 @@ def run(ctx) -> None:
            and d.stage_status.text().startswith(f"{STAGE_LABELS['print']}："),
            d.stage_status.text())
         ok("颜色也复位成常规柔和色（红字不许留在常规状态上）",
-           status_color() == T.INK_SOFT.lower(),
-           f"{status_color()} vs {T.INK_SOFT}")
+           not is_reddish(painted_color(d.stage_status)),
+           f"实际渲染 {status_color()}（常规状态 {T.INK_SOFT} 不该是红的）")
         ok("重新生成后按钮高亮也撤掉",
            d.run_button.styleSheet() == "", d.run_button.styleSheet())
 

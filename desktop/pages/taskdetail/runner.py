@@ -220,7 +220,10 @@ class StageRunnerMixin:
             # 开始重新生成即清除「版面已修改」标脏
             self._print_dirty = False
             try:
-                self.stage_status.setText("未执行")
+                # ⚠️ 必须走 _set_stage_status（不能只 setText）：状态行是同一个
+                # QLabel 被三处共用，只改文字不重置颜色的话，上一条"过期提示"的
+                # 红字会留在这里（见 page.py::_set_stage_status）。
+                self._set_stage_status("未执行")
             except Exception:
                 pass
             self.log_view.append(
@@ -292,7 +295,9 @@ class StageRunnerMixin:
         if self._progress_belongs_here(stage):
             self.stage_progress.setRange(0, 1)
             self.stage_progress.setValue(0)
-            self.stage_status.setText(
+            # 走 _set_stage_status 而不是 setText：颜色要跟着回到常规色，
+            # 否则上一条"上游已重跑/版面已修改"的红字会留在「执行中」上
+            self._set_stage_status(
                 f"{STAGE_LABELS[stage]}：{STATUS_LABELS['running']}"
             )
         if stage == "extract":
@@ -406,7 +411,7 @@ class StageRunnerMixin:
         """
         if self.process and self.process.state() != QProcess.NotRunning:
             self.cancel_requested = True
-            self.stage_status.setText("正在中断子任务...")
+            self._set_stage_status("正在中断子任务...")
             self.log_view.append("已请求中断，正在终止子任务进程...")
             # 立即把运行记录置为已中断：进程被强杀来不及回调时，
             # 状态不会永远停留在 "running"（否则重启后按钮状态是错的）
@@ -483,7 +488,7 @@ class StageRunnerMixin:
         if total and self._progress_belongs_here(event.get("stage")):
             self.stage_progress.setRange(0, total)
             self.stage_progress.setValue(min(done, total))
-            self.stage_status.setText(f"进度 {done}/{total}")
+            self._set_stage_status(f"进度 {done}/{total}")
         # 记住最近一次进度：finish_stage 用它补齐最终计数（见 _worker_finished）
         self._last_progress = (done, total)
         # 写运行记录 / 重建步骤条 / 重建提取结果缩略图条都是重活，见 _PROGRESS_UI_MS
@@ -648,7 +653,8 @@ class StageRunnerMixin:
                 # 重新生成完成，清除「版面已修改」标脏
                 self._print_dirty = False
                 try:
-                    self.stage_status.setText("成功")
+                    # 同上：颜色要一起回到常规色
+                    self._set_stage_status("成功")
                 except Exception:
                     pass
         self._refresh_stage_views()

@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from qfluentwidgets import ComboBox
+from qfluentwidgets import ComboBox, FluentLabelBase
 
 from desktop.ui.fonts import ui_font
 from desktop.ui.segmented_toggle import SegmentedToggle
@@ -68,12 +68,29 @@ def apply_to(
     bold: bool = False,
     color: str | None = None,
 ) -> QLabel:
-    """给 QLabel 统一设置字体与颜色（颜色用调色板，不用样式表）。"""
+    """给 QLabel 统一设置字体与颜色。
+
+    ⚠️ **上色有两条路，按控件类型分流**：
+
+    - qfluentwidgets 的标签（``FluentLabelBase`` 子类：CaptionLabel / BodyLabel /
+      StrongBodyLabel / TitleLabel / SubtitleLabel）**不读调色板**——它们用
+      ``setStyleSheet("color: …")`` 自己画（``setTextColor``）。对它们只 ``setPalette``
+      的话调色板里明明写着红色、**渲染出来仍是黑的**（2026-09-23 用户报「这个红色
+      没有修改过来」就是这么来的）。所以必须走 ``setTextColor``。
+    - 原生 ``QLabel`` 仍走调色板（原来的做法；对它用样式表反而会牵连子控件，
+      见模块头那段"样式表会把 QFrame 底色刷白"的教训）。
+
+    判据用 ``isinstance`` 而不是 ``hasattr(widget, "setTextColor")``：
+    ``QTextEdit`` 也有同名方法，但它设的是"以后输入的文字颜色"，语义完全不同。
+    """
     widget.setFont(ui_font(size, bold))
     if color:
-        palette = widget.palette()
-        palette.setColor(widget.foregroundRole(), QColor(color))
-        widget.setPalette(palette)
+        if isinstance(widget, FluentLabelBase):
+            widget.setTextColor(QColor(color))
+        else:
+            palette = widget.palette()
+            palette.setColor(widget.foregroundRole(), QColor(color))
+            widget.setPalette(palette)
     return widget
 
 

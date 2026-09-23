@@ -82,6 +82,41 @@ def wait_until(app, condition, timeout: float = 5.0, interval: float = 0.02) -> 
     return condition()
 
 
+def painted_color(widget) -> tuple[int, int, int] | None:
+    """把控件**真渲染出来**，返回最像"文字"的那个像素的 RGB。
+
+    取的是"彩度 + 暗度"最高的像素（背景是白/浅灰，文字像素得分明显更高）。
+
+    ⚠️ **校验文字颜色必须看渲染结果，不能查 ``palette()``**：qfluentwidgets 的
+    标签（``FluentLabelBase`` 子类）根本不读调色板，它用样式表自己画。2026-09-23
+    踩到——调色板里明明写着 ``#C93A3A``，画出来是纯黑，而"查调色板"的护栏一直
+    是**假绿**。同理也别只查 ``styleSheet()``：它只能证明"设了"，证明不了"画了"。
+
+    返回 ``None`` 表示控件一个非背景像素都没有（没字 / 没显示）。
+    """
+    image = widget.grab().toImage()
+    best, best_score = None, -1
+    for y in range(image.height()):
+        for x in range(image.width()):
+            color = image.pixelColor(x, y)
+            score = (255 - color.value()) + color.saturation()
+            if score > best_score:
+                best, best_score = color, score
+    return (best.red(), best.green(), best.blue()) if best is not None else None
+
+
+def is_reddish(rgb: tuple[int, int, int] | None, margin: int = 40) -> bool:
+    """这个颜色算不算"红字"（红通道明显高于绿蓝）。
+
+    比"等于某个色值"稳：抗锯齿会让边缘像素混白，但**最深的那一撮**仍是主色。
+    ``margin=40`` 能把 ``#4E5862``（常规柔和墨色，r=78 g=88 b=98）判为非红。
+    """
+    if rgb is None:
+        return False
+    red, green, blue = rgb
+    return red > green + margin and red > blue + margin
+
+
 class Context:
     """跨模块共享的夹具与状态。
 

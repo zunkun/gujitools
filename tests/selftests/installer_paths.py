@@ -145,7 +145,46 @@ def run(ctx) -> None:
     ok("guji_setup.iss：[Code] 里没有行首 # 的续行（ISPP 会当预处理指令）",
        not hash_lines, "; ".join(hash_lines))
 
-    # ---- 6. 用户文档与实现同源 ----
+    # ---- 6. 安装完成提示：短句多行，不写用户不关心的东西 ----
+    # （用户 2026-09-23：弹窗里一行太长读不动；"安装目录"这种用户不关心，别写）
+    finish = re.search(r"procedure RefreshEnvironment;(.*?)\nend;", iss, re.S)
+    ok("guji_setup.iss：存在 RefreshEnvironment（安装完成提示）", finish is not None)
+    body = finish.group(1) if finish else ""
+    # ExpandConstant 的参数不是提示文案；`{ }` 注释（不许嵌套，见下面第 5 节）
+    # 是写给维护者看的，也不算文案 —— 都剥掉再统计
+    prose = re.sub(r"ExpandConstant\('[^']*'\)", "", body)
+    prose = re.sub(r"\{[^{}]*\}", "", prose)
+    ok("guji_setup.iss：完成提示不写安装目录（用户不关心装在哪）",
+       "安装目录" not in prose, prose[:120])
+
+    # 路径变量必须独占一行：路径又长又断不开，混进句子里就是"一行太长"的根源
+    path_uses = len(re.findall(r"\b(?:AppDir|OldDir)\b\s*\+\s*(?:#13#10\s*\+)?", prose))
+    path_alone = len([ln for ln in prose.splitlines()
+                      if re.match(r"^\s*(?:AppDir|OldDir)\s*\+", ln)])
+    ok("guji_setup.iss：提示里的路径变量独占一行（不与文案混排）",
+       path_uses == path_alone and path_uses >= 1,
+       f"{path_uses} 处里只有 {path_alone} 处独占一行")
+
+    # 还原实际显示的行：`'A' + #13#10 + 'B' + 'C'` 里，被 #13#10 隔开的是两行，
+    # 同一块里的字面量是**同一行**的续接
+    def _width(text: str) -> int:
+        import unicodedata
+
+        return sum(2 if unicodedata.east_asian_width(ch) in "WF" else 1
+                   for ch in text)
+
+    shown = []
+    for chunk in prose.split("#13#10"):
+        text = "".join(re.findall(r"'([^']*)'", chunk))
+        if text:
+            shown.append(text)
+    ok("guji_setup.iss：完成提示确实拆出了多行（别因为解析错了而假绿）",
+       len(shown) >= 4, f"{len(shown)} 行：{shown[:2]}…")
+    too_long = [(t, _width(t)) for t in shown if _width(t) > 56]
+    ok("guji_setup.iss：完成提示每行不超过 56 个显示列（MsgBox 不给中文断行）",
+       not too_long, "; ".join(f"「{t}」={w} 列" for t, w in too_long))
+
+    # ---- 7. 用户文档与实现同源 ----
     ok("README：写清了安装目录（用户级 Programs，不装 Software）",
        EXPECTED_DIR in readme)
     ok("README：写明构建只产出安装包、不做部署",
