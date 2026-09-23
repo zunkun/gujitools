@@ -17,6 +17,7 @@ from desktop.services.submit_state import (
     NEW_VERSION, NO_PREVIEW, PREVIEW_STALE, UP_TO_DATE,
     rembg_submit_version_state,
 )
+from desktop.ui.widgets import bold_button
 from desktop.utils.files import list_stage_images
 from desktop.pages.taskdetail.runner import STATUS_LABELS
 
@@ -191,25 +192,25 @@ class SubmitMixin:
         self.submit_button.setEnabled(version not in (None, NO_PREVIEW))
         if version == NEW_VERSION:
             self.submit_button.setText("提交本次任务（有新版本）")
-            self.submit_button.setStyleSheet(
-                "PrimaryPushButton{font-weight:bold;}"
-            )
+            # ⚠️ 加粗走 setFont：setStyleSheet 会把 qfluent 按钮的整套 qss
+            # （含 hasIcon=true 的 36px 左边距）整串抹掉（见 widgets.bold_button）
+            bold_button(self.submit_button, True)
             self._show_submit_hint(
                 "● 预览有新版本，请提交本次任务", "#c0392b"
             )
         elif version == PREVIEW_STALE:
             self.submit_button.setText("提交本次任务")
-            self.submit_button.setStyleSheet("")
+            bold_button(self.submit_button, False)
             self._show_submit_hint(
                 "● 去底参数已修改，请重新「生成预览」后再提交", "#b8860b"
             )
         elif version == UP_TO_DATE:
             self.submit_button.setText("提交本次任务")
-            self.submit_button.setStyleSheet("")
+            bold_button(self.submit_button, False)
             self._show_submit_hint("最终图片已是最新版本", "#3a8a3e")
         else:  # no_preview / 执行中
             self.submit_button.setText("提交本次任务")
-            self.submit_button.setStyleSheet("")
+            bold_button(self.submit_button, False)
             self.submit_hint.hide()
 
     def _show_submit_hint(self, text: str, color: str) -> None:

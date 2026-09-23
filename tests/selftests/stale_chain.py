@@ -132,8 +132,11 @@ def run(ctx) -> None:
            is_reddish(painted_color(d.stage_status)),
            f"实际渲染 {status_color()}；调色板 {d.stage_status.palette().color(d.stage_status.foregroundRole()).name()}")
         ok("「生成PDF」按钮被加粗高亮",
-           "font-weight" in d.run_button.styleSheet(),
-           d.run_button.styleSheet())
+           d.run_button.font().bold(),
+           f"bold={d.run_button.font().bold()}")
+        ok("加粗不得动按钮的样式表（qss 一被整串替换，图标就压到文字上）",
+           "hasIcon=true" in d.run_button.styleSheet(),
+           f"样式表长度 {len(d.run_button.styleSheet())}")
 
         # 版面改动（用户直接改）优先于上游提示
         d._print_dirty = True
@@ -162,8 +165,11 @@ def run(ctx) -> None:
         ok("颜色也复位成常规柔和色（红字不许留在常规状态上）",
            not is_reddish(painted_color(d.stage_status)),
            f"实际渲染 {status_color()}（常规状态 {T.INK_SOFT} 不该是红的）")
-        ok("重新生成后按钮高亮也撤掉",
-           d.run_button.styleSheet() == "", d.run_button.styleSheet())
+        ok("重新生成后按钮加粗也撤掉（且样式表仍原封不动）",
+           not d.run_button.font().bold()
+           and "hasIcon=true" in d.run_button.styleSheet(),
+           f"bold={d.run_button.font().bold()} "
+           f"样式表长度 {len(d.run_button.styleSheet())}")
 
         # 上游没过期时，其它步骤不该被误报
         d._select_stage(2)

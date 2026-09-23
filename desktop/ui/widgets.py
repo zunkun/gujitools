@@ -46,6 +46,7 @@ __all__ = [
     "SegmentedToggle",
     "StatusChip",
     "apply_to",
+    "bold_button",
     "combo_box",
     "icon_pixmap",
     "ui_font",
@@ -92,6 +93,22 @@ def apply_to(
             palette.setColor(widget.foregroundRole(), QColor(color))
             widget.setPalette(palette)
     return widget
+
+
+def bold_button(button: QWidget, bold: bool) -> None:
+    """把按钮文字加粗 / 还原（高亮用）。
+
+    ⚠️ **别用 ``setStyleSheet("…{font-weight:bold;}")`` 干这件事**：qfluentwidgets
+    给每个按钮的样式表是**整串 setStyleSheet 进去的**（约 7.6KB），里面有一条
+    ``PushButton[hasIcon=true] { padding: 5px 12px 6px 36px; }`` —— 图标是
+    ``paintEvent`` 手绘在左边 12px 处的，**全靠这 36px 左边距让居中的文字让开**。
+    整串替换后 padding 全没了，图标就画到文字上了（2026-09-23 用户报
+    「执行本子任务按钮中的图片显示在了文字上面」）。``setFont`` 只动字体，
+    不碰样式表；按钮 qss 里没有 ``font:`` 规则，所以控件字体生效。
+    """
+    font = button.font()
+    font.setBold(bold)
+    button.setFont(font)
 
 
 def combo_box(

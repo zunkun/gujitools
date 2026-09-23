@@ -32,7 +32,7 @@ from desktop.services.font_catalog import start_background_scan
 from desktop.services.stale_chain import stale_upstream
 from desktop.store import STAGES, STAGE_LABELS
 from desktop.ui import theme as T
-from desktop.ui.widgets import apply_to
+from desktop.ui.widgets import apply_to, bold_button
 from desktop.workers import WorkerHost
 from desktop.pages.taskdetail.detect import DetectMixin
 from desktop.pages.taskdetail.history import HistoryMixin
@@ -100,6 +100,11 @@ class TaskDetailPage(
         self.detect_cache: dict[str, list[tuple] | None] = {}
         self._last_error_line: str | None = None
         self._extract_seen = 0  # 提取过程中已展示的结果页数
+        #: 最近一次 progress 事件 (done, total)。⚠️ 这里必须给**实例级默认值**：
+        #: 它平时在"开始执行"路径里赋值（runner.py），但进程收尾
+        #: （``_worker_finished``，含看门狗兜底）会读它——若收尾先于任何一次
+        #: 正常启动（护栏就是这么直接调的），没有默认值就是 AttributeError。
+        self._last_progress: tuple[int, int] = (0, 0)
         #: 「上游重跑 → 本步产物已过期」的判定缓存（键为下游阶段名）。
         #: ⚠️ **只在运行收尾/切任务时**重算：判定要读整份 runs.json，而
         #: _refresh_stage_views 在运行期每 ≤200ms 就跑一次，绝不能放那儿。
@@ -435,9 +440,10 @@ class TaskDetailPage(
         但**不阻止**用户先干别的——只提示，不自动重跑。
         """
         pending = self._regenerate_notice(self.current_stage()) is not None
-        self.run_button.setStyleSheet(
-            "PrimaryPushButton{font-weight:bold;}" if pending else ""
-        )
+        # ⚠️ 加粗走 setFont，别用 setStyleSheet("…{font-weight:bold}") —— 那会把
+        # qfluent 按钮的整套 qss（含 hasIcon=true 的 36px 左边距）整串抹掉，
+        # 图标就画到文字上了（见 desktop.ui.widgets.bold_button）
+        bold_button(self.run_button, pending)
 
     # ------------------------------------------------------------------ 预览刷新
     def _refresh_preview(self, index: int | None = None) -> None:

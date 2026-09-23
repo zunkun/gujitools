@@ -47,11 +47,50 @@ class _FakeProc:
 
 
 def run(ctx) -> None:
+    import ast
+
     from PySide6.QtCore import QProcess
 
-    from tests.selftests._context import ok, pump
+    from tests.selftests._context import ROOT, ok, pump
 
     app, d, repo = ctx.app, ctx.d, ctx.repo
+
+    # ---- 0. 带图标的按钮不得用 setStyleSheet 上样式（会把 qss 整串抹掉）----
+    # qfluent 按钮的 qss 里有 `PushButton[hasIcon=true]{padding-left:36px}`，
+    # 图标是 paintEvent 手绘的，全靠这条让居中的文字让开；整串替换后图标就
+    # 压到文字上（2026-09-23 用户报「执行本子任务按钮中的图片显示在了文字上面」）。
+    # 加粗一律走 desktop.ui.widgets.bold_button（setFont）。
+    bypass = []
+    for path in sorted((ROOT / "desktop").rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            if not (isinstance(func, ast.Attribute) and func.attr == "setStyleSheet"):
+                continue
+            receiver = getattr(func.value, "attr", None) or getattr(
+                func.value, "id", None
+            )
+            if not receiver or "button" not in receiver.lower():
+                continue
+            # 遍历整个调用子树：实参可能是条件表达式
+            # （`setStyleSheet("…" if pending else "")`），只看 args 会漏掉
+            for sub in ast.walk(node):
+                if isinstance(sub, ast.Constant) and isinstance(sub.value, str) \
+                        and "font-weight" in sub.value:
+                    bypass.append(f"{path.name}:{node.lineno}({receiver})")
+                    break
+    ok("没有按钮用 setStyleSheet 设 font-weight（qss 被整串替换后图标压字）",
+       not bypass, str(bypass))
+    qss = d.run_button.styleSheet()
+    ok("执行按钮的 qss 完整（hasIcon 的 36px 左边距还在）",
+       "hasIcon=true" in qss and "padding" in qss,
+       f"样式表长度 {len(qss)}")
+    ok("「继续执行」「中断」两颗带图标按钮的 qss 同样完整",
+       all("hasIcon=true" in b.styleSheet() for b in (d.resume_button, d.cancel_button)),
+       str([len(b.styleSheet()) for b in (d.resume_button, d.cancel_button)]))
+
 
     # 专用任务：守卫要读阶段状态刷按钮，需要一个真实 task_id（用完即删）
     tid = repo.create_task(Path("D:/samples/守卫样例.pdf"), "hash-guard", "守卫样例")
