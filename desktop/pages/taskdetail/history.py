@@ -22,11 +22,26 @@ class HistoryMixin:
     # 历史里存的是旧值或用户曾经填的自定义名，不应覆盖当前任务的规则值
     _PRINT_FIXED_KEYS = frozenset({"pdf_name", "title_text"})
 
+    #: **自动**回填（进阶段时那次）额外要跳过的字段，按阶段给。
+    #:
+    #: extract 的 ``pages`` 是「续跑」时按缺失页**派生**出来的一次性参数
+    #: （见 StageRunnerMixin._run_stage_unchecked），压根不是用户意图。自动回填它
+    #: 会让下一次点「执行本子任务」只跑那一小段页码——用户看到的就是"只提取了一半"，
+    #: 而且历史里存的还是这个残缺范围，越跑越窄。
+    #:
+    #: ⚠️ 只作用于**自动**回填。用户在下拉框里主动挑一条历史配置时仍然原样回填
+    #: （那是"照那次参数再跑一遍"的明确指令，tests/selftests/history.py 钉着）。
+    _AUTO_SKIP = {"extract": frozenset({"pages"})}
+
     def _history_fill_keys(self, stage: str) -> set:
         skip = set(self._HISTORY_SKIP)
         if stage == "print":
             skip |= self._PRINT_FIXED_KEYS
         return skip
+
+    def _auto_fill_keys(self, stage: str) -> set:
+        """自动回填（进阶段时的默认回填）用的跳过集合 = 历史跳过 + 阶段专属。"""
+        return self._history_fill_keys(stage) | self._AUTO_SKIP.get(stage, frozenset())
 
     def _restore_stage_params(self, index: int) -> None:
         """进入页面/切换阶段时回填参数：**暂存优先**，其次最近一次执行。
@@ -50,7 +65,7 @@ class HistoryMixin:
         if history:
             params = {
                 k: v for k, v in history[0].get("parameters", {}).items()
-                if k not in self._history_fill_keys(stage)
+                if k not in self._auto_fill_keys(stage)
             }
             self.control_stack.widget(index).apply_args(params)
 

@@ -32,6 +32,40 @@ class StageRunnerMixin:
     """依赖宿主页面提供的属性：store/task_id/source_path/pages、
     control_stack、stage_* 控件、log_view、process/run_id 等。"""
 
+    #: 进度事件的**界面刷新合并窗口**(ms)。
+    #:
+    #: ⚠️ 为什么必须合并：extract 每渲染完一页就发一条 progress 事件，一本 100 页
+    #: 的书就是 100 条。每条都去做「写 runs.json + 重建步骤条 + 重建提取结果缩略图
+    #: 条」是几十毫秒级的重活（实测 GUI 每秒只吃得下十几条），GUI 于是远远落在
+    #: worker 后面。后果有两个：界面明显发卡；更严重的是**进程退出时管道里还压着
+    #: 一大批没读的事件**，收尾时被一并丢掉 —— 历史里留下「成功 done=14/total=84」、
+    #: 日志缺「处理完成」那行，用户看到的就是"像被中断了/只提取了一半"。
+    #: 进度条与状态文字仍逐条即时更新（纯内存操作，便宜）。
+    _PROGRESS_UI_MS = 200
+
+    def _init_progress_ui(self) -> None:
+        """建进度刷新节流器（宿主页面 __init__ 里调一次，须在 _init_ui 之后）。"""
+        self._progress_ui_timer = QTimer(self)
+        self._progress_ui_timer.setSingleShot(True)
+        self._progress_ui_timer.setInterval(self._PROGRESS_UI_MS)
+        self._progress_ui_timer.timeout.connect(self._flush_progress_ui)
+        self._progress_dirty = False
+
+    def _flush_progress_ui(self) -> None:
+        """把合并掉的进度落盘并刷新步骤条 / 提取结果（收尾时也必须调一次）。"""
+        if self._progress_ui_timer.isActive():
+            self._progress_ui_timer.stop()
+        if not self._progress_dirty:
+            return
+        self._progress_dirty = False
+        if self.task_id and self.run_id:
+            done, total = self._last_progress
+            if total:
+                self.store.set_progress(self.task_id, self.run_id, done, total)
+        self._refresh_stage_views()
+        if self.running_stage == "extract":
+            self._poll_extract_results()
+
     # ---------------------------------------------------------- 执行/中断
     def run_stage(self, resume: bool = False) -> None:
         """启动当前阶段的 worker 子进程（带执行权守卫，防连点起两个）。
@@ -216,6 +250,10 @@ class StageRunnerMixin:
         # 最近一次 progress 事件 (done, total)：worker 结束时不带计数，
         # 用它把最终进度落到历史记录里（见 _worker_finished）。
         self._last_progress = (0, 0)
+        # 半行缓冲/进度合并都是**每次运行**的临时状态，别把上一次的残留带过来
+        self._stdout_tail = ""
+        self._progress_dirty = False
+        self._progress_ui_timer.stop()
         if stage == "extract":
             self._extract_seen = len(
                 list_stage_images(self.store.extract_output_dir(self.task_id))
@@ -282,8 +320,23 @@ class StageRunnerMixin:
                     code = 1
                 _finish_once(code, proc.exitStatus())
             elif not _process_alive(proc.processId()):
-                # OS 进程已退出而 Qt 未感知
-                _finish_once(0, QProcess.NormalExit)
+                # OS 进程已退出，Qt 却没报 finished（Windows 偶发）。
+                # ⚠️ 这里**不能**直接 ``_finish_once(0, NormalExit)``：
+                # ① 硬编码 0 会把崩溃/失败（退出码非 0）报成"执行成功"；
+                # ② 立刻收尾会丢掉管道里还没读的 progress/log 事件。
+                # 所以先让 Qt 收尾——它会排空管道并把**真实退出码**带回来；
+                # 实在收不了尾才按失败兜底（宁可误报失败，不可误报成功）。
+                if proc.waitForFinished(1500):
+                    code = proc.exitCode()
+                    if not self._proc_started and code == 0:
+                        code = 1
+                    _finish_once(code, proc.exitStatus())
+                else:
+                    self.log_view.append(
+                        "[看门狗] worker 进程已退出但未正常收尾，按失败处理"
+                    )
+                    self._last_error_line = "worker 未正常收尾（看门狗兜底）"
+                    _finish_once(1, QProcess.CrashExit)
 
         def _mark_started() -> None:
             self._proc_started = True
@@ -322,10 +375,38 @@ class StageRunnerMixin:
 
     # ---------------------------------------------------------- 输出解析
     def _read_worker_output(self) -> None:
+        """worker stdout 有数据到达（信号槽）：交给解析层。"""
         if not self.process:
             return
-        data = bytes(self.process.readAllStandardOutput()).decode("utf-8", errors="replace")
-        for line in data.splitlines():
+        self._consume_worker_stdout(bytes(self.process.readAllStandardOutput()))
+
+    def _consume_worker_stdout(self, data: bytes, final: bool = False) -> None:
+        """解析 worker 输出的 JSON Lines 事件。
+
+        ``final=True`` 用于收尾的最后一次读取：此时把残留的半行也当完整行
+        处理，别让它永远留在缓冲区里。
+
+        ⚠️ **必须做半行重组**：管道读取会在任意字节处截断，一条 JSON 事件被劈成
+        两半时 ``json.loads`` 必然失败、整条事件被降级成"人读日志"丢掉 ——
+        表现就是"进度偶尔少一条"。所以留一个尾巴，等下一批字节拼回来。
+        """
+        text = self._stdout_tail + data.decode("utf-8", errors="replace")
+        if final:
+            self._stdout_tail = ""
+            lines = text.splitlines()
+        else:
+            lines = text.split("\n")
+            tail = lines.pop()  # 末段可能不完整，留给下一批
+            # ⚠️ 只有「看起来是半条 JSON 事件」的余量才值得留到下一批拼回来。
+            # 协议外的裸 print（没有换行的库输出）一旦被留下，下一条真正的事件
+            # 会被拼到它后面、一起解析失败 —— 那就从"丢半条"变成"丢一条"。
+            # 所以非 JSON 的余量立刻当人读日志收掉。
+            if tail and not tail.lstrip().startswith("{"):
+                if tail.strip():
+                    self.log_view.append(tail)
+                tail = ""
+            self._stdout_tail = tail
+        for line in lines:
             try:
                 event = json.loads(line)
             except json.JSONDecodeError:
@@ -337,18 +418,7 @@ class StageRunnerMixin:
                 continue
             etype = event.get("type")
             if etype == "progress":
-                done, total = event.get("done", 0), event.get("total", 0)
-                if self.run_id:
-                    self.store.set_progress(self.task_id, self.run_id, done, total)
-                if total:
-                    self.stage_progress.setRange(0, total)
-                    self.stage_progress.setValue(min(done, total))
-                    self.stage_status.setText(f"进度 {done}/{total}")
-                # 记住最近一次进度：finish_stage 用它补齐最终计数（见 _worker_finished）
-                self._last_progress = (done, total)
-                self._refresh_stage_views()
-                if self.running_stage == "extract":
-                    self._poll_extract_results()
+                self._on_worker_progress(event)
             elif etype == "log":
                 self.log_view.append(event.get("message", ""))
             elif etype == "page_boxes":
@@ -361,6 +431,33 @@ class StageRunnerMixin:
                 self.log_view.append(f"错误：{event.get('message')}")
             elif etype == "cancelled":
                 self.log_view.append("worker 已被中断。")
+
+    def _on_worker_progress(self, event: dict) -> None:
+        """一条 progress 事件：轻量部分即时上屏，重活按窗口合并。"""
+        done, total = event.get("done", 0), event.get("total", 0)
+        if total:
+            self.stage_progress.setRange(0, total)
+            self.stage_progress.setValue(min(done, total))
+            self.stage_status.setText(f"进度 {done}/{total}")
+        # 记住最近一次进度：finish_stage 用它补齐最终计数（见 _worker_finished）
+        self._last_progress = (done, total)
+        # 写运行记录 / 重建步骤条 / 重建提取结果缩略图条都是重活，见 _PROGRESS_UI_MS
+        self._progress_dirty = True
+        if not self._progress_ui_timer.isActive():
+            self._progress_ui_timer.start()
+
+    def _drain_worker_output(self, proc) -> None:
+        """收尾前把管道余量读干（含最后那条不完整的行）。
+
+        ⚠️ 唯一调用点是 :meth:`_worker_finished`，且**必须在清 ``self.process`` /
+        ``self.run_id`` 之前**：这两个引用一清，后面到达的事件就再也进不了日志
+        与运行记录（大任务时 GUI 本来就落后，管道里常常还压着一批事件）。
+        """
+        try:
+            self._consume_worker_stdout(bytes(proc.readAllStandardOutput()), final=True)
+            self._consume_worker_stderr(bytes(proc.readAllStandardError()))
+        except RuntimeError:
+            pass  # 底层对象已析构（进程被强行收掉）
 
     def _store_page_size(self, event: dict) -> None:
         """extract 阶段上报的页面图片原始尺寸写入 sizes.json（框坐标的坐标系基准）。"""
@@ -400,8 +497,11 @@ class StageRunnerMixin:
         source = self.process or self.detect_process
         if not source:
             return
-        data = bytes(source.readAllStandardError()).decode("utf-8", errors="replace")
-        for line in data.splitlines():
+        self._consume_worker_stderr(bytes(source.readAllStandardError()))
+
+    def _consume_worker_stderr(self, data: bytes) -> None:
+        """解析 stderr 字节：逐行进日志，并记下像错误的那一行（失败提示用）。"""
+        for line in data.decode("utf-8", errors="replace").splitlines():
             line = line.strip()
             if line:
                 self.log_view.append(f"[stderr] {line}")
@@ -427,6 +527,21 @@ class StageRunnerMixin:
 
     def _worker_finished(self, exit_code: int, _status) -> None:
         stage = self.running_stage
+        # ⚠️ 收尾第一件事：把管道里剩下的输出读完。
+        # Qt 的 finished / 看门狗可能比最后一批 progress/log 事件先到（大任务时
+        # GUI 本来就落在 worker 后面），而下面马上要清 self.process 与 self.run_id ——
+        # 一清就等于把这批事件永久丢掉：进度停在中间值（历史里
+        # 「成功 done=14/total=84」）、日志缺「🎉 处理完成」那行，用户看到的就是
+        # "像被中断了/只提取了一半"。排空 + 落最后一次进度之后再清引用。
+        proc = self.process
+        if proc is not None:
+            if proc.state() != QProcess.NotRunning:
+                try:
+                    proc.waitForFinished(300)  # 让 Qt 收尾并排空管道
+                except RuntimeError:
+                    pass
+            self._drain_worker_output(proc)
+        self._flush_progress_ui()
         if self.cancel_requested:
             status = "cancelled"
         elif exit_code == 0:

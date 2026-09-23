@@ -104,8 +104,11 @@ def run_extract_stage(config: dict) -> int:
 
         pages_str = args.get("pages")
         try:
+            # ⚠️ parse_pages 返回的**已经是 0-based** 页码（见其文档字符串），
+            # GUI 侧不许再减一：再减会让整段页码前移一页——缺失页里的最后一页
+            # 永远提取不出来，而前一页会被重做（2026-09-23 修）。
             page_indices = (
-                [n - 1 for n in parse_pages(pages_str, total_pages)]
+                parse_pages(pages_str, total_pages)
                 if pages_str
                 else list(range(total_pages))
             )

@@ -39,6 +39,16 @@ class ThumbStrip(QListWidget):
     current_path_changed = Signal(int, str)
     order_changed = Signal()
 
+    #: 滚轮一格的翻页步长（**条目数**）。用户口径：一格 5 页。
+    #:
+    #: ⚠️ 不能沿用 Qt 默认。``IconMode`` 下 QListView 是按滚动条的 ``singleStep``
+    #: / ``QApplication::wheelScrollLines()``（Windows 的"每次滚动行数"）推步长的，
+    #: 实测一格翻 **3 个条目**，而且条目越矮、系统行数设置越大就翻得越多
+    #: （矮条目 80px 时一格仍翻 3 条；系统设成 12 行就是十几页）——用户反馈的
+    #: "一滚就翻十几页" 就是这个。改成自己按条目算，翻页量与条目高矮、系统设置
+    #: 都无关。
+    WHEEL_STEP_ITEMS = 5
+
     #: 条目之间的**可见间隙**（px）。⚠️ 这是条目外唯一的间距来源：条目
     #: 自己不再留任何余量（高度按图算，见 _item_hint），所以调间距只改这里。
     ITEM_SPACING = 6
@@ -70,10 +80,66 @@ class ThumbStrip(QListWidget):
         self.setStyleSheet("QListWidget::item { padding: 0px; }")
         self._placeholder = self._make_placeholder()
         self._reorderable = False
+        #: 滚轮 delta 的**余量**：触控板/高分辨率滚轮会连发小于一格(120)的
+        #: delta，攒够一格才翻；不累加的话一次轻推就会连翻好几格。
+        self._wheel_rest = 0
         self.setDragDropMode(QAbstractItemView.DragDropMode.NoDragDrop)
         self.model().rowsMoved.connect(self._on_rows_moved)
         # 当前行变化（鼠标点击 / 键盘方向键 / 程序化 setCurrentRow 都会走到）
         self.currentRowChanged.connect(self._on_current_row_changed)
+
+    # ---------------------------------------------------------------- 滚轮
+    def wheelEvent(self, event) -> None:  # noqa: N802
+        """滚轮按**条目**翻页：一格滚轮 = ``WHEEL_STEP_ITEMS`` 个条目。
+
+        刻意不调 ``super()``：Qt 那条路径按 singleStep / 系统"滚动行数"算步长
+        （见 WHEEL_STEP_ITEMS 的说明），会把一格变成十几页。这里自己算目标行号
+        并把该行落到顶端，翻页量恒定。
+        """
+        delta = event.angleDelta().y()
+        if not delta:
+            return super().wheelEvent(event)
+        if self.verticalScrollBar().maximum() <= 0:
+            # 内容不足一屏：本控件没啥可滚，把滚轮让给外层滚动区（别吞掉）
+            event.ignore()
+            return
+        self._wheel_rest += delta
+        notches = int(self._wheel_rest / 120)  # 向下滚为负
+        self._wheel_rest -= notches * 120
+        event.accept()
+        if notches:
+            self._scroll_items(-notches * self.WHEEL_STEP_ITEMS)
+
+    def _scroll_items(self, rows: int) -> None:
+        """把最上面那条平移 rows 个条目（正 = 向下看后面的页），两端自动夹住。"""
+        count = self.count()
+        if count <= 0 or not rows:
+            return
+        target = max(0, min(count - 1, self._first_visible_row() + rows))
+        bar = self.verticalScrollBar()
+        # ⚠️ 值域是**像素**（IconMode 下 QListView 就是这么报的），所以按逐条
+        # sizeHint 累计出目标行顶端再落值；直接用 singleStep 会因条目高矮不一而漂。
+        bar.setValue(min(self._row_top(target), bar.maximum()))
+
+    def _row_top(self, row: int) -> int:
+        """第 row 条顶端距内容顶端的像素偏移（逐条 sizeHint + 条目间隙累计）。"""
+        step = self.spacing()
+        return sum(
+            self.item(i).sizeHint().height() + step
+            for i in range(min(row, self.count()))
+        )
+
+    def _first_visible_row(self) -> int:
+        """当前最上面那条的行号（按像素偏移反查，不依赖 indexAt 的间隙行为）。"""
+        value = self.verticalScrollBar().value()
+        step = self.spacing()
+        offset = 0
+        for row in range(self.count()):
+            height = self.item(row).sizeHint().height() + step
+            if offset + height > value:  # 该条下边界已越过视口顶端 → 它可见
+                return row
+            offset += height
+        return max(0, self.count() - 1)
 
     def _item_hint(self, display_h: int) -> QSize:
         """条目的 sizeHint：宽固定（占满条宽），高 = 图实际显示高 + 文字行。

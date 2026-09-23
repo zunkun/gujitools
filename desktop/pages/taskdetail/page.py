@@ -97,7 +97,12 @@ class TaskDetailPage(
         self.detect_cache: dict[str, list[tuple] | None] = {}
         self._last_error_line: str | None = None
         self._extract_seen = 0  # 提取过程中已展示的结果页数
+        #: worker stdout 的半行缓冲（管道读取会在任意字节处截断，见
+        #: StageRunnerMixin._consume_worker_stdout）
+        self._stdout_tail = ""
         self._init_ui()
+        # 进度事件的界面刷新节流器（见 StageRunnerMixin._PROGRESS_UI_MS）
+        self._init_progress_ui()
         # 参数暂存：面板报到"用户改了参数"就防抖写 drafts/<阶段>.json
         self._install_draft_hooks()
         # 第三步实时预览：改参数/翻页时只重算当前页（见 rembg_live.RembgLiveMixin）
