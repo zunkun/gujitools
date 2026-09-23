@@ -22,23 +22,24 @@ class DetectPanel(StagePanel):
     """
 
     stage = "detect"
-    title = "检测文本框 (detect)"
+    title = "检测文本框"
     description = (
-        "YOLO 检测每张图的左右文本框坐标（detect_left_right_boxes），"
+        "自动检测每张图的左右文本框坐标，"
         "用于预览标注与去底色/裁剪区域。本阶段只识别坐标，不生成文件。"
         "普通文档/检测失败可勾选「整页模式」，整页作为一个文本框，跳过检测。"
     )
 
-    # 手动触发当前页检测（重负载：YOLO 子进程，不自动执行）
+    # 手动触发当前页检测（重负载：检测子进程，不自动执行）
     detect_page_requested = Signal()
-    # 整页模式开关（等价于第三步 area=4）
+    # 整页模式开关（等价于第三步的「整页」区域）
     whole_page_toggled = Signal(bool)
 
     def _build_form(self, form: QFormLayout) -> None:
-        self.whole_page = CheckBox("整页模式：不调用 YOLO")
+        self.whole_page = CheckBox("整页模式：不做检测")
         self.whole_page.setToolTip(
-            "整页作为一个文本框（等价于第三步 area=4）：跳过 YOLO 检测，"
-            "预览里的框画在页面边界，可继续拖动/重画。适合普通文档或古籍检测失败时"
+            "整页作为一个文本框（与第三步「区域模式」里的整页是同一件事）："
+            "跳过检测，预览里的框画在页面边界，可继续拖动/重画。"
+            "适合普通文档或古籍检测失败时"
         )
         self.whole_page.toggled.connect(self.whole_page_toggled.emit)
         form.addRow(self.whole_page)
@@ -46,7 +47,7 @@ class DetectPanel(StagePanel):
         button = PrimaryPushButton("检测本页")
         # 与其它阶段面板的表单控件同高（qfluent 按钮默认只有 27px）
         button.setFixedHeight(CONTROL_HEIGHT)
-        button.setToolTip("对当前选中的页面执行一次文本框检测（加载 YOLO 模型，耗时较长）")
+        button.setToolTip("对当前选中的页面执行一次文本框检测（需加载检测模型，耗时较长）")
         button.clicked.connect(self.detect_page_requested.emit)
         form.addRow(button)
 

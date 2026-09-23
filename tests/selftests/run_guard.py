@@ -188,6 +188,53 @@ def run(ctx) -> None:
         ok("进程收尾后执行权自动释放",
            d._run_claim is None and d.run_button.isEnabled(),
            f"claim={d._run_claim!r}")
+
+        # ---- 9. 失败原因必须落盘（"静默失败"唯一的事后可查线索）----
+        # 这一类失败**一条输出都没有**：0 条事件、0.2 秒退出、记录里只剩
+        # done=0/total=0。用户报的「提交失败，界面也没说为什么」就是它 ——
+        # 界面上只有一条会自己消失的 toast，所以原因必须写进 runs.json。
+        _reset()
+        d.cancel_requested = False
+        run_id = repo.create_stage_run(tid, "rembg_submit", {"area": 1})
+        d.run_id = run_id
+        d.running_stage = "rembg_submit"
+        d._last_error_line = None
+        toasts.clear()
+        d._worker_finished(1, QProcess.ExitStatus.CrashExit)
+        rec = next(r for r in repo.list_stage_runs(tid, "rembg_submit")
+                   if r["run_id"] == run_id)
+        ok("失败原因（退出码）落进运行记录，不再只有 done=0/total=0",
+           rec["status"] == "failed" and rec.get("error") == "退出码 1",
+           str({k: rec.get(k) for k in ("status", "done", "total", "error")}))
+        ok("失败 toast 与记录里的原因一致",
+           bool(toasts) and toasts[-1][0] == "error" and toasts[-1][2] == "退出码 1",
+           str(toasts))
+        ok("失败原因也留在日志里（toast 会消失，日志不会）",
+           "失败原因：退出码 1" in d.log_view.toPlainText(),
+           d.log_view.toPlainText()[-120:].replace("\n", " / "))
+
+        # 有具体错误行（stderr / 子进程启动失败）时，记具体原因而不是退出码
+        run_id2 = repo.create_stage_run(tid, "rembg_submit", {"area": 1})
+        d.run_id = run_id2
+        d.running_stage = "rembg_submit"
+        d._last_error_line = "子进程启动失败：C:\\x\\python.exe"
+        d._worker_finished(1, QProcess.ExitStatus.CrashExit)
+        rec2 = next(r for r in repo.list_stage_runs(tid, "rembg_submit")
+                    if r["run_id"] == run_id2)
+        ok("有具体错误行时记具体原因（优先于退出码）",
+           rec2.get("error") == "子进程启动失败：C:\\x\\python.exe",
+           str(rec2.get("error")))
+        d.run_id = None
+        d.running_stage = None
+
+        # 成功的那次不留 error（别把上一条失败的原因串过来）
+        ok_run = repo.create_stage_run(tid, "rembg_submit", {"area": 1})
+        repo.finish_stage(tid, ok_run, "success", progress=(6, 6))
+        rec_ok = next(r for r in repo.list_stage_runs(tid, "rembg_submit")
+                      if r["run_id"] == ok_run)
+        ok("成功的记录不带失败原因",
+           rec_ok["status"] == "success" and not rec_ok.get("error"),
+           str(rec_ok.get("error")))
     finally:
         (
             d._run_stage_unchecked,

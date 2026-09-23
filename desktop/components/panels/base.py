@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+import re
+
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QLabel, QLineEdit,
@@ -163,8 +165,69 @@ class StagePanel(QWidget):
         scroll.setWidget(container)
         return scroll
 
+    #: 标签列允许的最大宽度（px，用标签自身字体量出）。
+    #:
+    #: 为什么需要：QFormLayout 的标签列宽 = **所有行里最宽的那个标签**，所以一条
+    #: 长标签会把**整张面板**的输入框一起压扁。实测（1080×720、控制卡片 364px）：
+    #: 「印章最小饱和度（sealmin_sat）」一条 240px，把第三步全部字段压到 **112px**
+    #: （「边距」的占位文字「留空 或 30 / 20,30 / 20,30,25,35」被截得只剩几个字，
+    #: 「阈值偏移」的滑块也短得没法拖）。用户在截图上报的就是这个。
+    #:
+    #: 两档处理（用户 2026-09-23：「参数 label 太长了，如果太长，英文可以放在下一行，
+    #: 保证输入框表单够长」）：
+    #:
+    #: 1. 整条标签 ≤ 140px → 原样一行；
+    #: 2. 整条超了、但**折行后的两段都 ≤ 140px** → 把尾部的「（键名）」挪到第二行，
+    #:    标签列于是降到 ≈「中文那行」的宽度；
+    #: 3. 连「（键名）」这一行自身都超 140px（`（sealmin_sat）` 就有 156px，而
+    #:    括号里的下划线英文**没法再断行**）→ 这一行改成「上标签 / 下控件」，
+    #:    输入框直接吃满卡片宽度。
+    #:
+    #: 第三步实测：字段 112 → **232px**，只有最长的 `sealmin_sat` 那一条换成上下排
+    #: （字段 364px）；第一步最长标签 132px，两条规则都不触发，一行都没动。
+    LABEL_MAX_WIDTH = 140
+
     def _add_row(self, form: QFormLayout, label: str, widget) -> None:
-        form.addRow(label, widget)
+        """加一行参数；标签过长时按 :data:`LABEL_MAX_WIDTH` 折行或改排法。
+
+        ⚠️ 判据用**标签自身字体**量出的像素宽，不是字数：中文与英文宽度差一倍，
+        按字数判会把「快速模式（quick）」这种其实放得下的标签也改掉。
+        """
+        text, stacked = self._fit_label(label)
+        if stacked:
+            # ⚠️ PySide6 的 addRow 没有 `addRow(str)` 这个重载（C++ 有），
+            # 必须显式建 QLabel；`addRow(控件)` 会让它跨两列。
+            row_label = QLabel(text)
+            row_label.setWordWrap(True)
+            form.addRow(row_label)  # 标签独占一行（跨两列）
+            form.addRow(widget)     # 控件独占一行 → 吃满卡片宽度
+            return
+        form.addRow(text, widget)
+
+    def _fit_label(self, label: str) -> tuple[str, bool]:
+        """把标签调成放得下的形态 → ``(文本, 是否整行上下排)``。
+
+        返回值里的文本可能含 ``\\n``（QLabel 会按换行渲染），标签列宽取两行里更宽
+        的那一行；返回 ``(label, False)`` 表示原样即可。
+        """
+        if not label or "\n" in label:
+            return label, False
+        metrics = self.fontMetrics()
+
+        def width(text: str) -> int:
+            return metrics.horizontalAdvance(text)
+
+        if width(label) <= self.LABEL_MAX_WIDTH:
+            return label, False
+        # 尾部「（键名）」：只在最末尾找一层，中间带括号的（如「边距(mm)（border）」）
+        # 也能正确切出 head="边距(mm)"、key="（border）"
+        match = re.search(r"[（(][^（）()]*[）)]$", label)
+        if match is not None:
+            head = label[: match.start()].rstrip()
+            key = match.group(0)
+            if head and max(width(head), width(key)) <= self.LABEL_MAX_WIDTH:
+                return f"{head}\n{key}", False
+        return label, True
 
     def _build_form(self, form: QFormLayout) -> None:  # pragma: no cover
         raise NotImplementedError

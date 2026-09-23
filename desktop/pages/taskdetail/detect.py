@@ -150,7 +150,7 @@ class DetectMixin:
             self._refresh_reference_boxes()
             self._toast(
                 "info", "整页模式",
-                "未调用 YOLO：整页作为一个文本框，可拖动四角调整或重画。",
+                "未做检测：整页作为一个文本框，可拖动四角调整或重画。",
             )
             return
         entry = self.store.detect_boxes_entry(self.task_id, Path(path).stem)

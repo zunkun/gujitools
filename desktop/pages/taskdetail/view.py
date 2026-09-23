@@ -334,8 +334,9 @@ class DetailViewMixin:
             return
         self._save_print_order(silent=True)  # 拖拽频繁落盘，不打列表日志
         self._print_dirty = True
-        self.stage_status.setText("● 版面已修改，点击「生成 PDF」生效")
-        apply_to(self.stage_status, T.SIZE_CAPTION, color=T.INK_SOFT)
+        # 与"上游已重跑"共用同一套产出（文案 + 警示色），避免两处各写一份；
+        # 下一次 _refresh_stage_views 也由 _regenerate_notice 把它重新显出
+        self._set_stage_status("● 版面已修改，点击「生成 PDF」生效", alert=True)
         rx, ry, rw, rh = (list(rect) + [0, 0, 0, 0])[:4]
         self.log_view.append(
             f"第 {index + 1} 页版面已更新（x={rx:.0f}, y={ry:.0f}, "
@@ -371,7 +372,7 @@ class DetailViewMixin:
         self.submit_button = PrimaryPushButton(FIF.ACCEPT, "提交本次任务")
         self.submit_button.setFixedHeight(36)
         self.submit_button.setToolTip(
-            "将「生成预览」的去底色图片按 area/border 等合成为真正想要的最终图片"
+            "将「生成预览」的去底色图片按「区域模式 / 边距」合成为真正想要的最终图片"
         )
         self.submit_button.clicked.connect(self.run_rembg_submit)
         self.submit_button.setVisible(False)

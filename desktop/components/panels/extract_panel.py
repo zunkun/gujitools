@@ -21,7 +21,7 @@ class ExtractPanel(StagePanel):
     """
 
     stage = "extract"
-    title = "提取图片 (extract)"
+    title = "提取图片"
     description = (
         "将源 PDF 每页渲染为图片。左侧可切换「PDF 预览 / 提取结果」两个标签页。"
     )
@@ -36,28 +36,30 @@ class ExtractPanel(StagePanel):
         self.dpi.setSingleStep(50)
         self.dpi.setValue(int(d["dpi"]))
         self.dpi.setToolTip(
-            "整页渲染的 DPI 下限，默认 300。\n"
-            "PDF 的 1pt 在 zoom=1 时只渲染成 1px（=72 DPI），矢量文档这样\n"
-            "提取出来一放大就糊；补到 300 DPI 才能保证打印清晰。\n"
-            "取内嵌图（quick）时按原图字节落盘，这个值不生效。\n"
-            "想要旧的 72 DPI 行为，就把它设成 72。"
+            "整页渲染的清晰度下限（单位：每英寸点数），默认 300。\n"
+            "不放大直接渲染时，PDF 的 1 点只有 1 像素（约合 72），矢量文档这样\n"
+            "提取出来一放大就糊；补到 300 才能保证打印清晰。\n"
+            "取内嵌图时按原图字节落盘，这个值不生效。\n"
+            "想要旧的 72 行为，就把它设成 72。"
         )
         self.ext = combo_box(list(EXTRACT_EXTS))
         self.ext.setCurrentText(str(d["ext"]))
-        self.quick = CheckBox("优先取内嵌图 (quick)")
+        self.quick = CheckBox("优先取内嵌图")
         self.quick.setChecked(bool(d["quick"]))
         self.quick.setToolTip(
-            "直接取 PDF 内嵌的 jpg/png 图，通常更快且分辨率更高。\n"
-            "一页有多张图、内嵌格式是 jp2/jbig2 等、或内嵌图偏小时，"
+            "直接取 PDF 内嵌的图片，通常更快且分辨率更高。\n"
+            "一页有多张图、内嵌图格式很老、或内嵌图偏小时，"
             "会自动降级为整页渲染。"
         )
         self.pages_edit = LineEdit()
         self.pages_edit.setPlaceholderText("留空=全部页，示例：1,2,5-7")
-        self._add_row(form, "缩放因子 zoom", self.zoom)
-        self._add_row(form, "目标 DPI dpi", self.dpi)
-        self._add_row(form, "输出格式 ext", self.ext)
-        self._add_row(form, "快速模式 quick", self.quick)
-        self._add_row(form, "页码范围 pages", self.pages_edit)
+        # 标签格式（用户 2026-09-23 口径）：**中文在前、参数键名放在括号里**。
+        # 键名是有必要留的——这些参数与命令行一一对应，纯中文有时说不清指的是哪个。
+        self._add_row(form, "缩放因子（zoom）", self.zoom)
+        self._add_row(form, "目标清晰度（dpi）", self.dpi)
+        self._add_row(form, "输出格式（ext）", self.ext)
+        self._add_row(form, "快速模式（quick）", self.quick)
+        self._add_row(form, "页码范围（pages）", self.pages_edit)
 
     def get_args(self) -> dict:
         """收集提取参数：zoom/dpi/ext/quick/pages（不含 input/output）。

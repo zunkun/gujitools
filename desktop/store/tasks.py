@@ -11,13 +11,15 @@ from desktop.store.json_io import read_json, write_json
 from desktop.utils.files import copy_file_atomic
 
 STAGES = ("extract", "detect", "rembg", "print")
+# ⚠️ 这些是**界面文案**（步骤条/面板标题/toast/日志共用一份）：有中文就不再附
+# 英文键名 —— 用户口径「四个步骤有中文，英文就不要出现」。
 STAGE_LABELS = {
     "extract": "提取图片",
-    "detect": "检测文本框(detect)",
+    "detect": "检测文本框",
     "rembg": "图片去底色",
     # rembg 的「提交本次任务」动作：预览图按 area/border 合成最终图片
     "rembg_submit": "提交去底色结果",
-    "print": "生成PDF(print)",
+    "print": "生成 PDF",
 }
 
 # 列表里的阶段短名（步骤条/表格空间有限，用 2~3 字表达）
@@ -26,6 +28,19 @@ STAGE_SHORT = {
     "detect": "检测",
     "rembg": "去底",
     "print": "PDF",
+}
+
+#: 运行阶段 → 它归属的**界面步骤**（值取 STAGES 里的一项）。
+#:
+#: ⚠️ 「提交本次任务」（rembg_submit）不是独立步骤，而是第三步 rembg 面板上的
+#: 动作：它的进度必须显示在第三步。有了这张表，界面才谈得上"只有当前这一步的
+#: 进度才上屏"（详见 desktop/pages/taskdetail/runner.py::_progress_belongs_here）。
+STAGE_STEP = {
+    "extract": "extract",
+    "detect": "detect",
+    "rembg": "rembg",
+    "rembg_submit": "rembg",
+    "print": "print",
 }
 
 

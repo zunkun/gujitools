@@ -84,8 +84,8 @@ def run(ctx) -> None:
     ok("批量整页检测不产出任何检测框",
        not [e for e in collected if e.get("type") == "page_boxes"],
        str(collected))
-    ok("批量整页检测日志说明跳过 YOLO",
-       any(e.get("type") == "log" and "跳过 YOLO" in str(e.get("message"))
+    ok("批量整页检测日志说明跳过了检测",
+       any(e.get("type") == "log" and "跳过检测" in str(e.get("message"))
            for e in collected),
        str(collected))
     finished = [e for e in collected if e.get("type") == "finished"]

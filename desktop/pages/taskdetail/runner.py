@@ -17,7 +17,7 @@ from PySide6.QtCore import QProcess, QProcessEnvironment, QTimer
 from desktop.services.print_plan import missing_extract_pages_spec
 from desktop.store.json_io import write_json
 from desktop.utils.files import list_stage_images, project_root
-from desktop.store import STAGE_LABELS
+from desktop.store import STAGE_LABELS, STAGE_STEP
 
 STATUS_LABELS = {
     "pending": "未执行",
@@ -65,6 +65,37 @@ class StageRunnerMixin:
         self._refresh_stage_views()
         if self.running_stage == "extract":
             self._poll_extract_results()
+
+    # ---------------------------------------------------- 进度该显示在哪一步
+    def _step_of_stage(self, stage: str | None) -> str | None:
+        """运行阶段 → 它归属的界面步骤（``rembg_submit`` 归第三步，见 STAGE_STEP）。"""
+        if not stage:
+            return None
+        return STAGE_STEP.get(stage, stage)
+
+    def _progress_belongs_here(self, stage: str | None) -> bool:
+        """这条进度是否该画在**当前显示的这一步**上。
+
+        ⚠️ 进度条与状态文字是**全页面共享**的一份控件，必须只服务当前这一步。
+        以前无条件更新，于是第三步「提交本次任务」的进度被画在第四步的界面上：
+        走动的进度条 +「进度 42/91」+ 灰掉的「生成PDF」按钮 —— 看起来就像第四步
+        在自己生成 PDF（用户报的「在第三步提交，然后进第四步，pdf 在生成过程中」）。
+
+        跨步骤的进度一律不上屏：想知道它还在跑，看「中断」按钮点得亮、日志在滚。
+        """
+        return self._step_of_stage(stage) == self.current_stage()
+
+    def _own_step_running(self) -> bool:
+        """当前这一步**自己**的活儿是否正在跑。
+
+        此时进度条与状态文案归 :meth:`_on_worker_progress` 所有，别的路径
+        （``_apply_stage_state``）不许再写，否则两者每 200ms 互相盖一次，
+        状态文字来回跳。
+        """
+        return (
+            self.running_stage is not None
+            and self._step_of_stage(self.running_stage) == self.current_stage()
+        )
 
     # ---------------------------------------------------------- 执行/中断
     def run_stage(self, resume: bool = False) -> None:
@@ -193,8 +224,8 @@ class StageRunnerMixin:
             except Exception:
                 pass
             self.log_view.append(
-                f"区域合成：area={area}"
-                + (f"，border={border}" if border is not None else "，border=0")
+                f"区域合成：区域模式={area}"
+                + (f"，边距={border}" if border is not None else "，边距=0")
                 + f"（{len(effects)} 页）"
             )
         else:
@@ -254,6 +285,16 @@ class StageRunnerMixin:
         self._stdout_tail = ""
         self._progress_dirty = False
         self._progress_ui_timer.stop()
+        # 本步**自己**的活儿：立刻显示"执行中"并把进度归零 —— 第一个 progress
+        # 事件到达之前（torch 冷启动可达数秒）不该继续挂着上一次的「成功 91/91」。
+        # 跨步骤启动（在别的步骤点了按钮）则一个像素都不动：那一步的进度条与
+        # 文案不该被这一步的活儿改写（见 _progress_belongs_here）。
+        if self._progress_belongs_here(stage):
+            self.stage_progress.setRange(0, 1)
+            self.stage_progress.setValue(0)
+            self.stage_status.setText(
+                f"{STAGE_LABELS[stage]}：{STATUS_LABELS['running']}"
+            )
         if stage == "extract":
             self._extract_seen = len(
                 list_stage_images(self.store.extract_output_dir(self.task_id))
@@ -333,9 +374,9 @@ class StageRunnerMixin:
                     _finish_once(code, proc.exitStatus())
                 else:
                     self.log_view.append(
-                        "[看门狗] worker 进程已退出但未正常收尾，按失败处理"
+                        "[看门狗] 子任务进程已退出但未正常收尾，按失败处理"
                     )
-                    self._last_error_line = "worker 未正常收尾（看门狗兜底）"
+                    self._last_error_line = "子任务进程未正常收尾（看门狗兜底）"
                     _finish_once(1, QProcess.CrashExit)
 
         def _mark_started() -> None:
@@ -366,7 +407,7 @@ class StageRunnerMixin:
         if self.process and self.process.state() != QProcess.NotRunning:
             self.cancel_requested = True
             self.stage_status.setText("正在中断子任务...")
-            self.log_view.append("已请求中断，正在终止 worker...")
+            self.log_view.append("已请求中断，正在终止子任务进程...")
             # 立即把运行记录置为已中断：进程被强杀来不及回调时，
             # 状态不会永远停留在 "running"（否则重启后按钮状态是错的）
             if self.run_id:
@@ -426,16 +467,20 @@ class StageRunnerMixin:
             elif etype == "page_size":
                 self._store_page_size(event)
             elif etype == "started":
-                self.log_view.append(f"worker 已启动：{event.get('stage')}")
+                self.log_view.append(f"子任务进程已启动：{STAGE_LABELS.get(event.get('stage'), event.get('stage'))}")
             elif etype == "error":
                 self.log_view.append(f"错误：{event.get('message')}")
             elif etype == "cancelled":
-                self.log_view.append("worker 已被中断。")
+                self.log_view.append("子任务进程已被中断。")
 
     def _on_worker_progress(self, event: dict) -> None:
-        """一条 progress 事件：轻量部分即时上屏，重活按窗口合并。"""
+        """一条 progress 事件：轻量部分即时上屏，重活按窗口合并。
+
+        ⚠️ 只有**当前显示这一步**自己的进度才上屏（见 :meth:`_progress_belongs_here`）：
+        共享的进度条/文案被跨步骤的进度写进去，就会让人以为"这一步在跑"。
+        """
         done, total = event.get("done", 0), event.get("total", 0)
-        if total:
+        if total and self._progress_belongs_here(event.get("stage")):
             self.stage_progress.setRange(0, total)
             self.stage_progress.setValue(min(done, total))
             self.stage_status.setText(f"进度 {done}/{total}")
@@ -548,6 +593,12 @@ class StageRunnerMixin:
             status = "success"
         else:
             status = "failed"
+        # ⚠️ 失败原因算一次、用三处（落盘 / 日志 / toast）：worker 起不来的那类
+        # 失败**一条输出都没有**（0 事件、0.2 秒退出），只有退出码可依。以前只
+        # 弹一条转瞬即逝的 toast，记录里连原因都没有，事后完全无从查起。
+        failure = None
+        if status == "failed":
+            failure = self._last_error_line or f"退出码 {exit_code}"
         if self.run_id:
             # worker 的 finished 事件不带 done/total（进度由结构化事件实时汇报），
             # 用最近一次进度补齐，否则历史记录会停在中间的 done 值上。
@@ -555,11 +606,19 @@ class StageRunnerMixin:
                 self.task_id, self.run_id, status,
                 str(self.store.stage_output_dir(self.task_id, stage)) if stage else None,
                 progress=self._last_progress,
+                error=failure,
             )
         if self.task_id:
             self.store.update_task(
                 self.task_id, "completed" if status == "success" else status
             )
+        # 这一步刚跑完 → "上游比下游新"的关系可能变了，重算过期提示缓存
+        # （判定要读 runs.json，只能在这类"收尾"时刻做，不能放刷新热路径）。
+        # 必须在下面的 _refresh_stage_views() 之前：那一次刷新就要用新缓存。
+        try:
+            self._refresh_stale_notices()
+        except Exception:
+            pass
         self.process = None
         self.run_id = None
         self.running_stage = None
@@ -619,7 +678,9 @@ class StageRunnerMixin:
                         "最终图片已是最新预览版本，可前往第四步生成 PDF",
                     )
         if status == "failed":
-            reason = self._last_error_line or "退出码 " + str(exit_code)
+            reason = failure or "退出码 " + str(exit_code)
+            # 先落一行日志再弹 toast：toast 会自己消失，日志留在面板里
+            self.log_view.append(f"失败原因：{reason}")
             self._toast("error", f"{STAGE_LABELS.get(stage, '')}失败", reason)
         elif override_toast is not None:
             self._toast(*override_toast)

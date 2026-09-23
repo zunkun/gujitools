@@ -372,7 +372,7 @@ class RembgPreviewWidget(QWidget, ThumbsMixin):
             return
         self.view.clear_image("正在加载...")
         self.toggle_caption.setText(
-            "去底色结果 · 显示范围为步骤二检测框 + area/border 区域"
+            "去底色结果 · 显示范围为步骤二的检测框与「区域模式 / 边距」"
             if show_result
             else ("原图（尚未生成去底色结果）" if not result_img else "原图")
         )

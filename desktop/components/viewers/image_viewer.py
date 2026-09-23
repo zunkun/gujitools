@@ -255,7 +255,7 @@ class ImageViewerWidget(QWidget, ThumbsMixin):
                 return
         if original is not None and original != image.size():
             self.info_label.setText(
-                f"{original.width()} × {original.height()} px（预览已缩放）"
+                f"{original.width()} × {original.height()} 像素（预览已缩放）"
             )
         else:
             self.info_label.setText(f"{image.width()} × {image.height()} px")

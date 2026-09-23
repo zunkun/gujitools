@@ -30,7 +30,7 @@ class PrintPanel(PrintFormMixin, StagePanel):
     """
 
     stage = "print"
-    title = "生成 PDF (print)"
+    title = "生成 PDF"
     description = (
         "设置 PDF 纸张、边距、标题、页码等参数。"
         "左侧列表决定参与生成的图片与顺序。"

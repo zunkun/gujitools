@@ -53,7 +53,7 @@ def run_detect(config: dict) -> int:
             if img is None:
                 raise ValueError(f"无法读取图片: {image_path}")
             h, w = img.shape[:2]
-            _emit_log(f"整页模式(area=4)：{Path(image_path).name} 整页作为一个文本框，未调用 YOLO")
+            _emit_log(f"整页模式：{Path(image_path).name} 整页作为一个文本框，未做检测")
             emit(
                 {
                     "type": "boxes",
@@ -86,7 +86,7 @@ def run_detect(config: dict) -> int:
         )
         return 0
     except Exception as exc:
-        _emit_log(f"detect 失败: {Path(image_path).name} —— {exc}")
+        _emit_log(f"检测失败: {Path(image_path).name} —— {exc}")
         emit({"type": "detect_error", "image": image_path, "message": str(exc)})
         return 1
 
@@ -127,10 +127,10 @@ def run_detect_stage(config: dict) -> int:
         if int(args.get("area") or 1) == WHOLE_PAGE_AREA:
             # 整页模式：不加载 YOLO、不写 boxes.json（框由主进程按整页合成）。
             # 仍逐页报进度，界面上「本子任务」能正常走完，日志说明为何没有框。
-            _emit_log("整页模式（area=4）：跳过 YOLO 检测，整页作为一个文本框", context)
+            _emit_log("整页模式：跳过检测，整页作为一个文本框", context)
             for path in files:
                 done += 1
-                _emit_log(f"detect {path.name}  整页（未调用 YOLO）", context)
+                _emit_log(f"检测 {path.name}  整页（未做检测）", context)
                 emit({"type": "progress", **context, "done": done, "total": total})
             emit(
                 {

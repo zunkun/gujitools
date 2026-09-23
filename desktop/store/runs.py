@@ -2,8 +2,11 @@
 """阶段运行历史（runs.json）：每个阶段保留最近多次执行的记录，最新在前。
 
 结构：{stage: [record, ...]}
-record: {run_id, status, parameters, done, total, started_at, finished_at, output_path}
+record: {run_id, status, parameters, done, total, started_at, finished_at,
+         output_path, error}
 历史记录既用于页面状态渲染（最新一条），也作为阶段面板的历史配置选项。
+``error`` 只在失败时写：worker 起不来的那类失败（0 条事件、0.2 秒退出）
+以前在记录里只有 ``done=0 total=0``，事后完全没法查。
 """
 
 from __future__ import annotations
@@ -71,6 +74,7 @@ class RunMixin:
                 "started_at": time.time(),
                 "finished_at": None,
                 "output_path": None,
+                "error": None,
             },
         )
         runs[stage] = history[:MAX_RUN_HISTORY]
@@ -94,8 +98,9 @@ class RunMixin:
         status: str,
         output_path: str | None = None,
         progress: tuple[int, int] | None = None,
+        error: str | None = None,
     ) -> None:
-        """结束某次运行：写入 status/finished_at/output_path。
+        """结束某次运行：写入 status/finished_at/output_path（可选 error）。
 
         status 取 success/failed/cancelled 等；output_path 为该次执行的
         主产物路径（如 print.pdf、rembg 输出目录），供历史面板回链。
@@ -104,6 +109,11 @@ class RunMixin:
         progress 为 (done, total)，用于补齐最终计数。worker 的 finished 事件
         不再携带 done/total（进度由结构化 progress 事件实时汇报），因此调用方
         传入「最近一次进度」即可让历史记录落到真实完成数，而不是停在中间值。
+
+        error 为失败原因（退出码 / worker 的最后一行错误 / "子进程启动失败"）。
+        ⚠️ 必须落盘：worker 起不来的那类失败**没有任何输出**，界面上只有一条
+        转瞬即逝的 toast，记录里若也只有 ``done=0 total=0``，事后就彻底查不出
+        原因（用户报「提交失败但没说为什么」，只能靠猜）。
         """
         runs = self._load_runs(task_id)
         for records in runs.values():
@@ -112,6 +122,8 @@ class RunMixin:
                     record["status"] = status
                     record["finished_at"] = time.time()
                     record["output_path"] = output_path
+                    if error is not None:
+                        record["error"] = error
                     if progress is not None:
                         record["done"], record["total"] = progress
         self._save_runs(task_id, runs)
@@ -119,6 +131,17 @@ class RunMixin:
     def list_stage_runs(self, task_id: str, stage: str) -> list[dict]:
         """某阶段的历史执行记录，最新在前。"""
         return self._as_history(self._load_runs(task_id).get(stage))
+
+    def all_stage_runs(self, task_id: str) -> dict[str, list[dict]]:
+        """整份运行历史（**一次读盘**），键为阶段名、值为最新在前的记录列表。
+
+        给"跨阶段比对时间戳"这类一次要看全的场景用：逐个 ``list_stage_runs()``
+        会把整份 runs.json 读 N 遍（任务多跑过几次就有几十上百 KB）。
+        """
+        runs = self._load_runs(task_id)
+        return {
+            stage: self._as_history(records) for stage, records in runs.items()
+        }
 
     def stage_states(self, task_id: str) -> dict[str, dict]:
         """每个阶段最近一次运行的状态与进度（页面步骤条渲染用）。

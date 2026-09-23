@@ -38,6 +38,9 @@ class ThumbStrip(QListWidget):
 
     current_path_changed = Signal(int, str)
     order_changed = Signal()
+    #: 用户按了 Delete/Backspace（仅在 ``set_deletable(True)`` 时发出）。
+    #: 本控件**自己不删条目**——删什么、要不要落盘由宿主决定。
+    delete_requested = Signal()
 
     #: 滚轮一格的翻页步长（**条目数**）。用户口径：一格 5 页。
     #:
@@ -80,6 +83,9 @@ class ThumbStrip(QListWidget):
         self.setStyleSheet("QListWidget::item { padding: 0px; }")
         self._placeholder = self._make_placeholder()
         self._reorderable = False
+        #: 是否响应 Delete/Backspace（第四步的待打印列表打开；前三步关着——
+        #: 那里的页序与集合由数据层决定，键盘一按就删太危险）
+        self._deletable = False
         #: 滚轮 delta 的**余量**：触控板/高分辨率滚轮会连发小于一格(120)的
         #: delta，攒够一格才翻；不累加的话一次轻推就会连翻好几格。
         self._wheel_rest = 0
@@ -183,6 +189,25 @@ class ThumbStrip(QListWidget):
         """拖放发生后通知宿主（仅在可排序状态下转发）。"""
         if self._reorderable:
             self.order_changed.emit()
+
+    def set_deletable(self, on: bool) -> None:
+        """打开/关闭 Delete/Backspace 删除（只发信号，删不删由宿主定）。"""
+        self._deletable = bool(on)
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        """Delete/Backspace → ``delete_requested``。
+
+        ⚠️ 第四步工具条的提示写着「Delete 删除选中」，原先没有任何地方接这个
+        键——提示是空头支票，按下去毫无反应。这里只负责把键翻成信号，
+        「删哪些、要不要落盘」仍归宿主（``PrintPreviewWidget.remove_selected``）。
+        """
+        if self._deletable and event.key() in (
+            Qt.Key.Key_Delete, Qt.Key.Key_Backspace,
+        ):
+            self.delete_requested.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     @staticmethod
     def _make_placeholder() -> QIcon:

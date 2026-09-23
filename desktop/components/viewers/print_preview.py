@@ -70,6 +70,10 @@ class PrintPreviewWidget(QWidget, ThumbsMixin):
         self._init_thumbs()
         self._empty_hint = empty_hint
         self._entries_cache: list[dict] = []
+        #: 与 _entries_cache **同序同长**的条目身份令牌（每个条目一个 object()）。
+        #: 缩略图是分批异步装的，若按"派发时的行号"落值，用户在装载途中删除/
+        #: 拖动条目就会把 A 页的图写到 B 页那一行（见 _apply_page_thumb）。
+        self._entry_keys: list[object] = []
         self._params_provider = params_provider
         self._thumb_provider = thumb_provider
         self._mode = "layout"       # layout / original
@@ -88,6 +92,10 @@ class PrintPreviewWidget(QWidget, ThumbsMixin):
         left = QVBoxLayout()
         self.strip = ThumbStrip()
         self.strip.set_reorderable(True)
+        # 工具条提示写着「Delete 删除选中」，那就得真的响应 Delete/Backspace
+        # （ThumbStrip 只管把键翻成信号，删哪些仍由本类的 remove_selected 决定）
+        self.strip.set_deletable(True)
+        self.strip.delete_requested.connect(self.remove_selected)
         self.strip.order_changed.connect(self._on_strip_order_changed)
         self.strip.current_path_changed.connect(self._select_image)
         left.addWidget(self.strip, 1)
@@ -151,6 +159,8 @@ class PrintPreviewWidget(QWidget, ThumbsMixin):
         """重建列表：entries = [{file, label}]，可按条目自带 thumb 指定小图。"""
         self._stop_worker()
         self._entries_cache = list(entries)
+        # 身份令牌与条目一一对应重建：列表整个换了一批，旧令牌全部作废
+        self._entry_keys = [object() for _ in entries]
         self.strip.clear()
         if not entries:
             self.view.clear_image(self._empty_hint)
@@ -235,23 +245,47 @@ class PrintPreviewWidget(QWidget, ThumbsMixin):
 
         ⚠️ 走基类 ``_load_thumbs_chunked`` 分批：页面多时一次性解码会把
         一个核打满（风扇起转），分批后首批立刻可见、其余按间隙补齐。
+
+        ⚠️ 分批派发的是**条目身份令牌**而不是下标：批次跑完之前用户可能已经
+        删除/拖动过条目，行号会变（详见 :meth:`_apply_page_thumb`）。
         """
         entries = self._entries_cache
         if not entries:
             return
-        paths = [self._thumb_path_for(e) for e in entries]
-        labels = [
-            str(e.get("label") or Path(str(e["file"])).stem) for e in entries
+        pending = [
+            (key, self._thumb_path_for(entry))
+            for key, entry in zip(self._entry_keys, entries)
         ]
+        keys = [key for key, _ in pending]
         self._load_thumbs_chunked(
-            len(paths),
+            len(pending),
             make_worker=lambda start, end: ImageListWorker(
-                paths[start:end], edge=self.THUMB_EDGE
+                [path for _, path in pending[start:end]], edge=self.THUMB_EDGE
             ),
-            sink=lambda index, image, _path: self.strip.set_item_icon(
-                index, image, str(entries[index]["file"]), labels[index]
+            sink=lambda index, image, _path, keys=keys: (
+                self._apply_page_thumb(keys[index], image)
+                if 0 <= index < len(keys) else None
             ),
         )
+
+    def _apply_page_thumb(self, key, image) -> None:
+        """某条目的缩略图就绪：**按身份**找回它当前所在的行再落值。
+
+        ⚠️ 这里绝不能用"派发时的下标"。缩略图是分批异步装的（首批 10 张，
+        之后每批 12 张、首轮还要等 2s），一本几百页的书尾部要好几秒才补齐；
+        这期间用户删掉/拖动了条目，行号就整体前移了——按旧下标写会把
+        「别的页的图 + 别的页的标签 + 别的页的路径」一并刷到这一行上。后果
+        不只是看着乱：用户照着缩略图删页，删掉的是**数据层那一条**，跟屏幕
+        上看到的页不是同一张（2026-09-23 用户报「缩略图跟真实图片映射乱了，
+        我就删除了某些页」）。条目已被删除（令牌找不到）时直接丢弃。
+        """
+        try:
+            row = self._entry_keys.index(key)
+        except ValueError:
+            return
+        entry = self._entries_cache[row]
+        label = entry.get("label") or Path(str(entry["file"])).stem
+        self.strip.set_item_icon(row, image, str(entry["file"]), str(label))
 
     def _current_index(self) -> int:
         row = self.strip.currentRow()
@@ -288,7 +322,15 @@ class PrintPreviewWidget(QWidget, ThumbsMixin):
             if index is not None and 0 <= index < len(self._entries_cache):
                 order.append(int(index))
         # 删除后 order 会短于缓存——这正是"去掉被删条目"的效果，不能拦
+        keys = self._entry_keys
+        if len(keys) != len(self._entries_cache):
+            # 正常不会走到（两个表只在 set_entries / 本方法里成对重建）；
+            # 真错位也只重建令牌，绝不让 IndexError 把同步链路打断
+            keys = [object() for _ in self._entries_cache]
         self._entries_cache = [self._entries_cache[i] for i in order]
+        # 身份令牌必须与条目**同步换序**：_apply_page_thumb 靠它找回条目
+        # 当前所在的行号，两者一旦错位就会把缩略图写到别的页上
+        self._entry_keys = [keys[i] for i in order]
         for row in range(self.strip.count()):
             self.strip.item(row).setData(Qt.UserRole + 1, row)
 

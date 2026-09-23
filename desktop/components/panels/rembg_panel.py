@@ -24,10 +24,10 @@ class RembgPanel(StagePanel):
     """
 
     stage = "rembg"
-    title = "图片去底色 (rembg)"
+    title = "图片去底色"
     description = (
-        "整图 Otsu 二值化/灰度化去底，可保留印章。"
-        "area/border 决定显示与裁剪区域（配合步骤二的检测框）。"
+        "整图自动二值化/灰度化去底，可保留印章。"
+        "「区域模式」与「边距」决定显示与裁剪区域（配合步骤二的检测框）。"
     )
 
     def _build_form(self, form: QFormLayout) -> None:
@@ -41,7 +41,7 @@ class RembgPanel(StagePanel):
         self.area = combo_box(REMBG_AREAS)
         self.area.setCurrentIndex(self._index_of(self.area, d["area"]))
         self.area.setToolTip(
-            "4 = 整页：把整页当作唯一文本框（不调用 YOLO），边框画在页面边界，"
+            "4 = 整页：把整页当作唯一文本框（不做检测），边框画在页面边界，"
             "仍可在第二步拖动/重画；适合普通文档或古籍检测失败时整页去底色"
         )
         self.border = LineEdit()
@@ -74,9 +74,9 @@ class RembgPanel(StagePanel):
         offset_layout.setSpacing(8)
         offset_layout.addWidget(self.offset, 1)
         offset_layout.addWidget(self.offset_input)
-        self.seal = CheckBox("保留印章 (seal)")
+        self.seal = CheckBox("保留印章（seal）")
         self.seal.setChecked(bool(d["seal"]))
-        self.sealcolor = CheckBox("印章彩色 (sealcolor)")
+        self.sealcolor = CheckBox("印章彩色（sealcolor）")
         self.sealcolor.setChecked(bool(d["sealcolor"]))
         self.sealarea = SafeSpinBox()
         self.sealarea.setRange(1, 100000)
@@ -93,15 +93,17 @@ class RembgPanel(StagePanel):
         self.offset.valueChanged.connect(self._on_offset_changed)
         self.offset_input.textChanged.connect(self._on_offset_input_changed)
         self.border.setToolTip(
-            "留空时按 area 取默认：area=1/2/3 → 0（不加留白，第四步会在 A4 "
-            "上重新排版）；area=4（整页）→ 不设 border"
+            "留空时按「区域模式」取默认：左右分开 / 合并单图 / 整页合并 → 0"
+            "（不加留白，第四步会在 A4 上重新排版）；整页（不检测）→ 不设边距"
         )
-        self._add_row(form, "area 区域模式", self.area)
-        self._add_row(form, "border 边距(mm)", self.border)
-        self._add_row(form, "type 输出类型", self.type)
-        self._add_row(form, "offset 阈值偏移", offset_row)
-        self._add_row(form, "印章面积阈值", self.sealarea)
-        self._add_row(form, "印章最小饱和度", self.sealmin_sat)
+        # 标签格式（用户 2026-09-23 口径）：中文在前、键名放括号里；
+        # **带单位的**写成「中文(单位)（键名）」（单位跟着中文，别被塞进括号里挤成一团）
+        self._add_row(form, "区域模式（area）", self.area)
+        self._add_row(form, "边距(mm)（border）", self.border)
+        self._add_row(form, "输出类型（type）", self.type)
+        self._add_row(form, "阈值偏移（offset）", offset_row)
+        self._add_row(form, "印章面积阈值（sealarea）", self.sealarea)
+        self._add_row(form, "印章最小饱和度（sealmin_sat）", self.sealmin_sat)
         self._add_row(form, "", self.seal)
         self._add_row(form, "", self.sealcolor)
 

@@ -29,7 +29,10 @@ from PySide6.QtCore import QProcess, Signal
 from PySide6.QtWidgets import QWidget
 
 from desktop.services.font_catalog import start_background_scan
+from desktop.services.stale_chain import stale_upstream
 from desktop.store import STAGES, STAGE_LABELS
+from desktop.ui import theme as T
+from desktop.ui.widgets import apply_to
 from desktop.workers import WorkerHost
 from desktop.pages.taskdetail.detect import DetectMixin
 from desktop.pages.taskdetail.history import HistoryMixin
@@ -97,6 +100,10 @@ class TaskDetailPage(
         self.detect_cache: dict[str, list[tuple] | None] = {}
         self._last_error_line: str | None = None
         self._extract_seen = 0  # 提取过程中已展示的结果页数
+        #: 「上游重跑 → 本步产物已过期」的判定缓存（键为下游阶段名）。
+        #: ⚠️ **只在运行收尾/切任务时**重算：判定要读整份 runs.json，而
+        #: _refresh_stage_views 在运行期每 ≤200ms 就跑一次，绝不能放那儿。
+        self._stale_notices: dict[str, dict] = {}
         #: worker stdout 的半行缓冲（管道读取会在任意字节处截断，见
         #: StageRunnerMixin._consume_worker_stdout）
         self._stdout_tail = ""
@@ -169,6 +176,8 @@ class TaskDetailPage(
             self.source_path, cache_dir=self.store.source_thumbnails_dir(task_id)
         )
         self._refresh_manifest()
+        # 换任务就得重算"上游比下游新"的判定缓存（读的是新任务的 runs.json）
+        self._refresh_stale_notices()
         self._refresh_stage_views()
         self._select_stage(0)
 
@@ -231,11 +240,36 @@ class TaskDetailPage(
             self.step_bar.set_step_status(
                 index, state["status"], progress, completed=state["completed"]
             )
+        self._show_running_submit_on_steps(states)
         stage = self.current_stage()
         self._apply_stage_state(stage, states[stage])
         self._update_run_buttons(states[stage])
 
+    def _show_running_submit_on_steps(self, states: dict) -> None:
+        """「提交本次任务」（rembg_submit）在跑时，把**第三步**的步骤条显示成
+        「执行中 · 42/91」。
+
+        ⚠️ 提交不是独立步骤（STAGES 里没有它），但它归属第三步（见
+        ``desktop.store.tasks.STAGE_STEP``）。进度条与状态文案只服务当前显示的
+        步骤（见 ``StageRunnerMixin._progress_belongs_here``），所以用户一旦切到
+        别的步骤，就只剩步骤条这一处还能看出"还有活儿在跑"——不补这一句，
+        切走之后界面上就完全看不出提交还在执行了。
+        """
+        if self.running_stage != "rembg_submit":
+            return
+        done, total = self._last_progress
+        self.step_bar.set_step_status(
+            2, "running", (done, total) if total else None,
+            completed=states["rembg"]["completed"],
+        )
+
     def _apply_stage_state(self, stage: str, state: dict) -> None:
+        if self._own_step_running():
+            # 本步自己的活儿正在跑：进度条与文案此刻归 _on_worker_progress 所有。
+            # 这里若照旧刷成"上一次运行"的 done/total，就会和进度文案每 200ms
+            # 互相覆盖一次（状态文字来回跳，看着像卡住）。跑完 running_stage
+            # 清空，下一次刷新自然回到真实状态。
+            return
         total, done = state["total"], state["done"]
         if total:
             self.stage_progress.setRange(0, total)
@@ -243,8 +277,65 @@ class TaskDetailPage(
         else:
             self.stage_progress.setRange(0, 1)
             self.stage_progress.setValue(0)
-        self.stage_status.setText(
-            f"{STAGE_LABELS[stage]}：{STATUS_LABELS.get(state['status'], state['status'])}"
+        # 「产物需要重新生成」优先于"最近一次的结果"：改了版面、或上游又跑过
+        # 一次之后，再显示「成功」会误导（用户看着"成功"就把旧产物发出去了）
+        notice = self._regenerate_notice(stage)
+        if notice:
+            self._set_stage_status(notice, alert=True)
+        else:
+            self._set_stage_status(
+                f"{STAGE_LABELS[stage]}："
+                f"{STATUS_LABELS.get(state['status'], state['status'])}"
+            )
+
+    def _set_stage_status(self, text: str, alert: bool = False) -> None:
+        """写状态行文案，并选颜色：``alert=True`` 用警示色（红），否则常规柔和色。
+
+        ⚠️ 颜色必须在这里**一起**写：状态行是同一个 QLabel，被三处抢着用
+        （常规状态 / 版面已修改 / 上游已重跑）。只改文字不重置颜色，就会出现
+        "过期提示的红字留在下一次的常规状态上"。
+        """
+        self.stage_status.setText(text)
+        apply_to(
+            self.stage_status, T.SIZE_CAPTION,
+            color=T.DANGER if alert else T.INK_SOFT,
+        )
+
+    # ---------------------------------------------------- 上游重跑 → 产物过期
+    def _refresh_stale_notices(self) -> None:
+        """重算"上游比本步新"的判定缓存。
+
+        ⚠️ 只在**运行收尾**与**切任务**时调，别放进 ``_refresh_stage_views`` 的
+        热路径：判定要读整份 runs.json，而那里运行期每 ≤200ms 就跑一次。
+        """
+        if not self.task_id:
+            self._stale_notices = {}
+            return
+        # 一次读全（五个阶段逐个 list_stage_runs 会把 runs.json 读五遍）
+        self._stale_notices = stale_upstream(
+            self.store.all_stage_runs(self.task_id)
+        )
+
+    def _regenerate_notice(self, stage: str) -> str | None:
+        """本步产物"需要重新生成"的提示文案（没有则 None）。
+
+        两种来源，顺序即优先级：
+
+        1. 第四步的逐图坐标刚被版面编辑器改过（``_print_dirty``）——用户的直接
+           改动，最该被看见；
+        2. **上游重新执行过**（``services/stale_chain``）——本步产物是那之前生成的，
+           可能已经不是最新参数下的结果。
+        """
+        if stage == "print" and getattr(self, "_print_dirty", False):
+            return "● 版面已修改，点击「生成 PDF」生效"
+        info = (self._stale_notices or {}).get(stage)
+        if not info:
+            return None
+        label = STAGE_LABELS.get(info["stage"], info["stage"])
+        when = time.strftime("%H:%M", time.localtime(info["upstream_at"]))
+        return (
+            f"● 上游已重新执行（{label} · {when}），"
+            "本步产物可能已过期，请重新生成"
         )
 
     #: 执行按钮的防抖窗口(ms)：连击/双击在窗口内的第二次直接**静默**吞掉
@@ -334,7 +425,19 @@ class TaskDetailPage(
             not running and state["status"] in ("cancelled", "failed", "success")
         )
         self.cancel_button.setEnabled(self._stage_running())
+        self._apply_regenerate_highlight()
         self._update_submit_button(running)
+
+    def _apply_regenerate_highlight(self) -> None:
+        """本步产物过期（改了版面 / 上游又跑过）时把主按钮加粗高亮。
+
+        与第三步「提交本次任务（有新版本）」同一套视觉语言：文案里点明该动作，
+        但**不阻止**用户先干别的——只提示，不自动重跑。
+        """
+        pending = self._regenerate_notice(self.current_stage()) is not None
+        self.run_button.setStyleSheet(
+            "PrimaryPushButton{font-weight:bold;}" if pending else ""
+        )
 
     # ------------------------------------------------------------------ 预览刷新
     def _refresh_preview(self, index: int | None = None) -> None:

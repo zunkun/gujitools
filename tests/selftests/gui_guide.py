@@ -91,11 +91,16 @@ def run(ctx) -> None:
 
     ok("阶段顺序与实现一致", tuple(STAGES) == ("extract", "detect", "rembg", "print"),
        str(STAGES))
-    positions = [guide.find(x) for x in ("提取图片（extract）", "检测文本框（detect）",
-                                         "图片去底色（rembg）", "生成 PDF（print）")]
+    # ⚠️ 找**小节标题**，不要用 guide.find(label)：四个步骤名在开头的总览句里
+    # 也出现一次，用 find 会拿总览句的位置当顺序（标题写反也测不出来）。
+    heads = [ln for ln in guide.splitlines() if ln.startswith("## ")]
+    positions = []
+    for label in ("提取图片", "检测文本框", "图片去底色", "生成 PDF"):
+        found = [i for i, head in enumerate(heads) if label in head]
+        positions.append(found[0] if found else -1)
     ok("指南里四个步骤的叙述顺序正确",
        all(p >= 0 for p in positions) and positions == sorted(positions),
-       str(positions))
+       f"{positions}（-1=该步骤没有小节标题）")
 
     # ---- 5. 指南必须被索引进文档树（否则用户找不到）----
     # ⚠️ 指南已从 docs/gui/ 迁到 docs/guide/；技术细节留在 docs/dev/gui/。
@@ -145,7 +150,7 @@ def run(ctx) -> None:
     # 这类故障不抛异常、不留日志，只有看图才发现，所以必须用行为断言钉住。
     _assert_demo_thumbs_not_blank(ctx, root, ok)
 
-
+
 
     # ---- 8. 手册里不许出现技术说明（2026-09-19 按用户要求清理过一次）----
     # 读者是不懂命令行的使用者：内部文件名、旧版本行为、配置字段、实现口径、
@@ -166,6 +171,81 @@ def run(ctx) -> None:
     hits = [f"{token}（{why}）" for token, why in forbidden.items() if token in guide]
     ok("用户操作手册里没有技术说明（内部文件名/旧行为/实现口径）",
        not hits, "命中=" + "; ".join(hits))
+
+    # ---- 9. 步骤名纯中文；**参数标签「中文（键名）」**（用户 2026-09-23 口径）----
+    # 两条不同的规矩，别混：
+    # ① **顶部四个步骤名不要英文**（「提取图片 (extract)」→「提取图片」）；
+    # ② **参数标签要中文在前、键名放括号里**（「缩放因子（zoom）」）——参数与命令行
+    #    一一对应，纯中文有时说不清指的是哪个；带单位的写成「中文(单位)（键名）」。
+    # 唯一与键名无关的放行项是**格式名 PDF** 与**单位 mm**。
+    from desktop.store import STAGE_LABELS
+
+    allowed = {"PDF"}
+    bad_labels = {
+        key: words for key, words in (
+            (k, re.findall(r"[A-Za-z]+", v)) for k, v in STAGE_LABELS.items()
+        ) if set(words) - allowed
+    }
+    ok("四个步骤名只用中文（允许格式名 PDF）", not bad_labels, str(bad_labels))
+
+    panels_src = (root / "desktop" / "components" / "panels")
+    titles = []
+    row_labels: list[tuple[str, str]] = []   # (文件, 标签)
+    check_texts: list[tuple[str, str]] = []
+    for py in sorted(panels_src.glob("*.py")):
+        src = py.read_text(encoding="utf-8")
+        titles += re.findall(r'^\s{4}title = "([^"]+)"', src, re.M)
+        row_labels += [
+            (py.name, t) for t in re.findall(r'_add_row\(\s*form,\s*"([^"]+)"', src)
+        ]
+        check_texts += [
+            (py.name, t) for t in re.findall(r'CheckBox\("([^"]+)"\)', src)
+        ]
+
+    def _bare_latin(text: str) -> list[str]:
+        """括号**外面**的英文词 —— 键名必须待在括号里，不许裸着写。"""
+        outside = re.sub(r"（[^）]*）|\([^)]*\)", "", text).replace("PDF", "")
+        return re.findall(r"[A-Za-z][A-Za-z_]*", outside)
+
+    latin_titles = [t for t in titles if _bare_latin(t)]
+    bare = [f"{f}:{t}" for f, t in row_labels + check_texts if _bare_latin(t)]
+    ok("面板标题不含英文键名（格式名 PDF 例外）",
+       not latin_titles, str(latin_titles))
+    ok("参数标签/勾选项里的英文一律待在括号里（不出现裸英文）",
+       not bare, str(bare))
+
+    # 第一步、第三步的参数与命令行一一对应 → 每个标签都必须带（键名）
+    keyed_panels = {"extract_panel.py", "rembg_panel.py"}
+    missing_key = [f"{f}:{t}" for f, t in row_labels if f in keyed_panels and "（" not in t]
+    ok("第一步/第三步的参数标签都带（键名）", not missing_key, str(missing_key))
+    ok("面板标题与标签都有内容（别把扫描写成永远为空而假绿）",
+       len(titles) >= 4 and len(row_labels) >= 8,
+       f"titles={len(titles)} labels={len(row_labels)}")
+
+    # 手册参数表与界面用同一套格式：新写法必须在、旧的裸键名写法不许残留
+    expected = ["缩放因子（zoom）", "目标清晰度（dpi）", "输出格式（ext）",
+                "快速模式（quick）", "页码范围（pages）",
+                "区域模式（area）", "边距(mm)（border）", "输出类型（type）",
+                "阈值偏移（offset）", "保留印章（seal）", "印章彩色（sealcolor）"]
+    missing_doc = [t for t in expected if t not in guide]
+    ok("手册参数表用的是「中文（键名）」格式", not missing_doc,
+       f"缺失={missing_doc}")
+    legacy = ["缩放因子 zoom", "目标 DPI", "输出格式 ext", "快速模式 quick",
+              "页码范围 pages", "area 区域模式", "border 边距", "type 输出类型",
+              "offset 阈值偏移", "(seal)", "(sealcolor)"]
+    left = [t for t in legacy if t in guide]
+    ok("手册参数表已无「中文 + 参数键名」混排", not left, f"残留={left}")
+
+    # ---- 10. 面板标题里的步骤名必须与手册标题一致（改一处漏一处会立刻红）----
+    from desktop.components.panels.detect_panel import DetectPanel
+    from desktop.components.panels.extract_panel import ExtractPanel
+    from desktop.components.panels.print_panel import PrintPanel
+    from desktop.components.panels.rembg_panel import RembgPanel
+
+    for panel in (ExtractPanel, DetectPanel, RembgPanel, PrintPanel):
+        ok(f"面板标题「{panel.title}」与步骤名一致（{panel.stage}）",
+           panel.title == STAGE_LABELS[panel.stage],
+           f"面板={panel.title!r} vs 步骤名={STAGE_LABELS[panel.stage]!r}")
 
 def _assert_demo_thumbs_not_blank(ctx, root, ok) -> None:
     """跑一遍演示数据灌入 + 缩略图合成，确认没有「全白缩略图」。
