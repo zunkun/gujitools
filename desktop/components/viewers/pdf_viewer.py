@@ -10,10 +10,13 @@ from PySide6.QtWidgets import QHBoxLayout, QWidget
 
 from desktop.workers import PreviewWorker, WorkerHost, connect_queued
 from desktop.components.viewers.image_view import ImageView
+from desktop.components.viewers.image_zoom_dialog import (
+    ZoomPopupMixin, ZoomTarget,
+)
 from desktop.components.viewers.thumb_strip import ThumbStrip
 
 
-class PdfViewerWidget(QWidget, WorkerHost):
+class PdfViewerWidget(QWidget, WorkerHost, ZoomPopupMixin):
     """PDF 查看器：左侧页面缩略图 + 右侧大图。"""
 
     page_count_changed = Signal(int)
@@ -38,6 +41,8 @@ class PdfViewerWidget(QWidget, WorkerHost):
         layout.addWidget(self.strip)
         self.view = ImageView(placeholder)
         layout.addWidget(self.view, 1)
+        # 双击大图 → 图片预览弹窗（只读查看）
+        self._init_zoom_popup(self.view)
 
     def set_pdf(
         self,
@@ -52,6 +57,7 @@ class PdfViewerWidget(QWidget, WorkerHost):
         self._thumb_received = set()
         self._thumb_retried = False
         self.strip.clear()
+        self.close_zoom_popup()  # 换 PDF 了：弹窗里那页是旧文档
         text = placeholder or (path.name if path else "暂无 PDF")
         if path is None or not Path(path).exists():
             self.view.clear_image(text)
@@ -111,8 +117,10 @@ class PdfViewerWidget(QWidget, WorkerHost):
         if not self._pdf_path:
             return
         self.view.clear_image(f"正在渲染第 {page + 1} 页...")
+        # ⚠️ 渲染密度在 GUI 线程先算好（worker 线程不得碰 QWidget）
+        edge = self.view.preview_edge()
         self.run_worker(
-            lambda: PreviewWorker(self._pdf_path, page, longest_edge=1600),
+            lambda: PreviewWorker(self._pdf_path, page, longest_edge=edge),
             lambda worker, thread: (
                 connect_queued(
                     self,
@@ -129,4 +137,27 @@ class PdfViewerWidget(QWidget, WorkerHost):
                 worker.finished.connect(thread.quit),
                 worker.failed.connect(thread.quit),
             ),
+        )
+
+    # -------------------------------------------------------------- 图片预览
+    def _zoom_index(self) -> int:
+        """放大弹窗当前页 = 缩略图条的当前行。"""
+        return max(self.strip.currentRow(), 0)
+
+    def _zoom_target(self, index: int) -> ZoomTarget | None:
+        """第 index 页的图片预览来源。
+
+        PDF 是矢量的，所以这里**不设 cap**：放大弹窗按视口密度反推渲染边长，
+        密度越高越清晰（文字/线条不会像位图那样到顶）。
+        """
+        count = self.strip.count()
+        if not self._pdf_path or count <= 0 or not (0 <= index < count):
+            return None
+        return ZoomTarget(
+            render=lambda edge: PreviewWorker(
+                self._pdf_path, index, longest_edge=edge
+            ),
+            note=f"第 {index + 1}/{count} 页 · {self._pdf_path.name}",
+            stem=f"{self._pdf_path.stem}_{index + 1}",
+            count=count,
         )

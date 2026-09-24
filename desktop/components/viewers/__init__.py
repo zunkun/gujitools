@@ -16,6 +16,7 @@ Python 在导入子模块前一定会先执行父包的 ``__init__``，所以只
 
 __all__ = [
     "ImageView",
+    "ImageZoomDialog",
     "ImageViewerWidget",
     "PdfViewerWidget",
     "PrintPreviewWidget",
@@ -25,6 +26,9 @@ __all__ = [
 
 _LAZY = {
     "ImageView": ("desktop.components.viewers.image_view", "ImageView"),
+    "ImageZoomDialog": (
+        "desktop.components.viewers.image_zoom_dialog", "ImageZoomDialog",
+    ),
     "ImageViewerWidget": (
         "desktop.components.viewers.image_viewer", "ImageViewerWidget",
     ),

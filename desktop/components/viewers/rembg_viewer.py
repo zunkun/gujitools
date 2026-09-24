@@ -19,6 +19,9 @@ from qfluentwidgets import CaptionLabel
 
 from desktop.workers import ImageListWorker, PreviewWorker, connect_queued
 from desktop.components.viewers.image_view import ImageView
+from desktop.components.viewers.image_zoom_dialog import (
+    ZoomPopupMixin, ZoomTarget,
+)
 from desktop.components.viewers.thumb_strip import ThumbStrip
 from desktop.components.viewers.thumbs_loader import ThumbsMixin
 from core.command_spec import WHOLE_PAGE_AREA
@@ -34,7 +37,7 @@ def _union_box(valid: list) -> list:
     ]
 
 
-class RembgPreviewWidget(QWidget, ThumbsMixin):
+class RembgPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
     """去底色预览：左侧输出条目列表 + 右侧单视图（去底色结果 / 原图切换）。"""
 
     current_changed = Signal(int, str)
@@ -78,6 +81,8 @@ class RembgPreviewWidget(QWidget, ThumbsMixin):
         self.view = ImageView(empty_hint)
         right.addWidget(self.view, 1)
         layout.addLayout(right, 1)
+        # 双击大图 → 图片预览弹窗（与主预览同一份区域规则，见 _resolve_source）
+        self._init_zoom_popup(self.view)
         self._sync_toggle(False)
 
     # ------------------------------------------------------------------ API
@@ -216,6 +221,8 @@ class RembgPreviewWidget(QWidget, ThumbsMixin):
         self._entries = entries
         if not (labels_changed or force_strip):
             return
+        # 条目集合/身份变了：弹窗按"打开时的条目"取源，留着就是旧数据/错位
+        self.close_zoom_popup()
         self.strip.clear()
         if not entries:
             self.strip.add_placeholder("暂无图片")
@@ -268,11 +275,12 @@ class RembgPreviewWidget(QWidget, ThumbsMixin):
                 thumb_paths.append(Path(real))
                 effects.append(None)
             labels.append(entry["title"])
+        edge = self._decode_edge()
         self._load_thumbs_chunked(
             len(thumb_paths),
             make_worker=lambda start, end: ImageListWorker(
                 thumb_paths[start:end],
-                edge=ThumbStrip.DECODE_EDGE,
+                edge=edge,
                 effects=effects[start:end],
             ),
             sink=lambda index, image, _path: self.strip.set_item_icon(
@@ -307,6 +315,28 @@ class RembgPreviewWidget(QWidget, ThumbsMixin):
             return self._entries[row]
         return self._entries[0] if self._entries else None
 
+    # -------------------------------------------------------------- 图片预览
+    def _zoom_index(self) -> int:
+        """放大弹窗当前条目 = 缩略图条的当前行（条目与行号 1:1）。"""
+        return max(self.strip.currentRow(), 0)
+
+    def _zoom_target(self, index: int) -> ZoomTarget | None:
+        """第 index 条的图片预览来源；与主预览共用 :meth:`_resolve_source`。"""
+        if not (0 <= index < len(self._entries)):
+            return None
+        entry = self._entries[index]
+        source, effect, _has_result, _error = self._resolve_source(entry)
+        if source is None:
+            return None
+        return ZoomTarget(
+            render=lambda edge: PreviewWorker(
+                source, longest_edge=edge, effect=effect
+            ),
+            note=f"第 {index + 1}/{len(self._entries)} 条 · {source.name}",
+            stem=source.stem,
+            count=len(self._entries),
+        )
+
     # ------------------------------------------------------------------ 加载
     def _select_image(self, index: int, _path: str) -> None:
         if not self._entries or index >= len(self._entries):
@@ -325,11 +355,12 @@ class RembgPreviewWidget(QWidget, ThumbsMixin):
         """用户切换显示形态（分段开关回调，仅在点击时到达）。"""
         if self._mode != mode:
             self._mode = mode
+            self.close_zoom_popup()  # 弹窗里那页是切换前的形态
             self._load_display()
 
-    def _result_full_image(self) -> Path | None:
-        """当前页的去底色结果图：**实时暂存优先**，其次「生成预览」的正式产物。"""
-        entry = self._current_entry()
+    def _result_full_image(self, entry: dict | None = None) -> Path | None:
+        """某条目的去底色结果图：**实时暂存优先**，其次「生成预览」的正式产物。"""
+        entry = entry if entry is not None else self._current_entry()
         if not entry:
             return None
         stem = Path(entry["path"]).stem
@@ -342,11 +373,13 @@ class RembgPreviewWidget(QWidget, ThumbsMixin):
                     return candidate
         return None
 
-    def _load_display(self) -> None:
-        entry = self._current_entry()
-        if not entry:
-            self.view.clear_image("暂无图片")
-            return
+    def _resolve_source(self, entry: dict) -> tuple:
+        """条目 → (显示源, 区域合成参数, 是否有去底色结果, 错误文案)。
+
+        ⚠️ 主预览（:meth:`_load_display`）与放大弹窗（:meth:`_zoom_target`）**共用
+        这一份**：区域规则（area/border/单框/整页 + 实时暂存优先）只写一次，
+        两处各写一份必然漂移，用户就会看到"弹窗里和预览里不是同一块"。
+        """
         path_text = entry["path"]
         effect = None
         if self._boxes_provider and self._region_params_provider:
@@ -362,24 +395,36 @@ class RembgPreviewWidget(QWidget, ThumbsMixin):
                         "border": border,
                     }
             except Exception as exc:  # 参数计算失败时退化为整图显示
-                self.view.clear_image(f"区域计算失败：{exc}")
-                return
-        result_img = self._result_full_image()
+                return None, None, False, f"区域计算失败：{exc}"
+        result_img = self._result_full_image(entry)
         show_result = self._mode == "result" and result_img is not None
         source = result_img if show_result else Path(path_text)
         if not source.exists():
+            return None, None, result_img is not None, "暂无图片"
+        return source, effect, result_img is not None, ""
+
+    def _load_display(self) -> None:
+        entry = self._current_entry()
+        if not entry:
             self.view.clear_image("暂无图片")
             return
+        source, effect, has_result, error = self._resolve_source(entry)
+        if source is None:
+            self.view.clear_image(error)
+            return
+        show_result = self._mode == "result" and has_result
         self.view.clear_image("正在加载...")
         self.toggle_caption.setText(
             "去底色结果 · 显示范围为步骤二的检测框与「区域模式 / 边距」"
             if show_result
-            else ("原图（尚未生成去底色结果）" if not result_img else "原图")
+            else ("原图（尚未生成去底色结果）" if not has_result else "原图")
         )
-        self._sync_toggle(result_img is not None)
+        self._sync_toggle(has_result)
         token = self._load_token = object()
+        # ⚠️ 渲染密度在 GUI 线程先算好（worker 线程不得碰 QWidget）
+        edge = self.view.preview_edge()
         self.run_worker(
-            lambda: PreviewWorker(source, longest_edge=1600, effect=effect),
+            lambda: PreviewWorker(source, longest_edge=edge, effect=effect),
             lambda worker, thread: (
                 connect_queued(
                     self,

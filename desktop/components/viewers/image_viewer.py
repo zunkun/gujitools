@@ -12,11 +12,14 @@ from qfluentwidgets import FluentIcon as FIF
 
 from desktop.workers import ImageListWorker, PreviewWorker, connect_queued
 from desktop.components.viewers.image_view import ImageView
+from desktop.components.viewers.image_zoom_dialog import (
+    ZoomPopupMixin, ZoomTarget,
+)
 from desktop.components.viewers.thumb_strip import ThumbStrip
 from desktop.components.viewers.thumbs_loader import ThumbsMixin
 
 
-class ImageViewerWidget(QWidget, ThumbsMixin):
+class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
     """图片查看器：缩略图条 + 大图，支持切割框叠加、拖动与页面增删按钮。"""
 
     current_changed = Signal(int, str)
@@ -78,6 +81,8 @@ class ImageViewerWidget(QWidget, ThumbsMixin):
         self.show_boxes = show_boxes
         self.view.set_boxes_editable(show_boxes)
         self.view.boxes_edited.connect(self._boxes_edited)
+        # 双击大图 → 图片预览弹窗（只读查看；编辑仍在原画布上做）
+        self._init_zoom_popup(self.view)
         self._pending_boxes: tuple | None = None  # (boxes, image_size, info)，等大图加载后应用
         #: 每次选页递增的加载令牌，只有最新一次选择的渲染结果允许上屏。
         #: ⚠️ 不能改用「路径是否相同」判断：同一页也会被重复选择（见
@@ -112,6 +117,7 @@ class ImageViewerWidget(QWidget, ThumbsMixin):
             if self._paths:
                 self.current_changed.emit(index, str(self._paths[index]))
             return
+        self.close_zoom_popup()  # 清单换了：弹窗里那页已是旧数据
         self._paths = list(paths)
         self.strip.clear()
         if not paths:
@@ -164,10 +170,11 @@ class ImageViewerWidget(QWidget, ThumbsMixin):
         real_paths = list(paths)
         thumb_paths = [self._thumb_for(str(p)) for p in real_paths]
         labels = [Path(p).stem for p in real_paths]
+        edge = self._decode_edge()
         self._load_thumbs_chunked(
             len(real_paths),
             make_worker=lambda start, end: ImageListWorker(
-                thumb_paths[start:end], edge=ThumbStrip.DECODE_EDGE
+                thumb_paths[start:end], edge=edge
             ),
             sink=lambda index, image, _path: strip.set_item_icon(
                 index, image, str(real_paths[index]), labels[index]
@@ -197,8 +204,12 @@ class ImageViewerWidget(QWidget, ThumbsMixin):
             return  # 已被递归的那次选择接手，本次不再另起加载
         self._pending_boxes = None
         self.view.clear_image("正在加载图片...")
+        # ⚠️ 渲染密度必须在 **GUI 线程**先算好再传进 worker：``preview_edge()``
+        # 读的是控件尺寸与 dpr，worker 线程里碰 QWidget 是越界的
+        # （见 selftests/worker_thread_affinity.py）。
+        edge = self.view.preview_edge()
         self.run_worker(
-            lambda: PreviewWorker(path, longest_edge=1600),
+            lambda: PreviewWorker(path, longest_edge=edge),
             lambda worker, thread: (
                 connect_queued(
                     self,
@@ -259,3 +270,28 @@ class ImageViewerWidget(QWidget, ThumbsMixin):
             )
         else:
             self.info_label.setText(f"{image.width()} × {image.height()} px")
+
+    # -------------------------------------------------------------- 图片预览
+    def _zoom_index(self) -> int:
+        """放大弹窗当前页 = 缩略图条的当前行。"""
+        return max(self.strip.currentRow(), 0)
+
+    def _zoom_target(self, index: int) -> ZoomTarget | None:
+        """第 index 页的图片预览来源。
+
+        ``cap`` 取原图原生边长：解码到超过原生尺寸只是白放大（还会白占内存），
+        所以超过就按原生渲——此时 100% 恰好是"一个原生像素对一个屏幕像素"。
+        """
+        if not (0 <= index < len(self._paths)):
+            return None
+        path = self._paths[index]
+        original = self._original_size(str(path))
+        cap = max(original.width(), original.height()) if original else None
+        return ZoomTarget(
+            render=lambda edge: PreviewWorker(path, longest_edge=edge),
+            note=f"第 {index + 1}/{len(self._paths)} 页 · {path.name}",
+            stem=path.stem,
+            count=len(self._paths),
+            original=original,
+            cap=cap,
+        )

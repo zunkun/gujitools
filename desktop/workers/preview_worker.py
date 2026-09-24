@@ -363,7 +363,9 @@ class PreviewWorker(QObject):
         effect 为去底色合成参数 {boxes, area, border}，仅对单图生效。
         print_spec 为第四步「打印效果」参数
         {"args": print 参数, "index": 0-based 页序, "total": 总页数, "name": 文件名}，
-        非空时把图片按 utils.page_layout 的几何排进一张纸（仅内存，不落盘）。
+        非空时把图片按 utils.page_layout 的几何排进一张纸（仅内存，不落盘）；
+        另可给 "target_edge"（放大弹窗用）：按该边长反推像素密度**重新排版**，
+        标题/页码是重新绘制的，放到 4000px 依然锐利。
         """
         super().__init__()
         self.path = path
@@ -466,7 +468,17 @@ class PreviewWorker(QObject):
                 image_name=self.print_spec.get("name"),
                 image_rect=self.print_spec.get("rect"),
             )
-            image = compose_print_page(image, plan)
+            # target_edge（放大弹窗用）：按目标边长**反推像素密度**重新排版。
+            # ⚠️ 不能只把 compose_print_page 的产物放大了事——它内部固定按
+            # preview_px_per_mm（目标 1600px 长边）合成，放大只会糊；按密度
+            # 重排则标题/页码是**重新绘制**的，放到 4000px 依然锐利。
+            density = None
+            target_edge = self.print_spec.get("target_edge")
+            if target_edge:
+                longest_mm = max(plan.page_w_mm, plan.page_h_mm)
+                if longest_mm > 0:
+                    density = float(target_edge) / longest_mm
+            image = compose_print_page(image, plan, density)
         if not self.longest_edge:
             return image  # 不缩放：调用方需要原始分辨率
         return image.scaled(

@@ -15,7 +15,7 @@ reference_boxes 为参考框（如按 area/border 规则推导的最终裁剪大
 
 from __future__ import annotations
 
-from PySide6.QtCore import QPointF, QSize, Qt, Signal
+from PySide6.QtCore import QEvent, QPointF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QLabel
 
@@ -38,6 +38,15 @@ class ImageView(QLabel):
     """大图查看：随控件尺寸实时缩放，支持在图片坐标系叠加切割框。"""
 
     boxes_edited = Signal(list)  # 移动/缩放/删除/新增后：全部框（图片像素坐标）
+    #: 双击大图（宿主据此打开图片预览弹窗；只读查看，不改任何数据）
+    double_clicked = Signal()
+
+    #: 预览渲染最长边的**下限**：控件尚未布局（尺寸还是 0）时的兜底，也避免
+    #: 小控件把预览渲染得过小——之后窗口一最大化就只能放大、糊掉。
+    MIN_PREVIEW_EDGE = 1200
+    #: 预览渲染最长边的**上限**：超大窗口 × 高分屏下别为一页预览分配几十 MB。
+    #: 3000px 竖页约 37 MB（RGB32），是渲染耗时与内存的折中。
+    MAX_PREVIEW_EDGE = 3000
 
     def __init__(self, placeholder: str = "无预览", parent=None):
         """初始化画布与框编辑状态；placeholder 为空图时的占位文案。"""
@@ -71,6 +80,8 @@ class ImageView(QLabel):
         self._scale_y = 1.0
         self._offset_x = 0
         self._offset_y = 0
+        #: 本次渲染用的 dpr。叠加层线宽要按它取整到**设备像素**（见 _pen_width）。
+        self._dpr = 1.0
 
     @property
     def has_image(self) -> bool:
@@ -78,6 +89,24 @@ class ImageView(QLabel):
         return self._pixmap is not None
 
     # ------------------------------------------------------------------ API
+    def preview_edge(self) -> int:
+        """当前控件需要多高的预览分辨率（**最长边**像素数）。
+
+        按控件的**物理**像素算（逻辑尺寸 × dpr），取宽高较大者：图片按等比
+        缩放适配控件，长边必定落在控件的长边上，所以按较大边给就够。
+
+        交给 ``PreviewWorker(longest_edge=...)`` 用。⚠️ 早先四处调用点都写死
+        1600：高分屏（150%~200%）或大窗口下屏幕需要的像素比 1600 还多，
+        源图只能被放大 → 糊。实测（.workbuddy/perf/2026-09-24-preview-sharpness.md）
+        把密度拉满后 RMSE 再降 30~50%、锐度再涨 1.4~1.7 倍，代价是每页多 25~160ms。
+        """
+        dpr = self.devicePixelRatioF() or 1.0
+        longest = max(self.width(), self.height())
+        return max(
+            self.MIN_PREVIEW_EDGE,
+            min(self.MAX_PREVIEW_EDGE, int(round(longest * dpr))),
+        )
+
     def set_boxes_editable(self, editable: bool) -> None:
         """开关框编辑；开启时接受点击焦点以响应键盘删除。"""
         self._boxes_editable = editable
@@ -128,6 +157,17 @@ class ImageView(QLabel):
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
         self._rerender()
+
+    def event(self, event) -> bool:  # noqa: N802
+        """跨显示器拖动（dpr 变化）时按新 dpr 重画。
+
+        Qt 在窗口 dpr 变化时发 ``DevicePixelRatioChange``，**不保证**同时发
+        ``resizeEvent``。不接这个事件的话，把窗口从 100% 屏拖到 200% 屏，
+        图会一直停在按旧 dpr 出的那版（明显发糊），要等下次换页才恢复。
+        """
+        if event.type() == QEvent.Type.DevicePixelRatioChange and self._pixmap:
+            self._rerender()
+        return super().event(event)
 
     # ------------------------------------------------------------------ 坐标
     def _to_image_coords(self, pos: QPointF) -> tuple[float, float]:
@@ -296,6 +336,23 @@ class ImageView(QLabel):
             return
         super().mouseReleaseEvent(event)
 
+    def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802
+        """双击 → ``double_clicked``（宿主打开图片预览弹窗）。
+
+        ⚠️ 必须把本次按下可能已经开始的"手绘新框"清干净：双击的第一下会先落到
+        ``mousePressEvent`` 的"空白处 → 手绘"分支，不清就会在图上留一个跟着
+        鼠标跑的橡皮筋残影，而且第二下松开还会真的落一个框。
+        """
+        if event.button() == Qt.LeftButton and self._pixmap is not None:
+            self._mode = None
+            self._new_start = None
+            self._drag_index = None
+            self._ghost_box = None
+            self._rerender()
+            self.double_clicked.emit()
+            return
+        super().mouseDoubleClickEvent(event)
+
     def keyPressEvent(self, event) -> None:  # noqa: N802
         if self._boxes_editable and self._selected is not None and event.key() in (
             Qt.Key_Delete, Qt.Key_Backspace,
@@ -313,29 +370,59 @@ class ImageView(QLabel):
 
         缩放比以 _image_size（图片原始尺寸）为基准：显示的 pixmap 可能是
         预览加载时降采样过的版本，框坐标始终是原始像素坐标。
+
+        ⚠️ ``scaled`` 带 devicePixelRatio，其 ``width()`` 报的是**物理**像素，
+        必须换算回逻辑尺寸再算映射与居中偏移——把物理尺寸当逻辑尺寸用，
+        在高分屏下恰好差一个 dpr，框会整体放大并偏移。
         """
         ref_w = self._image_size.width() if self._image_size else self._pixmap.width()
         ref_h = self._image_size.height() if self._image_size else self._pixmap.height()
-        self._scale_x = scaled.width() / ref_w if ref_w else 1.0
-        self._scale_y = scaled.height() / ref_h if ref_h else 1.0
+        dpr = scaled.devicePixelRatio() or 1.0
+        disp_w = scaled.width() / dpr
+        disp_h = scaled.height() / dpr
+        self._scale_x = disp_w / ref_w if ref_w else 1.0
+        self._scale_y = disp_h / ref_h if ref_h else 1.0
         # setPixmap 后 QLabel 按 AlignCenter 居中显示
-        self._offset_x = max(0, (self.width() - scaled.width()) // 2)
-        self._offset_y = max(0, (self.height() - scaled.height()) // 2)
+        self._offset_x = max(0.0, (self.width() - disp_w) / 2)
+        self._offset_y = max(0.0, (self.height() - disp_h) / 2)
 
     def _rerender(self) -> None:
-        """按当前控件尺寸缩放显示（窗口缩放/布局变化后保持完整可见）。"""
+        """按当前控件尺寸缩放显示（窗口缩放/布局变化后保持完整可见）。
+
+        ⚠️ 必须按**物理**像素出图并把 dpr 写回 pixmap：早先按逻辑像素出图，
+        高分屏下 Qt 再按 dpr 放大一次，等于把图「先降后升」重采样两轮。
+        实测 150% 缩放下锐度 494 → 3755（**7.6 倍**）、200% 下 171 → 2831
+        （**16 倍**），而 100% 缩放下几乎无差别——所以只在普通屏上是看不出
+        这个问题的（数据见 .workbuddy/perf/2026-09-24-preview-sharpness.md）。
+
+        叠加层（框/手柄/文字）用**逻辑**坐标绘制。
+
+        ⚠️ **不要再手动 `painter.scale(dpr, dpr)`**：Qt 在带 devicePixelRatio 的
+        pixmap 上作画时，painter 的坐标**已经是逻辑坐标**（实测 dpr=1.5 时
+        `drawRect(0,0,10,10)` 覆盖物理 0~15px，而 `transform().m11()` 仍报 1.0
+        ——dpr 是在设备层生效的，不体现在 painter 的变换里）。再乘一次 dpr
+        等于放大两次：框会整体放大并偏移，而底图是对的，看上去就是"框和图片
+        对不上/比例不对"。离屏自测（dpr 恒为 1）测不出这个，必须在 dpr≠1 下
+        用像素级断言验（见 tests/selftests/preview_dpr.py）。
+        """
         if self._pixmap is None:
             return
-        target = self.size() * 0.96
+        dpr = self.devicePixelRatioF() or 1.0
+        self._dpr = dpr
+        if self.width() <= 0 or self.height() <= 0:
+            # 还没布局（尺寸 0）：照 0 尺寸缩放只会得到一张 1x1，别覆盖上一张图
+            return
+        target = QSize(
+            max(1, round(self.width() * 0.96 * dpr)),
+            max(1, round(self.height() * 0.96 * dpr)),
+        )
         scaled = self._pixmap.scaled(
             target, Qt.KeepAspectRatio, Qt.SmoothTransformation
         )
+        scaled.setDevicePixelRatio(dpr)
         # 先刷新映射，再绘制：框/参考框/橡皮筋都使用本次渲染的缩放比
         self._update_mapping(scaled)
-        display = QPixmap(scaled.size())
-        display.fill(Qt.transparent)
-        painter = QPainter(display)
-        painter.drawPixmap(0, 0, scaled)
+        painter = QPainter(scaled)
         if self._reference_boxes:
             self._draw_reference_boxes(painter)
         if self._boxes and self._image_size:
@@ -349,11 +436,22 @@ class ImageView(QLabel):
                 round((ghost[3] - ghost[1]) * self._scale_y),
             )
         painter.end()
-        self.setPixmap(display)
+        self.setPixmap(scaled)
+
+    def _pen_width(self, logical: int | float) -> float:
+        """叠加层线宽：取整到**设备像素**后再换算回逻辑宽度。
+
+        ⚠️ Qt 用**逻辑**线宽 × dpr 得到设备线宽。不是整数设备像素时（125% 缩放
+        下 2×1.25 = 2.5；150% 下选中态 3×1.5 = 4.5），光栅化对四条边的取整不一致
+        ——实测同一个框会出现「上3 下3 左3 右2」这种**粗细不匀**。取整到设备像素
+        后四条边一致（实测 dpr=1.0/1.25/1.5/2.0 全部均匀）。
+        """
+        dpr = self._dpr or 1.0
+        return max(1.0 / dpr, round(float(logical) * dpr) / dpr)
 
     def _draw_reference_boxes(self, painter: QPainter) -> None:
         """参考框：按 area/border 规则推导的最终裁剪大框，橙色虚线。"""
-        pen = QPen(REFERENCE_COLOR, 2, Qt.DashLine)
+        pen = QPen(REFERENCE_COLOR, self._pen_width(2), Qt.DashLine)
         painter.setPen(pen)
         for box in self._reference_boxes:
             x1, y1, x2, y2 = box
@@ -377,7 +475,10 @@ class ImageView(QLabel):
             x1, y1, x2, y2 = box
             color = BOX_COLORS[index % len(BOX_COLORS)]
             selected = index == self._selected
-            pen = QPen(color, 3 if selected else 2)
+            # 选中的框加粗（3 逻辑像素），未选中 2；两者都取整到设备像素，
+            # 否则高分屏下四边会粗细不匀（见 _pen_width）
+            pen = QPen(color, self._pen_width(3 if selected else 2))
+
             painter.setPen(pen)
             painter.drawRect(
                 round(x1 * self._scale_x), round(y1 * self._scale_y),

@@ -36,6 +36,20 @@ class ThumbStrip(QListWidget):
     # 竖页受高度约束，只有取框的长边，竖页才能真的用满框宽。
     DECODE_EDGE = max(ICON_SIZE.width(), ICON_SIZE.height())
 
+    @staticmethod
+    def decode_edge(dpr: float = 1.0, base: int | None = None) -> int:
+        """按 dpr 给出的缩略图**解码最长边**（调用方在**主线程**算好后传进 worker）。
+
+        ``base`` 是逻辑像素下的基准边，默认取 ``DECODE_EDGE``（= 图标框长边）。
+
+        ⚠️ 高分屏下条目本身是按 dpr 放大绘制的，只解码到逻辑尺寸就等于让 Qt
+        再放大一次 → 缩略图发糊。这与右侧大图 ``ImageView.preview_edge`` 是
+        同源问题（那边实测 150% 缩放下锐度差 7.6 倍）。
+        """
+        logical = ThumbStrip.DECODE_EDGE if base is None else int(base)
+        return max(1, int(round(logical * (dpr or 1.0))))
+
+
     current_path_changed = Signal(int, str)
     order_changed = Signal()
     #: 用户按了 Delete/Backspace（仅在 ``set_deletable(True)`` 时发出）。

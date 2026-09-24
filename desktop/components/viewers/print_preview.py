@@ -32,13 +32,16 @@ from desktop.ui import widgets as ui
 from desktop.ui.widgets import SegmentedToggle
 from desktop.workers import ImageListWorker, PreviewWorker, connect_queued
 from desktop.components.viewers.image_view import ImageView
+from desktop.components.viewers.image_zoom_dialog import (
+    ZoomPopupMixin, ZoomTarget,
+)
 from desktop.components.viewers.print_layout_canvas import PrintLayoutCanvas
 from desktop.components.viewers.thumb_strip import ThumbStrip
 from desktop.components.viewers.thumbs_loader import ThumbsMixin
 from utils.page_layout import plan_print_page, print_page_size_mm
 
 
-class PrintPreviewWidget(QWidget, ThumbsMixin):
+class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
     """生成 PDF 预览：左侧待打印缩略图条（可拖动排序）+ 右侧单页效果。"""
 
     order_changed = Signal()        # 列表内容/顺序变化（含拖动与删除）
@@ -125,6 +128,8 @@ class PrintPreviewWidget(QWidget, ThumbsMixin):
         self.view = ImageView(empty_hint)
         self.view.hide()
         right.addWidget(self.view, 1)
+        # 双击大图 → 图片预览弹窗（打印效果按目标边长**重新排版**，见 _zoom_target）
+        self._init_zoom_popup(self.view)
         body.addLayout(right, 1)
         layout.addLayout(body, 1)
 
@@ -158,6 +163,8 @@ class PrintPreviewWidget(QWidget, ThumbsMixin):
     def set_entries(self, entries: list[dict]) -> None:
         """重建列表：entries = [{file, label}]，可按条目自带 thumb 指定小图。"""
         self._stop_worker()
+        # 列表整个换了一批：弹窗按"打开时的条目"取源，留着就是旧数据/错位
+        self.close_zoom_popup()
         self._entries_cache = list(entries)
         # 身份令牌与条目一一对应重建：列表整个换了一批，旧令牌全部作废
         self._entry_keys = [object() for _ in entries]
@@ -257,10 +264,11 @@ class PrintPreviewWidget(QWidget, ThumbsMixin):
             for key, entry in zip(self._entry_keys, entries)
         ]
         keys = [key for key, _ in pending]
+        edge = self._decode_edge(self.THUMB_EDGE)
         self._load_thumbs_chunked(
             len(pending),
             make_worker=lambda start, end: ImageListWorker(
-                [path for _, path in pending[start:end]], edge=self.THUMB_EDGE
+                [path for _, path in pending[start:end]], edge=edge
             ),
             sink=lambda index, image, _path, keys=keys: (
                 self._apply_page_thumb(keys[index], image)
@@ -476,9 +484,11 @@ class PrintPreviewWidget(QWidget, ThumbsMixin):
             self.caption.setText(f"原图 · 第 {index + 1}/{total} 页")
         self.view.clear_image("正在加载...")
         token = self._load_token = object()
+        # ⚠️ 渲染密度在 GUI 线程先算好（worker 线程不得碰 QWidget）
+        edge = self.view.preview_edge()
         self.run_worker(
             lambda: PreviewWorker(
-                path, longest_edge=1600, print_spec=print_spec
+                path, longest_edge=edge, print_spec=print_spec
             ),
             lambda worker, thread: (
                 connect_queued(
@@ -507,3 +517,47 @@ class PrintPreviewWidget(QWidget, ThumbsMixin):
         if token is not self._load_token:
             return
         self.view.set_image(image, image_size=image.size())
+
+    # -------------------------------------------------------------- 图片预览
+    def _zoom_index(self) -> int:
+        """放大弹窗当前页 = 列表当前行。"""
+        return self._current_index()
+
+    def _zoom_target(self, index: int) -> ZoomTarget | None:
+        """第 index 页的图片预览来源：原图模式给原图，其余按打印效果重排。
+
+        ⚠️ 打印效果必须让 worker **按目标边长重新排版**（``target_edge``）：
+        ``compose_print_page`` 默认按 ``preview_px_per_mm``（目标 1600px 长边）
+        合成，直接放大会连标题/页码一起糊掉（见 preview_worker._load_image）。
+        """
+        if not (0 <= index < len(self._entries_cache)):
+            return None
+        path = Path(str(self._entries_cache[index]["file"]))
+        if not path.exists():
+            return None
+        count = len(self._entries_cache)
+        if self._mode == "original":
+            return ZoomTarget(
+                render=lambda edge: PreviewWorker(path, longest_edge=edge),
+                note=f"原图 · 第 {index + 1}/{count} 页",
+                stem=path.stem,
+                count=count,
+            )
+        spec, note = self._print_spec(index, path)
+        if spec is None:
+            # 参数不合法时主预览也退回原图，弹窗保持一致（不另造一套逻辑）
+            return ZoomTarget(
+                render=lambda edge: PreviewWorker(path, longest_edge=edge),
+                note=f"原图（{note}） · 第 {index + 1}/{count} 页",
+                stem=path.stem,
+                count=count,
+            )
+        return ZoomTarget(
+            render=lambda edge: PreviewWorker(
+                path, longest_edge=edge,
+                print_spec={**spec, "target_edge": edge},
+            ),
+            note=f"打印效果 · 第 {index + 1}/{count} 页",
+            stem=path.stem,
+            count=count,
+        )

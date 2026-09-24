@@ -54,6 +54,15 @@ class ThumbsMixin(WorkerHost):
         self._thumb_timer.setSingleShot(True)
         self._thumb_timer.timeout.connect(self._dispatch_next_thumb_batch)
 
+    def _decode_edge(self, base: int | None = None) -> int:
+        """当前 dpr 下的缩略图解码最长边（见 ``ThumbStrip.decode_edge``）。
+
+        ⚠️ 必须在**主线程**先算好再闭包进 ``make_worker``：批次工厂是在 worker
+        线程里被调用的，那里碰 QWidget（``devicePixelRatioF``）是越界的
+        （见 selftests/worker_thread_affinity.py）。
+        """
+        return ThumbStrip.decode_edge(self.devicePixelRatioF() or 1.0, base)
+
     # ------------------------------------------------------------ 对外入口
     def _load_thumbs(self, strip: ThumbStrip, paths: list[Path]) -> None:
         """按路径加载缩略图；标签取文件名。
@@ -61,9 +70,12 @@ class ThumbsMixin(WorkerHost):
         ⚠️ 只负责**分批调度**，解码仍交给 ``ImageListWorker``（它用
         QImageReader 的缩放解码，不会把两三千像素的原图整张读进内存）。
         """
+        edge = self._decode_edge()
         self._load_thumbs_chunked(
             len(paths),
-            make_worker=lambda start, end: ImageListWorker(list(paths[start:end])),
+            make_worker=lambda start, end: ImageListWorker(
+                list(paths[start:end]), edge=edge
+            ),
             sink=lambda index, image, path: strip.set_item_icon(
                 index, image, path, Path(path).name
             ),
