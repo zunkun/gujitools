@@ -19,74 +19,75 @@ from utils.box_geometry import (
 from desktop.utils.files import THUMBNAIL_EDGE
 
 
-def compose_region_output(image: QImage, boxes: list, area: int, border_mm, dpi: int = 300) -> list:
-    """按 crop/cropremove 的 area/border 规则，合成"效果预览图"列表。
+def region_canvas_specs(
+    image_size: tuple[int, int], boxes: list, area: int, border_mm,
+    dpi: int = 300,
+) -> list:
+    """compose_region_output 的**纯几何**部分：返回 ``[(画布尺寸, sources)]``。
 
-    **几何规则来自 utils.box_geometry**（与 functions/text_region.py 的 CLI
-    输出共用同一份实现），本函数只负责用 QImage 把布局画出来——这样规则
-    不会因数像素后端不同而被复制成两份。
-
-    与原实现的一处行为修正：area=3 + 双框 + border=None 时，并集区域现在
-    **写回原位置**（此前被搬到画布左上角）。规格见
-    docs/functions/cropremove.md:57「area=3 → 单图，ROI 写回原位置」。
+    不碰位图——只依据图片**尺寸**（QImageReader 读文件头即可拿到）就能
+    算出每张输出画布的大小与贴图来源。第三步提交据此**预先算好输出
+    文件名**（张数 × 名称），再并行处理各页；规则仍然只有这一份。
     """
-    W, H = image.width(), image.height()
-    padding = parse_border_mm(border_mm, dpi)
+    W, H = image_size
     present = [list(b) for b in boxes if b]
-
-    def blank(w: int, h: int) -> QImage:
-        canvas = QImage(max(w, 1), max(h, 1), QImage.Format_RGB32)
-        canvas.fill(Qt.white)
-        return canvas
-
-    def render(layout) -> list:
-        result = []
-        for canvas_spec in layout.canvases:
-            canvas = blank(canvas_spec.size[0], canvas_spec.size[1])
-            for source, ox, oy in canvas_spec.sources:
-                x1, y1, x2, y2 = source
-                sx1, sy1 = max(0, x1), max(0, y1)
-                sx2, sy2 = min(W, x2), min(H, y2)
-                if sx2 > sx1 and sy2 > sy1:
-                    painter = QPainter(canvas)
-                    painter.drawImage(
-                        ox + sx1 - x1,
-                        oy + sy1 - y1,
-                        image,
-                        sx1,
-                        sy1,
-                        sx2 - sx1,
-                        sy2 - sy1,
-                    )
-                    painter.end()
-            result.append(canvas)
-        return result
-
-    # 无检测框：整页原图
-    if not present:
-        return [blank(W, H)]
-
-    # 单框 + border + area=2/3：对称输出（实际框 + 空白镜像）
+    if not present:  # 无检测框：整页原图
+        return [((W, H), [])]
+    padding = parse_border_mm(border_mm, dpi)
     if len(present) == 1 and padding is not None and area in (2, 3):
-        return render(
-            build_symmetric_layout(
-                box=present[0],
-                border_padding=padding,
-                image_size=(W, H),
-                is_left=True,  # 内容置于左半，右半为空白镜像
-                dpi=dpi,
-            )
+        layout = build_symmetric_layout(
+            box=present[0],
+            border_padding=padding,
+            image_size=(W, H),
+            is_left=True,  # 内容置于左半，右半为空白镜像
+            dpi=dpi,
         )
-
-    return render(
-        build_output_layout(
+    else:
+        layout = build_output_layout(
             boxes=present,
             area=area,
             border_padding=padding,
             image_size=(W, H),
             dpi=dpi,
         )
-    )
+    return [(canvas_spec.size, canvas_spec.sources) for canvas_spec in layout.canvases]
+
+
+def compose_region_output(image: QImage, boxes: list, area: int, border_mm, dpi: int = 300) -> list:
+    """按 crop/cropremove 的 area/border 规则，合成"效果预览图"列表。
+
+    **几何规则来自 utils.box_geometry**（与 functions/text_region.py 的 CLI
+    输出共用同一份实现），本函数只负责用 QImage 把布局画出来——这样规则
+    不会因数像素后端不同而被复制成两份。几何部分见 `region_canvas_specs`。
+
+    与原实现的一处行为修正：area=3 + 双框 + border=None 时，并集区域现在
+    **写回原位置**（此前被搬到画布左上角）。规格见
+    docs/functions/cropremove.md:57「area=3 → 单图，ROI 写回原位置」。
+    """
+    W, H = image.width(), image.height()
+    specs = region_canvas_specs((W, H), boxes, area, border_mm, dpi)
+    result = []
+    for size, sources in specs:
+        canvas = QImage(max(size[0], 1), max(size[1], 1), QImage.Format_RGB32)
+        canvas.fill(Qt.white)
+        for source, ox, oy in sources:
+            x1, y1, x2, y2 = source
+            sx1, sy1 = max(0, x1), max(0, y1)
+            sx2, sy2 = min(W, x2), min(H, y2)
+            if sx2 > sx1 and sy2 > sy1:
+                painter = QPainter(canvas)
+                painter.drawImage(
+                    ox + sx1 - x1,
+                    oy + sy1 - y1,
+                    image,
+                    sx1,
+                    sy1,
+                    sx2 - sx1,
+                    sy2 - sy1,
+                )
+                painter.end()
+        result.append(canvas)
+    return result
 
 
 # 打印效果预览的基准分辨率：让整页落在 ~1600px 长边，既能看清标题/页码

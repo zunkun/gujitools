@@ -175,10 +175,13 @@ def run(ctx) -> None:
     # ---- 6. 两个渲染后端消费同一布局（结构性保证）----
     import inspect
 
-    from desktop.workers.preview_worker import compose_region_output
+    from desktop.workers import preview_worker
     from functions import text_region
 
-    gui_src = inspect.getsource(compose_region_output)
+    # ⚠️ 几何调用在 region_canvas_specs（纯几何），compose_region_output 只负责
+    # 用位图把它画出来——两个函数合起来才是 GUI 后端的全部，缺一不可。
+    gui_src = (inspect.getsource(preview_worker.compose_region_output)
+               + inspect.getsource(preview_worker.region_canvas_specs))
     cli_src = inspect.getsource(text_region)
     ok("GUI 侧复用 build_output_layout",
        "build_output_layout" in gui_src, "GUI 仍在自行推导几何")
@@ -192,3 +195,16 @@ def run(ctx) -> None:
        "SYMMETRIC_GAP_MM = " not in gui_src, "GUI 仍自带间隔常数")
     ok("CLI 侧不再硬编码 SYMMETRIC_GAP_MM",
        "SYMMETRIC_GAP_MM = " not in cli_src, "CLI 仍自带间隔常数")
+
+    # ---- 7. 第三步提交：名称预计算 + 并行合成（2026-09-24 提速改造）----
+    # 预计算输出名称必须走 region_canvas_specs（与合成同一份几何规则）；
+    # 若有人绕开它手写张数规则，area=1 时预计算的 total 会与实际产出脱节。
+    from desktop.stages import rembg_stage
+
+    stage_src = inspect.getsource(rembg_stage)
+    ok("提交阶段用线程池并行合成（PNG 编码占 85%，实测 4 线程 3.1×）",
+       "ThreadPoolExecutor" in stage_src, "提交合成退回了串行")
+    ok("输出名称预计算走 region_canvas_specs（规则只有一份）",
+       "region_canvas_specs" in stage_src, "提交阶段自行推导几何张数")
+    ok("并行 worker 数有上限（内存约束：每 worker ~200MB 位图）",
+       rembg_stage.SUBMIT_WORKERS <= 4, str(rembg_stage.SUBMIT_WORKERS))
