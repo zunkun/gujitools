@@ -125,15 +125,20 @@ def run(ctx) -> None:
        str(widget.entries()[0].get("rect")))
 
     # ---- 3. 四角拖动 = 缩放 ----
+    # ⚠️ 「原比例缩放」默认开启（keep_ratio=True，用户要求）：四角拖拽改为
+    # **等比缩放**——鼠标给的宽高里取更受限的维度配对，所以宽高的增量不再
+    # 各自 ≥5mm（这里竖开本受高度限制，宽只 +3.3mm），但**宽高比必须不变**、
+    # 左上角不动、两个维度都变大。想自由拉伸请取消勾选（见第 7 节的边手柄）。
     r = canvas._rect_px()
     _press(r.x() + r.width(), r.y() + r.height())   # 右下角手柄
     _move(r.x() + r.width() + 15 * ppm, r.y() + r.height() + 5 * ppm)
     _release(r.x() + r.width() + 15 * ppm, r.y() + r.height() + 5 * ppm)
     rect2 = canvas.current_rect()
-    ok("四角拖动缩放（宽高变大，左上角不动）",
-       rect2[2] > rect1[2] + 5 and rect2[3] > rect1[3]
+    ok("四角拖动缩放（默认原比例：等比变大，左上角不动）",
+       rect2[2] > rect1[2] and rect2[3] > rect1[3]
        and abs(rect2[0] - rect1[0]) < 0.01
-       and abs(rect2[1] - rect1[1]) < 0.01,
+       and abs(rect2[1] - rect1[1]) < 0.01
+       and abs(rect2[2] / rect2[3] - rect1[2] / rect1[3]) < 1e-6,
        f"{rect1} -> {rect2}")
 
     # ---- 4. 拖出页面会被夹住 ----
@@ -222,3 +227,78 @@ def run(ctx) -> None:
 
     widget.close()
     time.sleep(0)
+
+    # ---- 7. 原比例缩放（keep_ratio）：手柄与拖拽手感 ----
+    # 参数勾选「原比例缩放」（默认）→ 四角等比缩放、不给四边手柄；
+    # 取消 → 铺满语义，另有上/下/左/右四个边手柄可单独拉伸改变比例。
+    from PySide6.QtCore import QPointF  # noqa: F401（占位说明：命中走 mm 域）
+
+    from desktop.components.viewers.print_layout_canvas import PrintLayoutCanvas
+
+    ratio_canvas = PrintLayoutCanvas()
+    try:
+        ratio_canvas.resize(700, 560)
+        ratio_canvas.show()
+        pump(app, 4)
+        ratio_canvas.set_page(297, 210, None, [100, 100, 200, 300])
+        ok("四角 + 四边恒 8 个手柄（四边始终可用：拖边即单方向拉伸）",
+           len(ratio_canvas._handle_positions()) == 8,
+           str(len(ratio_canvas._handle_positions())))
+
+        # 原比例：角拖拽保持宽高比（鼠标给的宽高里取更受限的维度配对；
+        # 超出页面时整体等比缩回，不做单维度夹取——夹取会破坏比例）。
+        ratio_canvas._keep_ratio = True
+        ratio_canvas._rect_mm = [100, 100, 200, 300]     # w/h = 2/3
+        ratio_canvas._grab_rect = list(ratio_canvas._rect_mm)
+        ratio_canvas._corner = 0                          # 左上，锚点 = 右下
+        rect = ratio_canvas._resize_from_handle(50, 50)
+        ratio_src = 200 / 300
+        ok("原比例角拖拽保持宽高比（超页时整体等比缩回）",
+           abs(rect[2] / rect[3] - ratio_src) < 1e-6,
+           f"{rect[2]:.1f}/{rect[3]:.1f} = {rect[2] / rect[3]:.3f} "
+           f"vs 源 {ratio_src:.3f}")
+        ok("…且仍在页面内",
+           rect[0] >= 0 and rect[1] >= 0
+           and rect[0] + rect[2] <= 297 + 1e-6
+           and rect[1] + rect[3] <= 210 + 1e-6,
+           str([round(v, 1) for v in rect]))
+
+        # 非原比例：边手柄只改一个维度（这正是"可以上下左右拉伸"）
+        ratio_canvas._keep_ratio = False
+        ratio_canvas._rect_mm = [100, 100, 200, 100]
+        ratio_canvas._corner = 4                          # 上边
+        rect = ratio_canvas._resize_from_handle(150, 40)
+        ok("上边手柄单独拉伸：高度变、宽度不动（比例随之改变）",
+           abs(rect[2] - 200) < 1e-6 and abs(rect[3] - 160) < 1e-6,
+           str([round(v, 1) for v in rect]))
+        ratio_canvas._corner = 5                          # 右边
+        rect = ratio_canvas._resize_from_handle(260, 150)
+        ok("右边手柄单独拉伸：宽度变、高度不动",
+           abs(rect[2] - 160) < 1e-6 and abs(rect[3] - 100) < 1e-6,
+           str([round(v, 1) for v in rect]))
+        # ⚠️ 边手柄**不看** keep_ratio：勾着「原比例缩放」也必须能单方向拉伸
+        # （用户 16:58 报：「四边也可以拉伸调整，这样可以自由缩放宽高」）。
+        ratio_canvas._keep_ratio = True
+        ratio_canvas._rect_mm = [100, 100, 200, 100]
+        ratio_canvas._corner = 4                          # 上边
+        rect = ratio_canvas._resize_from_handle(150, 40)
+        ok("勾着原比例时边手柄仍可单独拉伸（等比只约束四角）",
+           abs(rect[2] - 200) < 1e-6 and abs(rect[3] - 160) < 1e-6,
+           str([round(v, 1) for v in rect]))
+
+        # 命中区：**整条边**都算（不限于边中点的小圆点）；角优先于边。
+        # 用户 17:03 报「为何不把四边大部分区域做成可以改变宽度的功能」。
+        rpx = ratio_canvas._rect_px()
+        ok("上边整条都是命中区（偏离中点也能拖那条边）",
+           ratio_canvas._hit_handle(
+               QPointF(rpx.center().x() + 60, rpx.y())) == 4, "")
+        ok("右边的非中点位置同样命中",
+           ratio_canvas._hit_handle(
+               QPointF(rpx.x() + rpx.width(), rpx.center().y() - 40)) == 5, "")
+        ok("角部优先按对角缩放命中（不误判成边）",
+           ratio_canvas._hit_handle(QPointF(rpx.x(), rpx.y())) == 0, "")
+        ok("框内仍命中移动（不会被边带误判成缩放）",
+           ratio_canvas._hit_handle(rpx.center()) is None
+           and ratio_canvas._hit_rect(rpx.center()), "")
+    finally:
+        ratio_canvas.deleteLater()

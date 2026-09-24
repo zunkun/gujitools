@@ -201,6 +201,10 @@ class DetailViewMixin:
         self.print_preview.order_changed.connect(self._save_print_order)
         self.print_preview.insert_requested.connect(self._insert_print_images)
         self.print_preview.download_requested.connect(self._download_print_pdf)
+        # 单页导出：当前页排进 A4 后的效果图（精度与 PDF 同级 300dpi）
+        self.print_preview.export_image_requested.connect(self._export_print_image)
+        self.print_preview.export_finished.connect(self._on_export_finished)
+        self.print_preview.export_failed.connect(self._on_export_failed)
         # 版面编辑：某一页图片坐标被拖拽/缩放后落盘 print.json 并标脏
         self.print_preview.layout_changed.connect(self._on_print_layout_changed)
         self.print_preview.hint.connect(

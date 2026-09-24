@@ -22,7 +22,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QImage
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QVBoxLayout, QWidget,
+    QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget,
 )
 from qfluentwidgets import CaptionLabel, PrimaryPushButton, PushButton
 from qfluentwidgets import FluentIcon as FIF
@@ -33,7 +33,7 @@ from desktop.ui.widgets import SegmentedToggle
 from desktop.workers import ImageListWorker, PreviewWorker, connect_queued
 from desktop.components.viewers.image_view import ImageView
 from desktop.components.viewers.image_zoom_dialog import (
-    ZoomPopupMixin, ZoomTarget,
+    ZoomPopupMixin, ZoomTarget, save_image,
 )
 from desktop.components.viewers.print_layout_canvas import PrintLayoutCanvas
 from desktop.components.viewers.thumb_strip import ThumbStrip
@@ -47,9 +47,17 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
     order_changed = Signal()        # 列表内容/顺序变化（含拖动与删除）
     insert_requested = Signal()     # 请求插入图片
     download_requested = Signal()   # 请求下载已生成的 PDF
+    # 请求把**当前页**导出为 A4 效果图片（宿主弹保存对话框，见 _export_print_image）
+    export_image_requested = Signal()
+    export_finished = Signal(str)   # 导出成功：文件路径
+    export_failed = Signal(str)     # 导出失败：原因
     hint = Signal(str)              # 需要宿主提示用户（如"未选中任何图片"）
     # 版面编辑：某一页的图片坐标（[x,y,w,h] mm）被拖拽/缩放改了
     layout_changed = Signal(int, list)
+
+    #: 导出图片的精度：与 PDF **同级**（`functions/print.py` 的 `PRINT_IMAGE_DPI`）。
+    #: 密度上限由 `compose_print_page` 夹住（不得超过源图原生密度），小图不会被拉大。
+    EXPORT_IMAGE_DPI = 300
 
     # 缩略图解码最长边：取 ThumbStrip 的**框长边**（不是框宽）——
     # ImageListWorker 的 edge 是最长边语义，竖开本页面受高度约束，
@@ -81,6 +89,7 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         self._thumb_provider = thumb_provider
         self._mode = "layout"       # layout / original
         self._load_token = None     # 请求令牌：仅最新一次加载生效
+        self._export_token = None   # 单页导出令牌：作废在飞的导出
         self._pdf_path: Path | None = None
         self._canvas_index = 0      # 当前在画布上编辑的页下标
 
@@ -151,12 +160,31 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         self.download_button.setToolTip("请先执行「生成 PDF」后再下载")
         self.download_button.setEnabled(False)
         self.download_button.clicked.connect(self.download_requested.emit)
+        # 单页导出：当前页排进 A4 纸后的**最终效果**（与 PDF 同精度），不生成 PDF
+        self.export_image_button = PushButton(FIF.IMAGE_EXPORT, "下载本页图片")
+        self.export_image_button.setToolTip(
+            f"把当前页按 A4 打印效果导出为图片"
+            f"（{self.EXPORT_IMAGE_DPI}dpi，单页）"
+        )
+        self.export_image_button.clicked.connect(self.export_image_requested.emit)
         self.hint_label = CaptionLabel("拖动缩略图排序 · Delete 删除选中")
+        # ⚠️ 提示文字是**次要信息**，必须能被压缩：QLabel 的 minimumSizeHint 默认
+        # 等于文字宽度（`setMinimumWidth(0)` 也压不动它，布局看的是 minimumSizeHint），
+        # 于是它会以固定宽度占住工具栏，把**整页/整个详情页**的最窄需求抬高——
+        # 窗口宽度固定时，被挤窄的是左侧控制面板（实测第三步输入框 200 → 178px，
+        # 正是 `panel_label_fit` 那条不变量在守的东西）。Ignored 策略让布局可以
+        # 把它压到 0，窄窗口下先牺牲提示、不牺牲输入框。
+        self.hint_label.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
+        )
         toolbar.addWidget(self.insert_button)
         toolbar.addWidget(self.delete_button)
+        toolbar.addWidget(self.export_image_button)
         toolbar.addWidget(self.download_button)
         toolbar.addStretch()
         toolbar.addWidget(self.hint_label)
+        # 初建时列表为空 → 先禁用（不能只等 set_entries，它会早退）
+        self._sync_export_button()
         return toolbar
 
     # ------------------------------------------------------------------ API
@@ -168,6 +196,7 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         self._entries_cache = list(entries)
         # 身份令牌与条目一一对应重建：列表整个换了一批，旧令牌全部作废
         self._entry_keys = [object() for _ in entries]
+        self._sync_export_button()
         self.strip.clear()
         if not entries:
             self.view.clear_image(self._empty_hint)
@@ -210,6 +239,7 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         for row in rows:
             self.strip.takeItem(row)
         self._sync_cache_order()
+        self._sync_export_button()
         self._emit_order_changed()
         self._load_display()
 
@@ -219,6 +249,20 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
             self.refresh_layout()
         else:
             self._load_display()
+
+    def navigate(self, forward: bool) -> None:
+        """方向键翻页：移动缩略图条当前行（联动预览刷新与选中态）。
+
+        供详情页的 ←/→ 键盘处理调用——「焦点在哪里，哪里就切换」：焦点在
+        主界面时这里翻，焦点在预览弹窗里由弹窗的窗口级 QShortcut 接管。
+        """
+        if not self._entries_cache:
+            return
+        row = self.strip.currentRow() + (1 if forward else -1)
+        row = max(0, min(len(self._entries_cache) - 1, row))
+        if row != self.strip.currentRow():
+            # setCurrentRow → currentRowChanged → _select_image → 重载预览
+            self.strip.setCurrentRow(row)
 
     # ------------------------------------------------------------------ 内部
     def _stop_worker(self) -> None:
@@ -410,8 +454,19 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         """在画布上编辑第 index 页：纸 + 图片 + 标题/页码，框可拖可缩放。"""
         self.view.hide()
         self.canvas.show()
+        # 「原比例缩放」决定画布手感（四角等比 vs 四角+四边自由拉伸）。
+        # ⚠️ 参数可能填了一半（provider 抛 ValueError）：兜底 True，别挡住编辑。
+        keep_ratio = True
+        if self._params_provider is not None:
+            try:
+                keep_ratio = bool(
+                    (self._params_provider() or {}).get("keep_ratio", True)
+                )
+            except Exception:
+                keep_ratio = True
         if index < 0 or index >= len(self._entries_cache):
-            self.canvas.set_page(*self._page_size_mm(), None, [0.0, 0.0, 0.0, 0.0])
+            self.canvas.set_page(*self._page_size_mm(), None,
+                                 [0.0, 0.0, 0.0, 0.0], keep_ratio=keep_ratio)
             return
         self._canvas_index = index
         entry = self._entries_cache[index]
@@ -419,7 +474,8 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         total = len(self._entries_cache)
         pw, ph = self._page_size_mm()
         if not path.exists():
-            self.canvas.set_page(pw, ph, None, [0.0, 0.0, 0.0, 0.0])
+            self.canvas.set_page(pw, ph, None, [0.0, 0.0, 0.0, 0.0],
+                                 keep_ratio=keep_ratio)
             self.caption.setText(f"图片不存在：{path.name}")
             return
         # 已存坐标优先；否则用当前自动排版作为初始位置（用户再微调）。
@@ -427,14 +483,20 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         rect = entry.get("rect")
         plan, image = self._plan_for(index, path, rect)
         if plan is None:
-            self.canvas.set_page(pw, ph, None, [0.0, 0.0, 0.0, 0.0])
+            self.canvas.set_page(pw, ph, None, [0.0, 0.0, 0.0, 0.0],
+                                 keep_ratio=keep_ratio)
             self.caption.setText(f"图片无法读取：{path.name}")
             return
         if rect is None:
             rect = list(plan.image)
-        self.canvas.set_page(pw, ph, image, rect, plan)
+        self.canvas.set_page(pw, ph, image, rect, plan, keep_ratio=keep_ratio)
+        handle_hint = (
+            "拖四角等比缩放，拖四边单独拉伸宽/高"
+            if keep_ratio else
+            "拖四角/上下左右边缩放（可拉伸改变比例）"
+        )
         self.caption.setText(
-            f"版面编辑 · 第 {index + 1}/{total} 页 · 拖动图片移动，拖四角缩放"
+            f"版面编辑 · 第 {index + 1}/{total} 页 · 拖动图片移动，{handle_hint}"
         )
 
     def _on_canvas_rect(self, rect: list) -> None:
@@ -486,9 +548,26 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         token = self._load_token = object()
         # ⚠️ 渲染密度在 GUI 线程先算好（worker 线程不得碰 QWidget）
         edge = self.view.preview_edge()
+        if print_spec is not None:
+            # 「打印效果」必须让 worker 按目标边长**重新排版**（target_edge），
+            # 而且密度要**高于屏幕需求**（超采样）。原因不是"像素不够"：
+            # Qt 的 SmoothTransformation 在**一次大比例缩小**时质量明显差于
+            # "分两档温和缩放"，所以中间画布越大越接近理想。
+            # 实测（A4 横向、源图 5873x3539、视口长边 788、最终显示 756）：
+            #   合成 1600 → worker 缩到 1200 → 显示   锐度 13121（旧口径）
+            #   合成 1200（=preview_edge）→ 显示       16165
+            #   合成 3000（本条）→ 显示                23200 ← 接近理想 23387
+            #   合成 = 显示尺寸（1:1）→ 显示            9797  ← 反而最糊
+            render_edge = max(edge, ImageView.MAX_PREVIEW_EDGE)
+            print_spec = {**print_spec, "target_edge": render_edge}
+        # longest_edge=0（不缩放）：画布已按 target_edge 的密度合成，这里再缩
+        # 一次纯属白扔细节。密度的上限（不超过源图原生密度，防放大）由
+        # compose_print_page 自己夹住，小图不会被拉大。
         self.run_worker(
             lambda: PreviewWorker(
-                path, longest_edge=edge, print_spec=print_spec
+                path,
+                longest_edge=0 if print_spec is not None else edge,
+                print_spec=print_spec,
             ),
             lambda worker, thread: (
                 connect_queued(
@@ -517,6 +596,94 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         if token is not self._load_token:
             return
         self.view.set_image(image, image_size=image.size())
+
+    # -------------------------------------------------------------- 单页导出
+    def _sync_export_button(self) -> None:
+        """有没有可导出的页——没页就别让按钮可点（点了只能弹个空对话框）。"""
+        self.export_image_button.setEnabled(bool(self._entries_cache))
+
+    def export_default_name(self) -> str | None:
+        """导出对话框的默认文件名；没有可导出的页时返回 None。"""
+        index = self._current_index()
+        if not (0 <= index < len(self._entries_cache)):
+            return None
+        stem = Path(str(self._entries_cache[index]["file"])).stem
+        return f"{stem}-打印效果.png"
+
+    def export_current_effect(self, target: str | Path) -> None:
+        """把**当前页**排进纸面后的 A4 效果图按 300dpi 写到 ``target``。
+
+        单页、不生成 PDF。走 worker 合成（与预览同一条 ``compose_print_page``
+        链路），所以"下载的图 = 屏幕上看到的效果"，只是精度与 PDF 同级而非
+        受屏幕像素限制。参数不合法/无条目时发 :attr:`export_failed`。
+        """
+        index = self._current_index()
+        if not (0 <= index < len(self._entries_cache)):
+            self.export_failed.emit("没有可导出的页面")
+            return
+        path = Path(str(self._entries_cache[index]["file"]))
+        if not path.exists():
+            self.export_failed.emit(f"图片不存在：{path.name}")
+            return
+        spec, note = self._print_spec(index, path)
+        if spec is None:
+            self.export_failed.emit(note or "打印参数不合法")
+            return
+        target = Path(target)
+        edge = self._export_edge()
+        token = self._export_token = object()
+        self.run_worker(
+            lambda: PreviewWorker(
+                path, longest_edge=0,
+                print_spec={**spec, "target_edge": edge},
+            ),
+            lambda worker, thread: (
+                connect_queued(
+                    self,
+                    worker.finished,
+                    lambda _p, image, _s, t=token: self._write_export(
+                        t, image, target
+                    ),
+                    thread,
+                ),
+                connect_queued(
+                    self,
+                    worker.failed,
+                    lambda _p, msg, t=token: self._export_failed(t, msg),
+                    thread,
+                ),
+                worker.finished.connect(thread.quit),
+                worker.failed.connect(thread.quit),
+            ),
+        )
+
+    def _export_edge(self) -> int:
+        """导出密度（= 与 PDF 同级的 300dpi）对应的**最长边**像素数。"""
+        args: dict = {}
+        if self._params_provider is not None:
+            try:
+                args = self._params_provider() or {}
+            except Exception:
+                args = {}  # 参数半填状态：按默认纸张算，别挡住导出
+        w_mm, h_mm = print_page_size_mm(
+            args.get("paper_size") or "A4",
+            args.get("orientation") or "landscape",
+        )
+        return max(1, round(max(w_mm, h_mm) / 25.4 * self.EXPORT_IMAGE_DPI))
+
+    def _write_export(self, token, image, target: Path) -> None:
+        """在主线程落盘（``save_image`` 按后缀选 PNG/JPEG）。"""
+        if token is not self._export_token:
+            return
+        if not save_image(image, target):
+            self.export_failed.emit(f"写入失败：{target}")
+            return
+        self.export_finished.emit(str(target))
+
+    def _export_failed(self, token, message: str) -> None:
+        if token is not self._export_token:
+            return
+        self.export_failed.emit(str(message))
 
     # -------------------------------------------------------------- 图片预览
     def _zoom_index(self) -> int:
@@ -554,7 +721,9 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
             )
         return ZoomTarget(
             render=lambda edge: PreviewWorker(
-                path, longest_edge=edge,
+                path,
+                # 0=不缩放：画布已按 target_edge 的密度重新排版，别再缩一次
+                longest_edge=0,
                 print_spec={**spec, "target_edge": edge},
             ),
             note=f"打印效果 · 第 {index + 1}/{count} 页",

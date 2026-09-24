@@ -20,9 +20,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
+from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import (
-    QColor, QIcon, QImage, QPainter, QPen, QPixmap, QPolygonF, QTransform,
+    QColor, QIcon, QImage, QKeySequence, QPainter, QPen, QPixmap, QPolygonF,
+    QShortcut, QTransform,
 )
 from PySide6.QtWidgets import (
     QDialog, QFileDialog, QFrame, QGraphicsPixmapItem, QGraphicsScene,
@@ -390,6 +391,17 @@ class ZoomableCanvas(QGraphicsView):
             self.fit()
 
     # ------------------------------------------------------------------ 交互
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        """←/→ 翻页（工具条 tooltip 承诺过的快捷键，此前一直没实现）。
+
+        ⚠️ 主动 ignore 掉：QGraphicsView 默认用方向键**滚动视图**，焦点落在
+        画布上时事件到不了对话框，翻页就死了；这里显式放行给父级。
+        """
+        if event.key() in (Qt.Key.Key_Left, Qt.Key.Key_Right):
+            event.ignore()
+            return
+        super().keyPressEvent(event)
+
     def wheelEvent(self, event) -> None:  # noqa: N802
         """滚轮缩放：以**光标下的那一点**为锚点（自己算，见 set_zoom）。"""
         delta = event.angleDelta().y()
@@ -477,6 +489,26 @@ class ImageZoomDialog(QDialog, WorkerHost):
         self.setWindowTitle("图片预览")
         self.setModal(False)
         self.resize(1120, 800)
+        # ⚠️ QDialog 默认标题栏**只有关闭（和帮助）**，没有最小化/最大化——
+        # 用户找不到「还原」入口、双击标题栏也没反应（17:08 截图报障）。
+        # 补上 min/max 提示后：右上角有最小化/最大化按钮，双击标题栏 =
+        # 最大化/还原（系统惯例，OS 自己处理，无需我们写代码）。
+        self.setWindowFlags(
+            self.windowFlags()
+            | Qt.WindowType.WindowMinimizeButtonHint
+            | Qt.WindowType.WindowMaximizeButtonHint
+        )
+        # 键盘翻页/全屏：用 **QShortcut（窗口级）**，不受焦点在哪个控件影响。
+        # ⚠️ 只靠 keyPressEvent 会掉：真实键盘走焦点链，焦点在画布/按钮上时
+        # 方向键被消费或导航走，到不了对话框——离屏 QTest 直接把按键发给
+        # 对话框，测不出来；用户实测「方向键没有实现」就是这个原因。
+        # Esc 不在这里抢：保留 QDialog 默认的关窗语义。
+        for seq, slot in (
+            (QKeySequence(Qt.Key.Key_Left), lambda: self._goto(-1)),
+            (QKeySequence(Qt.Key.Key_Right), lambda: self._goto(1)),
+            (QKeySequence(Qt.Key.Key_F11), self._toggle_fullscreen),
+        ):
+            QShortcut(seq, self).activated.connect(slot)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(T.SPACE_LG, T.SPACE_MD, T.SPACE_LG, T.SPACE_MD)
@@ -500,9 +532,10 @@ class ImageZoomDialog(QDialog, WorkerHost):
         self.zoom_out_btn.setToolTip("缩小（滚轮向下 / − 键）")
         self.zoom_out_btn.clicked.connect(self.canvas.zoom_out)
         self.zoom_label = CaptionLabel("100%")
-        self.zoom_label.setToolTip("当前显示比例")
+        self.zoom_label.setToolTip("当前显示比例（点击回到 100%）")
         self.zoom_label.setFixedWidth(52)
         self.zoom_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.zoom_label.installEventFilter(self)  # 点击 → 回 100%
         self.zoom_in_btn = ToolButton(FIF.ZOOM_IN)
         self.zoom_in_btn.setToolTip("放大（滚轮向上 / + 键）")
         self.zoom_in_btn.clicked.connect(self.canvas.zoom_in)
@@ -677,6 +710,37 @@ class ImageZoomDialog(QDialog, WorkerHost):
         """100%：一个图片像素对一个屏幕像素。"""
         self.canvas.set_zoom(1.0)
 
+    # ------------------------------------------------------- 窗口态与键盘
+    def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802
+        """双击**顶部工具栏**空白 → 全屏/还原。
+
+        ⚠️ 系统标题栏的双击（最大化/还原）由 windowFlags 提供的 min/max
+        按钮接管；这里只管我们自己的工具栏行（用户 17:07 报「双击顶部栏
+        也可以全屏」「双击顶部栏，不是单击」）。画布的双击是 100%↔适应，
+        语义不同，互不干扰。
+        """
+        if event.button() == Qt.MouseButton.LeftButton and \
+                event.position().y() < self.canvas.y():
+            self._toggle_fullscreen()
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
+
+    def _toggle_fullscreen(self) -> None:
+        """全屏 ↔ 正常（全屏时 Esc 先退全屏，见 keyPressEvent）。"""
+        if self.isFullScreen():
+            self.showNormal()
+        else:
+            self.showFullScreen()
+
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802
+        """点「百分比」标签 → 回 100%（标签兼做缩放复位的入口）。"""
+        if obj is self.zoom_label and \
+                event.type() == QEvent.Type.MouseButtonPress:
+            self._zoom_actual()
+            return True
+        return super().eventFilter(obj, event)
+
     def _goto(self, delta: int) -> None:
         """翻页：夹在两端（不回绕、不越界），越界即无动作。"""
         if self._target is None or self._target.count <= 1:
@@ -756,6 +820,11 @@ class ImageZoomDialog(QDialog, WorkerHost):
             return
         if key == Qt.Key.Key_1:
             self._zoom_actual()
+            return
+        if key == Qt.Key.Key_F11:
+            # 全屏↔还原（另一条路：双击顶部工具栏空白）。
+            # ⚠️ 不动 Esc：QDialog 的「Esc 关窗」在更深的事件层，这里抢不到。
+            self._toggle_fullscreen()
             return
         if key == Qt.Key.Key_R:
             self.canvas.rotate_clockwise()

@@ -512,11 +512,18 @@ def plan_print_page(
     avail_w_raw = page_w - ml - mr
     avail_h = page_h - mt - mb
     avail_w_for_img = max(0.0, avail_w_raw - 2 * reserve)
-    scale = min(
-        avail_w_for_img / w_px if w_px > 0 else 0.0,
-        avail_h / h_px if h_px > 0 else 0.0,
-    )
-    new_w, new_h = w_px * scale, h_px * scale
+    if args.get("keep_ratio", True):
+        scale = min(
+            avail_w_for_img / w_px if w_px > 0 else 0.0,
+            avail_h / h_px if h_px > 0 else 0.0,
+        )
+        new_w, new_h = w_px * scale, h_px * scale
+    else:
+        # 非原比例（`keep_ratio: false`）：图片**铺满可用区域**——宽、高各自取满，
+        # 不再受原图宽高比约束（这就是"取消原比例缩放"的语义：按纸面铺开）。
+        # 可用区域 = 纸张 − 页边距 − 左右各 TEXT_MARGIN_MM（给竖排标题/页码留的
+        # 固定边距，与保比例分支同源，两条分支的可视区域完全一致）。
+        new_w, new_h = avail_w_for_img, avail_h
     x_img = ml + reserve + (avail_w_for_img - new_w) / 2
     y_img = mt + (avail_h - new_h) / 2
 

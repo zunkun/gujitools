@@ -165,6 +165,22 @@ def entry_to_effect_spec(entry: dict, border) -> dict:
 
 
 # ---------------------------------------------------------------- print 效果规格
+def _base_label(label: str) -> str:
+    """收敛到「基础页名」：area=1 的 ``<页>-r`` / ``<页>-l`` 与 area=2/3 的
+    ``<页>`` 视为同一页。
+
+    ⚠️ 用户在第三步改过 area 但没重新提交时，第四步列表里的 label 形态与当前
+    派生集合**不一致**（列表是 "3"、派生是 "3-r"/"3-l"）。早先只按 label 精确
+    匹配，于是列表一条都对不上 → 全走「补条目」分支 → **用户在这一步的删除与
+    排序被静默忽略**（实测症状：列表 101 条，却生成了 198 页 PDF，删掉的页又
+    回来了）。按基础页名重映射后，第四步列表重新成为权威顺序。
+    """
+    for suffix in ("-r", "-l"):
+        if label.endswith(suffix):
+            return label[: -len(suffix)]
+    return label
+
+
 def plan_print_effects(
     list_entries: list[dict],
     composed: list[dict],
@@ -180,11 +196,17 @@ def plan_print_effects(
 
     与用户在第四步保存的列表（拖动排序/删除/外部插入）按 label 对齐：
     - 命中当前 area 派生集合的条目，按用户列表顺序输出合成规格；
+    - 列表 label 与当前派生集合**形态不同**（用户改过 area 而未重新提交）时，
+      按 `_base_label` 重映射到该页派生的全部条目——**顺序仍取列表顺序**，
+      这样本步的删除/排序在参数变化后依然生效；
     - 用户插入的外部图片（不在 stages/rembg 目录）整图透传；
-    - area 模式切换后已失效的旧提交图（如旧 82-r/82-l 被新 82 取代）
-      丢弃，当前集合中新派生的条目按默认顺序补在末尾，避免漏页或重复。
+    - 兜底补漏：当前派生集合里、列表与已提交产物都没有的条目才补在末尾。
     """
     dmap = {c["label"]: c for c in composed}
+    by_base: dict[str, list[dict]] = {}
+    for c in composed:
+        by_base.setdefault(_base_label(c["label"]), []).append(c)
+
     effects: list[dict] = []
     used: set[str] = set()
     for e in list_entries:
@@ -193,15 +215,29 @@ def plan_print_effects(
         if spec is not None:
             effects.append(entry_to_effect_spec(spec, border))
             used.add(label)
-        elif Path(e["file"]).parent != rembg_dir:
+            continue
+        group = by_base.get(_base_label(label))
+        if group:
+            for item in group:
+                if item["label"] in used:
+                    continue
+                effects.append(entry_to_effect_spec(item, border))
+                used.add(item["label"])
+            continue
+        if Path(e["file"]).parent != rembg_dir:
             # 用户手动插入的外部图片：不做区域合成，整页参与排版
             effects.append({"file": e["file"], "effect": None})
     # 仅补「当前 area 派生出、但提交产物里尚不存在」的条目（area 模式
-    # 切换后的新结构页）；已存在提交图却不在用户列表的，属于用户主动
-    # 删除，不得补回。
+    # 切换后的新结构页）。⚠️ 判定必须用**基础页名**：改过 area 时提交产物是旧
+    # 形态（"3"）、派生集合是新形态（"3-r"/"3-l"），按精确 label 比会把整批
+    # 新形态都当成"新结构页"补回来 → **用户在第四步删掉的页又复活**。
+    submitted_bases = {_base_label(s) for s in submitted_labels}
     for spec in composed:
-        if spec["label"] not in used and spec["label"] not in submitted_labels:
-            effects.append(entry_to_effect_spec(spec, border))
+        if spec["label"] in used:
+            continue
+        if _base_label(spec["label"]) in submitted_bases:
+            continue  # 该页产物已提交：不在列表 = 用户主动删除，不补回
+        effects.append(entry_to_effect_spec(spec, border))
     return effects
 
 

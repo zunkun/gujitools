@@ -25,8 +25,11 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QProcess, Signal
-from PySide6.QtWidgets import QWidget
+from PySide6.QtCore import QProcess, Qt, Signal
+from PySide6.QtWidgets import (
+    QAbstractItemView, QAbstractSlider, QAbstractSpinBox, QApplication,
+    QComboBox, QLineEdit, QPlainTextEdit, QTextEdit, QWidget,
+)
 
 from desktop.services.font_catalog import start_background_scan
 from desktop.services.stale_chain import stale_upstream
@@ -43,6 +46,24 @@ from desktop.pages.taskdetail.rembg_live import RembgLiveMixin
 from desktop.pages.taskdetail.runner import STATUS_LABELS, StageRunnerMixin
 from desktop.pages.taskdetail.submit import SubmitMixin
 from desktop.pages.taskdetail.view import DetailViewMixin
+
+
+#: 方向键**不抢**的控件：它们的 ←/→ 有本职工作（移光标/改值/翻选择）。
+#: 焦点落在这些控件上时方向键归它们；落在按钮/预览/页面本身时才翻页。
+_ARROW_OCCUPIED = (
+    QLineEdit, QTextEdit, QPlainTextEdit,          # 文本光标移动
+    QComboBox, QAbstractSpinBox,                   # 改值
+    QAbstractItemView,                             # 移动条目选择
+    QAbstractSlider,                               # 滚动
+)
+
+
+def _arrow_free_to_navigate() -> bool:
+    """当前焦点控件是否可以把 ←/→ 让给「切换页面」。"""
+    focus = QApplication.focusWidget()
+    if focus is None:
+        return True
+    return not isinstance(focus, _ARROW_OCCUPIED)
 
 
 class TaskDetailPage(
@@ -205,6 +226,22 @@ class TaskDetailPage(
         以步骤条高亮下标映射到 STAGES 序列；下标为负时按 0 兜底处理。
         """
         return STAGES[max(self.step_bar._current, 0)]
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        """←/→ 在第四步切换当前页（「焦点在哪里，哪里就切换」）。
+
+        ⚠️ 焦点在**输入类控件**上时不抢（见 `_ARROW_OCCUPIED` 表）；焦点在
+        预览弹窗里则由弹窗自己的窗口级 QShortcut 接管（两个窗口各自响应，
+        互不干扰）。其它阶段方向键不翻页。
+        """
+        key = event.key()
+        if key in (Qt.Key.Key_Left, Qt.Key.Key_Right) \
+                and self.current_stage() == "print" \
+                and _arrow_free_to_navigate():
+            self.print_preview.navigate(key == Qt.Key.Key_Right)
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def _select_stage(self, index: int) -> None:
         # 离开当前阶段前把待写暂存落盘（防抖未到期就走人不该丢改动）

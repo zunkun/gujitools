@@ -148,6 +148,8 @@ class PrintPanel(PrintFormMixin, StagePanel):
         for check in (
             self.title_printing, self.page_number_printing,
             self.page_number_end_to_last,
+            # 原比例开关直接改变图片落点（铺满 vs 等比），必须刷预览
+            self.keep_ratio,
         ):
             check.toggled.connect(emit)
         # 章节节点：改变各页标题，版面随之变化
@@ -306,6 +308,7 @@ class PrintPanel(PrintFormMixin, StagePanel):
             "pdf_name": self.pdf_name.text().strip() or DEFAULT_PARAMS["pdf_name"],
             "paper_size": self.paper_size.currentText(),
             "orientation": self.orientation.currentData(),
+            "keep_ratio": self.keep_ratio.isChecked(),
             "page_margins": page_margins,
             "title_printing": self.title_printing.isChecked(),
             "title_text": self.title_text.text().strip(),
@@ -368,6 +371,8 @@ class PrintPanel(PrintFormMixin, StagePanel):
             paper if paper in PAPER_SIZES else DEFAULT_PARAMS["paper_size"]
         )
         self._set_combo(self.orientation, p.get("orientation"), d["orientation"])
+        # 原比例缩放：缺键回落到集中默认（True）
+        self.keep_ratio.setChecked(bool(default_for(p, d, "keep_ratio")))
 
         # 「位置」「文字方向」界面已删除（见 PrintFormMixin.FIXED_TEXT_LAYOUT）：
         # 不回填控件（也没有控件），但把历史值**原样记住**，导出时回显——

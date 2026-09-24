@@ -165,6 +165,52 @@ GUI（QImage 渲染）共同消费同一份 `OutputLayout`，不得各自推导
   `pdf_name` 缺省兜底为 `print.pdf`。
   控件创建见 `desktop/components/panels/print_form.py`，
   取值/回填见同目录 `print_params.py`。
+- **效果预览的渲染密度**（`compose_print_page` / `PreviewWorker.print_spec`）：
+  密度必须由宿主给（`print_spec["target_edge"]`），**不能吃默认值**——默认是
+  `PRINT_PREVIEW_TARGET_EDGE(1600)` 的固定密度，与屏幕无关。
+  ⚠️ 反直觉但实测确定的规律：**密度高于屏幕需求反而更清晰**，因为 Qt 的
+  `SmoothTransformation` 在「一次大比例缩小」时质量明显差于「分两档温和缩放」。
+  实测（A4 横向、源图 5873×3539、视口长边 788、最终显示 756）：
+  「合成 3000」锐度 23200（≈ 理想 23387），「合成 1600」13121，
+  「合成 = 显示尺寸（1:1 合成）」只有 9797（最糊）。
+  故 `print_preview` 取 `target_edge = max(preview_edge(), MAX_PREVIEW_EDGE)`，
+  并同时传 `longest_edge=0`（画布已按该密度合成，**别再缩一次**）。
+- **密度的硬上限**：`compose_print_page` 把密度夹在**源图原生密度**之下
+  （`image.width()/图区域宽mm`）——再往上就是凭空放大（更糊 + 白占内存）。
+  所以「要 4000 与要 8000」得到同一张画布，小图不会被拉大。
+- `longest_edge=0` 的语义是「不缩放（要原始分辨率）」，图片分支原样返回画布；
+  ⚠️ PDF 分支此前直接相除会得到 `scale=0` → **空图**，现在显式处理为 `1.0`。
+- **原比例缩放**（print 参数 `keep_ratio`，默认 True）决定自动排版与编辑器手感：
+  - True：`scale = min(可用宽/w, 可用高/h)` 等比 fit（既有行为）；画布四角拖拽
+    **等比**（以拖拽起点框为基准、鼠标宽高取更受限维度配对，超页整体等比缩回），
+    **不提供**四边手柄；
+  - False：图片**铺满**可用区域（宽高各自取满，`x=ml+reserve, y=mt`），画布四角
+    拖拽也变为自由拉伸；
+  - ⚠️ 画布的**四边手柄（索引 4~7，`_EDGE_BY_HANDLE`）恒可用**——拖边即单方向
+    拉伸，**不受 keep_ratio 约束**（用户明确拖边就是要改那一维；曾做成"取消
+    原比例才出现"，用户 16:58 报四边也要能拉伸，遂改恒显）。keep_ratio 只约束
+    **四角**是否等比；
+  - 与「版面编辑器逐图 rect」的关系：rect 存在就原样采用（所见即所得），本键
+    只影响**没有 rect 的页**与拖拽手感；`functions/print.py` 的
+    `pdf.image(w,h)` 本就直接按目标矩形拉伸，无需改动。
+  - 跨层登记：`PRINT_DEFAULTS` → `PRINT_FORM_DEFAULTS`（展开）→
+    `params_spec.PRINT_DEFAULTS`（引用）→ `print_params._FORM_KEYS`（表单可见键）
+    → `static/guji.yaml`。护栏 `config_template` 逐值校验 CLI ↔ yaml。
+- **effects 规划：第四步列表是权威顺序**（`plan_print_effects` / `print_plan.py`）。
+  ⚠️ 用户改过第三步 area 而**没重新提交**时，列表 label（"3"）与当前派生集合
+  （"3-r"/"3-l"）**形态不同**。早先按 label 精确匹配 → 列表一条都对不上 → 全走
+  "补条目"分支 → **本步的删除与排序被静默忽略**（实际事故：列表 101 条却生成
+  198 页 PDF，删掉的页又回来了）。修法两条，缺一不可：
+  1. 匹配时按 `_base_label()` 收敛（"3-r"/"3-l" ↔ "3"），顺序仍取列表顺序；
+  2. **补条目的判定也用基础页名**——否则提交产物是旧形态时，新形态的整批派生
+     会被当成"新结构页"补回来，删除照样失效。
+- **进度条只有一个来源**：`functions/print.py` 的 `reporter.progress(已写入页数, total)`，
+  `total` = **实际写入 PDF 的页数**（页面清单增删后自然变化）。
+  ⚠️ 合成阶段（`print_stage`）**刻意不发 progress**：它也发一份的话，进度条会先跑完
+  合成、再由写入**从 0 重跑**，用户看到"顶部 197/198、底部 160/198 两个数字对不上"
+  （实际报障）。合成快（每页约 25ms），用日志（每 10 页一条）给反馈即可。
+  底部那行摘要来自 `LogPanel` 取日志**最后一行**，与顶部进度条不是一个来源——
+  这正是当初"两个数字不一致"的观感来源。
 
 ## 7. 图片预览弹窗（image_zoom_dialog）
 
@@ -221,7 +267,7 @@ GUI（QImage 渲染）共同消费同一份 `OutputLayout`，不得各自推导
 - **关窗**：作废在飞的渲染令牌 + `shutdown_workers()` + `canvas.clear()`
   （一张 4000px 预览约 45MB）。宿主换数据（`set_images`/`set_pdf`/`set_entries`/
   条目重建、第三步切形态）时调 `close_zoom_popup()`——弹窗里那页是打开时的快照。
-- 回归防护：`tests/selftests/preview_zoom.py`（88 项）。
+- 回归防护：`tests/selftests/preview_zoom.py`（93 项）。
 
 **已知不足（未做）**：>100% 的显示是放大（屏幕像素上限）。要让深放大也是 1:1，
 需要「按缩放级别重渲可见区域」：缩放后按 `edge × zoom`（受 cap）重渲，再把倍率

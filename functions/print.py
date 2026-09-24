@@ -554,6 +554,10 @@ class PrintFunction(FunctionBase):
             processed_count += 1
             if processed_count % 10 == 0 or processed_count == total:
                 print(f"\r写入进度: {processed_count}/{total}", end="")
+                # 结构化进度：**整个 print 阶段进度条的唯一来源**（total = 实际写入
+                # PDF 的页数，页面清单增删后自然跟着变）。合成阶段刻意不发进度，
+                # 否则两条独立进度会交替驱动同一条进度条（见 print_stage 的说明）。
+                self.reporter.progress(processed_count, total)
 
         print(f"\nPDF 生成完成: {output_pdf}")
         pdf.output(str(output_pdf))

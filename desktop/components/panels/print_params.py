@@ -45,7 +45,7 @@ __all__ = [
 # 其中确实带这四个键（命令行语义需要）。因此这里按**表单可见键**挑出一份，
 # 既保住上面那条前提，也让「界面不管」的语义不被默认表灌回。
 _FORM_KEYS = (
-    "title_text", "pdf_name", "paper_size", "orientation",
+    "title_text", "pdf_name", "paper_size", "orientation", "keep_ratio",
     "page_margins", "left_page_margins", "right_page_margins",
     "title_printing", "title_font", "title_font_size", "title_color",
     "title_margins", "title_switch_nodes",

@@ -51,7 +51,7 @@ def _wait_new_image(widget, app, previous, timeout: float = 20.0):
 def run(ctx) -> None:
     from pathlib import Path
 
-    from PySide6.QtWidgets import QAbstractItemView
+    from PySide6.QtWidgets import QAbstractItemView, QSizePolicy
 
     from tests.selftests._context import ok, pump
 
@@ -1074,6 +1074,179 @@ def run(ctx) -> None:
     ok("详情页效果预览的缩略图条沿用 ThumbStrip 的固定宽度",
        detail.print_preview.strip.width() == ThumbStrip.STRIP_WIDTH,
        str(detail.print_preview.strip.width()))
+    ok("详情页接上了单页导出的三个信号（按钮→对话框→提示）",
+       hasattr(detail, "_export_print_image")
+       and hasattr(detail, "_on_export_finished")
+       and hasattr(detail, "_on_export_failed"), "")
+
+    # ---- 进度来源唯一：一条进度条只能被一个阶段驱动 ----
+    # 事故症状：顶部截图「197/198」= 合成阶段、底部日志「160/198」= 写入阶段，
+    # 两个独立进度交替写同一条进度条。现在合成只写日志，进度由 CLI 的
+    # 「已写入页数」单一驱动（total = 实际写入 PDF 的页数，随页面清单变化）。
+    stage_text = (
+        Path(__file__).resolve().parents[2] / "desktop/stages/print_stage.py"
+    ).read_text(encoding="utf-8")
+    func_text = (
+        Path(__file__).resolve().parents[2] / "functions/print.py"
+    ).read_text(encoding="utf-8")
+    ok("合成阶段不发 progress（否则进度条会先跑完再跳回 0 重跑）",
+       '"type": "progress"' not in stage_text, "")
+    ok("进度唯一来源 = CLI 的已写入页数（reporter.progress）",
+       "self.reporter.progress(" in func_text, "")
+
+    # ---- 原比例缩放（keep_ratio）：自动排版的两种落点 ----
+    # ⚠️ 别把可用区写死成 277x190：TEXT_MARGIN_MM 一改这里就假失败，从常量推导。
+    from utils.page_layout import TEXT_MARGIN_MM, plan_print_page as _plan4
+
+    base_args = {"paper_size": "A4", "orientation": "landscape",
+                 "page_margins": [10, 10, 10, 10]}
+    avail_w = 297 - 10 - 10 - 2 * TEXT_MARGIN_MM
+    avail_h = 210 - 10 - 10
+    ratio_plan = _plan4((2000, 1000), {**base_args, "keep_ratio": True}, 0, 1)
+    ok("原比例（默认）：图片框保持源宽高比",
+       abs((ratio_plan.image[2] / ratio_plan.image[3]) - 2.0) < 1e-6,
+       f"{ratio_plan.image[2]:.1f}x{ratio_plan.image[3]:.1f}")
+    fill_plan = _plan4((2000, 1000), {**base_args, "keep_ratio": False}, 0, 1)
+    ok("取消原比例：图片铺满可用区域（受页边距约束）",
+       abs(fill_plan.image[2] - avail_w) < 1e-6
+       and abs(fill_plan.image[3] - avail_h) < 1e-6
+       and abs(fill_plan.image[0] - 10) < 1e-6
+       and abs(fill_plan.image[1] - 10) < 1e-6,
+       f"{tuple(round(v, 1) for v in fill_plan.image)} vs 可用 {avail_w:.0f}x{avail_h:.0f}")
+    # 老配置没有该键 → 等同 True（不改变既有任务的行为）
+    legacy = _plan4((2000, 1000), base_args, 0, 1)
+    ok("老配置无 keep_ratio 键：行为与 True 一致（不改变既有任务）",
+       abs(legacy.image[2] - ratio_plan.image[2]) < 1e-6,
+       f"{legacy.image[2]:.1f} vs {ratio_plan.image[2]:.1f}")
+
+    # ---- 11. 单页导出（「下载本页图片」）：A4 效果图，精度与 PDF 同级 ----
+    # 用户要的是"本页在 A4 上的**最终效果**"，且只导**单页**；精度不能受屏幕
+    # 像素限制，所以按 300dpi（= functions/print.py 的 PRINT_IMAGE_DPI）合成。
+    from tests.selftests._context import wait_until
+
+    export_src = _tmp_png(tmp / "export-src.png", 2000, 2828)
+    exporter = PrintPreviewWidget(params_provider=lambda: dict(full))
+    try:
+        exporter._mode = "effect"
+        ok("无页时不给默认文件名（宿主据此提示而不是弹空对话框）",
+           exporter.export_default_name() is None,
+           str(exporter.export_default_name()))
+        ok("无页时「下载本页图片」按钮不可点（不留死按钮）",
+           not exporter.export_image_button.isEnabled(), "")
+        # ⚠️ 这条守的是**别的步骤**的布局：工具栏每加一个按钮都会抬高详情页的
+        # 最窄需求，而窗口宽度固定时被挤窄的是左侧控制面板——实测加这个按钮后
+        # 第三步的输入框从 ≥200px 掉到 178px（`panel_label_fit` 那条不变量红了）。
+        # 所以工具栏里的**次要提示文字必须可压缩**（QLabel 的 minimumSizeHint 等于
+        # 文字宽，`setMinimumWidth(0)` 压不动，只有 Ignored 策略才行）。
+        ok("工具栏提示文字可压缩（不会为它挤压左侧面板的输入框）",
+           exporter.hint_label.sizePolicy().horizontalPolicy()
+           == QSizePolicy.Policy.Ignored,
+           str(exporter.hint_label.sizePolicy().horizontalPolicy()))
+
+        exporter.set_entries([{"file": str(export_src), "label": "0001"}])
+        pump(app, times=4)
+        ok("有页后按钮变为可点", exporter.export_image_button.isEnabled(), "")
+        ok("有页时默认文件名 =「<页名>-打印效果.png」",
+           exporter.export_default_name() == "export-src-打印效果.png",
+           str(exporter.export_default_name()))
+        ok("导出精度与 PDF 同级：A4 横向 300dpi → 长边 3508px",
+           exporter._export_edge() == 3508, str(exporter._export_edge()))
+
+        exporter._params_provider = lambda: dict(full, paper_size="A5")
+        ok("换纸张后导出边长跟着变（不是写死的）",
+           exporter._export_edge() < 3508, str(exporter._export_edge()))
+        exporter._params_provider = lambda: dict(full)
+
+        events: list[tuple[str, str]] = []
+        exporter.export_finished.connect(lambda p: events.append(("ok", p)))
+        exporter.export_failed.connect(lambda m: events.append(("err", m)))
+        out_dir = tmp / "export"
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        png_path = out_dir / "page.png"
+        exporter.export_current_effect(png_path)
+        ok("导出走异步 worker 并回报成功",
+           wait_until(app, lambda: bool(events), timeout=30)
+           and events[0][0] == "ok", str(events))
+        written = QImage(str(png_path))
+        ok("落盘的确实是 A4 300dpi 的效果图（长边 3508）",
+           png_path.exists() and max(written.width(), written.height()) == 3508,
+           f"{written.width()}x{written.height()}")
+        ok("导出的是**效果图**而不是屏幕预览那张（远超视口宽）",
+           written.width() > 900, f"{written.width()} vs exporter 宽 900")
+
+        jpg_path = out_dir / "page.jpg"
+        events.clear()
+        exporter.export_current_effect(jpg_path)
+        wait_until(app, lambda: bool(events), timeout=30)
+        ok("同一页也能导出 JPEG（save_image 按后缀选格式）",
+           jpg_path.exists() and jpg_path.stat().st_size > 0,
+           str(jpg_path.stat().st_size if jpg_path.exists() else "缺失"))
+
+        # 源图本身不够 300dpi 时：密度被夹在**源图原生密度**内 → 不放大
+        small_src = _tmp_png(tmp / "export-small.png", 620, 877)
+        exporter.set_entries([{"file": str(small_src), "label": "small"}])
+        pump(app, times=4)
+        events.clear()
+        small_out = out_dir / "small.png"
+        exporter.export_current_effect(small_out)
+        wait_until(app, lambda: bool(events), timeout=30)
+        small_img = QImage(str(small_out))
+        ok("小源图不会被放大（密度夹在原生密度内，长边 < 3508）",
+           0 < max(small_img.width(), small_img.height()) < 3508,
+           f"{small_img.width()}x{small_img.height()}（源图 620x877）")
+
+        events.clear()
+
+        def _bad_params():
+            raise ValueError("坏参数")
+
+        exporter._params_provider = _bad_params
+        bad_path = out_dir / "bad.png"
+        exporter.export_current_effect(bad_path)
+        ok("打印参数不合法时明确报失败，且不落盘半成品",
+           bool(events) and events[0][0] == "err" and not bad_path.exists(),
+           str(events))
+    finally:
+        exporter.deleteLater()
+
+    # ---- 方向键翻页：「焦点在哪里，哪里就切换」----
+    # 焦点在主界面 → 详情页 keyPressEvent 调 print_preview.navigate；
+    # 焦点在预览弹窗 → 弹窗自己的窗口级 QShortcut 接管（见 preview_zoom）。
+    ok("详情页接了 ←/→ 键盘处理（第四步翻页，输入类控件不抢）",
+       "def keyPressEvent" in (Path(__file__).resolve().parents[2]
+                               / "desktop/pages/taskdetail/page.py").read_text(
+                                   encoding="utf-8")
+       and "_arrow_free_to_navigate" in (Path(__file__).resolve().parents[2]
+                                         / "desktop/pages/taskdetail/page.py").read_text(
+                                             encoding="utf-8"), "")
+    ok("预览组件暴露 navigate（方向键翻页入口）",
+       hasattr(detail.print_preview, "navigate"), "")
+
+    nav_widget = PrintPreviewWidget()
+    try:
+        nav_src = _tmp_png(tmp / "nav-src.png", 400, 560)
+        nav_widget.set_entries(
+            [{"file": str(nav_src), "label": str(i)} for i in range(1, 5)]
+        )
+        nav_widget.strip.setCurrentRow(1)
+        pump(app, times=2)
+        nav_widget.navigate(True)
+        pump(app, times=2)
+        ok("navigate(True) 前进一行（联动预览刷新）",
+           nav_widget.strip.currentRow() == 2, str(nav_widget.strip.currentRow()))
+        nav_widget.navigate(False)
+        pump(app, times=2)
+        ok("navigate(False) 后退一行",
+           nav_widget.strip.currentRow() == 1, str(nav_widget.strip.currentRow()))
+        nav_widget.strip.setCurrentRow(3)
+        pump(app, times=2)
+        nav_widget.navigate(True)
+        pump(app, times=2)
+        ok("末页再前进不回绕（夹在两端）",
+           nav_widget.strip.currentRow() == 3, str(nav_widget.strip.currentRow()))
+    finally:
+        nav_widget.deleteLater()
 
 
 def _hint_of(widget) -> str:

@@ -8,9 +8,11 @@
 生成 PDF 时由 ``plan_print_page(image_rect=...)`` 原样采用——所见即所得。
 
 交互（与 detect/rembg 的裁剪框编辑同款手感）：
-- 框内拖动 → 整体移动；四角手柄拖动 → 缩放；松手 emit ``rect_changed``；
+- 框内拖动 → 整体移动；**四角**手柄拖动 → 缩放（勾「原比例缩放」时等比）；
+  **四条边整条都是命中带**（不限边中点的小圆点）→ 拖上/下边只改高度、
+  拖左/右边只改宽度（自由拉伸改变比例）；松手 emit ``rect_changed``；
 - 框始终被夹在页面内（夹到纸边即停），不会拖出页面；
-- 悬停手柄/框时显示对应光标。
+- 悬停手柄/边/框时显示对应光标。
 
 **标题与页码照画**：它们是「版面」的一部分，去掉就无从判断图片挪动后会不会
 压到字（曾误判为「标题页码被去除」）。绘制复用 ``preview_worker`` 的
@@ -47,11 +49,27 @@ HANDLE_STROKE = QColor("#2563eb")
 HANDLE_FILL = QColor("#ffffff")
 HANDLE_RADIUS = 6  # 手柄半径（控件像素）
 
-# 四角手柄光标：0=左上 1=右上 2=右下 3=左下
-_HANDLE_CURSORS = [
+# 手柄光标：0~3 = 四角（左上/右上/右下/左下），4~7 = 四边（上/右/下/左）。
+# ⚠️ 四边手柄**只在取消「原比例缩放」时出现**（那时才允许单方向拉伸）。
+_CORNER_CURSORS = [
     Qt.SizeFDiagCursor, Qt.SizeBDiagCursor,
     Qt.SizeFDiagCursor, Qt.SizeBDiagCursor,
 ]
+_EDGE_CURSORS = [
+    Qt.SizeVerCursor, Qt.SizeHorCursor,
+    Qt.SizeVerCursor, Qt.SizeHorCursor,
+]
+_HANDLE_CURSORS = _CORNER_CURSORS + _EDGE_CURSORS
+
+#: 边手柄索引 → 受影响的边
+_EDGE_BY_HANDLE = {4: "top", 5: "right", 6: "bottom", 7: "left"}
+
+#: 框的最小边长（mm）：拖到两边重合会让命中判定与后续缩放都失效
+MIN_RECT_MM = 2.0
+
+#: 边命中带（控件像素）：距边线这么近就算"拖这条边"，**不限边中点**。
+#: 角仍是小圆点邻域（角落优先按对角缩放处理）。
+EDGE_HIT_PX = 6
 
 
 class PrintLayoutCanvas(QWidget):
@@ -75,6 +93,13 @@ class PrintLayoutCanvas(QWidget):
         self._corner = 0
         self._grab_x = 0.0
         self._grab_y = 0.0
+        # 原比例缩放（来自 print 参数 keep_ratio）：
+        #   True  → 四角拖拽保持宽高比，且**不提供**四边手柄；
+        #   False → 铺满语义，另给上/下/左/右四个边手柄，可单独拉伸改变比例。
+        self._keep_ratio = True
+        #: 拖拽开始时的框（页面 mm）。保比例的角拖拽必须以**起点**为基准算比例，
+        #: 不能读拖动中的 _rect_mm（它每帧都在变，会越拖越偏）。
+        self._grab_rect = [0.0, 0.0, 0.0, 0.0]
         self._dirty = False
         self.setMouseTracking(True)
         self.setStyleSheet(
@@ -90,17 +115,23 @@ class PrintLayoutCanvas(QWidget):
         image: QImage | None,
         rect_mm: Sequence[float],
         plan=None,
+        keep_ratio: bool = True,
     ) -> None:
         """设置页面尺寸、待绘制图片与初始图片框（页面 mm）。
 
         ``plan`` 为 ``utils.page_layout.PrintPagePlan``：本控件据它画标题/
         页码与「已跳过」提示——版面编辑不能只看图片，否则无从判断挪动后
         会不会压到字。传 None 表示纯图片编辑（无标题/页码）。
+
+        ``keep_ratio``（print 参数 `keep_ratio`）：True（默认）= 四角拖拽
+        **保持宽高比**、不提供四边手柄；False = 四角自由拉伸 + 上/下/左/右
+        四个边手柄可单独拉伸（与「铺满可用区域」的自动排版语义配套）。
         """
         self._page_w_mm = float(page_w_mm)
         self._page_h_mm = float(page_h_mm)
         self._image = image
         self._plan = plan
+        self._keep_ratio = bool(keep_ratio)
         self._rect_mm = [float(v) for v in rect_mm]
         self._recompute()
         self.update()
@@ -158,19 +189,56 @@ class PrintLayoutCanvas(QWidget):
         )
 
     def _handle_positions(self) -> list[tuple[float, float]]:
+        """手柄位置：四角 + 四边，**恒 8 个**。
+
+        四边手柄始终可用——用户明确去拖某条边，就是要单方向拉伸那条边
+        （拖上/下边改高度、左/右边改宽度），与「原比例缩放」无关；
+        该勾选只约束**四角**拖拽是否等比（True=等比，False=自由）。
+        """
         r = self._rect_px()
+        cx = r.x() + r.width() / 2
+        cy = r.y() + r.height() / 2
         return [
-            (r.x(), r.y()),
-            (r.x() + r.width(), r.y()),
-            (r.x() + r.width(), r.y() + r.height()),
-            (r.x(), r.y() + r.height()),
+            (r.x(), r.y()),                     # 0 左上
+            (r.x() + r.width(), r.y()),         # 1 右上
+            (r.x() + r.width(), r.y() + r.height()),  # 2 右下
+            (r.x(), r.y() + r.height()),        # 3 左下
+            (cx, r.y()),                        # 4 上
+            (r.x() + r.width(), cy),            # 5 右
+            (cx, r.y() + r.height()),           # 6 下
+            (r.x(), cy),                        # 7 左
         ]
 
     def _hit_handle(self, pos: QPointF) -> int | None:
-        for i, (cx, cy) in enumerate(self._handle_positions()):
+        """命中手柄：先四角（圆点邻域），再四边（**整条边的命中带**）。
+
+        ⚠️ 边命中**不限于边中点的小圆点**——整条边两侧 `EDGE_HIT_PX` 控件
+        像素内都算拖那条边（窗口边缘的惯例：靠边即改宽/高，靠角即缩放）。
+        角优先于边：角落同时邻近两条边，按角处理才符合直觉（圆点邻域
+        判定在前，走到边判定时说明离角已经够远）。
+        """
+        positions = self._handle_positions()
+        for i in range(4):  # 四角：圆点邻域
+            cx, cy = positions[i]
             if abs(pos.x() - cx) <= HANDLE_RADIUS + 2 and \
                     abs(pos.y() - cy) <= HANDLE_RADIUS + 2:
                 return i
+        r = self._rect_px()
+        hit = EDGE_HIT_PX
+        near_top = abs(pos.y() - r.y()) <= hit
+        near_bottom = abs(pos.y() - (r.y() + r.height())) <= hit
+        near_left = abs(pos.x() - r.x()) <= hit
+        near_right = abs(pos.x() - (r.x() + r.width())) <= hit
+        x_in = r.x() - hit <= pos.x() <= r.x() + r.width() + hit
+        y_in = r.y() - hit <= pos.y() <= r.y() + r.height() + hit
+        if near_top and x_in:
+            return 4
+        if near_right and y_in:
+            return 5
+        if near_bottom and x_in:
+            return 6
+        if near_left and y_in:
+            return 7
         return None
 
     def _hit_rect(self, pos: QPointF) -> bool:
@@ -184,6 +252,9 @@ class PrintLayoutCanvas(QWidget):
         if corner is not None:
             self._mode = "resize"
             self._corner = corner
+            # 保比例的角拖拽以**起点框**为基准（比例与对角锚点都取自它）；
+            # 读拖动中的 _rect_mm 会逐帧累积偏差。
+            self._grab_rect = list(self._rect_mm)
             self._dirty = False
             self.update()
             return
@@ -212,20 +283,7 @@ class PrintLayoutCanvas(QWidget):
             return
         if self._mode == "resize":
             mx, my = self._to_mm(event.position())
-            x, y, w, h = self._rect_mm
-            # 以与拖动角相对的「对角」为锚点
-            ax, ay = {
-                0: (x + w, y + h), 1: (x, y + h),
-                2: (x, y), 3: (x + w, y),
-            }[self._corner]
-            nx1, ny1 = min(ax, mx), min(ay, my)
-            nx2, ny2 = max(ax, mx), max(ay, my)
-            # 夹在页面内
-            nx1 = min(max(nx1, 0.0), self._page_w_mm)
-            ny1 = min(max(ny1, 0.0), self._page_h_mm)
-            nx2 = min(max(nx2, 0.0), self._page_w_mm)
-            ny2 = min(max(ny2, 0.0), self._page_h_mm)
-            self._rect_mm = [nx1, ny1, nx2 - nx1, ny2 - ny1]
+            self._rect_mm = self._resize_from_handle(mx, my)
             self._dirty = True
             self.update()
             return
@@ -241,6 +299,62 @@ class PrintLayoutCanvas(QWidget):
             self.setCursor(Qt.ArrowCursor)
             return
         return super().mouseMoveEvent(event)
+
+    def _resize_from_handle(self, mx: float, my: float) -> list[float]:
+        """按当前手柄算出新框（页面 mm，始终夹在页面内）。
+
+        - 四边手柄：只改受影响的那个维度，**自由拉伸**（这是「取消原比例」
+          的核心手感：上下/左右单独拉，比例随之改变）；
+        - 四角手柄：`keep_ratio=False` 时自由拉伸；`True` 时以**对角为锚点**
+          等比缩放——比例取自拖拽起点框 `_grab_rect`，鼠标决定的宽高里取
+          **更受限**的那个维度配对，这样往任何方向拖都不会跑形。
+        """
+        gx, gy, gw, gh = self._grab_rect
+        pw, ph = self._page_w_mm, self._page_h_mm
+        edge = _EDGE_BY_HANDLE.get(self._corner)
+        if edge is not None:
+            x, y, w, h = self._rect_mm
+            if edge == "top":
+                top = min(max(my, 0.0), y + h - MIN_RECT_MM)
+                return [x, top, w, y + h - top]
+            if edge == "bottom":
+                bottom = min(max(my, y + MIN_RECT_MM), ph)
+                return [x, y, w, bottom - y]
+            if edge == "left":
+                left = min(max(mx, 0.0), x + w - MIN_RECT_MM)
+                return [left, y, x + w - left, h]
+            right = min(max(mx, x + MIN_RECT_MM), pw)
+            return [x, y, right - x, h]
+        # ---- 四角 ----
+        ax, ay = {
+            0: (gx + gw, gy + gh), 1: (gx, gy + gh),
+            2: (gx, gy), 3: (gx + gw, gy),
+        }[self._corner]
+        if not self._keep_ratio or gw <= 0 or gh <= 0:
+            nx1, ny1 = min(ax, mx), min(ay, my)
+            nx2, ny2 = max(ax, mx), max(ay, my)
+            nx1 = min(max(nx1, 0.0), pw)
+            ny1 = min(max(ny1, 0.0), ph)
+            nx2 = min(max(nx2, 0.0), pw)
+            ny2 = min(max(ny2, 0.0), ph)
+            return [nx1, ny1, nx2 - nx1, ny2 - ny1]
+        ratio = gh / gw
+        scale = min(
+            abs(mx - ax) / gw if gw else 0.0,
+            abs(my - ay) / gh if gh else 0.0,
+        )
+        new_w = max(MIN_RECT_MM, gw * scale)
+        new_h = max(MIN_RECT_MM, new_w * ratio)
+        # 超出页面就等比缩回来（不破比例，也不做单维度夹取）
+        if new_w > pw:
+            new_w, new_h = pw, pw * ratio
+        if new_h > ph:
+            new_h, new_w = ph, ph / ratio if ratio else new_w
+        nx = ax - new_w if self._corner in (0, 3) else ax
+        ny = ay - new_h if self._corner in (0, 1) else ay
+        nx = min(max(nx, 0.0), pw - new_w)
+        ny = min(max(ny, 0.0), ph - new_h)
+        return [nx, ny, new_w, new_h]
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802
         if self._mode in ("move", "resize"):

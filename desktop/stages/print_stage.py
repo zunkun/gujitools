@@ -52,7 +52,14 @@ def run_print_stage(config: dict) -> int:
             staging = Path(tmp)
             os.makedirs(staging, exist_ok=True)
             for index, spec in enumerate(effects):
-                emit({"type": "progress", **context, "done": index, "total": total})
+                # ⚠️ 合成阶段**不发 progress 事件**：整个 print 阶段只有一条进度条，
+                # 唯一来源是 CLI 侧的「已写入页数」（functions/print.py 走 reporter）。
+                # 这里再发一份，进度条就会先跑完合成、再由写入**从 0 重跑**，
+                # 用户看到的是"顶部 197/198、底部 160/198 两个数字对不上"
+                # （实测症状）。合成很快（每页约 25ms），用日志给反馈就够。
+                if index % 10 == 0 or index + 1 == total:
+                    emit({"type": "log", **context,
+                          "message": f"合成效果图 {index + 1}/{total}"})
                 image = QImage(spec["file"])
                 if image.isNull():
                     emit({"type": "log", **context,

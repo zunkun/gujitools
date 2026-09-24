@@ -497,6 +497,48 @@ def run(ctx) -> None:
     ok("R 键顺时针旋转 90°", dialog.canvas._rotation == 90,
        str(dialog.canvas._rotation))
 
+    # ---- 窗口态：min/max 按钮、双击顶部栏全屏、F11、百分比点击复位 ----
+    # 用户 17:03~17:08 报：弹窗右上没有最小化/还原（QDialog 默认标题栏只有
+    # 关闭）、双击顶部栏要能全屏。⚠️ 全屏切换走 fit() 不触发渲染，放在
+    # 渲染计数断言之后才不污染 edges。
+    from PySide6.QtCore import QPoint
+    from PySide6.QtTest import QTest
+
+    ok("标题栏带最小化/最大化按钮（QDialog 默认没有，用户找不到「还原」）",
+       bool(dialog.windowFlags() & Qt.WindowType.WindowMinimizeButtonHint)
+       and bool(dialog.windowFlags() & Qt.WindowType.WindowMaximizeButtonHint),
+       hex(int(dialog.windowFlags())))
+    QTest.mouseDClick(dialog, Qt.MouseButton.LeftButton,
+                      Qt.KeyboardModifier.NoModifier, QPoint(600, 6))
+    pump(app, times=4)
+    ok("双击顶部工具栏空白 → 全屏", dialog.isFullScreen(), "")
+    QTest.mouseDClick(dialog, Qt.MouseButton.LeftButton,
+                      Qt.KeyboardModifier.NoModifier, QPoint(600, 6))
+    pump(app, times=4)
+    ok("再双击顶部栏 → 还原", not dialog.isFullScreen(), "")
+    QTest.keyClick(dialog, Qt.Key_F11)
+    pump(app, times=4)
+    ok("F11 → 全屏", dialog.isFullScreen(), "")
+    QTest.keyClick(dialog, Qt.Key_F11)
+    pump(app, times=4)
+    ok("再按 F11 → 还原", not dialog.isFullScreen(), "")
+    # 点「百分比」标签 → 回 100%：由 dialog 的 eventFilter 消费按压实现
+    dialog.canvas.set_zoom(2.5)
+    handled = dialog.eventFilter(
+        dialog.zoom_label, QEvent(QEvent.Type.MouseButtonPress)
+    )
+    ok("百分比标签点击把倍率复位到 100%",
+       handled and abs(dialog.canvas.zoom - 1.0) < 1e-6,
+       f"handled={handled} zoom={dialog.canvas.zoom:.2f}")
+    # ⚠️ 翻页/全屏必须是**窗口级 QShortcut**：只靠 keyPressEvent 在真实 GUI
+    # 会掉——焦点在画布/按钮上时方向键被消费或导航走，到不了对话框
+    # （离屏 QTest 直接发给对话框测不出来；用户实测「没有实现」即此）。
+    from PySide6.QtGui import QShortcut
+
+    sc_keys = {s.key().toString() for s in dialog.findChildren(QShortcut)}
+    ok("方向键翻页/全屏走窗口级 QShortcut（不受焦点影响）",
+       {"Left", "Right", "F11"} <= sc_keys, str(sorted(sc_keys)))
+
     dialog.close()
     pump(app, times=3)
     ok("关闭后释放图片与后台线程",
@@ -596,6 +638,54 @@ def run(ctx) -> None:
     ok("重排出来的确实更锐（不是放大的糊图）",
        sharpness(big) > sharpness(upscaled) * 1.2,
        f"重排={sharpness(big):.0f} 放大={sharpness(upscaled):.0f}")
+
+    # ---------------------------------------------------------------- 11
+    # 「打印效果」密度约束（2026-09-24）：①合成不得**放大**源图；②给了
+    # target_edge 就不能再让 longest_edge 缩一次（白扔细节）；
+    # ③longest_edge=0 在 PDF 分支必须返回原始尺寸，而不是历史上那张空图。
+    def compose_src(path, longest, spec):
+        captured: dict = {}
+        worker = PreviewWorker(path, longest_edge=longest, print_spec=spec)
+        worker.finished.connect(
+            lambda _p, image, _s: captured.update(image=image)
+        )
+        worker.run()
+        return captured.get("image")
+
+    small_path = tmp / "small.png"
+    QImage(800, 1131, QImage.Format_RGB888).copy().save(str(small_path))
+    # 夹住的是**图片区域**的密度，不是画布（画布还要放标题/纸面留白）。
+    # 所以这里不比画布尺寸，而是比"要更大的边长能不能拿到更多像素"——
+    # 上限一旦存在，4000 与 8000 必然得到同一张画布。
+    ask_4000 = compose_src(small_path, 0, {**base_spec, "target_edge": 4000})
+    ask_8000 = compose_src(small_path, 0, {**base_spec, "target_edge": 8000})
+    ok("密度有上限：不放大源图（要 4000 与要 8000 得到同一张画布）",
+       ask_4000 is not None and ask_4000.size() == ask_8000.size(),
+       f"{ask_4000.size()} vs {ask_8000.size()}")
+    ok("…而且确实被夹住（没有真按请求边长合成）",
+       max(ask_4000.width(), ask_4000.height()) < 4000,
+       f"{ask_4000.width()}x{ask_4000.height()}（源图 800x1131）")
+
+    import fitz
+
+    pdf_path = tmp / "one.pdf"
+    doc = fitz.open()
+    pg = doc.new_page(width=595, height=842)
+    pg.insert_text((72, 72), "x")
+    doc.save(str(pdf_path))
+    doc.close()
+    pdf_img = compose_src(pdf_path, 0, None)
+    ok("longest_edge=0 在 PDF 分支返回原始尺寸（不再得到空图）",
+       pdf_img is not None and not pdf_img.isNull() and pdf_img.width() >= 590,
+       f"{pdf_img.width()}x{pdf_img.height()}")
+
+    host_text = (
+        root / "desktop/components/viewers/print_preview.py"
+    ).read_text(encoding="utf-8")
+    ok("第四步主预览：打印效果按 target_edge 重排（密度不写死 1600）",
+       "target_edge" in host_text and "MAX_PREVIEW_EDGE" in host_text, "")
+    ok("第四步主预览：给了 target_edge 就不再做 longest_edge 缩放",
+       "longest_edge=0" in host_text, "")
 
     # ---------------------------------------------------------------- 12
     for rel in HOST_FILES:

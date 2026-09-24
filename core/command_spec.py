@@ -352,6 +352,12 @@ PRINT_DEFAULTS: Dict[str, Any] = {
     "pdf_name": None,
     "paper_size": "A4",
     "orientation": "landscape",
+    # 原比例缩放：True（默认）= 图片按原始宽高比缩放到纸面，不拉伸；
+    # False = 图片**铺满**可用区域（受 page_margins 约束），且版面编辑器
+    # 给出上/下/左/右四个边手柄，可自由拉伸改变比例。
+    # ⚠️ 与「版面编辑器逐图 rect」的关系：rect 一旦存在就原样采用（所见即所得），
+    # 本键只决定**自动排版**（没有 rect 的页）与画布的拖拽手感。
+    "keep_ratio": True,
     "page_margins": list(DEFAULT_PAGE_MARGINS),
     "left_page_margins": None,
     "right_page_margins": None,

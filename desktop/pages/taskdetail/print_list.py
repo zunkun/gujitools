@@ -120,3 +120,32 @@ class PrintListMixin:
             return
         self._toast("success", "下载完成", f"已保存到：{target}")
         self.log_view.append(f"PDF 已下载到：{target}")
+
+    def _export_print_image(self) -> None:
+        """把**当前页**的 A4 效果图另存为图片（单页；精度与 PDF 同级 300dpi）。
+
+        渲染交给 ``print_preview``（它才懂排版口径），这里只负责对话框与提示：
+        与「下载 PDF」保持同一套交互（默认下载目录、toast、写日志）。
+        """
+        default_name = self.print_preview.export_default_name()
+        if not default_name:
+            self._toast("warning", "无可导出页面", "请先在第四步添加要打印的图片。")
+            return
+        downloads = Path.home() / "Downloads"
+        default_dir = downloads if downloads.exists() else Path.home()
+        target, _ = QFileDialog.getSaveFileName(
+            self, "下载本页图片", str(default_dir / default_name),
+            "PNG 图片 (*.png);;JPEG 图片 (*.jpg)",
+        )
+        if not target:
+            return
+        self._export_target = target
+        self.print_preview.export_current_effect(target)
+
+    def _on_export_finished(self, target: str) -> None:
+        self._toast("success", "已导出本页图片", f"已保存到：{target}")
+        self.log_view.append(f"本页图片已导出：{target}")
+
+    def _on_export_failed(self, message: str) -> None:
+        self._toast("error", "导出失败", message)
+        self.log_view.append(f"导出本页图片失败：{message}")

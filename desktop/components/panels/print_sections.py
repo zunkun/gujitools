@@ -47,10 +47,19 @@ class PrintSectionsMixin(PrintInsetMixin):
         self.pdf_name = self._line_edit("xxx[重制].pdf")
         self.paper_size = combo_box(PAPER_SIZES)
         self.orientation = self._make_combo(DIRECTIONS)
+        # 原比例缩放：默认勾选（不拉伸）。取消后图片铺满可用区域，且版面
+        # 编辑器给出上/下/左/右四个边手柄，可自由拉伸改变比例。
+        self.keep_ratio = CheckBox("原比例缩放")
+        self.keep_ratio.setToolTip(
+            "勾选（默认）：图片按原始宽高比缩放到纸面，不拉伸。\n"
+            "取消勾选：图片铺满可用区域（受页边距约束），可在版面上用"
+            "上/下/左/右四个边手柄自由拉伸，改变图片比例。"
+        )
         self._add_row(form, "古籍名称", self.title_text)
         self._add_row(form, "PDF 文件名", self.pdf_name)
         self._add_row(form, "纸张尺寸", self.paper_size)
         self._add_row(form, "纸张方向", self.orientation)
+        form.addRow(self.keep_ratio)
 
     def _build_margin_section(self, root: QVBoxLayout) -> None:
         form = self._section(root, "页边距（mm）")

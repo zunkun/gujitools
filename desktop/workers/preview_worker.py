@@ -288,6 +288,14 @@ def compose_print_page(
     按预览调好的边距/纸张/标题，与最终 PDF 必然一致。
     """
     density = px_per_mm or preview_px_per_mm(plan.page_w_mm, plan.page_h_mm)
+    img_w_mm, img_h_mm = plan.image[2], plan.image[3]
+    if not image.isNull() and img_w_mm > 0 and img_h_mm > 0:
+        # 密度**不得超过源图原生密度**：再往上就是把源图凭空放大（只会更糊），
+        # 还白占内存。宿主会给很大的 target_edge（弹窗 4000），小图（1200px
+        # 的扫描件）必须在这里被夹住。
+        density = min(
+            density, image.width() / img_w_mm, image.height() / img_h_mm
+        )
     page_w = max(1, round(plan.page_w_mm * density))
     page_h = max(1, round(plan.page_h_mm * density))
     page = QImage(page_w, page_h, QImage.Format_RGB32)
@@ -364,8 +372,13 @@ class PreviewWorker(QObject):
         print_spec 为第四步「打印效果」参数
         {"args": print 参数, "index": 0-based 页序, "total": 总页数, "name": 文件名}，
         非空时把图片按 utils.page_layout 的几何排进一张纸（仅内存，不落盘）；
-        另可给 "target_edge"（放大弹窗用）：按该边长反推像素密度**重新排版**，
-        标题/页码是重新绘制的，放到 4000px 依然锐利。
+        另可给 "target_edge"：按该边长反推像素密度**重新排版**（标题/页码是
+        重新绘制的，放到 4000px 依然锐利）。⚠️ 这个密度应当**高于屏幕需求**
+        （超采样）——Qt 一次大比例缩小的质量明显差于分两档温和缩放，实测
+        「合成 3000px」的锐度接近理论理想，而「合成 = 显示尺寸」反而最糊。
+        密度的上限由 compose_print_page 夹住（不超过源图原生密度）。
+        ⚠️ 给了 target_edge 时，longest_edge 应传 0（画布已按该密度合成，
+        再缩一次纯粹白扔细节）。
         """
         super().__init__()
         self.path = path
@@ -403,7 +416,14 @@ class PreviewWorker(QObject):
             self.metadata.emit(document.page_count, str(self.path))
             page = document.load_page(self.page)
             rect = page.rect
-            scale = self.longest_edge / max(rect.width, rect.height)
+            # longest_edge=0 的语义是「不缩放（要原始分辨率）」。此前直接相除会
+            # 得到 scale=0 → **一张空图**，所以调用方都得绕开这个语义；这里显式
+            # 处理掉，谁都不用再防。
+            scale = (
+                self.longest_edge / max(rect.width, rect.height)
+                if self.longest_edge
+                else 1.0
+            )
             pixmap = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
             return QImage.fromData(pixmap.tobytes("jpg", jpg_quality=80))
         finally:

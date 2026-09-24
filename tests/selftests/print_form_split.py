@@ -109,7 +109,7 @@ _CROSS_DEPS = {
         "_add_node_row",         # PrintFormMixin
         "_clear_node_rows",      # PrintFormMixin
         "_sync_enabled",         # PrintPanel
-        "title_text", "pdf_name", "paper_size", "orientation",
+        "title_text", "pdf_name", "paper_size", "orientation", "keep_ratio",
         "page_margins", "left_margins", "right_margins",
         "title_printing", "title_font", "title_font_size", "title_color",
         "_title_inset",
