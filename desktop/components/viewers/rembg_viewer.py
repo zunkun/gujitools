@@ -122,6 +122,10 @@ class RembgPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         self._rebuild_entries()
         self._load_display()
 
+    def navigate(self, forward: bool) -> None:
+        """方向键翻页（详情页 ←/→ 调用；联动预览刷新，见 ThumbStrip.navigate）。"""
+        self.strip.navigate(forward)
+
     def set_live_dir(self, path: Path | None) -> None:
         """设置（或传 None 清除）「实时预览」暂存目录。
 

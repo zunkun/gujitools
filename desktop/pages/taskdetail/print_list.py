@@ -149,3 +149,11 @@ class PrintListMixin:
     def _on_export_failed(self, message: str) -> None:
         self._toast("error", "导出失败", message)
         self.log_view.append(f"导出本页图片失败：{message}")
+
+    def _on_print_finished(self, printer_name: str) -> None:
+        self._toast("success", "已发送打印", f"打印机：{printer_name}")
+        self.log_view.append(f"本页已发送打印机：{printer_name}")
+
+    def _on_print_failed(self, message: str) -> None:
+        self._toast("error", "打印失败", message)
+        self.log_view.append(f"打印本页失败：{message}")

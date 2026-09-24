@@ -205,6 +205,9 @@ class DetailViewMixin:
         self.print_preview.export_image_requested.connect(self._export_print_image)
         self.print_preview.export_finished.connect(self._on_export_finished)
         self.print_preview.export_failed.connect(self._on_export_failed)
+        # 单页打印：同一份 A4 效果渲染，交系统打印对话框
+        self.print_preview.print_finished.connect(self._on_print_finished)
+        self.print_preview.print_failed.connect(self._on_print_failed)
         # 版面编辑：某一页图片坐标被拖拽/缩放后落盘 print.json 并标脏
         self.print_preview.layout_changed.connect(self._on_print_layout_changed)
         self.print_preview.hint.connect(

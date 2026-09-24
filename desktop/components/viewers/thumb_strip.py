@@ -208,6 +208,20 @@ class ThumbStrip(QListWidget):
         """打开/关闭 Delete/Backspace 删除（只发信号，删不删由宿主定）。"""
         self._deletable = bool(on)
 
+    def navigate(self, forward: bool) -> None:
+        """方向键翻页：移动当前行（夹在两端，不回绕）。
+
+        主预览的方向键导航入口——「焦点在哪里，哪里就切换」：焦点在主界面
+        的非输入控件上时由详情页转到这里（四个步骤的预览组件共用本方法）；
+        焦点落在本条上时 QListWidget 的方向键本来就移动选择，语义一致。
+        ``setCurrentRow`` 会触发 ``currentRowChanged``，预览刷新由各组件
+        既有的联动完成。
+        """
+        row = self.currentRow() + (1 if forward else -1)
+        row = max(0, min(self.count() - 1, row))
+        if row != self.currentRow():
+            self.setCurrentRow(row)
+
     def keyPressEvent(self, event) -> None:  # noqa: N802
         """Delete/Backspace → ``delete_requested``。
 
@@ -219,6 +233,13 @@ class ThumbStrip(QListWidget):
             Qt.Key.Key_Delete, Qt.Key.Key_Backspace,
         ):
             self.delete_requested.emit()
+            event.accept()
+            return
+        if event.key() in (Qt.Key.Key_Left, Qt.Key.Key_Right):
+            # ⚠️ 竖排条里 ←/→ **没有相邻格**，QListWidget 对它们毫无反应
+            # （↑/↓ 却能移动选择——用户 17:57 报「上下可以切换、左右不行」）。
+            # 把 ←/→ 翻译成翻页（与 ↑/↓ 同义）：焦点落在条上也要能左右切换。
+            self.navigate(event.key() == Qt.Key.Key_Right)
             event.accept()
             return
         super().keyPressEvent(event)

@@ -1210,6 +1210,56 @@ def run(ctx) -> None:
     finally:
         exporter.deleteLater()
 
+    # ---- 打印本页：同一份 A4 效果渲染，交系统打印对话框 ----
+    from PySide6.QtCore import QPoint
+    from PySide6.QtTest import QTest
+
+    print_src = _tmp_png(tmp / "print-src.png", 2000, 2828)
+    printer_widget = PrintPreviewWidget(params_provider=lambda: dict(full))
+    try:
+        printer_widget.set_entries([{"file": str(print_src), "label": "0001"}])
+        pump(app, times=4)
+        ok("「打印本页」按钮存在、文案纯中文且随条目启停",
+           printer_widget.print_button.text() == "打印本页"
+           and printer_widget.print_button.isEnabled(), "")
+        img, err = printer_widget._render_current_effect_sync()
+        ok("打印渲染 = A4 300dpi 效果图（同步执行，长边 3508）",
+           img is not None and max(img.width(), img.height()) == 3508,
+           f"{img.width()}x{img.height()}" if img is not None else err)
+        dbl: list[int] = []
+        printer_widget.canvas.double_clicked.connect(lambda: dbl.append(1))
+        QTest.mouseDClick(printer_widget.canvas, Qt.MouseButton.LeftButton,
+                          Qt.KeyboardModifier.NoModifier, QPoint(200, 150))
+        pump(app, times=2)
+        ok("版面编辑双击画布发出 double_clicked（宿主据此开预览弹窗）",
+           dbl == [1], str(dbl))
+    finally:
+        printer_widget.deleteLater()
+
+    ok("详情页接上打印完成的两个信号（toast + 日志）",
+       hasattr(detail, "_on_print_finished")
+       and hasattr(detail, "_on_print_failed"), "")
+
+    # ---- 参数变化 → 已打开的弹窗重渲染（纸张快照不再过期）----
+    # 渲染链路本就跟随配置（A4/A5/B5 × 横竖实测全对）；要补的是「弹窗开着
+    # 改参数」时快照过期的问题：refresh_display 必须触发弹窗重渲染。
+    ok("详情页接了参数变化 → 弹窗重渲染的钩子",
+       "_refresh_zoom_popup_if_open" in (Path(__file__).resolve().parents[2]
+                                         / "desktop/components/viewers/print_preview.py").read_text(
+                                             encoding="utf-8"), "")
+    stale = PrintPreviewWidget(params_provider=lambda: dict(full))
+    try:
+        stale.set_entries([{"file": str(print_src), "label": "0001"}])
+        pump(app, times=4)
+        calls: list[int] = []
+        stale._refresh_zoom_popup_if_open = lambda: calls.append(1)  # 拦截验证
+        stale.refresh_display()
+        pump(app, times=2)
+        ok("refresh_display（参数变化路径）会刷新已打开的弹窗",
+           calls == [1], str(calls))
+    finally:
+        stale.deleteLater()
+
     # ---- 方向键翻页：「焦点在哪里，哪里就切换」----
     # 焦点在主界面 → 详情页 keyPressEvent 调 print_preview.navigate；
     # 焦点在预览弹窗 → 弹窗自己的窗口级 QShortcut 接管（见 preview_zoom）。
@@ -1220,8 +1270,62 @@ def run(ctx) -> None:
        and "_arrow_free_to_navigate" in (Path(__file__).resolve().parents[2]
                                          / "desktop/pages/taskdetail/page.py").read_text(
                                              encoding="utf-8"), "")
+    # ⚠️ 点击预览大图（QLabel 不收焦点）后焦点落在**主窗口本身**——按键只会
+    # 到 MainWindow.keyPressEvent，不转发的话用户点完图片按左右毫无反应
+    # （用户 18:29 实测）。主窗口转发 + page.navigate_by_arrow 公开入口。
+    app_src = (Path(__file__).resolve().parents[2]
+               / "desktop/app.py").read_text(encoding="utf-8")
+    ok("主窗口把 ←/→ 转发给详情页（点击预览图后焦点落在主窗口）",
+       "def keyPressEvent" in app_src and "navigate_by_arrow" in app_src, "")
+    ok("详情页有 navigate_by_arrow 公开入口（主窗口转发用，含输入区守卫）",
+       hasattr(detail, "navigate_by_arrow"), "")
     ok("预览组件暴露 navigate（方向键翻页入口）",
        hasattr(detail.print_preview, "navigate"), "")
+
+    # ---- 方向键翻页推广到**所有步骤**（「焦点在哪里，哪里就切换」）----
+    page_src = (Path(__file__).resolve().parents[2]
+                / "desktop/pages/taskdetail/page.py").read_text(encoding="utf-8")
+    ok("详情页按阶段分发方向键（四步的预览控件全部映射）",
+       all(k in page_src for k in (
+           "_STAGE_PREVIEW_ATTRS", '"extract_result_viewer"',
+           '"detect_viewer"', '"rembg_viewer"', '"print_preview"')), "")
+    ok("四步预览组件都有 navigate 入口",
+       all(hasattr(getattr(detail, attr, None), "navigate") for attr in (
+           "extract_result_viewer", "detect_viewer",
+           "rembg_viewer", "print_preview")), "")
+    from desktop.components.viewers.thumb_strip import ThumbStrip
+
+    nav_strip = ThumbStrip()
+    for i in range(3):
+        nav_strip.add_page_item(str(i))
+    nav_strip.setCurrentRow(2)
+    nav_strip.navigate(True)
+    ok("末页再前进不回绕（ThumbStrip.navigate 夹取，唯一逻辑处）",
+       nav_strip.currentRow() == 2, str(nav_strip.currentRow()))
+    nav_strip.navigate(False)
+    nav_strip.navigate(False)
+    ok("首页再后退同样夹住", nav_strip.currentRow() == 0,
+       str(nav_strip.currentRow()))
+    # ⚠️ 竖排条里 ←/→ 没有相邻格，QListWidget 对它们毫无反应（↑/↓ 却能移动
+    # 选择）——用户实测「上下可以切换、左右不行」。条内必须显式翻译成翻页。
+    from PySide6.QtTest import QTest
+
+    kb_strip = ThumbStrip()
+    for i in range(3):
+        kb_strip.add_page_item(str(i))
+    kb_strip.show()                       # ⚠️ 不 show 的话 QTest 按键不可靠
+    pump(app, times=2)
+    kb_strip.setFocus()
+    pump(app, times=2)
+    kb_strip.setCurrentRow(0)
+    QTest.keyClick(kb_strip, Qt.Key_Right)
+    pump(app, times=2)
+    ok("条内按 → 翻页（焦点在缩略图条上也要能左右切换）",
+       kb_strip.currentRow() == 1, str(kb_strip.currentRow()))
+    QTest.keyClick(kb_strip, Qt.Key_Left)
+    pump(app, times=2)
+    ok("条内按 ← 翻回", kb_strip.currentRow() == 0, str(kb_strip.currentRow()))
+    kb_strip.deleteLater()
 
     nav_widget = PrintPreviewWidget()
     try:

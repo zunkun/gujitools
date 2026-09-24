@@ -20,9 +20,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QImage
+from PySide6.QtGui import QPageLayout, QPageSize, QImage, QPainter
+from PySide6.QtPrintSupport import QPrintDialog, QPrinter
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget,
+    QDialog, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget,
 )
 from qfluentwidgets import CaptionLabel, PrimaryPushButton, PushButton
 from qfluentwidgets import FluentIcon as FIF
@@ -51,6 +52,8 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
     export_image_requested = Signal()
     export_finished = Signal(str)   # 导出成功：文件路径
     export_failed = Signal(str)     # 导出失败：原因
+    print_finished = Signal(str)    # 打印成功：打印机名
+    print_failed = Signal(str)      # 打印失败：原因
     hint = Signal(str)              # 需要宿主提示用户（如"未选中任何图片"）
     # 版面编辑：某一页的图片坐标（[x,y,w,h] mm）被拖拽/缩放改了
     layout_changed = Signal(int, list)
@@ -58,6 +61,14 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
     #: 导出图片的精度：与 PDF **同级**（`functions/print.py` 的 `PRINT_IMAGE_DPI`）。
     #: 密度上限由 `compose_print_page` 夹住（不得超过源图原生密度），小图不会被拉大。
     EXPORT_IMAGE_DPI = 300
+
+    #: print 参数的纸张名 → Qt 页面尺寸（打印用；候选与表单 PAPER_SIZES 一致）
+    _PAPER_TO_QPAGE = {
+        "A3": QPageSize.PageSizeId.A3,
+        "A4": QPageSize.PageSizeId.A4,
+        "A5": QPageSize.PageSizeId.A5,
+        "B5": QPageSize.PageSizeId.B5,
+    }
 
     # 缩略图解码最长边：取 ThumbStrip 的**框长边**（不是框宽）——
     # ImageListWorker 的 edge 是最长边语义，竖开本页面受高度约束，
@@ -132,6 +143,9 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         # 版面编辑器：在 A4 纸上拖拽/缩放图片（默认模式）
         self.canvas = PrintLayoutCanvas()
         self.canvas.rect_changed.connect(self._on_canvas_rect)
+        # 双击画布 → 预览弹窗（版面编辑模式下看该页的打印效果放大；
+        # 打印效果/原图模式的双击在 self.view 上，见 _init_zoom_popup）
+        self.canvas.double_clicked.connect(self._open_zoom_popup)
         right.addWidget(self.canvas, 1)
         # 原图查看（非编辑）：复用 ImageViewerWidget 的大图查看
         self.view = ImageView(empty_hint)
@@ -167,6 +181,13 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
             f"（{self.EXPORT_IMAGE_DPI}dpi，单页）"
         )
         self.export_image_button.clicked.connect(self.export_image_requested.emit)
+        # 单页打印：与导出同一份渲染（A4 效果图），交系统打印对话框选打印机
+        self.print_button = PushButton(FIF.PRINT, "打印本页")
+        self.print_button.setToolTip(
+            f"把当前页按 A4 打印效果送到打印机"
+            f"（{self.EXPORT_IMAGE_DPI}dpi，单页）"
+        )
+        self.print_button.clicked.connect(self._print_current)
         self.hint_label = CaptionLabel("拖动缩略图排序 · Delete 删除选中")
         # ⚠️ 提示文字是**次要信息**，必须能被压缩：QLabel 的 minimumSizeHint 默认
         # 等于文字宽度（`setMinimumWidth(0)` 也压不动它，布局看的是 minimumSizeHint），
@@ -180,6 +201,7 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         toolbar.addWidget(self.insert_button)
         toolbar.addWidget(self.delete_button)
         toolbar.addWidget(self.export_image_button)
+        toolbar.addWidget(self.print_button)
         toolbar.addWidget(self.download_button)
         toolbar.addStretch()
         toolbar.addWidget(self.hint_label)
@@ -249,20 +271,21 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
             self.refresh_layout()
         else:
             self._load_display()
+        # ⚠️ 弹窗里那页是**打开时的快照**：纸张/方向/标题/页码一变就过期
+        # （用户 17:50 反馈"预览要按配置的纸张大小适配 A4/A5 等"——渲染链路
+        # 本就跟随参数，过期的是已打开的快照）。不关窗打断查看，重渲染当前页。
+        self._refresh_zoom_popup_if_open()
+
+    def _refresh_zoom_popup_if_open(self) -> None:
+        """弹窗开着 → 用**当前参数**重渲染该页（快照保持新鲜）。"""
+        dialog = self._zoom_dialog
+        if dialog is None or not dialog.isVisible():
+            return
+        dialog.show_for(index=self._current_index())
 
     def navigate(self, forward: bool) -> None:
-        """方向键翻页：移动缩略图条当前行（联动预览刷新与选中态）。
-
-        供详情页的 ←/→ 键盘处理调用——「焦点在哪里，哪里就切换」：焦点在
-        主界面时这里翻，焦点在预览弹窗里由弹窗的窗口级 QShortcut 接管。
-        """
-        if not self._entries_cache:
-            return
-        row = self.strip.currentRow() + (1 if forward else -1)
-        row = max(0, min(len(self._entries_cache) - 1, row))
-        if row != self.strip.currentRow():
-            # setCurrentRow → currentRowChanged → _select_image → 重载预览
-            self.strip.setCurrentRow(row)
+        """方向键翻页（详情页 ←/→ 调用；联动预览刷新，见 ThumbStrip.navigate）。"""
+        self.strip.navigate(forward)
 
     # ------------------------------------------------------------------ 内部
     def _stop_worker(self) -> None:
@@ -491,12 +514,13 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
             rect = list(plan.image)
         self.canvas.set_page(pw, ph, image, rect, plan, keep_ratio=keep_ratio)
         handle_hint = (
-            "拖四角等比缩放，拖四边单独拉伸宽/高"
+            "拖四角等比缩放，拖四边拉伸宽/高"
             if keep_ratio else
-            "拖四角/上下左右边缩放（可拉伸改变比例）"
+            "拖四角/四边拉伸（可改变比例）"
         )
         self.caption.setText(
-            f"版面编辑 · 第 {index + 1}/{total} 页 · 拖动图片移动，{handle_hint}"
+            f"版面编辑 · 第 {index + 1}/{total} 页 · 拖动移动，{handle_hint}，"
+            f"双击放大预览"
         )
 
     def _on_canvas_rect(self, rect: list) -> None:
@@ -599,8 +623,10 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
 
     # -------------------------------------------------------------- 单页导出
     def _sync_export_button(self) -> None:
-        """有没有可导出的页——没页就别让按钮可点（点了只能弹个空对话框）。"""
-        self.export_image_button.setEnabled(bool(self._entries_cache))
+        """有没有可操作的单页（没页就别让导出/打印可点，点了只能弹空对话框）。"""
+        enabled = bool(self._entries_cache)
+        self.export_image_button.setEnabled(enabled)
+        self.print_button.setEnabled(enabled)
 
     def export_default_name(self) -> str | None:
         """导出对话框的默认文件名；没有可导出的页时返回 None。"""
@@ -684,6 +710,78 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         if token is not self._export_token:
             return
         self.export_failed.emit(str(message))
+
+    # -------------------------------------------------------------- 单页打印
+    def _render_current_effect_sync(self):
+        """同步渲染当前页的 A4 效果图 → (QImage, 错误文案)。
+
+        与导出/预览同一条 `compose_print_page` 链路、同 300dpi 精度；
+        同步执行（A4 合成约几十毫秒，打印对话框弹出前完成，不打断操作流）。
+        """
+        index = self._current_index()
+        if not (0 <= index < len(self._entries_cache)):
+            return None, "没有可打印的页面"
+        path = Path(str(self._entries_cache[index]["file"]))
+        if not path.exists():
+            return None, f"图片不存在：{path.name}"
+        spec, note = self._print_spec(index, path)
+        if spec is None:
+            return None, note or "打印参数不合法"
+        captured: dict = {}
+        worker = PreviewWorker(
+            path, longest_edge=0,
+            print_spec={**spec, "target_edge": self._export_edge()},
+        )
+        worker.finished.connect(
+            lambda _p, image, _s: captured.update(image=image)
+        )
+        worker.run()  # 同线程直跑（run() 是普通方法），免异步等待
+        image = captured.get("image")
+        if image is None or image.isNull():
+            return None, "渲染失败"
+        return image, ""
+
+    def _print_current(self) -> None:
+        """把当前页的 A4 效果图送到打印机（对话框里选打印机/份数）。
+
+        纸张与方向**按右侧参数**设置——效果图就是按它排版的，纸面与预览
+        一致；对话框里仍可换打印机/份数/逐份打印。
+        """
+        from PySide6.QtGui import QPageLayout
+
+        image, err = self._render_current_effect_sync()
+        if image is None:
+            self.print_failed.emit(err)
+            return
+        args: dict = {}
+        if self._params_provider is not None:
+            try:
+                args = self._params_provider() or {}
+            except Exception:
+                args = {}
+        paper = str(args.get("paper_size") or "A4").upper()
+        printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+        printer.setPageSize(QPageSize(
+            self._PAPER_TO_QPAGE.get(paper, QPageSize.PageSizeId.A4)
+        ))
+        landscape = str(args.get("orientation") or "landscape").lower() in (
+            "l", "landscape"
+        )
+        printer.setPageOrientation(
+            QPageLayout.Orientation.Landscape if landscape
+            else QPageLayout.Orientation.Portrait
+        )
+        dialog = QPrintDialog(printer, self)
+        dialog.setWindowTitle(f"打印当前页（{paper} "
+                              f"{'横版' if landscape else '竖版'}）")
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        painter = QPainter(printer)
+        # 效果图与纸张**同比例**（plan 按纸面排版）→ 等比铺满可打印区
+        # 就是整页还原，不会变形；页边留白由打印机驱动自己保守处理
+        painter.drawImage(printer.pageRect(QPrinter.Unit.DevicePixel), image)
+        painter.end()
+        self.print_finished.emit(printer.printerName())
 
     # -------------------------------------------------------------- 图片预览
     def _zoom_index(self) -> int:

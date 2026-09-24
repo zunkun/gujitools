@@ -76,6 +76,9 @@ class PrintLayoutCanvas(QWidget):
     """A4 纸上的图片拖拽/缩放画布；rect_changed 发出页面 mm 坐标。"""
 
     rect_changed = Signal(list)  # [x_mm, y_mm, w_mm, h_mm]
+    # 双击画布 → 宿主打开预览弹窗（看该页的打印效果放大；编辑态下没有
+    # 别的双击语义，滚轮/拖拽都已被占用为编辑手势）
+    double_clicked = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -355,6 +358,14 @@ class PrintLayoutCanvas(QWidget):
         nx = min(max(nx, 0.0), pw - new_w)
         ny = min(max(ny, 0.0), ph - new_h)
         return [nx, ny, new_w, new_h]
+
+    def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802
+        """双击 → ``double_clicked``（宿主打开预览弹窗）。"""
+        if event.button() == Qt.MouseButton.LeftButton and self._image is not None:
+            self.double_clicked.emit()
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802
         if self._mode in ("move", "resize"):

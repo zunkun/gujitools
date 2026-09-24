@@ -101,6 +101,10 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
             return self._paths[row]
         return None
 
+    def navigate(self, forward: bool) -> None:
+        """方向键翻页（详情页 ←/→ 调用；联动预览刷新，见 ThumbStrip.navigate）。"""
+        self.strip.navigate(forward)
+
     def set_images(self, paths: list[Path], boxes_map: dict | None = None) -> None:
         """设置页面清单并重建缩略图条；清单未变则仅通知宿主重读。
 

@@ -26,7 +26,8 @@ from PySide6.QtGui import (
     QShortcut, QTransform,
 )
 from PySide6.QtWidgets import (
-    QDialog, QFileDialog, QFrame, QGraphicsPixmapItem, QGraphicsScene,
+    QDialog, QFileDialog, QFrame, QGraphicsPixmapItem, QGraphicsRectItem,
+    QGraphicsScene,
     QGraphicsView, QHBoxLayout, QVBoxLayout, QWidget,
 )
 from qfluentwidgets import CaptionLabel, PrimaryPushButton, PushButton, ToolButton
@@ -246,6 +247,14 @@ class ZoomableCanvas(QGraphicsView):
         item = QGraphicsPixmapItem(pixmap)
         item.setTransformationMode(Qt.TransformationMode.SmoothTransformation)
         self._scene.addItem(item)
+        # 页面边缘画一圈**细边框**：白底纸面与画布背景同色系时，没有它就
+        # 分不清"哪里是纸、哪里是空"（用户 17:50 报）。
+        # ⚠️ 挂成**子项**：旋转/翻转走父项的 setTransform，边框自动跟随；
+        # pen 宽 0 = cosmetic（任何缩放级别下都是 1 设备像素的细线，
+        # 不会放到 400% 时边框粗得像黑框）。只影响显示——导出/打印的
+        # 位图是 compose 的原图，不带这条线。
+        border = QGraphicsRectItem(item.boundingRect(), item)
+        border.setPen(QPen(QColor("#8a93a3"), 0))
         self._item = item
         self._apply_item_transform()
         self.fit()
@@ -585,9 +594,13 @@ class ImageZoomDialog(QDialog, WorkerHost):
         row.addWidget(self.next_btn)
 
         row.addSpacing(T.SPACE_MD)
+        self.print_btn = PushButton(FIF.PRINT, "打印")
+        self.print_btn.setToolTip("把当前图（含翻转/旋转）送到打印机")
+        self.print_btn.clicked.connect(self._print_image)
         self.download_btn = PrimaryPushButton(FIF.DOWNLOAD, "下载")
         self.download_btn.setToolTip("把整分辨率图片另存为 PNG（无损）或 JPEG")
         self.download_btn.clicked.connect(self._download)
+        row.addWidget(self.print_btn)
         row.addWidget(self.download_btn)
         return row
 
@@ -767,9 +780,43 @@ class ImageZoomDialog(QDialog, WorkerHost):
         for button in (
             self.zoom_out_btn, self.zoom_in_btn, self.fit_btn, self.actual_btn,
             self.rotate_ccw_btn, self.rotate_cw_btn, self.flip_h_btn,
-            self.flip_v_btn, self.download_btn,
+            self.flip_v_btn, self.print_btn, self.download_btn,
         ):
             button.setEnabled(has_image)
+
+    def _print_image(self) -> None:
+        """把当前图送到打印机（对话框里选打印机/纸张/份数）。
+
+        ⚠️ 一律取 ``canvas.export_image()``——**画布当前的整分辨率图**
+        （含翻转/旋转）。图可能是**虚拟图片**：第三步 area=1 的左右分页
+        实时合成预览并没有落盘，按路径重读会读不到——所以打印与下载走
+        同一条取图通道。
+        绘制：等比铺满可打印区并居中（源图比例与纸张无关，不拉伸变形）。
+        """
+        from PySide6.QtPrintSupport import QPrintDialog, QPrinter
+
+        image = self.canvas.export_image()
+        if image is None or image.isNull():
+            self.tip_label.setText("没有可打印的图片")
+            return
+        printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+        dialog = QPrintDialog(printer, self)
+        dialog.setWindowTitle("打印图片")
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        page = printer.pageRect(QPrinter.Unit.DevicePixel)
+        scaled = image.scaled(
+            page.size().toSize(), Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        painter = QPainter(printer)
+        painter.drawImage(
+            QPointF(page.x() + (page.width() - scaled.width()) / 2,
+                    page.y() + (page.height() - scaled.height()) / 2),
+            scaled,
+        )
+        painter.end()
+        self.tip_label.setText(f"已发送打印机：{printer.printerName()}")
 
     def _download(self) -> None:
         """把**整分辨率**（已应用翻转/旋转）的图另存到磁盘。"""

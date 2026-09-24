@@ -66,6 +66,16 @@ def _arrow_free_to_navigate() -> bool:
     return not isinstance(focus, _ARROW_OCCUPIED)
 
 
+#: 阶段 key → 主预览控件属性名（←/→ 方向键翻页的目标；
+#: 四个步骤的主预览都支持「焦点在哪里，哪里就切换」）
+_STAGE_PREVIEW_ATTRS = {
+    "extract": "extract_result_viewer",
+    "detect": "detect_viewer",
+    "rembg": "rembg_viewer",
+    "print": "print_preview",
+}
+
+
 class TaskDetailPage(
     StageRunnerMixin,
     SubmitMixin,
@@ -227,18 +237,30 @@ class TaskDetailPage(
         """
         return STAGES[max(self.step_bar._current, 0)]
 
-    def keyPressEvent(self, event) -> None:  # noqa: N802
-        """←/→ 在第四步切换当前页（「焦点在哪里，哪里就切换」）。
+    def navigate_by_arrow(self, forward: bool) -> bool:
+        """方向键切换当前步骤的页面（主窗口 ←/→ 转发入口）。
 
-        ⚠️ 焦点在**输入类控件**上时不抢（见 `_ARROW_OCCUPIED` 表）；焦点在
-        预览弹窗里则由弹窗自己的窗口级 QShortcut 接管（两个窗口各自响应，
-        互不干扰）。其它阶段方向键不翻页。
+        返回是否消费（主窗口据此决定要不要继续处理）。
+        「焦点在哪里，哪里就切换」：
+        - 焦点在**输入类控件**上时不抢（`_ARROW_OCCUPIED` 表——参数输入区
+          的方向键移光标/改值，用户 18:30 明确那里不需要切换）；
+        - 焦点在预览弹窗里则由弹窗自己的窗口级 QShortcut 接管；
+        - 四个步骤的主预览都支持（移动缩略图条当前行，联动预览刷新）。
         """
-        key = event.key()
-        if key in (Qt.Key.Key_Left, Qt.Key.Key_Right) \
-                and self.current_stage() == "print" \
-                and _arrow_free_to_navigate():
-            self.print_preview.navigate(key == Qt.Key.Key_Right)
+        if not _arrow_free_to_navigate():
+            return False
+        preview = getattr(
+            self, _STAGE_PREVIEW_ATTRS.get(self.current_stage(), ""), None
+        )
+        if preview is None:
+            return False
+        preview.navigate(forward)
+        return True
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        """←/→ 切换当前步骤的页面（焦点链不消费时兜底到达这里）。"""
+        if event.key() in (Qt.Key.Key_Left, Qt.Key.Key_Right) \
+                and self.navigate_by_arrow(event.key() == Qt.Key.Key_Right):
             event.accept()
             return
         super().keyPressEvent(event)

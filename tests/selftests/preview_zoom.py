@@ -530,6 +530,22 @@ def run(ctx) -> None:
     ok("百分比标签点击把倍率复位到 100%",
        handled and abs(dialog.canvas.zoom - 1.0) < 1e-6,
        f"handled={handled} zoom={dialog.canvas.zoom:.2f}")
+    # ---- 打印按钮：取图走 canvas.export_image()（虚拟图也适用）----
+    # ⚠️ 第三步 area=1 的实时合成预览**没有落盘**——打印绝不能按路径重读，
+    # 必须与下载同一条取图通道（画布当前整分辨率图，含翻转/旋转）。
+    ok("「打印」按钮存在（文案纯中文，与下载并排）",
+       dialog.print_btn.text() == "打印"
+       and not dialog.print_btn.icon().isNull(), dialog.print_btn.text())
+    ok("打印按钮随有图启停（_sync_controls 清单已登记）",
+       dialog.print_btn.isEnabled(), "")
+    pump(app, times=6)   # show_for 的渲染是异步的，等它落地再验取图
+    exp = dialog.canvas.export_image()
+    # ⚠️ 此时画布带着前面 R 键断言留下的 90° 旋转：export 含变换，尺寸对调
+    # （1200×900 ↔ 900×1200）正是「含翻转/旋转」语义本身。
+    ok("打印取图 = 画布整分辨率图（虚拟图片场景不按路径重读）",
+       exp is not None and not exp.isNull()
+       and (exp.width(), exp.height()) in ((1200, 900), (900, 1200)),
+       f"{exp.size() if exp is not None else None}")
     # ⚠️ 翻页/全屏必须是**窗口级 QShortcut**：只靠 keyPressEvent 在真实 GUI
     # 会掉——焦点在画布/按钮上时方向键被消费或导航走，到不了对话框
     # （离屏 QTest 直接发给对话框测不出来；用户实测「没有实现」即此）。

@@ -4,6 +4,7 @@
 from __future__ import annotations
 import os
 import sys
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget, QWidget
 from PySide6.QtGui import QIcon
 from qfluentwidgets import setTheme, Theme
@@ -89,6 +90,26 @@ class MainWindow(QMainWindow):
     def _back_to_list(self) -> None:
         self.list_page.refresh()
         self.pages.setCurrentWidget(self.list_page)
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        """←/→ 转发给详情页翻页。
+
+        ⚠️ 点击预览大图（QLabel 默认不收焦点）后，焦点落在**主窗口本身**，
+        按键只会到这里——不转发的话，用户点完图片按左右毫无反应
+        （用户 18:29 实测）。两条边界：
+        - 只在**详情页可见**时转发（任务列表页没有翻页语义）；
+        - 焦点在参数输入区等输入类控件时，方向键被它们自己消费（移光标/
+          改值），根本到不了这里——「焦点在输入区不切换」天然成立，
+          且详情页的 navigate_by_arrow 里还有同一道守卫兜底。
+        """
+        key = event.key()
+        if key in (Qt.Key.Key_Left, Qt.Key.Key_Right) \
+                and self._detail_page is not None \
+                and self.pages.currentWidget() is self._detail_page:
+            if self._detail_page.navigate_by_arrow(key == Qt.Key.Key_Right):
+                event.accept()
+                return
+        super().keyPressEvent(event)
 
     def closeEvent(self, event) -> None:
         """关闭窗口时先让详情页收尾 worker 子进程。
