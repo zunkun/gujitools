@@ -39,7 +39,11 @@ def natural_sort_key(filename: str) -> tuple:
     natural_key = [
         int(part) if part.isdigit() else part for part in re.split(r"(\d+)", filename)
     ]
-    return (priority, natural_key)
+    # ⚠️ 末尾追加**原文件名**做兜底键（2026-09-26 审计）：`page1.png` 与
+    #    `page01.png` 的自然键完全相同（都是 ('page', 1, '.png')），而输入来自
+    #    顺序不确定的 `iterdir()` → 两次运行可能给出不同页序（破坏幂等）。
+    #    加原名后排序是全序，结果稳定。
+    return (priority, natural_key, filename)
 
 
 def pdf_custom_sort_key(file_path: str) -> tuple:

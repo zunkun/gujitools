@@ -221,17 +221,38 @@ class DetailViewMixin:
         column = card.box
 
         self.control_stack = QStackedWidget()
+        # ⚠️ **四个阶段面板全部惰性**（2026-09-25 用户要求：进详情只建第一步，
+        # 第 2/3/4 步"谁进去谁才建"）。面板构造是纯 Qt + Python 密集活：第四步
+        # print_panel 单项就 ~150ms（空闲机器），是详情页构造的大头；而机器若
+        # 正在跑导入后台（PyMuPDF 连续攥 GIL），同样的代码会被拖成 ~2 秒。
+        # 用户可能整场都不点某一步，不该为它买单。
+        # 接线一律走 LazyPanelHost 的 created 回调（hooks），**绝不在构造期
+        # 直接 `widget(i)` 取面板**——属性转发会立刻把它建出来，惰性就白做了。
+        _HOOKS = {
+            1: self._wire_detect_panel,
+            2: self._wire_rembg_panel,
+            3: self._wire_print_panel,
+        }
         for index, panel_class in enumerate(PANEL_CLASSES):
-            if index == 3:
-                # 第四步 PrintPanel 最重（构造 ~128 ms，占详情页构造的一半），
-                # 而用户进来只看第一步 → 等真切到第四步再建（见 LazyPanelHost）。
-                self.control_stack.addWidget(
-                    LazyPanelHost(panel_class, hooks=[self._wire_print_panel])
-                )
-            else:
-                self.control_stack.addWidget(panel_class())
+            hook = _HOOKS.get(index)
+            self.control_stack.addWidget(
+                LazyPanelHost(panel_class, hooks=[hook] if hook else [])
+            )
         column.addWidget(self.control_stack, 1)
-        self._connect_stage_panels()
+        # 边距级联的挂起值：print 面板还没建时先把当前值记下来（见
+        # _sync_print_margin_default 与 _wire_print_panel）
+        self._pending_print_border = None
+        self._sync_print_margin_default()
+        # 第四步面板建好时补「按源 PDF 名派生默认 PDF 名/古籍名」：set_task 只
+        # 记下 _pending_source_stem，**不强制构造面板**（见 page.set_task）
+        self.control_stack.widget(3).add_created_hook(
+            self._apply_pending_source_defaults
+        )
+        # 同理补「切任务时挂起的第四步状态复位」（见 _apply_pending_print_reset）
+        self._pending_print_reset = False
+        self.control_stack.widget(3).add_created_hook(
+            self._apply_pending_print_reset
+        )
 
         column.addWidget(Divider())
         self._build_history_controls(column)
@@ -243,16 +264,15 @@ class DetailViewMixin:
         self._apply_control_width()
         return self.control_widget
 
-    def _connect_stage_panels(self) -> None:
-        """阶段面板信号 → 宿主动作的联动接线。"""
+    def _wire_detect_panel(self, detect_panel) -> None:
+        """第二步面板**首次构造后**的接线（LazyPanelHost 的 created 回调）。"""
         # detect 面板「检测本页」：手动触发当前页的 YOLO 检测（不自动执行）
-        detect_panel = self.control_stack.widget(1)
         detect_panel.detect_page_requested.connect(self._detect_current_page)
         # 整页模式：等价于把第三步 area 切到 4（跳过 YOLO，整页作为一个框）
         detect_panel.whole_page_toggled.connect(self._set_whole_page_mode)
 
-        # rembg 面板的参数变化决定检测框标注与去底色预览区域，联动刷新
-        rembg_panel = self.control_stack.widget(2)
+    def _wire_rembg_panel(self, rembg_panel) -> None:
+        """第三步面板**首次构造后**的接线（LazyPanelHost 的 created 回调）。"""
 
         def _on_rembg_panel_changed(*_):
             # area 可能被第二步的整页开关改动，勾选状态需回填
@@ -265,6 +285,7 @@ class DetailViewMixin:
             # 同步给 print 面板（用户未手动改边距时，默认值随级联变 0/20）
             self._sync_print_margin_default()
 
+        # rembg 面板的参数变化决定检测框标注与去底色预览区域，联动刷新
         rembg_panel.area.currentTextChanged.connect(_on_rembg_panel_changed)
         rembg_panel.border.textChanged.connect(_on_rembg_panel_changed)
         # 去底参数变化会改变预览图 → 「提交」按钮的新版本提示需实时刷新
@@ -274,15 +295,11 @@ class DetailViewMixin:
         rembg_panel.sealcolor.toggled.connect(_on_rembg_panel_changed)
         rembg_panel.sealarea.valueChanged.connect(_on_rembg_panel_changed)
         rembg_panel.sealmin_sat.valueChanged.connect(_on_rembg_panel_changed)
-
-        # print 面板的接线**推迟**到它真正被构造时（见 _wire_print_panel）：
-        # 第四步面板是惰性的，这里一碰它就等于立刻把它建出来，白惰性了。
-        # 边距级联只记下当前值，等面板建好时再补一次。
-        self._pending_print_border = None
+        # 面板建好时补一次当前 border（构造前它拿不到级联值）
         self._sync_print_margin_default()
 
     def _wire_print_panel(self, panel) -> None:
-        """第四步面板**首次构造后**的接线（LazyPanelHost 的 on_created 回调）。"""
+        """第四步面板**首次构造后**的接线（LazyPanelHost 的 created 回调）。"""
         # 参数变化 → 效果预览按新参数重画（只是重画内存位图，不执行、不提交、
         # 不生成 PDF）。防抖 250ms：边距/颜色是逐字符输入，每次都重载一遍大图
         # 会明显卡顿。
@@ -306,6 +323,52 @@ class DetailViewMixin:
         """
         return self.control_stack.widget(3).get_args()
 
+    def _apply_pending_source_defaults(self, panel=None) -> None:
+        """把「当前任务的源 PDF 名」派生的默认值补给第四步面板。
+
+        ⚠️ 面板是惰性的：``set_task`` 只记下 ``_pending_source_stem``，真正应用
+        由本方法负责——面板已建就立刻用，没建就等 created 回调在它建好时调用。
+        """
+        stem = getattr(self, "_pending_source_stem", None)
+        if not stem:
+            return
+        if panel is None:
+            host = self.control_stack.widget(3)
+            peek = getattr(host, "peek", None)
+            panel = peek() if callable(peek) else host
+        if panel is None:
+            return
+        try:
+            panel.set_source_defaults(stem)
+        except Exception:  # noqa: BLE001 - 面板版本差异不该影响进任务
+            pass
+
+    def _apply_pending_print_reset(self, panel=None) -> None:
+        """清掉第四步面板上「属于上一个任务」的已应用参数快照。
+
+        ⚠️ 为什么需要（2026-09-26 审计）：`print_panel._last_applied` 是「放弃本次
+        修改」的回填源。切任务时不清，在任务 B 点「放弃本次修改」会把**任务 A 的
+        参数**（含 A 派生的 pdf_name / title_text）回填进 B 的表单，后续可能用 A 的
+        名字生成 B 的 PDF。
+
+        与 `_apply_pending_source_defaults` 同一套惰性惯例：`set_task` 只置
+        `_pending_print_reset`，**不强制构造面板**；面板已建就立刻清，没建就等
+        它被建出来时由这里的 created 回调清。
+        """
+        if not getattr(self, "_pending_print_reset", False):
+            return
+        if panel is None:
+            host = self.control_stack.widget(3)
+            peek = getattr(host, "peek", None)
+            panel = peek() if callable(peek) else host
+            if panel is None:
+                return  # 还没建：留着标记，等 created 回调
+        try:
+            panel._last_applied = None
+        except Exception:  # noqa: BLE001 - 面板版本差异不该影响切任务
+            return
+        self._pending_print_reset = False
+
     def _sync_print_margin_default(self) -> None:
         """把第三步 rembg 面板的当前 border 同步给第四步面板做默认级联。
 
@@ -313,8 +376,19 @@ class DetailViewMixin:
         填写中途的非法值抛错），交给 print 面板自行决定是否覆盖默认边距。
         """
         try:
-            rembg_panel = self.control_stack.widget(2)
-            border = (rembg_panel.border.text() or "").strip() or None
+            rembg_host = self.control_stack.widget(2)
+            # ⚠️ 必须用 peek()（不触发构造）：第三步面板没建时它的 border 就是
+            # 默认空值，等它建好会由 _wire_rembg_panel 补一次同步。
+            rembg_peek = getattr(rembg_host, "peek", None)
+            if callable(rembg_peek):
+                rembg_panel = rembg_peek()
+                border = (
+                    (rembg_panel.border.text() or "").strip() or None
+                    if rembg_panel is not None
+                    else None
+                )
+            else:
+                border = (rembg_host.border.text() or "").strip() or None
         except Exception:
             border = None
         host = self.control_stack.widget(3)

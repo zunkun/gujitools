@@ -18,6 +18,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+from core.args import default_workers
 from core.command_spec import WHOLE_PAGE_AREA
 from desktop.stages.events import ProgressStream, emit, _real_stdout
 
@@ -150,9 +151,14 @@ def run_detect_stage(config: dict) -> int:
         _emit_log(load_line, context)
 
         # 逐张并发跑：单线程一张一两百毫秒，81 页就要十几秒；并发后总时长
-        # 主要取决于最慢的那张。上限沿用 CLI 的约定（min(8, 张数)），
-        # 可由 args 的 workers 覆盖。
-        workers = max(1, int(args.get("workers") or max(1, min(8, total))))
+        # 主要取决于最慢的那张。上限与函数层共用一份（core.args.default_workers
+        # 传入 command="detect" → min(8, CPU 核数, 张数)）：检测每张只在服务端
+        # imread 一次，比去底/裁剪的 ~350MB/张轻得多，所以上限单独放宽到 8。
+        # 具体数值只在 core/args.py 的 _COMMAND_DEFAULT_WORKER_CAP 里写一次。
+        workers = max(
+            1,
+            int(args.get("workers") or 0) or default_workers(total, command="detect"),
+        )
         if workers > 1:
             _emit_log(f"并发处理：{workers} 个线程（共 {total} 张）", context)
 
@@ -215,6 +221,11 @@ def run_detect_stage(config: dict) -> int:
         # ---- 最后汇总：一次性给出总数、成败与耗时（含模型加载另计）----
         total_elapsed = time.perf_counter() - started_all
         counted = max(stat["done"], 1)  # 防零除（total 已保证 > 0）
+        # ⚠️ 并发分支的真实进度在 `stat["done"]`，局部变量 `done` 从没自增过
+        #    （2026-09-26 审计）→ 以前 finished 事件里的 done 恒为 0。GUI 现在
+        #    靠 _last_progress 兜着看不出问题，但任何直接消费 finished 的旁路
+        #    （e2e、将来的 UI）会拿到错误的完成数。
+        done = stat["done"]
         summary = (
             f"总计用时 {total_elapsed:.1f} s（共 {total} 张："
             f"左框 {stat['left']}、右框 {stat['right']}、失败 {stat['failed']}；"

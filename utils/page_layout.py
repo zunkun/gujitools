@@ -385,10 +385,17 @@ def _margins_for_page(
     right_margins,
     page_index: int,
 ) -> Tuple[float, float, float, float]:
-    """奇偶页边距：1-based 奇数页用 left_margins，偶数页用 right_margins。"""
-    if left_margins is not None and right_margins is not None:
+    """奇偶页边距：1-based 奇数页用 left_margins，偶数页用 right_margins。
+
+    ⚠️ **只配一侧时不再整条规则被忽略**（2026-09-26 审计）：原实现要求两侧都非
+    None 才生效，而 `command_spec` 允许单独提供 `left_page_margins`——结果是用户
+    只填了左页边距，PDF 却仍按通用边距排，**毫无提示**。现在：配了的那侧按其奇偶
+    生效，没配的那侧回落通用边距。
+    """
+    if left_margins is not None or right_margins is not None:
         source = left_margins if page_index % 2 == 1 else right_margins
-        return tuple(float(v) for v in source)  # type: ignore[return-value]
+        if source is not None:
+            return tuple(float(v) for v in source)  # type: ignore[return-value]
     return tuple(float(v) for v in margins)  # type: ignore[return-value]
 
 
@@ -510,7 +517,11 @@ def plan_print_page(
     reserve = TEXT_MARGIN_MM
     w_px, h_px = float(image_size_px[0]), float(image_size_px[1])
     avail_w_raw = page_w - ml - mr
-    avail_h = page_h - mt - mb
+    # ⚠️ 必须夹到 0 以上（2026-09-26 审计）：`avail_w_for_img` 早就夹了，
+    #    `avail_h` 没夹——边距大到超过纸高时它是负数，于是 `scale` 取负值、
+    #    图片框变成**负宽高**传给 `pdf.image()`（畸形 PDF 或直接报错）。
+    #    校验层已经给边距加了上界，这里是纵深防线（调用方可以绕过校验直接进来）。
+    avail_h = max(0.0, page_h - mt - mb)
     avail_w_for_img = max(0.0, avail_w_raw - 2 * reserve)
     if args.get("keep_ratio", True):
         scale = min(

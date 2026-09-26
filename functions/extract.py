@@ -14,6 +14,7 @@ File: functions/extract.py
 """
 
 from functions.base import FunctionBase
+from utils.units import DEFAULT_RENDER_DPI
 from utils.pdf_extract import run_on_input_directory
 from utils.path_utils import get_extract_output_root
 
@@ -53,7 +54,7 @@ class ExtractFunction(FunctionBase):
         zoom = self.command_args.get("zoom", 1)
         # 整页渲染的 DPI 下限：只影响渲染路径（内嵌图按原图落盘）。
         # 用 `or` 兜底 —— 配置里显式写 dpi: null 时 get(k, 300) 会拿到 None。
-        dpi = self.command_args.get("dpi") or 300
+        dpi = self.command_args.get("dpi") or DEFAULT_RENDER_DPI
         # 默认与 CommandArgs 一致：True（自适应降级，见 pdf_extract._embedded_page_image）
         quick = self.command_args.get("quick", True)
         ext = self.command_args.get("ext", "jpg")

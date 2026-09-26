@@ -17,6 +17,15 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from utils.color_utils import parse_color as _parse_color_impl
+from utils.units import DEFAULT_RENDER_DPI
+from utils.image_utils import (
+    REMBG_DEFAULT_ENABLE_SEAL,
+    REMBG_DEFAULT_OFFSET,
+    REMBG_DEFAULT_SEAL_AREA,
+    REMBG_DEFAULT_SEAL_COLOR,
+    REMBG_DEFAULT_SEAL_MIN_SAT,
+    REMBG_DEFAULT_TYPE,
+)
 from utils.margin_utils import (
     DEFAULT_PAGE_MARGINS as _DEFAULT_PAGE_MARGINS,
     normalize_margin as _normalize_margin_impl,
@@ -34,7 +43,12 @@ ORIENTATIONS: Tuple[str, ...] = ("landscape", "portrait")
 POSITIONS: Tuple[str, ...] = ("top", "bottom")
 TEXT_ORIENTATIONS: Tuple[str, ...] = ("vertical", "horizontal")
 TITLE_SIDES: Tuple[str, ...] = ("left", "right", "both")
-IMAGE_EXTS: Tuple[str, ...] = ("jpg", "png")
+#: 命令能**写出**的图片格式。
+#: ⚠️ 名字不能叫 IMAGE_EXTS（2026-09-26 审计）：`utils/file_utils.IMAGE_EXTS`
+#: 是"**能读进来**的输入格式"（8 种），两者含义完全不同却同名，极易误用。
+#: 这里是输出侧，且必须与 `cli/cli_args.py` 里 argparse 的 choices 完全一致
+#: （以前 argparse 宣传 tiff、校验器只允许 jpg/png，用户按 --help 操作反而失败）。
+OUTPUT_IMAGE_EXTS: Tuple[str, ...] = ("jpg", "png", "tiff")
 REMBG_TYPES: Tuple[int, ...] = (1, 2, 3)
 # area=4「整页」：不调用 YOLO，整页作为一个文本框（普通文档/检测失败时的兜底）
 CROP_AREAS: Tuple[int, ...] = (1, 2, 3, 4)
@@ -69,8 +83,10 @@ def validate_border(border: Any) -> None:
         )
     try:
         nums = [int(p) for p in parts]
-    except ValueError:
-        raise ValueError(f"border 必须为数字，输入:{border}")
+    except ValueError as exc:
+        # 显式 from exc：保留原始异常链（pylint raise-missing-from），
+        # 排查时能看到到底是哪一个 token 转不出整数
+        raise ValueError(f"border 必须为数字，输入:{border}") from exc
     for n in nums:
         if n < 0:
             raise ValueError(f"border 边距不能为负数，输入值 {n}")
@@ -129,7 +145,7 @@ def _validate_extract(args) -> None:
         raise ValueError(f"dpi 必须在 72~1200 之间，当前={dpi}")
     if args.get("batch_size") < 1:
         raise ValueError(f"batch‑size 必须 >=1，当前={args.get('batch_size')}")
-    _check_choice(args.get("ext"), IMAGE_EXTS, "ext")
+    _check_choice(args.get("ext"), OUTPUT_IMAGE_EXTS, "ext")
     start, end = args.get("start"), args.get("end")
     if start is not None and start < 1:
         raise ValueError(f"start 页码必须 >=1，当前={start}")
@@ -146,7 +162,7 @@ def _validate_extract(args) -> None:
 
 def _validate_crop(args) -> None:
     _check_choice(args.get("area"), CROP_AREAS, "area")
-    _check_choice(args.get("ext"), IMAGE_EXTS, "ext")
+    _check_choice(args.get("ext"), OUTPUT_IMAGE_EXTS, "ext")
     validate_border(args.get("border"))
 
 
@@ -185,7 +201,8 @@ def _validate_detect(args) -> None:
     使用时必须保持可用。
     """
     _check_choice(
-        str(args.get("ext") or "png").lower().lstrip("."), ("jpg", "png", "tiff"), "ext"
+        str(args.get("ext") or "png").lower().lstrip("."),
+        OUTPUT_IMAGE_EXTS, "ext"
     )
 
 
@@ -199,13 +216,24 @@ def _validate_print(args) -> None:
     if pdf_name is not None and not isinstance(pdf_name, str):
         raise ValueError("pdf_name 必须为字符串")
 
+    # ⚠️ 边距要有**上界**（2026-09-26 审计）：只校验"非负"时，
+    #    `page_margins: [200,0,200,0]`（A4 高 297mm）会让排版里
+    #    `avail_h = page_h - mt - mb` 变成负数 → 图片框算出**负宽高**传给
+    #    `pdf.image()`，产出畸形 PDF 或直接报错。上界按"纸上还得放得下东西"取，
+    #    不按纸张尺寸算（这里不知道纸张），给一个宽松但安全的值：100mm。
+    _MARGIN_MAX_MM = 100
     for key in ("page_margins", "left_page_margins", "right_page_margins"):
         val = args.get(key)
         if val is not None:
             if not isinstance(val, list) or len(val) != 4:
                 raise ValueError(f"{key} 应为四元素列表")
-            if any(v < 0 for v in val):
+            if any(not isinstance(v, (int, float)) or v < 0 for v in val):
                 raise ValueError(f"{key} 中的值不能为负数")
+            if any(v > _MARGIN_MAX_MM for v in val):
+                raise ValueError(
+                    f"{key} 中的值不能超过 {_MARGIN_MAX_MM}mm，当前={val}"
+                    "（边距太大会把可排版区域挤成负数）"
+                )
 
     _check_choice(args.get("title_position"), POSITIONS, "title_position")
     _check_choice(args.get("page_number_position"), POSITIONS, "page_number_position")
@@ -222,6 +250,8 @@ def _validate_print(args) -> None:
             raise ValueError(f"{key} 应为 1/2/3/4 个数字（mm），当前={val}")
         if any(v < 0 for v in parsed):
             raise ValueError(f"{key} 中的值不能为负数")
+        if any(v > 100 for v in parsed):
+            raise ValueError(f"{key} 中的值不能超过 100mm，当前={val}")
 
     start, end = args.get("page_number_start_page"), args.get("page_number_end_page")
     if start is not None and (not isinstance(start, int) or start < 1):
@@ -230,6 +260,24 @@ def _validate_print(args) -> None:
         raise ValueError(f"page_number_end_page 必须为 >=1 的整数，当前={end}")
     if start is not None and end is not None and start > end:
         raise ValueError(f"start({start}) 不能大于 end({end})")
+
+    # ⚠️ 字号与页码基数也要校验（2026-09-26 审计）：原实现不校验，
+    #    负字号会让 `char_h_mm` 为负、文字落点算到纸外；`page_number_base`
+    #    写成非数字则直接在 `int()` 处抛**未捕获**异常（用户看到 traceback）。
+    for key in ("title_font_size", "page_number_font_size"):
+        val = args.get(key)
+        if val is None:
+            continue
+        if isinstance(val, bool) or not isinstance(val, (int, float)):
+            raise ValueError(f"{key} 必须为数字（pt），当前={val!r}")
+        if not 1 <= float(val) <= 500:
+            raise ValueError(f"{key} 必须在 1~500 之间（pt），当前={val}")
+    base = args.get("page_number_base")
+    if base is not None:
+        if isinstance(base, bool) or not isinstance(base, int):
+            raise ValueError(f"page_number_base 必须为整数（页码基数），当前={base!r}")
+        if not -100000 <= base <= 100000:
+            raise ValueError(f"page_number_base 超出合理范围，当前={base}")
 
     nodes = args.get("title_switch_nodes")
     if nodes is not None:
@@ -242,8 +290,8 @@ def _validate_print(args) -> None:
                 )
             try:
                 int(item[0])
-            except (ValueError, TypeError):
-                raise ValueError("标题切换节点页码必须为整数")
+            except (ValueError, TypeError) as exc:
+                raise ValueError("标题切换节点页码必须为整数") from exc
             if len(item) > 3:
                 raise ValueError("每项最多3个元素")
             if len(item) == 3 and item[2] not in TITLE_SIDES:
@@ -433,7 +481,7 @@ COMMAND_SPECS: Dict[str, CommandSpec] = {
             # 整页渲染的 DPI 下限。矢量 PDF（没有内嵌图）在 zoom=1 时只会
             # 渲染出 72 DPI，去底色后打回 PDF 必然发虚，因此默认补到 300。
             # 取内嵌图时按原图字节落盘，不受这个值影响。
-            "dpi": 300,
+            "dpi": DEFAULT_RENDER_DPI,
             "quick": True,
             "ext": "jpg",
             "pages": None,
@@ -451,12 +499,13 @@ COMMAND_SPECS: Dict[str, CommandSpec] = {
     "rembg": CommandSpec(
         name="rembg",
         defaults={
-            "offset": 0,
-            "type": 1,
-            "seal": False,
-            "sealcolor": False,
-            "sealarea": 80,
-            "sealmin_sat": 50,
+            # 值来自 utils/image_utils.py 的常量（那里是唯一定义处）
+            "offset": REMBG_DEFAULT_OFFSET,
+            "type": REMBG_DEFAULT_TYPE,
+            "seal": REMBG_DEFAULT_ENABLE_SEAL,
+            "sealcolor": REMBG_DEFAULT_SEAL_COLOR,
+            "sealarea": REMBG_DEFAULT_SEAL_AREA,
+            "sealmin_sat": REMBG_DEFAULT_SEAL_MIN_SAT,
             "area": 1,
             "border": None,
         },

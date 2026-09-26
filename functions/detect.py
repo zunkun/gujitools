@@ -22,6 +22,7 @@ detect + 裁剪 + 去底色`，两者都通过本模块拿到左右框，而不�
   对不落盘的检测无意义。
 """
 
+import os
 import shutil
 import threading
 import time
@@ -30,8 +31,9 @@ from pathlib import Path
 from typing import NamedTuple, Optional, Tuple
 
 import utils
+from core.args import default_workers
 from functions.base import FunctionBase
-from utils.path_utils import resolve_final_output_dir
+from utils.path_utils import assert_output_not_input, resolve_final_output_dir
 
 # 一个检测框 = (x1, y1, x2, y2) 像素坐标
 Box = Tuple[int, int, int, int]
@@ -324,12 +326,19 @@ class DetectFunction(FunctionBase):
         if not image_files:
             print("未找到图片文件")
             self.reporter.progress(0, 0)
-            return {
-                "processed": 0, "left": 0, "right": 0,
-                "output": str(self.outpath) if self.save else None,
-            }
+            # 同 functions/base.py：先发 0/0 让 GUI 进度条归零，再报错。
+            # 静默返回 processed: 0 会让「输入目录写错/上游没产出图」以退出码 0
+            # 溜过去（print 命令就这么坑过一次）。
+            raise FileNotFoundError(
+                f"未在 {self.input} 找到任何图片"
+                "（支持 jpg/jpeg/png 等；若图片在子目录里，请指向该子目录）"
+            )
 
         if self.save:
+            # 纵深防线：`detect --save` 的输出名与输入同名（`<stem>.png`），
+            # outpath 一旦等于输入目录就会把原图覆盖成标注图，clean 时更会直接
+            # 删掉输入。见 utils/path_utils.assert_output_not_input。
+            assert_output_not_input(self.input, self.outpath)
             clean = self.command_args.get("clean", False)
             if clean and self.outpath.exists():
                 shutil.rmtree(self.outpath)
@@ -344,8 +353,15 @@ class DetectFunction(FunctionBase):
         load_line, load_seconds = warm_up_detect_model()
         print(load_line)
 
+        # 兜底同样走 default_workers，并显式声明这是**检测命令**：检测每张只
+        # imread 一次（5000×4400 约 68MB）、推理在常驻服务里，上限单独放到 8
+        # （见 core/args.py 的 _COMMAND_DEFAULT_WORKER_CAP）。不许在这里另写数字。
         workers = max(
-            1, int(self.command_args.get("workers", max(1, min(8, total))))
+            1,
+            int(
+                self.command_args.get("workers")
+                or default_workers(total, command="detect")
+            ),
         )
         max_retries = 2
         results_by_file: dict = {}
@@ -399,6 +415,11 @@ class DetectFunction(FunctionBase):
         hit_left = sum(1 for r in hit if r.get("left"))
         hit_right = sum(1 for r in hit if r.get("right"))
         failed = sum(1 for r in results if r.get("status") == "error")
+        # ⚠️ 检测过 = 不是 error（`no_detect` 是"没找到框"的**合法结果**，这一页
+        #    确实检测过了）。返回值里必须同时给出"检测过多少/失败多少"，否则
+        #    调用方（GUI/脚本）只看 `processed` 会把「100 张里 30 张失败」当全成功
+        #    （2026-09-26 审计）。
+        detected = len(results) - failed
         print(
             f"检测完成: 共 {total} 页，左框 {hit_left} 页，"
             f"右框 {hit_right} 页，失败 {failed} 页"
@@ -412,9 +433,38 @@ class DetectFunction(FunctionBase):
         )
         if self.save:
             saved = sum(len(r.get("outputs") or []) for r in results)
-            print(f"标注图已保存: {saved} 张 -> {self.outpath}")
+            # 顺带报一下占用：标注图是**全分辨率无损位图**，真实 320 页的书
+            # 能写到 2~9GB（随原图大小）。这一步只用于肉眼核对检测框，
+            # 日常流程（crop/cropremove）内部已含检测，不需要 --save。
+            volume = 0
+            try:
+                with os.scandir(self.outpath) as entries:
+                    for entry in entries:
+                        try:
+                            volume += entry.stat().st_size
+                        except OSError:
+                            continue
+            except OSError:
+                pass
+            print(
+                f"标注图已保存: {saved} 张 -> {self.outpath}"
+                f"（共 {volume / 1048576:.0f}MB）"
+            )
+            if volume > 2 * 1024**3:
+                print(
+                    "⚠️ 标注图占用磁盘较大（全分辨率、无损）。只想核对检测框时"
+                    "可加 `--ext jpg`，体积约降到 1/10。"
+                )
+        if results and detected == 0:
+            # 一页都没检测成功 → 报错（与 functions/base.py、print 的空输入同一条规矩）
+            raise RuntimeError(
+                f"{len(results)} 张输入全部检测失败（失败 {failed} 张）。"
+                "常见原因：常驻 YOLO 服务起不来、图片损坏。"
+            )
         return {
             "processed": total,
+            "detected": detected,
+            "failed": failed,
             "left": hit_left,
             "right": hit_right,
             "output": str(self.outpath) if self.save else None,

@@ -203,7 +203,12 @@ def load_yolo_model() -> object:
         started = time.perf_counter()
         # 顺序要紧：两个降噪/打桩动作都必须在 import ultralytics 之前完成
         _silence_pruned_source_warnings()
-        _stub_unneeded_modules()
+        # ⚠️ stub 是**进程级**的：finder 常驻 sys.meta_path，此后进程内任何人
+        # import matplotlib/scipy/pandas 拿到的都是假模块。检测跑在独立 worker
+        # 子进程里时无碍；但调试脚本/同进程复用模型时如果需要真的这些库，
+        # 设 `GUJI_NO_STUB=1` 即可关闭（要求环境里真装了这些包）。
+        if not os.environ.get("GUJI_NO_STUB"):
+            _stub_unneeded_modules()
         # 在此处导入而非模块顶层：ultralytics 导入开销大且需先执行 _stub_unneeded_modules()，
         # 保证 utils 包被导入时不会连带加载深度学习依赖。
         from ultralytics import YOLO  # noqa: PLC0415

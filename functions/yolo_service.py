@@ -161,6 +161,57 @@ def _log(message: str) -> None:
         pass
 
 
+#: 服务日志体积上限：超过就在**服务启动时**换一份新的（不按行轮转，简单可靠）
+LOG_MAX_BYTES = 2 * 1024 * 1024
+
+#: 拉起过的服务进程句柄：保留引用以便回收（见 _spawn_service）。
+#: 不留引用的话 Popen 对象会被立刻 GC，服务退出后没人 wait → POSIX 上留僵尸。
+_SERVICE_PROCS: list = []
+
+
+def _rotate_log_if_huge() -> None:
+    """日志过大就删掉重开（服务启动时调一次）。
+
+    ⚠️ 原先这份日志**永久追加、从不轮转**（2026-09-26 审计）：每次拉起服务都追加
+    若干行、`print` 拦截后的库输出也全在里面，长期使用会涨到几十上百 MB。
+    这里做最简单的轮转——超上限就换一份新的：保留最近一次运行的记录足够诊断，
+    真需要历史用户会自己备份。
+    """
+    try:
+        path = log_file()
+        if path.exists() and path.stat().st_size > LOG_MAX_BYTES:
+            path.unlink()
+    except OSError:
+        pass
+
+
+def sweep_stale_service_files() -> int:
+    """删掉「属主进程已死」的发现文件，返回删除个数。
+
+    ⚠️ 发现文件只在服务**正常退出**时清（`_remove_service_file`）；被 kill、崩溃、
+    断电都会留下它，而且它是**按指纹分文件**的——换权重、升级版本各留一份、
+    从不回收（2026-09-26 审计）。留着不只是垃圾：客户端扫到陈旧文件会去连一个
+    已经不存在的端口，白等一轮建连超时。
+    """
+    from utils.proc_utils import pid_alive
+
+    removed = 0
+    for path in _all_service_files():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            pid = int(data.get("pid", -1))
+        except (OSError, ValueError, json.JSONDecodeError):
+            pid = -1  # 读不出来（损坏/半截）→ 它已经没用了，一并清掉
+        if pid_alive(pid):
+            continue
+        try:
+            path.unlink()
+            removed += 1
+        except OSError:
+            continue
+    return removed
+
+
 def _client_log(message: str) -> None:
     """客户端侧的诊断信息也写同一份日志，便于把两侧串起来看。"""
     _log(f"[client {os.getpid()}] {message}")
@@ -341,6 +392,7 @@ def _redirect_stdio_to_log() -> None:
     那行「加载 YOLO 模型: …」正好成为"服务侧只加载一次"的证据。
     """
     try:
+        _rotate_log_if_huge()  # 服务启动时轮转一次，避免日志无界增长
         fh = open(log_file(), "a", encoding="utf-8", buffering=1)
     except OSError:
         try:
@@ -510,7 +562,14 @@ def _spawn_service() -> bool:
     else:
         kwargs["start_new_session"] = True
     try:
-        subprocess.Popen(command, **kwargs)
+        # ⚠️ 保留 Popen 引用并顺手回收已退出的服务：
+        #    - 不留引用的话对象会被立刻 GC，服务退出后没人 wait → POSIX 上变僵尸
+        #      进程（GUI 可能开几小时，反复拉起会累积）；
+        #    - 记着它还能顺手做「日志轮转」的判据。
+        proc = subprocess.Popen(command, **kwargs)
+        _SERVICE_PROCS.append(proc)
+        for done in [p for p in _SERVICE_PROCS if p.poll() is not None]:
+            _SERVICE_PROCS.remove(done)
         _client_log(f"已拉起服务：{' '.join(command)}")
         return True
     except OSError as exc:
@@ -635,6 +694,12 @@ def warm_up() -> tuple[str, float]:
     """
     global _given_up
     if _service_enabled():
+        # 顺手清掉「属主已死」的旧发现文件（否则客户端会去连不存在的端口、
+        # 白等一轮建连超时；见 sweep_stale_service_files）
+        try:
+            sweep_stale_service_files()
+        except Exception:  # noqa: BLE001 - 清理是尽力而为，不能影响预热
+            pass
         conn = _thread_client()
         if conn is not None:
             try:

@@ -46,12 +46,6 @@ POPUP_MIN_HEIGHT = 140
 _ERROR_KEYS = ("错误", "失败", "Traceback", "[stderr]", "Error")
 
 
-def _last_line(text: str) -> str:
-    """取最后一条非空行；全空时返回空串。"""
-    lines = [line for line in text.splitlines() if line.strip()]
-    return lines[-1] if lines else ""
-
-
 def apply_log_view_style(view: QTextEdit) -> None:
     """给日志文本域套上"浅底内嵌字段"样式。
 
@@ -186,25 +180,44 @@ class LogPanel(QWidget):
         self._sync_arrow()
         self._refresh_bar()
 
-    def _state(self) -> str:
+    def _last_nonempty_line(self) -> str:
+        """日志里最后一条非空行。
+
+        ⚠️ **不许用 `toPlainText()`**（2026-09-26 审计）：那是**整篇日志的拷贝**，
+        而逐页打印的阶段会连着追加几百上千行 → 每来一行就拷一次全文再
+        `splitlines()` 一次，整体 O(n²)，日志越长界面越卡（detect/extract 跑起来
+        尤其明显）。QTextDocument 的 `lastBlock()` 直接给最后一段，代价与长度无关；
+        末端连续空行才往回走几步。
+        """
+        doc = self.log_view.document()
+        block = doc.lastBlock()
+        while block.isValid():
+            text = block.text()
+            if text.strip():
+                return text
+            block = block.previous()
+        return ""
+
+    def _state(self, last_line: str | None = None) -> str:
         """当前日志状态：``error`` / ``info`` / ``idle``（决定圆点与摘要颜色）。"""
-        text = self.log_view.toPlainText().strip()
-        if not text:
+        line = self._last_nonempty_line() if last_line is None else last_line
+        if not line.strip():
             return "idle"
-        return "error" if any(k in _last_line(text) for k in _ERROR_KEYS) else "info"
+        return "error" if any(k in line for k in _ERROR_KEYS) else "info"
 
     def _sync_arrow(self) -> None:
         self.toggle_button.setIcon(FIF.DOWN if self._expanded else FIF.UP)
 
     def _refresh_bar(self) -> None:
-        """按日志内容刷新状态圆点与摘要行。"""
-        state = self._state()
+        """按日志内容刷新状态圆点与摘要行（每条日志都调，必须 O(1)）。"""
+        last = self._last_nonempty_line()
+        state = self._state(last)
         if state == "idle":
             self.summary.setText("暂无输出")
             apply_to(self.summary, T.SIZE_CAPTION, color=T.INK_FAINT)
         else:
             elided = self.summary.fontMetrics().elidedText(
-                _last_line(self.log_view.toPlainText()),
+                last,
                 Qt.TextElideMode.ElideRight,
                 max(self.width() - 180, 120),
             )

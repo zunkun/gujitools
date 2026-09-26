@@ -14,25 +14,52 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 from pathlib import Path
+
+from utils.file_utils import replace_with_retry
 
 _SUFFIX = ".tmp"
 
 
+def _tmp_path(path: Path) -> Path:
+    """临时文件名必须**带上 pid 与线程号**，不能是固定的 `x.json.tmp`。
+
+    为什么（2026-09-26 审计）：单例守卫是**按构建目录**判定的，开发版与安装版
+    会同时运行、共用 `~/Documents/guji` 数据区（`desktop/single_instance.py` 的
+    注释明说了这一点）。固定名会让两个进程同时 `open(tmp,"w")`：A 写完 fsync
+    准备 replace 时，B 正在往同一个 tmp 里写半截内容 → `os.replace` 把**半截
+    JSON** 换成正式文件 → 下次 `read_json` 判为损坏、把 `tasks.json` 改名进
+    `*.corrupt-*` 并返回默认值 → 用户看到"全部任务凭空消失"。
+    带 pid/线程号后，各写各的临时文件，`os.replace` 仍是原子替换（后写者胜），
+    不会出现半截内容被上线。
+    """
+    tid = threading.get_ident()
+    return path.with_name(f"{path.name}.{os.getpid()}-{tid}{_SUFFIX}")
+
+
 def read_json(path: Path, default):
-    """读取 JSON；文件不存在返回 default，损坏则备份后返回 default。"""
+    """读取 JSON；文件不存在返回 default，损坏则备份后返回 default。
+
+    ⚠️ 「损坏」有两种，必须一起兜住：**语法坏了**（`JSONDecodeError`）与
+    **不是合法 UTF-8**（`UnicodeDecodeError`，外部编辑器/磁盘损坏/异构工具写坏
+    都能造成）。后者是 `ValueError` 的子类、**不是** `OSError`，早期实现只 try
+    `OSError` + `JSONDecodeError`，于是它会一路穿透到调用它的 Qt 槽里——在事件
+    处理中抛异常比"备份后返回默认值"糟糕得多。
+    """
     try:
-        text = path.read_text(encoding="utf-8")
+        raw = path.read_bytes()
     except FileNotFoundError:
         return default
     except OSError:
         return default
-    if not text.strip():
-        return default
     try:
+        text = raw.decode("utf-8")
+        if not text.strip():
+            return default
         return json.loads(text)
-    except json.JSONDecodeError:
+    except (UnicodeDecodeError, json.JSONDecodeError):
         backup = path.with_name(f"{path.name}.corrupt-{int(time.time())}")
         try:
             os.replace(path, backup)
@@ -51,10 +78,12 @@ def write_json(path: Path, data, indent: int = 1) -> None:
     parent = path.parent
     if not parent.exists():
         raise FileNotFoundError(f"目录不存在：{parent}")
-    tmp = path.with_name(path.name + _SUFFIX)
+    tmp = _tmp_path(path)
     payload = json.dumps(data, ensure_ascii=False, indent=indent)
     with open(tmp, "w", encoding="utf-8") as handle:
         handle.write(payload)
         handle.flush()
         os.fsync(handle.fileno())
-    os.replace(tmp, path)
+    # Windows：目标正被别的句柄打开时 os.replace 会抛 PermissionError（读者也算），
+    # 必须短暂重试——见 utils/file_utils.replace_with_retry。
+    replace_with_retry(tmp, path)

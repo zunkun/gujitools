@@ -50,7 +50,16 @@ class RembgLiveMixin:
         self._live_timer.timeout.connect(self._maybe_run_live_preview)
 
         # 两个触发点：面板参数被改（只对 rembg 面板）、预览区翻页
-        self.control_stack.widget(2).param_edited.connect(self._on_live_trigger)
+        # ⚠️ 第三步面板是**惰性**的：这里绝不能直接 `widget(2).param_edited`
+        # （属性转发会立刻把面板建出来）。挂 created 回调，等它真被建好再接。
+        rembg_host = self.control_stack.widget(2)
+        add_hook = getattr(rembg_host, "add_created_hook", None)
+        if callable(add_hook):
+            add_hook(
+                lambda panel: panel.param_edited.connect(self._on_live_trigger)
+            )
+        else:
+            rembg_host.param_edited.connect(self._on_live_trigger)
         self.rembg_viewer.current_changed.connect(self._on_live_trigger)
 
     # ---------------------------------------------------------------- 触发

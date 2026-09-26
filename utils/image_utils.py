@@ -135,6 +135,19 @@ def extract_red_seal(rgb_img: np.ndarray, min_seal_area: int, min_saturation: in
 
 
 # ---------- 区域去底 ----------
+def _mask_to_u8(mask: np.ndarray) -> np.ndarray:
+    """bool 掩码 → 0/255 的 uint8（形态学运算的输入）。
+
+    ⚠️ **不许写成 ``(mask * 255).astype(np.uint8)``**：NumPy 会先把 bool 升成
+    int64 再相乘，一张 22.6Mpx（5000×4400）的页就是 **181MB** 的瞬时数组——
+    比整张 RGB 位图（68MB）还大，还乘以并发线程数。分两步走结果逐位相同
+    （bool→uint8 得 0/1，再乘 255 得 0/255），峰值少一份 181MB。
+    """
+    out = mask.astype(np.uint8)
+    out *= 255
+    return out
+
+
 def apply_otsu_to_region(
     img_rgb: np.ndarray,
     gray: np.ndarray,
@@ -182,7 +195,7 @@ def apply_otsu_to_region(
         text_mask = text_mask & (~red_mask_roi)
 
     # 形态学去噪：开运算去除孤立噪点，闭运算填充文字内部孔洞
-    mask_u8 = (text_mask * 255).astype(np.uint8)
+    mask_u8 = _mask_to_u8(text_mask)
     kernel = np.ones((1, 1), np.uint8)
     mask_opened = cv2.morphologyEx(mask_u8, cv2.MORPH_OPEN, kernel, iterations=1)
     mask_closed = cv2.morphologyEx(mask_opened, cv2.MORPH_CLOSE, kernel, iterations=1)
@@ -238,7 +251,7 @@ def apply_otsu_whole(
         text_mask = text_mask & (~red_mask)
 
     # 形态学去噪
-    mask_u8 = (text_mask * 255).astype(np.uint8)
+    mask_u8 = _mask_to_u8(text_mask)
     kernel = np.ones((1, 1), np.uint8)
     mask_opened = cv2.morphologyEx(mask_u8, cv2.MORPH_OPEN, kernel, iterations=1)
     mask_closed = cv2.morphologyEx(mask_opened, cv2.MORPH_CLOSE, kernel, iterations=1)
@@ -262,16 +275,27 @@ def apply_otsu_whole(
 
 
 # ---------- 整页去底（CLI 与 GUI 共用的唯一实现）----------
+#: `rembg_page` 的默认参数值 —— **唯一定义处**（2026-09-26 审计）。
+#: `core/command_spec.py` 里 rembg 的默认值直接引用这几个常量，避免"同一套
+#: 默认值在 utils 与 core 各写一份、改一处漏一处"（依赖方向允许：core → utils）。
+REMBG_DEFAULT_OFFSET = 0
+REMBG_DEFAULT_TYPE = 1
+REMBG_DEFAULT_ENABLE_SEAL = False
+REMBG_DEFAULT_SEAL_COLOR = False
+REMBG_DEFAULT_SEAL_AREA = 80
+REMBG_DEFAULT_SEAL_MIN_SAT = 50
+
+
 def rembg_page(
     img_rgb: np.ndarray,
     gray: np.ndarray,
     *,
-    offset: int = 0,
-    img_type: int = 1,
-    enable_seal: bool = False,
-    seal_color: bool = False,
-    seal_area: int = 80,
-    seal_min_sat: int = 50,
+    offset: int = REMBG_DEFAULT_OFFSET,
+    img_type: int = REMBG_DEFAULT_TYPE,
+    enable_seal: bool = REMBG_DEFAULT_ENABLE_SEAL,
+    seal_color: bool = REMBG_DEFAULT_SEAL_COLOR,
+    seal_area: int = REMBG_DEFAULT_SEAL_AREA,
+    seal_min_sat: int = REMBG_DEFAULT_SEAL_MIN_SAT,
 ) -> np.ndarray:
     """整页去底色的**唯一实现**：算阈值 → 叠加 offset → 整图去底。
 

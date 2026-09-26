@@ -19,10 +19,10 @@ File: functions/init.py
 - 依赖 `ruamel.yaml` 保留注释和格式，若未安装则报错提示。
 """
 
-import sys
 import os
 from pathlib import Path
 from functions.base import DEFAULT_TEMP_NAME_MAP
+from utils.file_utils import replace_with_retry
 
 DEFAULT_EXTRACT_NAME = DEFAULT_TEMP_NAME_MAP["extract"]  # 通常为 "images"
 DEFAULT_REMBG_NAME = DEFAULT_TEMP_NAME_MAP["rembg"]  # 通常为 "rembg"
@@ -41,12 +41,23 @@ except ImportError:
 
 
 def safe_input(prompt_text: str, use_path_completer: bool = False) -> str:
-    """统一输入封装，支持路径补全。"""
-    if _pt_available and use_path_completer:
-        completer = PathCompleter(expanduser=True)
-        raw = pt_prompt(prompt_text, completer=completer)
-    else:
-        raw = input(prompt_text)
+    """统一输入封装，支持路径补全。
+
+    ⚠️ stdin 关闭时（在 GUI/测试进程里构造、或管道里跑）`input()` 会抛
+    `EOFError`——以前它会一路穿透，调用方看到的是"莫名其妙的 EOFError"
+    （2026-09-26 审计）。这里换成一句能照做的提示。
+    """
+    try:
+        if _pt_available and use_path_completer:
+            completer = PathCompleter(expanduser=True)
+            raw = pt_prompt(prompt_text, completer=completer)
+        else:
+            raw = input(prompt_text)
+    except EOFError:
+        raise RuntimeError(
+            "没有可交互的输入（stdin 已关闭）。"
+            "请改用非交互方式：`guji init -i <路径>`，或直接在配置文件里填。"
+        ) from None
     return raw.strip()
 
 
@@ -147,20 +158,37 @@ class InitFunction:
 
         # 加载模板
         template_path = Path(__file__).parent.parent / "static" / "guji.yaml"
+        # ⚠️ 不在这里 `sys.exit`：这是**库层**函数，`InitFunction` 可能被 GUI / 测试
+        #    进程构造，直接退进程会把宿主一起带走（2026-09-26 审计）。
+        #    统一改成抛异常 → CLI 的 execute_function 会转成 FAILED 退出码。
         if not template_path.exists():
-            print(f"ERROR: 模板文件 {template_path} 未找到")
-            sys.exit(1)
-
+            raise FileNotFoundError(f"模板文件未找到：{template_path}")
         try:
             from ruamel.yaml import YAML
-        except ImportError:
-            print("ERROR: 需要安装 ruamel.yaml 以保留配置注释，请运行：")
-            print("    pip install ruamel.yaml")
-            sys.exit(1)
+        except ImportError as exc:
+            raise RuntimeError(
+                "需要安装 ruamel.yaml 以保留配置注释，请运行："
+                " pip install ruamel.yaml"
+            ) from exc
+
+        if not target.parent.exists():
+            raise FileNotFoundError(f"目标目录不存在：{target.parent}")
 
         yaml = YAML()
-        with open(template_path, "r", encoding="utf-8") as f:
-            data = yaml.load(f)
+        try:
+            with open(template_path, "r", encoding="utf-8") as f:
+                data = yaml.load(f)
+        except Exception as exc:  # noqa: BLE001 - YAML 解析错误类型多，统一给人话
+            raise RuntimeError(
+                f"模板文件无法解析（{template_path}）：{type(exc).__name__}: {exc}"
+            ) from exc
+        if not isinstance(data, dict):
+            # 模板被清空 / 改成了非映射 → 以前会在 `data["name"] = name` 处抛
+            # TypeError，报错完全看不出是模板的问题
+            raise RuntimeError(
+                f"模板文件内容不是配置映射（{template_path}），"
+                f"实际是 {type(data).__name__}"
+            )
 
         # 更新元数据
         data["name"] = name
@@ -183,9 +211,21 @@ class InitFunction:
         if "print" in data and isinstance(data["print"], dict):
             data["print"]["input"] = print_input
 
-        # 写入最终配置文件
-        with open(target, "w", encoding="utf-8") as f:
-            yaml.dump(data, f)
+        # 写入最终配置文件。
+        # ⚠️ **原子写**（2026-09-26 审计）：裸 `open(target,"w")` 是先截断再写，
+        #    中途失败/断电会把用户**已有的配置**截成半截——而这个命令的常见用法
+        #    正是"在已有项目里重新生成"。先写临时文件再替换，保证要么旧的要么新的。
+        tmp = target.with_name(target.name + ".part")
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                yaml.dump(data, f)
+            replace_with_retry(tmp, target)
+        except BaseException:
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+            raise
 
         print(f"✅ 已生成配置文件: {target}")
         return {"file": str(target)}

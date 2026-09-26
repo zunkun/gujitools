@@ -18,7 +18,8 @@ import utils
 
 # 依赖中立层的只读协议，而非 cli 的具体容器类：
 # 这样 functions 不再反向依赖 cli，命令行与桌面端都可直接复用。
-from core.args import ArgsProvider
+from core.args import ArgsProvider, default_workers
+from utils.path_utils import assert_output_not_input
 from core.reporter import Reporter, normalize_reporter
 
 # 图片处理默认路径 Map
@@ -139,21 +140,36 @@ class FunctionBase:
         image_files = self._collect_input_files()
         if not image_files:
             print("未找到图片文件")
-            # 0/0 是明确信号：GUI 据此把进度条归零，而不是停在上一轮的残值
+            # 0/0 是明确信号：GUI 据此把进度条归零，而不是停在上一轮的残值。
             self.reporter.progress(0, 0)
-            return {"processed": 0, "output": str(self.outpath)}
+            # ⚠️ 归零之后**必须报错**，不能像以前那样 `return {"processed": 0}`
+            # 静默成功：那会让「输入目录写错一层」「上游没产出图」这类问题
+            # 以退出码 0 悄悄过去，脚本/流水线完全发现不了（print 命令就是
+            # 这么坑过一次，见 tests/selftests/print_stream.py）。
+            raise FileNotFoundError(
+                f"未在 {self.input} 找到任何图片"
+                "（支持 jpg/jpeg/png 等；若图片在子目录里，请指向该子目录）"
+            )
 
         # 清理输出目录（仅当用户显式指定 clean=True）。
         # 默认值 False 与 core.command_spec 保持一致——绝不能在缺省情况下
         # 静默删除用户已有输出（CommandArgs 总会注入该键，此处兜底值同理）。
+        # ⚠️ 纵深防线：outpath 可能是子类自己算的（含 GUI 传 _outpath 的路径），
+        # 这里在**真正 rmtree 之前**再确认一次它没撞上输入目录——否则会把用户
+        # 的输入图整个删掉（实测过，见 utils/path_utils.assert_output_not_input）。
+        assert_output_not_input(self.input, self.outpath)
         clean = self.command_args.get("clean", False)
         if clean and self.outpath.exists():
             shutil.rmtree(self.outpath)
         self.outpath.mkdir(parents=True, exist_ok=True)
 
-        # 并发与重试策略
+        # 并发与重试策略。
+        # 兜底走 default_workers（= min(4, CPU 核数, 张数)）：CommandArgs 总会
+        # 注入 workers，所以这个兜底只在「自建参数字典」时生效；写死 8 会让
+        # 绕开 CommandArgs 的调用方悄悄开 8 个线程，把峰值内存抬到 8×350MB。
         workers = max(
-            1, int(self.command_args.get("workers", max(1, min(8, len(image_files)))))
+            1,
+            int(self.command_args.get("workers") or default_workers(len(image_files))),
         )
         max_retries = 2
         results_by_file = {}
@@ -235,8 +251,24 @@ class FunctionBase:
         self._write_log(f"日志文件: {self.log_path}")
         self._write_log(f"失败清单文件: {self.fail_log_path}")
 
+        # ⚠️ 一页都没干活 → 必须报错，不许 exit 0 收场（2026-09-26 审计）。
+        #    判据用「有没有产出」而不是「status 是不是 success」：`crop`/`cropremove`
+        #    在没检测到框时的**合法成功状态**叫 `no_detect`/`whole_otsu`（照样出图），
+        #    拿 success 判定会把正常结果判成失败。只有 `error`（抛异常）与
+        #    `skipped`（文件过小/读不出来）才等于"这一页什么也没产出"。
+        failed = status_counts.get("error", 0)
+        skipped = status_counts.get("skipped", 0)
+        produced = len(results) - failed - skipped
+        if results and produced == 0:
+            raise RuntimeError(
+                f"{len(results)} 张输入全部没有产出"
+                f"（失败 {failed} 张、跳过 {skipped} 张）。"
+                f"失败清单见 {self.fail_log_path}"
+            )
+
         return {
             "processed": len(results),
+            "produced": produced,
             **status_counts,
             "output": str(self.outpath),
         }

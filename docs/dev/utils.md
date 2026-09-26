@@ -17,6 +17,7 @@
 | `file_utils.py`   | 文件收集与校验                 | `collect_image_files`, `is_valid_image_size`, `IMAGE_EXTS`                                                                      |
 | `yolo_utils.py`   | YOLO 模型加载与检测            | `load_yolo_model`, `detect_left_right_boxes`                                                                                    |
 | `pdf_utils.py`    | PDF 渲染与提取                 | `parse_pages`, `validate_page_range`, `calculate_zoom`, `process_page_batch`, `extract_pdf_optimized`, `run_on_input_directory` |
+| `pdf_stream.py`   | PDF **边写边落盘**（省掉整本输出缓冲） | `PdfDocument`, `write_streaming`                                                                                                |
 | `path_utils.py`   | 输出目录解析                   | `resolve_final_output_dir`, `get_extract_output_root`                                                                           |
 | `sort_utils.py`   | 自然排序                       | `natural_sort_key`, `pdf_custom_sort_key`                                                                                       |
 | `string_utils.py` | 字符串辅助                     | `num_to_chinese`                                                                                                                |
@@ -272,6 +273,36 @@ GUI 的预览控件也要画同样的框。配色与命名必须一致，否则�
 处理输入路径（文件或目录），对每个 PDF 调用 `extract_pdf_optimized`。目录输入时按 PDF 文件名创建子目录。
 
 缺失路径或空目录会抛 `ValueError`；单页失败会汇总为 `RuntimeError`，不再静默返回成功。
+
+---
+
+## pdf_stream.py — PDF 边写边落盘（`print` 专用）
+
+### `write_streaming(pdf, path) -> None`
+
+把 fpdf 生成的 PDF **一路写进文件**，而不是先在内存里攒出整本再落盘。
+
+**为什么**（2026-09-26 实测，320 页 4900×4400 扫描页）：
+
+| | 加载完 RSS | `output()` 峰值 | `output()` 耗时 |
+| --- | --- | --- | --- |
+| `pdf.output(path)` | 2644MB（cache 2548MB） | **5146MB** | 16.5s |
+| `write_streaming` | 2642MB | **2819MB（−45%）** | **8.1s** |
+
+`output()` 走 `OutputProducer.bufferize()`，把整本 PDF 写进一个 bytearray
+（`fpdf.py:6535`），所以内存 ≈ 图片缓存（≈PDF 体积）+ 输出缓冲（≈PDF 体积）。
+
+**怎么做到的**：`output(output_producer_class=...)` 是公开注入口，而 `OutputProducer`
+对 `self.buffer` 只有 `+=`（`output.py:1116`）和 `len()`（算偏移/startxref）两种用法、
+从不切片读。于是用 `_SpoolToFile` 顶替 buffer：写文件 + 记长度。
+
+⚠️ 唯一把 buffer 当 bytes 用的是 `_default_file_id()`（拿整个 buffer 做 md5 算
+trailer 的 /ID，`output.py:650`）。不碰 fpdf 内部，而是覆盖 `file_id()`——fpdf
+文档明说这是留给子类定义自定义 /ID 的钩子（`fpdf.py:5869`）；`_SpoolToFile`
+维护**增量 md5**，与全量算结果必然相同，因此 **产物逐字节一致**（护栏
+`tests/selftests/print_stream.py` 直接比 A/B 两侧的字节）。
+
+落盘走**临时 `.part` + `os.replace`**：中途失败不会留下半本 PDF 被用户点开。
 
 ---
 

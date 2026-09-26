@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from core.command_spec import (
     COMMAND_SPECS,
-    IMAGE_EXTS,
+    OUTPUT_IMAGE_EXTS,
     PAPER_SIZES as _PAPER_SIZES,
     PRINT_FORM_DEFAULTS,
     REMBG_TYPES as _REMBG_TYPES,
@@ -52,7 +52,7 @@ def _base(stage: str, **overrides) -> dict:
 # 避免「改一下中文文案就把参数解析弄挂」。
 
 # extract
-EXTRACT_EXTS = list(IMAGE_EXTS)
+EXTRACT_EXTS = list(OUTPUT_IMAGE_EXTS)  # 输出格式枚举（core 的唯一定义处）
 
 # rembg：area / type 的下拉（显示文本里带序号）
 REMBG_AREAS = [

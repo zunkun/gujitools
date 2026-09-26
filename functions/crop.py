@@ -23,8 +23,12 @@ class CropFunction(TextRegionProcessor):
         重新计算 self.outpath（覆盖基类/父类的计算），确保裁剪结果按配置后缀保存。
         """
         super().__init__(*args, **kwargs)
-        # 全局输出后缀，统一小写
-        self.output_suffix = output_suffix.lower()
+        # ⚠️ 后缀要跟着 `ext` 走（2026-09-26 审计）：参数 `output_suffix` 从来没
+        #    有人传过（构造方只给 command_args），于是它恒为 ".png" —— 而
+        #    `crop --ext jpg` 时"检测到框的页"走 `self.output_suffix`（.png）、
+        #    用户在规格里看到的 ext 完全不生效。现在优先取 `ext`。
+        ext = str(self.command_args.get("ext") or "").strip().lower().lstrip(".")
+        self.output_suffix = f".{ext}" if ext else output_suffix.lower()
         # 重新计算输出路径（覆盖父类可能已有的计算）
         self._calc_outpath()
 

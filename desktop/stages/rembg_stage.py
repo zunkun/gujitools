@@ -14,6 +14,8 @@ from desktop.stages.events import emit
 #: 0.65s，占整页 85%；Qt 的读写/绘制在 PySide6 里释放 GIL，线程并行实测
 #: 4 线程 3.47×）。上限 4 是内存约束：每个 worker 同时持有整页位图
 #: （~130MB）+ 输出画布，再多收益递减、峰值内存线性涨。
+#: ⚠️ 这里的 4 与 `core.args.MAX_DEFAULT_WORKERS`（函数层默认并发上限）
+#: 是同一个内存预算下的两个入口，改一处要想另一处。
 SUBMIT_WORKERS = max(
     1, min(4, int(os.environ.get("GUJI_SUBMIT_WORKERS") or 0)
            or min(4, os.cpu_count() or 1)),

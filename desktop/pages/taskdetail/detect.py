@@ -289,6 +289,7 @@ class DetectMixin:
             {"mode": "detect", "image": str(path), "area": self._current_area()},
         )
         self.detect_process = QProcess(self)
+        self._detect_out_buffer = ""  # stdout 半行重组缓冲（见 _read_detect_output）
         self.detect_process.setProgram(sys.executable)
         self.detect_process.setProcessEnvironment(self._worker_env())
         if getattr(sys, "frozen", False):
@@ -308,16 +309,42 @@ class DetectMixin:
         if not self.detect_process:
             return
         data = bytes(self.detect_process.readAllStandardOutput()).decode("utf-8", errors="replace")
+        # ⚠️ 半行重组（审计 P2）：readyRead 只保证"有字节"，不保证按行切齐。
+        # JSON Lines 事件被切成两半时，两半都 json.loads 失败 → boxes 事件
+        # 整条静默丢弃，界面上表现为"检测完了但框没了"。把不完整的首段
+        # 留到缓冲，与下一块拼上再解析；进程结束时缓冲里如有残留按坏行丢弃。
+        data = getattr(self, "_detect_out_buffer", "") + data
+        if "\n" in data:
+            data, self._detect_out_buffer = data.rsplit("\n", 1)
+        else:
+            self._detect_out_buffer = data
+            return
         for line in data.splitlines():
+            line = line.strip()
+            if not line:
+                continue
             try:
                 event = json.loads(line)
             except json.JSONDecodeError:
                 continue
+            if not isinstance(event, dict):
+                continue
             if event.get("type") == "boxes":
                 boxes = []
-                for key in ("left", "right"):
-                    if event.get(key):
-                        boxes.append([int(v) for v in event[key]])
+                try:
+                    for key in ("left", "right"):
+                        value = event.get(key)
+                        if value:
+                            boxes.append([int(v) for v in value])
+                except (TypeError, ValueError):
+                    # 畸形坐标（int() 转不动）宁可整条丢弃也别让槽抛异常——
+                    # 那样 Qt 只往控制台打一句，界面毫无反应
+                    self.log_view.append(
+                        f"检测输出格式异常，已忽略：{str(event)[:120]}"
+                    )
+                    continue
+                if "image" not in event:
+                    continue
                 self.detect_cache[event["image"]] = boxes
                 # 检测结果写回 boxes.json；无框不存，避免下次选中无法重新检测
                 if boxes:
@@ -339,6 +366,8 @@ class DetectMixin:
             # 被顶替的旧进程（_start_detect 已断其信号，理论上到不了这里）：
             # 绝不能顺手释放执行权——新进程才持有它
             return
+        # 结束后缓冲里若还有半行，是坏行/被截断的输出，直接丢弃防串到下一次
+        self._detect_out_buffer = ""
         self.detect_process = None
         self._release_run()
 

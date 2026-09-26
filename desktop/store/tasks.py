@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import time
 from pathlib import Path
@@ -108,14 +109,35 @@ class TaskMixin:
         任务号取当前最大号 +1，同时参考索引与磁盘目录；若两者不一致导致号被
         占用则继续顺延。创建时会预建 stages/runs/thumbnails/source
         子目录，但不复制源文件（由 copy_source_to_task 负责）。
+
+        ⚠️ **取号靠"目录创建的原子性"，不靠"先查后建"**（2026-09-26 审计）：
+        单例守卫是**按构建目录**判定的，开发版与安装版会同时运行、共用同一个
+        数据目录（`desktop/single_instance.py` 明说了）。两个进程会算出同一个
+        `_next_task_no()`、同时通过"号没被占用"的检查 → 拿到同一个任务号、
+        写同一个目录、索引里互相覆盖（一个任务凭空消失）。
+        `mkdir(exist_ok=False)` 在文件系统层是原子的：抢不到就顺延取号。
         """
-        task_id = self._next_task_no()  # 顺序任务号，目录即 0001、0002…
         now = time.time()
+        base_no = int(self._next_task_no())
+        task_dir: Path | None = None
+        task_id = ""
+        for offset in range(400):
+            task_id = f"{base_no + offset:04d}"
+            candidate = self.task_dir(task_id)
+            try:
+                # 原子占号：目录已存在说明别人（或旧数据）占了 → 顺延
+                candidate.mkdir(parents=True, exist_ok=False)
+            except FileExistsError:
+                continue
+            task_dir = candidate
+            break
+        if task_dir is None:
+            raise RuntimeError("无法分配到空闲的任务号（连续 400 个都被占用）")
+
+        for sub in ("stages", "runs", "thumbnails/source"):
+            (task_dir / sub).mkdir(parents=True, exist_ok=True)
+
         tasks = self._load_tasks_index()
-        # 兜底：极端情况下（并发/索引与磁盘不一致）拿到已占用的号，继续往后取
-        taken = {t.get("id") for t in tasks}
-        while task_id in taken or (self.task_dir(task_id)).exists():
-            task_id = f"{int(task_id) + 1:04d}"
         tasks.append(
             {
                 "id": task_id,
@@ -129,9 +151,6 @@ class TaskMixin:
             }
         )
         self._save_tasks_index(tasks)
-        task_dir = self.task_dir(task_id)
-        for sub in ("stages", "runs", "thumbnails/source"):
-            (task_dir / sub).mkdir(parents=True, exist_ok=True)
         return task_id
 
     def update_task(self, task_id: str, status: str) -> None:
@@ -175,8 +194,21 @@ class TaskMixin:
         return False
 
     # ---------- 任务目录布局 ----------
+    #: 合法任务号的形状：四位以上纯数字（由 `_next_task_no` 生成，如 0007）。
+    _TASK_ID_RE = re.compile(r"^[0-9]{4,}$")
+
     def task_dir(self, task_id: str) -> Path:
-        """任务根目录：tasks/<任务号>。"""
+        """任务根目录：tasks/<任务号>。
+
+        ⚠️ **必须校验形状**（2026-09-26 审计）：`task_id` 会被直接拼进路径，而
+        `delete_task` 对它做 `rmtree`。`tasks.json` 就在用户的文档目录下、可被
+        外部编辑或别的工具写坏，一旦出现 `"id": "..\\..\\somewhere"` 就会
+        **越界删除任务目录之外的东西**。这里只认 `create_task` 生成的形状。
+        """
+        if not isinstance(task_id, str) or not self._TASK_ID_RE.match(task_id):
+            raise ValueError(
+                f"任务号形状非法：{task_id!r}（应为四位以上数字，如 0007）"
+            )
         return self.root / "tasks" / task_id
 
     def stage_dir(self, task_id: str, stage: str) -> Path:

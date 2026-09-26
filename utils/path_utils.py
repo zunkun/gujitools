@@ -6,6 +6,61 @@ from pathlib import Path
 from typing import Optional
 
 
+def assert_output_not_input(input_path, out_path) -> None:
+    """确认输出目录不会撞上输入目录：撞上就抛 `ValueError`。
+
+    为什么必须有这道闸（2026-09-26 实测，硬证据）
+        `resolve_final_output_dir` 在「目录输入 + 不给 `--output`」时返回
+        ``input.parent / <该命令的子目录名>``。当**输入目录的 basename 恰好等于
+        该命令的子目录名**时（`.../rembg` 跑 rembg、`.../crop` 跑 crop、
+        `.../detect` 跑 `detect --save`、`.../images` 跑 extract），输出目录
+        就是**输入目录本身**。实测把两张可辨认的 PNG 放进一个叫 `rembg` 的目录：
+
+        | `clean` | 结果 |
+        |---|---|
+        | False | `1.png`/`2.png` **被原地覆盖**（rembg 输出名与输入同名） |
+        | True  | `rmtree(outpath)` 把**输入目录连同图片全部删除**，目录被重建为空，**退出码仍是 0** |
+
+        后者是静默丢数据：用户的原图没了，命令还报成功。
+        "重跑自己上一步的输出目录"是极常见的操作（`.../rembg`、`.../crop`），
+        所以不能靠用户小心。
+
+    判据（两条都要挡）
+        1. 输出 == 输入（原地覆盖 / 删掉输入）；
+        2. 输出是输入的**祖先**（`rmtree(输出)` 同样会连输入一起删）。
+
+    输入是**文件**时按它的父目录看待——对 extract 这类「输出根目录 = PDF 所在目录、
+    产物落在其子目录」的命令，`out_path == input.parent` 是合法的，那种情况由
+    「输出是否是输入的祖先」这条判据排除（父目录不是祖先关系里的 out 侧）。
+
+    参数:
+        input_path: 输入路径（文件或目录）。
+        out_path: 计算出的输出目录。
+
+    抛出:
+        ValueError: 输出会撞上输入时，附上可照做的修法（改用 `-o` 指到别处）。
+    """
+    try:
+        src = Path(input_path).resolve()
+        dst = Path(out_path).resolve()
+    except OSError:  # 路径过长/无权限等：交给真正的 IO 去报，别在这里拦
+        return
+    src_dir = src.parent if src.is_file() else src
+    if dst == src_dir:
+        raise ValueError(
+            f"输出目录与输入目录相同：{dst}\n"
+            "这会让本命令原地覆盖自己的输入（并且在 --clean 时把输入整个删掉）。\n"
+            "请用 -o/--output 指到一个不同的目录，例如："
+            f" -o {src_dir.parent / (src_dir.name + '-out')}"
+        )
+    if dst in src_dir.parents:
+        raise ValueError(
+            f"输出目录是输入目录的上级：{dst}\n"
+            "清理输出目录时会连输入一起删掉。请用 -o/--output 指到输入目录之内"
+            "或并列的其它目录。"
+        )
+
+
 def resolve_final_output_dir(
     input_path: Path,
     output_arg: Optional[str],
@@ -53,7 +108,11 @@ def resolve_final_output_dir(
         root = input_path.parent
 
     # 最终目录 = 根目录 / default_subdir
-    return root / default_subdir
+    final = root / default_subdir
+    # ⚠️ 出口处必须过闸：输入目录名恰好等于 default_subdir 时，final 就是输入本身，
+    #    不加 --clean 会原地覆盖、加 --clean 会把输入整个删掉（实测，见函数文档）。
+    assert_output_not_input(input_path, final)
+    return final
 
 
 def get_extract_output_root(

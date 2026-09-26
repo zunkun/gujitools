@@ -9,9 +9,8 @@
 import os
 from pathlib import Path
 from typing import List, Optional, Tuple
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 
-from fpdf import FPDF
 from fpdf.syntax import DestinationXYZ
 from PIL import Image
 
@@ -34,6 +33,7 @@ from utils.path_utils import resolve_final_output_dir
 from utils.pdf_draw import (
     build_font_chain, draw_horizontal_text, draw_vertical_text,
 )
+from utils.pdf_stream import PdfDocument, write_streaming
 from utils.sort_utils import pdf_custom_sort_key
 
 # 嵌入 PDF 前把超大扫描图缩放到的打印分辨率（仅缩小、不放大）。
@@ -134,16 +134,42 @@ def _collect_image_files(input_dir: Path, files: Optional[List[str]] = None) -> 
       ``pdf_custom_sort_key``（cover/menu 优先、同编号 r→l、数字自然序）
       推导顺序。
 
-    清单中不存在的路径会被跳过，让「数据表里有记录但物理文件已删」的
-    条目静默失效，而不是让整次打印失败。
+    清单中不存在的路径会被跳过（让「数据表里有记录但物理文件已删」的条目失效
+    而不是整次打印失败），但**会明确报出跳过了几张**——否则用户看到的只是
+    PDF 页数变少，完全不知道是清单和磁盘对不上。
+
+    ⚠️ 三处健壮性（2026-09-26 审计）：
+      1. `files` 是字符串时（YAML 写错类型）以前会被**逐字符迭代**，得到一堆
+         单字符路径、全部静默跳过 → 现在直接拒绝；
+      2. 相对路径以前按**当前工作目录**解析——清单里的相对路径应当相对
+         `input_dir`（数据表与图片目录是一起搬的），否则换台机器就全找不到；
+      3. 输入是**单个图片文件**时 `os.listdir` 会抛 `NotADirectoryError`
+         （未处理）→ 现在按单文件处理。
     """
+    if files is not None and not isinstance(files, (list, tuple)):
+        raise ValueError(
+            f"files 应为图片路径清单（数组），当前是 {type(files).__name__}：{files!r}"
+        )
     if files:
         out = []
+        missing = 0
         for text in files:
-            p = Path(text)
+            p = Path(str(text))
+            if not p.is_absolute():
+                # 相对路径按输入目录解析（清单与图片是一起搬的）
+                p = (input_dir if input_dir.is_dir() else input_dir.parent) / p
             if p.is_file():
                 out.append(str(p))
+            else:
+                missing += 1
+        if missing:
+            print(f"⚠️ 清单里有 {missing}/{len(files)} 张图片在磁盘上不存在，已跳过")
         return out
+    if input_dir.is_file():
+        # 单个图片文件当输入：直接就是这一页（以前会 NotADirectoryError 崩掉）
+        return [str(input_dir)]
+    if not input_dir.is_dir():
+        return []
     image_files = []
     for name in os.listdir(input_dir):
         if name.lower().endswith((".png", ".jpg", ".jpeg", ".bmp", ".gif")):
@@ -375,8 +401,15 @@ class PrintFunction(FunctionBase):
         image_files = _collect_image_files(input_dir, files)
         total = len(image_files)
         if total == 0:
-            print("未找到任何图片")
-            return {"processed": 0, "output": str(output_pdf)}
+            # ⚠️ 必须**报错**，不能静默返回 `{"processed": 0}`：曾出现
+            # 「输入目录写错一层（`-i final` 而图在 `final/rembg`）」时命令
+            # 以退出码 0 成功结束、既不产 PDF 也不报错，脚本完全发现不了
+            # （2026-09-26 极限测试实测）。空输入意味着这次调用不可能完成，
+            # 让 CLI 拿 FAILED 退出码、GUI 弹出原因。
+            raise FileNotFoundError(
+                f"未在 {input_dir} 找到任何图片"
+                "（支持 jpg/jpeg/png 等；若图片在子目录里，请指向该子目录）"
+            )
 
         # skip_pages 按**最终清单序号**（1 起）匹配：拖拽重排后仍指向
         # 同一位置。兼容旧写法——纯数字串既可能是序号也可能是原始页码，
@@ -439,7 +472,9 @@ class PrintFunction(FunctionBase):
             "page_number_suffix": self.command_args.get("page_number_suffix"),
         }
 
-        pdf = FPDF(
+        # 用 PdfDocument 而不是 FPDF：它只多一件事——把 trailer 的 /ID 接到
+        # 流式缓冲的增量摘要上（见 utils/pdf_stream.py）；不流式时行为与 FPDF 相同。
+        pdf = PdfDocument(
             orientation=orientation,
             unit="mm",
             format=_get_pdf_format(paper_size),
@@ -455,31 +490,10 @@ class PrintFunction(FunctionBase):
         max_w_px = int(avail_w_mm / MM_PER_INCH * PRINT_IMAGE_DPI)
         max_h_px = int(avail_h_mm / MM_PER_INCH * PRINT_IMAGE_DPI)
 
-        page_data = [None] * total
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = {}
-            for i, path in enumerate(image_files):
-                if (i + 1) in skip_indices:  # 序号从 1 起，与表单一致
-                    page_data[i] = {
-                        "idx": i,
-                        "img": None,
-                        "path": path,
-                        "size": (0, 0),
-                        "skip": True,
-                    }
-                    continue
-                futures[
-                    executor.submit(
-                        self._load_image, i, path, max_w_px, max_h_px
-                    )
-                ] = i
-            for future in as_completed(futures):
-                res = future.result()
-                if res:
-                    page_data[res["idx"]] = res
-                done = len([x for x in page_data if x is not None])
-                print(f"\r图片加载进度: {done}/{total}", end="")
-        print()
+        # ⚠️ 这里**不再**预先加载整本图片（老实现 `page_data = [None] * total`
+        #    把每一页的位图都攒在内存里，真实 320 页的书峰值 2994MB、且随页数
+        #    线性增长 → 2400 页会 OOM）。现在加载与写页在下面同一个循环里按序
+        #    进行，写完一页立刻释放（见「加载要按序、限窗、写完即释放」）。
 
         # ----- 字体链：标题与页码各一条 -----
         # 用户可分别指定字体（title_font / page_number_font），未指定则按
@@ -506,61 +520,103 @@ class PrintFunction(FunctionBase):
         # 规则在 utils.page_layout.sides_for_pages（预览与 PDF 同一份）
         sides = sides_for_pages(total, sorted_nodes, page_number_start_page)
 
-        for i, data in enumerate(page_data):
-            if not data or data.get("skip"):
-                continue
+        # ⚠️ **加载要按序、限窗、写完即释放**（2026-09-26 极限测试实测）
+        #    老实现把所有页 `executor.submit(...)` 一次性提上去、再等全部
+        #    `page_data` 收齐才开始写 PDF：等于**整本书的图同时驻留内存**。
+        #    真实 794MB/320 页的书（area=1 → 601 张）峰值 **2994MB**，而按页
+        #    数线性增长——2400 页的书就是几十 GB，直接 OOM。
+        #    现在只保留 `workers` 张在飞、按序号消费，写完立刻丢掉引用。
+        executor = ThreadPoolExecutor(max_workers=workers)
+        pending: dict[int, object] = {}
+        submit_cursor = 0
 
-            img = data["img"]
-            if img is None:
-                continue
-            w_img, h_img = data["size"]
+        def _submit_until_window_full() -> None:
+            """把待加载的页补到窗口上限（跳过 skip_pages 的页）。"""
+            nonlocal submit_cursor
+            while submit_cursor < total and len(pending) < max(1, workers):
+                index = submit_cursor
+                submit_cursor += 1
+                if (index + 1) in skip_indices:
+                    continue
+                pending[index] = executor.submit(
+                    self._load_image, index, image_files[index], max_w_px, max_h_px
+                )
 
-            pdf.add_page()
+        try:
+            for i in range(total):
+                if (i + 1) in skip_indices:
+                    continue
+                _submit_until_window_full()
+                future = pending.pop(i, None)
+                data = future.result() if future is not None else None
+                if not data or data.get("img") is None:
+                    continue
+                img = data["img"]
+                w_img, h_img = data["size"]
 
-            # ---- 布局：几何全部来自 utils.page_layout（预览与 PDF 同一份）----
-            # page_rects 由 GUI 从 print.json pages[].rect 收集：给定页直接用
-            # 其坐标作图片框（所见即所得），否则走 page_margins 自动排版。
-            image_rect = page_rects.get(i + 1)
-            plan = plan_print_page(
-                (w_img, h_img), plan_args, i, total,
-                sides=sides, sorted_nodes=sorted_nodes,
-                image_name=Path(image_files[i]).stem,
-                image_rect=image_rect,
-            )
-            x_img, y_img, new_w, new_h = plan.image
-            pdf.image(img, x=x_img, y=y_img, w=new_w, h=new_h)
+                pdf.add_page()
 
-            # 书签在章节节点对应的具体图片上创建。
-            for node_index, (node_title, _) in sorted_nodes:
-                if i == node_index:
-                    pdf.start_section(node_title, level=0)
-                    pdf._outline[-1].dest = DestinationXYZ(
-                        page=pdf.page, top=pdf.h_pt, left=0
+                # ---- 布局：几何全部来自 utils.page_layout（预览与 PDF 同一份）----
+                # page_rects 由 GUI 从 print.json pages[].rect 收集：给定页直接用
+                # 其坐标作图片框（所见即所得），否则走 page_margins 自动排版。
+                image_rect = page_rects.get(i + 1)
+                plan = plan_print_page(
+                    (w_img, h_img), plan_args, i, total,
+                    sides=sides, sorted_nodes=sorted_nodes,
+                    image_name=Path(image_files[i]).stem,
+                    image_rect=image_rect,
+                )
+                x_img, y_img, new_w, new_h = plan.image
+                pdf.image(img, x=x_img, y=y_img, w=new_w, h=new_h)
+
+                # 书签在章节节点对应的具体图片上创建。
+                for node_index, (node_title, _) in sorted_nodes:
+                    if i == node_index:
+                        pdf.start_section(node_title, level=0)
+                        pdf._outline[-1].dest = DestinationXYZ(
+                            page=pdf.page, top=pdf.h_pt, left=0
+                        )
+                        break
+
+                # ----- 标题（与页码同步起始页；内容与几何都在 plan 里）-----
+                if plan.title is not None:
+                    _draw_plan_text(
+                        pdf, plan.title, title_chain.primary, chain=title_chain
                     )
-                    break
 
-            # ----- 标题（与页码同步起始页；内容与几何都在 plan 里）-----
-            if plan.title is not None:
-                _draw_plan_text(
-                    pdf, plan.title, title_chain.primary, chain=title_chain
-                )
+                # ----- 页码 -----
+                if plan.page_number is not None:
+                    _draw_plan_text(
+                        pdf, plan.page_number, number_chain.primary, chain=number_chain
+                    )
 
-            # ----- 页码 -----
-            if plan.page_number is not None:
-                _draw_plan_text(
-                    pdf, plan.page_number, number_chain.primary, chain=number_chain
-                )
+                # 这一页的位图已经交给 fpdf，立刻释放（峰值内存不随页数增长）
+                data["img"] = None
+                del img, data
+                processed_count += 1
+                if processed_count % 10 == 0 or processed_count == total:
+                    print(f"\r写入进度: {processed_count}/{total}", end="")
+                    # 结构化进度：**整个 print 阶段进度条的唯一来源**（total = 实际写入
+                    # PDF 的页数，页面清单增删后自然跟着变）。合成阶段刻意不发进度，
+                    # 否则两条独立进度会交替驱动同一条进度条（见 print_stage 的说明）。
+                    self.reporter.progress(processed_count, total)
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
 
-            processed_count += 1
-            if processed_count % 10 == 0 or processed_count == total:
-                print(f"\r写入进度: {processed_count}/{total}", end="")
-                # 结构化进度：**整个 print 阶段进度条的唯一来源**（total = 实际写入
-                # PDF 的页数，页面清单增删后自然跟着变）。合成阶段刻意不发进度，
-                # 否则两条独立进度会交替驱动同一条进度条（见 print_stage 的说明）。
-                self.reporter.progress(processed_count, total)
+        if processed_count == 0:
+            # 有图片但一页都没写出来（全被 skip_pages 跳过、或图片全部解码失败）
+            # —— 同样不能当成成功：一个 0 页的 PDF 不是用户要的东西。
+            raise ValueError(
+                f"{total} 张图片全部被跳过或读取失败，没有生成任何页面"
+                "（检查 skip_pages 是否把页面全排除了）"
+            )
 
         print(f"\nPDF 生成完成: {output_pdf}")
-        pdf.output(str(output_pdf))
+        # ⚠️ **边写边落盘**，不要用 `pdf.output(path)`：后者会把整本 PDF 先建进
+        # 一个 bytearray 再 write_bytes，于是内存 ≈ 图片缓存（≈PDF 体积）+
+        # 输出缓冲（≈PDF 体积）。实测 320 页：峰值 5146MB → 2819MB（−45%）、
+        # output() 16.5s → 8.1s，产物逐字节一致。详见 utils/pdf_stream.py。
+        write_streaming(pdf, output_pdf)
         return {"processed": processed_count, "output": str(output_pdf)}
 
     @staticmethod

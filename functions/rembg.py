@@ -83,19 +83,34 @@ class RembgFunction(FunctionBase):
                 "reason": "file too small",
             }
 
-        with Image.open(image_path) as img:
-            img.load()
+        # ⚠️ with 的目标取名 source、工作图取名 img：非 RGB 输入时
+        # `img = source.convert("RGB")` 会换成新对象，而 with 的上下文管理器
+        # **仍然持有原图**——不显式关掉，整张原图（68MB）就会活到块结束。
+        with Image.open(image_path) as source:
+            source.load()
 
             # 统一为 RGB：RGBA 与白底合并，其他模式直接转换
-            if img.mode == "RGBA":
-                bg = Image.new("RGB", img.size, (255, 255, 255))
-                bg.paste(img, mask=img.split()[3])  # alpha 通道作为 mask 合成到白底
-                img = bg
-            elif img.mode != "RGB":
-                img = img.convert("RGB")
+            if source.mode == "RGBA":
+                img = Image.new("RGB", source.size, (255, 255, 255))
+                img.paste(source, mask=source.split()[3])  # alpha 通道作为 mask 合成到白底
+            elif source.mode != "RGB":
+                img = source.convert("RGB")
+            else:
+                img = source
 
             img_arr = np.array(img)
-            gray_arr = np.array(img.convert("L"))
+            # 灰度必须走 PIL 的 convert("L")（ITU-R 601-2 系数 + PIL 的舍入）。
+            # 换成 cv2.cvtColor 省事，但系数舍入差一点就可能让 Otsu 阈值挪一格，
+            # 而「界面预览与最终产物逐像素一致」是硬契约。
+            gray_img = img.convert("L")
+            gray_arr = np.array(gray_img)
+            # 两张 PIL 位图到此已无用（下面只用 numpy 数组）：**立刻关掉**。
+            # 一页 5000×4400 是 RGB 68MB + L 23MB，乘以并发数就是白背的峰值内存
+            # ——「处理完一张要还回去」说的正是这里。
+            gray_img.close()
+            img.close()
+            if img is not source:
+                source.close()
 
             # 获取命令行参数
             enable_seal = self.command_args.get("seal", False)

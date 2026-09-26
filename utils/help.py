@@ -213,11 +213,12 @@ def show_help_page(command=None):
     """分页显示帮助页面（尝试使用 less/more，无分页器则直接打印）。"""
     text = get_help_text(command)
 
-    if text is None:
-        # 找不到文档 → 提示可用主题后回退到快速帮助
-        if command:
-            print(f"未知主题: {command}")
-            print(f"可用主题: {', '.join(_DOC_MAP.keys())}\n")
+    # get_help_text 永远返回字符串（找不到时返回一句英文提示），所以这里**不能**
+    # 判 None —— 原先那段 `if text is None` 是死代码，`guji help 不存在的命令`
+    # 于是只输出半句英文，既没提示可用主题也没回退到快速帮助（2026-09-26 审计）。
+    if command and command not in _DOC_MAP:
+        print(f"未知主题: {command}")
+        print(f"可用主题: {', '.join(_DOC_MAP.keys())}\n")
         print_quick_help()
         return
 

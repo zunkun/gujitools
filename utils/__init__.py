@@ -8,6 +8,7 @@
 - `yolo_utils`: YOLO 模型加载与左右文本框检测。
 - `pdf_extract`: PDF 页面渲染为图片（多线程批量处理）。
 - `pdf_draw`: 生成 PDF 的绘制辅助（字体注册、竖排文字、页侧判定）。
+- `pdf_stream`: 让 fpdf 的输出**边写边落盘**（顶替整本输出缓冲，`print` 专用）。
 - `pdf_utils`: 上两者的**兼容 re-export 壳**，新代码请直接 import 具体模块。
 - `sort_utils`: 自然排序（封面/菜单优先，数字感知）。
 - `path_utils`: 输出路径解析（extract 根目录、各命令最终输出目录）。

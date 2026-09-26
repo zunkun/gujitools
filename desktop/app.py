@@ -4,7 +4,7 @@
 from __future__ import annotations
 import os
 import sys
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget, QWidget
 from PySide6.QtGui import QIcon
 from qfluentwidgets import setTheme, Theme
@@ -24,6 +24,10 @@ class MainWindow(QMainWindow):
     创建时设定窗口最小尺寸并套用全局底色；通过 QStackedWidget 持有两页，
     并连接列表页「打开详情」与详情页「返回」信号完成页面跳转。
     """
+
+    #: 启动后多久预热详情页（ms）。放在列表首帧画完之后，既不拖慢"窗口出现"，
+    #: 又能在用户点进任务之前把那笔 Qt 构造开销付掉（见 _prewarm_detail_page）。
+    PREWARM_DELAY_MS = 3000
 
     def __init__(self) -> None:
         super().__init__()
@@ -55,6 +59,10 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.pages)
         self.setStyleSheet(f"QMainWindow {{ background: {T.CANVAS}; }}")
         self.list_page.open_detail.connect(self._open_detail)
+        # 预热详情页（见 _prewarm_detail_page）：① 刚点完导入；② 启动后空闲。
+        # 两处都不占用户的操作响应路径，却把那笔 Qt 构造开销提前付掉。
+        self.list_page.import_queued.connect(self._prewarm_detail_page)
+        QTimer.singleShot(self.PREWARM_DELAY_MS, self._prewarm_detail_page)
 
     def _ensure_detail_page(self):
         """首次需要时创建详情页，挂进堆栈并接上「返回」信号。
@@ -81,6 +89,23 @@ class MainWindow(QMainWindow):
         惰性并不冲突。
         """
         return self._ensure_detail_page()
+
+    def _prewarm_detail_page(self) -> None:
+        """预构造详情页骨架与**第一步**面板（用户一进去看到的就是它）。
+
+        ⚠️ 只预热第一步：第 2/3/4 步的面板**用户不进去就不建**（2026-09-25
+        用户明确要求）。构造面板是纯 Qt + Python 密集活，机器若正在跑导入
+        后台（PyMuPDF 连续攥 GIL ~160ms/页），同样的代码会被拖慢十几倍——
+        所以既不该在点进详情时现造，也不该替没进去的步骤提前造。
+
+        预热时机：① 刚点完导入（列表页 import_queued）；② 启动后
+        PREWARM_DELAY_MS（列表已画完、用户还在看列表）。两处都不占用户的
+        操作响应路径。
+        """
+        page = self._ensure_detail_page()
+        first = page.control_stack.widget(0)
+        if hasattr(first, "peek") and first.peek() is None:
+            first.panel  # noqa: B018 - 触发构造，返回值不用
 
     def _open_detail(self, task_id: str) -> None:
         page = self._ensure_detail_page()

@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 from PySide6.QtWidgets import QFileDialog
@@ -51,7 +50,16 @@ class PrintListMixin:
             )
             for e in entries
         ]
-        self.store.save_print_doc(self.task_id, doc)
+        try:
+            self.store.save_print_doc(self.task_id, doc)
+        except OSError as exc:
+            # ⚠️ 落盘失败必须让用户看见（2026-09-26 审计）：任务目录被外部删除 /
+            #    磁盘满时，原先这个异常会**直接从 Qt 槽里抛出去**（排序、拖动版面
+            #    都是槽），只打印到控制台，用户看到的是"拖了没反应"且毫无原因。
+            message = f"待打印列表保存失败：{type(exc).__name__}: {exc}"
+            self.log_view.append(message)
+            self._toast("error", "列表未保存", message)
+            return
         if not silent:
             self.log_view.append(
                 f"待打印列表已更新（{self.print_preview.count()} 页）。"
@@ -113,11 +121,40 @@ class PrintListMixin:
         )
         if not target:
             return
-        try:
-            shutil.copy2(source, target)
-        except OSError as exc:
-            self._toast("error", "下载失败", str(exc))
+        # ⚠️ 复制进后台线程（审计 D2）：几百 MB 的 PDF 用主线程 copy2 会把
+        # 界面冻住整个复制时长；复制期间不禁按钮但用标志防重入。
+        if getattr(self, "_download_busy", False):
+            self._toast("warning", "正在下载", "上一次下载还没完成。")
             return
+        self._download_busy = True
+        from desktop.workers import CopyFilesWorker, connect_queued
+
+        worker = CopyFilesWorker([(source, Path(target))])
+        self.run_worker(
+            lambda: worker,
+            lambda w, thread: (
+                connect_queued(
+                    self, w.finished, self._on_download_done, thread
+                ),
+                connect_queued(
+                    self, w.failed,
+                    lambda msg: self._on_download_done([], [(str(source), msg)]),
+                    thread,
+                ),
+                w.finished.connect(thread.quit),
+                w.failed.connect(thread.quit),
+            ),
+        )
+
+    def _on_download_done(self, done: list, errors: list) -> None:
+        """后台下载完成（主线程）：播报结果并解除防重入。"""
+        self._download_busy = False
+        if errors:
+            self._toast("error", "下载失败", errors[0][1])
+            return
+        if not done:
+            return
+        target = done[0][1]
         self._toast("success", "下载完成", f"已保存到：{target}")
         self.log_view.append(f"PDF 已下载到：{target}")
 

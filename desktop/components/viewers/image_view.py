@@ -82,6 +82,14 @@ class ImageView(QLabel):
         self._offset_y = 0
         #: 本次渲染用的 dpr。叠加层线宽要按它取整到**设备像素**（见 _pen_width）。
         self._dpr = 1.0
+        #: 源图版本号：每次 set_image 递增。缓存键用它而不是 id()——旧 pixmap
+        #: 被回收后新对象可能拿到同一个 id，键就撞了。
+        self._pixmap_version = 0
+        #: SmoothTransformation 的缓存底图（不带叠加层）+ 缓存键。⇒ 拖框逐帧
+        #: 只做「拷贝 + 画叠加层」（毫秒级），不再对 3000px 源图整张重采样
+        #: （37MB/帧，实测拖框明显掉帧——见审计 D3）。
+        self._scaled_base: QPixmap | None = None
+        self._scaled_key: tuple | None = None
 
     @property
     def has_image(self) -> bool:
@@ -127,6 +135,7 @@ class ImageView(QLabel):
         self._image_size = image_size or image.size()
         self._boxes = [list(box) for box in (boxes or [])]
         self._pixmap = QPixmap.fromImage(image)
+        self._pixmap_version += 1  # 缓存底图作废（见 _scaled_base）
         self._selected = None
         self._mode = None
         self._drag_index = None
@@ -416,10 +425,19 @@ class ImageView(QLabel):
             max(1, round(self.width() * 0.96 * dpr)),
             max(1, round(self.height() * 0.96 * dpr)),
         )
-        scaled = self._pixmap.scaled(
-            target, Qt.KeepAspectRatio, Qt.SmoothTransformation
-        )
-        scaled.setDevicePixelRatio(dpr)
+        # ---- 底图缓存（审计 D3）：SmoothTransformation 对 3000px 源图是
+        # ~37MB/帧的重采样，而拖框时 mouseMoveEvent 逐帧调这里。键 = (源图版本,
+        # 目标尺寸, dpr)，三者拖框期间都不变 → 直接复用，只做一次廉价 copy
+        # 再画叠加层。窗口缩放/换图/换屏时键变 → 才真正重采样一次。
+        key = (self._pixmap_version, target, dpr)
+        if key != self._scaled_key or self._scaled_base is None:
+            self._scaled_base = self._pixmap.scaled(
+                target, Qt.KeepAspectRatio, Qt.SmoothTransformation
+            )
+            self._scaled_base.setDevicePixelRatio(dpr)
+            self._scaled_key = key
+        # copy() 是纯内存拷贝（毫秒级）；直接在缓存底图上画会把叠加层烙进缓存
+        scaled = self._scaled_base.copy()
         # 先刷新映射，再绘制：框/参考框/橡皮筋都使用本次渲染的缩放比
         self._update_mapping(scaled)
         painter = QPainter(scaled)

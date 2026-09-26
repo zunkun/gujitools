@@ -12,7 +12,7 @@
 from desktop.stages.events import ProgressStream, emit
 from desktop.stages.detect_stage import run_detect, run_detect_stage
 from desktop.stages.generic_stage import run_extract_stage, run_stage
-from desktop.stages.print_stage import run_print_stage
+from desktop.stages.print_stage import run_print_stage, sweep_orphan_staging
 from desktop.stages.rembg_stage import run_rembg_submit_stage
 
 __all__ = [
@@ -24,4 +24,5 @@ __all__ = [
     "run_stage",
     "run_print_stage",
     "run_rembg_submit_stage",
+    "sweep_orphan_staging",
 ]

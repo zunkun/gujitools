@@ -141,26 +141,6 @@ class ThumbStrip(QListWidget):
         # sizeHint 累计出目标行顶端再落值；直接用 singleStep 会因条目高矮不一而漂。
         bar.setValue(min(self._row_top(target), bar.maximum()))
 
-    def _row_top(self, row: int) -> int:
-        """第 row 条顶端距内容顶端的像素偏移（逐条 sizeHint + 条目间隙累计）。"""
-        step = self.spacing()
-        return sum(
-            self.item(i).sizeHint().height() + step
-            for i in range(min(row, self.count()))
-        )
-
-    def _first_visible_row(self) -> int:
-        """当前最上面那条的行号（按像素偏移反查，不依赖 indexAt 的间隙行为）。"""
-        value = self.verticalScrollBar().value()
-        step = self.spacing()
-        offset = 0
-        for row in range(self.count()):
-            height = self.item(row).sizeHint().height() + step
-            if offset + height > value:  # 该条下边界已越过视口顶端 → 它可见
-                return row
-            offset += height
-        return max(0, self.count() - 1)
-
     def _item_hint(self, display_h: int) -> QSize:
         """条目的 sizeHint：宽固定（占满条宽），高 = 图实际显示高 + 文字行。
 
@@ -260,6 +240,7 @@ class ThumbStrip(QListWidget):
     def add_placeholder(self, text: str) -> None:
         """追加一个纯文字占位条目（无图标，如"缩略图加载中…"）。"""
         self.addItem(QListWidgetItem(text))
+        self._invalidate_prefix()
 
     def add_page_item(self, label: str, path: str = "") -> None:
         """新增一个带占位图的条目，缩略图就绪后由 set_item_icon 替换。
@@ -271,6 +252,7 @@ class ThumbStrip(QListWidget):
         item.setData(Qt.UserRole, path)
         item.setSizeHint(self._item_hint(ThumbStrip.ICON_SIZE.height()))
         self.addItem(item)
+        self._invalidate_prefix()
 
     def set_item_icon(self, index: int, image, path: str, label: str) -> None:
         """替换某条目的图标/文字/路径（缩略图异步就绪后回调）。"""
@@ -287,4 +269,42 @@ class ThumbStrip(QListWidget):
             ThumbStrip.ICON_SIZE, Qt.AspectRatioMode.KeepAspectRatio
         )
         item.setSizeHint(self._item_hint(display.height()))
+        self._invalidate_prefix()
         self.scheduleDelayedItemsLayout()
+
+    # ------------------------------------------------------ 前缀和（审计 D7）
+    #: ⚠️ `_row_top`/`_first_visible_row` 原先每次滚轮都逐条 `sizeHint()` 累计
+    #: （2400 页 = 每次 2400 次跨 C++ 调用，滚轮明显发涩）。现在维护一份
+    #: 「条目顶端偏移」前缀和，条目增删/换图（高度变）时置脏，滚轮 O(log n)。
+    _prefix: list[int] | None = None
+
+    def _invalidate_prefix(self) -> None:
+        self._prefix = None
+
+    def _ensure_prefix(self) -> list[int]:
+        """构建/返回前缀和：`_prefix[i]` = 第 i 条顶端距内容顶端的像素。"""
+        if self._prefix is not None and len(self._prefix) == self.count() + 1:
+            return self._prefix
+        step = self.spacing()
+        prefix = [0]
+        acc = 0
+        for i in range(self.count()):
+            acc += self.item(i).sizeHint().height() + step
+            prefix.append(acc)
+        self._prefix = prefix
+        return prefix
+
+    def _row_top(self, row: int) -> int:
+        """第 row 条顶端距内容顶端的像素偏移（前缀和直接查表）。"""
+        prefix = self._ensure_prefix()
+        return prefix[max(0, min(row, self.count()))]
+
+    def _first_visible_row(self) -> int:
+        """当前最上面那条的行号（前缀和上二分，不依赖 indexAt 的间隙行为）。"""
+        import bisect
+
+        value = self.verticalScrollBar().value()
+        prefix = self._ensure_prefix()
+        # 找第一条「下边界 > value」的条目：_prefix[row+1] > value
+        row = bisect.bisect_right(prefix, value) - 1
+        return max(0, min(row, self.count() - 1))

@@ -29,6 +29,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import threading
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,7 +39,7 @@ from utils.fonts import GUJI_FONT_ENV, first_existing_cjk_font
 # ---------------------------------------------------------------------- 常量
 
 #: 字体文件扩展名（扫描用户自己安装的字体时用）
-_FONT_EXTS = (".ttf", ".ttc", ".otf", ".otc")
+from utils.fonts import FONT_EXTS as _FONT_EXTS  # 唯一定义处在 utils/fonts.py（见那里的说明）
 
 #: Linux 额外扫描的字体目录。发行版把字体装到哪、包名叫什么都不一样，
 #: 光靠 utils.fonts 的静态候选表会漏掉「用户手动拷进去的 simfang.ttf」。
@@ -422,20 +423,39 @@ def _run(command: tuple[str, ...], timeout: float, on_line=None) -> tuple[int, s
         return 127, f"{exc}"
     lines: list[str] = []
     assert proc.stdout is not None
-    for line in proc.stdout:
-        stripped = line.rstrip("\n")
-        lines.append(stripped)
-        if on_line is not None:
-            try:
-                on_line(stripped)
-            except Exception:  # 回调挂了不能连累安装进程
-                pass
+    # ⚠️ 用**读取线程 + 截止时间**读，不能 `for line in proc.stdout:`（2026-09-26
+    #    审计）：那样是阻塞读到 EOF，而超时只在读完之后才生效 —— 包管理器挂起
+    #    且不再输出时（保持 stdout 打开），`timeout` 形同虚设，GUI 的字体安装
+    #    工作线程会**永久**卡在"安装中"。这里超时就杀进程（stdout 随之关闭、
+    #    读取线程自然退出），保证调用方一定能拿到结果。
+    done = threading.Event()
+
+    def _drain() -> None:
+        try:
+            for line in proc.stdout:  # type: ignore[union-attr]
+                stripped = line.rstrip("\n")
+                lines.append(stripped)
+                if on_line is not None:
+                    try:
+                        on_line(stripped)
+                    except Exception:  # noqa: BLE001 - 回调挂了不能连累安装进程
+                        pass
+        finally:
+            done.set()
+
+    reader = threading.Thread(
+        target=_drain, name="guji-font-install-log", daemon=True
+    )
+    reader.start()
+    if not done.wait(timeout):
+        proc.kill()
+        done.wait(5)  # 等读取线程收尾，把已拿到的日志交出去
+        return 124, "\n".join(lines)
     try:
-        proc.wait(timeout=timeout)
+        proc.wait(timeout=5)
     except subprocess.TimeoutExpired:
         proc.kill()
         proc.wait()
-        return 124, "\n".join(lines)
     return proc.returncode, "\n".join(lines)
 
 

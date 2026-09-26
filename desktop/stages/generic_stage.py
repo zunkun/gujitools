@@ -7,6 +7,25 @@ import sys
 from pathlib import Path
 
 from desktop.stages.events import JsonLinesReporter, ProgressStream, emit, _real_stdout
+from utils.units import DEFAULT_RENDER_DPI
+
+
+def _json_safe(value):
+    """把 execute() 的返回值收拾成**一定能 json 序列化**的形状。
+
+    ⚠️ 为什么（2026-09-26 审计）：`emit({"type": "finished", "result": result})`
+    在同一个 `try` 里，一旦某个命令以后返回了 `Path`/`ndarray`/自定义对象，
+    `json.dumps` 会抛异常、被外层 `except Exception` 捕获 →
+    **把一个已经成功的阶段报成失败（退出码 1），而产物其实已经落盘**。
+    这里只保留 JSON 原生类型，其余一律 `str()`（result 只用于展示，GUI 不解析它）。
+    """
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(v) for v in value]
+    return str(value)
 
 
 def run_stage(config: dict) -> int:
@@ -60,7 +79,7 @@ def run_stage(config: dict) -> int:
             {
                 "type": "finished",
                 **context,
-                "result": result,
+                "result": _json_safe(result),
                 "output": output,
             }
         )
@@ -89,10 +108,10 @@ def run_extract_stage(config: dict) -> int:
     context = {"task_id": task_id, "stage": stage, "run_id": run_id}
     emit({"type": "started", **context})
     try:
-        import os
         import threading
 
         import pymupdf as fitz
+        from core.args import default_workers
         from utils.pdf_extract import parse_pages, render_pages_parallel
 
         pdf_path = Path(args["input"])
@@ -131,7 +150,13 @@ def run_extract_stage(config: dict) -> int:
         sys.stdout = interceptor
         try:
             # quick 默认与 CLI 一致为 True（自适应降级，见 _embedded_page_image）
-            workers = int(args.get("workers") or 0) or (os.cpu_count() or 4)
+            #
+            # ⚠️ 兜底必须走 core.args.default_workers()，不许再写 os.cpu_count()：
+            # 界面的参数表单不暴露 workers（EXCLUDED_KEYS），所以这里的兜底就是
+            # **用户实际拿到的并发数**。原先写 cpu_count() → 12 个线程同时
+            # fitz 渲染 6000px 大页，峰值内存与抢核把整机拖死（832MB/320 页的
+            # 《长短经》实测就是如此）。真源只有一处：core/args.py。
+            workers = int(args.get("workers") or 0) or default_workers()
             render_pages_parallel(
                 str(pdf_path),
                 page_indices,
@@ -143,7 +168,7 @@ def run_extract_stage(config: dict) -> int:
                 progress={"lock": threading.Lock(), "done": 0,
                           "total": len(page_indices)},
                 reporter=reporter,
-                dpi=float(args.get("dpi") or 300),
+                dpi=float(args.get("dpi") or DEFAULT_RENDER_DPI),
             )
         finally:
             sys.stdout = original_stdout

@@ -37,6 +37,7 @@ from desktop.workers import (
     SourceThumbnailsWorker,
     TaskRowsWorker,
     WorkerHost,
+    close_cached_documents,
     connect_queued,
 )
 from desktop.store import TaskStore
@@ -64,6 +65,12 @@ class TaskListPage(QWidget, WorkerHost):
     """
 
     open_detail = Signal(str)
+    #: 刚建好一条导入任务（源文件还没复制完、缩略图刚要开始渲）。
+    #: 宿主据此**预热详情页**：用户下一步就是点进这一行，而详情页里惰性
+    #: 构造的第四步面板要 ~150ms（机器空闲时）；等他在导入后台攥着 GIL 的
+    #: 窗口里点进去再建，会被拖成 ~2 秒（实测 1987ms）——那正是「从列表点进
+    #: 详情要等几秒」。挪到"刚点完导入、本来就在等"的时机付掉这笔开销。
+    import_queued = Signal()
 
     def __init__(self, store: TaskStore, parent=None):
         """初始化页面：构建 UI、绑定信号并刷新首次列表。
@@ -416,6 +423,8 @@ class TaskListPage(QWidget, WorkerHost):
             path, source_hash, path.stem, duplicate_confirmed=duplicate_confirmed
         )
         self.refresh()
+        # 用户下一步必是点进这一行：趁"刚点完导入"的等待期把详情页建出来
+        self.import_queued.emit()
         # 逐页缩略图 + 源文件副本：后台生成，落到任务目录 thumbnails/ 与根目录，
         # 之后不再清理。渲染的是**副本**，源文件随后被移动/删除都不影响本任务。
         worker = SourceThumbnailsWorker(
@@ -428,6 +437,7 @@ class TaskListPage(QWidget, WorkerHost):
             label=path.name,
             on_warning=lambda msg: self._toast("warning", "副本保存失败", msg),
             on_failed=lambda msg: self._toast("warning", "缩略图生成失败", msg),
+            tag=task_id,  # 归属标记：删这个任务时必须能精确停掉它自己的活
         )
 
     # ------------------------------------------------------ 导入进度提示
@@ -490,7 +500,29 @@ class TaskListPage(QWidget, WorkerHost):
     def shutdown_workers(self) -> None:
         """关程序前的收尾：先停导入后台队列（复制/缩略图），再走基类线程。"""
         self._thumb_queue.shutdown()
+        self._shutdown_hash_thread()
         super().shutdown_workers()
+
+    def _shutdown_hash_thread(self) -> None:
+        """收尾指纹线程。
+
+        ⚠️ `hash_thread = QThread(self)` 挂在**页对象**下，而基类
+        `shutdown_workers` 只认它自己登记的 `_threads`，从不碰这个属性
+        （2026-09-26 审计发现）。于是「导入 PDF 后、指纹还没算完就关程序」
+        （800MB 的书要 1~2s）会让 QThread 对象在运行中被销毁 → Qt abort。
+        哈希不可中断，只能等；等不到由 `stop_thread` 摘出父对象保命。
+        """
+        from desktop.workers.worker_host import stop_thread
+
+        stop_thread(self.hash_thread, self.HASH_SHUTDOWN_WAIT_MS, "指纹线程")
+
+    #: 指纹线程的收尾等待上限（毫秒）：整本 PDF 的 SHA-256，留够余量
+    HASH_SHUTDOWN_WAIT_MS = 5000
+
+    #: 删任务前等该任务后台导入收手的上限（毫秒）。
+    #: 缩略图渲染在下一页开头退出（单页约一两百毫秒），复制线程可能要更久；
+    #: 等不到就不删、让用户稍后重试——比留半个目录或弹"文件正被占用"好。
+    DELETE_STOP_WAIT_MS = 5000
 
     # ------------------------------------------------------------------ 删除
     def delete_task(self, task_id: str) -> None:
@@ -505,6 +537,21 @@ class TaskListPage(QWidget, WorkerHost):
             "删除任务", f"确定删除任务「{task['name']}」及其全部中间产物？", self
         )
         if not dialog.exec():
+            return
+        # ⚠️ 先关掉预览缓存里可能还开着的这本 PDF（Windows 上打开的句柄
+        # 会让 rmtree 一直 PermissionError，store 的重试救不了"永不关闭"）。
+        # 此刻在任务列表页，没有查看器在用它，关掉是安全的。
+        close_cached_documents()
+        # ⚠️ 再停掉**这个任务自己的**后台导入（复制源文件 + 渲染整本缩略图，
+        # 2400 页要 69s）。不停就删：rmtree 撞上正在写的文件（复制中的 .part
+        # 还是打开的句柄）→ 重试 8 次后失败、弹「文件正被占用」；更糟的是删完
+        # 后台线程还按旧路径继续写（2026-09-26 审计）。
+        if not self._thumb_queue.cancel_tag(task_id, wait_ms=self.DELETE_STOP_WAIT_MS):
+            # 等不到就**别硬删**：明确告诉用户稍后再试，比留半个目录好
+            self._toast(
+                "warning", "导入仍在收尾",
+                "该任务的缩略图/源文件副本还在写，请几秒后再删除。",
+            )
             return
         if not self.store.delete_task(task_id):
             # 目录被占用时 store 会保留任务记录，不留孤儿目录

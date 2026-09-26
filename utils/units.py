@@ -27,3 +27,14 @@ def mm_to_px(mm: float, dpi: float) -> float:
 def px_to_mm(px: float, dpi: float) -> float:
     """像素 → 毫米（按给定 DPI）。"""
     return float(px) * MM_PER_INCH / float(dpi)
+
+
+#: 扫描件渲染/保存的默认 DPI（**唯一定义处**）。
+#: ⚠️ 以前这个 300 在 4 个文件里各写一遍（`utils/pdf_extract.py`、
+#: `core/command_spec.py` 的 `extract.dpi` 默认值、`functions/extract.py`、
+#: `desktop/stages/generic_stage.py`），改一处必漏几处，CLI/GUI/库三方默认值
+#: 会悄悄分叉（2026-09-26 审计）。
+DEFAULT_RENDER_DPI = 300
+#: 1 英寸 = 72 点（PDF 排版单位）。poppler/PyMuPDF 的默认渲染分辨率也是 72dpi，
+#: 「zoom=1」在 PDF 语境里就等于 72dpi —— 别在业务代码里裸写 72。
+POINTS_PER_INCH = 72.0

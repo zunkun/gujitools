@@ -29,19 +29,12 @@ class ImageListWorker(QObject):
         edge: int = 96,
         effects: list | None = None,
         crops: list | None = None,
-        cache_dir: Path | None = None,
     ):
         """构造图片清单缩略图 worker。
 
         paths 为目标图片；edge 为缩略图最长边（默认 96）。effects/crops
         与 paths 对齐：非空时先按 area/border 合成效果或按像素框裁剪，
         再缩放到 edge（用于 print 列表效果预览）。
-
-        cache_dir 给定时启用**磁盘缩略图缓存**（``<stem>.jpg``）。只有
-        「既无 effect 也无 crop」的纯缩放结果才走缓存——带参数的合成结果
-        尺寸取决于参数，缓存下来会串味。命中且不比源图旧就直接读小图，
-        省掉整张原图的解码：详情页每次切阶段都会重建图条，而源图动辄
-        两三千像素。
         """
         super().__init__()
         self.paths = paths
@@ -49,18 +42,6 @@ class ImageListWorker(QObject):
         self.effects = effects
         # 与 paths 对齐的裁剪框列表（各自图片的像素坐标），None 表示不裁剪
         self.crops = crops
-        self.cache_dir = Path(cache_dir) if cache_dir else None
-
-    @staticmethod
-    def _cache_fresh(cache_file: Path, source: Path) -> bool:
-        """缓存文件存在、且不比源图旧（源图重新生成过就作废）。"""
-        try:
-            return (
-                cache_file.exists()
-                and cache_file.stat().st_mtime >= source.stat().st_mtime
-            )
-        except OSError:
-            return False
 
     @Slot()
     def run(self) -> None:

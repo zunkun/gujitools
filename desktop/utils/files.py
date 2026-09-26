@@ -10,6 +10,8 @@ import shutil
 import threading
 from pathlib import Path
 
+from utils.file_utils import replace_with_retry
+
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
 
 # 页缩略图（thumbnails/source 等）的最长边；256px 保证 area=1 半幅裁剪后仍清晰
@@ -70,8 +72,15 @@ def copy_file_atomic(source: Path, target: Path) -> Path:
     一遍）。共用一个临时名的话两边会交叉写同一个文件；各自写自己的临时
     文件则内容相同，谁最后 replace 都对。
     """
+    # ⚠️ 临时名 = 原名截断 + pid/tid + .part：NTFS 单个文件名上限 255 字符，
+    # 长书名（如《长短经.九卷.唐.赵蕤.撰.南宋时期杭州净戒院刊本…》这类古籍
+    # 文件名本身就 100+ 字符）再加 pid/tid 后缀就会超限，copy2 直接报
+    # 「系统找不到指定的路径」。把名字部分截到安全长度（pid/tid/part 约
+    # 占 40 字符），截断后的前缀 + pid/tid 仍能保证两个并发复制不重名——
+    # 同名前缀 + 不同 pid/tid 组合出的临时名彼此不同。
+    _stem = target.stem[: 255 - 45 - len(target.suffix)]
     temp = target.with_name(
-        f"{target.name}.{os.getpid():x}{threading.get_ident():x}.part"
+        f"{_stem}.{os.getpid():x}{threading.get_ident():x}{target.suffix}.part"
     )
     try:
         shutil.copy2(source, temp)
@@ -82,7 +91,7 @@ def copy_file_atomic(source: Path, target: Path) -> Path:
         except OSError:
             pass
         raise
-    os.replace(temp, target)
+    replace_with_retry(temp, target)  # Windows 上读者会让 os.replace 抛 PermissionError
     return target
 
 

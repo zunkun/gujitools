@@ -25,7 +25,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QProcess, Qt, Signal
+from PySide6.QtCore import QProcess, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView, QAbstractSlider, QAbstractSpinBox, QApplication,
     QComboBox, QLineEdit, QPlainTextEdit, QTextEdit, QWidget,
@@ -36,7 +36,7 @@ from desktop.services.stale_chain import stale_upstream
 from desktop.store import STAGES, STAGE_LABELS
 from desktop.ui import theme as T
 from desktop.ui.widgets import apply_to, bold_button
-from desktop.workers import WorkerHost
+from desktop.workers import CopySourceWorker, WorkerHost, connect_queued
 from desktop.pages.taskdetail.detect import DetectMixin
 from desktop.pages.taskdetail.history import HistoryMixin
 from desktop.pages.taskdetail.manifest import PageListMixin
@@ -97,6 +97,12 @@ class TaskDetailPage(
 
     back_requested = Signal()
 
+    #: 源文件副本缺失时，进详情页后延时多久再后台补副本（毫秒）。
+    #: 这段时间足够导入流程先落地副本；这里只为「导入时复制失败 / 老任务
+    #: 没有备份」兜底。绝不能在主线程里同步复制——800MB 的书会把进页面
+    #: 卡住几秒到几十秒（用户报的就是它）。
+    SOURCE_BACKUP_DELAY_MS = 4000
+
     def __init__(self, store, parent=None):
         """初始化详情页：建 worker 宿主、清运行态并组装 UI。
 
@@ -126,6 +132,15 @@ class TaskDetailPage(
         #: 提交被前置条件拒绝）不该罚掉用户紧接着的下一次点击——"提交被拒 →
         #: 马上点生成预览"就会踩到（rembg 自测真的红了）。
         self._run_launched_at = 0.0
+        #: 源文件副本缺失时的「延时后台补一份」定时器（见 _schedule_source_backup）
+        self._backup_timer = QTimer(self)
+        self._backup_timer.setSingleShot(True)
+        self._backup_timer.timeout.connect(self._run_source_backup)
+        self._backup_task_id: str | None = None
+        #: 「按源 PDF 名派生第四步默认 PDF 名/古籍名」的挂起值：第四步面板是
+        #: 惰性的，set_task 只记下源名，等面板真被建出来再应用（见 view.py
+        #: 的 _apply_pending_source_defaults）
+        self._pending_source_stem: str | None = None
         #: 最近一次的阶段状态：执行权变化时要重刷按钮，但不值得为此再读一次盘
         self._last_stage_state: dict = {"status": "pending"}
         self.detect_cache: dict[str, list[tuple] | None] = {}
@@ -146,6 +161,8 @@ class TaskDetailPage(
         self._init_ui()
         # 进度事件的界面刷新节流器（见 StageRunnerMixin._PROGRESS_UI_MS）
         self._init_progress_ui()
+        # 页面尺寸/检测框的攒批落盘（见 StageRunnerMixin._ANNOT_FLUSH_MS）
+        self._init_annotation_batch()
         # 参数暂存：面板报到"用户改了参数"就防抖写 drafts/<阶段>.json
         self._install_draft_hooks()
         # 第三步实时预览：改参数/翻页时只重算当前页（见 rembg_live.RembgLiveMixin）
@@ -165,16 +182,35 @@ class TaskDetailPage(
         task = self.store.get_task(task_id)
         if not task:
             return
+        # ⚠️ 复位**跨任务会串味**的两个第四步状态（2026-09-26 审计）：
+        #    ① `_print_dirty`：在任务 A 拖过版面，打开任务 B 时 B 的第四步会误显示
+        #       「● 版面已修改，点击「生成 PDF」生效」并把主按钮加粗；
+        #    ② print 面板的 `_last_applied`（供「放弃本次修改」回填）：不重置的话
+        #       在 B 点「放弃本次修改」会把 A 的参数（含 A 派生的 pdf_name/title_text）
+        #       回填进来 —— 后续可能用 A 的名字生成 B 的 PDF。
+        #    ⚠️ 面板是惰性的：**只能挂"待复位"标记**，等它真被建出来时再应用，
+        #    绝不能在这里 `self.control_stack.widget(3)` 把它拽出来。
+        self._print_dirty = False
+        self._pending_print_reset = True
+        self._apply_pending_print_reset()
         # ⚠️ 必须在覆盖 task_id 之前落盘：暂存要写进"上一个任务"的目录
         self._flush_param_drafts()
+        # 标注攒批同理：攒着的尺寸/框属于**上一个任务**，切换后写就串任务了
+        self._flush_annotations()
         self.task_id = task_id
         # ⚠️ 一律用任务目录里的**备份** PDF，不用索引里的 source_path：
         # 源文件在用户磁盘上会被移动/改名/删除，一走就「渲染失败」；
         # 备份随任务走，删除任务时一起清掉，任务才是自包含的。
-        # 备份缺失但源还在（老任务/复制失败）时 ensure_source_copy 顺手补一份。
-        self.source_path = self.store.ensure_source_copy(task_id) or Path(
+        #
+        # ⚠️⚠️ **这里绝不做同步复制**：老实现是 `ensure_source_copy()`，副本
+        # 缺失时**在主线程里**把整个 PDF 复制一遍——一本 800MB 的书就是进页面
+        # 卡住几秒到几十秒（用户报「进详情页要等一会」的真凶）。副本由导入
+        # 后台任务负责落盘；这里只用**已落地**的副本，没有就先用源文件（两者
+        # 二进制相同，渲染结果一致），后台补备份见 _schedule_source_backup()。
+        self.source_path = self.store.source_copy_path(task_id) or Path(
             task["source_path"]
         )
+        self._schedule_source_backup(task_id)
         if not self.source_path.exists():
             self._toast(
                 "error",
@@ -186,12 +222,23 @@ class TaskDetailPage(
         self.source_label.setText(self.source_path.name)
         # 切任务时先把各阶段面板复位到默认：这些面板是长生命周期控件，
         # 上个任务手改过的参数（area/border/type/zoom…）否则会带到新任务上，
-        # 而新任务往往没有历史记录可覆盖回来
+        # 而新任务往往没有历史记录可覆盖回来。
+        # ⚠️ 四个面板都是**惰性**的，这里必须走 `peek()`（不触发构造）：直接
+        #    `widget(i).reset_to_default()` 会经属性转发把面板全部现造出来，
+        #    进详情页的时间就又回到"要为没进去的步骤买单"（用户明确要求
+        #    第 2/3/4 步谁进去谁才建）。没建的面板本来就没动过，无需复位。
         for index in range(self.control_stack.count()):
-            self.control_stack.widget(index).reset_to_default()
+            host = self.control_stack.widget(index)
+            peek = getattr(host, "peek", None)
+            panel = peek() if callable(peek) else host
+            if panel is not None:
+                panel.reset_to_default()
         # 第四步默认 PDF 名/古籍名随源 PDF 名派生（xxx[重制].pdf / xxx）；
-        # 若该任务已有 print 历史，进入第四步时会再回填历史配置
-        self.control_stack.widget(3).set_source_defaults(self.source_path.stem)
+        # ⚠️ 同样不能在这里碰面板本体：记下源名，面板真被建出来时再应用
+        #    （见 _init_ui 里挂的 add_created_hook）。已有 print 历史时它会在
+        #    进入第四步时再回填历史配置。
+        self._pending_source_stem = self.source_path.stem
+        self._apply_pending_source_defaults()
         self.log_view.clear()
         self.detect_cache.clear()
         # 实时预览状态跨任务必须清干净：临时目录里的旧图 + "哪些页算过"的记忆
@@ -217,12 +264,80 @@ class TaskDetailPage(
         self._refresh_stage_views()
         self._select_stage(0)
 
+    def _schedule_source_backup(self, task_id: str) -> None:
+        """副本缺失且源还在时，**延时在后台**补一份（绝不在主线程里复制）。
+
+        延时 `SOURCE_BACKUP_DELAY_MS`：导入流程本身就在复制，这里只为
+        「导入时复制失败 / 早期版本没有备份的老任务」兜底，不该和正在跑的
+        导入任务重复劳动（`copy_file_atomic` 各自的临时文件不同名，重复复制
+        不会写坏文件，但白读白写一遍 800MB）。
+        """
+        if self.store.source_copy_path(task_id) is not None:
+            return
+        if not self._source_exists(task_id):
+            return  # 源也没了：set_task 已经弹过「PDF 缺失」
+        self._backup_task_id = task_id
+        self._backup_timer.start(self.SOURCE_BACKUP_DELAY_MS)
+
+    def _source_exists(self, task_id: str) -> bool:
+        task = self.store.get_task(task_id)
+        if not task:
+            return False
+        return Path(str(task.get("source_path") or "")).is_file()
+
+    def _run_source_backup(self) -> None:
+        """定时器到期：真正去后台复制（用户此时早就在用界面了）。"""
+        task_id = self._backup_task_id
+        self._backup_task_id = None
+        if not task_id or self.task_id != task_id:
+            return
+        if self.store.source_copy_path(task_id) is not None:
+            return  # 导入任务已经补上了
+        task = self.store.get_task(task_id)
+        if not task:
+            return
+        source = Path(str(task.get("source_path") or ""))
+        if not source.is_file():
+            return
+        target = self.store.task_dir(task_id) / source.name
+        self.run_worker(
+            lambda: CopySourceWorker(source, target),
+            lambda worker, thread: (
+                connect_queued(
+                    self,
+                    worker.finished,
+                    lambda _path: self._on_source_backup_ready(),
+                    thread,
+                ),
+                worker.finished.connect(thread.quit),
+                worker.failed.connect(thread.quit),
+            ),
+        )
+
+    def _on_source_backup_ready(self) -> None:
+        """副本补好了：若用户还在本任务上，把当前 PDF 换成副本。
+
+        ⚠️ 只有在**还在看同一个任务**时才能换（定时器/线程回来时用户可能
+        已经切走或返回列表了）。
+        """
+        if not self.task_id:
+            return
+        copy = self.store.source_copy_path(self.task_id)
+        if copy is None or self.source_path == copy:
+            return
+        self.source_path = copy
+        self.source_label.setText(copy.name)
+        self.source_pdf_viewer.set_pdf(
+            copy, cache_dir=self.store.source_thumbnails_dir(self.task_id)
+        )
+
     def _on_back(self) -> None:
         if self.process and self.process.state() != QProcess.NotRunning:
             self._toast("warning", "任务进行中", "请先中断当前子任务再返回。")
             return
         # 离开前把待写暂存落盘：task_id 马上被清掉，之后再写就找不到任务了
         self._flush_param_drafts()
+        self._flush_annotations()
         self.task_id = None
         self.source_path = None
         # 释放 PDF：不释放的话回到列表删除该任务时，rmtree 可能撞上文件占用
@@ -266,9 +381,17 @@ class TaskDetailPage(
         super().keyPressEvent(event)
 
     def _select_stage(self, index: int) -> None:
-        # 离开当前阶段前把待写暂存落盘（防抖未到期就走人不该丢改动）
+        # 离开当前阶段前把待写暂存落盘、把未提交的版面拖动补发
+        # （防抖未到期/拖住未松手就走人不该丢改动）
+        self.flush_layout_pending()
         self._flush_param_drafts()
         self.step_bar.set_current(index)
+        # ⚠️ 面板是**惰性**的：用户切到这一步，就现在把它建出来（不建的话
+        #    左侧控制区是空白）。反过来，没切过来的步骤一直不建——这正是
+        #    用户 2026-09-25 要求的"谁进去谁才建"。
+        target = self.control_stack.widget(index)
+        if hasattr(target, "peek") and target.peek() is None:
+            target.panel  # noqa: B018 - 触发构造
         self.control_stack.setCurrentIndex(index)
         self.preview_stack.setCurrentIndex(index)
         # 步骤三：主按钮为「生成预览」，下方另有「提交本次任务」；
@@ -553,9 +676,32 @@ class TaskDetailPage(
             self.process.waitForFinished(1500)
         if self.detect_process and self.detect_process.state() != QProcess.NotRunning:
             self.detect_process.kill()
+        # ⚠️ 先把「拖住图片框不松手」的版面改动补发出去，再走落盘与线程收尾：
+        #    rect_changed 只在 mouseRelease 发，不补发就会**丢掉这次拖动**
+        #    （2026-09-26 审计）。
+        self.flush_layout_pending()
         self._flush_param_drafts()
         self.shutdown_all_workers()
         event.accept()
+
+    def flush_layout_pending(self) -> None:
+        """把各处"未提交的界面改动"补发/落盘（关窗口、切步骤、切页前都要调）。
+
+        目前是第四步的版面画布：拖动中不落盘，只在松手/补发时提交。
+
+        ⚠️ **只按具体的类 `findChildren`，绝不用 `getattr(widget, ...)` 探测能力**：
+        四个阶段面板是 `LazyPanelHost`，属性转发（`__getattr__`）会**立刻把面板
+        构造出来**——那就把用户要求的「不进去就不建」破坏掉了。（2026-09-26 自己
+        踩到：写成 `getattr(w, "flush_pending", None)` 之后，`detail_prewarm`
+        护栏直接红成"四个面板全建"。）
+        """
+        from desktop.components.viewers.print_layout_canvas import PrintLayoutCanvas
+
+        for canvas in self.findChildren(PrintLayoutCanvas):
+            try:
+                canvas.flush_pending()
+            except RuntimeError:
+                pass  # 控件已析构
 
     def shutdown_all_workers(self) -> None:
         """连同各预览控件自己的缩略图线程一起收尾。
@@ -565,6 +711,11 @@ class TaskDetailPage(
         """
         self.shutdown_workers()
         for widget in self.findChildren(QWidget):
+            # ⚠️ 没建过的惰性面板直接跳过：`getattr` 探测会被 `LazyPanelHost` 的
+            #    属性转发接住，顺手把面板构造出来——关页面时白建四个面板
+            #    （2026-09-26 审计：同一类坑见 flush_layout_pending）。
+            if hasattr(widget, "peek") and widget.peek() is None:
+                continue
             shutdown = getattr(widget, "shutdown_workers", None)
             if callable(shutdown):
                 try:

@@ -92,11 +92,21 @@ def _build_for_subcommand(args, command: str) -> CommandArgs:
     config_path = getattr(args, "config", None)
     if config_path is not None:
         config_data = load_command_config(config_path, command)
-        # 布尔类型若为 False 视为「未显式开启」，不覆盖配置文件中的 True
+        # 布尔类型若为 False 视为「未显式开启」，不覆盖配置文件中的 True。
+        #
+        # ⚠️ 但**默认值是 None 的 `store_false` 开关是例外**（2026-09-26 审计）：
+        #    `--no-quick` 是 `action="store_false", default=None` —— 只有用户真的
+        #    传了它才会得到 False，这就是**显式值**。原来的过滤把它一起丢掉，
+        #    于是「配置里 quick: true + 命令行 --no-quick」关不掉 quick，
+        #    而且没有任何提示（这是本项目唯一的否定式开关）。
+        #    新增 `store_false` 开关时**必须**登记进这个集合，
+        #    护栏 `tests/selftests/cli_flags.py` 会盯着。
+        _EXPLICIT_FALSE_KEYS = {"quick"}
         cli_kwargs = {
             key: value
             for key, value in cli_kwargs.items()
-            if not isinstance(value, bool) or value
+            if value is not None
+            and (not isinstance(value, bool) or value or key in _EXPLICIT_FALSE_KEYS)
         }
         config_data.update(cli_kwargs)
         cli_kwargs = config_data

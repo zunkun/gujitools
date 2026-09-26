@@ -6,7 +6,10 @@
 
 from __future__ import annotations
 
+import atexit
+from collections import OrderedDict
 from pathlib import Path
+from typing import Callable
 
 from PySide6.QtCore import QObject, QPointF, Qt, Signal, Slot
 from PySide6.QtGui import QColor, QFont, QImage, QFontMetrics, QPainter
@@ -17,6 +20,7 @@ from utils.box_geometry import (
     parse_border_mm,
 )
 from desktop.utils.files import THUMBNAIL_EDGE
+from utils.file_utils import write_bytes_atomic
 
 
 def region_canvas_specs(
@@ -95,6 +99,83 @@ def compose_region_output(image: QImage, boxes: list, area: int, border_mm, dpi:
 PRINT_PREVIEW_TARGET_EDGE = 1600
 PRINT_PREVIEW_MIN_PX_PER_MM = 2.0
 PRINT_PREVIEW_MAX_PX_PER_MM = 8.0
+
+#: 渲染一页缩略图之后让出 GIL 的比例（让出时间 = 刚花掉的时间 × 这个值）。
+#: PyMuPDF 渲染 5000×4400 的扫描页约 160ms 且**几乎全程持有 GIL**：不让出时
+#: GUI 主线程只能捡到 ~2% 的时间片（实测另一线程 1ms 心跳被拖到 175ms，界面
+#: 就是"卡死"）。0.5 换来约 1/3 的时间片给界面，代价是缩略图整体慢约 50%
+#: ——它是纯后台活，而界面卡住是用户直接能感觉到的。
+THUMB_YIELD_RATIO = 0.5
+
+
+# --------------------------------------------------------------- 共享文档缓存
+# ⚠️ 为什么同一本 PDF 只打开一次（2026-09-25，修「切缩略图卡、多点几下卡死」）
+#   此前每次单页渲染都 `fitz.open(整本 832MB)` → 渲一页 → close。用户每点
+#   一次缩略图就是一次完整的打开+渲染，而且**每次点击各起一个线程**：连点
+#   N 下就有 N 个渲染线程同时攥着 GIL（每页 ~105ms），主线程捡不到时间片，
+#   整个界面冻住——"多点几下程序卡死"就是 N 份渲染叠出来的。
+#   现在两件事一起做：
+#   1. `_PDF_DOC_CACHE` 让同一文档保持打开、跨请求复用（LRU，最多 2 本）；
+#   2. `single_flight()`（见 `render_lock`）让**全进程同一时刻最多一个**页渲染
+#      在跑——排队的线程睡在锁上（不烧 CPU 不抢 GIL），主线程只在真正渲染的
+#      ~105ms 里被捏一下，之后立刻恢复。配合 pdf_viewer 的过期请求丢弃
+#      （is_stale），排队的陈旧点击根本不会渲染。
+#: 共享文档缓存的容量（本）。第二本是给放大弹窗换 PDF 场景的余量。
+_PDF_DOC_CACHE_MAX = 2
+#: 路径 → 已打开的 fitz.Document（LRU，最近用的在队尾）
+_PDF_DOC_CACHE: "OrderedDict[str, object]" = OrderedDict()
+# 单页渲染的全局互斥锁：同时只允许一个渲染使用共享文档（fitz.Document
+# 不是线程安全的，且渲染全程攥 GIL，多线程并行只会互相拖慢 + 冻住界面）。
+# ⚠️ 锁本体已挪到 `desktop/workers/render_lock.py`（零依赖小模块）：**批量
+# 缩略图与导入后台任务也要共用同一把**，而它们不能从本模块 import——那会把
+# 第四步预览的整套依赖拖进启动路径（见 workers/__init__.py 的惰性导出）。
+from desktop.workers.render_lock import single_flight  # noqa: E402  (位置即说明)
+
+
+def close_cached_documents() -> None:
+    """关掉共享文档缓存里的全部文档，释放 Windows 文件句柄。
+
+    ⚠️ 删除任务/关闭文档前必须调用：缓存里的 Document 一直握着 PDF 文件，
+    Windows 上不先关掉，`rmtree` 会一直 PermissionError（store 的重试兜底
+    救不了"永远不关"的句柄）。会等到当前正在跑的那次渲染结束（≤几百 ms）。
+    """
+    with single_flight():
+        while _PDF_DOC_CACHE:
+            _key, document = _PDF_DOC_CACHE.popitem()
+            try:
+                document.close()
+            except Exception:  # noqa: BLE001 - 关不掉就留给进程退出回收
+                pass
+
+
+# 解释器退出前把文档关干净：PyMuPDF 的 Document 活过 fitz 模块自身的
+# 清理阶段会在 C 层崩（0xC0000409 之类），atexit 保证先于模块回收执行。
+atexit.register(close_cached_documents)
+
+
+def _get_shared_document(path: Path):
+    """取（或打开）共享文档。**必须在 ``single_flight()`` 内调用**。
+
+    fitz.Document 非线程安全，但"持锁串行使用"是安全的——同一时刻只有一个
+    线程在碰它。命中缓存直接复用（这正是本缓存的意义：省掉每点一次就重新
+    解析 832MB xref 的开销），未命中才打开并插入 LRU。
+    """
+    key = str(path)
+    document = _PDF_DOC_CACHE.pop(key, None)
+    if document is not None:
+        _PDF_DOC_CACHE[key] = document  # 挪到队尾（最近使用）
+        return document
+    import fitz
+
+    document = fitz.open(key)
+    _PDF_DOC_CACHE[key] = document
+    while len(_PDF_DOC_CACHE) > _PDF_DOC_CACHE_MAX:
+        _old_key, old_document = _PDF_DOC_CACHE.popitem(last=False)
+        try:
+            old_document.close()
+        except Exception:  # noqa: BLE001
+            pass
+    return document
 
 
 def preview_px_per_mm(page_w_mm: float, page_h_mm: float,
@@ -354,6 +435,9 @@ class PreviewWorker(QObject):
     thumbnail_ready = Signal(int, QImage)
     completed = Signal()
     failed = Signal(int, str)
+    #: 请求在真正渲染前被判定为过期（用户已点了别的页），什么都没渲染。
+    #: 宿主据此结束线程即可，不要当错误处理。
+    skipped = Signal()
 
     def __init__(
         self,
@@ -364,6 +448,8 @@ class PreviewWorker(QObject):
         cache_dir: Path | None = None,
         effect: dict | None = None,
         print_spec: dict | None = None,
+        render_missing: bool = True,
+        pages: list[int] | None = None,
     ):
         """构造预览渲染 worker。
 
@@ -380,6 +466,13 @@ class PreviewWorker(QObject):
         密度的上限由 compose_print_page 夹住（不超过源图原生密度）。
         ⚠️ 给了 target_edge 时，longest_edge 应传 0（画布已按该密度合成，
         再缩一次纯粹白扔细节）。
+
+        `render_missing=False`：**只读缓存，不渲染缺页**。给「另一个生产者
+        正在填这个缓存目录」的场景用（导入后台任务在逐页写缩略图）——两边
+        各跑一遍全量渲染等于把工作量翻倍，而且两个 PyMuPDF 循环会互相抢
+        GIL，界面直接冻住（2026-09-25 实测）。
+        `pages`：只处理这些页（None = 全部）；配合 render_missing=False 就是
+        「只把我还没有的那几页从缓存里读出来」。
         """
         super().__init__()
         self.path = path
@@ -391,6 +484,25 @@ class PreviewWorker(QObject):
         # 去底色效果合成参数：{"boxes": [[x1,y1,x2,y2],...], "area": int, "border": str|None}
         self.effect = effect
         self.print_spec = print_spec
+        self.render_missing = render_missing
+        self.pages = list(pages) if pages is not None else None
+        #: 最近一次 PDF 单页渲染的 JPEG 字节（供宿主做页间缓存，见 _render_pdf_page）
+        self.last_jpeg: bytes | None = None
+        #: 宿主提供的"这条请求是否已过期"回调（如：用户已经点了别的页）。
+        #: 过期的请求在拿到渲染锁后直接跳过、发 skipped——不渲染、不白烧
+        #: 105ms 的 GIL。批量缩略图模式不用它。
+        self.is_stale: Callable[[], bool] | None = None
+        #: 收尾时置位：批量缩略图在**页边界**退出（见 cancel 与 _render_all_thumbnails）
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        """请求中止。
+
+        批量缩略图（整本几百上千页）会在**下一页开头**退出——已经渲好的页都已
+        落盘，重进会命中缓存，不会白干。单页渲染不可中断（一次 get_pixmap
+        只有 ~160ms，等它一下比打断安全）。
+        """
+        self._cancelled = True
 
     @Slot()
     def run(self) -> None:
@@ -401,6 +513,8 @@ class PreviewWorker(QObject):
                 return
             if self.path.suffix.lower() == ".pdf":
                 image = self._render_pdf_page()
+                if image is None:
+                    return  # 过期请求：skipped 已发出
             else:
                 image = self._load_image()
             self.finished.emit(self.page, image, str(self.path))
@@ -409,11 +523,24 @@ class PreviewWorker(QObject):
             if self.thumbnails:
                 self.completed.emit()
 
-    def _render_pdf_page(self) -> QImage:
+    def _render_pdf_page(self) -> QImage | None:
+        """渲染单页大图；请求过期时发 skipped 并返回 None。
+
+        ⚠️ 全程持 ``single_flight()``：共享文档只能串行使用（非线程安全），
+        且渲染本身攥 GIL，多线程并行只会把界面冻死。排队中的线程睡在锁上，
+        不烧 CPU；排到锁后先查一次 is_stale——用户在这期间点了别的页，这条
+        请求就不必再渲染了。
+        """
         import fitz
 
-        document = fitz.open(str(self.path))
-        try:
+        if self.is_stale is not None and self.is_stale():
+            self.skipped.emit()
+            return None
+        with single_flight():
+            if self.is_stale is not None and self.is_stale():
+                self.skipped.emit()
+                return None
+            document = _get_shared_document(self.path)
             self.metadata.emit(document.page_count, str(self.path))
             page = document.load_page(self.page)
             rect = page.rect
@@ -426,20 +553,50 @@ class PreviewWorker(QObject):
                 else 1.0
             )
             pixmap = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
-            return QImage.fromData(pixmap.tobytes("jpg", jpg_quality=80))
-        finally:
-            document.close()
+            # ⚠️ 顺手留一份 JPEG 字节：宿主（如 PDF 查看器）拿它做**页间缓存**，
+            # 命中时只要 QImage.fromData（实测 25ms）而不是重渲（187ms，且渲染
+            # 途中攥着 GIL 105ms）。加载图片的路径（_load_image）不经过这里，
+            # 缓存只对 PDF 页有效，见 pdf_viewer 的 _page_cache。
+            self.last_jpeg = pixmap.tobytes("jpg", jpg_quality=80)
+            return QImage.fromData(self.last_jpeg)
 
     def _render_all_thumbnails(self) -> None:
+        """逐页取缩略图：**命中缓存就直接用**，缺页按 ``render_missing`` 决定渲不渲。
+
+        ⚠️ 渲染一页扫描件（5000×4400 的内嵌 JPEG）要 ~160ms，而且 PyMuPDF
+        在这 160ms 里几乎一直攥着 GIL（实测另一线程 1ms 的心跳被拖到 175ms）。
+        所以：
+        1. **别人正在填这个缓存目录时（render_missing=False）一页都不要渲**——
+           原先两边各跑一遍全量渲染，工作量翻倍、GIL 互相抢，界面直接冻住；
+        2. 真要渲染时**按单页耗时成比例让出 GIL**，否则主线程只拿到 ~2% 的
+           时间片（用户看到的正是「导入期间整个界面卡住」）。
+        """
+        import time
+
         import fitz
 
         if self.cache_dir:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
-            (self.cache_dir / ".meta").write_text(str(self.thumbnail_edge))
+            write_bytes_atomic(
+                self.cache_dir / ".meta", str(self.thumbnail_edge).encode("utf-8")
+            )
         document = fitz.open(str(self.path))
         try:
             self.metadata.emit(document.page_count, str(self.path))
-            for page_number in range(document.page_count):
+            order = (
+                list(self.pages)
+                if self.pages is not None
+                else list(range(document.page_count))
+            )
+            for page_number in order:
+                if self._cancelled:
+                    # ⚠️ 没有这句时，整本缩略图渲染在收尾时只能"等它跑完"：
+                    # 几百上千页 × ~160ms/页，`shutdown_workers` 的 800ms 必然
+                    # 超时，线程被摘出父对象后还在后台啃 GIL（2026-09-26 审计）。
+                    # 在页边界退出即可——已经渲好的页都落盘了，重进会命中缓存。
+                    break
+                if not (0 <= page_number < document.page_count):
+                    continue
                 image = None
                 # 命名与导入缩略图一致：1 起始、四位补零（0001.jpg），自然排序
                 cache_file = (
@@ -450,16 +607,29 @@ class PreviewWorker(QObject):
                 if cache_file and cache_file.exists():
                     image = QImage(str(cache_file))
                 if image is None or image.isNull():
-                    page = document.load_page(page_number)
-                    rect = page.rect
-                    scale = self.thumbnail_edge / max(rect.width, rect.height)
-                    pixmap = page.get_pixmap(
-                        matrix=fitz.Matrix(scale, scale), alpha=False
-                    )
-                    data = pixmap.tobytes("jpg", jpg_quality=70)
+                    if not self.render_missing:
+                        continue  # 只读通道：缺页交给正在填缓存的那个生产者
+                    started = time.perf_counter()
+                    # ⚠️ 渲染段也要进**同一把单飞锁**：批量补页与用户的单页
+                    # 点击原来是各渲各的，两个 PyMuPDF 渲染并行 = GIL 互相抢。
+                    # 逐页进出锁（不是包整批）：用户点一下最多排在**一页**后面
+                    # （~160ms），而且让出 GIL 的 sleep 在锁外，排队期间界面照常。
+                    with single_flight():
+                        page = document.load_page(page_number)
+                        rect = page.rect
+                        scale = self.thumbnail_edge / max(rect.width, rect.height)
+                        pixmap = page.get_pixmap(
+                            matrix=fitz.Matrix(scale, scale), alpha=False
+                        )
+                        data = pixmap.tobytes("jpg", jpg_quality=70)
                     image = QImage.fromData(data)
                     if cache_file:
-                        cache_file.write_bytes(data)
+                        # 原子写：截断的缩略图会被 mtime 判据永久当成有效缓存
+                        write_bytes_atomic(cache_file, data)
+                    # 让出量与刚花掉的耗时成比例：GUI 拿到约 1/3 的时间片
+                    spent_ms = (time.perf_counter() - started) * 1000
+                    yield_ms = min(60.0, max(3.0, spent_ms * THUMB_YIELD_RATIO))
+                    time.sleep(yield_ms / 1000)
                 self.thumbnail_ready.emit(page_number, image)
         finally:
             document.close()

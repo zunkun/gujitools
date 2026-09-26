@@ -52,6 +52,41 @@ def connect_queued(owner, signal, slot, thread=None) -> QObject:
     return relay
 
 
+#: 收尾等了超时、但**仍在运行**的线程。必须留引用：QThread 对象一旦在
+#: "还在跑"的状态下被销毁，Qt 会直接 abort 整个进程
+#: （`QThread: Destroyed while thread is still running`）。
+_DETACHED_THREADS: list[QThread] = []
+
+
+def stop_thread(thread: QThread, timeout_ms: int, label: str) -> bool:
+    """请线程收手并最多等 `timeout_ms`；等不到就**摘下来别让它被销毁**。
+
+    返回 True 表示已结束。
+
+    为什么不能只 `quit()+wait()+丢引用`（2026-09-26 审计）
+        `quit()` 只结束线程的事件循环，打不断正在执行的槽。本项目里
+        `PreviewWorker._render_all_thumbnails`（整本缩略图）与 `PreviewWorker`
+        的单页渲染都是长阻塞循环，`HashWorker` 要算完整本 PDF 的 SHA-256
+        （800MB 约 1~2s）。这些线程都 parent 在 widget 上，而项目的退出路径是
+        「worker 线程仍在跑时先销毁 widget」→ QThread 对象被销毁 → Qt abort
+        （用户看到的是"关程序时崩一下"）。等不到时的正确做法不是假装成功，
+        而是把线程从父对象上摘下来、由模块级列表持有引用，让它自然跑完。
+    """
+    if thread is None or not thread.isRunning():
+        return True
+    thread.quit()
+    if thread.wait(timeout_ms):
+        return True
+    # 等不到：保命优先 —— 换父、留住引用，绝不让它在跑着的时候被析构
+    _DETACHED_THREADS.append(thread)
+    try:
+        thread.setParent(None)
+    except (RuntimeError, TypeError):  # 对象已在 C++ 侧销毁
+        pass
+    print(f"[shutdown] {label} 未在 {timeout_ms}ms 内结束，已摘出父对象避免崩溃")
+    return False
+
+
 class WorkerHost:
     """Mixin：在拥有者 widget 内启动一次性后台 worker 线程。"""
 
@@ -89,9 +124,26 @@ class WorkerHost:
                 container.remove(thread)
 
     def shutdown_workers(self) -> None:
-        """退出并等待所有后台线程（最多 800ms/线程），随后清空引用。"""
-        for thread in self._threads:
-            thread.quit()
-            thread.wait(800)
+        """退出并等待所有后台线程，随后清空引用表。
+
+        先给每个 worker 发一次 `cancel()`（有的话）——批量缩略图那种长循环
+        只有收到中止信号才会在页边界退出（见 `PreviewWorker.cancel`），
+        不然 `wait` 注定超时、线程被摘出去后还在后台啃 GIL。
+        等不到的线程交给 `stop_thread` 摘出父对象（否则 QThread 在运行中被销毁
+        会让 Qt abort —— 见 `stop_thread` 的说明）。
+        """
+        for worker in list(self._workers):
+            cancel = getattr(worker, "cancel", None)
+            if callable(cancel):
+                try:
+                    cancel()
+                except Exception:  # noqa: BLE001 - 收尾尽力而为
+                    pass
+        for thread in list(self._threads):
+            stop_thread(thread, self.SHUTDOWN_WAIT_MS, "后台线程")
         self._threads.clear()
         self._workers.clear()
+
+    #: 单个后台线程的收尾等待上限（毫秒）。长阻塞的渲染循环等不到就会被摘出去，
+    #: 不让它带着父对象一起被析构。
+    SHUTDOWN_WAIT_MS = 800

@@ -27,10 +27,24 @@
 from __future__ import annotations
 
 from collections import deque
+from typing import NamedTuple
 
 from PySide6.QtCore import QObject, QThread, QTimer, Signal
 
 from desktop.workers.worker_host import connect_queued
+
+
+class _Job(NamedTuple):
+    """一个排队中的后台 job。
+
+    `tag` 是归属标记（本项目传 task_id）：删任务时要能精确停掉「这个任务自己的」
+    job，而不是把整个队列一刀切（见 `cancel_tag`）。
+    """
+
+    worker: QObject
+    label: str
+    callbacks: dict
+    tag: str | None = None
 
 
 class SerialJobQueue(QObject):
@@ -58,11 +72,13 @@ class SerialJobQueue(QObject):
     def __init__(self, owner: QObject):
         """owner 为宿主 widget（主线程）；线程与中继都挂在它下面。"""
         super().__init__(owner)
-        #: 待跑的 (worker, label, 回调表)
-        self._pending: deque[tuple[QObject, str, dict]] = deque()
+        #: 待跑的 job（见 _Job）
+        self._pending: deque[_Job] = deque()
         self._thread: QThread | None = None
         self._worker: QObject | None = None
         self._label = ""
+        #: 正在跑的 job 的 tag（用于按任务取消，见 cancel_tag）
+        self._running_tag: str | None = None
         self._relays: list[QObject] = []
         #: True = 还没放行（正在等页面把列表画完）
         self._gated = False
@@ -77,10 +93,16 @@ class SerialJobQueue(QObject):
         label: str = "",
         on_warning=None,
         on_failed=None,
+        tag: str | None = None,
     ) -> None:
-        """排队一个 job；等 ``release()``（或超时）后按提交顺序执行。"""
+        """排队一个 job；等 ``release()``（或超时）后按提交顺序执行。
+
+        `tag` 给这个 job 打归属标记（本项目传 task_id），供 `cancel_tag` 精确
+        取消"某个任务的活"——删任务时必须先停掉它自己的后台导入，否则
+        `rmtree` 会撞上正在写的文件（见 `cancel_tag`）。
+        """
         self._pending.append(
-            (worker, label, {"warning": on_warning, "failed": on_failed})
+            _Job(worker, label, {"warning": on_warning, "failed": on_failed}, tag)
         )
         # 先扣住：列表行还没画出来，现在开工只会抢 GIL 把回程拖慢
         self._gated = True
@@ -111,6 +133,38 @@ class SerialJobQueue(QObject):
         """还有 job 在跑或排队。"""
         return self._thread is not None or bool(self._pending)
 
+    def cancel_tag(self, tag: str | None, wait_ms: int = 3000) -> bool:
+        """取消某个 tag（任务）名下的活：丢掉排队的、让在跑的收手并等它。
+
+        ⚠️ 为什么需要它（2026-09-26 审计）：`delete_task` 只关预览缓存就删目录，
+        不管该任务**自己的**后台导入（复制源文件 + 渲染整本缩略图，2400 页要
+        69s）。`rmtree` 撞上正在写的文件 → 重试 8 次后失败，用户看到
+        「文件正被占用」；更糟的是删完后台线程还按旧路径继续写。
+
+        返回 True 表示该任务名下的活已经全部停下（可以安全删目录）；
+        False 表示超时仍未收手（调用方应告知用户稍后重试，别硬删）。
+        """
+        if tag is None:
+            return True
+        self._pending = deque(job for job in self._pending if job.tag != tag)
+        if self._running_tag != tag:
+            return True
+        worker, thread = self._worker, self._thread
+        if worker is not None and hasattr(worker, "cancel"):
+            # 缩略图渲染循环会在下一页开头退出（单页最长约一两百毫秒）
+            worker.cancel()
+        # 复制线程是 daemon，cancel() 打不断它；worker 自己会在收手时短暂 join
+        # 一下（否则 .part 文件还开着，rmtree 照样失败）。
+        waiter = getattr(worker, "wait_copy", None)
+        if callable(waiter):
+            try:
+                waiter(wait_ms / 1000)
+            except Exception:  # noqa: BLE001 - 收尾尽力而为
+                pass
+        if thread is None:
+            return True
+        return thread.wait(wait_ms)
+
     def shutdown(self, wait_ms: int = 800) -> None:
         """退出收尾：停表、丢弃排队的活、让当前 job 尽快退出。
 
@@ -140,7 +194,8 @@ class SerialJobQueue(QObject):
         """有空位、已放行且队列非空时，启动下一个 job。"""
         if self._thread is not None or self._gated or not self._pending:
             return
-        worker, label, callbacks = self._pending.popleft()
+        job = self._pending.popleft()
+        worker, label, callbacks = job.worker, job.label, job.callbacks
         thread = QThread(self)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
@@ -175,6 +230,7 @@ class SerialJobQueue(QObject):
             )
         )
         self._thread, self._worker, self._label = thread, worker, label
+        self._running_tag = job.tag
         thread.start()
         self.job_started.emit(label)
 
@@ -185,6 +241,7 @@ class SerialJobQueue(QObject):
         self._thread = None
         self._worker = None
         self._label = ""
+        self._running_tag = None
         self._relays.clear()  # 中继已随线程 deleteLater，这里只丢 Python 引用
         thread.deleteLater()
         self.job_finished.emit(label)

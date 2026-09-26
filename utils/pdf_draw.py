@@ -24,6 +24,22 @@ def _used_names(pdf) -> set:
     return used
 
 
+def _registered_paths(pdf) -> dict:
+    """该 PDF 实例上「字体文件路径 → 注册名」的映射（挂在实例上，跨链共享）。
+
+    ⚠️ 只按**注册名**去重不够（2026-09-26 审计）：标题链与页码链各调一次
+    `build_font_chain`，两条链都会用到同一份主字体（如 simfang.ttf）。第二条链
+    发现 "simfang" 这名字被占了，就换个名（`simfang_2`）**再注册一遍** ——
+    PDF 里于是白多嵌一份字体子集，与"只注册用到的字体"的约定相悖。
+    按**路径**去重才是本意。
+    """
+    mapping = getattr(pdf, "_guji_font_by_path", None)
+    if mapping is None:
+        mapping = {}
+        pdf._guji_font_by_path = mapping
+    return mapping
+
+
 def _register_one(pdf, entry, used: set) -> str | None:
     """把单个字体注册进 pdf，返回注册名；失败返回 None。
 
@@ -119,10 +135,19 @@ def build_font_chain(pdf, texts=(), preferred=None) -> FontChain:
     # 注册 simfang——各自持有一个 set 的话，第二条链会重新注册同名字体，
     # 把第一条的映射悄悄顶掉。
     used = _used_names(pdf)
+    by_path = _registered_paths(pdf)
     registered: list = []
     for entry in used_paths:
+        existing = by_path.get(entry.path)
+        if existing is not None:
+            # 同一个字体文件已经注册过（另一条链注册的）→ 直接复用它的注册名，
+            # 不再 add_font 第二遍（见 _registered_paths 的说明）
+            names[entry.path] = existing
+            registered.append(entry)
+            continue
         name = _register_one(pdf, entry, used)
         if name:
+            by_path[entry.path] = name
             names[entry.path] = name
             registered.append(entry)
     if not names:

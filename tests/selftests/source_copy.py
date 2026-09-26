@@ -99,9 +99,18 @@ def run(ctx) -> None:
     page_src = (ROOT / "desktop" / "pages" / "taskdetail" / "page.py").read_text(
         encoding="utf-8"
     )
+    # 2026-09-25 契约变更：副本缺失**绝不在主线程同步补**（800MB 的书会把进
+    # 详情页卡住几秒到几十秒）。set_task 只用已落地的副本，缺了就延几秒交给
+    # 后台 CopySourceWorker 补（见 page.py::_schedule_source_backup）。
     ok(
-        "详情页改用 store.ensure_source_copy",
-        "ensure_source_copy(task_id)" in page_src,
+        "详情页不再同步复制（不得调 ensure_source_copy）",
+        ".ensure_source_copy(" not in page_src,
+    )
+    ok("详情页只用已落地的副本", "source_copy_path(task_id)" in page_src)
+    ok(
+        "副本缺失走延时后台补",
+        "_schedule_source_backup(task_id)" in page_src
+        and "CopySourceWorker" in page_src,
     )
 
     repo.delete_task(tid)

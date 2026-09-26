@@ -33,7 +33,7 @@ from utils.fonts import GROUP_OTHER, FontEntry
 _CACHE_NAME = "guji-cjk-font-cache.json"
 #: 扫描目录树的最大深度，防止 /usr/share/fonts 下的深层嵌套拖慢扫描
 _MAX_DEPTH = 4
-_FONT_EXTS = (".ttf", ".otf", ".ttc")
+from utils.fonts import FONT_EXTS as _FONT_EXTS  # 唯一定义处在 utils/fonts.py（见那里的说明）
 #: 判定"含中文"的探针码位：一（常用）、电（常用），两者都有才算
 _PROBE_CODEPOINTS = (0x4E00, 0x7535)
 

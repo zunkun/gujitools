@@ -367,6 +367,22 @@ class PrintLayoutCanvas(QWidget):
             return
         super().mouseDoubleClickEvent(event)
 
+    def flush_pending(self) -> bool:
+        """把"还没松手"的拖动结果补发出去（关窗口/切步骤/切页时调）。
+
+        ⚠️ 为什么需要（2026-09-26 审计）：`rect_changed` 只在 `mouseReleaseEvent`
+        里发（拖动过程中只 `update()` 重绘、不落盘）。于是「拖住图片框不放、
+        直接关窗口 / 返回列表」这一下改动就**永久丢失**，而且用户以为已经生效了
+        （画布上就是拖动后的样子）。这里主动补发一次，语义与正常松手完全一致。
+
+        返回 True 表示确实补发了一次（即存在未提交的改动）。
+        """
+        if not self._dirty:
+            return False
+        self.rect_changed.emit([round(v, 2) for v in self._rect_mm])
+        self._dirty = False
+        return True
+
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802
         if self._mode in ("move", "resize"):
             self._mode = None

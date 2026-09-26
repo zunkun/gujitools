@@ -19,6 +19,8 @@ from desktop.workers.worker_host import WorkerHost, connect_queued
 from desktop.workers.serial_jobs import SerialJobQueue
 
 __all__ = [
+    "CopyFilesWorker",
+    "CopySourceWorker",
     "HashWorker",
     "ImageListWorker",
     "PreviewWorker",
@@ -27,11 +29,20 @@ __all__ = [
     "SourceThumbnailsWorker",
     "TaskRowsWorker",
     "WorkerHost",
+    "close_cached_documents",
     "connect_queued",
 ]
 
 #: 惰性导出的名字 → (模块路径, 属性名)
 _LAZY = {
+    "CopyFilesWorker": (
+        "desktop.workers.copy_source_worker",
+        "CopyFilesWorker",
+    ),
+    "CopySourceWorker": (
+        "desktop.workers.copy_source_worker",
+        "CopySourceWorker",
+    ),
     "HashWorker": ("desktop.workers.hash_worker", "HashWorker"),
     "ImageListWorker": ("desktop.workers.image_list_worker", "ImageListWorker"),
     "PreviewWorker": ("desktop.workers.preview_worker", "PreviewWorker"),
@@ -41,6 +52,10 @@ _LAZY = {
         "SourceThumbnailsWorker",
     ),
     "TaskRowsWorker": ("desktop.workers.task_rows_worker", "TaskRowsWorker"),
+    "close_cached_documents": (
+        "desktop.workers.preview_worker",
+        "close_cached_documents",
+    ),
 }
 
 

@@ -157,35 +157,43 @@ class SubmitMixin:
         if not self.task_id or self.current_stage() != "rembg":
             self.submit_hint.hide()
             return
-        preview_state = self.store.stage_states(self.task_id)["rembg"]["status"]
-        has_preview = bool(
-            list_stage_images(self.store.rembg_preview_output_dir(self.task_id))
-        )
+        # ⚠️ 开销按需付（审计 D6）：这个函数在执行期间**每 ≤200ms 被进度节流
+        # 器拉一次**（_refresh_stage_views → _update_run_buttons → 这里）。
+        # `stage_states`（读 JSON）+ `list_stage_images`（扫目录）+
+        # `_rembg_submit_version_state`（再读两遍 runs.json）加起来每 tick
+        # 几十毫秒都在主线程上。而 `running=True` 时下面两个判据的结果根本
+        # 不进任何分支（直接落"执行中"提示）——纯浪费。先判 running，
+        # 只有空闲（低频状态变化）时才做这些读盘。
         if running:
             version = None
             tip = "当前有任务正在执行，请等待完成后再提交"
-        elif preview_state != "success":
-            version = NO_PREVIEW
-            if preview_state in ("failed", "cancelled"):
-                tip = (
-                    f"上次「生成预览」{STATUS_LABELS.get(preview_state, preview_state)}，"
-                    "请重新执行并成功后再提交本次任务"
-                )
-            else:
-                tip = "请先点击「生成预览」，执行成功后才能提交本次任务"
-        elif not has_preview:
-            version = NO_PREVIEW
-            tip = "预览结果缺失，请重新点击「生成预览」"
         else:
-            version = self._rembg_submit_version_state()
-            tip = {
-                NEW_VERSION: "预览已产生新版本（重新生成或参数已变更），"
-                             "请点击「提交本次任务」更新最终图片",
-                PREVIEW_STALE: "面板去底参数已修改，当前预览图不是最新；"
-                               "建议先重新「生成预览」，再提交本次任务",
-                UP_TO_DATE: "最终图片已是最新预览版本；参数变更或重新生成预览后需再次提交",
-                NO_PREVIEW: "请先点击「生成预览」，执行成功后才能提交本次任务",
-            }[version]
+            preview_state = self.store.stage_states(self.task_id)["rembg"]["status"]
+            has_preview = bool(
+                list_stage_images(self.store.rembg_preview_output_dir(self.task_id))
+            )
+            if preview_state != "success":
+                version = NO_PREVIEW
+                if preview_state in ("failed", "cancelled"):
+                    tip = (
+                        f"上次「生成预览」{STATUS_LABELS.get(preview_state, preview_state)}，"
+                        "请重新执行并成功后再提交本次任务"
+                    )
+                else:
+                    tip = "请先点击「生成预览」，执行成功后才能提交本次任务"
+            elif not has_preview:
+                version = NO_PREVIEW
+                tip = "预览结果缺失，请重新点击「生成预览」"
+            else:
+                version = self._rembg_submit_version_state()
+                tip = {
+                    NEW_VERSION: "预览已产生新版本（重新生成或参数已变更），"
+                                 "请点击「提交本次任务」更新最终图片",
+                    PREVIEW_STALE: "面板去底参数已修改，当前预览图不是最新；"
+                                   "建议先重新「生成预览」，再提交本次任务",
+                    UP_TO_DATE: "最终图片已是最新预览版本；参数变更或重新生成预览后需再次提交",
+                    NO_PREVIEW: "请先点击「生成预览」，执行成功后才能提交本次任务",
+                }[version]
         self.submit_button.setToolTip(tip)
 
         # 按钮文案/高亮

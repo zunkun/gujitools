@@ -21,7 +21,19 @@ import sys
 import argparse
 from pathlib import Path
 
+from cli.config_io import ConfigError
 from utils.help import process_help_command
+
+
+def _closest_flag(name: str, known: set[str]) -> str | None:
+    """在已知参数里找与 `name` 最像的那个（用于"是不是拼错了"的提示）。
+
+    用 `difflib.get_close_matches`；找不到像的就返回 None（不作提示）。
+    """
+    import difflib
+
+    matches = difflib.get_close_matches(name, sorted(known), n=1, cutoff=0.6)
+    return f"--{matches[0]}" if matches else None
 
 
 class CliArgsParser:
@@ -34,6 +46,25 @@ class CliArgsParser:
         及全部子命令（extract/crop/rembg/cropremove/init/run/print/help）。
         """
         self.parser: argparse.ArgumentParser = self.create_parser()
+
+    def _known_flags(self) -> set[str]:
+        """本项目支持的全部长参数名（去掉 `--`），供"是不是拼错了"提示用。
+
+        递归遍历主解析器与所有子解析器（`run <cmd>` 是一层子命令）。
+        """
+        flags: set[str] = set()
+
+        def walk(parser: argparse.ArgumentParser) -> None:
+            for action in parser._actions:  # noqa: SLF001 - argparse 没有公开遍历接口
+                for option in action.option_strings:
+                    if option.startswith("--"):
+                        flags.add(option[2:])
+                if isinstance(action, argparse._SubParsersAction):  # noqa: SLF001
+                    for sub in action.choices.values():
+                        walk(sub)
+
+        walk(self.parser)
+        return flags
 
     def create_parser(self) -> argparse.ArgumentParser:
         """创建并配置 argparse.ArgumentParser 以及所有子命令。
@@ -335,7 +366,26 @@ class CliArgsParser:
         """
         args, unknown_args = self.parser.parse_known_args()
         if unknown_args:
-            print(f"警告：忽略未定义参数: {' '.join(unknown_args)}")
+            # ⚠️ 不再"警告后继续"（2026-09-26 审计）：拼错一个参数名（`--bordr`）
+            #    以前只是打一行警告就照常跑，参数落到默认值、输出与预期不符却
+            #    退出码 0 —— 参数化流水线里极难发现。现在直接当错误，并给出可疑
+            #    的候选名（编辑距离最近的那个），让用户一眼看出拼错在哪。
+            hints = []
+            for unknown in unknown_args:
+                # 只看像参数名的 token（`--bordr 20` 里的 `20` 是它的值，别一起报）
+                if not unknown.startswith("-"):
+                    continue
+                name = unknown.split("=", 1)[0].lstrip("-")
+                if not name:
+                    continue
+                best = _closest_flag(name, self._known_flags())
+                hints.append(f"{unknown}（是不是 {best}？）" if best else unknown)
+            if not hints:
+                hints = [a for a in unknown_args]
+            raise ConfigError(
+                "无法识别的参数：" + "、".join(hints)
+                + "。用 --help 查看本命令支持的参数。"
+            )
 
         # -v/--version 标志
         if getattr(args, "version", False):

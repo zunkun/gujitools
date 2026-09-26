@@ -285,6 +285,12 @@ class TextRegionProcessor(FunctionBase):
         area=4 整页模式完全不用 YOLO，故先判断再预热，避免白加载；非整页时
         这笔开销被单独计时、单独报出，不会压在"第一张图"的耗时上。
         """
+        # ⚠️ 先看有没有输入，再决定要不要加载模型（2026-09-26 审计）：空目录时
+        #    以前会先花 ~5s / ~350MB 把 YOLO 拉起来（desktop 侧还会顺带拉起常驻
+        #    服务），然后才报「未找到图片」——白付一次模型加载。
+        #    这里直接交给 super()：它自己会抛统一的那条 FileNotFoundError。
+        if not self._collect_input_files():
+            return super().execute()
         if int(self.command_args.get("area", 1) or 1) != 4:
             load_line, _seconds = warm_up_detect_model()
             print(load_line)

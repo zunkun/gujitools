@@ -27,7 +27,14 @@ def run(ctx) -> None:
     ok("CONTROL_HEIGHT 与 qfluentwidgets 输入框实际高度一致",
        CONTROL_HEIGHT == base_h, f"常量 {CONTROL_HEIGHT} / 实测 {base_h}")
 
-    panels = [d.control_stack.widget(i) for i in range(d.control_stack.count())]
+    # ⚠️ 四个阶段面板是**惰性**的（2026-09-25 起：谁进去谁才建）。这里要逐个
+    # 量控件高度，必须显式把面板建出来——**不能用 Qt 的 findChildren/findChild**：
+    # 那是 C++ 层调用，不走 LazyPanelHost 的 ``__getattr__`` 转发，面板还没建时
+    # 直接什么都找不到（实测踩到「检测面板主按钮与表单控件等高 实测 None」）。
+    panels = [
+        host.panel if hasattr(host, "panel") else host
+        for host in (d.control_stack.widget(i) for i in range(d.control_stack.count()))
+    ]
     combos = [(p.stage, wdg) for p in panels for wdg in p.findChildren(_QFComboBox)]
     # print 面板原有「纸张尺寸/纸张方向/位置/文字方向×2」共 6 个下拉；
     # 标题与页码的「位置」「文字方向」已删除（固定为上/下 + 竖排，

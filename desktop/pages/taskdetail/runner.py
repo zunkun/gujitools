@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from pathlib import Path
 
 from PySide6.QtCore import QProcess, QProcessEnvironment, QTimer
@@ -42,6 +43,14 @@ class StageRunnerMixin:
     #: 日志缺「处理完成」那行，用户看到的就是"像被中断了/只提取了一半"。
     #: 进度条与状态文字仍逐条即时更新（纯内存操作，便宜）。
     _PROGRESS_UI_MS = 200
+
+    #: 「多少秒没有任何 worker 输出」就提醒用户可能卡住（只提醒，不自动杀）。
+    #: 合法的慢阶段里 worker 一直在发 progress/log，所以静默 = 可疑；
+    #: 但阈值给得宽松（3 分钟），宁可晚提醒也不误报。
+    STALL_WARN_S = 180
+    #: 页面尺寸/检测框的攒批落盘间隔（ms）。逐条落盘在 320 页上累计 3.1 秒
+    #: 主线程阻塞（见 _store_page_size / _store_stage_boxes 的说明）。
+    _ANNOT_FLUSH_MS = 400
 
     def _init_progress_ui(self) -> None:
         """建进度刷新节流器（宿主页面 __init__ 里调一次，须在 _init_ui 之后）。"""
@@ -281,6 +290,10 @@ class StageRunnerMixin:
         self.cancel_requested = False
         self.running_stage = stage
         self._last_error_line = None
+        # 看门狗的无进展预警：最后一次收到 worker 输出的时间 + 是否已提醒过
+        # （见 _warn_if_stalled —— 只提醒不自动杀，避免误杀合法的慢阶段）
+        self._last_event_at = time.time()
+        self._stall_warned = False
         # 最近一次 progress 事件 (done, total)：worker 结束时不带计数，
         # 用它把最终进度落到历史记录里（见 _worker_finished）。
         self._last_progress = (0, 0)
@@ -383,6 +396,33 @@ class StageRunnerMixin:
                     )
                     self._last_error_line = "子任务进程未正常收尾（看门狗兜底）"
                     _finish_once(1, QProcess.CrashExit)
+            else:
+                _warn_if_stalled()
+
+        def _warn_if_stalled() -> None:
+            """进程还活着、但很久没有任何事件 → 提醒用户可中断。
+
+            ⚠️ 为什么只提醒不自动杀（2026-09-26 审计）：worker 卡死（死锁、等
+            常驻 YOLO 服务、torch 卡住、管道反压）与**合法的慢阶段**（2400 页的
+            去底色/生成 PDF）在外部看是一样的——都只是"没输出"。自动杀掉会把
+            用户跑了几分钟的正常任务误杀，代价远大于收益。所以这里只把
+            "已经 N 分钟没有任何进展"摆到用户面前，让**他**决定要不要点中断。
+            """
+            last = self._last_event_at
+            if not last:
+                return
+            idle = time.time() - last
+            if idle < self.STALL_WARN_S or self._stall_warned:
+                return
+            self._stall_warned = True
+            minutes = idle / 60
+            self.log_view.append(
+                f"[看门狗] 已 {minutes:.0f} 分钟没有任何进度输出，"
+                "若确认卡住可点「中断」或关闭窗口。"
+            )
+            self._set_stage_status(
+                f"已 {minutes:.0f} 分钟无进展（可能卡住，可中断重试）"
+            )
 
         def _mark_started() -> None:
             self._proc_started = True
@@ -418,12 +458,24 @@ class StageRunnerMixin:
             if self.run_id:
                 self.store.finish_stage(self.task_id, self.run_id, "cancelled")
             self.process.kill()
+            # kill 是 TerminateProcess：worker 里的 `finally`/`with` 都不会执行，
+            # 「生成 PDF」的效果图暂存目录（整页 PNG，几百 MB~GB）会留在 %TEMP%。
+            # 这里立刻扫一次（按属主 pid 判死活），不等下一次生成 PDF 才回收。
+            try:
+                from desktop.stages import sweep_orphan_staging
+
+                sweep_orphan_staging()
+            except Exception:  # noqa: BLE001 - 回收是尽力而为，不能影响中断
+                pass
 
     # ---------------------------------------------------------- 输出解析
     def _read_worker_output(self) -> None:
         """worker stdout 有数据到达（信号槽）：交给解析层。"""
         if not self.process:
             return
+        # 任何输出都算"有进展"：重置无进展计时与提醒标志（见 _warn_if_stalled）
+        self._last_event_at = time.time()
+        self._stall_warned = False
         self._consume_worker_stdout(bytes(self.process.readAllStandardOutput()))
 
     def _consume_worker_stdout(self, data: bytes, final: bool = False) -> None:
@@ -474,7 +526,15 @@ class StageRunnerMixin:
             elif etype == "started":
                 self.log_view.append(f"子任务进程已启动：{STAGE_LABELS.get(event.get('stage'), event.get('stage'))}")
             elif etype == "error":
-                self.log_view.append(f"错误：{event.get('message')}")
+                # ⚠️ 结构化 error 事件是 worker 侧**最准确的失败原因**（stage 自己发的，
+                # 比 stderr 里那行启发式匹配可靠）。必须同时记进 _last_error_line：
+                # 只写日志的话，历史记录与失败弹窗只会显示「退出码 1」，真因
+                # （比如"没有生成任何图片，请先执行「生成预览」"）被淹在日志里，
+                # 用户事后完全查不到（2026-09-26 审计发现）。
+                message = event.get("message") or ""
+                self.log_view.append(f"错误：{message}")
+                if message.strip():
+                    self._last_error_line = message.strip()
             elif etype == "cancelled":
                 self.log_view.append("子任务进程已被中断。")
 
@@ -510,19 +570,27 @@ class StageRunnerMixin:
             pass  # 底层对象已析构（进程被强行收掉）
 
     def _store_page_size(self, event: dict) -> None:
-        """extract 阶段上报的页面图片原始尺寸写入 sizes.json（框坐标的坐标系基准）。"""
+        """extract 阶段上报的页面图片原始尺寸 → 攒批（sizes.json 是框坐标基准）。
+
+        ⚠️ 不逐条落盘：320 页逐条「读整个 sizes.json + 写回」实测累计 **1.3 秒**
+        主线程阻塞（2400 页的书记忆里是几十秒）。攒到 400ms 一次批量写。
+        """
         if not self.task_id:
             return
-        self.store.save_image_size(
-            self.task_id, event.get("image", ""),
-            event.get("width", 0), event.get("height", 0),
+        self._pending_sizes[event.get("image", "")] = (
+            int(event.get("width", 0)), int(event.get("height", 0)),
         )
+        self._annot_timer.start(self._ANNOT_FLUSH_MS)
 
     def _store_stage_boxes(self, event: dict) -> None:
-        """detect 阶段上报的框坐标实时写回 boxes.json（origin=auto）；手动框不被覆盖。
+        """detect 阶段上报的框坐标 → 攒批（origin=auto；人工框不被覆盖）。
 
         存储保留左右身份：[左框, 右框]，缺失一侧为 null，
         以便 area=1 输出条目按 -r/-l 规范排序。
+
+        ⚠️ 逐条落盘是「读 boxes.json + 写回」× 页数，320 页实测累计 **1.8 秒**
+        主线程阻塞；改攒批 + 一次性写。人工框的优先级判定挪到批量写里
+        （见 store.save_detect_boxes_batch），顺带省掉每条一次的文件读。
         """
         if not self.task_id:
             return
@@ -534,13 +602,47 @@ class StageRunnerMixin:
         ]
         if not any(boxes):
             return
-        image_key = event.get("image", "")
-        entry = self.store.detect_boxes_entry(self.task_id, image_key)
-        if entry and entry[1] == "manual":
+        self._pending_boxes[event.get("image", "")] = boxes
+        self._annot_timer.start(self._ANNOT_FLUSH_MS)
+
+    def _flush_annotations(self) -> None:
+        """把攒下的尺寸/框一次性落盘（定时器到期、阶段收尾、切任务时都要调）。
+
+        ⚠️ 必须在 `_worker_finished` 里调：阶段结束后下游要用 sizes.json/
+        boxes.json 做坐标基准，攒着不写会让下一阶段读到旧数据。
+        """
+        if self._annot_timer.isActive():
+            self._annot_timer.stop()
+        sizes, self._pending_sizes = self._pending_sizes, {}
+        boxes, self._pending_boxes = self._pending_boxes, {}
+        if not self.task_id:
             return
-        self.store.save_detect_boxes(
-            self.task_id, image_key, boxes, origin="auto"
-        )
+        try:
+            if sizes:
+                self.store.save_image_sizes_batch(self.task_id, sizes)
+            if boxes:
+                self.store.save_detect_boxes_batch(self.task_id, boxes)
+        except Exception as exc:  # noqa: BLE001 - 落盘失败不该打断阶段收尾
+            # ⚠️ 但不能**静默**吞掉（2026-09-26 审计）：磁盘满 / 任务目录被删 /
+            # 权限异常时，下游（去底色、打印）会按**缺失的坐标基准**算错布局，
+            # 而界面上一点提示都没有。这里做三件事：告警、记成失败原因、把数据
+            # 放回去等下次 flush 再试一次（否则这批攒好的框就永久丢了）。
+            message = f"页框/尺寸落盘失败：{type(exc).__name__}: {exc}"
+            self.log_view.append(message)
+            self._last_error_line = message
+            for key, value in sizes.items():
+                self._pending_sizes.setdefault(key, value)
+            for key, value in boxes.items():
+                self._pending_boxes.setdefault(key, value)
+
+    def _init_annotation_batch(self) -> None:
+        """建标注攒批器（宿主页面 __init__ 里调一次）。"""
+        self._pending_sizes: dict[str, tuple[int, int]] = {}
+        self._pending_boxes: dict[str, list] = {}
+        self._annot_timer = QTimer(self)
+        self._annot_timer.setSingleShot(True)
+        self._annot_timer.setInterval(self._ANNOT_FLUSH_MS)
+        self._annot_timer.timeout.connect(self._flush_annotations)
 
     def _read_worker_error(self) -> None:
         """worker 的 stderr：崩溃堆栈/告警原样进日志，避免失败时无从排查。"""
@@ -550,12 +652,25 @@ class StageRunnerMixin:
         self._consume_worker_stderr(bytes(source.readAllStandardError()))
 
     def _consume_worker_stderr(self, data: bytes) -> None:
-        """解析 stderr 字节：逐行进日志，并记下像错误的那一行（失败提示用）。"""
+        """解析 stderr 字节：逐行进日志，并记下像错误的那一行（失败提示用）。
+
+        ⚠️ 匹配**不区分大小写**且覆盖几种常见形态：原先只认 `"Error"`/`"Traceback"`
+        （首字母大写），而 argparse 的报错是 `prog: error: the following arguments
+        are required: --config`（小写）、apt/pip 之类是 `E:`，全都会漏掉 →
+        `_last_error_line` 仍是 None，用户看到的还是「退出码 1」。
+        """
+        _MARKERS = (
+            "error", "traceback", "exception", "failed", "failure", "unable",
+            "cannot", "can't", "no such", "no space", "denied", "errno",
+            "not found", "missing",
+            "错误", "失败", "异常",
+        )
         for line in data.decode("utf-8", errors="replace").splitlines():
             line = line.strip()
             if line:
                 self.log_view.append(f"[stderr] {line}")
-                if "Error" in line or "Traceback" in line or "错误" in line:
+                lowered = line.lower()
+                if any(marker in lowered for marker in _MARKERS):
                     self._last_error_line = line
 
     def _worker_error_occurred(self, error) -> None:
@@ -592,6 +707,9 @@ class StageRunnerMixin:
                     pass
             self._drain_worker_output(proc)
         self._flush_progress_ui()
+        # ⚠️ 标注（sizes.json / boxes.json）在这里必须落盘：阶段结束后下游要用
+        #    它们做坐标基准，攒着不写会让下一阶段读到旧数据。
+        self._flush_annotations()
         if self.cancel_requested:
             status = "cancelled"
         elif exit_code == 0:

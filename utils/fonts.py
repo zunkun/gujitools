@@ -57,7 +57,11 @@ GROUP_OTHER = 4       # 其它可用中文字体（楷体、隶书、等线…�
 #: 扩展区字符，拿它当主字体连"古籍"两个字都画不出来。
 GROUP_SUPPLEMENT = 9
 
-_FONT_EXTS = (".ttf", ".otf", ".ttc")
+#: 字体文件扩展名。**唯一定义处**（2026-09-26 审计）：以前
+#: fonts.py / font_scan.py / font_setup.py 各写一份，而且 font_setup 那份
+#: 多一个 `.otc`（OpenType Collection）→ `.otc` 字体能被"体检"扫到、
+#: 却不在候选表里，两边口径对不上。现在统一从这里取。
+FONT_EXTS = (".ttf", ".otf", ".ttc", ".otc")
 
 
 @dataclass(frozen=True)

@@ -38,6 +38,9 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import List, Optional
 
+from utils.file_utils import write_bytes_atomic
+from utils.units import DEFAULT_RENDER_DPI as DEFAULT_UNITS_DPI
+
 # ------------------------------------------------------------------ quick
 # quick 模式只在这几种内嵌格式上取巧：它们可以「原样落盘」，零解码零重编码。
 # jp2/jbig2/CCITT/tiff 等必须解码再重编码，未必比整页渲染快，且 PIL 缺对应
@@ -67,7 +70,8 @@ WIDE_PAGE_PT = 3000
 # 因此整页渲染时给一个 DPI 下限：实际 zoom = max(用户 zoom, dpi/72)，
 # 仍然受 MAX_OUTPUT_WIDTH_PX 封顶。内嵌图路径不受影响（原图就是原图，
 # 不做任何重采样）。
-DEFAULT_RENDER_DPI = 300
+#: 默认渲染 DPI（唯一定义处在 utils/units.py）
+DEFAULT_RENDER_DPI = DEFAULT_UNITS_DPI
 
 
 def parse_pages(pages_str: str, total_pages: int) -> List[int]:
@@ -89,21 +93,42 @@ def parse_pages(pages_str: str, total_pages: int) -> List[int]:
     if not pages_str:
         return list(range(total_pages))
     selected_pages = set()
-    parts = pages_str.split(",")
+    parts = [p.strip() for p in str(pages_str).split(",")]
     for part in parts:
-        part = part.strip()
+        if not part:
+            # 前后多余的逗号（"1,,3" / "1,"）当空项跳过，别抛原生 ValueError
+            continue
         if "-" in part:
             # 范围: "3-5" → 页 3,4,5 → 0-based: 2,3,4
-            a, b = part.split("-")
-            start = int(a) - 1
-            end = int(b) - 1
+            pieces = part.split("-")
+            if len(pieces) != 2 or not all(p.strip() for p in pieces):
+                # ⚠️ `"1-2-3"` / `"-"` 以前抛的是原生 `ValueError: too many values
+                #    to unpack`，对用户毫无指导意义（2026-09-26 审计）。这里明确
+                #    指出是哪个 token 写错了。
+                raise ValueError(
+                    f"页码范围格式错误: {part!r}（应形如 3、3-5、1,4-8；"
+                    f"总页数 {total_pages}）"
+                )
+            a, b = pieces
+            try:
+                start = int(a) - 1
+                end = int(b) - 1
+            except ValueError:
+                raise ValueError(
+                    f"页码范围里有非数字: {part!r}（总页数 {total_pages}）"
+                ) from None
             if start < 0 or end >= total_pages or start > end:
                 raise ValueError(f"页码范围无效: {part} (总页数: {total_pages})")
             for p in range(start, end + 1):
                 selected_pages.add(p)
         else:
             # 单页: "7" → 0-based: 6
-            p = int(part) - 1
+            try:
+                p = int(part) - 1
+            except ValueError:
+                raise ValueError(
+                    f"页码里有非数字: {part!r}（应形如 3、3-5、1,4-8）"
+                ) from None
             if p < 0 or p >= total_pages:
                 raise ValueError(f"页码 {part} 超出范围 (总页数: {total_pages})")
             selected_pages.add(p)
@@ -148,6 +173,12 @@ def calculate_zoom(page_width: float, requested_zoom: float = 1) -> float:
     """
     # 页面已足够宽时不再放大
     if page_width > WIDE_PAGE_PT:
+        return 1
+    if page_width <= 0:
+        # ⚠️ 异常小/0 宽度的页（畸形 PDF）不能直接做除法：`MAX_OUTPUT_WIDTH_PX //
+        #    int(page_width)` 在 int(page_width) == 0 时抛 ZeroDivisionError，
+        #    而它会被外层 `except Exception` 吞成"这一页失败"，真因看不出来
+        #    （2026-09-26 审计）。宽度异常时按"不缩放"处理，让后续渲染去报真正的错。
         return 1
     target_width = page_width * requested_zoom
     # 限制最大输出宽度，防止内存溢出
@@ -267,9 +298,12 @@ def _save_embedded_image(info, out_dir: str, page_idx: int, ext: str,
         src_ext == "png" and ext.lower() == "png"
     )
     if same_format and math.isclose(actual_zoom, 1.0):
-        # 最快的路径：直接把 PDF 里的压缩字节写成文件，零解码零重编码
-        with open(img_path, "wb") as fh:
-            fh.write(info["image"])
+        # 最快的路径：直接把 PDF 里的压缩字节写成文件，零解码零重编码。
+        # ⚠️ 必须**原子写**（2026-09-26 审计）：写到一半被 kill/断电会留下截断的
+        #    图片文件，而下游（detect/rembg/print）会把它当成有效页继续处理——
+        #    表现为"某一页莫名处理失败/出半张白图"，且没有任何提示。
+        #    原子写保证目标名下要么没有、要么完整。
+        write_bytes_atomic(img_path, info["image"])
         return img_path, int(info["width"]), int(info["height"])
 
     from PIL import Image
@@ -290,7 +324,10 @@ def process_page_batch(
     out_dir: str,
     zoom: float,
     ext: str,
-    quick: bool = False,
+    # 默认值必须与 core/command_spec.py 里 extract 的规格一致（zoom=1 /
+    # quick=True）：以前这里写的是 zoom=2 / quick=False，于是「直接调库」与
+    # 「走 CLI/GUI」是两套行为，默认值等于有了第二个来源（2026-09-26 审计）。
+    quick: bool = True,
     progress: dict = None,
     reporter=None,
     dpi: float = DEFAULT_RENDER_DPI,
@@ -330,65 +367,69 @@ def process_page_batch(
             ) from e
 
         doc = fitz.open(pdf_path)
-        for page_idx in page_indices:
-            try:
-                page = doc.load_page(page_idx)
-                page_rect = page.rect
-                original_width = page_rect.width
-                # 两条路径的 zoom 各算各的：
-                # - quick_zoom：用户 zoom 的原语义，供内嵌图「覆盖度」判定与
-                #   落盘决策（内嵌图永远是原图字节，不按 DPI 重采样）；
-                # - actual_zoom：整页渲染用，兜一个 DPI 下限，避免矢量 PDF
-                #   在 zoom=1 时只渲染出 72 DPI（见 DEFAULT_RENDER_DPI）。
-                quick_zoom = calculate_zoom(original_width, zoom)
-                actual_zoom = render_zoom(original_width, zoom, dpi)
-                page_start = time.time()
+        try:
+            for page_idx in page_indices:
+                try:
+                    page = doc.load_page(page_idx)
+                    page_rect = page.rect
+                    original_width = page_rect.width
+                    # 两条路径的 zoom 各算各的：
+                    # - quick_zoom：用户 zoom 的原语义，供内嵌图「覆盖度」判定与
+                    #   落盘决策（内嵌图永远是原图字节，不按 DPI 重采样）；
+                    # - actual_zoom：整页渲染用，兜一个 DPI 下限，避免矢量 PDF
+                    #   在 zoom=1 时只渲染出 72 DPI（见 DEFAULT_RENDER_DPI）。
+                    quick_zoom = calculate_zoom(original_width, zoom)
+                    actual_zoom = render_zoom(original_width, zoom, dpi)
+                    page_start = time.time()
 
-                if quick:
-                    # 自适应 quick：不满足条件时 _embedded_page_image 给出原因，
-                    # 直接降级整页渲染，不再"为了快而变慢/变糊"。
-                    info, why = _embedded_page_image(
-                        doc, page, page_rect, ext, quick_zoom
-                    )
-                    if info is None:
+                    if quick:
+                        # 自适应 quick：不满足条件时 _embedded_page_image 给出原因，
+                        # 直接降级整页渲染，不再"为了快而变慢/变糊"。
+                        info, why = _embedded_page_image(
+                            doc, page, page_rect, ext, quick_zoom
+                        )
+                        if info is None:
+                            img_path, iw, ih = _render_page(
+                                page, out_dir, page_idx, ext, actual_zoom
+                            )
+                            if progress is not None:
+                                with progress["lock"]:
+                                    reasons = progress.setdefault("reasons", {})
+                                    reasons[why] = reasons.get(why, 0) + 1
+                                    progress["fallback"] = progress.get("fallback", 0) + 1
+                        else:
+                            img_path, iw, ih = _save_embedded_image(
+                                info, out_dir, page_idx, ext, quick_zoom
+                            )
+                        report_image_size(img_path, iw, ih, reporter)
+                    else:
+                        # 标准模式：渲染整页为高质量图片
                         img_path, iw, ih = _render_page(
                             page, out_dir, page_idx, ext, actual_zoom
                         )
-                        if progress is not None:
-                            with progress["lock"]:
-                                reasons = progress.setdefault("reasons", {})
-                                reasons[why] = reasons.get(why, 0) + 1
-                                progress["fallback"] = progress.get("fallback", 0) + 1
-                    else:
-                        img_path, iw, ih = _save_embedded_image(
-                            info, out_dir, page_idx, ext, quick_zoom
-                        )
-                    report_image_size(img_path, iw, ih, reporter)
-                else:
-                    # 标准模式：渲染整页为高质量图片
-                    img_path, iw, ih = _render_page(
-                        page, out_dir, page_idx, ext, actual_zoom
-                    )
-                    report_image_size(img_path, iw, ih, reporter)
+                        report_image_size(img_path, iw, ih, reporter)
 
-                page_elapsed = time.time() - page_start
-                results.append(True)
-                if progress is not None:
-                    # 线程安全更新进度计数器
-                    with progress["lock"]:
-                        progress["done"] += 1
-                        done = progress["done"]
-                        total = progress["total"]
-                    # 结构化进度在锁外发：多次汇报是幂等/单调的，不必占着锁做 IO
-                    if reporter is not None:
-                        reporter.progress(done, total)
-                    print(
-                        f"进度: {done}/{total} 页 - 第 {page_idx+1} 页 用时: {page_elapsed:.2f}s"
-                    )
-            except Exception as e:
-                print(f"❌ 第 {page_idx+1} 页失败: {e}")
-                results.append(False)
-        doc.close()
+                    page_elapsed = time.time() - page_start
+                    results.append(True)
+                    if progress is not None:
+                        # 线程安全更新进度计数器
+                        with progress["lock"]:
+                            progress["done"] += 1
+                            done = progress["done"]
+                            total = progress["total"]
+                        # 结构化进度在锁外发：多次汇报是幂等/单调的，不必占着锁做 IO
+                        if reporter is not None:
+                            reporter.progress(done, total)
+                        print(
+                            f"进度: {done}/{total} 页 - 第 {page_idx+1} 页 用时: {page_elapsed:.2f}s"
+                        )
+                except Exception as e:
+                    print(f"❌ 第 {page_idx+1} 页失败: {e}")
+                    results.append(False)
+        finally:
+            # ⚠️ 异常路径也要还句柄（审计 P2）：Windows 上文档没关，
+            # 任务目录会一直被占用删不掉
+            doc.close()
         return results
     except Exception as e:
         print(f"❌ 处理批次失败: {e}")
@@ -401,7 +442,10 @@ def render_pages_parallel(
     out_dir: str,
     zoom: float,
     ext: str,
-    quick: bool = False,
+    # 默认值必须与 core/command_spec.py 里 extract 的规格一致（zoom=1 /
+    # quick=True）：以前这里写的是 zoom=2 / quick=False，于是「直接调库」与
+    # 「走 CLI/GUI」是两套行为，默认值等于有了第二个来源（2026-09-26 审计）。
+    quick: bool = True,
     workers: int = 4,
     batch_size: int = 4,
     progress: dict = None,
@@ -464,10 +508,13 @@ def render_pages_parallel(
 def extract_pdf_optimized(
     pdf_path: str,
     out_dir: str,
-    zoom: float = 2,
+    zoom: float = 1,
     ext: str = "jpg",
     workers: int = 4,
-    quick: bool = False,
+    # 默认值必须与 core/command_spec.py 里 extract 的规格一致（zoom=1 /
+    # quick=True）：以前这里写的是 zoom=2 / quick=False，于是「直接调库」与
+    # 「走 CLI/GUI」是两套行为，默认值等于有了第二个来源（2026-09-26 审计）。
+    quick: bool = True,
     pages: str = None,
     start: int = None,
     end: int = None,
@@ -557,9 +604,15 @@ def extract_pdf_optimized(
 
         success_count = sum(all_results)
         elapsed_time = time.time() - start_time
-        print(
-            f"\n🎉 处理完成！ 成功: {success_count}/{total_selected} 页 用时: {elapsed_time:.2f} 秒"
-        )
+        time_note = f" 用时: {elapsed_time:.2f} 秒"
+        if total_selected > 0 and success_count == 0:
+            # ⚠️ 一页都没成，绝不能报成功（2026-09-26 审计实测：原实现无论成功几页
+            #    都 `return True`，于是 PDF 损坏/输出目录不可写时命令以退出码 0
+            #    结束、没有任何产物，调用方（run_on_input_directory → CLI 退出码、
+            #    脚本、流水线）全都发现不了——和 print 那个「空输入静默成功」同类）。
+            print(f"\n❌ 提取失败：{total_selected} 页全部失败（成功 0 页）{time_note}")
+            return False
+        print(f"\n🎉 处理完成！ 成功: {success_count}/{total_selected} 页{time_note}")
         return True
     except Exception as e:
         print(f"❌ 失败: {e}")
@@ -572,7 +625,10 @@ def run_on_input_directory(
     zoom: float = 1,
     ext: str = "jpg",
     workers: int = 4,
-    quick: bool = False,
+    # 默认值必须与 core/command_spec.py 里 extract 的规格一致（zoom=1 /
+    # quick=True）：以前这里写的是 zoom=2 / quick=False，于是「直接调库」与
+    # 「走 CLI/GUI」是两套行为，默认值等于有了第二个来源（2026-09-26 审计）。
+    quick: bool = True,
     pages: str = None,
     start: int = None,
     end: int = None,
