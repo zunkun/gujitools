@@ -195,8 +195,15 @@ def run(ctx) -> None:
         app.processEvents()
         time.sleep(0.1)
 
-    _saved = repo.list_stage_runs(tid, "print")[0]["parameters"]
-    _saved_fx = _saved.get("_effects") or []
+    # ⚠️ 读 worker 实际消费的运行配置（run-<run_id>.json），不查 runs.json：
+    #    2026-09-26 起入史前剥离 _effects/files/page_rects（写放大治理）
+    import json as _json
+
+    _run_id = repo.list_stage_runs(tid, "print")[0]["run_id"]
+    _run_cfg = _json.loads(
+        (repo.runs_config_dir(tid) / f"run-{_run_id}.json").read_text(encoding="utf-8")
+    )
+    _saved_fx = _run_cfg["args"].get("_effects") or []
     ok("print 运行配置携带 area=2 / border=30 的实时合成规格",
        any(s.get("effect") and s["effect"].get("area") == 2
            and s["effect"].get("border") == "30" for s in _saved_fx),

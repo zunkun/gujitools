@@ -119,7 +119,7 @@ threshold = Otsu(left_pixels + right_pixels) + offset
 | --sealmin-sat | 50       | 红色识别最低饱和度（0~255）          |
 | --offset      | 0        | 阈值偏移量（正数文字加粗，负数变细） |
 | --type        | 1        | 输出类型（1=二值，2=1bit，3=灰度）   |
-| --workers     | CPU 核数 | 并行线程数                           |
+| --workers     | 按机器动态（≤8） | 并行线程数（CPU+内存双约束）  |
 
 ## 输出命名规则
 

@@ -55,6 +55,12 @@ def run_stage(config: dict) -> int:
 
         command = stage
         command_args = CommandArgs(command=command, **args)
+        # ⚠️ GUI 必须走与 CLI 相同的校验器（2026-09-26 第二轮审计）：此前
+        #    CommandArgs.validate() 只在 CLI 被调用，GUI 面板产生的边距 500mm、
+        #    非法 pdf_name 等全都放行到执行层——正是校验器注释里描述的
+        #    「可排版区域挤成负数 → 畸形 PDF」场景。这里补上后，非法参数在
+        #    执行前就以 error 事件回报（下面的 except 会转成界面提示）。
+        command_args.validate()
         interceptor = ProgressStream(_real_stdout(), context)
         reporter = JsonLinesReporter(context, stream=_real_stdout())
         original_stdout = sys.stdout

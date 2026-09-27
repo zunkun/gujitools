@@ -64,6 +64,11 @@ class SourceThumbnailsWorker(QObject):
     """导入 PDF 后渲染全部页面缩略图（256px，与预览查看器缓存一致）。"""
 
     finished = Signal(str)  # 缩略图目录路径
+
+    #: 请求被取消（删任务/关程序）：**终态信号**。串行队列把它接到
+    #: ``thread.quit``——没有它，取消路径的 return 会让线程事件循环永不退出
+    #: （队列卡死、任务删不掉）。
+    cancelled = Signal()
     #: 非致命问题：例如副本保存失败，但仍从原文件渲染成功
     warning = Signal(str)
     failed = Signal(str)
@@ -171,13 +176,15 @@ class SourceThumbnailsWorker(QObject):
                 self.progress.emit(0, total)  # 开始渲染
 
                 done = 0
+                cancelled = False
                 for index, batch in enumerate(self._batches(total)):
                     if index:
                         # 批间空隙：让 GUI 把上一批的图标画完、把点击处理掉
                         time.sleep(BATCH_GAP_MS / 1000)
                     for page_number in batch:
                         if self._cancelled:
-                            return
+                            cancelled = True
+                            break
                         # 任务可能中途被删除，此时停止写盘，避免残留目录
                         if not self.out_dir.parent.parent.is_dir():
                             raise FileNotFoundError("任务目录已不存在，中止缩略图生成")
@@ -193,10 +200,19 @@ class SourceThumbnailsWorker(QObject):
                             time.sleep(yield_ms / 1000)
                         done += 1
                         self.progress.emit(done, total)
+                    if cancelled:
+                        break
             finally:
                 if self._document is not None:
                     self._document.close()
                     self._document = None
+            # ⚠️ 取消也是终态：必须发信号让串行队列的 thread.quit 真正执行。
+            #    裸 return 时线程事件循环永不退出 → cancel_tag 的 wait 超时 →
+            #    任务永远删不掉、队列 busy() 恒 True、后续导入全部堵死
+            #    （2026-09-26 第二轮审计 H1）。
+            if cancelled:
+                self.cancelled.emit()
+                return
             # 全部页渲完：给副本一小段落地时间（快盘 0.7s 就够，让"导入完成"
             # 提示名副其实）。等不到也不阻塞——复制线程是 daemon，会在后台拷完。
             if self._copy_thread is not None:

@@ -23,8 +23,8 @@ guji run print
 配置模板里可以整段删除它。需要单独查看检测结果时才执行：
 
 ```bash
-guji detect -i ./images            # 只输出坐标，不落盘
-guji detect -i ./images --save     # 落地标注图
+guji detect -i ./images --save     # 落地标注图（命令行必须带 --save，否则拒绝执行）
+# 不落盘、只拿坐标的用法：走 crop/cropremove，或代码里调 detect_page_boxes()
 ```
 
 ## 模块清单

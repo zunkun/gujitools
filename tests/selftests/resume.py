@@ -48,6 +48,16 @@ def run(ctx) -> None:
     have = len(list(partial.glob("*.jpg"))) if partial.exists() else 0
     d.run_stage(resume=True)
     wait_worker(d, app, timeout=300)
+    # ⚠️ wait_worker 只等 QProcess 退出；finished 事件派发 + 收尾写盘
+    #    （finish_stage）还排在事件队列里（整跑重负载时可能差数百毫秒，
+    #    实测踩过：done=68/68 而状态还停在 running）。这里轮询到状态
+    #    落定再断言，别裸读。
+    _deadline = time.time() + 30
+    while time.time() < _deadline:
+        app.processEvents()
+        if repo.stage_states(tid_big)["extract"]["status"] != "running":
+            break
+        time.sleep(0.05)
     state = repo.stage_states(tid_big)["extract"]
     ok("续跑后成功", state["status"] == "success", str(state))
     total_now = len(list(partial.glob("*.jpg")))

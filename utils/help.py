@@ -121,6 +121,9 @@ def print_quick_help():
   crop           基于 YOLO 裁剪左右文本框
   rembg    (-r)   整图去底色 / 二值化 / 印章保留
   cropremove (-cr)  裁剪 + 去底色（复合流程）
+  print          从图片清单排版生成 PDF（经 guji run print 或桌面版使用）
+  init           在当前目录生成 guji.yaml 配置模板
+  run            从 guji.yaml 读取参数执行子命令
 
 全局选项:
   -h, --help     显示此帮助信息
@@ -131,11 +134,12 @@ def print_quick_help():
   guji help extract        查看 extract 手册
   guji help detect         查看 detect 手册
   guji help cropremove     查看 cropremove 手册
+  guji help print          查看 print 手册
   guji help overview       查看功能模块概览
 
 常用示例:
   guji extract -i book.pdf -o ./images --zoom 2
-  guji detect -i ./images
+  guji detect -i ./images --save
   guji crop -i ./images -o ./cropped
   guji rembg -i ./images -o ./output --seal --sealcolor
   guji cropremove -i ./images -o ./output --area 1

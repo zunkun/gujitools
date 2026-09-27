@@ -20,6 +20,15 @@ from desktop.store.tasks import STAGES
 
 MAX_RUN_HISTORY = 20  # 每阶段保留的执行历史条数
 
+#: 入史前剥掉的大块**运行时派生**字段。它们由「面板参数 + 当页清单」在每次
+#: 执行时重新推导（``_effects`` ← entries+area/border；``files`` ← print.json；
+#: ``page_rects`` ← 版面编辑器），面板回填（``apply_args``）只认表单字段，
+#: 永远用不到这三个。留着它们的话：2400 页的书单条记录 64KB~0.5MB，
+#: ×20 条历史，运行期每 200ms 的 ``set_progress`` 全量重写一次 → 每秒几十 MB
+#: 的磁盘写放大 + 主线程 json.dumps 卡顿（2026-09-26 第二轮审计 M5）。
+#: ⚠️ ``pdf_name`` 等**表单字段必须保留**（``_latest_print_pdf_path`` 靠它解析产物名）。
+_RUN_STRIP_KEYS = frozenset({"_effects", "files", "page_rects"})
+
 
 class RunMixin:
     """runs.json 读写。"""
@@ -63,12 +72,17 @@ class RunMixin:
         run_id = uuid.uuid4().hex
         runs = self._load_runs(task_id)
         history = self._as_history(runs.get(stage))
+        stored_parameters = {
+            key: value
+            for key, value in parameters.items()
+            if key not in _RUN_STRIP_KEYS
+        }
         history.insert(
             0,
             {
                 "run_id": run_id,
                 "status": "running",
-                "parameters": {"resume": resume, **parameters},
+                "parameters": {"resume": resume, **stored_parameters},
                 "done": 0,
                 "total": 0,
                 "started_at": time.time(),

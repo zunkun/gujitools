@@ -41,9 +41,14 @@ from core.command_spec import get_spec, normalize_margin
 #: | 2  |  706MB | 10.31s |
 #:
 #: 超过核数只是抢核 + 抢内存带宽：12 线程峰值是 4 线程的 3 倍，反而更慢。
-#: 故默认收敛到 4（与 desktop 的 SUBMIT_WORKERS 一致），**用户显式 --workers N
+#: 故默认收敛（与 desktop 的 SUBMIT_WORKERS 一致），**用户显式 --workers N
 #: 不受影响**——那是用户自己的选择。性能现场见 .workbuddy/perf/。
-MAX_DEFAULT_WORKERS = 4
+#:
+#: 2026-09-27：改为**动态预算**（见 machine_worker_budget）——用户反馈
+#: 「不能定死 8 或 4，按电脑配置动态调整」。本常量降级为动态预算的**封顶值**；
+#: 单页内存靠 `_mask_to_u8`、PIL 位图及时关闭等瘦身手段控制，实测本机
+#: 4 vs 8 线程整批耗时基本一致（内存带宽 4 线程即饱和），上调无害。
+MAX_DEFAULT_WORKERS = 8
 
 MAX_DEFAULT_DETECT_WORKERS = 8
 
@@ -54,17 +59,112 @@ MAX_DEFAULT_DETECT_WORKERS = 8
 #: **常驻 YOLO 服务**里、客户端线程只是等结果——与去底/裁剪的 ~350MB/张完全
 #: 不是一个量级。实测同一批 320 张：4 线程 52.6s / 8 线程 40.4s / 12 线程
 #: 39.2s，**8 线程即饱和**（12 线程只快 3%，却让客户端每线程多攥一张解码图）。
-#: 其余命令仍取 4。
 _COMMAND_DEFAULT_WORKER_CAP = {"detect": MAX_DEFAULT_DETECT_WORKERS}
 
 
-def default_worker_cap(command: str | None = None) -> int:
-    """该命令的默认并发**上限**（与机器核数无关）。
+def _total_physical_memory_gb() -> float:
+    """物理内存大小（GB）；取不到（平台冷门/权限受限）返回 0.0，调用方跳过内存维度。"""
+    import os as _os
+    import sys as _sys
 
-    `static/guji.yaml` 的示例值、文档表格与护栏都按它写：改上限只需改
-    `core/args.py` 这一处，别处不必跟着动。
+    try:
+        if _sys.platform == "win32":
+            import ctypes
+
+            class _MEMORYSTATUSEX(ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", ctypes.c_ulong),
+                    ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong),
+                    ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong),
+                    ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong),
+                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+                ]
+
+            stat = _MEMORYSTATUSEX()
+            stat.dwLength = ctypes.sizeof(_MEMORYSTATUSEX)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat)):
+                return stat.ullTotalPhys / (1024 ** 3)
+            return 0.0
+        return (
+            _os.sysconf("SC_PHYS_PAGES") * _os.sysconf("SC_PAGE_SIZE") / (1024 ** 3)
+        )
+    except Exception:  # noqa: BLE001 - 探测失败就只用 CPU 维度
+        return 0.0
+
+
+#: 内存维度的换算参数：预算 = 物理内存 × 60%；每个去底/裁剪 worker 峰值
+#: 约 350~500MB（位图 + Otsu 中间数组，见 _mask_to_u8 的注释）。
+_WORKER_MEM_BUDGET_RATIO = 0.6
+_WORKER_MEM_PER_THREAD_MB = 500
+
+_machine_budget_cache: Optional[int] = None
+
+
+def machine_worker_budget() -> int:
+    """按**这台机器**的配置动态算出默认并发预算（物理核 + 内存双约束）。
+
+    - CPU 维度：**物理核数**（psutil 可用则取，否则逻辑核）。去底/裁剪是
+      numpy/cv2 的内存带宽型负载，超线程几乎不涨吞吐（实测 4≈8 线程，
+      带宽 4 线程即饱和）——按物理核给先验，剩下的超线程兄弟核自然留给
+      GUI/系统，不需要再减；
+    - 内存维度：物理内存 × 60% ÷ 单 worker 峰值 500MB，至少 2；
+    - 两者取小，再封顶 ``MAX_DEFAULT_WORKERS``。结果进程内缓存（配置不会
+      在运行中途变）。
+
+    这只是**先验**：真实瓶颈只有跑起来才知道，functions/base 的自适应并发
+    会在默认值场景下按实测吞吐微调（见 ``CommandArgs.is_defaulted``）。
+    用户显式 ``--workers N`` / 面板数值**不受影响**——那是用户自己的选择。
     """
-    return _COMMAND_DEFAULT_WORKER_CAP.get(command or "", MAX_DEFAULT_WORKERS)
+    global _machine_budget_cache
+    if _machine_budget_cache is None:
+        logical = multiprocessing.cpu_count() or 4
+        physical = _physical_core_count() or logical
+        by_cpu = max(2, min(MAX_DEFAULT_WORKERS, physical))
+        by_mem = MAX_DEFAULT_WORKERS
+        total_gb = _total_physical_memory_gb()
+        if total_gb > 0:
+            by_mem = max(
+                2,
+                min(
+                    MAX_DEFAULT_WORKERS,
+                    int(
+                        total_gb
+                        * _WORKER_MEM_BUDGET_RATIO
+                        * 1024
+                        // _WORKER_MEM_PER_THREAD_MB
+                    ),
+                ),
+            )
+        _machine_budget_cache = max(2, min(by_cpu, by_mem))
+    return _machine_budget_cache
+
+
+def _physical_core_count() -> int:
+    """物理核数（不含超线程）；探测失败返回 0，调用方回落逻辑核。
+
+    psutil 由 ultralytics 带入（检测环境必有）；纯 CLI 环境没有它也能活。"""
+    try:
+        import psutil  # noqa: PLC0415
+
+        count = psutil.cpu_count(logical=False)
+        return int(count) if count else 0
+    except Exception:  # noqa: BLE001 - 没有就退回逻辑核
+        return 0
+
+
+def default_worker_cap(command: str | None = None) -> int:
+    """该命令的默认并发**上限**。
+
+    通用命令走 ``machine_worker_budget()``（按机器配置动态，≤
+    ``MAX_DEFAULT_WORKERS``）；detect 单独放宽到 ``MAX_DEFAULT_DETECT_WORKERS``
+    （每张图只在常驻服务里读一次，比去底/裁剪轻得多，见下）。
+    """
+    cap = _COMMAND_DEFAULT_WORKER_CAP.get(command or "")
+    return cap if cap is not None else machine_worker_budget()
 
 
 def default_workers(files: int | None = None, command: str | None = None) -> int:
@@ -162,11 +262,21 @@ class CommandArgs:
         command = kwargs.get("command", None)
         self.command = command
         self.args: Dict[str, Any] = {"command": command}
+        self._defaulted_keys: set = set()
         self._build_args(**kwargs)
 
     def get(self, key: str, default: Any = None) -> Any:
         """按字典风格获取参数。"""
         return self.args.get(key, default)
+
+    def is_defaulted(self, key: str) -> bool:
+        """该键的当前值是**注入的默认值**（调用方没显式给/给了 None）吗？
+
+        用途：自适应并发的开关——用户显式 ``--workers 4`` 是自己的选择
+        （固定 4 线程执行）；默认值才是"按机器预算的先验"，允许运行时按
+        实测吞吐微调（见 functions/base 的波次爬山）。
+        """
+        return key in self._defaulted_keys
 
     def __contains__(self, key: str) -> bool:
         return key in self.args
@@ -204,6 +314,15 @@ class CommandArgs:
         spec = get_spec(self.command)
         if spec is None:
             return  # 未登记的命令（如 help）不做额外处理
+
+        # 记录哪些键是**注入的默认值**（调用方没给/给了 None）：显式指定的值
+        # 语义不同——如 workers 用户给了就固定执行，默认值才允许自适应微调
+        # （见 CommandArgs.is_defaulted）。
+        self._defaulted_keys = {
+            key
+            for key in ("workers", "clean", *spec.defaults.keys())
+            if kwargs.get(key) is None
+        }
 
         # -------- 命令特有参数：默认值全部来自 CommandSpec --------
         for key, default in spec.defaults.items():

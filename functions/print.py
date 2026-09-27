@@ -12,7 +12,7 @@ from typing import List, Optional, Tuple
 from concurrent.futures import ThreadPoolExecutor
 
 from fpdf.syntax import DestinationXYZ
-from PIL import Image
+from PIL import Image, ImageOps
 
 from core.command_spec import PRINT_DEFAULTS
 from functions.base import FunctionBase
@@ -505,16 +505,37 @@ class PrintFunction(FunctionBase):
             str(node[1]) for node in title_switch_nodes if len(node) >= 2
         ]
         title_chain = build_font_chain(pdf, texts=title_texts, preferred=title_font)
-        # 页码是数字（ASCII），任何中文字体都有字形；仍建链是为了尊重
-        # 用户"页码用另一种字体"的选择。
+        # 页码建链要喂**真实页码文本**（2026-09-26 第二轮审计）：默认样式是
+        # 「第X頁」这类纯中文，不含 ASCII 数字——按 "0123456789" 建链时，
+        # 用户选了无 CJK 字形的页码字体（如 Arial）的话，「第/頁」在链里
+        # 找不到支持者 → 渲染成空白/notdef，且无任何告警。采首尾两个页码
+        # （含前后缀、前缀里可能有中文）覆盖实际会用到的字形。
+        from utils.string_utils import format_page_number
+
+        _pn_base = int(self.command_args.get("page_number_base") or 0)
+        _pn_fmt = str(self.command_args.get("page_number_format") or "chinese")
+        _pn_prefix = self.command_args.get("page_number_prefix")
+        _pn_prefix = "" if _pn_prefix is None else str(_pn_prefix)
+        _pn_suffix = self.command_args.get("page_number_suffix")
+        _pn_suffix = "" if _pn_suffix is None else str(_pn_suffix)
+        # 实际打印的编号是 base + 当前页（1-based），采首尾两页覆盖字形
+        number_texts = [
+            format_page_number(_pn_base + 1, _pn_fmt, _pn_prefix, _pn_suffix),
+            format_page_number(_pn_base + max(1, total), _pn_fmt, _pn_prefix, _pn_suffix),
+        ]
         number_chain = build_font_chain(
-            pdf, texts=["0123456789"], preferred=page_number_font
+            pdf, texts=number_texts, preferred=page_number_font
         )
 
         # 将配置中的页名节点解析为排序后图片的序号，用于章节切换和书签。
         sorted_nodes = _resolve_title_nodes(image_files, title_switch_nodes)
 
         processed_count = 0
+        # 进度分母 = 实际要写的页数（2026-09-26 第二轮审计）：total 含被
+        # skip_pages 跳过的页，processed_count 最大只能到 total-跳过数，
+        # 原先进度永远到不了 100%。
+        _zero_img_warned = False
+        total_written = max(0, total - len(skip_indices))
 
         # ---- 逐页左右侧：从起始标注页或章节节点开始按图片序号交替 ----
         # 规则在 utils.page_layout.sides_for_pages（预览与 PDF 同一份）
@@ -567,7 +588,20 @@ class PrintFunction(FunctionBase):
                     image_rect=image_rect,
                 )
                 x_img, y_img, new_w, new_h = plan.image
-                pdf.image(img, x=x_img, y=y_img, w=new_w, h=new_h)
+                # ⚠️ 边距把可用区挤到 0 时 plan 会给出 0×0（2026-09-26 第二轮
+                #    审计）：直接传给 fpdf2 会走它「w=h=0 → 按 72dpi 原尺寸」
+                #    的另一条语义分支，页面上落一颗小斑点图还毫无提示。这里
+                #    跳过贴图并告警（标题/页码照画，页不缺）。
+                if new_w <= 0 or new_h <= 0:
+                    if not _zero_img_warned:
+                        print(
+                            f"\n警告: 第 {i + 1} 页可排版区域为 0"
+                            "（边距过大），该页仅保留标题/页码。"
+                        )
+                        _zero_img_warned = True
+                    new_w = new_h = 0
+                if new_w > 0 and new_h > 0:
+                    pdf.image(img, x=x_img, y=y_img, w=new_w, h=new_h)
 
                 # 书签在章节节点对应的具体图片上创建。
                 for node_index, (node_title, _) in sorted_nodes:
@@ -594,14 +628,17 @@ class PrintFunction(FunctionBase):
                 data["img"] = None
                 del img, data
                 processed_count += 1
-                if processed_count % 10 == 0 or processed_count == total:
-                    print(f"\r写入进度: {processed_count}/{total}", end="")
+                if processed_count % 10 == 0 or processed_count == total_written:
+                    print(f"\r写入进度: {processed_count}/{total_written}", end="")
                     # 结构化进度：**整个 print 阶段进度条的唯一来源**（total = 实际写入
                     # PDF 的页数，页面清单增删后自然跟着变）。合成阶段刻意不发进度，
                     # 否则两条独立进度会交替驱动同一条进度条（见 print_stage 的说明）。
-                    self.reporter.progress(processed_count, total)
+                    self.reporter.progress(processed_count, total_written)
         finally:
             executor.shutdown(wait=False, cancel_futures=True)
+        # 收尾补发一次：最后一页若恰好落在 %10 的间隙里，上面也到不了终点
+        if processed_count:
+            self.reporter.progress(processed_count, total_written)
 
         if processed_count == 0:
             # 有图片但一页都没写出来（全被 skip_pages 跳过、或图片全部解码失败）
@@ -623,6 +660,14 @@ class PrintFunction(FunctionBase):
     def _load_image(idx, path, max_w_px=0, max_h_px=0):
         try:
             img = Image.open(path)
+            # ⚠️ EXIF 方向必须转正（2026-09-26 第二轮审计）：cv2 链
+            #    （detect/crop，utils.image_io.imdecode）默认按 EXIF 方向
+            #    自动转正、Qt 预览（QImageReader autoTransform）也转正，
+            #    唯独 PIL 不转——不处理的话，带 EXIF 方向的 JPEG 会被
+            #    **横躺 90°** 嵌进 PDF，与检测框/预览方向全不一致。
+            #    先查方向标签：无标签时 exif_transpose 也会整图复制一份。
+            if img.getexif().get(274, 1) != 1:
+                img = ImageOps.exif_transpose(img)
             if img.mode == "RGBA":
                 bg = Image.new("RGB", img.size, (255, 255, 255))
                 bg.paste(img, mask=img.split()[3])

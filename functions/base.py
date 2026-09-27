@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import List, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import shutil
+import time
+
 import utils
 
 # 依赖中立层的只读协议，而非 cli 的具体容器类：
@@ -164,13 +166,27 @@ class FunctionBase:
         self.outpath.mkdir(parents=True, exist_ok=True)
 
         # 并发与重试策略。
-        # 兜底走 default_workers（= min(4, CPU 核数, 张数)）：CommandArgs 总会
-        # 注入 workers，所以这个兜底只在「自建参数字典」时生效；写死 8 会让
-        # 绕开 CommandArgs 的调用方悄悄开 8 个线程，把峰值内存抬到 8×350MB。
+        # 兜底走 default_workers（= min(机器预算, CPU 核数, 张数)）：CommandArgs
+        # 总会注入 workers，所以这个兜底只在「自建参数字典」时生效。
         workers = max(
             1,
             int(self.command_args.get("workers") or default_workers(len(image_files))),
         )
+        # ⚠️ 并发**自适应爬山**（2026-09-27 用户要求"按机器实测动态匹配"）：
+        #    默认值只是机器预算的**先验**——真实瓶颈（内存带宽/核型/散热）
+        #    只有跑起来才知道。仅当 workers 是注入的默认值（用户没显式给，
+        #    见 CommandArgs.is_defaulted）且批量够大（≥16 张，波次测量才
+        #    稳定）时启用：从「先验−2」起步、每波 +1 线程，吞吐变差就锁回
+        #    最优。用户显式指定的 workers 是自己的选择，原样固定执行。
+        auto_tune = False
+        try:
+            auto_tune = (
+                self.command_args.is_defaulted("workers")
+                and len(image_files) >= 16
+            )
+        except AttributeError:
+            pass  # 自建参数容器（无 is_defaulted 协议）：按静态 workers 执行
+        tune_cap = workers
         max_retries = 2
         results_by_file = {}
         self.log_path = self.outpath / f"{self.cmd}_process.log"
@@ -189,14 +205,14 @@ class FunctionBase:
             """对一轮文件集合并行处理，返回每文件的结果列表。"""
             if not current_files:
                 return []
+            nonlocal workers, auto_tune
             total = len(image_files)
             finished = 0
             round_results = []
-            with ThreadPoolExecutor(max_workers=workers) as executor:
-                future_map = {
-                    executor.submit(self._process_single_image, p): p
-                    for p in current_files
-                }
+
+            def _drain(future_map):
+                """收割一批 future：记结果/失败、报进度。"""
+                nonlocal finished
                 for future in as_completed(future_map):
                     p = future_map[future]
                     try:
@@ -215,6 +231,55 @@ class FunctionBase:
                     # 结构化进度：完成数可能因重试超过总数，上限截断到 total
                     finished += 1
                     self.reporter.progress(min(finished, total), total)
+
+            if not auto_tune:
+                with ThreadPoolExecutor(max_workers=workers) as executor:
+                    _drain({
+                        executor.submit(self._process_single_image, p): p
+                        for p in current_files
+                    })
+                return round_results
+
+            # ---- 自适应波次：每波结束量一次吞吐，向更优并发爬一格 ----------
+            # 先验可能高估（内存带宽饱和后加线程白费）也可能低估（别人的机器
+            # 更好）：爬山从「先验−2」起步、逐波 +1 到预算上限，首见回退即锁
+            # 定最优——探测成本约 2~3 个波次（每波 ≥12 张），对整批是零头。
+            files = list(current_files)
+            idx = 0
+            w = max(2, tune_cap - 2)
+            best_w, best_rate = w, 0.0
+            climbing = w < tune_cap
+            wave = max(12, 3 * w)
+            while idx < len(files):
+                chunk = files[idx:idx + wave]
+                idx += len(chunk)
+                t0 = time.perf_counter()
+                with ThreadPoolExecutor(max_workers=w) as executor:
+                    _drain({
+                        executor.submit(self._process_single_image, p): p
+                        for p in chunk
+                    })
+                rate = len(chunk) / max(1e-6, time.perf_counter() - t0)
+                if rate > best_rate:
+                    best_w, best_rate = w, rate
+                if climbing:
+                    if best_rate > 0 and rate < best_rate * 0.97:
+                        # 这一手比已知最优差 ≥3%：锁回最优，不再爬
+                        self._write_log(
+                            f"并发自适应: {w} 线程 {rate:.2f} 页/秒 不如 "
+                            f"{best_w} 线程 {best_rate:.2f}，锁定最优"
+                        )
+                        w = best_w
+                        climbing = False
+                    elif w < tune_cap:
+                        w += 1
+                    else:
+                        climbing = False  # 到预算上限：锁定
+            self._write_log(
+                f"并发自适应: 采用 {best_w} 线程（最优吞吐 {best_rate:.2f} 页/秒）"
+            )
+            workers = best_w  # 重试轮直接用学到的最优
+            auto_tune = False  # 只在首轮爬一次，重试的文件少、测不准
             return round_results
 
         pending_files = list(image_files)

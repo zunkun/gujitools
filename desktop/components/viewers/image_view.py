@@ -284,6 +284,11 @@ class ImageView(QLabel):
                 0: (box[2], box[3]), 1: (box[0], box[3]),
                 2: (box[0], box[1]), 3: (box[2], box[1]),
             }[self._resize_corner]
+            # ⚠️ 拖角必须夹在图幅内（与 move 分支、new 松手时的夹取同口径）：
+            #    不夹的话 boxes.json 里会存进负坐标/超界框，下游 rembg 预览、
+            #    提交合成、打印按越界框算出错误区域（2026-09-26 第二轮审计）。
+            ix = min(max(ix, 0), self._image_size.width())
+            iy = min(max(iy, 0), self._image_size.height())
             self._boxes[self._drag_index] = self._normalize(
                 [anchor_x, anchor_y, ix, iy]
             )

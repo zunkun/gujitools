@@ -263,6 +263,11 @@ class TaskMixin:
         """源 PDF 页缩略图：导入即生成，PDF 预览直接复用，永不清理。"""
         return self.task_dir(task_id) / "thumbnails" / "source"
 
+    def rembg_thumbnails_dir(self, task_id: str) -> Path:
+        """第四步缩略图缓存：提交阶段（rembg_submit）随最终图片一并生成，
+        缩略条直接复用，不必每次现解码 6000px 的原图。"""
+        return self.task_dir(task_id) / "thumbnails" / "print"
+
     def copy_source_to_task(self, task_id: str, source_path: Path) -> Path:
         """导入时在任务目录下保留一份源文件副本（原子落地）。
 

@@ -201,6 +201,9 @@ class SerialJobQueue(QObject):
         thread.started.connect(worker.run)
         worker.finished.connect(thread.quit)
         worker.failed.connect(thread.quit)
+        if hasattr(worker, "cancelled"):
+            # 取消也是终态：worker 在循环边界收手时必须能退出线程事件循环
+            worker.cancelled.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
         # 子线程 emit → 排队回主线程再弹 toast（闭包必须走 connect_queued）
         on_warning = callbacks.get("warning")

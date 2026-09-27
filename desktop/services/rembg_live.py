@@ -52,6 +52,12 @@ def render_page(image_path: str, args: dict, out_dir: str | Path) -> str:
 
     with Image.open(image_path) as img:
         img.load()
+        # ⚠️ EXIF 方向转正（与 functions.rembg 同口径：cv2/Qt 都转正，PIL
+        #    不转的话实时预览与最终产物方向不一致）。先查标签避免无谓整图复制
+        if img.getexif().get(274, 1) != 1:
+            from PIL import ImageOps
+
+            img = ImageOps.exif_transpose(img)
         # 与 functions.rembg 一致：RGBA 先合到白底，避免 alpha 干扰阈值
         if img.mode == "RGBA":
             bg = Image.new("RGB", img.size, (255, 255, 255))

@@ -127,6 +127,8 @@ _YOLO_LOCK = threading.Lock()
 #: 用它的调用方（常驻服务）要把这笔开销单独报出来——它必须能被单独计时，
 #: 否则会落到"第一张图"的耗时里，看起来像某一张特别慢。
 _LOAD_SECONDS = 0.0
+#: 推理设备（load_yolo_model 里定，有 CUDA 用 GPU；见 _resolve_yolo_device）
+_YOLO_DEVICE = "cpu"
 
 
 def model_path() -> Path:
@@ -165,6 +167,30 @@ def load_seconds_used() -> float:
     检测耗时——"第一张图要 5 秒"看起来像图的问题，其实是模型在加载。
     """
     return _LOAD_SECONDS
+
+
+def _resolve_yolo_device() -> str:
+    """选择 YOLO 推理设备：有可用 CUDA 就用 GPU，否则 CPU。
+
+    - 环境变量 ``GUJI_YOLO_DEVICE`` 是用户的显式选择（auto/cpu/cuda/cuda:0…），
+      直接采用、不做可用性检查——写错了自己能在日志里看到报错；
+    - 自动模式探测 ``torch.cuda.is_available()``：检测是流水线里唯一的深度
+      学习环节，GPU 化收益最大（CPU 推理几百 ms/张，GPU 通常快一个量级）。
+      环境里装的是 CUDA 版 torch（cu121）但此前被硬编码在 CPU 上跑
+      （2026-09-27 用户指出"GPU 好就吃 GPU"）；
+    - 探测失败（torch 缺失/异常）一律回落 CPU，绝不因 GPU 探测把加载搞挂。
+    """
+    override = (os.environ.get("GUJI_YOLO_DEVICE") or "").strip().lower()
+    if override:
+        return override
+    try:
+        import torch  # noqa: PLC0415 - 调用点已在 ultralytics 导入之后
+
+        if torch.cuda.is_available():
+            return "cuda:0"
+    except Exception:  # noqa: BLE001 - 探测失败就老实跑 CPU
+        pass
+    return "cpu"
 
 
 def load_yolo_model() -> object:
@@ -215,7 +241,17 @@ def load_yolo_model() -> object:
 
         imported_at = time.perf_counter()
         _YOLO_MODEL = YOLO(str(resolved))
-        _YOLO_MODEL.to("cpu")  # 强制 CPU 模式，兼容无 GPU 环境
+        # 设备选择：有 CUDA 就吃 GPU（用户要求"GPU 好就吃 GPU"），
+        # GUJI_YOLO_DEVICE 可显式指定；挂了回落 CPU——GPU 只是加速件，
+        # 绝不能让设备初始化失败把"加载模型"整个搞挂。
+        global _YOLO_DEVICE
+        _YOLO_DEVICE = _resolve_yolo_device()
+        try:
+            _YOLO_MODEL.to(_YOLO_DEVICE)
+        except Exception as exc:  # noqa: BLE001 - 驱动/显存问题都走这里
+            print(f"GPU 初始化失败（{_YOLO_DEVICE}）：{exc}，回落 CPU 推理")
+            _YOLO_DEVICE = "cpu"
+            _YOLO_MODEL.to("cpu")
 
         # ⚠️ 在**加载锁内、单线程**先跑一次空推理，把首次预测的惰性初始化坐实。
         #    首次 predict 会做一次性初始化，其中包括 Conv+BN 融合：`fuse()` 把 BN
@@ -233,7 +269,8 @@ def load_yolo_model() -> object:
         print(
             f"加载 YOLO 模型完成: 用时 {elapsed:.1f} s"
             f"（导入 torch/ultralytics {imported_at - started:.1f} s，"
-            f"加载权重并预热 {elapsed - (imported_at - started):.1f} s）"
+            f"加载权重并预热 {elapsed - (imported_at - started):.1f} s，"
+            f"推理设备 {_YOLO_DEVICE}）"
             "；同一进程内后续检测直接复用"
         )
         return _YOLO_MODEL
@@ -263,7 +300,9 @@ def detect_left_right_boxes(
     h, w = image_bgr.shape[:2]
     mid_x = w / 2.0  # 图像中线，用于区分左右页
 
-    results = model(image_bgr, verbose=False, device="cpu")
+    # 设备跟模型走（load 时已选定并 to() 过）。写死 "cpu" 是无 GPU 时代的
+    # 兼容行为；GPU 时代它就是纯浪费（2026-09-27 用户指出"GPU 好就吃 GPU"）。
+    results = model(image_bgr, verbose=False, device=_YOLO_DEVICE)
     boxes = results[0].boxes
     left_boxes, right_boxes = [], []
 

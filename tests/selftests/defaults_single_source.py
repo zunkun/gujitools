@@ -139,12 +139,14 @@ def run(ctx) -> None:
         default_workers,
     )
 
-    want_default = max(1, min(MAX_DEFAULT_WORKERS, multiprocessing.cpu_count()))
+    want_cap = default_worker_cap()
+    want_default = max(1, min(want_cap, multiprocessing.cpu_count()))
     want_detect = max(
         1, min(MAX_DEFAULT_DETECT_WORKERS, multiprocessing.cpu_count())
     )
-    ok("默认并发上限 = 4（一页 5000×4400 约 350MB，线程数直接乘成峰值内存）",
-       MAX_DEFAULT_WORKERS == 4, f"上限={MAX_DEFAULT_WORKERS}")
+    ok("默认并发预算是动态的：2 ≤ 预算 ≤ 封顶 8（CPU 留 2 核 + 内存 60%÷500MB 双约束）",
+       2 <= want_cap <= MAX_DEFAULT_WORKERS == 8,
+       f"本机预算={want_cap} / 封顶={MAX_DEFAULT_WORKERS}")
     ok("检测的默认并发上限 = 8（每张只在常驻服务里读一次图，比去底/裁剪轻得多）",
        MAX_DEFAULT_DETECT_WORKERS == 8, f"上限={MAX_DEFAULT_DETECT_WORKERS}")
     ok("default_workers() = min(通用上限, CPU 核数)",
@@ -169,6 +171,17 @@ def run(ctx) -> None:
            got == want, f"注入值={got}")
     explicit = CommandArgs(command="rembg", input=".", workers=9).get("workers")
     ok("用户显式给的 workers 不被改写", explicit == 9, f"{explicit}")
+    # 默认值来源追踪（自适应并发的开关，2026-09-27）：默认注入的键
+    # is_defaulted=True，用户显式给的=False——执行层据此决定要不要爬山。
+    _ca_def = CommandArgs(command="rembg", input=".")
+    _ca_exp = CommandArgs(command="rembg", input=".", workers=2, area=1)
+    ok("CommandArgs.is_defaulted 区分「默认注入」与「用户显式」",
+       _ca_def.is_defaulted("workers")
+       and _ca_def.is_defaulted("area")  # spec 默认键没显式给 → 也算默认
+       and not _ca_exp.is_defaulted("workers")
+       and not _ca_exp.is_defaulted("area"),
+       f"默认 workers={_ca_def.is_defaulted('workers')} "
+       f"显式 workers={_ca_exp.is_defaulted('workers')}")
 
     missing: list[str] = []
     cpu_count_hits: list[str] = []
@@ -199,15 +212,14 @@ def run(ctx) -> None:
     import yaml
 
     template = yaml.safe_load((root / "static" / "guji.yaml").read_text(encoding="utf-8"))
-    # 逐段比对：每段的示例值要等于**该命令**的上限（detect=8、其余=4）。
-    # 原来只收集去重后的集合、要求恰好等于 [4]，加了 detect 的 8 就会红——
-    # 那样写会把「哪个命令用哪个上限」这条信息丢掉。
+    # 逐段比对：模板的 workers 示例值 ≤ 绝对封顶（2026-09-27 起默认并发是
+    # **按机器动态**的，模板是静态文件没法逐机相等——只钉"不超封顶"）。
     template_wrong = {
         name: section["workers"]
         for name, section in (template or {}).items()
         if isinstance(section, dict)
         and isinstance(section.get("workers"), int)
-        and section["workers"] != default_worker_cap(name)
+        and not (1 <= section["workers"] <= MAX_DEFAULT_WORKERS)
     }
     template_seen = sorted(
         name
@@ -216,6 +228,6 @@ def run(ctx) -> None:
     )
     ok("配置模板扫到了各命令的 workers 段（不是空跑）",
        len(template_seen) >= 5, f"扫到={template_seen}")
-    ok("配置模板各段的 workers 示例值 = 该命令的上限",
+    ok("配置模板各段的 workers 示例值不超封顶 8",
        not template_wrong,
-       f"不符={template_wrong}（应为 {[(n, default_worker_cap(n)) for n in template_seen]}）")
+       f"不符={template_wrong}（封顶={MAX_DEFAULT_WORKERS}，本机预算={want_cap}）")

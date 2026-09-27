@@ -265,6 +265,35 @@ class DetectMixin:
         self._show_boxes_info(normalized, "manual")
         self._refresh_reference_boxes()
 
+    def _stop_detect_process(self) -> None:
+        """停掉在跑的单页检测并释放执行权（返回列表/切任务前必须调）。
+
+        ⚠️ 不停的话（2026-09-26 第二轮审计 H3）：检测是几秒到十几秒的慢活，
+        用户中途「返回」或切到任务 B 后，旧进程的 boxes 事件才姗姗到达——
+        而 ``self.task_id`` 已经是 B 了，``save_detect_boxes`` 就会把 A 的
+        检测框写进 **B 的** boxes.json（两本书页名同为 0001 时直接污染裁剪）；
+        若 A 已被删除，这里还会 FileNotFoundError 从 Qt 槽直接炸出去。
+        与 ``_start_detect`` 的顶替逻辑同款：先断信号再 kill。
+        """
+        proc = self.detect_process
+        if proc is None:
+            return
+        if proc.state() != QProcess.NotRunning:
+            for signal in (
+                proc.readyReadStandardOutput,
+                proc.readyReadStandardError,
+                proc.finished,
+            ):
+                try:
+                    signal.disconnect()
+                except (RuntimeError, TypeError):
+                    pass
+            proc.kill()
+            proc.waitForFinished(1000)
+        self.detect_process = None
+        self._detect_out_buffer = ""
+        self._release_run()
+
     def _start_detect(self, path: Path) -> None:
         old = self.detect_process
         if old is not None and old.state() != QProcess.NotRunning:

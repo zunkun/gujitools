@@ -286,8 +286,9 @@ def run(ctx) -> None:
         ("print", "files"): "页序清单，运行时由程序作为 args['files'] 填入",
     }
     #: 不参与数值比对的通用键：input/output 是路径占位，
-    #: workers 的 CLI 默认 = min(该命令上限, CPU 核数)（机器相关；通用上限 4、
-    #: detect 上限 8，见 core/args.py 的 default_worker_cap）。
+    #: workers 的 CLI 默认 = min(该命令上限, CPU 核数)（机器相关；通用上限 8、
+    #: detect 上限 8，见 core/args.py 的 default_worker_cap；2026-09-27 用户
+    #: 权衡后从 4 调回 8）。
     _SKIP_VALUE_CHECK = {"input", "output", "workers"}
     #: clean 由 core/args.py 兜底，默认 False；模板若写 true，用户照抄就会
     #: 默认清空输出目录——这属于危险漂移，必须钉住。

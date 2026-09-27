@@ -121,13 +121,22 @@ class RembgLiveMixin:
         self._live_pending = snapshot
         self.rembg_viewer.set_live_dir(live)
         self.rembg_viewer.show_live_pending()
+        # 上一单还在飞就先取消（token 守卫只丢结果不省算力，审计 L2）
+        previous = getattr(self, "_live_worker", None)
+        if previous is not None and hasattr(previous, "cancel"):
+            try:
+                previous.cancel()
+            except Exception:  # noqa: BLE001
+                pass
+        worker = RembgLiveWorker(str(image_path), args, str(live), token)
+        self._live_worker = worker
         self.run_worker(
-            lambda: RembgLiveWorker(str(image_path), args, str(live), token),
-            lambda worker, thread: (
-                connect_queued(self, worker.finished, self._on_live_done, thread),
-                connect_queued(self, worker.failed, self._on_live_failed, thread),
-                worker.finished.connect(thread.quit),
-                worker.failed.connect(thread.quit),
+            lambda: worker,
+            lambda worker_, thread: (
+                connect_queued(self, worker_.finished, self._on_live_done, thread),
+                connect_queued(self, worker_.failed, self._on_live_failed, thread),
+                worker_.finished.connect(thread.quit),
+                worker_.failed.connect(thread.quit),
             ),
         )
 
@@ -135,6 +144,8 @@ class RembgLiveMixin:
         """单页结果回来：过期则丢弃，否则记住"这页已按该参数算过"并刷新显示。"""
         if token is not self._live_token:
             return
+        if not out_path:
+            return  # 被取消的那单（空路径，见 RembgLiveWorker.run）
         if self._live_pending is not None:
             self._live_done[Path(out_path).stem] = self._live_pending
         self._live_pending = None

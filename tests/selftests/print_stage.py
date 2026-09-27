@@ -10,10 +10,12 @@ TITLE = "print"
 
 
 def run(ctx) -> None:
+    import json
     import time
     from pathlib import Path
 
     import pymupdf
+    from PySide6.QtTest import QTest
 
     from tests.selftests._context import ok, wait_worker
 
@@ -85,13 +87,14 @@ def run(ctx) -> None:
 
     # 显式验证 border→边距级联（GUI 接线，而非只靠纯函数守卫）：
     # 清掉 border（视为 0）→ 默认回落 20；再设回 10 → 级联为 0
+    # ⚠️ 级联走第三步联动的 200ms 防抖，qWait 冲过去再断言
     _rembg_panel.border.setText("")
-    app.processEvents()
+    QTest.qWait(260)
     ok("第三步 border 清掉 → 第四步默认边距回落 20",
        panel.get_args()["page_margins"] == [20, 20, 20, 20],
        str(panel.get_args()["page_margins"]))
     _rembg_panel.border.setText("10")
-    app.processEvents()
+    QTest.qWait(260)
     ok("第三步 border=10 → 第四步默认边距级联为 0",
        panel.get_args()["page_margins"] == [0, 0, 0, 0],
        str(panel.get_args()["page_margins"]))
@@ -107,8 +110,15 @@ def run(ctx) -> None:
     ok("输出 PDF 页数与列表一致", doc.page_count == 6, str(doc.page_count))
     doc.close()
     ok("print.json 已保存", len(repo.load_print_pages(tid)) == 6)
-    # 运行配置中的 _effects 必须携带第三步当前 border（worker 据此实时合成）
-    _saved_fx = repo.list_stage_runs(tid, "print")[0]["parameters"].get("_effects") or []
+    # worker 实际消费的运行配置（run-<run_id>.json）必须携带第三步当前 border
+    # （据此实时合成）。⚠️ 不查 runs.json 历史：2026-09-26 起入史前剥掉大块
+    # 运行时派生字段（_effects/files/page_rects）——2400 页的书单条历史 0.5MB，
+    # 而历史只用于面板回填，留着它们是纯写放大。
+    _run_id = repo.list_stage_runs(tid, "print")[0]["run_id"]
+    _run_cfg = json.loads(
+        (repo.runs_config_dir(tid) / f"run-{_run_id}.json").read_text(encoding="utf-8")
+    )
+    _saved_fx = _run_cfg["args"].get("_effects") or []
     _saved_boxed = [s for s in _saved_fx if s.get("effect")]
     ok("print 运行配置携带实时合成规格（源 rembgpreview，border=10）",
        len(_saved_fx) == 6
@@ -117,6 +127,12 @@ def run(ctx) -> None:
        and all(s["effect"]["border"] == "10" for s in _saved_boxed)
        and any(s["effect"]["boxes"] == [_injected] for s in _saved_boxed),
        f"total={len(_saved_fx)} boxed={len(_saved_boxed)}")
+    # 历史里则不应再背这份大块派生数据（写放大治理）
+    _hist_params = repo.list_stage_runs(tid, "print")[0]["parameters"]
+    ok("历史参数已剥离运行时派生字段（_effects/files/page_rects）",
+       not ({"_effects", "files", "page_rects"} & set(_hist_params))
+       and _hist_params.get("pdf_name") == "print.pdf",
+       str(sorted(_hist_params)))
     # PDF 生成成功后下载按钮可用，且路径指向实际 PDF
     _pdf = d._latest_print_pdf_path()
     ok("生成 PDF 后下载按钮可用",

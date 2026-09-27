@@ -96,14 +96,14 @@ PNG 格式，300 DPI，optimize=True，compress_level=9。
 | ------------- | -------- | ------------------------------------ |
 | -i/--input    | .        | 输入图片文件或目录                   |
 | -o/--output   | None     | 输出目录名称                         |
-| --clean       | True     | 清空输出目录                         |
+| --clean       | False    | 清空输出目录（显式加 --clean 才清）   |
 | --offset      | 0        | 阈值偏移量（正数文字加粗，负数变细） |
 | --type        | 1        | 输出类型（1=二值，2=1bit，3=灰度）   |
 | --seal        | False    | 印章检测总开关                       |
 | --sealcolor   | False    | 印章彩色输出开关                     |
 | --sealarea    | 80       | 印章最小连通域像素面积               |
 | --sealmin-sat | 50       | 红色识别最低饱和度（0~255）          |
-| --workers     | CPU 核数 | 并行线程数                           |
+| --workers     | 按机器动态（≤8） | 并行线程数（CPU+内存双约束）  |
 
 ## 输出命名规则
 

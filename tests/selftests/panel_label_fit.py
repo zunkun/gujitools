@@ -163,6 +163,20 @@ def run(ctx) -> None:
     e_side = [r for r in e_rows if not r["stacked"]]
     ok("第一步表单已布局出多行", len(e_side) >= 5, f"并排 {len(e_side)} 行")
     e_widest = max(r["label_w"] for r in e_side)
+    # ⚠️ 字段列的下限**不能写死像素**（2026-09-26 自己踩的坑）：全量套件里
+    #    字体自测模块会先装 CJK 字体，中文标签列随之变宽（132px），字段列被
+    #    挤到 198px——固定 `>= 200` 就会在整跑时假失败（单跑全绿）。真正要守
+    #    的不变量是两条：① 标签列不超上限（宽标签去折行/上下排，见第三步）；
+    #    ② 字段列吃掉「表单宽 − 标签列 − 间距」的全部剩余（字段没被多挤）。
+    #    原先 112px 的回归由 ① 卡住（那条 240px 的长标签必超上限）。
+    _e_form = _form(extract)
+    _form_w = _e_form.parentWidget().width()
+    # 12px 常量余量：QFormLayout 的 contentsMargins 与字段控件自身的边框
+    # 不体现在 horizontalSpacing() 里（实测差 ~8px）。要卡的是"字段被挤扁"
+    # 这种量级（原回归 112px），不是个位数像素。
+    _expected_field = _form_w - e_widest - max(0, _e_form.horizontalSpacing()) - 12
     ok("第一步标签列、字段列同样满足不变量",
-       e_widest <= limit and max(r["field_w"] for r in e_side) >= FIELD_MIN_WIDTH,
-       f"标签 {e_widest} / 字段 {max(r['field_w'] for r in e_side)}")
+       e_widest <= limit
+       and max(r["field_w"] for r in e_side) >= _expected_field,
+       f"标签 {e_widest} / 字段 {max(r['field_w'] for r in e_side)}"
+       f" / 期望 ≥{_expected_field}")

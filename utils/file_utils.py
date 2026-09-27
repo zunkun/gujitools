@@ -88,6 +88,22 @@ def replace_with_retry(source, target, attempts: int = 6, delay: float = 0.05) -
             time.sleep(delay)
 
 
+def _unique_tmp_name(target) -> str:
+    """临时名带 pid + 线程号：**同一目标可能有两个生产者并发写**。
+
+    固定 ``x.jpg.part`` 时（2026-09-26 第二轮审计 M3）：导入队列与详情页的
+    补页 pass 同时渲同一页 → B 的 ``open("wb")`` 截断 A 正在写的内容，
+    A fsync 后 replace 提交**半截 JPEG**——它 mtime 更新、体积又常超阈值，
+    会同时通过 mtime 与字节头两道判据，**永久缓存坏图**。
+    与 ``desktop/store/json_io``、``desktop/utils/files.copy_file_atomic``
+    的既有做法对齐。
+    """
+    import os
+    import threading
+
+    return f"{target.name}.{os.getpid():x}-{threading.get_ident():x}.part"
+
+
 def write_bytes_atomic(path, data: bytes) -> None:
     """原子写字节：先写同目录临时文件，再替换到目标名。
 
@@ -105,7 +121,7 @@ def write_bytes_atomic(path, data: bytes) -> None:
 
     target = _Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    tmp = target.with_name(f"{target.name}.part")
+    tmp = target.with_name(_unique_tmp_name(target))
     with open(tmp, "wb") as handle:
         handle.write(data)
         handle.flush()

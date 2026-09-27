@@ -35,9 +35,24 @@ class RembgLiveWorker(QObject):
         self._args = dict(args)
         self._out_dir = out_dir
         self._token = token
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        """请求放弃计算。token 守卫只丢**结果**不省**算力**：连拖滑块时
+        每次派发都先取消上一单，别让几个 numpy 重活同时抢 GIL
+        （2026-09-26 第二轮审计 L2）。"""
+        self._cancelled = True
 
     def run(self) -> None:
-        """线程入口：算完发 finished，异常发 failed（不抛到线程外）。"""
+        """线程入口：算完发 finished，异常发 failed（不抛到线程外）。
+
+        ⚠️ 取消路径也必须发终态信号（finished/failed 之一），否则线程事件
+        循环永不退出（SourceThumbnailsWorker 同款教训）；空路径结果由宿主
+        按 token 丢弃。
+        """
+        if self._cancelled:
+            self.finished.emit(self._token, "")
+            return
         try:
             from desktop.services.rembg_live import render_page
 

@@ -9,17 +9,52 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from desktop.stages.events import emit
+from core.args import machine_worker_budget  # noqa: E402  (预算与函数层同一份)
+from desktop.utils.files import THUMBNAIL_EDGE  # noqa: E402
+from utils.file_utils import write_bytes_atomic  # noqa: E402
 
 #: 提交合成的并行 worker 数。瓶颈在 **PNG 编码**（实测单张 6000×5475 约
 #: 0.65s，占整页 85%；Qt 的读写/绘制在 PySide6 里释放 GIL，线程并行实测
-#: 4 线程 3.47×）。上限 4 是内存约束：每个 worker 同时持有整页位图
-#: （~130MB）+ 输出画布，再多收益递减、峰值内存线性涨。
-#: ⚠️ 这里的 4 与 `core.args.MAX_DEFAULT_WORKERS`（函数层默认并发上限）
-#: 是同一个内存预算下的两个入口，改一处要想另一处。
+#: 4 线程 3.47×）。每个 worker 同时持有整页位图（~130MB）+ 输出画布，
+#: 峰值内存随线程数线性涨。
+#: ⚠️ 上限与 `core.args.machine_worker_budget()`（函数层动态预算）保持一致
+#: （同一个内存预算下的两个入口，改一处要想另一处）；环境变量是用户的
+#: 显式选择，可越过预算但受绝对封顶 8 约束。
 SUBMIT_WORKERS = max(
-    1, min(4, int(os.environ.get("GUJI_SUBMIT_WORKERS") or 0)
-           or min(4, os.cpu_count() or 1)),
+    1,
+    min(
+        8,
+        int(os.environ.get("GUJI_SUBMIT_WORKERS") or 0)
+        or min(8, machine_worker_budget(), os.cpu_count() or 1),
+    ),
 )
+
+
+def _save_step4_thumb(image, name: str, thumb_dir: Path) -> None:
+    """提交落盘最终图后**顺手**生成第四步缩略条用的小图。
+
+    第四步左侧缩略条原先对每条目现解码 6000px 的原图（QImageReader 缩放
+    解码也要数百 ms/张），换成预生成 256px JPEG 后查看器零解码直接上屏
+    （2026-09-27 用户反馈「第四步缩略图渲染慢」）。
+
+    - 失败**静默跳过**：缩略图是纯加速件，查看器对缺失的页回落原图解码，
+      绝不能因为缩略图写失败把成功的提交报成失败；
+    - **原子写**：截断的缩略图 mtime 必然比最终图新，会被查看器的
+      mtime 新鲜度判据永久当成有效缓存（与源缩略图同一套道理）。
+    """
+    from PySide6.QtCore import QBuffer, QIODevice, Qt
+
+    try:
+        small = image.scaled(
+            THUMBNAIL_EDGE, THUMBNAIL_EDGE,
+            Qt.KeepAspectRatio, Qt.SmoothTransformation,
+        )
+        buf = QBuffer()
+        buf.open(QIODevice.OpenModeFlag.WriteOnly)
+        small.save(buf, "JPG", quality=80)
+        write_bytes_atomic(thumb_dir / f"{Path(name).stem}.jpg", bytes(buf.data()))
+    except Exception:  # noqa: BLE001 - 加速件不许拖垮主流程
+        pass
 
 
 def run_rembg_submit_stage(config: dict) -> int:
@@ -52,6 +87,13 @@ def run_rembg_submit_stage(config: dict) -> int:
                 else:
                     child.unlink()
         out_dir.mkdir(parents=True, exist_ok=True)
+        # 第四步缩略图缓存（与 store.rembg_thumbnails_dir 同一份目录布局：
+        # <task>/thumbnails/print；worker 侧拿不到 store，按任务目录布局推导）。
+        # 提交时**整目录重建**：最终图变了/页数变了，旧缩略图全部作废，
+        # 不留孤儿文件。
+        thumb_dir = out_dir.parent.parent / "thumbnails" / "print"
+        shutil.rmtree(thumb_dir, ignore_errors=True)
+        thumb_dir.mkdir(parents=True, exist_ok=True)
 
         from PySide6.QtGui import QImage, QImageReader
 
@@ -131,6 +173,7 @@ def run_rembg_submit_stage(config: dict) -> int:
                 dst = out_dir / name
                 if out.save(str(dst), "PNG"):
                     saved_names.append(name)
+                    _save_step4_thumb(out, name, thumb_dir)
                 else:
                     errors.append(f"写入失败: {dst}")
             return saved_names, errors

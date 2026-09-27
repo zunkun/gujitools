@@ -50,7 +50,9 @@ class ThumbsMixin(WorkerHost):
         self._thumb_next = 0
         self._thumb_total = 0
         #: 单次触发的定时器，负责在间隙后拉起下一批
-        self._thumb_timer = QTimer()
+        #: ⚠️ 必须给 parent：无主 QTimer 只靠 shutdown_workers 停，控件若未走
+        #:    该路径销毁，定时器仍会触发并碰已析构的 C++ 对象（审计 L3）
+        self._thumb_timer = QTimer(self)
         self._thumb_timer.setSingleShot(True)
         self._thumb_timer.timeout.connect(self._dispatch_next_thumb_batch)
 
@@ -64,24 +66,31 @@ class ThumbsMixin(WorkerHost):
         return ThumbStrip.decode_edge(self.devicePixelRatioF() or 1.0, base)
 
     # ------------------------------------------------------------ 对外入口
-    def _load_thumbs(self, strip: ThumbStrip, paths: list[Path]) -> None:
+    def _load_thumbs(self, strip: ThumbStrip, paths: list[Path],
+                     start: int = 0) -> None:
         """按路径加载缩略图；标签取文件名。
 
         ⚠️ 只负责**分批调度**，解码仍交给 ``ImageListWorker``（它用
         QImageReader 的缩放解码，不会把两三千像素的原图整张读进内存）。
+
+        ``start``：从第几条开始加载（之前的条目已有图标）。给「清单只是
+        前缀扩展」的增量刷新用（extract 执行期页面陆续落地，整表重跑是
+        O(N²) 控件 churn——2026-09-26 第二轮审计 L1）。
         """
         edge = self._decode_edge()
         self._load_thumbs_chunked(
             len(paths),
-            make_worker=lambda start, end: ImageListWorker(
-                list(paths[start:end]), edge=edge
+            make_worker=lambda s, e: ImageListWorker(
+                list(paths[s:e]), edge=edge
             ),
             sink=lambda index, image, path: strip.set_item_icon(
                 index, image, path, Path(path).name
             ),
+            start=start,
         )
 
-    def _load_thumbs_chunked(self, total: int, make_worker, sink) -> None:
+    def _load_thumbs_chunked(self, total: int, make_worker, sink,
+                             start: int = 0) -> None:
         """把 total 张缩略图分批加载。
 
         参数:
@@ -90,6 +99,7 @@ class ThumbsMixin(WorkerHost):
                 ``[start, end)``；worker 发出的 ``thumbnail_ready`` 里带的是
                 **切片内**下标，本方法会加回 start 变成全局下标。
             sink: ``(global_index, image, path)``，每张就绪时在**主线程**回调。
+            start: 光标起点（该下标之前的条目已有图标，跳过）。
 
         ⚠️ 调用即代表「重新装载」：会作废上一轮未跑完的批次（代际令牌），
         所以切阶段时旧的缩略图不会填进新列表。
@@ -99,8 +109,12 @@ class ThumbsMixin(WorkerHost):
         self._thumb_total = max(0, int(total))
         self._thumb_factory = make_worker
         self._thumb_sink = sink
-        self._thumb_next = 0
-        if self._thumb_total == 0 or make_worker is None or sink is None:
+        self._thumb_next = max(0, min(int(start), self._thumb_total))
+        if (
+            self._thumb_next >= self._thumb_total
+            or make_worker is None
+            or sink is None
+        ):
             return
         # 首批立即出：用户先看到开头几张，页面才算"出来了"
         self._dispatch_next_thumb_batch()

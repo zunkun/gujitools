@@ -109,8 +109,23 @@ class MainWindow(QMainWindow):
 
     def _open_detail(self, task_id: str) -> None:
         page = self._ensure_detail_page()
-        page.set_task(task_id)
-        self.pages.setCurrentWidget(page)
+        # ⚠️ 每次都必须真正 set_task，**不能**做"同任务已在看就早退"的优化
+        #    （2026-09-26 第二轮审计里试过，护栏当场抓回来）：任务号是顺序
+        #    复用的——用户删掉 0012 再新建，新任务也叫 0012；此时点列表必须
+        #    重新加载，否则详情页还是被删那个任务的状态（源路径、面板参数
+        #    全是旧的）。双击连点导致的重复复位是可接受的小代价。
+        if page.set_task(task_id):
+            self.pages.setCurrentWidget(page)
+        else:
+            # 两种拒绝：任务不存在（留在列表、刷新行）；子任务执行中
+            # （set_task 已弹 toast——把详情页亮出来让提示和进度被看见）
+            busy = page.running_stage is not None or (
+                page.process is not None
+                and page.process.state() != QProcess.NotRunning
+            )
+            if busy:
+                self.pages.setCurrentWidget(page)
+            self.list_page.refresh()
 
     def _back_to_list(self) -> None:
         self.list_page.refresh()

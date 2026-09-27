@@ -118,6 +118,13 @@ class ProgressStream(io.TextIOBase):
         self.real = real_stdout
         self.context = context  # {"task_id", "stage", "run_id"}
         self.buffer = ""
+        # ⚠️ 行缓冲必须加锁（2026-09-26 审计 #18）：functions/base 的线程池里
+        #    多线程同时 print()，而 print 分两次 write（正文、换行）——不加锁
+        #    时两条日志可能拼进同一行再转发。emit 自身有 _EMIT_LOCK，这里补齐
+        #    缓冲拼接这段。
+        import threading
+
+        self._lock = threading.Lock()
         # 兼容旧调用方：阶段执行器以前从解析结果里取 done/total 组装 finished。
         # 现在由 JsonLinesReporter 负责进度，这里不再维护计数，恒为 0。
         self.done = 0
@@ -131,19 +138,23 @@ class ProgressStream(io.TextIOBase):
         """按换行或回车切分输出边界，逐行转发日志；返回写入字符数（满足 io.TextIOBase 约定）。"""
         if not isinstance(text, str):
             text = str(text)
-        self.buffer += text
-        # 以换行或回车作为一条输出边界（print.py 使用 end="" + \r 输出进度）
-        while True:
-            idx = min(
-                (i for i in (self.buffer.find("\n"), self.buffer.find("\r")) if i >= 0),
-                default=-1,
-            )
-            if idx < 0:
-                break
-            line = self.buffer[: idx + 1].strip()
-            self.buffer = self.buffer[idx + 1 :]
-            if line:
-                self._consume(line)
+        with self._lock:
+            self.buffer += text
+            # 以换行或回车作为一条输出边界（print.py 使用 end="" + \r 输出进度）
+            lines: list[str] = []
+            while True:
+                idx = min(
+                    (i for i in (self.buffer.find("\n"), self.buffer.find("\r")) if i >= 0),
+                    default=-1,
+                )
+                if idx < 0:
+                    break
+                line = self.buffer[: idx + 1].strip()
+                self.buffer = self.buffer[idx + 1 :]
+                if line:
+                    lines.append(line)
+        for line in lines:
+            self._consume(line)
         return len(text)
 
     def flush(self) -> None:

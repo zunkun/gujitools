@@ -36,6 +36,12 @@ def run_detect(config: dict) -> int:
     """检测单张图片的左右文本框，返回像素坐标（重依赖由常驻服务承担）。"""
     image_path = config["image"]
     emit({"type": "detect_started", "image": image_path})
+    # ⚠️ 单图模式同样要拦 stdout（2026-09-26 审计 #19，与批量模式同款）：
+    #    YOLO/ultralytics 的模型摘要直接 print，不拦就混进 stdout JSON 流，
+    #    GUI 侧解析失败的行只能静默丢弃——模型加载日志凭空消失。
+    interceptor = ProgressStream(_real_stdout(), {"image": image_path})
+    original_stdout = sys.stdout
+    sys.stdout = interceptor
     try:
         # 跨层复用（登记在案，见 docs/dev/refactor-modularity.md §3.C）：
         # GUI 检测阶段必须跑与 CLI **完全相同**的检测算法，否则界面预览与
@@ -90,6 +96,11 @@ def run_detect(config: dict) -> int:
         _emit_log(f"检测失败: {Path(image_path).name} —— {exc}")
         emit({"type": "detect_error", "image": image_path, "message": str(exc)})
         return 1
+    finally:
+        sys.stdout = original_stdout
+        # 进程结束时缓冲里若有残留（无换行的最后一行），按日志转发掉
+        if interceptor.buffer.strip():
+            interceptor._consume(interceptor.buffer.strip())
 
 
 def run_detect_stage(config: dict) -> int:

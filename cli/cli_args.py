@@ -22,7 +22,11 @@ import argparse
 from pathlib import Path
 
 from cli.config_io import ConfigError
-from utils.help import process_help_command
+from utils.help import process_help_command, _DOC_MAP as _HELP_DOC_MAP
+# ⚠️ area 的 choices 必须从 spec 的枚举派生（2026-09-26 审计）：写死 [1,2,3]
+#    时，spec/文档/GUI 都支持的「4 = 整页模式」在 CLI 上被 argparse 直接拒绝
+#    （照文档操作反而失败，实测复现）。
+from core.command_spec import CROP_AREAS
 
 
 def _closest_flag(name: str, known: set[str]) -> str | None:
@@ -153,16 +157,17 @@ class CliArgsParser:
         crop_parser.add_argument(
             "--area",
             type=int,
-            choices=[1, 2, 3],
+            choices=list(CROP_AREAS),
             help="裁剪区域类型，默认1\n"
             "1 = 逐框独立裁剪，分别输出 -l/-r 两张图，无框时输出原图\n"
             "2 = 逐框独立裁剪，单图输出，border=None 保持原尺寸\n"
-            "3 = 合并左右框为整体外边界裁剪，单图输出，border=None 保持原尺寸",
+            "3 = 合并左右框为整体外边界裁剪，单图输出，border=None 保持原尺寸\n"
+            "4 = 整页模式（不加载 YOLO，整页即唯一文本框，不检测）",
         )
         crop_parser.add_argument(
             "--border",
-            help="文本框边界控制（mm），对 --area 1/2/3 均生效，默认None\n"
-            "None = 裁剪到各框边界（area=1）；输出与原图同尺寸（area=2/3）\n"
+            help="文本框边界控制（mm），对 --area 均生效，默认None\n"
+            "None = 按 area 取默认：area 1/2/3 → 0（紧裁到文本框外边界）；area 4 → 不设\n"
             "0 = 裁剪到文本框外边界，丢弃外侧区域\n"
             "有值 = 裁剪到外边界并按该值外扩空白边距（mm->px @300dpi）\n"
             "支持4种写法（数字用英文逗号分隔）：\n"
@@ -243,16 +248,17 @@ class CliArgsParser:
         cropremove_parser.add_argument(
             "--area",
             type=int,
-            choices=[1, 2, 3],
+            choices=list(CROP_AREAS),
             help="去底色文本区域识别类型，默认1\n"
             "1 = 逐框独立 Otsu（阈值取 left+right 合并），分别裁剪左右框输出 -l/-r 两张图，无框时输出原图\n"
             "2 = 逐框独立 Otsu（同1），单图输出，border=None 保持原尺寸\n"
-            "3 = 合并左右框为整体外边界统一 Otsu，单图输出，border=None 保持原尺寸",
+            "3 = 合并左右框为整体外边界统一 Otsu，单图输出，border=None 保持原尺寸\n"
+            "4 = 整页模式（不加载 YOLO，整页即唯一文本框，不检测）",
         )
         cropremove_parser.add_argument(
             "--border",
-            help="文本框边界控制（mm），对 --area 1/2/3 均生效，默认None\n"
-            "None = 裁剪到各框边界（area=1）；输出与原图同尺寸（area=2/3）\n"
+            help="文本框边界控制（mm），对 --area 均生效，默认None\n"
+            "None = 按 area 取默认：area 1/2/3 → 0（紧裁到文本框外边界）；area 4 → 不设\n"
             "0 = 裁剪到文本框外边界，丢弃外侧区域（area=1 各框，area=2/3 联合）\n"
             "有值 = 裁剪到外边界并按该值外扩空白边距（mm->px @300dpi），类比CSS margin\n"
             "支持4种写法（数字用英文逗号分隔）：\n"
@@ -287,10 +293,12 @@ class CliArgsParser:
         # ============ help ============
         # help 子命令：guji help [command] 查看命令手册，内容来自 docs/functions/<command>.md
         help_parser = subparsers.add_parser("help", help="查看命令手册")
+        # ⚠️ 主题清单从 _DOC_MAP 派生（2026-09-26 审计 #11）：写死清单漏了
+        #    detect/print——两个都有手册，却不能通过提示被发现
         help_parser.add_argument(
             "topic",
             nargs="?",
-            help="命令名称：extract / crop / rembg / cropremove / overview",
+            help="命令名称：" + " / ".join(_HELP_DOC_MAP.keys()),
         )
 
         # ============ init ============
@@ -309,12 +317,9 @@ class CliArgsParser:
             type=Path,
             help="原始 PDF 或图片目录（用于配置中的 extract.input）",
         )
-        init_parser.add_argument(
-            "-o",
-            "--output",
-            type=Path,
-            help="输出根目录（用于配置中的 extract.output 及其他命令的 input）",
-        )
+        # 注：不再提供 -o/--output——init 从 2026-09 起固定 extract.output=null
+        # （输出默认并列在输入旁边），历史上它是个收了值却没人消费的死参数，
+        # 帮助文本承诺的功能从未实现（2026-09-26 审计 #6，已删除）。
 
         # ============ run ============
         # run 子命令：从配置文件加载参数执行子命令
@@ -394,6 +399,15 @@ class CliArgsParser:
         # -h/--help 标志：全局显示总览，子命令上下文显示该命令手册
         if getattr(args, "help", False):
             topic = args.command if args.command not in (None, "help") else None
+            if topic is not None and topic not in _HELP_DOC_MAP:
+                # run/init 等没有手册文件的命令：打印 argparse 自己的用法，
+                # 而不是甩一句「未知主题」（2026-09-26 审计 #11）
+                for action in self.parser._actions:
+                    if action.dest == "command" and hasattr(action, "choices"):
+                        sub = action.choices.get(topic)
+                        if sub is not None:
+                            print(sub.format_help())
+                            sys.exit(0)
             process_help_command("help" if topic else "-h", topic)
 
         # help 子命令：提取 topic 传给帮助系统（docs/functions/<topic>.md）

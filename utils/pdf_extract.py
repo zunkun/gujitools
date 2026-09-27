@@ -288,6 +288,25 @@ def _embedded_page_image(doc, page, page_rect, ext: str, actual_zoom: float):
     return info, None
 
 
+def _exif_swap_dims(data: bytes, w: int, h: int) -> tuple[int, int]:
+    """EXIF 方向为 5~8（横竖互换）时交换宽高。
+
+    ⚠️ 为什么必须（2026-09-26 第二轮审计）：quick 路径**原样落盘内嵌字节**
+    （EXIF 保留），而消费端 cv2（detect 框坐标）与 Qt 预览（autoTransform）
+    都按 EXIF **转正后**处理——sizes.json 若报未旋转尺寸，GUI 叠框/版面
+    计算的坐标系就整体错位。只读文件头，不解码像素。
+    """
+    try:
+        from PIL import Image
+
+        with Image.open(io.BytesIO(data)) as probe:
+            if probe.getexif().get(274, 1) in (5, 6, 7, 8):
+                return h, w
+    except Exception:  # noqa: BLE001 - 读不出方向就按未旋转上报
+        pass
+    return w, h
+
+
 def _save_embedded_image(info, out_dir: str, page_idx: int, ext: str,
                          actual_zoom: float):
     """保存内嵌图：能原样落盘就直接写字节，否则解码转码。返回 (路径, 宽, 高)。"""
@@ -304,11 +323,17 @@ def _save_embedded_image(info, out_dir: str, page_idx: int, ext: str,
         #    表现为"某一页莫名处理失败/出半张白图"，且没有任何提示。
         #    原子写保证目标名下要么没有、要么完整。
         write_bytes_atomic(img_path, info["image"])
-        return img_path, int(info["width"]), int(info["height"])
+        w, h = int(info["width"]), int(info["height"])
+        return img_path, *_exif_swap_dims(info["image"], w, h)
 
-    from PIL import Image
+    from PIL import Image, ImageOps
 
     img = Image.open(io.BytesIO(info["image"]))
+    # ⚠️ 转码分支必须先转正再存（与 quick 路径的消费端视角一致）：存出的
+    #    文件没有 EXIF，若原样存未旋转像素，同一本书里 quick 页与转码页
+    #    方向相反。转正后尺寸按旋转后计。
+    if img.getexif().get(274, 1) != 1:
+        img = ImageOps.exif_transpose(img)
     if not math.isclose(actual_zoom, 1.0):
         img = img.resize(
             (max(1, int(img.width * actual_zoom)), max(1, int(img.height * actual_zoom))),

@@ -122,7 +122,7 @@ else:
 | --pages      | None     | 页码字符串（如 "1,3-5,7"）             |
 | --start      | None     | 起始页码（1-based）                    |
 | --end        | None     | 结束页码（1-based）                    |
-| --workers    | CPU 核数 | 线程数                                 |
+| --workers    | 按机器动态（≤8） | 线程数（CPU+内存双约束）      |
 | --batch-size | 4        | 每批次处理的页数                       |
 | --clean      | False    | 清空输出目录                           |
 

@@ -129,7 +129,16 @@ def run(ctx) -> None:
     doc = pymupdf.open(str(repo.print_output_pdf(tid)))
     ok("重排后 PDF 页数与列表一致", doc.page_count == n_before, str(doc.page_count))
     doc.close()
-    _fx = repo.list_stage_runs(tid, "print")[0]["parameters"].get("_effects") or []
+    # ⚠️ 读 worker 实际消费的运行配置（run-<run_id>.json），不查 runs.json：
+    #    2026-09-26 起入史前剥离 _effects/files/page_rects（写放大治理，
+    #    见 desktop/store/runs.py 的 _RUN_STRIP_KEYS）
+    import json as _json
+
+    _run_id = repo.list_stage_runs(tid, "print")[0]["run_id"]
+    _run_cfg = _json.loads(
+        (repo.runs_config_dir(tid) / f"run-{_run_id}.json").read_text(encoding="utf-8")
+    )
+    _fx = _run_cfg["args"].get("_effects") or []
     ok("运行配置的合成规格顺序与列表一致",
        [Path(s["file"]).stem for s in _fx]
        == [Path(e["file"]).stem for e in entries_after],

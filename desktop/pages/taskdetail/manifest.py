@@ -188,6 +188,9 @@ class PageListMixin:
         from desktop.workers import CopyFilesWorker, connect_queued
 
         worker = CopyFilesWorker(jobs)
+        # ⚠️ 任务令牌（2026-09-26 第二轮审计 M2）：复制可能要几秒，期间用户
+        #    已切到任务 B 的话，完成回调绝不能把 A 的文件插进 B 的清单。
+        owner_task = self.task_id
         self.run_worker(
             lambda: worker,
             lambda w, thread: (
@@ -202,12 +205,17 @@ class PageListMixin:
                 w.failed.connect(thread.quit),
             ),
         )
+        self._pages_copy_owner = owner_task
 
     def _on_pages_copied(self, done: list, errors: list) -> None:
         """后台复制完成后：把成功对插入清单、保存并刷新（主线程）。"""
         if not self.task_id or not done:
             if errors:
                 self._toast("error", "插入图片失败", errors[0][1])
+            return
+        # 复制期间切了任务：这批文件属于旧任务的 extract 目录，不能进新任务
+        if getattr(self, "_pages_copy_owner", None) != self.task_id:
+            self.log_view.append("已切换任务，忽略上一次未完成的图片插入。")
             return
         viewer = self._active_page_viewer()
         row = viewer.strip.currentRow()

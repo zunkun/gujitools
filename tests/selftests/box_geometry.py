@@ -206,5 +206,5 @@ def run(ctx) -> None:
        "ThreadPoolExecutor" in stage_src, "提交合成退回了串行")
     ok("输出名称预计算走 region_canvas_specs（规则只有一份）",
        "region_canvas_specs" in stage_src, "提交阶段自行推导几何张数")
-    ok("并行 worker 数有上限（内存约束：每 worker ~200MB 位图）",
-       rembg_stage.SUBMIT_WORKERS <= 4, str(rembg_stage.SUBMIT_WORKERS))
+    ok("并行 worker 数有上限（内存约束：每 worker ~200MB 位图；2026-09-27 起上限与函数层一致为 8）",
+       rembg_stage.SUBMIT_WORKERS <= 8, str(rembg_stage.SUBMIT_WORKERS))

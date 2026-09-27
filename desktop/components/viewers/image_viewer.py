@@ -122,6 +122,21 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
                 self.current_changed.emit(index, str(self._paths[index]))
             return
         self.close_zoom_popup()  # 清单换了：弹窗里那页已是旧数据
+        # ⚠️ 前缀扩展走**增量 append**（2026-09-26 第二轮审计 L1）：extract
+        #    执行期每 200ms 轮询一次输出目录，页面陆续落地；整表 clear+重建
+        #    320 个条目 = O(N²) 控件 churn。清单尾部追加时只补新条目。
+        old = self._paths
+        if (
+            len(paths) > len(old)
+            and old
+            and paths[: len(old)] == old
+            and self.strip.count() == len(old)
+        ):
+            for path in paths[len(old):]:
+                self.strip.add_page_item(Path(path).stem, str(path))
+            self._paths = list(paths)
+            self._load_thumbs(self.strip, self._paths, start=len(old))
+            return
         self._paths = list(paths)
         self.strip.clear()
         if not paths:
@@ -162,14 +177,15 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
             return Path(spec)
         return Path(path_text)
 
-    def _load_thumbs(self, strip, paths: list[Path]) -> None:
+    def _load_thumbs(self, strip, paths: list[Path], start: int = 0) -> None:
         """带提供者时加载映射后的缩略图，标签仍使用真实页面名。
 
         ⚠️ 分批调度走基类的 ``_load_thumbs_chunked``（首批立即、其余延后），
         这里只负责给出「切片 → worker」与「全局下标 → 条目」两个函数。
+        ``start`` 透传基类（增量追加时跳过已有图标的条目）。
         """
         if not self._thumb_provider:
-            super()._load_thumbs(strip, paths)
+            super()._load_thumbs(strip, paths, start)
             return
         real_paths = list(paths)
         thumb_paths = [self._thumb_for(str(p)) for p in real_paths]
@@ -177,12 +193,13 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         edge = self._decode_edge()
         self._load_thumbs_chunked(
             len(real_paths),
-            make_worker=lambda start, end: ImageListWorker(
-                thumb_paths[start:end], edge=edge
+            make_worker=lambda s, e: ImageListWorker(
+                thumb_paths[s:e], edge=edge
             ),
             sink=lambda index, image, _path: strip.set_item_icon(
                 index, image, str(real_paths[index]), labels[index]
             ),
+            start=start,
         )
 
     def _select_image(self, index: int, _path: str) -> None:

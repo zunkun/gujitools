@@ -14,6 +14,7 @@ CLI 启动逻辑：参数解析 → 功能分发 → 结果输出。
 退出码约定（与 `core.result.StageStatus` 对齐）:
 - 0: 正常完成
 - 1: 错误（未知命令、参数错误、配置错误、功能执行失败）
+- 2: argparse 用法错误（argparse 对缺参数/非法 choices 自带的退出码）
 - 130: 用户中断（Ctrl+C）
 
 本模块只保留「命令行外壳」独有的职责：argparse、YAML 覆盖语义、退出码。
@@ -156,11 +157,25 @@ def main() -> int:
     """命令行主入口函数，返回进程退出码。"""
     # 1. 解析命令行参数（help/version 在此阶段处理并退出，不触发重依赖加载）
     parser = CliArgsParser()
-    args = parser.parse_args()
+    try:
+        args = parser.parse_args()
+    except ConfigError as exc:
+        # 拼错参数（如 --bordr）的提示是精心写的一句话，不能让裸 traceback
+        # 把它淹没在堆栈里（2026-09-26 审计实测复现）
+        print(f"ERROR: {exc}")
+        return StageStatus.FAILED.to_exit_code()
     command = args.command
 
     # 2. 处理 help/version（已在 parse_args 中处理，这里仅安全返回）
     if command in ("help", "version"):
+        return StageStatus.SUCCESS.to_exit_code()
+
+    if not command:
+        # 裸 `guji`（无子命令）：打印快速帮助而非甩一句「未指定子命令」——
+        # 常见 CLI 习惯，epilog 也在宣传「使用 guji help」
+        from utils.help import print_quick_help
+
+        print_quick_help()
         return StageStatus.SUCCESS.to_exit_code()
 
     if command == "print":

@@ -76,7 +76,13 @@ def parse_color(text: str) -> QColor:
 
 
 def parse_margin4(text: str):
-    """解析边距简写：1 值→四边；2 值→上下/左右；4 值→上右下左；空→None。"""
+    """解析边距简写：1/2/3/4 值（CSS 简写）→ [上,右,下,左]；空→None。
+
+    ⚠️ 必须与 CLI 的 ``normalize_margin``（utils.margin_utils）同口径
+    （2026-09-26 审计 #13）：三值「上,左右,下」是合法写法（spec 的
+    title_margins 报错文案也明说 1/2/3/4），原先这里拒绝三值、同样的值
+    写进 guji.yaml 却能跑——GUI 比命令行更严，没有道理。
+    """
     text = str(text or "").strip()
     if not text:
         return None
@@ -91,8 +97,11 @@ def parse_margin4(text: str):
         vals = vals * 4
     elif len(vals) == 2:
         vals = [vals[0], vals[1], vals[0], vals[1]]
+    elif len(vals) == 3:
+        # CSS 三值：上 / 左右 / 下
+        vals = [vals[0], vals[1], vals[2], vals[1]]
     elif len(vals) != 4:
-        raise ValueError("边距需为 1 / 2 / 4 个值，如 20 或 20,30 或 20,30,25,35")
+        raise ValueError("边距需为 1 / 2 / 3 / 4 个值，如 20 或 20,30,25 或 20,30,25,35")
     return vals
 
 

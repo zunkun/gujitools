@@ -67,6 +67,11 @@ class PdfViewerWidget(QWidget, WorkerHost, ZoomPopupMixin):
         #: 连点多页时，陈旧请求在 worker 侧（is_stale）就不渲染了，就算已
         #: 渲完也不许覆盖用户当前看的页（2026-09-25 修「多点几下卡死」）。
         self._page_req_seq = 0
+        #: 缩略图 pass 的代际号：每次 set_pdf 递增。旧文档的整本缩略图 worker
+        #: 可能还要跑几十秒，它的迟到信号（metadata/thumbnail_ready/completed）
+        #: 一律按代际丢弃——否则旧书的页会画进新书缩略条，metadata 还会用
+        #: **旧书页数**重建条目、污染 pdf_page_count（2026-09-26 第二轮审计 M1）。
+        self._thumb_gen = 0
         #: 上一轮回扫看到的缓存文件数（用来判断"有没有新缩略图落盘"）
         self._last_cache_count = 0
         self._rescan_timer = QTimer(self)
@@ -103,6 +108,18 @@ class PdfViewerWidget(QWidget, WorkerHost, ZoomPopupMixin):
         self._thumb_received = set()
         self._thumb_total = 0
         self._thumb_retried = False
+        # 换文档 = 旧文档的所有在飞请求作废：单页渲染按序号、整本缩略图按代际
+        self._page_req_seq += 1
+        self._thumb_gen += 1
+        for worker in list(getattr(self, "_workers", [])):
+            cancel = getattr(worker, "cancel", None)
+            if callable(cancel) and (
+                hasattr(worker, "thumb_gen") or hasattr(worker, "is_stale")
+            ):
+                try:
+                    cancel()
+                except Exception:  # noqa: BLE001 - 收尾尽力而为
+                    pass
         self._rescan_timer.stop()
         self._stall_rounds = 0
         self._prefetch_busy = False
@@ -172,13 +189,21 @@ class PdfViewerWidget(QWidget, WorkerHost, ZoomPopupMixin):
         return bool(newest) and (time.time() - newest) < self.CACHE_ACTIVE_WINDOW_S
 
     def _wire_thumbnails(self, worker: PreviewWorker, thread) -> None:
+        worker.thumb_gen = self._thumb_gen  # 迟到信号按代际丢弃（见 _thumb_gen）
         worker.metadata.connect(self._metadata_ready)
         worker.thumbnail_ready.connect(self._thumb_ready)
         worker.completed.connect(self._thumbs_completed)
         worker.completed.connect(thread.quit)
         worker.failed.connect(thread.quit)
 
+    def _thumb_worker_is_stale(self) -> bool:
+        """sender() 的代际号 ≠ 当前代际 → 旧文档的迟到信号，丢弃。"""
+        gen = getattr(self.sender(), "thumb_gen", None)
+        return gen is not None and gen != self._thumb_gen
+
     def _metadata_ready(self, page_count: int, _path: str) -> None:
+        if self._thumb_worker_is_stale():
+            return
         if self._thumb_total == page_count and self.strip.count() == page_count:
             # 后续轮次（回扫/补缺页）：页面项已经建好了，**不能清空重建**——
             # 那会把已经加载好的图标全丢掉，只剩占位符。
@@ -194,6 +219,8 @@ class PdfViewerWidget(QWidget, WorkerHost, ZoomPopupMixin):
             self._select_page(0, "0")
 
     def _thumb_ready(self, index: int, image) -> None:
+        if self._thumb_worker_is_stale():
+            return  # 旧文档的迟到页：绝不能画进新书的缩略条
         self._thumb_received.add(index)
         # 磁盘缓存为 256px；条目显示按图标尺寸降采样，控制大文档内存
         scaled = image.scaled(
@@ -241,7 +268,7 @@ class PdfViewerWidget(QWidget, WorkerHost, ZoomPopupMixin):
 
     def _thumbs_completed(self) -> None:
         """一轮跑完：看是「只读」还是「自己补」，分别决定下一步。"""
-        if not self._pdf_path:
+        if self._thumb_worker_is_stale() or not self._pdf_path:
             return
         if self._pass_kind == "read":
             # 只读通道跑完：交给回扫定时器（新文件会陆续出现）

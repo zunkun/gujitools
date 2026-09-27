@@ -42,6 +42,9 @@ PAPER_SIZES: Tuple[str, ...] = ("A3", "A4", "A5", "B5")
 ORIENTATIONS: Tuple[str, ...] = ("landscape", "portrait")
 POSITIONS: Tuple[str, ...] = ("top", "bottom")
 TEXT_ORIENTATIONS: Tuple[str, ...] = ("vertical", "horizontal")
+#: 页码样式枚举（与 utils/string_utils.format_page_number 认得的样式一致）；
+#: 不校验的话拼错的值会被 format_page_number **静默回落中文数字**（审计 #14）
+PAGE_NUMBER_FORMATS: Tuple[str, ...] = ("chinese", "arabic", "ganzhi")
 TITLE_SIDES: Tuple[str, ...] = ("left", "right", "both")
 #: 命令能**写出**的图片格式。
 #: ⚠️ 名字不能叫 IMAGE_EXTS（2026-09-26 审计）：`utils/file_utils.IMAGE_EXTS`
@@ -87,9 +90,55 @@ def validate_border(border: Any) -> None:
         # 显式 from exc：保留原始异常链（pylint raise-missing-from），
         # 排查时能看到到底是哪一个 token 转不出整数
         raise ValueError(f"border 必须为数字，输入:{border}") from exc
+    # ⚠️ 边距要有上界（2026-09-26 第二轮审计）：`border 2000`（mm）会换算成
+    #    ~23622px 的四周留白，画布 (宽+47244)×(高+47244)×3 字节 ≈ 数 GB/张，
+    #    ×并发线程数直接 OOM——与 page_margins 的 100mm 上界同一口径。
+    _BORDER_MAX_MM = 100
     for n in nums:
         if n < 0:
             raise ValueError(f"border 边距不能为负数，输入值 {n}")
+        if n > _BORDER_MAX_MM:
+            raise ValueError(
+                f"border 单边不能超过 {_BORDER_MAX_MM}mm，当前={n}"
+                "（边距太大会把输出画布撑爆内存）"
+            )
+
+
+#: ``pdf_name`` 的黑名单字符与 Windows 保留设备名（2026-09-26 第二轮审计）：
+#: 用户输入会直接拼成输出文件名，不加校验时
+#: - 含 ``<>:"|?*`` 或路径分隔符 → OSError / 在任务目录外建目录；
+#: - 叫 ``con.pdf``/``nul.pdf`` 等 → **写进设备**，阶段报成功但磁盘无文件；
+#: - 结尾空格/点被 Windows 静默剥离；超长（长书名 stem + ``[重制].pdf``）超
+#:   NTFS 255 上限直接失败。
+_PDF_NAME_ILLEGAL = set('<>:"|?*/\\')
+_PDF_NAME_RESERVED = frozenset(
+    {"CON", "PRN", "AUX", "NUL",
+     *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+)
+_PDF_NAME_MAX = 200  # NTFS 单文件名上限 255，给「stem+[重制].pdf」和临时名留余量
+
+
+def validate_pdf_name(name: Any) -> None:
+    """校验 print 的输出 PDF 文件名；None/空白 = 用默认名，放行。"""
+    if name is None:
+        return
+    if not isinstance(name, str):
+        raise ValueError("pdf_name 必须为字符串")
+    value = name.strip()
+    if not value:
+        return
+    if len(value) > _PDF_NAME_MAX:
+        raise ValueError(f"pdf_name 过长（>{_PDF_NAME_MAX} 字符），当前 {len(value)}")
+    bad = sorted({ch for ch in value if ch in _PDF_NAME_ILLEGAL})
+    if bad:
+        raise ValueError(
+            f"pdf_name 不能包含 {''.join(bad)} 这些字符：{value!r}"
+        )
+    stem = value[:-4] if value.lower().endswith(".pdf") else value
+    if stem.rstrip(" .").upper() in _PDF_NAME_RESERVED:
+        raise ValueError(
+            f"pdf_name 不能使用 Windows 保留设备名（CON/NUL/COM1…）：{value!r}"
+        )
 
 
 def parse_color(value: Any) -> Tuple[int, int, int]:
@@ -213,8 +262,7 @@ def _validate_print(args) -> None:
     _check_choice(args.get("orientation"), ORIENTATIONS, "orientation")
 
     pdf_name = args.get("pdf_name")
-    if pdf_name is not None and not isinstance(pdf_name, str):
-        raise ValueError("pdf_name 必须为字符串")
+    validate_pdf_name(pdf_name)
 
     # ⚠️ 边距要有**上界**（2026-09-26 审计）：只校验"非负"时，
     #    `page_margins: [200,0,200,0]`（A4 高 297mm）会让排版里
@@ -239,6 +287,12 @@ def _validate_print(args) -> None:
     _check_choice(args.get("page_number_position"), POSITIONS, "page_number_position")
     for key in ("title_orientation", "page_number_orientation"):
         _check_choice(args.get(key), TEXT_ORIENTATIONS, key)
+    # 页码样式必须显式校验（2026-09-26 审计 #14）：不校验时拼错的值
+    # （如 roman）会被 format_page_number 静默回落成中文数字
+    _check_choice(
+        args.get("page_number_format"),
+        PAGE_NUMBER_FORMATS, "page_number_format",
+    )
 
     # 标题/页码「距页边」：与 page_margins 同一套校验，但允许为空（未配置）
     for key in ("title_margins", "page_number_margins"):
@@ -517,13 +571,15 @@ COMMAND_SPECS: Dict[str, CommandSpec] = {
     "cropremove": CommandSpec(
         name="cropremove",
         defaults={
-            "offset": 0,
-            "type": 1,
-            "seal": False,
+            # ⚠️ 与 rembg 段同样引用 utils/image_utils 的常量（唯一定义处）：
+            #    手抄一份的话，改 rembg 默认值时这里必漏（2026-09-26 审计 #17）
+            "offset": REMBG_DEFAULT_OFFSET,
+            "type": REMBG_DEFAULT_TYPE,
+            "seal": REMBG_DEFAULT_ENABLE_SEAL,
             "ext": "png",
-            "sealcolor": False,
-            "sealarea": 80,
-            "sealmin_sat": 50,
+            "sealcolor": REMBG_DEFAULT_SEAL_COLOR,
+            "sealarea": REMBG_DEFAULT_SEAL_AREA,
+            "sealmin_sat": REMBG_DEFAULT_SEAL_MIN_SAT,
             "area": 1,
             "border": None,
         },

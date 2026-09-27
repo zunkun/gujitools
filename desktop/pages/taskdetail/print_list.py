@@ -16,6 +16,30 @@ class PrintListMixin:
     """依赖宿主页面提供的属性：store/task_id、print_preview、log_view、
     _toast()。"""
 
+    def _print_thumb_provider(self, file_text: str):
+        """第四步缩略条的小图来源：提交阶段预生成的缩略图（无则回落原图解码）。
+
+        只服务 stages/rembg 的**提交产物**（缩略图按最终图 stem 存放，
+        mtime 不旧于最终图才算有效——外部改动了最终图就自动失效回落）；
+        用户手动「插入图片」的外部图没有预生成缩略图，照旧现解码。
+        """
+        if not self.task_id:
+            return None
+        try:
+            page = Path(file_text)
+            if page.parent != self.store.rembg_output_dir(self.task_id):
+                return None
+            thumb = self.store.rembg_thumbnails_dir(self.task_id) / f"{page.stem}.jpg"
+            if (
+                thumb.is_file()
+                and thumb.stat().st_mtime >= page.stat().st_mtime
+                and thumb.stat().st_size >= 512
+            ):
+                return thumb
+        except OSError:
+            return None
+        return None
+
     def _print_entries(self) -> tuple[list[dict], dict]:
         """第四步待打印图片列表（规则见 services/print_plan.plan_print_entries）。"""
         rembg_files = sorted(
@@ -78,7 +102,14 @@ class PrintListMixin:
         for filename in filenames:
             source = Path(filename)
             entries.append({"file": str(source), "label": source.stem})
-        self.store.save_print_pages(self.task_id, entries)
+        try:
+            self.store.save_print_pages(self.task_id, entries)
+        except OSError as exc:
+            # 同 _save_print_order：落盘失败必须可见，不能从 Qt 槽直接炸出去
+            message = f"待打印列表保存失败：{type(exc).__name__}: {exc}"
+            self.log_view.append(message)
+            self._toast("error", "列表未保存", message)
+            return
         self.print_preview.set_entries(self._print_entries())
         self.log_view.append(f"已插入 {len(filenames)} 张图片到待打印列表。")
 

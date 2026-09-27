@@ -117,11 +117,13 @@ def run(ctx) -> None:
     repo.save_detect_boxes(tid, _last_page.stem, [_lbox, _rbox], origin="manual")
     d.detect_cache[str(_last_page)] = [_lbox, _rbox]
     # 走真实的「改 area → 面板联动 → refresh_display」链路（label 随之变化才重建）
+    # ⚠️ 2026-09-26 起联动刷新有 200ms 防抖（逐字符输入的全量重建太贵），
+    #    这里用 qWait 把防抖冲过去再断言，别用裸 processEvents（不等定时器）。
     _rembg_panel = d.control_stack.widget(2)
     _rembg_panel.area.setCurrentIndex(1)  # area=2 → 该页合成单条
-    app.processEvents()
+    QTest.qWait(260)
     _rembg_panel.area.setCurrentIndex(0)  # area=1 → 拆成 -r / -l 两条
-    app.processEvents()
+    QTest.qWait(260)
 
     _rv = d.rembg_viewer
     _pair = [(i, e) for i, e in enumerate(_rv._entries)
@@ -131,6 +133,17 @@ def run(ctx) -> None:
        str([e["label"] for _, e in _pair]))
 
     # provider 给出的 effect 必须只覆盖该条目自己那一半（而非整页/并集）
+    # ⚠️ 缩略图由后台批量渲染落盘：整跑时这里可能恰好轮到首页之后的那批，
+    #    末页的 0007.jpg 还没写出来 → _page_thumb_for 返回 None（实测踩过，
+    #    纯时序竞态）。等它就绪再断言。
+    import time as _time
+
+    _thumb_file = repo.source_thumbnails_dir(tid) / f"{int(_last_page.stem):04d}.jpg"
+    for _ in range(150):  # 最多 15s：批量渲染含让出 GIL 的间隔，别掐太紧
+        if _thumb_file.exists():
+            break
+        app.processEvents()
+        _time.sleep(0.1)
     _spec_r = d._page_thumb_for(str(_last_page), _rbox, 1, None)
     _thumb_size = QImage(_spec_r["path"]).size()
     _box_r = _spec_r["effect"]["boxes"][0]
@@ -272,6 +285,24 @@ def run(ctx) -> None:
     ok("最终图落在 stages/rembg",
        final_dir.exists() and len(list(final_dir.glob("*.png"))) == 6,
        str(final_dir))
+    # ⚠️ 提交必须顺手生成第四步缩略图（2026-09-27：缩略条不再现解码原图）
+    _s4_thumbs = sorted(repo.rembg_thumbnails_dir(tid).glob("*.jpg"))
+    _s4_finals = sorted(final_dir.glob("*.png"))
+    ok("提交时生成第四步缩略图（数量与最终图一致且不旧于最终图）",
+       len(_s4_thumbs) == len(_s4_finals) > 0
+       and all(
+           t.stat().st_mtime >= (final_dir / f"{t.stem}.png").stat().st_mtime
+           for t in _s4_thumbs
+       ),
+       f"thumbs={len(_s4_thumbs)} finals={len(_s4_finals)}")
+    # 第四步 provider 命中这些缩略图（不再回落原图解码）
+    ok("第四步 provider 对提交产物返回缩略图",
+       all(
+           d._print_thumb_provider(str(p)) is not None
+           and Path(d._print_thumb_provider(str(p))).stem == p.stem
+           for p in _s4_finals
+       ),
+       str([d._print_thumb_provider(str(p)) for p in _s4_finals[:2]]))
     ok("提交成功后版本状态为最新、按钮徽标消失",
        d._rembg_submit_version_state() == "up_to_date"
        and d.submit_button.text() == "提交本次任务"

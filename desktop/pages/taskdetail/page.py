@@ -173,15 +173,25 @@ class TaskDetailPage(
         start_background_scan()
 
     # ------------------------------------------------------------------ 任务切换
-    def set_task(self, task_id: str) -> None:
+    def set_task(self, task_id: str) -> bool:
         """切换当前任务：复位所有阶段面板与运行态，避免跨任务泄漏。
 
         加载任务后先调用各面板 reset_to_default 清掉上一任务手改参数，再清
         detect 缓存/运行态引用并刷新清单与预览；防止参数或 run_id 串到新任务。
+        返回 False = 拒绝切换（任务不存在 / 子任务执行中），调用方应留在原地。
         """
         task = self.store.get_task(task_id)
         if not task:
-            return
+            return False
+        # ⚠️ 子任务执行中禁止切换（2026-09-26 第二轮审计）：runner 的收尾
+        #    全部按 self.task_id 落盘，切走后事件到达就会写进**新任务**的
+        #    runs.json / 输出目录。单页检测是几秒的辅助操作，直接停掉即可。
+        if self.process and self.process.state() != QProcess.NotRunning:
+            self._toast(
+                "warning", "任务进行中", "请先中断当前子任务再切换其他任务。"
+            )
+            return False
+        self._stop_detect_process()
         # ⚠️ 复位**跨任务会串味**的两个第四步状态（2026-09-26 审计）：
         #    ① `_print_dirty`：在任务 A 拖过版面，打开任务 B 时 B 的第四步会误显示
         #       「● 版面已修改，点击「生成 PDF」生效」并把主按钮加粗；
@@ -197,6 +207,10 @@ class TaskDetailPage(
         self._flush_param_drafts()
         # 标注攒批同理：攒着的尺寸/框属于**上一个任务**，切换后写就串任务了
         self._flush_annotations()
+        # 实时预览临时目录同理：reset(self.task_id) 清的是"上一个任务"的
+        # %TEMP%/guji_live_preview/<id>/ ——放在覆盖之后清的就是新任务的
+        # 空目录，旧任务那份（每张几 MB 的整页 PNG）永远没人清（审计 M4）
+        self._reset_rembg_live()
         self.task_id = task_id
         # ⚠️ 一律用任务目录里的**备份** PDF，不用索引里的 source_path：
         # 源文件在用户磁盘上会被移动/改名/删除，一走就「渲染失败」；
@@ -241,8 +255,9 @@ class TaskDetailPage(
         self._apply_pending_source_defaults()
         self.log_view.clear()
         self.detect_cache.clear()
-        # 实时预览状态跨任务必须清干净：临时目录里的旧图 + "哪些页算过"的记忆
-        self._reset_rembg_live()
+        # 图头尺寸缓存按 (路径, mtime) 键控、只增不减：换任务清掉，别攒一整场会话
+        self._thumb_size_cache = None
+        # （实时预览临时目录已在覆盖 task_id 之前按旧任务清过，见上方）
         self.pdf_page_count = 0
         self._history_prefilled: set[str] = set()
         self._history_params: list[dict] = []
@@ -263,6 +278,9 @@ class TaskDetailPage(
         self._refresh_stale_notices()
         self._refresh_stage_views()
         self._select_stage(0)
+        # ⚠️ 必须 True：_open_detail 靠返回值决定切不切页——漏了这句
+        #    "返回 None 被当拒绝"，详情页就永远进不去（2026-09-27 事故）
+        return True
 
     def _schedule_source_backup(self, task_id: str) -> None:
         """副本缺失且源还在时，**延时在后台**补一份（绝不在主线程里复制）。
@@ -335,9 +353,14 @@ class TaskDetailPage(
         if self.process and self.process.state() != QProcess.NotRunning:
             self._toast("warning", "任务进行中", "请先中断当前子任务再返回。")
             return
+        # ⚠️ 检测是几秒到十几秒的慢活：返回后旧进程的 boxes 事件才到达，
+        #    task_id 已清空/换成别的任务 → 跨任务写 boxes.json（审计 H3）。
+        self._stop_detect_process()
         # 离开前把待写暂存落盘：task_id 马上被清掉，之后再写就找不到任务了
         self._flush_param_drafts()
         self._flush_annotations()
+        # 实时预览暂存同样要按"当前任务"清（覆盖 task_id 之前，见 set_task）
+        self._reset_rembg_live()
         self.task_id = None
         self.source_path = None
         # 释放 PDF：不释放的话回到列表删除该任务时，rmtree 可能撞上文件占用

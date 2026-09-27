@@ -221,6 +221,12 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         self._sync_export_button()
         self.strip.clear()
         if not entries:
+            # ⚠️ 空清单必须把「版面编辑」画布一起收起来（审计 M4）：否则上一份
+            #    清单的纸面+图片框还挂在界面上**可拖动**，layout_changed 会照常
+            #    触发宿主落盘标脏——用户对着一个空列表"编辑"不存在的页。
+            self.canvas.hide()
+            self._canvas_index = -1
+            self.view.show()
             self.view.clear_image(self._empty_hint)
             self.caption.setText("")
             return
@@ -712,6 +718,11 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         self.export_failed.emit(str(message))
 
     # -------------------------------------------------------------- 单页打印
+    def _capture_print_image(self, _page, image, _path: str) -> None:
+        """同步打印渲染的接收槽：与 worker **同线程**直连是安全的（run() 是
+        普通方法、在本线程立即执行完），无需 connect_queued。"""
+        self._print_capture = image
+
     def _render_current_effect_sync(self):
         """同步渲染当前页的 A4 效果图 → (QImage, 错误文案)。
 
@@ -727,16 +738,14 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         spec, note = self._print_spec(index, path)
         if spec is None:
             return None, note or "打印参数不合法"
-        captured: dict = {}
         worker = PreviewWorker(
             path, longest_edge=0,
             print_spec={**spec, "target_edge": self._export_edge()},
         )
-        worker.finished.connect(
-            lambda _p, image, _s: captured.update(image=image)
-        )
+        self._print_capture = None
+        worker.finished.connect(self._capture_print_image)
         worker.run()  # 同线程直跑（run() 是普通方法），免异步等待
-        image = captured.get("image")
+        image = self._print_capture
         if image is None or image.isNull():
             return None, "渲染失败"
         return image, ""

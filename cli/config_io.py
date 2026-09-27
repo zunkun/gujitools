@@ -25,6 +25,14 @@ def load_yaml_config(path: Path) -> dict:
             data = yaml.safe_load(f)
     except yaml.YAMLError as exc:
         raise ConfigError(f"YAML parse error in {path}: {exc}") from exc
+    except UnicodeDecodeError as exc:
+        # ⚠️ 中文用户最常见的配置事故：老版记事本把 UTF-8 存成 ANSI(GBK)。
+        #    UnicodeDecodeError 不是 YAMLError/OSError，不单独接住的话用户
+        #    只看到 "'utf-8' codec can't decode byte 0xd0 …"（2026-09-26 审计）
+        raise ConfigError(
+            f"配置文件 {path} 不是 UTF-8 编码（可能被记事本存成了 ANSI/GBK），"
+            "请用编辑器「另存为 UTF-8」后重试"
+        ) from exc
     except OSError as exc:
         raise ConfigError(f"无法读取配置文件 {path}: {exc}") from exc
     if not isinstance(data, dict):

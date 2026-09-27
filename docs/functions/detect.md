@@ -162,6 +162,6 @@ detect 本身只是如实上报 `left` / `right` 为 `null`，不做任何兜底
 
 ## 并发与失败处理
 
-- 使用 `ThreadPoolExecutor` 并行检测，默认线程数 = `min(8, 图片数)`；
+- 使用 `ThreadPoolExecutor` 并行检测，默认线程数 = 按机器配置动态（≤8，再按图片数收敛）；
 - 出错图片最多重试 2 轮；仍失败则计入统计的「失败」项，不影响其它图片；
 - 进度通过 `reporter.progress(done, total)` 实时上报。

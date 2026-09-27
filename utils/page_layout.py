@@ -338,8 +338,13 @@ def sides_for_pages(
     从起始标注页（或最近的章节节点）开始按图片序号交替左右。
     """
     sides: List[str] = []
+    # ⚠️ 起始页夹进 [1, total]（2026-09-26 第二轮审计）：校验层只保证 >=1，
+    #    `start_page=50、图片 30 张` 时 anchor 永远匹配不到任何页，offset 全为
+    #    负数 → Python 负数取模让**每一页**的奇偶性整体翻转（页码/标题左右
+    #    反侧），且无提示。夹到最后一张 = "从末页起排"，与直觉一致。
+    anchor_start = min(max(int(page_number_start_page or 1), 1), max(1, total)) - 1
     for image_index in range(total):
-        anchor_index = page_number_start_page - 1
+        anchor_index = anchor_start
         anchor_side = "left"
         for node_index, (_title, node_side) in sorted_nodes:
             if anchor_index <= node_index <= image_index and node_side in (

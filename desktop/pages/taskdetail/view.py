@@ -197,6 +197,9 @@ class DetailViewMixin:
         self.print_preview = PrintPreviewWidget(
             empty_hint="暂无图片，请先在第三步「生成预览」并「提交本次任务」",
             params_provider=self._print_params,
+            # 提交阶段预生成的缩略图（thumbnails/print）：不再对每条目现解码
+            # 6000px 原图（2026-09-27 用户反馈第四步缩略图渲染慢）
+            thumb_provider=self._print_thumb_provider,
         )
         self.print_preview.order_changed.connect(self._save_print_order)
         self.print_preview.insert_requested.connect(self._insert_print_images)
@@ -273,17 +276,18 @@ class DetailViewMixin:
 
     def _wire_rembg_panel(self, rembg_panel) -> None:
         """第三步面板**首次构造后**的接线（LazyPanelHost 的 created 回调）。"""
+        # ⚠️ 联动刷新必须**去抖**（2026-09-26 第二轮审计 GUI-H1）：textChanged/
+        #    valueChanged 是逐字符/逐格触发，而一次联动 = 全量 boxes.json × N 页
+        #    重读（_refresh_reference_boxes → _build_entries 逐页查 detect_cache）
+        #    + runs.json × 3 次读 + 目录扫描（_update_submit_button）。大任务上
+        #    逐字符输入明显卡顿。200ms 防抖与第四步 _print_preview_timer 同法。
+        self._rembg_panel_timer = QTimer(self)
+        self._rembg_panel_timer.setSingleShot(True)
+        self._rembg_panel_timer.setInterval(200)
+        self._rembg_panel_timer.timeout.connect(self._on_rembg_panel_refresh)
 
         def _on_rembg_panel_changed(*_):
-            # area 可能被第二步的整页开关改动，勾选状态需回填
-            self._sync_whole_page_checkbox()
-            self._refresh_reference_boxes()
-            self._update_submit_button(
-                bool(self.process and self.process.state() != QProcess.NotRunning)
-            )
-            # 第三步 border 级联第四步默认边距：border 变化时把上游 border
-            # 同步给 print 面板（用户未手动改边距时，默认值随级联变 0/20）
-            self._sync_print_margin_default()
+            self._rembg_panel_timer.start()
 
         # rembg 面板的参数变化决定检测框标注与去底色预览区域，联动刷新
         rembg_panel.area.currentTextChanged.connect(_on_rembg_panel_changed)
@@ -296,6 +300,18 @@ class DetailViewMixin:
         rembg_panel.sealarea.valueChanged.connect(_on_rembg_panel_changed)
         rembg_panel.sealmin_sat.valueChanged.connect(_on_rembg_panel_changed)
         # 面板建好时补一次当前 border（构造前它拿不到级联值）
+        self._on_rembg_panel_refresh()
+
+    def _on_rembg_panel_refresh(self) -> None:
+        """第三步参数联动刷新（已去抖）：checkbox 回填 / 框标注 / 提交按钮 / 级联。"""
+        # area 可能被第二步的整页开关改动，勾选状态需回填
+        self._sync_whole_page_checkbox()
+        self._refresh_reference_boxes()
+        self._update_submit_button(
+            bool(self.process and self.process.state() != QProcess.NotRunning)
+        )
+        # 第三步 border 级联第四步默认边距：border 变化时把上游 border
+        # 同步给 print 面板（用户未手动改边距时，默认值随级联变 0/20）
         self._sync_print_margin_default()
 
     def _wire_print_panel(self, panel) -> None:

@@ -174,7 +174,14 @@ class PrintPanel(PrintFormMixin, StagePanel):
         if border_has_padding(self._upstream_border):
             params["page_margins"] = [0, 0, 0, 0]
         if self._source_stem:
-            params["pdf_name"] = f"{self._source_stem}[重制].pdf"
+            # ⚠️ 自动名要给长度留余量（2026-09-26 第二轮审计）：古籍 PDF 名动辄
+            #    100+ 字符，stem 接近 250 时加上「[重制].pdf」直接超 NTFS 255
+            #    上限（写文件 OSError，阶段失败）。spec 校验的上限是 200，这里
+            #    截 stem 到 180，保住「[重制].pdf」后缀。
+            stem = self._source_stem
+            if len(stem) > 180:
+                stem = stem[:180]
+            params["pdf_name"] = f"{stem}[重制].pdf"
             params["title_text"] = self._source_stem
         return params
 

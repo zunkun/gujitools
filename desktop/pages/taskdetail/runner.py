@@ -345,6 +345,7 @@ class StageRunnerMixin:
             if self._finish_delivered:
                 return
             self._finish_delivered = True
+            watchdog.stop()  # 已收尾：定时器显式停掉（也避免长会话里对象堆积）
             self._worker_finished(code, status)
 
         def _process_alive(pid: int) -> bool:
@@ -691,6 +692,33 @@ class StageRunnerMixin:
             self.extract_result_viewer.set_images(paths)
 
     def _worker_finished(self, exit_code: int, _status) -> None:
+        """顶层兜底：收尾链里任何一环（store 写盘 / 读盘 / 刷新）抛异常，
+        都不能让状态机卡死——``process/run_id/running_stage`` 不清、
+        ``_release_run`` 不执行 → 执行按钮永久灰死，看门狗每 300ms 空转
+        （2026-09-26 第二轮审计 H2：``replace_with_retry`` 重试耗尽抛
+        PermissionError 就会走到这里）。异常路径强制复位后照常刷新界面。"""
+        try:
+            self._worker_finished_impl(exit_code, _status)
+        except Exception:  # noqa: BLE001 - 收尾兜底必须接住一切
+            import traceback
+            import sys as _sys
+
+            tail = traceback.format_exc(limit=3).strip().splitlines()[-1]
+            print(f"[worker-finished-exception] {tail}", file=_sys.stderr, flush=True)
+            try:
+                self.log_view.append(f"收尾阶段出错（已强制复位执行状态）：{tail}")
+            except Exception:  # noqa: BLE001
+                pass
+            self.process = None
+            self.run_id = None
+            self.running_stage = None
+            try:
+                self._release_run()
+                self._refresh_stage_views()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _worker_finished_impl(self, exit_code: int, _status) -> None:
         stage = self.running_stage
         # ⚠️ 收尾第一件事：把管道里剩下的输出读完。
         # Qt 的 finished / 看门狗可能比最后一批 progress/log 事件先到（大任务时
@@ -711,6 +739,11 @@ class StageRunnerMixin:
         #    它们做坐标基准，攒着不写会让下一阶段读到旧数据。
         self._flush_annotations()
         if self.cancel_requested:
+            status = "cancelled"
+        elif exit_code == 130:
+            # ⚠️ stage 内部捕获 KeyboardInterrupt 时以退出码 130 结束（约定见
+            #    core.result.StageStatus.from_exit_code），应记为「已取消」而非
+            #    「失败」——用户自己中断的不该背一个红色失败（审计 #16）。
             status = "cancelled"
         elif exit_code == 0:
             status = "success"
