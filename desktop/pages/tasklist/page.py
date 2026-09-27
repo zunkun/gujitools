@@ -43,6 +43,7 @@ from desktop.workers import (
 from desktop.store import TaskStore
 from desktop.components.pagination import DEFAULT_PAGE_SIZE, Pager, Pagination
 from desktop.components.task_table import TaskTable
+from desktop.utils.files import default_open_dir
 
 # 状态文案统一取自 ui.theme，避免各处各自维护一份
 STATUS_LABELS = T.STATUS_LABELS
@@ -342,7 +343,10 @@ class TaskListPage(QWidget, WorkerHost):
         弹出文件框后若已有导入在跑则拒绝；否则起后台线程算内容指纹，
         完成后回调按查重结果弹「创建新任务/定位已有任务」，命中也可建副本。
         """
-        filename, _ = QFileDialog.getOpenFileName(self, "导入 PDF", "", "PDF (*.pdf)")
+        # 默认从文档目录起步：传空串会回退到进程工作目录（打包后是程序所在目录）
+        filename, _ = QFileDialog.getOpenFileName(
+            self, "导入 PDF", str(default_open_dir()), "PDF (*.pdf)"
+        )
         if not filename:
             return
         if self.hash_thread and self.hash_thread.isRunning():

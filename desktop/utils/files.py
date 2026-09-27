@@ -23,6 +23,19 @@ def guji_data_dir() -> Path:
     return Path.home() / "Documents" / "guji"
 
 
+def default_open_dir() -> Path:
+    """文件对话框的默认打开目录：用户文档目录。
+
+    QFileDialog 传空串会回退到进程工作目录（打包后就是程序所在目录），
+    入口落在安装/项目目录很不合适；统一改从文档目录起步。目录不存在时
+    回退到用户主目录，再不行返回空 Path 由调用方保持空串行为。
+    """
+    documents = Path.home() / "Documents"
+    if documents.is_dir():
+        return documents
+    return Path.home() if Path.home().is_dir() else Path()
+
+
 def project_root() -> Path:
     """项目根目录（`desktop` 包的上一级）。
 

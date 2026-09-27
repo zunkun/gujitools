@@ -8,7 +8,7 @@ from pathlib import Path
 from PySide6.QtWidgets import QFileDialog
 
 from desktop.services.print_plan import plan_print_entries
-from desktop.utils.files import list_stage_images
+from desktop.utils.files import default_open_dir, list_stage_images
 from utils.sort_utils import pdf_custom_sort_key
 
 
@@ -94,7 +94,10 @@ class PrintListMixin:
         if not self.task_id:
             return
         filenames, _ = QFileDialog.getOpenFileNames(
-            self, "插入图片", "", "图片 (*.png *.jpg *.jpeg *.bmp *.tif *.tiff)"
+            self,
+            "插入图片",
+            str(default_open_dir()),
+            "图片 (*.png *.jpg *.jpeg *.bmp *.tif *.tiff)",
         )
         if not filenames:
             return

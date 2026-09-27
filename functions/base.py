@@ -282,26 +282,53 @@ class FunctionBase:
             auto_tune = False  # 只在首轮爬一次，重试的文件少、测不准
             return round_results
 
+        # ⚠️ 嵌套并行压制（2026-09-27 实测，见 .workbuddy/perf/bench_threads_postfix_2026-09-27.py）：
+        #    cv2 默认在**每个进程里**开满逻辑核做形态学/颜色空间运算。外层线程池
+        #    workers>1 时就变成「N 外层 × 12 内部」的超订阅——线程在核间来回迁徙、
+        #    缓存互相踩，实测 6 外层线程 2.63 → 2.82 页/秒（+7%），8 线程不再
+        #    劣化、12 线程的劣化也收窄。并发靠外层池，cv2 内部留 1 线程即可。
+        #    ⚠️ 只在多线程批处理时压：单页路径（桌面端实时预览）不走本引擎，
+        #    那里没有外层池，cv2 内部并行是纯收益。跑完恢复原值，不影响
+        #    同进程后续的 cv2 用法。失败静默跳过（无 cv2 的纯文本流程不受影响）。
+        _prev_cv2_threads = None
+        if workers > 1:
+            try:
+                import cv2 as _cv2
+
+                _prev_cv2_threads = _cv2.getNumThreads()
+                _cv2.setNumThreads(1)
+            except Exception:  # noqa: BLE001 - 没有 cv2 就没有嵌套并行问题
+                _prev_cv2_threads = None
+
         pending_files = list(image_files)
-        for attempt in range(1, max_retries + 2):
-            if not pending_files:
-                break
-            round_results = _run_round(pending_files)
-            self._write_log(f"===== 第 {attempt} 轮结束 =====")
-            next_pending = []
-            for item in round_results:
-                file_name = item.get("file")
-                if item.get("status") == "error" and attempt <= max_retries:
-                    # 在重试时尝试重建原始路径（针对目录输入时）
-                    origin = self.input / file_name if not self.is_file else self.input
-                    if origin.exists():
-                        next_pending.append(origin)
+        try:
+            for attempt in range(1, max_retries + 2):
+                if not pending_files:
+                    break
+                round_results = _run_round(pending_files)
+                self._write_log(f"===== 第 {attempt} 轮结束 =====")
+                next_pending = []
+                for item in round_results:
+                    file_name = item.get("file")
+                    if item.get("status") == "error" and attempt <= max_retries:
+                        # 在重试时尝试重建原始路径（针对目录输入时）
+                        origin = self.input / file_name if not self.is_file else self.input
+                        if origin.exists():
+                            next_pending.append(origin)
+                        else:
+                            results_by_file[file_name] = item
+                            self._write_log(f"无法重试，文件丢失: {file_name}")
                     else:
                         results_by_file[file_name] = item
-                        self._write_log(f"无法重试，文件丢失: {file_name}")
-                else:
-                    results_by_file[file_name] = item
-            pending_files = next_pending
+                pending_files = next_pending
+        finally:
+            if _prev_cv2_threads is not None:
+                try:
+                    import cv2 as _cv2
+
+                    _cv2.setNumThreads(_prev_cv2_threads)
+                except Exception:  # noqa: BLE001 - 恢复失败不值得让批次报错
+                    pass
 
         # 按文件名排序输出结果并统计状态分布
         results = [results_by_file[f] for f in sorted(results_by_file)]

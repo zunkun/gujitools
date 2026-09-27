@@ -9,6 +9,8 @@ from PySide6.QtCore import QUrl, QSize
 from PySide6.QtGui import QDesktopServices, QImageReader
 from PySide6.QtWidgets import QFileDialog
 
+from desktop.utils.files import default_open_dir
+
 
 class PageListMixin:
     """依赖宿主页面提供的属性：store/task_id、pages、pdf_page_count、
@@ -165,7 +167,10 @@ class PageListMixin:
         if not self.task_id:
             return
         filenames, _ = QFileDialog.getOpenFileNames(
-            self, "插入图片", "", "图片 (*.png *.jpg *.jpeg *.bmp *.tif *.tiff)"
+            self,
+            "插入图片",
+            str(default_open_dir()),
+            "图片 (*.png *.jpg *.jpeg *.bmp *.tif *.tiff)",
         )
         if not filenames:
             return
