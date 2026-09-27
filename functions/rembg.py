@@ -22,15 +22,24 @@ File: functions/rembg.py
    - 支持 3 种输出类型：二值(type=1)、1bit(type=2)、灰度(type=3)；
    - `--sealcolor` 开关下输出彩色图，保留红色印章原色。
 
-5. **保存为 PNG**（300 DPI，optimize+compress_level=9）
+5. **保存为 PNG**（300 DPI，compress_level=6）
 """
 
 from pathlib import Path
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageOps
 import utils
 from functions.base import FunctionBase
 from utils import resolve_final_output_dir  # 新增导入
+
+# PNG 编码参数（2026-09-27 现场基准，见 .workbuddy/perf/bench_rembg_save_2026-09-27.py）：
+# 22MP 大页单张编码耗时  level=9+optimize ≈ 2000ms / level=6 ≈ 326ms / level=3 ≈ 186ms，
+# 产物体积 0.47MB → 0.55MB（+17%）→ 0.75MB（+60%）。**编码占单页总耗时 ~70%**
+# （load ~0.6s + rembg ~0.3s），是整步吞吐的第一瓶颈——也是「加线程不涨速」的
+# 主因（内存带宽在 4 线程即饱和，纯算力没吃满）。
+# 选 level=6：6.1 倍编码提速换 17% 体积。⚠️ PNG 无损，压缩级别只影响
+# 体积/耗时，**解码后的像素逐位不变**，不影响「预览与产物逐像素一致」契约。
+PNG_SAVE_KWARGS = dict(optimize=False, compress_level=6, dpi=(300, 300))
 
 
 class RembgFunction(FunctionBase):
@@ -88,6 +97,12 @@ class RembgFunction(FunctionBase):
         # **仍然持有原图**——不显式关掉，整张原图（68MB）就会活到块结束。
         with Image.open(image_path) as source:
             source.load()
+            # ⚠️ EXIF 方向转正（2026-09-26 第二轮审计）：cv2 链（detect 的框
+            #    坐标）与 Qt 预览都按 EXIF 转正，PIL 不转的话去底产物会横躺
+            #    90°、与框坐标系错位。先查方向标签再调：无标签时
+            #    exif_transpose 也会**整图复制一份**（68MB/页），白背内存。
+            if source.getexif().get(274, 1) != 1:
+                source = ImageOps.exif_transpose(source)
 
             # 统一为 RGB：RGBA 与白底合并，其他模式直接转换
             if source.mode == "RGBA":
@@ -143,25 +158,13 @@ class RembgFunction(FunctionBase):
             out_path = self.outpath / f"{image_path.stem}.png"
             if final_arr.ndim == 3:
                 # 彩色输出（印章原色保留）
-                Image.fromarray(final_arr, "RGB").save(
-                    out_path,
-                    format="PNG",
-                    optimize=True,
-                    compress_level=9,
-                    dpi=(300, 300),
-                )
+                Image.fromarray(final_arr, "RGB").save(out_path, format="PNG", **PNG_SAVE_KWARGS)
             else:
                 # 单通道输出（灰度或二值）
                 img_out = Image.fromarray(final_arr, "L")
                 if img_type == 2:
                     img_out = img_out.convert("1")  # 8bit → 1bit 单色位图
-                img_out.save(
-                    out_path,
-                    format="PNG",
-                    optimize=True,
-                    compress_level=9,
-                    dpi=(300, 300),
-                )
+                img_out.save(out_path, format="PNG", **PNG_SAVE_KWARGS)
 
             return {
                 "status": "success",

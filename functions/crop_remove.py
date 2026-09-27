@@ -21,6 +21,7 @@ from pathlib import Path
 from PIL import Image
 import utils
 from functions.text_region import TextRegionProcessor
+from functions.rembg import PNG_SAVE_KWARGS  # 去底产物的 PNG 编码参数（唯一来源）
 from utils import resolve_final_output_dir  # 新增导入
 
 
@@ -189,12 +190,10 @@ class CropRemoveFunction(TextRegionProcessor):
             return
         if arr.ndim == 3:
             Image.fromarray(arr, "RGB").save(
-                out_path, format="PNG", optimize=True, compress_level=9, dpi=(300, 300)
+                out_path, format="PNG", **PNG_SAVE_KWARGS
             )
             return
         img = Image.fromarray(arr, "L")
         if self._img_type == 2:
             img = img.convert("1")
-        img.save(
-            out_path, format="PNG", optimize=True, compress_level=9, dpi=(300, 300)
-        )
+        img.save(out_path, format="PNG", **PNG_SAVE_KWARGS)
