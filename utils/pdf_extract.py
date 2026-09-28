@@ -21,6 +21,10 @@
    像素不低于整页渲染尺寸」才走快路径，否则降级。这样 jp2/jbig2/CCITT 压缩、
    一页多图、内嵌缩略图这三类情况不会"为了快而变慢或变糊"。
 
+   ⚠️ 并发后端是**多进程**（`ProcessPoolExecutor`），不是线程：PyMuPDF 的
+   `get_pixmap` 期间持有 GIL，线程池对渲染**零加速**（实测 6 线程仅 1.15×，
+   还把 GUI 拖卡）。详见 `render_pages_parallel` 的说明。
+
 4. **目录遍历** (`run_on_input_directory`)
    支持输入为单个 PDF 文件或包含多个 PDF 的目录。
 
@@ -34,7 +38,6 @@ import os
 import shutil
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import List, Optional
 
@@ -343,6 +346,154 @@ def _save_embedded_image(info, out_dir: str, page_idx: int, ext: str,
     return img_path, img.width, img.height
 
 
+def _report_batch(result: dict, progress: dict, reporter) -> None:
+    """父进程侧：把一批渲染结果落到进度 / 日志 / 结构化通道。
+
+    ⚠️ 子进程只返回数据（见 ``_render_batch_in_worker``），所有 ``print`` 与
+    ``reporter`` 调用都收敛到这里，原因有二：
+
+    1. 子进程的 ``print`` 会绕过父进程装好的 ``ProgressStream`` 直写 fd 1 ——
+       日志格式不统一、顺序也会和进度条对不上；
+    2. ``reporter``（JsonLinesReporter）与 ``progress``（内含 ``threading.Lock``）
+       **本来就无法跨进程 pickle**，只能靠返回值把数据带回父进程再上报。
+    """
+    pages = result.get("pages") or []
+    batch_reasons = result.get("reasons") or {}
+    batch_fallback = int(result.get("fallback") or 0)
+    if progress is not None:
+        with progress["lock"]:
+            reasons = progress.setdefault("reasons", {})
+            for k, v in batch_reasons.items():
+                reasons[k] = reasons.get(k, 0) + v
+            if batch_fallback:
+                progress["fallback"] = progress.get("fallback", 0) + batch_fallback
+    for p in pages:
+        idx = int(p.get("idx", 0))
+        if not p.get("ok"):
+            print(f"❌ 第 {idx+1} 页失败: {p.get('err')}")
+            # ⚠️ 失败页**不计入 done**——这是改造前的既有可观察行为（部分失败时
+            #    进度条停在 <100%），并发后端换代时不要顺手改掉它。
+            continue
+        report_image_size(p["path"], p["w"], p["h"], reporter)
+        if progress is not None:
+            with progress["lock"]:
+                progress["done"] += 1
+                done = progress["done"]
+                total = progress["total"]
+            # 结构化进度在锁外发：多次汇报是幂等/单调的，不必占着锁做 IO
+            if reporter is not None:
+                reporter.progress(done, total)
+            print(
+                f"进度: {done}/{total} 页 - 第 {idx+1} 页 "
+                f"用时: {p.get('elapsed', 0.0):.2f}s"
+            )
+
+
+def _render_batch_in_worker(payload: tuple) -> dict:
+    """子进程执行体：渲染一批 PDF 页并返回结构化结果（纯数据，不落任何 IO 通道）。
+
+    ⚠️ 必须是**模块级函数**（否则无法 pickle 进进程池），且**不 print、不碰
+    ``reporter``/``progress``**（原因见 ``_report_batch``）。返回的 ``pages``
+    顺序与传入的 ``page_indices`` 一致，父进程据此按序上报。
+
+    payload = (pdf_path, page_indices, out_dir, zoom, ext, quick, dpi)
+
+    返回::
+
+        {
+          "pages": [{"idx": int, "ok": bool, "path": str, "w": int, "h": int,
+                     "elapsed": float, "err": str | None}, ...],
+          "reasons": {降级原因: 次数},   # 只有 quick 模式会产生
+          "fallback": int,               # quick 降级的总页数
+        }
+    """
+    pdf_path, page_indices, out_dir, zoom, ext, quick, dpi = payload
+    reasons: dict = {}
+    fallback = 0
+
+    def _fail_all(msg: str) -> dict:
+        """整批失败（依赖缺失 / PDF 打不开）：每页都记一条失败原因。"""
+        return {
+            "pages": [
+                {"idx": int(i), "ok": False, "err": msg, "elapsed": 0.0}
+                for i in page_indices
+            ],
+            "reasons": {},
+            "fallback": 0,
+        }
+
+    try:
+        import pymupdf as fitz
+    except ImportError as e:
+        return _fail_all(f"依赖缺失: PyMuPDF 未安装。请运行: pip install PyMuPDF（{e}）")
+    try:
+        from PIL import Image  # noqa: F401
+    except ImportError as e:
+        return _fail_all(f"依赖缺失: Pillow 未安装。请运行: pip install Pillow（{e}）")
+
+    try:
+        doc = fitz.open(pdf_path)
+    except Exception as e:  # noqa: BLE001 - 打不开就是整批失败
+        return _fail_all(f"打开 PDF 失败: {e}")
+
+    pages: List[dict] = []
+    try:
+        for page_idx in page_indices:
+            page_start = time.time()
+            try:
+                page = doc.load_page(page_idx)
+                page_rect = page.rect
+                original_width = page_rect.width
+                # 两条路径的 zoom 各算各的：
+                # - quick_zoom：用户 zoom 的原语义，供内嵌图「覆盖度」判定与
+                #   落盘决策（内嵌图永远是原图字节，不按 DPI 重采样）；
+                # - actual_zoom：整页渲染用，兜一个 DPI 下限，避免矢量 PDF
+                #   在 zoom=1 时只渲染出 72 DPI（见 DEFAULT_RENDER_DPI）。
+                quick_zoom = calculate_zoom(original_width, zoom)
+                actual_zoom = render_zoom(original_width, zoom, dpi)
+
+                if quick:
+                    # 自适应 quick：不满足条件时 _embedded_page_image 给出原因，
+                    # 直接降级整页渲染，不再"为了快而变慢/变糊"。
+                    info, why = _embedded_page_image(
+                        doc, page, page_rect, ext, quick_zoom
+                    )
+                    if info is None:
+                        img_path, iw, ih = _render_page(
+                            page, out_dir, page_idx, ext, actual_zoom
+                        )
+                        reasons[why] = reasons.get(why, 0) + 1
+                        fallback += 1
+                    else:
+                        img_path, iw, ih = _save_embedded_image(
+                            info, out_dir, page_idx, ext, quick_zoom
+                        )
+                else:
+                    # 标准模式：渲染整页为高质量图片
+                    img_path, iw, ih = _render_page(
+                        page, out_dir, page_idx, ext, actual_zoom
+                    )
+
+                pages.append({
+                    "idx": int(page_idx), "ok": True, "path": img_path,
+                    "w": int(iw), "h": int(ih),
+                    "elapsed": time.time() - page_start, "err": None,
+                })
+            except Exception as e:  # noqa: BLE001 - 单页失败不拖垮整批
+                pages.append({
+                    "idx": int(page_idx), "ok": False, "err": str(e),
+                    "elapsed": time.time() - page_start,
+                })
+    finally:
+        # ⚠️ 异常路径也要还句柄（审计 P2）：Windows 上文档没关，
+        # 任务目录会一直被占用删不掉
+        try:
+            doc.close()
+        except Exception:  # noqa: BLE001
+            pass
+    return {"pages": pages, "reasons": reasons, "fallback": fallback}
+
+
 def process_page_batch(
     pdf_path: str,
     page_indices: List[int],
@@ -376,89 +527,15 @@ def process_page_batch(
     返回:
         每页成功/失败的 bool 列表。
     """
-    results = []
     try:
-        try:
-            import pymupdf as fitz
-        except ImportError as e:
-            raise RuntimeError(
-                "依赖缺失: PyMuPDF 未安装。请运行: pip install PyMuPDF"
-            ) from e
-        try:
-            from PIL import Image  # noqa: F401
-        except ImportError as e:
-            raise RuntimeError(
-                "依赖缺失: Pillow 未安装。请运行: pip install Pillow"
-            ) from e
-
-        doc = fitz.open(pdf_path)
-        try:
-            for page_idx in page_indices:
-                try:
-                    page = doc.load_page(page_idx)
-                    page_rect = page.rect
-                    original_width = page_rect.width
-                    # 两条路径的 zoom 各算各的：
-                    # - quick_zoom：用户 zoom 的原语义，供内嵌图「覆盖度」判定与
-                    #   落盘决策（内嵌图永远是原图字节，不按 DPI 重采样）；
-                    # - actual_zoom：整页渲染用，兜一个 DPI 下限，避免矢量 PDF
-                    #   在 zoom=1 时只渲染出 72 DPI（见 DEFAULT_RENDER_DPI）。
-                    quick_zoom = calculate_zoom(original_width, zoom)
-                    actual_zoom = render_zoom(original_width, zoom, dpi)
-                    page_start = time.time()
-
-                    if quick:
-                        # 自适应 quick：不满足条件时 _embedded_page_image 给出原因，
-                        # 直接降级整页渲染，不再"为了快而变慢/变糊"。
-                        info, why = _embedded_page_image(
-                            doc, page, page_rect, ext, quick_zoom
-                        )
-                        if info is None:
-                            img_path, iw, ih = _render_page(
-                                page, out_dir, page_idx, ext, actual_zoom
-                            )
-                            if progress is not None:
-                                with progress["lock"]:
-                                    reasons = progress.setdefault("reasons", {})
-                                    reasons[why] = reasons.get(why, 0) + 1
-                                    progress["fallback"] = progress.get("fallback", 0) + 1
-                        else:
-                            img_path, iw, ih = _save_embedded_image(
-                                info, out_dir, page_idx, ext, quick_zoom
-                            )
-                        report_image_size(img_path, iw, ih, reporter)
-                    else:
-                        # 标准模式：渲染整页为高质量图片
-                        img_path, iw, ih = _render_page(
-                            page, out_dir, page_idx, ext, actual_zoom
-                        )
-                        report_image_size(img_path, iw, ih, reporter)
-
-                    page_elapsed = time.time() - page_start
-                    results.append(True)
-                    if progress is not None:
-                        # 线程安全更新进度计数器
-                        with progress["lock"]:
-                            progress["done"] += 1
-                            done = progress["done"]
-                            total = progress["total"]
-                        # 结构化进度在锁外发：多次汇报是幂等/单调的，不必占着锁做 IO
-                        if reporter is not None:
-                            reporter.progress(done, total)
-                        print(
-                            f"进度: {done}/{total} 页 - 第 {page_idx+1} 页 用时: {page_elapsed:.2f}s"
-                        )
-                except Exception as e:
-                    print(f"❌ 第 {page_idx+1} 页失败: {e}")
-                    results.append(False)
-        finally:
-            # ⚠️ 异常路径也要还句柄（审计 P2）：Windows 上文档没关，
-            # 任务目录会一直被占用删不掉
-            doc.close()
-        return results
-    except Exception as e:
+        result = _render_batch_in_worker(
+            (pdf_path, list(page_indices), out_dir, zoom, ext, quick, dpi)
+        )
+    except Exception as e:  # noqa: BLE001 - 兜底：批处理本身失败
         print(f"❌ 处理批次失败: {e}")
         return [False] * len(page_indices)
+    _report_batch(result, progress, reporter)
+    return [bool(p.get("ok")) for p in result["pages"]]
 
 
 def render_pages_parallel(
@@ -477,12 +554,29 @@ def render_pages_parallel(
     reporter=None,
     dpi: float = DEFAULT_RENDER_DPI,
 ) -> List[bool]:
-    """多线程提取指定页，返回每页成功状态。
+    """多**进程**提取指定页，返回每页成功状态。
 
     CLI（`extract_pdf_optimized`）与 GUI（`run_extract_stage`）共用这一份并发
     实现——GUI 曾经直接调 `process_page_batch` 串行跑全部页，是提取慢的主因。
 
-    每批一个 `fitz.open`（PyMuPDF 的 Document 非线程安全，必须各自打开）。
+    ⚠️ 2026-09-28：并发后端从 `ThreadPoolExecutor` 换成 `ProcessPoolExecutor`。
+    起因是「第一步 extract 变慢 + 界面卡」，实测（本机 6 物理核，102 页 jpx
+    扫描件，见 .workbuddy/memory/2026-09-28.md）：
+
+    - **线程对 PyMuPDF 渲染完全无效**：`get_pixmap` 期间持有 GIL，纯渲染
+      1→4→6 线程只有 1.15×（1085/942/972 ms/页）；端到端 4 线程与单线程持平，
+      6 线程占满物理核还把 GUI 拖卡（**这是"页面卡"的直接原因**）；
+    - 同一份活交给 4 个**进程**：**1.79 页/秒 vs 0.96（1.86×）**——GIL 不再共享。
+
+    代价与约束：
+    - 每个子进程要各自 `fitz.open`（Document 不可 pickle），结果再 pickle 回父进程，
+      因此**只有批次多于 1 批**才开池：单批（≤ batch_size 页）开池会被 ~0.8s 的
+      进程启动开销吃回去；
+    - 所有 `print` / `reporter` / `progress` 都由**父进程**做（见 `_report_batch`），
+      子进程只返回数据；
+    - ⚠️ 本函数会 spawn 子进程，因此**调用方入口必须有 `if __name__ == "__main__"`
+      保护**，打包环境还须先调 `multiprocessing.freeze_support()`（PyInstaller 的
+      硬要求，否则子进程会重新拉起整个 exe）。
 
     reporter 为结构化汇报通道（进度 + 页尺寸）；None → 保持纯 print 行为。
     """
@@ -493,29 +587,49 @@ def render_pages_parallel(
     progress.setdefault("reasons", {})
     progress.setdefault("fallback", 0)
 
+    page_indices = [int(i) for i in page_indices]
     batches = [
         page_indices[i : i + batch_size]
         for i in range(0, len(page_indices), batch_size)
     ]
-    all_results: List[bool] = []
-    with ThreadPoolExecutor(max_workers=max(1, int(workers or 1))) as executor:
-        futures = [
-            executor.submit(
-                process_page_batch,
-                pdf_path,
-                batch,
-                out_dir,
-                zoom,
-                ext,
-                quick,
-                progress,
-                reporter,
-                dpi,
+    workers = max(1, int(workers or 1))
+
+    # 子进程返回的每页状态按 idx 收拢，最后按入参顺序还原（池崩溃串行补跑时，
+    # 完成顺序会乱，靠 idx 对齐才不会错位）
+    results_by_idx: dict = {}
+
+    def _consume(result: dict) -> None:
+        _report_batch(result, progress, reporter)
+        for p in result.get("pages") or []:
+            results_by_idx[int(p.get("idx", 0))] = bool(p.get("ok"))
+
+    def _payload(batch: List[int]) -> tuple:
+        return (pdf_path, batch, out_dir, zoom, ext, quick, dpi)
+
+    done_batches = 0
+    if workers > 1 and len(batches) > 1:
+        from concurrent.futures import ProcessPoolExecutor
+
+        try:
+            with ProcessPoolExecutor(max_workers=workers) as executor:
+                # map 按 batches 顺序 yield，done_batches 于是能准确表示
+                # 「已消费的批次数」，异常时据此决定补跑哪一段
+                for result in executor.map(
+                    _render_batch_in_worker, [_payload(b) for b in batches]
+                ):
+                    _consume(result)
+                    done_batches += 1
+        except Exception as exc:  # noqa: BLE001 - 进程池崩溃不能拖垮整个任务
+            # 子进程被 OOM 杀掉 / 段错误 → BrokenProcessPool。已消费的批次不重跑，
+            # 剩下的在父进程里串行补完（落盘是原子写，重复渲染也是幂等的）。
+            print(
+                f"⚠️ 多进程渲染中断（{type(exc).__name__}: {exc}），"
+                f"剩余 {len(batches) - done_batches} 批改用串行补跑"
             )
-            for batch in batches
-        ]
-        for f in futures:
-            all_results.extend(f.result())
+
+    # workers==1 时这是主路径；进程池崩溃时这是兜底
+    for batch in batches[done_batches:]:
+        _consume(_render_batch_in_worker(_payload(batch)))
 
     if quick:
         reasons: dict = progress.get("reasons") or {}
@@ -527,7 +641,7 @@ def render_pages_parallel(
             print(f"ℹ️  quick：{fallback}/{len(page_indices)} 页降级整页渲染（{detail}）")
         else:
             print(f"ℹ️  quick：全部 {len(page_indices)} 页直接取内嵌图")
-    return all_results
+    return [results_by_idx.get(i, False) for i in page_indices]
 
 
 def extract_pdf_optimized(

@@ -78,4 +78,12 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    # ⚠️ extract 的渲染并发是**多进程**（utils/pdf_extract.render_pages_parallel），
+    #    会 spawn 子进程。打包（PyInstaller）后**必须**先调 freeze_support():
+    #    否则子进程重新执行本 exe 时会走 GUI 分支 —— 又拉起一个完整窗口。
+    #    （非打包环境由 spawn 自己 import __mp_main__，靠下面的 `if __name__`
+    #    保护即可；这里调用在两种环境下都安全。）
+    import multiprocessing
+
+    multiprocessing.freeze_support()
     sys.exit(main())

@@ -13,7 +13,7 @@
     dist/guji_setup_<版本>_<时间戳>.exe   安装包
 
 ⚠️ **构建脚本不负责部署**：本脚本只把产物落到 ``dist/``，**不再往
-``C:\Software\guji`` 之类的地方复制一份**——那是历史行为，会让人分不清
+``C:\\Software\\guji`` 之类的地方复制一份**——那是历史行为，会让人分不清
 "到底装在哪、跑的是哪一份"。要部署就走安装包（安装目录由
 ``guji_setup.iss`` 的 ``DefaultDirName`` 决定，PATH 也随之指向实际安装
 目录）；只想就地跑一下，双击 ``dist/guji/guji-desktop.exe`` 即可。
@@ -272,50 +272,64 @@ def ensure_build_environment(project_root):
     raise SystemExit(result.returncode)
 
 
-def trash_root() -> Path:
-    """旧产物与瘦身后文件的**归档目录**（仓库外同级：`../.guji_build_trash`）。
+#: 删除中途失败时残留目录的后缀（下次构建开头会再扫一次）
+_DELETING_SUFFIX = ".deleting"
 
-    ⚠️ 为什么构建里一律「只移不删」：
 
-    1. `dist/guji` 动辄上千项，`rmtree` 会被批量删除安全钩子按条数拦下
-       （实测 count=1168 > 阈值 50），一次拦下整轮 15 分钟的构建就白跑了；
-    2. 构建产物删了就没了——万一新包有问题，旧包也回不来。
+def remove_tree(path: Path, label: str | None = None) -> bool:
+    """整目录删除旧的 ``build/`` / ``dist/`` / 瘦身暂存目录，成功返回 True。
 
-    移到同盘的归档目录（同盘 = rename，秒级、不复制数据），需要腾空间时
-    手动清即可。
+    ``label`` 只影响日志里怎么称呼它（暂存夹叫「旧 _pruned_xxx/」读着别扭）。
+
+    ⚠️ **为什么不再归档**（2026-09-28 用户拍板）：归档等于把旧产物攒在仓库外。
+    实测 ``../.guji_build_trash`` 攒到了 **8.0 GB**（7 份 dist + 7 份 build +
+    一次 pruned），既没腾出空间，几份几百 MB 的目录摆在一起还分不清谁是谁。
+    构建产物是可再生的，不需要留——要回滚就跑一次旧提交的 ``build.py``。
+
+    删法是「先 rename、再整目录删」：
+
+    1. rename 是同盘秒级操作，能让旧路径**立刻**消失，PyInstaller 随后往
+       ``dist/`` 落地时不会撞上一个半删状态的目录；
+    2. 万一删到一半失败，残留集中在**一个** ``*.deleting`` 目录里（不是散在
+       原路径上），下次构建开头会再扫一次。
+
+    删不掉只警告，**绝不中断构建**——整轮 15 分钟不能被一次清理失败判死。
     """
-    root = Path(__file__).resolve().parent.parent / ".guji_build_trash"
-    root.mkdir(parents=True, exist_ok=True)
-    return root
-
-
-def retire(path: Path, trash: Path) -> Path | None:
-    """把旧的 build/ 或 dist/ 整体搬进归档目录，返回落点。"""
     if not path.exists():
-        return None
-    stamp = time.strftime("%Y%m%d_%H%M%S")
-    dest = trash / f"{path.name}_{stamp}"
+        return False
+
+    shown = label or f"旧 {path.name}/"
+    staging = path.with_name(f"{path.name}{_DELETING_SUFFIX}")
     try:
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        if dest.exists():  # 同一秒内重复跑
-            dest = trash / f"{path.name}_{stamp}_{os.getpid()}"
-        shutil.move(str(path), str(dest))
+        if staging.exists():  # 上一次构建留下的残骸
+            shutil.rmtree(staging, ignore_errors=True)
+        if staging.exists():
+            print(f"   ⚠️ {shown} 上次残留删不掉，跳过清理（继续构建）")
+            return False
+        os.replace(str(path), str(staging))
     except OSError as exc:
-        print(f"   ⚠️ 旧 {path.name} 归档失败（继续构建）: {exc}")
-        return None
-    print(f"   ♻️  旧 {path.name}/ → {dest}")
-    return dest
+        print(f"   ⚠️ {shown} 改名失败，跳过清理（继续构建）: {exc}")
+        return False
+
+    shutil.rmtree(staging, ignore_errors=True)
+    if staging.exists():
+        print(f"   ⚠️ {shown} 未删干净，残留 {staging}（继续构建）")
+        return False
+    print(f"   🗑️  {shown} 已删除")
+    return True
 
 
-def discard(path: Path, trash: Path, anchor: Path | None = None) -> bool:
-    """把瘦身命中的单个文件搬进归档目录（同样不删），成功返回 True。
+def stage_out(path: Path, staging: Path, anchor: Path | None = None) -> bool:
+    """把待删的单个文件**改名**进暂存目录（rename，不复制数据），成功返回 True。
 
-    ``trash`` 必须是**每次构建独有**的子目录：同名目标已存在时，旧代码会先
-    ``unlink`` 再搬——单次构建里 2332 个文件累计起来照样撞上批量删除阈值
-    （实测 count=50 就红）。让目标永不冲突，就一次删除都不需要。
+    瘦身一次要清掉 2000+ 个 torch 源文件：逐个 ``unlink`` 是最慢、也最容易撞上
+    批量删除阈值的做法（实测 count=50 就红过），而 rename 只是改一个目录项。
+    搬完再对暂存目录调**一次** :func:`remove_tree`，删除动作就收敛成「一次整目录删除」。
+
+    ``staging`` 每次构建独有：同名目标不存在，就永远不需要先删后搬。
     """
     try:
-        dest = (trash / path.relative_to(anchor)) if anchor is not None else (trash / path.name)
+        dest = (staging / path.relative_to(anchor)) if anchor is not None else (staging / path.name)
         dest.parent.mkdir(parents=True, exist_ok=True)
         if dest.exists():
             return False
@@ -403,11 +417,10 @@ def main():
 
     print(f"项目版本: {VERSION}")
 
-    # 归档旧产物（guji.spec 现在是构建输入，不能删）
-    # ⚠️ 这里**只移不删**：详见 trash_root() 的说明。
-    trash = trash_root()
+    # 删掉旧产物（guji.spec 是构建输入，不动它）
+    # ⚠️ 不再归档、也不因删除失败中断构建：详见 remove_tree()。
     for target in [project_root / "build", project_root / "dist"]:
-        retire(target, trash)
+        remove_tree(target)
 
     icon = prepare_icon(project_root)
 
@@ -563,8 +576,9 @@ def prune_bloat(dist_dir):
             print(f"   保留 {kept} 个 torch 源文件（运行时需读回源码）")
 
     saved = 0
-    # 每次构建一个独立的归档子目录：目标名不冲突，就永远不需要先删后搬
-    run_trash = trash_root() / "pruned" / time.strftime("%Y%m%d_%H%M%S")
+    # 待删文件先 rename 进暂存夹（同盘、秒级），最后对暂存夹删一把就完事——
+    # 2000+ 次 unlink 收敛成一次目录删除。详见 stage_out()。
+    run_staging = dist_dir.parent.parent / "build" / f"_pruned_{time.strftime('%Y%m%d_%H%M%S')}"
     for path, reason in targets:
         if not path.exists():
             continue
@@ -572,13 +586,14 @@ def prune_bloat(dist_dir):
             size = path.stat().st_size if path.is_file() else 0
         except OSError:
             continue
-        if discard(path, run_trash, anchor=internal):
+        if stage_out(path, run_staging, anchor=internal):
             saved += size
             removed_files += 1
         else:
-            print(f"   ⚠️ 归档失败（跳过）{path}")
+            print(f"   ⚠️ 移入暂存失败（跳过）{path}")
+    remove_tree(run_staging, label="瘦身暂存文件")
 
-    # 删（归档）完 .py 后剩下的空目录也一并清理；清不掉无所谓，空目录不占体积
+    # 删完 .py 后剩下的空目录也一并清理；清不掉无所谓，空目录不占体积
     removed_dirs = 0
     if torch_dir.is_dir():
         for d in sorted(torch_dir.rglob("*"), key=lambda p: -len(p.parts)):
@@ -591,8 +606,8 @@ def prune_bloat(dist_dir):
 
     if saved:
         print(
-            f"🧹 瘦身完成：归档 {removed_files} 个文件、清理 {removed_dirs} 个空目录，"
-            f"腾出 {saved / MB:.1f} MB（文件已移到 {run_trash}，未删除）"
+            f"🧹 瘦身完成：删除 {removed_files} 个文件、清理 {removed_dirs} 个空目录，"
+            f"腾出 {saved / MB:.1f} MB"
         )
     else:
         print("🧹 瘦身：没有匹配到可删除的内容")

@@ -216,4 +216,9 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    # ⚠️ extract 渲染是多进程：打包后需要 freeze_support() 让子进程走
+    #    spawn_main，而不是重新执行入口。
+    import multiprocessing
+
+    multiprocessing.freeze_support()
     sys.exit(main())

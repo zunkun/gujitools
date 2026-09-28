@@ -147,4 +147,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    # ⚠️ extract 渲染是多进程：见 desktop.py 同款说明。
+    import multiprocessing
+
+    multiprocessing.freeze_support()
     sys.exit(main())

@@ -58,4 +58,9 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    # ⚠️ extract 的渲染并发是**多进程**，会 spawn 子进程。打包后必须靠
+    #    freeze_support() 让子进程走 spawn_main 而不是重新执行 guji.exe。
+    import multiprocessing
+
+    multiprocessing.freeze_support()
     main()
