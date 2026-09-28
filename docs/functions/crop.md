@@ -16,17 +16,23 @@ guji crop --config ./book.yaml
 
 ## 核心算法
 
-### YOLO 检测 + 左右分割
+### YOLO 检测 + 按类别分流
 
 > **检测来自 `functions/detect.py`**：`crop` 不自己实现检测，而是调用
-> `functions.detect.detect_page_boxes(img, model)` 取左右框——这正是
+> `functions.detect.detect_page_content(img, model)` 取框——这正是
 > 「`crop` = `detect` + 裁剪」在代码里字面成立的原因。GUI 的第 2 步
 > （detect 阶段）走的是同一个函数，所以命令行与界面看到的框完全一致。
 > 需要单独查看检测结果时用 `guji detect -i ./images --save`。
+>
+> 内容框有两类（模型 `weights/bookcontent.pt`，对一页互斥）：`harfcontent`
+> 半幅（左右两栏）→ 分 left / right 两组；`fullcontent` 整幅（整页单一
+> 内容区）→ 只有一个框，**不拆左右**（area=1 只输出一张、无 `-l/-r` 后缀；
+> area=2/3 单框**不**做对称镜像）。
 
-1. 使用 YOLO 模型对图片推理，获取所有文本框；
-2. 计算每个框的水平中心 `cx = (x1 + x2) / 2`；
-3. 以图像宽度一半 `w/2` 为分界线：
+1. 使用 YOLO 模型对图片推理，获取所有内容框；
+2. `fullcontent` 直接作为整幅框；其余（`harfcontent`）按水平中心分左右：
+   - 计算水平中心 `cx = (x1 + x2) / 2`；
+   - 以图像宽度一半 `w/2` 为分界线：
    - `cx < w/2` → 归入 left 组
    - `cx >= w/2` → 归入 right 组
 4. 每组按面积降序排序，取 `[0]` 作为最大候选框。

@@ -1,11 +1,28 @@
 """
 File: functions/detect.py
-检测功能：在整页图片中检测左右两个文本框。
+检测功能：在整页图片中检测内容框（半幅左右两栏 / 整幅单区）。
 
 这是「检测」这一步的唯一实现——`crop = detect + 裁剪`、`cropremove =
-detect + 裁剪 + 去底色`，两者都通过本模块拿到左右框，而不是各自调用
-`utils.detect_left_right_boxes`。GUI 的 detect 阶段同样复用这里，因此
+detect + 裁剪 + 去底色`，两者都通过本模块拿框，而不是各自调用
+`utils.detect_content_boxes`。GUI 的 detect 阶段同样复用这里，因此
 「CLI 与 desktop 用同一套算法、只是参数不同」在检测这一步也成立。
+
+**两类内容框**（模型 `weights/bookcontent.pt`，两类对一页互斥）：
+- `harfcontent`（半幅，原 `bookcontent` 改名）：双栏排版中的一栏，一页最多
+  左右两个框 → 检测结果落在 `PageBoxes.left` / `PageBoxes.right`；
+- `fullcontent`（整幅）：整页只有一个内容区 → 落在 `PageBoxes.full`，
+  **不**按中线拆分（否则会被误判成左栏或右栏）。
+
+⚠️ 模型偶尔会在同一页同时给出两类，因此检测后按**互斥规则**强制消解
+（`utils.yolo_utils.resolve_content_boxes`，与参考实现
+`gujitrain/test/predict_bookcontent.py` 同规则）：
+
+1. **窄整幅剔除**：整幅框宽必须 > 页宽的 70%，否则视为失败检测丢弃；
+2. **双半幅压制整幅**：半幅 ≥2 个 → 整幅框一律删；
+3. **单半幅比置信度**：半幅恰好 1 个 → 与置信度最高的整幅比，整幅严格更高
+   才留整幅（平局留半幅）；没有半幅时整幅原样保留。
+
+消解结果由 `PageBoxes.notes` 带出（触发了哪条规则），CLI 与 GUI 都会打出来。
 
 与其它功能类的区别：
 - **`save` 决定是否落盘**。不带 `--save` 时 `self.outpath = None`，不计算路径、
@@ -39,10 +56,64 @@ from utils.path_utils import assert_output_not_input, resolve_final_output_dir
 Box = Tuple[int, int, int, int]
 
 
-def extract_first_box(boxes) -> Optional[Box]:
-    """从 `detect_left_right_boxes` 的返回里取面积最大的框的 4 个坐标。
+class PageBoxes(NamedTuple):
+    """一页的检测框结果。
 
-    `detect_left_right_boxes` 返回 ``[(x1, y1, x2, y2, area), ...]``，
+    三类字段互斥地描述**同一页**的形态（模型两类对一页互斥）：
+
+    - 半幅页（harfcontent）：``left`` / ``right`` 各可能有值，另一侧为 None；
+    - 整幅页（fullcontent）：只有 ``full`` 有值，``left`` / ``right`` 为 None；
+    - 无框：三者皆 None。
+
+    ⚠️ **存储槽位约定**（GUI boxes.json / 检测事件 / 下游布局共用）：
+    ``slots()`` 给出的槽位数编码形态——半幅固定 2 槽 ``[左, 右]``（保留左右
+    身份，缺失侧为 None），整幅只占 1 槽 ``[整幅]``。下游据此判断"单个框是否
+    整幅"（例如 area=2/3 的单框是否要做对称镜像——整幅**不**镜像）。
+    """
+
+    left: Optional[Box] = None
+    right: Optional[Box] = None
+    full: Optional[Box] = None
+    #: 检测后处理（互斥消解）**真的触发**的规则说明，供调用方打日志。
+    #: 见 `utils.yolo_utils.resolve_content_boxes`。
+    notes: Tuple[str, ...] = ()
+
+    @property
+    def is_full(self) -> bool:
+        """本页是否为「整幅」内容（fullcontent）。半幅优先（见 :meth:`slots`）。"""
+        return self.full is not None and self.left is None and self.right is None
+
+    @property
+    def has_any(self) -> bool:
+        """本页是否检出了任何框。"""
+        return self.left is not None or self.right is not None or self.full is not None
+
+    @property
+    def conflict(self) -> bool:
+        """是否同时检出了半幅与整幅。
+
+        **消解之后必定为 False**（见 `utils.yolo_utils.resolve_content_boxes`）；
+        保留此判据只为防御手工构造 / 旧存档数据。
+        """
+        return self.full is not None and (self.left is not None or self.right is not None)
+
+    def slots(self) -> list:
+        """按**槽位约定**给出框列表（半幅 2 槽 / 整幅 1 槽 / 无框空）。
+
+        半幅优先于整幅：万一两类同时存在（消解失灵 / 手工构造），按半幅处理——
+        保证「harfcontent 逻辑与原来完全一致」，整幅不会把已检出的半幅挤掉。
+        """
+        if self.left is not None or self.right is not None:
+            return [self.left, self.right]
+        if self.full is not None:
+            return [self.full]
+        return []
+
+
+def extract_first_box(boxes) -> Optional[Box]:
+    """从 `detect_content_boxes` 的返回里取面积最大的框的 4 个坐标。
+
+    `detect_content_boxes` 各侧返回 ``[(x1, y1, x2, y2, area, conf), ...]``，
     已按面积降序排列，故取 ``[0]`` 即最大候选框。统一在此处裁剪到前 4 个
     元素——此前 CLI 与 GUI 各自写了一遍
     ``left_boxes[0][:4] if left_boxes else None``。
@@ -115,20 +186,18 @@ def warm_up_detect_model() -> Tuple[str, float]:
     return backend_log_line(backend, seconds), seconds
 
 
-def detect_page_boxes_by_path(
-    image_path, model=None
-) -> Tuple[Optional[Box], Optional[Box]]:
-    """按**路径**检测左右文本框：优先常驻 YOLO 服务，失败回落本进程内。
+def detect_page_content_by_path(image_path, model=None) -> PageBoxes:
+    """按**路径**检测一页的内容框：优先常驻 YOLO 服务，失败回落本进程内。
 
     给"手上有路径"的调用方用（CLI 的 detect/crop/cropremove、GUI 的 detect
     阶段）。服务化只改**模型住在哪个进程**，不改算法：
 
     - 服务可用 → 模型全局只有一份，多个 worker、多次执行、多个线程共用，
       日志里「加载 YOLO 模型完成」只出现一次（在服务进程里）；
-    - 服务不可用 → 回落到 ``detect_page_boxes(imread(path), model)``，行为与
+    - 服务不可用 → 回落到 ``detect_page_content(imread(path), model)``，行为与
       引入服务之前**完全一致**（最坏就是慢那几秒）。
 
-    ⚠️ 与 `detect_page_boxes` 的分工：那个是**算法入口**（吃 ndarray，
+    ⚠️ 与 `detect_page_content` 的分工：那个是**算法入口**（吃 ndarray，
     crop/GUI 都靠它保证框一致，不要绕过）；本函数是**取图方式的选择**，
     内部最终仍然调它。
 
@@ -141,7 +210,7 @@ def detect_page_boxes_by_path(
             直接用它在进程内算，不再绕服务。
 
     返回:
-        (left_box, right_box)，各为 (x1, y1, x2, y2) 或 None。
+        :class:`PageBoxes`（左右半幅 / 整幅 / 无框）。
     """
     if model is None:
         # 函数内延迟导入：yolo_service 的检测处理器要反过来 import 本模块，
@@ -152,17 +221,33 @@ def detect_page_boxes_by_path(
         if outcome is not None:
             # 能拿到 outcome 就说明这次是服务算的（拿不到才回落，见下）
             _set_detect_report("service", outcome.model_load_seconds)
-            return outcome.left, outcome.right
+            return PageBoxes(left=outcome.left, right=outcome.right,
+                             full=outcome.full, notes=tuple(outcome.notes))
     img_bgr = utils.imread(image_path)
     if img_bgr is None:
         raise ValueError(f"无法读取图片: {image_path}")
     already = utils.is_model_loaded() if model is None else True
     started = time.perf_counter()
-    boxes = detect_page_boxes(img_bgr, model)
+    boxes = detect_page_content(img_bgr, model)
     _set_detect_report(
         "in-process", 0.0 if already else time.perf_counter() - started
     )
     return boxes
+
+
+def detect_page_boxes_by_path(
+    image_path, model=None
+) -> Tuple[Optional[Box], Optional[Box]]:
+    """兼容入口：只返回 ``(left, right)`` 两个框。
+
+    **仅为旧调用方保留签名**（测试/截图工具按 2 元组解包）。整幅页的框折算到
+    ``left``——新代码请用 :func:`detect_page_content_by_path` 拿 ``full`` 身份，
+    否则会把整幅当成"左栏"。
+    """
+    page = detect_page_content_by_path(image_path, model)
+    if page.is_full:
+        return page.full, None
+    return page.left, page.right
 
 
 def format_box(box) -> str:
@@ -170,29 +255,70 @@ def format_box(box) -> str:
     return "-" if box is None else ",".join(str(int(v)) for v in box)
 
 
-def detect_page_boxes(
-    img_bgr, model=None
-) -> Tuple[Optional[Box], Optional[Box]]:
-    """检测一页图片的左右文本框，返回 (left_box, right_box)。
+def detect_page_content(img_bgr, model=None) -> PageBoxes:
+    """检测一页图片的内容框，返回 :class:`PageBoxes`（左右半幅 / 整幅）。
 
     这是检测算法的**唯一入口**：crop / cropremove / GUI detect 阶段都调用
-    它，保证三处的框完全相同。
+    它（经 `detect_page_content_by_path` 取图），保证各处的框完全相同。
+    互斥消解（窄整幅剔除 / 双半幅压制整幅 / 单半幅比置信度）在底层
+    `utils.detect_content_boxes` 内完成，本函数只做「取最大框」与打包。
 
     参数:
         img_bgr: BGR 图像数组（由 `utils.imread` 读取，支持中文路径）。
         model: YOLO 模型实例；None 时使用进程内单例。
 
     返回:
-        (left_box, right_box)，各为 (x1, y1, x2, y2) 或 None。
+        :class:`PageBoxes`。半幅页给 left/right，整幅页给 full；
+        `notes` 带出触发的消解规则（供日志）。
     """
     if model is None:
         model = utils.load_yolo_model()
-    left_boxes, right_boxes = utils.detect_left_right_boxes(img_bgr, model)
-    return extract_first_box(left_boxes), extract_first_box(right_boxes)
+    content = utils.detect_content_boxes(img_bgr, model)
+    return PageBoxes(
+        left=extract_first_box(content.left_boxes),
+        right=extract_first_box(content.right_boxes),
+        full=extract_first_box(content.full_boxes),
+        notes=tuple(content.notes),
+    )
+
+
+def detect_page_boxes(
+    img_bgr, model=None
+) -> Tuple[Optional[Box], Optional[Box]]:
+    """兼容入口：只返回 ``(left, right)`` 两个框。
+
+    **仅为旧调用方保留签名**（测试/截图工具按 2 元组解包）。整幅页的框折算到
+    ``left``；新代码请用 :func:`detect_page_content`。
+    """
+    page = detect_page_content(img_bgr, model)
+    if page.is_full:
+        return page.full, None
+    return page.left, page.right
+
+
+def resolution_note(page: PageBoxes) -> Optional[str]:
+    """检测后处理（互斥消解）的说明行；没有可说的就返回 None。
+
+    模型对一页可能同时给出两类框（实测把推理尺寸调到 1280 时会出现
+    「整幅-半幅-整幅-半幅」四个框），因此检测后按互斥规则消解——
+    见 `utils.yolo_utils.resolve_content_boxes`：
+    窄整幅剔除 → 双半幅压制整幅 → 单半幅与整幅比置信度。
+
+    `page.notes` 记录了**哪条规则真的触发了**。必须让用户看得见：否则
+    「页面上明明有个整幅框，产物里却没有」无从解释。返回值交给调用方
+    `print` / `_emit_log`（CLI 与 GUI 各打一遍）。
+    """
+    parts = list(page.notes)
+    if page.conflict:
+        # 消解之后两类不该并存；真出现说明调用方绕过了消解（防御性）
+        parts.append("⚠️ 未消解:同时存在半幅与整幅框，已按半幅处理")
+    if not parts:
+        return None
+    return "检测后处理: " + "; ".join(parts)
 
 
 class DetectFunction(FunctionBase):
-    """检测功能：逐图检测左右文本框并上报坐标。
+    """检测功能：逐图检测内容框（半幅左右 / 整幅）并上报坐标。
 
     是否落盘由 `save` 决定：关闭时**不生成任何文件**（供代码调用 /
     GUI detect 阶段当中间步骤），开启时把标注图（框 + 坐标文字）落地，
@@ -209,7 +335,7 @@ class DetectFunction(FunctionBase):
         输出规则（`-o` 或默认 `detect` 目录），仅在开启时才创建。
 
         ⚠️ 这里刻意不保存模型实例：检测统一走
-        `detect_page_boxes_by_path`——优先交给常驻 YOLO 服务（服务自己读图、
+        `detect_page_content_by_path`——优先交给常驻 YOLO 服务（服务自己读图、
         模型全局只加载一次），服务不可用时它自己在本进程内加载一次单例即可
         （`utils.load_yolo_model()` 本身就有双重检查锁）。早先构造期就
         `load_yolo_model()` 会让每一次"服务可用"的检测白付 5 秒。
@@ -249,58 +375,76 @@ class DetectFunction(FunctionBase):
         到图上时，才在本进程里再读一次。
         """
         started = time.perf_counter()
-        left_box, right_box = detect_page_boxes_by_path(image_path)
+        page = detect_page_content_by_path(image_path)
         elapsed = time.perf_counter() - started
-        self._report_boxes(image_path, left_box, right_box, elapsed)
+        self._report_boxes(image_path, page, elapsed)
 
         result = {
-            "status": "success" if (left_box or right_box) else "no_detect",
+            "status": "success" if page.has_any else "no_detect",
             "file": image_path.name,
-            "left": left_box,
-            "right": right_box,
+            "left": page.left,
+            "right": page.right,
+            "full": page.full,
             "outputs": [],
         }
         if self.save:
             img_bgr = utils.imread(image_path)
             if img_bgr is None:
                 raise ValueError(f"无法读取图片: {image_path}")
-            result["outputs"] = self._save_annotated(
-                image_path, img_bgr, left_box, right_box
-            )
+            result["outputs"] = self._save_annotated(image_path, img_bgr, page)
         return result
 
-    def _save_annotated(self, image_path, img_bgr, left_box, right_box):
-        """把左右框画到图上并落地，返回写出的路径列表。
+    def _save_annotated(self, image_path, img_bgr, page: PageBoxes):
+        """把检测到的框画到图上并落地，返回写出的路径列表。
 
         只画**真正检测到的框**（None 项被 draw_boxes 跳过），因此
         「只检出左框」时不会画出错误的右框位置——与 GUI 预览一致。
+        整幅页的框标为「整幅」并配专用色，不会被误读成左/右栏。
         """
-        annotated = utils.draw_boxes(img_bgr, [left_box, right_box])
+        # 颜色/名称按框槽位覆盖：整幅用专用紫色 + 「整幅」，不是第 3 号的
+        # 「合并框」橙色。常数只在 utils.box_draw 里写一份。
+        from utils.box_draw import BOX_COLOR_FULL_BGR, BOX_COLORS_BGR  # noqa: PLC0415
+
+        annotated = utils.draw_boxes(
+            img_bgr,
+            [page.left, page.right, page.full],
+            names=["左框", "右框", "整幅"],
+            colors=[BOX_COLORS_BGR[0], BOX_COLORS_BGR[1], BOX_COLOR_FULL_BGR],
+        )
         out_path = self.outpath / f"{image_path.stem}{self.output_suffix}"
         if not utils.imwrite(out_path, annotated):
             raise OSError(f"标注图写出失败: {out_path}")
         return [str(out_path)]
 
-    def _report_boxes(self, image_path: Path, left_box, right_box,
+    def _report_boxes(self, image_path: Path, page: PageBoxes,
                       elapsed: float | None = None) -> None:
         """经 reporter 上报本页检测框（结构化事件 + 一行人读日志）。
 
         事件名与 `functions/text_region.py` 完全一致（`page_boxes`），
         因此 desktop 侧对 detect 阶段与 crop 阶段看到的是同一种事件。
-        日志带上**本页耗时**：用户要能看出"这一页实际干了什么、花了多久"，
-        否则一次检测跑完日志里只有进度、看不出每张图的结果。
+        负载带 `left` / `right` / `full` 三个键，下游按槽位约定还原形态
+        （见 :class:`PageBoxes`）。日志带上**本页耗时**：用户要能看出
+        "这一页实际干了什么、花了多久"，否则一次检测跑完日志里只有进度、
+        看不出每张图的结果。
         """
         self.reporter.event(
             "page_boxes",
             image=image_path.stem,
-            left=list(left_box) if left_box else None,
-            right=list(right_box) if right_box else None,
+            left=list(page.left) if page.left else None,
+            right=list(page.right) if page.right else None,
+            full=list(page.full) if page.full else None,
         )
         cost = "" if elapsed is None else f"（{elapsed * 1000:.0f} ms）"
         self.reporter.log(
             f"检测完成: {image_path.name} "
-            f"左={format_box(left_box)} 右={format_box(right_box)}{cost}"
+            f"左={format_box(page.left)} 右={format_box(page.right)} "
+            f"整幅={format_box(page.full)}{cost}"
         )
+        # 互斥消解真的剔了框时要让用户在命令行上看见（reporter.log 在 functions
+        # 层是空实现，所以这里直接 print）。
+        note = resolution_note(page)
+        if note:
+            print(note)
 
     def execute(self) -> dict:
         """逐图检测，返回汇总结果。
@@ -313,7 +457,8 @@ class DetectFunction(FunctionBase):
         `--save` 时才做落盘相关的准备。
 
         返回:
-            {"processed": n, "left": n, "right": n, "output": 目录或 None}
+            {"processed": n, "detected": n, "failed": n,
+             "left": n, "right": n, "full": n, "output": 目录或 None}
         """
         print(f"输入路径：{self.input}")
         if self.save:
@@ -414,6 +559,7 @@ class DetectFunction(FunctionBase):
         hit = [r for r in results if r.get("status") == "success"]
         hit_left = sum(1 for r in hit if r.get("left"))
         hit_right = sum(1 for r in hit if r.get("right"))
+        hit_full = sum(1 for r in hit if r.get("full"))
         failed = sum(1 for r in results if r.get("status") == "error")
         # ⚠️ 检测过 = 不是 error（`no_detect` 是"没找到框"的**合法结果**，这一页
         #    确实检测过了）。返回值里必须同时给出"检测过多少/失败多少"，否则
@@ -421,8 +567,8 @@ class DetectFunction(FunctionBase):
         #    （2026-09-26 审计）。
         detected = len(results) - failed
         print(
-            f"检测完成: 共 {total} 页，左框 {hit_left} 页，"
-            f"右框 {hit_right} 页，失败 {failed} 页"
+            f"检测完成: 共 {total} 页，半幅 左框 {hit_left} 页 / 右框 {hit_right} 页，"
+            f"整幅 {hit_full} 页，失败 {failed} 页"
         )
         total_elapsed = time.perf_counter() - started_all
         load_note = f"，模型加载另计 {load_seconds:.1f} s" if load_seconds > 0 else ""
@@ -467,5 +613,6 @@ class DetectFunction(FunctionBase):
             "failed": failed,
             "left": hit_left,
             "right": hit_right,
+            "full": hit_full,
             "output": str(self.outpath) if self.save else None,
         }

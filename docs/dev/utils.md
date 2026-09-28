@@ -15,7 +15,7 @@
 | `image_utils.py`  | 图像处理核心算法               | `calculate_auto_threshold`, `extract_red_seal`, `apply_otsu_to_region`, `apply_otsu_whole`, `parse_border`, `parse_border_mm`   |
 | `image_io.py`     | OpenCV 读写（中文路径安全）    | `imread`, `imwrite`                                                                                                             |
 | `file_utils.py`   | 文件收集与校验                 | `collect_image_files`, `is_valid_image_size`, `IMAGE_EXTS`                                                                      |
-| `yolo_utils.py`   | YOLO 模型加载与检测            | `load_yolo_model`, `detect_left_right_boxes`                                                                                    |
+| `yolo_utils.py`   | YOLO 模型加载与内容框检测      | `load_yolo_model`, `detect_content_boxes`                                                                                       |
 | `pdf_utils.py`    | PDF 渲染与提取                 | `parse_pages`, `validate_page_range`, `calculate_zoom`, `process_page_batch`, `extract_pdf_optimized`, `run_on_input_directory` |
 | `pdf_stream.py`   | PDF **边写边落盘**（省掉整本输出缓冲） | `PdfDocument`, `write_streaming`                                                                                                |
 | `path_utils.py`   | 输出目录解析                   | `resolve_final_output_dir`, `get_extract_output_root`                                                                           |
@@ -207,29 +207,48 @@ GUI 的预览控件也要画同样的框。配色与命名必须一致，否则�
 - 强制 CPU 模式（兼容无 GPU 环境）
 - 找不到权重文件时抛出 `FileNotFoundError`
 
-### `detect_left_right_boxes(image_bgr, model) -> (left_boxes, right_boxes)`
+### `detect_content_boxes(image_bgr, model) -> ContentBoxes`
 
-**左右文本框检测与分割**：
+**内容框检测 + 按类别分流 + 互斥消解**（模型 `weights/bookcontent.pt` 两类）：
 
-| 参数      | 类型       | 说明                                                       |
-| --------- | ---------- | ---------------------------------------------------------- |
-| image_bgr | np.ndarray | BGR 格式图像                                               |
-| model     | YOLO       | 模型实例                                                   |
-| 返回      | tuple      | `(left_boxes, right_boxes)`，每个 box = (x1,y1,x2,y2,area) |
+| 参数      | 类型       | 说明                                                                     |
+| --------- | ---------- | ------------------------------------------------------------------------ |
+| image_bgr | np.ndarray | BGR 格式图像                                                             |
+| model     | YOLO       | 模型实例                                                                 |
+| 返回      | namedtuple | `ContentBoxes(left_boxes, right_boxes, full_boxes, notes)`，box = (x1,y1,x2,y2,area,conf) |
 
-**左右分割算法**：
+- `harfcontent`（半幅，原 `bookcontent` 改名）→ 按中线分 left / right；
+- `fullcontent`（整幅）→ `full_boxes`，**不**按中线拆分。
+
+**互斥消解**（`resolve_content_boxes`，与 `gujitrain/test/predict_bookcontent.py`
+同规则；消解后两类互斥）：窄整幅（宽 ≤70%）剔除 → 半幅 ≥2 个则整幅全删 →
+半幅恰好 1 个时与置信度最高的整幅比（整幅须**严格更高**才留整幅）。
+`notes` 带出真的触发了哪条规则。
+
+类别号由 `model.names` 按**类名**解析（`_content_class_ids`），不写死下标；
+某个类名不存在时该侧的类别号为 `-1`（单类模型可正确退化）。
+**不按框宽区分两类的理由**：`harfcontent` 框宽实测约 43%、`fullcontent` 约
+95%，但单栏书的 `harfcontent` 框也可能横跨整幅（实测最宽 98.5%），宽度阈值
+不可靠——70% 只用于**规则1 对整幅框做合理性检查**，不用于类别判定。
+
+**左右分割算法**（仅 harfcontent）：
 
 1. 计算图像中线 `mid_x = w / 2`；
 2. 遍历所有检测框，计算水平中心 `cx = (x1 + x2) / 2`；
 3. `cx < mid_x` → left，否则 → right；
 4. 每组按面积降序排序，调用方取 `[0]` 即可获得最大候选框。
 
-> ⚠️ **唯一调用方是 `functions/detect.py`**：`functions.detect.detect_page_boxes()`
+> ⚠️ **唯一调用方是 `functions/detect.py`**：`functions.detect.detect_page_content()`
 > 是本原语的封装（它负责「取最大框的前 4 个坐标」这一步），也是全仓库**唯一**
-> 调用 `detect_left_right_boxes` 的地方。`crop` / `cropremove`（经
-> `TextRegionProcessor`）与 GUI 的 detect 阶段都必须走 `detect_page_boxes`，
+> 调用 `detect_content_boxes` 的地方。`crop` / `cropremove`（经
+> `TextRegionProcessor`）与 GUI 的 detect 阶段都必须走 `detect_page_content`，
 > **不得直接调用本文件的原语**。
 > `tests/selftests/detect_shared.py` 会扫描全仓库守卫这条约束，违反即测试红。
+
+`functions.detect.PageBoxes` 把结果表达为**槽位**：半幅固定 2 槽 `[左, 右]`
+（缺失侧为 None），整幅只占 1 槽 `[整幅]`。下游（`utils.box_geometry
+.is_full_content`、`desktop/.../image_view.slot_styles`、`print_plan`）据此
+判断整幅单框：area=2/3 **不做**对称镜像、area=1 只输出一条。
 
 ---
 

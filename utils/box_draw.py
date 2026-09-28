@@ -2,11 +2,12 @@
 File: utils/box_draw.py
 在图片上绘制检测框标注（供 CLI `detect --save` 与 GUI 预览共用）。
 
-**为什么放在 utils**：CLI 的 `guji detect --save` 要把左右框画到图片上落地，
+**为什么放在 utils**：CLI 的 `guji detect --save` 要把内容框画到图片上落地，
 GUI 的预览控件也要画同样的框。配色与命名必须一致，否则「命令行看到的」
 和「界面看到的」是两套东西。因此视觉约定集中在这里：
 
 - 左框 `#21c178`（绿）、右框 `#3b82f6`（蓝）、合并框 `#f59e0b`（橙）；
+- 整幅内容框（fullcontent，单框整页）`#a855f7`（紫），与前三色都区分得开；
 - 标注文字为「左框 (x1,y1,x2,y2)」。
 
 **中文字体**：OpenCV 的 `putText` 不支持中文（会画成 `????`），因此文字用
@@ -24,10 +25,16 @@ BOX_COLORS_BGR: Tuple[Tuple[int, int, int], ...] = (
     (0x78, 0xC1, 0x21),  # 左框 #21c178
     (0xF6, 0x82, 0x3B),  # 右框 #3b82f6
     (0x0B, 0x9E, 0xF5),  # 合并框 #f59e0b
+    (0xF7, 0x55, 0xA8),  # 整幅 #a855f7（fullcontent 单框整页）
 )
-BOX_NAMES: Tuple[str, ...] = ("左框", "右框", "合并框")
-# 无中文字体时的 ASCII 兜底标签
-BOX_NAMES_ASCII: Tuple[str, ...] = ("L", "R", "U")
+BOX_NAMES: Tuple[str, ...] = ("左框", "右框", "合并框", "整幅")
+# 无中文字体时的 ASCII 兜底标签（与 BOX_NAMES 一一对应，长度必须一致）
+BOX_NAMES_ASCII: Tuple[str, ...] = ("L", "R", "U", "F")
+
+#: 整幅内容框（fullcontent）的专用色/名：它**不是**左框也不是合并框，
+#: 单独一个颜色，免得标注图上把整页内容误读成某一栏。
+BOX_COLOR_FULL_BGR: Tuple[int, int, int] = BOX_COLORS_BGR[3]  # 整幅 #a855f7
+BOX_NAME_FULL = "整幅"
 
 _font_cache: dict = {}
 
@@ -78,6 +85,8 @@ def draw_boxes(
     thickness: int = 4,
     show_label: bool = True,
     color=None,
+    names: Optional[Sequence[str]] = None,
+    colors: Optional[Sequence[Tuple[int, int, int]]] = None,
 ):
     """在图像上绘制一组框（原地绘制并返回新图，不修改入参）。
 
@@ -89,6 +98,10 @@ def draw_boxes(
             细线看不清。
         show_label: 是否绘制「左框 (x1,y1,x2,y2)」这类标注。
         color: 指定线条颜色 (B,G,R)；None 时按框序号取默认色。
+        names: 与 boxes 按序号对齐的名称覆盖；``None`` 项回退到默认名。
+            用于把整幅内容框标成「整幅」而不是「左框」。
+        colors: 与 boxes 按序号对齐的颜色覆盖；``None`` 项回退到默认色。
+            优先于 ``color``（`color` 是"全部同色"的简写）。
 
     返回:
         绘制后的 BGR 图像（新数组）。
@@ -107,13 +120,21 @@ def draw_boxes(
         if box is None:
             continue
         x1, y1, x2, y2 = (int(v) for v in box[:4])
-        bgr = color if color is not None else box_color(index)
+        bgr = _pick(colors, index) or (color if color is not None else box_color(index))
         cv2.rectangle(out, (x1, y1), (x2, y2), tuple(int(c) for c in bgr), line_w)
         if not show_label:
             continue
-        label = f"{box_name(index)} ({x1},{y1},{x2},{y2})"
+        name = _pick(names, index) or box_name(index)
+        label = f"{name} ({x1},{y1},{x2},{y2})"
         out = _draw_label(out, label, x1, y1, bgr, font_scale)
     return out
+
+
+def _pick(seq, index):
+    """按序号取覆盖项；越界或该项为 None 时返回 None（表示用默认）。"""
+    if not seq or index >= len(seq):
+        return None
+    return seq[index]
 
 
 def _draw_label(img_bgr, text: str, x: int, y: int, bgr, font_scale: float):

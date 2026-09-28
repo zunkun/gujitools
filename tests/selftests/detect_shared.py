@@ -1,19 +1,22 @@
 # -*- coding: utf-8 -*-
-"""detect 步骤同源自测：左右框检测必须只有一份实现。
+"""detect 步骤同源自测：内容框检测必须只有一份实现。
 
-背景：用户的设计是「detect = 检测图中左右两个文本框」，且
-`crop = detect + 裁剪`、`cropremove = detect + 裁剪 + 去底色`。但改造前
-`functions/` 下**没有** detect 模块：CLI 在 `TextRegionProcessor` 里直接调
-`utils.detect_left_right_boxes`，GUI 在 `desktop/stages/detect_stage.py`
-里又各写一遍相同的调用与 `[0][:4]` 取值。三处同算法、零共享。
+背景：用户的设计是「detect = 检测图中的内容框（harfcontent 半幅左右两栏 /
+fullcontent 整幅单区）」，且 `crop = detect + 裁剪`、`cropremove = detect +
+裁剪 + 去底色`。但改造前 `functions/` 下**没有** detect 模块：CLI 在
+`TextRegionProcessor` 里直接调 `utils.detect_content_boxes`，GUI 在
+`desktop/stages/detect_stage.py` 里又各写一遍相同的调用与 `[0][:4]` 取值。
+三处同算法、零共享。
 
-现在检测的唯一入口是 `functions.detect.detect_page_boxes`，本模块守住：
+现在检测的唯一入口是 `functions.detect.detect_page_content`（按路径的变体是
+`detect_page_content_by_path`），本模块守住：
 
-1. 检测只在 `functions/detect.py` 一处调用 `utils.detect_left_right_boxes`；
+1. 检测只在 `functions/detect.py` 一处调用 `utils.detect_content_boxes`；
 2. `TextRegionProcessor`（crop/cropremove 的公共基类）走 detect 模块，不再自调原语；
 3. GUI 的 detect 阶段走 detect 模块，不再自调原语；
 4. `detect` 已登记为真实命令（工厂可构造、CLI 有子命令）；
-5. `extract_first_box` 的边界行为（空列表/None → None）。
+5. `extract_first_box` 的边界行为（空列表/None → None）；
+6. `PageBoxes` 的槽位约定（半幅 2 槽 / 整幅 1 槽）。
 """
 
 NAME = "detect_shared"
@@ -30,7 +33,7 @@ def run(ctx) -> None:
 
     root = Path(__file__).resolve().parents[2]
 
-    # ---- 1. 只有 detect.py 允许调用 utils.detect_left_right_boxes ----
+    # ---- 1. 只有 detect.py 允许调用 utils.detect_content_boxes ----
     callers = []
     for path in root.rglob("*.py"):
         text = str(path)
@@ -44,7 +47,7 @@ def run(ctx) -> None:
             stripped = line.strip()
             if stripped.startswith("#"):
                 continue
-            if "detect_left_right_boxes(" in line:
+            if "detect_content_boxes(" in line:
                 callers.append(path.relative_to(root).as_posix())
                 break
     ok("只有 functions/detect.py 调用检测原语",
@@ -54,20 +57,20 @@ def run(ctx) -> None:
     from functions import text_region
 
     tr_src = inspect.getsource(text_region)
-    ok("TextRegionProcessor 复用 detect_page_boxes",
-       "detect_page_boxes" in tr_src, "crop/cropremove 未走统一检测入口")
+    ok("TextRegionProcessor 复用 detect_page_content",
+       "detect_page_content" in tr_src, "crop/cropremove 未走统一检测入口")
     ok("TextRegionProcessor 不再自调检测原语",
-       "utils.detect_left_right_boxes(" not in tr_src,
+       "utils.detect_content_boxes(" not in tr_src,
        "基类仍自行调用 utils 检测原语")
 
     # ---- 3. GUI detect 阶段复用 detect 模块 ----
     from desktop.stages import detect_stage
 
     ds_src = inspect.getsource(detect_stage)
-    ok("GUI detect 阶段复用 detect_page_boxes",
-       "detect_page_boxes" in ds_src, "GUI 仍在自行检测")
+    ok("GUI detect 阶段复用 detect_page_content",
+       "detect_page_content" in ds_src, "GUI 仍在自行检测")
     ok("GUI detect 阶段不再自调检测原语",
-       "utils.detect_left_right_boxes(" not in ds_src,
+       "utils.detect_content_boxes(" not in ds_src,
        "GUI 仍自行调用 utils 检测原语")
     # 曾重复两遍的 [0][:4] 取值应已消失
     ok("GUI 不再重复写 [0][:4] 取值",
@@ -108,6 +111,37 @@ def run(ctx) -> None:
     left, right = detect_page_boxes(blank)
     ok("纯白图不抛异常且两侧为 None", left is None and right is None,
        f"left={left} right={right}")
+
+    # ---- 5b. PageBoxes 槽位约定：半幅 2 槽 / 整幅 1 槽 ----
+    from functions.detect import PageBoxes
+
+    half = PageBoxes(left=(1, 2, 3, 4), right=None)
+    ok("半幅固定 2 槽（缺失侧为 None，保留左右身份）",
+       half.slots() == [(1, 2, 3, 4), None], str(half.slots()))
+    ok("半幅不是整幅", half.is_full is False)
+    full = PageBoxes(full=(1, 2, 3, 4))
+    ok("整幅只占 1 槽", full.slots() == [(1, 2, 3, 4)], str(full.slots()))
+    ok("整幅 is_full 为真", full.is_full is True)
+    ok("无框 → 空槽", PageBoxes().slots() == [] and PageBoxes().has_any is False)
+    # 半幅优先：万一模型违反互斥、半幅与整幅都出，不能把已检出的半幅挤掉
+    both = PageBoxes(left=(1, 1, 2, 2), full=(0, 0, 9, 9))
+    ok("半幅优先于整幅（互斥被破坏时保 harf 行为）",
+       both.is_full is False and both.slots()[0] == (1, 1, 2, 2), str(both))
+    # 槽位约定下游只此一处实现
+    from utils.box_geometry import is_full_content
+
+    ok("整幅判定按槽位：1 槽才是整幅",
+       is_full_content([(1, 2, 3, 4)]) is True
+       and is_full_content([(1, 2, 3, 4), None]) is False
+       and is_full_content([]) is False)
+    from desktop.components.viewers.image_view import slot_styles
+
+    _fb, _fn, _fc = slot_styles([(1, 2, 3, 4)])
+    ok("整幅框在预览里命名「整幅」且带专用色",
+       _fn == ["整幅"] and _fc[0] is not None, f"{_fn}")
+    _hb, _hn, _hc = slot_styles([None, (9, 9, 9, 9)])
+    ok("半幅只检出一侧时保留另一侧身份（右框，不是左框）",
+       _hb == [[9, 9, 9, 9]] and _hn == ["右框"], f"{_hn}")
 
     # ---- 6. --save：默认不落地、开启才落地 ----
     import tempfile

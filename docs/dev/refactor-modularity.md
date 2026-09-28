@@ -140,7 +140,7 @@ from cli.command_args import CommandArgs      # ← 换成 core.args
 改成 `from core.args import CommandArgs` 就**直接消掉对 cli 的依赖**，零风险。
 
 `desktop/stages/detect_stage.py` 函数内 `from functions.detect import
-detect_page_boxes` 是**有意的算法复用**（GUI 检测阶段要跑与 CLI 完全相同的检测），
+detect_page_content` 是**有意的算法复用**（GUI 检测阶段要跑与 CLI 完全相同的检测），
 下沉到 core 不合适（算法属业务层）。处置：保留，但集中到
 `desktop/stages/registry.py` 并登记为「已知的跨层复用点」，加注释说明原因，
 避免后来人以为是疏漏。

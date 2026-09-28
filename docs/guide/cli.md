@@ -101,8 +101,8 @@ guji -v                  # 显示版本
 | 命令         | 别名  | 功能                       | 详细文档                                 |
 | ------------ | ----- | -------------------------- | ---------------------------------------- |
 | `extract`    | `-e`  | 从 PDF 提取页面为图片      | [extract.md](../functions/extract.md)       |
-| `detect`     | —     | 检测左右文本框坐标         | [detect.md](../functions/detect.md)         |
-| `crop`       | —     | 基于 YOLO 裁剪左右文本框   | [crop.md](../functions/crop.md)             |
+| `detect`     | —     | 检测内容框坐标（半幅/整幅） | [detect.md](../functions/detect.md)         |
+| `crop`       | —     | 基于 YOLO 裁剪内容框       | [crop.md](../functions/crop.md)             |
 | `rembg`      | `-r`  | 整图去底色/二值化/印章保留 | [rembg.md](../functions/rembg.md)           |
 | `cropremove` | `-cr` | 复合流程：裁剪 + 去底色    | [cropremove.md](../functions/cropremove.md) |
 | `print`      | —     | 将图片目录生成为 PDF       | [print.md](../functions/print.md)           |
@@ -159,7 +159,7 @@ crop=`crop`、rembg=`rembg`、cropremove=`rembg`
 
 ### detect — 文本框检测（非必要）
 
-检测整页图片中的左右文本框，并把标注图（左框绿色、右框蓝色 + 坐标文字）
+检测整页图片中的内容框（半幅左右 / 整幅整页），并把标注图（左框绿色、右框蓝色、整幅紫色 + 坐标文字）
 落地。**命令行下 `--save` 必须给**，否则命令被直接拒绝：
 
 ```bash
@@ -194,7 +194,7 @@ guji detect -i ./images --save -o ./detect-out --ext png
 
 ### crop — 文本框裁剪
 
-基于 YOLO 检测左右文本框并裁剪输出原图像素，支持 area/border 控制（与 cropremove 共享规则，但不做 Otsu 去底色）。
+基于 YOLO 检测内容框并裁剪输出原图像素，支持 area/border 控制（与 cropremove 共享规则，但不做 Otsu 去底色）。
 
 | 参数       | 默认值 | 说明                                |
 | ---------- | ------ | ----------------------------------- |
@@ -205,7 +205,7 @@ guji detect -i ./images --save -o ./detect-out --ext png
 
 | area | 裁剪方式               | 输出方式                              | border=None 时 |
 | ---- | ---------------------- | ------------------------------------- | -------------- |
-| 1    | 逐框独立裁剪           | 分别裁剪左右框，输出 `-l`/`-r` 两张图 | 裁剪到各框边界 |
+| 1    | 逐框独立裁剪           | 半幅输出 `-l`/`-r` 两张图；整幅只出一张 | 裁剪到各框边界 |
 | 2    | 逐框独立裁剪           | 单图，ROI 写回原位置                  | 输出原尺寸     |
 | 3    | 合并左右框为整体外边界 | 单图，ROI 写回原位置                  | 输出原尺寸     |
 
@@ -271,7 +271,7 @@ YAML 示例见 [print.md](../functions/print.md)。
 
 | area | Otsu 作用区域        | 输出方式                              | border=None 时 |
 | ---- | -------------------- | ------------------------------------- | -------------- |
-| 1    | 逐框独立（共享阈值） | 分别裁剪左右框，输出 `-l`/`-r` 两张图 | 裁剪到各框边界 |
+| 1    | 逐框独立（共享阈值） | 半幅输出 `-l`/`-r` 两张图；整幅只出一张 | 裁剪到各框边界 |
 | 2    | 逐框独立（共享阈值） | 单图，ROI 写回原位置                  | 输出原尺寸     |
 | 3    | 合并左右框为整体     | 单图，ROI 写回原位置                  | 输出原尺寸     |
 

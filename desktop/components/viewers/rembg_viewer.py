@@ -26,6 +26,7 @@ from desktop.components.viewers.thumb_strip import ThumbStrip
 from desktop.components.viewers.thumbs_loader import ThumbsMixin
 from core.command_spec import WHOLE_PAGE_AREA
 from desktop.ui.widgets import SegmentedToggle
+from utils.box_geometry import is_full_content
 from utils.sort_utils import pdf_custom_sort_key
 
 
@@ -156,6 +157,9 @@ class RembgPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         area=1 时每框一条（左右身份来自存储的 [左框, 右框] 列表，缺失为 null）；
         全部条目最终按 CLI 规范（utils/sort_utils.pdf_custom_sort_key）排序：
         同页编号 r 在 l 前，页码数字感知排序。
+
+        ``full`` 标记整幅内容(fullcontent)的**单槽**条目——它在 area=2/3 下
+        不做对称镜像（见 utils.box_geometry.is_full_content）。
         """
         entries: list[dict] = []
         for path in self._paths:
@@ -167,17 +171,21 @@ class RembgPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
                     boxes = self._boxes_provider(path_text) or []
                     area, _border = self._region_params_provider()
                     valid = [b for b in boxes if b]
+                    full = is_full_content(boxes)
                     if area == 1 and len(valid) == 2:
                         # 右框在前（古籍阅读顺序：r → l）
                         page_entries = [
                             {"label": f"{stem}-r", "path": path_text,
-                             "box": valid[1], "boxes": [valid[1]], "parea": 1},
+                             "box": valid[1], "boxes": [valid[1]], "parea": 1,
+                             "full": False},
                             {"label": f"{stem}-l", "path": path_text,
-                             "box": valid[0], "boxes": [valid[0]], "parea": 1},
+                             "box": valid[0], "boxes": [valid[0]], "parea": 1,
+                             "full": False},
                         ]
                     elif area == 1 and len(valid) == 1:
                         page_entries = [
-                            {"label": f"{stem}", "path": path_text, "box": valid[0], "parea": 1}
+                            {"label": f"{stem}", "path": path_text, "box": valid[0],
+                             "parea": 1, "full": full}
                         ]
                     elif area in (2, 3) and len(valid) == 2:
                         union = [min(b[0] for b in valid), min(b[1] for b in valid),
@@ -187,25 +195,26 @@ class RembgPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
                         # （area=2/3 的语义）退化成紧裁，与预览不一致。
                         page_entries = [
                             {"label": stem, "path": path_text, "box": union,
-                             "boxes": list(valid), "parea": area}
+                             "boxes": list(valid), "parea": area, "full": False}
                         ]
                     elif area in (2, 3) and len(valid) == 1:
-                        # 对称画布
+                        # 单框：半幅→对称画布；整幅(full)→普通框（不镜像）
                         page_entries = [
                             {"label": stem, "path": path_text, "box": valid[0],
-                             "boxes": list(valid), "parea": area}
+                             "boxes": list(valid), "parea": area, "full": full}
                         ]
                     elif area == WHOLE_PAGE_AREA and valid:
                         # 整页模式：整页（或用户手画的框）作为一个整体，不拆左右页
                         page_entries = [
                             {"label": stem, "path": path_text,
                              "box": _union_box(valid), "boxes": list(valid),
-                             "parea": area}
+                             "parea": area, "full": False}
                         ]
                 except Exception:
                     page_entries = None
             if not page_entries:
-                page_entries = [{"label": stem, "path": path_text, "box": None}]
+                page_entries = [{"label": stem, "path": path_text, "box": None,
+                                 "full": False}]
             entries.extend(page_entries)
         entries.sort(key=lambda e: pdf_custom_sort_key(e["label"]))
         return entries
@@ -267,7 +276,7 @@ class RembgPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
             if self._thumb_provider:
                 spec = self._thumb_provider(
                     real, entry.get("box"), entry.get("parea", 1), border_mm,
-                    boxes=entry.get("boxes"),
+                    boxes=entry.get("boxes"), full=entry.get("full", False),
                 )
             if isinstance(spec, dict):
                 thumb_paths.append(Path(spec["path"]))
@@ -391,12 +400,16 @@ class RembgPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
                 area, border = self._region_params_provider()
                 if entry.get("box") is not None and area == 1:
                     # area=1 单框条目：显示"该文本框 + border"区域
-                    effect = {"boxes": [entry["box"]], "area": 1, "border": border}
+                    effect = {"boxes": [entry["box"]], "area": 1,
+                              "border": border, "full": False}
                 else:
+                    raw = self._boxes_provider(path_text) or []
                     effect = {
-                        "boxes": self._boxes_provider(path_text) or [],
+                        "boxes": raw,
                         "area": area,
                         "border": border,
+                        # 整幅内容单框在 area=2/3 不做对称镜像
+                        "full": is_full_content(raw),
                     }
             except Exception as exc:  # 参数计算失败时退化为整图显示
                 return None, None, False, f"区域计算失败：{exc}"

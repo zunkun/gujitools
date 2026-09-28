@@ -77,6 +77,7 @@ class ImageListWorker(QObject):
                         int(effect.get("area", 1)),
                         effect.get("border"),
                         dpi=int(effect.get("dpi", 300)),
+                        full=bool(effect.get("full")),
                     )
                     image = compose_outputs_horizontal(outputs)
                     if image.isNull():

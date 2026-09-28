@@ -250,11 +250,14 @@ class _ServiceState:
 
 
 def _detect_file(image_path: str):
-    """服务侧执行一次检测，返回 `(left, right, model_load_seconds)`。
+    """服务侧执行一次检测，返回 `(PageBoxes, model_load_seconds)`。
 
-    ⚠️ 走的是与本进程内**完全相同**的入口 `functions.detect.detect_page_boxes`，
+    ⚠️ 走的是与本进程内**完全相同**的入口 `functions.detect.detect_page_content`，
     并且用同一个 `utils.load_yolo_model()` 单例——服务化只改"模型住在哪个
-    进程"，不改算法，因此服务算出的框与本进程算出的必然一致。
+    进程"，不改算法（含互斥消解），因此服务算出的框与本进程算出的必然一致。
+
+    `page.full` 是整幅内容（fullcontent）的框；`page.notes` 带出互斥消解
+    触发的规则说明（要回给客户端打日志）。
 
     `model_load_seconds` 只有**本次调用真的把模型加载起来**时才 > 0。调用方
     据此在日志里打出「加载 YOLO 模型完成: 用时 X s」——服务进程自己没有
@@ -263,7 +266,7 @@ def _detect_file(image_path: str):
     这里**必须**函数内延迟导入：`functions/detect.py` 在模块级 import 本模块的
     客户端，模块级互相 import 会成环。
     """
-    from functions.detect import detect_page_boxes  # noqa: PLC0415
+    from functions.detect import detect_page_content  # noqa: PLC0415
 
     img = utils.imread(image_path)
     if img is None:
@@ -272,8 +275,8 @@ def _detect_file(image_path: str):
     started = time.perf_counter()
     model = utils.load_yolo_model()
     load_seconds = 0.0 if already else time.perf_counter() - started
-    left, right = detect_page_boxes(img, model)
-    return left, right, load_seconds
+    page = detect_page_content(img, model)
+    return page, load_seconds
 
 
 def _dispatch(request: dict, state: _ServiceState, fp: str) -> dict:
@@ -319,11 +322,14 @@ def _dispatch(request: dict, state: _ServiceState, fp: str) -> dict:
     if cmd == "detect":
         state.enter()
         try:
-            left, right, load_seconds = _detect_file(str(request.get("image") or ""))
+            page, load_seconds = _detect_file(str(request.get("image") or ""))
             return {
                 "ok": True,
-                "left": list(left) if left else None,
-                "right": list(right) if right else None,
+                "left": list(page.left) if page.left else None,
+                "right": list(page.right) if page.right else None,
+                "full": list(page.full) if page.full else None,
+                # 互斥消解触发的规则说明（人读），客户端拿去打日志
+                "notes": list(page.notes),
                 "model_loaded": utils.is_model_loaded(),
                 "model_load_seconds": round(load_seconds, 3),
             }
@@ -640,10 +646,15 @@ class ServiceDetect(NamedTuple):
 
     `model_load_seconds > 0` 表示**这一张**把模型加载起来了（服务刚被拉起、
     或刚被 TTL 收走后又拉起）；为 0 表示服务里已有模型、直接复用。
+
+    `full` 是整幅内容（fullcontent）的框（与 left/right 互斥，互斥由检测侧的
+    消解规则保证）；`notes` 是消解触发的规则说明，客户端据此打日志。
     """
 
     left: tuple | None
     right: tuple | None
+    full: tuple | None
+    notes: tuple
     model_load_seconds: float
 
 
@@ -679,6 +690,8 @@ def detect_boxes_via_service(image_path, area: int = 1) -> ServiceDetect | None:
     return ServiceDetect(
         left=_as_box(resp.get("left")),
         right=_as_box(resp.get("right")),
+        full=_as_box(resp.get("full")),
+        notes=tuple(str(n) for n in (resp.get("notes") or ())),
         model_load_seconds=float(resp.get("model_load_seconds") or 0.0),
     )
 

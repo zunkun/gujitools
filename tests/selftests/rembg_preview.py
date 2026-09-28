@@ -107,7 +107,8 @@ def run(ctx) -> None:
     entry = widget._entries[0]
     source, effect, has_result, _error = widget._resolve_source(entry)
     ok("area=1 单框条目：区域参数=该框 + border",
-       effect == {"boxes": [entry["box"]], "area": 1, "border": "5"},
+       effect == {"boxes": [entry["box"]], "area": 1, "border": "5",
+                  "full": False},
        f"{effect} / entry.box={entry['box']}")
     ok("area=1 能取到结果图（结果优先）", has_result and source == result,
        str(source))

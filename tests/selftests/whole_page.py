@@ -156,10 +156,10 @@ def run(ctx) -> None:
     src = inspect.getsource(TextRegionProcessor._process_single_image)
     ok("CLI 侧 area=4 在调用检测之前分流",
        "if area_mode == 4:" in src and src.index("if area_mode == 4:") < src.index(
-           "detect_page_boxes"),
+           "detect_page_content"),
        "整页分支缺失或未挡在检测之前")
     ok("整页模式不预加载 YOLO 模型（改为按需加载）",
        TextRegionProcessor.__init__.__doc__ is not None
        and "延迟" in TextRegionProcessor.__init__.__doc__
-       and "detect_page_boxes(img_bgr, self._model)" not in src,
+       and "detect_page_content(img_bgr, self._model)" not in src,
        "模型仍在构造期加载或整页路径仍直接取 self._model")

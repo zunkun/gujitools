@@ -1,4 +1,4 @@
-"""YOLO 检测封装：模型加载与左右文本框分割。
+"""YOLO 检测封装：模型加载与页面内容框检测。
 
 此模块封装了 YOLO 目标检测模型的使用，提供两个核心功能：
 
@@ -6,11 +6,27 @@
    延迟加载 + 模块级单例 + 双重检查锁，确保多线程下模型只加载一次。
    权重文件查找路径: `gujitools/weights/bookcontent.pt`。
 
-2. **左右文本框检测** (`detect_left_right_boxes`)
-   对古籍扫描图（通常左页 + 右页双栏排版）执行检测后，按检测框水平中心点
-   与图像中线的关系分为 left / right 两组，供 crop / cropremove 使用。
+2. **页面内容框检测** (`detect_content_boxes`)
+   权重 `weights/bookcontent.pt` 是**两类**模型，两类对一页而言互斥：
 
-左右分割算法:
+   - ``harfcontent``（半幅，即原 `bookcontent` 改名）——双栏排版中的**一栏**。
+     双页扫描时一页出左右两栏，故按检测框水平中心与图像中线的关系分为
+     left / right 两组，供 crop / cropremove 使用；
+   - ``fullcontent``（整幅）——整页只有一个内容区（单页排版）。它**只有
+     一个框**，不参与左右分割，否则会被中线误判成某一半。
+
+   ⚠️ **类别名决定路由，不靠几何猜**：`harfcontent` 的框宽实测约 43%、
+   `fullcontent` 约 95%，但单栏书的 ``harfcontent`` 框也可能横跨整幅
+   （实测最宽 98.5%）。用宽度阈值区分二者并不可靠，所以一律按模型的
+   **类别号**路由（类别号由 `model.names` 按**类名**解析，见
+   :func:`_content_class_ids`）。
+
+   模型偶尔会在同一页同时给出两类（实测把推理尺寸调到 1280 时会出现
+   「整幅-半幅-整幅-半幅」四个框），因此检测后按**互斥规则**强制消解
+   （见 :func:`resolve_content_boxes`）：窄整幅剔除 → 双半幅压制整幅 →
+   单半幅与整幅比置信度。返回结果保证两类互斥，`notes` 说明触发了哪条规则。
+
+左右分割算法（仅对半幅）:
     以图像宽度一半为分界线，检测框中心 cx < w/2 归入 left，否则归入 right。
     每组按面积降序排序，调用方取 [0] 即可获得最大候选框。
 """
@@ -23,8 +39,9 @@ import threading
 import warnings
 from pathlib import Path
 from importlib.machinery import ModuleSpec
+from typing import List, NamedTuple, Tuple
+
 import numpy as np
-from typing import List, Tuple
 
 # ---------------------------------------------------------------- 启动开关
 # 本项目只用本地权重推理：不需要 ultralytics 去查 PyPI、上报匿名事件，更不需要
@@ -276,47 +293,201 @@ def load_yolo_model() -> object:
         return _YOLO_MODEL
 
 
-def detect_left_right_boxes(
-    image_bgr: np.ndarray, model: object
-) -> Tuple[List[tuple], List[tuple]]:
-    """使用 YOLO 检测文本框并按水平中心分为左右两组。
+#: 内容类别名。模型 `weights/bookcontent.pt` 的 `names` 就是这两个，
+#: 但这里只用于**按名解析类别号**（见 :func:`_content_class_ids`），
+#: 不假设它们在 `names` 里的下标顺序。
+CONTENT_CLASS_HARF = "harfcontent"
+CONTENT_CLASS_FULL = "fullcontent"
+
+#: 规则1：整幅(fullcontent)框宽必须 **>** 图像宽度 × 该比例，否则视为失败检测剔除。
+#: 依据：fullcontent 的语义就是「整幅内容区」——宽度不到七成的框不可能是整幅。
+#: 实测：训练集里真整幅框宽 p5=88%（均值 95%），而模型误判出来的「窄整幅」
+#: 只有 ~45%（一栏的宽度），70% 正好卡在两者之间。
+#: 该规则与参考实现 `gujitrain/test/predict_bookcontent.py` 的
+#: ``FULL_MIN_WIDTH_RATIO`` 一致。
+FULL_MIN_WIDTH_RATIO = 0.70
+
+
+class ContentBoxes(NamedTuple):
+    """一页的内容框检测结果（**已按互斥规则消解**），按类别分流。
+
+    属性:
+        left_boxes: 半幅框中中心在中线左侧的（面积降序）。
+        right_boxes: 半幅框中中心在中线右侧的（面积降序）。
+        full_boxes: 整幅框（面积降序，至多一个）。
+        notes: 互斥消解**实际触发**的规则说明（人读，供调用方打日志）；
+            没有触发任何规则时为空元组。消解之后两类必然互斥，
+            因此 left/right 与 full 不会同时非空。
+
+    每个 box = ``(x1, y1, x2, y2, area, conf)``，坐标为整数像素值。
+    """
+
+    left_boxes: List[tuple]
+    right_boxes: List[tuple]
+    full_boxes: List[tuple]
+    notes: Tuple[str, ...] = ()
+
+
+def _content_class_ids(model: object) -> Tuple[int, int]:
+    """从模型 ``names`` 里解析 ``(harfcontent_id, fullcontent_id)``。
+
+    ⚠️ 按**类名**解析而不是写死 0/1：训练 yaml 里 `names` 的顺序将来若调整，
+    这里的路由仍然正确。某个类名在 `names` 里不存在时返回 ``-1``（永不匹配），
+    于是单类模型也能正确退化：只有 harfcontent 的模型不会产出整幅框，反之亦然。
+
+    只有**拿不到任何 names 信息**时（老权重没有 names）才退回 ``(0, 1)``——
+    与当前 `data/bookcontent/bookcontent.yaml` 的顺序一致。
+    """
+    names = getattr(model, "names", None)
+    if isinstance(names, dict):
+        index = {str(v): int(k) for k, v in names.items()}
+    elif isinstance(names, (list, tuple)):
+        index = {str(v): i for i, v in enumerate(names)}
+    else:
+        index = {}
+    if not index:
+        return 0, 1
+    return index.get(CONTENT_CLASS_HARF, -1), index.get(CONTENT_CLASS_FULL, -1)
+
+
+def _split_by_center(boxes: List[tuple], mid_x: float):
+    """按框的水平中心把一组框分成左右两组（cx < mid_x 归左）。"""
+    left, right = [], []
+    for box in boxes:
+        cx = (box[0] + box[2]) / 2.0
+        (left if cx < mid_x else right).append(box)
+    return left, right
+
+
+def resolve_content_boxes(
+    raw_boxes, img_w: float, harf_id: int, full_id: int
+) -> Tuple[List[tuple], List[tuple], List[tuple], Tuple[str, ...]]:
+    """按**互斥规则**消解 harfcontent / fullcontent，返回 (left, right, full, notes)。
+
+    与参考实现 `gujitrain/test/predict_bookcontent.py::resolve_boxes` **同规则**
+    （规则顺序即优先级）：
+
+    1. **窄整幅剔除**：整幅框宽必须 > ``img_w × FULL_MIN_WIDTH_RATIO``（0.70），
+       否则判为失败检测直接剔除；
+    2. **双半幅压制整幅**：harfcontent ≥ 2 个 → 整幅框一律不存在（全删）——
+       两栏都检出来了，整幅一定是错的；
+    3. **单半幅与整幅比置信度**：harfcontent 恰好 1 个 → 取置信度最高的整幅框
+       与它比，整幅**严格更高**才留整幅（平局留半幅）；没有 harfcontent 时
+       整幅原样保留。
+
+    参数:
+        raw_boxes: 模型原始输出 ``[(cls_id, conf, x1, y1, x2, y2), …]``，未过滤。
+        img_w: 图像宽度（规则1 的基准）。
+        harf_id / full_id: 两类各自的类别号；``-1`` 表示该类不存在。
+
+    返回:
+        ``(left_boxes, right_boxes, full_boxes, notes)``。前三个均为面积降序的
+        ``(x1,y1,x2,y2,area,conf)``；``notes`` 是消解说明（人读，只含**真的触发**
+        的规则）。
+
+    ⚠️ 「两类互斥」是就**已登记的两个类别**而言的：未知类别（将来若再添类别）
+    一律按半幅处理、且**不参与**上述三条规则的计数与置信度比较——既不丢框，
+    也不会让它误压制整幅框。真出现第三类时，应把它当作新的语义在
+    `PageBoxes` / 槽位约定里显式建模，而不是靠这里兜底。
+    """
+    half, full_valid, others = [], [], []
+    narrow_full = 0
+    for cls, conf, x1, y1, x2, y2 in raw_boxes:
+        area = (x2 - x1) * (y2 - y1)
+        item = (int(x1), int(y1), int(x2), int(y2), area, float(conf))
+        if cls == full_id:
+            # 规则1：整幅框必须够宽，否则是"把某一栏误判成整幅"
+            if (x2 - x1) / img_w > FULL_MIN_WIDTH_RATIO:
+                full_valid.append(item)
+            else:
+                narrow_full += 1
+        elif cls == harf_id:
+            half.append(item)
+        else:
+            others.append(item)
+
+    notes: List[str] = []
+    if narrow_full:
+        notes.append(
+            f"剔除{narrow_full}个整幅框(宽≤{int(FULL_MIN_WIDTH_RATIO * 100)}%)"
+        )
+
+    kept_half, kept_full = half, full_valid
+    if len(half) >= 2:
+        # 规则2：两栏都出来了，整幅一定是错的
+        kept_full = []
+        if full_valid:
+            notes.append(
+                f"剔除{len(full_valid)}个整幅框(与{len(half)}个半幅框冲突)"
+            )
+    elif len(half) == 1:
+        # 规则3：只剩一个半幅时，与置信度最高的整幅比置信度（整幅须**严格更高**）
+        if full_valid:
+            best_full = max(full_valid, key=lambda b: b[5])
+            if best_full[5] > half[0][5]:
+                kept_half = []
+                notes.append(
+                    f"剔除半幅框(置信度{half[0][5]:.2f}<整幅{best_full[5]:.2f})"
+                )
+            else:
+                kept_full = []
+                notes.append(
+                    f"剔除{len(full_valid)}个整幅框"
+                    f"(最高{best_full[5]:.2f}≤半幅{half[0][5]:.2f})"
+                )
+
+    # 我们的槽位只需要**一个**整幅框：多个有效整幅时取面积最大者（参考实现
+    # 会把它们全留下并计入统计，本项目的下游只有一个整幅槽位）。
+    if len(kept_full) > 1:
+        kept_full = [max(kept_full, key=lambda b: b[4])]
+
+    mid_x = img_w / 2.0
+    left, right = _split_by_center(kept_half + others, mid_x)
+    left.sort(key=lambda b: b[4], reverse=True)
+    right.sort(key=lambda b: b[4], reverse=True)
+    full = sorted(kept_full, key=lambda b: b[4], reverse=True)
+    return left, right, full, tuple(notes)
+
+
+def detect_content_boxes(image_bgr: np.ndarray, model: object) -> ContentBoxes:
+    """使用 YOLO 检测页面内容框，按类别分流并按**互斥规则消解**。
 
     算法:
-    1. 取图像宽度的一半 mid_x = w / 2 作为左右分界线；
-    2. 遍历所有检测框，计算中心 cx = (x1 + x2) / 2；
-    3. cx < mid_x → left_boxes，否则 → right_boxes；
-    4. 每组按面积降序排序（最大框排在 [0]）。
+    1. 模型推理，取全部框的 ``(类别, 置信度, 坐标)``；
+    2. 按类别号分流（``fullcontent`` 与其余分开）；
+    3. 调用 :func:`resolve_content_boxes` 消解两类冲突（窄整幅剔除、双半幅压制
+       整幅、单半幅与整幅比置信度），保证返回结果**两类互斥**；
+    4. 半幅框按中线分左右，各组按面积降序（最大框排在 [0]）。
 
     参数:
         image_bgr: BGR 格式图像（cv2 读取的默认格式）。
         model: YOLO 模型实例。
 
     返回:
-        (left_boxes, right_boxes)：
-        - 每个 box = (x1, y1, x2, y2, area)，坐标为整数像素值；
-        - 面积降序排列，取 [0] 即可得最大候选框；
-        - 若某侧无检测框，对应列表为空。
+        :class:`ContentBoxes`（已消解；`notes` 说明触发了哪条规则）。
     """
     h, w = image_bgr.shape[:2]
-    mid_x = w / 2.0  # 图像中线，用于区分左右页
-
     # 设备跟模型走（load 时已选定并 to() 过）。写死 "cpu" 是无 GPU 时代的
     # 兼容行为；GPU 时代它就是纯浪费（2026-09-27 用户指出"GPU 好就吃 GPU"）。
     results = model(image_bgr, verbose=False, device=_YOLO_DEVICE)
     boxes = results[0].boxes
-    left_boxes, right_boxes = [], []
+    harf_id, full_id = _content_class_ids(model)
 
+    raw_boxes = []
     for box in boxes:
-        x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-        cx = (x1 + x2) / 2.0  # 检测框水平中心
-        area = (x2 - x1) * (y2 - y1)
-        bbox = (int(x1), int(y1), int(x2), int(y2), area)
-        if cx < mid_x:
-            left_boxes.append(bbox)
-        else:
-            right_boxes.append(bbox)
+        x1, y1, x2, y2 = (float(v) for v in box.xyxy[0].cpu().numpy())
+        raw_boxes.append(
+            (
+                int(box.cls[0].cpu().numpy()),
+                float(box.conf[0].cpu().numpy()),
+                x1,
+                y1,
+                x2,
+                y2,
+            )
+        )
 
-    # 按面积降序排序，调用方取 [0] 即可获得最大候选框
-    left_boxes.sort(key=lambda b: b[4], reverse=True)
-    right_boxes.sort(key=lambda b: b[4], reverse=True)
-    return left_boxes, right_boxes
+    left, right, full, notes = resolve_content_boxes(
+        raw_boxes, w, harf_id, full_id
+    )
+    return ContentBoxes(left, right, full, notes)

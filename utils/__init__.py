@@ -5,7 +5,7 @@
 - `image_utils`: Otsu 阈值计算、红色印章提取、区域/整图去底、border 参数解析。
 - `image_io`: cv2 读写封装，规避中文路径下 `cv2.imread` 返回 None 的问题。
 - `file_utils`: 图片文件收集与尺寸校验。
-- `yolo_utils`: YOLO 模型加载与左右文本框检测。
+- `yolo_utils`: YOLO 模型加载与页面内容框检测（harfcontent 半幅 / fullcontent 整幅）。
 - `pdf_extract`: PDF 页面渲染为图片（多线程批量处理）。
 - `pdf_draw`: 生成 PDF 的绘制辅助（字体注册、竖排文字、页侧判定）。
 - `pdf_stream`: 让 fpdf 的输出**边写边落盘**（顶替整本输出缓冲，`print` 专用）。
@@ -39,7 +39,7 @@ from utils.sort_utils import natural_sort_key
 # 重依赖模块的函数名 → (模块路径, 函数名) 映射，首次访问时按需加载
 _LAZY = {
     "load_yolo_model": ("utils.yolo_utils", "load_yolo_model"),
-    "detect_left_right_boxes": ("utils.yolo_utils", "detect_left_right_boxes"),
+    "detect_content_boxes": ("utils.yolo_utils", "detect_content_boxes"),
     # ⚠️ 下面三个是"状态查询"，也必须登记：否则调用方只能写
     # `utils.yolo_utils.is_model_loaded()`，而那是**靠偶然才成立**的——
     # 只有在某处恰好 `from utils.yolo_utils import ...` 过之后，子模块才会成为

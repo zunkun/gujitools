@@ -125,7 +125,7 @@ ERROR: 'detect' 不接受空跑（既未指定 --save，就不会产生任何文
         guji detect -i <图片目录> --save            # 输出到 <输入父目录>/detect
         guji detect -i <图片目录> --save -o <输出根目录>
 
-    如果你只是想拿到左右文本框坐标，不需要单独跑 detect：
+    如果你只是想拿到内容框坐标（半幅左右 / 整幅），不需要单独跑 detect：
       - 裁剪：  guji crop -i <图片目录>        （内部自动检测）
       - 裁剪+去底：guji cropremove -i <图片目录>（内部自动检测）
       - 代码调用：functions.detect.detect_page_boxes(img)，无需 --save。

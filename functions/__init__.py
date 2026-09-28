@@ -6,7 +6,7 @@ File: functions/__init__.py
 - `base.py`: FunctionBase 基类，提供输入路径解析、输出路径计算、并发执行引擎。
 - `text_region.py`: TextRegionProcessor 基类，封装 YOLO 检测 + area/border 规则 + 输出构建。
 - `extract.py`: 从 PDF 提取页面图片（ExtractFunction）。
-- `detect.py`: 检测整页图片的左右文本框，只上报坐标不写盘（DetectFunction）。
+- `detect.py`: 检测整页图片的内容框（半幅左右 / 整幅），只上报坐标不写盘（DetectFunction）。
 - `crop.py`: 裁剪原图像素（CropFunction），继承 TextRegionProcessor。
 - `rembg.py`: 整图去底色/二值化/印章保留（RembgFunction）。
 - `crop_remove.py`: 裁剪 + 去底色（CropRemoveFunction），继承 TextRegionProcessor。

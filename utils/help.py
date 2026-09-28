@@ -117,8 +117,8 @@ def print_quick_help():
 
 可用命令:
   extract  (-e)   从 PDF 提取页面为图片
-  detect         检测左右文本框坐标（--save 可输出标注图）
-  crop           基于 YOLO 裁剪左右文本框
+  detect         检测内容框坐标（半幅左右 / 整幅；--save 可输出标注图）
+  crop           基于 YOLO 裁剪内容框
   rembg    (-r)   整图去底色 / 二值化 / 印章保留
   cropremove (-cr)  裁剪 + 去底色（复合流程）
   print          从图片清单排版生成 PDF（经 guji run print 或桌面版使用）

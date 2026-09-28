@@ -26,6 +26,19 @@ from utils.units import MM_PER_INCH, mm_to_px
 SYMMETRIC_GAP_MM = 10
 
 
+def is_full_content(boxes) -> bool:
+    """``boxes`` 是否为「整幅内容」(fullcontent) 的**槽位表示**。
+
+    槽位约定见 `functions/detect.PageBoxes`：
+    - 半幅（harfcontent）固定 2 槽 ``[左, 右]``，缺失一侧为 None；
+    - 整幅（fullcontent）只占 **1 槽** ``[整幅]``。
+
+    据此判断 area=2/3 的单框要不要做对称镜像——整幅本来就是整页内容区，
+    镜像会凭空多出一半空白，**不做**镜像；半幅漏检一侧才需要镜像补白。
+    """
+    return len(list(boxes or [])) == 1
+
+
 def parse_border_mm(border_value, dpi: int = 300) -> Optional[List[int]]:
     """解析 border 参数（毫米单位），按 DPI 转换为像素。
 

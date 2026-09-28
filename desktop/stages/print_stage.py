@@ -137,6 +137,7 @@ def run_print_stage(config: dict) -> int:
                     effect.get("boxes", []),
                     int(effect.get("area", 1)),
                     effect.get("border"),
+                    full=bool(effect.get("full")),
                 )
             else:
                 outputs = [image]

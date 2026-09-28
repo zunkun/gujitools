@@ -33,6 +33,17 @@ class DetectMixin:
             return []
         return [b for b in boxes if b]
 
+    @staticmethod
+    def _viewer_slots(raw_boxes):
+        """原始**槽位**列表 → ``(boxes, names, colors)``，供预览控件绘制。
+
+        槽位约定见 `functions/detect.PageBoxes`：2 槽 = 半幅[左,右]（缺失侧
+        剔除但保留另一侧的名字）；1 槽 = 整幅(fullcontent)，命名为「整幅」。
+        """
+        from desktop.components.viewers.image_view import slot_styles
+
+        return slot_styles(raw_boxes)
+
     # ------------------------------------------------------------ 整页模式
     def _current_area(self) -> int:
         """当前 area（区域模式参数位于第三步 rembg 面板）。"""
@@ -96,18 +107,22 @@ class DetectMixin:
             # 时把整页框当成真实检测结果去拆左右页。
             self._show_boxes_info(boxes, origin)
             size = self._image_size_for(key) or (0, 0)
+            shown, names, colors = self._viewer_slots(boxes)
             self.detect_viewer.apply_boxes(
-                boxes, QSize(size[0], size[1]), self._describe_boxes(boxes)
+                shown, QSize(size[0], size[1]), self._describe_boxes(shown, names),
+                names=names, colors=colors,
             )
             self._refresh_reference_boxes()
             return
         if key in self.detect_cache:
-            boxes = self._valid_boxes(self.detect_cache[key])
-            self._show_boxes_info(boxes)
-            if boxes:
+            raw = self.detect_cache[key]
+            shown, names, colors = self._viewer_slots(raw)
+            self._show_boxes_info(shown, names=names)
+            if shown:
                 size = QImageReader(key).size()
                 self.detect_viewer.apply_boxes(
-                    boxes, size, self._describe_boxes(boxes)
+                    shown, size, self._describe_boxes(shown, names),
+                    names=names, colors=colors,
                 )
             self._refresh_reference_boxes()
             return
@@ -116,11 +131,14 @@ class DetectMixin:
         if entry is not None:
             boxes, origin = entry
             self.detect_cache[key] = boxes
-            display = self._valid_boxes(boxes)
-            self._show_boxes_info(display, origin)
-            if display:
+            shown, names, colors = self._viewer_slots(boxes)
+            self._show_boxes_info(shown, origin, names=names)
+            if shown:
                 size = QImageReader(key).size()
-                self.detect_viewer.apply_boxes(display, size, self._describe_boxes(display))
+                self.detect_viewer.apply_boxes(
+                    shown, size, self._describe_boxes(shown, names),
+                    names=names, colors=colors,
+                )
             self._refresh_reference_boxes()
             return
         self.detect_viewer.info_label.setText(
@@ -144,8 +162,10 @@ class DetectMixin:
                 return
             self._show_boxes_info(boxes, origin)
             size = self._image_size_for(key) or (0, 0)
+            shown, names, colors = self._viewer_slots(boxes)
             self.detect_viewer.apply_boxes(
-                boxes, QSize(size[0], size[1]), self._describe_boxes(boxes)
+                shown, QSize(size[0], size[1]), self._describe_boxes(shown, names),
+                names=names, colors=colors,
             )
             self._refresh_reference_boxes()
             self._toast(
@@ -155,9 +175,9 @@ class DetectMixin:
             return
         entry = self.store.detect_boxes_entry(self.task_id, Path(path).stem)
         if entry is not None and any(entry[0] or []):
-            display = self._valid_boxes(entry[0])
+            shown, names, _colors = self._viewer_slots(entry[0])
             self.detect_cache[key] = entry[0]
-            self._show_boxes_info(display, entry[1])
+            self._show_boxes_info(shown, entry[1], names=names)
             self._refresh_reference_boxes()
             self._toast("info", "已有检测结果", "该页检测结果已存在，直接展示。")
             return
@@ -234,22 +254,30 @@ class DetectMixin:
         # rembg 预览的区域同步刷新（显示范围跟随检测框 + area/border）
         self.rembg_viewer.refresh_display()
 
-    def _show_boxes_info(self, boxes, origin: str | None = None) -> None:
+    def _show_boxes_info(self, boxes, origin: str | None = None, names=None) -> None:
         if boxes is None:
             self.detect_viewer.info_label.setText("正在检测文本框位置...")
             return
         suffix = {
             "manual": "（手动）", "auto": "", "fullpage": "（整页，未检测）",
         }.get(origin, "")
-        self.detect_viewer.info_label.setText(self._describe_boxes(boxes) + suffix)
+        self.detect_viewer.info_label.setText(
+            self._describe_boxes(boxes, names) + suffix
+        )
 
     @staticmethod
-    def _describe_boxes(boxes) -> str:
+    def _describe_boxes(boxes, names=None) -> str:
+        """框列表 → 一行说明；names 与 boxes 对齐（整幅页显示「整幅」）。
+
+        names 缺失时回退到「左框/右框」（旧的按序号命名）。
+        """
         if not boxes:
             return "未检测到文本框"
-        names = ("左框", "右框")
+        labels = list(names) if names else []
         return "  ｜  ".join(
-            f"{names[i % 2]}({b[0]},{b[1]},{b[2]},{b[3]})" for i, b in enumerate(boxes)
+            f"{(labels[i] if i < len(labels) else ('左框', '右框')[i % 2])}"
+            f"({b[0]},{b[1]},{b[2]},{b[3]})"
+            for i, b in enumerate(boxes)
         )
 
     def _save_manual_boxes(self, path_text: str, boxes) -> None:
@@ -262,7 +290,8 @@ class DetectMixin:
         self.store.save_detect_boxes(
             self.task_id, image_key, normalized, origin="manual"
         )
-        self._show_boxes_info(normalized, "manual")
+        shown, names, _colors = self._viewer_slots(normalized)
+        self._show_boxes_info(shown, "manual", names=names)
         self._refresh_reference_boxes()
 
     def _stop_detect_process(self) -> None:
@@ -361,10 +390,16 @@ class DetectMixin:
             if event.get("type") == "boxes":
                 boxes = []
                 try:
-                    for key in ("left", "right"):
-                        value = event.get(key)
-                        if value:
-                            boxes.append([int(v) for v in value])
+                    full = event.get("full")
+                    if full:
+                        # 整幅内容(fullcontent)：单个框、**单槽**
+                        boxes = [[int(v) for v in full]]
+                    else:
+                        # 半幅：固定 2 槽 [左, 右]，缺失侧为 None（保留左右身份），
+                        # 与批量检测的 _store_stage_boxes 完全一致的槽位约定。
+                        for key in ("left", "right"):
+                            value = event.get(key)
+                            boxes.append([int(v) for v in value] if value else None)
                 except (TypeError, ValueError):
                     # 畸形坐标（int() 转不动）宁可整条丢弃也别让槽抛异常——
                     # 那样 Qt 只往控制台打一句，界面毫无反应
@@ -376,7 +411,7 @@ class DetectMixin:
                     continue
                 self.detect_cache[event["image"]] = boxes
                 # 检测结果写回 boxes.json；无框不存，避免下次选中无法重新检测
-                if boxes:
+                if any(boxes):
                     self.store.save_detect_boxes(
                         self.task_id, Path(event["image"]).stem, boxes, origin="auto"
                     )
@@ -406,8 +441,10 @@ class DetectMixin:
         if str(self.detect_viewer.current_path()) != str(path):
             return
         size = QImageReader(str(path)).size()
+        shown, names, colors = self._viewer_slots(boxes)
         self.detect_viewer.apply_boxes(
-            boxes or [], size, self._describe_boxes(boxes)
+            shown, size, self._describe_boxes(shown, names),
+            names=names, colors=colors,
         )
         if str(path) in self.detect_cache:
             self.detect_cache[str(path)] = boxes or []

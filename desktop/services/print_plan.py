@@ -13,6 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from core.command_spec import WHOLE_PAGE_AREA
+from utils.box_geometry import is_full_content
 
 
 # ---------------------------------------------------------------- extract 缺页
@@ -87,16 +88,21 @@ def plan_rembg_submit_entries(
         result = result_path_for(path.stem)
         if result is None:
             continue  # 该页尚未生成预览
-        boxes = [b for b in (boxes_for(str(path)) or []) if b]
+        # ⚠️ 用**原始槽位**判断是否整幅内容：半幅固定 2 槽 [左,右]（可能含 null），
+        #    整幅只占 1 槽。过滤 null 后两者都可能只剩 1 个框，届时无法区分——
+        #    而整幅单框在 area=2/3 不能做对称镜像（见 entry_to_effect_spec）。
+        raw_boxes = list(boxes_for(str(path)) or [])
+        full = is_full_content(raw_boxes)
+        boxes = [b for b in raw_boxes if b]
         stem = path.stem
         if area == 1 and len(boxes) == 2:
             entries.append(
                 {"file": str(result), "label": f"{stem}-r",
-                 "box": boxes[1], "boxes": [boxes[1]], "parea": 1}
+                 "box": boxes[1], "boxes": [boxes[1]], "parea": 1, "full": False}
             )
             entries.append(
                 {"file": str(result), "label": f"{stem}-l",
-                 "box": boxes[0], "boxes": [boxes[0]], "parea": 1}
+                 "box": boxes[0], "boxes": [boxes[0]], "parea": 1, "full": False}
             )
         elif area in (2, 3) and len(boxes) == 2:
             union = [
@@ -105,7 +111,7 @@ def plan_rembg_submit_entries(
             ]
             entries.append(
                 {"file": str(result), "label": stem,
-                 "box": union, "boxes": list(boxes), "parea": area}
+                 "box": union, "boxes": list(boxes), "parea": area, "full": False}
             )
         elif area == WHOLE_PAGE_AREA and len(boxes) >= 2:
             # 整页模式：整页（或用户手画的多个框）合成一个整体，不拆左右页
@@ -115,17 +121,17 @@ def plan_rembg_submit_entries(
             ]
             entries.append(
                 {"file": str(result), "label": stem, "box": union,
-                 "boxes": list(boxes), "parea": area}
+                 "boxes": list(boxes), "parea": area, "full": False}
             )
         elif len(boxes) == 1:
             entries.append(
                 {"file": str(result), "label": stem, "box": boxes[0],
-                 "boxes": [boxes[0]], "parea": area}
+                 "boxes": [boxes[0]], "parea": area, "full": full}
             )
         else:
             entries.append(
                 {"file": str(result), "label": stem,
-                 "box": None, "boxes": [], "parea": area}
+                 "box": None, "boxes": [], "parea": area, "full": False}
             )
     entries.sort(key=lambda e: pdf_custom_sort_key(e["label"]))
     return entries
@@ -145,6 +151,9 @@ def entry_to_effect_spec(entry: dict, border) -> dict:
     + 原始 area）显示整页、提交产物与 PDF 却是紧裁——用户报的「第三步 area=2、
     预览也是 area=2，生成的 PDF 却是 area=1 的效果」就是这么来的（紧裁观感
     与 area=1 的半页裁剪一致）。
+
+    ``full`` 原样透传给合成层：整幅内容(fullcontent)的单框在 area=2/3 下
+    **不做**对称镜像（见 utils.box_geometry.is_full_content）。
     """
     raw = [b for b in (entry.get("boxes") or []) if b]
     if not raw and entry.get("box"):
@@ -157,6 +166,7 @@ def entry_to_effect_spec(entry: dict, border) -> dict:
                 "boxes": raw,
                 "area": int(entry.get("parea", 1) or 1),
                 "border": border,
+                "full": bool(entry.get("full")),
             }
             if raw
             else None

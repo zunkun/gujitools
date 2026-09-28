@@ -123,12 +123,13 @@ def run_rembg_submit_stage(config: dict) -> int:
                 boxes = list(effect.get("boxes") or [])
                 area = int(effect.get("area", 1))
                 border = effect.get("border")
+                full = bool(effect.get("full"))
                 canvas_specs = region_canvas_specs(
-                    (size.width(), size.height()), boxes, area, border,
+                    (size.width(), size.height()), boxes, area, border, full=full,
                 )
             else:
                 # 无检测框/无区域参数：整页预览图原样交付
-                boxes, area, border = [], 1, None
+                boxes, area, border, full = [], 1, None, False
                 canvas_specs = [((size.width(), size.height()), [])]
             names = (
                 [f"{label}.png"]
@@ -137,7 +138,7 @@ def run_rembg_submit_stage(config: dict) -> int:
             )
             jobs.append({
                 "file": str(spec["file"]), "compose": has_boxes,
-                "boxes": boxes, "area": area, "border": border,
+                "boxes": boxes, "area": area, "border": border, "full": full,
                 "names": names, "label": label,
             })
 
@@ -156,6 +157,7 @@ def run_rembg_submit_stage(config: dict) -> int:
             if job["compose"]:
                 outputs = compose_region_output(
                     image, job["boxes"], job["area"], job["border"],
+                    full=bool(job.get("full")),
                 )
             else:
                 outputs = [image]

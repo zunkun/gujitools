@@ -224,7 +224,7 @@ def _write_real_detect_boxes(repo, task_id: str, extract_dir: Path,
     """
     import cv2
 
-    from functions.detect import detect_page_boxes
+    from functions.detect import detect_page_content
 
     ok_any = False
     for index, _real_no in enumerate(page_numbers, start=1):
@@ -236,14 +236,14 @@ def _write_real_detect_boxes(repo, task_id: str, extract_dir: Path,
         if image is None:
             continue
         try:
-            left, right = detect_page_boxes(image)
+            page = detect_page_content(image)
         except Exception:  # noqa: BLE001 — 检测失败就跳过该页，不阻断截图
             continue
-        # ⚠️ detect_page_boxes 返回的是 (left_box, right_box) **两个框**，
-        # 各自可能是 None；而 save_detect_boxes 要的是**框的列表**。
-        # 直接把返回值当列表传会把 int 当成框去解包 → TypeError。
-        boxes = [box for box in (left, right) if box is not None]
-        if boxes:
+        # ⚠️ 用 PageBoxes.slots() 而不是把 (left, right) 拼成列表：
+        # 槽位约定是 半幅=2 槽 [左,右]（缺失为 None）、整幅=1 槽 [整幅]，
+        # 直接把返回值当列表传会把 int 当框解包 → TypeError。
+        boxes = page.slots()
+        if any(boxes):
             repo.save_detect_boxes(task_id, key, boxes, origin="auto")
             ok_any = True
     return ok_any

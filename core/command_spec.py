@@ -592,7 +592,7 @@ COMMAND_SPECS: Dict[str, CommandSpec] = {
         defaults=dict(PRINT_DEFAULTS),
         validators=(_validate_print,),
     ),
-    # detect：检测左右文本框并上报坐标。
+    # detect：检测内容框（半幅左右 / 整幅）并上报坐标。
     # 不带 save 时是**无产出的中间步骤**（仅代码调用有意义）；
     # 命令行下无 save 的空跑会被 CLI 入口直接拒绝（见 cli.__main__._reject_dry_run）。
     # 命令行用 --save 时不产出文件，故必须显式 --save 落地标注图，目录规则同 crop。

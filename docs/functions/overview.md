@@ -59,7 +59,7 @@ print     ── 图片目录 → PDF（支持 A3/A4/A5/B5、标题和页码）
 ```
 
 - `detect` 是检测的**唯一实现**：`crop` / `cropremove` 内部通过
-  `functions.detect.detect_page_boxes` 取框，GUI 的 detect 阶段复用同一函数。
+  `functions.detect.detect_page_content` 取框，GUI 的 detect 阶段复用同一函数。
   把「检测」与「裁剪」拆开后，`crop = detect + 裁剪` 这一关系在代码里是字面成立的；
 - `crop` 与 `cropremove` 共享相同的 area/border 规则（继承 `TextRegionProcessor`），区别仅是 crop 不做 Otsu 去底色；
 - `rembg` 对整图去底，不依赖文本框检测；

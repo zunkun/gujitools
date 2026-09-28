@@ -83,7 +83,7 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         self.view.boxes_edited.connect(self._boxes_edited)
         # 双击大图 → 图片预览弹窗（只读查看；编辑仍在原画布上做）
         self._init_zoom_popup(self.view)
-        self._pending_boxes: tuple | None = None  # (boxes, image_size, info)，等大图加载后应用
+        self._pending_boxes: tuple | None = None  # (boxes, image_size, info, names, colors)，等大图加载后应用
         #: 每次选页递增的加载令牌，只有最新一次选择的渲染结果允许上屏。
         #: ⚠️ 不能改用「路径是否相同」判断：同一页也会被重复选择（见
         #: ``_select_image`` 的递归回调），路径一样但加载任务有两个。
@@ -149,14 +149,18 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         self._load_thumbs(self.strip, paths)
         self._select_image(0, str(paths[0]))
 
-    def apply_boxes(self, boxes: list[tuple], image_size: QSize, info_text: str = "") -> None:
-        """在当前大图上叠加切割框（图片像素坐标）；大图未就绪时挂起等待。"""
+    def apply_boxes(self, boxes: list[tuple], image_size: QSize, info_text: str = "",
+                    names: list | None = None, colors: list | None = None) -> None:
+        """在当前大图上叠加切割框（图片像素坐标）；大图未就绪时挂起等待。
+
+        names/colors 与 boxes 对齐（可选）：用于把整幅内容框标成「整幅」。
+        """
         if self.view.has_image:
-            self.view.set_boxes(boxes, image_size)
+            self.view.set_boxes(boxes, image_size, names=names, colors=colors)
             if info_text:
                 self.info_label.setText(info_text)
         else:
-            self._pending_boxes = (boxes, image_size, info_text)
+            self._pending_boxes = (boxes, image_size, info_text, names, colors)
 
     def set_reference_boxes(self, boxes: list) -> None:
         """设置参考框（最终裁剪大框，虚线显示，不参与编辑）。"""
@@ -279,9 +283,9 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         # 无框坐标场景（如尺寸信息缺失）回退为显示图自身尺寸
         self.view.set_image(image, image_size=original if original else None)
         if self._pending_boxes is not None:
-            boxes, size, info_text = self._pending_boxes
+            boxes, size, info_text, names, colors = self._pending_boxes
             self._pending_boxes = None
-            self.view.set_boxes(boxes, size)
+            self.view.set_boxes(boxes, size, names=names, colors=colors)
             if info_text:
                 self.info_label.setText(info_text)
                 return

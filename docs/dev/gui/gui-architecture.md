@@ -61,7 +61,7 @@ desktop/
 - `utils/box_draw.py` — 检测框标注绘制唯一实现，GUI 预览与 CLI `detect --save` 共用；
 - `functions/`、`cli/` — CLI 层，`rembg`/`print` 阶段经 `CommandArgs` 转发执行，
   `extract`/`detect` 由 desktop worker 直接实现（不走 CLI 输出目录规则）。
-  不过 **`detect` 的检测算法仍复用 `functions.detect.detect_page_boxes`**——
+  不过 **`detect` 的检测算法仍复用 `functions.detect.detect_page_content`**——
   只有「输出目录规则」被绕开，算法没有第二份实现。
 
 ### 2.1 阶段参数默认值：`panels/params_spec.py` 是唯一来源
@@ -162,7 +162,7 @@ guji/
 
 | 算法 | 位置 |
 | --- | --- |
-| 文本框检测（GUI/CLI 唯一入口） | `functions.detect.detect_page_boxes` → 底层 `utils.yolo_utils.detect_left_right_boxes`（单例，CPU） |
+| 内容框检测（GUI/CLI 唯一入口） | `functions.detect.detect_page_content` → 底层 `utils.yolo_utils.detect_content_boxes`（单例，CPU；半幅 harfcontent / 整幅 fullcontent） |
 | area/border → 效果区域合成 | `desktop/workers/preview_worker.compose_region_output` |
 | 几何规则（GUI/CLI 共用） | `utils/box_geometry.py`（parse_border_mm、compute_final_boxes） |
 | 检测框标注绘制（GUI/CLI 共用） | `utils/box_draw.py`（draw_boxes，配色与 GUI 预览一致） |

@@ -6,8 +6,8 @@ File: cli/cli_args.py
 
 子命令与别名:
 - extract (-e): 从 PDF 提取页面图片
-- detect: 检测图片左右文本框坐标（默认不落盘，--save 输出标注图）
-- crop: 基于 YOLO 检测裁剪左右文本框
+- detect: 检测图片内容框坐标（半幅左右 / 整幅；默认不落盘，--save 输出标注图）
+- crop: 基于 YOLO 检测裁剪内容框
 - rembg (-r): 整图去底色/二值化/印章保留
 - cropremove (-cr): 复合流程（crop + rembg）
 - print: 打印 PDF（仅支持通过 run 命令执行）
@@ -126,7 +126,7 @@ class CliArgsParser:
         # 默认只检测并输出坐标，不产出文件；--save 时把标注图落地。
         # crop / cropremove 内部的检测与这里同源（functions.detect）。
         detect_parser = subparsers.add_parser(
-            "detect", help="检测图片左右文本框坐标（可选落地标注图）", add_help=False
+            "detect", help="检测图片内容框坐标（半幅左右 / 整幅；可选落地标注图）", add_help=False
         )
         detect_parser.add_argument("-i", "--input", type=Path, help="图片文件或目录")
         detect_parser.add_argument(
@@ -159,7 +159,7 @@ class CliArgsParser:
             type=int,
             choices=list(CROP_AREAS),
             help="裁剪区域类型，默认1\n"
-            "1 = 逐框独立裁剪，分别输出 -l/-r 两张图，无框时输出原图\n"
+            "1 = 逐框独立裁剪：半幅输出 -l/-r 两张图，整幅只输出一张（无后缀），无框时输出原图\n"
             "2 = 逐框独立裁剪，单图输出，border=None 保持原尺寸\n"
             "3 = 合并左右框为整体外边界裁剪，单图输出，border=None 保持原尺寸\n"
             "4 = 整页模式（不加载 YOLO，整页即唯一文本框，不检测）",
@@ -250,7 +250,7 @@ class CliArgsParser:
             type=int,
             choices=list(CROP_AREAS),
             help="去底色文本区域识别类型，默认1\n"
-            "1 = 逐框独立 Otsu（阈值取 left+right 合并），分别裁剪左右框输出 -l/-r 两张图，无框时输出原图\n"
+            "1 = 逐框独立 Otsu（阈值取 left+right 合并）：半幅输出 -l/-r 两张，整幅只输出一张（无后缀），无框时输出原图\n"
             "2 = 逐框独立 Otsu（同1），单图输出，border=None 保持原尺寸\n"
             "3 = 合并左右框为整体外边界统一 Otsu，单图输出，border=None 保持原尺寸\n"
             "4 = 整页模式（不加载 YOLO，整页即唯一文本框，不检测）",

@@ -586,8 +586,10 @@ class StageRunnerMixin:
     def _store_stage_boxes(self, event: dict) -> None:
         """detect 阶段上报的框坐标 → 攒批（origin=auto；人工框不被覆盖）。
 
-        存储保留左右身份：[左框, 右框]，缺失一侧为 null，
-        以便 area=1 输出条目按 -r/-l 规范排序。
+        **槽位约定**（见 functions/detect.PageBoxes）：半幅(harfcontent)存
+        2 槽 ``[左, 右]``，缺失一侧为 null（保留左右身份，area=1 输出按 -r/-l
+        规范排序）；整幅(fullcontent)只存 **1 槽** ``[整幅]``——下游据此知道
+        它是"整页唯一内容"，单框时不做对称镜像、不拆左右两半。
 
         ⚠️ 逐条落盘是「读 boxes.json + 写回」× 页数，320 页实测累计 **1.8 秒**
         主线程阻塞；改攒批 + 一次性写。人工框的优先级判定挪到批量写里
@@ -595,12 +597,17 @@ class StageRunnerMixin:
         """
         if not self.task_id:
             return
-        left = event.get("left")
-        right = event.get("right")
-        boxes = [
-            [int(v) for v in left] if left else None,
-            [int(v) for v in right] if right else None,
-        ]
+        full = event.get("full")
+        if full:
+            # 整幅内容：单个框、单槽
+            boxes = [[int(v) for v in full]]
+        else:
+            left = event.get("left")
+            right = event.get("right")
+            boxes = [
+                [int(v) for v in left] if left else None,
+                [int(v) for v in right] if right else None,
+            ]
         if not any(boxes):
             return
         self._pending_boxes[event.get("image", "")] = boxes

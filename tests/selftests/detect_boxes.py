@@ -54,4 +54,5 @@ def run(ctx) -> None:
     # 再切回该页：直接命中 detect_cache，不触发重新检测
     d.detect_cache[manual_path] = [[10, 20, 300, 400]]
     d._detect_image_selected(0, manual_path)
-    ok("回看页面直接应用框", d.detect_viewer.info_label.text().startswith("左框"))
+    info = d.detect_viewer.info_label.text()
+    ok("回看页面直接应用框", "300,400" in info and "px" not in info, repr(info))

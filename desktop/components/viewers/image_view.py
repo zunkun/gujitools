@@ -21,11 +21,39 @@ from PySide6.QtWidgets import QLabel
 
 from desktop.ui import theme as T
 
-# 框颜色：绿/蓝/琥珀对应左框/右框/合并框，与检测语义一致
-BOX_COLORS = [QColor("#21c178"), QColor("#3b82f6"), QColor("#f59e0b")]
-BOX_NAMES = ["左框", "右框", "合并框"]
+# 框颜色：绿/蓝/琥珀/紫 对应 左框/右框/合并框/整幅，与检测语义一致
+# （整幅 = fullcontent 单框整页，见 functions/detect.PageBoxes）
+BOX_COLORS = [
+    QColor("#21c178"), QColor("#3b82f6"), QColor("#f59e0b"), QColor("#a855f7"),
+]
+BOX_NAMES = ["左框", "右框", "合并框", "整幅"]
+#: 整幅内容框（fullcontent）专用的名称/颜色。
+FULL_BOX_NAME = "整幅"
+FULL_BOX_COLOR = BOX_COLORS[3]
 REFERENCE_COLOR = QColor("#f97316")
 HANDLE_RADIUS = 5  # 缩放手柄半径（控件像素）
+
+
+def slot_styles(raw_boxes):
+    """原始框**槽位**列表 → ``(boxes, names, colors)``，三者按序对齐。
+
+    槽位约定与 `functions/detect.PageBoxes` 一致：半幅(harfcontent)固定 2 槽
+    ``[左, 右]``（缺失侧为 None，剔除但保留另一侧的名字/色）；整幅(fullcontent)
+    只占 1 槽。据此把整幅框命名为「整幅」并用紫色——绝不能拿它当"左框"。
+    """
+    raw = list(raw_boxes or [])
+    if len(raw) == 1:
+        spec = [(FULL_BOX_NAME, FULL_BOX_COLOR)]
+    else:
+        spec = [("左框", BOX_COLORS[0]), ("右框", BOX_COLORS[1])]
+    boxes, names, colors = [], [], []
+    for item, (name, color) in zip(raw, spec):
+        if not item:
+            continue
+        boxes.append(list(item))
+        names.append(name)
+        colors.append(color)
+    return boxes, names, colors
 
 # 选中框四角手柄：0=左上 1=右上 2=右下 3=左下
 _HANDLE_CURSORS = [
@@ -62,6 +90,10 @@ class ImageView(QLabel):
         )
         self._pixmap: QPixmap | None = None
         self._boxes: list[list[int]] = []  # [(x1,y1,x2,y2)] 图片像素坐标
+        # 每个框的名称/颜色覆盖（与 _boxes 按序号对齐；None 表示用默认）。
+        # 用于把整幅内容框(fullcontent)标成「整幅」而不是「左框」。
+        self._box_names: list[str] | None = None
+        self._box_colors: list | None = None
         self._reference_boxes: list = []  # 参考框（最终裁剪大框），虚线显示
         self._image_size: QSize | None = None
         self.setMouseTracking(True)
@@ -134,6 +166,8 @@ class ImageView(QLabel):
         """
         self._image_size = image_size or image.size()
         self._boxes = [list(box) for box in (boxes or [])]
+        self._box_names = None
+        self._box_colors = None
         self._pixmap = QPixmap.fromImage(image)
         self._pixmap_version += 1  # 缓存底图作废（见 _scaled_base）
         self._selected = None
@@ -142,12 +176,17 @@ class ImageView(QLabel):
         self._ghost_box = None
         self._rerender()
 
-    def set_boxes(self, boxes: list, image_size: QSize) -> None:
+    def set_boxes(self, boxes: list, image_size: QSize, names: list | None = None,
+                  colors: list | None = None) -> None:
         """仅更新切割框与图片原始尺寸并重绘（不换图）。
 
         boxes 为图片像素坐标；image_size 为坐标映射基准，与显示缩放无关。
+        names/colors 与 boxes 按序号对齐（可选）：用于把整幅内容框标成
+        「整幅」而非「左框」。用户手动增删框后序号可能超出，此时回退到默认名/色。
         """
         self._boxes = [list(box) for box in boxes]
+        self._box_names = list(names) if names else None
+        self._box_colors = list(colors) if colors else None
         self._image_size = image_size
         self._selected = None
         self._mode = None
@@ -157,6 +196,8 @@ class ImageView(QLabel):
         """清空图片与全部框（含参考框），显示占位文案。"""
         self._pixmap = None
         self._boxes = []
+        self._box_names = None
+        self._box_colors = None
         self._reference_boxes = []
         self._selected = None
         self._mode = None
@@ -496,7 +537,12 @@ class ImageView(QLabel):
         painter.setFont(font)
         for index, box in enumerate(self._boxes):
             x1, y1, x2, y2 = box
-            color = BOX_COLORS[index % len(BOX_COLORS)]
+            custom = self._box_colors
+            color = (
+                custom[index]
+                if custom and index < len(custom)
+                else BOX_COLORS[index % len(BOX_COLORS)]
+            )
             selected = index == self._selected
             # 选中的框加粗（3 逻辑像素），未选中 2；两者都取整到设备像素，
             # 否则高分屏下四边会粗细不匀（见 _pen_width）
@@ -507,7 +553,12 @@ class ImageView(QLabel):
                 round(x1 * self._scale_x), round(y1 * self._scale_y),
                 round((x2 - x1) * self._scale_x), round((y2 - y1) * self._scale_y),
             )
-            name = BOX_NAMES[index % len(BOX_NAMES)]
+            names = self._box_names
+            name = (
+                names[index]
+                if names and index < len(names)
+                else BOX_NAMES[index % len(BOX_NAMES)]
+            )
             painter.drawText(
                 round(x1 * self._scale_x) + 4,
                 max(14, round(y1 * self._scale_y) - 4),

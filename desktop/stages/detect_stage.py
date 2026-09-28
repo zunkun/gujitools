@@ -33,7 +33,7 @@ def _emit_log(message: str, context: dict | None = None) -> None:
 
 
 def run_detect(config: dict) -> int:
-    """检测单张图片的左右文本框，返回像素坐标（重依赖由常驻服务承担）。"""
+    """检测单张图片的内容框（半幅左右 / 整幅），返回像素坐标（重依赖由常驻服务承担）。"""
     image_path = config["image"]
     emit({"type": "detect_started", "image": image_path})
     # ⚠️ 单图模式同样要拦 stdout（2026-09-26 审计 #19，与批量模式同款）：
@@ -49,7 +49,8 @@ def run_detect(config: dict) -> int:
         # 放在函数内是刻意的——避免主进程加载 YOLO。
         import utils
         from functions.detect import (  # noqa: PLC0415
-            detect_page_boxes_by_path,
+            resolution_note,
+            detect_page_content_by_path,
             format_box,
             warm_up_detect_model,
         )
@@ -67,6 +68,7 @@ def run_detect(config: dict) -> int:
                     "image": image_path,
                     "left": [0, 0, int(w), int(h)],
                     "right": None,
+                    "full": None,
                 }
             )
             return 0
@@ -76,19 +78,24 @@ def run_detect(config: dict) -> int:
         load_line, _load_seconds = warm_up_detect_model()
         _emit_log(load_line)
         started = time.perf_counter()
-        left_box, right_box = detect_page_boxes_by_path(image_path)
+        page = detect_page_content_by_path(image_path)
         elapsed = time.perf_counter() - started
         _emit_log(
             f"detect {Path(image_path).name}  "
-            f"左={format_box(left_box)} 右={format_box(right_box)}  "
+            f"左={format_box(page.left)} 右={format_box(page.right)} "
+            f"整幅={format_box(page.full)}  "
             f"({elapsed * 1000:.0f} ms)"
         )
+        note = resolution_note(page)  # 互斥消解剔了框 → 日志里看得见
+        if note:
+            _emit_log(note)
         emit(
             {
                 "type": "boxes",
                 "image": image_path,
-                "left": list(left_box) if left_box else None,
-                "right": list(right_box) if right_box else None,
+                "left": list(page.left) if page.left else None,
+                "right": list(page.right) if page.right else None,
+                "full": list(page.full) if page.full else None,
             }
         )
         return 0
@@ -104,7 +111,7 @@ def run_detect(config: dict) -> int:
 
 
 def run_detect_stage(config: dict) -> int:
-    """detect 阶段：逐图检测左右文本框并上报坐标，不切割、不生成任何文件。
+    """detect 阶段：逐图检测内容框（半幅左右 / 整幅）并上报坐标，不切割、不生成任何文件。
 
     检测算法复用 `functions.detect.detect_page_boxes_by_path`（内部即 CLI crop /
     cropremove 用的同一入口），最终裁剪框由 GUI 按同一套规则
@@ -125,7 +132,8 @@ def run_detect_stage(config: dict) -> int:
         # 同上：跨层复用检测入口是登记在案的有意依赖。
         import utils
         from functions.detect import (  # noqa: PLC0415
-            detect_page_boxes_by_path,
+            resolution_note,
+            detect_page_content_by_path,
             format_box,
             warm_up_detect_model,
         )
@@ -175,17 +183,17 @@ def run_detect_stage(config: dict) -> int:
 
         started_all = time.perf_counter()
         lock = threading.Lock()
-        stat = {"done": 0, "left": 0, "right": 0, "failed": 0, "cost": 0.0}
+        stat = {"done": 0, "left": 0, "right": 0, "full": 0, "failed": 0, "cost": 0.0}
 
         def _detect_one(path: Path) -> None:
             """检测一张并立刻上报。**计数与上报都放在锁内**，保证
             「本张的 page_boxes → 本张的 progress」成对出现、计数不互相覆盖。"""
             started = time.perf_counter()
             failure = None
+            page = None
             try:
-                left_box, right_box = detect_page_boxes_by_path(path)
+                page = detect_page_content_by_path(path)
             except Exception as exc:  # noqa: BLE001 - 单张失败不该中断整批
-                left_box = right_box = None
                 failure = str(exc)
             elapsed = time.perf_counter() - started
             with lock:
@@ -195,23 +203,30 @@ def run_detect_stage(config: dict) -> int:
                     stat["failed"] += 1
                     _emit_log(f"detect {path.name} 失败: {failure}", context)
                 else:
-                    if left_box:
+                    if page.left:
                         stat["left"] += 1
-                    if right_box:
+                    if page.right:
                         stat["right"] += 1
+                    if page.full:
+                        stat["full"] += 1
                     _emit_log(
                         f"detect {path.name}  "
-                        f"左={format_box(left_box)} 右={format_box(right_box)}  "
+                        f"左={format_box(page.left)} 右={format_box(page.right)} "
+                        f"整幅={format_box(page.full)}  "
                         f"({elapsed * 1000:.0f} ms)",
                         context,
                     )
+                    note = resolution_note(page)  # 互斥消解剔了框 → 日志里看得见
+                    if note:
+                        _emit_log(note, context)
                     emit(
                         {
                             "type": "page_boxes",
                             **context,
                             "image": path.stem,
-                            "left": list(left_box) if left_box else None,
-                            "right": list(right_box) if right_box else None,
+                            "left": list(page.left) if page.left else None,
+                            "right": list(page.right) if page.right else None,
+                            "full": list(page.full) if page.full else None,
                         }
                     )
                 emit(
@@ -239,7 +254,8 @@ def run_detect_stage(config: dict) -> int:
         done = stat["done"]
         summary = (
             f"总计用时 {total_elapsed:.1f} s（共 {total} 张："
-            f"左框 {stat['left']}、右框 {stat['right']}、失败 {stat['failed']}；"
+            f"半幅 左{stat['left']}/右{stat['right']}、整幅 {stat['full']}、"
+            f"失败 {stat['failed']}；"
             f"{workers} 线程，单张累计 {stat['cost']:.1f} s、"
             f"平均 {stat['cost'] / counted * 1000:.0f} ms/张）"
         )

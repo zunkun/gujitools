@@ -26,7 +26,9 @@ import time
 import numpy as np
 import utils
 from functions.base import FunctionBase
-from functions.detect import detect_page_boxes_by_path, warm_up_detect_model
+from functions.detect import (
+    detect_page_content_by_path, resolution_note, warm_up_detect_model,
+)
 from utils.box_geometry import build_output_layout, build_symmetric_layout
 
 
@@ -39,7 +41,7 @@ class TextRegionProcessor(FunctionBase):
         area=4「整页」模式下完全不检测，模型也就不会被加载——这既省掉了
         非古籍文档白白等模型初始化，也让「没有 YOLO 权重」的环境仍能跑整页流程。
 
-        检测本身走 `detect_page_boxes_by_path`：优先交给**常驻 YOLO 服务**
+        检测本身走 `detect_page_content_by_path`：优先交给**常驻 YOLO 服务**
         （模型全局只加载一次、多进程共用），服务不可用时它自己在本进程内
         加载单例。因此本对象不持有模型。
         """
@@ -77,20 +79,32 @@ class TextRegionProcessor(FunctionBase):
         # 整页模式不检测，耗时无意义；只有真正跑了 YOLO 的那条路才有值
         detect_elapsed = None
 
+        left_box = right_box = full_box = None
+        page = None
         if area_mode == 4:
             # 整页模式：不调用 YOLO，整页即唯一文本框（普通文档 / 检测失败兜底）
             h, w = img_bgr.shape[:2]
-            left_box, right_box = (0, 0, w, h), None
+            left_box = (0, 0, w, h)
         else:
             # YOLO 检测：唯一入口在 functions.detect，保证 crop / cropremove /
             # GUI detect 阶段拿到的框完全一致（此前三处各自调 utils 原语）。
             # ⚠️ 走**按路径**的入口：检测优先交给常驻 YOLO 服务（服务自己读图），
             # 模型全局只加载一次；服务不可用时它内部回落到本进程内加载。
             detect_started = time.perf_counter()
-            left_box, right_box = detect_page_boxes_by_path(image_path)
+            page = detect_page_content_by_path(image_path)
             detect_elapsed = time.perf_counter() - detect_started
-        boxes = [b for b in (left_box, right_box) if b is not None]
-        self._report_boxes(image_path, left_box, right_box, detect_elapsed)
+            left_box, right_box, full_box = page.left, page.right, page.full
+
+        # 半幅(harfcontent)与整幅(fullcontent)对一页互斥；半幅优先（见 PageBoxes）。
+        # 整幅页只有**一个**框：不能当成"只检出左框"，否则会被 area=1 拆成
+        # -l/-r、被 area=2/3 当成漏检一侧去做镜像。
+        is_full = full_box is not None and left_box is None and right_box is None
+        boxes = [full_box] if is_full else [b for b in (left_box, right_box) if b]
+        self._report_boxes(image_path, left_box, right_box, full_box, detect_elapsed)
+        if page is not None:
+            note = resolution_note(page)  # 互斥消解剔了框 → 让用户看得见
+            if note:
+                print(note)
 
         # 无检测框
         if not boxes:
@@ -102,7 +116,7 @@ class TextRegionProcessor(FunctionBase):
         # 记录原始框数量（在 area=3 合并前判断）
         single_box_detected = len(boxes) == 1
 
-        # area=3 合并
+        # area=3 合并（仅半幅左右双框；整幅只有一个框，无需合并）
         if area_mode == 3 and left_box and right_box:
             lx1, ly1, lx2, ly2 = left_box
             rx1, ry1, rx2, ry2 = right_box
@@ -122,10 +136,13 @@ class TextRegionProcessor(FunctionBase):
             border_mm = effective_border_default(area_mode)
         border_padding = utils.parse_border_mm(border_mm, dpi=300)
 
-        # 特殊处理：area=2/3 + border有值 + 仅一个文本框 → 对称输出
+        # 特殊处理：area=2/3 + border有值 + **半幅**仅一个文本框 → 对称输出
         # 实际框 + border 组成一半，另一边为空白镜像，中间间隔
-        # utils.box_geometry.SYMMETRIC_GAP_MM（10mm）
-        if single_box_detected and border_padding is not None and area_mode in (2, 3):
+        # utils.box_geometry.SYMMETRIC_GAP_MM（10mm）。
+        # ⚠️ 整幅(fullcontent)不参与：它本来就是整页内容区，镜像会凭空多出
+        # 一半空白，与真实产物不符。
+        if (single_box_detected and border_padding is not None
+                and area_mode in (2, 3) and not is_full):
             is_left = left_box is not None
             actual_box = left_box if is_left else right_box
             final_arr = self._build_symmetric_output(
@@ -139,12 +156,12 @@ class TextRegionProcessor(FunctionBase):
                 "outputs": [str(out_path)],
             }
 
-        # area=1：逐框裁剪输出（-l/-r）
+        # area=1：逐框裁剪输出（半幅 -l/-r；整幅单条无后缀）
         if area_mode == 1:
             if border_padding is None:
                 border_padding = [0, 0, 0, 0]
             outputs = []
-            for box, suffix in ((left_box, "-l"), (right_box, "-r")):
+            for box, suffix in self._area1_outputs(left_box, right_box, full_box):
                 if box is None:
                     continue
                 final_arr = self._build_output(img_bgr, [box], border_padding, ctx)
@@ -162,6 +179,18 @@ class TextRegionProcessor(FunctionBase):
             "file": image_path.name,
             "outputs": [str(out_path)],
         }
+
+    @staticmethod
+    def _area1_outputs(left_box, right_box, full_box):
+        """area=1 的逐框输出清单 ``[(框, 文件名后缀), …]``。
+
+        - 半幅页（harfcontent）：左右各一条，后缀 ``-l`` / ``-r``（沿用既有语义）；
+        - 整幅页（fullcontent）：页面只有一个内容区，**只输出一条、不加后缀**
+          ——用户明确要求「area=1 时也只显示一个，不拆成左右两半」。
+        """
+        if full_box is not None and left_box is None and right_box is None:
+            return [(full_box, "")]
+        return [(left_box, "-l"), (right_box, "-r")]
 
     def _build_output(self, img_bgr, boxes, border_padding, ctx):
         """构建输出图像：框内为处理后像素，框外白色。
@@ -231,8 +260,9 @@ class TextRegionProcessor(FunctionBase):
             out_arr[oy : oy + h, ox : ox + w] = roi
 
     # ---- 子类必须实现 ----
-    def _report_boxes(self, image_path, left_box, right_box, elapsed=None) -> None:
-        """汇报本图检测到的左右框。
+    def _report_boxes(self, image_path, left_box, right_box, full_box=None,
+                      elapsed=None) -> None:
+        """汇报本图检测到的框（半幅左右 / 整幅）。
 
         主通道是结构化事件 `page_boxes`（GUI 据此把框写回 boxes.json）；
         `[boxes]` 文本行仅为**兼容保留**——后续可从 stderr 观察：
@@ -244,6 +274,7 @@ class TextRegionProcessor(FunctionBase):
             image=image_path.stem,
             left=None if left_box is None else [int(round(float(v))) for v in left_box[:4]],
             right=None if right_box is None else [int(round(float(v))) for v in right_box[:4]],
+            full=None if full_box is None else [int(round(float(v))) for v in full_box[:4]],
         )
 
         def fmt(box):
@@ -256,7 +287,7 @@ class TextRegionProcessor(FunctionBase):
         cost = "" if elapsed is None else f" cost={elapsed * 1000:.0f}ms"
         print(
             f"[boxes] {image_path.stem} left={fmt(left_box)} "
-            f"right={fmt(right_box)}{cost}"
+            f"right={fmt(right_box)} full={fmt(full_box)}{cost}"
         )
 
     def _on_boxes_detected(self, img_bgr, boxes):
