@@ -14,9 +14,13 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from typing import Any
 
-from PySide6.QtCore import QRectF, QSize, Qt
+from PySide6.QtCore import QEvent, QObject, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
+    QAbstractButton,
+    QApplication,
+    QCheckBox,
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -49,6 +53,7 @@ __all__ = [
     "bold_button",
     "combo_box",
     "icon_pixmap",
+    "install_button_pointer_cursor",
     "ui_font",
 ]
 
@@ -475,3 +480,30 @@ class PageHeader(QWidget):
         super().paintEvent(event)
         painter = QPainter(self)
         painter.fillRect(0, self.height() - 1, self.width(), 1, QColor(T.BORDER))
+
+
+class _ButtonCursorFilter(QObject):
+    """全局按钮光标过滤器：按钮首次被布局（Polish 事件）时设手型光标。
+
+    挂在 QApplication 上，覆盖现在和将来创建的所有按钮，不用每个按钮
+    单独 setCursor。下拉框（qfluent 的 ``ComboBox`` 继承 ``QPushButton``）
+    与复选框是"选择"不是"按压"，保持系统箭头光标。
+    """
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+        if (
+            event.type() == QEvent.Type.Polish
+            and isinstance(obj, QAbstractButton)
+            and not isinstance(obj, (QCheckBox, QComboBox))
+        ):
+            obj.setCursor(Qt.CursorShape.PointingHandCursor)
+        return False
+
+
+def install_button_pointer_cursor(app: QApplication) -> None:
+    """给整个应用的按钮启用 hover 手型光标（见 :class:`_ButtonCursorFilter`）。"""
+    guard = getattr(app, "_button_cursor_filter", None)
+    if guard is None:
+        guard = _ButtonCursorFilter(app)
+        app._button_cursor_filter = guard  # 过滤器必须保引用，否则被 GC 摘掉
+        app.installEventFilter(guard)

@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 72 个模块、75 个公开类、347 个公开函数/方法（生成于 2026-09-22）。
+覆盖 77 个模块、82 个公开类、443 个公开函数/方法（生成于 2026-09-29）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -12,12 +12,12 @@
 
 | 模块 | 类 | 函数 |
 | --- | --- | --- |
-| [`desktop.app`](#desktopapp) | 1 | 3 |
+| [`desktop.app`](#desktopapp) | 1 | 4 |
 | [`desktop.components.common.safecomment`](#desktopcomponentscommonsafecomment) | 6 | 12 |
 | [`desktop.components.log_panel`](#desktopcomponentslog_panel) | 1 | 9 |
 | [`desktop.components.pagination`](#desktopcomponentspagination) | 2 | 11 |
 | [`desktop.components.panels.base`](#desktopcomponentspanelsbase) | 1 | 7 |
-| [`desktop.components.panels.detect_panel`](#desktopcomponentspanelsdetect_panel) | 1 | 2 |
+| [`desktop.components.panels.detect_panel`](#desktopcomponentspanelsdetect_panel) | 1 | 3 |
 | [`desktop.components.panels.extract_panel`](#desktopcomponentspanelsextract_panel) | 1 | 1 |
 | [`desktop.components.panels.params_spec`](#desktopcomponentspanelsparams_spec) | 0 | 2 |
 | [`desktop.components.panels.print_form`](#desktopcomponentspanelsprint_form) | 1 | 1 |
@@ -30,42 +30,44 @@
 | [`desktop.components.panels.rembg_panel`](#desktopcomponentspanelsrembg_panel) | 1 | 1 |
 | [`desktop.components.step_bar`](#desktopcomponentsstep_bar) | 2 | 15 |
 | [`desktop.components.task_table`](#desktopcomponentstask_table) | 3 | 10 |
-| [`desktop.components.viewers.image_view`](#desktopcomponentsviewersimage_view) | 1 | 12 |
-| [`desktop.components.viewers.image_viewer`](#desktopcomponentsviewersimage_viewer) | 1 | 6 |
+| [`desktop.components.viewers.image_view`](#desktopcomponentsviewersimage_view) | 1 | 22 |
+| [`desktop.components.viewers.image_viewer`](#desktopcomponentsviewersimage_viewer) | 1 | 11 |
+| [`desktop.components.viewers.image_zoom_dialog`](#desktopcomponentsviewersimage_zoom_dialog) | 4 | 31 |
 | [`desktop.components.viewers.pdf_viewer`](#desktopcomponentsviewerspdf_viewer) | 1 | 2 |
-| [`desktop.components.viewers.print_layout_canvas`](#desktopcomponentsviewersprint_layout_canvas) | 1 | 9 |
-| [`desktop.components.viewers.print_preview`](#desktopcomponentsviewersprint_preview) | 1 | 8 |
-| [`desktop.components.viewers.rembg_viewer`](#desktopcomponentsviewersrembg_viewer) | 1 | 7 |
-| [`desktop.components.viewers.thumb_strip`](#desktopcomponentsviewersthumb_strip) | 1 | 5 |
+| [`desktop.components.viewers.print_layout_canvas`](#desktopcomponentsviewersprint_layout_canvas) | 1 | 11 |
+| [`desktop.components.viewers.print_preview`](#desktopcomponentsviewersprint_preview) | 1 | 11 |
+| [`desktop.components.viewers.rembg_viewer`](#desktopcomponentsviewersrembg_viewer) | 1 | 8 |
+| [`desktop.components.viewers.thumb_strip`](#desktopcomponentsviewersthumb_strip) | 1 | 10 |
 | [`desktop.components.viewers.thumbs_loader`](#desktopcomponentsviewersthumbs_loader) | 1 | 1 |
 | [`desktop.pages.taskdetail.detect`](#desktoppagestaskdetaildetect) | 1 | 0 |
 | [`desktop.pages.taskdetail.history`](#desktoppagestaskdetailhistory) | 1 | 0 |
 | [`desktop.pages.taskdetail.manifest`](#desktoppagestaskdetailmanifest) | 1 | 2 |
-| [`desktop.pages.taskdetail.page`](#desktoppagestaskdetailpage) | 1 | 5 |
+| [`desktop.pages.taskdetail.page`](#desktoppagestaskdetailpage) | 1 | 8 |
 | [`desktop.pages.taskdetail.params_draft`](#desktoppagestaskdetailparams_draft) | 1 | 1 |
 | [`desktop.pages.taskdetail.print_list`](#desktoppagestaskdetailprint_list) | 1 | 0 |
 | [`desktop.pages.taskdetail.rembg_live`](#desktoppagestaskdetailrembg_live) | 1 | 0 |
 | [`desktop.pages.taskdetail.runner`](#desktoppagestaskdetailrunner) | 1 | 2 |
 | [`desktop.pages.taskdetail.submit`](#desktoppagestaskdetailsubmit) | 1 | 1 |
 | [`desktop.pages.taskdetail.view`](#desktoppagestaskdetailview) | 2 | 4 |
-| [`desktop.pages.tasklist.page`](#desktoppagestasklistpage) | 1 | 5 |
+| [`desktop.pages.tasklist.page`](#desktoppagestasklistpage) | 1 | 6 |
 | [`desktop.services.font_catalog`](#desktopservicesfont_catalog) | 1 | 6 |
 | [`desktop.services.print_plan`](#desktopservicesprint_plan) | 0 | 5 |
 | [`desktop.services.rembg_live`](#desktopservicesrembg_live) | 0 | 3 |
+| [`desktop.services.stale_chain`](#desktopservicesstale_chain) | 0 | 2 |
 | [`desktop.services.submit_state`](#desktopservicessubmit_state) | 0 | 1 |
 | [`desktop.single_instance`](#desktopsingle_instance) | 0 | 3 |
 | [`desktop.stages.detect_stage`](#desktopstagesdetect_stage) | 0 | 2 |
 | [`desktop.stages.events`](#desktopstagesevents) | 2 | 9 |
 | [`desktop.stages.generic_stage`](#desktopstagesgeneric_stage) | 0 | 2 |
-| [`desktop.stages.print_stage`](#desktopstagesprint_stage) | 0 | 1 |
+| [`desktop.stages.print_stage`](#desktopstagesprint_stage) | 0 | 3 |
 | [`desktop.stages.rembg_stage`](#desktopstagesrembg_stage) | 0 | 1 |
-| [`desktop.store.annotations`](#desktopstoreannotations) | 1 | 6 |
+| [`desktop.store.annotations`](#desktopstoreannotations) | 1 | 8 |
 | [`desktop.store.drafts`](#desktopstoredrafts) | 1 | 5 |
 | [`desktop.store.json_io`](#desktopstorejson_io) | 0 | 2 |
 | [`desktop.store.pages`](#desktopstorepages) | 1 | 9 |
-| [`desktop.store.runs`](#desktopstoreruns) | 1 | 6 |
+| [`desktop.store.runs`](#desktopstoreruns) | 1 | 7 |
 | [`desktop.store.store`](#desktopstorestore) | 1 | 1 |
-| [`desktop.store.tasks`](#desktopstoretasks) | 1 | 19 |
+| [`desktop.store.tasks`](#desktopstoretasks) | 1 | 20 |
 | [`desktop.ui.font_setup`](#desktopuifont_setup) | 2 | 8 |
 | [`desktop.ui.fonts`](#desktopuifonts) | 0 | 1 |
 | [`desktop.ui.help_dialog`](#desktopuihelp_dialog) | 0 | 6 |
@@ -73,17 +75,20 @@
 | [`desktop.ui.segmented_toggle`](#desktopuisegmented_toggle) | 1 | 11 |
 | [`desktop.ui.style`](#desktopuistyle) | 0 | 3 |
 | [`desktop.ui.theme`](#desktopuitheme) | 0 | 2 |
-| [`desktop.ui.widgets`](#desktopuiwidgets) | 8 | 33 |
-| [`desktop.utils.files`](#desktoputilsfiles) | 0 | 6 |
+| [`desktop.ui.widgets`](#desktopuiwidgets) | 8 | 35 |
+| [`desktop.utils.files`](#desktoputilsfiles) | 0 | 8 |
 | [`desktop.utils.icon`](#desktoputilsicon) | 0 | 3 |
 | [`desktop.worker`](#desktopworker) | 0 | 1 |
+| [`desktop.workers.copy_source_worker`](#desktopworkerscopy_source_worker) | 2 | 4 |
 | [`desktop.workers.hash_worker`](#desktopworkershash_worker) | 1 | 2 |
 | [`desktop.workers.image_list_worker`](#desktopworkersimage_list_worker) | 1 | 2 |
-| [`desktop.workers.preview_worker`](#desktopworkerspreview_worker) | 1 | 8 |
-| [`desktop.workers.rembg_live_worker`](#desktopworkersrembg_live_worker) | 1 | 2 |
-| [`desktop.workers.source_thumbnails_worker`](#desktopworkerssource_thumbnails_worker) | 1 | 2 |
+| [`desktop.workers.preview_worker`](#desktopworkerspreview_worker) | 1 | 11 |
+| [`desktop.workers.rembg_live_worker`](#desktopworkersrembg_live_worker) | 1 | 3 |
+| [`desktop.workers.render_lock`](#desktopworkersrender_lock) | 0 | 1 |
+| [`desktop.workers.serial_jobs`](#desktopworkersserial_jobs) | 1 | 9 |
+| [`desktop.workers.source_thumbnails_worker`](#desktopworkerssource_thumbnails_worker) | 1 | 4 |
 | [`desktop.workers.task_rows_worker`](#desktopworkerstask_rows_worker) | 1 | 2 |
-| [`desktop.workers.worker_host`](#desktopworkersworker_host) | 1 | 3 |
+| [`desktop.workers.worker_host`](#desktopworkersworker_host) | 1 | 4 |
 
 ---
 
@@ -110,6 +115,7 @@ gujitools 桌面端主窗口：任务列表页 + 任务详情页切换。
 | 方法 | 说明 |
 | --- | --- |
 | `detail_page()` | 详情页实例（惰性构造）。 |
+| `keyPressEvent(event) -> None` | ←/→ 转发给详情页翻页。 |
 | `closeEvent(event) -> None` | 关闭窗口时先让详情页收尾 worker 子进程。 |
 
 ##### `detail_page()`
@@ -123,12 +129,27 @@ gujitools 桌面端主窗口：任务列表页 + 任务详情页切换。
 读它本身就等于声明「现在就需要详情页」，因此访问即构造——与启动期
 惰性并不冲突。
 
+##### `keyPressEvent(event) -> None`
+
+←/→ 转发给详情页翻页。
+
+⚠️ 点击预览大图（QLabel 默认不收焦点）后，焦点落在**主窗口本身**，
+按键只会到这里——不转发的话，用户点完图片按左右毫无反应
+（用户 18:29 实测）。两条边界：
+- 只在**详情页可见**时转发（任务列表页没有翻页语义）；
+- 焦点在参数输入区等输入类控件时，方向键被它们自己消费（移光标/
+  改值），根本到不了这里——「焦点在输入区不切换」天然成立，
+  且详情页的 navigate_by_arrow 里还有同一道守卫兜底。
+
 ##### `closeEvent(event) -> None`
 
 关闭窗口时先让详情页收尾 worker 子进程。
 详情页持有 worker 子进程与后台线程的引用，直接退出会让进程被强杀；
 这里把事件转交给详情页的 closeEvent 完成 kill/等待/清理后再接受关闭。
 详情页是惰性的——没建过就说明没有 worker 需要收尾。
+
+列表页也要收尾：导入后的「复制源文件 + 生成缩略图」在后台队列里，
+整本可能几千页（实测 2400 页要 69s），退出时让它尽快收手。
 
 ### 模块函数
 
@@ -371,20 +392,27 @@ page       当前页码，1-based；越界会在读取时被钳制
 
 源码：[`desktop/components/panels/base.py`](../../desktop/components/panels/base.py)
 
-阶段控制面板基类：标题 + 说明 + 参数表单骨架。
+阶段控制面板基类：标题 + 问号帮助按钮 + 参数表单骨架。
 
-标题与说明都开启换行——右侧参数卡片只有 340~580px 宽，长说明不换行会
-把面板撑出横向边界（原来靠各子类自己调 setWordWrap 兜着）。
+阶段说明（description）不再平铺在标题下方占高度，改由标题右侧的问号按钮
+承载：hover 弹 qfluentwidgets 的 ToolTip 气泡，点击弹 Flyout（内容自动换行）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| HELP_TOOLTIP_WIDTH | `26` |
+| HELP_BUBBLE_WIDTH | `360` |
 
 ### `class StagePanel(QWidget)`
 
-阶段控制面板：标题 + 说明 + 参数表单。子类实现 _build_form/get_args。
+阶段控制面板：标题（含问号帮助按钮）+ 参数表单。子类实现 _build_form/get_args。
 
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(parent=None)` | 构建面板骨架：标题 + 说明 + 参数表单容器。 |
+| `__init__(parent=None)` | 构建面板骨架：标题行 + 参数表单容器。 |
 | `mark_params_edited() -> None` | 补一次"用户改了参数"通知——给**按钮**这类不经过控件信号的入口用。 |
 | `build_form() -> QWidget` | 参数表单容器：统一装进透明滚动区，窗口过矮时出滚动条而非压扁表单。 |
 | `get_args() -> dict` | 从表单收集该阶段参数（不含 input/output/clean）。 |
@@ -393,11 +421,12 @@ page       当前页码，1-based；越界会在读取时被钳制
 
 ##### `__init__(parent=None)`
 
-构建面板骨架：标题 + 说明 + 参数表单容器。
+构建面板骨架：标题行 + 参数表单容器。
 
-title/description 来自子类类属性并开启换行，避免窄面板被长说明撑破；
-随后调用 build_form 生成子类表单并占满剩余垂直空间，最后统一把表单
-里输入控件的信号接到 ``param_edited``（供参数暂存）。
+title 来自子类类属性；description 不再平铺占高度，改挂在标题右侧
+问号按钮上（hover 出 ToolTip 气泡、点击出 Flyout）。随后调用
+build_form 生成子类表单并占满剩余垂直空间，最后统一把表单里输入
+控件的信号接到 ``param_edited``（供参数暂存）。
 
 ##### `mark_params_edited() -> None`
 
@@ -450,11 +479,19 @@ title/description 来自子类类属性并开启换行，避免窄面板被长�
 
 检测文本框阶段面板：仅识别坐标，不生成文件。
 
-YOLO 检测每张图的左右文本框坐标，供预览标注与去底色/裁剪使用；
+YOLO 检测每张图的内容框坐标（半幅：左右两栏；整幅：整页单一内容区），
+供预览标注与去底色/裁剪使用；
 本阶段无表单参数，get_args 返回空字典，手动检测经信号触发。
 
 「整页模式」是第三步 area=4 的入口开关：勾选后整页即唯一文本框，
 **不加载也不调用 YOLO**，预览里框画在页面边界，仍可手动拖动/重画。
+
+**人工干预**（用户 2026-09-29 定）：框的类型是**框自己的属性**，不随
+"还剩几个框"变化——
+
+- 半幅页的左右由**框的中心位置**决定，拖动跨过中线会自动换边；
+- 「整幅」由用户在本面板显式选择，选过之后无论怎么移动/缩放都是整幅；
+- 整幅与左右半幅互斥，且整幅一页只能有一个框（宿主负责提示与拦截）。
 
 #### 方法
 
@@ -462,6 +499,7 @@ YOLO 检测每张图的左右文本框坐标，供预览标注与去底色/裁�
 | --- | --- |
 | `get_args() -> dict` | 返回空参数字典（detect 阶段无表单参数）。 |
 | `set_whole_page(on: bool) -> None` | 外部（第三步 area）回填勾选状态；blockSignals 避免回抛造成循环。 |
+| `set_box_selection(index: int, kind: str) -> None` | 回填「选中框类型」控件：``index < 0``（无选中）时三段都不高亮。 |
 
 ##### `get_args() -> dict`
 
@@ -469,6 +507,15 @@ YOLO 检测每张图的左右文本框坐标，供预览标注与去底色/裁�
 
 整页模式不在这里上报：area 归第三步 rembg 面板所有，本开关只负责
 把 area 切到 4 / 切回 1（见宿主的 _set_whole_page_mode）。
+
+##### `set_box_selection(index: int, kind: str) -> None`
+
+回填「选中框类型」控件：``index < 0``（无选中）时三段都不高亮。
+
+``set_current`` 是程序化切换、**不发** ``current_changed``，因此不会
+反过来再触发一次类型切换（否则会自我递归）。
+
+未选中框时三段仍保持可点：点类型即"选中该类型的框"（用户要求 6）。
 
 ---
 
@@ -780,10 +827,19 @@ print 专用的解析/序列化纯函数，并把 ``DEFAULT_PARAMS`` 重新导�
 | 函数 | 说明 |
 | --- | --- |
 | `parse_color(text: str) -> QColor` | 解析 'r,g,b'（0~255）颜色字符串，非法时抛出 ValueError。 |
-| `parse_margin4(text: str)` | 解析边距简写：1 值→四边；2 值→上下/左右；4 值→上右下左；空→None。 |
+| `parse_margin4(text: str)` | 解析边距简写：1/2/3/4 值（CSS 简写）→ [上,右,下,左]；空→None。 |
 | `margin_to_text(value) -> str` | 边距列表转简写文本：四边相等→单值；上下/左右相等→两值；否则四值。 |
 | `skip_pages_to_text(value) -> str` | skip_pages 参数 → 表单文本（逗号分隔的页名）。 |
 | `text_to_skip_pages(text: str) -> list[str]` | 表单文本 → skip_pages 参数。 |
+
+#### `parse_margin4(text: str)`
+
+解析边距简写：1/2/3/4 值（CSS 简写）→ [上,右,下,左]；空→None。
+
+⚠️ 必须与 CLI 的 ``normalize_margin``（utils.margin_utils）同口径
+（2026-09-26 审计 #13）：三值「上,左右,下」是合法写法（spec 的
+title_margins 报错文案也明说 1/2/3/4），原先这里拒绝三值、同样的值
+写进 guji.yaml 却能跑——GUI 比命令行更严，没有道理。
 
 ---
 
@@ -1095,16 +1151,43 @@ reference_boxes 为参考框（如按 area/border 规则推导的最终裁剪大
 | --- | --- |
 | `__init__(placeholder: str='无预览', parent=None)` | 初始化画布与框编辑状态；placeholder 为空图时的占位文案。 |
 | `has_image() -> bool` | 当前是否已装入图片。 |
+| `full_mode() -> bool` | 本页是否为整幅(fullcontent)——整幅页只有「整幅」一种框类型。 |
+| `max_boxes() -> int` | 本页允许的框数上限：整幅 1 个；半幅左右各一，共 2 个。 |
+| `selected_index() -> int` | 当前选中的框下标；无选中为 -1。 |
+| `select_box(index: int) -> None` | 程序化选中第 index 个框（-1 = 取消选中）并重绘。 |
+| `box_kinds() -> list` | 当前每个框的类型：``"left"`` / ``"right"`` / ``"full"``。 |
+| `preview_edge() -> int` | 当前控件需要多高的预览分辨率（**最长边**像素数）。 |
 | `set_boxes_editable(editable: bool) -> None` | 开关框编辑；开启时接受点击焦点以响应键盘删除。 |
 | `set_reference_boxes(boxes: list) -> None` | 设置参考框（橙色虚线，不参与编辑）并重绘。 |
 | `set_image(image, boxes=None, image_size: QSize \| None=None) -> None` | 装入图片并重置编辑状态。 |
-| `set_boxes(boxes: list, image_size: QSize) -> None` | 仅更新切割框与图片原始尺寸并重绘（不换图）。 |
+| `set_boxes(boxes: list, image_size: QSize, full: bool=False, selected: int \| None=None) -> None` | 仅更新切割框、形态与图片原始尺寸并重绘（不换图）。 |
 | `clear_image(text: str='无预览') -> None` | 清空图片与全部框（含参考框），显示占位文案。 |
 | `resizeEvent(event) -> None` | Qt 事件覆写：尺寸变化时重算布局 / 重新缩放。 |
+| `event(event) -> bool` | 跨显示器拖动（dpr 变化）时按新 dpr 重画。 |
 | `mousePressEvent(event) -> None` | Qt 事件覆写：按下（选中 / 开始拖拽或绘制）。 |
 | `mouseMoveEvent(event) -> None` | Qt 事件覆写：移动（拖拽 / 缩放中的实时更新）。 |
 | `mouseReleaseEvent(event) -> None` | Qt 事件覆写：松开（提交本次编辑）。 |
+| `mouseDoubleClickEvent(event) -> None` | 双击 → ``double_clicked``（宿主打开图片预览弹窗）。 |
 | `keyPressEvent(event) -> None` | Qt 事件覆写：键盘操作（如 Delete 删除选中项）。 |
+
+##### `box_kinds() -> list`
+
+当前每个框的类型：``"left"`` / ``"right"`` / ``"full"``。
+
+与 :meth:`_draw_boxes` 用的是**同一份规则**（整幅页恒为 full；半幅页按
+中心位置判左右），所以面板高亮与实际画出的标签永远一致。
+
+##### `preview_edge() -> int`
+
+当前控件需要多高的预览分辨率（**最长边**像素数）。
+
+按控件的**物理**像素算（逻辑尺寸 × dpr），取宽高较大者：图片按等比
+缩放适配控件，长边必定落在控件的长边上，所以按较大边给就够。
+
+交给 ``PreviewWorker(longest_edge=...)`` 用。⚠️ 早先四处调用点都写死
+1600：高分屏（150%~200%）或大窗口下屏幕需要的像素比 1600 还多，
+源图只能被放大 → 糊。实测（.workbuddy/perf/2026-09-24-preview-sharpness.md）
+把密度拉满后 RMSE 再降 30~50%、锐度再涨 1.4~1.7 倍，代价是每页多 25~160ms。
 
 ##### `set_image(image, boxes=None, image_size: QSize | None=None) -> None`
 
@@ -1113,11 +1196,53 @@ reference_boxes 为参考框（如按 area/border 规则推导的最终裁剪大
 image 为 QImage；image_size 非空时作为框坐标的坐标系基准（大图可能被
 降采样显示，坐标必须按原始尺寸算）。
 
-##### `set_boxes(boxes: list, image_size: QSize) -> None`
+##### `set_boxes(boxes: list, image_size: QSize, full: bool=False, selected: int | None=None) -> None`
 
-仅更新切割框与图片原始尺寸并重绘（不换图）。
+仅更新切割框、形态与图片原始尺寸并重绘（不换图）。
 
 boxes 为图片像素坐标；image_size 为坐标映射基准，与显示缩放无关。
+``full=True`` 表示本页是整幅(fullcontent)：框显示为「整幅」且**只允许
+一个**；否则是半幅页，框按中心位置显示为左/右，最多两个。
+``selected`` 非负时把选中态落到该下标（宿主切换框类型后保持选中）。
+
+⚠️ 名称/颜色不在这里传：它们由 `box_styles` 按**中心位置**每帧现算，
+这样拖动框跨过中线时名字与颜色会立刻跟着换（用户 2026-09-29 要求）。
+
+##### `event(event) -> bool`
+
+跨显示器拖动（dpr 变化）时按新 dpr 重画。
+
+Qt 在窗口 dpr 变化时发 ``DevicePixelRatioChange``，**不保证**同时发
+``resizeEvent``。不接这个事件的话，把窗口从 100% 屏拖到 200% 屏，
+图会一直停在按旧 dpr 出的那版（明显发糊），要等下次换页才恢复。
+
+##### `mouseDoubleClickEvent(event) -> None`
+
+双击 → ``double_clicked``（宿主打开图片预览弹窗）。
+
+⚠️ 必须把本次按下可能已经开始的"手绘新框"清干净：双击的第一下会先落到
+``mousePressEvent`` 的"空白处 → 手绘"分支，不清就会在图上留一个跟着
+鼠标跑的橡皮筋残影，而且第二下松开还会真的落一个框。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `box_styles(boxes, image_size=None, full: bool=False)` | 框列表 → ``(names, colors)``，与 ``boxes``（去掉空项后）等长。 |
+| `box_names(boxes, image_size=None, full: bool=False) -> list` | 框名称列表（大图信息条文案用）——与 :func:`box_styles` 同一份规则。 |
+
+#### `box_styles(boxes, image_size=None, full: bool=False)`
+
+框列表 → ``(names, colors)``，与 ``boxes``（去掉空项后）等长。
+
+- ``full=True``（整幅页 / fullcontent）：每个框都是「整幅」+ 靛蓝——
+  整幅是**显式类型**，无论怎么移动、缩放都不变；
+- 否则是半幅页：按**中心位置**判左右（`utils.box_geometry.half_sides`，
+  规则只有那一处实现），所以把框拖过中线时名字与颜色会跟着换。
+
+⚠️ 这里以前按"框的序号/个数"命名（1 个框→「整幅」、2 个→「左/右」），于是
+删掉一个框会让剩下的框"变身"（用户 2026-09-29 报）。现在类型只由
+「是否整幅页」与「框的中心位置」决定，**与有几个框无关**。
 
 ---
 
@@ -1127,7 +1252,7 @@ boxes 为图片像素坐标；image_size 为坐标映射基准，与显示缩放
 
 图片查看器：缩略图条 + 大图，支持切割框叠加与页面增删按钮。
 
-### `class ImageViewerWidget(QWidget, ThumbsMixin)`
+### `class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin)`
 
 图片查看器：缩略图条 + 大图，支持切割框叠加、拖动与页面增删按钮。
 
@@ -1138,9 +1263,14 @@ boxes 为图片像素坐标；image_size 为坐标映射基准，与显示缩放
 | `__init__(editable: bool=False, show_boxes: bool=False, empty_hint: str='暂无图片', image_size_provider=None, thumb_provider=None, parent=None)` | 构建左侧缩略图条与右侧大图；editable 时追加删除/插入按钮。 |
 | `paths() -> list[Path]` | 当前页面清单（按显示顺序）。 |
 | `current_path() -> Path \| None` | 当前选中的页面路径；无选中或无清单时为 None。 |
+| `navigate(forward: bool) -> None` | 方向键翻页（详情页 ←/→ 调用；联动预览刷新，见 ThumbStrip.navigate）。 |
 | `set_images(paths: list[Path], boxes_map: dict \| None=None) -> None` | 设置页面清单并重建缩略图条；清单未变则仅通知宿主重读。 |
-| `apply_boxes(boxes: list[tuple], image_size: QSize, info_text: str='') -> None` | 在当前大图上叠加切割框（图片像素坐标）；大图未就绪时挂起等待。 |
+| `apply_boxes(boxes: list[tuple], image_size: QSize, info_text: str='', full: bool=False, selected: int=-1) -> None` | 在当前大图上叠加切割框（图片像素坐标）；大图未就绪时挂起等待。 |
 | `set_reference_boxes(boxes: list) -> None` | 设置参考框（最终裁剪大框，虚线显示，不参与编辑）。 |
+| `select_box(index: int) -> None` | 程序化选中第 index 个框（-1 = 取消选中）。 |
+| `selected_index() -> int` | 当前选中的框下标；无选中为 -1。 |
+| `box_full_mode() -> bool` | 本页是否为整幅(fullcontent)。 |
+| `box_kinds() -> list` | 当前每个框的类型（"left"/"right"/"full"）。 |
 
 ##### `__init__(editable: bool=False, show_boxes: bool=False, empty_hint: str='暂无图片', image_size_provider=None, thumb_provider=None, parent=None)`
 
@@ -1156,6 +1286,199 @@ image_size_provider 供大图降采样时还原原始像素尺寸；thumb_provid
 paths 为 Path 列表；boxes_map 预留（当前未用）。清单不变时跳过
 重建，但仍 emit current_changed 让宿主重新读取该页检测框/参数。
 
+##### `apply_boxes(boxes: list[tuple], image_size: QSize, info_text: str='', full: bool=False, selected: int=-1) -> None`
+
+在当前大图上叠加切割框（图片像素坐标）；大图未就绪时挂起等待。
+
+``full=True`` 表示本页是整幅(fullcontent)：框显示为「整幅」且只允许一个；
+否则按框的**中心位置**显示为左/右框。名称/颜色由控件每帧现算，不用传。
+``selected`` 为要选中的框下标（-1 = 不选），用于切换类型后保持选中。
+
+---
+
+## `desktop.components.viewers.image_zoom_dialog`
+
+源码：[`desktop/components/viewers/image_zoom_dialog.py`](../../desktop/components/viewers/image_zoom_dialog.py)
+
+图片预览弹窗：拖拽平移、滚轮/按钮缩放、翻转旋转、下载、翻页。
+
+为什么不把缩放直接做在 ``ImageView`` 上：那是**框编辑**画布——点击选中、
+拖拽移动整框、四角缩放、空白拖拽手绘。再叠一层"滚轮缩放 + 拖拽平移"，
+两种拖拽立刻打架（拖框 vs 拖画布），而框坐标是 detect/rembg 的实际输出依据，
+误操作代价高。所以编辑仍留在原处（固定"适应窗口"），弹窗只做**只读**查看。
+
+渲染密度由弹窗自己算（``_render_edge``：视口物理长边 × ``RENDER_HEADROOM``，
+再受宿主给的 ``ZoomTarget.cap`` 与 :data:`MAX_RENDER_EDGE` 约束），宿主只提供
+``render(edge) -> worker``。这样「图片按最长边解码」「PDF 按该边长渲染」
+「打印效果按该边长反推 px/mm 重新排版」三种口径各归各家，弹窗不必区分。
+
+⚠️ 缩放倍率的语义：**1.0 = 100% = 1 图片像素对 1 设备像素**（QGraphicsView 的
+变换比例 = 倍率 ÷ dpr）。所以场景里的 pixmap 刻意**不设** devicePixelRatio
+（1 场景单位 = 1 图片像素），否则这套换算会再叠一个 dpr。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| WHEEL_STEP | `1.15` |
+| RENDER_HEADROOM | `1.5` |
+| MIN_RENDER_EDGE | `1600` |
+| MAX_RENDER_EDGE | `4000` |
+| JPEG_QUALITY | `90` |
+| PAN_MARGIN_RATIO | `0.25` |
+
+### `class ZoomTarget`
+
+弹窗某一页的数据来源（宿主在**主线程**里按页现造）。
+
+``render`` 会在 **worker 线程**被调用，所以它只能读构造时快照下来的值
+（路径、参数字典……），**不得**碰任何 QWidget——同 ``worker_thread_affinity``
+的约束。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(render, note: str='', stem: str='', count: int=1, original=None, cap: int \| None=None)` | render: ``(edge:int) -> worker``；cap: 渲染密度上限（如原图原生边长）。 |
+
+### `class ZoomableCanvas(QGraphicsView)`
+
+缩放画布：滚轮以光标为锚点缩放、左键拖拽平移、双击切换适应/100%。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(parent=None)` | 初始化场景、拖拽平移与锚点缩放（锚点由 QGraphicsView 原生支持）。 |
+| `has_image() -> bool` | 当前是否已装入图片。 |
+| `zoom() -> float` | 当前缩放倍率（1.0 = 100% = 1 图片像素对 1 设备像素）。 |
+| `set_image(image: QImage \| None) -> None` | 装入图片并复位（适应窗口、清空翻转旋转）。 |
+| `clear() -> None` | 卸载图片（关窗时释放大图内存）。 |
+| `fit() -> None` | 适应窗口：整图完整可见（保持宽高比）。 |
+| `set_zoom(zoom: float, anchor_pos: QPointF \| None=None) -> None` | 设置缩放倍率。 |
+| `zoom_in() -> None` | 放大到下一档。 |
+| `zoom_out() -> None` | 缩小到上一档。 |
+| `image_rect() -> QRectF` | 图片在**场景坐标**里的实际占位（1 场景单位 = 1 图片像素）。 |
+| `rotate_clockwise() -> None` | 顺时针旋转 90°。 |
+| `rotate_counterclockwise() -> None` | 逆时针旋转 90°。 |
+| `flip_horizontal() -> None` | 水平翻转（左右镜像）。 |
+| `flip_vertical() -> None` | 垂直翻转（上下镜像）。 |
+| `keyPressEvent(event) -> None` | ←/→ 翻页（工具条 tooltip 承诺过的快捷键，此前一直没实现）。 |
+| `wheelEvent(event) -> None` | 滚轮缩放：以**光标下的那一点**为锚点（自己算，见 set_zoom）。 |
+| `mouseDoubleClickEvent(event) -> None` | 双击在「100%」与「适应窗口」之间切换。 |
+| `resizeEvent(event) -> None` | Qt 事件覆写：尺寸变化时重算布局 / 重新缩放。 |
+| `export_image() -> QImage \| None` | 导出用图：已应用翻转/旋转的**整分辨率**图（缩放的屏幕比例不参与）。 |
+
+##### `set_zoom(zoom: float, anchor_pos: QPointF | None=None) -> None`
+
+设置缩放倍率。
+
+``anchor_pos`` 是**视口坐标**下的不动点（滚轮传光标位置）；不传则以
+视口中心为不动点。
+
+⚠️ 刻意**不用** Qt 的 ``AnchorUnderMouse``：它依赖私有的
+``lastMouseEventPosition``，弹窗刚打开就滚轮时那个值可能是陈旧的
+（实测会退化成左上角），缩放会突然跳到一边。这里自己按"锚点处的场景
+点在缩放前后保持不动"来算，结果只取决于传入的位置，既可预期也可测。
+
+##### `image_rect() -> QRectF`
+
+图片在**场景坐标**里的实际占位（1 场景单位 = 1 图片像素）。
+
+⚠️ 与 ``sceneRect()`` 区分：场景矩形为了"没缩放也能拖"会被**居中扩展**
+到至少视口那么大（见 :meth:`_sync_scene_rect`），所以几何/朝向判断一律
+用本方法，只有滚动范围与 fitInView 的留白才看 ``sceneRect()``。
+
+##### `keyPressEvent(event) -> None`
+
+←/→ 翻页（工具条 tooltip 承诺过的快捷键，此前一直没实现）。
+
+⚠️ 主动 ignore 掉：QGraphicsView 默认用方向键**滚动视图**，焦点落在
+画布上时事件到不了对话框，翻页就死了；这里显式放行给父级。
+
+### `class ImageZoomDialog(QDialog, WorkerHost)`
+
+图片预览弹窗：拖拽平移、滚轮/按钮缩放、翻转旋转、下载、翻页。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(parent=None, factory=None, max_edge: int=MAX_RENDER_EDGE)` | ``factory(index) -> ZoomTarget \| None``，在**主线程**里现造该页来源。 |
+| `show_for(factory=None, index: int=0) -> None` | 打开/翻到某一页。``factory(index) -> ZoomTarget \| None``（主线程现造）。 |
+| `mouseDoubleClickEvent(event) -> None` | 双击**顶部工具栏**空白 → 全屏/还原。 |
+| `eventFilter(obj, event) -> bool` | 点「百分比」标签 → 回 100%（标签兼做缩放复位的入口）。 |
+| `keyPressEvent(event) -> None` | 快捷键：←/→ 翻页、+/- 缩放、0 适应窗口、1 原始比例、R 旋转。 |
+| `closeEvent(event) -> None` | 关窗即作废在飞的渲染并释放大图（一张 4000px 预览约 45MB）。 |
+
+##### `mouseDoubleClickEvent(event) -> None`
+
+双击**顶部工具栏**空白 → 全屏/还原。
+
+⚠️ 系统标题栏的双击（最大化/还原）由 windowFlags 提供的 min/max
+按钮接管；这里只管我们自己的工具栏行（用户 17:07 报「双击顶部栏
+也可以全屏」「双击顶部栏，不是单击」）。画布的双击是 100%↔适应，
+语义不同，互不干扰。
+
+##### `keyPressEvent(event) -> None`
+
+快捷键：←/→ 翻页、+/- 缩放、0 适应窗口、1 原始比例、R 旋转。
+
+Esc 交给 QDialog 自己处理（关窗）。
+
+### `class ZoomPopupMixin`
+
+宿主侧混入：双击大图打开图片预览弹窗。
+
+子类需要实现 :meth:`_zoom_target` 与 :meth:`_zoom_index`，并在
+``__init__`` 里调 :meth:`_init_zoom_popup`。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `close_zoom_popup() -> None` | 内容被换掉时关掉弹窗（弹窗里那页是打开时的快照，留着就是旧数据）。 |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `display_transform(rotation: int=0, flip_h: bool=False, flip_v: bool=False) -> QTransform` | 翻转/旋转的变换矩阵——**屏幕与导出必须共用这一个**。 |
+| `mirrored_rotate_icon() -> QIcon` | ``FIF.ROTATE`` 的水平镜像 = **逆时针（左旋）**。 |
+| `flip_icon(horizontal: bool=True, color: QColor \| None=None) -> QIcon` | 翻转按钮的图标（水平/垂直 = 同一个图形转 90°）。 |
+| `save_image(image: QImage, path: str \| Path, quality: int=JPEG_QUALITY) -> bool` | 把 QImage 写到磁盘：``.jpg``/``.jpeg`` 走有损（quality），其余交给 Qt。 |
+
+#### `display_transform(rotation: int=0, flip_h: bool=False, flip_v: bool=False) -> QTransform`
+
+翻转/旋转的变换矩阵——**屏幕与导出必须共用这一个**。
+
+⚠️ 屏幕侧走 ``QGraphicsPixmapItem.setTransform``、导出侧走
+``QImage.transformed``。两处若各写一份，改一处就会出现「看到的和下载的
+不一样」（翻转轴或旋转方向不一致）。
+
+#### `mirrored_rotate_icon() -> QIcon`
+
+``FIF.ROTATE`` 的水平镜像 = **逆时针（左旋）**。
+
+qfluentwidgets 只提供一个旋转图标：ROTATE 的箭头在弧线底部**指向左**，
+即顺时针（右旋）。左旋用它的镜像，两颗按钮的笔触天然一致、只差方向。
+
+多档位 pixmap 是为了高分屏下不掉清晰度（图标源是 SVG，按需渲染）。
+
+#### `flip_icon(horizontal: bool=True, color: QColor | None=None) -> QIcon`
+
+翻转按钮的图标（水平/垂直 = 同一个图形转 90°）。
+
+qfluentwidgets 没有可用的翻转图标：``SEARCH_MIRROR`` 是"带镜子的放大镜"，
+语义不对；``SYNC`` 是循环箭头。自绘还有个好处——一对图标笔触完全一致，
+且按需渲染，任意 dpr 下都锐利。
+
+#### `save_image(image: QImage, path: str | Path, quality: int=JPEG_QUALITY) -> bool`
+
+把 QImage 写到磁盘：``.jpg``/``.jpeg`` 走有损（quality），其余交给 Qt。
+
+单独抽出来是为了可测——保存对话框在离屏环境里弹不出来。
+
 ---
 
 ## `desktop.components.viewers.pdf_viewer`
@@ -1164,7 +1487,7 @@ paths 为 Path 列表；boxes_map 预留（当前未用）。清单不变时跳�
 
 PDF 查看器：左侧页面缩略图 + 右侧大图。
 
-### `class PdfViewerWidget(QWidget, WorkerHost)`
+### `class PdfViewerWidget(QWidget, WorkerHost, ZoomPopupMixin)`
 
 PDF 查看器：左侧页面缩略图 + 右侧大图。
 
@@ -1187,6 +1510,12 @@ placeholder 为无 PDF 时的占位文案；缩略图/大图经 WorkerHost 异�
 cache_dir：页缩略图缓存目录（如 thumbnails/source、thumbnails/print），
 命中则直接使用，缺失的页渲染后补写。
 
+⚠️ **缺页渲不渲要看缓存目录有没有别的生产者在填**（判据见
+`_cache_is_being_filled`）：导入后台任务正在逐页写同一份缓存，
+这里再跑一遍全量渲染 = 工作量翻倍 + 两个 PyMuPDF 循环互相抢 GIL，
+界面直接冻住（2026-09-25 实测）。所以那时只做「只读 + 每秒回扫」，
+生产者停手了才自己接手。
+
 ---
 
 ## `desktop.components.viewers.print_layout_canvas`
@@ -1202,9 +1531,11 @@ cache_dir：页缩略图缓存目录（如 thumbnails/source、thumbnails/print�
 生成 PDF 时由 ``plan_print_page(image_rect=...)`` 原样采用——所见即所得。
 
 交互（与 detect/rembg 的裁剪框编辑同款手感）：
-- 框内拖动 → 整体移动；四角手柄拖动 → 缩放；松手 emit ``rect_changed``；
+- 框内拖动 → 整体移动；**四角**手柄拖动 → 缩放（勾「原比例缩放」时等比）；
+  **四条边整条都是命中带**（不限边中点的小圆点）→ 拖上/下边只改高度、
+  拖左/右边只改宽度（自由拉伸改变比例）；松手 emit ``rect_changed``；
 - 框始终被夹在页面内（夹到纸边即停），不会拖出页面；
-- 悬停手柄/框时显示对应光标。
+- 悬停手柄/边/框时显示对应光标。
 
 **标题与页码照画**：它们是「版面」的一部分，去掉就无从判断图片挪动后会不会
 压到字（曾误判为「标题页码被去除」）。绘制复用 ``preview_worker`` 的
@@ -1219,6 +1550,8 @@ cache_dir：页缩略图缓存目录（如 thumbnails/source、thumbnails/print�
 | 名称 | 值 |
 | --- | --- |
 | HANDLE_RADIUS | `6` |
+| MIN_RECT_MM | `2.0` |
+| EDGE_HIT_PX | `6` |
 
 ### `class PrintLayoutCanvas(QWidget)`
 
@@ -1229,16 +1562,18 @@ A4 纸上的图片拖拽/缩放画布；rect_changed 发出页面 mm 坐标。
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(parent=None)` | — |
-| `set_page(page_w_mm: float, page_h_mm: float, image: QImage \| None, rect_mm: Sequence[float], plan=None) -> None` | 设置页面尺寸、待绘制图片与初始图片框（页面 mm）。 |
+| `set_page(page_w_mm: float, page_h_mm: float, image: QImage \| None, rect_mm: Sequence[float], plan=None, keep_ratio: bool=True) -> None` | 设置页面尺寸、待绘制图片与初始图片框（页面 mm）。 |
 | `current_rect() -> list[float]` | 当前图片框（页面 mm），供宿主落盘前读取。 |
 | `resizeEvent(event) -> None` | Qt 事件覆写：尺寸变化时重算布局 / 重新缩放。 |
 | `showEvent(event) -> None` | 显示时重算：首次进入第四步可能在布局完成前就 ``set_page`` 过， |
 | `mousePressEvent(event) -> None` | Qt 事件覆写：按下（选中 / 开始拖拽或绘制）。 |
 | `mouseMoveEvent(event) -> None` | Qt 事件覆写：移动（拖拽 / 缩放中的实时更新）。 |
+| `mouseDoubleClickEvent(event) -> None` | 双击 → ``double_clicked``（宿主打开预览弹窗）。 |
+| `flush_pending() -> bool` | 把"还没松手"的拖动结果补发出去（关窗口/切步骤/切页时调）。 |
 | `mouseReleaseEvent(event) -> None` | Qt 事件覆写：松开（提交本次编辑）。 |
 | `paintEvent(event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
 
-##### `set_page(page_w_mm: float, page_h_mm: float, image: QImage | None, rect_mm: Sequence[float], plan=None) -> None`
+##### `set_page(page_w_mm: float, page_h_mm: float, image: QImage | None, rect_mm: Sequence[float], plan=None, keep_ratio: bool=True) -> None`
 
 设置页面尺寸、待绘制图片与初始图片框（页面 mm）。
 
@@ -1246,11 +1581,26 @@ A4 纸上的图片拖拽/缩放画布；rect_changed 发出页面 mm 坐标。
 页码与「已跳过」提示——版面编辑不能只看图片，否则无从判断挪动后
 会不会压到字。传 None 表示纯图片编辑（无标题/页码）。
 
+``keep_ratio``（print 参数 `keep_ratio`）：True（默认）= 四角拖拽
+**保持宽高比**、不提供四边手柄；False = 四角自由拉伸 + 上/下/左/右
+四个边手柄可单独拉伸（与「铺满可用区域」的自动排版语义配套）。
+
 ##### `showEvent(event) -> None`
 
 显示时重算：首次进入第四步可能在布局完成前就 ``set_page`` 过，
 那时 ``width()/height()`` 还是 0，``_px_per_mm`` 会退化为 1.0。
 仅靠 resizeEvent 兜不住「已分配尺寸但从未显示」的情况。
+
+##### `flush_pending() -> bool`
+
+把"还没松手"的拖动结果补发出去（关窗口/切步骤/切页时调）。
+
+⚠️ 为什么需要（2026-09-26 审计）：`rect_changed` 只在 `mouseReleaseEvent`
+里发（拖动过程中只 `update()` 重绘、不落盘）。于是「拖住图片框不放、
+直接关窗口 / 返回列表」这一下改动就**永久丢失**，而且用户以为已经生效了
+（画布上就是拖动后的样子）。这里主动补发一次，语义与正常松手完全一致。
+
+返回 True 表示确实补发了一次（即存在未提交的改动）。
 
 ---
 
@@ -1273,7 +1623,7 @@ A4 纸上的图片拖拽/缩放画布；rect_changed 发出页面 mm 坐标。
 缩略图默认用条目图片本身（``ImageListWorker`` 走 QImageReader 缩放解码，
 等于现算缩略图）；传入 ``thumb_provider`` 时改用它给出的预生成小图。
 
-### `class PrintPreviewWidget(QWidget, ThumbsMixin)`
+### `class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin)`
 
 生成 PDF 预览：左侧待打印缩略图条（可拖动排序）+ 右侧单页效果。
 
@@ -1288,7 +1638,10 @@ A4 纸上的图片拖拽/缩放画布；rect_changed 发出页面 mm 坐标。
 | `set_pdf_path(path: str \| Path \| None) -> None` | 设置已生成 PDF 的路径；存在则启用下载按钮，否则禁用。 |
 | `remove_selected() -> None` | 删除所有选中条目，未选中则通过 hint 信号提示。 |
 | `refresh_display() -> None` | 右侧参数变化后按最新参数重画当前页（不生成任何文件）。 |
+| `navigate(forward: bool) -> None` | 方向键翻页（详情页 ←/→ 调用；联动预览刷新，见 ThumbStrip.navigate）。 |
 | `refresh_layout() -> None` | 参数（纸张/方向）变化后刷新画布：保留已存坐标，仅重算页面尺寸。 |
+| `export_default_name() -> str \| None` | 导出对话框的默认文件名；没有可导出的页时返回 None。 |
+| `export_current_effect(target: str \| Path) -> None` | 把**当前页**排进纸面后的 A4 效果图按 300dpi 写到 ``target``。 |
 
 ##### `__init__(empty_hint: str='暂无图片，请先完成去底色', params_provider=None, thumb_provider=None, parent=None)`
 
@@ -1297,6 +1650,14 @@ A4 纸上的图片拖拽/缩放画布；rect_changed 发出页面 mm 坐标。
 params_provider: () -> print 参数字典；非法时抛异常（由本控件捕获
     并退回「原图」显示）。为 None 时关闭「打印效果」项。
 thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
+
+##### `export_current_effect(target: str | Path) -> None`
+
+把**当前页**排进纸面后的 A4 效果图按 300dpi 写到 ``target``。
+
+单页、不生成 PDF。走 worker 合成（与预览同一条 ``compose_print_page``
+链路），所以"下载的图 = 屏幕上看到的效果"，只是精度与 PDF 同级而非
+受屏幕像素限制。参数不合法/无条目时发 :attr:`export_failed`。
 
 ---
 
@@ -1312,7 +1673,7 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 
 区域合成在 worker 线程完成，不生成文件；通过请求令牌避免快速切换串台。
 
-### `class RembgPreviewWidget(QWidget, ThumbsMixin)`
+### `class RembgPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin)`
 
 去底色预览：左侧输出条目列表 + 右侧单视图（去底色结果 / 原图切换）。
 
@@ -1323,6 +1684,7 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 | `__init__(empty_hint: str='暂无图片', parent=None)` | 构建缩略图条与「去底色结果 / 原图」切换行，默认显示去底色结果。 |
 | `set_images(paths: list[Path], rembg_dir: Path \| None, boxes_provider=None, region_params_provider=None, thumb_provider=None) -> None` | 设置图片清单与去底色目录，重建输出条目并加载显示。 |
 | `refresh_display() -> None` | detect 框/area/border 变化后，重建输出条目并按新区域重新加载。 |
+| `navigate(forward: bool) -> None` | 方向键翻页（详情页 ←/→ 调用；联动预览刷新，见 ThumbStrip.navigate）。 |
 | `set_live_dir(path: Path \| None) -> None` | 设置（或传 None 清除）「实时预览」暂存目录。 |
 | `live_dir() -> Path \| None` | 当前生效的实时预览暂存目录（未启用为 None）。 |
 | `current_entry_path() -> str \| None` | 当前选中条目的源图路径（无条目时为 None）。 |
@@ -1369,11 +1731,28 @@ paths 为源图；rembg_dir 为去底色结果目录（存在才显示结果）�
 
 | 方法 | 说明 |
 | --- | --- |
+| `decode_edge(dpr: float=1.0, base: int \| None=None) -> int` | 按 dpr 给出的缩略图**解码最长边**（调用方在**主线程**算好后传进 worker）。 |
 | `__init__(parent=None)` | 初始化条目尺寸与流式布局；当前行变化发出 current_path_changed(行号, 路径)。 |
+| `wheelEvent(event) -> None` | 滚轮按**条目**翻页：一格滚轮 = ``WHEEL_STEP_ITEMS`` 个条目。 |
 | `set_reorderable(on: bool) -> None` | 打开/关闭条目内部拖放排序（第四步待打印列表用）。 |
+| `set_deletable(on: bool) -> None` | 打开/关闭 Delete/Backspace 删除（只发信号，删不删由宿主定）。 |
+| `navigate(forward: bool) -> None` | 方向键翻页：移动当前行（夹在两端，不回绕）。 |
+| `keyPressEvent(event) -> None` | Delete/Backspace → ``delete_requested``。 |
 | `add_placeholder(text: str) -> None` | 追加一个纯文字占位条目（无图标，如"缩略图加载中…"）。 |
 | `add_page_item(label: str, path: str='') -> None` | 新增一个带占位图的条目，缩略图就绪后由 set_item_icon 替换。 |
 | `set_item_icon(index: int, image, path: str, label: str) -> None` | 替换某条目的图标/文字/路径（缩略图异步就绪后回调）。 |
+
+##### `decode_edge(dpr: float=1.0, base: int | None=None) -> int`
+
+装饰器：`staticmethod`
+
+按 dpr 给出的缩略图**解码最长边**（调用方在**主线程**算好后传进 worker）。
+
+``base`` 是逻辑像素下的基准边，默认取 ``DECODE_EDGE``（= 图标框长边）。
+
+⚠️ 高分屏下条目本身是按 dpr 放大绘制的，只解码到逻辑尺寸就等于让 Qt
+再放大一次 → 缩略图发糊。这与右侧大图 ``ImageView.preview_edge`` 是
+同源问题（那边实测 150% 缩放下锐度差 7.6 倍）。
 
 ##### `__init__(parent=None)`
 
@@ -1383,6 +1762,32 @@ paths 为源图；rembg_dir 为去底色结果目录（存在才显示结果）�
 键盘翻页（方向键 / PageUp / PageDown）与程序化 ``setCurrentRow``
 只会改 currentRow、**不产生点击**，只接 itemClicked 就会出现
 「翻页了但右侧预览不更新，切到别的视图模式再切回来才正常」。
+
+##### `wheelEvent(event) -> None`
+
+滚轮按**条目**翻页：一格滚轮 = ``WHEEL_STEP_ITEMS`` 个条目。
+
+刻意不调 ``super()``：Qt 那条路径按 singleStep / 系统"滚动行数"算步长
+（见 WHEEL_STEP_ITEMS 的说明），会把一格变成十几页。这里自己算目标行号
+并把该行落到顶端，翻页量恒定。
+
+##### `navigate(forward: bool) -> None`
+
+方向键翻页：移动当前行（夹在两端，不回绕）。
+
+主预览的方向键导航入口——「焦点在哪里，哪里就切换」：焦点在主界面
+的非输入控件上时由详情页转到这里（四个步骤的预览组件共用本方法）；
+焦点落在本条上时 QListWidget 的方向键本来就移动选择，语义一致。
+``setCurrentRow`` 会触发 ``currentRowChanged``，预览刷新由各组件
+既有的联动完成。
+
+##### `keyPressEvent(event) -> None`
+
+Delete/Backspace → ``delete_requested``。
+
+⚠️ 第四步工具条的提示写着「Delete 删除选中」，原先没有任何地方接这个
+键——提示是空头支票，按下去毫无反应。这里只负责把键翻成信号，
+「删哪些、要不要落盘」仍归宿主（``PrintPreviewWidget.remove_selected``）。
 
 ##### `add_page_item(label: str, path: str='') -> None`
 
@@ -1526,9 +1931,12 @@ manifest 插入锚点；文件缺失时查看器行号与清单下标会错位�
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(store, parent=None)` | 初始化详情页：建 worker 宿主、清运行态并组装 UI。 |
-| `set_task(task_id: str) -> None` | 切换当前任务：复位所有阶段面板与运行态，避免跨任务泄漏。 |
+| `set_task(task_id: str) -> bool` | 切换当前任务：复位所有阶段面板与运行态，避免跨任务泄漏。 |
 | `current_stage() -> str` | 返回当前所处阶段的 key（extract/detect/rembg/print）。 |
+| `navigate_by_arrow(forward: bool) -> bool` | 方向键切换当前步骤的页面（主窗口 ←/→ 转发入口）。 |
+| `keyPressEvent(event) -> None` | ←/→ 切换当前步骤的页面（焦点链不消费时兜底到达这里）。 |
 | `closeEvent(event) -> None` | 关闭页面时杀掉并等待 worker/detect 子进程，并关停所有后台线程。 |
+| `flush_layout_pending() -> None` | 把各处"未提交的界面改动"补发/落盘（关窗口、切步骤、切页前都要调）。 |
 | `shutdown_all_workers() -> None` | 连同各预览控件自己的缩略图线程一起收尾。 |
 
 ##### `__init__(store, parent=None)`
@@ -1538,18 +1946,30 @@ manifest 插入锚点；文件缺失时查看器行号与清单下标会错位�
 创建 store 引用与 _init_worker_host 后台线程宿主；初始化全部运行态
 字段（task_id/process/run_id/detect_cache 等）为空，再构建界面骨架。
 
-##### `set_task(task_id: str) -> None`
+##### `set_task(task_id: str) -> bool`
 
 切换当前任务：复位所有阶段面板与运行态，避免跨任务泄漏。
 
 加载任务后先调用各面板 reset_to_default 清掉上一任务手改参数，再清
 detect 缓存/运行态引用并刷新清单与预览；防止参数或 run_id 串到新任务。
+返回 False = 拒绝切换（任务不存在 / 子任务执行中），调用方应留在原地。
 
 ##### `current_stage() -> str`
 
 返回当前所处阶段的 key（extract/detect/rembg/print）。
 
 以步骤条高亮下标映射到 STAGES 序列；下标为负时按 0 兜底处理。
+
+##### `navigate_by_arrow(forward: bool) -> bool`
+
+方向键切换当前步骤的页面（主窗口 ←/→ 转发入口）。
+
+返回是否消费（主窗口据此决定要不要继续处理）。
+「焦点在哪里，哪里就切换」：
+- 焦点在**输入类控件**上时不抢（`_ARROW_OCCUPIED` 表——参数输入区
+  的方向键移光标/改值，用户 18:30 明确那里不需要切换）；
+- 焦点在预览弹窗里则由弹窗自己的窗口级 QShortcut 接管；
+- 四个步骤的主预览都支持（移动缩略图条当前行，联动预览刷新）。
 
 ##### `closeEvent(event) -> None`
 
@@ -1558,6 +1978,18 @@ detect 缓存/运行态引用并刷新清单与预览；防止参数或 run_id �
 详情页持有 QProcess 与多个 WorkerHost 线程；先 kill 正在跑的执行/
 检测子进程并等待（最多 1.5s），再 shutdown_all_workers 收尾其余线程，
 最后接受关闭事件，避免解释器退出时被强杀崩溃。
+
+##### `flush_layout_pending() -> None`
+
+把各处"未提交的界面改动"补发/落盘（关窗口、切步骤、切页前都要调）。
+
+目前是第四步的版面画布：拖动中不落盘，只在松手/补发时提交。
+
+⚠️ **只按具体的类 `findChildren`，绝不用 `getattr(widget, ...)` 探测能力**：
+四个阶段面板是 `LazyPanelHost`，属性转发（`__getattr__`）会**立刻把面板
+构造出来**——那就把用户要求的「不进去就不建」破坏掉了。（2026-09-26 自己
+踩到：写成 `getattr(w, "flush_pending", None)` 之后，`detail_prewarm`
+护栏直接红成"四个面板全建"。）
 
 ##### `shutdown_all_workers() -> None`
 
@@ -1776,6 +2208,12 @@ current_stage()、_update_run_buttons() 等。
 
 任务管理页：表格列表 + 导入PDF（先算指纹查重，确认后建任务并落副本/缩略图）。
 
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| HEADER_SUBTITLE | `"导入 PDF 后按四个子任务依次处理"` |
+
 ### `class TaskListPage(QWidget, WorkerHost)`
 
 任务管理页：搜索 + 分页的任务列表，支持导入 PDF 与删除。
@@ -1784,8 +2222,10 @@ current_stage()、_update_run_buttons() 等。
 ``_render()`` 负责「按关键词过滤 → 分页切片 → 填表」。搜索框只触发
 ``_render()``（不再读盘），所以打字时不会每次都去扫一遍任务目录。
 
-含表格/空状态二选一的内容区；导入走「后台算指纹→查重→确认建任务」
-流程，缩略图另行后台生成，全程不阻塞界面。
+含表格/空状态二选一的内容区。导入刻意分两段：**主线程**只做「算指纹 →
+查重 → 确认 → 建任务 → 刷新列表」（毫秒级，用户立刻看到新行）；**后台**
+串行做「复制源文件 + 生成整本缩略图」，且等列表画完才开工，期间挂一条
+「正在导入」提示条。
 
 #### 方法
 
@@ -1795,6 +2235,7 @@ current_stage()、_update_run_buttons() 等。
 | `refresh() -> None` | 刷新任务行：**读盘放后台线程**，读完回主线程渲染。 |
 | `focus_task(task_id: str) -> bool` | 翻到任务所在页并选中它；不在当前过滤结果里则返回 False。 |
 | `import_pdf() -> None` | 导入 PDF：选文件后后台算指纹并查重确认建任务。 |
+| `shutdown_workers() -> None` | 关程序前的收尾：先停导入后台队列（复制/缩略图），再走基类线程。 |
 | `delete_task(task_id: str) -> None` | 删除指定任务及其全部中间产物（带确认弹窗）。 |
 
 ##### `__init__(store: TaskStore, parent=None)`
@@ -1978,6 +2419,10 @@ area=1 与「双框 + area=2/3」在 border 为空时**不等价**，曾导致�
 预览也是 area=2，生成的 PDF 却是 area=1 的效果」就是这么来的（紧裁观感
 与 area=1 的半页裁剪一致）。
 
+``full`` 原样透传给合成层：整幅内容(fullcontent)页的内容区＝**整页**，
+合成时按 area=4 处理（不拆 `-l`/`-r`、不镜像、不紧裁）——见
+``desktop.workers.preview_worker.region_canvas_specs``。
+
 #### `plan_print_effects(list_entries: list[dict], composed: list[dict], rembg_dir: Path, submitted_labels: set[str], border) -> list[dict]`
 
 第四步列表 + 第三步当前 area/border → worker 合成规格。
@@ -1988,9 +2433,11 @@ area=1 与「双框 + area=2/3」在 border 为空时**不等价**，曾导致�
 
 与用户在第四步保存的列表（拖动排序/删除/外部插入）按 label 对齐：
 - 命中当前 area 派生集合的条目，按用户列表顺序输出合成规格；
+- 列表 label 与当前派生集合**形态不同**（用户改过 area 而未重新提交）时，
+  按 `_base_label` 重映射到该页派生的全部条目——**顺序仍取列表顺序**，
+  这样本步的删除/排序在参数变化后依然生效；
 - 用户插入的外部图片（不在 stages/rembg 目录）整图透传；
-- area 模式切换后已失效的旧提交图（如旧 82-r/82-l 被新 82 取代）
-  丢弃，当前集合中新派生的条目按默认顺序补在末尾，避免漏页或重复。
+- 兜底补漏：当前派生集合里、列表与已提交产物都没有的条目才补在末尾。
 
 #### `plan_print_entries(rembg_files: list[Path], doc: dict | None) -> tuple[list[dict], dict]`
 
@@ -2042,6 +2489,51 @@ print.json 仅持久化用户的拖动/删除/插入顺序。
 
 PNG 用 ``compress_level=1``：这是**临时预览**，编码速度比压缩率重要
 （正式产物走 ``functions.rembg``，那里仍是 level=9）。
+
+---
+
+## `desktop.services.stale_chain`
+
+源码：[`desktop/services/stale_chain.py`](../../desktop/services/stale_chain.py)
+
+跨阶段「上游重新执行 → 下游产物已过期」的判定（纯函数，无 Qt 依赖）。
+
+只看**成功运行的时间戳链**：某个下游阶段最近一次成功运行，比它的前置阶段里
+某一个的最近一次成功运行还旧 → 这个下游产物可能已经不是最新参数下的结果。
+
+⚠️ 只做判定，不做任何动作：**不自动重跑、不删产物、不改参数**。界面据此给一句
+提示（第四步状态行 + 主按钮高亮），要不要重跑由用户决定。
+
+⚠️ 不比对参数。参数级的"待更新"另有专门机制（见 `submit_state.py`：
+生成预览 → 提交本次任务的 new_version / preview_stale），本模块只回答
+"上游又跑过一次、而下游还是那之前的产物吗"。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| TIMESTAMP_TOLERANCE_S | `2.0` |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `latest_success(records) -> dict \| None` | 一组运行记录里最近一次**成功**的那条（按 finished_at 取最大）。 |
+| `stale_upstream(runs: dict) -> dict[str, dict]` | runs（``{阶段: [记录, ...]}``）→ 过期判定 ``{下游阶段: 详情}``。 |
+
+#### `latest_success(records) -> dict | None`
+
+一组运行记录里最近一次**成功**的那条（按 finished_at 取最大）。
+
+失败/中断的跑动不算数：它们没产出可用于比对的产物。
+
+#### `stale_upstream(runs: dict) -> dict[str, dict]`
+
+runs（``{阶段: [记录, ...]}``）→ 过期判定 ``{下游阶段: 详情}``。
+
+详情：``{"stage": 更新了的上游阶段, "upstream_at": ts, "downstream_at": ts}``。
+下游**从未成功过**时不判过期——那种情况界面本来就在说"未执行"，再叠一句
+"已过期"只会让人困惑。
 
 ---
 
@@ -2144,12 +2636,12 @@ worker 起来只需几百毫秒，模型全局只加载一次、多次检测共�
 
 | 函数 | 说明 |
 | --- | --- |
-| `run_detect(config: dict) -> int` | 检测单张图片的左右文本框，返回像素坐标（重依赖由常驻服务承担）。 |
-| `run_detect_stage(config: dict) -> int` | detect 阶段：逐图检测左右文本框并上报坐标，不切割、不生成任何文件。 |
+| `run_detect(config: dict) -> int` | 检测单张图片的内容框（半幅左右 / 整幅），返回像素坐标（重依赖由常驻服务承担）。 |
+| `run_detect_stage(config: dict) -> int` | detect 阶段：逐图检测内容框（半幅左右 / 整幅）并上报坐标，不切割、不生成任何文件。 |
 
 #### `run_detect_stage(config: dict) -> int`
 
-detect 阶段：逐图检测左右文本框并上报坐标，不切割、不生成任何文件。
+detect 阶段：逐图检测内容框（半幅左右 / 整幅）并上报坐标，不切割、不生成任何文件。
 
 检测算法复用 `functions.detect.detect_page_boxes_by_path`（内部即 CLI crop /
 cropremove 用的同一入口），最终裁剪框由 GUI 按同一套规则
@@ -2289,11 +2781,26 @@ print 阶段执行器：合成效果图后按**有序清单**生成 PDF。
 排序——因此不再需要把顺序「烧」进文件名的 workset 目录。合成结果写入
 一次性临时目录，交给 print 时同时给出有序清单，执行结束即随临时目录删除。
 
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| _STAGING_ROOT_NAME | `"guji-print-staging"` |
+| _OWNER_FILE | `"owner.pid"` |
+
 ### 模块函数
 
 | 函数 | 说明 |
 | --- | --- |
+| `staging_root() -> Path` | 所有效果图暂存目录的固定根。 |
+| `sweep_orphan_staging(exclude: Path \| None=None) -> int` | 删掉「属主进程已死」的暂存目录，返回删除个数。 |
 | `run_print_stage(config: dict) -> int` | print 阶段：把 rembg 结果按 area/border 合成为效果图，再生成 PDF。 |
+
+#### `sweep_orphan_staging(exclude: Path | None=None) -> int`
+
+删掉「属主进程已死」的暂存目录，返回删除个数。
+
+`exclude` 传自己正在用的目录（绝不删自己）。
 
 #### `run_print_stage(config: dict) -> int`
 
@@ -2364,9 +2871,22 @@ boxes.json / sizes.json 读写。
 | `boxes_path(task_id: str) -> Path` | 检测框存储文件：任务目录下的 boxes.json。 |
 | `detect_boxes_entry(task_id: str, image_key: str) -> tuple[list, str] \| None` | 返回 (boxes, origin)；无记录时返回 None。origin: 'auto' \| 'manual'。 |
 | `save_detect_boxes(task_id: str, image_key: str, boxes: list, origin: str='auto') -> None` | 写入某页的检测框及其来源标记（auto=自动检测，manual=人工编辑）。 |
+| `save_detect_boxes_batch(task_id: str, entries: dict[str, list]) -> None` | 批量写入某阶段的检测框（origin=auto）：**一次读改写**。 |
+| `save_image_sizes_batch(task_id: str, entries: dict[str, tuple[int, int]]) -> None` | 批量写入页面原始尺寸：一次读改写（理由同 save_detect_boxes_batch）。 |
 | `sizes_path(task_id: str) -> Path` | 页面原始尺寸文件：任务目录下的 sizes.json。 |
 | `save_image_size(task_id: str, image_key: str, width: int, height: int) -> None` | 记录某页图片的原始像素尺寸，作为框坐标与预览映射的坐标系基准。 |
 | `image_size(task_id: str, image_key: str) -> tuple[int, int] \| None` | 返回某页原始像素尺寸 (width, height)；无记录时返回 None。 |
+
+##### `save_detect_boxes_batch(task_id: str, entries: dict[str, list]) -> None`
+
+批量写入某阶段的检测框（origin=auto）：**一次读改写**。
+
+⚠️ 为什么必须攒批：detect 跑 320 页时逐页 `save_detect_boxes` 是
+「读整个 boxes.json + 改写」× 页数，实测 320 页累计 **1.8 秒**主线程
+阻塞（2400 页的书记忆里是 47.5s，见
+``.workbuddy/perf/2026-09-23-sqlite-vs-json.md``）；攒批后一次落盘
+~0.02s。人工框（origin=manual）在这里跳过，不被自动结果覆盖——
+与单条版同一条规矩，但只读一次文件。
 
 ---
 
@@ -2439,6 +2959,16 @@ JSON 持久化的原子读写工具。
 | `read_json(path: Path, default)` | 读取 JSON；文件不存在返回 default，损坏则备份后返回 default。 |
 | `write_json(path: Path, data, indent: int=1) -> None` | 原子写 JSON（临时文件 + fsync + os.replace）。 |
 
+#### `read_json(path: Path, default)`
+
+读取 JSON；文件不存在返回 default，损坏则备份后返回 default。
+
+⚠️ 「损坏」有两种，必须一起兜住：**语法坏了**（`JSONDecodeError`）与
+**不是合法 UTF-8**（`UnicodeDecodeError`，外部编辑器/磁盘损坏/异构工具写坏
+都能造成）。后者是 `ValueError` 的子类、**不是** `OSError`，早期实现只 try
+`OSError` + `JSONDecodeError`，于是它会一路穿透到调用它的 Qt 槽里——在事件
+处理中抛异常比"备份后返回默认值"糟糕得多。
+
 #### `write_json(path: Path, data, indent: int=1) -> None`
 
 原子写 JSON（临时文件 + fsync + os.replace）。
@@ -2481,8 +3011,11 @@ pages.json 的读写与按阶段输出目录重建。
 阶段运行历史（runs.json）：每个阶段保留最近多次执行的记录，最新在前。
 
 结构：{stage: [record, ...]}
-record: {run_id, status, parameters, done, total, started_at, finished_at, output_path}
+record: {run_id, status, parameters, done, total, started_at, finished_at,
+         output_path, error}
 历史记录既用于页面状态渲染（最新一条），也作为阶段面板的历史配置选项。
+``error`` 只在失败时写：worker 起不来的那类失败（0 条事件、0.2 秒退出）
+以前在记录里只有 ``done=0 total=0``，事后完全没法查。
 
 ### 模块常量
 
@@ -2501,8 +3034,9 @@ runs.json 读写。
 | `runs_path(task_id: str) -> Path` | 运行历史文件：任务目录下的 runs.json。 |
 | `create_stage_run(task_id: str, stage: str, parameters: dict, resume: bool=False) -> str` | 登记一次新的阶段执行并返回 run_id。 |
 | `set_progress(task_id: str, run_id: str, done: int, total: int) -> None` | 按 run_id 更新 done/total；run_id 不在任何阶段时静默忽略。 |
-| `finish_stage(task_id: str, run_id: str, status: str, output_path: str \| None=None, progress: tuple[int, int] \| None=None) -> None` | 结束某次运行：写入 status/finished_at/output_path。 |
+| `finish_stage(task_id: str, run_id: str, status: str, output_path: str \| None=None, progress: tuple[int, int] \| None=None, error: str \| None=None) -> None` | 结束某次运行：写入 status/finished_at/output_path（可选 error）。 |
 | `list_stage_runs(task_id: str, stage: str) -> list[dict]` | 某阶段的历史执行记录，最新在前。 |
+| `all_stage_runs(task_id: str) -> dict[str, list[dict]]` | 整份运行历史（**一次读盘**），键为阶段名、值为最新在前的记录列表。 |
 | `stage_states(task_id: str) -> dict[str, dict]` | 每个阶段最近一次运行的状态与进度（页面步骤条渲染用）。 |
 
 ##### `create_stage_run(task_id: str, stage: str, parameters: dict, resume: bool=False) -> str`
@@ -2512,9 +3046,9 @@ runs.json 读写。
 新记录插在该阶段历史最前，初始状态 running、进度 0/0；每阶段只保留
 最近 MAX_RUN_HISTORY 条。resume 标记本次是否为续跑。
 
-##### `finish_stage(task_id: str, run_id: str, status: str, output_path: str | None=None, progress: tuple[int, int] | None=None) -> None`
+##### `finish_stage(task_id: str, run_id: str, status: str, output_path: str | None=None, progress: tuple[int, int] | None=None, error: str | None=None) -> None`
 
-结束某次运行：写入 status/finished_at/output_path。
+结束某次运行：写入 status/finished_at/output_path（可选 error）。
 
 status 取 success/failed/cancelled 等；output_path 为该次执行的
 主产物路径（如 print.pdf、rembg 输出目录），供历史面板回链。
@@ -2523,6 +3057,18 @@ status 取 success/failed/cancelled 等；output_path 为该次执行的
 progress 为 (done, total)，用于补齐最终计数。worker 的 finished 事件
 不再携带 done/total（进度由结构化 progress 事件实时汇报），因此调用方
 传入「最近一次进度」即可让历史记录落到真实完成数，而不是停在中间值。
+
+error 为失败原因（退出码 / worker 的最后一行错误 / "子进程启动失败"）。
+⚠️ 必须落盘：worker 起不来的那类失败**没有任何输出**，界面上只有一条
+转瞬即逝的 toast，记录里若也只有 ``done=0 total=0``，事后就彻底查不出
+原因（用户报「提交失败但没说为什么」，只能靠猜）。
+
+##### `all_stage_runs(task_id: str) -> dict[str, list[dict]]`
+
+整份运行历史（**一次读盘**），键为阶段名、值为最新在前的记录列表。
+
+给"跨阶段比对时间戳"这类一次要看全的场景用：逐个 ``list_stage_runs()``
+会把整份 runs.json 读 N 遍（任务多跑过几次就有几十上百 KB）。
 
 ##### `stage_states(task_id: str) -> dict[str, dict]`
 
@@ -2593,7 +3139,8 @@ JSON 文件，没有旧数据（SQLite）需要迁移。
 | `workset_dir(task_id: str) -> Path` | 已废弃：检测/去底直接读 extract 输出目录，不再物化输入副本。 |
 | `runs_config_dir(task_id: str) -> Path` | 子进程执行配置（run-*.json / detect-config.json）。 |
 | `source_thumbnails_dir(task_id: str) -> Path` | 源 PDF 页缩略图：导入即生成，PDF 预览直接复用，永不清理。 |
-| `copy_source_to_task(task_id: str, source_path: Path) -> Path` | 导入时在任务目录下保留一份源文件副本。 |
+| `rembg_thumbnails_dir(task_id: str) -> Path` | 第四步缩略图缓存：提交阶段（rembg_submit）随最终图片一并生成， |
+| `copy_source_to_task(task_id: str, source_path: Path) -> Path` | 导入时在任务目录下保留一份源文件副本（原子落地）。 |
 | `source_copy_path(task_id: str) -> Path \| None` | 任务目录里的 PDF 备份路径；没有备份返回 None。 |
 | `ensure_source_copy(task_id: str) -> Path \| None` | 保证任务目录里有 PDF 备份；缺了就按索引里的 source_path 补一份。 |
 
@@ -2605,6 +3152,13 @@ JSON 文件，没有旧数据（SQLite）需要迁移。
 占用则继续顺延。创建时会预建 stages/runs/thumbnails/source
 子目录，但不复制源文件（由 copy_source_to_task 负责）。
 
+⚠️ **取号靠"目录创建的原子性"，不靠"先查后建"**（2026-09-26 审计）：
+单例守卫是**按构建目录**判定的，开发版与安装版会同时运行、共用同一个
+数据目录（`desktop/single_instance.py` 明说了）。两个进程会算出同一个
+`_next_task_no()`、同时通过"号没被占用"的检查 → 拿到同一个任务号、
+写同一个目录、索引里互相覆盖（一个任务凭空消失）。
+`mkdir(exist_ok=False)` 在文件系统层是原子的：抢不到就顺延取号。
+
 ##### `delete_task(task_id: str) -> bool`
 
 删除任务及其中间产物，返回是否真的删掉。
@@ -2615,6 +3169,15 @@ JSON 文件，没有旧数据（SQLite）需要迁移。
 ⚠️ Windows 上 PDF 被后台渲染线程打开时 ``rmtree`` 抛 PermissionError，
 原先 ``ignore_errors=True`` 会让它**静默残留**——列表里显示已删除，
 磁盘上目录还在。这里重试若干次再判定失败，失败时保留任务让用户重试。
+
+##### `task_dir(task_id: str) -> Path`
+
+任务根目录：tasks/<任务号>。
+
+⚠️ **必须校验形状**（2026-09-26 审计）：`task_id` 会被直接拼进路径，而
+`delete_task` 对它做 `rmtree`。`tasks.json` 就在用户的文档目录下、可被
+外部编辑或别的工具写坏，一旦出现 `"id": "..\..\somewhere"` 就会
+**越界删除任务目录之外的东西**。这里只认 `create_task` 生成的形状。
 
 ##### `stage_output_dir(task_id: str, stage: str) -> Path`
 
@@ -2628,6 +3191,20 @@ rembg 最终目录；print 返回 print.pdf 所在目录。
 已废弃：检测/去底直接读 extract 输出目录，不再物化输入副本。
 
 仅为清理历史遗留目录保留（老版本任务目录下可能仍有 workset/）。
+
+##### `rembg_thumbnails_dir(task_id: str) -> Path`
+
+第四步缩略图缓存：提交阶段（rembg_submit）随最终图片一并生成，
+缩略条直接复用，不必每次现解码 6000px 的原图。
+
+##### `copy_source_to_task(task_id: str, source_path: Path) -> Path`
+
+导入时在任务目录下保留一份源文件副本（原子落地）。
+
+⚠️ 复制本身可能是在**后台线程**里做的（见
+``desktop/workers/serial_jobs.py``），而详情页/预览随时会来读这份
+副本，所以走 ``copy_file_atomic``：写 ``.part`` 再 ``os.replace``，
+别人不会读到半截 PDF。
 
 ##### `source_copy_path(task_id: str) -> Path | None`
 
@@ -3254,9 +3831,40 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 
 | 函数 | 说明 |
 | --- | --- |
-| `apply_to(widget: QWidget, size: int=T.SIZE_BODY, bold: bool=False, color: str \| None=None) -> QLabel` | 给 QLabel 统一设置字体与颜色（颜色用调色板，不用样式表）。 |
+| `apply_to(widget: QWidget, size: int=T.SIZE_BODY, bold: bool=False, color: str \| None=None) -> QLabel` | 给 QLabel 统一设置字体与颜色。 |
+| `bold_button(button: QWidget, bold: bool) -> None` | 把按钮文字加粗 / 还原（高亮用）。 |
 | `combo_box(items: Iterable[str \| Sequence[Any]] \| None=None, width: int \| None=None) -> ComboBox` | 创建与输入框同高的下拉框（统一表单的行高节奏）。 |
 | `icon_pixmap(icon, size: int=24, color: str=T.INK_FAINT) -> QPixmap` | 把 FluentIcon 渲染成指定颜色的 pixmap（用于空状态插画）。 |
+| `install_button_pointer_cursor(app: QApplication) -> None` | 给整个应用的按钮启用 hover 手型光标（见 :class:`_ButtonCursorFilter`）。 |
+
+#### `apply_to(widget: QWidget, size: int=T.SIZE_BODY, bold: bool=False, color: str | None=None) -> QLabel`
+
+给 QLabel 统一设置字体与颜色。
+
+⚠️ **上色有两条路，按控件类型分流**：
+
+- qfluentwidgets 的标签（``FluentLabelBase`` 子类：CaptionLabel / BodyLabel /
+  StrongBodyLabel / TitleLabel / SubtitleLabel）**不读调色板**——它们用
+  ``setStyleSheet("color: …")`` 自己画（``setTextColor``）。对它们只 ``setPalette``
+  的话调色板里明明写着红色、**渲染出来仍是黑的**（2026-09-23 用户报「这个红色
+  没有修改过来」就是这么来的）。所以必须走 ``setTextColor``。
+- 原生 ``QLabel`` 仍走调色板（原来的做法；对它用样式表反而会牵连子控件，
+  见模块头那段"样式表会把 QFrame 底色刷白"的教训）。
+
+判据用 ``isinstance`` 而不是 ``hasattr(widget, "setTextColor")``：
+``QTextEdit`` 也有同名方法，但它设的是"以后输入的文字颜色"，语义完全不同。
+
+#### `bold_button(button: QWidget, bold: bool) -> None`
+
+把按钮文字加粗 / 还原（高亮用）。
+
+⚠️ **别用 ``setStyleSheet("…{font-weight:bold;}")`` 干这件事**：qfluentwidgets
+给每个按钮的样式表是**整串 setStyleSheet 进去的**（约 7.6KB），里面有一条
+``PushButton[hasIcon=true] { padding: 5px 12px 6px 36px; }`` —— 图标是
+``paintEvent`` 手绘在左边 12px 处的，**全靠这 36px 左边距让居中的文字让开**。
+整串替换后 padding 全没了，图标就画到文字上了（2026-09-23 用户报
+「执行本子任务按钮中的图片显示在了文字上面」）。``setFont`` 只动字体，
+不碰样式表；按钮 qss 里没有 ``font:`` 规则，所以控件字体生效。
 
 #### `combo_box(items: Iterable[str | Sequence[Any]] | None=None, width: int | None=None) -> ComboBox`
 
@@ -3288,11 +3896,21 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 | 函数 | 说明 |
 | --- | --- |
 | `guji_data_dir() -> Path` | GUI 数据根目录：用户文档目录下的 guji。 |
+| `default_open_dir() -> Path` | 文件对话框的默认打开目录：用户文档目录。 |
 | `project_root() -> Path` | 项目根目录（`desktop` 包的上一级）。 |
 | `package_dir() -> Path` | `desktop` 包目录（源码与 PyInstaller 打包两种模式下都可用）。 |
 | `file_hash(path: Path, chunk_size: int=1024 * 1024) -> str` | 流式计算文件 SHA-256（分块读取，避免大 PDF 撑爆内存）。 |
+| `copy_file_atomic(source: Path, target: Path) -> Path` | 把 source 复制到 target，**要么没有、要么完整**。 |
 | `natural_key(name: str)` | 生成自然排序键：数字段按整数、其余转小写，使 2 排在 10 前。 |
 | `list_stage_images(directory: Path) -> list[Path]` | 某阶段输出目录中的图片（自然排序）。 |
+
+#### `default_open_dir() -> Path`
+
+文件对话框的默认打开目录：用户文档目录。
+
+QFileDialog 传空串会回退到进程工作目录（打包后就是程序所在目录），
+入口落在安装/项目目录很不合适；统一改从文档目录起步。目录不存在时
+回退到用户主目录，再不行返回空 Path 由调用方保持空串行为。
 
 #### `project_root() -> Path`
 
@@ -3309,6 +3927,23 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 打包后 `desktop` 作为 PYZ 内的字节码存档存在，磁盘上没有真正的
 ``desktop/static/icon.png``；数据文件由 spec 的 ``datas`` 额外落到
 ``_internal/desktop/``，因此 frozen 下直接指向 ``sys._MEIPASS``。
+
+#### `copy_file_atomic(source: Path, target: Path) -> Path`
+
+把 source 复制到 target，**要么没有、要么完整**。
+
+⚠️ 不能用裸 ``shutil.copy2(source, target)``：导入后的复制是在**后台
+线程**里跑的，而详情页/PDF 预览随时会来看任务目录里的副本。直接往
+target 写，复制途中它就 ``is_file() == True`` 了，读到的却是半截
+PDF——渲染失败、甚至静默出一张残缺页。
+
+所以先写同目录的临时文件，落盘后再 ``os.replace`` 原子改名。临时名带
+.part 后缀，``glob("*.pdf")`` 之类的兜底查找也扫不到它。
+
+⚠️ 临时名里要带 **pid + 线程号**：同一个副本可能被两个地方同时复制
+（后台队列复制中，用户已经点进详情页 → ``ensure_source_copy`` 又复制
+一遍）。共用一个临时名的话两边会交叉写同一个文件；各自写自己的临时
+文件则内容相同，谁最后 replace 都对。
 
 ---
 
@@ -3384,6 +4019,55 @@ GUI worker 子进程入口：读取 --config 并按阶段路由执行。
 run_stage）。进程启动即启用 faulthandler 并统一 stdout/stderr 为 UTF-8，
 以输出 JSON Lines 进度供 GUI 解析。返回阶段执行器的退出码。
 
+⚠️ 启动期（读配置 / 解析 JSON / 路由之前）的异常一律转成 error 事件
++ stderr 堆栈，绝不让它变成"静默的退出码 1"（见 `_emit_fatal`）。
+SystemExit 放行（argparse 的用法错误已经写到 stderr 了）。
+
+---
+
+## `desktop.workers.copy_source_worker`
+
+源码：[`desktop/workers/copy_source_worker.py`](../../desktop/workers/copy_source_worker.py)
+
+后台补一份源文件副本（**绝不在主线程复制**）。
+
+背景：导入后台任务会顺手把源 PDF 复制进任务目录，之后一切都用副本
+（源文件在用户磁盘上会被移动/改名/删除）。但两种情况副本会缺：
+
+1. 导入时复制失败（磁盘满/权限）；
+2. 早期版本导入的老任务，压根没做备份。
+
+老实现是在详情页 `set_task()` 里**同步**调 `ensure_source_copy()` 补——
+一本 800MB 的书就是主线程卡住几秒到几十秒（用户报「进详情页要等一会」）。
+现在改成：先照常用源文件显示，**延时几秒**后如果副本还是没出现，再由这个
+worker 在后台线程里补一份；补的期间界面照常可用。
+
+### `class CopySourceWorker(QObject)`
+
+把源 PDF 原子复制到任务目录（后台线程里跑）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(source: Path, target: Path)` | source 为源文件；target 为任务目录里的副本路径。 |
+| `run() -> None` | 执行复制：失败只报 failed，不影响任务使用源文件继续干活。 |
+
+### `class CopyFilesWorker(QObject)`
+
+批量复制文件到目标目录（后台线程里跑；审计 D2）。
+
+「插入图片」「下载 PDF」原先在主线程 `shutil.copy2`——一本 463MB 的 PDF
+就把界面冻住整个复制时长。现在主线程只算好 (源, 目标) 对，这里逐对复制；
+单个失败不中断整批（跳过并在结果里注明）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(jobs: list[tuple[Path, Path]])` | — |
+| `run() -> None` | — |
+
 ---
 
 ## `desktop.workers.hash_worker`
@@ -3426,22 +4110,16 @@ effects 与 paths 对齐：非空时先按 area/border 规则合成效果再缩�
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(paths: list[Path], edge: int=96, effects: list \| None=None, crops: list \| None=None, cache_dir: Path \| None=None)` | 构造图片清单缩略图 worker。 |
+| `__init__(paths: list[Path], edge: int=96, effects: list \| None=None, crops: list \| None=None)` | 构造图片清单缩略图 worker。 |
 | `run() -> None` | 逐图生成缩略图，发 thumbnail_ready(index, image, path)，结束发 completed。 |
 
-##### `__init__(paths: list[Path], edge: int=96, effects: list | None=None, crops: list | None=None, cache_dir: Path | None=None)`
+##### `__init__(paths: list[Path], edge: int=96, effects: list | None=None, crops: list | None=None)`
 
 构造图片清单缩略图 worker。
 
 paths 为目标图片；edge 为缩略图最长边（默认 96）。effects/crops
 与 paths 对齐：非空时先按 area/border 合成效果或按像素框裁剪，
 再缩放到 edge（用于 print 列表效果预览）。
-
-cache_dir 给定时启用**磁盘缩略图缓存**（``<stem>.jpg``）。只有
-「既无 effect 也无 crop」的纯缩放结果才走缓存——带参数的合成结果
-尺寸取决于参数，缓存下来会串味。命中且不比源图旧就直接读小图，
-省掉整张原图的解码：详情页每次切阶段都会重建图条，而源图动辄
-两三千像素。
 
 ---
 
@@ -3460,6 +4138,8 @@ PDF/图片渲染：整页大图、页缩略图（带磁盘缓存）与去底色�
 | PRINT_PREVIEW_TARGET_EDGE | `1600` |
 | PRINT_PREVIEW_MIN_PX_PER_MM | `2.0` |
 | PRINT_PREVIEW_MAX_PX_PER_MM | `8.0` |
+| THUMB_YIELD_RATIO | `0.5` |
+| _PDF_DOC_CACHE_MAX | `2` |
 
 ### `class PreviewWorker(QObject)`
 
@@ -3469,10 +4149,11 @@ PDF/图片渲染：整页大图、页缩略图（带磁盘缓存）与去底色�
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(path: Path, page: int=0, longest_edge: int \| None=1200, thumbnails: bool=False, cache_dir: Path \| None=None, effect: dict \| None=None, print_spec: dict \| None=None)` | 构造预览渲染 worker。 |
+| `__init__(path: Path, page: int=0, longest_edge: int \| None=1200, thumbnails: bool=False, cache_dir: Path \| None=None, effect: dict \| None=None, print_spec: dict \| None=None, render_missing: bool=True, pages: list[int] \| None=None)` | 构造预览渲染 worker。 |
+| `cancel() -> None` | 请求中止。 |
 | `run() -> None` | 按构造参数渲染单页大图或批量页缩略图，发出 finished/thumbnail_ready。 |
 
-##### `__init__(path: Path, page: int=0, longest_edge: int | None=1200, thumbnails: bool=False, cache_dir: Path | None=None, effect: dict | None=None, print_spec: dict | None=None)`
+##### `__init__(path: Path, page: int=0, longest_edge: int | None=1200, thumbnails: bool=False, cache_dir: Path | None=None, effect: dict | None=None, print_spec: dict | None=None, render_missing: bool=True, pages: list[int] | None=None)`
 
 构造预览渲染 worker。
 
@@ -3481,30 +4162,78 @@ thumbnails=True 时渲染全部页缩略图到 cache_dir（命中则复用缓存
 effect 为去底色合成参数 {boxes, area, border}，仅对单图生效。
 print_spec 为第四步「打印效果」参数
 {"args": print 参数, "index": 0-based 页序, "total": 总页数, "name": 文件名}，
-非空时把图片按 utils.page_layout 的几何排进一张纸（仅内存，不落盘）。
+非空时把图片按 utils.page_layout 的几何排进一张纸（仅内存，不落盘）；
+另可给 "target_edge"：按该边长反推像素密度**重新排版**（标题/页码是
+重新绘制的，放到 4000px 依然锐利）。⚠️ 这个密度应当**高于屏幕需求**
+（超采样）——Qt 一次大比例缩小的质量明显差于分两档温和缩放，实测
+「合成 3000px」的锐度接近理论理想，而「合成 = 显示尺寸」反而最糊。
+密度的上限由 compose_print_page 夹住（不超过源图原生密度）。
+⚠️ 给了 target_edge 时，longest_edge 应传 0（画布已按该密度合成，
+再缩一次纯粹白扔细节）。
+
+`render_missing=False`：**只读缓存，不渲染缺页**。给「另一个生产者
+正在填这个缓存目录」的场景用（导入后台任务在逐页写缩略图）——两边
+各跑一遍全量渲染等于把工作量翻倍，而且两个 PyMuPDF 循环会互相抢
+GIL，界面直接冻住（2026-09-25 实测）。
+`pages`：只处理这些页（None = 全部）；配合 render_missing=False 就是
+「只把我还没有的那几页从缓存里读出来」。
+
+##### `cancel() -> None`
+
+请求中止。
+
+批量缩略图（整本几百上千页）会在**下一页开头**退出——已经渲好的页都已
+落盘，重进会命中缓存，不会白干。单页渲染不可中断（一次 get_pixmap
+只有 ~160ms，等它一下比打断安全）。
 
 ### 模块函数
 
 | 函数 | 说明 |
 | --- | --- |
-| `compose_region_output(image: QImage, boxes: list, area: int, border_mm, dpi: int=300) -> list` | 按 crop/cropremove 的 area/border 规则，合成"效果预览图"列表。 |
+| `region_canvas_specs(image_size: tuple[int, int], boxes: list, area: int, border_mm, dpi: int=300, full: bool=False) -> list` | compose_region_output 的**纯几何**部分：返回 ``[(画布尺寸, sources)]``。 |
+| `compose_region_output(image: QImage, boxes: list, area: int, border_mm, dpi: int=300, full: bool=False) -> list` | 按 crop/cropremove 的 area/border 规则，合成"效果预览图"列表。 |
+| `close_cached_documents() -> None` | 关掉共享文档缓存里的全部文档，释放 Windows 文件句柄。 |
 | `preview_px_per_mm(page_w_mm: float, page_h_mm: float, target_edge: int=PRINT_PREVIEW_TARGET_EDGE) -> float` | 按纸张尺寸给出效果预览的像素密度（px/mm）。 |
 | `qt_family_for_file(path: str) -> str \| None` | 按**字体文件**加载并取回 Qt 族名；失败返回 None。 |
 | `preview_text_font(spec, px_per_mm: float) -> QFont` | 按 PrintTextSpec 与像素密度给出**已设好像素大小**的字体。 |
 | `compose_print_page(image: QImage, plan, px_per_mm: float \| None=None) -> QImage` | 按 ``utils.page_layout.PrintPagePlan`` 合成"打印效果"位图。 |
 | `compose_outputs_horizontal(outputs: list, gap: int=12) -> QImage` | 多张输出横向拼接为一张展示图（灰底间隔，便于区分各框输出）。 |
 
-#### `compose_region_output(image: QImage, boxes: list, area: int, border_mm, dpi: int=300) -> list`
+#### `region_canvas_specs(image_size: tuple[int, int], boxes: list, area: int, border_mm, dpi: int=300, full: bool=False) -> list`
+
+compose_region_output 的**纯几何**部分：返回 ``[(画布尺寸, sources)]``。
+
+不碰位图——只依据图片**尺寸**（QImageReader 读文件头即可拿到）就能
+算出每张输出画布的大小与贴图来源。第三步提交据此**预先算好输出
+文件名**（张数 × 名称），再并行处理各页；规则仍然只有这一份。
+
+``full=True`` 表示这一页是整幅内容(fullcontent)。整幅页整页只有一个内容区，
+area 1/2/3 对「怎么分栏/怎么合并」的规则都不适用，因此这里把它的框**归一并
+整页**（`utils.box_geometry.whole_page_box`）——于是整幅页在 area 1/2/3/4 下
+行为一致，都等价 area=4（整页）；既不做对称镜像，也不紧裁掉页边。
+调用方通常直接传 ``is_full_content(原始槽位列表)`` 的结果。
+
+#### `compose_region_output(image: QImage, boxes: list, area: int, border_mm, dpi: int=300, full: bool=False) -> list`
 
 按 crop/cropremove 的 area/border 规则，合成"效果预览图"列表。
 
 **几何规则来自 utils.box_geometry**（与 functions/text_region.py 的 CLI
 输出共用同一份实现），本函数只负责用 QImage 把布局画出来——这样规则
-不会因数像素后端不同而被复制成两份。
+不会因数像素后端不同而被复制成两份。几何部分见 `region_canvas_specs`。
 
 与原实现的一处行为修正：area=3 + 双框 + border=None 时，并集区域现在
 **写回原位置**（此前被搬到画布左上角）。规格见
 docs/functions/cropremove.md:57「area=3 → 单图，ROI 写回原位置」。
+
+``full`` 语义见 `region_canvas_specs`（整幅页内容区＝整页，area 1/2/3/4 一致）。
+
+#### `close_cached_documents() -> None`
+
+关掉共享文档缓存里的全部文档，释放 Windows 文件句柄。
+
+⚠️ 删除任务/关闭文档前必须调用：缓存里的 Document 一直握着 PDF 文件，
+Windows 上不先关掉，`rmtree` 会一直 PermissionError（store 的重试兜底
+救不了"永远不关"的句柄）。会等到当前正在跑的那次渲染结束（≤几百 ms）。
 
 #### `qt_family_for_file(path: str) -> str | None`
 
@@ -3568,6 +4297,7 @@ PDF 仍要走「生成 PDF」按钮（functions/print.py）。
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(image_path: str, args: dict, out_dir: str, token: object) -> None` | 参数: |
+| `cancel() -> None` | 请求放弃计算。token 守卫只丢**结果**不省**算力**：连拖滑块时 |
 | `run() -> None` | 线程入口：算完发 finished，异常发 failed（不抛到线程外）。 |
 
 ##### `__init__(image_path: str, args: dict, out_dir: str, token: object) -> None`
@@ -3578,16 +4308,175 @@ args: rembg 面板收集的参数（offset/type/seal/…）。
 out_dir: 实时暂存目录（``services.rembg_live.live_dir``）。
 token: 本次请求的标识，供宿主判断结果是否已过期。
 
+##### `cancel() -> None`
+
+请求放弃计算。token 守卫只丢**结果**不省**算力**：连拖滑块时
+每次派发都先取消上一单，别让几个 numpy 重活同时抢 GIL
+（2026-09-26 第二轮审计 L2）。
+
+##### `run() -> None`
+
+线程入口：算完发 finished，异常发 failed（不抛到线程外）。
+
+⚠️ 取消路径也必须发终态信号（finished/failed 之一），否则线程事件
+循环永不退出（SourceThumbnailsWorker 同款教训）；空路径结果由宿主
+按 token 丢弃。
+
+---
+
+## `desktop.workers.render_lock`
+
+源码：[`desktop/workers/render_lock.py`](../../desktop/workers/render_lock.py)
+
+PDF 页渲染的**单飞锁**：全进程同一时刻只允许一个 PyMuPDF 页渲染。
+
+⚠️ 为什么单独成模块（不放在 ``preview_worker`` 里）
+    导入后台任务（``source_thumbnails_worker``）也要用这把锁，而
+    ``preview_worker`` 是 500+ 行的重模块（还带着第四步效果合成的整套依赖）。
+    从它 import 会把这些依赖拖进**启动路径**——`desktop/workers/__init__.py`
+    的惰性导出正是为了避免这件事。所以锁放在这个零依赖的小模块里，谁都能引。
+
+⚠️ 谁必须走它
+    **任何**从 PDF 页渲位图的代码：单页预览（``PreviewWorker._render_pdf_page``）、
+    批量缩略图（``PreviewWorker._render_all_thumbnails``）、导入后台任务
+    （``SourceThumbnailsWorker._render_page``）。渲染全程攥 GIL ~105–180ms
+    （实测），两个渲染并行 = GIL 互相抢，界面停顿叠加成 N×180ms——用户看到的
+    就是「切缩略图卡、多点几下直接卡死」。串行化之后停顿上限收敛到**单次渲染**，
+    且不随点击次数/页数增长。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `single_flight() -> threading.Lock` | 取单飞锁。用法：``with single_flight(): ...渲染一页...``。 |
+
+#### `single_flight() -> threading.Lock`
+
+取单飞锁。用法：``with single_flight(): ...渲染一页...``。
+
+⚠️ 只把**渲染本身**（load_page + get_pixmap + tobytes）包进锁：写盘、
+``QImage.fromData``、让出 GIL 的 sleep 都放锁外——否则别的渲染请求要陪着
+等 I/O，锁的粒度就过粗了。
+
+---
+
+## `desktop.workers.serial_jobs`
+
+源码：[`desktop/workers/serial_jobs.py`](../../desktop/workers/serial_jobs.py)
+
+串行后台任务队列：同一时刻只跑一个 job，且**等界面画完再开工**。
+
+## 为什么必须串行
+
+导入 PDF 后要跑「复制源文件 + 渲染整本缩略图」，那是 PyMuPDF 的密集 C 调用。
+原先每次导入都起一个线程、且不设上限，多个渲染线程同时跑就会争抢 GIL，
+主线程的每一次文件操作都被排到 GIL 队列后面：
+
+| 并发渲染线程 | 0 | 1 | 4 | 8 | 15 |
+|---|---|---|---|---|---|
+| 主线程 `create_task` 中位 | 5.5ms | 98ms | 216ms | 608ms | **1500ms** |
+
+对照实验排除了磁盘因素：后台**纯写盘**（狂写 8KB 文件、期间落盘 1110 个文件）
+对主线程 0 影响（stat 0.09ms、读 3KB 0.11ms、写 0.7ms）——是 GIL/线程调度，
+不是 I/O、不是 fsync、也不是 tasks.json 的体积。串行 + 每页让出 GIL 后
+主线程回到 16ms（脚本见 ``.workbuddy/perf/``）。
+
+## 为什么还要「扣住不放行」
+
+列表出现新行必须读 N 个任务的 runs.json。无争抢时 18 个任务只要 7.5ms；
+一旦和渲染线程撞上，每个文件操作都要等 GIL，实测「导入 → 看见新行」从
+0.2s 变成 0.5~2.5s。所以新 job 提交后先**扣住**，等页面把列表画完调
+``release()`` 再开工；同时留一个超时兜底，信号丢了也不会永远不干活。
+
+### `class SerialJobQueue(QObject)`
+
+把一次性后台 job 串成一条队列，并支持「界面画完再放行」。
+
+用法：``submit(worker, label, on_warning=..., on_failed=...)`` 排队，
+``release()`` 放行，``shutdown()`` 收尾。
+
+进度信号（job_started / progress / job_finished）供页面显示「正在导入」
+提示条：整本缩略图可能要跑几十秒，用户必须看得到它还在干活。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(owner: QObject)` | owner 为宿主 widget（主线程）；线程与中继都挂在它下面。 |
+| `submit(worker: QObject, label: str='', on_warning=None, on_failed=None, tag: str \| None=None) -> None` | 排队一个 job；等 ``release()``（或超时）后按提交顺序执行。 |
+| `release() -> None` | 界面画完了：放行排队中的 job（重复调用无副作用）。 |
+| `running_count() -> int` | 正在跑的 job 数（0 或 1）。 |
+| `pending_count() -> int` | 排队中的 job 数。 |
+| `current_label() -> str` | 正在跑的 job 的名字（没在跑就是空串）。 |
+| `busy() -> bool` | 还有 job 在跑或排队。 |
+| `cancel_tag(tag: str \| None, wait_ms: int=3000) -> bool` | 取消某个 tag（任务）名下的活：丢掉排队的、让在跑的收手并等它。 |
+| `shutdown(wait_ms: int=800) -> None` | 退出收尾：停表、丢弃排队的活、让当前 job 尽快退出。 |
+
+##### `submit(worker: QObject, label: str='', on_warning=None, on_failed=None, tag: str | None=None) -> None`
+
+排队一个 job；等 ``release()``（或超时）后按提交顺序执行。
+
+`tag` 给这个 job 打归属标记（本项目传 task_id），供 `cancel_tag` 精确
+取消"某个任务的活"——删任务时必须先停掉它自己的后台导入，否则
+`rmtree` 会撞上正在写的文件（见 `cancel_tag`）。
+
+##### `cancel_tag(tag: str | None, wait_ms: int=3000) -> bool`
+
+取消某个 tag（任务）名下的活：丢掉排队的、让在跑的收手并等它。
+
+⚠️ 为什么需要它（2026-09-26 审计）：`delete_task` 只关预览缓存就删目录，
+不管该任务**自己的**后台导入（复制源文件 + 渲染整本缩略图，2400 页要
+69s）。`rmtree` 撞上正在写的文件 → 重试 8 次后失败，用户看到
+「文件正被占用」；更糟的是删完后台线程还按旧路径继续写。
+
+返回 True 表示该任务名下的活已经全部停下（可以安全删目录）；
+False 表示超时仍未收手（调用方应告知用户稍后重试，别硬删）。
+
+##### `shutdown(wait_ms: int=800) -> None`
+
+退出收尾：停表、丢弃排队的活、让当前 job 尽快退出。
+
+当前 job 的 ``cancel()`` 让它在下一次循环检查时收手（整本可能几千页，
+不能傻等）；随后 ``quit()`` 结束线程事件循环。
+
 ---
 
 ## `desktop.workers.source_thumbnails_worker`
 
 源码：[`desktop/workers/source_thumbnails_worker.py`](../../desktop/workers/source_thumbnails_worker.py)
 
-导入 PDF 后逐页渲染缩略图，落盘到任务目录的 thumbnails/source/。
+导入后的一次性后台准备：**保住源文件副本 + 逐页渲染缩略图**。
 
 命名与 PDF 预览查看器的页缩略图缓存一致（{page}.jpg，0 起始），
 预览打开时直接命中缓存，不再重复渲染；该目录永不清理。
+
+⚠️ 顺序：**缩略图先行、复制并行**（2026-09-25 改）
+    原先「先复制 802MB、再从副本渲染缩略图」是串行的。复制本身不慢
+    （SSD 实测 0.73s / 794MB），但慢盘上它可能是几十秒；而这段时间里
+    用户已经点进详情页、要看的就是缩略图——他等的是**缩略图**，不是副本。
+    现在：复制丢进独立线程（纯 I/O，不占 GIL），缩略图**立刻从源文件**
+    开渲，首批（一屏可见量）先出；首批做完再等副本落地，后续页改从副本
+    继续渲染（源文件之后被挪走/删掉也不影响剩下的页）。
+
+⚠️ 为什么要每页让出 GIL
+    PyMuPDF 渲染一页扫描件（5000×4400 的内嵌 JPEG）要 ~160ms，而且这
+    160ms 里几乎一直持有 GIL：实测另一线程每 1ms 的心跳被拖到 175ms，
+    只让 3ms 的话主线程只拿到 ~2% 的时间片——用户看到的正是「导入期间
+    整个界面卡住」。现在让出量**按刚花掉的耗时成比例**（×0.5，上限 60ms），
+    界面拿到约 1/3 的时间片；代价是整本渲染慢约 50%，而它是纯后台活。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| FIRST_SCREEN_PAGES | `16` |
+| BATCH_PAGES | `8` |
+| BATCH_GAP_MS | `120` |
+| GIL_YIELD_RATIO | `0.5` |
+| GIL_YIELD_MIN_MS | `3` |
+| GIL_YIELD_MAX_MS | `60` |
+| MIN_THUMB_BYTES | `512` |
+| FINAL_COPY_WAIT_S | `5.0` |
 
 ### `class SourceThumbnailsWorker(QObject)`
 
@@ -3597,21 +4486,42 @@ token: 本次请求的标识，供宿主判断结果是否已过期。
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(pdf_path: Path, out_dir: Path, edge: int=THUMBNAIL_EDGE)` | 构造源 PDF 页缩略图 worker。 |
-| `run() -> None` | 逐页渲染缩略图落盘；任务目录被删时中止并报 failed。 |
+| `__init__(pdf_path: Path, out_dir: Path, edge: int=THUMBNAIL_EDGE, copy_to: Path \| None=None)` | 构造源 PDF 页缩略图 worker。 |
+| `cancel() -> None` | 请求中止：渲染循环在下一页之前退出（关程序用，不必等整本跑完）。 |
+| `wait_copy(timeout: float) -> bool` | 等复制线程收手，最多 `timeout` 秒；返回是否已结束。 |
+| `run() -> None` | 并行复制 + 逐页渲染缩略图；任务目录被删时中止并报 failed。 |
 
-##### `__init__(pdf_path: Path, out_dir: Path, edge: int=THUMBNAIL_EDGE)`
+##### `__init__(pdf_path: Path, out_dir: Path, edge: int=THUMBNAIL_EDGE, copy_to: Path | None=None)`
 
 构造源 PDF 页缩略图 worker。
 
 pdf_path 为源文件；out_dir 为 thumbnails/source/；edge 最长边
 （默认 256）。缩略图命名 {page+1:04d}.jpg，与预览缓存一致。
 
+copy_to 给了就**另起一个线程**把它复制成任务目录里的源文件副本
+（原子落地）；缩略图不等它——先用源文件渲首批，副本落地后剩下的页
+再从副本渲。源文件随后被移动/删除都不影响已落地的副本。
+
+##### `wait_copy(timeout: float) -> bool`
+
+等复制线程收手，最多 `timeout` 秒；返回是否已结束。
+
+⚠️ 为什么需要（2026-09-26 审计）：复制是在**独立 daemon 线程**里做的，
+`cancel()` 只置渲染循环的中止标志，打不断正在写的复制。而复制中的
+`.part` 文件是**打开的句柄**——删任务时 `rmtree` 会一直
+`PermissionError`（Windows）。所以删任务前必须给复制一个收手的机会。
+
 ##### `run() -> None`
 
 装饰器：`Slot()`
 
-逐页渲染缩略图落盘；任务目录被删时中止并报 failed。
+并行复制 + 逐页渲染缩略图；任务目录被删时中止并报 failed。
+
+⚠️ **顺序：缩略图一秒都不等复制**。复制丢进独立线程，缩略图立刻从
+**源文件**开渲、首批（一屏）先出；页间只顺路看一眼复制好了没
+（`is_alive()`，**不 join**），好了就换成从副本继续——源文件之后被
+挪走/删掉也不影响剩下的页。慢盘上复制 700MB 要几十秒，任何"等它"
+都会把整本缩略图停住，用户看到的就是"导入是串行的"。
 
 ⚠️ **每页先查缓存**：命名与预览查看器的缓存一致（``0001.jpg``），
 已存在且不比源 PDF 旧的直接跳过。否则重复导入同一份 PDF（或把任务
@@ -3652,6 +4562,12 @@ pdf_path 为源文件；out_dir 为 thumbnails/source/；edge 最长边
 
 WorkerHost：在拥有者 widget 内启动一次性后台 worker 线程并自动回收。
 
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| _DETACHED_THREADS | `[]` |
+
 ### `class WorkerHost`
 
 Mixin：在拥有者 widget 内启动一次性后台 worker 线程。
@@ -3661,7 +4577,7 @@ Mixin：在拥有者 widget 内启动一次性后台 worker 线程。
 | 方法 | 说明 |
 | --- | --- |
 | `run_worker(factory, wire) -> None` | 启动一次性 worker 线程并登记引用以便回收。 |
-| `shutdown_workers() -> None` | 退出并等待所有后台线程（最多 800ms/线程），随后清空引用。 |
+| `shutdown_workers() -> None` | 退出并等待所有后台线程，随后清空引用表。 |
 
 ##### `run_worker(factory, wire) -> None`
 
@@ -3670,11 +4586,22 @@ Mixin：在拥有者 widget 内启动一次性后台 worker 线程。
 factory() 负责造 worker，wire(worker, thread) 负责连信号；线程结束后
 worker 自动 deleteLater 并移出引用表，避免长会话下线程对象堆积。
 
+##### `shutdown_workers() -> None`
+
+退出并等待所有后台线程，随后清空引用表。
+
+先给每个 worker 发一次 `cancel()`（有的话）——批量缩略图那种长循环
+只有收到中止信号才会在页边界退出（见 `PreviewWorker.cancel`），
+不然 `wait` 注定超时、线程被摘出去后还在后台啃 GIL。
+等不到的线程交给 `stop_thread` 摘出父对象（否则 QThread 在运行中被销毁
+会让 Qt abort —— 见 `stop_thread` 的说明）。
+
 ### 模块函数
 
 | 函数 | 说明 |
 | --- | --- |
 | `connect_queued(owner, signal, slot, thread=None) -> QObject` | worker 信号 → 主线程闭包的**唯一正确写法**，返回中继对象。 |
+| `stop_thread(thread: QThread, timeout_ms: int, label: str) -> bool` | 请线程收手并最多等 `timeout_ms`；等不到就**摘下来别让它被销毁**。 |
 
 #### `connect_queued(owner, signal, slot, thread=None) -> QObject`
 
@@ -3690,5 +4617,20 @@ worker 信号 → 主线程闭包的**唯一正确写法**，返回中继对象�
 
 owner 为宿主 widget（主线程），thread 给了就在线程结束时回收中继，
 避免长会话反复加载累积出一批中继对象。
+
+#### `stop_thread(thread: QThread, timeout_ms: int, label: str) -> bool`
+
+请线程收手并最多等 `timeout_ms`；等不到就**摘下来别让它被销毁**。
+
+返回 True 表示已结束。
+
+为什么不能只 `quit()+wait()+丢引用`（2026-09-26 审计）
+    `quit()` 只结束线程的事件循环，打不断正在执行的槽。本项目里
+    `PreviewWorker._render_all_thumbnails`（整本缩略图）与 `PreviewWorker`
+    的单页渲染都是长阻塞循环，`HashWorker` 要算完整本 PDF 的 SHA-256
+    （800MB 约 1~2s）。这些线程都 parent 在 widget 上，而项目的退出路径是
+    「worker 线程仍在跑时先销毁 widget」→ QThread 对象被销毁 → Qt abort
+    （用户看到的是"关程序时崩一下"）。等不到时的正确做法不是假装成功，
+    而是把线程从父对象上摘下来、由模块级列表持有引用，让它自然跑完。
 
 ---

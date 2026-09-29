@@ -1,22 +1,27 @@
 # -*- coding: utf-8 -*-
-"""阶段控制面板基类：标题 + 说明 + 参数表单骨架。
+"""阶段控制面板基类：标题 + 问号帮助按钮 + 参数表单骨架。
 
-标题与说明都开启换行——右侧参数卡片只有 340~580px 宽，长说明不换行会
-把面板撑出横向边界（原来靠各子类自己调 setWordWrap 兜着）。
+阶段说明（description）不再平铺在标题下方占高度，改由标题右侧的问号按钮
+承载：hover 弹 qfluentwidgets 的 ToolTip 气泡，点击弹 Flyout（内容自动换行）。
 """
 
 from __future__ import annotations
 
 import re
+import textwrap
 
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QLabel, QLineEdit,
-    QSpinBox, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QLabel,
+    QLineEdit, QSpinBox, QVBoxLayout, QWidget,
 )
-from qfluentwidgets import ComboBox, ScrollArea
+from qfluentwidgets import (
+    ComboBox, Flyout, FlyoutAnimationType, FlyoutView, ScrollArea,
+    ToolTipFilter, ToolTipPosition, TransparentToolButton,
+)
 
 from desktop.ui import theme as T
+from desktop.ui.icons import HELP_CIRCLE
 from desktop.ui.widgets import apply_to
 
 
@@ -33,6 +38,36 @@ def default_for(parameters: dict, defaults: dict, key: str):
     if value is None:
         return defaults.get(key)
     return value
+
+
+#: 阶段说明气泡每行的字符数（按 CJK 字宽估）：太窄频繁折行难读，
+#: 太宽气泡会顶到屏幕边。26 字 ≈ 气泡宽 360px 上下。
+HELP_TOOLTIP_WIDTH = 26
+
+#: 说明气泡（ToolTip / Flyout）内容最大宽度：与 hover 气泡同宽量级。
+HELP_BUBBLE_WIDTH = 360
+
+
+def _wrap_help_text(text: str, width: int = HELP_TOOLTIP_WIDTH) -> str:
+    """把说明按固定字符数折行（ToolTip 气泡的 label 不开 wordWrap，必须预折）。"""
+    return "\n".join(textwrap.wrap(text, width=width))
+
+
+class _WrapFlyoutView(FlyoutView):
+    """内容自动换行、整体限宽的 FlyoutView。
+
+    ⚠️ 只给 contentLabel 开 wordWrap + setMaximumWidth **不够**：
+    ``FlyoutView._adjustText`` 会先按屏幕宽把内容预折成最长 120 字符的行，
+    label 的**期望宽度**（sizeHint）因此很大；气泡（本 view）若不限宽，
+    Flyout 就按这个大 hint 撑开，文字却只渲染在左侧 360px 里——
+    右侧一大块空白，看起来就是「气泡无限宽」。所以限宽必须加在整个 view 上。
+    """
+
+    def __init__(self, title: str, content: str, parent=None):
+        super().__init__(title, content, parent=parent)
+        self.contentLabel.setWordWrap(True)
+        self.contentLabel.setMaximumWidth(HELP_BUBBLE_WIDTH)
+        self.setMaximumWidth(HELP_BUBBLE_WIDTH)
 
 
 class _ShrinkableForm(QWidget):
@@ -55,7 +90,7 @@ class _ShrinkableForm(QWidget):
 
 
 class StagePanel(QWidget):
-    """阶段控制面板：标题 + 说明 + 参数表单。子类实现 _build_form/get_args。"""
+    """阶段控制面板：标题（含问号帮助按钮）+ 参数表单。子类实现 _build_form/get_args。"""
 
     stage: str = ""
     title: str = ""
@@ -65,33 +100,69 @@ class StagePanel(QWidget):
     param_edited = Signal()
 
     def __init__(self, parent=None):
-        """构建面板骨架：标题 + 说明 + 参数表单容器。
+        """构建面板骨架：标题行 + 参数表单容器。
 
-        title/description 来自子类类属性并开启换行，避免窄面板被长说明撑破；
-        随后调用 build_form 生成子类表单并占满剩余垂直空间，最后统一把表单
-        里输入控件的信号接到 ``param_edited``（供参数暂存）。
+        title 来自子类类属性；description 不再平铺占高度，改挂在标题右侧
+        问号按钮上（hover 出 ToolTip 气泡、点击出 Flyout）。随后调用
+        build_form 生成子类表单并占满剩余垂直空间，最后统一把表单里输入
+        控件的信号接到 ``param_edited``（供参数暂存）。
         """
         super().__init__(parent)
         # ⚠️ 必须在 build_form 之前置位：子类构造期会调 _apply_args 复位，
         # 那时还没接信号，但保持"回填不算用户改动"的语义始终成立
         self._applying = False
+        self._help_flyout: Flyout | None = None
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(T.SPACE_SM)
 
+        # 标题不参与拉伸：问号按钮要紧贴标题文字末尾，多余空间留在行尾
+        title_row = QHBoxLayout()
+        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setSpacing(T.SPACE_XS)
         self.title_label = QLabel(self.title)
         apply_to(self.title_label, T.SIZE_SUBTITLE, bold=True, color=T.INK)
         self.title_label.setWordWrap(True)
-        layout.addWidget(self.title_label)
+        title_row.addWidget(self.title_label)
 
-        self.desc_label = QLabel(self.description)
-        apply_to(self.desc_label, T.SIZE_CAPTION, color=T.INK_FAINT)
-        self.desc_label.setWordWrap(True)
-        layout.addWidget(self.desc_label)
+        if self.description:
+            self.help_button = TransparentToolButton(HELP_CIRCLE, self)
+            self.help_button.setFixedSize(26, 26)
+            self.help_button.setIconSize(QSize(18, 18))
+            self.help_button.setCursor(Qt.CursorShape.PointingHandCursor)
+            # hover 出气泡（ToolTip label 不换行，文字已预折行）
+            self.help_button.setToolTip(_wrap_help_text(self.description))
+            self.help_button.installEventFilter(
+                ToolTipFilter(self.help_button, showDelay=300,
+                              position=ToolTipPosition.BOTTOM)
+            )
+            # 点击出 Flyout（内容自动换行，点气泡外任意处关闭）
+            self.help_button.clicked.connect(self._toggle_help_flyout)
+            title_row.addWidget(self.help_button, 0, Qt.AlignmentFlag.AlignTop)
+        title_row.addStretch(1)
+        layout.addLayout(title_row)
 
         layout.addWidget(self.build_form())
         self._connect_param_edit_signals()
         layout.addStretch()
+
+    def _toggle_help_flyout(self) -> None:
+        """点问号按钮：弹出/关闭说明 Flyout（再点一次或点气泡外关闭）。
+
+        ⚠️ 用 DROP_DOWN（按钮下方弹出）：按钮在面板顶部，PULL_UP（向上）
+        会被屏幕边缘夹到窗口顶端，看起来像弹错了地方。
+        """
+        if self._help_flyout is not None and self._help_flyout.isVisible():
+            self._help_flyout.close()
+            return
+        view = _WrapFlyoutView(self.title, self.description)
+        self._help_flyout = Flyout.make(
+            view, target=self.help_button, parent=self.window(),
+            aniType=FlyoutAnimationType.DROP_DOWN,
+        )
+        # Flyout 默认 isDeleteOnClose：点气泡外/再点按钮关闭后 C++ 对象会被
+        # 销毁，不清引用的话下次点击就是对已删对象调 isVisible() → RuntimeError
+        self._help_flyout.destroyed.connect(lambda *_: setattr(self, "_help_flyout", None))
 
     # ------------------------------------------------------------------ 参数变动
     def _connect_param_edit_signals(self) -> None:

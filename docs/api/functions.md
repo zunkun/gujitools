@@ -4,7 +4,7 @@
 
 图像处理功能模块：GUI 与 CLI 共用同一套算法
 
-覆盖 11 个模块、11 个公开类、35 个公开函数/方法（生成于 2026-09-22）。
+覆盖 11 个模块、12 个公开类、43 个公开函数/方法（生成于 2026-09-29）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -16,13 +16,13 @@
 | [`functions.base`](#functionsbase) | 1 | 4 |
 | [`functions.crop`](#functionscrop) | 1 | 1 |
 | [`functions.crop_remove`](#functionscrop_remove) | 1 | 1 |
-| [`functions.detect`](#functionsdetect) | 2 | 9 |
+| [`functions.detect`](#functionsdetect) | 3 | 16 |
 | [`functions.extract`](#functionsextract) | 1 | 2 |
 | [`functions.init`](#functionsinit) | 1 | 3 |
 | [`functions.print`](#functionsprint) | 1 | 2 |
 | [`functions.rembg`](#functionsrembg) | 1 | 2 |
 | [`functions.text_region`](#functionstext_region) | 1 | 2 |
-| [`functions.yolo_service`](#functionsyolo_service) | 1 | 8 |
+| [`functions.yolo_service`](#functionsyolo_service) | 1 | 9 |
 
 ---
 
@@ -37,7 +37,7 @@ File: functions/__init__.py
 - `base.py`: FunctionBase 基类，提供输入路径解析、输出路径计算、并发执行引擎。
 - `text_region.py`: TextRegionProcessor 基类，封装 YOLO 检测 + area/border 规则 + 输出构建。
 - `extract.py`: 从 PDF 提取页面图片（ExtractFunction）。
-- `detect.py`: 检测整页图片的左右文本框，只上报坐标不写盘（DetectFunction）。
+- `detect.py`: 检测整页图片的内容框（半幅左右 / 整幅），只上报坐标不写盘（DetectFunction）。
 - `crop.py`: 裁剪原图像素（CropFunction），继承 TextRegionProcessor。
 - `rembg.py`: 整图去底色/二值化/印章保留（RembgFunction）。
 - `crop_remove.py`: 裁剪 + 去底色（CropRemoveFunction），继承 TextRegionProcessor。
@@ -217,12 +217,29 @@ self.outpath，使输出落入 rembg 目录。
 源码：[`functions/detect.py`](../../functions/detect.py)
 
 File: functions/detect.py
-检测功能：在整页图片中检测左右两个文本框。
+检测功能：在整页图片中检测内容框（半幅左右两栏 / 整幅单区）。
 
 这是「检测」这一步的唯一实现——`crop = detect + 裁剪`、`cropremove =
-detect + 裁剪 + 去底色`，两者都通过本模块拿到左右框，而不是各自调用
-`utils.detect_left_right_boxes`。GUI 的 detect 阶段同样复用这里，因此
+detect + 裁剪 + 去底色`，两者都通过本模块拿框，而不是各自调用
+`utils.detect_content_boxes`。GUI 的 detect 阶段同样复用这里，因此
 「CLI 与 desktop 用同一套算法、只是参数不同」在检测这一步也成立。
+
+**两类内容框**（模型 `weights/bookcontent.pt`，两类对一页互斥）：
+- `harfcontent`（半幅，原 `bookcontent` 改名）：双栏排版中的一栏，一页最多
+  左右两个框 → 检测结果落在 `PageBoxes.left` / `PageBoxes.right`；
+- `fullcontent`（整幅）：整页只有一个内容区 → 落在 `PageBoxes.full`，
+  **不**按中线拆分（否则会被误判成左栏或右栏）。
+
+⚠️ 模型偶尔会在同一页同时给出两类，因此检测后按**互斥规则**强制消解
+（`utils.yolo_utils.resolve_content_boxes`，与参考实现
+`gujitrain/test/predict_bookcontent.py` 同规则）：
+
+1. **窄整幅剔除**：整幅框宽必须 > 页宽的 70%，否则视为失败检测丢弃；
+2. **双半幅压制整幅**：半幅 ≥2 个 → 整幅框一律删；
+3. **单半幅比置信度**：半幅恰好 1 个 → 与置信度最高的整幅比，整幅严格更高
+   才留整幅（平局留半幅）；没有半幅时整幅原样保留。
+
+消解结果由 `PageBoxes.notes` 带出（触发了哪条规则），CLI 与 GUI 都会打出来。
 
 与其它功能类的区别：
 - **`save` 决定是否落盘**。不带 `--save` 时 `self.outpath = None`，不计算路径、
@@ -238,13 +255,54 @@ detect + 裁剪 + 去底色`，两者都通过本模块拿到左右框，而不�
 - **`execute()` 被重写**：基类语义是「建目录 → 处理 → 落盘 → 统计」，
   对不落盘的检测无意义。
 
+### `class PageBoxes(NamedTuple)`
+
+一页的检测框结果。
+
+三类字段互斥地描述**同一页**的形态（模型两类对一页互斥）：
+
+- 半幅页（harfcontent）：``left`` / ``right`` 各可能有值，另一侧为 None；
+- 整幅页（fullcontent）：只有 ``full`` 有值，``left`` / ``right`` 为 None；
+- 无框：三者皆 None。
+
+⚠️ **存储槽位约定**（GUI boxes.json / 检测事件 / 下游布局共用）：
+``slots()`` 给出的槽位数编码形态——半幅固定 2 槽 ``[左, 右]``（保留左右
+身份，缺失侧为 None），整幅只占 1 槽 ``[整幅]``。下游据此判断整幅页：
+整幅页的内容区就是整页，**area 1/2/3/4 行为一致**（都等价 area=4，
+见 `utils.box_geometry.whole_page_box`）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `is_full() -> bool` | 本页是否为「整幅」内容（fullcontent）。半幅优先（见 :meth:`slots`）。 |
+| `has_any() -> bool` | 本页是否检出了任何框。 |
+| `conflict() -> bool` | 是否同时检出了半幅与整幅。 |
+| `slots() -> list` | 按**槽位约定**给出框列表（半幅 2 槽 / 整幅 1 槽 / 无框空）。 |
+
+##### `conflict() -> bool`
+
+装饰器：`property`
+
+是否同时检出了半幅与整幅。
+
+**消解之后必定为 False**（见 `utils.yolo_utils.resolve_content_boxes`）；
+保留此判据只为防御手工构造 / 旧存档数据。
+
+##### `slots() -> list`
+
+按**槽位约定**给出框列表（半幅 2 槽 / 整幅 1 槽 / 无框空）。
+
+半幅优先于整幅：万一两类同时存在（消解失灵 / 手工构造），按半幅处理——
+保证「harfcontent 逻辑与原来完全一致」，整幅不会把已检出的半幅挤掉。
+
 ### `class DetectReport(NamedTuple)`
 
 一次「按路径检测」的模型来源信息（只为日志服务，不参与任何决策）。
 
 ### `class DetectFunction(FunctionBase)`
 
-检测功能：逐图检测左右文本框并上报坐标。
+检测功能：逐图检测内容框（半幅左右 / 整幅）并上报坐标。
 
 是否落盘由 `save` 决定：关闭时**不生成任何文件**（供代码调用 /
 GUI detect 阶段当中间步骤），开启时把标注图（框 + 坐标文字）落地，
@@ -268,7 +326,7 @@ GUI detect 阶段当中间步骤），开启时把标注图（框 + 坐标文字
 输出规则（`-o` 或默认 `detect` 目录），仅在开启时才创建。
 
 ⚠️ 这里刻意不保存模型实例：检测统一走
-`detect_page_boxes_by_path`——优先交给常驻 YOLO 服务（服务自己读图、
+`detect_page_content_by_path`——优先交给常驻 YOLO 服务（服务自己读图、
 模型全局只加载一次），服务不可用时它自己在本进程内加载一次单例即可
 （`utils.load_yolo_model()` 本身就有双重检查锁）。早先构造期就
 `load_yolo_model()` 会让每一次"服务可用"的检测白付 5 秒。
@@ -285,25 +343,29 @@ GUI detect 阶段当中间步骤），开启时把标注图（框 + 坐标文字
 `--save` 时才做落盘相关的准备。
 
 返回:
-    {"processed": n, "left": n, "right": n, "output": 目录或 None}
+    {"processed": n, "detected": n, "failed": n,
+     "left": n, "right": n, "full": n, "output": 目录或 None}
 
 ### 模块函数
 
 | 函数 | 说明 |
 | --- | --- |
-| `extract_first_box(boxes) -> Optional[Box]` | 从 `detect_left_right_boxes` 的返回里取面积最大的框的 4 个坐标。 |
+| `extract_first_box(boxes) -> Optional[Box]` | 从 `detect_content_boxes` 的返回里取面积最大的框的 4 个坐标。 |
 | `last_detect_report() -> DetectReport` | 取本线程最近一次按路径检测的来源信息（默认 in-process/0.0）。 |
 | `backend_log_line(backend: str, load_seconds: float) -> str` | 把「模型从哪来、加载用了多久」说成一句人读日志（GUI 与 CLI 共用措辞）。 |
 | `warm_up_detect_model() -> Tuple[str, float]` | 准备好检测模型，返回 ``(可写进日志的说明, 本次加载耗时秒)``。 |
-| `detect_page_boxes_by_path(image_path, model=None) -> Tuple[Optional[Box], Optional[Box]]` | 按**路径**检测左右文本框：优先常驻 YOLO 服务，失败回落本进程内。 |
+| `detect_page_content_by_path(image_path, model=None) -> PageBoxes` | 按**路径**检测一页的内容框：优先常驻 YOLO 服务，失败回落本进程内。 |
+| `detect_page_boxes_by_path(image_path, model=None) -> Tuple[Optional[Box], Optional[Box]]` | 兼容入口：只返回 ``(left, right)`` 两个框。 |
 | `format_box(box) -> str` | 把框格式化为 `x1,y1,x2,y2`，None 显示为 `-`（日志用，CLI/GUI 共用一份）。 |
-| `detect_page_boxes(img_bgr, model=None) -> Tuple[Optional[Box], Optional[Box]]` | 检测一页图片的左右文本框，返回 (left_box, right_box)。 |
+| `detect_page_content(img_bgr, model=None) -> PageBoxes` | 检测一页图片的内容框，返回 :class:`PageBoxes`（左右半幅 / 整幅）。 |
+| `detect_page_boxes(img_bgr, model=None) -> Tuple[Optional[Box], Optional[Box]]` | 兼容入口：只返回 ``(left, right)`` 两个框。 |
+| `resolution_note(page: PageBoxes) -> Optional[str]` | 检测后处理（互斥消解）的说明行；没有可说的就返回 None。 |
 
 #### `extract_first_box(boxes) -> Optional[Box]`
 
-从 `detect_left_right_boxes` 的返回里取面积最大的框的 4 个坐标。
+从 `detect_content_boxes` 的返回里取面积最大的框的 4 个坐标。
 
-`detect_left_right_boxes` 返回 ``[(x1, y1, x2, y2, area), ...]``，
+`detect_content_boxes` 各侧返回 ``[(x1, y1, x2, y2, area, conf), ...]``，
 已按面积降序排列，故取 ``[0]`` 即最大候选框。统一在此处裁剪到前 4 个
 元素——此前 CLI 与 GUI 各自写了一遍
 ``left_boxes[0][:4] if left_boxes else None``。
@@ -335,19 +397,19 @@ GUI detect 阶段当中间步骤），开启时把标注图（框 + 坐标文字
 不能落到"第一张图"的耗时里——用户明确提过那样看起来不合理（第一张 5 秒、
 其余 200 毫秒，像是某张图有问题，其实是模型在加载）。
 
-#### `detect_page_boxes_by_path(image_path, model=None) -> Tuple[Optional[Box], Optional[Box]]`
+#### `detect_page_content_by_path(image_path, model=None) -> PageBoxes`
 
-按**路径**检测左右文本框：优先常驻 YOLO 服务，失败回落本进程内。
+按**路径**检测一页的内容框：优先常驻 YOLO 服务，失败回落本进程内。
 
 给"手上有路径"的调用方用（CLI 的 detect/crop/cropremove、GUI 的 detect
 阶段）。服务化只改**模型住在哪个进程**，不改算法：
 
 - 服务可用 → 模型全局只有一份，多个 worker、多次执行、多个线程共用，
   日志里「加载 YOLO 模型完成」只出现一次（在服务进程里）；
-- 服务不可用 → 回落到 ``detect_page_boxes(imread(path), model)``，行为与
+- 服务不可用 → 回落到 ``detect_page_content(imread(path), model)``，行为与
   引入服务之前**完全一致**（最坏就是慢那几秒）。
 
-⚠️ 与 `detect_page_boxes` 的分工：那个是**算法入口**（吃 ndarray，
+⚠️ 与 `detect_page_content` 的分工：那个是**算法入口**（吃 ndarray，
 crop/GUI 都靠它保证框一致，不要绕过）；本函数是**取图方式的选择**，
 内部最终仍然调它。
 
@@ -360,21 +422,52 @@ crop/GUI 都靠它保证框一致，不要绕过）；本函数是**取图方式
         直接用它在进程内算，不再绕服务。
 
 返回:
-    (left_box, right_box)，各为 (x1, y1, x2, y2) 或 None。
+    :class:`PageBoxes`（左右半幅 / 整幅 / 无框）。
 
-#### `detect_page_boxes(img_bgr, model=None) -> Tuple[Optional[Box], Optional[Box]]`
+#### `detect_page_boxes_by_path(image_path, model=None) -> Tuple[Optional[Box], Optional[Box]]`
 
-检测一页图片的左右文本框，返回 (left_box, right_box)。
+兼容入口：只返回 ``(left, right)`` 两个框。
+
+**仅为旧调用方保留签名**（测试/截图工具按 2 元组解包）。整幅页的框折算到
+``left``——新代码请用 :func:`detect_page_content_by_path` 拿 ``full`` 身份，
+否则会把整幅当成"左栏"。
+
+#### `detect_page_content(img_bgr, model=None) -> PageBoxes`
+
+检测一页图片的内容框，返回 :class:`PageBoxes`（左右半幅 / 整幅）。
 
 这是检测算法的**唯一入口**：crop / cropremove / GUI detect 阶段都调用
-它，保证三处的框完全相同。
+它（经 `detect_page_content_by_path` 取图），保证各处的框完全相同。
+互斥消解（窄整幅剔除 / 双半幅压制整幅 / 单半幅比置信度）在底层
+`utils.detect_content_boxes` 内完成，本函数只做「取最大框」与打包。
 
 参数:
     img_bgr: BGR 图像数组（由 `utils.imread` 读取，支持中文路径）。
     model: YOLO 模型实例；None 时使用进程内单例。
 
 返回:
-    (left_box, right_box)，各为 (x1, y1, x2, y2) 或 None。
+    :class:`PageBoxes`。半幅页给 left/right，整幅页给 full；
+    `notes` 带出触发的消解规则（供日志）。
+
+#### `detect_page_boxes(img_bgr, model=None) -> Tuple[Optional[Box], Optional[Box]]`
+
+兼容入口：只返回 ``(left, right)`` 两个框。
+
+**仅为旧调用方保留签名**（测试/截图工具按 2 元组解包）。整幅页的框折算到
+``left``；新代码请用 :func:`detect_page_content`。
+
+#### `resolution_note(page: PageBoxes) -> Optional[str]`
+
+检测后处理（互斥消解）的说明行；没有可说的就返回 None。
+
+模型对一页可能同时给出两类框（实测把推理尺寸调到 1280 时会出现
+「整幅-半幅-整幅-半幅」四个框），因此检测后按互斥规则消解——
+见 `utils.yolo_utils.resolve_content_boxes`：
+窄整幅剔除 → 双半幅压制整幅 → 单半幅与整幅比置信度。
+
+`page.notes` 记录了**哪条规则真的触发了**。必须让用户看得见：否则
+「页面上明明有个整幅框，产物里却没有」无从解释。返回值交给调用方
+`print` / `_emit_log`（CLI 与 GUI 各打一遍）。
 
 ---
 
@@ -469,6 +562,14 @@ static/guji.yaml 模板派生的配置，保留原模板的注释与键顺序。
 | --- | --- |
 | `safe_input(prompt_text: str, use_path_completer: bool=False) -> str` | 统一输入封装，支持路径补全。 |
 
+#### `safe_input(prompt_text: str, use_path_completer: bool=False) -> str`
+
+统一输入封装，支持路径补全。
+
+⚠️ stdin 关闭时（在 GUI/测试进程里构造、或管道里跑）`input()` 会抛
+`EOFError`——以前它会一路穿透，调用方看到的是"莫名其妙的 EOFError"
+（2026-09-26 审计）。这里换成一句能照做的提示。
+
 ---
 
 ## `functions.print`
@@ -539,7 +640,7 @@ File: functions/rembg.py
    - 支持 3 种输出类型：二值(type=1)、1bit(type=2)、灰度(type=3)；
    - `--sealcolor` 开关下输出彩色图，保留红色印章原色。
 
-5. **保存为 PNG**（300 DPI，optimize+compress_level=9）
+5. **保存为 PNG**（300 DPI，compress_level=6）
 
 ### `class RembgFunction(FunctionBase)`
 
@@ -605,7 +706,7 @@ ctx 通过参数传递（而非 self 实例变量），保证 ThreadPoolExecutor
 area=4「整页」模式下完全不检测，模型也就不会被加载——这既省掉了
 非古籍文档白白等模型初始化，也让「没有 YOLO 权重」的环境仍能跑整页流程。
 
-检测本身走 `detect_page_boxes_by_path`：优先交给**常驻 YOLO 服务**
+检测本身走 `detect_page_content_by_path`：优先交给**常驻 YOLO 服务**
 （模型全局只加载一次、多进程共用），服务不可用时它自己在本进程内
 加载单例。因此本对象不持有模型。
 
@@ -678,6 +779,7 @@ frozen 打包下 `import torch` + 首次 `YOLO(weights)` 要 **约 5.4 秒**，d
 | CONNECT_TIMEOUT | `3.0` |
 | DETECT_TIMEOUT | `300.0` |
 | SPAWN_WAIT | `25.0` |
+| _SERVICE_PROCS | `[]` |
 
 ### `class ServiceDetect(NamedTuple)`
 
@@ -686,18 +788,31 @@ frozen 打包下 `import torch` + 首次 `YOLO(weights)` 要 **约 5.4 秒**，d
 `model_load_seconds > 0` 表示**这一张**把模型加载起来了（服务刚被拉起、
 或刚被 TTL 收走后又拉起）；为 0 表示服务里已有模型、直接复用。
 
+`full` 是整幅内容（fullcontent）的框（与 left/right 互斥，互斥由检测侧的
+消解规则保证）；`notes` 是消解触发的规则说明，客户端据此打日志。
+
 ### 模块函数
 
 | 函数 | 说明 |
 | --- | --- |
 | `service_file(fp: str) -> Path` | 发现文件的完整路径（**按指纹区分**，开发版与正式版各用各的）。 |
 | `log_file() -> Path` | 服务日志路径（服务是分离进程、没有控制台，日志必须落文件才可诊断）。 |
+| `sweep_stale_service_files() -> int` | 删掉「属主进程已死」的发现文件，返回删除个数。 |
 | `serve() -> int` | 服务主循环：绑定回环端口、写发现文件、按 TTL 空闲自退。返回进程退出码。 |
 | `service_in_use() -> bool` | 本线程是否已经在用常驻服务（日志里说明"模型住在哪"用）。 |
 | `detect_boxes_via_service(image_path, area: int=1) -> ServiceDetect \| None` | 把一张图交给常驻服务检测，返回 :class:`ServiceDetect`。 |
 | `warm_up() -> tuple[str, float]` | 确保模型就绪，返回 ``(backend, 本次加载耗时秒)``。 |
 | `service_status(timeout: float=CONNECT_TIMEOUT)` | 查询当前服务的状态（测试与排障用）；没有服务返回 None。 |
 | `shutdown_service(timeout: float=CONNECT_TIMEOUT) -> bool` | 让**本构建**的服务退出（desktop 关闭时调用；测试收尾也用它）。 |
+
+#### `sweep_stale_service_files() -> int`
+
+删掉「属主进程已死」的发现文件，返回删除个数。
+
+⚠️ 发现文件只在服务**正常退出**时清（`_remove_service_file`）；被 kill、崩溃、
+断电都会留下它，而且它是**按指纹分文件**的——换权重、升级版本各留一份、
+从不回收（2026-09-26 审计）。留着不只是垃圾：客户端扫到陈旧文件会去连一个
+已经不存在的端口，白等一轮建连超时。
 
 #### `detect_boxes_via_service(image_path, area: int=1) -> ServiceDetect | None`
 

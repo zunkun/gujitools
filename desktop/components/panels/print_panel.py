@@ -47,13 +47,9 @@ class PrintPanel(PrintFormMixin, StagePanel):
         pdf_name 联动标志、记录最近应用参数占位，并调 reset_to_default 复位。
         """
         super().__init__(parent)
-        # 表单内容较高，让滚动区占满标题以下的全部空间
-        self.layout().setStretch(2, 1)
-        # 基类的标题与说明文字默认不换行，长说明会把窄面板撑出横向边界
-        title_label = self.layout().itemAt(0).widget()
-        desc_label = self.layout().itemAt(1).widget()
-        title_label.setWordWrap(True)
-        desc_label.setWordWrap(True)
+        # 表单内容较高，让滚动区占满标题行以下的全部空间
+        # （基类布局：0=标题行（说明已并入问号按钮）、1=表单滚动区、2=弹簧）
+        self.layout().setStretch(1, 1)
         self._last_applied: dict | None = None
         # 「位置」「文字方向」界面已删除（见 PrintFormMixin.FIXED_TEXT_LAYOUT）。
         # 这里记住**历史参数里的原值**：桌面端不能改这两个键，但也不能把它们

@@ -4,7 +4,7 @@
 
 中立共享层：CLI 与 desktop 都依赖且语义必须一致的契约
 
-覆盖 4 个模块、9 个公开类、34 个公开函数/方法（生成于 2026-09-22）。
+覆盖 4 个模块、9 个公开类、39 个公开函数/方法（生成于 2026-09-29）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -12,8 +12,8 @@
 
 | 模块 | 类 | 函数 |
 | --- | --- | --- |
-| [`core.args`](#coreargs) | 3 | 8 |
-| [`core.command_spec`](#corecommand_spec) | 1 | 9 |
+| [`core.args`](#coreargs) | 3 | 12 |
+| [`core.command_spec`](#corecommand_spec) | 1 | 10 |
 | [`core.reporter`](#corereporter) | 3 | 11 |
 | [`core.result`](#coreresult) | 2 | 6 |
 
@@ -32,11 +32,24 @@ File: core/args.py
   因此 cli 与 desktop 双方都可以传入各自的实现；
 - `CommandArgs`：标准容器（原 `cli.command_args.CommandArgs` 迁入），
   负责注入默认值、标准化 input/output/workers 等；
+- `default_workers()` / `default_worker_cap()` / `MAX_DEFAULT_WORKERS` /
+  `MAX_DEFAULT_DETECT_WORKERS`：默认并发数的唯一来源（函数层、检测、提取都从
+  这里取，不许各自写 `cpu_count()`；`detect` 的上限与通用值不同，见
+  `_COMMAND_DEFAULT_WORKER_CAP`）。
 - `InitArgs`：init 命令专用容器，保留原始参数、不注入默认值
   （原 `cli.init_args.InitArgs` 迁入）。
 
 默认值不再在本文件逐条硬编码，而是从 `core.command_spec` 读取，
 保证与 GUI 表单使用同一份定义。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| MAX_DEFAULT_WORKERS | `8` |
+| MAX_DEFAULT_DETECT_WORKERS | `8` |
+| _WORKER_MEM_BUDGET_RATIO | `0.6` |
+| _WORKER_MEM_PER_THREAD_MB | `500` |
 
 ### `class ArgsProvider(Protocol)`
 
@@ -64,6 +77,7 @@ YAML 配置还是 Qt 表单。满足此协议的对象即可直接传入 Functio
 | --- | --- |
 | `__init__(**kwargs)` | 构造参数容器并标准化全部参数。 |
 | `get(key: str, default: Any=None) -> Any` | 按字典风格获取参数。 |
+| `is_defaulted(key: str) -> bool` | 该键的当前值是**注入的默认值**（调用方没显式给/给了 None）吗？ |
 | `as_dict() -> Dict[str, Any]` | 返回参数快照（浅拷贝），供序列化到运行配置文件。 |
 | `validate() -> None` | 按命令规格校验参数；不通过抛 ValueError，不做任何 I/O 写操作。 |
 
@@ -73,6 +87,14 @@ YAML 配置还是 Qt 表单。满足此协议的对象即可直接传入 Functio
 
 接收任意关键字参数（常来自 argparse.Namespace 或配置字典），提取
 command 后调用 _build_args 注入默认值并标准化 input/output/workers 等。
+
+##### `is_defaulted(key: str) -> bool`
+
+该键的当前值是**注入的默认值**（调用方没显式给/给了 None）吗？
+
+用途：自适应并发的开关——用户显式 ``--workers 4`` 是自己的选择
+（固定 4 线程执行）；默认值才是"按机器预算的先验"，允许运行时按
+实测吞吐微调（见 functions/base 的波次爬山）。
 
 ##### `validate() -> None`
 
@@ -103,6 +125,45 @@ command 后调用 _build_args 注入默认值并标准化 input/output/workers �
     raw: 原始参数字典。若为 None 则回退读取 sys.argv
          （直接构造 InitArgs() 时的便利行为）。
 
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `machine_worker_budget() -> int` | 按**这台机器**的配置动态算出默认并发预算（物理核 + 内存双约束）。 |
+| `default_worker_cap(command: str \| None=None) -> int` | 该命令的默认并发**上限**。 |
+| `default_workers(files: int \| None=None, command: str \| None=None) -> int` | 默认并发数：``min(该命令的上限, CPU 核数)``；给了张数就再按张数收敛。 |
+
+#### `machine_worker_budget() -> int`
+
+按**这台机器**的配置动态算出默认并发预算（物理核 + 内存双约束）。
+
+- CPU 维度：**物理核数**（psutil 可用则取，否则逻辑核）。去底/裁剪是
+  numpy/cv2 的内存带宽型负载，超线程几乎不涨吞吐（实测 4≈8 线程，
+  带宽 4 线程即饱和）——按物理核给先验，剩下的超线程兄弟核自然留给
+  GUI/系统，不需要再减；
+- 内存维度：物理内存 × 60% ÷ 单 worker 峰值 500MB，至少 2；
+- 两者取小，再封顶 ``MAX_DEFAULT_WORKERS``。结果进程内缓存（配置不会
+  在运行中途变）。
+
+这只是**先验**：真实瓶颈只有跑起来才知道，functions/base 的自适应并发
+会在默认值场景下按实测吞吐微调（见 ``CommandArgs.is_defaulted``）。
+用户显式 ``--workers N`` / 面板数值**不受影响**——那是用户自己的选择。
+
+#### `default_worker_cap(command: str | None=None) -> int`
+
+该命令的默认并发**上限**。
+
+通用命令走 ``machine_worker_budget()``（按机器配置动态，≤
+``MAX_DEFAULT_WORKERS``）；detect 单独放宽到 ``MAX_DEFAULT_DETECT_WORKERS``
+（每张图只在常驻服务里读一次，比去底/裁剪轻得多，见下）。
+
+#### `default_workers(files: int | None=None, command: str | None=None) -> int`
+
+默认并发数：``min(该命令的上限, CPU 核数)``；给了张数就再按张数收敛。
+
+`files` 传待处理张数（如 3 张图没必要开 4 个线程），None 表示不按张数收敛。
+`command` 传命令名以取该命令的上限（见 `default_worker_cap`），不传按通用上限。
+
 ---
 
 ## `core.command_spec`
@@ -125,6 +186,7 @@ File: core/command_spec.py
 | 名称 | 值 |
 | --- | --- |
 | WHOLE_PAGE_AREA | `4` |
+| _PDF_NAME_MAX | `200` |
 | TEXT_SIDE_MARGIN_MM | `10.0` |
 | AREA_WHOLE_PAGE | `4` |
 
@@ -144,6 +206,7 @@ File: core/command_spec.py
 | --- | --- |
 | `normalize_margin(value: Any, default: Optional[List[float]]=None) -> Optional[List[float]]` | 把 CSS 风格的 margin 简写标准化为 [上, 右, 下, 左]。 |
 | `validate_border(border: Any) -> None` | 校验 border 参数；支持 None / "30" / "20,30" / "20,30,25" / "20,30,20,25"。 |
+| `validate_pdf_name(name: Any) -> None` | 校验 print 的输出 PDF 文件名；None/空白 = 用默认名，放行。 |
 | `parse_color(value: Any) -> Tuple[int, int, int]` | 解析颜色为 (r, g, b) 整数元组，取值域 [0,255]。 |
 | `validate_color_fields(args) -> None` | 校验 print 命令中的颜色参数（title_color / page_number_color）。 |
 | `border_has_padding(border) -> bool` | 上游 crop/rembg 的 border 是否真正加过留白（非 None/空/全 0）。 |

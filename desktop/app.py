@@ -198,6 +198,9 @@ def main() -> int:
     app = QApplication(sys.argv)
     setTheme(Theme.LIGHT)
     apply_app_style(app)  # 统一字体、主题色、底色与滚动条
+    from desktop.ui.widgets import install_button_pointer_cursor
+
+    install_button_pointer_cursor(app)  # 所有按钮 hover 手型光标
     from desktop.ui.font_setup import ensure_cjk_fonts
 
     ensure_cjk_fonts()  # 没有中文字体时先弹安装引导，再进主界面
