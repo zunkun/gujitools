@@ -273,6 +273,13 @@ class DetailViewMixin:
         detect_panel.detect_page_requested.connect(self._detect_current_page)
         # 整页模式：等价于把第三步 area 切到 4（跳过 YOLO，整页作为一个框）
         detect_panel.whole_page_toggled.connect(self._set_whole_page_mode)
+        # 人工干预：选中框类型（左框/右框/整幅）与删除选中框
+        detect_panel.box_kind_changed.connect(self._set_selected_box_kind)
+        detect_panel.delete_box_requested.connect(self._delete_selected_box)
+        # 预览里点/删/画框会改变选中态 → 回填面板的「选中框类型」高亮
+        self.detect_viewer.selection_changed.connect(self._on_box_selection_changed)
+        # 超框数上限（整幅 1 个 / 半幅 2 个）时给出可操作的提示
+        self.detect_viewer.box_edit_rejected.connect(self._on_box_edit_rejected)
 
     def _wire_rembg_panel(self, rembg_panel) -> None:
         """第三步面板**首次构造后**的接线（LazyPanelHost 的 created 回调）。"""

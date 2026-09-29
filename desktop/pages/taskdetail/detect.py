@@ -17,9 +17,13 @@ from PySide6.QtCore import QProcess, QProcessEnvironment, QSize
 from PySide6.QtGui import QImageReader
 
 from core.command_spec import WHOLE_PAGE_AREA
-from utils.box_geometry import compute_final_boxes
+from utils.box_draw import BOX_KIND_INDEX, box_kind_name
+from utils.box_geometry import compute_final_boxes, half_slots, is_full_content
 from desktop.store.json_io import write_json
 from desktop.utils.files import project_root
+
+#: 框类型键 → 中文标签。文案的唯一来源是 utils/box_draw（同 BOX_KIND_INDEX）。
+KIND_LABELS = {kind: box_kind_name(kind) for kind in BOX_KIND_INDEX}
 
 
 class DetectMixin:
@@ -33,16 +37,197 @@ class DetectMixin:
             return []
         return [b for b in boxes if b]
 
-    @staticmethod
-    def _viewer_slots(raw_boxes):
-        """原始**槽位**列表 → ``(boxes, names, colors)``，供预览控件绘制。
+    # ------------------------------------------------------- 框类型（人工干预）
+    #
+    # 三条约定的落点（用户 2026-09-29 定）：
+    # 1. **删除不影响其他框的类型**：类型存在**槽位**里，不是"还剩几个框"推出来的；
+    # 2. **半幅的左/右由框的中心位置决定**（`utils.box_geometry.half_sides`），
+    #    拖动跨过中线自动换边；
+    # 3. **整幅是显式类型**：用户选了就一直是整幅，不随位置/大小改变；
+    #    整幅与半幅互斥，且一页只能有一个框（本类负责提示与拦截）。
 
-        槽位约定见 `functions/detect.PageBoxes`：2 槽 = 半幅[左,右]（缺失侧
-        剔除但保留另一侧的名字）；1 槽 = 整幅(fullcontent)，命名为「整幅」。
+    def _box_kinds(self) -> list:
+        """预览里每个框当前的类型（"left"/"right"/"full"）。"""
+        return self.detect_viewer.box_kinds()
+
+    def _on_box_selection_changed(self, index: int) -> None:
+        """预览里选中态变化 → 回填面板的「选中框类型」与删除按钮。"""
+        panel = self.control_stack.widget(1)
+        setter = getattr(panel, "set_box_selection", None)
+        if not callable(setter):
+            return
+        kinds = self._box_kinds()
+        kind = kinds[index] if 0 <= index < len(kinds) else ""
+        setter(index, kind)
+
+    def _on_box_edit_rejected(self, message: str) -> None:
+        """框数已达上限（整幅 1 / 半幅 2）→ 弹出可操作的提示。"""
+        self._toast("warning", "框数已达上限", message)
+
+    def _set_selected_box_kind(self, kind: str) -> None:
+        """面板里点了「左框 / 右框 / 整幅」。
+
+        没选中框时按用户要求 6 处理：**点类型即选中该类型的框**；
+        选中了框则切换它的类型（整幅要过互斥检查）。
         """
-        from desktop.components.viewers.image_view import slot_styles
+        path = self.detect_viewer.current_path()
+        if path is None or not self.task_id:
+            return
+        if self._current_area() == WHOLE_PAGE_AREA:
+            self._toast(
+                "warning", "整页模式",
+                "当前是整页模式（整页即唯一文本框）。要按左右/整幅标注，"
+                "请先取消第二步的「整页模式」。",
+            )
+            return
+        index = self.detect_viewer.selected_index()
+        if index < 0:
+            self._select_box_of_kind(kind)
+            return
+        kinds = self._box_kinds()
+        current = kinds[index] if index < len(kinds) else ""
+        if kind == current:
+            return  # 已经是这个类型（左/右按位置判定，点了也是这个结果）
+        if kind == "full":
+            self._make_box_full(str(path), index)
+        else:
+            self._make_box_half(str(path), index, kind)
 
-        return slot_styles(raw_boxes)
+    def _select_box_of_kind(self, kind: str) -> None:
+        """没有选中框时，点类型＝选中该类框；该类型不存在则提示。"""
+        kinds = self._box_kinds()
+        names = {"left": "左框", "right": "右框", "full": "整幅"}
+        for index, value in enumerate(kinds):
+            if value == kind:
+                self.detect_viewer.select_box(index)
+                return
+        self._toast(
+            "info", f"没有「{names.get(kind, kind)}」",
+            "当前页没有这个类型的框：可先在预览里画出文本框，"
+            "或点已有框后切换类型。",
+        )
+
+    def _make_box_full(self, path_text: str, index: int) -> None:
+        """把第 index 个框设为「整幅」（整幅与半幅互斥、一页只能一个框）。"""
+        raw = self._raw_boxes_for(path_text)
+        boxes = self._valid_boxes(raw)
+        if not 0 <= index < len(boxes):
+            return
+        others = [b for i, b in enumerate(boxes) if i != index]
+        if others:
+            # 用户要求 4/5：整幅只能有一个框、且与左右半幅互斥 → 说清现状 + 给删除动作。
+            # 其他框的类型照实写出来：其中若已有「整幅」，用户一眼看到"已存在一个整幅"。
+            from qfluentwidgets import Dialog  # noqa: PLC0415
+
+            kinds = self._box_kinds()
+            labels = "、".join(
+                f"「{KIND_LABELS.get(kinds[i], '')}」"
+                for i in range(len(boxes)) if i != index and i < len(kinds)
+            )
+            dialog = Dialog(
+                "整幅只能有一个框",
+                f"当前页还有其他文本框（{labels}）。\n"
+                "整幅与左右半框互斥，且整幅一页只能有一个框。\n"
+                "是否删除其他文本框，把当前框设为「整幅」？",
+                self.window(),
+            )
+            dialog.yesButton.setText("删除其他框并设为整幅")
+            dialog.cancelButton.setText("取消")
+            if not dialog.exec():
+                self._on_box_selection_changed(index)  # 回填面板高亮，别停在「整幅」
+                return
+        self._store_slots(path_text, [boxes[index]], "manual", select_box=boxes[index])
+
+    def _make_box_half(self, path_text: str, index: int, kind: str) -> None:
+        """把第 index 个框改成半幅（左/右）。"""
+        raw = self._raw_boxes_for(path_text)
+        boxes = self._valid_boxes(raw)
+        if not 0 <= index < len(boxes):
+            return
+        if not self.detect_viewer.box_full_mode():
+            # 半幅页里左/右是**位置**决定的（用户要求 2），点不出另一种来
+            side = "左框" if kind == "left" else "右框"
+            self._toast(
+                "info", f"「{side}」由框的位置决定",
+                f"左框/右框按框的中心位置自动判定：把这个框拖到页面的另一半，"
+                f"它就会变成{side}。",
+            )
+            return
+        # 整幅 → 半幅：一个框也能是半幅（漏检一侧的情形），按中心位置定左右
+        size = self._image_size_for(path_text) or (0, 0)
+        self._store_slots(
+            path_text, half_slots([boxes[index]], size), "manual",
+            select_box=boxes[index],
+        )
+
+    def _delete_selected_box(self) -> None:
+        """删除当前选中的文本框（与 Delete 键同一条路径）。"""
+        path = self.detect_viewer.current_path()
+        if path is None:
+            return
+        index = self.detect_viewer.selected_index()
+        if index < 0:
+            self._toast("info", "未选中文本框", "先在预览里点一下要删除的框。")
+            return
+        boxes = self._valid_boxes(self._raw_boxes_for(str(path)))
+        if not 0 <= index < len(boxes):
+            return
+        del boxes[index]
+        size = self._image_size_for(str(path)) or (0, 0)
+        self._store_slots(str(path), half_slots(boxes, size), "manual")
+        self.detect_viewer.select_box(-1)
+
+    def _raw_boxes_for(self, path_text: str) -> list:
+        """某页**槽位**表示（保留 null，形态信息就在槽数里）。"""
+        raw = self.detect_cache.get(str(path_text))
+        if raw is None and self.task_id:
+            entry = self.store.detect_boxes_entry(
+                self.task_id, Path(path_text).stem
+            )
+            raw = entry[0] if entry else []
+        return list(raw or [])
+
+    def _store_slots(self, path_text: str, raw: list, origin: str,
+                     select_box=None) -> None:
+        """把槽位结果落库 + 进缓存 + 刷预览（人工编辑与类型切换共用一条路径）。
+
+        ``select_box`` 给定某个框时，重新上屏后仍选中**同一个框**（按坐标找回）——
+        切换类型 / 整理槽位会改变框在列表里的次序，按下标保持会选错框。
+        """
+        image_key = Path(path_text).stem
+        self.detect_cache[str(path_text)] = list(raw)
+        if self.task_id:
+            self.store.save_detect_boxes(self.task_id, image_key, list(raw), origin=origin)
+        shown = self._valid_boxes(raw)
+        index = -1
+        if select_box is not None:
+            target = list(select_box)
+            index = next(
+                (i for i, b in enumerate(shown) if list(b) == target), -1
+            )
+        self._apply_boxes(path_text, raw, origin, select_index=index)
+        self._refresh_reference_boxes()
+
+    def _apply_boxes(self, path_text: str, raw, origin: str | None = None,
+                     select_index: int = -1) -> None:
+        """把某页的槽位结果画到大图上。
+
+        显示用的名称/颜色**由控件按中心位置现算**（`image_view.box_styles`），
+        这里只把 ``full``（整幅页）标志、一行文案与要选中的下标交给它——
+        规则不抄第二份。
+        """
+        from desktop.components.viewers.image_view import box_names  # noqa: PLC0415
+
+        shown = self._valid_boxes(raw)
+        full = is_full_content(raw)
+        size = self._image_size_for(path_text)
+        qsize = QSize(size[0], size[1]) if size else QImageReader(str(path_text)).size()
+        names = box_names(shown, size, full)
+        self._show_boxes_info(shown, origin, names=names)
+        self.detect_viewer.apply_boxes(
+            shown, qsize, self._describe_boxes(shown, names),
+            full=full, selected=select_index,
+        )
 
     # ------------------------------------------------------------ 整页模式
     def _current_area(self) -> int:
@@ -73,16 +258,18 @@ class DetectMixin:
         只认人工框（origin=manual）：自动检测结果在整页模式下不生效——
         语义上整页模式就是「不检测」，旧 YOLO 结果留着只会让切换后画面困惑。
         用户手动画过框则沿用，其余一律整页。
+
+        ⚠️ 返回的是**原始槽位**（保留 None），不是过滤后的框列表：槽数编码
+        形态（半幅 2 槽 / 整幅 1 槽），过滤掉 None 后「手动半幅只剩一侧」会
+        退化成 1 槽，被当成整幅。
         """
         entry = (
             self.store.detect_boxes_entry(self.task_id, Path(path_text).stem)
             if self.task_id
             else None
         )
-        if entry and entry[1] == "manual":
-            boxes = self._valid_boxes(entry[0])
-            if boxes:
-                return boxes, "manual"
+        if entry and entry[1] == "manual" and self._valid_boxes(entry[0]):
+            return list(entry[0]), "manual"
         return self._whole_page_boxes(path_text), "fullpage"
 
     def _current_boxes_for(self, path_text: str) -> list:
@@ -105,24 +292,20 @@ class DetectMixin:
                 return
             # 整页框是**派生**出来的：既不入库也不进缓存，避免切回 area=1
             # 时把整页框当成真实检测结果去拆左右页。
-            self._show_boxes_info(boxes, origin)
-            size = self._image_size_for(key) or (0, 0)
-            shown, names, colors = self._viewer_slots(boxes)
-            self.detect_viewer.apply_boxes(
-                shown, QSize(size[0], size[1]), self._describe_boxes(shown, names),
-                names=names, colors=colors,
-            )
+            self._apply_boxes(key, boxes, origin)
             self._refresh_reference_boxes()
             return
         if key in self.detect_cache:
-            raw = self.detect_cache[key]
-            shown, names, colors = self._viewer_slots(raw)
-            self._show_boxes_info(shown, names=names)
-            if shown:
-                size = QImageReader(key).size()
+            raw = self.detect_cache[key] or []
+            if self._valid_boxes(raw):
+                self._apply_boxes(key, raw)
+            else:
+                self._show_boxes_info([])
+                # ⚠️ 无框时也要把预览的形态复位：否则上一页如果是整幅页，
+                #    本页会沿用「整幅」的框数上限（只能画一个框）。
                 self.detect_viewer.apply_boxes(
-                    shown, size, self._describe_boxes(shown, names),
-                    names=names, colors=colors,
+                    [], QImageReader(key).size(), self._describe_boxes([]),
+                    full=is_full_content(raw),
                 )
             self._refresh_reference_boxes()
             return
@@ -131,16 +314,13 @@ class DetectMixin:
         if entry is not None:
             boxes, origin = entry
             self.detect_cache[key] = boxes
-            shown, names, colors = self._viewer_slots(boxes)
-            self._show_boxes_info(shown, origin, names=names)
-            if shown:
-                size = QImageReader(key).size()
-                self.detect_viewer.apply_boxes(
-                    shown, size, self._describe_boxes(shown, names),
-                    names=names, colors=colors,
-                )
+            self._apply_boxes(key, boxes, origin)
             self._refresh_reference_boxes()
             return
+        self.detect_viewer.info_label.setText(
+            "尚未检测：执行「本子任务」批量检测，或点击面板中的「检测本页」"
+        )
+
         self.detect_viewer.info_label.setText(
             "尚未检测：执行「本子任务」批量检测，或点击面板中的「检测本页」"
         )
@@ -160,13 +340,7 @@ class DetectMixin:
             if not boxes:
                 self._toast("warning", "提示", "读取不到页面尺寸，请先完成第一步提取。")
                 return
-            self._show_boxes_info(boxes, origin)
-            size = self._image_size_for(key) or (0, 0)
-            shown, names, colors = self._viewer_slots(boxes)
-            self.detect_viewer.apply_boxes(
-                shown, QSize(size[0], size[1]), self._describe_boxes(shown, names),
-                names=names, colors=colors,
-            )
+            self._apply_boxes(key, boxes, origin)
             self._refresh_reference_boxes()
             self._toast(
                 "info", "整页模式",
@@ -175,9 +349,8 @@ class DetectMixin:
             return
         entry = self.store.detect_boxes_entry(self.task_id, Path(path).stem)
         if entry is not None and any(entry[0] or []):
-            shown, names, _colors = self._viewer_slots(entry[0])
             self.detect_cache[key] = entry[0]
-            self._show_boxes_info(shown, entry[1], names=names)
+            self._apply_boxes(key, entry[0], entry[1])
             self._refresh_reference_boxes()
             self._toast("info", "已有检测结果", "该页检测结果已存在，直接展示。")
             return
@@ -281,18 +454,30 @@ class DetectMixin:
         )
 
     def _save_manual_boxes(self, path_text: str, boxes) -> None:
-        """预览区编辑线框后保存到库（origin=manual），不生成任何文件。"""
+        """预览区编辑线框后保存到库（origin=manual），不生成任何文件。
+
+        ⚠️ 存的是**槽位**表示，不是"用户画了几个框"：
+        - 整幅页 → 1 槽 ``[整幅]``；
+        - 半幅页 → **恒 2 槽** ``[左, 右]``（缺失侧 null）。
+
+        这样删到一个不剩或只剩一侧时，形态都不会从半幅变成整幅——用户报的
+        "删掉整幅框后，右边的框自动变成了整幅" 就是按元素个数推断类型的后果。
+        """
         if not self.task_id:
             return
         normalized = [[int(round(float(v))) for v in box] for box in boxes]
-        image_key = Path(path_text).stem
-        self.detect_cache[str(path_text)] = normalized
-        self.store.save_detect_boxes(
-            self.task_id, image_key, normalized, origin="manual"
-        )
-        shown, names, _colors = self._viewer_slots(normalized)
-        self._show_boxes_info(shown, "manual", names=names)
-        self._refresh_reference_boxes()
+        size = self._image_size_for(path_text) or (0, 0)
+        sel = self.detect_viewer.selected_index()
+        sel_box = normalized[sel] if 0 <= sel < len(normalized) else None
+        if not normalized:
+            raw: list = []
+        elif self.detect_viewer.box_full_mode() and len(normalized) == 1:
+            raw = [normalized[0]]  # 整幅：只允许一个框（控件侧已按 max_boxes 拦住）
+        else:
+            # 半幅：恒 2 槽。⚠️ 万一"整幅页"却拿到多个框（不该发生），按半幅存——
+            # 宁可形态变半幅，也不能悄悄丢掉用户画出来的框。
+            raw = half_slots(normalized, size)
+        self._store_slots(path_text, raw, "manual", select_box=sel_box)
 
     def _stop_detect_process(self) -> None:
         """停掉在跑的单页检测并释放执行权（返回列表/切任务前必须调）。
@@ -436,16 +621,12 @@ class DetectMixin:
         self._release_run()
 
     def _apply_detect_result(self, path: Path, boxes) -> None:
+        """自动检测结果到达 → 上屏（只在本页仍是预览页、且还停在第二步时应用）。"""
         if self.current_stage() != "detect":
             return
         if str(self.detect_viewer.current_path()) != str(path):
             return
-        size = QImageReader(str(path)).size()
-        shown, names, colors = self._viewer_slots(boxes)
-        self.detect_viewer.apply_boxes(
-            shown, size, self._describe_boxes(shown, names),
-            names=names, colors=colors,
-        )
         if str(path) in self.detect_cache:
             self.detect_cache[str(path)] = boxes or []
+        self._apply_boxes(str(path), boxes or [])
         self._refresh_reference_boxes()

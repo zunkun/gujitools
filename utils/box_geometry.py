@@ -35,8 +35,63 @@ def is_full_content(boxes) -> bool:
 
     据此判断 area=2/3 的单框要不要做对称镜像——整幅本来就是整页内容区，
     镜像会凭空多出一半空白，**不做**镜像；半幅漏检一侧才需要镜像补白。
+
+    ⚠️ 槽数**不是**"有几个框"，而是**形态**：半幅恒 2 槽（`half_slots` 保证），
+    整幅恒 1 槽。半幅删剩一侧后仍然写回 2 槽（另一侧 None），否则会被误判成整幅。
     """
     return len(list(boxes or [])) == 1
+
+
+def half_sides(boxes, image_size) -> List[str]:
+    """半幅(harfcontent)页的框 → 每个框的侧别 ``"left"`` / ``"right"``。
+
+    规则（用户 2026-09-29 定）**只在本函数实现一处**，GUI 预览的命名/配色与
+    入库的槽位组装都调它：
+
+    - 只有 1 个框：中心 ``cx < 图宽/2`` → 左，否则 → 右（按**位置**判，不看大小）；
+    - 多个框：按中心 ``cx`` 升序，**最靠左的那个归左**，其余归右——这样把框
+      拖过中线时两侧身份自然互换，也不会出现"两个框都想要左槽"。
+
+    ⚠️ **半幅的左右是位置决定的**（移动/缩放后会重新判定）；与位置无关的显式
+    类型只有整幅(fullcontent)，由用户在第二步「选中框类型」里选择——那条路
+    **不经过本函数**（见 :func:`whole_page_box` 与 ``is_full_content``）。
+
+    参数:
+        boxes: 框列表（原始图片坐标）；空项自动跳过。
+        image_size: 原图 (宽, 高)，用于取中线。
+
+    返回:
+        与 ``boxes``（去掉空项后）等长的侧别字符串列表。
+    """
+    present = [tuple(b) for b in (boxes or []) if b]
+    if not present:
+        return []
+    mid_x = (int(image_size[0]) if image_size else 0) / 2.0
+    if len(present) == 1:
+        cx = (present[0][0] + present[0][2]) / 2.0
+        return ["left" if cx < mid_x else "right"]
+    order = sorted(range(len(present)), key=lambda i: present[i][0] + present[i][2])
+    sides = ["right"] * len(present)
+    sides[order[0]] = "left"
+    return sides
+
+
+def half_slots(boxes, image_size) -> List[Optional[list]]:
+    """半幅页的框 → **2 槽** ``[左, 右]``（缺失侧 ``None``）。
+
+    ⚠️ 恒为 2 槽是**关键**：``is_full_content`` 靠槽数区分两种形态（整幅 = 1 槽）。
+    半幅只要漏检/删剩一侧就退化成 1 槽，那个框就会被当成「整幅」——这正是
+    "删掉整幅框后，右边的框自动变成了整幅" 的根因（用户 2026-09-29 报）。
+    """
+    present = [list(b) for b in (boxes or []) if b]
+    left = right = None
+    for box, side in zip(present, half_sides(present, image_size)):
+        if side == "left":
+            if left is None:
+                left = box
+        elif right is None:
+            right = box
+    return [left, right]
 
 
 def whole_page_box(image_size) -> List[int]:

@@ -70,6 +70,14 @@ QT_QPA_PLATFORM=offscreen KMP_DUPLICATE_LIB_OK=TRUE \
    **不写自动框**（`boxes.json` 里不会有自动检测结果），只认手动框。
 3. **检测与 CLI 同源**：GUI 的检测与命令行 `detect` / `crop` / `cropremove` 走同一份
    实现，两个入口看到的框一致（`utils/box_geometry.py` 是唯一权威）。
+3b. **第二步的「框类型」（2026-09-29 用户定）**：框的类型是**框自己的属性**，
+   不随"还剩几个框"变化——半幅页的左右由**中心位置**判（`utils.box_geometry
+   .half_sides`），整幅是用户在面板里**显式选择**的（选过就一直是整幅）。
+   形态互斥：半幅恒 **2 槽** `[左, 右]`、整幅 **1 槽** `[整幅]`——
+   `is_full_content` 靠槽数区分，所以"半幅删剩一侧"必须写回 2 槽，
+   否则那个框会被当成整幅（用户报的 bug）。半幅最多 2 个框、整幅 1 个，
+   超出时由 `image_view.edit_rejected` 提示。规则细节与护栏见
+   `tests/selftests/detect_edit.py`。
 4. **去底色输出的条目命名**：`area=1` 时按输出拆成 `N-r`（右页）/ `N-l`（左页），
    缩略图只显示所属那半页——手册里改写成「按「右页 / 左页」分开显示」。
 5. **版面坐标的落盘**：第四步拖动后的逐页坐标记在任务里（`print.json`），

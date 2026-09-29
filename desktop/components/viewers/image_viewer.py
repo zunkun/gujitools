@@ -26,6 +26,10 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
     delete_requested = Signal()
     insert_requested = Signal()
     boxes_edited = Signal(str, list)  # (图片路径, 全部框坐标) 拖动结束后发出
+    #: 选中框变化（-1 = 无选中）：宿主据此同步「选中框类型」控件
+    selection_changed = Signal(int)
+    #: 编辑被拒绝（超框数上限等）：宿主弹提示
+    box_edit_rejected = Signal(str)
 
     def __init__(
         self,
@@ -81,9 +85,12 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         self.show_boxes = show_boxes
         self.view.set_boxes_editable(show_boxes)
         self.view.boxes_edited.connect(self._boxes_edited)
+        # 选中态与"编辑被拒"直接转发给宿主（第二步面板据此高亮框类型/提示）
+        self.view.selection_changed.connect(self.selection_changed.emit)
+        self.view.edit_rejected.connect(self.box_edit_rejected.emit)
         # 双击大图 → 图片预览弹窗（只读查看；编辑仍在原画布上做）
         self._init_zoom_popup(self.view)
-        self._pending_boxes: tuple | None = None  # (boxes, image_size, info, names, colors)，等大图加载后应用
+        self._pending_boxes: tuple | None = None  # (boxes, image_size, info, full)，等大图加载后应用
         #: 每次选页递增的加载令牌，只有最新一次选择的渲染结果允许上屏。
         #: ⚠️ 不能改用「路径是否相同」判断：同一页也会被重复选择（见
         #: ``_select_image`` 的递归回调），路径一样但加载任务有两个。
@@ -150,21 +157,39 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         self._select_image(0, str(paths[0]))
 
     def apply_boxes(self, boxes: list[tuple], image_size: QSize, info_text: str = "",
-                    names: list | None = None, colors: list | None = None) -> None:
+                    full: bool = False, selected: int = -1) -> None:
         """在当前大图上叠加切割框（图片像素坐标）；大图未就绪时挂起等待。
 
-        names/colors 与 boxes 对齐（可选）：用于把整幅内容框标成「整幅」。
+        ``full=True`` 表示本页是整幅(fullcontent)：框显示为「整幅」且只允许一个；
+        否则按框的**中心位置**显示为左/右框。名称/颜色由控件每帧现算，不用传。
+        ``selected`` 为要选中的框下标（-1 = 不选），用于切换类型后保持选中。
         """
         if self.view.has_image:
-            self.view.set_boxes(boxes, image_size, names=names, colors=colors)
+            self.view.set_boxes(boxes, image_size, full=full, selected=selected)
             if info_text:
                 self.info_label.setText(info_text)
         else:
-            self._pending_boxes = (boxes, image_size, info_text, names, colors)
+            self._pending_boxes = (boxes, image_size, info_text, full, selected)
 
     def set_reference_boxes(self, boxes: list) -> None:
         """设置参考框（最终裁剪大框，虚线显示，不参与编辑）。"""
         self.view.set_reference_boxes(boxes)
+
+    def select_box(self, index: int) -> None:
+        """程序化选中第 index 个框（-1 = 取消选中）。"""
+        self.view.select_box(index)
+
+    def selected_index(self) -> int:
+        """当前选中的框下标；无选中为 -1。"""
+        return self.view.selected_index()
+
+    def box_full_mode(self) -> bool:
+        """本页是否为整幅(fullcontent)。"""
+        return self.view.full_mode
+
+    def box_kinds(self) -> list:
+        """当前每个框的类型（"left"/"right"/"full"）。"""
+        return self.view.box_kinds()
 
     def _boxes_edited(self, boxes: list) -> None:
         path = self.current_path()
@@ -283,9 +308,9 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         # 无框坐标场景（如尺寸信息缺失）回退为显示图自身尺寸
         self.view.set_image(image, image_size=original if original else None)
         if self._pending_boxes is not None:
-            boxes, size, info_text, names, colors = self._pending_boxes
+            boxes, size, info_text, full, selected = self._pending_boxes
             self._pending_boxes = None
-            self.view.set_boxes(boxes, size, names=names, colors=colors)
+            self.view.set_boxes(boxes, size, full=full, selected=selected)
             if info_text:
                 self.info_label.setText(info_text)
                 return

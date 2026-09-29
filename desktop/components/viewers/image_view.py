@@ -20,42 +20,52 @@ from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QLabel
 
 from desktop.ui import theme as T
-from utils.box_draw import BOX_COLORS_RGB
+from utils.box_draw import BOX_KIND_INDEX, BOX_COLORS_RGB
 from utils.box_draw import BOX_NAMES as _BOX_NAMES
+from utils.box_geometry import half_sides
 
 # 框颜色/名称**不在本文件定义**：唯一事实来源是 utils/box_draw.py —— CLI 的
 # `detect --save` 标注图用的也是它，两边各抄一份（只靠注释对齐）迟早漂移。
-# 顺序：绿 / 蓝 / 琥珀 / 朱砂红 对应 左框 / 右框 / 合并框 / 整幅
+# 顺序：绿 / 蓝 / 琥珀 / 靛蓝 对应 左框 / 右框 / 合并框 / 整幅
 # （整幅 = fullcontent 单框整页，见 functions/detect.PageBoxes）
 BOX_COLORS = [QColor(*rgb) for rgb in BOX_COLORS_RGB]
 BOX_NAMES = list(_BOX_NAMES)
+#: 类型键 → 下标（映射本身在 utils/box_draw，各层不再各记一份）
+SIDE_INDEX = {"left": BOX_KIND_INDEX["left"], "right": BOX_KIND_INDEX["right"]}
+FULL_INDEX = BOX_KIND_INDEX["full"]
 #: 整幅内容框（fullcontent）专用的名称/颜色。
-FULL_BOX_NAME = "整幅"
-FULL_BOX_COLOR = BOX_COLORS[3]
+FULL_BOX_NAME = BOX_NAMES[FULL_INDEX]
+FULL_BOX_COLOR = BOX_COLORS[FULL_INDEX]
 REFERENCE_COLOR = QColor("#f97316")
 HANDLE_RADIUS = 5  # 缩放手柄半径（控件像素）
 
 
-def slot_styles(raw_boxes):
-    """原始框**槽位**列表 → ``(boxes, names, colors)``，三者按序对齐。
+def box_styles(boxes, image_size=None, full: bool = False):
+    """框列表 → ``(names, colors)``，与 ``boxes``（去掉空项后）等长。
 
-    槽位约定与 `functions/detect.PageBoxes` 一致：半幅(harfcontent)固定 2 槽
-    ``[左, 右]``（缺失侧为 None，剔除但保留另一侧的名字/色）；整幅(fullcontent)
-    只占 1 槽。据此把整幅框命名为「整幅」并用专用色（朱砂红）——绝不能拿它当"左框"。
+    - ``full=True``（整幅页 / fullcontent）：每个框都是「整幅」+ 靛蓝——
+      整幅是**显式类型**，无论怎么移动、缩放都不变；
+    - 否则是半幅页：按**中心位置**判左右（`utils.box_geometry.half_sides`，
+      规则只有那一处实现），所以把框拖过中线时名字与颜色会跟着换。
+
+    ⚠️ 这里以前按"框的序号/个数"命名（1 个框→「整幅」、2 个→「左/右」），于是
+    删掉一个框会让剩下的框"变身"（用户 2026-09-29 报）。现在类型只由
+    「是否整幅页」与「框的中心位置」决定，**与有几个框无关**。
     """
-    raw = list(raw_boxes or [])
-    if len(raw) == 1:
-        spec = [(FULL_BOX_NAME, FULL_BOX_COLOR)]
-    else:
-        spec = [("左框", BOX_COLORS[0]), ("右框", BOX_COLORS[1])]
-    boxes, names, colors = [], [], []
-    for item, (name, color) in zip(raw, spec):
-        if not item:
-            continue
-        boxes.append(list(item))
-        names.append(name)
-        colors.append(color)
-    return boxes, names, colors
+    present = [b for b in (boxes or []) if b]
+    if full:
+        return [FULL_BOX_NAME] * len(present), [FULL_BOX_COLOR] * len(present)
+    names, colors = [], []
+    for side in half_sides(present, image_size):
+        index = SIDE_INDEX[side]
+        names.append(BOX_NAMES[index])
+        colors.append(BOX_COLORS[index])
+    return names, colors
+
+
+def box_names(boxes, image_size=None, full: bool = False) -> list:
+    """框名称列表（大图信息条文案用）——与 :func:`box_styles` 同一份规则。"""
+    return box_styles(boxes, image_size, full)[0]
 
 # 选中框四角手柄：0=左上 1=右上 2=右下 3=左下
 _HANDLE_CURSORS = [
@@ -70,6 +80,10 @@ class ImageView(QLabel):
     boxes_edited = Signal(list)  # 移动/缩放/删除/新增后：全部框（图片像素坐标）
     #: 双击大图（宿主据此打开图片预览弹窗；只读查看，不改任何数据）
     double_clicked = Signal()
+    #: 选中框变化：新下标，无选中为 -1（宿主据此同步「选中框类型」控件与删除按钮）
+    selection_changed = Signal(int)
+    #: 本次编辑被拒绝（含原因文案）：超框数上限等，宿主弹出提示
+    edit_rejected = Signal(str)
 
     #: 预览渲染最长边的**下限**：控件尚未布局（尺寸还是 0）时的兜底，也避免
     #: 小控件把预览渲染得过小——之后窗口一最大化就只能放大、糊掉。
@@ -92,10 +106,9 @@ class ImageView(QLabel):
         )
         self._pixmap: QPixmap | None = None
         self._boxes: list[list[int]] = []  # [(x1,y1,x2,y2)] 图片像素坐标
-        # 每个框的名称/颜色覆盖（与 _boxes 按序号对齐；None 表示用默认）。
-        # 用于把整幅内容框(fullcontent)标成「整幅」而不是「左框」。
-        self._box_names: list[str] | None = None
-        self._box_colors: list | None = None
+        #: 本页是否**整幅**(fullcontent)：整幅页的框是显式类型（恒为「整幅」，
+        #: 不按位置判左右），且只允许一个框；否则是半幅页（按中心定左右、最多两个）。
+        self._full_mode = False
         self._reference_boxes: list = []  # 参考框（最终裁剪大框），虚线显示
         self._image_size: QSize | None = None
         self.setMouseTracking(True)
@@ -129,6 +142,46 @@ class ImageView(QLabel):
     def has_image(self) -> bool:
         """当前是否已装入图片。"""
         return self._pixmap is not None
+
+    @property
+    def full_mode(self) -> bool:
+        """本页是否为整幅(fullcontent)——整幅页只有「整幅」一种框类型。"""
+        return self._full_mode
+
+    @property
+    def max_boxes(self) -> int:
+        """本页允许的框数上限：整幅 1 个；半幅左右各一，共 2 个。"""
+        return 1 if self._full_mode else 2
+
+    def selected_index(self) -> int:
+        """当前选中的框下标；无选中为 -1。"""
+        return -1 if self._selected is None else self._selected
+
+    def _select(self, index: int | None) -> None:
+        """更新选中框并在**真的变化时**发 ``selection_changed``（-1 = 无选中）。"""
+        if index == self._selected:
+            return
+        self._selected = index
+        self.selection_changed.emit(self.selected_index())
+
+    def select_box(self, index: int) -> None:
+        """程序化选中第 index 个框（-1 = 取消选中）并重绘。"""
+        self._select(None if index is None or index < 0 else int(index))
+        self._rerender()
+
+    def box_kinds(self) -> list:
+        """当前每个框的类型：``"left"`` / ``"right"`` / ``"full"``。
+
+        与 :meth:`_draw_boxes` 用的是**同一份规则**（整幅页恒为 full；半幅页按
+        中心位置判左右），所以面板高亮与实际画出的标签永远一致。
+        """
+        if self._full_mode:
+            return ["full"] * len(self._boxes)
+        size = (
+            (self._image_size.width(), self._image_size.height())
+            if self._image_size else None
+        )
+        return half_sides(self._boxes, size)
 
     # ------------------------------------------------------------------ API
     def preview_edge(self) -> int:
@@ -168,29 +221,34 @@ class ImageView(QLabel):
         """
         self._image_size = image_size or image.size()
         self._boxes = [list(box) for box in (boxes or [])]
-        self._box_names = None
-        self._box_colors = None
         self._pixmap = QPixmap.fromImage(image)
         self._pixmap_version += 1  # 缓存底图作废（见 _scaled_base）
-        self._selected = None
+        # 换页即回到「半幅、无选中」；整幅页由随后的 set_boxes(full=True) 标明
+        self._full_mode = False
+        self._select(None)
         self._mode = None
         self._drag_index = None
         self._ghost_box = None
         self._rerender()
 
-    def set_boxes(self, boxes: list, image_size: QSize, names: list | None = None,
-                  colors: list | None = None) -> None:
-        """仅更新切割框与图片原始尺寸并重绘（不换图）。
+    def set_boxes(self, boxes: list, image_size: QSize, full: bool = False,
+                  selected: int | None = None) -> None:
+        """仅更新切割框、形态与图片原始尺寸并重绘（不换图）。
 
         boxes 为图片像素坐标；image_size 为坐标映射基准，与显示缩放无关。
-        names/colors 与 boxes 按序号对齐（可选）：用于把整幅内容框标成
-        「整幅」而非「左框」。用户手动增删框后序号可能超出，此时回退到默认名/色。
+        ``full=True`` 表示本页是整幅(fullcontent)：框显示为「整幅」且**只允许
+        一个**；否则是半幅页，框按中心位置显示为左/右，最多两个。
+        ``selected`` 非负时把选中态落到该下标（宿主切换框类型后保持选中）。
+
+        ⚠️ 名称/颜色不在这里传：它们由 `box_styles` 按**中心位置**每帧现算，
+        这样拖动框跨过中线时名字与颜色会立刻跟着换（用户 2026-09-29 要求）。
         """
         self._boxes = [list(box) for box in boxes]
-        self._box_names = list(names) if names else None
-        self._box_colors = list(colors) if colors else None
+        self._full_mode = bool(full)
         self._image_size = image_size
-        self._selected = None
+        self._select(None)
+        if selected is not None and 0 <= selected < len(self._boxes):
+            self._select(int(selected))
         self._mode = None
         self._rerender()
 
@@ -198,10 +256,9 @@ class ImageView(QLabel):
         """清空图片与全部框（含参考框），显示占位文案。"""
         self._pixmap = None
         self._boxes = []
-        self._box_names = None
-        self._box_colors = None
+        self._full_mode = False
         self._reference_boxes = []
-        self._selected = None
+        self._select(None)
         self._mode = None
         self._drag_index = None
         self.setText(text)
@@ -290,7 +347,7 @@ class ImageView(QLabel):
             # 2) 点中某个框 → 选中并进入拖动
             index = self._hit_box(ix, iy)
             if index is not None:
-                self._selected = index
+                self._select(index)
                 self._drag_index = index
                 self._mode = "move"
                 self._dirty = False
@@ -300,13 +357,30 @@ class ImageView(QLabel):
                 self.setCursor(Qt.ClosedHandCursor)
                 self._rerender()
                 return
-            # 3) 空白处 → 手绘新框
-            self._selected = None
+            # 3) 空白处 → 手绘新框（已达上限则拒绝，宿主弹提示）
+            if len(self._boxes) >= self.max_boxes:
+                self._select(None)
+                self._rerender()
+                self.edit_rejected.emit(self._limit_message())
+                return
+            self._select(None)
             self._mode = "new"
             self._new_start = (ix, iy)
             self._rerender()
             return
         super().mousePressEvent(event)
+
+    def _limit_message(self) -> str:
+        """框数已达上限时的提示文案（按形态给出下一步该做什么）。"""
+        if self._full_mode:
+            return (
+                "「整幅」页只能有一个文本框。要画左右文本框，请先在"
+                "「选中框类型」里把整幅框改为左框或右框。"
+            )
+        return (
+            "半幅页最多左右两个文本框。要画整页的整幅框，请先删除其他文本框，"
+            "再把框类型改为「整幅」。"
+        )
 
     def mouseMoveEvent(self, event) -> None:  # noqa: N802
         ix, iy = self._to_image_coords(event.position())
@@ -380,6 +454,10 @@ class ImageView(QLabel):
             self._ghost_box = None
             # 过滤误触产生的极小框
             if box[2] - box[0] > 8 and box[3] - box[1] > 8 and self._image_size is not None:
+                if len(self._boxes) >= self.max_boxes:
+                    self.edit_rejected.emit(self._limit_message())
+                    self._rerender()
+                    return
                 box = [
                     min(max(box[0], 0), self._image_size.width()),
                     min(max(box[1], 0), self._image_size.height()),
@@ -387,7 +465,7 @@ class ImageView(QLabel):
                     min(max(box[3], 0), self._image_size.height()),
                 ]
                 self._boxes.append(box)
-                self._selected = len(self._boxes) - 1
+                self._select(len(self._boxes) - 1)
                 self._commit_edit()
             self._rerender()
             return
@@ -415,7 +493,9 @@ class ImageView(QLabel):
             Qt.Key_Delete, Qt.Key_Backspace,
         ):
             del self._boxes[self._selected]
-            self._selected = None
+            # ⚠️ 先清选中再提交：只剩一个框时它的**类型不会被删除影响**
+            #    （半幅仍是半幅、整幅仍是整幅），类型与"剩几个框"无关。
+            self._select(None)
             self._commit_edit()
             self._rerender()
             return
@@ -537,17 +617,16 @@ class ImageView(QLabel):
         font = painter.font()
         font.setPixelSize(13)
         painter.setFont(font)
+        # 名称/颜色**每帧现算**：整幅页恒为「整幅」；半幅页按中心位置定左右，
+        # 因此拖动跨过中线的那一刻标签就换过来（不必等宿主回写）。
+        size = (self._image_size.width(), self._image_size.height()) if self._image_size else None
+        names, colors = box_styles(self._boxes, size, self._full_mode)
         for index, box in enumerate(self._boxes):
             x1, y1, x2, y2 = box
-            custom = self._box_colors
-            color = (
-                custom[index]
-                if custom and index < len(custom)
-                else BOX_COLORS[index % len(BOX_COLORS)]
-            )
+            color = colors[index] if index < len(colors) else BOX_COLORS[0]
             selected = index == self._selected
             # 选中的框加粗（3 逻辑像素），未选中 2；两者都取整到设备像素，
-            # 否则高分屏下四边会粗细不匀（见 _pen_width）
+            # 否则高分屏下四边会粗细不均（见 _pen_width）
             pen = QPen(color, self._pen_width(3 if selected else 2))
 
             painter.setPen(pen)
@@ -555,12 +634,7 @@ class ImageView(QLabel):
                 round(x1 * self._scale_x), round(y1 * self._scale_y),
                 round((x2 - x1) * self._scale_x), round((y2 - y1) * self._scale_y),
             )
-            names = self._box_names
-            name = (
-                names[index]
-                if names and index < len(names)
-                else BOX_NAMES[index % len(BOX_NAMES)]
-            )
+            name = names[index] if index < len(names) else BOX_NAMES[0]
             painter.drawText(
                 round(x1 * self._scale_x) + 4,
                 max(14, round(y1 * self._scale_y) - 4),

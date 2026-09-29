@@ -47,12 +47,18 @@ def run(ctx) -> None:
     d._save_manual_boxes(manual_path, [[10, 20, 300, 400]])
     entry = repo.detect_boxes_entry(tid, Path(manual_path).stem)
     ok("手动框写入数据库", entry is not None and entry[1] == "manual", str(entry))
-    ok("手动框坐标正确", entry is not None and entry[0] == [[10, 20, 300, 400]], str(entry))
-    ok("detect_cache 同步更新", d.detect_cache.get(manual_path) == [[10, 20, 300, 400]])
+    # ⚠️ 半幅页**恒 2 槽**（缺失侧 null）：不能因为只剩一个框就退化成 1 槽，
+    #    否则会被当成「整幅」（用户 2026-09-29 报的"删掉一个框，另一个变整幅"）。
+    stored = entry[0] if entry else None
+    ok("手动框按半幅 2 槽入库（形态不退化）",
+       isinstance(stored, list) and len(stored) == 2
+       and [b for b in stored if b] == [[10, 20, 300, 400]], str(stored))
+    ok("detect_cache 同步为同一份槽位表示",
+       d.detect_cache.get(manual_path) == stored, str(d.detect_cache.get(manual_path)))
     after_files = _snapshot()
     ok("手动调整不生成新文件", before_files == after_files)
     # 再切回该页：直接命中 detect_cache，不触发重新检测
-    d.detect_cache[manual_path] = [[10, 20, 300, 400]]
+    d.detect_cache[manual_path] = stored
     d._detect_image_selected(0, manual_path)
     info = d.detect_viewer.info_label.text()
     ok("回看页面直接应用框", "300,400" in info and "px" not in info, repr(info))

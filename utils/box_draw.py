@@ -7,8 +7,8 @@ GUI 的预览控件也要画同样的框。配色与命名必须一致，否则�
 和「界面看到的」是两套东西。因此视觉约定集中在这里：
 
 - 左框 `#21c178`（绿）、右框 `#3b82f6`（蓝）、合并框 `#f59e0b`（琥珀）；
-- 整幅内容框（fullcontent，单框整页）`#C0392B`（朱砂红）——古籍用印的朱砂色，
-  暖调，压在米黄纸页上不刺眼；与前三色区分干净，也不落在冷色系里；
+- 整幅内容框（fullcontent，单框整页）`#4F46E5`（靛蓝）——深蓝紫，压在米黄
+  纸页上醒目；与前三色区分干净（2026-09-29 用户选定，此前朱砂红被否）。
 - 标注文字为「左框 (x1,y1,x2,y2)」。
 
 **中文字体**：OpenCV 的 `putText` 不支持中文（会画成 `????`），因此文字用
@@ -31,7 +31,7 @@ BOX_COLORS_RGB: Tuple[Tuple[int, int, int], ...] = (
     (0x21, 0xC1, 0x78),  # 左框（绿）
     (0x3B, 0x82, 0xF6),  # 右框（蓝）
     (0xF5, 0x9E, 0x0B),  # 合并框（琥珀）
-    (0xC0, 0x39, 0x2B),  # 整幅（朱砂红；fullcontent 单框整页）
+    (0x4F, 0x46, 0xE5),  # 整幅（靛蓝；fullcontent 单框整页）
 )
 BOX_COLORS_BGR: Tuple[Tuple[int, int, int], ...] = tuple(
     (b, g, r) for r, g, b in BOX_COLORS_RGB
@@ -40,9 +40,27 @@ BOX_NAMES: Tuple[str, ...] = ("左框", "右框", "合并框", "整幅")
 # 无中文字体时的 ASCII 兜底标签（与 BOX_NAMES 一一对应，长度必须一致）
 BOX_NAMES_ASCII: Tuple[str, ...] = ("L", "R", "U", "F")
 
+#: **框类型键 → 在 BOX_NAMES / BOX_COLORS 里的下标**。
+#:
+#: 类型键（``"left"`` / ``"right"`` / ``"full"``）是**跨层协议**：第二步面板的
+#: 类型按钮、宿主的人工干预逻辑、GUI 预览的标签/配色都按它取值——各层各自
+#: 记下标迟早会错位，所以映射只在这里写一份。
+BOX_KIND_INDEX = {
+    "left": BOX_NAMES.index("左框"),
+    "right": BOX_NAMES.index("右框"),
+    "full": BOX_NAMES.index("整幅"),
+}
+
+
+def box_kind_name(kind: str) -> str:
+    """类型键 → 中文名称（``"left"`` → 「左框」）；未知键原样返回。"""
+    index = BOX_KIND_INDEX.get(kind)
+    return BOX_NAMES[index] if index is not None else str(kind)
+
+
 #: 整幅内容框（fullcontent）的专用色/名：它**不是**左框也不是合并框，
 #: 单独一个颜色，免得标注图上把整页内容误读成某一栏。
-BOX_COLOR_FULL_BGR: Tuple[int, int, int] = BOX_COLORS_BGR[3]  # 整幅（朱砂红 #C0392B）
+BOX_COLOR_FULL_BGR: Tuple[int, int, int] = BOX_COLORS_BGR[3]  # 整幅（靛蓝 #4F46E5）
 BOX_NAME_FULL = "整幅"
 
 _font_cache: dict = {}

@@ -402,7 +402,7 @@ class DetectFunction(FunctionBase):
         「只检出左框」时不会画出错误的右框位置——与 GUI 预览一致。
         整幅页的框标为「整幅」并配专用色，不会被误读成左/右栏。
         """
-        # 颜色/名称按框槽位覆盖：整幅用专用朱砂红 + 「整幅」，不是第 3 号的
+        # 颜色/名称按框槽位覆盖：整幅用专用靛蓝 + 「整幅」，不是第 3 号的
         # 「合并框」琥珀色。常数只在 utils.box_draw 里写一份。
         from utils.box_draw import BOX_COLOR_FULL_BGR, BOX_COLORS_BGR  # noqa: PLC0415
 

@@ -345,7 +345,8 @@ def run(ctx) -> None:
     _a_spec = next(s for s in _fx10
                    if Path(s["file"]).stem == _anchor_stem)
     ok("print 合成规格携带检测框/area/border",
-       _a_spec["effect"] == {"boxes": [_injected], "area": 1, "border": "10"},
+       _a_spec["effect"] == {"boxes": [_injected], "area": 1, "border": "10",
+                             "full": False},
        str(_a_spec))
     # 仅改 border 不重新提交：合成规格立即变为新值
     panel3.border.setText("25")

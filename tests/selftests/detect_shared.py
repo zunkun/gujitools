@@ -134,14 +134,20 @@ def run(ctx) -> None:
        is_full_content([(1, 2, 3, 4)]) is True
        and is_full_content([(1, 2, 3, 4), None]) is False
        and is_full_content([]) is False)
-    from desktop.components.viewers.image_view import slot_styles
+    # 命名/配色由**类型**决定，不再由"框的序号/还剩几个框"决定（2026-09-29）：
+    # 整幅是显式类型（恒「整幅」）；半幅按框的**中心位置**判左右。
+    from desktop.components.viewers.image_view import box_styles
 
-    _fb, _fn, _fc = slot_styles([(1, 2, 3, 4)])
-    ok("整幅框在预览里命名「整幅」且带专用色",
-       _fn == ["整幅"] and _fc[0] is not None, f"{_fn}")
-    _hb, _hn, _hc = slot_styles([None, (9, 9, 9, 9)])
-    ok("半幅只检出一侧时保留另一侧身份（右框，不是左框）",
-       _hb == [[9, 9, 9, 9]] and _hn == ["右框"], f"{_hn}")
+    _fn, _fc = box_styles([(1, 2, 3, 4)], (1000, 800), full=True)
+    ok("整幅页的框命名「整幅」且带专用色（靛蓝）",
+       _fn == ["整幅"] and _fc[0].name().lower() == "#4f46e5", f"{_fn}")
+    _hn, _ = box_styles([(9, 9, 9, 9)], (1000, 800), full=False)
+    ok("半幅单框按**中心位置**命名（中心在左 → 左框）", _hn == ["左框"], f"{_hn}")
+    _hn2, _ = box_styles([(600, 9, 900, 90)], (1000, 800), full=False)
+    ok("半幅单框中心在右 → 右框", _hn2 == ["右框"], f"{_hn2}")
+    _hn3, _ = box_styles([(600, 9, 900, 90), (9, 9, 300, 90)], (1000, 800), full=False)
+    ok("半幅两框按中心排序命名（靠左的→左框，另一个→右框）",
+       _hn3 == ["右框", "左框"], f"{_hn3}")
 
     # ---- 5b. 配色/命名只有一份：GUI 直接 import utils.box_draw，不许再抄 ----
     # 曾经两边各写一份十六进制、只靠注释说"与对方对齐"，改一次颜色就有漏改风险。
