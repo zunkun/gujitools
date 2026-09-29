@@ -90,7 +90,8 @@ def plan_rembg_submit_entries(
             continue  # 该页尚未生成预览
         # ⚠️ 用**原始槽位**判断是否整幅内容：半幅固定 2 槽 [左,右]（可能含 null），
         #    整幅只占 1 槽。过滤 null 后两者都可能只剩 1 个框，届时无法区分——
-        #    而整幅单框在 area=2/3 不能做对称镜像（见 entry_to_effect_spec）。
+        #    而整幅页的内容区是**整页**（area 1/2/3/4 行为一致，
+        #    见 entry_to_effect_spec 与 utils.box_geometry.whole_page_box）。
         raw_boxes = list(boxes_for(str(path)) or [])
         full = is_full_content(raw_boxes)
         boxes = [b for b in raw_boxes if b]
@@ -152,8 +153,9 @@ def entry_to_effect_spec(entry: dict, border) -> dict:
     预览也是 area=2，生成的 PDF 却是 area=1 的效果」就是这么来的（紧裁观感
     与 area=1 的半页裁剪一致）。
 
-    ``full`` 原样透传给合成层：整幅内容(fullcontent)的单框在 area=2/3 下
-    **不做**对称镜像（见 utils.box_geometry.is_full_content）。
+    ``full`` 原样透传给合成层：整幅内容(fullcontent)页的内容区＝**整页**，
+    合成时按 area=4 处理（不拆 `-l`/`-r`、不镜像、不紧裁）——见
+    ``desktop.workers.preview_worker.region_canvas_specs``。
     """
     raw = [b for b in (entry.get("boxes") or []) if b]
     if not raw and entry.get("box"):

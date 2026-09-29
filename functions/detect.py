@@ -67,8 +67,9 @@ class PageBoxes(NamedTuple):
 
     ⚠️ **存储槽位约定**（GUI boxes.json / 检测事件 / 下游布局共用）：
     ``slots()`` 给出的槽位数编码形态——半幅固定 2 槽 ``[左, 右]``（保留左右
-    身份，缺失侧为 None），整幅只占 1 槽 ``[整幅]``。下游据此判断"单个框是否
-    整幅"（例如 area=2/3 的单框是否要做对称镜像——整幅**不**镜像）。
+    身份，缺失侧为 None），整幅只占 1 槽 ``[整幅]``。下游据此判断整幅页：
+    整幅页的内容区就是整页，**area 1/2/3/4 行为一致**（都等价 area=4，
+    见 `utils.box_geometry.whole_page_box`）。
     """
 
     left: Optional[Box] = None
@@ -401,8 +402,8 @@ class DetectFunction(FunctionBase):
         「只检出左框」时不会画出错误的右框位置——与 GUI 预览一致。
         整幅页的框标为「整幅」并配专用色，不会被误读成左/右栏。
         """
-        # 颜色/名称按框槽位覆盖：整幅用专用紫色 + 「整幅」，不是第 3 号的
-        # 「合并框」橙色。常数只在 utils.box_draw 里写一份。
+        # 颜色/名称按框槽位覆盖：整幅用专用朱砂红 + 「整幅」，不是第 3 号的
+        # 「合并框」琥珀色。常数只在 utils.box_draw 里写一份。
         from utils.box_draw import BOX_COLOR_FULL_BGR, BOX_COLORS_BGR  # noqa: PLC0415
 
         annotated = utils.draw_boxes(

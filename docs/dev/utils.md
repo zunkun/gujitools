@@ -248,7 +248,9 @@ GUI 的预览控件也要画同样的框。配色与命名必须一致，否则�
 `functions.detect.PageBoxes` 把结果表达为**槽位**：半幅固定 2 槽 `[左, 右]`
 （缺失侧为 None），整幅只占 1 槽 `[整幅]`。下游（`utils.box_geometry
 .is_full_content`、`desktop/.../image_view.slot_styles`、`print_plan`）据此
-判断整幅单框：area=2/3 **不做**对称镜像、area=1 只输出一条。
+判断整幅页——整幅页的内容区就是整页，**area 1/2/3/4 行为一致**（都等价
+area=4：不拆 `-l/-r`、不镜像、不紧裁），归一入口是
+`utils.box_geometry.whole_page_box`（CLI 与 GUI 共用）。
 
 ---
 

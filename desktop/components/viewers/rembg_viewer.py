@@ -158,8 +158,8 @@ class RembgPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         全部条目最终按 CLI 规范（utils/sort_utils.pdf_custom_sort_key）排序：
         同页编号 r 在 l 前，页码数字感知排序。
 
-        ``full`` 标记整幅内容(fullcontent)的**单槽**条目——它在 area=2/3 下
-        不做对称镜像（见 utils.box_geometry.is_full_content）。
+        ``full`` 标记整幅内容(fullcontent)的**单槽**条目——它的内容区＝整页，
+        合成时 area 1/2/3/4 行为一致（见 utils.box_geometry.whole_page_box）。
         """
         entries: list[dict] = []
         for path in self._paths:
@@ -198,7 +198,7 @@ class RembgPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
                              "boxes": list(valid), "parea": area, "full": False}
                         ]
                     elif area in (2, 3) and len(valid) == 1:
-                        # 单框：半幅→对称画布；整幅(full)→普通框（不镜像）
+                        # 单框：半幅→对称画布；整幅(full)→整页（area 1/2/3/4 一致）
                         page_entries = [
                             {"label": stem, "path": path_text, "box": valid[0],
                              "boxes": list(valid), "parea": area, "full": full}
@@ -399,16 +399,19 @@ class RembgPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
             try:
                 area, border = self._region_params_provider()
                 if entry.get("box") is not None and area == 1:
-                    # area=1 单框条目：显示"该文本框 + border"区域
+                    # area=1 单框条目：显示"该文本框 + border"区域。
+                    # ⚠️ full 必须原样带上：整幅页的内容区是**整页**，漏了它
+                    #    会被当成普通单框去紧裁（预览与产物对不上）。
                     effect = {"boxes": [entry["box"]], "area": 1,
-                              "border": border, "full": False}
+                              "border": border,
+                              "full": bool(entry.get("full"))}
                 else:
                     raw = self._boxes_provider(path_text) or []
                     effect = {
                         "boxes": raw,
                         "area": area,
                         "border": border,
-                        # 整幅内容单框在 area=2/3 不做对称镜像
+                        # 整幅页内容区＝整页（area 1/2/3/4 行为一致）
                         "full": is_full_content(raw),
                     }
             except Exception as exc:  # 参数计算失败时退化为整图显示

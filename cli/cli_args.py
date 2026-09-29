@@ -159,7 +159,7 @@ class CliArgsParser:
             type=int,
             choices=list(CROP_AREAS),
             help="裁剪区域类型，默认1\n"
-            "1 = 逐框独立裁剪：半幅输出 -l/-r 两张图，整幅只输出一张（无后缀），无框时输出原图\n"
+            "1 = 逐框独立裁剪：半幅输出 -l/-r 两张图，整幅页按整页输出一张（不拆），无框时输出原图\n"
             "2 = 逐框独立裁剪，单图输出，border=None 保持原尺寸\n"
             "3 = 合并左右框为整体外边界裁剪，单图输出，border=None 保持原尺寸\n"
             "4 = 整页模式（不加载 YOLO，整页即唯一文本框，不检测）",
@@ -250,7 +250,7 @@ class CliArgsParser:
             type=int,
             choices=list(CROP_AREAS),
             help="去底色文本区域识别类型，默认1\n"
-            "1 = 逐框独立 Otsu（阈值取 left+right 合并）：半幅输出 -l/-r 两张，整幅只输出一张（无后缀），无框时输出原图\n"
+            "1 = 逐框独立 Otsu（阈值取 left+right 合并）：半幅输出 -l/-r 两张，整幅页按整页输出一张（不拆），无框时输出原图\n"
             "2 = 逐框独立 Otsu（同1），单图输出，border=None 保持原尺寸\n"
             "3 = 合并左右框为整体外边界统一 Otsu，单图输出，border=None 保持原尺寸\n"
             "4 = 整页模式（不加载 YOLO，整页即唯一文本框，不检测）",

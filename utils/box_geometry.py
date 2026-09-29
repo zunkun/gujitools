@@ -39,6 +39,24 @@ def is_full_content(boxes) -> bool:
     return len(list(boxes or [])) == 1
 
 
+def whole_page_box(image_size) -> List[int]:
+    """整页框 ``[0, 0, W, H]``——「整页只有一个内容区」时的唯一内容区表示。
+
+    两处用它，语义完全相同：
+
+    - ``area=4``（整页模式：不检测，整页即唯一文本框）；
+    - **整幅内容(fullcontent)页**：整页只有一个内容区，area 1/2/3 的
+      「按中线分左右栏 / 合并左右栏」对它没有意义。因此规定整幅页在
+      **area 1/2/3/4 下行为一致**，都等价于 ``area=4``——内容区＝整页，
+      既不拆 ``-l/-r``、也不做对称镜像、也不紧裁掉页边。
+
+    ⚠️ CLI（`functions/text_region`）与 GUI（`preview_worker.region_canvas_specs`）
+    都把整幅页的框换成它，从而复用同一套 area/border 规则，不必各自加分支
+    （各自加分支正是之前「CLI 紧裁、GUI 半幅空白」这类分歧的来源）。
+    """
+    return [0, 0, int(image_size[0]), int(image_size[1])]
+
+
 def parse_border_mm(border_value, dpi: int = 300) -> Optional[List[int]]:
     """解析 border 参数（毫米单位），按 DPI 转换为像素。
 

@@ -20,13 +20,15 @@ from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QLabel
 
 from desktop.ui import theme as T
+from utils.box_draw import BOX_COLORS_RGB
+from utils.box_draw import BOX_NAMES as _BOX_NAMES
 
-# 框颜色：绿/蓝/琥珀/紫 对应 左框/右框/合并框/整幅，与检测语义一致
+# 框颜色/名称**不在本文件定义**：唯一事实来源是 utils/box_draw.py —— CLI 的
+# `detect --save` 标注图用的也是它，两边各抄一份（只靠注释对齐）迟早漂移。
+# 顺序：绿 / 蓝 / 琥珀 / 朱砂红 对应 左框 / 右框 / 合并框 / 整幅
 # （整幅 = fullcontent 单框整页，见 functions/detect.PageBoxes）
-BOX_COLORS = [
-    QColor("#21c178"), QColor("#3b82f6"), QColor("#f59e0b"), QColor("#a855f7"),
-]
-BOX_NAMES = ["左框", "右框", "合并框", "整幅"]
+BOX_COLORS = [QColor(*rgb) for rgb in BOX_COLORS_RGB]
+BOX_NAMES = list(_BOX_NAMES)
 #: 整幅内容框（fullcontent）专用的名称/颜色。
 FULL_BOX_NAME = "整幅"
 FULL_BOX_COLOR = BOX_COLORS[3]
@@ -39,7 +41,7 @@ def slot_styles(raw_boxes):
 
     槽位约定与 `functions/detect.PageBoxes` 一致：半幅(harfcontent)固定 2 槽
     ``[左, 右]``（缺失侧为 None，剔除但保留另一侧的名字/色）；整幅(fullcontent)
-    只占 1 槽。据此把整幅框命名为「整幅」并用紫色——绝不能拿它当"左框"。
+    只占 1 槽。据此把整幅框命名为「整幅」并用专用色（朱砂红）——绝不能拿它当"左框"。
     """
     raw = list(raw_boxes or [])
     if len(raw) == 1:

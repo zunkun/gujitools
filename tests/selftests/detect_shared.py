@@ -143,6 +143,23 @@ def run(ctx) -> None:
     ok("半幅只检出一侧时保留另一侧身份（右框，不是左框）",
        _hb == [[9, 9, 9, 9]] and _hn == ["右框"], f"{_hn}")
 
+    # ---- 5b. 配色/命名只有一份：GUI 直接 import utils.box_draw，不许再抄 ----
+    # 曾经两边各写一份十六进制、只靠注释说"与对方对齐"，改一次颜色就有漏改风险。
+    from desktop.components.viewers.image_view import BOX_COLORS as _GUI_C
+    from desktop.components.viewers.image_view import BOX_NAMES as _GUI_N
+    from utils.box_draw import BOX_COLORS_BGR as _BGR
+    from utils.box_draw import BOX_COLORS_RGB as _RGB
+    from utils.box_draw import BOX_NAMES as _UTIL_N
+
+    ok("GUI 框颜色与 utils 同源（GUI 不再自带色值）",
+       [tuple(c.getRgb()[:3]) for c in _GUI_C] == list(_RGB),
+       f"GUI={[c.name() for c in _GUI_C]} utils={list(_RGB)}")
+    ok("BGR 由 RGB 推导，不会手写漂移",
+       _BGR == tuple((b, g, r) for r, g, b in _RGB), str(_BGR))
+    ok("GUI 框名称与 utils 同源", _GUI_N == list(_UTIL_N), f"{_GUI_N}")
+    ok("四个框色互不相同（整幅不会与左/右/合并框混淆）",
+       len(set(_RGB)) == len(_RGB) == 4, str(_RGB))
+
     # ---- 6. --save：默认不落地、开启才落地 ----
     import tempfile
     from pathlib import Path as _P
