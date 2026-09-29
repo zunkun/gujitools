@@ -81,6 +81,7 @@ class DetectPanel(StagePanel):
             "· 左框、右框按框的中心位置自动判定，拖动跨过中线会换边；\n"
             "· 整幅是整页唯一内容区，选过之后不随位置/大小改变；\n"
             "· 整幅与左右半幅互斥，且整幅一页只能有一个框。\n"
+            "下游区域随整幅框走（area=1/2/3 效果一致）；只有 area=4 保留整页。\n"
             "没有选中框时，点这三项＝选中该类型的框。"
         )
         self.box_kind.current_changed.connect(self.box_kind_changed.emit)

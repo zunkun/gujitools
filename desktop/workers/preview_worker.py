@@ -23,6 +23,7 @@ from utils.box_geometry import (
 )
 from desktop.utils.files import THUMBNAIL_EDGE
 from utils.file_utils import write_bytes_atomic
+from core.command_spec import WHOLE_PAGE_AREA
 
 
 def region_canvas_specs(
@@ -35,10 +36,15 @@ def region_canvas_specs(
     算出每张输出画布的大小与贴图来源。第三步提交据此**预先算好输出
     文件名**（张数 × 名称），再并行处理各页；规则仍然只有这一份。
 
-    ``full=True`` 表示这一页是整幅内容(fullcontent)。整幅页整页只有一个内容区，
-    area 1/2/3 对「怎么分栏/怎么合并」的规则都不适用，因此这里把它的框**归一并
-    整页**（`utils.box_geometry.whole_page_box`）——于是整幅页在 area 1/2/3/4 下
-    行为一致，都等价 area=4（整页）；既不做对称镜像，也不紧裁掉页边。
+    ``full=True`` 表示这一页是整幅内容(fullcontent)。整幅框本质是"大一点的
+    单独内容框"，**框原样参与布局**（用户 2026-09-29 改定，推翻旧的"整幅＝整页"）：
+
+    - area=4：保留框外内容 → 框归一成整页（`utils.box_geometry.whole_page_box`）；
+    - area=1/2/3：统一按 **area=3 的合并语义**走单框布局（不拆 ``-l``/``-r``、
+      不做对称镜像），几何由 border 决定：给了 border（面板默认 ``"0"``）→
+      紧裁「框 + border」；border 留空（None）→ 整页画布、框写回原位置（框外白）。
+      三种 area 因此效果一致。
+
     调用方通常直接传 ``is_full_content(原始槽位列表)`` 的结果。
     """
     W, H = image_size
@@ -46,7 +52,10 @@ def region_canvas_specs(
     if not present:  # 无检测框：整页原图
         return [((W, H), [])]
     if full:
-        present = [whole_page_box((W, H))]
+        if area == WHOLE_PAGE_AREA:
+            present = [whole_page_box((W, H))]
+        else:
+            area = 3
     padding = parse_border_mm(border_mm, dpi)
     if len(present) == 1 and padding is not None and area in (2, 3) and not full:
         layout = build_symmetric_layout(
@@ -79,7 +88,8 @@ def compose_region_output(image: QImage, boxes: list, area: int, border_mm,
     **写回原位置**（此前被搬到画布左上角）。规格见
     docs/functions/cropremove.md:57「area=3 → 单图，ROI 写回原位置」。
 
-    ``full`` 语义见 `region_canvas_specs`（整幅页内容区＝整页，area 1/2/3/4 一致）。
+    ``full`` 语义见 `region_canvas_specs`（整幅框原样下传：area=4 保留整页、
+    area 1/2/3 统一按合并语义）。
     """
     W, H = image.width(), image.height()
     specs = region_canvas_specs((W, H), boxes, area, border_mm, dpi, full=full)

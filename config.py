@@ -4,4 +4,4 @@
    guji.yaml，不在本模块维护。
 """
 
-VERSION = "1.3.2"
+VERSION = "1.3.3"

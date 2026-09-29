@@ -33,8 +33,9 @@ def is_full_content(boxes) -> bool:
     - 半幅（harfcontent）固定 2 槽 ``[左, 右]``，缺失一侧为 None；
     - 整幅（fullcontent）只占 **1 槽** ``[整幅]``。
 
-    据此判断 area=2/3 的单框要不要做对称镜像——整幅本来就是整页内容区，
-    镜像会凭空多出一半空白，**不做**镜像；半幅漏检一侧才需要镜像补白。
+    据此判断 area=2/3 的单框要不要做对称镜像——整幅框已近页宽，
+    镜像会凭空多出一半空白，**不做**镜像（这是整幅在合成层唯一的特殊行为，
+    区域本身随框走）；半幅漏检一侧才需要镜像补白。
 
     ⚠️ 槽数**不是**"有几个框"，而是**形态**：半幅恒 2 槽（`half_slots` 保证），
     整幅恒 1 槽。半幅删剩一侧后仍然写回 2 槽（另一侧 None），否则会被误判成整幅。
@@ -97,17 +98,17 @@ def half_slots(boxes, image_size) -> List[Optional[list]]:
 def whole_page_box(image_size) -> List[int]:
     """整页框 ``[0, 0, W, H]``——「整页只有一个内容区」时的唯一内容区表示。
 
-    两处用它，语义完全相同：
+    两处用它，语义相同——都表示"保留整页内容"：
 
     - ``area=4``（整页模式：不检测，整页即唯一文本框）；
-    - **整幅内容(fullcontent)页**：整页只有一个内容区，area 1/2/3 的
-      「按中线分左右栏 / 合并左右栏」对它没有意义。因此规定整幅页在
-      **area 1/2/3/4 下行为一致**，都等价于 ``area=4``——内容区＝整页，
-      既不拆 ``-l/-r``、也不做对称镜像、也不紧裁掉页边。
+    - **整幅内容(fullcontent)页 + area=4**：保留框外内容 → 框归一成整页。
 
-    ⚠️ CLI（`functions/text_region`）与 GUI（`preview_worker.region_canvas_specs`）
-    都把整幅页的框换成它，从而复用同一套 area/border 规则，不必各自加分支
-    （各自加分支正是之前「CLI 紧裁、GUI 半幅空白」这类分歧的来源）。
+    整幅页在 area=1/2/3 下**不再**用整页框（用户 2026-09-29 改定）：整幅框
+    本质是"大一点的单独内容框"，框原样下传，area 1/2/3 统一按 area=3 的
+    合并语义走单框布局（见 ``preview_worker.region_canvas_specs``）。
+
+    CLI（`functions/text_region`）与 GUI（`preview_worker.region_canvas_specs`）
+    共用本函数，避免各自造 [0,0,W,H]。
     """
     return [0, 0, int(image_size[0]), int(image_size[1])]
 

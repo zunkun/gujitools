@@ -101,14 +101,14 @@ class TextRegionProcessor(FunctionBase):
         # 半幅(harfcontent)与整幅(fullcontent)对一页互斥；半幅优先（见 PageBoxes）。
         h, w = img_bgr.shape[:2]
         is_full = full_box is not None and left_box is None and right_box is None
-        if area_mode == WHOLE_PAGE_AREA or is_full:
-            # 整页 / 整幅(fullcontent)：**内容区＝整页**。
-            # 整幅页整页只有一个内容区，area 1/2/3 的「分左右栏 / 合并左右栏」
-            # 对它没有意义 —— 因此规定整幅页在 area 1/2/3/4 下行为**一致**，
-            # 都等价 area=4：不拆 -l/-r、不镜像、也不紧裁掉页边
-            # （用户 2026-09-29：「area=1,2,3,4 在 fullcontent 应该跟 4 一样」）。
-            # 归一后走的就是下面同一套 area/border 规则，无需再加分支。
+        if area_mode == WHOLE_PAGE_AREA:
             boxes = [whole_page_box((w, h))]
+        elif is_full:
+            # 整幅(fullcontent)：**框原样下传**（用户 2026-09-29 改定，推翻旧的
+            # "整幅＝整页"）。整幅框本质是"大一点的单独内容框"，区域随框走——
+            # area 1/2/3 对它都是同一套单框合并语义（不拆 -l/-r、不镜像）；
+            # 只有 area=4 才用整页框（保留框外内容）。
+            boxes = [full_box]
         else:
             boxes = [b for b in (left_box, right_box) if b]
         self._report_boxes(image_path, left_box, right_box, full_box, detect_elapsed)
@@ -139,20 +139,19 @@ class TextRegionProcessor(FunctionBase):
 
         # border 参数：没给（None/空）时按 area 取默认——area=1/2/3 → "0"
         # （不加留白，第四步会在 A4 上重新排版），area=4（整页）→ None。
-        # ⚠️ 整幅(fullcontent)页按 area=4 取值：它的内容区就是整页（见上）。
+        # 整幅(fullcontent)不再按 area=4 取默认：它的 border 跟随用户选的
+        # area（框原样下传，见上）。
         # 规则只有一份，见 core.command_spec.effective_border_default。
         border_mm = self.command_args.get("border")
         if border_mm is None or not str(border_mm).strip():
-            border_mm = effective_border_default(
-                WHOLE_PAGE_AREA if (area_mode == WHOLE_PAGE_AREA or is_full)
-                else area_mode
-            )
+            border_mm = effective_border_default(area_mode)
         border_padding = utils.parse_border_mm(border_mm, dpi=300)
 
-        # 特殊处理：area=2/3 + border有值 + **半幅**仅一个文本框 → 对称输出
+        # area=2/3 + border有值 + **半幅**仅一个文本框 → 对称输出
         # 实际框 + border 组成一半，另一边为空白镜像，中间间隔
         # utils.box_geometry.SYMMETRIC_GAP_MM（10mm）。
-        # ⚠️ 整幅(fullcontent)不参与：它的内容区是整页，镜像只会凭空多出一半空白。
+        # ⚠️ 整幅(fullcontent)不做镜像：它已近页宽，镜像会凭空多出一半空白
+        # （这是 full 唯一的特殊行为；区域本身随框走）。
         if (single_box_detected and border_padding is not None
                 and area_mode in (2, 3) and not is_full):
             is_left = left_box is not None
@@ -169,8 +168,8 @@ class TextRegionProcessor(FunctionBase):
             }
 
         # area=1：逐框裁剪输出（-l/-r）
-        # ⚠️ 整幅页不走这里（is_full 时它按整页单图输出，见上）——整页只有一个
-        # 内容区，拆成 -l/-r 没有意义。
+        # ⚠️ 整幅页不走这里——不拆 -l/-r（整幅只有一个框），落到下面的单图输出，
+        # 几何与 area=2/3 完全一致（用户 2026-09-29：整幅的 area 1/2/3 效果一样）。
         if area_mode == 1 and not is_full:
             if border_padding is None:
                 border_padding = [0, 0, 0, 0]
@@ -185,6 +184,10 @@ class TextRegionProcessor(FunctionBase):
             return {"status": "success", "file": image_path.name, "outputs": outputs}
 
         # area=2/3（以及整幅页 / area=4）：单图输出
+        # 整幅页落到这里时 boxes=[整幅框]，几何由 border 决定：
+        #   · border 默认（area 1/2/3 → "0"）→ 紧裁「框」（区域随框走）
+        #   · 显式给 border                 → 紧裁「框 + border」
+        #   · border=None（只来自 area=4）  → 整页画布、框写回原位置（框外白）
         final_arr = self._build_output(img_bgr, boxes, border_padding, ctx)
         out_path = self.outpath / f"{image_path.stem}.{ext}"
         self._save_output(final_arr, out_path)
@@ -200,9 +203,8 @@ class TextRegionProcessor(FunctionBase):
 
         半幅页（harfcontent）：左右各一条，后缀 ``-l`` / ``-r``。
 
-        ⚠️ 整幅页（fullcontent）**不走这里**：它的内容区＝整页，area 1/2/3/4
-        行为一致（都按整页单图输出，见 `_process_single_image`），因此不会有
-        「整幅要不要拆左右」这个问题。
+        ⚠️ 整幅页（fullcontent）**不走这里**：不拆 -l/-r（只有一个框），由
+        调用方落到单图输出——几何同为准「框 + border」，效果与 area=2/3 一致。
         """
         return [(left_box, "-l"), (right_box, "-r")]
 

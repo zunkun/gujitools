@@ -5,10 +5,11 @@
 改名）与 fullcontent（整幅，整页单一内容区），两类对一页互斥。本模块守住
 「整幅」这条新增语义在三处的行为（都不需要真的跑 YOLO，纯规则断言）：
 
-1. **整幅页 area 1/2/3/4 行为一致**（用户 2026-09-29 定）：整幅页整页只有一个
-   内容区，area 1/2/3 的「分左右栏 / 合并左右栏」对它没有意义，因此统一按
-   ``area=4`` 处理——**内容区＝整页**（``utils.box_geometry.whole_page_box``）：
-   不拆 ``-l``/``-r``、不做对称镜像、也不紧裁掉页边。半幅的既有行为一律不变。
+1. **整幅框原样下传**（用户 2026-09-29 晚改定，推翻旧的"整幅＝整页"）：
+   整幅框本质是"大一点的单独内容框"，区域随框走——area=1/2/3 统一按
+   **area=3 的合并语义**走单框布局（不拆 ``-l``/``-r``、不做对称镜像；
+   border 空 → 整页画布写回原位置、框外白，给 border → 紧裁「框 + border」）；
+   只有 **area=4 保留框外内容**（框归一整页）。半幅的既有行为一律不变。
 2. **派生条目**：整幅单槽在 area=1/2/3 下都是一条，且 ``full`` 标记随条目/
    effect 透传到合成层（合成层据此把内容区当整页）。
 3. 槽位约定（半幅 2 槽 / 整幅 1 槽）是整条链路的唯一判据。
@@ -44,7 +45,9 @@ def run(ctx) -> None:
     ok("半幅只检出一侧 area=1 → 只一条（另一侧 None 被跳过）",
        outs == [(None, "-l"), (right, "-r")], str(outs))
 
-    # ---- 2. 整幅页：area 1/2/3/4 **行为一致**（内容区＝整页，同 area=4）----
+    # ---- 2. 整幅页：框原样下传；area 1/2/3 统一合并语义，area=4 保留整页 ----
+    # （用户 2026-09-29 改定，推翻旧的"整幅＝整页"：整幅框本质是"大一点的
+    #   单独内容框"，区域随框走；只有 area=4 保留框外内容。）
     from core.command_spec import WHOLE_PAGE_AREA, effective_border_default
     from desktop.workers.preview_worker import region_canvas_specs
     from utils.box_geometry import SYMMETRIC_GAP_MM, whole_page_box
@@ -60,18 +63,28 @@ def run(ctx) -> None:
 
     full_specs = {
         a: region_canvas_specs((W, H), [detected_full], a, "0", full=True)
-        for a in (1, 2, 3, 4)
+        for a in (1, 2, 3)
     }
-    ok("整幅页 area=1/2/3/4 的画布完全相同（统一按整页）",
+    ok("整幅页 area=1/2/3 的画布完全相同（统一按合并语义）",
        len({repr(v) for v in full_specs.values()}) == 1, str(full_specs))
-    ok("整幅页画布＝整页，且内容按整页写回（不镜像、不紧裁）",
-       full_specs[1] == [((W, H), ((tuple(page_box), 0, 0),))], str(full_specs[1]))
-    ok("整幅页显式给 border → 整页 + 白边（与 area=4 同一条规则）",
-       region_canvas_specs((W, H), [detected_full], 2, "10", full=True)[0][0]
+    ok("整幅页 area=1/2/3 + border → 紧裁「整幅框 + border」（不是整页）",
+       full_specs[1] == [((960 - 40, 770 - 30), ((tuple(detected_full), 0, 0),))],
+       str(full_specs[1]))
+    ok("整幅页 area=1/2/3 border 空 → 整页画布、框内容写回原位置（框外白）",
+       region_canvas_specs((W, H), [detected_full], 2, None, full=True)
+       == [((W, H), ((tuple(detected_full), 40, 30),))],
+       str(region_canvas_specs((W, H), [detected_full], 2, None, full=True)))
+    ok("整幅页 area=4 → 归一整页（保留框外内容）",
+       region_canvas_specs((W, H), [detected_full], 4, None, full=True)
+       == [((W, H), ((tuple(page_box), 0, 0),))],
+       str(region_canvas_specs((W, H), [detected_full], 4, None, full=True)))
+    ok("整幅页 area=4 显式给 border → 整页 + 白边",
+       region_canvas_specs((W, H), [detected_full], 4, "10", full=True)[0][0]
        == (W + pad * 2, H + pad * 2),
-       str(region_canvas_specs((W, H), [detected_full], 2, "10", full=True)))
-    ok("整幅页的 border 默认取 area=4（None，不加白边）",
-       effective_border_default(WHOLE_PAGE_AREA) is None)
+       str(region_canvas_specs((W, H), [detected_full], 4, "10", full=True)))
+    ok("整幅页的 border 默认跟随所选 area（不再强取 area=4 的 None）",
+       effective_border_default(1) == "0"
+       and effective_border_default(WHOLE_PAGE_AREA) is None)
 
     # 半幅既有行为一律不变
     half_single = region_canvas_specs((W, H), [[0, 0, 200, 100]], 2, "10", full=False)
@@ -87,17 +100,20 @@ def run(ctx) -> None:
        region_canvas_specs((W, H), [[0, 0, 200, 100]], 3, "10", full=False)[0][0]
        == (pad + 200 * 2 + gap + pad, pad + 100 + pad))
 
-    # CLI 侧同一套语义：归一整页、且 area=1 不再拆整幅
+    # CLI 侧同一套语义：整幅框原样下传、且 area=1 不拆整幅
     import inspect
 
     tr_src = inspect.getsource(TextRegionProcessor._process_single_image)
-    ok("CLI 整幅页归一整页（复用同一个 whole_page_box）",
-       "whole_page_box" in tr_src, "CLI 自写了一套整幅归一")
+    ok("CLI 整幅框原样下传（boxes = [full_box]，不再归一整页）",
+       "boxes = [full_box]" in tr_src, "整幅仍被换成整页框")
     ok("CLI 整幅页不走 area=1 的 -l/-r 拆分",
        "if area_mode == 1 and not is_full" in tr_src, "整幅仍会被拆左右")
-    ok("GUI 整幅页同样复用 whole_page_box（CLI/GUI 不各写一套）",
+    ok("CLI 整幅页 border 默认跟随所选 area（不再按整页取 None）",
+       "effective_border_default(area_mode)" in tr_src
+       and "or is_full" not in tr_src, "border 默认仍被 area=4 劫持")
+    ok("GUI 整幅页 area=4 同样复用 whole_page_box（CLI/GUI 不各写一套）",
        "whole_page_box" in inspect.getsource(region_canvas_specs),
-       "GUI 自写了一套整幅归一")
+       "GUI 自写了一套整页归一")
 
     # ---- 3. 派生条目：整幅单条 + full 标记透传 ----
     from desktop.services.print_plan import (
@@ -117,7 +133,7 @@ def run(ctx) -> None:
     ok("整幅单槽 → area=2 派生一条，full 标记为真",
        len(one) == 1 and one[0]["full"] is True, str(one))
     eff = entry_to_effect_spec(one[0], None)["effect"]
-    ok("整幅的 full 透传到 effect（合成层据此把内容区当整页）",
+    ok("整幅的 full 透传到 effect（合成层据此抑制镜像、area=4 归一整页）",
        eff.get("full") is True, str(eff))
 
     # 半幅：两槽（含 null）——即便只剩一个有效框，也**不能**当整幅
@@ -138,8 +154,9 @@ def run(ctx) -> None:
        len(full_area1) == 1 and full_area1[0]["label"] == "0001"
        and full_area1[0]["full"] is True, str(full_area1))
 
-    # 端到端（用户报的「整幅页 area=2/3 只占一半页面」）：检测框比整页小，
-    # 合成出来的仍必须是**整页**——既不是半幅 + 空白镜像，也不是紧裁。
+    # 端到端（用户报的「area=1 显示的是整个页面，而不是 fullcontent 所在区域」）：
+    # 整幅框原样下传——border 空时整页画布、框内容写回原位置（框外白）；
+    # area=4 才保留框外内容（整页原图）。
     from PySide6.QtCore import Qt
     from PySide6.QtGui import QImage
 
@@ -151,12 +168,26 @@ def run(ctx) -> None:
     eff = entry_to_effect_spec(full_entry, None)["effect"]
     outs = compose_region_output(
         src, eff["boxes"], eff["area"], eff["border"], full=eff["full"])
-    ok("整幅页 area=2 合成产物＝整页尺寸（不紧裁也不镜像）",
+    ok("整幅页 area=2（border 空）合成产物＝整页尺寸、框内容写回原位置",
        len(outs) == 1 and outs[0].size() == src.size(), str(outs[0].size()))
-    ok("整幅页 area=2 四角都被画上（整页铺满，没有半页留白）",
-       all(outs[0].pixelColor(x, y) != Qt.white
-           for x, y in ((0, 0), (399, 0), (0, 299), (399, 299))),
-       f"{outs[0].pixelColor(0, 0).name()} {outs[0].pixelColor(399, 0).name()}")
+    ok("整幅页框外留白、框内是内容（区域随整幅框走，不再整页铺满）",
+       outs[0].pixelColor(0, 0) == Qt.white
+       and outs[0].pixelColor(200, 150) != Qt.white,
+       f"角落 {outs[0].pixelColor(0, 0).name()} 中心 {outs[0].pixelColor(200, 150).name()}")
+    ok("整幅页 area=1/2/3 合成产物完全一致",
+       all(
+           compose_region_output(
+               src, eff["boxes"], a, eff["border"], full=eff["full"])[0]
+           .size() == outs[0].size()
+           for a in (1, 3)
+       ))
+    _e4 = {"boxes": [[40, 30, 360, 270]], "area": 4, "border": None, "full": True}
+    out4 = compose_region_output(src, _e4["boxes"], 4, None, full=True)[0]
+    ok("整幅页 area=4 保留框外内容（四角都是原图内容）",
+       out4.size() == src.size()
+       and all(out4.pixelColor(x, y) != Qt.white
+               for x, y in ((0, 0), (399, 0), (0, 299), (399, 299))),
+       f"{out4.pixelColor(0, 0).name()} {out4.pixelColor(399, 299).name()}")
 
     # ---- 4. PageBoxes 槽位约定与派生一致 ----
     ok("整幅 PageBoxes.slots() 与 print_plan 判据一致（都是 1 槽）",

@@ -68,8 +68,8 @@ class PageBoxes(NamedTuple):
     ⚠️ **存储槽位约定**（GUI boxes.json / 检测事件 / 下游布局共用）：
     ``slots()`` 给出的槽位数编码形态——半幅固定 2 槽 ``[左, 右]``（保留左右
     身份，缺失侧为 None），整幅只占 1 槽 ``[整幅]``。下游据此判断整幅页：
-    整幅页的内容区就是整页，**area 1/2/3/4 行为一致**（都等价 area=4，
-    见 `utils.box_geometry.whole_page_box`）。
+    整幅框原样下传（区域随框走），area=4 才归一整页保留框外内容
+    （用户 2026-09-29 改定，见 `utils.box_geometry.whole_page_box`）。
     """
 
     left: Optional[Box] = None

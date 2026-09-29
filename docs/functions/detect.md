@@ -123,9 +123,12 @@ detect 与 crop 是同级步骤，输出都落在**输入目录的旁边**：
 `ContentBoxes(left_boxes, right_boxes, full_boxes, notes)`，**已消解**）；
 `functions/detect.py` 在其上统一了「取最大框的前 4 个坐标」，并按
 **槽位约定**表达结果：半幅固定 2 槽 `[左, 右]`（缺失侧为 None），
-整幅只占 1 槽 `[整幅]`。下游据此判断整幅页——整幅页的内容区就是整页，
-**area 1/2/3/4 行为一致**（都等价 area=4：不拆 `-l/-r`、不做对称镜像、
-不紧裁页边），归一入口 `utils.box_geometry.whole_page_box`（CLI / GUI 共用）。
+整幅只占 1 槽 `[整幅]`。下游据此判断整幅页——整幅框本质是"大一点的单独内容框"，
+**框原样下传、区域随框走**：area=1/2/3 统一按合并语义（不拆 `-l/-r`、不做
+对称镜像；border 空 → 整页画布写回原位置、框外白，给 border → 紧裁
+「框 + border」），只有 **area=4 保留框外内容**（框归一整页，入口
+`utils.box_geometry.whole_page_box`，CLI / GUI 共用）。（用户 2026-09-29
+改定，推翻旧的"整幅＝整页"。）
 
 ### 判错时的排查（模型 or 代码？）
 
