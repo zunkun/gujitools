@@ -27,6 +27,13 @@ from desktop.utils.files import project_root
 #: 框类型键 → 中文标签。文案的唯一来源是 utils/box_draw（同 BOX_KIND_INDEX）。
 KIND_LABELS = {kind: box_kind_name(kind) for kind in BOX_KIND_INDEX}
 
+#: 信息条尾注：按本次框的来源（origin）标注。⚠️ `_apply_boxes` 与
+#: `_show_boxes_info` 必须共用这一份——apply_boxes 的 info_text 也会写
+#: 信息条，两处后缀不一致时后写的会覆盖先写的（曾丢过「（手动）」标记）。
+ORIGIN_SUFFIX = {
+    "manual": "（手动）", "auto": "", "fullpage": "（整页，未检测）",
+}
+
 
 class DetectMixin:
     """依赖宿主页面提供的属性：store/task_id、detect_viewer、log_view、
@@ -268,9 +275,10 @@ class DetectMixin:
         size = self._image_size_for(path_text)
         qsize = QSize(size[0], size[1]) if size else QImageReader(str(path_text)).size()
         names = box_names(shown, size, full)
+        info = self._describe_boxes(shown, names) + ORIGIN_SUFFIX.get(origin, "")
         self._show_boxes_info(shown, origin, names=names)
         self.detect_viewer.apply_boxes(
-            shown, qsize, self._describe_boxes(shown, names),
+            shown, qsize, info,
             full=full, selected=select_index,
         )
 
@@ -476,9 +484,7 @@ class DetectMixin:
         if boxes is None:
             self.detect_viewer.info_label.setText("正在检测文本框位置...")
             return
-        suffix = {
-            "manual": "（手动）", "auto": "", "fullpage": "（整页，未检测）",
-        }.get(origin, "")
+        suffix = ORIGIN_SUFFIX.get(origin, "")
         self.detect_viewer.info_label.setText(
             self._describe_boxes(boxes, names) + suffix
         )

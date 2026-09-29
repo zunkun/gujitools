@@ -536,6 +536,85 @@ def wait_for_thumbnails(
     return False
 
 
+def wait_view_ready(app, view, timeout: float = 30.0) -> bool:
+    """等异步大图加载完成：选页/改参数会先 clear_image 占位（has_image=False），
+    worker 算完 set_image 后变 True。轮询该判据，避免拍到「正在加载/正在去底色」。
+
+    ⚠️ 大图加载是 PreviewWorker 后台线程，只 pump 固定次数会拍到转圈占位文案
+    （s3-去底色-参数 曾因此整张图没有预览内容）。
+    """
+    start = time.time()
+    while time.time() - start < timeout:
+        app.processEvents()
+        time.sleep(0.05)
+        if getattr(view, "has_image", False):
+            app.processEvents()
+            return True
+    print(f"⚠️ 大图加载等待超时（{timeout:.0f}s）")
+    return False
+
+
+def wait_view_reload(app, view, timeout: float = 30.0, clear_wait: float = 4.0) -> bool:
+    """等一轮「清空占位 → 重新上屏」完整发生。
+
+    ⚠️ 改 rembg 参数走 `LIVE_DEBOUNCE_MS`（350ms）防抖才触发重算——直接等
+    has_image 会被**还没被清掉的旧图**骗过（立即返回 True，拍到旧态/转圈页）。
+    所以必须先见到 clear，再等新图；clear_wait 内始终没清空就当作无重算，
+    以当前图在位为准。
+    """
+    start = time.time()
+    cleared = not getattr(view, "has_image", False)
+    while not cleared and time.time() - start < clear_wait:
+        app.processEvents()
+        time.sleep(0.05)
+        cleared = not getattr(view, "has_image", False)
+    return wait_view_ready(app, view, timeout)
+
+
+def wait_view_settled(app, view, quiet: float = 2.5, timeout: float = 40.0) -> bool:
+    """等到预览视图**稳定**：有图、且 quiet 秒内不再发生「清空 → 重载」。
+
+    ⚠️ rembg 参数变化走 350ms 防抖 + live worker + refresh_display 再一层
+    大图 worker，多层异步会连环 clear/上屏；只等「首次有图」会停在中间层，
+    拍到「正在加载...」（真踩过）。这里要求 has_image 保持 quiet 秒才算稳。
+    """
+    start = time.time()
+    last_change = time.time()
+    prev = getattr(view, "has_image", False)
+    while time.time() - start < timeout:
+        app.processEvents()
+        time.sleep(0.05)
+        has = getattr(view, "has_image", False)
+        if has != prev:
+            prev = has
+            last_change = time.time()
+        if prev and (time.time() - last_change) >= quiet:
+            app.processEvents()
+            return True
+    print(f"⚠️ 预览稳定等待超时（{timeout:.0f}s）")
+    return prev
+
+
+def _wait_list_rows(app, list_page, repo, timeout: float = 15.0) -> None:
+    """等任务列表的后台读盘 worker（TaskRowsWorker）渲染出数据行。
+
+    真实数据目录可能有几十个任务、逐个读 runs.json，同步 pump 固定次数
+    会拍到空表。分页每页 10 行，行数到位即认为渲染完成。
+    """
+    table = getattr(getattr(list_page, "table", None), "table", None)
+    expected = len(repo.list_tasks()) if repo is not None else 0
+    target = min(expected, 10)
+    start = time.time()
+    while table is not None and time.time() - start < timeout:
+        app.processEvents()
+        time.sleep(0.1)
+        if target and table.rowCount() >= target:
+            app.processEvents()
+            time.sleep(0.4)  # 让状态胶囊/时间列的最后一轮刷新落定
+            return
+    app.processEvents()
+
+
 def _visible_strips(detail) -> list:
     """详情页里当前有内容的缩略图条（供 wait_for_thumbnails 使用）。
 
@@ -559,7 +638,8 @@ def _visible_strips(detail) -> list:
 # --------------------------------------------------------------- 操作步骤截图
 
 def shoot_guide(app, window, out_dir: Path, task_id: str,
-                book_title: str = "龍譚精舍叢刻") -> list[Path]:
+                book_title: str = "龍譚精舍叢刻",
+                list_repo=None, demo_repo=None) -> list[Path]:
     """按「用户操作步骤」逐屏截图，供上手指南引用。
 
     与总览模式的差别：这里刻意**制造交互态**——选中检测框、改 area、
@@ -572,6 +652,10 @@ def shoot_guide(app, window, out_dir: Path, task_id: str,
         out_dir: 输出目录（自动创建）。
         task_id: 演示任务号（全流程完整的那一条）。
         book_title: 第四步表单里填的古籍名（取真实书名）。
+        list_repo: 任务列表页用的数据仓（用户 2026-09-29 定：s0 展示真实
+            `~/Documents/guji` 里已导入的任务，不用 seed 的演示任务）。
+            None 时回退用 window 现有 store。
+        demo_repo: 详情页演示任务的仓（截完列表页换回来）。
 
     返回:
         写出的 PNG 路径列表。
@@ -603,10 +687,19 @@ def shoot_guide(app, window, out_dir: Path, task_id: str,
         print(f"已生成 {path.name}  {('— ' + note) if note else ''}")
 
     # ---- 步骤 0：任务列表页（起点）----
+    # ⚠️ 列表页用**真实数据目录**（~/Documents/guji）里已导入的任务（只读展示：
+    #    TaskStore 构造只确保目录存在、refresh 只读盘，绝不写真实数据），
+    #    截完立刻换回演示数据——详情页各阶段需要 seed 铺的产物。
+    if list_repo is not None and demo_repo is not None:
+        window.store = list_repo
+        window.list_page.store = list_repo
     window.pages.setCurrentWidget(window.list_page)
     window.list_page.refresh()
-    pump(app, 10)
+    _wait_list_rows(app, window.list_page, list_repo or window.store)
     snap("s0-任务列表.png", "起点：已导入的任务")
+    if list_repo is not None and demo_repo is not None:
+        window.store = demo_repo
+        window.list_page.store = demo_repo
 
     window._open_detail(task_id)
     pump(app, 12)
@@ -620,7 +713,18 @@ def shoot_guide(app, window, out_dir: Path, task_id: str,
     extract_panel.zoom.setValue(2)
     extract_panel.ext.setCurrentText("png")
     detail.extract_tabs.setCurrentIndex(0)  # 切回 PDF 预览，展示参数与源文件对照
-    snap("s1-提取-参数.png", "第一步：调 zoom / dpi / ext 参数")
+
+    # PDF 预览翻到**第 DEMO_PAGE 页**（默认停在第 1 页——多为封面/空白页，
+    # 读者对不上正文；全手册的图都统一在同一演示页上）。选页是异步加载
+    # （先 clear 再 worker 渲染），必须等完成再截。
+    def _open_pdf_demo_page() -> None:
+        strip = detail.source_pdf_viewer.strip
+        if strip.count() >= DEMO_PAGE:
+            strip.setCurrentRow(DEMO_PAGE - 1)
+            wait_view_ready(app, detail.source_pdf_viewer.view, timeout=20)
+
+    snap("s1-提取-参数.png", "第一步：调 zoom / dpi / ext 参数",
+         before=_open_pdf_demo_page)
 
     # ---- 步骤 2：检测文本框 ----
     detail.extract_tabs.setCurrentIndex(0)
@@ -651,6 +755,11 @@ def shoot_guide(app, window, out_dir: Path, task_id: str,
     def _draw_extra_box() -> None:
         if not inner._boxes:
             return
+        # 半幅页最多左右两个框（超出会被 edit_rejected 拒掉，2026-09-29 起的
+        # 框数上限规则），先删掉右框腾出名额，再在版心下方补画——同时演示
+        # 「删除」与「手绘补充」两个操作，信息条会带「（手动）」说明。
+        if len(inner._boxes) >= 2:
+            del inner._boxes[1]
         # 以已检出的框为参照推算出画面尺寸，避免依赖具体书页尺寸
         xs = [c for box in inner._boxes for c in (box[0], box[2])]
         ys = [c for box in inner._boxes for c in (box[1], box[3])]
@@ -669,16 +778,40 @@ def shoot_guide(app, window, out_dir: Path, task_id: str,
          before=_draw_extra_box)
 
     # ---- 步骤 3：去底色 ----
+    # ⚠️ s2 手绘演示把 001 的框**落库**改成了「左框 + 版心下横条」（右框被删、
+    #    横条按位置判为右框），不恢复的话第三步条目 1（001-r）就是那条横条，
+    #    预览与手册「左右分开」的描述完全对不上（真踩过）。这里重跑真实检测
+    #    写回原始框，并清掉内存缓存，再切阶段。
+    if demo_repo is not None:
+        extract_dir = demo_repo.extract_output_dir(task_id)
+        if _write_real_detect_boxes(demo_repo, task_id, extract_dir, [DEMO_PAGE]):
+            detail.detect_cache.clear()
     detail._select_stage(2)
     rembg_panel = detail.control_stack.widget(2)
     rembg_panel.area.setCurrentText("2 (合并单图)")
     rembg_panel.border.setText("20,30")
     rembg_panel.seal.setChecked(True)
     rembg_panel.type.setCurrentText("1 (二值)")
+    # ⚠️ 改参数走 350ms 防抖才触发实时预览重算（先「正在按新参数去底色…」
+    #    占位，live worker 算完再 refresh_display → 又一层大图 worker 才上屏）。
+    #    要等视图**稳定**（多层异步连环 clear/上屏），否则拍到旧图/转圈页（真踩过）。
+    wait_view_settled(app, detail.rembg_viewer.view)
     snap("s3-去底色-参数.png", "第三步：area/border/印章参数")
 
     rembg_panel.area.setCurrentText("1 (左右分开)")
-    snap("s3-去底色-结果.png", "第三步：左右分开的去底色结果")
+    wait_view_settled(app, detail.rembg_viewer.view)
+
+    # area=1 后条目按「同页 r 在 l 前」重排，当前行可能停在别的页上
+    # （曾截到与演示页无关的图）。显式选中第一条（= 演示页 001 的右页），
+    # 等它的大图真正加载完再截。
+    def _select_first_rembg_entry() -> None:
+        strip = detail.rembg_viewer.strip
+        if strip.count() > 0:
+            strip.setCurrentRow(0)
+            wait_view_settled(app, detail.rembg_viewer.view)
+
+    snap("s3-去底色-结果.png", "第三步：左右分开的去底色结果",
+         before=_select_first_rembg_entry)
 
     # ---- 步骤 4：生成 PDF ----
     detail._select_stage(3)
@@ -770,6 +903,19 @@ def main() -> int:
     repo = TaskStore(root)
     task_ids = seed(repo)
 
+    # 任务列表页截图用**真实数据目录**里已导入的任务（用户 2026-09-29 定：
+    # 手册里的列表要和读者打开程序看到的一致）。只读展示，不写入；
+    # 目录不存在或没有任务时回退演示列表。
+    real_root = Path.home() / "Documents" / "guji"
+    list_repo = None
+    if real_root.is_dir() and (real_root / "tasks.json").exists():
+        probe = TaskStore(real_root)
+        if probe.list_tasks():
+            list_repo = probe
+            print(f"✓ 任务列表截图取自真实数据目录：{real_root}")
+        else:
+            print("ℹ️ 真实数据目录没有任务，列表页回退演示数据")
+
     # 演示主角的书名：取任务名（seed 已按真实 PDF 命名），第四步表单与日志都用它
     main_task = repo.get_task(task_ids[0]) or {}
     book_title = main_task.get("name") or "龍譚精舍叢刻"
@@ -787,7 +933,8 @@ def main() -> int:
         window._open_detail(task_ids[0])
         pump(app, 12)
         shots = shoot_guide(
-            app, window, out_dir / "guide", task_ids[0], book_title=book_title
+            app, window, out_dir / "guide", task_ids[0], book_title=book_title,
+            list_repo=list_repo, demo_repo=repo,
         )
         for path in shots:
             print(f"  {path.stat().st_size // 1024} KB")
