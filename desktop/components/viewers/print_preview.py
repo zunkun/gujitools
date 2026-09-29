@@ -39,7 +39,9 @@ from desktop.components.viewers.image_zoom_dialog import (
 from desktop.components.viewers.print_layout_canvas import PrintLayoutCanvas
 from desktop.components.viewers.thumb_strip import ThumbStrip
 from desktop.components.viewers.thumbs_loader import ThumbsMixin
-from utils.page_layout import plan_print_page, print_page_size_mm
+from utils.page_layout import (
+    plan_print_page, print_page_size_mm, resolve_title_nodes,
+)
 
 
 class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
@@ -442,6 +444,9 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
                     self._entries_cache[index].get("rect")
                     if 0 <= index < len(self._entries_cache) else None
                 ),
+                # 解析好的标题切换节点（见 _resolved_nodes）：worker 线程
+                # 拿不到条目清单，必须在这里解析好再传过去
+                "nodes": self._resolved_nodes(args),
             },
             "",
         )
@@ -457,6 +462,29 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
             args.get("paper_size", "A4"),
             args.get("orientation", "landscape"),
         )
+
+    def _resolved_nodes(self, args: dict) -> list:
+        """按 **PDF 页序（列表位置，1 起）** 解析标题切换节点（三处预览共用）。
+
+        ⚠️ 两个都不能指望 ``plan_print_page`` 的内部兜底：它拿不到条目清单，
+        用**空列表**解析节点——任何页名都匹配不到，节点永远不生效（2026-09-29
+        用户实测「添加动态节点没有自动生效」）。
+
+        ⚠️ 匹配必须用**列表位置**，不能用条目页名：rembg 条目的页名是
+        extract 的原始页码，可能不从 1 起、可能有缺口（任务 0020 实测
+        ``3.png..63.png``），用户填「1」想的是 **PDF 第 1 页**，按页名匹配
+        永远落空 → 预览整本都是主标题（同日用户实测）。执行层
+        （``run_print_stage``）把合成图按列表顺序写成 ``0001..N`` 再解析，
+        语义同样是位置序号——这里必须同口径，预览与 PDF 才一致。
+        """
+        try:
+            nodes = args.get("title_switch_nodes") or []
+            if not nodes:
+                return []
+            stems = [str(i + 1) for i in range(len(self._entries_cache))]
+            return resolve_title_nodes(stems, nodes)
+        except Exception:
+            return []  # 参数没填好不阻塞预览（与 _print_spec 的容错同口径）
 
     def _plan_for(self, index: int, path: Path, rect=None):
         """该页的完整排版几何（含标题/页码/跳过态）。
@@ -476,6 +504,7 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
             (image.width(), image.height()), args, index,
             len(self._entries_cache), image_name=path.stem,
             image_rect=rect,
+            sorted_nodes=self._resolved_nodes(args),
         )
         return plan, image
 

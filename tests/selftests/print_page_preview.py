@@ -251,6 +251,60 @@ def run(ctx) -> None:
            (800, 1200), dict(full, skip_pages=["2-r"]), 1, 3, image_name="0002-r"
        ).skipped)
 
+    # ---- 4b. 标题切换节点：预览按 **PDF 页序（列表位置）** 解析（2026-09-29 回归）----
+    # 根因一：plan_print_page 拿不到条目清单，内部兜底 resolve_title_nodes([], …)
+    # 匹配不到任何页名 → 加了节点预览也毫无反应。修法：GUI 侧
+    # （print_preview._resolved_nodes）解析好再传 sorted_nodes；worker 从
+    # print_spec["nodes"] 透传。
+    # 根因二：rembg 条目页名是 extract 原始页码，可能从 3 起、有缺口（任务
+    # 0020 实测 3.png..63.png），用户填「1」想的是 PDF 第 1 页——按页名匹配
+    # 永远落空。修法：_resolved_nodes 用列表位置序号（与执行层把合成图按
+    # 列表顺序写成 0001..N 同口径），预览与 PDF 语义一致。
+    from utils.page_layout import resolve_title_nodes
+
+    node_args = dict(full, title_switch_nodes=[[2, "卷二"]])
+    stems = ["0001", "0002", "0003"]
+    resolved = resolve_title_nodes(stems, node_args["title_switch_nodes"])
+    ok("节点按页名解析到清单下标（第 2 页）",
+       bool(resolved) and resolved[0][0] == 1, str(resolved))
+    _t1 = plan_print_page((800, 1200), node_args, 0, 3, image_name="0001",
+                          sorted_nodes=resolved)
+    _t2 = plan_print_page((800, 1200), node_args, 1, 3, image_name="0002",
+                          sorted_nodes=resolved)
+    _t3 = plan_print_page((800, 1200), node_args, 2, 3, image_name="0003",
+                          sorted_nodes=resolved)
+    ok("节点页起标题切换且延续到后续页",
+       _t1.title.text == "测试古籍" and _t2.title.text == "卷二"
+       and _t3.title.text == "卷二",
+       f"{_t1.title.text} / {_t2.title.text} / {_t3.title.text}")
+    ok("不传清单解析结果时节点整体失效（兜底语义：调用方必须传 sorted_nodes）",
+       plan_print_page(
+           (800, 1200), node_args, 1, 3, image_name="0002"
+       ).title.text == "测试古籍")
+    # 条目页名有缺口（3..5）时，节点 1 必须命中**列表第 1 项**（位置语义）
+    gap_resolved = resolve_title_nodes(
+        ["1", "2", "3"], [[1, "首页标题"]])  # _resolved_nodes 的输入形态
+    ok("位置序号解析：节点 1 命中列表第 1 项（哪怕条目页名是 3/4/5）",
+       bool(gap_resolved) and gap_resolved[0][0] == 0, str(gap_resolved))
+    _gap_plan = plan_print_page(
+        (800, 1200), dict(full, title_switch_nodes=[[1, "首页标题"]]),
+        0, 3, image_name="0003",           # 该条目的真实页名是 3
+        sorted_nodes=resolve_title_nodes(["1", "2", "3"], [[1, "首页标题"]]),
+    )
+    ok("缺口页名条目（页名 3 的第 1 项）页面标题 = 节点标题",
+       _gap_plan.title.text == "首页标题", str(_gap_plan.title))
+    pv_src = (Path(__file__).resolve().parents[2]
+              / "desktop" / "components" / "viewers" / "print_preview.py"
+              ).read_text(encoding="utf-8")
+    pw_src = (Path(__file__).resolve().parents[2]
+              / "desktop" / "workers" / "preview_worker.py"
+              ).read_text(encoding="utf-8")
+    ok("print_spec 携带解析好的 nodes、worker 透传给 plan_print_page",
+       '"nodes": self._resolved_nodes(args)' in pv_src
+       and 'sorted_nodes=self.print_spec.get("nodes")' in pw_src)
+    ok("_resolved_nodes 用列表位置序号解析（不是条目页名）",
+       "stems = [str(i + 1) for i in range(len(self._entries_cache))]" in pv_src)
+
     # ---- 5. 与成品 PDF 逐值比对（预览几何 == PDF 几何）----
     import pymupdf
 

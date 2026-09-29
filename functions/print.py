@@ -119,6 +119,12 @@ def _resolve_title_nodes(image_files, title_switch_nodes):
 
     ``页名`` 为**原始页码**（如 ``5`` / ``5-r`` 的 ``5``），不是列表下标，
     因此规则里按同名回查图片在最终清单中的下标。
+
+    ⚠️ 语义随输入而定：CLI 直跑时 ``image_files`` 是用户目录的原始文件
+    （页码=原书页名）；GUI 链路（``run_print_stage``）传入的清单是按列表
+    顺序重新编号的暂存图 ``0001..N``（页码=PDF 页序）。预览侧
+    （``print_preview._resolved_nodes``）同样按位置序号解析——两边同口径，
+    节点在预览与成品 PDF 中一致。
     """
     return resolve_title_nodes(image_files, title_switch_nodes)
 

@@ -682,6 +682,10 @@ class PreviewWorker(QObject):
                 int(self.print_spec.get("total", 1)),
                 image_name=self.print_spec.get("name"),
                 image_rect=self.print_spec.get("rect"),
+                # 节点由 GUI 侧按完整条目清单解析好（print_spec["nodes"]）：
+                # 这里拿不到清单，走 plan 内部兜底的话节点永远匹配不上
+                # （「添加动态节点预览不生效」的根因，2026-09-29）。
+                sorted_nodes=self.print_spec.get("nodes"),
             )
             # target_edge（放大弹窗用）：按目标边长**反推像素密度**重新排版。
             # ⚠️ 不能只把 compose_print_page 的产物放大了事——它内部固定按

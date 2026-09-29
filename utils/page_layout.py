@@ -509,6 +509,11 @@ def plan_print_page(
     )
 
     if sorted_nodes is None:
+        # ⚠️ 兜底**解析不了节点**：这里拿不到条目清单，空列表匹配不到任何
+        #    页名 → 节点被整体忽略、各页恒用主标题。带 title_switch_nodes
+        #    的调用方（预览/版面编辑器/放大导出）必须自己用完整清单解析好
+        #    再传进来（见 print_preview._resolved_nodes），执行层
+        #    （functions/print.py）传的就是 image_files 解析结果。
         sorted_nodes = resolve_title_nodes([], args.get("title_switch_nodes") or [])
     if sides is None:
         sides = sides_for_pages(
