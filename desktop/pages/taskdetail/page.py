@@ -428,6 +428,10 @@ class TaskDetailPage(
         else:
             self.run_button.setText("执行本子任务")
         self.submit_button.setVisible(stage == "rembg")
+        # 右侧面板的步骤专属区块：detect 显示「检测结果统计」，其余步骤显示
+        # 「执行记录」（detect 无表单参数，历史回填没用武之地）
+        self.detect_stats.setVisible(stage == "detect")
+        self.history_block.setVisible(stage != "detect")
         self._apply_control_width()
         self._refresh_stage_views()
         self._refresh_preview(index)
@@ -660,6 +664,8 @@ class TaskDetailPage(
             self.extract_result_viewer.set_images(self._manifest_paths())
         elif stage == "detect":
             self.detect_viewer.set_images(self._manifest_paths())
+            # 清单可能变了（增删页/切任务/批量检测跑完）→ 统计跟着重算
+            self._refresh_detect_stats()
         elif stage == "rembg":
             self.rembg_viewer.set_images(
                 self._manifest_paths(),

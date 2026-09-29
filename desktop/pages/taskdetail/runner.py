@@ -630,6 +630,11 @@ class StageRunnerMixin:
                 self.store.save_image_sizes_batch(self.task_id, sizes)
             if boxes:
                 self.store.save_detect_boxes_batch(self.task_id, boxes)
+                # detect 批量检测中：落了一批框 → 右侧统计跟着实时重算
+                # （boxes.json 一次读盘 ~1ms，400ms 一次可忽略）
+                if self.current_stage() == "detect" \
+                        and self.detect_stats.isVisible():
+                    self._refresh_detect_stats()
         except Exception as exc:  # noqa: BLE001 - 落盘失败不该打断阶段收尾
             # ⚠️ 但不能**静默**吞掉（2026-09-26 审计）：磁盘满 / 任务目录被删 /
             # 权限异常时，下游（去底色、打印）会按**缺失的坐标基准**算错布局，

@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 77 个模块、82 个公开类、443 个公开函数/方法（生成于 2026-09-29）。
+覆盖 78 个模块、83 个公开类、448 个公开函数/方法（生成于 2026-09-29）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -14,6 +14,7 @@
 | --- | --- | --- |
 | [`desktop.app`](#desktopapp) | 1 | 4 |
 | [`desktop.components.common.safecomment`](#desktopcomponentscommonsafecomment) | 6 | 12 |
+| [`desktop.components.detect_stats`](#desktopcomponentsdetect_stats) | 1 | 4 |
 | [`desktop.components.log_panel`](#desktopcomponentslog_panel) | 1 | 9 |
 | [`desktop.components.pagination`](#desktopcomponentspagination) | 2 | 11 |
 | [`desktop.components.panels.base`](#desktopcomponentspanelsbase) | 1 | 7 |
@@ -61,7 +62,7 @@
 | [`desktop.stages.generic_stage`](#desktopstagesgeneric_stage) | 0 | 2 |
 | [`desktop.stages.print_stage`](#desktopstagesprint_stage) | 0 | 3 |
 | [`desktop.stages.rembg_stage`](#desktopstagesrembg_stage) | 0 | 1 |
-| [`desktop.store.annotations`](#desktopstoreannotations) | 1 | 8 |
+| [`desktop.store.annotations`](#desktopstoreannotations) | 1 | 9 |
 | [`desktop.store.drafts`](#desktopstoredrafts) | 1 | 5 |
 | [`desktop.store.json_io`](#desktopstorejson_io) | 0 | 2 |
 | [`desktop.store.pages`](#desktopstorepages) | 1 | 9 |
@@ -245,6 +246,40 @@ widget.installEventFilter(_filter)
 | 方法 | 说明 |
 | --- | --- |
 | `eventFilter(obj, event)` | Qt 事件过滤器。 |
+
+---
+
+## `desktop.components.detect_stats`
+
+源码：[`desktop/components/detect_stats.py`](../../desktop/components/detect_stats.py)
+
+检测结果统计组件（第二步右侧）：按页形态分类统计，总览 / 明细两级。
+
+数据由宿主（`DetectMixin._refresh_detect_stats`）计算后经 `set_results`
+灌入：分类规则唯一实现在 `utils.box_geometry.classify_page_slots`（槽位
+形态 → fullcontent / harfcontent / 单独页 / 无文本框），本组件只管展示。
+
+交互：默认显示**总览**（四类的页数，点击某一类）；明细页列出该类每页的
+页码，点页码发 `page_clicked(row)` 由宿主跳转预览，另有「返回总览」。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| LIST_MAX_HEIGHT | `168` |
+
+### `class DetectStatsWidget(QWidget)`
+
+「检测结果统计」：总览四级分类页数，点进某类查看页码明细。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(parent=None)` | — |
+| `set_results(total: int, classes: dict[str, list[tuple[int, str]]]) -> None` | 灌入统计结果：``total`` 总页数；``classes`` 分类键 → [(行号, 页码)]。 |
+| `show_overview() -> None` | 回到总览（返回按钮与数据刷新后的兜底都走这里）。 |
+| `show_detail(class_key: str) -> None` | 打开某分类的页码明细。 |
 
 ---
 
@@ -2419,9 +2454,9 @@ area=1 与「双框 + area=2/3」在 border 为空时**不等价**，曾导致�
 预览也是 area=2，生成的 PDF 却是 area=1 的效果」就是这么来的（紧裁观感
 与 area=1 的半页裁剪一致）。
 
-``full`` 原样透传给合成层：整幅内容(fullcontent)页的内容区＝**整页**，
-合成时按 area=4 处理（不拆 `-l`/`-r`、不镜像、不紧裁）——见
-``desktop.workers.preview_worker.region_canvas_specs``。
+``full`` 原样透传给合成层：整幅(fullcontent)页的框**原样下传**——
+area=4 保留整页内容、area 1/2/3 统一按合并语义走单框布局（不拆
+``-l``/``-r``、不镜像）——见 ``desktop.workers.preview_worker.region_canvas_specs``。
 
 #### `plan_print_effects(list_entries: list[dict], composed: list[dict], rembg_dir: Path, submitted_labels: set[str], border) -> list[dict]`
 
@@ -2870,12 +2905,20 @@ boxes.json / sizes.json 读写。
 | --- | --- |
 | `boxes_path(task_id: str) -> Path` | 检测框存储文件：任务目录下的 boxes.json。 |
 | `detect_boxes_entry(task_id: str, image_key: str) -> tuple[list, str] \| None` | 返回 (boxes, origin)；无记录时返回 None。origin: 'auto' \| 'manual'。 |
+| `detect_boxes_all(task_id: str) -> dict[str, tuple[list, str]]` | 整份 boxes.json：``image_key → (boxes, origin)``，**一次读盘**。 |
 | `save_detect_boxes(task_id: str, image_key: str, boxes: list, origin: str='auto') -> None` | 写入某页的检测框及其来源标记（auto=自动检测，manual=人工编辑）。 |
 | `save_detect_boxes_batch(task_id: str, entries: dict[str, list]) -> None` | 批量写入某阶段的检测框（origin=auto）：**一次读改写**。 |
 | `save_image_sizes_batch(task_id: str, entries: dict[str, tuple[int, int]]) -> None` | 批量写入页面原始尺寸：一次读改写（理由同 save_detect_boxes_batch）。 |
 | `sizes_path(task_id: str) -> Path` | 页面原始尺寸文件：任务目录下的 sizes.json。 |
 | `save_image_size(task_id: str, image_key: str, width: int, height: int) -> None` | 记录某页图片的原始像素尺寸，作为框坐标与预览映射的坐标系基准。 |
 | `image_size(task_id: str, image_key: str) -> tuple[int, int] \| None` | 返回某页原始像素尺寸 (width, height)；无记录时返回 None。 |
+
+##### `detect_boxes_all(task_id: str) -> dict[str, tuple[list, str]]`
+
+整份 boxes.json：``image_key → (boxes, origin)``，**一次读盘**。
+
+逐页统计（第二步右侧的检测结果统计）要遍历全部页面，若逐页调
+`detect_boxes_entry` 就是「读整个文件」× 页数；这里一次读完。
 
 ##### `save_detect_boxes_batch(task_id: str, entries: dict[str, list]) -> None`
 
@@ -4207,10 +4250,14 @@ compose_region_output 的**纯几何**部分：返回 ``[(画布尺寸, sources)
 算出每张输出画布的大小与贴图来源。第三步提交据此**预先算好输出
 文件名**（张数 × 名称），再并行处理各页；规则仍然只有这一份。
 
-``full=True`` 表示这一页是整幅内容(fullcontent)。整幅页整页只有一个内容区，
-area 1/2/3 对「怎么分栏/怎么合并」的规则都不适用，因此这里把它的框**归一并
-整页**（`utils.box_geometry.whole_page_box`）——于是整幅页在 area 1/2/3/4 下
-行为一致，都等价 area=4（整页）；既不做对称镜像，也不紧裁掉页边。
+``full=True`` 表示这一页是整幅内容(fullcontent)。整幅框本质是"大一点的
+单独内容框"，**框原样参与布局**（用户 2026-09-29 改定，推翻旧的"整幅＝整页"）：
+
+- area=4：保留框外内容 → 框归一成整页（`utils.box_geometry.whole_page_box`）；
+- area=1/2/3：统一按 **area=3 的合并语义**走单框布局（不拆 ``-l``/``-r``、
+  不做对称镜像）——border 空 → 整页画布写回原位置，给 border → 紧裁
+  「框 + border」。三种 area 因此效果一致。
+
 调用方通常直接传 ``is_full_content(原始槽位列表)`` 的结果。
 
 #### `compose_region_output(image: QImage, boxes: list, area: int, border_mm, dpi: int=300, full: bool=False) -> list`
@@ -4225,7 +4272,8 @@ area 1/2/3 对「怎么分栏/怎么合并」的规则都不适用，因此这�
 **写回原位置**（此前被搬到画布左上角）。规格见
 docs/functions/cropremove.md:57「area=3 → 单图，ROI 写回原位置」。
 
-``full`` 语义见 `region_canvas_specs`（整幅页内容区＝整页，area 1/2/3/4 一致）。
+``full`` 语义见 `region_canvas_specs`（整幅框原样下传：area=4 保留整页、
+area 1/2/3 统一按合并语义）。
 
 #### `close_cached_documents() -> None`
 

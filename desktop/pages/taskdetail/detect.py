@@ -18,7 +18,9 @@ from PySide6.QtGui import QImageReader
 
 from core.command_spec import WHOLE_PAGE_AREA
 from utils.box_draw import BOX_KIND_INDEX, box_kind_name
-from utils.box_geometry import compute_final_boxes, half_slots, is_full_content
+from utils.box_geometry import (
+    classify_page_slots, compute_final_boxes, half_slots, is_full_content
+)
 from desktop.store.json_io import write_json
 from desktop.utils.files import project_root
 
@@ -177,6 +179,47 @@ class DetectMixin:
         self._store_slots(str(path), half_slots(boxes, size), "manual")
         self.detect_viewer.select_box(-1)
 
+    # ------------------------------------------------------- 检测结果统计
+    #
+    # 第二步右侧的「检测结果统计」：按页形态（fullcontent / harfcontent /
+    # 单独页 / 无文本框）分类计数，默认总览、点进看页码明细。分类规则唯一
+    # 实现在 `utils.box_geometry.classify_page_slots`；这里只负责**取数**与
+    # 触发时机（切阶段、批量检测、单页检测、人工编辑框之后都要重算）。
+
+    @staticmethod
+    def _page_label(path: Path) -> str:
+        """页码展示文案：数字页名去掉前导零（0007 → 7），其余原样。"""
+        stem = path.stem
+        return str(int(stem)) if stem.isdigit() else stem
+
+    def _refresh_detect_stats(self) -> None:
+        """重算右侧统计：清单 × 每页槽位（内存缓存优先，boxes.json 一次读盘）。"""
+        widget = getattr(self, "detect_stats", None)
+        if widget is None:
+            return
+        paths = self._manifest_paths()
+        if not self.task_id or not paths:
+            widget.set_results(len(paths), {})
+            return
+        boxes_all = self.store.detect_boxes_all(self.task_id)
+        classes: dict[str, list[tuple[int, str]]] = {}
+        for row, path in enumerate(paths):
+            raw = self.detect_cache.get(str(path))
+            if raw is None:
+                raw = boxes_all.get(path.stem, ([], "auto"))[0]
+            # ⚠️ 传给分类器的是**槽位**（保留 None）：单独页（双槽缺一侧）
+            #    过滤掉 None 会被误判成整幅。
+            classes.setdefault(classify_page_slots(raw), []).append(
+                (row, self._page_label(path))
+            )
+        widget.set_results(len(paths), classes)
+
+    def _goto_stats_page(self, row: int) -> None:
+        """统计明细里点了页码 → 预览跳到那一页（联动框重读）。"""
+        strip = self.detect_viewer.strip
+        if 0 <= row < strip.count():
+            strip.setCurrentRow(row)
+
     def _raw_boxes_for(self, path_text: str) -> list:
         """某页**槽位**表示（保留 null，形态信息就在槽数里）。"""
         raw = self.detect_cache.get(str(path_text))
@@ -207,6 +250,8 @@ class DetectMixin:
             )
         self._apply_boxes(path_text, raw, origin, select_index=index)
         self._refresh_reference_boxes()
+        # 拖动/删框/切类型都会改这一页的形态 → 右侧统计同步重算
+        self._refresh_detect_stats()
 
     def _apply_boxes(self, path_text: str, raw, origin: str | None = None,
                      select_index: int = -1) -> None:
@@ -619,6 +664,8 @@ class DetectMixin:
         self._detect_out_buffer = ""
         self.detect_process = None
         self._release_run()
+        # 单页检测完成 → 该页形态可能变了，重算右侧统计
+        self._refresh_detect_stats()
 
     def _apply_detect_result(self, path: Path, boxes) -> None:
         """自动检测结果到达 → 上屏（只在本页仍是预览页、且还停在第二步时应用）。"""

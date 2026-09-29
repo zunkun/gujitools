@@ -39,6 +39,18 @@ class AnnotationMixin:
             return None
         return entry.get("boxes", []), entry.get("origin", "auto")
 
+    def detect_boxes_all(self, task_id: str) -> dict[str, tuple[list, str]]:
+        """整份 boxes.json：``image_key → (boxes, origin)``，**一次读盘**。
+
+        逐页统计（第二步右侧的检测结果统计）要遍历全部页面，若逐页调
+        `detect_boxes_entry` 就是「读整个文件」× 页数；这里一次读完。
+        """
+        data = self._load_json(self.boxes_path(task_id))
+        return {
+            key: (entry.get("boxes", []), entry.get("origin", "auto"))
+            for key, entry in data.items() if isinstance(entry, dict)
+        }
+
     def save_detect_boxes(
         self, task_id: str, image_key: str, boxes: list, origin: str = "auto"
     ) -> None:

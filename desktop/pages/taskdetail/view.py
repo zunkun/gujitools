@@ -22,6 +22,7 @@ from qfluentwidgets import (
 from qfluentwidgets import FluentIcon as FIF
 
 from desktop.components import PANEL_CLASSES
+from desktop.components.detect_stats import DetectStatsWidget
 from desktop.components.log_panel import LogPanel
 from desktop.components.step_bar import StepBar
 from desktop.components.viewers import (
@@ -242,6 +243,13 @@ class DetailViewMixin:
                 LazyPanelHost(panel_class, hooks=[hook] if hook else [])
             )
         column.addWidget(self.control_stack, 1)
+        # 第二步右侧的「检测结果统计」：只在 detect 阶段显示（见 _select_stage），
+        # 位置就是其它步骤「执行记录」的那块——执行记录对 detect 无用（无表单
+        # 参数可回填，用户 2026-09-29 定），这一步改显统计。
+        self.detect_stats = DetectStatsWidget()
+        self.detect_stats.page_clicked.connect(self._goto_stats_page)
+        self.detect_stats.hide()
+        column.addWidget(self.detect_stats)
         # 边距级联的挂起值：print 面板还没建时先把当前值记下来（见
         # _sync_print_margin_default 与 _wire_print_panel）
         self._pending_print_border = None
@@ -448,13 +456,20 @@ class DetailViewMixin:
         )
 
     def _build_history_controls(self, control: QVBoxLayout) -> None:
-        # ---- 历史执行配置选择 ----
-        control.addWidget(SectionTitle("执行记录"))
+        # ---- 历史执行配置选择（detect 阶段整体隐藏，见 _select_stage）----
+        # ⚠️ 必须包成独立 block 再整体 setVisible：散着藏的话，切到第二步要
+        #    记住藏三个控件，漏一个就露出半截「执行记录」。
+        self.history_block = QWidget()
+        block = QVBoxLayout(self.history_block)
+        block.setContentsMargins(0, 0, 0, 0)
+        block.setSpacing(T.SPACE_SM)
+        block.addWidget(SectionTitle("执行记录"))
         self.history_caption = CaptionLabel("历史执行配置（选择后回填到表单）")
         apply_to(self.history_caption, T.SIZE_CAPTION, color=T.INK_FAINT)
-        control.addWidget(self.history_caption)
+        block.addWidget(self.history_caption)
         self.history_combo = self._make_history_combo()
-        control.addWidget(self.history_combo)
+        block.addWidget(self.history_combo)
+        control.addWidget(self.history_block)
 
         self.stage_status = CaptionLabel("未执行")
         apply_to(self.stage_status, T.SIZE_CAPTION, color=T.INK_SOFT)

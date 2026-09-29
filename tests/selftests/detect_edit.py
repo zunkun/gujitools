@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import QObject, Signal
 
 from desktop.pages.taskdetail.detect import DetectMixin
@@ -25,7 +27,7 @@ TITLE = "第二步人工干预（框类型）"
 
 
 class _StoreStub:
-    """最小 boxes.json：只保留宿主用到的两个方法。"""
+    """最小 boxes.json：只保留宿主用到的几个方法。"""
 
     def __init__(self):
         self.data: dict = {}
@@ -39,6 +41,12 @@ class _StoreStub:
         entry = self.data.get(image_key)
         return (entry["boxes"], entry["origin"]) if entry else None
 
+    def detect_boxes_all(self, task_id):
+        return {
+            key: (entry["boxes"], entry["origin"])
+            for key, entry in self.data.items()
+        }
+
 
 class _LabelStub:
     def __init__(self):
@@ -49,6 +57,20 @@ class _LabelStub:
 
     def text(self):
         return self._text
+
+
+class _StripStub:
+    """缩略图条的最小替身：统计明细点页码时宿主只用到 count/setCurrentRow。"""
+
+    def __init__(self, rows: int = 4):
+        self._rows = rows
+        self.row = -1
+
+    def count(self):
+        return self._rows
+
+    def setCurrentRow(self, row):  # noqa: N802 - Qt 命名
+        self.row = int(row)
 
 
 class _ViewerStub(QObject):
@@ -69,6 +91,7 @@ class _ViewerStub(QObject):
         self.info_label = _LabelStub()
         self.path = ""
         self.reference = None
+        self.strip = _StripStub()
 
     def apply_boxes(self, boxes, size, info_text="", full=False, selected=-1):
         self.view.set_boxes(boxes, size, full=full, selected=selected)
@@ -112,15 +135,20 @@ class _StackStub:
 class _Host(DetectMixin):
     """把 DetectMixin 挂到一个最小宿主上（真实页面里这些由 page.py 提供）。"""
 
-    def __init__(self, path: str, size: tuple[int, int]):
+    def __init__(self, path: str, size: tuple[int, int], pages: int = 4):
+        from desktop.components.detect_stats import DetectStatsWidget
+
         self.task_id = "t1"
         self.store = _StoreStub()
         self.detect_cache: dict = {}
         self.detect_viewer = _ViewerStub()
         self.detect_viewer.path = path
+        self.detect_viewer.strip = _StripStub(pages)
         # 与 view.py 的 _wire_detect_panel 同款接线：选中态变化回填面板
         self.detect_viewer.selection_changed.connect(self._on_box_selection_changed)
         self.control_stack = _StackStub(_PanelStub())
+        self.detect_stats = DetectStatsWidget()
+        self._pages = [Path(f"/t/{i:04d}.png") for i in range(1, pages + 1)]
         self._size = size
         self.toasts: list = []
 
@@ -130,6 +158,9 @@ class _Host(DetectMixin):
 
     def _image_size_for(self, _path_text):
         return self._size
+
+    def _manifest_paths(self):
+        return list(self._pages)
 
     def _toast(self, kind, title, content):
         self.toasts.append((kind, title, content))

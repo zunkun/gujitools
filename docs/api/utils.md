@@ -4,7 +4,7 @@
 
 通用工具函数：几何、排序、图像 IO、PDF、YOLO
 
-覆盖 21 个模块、11 个公开类、116 个公开函数/方法（生成于 2026-09-29）。
+覆盖 21 个模块、11 个公开类、117 个公开函数/方法（生成于 2026-09-29）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -13,7 +13,7 @@
 | 模块 | 类 | 函数 |
 | --- | --- | --- |
 | [`utils.box_draw`](#utilsbox_draw) | 0 | 6 |
-| [`utils.box_geometry`](#utilsbox_geometry) | 2 | 8 |
+| [`utils.box_geometry`](#utilsbox_geometry) | 2 | 9 |
 | [`utils.color_utils`](#utilscolor_utils) | 0 | 2 |
 | [`utils.file_utils`](#utilsfile_utils) | 0 | 4 |
 | [`utils.font_scan`](#utilsfont_scan) | 0 | 4 |
@@ -122,6 +122,10 @@ docs/functions/cropremove.md:57）。布局层统一后该分歧由本模块消�
 | 名称 | 值 |
 | --- | --- |
 | SYMMETRIC_GAP_MM | `10` |
+| PAGE_CLASS_FULLCONTENT | `"fullcontent"` |
+| PAGE_CLASS_HARFCONTENT | `"harfcontent"` |
+| PAGE_CLASS_SINGLE | `"single"` |
+| PAGE_CLASS_EMPTY | `"empty"` |
 
 ### `class Canvas`
 
@@ -148,6 +152,7 @@ docs/functions/cropremove.md:57）。布局层统一后该分歧由本模块消�
 | 函数 | 说明 |
 | --- | --- |
 | `is_full_content(boxes) -> bool` | ``boxes`` 是否为「整幅内容」(fullcontent) 的**槽位表示**。 |
+| `classify_page_slots(slots) -> str` | 页的**槽位**表示 → 页形态分类键（四类见 `PAGE_CLASS_*` 常量）。 |
 | `half_sides(boxes, image_size) -> List[str]` | 半幅(harfcontent)页的框 → 每个框的侧别 ``"left"`` / ``"right"``。 |
 | `half_slots(boxes, image_size) -> List[Optional[list]]` | 半幅页的框 → **2 槽** ``[左, 右]``（缺失侧 ``None``）。 |
 | `whole_page_box(image_size) -> List[int]` | 整页框 ``[0, 0, W, H]``——「整页只有一个内容区」时的唯一内容区表示。 |
@@ -164,11 +169,24 @@ docs/functions/cropremove.md:57）。布局层统一后该分歧由本模块消�
 - 半幅（harfcontent）固定 2 槽 ``[左, 右]``，缺失一侧为 None；
 - 整幅（fullcontent）只占 **1 槽** ``[整幅]``。
 
-据此判断 area=2/3 的单框要不要做对称镜像——整幅本来就是整页内容区，
-镜像会凭空多出一半空白，**不做**镜像；半幅漏检一侧才需要镜像补白。
+据此判断 area=2/3 的单框要不要做对称镜像——整幅框已近页宽，
+镜像会凭空多出一半空白，**不做**镜像（这是整幅在合成层唯一的特殊行为，
+区域本身随框走）；半幅漏检一侧才需要镜像补白。
 
 ⚠️ 槽数**不是**"有几个框"，而是**形态**：半幅恒 2 槽（`half_slots` 保证），
 整幅恒 1 槽。半幅删剩一侧后仍然写回 2 槽（另一侧 None），否则会被误判成整幅。
+
+#### `classify_page_slots(slots) -> str`
+
+页的**槽位**表示 → 页形态分类键（四类见 `PAGE_CLASS_*` 常量）。
+
+分类依据是槽位形态（与 `is_full_content` 同一条约定）：
+- 无任何框 → 无文本框；
+- 单槽且非空 → 整幅(fullcontent)；
+- 双槽全有 → 半幅(harfcontent)；双槽缺一侧 → 单独页（半幅单栏）。
+
+⚠️ 参数必须是**槽位**表示（半幅恒 2 槽、整幅 1 槽，见 `half_slots`），
+不是"过滤掉 None 后还剩几个框"——过滤后单独页会误判成整幅。
 
 #### `half_sides(boxes, image_size) -> List[str]`
 
@@ -204,17 +222,17 @@ docs/functions/cropremove.md:57）。布局层统一后该分歧由本模块消�
 
 整页框 ``[0, 0, W, H]``——「整页只有一个内容区」时的唯一内容区表示。
 
-两处用它，语义完全相同：
+两处用它，语义相同——都表示"保留整页内容"：
 
 - ``area=4``（整页模式：不检测，整页即唯一文本框）；
-- **整幅内容(fullcontent)页**：整页只有一个内容区，area 1/2/3 的
-  「按中线分左右栏 / 合并左右栏」对它没有意义。因此规定整幅页在
-  **area 1/2/3/4 下行为一致**，都等价于 ``area=4``——内容区＝整页，
-  既不拆 ``-l/-r``、也不做对称镜像、也不紧裁掉页边。
+- **整幅内容(fullcontent)页 + area=4**：保留框外内容 → 框归一成整页。
 
-⚠️ CLI（`functions/text_region`）与 GUI（`preview_worker.region_canvas_specs`）
-都把整幅页的框换成它，从而复用同一套 area/border 规则，不必各自加分支
-（各自加分支正是之前「CLI 紧裁、GUI 半幅空白」这类分歧的来源）。
+整幅页在 area=1/2/3 下**不再**用整页框（用户 2026-09-29 改定）：整幅框
+本质是"大一点的单独内容框"，框原样下传，area 1/2/3 统一按 area=3 的
+合并语义走单框布局（见 ``preview_worker.region_canvas_specs``）。
+
+CLI（`functions/text_region`）与 GUI（`preview_worker.region_canvas_specs`）
+共用本函数，避免各自造 [0,0,W,H]。
 
 #### `parse_border_mm(border_value, dpi: int=300) -> Optional[List[int]]`
 

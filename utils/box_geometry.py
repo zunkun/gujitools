@@ -43,6 +43,37 @@ def is_full_content(boxes) -> bool:
     return len(list(boxes or [])) == 1
 
 
+#: 页形态分类键（`classify_page_slots` 的返回值）：与检测模型的两类内容
+#: （fullcontent / harfcontent）同名的两个键是跨层文案，GUI 统计直接展示。
+PAGE_CLASS_FULLCONTENT = "fullcontent"   # 整幅：单槽（整页唯一内容区）
+PAGE_CLASS_HARFCONTENT = "harfcontent"   # 半幅：左右两栏齐全
+PAGE_CLASS_SINGLE = "single"             # 单独页：半幅只检出一栏（左或右）
+PAGE_CLASS_EMPTY = "empty"               # 无文本框
+
+
+def classify_page_slots(slots) -> str:
+    """页的**槽位**表示 → 页形态分类键（四类见 `PAGE_CLASS_*` 常量）。
+
+    分类依据是槽位形态（与 `is_full_content` 同一条约定）：
+    - 无任何框 → 无文本框；
+    - 单槽且非空 → 整幅(fullcontent)；
+    - 双槽全有 → 半幅(harfcontent)；双槽缺一侧 → 单独页（半幅单栏）。
+
+    ⚠️ 参数必须是**槽位**表示（半幅恒 2 槽、整幅 1 槽，见 `half_slots`），
+    不是"过滤掉 None 后还剩几个框"——过滤后单独页会误判成整幅。
+    """
+    raw = list(slots or [])
+    present = [b for b in raw if b]
+    if not present:
+        return PAGE_CLASS_EMPTY
+    if len(raw) == 1:
+        return PAGE_CLASS_FULLCONTENT
+    if len(raw) == 2:
+        return PAGE_CLASS_HARFCONTENT if len(present) == 2 else PAGE_CLASS_SINGLE
+    # 防御畸形存档（>2 槽）：只要有框就按半幅计，不丢页
+    return PAGE_CLASS_HARFCONTENT
+
+
 def half_sides(boxes, image_size) -> List[str]:
     """半幅(harfcontent)页的框 → 每个框的侧别 ``"left"`` / ``"right"``。
 
