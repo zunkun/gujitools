@@ -281,7 +281,9 @@ class DetailViewMixin:
         panel.whole_rotate_delta.connect(self._on_imposition_whole_rotate)
         panel.item_rotation_edited.connect(self._on_imposition_item_rotate)
         panel.reset_requested.connect(self._on_imposition_reset_layout)
-        panel.delete_requested.connect(self._on_imposition_delete_page)
+        # 「新增图片」（单图页才出现）/「删除选中图片」（选中图才出现的按钮）
+        panel.add_image_requested.connect(self._on_imposition_add_image)
+        panel.item_delete_requested.connect(self._on_imposition_delete_item)
         panel.clear_requested.connect(self._on_imposition_clear)
         self.imposition_panel = panel
         # 既有控制器/自测沿用的宿主别名（控件实体在 panel 里）

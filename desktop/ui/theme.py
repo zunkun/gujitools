@@ -89,6 +89,38 @@ RADIUS_SM = 6
 RADIUS_MD = 10
 RADIUS_LG = 14
 
+
+def danger_button_qss(padding: str | None = None) -> str:
+    """危险操作按钮（删除）的实例级样式表，各处删除按钮共用这一份。
+
+    实例样式表会把 qfluent 自带按钮样式整体顶掉，四个状态必须写全——
+    缺哪态哪态就退回默认渲染、没有视觉反馈。
+
+    ``padding``：给**不定尺寸**的按钮传 qfluent 按钮同款内边距
+    （"5px 12px 6px 12px"），高度才会跟旁边 qfluent 按钮一致；
+    定尺寸按钮（如任务表格 52×30）不传。
+    """
+    pad = f"    padding: {padding};\n" if padding else ""
+    return (
+        "QPushButton {\n"
+        f"    background-color: {DANGER};\n"
+        f"    color: {SURFACE};\n"
+        "    border: none;\n"
+        f"    border-radius: {RADIUS_SM}px;\n"
+        f"{pad}"
+        "}\n"
+        "QPushButton:hover {\n"
+        f"    background-color: {DANGER_HOVER};\n"
+        "}\n"
+        "QPushButton:pressed {\n"
+        f"    background-color: {DANGER_PRESSED};\n"
+        "}\n"
+        "QPushButton:disabled {\n"
+        f"    background-color: {DANGER_SOFT};\n"
+        f"    color: {INK_DISABLED};\n"
+        "}\n"
+    )
+
 # ---------------------------------------------------------------- 滚动条
 SCROLLBAR_WIDTH = 10        # 纵向滚动条宽度 / 横向滚动条高度
 SCROLLBAR_MARGIN = 2        # 滚动条与容器边缘的留白

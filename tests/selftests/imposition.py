@@ -5,15 +5,17 @@
 1. 左侧一列「第一页 / 第二页 / …」，**虚线的「＋ 选择拼版」固定钉在左列
    最底部**（不跟在页码下面）；页条目勾选框紧挨文字，勾选页后清单下沿
    浮出「取消选择 / 批量删除」悬浮条，取消选择即收起；
-2. 点「选择拼版」弹窗，从**剩余未被选择拼版的图片**里**自由勾选**（不限
-   张数；**网格布局**，一行好几个、卡片宽一些），点「开始拼版」按每两张
-   一页配对，落单的不拼；还能「删除图片」移出选择范围、进入已删除视图
-   批量恢复；
+2. 点「选择拼版」弹窗，从**剩余未被选择拼版的图片**里勾选（**只有三种
+   可选形态**：1 张单独成页；2 张拼一页；1 张半幅 + 自动拼版；勾 0/≥3 张
+   「开始拼版」不可点），点「开始拼版」生效——自动拼版规则见
+   ``services.imposition.auto_impose_pages``（前一个左半幅+当前右半幅、
+   **页号连续**才配对；整幅单独一页；首位/落单的半幅单独一页）；
+   还能「删除图片」移出选择范围、进入已删除视图批量恢复；
 3. 右侧操作区可拖动 / 缩放拉伸 / 旋转；**序号在前的排在右侧、序号大的在左侧**；
 4. 拼版一旦生效，最后一步「生成 PDF」的取图来源就从第三步去底色换成拼版结果；
 5. **点击选中**某张图后它带一圈**常显细虚线**（选中状态）；**按住鼠标操作
    期间**升级为带手柄的完整虚线框，松手回到细框；切页/点空白取消选中，
-   右侧「操作当前图片」区只在有选中图时激活高亮。
+   右侧「当前图片样式」区只在有选中图时激活高亮。
 
 ⚠️ 本模块**自建任务与独立详情页**（不借 ctx.d）：拼版会往任务目录写产物、
 改 print.json，跟其它模块共用一个页面会互相串状态。独立页在结尾整体销毁。
@@ -210,6 +212,85 @@ def run(ctx) -> None:
            == ["2-r.png", "2-l.png"],
            str(_names(S.excluded_files([a, b, c, d],
                       {"removed": [str(d), str(c)]}))))
+
+        # ---------------- 3b. 自动拼版规则（用户 2026-09-30）----------------
+        # 1. 默认两张半栏拼一页：配对必须是「前一个左半幅 + 当前右半幅」；
+        # 2. 页号必须连续（不连续的图片不可以合并在一页）；
+        # 3. 整幅(fullcontent)标注的图单独一页；等配对的上一张因此落单；
+        #    整幅后拼版重开；首位/整幅后的右半幅单独一页。
+        full = _mk(src / "3.png", (128, 128, 128))
+
+        def _page_shapes(pages):
+            return [tuple(Path(i["file"]).name for i in p["items"])
+                    for p in pages]
+
+        ok("classify_source 按文件名后缀分形态（-r/-l/无后缀）",
+           S.classify_source(a) == S.SOURCE_RIGHT
+           and S.classify_source(b) == S.SOURCE_LEFT
+           and S.classify_source(full) == S.SOURCE_FULL,
+           f"{S.classify_source(a)}/{S.classify_source(b)}/"
+           f"{S.classify_source(full)}")
+        single = S.make_single_page(full)
+        ok("整幅图自成一页（版面只有一项、原始尺寸）",
+           single is not None and len(single["items"]) == 1
+           and Path(single["items"][0]["file"]).name == "3.png"
+           and single["items"][0]["rect"][2:] == [400.0, 600.0],
+           str(single))
+        ok("单图页产出 = 原图尺寸紧裁",
+           S.compose_page(single).size == (400, 600),
+           str(S.compose_page(single).size))
+
+        auto = S.auto_impose_pages([a, b, c, d])
+        ok("自动拼版（r,l,r,l）：首位 -r 单独一页，左半幅与下一个右半幅配对",
+           _page_shapes(auto) == [("1-r.png",), ("1-l.png", "2-r.png"),
+                                  ("2-l.png",)],
+           str(_page_shapes(auto)))
+        ok("自动配对同样序号在前的进右槽",
+           Path(auto[1]["items"][0]["file"]).name == "1-l.png")
+        ok("自动拼版：末尾落单的左半幅单独一页",
+           len(auto[-1]["items"]) == 1
+           and Path(auto[-1]["items"][0]["file"]).name == "2-l.png")
+
+        auto_full = S.auto_impose_pages([full, a, b, c, d])
+        ok("整幅后拼版重开：整幅单独一页、随后首位 -r 单独一页、再左+右配对",
+           _page_shapes(auto_full) == [("3.png",), ("1-r.png",),
+                                       ("1-l.png", "2-r.png"), ("2-l.png",)],
+           str(_page_shapes(auto_full)))
+        ok("上一张等配对时遇到整幅 → 上一张单独一页（整幅不与它拼）",
+           _page_shapes(S.auto_impose_pages([b, full])) == [("1-l.png",),
+                                                            ("3.png",)],
+           str(_page_shapes(S.auto_impose_pages([b, full]))))
+        ok("整幅夹在中间同样断开配对",
+           _page_shapes(S.auto_impose_pages([a, b, full, c, d]))
+           == [("1-r.png",), ("1-l.png",), ("3.png",), ("2-r.png",),
+               ("2-l.png",)],
+           str(_page_shapes(S.auto_impose_pages([a, b, full, c, d]))))
+
+        # 页号必须连续（用户 2026-09-30：不连续的图片不可以合并在一页）
+        e = _mk(src / "5-r.png", RED)
+        f2 = _mk(src / "4-l.png", GREEN)
+        ok("source_page_number 按文件名前缀解析（1-r→1、004-l→4、cover→None）",
+           S.source_page_number(a) == 1
+           and S.source_page_number(src / "004-l.png") == 4
+           and S.source_page_number(src / "cover.png") is None,
+           f"{S.source_page_number(a)}/"
+           f"{S.source_page_number(src / '004-l.png')}/"
+           f"{S.source_page_number(src / 'cover.png')}")
+        ok("页号不连续（1-l 之后直接 5-r）→ 不配对、各自单独一页",
+           _page_shapes(S.auto_impose_pages([b, e])) == [("1-l.png",),
+                                                         ("5-r.png",)],
+           str(_page_shapes(S.auto_impose_pages([b, e]))))
+        ok("断口后重新开始：5-r 等不到 4-l（序号也不连续）、4-l 落单",
+           _page_shapes(S.auto_impose_pages([a, b, e, f2]))
+           == [("1-r.png",), ("1-l.png",), ("5-r.png",), ("4-l.png",)],
+           str(_page_shapes(S.auto_impose_pages([a, b, e, f2]))))
+        ok("同一页号的 l→r 不配对（必须跨页号：前一左＋后一右）",
+           _page_shapes(S.auto_impose_pages([d, c]))
+           == [("2-l.png",), ("2-r.png",)],
+           str(_page_shapes(S.auto_impose_pages([d, c]))))
+        ok("读不到尺寸的图跳过（不产出残页）",
+           S.auto_impose_pages([tmp / "missing.png"]) == [])
+        ok("空清单自动拼版 = 空页清单", S.auto_impose_pages([]) == [])
 
         # ---------------- 4. 操作画布（拖动 / 缩放 / 旋转 / 复位）----------------
         from PySide6.QtGui import QImage
@@ -591,15 +672,16 @@ def run(ctx) -> None:
            card.name.text() == "2-r.png".removesuffix(".png")
            and not card.name.isHidden(),
            f"{card.name.text()!r}")
-        ok("未选够两张时「开始拼版」不可点", not dialog.ok_button.isEnabled())
-        # 「选择阶段不限张数，配对发生在『开始拼版』」（用户 2026-09-30）
+        ok("没勾选时「开始拼版」不可点", not dialog.ok_button.isEnabled())
+        # 「只有三种可选形态」（用户 2026-09-30）：1 张单独成页 / 2 张拼一页 /
+        # 1 张半幅 + 自动拼版
         dialog.cards[0].toggle()
-        ok("只勾一张：「开始拼版」不可点，提示至少勾 2 张",
-           not dialog.ok_button.isEnabled() and "至少勾 2 张" in dialog.status.text(),
+        ok("只勾 1 张：「开始拼版」可点（单张单独成页），提示单独成一页",
+           dialog.ok_button.isEnabled() and "单独成一页" in dialog.status.text(),
            dialog.status.text())
         dialog.cards[1].toggle()
-        ok("勾满两张：「开始拼版」可点，提示拼成 1 页",
-           dialog.ok_button.isEnabled() and "拼成 1 页" in dialog.status.text(),
+        ok("勾满两张：「开始拼版」可点，提示拼成一页",
+           dialog.ok_button.isEnabled() and "拼成一页" in dialog.status.text(),
            dialog.status.text())
         ok("点卡片即可勾选（整张卡片都是热区）",
            dialog.cards[0].is_checked() and dialog.cards[1].is_checked())
@@ -607,28 +689,71 @@ def run(ctx) -> None:
            _names(dialog.picked_files()) == ["2-r.png", "2-l.png"],
            str(_names(dialog.picked_files())))
         dialog.cards[0].toggle()
-        ok("取消勾选 → 「开始拼版」重新变灰",
-           not dialog.cards[0].is_checked() and not dialog.ok_button.isEnabled())
+        ok("取消勾选回到 1 张 → 仍可点（单张单独成页）",
+           not dialog.cards[0].is_checked() and dialog.ok_button.isEnabled())
+        dialog.cards[1].toggle()
+        ok("两张都取消 → 「开始拼版」变灰",
+           not dialog.cards[1].is_checked() and not dialog.ok_button.isEnabled())
         dialog.cards[0].toggle()
         ok("勾中的卡片进入选中态（浅底 + 对勾）", dialog.cards[0].is_checked())
+
+        # ---- 「自此之后图片自动拼版」复选框（用户 2026-09-30：恰好勾 1 张
+        #      **半幅**时出现在下方，勾上后「开始拼版」走自动拼版）----
+        # （当前状态：只勾 cards[0] 一张半幅）
+        ok("只勾 1 张：下方出现「自此之后图片自动拼版」复选框（默认未勾）",
+           dialog.auto_checkbox.isVisibleTo(dialog)
+           and not dialog.auto_checkbox.isChecked(),
+           f"visible={not dialog.auto_checkbox.isHidden()} "
+           f"checked={dialog.auto_checkbox.isChecked()}")
+        ok("复选框没勾时「开始拼版」也可点（单张单独成页）",
+           dialog.ok_button.isEnabled())
+        dialog.auto_checkbox.setChecked(True)
+        ok("勾上自动拼版后「开始拼版」可点",
+           dialog.ok_button.isEnabled())
+        ok("auto_mode_file = 勾选的那张",
+           dialog.auto_mode_file() is not None
+           and dialog.auto_mode_file().name == "2-r.png",
+           str(dialog.auto_mode_file()))
+        ok("auto_sequence = 从勾选那张起到候选末尾（源清单顺序）",
+           _names(dialog.auto_sequence()) == ["2-r.png", "2-l.png"],
+           str(_names(dialog.auto_sequence())))
+        dialog.cards[1].toggle()
+        ok("勾到 2 张：复选框隐藏并复位（走手动拼一页）",
+           not dialog.auto_checkbox.isVisibleTo(dialog)
+           and not dialog.auto_checkbox.isChecked()
+           and dialog.ok_button.isEnabled())
+        dialog.cards[1].toggle()
+        ok("回到只勾 1 张：复选框重新出现（未勾），「开始拼版」可点",
+           dialog.auto_checkbox.isVisibleTo(dialog)
+           and not dialog.auto_checkbox.isChecked()
+           and dialog.ok_button.isEnabled())
         dialog.deleteLater()
 
-        # 自由多选：3 张也能勾（配对在「开始拼版」，落单不拼）
+        # 勾 3 张：可以勾，但「开始拼版」不可点（用户 2026-09-30：最多 2 张）
         third = ImpositionPickerDialog([a, b, c])
-        ok("三张候选时全部可勾（不限张数）", third.count() == 3)
+        ok("三张候选时全部可勾", third.count() == 3)
         third.cards[0].toggle()
         third.cards[1].toggle()
         third.cards[2].toggle()
-        ok("勾 3 张也合法（不再挡回）",
-           len(third.checked_files()) == 3 and third.ok_button.isEnabled(),
-           f"勾中 {_names(third.checked_files())}")
-        ok("状态行提示落单（3 张 → 1 页 + 落单）",
-           "落单" in third.status.text(), third.status.text())
+        ok("勾 3 张 → 「开始拼版」不可点，提示最多勾 2 张",
+           len(third.checked_files()) == 3 and not third.ok_button.isEnabled()
+           and "最多勾 2 张" in third.status.text(),
+           f"勾中 {_names(third.checked_files())} / {third.status.text()}")
         third.cards[1].toggle()
-        ok("勾 2 张 → 提示拼成 1 页（无落单）",
-           "拼成 1 页" in third.status.text() and "落单" not in third.status.text(),
+        ok("回到勾 2 张 → 可点，提示拼成一页",
+           third.ok_button.isEnabled() and "拼成一页" in third.status.text(),
            third.status.text())
         third.deleteLater()
+
+        # 1 张整幅：单独成页可点，但没有自动拼版选项（自动只对半幅）
+        full_only = ImpositionPickerDialog([full])
+        full_only.cards[0].toggle()
+        ok("只勾 1 张整幅：「开始拼版」可点、提示整幅单独成一页、无自动选项",
+           full_only.ok_button.isEnabled()
+           and "整幅" in full_only.status.text()
+           and not full_only.auto_checkbox.isVisibleTo(full_only),
+           full_only.status.text())
+        full_only.deleteLater()
 
         # ---- 「删除图片」/「查看删除的图片」（用户 2026-09-30）----
         del_dlg = ImpositionPickerDialog([a, b, c, d])
@@ -780,6 +905,9 @@ def run(ctx) -> None:
             def picked_files(self):
                 return self.files[:2]
 
+            def auto_mode_file(self):
+                return None
+
             def removed_files(self):
                 return list(self.initial_removed)
 
@@ -811,7 +939,7 @@ def run(ctx) -> None:
                 return []
 
         class _FakeOneDialog(_FakeRemoveDialog):
-            """替身弹窗：只勾一张——不足一页，应被校验挡下。"""
+            """替身弹窗：只勾一张——单张单独成页（用户 2026-09-30）。"""
 
             def picked_files(self):
                 return self.files[:1]
@@ -839,12 +967,21 @@ def run(ctx) -> None:
             pump(ctx.app, times=4)
             ok("恢复后黑名单清空（重新进入候选范围）",
                page._imposition_doc().get("removed") == [])
-            # 校验：只勾一张 → 不足一页，挡下不建页
+            # 只勾一张 → 单图单独一页（用户 2026-09-30：单张允许拼版）
             _ipick.ImpositionPickerDialog = _FakeOneDialog
             page._on_imposition_add_requested()
             page._imposition_timer.stop()
-            ok("只勾一张被校验挡下（不足一页，不建页）",
-               len(page._imposition_pages()) == 0)
+            pump(ctx.app, times=6)
+            one_pages = page._imposition_pages()
+            ok("只勾一张 → 单图单独一页（1 项、原图 1-r）",
+               len(one_pages) == 1 and len(one_pages[0]["items"]) == 1
+               and Path(one_pages[0]["items"][0]["file"]).name == "1-r.png",
+               str([[Path(i["file"]).name for i in p["items"]]
+                    for p in one_pages]))
+            # 清空，接原有「手动两张」流程
+            page._save_imposition_pages([])
+            page._imposition_timer.stop()
+            pump(ctx.app, times=4)
         finally:
             _ipick.ImpositionPickerDialog = real_dialog
 
@@ -862,6 +999,44 @@ def run(ctx) -> None:
                str([[Path(i["file"]).name for i in p["items"]] for p in pages]))
             ok("多选拼版后左列两页、停在第一页",
                len(page.imposition_view.page_list.entries()) == 2
+               and page.imposition_view.current_index() == 0,
+               str(page.imposition_view.current_index()))
+            # 清空，接原有「手动两张」流程
+            page._save_imposition_pages([])
+            page._imposition_timer.stop()
+            pump(ctx.app, times=4)
+        finally:
+            _ipick.ImpositionPickerDialog = real_dialog
+
+        # ---- 自动拼版接线：勾 1 张 + 「自此之后图片自动拼版」→ 规则引擎接管
+        # （用户 2026-09-30：1-r 单独一页、左半幅+右半幅配对、落单单页）----
+        class _FakeAutoDialog(_FakeDialog):
+            """替身弹窗：只勾第一张 + 自动拼版（UI 行为已在真实弹窗测过）。"""
+
+            def picked_files(self):
+                return self.files[:1]
+
+            def auto_mode_file(self):
+                return self.files[0]
+
+            def auto_sequence(self):
+                return list(self.files)
+
+        _ipick.ImpositionPickerDialog = _FakeAutoDialog
+        try:
+            page._on_imposition_add_requested()
+            page._imposition_timer.stop()
+            pump(ctx.app, times=6)
+            auto_pages = page._imposition_pages()
+            ok("自动拼版落盘：首位 1-r 单独一页、(1-l,2-r) 配对、末尾 2-l 单独",
+               len(auto_pages) == 3
+               and [tuple(Path(i["file"]).name for i in p["items"])
+                    for p in auto_pages]
+               == [("1-r.png",), ("1-l.png", "2-r.png"), ("2-l.png",)],
+               str([[Path(i["file"]).name for i in p["items"]]
+                    for p in auto_pages]))
+            ok("自动拼版后左列 3 页、停在第一页",
+               len(page.imposition_view.page_list.entries()) == 3
                and page.imposition_view.current_index() == 0,
                str(page.imposition_view.current_index()))
             # 清空，接原有「手动两张」流程
@@ -1015,53 +1190,177 @@ def run(ctx) -> None:
         page.imposition_view.set_current(0)
         pump(ctx.app, times=4)
 
-        # 「删除本页拼版」有模态确认弹窗（2026-09-30）：测试用替身应答，
-        # 真实 Dialog.exec() 会卡死测试（同 picker 替身的套路）
-        import qfluentwidgets as _qfw
-        _real_dialog = _qfw.Dialog
-        _seen: list = []
-        _answer = {"exec": 0}
+        # ---------------- 7b-2. 「删除选中图片」+ 单图页「新增图片」 --------
+        # （2026-09-30 用户定：右侧不再有「删除本页拼版」——删页入口只剩左列
+        # 「✕」/批量删除/清空；选中哪张图就能删哪张；单图页给「新增图片」）
+        page._save_imposition_pages(before_release)
+        page._imposition_timer.stop()
+        page.imposition_view.set_current(0)
+        pump(ctx.app, times=4)
+        page.imposition_view.canvas.select(1)  # 选中左槽「1-l」
+        page._on_imposition_delete_item()
+        page._imposition_timer.stop()
+        pump(ctx.app, times=4)
+        kept = page._imposition_pages()
+        ok("「删除选中图片」：页保留、只删被选中的那一张",
+           len(kept) == 2 and len(kept[0]["items"]) == 1
+           and Path(kept[0]["items"][0]["file"]).name == "1-r.png",
+           str([[Path(i["file"]).name for i in p["items"]] for p in kept]))
+        ok("删完后面板出现「新增图片」（单图页），画布选中清空",
+           not page.imposition_panel.add_image_button.isHidden()
+           and page.imposition_view.selected_slot() < 0
+           and page.imposition_view.current_index() == 0)
+        # 删掉单图页的最后一张图：页整个消失（空页没有意义）——另一页保留，
+        # 仍是生效态；把剩余页也删光才回退去底色。
+        # （2026-09-30 用户定：删最后一张=整页移除，要弹确认框——真实弹窗是
+        # 模态的，测试里不能 exec，用替身同 picker 套路，可编排确认/取消）
+        import qfluentwidgets as _qw
 
-        class _FakeButton:
-            def setText(self, _text):
-                pass
+        _real_dialog = _qw.Dialog
 
         class _FakeConfirm:
-            """替身确认弹窗：记录 (标题, 正文)，按 ``_answer["exec"]`` 应答。"""
+            result = 1  # 1=确认，0=取消
+            asked = []
 
-            def __init__(self, title, content, parent=None, *_a, **_k):
-                _seen.append((title, content))
-                self.yesButton = _FakeButton()
-                self.cancelButton = _FakeButton()
+            def __init__(self, title, content, parent=None):
+                _FakeConfirm.asked.append((title, content))
+
+                class _Btn:
+                    def setText(self, text):
+                        pass
+
+                self.yesButton = _Btn()
+                self.cancelButton = _Btn()
 
             def exec(self):
-                return _answer["exec"]
+                return _FakeConfirm.result
 
-        _qfw.Dialog = _FakeConfirm
+        _qw.Dialog = _FakeConfirm
+
+        page.imposition_view.canvas.select(0)
+        _FakeConfirm.result = 0  # 先试「取消」
+        page._on_imposition_delete_item()
+        page._imposition_timer.stop()
+        pump(ctx.app, times=4)
+        ok("删最后一张弹确认框、点「取消」：页保留不动",
+           len(page._imposition_pages()) == 2
+           and [Path(i["file"]).name
+                for i in page._imposition_pages()[0]["items"]] == ["1-r.png"]
+           and _FakeConfirm.asked[-1][0] == "删除图片"
+           and "整页拼版" in _FakeConfirm.asked[-1][1],
+           f"pages={[[Path(i['file']).name for i in p['items']] for p in page._imposition_pages()]} "
+           f"asked={_FakeConfirm.asked}")
+
+        page.imposition_view.canvas.select(0)
+        _FakeConfirm.result = 1  # 「删除」
+        page._on_imposition_delete_item()
+        page._imposition_timer.stop()
+        pump(ctx.app, times=4)
+        ok("删掉单图页最后一张：页一并删除，另一页保留（仍是生效态）",
+           len(page._imposition_pages()) == 1
+           and [Path(i["file"]).name
+                for i in page._imposition_pages()[0]["items"]]
+           == ["2-r.png", "2-l.png"]
+           and page.imposition_view.current_index() == 0
+           and page.imposition_active()
+           and page.print_source_dir() != rembg_dir,
+           f"pages={[[Path(i['file']).name for i in p['items']] for p in page._imposition_pages()]} "
+           f"cur={page.imposition_view.current_index()} "
+           f"active={page.imposition_active()}")
+        # 把最后一页的两张也删光：全部页清空 → 视为未生效（取图回退去底色）
+        page.imposition_view.canvas.select(0)
+        page._on_imposition_delete_item()
+        page._imposition_timer.stop()
+        pump(ctx.app, times=4)
+        page.imposition_view.canvas.select(0)
+        page._on_imposition_delete_item()
+        page._imposition_timer.stop()
+        pump(ctx.app, times=4)
+        ok("删光全部图片：页清空、视为未生效（取图回退去底色）",
+           page._imposition_pages() == []
+           and page.imposition_view.current_index() == -1
+           and not page.imposition_active()
+           and page.print_source_dir() == rembg_dir,
+           f"pages={page._imposition_pages()} "
+           f"cur={page.imposition_view.current_index()} "
+           f"active={page.imposition_active()} "
+           f"src={page.print_source_dir()} vs {rembg_dir}")
+        _qw.Dialog = _real_dialog  # 恢复真实弹窗
+
+        # 单图页「新增图片」：append 弹窗替身返回 1 张右半幅「2-r」
+        # ——原图是左半幅「1-l」→ 新图进右槽、贴在原图右边（原图版面不动）
+        single_left = S.single_items(str(b))  # 1-l（左半幅，GREEN）
+        page._save_imposition_pages([{"items": single_left}])
+        page._imposition_timer.stop()
+        page.imposition_view.set_current(0)
+        pump(ctx.app, times=4)
+        ok("单图页进入后面板露出「新增图片」",
+           not page.imposition_panel.add_image_button.isHidden())
+        import desktop.components.imposition.picker as _picker_mod
+
+        _real_picker = _picker_mod.ImpositionPickerDialog
+
+        class _FakeAppend:
+            """替身弹窗：固定返回一张图（append 模式只放行 1 张）。"""
+
+            def __init__(self, picked):
+                self._picked = picked
+                import sys
+                print("PROBE fake picker constructed", file=sys.stderr)
+
+            def exec(self):
+                return 1
+
+            def picked_files(self):
+                return self._picked
+
+            def removed_files(self):
+                return []
+
+            def removed_changed(self):
+                return False
+
+        _picker_mod.ImpositionPickerDialog = _FakeAppend([str(c)])  # 2-r
         try:
-            page._on_imposition_delete_page()
+            page.imposition_panel.add_image_button.click()
             page._imposition_timer.stop()
-            ok("「删除本页拼版」弹确认窗（标题 + 版面丢失提示 + 页码）",
-               len(_seen) == 1 and _seen[0][0] == "删除本页拼版"
-               and "丢失" in _seen[0][1] and "第 1 页" in _seen[0][1],
-               str(_seen))
-            ok("弹窗取消 → 页面原样保留",
-               len(page._imposition_pages()) == 2
-               and page.imposition_view.current_index() == 0)
-            _answer["exec"] = 1
-            page._on_imposition_delete_page()
-            page._imposition_timer.stop()
-            ok("确认后删除本页拼版",
-               len(page._imposition_pages()) == 1
-               and page.imposition_view.current_index() == 0)
-            page._on_imposition_delete_page()
-            page._imposition_timer.stop()
-            ok("删光拼版后视为未生效（不会拿空目录去生成 PDF）",
-               not page.imposition_active()
-               and page.print_source_dir() == rembg_dir
-               and page.imposition_view.current_index() == -1)
+            pump(ctx.app, times=4)
+            merged = page._imposition_pages()
+            ok("左半幅原图 + 新增右半幅：新图进右槽、贴原图右边",
+               len(merged) == 1 and len(merged[0]["items"]) == 2
+               and Path(merged[0]["items"][0]["file"]).name == "2-r.png"
+               and Path(merged[0]["items"][1]["file"]).name == "1-l.png"
+               and merged[0]["items"][0]["rect"][0]
+               == merged[0]["items"][1]["rect"][0] + 400.0
+               and merged[0]["items"][1]["rect"] == single_left[0]["rect"],
+               str([[Path(i["file"]).name for i in p["items"]]
+                    for p in merged]))
         finally:
-            _qfw.Dialog = _real_dialog
+            _picker_mod.ImpositionPickerDialog = _real_picker
+
+        # 原图是右半幅「1-r」：新增「2-l」进左槽、贴原图左边
+        page._save_imposition_pages([{"items": S.single_items(str(a))}])
+        page._imposition_timer.stop()
+        page.imposition_view.set_current(0)
+        pump(ctx.app, times=4)
+        _picker_mod.ImpositionPickerDialog = _FakeAppend([str(d)])  # 2-l
+        try:
+            page.imposition_panel.add_image_button.click()
+            page._imposition_timer.stop()
+            pump(ctx.app, times=4)
+            merged = page._imposition_pages()
+            ok("右半幅原图 + 新增左半幅：新图进左槽、贴原图左边",
+               len(merged) == 1 and len(merged[0]["items"]) == 2
+               and Path(merged[0]["items"][0]["file"]).name == "1-r.png"
+               and Path(merged[0]["items"][1]["file"]).name == "2-l.png"
+               and merged[0]["items"][1]["rect"][0] == -400.0,
+               str([i["rect"] for i in merged[0]["items"]]))
+        finally:
+            _picker_mod.ImpositionPickerDialog = _real_picker
+        page._save_imposition_pages(before_release)
+        page._imposition_timer.stop()
+        page.imposition_view.set_current(0)
+        pump(ctx.app, times=4)
 
         # ---------------- 7c. 整版/单图旋转组件 + 红色对齐线（用户 2026-09-30）----
         # 「拼版整体可以旋转，不是 90 度，而是有旋转组件」「单独一个文本框图片
@@ -1139,6 +1438,29 @@ def run(ctx) -> None:
         ok("对齐线只画在两图中心中点那条竖线上（别处没有）",
            _red_hits(spine_img, x_px + 150, band=4) == 0,
            f"远处命中 {_red_hits(spine_img, x_px + 150, band=4)}")
+
+        # ---- 单图页红线判据（用户 2026-09-30 晚：单独一张半页图片在某页，
+        # 不显示中间红线）----实际任务里**无 -l/-r 后缀的竖图也可能是半页**
+        # （整幅误检 / 封面插页，任务 0020 的 3.png 实测 1070×1536），文件名
+        # 认不出来——判据是源图宽高比：竖图（高≥宽）不画、横图（宽>高）才画。
+        single_portrait = _mk(tmp / "single-half.png", BLUE)  # 400×600 竖图
+        spine_cv.set_page([
+            {"file": str(single_portrait),
+             "rect": [0.0, 0.0, 400.0, 600.0], "rotation": 0.0},
+        ])
+        portrait_img = spine_cv.grab().toImage()
+        ok("单图页是**竖图**（半页/单页，含无后缀的）：整幅画面没有红线",
+           _count_near(portrait_img, SPINE_RGB) == 0,
+           f"命中 {_count_near(portrait_img, SPINE_RGB)} 像素")
+        single_land = _mk(tmp / "single-spread.png", BLUE, size=(600, 400))
+        spine_cv.set_page([
+            {"file": str(single_land),
+             "rect": [0.0, 0.0, 600.0, 400.0], "rotation": 0.0},
+        ])
+        land_img = spine_cv.grab().toImage()
+        ok("单图页是**横图**（整幅对开）：红色对齐线仍要画（旋转基准）",
+           _count_near(land_img, SPINE_RGB) > 20,
+           f"命中 {_count_near(land_img, SPINE_RGB)} 像素")
 
         # ---- 成品截图范围框：两图外接框并集的灰虚线（用户 2026-09-30）----
         def _crop_hits_x(image, x_px, band=6, y_from=None, y_to=None):
@@ -1373,19 +1695,47 @@ def run(ctx) -> None:
         ok("单图组件改值发**绝对角度**", item_angles == [60.0], str(item_angles))
         panel.set_item_rotation(None)
         ok("清空选中后单图组件重新禁用", not panel.item_spin.isEnabled())
-        ok("面板分区：「操作当前图片页」页级块在前、「操作当前图片」图片级块在后",
-           panel.item_section.title_label.text() == "操作当前图片"
+        ok("面板分区：「操作当前图片页」页级块在前、「当前图片样式」图片级块在后",
+           panel.item_section.title_label.text() == "当前图片样式"
            and 0 <= _column_index(panel.box, panel.clear_button)
            < _column_index(panel.box, panel.item_section))
         ok("面板上没有「选择拼版」按钮（2026-09-30 删除：入口只在左列虚线格）",
            not hasattr(panel, "add_button"))
-        _page_row = next(
+        ok("「复位本页版面」独占一行 block（删除按钮挪走后不再拼行）",
+           _column_index(panel.box, panel.reset_button) >= 0)
+        _actions_row = next(
             (panel.box.itemAt(i).layout() for i in range(panel.box.count())
              if panel.box.itemAt(i).layout() is not None
-             and panel.box.itemAt(i).layout().indexOf(panel.reset_button) >= 0),
+             and panel.box.itemAt(i).layout().indexOf(panel.add_image_button) >= 0),
             None)
-        ok("「复位本页版面」与「删除本页拼版」同一行",
-           _page_row is not None and _page_row.indexOf(panel.delete_button) >= 0)
+        ok("「删除选中图片」挪进页级区，与「新增图片」同一行（不在图片样式区块里）",
+           _actions_row is not None
+           and _actions_row.indexOf(panel.delete_item_button) >= 0
+           and panel.item_section.layout().indexOf(panel.delete_item_button) < 0)
+        ok("未选中图时删除按钮隐藏、新增按钮隐藏（两图页初始态）",
+           panel.delete_item_button.isHidden()
+           and panel.add_image_button.isHidden())
+        panel.set_item_rotation(30.0)
+        ok("选中图后「删除选中图片」露出（页级区里）",
+           not panel.delete_item_button.isHidden())
+        ok("「删除选中图片」用共享危险按钮样式 theme.danger_button_qss"
+           "（2026-09-30 用户定：样式对齐任务列表删除按钮）",
+           "#C93A3A" in panel.delete_item_button.styleSheet()
+           and ":hover" in panel.delete_item_button.styleSheet()
+           and "padding: 6px 12px 7px 12px" in panel.delete_item_button.styleSheet()
+           and "#C0392B" not in panel.delete_item_button.styleSheet())
+        ok("「删除选中图片」不带图标（红底上 fluent 深色图标对比度差）",
+           panel.delete_item_button.icon().isNull())
+        panel.set_single_page(True)
+        ok("「删除选中图片」与「新增图片」等高（内边距补齐 fluent 上下边框）",
+           panel.delete_item_button.sizeHint().height()
+           == panel.add_image_button.sizeHint().height(),
+           str((panel.delete_item_button.sizeHint().height(),
+                panel.add_image_button.sizeHint().height())))
+        panel.set_single_page(False)
+        panel.set_item_rotation(None)
+        ok("清空选中后删除按钮重新隐藏",
+           panel.delete_item_button.isHidden())
         ok("「在流程中启用图片拼版」开关在面板最底部",
            0 <= _column_index(panel.box, panel.enabled_checkbox)
            and _column_index(panel.box, panel.enabled_checkbox)
@@ -1393,10 +1743,10 @@ def run(ctx) -> None:
         ok("说明挂在问号按钮上（不再平铺）",
            isinstance(getattr(panel, "help_button", None), HelpButton)
            and "可选节点" in panel.help_button.toolTip())
-        ok("清空选中后「操作当前图片」区块灰掉",
+        ok("清空选中后「当前图片样式」区块灰掉",
            not panel.item_section._active)
         panel.set_item_rotation(30.0)
-        ok("有选中图时「操作当前图片」区块高亮",
+        ok("有选中图时「当前图片样式」区块高亮",
            panel.item_section._active, str(panel.item_section._active))
         panel.deleteLater()
 

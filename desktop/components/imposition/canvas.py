@@ -15,7 +15,7 @@
 - **点击某张图 → 选中**：选中的图带一圈**常显的细虚线**（选中状态，
   **跟着图一起转**——用户 2026-09-30 报过"旋转后高亮框不跟着转"）；
   **按住鼠标操作期间**才升级为带手柄/旋转钮的完整虚线框，**一松手回到
-  细框**（2026-09-30：选中态要一直看得见，右侧「操作当前图片」区跟着激活）；
+  细框**（2026-09-30：选中态要一直看得见，右侧「当前图片样式」区跟着激活）；
 - **切页 / 点空白处 → 取消选中**（右侧图片操作区随之灰掉）；
 - **双击某张图 → 预览这张原图**；**双击两图之外的空白处 → 预览左右组合**
   （整页按产出口径合成的效果，``emit`` 给控制器开预览弹窗，画布自己不管弹窗）；
@@ -29,10 +29,13 @@
 - 点某张图 → 选中；框内拖动 → 整体移动；**四角**手柄 → 缩放（按住 Shift
   等比）；**四条边整条都是命中带** → 只改一个维度；框**上方的小圆钮** → 旋转
   （按住 Shift 吸附到 15°）；松手 emit ``items_changed``（拖动过程中只重绘）；
-- **红色对齐线**恒显：两图 rect 中心中点所在的竖线（``SPINE_COLOR``）——
-  整版/单图旋转时拿它当"转没转歪"的对比基准；整版旋转走
-  ``rotate_whole``（滑块增量，绕该中点公转+自转），单图绝对角度走
-  ``set_item_rotation``，两者都只重绘、由控制器择机 commit；
+- **红色对齐线**恒显（**两图页**）：两图 rect 中心中点所在的竖线
+  （``SPINE_COLOR``）——整版/单图旋转时拿它当"转没转歪"的对比基准；
+  **单图页只认横图（源图宽>高）**（2026-09-30 用户定：单独一张半页图片
+  不需要显示中间红线；单独一张整幅对开（横图）仍要）——判据用源图
+  宽高比（竖图=半页/单页、横图=整幅对开），文件名后缀认不出"无后缀的
+  半页图"；整版旋转走 ``rotate_whole``（滑块增量，绕该中点公转+自转），
+  单图绝对角度走 ``set_item_rotation``，两者都只重绘、由控制器择机 commit；
 - **灰色截图范围框**恒显（``CROP_COLOR``）：两图旋转后外接框的并集——
   上下左右最外侧点组成的虚线矩形，与产出图的紧裁范围是同一套几何
   （``services.imposition.page_bounds``），转一转就能看到范围跟着变。
@@ -227,6 +230,23 @@ class ImpositionCanvas(QWidget):
 
     def has_items(self) -> bool:
         return bool(self._items)
+
+    def _spine_visible(self) -> bool:
+        """红色对齐线要不要画：两图页恒显；**单图页只认横图（宽>高）**。
+
+        单图页判据走**源图的宽高比**而不是文件名后缀（用户 2026-09-30 晚：
+        「单独一张半页图片在某页，不需要显示中间红线」）——实际任务里
+        **没有 ``-l``/``-r`` 后缀的竖图也可能是半页**（整幅误检、封面插页、
+        单页扫描），文件名认不出来，而半页/单页图恒为竖图（高≥宽）、
+        整幅对开页恒为横图（宽>高，见任务 0007 实测 1917×1410）。
+        尺寸读不到（文件已丢）不画——宁可少画也不画误导线。
+        """
+        if len(self._items) >= 2:
+            return True
+        if len(self._items) == 1:
+            size = self._image_size(self._items[0]["file"])
+            return size is not None and size[0] > size[1]
+        return False
 
     def frame_visible(self) -> bool:
         """当前是否画**带手柄的完整操作框**（= 鼠标按住期间）。
@@ -831,12 +851,18 @@ class ImpositionCanvas(QWidget):
             self._draw_item(painter, index, item)
         # 红色对齐线（用户 2026-09-30）：两图公共中心所在竖线，**恒显**——
         # 不管有没有选中、有没有在拖动，它都在；整版旋转时拿它当对比基准。
+        # ⚠️ 单图页只认横图（源图宽>高；2026-09-30 晚用户定：单张半页图
+        # ——包括无 -l/-r 后缀的竖图——不画红线；单张整幅对开仍要），
+        # 见 _spine_visible。
         if self._items:
-            center_x, _ = self._spread_center_units()
-            x = self._off_x + center_x * self._px_per_unit
-            # 宽度 1.0（用户 2026-09-30：1.5 的红线渲染出来约 2px，嫌太宽）
-            painter.setPen(QPen(SPINE_COLOR, 1.0, Qt.DashLine, Qt.RoundCap))
-            painter.drawLine(QPointF(x, 0.0), QPointF(x, float(self.height())))
+            if self._spine_visible():
+                center_x, _ = self._spread_center_units()
+                x = self._off_x + center_x * self._px_per_unit
+                # 宽度 1.0（用户 2026-09-30：1.5 的红线渲染出来约 2px，嫌太宽）
+                painter.setPen(QPen(SPINE_COLOR, 1.0, Qt.DashLine, Qt.RoundCap))
+                painter.drawLine(
+                    QPointF(x, 0.0), QPointF(x, float(self.height()))
+                )
             # 成品截图范围框（用户 2026-09-30）：两图外接框并集的灰虚线，
             # **恒显**——产出图就是这块范围的紧裁，旋转/挪动时它跟着变。
             self._draw_crop_frame(painter)

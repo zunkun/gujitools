@@ -7,8 +7,9 @@
   连接线由 **StepBar 底层统一画**、从节点框**后面**穿过——节点框有实底
   （``_StepItem.pill`` / 拼版节点自己画），框内那截线被遮住，线自然"从
   框后面出发"，不用再对齐框边缘；
-- 节点框：真实步骤**实线** border（有实底），「图片拼版」可选节点**默认
-  虚线**（选中后转实线主题色）——虚线 = 非真实流向，与连接线的语言一致；
+- 节点框：所有节点**同一套外观**——SURFACE 实底 + 浅色描边 + 高亮底色，
+  选中/当前只有底色变化、**没有边框差异**（用户 2026-09-30：其他节点即使
+  选中也没有 border，只有背景色；拼版节点生效与否样式统一）；
 - 状态色：未执行（灰）· 执行中（蓝）· 成功（绿）· 失败（红）· 已中断（橙）；
 - 整步可点击切换，带悬停底色，避免按钮样式的标签堆叠感。
 
@@ -47,6 +48,10 @@ _STATUS_COLORS = {
 _BADGE = 26          # 徽标直径
 _CONNECTOR_W = 38    # 连接线宽度（含箭头）
 _BYPASS_CLEAR = 28   # 绕行线上下竖线离拼版节点左右缘的距离（用户 2026-09-30：别贴着按钮拐弯）
+# 所有节点的**统一默认宽度**（用户 2026-09-30：所有节点设置一个默认宽度，
+# 生效/不生效、选择/未选择都不改变宽度——状态只表达在徽标与副标题上）。
+# 只是下限：状态副标题更长时节点仍可以变宽（文字走省略号兜底）。
+_NODE_MIN_W = 140
 
 _STATUS_LABELS = {
     "pending": "未执行",
@@ -58,18 +63,25 @@ _STATUS_LABELS = {
 
 
 class _StepBadge(QWidget):
-    """圆形徽标：编号 / 成功对勾。"""
+    """圆形徽标：编号 / 成功对勾 / 自定义符号（如拼版节点的「＋」）。"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedSize(_BADGE, _BADGE)
         self._number = 1
         self._status = "pending"
+        #: 非 success 状态下要画的符号（None = 画编号）。success 恒画对勾。
+        self._symbol: str | None = None
 
     def set_state(self, number: int, status: str) -> None:
         self._number = number
         self._status = status
         self.update()
+
+    def set_symbol(self, symbol: str | None) -> None:
+        if symbol != self._symbol:
+            self._symbol = symbol
+            self.update()
 
     def paintEvent(self, _event) -> None:
         fill, border, text_color = _STATUS_COLORS.get(
@@ -93,6 +105,13 @@ class _StepBadge(QWidget):
             )
             painter.setBrush(Qt.NoBrush)
             painter.drawPath(path)
+        elif self._symbol:
+            font = QFont(self.font())
+            font.setPixelSize(14)
+            font.setBold(True)
+            painter.setFont(font)
+            painter.setPen(QColor(text_color))
+            painter.drawText(self.rect(), Qt.AlignCenter, self._symbol)
         else:
             font = QFont(self.font())
             font.setPixelSize(12)
@@ -177,6 +196,8 @@ class StepItem(QFrame):
         self.pill = QFrame(self)
         self.pill.setObjectName("stepPill")
         self.pill.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+        # 统一默认宽度（_NODE_MIN_W）：节点之间宽窄一致，状态变化不引起跳动
+        self.pill.setMinimumWidth(_NODE_MIN_W)
         row = QHBoxLayout(self.pill)
         row.setContentsMargins(8, 5, 12, 5)
         row.setSpacing(9)
@@ -293,21 +314,24 @@ class StepItem(QFrame):
 
 
 class _ImpositionNode(QFrame):
-    """流程条上的「图片拼版」可选节点：**默认虚线框**表达"可选步骤"。
+    """流程条上的「图片拼版」可选节点：**外观与真实节点完全同款**。
 
-    与真实步骤（StepItem）的视觉区分：
-    - 边框**默认虚线**（真实步骤是实线胶囊）；**选中后转实线主题色**——
-      虚线 = 非真实流向，与连接线的语言一致；
-    - 选中（用户选择拼版进入流程）时边框转主题色 + 浅色底 + 副标题「已选择」；
-    - 未选中时灰色虚线 + 副标题「未选择」；
-    - 当前正在查看它的详情时叠加当前步的高亮底色；
+    用户 2026-09-30 定稿（替代早先的「虚线 = 可选」语言）：
+    - **没有自己的边框差异**——其他节点即使选中也只有背景色、没有 border，
+      本节点一样：SURFACE 实底 + 浅描边（与 StepItem 同一支画法）；
+      **高亮底色只属于当前步**（用户 2026-09-30：生效但不是当前步骤 →
+      白底，与其他节点一致），生效/不生效、选择/未选择**样式统一**，
+      状态只表达在徽标与副标题上；
+    - 徽标跟真实步骤同款圆形：未生效画灰色「＋」（可选、未进流程），
+      **选中且生效**后跟前面节点一样是绿色对勾（``set_flow_active``）；
+    - 未选择时副标题「未选择」，选择后「已选择」；
+    - 当前正在查看它的详情时叠加当前步的高亮底色（与真实步骤一致）；
     - 框内**始终有 SURFACE 实底**：连接线从框后面穿过时靠它遮住（真实
       步骤同款，见 ``StepItem.paintEvent``）；
     - **能不能把两侧连接线点亮，看这条支路是不是真的在流程里**（生效态，
       由 ``StepBar.set_imposition_active`` 控制）：未生效 → 两端灰色虚线、
-      主流程走节点上方的绕行线；生效 → 回到常规规则。节点的**选择态**
-      （边框颜色/「已选择」）只管自己的外观，与连线无关；
-    - 宽度永远贴合自己的文字，宽窄由外层槽位决定。
+      主流程走节点上方的绕行线；生效 → 回到常规规则；
+    - 宽度有统一默认下限（``_NODE_MIN_W``），状态变化不改变宽度。
     """
 
     clicked = Signal()
@@ -316,26 +340,36 @@ class _ImpositionNode(QFrame):
         super().__init__(parent)
         self._selected = False
         self._current = False
+        self._flow = False
         self.setObjectName("impositionNode")
         self.setCursor(Qt.PointingHandCursor)
-        # ⚠️ **不许被拉宽**：虚线框只包住自己的文字（用户 2026-09-30 报「虚线框
+        # ⚠️ **不许被拉宽**：节点只包住自己的内容（用户 2026-09-30 报「虚线框
         # 宽度太宽」——它跟真实步骤平分了流程条的多余空间，实测 303px vs 步骤
         # 胶囊 145px）。Maximum = 宽度上限就是 sizeHint，窗口变窄时仍可压缩
-        # （标题走省略号）；多余空间留给真实步骤（StepBar 里本节点按 stretch 0
-        # 插入，两道一起保证）。
+        # （标题走省略号）；多余空间留给真实步骤。统一默认宽度由
+        # ``setMinimumWidth(_NODE_MIN_W)`` 给下限。
         self.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Preferred)
+        self.setMinimumWidth(_NODE_MIN_W)
         self.setToolTip(
             "可选节点：第三步「区域模式」为 1（左右分开）时出现，"
             "位于「图片去底色」与「生成 PDF」之间。点击查看/选择。"
         )
 
-        column = QVBoxLayout(self)
-        column.setContentsMargins(10, 5, 10, 5)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(8, 5, 12, 5)   # 与 StepItem 胶囊一致
+        row.setSpacing(9)
+        self.badge = _StepBadge(self)
+        self.badge.set_symbol("＋")           # 未生效：灰色「＋」；生效后转对勾
+        row.addWidget(self.badge, 0, Qt.AlignVCenter)
+
+        column = QVBoxLayout()
+        column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(0)
         self.title_label = _ElidedLabel(title, self)
         self.detail_label = _ElidedLabel("未选择", self)
         column.addWidget(self.title_label)
         column.addWidget(self.detail_label)
+        row.addLayout(column, 1)
         self._apply_style()
 
     def set_selected(self, selected: bool) -> None:
@@ -351,55 +385,57 @@ class _ImpositionNode(QFrame):
             self._current = current
             self._apply_style()
 
+    def set_flow_active(self, active: bool) -> None:
+        """拼版支路是否**生效**：生效 → 徽标转绿色对勾（与真实步骤同款）。"""
+        active = bool(active)
+        if active != self._flow:
+            self._flow = active
+            self.badge.set_state(0, "success" if active else "pending")
+            self._apply_style()
+
     def _hovered(self) -> bool:
         return self.underMouse()
 
     def _apply_style(self) -> None:
-        border = QColor(ACCENT if self._selected else "#8a8a8a")
-        title_color = ACCENT if self._selected else T.INK_SOFT
-        detail_color = ACCENT if self._selected else T.INK_FAINT
-        if self._selected:
+        # 与真实节点同一套配色：高亮底色**只在当前步**（用户 2026-09-30：
+        # 生效但不是当前步骤 → 白底，与其他节点一致；「已选择」由副标题
+        # 与徽标表达，不再压蓝底）。
+        if self._current:
             self._background = QColor(0, 120, 212, 26)
-        elif self._current or self._hovered():
+        elif self._hovered():
             self._background = QColor(0, 0, 0, 11)
         else:
             self._background = None
-        self._border = border
         self.detail_label.setText("已选择" if self._selected else "未选择")
 
         title_font = QFont(self.font())
         title_font.setPixelSize(13)
-        title_font.setBold(self._current or self._selected)
+        title_font.setBold(self._current)
         self.title_label.setFont(title_font)
-        self.title_label.set_text_color(title_color)
+        self.title_label.set_text_color(ACCENT if self._current else T.INK_SOFT)
         detail_font = QFont(self.font())
         detail_font.setPixelSize(12)
         self.detail_label.setFont(detail_font)
-        self.detail_label.set_text_color(detail_color)
+        self.detail_label.set_text_color(ACCENT if self._selected else T.INK_FAINT)
         self.update()
 
     def paintEvent(self, _event) -> None:
+        """与 ``StepItem.paintEvent`` 同一支画法：SURFACE 实底 + 高亮底色
+        + 浅描边。选中/生效**不换边框**（用户 2026-09-30：其他节点即使
+        选中也没有 border，只有背景色）。实底用来遮住从框后面穿过的连接线。
+        """
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        rect = QRectF(1.0, 1.0, self.width() - 2, self.height() - 2)
-        # SURFACE 实底先行：遮住从框后面穿过的连接线（真实步骤同款）
+        rect = QRectF(0.5, 0.5, self.width() - 1, self.height() - 1)
         painter.setPen(Qt.NoPen)
         painter.setBrush(QColor(T.SURFACE))
         painter.drawRoundedRect(rect, 8, 8)
         if self._background is not None:
             painter.setBrush(self._background)
             painter.drawRoundedRect(rect, 8, 8)
-        # 边框：默认虚线（可选步骤），选中后转实线主题色（用户 2026-09-30：
-        # 各节点实线 border、只有拼版默认虚线，线才能从节点框后面出发）
-        painter.setPen(
-            QPen(
-                self._border, 1.4,
-                Qt.SolidLine if self._selected else Qt.DashLine,
-                Qt.RoundCap, Qt.RoundJoin,
-            )
-        )
+        painter.setPen(QPen(QColor(T.BORDER), 1))
         painter.setBrush(Qt.NoBrush)
-        painter.drawRoundedRect(rect, 8, 8)
+        painter.drawRoundedRect(rect.adjusted(0.5, 0.5, -0.5, -0.5), 8, 8)
         painter.end()
 
     def enterEvent(self, event) -> None:
@@ -461,16 +497,19 @@ class StepBar(QWidget):
 
     节点有两条互相独立的状态线（别合并）：
     - **选择态**（``set_imposition_selected``）：只管节点自己的外观
-      （边框虚实/颜色 + 「已选择/未选择」副标题）；
+      （「已选择/未选择」副标题；节点没有边框差异、也不压高亮底色，
+      与真实步骤同一套外观）；
     - **生效态**（``set_imposition_active``）：这条支路是否真的承载流程
-      （已启用且至少有一页拼版）。生效 → 两侧连接线常规点亮；未生效 →
-      两侧连接线灰色虚线，同时「去底色 → 生成 PDF」画一条从节点上方
-      绕过的绕行线（``_draw_imposition_bypass``）——选了拼版但还没有
-      拼版页时，第四步实际取的仍是第三步产物，线不能说谎。
+      （已启用且至少有一页拼版）。生效 → 两侧连接线常规点亮、节点徽标
+      转绿色对勾；未生效 → 两侧连接线灰色虚线、徽标灰色「＋」，同时
+      「去底色 → 生成 PDF」画一条从节点上方绕过的绕行线
+      （``_draw_imposition_bypass``）——选了拼版但还没有拼版页时，
+      第四步实际取的仍是第三步产物，线不能说谎。
 
     节点的宽度与间距分成两件事（都踩过坑，别再合并）：
     - **槽位**与真实步骤等宽（``imposition_slot`` + stretch 1）→ 步骤间距均分；
-    - **节点框**只在槽位里靠左、宽度贴合文字（``QSizePolicy.Maximum``）→ 不被拉宽。
+    - **节点框**只在槽位里靠左、宽度不超过内容但有统一默认下限
+      （``QSizePolicy.Maximum`` + ``_NODE_MIN_W``）→ 不被拉宽、宽窄一致。
     """
 
     current_changed = Signal(int)
@@ -726,21 +765,23 @@ class StepBar(QWidget):
         self._sync()
 
     def set_imposition_selected(self, selected: bool) -> None:
-        """「图片拼版」是否被选择（只改节点外观，不动连接线/绕行线）。"""
+        """「图片拼版」是否被选择（副标题/徽标口径，不动连接线/绕行线）。"""
         self.imposition_node.set_selected(selected)
         self._sync()
 
     def set_imposition_active(self, active: bool) -> None:
         """拼版支路是否**生效**（已启用且至少有一页拼版，宿主判定）。
 
-        生效 → 两侧连接线常规点亮；未生效 → 两侧连接线灰色虚线，
-        主流程改走节点上方的绕行线。与 ``set_imposition_selected``
+        生效 → 两侧连接线常规点亮、节点徽标转绿色对勾（与真实步骤同款）；
+        未生效 → 两侧连接线灰色虚线、徽标灰色「＋」，主流程改走节点上方
+        的绕行线。与 ``set_imposition_selected``
         （节点自己的选择外观）互不取代：选了但还没有拼版页时，节点
         显示「已选择」，但线仍然是灰色虚线 + 绕行。
         """
         active = bool(active)
         if active != self._imposition_flow:
             self._imposition_flow = active
+            self.imposition_node.set_flow_active(active)
             self._sync()
 
     def set_step_status(

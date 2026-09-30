@@ -495,9 +495,13 @@ class ImageZoomDialog(QDialog, WorkerHost):
         self._index = 0
         self._target: ZoomTarget | None = None
         self._token = None  # 渲染令牌：只认最新一次请求的结果
+        self._editor = None  # 图片编辑弹窗（懒建，见 _edit_image）
         self.setWindowTitle("图片预览")
         self.setModal(False)
-        self.resize(1120, 800)
+        # ⚠️ 1360 起：工具条一行摆了缩放/朝向/翻页/打印/下载/编辑十几个
+        # 控件，1120 时「编辑」会被挤到翻页组旁边贴成一团（用户 19:20 报
+        # "宽度放不下编辑按钮"）。宽度给足，配合 addStretch 兜底。
+        self.resize(1360, 860)
         # ⚠️ QDialog 默认标题栏**只有关闭（和帮助）**，没有最小化/最大化——
         # 用户找不到「还原」入口、双击标题栏也没反应（17:08 截图报障）。
         # 补上 min/max 提示后：右上角有最小化/最大化按钮，双击标题栏 =
@@ -594,6 +598,10 @@ class ImageZoomDialog(QDialog, WorkerHost):
         row.addWidget(self.next_btn)
 
         row.addSpacing(T.SPACE_MD)
+        self.edit_btn = PushButton(FIF.EDIT, "编辑")
+        self.edit_btn.setToolTip("打开图片编辑器：裁剪 / 拉伸 / 擦除 / 插入文字")
+        self.edit_btn.clicked.connect(self._edit_image)
+        row.addWidget(self.edit_btn)
         self.print_btn = PushButton(FIF.PRINT, "打印")
         self.print_btn.setToolTip("把当前图（含翻转/旋转）送到打印机")
         self.print_btn.clicked.connect(self._print_image)
@@ -780,9 +788,40 @@ class ImageZoomDialog(QDialog, WorkerHost):
         for button in (
             self.zoom_out_btn, self.zoom_in_btn, self.fit_btn, self.actual_btn,
             self.rotate_ccw_btn, self.rotate_cw_btn, self.flip_h_btn,
-            self.flip_v_btn, self.print_btn, self.download_btn,
+            self.flip_v_btn, self.edit_btn, self.print_btn, self.download_btn,
         ):
             button.setEnabled(has_image)
+
+    # ------------------------------------------------------------------ 编辑
+    def _open_editor(self, image) -> "ImageEditorDialog | None":
+        """造编辑器弹窗（不 exec，便于离屏测试）。无图时返回 None。"""
+        from desktop.components.viewers.image_editor import ImageEditorDialog
+
+        if image is None or image.isNull():
+            return None
+        self._editor = ImageEditorDialog(self, image)
+        return self._editor
+
+    def _edit_image(self) -> None:
+        """打开编辑器；「完成」后把编辑结果写回画布（覆盖当前页显示）。
+
+        ⚠️ 编辑的是 ``export_image()``（已含翻转/旋转）——结果里变换已"烤"
+        进像素，写回 ``set_image`` 会复位朝向，所见即所得，不叠加。
+        结果只活在画布里：满意用「下载」落盘，翻页/关窗即丢弃（预览可能
+        是实时合成的虚拟图，不是所有页都有文件可回写）。
+        """
+        editor = self._open_editor(self.canvas.export_image())
+        if editor is None:
+            self.tip_label.setText("没有可编辑的图片")
+            return
+        if editor.exec() != QDialog.DialogCode.Accepted:
+            return
+        edited = editor.result_image()
+        if edited is None or edited.isNull():
+            return
+        self.canvas.set_image(edited)
+        self._on_zoom_changed(self.canvas.zoom)
+        self.tip_label.setText("已应用编辑：满意就用「下载」保存；翻页会丢弃未保存的修改")
 
     def _print_image(self) -> None:
         """把当前图送到打印机（对话框里选打印机/纸张/份数）。

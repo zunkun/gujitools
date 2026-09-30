@@ -78,19 +78,19 @@ def run(ctx) -> None:
     pump(app)
     ok("取消勾选 → 节点恢复未选择", not d.step_bar.imposition_node.is_selected())
 
-    # ---- 虚线节点宽度必须**贴着文字**（用户 2026-09-30：「虚线框宽度太宽」）----
-    # 回归钉子：节点曾按 stretch 1 插入、尺寸策略又是 Preferred，于是跟真实步骤
-    # 一起平分流程条的多余空间，被拉成步骤胶囊的 1.5~2 倍（用户截图 303px vs 145px）。
-    # 现在：槽位等宽（stretch 1）+ 框在槽位里贴合文字（Maximum 策略）——
-    # 只做前者 = 框被拉宽，只做后者 = 最后一段挤在一起（用户报「不均分步骤」，
-    # 实测间距 406 vs 147px）。
+    # ---- 所有节点统一默认宽度（用户 2026-09-30：生效/不生效样式统一）----
+    # 旧断言「节点贴着文字、比胶囊窄」已按新口径替代：所有节点（真实步骤
+    # 胶囊 + 拼版节点）都有 _NODE_MIN_W 统一下限，状态变化不改变宽度；
+    # 节点仍不许被槽位拉宽（Maximum 策略，宽度 = max(sizeHint, 默认宽度)）。
+    from desktop.components.step_bar import _NODE_MIN_W
     node = d.step_bar.imposition_node
-    widest_pill = max(it.pill.width() for it in d.step_bar.buttons)
-    ok("虚线节点宽度贴着文字（不超过自身 sizeHint）",
-       node.width() <= node.sizeHint().width() + 2,
+    ok("所有节点都有统一默认宽度（胶囊与拼版节点 ≥ _NODE_MIN_W）",
+       all(it.pill.width() >= _NODE_MIN_W - 2 for it in d.step_bar.buttons)
+       and node.width() >= _NODE_MIN_W - 2,
+       f"胶囊 {[it.pill.width() for it in d.step_bar.buttons]} 节点 {node.width()}")
+    ok("拼版节点不被槽位拉宽（宽度 = max(sizeHint, 默认宽度)）",
+       node.width() <= max(node.sizeHint().width(), _NODE_MIN_W) + 2,
        f"节点 {node.width()} vs sizeHint {node.sizeHint().width()}")
-    ok("虚线节点比步骤胶囊窄（不被拉宽）",
-       node.width() < widest_pill, f"节点 {node.width()} vs 最宽胶囊 {widest_pill}")
     slot = d.step_bar.imposition_slot
     ok("拼版槽位与真实步骤等宽（步骤间距均分）",
        abs(slot.width() - d.step_bar.buttons[0].width()) <= 2,
@@ -162,6 +162,11 @@ def run(ctx) -> None:
     ok("只勾「已选择」未生效 → 连接线仍是灰色虚线（外观与流向分离）",
        front is not None and not front[2] and front[3]
        and back is not None and not back[2] and back[3])
+    # 用户 2026-09-30：生效/选择**不压蓝底**——高亮底色只属于当前步，
+    # 非当前步的拼版节点跟其他节点一样白底。
+    ok("选中但不是当前步 → 节点白底（无高亮）",
+       bar.imposition_node._background is None,
+       f"bg={bar.imposition_node._background}")
     bar.set_imposition_active(True)
     pump(app)
     front, back = _impo_segs()
@@ -172,9 +177,19 @@ def run(ctx) -> None:
     ok("生效后端连接线点亮", back is not None and back[2])
     ok("生效后连接线恢复实线", front is not None and not front[3]
        and back is not None and not back[3])
+    ok("生效后节点徽标转对勾（与真实步骤同款）",
+       bar.imposition_node.badge._status == "success",
+       f"status={bar.imposition_node.badge._status}")
     bar.set_imposition_active(False)
+    ok("退回未生效 → 徽标恢复灰色「＋」",
+       bar.imposition_node.badge._status == "pending"
+       and bar.imposition_node.badge._symbol == "＋",
+       f"status={bar.imposition_node.badge._status} symbol={bar.imposition_node.badge._symbol}")
     bar.set_current(bar.imposition_index)      # 当前就停在拼版详情（未生效）
     pump(app)
+    ok("当前步是拼版 → 才有高亮底色（与其他节点当前步一致）",
+       bar.imposition_node._background is not None,
+       f"bg={bar.imposition_node._background}")
     front, back = _impo_segs()
     ok("当前是拼版但未生效 → 前端仍是灰色虚线（不再有当前步例外）",
        front is not None and not front[2] and front[3], f"front={front}")
@@ -186,10 +201,14 @@ def run(ctx) -> None:
     ok("离开拼版且未生效 → 前端保持灰虚线",
        front is not None and not front[2] and front[3])
 
-    # ---- 节点框语言（用户 2026-09-30）：真实步骤实线 border，只有拼版默认虚线 ----
+    # ---- 节点框语言（用户 2026-09-30 定稿）：所有节点同一套外观，选中/生效
+    # 只有背景色差异、没有边框差异；状态表达在徽标（＋/对勾）与副标题上。
     # 连接线由 StepBar 底层画、从节点框后面穿过：框**外**能看到线（真的画了），
     # 线伸进框**内**的部分被节点 SURFACE 实底遮住——渲染成像素来验。
-    ok("拼版节点默认未选择（边框默认虚线）", not node.is_selected())
+    ok("拼版节点默认未选择", not node.is_selected())
+    ok("未生效节点徽标是灰色「＋」（不是对勾）",
+       node.badge._status == "pending" and node.badge._symbol == "＋",
+       f"status={node.badge._status} symbol={node.badge._symbol}")
 
     def _near(c, rgb, tol=18):
         return all(abs(a - b) <= tol for a, b in zip((c.red(), c.green(), c.blue()), rgb))

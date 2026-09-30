@@ -235,8 +235,15 @@ class ImpositionViewWidget(QWidget):
             )
             return
         stems = page_source_stems(self._pages[self._current])
-        right = html.escape(stems[0]) if stems else "（空）"
-        left = html.escape(stems[1]) if len(stems) > 1 else "（空）"
+        # 单图页（自动拼版里整幅/落单图单独成的那页）：没有左右槽，只报整幅名
+        if len(stems) == 1:
+            self.hint_main.setText(
+                f"{cn_page_label(self._current)}　·　整幅"
+                f"<b><font color=\"{SPINE_COLOR.name()}\">「{html.escape(stems[0])}」</font></b>"
+            )
+            return
+        right = html.escape(stems[0])
+        left = html.escape(stems[1])
         # 颜色只引画布常量（SPINE_COLOR / CROP_COLOR），不许再抄一份色值：
         # 画布标注换了色，文字里的词必须跟着变，否则文字就在撒谎。
         spine = SPINE_COLOR.name()
@@ -249,7 +256,7 @@ class ImpositionViewWidget(QWidget):
         self.hint.setText(
             "拖动移动　·　四角/四边缩放拉伸　·　框上方圆钮旋转　·　滚轮缩放视图　｜　"
             "双击图片预览原图　·　双击空白处预览成品组合　｜　"
-            "点击图片选中后可在右侧「操作当前图片」里调整"
+            "点击图片选中后可在右侧「当前图片样式」里调整"
             f"（<font color=\"{spine}\">红色虚线</font>为两图公共中心线，"
             f"<font color=\"{crop}\">灰色虚线框</font>为成品截图范围）。"
         )

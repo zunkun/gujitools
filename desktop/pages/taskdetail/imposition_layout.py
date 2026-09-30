@@ -7,8 +7,9 @@
 - **双击预览**（用户 2026-09-30）：双击某张图 → 弹窗预览这张原图；
   双击两图之外的空白处 → 弹窗预览整页左右组合（按产出口径合成）；
 - 面板的**整体旋转**（滑块/输入框增量）、复位本页版面（对当前页或
-  选中槽位做版面变换）；
-- 状态行（当前页 / 选中槽位 / 拼版是否生效）；
+  选中槽位做版面变换）、**删除选中图片**（2026-09-30 用户定：选中哪张
+  就能删哪张，页保留、图回未选择列表）；
+- 状态行（当前页 / 选中槽位 / 拼版是否生效 / 单图页显隐「新增图片」）；
 - **后台防抖合成**（``stages/imposition/``，列表顺序即页序）与生成 PDF 前
   的同步兜底合成。
 
@@ -24,9 +25,8 @@ from pathlib import Path
 from PySide6.QtCore import QTimer
 
 from desktop.services.imposition import (
-    cn_page_label, default_items, page_source_stems,
+    cn_page_label, default_items, page_source_stems, single_items,
 )
-
 #: 版面改动 → 后台重新合成落盘的防抖（拖动会连续改版面）
 COMPOSE_DEBOUNCE_MS = 500
 #: 旋转组件（滑块/输入框）连续吐增量 → 停顿多久算"改完了"再统一落盘
@@ -124,7 +124,8 @@ class ImpositionLayoutMixin:
             return
         items = pages[index].get("items") or []
         files = [item.get("file") for item in items]
-        reset = default_items(files)
+        # 单图页（整幅/落单）只有一项：复位 = 原始尺寸、归零位（没有"并排"）
+        reset = single_items(files[0]) if len(files) == 1 else default_items(files)
         if reset is None:
             self._toast(
                 "error", "无法复位",
@@ -141,6 +142,72 @@ class ImpositionLayoutMixin:
         self._schedule_imposition_compose()
         self._update_imposition_status(index)
         self.log_view.append(f"第 {index + 1} 页拼版已复位为默认并排版面。")
+
+    def _on_imposition_delete_item(self) -> None:
+        """「删除选中图片」（面板）：把画布里选中的那张图从本页删掉。
+
+        **页保留**——剩一张时面板会自动出现「新增图片」可以再补一张；**删到
+        最后一张则整页移除**（空页没有意义，与左列「✕」释放同款语义——全部
+        页删光即视为未生效，取图回退去底色；2026-09-30 用户定：整页移除前
+        要弹确认框）。被删的图不再被任何页引用，
+        即自动回到「未选择列表」（下次「选择拼版」或「新增图片」都能再选它）。
+        落盘走 ``_save_imposition_pages``：画布重灌会清空选中，「当前图片样式」
+        区随之灰掉。
+        """
+        view = getattr(self, "imposition_view", None)
+        if view is None or view.current_index() < 0:
+            self._toast("info", "没有拼版页", "请先点左侧的拼版页，或添加一页拼版。")
+            return
+        view.flush_pending()
+        index = view.current_index()
+        slot = view.selected_slot()
+        if slot < 0:
+            self._toast("info", "没有选中的图片", "先在画布里点选要删除的图片。")
+            return
+        pages = self._imposition_pages()
+        if not 0 <= index < len(pages):
+            return
+        items = [dict(item) for item in pages[index].get("items") or []]
+        if not 0 <= slot < len(items):
+            return
+        removed = items.pop(slot)
+        if not items:
+            # 本页最后一张：页会跟着一起删（2026-09-30 用户定：要确认）。
+            # 此刻还没动任何状态（items 是副本），取消直接返回即可。
+            from qfluentwidgets import Dialog
+
+            dialog = Dialog(
+                "删除图片",
+                f"「{Path(removed['file']).stem}」是本页最后一张图片，"
+                "删除后整页拼版将一并移除。\n是否继续？",
+                self.window(),
+            )
+            dialog.yesButton.setText("删除")
+            dialog.cancelButton.setText("取消")
+            if not dialog.exec():
+                return
+        if items:
+            pages[index] = {**pages[index], "items": items}
+        else:
+            # 单图页删掉最后一张：页一并删除（空页没有意义），与左列
+            # 「✕」释放同款语义——视为未生效，取图来源回退去底色
+            pages.pop(index)
+        self._save_imposition_pages(pages)
+        view.set_current(min(index, len(pages) - 1))
+        self._update_imposition_status(
+            view.current_index() if view is not None else -1
+        )
+        if items:
+            self.log_view.append(
+                f"已删除{cn_page_label(index)}选中的图片"
+                f"「{Path(removed['file']).stem}」，回到未选择列表。"
+            )
+        else:
+            self.log_view.append(
+                f"已删除{cn_page_label(index)}最后一张图片"
+                f"「{Path(removed['file']).stem}」，本页没有图了，整页移除"
+                f"（源图回到未选择列表）。"
+            )
 
     # ------------------------------------------------------------- 双击预览
     def _open_imposition_item_preview(self, slot: int) -> None:
@@ -259,6 +326,15 @@ class ImpositionLayoutMixin:
         if label is None:
             return
         pages = self._imposition_pages()
+        # 「新增图片」只在单图页出现（2026-09-30 用户定）——面板按钮显隐
+        # 搭状态行这趟车一起同步（状态行是"当前页变了"的汇聚点）
+        panel = getattr(self, "imposition_panel", None)
+        if panel is not None:
+            single = (
+                0 <= index < len(pages)
+                and len(pages[index].get("items") or []) == 1
+            )
+            panel.set_single_page(single)
         if not pages:
             text = "尚未添加拼版页"
         else:

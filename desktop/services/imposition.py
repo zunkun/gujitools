@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import math
+import re
 from pathlib import Path
 
 #: 一页拼版固定两项（右槽、左槽）
@@ -223,6 +224,154 @@ def make_page(sources: list) -> dict | None:
     if items is None:
         return None
     return {"items": items}
+
+
+def single_items(file) -> list[dict] | None:
+    """一张源图 → **单图版面**（整幅图 / 落单图专用：原始像素、不旋转）。
+
+    尺寸读不到返回 None（调用方负责跳过 / 提示）。
+    """
+    width, height = image_size(file)
+    if width <= 0 or height <= 0:
+        return None
+    return [{"file": str(file), "rect": [0.0, 0.0, float(width), float(height)],
+             "rotation": 0.0}]
+
+
+def make_single_page(file) -> dict | None:
+    """一张源图**自成一页**（整幅不拼、落单）：版面里只有一项。"""
+    items = single_items(file)
+    if items is None:
+        return None
+    return {"items": items}
+
+
+def append_item_to_page(items: list[dict], file) -> list[dict] | None:
+    """单图页「新增图片」：把 ``file`` 并进当前页，返回**新的 items**。
+
+    槽位与摆放口径（用户 2026-09-30：单图页可以再导一张图拼成对页）：
+
+    - 原图是**左半幅**（文件名 ``-l``/``_l`` 结尾）→ 新图进**右槽**
+      （``items[0]``），摆在原图**右边**；
+    - 其余（右半幅 / 整幅 / 无后缀）→ 新图进**左槽**（``items[1]``），
+      摆在原图**左边**；
+    - 新图按**原始像素**进版面、顶边与原图对齐、紧贴原图边缘（用户可再
+      拖动/缩放）；原图的版面（位置/大小/旋转）**原样保留**，不重排。
+
+    ``items`` 不是恰好一项（只有单图页能加图）或尺寸读不到时返回 None，
+    调用方负责提示。
+    """
+    if len(items) != 1:
+        return None
+    existing = dict(items[0])
+    ex_x, ex_y, ex_w, _ex_h = (float(v) for v in existing["rect"])
+    fresh = single_items(file)
+    if fresh is None:
+        return None
+    new_w, new_h = fresh[0]["rect"][2], fresh[0]["rect"][3]
+    new_item = {
+        "file": str(file),
+        "rect": [0.0, ex_y, float(new_w), float(new_h)],
+        "rotation": 0.0,
+    }
+    if classify_source(existing["file"]) == SOURCE_LEFT:
+        # 原图是左半幅：新图进右槽，贴在原图右边
+        new_item["rect"][0] = ex_x + ex_w
+        return [new_item, existing]
+    # 其余：新图进左槽，贴在原图左边
+    new_item["rect"][0] = ex_x - new_w
+    return [existing, new_item]
+
+
+# ------------------------------------------------------------------ 自动拼版
+#: 源图形态（``classify_source`` 的返回值）。
+SOURCE_LEFT = "left"    # 左半幅：文件名以 ``-l`` / ``_l`` 结尾
+SOURCE_RIGHT = "right"  # 右半幅：文件名以 ``-r`` / ``_r`` 结尾
+SOURCE_FULL = "full"    # 整幅：无 -l/-r 后缀（fullcontent 页在 area=1 下
+#                          不拆半幅，第三步提交产物就是无后缀单文件）
+
+
+def classify_source(path) -> str:
+    """源图形态：左半幅 / 右半幅 / 整幅（**判据唯一处：文件名后缀**）。
+
+    自动拼版只能靠文件名认图——拼版侧读不到检测框，而第三步的落盘口径是
+    半幅页 ``<页号>-l`` / ``<页号>-r``、整幅页 ``<页号>``（见
+    ``functions/text_region._area1_outputs`` 与单图输出）。
+    """
+    match = re.search(r"[_-]([lr])$", Path(str(path)).stem.lower())
+    if match:
+        return SOURCE_LEFT if match.group(1) == "l" else SOURCE_RIGHT
+    return SOURCE_FULL
+
+
+def source_page_number(path) -> int | None:
+    """源图**页号**：文件名开头的连续数字（``3-r`` → 3、``004-l`` → 4）。
+
+    「不连续的图片不可以合并在一页」的判据。文件名不带数字前缀的图
+    （如 ``cover``）返回 None——永不参与配对，只能单独成页。
+    """
+    match = re.match(r"(\d+)", Path(str(path)).stem)
+    return int(match.group(1)) if match else None
+
+
+def auto_impose_pages(files: list) -> list[dict]:
+    """自动拼版（用户 2026-09-30 规则，**唯一实现**）：
+
+    1. **默认两张半栏拼一页**：配对必须是「前一个左半幅 + 当前右半幅」
+       （序号在前的进右槽，与手动配对口径一致）。例：``3-r, 3-l, 4-r,
+       4-l, 5-r`` 从 ``3-l`` 起 → ``(3-l, 4-r)、(4-l, 5-r)``；从 ``3-r``
+       起 → ``[3-r]、(3-l, 4-r)、(4-l, 5-r)``（首位右半幅前面没有左半幅，
+       单独一页）；
+    2. **页号必须连续**：不连续的图片不可以合并在一页——``3-l`` 之后隔着
+       已用掉的 4 直接来 ``5-r``，则 ``3-l`` 单独一页、``5-r`` 重新开始；
+       文件名无数字前缀的图永不配对；
+    3. **整幅(fullcontent)标注的图单独一页**，不与任何图配对；等配对的
+       上一张因此落单、也单独一页；整幅之后拼版重新开始；末尾落单的
+       左半幅同样单独一页。
+
+    遍历按源清单顺序（``pdf_custom_sort_key``：同页号 r 在前），产出的
+    页清单顺序即 PDF 页序。尺寸读不到的图跳过（不产出残页）。
+    """
+    pages: list[dict] = []
+    pending: str | None = None   # 等待配对的上一张（右槽候选）
+    pending_no: int | None = None  # pending 的页号（连续性判据）
+    for raw in files:
+        file = str(raw)
+        kind = classify_source(file)
+        no = source_page_number(file)
+        if kind == SOURCE_FULL:
+            if pending is not None:
+                page = make_single_page(pending)
+                if page is not None:
+                    pages.append(page)
+                pending = None
+                pending_no = None
+            page = make_single_page(file)
+            if page is not None:
+                pages.append(page)
+            continue
+        if (pending is not None
+                and classify_source(pending) == SOURCE_LEFT
+                and kind == SOURCE_RIGHT
+                and pending_no is not None
+                and no == pending_no + 1):
+            page = make_page([pending, file])
+            if page is not None:
+                pages.append(page)
+            pending = None
+            pending_no = None
+            continue
+        if pending is not None:
+            page = make_single_page(pending)
+            if page is not None:
+                pages.append(page)
+        pending = file
+        pending_no = no
+    if pending is not None:
+        page = make_single_page(pending)
+        if page is not None:
+            pages.append(page)
+    return pages
 
 
 # ------------------------------------------------------------------ 合成

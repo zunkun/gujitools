@@ -24,27 +24,8 @@ from desktop.ui import theme as T
 
 ROW_HEIGHT = 56
 
-# 危险操作按钮（删除）：实例级样式表顶掉 qfluent 默认按钮外观，让删除
-# 在一排灰白按钮里一眼可辨。四个状态必须写全——实例样式表会把库自带的
-# 按钮样式整体顶掉，缺哪态哪态就退回默认渲染、没有视觉反馈。
-_DANGER_BUTTON_QSS = f"""
-QPushButton {{
-    background-color: {T.DANGER};
-    color: {T.SURFACE};
-    border: none;
-    border-radius: {T.RADIUS_SM}px;
-}}
-QPushButton:hover {{
-    background-color: {T.DANGER_HOVER};
-}}
-QPushButton:pressed {{
-    background-color: {T.DANGER_PRESSED};
-}}
-QPushButton:disabled {{
-    background-color: {T.DANGER_SOFT};
-    color: {T.INK_DISABLED};
-}}
-"""
+# 危险操作按钮（删除）样式已提升为共享函数：`theme.danger_button_qss()`，
+# 任务表格与拼版面板的删除按钮共用同一份（单一来源，2026-09-30）。
 
 
 class NameLabel(QLabel):
@@ -403,7 +384,7 @@ class TaskTable(QWidget):
         delete_btn = PushButton("删除")
         delete_btn.setFixedSize(QSize(52, 30))
         delete_btn.setToolTip("删除任务及其全部中间产物")
-        delete_btn.setStyleSheet(_DANGER_BUTTON_QSS)
+        delete_btn.setStyleSheet(T.danger_button_qss())
         delete_btn.clicked.connect(lambda: self.delete_request.emit(task_id))
         layout.addWidget(delete_btn)
         return w

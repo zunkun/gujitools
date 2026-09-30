@@ -1,14 +1,17 @@
 # -*- coding: utf-8 -*-
 """拼版控制面板——**模块二：拼版操作** 的右列（详情页控制区）。
 
-布局（用户 2026-09-30 定稿）：标题行（说明挂**问号按钮**，同其他步骤面板）
+布局（用户 2026-09-30 晚定稿）：标题行（说明挂**问号按钮**，同其他步骤面板）
 + 状态行 + **两块分区** + 底部启用开关：
 
 - **「操作当前图片页」**：页级操作——整体旋转（滑块/输入框，任意角度增量）、
-  复位本页版面 / 删除本页拼版（**同行两个按钮**）、清空全部拼版；
-- **「操作当前图片」**：图片级操作——旋转（绕图片中心）。这一块**只在画布里
+  **复位本页版面**（独占一行 block）、**一行两个**的「新增图片」（只在单图页
+  出现）与「删除选中图片」（只在选中某张图时出现；2026-09-30 用户定：删除
+  按钮从图片样式区挪进来跟新增图片同行）——「删除本页拼版」按钮已删除
+  （删页入口只剩左列的「✕」与批量删除），清空全部拼版保留；
+- **「当前图片样式」**：图片级操作——旋转（绕图片中心）。这一块**只在画布里
   选中了某张图时激活并高亮**（``_ItemSection``），切页 / 点空白取消选中后
-  整块灰掉（用户 2026-09-30：只有某张图片选中 active 时图片区才高亮）；
+  整块灰掉；
 - **「在流程中启用图片拼版」**复选框**放面板最底部**（用户 2026-09-30）：
   决定第四步取图来源（共享基元 ``print_source_dir``）。
 
@@ -54,11 +57,15 @@ PANEL_DESCRIPTION = (
 
 
 class _ItemSection(QFrame):
-    """「操作当前图片」区块：画布里选中了图才**激活并高亮**，否则灰掉。
+    """「当前图片样式」区块：画布里选中了图才**激活并高亮**，否则灰掉。
 
     ⚠️ 底色/描边**自己画**（``paintEvent``），不用样式表——样式表一旦进入
     子树，Qt 会把 QFrame 底色填白（步骤条 ``_StepBadge``、页清单
     ``_PageEntry`` 的同一条教训），还会连带影响子 QLabel 的取色路径。
+
+    「删除选中图片」按钮**不在本区块里**（2026-09-30 用户定：挪到页级区的
+    「新增图片」同一行），本区块只剩旋转样式；选中/取消选中的显隐由面板
+    ``set_item_rotation`` 一并拨动删除按钮。
     """
 
     def __init__(self, parent=None):
@@ -67,7 +74,7 @@ class _ItemSection(QFrame):
         column = QVBoxLayout(self)
         column.setContentsMargins(10, 8, 10, 8)
         column.setSpacing(T.SPACE_SM)
-        self.title_label = QLabel("操作当前图片", self)
+        self.title_label = QLabel("当前图片样式", self)
         column.addWidget(self.title_label)
         self.rotation_caption = CaptionLabel("旋转（绕图片中心）", self)
         apply_to(self.rotation_caption, T.SIZE_CAPTION, color=T.INK_FAINT)
@@ -128,8 +135,10 @@ class ImpositionPanel(Card):
     item_rotation_edited = Signal(float)
     #: 复位本页版面
     reset_requested = Signal()
-    #: 删除当前页
-    delete_requested = Signal()
+    #: 点了「新增图片」（只在单图页出现）：给本页再导一张图
+    add_image_requested = Signal()
+    #: 点了「删除选中图片」（页级区「新增图片」同行那颗红按钮）
+    item_delete_requested = Signal()
     #: 清空全部页
     clear_requested = Signal()
 
@@ -174,25 +183,56 @@ class ImpositionPanel(Card):
         self.whole_slider.valueChanged.connect(self._on_whole_slider)
         self.whole_spin.valueChanged.connect(self._on_whole_spin)
 
-        # 复位/删除一行两个（用户 2026-09-30）
-        page_actions = QHBoxLayout()
-        page_actions.setSpacing(T.SPACE_SM)
+        # 复位本页版面独占一行（block，2026-09-30 用户定：删除按钮挪去
+        # 与「新增图片」同行后，复位不再拼行）
         self.reset_button = PushButton(FIF.SYNC, "复位本页版面")
         self.reset_button.setToolTip(
-            "把本页两张图恢复成刚拼好时的样子（并排、原始大小、不旋转）"
+            "把本页图片恢复成刚拼好时的样子（并排、原始大小、不旋转）"
         )
         self.reset_button.clicked.connect(self.reset_requested)
-        page_actions.addWidget(self.reset_button, 1)
-        self.delete_button = PushButton(FIF.DELETE, "删除本页拼版")
-        self.delete_button.clicked.connect(self.delete_requested)
-        page_actions.addWidget(self.delete_button, 1)
+        column.addWidget(self.reset_button)
+
+        # 「新增图片」（只在单图页出现）+「删除选中图片」（只在选中某张图
+        # 时出现）一行两个（2026-09-30 用户定：删除按钮从「当前图片样式」
+        # 区块挪进页级区；显隐互不依赖，各占一半，独显时占满整行）
+        page_actions = QHBoxLayout()
+        page_actions.setSpacing(T.SPACE_SM)
+        self.add_image_button = PushButton(FIF.ADD, "新增图片")
+        self.add_image_button.setToolTip(
+            "本页只有一张图：再导入一张剩余未拼版的图片，拼成左右两图的一页"
+        )
+        self.add_image_button.clicked.connect(self.add_image_requested)
+        page_actions.addWidget(self.add_image_button, 1)
+        self.add_image_button.hide()
+        # 配色（用户 2026-09-30）：红底白字，样式对齐任务列表页的删除按钮
+        # （`theme.danger_button_qss` 共享一份）。⚠️ 实例样式表会把 qfluent
+        # 自带 qss（高度/内边距）整体顶掉——这里必须带上 fluent 同款内边距，
+        # 高度才跟「新增图片」一致；⚠️ 也别用 `FluentStyleSheet.BUTTON.value`
+        # 拼 qss——`.value` 只是文件名字符串 "button"，不是 qss 内容，拼出来
+        # 会把样式顶光（按钮变矮、图标叠字，2026-09-30 用户截图报过）。
+        # 纯文字不带图标：红底上 fluent 深色图标对比度差，任务列表删除按钮同款。
+        self.delete_item_button = PushButton("删除选中图片", self)
+        self.delete_item_button.setToolTip(
+            "把选中的这张图从本页拼版里删掉（源图不受影响，"
+            "回到未选择列表可重新选择）；若是本页最后一张，"
+            "整页拼版会一并移除（会先确认）"
+        )
+        self.delete_item_button.setStyleSheet(
+            # 上下内边距比 fluent 多 1px：fluent 按钮上下各还有 1px 边框
+            # （5+6+2=32），红底按钮 border: none，补齐才同高
+            T.danger_button_qss(padding="6px 12px 7px 12px")
+        )
+        self.delete_item_button.clicked.connect(self.item_delete_requested)
+        page_actions.addWidget(self.delete_item_button, 1)
+        self.delete_item_button.hide()
         column.addLayout(page_actions)
 
         self.clear_button = PushButton(FIF.CLEAR_SELECTION, "清空全部拼版")
         self.clear_button.clicked.connect(self.clear_requested)
         column.addWidget(self.clear_button)
 
-        # ---- 「操作当前图片」：图片级操作，选中图才激活高亮 ----
+        # ---- 「当前图片样式」：图片级操作，选中图才激活高亮 ----
+        # （删除按钮在上面页级区的「新增图片」同行，不在这里）
         self.item_section = _ItemSection(self)
         column.addWidget(self.item_section)
         self.item_spin = self._build_angle_spin()
@@ -289,10 +329,12 @@ class ImpositionPanel(Card):
     def set_item_rotation(self, value: float | None) -> None:
         """程序化回填选中图角度；``None`` = 没有选中。
 
-        ``None`` 时「操作当前图片」整块灰掉、组件禁用清零；有值则高亮激活
+        ``None`` 时「当前图片样式」整块灰掉、组件禁用清零，页级区的
+        「删除选中图片」一并隐藏；有值则高亮激活、删除按钮露出
         （用户 2026-09-30：只有某张图片选中 active 时图片区才高亮）。
         """
         self.item_section.set_active(value is not None)
+        self.delete_item_button.setVisible(value is not None)
         if value is None:
             self._syncing_rotation = True
             self.item_slider.setValue(0)
@@ -313,6 +355,10 @@ class ImpositionPanel(Card):
         """有没有可操作的拼版页：没有时整版旋转组件一并禁用。"""
         self.whole_slider.setEnabled(bool(on))
         self.whole_spin.setEnabled(bool(on))
+
+    def set_single_page(self, on: bool) -> None:
+        """当前页是不是**单图页**：是才露出「新增图片」（两图页隐藏）。"""
+        self.add_image_button.setVisible(bool(on))
 
     def set_enabled_checked(self, on: bool) -> None:
         """程序化回填启用开关（blockSignals 避免回抛覆盖落盘值）。"""

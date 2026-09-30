@@ -26,8 +26,9 @@ from PySide6.QtWidgets import (
     QFrame, QGridLayout, QHBoxLayout, QLabel, QScrollArea, QStackedWidget,
     QVBoxLayout, QWidget,
 )
-from qfluentwidgets import PrimaryPushButton, PushButton
+from qfluentwidgets import CheckBox, PrimaryPushButton, PushButton
 
+from desktop.services.imposition import SOURCE_FULL, classify_source
 from desktop.ui import theme as T
 from desktop.ui.widgets import apply_to
 
@@ -44,10 +45,6 @@ CARD_GAP = 12
 DIALOG_W, DIALOG_H = 1000, 680
 #: 每轮事件循环补几张缩略图（避免一次性解码上百张大图把弹窗卡住）
 THUMB_BATCH = 6
-
-#: 一页拼版固定两项（与 ``services.imposition.ITEMS_PER_PAGE`` 同一口径）：
-#: 配对发生在点「开始拼版」时，选择阶段不限张数
-PICK_COUNT = 2
 
 
 def _source_thumb_pixmap(path) -> QPixmap:
@@ -247,6 +244,12 @@ class _CardGrid(QWidget):
 class ImpositionPickerDialog(FramelessDialog):
     """「选择拼版」弹窗：从剩余未使用的源图里勾选两张。
 
+    两种模式（2026-09-30 新增 ``mode`` 参数）：
+
+    - **``"pick"``**（默认，选页）：自由多选，1 张单独成页 / 2 张拼一页；
+    - **``"append"``**（单图页「新增图片」）：**只能勾 1 张**，确认按钮叫
+      「添加」——宿主把这张图并进当前那一页拼版（见模块一控制器）。
+
     **卡片网格**：一行摆好几张（列数随窗口宽度自动变），卡片 ``CARD_W×CARD_H``、
     缩略图固定 ``THUMB_W×THUMB_H``（用户要求「一行好几个、选框宽一些」且
     「图片要正常显示、要有文字」）。
@@ -263,8 +266,10 @@ class ImpositionPickerDialog(FramelessDialog):
     展示，勾选结果也按**源清单顺序**返回（不是点选先后）。
     """
 
-    def __init__(self, files: list, parent=None, removed_files=None):
+    def __init__(self, files: list, parent=None, removed_files=None,
+                 mode: str = "pick"):
         super().__init__(parent)
+        self._mode = "append" if mode == "append" else "pick"
         # ``files`` 是**候选池**：剩余未用 + 已删除（宿主按源清单顺序合并传入），
         # 实际候选 = 池子减去黑名单——这样"恢复"后的图才有地方回去。
         self._files = [Path(f) for f in files]
@@ -282,7 +287,8 @@ class ImpositionPickerDialog(FramelessDialog):
         self.cards: list[_SourceCard] = []  # 候选视图当前卡片（源清单顺序）
         self.removed_cards: list[_SourceCard] = []  # 已删除视图当前卡片
         self._removed_view_visited = False
-        self.setWindowTitle("选择拼版")
+        # append 模式（单图页「新增图片」）：标题与确认按钮换文案
+        self.setWindowTitle("新增图片" if self._mode == "append" else "选择拼版")
         self.setModal(True)
         self.resize(DIALOG_W, DIALOG_H)
         self._setup_title_bar()
@@ -317,6 +323,19 @@ class ImpositionPickerDialog(FramelessDialog):
         apply_to(self.status, T.SIZE_CAPTION, color=T.INK_SOFT)
         column.addWidget(self.status)
 
+        # 「自此之后图片自动拼版」（用户 2026-09-30 要求恢复）：**恰好勾 1 张**
+        # 时出现在下方——勾上后点「开始拼版」，宿主从这张图起把剩余候选按
+        # 自动拼版规则（整幅单独一页、左半幅+右半幅配对）全部拼完。
+        self.auto_checkbox = CheckBox("自此之后图片自动拼版", self)
+        self.auto_checkbox.setToolTip(
+            "只勾选 1 张图片时可用：从这张图起，把剩余未拼版的图片按顺序"
+            "自动拼完——整幅图单独一页，左半幅与紧随其后的右半幅拼成一页"
+            "（序号在前的排在右侧），落单的图单独一页。"
+        )
+        self.auto_checkbox.toggled.connect(self._update_status)
+        self.auto_checkbox.hide()
+        column.addWidget(self.auto_checkbox)
+
         self.restore_button = PushButton("恢复选中", self)
         self.restore_button.clicked.connect(self._on_restore_clicked)
         self.restore_button.hide()
@@ -342,7 +361,9 @@ class ImpositionPickerDialog(FramelessDialog):
         cancel = PushButton("取消", self)
         cancel.clicked.connect(self.reject)
         buttons.addWidget(cancel)
-        self.ok_button = PrimaryPushButton("开始拼版", self)
+        self.ok_button = PrimaryPushButton(
+            "添加" if self._mode == "append" else "开始拼版", self
+        )
         self.ok_button.setEnabled(False)
         self.ok_button.clicked.connect(self.accept)
         buttons.addWidget(self.ok_button)
@@ -363,7 +384,7 @@ class ImpositionPickerDialog(FramelessDialog):
         self.titleBar.maxBtn.show()
         self.titleBar.setDoubleClickEnabled(True)
         self._restore_maximize_style()
-        title = QLabel("选择拼版", self.titleBar)
+        title = QLabel(self.windowTitle(), self.titleBar)
         apply_to(title, T.SIZE_BODY, bold=True, color=T.INK)
         self.titleBar.hBoxLayout.insertSpacing(0, 12)
         self.titleBar.hBoxLayout.insertWidget(1, title, 0, Qt.AlignLeft)
@@ -404,6 +425,29 @@ class ImpositionPickerDialog(FramelessDialog):
     #: 兼容旧名（宿主与护栏历史上叫 picked_files）
     def picked_files(self) -> list[Path]:
         return self.checked_files()
+
+    def auto_mode_file(self) -> Path | None:
+        """「自此之后图片自动拼版」生效的那张图（不生效返回 None）。
+
+        生效条件：勾选框被勾上、且**恰好勾了 1 张半幅图**——选项只在勾
+        1 张半幅时出现（用户口径：三种可选形态），整幅与多选一律不走自动。
+        """
+        if not self.auto_checkbox.isChecked():
+            return None
+        picked = self.checked_files()
+        return picked[0] if len(picked) == 1 else None
+
+    def auto_sequence(self) -> list[Path]:
+        """自动拼版的图片序列：从勾选那张起到候选清单末尾（源清单顺序）。
+
+        「自此之后」= 含勾选的那张本身；它之前的图片不参与（留在候选池，
+        之后仍可手动拼）。
+        """
+        file = self.auto_mode_file()
+        if file is None:
+            return []
+        candidates = self._candidate_paths()
+        return candidates[candidates.index(file):]
 
     def removed_files(self) -> list[Path]:
         """当前黑名单（含会话内新删的，不含已恢复的）。"""
@@ -530,14 +574,31 @@ class ImpositionPickerDialog(FramelessDialog):
     def _update_status(self) -> None:
         """说明行/状态行 + 各按钮的显隐与可用性。
 
-        口径（用户 2026-09-30）：选择阶段**自由多选、不限张数**，也不做任何
-        配对；「开始拼版」在勾选 ≥2 张时可点，点下后由宿主按每两张一页配对
-        （落单的不拼）。已删除视图里可恢复。
+        口径（用户 2026-09-30 定，**只有三种可选形态**）：
+        1. 勾 **1 张**（半幅或整幅）→「开始拼版」可点，单张单独成页；
+        2. 勾 **2 张**（半幅）→ 拼成一页，序号在前的排右侧；
+        3. 勾 **1 张半幅** + 下方「自此之后图片自动拼版」→ 从那张起自动
+           拼完剩余候选（整幅单独一页；半幅按「前一左＋后一右」且页号
+           连续配对）。
+        勾 0 张或 ≥3 张时「开始拼版」不可点。已删除视图里可恢复。
+
+        **append 模式**（单图页「新增图片」）：只能勾 **1 张**——0 张或
+        ≥2 张时「添加」不可点，「自动拼版」选项整段隐藏。
         """
         removed_view = self.stack.currentIndex() == 1
         candidates = self._candidate_paths()
         picked = self.checked_files()
-        self.ok_button.setEnabled(len(picked) >= PICK_COUNT)
+        append_mode = self._mode == "append"
+        auto_available = (
+            not append_mode
+            and not removed_view and len(picked) == 1
+            and classify_source(picked[0]) != SOURCE_FULL
+        )
+        self.auto_checkbox.setVisible(auto_available)
+        if not auto_available and self.auto_checkbox.isChecked():
+            # 选项只在恰好勾 1 张半幅时有意义：离开该状态就复位，避免残留旧勾选
+            self.auto_checkbox.setChecked(False)
+        self.ok_button.setEnabled(len(picked) in ((1,) if append_mode else (1, 2)))
         self.removed_entry_button.setVisible(not removed_view)
         self.delete_button.setVisible(not removed_view)
         self.ok_button.setVisible(not removed_view)
@@ -562,26 +623,56 @@ class ImpositionPickerDialog(FramelessDialog):
                 if self._removed else "没有已删除的图片。"
             )
             return
+        if append_mode:
+            self.note.setText(
+                f"从剩余未拼版的 {len(candidates)} 张图片中选 1 张，"
+                "添加到当前这一页拼版（「删除图片」把不用的图移出选择范围）。"
+            )
+            self.status.setStyleSheet(f"color:{T.INK_SOFT};")
+            count = len(picked)
+            if count == 0:
+                self.status.setText("已选 0 张。点卡片勾选 1 张图片。")
+            elif count == 1:
+                self.status.setText(
+                    f"已选 1 张：「{picked[0].stem}」。"
+                    "点「添加」把它加进当前页拼版。"
+                )
+            else:
+                self.status.setText(
+                    f"已选 {count} 张：本页只能再添加 1 张，请取消多余的勾选。"
+                )
+            return
         self.note.setText(
-            f"从剩余未拼版的 {len(candidates)} 张图片中自由勾选（不限张数）："
-            "点「开始拼版」时按源清单顺序每两张拼成一页，序号在前的排在右侧。"
-            "「删除图片」把不用的图移出选择范围。"
+            f"从剩余未拼版的 {len(candidates)} 张图片中勾选："
+            "1 张单独成一页，2 张拼成一页（序号在前的排在右侧）；"
+            "只勾 1 张半幅图时可勾选下方「自此之后图片自动拼版」，"
+            "从那张图起自动拼完。「删除图片」把不用的图移出选择范围。"
         )
         self.status.setStyleSheet(f"color:{T.INK_SOFT};")
         count = len(picked)
         if count == 0:
             self.status.setText(
-                "已选 0 张。点卡片勾选（可多选），点「开始拼版」每两张拼一页。"
+                "已选 0 张。点卡片勾选：1 张单独成页，2 张拼成一页。"
             )
             return
         if count == 1:
+            if classify_source(picked[0]) == SOURCE_FULL:
+                self.status.setText(
+                    f"已选 1 张：「{picked[0].stem}」（整幅）。"
+                    "点「开始拼版」将单独成一页。"
+                )
+            else:
+                self.status.setText(
+                    f"已选 1 张：「{picked[0].stem}」。点「开始拼版」"
+                    "单独成一页；也可勾选下方「自此之后图片自动拼版」"
+                    "从这张起自动拼完。"
+                )
+            return
+        if count == 2:
             self.status.setText(
-                f"已选 1 张：「{picked[0].stem}」。至少勾 2 张才能拼一页。"
+                "已选 2 张：将拼成一页，序号在前的排在右侧。"
             )
             return
-        pages, leftover = count // PICK_COUNT, count % PICK_COUNT
-        tail = "，最后 1 张落单不拼" if leftover else ""
         self.status.setText(
-            f"已选 {count} 张：开始拼版将按每两张一页拼成 {pages} 页"
-            + (tail + "。" if tail else "。")
+            f"已选 {count} 张：最多勾 2 张——两张拼一页，或 1 张单独成页。"
         )
