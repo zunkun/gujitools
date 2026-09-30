@@ -34,13 +34,24 @@ desktop/
       print_list.py     #     第四步待打印列表
       runner.py         #     阶段执行（worker 子进程编排）
       detect.py         #     detect 检测控制
-  services/             # 纯业务规则（无 Qt）：print_plan 条目派生、submit_state 版本状态机
+      rembg_live.py     #     第三步改参数/翻页时只重算当前页
+      imposition.py     #     流程条「图片拼版」共享基元（文档读写/取图来源/详情进出）
+      imposition_pages.py #   模块一「选择拼版」控制器：启用开关、弹窗加页、删页/页序/清空
+      imposition_layout.py #  模块二「拼版操作」控制器：旋转/复位、版面落盘、防抖合成、状态行
+  services/             # 纯业务规则（无 Qt）：print_plan 条目派生、submit_state 版本状态机、
+                        #   imposition 拼版版面与合成
   ui/                   # 界面系统：设计令牌 + 基础自绘控件 + 全局样式（详见 gui-ui-system.md）
     theme.py            #   颜色/间距/圆角/字号/状态色映射（唯一色值来源）
     style.py            #   全局字体、主题色、极简全局 QSS
     widgets.py          #   Card/StatusChip/ProgressLine/EmptyState/PageHeader…（paintEvent 自绘）
   components/           # 步骤条、任务表格、查看器（PDF/图片/rembg）、阶段参数面板、日志
     step_bar.py             # 顶部步骤条：编号/对勾徽标 + 连接箭头 + 状态色（自绘，不用样式表）
+    imposition/                    # 图片拼版组件包（components/imposition/），按操作逻辑分两个模块
+      page_list.py                 #   模块一「选择拼版」：左列拼版页清单
+      picker.py                    #   模块一「选择拼版」：「选择拼版」弹窗
+      canvas.py                    #   模块二「拼版操作」：拖动/缩放拉伸/旋转画布（同 PrintLayoutCanvas 一族）
+      panel.py                     #   模块二「拼版操作」：右侧控制面板（开关/页序/旋转/复位/删除）
+      view.py                      #   装配层：左列清单 + 画布（ImpositionViewWidget）
     task_table.py           # 任务表格：子任务状态用状态胶囊组显示
     log_panel.py            # 执行日志：底部状态条 + 点击唤出的浮层（出错自动标红）
     panels/params_spec.py   # 各阶段默认参数与下拉候选表（唯一默认值来源，见下）
@@ -128,12 +139,14 @@ mod = importlib.import_module("functions.crop")   # 不用 import_module(".crop"
 ```text
 guji/
   tasks.json            # 任务索引（id=任务号、名称、源路径、hash、状态、时间…）
+  ui.json               # 全局界面状态（last_task + source_hash：上次停留的任务，重启恢复用）
   tasks/<任务号>/
     <源文件名>.pdf      # 导入时复制的源文件副本
     pages.json          # 页面清单 [{file, label}]
     runs.json           # 各阶段执行历史（最新在前，≤20 条）
     boxes.json          # 检测框 {页stem: {boxes:[左,右], origin: auto|manual}}
     sizes.json          # 页面图片原始尺寸 {页stem: [w, h]}
+    ui.json             # 界面状态（当前只有 last_stage：上次停留的步骤 key）
     drafts/<阶段>.json  # 参数暂存：用户改过但还没执行的阶段参数（进页面时优先回填）
     runs/               # 子进程执行配置 run-*.json / detect-config.json
     thumbnails/

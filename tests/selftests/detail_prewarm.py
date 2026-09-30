@@ -30,14 +30,16 @@ def run(ctx) -> None:
     app, w, d = ctx.app, ctx.w, ctx.d
 
     def built() -> list[str]:
-        """四步面板的构造状态：'建' / '空'。"""
+        """四步面板的构造状态：'建' / '空'（第 5 位是拼版占位面板，不查）。"""
         stack = d.control_stack
         return [
             "建" if stack.widget(i).peek() is not None else "空"
-            for i in range(stack.count())
+            for i in range(4)
         ]
 
     # ---- 1. 四个面板都是惰性宿主 ----
+    # 控制栈共 5 位：4 个惰性阶段面板 + 1 个「图片拼版」占位详情面板
+    # （伪步骤，无参数无惰性必要，见 ImpositionMixin）
     stack = d.control_stack
     lazy_count = sum(
         1 for i in range(stack.count())
@@ -45,7 +47,7 @@ def run(ctx) -> None:
     )
     ok(
         "四个阶段面板全是惰性宿主（谁进去谁才建）",
-        lazy_count == stack.count() == 4,
+        lazy_count == 4 and stack.count() == 5,
         f"惰性 {lazy_count} / 共 {stack.count()}",
     )
 
@@ -77,9 +79,16 @@ def run(ctx) -> None:
        and 'widget.peek() is None' in code,
        "找不到 peek 保护")
     ok("版面补发按具体类查（不用属性探测）",
-       "findChildren(PrintLayoutCanvas)" in code)
+       "findChildren(cls)" in code
+       and "(PrintLayoutCanvas, ImpositionCanvas)" in code,
+       "补发应遍历具体类列表，不能 getattr 探测（会 Materialize 惰性面板）")
 
     # ---- 3. 进入任务：只有第一步被建出来 ----
+    # ⚠️ 进任务前先把"上次停留的步骤"钉回第一步：详情页现在会**回到上次停留的
+    #    步骤**（page.py::_initial_stage_index，2026-09-30），本模块要验的是
+    #    "落在第一步时只建第一步的面板"，不能受前面模块切过哪一步的影响。
+    #    （"回到上次那一步"本身由 tests/selftests/last_stage.py 单独验。）
+    ctx.repo.save_last_stage(ctx.tid, "extract")
     d.set_task(ctx.tid)
     after_enter = built()
     ok("进入详情后第 2/3/4 步面板仍未构造",

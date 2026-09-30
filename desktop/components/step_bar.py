@@ -4,6 +4,11 @@
 设计要点：
 - 每一步 = 圆形徽标（编号或 ✓）+ 标题 + 状态副标题，用形状表达"第几步"；
 - 步骤之间用带箭头的连接线连起来，已完成的线段变色，直观表达先后顺序；
+  连接线由 **StepBar 底层统一画**、从节点框**后面**穿过——节点框有实底
+  （``_StepItem.pill`` / 拼版节点自己画），框内那截线被遮住，线自然"从
+  框后面出发"，不用再对齐框边缘；
+- 节点框：真实步骤**实线** border（有实底），「图片拼版」可选节点**默认
+  虚线**（选中后转实线主题色）——虚线 = 非真实流向，与连接线的语言一致；
 - 状态色：未执行（灰）· 执行中（蓝）· 成功（绿）· 失败（红）· 已中断（橙）；
 - 整步可点击切换，带悬停底色，避免按钮样式的标签堆叠感。
 
@@ -15,7 +20,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
+from PySide6.QtCore import QPoint, QPointF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
     QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget,
@@ -41,6 +46,7 @@ _STATUS_COLORS = {
 
 _BADGE = 26          # 徽标直径
 _CONNECTOR_W = 38    # 连接线宽度（含箭头）
+_BYPASS_CLEAR = 28   # 绕行线上下竖线离拼版节点左右缘的距离（用户 2026-09-30：别贴着按钮拐弯）
 
 _STATUS_LABELS = {
     "pending": "未执行",
@@ -98,36 +104,18 @@ class _StepBadge(QWidget):
 
 
 class _Connector(QWidget):
-    """步骤之间的连接线 + 箭头；左侧步骤已完成时着色。"""
+    """步骤之间的**占位间隔**：只负责撑开左右节点的间距。
+
+    连接线本体（线 + 箭头）由 ``StepBar._draw_connectors`` 在底层统一画、
+    从节点框后面穿过——线端被节点的实底遮住，不再需要对齐框边缘。本控件
+    不画任何东西，但自测依赖它的类型与槽位顺序，别删。
+    """
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedWidth(_CONNECTOR_W)
         self.setFixedHeight(18)
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        self._done = False
-
-    def set_done(self, done: bool) -> None:
-        if done != self._done:
-            self._done = done
-            self.update()
-
-    def paintEvent(self, _event) -> None:
-        color = QColor(GREEN if self._done else "#d6d6d6")
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        y = self.height() / 2
-        painter.setPen(QPen(color, 2, Qt.SolidLine, Qt.RoundCap))
-        painter.drawLine(QPointF(1, y), QPointF(self.width() - 10, y))
-        arrow = QPainterPath()
-        arrow.moveTo(self.width() - 9, y - 4)
-        arrow.lineTo(self.width() - 4, y)
-        arrow.lineTo(self.width() - 9, y + 4)
-        painter.setPen(
-            QPen(color, 2, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
-        )
-        painter.drawPath(arrow)
-        painter.end()
 
 
 class _ElidedLabel(QLabel):
@@ -267,15 +255,26 @@ class StepItem(QFrame):
 
     # ------------------------------------------------------------------ 绘制
     def paintEvent(self, _event) -> None:
-        """自己画胶囊底色：样式表一旦出现在子树里，Qt 会把 QFrame 底色填白
-        （盖住步骤条的卡片底色），所以这里不用样式表。"""
-        if self._background is None:
-            return
+        """自己画胶囊：样式表一旦出现在子树里，Qt 会把 QFrame 底色填白
+        （盖住步骤条的卡片底色），所以这里不用样式表。
+
+        胶囊**始终**有 SURFACE 实底 + 实线 border：实底用来遮住从框后面
+        穿过的连接线（见 ``StepBar._draw_connectors``），实线 border 是
+        真实步骤的视觉语言（可选节点才是虚线）。高亮底色（当前/悬停）
+        叠在实底之上。
+        """
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
+        rect = QRectF(self.pill.geometry())
         painter.setPen(Qt.NoPen)
-        painter.setBrush(self._background)
-        painter.drawRoundedRect(QRectF(self.pill.geometry()), 8, 8)
+        painter.setBrush(QColor(T.SURFACE))
+        painter.drawRoundedRect(rect, 8, 8)
+        if self._background is not None:
+            painter.setBrush(self._background)
+            painter.drawRoundedRect(rect, 8, 8)
+        painter.setPen(QPen(QColor(T.BORDER), 1))
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRoundedRect(rect.adjusted(0.5, 0.5, -0.5, -0.5), 8, 8)
         painter.end()
 
     # ------------------------------------------------------------------ 交互
@@ -293,10 +292,190 @@ class StepItem(QFrame):
         super().mouseReleaseEvent(event)
 
 
+class _ImpositionNode(QFrame):
+    """流程条上的「图片拼版」可选节点：**默认虚线框**表达"可选步骤"。
+
+    与真实步骤（StepItem）的视觉区分：
+    - 边框**默认虚线**（真实步骤是实线胶囊）；**选中后转实线主题色**——
+      虚线 = 非真实流向，与连接线的语言一致；
+    - 选中（用户选择拼版进入流程）时边框转主题色 + 浅色底 + 副标题「已选择」；
+    - 未选中时灰色虚线 + 副标题「未选择」；
+    - 当前正在查看它的详情时叠加当前步的高亮底色；
+    - 框内**始终有 SURFACE 实底**：连接线从框后面穿过时靠它遮住（真实
+      步骤同款，见 ``StepItem.paintEvent``）；
+    - **能不能把两侧连接线点亮，看这条支路是不是真的在流程里**（生效态，
+      由 ``StepBar.set_imposition_active`` 控制）：未生效 → 两端灰色虚线、
+      主流程走节点上方的绕行线；生效 → 回到常规规则。节点的**选择态**
+      （边框颜色/「已选择」）只管自己的外观，与连线无关；
+    - 宽度永远贴合自己的文字，宽窄由外层槽位决定。
+    """
+
+    clicked = Signal()
+
+    def __init__(self, title: str, parent=None):
+        super().__init__(parent)
+        self._selected = False
+        self._current = False
+        self.setObjectName("impositionNode")
+        self.setCursor(Qt.PointingHandCursor)
+        # ⚠️ **不许被拉宽**：虚线框只包住自己的文字（用户 2026-09-30 报「虚线框
+        # 宽度太宽」——它跟真实步骤平分了流程条的多余空间，实测 303px vs 步骤
+        # 胶囊 145px）。Maximum = 宽度上限就是 sizeHint，窗口变窄时仍可压缩
+        # （标题走省略号）；多余空间留给真实步骤（StepBar 里本节点按 stretch 0
+        # 插入，两道一起保证）。
+        self.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Preferred)
+        self.setToolTip(
+            "可选节点：第三步「区域模式」为 1（左右分开）时出现，"
+            "位于「图片去底色」与「生成 PDF」之间。点击查看/选择。"
+        )
+
+        column = QVBoxLayout(self)
+        column.setContentsMargins(10, 5, 10, 5)
+        column.setSpacing(0)
+        self.title_label = _ElidedLabel(title, self)
+        self.detail_label = _ElidedLabel("未选择", self)
+        column.addWidget(self.title_label)
+        column.addWidget(self.detail_label)
+        self._apply_style()
+
+    def set_selected(self, selected: bool) -> None:
+        if selected != self._selected:
+            self._selected = selected
+            self._apply_style()
+
+    def is_selected(self) -> bool:
+        return self._selected
+
+    def set_current(self, current: bool) -> None:
+        if current != self._current:
+            self._current = current
+            self._apply_style()
+
+    def _hovered(self) -> bool:
+        return self.underMouse()
+
+    def _apply_style(self) -> None:
+        border = QColor(ACCENT if self._selected else "#8a8a8a")
+        title_color = ACCENT if self._selected else T.INK_SOFT
+        detail_color = ACCENT if self._selected else T.INK_FAINT
+        if self._selected:
+            self._background = QColor(0, 120, 212, 26)
+        elif self._current or self._hovered():
+            self._background = QColor(0, 0, 0, 11)
+        else:
+            self._background = None
+        self._border = border
+        self.detail_label.setText("已选择" if self._selected else "未选择")
+
+        title_font = QFont(self.font())
+        title_font.setPixelSize(13)
+        title_font.setBold(self._current or self._selected)
+        self.title_label.setFont(title_font)
+        self.title_label.set_text_color(title_color)
+        detail_font = QFont(self.font())
+        detail_font.setPixelSize(12)
+        self.detail_label.setFont(detail_font)
+        self.detail_label.set_text_color(detail_color)
+        self.update()
+
+    def paintEvent(self, _event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        rect = QRectF(1.0, 1.0, self.width() - 2, self.height() - 2)
+        # SURFACE 实底先行：遮住从框后面穿过的连接线（真实步骤同款）
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(T.SURFACE))
+        painter.drawRoundedRect(rect, 8, 8)
+        if self._background is not None:
+            painter.setBrush(self._background)
+            painter.drawRoundedRect(rect, 8, 8)
+        # 边框：默认虚线（可选步骤），选中后转实线主题色（用户 2026-09-30：
+        # 各节点实线 border、只有拼版默认虚线，线才能从节点框后面出发）
+        painter.setPen(
+            QPen(
+                self._border, 1.4,
+                Qt.SolidLine if self._selected else Qt.DashLine,
+                Qt.RoundCap, Qt.RoundJoin,
+            )
+        )
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRoundedRect(rect, 8, 8)
+        painter.end()
+
+    def enterEvent(self, event) -> None:
+        self._apply_style()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        self._apply_style()
+        super().leaveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() == Qt.LeftButton and self.rect().contains(event.position().toPoint()):
+            self.clicked.emit()
+        super().mouseReleaseEvent(event)
+
+
+def _rounded_polyline(points: list[tuple[float, float]], radius: float = 6.0) -> QPainterPath:
+    """带圆角的折线（``points`` 是 **(x, y) float 元组**）。
+
+    ⚠️ 全程用 ``QPainterPath`` 的 float 重载（``moveTo(x, y)``），**不要**换成
+    QPointF 对象运算（``corner - prev``、``QPainterPath(QPointF)`` 那套）：
+    PySide6 6.11.1 在 paint 派发期间做 QPointF 的 sip 运算会触发 access
+    violation（2026-09-30 自测稳定复现，直线 float 版连跑全绿）。拐角圆滑
+    用二次贝塞尔的折线逼近（每角 4 个中间点，2px 线宽下肉眼是平滑的）。
+    相邻段太短时半径自动收缩（取半段长），不会画出越界的圆角。
+    """
+    path = QPainterPath()
+    path.moveTo(points[0][0], points[0][1])
+    for i in range(1, len(points) - 1):
+        (px, py), (cx, cy), (nx, ny) = points[i - 1], points[i], points[i + 1]
+        vx, vy = cx - px, cy - py
+        wx, wy = nx - cx, ny - cy
+        len_in = (vx * vx + vy * vy) ** 0.5
+        len_out = (wx * wx + wy * wy) ** 0.5
+        if len_in < 1 or len_out < 1:
+            path.lineTo(cx, cy)
+            continue
+        r = min(radius, len_in / 2, len_out / 2)
+        ax, ay = cx - vx * (r / len_in), cy - vy * (r / len_in)
+        bx, by = cx + wx * (r / len_out), cy + wy * (r / len_out)
+        for k in range(1, 4):
+            t = k / 4
+            mt = 1 - t
+            path.lineTo(
+                mt * mt * ax + 2 * mt * t * cx + t * t * bx,
+                mt * mt * ay + 2 * mt * t * cy + t * t * by,
+            )
+    path.lineTo(points[-1][0], points[-1][1])
+    return path
+
+
 class StepBar(QWidget):
-    """横向步骤条：4 个步骤按顺序排列，当前步骤高亮、已完成步骤打勾。"""
+    """横向步骤条：4 个步骤按顺序排列，当前步骤高亮、已完成步骤打勾。
+
+    除真实步骤外还支持一个**条件虚线节点**（「图片拼版」可选步骤）：
+    默认隐藏，``set_imposition_visible(True)`` 时插到倒数两个步骤之间。
+    伪步骤下标 = 真实步骤数（``imposition_index``），``set_current`` /
+    ``current_changed`` 都以它表达"当前在看拼版详情"。
+
+    节点有两条互相独立的状态线（别合并）：
+    - **选择态**（``set_imposition_selected``）：只管节点自己的外观
+      （边框虚实/颜色 + 「已选择/未选择」副标题）；
+    - **生效态**（``set_imposition_active``）：这条支路是否真的承载流程
+      （已启用且至少有一页拼版）。生效 → 两侧连接线常规点亮；未生效 →
+      两侧连接线灰色虚线，同时「去底色 → 生成 PDF」画一条从节点上方
+      绕过的绕行线（``_draw_imposition_bypass``）——选了拼版但还没有
+      拼版页时，第四步实际取的仍是第三步产物，线不能说谎。
+
+    节点的宽度与间距分成两件事（都踩过坑，别再合并）：
+    - **槽位**与真实步骤等宽（``imposition_slot`` + stretch 1）→ 步骤间距均分；
+    - **节点框**只在槽位里靠左、宽度贴合文字（``QSizePolicy.Maximum``）→ 不被拉宽。
+    """
 
     current_changed = Signal(int)
+    #: 流程条上点了「图片拼版」虚线节点（宿主据此切到占位详情）。
+    imposition_clicked = Signal()
 
     def __init__(self, steps, parent=None):
         """按给定步骤标题逐项构建；steps 允许传生成器。"""
@@ -306,10 +485,29 @@ class StepBar(QWidget):
         self.connectors: list[_Connector] = []
         self._completed: set[int] = set()
         self._current = 0
+        #: 拼版支路是否**生效**（承载真实流程）；与节点的选择态分开
+        self._imposition_flow = False
+        #: 伪步骤（拼版节点）的下标与控件；节点默认隐藏
+        self.imposition_index = len(steps)
+        self.imposition_node = _ImpositionNode("图片拼版", self)
+        self.imposition_node.clicked.connect(self._on_imposition_click)
+        self._imposition_connector = _Connector(self)
+        # 节点**槽位**：与真实步骤等宽（stretch 1 → 间距均分），虚线框在槽位里
+        # 靠左、宽度仍贴合文字。这两件事必须分开——合成一个控件就只能二选一：
+        # 槽位等宽 = 虚线框被拉宽（用户 2026-09-30 报过），框贴合文字 = 最后一段
+        # 挤在一起（用户同日报「不均分步骤」，实测间距 406 vs 147px）。与
+        # StepItem「外框等宽拉伸 + 内层 pill 贴合内容」是同一套写法。
+        self.imposition_slot = QWidget(self)
+        slot_row = QHBoxLayout(self.imposition_slot)
+        slot_row.setContentsMargins(0, 0, 8, 0)  # 与 StepItem 外边距一致
+        slot_row.setSpacing(0)
+        slot_row.addWidget(self.imposition_node, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        slot_row.addStretch(0)
 
         row = QHBoxLayout(self)
         row.setContentsMargins(10, 6, 10, 6)
         row.setSpacing(0)
+        self._row = row
         for index, title in enumerate(steps):
             item = StepItem(index, title, self)
             item.clicked.connect(self._on_click)
@@ -319,6 +517,24 @@ class StepBar(QWidget):
                 connector = _Connector(self)
                 self.connectors.append(connector)
                 row.addWidget(connector, 0, Qt.AlignVCenter)
+        # 把「拼版节点 + 它后面的连接线」插到**最后一个步骤之前**：
+        # 布局此时为 [item0, conn0, item1, conn1, item2, conn2, item3]
+        # （stretch 还没加），最后一步的下标 = count-1。插入顺序：先 connB
+        # 再 node，各占一个槽位 → [..., item2, conn2(去底色↔拼), node, connB(拼↔PDF), item3]。
+        # ⚠️ 必须是 count-1：算成 count-2 会插到 conn2 前面，箭头全跑到
+        #    虚线框后面（用户截图报过：虚线前面没有箭头、后面挤两个）。
+        insert_at = max(row.count() - 1, 0)
+        row.insertWidget(insert_at, self._imposition_connector, 0, Qt.AlignVCenter)
+        # 槽位 stretch **1**：与真实步骤平分多余空间（间距才均匀）；虚线框自身
+        # 靠 Maximum 策略贴在槽位左侧，不会被拉宽。
+        row.insertWidget(insert_at, self.imposition_slot, 1)
+        #: 节点**前面**那条连接线——布局上就是紧挨着槽位左边的那条，也就是原本的
+        #  「去底色→PDF」。绕行线的起终点现取左右胶囊几何（见 _bypass_points），
+        #  本属性只用于标认「前端那格」；线本身的点亮/虚线由
+        #  ``_connector_segments`` 按下标（len-2）判定。
+        self.imposition_front_connector = self.connectors[-1]
+        self.imposition_node.setVisible(False)
+        self._imposition_connector.setVisible(False)
         row.addStretch(0)
         self._sync()
 
@@ -330,12 +546,151 @@ class StepBar(QWidget):
         painter.setPen(QPen(QColor(T.BORDER), 1))
         painter.setBrush(QColor(T.SURFACE))
         painter.drawRoundedRect(rect, T.RADIUS_MD, T.RADIUS_MD)
+        # 连接线先画（底层）：端点伸进左右节点框内，被节点的实底遮住，
+        # 看起来就是"从节点框后面出发"（用户 2026-09-30）。
+        self._draw_connectors(painter)
+        self._draw_imposition_bypass(painter)
         painter.end()
+
+    def _connector_segments(self) -> list[tuple]:
+        """按布局顺序枚举连接段：``(左节点框, 右节点框, 点亮?, 虚线?)``。
+
+        点亮/虚线规则与旧 _Connector 时代一致：
+        - 常规段：左侧步骤完成即点亮，永不变虚；
+        - 「去底色 → 拼版」与「拼版 → PDF」：支路生效（``_imposition_flow``）
+          才按常规点亮，未生效一律灰虚线——真实流向走节点上方的绕行线；
+        - 节点隐藏（area≠1）时前端那格回归普通的「去底色 → PDF」常规段。
+        """
+        n = len(self.buttons)
+        shown = self._imposition_shown()
+        flow = shown and self._imposition_flow
+        segments = []
+        for index in range(n - 1):
+            if shown and index == n - 2:
+                segments.append((
+                    self.buttons[index].pill, self.imposition_node,
+                    flow and index in self._completed, not flow,
+                ))
+            else:
+                segments.append((
+                    self.buttons[index].pill, self.buttons[index + 1].pill,
+                    index in self._completed, False,
+                ))
+        if shown:
+            segments.append(
+                (self.imposition_node, self.buttons[-1].pill, flow, not flow)
+            )
+        return segments
+
+    def _draw_connectors(self, painter) -> None:
+        """把每段连接线画成「左节点中心 → 右节点中心」的整线 + 箭头。
+
+        线端伸进节点框内、被节点 SURFACE 实底遮住（``StepItem.pill`` /
+        ``_ImpositionNode.paintEvent`` 都先铺实底）——这就是"连接线从节点
+        框后面出发"。箭头钉在右节点框左缘外侧，**始终实线**（虚线笔画会把
+        5px 的短箭头裁成断续的小段）。
+        """
+        for left, right, done, dash in self._connector_segments():
+            a = left.mapTo(self, QPoint(left.width() // 2, left.height() // 2))
+            b = right.mapTo(self, QPoint(right.width() // 2, right.height() // 2))
+            color = QColor(GREEN if done else "#d6d6d6")
+            painter.setPen(
+                QPen(
+                    color, 2, Qt.DashLine if dash else Qt.SolidLine, Qt.RoundCap
+                )
+            )
+            painter.drawLine(QPointF(a.x(), a.y()), QPointF(b.x(), b.y()))
+            painter.setPen(
+                QPen(color, 2, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+            )
+            tip = b.x() - right.width() // 2 - 2
+            arrow = QPainterPath()
+            arrow.moveTo(tip - 5, a.y() - 4)
+            arrow.lineTo(tip, a.y())
+            arrow.lineTo(tip - 5, a.y() + 4)
+            painter.drawPath(arrow)
+
+    def _draw_imposition_bypass(self, painter) -> None:
+        """「去底色 → 生成 PDF」绕行线：拼版节点在流程里但**未生效**时画。
+
+        此刻第四步实际取的是第三步产物（``print_source_dir``），主线必须在
+        节点上方绕过去，否则流程条上「去底色」和「生成 PDF」之间没有真实
+        连接。颜色规则与普通连接线一致：左侧步骤（去底色）完成即绿。
+        拼版支路自己的两条线此时是灰色虚线（见 ``_sync``）。
+        """
+        if self._imposition_shown() is False or self._imposition_flow:
+            return
+        points = self._bypass_points()
+        if points is None:
+            return
+        done = (len(self.connectors) - 1) in self._completed
+        painter.setPen(
+            QPen(
+                QColor(GREEN if done else "#d6d6d6"), 2,
+                Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin,
+            )
+        )
+        painter.setBrush(Qt.NoBrush)
+        painter.drawPath(_rounded_polyline(points))
+
+    def _bypass_points(self) -> list[tuple[float, float]] | None:
+        """绕行线折点（**纯 float 元组**，见 ``_rounded_polyline`` 的警示）：
+        **从「去底色」胶囊中心出发** → 向右 → **直角上折** → 向右越过节点
+        上方 → **直角下折** → 向右接到「生成 PDF」胶囊左缘——**全部横平
+        竖直**，像管道工铺管（用户 2026-09-30：不要任意角度的斜线）。
+
+        ⚠️ 起点必须是**胶囊中心**而不是前端连接件的左缘（用户 2026-09-30
+        报「实线左侧悬空」）：StepItem 胶囊贴合内容、右侧留白，虚线连接线
+        从胶囊中心画出来——起点若取连接件左缘，胶囊右缘到连接件左缘之间
+        就只剩一段没人覆盖的灰虚线。从胶囊中心出发，实线正好整段盖住虚线
+        （胶囊框内的那截被胶囊 SURFACE 实底遮住，与常规连接线同款）。
+
+        上下竖线离节点左右缘各 ``_BYPASS_CLEAR`` px（用户同日报「不要贴着
+        按钮边缘拐弯」），且不越进左右胶囊（至少留 6px）；空间不够时往里
+        收，竖线贴上仍放不下就不画（返回 None）。
+        """
+        node = self.imposition_node
+        if node.width() < 5:
+            return None
+        left_pill = self.buttons[-2].pill
+        right_pill = self.buttons[-1].pill
+        left_c = left_pill.mapTo(
+            self, QPoint(left_pill.width() // 2, left_pill.height() // 2)
+        )
+        right_c = right_pill.mapTo(
+            self, QPoint(right_pill.width() // 2, right_pill.height() // 2)
+        )
+        top_left = node.mapTo(self, QPoint(0, 0))
+        y_main = float(left_c.y())
+        y_top = min(max(top_left.y() - 7.0, 4.0), y_main - 10.0)
+        x_in = max(
+            float(top_left.x() - _BYPASS_CLEAR),
+            float(left_c.x() + left_pill.width() // 2 + 6.0),
+        )
+        x_out = min(
+            float(top_left.x() + node.width() + _BYPASS_CLEAR),
+            float(right_c.x() - right_pill.width() // 2 - 6.0),
+        )
+        if x_in >= x_out:
+            return None
+        return [
+            (float(left_c.x()), y_main),
+            (x_in, y_main),
+            (x_in, y_top),
+            (x_out, y_top),
+            (x_out, y_main),
+            (float(right_c.x() - right_pill.width() // 2 - 1), y_main),
+        ]
 
     # ------------------------------------------------------------------ 接口
     def _on_click(self, index: int) -> None:
         self.set_current(index)
         self.current_changed.emit(index)
+
+    def _on_imposition_click(self) -> None:
+        self._current = self.imposition_index
+        self._sync()
+        self.imposition_clicked.emit()
 
     def set_current(self, index: int) -> None:
         """设置当前步骤下标并同步各步骤高亮与徽标。"""
@@ -351,6 +706,42 @@ class StepBar(QWidget):
         """兼容旧调用：只更新标题文本。"""
         for item, text in zip(self.buttons, texts):
             item.set_title(text)
+
+    def set_imposition_visible(self, visible: bool) -> None:
+        """显示/隐藏「图片拼版」虚线节点（随第三步区域模式是否为 1）。
+
+        ⚠️ 槽位要一起隐藏：只藏节点的话，那格等宽槽位还占着位置，流程条上会
+        留出一段空白（第四步/PDF 看起来被推远）。
+        另外节点显示时行顶边距 6→18：给绕行线留一条**走线带**——拼版未生效
+        时「去底色 → 生成 PDF」的线要贴着节点上方绕过去（见
+        ``_draw_imposition_bypass``），不预留高度弧线会顶到卡片边框。
+        """
+        self.imposition_node.setVisible(visible)
+        self.imposition_slot.setVisible(visible)
+        self._imposition_connector.setVisible(visible)
+        margins = self._row.contentsMargins()
+        self._row.setContentsMargins(
+            margins.left(), 18 if visible else 6, margins.right(), margins.bottom()
+        )
+        self._sync()
+
+    def set_imposition_selected(self, selected: bool) -> None:
+        """「图片拼版」是否被选择（只改节点外观，不动连接线/绕行线）。"""
+        self.imposition_node.set_selected(selected)
+        self._sync()
+
+    def set_imposition_active(self, active: bool) -> None:
+        """拼版支路是否**生效**（已启用且至少有一页拼版，宿主判定）。
+
+        生效 → 两侧连接线常规点亮；未生效 → 两侧连接线灰色虚线，
+        主流程改走节点上方的绕行线。与 ``set_imposition_selected``
+        （节点自己的选择外观）互不取代：选了但还没有拼版页时，节点
+        显示「已选择」，但线仍然是灰色虚线 + 绕行。
+        """
+        active = bool(active)
+        if active != self._imposition_flow:
+            self._imposition_flow = active
+            self._sync()
 
     def set_step_status(
         self, index: int, status: str, progress: tuple | None = None,
@@ -383,10 +774,21 @@ class StepBar(QWidget):
             item.set_status("pending", _STATUS_LABELS["pending"])
         self._sync()
 
+    def _imposition_shown(self) -> bool:
+        """拼版节点是否被**配置**为显示。
+
+        ⚠️ 用 ``isHidden()``（只反映显式 ``setVisible(False)``）而不是
+        ``isVisible()``（还要求整条窗口已经 show）：构建期/未显示时算出来的
+        "未显示"会把两侧连接线压灰，而之后不一定再有 ``_sync`` 把它们点亮。
+        """
+        return not self.imposition_node.isHidden()
+
     def _sync(self) -> None:
+        imposition_current = self._current == self.imposition_index
         for index, item in enumerate(self.buttons):
             item.badge.set_state(index + 1, item._badge_status)
             item.set_current(index == self._current)
-        for index, connector in enumerate(self.connectors):
-            connector.set_done(index in self._completed)
+        self.imposition_node.set_current(imposition_current)
+        # 连接线（含拼版两侧）的点亮/虚线状态由 ``_connector_segments`` 在
+        # 绘制时从 ``_completed`` / ``_imposition_flow`` 现算——控件不再存状态。
         self.update()

@@ -8,17 +8,25 @@ from pathlib import Path
 from desktop.utils.files import guji_data_dir
 from desktop.store.annotations import AnnotationMixin
 from desktop.store.drafts import DraftMixin
+from desktop.store.imposition import ImpositionMixin
 from desktop.store.pages import PageManifestMixin
 from desktop.store.runs import RunMixin
 from desktop.store.tasks import TaskMixin
+from desktop.store.ui_state import UIStateMixin
 
 
-class TaskStore(TaskMixin, RunMixin, PageManifestMixin, AnnotationMixin, DraftMixin):
-    """唯一数据入口：组合任务/运行/页面/标注/暂存五个 Mixin，统一读写文件存储。
+class TaskStore(
+    TaskMixin, RunMixin, PageManifestMixin, AnnotationMixin, DraftMixin,
+    ImpositionMixin, UIStateMixin,
+):
+    """唯一数据入口：组合任务/运行/页面/标注/暂存/拼版/界面状态七个 Mixin，
+    统一读写文件存储。
 
     数据根目录下含 tasks/（每任务一子目录）及各 JSON 清单
     （tasks.json/runs.json/boxes.json/sizes.json/pages.json/print.json）；
-    每任务目录下另有 drafts/<阶段>.json（用户改过但未执行的参数暂存）。
+    每任务目录下另有 drafts/<阶段>.json（用户改过但未执行的参数暂存）、
+    drafts/imposition.json（图片拼版的选择态 + 逐页版面）与 ui.json
+    （上次停留的步骤，用于再次打开任务时回到那一步）。
     """
 
     def __init__(self, root: Path | None = None):

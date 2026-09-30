@@ -33,7 +33,8 @@ def run(ctx) -> None:
     # 直接什么都找不到（实测踩到「检测面板主按钮与表单控件等高 实测 None」）。
     panels = [
         host.panel if hasattr(host, "panel") else host
-        for host in (d.control_stack.widget(i) for i in range(d.control_stack.count()))
+        for host in (d.control_stack.widget(i) for i in range(4))
+        # ⚠️ 只量四个真实阶段面板：第 5 位是「图片拼版」占位面板（无表单）
     ]
     combos = [(p.stage, wdg) for p in panels for wdg in p.findChildren(_QFComboBox)]
     # print 面板原有「纸张尺寸/纸张方向/位置/文字方向×2」共 6 个下拉；

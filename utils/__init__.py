@@ -14,6 +14,7 @@
 - `path_utils`: 输出路径解析（extract 根目录、各命令最终输出目录）。
 - `color_utils`: 颜色 'r,g,b' 解析（非法值抛错，不静默降级为黑）。
 - `margin_utils`: 边距 CSS 简写标准化（单/两/三/四值 → [上,右,下,左]）。
+- `transparent_png`: 白底 → 透明底的 PNG 编码（第三步提交产物专用，自带最省形态选择）。
 - `help`: man 风格帮助文本加载与分页显示。
 
 `color_utils` 与 `margin_utils` 位于最低层，供 core 与 functions 共用，
@@ -58,6 +59,8 @@ _LAZY = {
     "imread": ("utils.image_io", "imread"),
     "imwrite": ("utils.image_io", "imwrite"),
     "draw_boxes": ("utils.box_draw", "draw_boxes"),
+    # 第三步提交产物的透明底编码（唯一实现，自带编码形态选择）
+    "save_white_as_transparent": ("utils.transparent_png", "save_white_as_transparent"),
 }
 
 

@@ -1,0 +1,319 @@
+# -*- coding: utf-8 -*-
+"""**模块一「选择拼版」控制器**：拼版页的增删与选择状态。
+
+对应 UI 模块一（``desktop/components/imposition/page_list.py`` +
+``picker.py``）与右侧面板的页管理按钮（``panel.py``）：
+- 启用/取消拼版（决定第四步取图来源，落盘到 ``drafts/imposition.json``）；
+- 「选择拼版」→ 弹窗挑两张加一页；或挑一张勾「自动拼版」批量加页；
+  弹窗里还能「删除图片」（黑名单 ``removed`` 字段，软删除）与恢复；
+- 删除当前页 / 清空全部（页序在左列**拖动排序**，翻页在画布下方
+  「上一页/下一页」，见 ``components/imposition/view.py``）。
+
+只通过 ``self`` 依赖共享基元（``imposition.ImpositionBaseMixin`` 提供的
+``_imposition_doc`` / ``_save_imposition_pages`` / ``imposition_active`` /
+``_refresh_print_source`` / ``_update_imposition_status`` 等）与宿主页面
+（``step_bar``、``log_view``、``_toast``），本文件**不 import** 其它拼版
+控制器模块——两个模块的 agent 可以互不影响地改。
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from desktop.services.imposition import (
+    ITEMS_PER_PAGE, excluded_files, make_page, used_source_files,
+)
+
+
+class ImpositionPagesMixin:
+    """拼版页管理（模块一）：启用开关、加页、删页、清空。"""
+
+    # ------------------------------------------------------------- 选择状态
+    def _load_imposition_enabled(self) -> bool:
+        """当前任务是否选择了拼版（默认不选择）。"""
+        if not self.task_id:
+            return False
+        return bool(self.store.load_imposition_doc(self.task_id).get("enabled"))
+
+    def _save_imposition_enabled(self, enabled: bool) -> None:
+        """把选择状态随任务落盘（drafts/imposition.json）。"""
+        if not self.task_id:
+            return
+        doc = self.store.load_imposition_doc(self.task_id)
+        doc["enabled"] = bool(enabled)
+        self.store.save_imposition_doc(self.task_id, doc)
+
+    def _on_imposition_enabled_toggled(self, on: bool) -> None:
+        """拼版详情里的启用开关：更新节点选择态并落盘。
+
+        启用/取消会**改变第四步的取图来源**（见 ``print_source_dir``），所以
+        同时把待打印列表刷新一次——否则用户切到第四步看到的还是旧的来源。
+        """
+        self._save_imposition_enabled(on)
+        self._sync_imposition_step_bar()
+        self._toast(
+            "info", "图片拼版",
+            "已启用「图片拼版」：第四步「生成 PDF」将使用拼版结果。"
+            if on else
+            "已取消「图片拼版」：第四步「生成 PDF」回到第三步的去底色产物。",
+        )
+        if on:
+            self._schedule_imposition_compose()
+        self._refresh_print_source()
+
+    # ------------------------------------------------------------- 加页
+    def _on_imposition_add_requested(self) -> None:
+        """点「＋ 选择拼版」：弹窗自由多选，点「开始拼版」按每两张一页配对。"""
+        if not self.task_id:
+            return
+        from desktop.components.imposition.picker import ImpositionPickerDialog
+
+        doc = self._imposition_doc()
+        sources = self.imposition_source_files()
+        if not sources:
+            self._toast(
+                "warning", "没有可拼版的图片",
+                "请先在第三步「生成预览」并「提交本次任务」，"
+                "再从拼版里选择成品图片。",
+            )
+            return
+        used = used_source_files(doc)
+        removed = excluded_files(sources, doc)
+        # 候选池 = 没被页用过的图（**含已删除的**——弹窗里可以恢复它们）；
+        # remaining 才是真正的候选。池子按源清单顺序传给弹窗。
+        removed_keys = {str(f) for f in removed}
+        pool = [f for f in sources if str(f) not in used]
+        remaining = [f for f in pool if str(f) not in removed_keys]
+        if len(remaining) < ITEMS_PER_PAGE and not removed:
+            self._toast(
+                "warning", "没有可选的图片",
+                f"还剩 {len(remaining)} 张未拼版，拼成一页需要 "
+                f"{ITEMS_PER_PAGE} 张。可先删掉某些拼版页再来选。",
+            )
+            return
+        dialog = ImpositionPickerDialog(pool, self.window(), removed_files=removed)
+        if not dialog.exec():
+            # 取消也落盘：删除/恢复是即时意图，与是否开始拼版无关
+            self._apply_picker_removed(dialog)
+            return
+        self._apply_picker_removed(dialog)
+        # 配对发生在「开始拼版」：勾选（源清单顺序）每两张一页，落单不拼
+        batch = dialog.picked_files()
+        if len(batch) < ITEMS_PER_PAGE:
+            self._toast(
+                "warning", "还没选够",
+                f"至少勾选 {ITEMS_PER_PAGE} 张图片（每两张拼成一页）。",
+            )
+            return
+        new_pages: list[dict] = []
+        for i in range(0, len(batch) - 1, 2):
+            made = make_page(batch[i:i + ITEMS_PER_PAGE])
+            if made is not None:
+                new_pages.append(made)
+        if not new_pages:
+            self._toast(
+                "error", "拼版失败",
+                "选中的图片无法读取尺寸，请换两张。",
+            )
+            return
+        pages = self._imposition_pages()
+        pages.extend(new_pages)
+        self._save_imposition_pages(pages)
+        first_index = len(pages) - len(new_pages)
+        view = getattr(self, "imposition_view", None)
+        if view is not None:
+            view.set_current(first_index)
+        self._update_imposition_status(first_index)
+        paired = len(new_pages) * ITEMS_PER_PAGE
+        leftover = batch[paired:]
+        if len(new_pages) == 1:
+            page = new_pages[0]
+            self.log_view.append(
+                f"已添加第 {first_index + 1} 页拼版："
+                f"右侧「{Path(page['items'][0]['file']).stem}」、"
+                f"左侧「{Path(page['items'][1]['file']).stem}」。"
+            )
+        else:
+            self.log_view.append(
+                f"已添加 {len(new_pages)} 页拼版：从"
+                f"「{Path(batch[0]).stem}」开始每两张一页"
+                + (f"（「{Path(leftover[0]).stem}」落单，未拼）。"
+                   if leftover else "。")
+            )
+        if not self._load_imposition_enabled():
+            # 加了拼版页却还没启用：顺手启用，否则第四步不会用到它
+            self._set_imposition_checked(True)
+
+    def _apply_picker_removed(self, dialog) -> None:
+        """把弹窗里「删除图片 / 恢复」的结果落盘（``removed`` 黑名单字段）。
+
+        集合没变（删了又恢复）就不动文档；有变化就写日志——被删的图不再
+        进入「选择拼版」候选（``remaining_files`` 会排除它），恢复即回来。
+        """
+        if self.task_id is None or not dialog.removed_changed():
+            return
+        removed = [str(p) for p in dialog.removed_files()]
+        doc = self.store.load_imposition_doc(self.task_id)
+        old = {str(f) for f in doc.get("removed") or []}
+        doc["removed"] = removed
+        self.store.save_imposition_doc(self.task_id, doc)
+        added = [f for f in removed if f not in old]
+        restored = [f for f in old if f not in set(removed)]
+        if added:
+            self.log_view.append(
+                f"已把 {len(added)} 张图片移出选择范围："
+                + "、".join(Path(f).stem for f in added) + "。"
+            )
+        if restored:
+            self.log_view.append(
+                f"已恢复 {len(restored)} 张图片到选择范围："
+                + "、".join(Path(f).stem for f in restored) + "。"
+            )
+
+    # ------------------------------------------------------------- 切页
+    def _on_imposition_page_selected(self, index: int) -> None:
+        """左列切到某一页（视图自己已切好画布，这里只更新状态行）。"""
+        self._update_imposition_status(index)
+
+    # ------------------------------------------------------------- 删页/页序
+    def _on_imposition_delete_page(self) -> None:
+        """删除当前拼版页——**先弹窗确认**（版面调整丢失，不可撤销）。"""
+        view = getattr(self, "imposition_view", None)
+        if view is None or view.current_index() < 0:
+            self._toast("info", "没有拼版页", "当前没有可删除的拼版页。")
+            return
+        index = view.current_index()
+        pages = self._imposition_pages()
+        if not 0 <= index < len(pages):
+            return
+        from qfluentwidgets import Dialog
+
+        dialog = Dialog(
+            "删除本页拼版",
+            f"将删除第 {index + 1} 页拼版：本页的版面调整（位置/大小/旋转）"
+            "会丢失，两张图释放回未选择列表，且无法撤销。\n是否继续？",
+            self.window(),
+        )
+        dialog.yesButton.setText("删除")
+        dialog.cancelButton.setText("取消")
+        if not dialog.exec():
+            return
+        removed = pages.pop(index)
+        self._save_imposition_pages(pages)
+        view.set_current(min(index, len(pages) - 1))
+        self._update_imposition_status(view.current_index())
+        self.log_view.append(
+            f"已删除第 {index + 1} 页拼版（"
+            + "、".join(Path(i["file"]).stem for i in removed.get("items") or [])
+            + "）。"
+        )
+
+    def _on_imposition_batch_delete(self) -> None:
+        """左列勾选多页后点悬浮框「批量删除」——**先弹窗确认**再删。
+
+        语义与单页删除一致：版面调整丢失、图片释放回未选择列表。落盘后
+        ``_save_imposition_pages`` 重建清单，勾选集合随页消失自动清空；
+        当前页被删时落到「第一个被删页」左移后的位置（被删光了则钳到尾页）。
+        """
+        view = getattr(self, "imposition_view", None)
+        if view is None:
+            return
+        pages = self._imposition_pages()
+        indexes = [i for i in view.checked_pages() if 0 <= i < len(pages)]
+        if not indexes:
+            self._toast("info", "没有勾选", "先在左列勾选要删除的拼版页。")
+            return
+        # 确认弹窗（用户 2026-09-30 口径）：宽度固定、正文折行，正文下方
+        # 逐页列出被勾选的页（「第一页：图名 · 图名」），页数多时列表
+        # 内部滚动、弹窗高度封顶——见 BatchDeleteConfirmDialog。
+        from desktop.components.imposition.confirm_delete import (
+            BatchDeleteConfirmDialog,
+        )
+
+        dialog = BatchDeleteConfirmDialog(
+            [(i, pages[i]) for i in indexes], self.window(),
+        )
+        if not dialog.exec():
+            return
+        current = view.current_index()
+        drop = set(indexes)
+        self._save_imposition_pages(
+            [p for i, p in enumerate(pages) if i not in drop]
+        )
+        if current in drop:
+            anchor = min(indexes)
+            new_current = anchor - sum(1 for i in indexes if i < anchor)
+        else:
+            new_current = current - sum(1 for i in indexes if i < current)
+        new_current = min(new_current, len(pages) - len(drop) - 1)
+        view.set_current(new_current)
+        self._update_imposition_status(view.current_index())
+        self.log_view.append(
+            f"已批量删除 {len(indexes)} 页拼版（第 {listing} 页），"
+            "图片已释放回未选择列表。"
+        )
+
+    def _on_imposition_page_reorder(self, source: int, target: int) -> None:
+        """左列拖动排序松手：把第 ``source`` 页移到 ``target``（移除后口径）。
+
+        ``_save_imposition_pages`` 会重建左列清单——页码标签「第几页」随新
+        顺序重新生成，画布跟着落到拖动后的那一页。
+        """
+        pages = self._imposition_pages()
+        if not (0 <= source < len(pages)):
+            return
+        page = pages.pop(source)
+        target = max(0, min(target, len(pages)))
+        pages.insert(target, page)
+        self._save_imposition_pages(pages)
+        view = getattr(self, "imposition_view", None)
+        if view is not None:
+            view.set_current(target)
+        self._update_imposition_status(target)
+
+    def _on_imposition_release_page(self, index: int) -> None:
+        """左列某页右侧的「✕」：删掉该页，把它的两张图释放回未选择列表。
+
+        「未选择图片列表」= 源清单减去页引用与「删除图片」黑名单
+        （``remaining_files``），所以删页即释放——下次「选择拼版」这两张图
+        就回来了（除非它们被用户移出了选择范围）。
+        """
+        pages = self._imposition_pages()
+        if not 0 <= index < len(pages):
+            return
+        removed = pages.pop(index)
+        self._save_imposition_pages(pages)
+        view = getattr(self, "imposition_view", None)
+        if view is not None:
+            view.set_current(min(index, len(pages) - 1))
+        self._update_imposition_status(
+            view.current_index() if view is not None else -1
+        )
+        self.log_view.append(
+            f"已释放第 {index + 1} 页的两张图片（"
+            + "、".join(Path(i["file"]).stem for i in removed.get("items") or [])
+            + "），回到未选择列表，可重新「选择拼版」。"
+        )
+
+    def _on_imposition_clear(self) -> None:
+        """清空全部拼版页（选择态保留，便于重新拼）。"""
+        pages = self._imposition_pages()
+        if not pages:
+            return
+        from qfluentwidgets import Dialog
+
+        dialog = Dialog(
+            "清空拼版",
+            f"将删除全部 {len(pages)} 页拼版（源图片不受影响）。\n是否继续？",
+            self.window(),
+        )
+        dialog.yesButton.setText("清空")
+        dialog.cancelButton.setText("取消")
+        if not dialog.exec():
+            return
+        self._save_imposition_pages([])
+        view = getattr(self, "imposition_view", None)
+        if view is not None:
+            view.set_current(-1)
+        self._update_imposition_status(-1)
+        self.log_view.append("已清空全部拼版页。")

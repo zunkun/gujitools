@@ -18,6 +18,9 @@
 - runner.StageRunnerMixin    阶段执行（worker 子进程编排）
 - detect.DetectMixin         detect 检测控制
 - rembg_live.RembgLiveMixin  第三步改参数/翻页时只重算当前页的实时预览
+- imposition.ImpositionMixin 流程条「图片拼版」可选节点
+  （共享基元 imposition.py + 模块一 imposition_pages.py「选择拼版」
+  + 模块二 imposition_layout.py「拼版操作」）
 """
 
 from __future__ import annotations
@@ -33,12 +36,13 @@ from PySide6.QtWidgets import (
 
 from desktop.services.font_catalog import start_background_scan
 from desktop.services.stale_chain import stale_upstream
-from desktop.store import STAGES, STAGE_LABELS
+from desktop.store import IMPOSITION_INDEX, IMPOSITION_STAGE, STAGES, STAGE_LABELS
 from desktop.ui import theme as T
 from desktop.ui.widgets import apply_to, bold_button
 from desktop.workers import CopySourceWorker, WorkerHost, connect_queued
 from desktop.pages.taskdetail.detect import DetectMixin
 from desktop.pages.taskdetail.history import HistoryMixin
+from desktop.pages.taskdetail.imposition import ImpositionMixin
 from desktop.pages.taskdetail.manifest import PageListMixin
 from desktop.pages.taskdetail.params_draft import ParamDraftMixin
 from desktop.pages.taskdetail.print_list import PrintListMixin
@@ -84,6 +88,7 @@ class TaskDetailPage(
     ParamDraftMixin,
     HistoryMixin,
     DetectMixin,
+    ImpositionMixin,
     PageListMixin,
     DetailViewMixin,
     QWidget,
@@ -165,6 +170,8 @@ class TaskDetailPage(
         self._init_annotation_batch()
         # 参数暂存：面板报到"用户改了参数"就防抖写 drafts/<阶段>.json
         self._install_draft_hooks()
+        # 图片拼版的合成防抖定时器（后台落 stages/imposition）
+        self._init_imposition_compose()
         # 第三步实时预览：改参数/翻页时只重算当前页（见 rembg_live.RembgLiveMixin）
         self._init_rembg_live()
         # 字体列表后台预热：一进任务（还在第一/二/三步）就起后台线程扫系统
@@ -241,7 +248,9 @@ class TaskDetailPage(
         #    `widget(i).reset_to_default()` 会经属性转发把面板全部现造出来，
         #    进详情页的时间就又回到"要为没进去的步骤买单"（用户明确要求
         #    第 2/3/4 步谁进去谁才建）。没建的面板本来就没动过，无需复位。
-        for index in range(self.control_stack.count()):
+        #    ⚠️ 只遍历真实阶段（len(STAGES)）：第 5 位是「图片拼版」占位面板，
+        #    没有参数也没有 reset_to_default，混进来就是 AttributeError。
+        for index in range(len(STAGES)):
             host = self.control_stack.widget(index)
             peek = getattr(host, "peek", None)
             panel = peek() if callable(peek) else host
@@ -276,8 +285,14 @@ class TaskDetailPage(
         self._refresh_manifest()
         # 换任务就得重算"上游比下游新"的判定缓存（读的是新任务的 runs.json）
         self._refresh_stale_notices()
+        # 拼版视图/状态复位（取消在飞合成、灌新任务的拼版文档）
+        self._reset_imposition_state()
         self._refresh_stage_views()
-        self._select_stage(0)
+        # 落到「上次停留的步骤」（没有记录 / 记录匹配不上时回第一步）
+        self._select_stage(self._initial_stage_index())
+        # 记下「上次停留的任务」：程序重启后直接回到这个任务（落到哪一步由
+        # 该任务自己的 ui.json 另记，见 _remember_stage）——两层记录各管一半
+        self.store.save_last_task(task_id)
         # ⚠️ 必须 True：_open_detail 靠返回值决定切不切页——漏了这句
         #    "返回 None 被当拒绝"，详情页就永远进不去（2026-09-27 事故）
         return True
@@ -369,11 +384,17 @@ class TaskDetailPage(
 
     # ------------------------------------------------------------------ 阶段切换/状态
     def current_stage(self) -> str:
-        """返回当前所处阶段的 key（extract/detect/rembg/print）。
+        """返回当前所处阶段的 key（extract/detect/rembg/print/imposition）。
 
         以步骤条高亮下标映射到 STAGES 序列；下标为负时按 0 兜底处理。
+        「图片拼版」是**伪步骤**（下标 = IMPOSITION_INDEX），返回它的专用 key：
+        调用方凡是拿这个 key 去 STAGES/STAGE_LABELS/runs 里查的，都必须先
+        挡掉（见 _refresh_stage_views / _apply_control_width 等处的守卫）。
         """
-        return STAGES[max(self.step_bar._current, 0)]
+        current = self.step_bar._current
+        if current == IMPOSITION_INDEX:
+            return IMPOSITION_STAGE
+        return STAGES[max(current, 0)]
 
     def navigate_by_arrow(self, forward: bool) -> bool:
         """方向键切换当前步骤的页面（主窗口 ←/→ 转发入口）。
@@ -403,12 +424,74 @@ class TaskDetailPage(
             return
         super().keyPressEvent(event)
 
+    # --------------------------------------------------- 上次停留的步骤（记忆）
+    # 「上次停留的步骤」按 **key** 记（不是下标）：步骤会增减（「图片拼版」就是
+    # 条件出现的可选节点），下标一旦错位就会把用户送到**另一个**步骤去。key 是
+    # 按语义匹配的，匹配不上就回落第一步——这正是用户要的口径。
+    def _stage_index_of(self, stage: str | None) -> int | None:
+        """把记录的步骤 key 映射成**当前流程**里的下标；匹配不上返回 None。
+
+        ⚠️ 「图片拼版」是**条件节点**：当前 area≠1 时它根本不在流程条上，
+        即便 key 认得出来也算"找不到匹配"——否则会切进一个流程条上不存在的
+        步骤，紧接着又被 ``_refresh_imposition_node`` 踢回第三步（落到哪一步
+        全看谁后跑，比"回第一步"更难解释）。
+        """
+        if not stage:
+            return None
+        if stage == IMPOSITION_STAGE:
+            return IMPOSITION_INDEX if self._imposition_node_visible() else None
+        if stage in STAGES:
+            return STAGES.index(stage)
+        return None
+
+    def _initial_stage_index(self) -> int:
+        """进详情页默认落到第几步：**上次停留的步骤**，匹配不上则第一步。
+
+        这是「打开任务详情默认打开记录的那一步，找不到匹配就从第一步开始」
+        的唯一实现处（``set_task`` 末尾调它）。
+        """
+        if not self.task_id:
+            return 0
+        index = self._stage_index_of(self.store.load_last_stage(self.task_id))
+        return 0 if index is None else index
+
+    def _remember_stage(self, index: int) -> None:
+        """记下"用户最后停留的步骤"，下次打开这个任务直接回到这里。
+
+        写在 ``_select_stage`` 里（切步骤的唯一入口）而不是"返回列表/关窗口"
+        时：进程被强杀、断电都不会把记录丢掉。⚠️ 记的是 key 不是下标，理由
+        见 :meth:`_stage_index_of`；任务目录已删时 ``save_last_stage`` 自己
+        跳过（不重建目录）。
+        """
+        if not self.task_id:
+            return
+        stage = IMPOSITION_STAGE if index == IMPOSITION_INDEX else STAGES[index]
+        self.store.save_last_stage(self.task_id, stage)
+
     def _select_stage(self, index: int) -> None:
         # 离开当前阶段前把待写暂存落盘、把未提交的版面拖动补发
         # （防抖未到期/拖住未松手就走人不该丢改动）
         self.flush_layout_pending()
         self._flush_param_drafts()
         self.step_bar.set_current(index)
+        # 记住这一步：下次打开任务默认回到这里
+        self._remember_stage(index)
+        if index == IMPOSITION_INDEX:
+            # ⚠️ 节点本身的显示/选择状态要在这里先补一次：真实步骤是在本方法
+            #    **末尾**刷的（那边得等 area 回填完），而这条分支提前 return 了。
+            #    漏掉它的后果（用户 2026-09-30 报的 bug）：上次停在「图片拼版」，
+            #    重进任务直接恢复到这一步时，流程条上**没有那个虚线节点**——
+            #    节点显示状态还停在上一个任务/构造时的隐藏态，只能等用户点了
+            #    别处再切回来才会出现。
+            #    ⚠️ 这一步内部可能发现 area≠1 而把当前步踢回第三步
+            #    （见 ImpositionMixin._refresh_imposition_node）：那就跟随它，
+            #    别再进拼版详情，否则步骤条说"第三步"、页面却是拼版。
+            self._refresh_imposition_node()
+            if self.step_bar._current != IMPOSITION_INDEX:
+                return
+            # 「图片拼版」伪步骤：右侧/预览区都是占位详情，不碰阶段面板
+            self._select_imposition_detail()
+            return
         # ⚠️ 面板是**惰性**的：用户切到这一步，就现在把它建出来（不建的话
         #    左侧控制区是空白）。反过来，没切过来的步骤一直不建——这正是
         #    用户 2026-09-25 要求的"谁进去谁才建"。
@@ -417,6 +500,11 @@ class TaskDetailPage(
             target.panel  # noqa: B018 - 触发构造
         self.control_stack.setCurrentIndex(index)
         self.preview_stack.setCurrentIndex(index)
+        # 真实步骤：执行按钮组恢复可见（拼版详情页整组藏掉，见
+        # _select_imposition_detail；两种状态互斥、切换时都要还原）
+        self.run_button.setVisible(True)
+        self.resume_button.setVisible(True)
+        self.cancel_button.setVisible(True)
         # 步骤三：主按钮为「生成预览」，下方另有「提交本次任务」；
         # 步骤四：主按钮为「生成 PDF」（按版面编辑器里的逐图坐标生成）；
         # 其余阶段保持「执行本子任务」，提交按钮隐藏。
@@ -440,6 +528,9 @@ class TaskDetailPage(
         if STAGES[index] == "detect":
             # 整页开关是 area=4 的入口，切回第二步时按当前 area 回填
             self._sync_whole_page_checkbox()
+        # 流程条上的「图片拼版」节点跟随当前 area（回填可能改了 area，
+        # 走 blockSignals 时不会触发面板信号，这里统一补一次）
+        self._refresh_imposition_node()
 
     def _refresh_stage_views(self) -> None:
         if not self.task_id:
@@ -456,6 +547,14 @@ class TaskDetailPage(
             )
         self._show_running_submit_on_steps(states)
         stage = self.current_stage()
+        if stage == IMPOSITION_STAGE:
+            # 「图片拼版」伪步骤在 runs.json 里没有状态可读；执行按钮组也
+            # 整体隐藏（见 _select_imposition_detail），这里只给状态行文案。
+            self._set_stage_status(
+                "图片拼版：可选节点（勾选「在流程中启用图片拼版」后，"
+                "生成 PDF 使用拼版结果）"
+            )
+            return
         self._apply_stage_state(stage, states[stage])
         self._update_run_buttons(states[stage])
 
@@ -677,6 +776,10 @@ class TaskDetailPage(
         elif stage == "print":
             entries, _doc = self._print_entries()
             self.print_preview.set_entries(entries)
+            # 记下本次列表的来源：进入路径在 _refresh_print_source 里是"只作废
+            # 缓存不重建"，不在这里补记的话，进第四步后每次后台合成回调都会
+            # 把整批列表白重建一遍（同步解码首图，UI 冻结）
+            self._print_source_cache = str(self.print_source_dir())
             # 若此前已生成过 PDF，恢复下载按钮状态
             self.print_preview.set_pdf_path(self._latest_print_pdf_path())
 
@@ -716,21 +819,24 @@ class TaskDetailPage(
     def flush_layout_pending(self) -> None:
         """把各处"未提交的界面改动"补发/落盘（关窗口、切步骤、切页前都要调）。
 
-        目前是第四步的版面画布：拖动中不落盘，只在松手/补发时提交。
+        目前是第四步的版面画布与拼版画布：拖动中不落盘，只在松手/补发时提交。
 
         ⚠️ **只按具体的类 `findChildren`，绝不用 `getattr(widget, ...)` 探测能力**：
         四个阶段面板是 `LazyPanelHost`，属性转发（`__getattr__`）会**立刻把面板
         构造出来**——那就把用户要求的「不进去就不建」破坏掉了。（2026-09-26 自己
         踩到：写成 `getattr(w, "flush_pending", None)` 之后，`detail_prewarm`
         护栏直接红成"四个面板全建"。）
+        ⚠️ 拼版画布是**直接构造**的（不在 LazyPanelHost 里），按类查安全。
         """
+        from desktop.components.imposition.canvas import ImpositionCanvas
         from desktop.components.viewers.print_layout_canvas import PrintLayoutCanvas
 
-        for canvas in self.findChildren(PrintLayoutCanvas):
-            try:
-                canvas.flush_pending()
-            except RuntimeError:
-                pass  # 控件已析构
+        for cls in (PrintLayoutCanvas, ImpositionCanvas):
+            for canvas in self.findChildren(cls):
+                try:
+                    canvas.flush_pending()
+                except RuntimeError:
+                    pass  # 控件已析构
 
     def shutdown_all_workers(self) -> None:
         """连同各预览控件自己的缩略图线程一起收尾。

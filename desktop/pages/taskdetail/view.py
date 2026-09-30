@@ -17,18 +17,20 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QStackedWidget, QTabWidget, QVBoxLayout, QWidget,
 )
 from qfluentwidgets import (
-    CaptionLabel, ComboBox, PrimaryPushButton, PushButton, ToolButton,
+    CaptionLabel, CheckBox, ComboBox, PrimaryPushButton, PushButton, ToolButton,
 )
 from qfluentwidgets import FluentIcon as FIF
 
 from desktop.components import PANEL_CLASSES
 from desktop.components.detect_stats import DetectStatsWidget
+from desktop.components.imposition import ImpositionPanel, ImpositionViewWidget
 from desktop.components.log_panel import LogPanel
 from desktop.components.step_bar import StepBar
 from desktop.components.viewers import (
-    ImageViewerWidget, PdfViewerWidget, PrintPreviewWidget, RembgPreviewWidget,
+    ImageViewerWidget, PdfViewerWidget,
+    PrintPreviewWidget, RembgPreviewWidget,
 )
-from desktop.store import STAGES, STAGE_LABELS
+from desktop.store import IMPOSITION_INDEX, STAGES, STAGE_LABELS
 from desktop.ui import theme as T
 from desktop.ui.widgets import (
     Card, Divider, ProgressLine, SectionTitle, apply_to, combo_box,
@@ -151,6 +153,10 @@ class DetailViewMixin:
         # 步骤条自带卡片底（paintEvent 绘制），不再套一层 Card，避免"卡片套卡片"
         self.step_bar = StepBar(STAGE_LABELS[s] for s in STAGES)
         self.step_bar.current_changed.connect(self._select_stage)
+        # 「图片拼版」虚线节点：点击切到伪步骤的占位详情（ImpositionMixin）
+        self.step_bar.imposition_clicked.connect(
+            lambda: self._select_stage(IMPOSITION_INDEX)
+        )
         return self.step_bar
 
     def _build_preview_card(self) -> Card:
@@ -218,7 +224,70 @@ class DetailViewMixin:
             lambda message: self._toast("info", "提示", message)
         )
         self.preview_stack.addWidget(self.print_preview)
+
+        # 拼版伪步骤（index 4）：左列拼版页 + 右侧拼版操作画布
+        self.preview_stack.addWidget(self._build_imposition_preview())
         return self.preview_stack
+
+    def _build_imposition_preview(self) -> Card:
+        """「图片拼版」页面：左侧拼版页清单（模块一）+ 右侧操作画布（模块二）。
+
+        左列是「第一页 / 第二页 / …」加末尾一个**虚线**「＋ 选择拼版」；
+        右侧画布可拖动 / 缩放拉伸 / 旋转当前页的两张图。业务动作全部委托给
+        拼版控制器（``imposition.py`` 基元 + ``imposition_pages`` /
+        ``imposition_layout`` 两模块的 Mixin）。
+        """
+        card = Card(padding=T.SPACE_SM, spacing=0, radius=T.RADIUS_MD)
+        self.imposition_view = ImpositionViewWidget()
+        self.imposition_view.page_selected.connect(
+            self._on_imposition_page_selected
+        )
+        self.imposition_view.add_requested.connect(
+            self._on_imposition_add_requested
+        )
+        self.imposition_view.page_reorder_requested.connect(
+            self._on_imposition_page_reorder
+        )
+        self.imposition_view.page_remove_requested.connect(
+            self._on_imposition_release_page
+        )
+        self.imposition_view.pages_batch_delete_requested.connect(
+            self._on_imposition_batch_delete
+        )
+        self.imposition_view.items_changed.connect(
+            self._on_imposition_items_changed
+        )
+        self.imposition_view.slot_selected.connect(
+            self._on_imposition_slot_selected
+        )
+        self.imposition_view.item_preview_requested.connect(
+            self._open_imposition_item_preview
+        )
+        self.imposition_view.spread_preview_requested.connect(
+            self._open_imposition_spread_preview
+        )
+        card.box.addWidget(self.imposition_view)
+        return card
+
+    def _build_imposition_panel(self) -> Card:
+        """「图片拼版」详情面板（模块二的右侧控制区，控件实体在
+        ``desktop/components/imposition/panel.py``），这里只接线。
+
+        启用开关决定**第四步的取图来源**：勾选且有拼版页时，生成 PDF 用拼版
+        结果，否则回到第三步的去底色产物（见 ``print_source_dir``）。
+        """
+        panel = ImpositionPanel()
+        panel.enabled_toggled.connect(self._on_imposition_enabled_toggled)
+        panel.whole_rotate_delta.connect(self._on_imposition_whole_rotate)
+        panel.item_rotation_edited.connect(self._on_imposition_item_rotate)
+        panel.reset_requested.connect(self._on_imposition_reset_layout)
+        panel.delete_requested.connect(self._on_imposition_delete_page)
+        panel.clear_requested.connect(self._on_imposition_clear)
+        self.imposition_panel = panel
+        # 既有控制器/自测沿用的宿主别名（控件实体在 panel 里）
+        self.imposition_enabled_checkbox = panel.enabled_checkbox
+        self.imposition_panel_status = panel.status_label
+        return panel
 
     def _build_control_card(self) -> QWidget:
         card = Card(padding=T.SPACE_MD, spacing=T.SPACE_MD, radius=T.RADIUS_MD)
@@ -242,6 +311,9 @@ class DetailViewMixin:
             self.control_stack.addWidget(
                 LazyPanelHost(panel_class, hooks=[hook] if hook else [])
             )
+        # 拼版伪步骤（index 4）：占位详情面板——只在流程条点了虚线节点时显示，
+        # 不属于任何真实阶段（STAGES/runs 机制不感知它）
+        self.control_stack.addWidget(self._build_imposition_panel())
         column.addWidget(self.control_stack, 1)
         # 第二步右侧的「检测结果统计」：只在 detect 阶段显示（见 _select_stage），
         # 位置就是其它步骤「执行记录」的那块——执行记录对 detect 无用（无表单
@@ -328,6 +400,8 @@ class DetailViewMixin:
         # 第三步 border 级联第四步默认边距：border 变化时把上游 border
         # 同步给 print 面板（用户未手动改边距时，默认值随级联变 0/20）
         self._sync_print_margin_default()
+        # 流程条上的「图片拼版」节点跟随 area（=1 出现，其余隐藏）
+        self._refresh_imposition_node()
 
     def _wire_print_panel(self, panel) -> None:
         """第四步面板**首次构造后**的接线（LazyPanelHost 的 created 回调）。"""

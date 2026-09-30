@@ -7,7 +7,9 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QFileDialog
 
-from desktop.services.print_plan import plan_print_entries
+from desktop.services.print_plan import (
+    drop_foreign_stage_pages, plan_print_entries,
+)
 from desktop.utils.files import default_open_dir, list_stage_images
 from utils.sort_utils import pdf_custom_sort_key
 
@@ -21,7 +23,8 @@ class PrintListMixin:
 
         只服务 stages/rembg 的**提交产物**（缩略图按最终图 stem 存放，
         mtime 不旧于最终图才算有效——外部改动了最终图就自动失效回落）；
-        用户手动「插入图片」的外部图没有预生成缩略图，照旧现解码。
+        拼版产物（stages/imposition）与用户手动「插入图片」的外部图没有预生成
+        缩略图，照旧现解码。
         """
         if not self.task_id:
             return None
@@ -41,12 +44,30 @@ class PrintListMixin:
         return None
 
     def _print_entries(self) -> tuple[list[dict], dict]:
-        """第四步待打印图片列表（规则见 services/print_plan.plan_print_entries）。"""
+        """第四步待打印图片列表（规则见 services/print_plan.plan_print_entries）。
+
+        ⚠️ **取图目录由拼版是否生效决定**（``ImpositionMixin.print_source_dir``）：
+        拼版启用且有拼版页 → ``stages/imposition``（拼版已是成品整页），
+        否则 → ``stages/rembg``（第三步「提交本次任务」的产物）。
+        ``plan_print_entries`` 只认"一批成品图 + 顺序文档"，对来源无感。
+        """
+        source_dir = self.print_source_dir()
         rembg_files = sorted(
-            list_stage_images(self.store.rembg_output_dir(self.task_id)),
+            list_stage_images(source_dir),
             key=lambda p: pdf_custom_sort_key(p.name),
         )
         doc = self.store.load_print_doc(self.task_id)
+        # ⚠️ 来源切换（拼版 ↔ 去底色）后，旧来源那一批还留在 print.json 里；
+        # 不剔掉就会被当成"用户插入的外部图片"追加进 PDF（见 print_plan 的
+        # drop_foreign_stage_pages）。
+        cleaned = drop_foreign_stage_pages(
+            doc.get("pages") if doc else None,
+            source_dir,
+            self.store.task_dir(self.task_id) / "stages",
+        )
+        if doc and len(cleaned) != len(doc.get("pages") or []):
+            doc = {**doc, "pages": cleaned}
+            self.store.save_print_doc(self.task_id, doc)
         entries, new_doc = plan_print_entries(rembg_files, doc)
         self._print_doc_snapshot = new_doc
         if not doc or set(doc.get("rembg_snapshot") or []) != set(new_doc["rembg_snapshot"]):

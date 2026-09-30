@@ -23,6 +23,8 @@ __all__ = [
     "CopySourceWorker",
     "HashWorker",
     "ImageListWorker",
+    "ImpositionComposeWorker",
+    "ImpositionPagePreviewWorker",
     "PreviewWorker",
     "RembgLiveWorker",
     "SerialJobQueue",
@@ -45,6 +47,14 @@ _LAZY = {
     ),
     "HashWorker": ("desktop.workers.hash_worker", "HashWorker"),
     "ImageListWorker": ("desktop.workers.image_list_worker", "ImageListWorker"),
+    "ImpositionComposeWorker": (
+        "desktop.workers.imposition_worker",
+        "ImpositionComposeWorker",
+    ),
+    "ImpositionPagePreviewWorker": (
+        "desktop.workers.imposition_worker",
+        "ImpositionPagePreviewWorker",
+    ),
     "PreviewWorker": ("desktop.workers.preview_worker", "PreviewWorker"),
     "RembgLiveWorker": ("desktop.workers.rembg_live_worker", "RembgLiveWorker"),
     "SourceThumbnailsWorker": (

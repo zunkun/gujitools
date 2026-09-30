@@ -14,6 +14,7 @@
 | `box_draw.py`     | 检测框标注绘制（GUI/CLI 共用） | `draw_boxes`, `box_color`, `box_name`, `find_cjk_font`                                                                          |
 | `image_utils.py`  | 图像处理核心算法               | `calculate_auto_threshold`, `extract_red_seal`, `apply_otsu_to_region`, `apply_otsu_whole`, `parse_border`, `parse_border_mm`   |
 | `image_io.py`     | OpenCV 读写（中文路径安全）    | `imread`, `imwrite`                                                                                                             |
+| `transparent_png.py` | 白底 → 透明底的 PNG 编码（第三步提交产物专用） | `save_white_as_transparent`, `describe_encoding`, `WHITE_LEVEL`                                                            |
 | `file_utils.py`   | 文件收集与校验                 | `collect_image_files`, `is_valid_image_size`, `IMAGE_EXTS`                                                                      |
 | `yolo_utils.py`   | YOLO 模型加载与内容框检测      | `load_yolo_model`, `detect_content_boxes`                                                                                       |
 | `pdf_utils.py`    | PDF 渲染与提取                 | `parse_pages`, `validate_page_range`, `calculate_zoom`, `process_page_batch`, `extract_pdf_optimized`, `run_on_input_directory` |

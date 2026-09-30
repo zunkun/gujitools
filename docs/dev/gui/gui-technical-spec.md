@@ -67,6 +67,22 @@ GUI 侧用「最近一次 progress」在 `finish_stage` 时补齐最终计数。
 `painter.rotate(90)` / `pdf.rotation(-90, x, y)` 把该段旋转 90°（字头朝右、
 自上而下读）。竖排高度用 `vertical_extent_mm`（拉丁段按 0.55 字宽折算）。
 
+**ui.json**：`{"last_stage": "rembg"}`——任务级界面状态，目前只有一项：用户
+**上次在详情页停留的步骤**。打开任务时 `_initial_stage_index()` 把 key 映射回
+当前流程里的下标（`_stage_index_of`），匹配不上（key 认不出、或「图片拼版」
+这个条件节点当前不在流程里）就回第一步。⚠️ **记 key 不记下标**：步骤会增减，
+下标错位会把用户送到另一个步骤去。写入在 `_select_stage()`（切步骤的唯一
+入口，进程被杀也不丢），读取只读盘不建面板。
+
+**根目录 ui.json**：`{"last_task": "0012", "source_hash": "…"}`——全局界面状态，
+与任务级那份各管一半：这里记「上次待的任务」，步骤仍由任务自己的 `ui.json`
+记。写入口在 `TaskDetailPage.set_task()` 末尾（进任务即写）；启动时
+`main()` 延迟 `RESTORE_DELAY_MS` 调 `MainWindow._restore_last_task()`：任务
+存在**且指纹一致**才 `_open_detail`（步骤由 `set_task` 自己恢复）。`source_hash`
+是防撞号的——任务号顺序复用（删 0012 再新建也叫 0012），对不上说明这个号
+已经是别的任务，当"任务不存在"安静留在列表页。冒烟模式（`GUJI_GUI_SELFTEST`）
+不做恢复。
+
 **drafts/<阶段>.json**：`{参数名: 值}`，内容是 `PrintPanel.get_args()` 那一套键
 （已归一化）。用途是「参数暂存」——改了参数没执行就切阶段/切任务/关程序时，
 改动落在这里，下次进入该阶段按 **暂存 > 最近一次执行参数 > 内置默认** 回填。
@@ -97,6 +113,15 @@ GUI（QImage 渲染）共同消费同一份 `OutputLayout`，不得各自推导
   CSS 风格 1~4 值，返回 [top, right, bottom, left]）。
 - 合成在 worker 线程完成（`compose_region_output` + `compose_outputs_horizontal`），
   多输出横向拼接展示；不生成文件。
+- **提交产物（`stages/rembg/*.png`）一律是白底透明的 PNG**（2026-09-30 用户要求：
+  无论 `type` 是什么，提交结果的白底都转透明）。⚠️ 透明只能在**合成之后**加：
+  合成画布是**不透明白**填充（`Format_RGB32` + `fill(Qt.white)`），在去底计算处
+  （`utils.rembg_page`）加会被它重新压平。落盘的唯一实现是
+  `utils.save_white_as_transparent`（`desktop/stages/rembg_stage._save_transparent_png`
+  调用）：判据只看像素不看 `type`（面板参数与预览可能不同步），灰阶页走调色板 +
+  tRNS（纯黑白页 1bit、灰度页 2/4/8bit；透明区 RGB 保留 255，第四步 JPEG 缩略图
+  才不会变黑底），彩色印章页走 RGBA 保原色。回归防护：
+  `tests/selftests/rembg_transparent.py`。
 - rembg 预览默认显示去底色结果，可切换原图；两者均按上述规则裁剪显示。
 - 回归防护：`tests/selftests/box_geometry.py`（规格一致 + 两侧同源）。
 
@@ -279,3 +304,132 @@ GUI（QImage 渲染）共同消费同一份 `OutputLayout`，不得各自推导
 - `tasks.json` 中 `id` 即任务号，四位零填充（0001…），任务目录同名。
 - 新任务号 = 当前最大号（索引 ∪ 磁盘目录）+ 1；删除不复用。
 - 启动迁移将 uuid 目录按 created_at 重编号。
+
+## 9. 图片拼版（节点文档、坐标与合成）
+
+### 9.1 文档：`drafts/imposition.json`
+
+```json
+{
+  "enabled": true,
+  "pages": [
+    {"items": [
+       {"file": "…/stages/rembg/3-r.png", "rect": [x, y, w, h], "rotation": 0.0},
+       {"file": "…/stages/rembg/3-l.png", "rect": [x, y, w, h], "rotation": 0.0}
+     ]}
+  ]
+}
+```
+
+- 放在 `drafts/` 是**历史原因**（占位节点时代就存 `{"enabled": bool}`），
+  换位置会让老任务的选择态丢失；
+- `items` **恒 2 项**：`0` = 右槽（源清单序号在前），`1` = 左槽；
+- `rect` 单位是**源图像素**（左上原点、x 向右、y 向下）；
+- ⚠️ **没有 `sheet`**（用户 2026-09-30：「拼版不需要设置纸张，只需要
+  背景是白色的就行，后续提交时根据图片的四个区域合并出一张图片」）：老文档里
+  的 `sheet` 读进来直接忽略；
+- `rotation` 是**顺时针角度**（Qt `QPainter.rotate` 口径，PIL 侧取负），
+  绕该项 `rect` 的中心；
+- 读写与形状校验：`store/imposition.py`（IO）+ `services/imposition.py`
+  （`normalize_page` / `normalize_doc`，唯一校验处）。
+
+### 9.2 产出：`stages/imposition/0001.png …`
+
+- 文件名按**列表顺序**编号（列表顺序即 PDF 页序）；重合成时序号更大的旧文件
+  会被清掉（`compose_doc` 的 `_sweep_stale`），否则用户删页后旧页还会进 PDF；
+- 合成白底 PNG，**尺寸 = 两张图外接框的紧裁**（`page_bounds`）：没有纸张，
+  图上多大、挪多远，产出就跟到哪；去底图自带的透明在此压到白底
+  （与 `functions.print` 的压平一致）；
+- 触发：版面/页数变化 → 500ms 防抖 → **后台线程**重合成
+  （`workers/imposition_worker.py`）；点「生成PDF」前再**同步**补一次
+  （`_compose_imposition_now`），保证 PDF 用的是最新版面。
+
+### 9.3 画布：`components/imposition/canvas.py`
+
+拼版 UI 组件包 `components/imposition/` 按操作逻辑分两个模块：**模块一
+「选择拼版」**（`page_list.py` 左列清单 + `picker.py` 弹窗）与**模块二
+「拼版操作」**（`canvas.py` 画布 + `panel.py` 控制面板），`view.py` 是装配层；
+控制器在 `pages/taskdetail/` 同样按模块拆：`imposition.py`（共享基元）、
+`imposition_pages.py`（模块一）、`imposition_layout.py`（模块二）。
+
+左列清单（`page_list.py`）每格 `_PageEntry` **左上有勾选框**（用户 2026-09-30；
+钉死 22px 小方块——qfluentwidgets CheckBox 空文本的 sizeHint 有 57px 宽，
+不钉死就与页标题隔着大空档）。勾选数驱动**悬浮操作条** `_SelectBar`
+（「已选 N 页」+「取消选择」「批量删除」，浮在滚动区下沿、勾选数归零自动
+收起），点「批量删除」经 ``batch_delete_requested`` → 控制器
+`_on_imposition_batch_delete` **弹窗确认**后批量删页。勾选集合**按副标题
+（caption）跨 `set_pages` 重建保留**——拖动排序/加页不丢勾，页被删则自然
+落选；勾选框吃掉自己的鼠标事件，不会触发条目的切页/拖动排序。
+「＋ 选择拼版」格**钉在左列最底部**（滚动区之外，不随页数上下移动）。
+
+画布是 `PrintLayoutCanvas` 的同族实现（页面坐标 → 控件像素等比适配），差异在于
+可以放**多张**图、每张带旋转：`rect` 是落点框、`rotation` 只作用于框内图像
+（框线恒画在未旋转的矩形上），手柄命中沿用「四角圆点邻域 + 四边整条命中带」
+并多一个**旋转钮**（框上方 26px）。
+
+**框线两态**（用户 2026-09-30 口径）：**点击某张图 → 选中**，选中的图带一圈
+**常显的细虚线**（`_draw_selected_border`，选中状态一直看得见）；**按住鼠标
+操作期间**才升级为 `Qt.DashLine` 虚线框 + 手柄 + 旋转钮（`_pressed` 为真时画，
+`mouseRelease`/`leaveEvent`/`flush_pending` 都把它清掉，松手回到细框）。
+**载页/切页/点空白处都清空选中**（`set_page` 恒 `_selected=-1`，不自动选中；
+`view.set_current` 对"画布已是这份版面"的回灌会跳过 `set_page`，拖动落盘后的
+刷新不掉选中态）。因此**命中判定必须是几何的**，不能依赖"看得见手柄"——
+未按下时靠光标提示（图内 `OpenHand`、四角/四边缩放光标、圆钮处 `Cross`）。
+
+**红色对齐线恒显 + 旋转组件**（用户 2026-09-30 口径）：`paintEvent` 在图之上
+画一条 `SPINE_COLOR`（`#E02020`）红色垂直虚线，x 取 `_spread_center_units()`——
+**两图未旋转 rect 中心的中点**（单图时即其中心）。用 rect 中心而不是外接框
+中心是刻意的：单图自转不挪 rect 中心、整版旋转又绕这个中点公转，所以无论
+怎么转对齐线都钉在同一处。旋转有两条入口，都**只重绘不上报**（脏标记交给
+控制器的停顿计时器 `EDIT_COMMIT_DEBOUNCE_MS=250` 统一 `flush_pending` 落盘，
+避免滑块每 1° 就走一遍 set_page + 落盘 + 合成）：
+
+- **整版旋转** `canvas.rotate_whole(delta)`：每图"rect 中心绕公共中心公转
+  （y 向下坐标系的视觉顺时针矩阵）+ 自身 `rotation` 叠加"——两图相对位置、
+  相对角度不变，对齐线不动；`spread_rotation()` 取两图平均角收敛到
+  [-180, 180) 当整版角度（单图转过后角度差原样保留）；
+- **单图绝对角度** `canvas.set_item_rotation(angle)`：只改选中图的
+  `rotation`（绕自身 rect 中心），提交后 `refit()` 重新适配可视区。
+
+面板（`panel.py`）按用户 2026-09-30 口径**分区分布**：页级块**「操作当前
+图片页」**（整体旋转 / 复位本页版面 / 删除本页拼版（这两个**同行**）/
+清空全部拼版）与图片级块**「操作当前图片」**（旋转，`_ItemSection` 自绘框）
+分开；说明收在标题旁的 `desktop.ui.widgets.HelpButton` 问号按钮里（与
+`StagePanel` 同款），**「在流程中启用图片拼版」开关放面板最底部**；
+面板上**没有**「选择拼版」按钮（入口只在左列虚线格，`add_requested`
+信号随之移除）。图片级块
+**只在画布里选中了某张图时激活并高亮**（描边 `ACCENT` + 浅底 `ACCENT_SOFT`，
+未选中灰底 + "未选中图片"提示），切页/点空白取消选中后整块灰掉。两组旋转组件
+都是「`Slider`（1°/格）+ `DoubleSpinBox`（1° 步进）」：**整体旋转**发
+`whole_rotate_delta`（**增量**，跨 ±180° 边界按 wrap 取最近方向），**选中图
+旋转**发 `item_rotation_edited`（**绝对角度**，未选中时禁用）；程序化回填走
+`set_whole_angle` / `set_item_rotation`（blockSignals 语义不回抛，后者同时驱动
+图片块的高亮态），挂在 `_update_imposition_status` 这个"当前页/选中变了"的
+汇聚点上同步。旋转组件是**微调口径**（用户 2026-09-30）：输入框挂说明行右侧
+（2 位小数、步进 0.1°），滑块**通栏独占一行**、内部值 = 度数 ×100 即
+**0.01°/格**（键盘 1 格 0.01°、PageUp/Down 1°），大角度直接在输入框键入。
+画布还**恒显**一条灰色虚线框（`CROP_COLOR`，`_draw_crop_frame`）＝两图旋转后
+外接框的并集——与 `services.imposition.page_bounds` 同一套几何
+（`_item_box_units` 是它的画布版），即成品紧裁范围的可视化。
+
+### 9.4 选择弹窗：真控件卡片网格
+
+`ImpositionPickerDialog` **不用** `QListWidget` 的图标模式——那条路把缩略图尺寸
+与文字排版交给委托按 `sizeHint` 自行决定，在真机上（高分屏 + 真实的
+「1bit 调色板 + tRNS 白底透明」PNG）会把卡片内容画成一小条、文字也看不见
+（用户 2026-09-30 截图报过）。改成一排**真控件卡片**：
+
+- `_SourceCard`：固定 `CARD_W×CARD_H = 188×264`，内含**固定尺寸**
+  `THUMB_W×THUMB_H = 156×196` 的缩略图 QLabel + 名字 QLabel，勾选框与选中底
+  由卡片 `paintEvent` 自绘。⚠️ 顶部留 `CARD_HEAD=30` 的「页眉」放勾选框——
+  子控件（缩略图）会盖在卡片之上，不留位置勾选标记就被压住。
+- `_CardGrid`：`QGridLayout` + `resizeEvent` 重排，列数 = `(宽度+gap)//(CARD_W+gap)`，
+  等价于 flex 换行（窗口变宽一行放更多），卡片尺寸不变、不拉伸变形。
+- 缩略图：整幅解码后**自己缩**进固定框（`_source_thumb_pixmap`），**不用**
+  `QImageReader.setScaledSize`——对 1bit 调色板 PNG 的缩放读取会给出尺寸异常的图
+  （正是"卡片里只有一段残图/空白"的来源）。分批 6 张/轮解码，弹窗不卡。
+- 交互：点**整张卡片**即勾选（`toggle_card`），超过两张回退并提示；勾选结果
+  按**源清单顺序**返回（序号在前的排拼版页右侧）。
+
+护栏：`tests/selftests/imposition.py`（88 条，含"真实白底透明 PNG 也能出缩略图"、
+"无纸张：产出按外接框紧裁"、"拖动/缩放不设范围限制"）。

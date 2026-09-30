@@ -408,6 +408,19 @@ YOLO 识别每页的**左、右文本框**，结果存入 `boxes.json`（不生�
 
 > 参数改动后预览图会标记为过期，需重新「生成预览」再提交。
 
+#### 可选节点：图片拼版（imposition）
+
+第 3 步的 `area`（区域模式）选 **1（左右分开）** 时，流程条上会在「图片去底色」
+与「生成 PDF」之间多出一个**虚线可选节点「图片拼版」**——它不是必经步骤。
+
+- 左侧一列是「第一页 / 第二页 / …」，最后一格是虚线的「**＋ 选择拼版**」；
+- 点它弹出挑选窗口，从**还没被任何一页拼版用过**的图片（第 3 步「提交本次任务」
+  的成品图）里挑**两张**：**序号在前的排在右侧、序号大的排在左侧**；
+- 右侧操作区可**拖动 / 四角四边缩放拉伸 / 旋转**，把两张图摆到一张纸上；
+- **生效规则**：勾选「在流程中启用图片拼版」且至少有一页拼版时，第 4 步的
+  待打印列表与「生成PDF」改用拼版结果（`stages/imposition/`）；否则照旧用
+  第 3 步的去底色成品图（`stages/rembg/`）。拼版不是必须的。
+
 #### 第 4 步：生成 PDF（print）
 
 设置纸张、边距、标题、页码后合成 PDF，产物落在任务目录 `stages/print/`。
@@ -438,13 +451,20 @@ YOLO 识别每页的**左、右文本框**，结果存入 `boxes.json`（不生�
 
 ### 桌面端开发相关
 
-```bash
-# 功能自测（1074 项断言）
-QT_QPA_PLATFORM=offscreen python tests/gui_selftest.py
+测试**按改动范围分档跑，不必每次全量**——只跑与本次改动相关的功能模块即可，
+只有动了共享底层（`core/`、`utils` 几何单位、配置默认值、`store/`、打包入口）
+或发布打包前才跑全量。
 
-# 只跑某功能 / 列出模块 / 跳过模块
+```bash
+# ① 日常：只跑相关模块（自动带上其依赖）
 QT_QPA_PLATFORM=offscreen python tests/gui_selftest.py --only detect_shared
+
+# 列出全部模块与依赖 / 跳过无关的大批模块
 QT_QPA_PLATFORM=offscreen python tests/gui_selftest.py --list
+QT_QPA_PLATFORM=offscreen python tests/gui_selftest.py --skip extract,resume
+
+# ② 动了共享底层 / 发布前：全量
+QT_QPA_PLATFORM=offscreen python tests/gui_selftest.py
 
 # 离屏渲染界面截图（视觉自查）
 QT_QPA_PLATFORM=offscreen python tests/gui_shot.py D:/tmp/shots

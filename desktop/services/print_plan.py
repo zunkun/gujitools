@@ -254,6 +254,45 @@ def plan_print_effects(
 
 
 # ---------------------------------------------------------------- 待打印列表
+def drop_foreign_stage_pages(
+    pages: list[dict] | None, source_dir: Path, stages_root: Path,
+) -> list[dict]:
+    """从待打印清单里剔除「属于本任务**别的阶段**产物」的条目。
+
+    ⚠️ 为什么必须剔（2026-09-30 引入「图片拼版」时暴露）：``plan_print_entries``
+    的规则是「不在当前来源目录里的条目 = 用户手动插入的外部图片，原样保留」。
+    可第四步的来源会**切换**——拼版生效时用 ``stages/imposition``，否则用
+    ``stages/rembg``。切过去之后，原先那一批还留在 ``print.json`` 里、又不在
+    新来源目录下，就会被当成"用户插入的图"**追加到列表末尾**：生成 PDF 时
+    新旧两套整页全打进去（实测 2 页拼版 + 4 页去底色 = 6 页）。
+
+    判据写死在"路径是否落在本任务的 ``stages/`` 下"：同任务其它阶段的产物
+    永远是**上一轮来源**的残留，绝不可能是用户从磁盘上手动挑来的外部图片。
+    真正的外部图片（桌面/下载目录…）一律保留。
+    """
+    if not pages:
+        return list(pages or [])
+    source = Path(source_dir)
+    root = Path(stages_root)
+    kept: list[dict] = []
+    for page in pages:
+        file_text = str(page.get("file") or "")
+        if not file_text:
+            kept.append(page)
+            continue
+        candidate = Path(file_text)
+        if candidate.parent == source:
+            kept.append(page)
+            continue
+        try:
+            if candidate.parent.is_relative_to(root):
+                continue  # 本任务别的阶段的产物 → 上一轮来源的残留
+        except (TypeError, ValueError):
+            pass
+        kept.append(page)  # 真正的外部图片：保留用户的插入
+    return kept
+
+
 def plan_print_entries(rembg_files: list[Path], doc: dict | None) -> tuple[list[dict], dict]:
     """第四步待打印图片列表的规划。
 

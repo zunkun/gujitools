@@ -1,5 +1,10 @@
 # -*- coding: utf-8 -*-
-"""rembg_submit 阶段执行器：把「生成预览」产出的整页去底图合成为最终交付图片。"""
+"""rembg_submit 阶段执行器：把「生成预览」产出的整页去底图合成为最终交付图片。
+
+产物一律是**白底透明**的 PNG（规则与编码形态的唯一实现在
+``utils/transparent_png.py``）：用户 2026-09-30 定的「无论 type 是什么，
+提交产物都把黑字白底里的白底改成透明」。
+"""
 
 from __future__ import annotations
 
@@ -8,6 +13,7 @@ import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+import utils
 from desktop.stages.events import emit
 from core.args import machine_worker_budget  # noqa: E402  (预算与函数层同一份)
 from desktop.utils.files import THUMBNAIL_EDGE  # noqa: E402
@@ -28,6 +34,45 @@ SUBMIT_WORKERS = max(
         or min(8, machine_worker_budget(), os.cpu_count() or 1),
     ),
 )
+
+
+def _qimage_rgb_array(image):
+    """QImage → ``(H, W, 3)`` 的 RGB 数组（``uint8``，独立于 QImage 生命周期）。
+
+    ⚠️ 三个坑，逐条都是踩过的：
+    1. ``constBits()`` 的内存布局是 **B,G,R,A**（Format_RGB32），直接当 RGB 用
+       会让整页偏色——必须反序取通道。
+    2. **必须复制一份出来**（``np.ascontiguousarray``）。numpy 的 ``frombuffer``
+       只是**引用** Qt 的缓冲区，而内存归 QImage 对象所有：一旦那个 QImage 被
+       回收，数组就变成悬垂指针。非 RGB32 的输入（预览图模式 "1"/"L" 且该页
+       无检测框、走整图透传那条分支）恰恰要先 ``convertToFormat`` 出一个
+       **临时对象**，它在下面几行之后就被回收——实测症状是产物里混进随机彩色
+       像素（``[156,233,32]`` 之类，那些是别人的内存），重则直接段错误。
+       一整份 RGB 拷贝是 3 字节/像素（22MP 页 66MB），换掉这类静默错误值得。
+    3. ``convertToFormat`` 在格式已一致时会返回浅拷贝；这里只在格式不同时调用。
+    """
+    import numpy as np
+    from PySide6.QtGui import QImage
+
+    if image.format() != QImage.Format_RGB32:
+        image = image.convertToFormat(QImage.Format_RGB32)
+    height, width = image.height(), image.width()
+    stride = image.bytesPerLine()
+    buffer = np.frombuffer(image.constBits(), np.uint8)
+    rows = buffer[: stride * height].reshape(height, stride)
+    # RGB32 每行 32 位对齐，stride 恒等于 width*4（这里仍取 width*4 切一刀，
+    # 不依赖该前提）；切片后恒为连续视图，reshape 不会悄悄复制。
+    pixels = rows[:, : width * 4].reshape(height, width, 4)
+    return np.ascontiguousarray(pixels[:, :, 2::-1])
+
+
+def _save_transparent_png(image, dst: Path) -> None:
+    """把合成结果落盘为**白底透明** PNG（编码规则见 ``utils.transparent_png``）。
+
+    ⚠️ 不许绕过这个函数直接 ``image.save(dst, "PNG")``：那样写出的白底图会和
+    透明底产物混在一批里（护栏 tests/selftests/rembg_transparent.py 会盯着）。
+    """
+    utils.save_white_as_transparent(_qimage_rgb_array(image), dst)
 
 
 def _save_step4_thumb(image, name: str, thumb_dir: Path) -> None:
@@ -173,11 +218,16 @@ def run_rembg_submit_stage(config: dict) -> int:
                 )
             for out, name in zip(outputs, names):
                 dst = out_dir / name
-                if out.save(str(dst), "PNG"):
-                    saved_names.append(name)
-                    _save_step4_thumb(out, name, thumb_dir)
-                else:
-                    errors.append(f"写入失败: {dst}")
+                try:
+                    _save_transparent_png(out, dst)
+                except Exception as exc:  # noqa: BLE001 - 单张失败不许拖垮整批
+                    errors.append(f"写入失败: {dst}（{exc}）")
+                    continue
+                saved_names.append(name)
+                # 缩略图仍从**合成位图**生成（白底）：它是第四步缩略条的 JPEG
+                # 加速件，而 JPEG 根本没有 α 通道——从合成图直接缩放落盘，
+                # 结果与改动前逐字节一致，省得再绕一圈解码。
+                _save_step4_thumb(out, name, thumb_dir)
             return saved_names, errors
 
         done = 0
@@ -208,7 +258,7 @@ def run_rembg_submit_stage(config: dict) -> int:
         emit({"type": "progress", **context, "done": total, "total": total})
         emit(
             {"type": "log", **context,
-             "message": f"最终图片已生成（{saved} 张）：{out_dir}"}
+             "message": f"最终图片已生成（{saved} 张，白底已转透明）：{out_dir}"}
         )
         if not saved:
             emit(

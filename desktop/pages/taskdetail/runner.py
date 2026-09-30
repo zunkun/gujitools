@@ -18,7 +18,7 @@ from PySide6.QtCore import QProcess, QProcessEnvironment, QTimer
 from desktop.services.print_plan import missing_extract_pages_spec
 from desktop.store.json_io import write_json
 from desktop.utils.files import list_stage_images, project_root
-from desktop.store import STAGE_LABELS, STAGE_STEP
+from desktop.store import IMPOSITION_STAGE, STAGE_LABELS, STAGE_STEP
 
 STATUS_LABELS = {
     "pending": "未执行",
@@ -117,7 +117,12 @@ class StageRunnerMixin:
 
         守卫由 :meth:`TaskDetailPage._acquire_run` 提供（受理标记 + 防抖窗口）；
         真正干活的是 :meth:`_run_stage_unchecked`。
+
+        ⚠️ 「图片拼版」伪步骤没有可执行内容（占位详情页，执行按钮组处于
+        隐藏态）；这里再挡一道，防自动化/快捷路径绕过可见性直接触发。
         """
+        if self.current_stage() == IMPOSITION_STAGE:
+            return
         if not self._acquire_run("子任务"):
             return
         try:
@@ -180,6 +185,12 @@ class StageRunnerMixin:
             # 任务」完全相同的几何规则）——调整 border 后无需重新提交，
             # 直接生成 PDF 即可生效；第四步的纸张/边距/标题/页码等自定义
             # 参数继续传给 CLI print。
+            #
+            # ⚠️ 拼版生效时**取图来源换成 stages/imposition**（见
+            #    ImpositionMixin.print_source_dir / _build_print_effects）：
+            #    这里先同步补一次合成，保证 PDF 用的拼版版面是最新的——用户
+            #    改完版面立刻点「生成 PDF」时，后台那轮防抖合成可能还没跑完。
+            self._compose_imposition_now()
             entries, doc = self._print_entries()
             entries = [e for e in entries if Path(e["file"]).exists()]
             rembg_panel = self.control_stack.widget(2)  # 第三步 rembg 面板
@@ -236,9 +247,13 @@ class StageRunnerMixin:
             except Exception:
                 pass
             self.log_view.append(
-                f"区域合成：区域模式={area}"
-                + (f"，边距={border}" if border is not None else "，边距=0")
-                + f"（{len(effects)} 页）"
+                (
+                    f"图片拼版：{len(effects)} 页（生成 PDF 用拼版结果）"
+                    if self.imposition_active() else
+                    f"区域合成：区域模式={area}"
+                    + (f"，边距={border}" if border is not None else "，边距=0")
+                    + f"（{len(effects)} 页）"
+                )
             )
         else:
             self._refresh_manifest()

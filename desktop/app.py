@@ -29,6 +29,11 @@ class MainWindow(QMainWindow):
     #: 又能在用户点进任务之前把那笔 Qt 构造开销付掉（见 _prewarm_detail_page）。
     PREWARM_DELAY_MS = 3000
 
+    #: 启动后多久尝试「回到上次任务」（ms）。排在列表首帧之后（先让窗口
+    #: 有内容），但必须远早于预热——恢复本身多半就要现建详情页，预热只是
+    #: 给"没恢复成"的兜底路径付构造开销。
+    RESTORE_DELAY_MS = 300
+
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle(WINDOW_TITLE)
@@ -106,6 +111,23 @@ class MainWindow(QMainWindow):
         first = page.control_stack.widget(0)
         if hasattr(first, "peek") and first.peek() is None:
             first.panel  # noqa: B018 - 触发构造，返回值不用
+
+    def _restore_last_task(self) -> None:
+        """启动恢复：上次待在哪个任务的哪一步，就回到哪里继续。
+
+        「哪个任务」记在数据根目录 ``ui.json``（进入任务即写，见
+        ``TaskDetailPage.set_task``）；「哪一步」记在该任务目录的 ``ui.json``，
+        ``set_task`` 末尾自己恢复——这里只负责把任务打开。三类"不在了"都
+        安静留在列表页：记录缺失/写坏；任务已删；任务号被新任务复用
+        （指纹对不上，见 ``load_last_task`` 的防撞号说明）。
+        """
+        record = self.store.load_last_task()
+        if not record:
+            return
+        task = self.store.get_task(record["id"])
+        if not task or str(task.get("source_hash") or "") != record["source_hash"]:
+            return
+        self._open_detail(record["id"])
 
     def _open_detail(self, task_id: str) -> None:
         page = self._ensure_detail_page()
@@ -225,6 +247,13 @@ def main() -> int:
     from PySide6.QtCore import QTimer
 
     QTimer.singleShot(0, window.list_page.refresh)
+    # 「回到上次任务」（用户 2026-09-30）：启动后自动检测上次执行的任务是否
+    # 还在——在就打开详情、落到上次停留的步骤继续处理；不在（已删/任务号
+    # 被复用/记录写坏）就安静留在列表页，见 _restore_last_task。
+    # ⚠️ 冒烟模式（GUJI_GUI_SELFTEST）不恢复：冒烟可能在别人的数据目录上跑、
+    #    也可能在 GUI 开着时运行，不该替用户跳页，只验"启动不崩"。
+    if not os.environ.get("GUJI_GUI_SELFTEST"):
+        QTimer.singleShot(MainWindow.RESTORE_DELAY_MS, window._restore_last_task)
     _install_sigint_handler(app)
     if os.environ.get("GUJI_GUI_SELFTEST"):
         from PySide6.QtCore import QTimer

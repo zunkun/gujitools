@@ -31,6 +31,17 @@ STAGE_SHORT = {
     "print": "PDF",
 }
 
+# ------------------------------------------------------------ 流程条的可选节点
+#: 「图片拼版」**伪步骤**：流程条上的虚线可选节点，位于第三步（图片去底色）
+#: 与第四步（生成 PDF）之间，仅当第三步「区域模式」为 1（左右分开）时出现。
+#: 用户可以选择它（启用）也可以不选择；节点详情当前为占位（不参与任何执行
+#: 链路，STAGES/runs.json/阶段面板等机制一律不感知它）。
+IMPOSITION_STAGE = "imposition"
+IMPOSITION_LABEL = "图片拼版"
+#: 伪步骤在流程条上的下标：跟在四个真实步骤之后（控制栈/预览栈里同样占
+#: 第 5 位——占位详情面板与占位预览）。
+IMPOSITION_INDEX = len(STAGES)
+
 #: 运行阶段 → 它归属的**界面步骤**（值取 STAGES 里的一项）。
 #:
 #: ⚠️ 「提交本次任务」（rembg_submit）不是独立步骤，而是第三步 rembg 面板上的
@@ -226,6 +237,14 @@ class TaskMixin:
     def rembg_preview_output_dir(self, task_id: str) -> Path:
         """「生成预览」产出的整页去底预览图目录（中间产物，不参与 print）。"""
         return self.stage_dir(task_id, "rembgpreview")
+
+    def imposition_output_dir(self, task_id: str) -> Path:
+        """「图片拼版」产出的成品拼版页图目录（列表顺序即页序）。
+
+        拼版节点**生效**时（选择态为真且有拼版页），第四步「生成 PDF」与它的
+        待打印列表一律从这里取图；否则仍从 ``rembg_output_dir`` 取。
+        """
+        return self.stage_dir(task_id, "imposition")
 
     def print_output_pdf(self, task_id: str) -> Path:
         """print 阶段产物 print.pdf 的完整路径。"""

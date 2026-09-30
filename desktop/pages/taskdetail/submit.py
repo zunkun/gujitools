@@ -70,7 +70,18 @@ class SubmitMixin:
     def _build_print_effects(
         self, list_entries: list[dict], area: int, border
     ) -> list[dict]:
-        """第四步列表 + 第三步当前 area/border → worker 合成规格。"""
+        """第四步列表 + 第三步当前 area/border → worker 合成规格。
+
+        ⚠️ **拼版生效时直接透传**：拼版页本身就是"两张源图已经合成好的整页
+        成品"（``stages/imposition``），再走一遍区域合成会把整页当半幅紧裁，
+        拼出来的版面全毁。所以拼版生效 → ``effect=None`` 整图参与排版。
+        """
+        if self.imposition_active():
+            return [
+                {"file": str(Path(e["file"])), "effect": None}
+                for e in list_entries
+                if Path(e["file"]).exists()
+            ]
         from desktop.services.print_plan import plan_print_effects
 
         composed = self._rembg_submit_entries(area, border)

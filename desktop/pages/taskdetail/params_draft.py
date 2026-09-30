@@ -33,13 +33,17 @@ class ParamDraftMixin:
     _DRAFT_DEBOUNCE_MS = 400
 
     def _install_draft_hooks(self) -> None:
-        """给每个阶段面板接上「用户改了参数」→ 防抖暂存。"""
+        """给每个阶段面板接上「用户改了参数」→ 防抖暂存。
+
+        ⚠️ 只挂真实阶段（len(STAGES)）：控制栈第 5 位是「图片拼版」占位
+        面板，没有 param_edited 信号，混进循环就是 AttributeError。
+        """
         self._draft_dirty: set[int] = set()
         self._draft_timer = QTimer(self)
         self._draft_timer.setSingleShot(True)
         self._draft_timer.setInterval(self._DRAFT_DEBOUNCE_MS)
         self._draft_timer.timeout.connect(self._flush_param_drafts)
-        for index in range(self.control_stack.count()):
+        for index in range(min(self.control_stack.count(), len(STAGES))):
             host = self.control_stack.widget(index)
             register = getattr(host, "add_created_hook", None)
             if callable(register):

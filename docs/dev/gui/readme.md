@@ -44,7 +44,10 @@ hupper -m desktop
 # 或
 python desktop.py
 
-# 运行全功能自测（1074 项断言）
+# 只跑与本次改动相关的自测模块（日常推荐，自动带上其依赖）
+QT_QPA_PLATFORM=offscreen python tests/gui_selftest.py --only <模块名>
+
+# 全量自测：仅动了共享底层或发布打包前才需要（详见 .workbuddy/memory/details-testing.md）
 QT_QPA_PLATFORM=offscreen python tests/gui_selftest.py
 
 # 离屏渲染界面截图（视觉自查，输出到指定目录）
@@ -87,8 +90,8 @@ QT_QPA_PLATFORM=offscreen python tests/gui_shot.py --guide D:/tmp/shots
 - **改完源码同步文档**：
 
   ```bash
-  # 功能回归（1074 项断言，含真实 worker 子进程全流程）
-  QT_QPA_PLATFORM=offscreen python tests/gui_selftest.py
+  # 功能回归：先 --only 跑相关模块；只有动到共享底层才全量
+  QT_QPA_PLATFORM=offscreen python tests/gui_selftest.py --only <模块名>
 
   # 重新生成 / 校验 API 参考
   python tools/gen_api_docs.py

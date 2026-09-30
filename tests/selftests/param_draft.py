@@ -121,9 +121,10 @@ def run(ctx) -> None:
            repo.load_draft(tid, "print") is None)
 
         # ---- 8. 面板都接上了"用户改动"通道 ----
+        # （只查四个真实阶段面板：第 5 位是「图片拼版」占位面板，无参数）
         ok("四个阶段面板都带 param_edited 信号",
            all(hasattr(page.control_stack.widget(i), "param_edited")
-               for i in range(page.control_stack.count())))
+               for i in range(4)))
         seen: list[int] = []
         page.control_stack.widget(0).param_edited.connect(lambda: seen.append(1))
         extract_panel = page.control_stack.widget(0)

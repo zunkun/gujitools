@@ -43,6 +43,15 @@ class HistoryMixin:
         """自动回填（进阶段时的默认回填）用的跳过集合 = 历史跳过 + 阶段专属。"""
         return self._history_fill_keys(stage) | self._AUTO_SKIP.get(stage, frozenset())
 
+    def _current_history_stage(self) -> str:
+        """历史回填当前对应的阶段 key。
+
+        ⚠️ 流程条第 5 位是「图片拼版」伪步骤（无历史/无参数可回填），
+        下标越界时按第一步兜底——只走防御，正常路径不会到那里。
+        """
+        current = self.step_bar._current
+        return STAGES[current] if 0 <= current < len(STAGES) else STAGES[0]
+
     def _restore_stage_params(self, index: int) -> None:
         """进入页面/切换阶段时回填参数：**暂存优先**，其次最近一次执行。
 
@@ -76,7 +85,7 @@ class HistoryMixin:
         combo.clear()
         self._history_params: list[dict] = []
         if self.task_id:
-            stage = STAGES[max(self.step_bar._current, 0)]
+            stage = self._current_history_stage()
             for record in self.store.list_stage_runs(self.task_id, stage):
                 started = time.strftime(
                     "%m-%d %H:%M", time.localtime(record.get("started_at", 0))
@@ -95,10 +104,13 @@ class HistoryMixin:
     def _on_history_selected(self, index: int) -> None:
         if index < 0 or index >= len(getattr(self, "_history_params", [])):
             return
-        stage = STAGES[max(self.step_bar._current, 0)]
+        current = self.step_bar._current
+        if not 0 <= current < len(STAGES):
+            return  # 「图片拼版」占位详情没有历史回填（下拉框也处于隐藏态）
+        stage = STAGES[current]
         params = {
             k: v for k, v in self._history_params[index].items()
             if k not in self._history_fill_keys(stage)
         }
-        self.control_stack.widget(self.step_bar._current).apply_args(params)
+        self.control_stack.widget(current).apply_args(params)
         self._toast("info", "已回填历史配置", STAGE_LABELS[stage])
