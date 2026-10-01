@@ -893,7 +893,7 @@ def main() -> int:
     families = load_fonts(app)
     print(f"已注册字体：{families}")
 
-    from desktop.app import MainWindow
+    from desktop.app import WINDOW_SIZE, MainWindow
     from desktop.store import TaskStore
     from desktop.ui.style import apply_app_style
 
@@ -924,7 +924,10 @@ def main() -> int:
     window.store = repo
     window.list_page.store = repo
     window.detail_page.store = repo
-    window.resize(1440, 920)
+    # 手册截图统一按主窗口的**期望**尺寸出图（与 desktop/app.py 同一份常量，
+    # 别再各写一份）。这里显式 resize 是有意的：MainWindow 构造时会按屏幕
+    # 可用区域夹紧，截图不跟着屏幕变，否则同一份手册在不同机器上是两个版式。
+    window.resize(WINDOW_SIZE)
     window.show()
     window.list_page.refresh()
     pump(app)

@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 93 个模块、106 个公开类、659 个公开函数/方法（生成于 2026-10-01）。
+覆盖 94 个模块、106 个公开类、662 个公开函数/方法（生成于 2026-10-01）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -91,6 +91,7 @@
 | [`desktop.ui.style`](#desktopuistyle) | 0 | 3 |
 | [`desktop.ui.theme`](#desktopuitheme) | 0 | 3 |
 | [`desktop.ui.widgets`](#desktopuiwidgets) | 9 | 36 |
+| [`desktop.ui.window_size`](#desktopuiwindow_size) | 0 | 3 |
 | [`desktop.utils.files`](#desktoputilsfiles) | 0 | 8 |
 | [`desktop.utils.icon`](#desktoputilsicon) | 0 | 3 |
 | [`desktop.worker`](#desktopworker) | 0 | 1 |
@@ -119,6 +120,7 @@ gujitools 桌面端主窗口：任务列表页 + 任务详情页切换。
 | 名称 | 值 |
 | --- | --- |
 | WINDOW_TITLE | `"古籍重製"` |
+| WINDOW_START_MAXIMIZED | `True` |
 
 ### `class MainWindow(QMainWindow)`
 
@@ -3952,6 +3954,7 @@ desktop 单例守卫：**同一个构建**同时只允许一个 GUI 实例。
 | _MUTEX_PREFIX | `"Local\GujiZhiZuo-Desktop-"` |
 | _ERROR_ALREADY_EXISTS | `183` |
 | _SW_RESTORE | `9` |
+| _SW_SHOW | `5` |
 
 ### 模块函数
 
@@ -3968,6 +3971,15 @@ desktop 单例守卫：**同一个构建**同时只允许一个 GUI 实例。
 identity 用 **desktop 包目录**（`desktop.utils.files.package_dir()`）：
 源码是 `D:\...\desktop`，打包是 `...\guji\_internal\desktop`——同一构建
 稳定不变，两个构建互不相同。
+
+#### `activate_existing_window(title: str) -> bool`
+
+把已有实例的窗口恢复并带到前台。找不到（返回 False）也不影响退出。
+
+⚠️ **只在窗口被最小化时才用 SW_RESTORE**。``SW_RESTORE`` 的语义是"把最小化
+**或最大化**的窗口还原到原始尺寸"，主窗口默认就是最大化（见 app.py 的
+WINDOW_START_MAXIMIZED），一律 SW_RESTORE 会让"再点一次快捷方式"变成
+"把窗口缩回去"——用户会以为程序自己变小了。非最小化一律 SW_SHOW。
 
 ---
 
@@ -5546,6 +5558,69 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 ``items`` 传字符串序列时只填显示文案；传 ``(文案, 值)`` 二元组序列时
 值写进 ``itemData``，读出用 ``currentData()``。``width`` 非空则固定宽度
 （用于节点行这类需要横向对齐的窄列）。
+
+---
+
+## `desktop.ui.window_size`
+
+源码：[`desktop/ui/window_size.py`](../../desktop/ui/window_size.py)
+
+窗口尺寸适配：把「默认尺寸」夹进当前屏幕的可用区域，并摆到合适位置。
+
+背景（2026-10-01 用户报障「不最大化就显示不完整 / 被任务栏遮挡」）：
+窗口尺寸一直是**逻辑像素的固定值**（主窗口 1440×920），既不看屏幕、也不看
+系统缩放。实测这台机器 1920×1080 @125% → 逻辑屏 1536×864，减去任务栏后
+**可用高度只有 824**：920 > 824，窗口底部（日志状态条、第四步按钮）永远
+压在任务栏后面，非最大化下够不着。1366×768 或 150%/175% 缩放的机器更紧，
+可用区域甚至**小于窗口的最小尺寸**——那种情况下用户连拖小都做不到。
+
+规则（**只夹不涨**，屏幕够大时与改动前逐像素一致）：
+
+1. 期望宽高先扣掉**窗口边框预留**（标题栏那 30 逻辑像素不算在客户端尺寸里，
+   不扣就会出现"客户端刚好等于屏幕、却仍被标题栏顶出去"），再各夹到可用区域的
+   :data:`FIT_RATIO`；
+2. 最小宽高**跟着夹**——否则"可用高 672 < 最小高 720"时窗口被卡死，
+   用户没有任何办法把它缩进屏幕；
+3. 位置也一并摆好：有可见父窗口的弹窗居中到父窗口（Qt 的默认观感，这里
+   显式写出来才夹得住），顶层窗口居中到屏幕可用区域；居中与夹紧都按**含边框**
+   的外框尺寸算，最后再把外框夹回可用区域，免得 1440 宽的窗口在 1536 宽的屏
+   上被系统摆出半截。
+
+⚠️ 两个必须守住的边界：
+
+- **只在构造那一刻算一次**，不做持续约束（不装事件过滤器、不重写
+  ``resizeEvent``）。自测与截图脚本会显式 ``resize()`` 到指定尺寸
+  （``tests/gui_shot.py``、``tests/selftests/_context.py``），持续夹紧会让
+  它们拿到别的尺寸，护栏随即失真。
+- 拿不到屏幕信息时**原样返回、不做任何猜测**：宁可维持旧行为，也不要凭空
+  给一个尺寸（离屏/无头环境下 ``primaryScreen()`` 可能为空）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| FIT_RATIO | `0.95` |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `available_area(reference=None) -> QRect \| None` | 参考控件所在屏幕的**可用区域**（已扣除任务栏）；拿不到返回 None。 |
+| `fit_sizes(preferred: QSize, minimum: QSize \| None, area: QRect \| None) -> tuple[QSize, QSize \| None]` | 把期望尺寸与最小尺寸夹进 ``area``，返回 (客户端尺寸, 最小尺寸)。 |
+| `apply_window_size(window, preferred: QSize, minimum: QSize \| None=None) -> QSize` | 把 ``window`` 设成「期望尺寸夹进屏幕可用区域」的样子，返回最终尺寸。 |
+
+#### `fit_sizes(preferred: QSize, minimum: QSize | None, area: QRect | None) -> tuple[QSize, QSize | None]`
+
+把期望尺寸与最小尺寸夹进 ``area``，返回 (客户端尺寸, 最小尺寸)。
+
+纯函数（不碰 Qt 控件），便于直接断言边界；``area`` 为空时原样返回。
+
+#### `apply_window_size(window, preferred: QSize, minimum: QSize | None=None) -> QSize`
+
+把 ``window`` 设成「期望尺寸夹进屏幕可用区域」的样子，返回最终尺寸。
+
+调用点全是各窗口 ``__init__`` 里原本写 ``resize()`` / ``setMinimumSize()``
+的位置，一行换一行。
 
 ---
 

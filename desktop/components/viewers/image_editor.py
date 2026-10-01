@@ -71,7 +71,7 @@ import math
 import time
 
 from PySide6.QtCore import (
-    QLineF, QPointF, QRect, QRectF, QSizeF, Qt, QTimer, Signal,
+    QLineF, QPointF, QRect, QRectF, QSize, QSizeF, Qt, QTimer, Signal,
 )
 from PySide6.QtGui import (
     QBrush, QColor, QFont, QImage, QKeySequence, QFontMetrics,
@@ -93,6 +93,7 @@ from qfluentwidgets import FluentIcon as FIF
 from desktop.ui import theme as T
 from desktop.ui.color_picker import ColorPickerButton
 from desktop.ui.fonts import text_font_families
+from desktop.ui.window_size import apply_window_size
 # ⚠️ utils.cage_warp 的 numpy 是**函数内延迟导入**的，模块级 import 不会
 #    把 numpy 拖进 GUI 主进程的启动路径（与 desktop/services/rembg_live 同口径）。
 from utils.cage_warp import (
@@ -2111,6 +2112,14 @@ class EditorCanvas(QGraphicsView):
 
 
 # ------------------------------------------------------------------ 弹窗
+#: 图片编辑弹窗的**期望**尺寸与最小尺寸（逻辑像素）。落地前一律经
+#: ``apply_window_size`` 夹进屏幕可用区域，所以这两个值是"上限"而不是承诺
+#: （1920×1080 @125% 的机器上可用高只有 824，940 会被任务栏吃掉一截）。
+#: 自测按这两个常量算期望值，别再在测试里写死 1440×940。
+EDITOR_SIZE = QSize(1440, 940)
+EDITOR_MIN_SIZE = QSize(1000, 680)
+
+
 class ImageEditorDialog(QDialog):
     """图片编辑弹窗：顶部工具/选项行 + 中央画布 + 底部状态行。
 
@@ -2127,8 +2136,10 @@ class ImageEditorDialog(QDialog):
         self.setModal(True)
         # 编辑要看得清字迹：默认开大，并带最小化/最大化按钮（标题栏双击
         # 最大化也随 maximize 按钮生效），用户 20:18 定
-        self.resize(1440, 940)
-        self.setMinimumSize(1000, 680)
+        # ✳️ 但默认尺寸与最小尺寸都要先夹进屏幕可用区域：1440×940 / 1000×680
+        # 在 1920×1080 @125%（逻辑可用 1536×824）下都会被任务栏吃掉一截，
+        # 高缩放的笔记本上最小尺寸甚至比可用区域还大、用户连拖小都做不到。
+        apply_window_size(self, EDITOR_SIZE, EDITOR_MIN_SIZE)
         # ⚠️ 显式设置窗口旗标时必须把 CloseButtonHint 一并给上：只给
         #    min/max 不给 close，Windows 标题栏的关闭按钮会失效（用户报障
         #    "编辑弹窗关闭按钮不生效"，2026-10-01）。

@@ -30,8 +30,8 @@
    工具选项行在主工具栏下方；
 8. **窗口旗标**：最小化/最大化/关闭按钮齐备（缺 CloseButtonHint 时
    Windows 上关闭按钮失效，用户报障过）；
-9. **预览弹窗接线**：有「编辑」按钮、宽度 ≥ 1280（放得下按钮）、
-   无图禁用/有图可用、``_open_editor`` 拿到画布整图；
+9. **预览弹窗接线**：有「编辑」按钮、宽度取满（理想 1360，超出屏幕时夹进
+   可用区域）、无图禁用/有图可用、``_open_editor`` 拿到画布整图；
 10. **编辑结果写回画布**：``_edit_image`` 走的通道（set_image）会替换画布图。
 """
 from __future__ import annotations
@@ -122,13 +122,36 @@ def run(ctx) -> None:
            and dialog.canvas.image.height() == 120, "")
 
         # ---- 弹窗开大 + 最小化/最大化/关闭按钮 + 工具按钮选中高亮 ----
-        ok("弹窗：默认开大（≥1360×900）并带最小化/最大化/关闭按钮",
-           dialog.width() >= 1360 and dialog.height() >= 900
+        # ⚠️ 期望 1440×940 只是**上限**：落地尺寸会被 apply_window_size 夹进
+        #    屏幕可用区域（1920×1080 @125% 的机器可用高只有 824）。这里按同
+        #    一个公式算期望值，既守住"默认开大"，也守住"不许顶出屏幕"。
+        from desktop.components.viewers.image_editor import (
+            EDITOR_MIN_SIZE, EDITOR_SIZE,
+        )
+        from desktop.ui.window_size import (
+            FRAME_ALLOWANCE, FIT_RATIO, available_area,
+        )
+
+        area = available_area(dialog)
+        expect_w = min(EDITOR_SIZE.width(),
+                       int((area.width() - FRAME_ALLOWANCE.width()) * FIT_RATIO))
+        expect_h = min(EDITOR_SIZE.height(),
+                       int((area.height() - FRAME_ALLOWANCE.height()) * FIT_RATIO))
+        ok("弹窗：默认开大（1440×940，超出屏幕时夹进可用区域）并带"
+           "最小化/最大化/关闭按钮",
+           dialog.width() == expect_w and dialog.height() == expect_h
+           and dialog.width() <= area.width()
+           and dialog.height() + FRAME_ALLOWANCE.height() <= area.height()
            and bool(dialog.windowFlags() & Qt.WindowMinimizeButtonHint)
            and bool(dialog.windowFlags() & Qt.WindowMaximizeButtonHint)
            and bool(dialog.windowFlags() & Qt.WindowCloseButtonHint),
-           f"size={dialog.width()}x{dialog.height()} "
+           f"size={dialog.width()}x{dialog.height()} 期望={expect_w}x{expect_h} "
+           f"可用区={area.width()}x{area.height()} "
            f"flags={hex(int(dialog.windowFlags()))}")
+        ok("弹窗：最小尺寸也被夹进可用区域（小屏上仍能拖到放得下）",
+           dialog.minimumWidth() <= min(EDITOR_MIN_SIZE.width(), dialog.width())
+           and dialog.minimumHeight() <= min(EDITOR_MIN_SIZE.height(), dialog.height()),
+           f"min={dialog.minimumWidth()}x{dialog.minimumHeight()}")
         ok("工具栏：工具按钮是 ToggleButton（选中态有主色高亮），"
            "裁剪/变换/变形/擦除/文字五个",
            all(type(dialog._tool_buttons[k]).__name__ == "ToggleButton"
@@ -1110,8 +1133,19 @@ def run(ctx) -> None:
     try:
         ok("预览弹窗：工具条上有「编辑」按钮",
            getattr(zoom, "edit_btn", None) is not None, "")
-        ok("预览弹窗：宽度 ≥ 1280（放得下编辑按钮）",
-           zoom.width() >= 1280, f"width={zoom.width()}")
+        # 期望 1360 宽（一行摆得下缩放/朝向/翻页/打印/下载/编辑），但落地尺寸
+        # 会先被夹进屏幕可用区域——按同一个公式算期望值，别写死 1280。
+        from desktop.components.viewers.image_zoom_dialog import ZOOM_DIALOG_SIZE
+        from desktop.ui.window_size import (
+            FRAME_ALLOWANCE, FIT_RATIO, available_area,
+        )
+
+        zoom_area = available_area(zoom)
+        zoom_w = min(ZOOM_DIALOG_SIZE.width(),
+                     int((zoom_area.width() - FRAME_ALLOWANCE.width()) * FIT_RATIO))
+        ok("预览弹窗：宽度取满（理想 1360，超出屏幕时夹进可用区域）",
+           zoom.width() == zoom_w and zoom.width() <= zoom_area.width(),
+           f"width={zoom.width()} 期望={zoom_w} 可用区={zoom_area.width()}")
         ok("预览弹窗：无图时编辑按钮禁用", not zoom.edit_btn.isEnabled(), "")
         zoom.canvas.set_image(make_image(64, 48))
         zoom._sync_controls()

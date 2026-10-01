@@ -25,6 +25,8 @@ import sys
 _MUTEX_PREFIX = "Local\\GujiZhiZuo-Desktop-"
 _ERROR_ALREADY_EXISTS = 183
 _SW_RESTORE = 9
+#: 原样显示（不改尺寸/状态），用于"已经最大化或普通状态"的已有窗口。
+_SW_SHOW = 5
 
 #: 持有的互斥体句柄。**必须**被模块级引用持有：句柄一旦被回收，互斥体即销毁，
 #: 单例守卫随之失效（直到进程退出才释放，正合需求）。
@@ -72,7 +74,13 @@ def acquire(identity: str) -> bool:
 
 
 def activate_existing_window(title: str) -> bool:
-    """把已有实例的窗口恢复并带到前台。找不到（返回 False）也不影响退出。"""
+    """把已有实例的窗口恢复并带到前台。找不到（返回 False）也不影响退出。
+
+    ⚠️ **只在窗口被最小化时才用 SW_RESTORE**。``SW_RESTORE`` 的语义是"把最小化
+    **或最大化**的窗口还原到原始尺寸"，主窗口默认就是最大化（见 app.py 的
+    WINDOW_START_MAXIMIZED），一律 SW_RESTORE 会让"再点一次快捷方式"变成
+    "把窗口缩回去"——用户会以为程序自己变小了。非最小化一律 SW_SHOW。
+    """
     if sys.platform != "win32":
         return False
 
@@ -84,10 +92,12 @@ def activate_existing_window(title: str) -> bool:
     user32.FindWindowW.restype = wintypes.HWND
     user32.ShowWindow.argtypes = [wintypes.HWND, wintypes.INT]
     user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+    user32.IsIconic.argtypes = [wintypes.HWND]
+    user32.IsIconic.restype = wintypes.BOOL
 
     hwnd = user32.FindWindowW(None, title)
     if not hwnd:
         return False
-    user32.ShowWindow(hwnd, _SW_RESTORE)
+    user32.ShowWindow(hwnd, _SW_RESTORE if user32.IsIconic(hwnd) else _SW_SHOW)
     user32.SetForegroundWindow(hwnd)
     return True

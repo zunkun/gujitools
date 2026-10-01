@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import os
 
-from PySide6.QtCore import QSettings, Qt, QThread, Signal
+from PySide6.QtCore import QSettings, QSize, Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QDialog, QHBoxLayout, QLabel, QTextEdit, QVBoxLayout, QWidget,
 )
@@ -30,6 +30,7 @@ from qfluentwidgets import CheckBox, PrimaryPushButton, PushButton, SubtitleLabe
 
 from desktop.ui import theme as T
 from desktop.ui.fonts import ui_font
+from desktop.ui.window_size import apply_window_size
 from utils.font_setup import (
     InstallResult, check_cjk_font, install_cjk_fonts, install_plan,
     manual_install_text,
@@ -81,7 +82,10 @@ class FontFixDialog(QDialog):
 
         self.setWindowTitle("缺少中文字体")
         self.setModal(True)
-        self.resize(760, 620)
+        # ⚠️ 缺字体引导框可能在**任何**屏幕上弹出来（包括还没进主界面的
+        # 低分屏/高缩放屏），高度同样要按可用区域夹住，否则"暂时跳过"按钮
+        # 会掉到任务栏后面，用户被卡在这一步。
+        apply_window_size(self, QSize(760, 620))
         self.setStyleSheet(f"QDialog {{ background: {T.CANVAS}; }}")
 
         box = QVBoxLayout(self)

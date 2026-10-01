@@ -39,6 +39,7 @@ from qfluentwidgets import FluentIcon as FIF
 
 from desktop.ui import theme as T
 from desktop.ui.widgets import apply_to
+from desktop.ui.window_size import apply_window_size
 from desktop.workers import WorkerHost, connect_queued
 
 #: 缩放档位。按档位走而不是连续乘：按钮连点不会累积浮点漂移，步长也可预期
@@ -552,6 +553,13 @@ class ZoomableCanvas(QGraphicsView):
         self._scene.setSceneRect(rect.adjusted(-pad_x, -pad_y, pad_x, pad_y))
 
 
+#: 图片预览弹窗的**期望**尺寸（逻辑像素）：1360 起，工具条一行摆了缩放/朝向/
+#: 翻页/打印/下载/编辑十几个控件，1120 时「编辑」会被挤到翻页组旁边贴成一团
+#: （用户 19:20 报"宽度放不下编辑按钮"）。这是上限，落地前会按屏幕可用区域
+#: 夹紧（见 apply_window_size）。
+ZOOM_DIALOG_SIZE = QSize(1360, 860)
+
+
 class ImageZoomDialog(QDialog, WorkerHost):
     """图片预览弹窗：拖拽平移、滚轮/按钮缩放、翻转旋转、下载、翻页。"""
 
@@ -578,7 +586,10 @@ class ImageZoomDialog(QDialog, WorkerHost):
         # ⚠️ 1360 起：工具条一行摆了缩放/朝向/翻页/打印/下载/编辑十几个
         # 控件，1120 时「编辑」会被挤到翻页组旁边贴成一团（用户 19:20 报
         # "宽度放不下编辑按钮"）。宽度给足，配合 addStretch 兜底。
-        self.resize(1360, 860)
+        # 但"给足"要让位于屏幕：1920×1080 @125% 的机器可用高只有 824，
+        # 860 会顶到任务栏后面（用户报「不最大化显示不完整」），统一交给
+        # apply_window_size 夹一次（只夹不涨，大屏上仍是 1360×860）。
+        apply_window_size(self, ZOOM_DIALOG_SIZE)
         # ⚠️ QDialog 默认标题栏**只有关闭（和帮助）**，没有最小化/最大化——
         # 用户找不到「还原」入口、双击标题栏也没反应（17:08 截图报障）。
         # 补上 min/max 提示后：右上角有最小化/最大化按钮，双击标题栏 =

@@ -4,7 +4,7 @@
 from __future__ import annotations
 import os
 import sys
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget, QWidget
 from PySide6.QtGui import QIcon
 from qfluentwidgets import setTheme, Theme
@@ -13,10 +13,32 @@ from desktop.store import TaskStore
 from desktop.ui import theme as T
 from desktop.utils.icon import rounded_window_icon
 from desktop.ui.style import apply_app_style
+from desktop.ui.window_size import apply_window_size
 from desktop.utils.files import package_dir
 
 #: 主窗口标题（单例守卫按它找已有实例的窗口，见 desktop/single_instance.py）
 WINDOW_TITLE = "古籍重製"
+
+#: 主窗口**期望**尺寸与最小尺寸（逻辑像素）。**只是期望**：真正落地前会按屏幕
+#: 可用区域夹一次（见 desktop/ui/window_size.py），否则 1920×1080 @125% 的
+#: 机器上 920 高会顶到任务栏后面去。截图脚本也复用这两个常量，别再写一份。
+#:
+#: 因为默认启动即最大化（见 WINDOW_START_MAXIMIZED），这两个值的实际角色是
+#: **还原尺寸**：用户点标题栏的「还原」按钮/双击标题栏时落到的大小。
+WINDOW_SIZE = QSize(1440, 920)
+WINDOW_MIN_SIZE = QSize(1080, 720)
+
+#: 启动时是否直接最大化（用户 2026-10-01 定：「我这个 1920 的屏幕默认就占满
+#: 屏幕吧，现在默认宽度跟 1920 差不了多少，最大化最小化没什么意义」）。
+#:
+#: 理由成立：夹紧后的默认宽度已经是可用宽度的 94%（1536 → 1440），留的那 96px
+#: 除了露出桌面什么用都没有；而本程序四个步骤的界面都是"越大越好"，用户开机
+#: 十有八九第一件事就是按最大化。索性直接给。
+#:
+#: ⚠️ 保留了还原尺寸（WINDOW_SIZE）与最小尺寸（WINDOW_MIN_SIZE），所以「还原」
+#: 依旧有意义——最大化不等于把窗口定死。这也是**只影响主窗口**的开关：图片
+#: 预览/编辑/拼版选图等弹窗一律不最大化（用户明确要的是"程序"占满屏幕）。
+WINDOW_START_MAXIMIZED = True
 
 
 class MainWindow(QMainWindow):
@@ -37,8 +59,10 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle(WINDOW_TITLE)
-        self.resize(1440, 920)
-        self.setMinimumSize(1080, 720)
+        # 期望 1440×920 / 最小 1080×720，但**先按屏幕可用区域夹一次**：
+        # 1920×1080 @125% 的机器逻辑可用高只有 824，直接上 920 会让窗口底部
+        # （日志状态条、第四步按钮）永远压在任务栏后面，非最大化就够不着。
+        apply_window_size(self, WINDOW_SIZE, WINDOW_MIN_SIZE)
 
         # ========== 加载窗口图标 desktop/static/icon.png ==========
         # 打包后 desktop/ 是 PYZ 内字节码，磁盘上无此路径，改从
@@ -240,7 +264,12 @@ def main() -> int:
             return 0
 
     window = MainWindow()
-    window.show()
+    # 默认占满屏幕（见 WINDOW_START_MAXIMIZED）；夹紧后的 WINDOW_SIZE 是还原
+    # 尺寸。冒烟模式仍走 show()：无头环境不该依赖窗口管理器对最大化的处理。
+    if WINDOW_START_MAXIMIZED and not os.environ.get("GUJI_GUI_SELFTEST"):
+        window.showMaximized()
+    else:
+        window.show()
     # 列表数据推迟到窗口显示之后的**下一拍**：TaskListPage 首次渲染要建每行的
     # 控件、还要读各任务的 runs.json（实测 ~74 ms），放在 show() 之前等于推迟
     # 窗口出现。先给用户一个空壳窗口，再填内容。

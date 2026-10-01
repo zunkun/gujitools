@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 
 from qframelesswindow import FramelessDialog
-from PySide6.QtCore import QPoint, QRectF, Qt, QTimer, Signal
+from PySide6.QtCore import QPoint, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QImageReader, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
     QFrame, QGridLayout, QHBoxLayout, QLabel, QScrollArea, QStackedWidget,
@@ -31,6 +31,7 @@ from qfluentwidgets import CheckBox, PrimaryPushButton, PushButton
 from desktop.services.imposition import SOURCE_FULL, classify_source
 from desktop.ui import theme as T
 from desktop.ui.widgets import apply_to
+from desktop.ui.window_size import apply_window_size
 
 #: 弹窗缩略图的**固定框**（源图按比例缩进这个框，白底居中）
 THUMB_W, THUMB_H = 156, 196
@@ -290,7 +291,9 @@ class ImpositionPickerDialog(FramelessDialog):
         # append 模式（单图页「新增图片」）：标题与确认按钮换文案
         self.setWindowTitle("新增图片" if self._mode == "append" else "选择拼版")
         self.setModal(True)
-        self.resize(DIALOG_W, DIALOG_H)
+        # 默认 1000×680 是**期望值**：1366×768 @125%（逻辑可用约 1093×574）
+        # 之类的机器上 680 高会顶出屏幕，统一按可用区域夹一次。
+        apply_window_size(self, QSize(DIALOG_W, DIALOG_H))
         self._setup_title_bar()
 
         column = QVBoxLayout(self)
