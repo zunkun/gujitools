@@ -55,15 +55,20 @@ def is_dark(color) -> bool:
 
 
 def run(ctx) -> None:
+    import math
+
     from PySide6.QtCore import QPointF, QRectF, Qt
     from PySide6.QtGui import QColor
 
     from tests.selftests._context import ok
 
     from desktop.components.viewers.image_editor import (
-        ERASER_DEFAULT, ImageEditorDialog, TextBlockItem, bake_transform,
+        CAGE_FIT_RATIO, CAGE_PER_SIDE_DEFAULT, CAGE_PREVIEW_PIXELS,
+        CAGE_PREVIEW_SETTLE_PIXELS, CAGE_REACH_CHOICES, ERASER_DEFAULT,
+        ImageEditorDialog, TextBlockItem, bake_transform, cage_preview_scale,
         clamp_rect, draw_text, rotate_about, scale_about, shear_about,
     )
+    from utils.cage_warp import deform_qimage, warp_region
 
     # ---- 1. clamp_rect ----
     bounds = QRectF(0, 0, 100, 80)
@@ -124,11 +129,12 @@ def run(ctx) -> None:
            and bool(dialog.windowFlags() & Qt.WindowCloseButtonHint),
            f"size={dialog.width()}x{dialog.height()} "
            f"flags={hex(int(dialog.windowFlags()))}")
-        ok("工具栏：工具按钮是 ToggleButton（选中态有主色高亮），拉伸已移除",
+        ok("工具栏：工具按钮是 ToggleButton（选中态有主色高亮），"
+           "裁剪/变换/变形/擦除/文字五个",
            all(type(dialog._tool_buttons[k]).__name__ == "ToggleButton"
                for k in dialog._tool_buttons)
-           and set(dialog._tool_buttons) == {"crop", "transform", "erase",
-                                             "text"}
+           and set(dialog._tool_buttons) == {"crop", "transform", "cage",
+                                             "erase", "text"}
            and dialog._tool_buttons["crop"].isChecked()
            and not dialog._tool_buttons["erase"].isChecked(),
            f"tools={sorted(dialog._tool_buttons)} "
@@ -813,6 +819,286 @@ def run(ctx) -> None:
                f"undo={len(dialog5._undo)} before={undo_before}")
         finally:
             dialog5.deleteLater()
+
+        # ---- 变形：GIMP「变换笼」（拖节点 → 笼内跟着走、笼外一动不动） ----
+        cimg = make_image(200, 120)
+        for x in range(100, 130):      # 笼内左上角的黑块（会被扯走）
+            for y in range(20, 50):
+                cimg.setPixel(x, y, 0xFF000000)
+        for x in range(40, 60):        # 笼外的标记块（必须一动不动）
+            for y in range(20, 50):
+                cimg.setPixel(x, y, 0xFF000000)
+        dialog6 = ImageEditorDialog(None, cimg)
+        try:
+            canvas6 = dialog6.canvas
+            dialog6._set_tool("cage")
+            nodes = canvas6.cage_polygon() or []
+            ok("变形：进入工具自动生成覆盖整幅的矩形笼（4 节点）、无待应用形变",
+               canvas6._tool == "cage" and len(nodes) == 4
+               and canvas6.cage_pending() is None
+               and canvas6.cage_density() == CAGE_PER_SIDE_DEFAULT,
+               f"节点 {len(nodes)} 个，pending="
+               f"{canvas6.cage_pending() is not None}")
+
+            from qfluentwidgets import ComboBox as _Combo
+            from qfluentwidgets import PushButton as _Push
+
+            texts = [b.text() for b in dialog6._option_page.findChildren(_Push)]
+            combos = dialog6._option_page.findChildren(_Combo)
+            ok("变形：选项行有「重画笼 / 重置 / 应用变形」与「把手疏密」「影响范围」两个下拉",
+               {"重画笼", "重置", "应用变形"} <= set(texts)
+               and len(combos) == 2 and {c.count() for c in combos} == {3},
+               f"按钮={texts} 下拉项数={[c.count() for c in combos]}")
+            ok("变形：「影响范围」默认最紧凑（拖动距离的 2.5 倍），可切三档",
+               canvas6.cage_reach() == 0 and len(CAGE_REACH_CHOICES) == 3
+               and CAGE_REACH_CHOICES[0][0] == 2.5, "")
+
+            canvas6.set_cage_density(2)
+            ok("变形：节点疏密 2 段 → 8 个节点（四角 + 四边中点）",
+               len(canvas6.cage_polygon() or []) == 8,
+               f"节点 {len(canvas6.cage_polygon() or [])} 个")
+            canvas6.set_cage_density(1)
+
+            dialog6.show()
+            app.processEvents()
+            app.processEvents()
+            ok("变形：节点圆点与笼顶点一一对应、位置对齐（悬停/拖动看圆点大小）",
+               len(canvas6._cage_dots) == 4
+               and all(item.isVisible() for item in canvas6._cage_dots)
+               and all((item.rect().center() - point).manhattanLength() < 1e-6
+                       for item, point
+                       in zip(canvas6._cage_dots, canvas6.cage_polygon())),
+               f"圆点 {len(canvas6._cage_dots)} 个")
+            ok("变形：没拖动过就不画\"原位虚影\"（两条线完全重合时画出来是糊的）",
+               not canvas6._cage_ghost.isVisible()
+               and canvas6._cage_poly.isVisible(), "")
+
+            # 进「变形」时图片不铺满视口：四周留白，好把把手往图外拖
+            # （用户 2026-10-01：图片宽高不要铺满整个操作 canvas 区域）
+            dialog6._set_tool("crop")
+            canvas6.fit()
+            app.processEvents()
+            full_zoom6 = canvas6._zoom
+            dialog6._set_tool("cage")
+            app.processEvents()
+            ok("变形：进这个工具时图片不铺满视口（四周留出可操作空间）",
+               full_zoom6 > 0
+               and abs(canvas6._zoom / full_zoom6 - CAGE_FIT_RATIO) < 0.03,
+               f"铺满 {full_zoom6:.4f} → 留白 {canvas6._zoom:.4f}"
+               f"（比值 {canvas6._zoom / full_zoom6:.3f}，期望 {CAGE_FIT_RATIO}）")
+            dialog6._set_tool("crop")
+            ok("变形：切走工具后恢复铺满视口",
+               abs(canvas6._zoom / full_zoom6 - 1.0) < 0.03,
+               f"切走后 {canvas6._zoom:.4f}")
+            dialog6._set_tool("cage")
+            app.processEvents()
+
+            # 把手能拖到图片**外面**：往外拖＝拉伸（用户报过"只能向内，不能向外"）
+            canvas6.cage_move_node(0, QPointF(-40.0, -30.0))
+            outside6 = canvas6.cage_polygon()[0]
+            ok("变形：把手能拖到图片外面（往外拖＝拉伸，不再被夹回图边）",
+               outside6.x() < 0 and outside6.y() < 0
+               and canvas6.cage_pending() is not None,
+               f"把手落在 ({outside6.x():.1f}, {outside6.y():.1f})")
+            canvas6.reset_cage()
+            # 但也不能被甩到天外（留了一个"一张图那么远"的宽松上限）
+            canvas6.cage_move_node(0, QPointF(-9999.0, -9999.0))
+            far6 = canvas6.cage_polygon()[0]
+            ok("变形：往外拖有宽松上限（防止把手被甩丢，再也找不回来）",
+               -400.0 < far6.x() <= 0.0 and -400.0 < far6.y() <= 0.0,
+               f"拖到 -9999 实得 ({far6.x():.1f}, {far6.y():.1f})")
+            canvas6.reset_cage()
+
+            # 「重置 / 重画笼 / 应用变形」清掉预览，也必须把节流时间戳一起清零，
+            # 否则紧接着拖的第一次会被 CAGE_PREVIEW_INTERVAL 吃掉——用户刚重置完
+            # 拖半天没反应，松手才突然跳出来（真实踩到）
+            canvas6.cage_move_node(0, QPointF(-30.0, -20.0))
+            ok("变形：「重置」后立刻拖第一次就能出画（不被预览节流吃掉）",
+               canvas6._cage_item is not None,
+               f"预览浮层={'有' if canvas6._cage_item is not None else '无'}")
+            canvas6.reset_cage()
+
+            # 采用一个局部笼（罩住笼内黑块），把左上角节点往右下扯
+            canvas6.adopt_cage([(100, 20), (190, 20), (190, 110), (100, 110)])
+            ok("变形：adopt_cage 立笼（原位 = 当前位置，形变从零开始）",
+               canvas6.cage_pending() is None
+               and len(canvas6.cage_polygon()) == 4, "")
+
+            def cview(scene: QPointF) -> QPointF:
+                return QPointF(canvas6.mapFromScene(scene))
+
+            corner6 = cview(QPointF(100, 20))
+            ok("变形：悬停到节点上命中（顶点上也能抓着）",
+               canvas6._hit_cage_node(corner6) == 0,
+               f"hit={canvas6._hit_cage_node(corner6)}")
+            canvas6.mousePressEvent(mouse_event("press", corner6))
+            ok("变形：按下节点进入拖动状态（不是移动整幅）",
+               canvas6._mode == ("cage", 0), f"mode={canvas6._mode}")
+            drag_to = cview(QPointF(124, 40))
+            canvas6.mouseMoveEvent(mouse_event("move", drag_to))
+            pending = canvas6.cage_pending()
+            ok("变形：拖把手即产生待应用形变 + 显示像素预览浮层",
+               pending is not None and canvas6._cage_item is not None
+               and canvas6._cage_ghost.isVisible(), "")
+            canvas6.mouseReleaseEvent(mouse_event("release", drag_to))
+            ok("变形：松手后模式复位、预览保留（松手的是最终结果）",
+               canvas6._mode is None and canvas6._cage_item is not None, "")
+            home6, moved6 = canvas6.cage_pending()
+            others = [moved6[i] for i in (1, 2, 3)]
+            expected6 = [(190.0, 20.0), (190.0, 110.0), (100.0, 110.0)]
+            ok("变形：只有被拖的把手动了，其余把手原地不动",
+               abs(moved6[0][0] - 124) < 1.5 and abs(moved6[0][1] - 40) < 1.5
+               and all(abs(a[0] - b[0]) < 1e-6 and abs(a[1] - b[1]) < 1e-6
+                       for a, b in zip(others, expected6)),
+               f"被拖把手 {moved6[0]}")
+            # 影响半径 = 实际拖动距离 × 倍数：拖动距离要取**落点**算，不能写名义上的
+            # (24, 20)——视图↔场景映射会取整，写死数字会让断言差之毫厘地红
+            reach6 = math.hypot(moved6[0][0] - home6[0][0], moved6[0][1] - home6[0][1])
+            ok("变形：影响半径 = 拖动距离 × 「影响范围」倍数",
+               abs(canvas6.cage_influence()
+                   - reach6 * CAGE_REACH_CHOICES[0][0]) < 1e-6,
+               f"拖了 {reach6:.2f}px → 影响半径 {canvas6.cage_influence():.2f}px")
+            bounds6 = warp_region(home6, moved6, canvas6.cage_influence(),
+                                  width=200, height=120)
+            ok("变形：预览浮层贴在**影响范围的框**上（框外原图直接透出）",
+               abs(canvas6._cage_item.pos().x() - bounds6[0]) < 3
+               and abs(canvas6._cage_item.pos().y() - bounds6[1]) < 3
+               and bounds6[0] > 30,
+               f"pos={canvas6._cage_item.pos()} region={bounds6}")
+
+            # 预览分辨率规则（纯函数钉死）：清晰度与成本取小
+            span = 4000 * 3000
+            ok("变形：预览分辨率 = min(屏幕清晰度, 成本上限)",
+               cage_preview_scale(100, 100, 1.0, 200_000) == 1.0
+               and cage_preview_scale(400, 400, 0.1, 200_000) == 0.1
+               and abs(cage_preview_scale(4000, 3000, 0.36, CAGE_PREVIEW_PIXELS)
+                       - (CAGE_PREVIEW_PIXELS / span) ** 0.5) < 1e-9
+               and abs(cage_preview_scale(4000, 3000, 1.0,
+                                          CAGE_PREVIEW_SETTLE_PIXELS)
+                       - (CAGE_PREVIEW_SETTLE_PIXELS / span) ** 0.5) < 1e-9,
+               f"整页拖动={cage_preview_scale(4000, 3000, 0.36, CAGE_PREVIEW_PIXELS):.3f} "
+               f"松手={cage_preview_scale(4000, 3000, 1.0, CAGE_PREVIEW_SETTLE_PIXELS):.3f}")
+
+            # 应用：内容随笼子走、笼外一动不动、压一个撤销点、笼留在原地
+            snapshot6 = canvas6.image.copy()
+            polygon6 = [(p.x(), p.y()) for p in canvas6.cage_polygon()]
+            undo_before6 = len(dialog6._undo)
+            dialog6._commit_cage()
+            baked6 = dialog6.canvas.image
+            inside_changed = any(
+                baked6.pixelColor(x, y).rgba() != snapshot6.pixelColor(x, y).rgba()
+                for y in range(0, 120, 2) for x in range(0, 200, 2))
+            outside = [
+                (x, y) for y in range(0, 120, 2) for x in range(0, 200, 2)
+                if not (bounds6[0] <= x < bounds6[2]
+                        and bounds6[1] <= y < bounds6[3])
+            ]
+            outside_same = all(
+                baked6.pixelColor(x, y).rgba() == snapshot6.pixelColor(x, y).rgba()
+                for x, y in outside)
+            ok("变形：应用后把手附近像素真的变了、影响范围外逐字节不动",
+               inside_changed and outside_same and baked6.size() == snapshot6.size(),
+               f"范围内变化={inside_changed} 范围外 {len(outside)} 点全同={outside_same}")
+            # 用户 2026-10-01 报的核心问题：拖一个点会"从其他节点拉出折线"。
+            # 这几个采样点里有其余把手那一带，必须**完全不沾**。
+            far6 = [(5, 5), (5, 60), (5, 115), (40, 90), (188, 108), (192, 112)]
+            far_same6 = all(baked6.pixelColor(x, y).rgba()
+                            == snapshot6.pixelColor(x, y).rgba()
+                            for x, y in far6)
+            ok("变形：远处（含其余把手那一带）逐字节不动（不再整笼都被带歪）",
+               far_same6 and outside_same,
+               f"远端 {len(far6)} 点全同={far_same6} / 框外全同={outside_same}")
+            ok("变形：应用压一个撤销点、待应用状态清掉",
+               len(dialog6._undo) == undo_before6 + 1
+               and dialog6.canvas.cage_pending() is None,
+               f"undo={len(dialog6._undo)} before={undo_before6}")
+            ok("变形：应用后笼留在原地（接着微调同一块，不用重新圈）",
+               [(p.x(), p.y()) for p in dialog6.canvas.cage_polygon()]
+               == polygon6, "")
+            dialog6._undo_now()
+            ok("变形：撤销回到形变前（整图逐字节一致）",
+               all(dialog6.canvas.image.pixelColor(x, y).rgba()
+                   == snapshot6.pixelColor(x, y).rgba()
+                   for y in range(0, 120, 2) for x in range(0, 200, 2)),
+               f"undo={len(dialog6._undo)}")
+
+            # 点笼线就地加点：顶点 +1，且形变逐字节不变（MVC 的边参数插值）
+            canvas6.adopt_cage([(100, 20), (190, 20), (190, 110), (100, 110)])
+            canvas6.cage_move_node(0, QPointF(130, 50))
+            base_home, base_moved = canvas6.cage_pending()
+            source6 = canvas6.image
+            before6 = deform_qimage(source6, base_home, base_moved)
+            edge_view = cview(QPointF(190, 65))    # 右边（节点 1→2）中点
+            index6 = canvas6._insert_cage_node(edge_view)
+            grew_home, grew_moved = canvas6.cage_pending()
+            after6 = deform_qimage(source6, grew_home, grew_moved)
+            added_same = all(
+                after6.pixelColor(x, y).rgba() == before6.pixelColor(x, y).rgba()
+                for y in range(0, 120, 3) for x in range(0, 200, 3))
+            ok("变形：点笼线就地加节点（GIMP 同款）——顶点 +1 且形变逐字节不变",
+               index6 == 2 and len(grew_moved) == len(base_moved) + 1
+               and added_same,
+               f"新节点下标={index6} 顶点 {len(base_moved)} → {len(grew_moved)} "
+               f"形变不变={added_same}")
+
+            # 手绘笼：逐点点击、点回起点闭合；Esc 放弃
+            canvas6.reset_cage()
+            ok("变形：「重置」丢掉未应用的形变（笼回到覆盖整幅的矩形）",
+               canvas6.cage_pending() is None
+               and len(canvas6.cage_polygon() or []) == 4, "")
+            canvas6.begin_cage_draw()
+            ok("变形：进入手绘笼（十字光标、不再显示节点）",
+               canvas6.is_drawing_cage()
+               and canvas6.viewport().cursor().shape()
+               == Qt.CursorShape.CrossCursor, "")
+            for point in (QPointF(30, 30), QPointF(120, 20), QPointF(110, 100)):
+                canvas6.mousePressEvent(mouse_event("press", cview(point)))
+            ok("变形：逐点点击累加顶点（未闭合前不产生笼）",
+               len(canvas6._cage_drawing or []) == 3
+               and canvas6._cage_poly.path().elementCount() >= 3, "")
+            canvas6.mousePressEvent(mouse_event(
+                "press", cview(QPointF(30, 30))))     # 点回起点 = 闭合
+            drawn = canvas6.cage_polygon() or []
+            ok("变形：点回起点闭合手绘笼（3 个顶点，形变从零开始）",
+               not canvas6.is_drawing_cage()
+               and len(drawn) == 3 and canvas6.cage_pending() is None,
+               f"顶点 {len(drawn)} 个")
+            canvas6.begin_cage_draw()
+            drawn_before = canvas6.cage_polygon()
+            dialog6._escape()
+            ok("变形：画笼中按 Esc 只放弃这次手绘、不关弹窗（关窗=丢全部编辑）",
+               not canvas6.is_drawing_cage() and dialog6.isVisible()
+               and canvas6.cage_polygon() == drawn_before, "")
+
+            # 「重画笼」：先把已拖的形变落地，再进手绘（否则重画即丢形变）
+            canvas6.cage_move_node(0, QPointF(60, 40))
+            undo_before6b = len(dialog6._undo)
+            dialog6._begin_cage_draw()
+            ok("变形：「重画笼」先把已有形变落地再进手绘（不给用户丢工作）",
+               len(dialog6._undo) == undo_before6b + 1
+               and canvas6.is_drawing_cage()
+               and canvas6.cage_pending() is None, "")
+            canvas6.cancel_cage_draw()
+
+            # 切走工具自动烘焙（与变换、文字同款口径：不留"未落地"的编辑）
+            canvas6.cage_move_node(0, QPointF(120, 40))
+            snapshot6b = dialog6.canvas.image.copy()
+            undo_before6c = len(dialog6._undo)
+            dialog6._set_tool("crop")
+            baked6b = dialog6.canvas.image
+            ok("变形：切走工具自动烘焙未应用的形变（压撤销点、像素真的变了）",
+               len(dialog6._undo) == undo_before6c + 1
+               and dialog6.canvas._tool == "crop"
+               and any(baked6b.pixelColor(x, y).rgba()
+                       != snapshot6b.pixelColor(x, y).rgba()
+                       for y in range(0, 120, 2) for x in range(0, 200, 2)),
+               f"undo={len(dialog6._undo)} before={undo_before6c}")
+
+            dialog6._escape()
+            ok("变形：非画笼时 Esc 仍是原行为（关闭弹窗 = 放弃本次编辑）",
+               not dialog6.isVisible(), "")
+        finally:
+            dialog6.deleteLater()
     finally:
         dialog.deleteLater()
     app.processEvents()

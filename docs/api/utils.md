@@ -4,7 +4,7 @@
 
 通用工具函数：几何、排序、图像 IO、PDF、YOLO
 
-覆盖 22 个模块、11 个公开类、119 个公开函数/方法（生成于 2026-10-01）。
+覆盖 23 个模块、11 个公开类、129 个公开函数/方法（生成于 2026-10-01）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -14,6 +14,7 @@
 | --- | --- | --- |
 | [`utils.box_draw`](#utilsbox_draw) | 0 | 6 |
 | [`utils.box_geometry`](#utilsbox_geometry) | 2 | 9 |
+| [`utils.cage_warp`](#utilscage_warp) | 0 | 10 |
 | [`utils.color_utils`](#utilscolor_utils) | 0 | 2 |
 | [`utils.file_utils`](#utilsfile_utils) | 0 | 4 |
 | [`utils.font_scan`](#utilsfont_scan) | 0 | 4 |
@@ -295,6 +296,166 @@ desktop/workers/preview_worker.compose_region_output 的几何完全等价，
 
 返回:
     OutputLayout（单一画布）。
+
+---
+
+## `utils.cage_warp`
+
+源码：[`utils/cage_warp.py`](../../utils/cage_warp.py)
+
+变换笼（cage transform）：拖笼上的把手 → **局部**光滑形变。
+
+口径（2026-10-01 用户定）
+------------------------
+- 笼是一圈**把手**（节点）。拖哪个把手，只有它**附近**的像素跟着走，
+  远处的像素**逐字节一动不动**。
+- 影响随距离平滑衰减到 0（"像扯弹簧"：作用点变化大，远端几乎不动），
+  而且是 **C² 光滑**的——不会沿笼边拉出生硬的折痕。
+- 向内拖＝压缩，向外拖＝拉伸，两个方向都行。
+- ⚠️ 与 GIMP 原版的差别：GIMP 的笼是"**笼内整体一起走**"（全局 Green
+  Coordinates / MVC），拖一个角会把整笼带动、从其余顶点拉出折痕。本项目
+  按用户要求改成**局部**影响（2026-10-01 用户反馈："选择一点向内拖会从
+  其他节点生出折线……应该尽可能影响局部，尽量少影响距离远的节点"）。
+
+算法：紧支撑 RBF 位移场
+----------------------
+把每个**被拖过的**把手当作一个约束点：目标位置 ``mᵢ`` 处的像素要取源位置
+``hᵢ`` 的像素，即位移 ``qᵢ = hᵢ − mᵢ``。取 **Wendland** 核
+
+    φ(r) = (1 − r)⁴ (4r + 1)   (r < 1)，  核外恒为 0
+
+插值：``s(p) = p + Σⱼ wⱼ φ(|p − mⱼ| / R)``，``w`` 由 ``Φw = q`` 解出
+（``Φᵢⱼ = φ(|mᵢ − mⱼ|/R)``，把手数 ≤ 十几个，小线性方程组微秒级）。
+
+四条性质是"手感"与"可断言"的关键，都有自测钉死：
+
+1. **精确插值**：``s(mᵢ) = hᵢ``——把手处的像素严格跟着把手走。
+2. **紧支撑 ⇒ 局部**：``|p − mⱼ| ≥ R`` 时 ``φ ≡ 0``，于是 ``s(p) = p``，
+   影响半径外**逐字节等于原图**。这就是"拖一个点只动附近"的来源。
+3. **只有被拖过的把手进方程组**：没动过的把手（含"在笼线上新加的点"）
+   不构成约束，所以**加点仍然逐字节中性**。
+4. **恒等即原图**：所有把手都没动 ⇒ 直接 return 原数组的副本。
+
+``R``（影响半径）由 :func:`influence_radius` 决定：取用户给的半径，再抬到
+**保证位移场不折叠**的下限——位移场梯度量级是 ``|φ'|max·Σ|wⱼ| / R``，超过 1
+就会自交（实测表现为"漩涡"）。半径过小 + 拖得过远必然自交，这条下限把
+它挡在门外；越界的请求会被**自动放宽半径**，宁可影响大一点也不能出乱纹。
+
+性能
+----
+与全局 MVC 不同，**工作区域只有影响半径那么大**：整页 4000×3000 的图拖一个
+把手，也只算 ``(2R)²`` 那一小块。瓶颈始终是**逐像素重采样**，不是求场
+（稀格求场恒在毫秒级）——实测拆解（本机 2026-10-01，整页 4000×3000）：
+
+=================  ==========
+源坐标场（稀格）      <5ms
+场采样到全分辨率     1.2s
+双线性取样           1.9s
+**合计**            **3.1s**
+=================  ==========
+
+所以桌面侧仍然**降分辨率出预览**（``CAGE_PREVIEW_SCALE``）、只在落地时走
+全分辨率；而局部影响让"要算的面积"从整幅缩到半径平方，预览几乎必然跟手。
+
+几何约定
+--------
+- 全部用**图片像素坐标**，y 向下（与 QImage 一致）；像素中心取整数坐标。
+- ``cage_src`` = 把手原位，``cage_dst`` = 把手当前位置；两序列**一一对应**，
+  闭合顺序，顺/逆时针都可以。
+
+⚠️ numpy 一律**延迟导入**：桌面主进程要 import 本模块（只为拿函数引用），
+启动路径不能因此背上 numpy 的加载成本。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| FIELD_MAX | `40000` |
+| COINCIDENT | `1e-06` |
+| _RADIUS_FLOOR | `2.5` |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `perimeter_cage(rect, per_side: int=2)` | 矩形 ``rect`` = ``(x0, y0, x1, y1)`` → **沿周长均匀取样**的闭合把手序列。 |
+| `wendland(r)` | Wendland **C²** 紧支撑核：``r < 1`` 时 ``(1−r)⁴(4r+1)``，否则 ``0``。 |
+| `influence_radius(cage_src, cage_dst, influence=None) -> float` | 当前这组拖动需要的**影响半径**（用户下限 + 防自交下限），没动过则 0。 |
+| `moved_handles(cage_src, cage_dst, influence=None)` | 把"被拖过的把手"整理成 ``(把手当前位置, RBF 权重, 影响半径)``。 |
+| `warp_region(cage_src, cage_dst, influence=None, *, width: int, height: int)` | 这次拖动**实际会改动的矩形区域**（图片坐标，开区间右端）。 |
+| `cage_moved(cage_src, cage_dst, epsilon: float=1e-06) -> bool` | 两个笼是否有实质差别（区分"真变形"与"动过手但没挪"）。 |
+| `deform(src, cage_src, cage_dst, *, influence=None, fill=FILL, step: int \| None=None, block: int=BLOCK_PIXELS, bounds=None)` | 按「把手 ``cage_src`` → 把手 ``cage_dst``」形变 ``src``，返回**同尺寸**新数组。 |
+| `qimage_to_rgba(image)` | QImage → ``(H, W, 4)`` uint8 **RGBA**（ARGB32 在小端机器上是 B,G,R,A）。 |
+| `array_to_qimage(rgb)` | ``(H, W, 3\|4)`` uint8 → QImage（ARGB32）；3 通道按不透明处理。 |
+| `deform_qimage(image, cage_src, cage_dst, *, influence=None, fill=None)` | QImage 版 :func:`deform`（整幅同尺寸，**保留 alpha 通道**）。 |
+
+#### `perimeter_cage(rect, per_side: int=2)`
+
+矩形 ``rect`` = ``(x0, y0, x1, y1)`` → **沿周长均匀取样**的闭合把手序列。
+
+``per_side`` = 每条边分成几段。1 → 只有四个角；2 → 四角 + 四边中点（8 点）。
+
+沿周长取样是为了得到一圈"绳子"上均匀的**结**：把手只在周长上，拖动
+某个结时它的邻居距离一致，手感均匀。内部再多铺点也不会算错（算法只用
+把手位置，不看多边形形状），只是没必要。
+
+#### `wendland(r)`
+
+Wendland **C²** 紧支撑核：``r < 1`` 时 ``(1−r)⁴(4r+1)``，否则 ``0``。
+
+选它而不是高斯：高斯处处非零（影响永远不为 0，"局部"就成了近似），
+紧支撑才让"半径外逐字节不动"成为**可断言**的性质；而多项式形式没有
+指数运算，在几十万格点上比高斯还便宜。
+
+#### `influence_radius(cage_src, cage_dst, influence=None) -> float`
+
+当前这组拖动需要的**影响半径**（用户下限 + 防自交下限），没动过则 0。
+
+单独暴露出来是为了让画布知道"该重算多大一块"——省得为了拿一个数字
+把整张图跑一遍。
+
+#### `moved_handles(cage_src, cage_dst, influence=None)`
+
+把"被拖过的把手"整理成 ``(把手当前位置, RBF 权重, 影响半径)``。
+
+没动过（或两个笼形状不一致）→ ``None``。**只有真的动过的把手**进方程
+组，所以"在笼线上加一个点"不会改变形变（自测有这个断言）。
+
+#### `warp_region(cage_src, cage_dst, influence=None, *, width: int, height: int)`
+
+这次拖动**实际会改动的矩形区域**（图片坐标，开区间右端）。
+
+画布侧的预览浮层就贴在这个框上（框外逐字节等于原图，直接透出底图即可，
+既不浪费也不会有接缝）。纯 Python + numpy 基础运算，不加载重型依赖。
+
+#### `deform(src, cage_src, cage_dst, *, influence=None, fill=FILL, step: int | None=None, block: int=BLOCK_PIXELS, bounds=None)`
+
+按「把手 ``cage_src`` → 把手 ``cage_dst``」形变 ``src``，返回**同尺寸**新数组。
+
+逐像素语义：
+
+1. 落在**影响半径内** → 按位移场反查源坐标、双线性采样（内容跟着把手走）；
+2. 半径外 → **原样不动**（位移场在那里恒等于 0，见模块文档「算法」）；
+3. 采样点被拉到**画布外** → 填 ``fill``（小端 RGBA 时给 4 元组）。
+
+``src`` 支持 (H, W) 与 (H, W, C)。``influence`` 是影响半径（图片像素，
+缺省由位移量自动定，见 :func:`moved_handles`）；``step`` 是位移场的格距
+（缺省按 :data:`FIELD_MAX` 自适应）；``bounds`` 可显式指定处理范围。
+
+#### `qimage_to_rgba(image)`
+
+QImage → ``(H, W, 4)`` uint8 **RGBA**（ARGB32 在小端机器上是 B,G,R,A）。
+
+⚠️ 必须把 alpha 带上。桌面侧编辑的常常是第三步产物"**白底透明 PNG**"：
+透明像素的 RGB 分量存的是 0，一旦只取 RGB 丢掉 alpha，整片背景就读成
+**黑色**（用户 2026-10-01 报的"变形后图片变成黑色"就是这个）。
+
+#### `deform_qimage(image, cage_src, cage_dst, *, influence=None, fill=None)`
+
+QImage 版 :func:`deform`（整幅同尺寸，**保留 alpha 通道**）。
+
+不透明图走 3 通道（比 4 通道少 1/4 的采样量）；带 alpha 的图走 4 通道，
+越界填充取 :data:`FILL_CLEAR`（白 + 透明），免得透明底变实心。
 
 ---
 

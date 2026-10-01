@@ -15,6 +15,7 @@
 - `color_utils`: 颜色 'r,g,b' 解析（非法值抛错，不静默降级为黑）。
 - `margin_utils`: 边距 CSS 简写标准化（单/两/三/四值 → [上,右,下,左]）。
 - `transparent_png`: 白底 → 透明底的 PNG 编码（第三步提交产物专用，自带最省形态选择）。
+- `cage_warp`: 变换笼（GIMP 口径）的局部形变算法——紧支撑 RBF 位移场 + 稀格求场（numpy 延迟导入）。
 - `help`: man 风格帮助文本加载与分页显示。
 
 `color_utils` 与 `margin_utils` 位于最低层，供 core 与 functions 共用，

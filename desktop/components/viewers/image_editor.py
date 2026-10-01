@@ -7,7 +7,7 @@
 **原子覆盖原图片文件**；虚拟预览（区域合成/打印重排/PDF 页）没有文件
 可回写，维持"满意用「下载」落盘、翻页/关窗即丢弃"的旧行为。
 
-四个工具的行为口径：
+五个工具的行为口径：
 
 - **裁剪**：**默认选中整幅图**，沿四边/四角**任意位置**向内拖收边（整条
   边都是命中带，不只手柄小方块）、拖框中间移动；松手后**视图自动适配新
@@ -22,10 +22,29 @@
   浮层显示）；「应用变换」（或切走工具/「完成」）才烘焙进像素——原
   区域填白、只把选区内容按仿射矩阵画回去，画布尺寸不变，**区域外的
   像素一动不动**。一批一个撤销点。
+- **变形**（局部光滑形变，处理古籍褶皱/卷曲）：画面上有一个**一圈把手的笼**
+  （默认＝覆盖选区的矩形，把手疏密在选项行选 4/8/12 点），**拖某个把手**，
+  只有它**附近**的像素跟着走 —— **近处变化大、远处几乎不动**（"像扯弹簧"），
+  影响范围**之外**的像素逐字节一动不动。影响范围＝拖动距离的倍数，
+  选项行「影响范围」可选紧凑/适中/宽松；
+  **点笼线**可就地加一个把手（加完即可拖；加上去不改变形变），
+  「重画笼」可手绘任意闭合区域（逐点点击、点回起点闭合、画笼中 Esc 放弃）。
+  把手**可以拖到图片外面**（往外拉＝把那块内容往外拉伸）。
+  ⚠️ 刻意**不是** GIMP 原版那种"笼内整体一起走"的全局形变：那样拖一个角会把
+  整笼拉斜、从其余顶点扯出折痕（用户 2026-10-01 报过），改为局部影响。
+  拖动即实时预览（只算影响范围那一小块 + 按屏幕清晰度降采样，见
+  :func:`cage_preview_scale`），松手补一帧更清楚的；「应用变形」（或切走
+  工具/「完成」）才烘焙进像素（有等待光标）。
+  ⚠️ 「应用变形」后**笼留在原地**（``adopt_cage``）：古籍褶皱往往要来回试
+  几次，每次都回到全幅矩形笼的话用户得重新圈一遍。
+  算法与口径见 ``utils/cage_warp.py``。
+  ⚠️ 进这个工具时图片**不铺满视口**（:data:`CAGE_FIT_RATIO`），四周留白
+  方便把把手往图外拖。
 - **擦除**：按住左键涂抹把污点**擦成白底**（古籍页面去污点就是涂白）；
   直径在选项行可调；光标处有**实圈指示**，直径恒等于实际擦除直径
   （所见即所擦）。一笔一个撤销点。
-  （原「拉伸」与笔刷配色已按用户 2026-10-01 要求移除。）
+  （原「拉伸」与笔刷配色已按用户 2026-10-01 要求移除；同日按 GIMP
+  变换笼方案重新实现为上面的「变形」。）
 - **文字**：点击落点 → 画布上**就地输入**（光标可见，点已有块可继续
   编辑）→ 选项行可调字体 family / 字号 / **颜色选择器**（对整块即时
   生效，样式是段落属性，与手机作图App同口径）→ 鼠标悬停在文字上出现
@@ -47,20 +66,23 @@
 """
 from __future__ import annotations
 
+import contextlib
 import math
+import time
 
 from PySide6.QtCore import (
-    QLineF, QPointF, QRectF, QSizeF, Qt, QTimer, Signal,
+    QLineF, QPointF, QRect, QRectF, QSizeF, Qt, QTimer, Signal,
 )
 from PySide6.QtGui import (
     QBrush, QColor, QFont, QImage, QKeySequence, QFontMetrics,
-    QPainter, QPen, QPixmap, QPolygonF, QShortcut, QTransform,
+    QPainter, QPainterPath, QPen, QPixmap, QPolygonF, QShortcut, QTransform,
 )
 from PySide6.QtWidgets import (
-    QDialog, QFrame, QGraphicsEllipseItem, QGraphicsItem,
-    QGraphicsLineItem, QGraphicsPixmapItem, QGraphicsPolygonItem,
-    QGraphicsRectItem, QGraphicsScene, QGraphicsTextItem, QGraphicsView,
-    QHBoxLayout, QLabel, QVBoxLayout, QWidget,
+    QApplication, QDialog, QFrame, QGraphicsEllipseItem, QGraphicsItem,
+    QGraphicsLineItem, QGraphicsPathItem, QGraphicsPixmapItem,
+    QGraphicsPolygonItem, QGraphicsRectItem, QGraphicsScene,
+    QGraphicsTextItem, QGraphicsView, QHBoxLayout, QLabel, QVBoxLayout,
+    QWidget,
 )
 from qfluentwidgets import (
     CaptionLabel, CheckBox, ComboBox, PrimaryPushButton, PushButton,
@@ -71,6 +93,12 @@ from qfluentwidgets import FluentIcon as FIF
 from desktop.ui import theme as T
 from desktop.ui.color_picker import ColorPickerButton
 from desktop.ui.fonts import text_font_families
+# ⚠️ utils.cage_warp 的 numpy 是**函数内延迟导入**的，模块级 import 不会
+#    把 numpy 拖进 GUI 主进程的启动路径（与 desktop/services/rembg_live 同口径）。
+from utils.cage_warp import (
+    cage_moved, deform_qimage as deform_cage_image,
+    perimeter_cage, warp_region,
+)
 
 #: 撤销栈深度（步）。每步是整图快照，大图下是拿内存换的。
 UNDO_LIMIT = 12
@@ -116,11 +144,48 @@ TEXT_SWATCHES = (
     ("赭黄", "#8d6e63"),
     ("黛绿", "#2e7d32"),
 )
+#: 「变形」矩形笼的默认节点疏密（每条边分几段）。
+CAGE_PER_SIDE_DEFAULT = 1
+#: 可选的节点疏密：1 → 4 点（四角）/ 2 → 8 点 / 3 → 12 点。
+CAGE_PER_SIDE_CHOICES = (1, 2, 3)
+#: 「影响范围」档位 = **拖动距离的倍数**（决定形变的影响半径）。
+#: 下限 2.5 是 ``utils/cage_warp`` 的防自交下限（半径太小 + 拖太远必然把
+#: 像素扯出漩涡），所以档位从 2.5 起；倍数越大越"牵连"周围。
+#: 用户 2026-10-01 定：默认要"尽量少影响距离远的节点"，所以默认取最紧凑的
+#: 上一档。真正的半径换算见 ``EditorCanvas.cage_influence``。
+CAGE_REACH_CHOICES = ((2.5, "紧凑"), (4.0, "适中"), (7.0, "宽松"))
+CAGE_REACH_DEFAULT = 0
+#: 进「变形」时图片占视口的比例——**四周留出可操作空间**。
+#: 用户 2026-10-01：图片宽高不要铺满整个操作区（笼节点要能往图外拖，
+#: 越靠边越需要留白；也免得笼线贴着控件边缘不好抓）。
+CAGE_FIT_RATIO = 0.8
+#: 笼节点的视觉直径与命中直径（视图像素）——命中圈比视觉略大，好抓。
+CAGE_NODE_VIEW_PX = 11.0
+CAGE_HIT_VIEW_PX = 9.0
+#: 手绘笼时：点到第一个节点的这个视觉距离内 = 闭合多边形。
+CAGE_CLOSE_VIEW_PX = 14.0
+#: 拖动中**像素预览**的工作分辨率上限（像素）。
+#: 形变是逐像素重映射：整页 4000×3000 全分辨率一次要 **3 秒**（实测拆解见
+#: ``utils/cage_warp`` 的模块文档）。⚠️ 形变现在是**局部**的——只算影响半径
+#: 那么大的区域（拖 60px 就是 249×234）——所以这个上限只在"影响范围调宽 +
+#: 缩着看整页"时才会碰到。
+#: 20 万像素 ≈ 0.06s，配 :data:`CAGE_PREVIEW_INTERVAL` 的节拍留出一半
+#: 时间去响应/重绘覆盖层（笼线每帧都跟手）。
+CAGE_PREVIEW_PIXELS = 200_000
+#: **松手后**重算预览的分辨率上限（像素）。松手是"停下来看结果"的时刻，
+#: 按屏幕分辨率算（见 :func:`cage_preview_scale`）就够清楚，但别放开到
+#: 全分辨率——整页笼在 100% 缩放下那是 3 秒。250 万像素 ≈ 0.6s，
+#: 而局部形变（几十万像素）本来就是全分辨率。
+CAGE_PREVIEW_SETTLE_PIXELS = 2_500_000
+#: 像素预览重算的最小间隔（秒）。一次重映射是 0.06s 量级，不节流的话每个
+#: move 事件都会阻塞界面；笼的**覆盖层**（笼线 + 节点）不受此限，每帧都跟手。
+CAGE_PREVIEW_INTERVAL = 0.12
 
 #: 左侧工具栏：（键, 图标, 中文名）
 TOOLS = (
     ("crop", FIF.CUT, "裁剪"),
     ("transform", FIF.MOVE, "变换"),
+    ("cage", FIF.LAYOUT, "变形"),
     ("erase", FIF.ERASE_TOOL, "擦除"),
     ("text", FIF.FONT, "文字"),
 )
@@ -190,6 +255,56 @@ def bake_transform(image: QImage, rect: QRectF, xf: QTransform,
     return result
 
 
+def bake_cage(image: QImage, cage_src, cage_dst, influence=None) -> QImage:
+    """把「把手 ``cage_src`` → 把手 ``cage_dst``」的形变烘焙进图片（尺寸不变）。
+
+    与 :func:`bake_transform` 同口径：**影响半径之外**的像素逐字节不动，
+    只是这里不是仿射矩阵而是逐像素重映射（见 ``utils.cage_warp``）。
+    ⚠️ **保留 alpha**：桌面侧编辑的常常是第三步产物「白底透明 PNG」，
+    丢掉 alpha 会让整片透明背景变成不透明黑（用户 2026-10-01 报过）。
+    """
+    return deform_cage_image(image, cage_src, cage_dst, influence=influence)
+
+
+def cage_preview_scale(span_x: float, span_y: float,
+                       on_screen: float = 1.0,
+                       budget_pixels: float = CAGE_PREVIEW_PIXELS) -> float:
+    """拖动预览的降采样倍率：清晰度与成本的**取小**。
+
+    两个约束：
+
+    1. **清晰度**：``on_screen`` = 场景 1 单位对应多少**设备像素**
+       （= 当前缩放 × dpr）。预览取到这个倍率时，预览图上的 1 像素正好
+       落在屏幕 1 设备像素上——看着与原图一样清楚，再取大就是纯浪费。
+    2. **成本**：处理面积不超过 ``budget_pixels``。
+
+    缩到 1/3 看整页时清晰度约束直接给出 1/3：比按成本算还省 9 倍工作量，
+    而且屏幕上看不出区别（这正是"预览"该有的样子）。
+
+    ``budget_pixels`` 由调用方按场合给：拖动中给
+    :data:`CAGE_PREVIEW_PIXELS`（要跟手），松手后给
+    :data:`CAGE_PREVIEW_SETTLE_PIXELS`（停下来看结果，宁可慢一点也要清楚）。
+    """
+    area = max(1.0, float(span_x) * float(span_y))
+    budget = math.sqrt(float(budget_pixels) / area)
+    return max(1e-3, min(1.0, float(on_screen), budget))
+
+
+@contextlib.contextmanager
+def wait_cursor():
+    """耗时操作期间挂等待光标。
+
+    ⚠️ 必须 ``processEvents`` 一下，否则光标要等界面回到事件循环才换，
+    而那时的等待已经结束了（等于没挂）。调用方负责别在里面重入。
+    """
+    QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+    QApplication.processEvents()
+    try:
+        yield
+    finally:
+        QApplication.restoreOverrideCursor()
+
+
 def draw_text(image: QImage, pos: QPointF, text: str, px: int,
               color: QColor, family: str | None = None) -> QImage:
     """在 ``pos``（文字块左上角）画文字（可多行，行距 1.25 倍）；空文本原样返回。
@@ -218,15 +333,42 @@ def draw_text(image: QImage, pos: QPointF, text: str, px: int,
     return result
 
 
-def _dist_to_segment(p: QPointF, a: QPointF, b: QPointF) -> float:
-    """点到线段的最短距离（视图像素口径的边命中带用）。"""
+def _as_point(point) -> QPointF:
+    """``QPointF`` / ``(x, y)`` 元组都收。
+
+    笼相关接口两边都可能传（``cage_pending`` 给的是元组、覆盖层给的是
+    ``QPointF``），强制调用方记两套只会踩坑。
+    """
+    if isinstance(point, QPointF):
+        return QPointF(point)
+    return QPointF(float(point[0]), float(point[1]))
+
+
+def _project_on_segment(p: QPointF, a: QPointF, b: QPointF):
+    """``p`` 在线段 ``ab`` 上的**投影点**与参数 ``t``（0=起点、1=终点）。
+
+    笼边上就地加节点时用：新节点要**精确落在笼线上**（不是落在鼠标像素
+    上），否则加点本身就会带来亚像素位移，"加点不改变形变"这条性质就
+    不成立了。
+    """
     ab = b - a
     length_sq = ab.x() * ab.x() + ab.y() * ab.y()
-    if length_sq < 1e-9:
-        return QLineF(p, a).length()
+    if length_sq < 1e-12:
+        return (QPointF(a), 0.0)
     t = max(0.0, min(1.0, (
         (p.x() - a.x()) * ab.x() + (p.y() - a.y()) * ab.y()) / length_sq))
-    return QLineF(p, a + ab * t).length()
+    return (a + ab * t, t)
+
+
+def _segment_hit(p: QPointF, a: QPointF, b: QPointF) -> tuple[float, float]:
+    """点到线段的**最短距离**与**落点参数** ``t``（0=起点、1=终点）。"""
+    point, t = _project_on_segment(p, a, b)
+    return (QLineF(p, point).length(), t)
+
+
+def _dist_to_segment(p: QPointF, a: QPointF, b: QPointF) -> float:
+    """点到线段的最短距离（视图像素口径的边命中带用）。"""
+    return _segment_hit(p, a, b)[0]
 
 
 class TextBlockItem(QGraphicsTextItem):
@@ -354,6 +496,8 @@ class EditorCanvas(QGraphicsView):
         #: ⚠️ 没有它，弹窗刚打开（布局未定）时 fit 算出的脏尺寸会把大图
         #: 缩成指甲盖大小且再也不修正（用户截图报过）。
         self._user_zoomed = False
+        #: 「适应窗口」时图片占视口的比例（1.0 = 铺满；见 set_fit_ratio）
+        self._fit_ratio = 1.0
         self._rect: QRectF | None = None          # 当前选区（图片坐标）
         self._mode: tuple | None = None           # 进行中的拖拽
         self._hover_handle: str | None = None     # 悬停/拖动中的手柄（光标+高亮）
@@ -382,6 +526,25 @@ class EditorCanvas(QGraphicsView):
         self._paint_image: QImage | None = None
         #: 变换内容的浮层（跟随 _xf 实时变形，烘焙语义与预览一致）
         self._float_item: QGraphicsPixmapItem | None = None
+        # ---- 「变形」（变换笼）状态 ----
+        #: 笼的**原始位置**（拖动前），形变映射的左端
+        self._cage_home: list[QPointF] | None = None
+        #: 笼的**当前节点位置**（拖动后），映射的右端
+        self._cage: list[QPointF] | None = None
+        #: 矩形笼的节点疏密（每边几段）
+        self._cage_per_side = CAGE_PER_SIDE_DEFAULT
+        #: 「影响范围」档位（CAGE_REACH_CHOICES 的下标；换算见 cage_influence）
+        self._cage_reach = CAGE_REACH_DEFAULT
+        #: 手绘笼进行中的顶点（None = 不在画笼模式）
+        self._cage_drawing: list[QPointF] | None = None
+        #: 手绘笼时的"皮筋"端点（鼠标位置，图片坐标）——点下一个点之前
+        #: 先看到线会连到哪，落点才准
+        self._cage_cursor = QPointF()
+        #: 悬停/拖动中的笼节点下标
+        self._cage_node: int | None = None
+        #: 像素预览浮层 + 上次重算的时刻（节流用，见 _refresh_cage_preview）
+        self._cage_item: QGraphicsPixmapItem | None = None
+        self._cage_painted_at = 0.0
         self.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setBackgroundBrush(QColor(T.SURFACE_SOFT))
@@ -408,8 +571,11 @@ class EditorCanvas(QGraphicsView):
         # 换图后文字块/变换预览都失效，一并清掉（应用/撤销/还原都走这里）
         self.clear_text_blocks()
         self._clear_transform_preview()
+        self._clear_cage_preview()
         self._xf = QTransform()
         self._xf_touched = False
+        self._cage_drawing = None
+        self._cage_node = None
         if self._item is not None:
             self._scene.removeItem(self._item)
             self._item = None
@@ -429,11 +595,13 @@ class EditorCanvas(QGraphicsView):
         self._item = item
         self.setSceneRect(item.boundingRect())
         self.fit()
-        if self._tool in ("crop", "transform"):
+        if self._tool in ("crop", "transform", "cage"):
             # 换图（应用/撤销/还原都走这里）后选区重新默认全选：
             # 裁剪/变换的语义都是"从当前原图出发"，不是沿用旧图上的框
             self._rect = QRectF(self.image_rect())
             self._xf_pivot = self._rect.center()
+        if self._tool == "cage":
+            self._reset_cage_geometry()
         self._sync_overlay()
 
     def refresh(self) -> None:
@@ -458,21 +626,27 @@ class EditorCanvas(QGraphicsView):
 
     # ------------------------------------------------------------ 工具
     def set_tool(self, tool: str) -> None:
-        """切换工具：裁剪/变换默认全选，其余清选区、换光标。"""
+        """切换工具：裁剪/变换/变形默认全选，其余清选区、换光标。"""
         self._tool = tool
         self._mode = None
         self._clear_transform_preview()
+        self._clear_cage_preview()
+        self._cage_drawing = None
+        self._cage_node = None
         self._xf = QTransform()
         self._xf_touched = False
         self._xf_reshape = False  # 调整范围是勾选态，换工具即复位
         self._hide_text_outline()
         if tool != "erase":
             self._hide_eraser_ring()
-        if tool in ("crop", "transform") and not self.image_rect().isNull():
+        if tool in ("crop", "transform", "cage") \
+                and not self.image_rect().isNull():
             self._rect = QRectF(self.image_rect())
             self._xf_pivot = self._rect.center()
         else:
             self._rect = None
+        if tool == "cage":
+            self._reset_cage_geometry()
         self._sync_overlay()
         self._sync_cursor()
 
@@ -714,6 +888,243 @@ class EditorCanvas(QGraphicsView):
             self._xf = shear_about(
                 QPointF(rect.left(), anchor_y), sh, 0.0) * x_start
 
+    # ------------------------------------------------------------ 变形（变换笼）
+    # 口径与算法见 utils/cage_warp.py 的模块文档。画布这边只负责：
+    #   ① 维护"笼原位 / 笼当前位置"两组顶点；
+    #   ② 拖动时按 CAGE_PREVIEW_PIXELS 降采样出**像素预览**（全分辨率太慢）；
+    #   ③ 覆盖层（笼线 + 节点）每帧跟手，覆盖层本身不碰像素。
+    def cage_density(self) -> int:
+        """矩形笼当前的节点疏密（每边几段）。"""
+        return self._cage_per_side
+
+    def set_cage_density(self, per_side: int) -> None:
+        """改矩形笼的疏密：按当前选区重建笼（已拖动的节点位置丢弃）。"""
+        self._cage_per_side = max(1, int(per_side))
+        self.reset_cage()
+
+    def cage_reach(self) -> int:
+        """「影响范围」档位下标（见 :data:`CAGE_REACH_CHOICES`）。"""
+        return self._cage_reach
+
+    def set_cage_reach(self, index: int) -> None:
+        """改「影响范围」：只影响**之后的**拖动，不必丢掉已有的形变。"""
+        self._cage_reach = max(0, min(len(CAGE_REACH_CHOICES) - 1, int(index)))
+
+    def cage_influence(self) -> float | None:
+        """把「影响范围」档位换算成**绝对影响半径**（图片像素）；没动过则 None。
+
+        档位记的是"拖动距离的倍数"而不是固定像素，是为了让手感一致：拖得远，
+        受影响的面积自然大一点，但**相对比例不变**——这正是"像扯弹簧"该有的
+        样子（近处变化大、远端几乎不动）。倍数下限由 ``utils.cage_warp`` 的
+        防自交判据把着，真给太小也会被自动放宽。
+        """
+        if self._cage is None or self._cage_home is None:
+            return None
+        reach = 0.0
+        for home, moved in zip(self._cage_home, self._cage):
+            reach = max(reach, QLineF(home, moved).length())
+        if reach <= 0.0:
+            return None
+        return reach * CAGE_REACH_CHOICES[self._cage_reach][0]
+
+    def _reset_cage_geometry(self) -> None:
+        """（不发信号）把笼重置成覆盖当前选区的矩形，原位=当前位置。"""
+        # 笼被重建了，旧笼算出来的预览浮层已经没有意义（它是按旧笼的
+        # 外接框裁的图），必须一并撤掉——留着就是一坨错位的像素
+        self._clear_cage_preview()
+        if self.image_rect().isNull():
+            self._cage = None
+            self._cage_home = None
+            return
+        rect = (self._rect or self.image_rect()).normalized()
+        points = perimeter_cage(
+            (rect.left(), rect.top(), rect.right(), rect.bottom()),
+            self._cage_per_side)
+        self._cage_home = [QPointF(x, y) for x, y in points]
+        self._cage = [QPointF(point) for point in self._cage_home]
+
+    def reset_cage(self) -> None:
+        """「重置」：笼回到覆盖当前选区的默认矩形，丢掉未应用的形变。"""
+        self._clear_cage_preview()
+        self._cage_drawing = None
+        self._cage_node = None
+        self._reset_cage_geometry()
+        self._sync_overlay()
+        self._sync_cursor()
+
+    def is_drawing_cage(self) -> bool:
+        """是否正处在「重画笼」的手绘状态。"""
+        return self._cage_drawing is not None
+
+    def begin_cage_draw(self) -> None:
+        """进入手绘笼（GIMP 的「创建或调整笼」）：逐点点击圈区域。"""
+        self._clear_cage_preview()
+        self._cage_drawing = []
+        self._cage_cursor = QPointF()
+        self._cage_node = None
+        self._sync_overlay()
+        self._sync_cursor()
+
+    def cancel_cage_draw(self) -> None:
+        """放弃手绘，保留原来的笼（若它已被拖动，预览一并恢复）。"""
+        if self._cage_drawing is None:
+            return
+        self._cage_drawing = None
+        self._sync_overlay()
+        self._sync_cursor()
+        self._refresh_cage_preview(force=True)
+
+    def _close_cage(self) -> None:
+        """闭合手绘多边形，把它变成新的笼（原位=当前位置，形变从零开始）。"""
+        points = list(self._cage_drawing or [])
+        if len(points) < 3:
+            return
+        self._cage_drawing = None
+        self._cage_node = None
+        self._cage_home = [QPointF(point) for point in points]
+        self._cage = [QPointF(point) for point in points]
+        self._clear_cage_preview()
+        self._sync_overlay()
+        self._sync_cursor()
+
+    def cage_pending(self):
+        """未应用的笼形变 ``(笼原位, 笼当前位置)``（(x, y) 元组列表）；无则 None。"""
+        if self._cage is None or self._cage_home is None:
+            return None
+        if len(self._cage) < 3 or len(self._cage) != len(self._cage_home):
+            return None
+        home = [(point.x(), point.y()) for point in self._cage_home]
+        moved = [(point.x(), point.y()) for point in self._cage]
+        if not cage_moved(home, moved):
+            return None
+        return (home, moved)
+
+    def cage_move_node(self, index: int, pos: QPointF) -> None:
+        """把第 ``index`` 个笼把手拖到 ``pos``（图片坐标）。
+
+        ⚠️ **允许拖到图片外面**（用户 2026-10-01：「任意点只能向内，不能向外」）。
+        往外拖＝把那块内容往外**拉伸**，拉出画布的部分按越界填底。这里只留一个
+        "一张图那么远"的宽松上限，免得把手被甩到天外、再也找不回来。
+        """
+        if self._cage is None or not 0 <= index < len(self._cage):
+            return
+        limit = self.image_rect()
+        offset_x, offset_y = limit.width(), limit.height()
+        self._cage[index] = QPointF(
+            max(limit.left() - offset_x,
+                min(pos.x(), limit.right() + offset_x)),
+            max(limit.top() - offset_y,
+                min(pos.y(), limit.bottom() + offset_y)))
+        self._cage_node = index  # 拖着的这个点保持放大高亮
+        self._sync_overlay()
+        self._refresh_cage_preview()
+
+    def _hit_cage_node(self, view_pos: QPointF) -> int | None:
+        """命中笼节点（视图像素口径，不随缩放变）。"""
+        if self._cage is None:
+            return None
+        for index, point in enumerate(self._cage):
+            spot = QPointF(self.mapFromScene(point))
+            if QLineF(view_pos, spot).length() <= CAGE_HIT_VIEW_PX:
+                return index
+        return None
+
+    # ---- 像素预览（降采样 + 节流） ----
+    def _clear_cage_preview(self) -> None:
+        """丢掉像素预览浮层，并把节流时间戳一并清零。
+
+        ⚠️ 清预览 = 「已经没有待应用的形变了」，所以下一次拖动是**全新的一轮**，
+        必须立刻出画。若只删浮层、留下 ``_cage_painted_at``，那么刚
+        「重置 / 重画笼 / 应用变形 / 采用笼」完紧接着拖的**第一次**会被
+        :data:`CAGE_PREVIEW_INTERVAL` 的窗口吃掉——用户拖了半天画面一动不动，
+        松开手才突然跳出来（真实踩到：这就是 ``fit()`` 空转那一类，见
+        :meth:`_refresh_cage_preview` 的注释；这里把 reset/adopt 这条路径也堵上）。
+        """
+        self._cage_painted_at = 0.0
+        if self._cage_item is not None:
+            self._scene.removeItem(self._cage_item)
+            self._cage_item = None
+
+    def _refresh_cage_preview(self, force: bool = False) -> None:
+        """重算"形变后"的像素预览（浮层）。
+
+        ⚠️ 三层降本（缺一不可）：形变是逐像素重映射，源图是整页 4000×3000
+        时全分辨率一次要 **3 秒**（实测拆解见 ``utils.cage_warp``）。
+
+        - **范围**：形变本身是**局部**的，只算 :func:`warp_region` 给出的
+          "影响盘并集外接框"——拖一个把手 60px 就只有 249×234 那么大；
+          框外原图直接透出（那里位移场恒等于 0，逐字节等于原图，
+          所以既不用整幅快照，也不会在框边留接缝）；
+        - **分辨率**：按 :func:`cage_preview_scale` 降采样——它同时卡"屏幕
+          上够清楚"和"工作量有上限"。拖动中取 :data:`CAGE_PREVIEW_PIXELS`
+          （~0.06s，跟得上手），``force`` 时取 :data:`CAGE_PREVIEW_SETTLE_PIXELS`
+          （松手了，停下来看清楚，~0.6s 上限）；
+        - **时间**：:data:`CAGE_PREVIEW_INTERVAL` 之内不重复算（``force`` 跳过）。
+
+        笼线/节点（覆盖层）每帧都跟手，与这里的节拍无关。
+        """
+        if self._image is None or self._cage is None or self._cage_home is None:
+            return
+        now = time.monotonic()
+        if not force and now - self._cage_painted_at < CAGE_PREVIEW_INTERVAL:
+            return
+        home = [(point.x(), point.y()) for point in self._cage_home]
+        moved = [(point.x(), point.y()) for point in self._cage]
+        if not cage_moved(home, moved):
+            # 没干活就不算"刚画过"：``_clear_cage_preview`` 会把时间戳清零，
+            # 否则紧接着的第一次真拖动会被节流窗口吃掉，用户拖了半天画面
+            # 一动不动（真实踩到：fit() 里的空转把时间戳刷成了"刚画"）。
+            self._clear_cage_preview()
+            return
+        width, height = self._image.width(), self._image.height()
+        influence = self.cage_influence()
+        x0, y0, x1, y1 = warp_region(home, moved, influence,
+                                     width=width, height=height)
+        if x1 <= x0 or y1 <= y0:
+            self._clear_cage_preview()
+            return
+
+        # 场景 1 单位 = 屏幕上 zoom × dpr 个设备像素（见 cage_preview_scale）
+        scale = cage_preview_scale(
+            x1 - x0, y1 - y0,
+            self._zoom * max(1.0, self.devicePixelRatioF()),
+            CAGE_PREVIEW_SETTLE_PIXELS if force else CAGE_PREVIEW_PIXELS)
+        if scale >= 1.0:
+            source = self._image
+        else:
+            source = self._image.scaled(
+                max(1, int(round(width * scale))),
+                max(1, int(round(height * scale))),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation)
+        warped = deform_cage_image(
+            source,
+            [(x * scale, y * scale) for x, y in home],
+            [(x * scale, y * scale) for x, y in moved],
+            influence=None if influence is None else influence * scale)
+        # 取整后按**缩放坐标系**裁框、再按 1/scale 摆回图片坐标：位置与尺寸
+        # 都精确对齐（若裁完再按原坐标摆，会有 1/scale 像素的错位）。
+        left = int(math.floor(x0 * scale))
+        top = int(math.floor(y0 * scale))
+        right = min(warped.width(), int(math.ceil(x1 * scale)) + 1)
+        bottom = min(warped.height(), int(math.ceil(y1 * scale)) + 1)
+        if right <= left or bottom <= top:
+            self._clear_cage_preview()
+            return
+        pixmap = QPixmap.fromImage(
+            warped.copy(QRect(left, top, right - left, bottom - top)))
+        pixmap.setDevicePixelRatio(1.0)
+        if self._cage_item is None:
+            self._cage_item = QGraphicsPixmapItem()
+            self._cage_item.setZValue(4)  # 底图之上、覆盖层（11+）之下
+            self._cage_item.setTransformationMode(
+                Qt.TransformationMode.SmoothTransformation)
+            self._scene.addItem(self._cage_item)
+        self._cage_item.setPixmap(pixmap)
+        self._cage_item.setPos(left / scale, top / scale)
+        self._cage_item.setScale(1.0 / scale)
+        self._cage_painted_at = now
+
     # ------------------------------------------------------------ 覆盖层
     def _build_overlay(self) -> None:
         """遮罩 4 块 + 选区边框 + 8 手柄，建好藏起来，按需显示。"""
@@ -795,6 +1206,26 @@ class EditorCanvas(QGraphicsView):
         self._text_outline.setZValue(18)
         self._text_outline.hide()
         self._scene.addItem(self._text_outline)
+        # 「变形」的笼：**原位虚影**（点线，告诉你"原来在哪"）+ **当前位置**
+        # （虚线）+ 节点圆点。用两套线是有意的——只画一条的话，把节点拖远
+        # 之后就完全看不出内容是从哪儿被扯过来的了。
+        self._cage_ghost = QGraphicsPolygonItem()
+        self._cage_ghost.setBrush(QBrush(Qt.BrushStyle.NoBrush))
+        self._cage_ghost.setPen(QPen(QColor(T.INK_FAINT), 0, Qt.PenStyle.DotLine))
+        self._cage_ghost.setZValue(11)
+        self._cage_ghost.hide()
+        self._scene.addItem(self._cage_ghost)
+        # ⚠️ 当前笼用 **QPainterPath 而不是 QGraphicsPolygonItem**：手绘笼
+        #    过程中要画"尚未闭合的折线"，PolygonItem 永远会自动闭合，看起来
+        #    像已经圈好了。
+        self._cage_poly = QGraphicsPathItem()
+        self._cage_poly.setBrush(QBrush(Qt.BrushStyle.NoBrush))
+        self._cage_poly.setPen(QPen(QColor(T.ACCENT), 0, Qt.PenStyle.DashLine))
+        self._cage_poly.setZValue(12)
+        self._cage_poly.hide()
+        self._scene.addItem(self._cage_poly)
+        #: 笼节点圆点（数量随手绘/疏密变，按需增删）
+        self._cage_dots: list[QGraphicsEllipseItem] = []
 
     def _move_eraser_ring(self, pos: QPointF, show: bool = True) -> None:
         """橡皮擦圈挪到 ``pos``（图片坐标，圈心 = 笔刷中心 = 光标处）。"""
@@ -830,6 +1261,9 @@ class EditorCanvas(QGraphicsView):
         if (self._tool == "transform" and self._rect is not None
                 and self._image is not None):
             self._sync_transform_overlay()
+            return
+        if self._tool == "cage" and self._image is not None:
+            self._sync_cage_overlay()
             return
         visible = (
             self._tool == "crop"
@@ -929,6 +1363,173 @@ class EditorCanvas(QGraphicsView):
             QRectF(pivot.x() - pr, pivot.y() - pr, pr * 2, pr * 2))
         self._pivot_item.setVisible(True)
 
+    # ---- 「变形」的覆盖层 ----
+    @staticmethod
+    def _cage_path(points, close: bool) -> QPainterPath:
+        """顶点序列 → 路径（``close=True`` 首尾相连成闭合多边形）。"""
+        path = QPainterPath()
+        if not points:
+            return path
+        path.moveTo(points[0])
+        for point in points[1:]:
+            path.lineTo(point)
+        if close and len(points) >= 3:
+            path.closeSubpath()
+        return path
+
+    def _sync_cage_overlay(self) -> None:
+        """变形工具的覆盖层：原笼虚影 + 当前笼 + 节点圆点。
+
+        种两种状态：
+
+        - **手绘中**（``_cage_drawing``）：画"已点的点 + 到鼠标的皮筋"折线，
+          第一个点画得更大（点回它即闭合）；不画原位虚影——正在圈新区域，
+          画一个旧笼只会让人以为它已经生效了。
+        - **常态**：当前笼（虚线闭合）+ 原笼原位（点线，只有真的拖动过才
+          显示；没动过两条线完全重合，画出来只是糊成一条）。
+        """
+        for item in self._mask:
+            item.setVisible(False)
+        self._sel_border.setVisible(False)
+        self._quad.setVisible(False)
+        self._pivot_item.setVisible(False)
+        for item in self._handles.values():
+            item.setVisible(False)
+        for item in self._edge_lines.values():
+            item.setVisible(False)
+        if self._cage_drawing is not None:
+            points = list(self._cage_drawing)
+            # 皮筋：从最后一点连到鼠标；已点 ≥3 点时再连回起点预览闭合形状
+            rubber = points + [QPointF(self._cage_cursor)]
+            if len(points) >= 3:
+                rubber.append(QPointF(points[0]))
+            self._cage_poly.setPath(self._cage_path(rubber, close=False))
+            self._cage_poly.setVisible(True)
+            self._cage_ghost.setVisible(False)
+            self._sync_cage_dots(points, first_marked=True)
+            return
+        if self._cage is None or len(self._cage) < 3:
+            self._cage_poly.setVisible(False)
+            self._cage_ghost.setVisible(False)
+            self._sync_cage_dots([])
+            return
+        self._cage_poly.setPath(self._cage_path(list(self._cage), close=True))
+        self._cage_poly.setVisible(True)
+        moved = self._cage_home is not None and cage_moved(
+            [(p.x(), p.y()) for p in self._cage_home],
+            [(p.x(), p.y()) for p in self._cage])
+        if moved:
+            self._cage_ghost.setPolygon(QPolygonF(list(self._cage_home)))
+            self._cage_ghost.setVisible(True)
+        else:
+            self._cage_ghost.setVisible(False)
+        self._sync_cage_dots(self._cage)
+
+    def _sync_cage_dots(self, points, first_marked: bool = False) -> None:
+        """按顶点数增删/摆放节点圆点（视觉尺寸 = 视图像素 ÷ 当前倍率）。
+
+        悬停/拖动中的节点放大一圈：抓没抓住看圆点大小就知道。
+        """
+        zoom = max(self._zoom, 1e-6)
+        base = CAGE_NODE_VIEW_PX / 2.0 / zoom
+        hovered = base * 1.45
+        while len(self._cage_dots) < len(points):
+            item = QGraphicsEllipseItem()
+            item.setZValue(13)
+            self._scene.addItem(item)
+            self._cage_dots.append(item)
+        while len(self._cage_dots) > len(points):
+            self._scene.removeItem(self._cage_dots.pop())
+        for index, point in enumerate(points):
+            item = self._cage_dots[index]
+            big = (index == self._cage_node
+                   or (first_marked and index == 0))
+            radius = hovered if big else base
+            item.setRect(QRectF(point.x() - radius, point.y() - radius,
+                                radius * 2, radius * 2))
+            if first_marked and index == 0:
+                # 画笼时首点＝"点我闭合"的把手：换个色 + 描白边
+                item.setBrush(QBrush(QColor(T.SURFACE)))
+                item.setPen(QPen(QColor(T.ACCENT_HOVER), 0))
+            else:
+                item.setBrush(QBrush(QColor(T.ACCENT_HOVER if big else T.ACCENT)))
+                item.setPen(QPen(QColor("#ffffff"), 0))
+            item.setVisible(True)
+
+    def _insert_cage_node(self, view_pos: QPointF) -> int | None:
+        """点在笼边上 → 就地插一个把手，返回新把手下标。
+
+        ⚠️ 两处讲究，少一样都会"加点即变"：
+
+        1. 新把手**投到边上**，不是落在鼠标像素上（见 :func:`_project_on_segment`）；
+        2. **原位与当前位置插同一个坐标**。形变只由"动过的把手"决定
+           （``utils.cage_warp.moved_handles`` 只把 ``位移 > 0`` 的把手当约束），
+           所以原位 = 当前位置的新把手**不进方程组**，形变逐字节不变。
+           语义上也最顺：新把手抓的是"画面上现在这块内容"，
+           接着拖就是继续拉同一块。
+
+        自测盯着这条：加点前后 ``deform`` 逐字节相同（只是多个可拖的把手）。
+        """
+        if self._cage is None or self._cage_home is None \
+                or len(self._cage) < 3:
+            return None
+        best: tuple[float, int] | None = None
+        for index in range(len(self._cage)):
+            a = QPointF(self.mapFromScene(self._cage[index]))
+            b = QPointF(self.mapFromScene(
+                self._cage[(index + 1) % len(self._cage)]))
+            distance, _ = _segment_hit(view_pos, a, b)
+            if distance <= CAGE_HIT_VIEW_PX * 1.8 \
+                    and (best is None or distance < best[0]):
+                best = (distance, index)
+        if best is None:
+            return None
+        index = best[1]
+        nxt = (index + 1) % len(self._cage)
+        inside = self.image_rect()
+        spot = self.mapToScene(view_pos.toPoint())
+        projected, _t = _project_on_segment(
+            QPointF(spot), QPointF(self._cage[index]),
+            QPointF(self._cage[nxt]))
+        added = QPointF(
+            max(inside.left(), min(projected.x(), inside.right())),
+            max(inside.top(), min(projected.y(), inside.bottom())))
+        self._cage.insert(index + 1, QPointF(added))
+        self._cage_home.insert(index + 1, QPointF(added))
+        self._clear_cage_preview()  # 只加点没位移：预览等于原图，撤掉更省
+        self._sync_overlay()
+        return index + 1
+
+    def cage_polygon(self) -> list[QPointF] | None:
+        """当前笼的顶点（图片坐标，可能已被拖动）；不足 3 点返回 None。"""
+        if self._cage is None or len(self._cage) < 3:
+            return None
+        return [QPointF(point) for point in self._cage]
+
+    def adopt_cage(self, points) -> None:
+        """把 ``points`` 直接立为笼（原位 = 当前位置 = 恒等形变）。
+
+        ``points`` 收 ``QPointF`` 与 ``(x, y)`` 元组（见 :func:`_as_point`）。
+
+        「应用变形」后用：形变已经烧进像素，**笼留在原地**——用户想接着
+        微调同一块（古籍褶皱往往要来回试几次），不该逼他重新圈一遍。
+        """
+        inside = self.image_rect()
+        clamped = [
+            QPointF(max(inside.left(), min(point.x(), inside.right())),
+                    max(inside.top(), min(point.y(), inside.bottom())))
+            for point in map(_as_point, points)
+        ]
+        if len(clamped) < 3:
+            self.reset_cage()
+            return
+        self._clear_cage_preview()
+        self._cage_drawing = None
+        self._cage_node = None
+        self._cage_home = [QPointF(point) for point in clamped]
+        self._cage = [QPointF(point) for point in clamped]
+        self._sync_overlay()
+
     def _hit_transform(self, view_pos: QPointF) -> str:
         """变换工具命中测试（视图像素口径，不随缩放变）。
 
@@ -970,17 +1571,43 @@ class EditorCanvas(QGraphicsView):
         return "outside"
 
     # ------------------------------------------------------------ 缩放
-    def fit(self) -> None:
-        """适应窗口（整图完整可见）。"""
+    def fit(self, ratio: float | None = None) -> None:
+        """适应窗口（整图完整可见）；``ratio`` < 1 时四周留白。
+
+        留白的做法是把"要装进去的矩形"按比例放大——图片因此只占视口的
+        ``ratio``（见 :data:`CAGE_FIT_RATIO`：进「变形」时图片不顶满视口，
+        用户才有地方把笼把手往图外拖）。
+        """
         if self._item is None or self.viewport().width() <= 1:
             return  # 控件还没布局：此时 fit 算出来的是脏值，等 resizeEvent 再来
-        self.fitInView(self.image_rect(), Qt.AspectRatioMode.KeepAspectRatio)
+        rect = self.image_rect()
+        if ratio is None:
+            ratio = self._fit_ratio
+        ratio = max(0.2, min(1.0, float(ratio)))
+        if ratio < 1.0 and not rect.isNull():
+            grow_x = rect.width() * (1.0 / ratio - 1.0) / 2.0
+            grow_y = rect.height() * (1.0 / ratio - 1.0) / 2.0
+            rect = rect.adjusted(-grow_x, -grow_y, grow_x, grow_y)
+        self.fitInView(rect, Qt.AspectRatioMode.KeepAspectRatio)
         self._zoom = max(MIN_ZOOM, min(MAX_ZOOM, self.transform().m11()))
         self._user_zoomed = False
         # ⚠️ 手柄的几何 = 视图像素 ÷ 当前倍率，倍率变了必须重算覆盖层；
         #    不然 set_image 时用脏 viewport 算的小倍率会留下巨型手柄
         #    （离屏渲染抓出来的：手柄有 ~150 视图像素，应为 12）。
         self._sync_overlay()
+        # 变形预览的清晰度是跟着倍率定的（见 cage_preview_scale）：倍率变了
+        # 就重算一次，缩着看整页时能省下几十倍工作量
+        self._refresh_cage_preview()
+
+    def set_fit_ratio(self, ratio: float) -> None:
+        """设「适应窗口」时图片占视口的比例（1.0 = 铺满，< 1 = 四周留白）。
+
+        只在用户**没手动缩放过**时立刻生效——手动缩放是明确意图，不该被悄悄
+        改掉；但他下次点「适应窗口」或改窗口大小时就按新比例来。
+        """
+        self._fit_ratio = max(0.2, min(1.0, float(ratio)))
+        if not self._user_zoomed:
+            self.fit()
 
     def zoom_in(self) -> None:
         """放大一档（工具栏按钮用；无档位表，连续乘 1.25）。"""
@@ -1008,6 +1635,7 @@ class EditorCanvas(QGraphicsView):
         self._zoom = zoom
         self._user_zoomed = True
         self._sync_overlay()  # 手柄视觉尺寸不随缩放变，几何要重算
+        self._refresh_cage_preview()  # 同上：预览清晰度跟倍率走（有节流）
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
@@ -1038,6 +1666,7 @@ class EditorCanvas(QGraphicsView):
         self._zoom = zoom
         self._user_zoomed = True
         self._sync_overlay()
+        self._refresh_cage_preview()
 
     def wheelEvent(self, event) -> None:  # noqa: N802
         delta = event.angleDelta().y()
@@ -1062,6 +1691,19 @@ class EditorCanvas(QGraphicsView):
 
     def _update_hover_cursor(self, view_pos: QPointF) -> None:
         """未拖拽时的悬停反馈：命中边缘给方向缩放光标 + 边界高亮。"""
+        if self._tool == "cage" and self._item is not None:
+            if self._cage_drawing is not None:
+                # 画笼：点一个落点加一个顶点
+                self.viewport().setCursor(Qt.CursorShape.CrossCursor)
+                return
+            index = self._hit_cage_node(view_pos)
+            if index != self._cage_node:
+                self._cage_node = index  # 悬停中的节点画大一圈
+                self._sync_cage_overlay()
+            self.viewport().setCursor(
+                Qt.CursorShape.SizeAllCursor if index is not None
+                else Qt.CursorShape.ArrowCursor)
+            return
         if self._tool == "transform" and not self._xf_reshape \
                 and self._item is not None:
             hit = self._hit_transform(view_pos)
@@ -1104,6 +1746,11 @@ class EditorCanvas(QGraphicsView):
             # 裁剪默认有框：箭头（手柄收边/框内移动），不是"准备画框"的十字
             "crop": Qt.CursorShape.ArrowCursor,
             "text": Qt.CursorShape.IBeamCursor,
+            # 画笼是"点落点"的十字；常态箭头——笼上只有节点能拖，悬停到
+            # 节点时由 _update_hover_cursor 换成移动光标
+            "cage": (Qt.CursorShape.CrossCursor
+                     if self._cage_drawing is not None
+                     else Qt.CursorShape.ArrowCursor),
         }.get(self._tool, Qt.CursorShape.ArrowCursor)
         self.viewport().setCursor(cursor)
 
@@ -1207,6 +1854,34 @@ class EditorCanvas(QGraphicsView):
                     self._mode = ("xf_move", self._xf, pos)
             event.accept()
             return
+        if self._tool == "cage":
+            if self._cage_drawing is not None:
+                # 手绘笼：逐点圈区域；点回第一个点 = 闭合
+                if len(self._cage_drawing) >= 3 and QLineF(
+                        event.position(),
+                        QPointF(self.mapFromScene(
+                            self._cage_drawing[0]))).length() \
+                        <= CAGE_CLOSE_VIEW_PX:
+                    self._close_cage()
+                else:
+                    self._cage_drawing.append(QPointF(
+                        max(inside.left(), min(pos.x(), inside.right())),
+                        max(inside.top(), min(pos.y(), inside.bottom()))))
+                    self._cage_cursor = QPointF(pos)
+                    self._sync_overlay()
+                event.accept()
+                return
+            index = self._hit_cage_node(event.position())
+            if index is None:
+                index = self._insert_cage_node(event.position())  # 点笼线加点
+            if index is None:
+                event.accept()
+                return
+            self._cage_node = index
+            self._mode = ("cage", index)
+            self._sync_overlay()
+            event.accept()
+            return
         if self._tool == "erase":
             self.stroke_started.emit()
             self._erase_at(pos, pos)
@@ -1252,6 +1927,11 @@ class EditorCanvas(QGraphicsView):
                     self._move_text_outline(block)
                 else:
                     self._hide_text_outline()
+            elif self._tool == "cage" and self._item is not None \
+                    and self._cage_drawing is not None:
+                # 手绘笼的**皮筋**跟随鼠标：点下一个落点之前先看见线往哪连
+                self._cage_cursor = self.mapToScene(event.position().toPoint())
+                self._sync_cage_overlay()
             self._update_hover_cursor(event.position())
             event.accept()
             return
@@ -1318,6 +1998,8 @@ class EditorCanvas(QGraphicsView):
             self._rect = moved
         elif kind == "handle":
             self._resize_rect(self._mode[1], pos)
+        elif kind == "cage":
+            self.cage_move_node(self._mode[1], pos)
         elif kind == "draw":
             self._erase_at(self._mode[1], pos)
             self._move_eraser_ring(pos)
@@ -1348,6 +2030,13 @@ class EditorCanvas(QGraphicsView):
             return
         if self._mode and self._mode[0] == "draw":
             self._mode = None
+            event.accept()
+            return
+        if self._mode and self._mode[0] == "cage":
+            # 松手补一次预览：拖动中可能正好被节流窗口跳过，最后一帧不补
+            # 的话停在屏幕上的就不是松手位置的结果（所见≠将得）
+            self._mode = None
+            self._refresh_cage_preview(force=True)
             event.accept()
             return
         if self._mode and self._mode[0].startswith("xf_"):
@@ -1397,6 +2086,9 @@ class EditorCanvas(QGraphicsView):
         self._hide_eraser_ring()
         self._hide_text_outline()
         self._apply_hover_highlight()
+        if self._cage_node is not None and self._mode is None:
+            self._cage_node = None  # 悬停放大的节点缩回去
+            self._sync_overlay()
         self._sync_cursor()
         super().leaveEvent(event)
 
@@ -1404,6 +2096,12 @@ class EditorCanvas(QGraphicsView):
         # 就地编辑文字时按键（含 ←/→ 移光标）全部给文本编辑，不走翻页
         if isinstance(self._scene.focusItem(), TextBlockItem):
             super().keyPressEvent(event)
+            return
+        # 画笼中按 Esc：放弃这次手绘，保留原来的笼
+        if self._cage_drawing is not None \
+                and event.key() == Qt.Key.Key_Escape:
+            self.cancel_cage_draw()
+            event.accept()
             return
         # ←/→ 别拿去滚动画布，交还弹窗（与预览弹窗一致：方向键是翻页）
         if event.key() in (Qt.Key.Key_Left, Qt.Key.Key_Right):
@@ -1454,6 +2152,8 @@ class ImageEditorDialog(QDialog):
         self._text_color: str = "#000000"
         self._text_family: str = T.FONT_FAMILY
         self._erase_size: int = ERASER_DEFAULT
+        #: 全分辨率形变烘焙中（等待光标前会 processEvents，防重入）
+        self._cage_busy = False
 
         self.canvas = EditorCanvas(self)
         self.canvas.set_image(self._image)
@@ -1464,7 +2164,7 @@ class ImageEditorDialog(QDialog):
         root.setContentsMargins(T.SPACE_MD, T.SPACE_MD, T.SPACE_MD, T.SPACE_MD)
         root.setSpacing(T.SPACE_SM)
         # ⚠️ 两行结构（Win10 照片的布局）：主工具栏一行摆不下撤销/还原/
-        #    缩放/四个工具/提示/应用/完成，一行时左侧按钮会被挤出窗口
+        #    缩放/五个工具/提示/应用/完成，一行时左侧按钮会被挤出窗口
         #    （用户 19:36 截图报"左上边有按钮隐藏掉了"）。
         # ⚠️ _option_row 必须先建：_build_toolbar_row 末尾的 _set_tool
         #    就会往里插第一份选项页。
@@ -1483,12 +2183,28 @@ class ImageEditorDialog(QDialog):
         for seq, slot in (
             (QKeySequence("Ctrl+Z"), self._undo_now),
             (QKeySequence("Ctrl+Y"), self._redo_now),
+            (QKeySequence(Qt.Key.Key_Escape), self._escape),
         ):
             QShortcut(seq, self).activated.connect(slot)
 
+    def _escape(self) -> None:
+        """Esc：先吃掉"进行中的手绘笼"，其次结束文字编辑，最后才关窗。
+
+        ⚠️ 关窗 = 放弃本次全部编辑（状态行里写着），画笼画到一半一个 Esc
+        把整轮编辑清掉太伤人——所以手绘态优先吃掉这个键（GIMP 同款）。
+        """
+        if self.canvas.is_drawing_cage():
+            self.canvas.cancel_cage_draw()
+            return
+        block = self.canvas.focused_text_block()
+        if block is not None:
+            block.clearFocus()
+            return
+        self.reject()
+
     # ------------------------------------------------------------ 构建
     def _build_toolbar_row(self) -> QHBoxLayout:
-        """主工具栏：撤销/还原 ｜ 缩放 ｜ 四个工具 ｜ … ｜ 完成。"""
+        """主工具栏：撤销/还原 ｜ 缩放 ｜ 五个工具 ｜ … ｜ 完成。"""
         row = QHBoxLayout()
         row.setSpacing(T.SPACE_SM)
         self.undo_btn = ToolButton(FIF.RETURN)
@@ -1571,7 +2287,12 @@ class ImageEditorDialog(QDialog):
             self._commit_text_blocks()
         if tool != "transform":
             self._commit_transform()
+        if tool != "cage":
+            self._commit_cage()
         self.canvas.set_tool(tool)
+        # 进「变形」时图片不铺满视口，四周留出可操作空间——笼把手要能往
+        # 图外拖，越靠边越需要留白（用户 2026-10-01 定）。离开时恢复铺满。
+        self.canvas.set_fit_ratio(CAGE_FIT_RATIO if tool == "cage" else 1.0)
         for key, button in self._tool_buttons.items():
             button.setChecked(key == tool)
         layout = self._swap_option_page()
@@ -1579,6 +2300,8 @@ class ImageEditorDialog(QDialog):
             self._page_crop(layout)
         elif tool == "transform":
             self._page_transform(layout)
+        elif tool == "cage":
+            self._page_cage(layout)
         elif tool == "erase":
             self._page_erase(layout)
         elif tool == "text":
@@ -1624,6 +2347,73 @@ class ImageEditorDialog(QDialog):
         apply_btn.setToolTip("把当前变换烘焙进图片：原区域填白（可撤销）")
         apply_btn.clicked.connect(self._commit_transform)
         layout.addWidget(apply_btn)
+
+    def _page_cage(self, layout: QHBoxLayout) -> None:
+        self._hint(layout,
+                   "拖笼上的把手：那个把手附近的内容跟着走（近处动得多、"
+                   "远处几乎不动），影响范围外的像素一动不动；"
+                   "把手能拖到图外（往外拉＝拉伸），点笼线可就地加把手，"
+                   "「重画笼」手绘任意闭合区域，点回起点闭合（Esc 放弃）")
+        combo = ComboBox()
+        combo.setFixedWidth(150)
+        # NoFocus：别把键盘焦点从画布抢走（Esc 取消画笼要靠画布收键）
+        combo.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        for per_side, label in ((1, "4 点（四角）"), (2, "8 点（含边中点）"),
+                                (3, "12 点")):
+            combo.addItem(label, userData=per_side)
+        combo.setCurrentIndex(
+            max(0, combo.findData(self.canvas.cage_density())))
+        combo.setToolTip("默认矩形笼的把手疏密（每边分几段）；一改就重建笼")
+        layout.addWidget(QLabel("把手疏密"))
+        layout.addWidget(combo)
+
+        def apply_density(_index: int) -> None:
+            value = combo.currentData()
+            if value is None:
+                return
+            if self.canvas.cage_pending() is not None:
+                # 重建笼会把已拖的形变丢掉：先把它落地（一个撤销点）
+                self._commit_cage()
+            self.canvas.set_cage_density(int(value))
+
+        combo.currentIndexChanged.connect(apply_density)
+
+        reach = ComboBox()
+        reach.setFixedWidth(96)
+        reach.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        for index, (_times, label) in enumerate(CAGE_REACH_CHOICES):
+            reach.addItem(label, userData=index)
+        reach.setCurrentIndex(self.canvas.cage_reach())
+        reach.setToolTip(
+            "影响范围＝拖动距离的几倍：越紧凑越只动把手附近，越宽松牵连越大。"
+            "只影响之后的拖动，不必重来")
+        layout.addWidget(QLabel("影响范围"))
+        layout.addWidget(reach)
+        reach.currentIndexChanged.connect(
+            lambda _i: self.canvas.set_cage_reach(int(reach.currentData())))
+
+        draw_btn = PushButton("重画笼")
+        draw_btn.setToolTip(
+            "手绘一个闭合区域当笼：逐点点击，点回起点（或第一点）闭合；"
+            "正在画时按 Esc 放弃。要换处理区域时用它")
+        draw_btn.clicked.connect(self._begin_cage_draw)
+        layout.addWidget(draw_btn)
+        reset_btn = PushButton("重置")
+        reset_btn.setToolTip("丢掉未应用的形变，笼回到覆盖整幅的默认矩形")
+        reset_btn.clicked.connect(self.canvas.reset_cage)
+        layout.addWidget(reset_btn)
+        apply_btn = PrimaryPushButton("应用变形")
+        apply_btn.setToolTip(
+            "把当前形变按全分辨率烘焙进图片（可撤销）；"
+            "应用后笼留在原地，方便接着微调")
+        apply_btn.clicked.connect(self._commit_cage)
+        layout.addWidget(apply_btn)
+
+    def _begin_cage_draw(self) -> None:
+        """「重画笼」：先把当前形变落地，再进入手绘（否则重画即丢形变）。"""
+        if self.canvas.cage_pending() is not None:
+            self._commit_cage()
+        self.canvas.begin_cage_draw()
 
     def _page_erase(self, layout: QHBoxLayout) -> None:
         self._hint(layout, "按住左键在污点上涂抹，把它擦成白底（古籍页面去污点）")
@@ -1796,6 +2586,41 @@ class ImageEditorDialog(QDialog):
         self._image = bake_transform(self._image, rect, xf, region)
         self.canvas.set_image(self._image)
 
+    # ------------------------------------------------------------ 变形
+    def _commit_cage(self) -> None:
+        """把未应用的**笼形变**烘焙进图片（一个撤销点），笼留在原地。
+
+        「应用变形」按钮、切走工具、「完成」都走这里。形变是逐像素重映射
+        （见 ``utils.cage_warp``），按**全分辨率**算——虽然影响是局部的
+        （拖 60px 只有 249×234），把影响范围调宽时仍可能到秒级，所以挂
+        等待光标；并且**防重入**——等待光标前那一下 ``processEvents``
+        会派发排队事件，不防的话一次点击可能触发两遍（第二遍把已经形变过的
+        图再形变一次，白丢一个撤销点、结果也不对）。
+        """
+        if not hasattr(self, "canvas") or self._cage_busy:
+            return
+        pending = self.canvas.cage_pending()
+        if pending is None or self._image is None or self._image.isNull():
+            # 没有未应用的形变：预览浮层本来就不存在（它只伴随形变出现），
+            # 什么都不用清——这里**刻意不调** reset_cage：本函数在"切走到
+            # 非变形工具"时也会被调，那时重建一个笼纯属白干
+            return
+        polygon = self.canvas.cage_polygon()
+        home, moved = pending
+        self._push_undo()
+        self._cage_busy = True
+        try:
+            with wait_cursor():
+                self._image = bake_cage(self._image, home, moved,
+                                        self.canvas.cage_influence())
+        finally:
+            self._cage_busy = False
+        self.canvas.set_image(self._image)
+        if polygon is not None:
+            # 形变已烧进像素，笼**留在原地**：古籍褶皱往往要来回试几次，
+            # 每次应用后都回到全幅矩形笼的话，用户得重新圈一遍
+            self.canvas.adopt_cage(polygon)
+
     # ------------------------------------------------------------ 文字
     def _spawn_text_block(self, pos: QPointF) -> None:
         """文字工具点击落点 → 画布上生成文字块就地编辑（光标可见）。"""
@@ -1826,7 +2651,8 @@ class ImageEditorDialog(QDialog):
         self.canvas.replace_image(self._image)
 
     def _finish(self) -> None:
-        """「完成」：未应用的变换/未插入的文字一并写入，再应用全部编辑。"""
+        """「完成」：未应用的变形/变换/未插入的文字一并写入，再应用全部编辑。"""
+        self._commit_cage()
         self._commit_transform()
         self._commit_text_blocks()
         self.accept()

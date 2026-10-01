@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 93 个模块、106 个公开类、643 个公开函数/方法（生成于 2026-10-01）。
+覆盖 93 个模块、106 个公开类、659 个公开函数/方法（生成于 2026-10-01）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -37,7 +37,7 @@
 | [`desktop.components.panels.rembg_panel`](#desktopcomponentspanelsrembg_panel) | 1 | 1 |
 | [`desktop.components.step_bar`](#desktopcomponentsstep_bar) | 2 | 18 |
 | [`desktop.components.task_table`](#desktopcomponentstask_table) | 3 | 10 |
-| [`desktop.components.viewers.image_editor`](#desktopcomponentsviewersimage_editor) | 3 | 51 |
+| [`desktop.components.viewers.image_editor`](#desktopcomponentsviewersimage_editor) | 3 | 68 |
 | [`desktop.components.viewers.image_view`](#desktopcomponentsviewersimage_view) | 1 | 23 |
 | [`desktop.components.viewers.image_viewer`](#desktopcomponentsviewersimage_viewer) | 1 | 13 |
 | [`desktop.components.viewers.image_zoom_dialog`](#desktopcomponentsviewersimage_zoom_dialog) | 4 | 34 |
@@ -63,7 +63,7 @@
 | [`desktop.pages.tasklist.page`](#desktoppagestasklistpage) | 1 | 6 |
 | [`desktop.services.font_catalog`](#desktopservicesfont_catalog) | 1 | 6 |
 | [`desktop.services.imposition`](#desktopservicesimposition) | 0 | 20 |
-| [`desktop.services.print_plan`](#desktopservicesprint_plan) | 0 | 6 |
+| [`desktop.services.print_plan`](#desktopservicesprint_plan) | 0 | 5 |
 | [`desktop.services.rembg_live`](#desktopservicesrembg_live) | 0 | 3 |
 | [`desktop.services.stale_chain`](#desktopservicesstale_chain) | 0 | 2 |
 | [`desktop.services.submit_state`](#desktopservicessubmit_state) | 0 | 1 |
@@ -1717,7 +1717,7 @@ source_path 不单独成列，仅作任务名的悬浮提示。
 **原子覆盖原图片文件**；虚拟预览（区域合成/打印重排/PDF 页）没有文件
 可回写，维持"满意用「下载」落盘、翻页/关窗即丢弃"的旧行为。
 
-四个工具的行为口径：
+五个工具的行为口径：
 
 - **裁剪**：**默认选中整幅图**，沿四边/四角**任意位置**向内拖收边（整条
   边都是命中带，不只手柄小方块）、拖框中间移动；松手后**视图自动适配新
@@ -1732,10 +1732,29 @@ source_path 不单独成列，仅作任务名的悬浮提示。
   浮层显示）；「应用变换」（或切走工具/「完成」）才烘焙进像素——原
   区域填白、只把选区内容按仿射矩阵画回去，画布尺寸不变，**区域外的
   像素一动不动**。一批一个撤销点。
+- **变形**（局部光滑形变，处理古籍褶皱/卷曲）：画面上有一个**一圈把手的笼**
+  （默认＝覆盖选区的矩形，把手疏密在选项行选 4/8/12 点），**拖某个把手**，
+  只有它**附近**的像素跟着走 —— **近处变化大、远处几乎不动**（"像扯弹簧"），
+  影响范围**之外**的像素逐字节一动不动。影响范围＝拖动距离的倍数，
+  选项行「影响范围」可选紧凑/适中/宽松；
+  **点笼线**可就地加一个把手（加完即可拖；加上去不改变形变），
+  「重画笼」可手绘任意闭合区域（逐点点击、点回起点闭合、画笼中 Esc 放弃）。
+  把手**可以拖到图片外面**（往外拉＝把那块内容往外拉伸）。
+  ⚠️ 刻意**不是** GIMP 原版那种"笼内整体一起走"的全局形变：那样拖一个角会把
+  整笼拉斜、从其余顶点扯出折痕（用户 2026-10-01 报过），改为局部影响。
+  拖动即实时预览（只算影响范围那一小块 + 按屏幕清晰度降采样，见
+  :func:`cage_preview_scale`），松手补一帧更清楚的；「应用变形」（或切走
+  工具/「完成」）才烘焙进像素（有等待光标）。
+  ⚠️ 「应用变形」后**笼留在原地**（``adopt_cage``）：古籍褶皱往往要来回试
+  几次，每次都回到全幅矩形笼的话用户得重新圈一遍。
+  算法与口径见 ``utils/cage_warp.py``。
+  ⚠️ 进这个工具时图片**不铺满视口**（:data:`CAGE_FIT_RATIO`），四周留白
+  方便把把手往图外拖。
 - **擦除**：按住左键涂抹把污点**擦成白底**（古籍页面去污点就是涂白）；
   直径在选项行可调；光标处有**实圈指示**，直径恒等于实际擦除直径
   （所见即所擦）。一笔一个撤销点。
-  （原「拉伸」与笔刷配色已按用户 2026-10-01 要求移除。）
+  （原「拉伸」与笔刷配色已按用户 2026-10-01 要求移除；同日按 GIMP
+  变换笼方案重新实现为上面的「变形」。）
 - **文字**：点击落点 → 画布上**就地输入**（光标可见，点已有块可继续
   编辑）→ 选项行可调字体 family / 字号 / **颜色选择器**（对整块即时
   生效，样式是段落属性，与手机作图App同口径）→ 鼠标悬停在文字上出现
@@ -1767,6 +1786,15 @@ source_path 不单独成列，仅作任务名的悬浮提示。
 | SEL_FIT_RATIO | `0.8` |
 | PIVOT_VIEW_PX | `14.0` |
 | ROTATE_SNAP_DEG | `15.0` |
+| CAGE_PER_SIDE_DEFAULT | `1` |
+| CAGE_REACH_DEFAULT | `0` |
+| CAGE_FIT_RATIO | `0.8` |
+| CAGE_NODE_VIEW_PX | `11.0` |
+| CAGE_HIT_VIEW_PX | `9.0` |
+| CAGE_CLOSE_VIEW_PX | `14.0` |
+| CAGE_PREVIEW_PIXELS | `200000` |
+| CAGE_PREVIEW_SETTLE_PIXELS | `2500000` |
+| CAGE_PREVIEW_INTERVAL | `0.12` |
 
 ### `class TextBlockItem(QGraphicsTextItem)`
 
@@ -1816,7 +1844,7 @@ source_path 不单独成列，仅作任务名的悬浮提示。
 | `replace_image(image: QImage) -> None` | 就地换图（尺寸不变的语义，如文字写入）：不动缩放与滚动位置。 |
 | `image() -> QImage \| None` | — |
 | `image_rect() -> QRectF` | 图片占位（= 场景坐标，1 场景单位 = 1 图片像素）。 |
-| `set_tool(tool: str) -> None` | 切换工具：裁剪/变换默认全选，其余清选区、换光标。 |
+| `set_tool(tool: str) -> None` | 切换工具：裁剪/变换/变形默认全选，其余清选区、换光标。 |
 | `set_eraser(size: int) -> None` | 设置橡皮擦直径（图片像素）；擦除固定涂白，没有颜色可选。 |
 | `selection() -> QRectF \| None` | 当前选区（图片坐标）；不足最小边视为没有。 |
 | `add_text_block(pos: QPointF, px: int, color: QColor, family: str) -> TextBlockItem` | 在落点放一个可就地编辑的文字块并给它焦点（光标闪烁）。 |
@@ -1833,7 +1861,21 @@ source_path 不单独成列，仅作任务名的悬浮提示。
 | `transform_rotate(degrees: float) -> None` | 绕**轴心当前视觉位置**旋转（轴心保持不动）。 |
 | `transform_scale(sx: float, sy: float, anchor: QPointF \| None=None) -> None` | 缩放（局部空间，锚点缺省=轴心；sx/sy 是相对当前内容的倍率）。 |
 | `transform_shear(edge: str, k: float) -> None` | 拖边切变：``edge`` 是被抓的边（l/r/t/b），``k`` 是切变系数， |
-| `fit() -> None` | 适应窗口（整图完整可见）。 |
+| `cage_density() -> int` | 矩形笼当前的节点疏密（每边几段）。 |
+| `set_cage_density(per_side: int) -> None` | 改矩形笼的疏密：按当前选区重建笼（已拖动的节点位置丢弃）。 |
+| `cage_reach() -> int` | 「影响范围」档位下标（见 :data:`CAGE_REACH_CHOICES`）。 |
+| `set_cage_reach(index: int) -> None` | 改「影响范围」：只影响**之后的**拖动，不必丢掉已有的形变。 |
+| `cage_influence() -> float \| None` | 把「影响范围」档位换算成**绝对影响半径**（图片像素）；没动过则 None。 |
+| `reset_cage() -> None` | 「重置」：笼回到覆盖当前选区的默认矩形，丢掉未应用的形变。 |
+| `is_drawing_cage() -> bool` | 是否正处在「重画笼」的手绘状态。 |
+| `begin_cage_draw() -> None` | 进入手绘笼（GIMP 的「创建或调整笼」）：逐点点击圈区域。 |
+| `cancel_cage_draw() -> None` | 放弃手绘，保留原来的笼（若它已被拖动，预览一并恢复）。 |
+| `cage_pending()` | 未应用的笼形变 ``(笼原位, 笼当前位置)``（(x, y) 元组列表）；无则 None。 |
+| `cage_move_node(index: int, pos: QPointF) -> None` | 把第 ``index`` 个笼把手拖到 ``pos``（图片坐标）。 |
+| `cage_polygon() -> list[QPointF] \| None` | 当前笼的顶点（图片坐标，可能已被拖动）；不足 3 点返回 None。 |
+| `adopt_cage(points) -> None` | 把 ``points`` 直接立为笼（原位 = 当前位置 = 恒等形变）。 |
+| `fit(ratio: float \| None=None) -> None` | 适应窗口（整图完整可见）；``ratio`` < 1 时四周留白。 |
+| `set_fit_ratio(ratio: float) -> None` | 设「适应窗口」时图片占视口的比例（1.0 = 铺满，< 1 = 四周留白）。 |
 | `zoom_in() -> None` | 放大一档（工具栏按钮用；无档位表，连续乘 1.25）。 |
 | `zoom_out() -> None` | 缩小一档。 |
 | `set_zoom(zoom: float, anchor_view: QPointF \| None=None) -> None` | 锚点缩放（同预览弹窗的 translate 补偿法，缩放不漂移）。 |
@@ -1874,6 +1916,47 @@ source_path 不单独成列，仅作任务名的悬浮提示。
 拖边切变：``edge`` 是被抓的边（l/r/t/b），``k`` 是切变系数，
 对边为锚（抓右边往下拖 = 内容随 x 增大而下斜）。
 
+##### `cage_influence() -> float | None`
+
+把「影响范围」档位换算成**绝对影响半径**（图片像素）；没动过则 None。
+
+档位记的是"拖动距离的倍数"而不是固定像素，是为了让手感一致：拖得远，
+受影响的面积自然大一点，但**相对比例不变**——这正是"像扯弹簧"该有的
+样子（近处变化大、远端几乎不动）。倍数下限由 ``utils.cage_warp`` 的
+防自交判据把着，真给太小也会被自动放宽。
+
+##### `cage_move_node(index: int, pos: QPointF) -> None`
+
+把第 ``index`` 个笼把手拖到 ``pos``（图片坐标）。
+
+⚠️ **允许拖到图片外面**（用户 2026-10-01：「任意点只能向内，不能向外」）。
+往外拖＝把那块内容往外**拉伸**，拉出画布的部分按越界填底。这里只留一个
+"一张图那么远"的宽松上限，免得把手被甩到天外、再也找不回来。
+
+##### `adopt_cage(points) -> None`
+
+把 ``points`` 直接立为笼（原位 = 当前位置 = 恒等形变）。
+
+``points`` 收 ``QPointF`` 与 ``(x, y)`` 元组（见 :func:`_as_point`）。
+
+「应用变形」后用：形变已经烧进像素，**笼留在原地**——用户想接着
+微调同一块（古籍褶皱往往要来回试几次），不该逼他重新圈一遍。
+
+##### `fit(ratio: float | None=None) -> None`
+
+适应窗口（整图完整可见）；``ratio`` < 1 时四周留白。
+
+留白的做法是把"要装进去的矩形"按比例放大——图片因此只占视口的
+``ratio``（见 :data:`CAGE_FIT_RATIO`：进「变形」时图片不顶满视口，
+用户才有地方把笼把手往图外拖）。
+
+##### `set_fit_ratio(ratio: float) -> None`
+
+设「适应窗口」时图片占视口的比例（1.0 = 铺满，< 1 = 四周留白）。
+
+只在用户**没手动缩放过**时立刻生效——手动缩放是明确意图，不该被悄悄
+改掉；但他下次点「适应窗口」或改窗口大小时就按新比例来。
+
 ##### `fit_selection() -> None`
 
 视图适配当前选区（选区约占视口 80%，四周留出可操作白边）。
@@ -1905,6 +1988,9 @@ source_path 不单独成列，仅作任务名的悬浮提示。
 | `scale_about(point: QPointF, sx: float, sy: float) -> QTransform` | 绕 ``point`` 缩放（sx/sy 为 0 会退化，调用方保证非零）。 |
 | `shear_about(point: QPointF, sh: float, sv: float) -> QTransform` | 绕 ``point`` 切变：水平 sh（x 随 y 斜切）、垂直 sv（y 随 x 斜切）。 |
 | `bake_transform(image: QImage, rect: QRectF, xf: QTransform, region: QImage) -> QImage` | 把「选区内容经 ``xf`` 变换」烘焙进图片（画布尺寸不变）。 |
+| `bake_cage(image: QImage, cage_src, cage_dst, influence=None) -> QImage` | 把「把手 ``cage_src`` → 把手 ``cage_dst``」的形变烘焙进图片（尺寸不变）。 |
+| `cage_preview_scale(span_x: float, span_y: float, on_screen: float=1.0, budget_pixels: float=CAGE_PREVIEW_PIXELS) -> float` | 拖动预览的降采样倍率：清晰度与成本的**取小**。 |
+| `wait_cursor()` | 耗时操作期间挂等待光标。 |
 | `draw_text(image: QImage, pos: QPointF, text: str, px: int, color: QColor, family: str \| None=None) -> QImage` | 在 ``pos``（文字块左上角）画文字（可多行，行距 1.25 倍）；空文本原样返回。 |
 
 #### `bake_transform(image: QImage, rect: QRectF, xf: QTransform, region: QImage) -> QImage`
@@ -1914,6 +2000,42 @@ source_path 不单独成列，仅作任务名的悬浮提示。
 先把**原区域**填白（内容被挪走/变形后空出来的地方），再在 ``xf``
 变换下把选区快照画回去——与画布上的实时预览（填白底 + 变换浮层）
 所见一致。古籍整页白底，填白视觉上最干净。
+
+#### `bake_cage(image: QImage, cage_src, cage_dst, influence=None) -> QImage`
+
+把「把手 ``cage_src`` → 把手 ``cage_dst``」的形变烘焙进图片（尺寸不变）。
+
+与 :func:`bake_transform` 同口径：**影响半径之外**的像素逐字节不动，
+只是这里不是仿射矩阵而是逐像素重映射（见 ``utils.cage_warp``）。
+⚠️ **保留 alpha**：桌面侧编辑的常常是第三步产物「白底透明 PNG」，
+丢掉 alpha 会让整片透明背景变成不透明黑（用户 2026-10-01 报过）。
+
+#### `cage_preview_scale(span_x: float, span_y: float, on_screen: float=1.0, budget_pixels: float=CAGE_PREVIEW_PIXELS) -> float`
+
+拖动预览的降采样倍率：清晰度与成本的**取小**。
+
+两个约束：
+
+1. **清晰度**：``on_screen`` = 场景 1 单位对应多少**设备像素**
+   （= 当前缩放 × dpr）。预览取到这个倍率时，预览图上的 1 像素正好
+   落在屏幕 1 设备像素上——看着与原图一样清楚，再取大就是纯浪费。
+2. **成本**：处理面积不超过 ``budget_pixels``。
+
+缩到 1/3 看整页时清晰度约束直接给出 1/3：比按成本算还省 9 倍工作量，
+而且屏幕上看不出区别（这正是"预览"该有的样子）。
+
+``budget_pixels`` 由调用方按场合给：拖动中给
+:data:`CAGE_PREVIEW_PIXELS`（要跟手），松手后给
+:data:`CAGE_PREVIEW_SETTLE_PIXELS`（停下来看结果，宁可慢一点也要清楚）。
+
+#### `wait_cursor()`
+
+装饰器：`contextlib.contextmanager`
+
+耗时操作期间挂等待光标。
+
+⚠️ 必须 ``processEvents`` 一下，否则光标要等界面回到事件循环才换，
+而那时的等待已经结束了（等于没挂）。调用方负责别在里面重入。
 
 #### `draw_text(image: QImage, pos: QPointF, text: str, px: int, color: QColor, family: str | None=None) -> QImage`
 
@@ -2283,7 +2405,7 @@ Esc 交给 QDialog 自己处理（关窗）。
 
 ### `class ZoomPopupMixin`
 
-宿主侧混入：双击/右键大图打开图片预览弹窗与「查看 / 编辑」菜单。
+宿主侧混入：双击/右键大图打开图片预览弹窗与「预览 / 编辑」菜单。
 
 子类需要实现 :meth:`_zoom_target` 与 :meth:`_zoom_index`，并在
 ``__init__`` 里调 :meth:`_init_zoom_popup`。
@@ -3585,8 +3707,11 @@ PIL ``rotate`` 是**逆时针**，所以这里取负。两边口径写反的话�
 这里的规则是 GUI 各阶段共享的「单一事实来源」：
 - 提取缺页     → 续跑 extract 时的 pages 参数；
 - 提交条目     → rembg「提交本次任务」的最终图片派生；
-- 打印效果     → print 阶段在 worker 内实时合成的规格；
 - 待打印列表   → 第四步左侧列表的默认排序与持久化合并。
+
+⚠️ 第四步**没有**「按当前参数临时合成」的规则（2026-10-01 用户口径：
+去底色那一步必须提交才能传给下一步）：print 只排版「提交本次任务」落盘的
+成品图，见 ``taskdetail.submit.SubmitMixin._build_print_effects``。
 
 ### 模块函数
 
@@ -3595,7 +3720,6 @@ PIL ``rotate`` 是**逆时针**，所以这里取负。两边口径写反的话�
 | `missing_extract_pages_spec(output_dir: Path, total: int) -> str \| None` | 提取输出目录中缺失的页码，压缩为 CLI pages 参数（如 "3,7-9"）。 |
 | `plan_rembg_submit_entries(manifest_paths: list[Path], result_path_for, boxes_for, area: int) -> list[dict]` | 预览结果 + 检测框 + area/border → 最终图片条目。 |
 | `entry_to_effect_spec(entry: dict, border) -> dict` | 提交条目 → worker 效果合成规格（run_print_stage/run_rembg_submit_stage 用）。 |
-| `plan_print_effects(list_entries: list[dict], composed: list[dict], rembg_dir: Path, submitted_labels: set[str], border) -> list[dict]` | 第四步列表 + 第三步当前 area/border → worker 合成规格。 |
 | `drop_foreign_stage_pages(pages: list[dict] \| None, source_dir: Path, stages_root: Path) -> list[dict]` | 从待打印清单里剔除「属于本任务**别的阶段**产物」的条目。 |
 | `plan_print_entries(rembg_files: list[Path], doc: dict \| None) -> tuple[list[dict], dict]` | 第四步待打印图片列表的规划。 |
 
@@ -3652,22 +3776,6 @@ area=1 与「双框 + area=2/3」在 border 为空时**不等价**，曾导致�
 ``full`` 原样透传给合成层：整幅(fullcontent)页的框**原样下传**——
 area=4 保留整页内容、area 1/2/3 统一按合并语义走单框布局（不拆
 ``-l``/``-r``、不镜像）——见 ``desktop.workers.preview_worker.region_canvas_specs``。
-
-#### `plan_print_effects(list_entries: list[dict], composed: list[dict], rembg_dir: Path, submitted_labels: set[str], border) -> list[dict]`
-
-第四步列表 + 第三步当前 area/border → worker 合成规格。
-
-与「提交本次任务」复用同一套派生规则（plan_rembg_submit_entries）：
-源图为 stages/rembgpreview 去底图，effect 携带检测框/area/border，
-由 run_print_stage 在子进程内实时合成后再排版为 PDF。
-
-与用户在第四步保存的列表（拖动排序/删除/外部插入）按 label 对齐：
-- 命中当前 area 派生集合的条目，按用户列表顺序输出合成规格；
-- 列表 label 与当前派生集合**形态不同**（用户改过 area 而未重新提交）时，
-  按 `_base_label` 重映射到该页派生的全部条目——**顺序仍取列表顺序**，
-  这样本步的删除/排序在参数变化后依然生效；
-- 用户插入的外部图片（不在 stages/rembg 目录）整图透传；
-- 兜底补漏：当前派生集合里、列表与已提交产物都没有的条目才补在末尾。
 
 #### `drop_foreign_stage_pages(pages: list[dict] | None, source_dir: Path, stages_root: Path) -> list[dict]`
 
