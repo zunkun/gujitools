@@ -154,6 +154,21 @@ def run(ctx) -> None:
        len(full_area1) == 1 and full_area1[0]["label"] == "0001"
        and full_area1[0]["full"] is True, str(full_area1))
 
+    # 半幅 area=1 漏检一侧：label 必须带 -l/-r（用户 2026-10-01 报：
+    # 只有一个左文本框时产物叫 3.png，拼版按后缀判左右会把它误当整幅）
+    side_left = _entries(lambda _p: [[0, 0, 100, 100], None], 1)
+    ok("半幅 area=1 只检出左框 → label 0001-l（保留左右身份）",
+       len(side_left) == 1 and side_left[0]["label"] == "0001-l"
+       and side_left[0]["full"] is False, str(side_left))
+    side_right = _entries(lambda _p: [None, [200, 0, 300, 100]], 1)
+    ok("半幅 area=1 只检出右框 → label 0001-r",
+       len(side_right) == 1 and side_right[0]["label"] == "0001-r", str(side_right))
+    ok("半幅 area=2/3 单侧仍是对称整页输出（label 不带后缀，与 CLI 一致）",
+       all(
+           _entries(lambda _p: [[0, 0, 100, 100], None], a)[0]["label"] == "0001"
+           for a in (2, 3)
+       ))
+
     # 端到端（用户报的「area=1 显示的是整个页面，而不是 fullcontent 所在区域」）：
     # 整幅框原样下传——border 空时整页画布、框内容写回原位置（框外白）；
     # area=4 才保留框外内容（整页原图）。

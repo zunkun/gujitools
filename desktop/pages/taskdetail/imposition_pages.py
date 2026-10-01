@@ -99,7 +99,7 @@ class ImpositionPagesMixin:
             self._apply_picker_removed(dialog)
             return
         self._apply_picker_removed(dialog)
-        # 「自此之后图片自动拼版」：只勾 1 张 + 勾了复选框 → 从那张起把
+        # 「从这张图片开始自动拼版」：只勾 1 张 + 勾了复选框 → 从那张起把
         # 剩余候选按规则自动拼完（整幅单独一页；前一个左半幅 + 当前右半幅
         # 配对；落单单页）。规则唯一实现在 services.imposition.auto_impose_pages。
         auto_file = dialog.auto_mode_file()

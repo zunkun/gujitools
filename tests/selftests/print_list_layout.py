@@ -149,66 +149,45 @@ def run(ctx) -> None:
     finally:
         strip.deleteLater()
 
-    # ---- 2. effects 规划：第四步列表必须是**权威顺序** ----
-    # ⚠️ 这一节守的是一个真实事故：用户在第三步把 area 改掉（但没重新提交），
-    # 第四步列表里的 label 形态（"3"）与当前派生集合（"3-r"/"3-l"）不一致，
-    # 而旧实现只按 label **精确匹配** → 列表一条都对不上 → 全走"补条目"分支
-    # → 用户在这一步的删除与排序被静默忽略（症状：列表 101 条却生成 198 页 PDF，
-    # 删掉的页又回来了）。
+    # ---- 2. 取图规格：**整图透传列表**（2026-10-01 新契约）----
+    # 用户口径「去底色那一步，必须提交才能传给下一步」：第四步只排版
+    # 「提交本次任务」的成品图，不再拿去底图按当前 area/border 现算。
+    #
+    # ⚠️ 这条契约顺带干掉了一类真实事故：旧实现要按 label 把列表与"当前
+    # area 派生集合"对齐（形态不同时还得按基础页名重映射），一旦对齐逻辑出错，
+    # 用户在第四步**删掉的页会被补回来**（实测症状：列表 101 条却生成了
+    # 198 页 PDF）。现在取图就是列表本身，顺序即页序、删掉即消失。
     from pathlib import Path
 
-    from desktop.services.print_plan import plan_print_effects
+    from desktop.pages.taskdetail.submit import SubmitMixin
 
     tmp = Path(ctx.tmp) / "print_list_layout"
     rembg = tmp / "rembg"
     rembg.mkdir(parents=True, exist_ok=True)
 
-    def composed_of(label: str, parea: int = 1) -> dict:
-        """派生集合的一个条目（boxes 为空 → effect 为空，不触发图像合成）。"""
-        return {"label": label, "file": str(rembg / f"{label}.png"),
-                "box": None, "boxes": [], "parea": parea}
+    def file_of(name: str) -> str:
+        path = rembg / f"{name}.png"
+        path.write_bytes(b"x")
+        return str(path)
 
-    def entry_of(label: str) -> dict:
-        return {"file": str(rembg / f"{label}.png"), "label": label}
-
-    def labels(effects) -> list[str]:
-        return [e.get("label") for e in effects]
-
-    # ① label 形态一致：按列表顺序，且尊重删除
-    composed = [composed_of("1"), composed_of("2"), composed_of("3")]
-    eff = plan_print_effects(
-        [entry_of("3"), entry_of("1")], composed, rembg, {"1", "2", "3"}, "0"
-    )
-    ok("area 一致：合成顺序跟随列表，且删掉的页不复活",
-       labels(eff) == ["3", "1"], str(labels(eff)))
-
-    # ② 形态不同（列表 "3"，派生 "3-r"/"3-l"）：按基础页名重映射
-    composed2 = [composed_of(f"{n}{s}") for n in ("1", "2", "3") for s in ("-r", "-l")]
-    eff2 = plan_print_effects(
-        [entry_of("3")], composed2, rembg, {"1", "2", "3"}, "0"
-    )
-    ok("改过 area 后：列表按基础页名展开为当前派生的两条",
-       labels(eff2) == ["3-r", "3-l"], str(labels(eff2)))
-    ok("…且仍尊重删除（只留了第 3 页，第 1/2 页不得补回）",
-       not any(str(l).startswith(("1", "2")) for l in labels(eff2)),
-       str(labels(eff2)))
-
-    # ③ 反向（列表是拆页、派生是并集）：合并成一条，不重复
-    eff3 = plan_print_effects(
-        [entry_of("3-r"), entry_of("3-l")], [composed_of("3")],
-        rembg, {"3-r", "3-l"}, "0",
-    )
-    ok("反向形态差异同样收敛（两条拆页对应一条派生，不重复）",
-       labels(eff3) == ["3"], str(labels(eff3)))
-
-    # ④ 外部插入的图片整图透传（不做区域合成）
     outside = tmp / "outside.png"
-    outside.parent.mkdir(parents=True, exist_ok=True)
     outside.write_bytes(b"x")
-    eff4 = plan_print_effects(
-        [{"file": str(outside), "label": "cover"}], [composed_of("1")],
-        rembg, {"1"}, "0",
-    )
-    ok("外部插入的图片透传且 effect 为空（整图参与排版）",
-       len(eff4) == 1 and eff4[0]["effect"] is None
-       and Path(eff4[0]["file"]) == outside, str(eff4))
+    missing = rembg / "缺失.png"  # 不创建：文件不存在的条目
+    entries = [
+        {"file": file_of("3"), "label": "3"},
+        {"file": file_of("1-r"), "label": "1-r"},
+        {"file": str(outside), "label": "cover"},
+        {"file": str(missing), "label": "缺失"},
+    ]
+    # ⚠️ 用最小替身调用：取图规则**不再依赖页面/面板/拼版状态**（这也正是
+    #    新契约的一部分）；一旦有人往方法里塞 self.xxx，这里会立刻红。
+    effects = SubmitMixin._build_print_effects(object(), entries)
+    ok("取图 = 列表顺序逐条透传（含外部插入图）",
+       [e["file"] for e in effects]
+       == [entries[0]["file"], entries[1]["file"], str(outside)],
+       str([Path(e["file"]).name for e in effects]))
+    ok("…且不再携带区域合成规格（effect 全为 None）",
+       all(e.get("effect") is None for e in effects), str(effects))
+    ok("列表里指向已不存在文件的条目被过滤（不生成空页）",
+       not any("缺失" in e["file"] for e in effects),
+       str([e["file"] for e in effects]))

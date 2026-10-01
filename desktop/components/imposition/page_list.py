@@ -16,6 +16,8 @@
 
 from __future__ import annotations
 
+from functools import partial
+
 from PySide6.QtCore import (
     QAbstractAnimation, QPoint, QRectF, Qt, QPropertyAnimation, QTimer, Signal,
 )
@@ -613,7 +615,9 @@ class ImpositionPageList(QWidget):
         """登记动画；它结束时自己从 ``_anims`` 摘除（finished 信号在
         C++ 对象销毁前发出，之后 deleteLater，避免留悬挂引用）。"""
         self._anims.append(anim)
-        anim.finished.connect(lambda a=anim: self._forget_anim(a))
+        # ⚠️ 动画的 finished 在主线程发出，直连安全；但护栏静态扫描按信号名
+        # 拦「worker 信号直连 lambda」，这里用 partial + 绑定方法保持同款写法
+        anim.finished.connect(partial(self._forget_anim, anim))
         anim.finished.connect(anim.deleteLater)
         anim.start(QAbstractAnimation.DeletionPolicy.DeleteWhenStopped)
 
@@ -676,6 +680,7 @@ class ImpositionPageList(QWidget):
             ghost.deleteLater()
             return
         # 落位动画结束后才发信号：控制器据此 pop(source)/insert(drop) 落盘
+        # （finished 在主线程发出；partial 写法见 _register_anim 的说明）
         target = drop
         self._committing = True
         anim = QPropertyAnimation(ghost, b"pos", self)
@@ -684,7 +689,7 @@ class ImpositionPageList(QWidget):
         anim.setEndValue(QPoint(self._drag_x, self._slot_y(drop)))
         anim.setEasingCurve(QEasingCurve.OutCubic)
         anim.finished.connect(
-            lambda: self._emit_reorder(source, target, ghost))
+            partial(self._emit_reorder, source, target, ghost))
         self._register_anim(anim)
 
     def _emit_reorder(self, source: int, target: int, ghost) -> None:

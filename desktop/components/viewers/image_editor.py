@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
-"""图片编辑弹窗：裁剪 / 拉伸 / 擦除 / 插入文字（Win10 照片风格）。
+"""图片编辑弹窗：裁剪 / 擦除 / 插入文字（Win10 照片风格）。
 
 从图片预览弹窗（``image_zoom_dialog``）的「编辑」按钮进入，编辑的是
-**画布当前整分辨率图**（已含翻转/旋转）；「完成」后写回弹窗画布——满意
-就用弹窗原有的「下载」落盘，翻页/关窗即丢弃（预览可能是实时合成的虚拟
-图，不是所有页都有文件可回写，所以统一走下载）。
+**画布当前整分辨率图**（已含翻转/旋转）；「完成」后写回弹窗画布。宿主
+给 ``save_back=True``（画布显示 1:1 对应真实文件）时，「完成」= 直接
+**原子覆盖原图片文件**；虚拟预览（区域合成/打印重排/PDF 页）没有文件
+可回写，维持"满意用「下载」落盘、翻页/关窗即丢弃"的旧行为。
 
 四个工具的行为口径：
 
@@ -12,36 +13,64 @@
   边都是命中带，不只手柄小方块）、拖框中间移动；松手后**视图自动适配新
   选区**（选区变小就放大查看）。不做截图式"拖拽画框"——那是截图的交互，
   裁剪的语义是"从原图里收出想要的部分"（用户 20:05 定）。
-- **拉伸**：先拖出一个源区域，再拖右/下边（或角）把区域内容**横向/纵向
-  拉伸**（锚定左上）；应用后源区域先填白再把拉伸内容贴回——古籍整页
-  白底，填白视觉上最干净。
-- **擦除**：按住左键涂抹，圆头笔刷直接改像素（默认白色，古籍页面去污点
-  就是涂白；可切黑）。一笔一个撤销点。
-- **文字**：点击落点 → 输入文字 → 以当前字号/颜色画上去。每次插入一个
-  撤销点。
+- **变换**（GIMP「统一变换」口径，处理古籍褶皱/歪斜）：**默认选中整幅
+  图**，拖角=缩放（Shift 等比）、拖边=切变、框内拖=移动、框外拖=**绕
+  轴心旋转**（Shift 每 15° 吸附）；轴心圆点可拖动，「从轴心」勾选后
+  缩放/切变也以轴心为锚。勾选「**调整范围**」后沿边拖动**收小要处理的
+  区域**（收完自动回到变换模式）——小范围修褶皱就是"收小区域 → 旋转/
+  切变把它正回来"。拖动即实时预览（原区域填白，变换后的内容以
+  浮层显示）；「应用变换」（或切走工具/「完成」）才烘焙进像素——原
+  区域填白、只把选区内容按仿射矩阵画回去，画布尺寸不变，**区域外的
+  像素一动不动**。一批一个撤销点。
+- **擦除**：按住左键涂抹把污点**擦成白底**（古籍页面去污点就是涂白）；
+  直径在选项行可调；光标处有**实圈指示**，直径恒等于实际擦除直径
+  （所见即所擦）。一笔一个撤销点。
+  （原「拉伸」与笔刷配色已按用户 2026-10-01 要求移除。）
+- **文字**：点击落点 → 画布上**就地输入**（光标可见，点已有块可继续
+  编辑）→ 选项行可调字体 family / 字号 / **颜色选择器**（对整块即时
+  生效，样式是段落属性，与手机作图App同口径）→ 鼠标悬停在文字上出现
+  **边界虚线框**，按住拖动整块移动（虚线框跟随，松手即消失）→
+  「插入文字」把块写进图片（切走工具或点「完成」时未插入的块也自动
+  写入）。一个批次一个撤销点。
+
+  选项行的字体下拉**以中文字体为主**、只带几个常用西文字体（系统字体库
+  动辄两三百个族，全列出来反而找不到"仿宋"，见 `ui.fonts`）；颜色是
+  **一个按钮**，常用色块收在它弹出的面板里（见 `ui.color_picker`）。
+
+  ⚠️ 样式改动作用在"**当前样式块**"（``EditorCanvas.style_target_block``）
+  上，而不是"场景焦点项"：选项行的控件（尤其 qfluentwidgets 的 Slider，
+  它是 ``StrongFocus``）一被点击就会抢走键盘焦点，场景焦点项随之变 None，
+  按焦点项找块的话**改字号/颜色全部落空**（用户 2026-10-01 报障）。
 
 ⚠️ 撤销栈存的是**整图快照**（QImage 写时复制在就地绘制时仍会共享底层数据，
 必须 ``copy()``），上限 12 步——4000px 预览约 60MB/步，再多内存吃不消。
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QLineF, QPointF, QRectF, Qt, Signal
+import math
+
+from PySide6.QtCore import (
+    QLineF, QPointF, QRectF, QSizeF, Qt, QTimer, Signal,
+)
 from PySide6.QtGui import (
-    QBrush, QColor, QFont, QImage, QKeySequence, QFontMetrics, QPainter,
-    QPen, QPixmap, QShortcut,
+    QBrush, QColor, QFont, QImage, QKeySequence, QFontMetrics,
+    QPainter, QPen, QPixmap, QPolygonF, QShortcut, QTransform,
 )
 from PySide6.QtWidgets import (
-    QDialog, QFrame, QGraphicsLineItem, QGraphicsPixmapItem,
-    QGraphicsRectItem, QGraphicsScene, QGraphicsView, QHBoxLayout, QLabel,
-    QVBoxLayout, QWidget,
+    QDialog, QFrame, QGraphicsEllipseItem, QGraphicsItem,
+    QGraphicsLineItem, QGraphicsPixmapItem, QGraphicsPolygonItem,
+    QGraphicsRectItem, QGraphicsScene, QGraphicsTextItem, QGraphicsView,
+    QHBoxLayout, QLabel, QVBoxLayout, QWidget,
 )
 from qfluentwidgets import (
-    CaptionLabel, PrimaryPushButton, PushButton, RadioButton, Slider,
-    ToggleButton, ToolButton,
+    CaptionLabel, CheckBox, ComboBox, PrimaryPushButton, PushButton,
+    Slider, ToggleButton, ToolButton,
 )
 from qfluentwidgets import FluentIcon as FIF
 
 from desktop.ui import theme as T
+from desktop.ui.color_picker import ColorPickerButton
+from desktop.ui.fonts import text_font_families
 
 #: 撤销栈深度（步）。每步是整图快照，大图下是拿内存换的。
 UNDO_LIMIT = 12
@@ -69,15 +98,29 @@ HOVER_CURSORS = {
 }
 #: 松手后适配选区的视口占比（不填满，四周留白好抓边，用户 20:28 定）
 SEL_FIT_RATIO = 0.8
-#: 擦除笔刷粗细范围（图片像素）
-BRUSH_MIN, BRUSH_MAX, BRUSH_DEFAULT = 4, 160, 24
+#: 变换轴心圆点的视觉直径（视图像素）
+PIVOT_VIEW_PX = 14.0
+#: 旋转按住 Shift 时的角度吸附步（度）
+ROTATE_SNAP_DEG = 15.0
+#: 橡皮擦直径范围（图片像素）
+ERASER_MIN, ERASER_MAX, ERASER_DEFAULT = 4, 160, 24
 #: 插入文字字号范围（图片像素高）
 TEXT_MIN, TEXT_MAX, TEXT_DEFAULT = 12, 240, 48
+#: 文字常用色（古籍批注口径：黑墨/白粉/朱批/藏蓝/赭黄/黛绿）——一击即换的
+#: 色块，**收在颜色选择器面板里**（用户 2026-10-01：色块不要散在选项行上）。
+TEXT_SWATCHES = (
+    ("黑墨", "#000000"),
+    ("白粉", "#ffffff"),
+    ("朱批", "#d32f2f"),
+    ("藏蓝", "#1976d2"),
+    ("赭黄", "#8d6e63"),
+    ("黛绿", "#2e7d32"),
+)
 
 #: 左侧工具栏：（键, 图标, 中文名）
 TOOLS = (
     ("crop", FIF.CUT, "裁剪"),
-    ("stretch", FIF.MOVE, "拉伸"),
+    ("transform", FIF.MOVE, "变换"),
     ("erase", FIF.ERASE_TOOL, "擦除"),
     ("text", FIF.FONT, "文字"),
 )
@@ -96,38 +139,71 @@ def clamp_rect(rect: QRectF, bounds: QRectF) -> QRectF:
     return QRectF(x, y, width, height)
 
 
-def stretch_region(image: QImage, src: QRectF, dst: QRectF) -> QImage:
-    """把 ``src`` 区域的内容拉伸贴到 ``dst``（画布尺寸不变）。
+# ------------------------------------------------------------------ 变换数学
+# ⚠️ PySide6 的 QTransform 复合约定（离屏实测）：
+#   * ``(A * B).map(p)`` = **先 A 后 B**（与 QPainter 的调用顺序一致）；
+#   * 链式 builder ``translate(c).rotate(a).translate(-c)`` 恰好是"绕 c 旋转"；
+#   * ``shear(sh, sv)``：x' = x + sh·y，y' = y + sv·x；rotate 正角度 = 顺时针
+#     （y 向下坐标系）。下面的组合全按这套语义写，并有自测盯着。
+def rotate_about(point: QPointF, degrees: float) -> QTransform:
+    """绕 ``point`` 旋转 ``degrees``（正=顺时针）。"""
+    t = QTransform()
+    t.translate(point.x(), point.y())
+    t.rotate(degrees)
+    t.translate(-point.x(), -point.y())
+    return t
 
-    先把**源区域**填白再贴拉伸结果：目标比源小时，源区域多出来的部分
-    如果留原像素会形成"重影带"；古籍是白底页，填白最干净。
-    两个区域都先夹进画布再裁。
+
+def scale_about(point: QPointF, sx: float, sy: float) -> QTransform:
+    """绕 ``point`` 缩放（sx/sy 为 0 会退化，调用方保证非零）。"""
+    t = QTransform()
+    t.translate(point.x(), point.y())
+    t.scale(sx, sy)
+    t.translate(-point.x(), -point.y())
+    return t
+
+
+def shear_about(point: QPointF, sh: float, sv: float) -> QTransform:
+    """绕 ``point`` 切变：水平 sh（x 随 y 斜切）、垂直 sv（y 随 x 斜切）。"""
+    t = QTransform()
+    t.translate(point.x(), point.y())
+    t.shear(sh, sv)
+    t.translate(-point.x(), -point.y())
+    return t
+
+
+def bake_transform(image: QImage, rect: QRectF, xf: QTransform,
+                   region: QImage) -> QImage:
+    """把「选区内容经 ``xf`` 变换」烘焙进图片（画布尺寸不变）。
+
+    先把**原区域**填白（内容被挪走/变形后空出来的地方），再在 ``xf``
+    变换下把选区快照画回去——与画布上的实时预览（填白底 + 变换浮层）
+    所见一致。古籍整页白底，填白视觉上最干净。
     """
-    bounds = QRectF(0, 0, image.width(), image.height())
-    src = clamp_rect(src, bounds)
-    dst = clamp_rect(dst, bounds)
-    if src.isEmpty() or dst.isEmpty():
-        return image
-    region = image.copy(src.toRect())
     result = image.copy()
     painter = QPainter(result)
     painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
-    painter.fillRect(src, Qt.GlobalColor.white)
-    painter.drawImage(dst, region)
+    painter.fillRect(rect, QColor("#ffffff"))
+    painter.setTransform(xf)
+    painter.drawImage(rect, region)
     painter.end()
     return result
 
 
 def draw_text(image: QImage, pos: QPointF, text: str, px: int,
-              color: QColor) -> QImage:
-    """在 ``pos``（文字块左上角）画文字（可多行，行距 1.25 倍）；空文本原样返回。"""
+              color: QColor, family: str | None = None) -> QImage:
+    """在 ``pos``（文字块左上角）画文字（可多行，行距 1.25 倍）；空文本原样返回。
+
+    ``family`` 缺省用主题字体；文字块（就地编辑）烧进图片时传块当时的
+    family，保证"所见即所得"。
+    """
     if not text.strip():
         return image
     result = image.copy()
     painter = QPainter(result)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
-    font = QFont(T.FONT_FAMILY)
+    font = QFont(family or T.FONT_FAMILY)
     font.setPixelSize(max(1, int(px)))
     painter.setFont(font)
     painter.setPen(QPen(color))
@@ -142,20 +218,129 @@ def draw_text(image: QImage, pos: QPointF, text: str, px: int,
     return result
 
 
+def _dist_to_segment(p: QPointF, a: QPointF, b: QPointF) -> float:
+    """点到线段的最短距离（视图像素口径的边命中带用）。"""
+    ab = b - a
+    length_sq = ab.x() * ab.x() + ab.y() * ab.y()
+    if length_sq < 1e-9:
+        return QLineF(p, a).length()
+    t = max(0.0, min(1.0, (
+        (p.x() - a.x()) * ab.x() + (p.y() - a.y()) * ab.y()) / length_sq))
+    return QLineF(p, a + ab * t).length()
+
+
+class TextBlockItem(QGraphicsTextItem):
+    """画布上的待插入文字块：就地编辑（光标可见），按住拖动整体移动。
+
+    交互口径：**单击**进编辑态放光标（QGraphicsTextItem 原生），**按住
+    拖动**超过阈值 = 移动整块。刻意不复用 ``ItemIsMovable``——它与文本
+    编辑的"按住选字"打架，这里按位移阈值自己分流。拖动全程由画布的
+    **边界虚线框**跟随（悬停即显示、松手即消失），用户随时知道"这一块
+    会被整体挪走"（用户 2026-10-01：手机作图式文字）。
+    """
+
+    #: 按下后位移超过该值（图片像素）判定为拖动，否则视为点击放光标
+    DRAG_THRESHOLD = 4.0
+
+    def __init__(self, pos: QPointF, px: int, color: QColor, family: str):
+        super().__init__()
+        self.setPos(pos)
+        # 文档默认有 4px 边距，会让"烧进图片"的位置比屏幕所见偏右下
+        self.document().setDocumentMargin(0.0)
+        font = QFont(family)
+        font.setPixelSize(max(1, int(px)))
+        self.setFont(font)
+        self.setDefaultTextColor(color)
+        self.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextEditorInteraction)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsFocusable, True)
+        self._moving = False
+        self._press_scene = QPointF()
+        self._canvas: "EditorCanvas | None" = None  # add_text_block 回填
+
+    def apply_style(self, family: str, px: int, color: QColor) -> None:
+        """选项行改字体/字号/颜色时对块即时生效（编辑中也能改）。
+
+        ⚠️ 是**整块**生效：setFont/setDefaultTextColor 作用于整个文档，
+        与手机作图App一致——样式是段落属性，不做逐字混排。
+        """
+        font = self.font()
+        font.setFamily(family)
+        font.setPixelSize(max(1, int(px)))
+        self.setFont(font)
+        self.setDefaultTextColor(color)
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._moving = False
+            self._press_scene = event.scenePos()
+            if self._canvas is not None:
+                self._canvas._move_text_outline(self)
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:  # noqa: N802
+        if (event.buttons() & Qt.MouseButton.LeftButton
+                and (self._moving
+                     or (event.scenePos() - self._press_scene)
+                     .manhattanLength() > self.DRAG_THRESHOLD)):
+            delta = event.scenePos() - self._press_scene
+            self._moving = True
+            self.setPos(self.pos() + delta)
+            self._press_scene = event.scenePos()
+            if self._canvas is not None:
+                self._canvas._move_text_outline(self)
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+        if self._moving:
+            self._moving = False
+            if self._canvas is not None:
+                self._canvas._hide_text_outline()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        # Esc 结束编辑（块保留，可再拖动/再编辑）；不冒泡去关弹窗
+        if event.key() == Qt.Key.Key_Escape:
+            self.clearFocus()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def focusInEvent(self, event) -> None:  # noqa: N802
+        super().focusInEvent(event)
+        # 报备"当前样式块"：选项行改字体/字号/颜色时作用在它身上。不能靠
+        # 场景焦点项现查——选项行控件（尤其 Slider）一被点就把焦点抢走。
+        if self._canvas is not None:
+            self._canvas._active_text_block = self
+
+    def focusOutEvent(self, event) -> None:  # noqa: N802
+        super().focusOutEvent(event)
+        # 空块（点了落点没打字）失焦即自删，不留隐形占位
+        if not self.toPlainText().strip():
+            if self._canvas is not None and self._canvas._active_text_block is self:
+                self._canvas._active_text_block = None
+            QTimer.singleShot(0, self.deleteLater)
+
+
 # ------------------------------------------------------------------ 画布
 class EditorCanvas(QGraphicsView):
     """编辑画布：滚轮缩放、中/右键拖拽平移、左键按工具交互。
 
     场景坐标 = 图片像素（pixmap 刻意不设 devicePixelRatio，与预览弹窗同
-    口径）。选区矩形（裁剪/拉伸共用）几何全部落在**图片坐标系**，缩放
-    只影响显示。裁剪与拉伸的交互不同：裁剪**默认全选**只许收边，拉伸
-    仍要"拖拽画框"选出源区域。
+    口径）。选区矩形（裁剪）几何全部落在**图片坐标系**，缩放只影响显示。
+    裁剪不做"拖拽画框"：**默认全选**，只许收边/框内移动。
     """
 
     #: 擦除一笔开始（弹窗借此压撤销点）
     stroke_started = Signal()
     #: 在文字工具下单击了某个落点（图片坐标，已夹进画布）
     text_requested = Signal(QPointF)
+    #: 「调整范围」收边完成（弹窗借此取消勾选，自动回到变换模式）
+    reshape_finished = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -170,11 +355,33 @@ class EditorCanvas(QGraphicsView):
         #: 缩成指甲盖大小且再也不修正（用户截图报过）。
         self._user_zoomed = False
         self._rect: QRectF | None = None          # 当前选区（图片坐标）
-        self._rect_src: QRectF | None = None      # 拉伸的源区域（选区定格时）
         self._mode: tuple | None = None           # 进行中的拖拽
         self._hover_handle: str | None = None     # 悬停/拖动中的手柄（光标+高亮）
-        self._erase_color = QColor("#ffffff")
-        self._erase_size = BRUSH_DEFAULT
+        self._erase_size = ERASER_DEFAULT
+        self._eraser_pos = QPointF()   # 橡皮擦圈当前位置（图片坐标）
+        #: **当前样式作用块**：选项行改字体/字号/颜色时作用在它身上。由
+        #: 新建/聚焦/点击文字块时刷新（见 TextBlockItem.focusInEvent）。
+        #: ⚠️ 不能用"场景焦点项"代替：选项行的 Slider 是 StrongFocus，一拖
+        #: 就把焦点抢走，焦点项变 None，样式改动全部落空（用户报障过）。
+        self._active_text_block: TextBlockItem | None = None
+        # ---- 变换工具状态 ----
+        #: 累计仿射矩阵（图片坐标 → 当前位置）；恒等 = 没动过
+        self._xf = QTransform()
+        #: 轴心（**选区局部坐标**，显示时经 _xf 映到画布）
+        self._xf_pivot = QPointF()
+        #: 发生过任何变换操作（区分"真变换"与"动了手但没动矩阵"）
+        self._xf_touched = False
+        #: 从轴心缩放/切变（旋转永远绕轴心）
+        self._xf_about_pivot = False
+        #: 「调整范围」模式：拖手柄收小变换区域而不是缩放内容
+        #: （小范围修褶皱的入口：先框住褶皱，再旋转/切变把它正回来）
+        self._xf_reshape = False
+        #: 预览三件套：锁定的选区 / 选区像素快照 / 填白后的底图
+        self._xf_rect: QRectF | None = None
+        self._xf_region: QImage | None = None
+        self._paint_image: QImage | None = None
+        #: 变换内容的浮层（跟随 _xf 实时变形，烘焙语义与预览一致）
+        self._float_item: QGraphicsPixmapItem | None = None
         self.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setBackgroundBrush(QColor(T.SURFACE_SOFT))
@@ -183,6 +390,11 @@ class EditorCanvas(QGraphicsView):
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.NoAnchor)
         # 悬停就要更新光标形态（默认只在按住时才来 move 事件）
         self.setMouseTracking(True)
+        # ⚠️ 必须 StrongFocus：就地文字块靠「视图持有键盘焦点 → 转发给场景
+        #    焦点项」才能收到输入；NoFocus 会让打字全部落空（用户报
+        #    「文字不能编辑，输入没效果」，2026-10-01）。方向键翻页由
+        #    keyPressEvent 显式 ignore 保持不变。
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._build_overlay()
         self._sync_cursor()
 
@@ -193,7 +405,11 @@ class EditorCanvas(QGraphicsView):
             self._scene.removeItem(self._border)
         self._border = None
         self._rect = None
-        self._rect_src = None
+        # 换图后文字块/变换预览都失效，一并清掉（应用/撤销/还原都走这里）
+        self.clear_text_blocks()
+        self._clear_transform_preview()
+        self._xf = QTransform()
+        self._xf_touched = False
         if self._item is not None:
             self._scene.removeItem(self._item)
             self._item = None
@@ -213,17 +429,22 @@ class EditorCanvas(QGraphicsView):
         self._item = item
         self.setSceneRect(item.boundingRect())
         self.fit()
-        if self._tool == "crop":
-            # 换图（裁剪应用/撤销/还原都走这里）后裁剪区重新默认全选：
-            # 裁剪的语义是"从当前原图收边"，不是沿用旧图上的框
+        if self._tool in ("crop", "transform"):
+            # 换图（应用/撤销/还原都走这里）后选区重新默认全选：
+            # 裁剪/变换的语义都是"从当前原图出发"，不是沿用旧图上的框
             self._rect = QRectF(self.image_rect())
-            self._rect_src = None
+            self._xf_pivot = self._rect.center()
         self._sync_overlay()
 
     def refresh(self) -> None:
         """像素被就地改过（擦除）后只刷显示，不动缩放与滚动位置。"""
         if self._item is not None and self._image is not None:
             self._item.setPixmap(QPixmap.fromImage(self._image))
+
+    def replace_image(self, image: QImage) -> None:
+        """就地换图（尺寸不变的语义，如文字写入）：不动缩放与滚动位置。"""
+        self._image = image
+        self.refresh()
 
     @property
     def image(self) -> QImage | None:
@@ -237,21 +458,30 @@ class EditorCanvas(QGraphicsView):
 
     # ------------------------------------------------------------ 工具
     def set_tool(self, tool: str) -> None:
-        """切换工具：裁剪默认全选（只许收边），其余清选区、换光标。"""
+        """切换工具：裁剪/变换默认全选，其余清选区、换光标。"""
         self._tool = tool
-        self._rect_src = None
         self._mode = None
-        if tool == "crop" and not self.image_rect().isNull():
+        self._clear_transform_preview()
+        self._xf = QTransform()
+        self._xf_touched = False
+        self._xf_reshape = False  # 调整范围是勾选态，换工具即复位
+        self._hide_text_outline()
+        if tool != "erase":
+            self._hide_eraser_ring()
+        if tool in ("crop", "transform") and not self.image_rect().isNull():
             self._rect = QRectF(self.image_rect())
+            self._xf_pivot = self._rect.center()
         else:
             self._rect = None
         self._sync_overlay()
         self._sync_cursor()
 
-    def set_brush(self, size: int, color: QColor) -> None:
-        """设置擦除笔刷（图片像素直径与颜色）。"""
+    def set_eraser(self, size: int) -> None:
+        """设置橡皮擦直径（图片像素）；擦除固定涂白，没有颜色可选。"""
         self._erase_size = max(1, int(size))
-        self._erase_color = QColor(color)
+        # 圈已在屏上（悬停中/拖抹中）就按新直径重画，光标与笔刷同步变大变小
+        if any(item.isVisible() for item in self._eraser_ring):
+            self._move_eraser_ring(self._eraser_pos)
 
     def selection(self) -> QRectF | None:
         """当前选区（图片坐标）；不足最小边视为没有。"""
@@ -262,9 +492,227 @@ class EditorCanvas(QGraphicsView):
             return None
         return rect
 
-    def stretch_source(self) -> QRectF | None:
-        """拉伸的源区域（选区第一次定格时的位置）。"""
-        return self._rect_src
+    # ------------------------------------------------------------ 文字块
+    def add_text_block(self, pos: QPointF, px: int, color: QColor,
+                       family: str) -> TextBlockItem:
+        """在落点放一个可就地编辑的文字块并给它焦点（光标闪烁）。
+
+        ⚠️ 顺便把键盘焦点拿回视图：场景焦点项的输入要靠「视图持有键盘
+        焦点 → keyPressEvent 转发」这条链，视图没焦点时打字全落空。
+        """
+        item = TextBlockItem(pos, px, color, family)
+        item._canvas = self  # 拖动时让画布的边界虚线框跟随
+        item.setZValue(20)
+        self._scene.addItem(item)
+        self._active_text_block = item
+        self.setFocus()
+        item.setFocus()
+        return item
+
+    def _move_text_outline(self, block: TextBlockItem) -> None:
+        """文字块**边界虚线框**挪到块身（悬停/拖动中可见，松手即隐）。
+
+        用户 2026-10-01：鼠标放在文字上要有"这一块的范围"线段，拖动时
+        跟着走，释放就消失——拖的是整块，不是光标。
+        """
+        rect = block.mapRectToScene(block.boundingRect())
+        self._text_outline.setRect(rect)
+        self._text_outline.setVisible(True)
+
+    def _hide_text_outline(self) -> None:
+        self._text_outline.hide()
+
+    def _text_block_at(self, pos: QPointF) -> TextBlockItem | None:
+        """落点处的文字块（按块的边界矩形命中，与虚线框口径一致）。"""
+        for block in self.text_blocks():
+            if block.boundingRect().contains(block.mapFromScene(pos)):
+                return block
+        return None
+
+    def text_blocks(self) -> list[TextBlockItem]:
+        """画布上所有待插入文字块。"""
+        return [i for i in self._scene.items()
+                if isinstance(i, TextBlockItem)]
+
+    def focused_text_block(self) -> TextBlockItem | None:
+        """正在编辑的文字块（场景焦点项；键盘输入路由用）。"""
+        item = self._scene.focusItem()
+        return item if isinstance(item, TextBlockItem) else None
+
+    def style_target_block(self) -> TextBlockItem | None:
+        """选项行改样式时作用的那一块：优先正在编辑的，其次"当前样式块"。
+
+        ⚠️ 与 :meth:`focused_text_block` 分开是刻意的：点选项行的滑杆/按钮
+        会抢走键盘焦点，此时"正在编辑"已经没了，但用户**期望**改动仍落在他
+        刚点的那个文字块上（用户 2026-10-01 报"字号不生效"就是这个原因）。
+        """
+        block = self.focused_text_block()
+        if block is not None:
+            return block
+        block = self._active_text_block
+        if block is None:
+            return None
+        try:
+            alive = block.scene() is self._scene
+        except RuntimeError:  # 空块失焦自删，C++ 对象已回收
+            alive = False
+        if not alive:
+            self._active_text_block = None
+            return None
+        return block
+
+    def focus_text_block(self, block: TextBlockItem | None = None) -> None:
+        """把键盘焦点还给文字块（颜色面板关掉后接着打字用）。"""
+        block = block if block is not None else self.style_target_block()
+        if block is None or block.scene() is not self._scene:
+            return
+        self.setFocus()
+        block.setFocus()
+
+    def clear_text_blocks(self) -> None:
+        """清掉所有文字块（插入/换图/关编辑时）。"""
+        self._hide_text_outline()
+        self._active_text_block = None
+        for item in self.text_blocks():
+            self._scene.removeItem(item)
+            item.deleteLater()
+
+    # ------------------------------------------------------------ 变换
+    def set_transform_about_pivot(self, about: bool) -> None:
+        """「从轴心」：缩放/切变以轴心为锚（旋转永远绕轴心）。"""
+        self._xf_about_pivot = bool(about)
+
+    def set_transform_reshape(self, on: bool) -> None:
+        """「调整范围」模式：拖手柄/边=收小变换区域，而不是缩放内容。
+
+        进入时必须丢掉未应用的变换预览——浮层与填白底都是按**旧区域**
+        快照做的，区域一变它们就与画布对不上了。退出（收边完成/取消
+        勾选）后保留收小的区域，下一次拖动即以它为变换对象。
+        """
+        on = bool(on)
+        if on and (self._xf_touched or self._float_item is not None):
+            self._clear_transform_preview()
+            self._xf = QTransform()
+            self._xf_touched = False
+        self._xf_reshape = on
+        self._sync_overlay()
+        self._sync_cursor()
+
+    def _ensure_transform_preview(self) -> None:
+        """锁定选区并搭起实时预览：底图填白 + 选区快照浮层。
+
+        只在第一次真正抓取时做一次（拿两张整图快照），后续拖动只改
+        ``_xf`` 与浮层的 transform，不再碰像素。
+        """
+        if self._float_item is not None or self._image is None \
+                or self._rect is None:
+            return
+        rect = self._rect.normalized()
+        self._xf_rect = QRectF(rect)
+        self._xf_region = self._image.copy(rect.toRect())
+        self._paint_image = self._image.copy()
+        painter = QPainter(self._paint_image)
+        painter.fillRect(rect, QColor("#ffffff"))
+        painter.end()
+        self._item.setPixmap(QPixmap.fromImage(self._paint_image))
+        self._float_item = QGraphicsPixmapItem(
+            QPixmap.fromImage(self._xf_region))
+        self._float_item.setZValue(5)
+        self._scene.addItem(self._float_item)
+        self._sync_float()
+
+    def _sync_float(self) -> None:
+        """浮层跟随累计矩阵：选区像素 (u,v) → 原图坐标 → 画布位置。"""
+        if self._float_item is None or self._xf_rect is None:
+            return
+        tl = self._xf_rect.topLeft()
+        # (A*B) 先 A 后 B：先平移到选区原位，再套累计矩阵
+        self._float_item.setTransform(
+            QTransform().translate(tl.x(), tl.y()) * self._xf)
+
+    def _clear_transform_preview(self) -> None:
+        """撤掉预览浮层并把底图恢复成真像素（矩阵不动，见 reset_transform）。"""
+        if self._float_item is not None:
+            self._scene.removeItem(self._float_item)
+            self._float_item = None
+        if self._paint_image is not None:
+            self._paint_image = None
+            self._xf_region = None
+            self._xf_rect = None
+            self.refresh()
+
+    def reset_transform(self) -> None:
+        """「重置」：丢弃未应用的变换，选区回到整幅、轴心回到中心。"""
+        self._clear_transform_preview()
+        self._xf = QTransform()
+        self._xf_touched = False
+        if not self.image_rect().isNull():
+            self._rect = QRectF(self.image_rect())
+            self._xf_pivot = self._rect.center()
+        self._sync_overlay()
+
+    def transform_pending(self) -> tuple[QRectF, QTransform, QImage] | None:
+        """未应用的变换 ``(选区, 矩阵, 选区像素快照)``；没有则 None。"""
+        if (not self._xf_touched or self._xf_rect is None
+                or self._xf_region is None):
+            return None
+        return (QRectF(self._xf_rect), QTransform(self._xf),
+                QImage(self._xf_region))
+
+    # ---- 变换操作（拖拽处理器与自测共用的语义级入口） ----
+    def transform_move(self, dx: float, dy: float) -> None:
+        """整体平移 ``dx, dy``（图片像素）。"""
+        self._ensure_transform_preview()
+        # 先已有的变换，再平移：(T * Move) 先 T 后 Move
+        self._xf = self._xf * QTransform().translate(dx, dy)
+        self._xf_touched = True
+        self._sync_float()
+        self._sync_overlay()
+
+    def transform_rotate(self, degrees: float) -> None:
+        """绕**轴心当前视觉位置**旋转（轴心保持不动）。"""
+        self._ensure_transform_preview()
+        center = self._xf.map(self._xf_pivot)
+        self._xf = self._xf * rotate_about(center, degrees)
+        self._xf_touched = True
+        self._sync_float()
+        self._sync_overlay()
+
+    def transform_scale(self, sx: float, sy: float,
+                        anchor: QPointF | None = None) -> None:
+        """缩放（局部空间，锚点缺省=轴心；sx/sy 是相对当前内容的倍率）。"""
+        self._ensure_transform_preview()
+        point = QPointF(anchor) if anchor is not None else self._xf_pivot
+        sx = sx if abs(sx) > 1e-6 else 1.0
+        sy = sy if abs(sy) > 1e-6 else 1.0
+        # 局部操作发生在累计矩阵**之前**：(S * T) 先 S 后 T
+        self._xf = scale_about(point, sx, sy) * self._xf
+        self._xf_touched = True
+        self._sync_float()
+        self._sync_overlay()
+
+    def transform_shear(self, edge: str, k: float) -> None:
+        """拖边切变：``edge`` 是被抓的边（l/r/t/b），``k`` 是切变系数，
+        对边为锚（抓右边往下拖 = 内容随 x 增大而下斜）。"""
+        self._ensure_transform_preview()
+        self._apply_shear(edge, k, self._xf)
+        self._xf_touched = True
+        self._sync_float()
+        self._sync_overlay()
+
+    def _apply_shear(self, edge: str, k: float, x_start: QTransform) -> None:
+        """在 ``x_start`` 基础上叠一次切变（拖拽中按拖动起点取绝对量）。"""
+        rect = self._xf_rect.normalized()
+        if edge in ("l", "r"):
+            anchor_x = rect.right() if edge == "l" else rect.left()
+            sv = -k if edge == "l" else k
+            self._xf = shear_about(
+                QPointF(anchor_x, rect.top()), 0.0, sv) * x_start
+        else:
+            anchor_y = rect.bottom() if edge == "t" else rect.top()
+            sh = -k if edge == "t" else k
+            self._xf = shear_about(
+                QPointF(rect.left(), anchor_y), sh, 0.0) * x_start
 
     # ------------------------------------------------------------ 覆盖层
     def _build_overlay(self) -> None:
@@ -286,6 +734,13 @@ class EditorCanvas(QGraphicsView):
         self._sel_border.setZValue(11)
         self._sel_border.hide()
         self._scene.addItem(self._sel_border)
+        # 变换工具的**四边形**选框（跟随累计矩阵变形，虚线同款样式）
+        self._quad = QGraphicsPolygonItem()
+        self._quad.setBrush(QBrush(Qt.BrushStyle.NoBrush))
+        self._quad.setPen(QPen(QColor(T.ACCENT), 0, Qt.PenStyle.DashLine))
+        self._quad.setZValue(11)
+        self._quad.hide()
+        self._scene.addItem(self._quad)
         self._handles: dict[str, QGraphicsRectItem] = {}
         handle_pen = QPen(QColor("#ffffff"), 0)
         handle_brush = QBrush(QColor(T.ACCENT))
@@ -309,6 +764,51 @@ class EditorCanvas(QGraphicsView):
             item.hide()
             self._scene.addItem(item)
             self._edge_lines[name] = item
+        # 变换**轴心**圆点（画在最上层，可拖动）
+        self._pivot_item = QGraphicsEllipseItem()
+        self._pivot_item.setBrush(QBrush(QColor(T.ACCENT)))
+        self._pivot_item.setPen(QPen(QColor("#ffffff"), 0))
+        self._pivot_item.setZValue(14)
+        self._pivot_item.hide()
+        self._scene.addItem(self._pivot_item)
+        # 橡皮擦**光标圈**：直径恒等于实际擦除直径（场景坐标 = 图片像素，
+        # 缩放天然跟随），圈到哪里擦到哪里（用户 2026-10-01：光标大小要和
+        # 划线一致）。外圈深色 3 设备像素 + 内圈白 1 设备像素，白纸黑底都
+        # 看得见；pen 用 cosmetic——线宽按设备像素，任何缩放下都是恒定细线。
+        self._eraser_ring: list[QGraphicsEllipseItem] = []
+        for color, width in (("#3a3f4b", 3.0), ("#ffffff", 1.0)):
+            item = QGraphicsEllipseItem()
+            pen = QPen(QColor(color))
+            pen.setCosmetic(True)
+            pen.setWidthF(width)
+            item.setPen(pen)
+            item.setBrush(QBrush(Qt.BrushStyle.NoBrush))
+            item.setZValue(15)
+            item.hide()
+            self._scene.addItem(item)
+            self._eraser_ring.append(item)
+        # 文字块**边界虚线框**：悬停在块上/拖动中显示"这一块的范围"，
+        # 松手即消失（用户 2026-10-01 手机作图式文字）
+        self._text_outline = QGraphicsRectItem()
+        self._text_outline.setBrush(QBrush(Qt.BrushStyle.NoBrush))
+        self._text_outline.setPen(QPen(QColor(T.ACCENT), 0, Qt.PenStyle.DashLine))
+        self._text_outline.setZValue(18)
+        self._text_outline.hide()
+        self._scene.addItem(self._text_outline)
+
+    def _move_eraser_ring(self, pos: QPointF, show: bool = True) -> None:
+        """橡皮擦圈挪到 ``pos``（图片坐标，圈心 = 笔刷中心 = 光标处）。"""
+        self._eraser_pos = QPointF(pos)
+        radius = self._erase_size / 2.0
+        rect = QRectF(pos.x() - radius, pos.y() - radius,
+                      self._erase_size, self._erase_size)
+        for item in self._eraser_ring:
+            item.setRect(rect)
+            item.setVisible(show and self._item is not None)
+
+    def _hide_eraser_ring(self) -> None:
+        for item in self._eraser_ring:
+            item.hide()
 
     def _handle_boxes(self, rect: QRectF) -> dict[str, QRectF]:
         """8 个手柄的图片坐标框（视觉尺寸 = 视图像素 ÷ 当前倍率）。"""
@@ -327,14 +827,20 @@ class EditorCanvas(QGraphicsView):
 
     def _sync_overlay(self) -> None:
         """按当前选区刷新遮罩/边框/手柄几何与可见性。"""
+        if (self._tool == "transform" and self._rect is not None
+                and self._image is not None):
+            self._sync_transform_overlay()
+            return
         visible = (
-            self._tool in ("crop", "stretch")
+            self._tool == "crop"
             and self._rect is not None and self._image is not None
         )
         if not visible:
             for item in self._mask:
                 item.setVisible(False)
             self._sel_border.setVisible(False)
+            self._quad.setVisible(False)
+            self._pivot_item.setVisible(False)
             for item in self._handles.values():
                 item.setVisible(False)
             for item in self._edge_lines.values():
@@ -359,6 +865,8 @@ class EditorCanvas(QGraphicsView):
             item.setVisible(True)
         self._sel_border.setRect(rect)
         self._sel_border.setVisible(True)
+        self._quad.setVisible(False)
+        self._pivot_item.setVisible(False)
         for name, box in self._handle_boxes(rect).items():
             self._handles[name].setRect(box)
             self._handles[name].setVisible(True)
@@ -376,6 +884,90 @@ class EditorCanvas(QGraphicsView):
             item.setPen(pen)
             item.setLine(line)
         self._apply_hover_highlight()
+
+    def _transform_quad(self) -> dict[str, QPointF]:
+        """变换后选区四角（图片坐标）：8 手柄与命中测试的几何来源。"""
+        rect = (self._xf_rect or self._rect).normalized()
+        xf = self._xf
+        return {
+            "tl": xf.map(rect.topLeft()), "tr": xf.map(rect.topRight()),
+            "br": xf.map(rect.bottomRight()), "bl": xf.map(rect.bottomLeft()),
+        }
+
+    def _sync_transform_overlay(self) -> None:
+        """变换工具的覆盖层：四边形选框 + 8 手柄（跟随矩阵变形）+ 轴心。"""
+        for item in self._mask:
+            item.setVisible(False)
+        self._sel_border.setVisible(False)
+        for item in self._edge_lines.values():
+            item.setVisible(False)
+        corners = self._transform_quad()
+        quad = QPolygonF([corners["tl"], corners["tr"],
+                          corners["br"], corners["bl"], corners["tl"]])
+        self._quad.setPolygon(quad)
+        self._quad.setVisible(True)
+        hs = HANDLE_VIEW_PX / max(self._zoom, 1e-6)
+        points = {
+            "tl": corners["tl"], "tr": corners["tr"],
+            "bl": corners["bl"], "br": corners["br"],
+            "t": QPointF((corners["tl"].x() + corners["tr"].x()) / 2,
+                         (corners["tl"].y() + corners["tr"].y()) / 2),
+            "b": QPointF((corners["bl"].x() + corners["br"].x()) / 2,
+                         (corners["bl"].y() + corners["br"].y()) / 2),
+            "l": QPointF((corners["tl"].x() + corners["bl"].x()) / 2,
+                         (corners["tl"].y() + corners["bl"].y()) / 2),
+            "r": QPointF((corners["tr"].x() + corners["br"].x()) / 2,
+                         (corners["tr"].y() + corners["br"].y()) / 2),
+        }
+        for name, point in points.items():
+            self._handles[name].setRect(
+                QRectF(point.x() - hs / 2, point.y() - hs / 2, hs, hs))
+            self._handles[name].setVisible(True)
+        pivot = self._xf.map(self._xf_pivot)
+        pr = PIVOT_VIEW_PX / 2.0 / max(self._zoom, 1e-6)
+        self._pivot_item.setRect(
+            QRectF(pivot.x() - pr, pivot.y() - pr, pr * 2, pr * 2))
+        self._pivot_item.setVisible(True)
+
+    def _hit_transform(self, view_pos: QPointF) -> str:
+        """变换工具命中测试（视图像素口径，不随缩放变）。
+
+        优先级：轴心 → 角手柄 → 边手柄 → 框内（移动）→ 框外（旋转）。
+        """
+        if self._rect is None:
+            return "outside"
+        corners = self._transform_quad()
+        pivot = self._xf.map(self._xf_pivot)
+        pivot_v = self.mapFromScene(pivot)
+        if (QLineF(view_pos, QPointF(pivot_v)).length()
+                <= PIVOT_VIEW_PX / 2.0 + 3.0):
+            return "pivot"
+        view = {name: QPointF(self.mapFromScene(pt))
+                for name, pt in corners.items()}
+        # 角：方形盒；边：中线点盒 + 整条边的距离带（拖着顺手）
+        box = HANDLE_VIEW_PX * 0.9
+        for name, pt in view.items():
+            if abs(view_pos.x() - pt.x()) <= box \
+                    and abs(view_pos.y() - pt.y()) <= box:
+                return name
+        edges = {
+            "t": (view["tl"], view["tr"]), "r": (view["tr"], view["br"]),
+            "b": (view["br"], view["bl"]), "l": (view["bl"], view["tl"]),
+        }
+        for name, (a, b) in edges.items():
+            mid = (a + b) / 2.0
+            if (QLineF(view_pos, mid).length()
+                    <= HANDLE_VIEW_PX * 0.9):
+                return name
+        for name, (a, b) in edges.items():
+            if _dist_to_segment(view_pos, a, b) <= EDGE_BAND_VIEW_PX:
+                return name
+        scene = self.mapToScene(view_pos.toPoint())
+        if QPolygonF([corners["tl"], corners["tr"],
+                      corners["br"], corners["bl"]]).containsPoint(
+                scene, Qt.FillRule.OddEvenFill):
+            return "inside"
+        return "outside"
 
     # ------------------------------------------------------------ 缩放
     def fit(self) -> None:
@@ -459,9 +1051,10 @@ class EditorCanvas(QGraphicsView):
     def _apply_hover_highlight(self) -> None:
         """悬停/拖动中的边高亮：命中角手柄时相邻两条边一起亮。"""
         active = (
-            self._tool in ("crop", "stretch")
+            self._tool in ("crop", "transform")
             and self._rect is not None
             and self._hover_handle is not None
+            and (self._tool == "crop" or self._xf_reshape)
         )
         for name, item in self._edge_lines.items():
             # 名字包含判断对单边/角手柄都成立："tl" 含 "t""l"、"bl" 含 "b""l"
@@ -469,7 +1062,20 @@ class EditorCanvas(QGraphicsView):
 
     def _update_hover_cursor(self, view_pos: QPointF) -> None:
         """未拖拽时的悬停反馈：命中边缘给方向缩放光标 + 边界高亮。"""
-        if self._tool not in ("crop", "stretch") or self._item is None:
+        if self._tool == "transform" and not self._xf_reshape \
+                and self._item is not None:
+            hit = self._hit_transform(view_pos)
+            if hit in HOVER_CURSORS:
+                cursor = HOVER_CURSORS[hit]  # 角/边：方向光标
+            elif hit in ("pivot", "inside"):
+                cursor = Qt.CursorShape.SizeAllCursor
+            elif hit == "outside":
+                cursor = Qt.CursorShape.CrossCursor  # 框外拖 = 旋转
+            else:
+                cursor = Qt.CursorShape.ArrowCursor
+            self.viewport().setCursor(cursor)
+            return
+        if self._tool not in ("crop", "transform") or self._item is None:
             if self._hover_handle is not None:
                 self._hover_handle = None
                 self._apply_hover_highlight()
@@ -490,11 +1096,13 @@ class EditorCanvas(QGraphicsView):
         self.viewport().setCursor(cursor)
 
     def _sync_cursor(self) -> None:
+        """按工具换光标：擦除藏系统光标——实圈就是光标（直径=擦除直径）。"""
+        if self._tool == "erase":
+            self.viewport().setCursor(Qt.CursorShape.BlankCursor)
+            return
         cursor = {
             # 裁剪默认有框：箭头（手柄收边/框内移动），不是"准备画框"的十字
             "crop": Qt.CursorShape.ArrowCursor,
-            "stretch": Qt.CursorShape.CrossCursor,
-            "erase": Qt.CursorShape.CrossCursor,
             "text": Qt.CursorShape.IBeamCursor,
         }.get(self._tool, Qt.CursorShape.ArrowCursor)
         self.viewport().setCursor(cursor)
@@ -548,29 +1156,72 @@ class EditorCanvas(QGraphicsView):
             self._sync_overlay()
             event.accept()
             return
-        if self._tool == "stretch":
-            handle = self._hit_handle(event.position())
-            self._hover_handle = handle
-            self._apply_hover_highlight()
-            if handle is not None and self._rect is not None:
-                self._mode = ("handle", handle)
-            elif self._rect is not None and \
-                    self._rect.normalized().contains(pos):
-                self._mode = ("move", pos, QPointF(self._rect.topLeft()))
+        if self._tool == "transform":
+            if self._xf_reshape:
+                # 「调整范围」：交互与裁剪同款（整条边命中带 + 框内移动），
+                # 只是松手后不应用，区域留给变换用
+                handle = self._hit_handle(event.position())
+                self._hover_handle = handle
+                self._apply_hover_highlight()
+                if handle is not None:
+                    self._mode = ("handle", handle)
+                elif self._rect is not None and \
+                        self._rect.normalized().contains(pos):
+                    self._mode = ("move", pos, QPointF(self._rect.topLeft()))
+                self._sync_overlay()
+                event.accept()
+                return
+            hit = self._hit_transform(event.position())
+            if hit == "outside":
+                # 松手前没建过预览的话，这次按下也不产生任何变换
+                self._ensure_transform_preview()
+                if self._float_item is None:
+                    event.accept()
+                    return
+                center = self._xf.map(self._xf_pivot)
+                angle0 = math.degrees(math.atan2(
+                    pos.y() - center.y(), pos.x() - center.x()))
+                self._mode = ("xf_rotate", self._xf, center, angle0)
+            elif hit == "pivot":
+                inv, _ = self._xf.inverted()
+                self._mode = ("xf_pivot", inv)
             else:
-                self._rect = QRectF(pos, pos)
-                self._rect_src = None
-                self._mode = ("rubber", pos)
-            self._sync_overlay()
+                self._ensure_transform_preview()
+                if self._float_item is None:
+                    event.accept()
+                    return
+                if hit in ("tl", "tr", "bl", "br"):
+                    rect = self._xf_rect.normalized()
+                    opposite = {"tl": rect.bottomRight(),
+                                "tr": rect.bottomLeft(),
+                                "bl": rect.topRight(),
+                                "br": rect.topLeft()}[hit]
+                    anchor = (self._xf_pivot if self._xf_about_pivot
+                              else QPointF(opposite))
+                    inv, _ = self._xf.inverted()
+                    self._mode = (
+                        "xf_scale", self._xf, inv.map(pos), QPointF(anchor))
+                elif hit in ("t", "b", "l", "r"):
+                    self._mode = ("xf_shear", self._xf, pos, hit)
+                else:  # 框内 = 移动
+                    self._mode = ("xf_move", self._xf, pos)
             event.accept()
             return
         if self._tool == "erase":
             self.stroke_started.emit()
             self._erase_at(pos, pos)
+            self._move_eraser_ring(pos)
             self._mode = ("draw", pos)
             event.accept()
             return
         if self._tool == "text":
+            hit = self._scene.itemAt(pos, QTransform())
+            if isinstance(hit, TextBlockItem):
+                # 点在已有文字块上：交给场景路由（放光标/选字/按住拖动）——
+                # 每次点击都新建块的话，旧块就永远进不了编辑态（用户报
+                # 「文字不能编辑」，2026-10-01）
+                super().mousePressEvent(event)
+                return
             clamped = QPointF(
                 max(inside.left(), min(pos.x(), inside.right())),
                 max(inside.top(), min(pos.y(), inside.bottom())),
@@ -582,7 +1233,25 @@ class EditorCanvas(QGraphicsView):
 
     def mouseMoveEvent(self, event) -> None:  # noqa: N802
         if self._mode is None:
-            # 未拖拽：悬停反馈（方向缩放光标 + 边界高亮），需要 mouseTracking
+            if self._scene.mouseGrabberItem() is not None:
+                # 文字块拖拽中（按下时已把事件送进场景、块抓住了鼠标）：
+                # move 必须继续转发给场景——在这里当悬停消费掉的话，块
+                # 永远收不到 move，"按住拖动"就是死的（用户报「鼠标放在
+                # 文字上面可以移动」，2026-10-01）
+                super().mouseMoveEvent(event)
+                event.accept()
+                return
+            # 未拖拽：橡皮擦圈/文字边界框跟随鼠标 + 悬停反馈（需要 mouseTracking）
+            if self._tool == "erase" and self._item is not None:
+                self._move_eraser_ring(
+                    self.mapToScene(event.position().toPoint()))
+            elif self._tool == "text" and self._item is not None:
+                block = self._text_block_at(
+                    self.mapToScene(event.position().toPoint()))
+                if block is not None:
+                    self._move_text_outline(block)
+                else:
+                    self._hide_text_outline()
             self._update_hover_cursor(event.position())
             event.accept()
             return
@@ -598,21 +1267,62 @@ class EditorCanvas(QGraphicsView):
             return
         pos = self.mapToScene(event.position().toPoint())
         inside = self.image_rect()
-        if kind == "rubber":
-            self._rect = clamp_rect(QRectF(self._mode[1], pos), inside)
+        if kind == "xf_move":
+            _, x_start, start = self._mode
+            delta = pos - start
+            self._xf = x_start * QTransform().translate(delta.x(), delta.y())
+            self._xf_touched = True
+        elif kind == "xf_rotate":
+            _, x_start, center, angle0 = self._mode
+            angle = math.degrees(math.atan2(
+                pos.y() - center.y(), pos.x() - center.x()))
+            delta = (angle - angle0 + 180.0) % 360.0 - 180.0
+            if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+                delta = round(delta / ROTATE_SNAP_DEG) * ROTATE_SNAP_DEG
+            # 旋转发生在累计矩阵之后（轴心是视觉位置）：(T * R) 先 T 后 R
+            self._xf = x_start * rotate_about(center, delta)
+            self._xf_touched = True
+        elif kind == "xf_scale":
+            _, x_start, p0_local, anchor = self._mode
+            inv, _ = x_start.inverted()
+            cur = inv.map(pos)
+            sx = ((cur.x() - anchor.x()) / (p0_local.x() - anchor.x())
+                  if abs(p0_local.x() - anchor.x()) > 1e-6 else 1.0)
+            sy = ((cur.y() - anchor.y()) / (p0_local.y() - anchor.y())
+                  if abs(p0_local.y() - anchor.y()) > 1e-6 else 1.0)
+            if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+                sx = sy = (sx + sy) / 2.0  # 等比
+            self._xf = scale_about(anchor, sx, sy) * x_start
+            self._xf_touched = True
+        elif kind == "xf_shear":
+            _, x_start, start, edge = self._mode
+            inv, _ = x_start.inverted()
+            delta = inv.map(pos) - inv.map(start)
+            rect = self._xf_rect.normalized()
+            if edge in ("l", "r"):
+                k = delta.y() / rect.width()
+            else:
+                k = delta.x() / rect.height()
+            self._apply_shear(edge, k, x_start)
+            self._xf_touched = True
+        elif kind == "xf_pivot":
+            inv = self._mode[1]
+            self._xf_pivot = clamp_rect(
+                QRectF(inv.map(pos), QSizeF(0, 0)),
+                self._xf_rect.normalized()).topLeft()
         elif kind == "move":
             start, origin = self._mode[1], self._mode[2]
             delta = pos - start
             moved = self._rect.normalized().translated(delta)
             moved.moveTopLeft(clamp_rect(moved, inside).topLeft())
             self._rect = moved
-            if self._rect_src is not None:
-                self._rect_src = self._rect_src.translated(delta)
         elif kind == "handle":
             self._resize_rect(self._mode[1], pos)
         elif kind == "draw":
             self._erase_at(self._mode[1], pos)
+            self._move_eraser_ring(pos)
             self._mode = ("draw", pos)
+        self._sync_float()
         self._sync_overlay()
         event.accept()
 
@@ -622,19 +1332,25 @@ class EditorCanvas(QGraphicsView):
             self._sync_cursor()
             event.accept()
             return
-        if self._mode and self._mode[0] in ("rubber", "move", "handle"):
-            # 选区定格：拉伸工具在这里记住源区域（拖手柄拉伸的基准）
-            if self._tool == "stretch" and self._rect_src is None:
-                self._rect_src = self._rect.normalized()
-            refit = self._tool == "crop" and self._mode[0] in ("move", "handle")
+        if self._mode and self._mode[0] in ("move", "handle"):
+            # move/handle 只在裁剪与变换「调整范围」下出现；两者松手都
+            # 把视图适配到新选区（变小就放大，修褶皱要对准那一小块）
+            was_reshape = self._tool == "transform" and self._xf_reshape
             self._mode = None
+            if was_reshape:
+                self._xf_reshape = False
+                # 轴心跟随新区域中心：后续旋转/缩放绕"褶皱那块"的中心
+                self._xf_pivot = self._rect.normalized().center()
+                self.reshape_finished.emit()  # 弹窗取消勾选，回到变换
             self._sync_overlay()
-            if refit:
-                # 裁剪区变了 → 视图跟着新区域缩放（变小就放大查看）
-                self.fit_selection()
+            self.fit_selection()
             event.accept()
             return
         if self._mode and self._mode[0] == "draw":
+            self._mode = None
+            event.accept()
+            return
+        if self._mode and self._mode[0].startswith("xf_"):
             self._mode = None
             event.accept()
             return
@@ -659,12 +1375,12 @@ class EditorCanvas(QGraphicsView):
         self._rect = rect
 
     def _erase_at(self, start: QPointF, end: QPointF) -> None:
-        """圆头笔刷在图上就地画一段线，并刷新显示。"""
+        """橡皮擦在图上就地擦一段（涂白；古籍页面去污点=涂白），刷新显示。"""
         if self._image is None:
             return
         painter = QPainter(self._image)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        pen = QPen(self._erase_color, float(self._erase_size))
+        pen = QPen(QColor("#ffffff"), float(self._erase_size))
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
         painter.setPen(pen)
@@ -676,13 +1392,19 @@ class EditorCanvas(QGraphicsView):
         self.refresh()
 
     def leaveEvent(self, event) -> None:  # noqa: N802
-        # 鼠标离开画布：高亮熄灭、光标回到工具默认形态
+        # 鼠标离开画布：高亮熄灭、橡皮擦圈/文字边界框隐藏、光标回默认
         self._hover_handle = None
+        self._hide_eraser_ring()
+        self._hide_text_outline()
         self._apply_hover_highlight()
         self._sync_cursor()
         super().leaveEvent(event)
 
     def keyPressEvent(self, event) -> None:  # noqa: N802
+        # 就地编辑文字时按键（含 ←/→ 移光标）全部给文本编辑，不走翻页
+        if isinstance(self._scene.focusItem(), TextBlockItem):
+            super().keyPressEvent(event)
+            return
         # ←/→ 别拿去滚动画布，交还弹窗（与预览弹窗一致：方向键是翻页）
         if event.key() in (Qt.Key.Key_Left, Qt.Key.Key_Right):
             event.ignore()
@@ -697,20 +1419,28 @@ class ImageEditorDialog(QDialog):
     ``accepted`` 后用 :meth:`result_image` 取编辑结果；关闭/拒绝即放弃。
     """
 
-    def __init__(self, parent=None, image: QImage | None = None):
+    def __init__(self, parent=None, image: QImage | None = None,
+                 save_back: bool = False):
         super().__init__(parent)
+        # 本页有真实文件可回写（宿主预览弹窗传入）：「完成」= 直接覆盖原图
+        # 文件，而不是"回画布再自己下载"。只影响文案，行为在弹窗侧。
+        self._save_back = bool(save_back)
         self.setWindowTitle("图片编辑")
         self.setModal(True)
         # 编辑要看得清字迹：默认开大，并带最小化/最大化按钮（标题栏双击
         # 最大化也随 maximize 按钮生效），用户 20:18 定
         self.resize(1440, 940)
         self.setMinimumSize(1000, 680)
+        # ⚠️ 显式设置窗口旗标时必须把 CloseButtonHint 一并给上：只给
+        #    min/max 不给 close，Windows 标题栏的关闭按钮会失效（用户报障
+        #    "编辑弹窗关闭按钮不生效"，2026-10-01）。
         self.setWindowFlags(
             Qt.Window
             | Qt.WindowTitleHint
             | Qt.WindowSystemMenuHint
             | Qt.WindowMinimizeButtonHint
             | Qt.WindowMaximizeButtonHint
+            | Qt.WindowCloseButtonHint
         )
         base = image if image is not None else QImage()
         # 统一转 ARGB32：rembg 产物可能是调色板 PNG，就地绘制需要真彩格式
@@ -719,14 +1449,16 @@ class ImageEditorDialog(QDialog):
         self._undo: list[QImage] = []
         self._redo: list[QImage] = []
         self._option_page: QWidget | None = None
-        # 文字工具选项的活性引用（插入时现读，见 _text_settings）
+        # 文字工具选项的活性引用（插入时现读，见 _commit_text_blocks）
         self._text_size: int = TEXT_DEFAULT
         self._text_color: str = "#000000"
+        self._text_family: str = T.FONT_FAMILY
+        self._erase_size: int = ERASER_DEFAULT
 
         self.canvas = EditorCanvas(self)
         self.canvas.set_image(self._image)
         self.canvas.stroke_started.connect(self._push_undo)
-        self.canvas.text_requested.connect(self._insert_text)
+        self.canvas.text_requested.connect(self._spawn_text_block)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(T.SPACE_MD, T.SPACE_MD, T.SPACE_MD, T.SPACE_MD)
@@ -801,9 +1533,11 @@ class ImageEditorDialog(QDialog):
         row.addStretch(1)
         self.done_btn = PrimaryPushButton(FIF.SAVE, "完成")
         self.done_btn.setToolTip(
+            "应用全部编辑并**覆盖原图片**"
+            if self._save_back else
             "应用全部编辑并回到预览；满意再用预览弹窗的「下载」保存文件"
         )
-        self.done_btn.clicked.connect(self.accept)
+        self.done_btn.clicked.connect(self._finish)
         row.addWidget(self.done_btn)
         self._set_tool("crop")  # 填充第二行选项（工具按钮已就位）
         return row
@@ -830,17 +1564,21 @@ class ImageEditorDialog(QDialog):
         return layout
 
     def _set_tool(self, tool: str) -> None:
-        """切换工具并重建选项区。"""
+        """切换工具并重建选项区；离开文字/变换工具前把进行中的工作写进图。"""
         if not hasattr(self, "canvas"):
             return  # 构建期先于画布存在，等 __init__ 末尾再真切换
+        if tool != "text":
+            self._commit_text_blocks()
+        if tool != "transform":
+            self._commit_transform()
         self.canvas.set_tool(tool)
         for key, button in self._tool_buttons.items():
             button.setChecked(key == tool)
         layout = self._swap_option_page()
         if tool == "crop":
             self._page_crop(layout)
-        elif tool == "stretch":
-            self._page_stretch(layout)
+        elif tool == "transform":
+            self._page_transform(layout)
         elif tool == "erase":
             self._page_erase(layout)
         elif tool == "text":
@@ -861,84 +1599,115 @@ class ImageEditorDialog(QDialog):
         apply_btn.clicked.connect(self._apply_crop)
         layout.addWidget(apply_btn)
 
-    def _page_stretch(self, layout: QHBoxLayout) -> None:
-        self._hint(layout, "拖拽选出区域，再拖右/下边（角）把内容拉伸，空出处填白")
-        apply_btn = PrimaryPushButton("应用拉伸")
-        apply_btn.setToolTip("按当前拖出的目标范围拉伸选区内容（可撤销）")
-        apply_btn.clicked.connect(self._apply_stretch)
+    def _page_transform(self, layout: QHBoxLayout) -> None:
+        self._hint(layout, "拖角=缩放（Shift 等比）· 拖边=切变 · 框内拖=移动"
+                           " · 框外拖=绕轴心旋转（Shift 每 15°）；轴心圆点可拖动")
+        reshape = CheckBox("调整范围")
+        reshape.setToolTip(
+            "勾选后沿边拖动收小要处理的区域（收完自动回到变换模式）——"
+            "小范围修褶皱：先框住褶皱，再旋转/切变把它正回来"
+        )
+        reshape.setChecked(self.canvas._xf_reshape)
+        reshape.toggled.connect(self.canvas.set_transform_reshape)
+        self.canvas.reshape_finished.connect(
+            lambda: reshape.setChecked(False))
+        layout.addWidget(reshape)
+        check = CheckBox("从轴心缩放/切变")
+        check.setChecked(self.canvas._xf_about_pivot)
+        check.toggled.connect(self.canvas.set_transform_about_pivot)
+        layout.addWidget(check)
+        reset_btn = PushButton("重置")
+        reset_btn.setToolTip("丢弃未应用的变换，选区回到整幅（不动已应用的编辑）")
+        reset_btn.clicked.connect(self.canvas.reset_transform)
+        layout.addWidget(reset_btn)
+        apply_btn = PrimaryPushButton("应用变换")
+        apply_btn.setToolTip("把当前变换烘焙进图片：原区域填白（可撤销）")
+        apply_btn.clicked.connect(self._commit_transform)
         layout.addWidget(apply_btn)
 
-    def _color_picker(self, on_change, default_black: bool = False) -> tuple[
-            RadioButton, RadioButton]:
-        """「白/黑」二选一（擦除与文字共用），返回 (白, 黑)。
-
-        只连**白**的 toggled：二选一里切换任何一侧都会触发它，一处连线
-        就够。``default_black``：文字默认黑（白纸上黑字），擦除默认白。
-        """
-        white = RadioButton("白")
-        black = RadioButton("黑")
-        white.setChecked(not default_black)
-        black.setChecked(default_black)
-        white.toggled.connect(on_change)
-        layout = self._option_page.layout()
-        layout.addWidget(QLabel("颜色"))
-        layout.addWidget(white)
-        layout.addWidget(black)
-        return white, black
-
     def _page_erase(self, layout: QHBoxLayout) -> None:
-        self._hint(layout, "按住左键在污点上涂抹（古籍页面去污点=涂白）")
-        size_label = CaptionLabel(f"{BRUSH_DEFAULT}px")
+        self._hint(layout, "按住左键在污点上涂抹，把它擦成白底（古籍页面去污点）")
+        size_label = CaptionLabel(f"{self._erase_size}px")
         slider = Slider(Qt.Orientation.Horizontal)
-        slider.setRange(BRUSH_MIN, BRUSH_MAX)
-        slider.setValue(BRUSH_DEFAULT)
+        slider.setRange(ERASER_MIN, ERASER_MAX)
+        slider.setValue(self._erase_size)
         slider.setFixedWidth(160)
 
         def apply_size(value: int) -> None:
             size_label.setText(f"{value}px")
-            self.canvas.set_brush(value, self._erase_picker_color)
+            self._erase_size = value
+            self.canvas.set_eraser(value)
 
-        white, black = self._color_picker(
-            lambda _=False: self.canvas.set_brush(
-                slider.value(), self._erase_picker_color
-            )
-        )
-        self._erase_white = white
         slider.valueChanged.connect(apply_size)
-        layout.addWidget(QLabel("笔刷粗细"))
+        layout.addWidget(QLabel("橡皮擦大小"))
         layout.addWidget(slider)
         layout.addWidget(size_label)
-        # 初次进入按默认笔刷生效
-        self.canvas.set_brush(BRUSH_DEFAULT, QColor("#ffffff"))
-
-    @property
-    def _erase_picker_color(self) -> QColor:
-        white = getattr(self, "_erase_white", None)
-        if white is not None and not white.isChecked():
-            return QColor("#000000")
-        return QColor("#ffffff")
+        # 初次进入按默认大小生效
+        self.canvas.set_eraser(self._erase_size)
 
     def _page_text(self, layout: QHBoxLayout) -> None:
-        self._hint(layout, "点击图片上的落点，输入要插入的文字")
+        self._hint(layout, "点击图片落点就地输入（光标可见）；样式对**整块**"
+                           "即时生效；悬停文字出现虚线框，按住可拖动整块；"
+                           "「插入文字」把文字写进图片")
+        # 字体：**中文字体为主** + 几个常用西文（用户 2026-10-01 定：系统字体
+        # 库里两三百个族全列出来，中文反而被淹没、翻半天找不到"仿宋"）
+        combo = ComboBox()
+        combo.setFixedWidth(170)
+        for family in text_font_families():
+            combo.addItem(family, userData=family)
+        combo.setCurrentIndex(max(0, combo.findData(self._text_family)))
+        if combo.currentData():  # 存的族名不在清单里时以清单首项为准，别错位
+            self._text_family = combo.currentData()
+        combo.setToolTip("文字字体（中文字体为主）")
+        layout.addWidget(QLabel("字体"))
+        layout.addWidget(combo)
+
         size_label = CaptionLabel(f"{self._text_size}px")
         slider = Slider(Qt.Orientation.Horizontal)
         slider.setRange(TEXT_MIN, TEXT_MAX)
         slider.setValue(self._text_size)
         slider.setFixedWidth(160)
-        slider.valueChanged.connect(
-            lambda value: (size_label.setText(f"{value}px"),
-                           setattr(self, "_text_size", value))
-        )
-        white, black = self._color_picker(
-            lambda _=False: setattr(
-                self, "_text_color",
-                "#ffffff" if white.isChecked() else "#000000",
-            ),
-            default_black=True,  # 白纸上的文字，默认黑
-        )
+        # ⚠️ NoFocus：qfluentwidgets 的 Slider 默认是 StrongFocus，一拖就把
+        # 键盘焦点从画布抢走——就地编辑的文字块随之丢焦点、光标消失。
+        # （改样式走"当前样式块"后功能上已不依赖焦点，但保住光标体验更好。）
+        slider.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        slider.setToolTip("文字大小（图片像素）")
         layout.addWidget(QLabel("字号"))
         layout.addWidget(slider)
         layout.addWidget(size_label)
+
+        # 颜色：常用色块与任意色**都收在这一个按钮弹出的面板里**（用户
+        # 2026-10-01：色块不要在外面，要在颜色选择器里面，且要好看）
+        layout.addWidget(QLabel("颜色"))
+        picker = ColorPickerButton(QColor(self._text_color), TEXT_SWATCHES,
+                                   parent=self)
+        layout.addWidget(picker)
+
+        def style_changed() -> None:
+            block = self.canvas.style_target_block()
+            if block is not None:
+                block.apply_style(
+                    self._text_family, self._text_size,
+                    QColor(self._text_color))
+
+        combo.currentIndexChanged.connect(
+            lambda _index: (
+                setattr(self, "_text_family",
+                        combo.currentData() or self._text_family),
+                style_changed()))
+        slider.valueChanged.connect(
+            lambda value: (setattr(self, "_text_size", value),
+                           size_label.setText(f"{value}px"), style_changed()))
+        picker.colorChanged.connect(
+            lambda color: (setattr(self, "_text_color", color.name()),
+                           style_changed()))
+        # 颜色面板关掉后把键盘焦点还给文字块，接着打字不中断
+        picker.panelClosed.connect(self.canvas.focus_text_block)
+
+        insert_btn = PrimaryPushButton("插入文字")
+        insert_btn.setToolTip("把画布上的文字块写进图片（可撤销）")
+        insert_btn.clicked.connect(self._commit_text_blocks)
+        layout.addWidget(insert_btn)
 
     # ------------------------------------------------------------ 撤销
     def _push_undo(self) -> None:
@@ -954,6 +1723,12 @@ class ImageEditorDialog(QDialog):
     def _undo_now(self) -> None:
         if not self._undo:
             return
+        # 正在就地编辑文字时不撤图：Ctrl+Z 被弹窗快捷键截走，这里必须
+        # 让位——不然想撤一个字却把整张图连同文字块一起退掉了
+        if self.canvas.focused_text_block() is not None:
+            return
+        # 撤销换图会作废画布上的文字块（它们不在撤销历史里）
+        self.canvas.clear_text_blocks()
         self._redo.append(self._image.copy())
         self._image = self._undo.pop()
         self.canvas.set_image(self._image)
@@ -962,6 +1737,9 @@ class ImageEditorDialog(QDialog):
     def _redo_now(self) -> None:
         if not self._redo:
             return
+        if self.canvas.focused_text_block() is not None:
+            return  # 同 _undo_now：文字编辑中不让 Ctrl+Y 动图
+        self.canvas.clear_text_blocks()
         self._undo.append(self._image.copy())
         self._image = self._redo.pop()
         self.canvas.set_image(self._image)
@@ -971,6 +1749,7 @@ class ImageEditorDialog(QDialog):
         """还原到打开时的图（还原本身可撤销）。"""
         if self._original.isNull():
             return
+        self.canvas.clear_text_blocks()
         if self._undo and self._image is not None:
             self._undo.append(self._image.copy())
             if len(self._undo) > UNDO_LIMIT:
@@ -999,29 +1778,58 @@ class ImageEditorDialog(QDialog):
         self._image = self._image.copy(rect.toRect())
         self.canvas.set_image(self._image)
 
-    def _apply_stretch(self) -> None:
-        rect = self._selection()
-        src = self.canvas.stretch_source()
-        if rect is None or src is None or self._image is None:
+    # ------------------------------------------------------------ 变换
+    def _commit_transform(self) -> None:
+        """把未应用的变换烘焙进图片（一个撤销点）；没有变换就只清预览。
+
+        「应用变换」按钮、切走工具、「完成」都走这里——预览即所见，
+        烘焙结果与浮层显示一致（原区域填白 + 变换后的选区内容）。
+        """
+        if not hasattr(self, "canvas"):
             return
+        pending = self.canvas.transform_pending()
+        if pending is None:
+            self.canvas.reset_transform()
+            return
+        rect, xf, region = pending
         self._push_undo()
-        self._image = stretch_region(self._image, src, rect)
+        self._image = bake_transform(self._image, rect, xf, region)
         self.canvas.set_image(self._image)
 
-    def _insert_text(self, pos: QPointF) -> None:
-        """文字工具点击落点 → 输入 → 画上去（一个撤销点）。"""
-        from PySide6.QtWidgets import QInputDialog
-
-        text, ok = QInputDialog.getMultiLineText(
-            self, "插入文字", "要插入的文字（可换行）：", "",
+    # ------------------------------------------------------------ 文字
+    def _spawn_text_block(self, pos: QPointF) -> None:
+        """文字工具点击落点 → 画布上生成文字块就地编辑（光标可见）。"""
+        if self._image is None or self._image.isNull():
+            return
+        self.canvas.add_text_block(
+            pos, self._text_size, QColor(self._text_color),
+            self._text_family,
         )
-        if not ok or not text.strip():
+
+    def _commit_text_blocks(self) -> None:
+        """把画布上非空文字块写进图片（一个批次一个撤销点），然后清块。"""
+        if not hasattr(self, "canvas"):
+            return
+        blocks = self.canvas.text_blocks()
+        payload = [
+            (b.pos(), b.toPlainText(), b.font().pixelSize(),
+             QColor(b.defaultTextColor()), b.font().family())
+            for b in blocks if b.toPlainText().strip()
+        ]
+        self.canvas.clear_text_blocks()
+        if not payload or self._image is None or self._image.isNull():
             return
         self._push_undo()
-        self._image = draw_text(
-            self._image, pos, text, self._text_size, QColor(self._text_color)
-        )
-        self.canvas.set_image(self._image)
+        for pos, text, px, color, family in payload:
+            self._image = draw_text(
+                self._image, pos, text, px, color, family)
+        self.canvas.replace_image(self._image)
+
+    def _finish(self) -> None:
+        """「完成」：未应用的变换/未插入的文字一并写入，再应用全部编辑。"""
+        self._commit_transform()
+        self._commit_text_blocks()
+        self.accept()
 
     # ------------------------------------------------------------ 对外
     def result_image(self) -> QImage | None:
@@ -1036,6 +1844,8 @@ class ImageEditorDialog(QDialog):
         row = QHBoxLayout(bar)
         row.setContentsMargins(0, 0, 0, 0)
         hint = CaptionLabel(
+            "「完成」应用编辑并覆盖原图片；直接关闭弹窗 = 放弃本次全部编辑"
+            if self._save_back else
             "「完成」应用编辑并回到预览；直接关闭弹窗 = 放弃本次全部编辑"
         )
         hint.setTextColor(T.INK_FAINT)

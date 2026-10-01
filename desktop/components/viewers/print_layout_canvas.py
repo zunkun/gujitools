@@ -79,6 +79,9 @@ class PrintLayoutCanvas(QWidget):
     # 双击画布 → 宿主打开预览弹窗（看该页的打印效果放大；编辑态下没有
     # 别的双击语义，滚轮/拖拽都已被占用为编辑手势）
     double_clicked = Signal()
+    # 右键画布 → 宿主弹出「预览图片 / 编辑图片」菜单（与其余步骤预览区同一套；
+    # 有图才发，空页不弹）
+    context_menu_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -366,6 +369,17 @@ class PrintLayoutCanvas(QWidget):
             event.accept()
             return
         super().mouseDoubleClickEvent(event)
+
+    def contextMenuEvent(self, event) -> None:  # noqa: N802
+        """右键 → ``context_menu_requested``（宿主弹「预览图片 / 编辑图片」菜单）。
+
+        左键的拖拽/缩放不受影响（右键不参与编辑手势）；空页不弹菜单。
+        """
+        if self._image is not None:
+            self.context_menu_requested.emit()
+            event.accept()
+            return
+        super().contextMenuEvent(event)
 
     def flush_pending(self) -> bool:
         """把"还没松手"的拖动结果补发出去（关窗口/切步骤/切页时调）。

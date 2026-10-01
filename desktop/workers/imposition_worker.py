@@ -56,6 +56,9 @@ class ImpositionPagePreviewWorker(QObject):
     failed = Signal(int, str)
 
     def __init__(self, page: dict, longest_edge: int = 1600):
+        """``longest_edge`` 是预览密度上限；**传 0 = 不缩**（全分辨率，
+        右键空白处「编辑图片」用：编辑器要的是与落盘成品同一分辨率的图）。
+        """
         super().__init__()
         self.page = page
         self.longest_edge = int(longest_edge) or 0

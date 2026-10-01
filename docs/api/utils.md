@@ -4,7 +4,7 @@
 
 通用工具函数：几何、排序、图像 IO、PDF、YOLO
 
-覆盖 21 个模块、11 个公开类、117 个公开函数/方法（生成于 2026-09-29）。
+覆盖 22 个模块、11 个公开类、119 个公开函数/方法（生成于 2026-10-01）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -31,6 +31,7 @@
 | [`utils.proc_utils`](#utilsproc_utils) | 0 | 1 |
 | [`utils.sort_utils`](#utilssort_utils) | 0 | 2 |
 | [`utils.string_utils`](#utilsstring_utils) | 0 | 3 |
+| [`utils.transparent_png`](#utilstransparent_png) | 0 | 2 |
 | [`utils.units`](#utilsunits) | 0 | 2 |
 | [`utils.yolo_utils`](#utilsyolo_utils) | 1 | 6 |
 
@@ -1861,6 +1862,79 @@ pid 对应的进程是否还活着。
 
 前缀/后缀是**原样拼接**的（不做空格补全）：想排「第 5 页」就把前缀写成
 ``"第 "``。空前缀/后缀表示只要数字本身。
+
+---
+
+## `utils.transparent_png`
+
+源码：[`utils/transparent_png.py`](../../utils/transparent_png.py)
+
+「白底 → 透明底」的 PNG 编码：**唯一实现**。
+
+只作用于第三步「提交本次任务」写出的最终图片（``stages/rembg/*.png``），
+不碰去底产物本身、也不碰 PDF。
+
+为什么值得单独一个模块
+----------------------
+这个规则同时决定两件容易漂移的事：**哪些像素算白底**、**用哪种编码最省空间**。
+散在调用方（``desktop/stages/rembg_stage.py``）里，下一处再要透明 PNG 就会
+各抄一份、判据各写一套。
+
+编码形态与实测（5000×4400 仿古籍页，见
+``.workbuddy/perf/bench_transparent_submit_2026-09-30.py``）：
+
+===========================  ==============  =========  ==================
+页内容                        编码形态         体积        对比旧写法
+                          （PNG 头）                   （Qt 直存 RGB24）
+===========================  ==============  =========  ==================
+纯黑白（type=1/2，主流）      位深 1 调色板    0.011MB     6.7× 小、3.2× 快
+灰度（type=3）               位深 2~8 调色板  0.015MB     5× 小、3.3× 快
+彩色（sealcolor 印章原色）    RGBA8          0.095MB     体积略增（必须无损）
+===========================  ==============  =========  ==================
+
+三条硬约定（改动前先读）
+------------------------
+1. **判据只看像素，不看 ``type`` 参数**。提交阶段的图是「去底预览图经
+   ``compose_region_output`` 合成」出来的 Qt ``Format_RGB32``，而面板的
+   ``type`` 与预览可能不同步（改了参数没重新生成预览也能提交）——按像素
+   判定才不会写错。
+2. **透明像素的 RGB 保持 255，不清零**。第四步缩略图是 JPEG，Qt 丢 α 时直接
+   取 RGB；清零就会把缩略图显示成黑底（``tools/make_icon.py`` 里那套
+   「清零防预乘淡边」的做法在这里**不适用**）。
+3. ⚠️ PIL 的 ``save(mode="P", transparency=N)`` 里 N 是**首个透明项的调色板
+   下标**（实现为写 ``b"\xff"*N + b"\x00"`` 再按调色板项数截断），不是灰度
+   值：传 255 而调色板只有 2 项 → tRNS 变成 ``[255, 255]``，**一个透明项都
+   没写进去**，而且不报错。位深不用手写：不传 ``bits`` 时 PIL 按调色板项数
+   自动取 1/2/4/8。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| WHITE_LEVEL | `255` |
+| PNG_COMPRESS_LEVEL | `6` |
+| _GRAY_LEVELS | `256` |
+| _COMPACT_PALETTE_MAX | `16` |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `save_white_as_transparent(rgb: np.ndarray, path: str \| Path, *, compress_level: int=PNG_COMPRESS_LEVEL) -> dict` | 把「白底图」写成白底透明的 PNG，自动选最省的编码形态。 |
+| `describe_encoding(rgb: np.ndarray) -> Optional[dict]` | 只算编码形态、不落盘（日志/护栏用，判据与 ``save_white_as_transparent`` 同源）。 |
+
+#### `save_white_as_transparent(rgb: np.ndarray, path: str | Path, *, compress_level: int=PNG_COMPRESS_LEVEL) -> dict`
+
+把「白底图」写成白底透明的 PNG，自动选最省的编码形态。
+
+参数:
+    rgb: (H, W, 3) 的 RGB 数组（``uint8``）；多于 3 通道时只用前 3 个。
+    path: 输出 PNG 路径（调用方负责目录已存在）。
+    compress_level: PNG 压缩级别（0~9）。
+
+返回:
+    ``{"encoding": "P"|"RGBA", "colors": int|None, "bits": int, "bytes": int}``，
+    供调用方打日志/统计；失败会直接抛异常（不静默降级成白底）。
 
 ---
 

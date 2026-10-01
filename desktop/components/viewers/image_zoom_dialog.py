@@ -18,12 +18,16 @@
 
 from __future__ import annotations
 
+import os
+import threading
 from pathlib import Path
+
+from utils.file_utils import replace_with_retry
 
 from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import (
-    QColor, QIcon, QImage, QKeySequence, QPainter, QPen, QPixmap, QPolygonF,
-    QShortcut, QTransform,
+    QColor, QCursor, QIcon, QImage, QKeySequence, QPainter, QPen, QPixmap,
+    QPolygonF, QShortcut, QTransform,
 )
 from PySide6.QtWidgets import (
     QDialog, QFileDialog, QFrame, QGraphicsPixmapItem, QGraphicsRectItem,
@@ -165,6 +169,45 @@ def save_image(image: QImage, path: str | Path,
     return bool(image.save(str(target)))
 
 
+#: 覆盖原图时的 JPEG 画质：比「下载另存」高一档——写回的是任务里唯一
+#: 一份页面图，反复编辑叠加的有损代价比另存一份副本更伤。
+OVERWRITE_JPEG_QUALITY = 95
+
+#: 后缀 → Qt 保存格式（覆盖原图用；临时文件后缀是 .part，格式必须显式给）。
+OVERWRITE_FORMATS = {
+    ".jpg": "JPEG", ".jpeg": "JPEG", ".png": "PNG",
+    ".bmp": "BMP", ".tif": "TIFF", ".tiff": "TIFF",
+}
+
+
+def overwrite_image_file(image: QImage, target: Path,
+                         quality: int = OVERWRITE_JPEG_QUALITY) -> bool:
+    """把 ``image`` **原子**覆盖到 ``target``（格式按目标后缀）。
+
+    ⚠️ 必须走「临时文件 + os.replace」，不能就地写：任务目录里的页面图
+    可能是硬链接（workset 时代的遗产），就地写会把链接另一头的源文件一起
+    改掉；且覆盖途中被 200ms 一次的 extract 轮询/预览读到半截也是事故。
+    ``os.replace`` 换的是目录项——读者要么看到完整旧图、要么看到完整新图，
+    旧 inode 原样留在硬链接另一头。
+    """
+    fmt = OVERWRITE_FORMATS.get(target.suffix.lower(), "PNG")
+    temp = target.with_name(
+        f"{target.stem}.{os.getpid():x}{threading.get_ident():x}"
+        f"{target.suffix}.part"
+    )
+    try:
+        if not image.save(str(temp), fmt, quality):
+            return False
+        replace_with_retry(temp, target)
+        return True
+    except OSError:
+        try:
+            temp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return False
+
+
 class ZoomTarget:
     """弹窗某一页的数据来源（宿主在**主线程**里按页现造）。
 
@@ -173,17 +216,35 @@ class ZoomTarget:
     的约束。
     """
 
-    __slots__ = ("render", "note", "stem", "count", "original", "cap")
+    __slots__ = ("render", "note", "stem", "count", "original", "cap",
+                 "save_path", "edit_path")
 
     def __init__(self, render, note: str = "", stem: str = "", count: int = 1,
-                 original=None, cap: int | None = None):
-        """render: ``(edge:int) -> worker``；cap: 渲染密度上限（如原图原生边长）。"""
+                 original=None, cap: int | None = None, save_path=None,
+                 edit_path=None):
+        """render: ``(edge:int) -> worker``；cap: 渲染密度上限（如原图原生边长）。
+
+        ``save_path``：本页显示的像素**就是**这个真实文件（Path | None）。
+        给了它，编辑器「完成」后把编辑结果覆盖回该文件（编辑器加载的也是
+        该文件的全分辨率原图，预览的降采样不掺和）；**只允许在"画布显示的
+        内容 1:1 就是这个文件"时给**——区域合成（effect）、打印重排、PDF
+        矢量页都是虚拟图，写回会把整张文件覆盖成一块裁剪区域，绝不能开。
+
+        ``edit_path``：本页**编辑时要写回的真实文件**（Path | None），
+        可以不同于 ``save_path``——区域合成/打印效果这类派生显示，
+        显示的不是某个文件的全部像素，但它**派生自**一个真实文件；编辑
+        要改的是那个文件（各步骤改动因此串成一条链，最终落到 PDF）。
+        不传时回落 ``save_path``（1:1 显示的情形）。两者都为 None 表示
+        没有可回写的文件（PDF 矢量页等），右键菜单不提供「编辑图片」。
+        """
         self.render = render
         self.note = note or "预览"
         self.stem = stem or "preview"
         self.count = max(1, int(count))
         self.original = original  # QSize | None：原始像素尺寸（状态条用）
         self.cap = cap            # int | None：超过它渲染没有意义（会白放大）
+        self.save_path = Path(save_path) if save_path else None
+        self.edit_path = Path(edit_path) if edit_path else self.save_path
 
 
 class ZoomableCanvas(QGraphicsView):
@@ -439,6 +500,14 @@ class ZoomableCanvas(QGraphicsView):
             self._sync_scene_rect()
 
     # ------------------------------------------------------------------ 导出
+    def orientation(self) -> QTransform:
+        """当前翻转/旋转矩阵（恒等 = 没动过朝向）。
+
+        编辑器回写原图时用它把朝向"烤"进全分辨率原图——见
+        ``ImageZoomDialog._edit_image``。
+        """
+        return display_transform(self._rotation, self._flip_h, self._flip_v)
+
     def export_image(self) -> QImage | None:
         """导出用图：已应用翻转/旋转的**整分辨率**图（缩放的屏幕比例不参与）。"""
         if self._image is None:
@@ -485,6 +554,14 @@ class ZoomableCanvas(QGraphicsView):
 
 class ImageZoomDialog(QDialog, WorkerHost):
     """图片预览弹窗：拖拽平移、滚轮/按钮缩放、翻转旋转、下载、翻页。"""
+
+    #: 编辑器「完成」且成功覆盖原图后发出：``image_saved(path, edited)``。
+    #: ``path`` = 被覆盖的文件路径文本；``edited`` = 编辑结果 QImage（是
+    #: 全分辨率原图，预览画布只是它的降采样）——宿主拿它**立即**把主查看
+    #: 器的大图/条目图标同步成编辑后的样子（见各查看器的
+    #: ``apply_edited_image``），不必等缩略图后台重生成的窗口期还显示旧图。
+    #: 只在 ``ZoomTarget.save_path`` 回写路径上发出。
+    image_saved = Signal(str, object)
 
     def __init__(self, parent=None, factory=None, max_edge: int = MAX_RENDER_EDGE):
         """``factory(index) -> ZoomTarget | None``，在**主线程**里现造该页来源。"""
@@ -599,7 +676,7 @@ class ImageZoomDialog(QDialog, WorkerHost):
 
         row.addSpacing(T.SPACE_MD)
         self.edit_btn = PushButton(FIF.EDIT, "编辑")
-        self.edit_btn.setToolTip("打开图片编辑器：裁剪 / 拉伸 / 擦除 / 插入文字")
+        self.edit_btn.setToolTip("打开图片编辑器：裁剪 / 变换 / 擦除 / 插入文字")
         self.edit_btn.clicked.connect(self._edit_image)
         row.addWidget(self.edit_btn)
         self.print_btn = PushButton(FIF.PRINT, "打印")
@@ -793,24 +870,60 @@ class ImageZoomDialog(QDialog, WorkerHost):
             button.setEnabled(has_image)
 
     # ------------------------------------------------------------------ 编辑
-    def _open_editor(self, image) -> "ImageEditorDialog | None":
-        """造编辑器弹窗（不 exec，便于离屏测试）。无图时返回 None。"""
+    def _open_editor(self, image, save_back: bool = False
+                     ) -> "ImageEditorDialog | None":
+        """造编辑器弹窗（不 exec，便于离屏测试）。无图时返回 None。
+
+        ``save_back``：本页有真实文件可回写——编辑器文案改成「完成 = 覆盖
+        原图片」，别再让用户以为还要去「下载」。
+        """
         from desktop.components.viewers.image_editor import ImageEditorDialog
 
         if image is None or image.isNull():
             return None
-        self._editor = ImageEditorDialog(self, image)
+        self._editor = ImageEditorDialog(self, image, save_back=save_back)
         return self._editor
 
     def _edit_image(self) -> None:
-        """打开编辑器；「完成」后把编辑结果写回画布（覆盖当前页显示）。
+        """打开编辑器；「完成」后把编辑结果写回**真实文件**（可回写时）。
 
-        ⚠️ 编辑的是 ``export_image()``（已含翻转/旋转）——结果里变换已"烤"
-        进像素，写回 ``set_image`` 会复位朝向，所见即所得，不叠加。
-        结果只活在画布里：满意用「下载」落盘，翻页/关窗即丢弃（预览可能
-        是实时合成的虚拟图，不是所有页都有文件可回写）。
+        可回写目标 = ``ZoomTarget.edit_path``（本页显示图对应的真实文件）。
+        用户原则（2026-10-01）：**图片编辑不是"本步骤看看"，各步骤改动要串成
+        一条链、最终落到 PDF**——所以按"显示的是处理前还是处理后的图"决定改谁：
+
+        - 处理前的图（如第三步「原图」）→ 改该源图文件；
+        - 处理后的图（如第三步「去底色结果」、第四步待打印图）→ 改该结果
+          文件（本步产出，下一步读的就是它）。
+
+        派生显示（区域合成 / 打印效果）显示的不是某个文件的全部像素，但编辑
+        改的仍是它派生的那个真实文件；「完成」后**重新合成当前显示**，而不是
+        把合成结果盖回文件。
+
+        没有真实文件（PDF 矢量页）时维持旧行为：只改画布，满意用「下载」落盘。
         """
-        editor = self._open_editor(self.canvas.export_image())
+        target = self._target
+        edit_path = target.edit_path if target else None
+        is_direct = (
+            edit_path is not None
+            and target is not None
+            and target.save_path == edit_path
+        )
+        if edit_path is not None:
+            base = QImage(str(edit_path))
+            if base.isNull():
+                self.tip_label.setText(f"无法读取原图：{edit_path.name}")
+                return
+            # 只有"显示内容就是这个文件"（1:1）时才把预览的翻转/旋转烤进
+            # 像素；派生显示（区域合成/打印效果）的朝向不属于该文件，不烤。
+            if is_direct:
+                transform = self.canvas.orientation()
+                if not transform.isIdentity():
+                    base = base.transformed(
+                        transform, Qt.TransformationMode.SmoothTransformation
+                    )
+            editor = self._open_editor(base, save_back=True)
+        else:
+            editor = self._open_editor(self.canvas.export_image())
         if editor is None:
             self.tip_label.setText("没有可编辑的图片")
             return
@@ -818,6 +931,24 @@ class ImageZoomDialog(QDialog, WorkerHost):
             return
         edited = editor.result_image()
         if edited is None or edited.isNull():
+            return
+        if edit_path is not None:
+            if not overwrite_image_file(edited, edit_path):
+                self.tip_label.setText(f"保存失败，编辑未生效：{edit_path}")
+                return
+            # 三处同步：① 主查看器（信号携带编辑图，宿主立即上屏并登记尺寸）
+            # ② 本弹窗画布 ③ 磁盘文件（上面已原子覆盖）。缩略图缓存由宿主
+            # 后台重生，不阻塞前两处。
+            self.image_saved.emit(str(edit_path), edited)
+            if is_direct:
+                self.canvas.set_image(edited)
+                self._on_zoom_changed(self.canvas.zoom)
+            else:
+                # 派生显示：按新文件重新合成当前页（区域/打印效果随之更新）
+                self.show_for(index=self._index)
+            self.tip_label.setText(
+                f"已覆盖原图：{edit_path.name}（后续步骤将使用编辑后的图）"
+            )
             return
         self.canvas.set_image(edited)
         self._on_zoom_changed(self.canvas.zoom)
@@ -926,7 +1057,7 @@ class ImageZoomDialog(QDialog, WorkerHost):
 
 
 class ZoomPopupMixin:
-    """宿主侧混入：双击大图打开图片预览弹窗。
+    """宿主侧混入：双击/右键大图打开图片预览弹窗与「预览 / 编辑」菜单。
 
     子类需要实现 :meth:`_zoom_target` 与 :meth:`_zoom_index`，并在
     ``__init__`` 里调 :meth:`_init_zoom_popup`。
@@ -937,9 +1068,10 @@ class ZoomPopupMixin:
     _zoom_dialog: "ImageZoomDialog | None" = None
 
     def _init_zoom_popup(self, view) -> None:
-        """把 ``view``（``ImageView``）的双击接到弹窗上。"""
+        """把 ``view``（``ImageView``）的双击/右键接到弹窗与菜单上。"""
         self._zoom_dialog = None
         view.double_clicked.connect(self._open_zoom_popup)
+        view.context_menu_requested.connect(self._open_zoom_menu)
 
     def _open_zoom_popup(self) -> None:
         """打开弹窗；没有可预览的页时静默返回。"""
@@ -950,6 +1082,10 @@ class ZoomPopupMixin:
             self._zoom_dialog = ImageZoomDialog(
                 self.window() or self, factory=self._zoom_target
             )
+            dialog = self._zoom_dialog
+            # 编辑器覆盖了原图：宿主要同步尺寸/缩略图/大图（默认空实现，
+            # 有真实文件的宿主各自覆写）
+            dialog.image_saved.connect(self._on_zoom_image_saved)
         dialog = self._zoom_dialog
         # 先 show 再 show_for：视口有了真实尺寸，渲染密度才算得准
         dialog.show()
@@ -961,6 +1097,102 @@ class ZoomPopupMixin:
         """内容被换掉时关掉弹窗（弹窗里那页是打开时的快照，留着就是旧数据）。"""
         if self._zoom_dialog is not None:
             self._zoom_dialog.close()
+
+    # ------------------------------------------------------ 右键「预览 / 编辑」
+    def _open_zoom_menu(self) -> None:
+        """预览区右键菜单：**预览图片 / 编辑图片**（各步骤预览区统一）。
+
+        - 「预览图片」与双击同一条路（打开图片预览弹窗）；
+        - 「编辑图片」**不经预览弹窗**直达编辑器，编辑当前图对应的真实文件
+          并覆盖回写（见 :meth:`edit_current_image`）。没有可回写的真实文件
+          （PDF 矢量页）时不提供这一项。
+
+        没有可预览/可编辑的图时静默返回（不弹空菜单）。
+        """
+        target = self._zoom_target(self._zoom_index())
+        if target is None:
+            return
+        from qfluentwidgets import Action, RoundMenu
+
+        menu = RoundMenu(parent=self if isinstance(self, QWidget) else None)
+        for text, icon, slot in self._zoom_menu_items(target):
+            action = Action(icon, text, menu)
+            action.triggered.connect(slot)
+            menu.addAction(action)
+        menu.exec(QCursor.pos())
+
+    def _zoom_menu_items(self, target) -> list:
+        """右键菜单项 ``[(文案, 图标, 槽)]``：有可回写文件才给「编辑图片」。
+
+        文案与拼版画布的右键菜单**保持一致**（预览图片 / 编辑图片），四个步骤
+        加拼版是同一套入口。抽成方法是为了可测——``_open_zoom_menu`` 要
+        ``exec`` 模态，离屏测不了；这里只算"该有哪些项"，与弹菜单解耦。
+        """
+        from qfluentwidgets import FluentIcon as FIF
+
+        items = [("预览图片", FIF.PHOTO, self._open_zoom_popup)]
+        if target is not None and target.edit_path is not None:
+            items.append(("编辑图片", FIF.EDIT, self.edit_current_image))
+        return items
+
+    def edit_current_image(self) -> bool:
+        """右键「编辑图片」：直接编辑当前显示图对应的**真实文件**并覆盖回写。
+
+        用户原则（2026-10-01）：图片编辑不是"本步骤看看"，各步骤改动要串成
+        一条链、最终落到 PDF。目标由 ``ZoomTarget.edit_path`` 决定——
+
+        - 显示的是**处理前**的图（如第三步「原图」）→ 改该源图文件；
+        - 显示的是**处理后**的图（如第三步「去底色结果」、第四步待打印图）
+          → 改该结果文件（本步产出，下一步读的就是它）。
+
+        编辑器「完成」后：原子覆盖该文件 → ``_on_zoom_image_saved`` 通知宿主
+        刷新（尺寸 / 缩略图 / 各处大图）。返回是否真的写回了文件。
+        """
+        from desktop.components.viewers.image_editor import ImageEditorDialog
+
+        target = self._zoom_target(self._zoom_index())
+        if target is None or target.edit_path is None:
+            return False
+        path = target.edit_path
+        image = QImage(str(path))
+        if image.isNull():
+            self._notify_edit("warning", "无法编辑", f"读不到原图：{path.name}")
+            return False
+        parent = self.window() if isinstance(self, QWidget) else None
+        editor = ImageEditorDialog(parent, image, save_back=True)
+        if editor.exec() != QDialog.DialogCode.Accepted:
+            return False
+        edited = editor.result_image()
+        if edited is None or edited.isNull():
+            return False
+        if not overwrite_image_file(edited, path):
+            self._notify_edit("error", "保存失败", f"编辑未生效：{path.name}")
+            return False
+        self._on_zoom_image_saved(str(path), edited)
+        return True
+
+    def _notify_edit(self, kind: str, title: str, content: str) -> None:
+        """编辑失败的提示（InfoBar）。没有可用的宿主窗口时静默。"""
+        parent = self.window() if isinstance(self, QWidget) else None
+        if parent is None:
+            return
+        from qfluentwidgets import InfoBar, InfoBarPosition
+
+        factory = getattr(InfoBar, kind, InfoBar.info)
+        factory(
+            title=title,
+            content=content,
+            parent=parent,
+            position=InfoBarPosition.BOTTOM_RIGHT,
+            duration=3000,
+        )
+
+    def _on_zoom_image_saved(self, path_text: str, image=None) -> None:
+        """编辑器覆盖原图后的宿主钩子 ``image_saved(path, edited)``。
+
+        默认什么都不做：没有真实文件的宿主（PDF 预览）永远收不到；有
+        回写路径的宿主覆写本方法去立即同步大图/条目图标并登记尺寸。
+        """
 
     # ---- 子类实现 ----
     def _zoom_index(self) -> int:

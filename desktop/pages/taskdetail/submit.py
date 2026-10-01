@@ -41,12 +41,45 @@ class SubmitMixin:
         return None
 
     def _rembg_submit_version_state(self) -> str:
-        return rembg_submit_version_state(
+        state = rembg_submit_version_state(
             preview_run=self._latest_success_run("rembg"),
             submit_run=self._latest_success_run("rembg_submit"),
             panel_args=self.control_stack.widget(2).get_args(),
             preview_param_keys=self.PREVIEW_PARAM_KEYS,
         )
+        if state == UP_TO_DATE and self._preview_edited_after_submit():
+            # 去底色结果被编辑过：提交产物仍是编辑前那一份，必须重新提交才会
+            # 传给第四步（用户 2026-10-01「去底色那一步，必须提交才能传给
+            # 下一步」）。参数没变，纯版本判定看不出这件事，所以另判一次。
+            return NEW_VERSION
+        return state
+
+    def _preview_edited_after_submit(self) -> bool:
+        """``stages/rembgpreview`` 里是否有文件比最近一次成功提交还新。
+
+        提交产物是「提交那一刻」的去底图合成结果，之后单独编辑去底图**不会**
+        自动生效——按钮/提示必须把"请重新提交"说出来，不能让用户以为白编辑了。
+        """
+        if not self.task_id:
+            return False
+        submit_run = self._latest_success_run("rembg_submit")
+        if not submit_run:
+            return False
+        try:
+            submit_at = float(submit_run.get("finished_at") or 0.0)
+        except (TypeError, ValueError):
+            return False
+        if submit_at <= 0:
+            return False
+        for image in list_stage_images(
+            self.store.rembg_preview_output_dir(self.task_id)
+        ):
+            try:
+                if image.stat().st_mtime > submit_at:
+                    return True
+            except OSError:  # 竞态下文件没了：不算编辑
+                continue
+        return False
 
     # ---------------------------------------------------------- 派生条目
     def _rembg_result_path(self, stem: str) -> Path | None:
@@ -67,29 +100,30 @@ class SubmitMixin:
             area=area,
         )
 
-    def _build_print_effects(
-        self, list_entries: list[dict], area: int, border
-    ) -> list[dict]:
-        """第四步列表 + 第三步当前 area/border → worker 合成规格。
+    def _build_print_effects(self, list_entries: list[dict]) -> list[dict]:
+        """第四步的取图规格：**一律透传「提交本次任务」的最终图**。
 
-        ⚠️ **拼版生效时直接透传**：拼版页本身就是"两张源图已经合成好的整页
-        成品"（``stages/imposition``），再走一遍区域合成会把整页当半幅紧裁，
-        拼出来的版面全毁。所以拼版生效 → ``effect=None`` 整图参与排版。
+        用户 2026-10-01 口径：「去底色那一步，必须提交才能传给下一步」。
+        所以第四步**不再**拿去底图（``stages/rembgpreview``）+ 当前
+        area/border 现算，只用第三步落盘的成品图（``stages/rembg``，拼版
+        生效时是 ``stages/imposition``）——它们是同一套几何规则在**提交
+        那一刻**合成出来的。由此：
+
+        - 编辑去底色结果、改 area/border 之后，都要重新「提交本次任务」
+          才会进 PDF（提交按钮本来就会高亮「有新版本」提示）；
+        - 编辑第四步的「待打印图」则是「生成 PDF」即生效（它就是要交付的
+          那张图本身）；
+        - 拼版页同样是"已经合成好的整页成品"，本来就走这条透传——再走一遍
+          区域合成会把整页当半幅紧裁，拼出来的版面全毁。
+
+        ``effect=None`` 表示"这份文件的全部像素就是要排版的内容"，worker
+        直接原样送进 PDF。
         """
-        if self.imposition_active():
-            return [
-                {"file": str(Path(e["file"])), "effect": None}
-                for e in list_entries
-                if Path(e["file"]).exists()
-            ]
-        from desktop.services.print_plan import plan_print_effects
-
-        composed = self._rembg_submit_entries(area, border)
-        rembg_dir = self.store.rembg_output_dir(self.task_id)
-        submitted_labels = {p.stem for p in list_stage_images(rembg_dir)}
-        return plan_print_effects(
-            list_entries, composed, rembg_dir, submitted_labels, border,
-        )
+        return [
+            {"file": str(Path(e["file"])), "effect": None}
+            for e in list_entries
+            if Path(e["file"]).exists()
+        ]
 
     # ---------------------------------------------------------- 提交动作
     def run_rembg_submit(self) -> None:
@@ -198,7 +232,8 @@ class SubmitMixin:
             else:
                 version = self._rembg_submit_version_state()
                 tip = {
-                    NEW_VERSION: "预览已产生新版本（重新生成或参数已变更），"
+                    NEW_VERSION: "预览已产生新版本（重新生成预览、参数变更，"
+                                 "或去底色结果被编辑过），"
                                  "请点击「提交本次任务」更新最终图片",
                     PREVIEW_STALE: "面板去底参数已修改，当前预览图不是最新；"
                                    "建议先重新「生成预览」，再提交本次任务",
@@ -215,7 +250,7 @@ class SubmitMixin:
             # （含 hasIcon=true 的 36px 左边距）整串抹掉（见 widgets.bold_button）
             bold_button(self.submit_button, True)
             self._show_submit_hint(
-                "● 预览有新版本，请提交本次任务", "#c0392b"
+                "● 有新版本待提交（预览/参数/去底色结果有改动）", "#c0392b"
             )
         elif version == PREVIEW_STALE:
             self.submit_button.setText("提交本次任务")

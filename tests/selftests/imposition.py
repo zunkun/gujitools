@@ -52,6 +52,32 @@ def _mk(path: Path, color, size=(400, 600)) -> Path:
     return path
 
 
+#: 编辑结果用的工作色：挑两个夹具色系里没有的颜色，像素断言不会被"本来就
+#: 是这个颜色"糊弄过去
+EDIT_ITEM_COLOR = (12, 200, 180)
+EDIT_SPREAD_COLOR = (200, 30, 200)
+
+
+def _solid_qimage(color, width: int = 64, height: int = 48):
+    """纯色 QImage（编辑结果的替身）。"""
+    from PySide6.QtGui import QColor, QImage
+
+    image = QImage(width, height, QImage.Format_RGB32)
+    image.fill(QColor(*color))
+    return image
+
+
+def _qimage_pixel(path: Path, x: int, y: int):
+    """读文件里一个像素的 (r, g, b)；读不到返回 None。"""
+    from PySide6.QtGui import QImage
+
+    image = QImage(str(path))
+    if image.isNull():
+        return None
+    c = image.pixelColor(x, y)
+    return (c.red(), c.green(), c.blue())
+
+
 def _names(paths) -> list[str]:
     return [Path(p).name for p in paths]
 
@@ -697,10 +723,10 @@ def run(ctx) -> None:
         dialog.cards[0].toggle()
         ok("勾中的卡片进入选中态（浅底 + 对勾）", dialog.cards[0].is_checked())
 
-        # ---- 「自此之后图片自动拼版」复选框（用户 2026-09-30：恰好勾 1 张
-        #      **半幅**时出现在下方，勾上后「开始拼版」走自动拼版）----
+        # ---- 「从这张图片开始自动拼版」复选框（用户 2026-10-01：恰好勾 1 张
+        #      就出现，**不限整幅/半幅**；勾上后「开始拼版」走自动拼版）----
         # （当前状态：只勾 cards[0] 一张半幅）
-        ok("只勾 1 张：下方出现「自此之后图片自动拼版」复选框（默认未勾）",
+        ok("只勾 1 张：下方出现「从这张图片开始自动拼版」复选框（默认未勾）",
            dialog.auto_checkbox.isVisibleTo(dialog)
            and not dialog.auto_checkbox.isChecked(),
            f"visible={not dialog.auto_checkbox.isHidden()} "
@@ -745,14 +771,19 @@ def run(ctx) -> None:
            third.status.text())
         third.deleteLater()
 
-        # 1 张整幅：单独成页可点，但没有自动拼版选项（自动只对半幅）
+        # 1 张整幅：单独成页可点，自动拼版选项同样出现（用户 2026-10-01：
+        # 不再限制半幅，整幅起自动 = 整幅单独一页后继续往下配）
         full_only = ImpositionPickerDialog([full])
         full_only.cards[0].toggle()
-        ok("只勾 1 张整幅：「开始拼版」可点、提示整幅单独成一页、无自动选项",
+        ok("只勾 1 张整幅：「开始拼版」可点、自动拼版选项同样出现",
            full_only.ok_button.isEnabled()
-           and "整幅" in full_only.status.text()
-           and not full_only.auto_checkbox.isVisibleTo(full_only),
+           and full_only.auto_checkbox.isVisibleTo(full_only)
+           and "整幅" in full_only.status.text(),
            full_only.status.text())
+        full_only.auto_checkbox.setChecked(True)
+        ok("勾上后整幅也能走自动拼版（auto_mode_file 生效）",
+           full_only.auto_mode_file() == full,
+           str(full_only.auto_mode_file()))
         full_only.deleteLater()
 
         # ---- 「删除图片」/「查看删除的图片」（用户 2026-09-30）----
@@ -842,7 +873,9 @@ def run(ctx) -> None:
         for name, color in (("1-r", RED), ("1-l", GREEN),
                             ("2-r", BLUE), ("2-l", YELLOW)):
             _mk(rembg_dir / f"{name}.png", color)
-        # 让"未生效"路径也走真实区域合成：提取清单 + 去底预览 + 检测框
+        # 顺带铺好上游夹具（提取清单 / 去底预览 / 检测框）：它们已不参与第四步
+        # 合成（2026-10-01 起只透传提交产物），但保留成"真实任务该有的样子"，
+        # 免得测试跑在空目录上。
         extract = repo.extract_output_dir(tid)
         preview = repo.rembg_preview_output_dir(tid)
         boxes = []
@@ -879,13 +912,15 @@ def run(ctx) -> None:
         ok("详情里的拼版视图就是刚验证的那个控件",
            isinstance(page.imposition_view, ImpositionViewWidget))
 
-        # 未生效时：区域合成照旧（这是"否则从第三步去底色获取"的基线）
+        # 未生效时：第四步也只排版第三步「提交本次任务」的成品图（整图透传）。
+        # 2026-10-01 起不再拿去底图按 area/border 现算——见 submit.py。
         base_entries, _doc = page._print_entries()
-        base_effects = page._build_print_effects(base_entries, 1, None)
-        ok("未生效时仍走区域合成（effect 都带合成规格）",
+        base_effects = page._build_print_effects(base_entries)
+        ok("未生效时也整图透传提交产物（不再按 area/border 现算）",
            len(base_effects) == 4
-           and all(e["effect"] is not None for e in base_effects),
-           str([e["effect"] for e in base_effects][:1]))
+           and all(e["effect"] is None for e in base_effects)
+           and {str(Path(e["file"]).parent) for e in base_effects} == {str(rembg_dir)},
+           str(base_effects[:1]))
 
         pages = None
         import desktop.components.imposition.picker as _ipick
@@ -1008,7 +1043,7 @@ def run(ctx) -> None:
         finally:
             _ipick.ImpositionPickerDialog = real_dialog
 
-        # ---- 自动拼版接线：勾 1 张 + 「自此之后图片自动拼版」→ 规则引擎接管
+        # ---- 自动拼版接线：勾 1 张 + 「从这张图片开始自动拼版」→ 规则引擎接管
         # （用户 2026-09-30：1-r 单独一页、左半幅+右半幅配对、落单单页）----
         class _FakeAutoDialog(_FakeDialog):
             """替身弹窗：只勾第一张 + 自动拼版（UI 行为已在真实弹窗测过）。"""
@@ -1092,8 +1127,8 @@ def run(ctx) -> None:
            {str(Path(e["file"]).parent) for e in entries}
            == {str(repo.imposition_output_dir(tid))},
            str(_names([e["file"] for e in entries])))
-        effects = page._build_print_effects(entries, 1, None)
-        ok("拼版生效时不再做区域合成（整页透传）",
+        effects = page._build_print_effects(entries)
+        ok("拼版生效时整页透传（拼版页本身就是成品）",
            len(effects) == 2 and all(e["effect"] is None for e in effects),
            str(effects))
 
@@ -1320,7 +1355,10 @@ def run(ctx) -> None:
             def removed_changed(self):
                 return False
 
-        _picker_mod.ImpositionPickerDialog = _FakeAppend([str(c)])  # 2-r
+        # ⚠️ 赋给弹窗槽位的必须是**可调用对象**（工厂），不能是替身实例——
+        # 控制器拿到的是 `ImpositionPickerDialog(...)` 调用形式。
+        _picker_mod.ImpositionPickerDialog = (
+            lambda *a, **k: _FakeAppend([str(c)]))  # 2-r
         try:
             page.imposition_panel.add_image_button.click()
             page._imposition_timer.stop()
@@ -1343,7 +1381,8 @@ def run(ctx) -> None:
         page._imposition_timer.stop()
         page.imposition_view.set_current(0)
         pump(ctx.app, times=4)
-        _picker_mod.ImpositionPickerDialog = _FakeAppend([str(d)])  # 2-l
+        _picker_mod.ImpositionPickerDialog = (
+            lambda *a, **k: _FakeAppend([str(d)]))  # 2-l
         try:
             page.imposition_panel.add_image_button.click()
             page._imposition_timer.stop()
@@ -1929,6 +1968,230 @@ def run(ctx) -> None:
         finally:
             _izd.ImageZoomDialog = _real_zoom_cls
             page._imposition_zoom_dialog = None
+
+        # ---------------- 9. 右键菜单：预览图片 / 编辑图片（不经预览弹窗）
+        # 用户 2026-10-01：右键菜单两个入口，目标规则与双击一致（图上 →
+        # 这张原图；空白 → 整页组合）；「编辑图片」原本是预览弹窗里的按钮，
+        # 现在右键直达——单张图覆盖回写源图原图，整页组合写回拼版成品。
+        from PySide6.QtCore import QEvent, QPoint
+        from PySide6.QtGui import QContextMenuEvent
+        from PySide6.QtWidgets import QDialog
+        from qfluentwidgets.components.widgets.menu import RoundMenu
+
+        from tests.selftests._context import wait_until
+
+        _menu: dict = {}
+
+        def _fake_menu_exec(self, pos, ani=True, aniType=None):
+            _menu["actions"] = self.actions()
+            return None
+
+        _real_menu_exec = RoundMenu.exec
+        RoundMenu.exec = _fake_menu_exec
+
+        def _ctx(cv, x, y):
+            return QContextMenuEvent(
+                QContextMenuEvent.Reason.Mouse, QPoint(int(x), int(y)),
+                QPoint(int(x), int(y)),
+            )
+
+        def _pick(choice: int):
+            """点菜单里的第 choice 项（0=预览图片 1=编辑图片）。"""
+            _menu["actions"][choice].trigger()
+
+        try:
+            # ---- 画布层：菜单两项 + 目标分流 ----
+            canvas4 = ImpositionCanvas()
+            canvas4.resize(600, 600)
+            canvas4.set_page(S.default_items([str(a), str(b)]))
+            canvas4.show()
+            ctx.app.processEvents()
+
+            hits: dict = {"preview_item": [], "preview_spread": 0,
+                          "edit_item": [], "edit_spread": 0}
+            canvas4.item_double_clicked.connect(
+                lambda i: hits.__setitem__("preview_item", hits["preview_item"] + [i]))
+            canvas4.spread_double_clicked.connect(
+                lambda: hits.__setitem__("preview_spread", hits["preview_spread"] + 1))
+            canvas4.item_edit_requested.connect(
+                lambda i: hits.__setitem__("edit_item", hits["edit_item"] + [i]))
+            canvas4.spread_edit_requested.connect(
+                lambda: hits.__setitem__("edit_spread", hits["edit_spread"] + 1))
+            selections: list[int] = []
+            canvas4.selection_changed.connect(selections.append)
+
+            ix, iy = _item_pt(canvas4, 0)
+            canvas4.contextMenuEvent(_ctx(canvas4, ix, iy))
+            ok("右键图上弹出菜单：两项是「预览图片 / 编辑图片」",
+               [act.text() for act in _menu.get("actions", [])]
+               == ["预览图片", "编辑图片"],
+               str([act.text() for act in _menu.get("actions", [])]))
+            ok("右键即选中那张图（与左键点击同款语义）",
+               canvas4.selected() == 0 and selections == [0],
+               f"selected={canvas4.selected()} selections={selections}")
+            _pick(0)
+            ok("右键图上点「预览图片」→ 与双击同一信号（预览这张原图）",
+               hits["preview_item"] == [0] and hits["preview_spread"] == 0,
+               str(hits))
+            _pick(1)
+            ok("右键图上点「编辑图片」→ 发 item_edit_requested（同槽位）",
+               hits["edit_item"] == [0] and hits["edit_spread"] == 0,
+               str(hits))
+
+            bx, by = _blank_pt(canvas4)
+            canvas4.contextMenuEvent(_ctx(canvas4, bx, by))
+            _pick(0)
+            _pick(1)
+            ok("右键空白处：预览走 spread 信号、编辑走 spread_edit 信号",
+               hits["preview_spread"] == 1 and hits["edit_spread"] == 1
+               and hits["edit_item"] == [0],
+               str(hits))
+            canvas4.deleteLater()
+
+            _menu.clear()
+            empty_hits: list[int] = []
+            empty_canvas = ImpositionCanvas()
+            empty_canvas.item_edit_requested.connect(empty_hits.append)
+            empty_canvas.contextMenuEvent(_ctx(empty_canvas, 30, 30))
+            ok("空画布右键没有菜单", not _menu.get("actions"), str(_menu))
+            empty_canvas.deleteLater()
+
+            # ---- 视图层：编辑信号也直连转发 + 提示语提到右键 ----
+            view3 = ImpositionViewWidget()
+            view3.set_pages([{"items": S.default_items([str(a), str(b)])}],
+                            current=0)
+            edit_forward: list[str] = []
+            view3.item_edit_requested.connect(
+                lambda i: edit_forward.append(f"item:{i}"))
+            view3.spread_edit_requested.connect(
+                lambda: edit_forward.append("spread"))
+            view3.canvas.item_edit_requested.emit(1)
+            view3.canvas.spread_edit_requested.emit()
+            ok("视图把两种右键编辑都转发给控制器（item:槽位 / spread）",
+               edit_forward == ["item:1", "spread"], str(edit_forward))
+            ok("底部提示语写明右键可编辑",
+               "右键" in view3.hint.text() and "编辑" in view3.hint.text(),
+               view3.hint.text())
+            view3.deleteLater()
+
+            # ---- 控制器层：右键图上「编辑图片」→ 编辑器（覆盖回写源图）----
+            import desktop.components.viewers.image_editor as _ied
+
+            _edit_seen: dict = {}
+            _edited = _solid_qimage(EDIT_ITEM_COLOR, 64, 48)
+
+            class _FakeEditorDialog:
+                def __init__(self, parent, image, save_back=False):
+                    _edit_seen["save_back"] = save_back
+
+                def exec(self):
+                    _edit_seen["exec"] = _edit_seen.get("mode", "ok")
+                    return QDialog.DialogCode.Accepted
+
+                def result_image(self):
+                    return _edited
+
+            _real_editor_cls = _ied.ImageEditorDialog
+            _ied.ImageEditorDialog = _FakeEditorDialog
+
+            from desktop.components.viewers.image_zoom_dialog import (
+                overwrite_image_file,
+            )
+
+            def _pixel_of(path: Path):
+                return _qimage_pixel(path, 2, 2)
+
+            try:
+                item_path = Path(
+                    page._imposition_pages()[0]["items"][0]["file"]
+                )
+                ok("准备：拼版源图存在", item_path.exists())
+                # 预热画布解码缓存，等会儿断言「缓存被丢掉」才有意义
+                page.imposition_view.canvas._image(str(item_path))
+                ok("准备：画布缓存里已有这张图",
+                   str(item_path) in page.imposition_view.canvas._images)
+
+                _edit_seen.clear()
+                page._open_imposition_item_edit(0)
+                ok("编辑器以 save_back 模式打开（完成 = 覆盖原图片）",
+                   _edit_seen.get("save_back") is True
+                   and _edit_seen.get("exec") == "ok", str(_edit_seen))
+                ok("「完成」把编辑结果覆盖回源图原图",
+                   _pixel_of(item_path) == EDIT_ITEM_COLOR,
+                   f"item={item_path.name} 像素={_pixel_of(item_path)}")
+                ok("画布解码缓存已丢（重绘读新图，不显示旧图）",
+                   str(item_path) not in page.imposition_view.canvas._images)
+                ok("源图变了 → 重新防抖合成已挂上",
+                   page._imposition_dirty, f"dirty={page._imposition_dirty}")
+                page._imposition_timer.stop()
+                page._imposition_dirty = False
+
+                # 取消编辑：不覆盖
+                _edit_seen.clear()
+                _edit_seen["mode"] = "reject"
+
+                class _RejectEditor(_FakeEditorDialog):
+                    def exec(self):
+                        return QDialog.DialogCode.Rejected
+
+                _ied.ImageEditorDialog = _RejectEditor
+                before = _pixel_of(item_path)
+                page._open_imposition_item_edit(0)
+                ok("取消编辑不覆盖源图", _pixel_of(item_path) == before,
+                   f"before={before} after={_pixel_of(item_path)}")
+                _ied.ImageEditorDialog = _FakeEditorDialog
+            finally:
+                _ied.ImageEditorDialog = _real_editor_cls
+
+            # ---- 控制器层：右键空白「编辑图片」→ 合成全分辨率 → 写回成品 ----
+            from desktop.services.imposition import FILE_FMT
+
+            out_path = page.store.imposition_output_dir(
+                page.task_id
+            ) / FILE_FMT.format(1)
+            _spread_seen: dict = {}
+            _spread_edited = _solid_qimage(EDIT_SPREAD_COLOR, 30, 20)
+
+            class _FakeSpreadEditor:
+                def __init__(self, parent, image, save_back=False):
+                    _spread_seen["save_back"] = save_back
+                    _spread_seen["size"] = (image.width(), image.height())
+
+                def exec(self):
+                    return QDialog.DialogCode.Accepted
+
+                def result_image(self):
+                    return _spread_edited
+
+            _ied.ImageEditorDialog = _FakeSpreadEditor
+            try:
+                if out_path.exists():
+                    out_path.unlink()
+                page._open_imposition_spread_edit()
+                done = wait_until(
+                    ctx.app,
+                    lambda: out_path.exists()
+                    and _pixel_of(out_path) == EDIT_SPREAD_COLOR,
+                )
+                ok("整页组合编辑：按产出口径合成 → 编辑器 → 覆盖成品文件",
+                   done and _pixel_of(out_path) == EDIT_SPREAD_COLOR,
+                   f"out={out_path.name} exists={out_path.exists()} "
+                   f"pixel={_pixel_of(out_path) if out_path.exists() else None}")
+                ok("编辑器以 save_back 模式打开（成品有真实文件可回写）",
+                   _spread_seen.get("save_back") is True, str(_spread_seen))
+                ok("给编辑器的是全分辨率组合图（不缩）",
+                   _spread_seen.get("size") == (
+                       _spread_edited.width(), _spread_edited.height())
+                   or (_spread_seen.get("size") or (0, 0))[0]
+                   >= _spread_edited.width(),
+                   str(_spread_seen))
+                ok("挂着的防抖合成被取消（不会用未编辑结果冲掉手工修饰）",
+                   not page._imposition_dirty,
+                   f"dirty={page._imposition_dirty}")
+            finally:
+                _ied.ImageEditorDialog = _real_editor_cls
+        finally:
+            RoundMenu.exec = _real_menu_exec
     finally:
         if page is not None:
             try:

@@ -42,6 +42,9 @@ class RembgPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
     """去底色预览：左侧输出条目列表 + 右侧单视图（去底色结果 / 原图切换）。"""
 
     current_changed = Signal(int, str)
+    #: 编辑器在放大弹窗里覆盖了某个文件 ``image_saved(path, edited)``：
+    #: 宿主据此刷新尺寸记录/缩略图/各处显示（真实文件才可能发出）
+    image_saved = Signal(str, object)
 
     def __init__(self, empty_hint: str = "暂无图片", parent=None):
         """构建缩略图条与「去底色结果 / 原图」切换行，默认显示去底色结果。"""
@@ -184,8 +187,14 @@ class RembgPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
                              "full": False},
                         ]
                     elif area == 1 and len(valid) == 1:
+                        # 半幅漏检一侧：label 同样带 -l/-r（看原始槽位，与提交
+                        # 产物命名一致，见 print_plan.plan_rembg_submit_entries）；
+                        # 整幅(full)单槽不带后缀。
+                        single_label = stem
+                        if not full and len(boxes) == 2:
+                            single_label = f"{stem}-l" if boxes[0] else f"{stem}-r"
                         page_entries = [
-                            {"label": f"{stem}", "path": path_text, "box": valid[0],
+                            {"label": single_label, "path": path_text, "box": valid[0],
                              "parea": 1, "full": full}
                         ]
                     elif area in (2, 3) and len(valid) == 2:
@@ -251,7 +260,8 @@ class RembgPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
                     self.strip.setCurrentRow(row)
                     break
 
-    def _load_page_thumbs(self, entries: list[dict]) -> None:
+    def _load_page_thumbs(self, entries: list[dict],
+                          rows: list[int] | None = None) -> None:
         """加载各条目缩略图：按检测框 + area/border 合成，只显示所属部分。
 
         条目缩略图不是整页缩略图——area=1 时要显示"该条目那半页"，
@@ -261,6 +271,10 @@ class RembgPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
 
         合成后的图按"覆盖填充"放大到条目图标尺寸并居中裁切，
         保证占满整个图标宽度（避免半幅图旁边留白）。
+
+        ``rows``：``entries`` 是整条清单的**子集**时给出对应条目在缩略图条
+        里的行号（单页文件被覆盖后只刷那几行，不重建整个条）；None = 全量，
+        行号即切片下标。
         """
         thumb_paths = []
         effects = []
@@ -298,7 +312,8 @@ class RembgPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
                 effects=effects[start:end],
             ),
             sink=lambda index, image, _path: self.strip.set_item_icon(
-                index, self._fill_icon(image), "", labels[index]
+                rows[index] if rows else index,
+                self._fill_icon(image), "", labels[index]
             ),
         )
 
@@ -335,13 +350,34 @@ class RembgPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         return max(self.strip.currentRow(), 0)
 
     def _zoom_target(self, index: int) -> ZoomTarget | None:
-        """第 index 条的图片预览来源；与主预览共用 :meth:`_resolve_source`。"""
+        """第 index 条的图片预览来源；与主预览共用 :meth:`_resolve_source`。
+
+        ``save_path`` 只在 ``effect is None``（显示内容就是这个文件的全部
+        像素）时给：区域合成（area/border 裁一块、拼画布）是虚拟图，把它
+        写回会把整张文件覆盖成一小块。
+
+        ``edit_path`` 是**编辑要回写的真实文件**（用户 2026-10-01：编辑要串起
+        各步、最终落到 PDF）：
+        - 「原图」形态 → 源图文件（第一步产出）；
+        - 「去底色结果」形态 → **正式**结果文件（``stages/rembgpreview``，
+          提交后即喂给第四步）；
+        - 显示的是**实时暂存**结果（参数已改、尚未「生成预览」）→ 不给编辑：
+          写回临时文件会被下次实时预览覆盖、也不进提交产物。
+        """
         if not (0 <= index < len(self._entries)):
             return None
         entry = self._entries[index]
         source, effect, _has_result, _error = self._resolve_source(entry)
         if source is None:
             return None
+        source_path = Path(str(entry["path"]))
+        edit_path = None
+        if Path(source) == source_path:
+            edit_path = source_path
+        else:
+            formal = self._result_full_image(entry, include_live=False)
+            if formal is not None and Path(source) == formal:
+                edit_path = formal
         return ZoomTarget(
             render=lambda edge: PreviewWorker(
                 source, longest_edge=edge, effect=effect
@@ -349,7 +385,35 @@ class RembgPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
             note=f"第 {index + 1}/{len(self._entries)} 条 · {source.name}",
             stem=source.stem,
             count=len(self._entries),
+            save_path=source if effect is None else None,
+            edit_path=edit_path,
         )
+
+    def _on_zoom_image_saved(self, path_text: str, image=None) -> None:
+        """弹窗里覆盖了文件：转发给宿主（同步尺寸/缩略图并刷新显示）。"""
+        self.image_saved.emit(path_text, image)
+
+    def refresh_page(self, path_text: str) -> None:
+        """某文件被覆盖后刷新本查看器：受影响条目图标 + 当前大图。
+
+        由宿主在缩略图重生成完毕后调用；路径与本查看器无关时是空操作。
+        """
+        rows = [
+            i for i, entry in enumerate(self._entries)
+            if entry["path"] == path_text
+        ]
+        entry = self._current_entry()
+        if entry is not None and (
+            entry["path"] == path_text
+            or str(self._result_full_image(entry) or "") == str(
+                Path(path_text)
+            )
+        ):
+            self._load_display()  # 大图按新文件重载（异步、令牌保护）
+        if rows:
+            self._load_page_thumbs(
+                [self._entries[i] for i in rows], rows=rows
+            )
 
     # ------------------------------------------------------------------ 加载
     def _select_image(self, index: int, _path: str) -> None:
@@ -372,13 +436,24 @@ class RembgPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
             self.close_zoom_popup()  # 弹窗里那页是切换前的形态
             self._load_display()
 
-    def _result_full_image(self, entry: dict | None = None) -> Path | None:
-        """某条目的去底色结果图：**实时暂存优先**，其次「生成预览」的正式产物。"""
+    def _result_full_image(self, entry: dict | None = None,
+                           include_live: bool = True) -> Path | None:
+        """某条目的去底色结果图。
+
+        ``include_live=True``（默认，**显示口径**）：**实时暂存优先**，其次
+        「生成预览」的正式产物——实时暂存才是"此刻参数下"的样子。
+        ``include_live=False``（**编辑回写口径**）：只认正式产物
+        （``stages/rembgpreview``）——实时暂存是系统临时文件，改了会被下一次
+        实时预览覆盖，也不进「提交本次任务」，写回它等于"改了不生效"。
+        """
         entry = entry if entry is not None else self._current_entry()
         if not entry:
             return None
         stem = Path(entry["path"]).stem
-        for base in (self._live_dir, self._rembg_dir):
+        bases = (self._live_dir, self._rembg_dir) if include_live else (
+            self._rembg_dir,
+        )
+        for base in bases:
             if not base:
                 continue
             for ext in ("png", "jpg", "jpeg"):

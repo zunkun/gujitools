@@ -5,7 +5,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Signal
+from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 from qfluentwidgets import CaptionLabel, ToolButton
 from qfluentwidgets import FluentIcon as FIF
@@ -30,6 +31,9 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
     selection_changed = Signal(int)
     #: 编辑被拒绝（超框数上限等）：宿主弹提示
     box_edit_rejected = Signal(str)
+    #: 编辑器在放大弹窗里覆盖了某张页面图 ``image_saved(path, edited)``：
+    #: 宿主据此同步 sizes.json、重生成缩略图并刷新各处显示
+    image_saved = Signal(str, object)
 
     def __init__(
         self,
@@ -344,4 +348,53 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
             count=len(self._paths),
             original=original,
             cap=cap,
+            # 页面图就是磁盘上的真实文件：编辑器「完成」= 覆盖它
+            save_path=path,
+            # 编辑目标 = 这张页面图本身（第一步产出，第二步检测读的就是它）
+            edit_path=path,
         )
+
+    def _on_zoom_image_saved(self, path_text: str, image=None) -> None:
+        """弹窗里覆盖了页面图：转发给宿主（同步 sizes.json/缩略图）。"""
+        self.image_saved.emit(path_text, image)
+
+    def apply_edited_image(self, path_text: str, image) -> None:
+        """编辑结果**立即上屏**（不等文件重解码/缩略图重生成）。
+
+        编辑弹窗确认后由宿主调用：当前页大图直接换成编辑结果，条目图标
+        用编辑结果现缩一张，缩略图缓存随后由宿主后台重生兜底。清单里没有
+        这个路径（或图无效）时是空操作。
+        """
+        try:
+            row = [str(p) for p in self._paths].index(path_text)
+        except ValueError:
+            return
+        if image is None or getattr(image, "isNull", lambda: True)():
+            return
+        # 作废在飞的加载：迟到的旧文件解码结果不许盖掉刚上屏的编辑图
+        self._load_token += 1
+        if row == max(self.strip.currentRow(), 0):
+            size = QSize(image.width(), image.height())
+            self.view.set_image(image, image_size=size)
+            self.info_label.setText(f"{size.width()} × {size.height()} px")
+            # 让宿主按新尺寸重读检测框（sizes.json 已先行更新）
+            self.current_changed.emit(row, path_text)
+        edge = self._decode_edge()
+        icon = image.scaled(
+            edge, edge, Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        self.strip.set_item_icon(row, icon, path_text, Path(path_text).stem)
+
+    def refresh_page(self, path_text: str) -> None:
+        """某页缩略图缓存重生成后刷新条目图标（大图由 apply_edited_image
+        即时同步过，不再重载）。路径不在清单里时是空操作。"""
+        try:
+            row = [str(p) for p in self._paths].index(path_text)
+        except ValueError:
+            return
+        image = QImage(str(self._thumb_for(path_text)))
+        if not image.isNull():
+            self.strip.set_item_icon(
+                row, image, path_text, Path(path_text).stem
+            )

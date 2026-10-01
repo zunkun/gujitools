@@ -59,6 +59,9 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
     hint = Signal(str)              # 需要宿主提示用户（如"未选中任何图片"）
     # 版面编辑：某一页的图片坐标（[x,y,w,h] mm）被拖拽/缩放改了
     layout_changed = Signal(int, list)
+    #: 编辑器覆盖了某张待打印图 ``image_saved(path, edited)``：宿主据此记日志
+    #: （提示"点「生成 PDF」即生效"）——待打印图就是最终进 PDF 的那张
+    image_saved = Signal(str, object)
 
     #: 导出图片的精度：与 PDF **同级**（`functions/print.py` 的 `PRINT_IMAGE_DPI`）。
     #: 密度上限由 `compose_print_page` 夹住（不得超过源图原生密度），小图不会被拉大。
@@ -148,6 +151,9 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         # 双击画布 → 预览弹窗（版面编辑模式下看该页的打印效果放大；
         # 打印效果/原图模式的双击在 self.view 上，见 _init_zoom_popup）
         self.canvas.double_clicked.connect(self._open_zoom_popup)
+        # 右键画布 → 同一套「预览图片 / 编辑图片」菜单（版面编辑是第四步默认
+        # 视图，用户最自然的右键位置就是这里）
+        self.canvas.context_menu_requested.connect(self._open_zoom_menu)
         right.addWidget(self.canvas, 1)
         # 原图查看（非编辑）：复用 ImageViewerWidget 的大图查看
         self.view = ImageView(empty_hint)
@@ -295,7 +301,20 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         """方向键翻页（详情页 ←/→ 调用；联动预览刷新，见 ThumbStrip.navigate）。"""
         self.strip.navigate(forward)
 
-    # ------------------------------------------------------------------ 内部
+    def _on_zoom_image_saved(self, path_text: str, image=None) -> None:
+        """弹窗/右键里覆盖了待打印图：重画当前显示（缩略图缓存按 mtime 自愈）。
+
+        打印列表的缩略图命中判据是「thumb mtime ≥ 源图 mtime」，覆盖后
+        源图变新，旧缓存自动失效回退真图解码，无需在这里重建整列图标。
+        另发 ``image_saved`` 让宿主记日志（待打印图就是最终进 PDF 的那张）。
+        """
+        if self._current_index() >= 0 and self._entries_cache:
+            entry = self._entries_cache[self._current_index()]
+            if entry.get("file") == path_text:
+                self.refresh_display()
+        self.image_saved.emit(path_text, image)
+
+    # -------------------------------------------------------------- 内部
     def _stop_worker(self) -> None:
         for thread in getattr(self, "_threads", []):
             thread.quit()
@@ -845,6 +864,11 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
                 note=f"原图 · 第 {index + 1}/{count} 页",
                 stem=path.stem,
                 count=count,
+                # 原图模式显示的就是这个文件的全部像素：编辑器「完成」可覆盖它
+                save_path=path,
+                # 编辑目标 = 待打印的这张图（第三步提交产物/拼版成品），
+                # 也就是最终进 PDF 的那张——改了它生成 PDF 即生效
+                edit_path=path,
             )
         spec, note = self._print_spec(index, path)
         if spec is None:
@@ -854,6 +878,8 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
                 note=f"原图（{note}） · 第 {index + 1}/{count} 页",
                 stem=path.stem,
                 count=count,
+                # 打印效果不可算时显示的是原图：同样按真实文件回写
+                edit_path=path,
             )
         return ZoomTarget(
             render=lambda edge: PreviewWorker(
@@ -865,4 +891,8 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
             note=f"打印效果 · 第 {index + 1}/{count} 页",
             stem=path.stem,
             count=count,
+            # 打印效果是**派生显示**（A4 重排），不是这个文件的全部像素，
+            # 故不给 save_path；但编辑改的仍是它派生的真实文件（用户原则：
+            # 编辑串起各步、最终落到 PDF），「完成」后重新排版当前页。
+            edit_path=path,
         )

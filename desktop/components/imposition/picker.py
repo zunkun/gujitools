@@ -323,10 +323,11 @@ class ImpositionPickerDialog(FramelessDialog):
         apply_to(self.status, T.SIZE_CAPTION, color=T.INK_SOFT)
         column.addWidget(self.status)
 
-        # 「自此之后图片自动拼版」（用户 2026-09-30 要求恢复）：**恰好勾 1 张**
-        # 时出现在下方——勾上后点「开始拼版」，宿主从这张图起把剩余候选按
-        # 自动拼版规则（整幅单独一页、左半幅+右半幅配对）全部拼完。
-        self.auto_checkbox = CheckBox("自此之后图片自动拼版", self)
+        # 「从这张图片开始自动拼版」：**恰好勾 1 张**时出现在下方（不限
+        # 整幅/半幅，用户 2026-10-01 定）——勾上后点「开始拼版」，宿主从
+        # 这张图起把剩余候选按自动拼版规则（整幅单独一页、左半幅+右半幅
+        # 配对）全部拼完。
+        self.auto_checkbox = CheckBox("从这张图片开始自动拼版", self)
         self.auto_checkbox.setToolTip(
             "只勾选 1 张图片时可用：从这张图起，把剩余未拼版的图片按顺序"
             "自动拼完——整幅图单独一页，左半幅与紧随其后的右半幅拼成一页"
@@ -427,10 +428,10 @@ class ImpositionPickerDialog(FramelessDialog):
         return self.checked_files()
 
     def auto_mode_file(self) -> Path | None:
-        """「自此之后图片自动拼版」生效的那张图（不生效返回 None）。
+        """「从这张图片开始自动拼版」生效的那张图（不生效返回 None）。
 
-        生效条件：勾选框被勾上、且**恰好勾了 1 张半幅图**——选项只在勾
-        1 张半幅时出现（用户口径：三种可选形态），整幅与多选一律不走自动。
+        生效条件：勾选框被勾上、且**恰好勾了 1 张图**——选项只在恰好
+        勾 1 张时出现（不限整幅/半幅，用户 2026-10-01 定），多选不走自动。
         """
         if not self.auto_checkbox.isChecked():
             return None
@@ -574,16 +575,18 @@ class ImpositionPickerDialog(FramelessDialog):
     def _update_status(self) -> None:
         """说明行/状态行 + 各按钮的显隐与可用性。
 
-        口径（用户 2026-09-30 定，**只有三种可选形态**）：
-        1. 勾 **1 张**（半幅或整幅）→「开始拼版」可点，单张单独成页；
+        口径：
+        1. 勾 **1 张**（整幅或半幅）→「开始拼版」可点，单张单独成页；
+           同时下方出现「从这张图片开始自动拼版」（不限整幅/半幅，
+           用户 2026-10-01 定），勾上即走自动拼版；
         2. 勾 **2 张**（半幅）→ 拼成一页，序号在前的排右侧；
-        3. 勾 **1 张半幅** + 下方「自此之后图片自动拼版」→ 从那张起自动
-           拼完剩余候选（整幅单独一页；半幅按「前一左＋后一右」且页号
-           连续配对）。
+        3. 自动拼版从勾选那张起拼完剩余候选（整幅单独一页；半幅按
+           「前一左＋后一右」且页号连续配对）。
         勾 0 张或 ≥3 张时「开始拼版」不可点。已删除视图里可恢复。
 
         **append 模式**（单图页「新增图片」）：只能勾 **1 张**——0 张或
-        ≥2 张时「添加」不可点，「自动拼版」选项整段隐藏。
+        ≥2 张时「添加」不可点，「自动拼版」选项整段隐藏（加进已有页的
+        动作与自动拼版互斥）。
         """
         removed_view = self.stack.currentIndex() == 1
         candidates = self._candidate_paths()
@@ -592,11 +595,10 @@ class ImpositionPickerDialog(FramelessDialog):
         auto_available = (
             not append_mode
             and not removed_view and len(picked) == 1
-            and classify_source(picked[0]) != SOURCE_FULL
         )
         self.auto_checkbox.setVisible(auto_available)
         if not auto_available and self.auto_checkbox.isChecked():
-            # 选项只在恰好勾 1 张半幅时有意义：离开该状态就复位，避免残留旧勾选
+            # 选项只在恰好勾 1 张时有意义：离开该状态就复位，避免残留旧勾选
             self.auto_checkbox.setChecked(False)
         self.ok_button.setEnabled(len(picked) in ((1,) if append_mode else (1, 2)))
         self.removed_entry_button.setVisible(not removed_view)
@@ -645,7 +647,7 @@ class ImpositionPickerDialog(FramelessDialog):
         self.note.setText(
             f"从剩余未拼版的 {len(candidates)} 张图片中勾选："
             "1 张单独成一页，2 张拼成一页（序号在前的排在右侧）；"
-            "只勾 1 张半幅图时可勾选下方「自此之后图片自动拼版」，"
+            "只勾 1 张图片时可勾选下方「从这张图片开始自动拼版」，"
             "从那张图起自动拼完。「删除图片」把不用的图移出选择范围。"
         )
         self.status.setStyleSheet(f"color:{T.INK_SOFT};")
@@ -656,17 +658,12 @@ class ImpositionPickerDialog(FramelessDialog):
             )
             return
         if count == 1:
-            if classify_source(picked[0]) == SOURCE_FULL:
-                self.status.setText(
-                    f"已选 1 张：「{picked[0].stem}」（整幅）。"
-                    "点「开始拼版」将单独成一页。"
-                )
-            else:
-                self.status.setText(
-                    f"已选 1 张：「{picked[0].stem}」。点「开始拼版」"
-                    "单独成一页；也可勾选下方「自此之后图片自动拼版」"
-                    "从这张起自动拼完。"
-                )
+            tag = "（整幅）" if classify_source(picked[0]) == SOURCE_FULL else ""
+            self.status.setText(
+                f"已选 1 张：「{picked[0].stem}」{tag}。点「开始拼版」"
+                "单独成一页；也可勾选下方「从这张图片开始自动拼版」"
+                "从这张起自动拼完。"
+            )
             return
         if count == 2:
             self.status.setText(

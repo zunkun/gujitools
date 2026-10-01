@@ -80,6 +80,8 @@ class ImageView(QLabel):
     boxes_edited = Signal(list)  # 移动/缩放/删除/新增后：全部框（图片像素坐标）
     #: 双击大图（宿主据此打开图片预览弹窗；只读查看，不改任何数据）
     double_clicked = Signal()
+    #: 右键大图（宿主据此弹出「预览图片 / 编辑图片」菜单）。有图才发。
+    context_menu_requested = Signal()
     #: 选中框变化：新下标，无选中为 -1（宿主据此同步「选中框类型」控件与删除按钮）
     selection_changed = Signal(int)
     #: 本次编辑被拒绝（含原因文案）：超框数上限等，宿主弹出提示
@@ -487,6 +489,18 @@ class ImageView(QLabel):
             self.double_clicked.emit()
             return
         super().mouseDoubleClickEvent(event)
+
+    def contextMenuEvent(self, event) -> None:  # noqa: N802
+        """右键大图 → ``context_menu_requested``（宿主弹「查看 / 编辑」菜单）。
+
+        没有图时不弹（没有可查看/可编辑的东西），交给默认处理。框编辑用的是
+        左键（见 mousePressEvent），右键不参与，两者不打架。
+        """
+        if self._pixmap is not None:
+            self.context_menu_requested.emit()
+            event.accept()
+            return
+        super().contextMenuEvent(event)
 
     def keyPressEvent(self, event) -> None:  # noqa: N802
         if self._boxes_editable and self._selected is not None and event.key() in (

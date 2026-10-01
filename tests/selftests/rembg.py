@@ -11,6 +11,8 @@ TITLE = "rembg"
 
 
 def run(ctx) -> None:
+    import os
+    import time
     from pathlib import Path
 
     from PySide6.QtCore import QPoint, Qt
@@ -307,6 +309,21 @@ def run(ctx) -> None:
        d._rembg_submit_version_state() == "up_to_date"
        and d.submit_button.text() == "提交本次任务"
        and "#3a8a3e" in d.submit_hint.styleSheet())
+    # 去底色结果被编辑（参数没变、也没重新生成预览）也必须改口提示重新提交：
+    # 提交产物是"提交那一刻"的合成结果，不重新提交就传不到第四步
+    # （用户 2026-10-01「去底色那一步，必须提交才能传给下一步」）。
+    _pv_edit = next(
+        iter(sorted(repo.rembg_preview_output_dir(tid).glob("*.png"))))
+    _pv_mtime = _pv_edit.stat().st_mtime
+    _stamp = time.time() + 5
+    os.utime(_pv_edit, (_stamp, _stamp))  # 模拟"提交之后又被编辑过"
+    d._update_submit_button(False)
+    ok("编辑去底色结果后按钮改口：待重新提交（不再是绿色『已是最新版本』）",
+       d._rembg_submit_version_state() == "new_version"
+       and "有新版本" in d.submit_button.text()
+       and "#c0392b" in d.submit_hint.styleSheet(),
+       f"{d._rembg_submit_version_state()} / {d.submit_button.text()}")
+    os.utime(_pv_edit, (_pv_mtime, _pv_mtime))  # 还原 mtime，别影响后续模块
     # 提交记录了所基于的预览版本号（不加载 YOLO，纯框坐标合成）
     _sub = next(r for r in repo.list_stage_runs(tid, "rembg_submit")
                 if r["status"] == "success")
@@ -322,7 +339,9 @@ def run(ctx) -> None:
        d._rembg_submit_version_state() == "new_version"
        and "有新版本" in d.submit_button.text())
 
-    # --- 生成 PDF 时第三步 area/border 实时生效（无需重新提交）---
+    # --- 第四步只排版「提交本次任务」的成品图 ---
+    # 用户 2026-10-01 口径：「去底色那一步，必须提交才能传给下一步」。所以
+    # 第四步**不再**拿去底图（stages/rembgpreview）按当前 area/border 现算。
     # 给一页注入确定性检测框（单框），模拟 YOLO 检出
     _comp0 = d._rembg_submit_entries(1, None)
     _anchor = next((c for c in _comp0 if c.get("box") is None), _comp0[0])
@@ -337,31 +356,25 @@ def run(ctx) -> None:
 
     panel3.border.setText("10")
     _entries_b, _ = d._print_entries()
-    _fx10 = d._build_print_effects(_entries_b, 1, "10")
-    ok("print 合成规格与列表一一对应且源为 rembgpreview 去底图",
-       len(_fx10) == 6
-       and all(Path(s["file"]).parent == preview_dir for s in _fx10),
-       str([Path(s["file"]).name for s in _fx10]))
-    _a_spec = next(s for s in _fx10
-                   if Path(s["file"]).stem == _anchor_stem)
-    ok("print 合成规格携带检测框/area/border",
-       _a_spec["effect"] == {"boxes": [_injected], "area": 1, "border": "10",
-                             "full": False},
-       str(_a_spec))
-    # 仅改 border 不重新提交：合成规格立即变为新值
+    _fx10 = d._build_print_effects(_entries_b)
+    ok("第四步取图 = 提交产物整图透传（与列表一一对应、effect 全 None）",
+       len(_fx10) == len(_entries_b) > 0
+       and all(e["effect"] is None for e in _fx10)
+       and all(Path(e["file"]).parent == final_dir for e in _fx10),
+       str([Path(e["file"]).name for e in _fx10]))
+    # 仅改 border / area **不再**「即时生效」——必须重新提交（按钮会提示）
     panel3.border.setText("25")
-    _fx25 = d._build_print_effects(d._print_entries()[0], 1, "25")
-    _a25 = next(s for s in _fx25 if Path(s["file"]).stem == _anchor_stem)
-    ok("调整 border 后无需重新提交即生效",
-       _a25["effect"]["border"] == "25"
-       and _a25["effect"]["boxes"] == [_injected],
-       str(_a25))
-    # 外部插入图整图透传；area 结构变更后旧提交图被丢弃、新条目补尾
+    _fx25 = d._build_print_effects(d._print_entries()[0])
+    ok("改 border 不重新提交 → 取图规格不变（仍指向同一批成品图）",
+       [e["file"] for e in _fx25] == [e["file"] for e in _fx10]
+       and all(e["effect"] is None for e in _fx25),
+       str([Path(e["file"]).name for e in _fx25]))
+    # 外部插入图整图透传；指向不存在文件的条目被过滤（不生成空页）
     _mixed = _entries_b + [{"file": str(img), "label": "external_page"}]
     _stale = {"file": str(repo.rembg_output_dir(tid) / "999-r.png"),
               "label": "999-r"}
-    _fx_mix = d._build_print_effects(_mixed + [_stale], 1, "25")
-    ok("外部插入图透传、旧 area 提交图不混入 PDF",
-       any(s["file"] == str(img) and s["effect"] is None for s in _fx_mix)
-       and not any(Path(s["file"]).name == "999-r.png" for s in _fx_mix))
+    _fx_mix = d._build_print_effects(_mixed + [_stale])
+    ok("外部插入图透传、丢失的条目被过滤",
+       any(e["file"] == str(img) and e["effect"] is None for e in _fx_mix)
+       and not any(Path(e["file"]).name == "999-r.png" for e in _fx_mix))
     panel3.border.setText("10")  # 正式 print 使用 10mm

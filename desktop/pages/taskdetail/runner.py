@@ -179,17 +179,15 @@ class StageRunnerMixin:
                 args["pages"] = missing
                 args["clean"] = False
         elif stage == "print":
-            # print：左侧列表顺序即 PDF 页序。图片以第三步「生成预览」的
-            # 去底图（stages/rembgpreview）为源，按第三步面板**当前**的
-            # area/border + 检测框在 worker 子进程内实时合成（与「提交本次
-            # 任务」完全相同的几何规则）——调整 border 后无需重新提交，
-            # 直接生成 PDF 即可生效；第四步的纸张/边距/标题/页码等自定义
-            # 参数继续传给 CLI print。
+            # print：左侧列表顺序即 PDF 页序。图片就是第三步「提交本次任务」
+            # 落盘的成品图（非拼版 stages/rembg、拼版 stages/imposition），
+            # 不在这一步重新合成——area/border 已在提交时兑现（用户
+            # 2026-10-01：「去底色那一步，必须提交才能传给下一步」）。
             #
-            # ⚠️ 拼版生效时**取图来源换成 stages/imposition**（见
-            #    ImpositionMixin.print_source_dir / _build_print_effects）：
-            #    这里先同步补一次合成，保证 PDF 用的拼版版面是最新的——用户
-            #    改完版面立刻点「生成 PDF」时，后台那轮防抖合成可能还没跑完。
+            # ⚠️ 拼版生效时**取图来源换到 stages/imposition**（见
+            #    ImpositionMixin.print_source_dir）：这里先同步补一次合成，
+            #    保证 PDF 用的拼版版面是最新的——用户改完版面立刻点
+            #    「生成 PDF」时，后台那轮防抖合成可能还没跑完。
             self._compose_imposition_now()
             entries, doc = self._print_entries()
             entries = [e for e in entries if Path(e["file"]).exists()]
@@ -199,9 +197,8 @@ class StageRunnerMixin:
             except ValueError as exc:
                 self._toast("error", "第三步参数错误", str(exc))
                 return
-            area = int(rargs.get("area", 1))
             border = rargs.get("border")
-            effects = self._build_print_effects(entries, area, border)
+            effects = self._build_print_effects(entries)
             # 第三步 border 级联第四步默认边距：把上游 border 透传给 print，
             # 让其「通用边距默认」在 border 非 0 时回落为 0（避免双重留白）。
             args["upstream_border"] = border
@@ -250,9 +247,8 @@ class StageRunnerMixin:
                 (
                     f"图片拼版：{len(effects)} 页（生成 PDF 用拼版结果）"
                     if self.imposition_active() else
-                    f"区域合成：区域模式={area}"
-                    + (f"，边距={border}" if border is not None else "，边距=0")
-                    + f"（{len(effects)} 页）"
+                    f"生成 PDF：{len(effects)} 页"
+                    "（用第三步「提交本次任务」的成品图）"
                 )
             )
         else:

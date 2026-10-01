@@ -25,8 +25,9 @@ UPSTREAM = {
     "rembg": ("extract", "detect"),
     # 提交：合成最终图，源是「生成预览」的去底图
     "rembg_submit": ("rembg",),
-    # 生成 PDF：worker 内实时合成，源是去底图 + **当时**的检测框/area/border，
-    # 列表则来自提交产物 —— 所以 extract/detect/rembg/rembg_submit 都是它的上游
+    # 生成 PDF：只排版「提交本次任务」的成品图（2026-10-01 起不再拿去底图现算），
+    # 列表与图片都来自提交产物；但 extract/detect/rembg 跑过就意味着这份提交
+    # 产物已经落后于上游（用户多半要重新「生成预览」再提交），照旧算它的上游
     "print": ("extract", "detect", "rembg", "rembg_submit"),
 }
 

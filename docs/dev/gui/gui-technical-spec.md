@@ -221,14 +221,16 @@ GUI（QImage 渲染）共同消费同一份 `OutputLayout`，不得各自推导
   - 跨层登记：`PRINT_DEFAULTS` → `PRINT_FORM_DEFAULTS`（展开）→
     `params_spec.PRINT_DEFAULTS`（引用）→ `print_params._FORM_KEYS`（表单可见键）
     → `static/guji.yaml`。护栏 `config_template` 逐值校验 CLI ↔ yaml。
-- **effects 规划：第四步列表是权威顺序**（`plan_print_effects` / `print_plan.py`）。
-  ⚠️ 用户改过第三步 area 而**没重新提交**时，列表 label（"3"）与当前派生集合
-  （"3-r"/"3-l"）**形态不同**。早先按 label 精确匹配 → 列表一条都对不上 → 全走
-  "补条目"分支 → **本步的删除与排序被静默忽略**（实际事故：列表 101 条却生成
-  198 页 PDF，删掉的页又回来了）。修法两条，缺一不可：
-  1. 匹配时按 `_base_label()` 收敛（"3-r"/"3-l" ↔ "3"），顺序仍取列表顺序；
-  2. **补条目的判定也用基础页名**——否则提交产物是旧形态时，新形态的整批派生
-     会被当成"新结构页"补回来，删除照样失效。
+- **第四步取图：只排版「提交本次任务」的成品图**（`SubmitMixin._build_print_effects`
+  / `submit.py`；2026-10-01 用户口径「去底色那一步，必须提交才能传给下一步」）。
+  第四步**不再**拿去底图（`stages/rembgpreview`）+ 当前 area/border 现场合成：
+  area/border 在提交那一刻就兑现进 `stages/rembg`（拼版生效时是
+  `stages/imposition`），第四步只把列表**整图透传**（`effect=None`）——列表顺序
+  即页序、删掉即消失；编辑第四步的「待打印图」则「生成 PDF」即生效。
+  ⚠️ 之前的 `plan_print_effects` 要按 label 把列表与"当前 area 派生集合"对齐
+  （形态不同时还得按基础页名重映射），一旦对齐出错，用户在第四步**删掉的页会被
+  补回来**（实际事故：列表 101 条却生成 198 页 PDF）。这套对齐逻辑已随该契约
+  一并删除；护栏见 `print_list_layout` 第 2 节与 `print_area_border_e2e`。
 - **进度条只有一个来源**：`functions/print.py` 的 `reporter.progress(已写入页数, total)`，
   `total` = **实际写入 PDF 的页数**（页面清单增删后自然变化）。
   ⚠️ 合成阶段（`print_stage`）**刻意不发 progress**：它也发一份的话，进度条会先跑完

@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 78 个模块、83 个公开类、448 个公开函数/方法（生成于 2026-09-29）。
+覆盖 93 个模块、106 个公开类、643 个公开函数/方法（生成于 2026-10-01）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -15,6 +15,12 @@
 | [`desktop.app`](#desktopapp) | 1 | 4 |
 | [`desktop.components.common.safecomment`](#desktopcomponentscommonsafecomment) | 6 | 12 |
 | [`desktop.components.detect_stats`](#desktopcomponentsdetect_stats) | 1 | 4 |
+| [`desktop.components.imposition.canvas`](#desktopcomponentsimpositioncanvas) | 1 | 26 |
+| [`desktop.components.imposition.confirm_delete`](#desktopcomponentsimpositionconfirm_delete) | 1 | 1 |
+| [`desktop.components.imposition.page_list`](#desktopcomponentsimpositionpage_list) | 1 | 8 |
+| [`desktop.components.imposition.panel`](#desktopcomponentsimpositionpanel) | 1 | 7 |
+| [`desktop.components.imposition.picker`](#desktopcomponentsimpositionpicker) | 1 | 9 |
+| [`desktop.components.imposition.view`](#desktopcomponentsimpositionview) | 1 | 10 |
 | [`desktop.components.log_panel`](#desktopcomponentslog_panel) | 1 | 9 |
 | [`desktop.components.pagination`](#desktopcomponentspagination) | 2 | 11 |
 | [`desktop.components.panels.base`](#desktopcomponentspanelsbase) | 1 | 7 |
@@ -29,19 +35,23 @@
 | [`desktop.components.panels.print_sections`](#desktopcomponentspanelsprint_sections) | 1 | 0 |
 | [`desktop.components.panels.print_text_layout`](#desktopcomponentspanelsprint_text_layout) | 1 | 0 |
 | [`desktop.components.panels.rembg_panel`](#desktopcomponentspanelsrembg_panel) | 1 | 1 |
-| [`desktop.components.step_bar`](#desktopcomponentsstep_bar) | 2 | 15 |
+| [`desktop.components.step_bar`](#desktopcomponentsstep_bar) | 2 | 18 |
 | [`desktop.components.task_table`](#desktopcomponentstask_table) | 3 | 10 |
-| [`desktop.components.viewers.image_view`](#desktopcomponentsviewersimage_view) | 1 | 22 |
-| [`desktop.components.viewers.image_viewer`](#desktopcomponentsviewersimage_viewer) | 1 | 11 |
-| [`desktop.components.viewers.image_zoom_dialog`](#desktopcomponentsviewersimage_zoom_dialog) | 4 | 31 |
+| [`desktop.components.viewers.image_editor`](#desktopcomponentsviewersimage_editor) | 3 | 51 |
+| [`desktop.components.viewers.image_view`](#desktopcomponentsviewersimage_view) | 1 | 23 |
+| [`desktop.components.viewers.image_viewer`](#desktopcomponentsviewersimage_viewer) | 1 | 13 |
+| [`desktop.components.viewers.image_zoom_dialog`](#desktopcomponentsviewersimage_zoom_dialog) | 4 | 34 |
 | [`desktop.components.viewers.pdf_viewer`](#desktopcomponentsviewerspdf_viewer) | 1 | 2 |
-| [`desktop.components.viewers.print_layout_canvas`](#desktopcomponentsviewersprint_layout_canvas) | 1 | 11 |
+| [`desktop.components.viewers.print_layout_canvas`](#desktopcomponentsviewersprint_layout_canvas) | 1 | 12 |
 | [`desktop.components.viewers.print_preview`](#desktopcomponentsviewersprint_preview) | 1 | 11 |
-| [`desktop.components.viewers.rembg_viewer`](#desktopcomponentsviewersrembg_viewer) | 1 | 8 |
+| [`desktop.components.viewers.rembg_viewer`](#desktopcomponentsviewersrembg_viewer) | 1 | 9 |
 | [`desktop.components.viewers.thumb_strip`](#desktopcomponentsviewersthumb_strip) | 1 | 10 |
 | [`desktop.components.viewers.thumbs_loader`](#desktopcomponentsviewersthumbs_loader) | 1 | 1 |
 | [`desktop.pages.taskdetail.detect`](#desktoppagestaskdetaildetect) | 1 | 0 |
 | [`desktop.pages.taskdetail.history`](#desktoppagestaskdetailhistory) | 1 | 0 |
+| [`desktop.pages.taskdetail.imposition`](#desktoppagestaskdetailimposition) | 2 | 3 |
+| [`desktop.pages.taskdetail.imposition_layout`](#desktoppagestaskdetailimposition_layout) | 1 | 1 |
+| [`desktop.pages.taskdetail.imposition_pages`](#desktoppagestaskdetailimposition_pages) | 1 | 0 |
 | [`desktop.pages.taskdetail.manifest`](#desktoppagestaskdetailmanifest) | 1 | 2 |
 | [`desktop.pages.taskdetail.page`](#desktoppagestaskdetailpage) | 1 | 8 |
 | [`desktop.pages.taskdetail.params_draft`](#desktoppagestaskdetailparams_draft) | 1 | 1 |
@@ -52,7 +62,8 @@
 | [`desktop.pages.taskdetail.view`](#desktoppagestaskdetailview) | 2 | 4 |
 | [`desktop.pages.tasklist.page`](#desktoppagestasklistpage) | 1 | 6 |
 | [`desktop.services.font_catalog`](#desktopservicesfont_catalog) | 1 | 6 |
-| [`desktop.services.print_plan`](#desktopservicesprint_plan) | 0 | 5 |
+| [`desktop.services.imposition`](#desktopservicesimposition) | 0 | 20 |
+| [`desktop.services.print_plan`](#desktopservicesprint_plan) | 0 | 6 |
 | [`desktop.services.rembg_live`](#desktopservicesrembg_live) | 0 | 3 |
 | [`desktop.services.stale_chain`](#desktopservicesstale_chain) | 0 | 2 |
 | [`desktop.services.submit_state`](#desktopservicessubmit_state) | 0 | 1 |
@@ -64,25 +75,29 @@
 | [`desktop.stages.rembg_stage`](#desktopstagesrembg_stage) | 0 | 1 |
 | [`desktop.store.annotations`](#desktopstoreannotations) | 1 | 9 |
 | [`desktop.store.drafts`](#desktopstoredrafts) | 1 | 5 |
+| [`desktop.store.imposition`](#desktopstoreimposition) | 1 | 3 |
 | [`desktop.store.json_io`](#desktopstorejson_io) | 0 | 2 |
 | [`desktop.store.pages`](#desktopstorepages) | 1 | 9 |
 | [`desktop.store.runs`](#desktopstoreruns) | 1 | 7 |
 | [`desktop.store.store`](#desktopstorestore) | 1 | 1 |
-| [`desktop.store.tasks`](#desktopstoretasks) | 1 | 20 |
+| [`desktop.store.tasks`](#desktopstoretasks) | 1 | 21 |
+| [`desktop.store.ui_state`](#desktopstoreui_state) | 1 | 6 |
+| [`desktop.ui.color_picker`](#desktopuicolor_picker) | 5 | 30 |
 | [`desktop.ui.font_setup`](#desktopuifont_setup) | 2 | 8 |
-| [`desktop.ui.fonts`](#desktopuifonts) | 0 | 1 |
+| [`desktop.ui.fonts`](#desktopuifonts) | 0 | 2 |
 | [`desktop.ui.help_dialog`](#desktopuihelp_dialog) | 0 | 6 |
 | [`desktop.ui.icons`](#desktopuiicons) | 2 | 4 |
 | [`desktop.ui.segmented_toggle`](#desktopuisegmented_toggle) | 1 | 11 |
 | [`desktop.ui.style`](#desktopuistyle) | 0 | 3 |
-| [`desktop.ui.theme`](#desktopuitheme) | 0 | 2 |
-| [`desktop.ui.widgets`](#desktopuiwidgets) | 8 | 35 |
+| [`desktop.ui.theme`](#desktopuitheme) | 0 | 3 |
+| [`desktop.ui.widgets`](#desktopuiwidgets) | 9 | 36 |
 | [`desktop.utils.files`](#desktoputilsfiles) | 0 | 8 |
 | [`desktop.utils.icon`](#desktoputilsicon) | 0 | 3 |
 | [`desktop.worker`](#desktopworker) | 0 | 1 |
 | [`desktop.workers.copy_source_worker`](#desktopworkerscopy_source_worker) | 2 | 4 |
 | [`desktop.workers.hash_worker`](#desktopworkershash_worker) | 1 | 2 |
 | [`desktop.workers.image_list_worker`](#desktopworkersimage_list_worker) | 1 | 2 |
+| [`desktop.workers.imposition_worker`](#desktopworkersimposition_worker) | 2 | 4 |
 | [`desktop.workers.preview_worker`](#desktopworkerspreview_worker) | 1 | 11 |
 | [`desktop.workers.rembg_live_worker`](#desktopworkersrembg_live_worker) | 1 | 3 |
 | [`desktop.workers.render_lock`](#desktopworkersrender_lock) | 0 | 1 |
@@ -283,6 +298,492 @@ widget.installEventFilter(_filter)
 
 ---
 
+## `desktop.components.imposition.canvas`
+
+源码：[`desktop/components/imposition/canvas.py`](../../desktop/components/imposition/canvas.py)
+
+图片拼版操作画布：**白底**上拖动 / 缩放拉伸 / 旋转两张源图。
+
+坐标体系与落盘完全一致——**源图像素，左上原点，x 向右、y 向下**
+（``desktop.services.imposition``）。控件把「所有图的外接框」等比缩放到可视区，
+用 ``px_per_unit`` 在「图坐标」与「控件像素」之间换算；用户拖动/缩放/旋转
+得到的结果直接写回 ``drafts/imposition.json`` 的 ``items``，由
+``compose_page`` 原样采用——所见即所得。
+
+**拼版没有纸张**（用户 2026-09-30：「这个拼版不需要设置纸张，只需要背景是
+白色的就行，后续提交的时候根据图片的四个区域合并出一张图片」）：画布就是一块
+白底，没有纸张矩形、也没有边界线；产出图由服务层按「所有图外接框」紧裁。
+
+交互（用户定的观感）：
+- **点击某张图 → 选中**：选中的图带一圈**常显的细虚线**（选中状态，
+  **跟着图一起转**——用户 2026-09-30 报过"旋转后高亮框不跟着转"）；
+  **按住鼠标操作期间**才升级为带手柄/旋转钮的完整虚线框，**一松手回到
+  细框**（2026-09-30：选中态要一直看得见，右侧「当前图片样式」区跟着激活）；
+- **切页 / 点空白处 → 取消选中**（右侧图片操作区随之灰掉）；
+- **双击某张图 → 预览这张原图**；**双击两图之外的空白处 → 预览左右组合**
+  （整页按产出口径合成的效果，``emit`` 给控制器开预览弹窗，画布自己不管弹窗）；
+- **滚轮 → 缩放视图**（以光标为锚点，松开即停在当前倍率）：缩放只改
+  ``_px_per_unit`` 与偏移两个数，不解码、不重排；重绘**不在滚轮事件里直接
+  要**——滚轮/触控板连发时一秒能来上百个事件，直接要就是把大图重绘拉到
+  事件率。渲染合并策略见 ``wheelEvent`` / ``_on_wheel_frame``：滚动期间每
+  帧最多重绘一次、走**快速档**（不做平滑采样），停稳后补一帧高质量重绘；
+- 未按下时靠**光标**提示可抓的位置：图内 `OpenHand`、四角/四边缩放光标、
+  框上方圆钮处 `Cross`（命中判定是几何的，不依赖框线可见）；
+- 点某张图 → 选中；框内拖动 → 整体移动；**四角**手柄 → 缩放（按住 Shift
+  等比）；**四条边整条都是命中带** → 只改一个维度；框**上方的小圆钮** → 旋转
+  （按住 Shift 吸附到 15°）；松手 emit ``items_changed``（拖动过程中只重绘）；
+- **红色对齐线**恒显（**两图页**）：两图 rect 中心中点所在的竖线
+  （``SPINE_COLOR``）——整版/单图旋转时拿它当"转没转歪"的对比基准；
+  **单图页只认横图（源图宽>高）**（2026-09-30 用户定：单独一张半页图片
+  不需要显示中间红线；单独一张整幅对开（横图）仍要）——判据用源图
+  宽高比（竖图=半页/单页、横图=整幅对开），文件名后缀认不出"无后缀的
+  半页图"；整版旋转走 ``rotate_whole``（滑块增量，绕该中点公转+自转），
+  单图绝对角度走 ``set_item_rotation``，两者都只重绘、由控制器择机 commit；
+- **灰色截图范围框**恒显（``CROP_COLOR``）：两图旋转后外接框的并集——
+  上下左右最外侧点组成的虚线矩形，与产出图的紧裁范围是同一套几何
+  （``services.imposition.page_bounds``），转一转就能看到范围跟着变。
+
+**⚠️ 不限制图片位置/大小**（用户：「图片拉伸、移动后可能超出原本界限，现在是
+不显示了，现在不要限制」）：拖动与缩放**都不夹在某个范围内**，画布也**不做
+裁剪**——画到哪就是哪，可视范围按所有图的外接框自适应，打开一页就能看全。
+
+⚠️ ``rotation`` 是**顺时针角度**（与 Qt ``QPainter.rotate`` 同向），绕该项
+``rect`` 的中心转——与 PIL 合成侧的取负口径配套（见 services.imposition）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| HANDLE_RADIUS | `5` |
+| ROTATE_KNOB_RADIUS | `6` |
+| ROTATE_KNOB_GAP | `26` |
+| MIN_RECT | `4.0` |
+| EDGE_HIT_PX | `6` |
+| SNAP_DEGREES | `15.0` |
+| WHEEL_ZOOM_STEP | `1.15` |
+| ZOOM_MIN | `0.2` |
+| ZOOM_MAX | `8.0` |
+| WHEEL_REPAINT_MS | `30` |
+
+### `class ImpositionCanvas(QWidget)`
+
+拼版画布：白底上拖动/缩放/旋转两张图；``items_changed`` 发出图坐标。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(parent=None)` | — |
+| `set_page(items) -> None` | 设置这一页的版面（图坐标即源图像素）；**不选中任何图**。 |
+| `clear_page() -> None` | 清空（无拼版页时用）：只留白底。 |
+| `items() -> list[dict]` | 当前版面（合成像素，已四舍五入到两位）。 |
+| `selected() -> int` | 当前选中的槽位下标（-1 = 未选中）。 |
+| `select(index: int) -> None` | 外部选中某个槽位（右侧面板切换时用）。 |
+| `has_items() -> bool` | — |
+| `frame_visible() -> bool` | 当前是否画**带手柄的完整操作框**（= 鼠标按住期间）。 |
+| `rotate_selected(delta_deg: float) -> None` | 把选中的图旋转 ``delta_deg``（顺时针为正），并立即上报。 |
+| `rotate_whole(delta_deg: float) -> None` | **整版旋转** ``delta_deg``（顺时针为正）：两张图绕公共中心转。 |
+| `set_item_rotation(angle_deg: float) -> None` | 把选中的图的旋转设为绝对角度（绕自身 rect 中心，只重绘不上报）。 |
+| `spread_rotation() -> float \| None` | 整版当前的"平均旋转角"（收敛到 [-180, 180)；无图返回 None）。 |
+| `selected_rotation() -> float \| None` | 选中图当前的旋转角（无选中返回 None）。 |
+| `refit() -> None` | 按当前 items 重新适配可视区并重绘（整版旋转后外接框变了）。 |
+| `flush_pending() -> bool` | 把"还没松手"的编辑结果补发出去（切页/切步骤/离开时调）。 |
+| `resizeEvent(event) -> None` | Qt 事件覆写：尺寸变化时重算布局 / 重新缩放。 |
+| `showEvent(event) -> None` | Qt 事件覆写：显示时刷新状态。 |
+| `invalidate_image(path: str) -> None` | 某个源图文件被外部覆盖（编辑器「完成」回写）后：丢掉它的解码 |
+| `contextMenuEvent(event) -> None` | 右键菜单：**预览图片 / 编辑图片**（2026-10-01 用户定）。 |
+| `mouseDoubleClickEvent(event) -> None` | 双击：**图上 → 预览这张原图**；**两图之外的空白 → 预览左右组合**。 |
+| `mousePressEvent(event) -> None` | Qt 事件覆写：按下（选中 / 开始拖拽或绘制）。 |
+| `mouseMoveEvent(event) -> None` | Qt 事件覆写：移动（拖拽 / 缩放中的实时更新）。 |
+| `mouseReleaseEvent(event) -> None` | Qt 事件覆写：松开（提交本次编辑）。 |
+| `leaveEvent(event) -> None` | 指针离开画布：按下状态收不到 release 时也别留着框线。 |
+| `wheelEvent(event) -> None` | 滚轮缩放视图（以光标为锚点）；**重绘按帧合并**（减渲染的关键）。 |
+| `paintEvent(event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
+
+##### `set_page(items) -> None`
+
+设置这一页的版面（图坐标即源图像素）；**不选中任何图**。
+
+⚠️ 参数**只有 items**：拼版没有纸张（用户 2026-09-30），可视范围按
+「所有图的外接框」自适应，不再有一个"纸张矩形"要摆。
+⚠️ 每次载页都**清空选中**（用户 2026-09-30：切页后右侧「操作当前
+图片」区不激活，点击某张图才选中）。
+
+##### `frame_visible() -> bool`
+
+当前是否画**带手柄的完整操作框**（= 鼠标按住期间）。
+
+平时选中的图另有常显细框（``_draw_selected_border``），不算在内。
+
+##### `rotate_whole(delta_deg: float) -> None`
+
+**整版旋转** ``delta_deg``（顺时针为正）：两张图绕公共中心转。
+
+公共中心 = 两图 ``rect`` 中心的**中点**（也就是红色对齐线所在的竖线，
+见 ``_spread_center_units``）。每张图"中心绕公共中心公转 + 自身
+``rotation`` 叠加"——两图的相对位置、相对角度都不变，对齐线也不动，
+用户拖滑块时看到的就是整版在一根固定的中线上左右倾摆。
+
+⚠️ 只重绘**不上报**：滑块会连续吐增量，落盘交给控制器在停顿后统一
+``flush_pending``（与拖动的"松手才上报"同一策略）。
+
+##### `spread_rotation() -> float | None`
+
+整版当前的"平均旋转角"（收敛到 [-180, 180)；无图返回 None）。
+
+单图自转过后两图角度可能不同，这里取平均当作整版角度——滑块就以
+这个值为基准继续吐增量，两图的角度差原样保留。
+
+##### `refit() -> None`
+
+按当前 items 重新适配可视区并重绘（整版旋转后外接框变了）。
+
+⚠️ 滚轮缩放倍率一并归一：这里语义就是"回到打开时的样子"。
+
+##### `flush_pending() -> bool`
+
+把"还没松手"的编辑结果补发出去（切页/切步骤/离开时调）。
+
+与 ``print_layout_canvas.flush_pending`` 同一理由：``items_changed``
+只在松手时发，拖住不放直接切走会让这一下改动永久丢失。
+
+##### `invalidate_image(path: str) -> None`
+
+某个源图文件被外部覆盖（编辑器「完成」回写）后：丢掉它的解码
+缓存并重绘——不丢的话画布会一直显示覆盖前的旧图。
+
+##### `contextMenuEvent(event) -> None`
+
+右键菜单：**预览图片 / 编辑图片**（2026-10-01 用户定）。
+
+目标规则与双击一致：**图上** → 这张原图；**两图之外的空白** →
+整页左右组合（成品口径）。预览与双击走**同一组信号**（行为完全
+一样，只是入口多一个）；编辑是新加的直接入口——原本编辑是预览
+弹窗工具条里的按钮，现在不经过弹窗、右键直达，由控制器接管。
+右键即选中（与左键点击同款语义），右侧「当前图片样式」跟着激活。
+空画布没有菜单（没有可预览/可编辑的东西）。
+
+##### `mouseDoubleClickEvent(event) -> None`
+
+双击：**图上 → 预览这张原图**；**两图之外的空白 → 预览左右组合**。
+
+⚠️ 处理了就 ``accept``：Qt 对未接受的双击会**再补一个 mousePress**，
+那会走进 ``mousePressEvent`` 把编辑手势带起来（用户双击预览、松手时
+画布却以为刚拖动过一下）。
+
+##### `wheelEvent(event) -> None`
+
+滚轮缩放视图（以光标为锚点）；**重绘按帧合并**（减渲染的关键）。
+
+缩放本身只是 ``_zoom_at`` 里几个乘法——不解码、不重排、不碰图缓存。
+真正贵的是重绘：两张几千像素见方的原图 + 平滑采样。高分滚轮/触控板
+一秒能吐上百个 wheel 事件，若每个事件都 ``update()``，重绘就被拉到
+事件率。所以这里**不直接要重绘**：
+
+- 启动帧窗口定时器（``WHEEL_REPAINT_MS``），窗口内再来滚动只置
+  ``_wheel_paint_pending``；
+- 窗口到期画一帧（``_on_wheel_frame``）；窗口内还有滚动就滚到下一帧，
+  没有就关掉快速档、补一帧带平滑的高质量重绘收尾。
+
+连发期间 paintEvent 走**快速档**（不做 ``SmoothPixmapTransform``，
+大图缩放的重头开销在这）——反正下一滚就整帧重画，糊一帧没人看得出。
+
+---
+
+## `desktop.components.imposition.confirm_delete`
+
+源码：[`desktop/components/imposition/confirm_delete.py`](../../desktop/components/imposition/confirm_delete.py)
+
+「批量删除拼版页」确认弹窗（**模块一：选择拼版** 的 UI）。
+
+用户口径（2026-09-30）：
+- **宽度固定**：弹窗不再随文字一行拉到很宽，正文允许折成多行；
+- **逐页列名**：多选时用户看不清要删的是哪几页，正文下方按
+  「第一页：图名 · 图名」逐行列出被勾选的页（与左列清单同源文案）；
+- **高度封顶**：勾选的页再多，弹窗也不能无限变高——列表放进滚动区，
+  超出封顶高度出现滚动条。
+
+宿主（唤起与删除落盘）见 ``desktop/pages/taskdetail/imposition_pages.py``
+的 ``_on_imposition_batch_delete``。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| DIALOG_W | `520` |
+| LIST_MAX_H | `264` |
+
+### `class BatchDeleteConfirmDialog(MessageBoxBase)`
+
+批量删除拼版页的确认框：正文折行 + 逐页列名 + 列表滚动。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(pages: list, parent=None)` | ``pages`` 是被勾选的 ``[(页下标, 页数据), …]``（原顺序）。 |
+
+##### `__init__(pages: list, parent=None)`
+
+``pages`` 是被勾选的 ``[(页下标, 页数据), …]``（原顺序）。
+
+页数据只读它的 ``items``（两张源图），文案与左列清单同源
+（``page_source_stems`` + ``cn_page_label``）。
+
+---
+
+## `desktop.components.imposition.page_list`
+
+源码：[`desktop/components/imposition/page_list.py`](../../desktop/components/imposition/page_list.py)
+
+拼版页清单——**模块一：选择拼版** 的左列（「第一页」「第二页」…）。
+
+虚线的**「＋ 选择拼版」固定钉在左列最底部**（不随页条目增长下移出视野），
+点了发 ``add_requested``，由模块一控制器
+（``desktop/pages/taskdetail/imposition_pages.py``）弹窗挑图建页。
+
+页条目左上有**勾选框**（与页标题紧挨）；勾了页，一条**悬浮操作框**
+（「已选 N 页」+「取消选择」「批量删除」）悬在页码栏右侧中部，可拖动
+——取消选择即收起。
+
+这里只做控件与信号：清单**只认页标题/副标题文案**，不认拼版文档本身——
+页清单的数据（``drafts/imposition.json``）由装配层
+``view.ImpositionViewWidget`` 灌进来。
+
+### `class ImpositionPageList(QWidget)`
+
+左列拼版页清单：滚动的页条目 + 底部固定的虚线「＋ 选择拼版」。
+
+只认文案：``set_pages(captions)`` 灌入每页的副标题（两张源图名），
+条目数即页数；当前页高亮由 ``set_current`` 控制。勾选了页，一条悬浮
+操作框（``_SelectBar``）悬在页码栏右侧中部（可拖动），提供
+「取消选择 / 批量删除」。
+
+页条目支持**按住上下拖动排序**，交互口径（用户 2026-09-30 三稿：拖动
+中清单不留空档）：按下后**本体留在原位置灰**，一张等大的「幽灵卡」
+跟着光标走，主色细线指示松手后落到哪——清单全程一动不动。**松手**
+后幽灵卡滑进落点槽位、这才真正换位，随后发
+``reorder_requested(from, target)``——``target`` 是**拖走之后**的插入
+下标（调用方据此 pop/insert），拖回原位则不发。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(parent=None)` | — |
+| `resizeEvent(event) -> None` | Qt 事件覆写：尺寸变化时重算布局 / 重新缩放。 |
+| `set_float_host(host) -> None` | 把悬浮框的宿主换成外部装配层（拼版视图整体）。 |
+| `entries() -> list[_PageEntry]` | — |
+| `set_pages(captions: list[str], current: int=-1) -> None` | 按页数重建清单（``captions[i]`` 是第 i 页的副标题）。 |
+| `set_current(index: int) -> None` | 高亮当前页（-1 = 无页）。 |
+| `current() -> int` | — |
+| `checked_indexes() -> list[int]` | 勾选了的页下标（升序）。 |
+
+##### `set_float_host(host) -> None`
+
+把悬浮框的宿主换成外部装配层（拼版视图整体）。
+
+页码栏只有 150px 宽，框要「浮在页码栏**右侧**」就得允许它超出本列、
+悬到右边画布上——挂到视图底下才行。``view.py`` 装配时调用；不设置
+则兜底贴在清单内右缘、垂直居中。
+
+##### `set_pages(captions: list[str], current: int=-1) -> None`
+
+按页数重建清单（``captions[i]`` 是第 i 页的副标题）。
+
+勾选集合**按副标题跨重建保留**：拖动排序/加页不丢勾选；页被删掉
+（副标题不在了）自然落选——批量删除自己就是靠这次重建清空的。
+
+---
+
+## `desktop.components.imposition.panel`
+
+源码：[`desktop/components/imposition/panel.py`](../../desktop/components/imposition/panel.py)
+
+拼版控制面板——**模块二：拼版操作** 的右列（详情页控制区）。
+
+布局（用户 2026-09-30 晚定稿）：标题行（说明挂**问号按钮**，同其他步骤面板）
++ 状态行 + **两块分区** + 底部启用开关：
+
+- **「操作当前图片页」**：页级操作——整体旋转（滑块/输入框，任意角度增量）、
+  **复位本页版面**（独占一行 block）、**一行两个**的「新增图片」（只在单图页
+  出现）与「删除选中图片」（只在选中某张图时出现；2026-09-30 用户定：删除
+  按钮从图片样式区挪进来跟新增图片同行）——「删除本页拼版」按钮已删除
+  （删页入口只剩左列的「✕」与批量删除），清空全部拼版保留；
+- **「当前图片样式」**：图片级操作——旋转（绕图片中心）。这一块**只在画布里
+  选中了某张图时激活并高亮**（``_ItemSection``），切页 / 点空白取消选中后
+  整块灰掉；
+- **「在流程中启用图片拼版」**复选框**放面板最底部**（用户 2026-09-30）：
+  决定第四步取图来源（共享基元 ``print_source_dir``）。
+
+「选择拼版」按钮**不在本面板**（2026-09-30 删除）：入口只有左列末尾的
+虚线「＋ 选择拼版」格（``page_list.py``），两处同义留一处。
+
+这里只做控件与信号，所有动作都发信号交给模块二控制器
+（``desktop/pages/taskdetail/imposition_layout.py``）与共享基元
+（``imposition.py``）处理：
+- 删除/清空是**页管理**（模块一控制器）；页序在左列**拖动排序**、翻页在
+  画布下方「上一页/下一页」（``view.py``），都不在本面板；
+- **整体旋转**（增量）与**选中图旋转**（绝对角度）是**版面操作**（模块二
+  控制器）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| ANGLE_SLIDER_SCALE | `100` |
+| PANEL_DESCRIPTION | `"可选节点：第三步「区域模式」为 1（左右分开）时出现在流程中，位于「图片去底色」与「生成 PDF」之间。勾选下方开…"` |
+
+### `class ImpositionPanel(Card)`
+
+「图片拼版」详情控制面板（control_stack 的第 5 页）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(parent=None)` | — |
+| `set_whole_angle(value: float) -> None` | 程序化回填整版角度（blockSignals 语义，绝不回抛增量）。 |
+| `set_item_rotation(value: float \| None) -> None` | 程序化回填选中图角度；``None`` = 没有选中。 |
+| `set_page_available(on: bool) -> None` | 有没有可操作的拼版页：没有时整版旋转组件一并禁用。 |
+| `set_single_page(on: bool) -> None` | 当前页是不是**单图页**：是才露出「新增图片」（两图页隐藏）。 |
+| `set_enabled_checked(on: bool) -> None` | 程序化回填启用开关（blockSignals 避免回抛覆盖落盘值）。 |
+| `set_status(text: str) -> None` | 状态行：当前页 + 选中槽位 + 生效与否。 |
+
+##### `set_item_rotation(value: float | None) -> None`
+
+程序化回填选中图角度；``None`` = 没有选中。
+
+``None`` 时「当前图片样式」整块灰掉、组件禁用清零，页级区的
+「删除选中图片」一并隐藏；有值则高亮激活、删除按钮露出
+（用户 2026-09-30：只有某张图片选中 active 时图片区才高亮）。
+
+---
+
+## `desktop.components.imposition.picker`
+
+源码：[`desktop/components/imposition/picker.py`](../../desktop/components/imposition/picker.py)
+
+「选择拼版」弹窗（**模块一：选择拼版** 的 UI）。
+
+从**剩余未被选择拼版的图片**（源清单里还没被任何一页用过的，见
+``services.imposition.remaining_files``）里**自由多选**——选择阶段不限
+张数、不做任何配对；点「开始拼版」时才把勾选的图按源清单顺序**每两张
+配成一页**（序号在前的进右槽），落单的不拼。
+
+「删除图片」把勾选的图移出选择范围（**软删除**：黑名单由宿主落盘到
+``drafts/imposition.json`` 的 ``removed`` 字段，源文件不动）；
+「查看删除的图片」切换到已删除视图，可勾选批量恢复。
+
+这里只做控件与信号；弹窗怎么被唤起、选中之后怎么建页落盘，见
+``desktop/pages/taskdetail/imposition_pages.py``（模块一控制器）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| CARD_HEAD | `30` |
+| CARD_GAP | `12` |
+| THUMB_BATCH | `6` |
+
+### `class ImpositionPickerDialog(FramelessDialog)`
+
+「选择拼版」弹窗：从剩余未使用的源图里勾选两张。
+
+两种模式（2026-09-30 新增 ``mode`` 参数）：
+
+- **``"pick"``**（默认，选页）：自由多选，1 张单独成页 / 2 张拼一页；
+- **``"append"``**（单图页「新增图片」）：**只能勾 1 张**，确认按钮叫
+  「添加」——宿主把这张图并进当前那一页拼版（见模块一控制器）。
+
+**卡片网格**：一行摆好几张（列数随窗口宽度自动变），卡片 ``CARD_W×CARD_H``、
+缩略图固定 ``THUMB_W×THUMB_H``（用户要求「一行好几个、选框宽一些」且
+「图片要正常显示、要有文字」）。
+
+**可缩放**（用户 2026-09-30 要求）：底座是 ``qframelesswindow.FramelessDialog``，
+恢复它的最小化/最大化按钮与「双击标题栏放大/还原」；边缘还能拖拽调整大小，
+网格列数跟着窗口宽度自动变。
+
+**删除/恢复**（用户 2026-09-30 要求）：勾选卡片可「删除图片」——移出选择
+范围（软删除，源文件不动，黑名单由宿主落盘）；「查看删除的图片」切到
+已删除视图，勾选后「恢复选中」或「全部恢复」。
+
+源清单顺序在前的图会被放到拼版页**右侧**（用户口径），这里按同一顺序
+展示，勾选结果也按**源清单顺序**返回（不是点选先后）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(files: list, parent=None, removed_files=None, mode: str='pick')` | — |
+| `count() -> int` | 候选视图的卡片数（已删除的不算）。 |
+| `checked_files() -> list[Path]` | 用户勾选的源图（**按源清单顺序**，不是勾选先后）。 |
+| `picked_files() -> list[Path]` | — |
+| `auto_mode_file() -> Path \| None` | 「从这张图片开始自动拼版」生效的那张图（不生效返回 None）。 |
+| `auto_sequence() -> list[Path]` | 自动拼版的图片序列：从勾选那张起到候选清单末尾（源清单顺序）。 |
+| `removed_files() -> list[Path]` | 当前黑名单（含会话内新删的，不含已恢复的）。 |
+| `removed_changed() -> bool` | 黑名单与打开时是否不同（宿主据此决定要不要落盘）。 |
+| `toggle_card(card: _SourceCard) -> None` | 切换一张候选卡片的勾选（自由多选，不设上限）。 |
+
+##### `checked_files() -> list[Path]`
+
+用户勾选的源图（**按源清单顺序**，不是勾选先后）。
+
+张数不限——配对（每两张一页）由宿主在「开始拼版」后做。
+
+##### `auto_mode_file() -> Path | None`
+
+「从这张图片开始自动拼版」生效的那张图（不生效返回 None）。
+
+生效条件：勾选框被勾上、且**恰好勾了 1 张图**——选项只在恰好
+勾 1 张时出现（不限整幅/半幅，用户 2026-10-01 定），多选不走自动。
+
+##### `auto_sequence() -> list[Path]`
+
+自动拼版的图片序列：从勾选那张起到候选清单末尾（源清单顺序）。
+
+「自此之后」= 含勾选的那张本身；它之前的图片不参与（留在候选池，
+之后仍可手动拼）。
+
+---
+
+## `desktop.components.imposition.view`
+
+源码：[`desktop/components/imposition/view.py`](../../desktop/components/imposition/view.py)
+
+拼版页装配控件：左列拼版页清单（模块一）+ 右区操作画布（模块二）。
+
+本文件是**两个模块的缝合处**，只做组合与转发，不含业务：
+
+- **模块一（选择拼版）**：左列 ``ImpositionPageList`` 与
+  ``ImpositionPickerDialog``（``picker.py``）——选哪两张、拼几页；
+- **模块二（拼版操作）**：``ImpositionCanvas``（``canvas.py``）——
+  拖动 / 缩放拉伸 / 旋转，以及右侧 ``ImpositionPanel``（``panel.py``）。
+
+落盘 / 合成 / 与第四步取图切换由 ``desktop/pages/taskdetail/`` 下的
+拼版控制器负责（``imposition.py`` 共享基元 + 模块一/二各自的 Mixin）。
+
+### `class ImpositionViewWidget(QWidget)`
+
+拼版页面：左列拼版页清单 + 右区操作画布。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(parent=None)` | — |
+| `set_pages(pages: list[dict], current: int=-1) -> None` | 整批灌入拼版页；``current`` 是当前显示的下标。 |
+| `pages() -> list[dict]` | — |
+| `set_current(index: int) -> None` | 切到某一页（-1 = 无页，画布清空）。 |
+| `current_index() -> int` | — |
+| `checked_pages() -> list[int]` | 左列勾选了的页下标（升序）——批量操作用。 |
+| `current_items() -> list[dict]` | — |
+| `selected_slot() -> int` | — |
+| `update_current_items(items: list[dict]) -> None` | 把外部（面板按钮）改过的版面写回当前页并重画画布。 |
+| `flush_pending() -> None` | 离开页面前的补发（拖住未松手就切走时别丢改动）。 |
+
+---
+
 ## `desktop.components.log_panel`
 
 源码：[`desktop/components/log_panel.py`](../../desktop/components/log_panel.py)
@@ -431,13 +932,7 @@ page       当前页码，1-based；越界会在读取时被钳制
 
 阶段说明（description）不再平铺在标题下方占高度，改由标题右侧的问号按钮
 承载：hover 弹 qfluentwidgets 的 ToolTip 气泡，点击弹 Flyout（内容自动换行）。
-
-### 模块常量
-
-| 名称 | 值 |
-| --- | --- |
-| HELP_TOOLTIP_WIDTH | `26` |
-| HELP_BUBBLE_WIDTH | `360` |
+按钮本体是公共控件 ``desktop.ui.widgets.HelpButton``（「图片拼版」面板同款）。
 
 ### `class StagePanel(QWidget)`
 
@@ -968,6 +1463,12 @@ border 留空时按 area 取默认（area=1/2/3 → 0、area=4 → 不设），
 设计要点：
 - 每一步 = 圆形徽标（编号或 ✓）+ 标题 + 状态副标题，用形状表达"第几步"；
 - 步骤之间用带箭头的连接线连起来，已完成的线段变色，直观表达先后顺序；
+  连接线由 **StepBar 底层统一画**、从节点框**后面**穿过——节点框有实底
+  （``_StepItem.pill`` / 拼版节点自己画），框内那截线被遮住，线自然"从
+  框后面出发"，不用再对齐框边缘；
+- 节点框：所有节点**同一套外观**——SURFACE 实底 + 浅色描边 + 高亮底色，
+  选中/当前只有底色变化、**没有边框差异**（用户 2026-09-30：其他节点即使
+  选中也没有 border，只有背景色；拼版节点生效与否样式统一）；
 - 状态色：未执行（灰）· 执行中（蓝）· 成功（绿）· 失败（红）· 已中断（橙）；
 - 整步可点击切换，带悬停底色，避免按钮样式的标签堆叠感。
 
@@ -982,6 +1483,8 @@ border 留空时按 area 取默认（area=1/2/3 → 0、area=4 → 不设），
 | --- | --- |
 | _BADGE | `26` |
 | _CONNECTOR_W | `38` |
+| _BYPASS_CLEAR | `28` |
+| _NODE_MIN_W | `140` |
 
 ### `class StepItem(QFrame)`
 
@@ -999,7 +1502,7 @@ border 留空时按 area 取默认（area=1/2/3 → 0、area=4 → 不设），
 | `set_title(title: str) -> None` | 只替换标题文案，不改动状态与徽标。 |
 | `set_status(status: str, detail: str='', badge_status: str='') -> None` | status 决定副标题/标题色，badge_status 决定徽标（缺省同 status）。 |
 | `set_current(current: bool) -> None` | 设置是否为当前步骤，切换高亮底色与标题字重。 |
-| `paintEvent(_event) -> None` | 自己画胶囊底色：样式表一旦出现在子树里，Qt 会把 QFrame 底色填白 |
+| `paintEvent(_event) -> None` | 自己画胶囊：样式表一旦出现在子树里，Qt 会把 QFrame 底色填白 |
 | `enterEvent(event) -> None` | Qt 事件覆写：鼠标移入时进入高亮态。 |
 | `leaveEvent(event) -> None` | Qt 事件覆写：鼠标移出时恢复常态。 |
 | `mouseReleaseEvent(event) -> None` | Qt 事件覆写：松开（提交本次编辑）。 |
@@ -1020,12 +1523,38 @@ status 决定副标题/标题色，badge_status 决定徽标（缺省同 status�
 
 ##### `paintEvent(_event) -> None`
 
-自己画胶囊底色：样式表一旦出现在子树里，Qt 会把 QFrame 底色填白
+自己画胶囊：样式表一旦出现在子树里，Qt 会把 QFrame 底色填白
 （盖住步骤条的卡片底色），所以这里不用样式表。
+
+胶囊**始终**有 SURFACE 实底 + 实线 border：实底用来遮住从框后面
+穿过的连接线（见 ``StepBar._draw_connectors``），实线 border 是
+真实步骤的视觉语言（可选节点才是虚线）。高亮底色（当前/悬停）
+叠在实底之上。
 
 ### `class StepBar(QWidget)`
 
 横向步骤条：4 个步骤按顺序排列，当前步骤高亮、已完成步骤打勾。
+
+除真实步骤外还支持一个**条件虚线节点**（「图片拼版」可选步骤）：
+默认隐藏，``set_imposition_visible(True)`` 时插到倒数两个步骤之间。
+伪步骤下标 = 真实步骤数（``imposition_index``），``set_current`` /
+``current_changed`` 都以它表达"当前在看拼版详情"。
+
+节点有两条互相独立的状态线（别合并）：
+- **选择态**（``set_imposition_selected``）：只管节点自己的外观
+  （「已选择/未选择」副标题；节点没有边框差异、也不压高亮底色，
+  与真实步骤同一套外观）；
+- **生效态**（``set_imposition_active``）：这条支路是否真的承载流程
+  （已启用且至少有一页拼版）。生效 → 两侧连接线常规点亮、节点徽标
+  转绿色对勾；未生效 → 两侧连接线灰色虚线、徽标灰色「＋」，同时
+  「去底色 → 生成 PDF」画一条从节点上方绕过的绕行线
+  （``_draw_imposition_bypass``）——选了拼版但还没有拼版页时，
+  第四步实际取的仍是第三步产物，线不能说谎。
+
+节点的宽度与间距分成两件事（都踩过坑，别再合并）：
+- **槽位**与真实步骤等宽（``imposition_slot`` + stretch 1）→ 步骤间距均分；
+- **节点框**只在槽位里靠左、宽度不超过内容但有统一默认下限
+  （``QSizePolicy.Maximum`` + ``_NODE_MIN_W``）→ 不被拉宽、宽窄一致。
 
 #### 方法
 
@@ -1036,8 +1565,31 @@ status 决定副标题/标题色，badge_status 决定徽标（缺省同 status�
 | `set_current(index: int) -> None` | 设置当前步骤下标并同步各步骤高亮与徽标。 |
 | `mark_completed(index: int) -> None` | 标记某步骤已完成（徽标改为对勾，连接线着色）。 |
 | `set_steps(texts) -> None` | 兼容旧调用：只更新标题文本。 |
+| `set_imposition_visible(visible: bool) -> None` | 显示/隐藏「图片拼版」虚线节点（随第三步区域模式是否为 1）。 |
+| `set_imposition_selected(selected: bool) -> None` | 「图片拼版」是否被选择（副标题/徽标口径，不动连接线/绕行线）。 |
+| `set_imposition_active(active: bool) -> None` | 拼版支路是否**生效**（已启用且至少有一页拼版，宿主判定）。 |
 | `set_step_status(index: int, status: str, progress: tuple \| None=None, completed: bool \| None=None) -> None` | 设置某步骤状态；progress 为 (已完成, 总数) 时拼出 "成功 · 84/84"。 |
 | `reset_statuses() -> None` | 全部步骤恢复为未执行，并清空已完成标记。 |
+
+##### `set_imposition_visible(visible: bool) -> None`
+
+显示/隐藏「图片拼版」虚线节点（随第三步区域模式是否为 1）。
+
+⚠️ 槽位要一起隐藏：只藏节点的话，那格等宽槽位还占着位置，流程条上会
+留出一段空白（第四步/PDF 看起来被推远）。
+另外节点显示时行顶边距 6→18：给绕行线留一条**走线带**——拼版未生效
+时「去底色 → 生成 PDF」的线要贴着节点上方绕过去（见
+``_draw_imposition_bypass``），不预留高度弧线会顶到卡片边框。
+
+##### `set_imposition_active(active: bool) -> None`
+
+拼版支路是否**生效**（已启用且至少有一页拼版，宿主判定）。
+
+生效 → 两侧连接线常规点亮、节点徽标转绿色对勾（与真实步骤同款）；
+未生效 → 两侧连接线灰色虚线、徽标灰色「＋」，主流程改走节点上方
+的绕行线。与 ``set_imposition_selected``
+（节点自己的选择外观）互不取代：选了但还没有拼版页时，节点
+显示「已选择」，但线仍然是灰色虚线 + 绕行。
 
 ##### `set_step_status(index: int, status: str, progress: tuple | None=None, completed: bool | None=None) -> None`
 
@@ -1153,6 +1705,225 @@ source_path 不单独成列，仅作任务名的悬浮提示。
 
 ---
 
+## `desktop.components.viewers.image_editor`
+
+源码：[`desktop/components/viewers/image_editor.py`](../../desktop/components/viewers/image_editor.py)
+
+图片编辑弹窗：裁剪 / 擦除 / 插入文字（Win10 照片风格）。
+
+从图片预览弹窗（``image_zoom_dialog``）的「编辑」按钮进入，编辑的是
+**画布当前整分辨率图**（已含翻转/旋转）；「完成」后写回弹窗画布。宿主
+给 ``save_back=True``（画布显示 1:1 对应真实文件）时，「完成」= 直接
+**原子覆盖原图片文件**；虚拟预览（区域合成/打印重排/PDF 页）没有文件
+可回写，维持"满意用「下载」落盘、翻页/关窗即丢弃"的旧行为。
+
+四个工具的行为口径：
+
+- **裁剪**：**默认选中整幅图**，沿四边/四角**任意位置**向内拖收边（整条
+  边都是命中带，不只手柄小方块）、拖框中间移动；松手后**视图自动适配新
+  选区**（选区变小就放大查看）。不做截图式"拖拽画框"——那是截图的交互，
+  裁剪的语义是"从原图里收出想要的部分"（用户 20:05 定）。
+- **变换**（GIMP「统一变换」口径，处理古籍褶皱/歪斜）：**默认选中整幅
+  图**，拖角=缩放（Shift 等比）、拖边=切变、框内拖=移动、框外拖=**绕
+  轴心旋转**（Shift 每 15° 吸附）；轴心圆点可拖动，「从轴心」勾选后
+  缩放/切变也以轴心为锚。勾选「**调整范围**」后沿边拖动**收小要处理的
+  区域**（收完自动回到变换模式）——小范围修褶皱就是"收小区域 → 旋转/
+  切变把它正回来"。拖动即实时预览（原区域填白，变换后的内容以
+  浮层显示）；「应用变换」（或切走工具/「完成」）才烘焙进像素——原
+  区域填白、只把选区内容按仿射矩阵画回去，画布尺寸不变，**区域外的
+  像素一动不动**。一批一个撤销点。
+- **擦除**：按住左键涂抹把污点**擦成白底**（古籍页面去污点就是涂白）；
+  直径在选项行可调；光标处有**实圈指示**，直径恒等于实际擦除直径
+  （所见即所擦）。一笔一个撤销点。
+  （原「拉伸」与笔刷配色已按用户 2026-10-01 要求移除。）
+- **文字**：点击落点 → 画布上**就地输入**（光标可见，点已有块可继续
+  编辑）→ 选项行可调字体 family / 字号 / **颜色选择器**（对整块即时
+  生效，样式是段落属性，与手机作图App同口径）→ 鼠标悬停在文字上出现
+  **边界虚线框**，按住拖动整块移动（虚线框跟随，松手即消失）→
+  「插入文字」把块写进图片（切走工具或点「完成」时未插入的块也自动
+  写入）。一个批次一个撤销点。
+
+  选项行的字体下拉**以中文字体为主**、只带几个常用西文字体（系统字体库
+  动辄两三百个族，全列出来反而找不到"仿宋"，见 `ui.fonts`）；颜色是
+  **一个按钮**，常用色块收在它弹出的面板里（见 `ui.color_picker`）。
+
+  ⚠️ 样式改动作用在"**当前样式块**"（``EditorCanvas.style_target_block``）
+  上，而不是"场景焦点项"：选项行的控件（尤其 qfluentwidgets 的 Slider，
+  它是 ``StrongFocus``）一被点击就会抢走键盘焦点，场景焦点项随之变 None，
+  按焦点项找块的话**改字号/颜色全部落空**（用户 2026-10-01 报障）。
+
+⚠️ 撤销栈存的是**整图快照**（QImage 写时复制在就地绘制时仍会共享底层数据，
+必须 ``copy()``），上限 12 步——4000px 预览约 60MB/步，再多内存吃不消。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| UNDO_LIMIT | `12` |
+| WHEEL_STEP | `1.15` |
+| MIN_RECT_EDGE | `4.0` |
+| HANDLE_VIEW_PX | `12.0` |
+| EDGE_BAND_VIEW_PX | `8.0` |
+| SEL_FIT_RATIO | `0.8` |
+| PIVOT_VIEW_PX | `14.0` |
+| ROTATE_SNAP_DEG | `15.0` |
+
+### `class TextBlockItem(QGraphicsTextItem)`
+
+画布上的待插入文字块：就地编辑（光标可见），按住拖动整体移动。
+
+交互口径：**单击**进编辑态放光标（QGraphicsTextItem 原生），**按住
+拖动**超过阈值 = 移动整块。刻意不复用 ``ItemIsMovable``——它与文本
+编辑的"按住选字"打架，这里按位移阈值自己分流。拖动全程由画布的
+**边界虚线框**跟随（悬停即显示、松手即消失），用户随时知道"这一块
+会被整体挪走"（用户 2026-10-01：手机作图式文字）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(pos: QPointF, px: int, color: QColor, family: str)` | — |
+| `apply_style(family: str, px: int, color: QColor) -> None` | 选项行改字体/字号/颜色时对块即时生效（编辑中也能改）。 |
+| `mousePressEvent(event) -> None` | Qt 事件覆写：按下（选中 / 开始拖拽或绘制）。 |
+| `mouseMoveEvent(event) -> None` | Qt 事件覆写：移动（拖拽 / 缩放中的实时更新）。 |
+| `mouseReleaseEvent(event) -> None` | Qt 事件覆写：松开（提交本次编辑）。 |
+| `keyPressEvent(event) -> None` | Qt 事件覆写：键盘操作（如 Delete 删除选中项）。 |
+| `focusInEvent(event) -> None` | — |
+| `focusOutEvent(event) -> None` | — |
+
+##### `apply_style(family: str, px: int, color: QColor) -> None`
+
+选项行改字体/字号/颜色时对块即时生效（编辑中也能改）。
+
+⚠️ 是**整块**生效：setFont/setDefaultTextColor 作用于整个文档，
+与手机作图App一致——样式是段落属性，不做逐字混排。
+
+### `class EditorCanvas(QGraphicsView)`
+
+编辑画布：滚轮缩放、中/右键拖拽平移、左键按工具交互。
+
+场景坐标 = 图片像素（pixmap 刻意不设 devicePixelRatio，与预览弹窗同
+口径）。选区矩形（裁剪）几何全部落在**图片坐标系**，缩放只影响显示。
+裁剪不做"拖拽画框"：**默认全选**，只许收边/框内移动。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(parent=None)` | — |
+| `set_image(image: QImage \| None) -> None` | 装入/替换图片并重新适应窗口（裁剪/撤销等"画布换图"也走这里）。 |
+| `refresh() -> None` | 像素被就地改过（擦除）后只刷显示，不动缩放与滚动位置。 |
+| `replace_image(image: QImage) -> None` | 就地换图（尺寸不变的语义，如文字写入）：不动缩放与滚动位置。 |
+| `image() -> QImage \| None` | — |
+| `image_rect() -> QRectF` | 图片占位（= 场景坐标，1 场景单位 = 1 图片像素）。 |
+| `set_tool(tool: str) -> None` | 切换工具：裁剪/变换默认全选，其余清选区、换光标。 |
+| `set_eraser(size: int) -> None` | 设置橡皮擦直径（图片像素）；擦除固定涂白，没有颜色可选。 |
+| `selection() -> QRectF \| None` | 当前选区（图片坐标）；不足最小边视为没有。 |
+| `add_text_block(pos: QPointF, px: int, color: QColor, family: str) -> TextBlockItem` | 在落点放一个可就地编辑的文字块并给它焦点（光标闪烁）。 |
+| `text_blocks() -> list[TextBlockItem]` | 画布上所有待插入文字块。 |
+| `focused_text_block() -> TextBlockItem \| None` | 正在编辑的文字块（场景焦点项；键盘输入路由用）。 |
+| `style_target_block() -> TextBlockItem \| None` | 选项行改样式时作用的那一块：优先正在编辑的，其次"当前样式块"。 |
+| `focus_text_block(block: TextBlockItem \| None=None) -> None` | 把键盘焦点还给文字块（颜色面板关掉后接着打字用）。 |
+| `clear_text_blocks() -> None` | 清掉所有文字块（插入/换图/关编辑时）。 |
+| `set_transform_about_pivot(about: bool) -> None` | 「从轴心」：缩放/切变以轴心为锚（旋转永远绕轴心）。 |
+| `set_transform_reshape(on: bool) -> None` | 「调整范围」模式：拖手柄/边=收小变换区域，而不是缩放内容。 |
+| `reset_transform() -> None` | 「重置」：丢弃未应用的变换，选区回到整幅、轴心回到中心。 |
+| `transform_pending() -> tuple[QRectF, QTransform, QImage] \| None` | 未应用的变换 ``(选区, 矩阵, 选区像素快照)``；没有则 None。 |
+| `transform_move(dx: float, dy: float) -> None` | 整体平移 ``dx, dy``（图片像素）。 |
+| `transform_rotate(degrees: float) -> None` | 绕**轴心当前视觉位置**旋转（轴心保持不动）。 |
+| `transform_scale(sx: float, sy: float, anchor: QPointF \| None=None) -> None` | 缩放（局部空间，锚点缺省=轴心；sx/sy 是相对当前内容的倍率）。 |
+| `transform_shear(edge: str, k: float) -> None` | 拖边切变：``edge`` 是被抓的边（l/r/t/b），``k`` 是切变系数， |
+| `fit() -> None` | 适应窗口（整图完整可见）。 |
+| `zoom_in() -> None` | 放大一档（工具栏按钮用；无档位表，连续乘 1.25）。 |
+| `zoom_out() -> None` | 缩小一档。 |
+| `set_zoom(zoom: float, anchor_view: QPointF \| None=None) -> None` | 锚点缩放（同预览弹窗的 translate 补偿法，缩放不漂移）。 |
+| `resizeEvent(event) -> None` | Qt 事件覆写：尺寸变化时重算布局 / 重新缩放。 |
+| `fit_selection() -> None` | 视图适配当前选区（选区约占视口 80%，四周留出可操作白边）。 |
+| `wheelEvent(event) -> None` | Qt 事件覆写：滚轮（缩放 / 滚动）。 |
+| `mousePressEvent(event) -> None` | Qt 事件覆写：按下（选中 / 开始拖拽或绘制）。 |
+| `mouseMoveEvent(event) -> None` | Qt 事件覆写：移动（拖拽 / 缩放中的实时更新）。 |
+| `mouseReleaseEvent(event) -> None` | Qt 事件覆写：松开（提交本次编辑）。 |
+| `leaveEvent(event) -> None` | Qt 事件覆写：鼠标移出时恢复常态。 |
+| `keyPressEvent(event) -> None` | Qt 事件覆写：键盘操作（如 Delete 删除选中项）。 |
+
+##### `add_text_block(pos: QPointF, px: int, color: QColor, family: str) -> TextBlockItem`
+
+在落点放一个可就地编辑的文字块并给它焦点（光标闪烁）。
+
+⚠️ 顺便把键盘焦点拿回视图：场景焦点项的输入要靠「视图持有键盘
+焦点 → keyPressEvent 转发」这条链，视图没焦点时打字全落空。
+
+##### `style_target_block() -> TextBlockItem | None`
+
+选项行改样式时作用的那一块：优先正在编辑的，其次"当前样式块"。
+
+⚠️ 与 :meth:`focused_text_block` 分开是刻意的：点选项行的滑杆/按钮
+会抢走键盘焦点，此时"正在编辑"已经没了，但用户**期望**改动仍落在他
+刚点的那个文字块上（用户 2026-10-01 报"字号不生效"就是这个原因）。
+
+##### `set_transform_reshape(on: bool) -> None`
+
+「调整范围」模式：拖手柄/边=收小变换区域，而不是缩放内容。
+
+进入时必须丢掉未应用的变换预览——浮层与填白底都是按**旧区域**
+快照做的，区域一变它们就与画布对不上了。退出（收边完成/取消
+勾选）后保留收小的区域，下一次拖动即以它为变换对象。
+
+##### `transform_shear(edge: str, k: float) -> None`
+
+拖边切变：``edge`` 是被抓的边（l/r/t/b），``k`` 是切变系数，
+对边为锚（抓右边往下拖 = 内容随 x 增大而下斜）。
+
+##### `fit_selection() -> None`
+
+视图适配当前选区（选区约占视口 80%，四周留出可操作白边）。
+
+裁剪区收小后松手时调用——选区变小了就要放大查看（用户 20:18 定）。
+⚠️ 不填满视口：顶满时选区边界贴着视口边缘，看不到上下文、手柄
+也挤在边上不好抓（用户 20:28 定"缩放至选区时留出边距"）。
+视图从此锚定选区（``_user_zoomed``），窗口 resize 不再拉回整图。
+
+### `class ImageEditorDialog(QDialog)`
+
+图片编辑弹窗：顶部工具/选项行 + 中央画布 + 底部状态行。
+
+``accepted`` 后用 :meth:`result_image` 取编辑结果；关闭/拒绝即放弃。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(parent=None, image: QImage \| None=None, save_back: bool=False)` | — |
+| `result_image() -> QImage \| None` | 编辑结果（无图时 None；是否采纳由调用方的 exec 结果决定）。 |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `clamp_rect(rect: QRectF, bounds: QRectF) -> QRectF` | 把矩形夹进边界内（先平移、超界再缩边）；空矩形原样返回。 |
+| `rotate_about(point: QPointF, degrees: float) -> QTransform` | 绕 ``point`` 旋转 ``degrees``（正=顺时针）。 |
+| `scale_about(point: QPointF, sx: float, sy: float) -> QTransform` | 绕 ``point`` 缩放（sx/sy 为 0 会退化，调用方保证非零）。 |
+| `shear_about(point: QPointF, sh: float, sv: float) -> QTransform` | 绕 ``point`` 切变：水平 sh（x 随 y 斜切）、垂直 sv（y 随 x 斜切）。 |
+| `bake_transform(image: QImage, rect: QRectF, xf: QTransform, region: QImage) -> QImage` | 把「选区内容经 ``xf`` 变换」烘焙进图片（画布尺寸不变）。 |
+| `draw_text(image: QImage, pos: QPointF, text: str, px: int, color: QColor, family: str \| None=None) -> QImage` | 在 ``pos``（文字块左上角）画文字（可多行，行距 1.25 倍）；空文本原样返回。 |
+
+#### `bake_transform(image: QImage, rect: QRectF, xf: QTransform, region: QImage) -> QImage`
+
+把「选区内容经 ``xf`` 变换」烘焙进图片（画布尺寸不变）。
+
+先把**原区域**填白（内容被挪走/变形后空出来的地方），再在 ``xf``
+变换下把选区快照画回去——与画布上的实时预览（填白底 + 变换浮层）
+所见一致。古籍整页白底，填白视觉上最干净。
+
+#### `draw_text(image: QImage, pos: QPointF, text: str, px: int, color: QColor, family: str | None=None) -> QImage`
+
+在 ``pos``（文字块左上角）画文字（可多行，行距 1.25 倍）；空文本原样返回。
+
+``family`` 缺省用主题字体；文字块（就地编辑）烧进图片时传块当时的
+family，保证"所见即所得"。
+
+---
+
 ## `desktop.components.viewers.image_view`
 
 源码：[`desktop/components/viewers/image_view.py`](../../desktop/components/viewers/image_view.py)
@@ -1203,6 +1974,7 @@ reference_boxes 为参考框（如按 area/border 规则推导的最终裁剪大
 | `mouseMoveEvent(event) -> None` | Qt 事件覆写：移动（拖拽 / 缩放中的实时更新）。 |
 | `mouseReleaseEvent(event) -> None` | Qt 事件覆写：松开（提交本次编辑）。 |
 | `mouseDoubleClickEvent(event) -> None` | 双击 → ``double_clicked``（宿主打开图片预览弹窗）。 |
+| `contextMenuEvent(event) -> None` | 右键大图 → ``context_menu_requested``（宿主弹「查看 / 编辑」菜单）。 |
 | `keyPressEvent(event) -> None` | Qt 事件覆写：键盘操作（如 Delete 删除选中项）。 |
 
 ##### `box_kinds() -> list`
@@ -1259,6 +2031,13 @@ Qt 在窗口 dpr 变化时发 ``DevicePixelRatioChange``，**不保证**同时�
 ``mousePressEvent`` 的"空白处 → 手绘"分支，不清就会在图上留一个跟着
 鼠标跑的橡皮筋残影，而且第二下松开还会真的落一个框。
 
+##### `contextMenuEvent(event) -> None`
+
+右键大图 → ``context_menu_requested``（宿主弹「查看 / 编辑」菜单）。
+
+没有图时不弹（没有可查看/可编辑的东西），交给默认处理。框编辑用的是
+左键（见 mousePressEvent），右键不参与，两者不打架。
+
 ### 模块函数
 
 | 函数 | 说明 |
@@ -1306,6 +2085,8 @@ Qt 在窗口 dpr 变化时发 ``DevicePixelRatioChange``，**不保证**同时�
 | `selected_index() -> int` | 当前选中的框下标；无选中为 -1。 |
 | `box_full_mode() -> bool` | 本页是否为整幅(fullcontent)。 |
 | `box_kinds() -> list` | 当前每个框的类型（"left"/"right"/"full"）。 |
+| `apply_edited_image(path_text: str, image) -> None` | 编辑结果**立即上屏**（不等文件重解码/缩略图重生成）。 |
+| `refresh_page(path_text: str) -> None` | 某页缩略图缓存重生成后刷新条目图标（大图由 apply_edited_image |
 
 ##### `__init__(editable: bool=False, show_boxes: bool=False, empty_hint: str='暂无图片', image_size_provider=None, thumb_provider=None, parent=None)`
 
@@ -1328,6 +2109,19 @@ paths 为 Path 列表；boxes_map 预留（当前未用）。清单不变时跳�
 ``full=True`` 表示本页是整幅(fullcontent)：框显示为「整幅」且只允许一个；
 否则按框的**中心位置**显示为左/右框。名称/颜色由控件每帧现算，不用传。
 ``selected`` 为要选中的框下标（-1 = 不选），用于切换类型后保持选中。
+
+##### `apply_edited_image(path_text: str, image) -> None`
+
+编辑结果**立即上屏**（不等文件重解码/缩略图重生成）。
+
+编辑弹窗确认后由宿主调用：当前页大图直接换成编辑结果，条目图标
+用编辑结果现缩一张，缩略图缓存随后由宿主后台重生兜底。清单里没有
+这个路径（或图无效）时是空操作。
+
+##### `refresh_page(path_text: str) -> None`
+
+某页缩略图缓存重生成后刷新条目图标（大图由 apply_edited_image
+即时同步过，不再重载）。路径不在清单里时是空操作。
 
 ---
 
@@ -1361,6 +2155,7 @@ paths 为 Path 列表；boxes_map 预留（当前未用）。清单不变时跳�
 | MAX_RENDER_EDGE | `4000` |
 | JPEG_QUALITY | `90` |
 | PAN_MARGIN_RATIO | `0.25` |
+| OVERWRITE_JPEG_QUALITY | `95` |
 
 ### `class ZoomTarget`
 
@@ -1374,7 +2169,24 @@ paths 为 Path 列表；boxes_map 预留（当前未用）。清单不变时跳�
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(render, note: str='', stem: str='', count: int=1, original=None, cap: int \| None=None)` | render: ``(edge:int) -> worker``；cap: 渲染密度上限（如原图原生边长）。 |
+| `__init__(render, note: str='', stem: str='', count: int=1, original=None, cap: int \| None=None, save_path=None, edit_path=None)` | render: ``(edge:int) -> worker``；cap: 渲染密度上限（如原图原生边长）。 |
+
+##### `__init__(render, note: str='', stem: str='', count: int=1, original=None, cap: int | None=None, save_path=None, edit_path=None)`
+
+render: ``(edge:int) -> worker``；cap: 渲染密度上限（如原图原生边长）。
+
+``save_path``：本页显示的像素**就是**这个真实文件（Path | None）。
+给了它，编辑器「完成」后把编辑结果覆盖回该文件（编辑器加载的也是
+该文件的全分辨率原图，预览的降采样不掺和）；**只允许在"画布显示的
+内容 1:1 就是这个文件"时给**——区域合成（effect）、打印重排、PDF
+矢量页都是虚拟图，写回会把整张文件覆盖成一块裁剪区域，绝不能开。
+
+``edit_path``：本页**编辑时要写回的真实文件**（Path | None），
+可以不同于 ``save_path``——区域合成/打印效果这类派生显示，
+显示的不是某个文件的全部像素，但它**派生自**一个真实文件；编辑
+要改的是那个文件（各步骤改动因此串成一条链，最终落到 PDF）。
+不传时回落 ``save_path``（1:1 显示的情形）。两者都为 None 表示
+没有可回写的文件（PDF 矢量页等），右键菜单不提供「编辑图片」。
 
 ### `class ZoomableCanvas(QGraphicsView)`
 
@@ -1402,6 +2214,7 @@ paths 为 Path 列表；boxes_map 预留（当前未用）。清单不变时跳�
 | `wheelEvent(event) -> None` | 滚轮缩放：以**光标下的那一点**为锚点（自己算，见 set_zoom）。 |
 | `mouseDoubleClickEvent(event) -> None` | 双击在「100%」与「适应窗口」之间切换。 |
 | `resizeEvent(event) -> None` | Qt 事件覆写：尺寸变化时重算布局 / 重新缩放。 |
+| `orientation() -> QTransform` | 当前翻转/旋转矩阵（恒等 = 没动过朝向）。 |
 | `export_image() -> QImage \| None` | 导出用图：已应用翻转/旋转的**整分辨率**图（缩放的屏幕比例不参与）。 |
 
 ##### `set_zoom(zoom: float, anchor_pos: QPointF | None=None) -> None`
@@ -1430,6 +2243,13 @@ paths 为 Path 列表；boxes_map 预留（当前未用）。清单不变时跳�
 
 ⚠️ 主动 ignore 掉：QGraphicsView 默认用方向键**滚动视图**，焦点落在
 画布上时事件到不了对话框，翻页就死了；这里显式放行给父级。
+
+##### `orientation() -> QTransform`
+
+当前翻转/旋转矩阵（恒等 = 没动过朝向）。
+
+编辑器回写原图时用它把朝向"烤"进全分辨率原图——见
+``ImageZoomDialog._edit_image``。
 
 ### `class ImageZoomDialog(QDialog, WorkerHost)`
 
@@ -1463,7 +2283,7 @@ Esc 交给 QDialog 自己处理（关窗）。
 
 ### `class ZoomPopupMixin`
 
-宿主侧混入：双击大图打开图片预览弹窗。
+宿主侧混入：双击/右键大图打开图片预览弹窗与「查看 / 编辑」菜单。
 
 子类需要实现 :meth:`_zoom_target` 与 :meth:`_zoom_index`，并在
 ``__init__`` 里调 :meth:`_init_zoom_popup`。
@@ -1473,6 +2293,21 @@ Esc 交给 QDialog 自己处理（关窗）。
 | 方法 | 说明 |
 | --- | --- |
 | `close_zoom_popup() -> None` | 内容被换掉时关掉弹窗（弹窗里那页是打开时的快照，留着就是旧数据）。 |
+| `edit_current_image() -> bool` | 右键「编辑图片」：直接编辑当前显示图对应的**真实文件**并覆盖回写。 |
+
+##### `edit_current_image() -> bool`
+
+右键「编辑图片」：直接编辑当前显示图对应的**真实文件**并覆盖回写。
+
+用户原则（2026-10-01）：图片编辑不是"本步骤看看"，各步骤改动要串成
+一条链、最终落到 PDF。目标由 ``ZoomTarget.edit_path`` 决定——
+
+- 显示的是**处理前**的图（如第三步「原图」）→ 改该源图文件；
+- 显示的是**处理后**的图（如第三步「去底色结果」、第四步待打印图）
+  → 改该结果文件（本步产出，下一步读的就是它）。
+
+编辑器「完成」后：原子覆盖该文件 → ``_on_zoom_image_saved`` 通知宿主
+刷新（尺寸 / 缩略图 / 各处大图）。返回是否真的写回了文件。
 
 ### 模块函数
 
@@ -1482,6 +2317,7 @@ Esc 交给 QDialog 自己处理（关窗）。
 | `mirrored_rotate_icon() -> QIcon` | ``FIF.ROTATE`` 的水平镜像 = **逆时针（左旋）**。 |
 | `flip_icon(horizontal: bool=True, color: QColor \| None=None) -> QIcon` | 翻转按钮的图标（水平/垂直 = 同一个图形转 90°）。 |
 | `save_image(image: QImage, path: str \| Path, quality: int=JPEG_QUALITY) -> bool` | 把 QImage 写到磁盘：``.jpg``/``.jpeg`` 走有损（quality），其余交给 Qt。 |
+| `overwrite_image_file(image: QImage, target: Path, quality: int=OVERWRITE_JPEG_QUALITY) -> bool` | 把 ``image`` **原子**覆盖到 ``target``（格式按目标后缀）。 |
 
 #### `display_transform(rotation: int=0, flip_h: bool=False, flip_v: bool=False) -> QTransform`
 
@@ -1513,6 +2349,16 @@ qfluentwidgets 没有可用的翻转图标：``SEARCH_MIRROR`` 是"带镜子的�
 把 QImage 写到磁盘：``.jpg``/``.jpeg`` 走有损（quality），其余交给 Qt。
 
 单独抽出来是为了可测——保存对话框在离屏环境里弹不出来。
+
+#### `overwrite_image_file(image: QImage, target: Path, quality: int=OVERWRITE_JPEG_QUALITY) -> bool`
+
+把 ``image`` **原子**覆盖到 ``target``（格式按目标后缀）。
+
+⚠️ 必须走「临时文件 + os.replace」，不能就地写：任务目录里的页面图
+可能是硬链接（workset 时代的遗产），就地写会把链接另一头的源文件一起
+改掉；且覆盖途中被 200ms 一次的 extract 轮询/预览读到半截也是事故。
+``os.replace`` 换的是目录项——读者要么看到完整旧图、要么看到完整新图，
+旧 inode 原样留在硬链接另一头。
 
 ---
 
@@ -1604,6 +2450,7 @@ A4 纸上的图片拖拽/缩放画布；rect_changed 发出页面 mm 坐标。
 | `mousePressEvent(event) -> None` | Qt 事件覆写：按下（选中 / 开始拖拽或绘制）。 |
 | `mouseMoveEvent(event) -> None` | Qt 事件覆写：移动（拖拽 / 缩放中的实时更新）。 |
 | `mouseDoubleClickEvent(event) -> None` | 双击 → ``double_clicked``（宿主打开预览弹窗）。 |
+| `contextMenuEvent(event) -> None` | 右键 → ``context_menu_requested``（宿主弹「预览图片 / 编辑图片」菜单）。 |
 | `flush_pending() -> bool` | 把"还没松手"的拖动结果补发出去（关窗口/切步骤/切页时调）。 |
 | `mouseReleaseEvent(event) -> None` | Qt 事件覆写：松开（提交本次编辑）。 |
 | `paintEvent(event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
@@ -1625,6 +2472,12 @@ A4 纸上的图片拖拽/缩放画布；rect_changed 发出页面 mm 坐标。
 显示时重算：首次进入第四步可能在布局完成前就 ``set_page`` 过，
 那时 ``width()/height()`` 还是 0，``_px_per_mm`` 会退化为 1.0。
 仅靠 resizeEvent 兜不住「已分配尺寸但从未显示」的情况。
+
+##### `contextMenuEvent(event) -> None`
+
+右键 → ``context_menu_requested``（宿主弹「预览图片 / 编辑图片」菜单）。
+
+左键的拖拽/缩放不受影响（右键不参与编辑手势）；空页不弹菜单。
 
 ##### `flush_pending() -> bool`
 
@@ -1724,6 +2577,7 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 | `live_dir() -> Path \| None` | 当前生效的实时预览暂存目录（未启用为 None）。 |
 | `current_entry_path() -> str \| None` | 当前选中条目的源图路径（无条目时为 None）。 |
 | `show_live_pending() -> None` | 实时预览正在计算：先给个即时反馈，别让界面看起来没反应。 |
+| `refresh_page(path_text: str) -> None` | 某文件被覆盖后刷新本查看器：受影响条目图标 + 当前大图。 |
 
 ##### `set_images(paths: list[Path], rembg_dir: Path | None, boxes_provider=None, region_params_provider=None, thumb_provider=None) -> None`
 
@@ -1740,6 +2594,12 @@ paths 为源图；rembg_dir 为去底色结果目录（存在才显示结果）�
 非 None 时结果图优先从这里取：它是按**此刻**面板参数现算的当前页；
 而 ``_rembg_dir``（stages/rembgpreview）是上一次「生成预览」的全量产物，
 参数可能已经改过。
+
+##### `refresh_page(path_text: str) -> None`
+
+某文件被覆盖后刷新本查看器：受影响条目图标 + 当前大图。
+
+由宿主在缩略图重生成完毕后调用；路径与本查看器无关时是空操作。
 
 ---
 
@@ -1895,6 +2755,133 @@ history_combo、_toast()。
 
 ---
 
+## `desktop.pages.taskdetail.imposition`
+
+源码：[`desktop/pages/taskdetail/imposition.py`](../../desktop/pages/taskdetail/imposition.py)
+
+任务详情页的「图片拼版」共享基元与 Mixin 装配。
+
+流程条上的「图片拼版」是**虚线可选节点**（``desktop.components.step_bar``）：
+仅当第三步（图片去底色）的「区域模式」为 1（左右分开）时出现在「图片去底色」
+与「生成 PDF」之间；用户可以选择它（启用）也可以不选择。
+
+按操作逻辑拆成三个文件（后续可由不同 agent 分头维护，互不影响）：
+
+- **本文件** ``ImpositionBaseMixin``：两个模块都要用的**共享基元**——
+  area 读取与节点可见性、拼版文档读写（``drafts/imposition.json``）、
+  源图清单与「拼版生效」判定、第四步取图切换（``print_source_dir``）、
+  视图灌装、详情进出与切任务复位；
+- **``imposition_pages.ImpositionPagesMixin``**（模块一「选择拼版」）：
+  启用开关、弹窗加页、删页/页序/清空；
+- **``imposition_layout.ImpositionLayoutMixin``**（模块二「拼版操作」）：
+  旋转/复位、版面落盘、防抖后台合成、状态行。
+
+⚠️ 拼版本身**不是** STAGES 里的一步：runs.json / 阶段面板机制一概不感知它，
+执行按钮组在拼版详情里整组隐藏。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| IMPOSITION_AREA | `1` |
+
+### `class ImpositionBaseMixin`
+
+拼版共享基元：节点可见性、文档读写、取图切换、详情进出。
+
+依赖宿主页面提供：store/task_id、control_stack、step_bar、
+_select_stage()、_set_stage_status()、_toast()、log_view。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `imposition_source_files() -> list[Path]` | 可挑选的源图：第三步「提交本次任务」的成品图（stages/rembg）。 |
+| `imposition_active() -> bool` | 拼版是否**生效**：已启用且至少有一页拼版。 |
+| `print_source_dir() -> Path` | 第四步的取图目录：拼版生效 → stages/imposition，否则 stages/rembg。 |
+
+### `class ImpositionMixin(ImpositionPagesMixin, ImpositionLayoutMixin, ImpositionBaseMixin)`
+
+「图片拼版」节点控制器 = 模块一（页管理） + 模块二（版面/合成） + 基元。
+
+方法查找顺序：模块一 → 模块二 → 共享基元；三个文件互不 import，
+只经 ``self`` 在组合后的宿主页面上协作。
+
+---
+
+## `desktop.pages.taskdetail.imposition_layout`
+
+源码：[`desktop/pages/taskdetail/imposition_layout.py`](../../desktop/pages/taskdetail/imposition_layout.py)
+
+**模块二「拼版操作」控制器**：画布版面操作与拼版合成落盘。
+
+对应 UI 模块二（``desktop/components/imposition/canvas.py`` +
+``panel.py``）：
+- 画布里拖动 / 缩放拉伸 / 旋转 → ``items_changed`` → 落盘 + 防抖合成；
+- **双击预览**（用户 2026-09-30）：双击某张图 → 弹窗预览这张原图；
+  双击两图之外的空白处 → 弹窗预览整页左右组合（按产出口径合成）；
+- **右键菜单「预览图片 / 编辑图片」**（2026-10-01）：目标规则与双击一致
+  （图上 → 这张原图；空白 → 整页组合）；预览与双击同一条路，「编辑图片」
+  则**不经预览弹窗**直达编辑器——单张图编辑源图原图并覆盖回写（含刷新链），
+  整页组合按产出口径现场合成全分辨率图、「完成」写回该页拼版成品文件；
+- 面板的**整体旋转**（滑块/输入框增量）、复位本页版面（对当前页或
+  选中槽位做版面变换）、**删除选中图片**（2026-09-30 用户定：选中哪张
+  就能删哪张，页保留、图回未选择列表）；
+- 状态行（当前页 / 选中槽位 / 拼版是否生效 / 单图页显隐「新增图片」）；
+- **后台防抖合成**（``stages/imposition/``，列表顺序即页序）与生成 PDF 前
+  的同步兜底合成。
+
+只通过 ``self`` 依赖共享基元（``imposition.ImpositionBaseMixin``）与宿主
+页面（``store``、``log_view``、``run_worker``、``_toast``），本文件
+**不 import** 其它拼版控制器模块。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| COMPOSE_DEBOUNCE_MS | `500` |
+| EDIT_COMMIT_DEBOUNCE_MS | `250` |
+
+### `class ImpositionLayoutMixin`
+
+拼版版面操作（模块二）：旋转/复位、版面落盘、防抖后台合成。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `close_imposition_zoom_popup() -> None` | 关掉拼版预览弹窗（内容失效时调：切任务等）。 |
+
+---
+
+## `desktop.pages.taskdetail.imposition_pages`
+
+源码：[`desktop/pages/taskdetail/imposition_pages.py`](../../desktop/pages/taskdetail/imposition_pages.py)
+
+**模块一「选择拼版」控制器**：拼版页的增删与选择状态。
+
+对应 UI 模块一（``desktop/components/imposition/page_list.py`` +
+``picker.py``）与右侧面板的页管理按钮（``panel.py``）：
+- 启用/取消拼版（决定第四步取图来源，落盘到 ``drafts/imposition.json``）；
+- 「选择拼版」→ 弹窗挑两张加一页；或挑一张勾「自动拼版」批量加页；
+  弹窗里还能「删除图片」（黑名单 ``removed`` 字段，软删除）与恢复；
+- **单图页「新增图片」**（2026-09-30）：append 模式弹窗挑 1 张并进当前页；
+- 删页入口只剩**左列**：「✕」释放单页 / 勾选悬浮框批量删除 / 清空全部
+  ——右侧面板的「删除本页拼版」按钮已删（2026-09-30 用户定）；
+  页序在左列**拖动排序**，翻页在画布下方「上一页/下一页」。
+
+只通过 ``self`` 依赖共享基元（``imposition.ImpositionBaseMixin`` 提供的
+``_imposition_doc`` / ``_save_imposition_pages`` / ``imposition_active`` /
+``_refresh_print_source`` / ``_update_imposition_status`` 等）与宿主页面
+（``step_bar``、``log_view``、``_toast``），本文件**不 import** 其它拼版
+控制器模块——两个模块的 agent 可以互不影响地改。
+
+### `class ImpositionPagesMixin`
+
+拼版页管理（模块一）：启用开关、加页、删页、清空。
+
+---
+
 ## `desktop.pages.taskdetail.manifest`
 
 源码：[`desktop/pages/taskdetail/manifest.py`](../../desktop/pages/taskdetail/manifest.py)
@@ -1953,8 +2940,11 @@ manifest 插入锚点；文件缺失时查看器行号与清单下标会错位�
 - runner.StageRunnerMixin    阶段执行（worker 子进程编排）
 - detect.DetectMixin         detect 检测控制
 - rembg_live.RembgLiveMixin  第三步改参数/翻页时只重算当前页的实时预览
+- imposition.ImpositionMixin 流程条「图片拼版」可选节点
+  （共享基元 imposition.py + 模块一 imposition_pages.py「选择拼版」
+  + 模块二 imposition_layout.py「拼版操作」）
 
-### `class TaskDetailPage(StageRunnerMixin, SubmitMixin, RembgLiveMixin, PrintListMixin, ParamDraftMixin, HistoryMixin, DetectMixin, PageListMixin, DetailViewMixin, QWidget, WorkerHost)`
+### `class TaskDetailPage(StageRunnerMixin, SubmitMixin, RembgLiveMixin, PrintListMixin, ParamDraftMixin, HistoryMixin, DetectMixin, ImpositionMixin, PageListMixin, DetailViewMixin, QWidget, WorkerHost)`
 
 任务详情页：由多个 Mixin 组合，固定四阶段流程。
 
@@ -1967,7 +2957,7 @@ manifest 插入锚点；文件缺失时查看器行号与清单下标会错位�
 | --- | --- |
 | `__init__(store, parent=None)` | 初始化详情页：建 worker 宿主、清运行态并组装 UI。 |
 | `set_task(task_id: str) -> bool` | 切换当前任务：复位所有阶段面板与运行态，避免跨任务泄漏。 |
-| `current_stage() -> str` | 返回当前所处阶段的 key（extract/detect/rembg/print）。 |
+| `current_stage() -> str` | 返回当前所处阶段的 key（extract/detect/rembg/print/imposition）。 |
 | `navigate_by_arrow(forward: bool) -> bool` | 方向键切换当前步骤的页面（主窗口 ←/→ 转发入口）。 |
 | `keyPressEvent(event) -> None` | ←/→ 切换当前步骤的页面（焦点链不消费时兜底到达这里）。 |
 | `closeEvent(event) -> None` | 关闭页面时杀掉并等待 worker/detect 子进程，并关停所有后台线程。 |
@@ -1991,9 +2981,12 @@ detect 缓存/运行态引用并刷新清单与预览；防止参数或 run_id �
 
 ##### `current_stage() -> str`
 
-返回当前所处阶段的 key（extract/detect/rembg/print）。
+返回当前所处阶段的 key（extract/detect/rembg/print/imposition）。
 
 以步骤条高亮下标映射到 STAGES 序列；下标为负时按 0 兜底处理。
+「图片拼版」是**伪步骤**（下标 = IMPOSITION_INDEX），返回它的专用 key：
+调用方凡是拿这个 key 去 STAGES/STAGE_LABELS/runs 里查的，都必须先
+挡掉（见 _refresh_stage_views / _apply_control_width 等处的守卫）。
 
 ##### `navigate_by_arrow(forward: bool) -> bool`
 
@@ -2018,13 +3011,14 @@ detect 缓存/运行态引用并刷新清单与预览；防止参数或 run_id �
 
 把各处"未提交的界面改动"补发/落盘（关窗口、切步骤、切页前都要调）。
 
-目前是第四步的版面画布：拖动中不落盘，只在松手/补发时提交。
+目前是第四步的版面画布与拼版画布：拖动中不落盘，只在松手/补发时提交。
 
 ⚠️ **只按具体的类 `findChildren`，绝不用 `getattr(widget, ...)` 探测能力**：
 四个阶段面板是 `LazyPanelHost`，属性转发（`__getattr__`）会**立刻把面板
 构造出来**——那就把用户要求的「不进去就不建」破坏掉了。（2026-09-26 自己
 踩到：写成 `getattr(w, "flush_pending", None)` 之后，`detail_prewarm`
 护栏直接红成"四个面板全建"。）
+⚠️ 拼版画布是**直接构造**的（不在 LazyPanelHost 里），按类查安全。
 
 ##### `shutdown_all_workers() -> None`
 
@@ -2144,6 +3138,9 @@ control_stack、stage_* 控件、log_view、process/run_id 等。
 
 守卫由 :meth:`TaskDetailPage._acquire_run` 提供（受理标记 + 防抖窗口）；
 真正干活的是 :meth:`_run_stage_unchecked`。
+
+⚠️ 「图片拼版」伪步骤没有可执行内容（占位详情页，执行按钮组处于
+隐藏态）；这里再挡一道，防自动化/快捷路径绕过可见性直接触发。
 
 ##### `cancel_stage() -> None`
 
@@ -2385,6 +3382,200 @@ parent 一般为 MainWindow；会创建 store 引用与导入按钮状态占位�
 
 ---
 
+## `desktop.services.imposition`
+
+源码：[`desktop/services/imposition.py`](../../desktop/services/imposition.py)
+
+图片拼版的派生与合成规则（纯函数 + PIL，无 Qt 依赖，便于独立测试）。
+
+一句话职责：**把每页的两张源图按版面摆到白底上，落成 ``stages/imposition``
+里的成品页图**，供第四步「生成 PDF」当整页图片直接用。
+
+三件事在这里定死（别在别处再写一份）：
+
+1. **槽位约定**：一页拼版恒两项，``items[0]`` = **右槽**、``items[1]`` = **左槽**。
+   用户口径「序号排前面的在右侧、序号大的在左侧」——所以按源清单顺序取两张
+   （序号小的在前）时，序号小的进右槽。
+2. **坐标口径**：``rect`` 是**源图像素**，左上原点、x 向右、y 向下；
+   ``rotation`` 是**顺时针角度**（Qt 口径；PIL 侧取负），绕该项 ``rect`` 的中心。
+3. **没有"纸张"**（用户 2026-09-30：「这个拼版不需要设置纸张，只需要背景是白色的
+   就行，后续提交的时候根据图片的四个区域合并出一张图片」）：版面只有白底，
+   图可以随意移动/拉伸；**产出图 = 所有图外接框的紧裁**（``page_bounds`` →
+   ``compose_page``），所以加多少留白、挪多远，用户自己说了算。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| ITEMS_PER_PAGE | `2` |
+| FILE_FMT | `"{:04d}.png"` |
+| _CN_DIGITS | `"零一二三四五六七八九"` |
+| SOURCE_LEFT | `"left"` |
+| SOURCE_RIGHT | `"right"` |
+| SOURCE_FULL | `"full"` |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `normalize_page(page) -> dict \| None` | 把任意来源的一页拼版收敛成合法形状；不可修复时返回 None。 |
+| `normalize_doc(doc) -> dict` | 整份文档收敛：``{"enabled", "pages", "removed"}``（永不为 None）。 |
+| `cn_page_label(index: int) -> str` | 页序（0 起）→ 中文页码标签：``第一页`` / ``第十二页`` / ``第100页``。 |
+| `image_size(path) -> tuple[int, int]` | 图片像素尺寸（读文件头，不解码整图）；读不到返回 (0, 0)。 |
+| `used_source_files(doc: dict) -> set[str]` | 已被任何一页拼版引用的源图（用于算「剩余未被选择拼版的图片」）。 |
+| `remaining_files(files: list, doc: dict) -> list` | 源清单里**还没被任何拼版页用过、也没被删除**的图片（顺序沿用源清单）。 |
+| `removed_source_files(doc: dict) -> set[str]` | 被用户「删除图片」移出选择范围的源图路径集合（软删除黑名单）。 |
+| `excluded_files(files: list, doc: dict) -> list` | 源清单里被删除的图（**按源清单顺序**）——给弹窗的「已删除」视图展示。 |
+| `page_source_stems(page: dict) -> list[str]` | 一页拼版两张源图的名字（去扩展名），按槽位顺序（右、左）。 |
+| `default_items(files: list) -> list[dict] \| None` | 两张源图 → **默认并排版面**（各按原始像素，不改动用户的图）。 |
+| `make_page(sources: list) -> dict \| None` | 按**源清单顺序**取两张图造一页拼版版面。 |
+| `single_items(file) -> list[dict] \| None` | 一张源图 → **单图版面**（整幅图 / 落单图专用：原始像素、不旋转）。 |
+| `make_single_page(file) -> dict \| None` | 一张源图**自成一页**（整幅不拼、落单）：版面里只有一项。 |
+| `append_item_to_page(items: list[dict], file) -> list[dict] \| None` | 单图页「新增图片」：把 ``file`` 并进当前页，返回**新的 items**。 |
+| `classify_source(path) -> str` | 源图形态：左半幅 / 右半幅 / 整幅（**判据唯一处：文件名后缀**）。 |
+| `source_page_number(path) -> int \| None` | 源图**页号**：文件名开头的连续数字（``3-r`` → 3、``004-l`` → 4）。 |
+| `auto_impose_pages(files: list) -> list[dict]` | 自动拼版（用户 2026-09-30 规则，**唯一实现**）： |
+| `page_bounds(page: dict) -> tuple[float, float, float, float]` | 一页的**内容范围**：所有图外接框的并集（用户说的「图片的四个区域」）。 |
+| `compose_page(page: dict)` | 一页拼版 → PIL RGB 图：**白底 + 所有图外接框的紧裁**。 |
+| `compose_doc(doc: dict, dest_dir) -> list[Path]` | 把整份拼版文档落成 ``dest_dir/0001.png`` …（列表顺序即页序）。 |
+
+#### `normalize_page(page) -> dict | None`
+
+把任意来源的一页拼版收敛成合法形状；不可修复时返回 None。
+
+⚠️ 校验必须严：``rect`` 会直接喂给合成函数当落点，坏值（缺字段、0 宽、
+非数字）会让合成抛异常或产出空图，而这份文档在用户的文档目录里、可被
+外部编辑写坏。
+
+⚠️ 老版本存过 ``"sheet": [w, h]``（有纸张的时代）。现在**忽略它**：
+版面以两张图为准，纸张已经不存在了，读老任务照样能合成。
+
+#### `normalize_doc(doc) -> dict`
+
+整份文档收敛：``{"enabled", "pages", "removed"}``（永不为 None）。
+
+``removed`` 是**黑名单**（用户在「选择拼版」弹窗里删掉的图，软删除——
+文件不动，只是不再进入候选范围）。存字符串路径列表，去重保序；
+读老任务没有这个键时为空列表。
+
+#### `cn_page_label(index: int) -> str`
+
+页序（0 起）→ 中文页码标签：``第一页`` / ``第十二页`` / ``第100页``。
+
+只覆盖 1~99 的中文写法（古籍拼版页数够用），超出退回阿拉伯数字——
+这里只是**界面文案**，不参与任何匹配，宁可难看也不要写错数字。
+
+#### `remaining_files(files: list, doc: dict) -> list`
+
+源清单里**还没被任何拼版页用过、也没被删除**的图片（顺序沿用源清单）。
+
+「删除」是黑名单（``removed``，弹窗里用户主动移出选择范围的图），
+不是删文件——恢复后重新回到候选范围。
+
+#### `default_items(files: list) -> list[dict] | None`
+
+两张源图 → **默认并排版面**（各按原始像素，不改动用户的图）。
+
+``files`` 顺序即槽位顺序 ``[右槽, 左槽]``：左槽贴 x=0，右槽紧挨在它右边，
+两者顶部对齐。古籍一页的两半通常同尺寸，摆出来就是标准对开。
+
+尺寸读不到 / 少于两张时返回 None（调用方负责提示）。
+
+#### `make_page(sources: list) -> dict | None`
+
+按**源清单顺序**取两张图造一页拼版版面。
+
+``sources`` 顺序即源清单顺序（序号小在前）；本函数把 ``sources[0]``
+放进**右槽**、``sources[1]`` 放进**左槽**——这就是用户的口径
+「序号排前面的在右侧，序号大的在左侧」。版面本身见 ``default_items``。
+
+#### `single_items(file) -> list[dict] | None`
+
+一张源图 → **单图版面**（整幅图 / 落单图专用：原始像素、不旋转）。
+
+尺寸读不到返回 None（调用方负责跳过 / 提示）。
+
+#### `append_item_to_page(items: list[dict], file) -> list[dict] | None`
+
+单图页「新增图片」：把 ``file`` 并进当前页，返回**新的 items**。
+
+槽位与摆放口径（用户 2026-09-30：单图页可以再导一张图拼成对页）：
+
+- 原图是**左半幅**（文件名 ``-l``/``_l`` 结尾）→ 新图进**右槽**
+  （``items[0]``），摆在原图**右边**；
+- 其余（右半幅 / 整幅 / 无后缀）→ 新图进**左槽**（``items[1]``），
+  摆在原图**左边**；
+- 新图按**原始像素**进版面、顶边与原图对齐、紧贴原图边缘（用户可再
+  拖动/缩放）；原图的版面（位置/大小/旋转）**原样保留**，不重排。
+
+``items`` 不是恰好一项（只有单图页能加图）或尺寸读不到时返回 None，
+调用方负责提示。
+
+#### `classify_source(path) -> str`
+
+源图形态：左半幅 / 右半幅 / 整幅（**判据唯一处：文件名后缀**）。
+
+自动拼版只能靠文件名认图——拼版侧读不到检测框，而第三步的落盘口径是
+半幅页 ``<页号>-l`` / ``<页号>-r``、整幅页 ``<页号>``（见
+``functions/text_region._area1_outputs`` 与单图输出）。
+
+#### `source_page_number(path) -> int | None`
+
+源图**页号**：文件名开头的连续数字（``3-r`` → 3、``004-l`` → 4）。
+
+「不连续的图片不可以合并在一页」的判据。文件名不带数字前缀的图
+（如 ``cover``）返回 None——永不参与配对，只能单独成页。
+
+#### `auto_impose_pages(files: list) -> list[dict]`
+
+自动拼版（用户 2026-09-30 规则，**唯一实现**）：
+
+1. **默认两张半栏拼一页**：配对必须是「前一个左半幅 + 当前右半幅」
+   （序号在前的进右槽，与手动配对口径一致）。例：``3-r, 3-l, 4-r,
+   4-l, 5-r`` 从 ``3-l`` 起 → ``(3-l, 4-r)、(4-l, 5-r)``；从 ``3-r``
+   起 → ``[3-r]、(3-l, 4-r)、(4-l, 5-r)``（首位右半幅前面没有左半幅，
+   单独一页）；
+2. **页号必须连续**：不连续的图片不可以合并在一页——``3-l`` 之后隔着
+   已用掉的 4 直接来 ``5-r``，则 ``3-l`` 单独一页、``5-r`` 重新开始；
+   文件名无数字前缀的图永不配对；
+3. **整幅(fullcontent)标注的图单独一页**，不与任何图配对；等配对的
+   上一张因此落单、也单独一页；整幅之后拼版重新开始；末尾落单的
+   左半幅同样单独一页。
+
+遍历按源清单顺序（``pdf_custom_sort_key``：同页号 r 在前），产出的
+页清单顺序即 PDF 页序。尺寸读不到的图跳过（不产出残页）。
+
+#### `page_bounds(page: dict) -> tuple[float, float, float, float]`
+
+一页的**内容范围**：所有图外接框的并集（用户说的「图片的四个区域」）。
+
+没有纸张概念之后，产出图就是这块范围的紧裁——所以用户把图挪远/拉大，
+产出就跟着变大，不会被裁掉。
+
+#### `compose_page(page: dict)`
+
+一页拼版 → PIL RGB 图：**白底 + 所有图外接框的紧裁**。
+
+⚠️ 旋转方向必须与画布一致：``rotation`` 按 **Qt 顺时针**口径存，
+PIL ``rotate`` 是**逆时针**，所以这里取负。两边口径写反的话，画布上
+转 90°、落盘却反向 90°，用户会看到"生成的 PDF 和图里不一样"。
+
+留白处为白：去底图的透明在此压到白底上（与 ``functions.print`` 加载图片
+时的压平规则一致）。
+
+#### `compose_doc(doc: dict, dest_dir) -> list[Path]`
+
+把整份拼版文档落成 ``dest_dir/0001.png`` …（列表顺序即页序）。
+
+返回写出的文件列表（顺序与页序一致）。**多余的旧文件会被清掉**——否则
+用户删掉一页后，上一轮多出来的 ``0007.png`` 还会被第四步当成一页打进 PDF。
+只清理本函数自己命名形态的文件（``\d{4}.png``），不碰目录里的别的东西。
+
+单页合成失败时跳过该页（不写文件），其余页照常。任务目录不存在时
+（任务被删）直接返回空列表。
+
+---
+
 ## `desktop.services.print_plan`
 
 源码：[`desktop/services/print_plan.py`](../../desktop/services/print_plan.py)
@@ -2405,6 +3596,7 @@ parent 一般为 MainWindow；会创建 store 引用与导入按钮状态占位�
 | `plan_rembg_submit_entries(manifest_paths: list[Path], result_path_for, boxes_for, area: int) -> list[dict]` | 预览结果 + 检测框 + area/border → 最终图片条目。 |
 | `entry_to_effect_spec(entry: dict, border) -> dict` | 提交条目 → worker 效果合成规格（run_print_stage/run_rembg_submit_stage 用）。 |
 | `plan_print_effects(list_entries: list[dict], composed: list[dict], rembg_dir: Path, submitted_labels: set[str], border) -> list[dict]` | 第四步列表 + 第三步当前 area/border → worker 合成规格。 |
+| `drop_foreign_stage_pages(pages: list[dict] \| None, source_dir: Path, stages_root: Path) -> list[dict]` | 从待打印清单里剔除「属于本任务**别的阶段**产物」的条目。 |
 | `plan_print_entries(rembg_files: list[Path], doc: dict \| None) -> tuple[list[dict], dict]` | 第四步待打印图片列表的规划。 |
 
 #### `missing_extract_pages_spec(output_dir: Path, total: int) -> str | None`
@@ -2427,8 +3619,11 @@ area             : 区域模式（1=左右分页，2/3=并集/对称画布）
 
 派生规则与 rembg 预览条目、print 待打印列表完全一致：
 - area=1 双框：拆 <页>-r / <页>-l 两条（古籍阅读顺序 r 在前）；
+- area=1 半幅漏检一侧：单条也保留左右身份（<页>-l / <页>-r，按缺失侧
+  所在槽位判定）——否则产物叫 <页>.png，第四步拼版按文件名后缀判
+  左右半幅时会把这页误当整幅（用户 2026-10-01 报）；
 - area=2/3 双框：合成一条（不再分栏）；
-- 单框：area=2/3 走对称画布，其余按普通框；
+- 单框：area=2/3 走对称画布（整页形态，不带后缀），其余按普通框；
 - 无框：整页预览图透传。
 最终按 CLI natural sort 排序（同页 r 在 l 前）。
 
@@ -2473,6 +3668,21 @@ area=4 保留整页内容、area 1/2/3 统一按合并语义走单框布局（�
   这样本步的删除/排序在参数变化后依然生效；
 - 用户插入的外部图片（不在 stages/rembg 目录）整图透传；
 - 兜底补漏：当前派生集合里、列表与已提交产物都没有的条目才补在末尾。
+
+#### `drop_foreign_stage_pages(pages: list[dict] | None, source_dir: Path, stages_root: Path) -> list[dict]`
+
+从待打印清单里剔除「属于本任务**别的阶段**产物」的条目。
+
+⚠️ 为什么必须剔（2026-09-30 引入「图片拼版」时暴露）：``plan_print_entries``
+的规则是「不在当前来源目录里的条目 = 用户手动插入的外部图片，原样保留」。
+可第四步的来源会**切换**——拼版生效时用 ``stages/imposition``，否则用
+``stages/rembg``。切过去之后，原先那一批还留在 ``print.json`` 里、又不在
+新来源目录下，就会被当成"用户插入的图"**追加到列表末尾**：生成 PDF 时
+新旧两套整页全打进去（实测 2 页拼版 + 4 页去底色 = 6 页）。
+
+判据写死在"路径是否落在本任务的 ``stages/`` 下"：同任务其它阶段的产物
+永远是**上一轮来源**的残留，绝不可能是用户从磁盘上手动挑来的外部图片。
+真正的外部图片（桌面/下载目录…）一律保留。
 
 #### `plan_print_entries(rembg_files: list[Path], doc: dict | None) -> tuple[list[dict], dict]`
 
@@ -2862,6 +4072,10 @@ args["_effects"] = [
 
 rembg_submit 阶段执行器：把「生成预览」产出的整页去底图合成为最终交付图片。
 
+产物一律是**白底透明**的 PNG（规则与编码形态的唯一实现在
+``utils/transparent_png.py``）：用户 2026-09-30 定的「无论 type 是什么，
+提交产物都把黑字白底里的白底改成透明」。
+
 ### 模块函数
 
 | 函数 | 说明 |
@@ -2972,6 +4186,63 @@ boxes.json / sizes.json 读写。
 
 任务目录已删除时跳过（与 ``save_pages`` 同规矩：不把已删任务重新
 创建出来）；``params`` 为空则视为"没有可暂存的内容"，返回 False。
+
+---
+
+## `desktop.store.imposition`
+
+源码：[`desktop/store/imposition.py`](../../desktop/store/imposition.py)
+
+图片拼版文档（``drafts/imposition.json``）：选择态 + 逐页拼版版面。
+
+为什么放在 ``drafts/`` 而不是任务根目录：这个文件从「图片拼版」占位节点
+时代就在那里（当时只有 ``{"enabled": bool}``），换位置会让老任务的选择态
+凭空丢失。现在扩成一句话能读完的形状：
+
+    {
+      "enabled": true,                      # 是否把拼版接进流程（第四步取图开关）
+      "pages": [                            # 拼版清单，列表顺序即产出页序
+        {
+          "items": [                        # 恒 2 项：0=右槽（序号在前），1=左槽
+            {"file": "...", "rect": [x, y, w, h], "rotation": 0.0},
+            {"file": "...", "rect": [x, y, w, h], "rotation": 0.0}
+          ]
+        }
+      ]
+    }
+
+``rect`` 的单位是**源图像素**（左上原点、x 向右、y 向下）。``rotation`` 是
+**顺时针角度**（与 Qt ``QPainter.rotate`` 同向；PIL 侧取负）。
+
+⚠️ **没有 ``sheet``**（用户 2026-09-30：「拼版不需要设置纸张，只需要背景是
+白色的就行，后续提交的时候根据图片的四个区域合并出一张图片」）：早期版本存过
+``"sheet": [w, h]``，现在读进来**直接忽略**——版面完全以两张图为准，产出图按
+所有图的外接框紧裁（``services.imposition.page_bounds``）。
+
+形状校验与合成规则都在 ``desktop.services.imposition``（**唯一实现处**）——
+这里只负责「按任务目录读写这份 JSON」，读出来的东西一律过一遍
+``normalize_doc``，调用点不用判空、不用自己验字段。
+
+⚠️ 只做「读—写」，不碰 Qt。
+
+### `class ImpositionMixin`
+
+``drafts/imposition.json`` 的读写。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `imposition_doc_path(task_id: str) -> Path` | 拼版文档：``tasks/<任务号>/drafts/imposition.json``。 |
+| `load_imposition_doc(task_id: str) -> dict` | 读拼版文档（缺失/损坏一律回落成空文档，调用点不用判空）。 |
+| `save_imposition_doc(task_id: str, doc: dict) -> bool` | 写拼版文档，返回是否真的写了。 |
+
+##### `save_imposition_doc(task_id: str, doc: dict) -> bool`
+
+写拼版文档，返回是否真的写了。
+
+任务目录已删除时跳过（与 ``save_pages`` 同规矩：不把已删任务重新
+创建出来）。
 
 ---
 
@@ -3128,13 +4399,16 @@ error 为失败原因（退出码 / worker 的最后一行错误 / "子进程启
 
 TaskStore：任务、阶段、页面标注的统一文件存储入口。
 
-### `class TaskStore(TaskMixin, RunMixin, PageManifestMixin, AnnotationMixin, DraftMixin)`
+### `class TaskStore(TaskMixin, RunMixin, PageManifestMixin, AnnotationMixin, DraftMixin, ImpositionMixin, UIStateMixin)`
 
-唯一数据入口：组合任务/运行/页面/标注/暂存五个 Mixin，统一读写文件存储。
+唯一数据入口：组合任务/运行/页面/标注/暂存/拼版/界面状态七个 Mixin，
+统一读写文件存储。
 
 数据根目录下含 tasks/（每任务一子目录）及各 JSON 清单
 （tasks.json/runs.json/boxes.json/sizes.json/pages.json/print.json）；
-每任务目录下另有 drafts/<阶段>.json（用户改过但未执行的参数暂存）。
+每任务目录下另有 drafts/<阶段>.json（用户改过但未执行的参数暂存）、
+drafts/imposition.json（图片拼版的选择态 + 逐页版面）与 ui.json
+（上次停留的步骤，用于再次打开任务时回到那一步）。
 
 #### 方法
 
@@ -3158,6 +4432,13 @@ JSON 文件，没有旧数据（SQLite）需要迁移。
 
 任务索引（tasks.json）与任务目录布局。
 
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| IMPOSITION_STAGE | `"imposition"` |
+| IMPOSITION_LABEL | `"图片拼版"` |
+
 ### `class TaskMixin`
 
 任务索引读写与任务目录/阶段输出目录的路径推导。
@@ -3177,6 +4458,7 @@ JSON 文件，没有旧数据（SQLite）需要迁移。
 | `extract_output_dir(task_id: str) -> Path` | 提取图片直接位于 stages/extract（无 PDF 名/嵌套子目录）。 |
 | `rembg_output_dir(task_id: str) -> Path` | 步骤三最终图片目录（「提交本次任务」产出，print 阶段从此取图）。 |
 | `rembg_preview_output_dir(task_id: str) -> Path` | 「生成预览」产出的整页去底预览图目录（中间产物，不参与 print）。 |
+| `imposition_output_dir(task_id: str) -> Path` | 「图片拼版」产出的成品拼版页图目录（列表顺序即页序）。 |
 | `print_output_pdf(task_id: str) -> Path` | print 阶段产物 print.pdf 的完整路径。 |
 | `stage_output_dir(task_id: str, stage: str) -> Path` | 返回某阶段（GUI）应写入的输出目录。 |
 | `workset_dir(task_id: str) -> Path` | 已废弃：检测/去底直接读 extract 输出目录，不再物化输入副本。 |
@@ -3222,6 +4504,13 @@ JSON 文件，没有旧数据（SQLite）需要迁移。
 外部编辑或别的工具写坏，一旦出现 `"id": "..\..\somewhere"` 就会
 **越界删除任务目录之外的东西**。这里只认 `create_task` 生成的形状。
 
+##### `imposition_output_dir(task_id: str) -> Path`
+
+「图片拼版」产出的成品拼版页图目录（列表顺序即页序）。
+
+拼版节点**生效**时（选择态为真且有拼版页），第四步「生成 PDF」与它的
+待打印列表一律从这里取图；否则仍从 ``rembg_output_dir`` 取。
+
 ##### `stage_output_dir(task_id: str, stage: str) -> Path`
 
 返回某阶段（GUI）应写入的输出目录。
@@ -3263,6 +4552,196 @@ rembg 最终目录；print 返回 print.pdf 所在目录。
 
 老任务（导入时复制失败）或备份被误删时靠它自愈；源也一起没了就
 返回 None，调用方负责提示。
+
+---
+
+## `desktop.store.ui_state`
+
+源码：[`desktop/store/ui_state.py`](../../desktop/store/ui_state.py)
+
+界面状态（``ui.json``）：与"用户上次看到哪"有关的小状态，分两层记。
+
+**任务级**——``tasks/<任务号>/ui.json``（删除任务即清掉）：
+
+    {"last_stage": "rembg"}      # 上次在这个任务里停留的步骤 key
+
+**为什么记 key 而不是下标**：流程里的步骤会增减（「图片拼版」虚线节点就是
+条件出现的可选步骤），下标一旦错位就会把用户送到**另一个**步骤去；key 是按
+语义匹配的，步骤没了自然"匹配不上"，调用方据此回落第一步。
+
+key 取自 ``desktop.store.tasks``：``STAGES`` 里的一项，或伪步骤
+``IMPOSITION_STAGE``（"imposition"）。
+
+**全局**——数据根目录下的 ``ui.json``（跨任务共享，只一项）：
+
+    {"last_task": "0012", "source_hash": "…"}
+
+程序重启后靠它找到"上次待的那个任务"，再由该任务自己的 ``last_stage``
+落到具体步骤——两层记录各管一半。``source_hash`` 是防撞号的：任务号
+**顺序复用**（删掉 0012 再新建，新任务也叫 0012），指纹对不上说明这个号
+已经是别的任务，恢复时当"任务不存在"处理。
+
+⚠️ 只做「读—写」，不碰 Qt。
+
+### `class UIStateMixin`
+
+``ui.json`` 的读写（任务级 + 全局）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `app_ui_path() -> Path` | 全局界面状态文件：数据根目录下的 ``ui.json``（跨任务共享）。 |
+| `load_last_task() -> dict \| None` | 上次停留的任务记录 ``{"id":…, "source_hash":…}``；没有/写坏返回 None。 |
+| `save_last_task(task_id: str) -> bool` | 记录「上次停留的任务」，程序重启后直接回到这里。 |
+| `ui_state_path(task_id: str) -> Path` | 任务界面状态文件：``tasks/<任务号>/ui.json``。 |
+| `load_last_stage(task_id: str) -> str \| None` | 上次停留的步骤 key；没有记录/格式不对返回 None。 |
+| `save_last_stage(task_id: str, stage: str) -> bool` | 记录上次停留的步骤 key，返回是否真的写了。 |
+
+##### `load_last_task() -> dict | None`
+
+上次停留的任务记录 ``{"id":…, "source_hash":…}``；没有/写坏返回 None。
+
+恢复方拿到后**必须**用 ``get_task`` + 指纹比对确认"这个号还是当初
+那个任务"（见模块注释的防撞号说明），不能只看 id 就往里跳。
+
+##### `save_last_task(task_id: str) -> bool`
+
+记录「上次停留的任务」，程序重启后直接回到这里。
+
+只在任务真实存在时写（不给不存在的任务留指针）；指纹一并入库，
+见 :meth:`load_last_task`。
+
+##### `save_last_stage(task_id: str, stage: str) -> bool`
+
+记录上次停留的步骤 key，返回是否真的写了。
+
+任务目录已删除时跳过（与 ``save_pages``/``save_imposition_doc``
+同一条规矩：不把已删任务重新创建出来）。文件里只覆盖 ``last_stage``
+一项，将来加别的界面状态互不影响。
+
+---
+
+## `desktop.ui.color_picker`
+
+源码：[`desktop/ui/color_picker.py`](../../desktop/ui/color_picker.py)
+
+文字颜色选择器：触发器按钮 + 弹出面板（内置常用色块 + 完整取色）。
+
+用户 2026-10-01 定的三件事（图片编辑 → 文字工具）：
+
+1. **常用色块搬进面板里**——原来 6 个色块散在选项行上，既挤、又和"颜色"这个
+   概念分了家；现在统一收进选择器，选项行只留一个颜色按钮；
+2. 选择器要**好看**：当前色预览、饱和度/明度方块、色相条、常用色、十六进制
+   输入，全部走 ``desktop.ui.theme`` 的令牌，跟其它界面同一套配色；
+3. 任意色仍要能取（色相/明度方块 + 十六进制可输入）。
+
+为什么不用 qfluentwidgets 的 ``ColorPickerButton``
+--------------------------------------------------
+- 它把常用色块留在**外面**（本需求正是要收进去）；
+- 它开的是 488×696 的遮罩大对话框 ``ColorDialog``，而且本应用**不加载 .qm
+  翻译**，里面全是英文 ``OK`` / ``Cancel`` / ``Edit Color``，与全中文界面不搭。
+
+⚠️ 面板里所有可点控件都是 ``NoFocus``：选项行一旦抢走键盘焦点，画布上正在
+就地编辑的文字块就丢焦点、光标消失（用户 2026-10-01 报的"字号不生效"根因
+就是焦点被抢）。触发器在面板关闭时补发 ``panelClosed``，宿主据此把焦点还给
+文字块，接着打字不中断。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| SWATCH_SIZE | `30` |
+| PANEL_WIDTH | `268` |
+
+### `class SwatchButton(QAbstractButton)`
+
+面板里的预设色块：圆角方块，悬停描边、选中打勾。
+
+底色描边是必需的：白粉/浅色块压在白色面板上，没有描边就"不存在"。
+打勾颜色按底色明度自适应（亮底用墨色、暗底用白色），任何色都看得清。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(color: QColor, name: str='', parent=None)` | — |
+| `color() -> QColor` | 这个色块代表的颜色。 |
+| `is_selected() -> bool` | 当前是否被标为"选中的那一个"。 |
+| `set_selected(selected: bool) -> None` | — |
+| `enterEvent(event) -> None` | Qt 事件覆写：鼠标移入时进入高亮态。 |
+| `leaveEvent(event) -> None` | Qt 事件覆写：鼠标移出时恢复常态。 |
+| `paintEvent(event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
+
+### `class ColorArea(QWidget)`
+
+饱和度 / 明度方块：横轴 = 饱和度（左灰右艳），纵轴 = 明度（上亮下暗）。
+
+底色用**三层渐变**叠出来（纯色相 → 白到透明 → 透明到黑），而不是逐像素
+算 HSV：200×120 的方块逐像素在 Python 里要几十毫秒，拖动色相条时会卡。
+渐变结果按 (尺寸, 色相) 缓存，拖动游标时一次都不用重画。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(parent=None)` | — |
+| `set_hsv(hue: float, sat: float, val: float) -> None` | 程序化同步（不发 ``picked``）。 |
+| `paintEvent(event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
+| `mousePressEvent(event) -> None` | Qt 事件覆写：按下（选中 / 开始拖拽或绘制）。 |
+| `mouseMoveEvent(event) -> None` | Qt 事件覆写：移动（拖拽 / 缩放中的实时更新）。 |
+
+### `class HueBar(QWidget)`
+
+色相条：0~359 的彩虹渐变，拖动/点击改色相。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(parent=None)` | — |
+| `set_hue(hue: float) -> None` | 程序化同步（不发 ``picked``）。 |
+| `paintEvent(event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
+| `mousePressEvent(event) -> None` | Qt 事件覆写：按下（选中 / 开始拖拽或绘制）。 |
+| `mouseMoveEvent(event) -> None` | Qt 事件覆写：移动（拖拽 / 缩放中的实时更新）。 |
+
+### `class ColorPickerPopup(QWidget)`
+
+颜色面板（弹出层）：当前色 + 明度/饱和度方块 + 色相条 + 常用色 + 十六进制。
+
+⚠️ 自己开一个 ``Qt.Popup`` 顶层窗口，而不是用 ``RoundMenu``：面板里有可
+输入的 ``QLineEdit``，塞进 QMenu 里键盘事件会被菜单抢走，十六进制根本没法
+敲。``Qt.Popup`` 自带"点外面就关"的语义，正是要的。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(color: QColor, swatches: Iterable=(), parent=None)` | — |
+| `color() -> QColor` | 面板当前颜色。 |
+| `set_color(color: QColor, notify: bool=False) -> None` | 程序化设色（不发 ``colorChanged`` 除非 ``notify``）。 |
+| `hideEvent(event) -> None` | Qt 事件覆写：隐藏时收尾。 |
+
+### `class ColorPickerButton(QAbstractButton)`
+
+文字颜色触发器：色点 + 十六进制 + 下拉箭头；点开弹出颜色面板。
+
+自带绘制（不走 qfluentwidgets 的 ``ColorPickerButton``）：那个是个 96×32
+的纯色块，看不出当前色值，也不带下拉指示。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(color: QColor, swatches: Iterable=(), title: str='文字颜色', parent=None)` | — |
+| `color() -> QColor` | 当前颜色。 |
+| `set_color(color: QColor, notify: bool=False) -> None` | 程序化设色（同步面板，不发信号除非 ``notify``）。 |
+| `popup() -> ColorPickerPopup \| None` | 当前面板（没开过/已销毁则 None）——自测用。 |
+| `sizeHint() -> QSize` | Qt 覆写：建议尺寸。 |
+| `minimumSizeHint() -> QSize` | Qt 覆写：最小建议尺寸。 |
+| `enterEvent(event) -> None` | Qt 事件覆写：鼠标移入时进入高亮态。 |
+| `leaveEvent(event) -> None` | Qt 事件覆写：鼠标移出时恢复常态。 |
+| `paintEvent(event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
 
 ---
 
@@ -3344,7 +4823,7 @@ rembg 最终目录；print 返回 print.pdf 所在目录。
 
 源码：[`desktop/ui/fonts.py`](../../desktop/ui/fonts.py)
 
-界面字体：统一的字体族解析与构造。
+界面字体：统一的字体族解析与构造，以及「文字工具」的可选字体清单。
 
 从 `desktop/ui/widgets.py` 拆出（见 docs/dev/refactor-modularity.md §3.B）。
 `ui_font` 跟「控件」没什么关系，却被日志面板、分段开关等多处共用；留在
@@ -3355,12 +4834,14 @@ widgets 里会让 `segmented_toggle` 反向 import widgets，形成循环导入�
 | 名称 | 值 |
 | --- | --- |
 | _FONT_FAMILY | `None` |
+| _TEXT_FONTS_CACHE | `None` |
 
 ### 模块函数
 
 | 函数 | 说明 |
 | --- | --- |
 | `ui_font(size: int=T.SIZE_BODY, bold: bool=False) -> QFont` | 统一的界面字体（族名 + 像素字号）。 |
+| `text_font_families(refresh: bool=False) -> list[str]` | 文字工具可选字体：**中文字体在前**，其后是几个常用西文字体。 |
 
 #### `ui_font(size: int=T.SIZE_BODY, bold: bool=False) -> QFont`
 
@@ -3370,6 +4851,17 @@ widgets 里会让 `segmented_toggle` 反向 import widgets，形成循环导入�
 ``apply_app_style`` 给整个应用设置的字体保持一致；否则在没有
 ``Microsoft YaHei UI`` 的机器上，这些控件会各自回退到默认字体，
 和应用其它文字对不上。
+
+#### `text_font_families(refresh: bool=False) -> list[str]`
+
+文字工具可选字体：**中文字体在前**，其后是几个常用西文字体。
+
+⚠️ 离屏（``QT_QPA_PLATFORM=offscreen``）与精简镜像里 ``QFontDatabase``
+可能是空的——此时退回 `utils.fonts` 的候选族名 + 西文常量，保证下拉不空、
+控件可用；真实机器上取到的当然是系统里**实际装了**的字体。
+
+结果缓存：逐个族查 ``writingSystems()`` 在 200+ 字体的机器上要 ~150ms，
+而文字工具每次切换都会重建选项行。装了新字体想立刻看到就传 ``refresh``。
 
 ---
 
@@ -3725,12 +5217,24 @@ QSS 里不会生效；它由 `desktop.components.log_panel.apply_log_view_style`
 | --- | --- |
 | `status_colors(status: str) -> tuple[str, str]` | 状态 → (前景色, 底色)，未知状态按未执行处理。 |
 | `status_label(status: str) -> str` | 状态键 → 中文短标签，未知或空状态回退到"未知"。 |
+| `danger_button_qss(padding: str \| None=None) -> str` | 危险操作按钮（删除）的实例级样式表，各处删除按钮共用这一份。 |
 
 #### `status_label(status: str) -> str`
 
 状态键 → 中文短标签，未知或空状态回退到"未知"。
 
 取值来自 STATUS_LABELS（如 "running"→"执行中"）。
+
+#### `danger_button_qss(padding: str | None=None) -> str`
+
+危险操作按钮（删除）的实例级样式表，各处删除按钮共用这一份。
+
+实例样式表会把 qfluent 自带按钮样式整体顶掉，四个状态必须写全——
+缺哪态哪态就退回默认渲染、没有视觉反馈。
+
+``padding``：给**不定尺寸**的按钮传 qfluent 按钮同款内边距
+（"5px 12px 6px 12px"），高度才会跟旁边 qfluent 按钮一致；
+定尺寸按钮（如任务表格 52×30）不传。
 
 ---
 
@@ -3752,6 +5256,8 @@ QSS 里不会生效；它由 `desktop.components.log_panel.apply_log_view_style`
 | 名称 | 值 |
 | --- | --- |
 | CONTROL_HEIGHT | `33` |
+| HELP_TOOLTIP_WIDTH | `26` |
+| HELP_BUBBLE_WIDTH | `360` |
 
 ### `class Card(QFrame)`
 
@@ -3869,6 +5375,19 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 | `__init__(title: str, subtitle: str='', parent=None)` | 固定高 64px；右侧操作区通过 ``self.actions`` 布局添加按钮。 |
 | `set_subtitle(text: str) -> None` | 设置副标题文案，空串则隐藏副标题行。 |
 | `paintEvent(event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
+
+### `class HelpButton(TransparentToolButton)`
+
+问号帮助按钮：hover 弹 ToolTip 气泡，点击弹/收说明 Flyout。
+
+各阶段面板（``StagePanel``）与「图片拼版」面板的标题旁都用它——
+说明文字不再平铺在标题下方占高度，全部收进这个按钮。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(title: str='', description: str='', parent=None)` | — |
 
 ### 模块函数
 
@@ -4166,6 +5685,54 @@ paths 为目标图片；edge 为缩略图最长边（默认 96）。effects/crop
 
 ---
 
+## `desktop.workers.imposition_worker`
+
+源码：[`desktop/workers/imposition_worker.py`](../../desktop/workers/imposition_worker.py)
+
+后台把图片拼版文档合成为成品页图（写 ``stages/imposition``）。
+
+为什么要后台：版面拖动/删除会频繁触发重合成，而一页拼版要打开两张原图、
+缩放、旋转、alpha 合成再编 PNG——几十页叠起来在主线程做就是明显卡顿。
+合成只用 PIL，不碰 Qt，也没有共享可变状态，天然适合放线程里。
+
+⚠️ 入参 ``doc`` 是**构造时的快照**（调用方先落盘再把文档交进来），worker 期间
+用户又改版面不会写坏文件——最多是这一批略旧，下一批（防抖到期后再跑一轮）
+会覆盖成最新。
+
+### `class ImpositionComposeWorker(QObject)`
+
+把整份拼版文档落成一页一张的成品图（后台线程里跑）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(doc: dict, out_dir)` | doc 为拼版文档；out_dir 为目标目录（stages/imposition）。 |
+| `run() -> None` | 合成全部拼版页；失败只报 failed，由宿主提示并落日志。 |
+
+### `class ImpositionPagePreviewWorker(QObject)`
+
+把**一页拼版**合成内存预览图（后台线程里跑，不落盘）。
+
+给画布双击空白处的「左右组合预览」弹窗用：``page`` 是构造时的**快照**，
+弹窗开着的时候用户继续拖版面不影响已经打开的这一张。信号口径与
+``PreviewWorker`` 一致（``finished(int, QImage, str)`` / ``failed(int, str)``），
+``ImageZoomDialog`` 的接线原样可用。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(page: dict, longest_edge: int=1600)` | ``longest_edge`` 是预览密度上限；**传 0 = 不缩**（全分辨率， |
+| `run() -> None` | PIL 合成（services.imposition.compose_page）→ QImage → 缩到边长。 |
+
+##### `__init__(page: dict, longest_edge: int=1600)`
+
+``longest_edge`` 是预览密度上限；**传 0 = 不缩**（全分辨率，
+右键空白处「编辑图片」用：编辑器要的是与落盘成品同一分辨率的图）。
+
+---
+
 ## `desktop.workers.preview_worker`
 
 源码：[`desktop/workers/preview_worker.py`](../../desktop/workers/preview_worker.py)
@@ -4255,8 +5822,9 @@ compose_region_output 的**纯几何**部分：返回 ``[(画布尺寸, sources)
 
 - area=4：保留框外内容 → 框归一成整页（`utils.box_geometry.whole_page_box`）；
 - area=1/2/3：统一按 **area=3 的合并语义**走单框布局（不拆 ``-l``/``-r``、
-  不做对称镜像）——border 空 → 整页画布写回原位置，给 border → 紧裁
-  「框 + border」。三种 area 因此效果一致。
+  不做对称镜像），几何由 border 决定：给了 border（面板默认 ``"0"``）→
+  紧裁「框 + border」；border 留空（None）→ 整页画布、框写回原位置（框外白）。
+  三种 area 因此效果一致。
 
 调用方通常直接传 ``is_full_content(原始槽位列表)`` 的结果。
 

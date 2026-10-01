@@ -55,6 +55,8 @@ import math
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QImage, QPainter, QPen
 from PySide6.QtWidgets import QWidget
+from qfluentwidgets import Action, RoundMenu
+from qfluentwidgets import FluentIcon as FIF
 
 from desktop.ui import theme as T
 
@@ -115,10 +117,15 @@ class ImpositionCanvas(QWidget):
     items_changed = Signal(list)
     #: 当前选中的图（0 右槽 / 1 左槽 / -1 未选中）
     selection_changed = Signal(int)
-    #: **双击了某张图**（0 右槽 / 1 左槽）：请求预览这张原图
+    #: **双击某张图**（0 右槽 / 1 左槽）：请求预览这张原图
     item_double_clicked = Signal(int)
     #: **双击了图片之外的空白处**：请求预览整页左右组合
     spread_double_clicked = Signal()
+    #: **右键菜单「编辑图片」**（0 右槽 / 1 左槽）：不经预览弹窗，直接编辑
+    #: 这张原图（2026-10-01 用户定：编辑原本是预览弹窗里的按钮，现在右键直达）
+    item_edit_requested = Signal(int)
+    #: **右键菜单在空白处选了「编辑图片」**：直接编辑整页左右组合（成品口径）
+    spread_edit_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -566,6 +573,53 @@ class ImpositionCanvas(QWidget):
         return -1
 
     # ------------------------------------------------------------------ 鼠标
+    def invalidate_image(self, path: str) -> None:
+        """某个源图文件被外部覆盖（编辑器「完成」回写）后：丢掉它的解码
+        缓存并重绘——不丢的话画布会一直显示覆盖前的旧图。
+        """
+        self._images.pop(str(path), None)
+        self.update()
+
+    def contextMenuEvent(self, event) -> None:  # noqa: N802
+        """右键菜单：**预览图片 / 编辑图片**（2026-10-01 用户定）。
+
+        目标规则与双击一致：**图上** → 这张原图；**两图之外的空白** →
+        整页左右组合（成品口径）。预览与双击走**同一组信号**（行为完全
+        一样，只是入口多一个）；编辑是新加的直接入口——原本编辑是预览
+        弹窗工具条里的按钮，现在不经过弹窗、右键直达，由控制器接管。
+        右键即选中（与左键点击同款语义），右侧「当前图片样式」跟着激活。
+        空画布没有菜单（没有可预览/可编辑的东西）。
+        """
+        if not self._items:
+            return super().contextMenuEvent(event)
+        index = self._item_at(QPointF(event.pos()))
+        if index >= 0 and index != self._selected:
+            self._selected = index
+            self.selection_changed.emit(self._selected)
+            self.update()
+        menu = RoundMenu(parent=self)
+        for text, icon, slot in (
+            ("预览图片", FIF.PHOTO, lambda: self._emit_context(index, False)),
+            ("编辑图片", FIF.EDIT, lambda: self._emit_context(index, True)),
+        ):
+            action = Action(icon, text, menu)
+            action.triggered.connect(slot)
+            menu.addAction(action)
+        menu.exec(event.globalPos())
+        event.accept()
+
+    def _emit_context(self, index: int, edit: bool) -> None:
+        """右键菜单点了某一项：按目标（图上/空白）发出对应的请求信号。
+
+        预览复用双击信号——两者对下游（视图→控制器）是同一个请求。
+        """
+        if index >= 0:
+            (self.item_edit_requested if edit
+             else self.item_double_clicked).emit(index)
+        else:
+            (self.spread_edit_requested if edit
+             else self.spread_double_clicked).emit()
+
     def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802
         """双击：**图上 → 预览这张原图**；**两图之外的空白 → 预览左右组合**。
 

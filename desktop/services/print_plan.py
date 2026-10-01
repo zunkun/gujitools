@@ -4,8 +4,11 @@
 这里的规则是 GUI 各阶段共享的「单一事实来源」：
 - 提取缺页     → 续跑 extract 时的 pages 参数；
 - 提交条目     → rembg「提交本次任务」的最终图片派生；
-- 打印效果     → print 阶段在 worker 内实时合成的规格；
 - 待打印列表   → 第四步左侧列表的默认排序与持久化合并。
+
+⚠️ 第四步**没有**「按当前参数临时合成」的规则（2026-10-01 用户口径：
+去底色那一步必须提交才能传给下一步）：print 只排版「提交本次任务」落盘的
+成品图，见 ``taskdetail.submit.SubmitMixin._build_print_effects``。
 """
 
 from __future__ import annotations
@@ -70,8 +73,11 @@ def plan_rembg_submit_entries(
 
     派生规则与 rembg 预览条目、print 待打印列表完全一致：
     - area=1 双框：拆 <页>-r / <页>-l 两条（古籍阅读顺序 r 在前）；
+    - area=1 半幅漏检一侧：单条也保留左右身份（<页>-l / <页>-r，按缺失侧
+      所在槽位判定）——否则产物叫 <页>.png，第四步拼版按文件名后缀判
+      左右半幅时会把这页误当整幅（用户 2026-10-01 报）；
     - area=2/3 双框：合成一条（不再分栏）；
-    - 单框：area=2/3 走对称画布，其余按普通框；
+    - 单框：area=2/3 走对称画布（整页形态，不带后缀），其余按普通框；
     - 无框：整页预览图透传。
     最终按 CLI natural sort 排序（同页 r 在 l 前）。
 
@@ -125,8 +131,15 @@ def plan_rembg_submit_entries(
                  "boxes": list(boxes), "parea": area, "full": False}
             )
         elif len(boxes) == 1:
+            label = stem
+            if area == 1 and not full and len(raw_boxes) == 2:
+                # 半幅(harfcontent)漏检一侧：单条也要保住 -l/-r 身份。
+                # ⚠️ 判左右只能看**槽位**（半幅恒 2 槽 [左, 右]，见 half_slots），
+                # 不能看框的中心——这里拿到的就是原始槽位。area=2/3 的单框是
+                # 对称整页输出（与 CLI 一致），不带后缀。
+                label = f"{stem}-l" if raw_boxes[0] else f"{stem}-r"
             entries.append(
-                {"file": str(result), "label": stem, "box": boxes[0],
+                {"file": str(result), "label": label, "box": boxes[0],
                  "boxes": [boxes[0]], "parea": area, "full": full}
             )
         else:
@@ -177,82 +190,6 @@ def entry_to_effect_spec(entry: dict, border) -> dict:
 
 
 # ---------------------------------------------------------------- print 效果规格
-def _base_label(label: str) -> str:
-    """收敛到「基础页名」：area=1 的 ``<页>-r`` / ``<页>-l`` 与 area=2/3 的
-    ``<页>`` 视为同一页。
-
-    ⚠️ 用户在第三步改过 area 但没重新提交时，第四步列表里的 label 形态与当前
-    派生集合**不一致**（列表是 "3"、派生是 "3-r"/"3-l"）。早先只按 label 精确
-    匹配，于是列表一条都对不上 → 全走「补条目」分支 → **用户在这一步的删除与
-    排序被静默忽略**（实测症状：列表 101 条，却生成了 198 页 PDF，删掉的页又
-    回来了）。按基础页名重映射后，第四步列表重新成为权威顺序。
-    """
-    for suffix in ("-r", "-l"):
-        if label.endswith(suffix):
-            return label[: -len(suffix)]
-    return label
-
-
-def plan_print_effects(
-    list_entries: list[dict],
-    composed: list[dict],
-    rembg_dir: Path,
-    submitted_labels: set[str],
-    border,
-) -> list[dict]:
-    """第四步列表 + 第三步当前 area/border → worker 合成规格。
-
-    与「提交本次任务」复用同一套派生规则（plan_rembg_submit_entries）：
-    源图为 stages/rembgpreview 去底图，effect 携带检测框/area/border，
-    由 run_print_stage 在子进程内实时合成后再排版为 PDF。
-
-    与用户在第四步保存的列表（拖动排序/删除/外部插入）按 label 对齐：
-    - 命中当前 area 派生集合的条目，按用户列表顺序输出合成规格；
-    - 列表 label 与当前派生集合**形态不同**（用户改过 area 而未重新提交）时，
-      按 `_base_label` 重映射到该页派生的全部条目——**顺序仍取列表顺序**，
-      这样本步的删除/排序在参数变化后依然生效；
-    - 用户插入的外部图片（不在 stages/rembg 目录）整图透传；
-    - 兜底补漏：当前派生集合里、列表与已提交产物都没有的条目才补在末尾。
-    """
-    dmap = {c["label"]: c for c in composed}
-    by_base: dict[str, list[dict]] = {}
-    for c in composed:
-        by_base.setdefault(_base_label(c["label"]), []).append(c)
-
-    effects: list[dict] = []
-    used: set[str] = set()
-    for e in list_entries:
-        label = e.get("label") or Path(e["file"]).stem
-        spec = dmap.get(label)
-        if spec is not None:
-            effects.append(entry_to_effect_spec(spec, border))
-            used.add(label)
-            continue
-        group = by_base.get(_base_label(label))
-        if group:
-            for item in group:
-                if item["label"] in used:
-                    continue
-                effects.append(entry_to_effect_spec(item, border))
-                used.add(item["label"])
-            continue
-        if Path(e["file"]).parent != rembg_dir:
-            # 用户手动插入的外部图片：不做区域合成，整页参与排版
-            effects.append({"file": e["file"], "effect": None})
-    # 仅补「当前 area 派生出、但提交产物里尚不存在」的条目（area 模式
-    # 切换后的新结构页）。⚠️ 判定必须用**基础页名**：改过 area 时提交产物是旧
-    # 形态（"3"）、派生集合是新形态（"3-r"/"3-l"），按精确 label 比会把整批
-    # 新形态都当成"新结构页"补回来 → **用户在第四步删掉的页又复活**。
-    submitted_bases = {_base_label(s) for s in submitted_labels}
-    for spec in composed:
-        if spec["label"] in used:
-            continue
-        if _base_label(spec["label"]) in submitted_bases:
-            continue  # 该页产物已提交：不在列表 = 用户主动删除，不补回
-        effects.append(entry_to_effect_spec(spec, border))
-    return effects
-
-
 # ---------------------------------------------------------------- 待打印列表
 def drop_foreign_stage_pages(
     pages: list[dict] | None, source_dir: Path, stages_root: Path,

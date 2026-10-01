@@ -3,13 +3,16 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from PySide6.QtCore import QUrl, QSize
 from PySide6.QtGui import QDesktopServices, QImageReader
 from PySide6.QtWidgets import QFileDialog
 
-from desktop.utils.files import default_open_dir
+from desktop.utils.files import THUMBNAIL_EDGE, default_open_dir
+from desktop.workers import ImageListWorker, connect_queued
+from utils.file_utils import replace_with_retry
 
 
 class PageListMixin:
@@ -110,6 +113,124 @@ class PageListMixin:
                 return QSize(meta[0], meta[1])
         size = QImageReader(path_text).size()
         return size if size.isValid() else None
+
+    # -------------------------------------------------- 编辑器覆盖原图
+    def _on_page_image_saved(self, path_text: str, image=None) -> None:
+        """编辑器「完成」覆盖了某张页面图（extract/detect/rembg 预览转来）。
+
+        磁盘上的图变了，派生数据按快慢两条线跟上，否则就是"编辑不生效"：
+        1. **立即**（本调用内）：``sizes.json`` 同步新尺寸（检测框坐标与
+           预览映射的像素基准，不跟上框就错位；只针对 extract 页面图），
+           并把编辑结果直接上屏到 extract/detect 查看器的大图与条目图标
+           （``apply_edited_image``，不等任何后台重解码）；
+        2. **后台**：``thumbnails/source`` 页缩略图重生成（异步），完成后
+           只刷条目图标兜底（大图已即时同步过）。
+        rembg 结果等其他文件：无坐标基准，直接按文件刷新 rembg 显示。
+        另按**被编辑文件所处的阶段**提示"下一步怎么让它生效"——用户原则
+        （2026-10-01）：各步骤的编辑要串成一条链、最终落到 PDF。
+        """
+        if not self.task_id:
+            return
+        path = Path(path_text)
+        if path.parent == self.store.extract_output_dir(self.task_id) \
+                and path.stem.isdigit():
+            reader = QImageReader(path_text)
+            size = reader.size()
+            if size.isValid():
+                self.store.save_image_size(
+                    self.task_id, path.stem, size.width(), size.height()
+                )
+                self.log_view.append(
+                    f"页面图片已更新：{path.name}"
+                    f"（{size.width()}×{size.height()} px）；"
+                    "检测框基于旧图坐标，失配时请重新执行检测。"
+                )
+            self.extract_result_viewer.apply_edited_image(path_text, image)
+            self.detect_viewer.apply_edited_image(path_text, image)
+            self._regen_page_thumb(path_text)
+        else:
+            # rembg 结果等：无坐标基准与页缩略图要跟，按文件刷新显示即可
+            self.rembg_viewer.refresh_page(path_text)
+            self._log_edit_downstream(path)
+
+    def _log_edit_downstream(self, path: Path) -> None:
+        """按被编辑文件所处阶段，提示"下一步怎么让这次编辑生效"。
+
+        第三步「去底色结果」要重新「提交本次任务」才会合成到 stages/rembg
+        被第四步取用；第四步待打印图与拼版成品改了「生成 PDF」即生效。
+        不属于这两类的路径（外部插入图等）不打日志。
+        """
+        try:
+            if path.parent == self.store.rembg_preview_output_dir(self.task_id):
+                self.log_view.append(
+                    f"已编辑去底色结果「{path.name}」；"
+                    "点「提交本次任务」后，第四步（生成 PDF）才会用上这次修改。"
+                )
+                # 按钮立刻改口（绿色「已是最新版本」在这里是假话）：编辑后必须
+                # 重新提交才传给第四步，见 submit._preview_edited_after_submit
+                self._update_submit_button(self.running_stage is not None)
+            elif path.parent in (
+                self.store.rembg_output_dir(self.task_id),
+                self.store.imposition_output_dir(self.task_id),
+            ):
+                self.log_view.append(
+                    f"已编辑待打印图片「{path.name}」；"
+                    "点「生成 PDF」即用上这次修改。"
+                )
+        except Exception:  # noqa: BLE001 - 提示不该影响刷新主链路
+            pass
+
+    def _regen_page_thumb(self, path_text: str) -> None:
+        """后台重生成某页的 source 缩略图（256px），完成后刷新各查看器。"""
+        worker = ImageListWorker([Path(path_text)], edge=THUMBNAIL_EDGE)
+        owner_task = self.task_id
+        self.run_worker(
+            lambda: worker,
+            lambda w, thread: (
+                connect_queued(
+                    self,
+                    w.thumbnail_ready,
+                    lambda _i, image, _p, t=path_text, o=owner_task:
+                        self._on_saved_thumb_ready(image, t, o),
+                    thread,
+                ),
+                connect_queued(
+                    self, w.failed,
+                    lambda msg: self._toast(
+                        "warning", "缩略图刷新失败", msg
+                    ),
+                    thread,
+                ),
+                w.completed.connect(thread.quit),
+                w.failed.connect(thread.quit),
+            ),
+        )
+
+    def _on_saved_thumb_ready(self, image, path_text: str,
+                              owner_task: str) -> None:
+        """新缩略图就绪：原子替换缓存文件，条目图标兜底刷新。
+
+        大图已在 _on_page_image_saved 里用编辑结果即时上屏，这里只把
+        图标从「编辑结果现缩的临时版」换成「与文件一致的缓存版」。
+        """
+        if owner_task != self.task_id or image.isNull():
+            return  # 复制/编辑期间切了任务，旧任务的缩略图不能写进新任务
+        path = Path(path_text)
+        if not path.stem.isdigit():
+            return
+        thumb = self.store.source_thumbnails_dir(self.task_id) / (
+            f"{int(path.stem):04d}.jpg"
+        )
+        thumb.parent.mkdir(parents=True, exist_ok=True)
+        # 原子写：预生成缩略图随时会被缩略图条/清单读取，半截图就是花图标
+        temp = thumb.with_name(f"{thumb.stem}.part.jpg")
+        if not image.save(str(temp), "JPEG", 90):
+            temp.unlink(missing_ok=True)
+            return
+        replace_with_retry(temp, thumb)
+        self.extract_result_viewer.refresh_page(path_text)
+        self.detect_viewer.refresh_page(path_text)
+        self.rembg_viewer.refresh_page(path_text)
 
     # ------------------------------------------------------------------ 增删
     def _active_page_viewer(self):

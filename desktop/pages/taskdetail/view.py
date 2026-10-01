@@ -191,10 +191,14 @@ class DetailViewMixin:
         self.detect_viewer.delete_requested.connect(self.delete_selected_page)
         self.detect_viewer.insert_requested.connect(self.insert_pages)
         self.detect_viewer.boxes_edited.connect(self._save_manual_boxes)
+        # 编辑器「完成」覆盖原图后：同步 sizes.json/缩略图并刷新显示
+        self.extract_result_viewer.image_saved.connect(self._on_page_image_saved)
+        self.detect_viewer.image_saved.connect(self._on_page_image_saved)
         self.preview_stack.addWidget(self.detect_viewer)
 
         # rembg：原图/结果对比
         self.rembg_viewer = RembgPreviewWidget()
+        self.rembg_viewer.image_saved.connect(self._on_page_image_saved)
         self.preview_stack.addWidget(self.rembg_viewer)
 
         # print：左缩略图条 + 右「打印效果」预览（可拖动排序/删除/插入）
@@ -211,6 +215,8 @@ class DetailViewMixin:
         self.print_preview.order_changed.connect(self._save_print_order)
         self.print_preview.insert_requested.connect(self._insert_print_images)
         self.print_preview.download_requested.connect(self._download_print_pdf)
+        # 编辑器覆盖了某张待打印图：记日志提示「点生成 PDF 即生效」
+        self.print_preview.image_saved.connect(self._on_page_image_saved)
         # 单页导出：当前页排进 A4 后的效果图（精度与 PDF 同级 300dpi）
         self.print_preview.export_image_requested.connect(self._export_print_image)
         self.print_preview.export_finished.connect(self._on_export_finished)
@@ -265,6 +271,12 @@ class DetailViewMixin:
         )
         self.imposition_view.spread_preview_requested.connect(
             self._open_imposition_spread_preview
+        )
+        self.imposition_view.item_edit_requested.connect(
+            self._open_imposition_item_edit
+        )
+        self.imposition_view.spread_edit_requested.connect(
+            self._open_imposition_spread_edit
         )
         card.box.addWidget(self.imposition_view)
         return card

@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
-"""print 阶段自测：第四步表单、真实生成 PDF、页数/print.json/实时合成规格。
+"""print 阶段自测：第四步表单、真实生成 PDF、页数/print.json/取图规格。
 
-依赖 rembg 模块注入的 ``ctx.injected_boxes`` 与 ``ctx.preview_dir``。
+2026-10-01 起第四步只排版「提交本次任务」的成品图（不再拿去底图按当前
+area/border 现算），所以这里断言的是「取图 = 提交产物」。依赖 rembg 模块
+先跑过（DEPENDS）：要有提交产物。
 """
 
 NAME = "print"
@@ -22,15 +24,13 @@ def run(ctx) -> None:
     app, d, repo = ctx.app, ctx.d, ctx.repo
     tid = ctx.tid
     img = ctx.inserted_img
-    _injected = ctx.injected_boxes
-    preview_dir = ctx.preview_dir
 
     d.set_task(tid)
     d._select_stage(3)
-    # 本模块断言 print 运行配置携带 border=10 的合成规格——这是它自己的
-    # 前置条件，必须自己设好：set_task 会让 rembg 面板按历史记录回填，
-    # 历史里没有 border 就会被清空（拆分前 rembg 段设置的 "10" 会残留，
-    # 掩盖这条依赖；模块化后不能再靠上游残留）。
+    # border=10 是本模块自己的前置条件，必须自己设好：下面的「border→边距
+    # 级联」用例要它非 0。set_task 会让 rembg 面板按历史记录回填，历史里没有
+    # border 就会被清空（拆分前 rembg 段设置的 "10" 会残留，掩盖这条依赖；
+    # 模块化后不能再靠上游残留）。
     _rembg_panel = d.control_stack.widget(2)
     _rembg_panel.border.setText("10")
     ok("print 列表直接使用 stages/rembg 最终图",
@@ -110,23 +110,23 @@ def run(ctx) -> None:
     ok("输出 PDF 页数与列表一致", doc.page_count == 6, str(doc.page_count))
     doc.close()
     ok("print.json 已保存", len(repo.load_print_pages(tid)) == 6)
-    # worker 实际消费的运行配置（run-<run_id>.json）必须携带第三步当前 border
-    # （据此实时合成）。⚠️ 不查 runs.json 历史：2026-09-26 起入史前剥掉大块
-    # 运行时派生字段（_effects/files/page_rects）——2400 页的书单条历史 0.5MB，
-    # 而历史只用于面板回填，留着它们是纯写放大。
+    # worker 实际消费的运行配置（run-<run_id>.json）：取图必须是第三步
+    # 「提交本次任务」的成品图，且不带任何区域合成规格（2026-10-01 起第四步
+    # 不再拿去底图现算；第三步那边改 area/border 必须先重新提交）。
+    # ⚠️ 不查 runs.json 历史：2026-09-26 起入史前剥掉大块运行时派生字段
+    # （_effects/files/page_rects）——2400 页的书单条历史 0.5MB，而历史只用于
+    # 面板回填，留着它们是纯写放大。
     _run_id = repo.list_stage_runs(tid, "print")[0]["run_id"]
     _run_cfg = json.loads(
         (repo.runs_config_dir(tid) / f"run-{_run_id}.json").read_text(encoding="utf-8")
     )
     _saved_fx = _run_cfg["args"].get("_effects") or []
-    _saved_boxed = [s for s in _saved_fx if s.get("effect")]
-    ok("print 运行配置携带实时合成规格（源 rembgpreview，border=10）",
+    ok("print 运行配置的取图 = 提交产物（整图透传，无区域合成规格）",
        len(_saved_fx) == 6
-       and all(Path(s["file"]).parent == preview_dir for s in _saved_fx)
-       and len(_saved_boxed) >= 1
-       and all(s["effect"]["border"] == "10" for s in _saved_boxed)
-       and any(s["effect"]["boxes"] == [_injected] for s in _saved_boxed),
-       f"total={len(_saved_fx)} boxed={len(_saved_boxed)}")
+       and all(Path(s["file"]).parent == _rembg_final for s in _saved_fx)
+       and all(s.get("effect") is None for s in _saved_fx),
+       f"total={len(_saved_fx)} "
+       f"effects={[s.get('effect') for s in _saved_fx][:2]}")
     # 历史里则不应再背这份大块派生数据（写放大治理）
     _hist_params = repo.list_stage_runs(tid, "print")[0]["parameters"]
     ok("历史参数已剥离运行时派生字段（_effects/files/page_rects）",

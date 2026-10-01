@@ -53,6 +53,6 @@ desktop/static/icon.ico
 # 就会留在这个位置（打包版会优先打开它），别让它进仓库
 desktop/static/manual.html
 
-.workbuddy/
+# .workbuddy/
 .workbuddy-ai/
 .trae/

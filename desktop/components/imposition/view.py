@@ -53,6 +53,10 @@ class ImpositionViewWidget(QWidget):
     item_preview_requested = Signal(int)
     #: 画布内双击了图片之外的空白处：请求预览整页左右组合
     spread_preview_requested = Signal()
+    #: 画布右键菜单「编辑图片」（0 右槽 / 1 左槽）：不经预览弹窗直接编辑
+    item_edit_requested = Signal(int)
+    #: 画布右键菜单在空白处选了「编辑图片」：直接编辑整页左右组合
+    spread_edit_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -89,6 +93,9 @@ class ImpositionViewWidget(QWidget):
         self.canvas.spread_double_clicked.connect(
             self.spread_preview_requested
         )
+        # 右键「编辑图片」同款直连：不经预览弹窗的编辑入口归控制器管
+        self.canvas.item_edit_requested.connect(self.item_edit_requested)
+        self.canvas.spread_edit_requested.connect(self.spread_edit_requested)
         right.addWidget(self.canvas, 1)
         bottom = QHBoxLayout()
         bottom.setSpacing(T.SPACE_SM)
@@ -256,6 +263,7 @@ class ImpositionViewWidget(QWidget):
         self.hint.setText(
             "拖动移动　·　四角/四边缩放拉伸　·　框上方圆钮旋转　·　滚轮缩放视图　｜　"
             "双击图片预览原图　·　双击空白处预览成品组合　｜　"
+            "右键图片/空白处可预览或编辑（编辑不经预览弹窗）　｜　"
             "点击图片选中后可在右侧「当前图片样式」里调整"
             f"（<font color=\"{spine}\">红色虚线</font>为两图公共中心线，"
             f"<font color=\"{crop}\">灰色虚线框</font>为成品截图范围）。"
