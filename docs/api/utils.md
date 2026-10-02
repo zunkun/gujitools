@@ -4,7 +4,7 @@
 
 通用工具函数：几何、排序、图像 IO、PDF、YOLO
 
-覆盖 23 个模块、11 个公开类、129 个公开函数/方法（生成于 2026-10-01）。
+覆盖 25 个模块、11 个公开类、159 个公开函数/方法（生成于 2026-10-02）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -13,8 +13,8 @@
 | 模块 | 类 | 函数 |
 | --- | --- | --- |
 | [`utils.box_draw`](#utilsbox_draw) | 0 | 6 |
-| [`utils.box_geometry`](#utilsbox_geometry) | 2 | 9 |
-| [`utils.cage_warp`](#utilscage_warp) | 0 | 10 |
+| [`utils.box_geometry`](#utilsbox_geometry) | 2 | 11 |
+| [`utils.cage_warp`](#utilscage_warp) | 0 | 11 |
 | [`utils.color_utils`](#utilscolor_utils) | 0 | 2 |
 | [`utils.file_utils`](#utilsfile_utils) | 0 | 4 |
 | [`utils.font_scan`](#utilsfont_scan) | 0 | 4 |
@@ -29,7 +29,9 @@
 | [`utils.pdf_draw`](#utilspdf_draw) | 1 | 9 |
 | [`utils.pdf_extract`](#utilspdf_extract) | 0 | 9 |
 | [`utils.pdf_stream`](#utilspdf_stream) | 1 | 2 |
+| [`utils.perspective`](#utilsperspective) | 0 | 12 |
 | [`utils.proc_utils`](#utilsproc_utils) | 0 | 1 |
+| [`utils.puppet_warp`](#utilspuppet_warp) | 0 | 15 |
 | [`utils.sort_utils`](#utilssort_utils) | 0 | 2 |
 | [`utils.string_utils`](#utilsstring_utils) | 0 | 3 |
 | [`utils.transparent_png`](#utilstransparent_png) | 0 | 2 |
@@ -154,6 +156,8 @@ docs/functions/cropremove.md:57）。布局层统一后该分歧由本模块消�
 | 函数 | 说明 |
 | --- | --- |
 | `is_full_content(boxes) -> bool` | ``boxes`` 是否为「整幅内容」(fullcontent) 的**槽位表示**。 |
+| `page_box_slots(left, right, full) -> List[Optional[list]]` | 三类框 → **槽位表示**（槽位约定的**唯一实现**）。 |
+| `page_box_slots_from_event(payload) -> List[Optional[list]]` | ``page_boxes`` 事件负载 → **槽位表示**（坐标一律转 int）。 |
 | `classify_page_slots(slots) -> str` | 页的**槽位**表示 → 页形态分类键（四类见 `PAGE_CLASS_*` 常量）。 |
 | `half_sides(boxes, image_size) -> List[str]` | 半幅(harfcontent)页的框 → 每个框的侧别 ``"left"`` / ``"right"``。 |
 | `half_slots(boxes, image_size) -> List[Optional[list]]` | 半幅页的框 → **2 槽** ``[左, 右]``（缺失侧 ``None``）。 |
@@ -177,6 +181,40 @@ docs/functions/cropremove.md:57）。布局层统一后该分歧由本模块消�
 
 ⚠️ 槽数**不是**"有几个框"，而是**形态**：半幅恒 2 槽（`half_slots` 保证），
 整幅恒 1 槽。半幅删剩一侧后仍然写回 2 槽（另一侧 None），否则会被误判成整幅。
+
+#### `page_box_slots(left, right, full) -> List[Optional[list]]`
+
+三类框 → **槽位表示**（槽位约定的**唯一实现**）。
+
+半幅优先于整幅：只要有左或右就按半幅出 **2 槽** ``[左, 右]``（缺失侧
+``None``）；否则整幅只占 **1 槽** ``[整幅]``；都没有则空表。
+
+半幅优先是既有明文规则（原 ``PageBoxes.slots``）：万一两类同时存在
+（互斥消解失灵 / 手工构造的防御场景），按半幅处理——保证 harfcontent 逻辑
+与原来完全一致，整幅不会把已检出的半幅挤掉。正常数据下两者不可兼得
+（见 ``functions.detect.PageBoxes.conflict``）。
+
+调用方两处，共用本函数以免"同一件事两处定义"而漂移：
+``functions.detect.PageBoxes.slots``（对象侧）与
+:func:`page_box_slots_from_event`（事件侧）。
+
+#### `page_box_slots_from_event(payload) -> List[Optional[list]]`
+
+``page_boxes`` 事件负载 → **槽位表示**（坐标一律转 int）。
+
+``page_boxes`` 是检测结果跨进程 / 跨线程回传的**唯一通道**，负载形如::
+
+    {"image": stem, "left": [...] | None,
+     "right": [...] | None, "full": [...] | None}
+
+（见 ``functions.detect.DetectFunction._report_boxes``）。任务流程第二步与
+独立「检测文本框」模块页都从这里还原形态，不再各写一遍槽位拼装。
+
+⚠️ 本模块（utils）**不 import functions**——分层是单向的
+``utils ← core ← {cli, functions, desktop}``，反过来引用会被
+``tests/selftests/layering.py`` 判违规。所以这里只按负载里的三个键出槽位，
+不去构造 ``functions.detect.PageBoxes``：两侧共用的是**规则**
+（:func:`page_box_slots`），不是类型。
 
 #### `classify_page_slots(slots) -> str`
 
@@ -354,8 +392,18 @@ desktop/workers/preview_worker.compose_region_output 的几何完全等价，
 **合计**            **3.1s**
 =================  ==========
 
-所以桌面侧仍然**降分辨率出预览**（``CAGE_PREVIEW_SCALE``）、只在落地时走
-全分辨率；而局部影响让"要算的面积"从整幅缩到半径平方，预览几乎必然跟手。
+所以桌面侧仍然**降分辨率出预览**（``image_editor.cage_preview_scale``）、
+只在落地时走全分辨率；而局部影响让"要算的面积"从整幅缩到半径平方，
+预览几乎必然跟手。
+
+落地（全分辨率）这一步在**大图上仍是秒级到分钟级**，直接同步跑会把 GUI
+主线程钉死（用户 2026-10-01 报"卡死/崩溃"）。为此：
+
+- :func:`deform` / :func:`deform_qimage` 支持 ``bounds``（只算影响框、返回
+  裁好的图，框外逐字节不动 ⇒ 画布直接透底图）与 ``progress``（每个分块回调
+  ``progress(done, total)``，返回 ``False`` 即中止、函数返回 ``None``）；
+- 画布侧（``image_editor.run_with_progress``）把落地丢进**后台线程**并显示
+  进度对话框，主线程保持响应、可取消。
 
 几何约定
 --------
@@ -383,11 +431,12 @@ desktop/workers/preview_worker.compose_region_output 的几何完全等价，
 | `influence_radius(cage_src, cage_dst, influence=None) -> float` | 当前这组拖动需要的**影响半径**（用户下限 + 防自交下限），没动过则 0。 |
 | `moved_handles(cage_src, cage_dst, influence=None)` | 把"被拖过的把手"整理成 ``(把手当前位置, RBF 权重, 影响半径)``。 |
 | `warp_region(cage_src, cage_dst, influence=None, *, width: int, height: int)` | 这次拖动**实际会改动的矩形区域**（图片坐标，开区间右端）。 |
+| `content_region(cage_src, cage_dst, influence=None, *, width: int, height: int)` | 形变后**内容占用的矩形范围**（图片坐标，开区间右端）——**不夹进画布**。 |
 | `cage_moved(cage_src, cage_dst, epsilon: float=1e-06) -> bool` | 两个笼是否有实质差别（区分"真变形"与"动过手但没挪"）。 |
-| `deform(src, cage_src, cage_dst, *, influence=None, fill=FILL, step: int \| None=None, block: int=BLOCK_PIXELS, bounds=None)` | 按「把手 ``cage_src`` → 把手 ``cage_dst``」形变 ``src``，返回**同尺寸**新数组。 |
+| `deform(src, cage_src, cage_dst, *, influence=None, fill=FILL, step: int \| None=None, block: int=BLOCK_PIXELS, bounds=None, grow: bool=False, progress=None)` | 按「把手 ``cage_src`` → 把手 ``cage_dst``」形变 ``src``。 |
 | `qimage_to_rgba(image)` | QImage → ``(H, W, 4)`` uint8 **RGBA**（ARGB32 在小端机器上是 B,G,R,A）。 |
 | `array_to_qimage(rgb)` | ``(H, W, 3\|4)`` uint8 → QImage（ARGB32）；3 通道按不透明处理。 |
-| `deform_qimage(image, cage_src, cage_dst, *, influence=None, fill=None)` | QImage 版 :func:`deform`（整幅同尺寸，**保留 alpha 通道**）。 |
+| `deform_qimage(image, cage_src, cage_dst, *, influence=None, fill=None, bounds=None, grow=False, progress=None)` | QImage 版 :func:`deform`（**保留 alpha 通道**）。 |
 
 #### `perimeter_cage(rect, per_side: int=2)`
 
@@ -428,19 +477,60 @@ Wendland **C²** 紧支撑核：``r < 1`` 时 ``(1−r)⁴(4r+1)``，否则 ``0`
 画布侧的预览浮层就贴在这个框上（框外逐字节等于原图，直接透出底图即可，
 既不浪费也不会有接缝）。纯 Python + numpy 基础运算，不加载重型依赖。
 
-#### `deform(src, cage_src, cage_dst, *, influence=None, fill=FILL, step: int | None=None, block: int=BLOCK_PIXELS, bounds=None)`
+#### `content_region(cage_src, cage_dst, influence=None, *, width: int, height: int)`
 
-按「把手 ``cage_src`` → 把手 ``cage_dst``」形变 ``src``，返回**同尺寸**新数组。
+形变后**内容占用的矩形范围**（图片坐标，开区间右端）——**不夹进画布**。
+
+用户 2026-10-02 报：「图片倾斜后一部分区域超出原本边界，现在会被截掉，
+不对；超出原本区域的**不要截**，最终结果要按最后图片的范围。」
+
+口径（用户同日的补充）：「一切以新图为准，新图什么样就什么样，老图不要
+了」——最终画布 = **形变后内容的完整外框**，不是"原图 ∪ 形变后"的松散
+并集。对变换笼来说，"内容"分两块：
+
+① **没碰到的内容**：RBF 是紧支撑的，影响半径外的像素逐字节不变，仍老实
+   待在 ``[0, W] × [0, H]`` 里——这块必须原样留全（它**就是**结果的一
+   部分，不是"老图残留"）；
+② **被拖走的把手附近的源内容**：它跟着把手走。位移场是后向的，所以不能
+   正推落点，但 ``s(mᵢ) = hᵢ``（把手处内容严格跟着把手），于是把手落点
+   ``mᵢ`` 就是这块内容的"锚点"。
+
+因此画布 = ``[0, W] × [0, H]`` ∪ ``bbox(被拖把手的落点)``。
+
+⚠️ **不要**再叠加影响半径 ``R``：``R`` 是 RBF 解算出来的**位移场**尺度
+（可能远大于实际位移），不是"内容向外铺开的距离"。把 ``mᵢ ± R`` 并进
+来会让**向内**拖把手也凭空外扩几十像素（实测拖 25px 却外扩 64px），
+画布白白变大、四边多出一圈空白——正是用户要消掉的"老图残留"。
+
+返回 ``(x0, y0, x1, y1)``；没动过 → 原图边界 ``(0, 0, W, H)``。
+
+#### `deform(src, cage_src, cage_dst, *, influence=None, fill=FILL, step: int | None=None, block: int=BLOCK_PIXELS, bounds=None, grow: bool=False, progress=None)`
+
+按「把手 ``cage_src`` → 把手 ``cage_dst``」形变 ``src``。
+
+**默认**（``grow=False``）返回**同尺寸**新数组；``grow=True`` 返回
+**放大后**的新数组 + 其原点偏移，让"被拖出原边界的内容"**不被截掉**
+（见 :func:`deform_qimage` 的返回值说明与用户 2026-10-02 报障）。
 
 逐像素语义：
 
 1. 落在**影响半径内** → 按位移场反查源坐标、双线性采样（内容跟着把手走）；
 2. 半径外 → **原样不动**（位移场在那里恒等于 0，见模块文档「算法」）；
-3. 采样点被拉到**画布外** → 填 ``fill``（小端 RGBA 时给 4 元组）。
+3. 采样点超出**源图** → 填 ``fill``（小端 RGBA 时给 4 元组）。
+   ⚠️ 与 ``grow`` 无关：填的是"源图之外"，不是"原边界之外"——内容被
+   拖到原边界外时，它的**源坐标仍在源图内**，所以照常取到真实像素。
 
 ``src`` 支持 (H, W) 与 (H, W, C)。``influence`` 是影响半径（图片像素，
 缺省由位移量自动定，见 :func:`moved_handles`）；``step`` 是位移场的格距
 （缺省按 :data:`FIELD_MAX` 自适应）；``bounds`` 可显式指定处理范围。
+
+``progress`` 给定时在**每个分块**后回调 ``progress(done, total)``
+（``total`` = 要处理的像素总数）；返回 ``False`` 则**提前中止**并返回
+``None``（让长任务能被打断，见画布侧的大图烘焙）。
+
+返回：``grow=False`` → ``out``（同尺寸 ndarray）；``grow=True`` →
+``(out, (ox, oy))``（``out`` 是新画布，``(ox, oy)`` = 新画布左上角在
+旧坐标系里的位置，可为负）。
 
 #### `qimage_to_rgba(image)`
 
@@ -450,12 +540,26 @@ QImage → ``(H, W, 4)`` uint8 **RGBA**（ARGB32 在小端机器上是 B,G,R,A�
 透明像素的 RGB 分量存的是 0，一旦只取 RGB 丢掉 alpha，整片背景就读成
 **黑色**（用户 2026-10-01 报的"变形后图片变成黑色"就是这个）。
 
-#### `deform_qimage(image, cage_src, cage_dst, *, influence=None, fill=None)`
+#### `deform_qimage(image, cage_src, cage_dst, *, influence=None, fill=None, bounds=None, grow=False, progress=None)`
 
-QImage 版 :func:`deform`（整幅同尺寸，**保留 alpha 通道**）。
+QImage 版 :func:`deform`（**保留 alpha 通道**）。
 
 不透明图走 3 通道（比 4 通道少 1/4 的采样量）；带 alpha 的图走 4 通道，
 越界填充取 :data:`FILL_CLEAR`（白 + 透明），免得透明底变实心。
+
+``bounds`` = ``(x0, y0, x1, y1)``（图片坐标，开区间右端）时**只算这块**
+并返回**裁剪后的图**（左上角 = 框左上角）——画布侧预览就靠它把工作量
+从整幅缩到影响框（框外逐字节等于原图，直接透底图即可）。``None``（默认）
+返回整幅同尺寸结果。``bounds`` 与 ``grow=True`` 同时给：``bounds`` 仍
+作为"要重算哪块"的提示，最终返回的是**放大的整幅**（不裁剪）。
+
+``grow=True``：用户 2026-10-02 报障的修复——内容被拖出原边界时**不截**，
+按 :func:`content_region` 放大画布，返回 ``(QImage, (ox, oy))``，
+``(ox, oy)`` = 新图左上角在原图坐标系里的位置（可为负）。``grow=False``
+（默认）返回单个 ``QImage``，与原行为逐字节一致。
+
+``progress`` 透传给 :func:`deform`（每个分块回调一次，返回 ``False``
+则中止并返回 ``None``）。
 
 ---
 
@@ -1900,6 +2004,92 @@ reporter 为结构化汇报通道（进度 + 页尺寸）；None → 保持纯 p
 
 ---
 
+## `utils.perspective`
+
+源码：[`utils/perspective.py`](../../utils/perspective.py)
+
+四点透视校正（古籍拍摄角度 / 页面倾斜的快速摆正）。
+
+## 口径（2026-10-01 用户定：独立入口）
+
+「变形」（:mod:`utils.puppet_warp`）是**局部**微调（褶皱、小面积抽动），
+本模块是**整页**的快速摆正：古籍翻拍常见的"梯形/倾斜"——书页四条边不是
+矩形（拍摄角度导致），或整页微微斜着（装订线倾斜）。做法是拉四个角点，
+把**源四边形**映到**目标矩形**（单应变换 / 透视变换），一次摆正整页。
+
+- 与「变形」的分工：褶皱用变形（局部、图钉、逐点），页形/角度用本模块
+  （整页、四个角、一次到位）。两者都落在同一套编辑器与撤销栈里。
+- 与「变换」的分工：变换是**仿射**（平行线还是平行线），本模块是**透视**
+  （平行线可以交于一点），这才是"角度"该有的数学。
+
+## 算法：四点 DLT 解单应矩阵 + 逆向采样
+
+1. **单应**：``H`` 3×3 使 ``dst ~ H·src``（齐次坐标，共 8 个自由度）。
+   四点对应给出 8 个线性方程，解 8×8 线性组（:func:`homography`）。
+2. **采样**：对**目标**矩形里每个像素 ``(x', y')``，用 ``H⁻¹`` 反算它来自
+   源图的哪个点，双线性采样（**逆向映射**——正向映射会在目标上留空洞）。
+   越界处填 ``fill``（白纸口径填白）。
+
+numpy 延迟导入（桌面主进程 import 本模块时不加载）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| MIN_AREA | `0.001` |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `homography(src, dst)` | 解四点对应的单应矩阵 ``H``（3×3，``dst ~ H·src``）。 |
+| `invert(H)` | 单应矩阵求逆（正变换 ``src→dst``，采样要用逆 ``dst→src``）。 |
+| `apply_homography(H, points)` | 把 ``H`` 作用到 ``points``（``(N, 2)`` 或 ``(2,)``），返回同形状。 |
+| `target_rect(src, *, mode: str='bbox')` | 给源四边形算一个"摆正后"的目标矩形（图片坐标，**像素闭区间**）。 |
+| `quad_area(quad) -> float` | 四边形（按序）的面积（shoelace，恒为非负）。 |
+| `quad_degenerate(quad) -> bool` | 四边形是否退化（面积过小）——退化时不校正，直接放弃。 |
+| `rectify(src, quad, *, out_size=None, mode: str='bbox', fill=FILL, block: int=BLOCK_PIXELS)` | 把 ``src`` 里 ``quad`` 围的区域透视摆正到目标矩形，返回新数组。 |
+| `qimage_to_rgba(image)` | QImage → ``(H, W, 4)`` uint8 **RGBA**（保留 alpha，见 puppet_warp）。 |
+| `array_to_qimage(rgb)` | ``(H, W, 3\|4)`` uint8 → QImage（ARGB32）；3 通道按不透明处理。 |
+| `rectify_qimage(image, quad, *, out_size=None, mode: str='bbox', fill=None)` | QImage 版 :func:`rectify`（保留 alpha；带 alpha 的图越界填透明白）。 |
+| `rectify_region(quad, width: int, height: int, *, mode: str='bbox')` | 这次校正的目标矩形 ``(x0, y0, w, h)``（画布预览贴框用）。 |
+| `quad_moved(src_quad, dst_quad, epsilon: float=1e-06) -> bool` | 四角是否真的动过（区分"全选没动"与"要校正"）。 |
+
+#### `homography(src, dst)`
+
+解四点对应的单应矩阵 ``H``（3×3，``dst ~ H·src``）。
+
+``src``/``dst`` 各是 4 个 ``(x, y)``。用 DLT：每个对应点给两行方程，
+8 个方程解 8 个未知量（令 ``h33 = 1``）。四点共线（退化）时抛
+:class:`ValueError`——调用方应先在 UI 上拦住，而不是解出垃圾。
+
+#### `target_rect(src, *, mode: str='bbox')`
+
+给源四边形算一个"摆正后"的目标矩形（图片坐标，**像素闭区间**）。
+
+- ``mode="bbox"``：目标 = 源四边形的**轴对齐外接框**（尺寸与图幅同）；
+- ``mode="area"``：目标 = 与源四边形**等面积**的矩形，宽高比取源四边形
+  对边平均长之比（摆正后不变形，内容不拉胖/压扁）。
+
+⚠️ 四角是**像素坐标**（含端点），所以尺寸按 ``max - min + 1`` 取：
+四角正好压在图片四角（``(0,0)~(w-1,h-1)``）时目标尺寸 = ``(w, h)``，
+校正**逐字节还原原图**（自测钉死）。写成 ``max - min`` 会差 1 像素、
+反而把没动的整页缩掉一行一列。
+
+返回 ``(x0, y0, x1, y1)``（闭区间；尺寸 = ``x1-x0+1``）。
+
+#### `rectify(src, quad, *, out_size=None, mode: str='bbox', fill=FILL, block: int=BLOCK_PIXELS)`
+
+把 ``src`` 里 ``quad`` 围的区域透视摆正到目标矩形，返回新数组。
+
+- ``src``：``(H, W)`` 或 ``(H, W, C)``。
+- ``quad``：源四边形四个角，顺序 ``[左上, 右上, 右下, 左下]``。
+- ``out_size``：目标尺寸 ``(宽度, 高度)``；缺省按 :func:`target_rect`
+  的 ``mode`` 推。
+- 输出**尺寸 = 目标矩形尺寸**（就地摆正，不是原尺寸上的贴块）。
+
+---
+
 ## `utils.proc_utils`
 
 源码：[`utils/proc_utils.py`](../../utils/proc_utils.py)
@@ -1923,6 +2113,300 @@ pid 对应的进程是否还活着。
 ⚠️ **保守优先**：任何"说不清"的情况（权限不足、psutil 不可用、平台差异）
 都返回 True（当作活着）。调用方是拿它做**删除判据**的（删暂存目录、删发现
 文件），把"不确定"当成"已死"就会误删正在用的东西；反过来只是少清一点垃圾。
+
+---
+
+## `utils.puppet_warp`
+
+源码：[`utils/puppet_warp.py`](../../utils/puppet_warp.py)
+
+操控变形（puppet warp）：图钉 + 三角网格 + **尽可能保刚** 的形变。
+
+口径（2026-10-01 用户定：GIMP 变换笼做不好就改用 PS 的方案）
+------------------------------------------------------------
+对齐 Photoshop 的 **操控变形 Puppet Warp**：在图上钉几个图钉（pin），拖某个
+图钉时**图钉附近的内容跟着走、离得越远动得越少、没被钉又被钉住的区域基本不动**
+（"像扯弹簧"/"像揉面团"）。**不是** PS 的「变形 Warp」（那是有规则网格控制点的
+拉伸），也**不是** GIMP 的变换笼。
+
+⚠️ 为什么换掉变换笼（Green 坐标）
+--------------------------------
+前一版按 GIMP 变换笼实现（Green 坐标闭式系数），**数学逐字对得上 GIMP 源码**
+（`green_coefs` 与 `gimpoperationcagecoefcalc.c` 一致，`Σφ≡1`、恒等复现、
+相似复现三条性质实测误差均为 0），但有两个绕不过去的问题：
+
+1. 它的形变是**全局**的：拖一个把手，**笼内每个点都在动**，位移缓慢衰减却
+   从不归零（实测 100 → 59 → 35 → 16 px）。用户看到的就是"整页歪掉、
+   两个弯把图片干得稀碎"。GIMP 里能用是因为**笼只圈一小块**，而本项目的
+   默认笼是**贴图边的矩形**（覆盖整幅）⇒ 全局形变作用在整页上。
+2. 落地实现里还要做"从形变后位置反解源位置"的**反演**，而正向场只在
+   源笼内有定义，反演极易陷入"源笼外位移为零"的假不动点（实测拖 100px
+   只有 0.4% 像素变化，即"拖了没反应"）。
+
+**这两条在 Green 坐标路线里是结构性的，不是调参能修的。**
+ARAP（As-Rigid-As-Possible）恰好相反：能量函数直接惩罚"每个三角形偏离
+刚体旋转"的量，未约束处的解由**拉普拉斯型线性系统**给出，天然是"近处大、
+远处衰减"的**局部**形变，且不需要反演（直接用正向解的网格做三角形内插）。
+
+算法：ARAP 表面建模（Sorkine & Alexa, SGP 2007）
+----------------------------------------------
+1. **建网格**：把图片按 `mesh_cell` 像素切成一格一格的**规则三角网格**
+   （每格两个三角形，对角线方向交替以避开规则偏置）。
+   顶点 = 网格交点，初始位置 = 图片像素坐标。
+2. **图钉**：每个图钉把某个原始网格顶点**钉到**一个新位置（用户拖到的地方）。
+   钉住处是**硬约束**（狄利克雷边界），解方程时不参与求解。
+3. **能量**：
+   ``E = Σ_i Σ_{j∈N(i)} w_ij · ‖(p'_i − p'_j) − R_i (p_i − p_j)‖²``
+   其中 ``R_i`` 取"让顶点 i 的 1-邻域最贴合某个旋转"的最优旋转矩阵，
+   ``w_ij = (cot α + cot β)/2``（网格是正的三角剖分，余切权重恒正）。
+4. **local-global 迭代**（论文口径，交替最小化）：
+   - **local**：固定当前顶点位置，对每个顶点 i 由
+     ``S_i = Σ_j w_ij (p_i − p_j)(p'_i − p'_j)ᵀ`` 做 **SVD**，
+     ``R_i = V Uᵀ``（含翻转修正，见 :func:`_best_rotation`）。
+   - **global**：固定所有 ``R_i``，对能量求导得**稀疏对称正定线性系统**
+     ``L P' = b``（L = 余切拉普拉斯），解出新的顶点位置。
+     钉住处按行替换成单位方程（硬约束），所以"钉在哪就精确在哪"。
+   迭代十几次即收敛（残差单调下降），实测整页 4000px 网格只需毫秒级。
+5. **取样**：网格只解出**顶点**位移；输出像素落在哪个三角形里，就用该
+   三角形的**重心坐标**插值出源坐标，再双线性采样原图。
+
+三条性质是"手感"与"可断言"的关键（自测钉死）：
+
+1. **不乱动**：所有图钉都没挪 ⇒ 网格恒等 ⇒ 输出**逐字节**等于原图。
+2. **钉住就准**：图钉落在网格顶点上，硬约束保证该顶点**精确**到位。
+3. **衰减 + 局部**：远离被拖图钉方向的位移单调变小；把**被拖图钉周围的
+   邻域钉死**（PS 的用法：关节两侧都钉）后，那些钉住处**一动都不动**——
+   这正是"近处动得多、远处几乎不动"的可量化版本。
+
+性能
+----
+**瓶颈在逐像素重采样，不在解方程。**（2026-10-02 全面实测，结论与数量级都
+已钉死，改前先读这段，免得重复走弯路。）
+
+1. **重采样 ≈ 0.7 µs/像素**（内存带宽受限，已到 numpy 下界）。1200×900
+   (1.08M 像素) 拆开实测：纯双线性采样 336ms、纯重心坐标 101ms、固定开销
+   仅 7ms。任何"再优化一点"的尝试（float32 顶点、融合光栅化+采样、扫描线、
+   格张量）都只拿到 -15%~+5%，还引入正确性回归 —— **本条路已走到底**。
+   ⇒ 唯一的杠杆是**降分辨率预览**（成本随像素数近线性：8 万像素 43ms、
+   12 万 72ms、20 万 140ms）。形变场是低频的，预览图再由 Qt 平滑放大，
+   肉眼看不出差别。
+
+2. **ARAP 不是局部的**（像素级确认）：拖**一个**图钉 100px，改动区域
+   :func:`mesh_region` 仍是整图的 **96~98%**（位移场缓慢衰减但永不归零）。
+   ⇒ **"只重算图钉附近"做不到，裁剪 :func:`mesh_region` 也没收益（只省 ~4%）。**
+
+3. **求解耗时随顶点数超线性**：7676 顶点 2.1s、1989 顶点 0.26s、520 顶点
+   0.07s。拖动时用 :func:`drag_cell` 给出的**粗网格**（两道约束：相对倍数
+   :data:`MESH_DRAG_COARSEN` + 顶点数绝对上限 :data:`MESH_DRAG_MAX_VERTICES`），
+   松手 / 应用时才回精网格。⚠️ 只卡"倍数"不够：最密档 20px 在 4000×3000
+   下有 3 万顶点，×4 后仍剩 1989 顶点 ≈ 单次求解 103ms，照样卡。
+
+桌面侧的完整降本链见 `image_editor._refresh_deform_preview`（粗网格解 +
+按整幅图面积限预算的降分辨率 + 节流）。
+
+几何约定
+--------
+- 全部用**图片像素坐标**，y 向下（与 QImage 一致）。
+- numpy 一律**延迟导入**：桌面主进程要 import 本模块（只为拿函数引用），
+  启动路径不能因此背上 numpy 的成本。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| MESH_CELL_DEFAULT | `40.0` |
+| MESH_MAX_VERTICES | `200000` |
+| ARAP_ITERATIONS | `12` |
+| ARAP_DRAG_ITERATIONS | `4` |
+| ARAP_TOLERANCE | `0.001` |
+| ARAP_DRAG_TOLERANCE | `0.005` |
+| MESH_DRAG_COARSEN | `4.0` |
+| MESH_DRAG_MAX_VERTICES | `600` |
+| COINCIDENT | `1e-06` |
+| WARP_BBOX_LIMIT | `200000` |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `grid_cell(width: int, height: int, cell: float \| None=None) -> float` | 按图片尺寸与目标格距算出**实际格距**（夹在护栏内）。 |
+| `drag_cell(width: int, height: int, cell: float \| None=None) -> float` | **拖动中**用的格距：在 :func:`grid_cell` 基础上再粗化到顶点数上限内。 |
+| `build_mesh(width: int, height: int, cell: float \| None=None)` | 建规则三角网格：返回 ``(vertices, triangles, cols, rows, cell)``。 |
+| `nearest_vertex(vertices, point) -> int` | 离 ``point`` 最近的网格顶点下标（图钉吸附到网格顶点用）。 |
+| `cotangent_weights(vertices, triangles)` | 三角网格上的**余切权重**：``(edge_i, edge_j, weights)`` 三个等长数组。 |
+| `build_laplacian(edge_i, edge_j, weights, n_vertices)` | 余切拉普拉斯矩阵 ``L``（稀疏 CSR）：``L[i,i] = Σ_j w_ij``， |
+| `solve_arap(vertices, triangles, pins, *, iterations: int=ARAP_ITERATIONS, tolerance: float=ARAP_TOLERANCE)` | 解 ARAP：``pins`` = ``[(顶点下标, (x, y)), ...]`` 硬约束 → 返回新顶点。 |
+| `border_vertices(vertices, width: int, height: int)` | 贴图片四边的网格顶点下标（**隐式锚点**，见 :func:`solve_puppet`）。 |
+| `solve_puppet(vertices, triangles, pins, *, width: int \| None=None, height: int \| None=None, anchor_border: bool=True, iterations: int=ARAP_ITERATIONS, tolerance: float=ARAP_TOLERANCE)` | **面向交互**的入口：把图钉 + 隐式边框锚点合起来解 ARAP。 |
+| `puppet_warp(src, vertices_rest, vertices_moved, triangles, *, fill=FILL, block: int=BLOCK_PIXELS, grow: bool=False, progress=None)` | 把 ``vertices_rest → vertices_moved`` 的网格形变应用到 ``src``。 |
+| `qimage_to_rgba(image)` | QImage → ``(H, W, 4)`` uint8 **RGBA**（ARGB32 在小端机器上是 B,G,R,A）。 |
+| `array_to_qimage(rgb)` | ``(H, W, 3\|4)`` uint8 → QImage（ARGB32）；3 通道按不透明处理。 |
+| `puppet_warp_qimage(image, vertices_rest, vertices_moved, triangles, *, fill=None, grow=False, progress=None)` | QImage 版 :func:`puppet_warp`（**保留 alpha 通道**）。 |
+| `mesh_region(vertices_rest, vertices_moved, width: int, height: int)` | 这次形变**实际会改动的矩形区域**（图片坐标，开区间右端）。 |
+| `mesh_moved(vertices_rest, vertices_moved, epsilon: float=1e-06) -> bool` | 网格是否有实质变化（区分"钉过但没挪"与"真变形"）。 |
+
+#### `grid_cell(width: int, height: int, cell: float | None=None) -> float`
+
+按图片尺寸与目标格距算出**实际格距**（夹在护栏内）。
+
+``cell`` 缺省用 :data:`MESH_CELL_DEFAULT`；顶点数超过
+:data:`MESH_MAX_VERTICES` 时自动放大格距（超大图兜底，不让内存爆掉）。
+
+#### `drag_cell(width: int, height: int, cell: float | None=None) -> float`
+
+**拖动中**用的格距：在 :func:`grid_cell` 基础上再粗化到顶点数上限内。
+
+两道约束叠加（取更粗的那个）：
+
+1. **相对粗化**：``cell × MESH_DRAG_COARSEN``——保住"粗网格解出的形变
+   趋势与精网格一致"这一点；
+2. **绝对上限**：顶点数不超过 :data:`MESH_DRAG_MAX_VERTICES`——挡住
+   "原格距本就很密"的情形（最密档 20px 在 4000×3000 下有 3 万顶点，
+   乘 4 仍剩 1989，单次求解 103ms）。
+
+⚠️ 这是"拖动卡死"的第二道关键手段（第一道是降分辨率预览）。ARAP 求解
+耗时随顶点数**超线性**增长，只控倍数不控绝对量，最密档照样卡。
+
+#### `build_mesh(width: int, height: int, cell: float | None=None)`
+
+建规则三角网格：返回 ``(vertices, triangles, cols, rows, cell)``。
+
+- ``vertices``：``(N, 2)`` 网格交点（图片像素坐标）。
+- ``triangles``：``(M, 3)`` 三角形顶点下标，每格两个三角，
+  **对角线交替**（棋盘式翻转）——全用同一方向的对角线会让网格在
+  某个方向偏硬，交替后各向同性得多（这是标准做法）。
+- ``cols``/``rows``：**格数**（顶点数各 +1）。
+- ``cell``：实际格距。
+
+网格严格覆盖 ``[0, width-1] × [0, height-1]``（末行/末列贴到图边），
+所以"图片四角"永远是网格顶点——用户在图角钉钉时能钉到。
+
+#### `cotangent_weights(vertices, triangles)`
+
+三角网格上的**余切权重**：``(edge_i, edge_j, weights)`` 三个等长数组。
+
+每条**无向边只出现一次**（``i < j``），权重 ``w_ij = (cot α + cot β)/2``
+（α/β 是该边两侧三角形在**对角顶点处**的内角）。
+
+⚠️ **本函数返回的权重恒为正**，这是 ARAP 能量的前提（能量
+``Σ w_ij‖·‖²`` 要求 ``w_ij > 0``，否则最小化会退化）。做法是取
+``cot = dot / |cross|``：``|cross|`` 抹掉了三角形**
+绕向**（CW/CCW）带来的符号，只留下几何意义上的余切。规则网格的对角
+不超过 45°，两对角之和 < 90°，故 ``cot α + cot β > 0`` 恒成立。
+
+⚠️ 前一版用 ``cross``（带符号）作分母，遇到 :func:`build_mesh` 里
+``(r+c)%2==0`` 那一支产出的 **CW 三角形**时，全部 ``cot`` 变负、
+``degree`` 变负，归一化时除以 ``sqrt(负×负)`` 后放大到 **1e12**，
+右端项直接爆成 4e13 —— 解出来就是"整页平移 167px"（探针实测）。
+**符号必须在这里就地掐掉。**
+
+同一条边被两个三角形共享时权重**累加**（先收集再按边 key 归并）。
+
+#### `build_laplacian(edge_i, edge_j, weights, n_vertices)`
+
+余切拉普拉斯矩阵 ``L``（稀疏 CSR）：``L[i,i] = Σ_j w_ij``，
+``L[i,j] = −w_ij``（对称）。
+
+求解时钉住处按行替换成单位方程（见 :func:`solve_arap`），所以这里
+返回**未加约束**的矩阵，由调用方按需改行。
+
+#### `solve_arap(vertices, triangles, pins, *, iterations: int=ARAP_ITERATIONS, tolerance: float=ARAP_TOLERANCE)`
+
+解 ARAP：``pins`` = ``[(顶点下标, (x, y)), ...]`` 硬约束 → 返回新顶点。
+
+没给任何图钉（或图钉位置与初始一致）时直接返回 ``vertices`` 的副本——
+恒等形变**不做任何计算**（自测钉死"逐字节还原"）。
+
+local-global 交替：
+- **local**：``R_i`` 取 :func:`_best_rotation` ``S_i`` 的 SVD 最优旋转，
+  ``S_i = Σ_j w_ij (p_i−p_j)(p'_i−p'_j)ᵀ``；
+- **global**：解 ``L P' = b``，``b_i = Σ_j (w_ij/2)(R_i+R_j)(p_i−p_j)``。
+
+⚠️ **硬约束的正确消元**（前一版错在这里，症状是"钉了不动也整页乱飞"）：
+钉住顶点的未知量要**同时**做两件事——① 在自由顶点的方程里把 ``L[i,k]·t_k``
+挪到右端；② **把该列从矩阵里清成 0**（再用单位行覆盖钉住行）。
+前一版只做了 ① 没做 ②，于是 ``A[i,k]`` 仍留着 ``−w_ik``，与右端里已经
+挪走的 ``t_k`` **重复计入**，等价于把约束位置算了两次 —— 实测"两个图钉
+都不挪"竟解出 202px 的整页位移（正确解应是 0）。
+
+#### `border_vertices(vertices, width: int, height: int)`
+
+贴图片四边的网格顶点下标（**隐式锚点**，见 :func:`solve_puppet`）。
+
+⚠️ 这条是 Puppet Warp 能"稳住"的关键，必须理解：
+ARAP 能量只惩罚"三角形偏离刚体旋转"，**对整体平移/旋转不变**。所以只钉
+一个图钉时，整张网格可以靠"一起平移"来满足它 —— 实测（400×300，格距
+40）只钉一个图钉拖 37px，**每个顶点都平移 14.269px**，完全是"整页漂移"。
+Photoshop 的做法是默认把**画布边界**视为固定：拖内部图钉时边框被拉住，
+形变才收敛成"近处大、远处为零"。
+
+返回贴住 ``x∈{0, width-1}`` 或 ``y∈{0, height-1}`` 的顶点下标数组。
+
+#### `solve_puppet(vertices, triangles, pins, *, width: int | None=None, height: int | None=None, anchor_border: bool=True, iterations: int=ARAP_ITERATIONS, tolerance: float=ARAP_TOLERANCE)`
+
+**面向交互**的入口：把图钉 + 隐式边框锚点合起来解 ARAP。
+
+- ``anchor_border=True``（默认，PS 口径）时自动把
+  :func:`border_vertices` 里的顶点按**原位**钉住，作为边界约束；
+  否则一个图钉会让整页一起平移（见 :func:`border_vertices` 的说明）。
+- ``width``/``height`` 缺省时由 ``vertices`` 的包围盒推出（网格严格覆盖
+  ``[0, w-1]×[0, h-1]``）。
+- 用户图钉与边框锚点若有重合，以**用户图钉**为准（后者被覆盖，避免
+  同一顶点两个目标位置）。
+
+返回新的顶点数组。``pins`` 为空且 ``anchor_border=False`` 时原样返回。
+
+#### `puppet_warp(src, vertices_rest, vertices_moved, triangles, *, fill=FILL, block: int=BLOCK_PIXELS, grow: bool=False, progress=None)`
+
+把 ``vertices_rest → vertices_moved`` 的网格形变应用到 ``src``。
+
+逐像素重映射（**正向解网格 + 三角形重心插值**，不做反演）：
+对每个输出像素，找到它落在**形变后网格**的哪个三角形里 ⇒ 用该三角形的
+重心坐标在**形变前网格**上插值出源坐标 ⇒ 双线性采样。
+
+``src`` 支持 (H, W) 与 (H, W, C)。网格没动过时**逐字节**返回原图。
+``block`` 保留仅为兼容旧调用（现实现不再分块）。
+
+``grow=True``：网格顶点被拖出原边界时**不裁**，画布放大到
+「原图 ∪ 形变后网格外接框」（用户 2026-10-02：「超出原本区域的不要截，
+最终结果按最后图片的范围」）。返回 ``(out, (ox, oy))``，``(ox, oy)`` =
+新画布左上角在原坐标系里的位置（可为负）。
+
+``progress`` 给定时在**三个粗阶段**回调 ``progress(stage, 3)``
+（扫描线栅格化 → 双线性采样 → 完成）；返回 ``False`` 则中止并返回
+``None``。这里只在粗粒度上报（实现是整表向量化，没有可切分的分块循环，
+见 ``utils.puppet_warp`` 的「性能」）——只为让画布侧的长任务有进度可示、
+可被取消。
+
+#### `qimage_to_rgba(image)`
+
+QImage → ``(H, W, 4)`` uint8 **RGBA**（ARGB32 在小端机器上是 B,G,R,A）。
+
+⚠️ 必须把 alpha 带上。桌面侧编辑的常常是第三步产物"**白底透明 PNG**"：
+透明像素的 RGB 分量存的是 0，一旦只取 RGB 丢掉 alpha，整片背景就读成
+**黑色**（用户 2026-10-01 报的"变形后图片变成黑色"就是这个）。
+
+#### `puppet_warp_qimage(image, vertices_rest, vertices_moved, triangles, *, fill=None, grow=False, progress=None)`
+
+QImage 版 :func:`puppet_warp`（**保留 alpha 通道**）。
+
+不透明图走 3 通道（比 4 通道少 1/4 的采样量）；带 alpha 的图走 4 通道，
+越界填充取 :data:`FILL_CLEAR`（白 + 透明），免得透明底变实心。
+
+``grow=True``：网格被拖出原边界时不裁，画布放大，返回
+``(QImage, (ox, oy))``（见 :func:`puppet_warp`）。``grow=False``（默认）
+返回单个 ``QImage``，与原行为逐字节一致。
+
+``progress`` 透传给 :func:`puppet_warp`（粗阶段回调，返回 ``False``
+则中止并返回 ``None``）。
+
+#### `mesh_region(vertices_rest, vertices_moved, width: int, height: int)`
+
+这次形变**实际会改动的矩形区域**（图片坐标，开区间右端）。
+
+取"移动过的网格顶点"的包围盒——网格没动的部分逐字节等于原图，
+画布侧的预览浮层贴在框外也不会留接缝。返回 ``(x0, y0, x1, y1)``；
+没动过返回 ``(0, 0, 0, 0)``。
 
 ---
 

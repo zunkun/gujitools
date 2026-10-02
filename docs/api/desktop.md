@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 94 个模块、106 个公开类、662 个公开函数/方法（生成于 2026-10-01）。
+覆盖 107 个模块、123 个公开类、781 个公开函数/方法（生成于 2026-10-02）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -12,7 +12,7 @@
 
 | 模块 | 类 | 函数 |
 | --- | --- | --- |
-| [`desktop.app`](#desktopapp) | 1 | 4 |
+| [`desktop.app`](#desktopapp) | 1 | 8 |
 | [`desktop.components.common.safecomment`](#desktopcomponentscommonsafecomment) | 6 | 12 |
 | [`desktop.components.detect_stats`](#desktopcomponentsdetect_stats) | 1 | 4 |
 | [`desktop.components.imposition.canvas`](#desktopcomponentsimpositioncanvas) | 1 | 26 |
@@ -37,7 +37,7 @@
 | [`desktop.components.panels.rembg_panel`](#desktopcomponentspanelsrembg_panel) | 1 | 1 |
 | [`desktop.components.step_bar`](#desktopcomponentsstep_bar) | 2 | 18 |
 | [`desktop.components.task_table`](#desktopcomponentstask_table) | 3 | 10 |
-| [`desktop.components.viewers.image_editor`](#desktopcomponentsviewersimage_editor) | 3 | 68 |
+| [`desktop.components.viewers.image_editor`](#desktopcomponentsviewersimage_editor) | 3 | 82 |
 | [`desktop.components.viewers.image_view`](#desktopcomponentsviewersimage_view) | 1 | 23 |
 | [`desktop.components.viewers.image_viewer`](#desktopcomponentsviewersimage_viewer) | 1 | 13 |
 | [`desktop.components.viewers.image_zoom_dialog`](#desktopcomponentsviewersimage_zoom_dialog) | 4 | 34 |
@@ -47,6 +47,14 @@
 | [`desktop.components.viewers.rembg_viewer`](#desktopcomponentsviewersrembg_viewer) | 1 | 9 |
 | [`desktop.components.viewers.thumb_strip`](#desktopcomponentsviewersthumb_strip) | 1 | 10 |
 | [`desktop.components.viewers.thumbs_loader`](#desktopcomponentsviewersthumbs_loader) | 1 | 1 |
+| [`desktop.modules`](#desktopmodules) | 1 | 1 |
+| [`desktop.modules.base`](#desktopmodulesbase) | 1 | 9 |
+| [`desktop.modules.detect.page`](#desktopmodulesdetectpage) | 1 | 3 |
+| [`desktop.modules.extract.page`](#desktopmodulesextractpage) | 1 | 2 |
+| [`desktop.modules.imposition.page`](#desktopmodulesimpositionpage) | 1 | 2 |
+| [`desktop.modules.print.page`](#desktopmodulesprintpage) | 1 | 2 |
+| [`desktop.modules.rembg.page`](#desktopmodulesrembgpage) | 1 | 2 |
+| [`desktop.modules.shell`](#desktopmodulesshell) | 1 | 15 |
 | [`desktop.pages.taskdetail.detect`](#desktoppagestaskdetaildetect) | 1 | 0 |
 | [`desktop.pages.taskdetail.history`](#desktoppagestaskdetailhistory) | 1 | 0 |
 | [`desktop.pages.taskdetail.imposition`](#desktoppagestaskdetailimposition) | 2 | 3 |
@@ -73,6 +81,11 @@
 | [`desktop.stages.generic_stage`](#desktopstagesgeneric_stage) | 0 | 2 |
 | [`desktop.stages.print_stage`](#desktopstagesprint_stage) | 0 | 3 |
 | [`desktop.stages.rembg_stage`](#desktopstagesrembg_stage) | 0 | 1 |
+| [`desktop.steps.control`](#desktopstepscontrol) | 1 | 11 |
+| [`desktop.steps.kernel`](#desktopstepskernel) | 5 | 11 |
+| [`desktop.steps.process`](#desktopstepsprocess) | 1 | 7 |
+| [`desktop.steps.source_zone`](#desktopstepssource_zone) | 1 | 18 |
+| [`desktop.steps.spec`](#desktopstepsspec) | 1 | 18 |
 | [`desktop.store.annotations`](#desktopstoreannotations) | 1 | 9 |
 | [`desktop.store.drafts`](#desktopstoredrafts) | 1 | 5 |
 | [`desktop.store.imposition`](#desktopstoreimposition) | 1 | 3 |
@@ -113,61 +126,78 @@
 
 源码：[`desktop/app.py`](../../desktop/app.py)
 
-gujitools 桌面端主窗口：任务列表页 + 任务详情页切换。
+gujitools 桌面端主窗口：左侧导航壳层（任务管理 + 独立模块）。
 
 ### 模块常量
 
 | 名称 | 值 |
 | --- | --- |
 | WINDOW_TITLE | `"古籍重製"` |
+| CONTENT_MIN_WIDTH | `1080` |
 | WINDOW_START_MAXIMIZED | `True` |
 
 ### `class MainWindow(QMainWindow)`
 
-主窗口：在任务列表页与任务详情页之间切换。
-创建时设定窗口最小尺寸并套用全局底色；通过 QStackedWidget 持有两页，
-并连接列表页「打开详情」与详情页「返回」信号完成页面跳转。
+主窗口：左侧导航壳层（任务管理 + 独立模块）与详情页跳转。
+
+2026-10-02 起，窗口中央从「列表页/详情页两页对切」升级为
+:class:`desktop.modules.shell.ModuleShell`：左边一条 qfluentwidgets
+导航栏，右边页面栈。任务管理仍是首页，其余是彼此独立的工具模块
+（图片提取 / 去底色 / 拼图）。
+
+⚠️ **对外的属性名一个都没变**：``list_page`` / ``detail_page`` / ``pages``
+/ ``store`` 全部转发给壳层同名成员（见下面几个 property）。``tests/gui_shot.py``
+与 ``tests/selftests/_context.py`` 都按这些名字取页面操作控件，转发一层
+既升级了布局、又不改测试契约。
 
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
-| `detail_page()` | 详情页实例（惰性构造）。 |
-| `keyPressEvent(event) -> None` | ←/→ 转发给详情页翻页。 |
-| `closeEvent(event) -> None` | 关闭窗口时先让详情页收尾 worker 子进程。 |
+| `store()` | 任务存储：转发壳层（壳层与各页面各自持有引用，见 setter 的说明）。 |
+| `store(value) -> None` | 整体换掉数据目录（测试/截图脚本把 store 指向临时目录时用）。 |
+| `pages()` | 页面栈（``QStackedWidget``）：转发给壳层，兼容既有调用点。 |
+| `list_page()` | 任务列表页：转发给壳层。 |
+| `detail_page()` | 详情页实例（惰性构造）：转发给壳层。 |
+| `keyPressEvent(event) -> None` | ←/→ 转发给壳层（详情页翻页）。 |
+| `closeEvent(event) -> None` | 关闭窗口时让壳层收尾所有 worker 子进程与后台线程。 |
+
+##### `store(value) -> None`
+
+装饰器：`store.setter`
+
+整体换掉数据目录（测试/截图脚本把 store 指向临时目录时用）。
+
+⚠️ 赋值必须**传到壳层**，不能只改 MainWindow 自己：壳层存了一份（惰性
+详情页构造时取它）、列表页存了一份、已建出来的详情页又存了一份。只改
+这里的话，惰性构造的详情页会继续读**真实数据目录**——表现是"打开的是
+同名任务号的另一个任务"（`tests/selftests/last_stage.py` 实测）：
+它给 MainWindow 换 store 后 `_restore_last_task` 打开 0001，而详情页
+拿的是真实目录里的 0001，于是落到了那台机器上真正停留的步骤。
 
 ##### `detail_page()`
 
 装饰器：`property`
 
-详情页实例（惰性构造）。
+详情页实例（惰性构造）：转发给壳层。
 
-保留这个公开属性名：``tests/selftests/_context.py`` 与
-``tests/gui_shot.py`` 都按 ``window.detail_page`` 取页面来操作控件。
 读它本身就等于声明「现在就需要详情页」，因此访问即构造——与启动期
 惰性并不冲突。
 
 ##### `keyPressEvent(event) -> None`
 
-←/→ 转发给详情页翻页。
+←/→ 转发给壳层（详情页翻页）。
 
 ⚠️ 点击预览大图（QLabel 默认不收焦点）后，焦点落在**主窗口本身**，
 按键只会到这里——不转发的话，用户点完图片按左右毫无反应
-（用户 18:29 实测）。两条边界：
-- 只在**详情页可见**时转发（任务列表页没有翻页语义）；
-- 焦点在参数输入区等输入类控件时，方向键被它们自己消费（移光标/
-  改值），根本到不了这里——「焦点在输入区不切换」天然成立，
-  且详情页的 navigate_by_arrow 里还有同一道守卫兜底。
+（用户 18:29 实测）。转发实现见 ModuleShell.keyPressEvent。
 
 ##### `closeEvent(event) -> None`
 
-关闭窗口时先让详情页收尾 worker 子进程。
-详情页持有 worker 子进程与后台线程的引用，直接退出会让进程被强杀；
-这里把事件转交给详情页的 closeEvent 完成 kill/等待/清理后再接受关闭。
-详情页是惰性的——没建过就说明没有 worker 需要收尾。
+关闭窗口时让壳层收尾所有 worker 子进程与后台线程。
 
-列表页也要收尾：导入后的「复制源文件 + 生成缩略图」在后台队列里，
-整本可能几千页（实测 2400 页要 69s），退出时让它尽快收手。
+壳层会把收尾分发给任务列表页、懒建的详情页与已构造的模块页；
+详情页持有 worker 子进程与后台线程的引用，直接退出会让进程被强杀。
 
 ### 模块函数
 
@@ -1734,24 +1764,27 @@ source_path 不单独成列，仅作任务名的悬浮提示。
   浮层显示）；「应用变换」（或切走工具/「完成」）才烘焙进像素——原
   区域填白、只把选区内容按仿射矩阵画回去，画布尺寸不变，**区域外的
   像素一动不动**。一批一个撤销点。
-- **变形**（局部光滑形变，处理古籍褶皱/卷曲）：画面上有一个**一圈把手的笼**
-  （默认＝覆盖选区的矩形，把手疏密在选项行选 4/8/12 点），**拖某个把手**，
-  只有它**附近**的像素跟着走 —— **近处变化大、远处几乎不动**（"像扯弹簧"），
-  影响范围**之外**的像素逐字节一动不动。影响范围＝拖动距离的倍数，
-  选项行「影响范围」可选紧凑/适中/宽松；
-  **点笼线**可就地加一个把手（加完即可拖；加上去不改变形变），
-  「重画笼」可手绘任意闭合区域（逐点点击、点回起点闭合、画笼中 Esc 放弃）。
-  把手**可以拖到图片外面**（往外拉＝把那块内容往外拉伸）。
-  ⚠️ 刻意**不是** GIMP 原版那种"笼内整体一起走"的全局形变：那样拖一个角会把
-  整笼拉斜、从其余顶点扯出折痕（用户 2026-10-01 报过），改为局部影响。
-  拖动即实时预览（只算影响范围那一小块 + 按屏幕清晰度降采样，见
-  :func:`cage_preview_scale`），松手补一帧更清楚的；「应用变形」（或切走
-  工具/「完成」）才烘焙进像素（有等待光标）。
-  ⚠️ 「应用变形」后**笼留在原地**（``adopt_cage``）：古籍褶皱往往要来回试
-  几次，每次都回到全幅矩形笼的话用户得重新圈一遍。
-  算法与口径见 ``utils/cage_warp.py``。
-  ⚠️ 进这个工具时图片**不铺满视口**（:data:`CAGE_FIT_RATIO`），四周留白
-  方便把把手往图外拖。
+- **变形**（**PS 操控变形 Puppet Warp 口径**，处理古籍褶皱/卷曲/线段倾斜）：
+  在图上**打图钉**（点一下放一个）→ 拖某个图钉，**它附近的内容跟着走、
+  离得越远动得越少、没被钉住的远处几乎不动**（"像扯弹簧"/"像揉面团"）。
+  - **加图钉**：工具激活时直接点图上的位置；点已有图钉附近＝选中它而不是
+    新建（吸附半径 :data:`PIN_HIT_VIEW_PX`）。
+  - **删图钉**：`Alt`+点，或右键点。
+  - **图钉拖到图外**：允许（往外拉＝把那块内容往外拉伸），越界部分填底。
+  - **网格疏密**：算法把图片切成三角网格，格距在选项行选（见
+    :data:`MESH_DENSITY_CHOICES`）；越密越细腻、解方程越慢。
+  - ⚠️ **边框自动锚定**：ARAP 能量对整体平移/旋转不变，只钉一个图钉时整张
+    网格会"一起漂移"（实测每个顶点都平移 14px）。所以默认把**图片四边**
+    视为固定（PS 的做法），拖内部图钉时边框被拉住，形变才收敛成"近处大、
+    远处为零"（见 ``utils.puppet_warp.solve_puppet``）。
+  - 拖动即实时预览（只算动过的网格凸包包围盒 + 按屏幕清晰度降采样，见
+    :func:`cage_preview_scale`），松手补一帧更清楚的；「应用变形」（或切走
+    工具/「完成」）才烘焙进像素（有等待光标）。
+  - ⚠️ 「应用变形」后**图钉留在原地**（``adopt_pins``）：古籍褶皱往往要来回
+    试几次，每次应用后都清空图钉的话用户得重新钉一遍。
+  算法与口径见 ``utils/puppet_warp.py``。
+  ⚠️ 进这个工具时图片**不铺满视口**（:data:`DEFORM_FIT_RATIO`），四周留白
+  方便把图钉往图外拖。
 - **擦除**：按住左键涂抹把污点**擦成白底**（古籍页面去污点就是涂白）；
   直径在选项行可调；光标处有**实圈指示**，直径恒等于实际擦除直径
   （所见即所擦）。一笔一个撤销点。
@@ -1786,17 +1819,27 @@ source_path 不单独成列，仅作任务名的悬浮提示。
 | HANDLE_VIEW_PX | `12.0` |
 | EDGE_BAND_VIEW_PX | `8.0` |
 | SEL_FIT_RATIO | `0.8` |
+| EDIT_FIT_RATIO | `0.8` |
 | PIVOT_VIEW_PX | `14.0` |
 | ROTATE_SNAP_DEG | `15.0` |
-| CAGE_PER_SIDE_DEFAULT | `1` |
-| CAGE_REACH_DEFAULT | `0` |
-| CAGE_FIT_RATIO | `0.8` |
-| CAGE_NODE_VIEW_PX | `11.0` |
-| CAGE_HIT_VIEW_PX | `9.0` |
-| CAGE_CLOSE_VIEW_PX | `14.0` |
-| CAGE_PREVIEW_PIXELS | `200000` |
+| MESH_DENSITY_DEFAULT | `40.0` |
+| DEFORM_FIT_RATIO | `0.8` |
+| PIN_NODE_VIEW_PX | `9.0` |
+| PIN_HIT_VIEW_PX | `11.0` |
+| QUAD_HANDLE_VIEW_PX | `8.0` |
+| QUAD_HIT_VIEW_PX | `12.0` |
+| RECTIFY_RATIO_DEFAULT | `"area"` |
+| DEFORM_PREVIEW_PIXELS | `120000` |
+| DEFORM_PREVIEW_SETTLE_PIXELS | `2500000` |
+| DEFORM_PREVIEW_INTERVAL | `0.08` |
+| CAGE_HANDLE_VIEW_PX | `8.0` |
+| CAGE_HIT_VIEW_PX | `12.0` |
+| CAGE_EDGE_BAND_VIEW_PX | `8.0` |
+| CAGE_PREVIEW_PIXELS | `250000` |
 | CAGE_PREVIEW_SETTLE_PIXELS | `2500000` |
-| CAGE_PREVIEW_INTERVAL | `0.12` |
+| CAGE_PREVIEW_INTERVAL | `0.08` |
+| CAGE_FIT_RATIO | `0.8` |
+| CAGE_DENSITY_DEFAULT | `2` |
 
 ### `class TextBlockItem(QGraphicsTextItem)`
 
@@ -1863,19 +1906,31 @@ source_path 不单独成列，仅作任务名的悬浮提示。
 | `transform_rotate(degrees: float) -> None` | 绕**轴心当前视觉位置**旋转（轴心保持不动）。 |
 | `transform_scale(sx: float, sy: float, anchor: QPointF \| None=None) -> None` | 缩放（局部空间，锚点缺省=轴心；sx/sy 是相对当前内容的倍率）。 |
 | `transform_shear(edge: str, k: float) -> None` | 拖边切变：``edge`` 是被抓的边（l/r/t/b），``k`` 是切变系数， |
-| `cage_density() -> int` | 矩形笼当前的节点疏密（每边几段）。 |
-| `set_cage_density(per_side: int) -> None` | 改矩形笼的疏密：按当前选区重建笼（已拖动的节点位置丢弃）。 |
-| `cage_reach() -> int` | 「影响范围」档位下标（见 :data:`CAGE_REACH_CHOICES`）。 |
-| `set_cage_reach(index: int) -> None` | 改「影响范围」：只影响**之后的**拖动，不必丢掉已有的形变。 |
-| `cage_influence() -> float \| None` | 把「影响范围」档位换算成**绝对影响半径**（图片像素）；没动过则 None。 |
-| `reset_cage() -> None` | 「重置」：笼回到覆盖当前选区的默认矩形，丢掉未应用的形变。 |
-| `is_drawing_cage() -> bool` | 是否正处在「重画笼」的手绘状态。 |
-| `begin_cage_draw() -> None` | 进入手绘笼（GIMP 的「创建或调整笼」）：逐点点击圈区域。 |
-| `cancel_cage_draw() -> None` | 放弃手绘，保留原来的笼（若它已被拖动，预览一并恢复）。 |
-| `cage_pending()` | 未应用的笼形变 ``(笼原位, 笼当前位置)``（(x, y) 元组列表）；无则 None。 |
-| `cage_move_node(index: int, pos: QPointF) -> None` | 把第 ``index`` 个笼把手拖到 ``pos``（图片坐标）。 |
-| `cage_polygon() -> list[QPointF] \| None` | 当前笼的顶点（图片坐标，可能已被拖动）；不足 3 点返回 None。 |
-| `adopt_cage(points) -> None` | 把 ``points`` 直接立为笼（原位 = 当前位置 = 恒等形变）。 |
+| `mesh_density() -> float` | 当前网格格距（图片像素档位）。 |
+| `set_mesh_density(cell: float) -> None` | 改网格格距：**重建网格并清空图钉**（顶点下标全变了，旧钉无意义）。 |
+| `reset_pins() -> None` | 「重置」：清空所有图钉，丢掉未应用的形变（网格本身保留）。 |
+| `pins() -> list` | 当前图钉的副本（``(顶点下标, QPointF)`` 列表）——给自测与外部读。 |
+| `pin_count() -> int` | 当前图钉个数。 |
+| `pin_add(pos: QPointF) -> int \| None` | 在 ``pos``（图片坐标）加一个图钉，返回它在 ``_pins`` 里的下标。 |
+| `pin_remove(index: int) -> None` | 删掉第 ``index`` 个图钉（形变随之重解）。 |
+| `pin_move(index: int, pos: QPointF) -> None` | 把第 ``index`` 个图钉拖到 ``pos``（图片坐标）。 |
+| `pins_pending()` | 未应用的形变 ``(vertices_rest, vertices_moved, triangles)``；无则 None。 |
+| `adopt_pins(pin_vertices=None) -> None` | 「应用变形」后用：把图钉**原地保留**（目标位置 = 新网格的原位）。 |
+| `reset_cage() -> None` | 「重置」：把手回到整幅图原位（丢掉未应用的形变）。 |
+| `cage_density() -> int` | 当前每边把手数档位。 |
+| `set_cage_density(per_side: int) -> None` | 改每边把手数：**重建笼并清掉未应用的形变**（把手序号全变了）。 |
+| `cage() -> list` | 当前把手副本 ``[(原位, 当前位置), ...]``——给自测与外部读。 |
+| `cage_source() -> list[QPointF]` | 把手**原位**序列（形变映射的左端）。 |
+| `cage_target() -> list[QPointF]` | 把手**当前位置**序列（形变映射的右端）。 |
+| `cage_pending()` | 未应用的笼形变 ``(cage_src, cage_dst)``；没动过返回 ``None``。 |
+| `cage_move(index: int, pos: QPointF) -> None` | 把第 ``index`` 个把手拖到 ``pos``（图片坐标，允许图外）。 |
+| `cage_move_all(delta: QPointF) -> None` | 整体平移笼（拖边/拖笼内部）：把所有把手在**按下时的快照**上位移。 |
+| `reset_quad() -> None` | 「重置」：四角回到整幅图四角（丢掉未应用的校正）。 |
+| `quad() -> list` | 当前四边形四角副本（``QPointF`` 列表）——给自测与外部读。 |
+| `rectify_ratio() -> str` | 目标矩形宽高比口径（见 RECTIFY_RATIO_CHOICES）。 |
+| `set_rectify_ratio(mode: str) -> None` | 改目标矩形口径：只影响**之后的**预览，不必丢掉当前四角。 |
+| `quad_move(index: int, pos: QPointF) -> None` | 把第 ``index`` 个角拖到 ``pos``（图片坐标）。 |
+| `quad_pending()` | 未应用的校正 ``(quad, mode)``；四角没动过则 None。 |
 | `fit(ratio: float \| None=None) -> None` | 适应窗口（整图完整可见）；``ratio`` < 1 时四周留白。 |
 | `set_fit_ratio(ratio: float) -> None` | 设「适应窗口」时图片占视口的比例（1.0 = 铺满，< 1 = 四周留白）。 |
 | `zoom_in() -> None` | 放大一档（工具栏按钮用；无档位表，连续乘 1.25）。 |
@@ -1918,38 +1973,67 @@ source_path 不单独成列，仅作任务名的悬浮提示。
 拖边切变：``edge`` 是被抓的边（l/r/t/b），``k`` 是切变系数，
 对边为锚（抓右边往下拖 = 内容随 x 增大而下斜）。
 
-##### `cage_influence() -> float | None`
+##### `pin_add(pos: QPointF) -> int | None`
 
-把「影响范围」档位换算成**绝对影响半径**（图片像素）；没动过则 None。
+在 ``pos``（图片坐标）加一个图钉，返回它在 ``_pins`` 里的下标。
 
-档位记的是"拖动距离的倍数"而不是固定像素，是为了让手感一致：拖得远，
-受影响的面积自然大一点，但**相对比例不变**——这正是"像扯弹簧"该有的
-样子（近处变化大、远端几乎不动）。倍数下限由 ``utils.cage_warp`` 的
-防自交判据把着，真给太小也会被自动放宽。
+图钉**吸附到最近的网格顶点**（ARAP 的硬约束只能钉在顶点上）；同一
+顶点已有图钉时不再重复加，直接返回已有的那个。
 
-##### `cage_move_node(index: int, pos: QPointF) -> None`
+##### `pin_move(index: int, pos: QPointF) -> None`
 
-把第 ``index`` 个笼把手拖到 ``pos``（图片坐标）。
+把第 ``index`` 个图钉拖到 ``pos``（图片坐标）。
 
 ⚠️ **允许拖到图片外面**（用户 2026-10-01：「任意点只能向内，不能向外」）。
 往外拖＝把那块内容往外**拉伸**，拉出画布的部分按越界填底。这里只留一个
-"一张图那么远"的宽松上限，免得把手被甩到天外、再也找不回来。
+"一张图那么远"的宽松上限，免得图钉被甩到天外、再也找不回来。
 
-##### `adopt_cage(points) -> None`
+##### `pins_pending()`
 
-把 ``points`` 直接立为笼（原位 = 当前位置 = 恒等形变）。
+未应用的形变 ``(vertices_rest, vertices_moved, triangles)``；无则 None。
 
-``points`` 收 ``QPointF`` 与 ``(x, y)`` 元组（见 :func:`_as_point`）。
+「未应用」= 解出的网格确实动过。全都没动时返回 None，调用方据此
+跳过烘焙（不产生多余的撤销点）。
 
-「应用变形」后用：形变已经烧进像素，**笼留在原地**——用户想接着
-微调同一块（古籍褶皱往往要来回试几次），不该逼他重新圈一遍。
+##### `adopt_pins(pin_vertices=None) -> None`
+
+「应用变形」后用：把图钉**原地保留**（目标位置 = 新网格的原位）。
+
+⚠️ 为什么不清空：古籍褶皱往往要来回试几次，每次应用后都清空图钉的话
+用户得重新钉一遍。保留图钉、并让它们落在**刚烘焙完的图**的原位，
+就可以接着微调同一块。
+
+⚠️ ``pin_vertices`` 必须由调用方在 ``set_image`` **之前**快照传入：
+:meth:`set_image` 换图时会把 ``_pins`` 清空（换图后旧钉无意义），
+所以这里不能指望调用时 ``self._pins`` 还在。传 ``None`` 时退回读
+当前 ``self._pins``（兼容直接调用）。
+
+##### `cage_pending()`
+
+未应用的笼形变 ``(cage_src, cage_dst)``；没动过返回 ``None``。
+
+口径与 :meth:`pins_pending` 一致：只有"把手真的动过"才算待应用。
+
+##### `cage_move_all(delta: QPointF) -> None`
+
+整体平移笼（拖边/拖笼内部）：把所有把手在**按下时的快照**上位移。
+
+必须基于快照位移，不能逐帧累加——否则每帧都从"当前值"再位移一次，
+手一停位置就漂（浮点累积）。
+
+##### `quad_move(index: int, pos: QPointF) -> None`
+
+把第 ``index`` 个角拖到 ``pos``（图片坐标）。
+
+⚠️ **允许拖到图片外面**（四角要能框住"拍摄时把纸张也拍进来了"的
+边界）。只留一个"一张图那么远"的宽松上限，免得角点被甩丢。
 
 ##### `fit(ratio: float | None=None) -> None`
 
 适应窗口（整图完整可见）；``ratio`` < 1 时四周留白。
 
 留白的做法是把"要装进去的矩形"按比例放大——图片因此只占视口的
-``ratio``（见 :data:`CAGE_FIT_RATIO`：进「变形」时图片不顶满视口，
+``ratio``（见 :data:`DEFORM_FIT_RATIO`：进「变形」时图片不顶满视口，
 用户才有地方把笼把手往图外拖）。
 
 ##### `set_fit_ratio(ratio: float) -> None`
@@ -1989,30 +2073,56 @@ source_path 不单独成列，仅作任务名的悬浮提示。
 | `rotate_about(point: QPointF, degrees: float) -> QTransform` | 绕 ``point`` 旋转 ``degrees``（正=顺时针）。 |
 | `scale_about(point: QPointF, sx: float, sy: float) -> QTransform` | 绕 ``point`` 缩放（sx/sy 为 0 会退化，调用方保证非零）。 |
 | `shear_about(point: QPointF, sh: float, sv: float) -> QTransform` | 绕 ``point`` 切变：水平 sh（x 随 y 斜切）、垂直 sv（y 随 x 斜切）。 |
-| `bake_transform(image: QImage, rect: QRectF, xf: QTransform, region: QImage) -> QImage` | 把「选区内容经 ``xf`` 变换」烘焙进图片（画布尺寸不变）。 |
-| `bake_cage(image: QImage, cage_src, cage_dst, influence=None) -> QImage` | 把「把手 ``cage_src`` → 把手 ``cage_dst``」的形变烘焙进图片（尺寸不变）。 |
-| `cage_preview_scale(span_x: float, span_y: float, on_screen: float=1.0, budget_pixels: float=CAGE_PREVIEW_PIXELS) -> float` | 拖动预览的降采样倍率：清晰度与成本的**取小**。 |
+| `bake_transform(image: QImage, rect: QRectF, xf: QTransform, region: QImage, grow: bool=False)` | 把「选区内容经 ``xf`` 变换」烘焙进图片。 |
+| `transform_region(image: QImage, rect: QRectF, xf: QTransform)` | ``grow`` 模式的目标画布：``(ox, oy, width, height)``。 |
+| `bake_puppet(image: QImage, vertices_rest, vertices_moved, triangles, grow=False, progress=None)` | 把「网格 ``vertices_rest`` → ``vertices_moved``」的形变烘焙进图片。 |
+| `cage_preview_scale(span_x: float, span_y: float, on_screen: float=1.0, budget_pixels: float=DEFORM_PREVIEW_PIXELS) -> float` | 拖动预览的降采样倍率：清晰度与成本的**取小**。 |
 | `wait_cursor()` | 耗时操作期间挂等待光标。 |
+| `run_with_progress(parent: QWidget \| None, title: str, label: str, work, params: dict)` | 在后台线程跑 ``work(params, progress)`` 并显示进度对话框。 |
 | `draw_text(image: QImage, pos: QPointF, text: str, px: int, color: QColor, family: str \| None=None) -> QImage` | 在 ``pos``（文字块左上角）画文字（可多行，行距 1.25 倍）；空文本原样返回。 |
 
-#### `bake_transform(image: QImage, rect: QRectF, xf: QTransform, region: QImage) -> QImage`
+#### `bake_transform(image: QImage, rect: QRectF, xf: QTransform, region: QImage, grow: bool=False)`
 
-把「选区内容经 ``xf`` 变换」烘焙进图片（画布尺寸不变）。
+把「选区内容经 ``xf`` 变换」烘焙进图片。
 
-先把**原区域**填白（内容被挪走/变形后空出来的地方），再在 ``xf``
-变换下把选区快照画回去——与画布上的实时预览（填白底 + 变换浮层）
-所见一致。古籍整页白底，填白视觉上最干净。
+``grow=False``（旧行为）：画布尺寸不变——先把**原区域**填白（内容被挪走/
+变形后空出来的地方），再在 ``xf`` 变换下把选区快照画回去。古籍整页白底，
+填白视觉上最干净。
 
-#### `bake_cage(image: QImage, cage_src, cage_dst, influence=None) -> QImage`
+``grow=True``（用户 2026-10-02）：「图片倾斜后一部分区域超出原本边界，
+现在会被截掉」——**不截**。最终画布 = 「原图边界 ∪ 变换后选区的外框」
+（:func:`transform_region`）。返回 ``(QImage, (ox, oy))``，``(ox, oy)`` =
+新画布左上角在原坐标系里的位置（可为负）。
 
-把「把手 ``cage_src`` → 把手 ``cage_dst``」的形变烘焙进图片（尺寸不变）。
+#### `transform_region(image: QImage, rect: QRectF, xf: QTransform)`
 
-与 :func:`bake_transform` 同口径：**影响半径之外**的像素逐字节不动，
-只是这里不是仿射矩阵而是逐像素重映射（见 ``utils.cage_warp``）。
+``grow`` 模式的目标画布：``(ox, oy, width, height)``。
+
+用户口径（2026-10-02）：「一切以新图为准，新图什么样就什么样，老图不要了」
+——最终图 = **变换后内容的完整外框**，而不是"原图 ∪ 变换后"。
+
+内容 = ①变换后的选区（仿射把矩形映成平行四边形，落在四角外接框内）
+∪ ②**选区之外**原本就留着的那部分原图（选区整体移走时这块为空）。
+选区原位被移走、内容被填白，所以**不再算进外框**——若按"原图边界"取并，
+整体平移就会凭空多出一条填白边（用户要的正是把它去掉）。
+
+#### `bake_puppet(image: QImage, vertices_rest, vertices_moved, triangles, grow=False, progress=None)`
+
+把「网格 ``vertices_rest`` → ``vertices_moved``」的形变烘焙进图片。
+
+与 :func:`bake_transform` 同口径：**没动过的网格区域**逐字节不动，只是
+这里不是仿射矩阵，而是 ARAP 三角网格逐像素重映射（PS 操控变形口径，
+见 ``utils.puppet_warp``）。
 ⚠️ **保留 alpha**：桌面侧编辑的常常是第三步产物「白底透明 PNG」，
 丢掉 alpha 会让整片透明背景变成不透明黑（用户 2026-10-01 报过）。
 
-#### `cage_preview_scale(span_x: float, span_y: float, on_screen: float=1.0, budget_pixels: float=CAGE_PREVIEW_PIXELS) -> float`
+``grow=True``：图钉拖出原边界时不裁，画布放大，返回 ``(QImage, (ox, oy))``
+（用户 2026-10-02：「超出原本区域的不要截，最终结果按最后图片的范围」）。
+
+``progress`` 透传（见 ``utils.puppet_warp.puppet_warp``）；被中止时
+返回 ``None``。
+
+#### `cage_preview_scale(span_x: float, span_y: float, on_screen: float=1.0, budget_pixels: float=DEFORM_PREVIEW_PIXELS) -> float`
 
 拖动预览的降采样倍率：清晰度与成本的**取小**。
 
@@ -2027,8 +2137,8 @@ source_path 不单独成列，仅作任务名的悬浮提示。
 而且屏幕上看不出区别（这正是"预览"该有的样子）。
 
 ``budget_pixels`` 由调用方按场合给：拖动中给
-:data:`CAGE_PREVIEW_PIXELS`（要跟手），松手后给
-:data:`CAGE_PREVIEW_SETTLE_PIXELS`（停下来看结果，宁可慢一点也要清楚）。
+:data:`DEFORM_PREVIEW_PIXELS`（要跟手），松手后给
+:data:`DEFORM_PREVIEW_SETTLE_PIXELS`（停下来看结果，宁可慢一点也要清楚）。
 
 #### `wait_cursor()`
 
@@ -2038,6 +2148,14 @@ source_path 不单独成列，仅作任务名的悬浮提示。
 
 ⚠️ 必须 ``processEvents`` 一下，否则光标要等界面回到事件循环才换，
 而那时的等待已经结束了（等于没挂）。调用方负责别在里面重入。
+
+#### `run_with_progress(parent: QWidget | None, title: str, label: str, work, params: dict)`
+
+在后台线程跑 ``work(params, progress)`` 并显示进度对话框。
+
+返回工作结果；被用户取消时返回 ``None``。``work`` 必须是**纯计算**
+（只用到形参，不碰 Qt 部件/画布），这样才能安全地放进工作线程。
+小任务（预估很快）也不亏：线程启动 + 对话框开销在毫秒级。
 
 #### `draw_text(image: QImage, pos: QPointF, text: str, px: int, color: QColor, family: str | None=None) -> QImage`
 
@@ -2845,6 +2963,436 @@ Delete/Backspace → ``delete_requested``。
 | 方法 | 说明 |
 | --- | --- |
 | `shutdown_workers() -> None` | 停掉分批定时器与未完成的批次，再走基类的线程收尾。 |
+
+---
+
+## `desktop.modules`
+
+源码：[`desktop/modules/__init__.py`](../../desktop/modules/__init__.py)
+
+独立功能模块包：**左侧导航**里的每个条目对应一个模块。
+
+设计目标（用户 2026-10-02 要求）：
+「使用 qfluentwidget 组件，左侧开发「图片提取 / 去底色 / 拼图」等模块功能，
+这些功能**独立**，但是**复用先有功能**。」
+
+两个关键词决定了这一层的形状：
+
+- **独立**：每个模块是一个自包含的 ``QWidget`` 页面，只依赖
+  ``desktop.components.*`` / ``desktop.services.*`` / ``functions.*`` 这些
+  **共享底座**；模块之间**零 import 依赖**，也不依赖 ``TaskDetailPage``
+  （那条「任务 → 四步」的重编排流程）。删掉一个模块只需从 :data:`MODULES`
+  里去掉一行，其余代码一行都不用动。
+- **复用**：模块页面**不重新发明控件**——参数表单直接用现成的
+  ``ExtractPanel`` / ``RembgPanel``，拼版用现成的 ``ImpositionViewWidget`` +
+  ``ImpositionPanel``，执行直接调 ``functions.get_function()``。新增模块的
+  成本因此只有「选文件 + 放控件 + 起线程」这一层胶水。
+
+壳层（``desktop/modules/shell.py``）只从本模块拿**元数据**（key/标题/图标/
+工厂），从不 import 具体页面——工厂是惰性的，只有用户真正点进某个模块时
+才触发那个页面的 import。这与 ``desktop.pages`` 的 PEP 562 惰性导出同一套路：
+启动时不该为「用户可能不点」的模块付构造/导入开销。
+
+### `class Module`
+
+左侧导航的一个模块条目（纯元数据，不含任何控件/导入）。
+
+- ``key``：唯一路由键，同时用作 ``QStackedWidget`` 的寻址依据；
+- ``title``：导航栏文案；
+- ``icon``：``FluentIcon`` 成员（延迟到壳层再取，避免这里 import 重物）；
+- ``subtitle``：页头副标题；
+- ``factory``：``() -> QWidget``，**首次进入该模块时才调用**。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `module_by_key(key: str) -> Module \| None` | 按路由键取模块元数据；不存在返回 None（调用方自己决定怎么提示）。 |
+
+---
+
+## `desktop.modules.base`
+
+源码：[`desktop/modules/base.py`](../../desktop/modules/base.py)
+
+独立模块页面的**基类**：把「页头 + 左预览 + 右控制 + 日志」这套骨架收在一处。
+
+为什么需要它（而不是每个模块各写一遍 QVBoxLayout）：
+
+- 三个模块（图片提取 / 去底色 / 拼图）的**外壳**长得一样——都是「选文件 →
+  调参数 → 出结果」。骨架统一后，模块页只剩「参数面板是谁、执行怎么跑」两件事，
+  新增模块的成本降到几十行；
+- 骨架统一也保证了**左导航切换时页面不跳变**：三页的页头高度、内容内边距、
+  控制列宽度都来自同一组常量（``desktop.ui.theme``）。
+
+⚠️ 本类**只依赖共享底座**（``desktop.ui.*``、``desktop.workers``），不 import
+任何模块页、不 import ``TaskDetailPage``——「模块独立」这条底线由本文件守住。
+
+### `class ModulePage(QWidget, WorkerHost)`
+
+独立模块页面骨架：页头（标题 + 副标题 + 操作区）+ 左右两栏 + 状态行。
+
+子类需要做的三件事：
+
+1. ``TITLE`` / ``SUBTITLE``：页头文案（``__init__`` 里已经摆好控件，
+   有需要在构建后改文案的走 ``self.header.title_label``）；
+2. ``_build_preview()``：左栏预览控件（**必须实现**，返回 QWidget）；
+3. ``_build_control()``：右栏控制控件（**必须实现**，返回 QWidget）。
+
+``status(text)`` 往页头的状态行写字，``toast(kind, title, content)`` 弹
+InfoBar —— 这两个是各模块反馈执行结果的标准出口，别自己 new InfoBar。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(parent=None)` | 组装骨架：页头 → 整幅输入区（可选）→ 左右分栏 → 状态行。 |
+| `dragEnterEvent(event) -> None` | 拖到页面空白处：当作拖向输入区（点亮它），避免"拖上去没反应"。 |
+| `dragMoveEvent(event) -> None` | 拖拽移动中：保持接受（Qt 要求显式接受才会给 drop）。 |
+| `dragLeaveEvent(event) -> None` | 拖出页面：熄灭输入区高亮。 |
+| `dropEvent(event) -> None` | 松手：把路径交给输入区，由它按步骤规则归一成源。 |
+| `status(text: str, kind: str='info') -> None` | 写页头状态行；``kind`` 取 info/success/warning/error 决定颜色。 |
+| `toast(kind: str, title: str, content: str) -> None` | 弹 InfoBar（右下角，与详情页 ``_toast`` 同一位置/时长）。 |
+| `log(text: str) -> None` | 往底部日志区追加一行。 |
+| `closeEvent(event) -> None` | 关闭时收尾后台线程，避免解释器退出时被强杀（同详情页规矩）。 |
+
+---
+
+## `desktop.modules.detect.page`
+
+源码：[`desktop/modules/detect/page.py`](../../desktop/modules/detect/page.py)
+
+「检测文本框」独立模块页：与任务流程无关，选一批图片直接检测内容框。
+
+**复用共用组件**（``desktop/steps``）：页头下方横跨整幅的**大输入区**（拖图片 /
+拖文件夹 / 点选），右栏是 :class:`StepControl`（输出目录 + 执行/中断），执行走
+``StepKernel`` → ``functions.get_function("detect")``——与任务流程第二步是同一条
+代码路径（连参数面板都是同一个 ``DetectPanel``）。
+
+**和别的模块页最大的不同：这一步的产物不是文件，是坐标。**
+
+``detect`` 默认不落盘（``--save`` 关着），框只经 ``page_boxes`` 结构化事件回来
+（见 ``functions.detect.DetectFunction._report_boxes``）。所以：
+
+1. 内核必须把**非 progress/log 的事件**原样透传上来（``StepKernel.event``，
+   2026-10-02 补的通道）——改造前它只转进度和日志，这一步的结果到不了界面；
+2. 本页把每页的框收在内存里（``self._boxes``，键 = 文件名去后缀），左栏用共享
+   查看器把框画在图上，用户可直接**手绘 / 拖动 / 缩放手柄 / Delete** 修正；
+3. 交付方式是「**导出坐标 JSON**」——写 ``<输出目录>/boxes.json``，格式与任务
+   流程的 ``tasks/<id>/boxes.json`` **逐字段一致**（``{stem: {boxes, origin,
+   updated_at}}``），所以导出的文件可以直接当作下一步（或将来自定义流程里任意
+   一步）的输入。
+
+⚠️ **槽位约定**（半幅 2 槽 ``[左, 右]``、整幅 1 槽 ``[整幅]``）的全部规则来自
+``utils.box_geometry``（``page_box_slots_from_event`` 读事件、``half_slots`` 收
+人工框），本页不自己数"还剩几个框"——按个数推类型会造成"删掉整幅框后右边的框
+自动变成整幅"（用户 2026-09-29 报过的老问题）。
+
+⚠️ **为什么不摆 ``DetectPanel``**：面板里那三个控件（「整页模式」切的是**第三步**
+的 area、「选中框类型」/「删除选中框」依赖任务流程的框类型机制）全部由任务流程
+宿主驱动；本页的框编辑直接由查看器承担，留着面板就是三个点不动的死控件。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| EXPORT_NAME | `"boxes.json"` |
+
+### `class DetectModulePage(ModulePage)`
+
+检测文本框模块页：拖入图片 → 检测内容框 → 图上修正 → 导出坐标 JSON。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(parent=None)` | 建骨架、共用步骤控件与内存中的框表。 |
+| `export_boxes() -> None` | 把各页框坐标写成 ``<输出目录>/boxes.json``（与任务流程同格式）。 |
+| `shutdown_workers() -> None` | 收尾：查看器自己的后台线程 + 共用步骤控件的执行线程。 |
+
+##### `export_boxes() -> None`
+
+把各页框坐标写成 ``<输出目录>/boxes.json``（与任务流程同格式）。
+
+格式（``desktop/store/annotations.py`` 的 ``boxes.json``）：:
+
+    {"<页名去后缀>": {"boxes": [[x1,y1,x2,y2], ...],
+                     "origin": "auto" | "manual",
+                     "updated_at": <秒级时间戳>}}
+
+用 ``desktop.store.json_io.write_json``（临时文件 + ``os.replace`` 原子
+落盘）——与任务流程写这份文件走的是同一个 IO，不另写一套。
+
+---
+
+## `desktop.modules.extract.page`
+
+源码：[`desktop/modules/extract/page.py`](../../desktop/modules/extract/page.py)
+
+「图片提取」独立模块页。
+
+**复用共用组件**（``desktop/steps``）：页头下方是横跨整幅的**大输入区**
+（:class:`~desktop.steps.source_zone.SourceZone`：拖 PDF、拖文件夹、点选），
+右栏是 :class:`StepControl`（参数 + 输出目录 + 执行/中断），执行走
+:class:`StepKernel` → ``functions.get_function("extract")``——与 CLI 同一条
+代码路径，本页不再自己写 worker 线程。
+
+**独立**：不依赖任务、不依赖 ``TaskDetailPage``——用户自选 PDF 与输出目录，
+在后台线程里跑，产出的图片用现成的 ``ImageViewerWidget`` 展示。三个模块各持
+自己的一份 :class:`StepControl`，因此**互不影响**。
+
+### `class ExtractModulePage(ModulePage)`
+
+图片提取模块页：选 PDF → 调参数 → 执行 → 看结果。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(parent=None)` | 建骨架与共用步骤控件；预览区是空态，等执行完再灌结果。 |
+| `shutdown_workers() -> None` | 收尾共用步骤控件的执行线程（壳层关窗口时会调到这里）。 |
+
+---
+
+## `desktop.modules.imposition.page`
+
+源码：[`desktop/modules/imposition/page.py`](../../desktop/modules/imposition/page.py)
+
+「拼图」独立模块页（= 图片拼版）。
+
+**复用共用组件**：
+
+- 输入：:class:`~desktop.steps.source_zone.SourceZone`——页头下方横跨整幅的
+  **大输入区**（拖一批图片、拖一个图片文件夹、或点选），与"图片提取 / 去底色"
+  是同一块控件；
+- 执行：:class:`~desktop.steps.kernel.StepKernel` + ``CallableJob``——
+  拼版不是 CLI 命令，所以走"纯函数 job"这条路（内核同样只认"输出目录"）；
+- 界面：``ImpositionViewWidget``（左页清单 + 右拖拽画布）、
+  ``ImpositionPanel``（右侧控制面板）、``ImpositionPickerDialog``（选图弹窗）；
+- 规则：``desktop.services.imposition`` 是**纯函数模块**（无 Qt），版面默认
+  摆放、自动拼版、合成紧裁全部直接用；
+- 元数据：``desktop/steps/spec.py`` 的 imposition 条目（标题/副标题/过滤串/
+  后缀/输出名）。
+
+**独立**：不依赖任务目录、不依赖 ``TaskDetailPage`` 的拼版控制器。用户选了
+一批图片作为「源清单」，模块自己维护一份 ``doc``（内存 + 可导出），
+点「导出成品」把每页合成为 PNG。
+
+⚠️ 与任务流程的差别（有意为之）：任务流程里拼版的产物供第四步生成 PDF，
+且「启用开关」决定取图来源；单文件模式下没有下游，所以这里把面板里的
+「启用开关」隐掉，只留版面操作与导出。
+
+### `class ImpositionModulePage(ModulePage)`
+
+拼图模块页：选图 → 自动/手动拼版 → 调整版面 → 导出成品。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(parent=None)` | 先建骨架，再补「选图 / 自动拼版 / 导出」这条操作链。 |
+| `shutdown_workers() -> None` | 关闭页面前中止并等待导出线程。 |
+
+---
+
+## `desktop.modules.print.page`
+
+源码：[`desktop/modules/print/page.py`](../../desktop/modules/print/page.py)
+
+独立模块「生成 PDF」：与任务流程无关，选一批成品图直接合成 PDF。
+
+**复用共用组件**（``desktop/steps``）：页头下方横跨整幅的**大输入区**（拖图片
+文件夹 / 拖一批图片 / 点选），右栏是 :class:`StepControl`（打印参数 + 输出目录 +
+执行/中断），执行走 ``StepKernel`` → ``functions.get_function("print")``——
+与任务流程第四步是同一条代码路径（连参数面板都是同一个 ``PrintPanel``）。
+
+⚠️ **与任务流程第四步的有意差别：页序。** 流程里页序 = 第四步列表里用户手动排的
+那份清单（``functions/print`` 的 ``files`` 参数）。独立页面按用户 2026-10-02 的
+选择**不提供手动排序**——页序就是文件名顺序
+（``utils.sort_utils.pdf_custom_sort_key``，与 CLI 直跑 ``guji run print <目录>``
+一致）。要调页序，先用「拼图」模块把版面排好再拖过来。
+
+⚠️ **产物形态与别的模块不同**：``print`` 产出的是**一个 PDF 文件**，不是一目录
+图片。所以 ``StepSpec.artifact_is_file=True``——执行内核**不会**把
+``function.outpath`` 覆盖成输出目录（那样会拿目录当文件路径写），并且把**真正的
+PDF 路径**回传给 ``finished``；本页据此直接把它交给左侧的 PDF 预览控件。
+
+### `class PrintModulePage(ModulePage)`
+
+生成 PDF 模块页：拖入成品图（一批或一个文件夹）→ 调版面 → 合成 PDF。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(parent=None)` | 建骨架与共用步骤控件。 |
+| `shutdown_workers() -> None` | 收尾：PDF 预览自己的后台线程 + 共用步骤控件的执行线程。 |
+
+---
+
+## `desktop.modules.rembg.page`
+
+源码：[`desktop/modules/rembg/page.py`](../../desktop/modules/rembg/page.py)
+
+「去底色」独立模块页。
+
+**复用共用组件**（``desktop/steps``）：页头下方是横跨整幅的**大输入区**
+（拖图片、拖整个文件夹、点选），右栏是 :class:`StepControl`（参数 + 输出目录 +
+执行/中断），执行走 :class:`StepKernel` → ``functions.get_function("rembg")``
+——与任务流程第三步是同一条代码路径。本页不再自己写 worker 线程。
+
+**独立**：不需要任务、不需要检测框——用户拖入**一整个图片文件夹**（批量）或
+**单张图片**，结果用原图/结果对比控件（``RembgPreviewWidget``）看。
+
+⚠️ 与任务流程的差别（有意为之）：第三步的 area/border 依赖第二步的检测框，
+单文件模式下没有框可用，所以这里**只暴露「整图/去底参数」这一层**，area 固定
+按「图像本身」处理，不参与框裁剪。
+
+### `class RembgModulePage(ModulePage)`
+
+去底色模块页：拖入图片（单张或文件夹）→ 调参数 → 批量去底 → 对比看结果。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(parent=None)` | 建骨架与共用步骤控件。 |
+| `shutdown_workers() -> None` | 收尾共用步骤控件的执行线程（壳层关窗口时会调到这里）。 |
+
+---
+
+## `desktop.modules.shell`
+
+源码：[`desktop/modules/shell.py`](../../desktop/modules/shell.py)
+
+左侧导航壳层：qfluentwidgets 的 ``NavigationInterface`` + 页面栈。
+
+布局照搬 ``FluentWindow`` 的做法（导航栏在左、页面栈在右、拉伸因子给页面栈），
+但不继承 ``FluentWindow``——那个类自带标题栏/亚克力/Mica 一整套窗口装饰，
+而本程序用的是原生标题栏（``desktop/app.py`` 有最大化/还原尺寸与单例逻辑），
+换标题栏会连带影响窗口尺寸夹紧与截图脚本。所以只借它的**布局套路**：
+
+    hBoxLayout { navigationInterface, pageStack( stretch=1 ) }
+
+导航条目分两组：
+
+- ``TOP``：**任务管理**（原 ``TaskListPage``，点任务仍在栈内打开详情页）+
+  各独立模块（图片提取 / 去底色 / 拼图，来自 ``desktop.modules.MODULES``）；
+- 模块条目全部**惰性构造**：第一次点进去才 ``factory()``，不点不建。
+
+⚠️ 导航栏**默认折叠**（用户 2026-10-02：「左侧的目录，默认关闭」）：启动后
+只剩一列图标，正文区拿到整幅宽度；想看到条目文字就点左上角的菜单按钮展开，
+再点一次收回。**不要**再在 resizeEvent 里替用户 `expand()`——那会让"默认
+关闭"失效（见 :meth:`resizeEvent` 的说明）。
+
+⚠️ 壳层**不 import 任何具体模块页**，只认 :class:`desktop.modules.Module` 的
+元数据与工厂——这是「模块独立」在壳层侧的落实：删模块只需要改 ``MODULES``。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| NAV_COMPACT_WIDTH | `48` |
+| NAV_WIDTH | `200` |
+| NAV_MIN_EXPAND_WINDOW | `720` |
+| ROUTE_TASKS | `"tasks"` |
+| ROUTE_DETAIL | `"detail"` |
+
+### `class ModuleShell(QWidget)`
+
+壳层根控件：左侧导航 + 右侧页面栈。
+
+对外暴露 :meth:`open_detail` / :meth:`back_to_list` 供 ``MainWindow``
+转发（两者都走栈切换，行为与 ``app.py`` 原来的 ``_open_detail`` /
+``_back_to_list`` 一致）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(store: TaskStore, parent=None)` | 建导航与页面栈，挂上「任务管理」页，模块条目按注册表登记。 |
+| `show_tasks() -> None` | 切回任务列表页并刷新列表。 |
+| `detail_page()` | 任务详情页（惰性构造）。 |
+| `prewarm_detail_page() -> None` | 预构造详情页骨架与**第一步**面板（同 app.py 原 ``_prewarm_detail_page``）。 |
+| `open_detail(task_id: str) -> None` | 打开某个任务的详情页（行为与 ``app.py::_open_detail`` 一致）。 |
+| `back_to_list() -> None` | 详情页「返回」→ 切回列表并刷新。 |
+| `show_module(key: str) -> None` | 切到某个模块页；首次进入时惰性构造。 |
+| `module_page(key: str) -> QWidget \| None` | 已构造的模块页；**没建过返回 None**（自测用它断言"惰性没被破坏"）。 |
+| `rebind_store(store: TaskStore) -> None` | 把壳层与**已建页面**上的 store 引用一起换掉（换数据目录用）。 |
+| `current_route() -> str` | 当前**显示中**页面的路由键。 |
+| `selected_route() -> str` | 导航栏**当前高亮**的条目路由键。 |
+| `nav_is_expanded() -> bool` | 导航栏当前是否展开（``EXPAND``）。 |
+| `toggle_nav() -> None` | 展开/收回导航栏（等价于点左上角的菜单按钮）。 |
+| `shutdown_workers() -> None` | 收尾所有页面的后台线程（壳层 + 惰性页 + 已建模块页）。 |
+| `keyPressEvent(event) -> None` | ←/→ 在详情页内转发翻页（同 app.py 原逻辑，焦点链不消费时兜底）。 |
+
+##### `show_tasks() -> None`
+
+切回任务列表页并刷新列表。
+
+⚠️ 不去手动 ``setCurrentItem``：切页会触发 ``pages.currentChanged``
+→ :meth:`_sync_nav_to_page` 统一同步高亮，单点维护不易漏。
+
+##### `detail_page()`
+
+装饰器：`property`
+
+任务详情页（惰性构造）。
+
+保留这个名字：``tests/selftests/_context.py`` 与 ``tests/gui_shot.py``
+都按 ``window.detail_page`` 取页面来操作控件（原来在 MainWindow 上，
+现在壳层转发一层，外部契约不变）。
+
+##### `show_module(key: str) -> None`
+
+切到某个模块页；首次进入时惰性构造。
+
+找不到该 key（注册表被改过、或旧导航项残留）时安静退回任务管理并提示，
+不让壳层抛异常——导航项是用户能点的东西，任何输入都不该让程序崩。
+
+##### `rebind_store(store: TaskStore) -> None`
+
+把壳层与**已建页面**上的 store 引用一起换掉（换数据目录用）。
+
+⚠️ 必须一起换：壳层自己持一份（惰性详情页构造时取的就是它）、列表页
+持一份、已经建出来的详情页又持一份。只改 ``MainWindow.store`` 而漏掉
+这里，惰性构造的详情页会继续指向**老目录**——表现是"打开的是同名任务
+号的另一个任务"（`tests/selftests/last_stage.py` 就是这么红的：真实数据
+目录里恰好也有 0001，而它停在拼版步）。测试与截图脚本的
+「换 store 指向临时目录」这一手（`_context.prepare` / `gui_shot`）全靠它。
+
+##### `current_route() -> str`
+
+当前**显示中**页面的路由键。
+
+``QStackedWidget`` 里的页面对象与路由的映射在这里反查；模块页按
+``_module_pages`` 的键匹配，任务列表/详情页按对象身份匹配。
+
+##### `selected_route() -> str`
+
+导航栏**当前高亮**的条目路由键。
+
+⚠️ ``NavigationInterface`` 没有公开的"取当前项"接口（只有
+``setCurrentItem``），所以这里自己记一份 ``_selected_route``——
+高亮是我们在 :meth:`_sync_nav_to_page` 里设的，记它准确且无副作用。
+
+##### `nav_is_expanded() -> bool`
+
+导航栏当前是否展开（``EXPAND``）。
+
+测试/截图脚本用它断言"默认是折叠的、点菜单按钮能展开"——qfluentwidgets
+没有公开的 displayMode 读取接口，所以在这里封一层。
+
+##### `toggle_nav() -> None`
+
+展开/收回导航栏（等价于点左上角的菜单按钮）。
+
+供菜单按钮之外的入口（自测、快捷键、将来的命令面板）复用同一条逻辑：
+折叠时展开、展开时收回，**不改变**默认折叠这条约定。
+
+⚠️ 必须走 ``NavigationInterface.toggle()``：``NavigationInterface``
+**只有 ``expand()`` 没有 ``collapse()``**（收回在 ``panel`` 上），
+自己拼 expand/collapse 会踩 ``AttributeError``。
 
 ---
 
@@ -4219,6 +4767,607 @@ args["_effects"] = [
 
 ---
 
+## `desktop.steps.control`
+
+源码：[`desktop/steps/control.py`](../../desktop/steps/control.py)
+
+共用步骤控制组件：把「选源 → 调参数 → 执行/中断」这条链装成一块控件。
+
+这一块就是三个模块页右栏的**全部内容**：一块**大输入区**（拖文件/拖文件夹/
+点选，见 :class:`~desktop.steps.source_zone.SourceZone`）、一个输出目录按钮、
+一个参数面板（来自 :class:`StepSpec`）、执行与中断按钮。
+三个模块各持**自己的一份实例**（各自的 :class:`StepKernel`、各自的源/输出），
+因此**互不影响**——没有共享的可变状态，一个模块在跑不会让另一个模块的按钮变灰。
+
+对外 API 与用户口径一一对应（"入口文件目录，输出文件目录"）：
+
+- :meth:`source` / :meth:`set_source` —— 入口（文件或目录）；
+- :meth:`output` / :meth:`set_output` —— 出口目录；
+- :meth:`args` —— 参数面板收集到的参数；
+- :meth:`run` / :meth:`cancel` / :meth:`busy` / :meth:`shutdown`。
+
+「用户给的路径 → 一个源」的归一化**不在这里**：它住在
+:meth:`desktop.steps.spec.StepSpec.resolve_source`（纯逻辑、可单测），
+本类只负责把结果画出来并发出 ``source_changed``。
+
+⚠️ 本组件**只发信号、不弹 InfoBar**：提示语由宿主页面（模块页有页头状态行与
+日志区）决定怎么呈现。这样同一块控件既能放进模块页，也能放进将来的批处理界面。
+
+### `class StepControl(QWidget)`
+
+一个步骤的控制区（无卡片外壳，宿主自己包 :class:`Card`）。
+
+信号：
+
+- ``status(text, kind)``：状态文案 + 语义（info/success/warning/error）；
+- ``progress(done, total)``：执行进度（``total=0`` 表示未知）；
+- ``finished(output)``：成功，参数是输出目录；
+- ``failed(message)``：失败原因；
+- ``log(text)``：一行人读日志；
+- ``source_changed(path)``：源变了（宿主可据此更新副标题/预览）；
+- ``running_changed(bool)``：开始/结束执行（宿主可据此禁用别的入口）；
+- ``event(name, payload)``：步骤私有的结构化事件（如 ``page_boxes``），
+  给"产物不是文件"的步骤用（detect 报框坐标）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(spec: StepSpec, job=None, zone: SourceZone \| None=None, parent=None)` | 按 ``spec`` 组装控件；``job`` 省略时按 ``spec.command`` 造命令 job。 |
+| `source() -> Path \| None` | 当前源（文件或目录）；未选为 ``None``。 |
+| `set_source(path: Path \| str \| None) -> None` | 设置源；未手动选过输出时，按 :meth:`StepSpec.default_output` 重推输出。 |
+| `output() -> Path \| None` | 当前输出目录；未定则为 ``None``（执行时按默认规则补）。 |
+| `set_output(path: Path \| str \| None) -> None` | 显式设置输出目录（会被记为"手动选择"，不再自动覆盖）。 |
+| `args() -> dict` | 参数面板收集到的参数（面板为 ``None`` 时是空字典）。 |
+| `zone_detail(source: Path \| None=None) -> str` | 大输入区第二行的说明文案（宿主想知道"显示里写了什么"时用）。 |
+| `run() -> None` | 校验前置条件并起后台执行。校验不通过只发 ``status``，不弹窗。 |
+| `cancel() -> None` | 请求中止当前执行。 |
+| `busy() -> bool` | 是否正在执行。 |
+| `shutdown(timeout_ms: int=1500) -> None` | 收尾执行线程（页面关闭时必须调）。 |
+
+##### `__init__(spec: StepSpec, job=None, zone: SourceZone | None=None, parent=None)`
+
+按 ``spec`` 组装控件；``job`` 省略时按 ``spec.command`` 造命令 job。
+
+``zone``：宿主已经建好的**大输入区**。模块页把它横跨整幅放在页头下方
+（用户要的"页面上有一个大的输入框"），这时候传进来，本组件只接线、
+不重复摆放；不传就自己建一个摆在自己顶部（给"整块塞进卡片"的用法）。
+
+##### `set_source(path: Path | str | None) -> None`
+
+设置源；未手动选过输出时，按 :meth:`StepSpec.default_output` 重推输出。
+
+同时把源画进大输入区（已选态）——宿主（模块页 / 拼版页）也走这里，
+保证"输入的显示"与"真正的源"永远一致，只有一份事实。
+
+---
+
+## `desktop.steps.kernel`
+
+源码：[`desktop/steps/kernel.py`](../../desktop/steps/kernel.py)
+
+执行内核：把「输入路径 + 输出路径 + 参数」跑成一个后台任务。
+
+用户口径（2026-10-02）：
+
+> 公共组件定义好 API 就行，比如入口文件目录，输出文件目录等；
+> 新的功能可以批量处理也可以处理一张图片。
+
+所以这里的 API 只有三样东西——**源（文件或目录）、输出目录、参数**：
+
+    kernel = StepKernel(command_job("rembg"))
+    kernel.progress.connect(on_progress)
+    kernel.finished.connect(on_finished)   # 参数 = 输出目录
+    kernel.failed.connect(on_failed)
+    kernel.run(StepRequest(source=src, dest=dst, args=panel.get_args()))
+
+- **单张 / 批量**不是两套代码：源是文件就是单张、是目录就是批量，判断在
+  功能层（``FunctionBase.is_file``）里，本内核只负责把路径递下去；
+- **与流程无关**：内核不知道自己是第几步、上游是谁——任务管理的那套顺序
+  编排留在 ``desktop/pages/taskdetail``，本层只做"跑一步"；
+- **不卡界面**：任务跑在 QThread 里，进度/结果经 Qt 信号排队回主线程。
+
+⚠️ 这里跑的是**进程内**线程（与任务流程的子进程隔离不同）。模块页要的是
+"点一下就开始、看得见进度"，进程内更轻；崩溃隔离由任务流程那条
+``desktop.steps.process.StageProcess`` 负责——两条路各取所需，共用同一份
+:class:`StepSpec` 与参数面板。
+
+### `class StepRequest`
+
+一次处理请求：**入口 + 出口 + 参数**（内核唯一认识的输入形状）。
+
+- ``source``：源文件或源目录；``None`` 表示这一步不需要源（罕见）；
+- ``dest``：输出目录（或输出文件）；``None`` 表示由功能层自行推导；
+- ``args``：参数面板 ``get_args()`` 的结果（不含 input/output）。
+
+### `class StepJob`
+
+一次处理任务：给定请求与进度回调，跑完返回输出路径。
+
+子类只需实现 :meth:`__call__`；抛出的任何异常都会被内核转成 ``failed``
+信号（调用方不必自己 try）。
+
+### `class CommandJob(StepJob)`
+
+把 ``functions.get_function(command)`` 包成一个 job。
+
+⚠️ 输出目录**精确生效**：显式把 ``function.outpath`` 设成 ``request.dest``。
+不设的话，rembg / cropremove 这类命令会在用户给的目录后再追加一层自己的
+子目录（``resolve_final_output_dir`` 的规则），产物落到 ``dest/rembg/``，
+调用方按 ``dest/<name>.png`` 找结果就永远找不到（模块页改版前的实测坑）。
+显式覆盖后，"输出目录"就真的等于用户选的那个目录——这正是本层对外的承诺。
+
+仍然有命令会**无视**这个覆盖（自己在 ``dest`` 下面再建目录），extract 就是
+一个：它的布局由 ``utils.pdf_extract.run_on_input_directory`` 决定，是
+``<dest>/<PDF名>/<子目录>/``。这类"命令自己的目录习惯"由 ``after`` 钩子
+（见 :func:`extract_job`）擦屁股，而不是让每个调用方各自去认路。
+
+还有一类相反的情况：``artifact_is_file=True`` 的命令（``print``）**不能**被
+覆盖——它的 ``--output`` 是目录、``outpath`` 是目录下的**文件**
+（``<输出>/output.pdf``），覆盖成目录会拿目录当文件路径写。这种命令由它自己
+算 outpath，内核只负责把真正的产物路径回传。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(command: str, after: Callable[[StepRequest], None] \| None=None, artifact_is_file: bool=False)` | — |
+
+### `class CallableJob(StepJob)`
+
+把任意纯函数包成一个 job（拼版走这条路：``compose_doc`` 不是 CLI 命令）。
+
+``fn(request, report) -> str | None``：与 :meth:`StepJob.__call__` 同形。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(fn: Callable[[StepRequest, Report], str \| None])` | — |
+
+### `class StepKernel(QObject)`
+
+一个步骤的执行内核：跑一次 :class:`StepJob`，信号回报进度与结果。
+
+生命周期：``run()`` → ``started`` → 若干 ``progress``/``log`` →
+``finished`` 或 ``failed``。同一时刻只允许一次运行（``busy()`` 为真时
+``run()`` 直接返回 False，调用方据此提示"上一次还没结束"）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(job: StepJob \| None, parent=None)` | — |
+| `run(request: StepRequest) -> bool` | 起后台线程跑一次；已在跑则返回 False（调用方应提示并放弃本次）。 |
+| `cancel() -> None` | 请求中止（尽力而为；能否立刻停下取决于功能层是否检查标记）。 |
+| `busy() -> bool` | 是否正在运行（线程还在跑）。 |
+| `shutdown(timeout_ms: int=1500) -> None` | 收尾：请求中止并等待线程结束（页面关闭/退出时必须调）。 |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `command_job(command: str) -> CommandJob` | 按命令名造一个 :class:`CommandJob`（最常用的入口）。 |
+| `extract_job() -> CommandJob` | 图片提取的 job：跑 ``extract``，**单 PDF 时把产物平铺到输出目录**。 |
+| `job_for(spec) -> StepJob \| None` | 按 :class:`~desktop.steps.spec.StepSpec` 造执行 job（**唯一入口**）。 |
+| `callable_job(fn: Callable[[StepRequest, Report], str \| None]) -> CallableJob` | 按纯函数造一个 :class:`CallableJob`。 |
+
+#### `extract_job() -> CommandJob`
+
+图片提取的 job：跑 ``extract``，**单 PDF 时把产物平铺到输出目录**。
+
+⚠️ 为什么需要它（2026-10-02 实测）：``functions.extract`` 按
+``<输出>/<PDF名>/images/`` 铺图（``run_on_input_directory``，与 CLI 同源）。
+
+- 源是**目录**（一次多个 PDF）时这是对的做法：每个 PDF 各自一个文件夹，
+  否则大家的 ``1.jpg`` 会互相覆盖；
+- 源是**单个 PDF**时这层嵌套纯属多余，而且**违背本层"输出目录精确生效"的
+  承诺**：用户选的是 ``样书_提取``，图片却在 ``样书_提取/样书/images/``。
+  更糟的是下一步——把输出目录直接拖给「去底色」，功能层只扫顶层，报
+  "未找到图片文件"（实测：提取 → 去底色连不上）。
+
+所以单 PDF 时把 ``<输出>/<PDF名>/**`` 搬平到 ``<输出>/`` 再删空壳；有同名
+文件时**整个不动**（宁可留着嵌套，也不能覆盖或丢文件）。
+
+#### `job_for(spec) -> StepJob | None`
+
+按 :class:`~desktop.steps.spec.StepSpec` 造执行 job（**唯一入口**）。
+
+调用方（模块页 / 将来的批处理界面）不要自己拼 ``command_job``：哪一步需要
+额外的收尾（如 extract 的平铺）只有这里知道，散出去就一定会漏。
+没有命令的步骤（拼版）返回 ``None``——那种步骤由调用方给 ``CallableJob``。
+
+---
+
+## `desktop.steps.process`
+
+源码：[`desktop/steps/process.py`](../../desktop/steps/process.py)
+
+子进程传输层：把 worker 子进程的启动、看门狗与收尾收成一个可复用零件。
+
+**为什么在"共用步骤组件层"里**：任务详情页原先自己攥着这坨代码
+（``StageRunnerMixin`` 里一百多行 QProcess/看门狗/兜底收尾），它和页面耦合在
+一起，谁都复用不了。抽到本模块后，它只依赖 Qt，不知道"第几步""任务是什么"，
+于是和 :mod:`desktop.steps.kernel`（进程内执行内核）并列成为这一层的两种
+"把一步跑起来"的方式：
+
+- :class:`~desktop.steps.kernel.StepKernel`：**进程内**线程，轻，模块页用；
+- :class:`StageProcess`：**子进程**隔离，重，任务管理用（torch 崩溃不带走
+  GUI、能真正 kill 掉）。
+
+职责边界（有意划在这里）：
+
+- 本类**只做传输**：起进程、把管道里的**原始字节**转出来、Windows 偶发丢
+  ``finished`` 时用看门狗兜底、保证"完成"只报一次；
+- **不解析** stdout 的 JSON Lines、不认 stderr 里哪行像错误、不碰 runs.json
+  ——那些是宿主的业务（写运行记录、刷进度条、落 boxes.json），放这里会让
+  本类重新长出"任务流程"的触手，也就失去了复用价值。
+
+### `class StageProcess(QObject)`
+
+一个阶段子进程：起进程、转字节流、兜底收尾。
+
+信号（全部在**主线程**发出）：
+
+- ``stdout(bytes)``：标准输出的**原始字节**（宿主自己做半行重组与 JSON 解析）；
+- ``stderr(bytes)``：标准错误的原始字节（宿主决定哪行算错误）；
+- ``started()``：进程真的起来了；
+- ``finished(int, object)``：``(退出码, exit_status)``，**保证只发一次**；
+- ``process_error(object)``：QProcess 报的错（含启动失败）；
+- ``stalled(float)``：已 N 分钟没有任何输出（只提醒，不自动杀）；
+- ``unclean_exit()``：OS 进程已退出、Qt 却没能正常收尾（看门狗兜底）；
+  宿主据此把"未正常收尾"记成失败原因——本类只报"发生了"，不管怎么记。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(parent=None, stall_warn_s: float \| None=None)` | — |
+| `process() -> QProcess \| None` | 底层 ``QProcess``（宿主用它查状态/杀进程；测试也按它等待）。 |
+| `running() -> bool` | 进程是否还在跑。 |
+| `start(program: str, arguments: list[str], workdir: Path \| str \| None=None, env: QProcessEnvironment \| None=None) -> QProcess` | 起子进程并接好输出/看门狗；返回底层 ``QProcess``。 |
+| `kill() -> None` | 杀掉子进程（不等待；等待由宿主决定）。 |
+
+##### `start(program: str, arguments: list[str], workdir: Path | str | None=None, env: QProcessEnvironment | None=None) -> QProcess`
+
+起子进程并接好输出/看门狗；返回底层 ``QProcess``。
+
+调用方通常紧接着把返回值存到自己的属性上（既有测试按
+``page.process`` 取进程）。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `worker_arguments(config_path: Path) -> list[str]` | 按运行环境给出启动 worker 子进程的参数表。 |
+| `worker_env() -> QProcessEnvironment` | 子进程强制 UTF-8：GUI 按 UTF-8 解析 JSON Lines，CLI 输出含 emoji。 |
+
+#### `worker_arguments(config_path: Path) -> list[str]`
+
+按运行环境给出启动 worker 子进程的参数表。
+
+- 打包（``sys.frozen``）：主程序即入口，``--worker --config`` 路由到子任务执行；
+- 源码：按模块启动（``-m desktop.worker``），不依赖入口文件名（``desktop.py``
+  改名无影响），工作目录必须是项目根（能解析出 ``desktop`` 包的那一级）。
+
+---
+
+## `desktop.steps.source_zone`
+
+源码：[`desktop/steps/source_zone.py`](../../desktop/steps/source_zone.py)
+
+共用「大输入区」：拖拽 / 点选，把**文件或文件夹**交给一个步骤。
+
+用户 2026-10-02 的要求（原话）：
+
+> 你就在左侧这些目录点上去，页面上有一个大的输入框，可以输入图片和输入文件，
+> 或者输入目录，也可以把文件拖进去，目录投进去。
+
+于是有了这一块：**一个控件同时承担"选择"和"放下"两件事**，三条入口都通——
+
+1. 拖**文件**进来；
+2. 拖**文件夹**进来（含图片/PDF 的目录）；
+3. **点一下**从对话框里选（``accepts_dir`` 为真时先问"选文件还是选文件夹"）。
+
+它是 :mod:`desktop.steps` 层的一部分，所以左侧三个模块与任务流程**共用同一份
+实现**——这正是用户要的"抽成公共组件、定义好入口/出口 API"。
+
+设计要点（改之前先读）：
+
+- **只管"用户给了哪些路径"，不管"这算不算合法输入"**。归一化（一堆文件/文件夹
+  → 一个"源"）由 :meth:`desktop.steps.spec.StepSpec.resolve_source` 负责，
+  那是纯逻辑、可以脱离 Qt 单测；本控件只把原始路径经 ``paths_chosen`` 发出去。
+  这样"拼图"这种要整份清单的调用方也能直接复用本控件。
+- **自绘**（项目规矩：基础控件一律 ``paintEvent``，不引样式表）：两种形态——
+  空态是大块（图标 + 两行提示），已选态收窄成一行（图标 + 名字 + 路径 + 清空）。
+- **拖拽热区**：拖到控件上（或宿主页面上，见 ``ModulePage``）时描边与底色变主色，
+  给"松手就放这儿"的反馈。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| EMPTY_HEIGHT | `132` |
+| FILLED_HEIGHT | `74` |
+| ICON_BOX | `30` |
+| CLOSE_BOX | `26` |
+
+### `class SourceZone(QWidget)`
+
+一个步骤的**大输入区**：拖入 / 点选文件或文件夹（自绘，可清空）。
+
+信号：
+
+- ``paths_chosen(list)``：用户拖入或选中了一批路径（``list[str]``，**原始**，
+  未做任何合法性判断）；空拖拽不会发。
+- ``cleared()``：用户点了右上角的清空。
+- ``rejected(str)``：拖进来的东西一件都用不了（一句给用户看的话）。
+  调用方通常转成页头的 toast/状态行。
+
+显示与语义分离：``set_source()`` 只负责"把现在选中的源画出来"，不发信号，
+因此宿主（:class:`~desktop.steps.control.StepControl`）说了算——它才是
+"文件/目录 → 一个源"的归一化权威。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(spec: StepSpec, parent=None)` | 按 ``spec`` 取文案/图标/过滤串；初始为空态。 |
+| `source() -> Path \| None` | 当前**显示**的源（宿主设进来的；未设为 ``None``）。 |
+| `set_source(path: Path \| str \| None, detail: str='') -> None` | 把"当前源"画出来（不发 ``paths_chosen``，避免与宿主来回打环）。 |
+| `offer(paths) -> None` | 把一批路径当作用户给的输入送出去（拖拽/点选/宿主转发都走这里）。 |
+| `set_hot(hot: bool) -> None` | 外部（宿主页面的整页拖拽）切换"正在拖入"高亮。 |
+| `clear() -> None` | 清空当前源并发 ``cleared``（点右上角 ✕ 与宿主主动复位走同一条）。 |
+| `busy_lock(locked: bool) -> None` | 执行中禁用（拖拽也不收），并保持当前画面。 |
+| `paths_from_mime(mime) -> list[str]` | 从拖拽数据里取**本地**路径（URL 形式的文件/文件夹，非本地的丢掉）。 |
+| `dragEnterEvent(event) -> None` | 有东西拖上来：认得本地文件/文件夹就收，并亮起来。 |
+| `dragMoveEvent(event) -> None` | 拖拽移动中：保持接受（Qt 要求显式接受才会给 drop）。 |
+| `dragLeaveEvent(event) -> None` | 拖出控件：熄灭高亮。 |
+| `dropEvent(event) -> None` | 松手放下：把原始路径交给宿主。 |
+| `enterEvent(event) -> None` | 鼠标进来：底色淡一档（可点的暗示）。 |
+| `leaveEvent(event) -> None` | 鼠标离开：恢复底色。 |
+| `keyPressEvent(event) -> None` | 回车/空格 = 点一下（键盘可达）。 |
+| `mousePressEvent(event) -> None` | 点清空按钮 = 清空；点别处 = 选文件/文件夹。 |
+| `browse() -> None` | 打开对话框选输入；``accepts_dir`` 为真时先让用户挑"文件还是文件夹"。 |
+| `paintEvent(event) -> None` | 画底（圆角虚线框）+ 内容（空态两行 / 已选态一行）。 |
+
+##### `set_source(path: Path | str | None, detail: str='') -> None`
+
+把"当前源"画出来（不发 ``paths_chosen``，避免与宿主来回打环）。
+
+``path=None`` 回到空态；``detail`` 是已选态的第二行小字（如"文件夹 ·
+12 个文件"），留空时按路径自动生成。
+
+##### `offer(paths) -> None`
+
+把一批路径当作用户给的输入送出去（拖拽/点选/宿主转发都走这里）。
+
+空列表不进主流程（避免下游收到"什么都没有"的信号），改为发一条
+``rejected`` 让界面说话。
+
+##### `paths_from_mime(mime) -> list[str]`
+
+装饰器：`staticmethod`
+
+从拖拽数据里取**本地**路径（URL 形式的文件/文件夹，非本地的丢掉）。
+
+单独抽成 staticmethod 是为了能直接单测——不用去合成 Qt 拖拽事件。
+
+---
+
+## `desktop.steps.spec`
+
+源码：[`desktop/steps/spec.py`](../../desktop/steps/spec.py)
+
+步骤的**声明式元数据**：一个步骤"是什么"，与流程顺序无关。
+
+用户口径（2026-10-02）：
+
+> 任务管理每个步骤组件有先后关系，因此我们的组件不需要相互关联，
+> 公共组件定义好 API 就行，比如入口文件目录，输出文件目录等。
+
+所以 :class:`StepSpec` 只描述**这一步自己**：跑哪个命令、用哪个参数面板、
+输入是 PDF 还是图片（单张 / 目录 / 一批）、默认输出目录怎么从输入推出来。
+「上一步是谁、下一步是谁、产物给谁用」**一概不写**——那是任务管理自己的
+编排，不是步骤的属性。正因如此，同一个 spec 既能被任务流程用，也能被左侧
+导航的独立模块用。
+
+「入口」这一侧的三件事也都收在这里，**不散到界面代码**去（用户 2026-10-02：
+「页面上有一个大的输入框，可以输入图片和输入文件，或者输入目录，也可以把
+文件拖进去」）：
+
+1. 认哪些后缀 —— :meth:`StepSpec.suffixes`（从 ``file_filter`` 里抠，过滤串
+   仍是唯一事实来源）；
+2. 允不允许直接拿目录当输入 —— ``accepts_dir``；
+3. 用户给了一堆东西（拖进来的文件/文件夹混在一起）**到底算哪个源** ——
+   :meth:`StepSpec.resolve_source`。这是纯逻辑，可以脱离 Qt 单测。
+
+⚠️ 面板只记**类名**（字符串），到用的时候才从 ``desktop.components.panels``
+惰性取——本模块因此不 import 任何 Qt 面板，可以被纯逻辑（CLI、自测、未来的
+批处理）安全导入。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| IMAGE_FILTER | `"图片 (*.jpg *.jpeg *.png *.bmp *.tif *.tiff *.webp)"` |
+| PDF_FILTER | `"PDF 文件 (*.pdf)"` |
+| AUTO_DESCEND_DEPTH | `2` |
+
+### `class StepSpec`
+
+一个处理步骤的元数据（不可变，可当字典键/常量用）。
+
+字段含义：
+
+- ``key``：唯一路由键，与 ``desktop.modules.MODULES`` 的 key 同名同义；
+- ``command``：``functions.get_function`` 的命令名；``None`` 表示这一步
+  不是 CLI 命令（如拼版是纯函数 ``compose_doc``，由调用方给 job）；
+- ``title``：**模块页头大标题 + 左侧导航条目**的名字（"图片提取"）；
+- ``subtitle``：**模块页头副标题**（"选择一个 PDF（…），把每页渲染成图片"）；
+- ``nav_tooltip``：**导航条目悬停提示**（空则用 ``subtitle``）；
+- ``nav_icon``：**导航条目图标**（``FluentIcon`` 成员名）；
+- ``panel``：参数面板**类名**（``desktop.components.panels`` 里的名字）；
+  ``None`` 表示这一步没有可调参数；
+- ``pick_label``：源选择对话框的标题（"选择 PDF" / "选择图片"）；
+- ``run_label``：执行按钮文案（空则回落到"开始 + 标题"）；
+- ``file_filter``：``QFileDialog`` 的文件过滤串，**同时是后缀的唯一来源**
+  （见 :meth:`suffixes`）；
+- ``accepts_dir``：源能不能直接是目录（拖进来一个文件夹算不算一个源）；
+- ``allow_multi``：对话框允许一次多选（拖拽天然支持多选，此项只管对话框）；
+- ``flat_output``：单源时要不要把产物**平铺到输出目录根下**。置 ``True`` 的
+  只有 ``extract``——它的命令习惯是 ``<输出>/<PDF名>/images/``（见
+  :func:`desktop.steps.kernel.job_for`），单 PDF 时这层嵌套既多余又断链；
+- ``artifact_is_file``：这一步的产物是**单个文件**（而不是一目录文件）。
+  ``print`` 为 ``True``——它的 ``--output`` 是**目录**，文件名由命令自己在其下
+  取（``<输出>/output.pdf``），所以执行内核**不能**把 ``function.outpath``
+  覆盖成那个目录（覆盖了就会拿目录当文件路径写，直接报错）；内核还会把
+  **真正的产物路径**（而不是目录）回传给 ``finished``；
+- ``output_suffix``：默认输出目录名 = 源名 + 这个后缀；
+- ``output_name``：给了就用**固定名**（如"拼图成品"），不再用后缀规则；
+- ``drop_icon`` / ``drop_title`` / ``drop_hint``：共用大输入区
+  （:class:`desktop.steps.source_zone.SourceZone`）的图标与两行文案；
+  后两者留空时按 ``title`` 生成兜底文案。
+
+⚠️ **文案字段按"界面上有哪几个地方要显示"逐个建，不合并**。同一步在流程条
+和左侧导航里叫法确实不一样（流程条说的是**动作**「提取图片」，导航说的是
+**东西**「图片提取」），硬合成一个名字就会改动其中一处界面。所以：
+
+===============  ==========================================
+字段              用在哪
+===============  ==========================================
+``title``         模块页头大标题、左侧导航条目
+``subtitle``      模块页头副标题
+``nav_tooltip``   导航条目悬停提示
+``stage_title``   流程步骤条上的名字（空则用 ``title``）
+``short``         流程步骤条上的短名（空则用 ``stage_title``）
+===============  ==========================================
+
+**流程侧**：
+
+- ``role``：``"stage"`` = 默认流程主链上的一步；``"optional"`` = 流程条上的
+  **可选节点**（拼版就是：``STAGES`` 里没有它，但它有自己的模块页）。
+  见 :data:`FLOW_STAGES` / :data:`OPTIONAL_STEPS`；
+- ``nav``：这一步**有没有独立的模块页**、要不要进左侧导航。``False`` 表示
+  还没抽出来——壳层据此不过去建页面（``desktop.modules.MODULES`` 会把它
+  过滤掉），免得出现"清单里有、页面不存在"；
+- ``inputs`` / ``outputs``：**BPM 端口预留**——将来自定义流程要靠它们把步骤
+  连起来。⚠️ 现在**还没接线**：任务流程走的仍是"约定目录布局"（提取的输出
+  目录就是去底色的输入目录）。先声明出来，是为了让端口模型落地时不用回头
+  改五条 spec。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `panel_class()` | 惰性取参数面板类（``None`` 表示这一步没有面板）。 |
+| `suffixes() -> tuple[str, ...]` | 本步骤认的文件后缀（小写，含点）；从 ``file_filter`` 推导。 |
+| `input_noun() -> str` | 输入物的中文称呼（"PDF" / "图片"），由 ``pick_label`` 派生，用于提示语。 |
+| `accepts_path(path: Path \| str) -> bool` | 这个路径能不能当源：目录看 ``accepts_dir``，文件看后缀。 |
+| `collect_files(paths) -> list[Path]` | 把一批路径展开成**文件清单**（给"要一批文件"的调用方，如拼图）。 |
+| `listing(directory: Path \| str) -> list[Path]` | 目录里符合本步骤后缀的文件（**只看顶层**，与功能层 |
+| `nested_listing(directory: Path \| str, max_depth: int=AUTO_DESCEND_DEPTH) -> list[Path]` | 在下面 1~``max_depth`` 层里找**装着本步骤文件的子目录**（广度优先）。 |
+| `resolve_source(paths) -> tuple[Path \| None, str]` | 把用户给的一批路径**归一成"这一步的源"**（文件或目录）。 |
+| `default_output(source: Path \| None) -> Path \| None` | 从源路径推出默认输出目录（源为空则返回 ``None``）。 |
+| `accepts_files() -> bool` | 源可以是一批文件吗（多选 / 单选都算）。 |
+| `run_text() -> str` | 执行按钮文案（``run_label`` 为空时回落到"开始 + 标题"）。 |
+| `short_name() -> str` | 流程步骤条上的短名（``short`` 为空时用 ``stage_name()``）。 |
+| `stage_name() -> str` | 流程步骤条上的名字（``stage_title`` 为空时用 ``title``）。 |
+| `nav_tip() -> str` | 导航条目悬停提示（``nav_tooltip`` 为空时用 ``subtitle``）。 |
+| `drop_title_text() -> str` | 大输入区空态的标题（``drop_title`` 为空时兜底）。 |
+| `drop_hint_text() -> str` | 大输入区空态的提示行（``drop_hint`` 为空时按能否选目录兜底）。 |
+| `summary() -> str` | 一行可读描述（日志/自测用，别拿它做判断）。 |
+
+##### `panel_class()`
+
+惰性取参数面板类（``None`` 表示这一步没有面板）。
+
+``panel`` 支持两种写法：
+
+- ``"ExtractPanel"``：在 ``desktop.components.panels`` 里找（四个阶段
+  面板都在那儿，是绝大多数情况）；
+- ``"desktop.components.imposition:ImpositionPanel"``：**指定模块**再找
+  ——拼版面板住在 ``desktop.components.imposition``，不在上面那个包里。
+
+##### `suffixes() -> tuple[str, ...]`
+
+本步骤认的文件后缀（小写，含点）；从 ``file_filter`` 推导。
+
+⚠️ 故意**解析过滤串**而不是另写一份后缀表：两处一旦并存就一定会漂移
+（用户看到的对话框按过滤串，拖拽判定却按另一份表）。
+
+##### `collect_files(paths) -> list[Path]`
+
+把一批路径展开成**文件清单**（给"要一批文件"的调用方，如拼图）。
+
+与 :meth:`resolve_source` 的分工：那个把一堆路径收成**一个源**（文件
+提取 / 去底色要的），这个把它们**摊平成一份清单**（拼图要的）。
+
+- 文件：后缀对就留下；
+- 目录：先取顶层的；顶层没有、但只有**一个**子目录装着 → 用那一层
+  （同 :meth:`resolve_source` 的下钻理由：提取模块的产物是
+  ``<输出根>/<PDF名>/images/``）；
+- 结果去重并按文件名排序（"前一页左半幅 + 当前页右半幅"的配对规则
+  依赖一个稳定顺序）。
+
+##### `listing(directory: Path | str) -> list[Path]`
+
+目录里符合本步骤后缀的文件（**只看顶层**，与功能层
+``collect_image_files`` / ``run_on_input_directory`` 同口径）。
+
+读不了（不存在/没权限）时返回空表——调用方据此给"这里没有可用文件"。
+
+##### `nested_listing(directory: Path | str, max_depth: int=AUTO_DESCEND_DEPTH) -> list[Path]`
+
+在下面 1~``max_depth`` 层里找**装着本步骤文件的子目录**（广度优先）。
+
+命中一层就停在该层——找到更浅的就不再往下挖，避免把"某一层唯一"误判成
+"最深处唯一"。返回的是目录清单（不是文件），调用方按数量决定怎么办。
+
+##### `resolve_source(paths) -> tuple[Path | None, str]`
+
+把用户给的一批路径**归一成"这一步的源"**（文件或目录）。
+
+返回 ``(源, 说明)``：说明为空 = 顺利且无需交代；非空是一句给用户看的
+话（可能是我替你选了哪一个，也可能是不接受的理由）。
+
+规则（顺序即优先级）：
+
+1. 混着文件夹进来时，只要 ``accepts_dir`` 就**取第一个文件夹当源**
+   （拖一个文件夹进来是最自然的批量用法）；不接受目录的步骤则改为
+   从文件夹里挑出符合后缀的文件继续走第 3 步；
+2. 文件夹**顶层没有**本步骤能用的文件时，往下钻一~两层（见
+   :meth:`nested_listing`）：恰好一个子目录装着 → 自动指向它并说明；
+   多个 → 拒绝并让用户挑一个（混着处理会把不同书的页拼在一起）；
+3. 单个文件 → 它自己；
+4. 多个文件 → 它们的**共同父目录**（批量语义就是"处理这个目录"）；
+   共同父目录不存在（跨盘）时退到第一个文件所在的目录；
+5. 一件都不匹配 → ``(None, 理由)``。
+
+##### `default_output(source: Path | None) -> Path | None`
+
+从源路径推出默认输出目录（源为空则返回 ``None``）。
+
+规则（与三个模块改造前的行为逐字一致，改动会让老用户找不到产物）：
+
+- 固定名（``output_name``）优先，放在源的**同级目录**下；
+- 否则：源是目录 → ``<父目录>/<目录名><后缀>``；
+  源是文件 → ``<父目录>/<文件名去后缀><后缀>``。
+
+##### `stage_name() -> str`
+
+流程步骤条上的名字（``stage_title`` 为空时用 ``title``）。
+
+⚠️ 与 ``title``（模块页头/导航）**有意分开**：见类 docstring 的文案表。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `spec_by_key(key: str) -> StepSpec \| None` | 按 key 取步骤元数据；不存在返回 ``None``。 |
+
+---
+
 ## `desktop.store.annotations`
 
 源码：[`desktop/store/annotations.py`](../../desktop/store/annotations.py)
@@ -4551,13 +5700,6 @@ JSON 文件，没有旧数据（SQLite）需要迁移。
 源码：[`desktop/store/tasks.py`](../../desktop/store/tasks.py)
 
 任务索引（tasks.json）与任务目录布局。
-
-### 模块常量
-
-| 名称 | 值 |
-| --- | --- |
-| IMPOSITION_STAGE | `"imposition"` |
-| IMPOSITION_LABEL | `"图片拼版"` |
 
 ### `class TaskMixin`
 
