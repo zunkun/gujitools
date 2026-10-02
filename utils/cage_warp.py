@@ -50,8 +50,18 @@
 **合计**            **3.1s**
 =================  ==========
 
-所以桌面侧仍然**降分辨率出预览**（``CAGE_PREVIEW_SCALE``）、只在落地时走
-全分辨率；而局部影响让"要算的面积"从整幅缩到半径平方，预览几乎必然跟手。
+所以桌面侧仍然**降分辨率出预览**（``image_editor.cage_preview_scale``）、
+只在落地时走全分辨率；而局部影响让"要算的面积"从整幅缩到半径平方，
+预览几乎必然跟手。
+
+落地（全分辨率）这一步在**大图上仍是秒级到分钟级**，直接同步跑会把 GUI
+主线程钉死（用户 2026-10-01 报"卡死/崩溃"）。为此：
+
+- :func:`deform` / :func:`deform_qimage` 支持 ``bounds``（只算影响框、返回
+  裁好的图，框外逐字节不动 ⇒ 画布直接透底图）与 ``progress``（每个分块回调
+  ``progress(done, total)``，返回 ``False`` 即中止、函数返回 ``None``）；
+- 画布侧（``image_editor.run_with_progress``）把落地丢进**后台线程**并显示
+  进度对话框，主线程保持响应、可取消。
 
 几何约定
 --------
@@ -232,6 +242,61 @@ def warp_region(cage_src, cage_dst, influence=None, *, width: int, height: int):
     return _deform_region(handles[0], handles[2], width, height)
 
 
+def _region_unclamped(centres, radius: float):
+    """影响盘的并集外接框，**不夹进画布**（可为负坐标）。
+
+    与 :func:`_deform_region` 同构，只是不裁到 ``[0, W]×[0, H]``——``grow``
+    模式要算的正是"被拖到原边界外"的那块，裁掉就白做了。
+    """
+    xs = centres[:, 0]
+    ys = centres[:, 1]
+    x0 = int(math.floor(float(xs.min()) - radius))
+    y0 = int(math.floor(float(ys.min()) - radius))
+    x1 = int(math.ceil(float(xs.max()) + radius)) + 1
+    y1 = int(math.ceil(float(ys.max()) + radius)) + 1
+    return (x0, y0, x1, y1)
+
+
+def content_region(cage_src, cage_dst, influence=None, *, width: int, height: int):
+    """形变后**内容占用的矩形范围**（图片坐标，开区间右端）——**不夹进画布**。
+
+    用户 2026-10-02 报：「图片倾斜后一部分区域超出原本边界，现在会被截掉，
+    不对；超出原本区域的**不要截**，最终结果要按最后图片的范围。」
+
+    口径（用户同日的补充）：「一切以新图为准，新图什么样就什么样，老图不要
+    了」——最终画布 = **形变后内容的完整外框**，不是"原图 ∪ 形变后"的松散
+    并集。对变换笼来说，"内容"分两块：
+
+    ① **没碰到的内容**：RBF 是紧支撑的，影响半径外的像素逐字节不变，仍老实
+       待在 ``[0, W] × [0, H]`` 里——这块必须原样留全（它**就是**结果的一
+       部分，不是"老图残留"）；
+    ② **被拖走的把手附近的源内容**：它跟着把手走。位移场是后向的，所以不能
+       正推落点，但 ``s(mᵢ) = hᵢ``（把手处内容严格跟着把手），于是把手落点
+       ``mᵢ`` 就是这块内容的"锚点"。
+
+    因此画布 = ``[0, W] × [0, H]`` ∪ ``bbox(被拖把手的落点)``。
+
+    ⚠️ **不要**再叠加影响半径 ``R``：``R`` 是 RBF 解算出来的**位移场**尺度
+    （可能远大于实际位移），不是"内容向外铺开的距离"。把 ``mᵢ ± R`` 并进
+    来会让**向内**拖把手也凭空外扩几十像素（实测拖 25px 却外扩 64px），
+    画布白白变大、四边多出一圈空白——正是用户要消掉的"老图残留"。
+
+    返回 ``(x0, y0, x1, y1)``；没动过 → 原图边界 ``(0, 0, W, H)``。
+    """
+    handles = moved_handles(cage_src, cage_dst, influence)
+    if handles is None:
+        return (0, 0, int(width), int(height))
+    centres, _weights, _radius = handles
+    xs, ys = centres[:, 0], centres[:, 1]
+    # 内容外框 = 原图边界 ∪ 被拖把手落点（不叠影响半径，见 docstring）
+    x0 = min(0, int(math.floor(float(xs.min()))))
+    y0 = min(0, int(math.floor(float(ys.min()))))
+    x1 = max(int(width), int(math.ceil(float(xs.max()))) + 1)
+    y1 = max(int(height), int(math.ceil(float(ys.max()))) + 1)
+    return (x0, y0, x1, y1)
+
+
+
 def cage_moved(cage_src, cage_dst, epsilon: float = 1e-6) -> bool:
     """两个笼是否有实质差别（区分"真变形"与"动过手但没挪"）。"""
     np = _numpy()
@@ -327,18 +392,33 @@ def _bilinear(src, x, y, fill):
 
 # ------------------------------------------------------------------ 形变
 def deform(src, cage_src, cage_dst, *, influence=None, fill=FILL,
-           step: int | None = None, block: int = BLOCK_PIXELS, bounds=None):
-    """按「把手 ``cage_src`` → 把手 ``cage_dst``」形变 ``src``，返回**同尺寸**新数组。
+           step: int | None = None, block: int = BLOCK_PIXELS, bounds=None,
+           grow: bool = False, progress=None):
+    """按「把手 ``cage_src`` → 把手 ``cage_dst``」形变 ``src``。
+
+    **默认**（``grow=False``）返回**同尺寸**新数组；``grow=True`` 返回
+    **放大后**的新数组 + 其原点偏移，让"被拖出原边界的内容"**不被截掉**
+    （见 :func:`deform_qimage` 的返回值说明与用户 2026-10-02 报障）。
 
     逐像素语义：
 
     1. 落在**影响半径内** → 按位移场反查源坐标、双线性采样（内容跟着把手走）；
     2. 半径外 → **原样不动**（位移场在那里恒等于 0，见模块文档「算法」）；
-    3. 采样点被拉到**画布外** → 填 ``fill``（小端 RGBA 时给 4 元组）。
+    3. 采样点超出**源图** → 填 ``fill``（小端 RGBA 时给 4 元组）。
+       ⚠️ 与 ``grow`` 无关：填的是"源图之外"，不是"原边界之外"——内容被
+       拖到原边界外时，它的**源坐标仍在源图内**，所以照常取到真实像素。
 
     ``src`` 支持 (H, W) 与 (H, W, C)。``influence`` 是影响半径（图片像素，
     缺省由位移量自动定，见 :func:`moved_handles`）；``step`` 是位移场的格距
     （缺省按 :data:`FIELD_MAX` 自适应）；``bounds`` 可显式指定处理范围。
+
+    ``progress`` 给定时在**每个分块**后回调 ``progress(done, total)``
+    （``total`` = 要处理的像素总数）；返回 ``False`` 则**提前中止**并返回
+    ``None``（让长任务能被打断，见画布侧的大图烘焙）。
+
+    返回：``grow=False`` → ``out``（同尺寸 ndarray）；``grow=True`` →
+    ``(out, (ox, oy))``（``out`` 是新画布，``(ox, oy)`` = 新画布左上角在
+    旧坐标系里的位置，可为负）。
     """
     np = _numpy()
     src = np.asarray(src)
@@ -347,24 +427,61 @@ def deform(src, cage_src, cage_dst, *, influence=None, fill=FILL,
     height, width = src.shape[0], src.shape[1]
     channels = 1 if src.ndim == 2 else src.shape[2]
 
-    out = src.copy()
     handles = moved_handles(cage_src, cage_dst, influence)
     if handles is None:
-        return out  # 没动过（或笼不匹配）：原样返回
+        return (src.copy(), (0, 0)) if grow else src.copy()  # 没动过
+
     centres, weights, radius = handles
     if bounds is None:
-        bounds = _deform_region(centres, radius, width, height)
+        if grow:
+            # 受影响块 = 影响盘的并集外接框（**不夹进画布**：内容可能被拖到
+            # 原边界外，那块也属于"要重算"的区域）。
+            bounds = _region_unclamped(centres, radius)
+        else:
+            bounds = _deform_region(centres, radius, width, height)
     x0, y0, x1, y1 = (int(bounds[0]), int(bounds[1]),
                       int(bounds[2]), int(bounds[3]))
     if x1 <= x0 or y1 <= y0:
-        return out  # 影响盘整体在画布外：什么都没变
+        return (src.copy(), (0, 0)) if grow else src.copy()  # 影响盘在画布外
 
     clip_fill = np.full(channels, fill, dtype=np.float32) \
         if np.isscalar(fill) else np.asarray(fill, dtype=np.float32)
     if clip_fill.shape != (channels,):
         raise ValueError(f"fill 长度应为 {channels}，实际 {clip_fill.shape}")
 
-    span_x, span_y = x1 - x0, y1 - y0
+    # ---- 输出画布 ----
+    # grow=False：输出=同尺寸原图副本，处理块写回原位（与老实现逐字节一致）。
+    # grow=True ：输出=「内容外接框 ∪ 原图边界」；先把**原图整体**按偏移贴进去
+    #             （影响半径外的像素逐字节不动，必须保留），再对受影响块重采样。
+    if grow:
+        cx0, cy0, cx1, cy1 = content_region(cage_src, cage_dst, influence,
+                                            width=width, height=height)
+        out_w, out_h = cx1 - cx0, cy1 - cy0
+        out = np.empty((out_h, out_w, channels), dtype=src.dtype)
+        out.reshape(-1, channels)[:] = clip_fill.astype(src.dtype)
+        origin_x, origin_y = cx0, cy0
+        # 原图在新画布里的位置（grow 时 origin 可为负 ⇒ 原图整体右移/下移）
+        px0, py0 = -origin_x, -origin_y
+        px1, py1 = px0 + width, py0 + height
+        # 夹进输出画布后贴入原图（影响圈外的部分靠这一步"原样保留"）
+        bx0, by0 = max(0, px0), max(0, py0)
+        bx1, by1 = min(out_w, px1), min(out_h, py1)
+        if bx1 > bx0 and by1 > by0:
+            out[by0:by1, bx0:bx1] = src[by0 - py0:by1 - py0,
+                                        bx0 - px0:bx1 - px0]
+    else:
+        out = src.copy()
+        out_w, out_h = width, height
+        origin_x, origin_y = 0, 0
+    # 处理框在输出画布里的坐标（grow 时整体平移 -origin）
+    ax0, ay0 = x0 - origin_x, y0 - origin_y
+    ax1, ay1 = x1 - origin_x, y1 - origin_y
+    ax0, ay0 = max(0, ax0), max(0, ay0)
+    ax1, ay1 = min(out_w, ax1), min(out_h, ay1)
+    if ax1 <= ax0 or ay1 <= ay0:
+        return (out, (origin_x, origin_y)) if grow else out
+
+    span_x, span_y = ax1 - ax0, ay1 - ay0
     if step is None:
         step = max(1, int(math.ceil(math.sqrt(span_x * span_y / FIELD_MAX))))
     step = max(1, int(step))
@@ -376,13 +493,17 @@ def deform(src, cage_src, cage_dst, *, influence=None, fill=FILL,
     #    映射，若就地读同一块缓冲，先算完的块会被后算的块当成源数据取走
     #    （反馈式污染）。``origin`` 是只读的原图视图，``canvas`` 是输出视图。
     origin = src.reshape(height, width, channels)
-    canvas = out.reshape(height, width, channels)
+    canvas = out.reshape(out_h, out_w, channels)
     rows = max(1, int(block) // max(1, span_x))
 
-    for start in range(y0, y1, rows):
-        stop = min(start + rows, y1)
-        coords_x = np.arange(x0, x1, dtype=np.float64)
-        coords_y = np.arange(start, stop, dtype=np.float64)
+    total = span_x * span_y
+    done = 0
+    for start in range(ay0, ay1, rows):
+        stop = min(start + rows, ay1)
+        # 输出画布坐标；源坐标 = 输出坐标 + origin（grow 时 origin 可为负）
+        coords_x = np.arange(ax0 + origin_x, ax1 + origin_x, dtype=np.float64)
+        coords_y = np.arange(start + origin_y, stop + origin_y,
+                             dtype=np.float64)
         shift_x = _sample_lattice(field_x, float(x0), float(y0), step,
                                   coords_x, coords_y)
         shift_y = _sample_lattice(field_y, float(x0), float(y0), step,
@@ -390,9 +511,13 @@ def deform(src, cage_src, cage_dst, *, influence=None, fill=FILL,
         shape = (stop - start, span_x, channels)
         source_x = (coords_x[None, :] + shift_x).reshape(-1)
         source_y = (coords_y[:, None] + shift_y).reshape(-1)
-        canvas[start:stop, x0:x1] = _bilinear(
+        canvas[start:stop, ax0:ax1] = _bilinear(
             origin, source_x, source_y, clip_fill).reshape(shape)
-    return out
+        if progress is not None:
+            done += span_x * (stop - start)
+            if progress(done, total) is False:
+                return None
+    return (out, (origin_x, origin_y)) if grow else out
 
 
 # ------------------------------------------------------------------ QImage
@@ -430,21 +555,50 @@ def array_to_qimage(rgb):
     return image.copy()  # copy 后不再依赖上面那块临时缓冲
 
 
-def deform_qimage(image, cage_src, cage_dst, *, influence=None, fill=None):
-    """QImage 版 :func:`deform`（整幅同尺寸，**保留 alpha 通道**）。
+def deform_qimage(image, cage_src, cage_dst, *, influence=None, fill=None,
+                  bounds=None, grow=False, progress=None):
+    """QImage 版 :func:`deform`（**保留 alpha 通道**）。
 
     不透明图走 3 通道（比 4 通道少 1/4 的采样量）；带 alpha 的图走 4 通道，
     越界填充取 :data:`FILL_CLEAR`（白 + 透明），免得透明底变实心。
+
+    ``bounds`` = ``(x0, y0, x1, y1)``（图片坐标，开区间右端）时**只算这块**
+    并返回**裁剪后的图**（左上角 = 框左上角）——画布侧预览就靠它把工作量
+    从整幅缩到影响框（框外逐字节等于原图，直接透底图即可）。``None``（默认）
+    返回整幅同尺寸结果。``bounds`` 与 ``grow=True`` 同时给：``bounds`` 仍
+    作为"要重算哪块"的提示，最终返回的是**放大的整幅**（不裁剪）。
+
+    ``grow=True``：用户 2026-10-02 报障的修复——内容被拖出原边界时**不截**，
+    按 :func:`content_region` 放大画布，返回 ``(QImage, (ox, oy))``，
+    ``(ox, oy)`` = 新图左上角在原图坐标系里的位置（可为负）。``grow=False``
+    （默认）返回单个 ``QImage``，与原行为逐字节一致。
+
+    ``progress`` 透传给 :func:`deform`（每个分块回调一次，返回 ``False``
+    则中止并返回 ``None``）。
     """
     np = _numpy()
 
     rgba = qimage_to_rgba(image)
     opaque = bool(rgba[:, :, 3].min() == 255)
+    common = dict(influence=influence, bounds=bounds, grow=grow,
+                  progress=progress)
     if opaque:
         warped = deform(np.ascontiguousarray(rgba[:, :, :3]),
-                        cage_src, cage_dst, influence=influence,
-                        fill=FILL if fill is None else tuple(fill)[:3])
+                        cage_src, cage_dst,
+                        fill=FILL if fill is None else tuple(fill)[:3],
+                        **common)
     else:
-        warped = deform(rgba, cage_src, cage_dst, influence=influence,
-                        fill=FILL_CLEAR if fill is None else fill)
+        warped = deform(rgba, cage_src, cage_dst,
+                        fill=FILL_CLEAR if fill is None else fill,
+                        **common)
+    if warped is None:
+        return None  # 被 progress 中止
+    if grow:
+        array, origin = warped
+        return array_to_qimage(np.ascontiguousarray(array)), origin
+    if bounds is not None:
+        x0, y0, x1, y1 = (int(bounds[0]), int(bounds[1]),
+                          int(bounds[2]), int(bounds[3]))
+        if x1 > x0 and y1 > y0:
+            warped = warped[y0:y1, x0:x1]
     return array_to_qimage(np.ascontiguousarray(warped))

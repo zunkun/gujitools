@@ -22,24 +22,27 @@
   浮层显示）；「应用变换」（或切走工具/「完成」）才烘焙进像素——原
   区域填白、只把选区内容按仿射矩阵画回去，画布尺寸不变，**区域外的
   像素一动不动**。一批一个撤销点。
-- **变形**（局部光滑形变，处理古籍褶皱/卷曲）：画面上有一个**一圈把手的笼**
-  （默认＝覆盖选区的矩形，把手疏密在选项行选 4/8/12 点），**拖某个把手**，
-  只有它**附近**的像素跟着走 —— **近处变化大、远处几乎不动**（"像扯弹簧"），
-  影响范围**之外**的像素逐字节一动不动。影响范围＝拖动距离的倍数，
-  选项行「影响范围」可选紧凑/适中/宽松；
-  **点笼线**可就地加一个把手（加完即可拖；加上去不改变形变），
-  「重画笼」可手绘任意闭合区域（逐点点击、点回起点闭合、画笼中 Esc 放弃）。
-  把手**可以拖到图片外面**（往外拉＝把那块内容往外拉伸）。
-  ⚠️ 刻意**不是** GIMP 原版那种"笼内整体一起走"的全局形变：那样拖一个角会把
-  整笼拉斜、从其余顶点扯出折痕（用户 2026-10-01 报过），改为局部影响。
-  拖动即实时预览（只算影响范围那一小块 + 按屏幕清晰度降采样，见
-  :func:`cage_preview_scale`），松手补一帧更清楚的；「应用变形」（或切走
-  工具/「完成」）才烘焙进像素（有等待光标）。
-  ⚠️ 「应用变形」后**笼留在原地**（``adopt_cage``）：古籍褶皱往往要来回试
-  几次，每次都回到全幅矩形笼的话用户得重新圈一遍。
-  算法与口径见 ``utils/cage_warp.py``。
-  ⚠️ 进这个工具时图片**不铺满视口**（:data:`CAGE_FIT_RATIO`），四周留白
-  方便把把手往图外拖。
+- **变形**（**PS 操控变形 Puppet Warp 口径**，处理古籍褶皱/卷曲/线段倾斜）：
+  在图上**打图钉**（点一下放一个）→ 拖某个图钉，**它附近的内容跟着走、
+  离得越远动得越少、没被钉住的远处几乎不动**（"像扯弹簧"/"像揉面团"）。
+  - **加图钉**：工具激活时直接点图上的位置；点已有图钉附近＝选中它而不是
+    新建（吸附半径 :data:`PIN_HIT_VIEW_PX`）。
+  - **删图钉**：`Alt`+点，或右键点。
+  - **图钉拖到图外**：允许（往外拉＝把那块内容往外拉伸），越界部分填底。
+  - **网格疏密**：算法把图片切成三角网格，格距在选项行选（见
+    :data:`MESH_DENSITY_CHOICES`）；越密越细腻、解方程越慢。
+  - ⚠️ **边框自动锚定**：ARAP 能量对整体平移/旋转不变，只钉一个图钉时整张
+    网格会"一起漂移"（实测每个顶点都平移 14px）。所以默认把**图片四边**
+    视为固定（PS 的做法），拖内部图钉时边框被拉住，形变才收敛成"近处大、
+    远处为零"（见 ``utils.puppet_warp.solve_puppet``）。
+  - 拖动即实时预览（只算动过的网格凸包包围盒 + 按屏幕清晰度降采样，见
+    :func:`cage_preview_scale`），松手补一帧更清楚的；「应用变形」（或切走
+    工具/「完成」）才烘焙进像素（有等待光标）。
+  - ⚠️ 「应用变形」后**图钉留在原地**（``adopt_pins``）：古籍褶皱往往要来回
+    试几次，每次应用后都清空图钉的话用户得重新钉一遍。
+  算法与口径见 ``utils/puppet_warp.py``。
+  ⚠️ 进这个工具时图片**不铺满视口**（:data:`DEFORM_FIT_RATIO`），四周留白
+  方便把图钉往图外拖。
 - **擦除**：按住左键涂抹把污点**擦成白底**（古籍页面去污点就是涂白）；
   直径在选项行可调；光标处有**实圈指示**，直径恒等于实际擦除直径
   （所见即所擦）。一笔一个撤销点。
@@ -71,7 +74,8 @@ import math
 import time
 
 from PySide6.QtCore import (
-    QLineF, QPointF, QRect, QRectF, QSize, QSizeF, Qt, QTimer, Signal,
+    QLineF, QPointF, QRect, QRectF, QSize, QSizeF, Qt, QThread, QTimer,
+    Signal,
 )
 from PySide6.QtGui import (
     QBrush, QColor, QFont, QImage, QKeySequence, QFontMetrics,
@@ -81,8 +85,8 @@ from PySide6.QtWidgets import (
     QApplication, QDialog, QFrame, QGraphicsEllipseItem, QGraphicsItem,
     QGraphicsLineItem, QGraphicsPathItem, QGraphicsPixmapItem,
     QGraphicsPolygonItem, QGraphicsRectItem, QGraphicsScene,
-    QGraphicsTextItem, QGraphicsView, QHBoxLayout, QLabel, QVBoxLayout,
-    QWidget,
+    QGraphicsTextItem, QGraphicsView, QHBoxLayout, QLabel, QProgressDialog,
+    QVBoxLayout, QWidget,
 )
 from qfluentwidgets import (
     CaptionLabel, CheckBox, ComboBox, PrimaryPushButton, PushButton,
@@ -94,11 +98,21 @@ from desktop.ui import theme as T
 from desktop.ui.color_picker import ColorPickerButton
 from desktop.ui.fonts import text_font_families
 from desktop.ui.window_size import apply_window_size
-# ⚠️ utils.cage_warp 的 numpy 是**函数内延迟导入**的，模块级 import 不会
-#    把 numpy 拖进 GUI 主进程的启动路径（与 desktop/services/rembg_live 同口径）。
+# ⚠️ utils.puppet_warp 的 numpy/scipy 是**函数内延迟导入**的，模块级 import
+#    不会把它们拖进 GUI 主进程的启动路径（与 desktop/services/rembg_live
+#    同口径）。这里只取函数引用，真正解算时才 import numpy/scipy。
+from utils.puppet_warp import (
+    ARAP_DRAG_ITERATIONS, ARAP_DRAG_TOLERANCE,
+    build_mesh, drag_cell, grid_cell, mesh_moved, nearest_vertex,
+    puppet_warp_qimage, solve_puppet,
+)
+# ⚠️ 变换笼（GIMP 口径，与上面的 PS 操控变形**并存**，是两个独立工具）。
+#    同样只取函数引用，numpy 在函数内延迟导入。
 from utils.cage_warp import (
-    cage_moved, deform_qimage as deform_cage_image,
-    perimeter_cage, warp_region,
+    cage_moved, deform_qimage, moved_handles, perimeter_cage,
+)
+from utils.perspective import (
+    quad_moved, rectify_qimage, rectify_region,
 )
 
 #: 撤销栈深度（步）。每步是整图快照，大图下是拿内存换的。
@@ -127,6 +141,11 @@ HOVER_CURSORS = {
 }
 #: 松手后适配选区的视口占比（不填满，四周留白好抓边，用户 20:28 定）
 SEL_FIT_RATIO = 0.8
+#: 「适应窗口」时图片占视口的比例——**任何工具下都四周留白**。
+#: 用户 2026-10-02：编辑区不要铺满整个界面，"上下都预留空白地方，方便后续
+#: 操作"（图钉/笼把手/四角要能往图外拖，且图边不贴控件边缘才好点）。
+#: 0.8 ⇒ 上下左右各留 ~10% 视口，正好是"顺手"的余量。
+EDIT_FIT_RATIO = 0.8
 #: 变换轴心圆点的视觉直径（视图像素）
 PIVOT_VIEW_PX = 14.0
 #: 旋转按住 Shift 时的角度吸附步（度）
@@ -145,48 +164,84 @@ TEXT_SWATCHES = (
     ("赭黄", "#8d6e63"),
     ("黛绿", "#2e7d32"),
 )
-#: 「变形」矩形笼的默认节点疏密（每条边分几段）。
-CAGE_PER_SIDE_DEFAULT = 1
-#: 可选的节点疏密：1 → 4 点（四角）/ 2 → 8 点 / 3 → 12 点。
-CAGE_PER_SIDE_CHOICES = (1, 2, 3)
-#: 「影响范围」档位 = **拖动距离的倍数**（决定形变的影响半径）。
-#: 下限 2.5 是 ``utils/cage_warp`` 的防自交下限（半径太小 + 拖太远必然把
-#: 像素扯出漩涡），所以档位从 2.5 起；倍数越大越"牵连"周围。
-#: 用户 2026-10-01 定：默认要"尽量少影响距离远的节点"，所以默认取最紧凑的
-#: 上一档。真正的半径换算见 ``EditorCanvas.cage_influence``。
-CAGE_REACH_CHOICES = ((2.5, "紧凑"), (4.0, "适中"), (7.0, "宽松"))
-CAGE_REACH_DEFAULT = 0
+#: 「变形」网格格距档位（图片像素）——越小网格越密、形变越细腻、解方程越慢。
+#: 档位按**真实像素**给，跟图片尺寸无关：20px 一格在 4000px 页面上是
+#: 200×150 格 ≈ 3 万顶点（解算 + 采样都在亚秒级），80px 一格则只有 2 千顶点。
+MESH_DENSITY_CHOICES = ((20.0, "细（20px 一格）"),
+                        (40.0, "标准（40px 一格）"),
+                        (80.0, "粗（80px 一格）"))
+#: 网格格距默认档（图片像素）。40px 是清晰度与耗时的折中：古籍页码常见
+#: 2000~4000px，40px 一格 = 50~100 格/边，足够表现褶皱的连续弯曲。
+MESH_DENSITY_DEFAULT = 40.0
 #: 进「变形」时图片占视口的比例——**四周留出可操作空间**。
-#: 用户 2026-10-01：图片宽高不要铺满整个操作区（笼节点要能往图外拖，
-#: 越靠边越需要留白；也免得笼线贴着控件边缘不好抓）。
-CAGE_FIT_RATIO = 0.8
-#: 笼节点的视觉直径与命中直径（视图像素）——命中圈比视觉略大，好抓。
-CAGE_NODE_VIEW_PX = 11.0
-CAGE_HIT_VIEW_PX = 9.0
-#: 手绘笼时：点到第一个节点的这个视觉距离内 = 闭合多边形。
-CAGE_CLOSE_VIEW_PX = 14.0
+#: 用户 2026-10-01：图片宽高不要铺满整个操作区（图钉要能往图外拖，
+#: 越靠边越需要留白；也免得图钉贴着控件边缘不好点）。
+DEFORM_FIT_RATIO = 0.8
+#: 图钉的视觉直径与命中半径（视图像素）——命中圈比视觉略大，好点。
+PIN_NODE_VIEW_PX = 9.0
+PIN_HIT_VIEW_PX = 11.0
+#: 「校正」四角手柄的视觉半径与命中半径（视图像素）。
+QUAD_HANDLE_VIEW_PX = 8.0
+QUAD_HIT_VIEW_PX = 12.0
+#: 四角手柄画成方块还是圆点（方块更像"框角"，且与图钉圆点区分开）。
+#: 「校正」目标矩形的宽高比档位：外接框 / 保持原比例（对边平均长）。
+RECTIFY_RATIO_CHOICES = (("bbox", "外接框（尺寸最省）"),
+                         ("area", "保持原比例（不变形）"))
+RECTIFY_RATIO_DEFAULT = "area"
 #: 拖动中**像素预览**的工作分辨率上限（像素）。
-#: 形变是逐像素重映射：整页 4000×3000 全分辨率一次要 **3 秒**（实测拆解见
-#: ``utils/cage_warp`` 的模块文档）。⚠️ 形变现在是**局部**的——只算影响半径
-#: 那么大的区域（拖 60px 就是 249×234）——所以这个上限只在"影响范围调宽 +
-#: 缩着看整页"时才会碰到。
-#: 20 万像素 ≈ 0.06s，配 :data:`CAGE_PREVIEW_INTERVAL` 的节拍留出一半
-#: 时间去响应/重绘覆盖层（笼线每帧都跟手）。
-CAGE_PREVIEW_PIXELS = 200_000
+#: 形变是逐像素重映射：整页 4000×3000 全分辨率一次要 **3~10 秒**（实测
+#: 见 ``utils/puppet_warp`` 的模块文档）。ARAP 的位移场缓慢衰减、整图
+#: 96~98% 受影响，所以预算按**整幅图**面积算（裁局部框只省 ~4%）。
+#: 20 万像素 ≈ 0.2s，配 :data:`DEFORM_PREVIEW_INTERVAL` 的节拍让图钉
+#: （覆盖层）始终跟手。
+#:
+#: ⚠️ 这个值是"跟手"的第一道闸门。逐像素重映射的实测成本 ≈ **0.7 µs/像素**
+#: （重心插值 + 4 点双线性 + 写回；numpy 内存带宽受限，已到实测下界），所以
+#: 20 万 ≈ 140ms/帧（偏卡）、12 万 ≈ 72ms（跟手）、8 万 ≈ 43ms（顺滑）。
+#: 取 12 万：4000×3000 拖动帧时间压到 ~80ms 量级。画质上形变场是低频的、
+#: 预览图再由 Qt 平滑放大，肉眼与原图无差别（早期取 20 万是按"0.2s"估的，
+#: 实测偏乐观，正是真机卡顿的来源）。
+DEFORM_PREVIEW_PIXELS = 120_000
 #: **松手后**重算预览的分辨率上限（像素）。松手是"停下来看结果"的时刻，
 #: 按屏幕分辨率算（见 :func:`cage_preview_scale`）就够清楚，但别放开到
-#: 全分辨率——整页笼在 100% 缩放下那是 3 秒。250 万像素 ≈ 0.6s，
-#: 而局部形变（几十万像素）本来就是全分辨率。
+#: 全分辨率——整页在 100% 缩放下那是秒级。250 万像素 ≈ 2s。
+DEFORM_PREVIEW_SETTLE_PIXELS = 2_500_000
+#: 像素预览重算的最小间隔（秒）。一次重映射 ~0.07s 量级，不节流的话每个
+#: move 事件都会阻塞界面；节流到略大于单帧成本，既不让队列堆积、又能
+#: 跟上鼠标（图钉的**覆盖层**不受此限，每帧都跟手）。
+DEFORM_PREVIEW_INTERVAL = 0.08
+
+# ---- 「变换笼」（GIMP 口径）常量 ----
+#: 每边默认把手数（矩形笼 = 4 角 + 每边 N 个中点）。
+#: 「变换笼」的手柄（把手）视觉半径与命中半径（视图像素）。
+CAGE_HANDLE_VIEW_PX = 8.0
+CAGE_HIT_VIEW_PX = 12.0
+#: 笼边线的命中带宽（视图像素）——边缘本身可拖，用于整体移动笼。
+CAGE_EDGE_BAND_VIEW_PX = 8.0
+#: 拖动中**像素预览**的分辨率上限（像素）。
+#: 笼形变是 RBF 位移场，**局部**（影响半径外逐字节原样，见
+#: ``utils.cage_warp``），所以工作量远小于整幅——预算给得比「变形」宽。
+CAGE_PREVIEW_PIXELS = 250_000
+#: 松手后重算预览的分辨率上限（像素）。
 CAGE_PREVIEW_SETTLE_PIXELS = 2_500_000
-#: 像素预览重算的最小间隔（秒）。一次重映射是 0.06s 量级，不节流的话每个
-#: move 事件都会阻塞界面；笼的**覆盖层**（笼线 + 节点）不受此限，每帧都跟手。
-CAGE_PREVIEW_INTERVAL = 0.12
+#: 预览重算的最小间隔（秒）。
+CAGE_PREVIEW_INTERVAL = 0.08
+#: 进「变换笼」时图片占视口的比例——四周留白，把手要能往图外拖。
+CAGE_FIT_RATIO = 0.8
+#: 「变换笼」每边把手数档位（4 角固定 + 每边 N 个中点）。
+#: 越多越能做出连续的波浪形变，但把手密集时不好点。
+CAGE_DENSITY_CHOICES = ((1, "稀疏（每边 1 个）"),
+                        (2, "标准（每边 2 个）"),
+                        (3, "密集（每边 3 个）"))
+CAGE_DENSITY_DEFAULT = 2
 
 #: 左侧工具栏：（键, 图标, 中文名）
 TOOLS = (
     ("crop", FIF.CUT, "裁剪"),
     ("transform", FIF.MOVE, "变换"),
-    ("cage", FIF.LAYOUT, "变形"),
+    ("deform", FIF.LAYOUT, "变形"),
+    ("cage", FIF.TAG, "变换笼"),
+    ("rectify", FIF.ZOOM, "校正"),
     ("erase", FIF.ERASE_TOOL, "擦除"),
     ("text", FIF.FONT, "文字"),
 )
@@ -239,37 +294,132 @@ def shear_about(point: QPointF, sh: float, sv: float) -> QTransform:
 
 
 def bake_transform(image: QImage, rect: QRectF, xf: QTransform,
-                   region: QImage) -> QImage:
-    """把「选区内容经 ``xf`` 变换」烘焙进图片（画布尺寸不变）。
+                   region: QImage, grow: bool = False):
+    """把「选区内容经 ``xf`` 变换」烘焙进图片。
 
-    先把**原区域**填白（内容被挪走/变形后空出来的地方），再在 ``xf``
-    变换下把选区快照画回去——与画布上的实时预览（填白底 + 变换浮层）
-    所见一致。古籍整页白底，填白视觉上最干净。
+    ``grow=False``（旧行为）：画布尺寸不变——先把**原区域**填白（内容被挪走/
+    变形后空出来的地方），再在 ``xf`` 变换下把选区快照画回去。古籍整页白底，
+    填白视觉上最干净。
+
+    ``grow=True``（用户 2026-10-02）：「图片倾斜后一部分区域超出原本边界，
+    现在会被截掉」——**不截**。最终画布 = 「原图边界 ∪ 变换后选区的外框」
+    （:func:`transform_region`）。返回 ``(QImage, (ox, oy))``，``(ox, oy)`` =
+    新画布左上角在原坐标系里的位置（可为负）。
     """
-    result = image.copy()
-    painter = QPainter(result)
+    if not grow:
+        result = image.copy()
+        painter = QPainter(result)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+        painter.fillRect(rect, QColor("#ffffff"))
+        painter.setTransform(xf)
+        painter.drawImage(rect, region)
+        painter.end()
+        return result
+    # grow：新画布 = 原图 ∪ 变换后选区外框
+    ox, oy, width, height = transform_region(image, rect, xf)
+    # 底图：不透明图填白（与旧行为一致：古籍白纸），带 alpha 的图填透明
+    transparent = image.hasAlphaChannel() and _image_has_alpha(image)
+    base = QImage(width, height, QImage.Format.Format_ARGB32)
+    base.fill(QColor(0, 0, 0, 0) if transparent else QColor("#ffffff"))
+    painter = QPainter(base)
+    painter.drawImage(-ox, -oy, image)
+    painter.end()
+    painter = QPainter(base)
     painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+    # 原选区在新画布里的位置：先填白（把被挪走的原内容擦掉），再画变换结果
+    painter.translate(-ox, -oy)
     painter.fillRect(rect, QColor("#ffffff"))
-    painter.setTransform(xf)
+    painter.setTransform(xf, True)
     painter.drawImage(rect, region)
     painter.end()
-    return result
+    return base, (ox, oy)
 
 
-def bake_cage(image: QImage, cage_src, cage_dst, influence=None) -> QImage:
-    """把「把手 ``cage_src`` → 把手 ``cage_dst``」的形变烘焙进图片（尺寸不变）。
+def _image_has_alpha(image: QImage) -> bool:
+    """源图是否**真有透明像素**（决定 grow 底图填透明还是填白）。见画布同款。
 
-    与 :func:`bake_transform` 同口径：**影响半径之外**的像素逐字节不动，
-    只是这里不是仿射矩阵而是逐像素重映射（见 ``utils.cage_warp``）。
+    不能用 ``hasAlphaChannel()`` 单判——ARGB32 格式"有通道"不代表真有透明
+    像素（整幅全不透明时填透明会在 Windows 上显成黑）。
+    """
+    if image.isNull():
+        return False
+    rgba = image.convertToFormat(QImage.Format.Format_RGBA8888)
+    raw = bytes(rgba.constBits())
+    step = rgba.width() * 4
+    for y in range(rgba.height()):
+        row = raw[y * step:(y + 1) * step]
+        if row[3::4].count(255) != rgba.width():
+            return True
+    return False
+
+
+def transform_region(image: QImage, rect: QRectF, xf: QTransform):
+    """``grow`` 模式的目标画布：``(ox, oy, width, height)``。
+
+    用户口径（2026-10-02）：「一切以新图为准，新图什么样就什么样，老图不要了」
+    ——最终图 = **变换后内容的完整外框**，而不是"原图 ∪ 变换后"。
+
+    内容 = ①变换后的选区（仿射把矩形映成平行四边形，落在四角外接框内）
+    ∪ ②**选区之外**原本就留着的那部分原图（选区整体移走时这块为空）。
+    选区原位被移走、内容被填白，所以**不再算进外框**——若按"原图边界"取并，
+    整体平移就会凭空多出一条填白边（用户要的正是把它去掉）。
+    """
+    corners = [rect.topLeft(), rect.topRight(),
+               rect.bottomRight(), rect.bottomLeft()]
+    mapped = [xf.map(point) for point in corners]
+    xs = [point.x() for point in mapped]
+    ys = [point.y() for point in mapped]
+    # ⚠️ 用 `round` 而不是 `floor/ceil`：拖拽平移量是**浮点**（鼠标到像素的
+    # 映射会带小数点，实测 −30.048465），floor(−30.048)=−31、ceil(169.952)
+    # =170 ⇒ 凭空多出 1px 画布。四舍五入到最近像素才是"内容真正占了几列"，
+    # 因为渲染时半像素会被夹到边界上、不会多出可分辨的一列。
+    x0 = round(min(xs))
+    y0 = round(min(ys))
+    x1 = round(max(xs))
+    y1 = round(max(ys))
+    # 选区之外的原图内容仍存在（部分选区变换时）：把"原图 − 选中矩形"的
+    # 四块残余内容并进来。注意：残余是**未变换的原图矩形**，按内容真实占用
+    # 取整——用 `floor/ceil` 向外扩一列，原图的边界列才不会被切掉；这里
+    # 不用 `round`（`round` 是给变换后坐标用的，见上）。
+    sel = rect.normalized()
+    for bx0, by0, bx1, by1 in (
+        (0.0, 0.0, sel.left(), image.height()),        # 左残条
+        (sel.right(), 0.0, image.width(), image.height()),  # 右残条
+        (sel.left(), 0.0, sel.right(), sel.top()),     # 上残条
+        (sel.left(), sel.bottom(), sel.right(), image.height()),  # 下残条
+    ):
+        if bx1 - bx0 <= 0 or by1 - by0 <= 0:
+            continue
+        x0 = min(x0, math.floor(bx0))
+        y0 = min(y0, math.floor(by0))
+        x1 = max(x1, math.ceil(bx1))
+        y1 = max(y1, math.ceil(by1))
+    return x0, y0, max(1, x1 - x0), max(1, y1 - y0)
+
+
+def bake_puppet(image: QImage, vertices_rest, vertices_moved,
+                triangles, grow=False, progress=None):
+    """把「网格 ``vertices_rest`` → ``vertices_moved``」的形变烘焙进图片。
+
+    与 :func:`bake_transform` 同口径：**没动过的网格区域**逐字节不动，只是
+    这里不是仿射矩阵，而是 ARAP 三角网格逐像素重映射（PS 操控变形口径，
+    见 ``utils.puppet_warp``）。
     ⚠️ **保留 alpha**：桌面侧编辑的常常是第三步产物「白底透明 PNG」，
     丢掉 alpha 会让整片透明背景变成不透明黑（用户 2026-10-01 报过）。
+
+    ``grow=True``：图钉拖出原边界时不裁，画布放大，返回 ``(QImage, (ox, oy))``
+    （用户 2026-10-02：「超出原本区域的不要截，最终结果按最后图片的范围」）。
+
+    ``progress`` 透传（见 ``utils.puppet_warp.puppet_warp``）；被中止时
+    返回 ``None``。
     """
-    return deform_cage_image(image, cage_src, cage_dst, influence=influence)
+    return puppet_warp_qimage(image, vertices_rest, vertices_moved, triangles,
+                              grow=grow, progress=progress)
 
 
 def cage_preview_scale(span_x: float, span_y: float,
                        on_screen: float = 1.0,
-                       budget_pixels: float = CAGE_PREVIEW_PIXELS) -> float:
+                       budget_pixels: float = DEFORM_PREVIEW_PIXELS) -> float:
     """拖动预览的降采样倍率：清晰度与成本的**取小**。
 
     两个约束：
@@ -283,8 +433,8 @@ def cage_preview_scale(span_x: float, span_y: float,
     而且屏幕上看不出区别（这正是"预览"该有的样子）。
 
     ``budget_pixels`` 由调用方按场合给：拖动中给
-    :data:`CAGE_PREVIEW_PIXELS`（要跟手），松手后给
-    :data:`CAGE_PREVIEW_SETTLE_PIXELS`（停下来看结果，宁可慢一点也要清楚）。
+    :data:`DEFORM_PREVIEW_PIXELS`（要跟手），松手后给
+    :data:`DEFORM_PREVIEW_SETTLE_PIXELS`（停下来看结果，宁可慢一点也要清楚）。
     """
     area = max(1.0, float(span_x) * float(span_y))
     budget = math.sqrt(float(budget_pixels) / area)
@@ -304,6 +454,115 @@ def wait_cursor():
         yield
     finally:
         QApplication.restoreOverrideCursor()
+
+
+class _BakeWorker(QThread):
+    """把**全分辨率烘焙**放到后台线程跑，并用进度对话框报告进度。
+
+    为什么需要它（用户 2026-10-01 报"程序卡死崩溃，不能实时查看"）：
+    ``deform_qimage`` / ``puppet_warp_qimage`` 是逐像素重映射，整页
+    4000×3000 要 3~15 秒、12000×9000 到分钟级。**同步**跑会把 GUI 主线程
+    钉死——界面不重绘、不响应点击，用户看到的就是"卡死/崩溃"（其实是假死）。
+
+    做法：把"重活"（``work(params, progress)`` 返回结果）丢进本线程；工作
+    函数通过 ``progress(done, total)`` 回调报进度，主线程每来一次就把
+    ``QProgressDialog`` 往前推一格并 ``processEvents``（保持"取消"按钮可点）。
+    主线程序列化地与工作线程通信：只传不可变的参数与结果，避免共享可变状态。
+
+    ``progress`` 返回 ``False``（用户点了取消），工作函数应尽快返回 ``None``；
+    本线程据此把结果标为"已取消"。
+    """
+
+    #: 进度回调在工作线程里被调用 → 用信号转发到主线程更新对话框
+    ticked = Signal(int, int)
+
+    def __init__(self, work, params: dict, parent=None):
+        super().__init__(parent)
+        self._work = work
+        self._params = params
+        self.cancelled = False
+        self.result = None
+
+    def cancel(self) -> None:
+        """请求取消（主线程调；工作函数下次回调进度时即中止）。"""
+        self.cancelled = True
+
+    def progress(self, done: int, total: int):
+        """工作函数调用的进度回调；返回 False 表示用户已请求取消。"""
+        self.ticked.emit(int(done), int(total))
+        return not self.cancelled
+
+    def run(self) -> None:  # noqa: D102（QThread 入口）
+        self.result = self._work(self._params, self.progress)
+
+
+def run_with_progress(parent: QWidget | None, title: str, label: str,
+                      work, params: dict):
+    """在后台线程跑 ``work(params, progress)`` 并显示进度对话框。
+
+    返回工作结果；被用户取消时返回 ``None``。``work`` 必须是**纯计算**
+    （只用到形参，不碰 Qt 部件/画布），这样才能安全地放进工作线程。
+    小任务（预估很快）也不亏：线程启动 + 对话框开销在毫秒级。
+    """
+    worker = _BakeWorker(work, params, parent)
+    dialog = QProgressDialog(label, "取消", 0, 100, parent)
+    dialog.setWindowTitle(title)
+    dialog.setWindowModality(Qt.WindowModality.ApplicationModal)
+    dialog.setMinimumDuration(300)       # 快任务不闪一下对话框
+    dialog.setAutoClose(False)
+    dialog.setAutoReset(False)
+    dialog.setValue(0)
+    # ⚠️ ``QProgressDialog.close()`` **也会**发 ``canceled``（实测 Qt6），
+    #    不区分的话"正常跑完 → close"会被当成用户取消，结果白丢。
+    #    用一个闸门：只有对话框还开着时的 canceled 才算真取消。
+    state = {"done": False}
+
+    def on_cancel() -> None:
+        if not state["done"]:
+            worker.cancel()
+
+    dialog.canceled.connect(on_cancel)
+
+    def on_tick(done: int, total: int) -> None:
+        if total > 0:
+            dialog.setValue(min(100, int(done * 100 / total)))
+
+    worker.ticked.connect(on_tick)
+    worker.start()
+    # 主线程等它跑完，但每 50ms 醒一次让事件循环处理重绘/取消点击
+    while not worker.wait(50):
+        QApplication.processEvents()
+    state["done"] = True          # 先封住 canceled，再正常关闭
+    dialog.close()
+    dialog.deleteLater()
+    worker.wait()
+    if worker.cancelled:
+        return None
+    return worker.result
+
+
+def _bake_cage_work(params: dict, progress):
+    """后台线程里的笼形变烘焙（纯计算，不碰 Qt 部件）。
+
+    见 :func:`run_with_progress`：只读 ``params``、只写返回值，形变本身由
+    ``utils.cage_warp.deform_qimage`` 完成（QImage 是隐式共享的值对象，
+    在工作线程里用/生成是安全的——这里全程不触碰任何 QWidget/画布）。
+
+    ``grow=True``：内容被拖出原边界时**不裁**，返回 ``(QImage, (ox, oy))``
+    （用户 2026-10-02：「超出原本区域的不要截，最终结果要按最后图片的范围」）。
+    """
+    return deform_qimage(params["image"], params["src"], params["dst"],
+                         grow=True, progress=progress)
+
+
+def _bake_puppet_work(params: dict, progress):
+    """后台线程里的 ARAP 形变烘焙（纯计算，不碰 Qt 部件）。见上。
+
+    ``grow=True``：图钉被拖出原边界时**不裁**，返回 ``(QImage, (ox, oy))``
+    （用户 2026-10-02：「超出原本区域的不要截」）。
+    """
+    return bake_puppet(params["image"], params["vertices"], params["moved"],
+                       params["triangles"], grow=True, progress=progress)
 
 
 def draw_text(image: QImage, pos: QPointF, text: str, px: int,
@@ -334,24 +593,8 @@ def draw_text(image: QImage, pos: QPointF, text: str, px: int,
     return result
 
 
-def _as_point(point) -> QPointF:
-    """``QPointF`` / ``(x, y)`` 元组都收。
-
-    笼相关接口两边都可能传（``cage_pending`` 给的是元组、覆盖层给的是
-    ``QPointF``），强制调用方记两套只会踩坑。
-    """
-    if isinstance(point, QPointF):
-        return QPointF(point)
-    return QPointF(float(point[0]), float(point[1]))
-
-
 def _project_on_segment(p: QPointF, a: QPointF, b: QPointF):
-    """``p`` 在线段 ``ab`` 上的**投影点**与参数 ``t``（0=起点、1=终点）。
-
-    笼边上就地加节点时用：新节点要**精确落在笼线上**（不是落在鼠标像素
-    上），否则加点本身就会带来亚像素位移，"加点不改变形变"这条性质就
-    不成立了。
-    """
+    """``p`` 在线段 ``ab`` 上的**投影点**与参数 ``t``（0=起点、1=终点）。"""
     ab = b - a
     length_sq = ab.x() * ab.x() + ab.y() * ab.y()
     if length_sq < 1e-12:
@@ -497,8 +740,10 @@ class EditorCanvas(QGraphicsView):
         #: ⚠️ 没有它，弹窗刚打开（布局未定）时 fit 算出的脏尺寸会把大图
         #: 缩成指甲盖大小且再也不修正（用户截图报过）。
         self._user_zoomed = False
-        #: 「适应窗口」时图片占视口的比例（1.0 = 铺满；见 set_fit_ratio）
-        self._fit_ratio = 1.0
+        #: 「适应窗口」时图片占视口的比例（1.0 = 铺满；见 set_fit_ratio）。
+        #: 缺省即留白（EDIT_FIT_RATIO），用户 2026-10-02：「编辑区不要铺满整个
+        #: 界面，上下都要预留空白」——所有工具通用，不只是变形/变换笼。
+        self._fit_ratio = EDIT_FIT_RATIO
         self._rect: QRectF | None = None          # 当前选区（图片坐标）
         self._mode: tuple | None = None           # 进行中的拖拽
         self._hover_handle: str | None = None     # 悬停/拖动中的手柄（光标+高亮）
@@ -527,25 +772,58 @@ class EditorCanvas(QGraphicsView):
         self._paint_image: QImage | None = None
         #: 变换内容的浮层（跟随 _xf 实时变形，烘焙语义与预览一致）
         self._float_item: QGraphicsPixmapItem | None = None
-        # ---- 「变形」（变换笼）状态 ----
-        #: 笼的**原始位置**（拖动前），形变映射的左端
-        self._cage_home: list[QPointF] | None = None
-        #: 笼的**当前节点位置**（拖动后），映射的右端
-        self._cage: list[QPointF] | None = None
-        #: 矩形笼的节点疏密（每边几段）
-        self._cage_per_side = CAGE_PER_SIDE_DEFAULT
-        #: 「影响范围」档位（CAGE_REACH_CHOICES 的下标；换算见 cage_influence）
-        self._cage_reach = CAGE_REACH_DEFAULT
-        #: 手绘笼进行中的顶点（None = 不在画笼模式）
-        self._cage_drawing: list[QPointF] | None = None
-        #: 手绘笼时的"皮筋"端点（鼠标位置，图片坐标）——点下一个点之前
-        #: 先看到线会连到哪，落点才准
-        self._cage_cursor = QPointF()
-        #: 悬停/拖动中的笼节点下标
-        self._cage_node: int | None = None
-        #: 像素预览浮层 + 上次重算的时刻（节流用，见 _refresh_cage_preview）
-        self._cage_item: QGraphicsPixmapItem | None = None
-        self._cage_painted_at = 0.0
+        # ---- 「变形」（PS 操控变形 Puppet Warp）状态 ----
+        #: 三角网格的**参考顶点**（图片像素坐标，建好就不变），
+        #: ``(vertices, triangles, cols, rows, cell)``；懒建，见 _ensure_mesh
+        self._mesh: tuple | None = None
+        #: 网格格距（图片像素档位，见 MESH_DENSITY_CHOICES）
+        self._mesh_cell = MESH_DENSITY_DEFAULT
+        #: 图钉列表：``[(顶点下标, QPointF 当前目标位置), ...]``。
+        #: 顶点下标由 ``nearest_vertex`` 把用户点击吸附到最近网格顶点得到；
+        #: 目标位置是用户拖到的地方（**允许在图外**，用来看图钉本体画在哪）。
+        self._pins: list[tuple[int, QPointF]] = []
+        #: 解算出来的**当前网格顶点位置**（拖动后），烘焙/预览的映射右端；
+        #: None = 还没解过（等于参考网格，恒等）
+        self._mesh_moved = None
+        #: 拖动预览用的**粗网格**缓存（格距见 utils.puppet_warp.drag_cell）
+        self._drag_cache: tuple | None = None
+        #: 悬停中的图钉下标
+        self._pin_hover: int | None = None
+        #: 像素预览浮层 + 上次重算的时刻（节流用，见 _refresh_deform_preview）
+        self._deform_item: QGraphicsPixmapItem | None = None
+        self._deform_painted_at = 0.0
+        #: 形变预览时**底图上被挖空的矩形**（图片坐标，整数）：浮层盖住的这块
+        #: 在底图里被填白（透明图填透明），否则原像素会从形变结果底下透出来
+        #: ——用户 2026-10-02 报的"图片变换了，原图还在背景上面"就是这个重影。
+        #: 每帧按新框回填旧框、再挖新框（见 _paint_canvas_cutout）。
+        self._preview_cutout: QRect | None = None
+        #: 源图是否真有透明像素的缓存（None = 还没算过；见 _has_alpha）
+        self._alpha_known: bool | None = None
+        # ---- 「变换笼」（GIMP 口径）状态 ----
+        #: 笼把手：``[(原位 QPointF, 当前位置 QPointF), ...]``，闭合顺序。
+        #: 进工具时 = 贴图边的矩形笼（≡ 没动过）；拖任一把手即产生形变。
+        self._cage_handles: list[tuple[QPointF, QPointF]] = []
+        #: 每边把手数档位（见 CAGE_DENSITY_CHOICES）
+        self._cage_per_side = 2
+        #: 悬停中的把手下标
+        self._cage_hover: int | None = None
+        #: 拖动中的把手下标（None = 拖的是整体/边走）
+        self._cage_drag: int | None = None
+        #: 拖整体时记下的"按下点 → 当时的把手快照"
+        self._cage_drag_origin: tuple[QPointF, list] | None = None
+        #: 笼形变的像素预览浮层 + 节流时间戳
+        self._cage_preview_item: QGraphicsPixmapItem | None = None
+        self._cage_preview_at = 0.0
+        # ---- 「校正」（四点透视摆正）状态 ----
+        #: 源四边形四个角（图片坐标，顺序 左上/右上/右下/左下）。
+        #: 进工具时 = 整幅图四角（≡ 没动过）；拖任一角即产生校正。
+        self._rect_quad: list[QPointF] = []
+        #: 目标矩形宽高比口径（见 RECTIFY_RATIO_CHOICES）
+        self._rectify_ratio = RECTIFY_RATIO_DEFAULT
+        #: 拖过的角下标（None = 没拖过）
+        self._rect_drag: int | None = None
+        #: 悬停中的角下标
+        self._rect_hover: int | None = None
         self.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setBackgroundBrush(QColor(T.SURFACE_SOFT))
@@ -572,11 +850,26 @@ class EditorCanvas(QGraphicsView):
         # 换图后文字块/变换预览都失效，一并清掉（应用/撤销/还原都走这里）
         self.clear_text_blocks()
         self._clear_transform_preview()
+        self._clear_deform_preview()
         self._clear_cage_preview()
         self._xf = QTransform()
         self._xf_touched = False
-        self._cage_drawing = None
-        self._cage_node = None
+        self._mesh = None          # 换图后网格重建（新尺寸/新格距）
+        self._mesh_moved = None
+        self._pins = []
+        self._pin_hover = None
+        # 换图后笼失效（新尺寸）：清掉，进工具时按新图重建
+        self._cage_handles = []
+        self._cage_hover = None
+        self._cage_drag = None
+        self._cage_drag_origin = None
+        # 换图后四边形失效（新尺寸）：清掉，进工具时按新图重建
+        self._rect_quad = []
+        self._rect_hover = None
+        self._rect_drag = None
+        # 换图后形变预览的"挖空"与 alpha 缓存都失效（新图、新像素）
+        self._preview_cutout = None
+        self._alpha_known = None
         if self._item is not None:
             self._scene.removeItem(self._item)
             self._item = None
@@ -596,24 +889,114 @@ class EditorCanvas(QGraphicsView):
         self._item = item
         self.setSceneRect(item.boundingRect())
         self.fit()
-        if self._tool in ("crop", "transform", "cage"):
+        if self._tool in ("crop", "transform", "deform"):
             # 换图（应用/撤销/还原都走这里）后选区重新默认全选：
             # 裁剪/变换的语义都是"从当前原图出发"，不是沿用旧图上的框
             self._rect = QRectF(self.image_rect())
             self._xf_pivot = self._rect.center()
+        if self._tool == "deform":
+            self._ensure_mesh()
         if self._tool == "cage":
-            self._reset_cage_geometry()
+            self._ensure_cage()
         self._sync_overlay()
+
+    def _sync_scene_rect(self) -> None:
+        """把场景矩形扩到"底图 ∪ 形变预览浮层"。
+
+        grow 模式下形变预览会画到原图边界**之外**，若场景矩形仍等于图片
+        边界（``set_image`` 里设的），图外那块会被视口裁掉、看不见（滚不
+        过去）。这里取并集后恢复；没有浮层时退化为图片边界。
+        """
+        if self._item is None:
+            return
+        rect = self._item.boundingRect()
+        if self._deform_item is not None:
+            rect = rect.united(self._deform_item.sceneBoundingRect())
+        if self._cage_preview_item is not None:
+            rect = rect.united(self._cage_preview_item.sceneBoundingRect())
+        if self._float_item is not None:
+            rect = rect.united(self._float_item.sceneBoundingRect())
+        self.setSceneRect(rect)
 
     def refresh(self) -> None:
         """像素被就地改过（擦除）后只刷显示，不动缩放与滚动位置。"""
         if self._item is not None and self._image is not None:
             self._item.setPixmap(QPixmap.fromImage(self._image))
+            # ⚠️ 重刷底图会连同"挖空"一起抹掉：形变预览的浮层还盖在上面，
+            #    底图恢复原样就会从浮层底下透出旧内容（重影重新出现）。
+            #    这里把上次挖空的框重新挖一遍（见 _paint_canvas_cutout）。
+            if self._preview_cutout is not None:
+                self._paint_canvas_cutout(self._preview_cutout)
 
     def replace_image(self, image: QImage) -> None:
         """就地换图（尺寸不变的语义，如文字写入）：不动缩放与滚动位置。"""
         self._image = image
+        self._alpha_known = None   # 像素变了，透明判定要重算
         self.refresh()
+
+    def _paint_canvas_cutout(self, rect: QRect | None) -> None:
+        """把底图重画成"原图 + 指定矩形挖空"，供形变预览浮层盖住。
+
+        为什么需要它（用户 2026-10-02 报："拖动图片变化形态，图片变换了，
+        但是原图片还是在背景上面"）：形变预览是**局部浮层**，底图仍是一整
+        张原图。往图外拖/向内推时，形变结果会让开一些位置，那些位置底图里
+        的**旧像素就透出来了**——看上去像两张图叠着。变换工具早就有这个
+        处理（把选区填白再画浮层），这里把同一口径搬到形变工具。
+
+        ⚠️ 调用方传的是**整张原图** ``QRect(0, 0, width, height)``，不是
+        "受影响的小框"：grow 之后浮层已经被移到任意 ``origin``（可能为负），
+        形变过的内容会离开原来的位置；只挖局部小框的话，凡是浮层没盖住、
+        但原图里有旧像素的地方都会透出来。整块挖空最稳。
+
+        ``rect`` = 要挖空的框（图片坐标，整数）。旧框若与它不同要先按
+        ``self._image`` 重铺（回填旧框），否则拖远后旧框的白洞留在原地。
+        透明源图挖成透明（保持"白底透明 PNG"不变成白块）。
+        """
+        if self._item is None or self._image is None:
+            return
+        canvas = self._image.copy()
+        if rect is not None:
+            clipped = rect.intersected(
+                QRect(0, 0, canvas.width(), canvas.height()))
+            if not clipped.isEmpty():
+                painter = QPainter(canvas)
+                # 源图带 alpha ⇒ 挖成透明；不透明源图 ⇒ 填白（与变换/烘焙填白一致）
+                fill = (QColor(0, 0, 0, 0) if self._has_alpha()
+                        else QColor("#ffffff"))
+                painter.setCompositionMode(
+                    QPainter.CompositionMode.CompositionMode_Source)
+                painter.fillRect(clipped, fill)
+                painter.end()
+        pixmap = QPixmap.fromImage(canvas)
+        pixmap.setDevicePixelRatio(1.0)
+        self._item.setPixmap(pixmap)
+        self._preview_cutout = rect
+
+    def _has_alpha(self) -> bool:
+        """源图是否有**真的透明像素**（决定形变挖空填透明还是填白）。
+
+        不能用 ``hasAlphaChannel()`` 单判——ARGB32 格式"有 alpha 通道"不代表
+        真有透明像素（整幅全不透明时填透明会在 Windows 上显成黑）。这里实际
+        扫一遍 alpha：整幅不透明 ⇒ 填白；有任一透明像素 ⇒ 填透明。
+
+        ⚠️ 结果**按图缓存**（``_alpha_known``）：整页扫 alpha 是 O(像素)，
+        每帧调用会白白吃掉几十毫秒（预览要跟手）。换图/就地改像素时失效。
+        """
+        if self._alpha_known is not None:
+            return self._alpha_known
+        if self._image is None:
+            return False
+        rgba = self._image.convertToFormat(QImage.Format.Format_RGBA8888)
+        raw = bytes(rgba.constBits())
+        step = rgba.width() * 4
+        result = False
+        for y in range(rgba.height()):
+            row = raw[y * step:(y + 1) * step]
+            if row[3::4].count(255) != rgba.width():
+                result = True
+                break
+        self._alpha_known = result
+        return result
 
     @property
     def image(self) -> QImage | None:
@@ -631,23 +1014,33 @@ class EditorCanvas(QGraphicsView):
         self._tool = tool
         self._mode = None
         self._clear_transform_preview()
+        self._clear_deform_preview()
         self._clear_cage_preview()
-        self._cage_drawing = None
-        self._cage_node = None
+        self._pin_hover = None
+        self._cage_hover = None
+        self._cage_drag = None
+        self._cage_drag_origin = None
         self._xf = QTransform()
         self._xf_touched = False
         self._xf_reshape = False  # 调整范围是勾选态，换工具即复位
         self._hide_text_outline()
         if tool != "erase":
             self._hide_eraser_ring()
-        if tool in ("crop", "transform", "cage") \
+        if tool in ("crop", "transform", "deform") \
                 and not self.image_rect().isNull():
             self._rect = QRectF(self.image_rect())
             self._xf_pivot = self._rect.center()
         else:
             self._rect = None
-        if tool == "cage":
-            self._reset_cage_geometry()
+        if tool == "deform":
+            self._ensure_mesh()
+        elif tool == "cage":
+            self._ensure_cage()
+        elif tool == "rectify":
+            self._rect_quad = []      # 换工具进来 = 从整幅四角重新开始
+            self._ensure_quad()
+            self._rect_hover = None
+            self._rect_drag = None
         self._sync_overlay()
         self._sync_cursor()
 
@@ -804,6 +1197,9 @@ class EditorCanvas(QGraphicsView):
         # (A*B) 先 A 后 B：先平移到选区原位，再套累计矩阵
         self._float_item.setTransform(
             QTransform().translate(tl.x(), tl.y()) * self._xf)
+        # 变换把选区送出原边界时，浮层会跑到图片外——扩场景矩形才看得见
+        # （用户 2026-10-02：超出原边界的内容不能丢）
+        self._sync_scene_rect()
 
     def _clear_transform_preview(self) -> None:
         """撤掉预览浮层并把底图恢复成真像素（矩阵不动，见 reset_transform）。"""
@@ -815,6 +1211,8 @@ class EditorCanvas(QGraphicsView):
             self._xf_region = None
             self._xf_rect = None
             self.refresh()
+        # 浮层没了 → 场景矩形收回图片边界（变换曾把浮层送出图外时扩过）
+        self._sync_scene_rect()
 
     def reset_transform(self) -> None:
         """「重置」：丢弃未应用的变换，选区回到整幅、轴心回到中心。"""
@@ -889,207 +1287,614 @@ class EditorCanvas(QGraphicsView):
             self._xf = shear_about(
                 QPointF(rect.left(), anchor_y), sh, 0.0) * x_start
 
-    # ------------------------------------------------------------ 变形（变换笼）
-    # 口径与算法见 utils/cage_warp.py 的模块文档。画布这边只负责：
-    #   ① 维护"笼原位 / 笼当前位置"两组顶点；
-    #   ② 拖动时按 CAGE_PREVIEW_PIXELS 降采样出**像素预览**（全分辨率太慢）；
-    #   ③ 覆盖层（笼线 + 节点）每帧跟手，覆盖层本身不碰像素。
-    def cage_density(self) -> int:
-        """矩形笼当前的节点疏密（每边几段）。"""
-        return self._cage_per_side
+    # ------------------------------------------------------------ 变形（操控变形）
+    # 口径与算法见 utils/puppet_warp.py 的模块文档。画布这边只负责：
+    #   ① 维护图钉列表（点加、拖移、Alt/右键删）；
+    #   ② 把图钉交给 solve_puppet 解出**形变后的网格顶点**；
+    #   ③ 拖动时按 DEFORM_PREVIEW_PIXELS 降采样出**像素预览**（全分辨率太慢）；
+    #   ④ 覆盖层（图钉）每帧跟手，覆盖层本身不碰像素。
+    def mesh_density(self) -> float:
+        """当前网格格距（图片像素档位）。"""
+        return self._mesh_cell
 
-    def set_cage_density(self, per_side: int) -> None:
-        """改矩形笼的疏密：按当前选区重建笼（已拖动的节点位置丢弃）。"""
-        self._cage_per_side = max(1, int(per_side))
-        self.reset_cage()
+    def set_mesh_density(self, cell: float) -> None:
+        """改网格格距：**重建网格并清空图钉**（顶点下标全变了，旧钉无意义）。"""
+        self._mesh_cell = float(cell)
+        self.reset_pins()
 
-    def cage_reach(self) -> int:
-        """「影响范围」档位下标（见 :data:`CAGE_REACH_CHOICES`）。"""
-        return self._cage_reach
+    def _ensure_mesh(self) -> None:
+        """（不发信号）按当前图片与格距建网格；已建且尺寸/格距没变就复用。"""
+        if self._image is None or self._image.isNull():
+            self._mesh = None
+            return
+        width, height = self._image.width(), self._image.height()
+        cell = grid_cell(width, height, self._mesh_cell)
+        if self._mesh is not None and self._mesh[4] == cell \
+                and self._mesh[0].shape[0] > 0:
+            return
+        self._mesh = build_mesh(width, height, self._mesh_cell)
+        self._mesh_moved = None
+        self._drag_cache = None   # 网格变了，粗网格缓存一并失效
+        self._pins = []
+        self._pin_hover = None
 
-    def set_cage_reach(self, index: int) -> None:
-        """改「影响范围」：只影响**之后的**拖动，不必丢掉已有的形变。"""
-        self._cage_reach = max(0, min(len(CAGE_REACH_CHOICES) - 1, int(index)))
+    def reset_pins(self) -> None:
+        """「重置」：清空所有图钉，丢掉未应用的形变（网格本身保留）。"""
+        self._clear_deform_preview()
+        self._mesh = None
+        self._mesh_moved = None
+        self._pins = []
+        self._pin_hover = None
+        self._ensure_mesh()
+        self._sync_overlay()
+        self._sync_cursor()
 
-    def cage_influence(self) -> float | None:
-        """把「影响范围」档位换算成**绝对影响半径**（图片像素）；没动过则 None。
+    def pins(self) -> list:
+        """当前图钉的副本（``(顶点下标, QPointF)`` 列表）——给自测与外部读。"""
+        return [(index, QPointF(point)) for index, point in self._pins]
 
-        档位记的是"拖动距离的倍数"而不是固定像素，是为了让手感一致：拖得远，
-        受影响的面积自然大一点，但**相对比例不变**——这正是"像扯弹簧"该有的
-        样子（近处变化大、远端几乎不动）。倍数下限由 ``utils.cage_warp`` 的
-        防自交判据把着，真给太小也会被自动放宽。
+    def pin_count(self) -> int:
+        """当前图钉个数。"""
+        return len(self._pins)
+
+    def _solve_pins(self, *, drag: bool = False):
+        """按当前图钉解一次 ARAP，返回 ``(vertices_rest, vertices_moved)``。
+
+        没图钉、或图钉全都还在原位上 ⇒ 返回 ``None``（形变 = 恒等，调用方
+        据此跳过重采样——这保证了"没钉就逐字节等于原图"）。
+
+        ⚠️ **``drag=True`` 时用"粗网格 + 少迭代"求一个跟手的近似解**：
+        ARAP 的解算耗时随顶点数**超线性**增长（实测 7676 顶点 2.1s、
+        1989 顶点 0.26s、520 顶点 0.07s），而拖动每次鼠标移动都要重解 ——
+        大图上用精网格根本不可能跟手，用户看到的就是"卡死"。粗网格解出的
+        是同一根形变"趋势"，松手后再用精网格解到精细（见
+        :func:`utils.puppet_warp.drag_cell`，它同时卡"相对倍数"和"顶点数
+        绝对上限"两道）。
+
+        像素重采样不在这里做，由 :meth:`_refresh_deform_preview` /
+        :func:`bake_puppet` 走。
         """
-        if self._cage is None or self._cage_home is None:
+        if self._mesh is None or self._image is None:
             return None
-        reach = 0.0
-        for home, moved in zip(self._cage_home, self._cage):
-            reach = max(reach, QLineF(home, moved).length())
-        if reach <= 0.0:
+        if not self._pins:
             return None
-        return reach * CAGE_REACH_CHOICES[self._cage_reach][0]
+        width, height = self._image.width(), self._image.height()
+        mesh = self._drag_mesh() if drag else self._mesh
+        if mesh is None:
+            return None
+        vertices, triangles = mesh[0], mesh[1]
+        # 图钉按**图片坐标**存，落到哪张网格就吸附到哪张网格的顶点
+        targets = []
+        for _vertex, point in self._pins:
+            k = nearest_vertex(vertices, (point.x(), point.y()))
+            targets.append((int(k), (point.x(), point.y())))
+        kwargs = {}
+        if drag:
+            kwargs = {"iterations": ARAP_DRAG_ITERATIONS,
+                      "tolerance": ARAP_DRAG_TOLERANCE}
+        try:
+            moved = solve_puppet(vertices, triangles, targets,
+                                 width=width, height=height, **kwargs)
+        except Exception:
+            # 解算失败（奇异/退化）时退化为恒等，绝不把画布搞崩
+            return None
+        return vertices, moved, triangles
 
-    def _reset_cage_geometry(self) -> None:
-        """（不发信号）把笼重置成覆盖当前选区的矩形，原位=当前位置。"""
-        # 笼被重建了，旧笼算出来的预览浮层已经没有意义（它是按旧笼的
-        # 外接框裁的图），必须一并撤掉——留着就是一坨错位的像素
-        self._clear_cage_preview()
-        if self.image_rect().isNull():
-            self._cage = None
-            self._cage_home = None
+    def _drag_mesh(self):
+        """拖动预览用的**粗网格**（:func:`drag_cell` 给出格距），缓存。
+
+        返回 ``(vertices, triangles, cols, rows, cell)``；格距同时受"相对
+        粗化倍数"和"顶点数上限"两条约束（见 ``utils.puppet_warp.drag_cell``）。
+        """
+        if self._image is None:
+            return None
+        width, height = self._image.width(), self._image.height()
+        cell = drag_cell(width, height, self._mesh_cell)
+        if self._drag_cache is not None and self._drag_cache[4] == cell:
+            return self._drag_cache
+        self._drag_cache = build_mesh(width, height, cell)
+        return self._drag_cache
+
+    def pin_add(self, pos: QPointF) -> int | None:
+        """在 ``pos``（图片坐标）加一个图钉，返回它在 ``_pins`` 里的下标。
+
+        图钉**吸附到最近的网格顶点**（ARAP 的硬约束只能钉在顶点上）；同一
+        顶点已有图钉时不再重复加，直接返回已有的那个。
+        """
+        self._ensure_mesh()
+        if self._mesh is None:
+            return None
+        vertices = self._mesh[0]
+        vertex = nearest_vertex(vertices, (pos.x(), pos.y()))
+        for index, (existing, _point) in enumerate(self._pins):
+            if existing == vertex:
+                return index
+        self._pins.append((vertex, QPointF(float(vertices[vertex, 0]),
+                                           float(vertices[vertex, 1]))))
+        self._clear_deform_preview()
+        self._sync_overlay()
+        return len(self._pins) - 1
+
+    def pin_remove(self, index: int) -> None:
+        """删掉第 ``index`` 个图钉（形变随之重解）。"""
+        if not 0 <= index < len(self._pins):
             return
-        rect = (self._rect or self.image_rect()).normalized()
-        points = perimeter_cage(
-            (rect.left(), rect.top(), rect.right(), rect.bottom()),
-            self._cage_per_side)
-        self._cage_home = [QPointF(x, y) for x, y in points]
-        self._cage = [QPointF(point) for point in self._cage_home]
-
-    def reset_cage(self) -> None:
-        """「重置」：笼回到覆盖当前选区的默认矩形，丢掉未应用的形变。"""
-        self._clear_cage_preview()
-        self._cage_drawing = None
-        self._cage_node = None
-        self._reset_cage_geometry()
+        self._pins.pop(index)
+        self._pin_hover = None
+        self._clear_deform_preview()
+        self._refresh_deform_preview(force=True)
         self._sync_overlay()
-        self._sync_cursor()
 
-    def is_drawing_cage(self) -> bool:
-        """是否正处在「重画笼」的手绘状态。"""
-        return self._cage_drawing is not None
-
-    def begin_cage_draw(self) -> None:
-        """进入手绘笼（GIMP 的「创建或调整笼」）：逐点点击圈区域。"""
-        self._clear_cage_preview()
-        self._cage_drawing = []
-        self._cage_cursor = QPointF()
-        self._cage_node = None
-        self._sync_overlay()
-        self._sync_cursor()
-
-    def cancel_cage_draw(self) -> None:
-        """放弃手绘，保留原来的笼（若它已被拖动，预览一并恢复）。"""
-        if self._cage_drawing is None:
-            return
-        self._cage_drawing = None
-        self._sync_overlay()
-        self._sync_cursor()
-        self._refresh_cage_preview(force=True)
-
-    def _close_cage(self) -> None:
-        """闭合手绘多边形，把它变成新的笼（原位=当前位置，形变从零开始）。"""
-        points = list(self._cage_drawing or [])
-        if len(points) < 3:
-            return
-        self._cage_drawing = None
-        self._cage_node = None
-        self._cage_home = [QPointF(point) for point in points]
-        self._cage = [QPointF(point) for point in points]
-        self._clear_cage_preview()
-        self._sync_overlay()
-        self._sync_cursor()
-
-    def cage_pending(self):
-        """未应用的笼形变 ``(笼原位, 笼当前位置)``（(x, y) 元组列表）；无则 None。"""
-        if self._cage is None or self._cage_home is None:
-            return None
-        if len(self._cage) < 3 or len(self._cage) != len(self._cage_home):
-            return None
-        home = [(point.x(), point.y()) for point in self._cage_home]
-        moved = [(point.x(), point.y()) for point in self._cage]
-        if not cage_moved(home, moved):
-            return None
-        return (home, moved)
-
-    def cage_move_node(self, index: int, pos: QPointF) -> None:
-        """把第 ``index`` 个笼把手拖到 ``pos``（图片坐标）。
+    def pin_move(self, index: int, pos: QPointF) -> None:
+        """把第 ``index`` 个图钉拖到 ``pos``（图片坐标）。
 
         ⚠️ **允许拖到图片外面**（用户 2026-10-01：「任意点只能向内，不能向外」）。
         往外拖＝把那块内容往外**拉伸**，拉出画布的部分按越界填底。这里只留一个
-        "一张图那么远"的宽松上限，免得把手被甩到天外、再也找不回来。
+        "一张图那么远"的宽松上限，免得图钉被甩到天外、再也找不回来。
         """
-        if self._cage is None or not 0 <= index < len(self._cage):
+        if not 0 <= index < len(self._pins):
             return
         limit = self.image_rect()
         offset_x, offset_y = limit.width(), limit.height()
-        self._cage[index] = QPointF(
+        clamped = QPointF(
             max(limit.left() - offset_x,
                 min(pos.x(), limit.right() + offset_x)),
             max(limit.top() - offset_y,
                 min(pos.y(), limit.bottom() + offset_y)))
-        self._cage_node = index  # 拖着的这个点保持放大高亮
+        vertex, _old = self._pins[index]
+        self._pins[index] = (vertex, clamped)
+        self._pin_hover = index  # 拖着的这个保持放大高亮
         self._sync_overlay()
-        self._refresh_cage_preview()
+        self._refresh_deform_preview()
 
-    def _hit_cage_node(self, view_pos: QPointF) -> int | None:
-        """命中笼节点（视图像素口径，不随缩放变）。"""
-        if self._cage is None:
-            return None
-        for index, point in enumerate(self._cage):
+    def _hit_pin(self, view_pos: QPointF) -> int | None:
+        """命中图钉（视图像素口径，不随缩放变）。"""
+        for index, (_vertex, point) in enumerate(self._pins):
             spot = QPointF(self.mapFromScene(point))
-            if QLineF(view_pos, spot).length() <= CAGE_HIT_VIEW_PX:
+            if QLineF(view_pos, spot).length() <= PIN_HIT_VIEW_PX:
                 return index
         return None
 
+    def pins_pending(self):
+        """未应用的形变 ``(vertices_rest, vertices_moved, triangles)``；无则 None。
+
+        「未应用」= 解出的网格确实动过。全都没动时返回 None，调用方据此
+        跳过烘焙（不产生多余的撤销点）。
+        """
+        solved = self._solve_pins()
+        if solved is None:
+            return None
+        vertices, moved, triangles = solved
+        if not mesh_moved(vertices, moved):
+            return None
+        return (vertices, moved, triangles)
+
+    def adopt_pins(self, pin_vertices=None) -> None:
+        """「应用变形」后用：把图钉**原地保留**（目标位置 = 新网格的原位）。
+
+        ⚠️ 为什么不清空：古籍褶皱往往要来回试几次，每次应用后都清空图钉的话
+        用户得重新钉一遍。保留图钉、并让它们落在**刚烘焙完的图**的原位，
+        就可以接着微调同一块。
+
+        ⚠️ ``pin_vertices`` 必须由调用方在 ``set_image`` **之前**快照传入：
+        :meth:`set_image` 换图时会把 ``_pins`` 清空（换图后旧钉无意义），
+        所以这里不能指望调用时 ``self._pins`` 还在。传 ``None`` 时退回读
+        当前 ``self._pins``（兼容直接调用）。
+        """
+        self._clear_deform_preview()
+        self._mesh = None
+        self._mesh_moved = None
+        self._ensure_mesh()   # 重建网格（图片没变，格距没变 → 复用/重建都行）
+        if self._mesh is not None:
+            vertices = self._mesh[0]
+            source = self._pins if pin_vertices is None else pin_vertices
+            self._pins = [
+                (vertex, QPointF(float(vertices[vertex, 0]),
+                                 float(vertices[vertex, 1])))
+                for vertex, _point in source
+                if 0 <= vertex < len(vertices)
+            ]
+        self._sync_overlay()
+
+    # ---- 「变换笼」（GIMP 口径）----
+    #: 笼把手的位置口径与 ``utils.cage_warp`` 一致：``(原位, 当前位置)`` 两个
+    #: 序列，闭合顺序。原位 = 进工具时贴图边的矩形；当前位置 = 用户拖到的
+    #: 地方（**允许在图外**，往外拖 = 拉伸）。
+    def _ensure_cage(self) -> None:
+        """（不发信号）没笼时按当前整幅图建一个（贴图边的矩形笼）。"""
+        if self._image is None or self._image.isNull():
+            self._cage_handles = []
+            return
+        if self._cage_handles:
+            return
+        rect = self.image_rect()
+        handles = perimeter_cage(
+            (rect.left(), rect.top(), rect.right(), rect.bottom()),
+            self._cage_per_side)
+        # perimeter_cage 给的是单序列 (x, y) 元组（原位）；当前位置初始 = 原位
+        self._cage_handles = [
+            (QPointF(float(x), float(y)), QPointF(float(x), float(y)))
+            for x, y in handles
+        ]
+
+    def reset_cage(self) -> None:
+        """「重置」：把手回到整幅图原位（丢掉未应用的形变）。"""
+        self._clear_cage_preview()
+        self._cage_handles = []
+        self._cage_drag = None
+        self._cage_hover = None
+        self._cage_drag_origin = None
+        self._ensure_cage()
+        self._sync_cage_overlay()
+        self._sync_cursor()
+        self._refresh_cage_preview(force=True)
+
+    def cage_density(self) -> int:
+        """当前每边把手数档位。"""
+        return self._cage_per_side
+
+    def set_cage_density(self, per_side: int) -> None:
+        """改每边把手数：**重建笼并清掉未应用的形变**（把手序号全变了）。"""
+        self._cage_per_side = max(1, int(per_side))
+        self.reset_cage()
+
+    def cage(self) -> list:
+        """当前把手副本 ``[(原位, 当前位置), ...]``——给自测与外部读。"""
+        self._ensure_cage()
+        return [(QPointF(a), QPointF(b)) for a, b in self._cage_handles]
+
+    def cage_source(self) -> list[QPointF]:
+        """把手**原位**序列（形变映射的左端）。"""
+        self._ensure_cage()
+        return [QPointF(a) for a, _b in self._cage_handles]
+
+    def cage_target(self) -> list[QPointF]:
+        """把手**当前位置**序列（形变映射的右端）。"""
+        self._ensure_cage()
+        return [QPointF(b) for _a, b in self._cage_handles]
+
+    def cage_pending(self):
+        """未应用的笼形变 ``(cage_src, cage_dst)``；没动过返回 ``None``。
+
+        口径与 :meth:`pins_pending` 一致：只有"把手真的动过"才算待应用。
+        """
+        if self._image is None or self._image.isNull():
+            return None
+        self._ensure_cage()
+        if not self._cage_handles:
+            return None
+        src = self.cage_source()
+        dst = self.cage_target()
+        if not cage_moved([(p.x(), p.y()) for p in src],
+                          [(p.x(), p.y()) for p in dst]):
+            return None
+        return src, dst
+
+    def cage_move(self, index: int, pos: QPointF) -> None:
+        """把第 ``index`` 个把手拖到 ``pos``（图片坐标，允许图外）。"""
+        self._ensure_cage()
+        if not (0 <= index < len(self._cage_handles)):
+            return
+        origin, _cur = self._cage_handles[index]
+        self._cage_handles[index] = (origin, QPointF(pos))
+        self._sync_cage_overlay()
+        self._refresh_cage_preview()
+
+    def cage_move_all(self, delta: QPointF) -> None:
+        """整体平移笼（拖边/拖笼内部）：把所有把手在**按下时的快照**上位移。
+
+        必须基于快照位移，不能逐帧累加——否则每帧都从"当前值"再位移一次，
+        手一停位置就漂（浮点累积）。
+        """
+        if self._cage_drag_origin is None:
+            return
+        _start, snapshot = self._cage_drag_origin
+        self._cage_handles = [(a, QPointF(b.x() + delta.x(), b.y() + delta.y()))
+                              for a, b in snapshot]
+        self._sync_cage_overlay()
+        self._refresh_cage_preview()
+
+    def _hit_cage_handle(self, view_point: QPointF) -> int | None:
+        """命中哪个把手（视口坐标，按当前倍率换算命中半径）。"""
+        if not self._cage_handles:
+            return None
+        radius = CAGE_HIT_VIEW_PX
+        best, best_d2 = None, radius * radius
+        for i, (_origin, cur) in enumerate(self._cage_handles):
+            vp = QPointF(self.mapFromScene(cur))
+            d2 = (vp.x() - view_point.x()) ** 2 + (vp.y() - view_point.y()) ** 2
+            if d2 <= best_d2:
+                best, best_d2 = i, d2
+        return best
+
+    def _hit_cage_body(self, scene_point: QPointF) -> bool:
+        """命中笼内部/边（用于整体平移）。用原位上构建的多边形判定。"""
+        if not self._cage_handles:
+            return False
+        poly = QPolygonF([a for a, _b in self._cage_handles])
+        if poly.containsPoint(scene_point, Qt.FillRule.OddEvenFill):
+            return True
+        # 边缘带宽：到任一条边的距离在阈值内也算（贴着边拖更好抓）
+        tol = CAGE_EDGE_BAND_VIEW_PX / max(1e-6, self._zoom)
+        n = len(poly)
+        for i in range(n):
+            a, b = poly[i], poly[(i + 1) % n]
+            if _dist_to_segment(scene_point, a, b) <= tol:
+                return True
+        return False
+
+    # ---- 「校正」（四点透视摆正） ----
+    def _ensure_quad(self) -> None:
+        """（不发信号）没四边形时按当前整幅图建一个（四角 = 图四角）。"""
+        if self._image is None or self._image.isNull():
+            self._rect_quad = []
+            return
+        if self._rect_quad:
+            return
+        rect = self.image_rect()
+        self._rect_quad = [QPointF(rect.left(), rect.top()),
+                      QPointF(rect.right(), rect.top()),
+                      QPointF(rect.right(), rect.bottom()),
+                      QPointF(rect.left(), rect.bottom())]
+
+    def reset_quad(self) -> None:
+        """「重置」：四角回到整幅图四角（丢掉未应用的校正）。"""
+        self._clear_deform_preview()
+        self._rect_quad = []
+        self._rect_drag = None
+        self._rect_hover = None
+        self._ensure_quad()
+        self._sync_quad_overlay()
+        self._sync_cursor()
+
+    def quad(self) -> list:
+        """当前四边形四角副本（``QPointF`` 列表）——给自测与外部读。"""
+        self._ensure_quad()
+        return [QPointF(p) for p in self._rect_quad]
+
+    def rectify_ratio(self) -> str:
+        """目标矩形宽高比口径（见 RECTIFY_RATIO_CHOICES）。"""
+        return self._rectify_ratio
+
+    def set_rectify_ratio(self, mode: str) -> None:
+        """改目标矩形口径：只影响**之后的**预览，不必丢掉当前四角。"""
+        self._rectify_ratio = mode
+        self._refresh_deform_preview(force=True)
+        self._sync_quad_overlay()
+
+    def quad_move(self, index: int, pos: QPointF) -> None:
+        """把第 ``index`` 个角拖到 ``pos``（图片坐标）。
+
+        ⚠️ **允许拖到图片外面**（四角要能框住"拍摄时把纸张也拍进来了"的
+        边界）。只留一个"一张图那么远"的宽松上限，免得角点被甩丢。
+        """
+        self._ensure_quad()
+        if not 0 <= index < 4:
+            return
+        limit = self.image_rect()
+        off_x, off_y = limit.width(), limit.height()
+        clamped = QPointF(
+            max(limit.left() - off_x, min(pos.x(), limit.right() + off_x)),
+            max(limit.top() - off_y, min(pos.y(), limit.bottom() + off_y)))
+        self._rect_quad[index] = clamped
+        self._rect_hover = index
+        self._sync_quad_overlay()
+        self._refresh_deform_preview()
+
+    def _hit_quad(self, view_pos: QPointF) -> int | None:
+        """命中四角手柄（视图像素口径，不随缩放变）。"""
+        self._ensure_quad()
+        for index, point in enumerate(self._rect_quad):
+            spot = QPointF(self.mapFromScene(point))
+            if QLineF(view_pos, spot).length() <= QUAD_HIT_VIEW_PX:
+                return index
+        return None
+
+    def quad_pending(self):
+        """未应用的校正 ``(quad, mode)``；四角没动过则 None。"""
+        self._ensure_quad()
+        if len(self._rect_quad) != 4:
+            return None
+        rect = self.image_rect()
+        rest = [(rect.left(), rect.top()), (rect.right(), rect.top()),
+                (rect.right(), rect.bottom()), (rect.left(), rect.bottom())]
+        if not quad_moved(rest, [(p.x(), p.y()) for p in self._rect_quad]):
+            return None
+        return ([(p.x(), p.y()) for p in self._rect_quad], self._rectify_ratio)
+
+    def _sync_quad_overlay(self) -> None:
+        """四角手柄的显隐与位置刷新（只在「校正」工具下显示）。"""
+        show = (self._tool == "rectify" and self._item is not None
+                and len(self._rect_quad) == 4)
+        if not show:
+            self._rect_poly.hide()
+            for item in self._rect_dots:
+                item.hide()
+            return
+        self._rect_poly.show()
+        path = QPainterPath()
+        path.moveTo(self._rect_quad[0])
+        for point in self._rect_quad[1:]:
+            path.lineTo(point)
+        path.closeSubpath()
+        self._rect_poly.setPath(path)
+        half = QUAD_HANDLE_VIEW_PX / max(self._zoom, 1e-6)
+        for index, item in enumerate(self._rect_dots):
+            point = self._rect_quad[index]
+            item.setRect(QRectF(point.x() - half, point.y() - half,
+                                half * 2, half * 2))
+            big = index == self._rect_hover
+            item.setBrush(QBrush(QColor(T.ACCENT_HOVER if big else T.ACCENT)))
+            item.show()
+
     # ---- 像素预览（降采样 + 节流） ----
-    def _clear_cage_preview(self) -> None:
+    def _clear_deform_preview(self) -> None:
         """丢掉像素预览浮层，并把节流时间戳一并清零。
 
         ⚠️ 清预览 = 「已经没有待应用的形变了」，所以下一次拖动是**全新的一轮**，
-        必须立刻出画。若只删浮层、留下 ``_cage_painted_at``，那么刚
-        「重置 / 重画笼 / 应用变形 / 采用笼」完紧接着拖的**第一次**会被
-        :data:`CAGE_PREVIEW_INTERVAL` 的窗口吃掉——用户拖了半天画面一动不动，
+        必须立刻出画。若只删浮层、留下 ``_deform_painted_at``，那么刚
+        「重置 / 应用变形 / 采用图钉」完紧接着拖的**第一次**会被
+        :data:`DEFORM_PREVIEW_INTERVAL` 的窗口吃掉——用户拖了半天画面一动不动，
         松开手才突然跳出来（真实踩到：这就是 ``fit()`` 空转那一类，见
-        :meth:`_refresh_cage_preview` 的注释；这里把 reset/adopt 这条路径也堵上）。
+        :meth:`_refresh_deform_preview` 的注释；这里把 reset/adopt 这条路径也堵上）。
         """
-        self._cage_painted_at = 0.0
-        if self._cage_item is not None:
-            self._scene.removeItem(self._cage_item)
-            self._cage_item = None
+        self._deform_painted_at = 0.0
+        if self._deform_item is not None:
+            self._scene.removeItem(self._deform_item)
+            self._deform_item = None
+        # ⚠️ 底图上被挖空的框必须回填：不清的话预览浮层没了、原图却留着个
+        #    白洞（用户会看到"图被啃掉一块"）。
+        if self._preview_cutout is not None:
+            self._paint_canvas_cutout(None)
+        # 浮层没了 → 场景矩形收回图片边界（grow 时曾为图外内容扩过）
+        self._sync_scene_rect()
+
+    def _clear_cage_preview(self) -> None:
+        """丢掉变换笼的像素预览浮层，并把节流时间戳一并清零。
+
+        与 :meth:`_clear_deform_preview` 同理：清预览 = 「已经没有待应用的
+        形变了」，下一次拖动是全新一轮，必须立刻出画（否则重置/应用后紧接着
+        拖的第一次会被节流窗口吃掉）。
+        """
+        self._cage_preview_at = 0.0
+        if self._cage_preview_item is not None:
+            self._scene.removeItem(self._cage_preview_item)
+            self._cage_preview_item = None
+        # ⚠️ 同 :meth:`_clear_deform_preview`：底图上被挖空的框必须回填，
+        #    否则预览浮层没了、原图却留着个白洞。
+        if self._preview_cutout is not None:
+            self._paint_canvas_cutout(None)
+        # 浮层没了 → 场景矩形收回图片边界（grow 时曾为图外内容扩过）
+        self._sync_scene_rect()
 
     def _refresh_cage_preview(self, force: bool = False) -> None:
-        """重算"形变后"的像素预览（浮层）。
+        """重算变换笼的像素预览浮层。
 
-        ⚠️ 三层降本（缺一不可）：形变是逐像素重映射，源图是整页 4000×3000
-        时全分辨率一次要 **3 秒**（实测拆解见 ``utils.cage_warp``）。
+        与 :meth:`_refresh_deform_preview` 同构：
 
-        - **范围**：形变本身是**局部**的，只算 :func:`warp_region` 给出的
-          "影响盘并集外接框"——拖一个把手 60px 就只有 249×234 那么大；
-          框外原图直接透出（那里位移场恒等于 0，逐字节等于原图，
-          所以既不用整幅快照，也不会在框边留接缝）；
-        - **分辨率**：按 :func:`cage_preview_scale` 降采样——它同时卡"屏幕
-          上够清楚"和"工作量有上限"。拖动中取 :data:`CAGE_PREVIEW_PIXELS`
-          （~0.06s，跟得上手），``force`` 时取 :data:`CAGE_PREVIEW_SETTLE_PIXELS`
-          （松手了，停下来看清楚，~0.6s 上限）；
+        - **范围**：``grow=True`` 时形变结果可能落到原图边界**之外**，所以预览
+          按**整幅图**降采样后整体重算（:func:`deform_qimage` 的 grow 模式），
+          浮层覆盖"原图 ∪ 图外内容"；底图整张挖空，由浮层完整呈现（用户
+          2026-10-02：「超出原本区域的不要截，最终结果按最后图片的范围」）。
+          场景矩形同步扩到浮层范围，图外那块才看得见；
+        - **分辨率**：按 :func:`cage_preview_scale` 降采样，拖动中取
+          :data:`CAGE_PREVIEW_PIXELS`，``force``（松手）取
+          :data:`CAGE_PREVIEW_SETTLE_PIXELS`；
         - **时间**：:data:`CAGE_PREVIEW_INTERVAL` 之内不重复算（``force`` 跳过）。
 
-        笼线/节点（覆盖层）每帧都跟手，与这里的节拍无关。
+        笼把手（覆盖层）每帧都跟手，与这里的节拍无关。
         """
-        if self._image is None or self._cage is None or self._cage_home is None:
+        if self._image is None or not self._cage_handles:
+            self._clear_cage_preview()
+            return
+        src = self.cage_source()
+        dst = self.cage_target()
+        src_xy = [(p.x(), p.y()) for p in src]
+        dst_xy = [(p.x(), p.y()) for p in dst]
+        if not cage_moved(src_xy, dst_xy):
+            self._clear_cage_preview()
             return
         now = time.monotonic()
-        if not force and now - self._cage_painted_at < CAGE_PREVIEW_INTERVAL:
-            return
-        home = [(point.x(), point.y()) for point in self._cage_home]
-        moved = [(point.x(), point.y()) for point in self._cage]
-        if not cage_moved(home, moved):
-            # 没干活就不算"刚画过"：``_clear_cage_preview`` 会把时间戳清零，
-            # 否则紧接着的第一次真拖动会被节流窗口吃掉，用户拖了半天画面
-            # 一动不动（真实踩到：fit() 里的空转把时间戳刷成了"刚画"）。
-            self._clear_cage_preview()
+        if not force and now - self._cage_preview_at < CAGE_PREVIEW_INTERVAL:
             return
         width, height = self._image.width(), self._image.height()
-        influence = self.cage_influence()
-        x0, y0, x1, y1 = warp_region(home, moved, influence,
-                                     width=width, height=height)
-        if x1 <= x0 or y1 <= y0:
-            self._clear_cage_preview()
-            return
-
-        # 场景 1 单位 = 屏幕上 zoom × dpr 个设备像素（见 cage_preview_scale）
+        # grow 后内容可能落到原边界之外，预览也必须把外面那块画出来（否则
+        # 松手落地时"画面突然多出一块"，与预览对不上）。所以这里按**整幅图**
+        # 的预算降采样（同 deform），而不是只算影响框。
         scale = cage_preview_scale(
-            x1 - x0, y1 - y0,
+            width, height,
             self._zoom * max(1.0, self.devicePixelRatioF()),
             CAGE_PREVIEW_SETTLE_PIXELS if force else CAGE_PREVIEW_PIXELS)
+        scale = min(1.0, scale)
+        if scale >= 1.0:
+            source = self._image
+            src_s = [(p.x(), p.y()) for p in src]
+            dst_s = [(p.x(), p.y()) for p in dst]
+        else:
+            source = self._image.scaled(
+                max(1, int(round(width * scale))),
+                max(1, int(round(height * scale))),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation)
+            src_s = [(p.x() * scale, p.y() * scale) for p in src]
+            dst_s = [(p.x() * scale, p.y() * scale) for p in dst]
+        preview, origin_s = deform_qimage(source, src_s, dst_s, grow=True)
+        if preview is None or preview.isNull():
+            self._clear_cage_preview()
+            return
+        pixmap = QPixmap.fromImage(preview)
+        pixmap.setDevicePixelRatio(1.0)
+        if self._cage_preview_item is None:
+            self._cage_preview_item = QGraphicsPixmapItem()
+            self._cage_preview_item.setZValue(4)  # 底图之上、覆盖层（11+）之下
+            self._cage_preview_item.setTransformationMode(
+                Qt.TransformationMode.SmoothTransformation)
+            self._scene.addItem(self._cage_preview_item)
+        self._cage_preview_item.setPixmap(pixmap)
+        self._cage_preview_item.setPos(origin_s[0] / scale, origin_s[1] / scale)
+        self._cage_preview_item.setScale(1.0 / scale)
+        # ⚠️ 底图上把**原图整块**挖空：形变结果（含图外那块）由浮层完整呈现，
+        #    底图若不挖空，原内容会从浮层底下透出来（用户 2026-10-02 报的重影）。
+        #    grow 后浮层覆盖范围 ≥ 原图，所以直接挖整张原图即可。
+        self._paint_canvas_cutout(QRect(0, 0, width, height))
+        # 场景矩形要扩到"原图 ∪ 浮层"：否则图外那块内容被视口裁掉、看不见
+        # （用户 2026-10-02：超出原边界的内容不能丢——预览也要看得见）。
+        self._sync_scene_rect()
+        self._cage_preview_at = now
+
+    def _refresh_deform_preview(self, force: bool = False) -> None:
+        """重算"形变后"的像素预览（浮层）。
+
+        ⚠️ 两重降本（缺一不可）：形变是逐像素重映射，源图是整页 4000×3000
+        时全分辨率一次要秒级（实测见 ``utils.puppet_warp``）。
+
+        - **分辨率**：按 :func:`cage_preview_scale` 降采样——它同时卡"屏幕
+          上够清楚"和"工作量有上限"。拖动中取 :data:`DEFORM_PREVIEW_PIXELS`
+          （~80ms），``force`` 时取 :data:`DEFORM_PREVIEW_SETTLE_PIXELS`
+          （松手了，停下来看清楚）。⚠️ 预算按**整幅图**面积算，因为下面
+          ``bake_puppet`` 是拿整张降采样图做的映射；
+        - **时间**：:data:`DEFORM_PREVIEW_INTERVAL` 之内不重复算（``force`` 跳过）。
+
+        ⚠️ ``grow=True``：ARAP 网格被拖出原边界时预览**整体重算并显示图外
+        那块**——不再按 :func:`mesh_region` 裁框（ARAP 的位移场缓慢衰减、
+        整图 96~98% 受影响，裁框只省 ~4%，见 ``utils.puppet_warp``）。浮层
+        覆盖"原图 ∪ 图外内容"，底图整张挖空，场景矩形同步扩大。
+
+        图钉（覆盖层）每帧都跟手，与这里的节拍无关。
+        """
+        if self._tool == "rectify":
+            self._refresh_rectify_preview(force=force)
+            return
+        if self._image is None or self._mesh is None or not self._pins:
+            return
+        now = time.monotonic()
+        if not force and now - self._deform_painted_at < DEFORM_PREVIEW_INTERVAL:
+            return
+        # force（松手补帧）用精网格解到收敛；拖动中用粗网格近似解（跟手）
+        solved = self._solve_pins(drag=not force)
+        if solved is None:
+            # 没干活就不算"刚画过"：``_clear_deform_preview`` 会把时间戳清零，
+            # 否则紧接着的第一次真拖动会被节流窗口吃掉，用户拖了半天画面
+            # 一动不动（真实踩到：fit() 里的空转把时间戳刷成了"刚画"）。
+            self._clear_deform_preview()
+            return
+        vertices, moved, triangles = solved
+        if not mesh_moved(vertices, moved):
+            self._clear_deform_preview()
+            return
+        width, height = self._image.width(), self._image.height()
+
+        # 场景 1 单位 = 屏幕上 zoom × dpr 个设备像素（见 cage_preview_scale）。
+        # ⚠️ 成本预算按**整幅图**的面积算，不是按 mesh_region 的框——因为
+        #    bake_puppet 是拿**整张降采样图**去做的映射（不是只处理框内），
+        #    所以真实工作量 = width×height×scale²。早前按框面积算，预算
+        #    20 万实际会重映射到 27 万（框只占整图 ~95% 也差这么多，因为
+        #    scale 被同时乘到了整幅），实测帧时间比预期高 30%（自测/基准
+        #    逮到）。这里显式按整图面积给出 scale。
+        scale = cage_preview_scale(
+            width, height,
+            self._zoom * max(1.0, self.devicePixelRatioF()),
+            DEFORM_PREVIEW_SETTLE_PIXELS if force else DEFORM_PREVIEW_PIXELS)
         if scale >= 1.0:
             source = self._image
         else:
@@ -1098,35 +1903,87 @@ class EditorCanvas(QGraphicsView):
                 max(1, int(round(height * scale))),
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation)
-        warped = deform_cage_image(
-            source,
-            [(x * scale, y * scale) for x, y in home],
-            [(x * scale, y * scale) for x, y in moved],
-            influence=None if influence is None else influence * scale)
-        # 取整后按**缩放坐标系**裁框、再按 1/scale 摆回图片坐标：位置与尺寸
-        # 都精确对齐（若裁完再按原坐标摆，会有 1/scale 像素的错位）。
-        left = int(math.floor(x0 * scale))
-        top = int(math.floor(y0 * scale))
-        right = min(warped.width(), int(math.ceil(x1 * scale)) + 1)
-        bottom = min(warped.height(), int(math.ceil(y1 * scale)) + 1)
-        if right <= left or bottom <= top:
-            self._clear_cage_preview()
+        # grow：图钉被拖出原边界时预览也要把外面那块画出来（否则松手落地
+        # 时"画面突然多出一块"，与预览对不上）。
+        warped, origin_s = bake_puppet(source, vertices * scale, moved * scale,
+                                       triangles, grow=True)
+        if warped is None or warped.isNull():
+            self._clear_deform_preview()
             return
-        pixmap = QPixmap.fromImage(
-            warped.copy(QRect(left, top, right - left, bottom - top)))
+        pixmap = QPixmap.fromImage(warped)
         pixmap.setDevicePixelRatio(1.0)
-        if self._cage_item is None:
-            self._cage_item = QGraphicsPixmapItem()
-            self._cage_item.setZValue(4)  # 底图之上、覆盖层（11+）之下
-            self._cage_item.setTransformationMode(
+        if self._deform_item is None:
+            self._deform_item = QGraphicsPixmapItem()
+            self._deform_item.setZValue(4)  # 底图之上、覆盖层（11+）之下
+            self._deform_item.setTransformationMode(
                 Qt.TransformationMode.SmoothTransformation)
-            self._scene.addItem(self._cage_item)
-        self._cage_item.setPixmap(pixmap)
-        self._cage_item.setPos(left / scale, top / scale)
-        self._cage_item.setScale(1.0 / scale)
-        self._cage_painted_at = now
+            self._scene.addItem(self._deform_item)
+        self._deform_item.setPixmap(pixmap)
+        self._deform_item.setPos(origin_s[0] / scale, origin_s[1] / scale)
+        self._deform_item.setScale(1.0 / scale)
+        # ⚠️ 底图上把**整张原图**挖空：grow 后浮层覆盖范围 ≥ 原图，由浮层
+        #    完整呈现（含图外那块）；不挖空的话原像素会从浮层底下透出来
+        #    （"图片变换了，原图还在背景上面"）。
+        self._paint_canvas_cutout(QRect(0, 0, width, height))
+        # 场景矩形扩到"原图 ∪ 浮层"，图外那块才看得见
+        self._sync_scene_rect()
+        self._deform_painted_at = now
 
-    # ------------------------------------------------------------ 覆盖层
+    def _refresh_rectify_preview(self, force: bool = False) -> None:
+        """重算「校正」的像素预览：把四角框住的区域透视摆正后贴回原位置。
+
+        ⚠️ 与「变形」的预览不同：校正会**改变尺寸**（摆正后是目标矩形），
+        所以浮层不是"贴原尺寸的框"，而是"贴在源四边形的框里、显示摆正后的
+        内容"——所见即应用后那块的去向（应用后整图会被换成摆正图）。
+        """
+        if self._image is None:
+            self._clear_deform_preview()
+            return
+        pending = self.quad_pending()
+        if pending is None:
+            self._clear_deform_preview()
+            return
+        now = time.monotonic()
+        if not force and now - self._deform_painted_at < DEFORM_PREVIEW_INTERVAL:
+            return
+        quad, mode = pending
+        width, height = self._image.width(), self._image.height()
+        x0, y0, _out_w, _out_h = rectify_region(quad, width, height, mode=mode)
+        # 同 deform：预算按**整幅图**面积算（rectify_qimage 也是拿整张降采样
+        # 图去重的映射，真实工作量 = width×height×scale²，见上方说明）。
+        scale = cage_preview_scale(
+            width, height,
+            self._zoom * max(1.0, self.devicePixelRatioF()),
+            DEFORM_PREVIEW_SETTLE_PIXELS if force else DEFORM_PREVIEW_PIXELS)
+        if scale >= 1.0:
+            source = self._image
+            quad_scaled = quad
+        else:
+            source = self._image.scaled(
+                max(1, int(round(width * scale))),
+                max(1, int(round(height * scale))),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation)
+            quad_scaled = [(px * scale, py * scale) for px, py in quad]
+        try:
+            warped = rectify_qimage(source, quad_scaled, out_size=None,
+                                    mode=mode)
+        except ValueError:
+            self._clear_deform_preview()
+            return
+        pixmap = QPixmap.fromImage(warped)
+        pixmap.setDevicePixelRatio(1.0)
+        if self._deform_item is None:
+            self._deform_item = QGraphicsPixmapItem()
+            self._deform_item.setZValue(4)
+            self._deform_item.setTransformationMode(
+                Qt.TransformationMode.SmoothTransformation)
+            self._scene.addItem(self._deform_item)
+        self._deform_item.setPixmap(pixmap)
+        self._deform_item.setPos(x0, y0)
+        self._deform_item.setScale(1.0 / scale)
+        self._deform_painted_at = now
+
     def _build_overlay(self) -> None:
         """遮罩 4 块 + 选区边框 + 8 手柄，建好藏起来，按需显示。"""
         self._border = None  # 纸边框（set_image 建）
@@ -1207,25 +2064,58 @@ class EditorCanvas(QGraphicsView):
         self._text_outline.setZValue(18)
         self._text_outline.hide()
         self._scene.addItem(self._text_outline)
-        # 「变形」的笼：**原位虚影**（点线，告诉你"原来在哪"）+ **当前位置**
-        # （虚线）+ 节点圆点。用两套线是有意的——只画一条的话，把节点拖远
-        # 之后就完全看不出内容是从哪儿被扯过来的了。
-        self._cage_ghost = QGraphicsPolygonItem()
-        self._cage_ghost.setBrush(QBrush(Qt.BrushStyle.NoBrush))
-        self._cage_ghost.setPen(QPen(QColor(T.INK_FAINT), 0, Qt.PenStyle.DotLine))
-        self._cage_ghost.setZValue(11)
-        self._cage_ghost.hide()
-        self._scene.addItem(self._cage_ghost)
-        # ⚠️ 当前笼用 **QPainterPath 而不是 QGraphicsPolygonItem**：手绘笼
-        #    过程中要画"尚未闭合的折线"，PolygonItem 永远会自动闭合，看起来
-        #    像已经圈好了。
-        self._cage_poly = QGraphicsPathItem()
-        self._cage_poly.setBrush(QBrush(Qt.BrushStyle.NoBrush))
-        self._cage_poly.setPen(QPen(QColor(T.ACCENT), 0, Qt.PenStyle.DashLine))
-        self._cage_poly.setZValue(12)
-        self._cage_poly.hide()
-        self._scene.addItem(self._cage_poly)
-        #: 笼节点圆点（数量随手绘/疏密变，按需增删）
+        # 「变形」的**图钉**：每个图钉一根"钉子"（原点→当前位置的细线，
+        # 拖远时看得出内容被从哪儿扯过来）+ 一个圆点。钉子用区分色，
+        # 拖远时不会和图片内容糊在一起。
+        self._pin_tail = QGraphicsPathItem()
+        self._pin_tail.setBrush(QBrush(Qt.BrushStyle.NoBrush))
+        tail_pen = QPen(QColor(T.INK_FAINT), 0, Qt.PenStyle.DotLine)
+        tail_pen.setCosmetic(True)
+        self._pin_tail.setPen(tail_pen)
+        self._pin_tail.setZValue(11)
+        self._pin_tail.hide()
+        self._scene.addItem(self._pin_tail)
+        #: 图钉圆点（数量随用户增删，按需增删）
+        self._pin_dots: list[QGraphicsEllipseItem] = []
+        # 「校正」的**四角手柄**：一个四边形轮廓 + 4 个方块角点。
+        # 轮廓画源四边形（要摆正的区域），方块是抓点。
+        self._rect_poly = QGraphicsPathItem()
+        self._rect_poly.setBrush(QBrush(Qt.BrushStyle.NoBrush))
+        quad_pen = QPen(QColor(T.ACCENT), 0, Qt.PenStyle.DashLine)
+        quad_pen.setCosmetic(True)
+        self._rect_poly.setPen(quad_pen)
+        self._rect_poly.setZValue(13)
+        self._rect_poly.hide()
+        self._scene.addItem(self._rect_poly)
+        #: 四个方块角点
+        self._rect_dots: list[QGraphicsRectItem] = []
+        for _ in range(4):
+            item = QGraphicsRectItem()
+            item.setPen(QPen(QColor("#ffffff"), 0))
+            item.setBrush(QBrush(QColor(T.ACCENT)))
+            item.setZValue(14)
+            item.hide()
+            self._scene.addItem(item)
+            self._rect_dots.append(item)
+        # 「变换笼」的**边框**：闭合折线（原位实线 + 当前位置虚线）。
+        # 原位实线让人看见"笼本来贴在哪"，当前位置虚线是拖到的地方。
+        self._cage_src_poly = QGraphicsPathItem()
+        self._cage_src_poly.setBrush(QBrush(Qt.BrushStyle.NoBrush))
+        src_pen = QPen(QColor(T.INK_FAINT), 0, Qt.PenStyle.DotLine)
+        src_pen.setCosmetic(True)
+        self._cage_src_poly.setPen(src_pen)
+        self._cage_src_poly.setZValue(11)
+        self._cage_src_poly.hide()
+        self._scene.addItem(self._cage_src_poly)
+        self._cage_dst_poly = QGraphicsPathItem()
+        self._cage_dst_poly.setBrush(QBrush(Qt.BrushStyle.NoBrush))
+        dst_pen = QPen(QColor(T.ACCENT), 0, Qt.PenStyle.DashLine)
+        dst_pen.setCosmetic(True)
+        self._cage_dst_poly.setPen(dst_pen)
+        self._cage_dst_poly.setZValue(12)
+        self._cage_dst_poly.hide()
+        self._scene.addItem(self._cage_dst_poly)
+        #: 笼把手圆点（数量随密度档位变，按需增删）
         self._cage_dots: list[QGraphicsEllipseItem] = []
 
     def _move_eraser_ring(self, pos: QPointF, show: bool = True) -> None:
@@ -1263,8 +2153,14 @@ class EditorCanvas(QGraphicsView):
                 and self._image is not None):
             self._sync_transform_overlay()
             return
+        if self._tool == "deform" and self._image is not None:
+            self._sync_pin_overlay()
+            return
         if self._tool == "cage" and self._image is not None:
             self._sync_cage_overlay()
+            return
+        if self._tool == "rectify" and self._image is not None:
+            self._sync_quad_overlay()
             return
         visible = (
             self._tool == "crop"
@@ -1276,6 +2172,10 @@ class EditorCanvas(QGraphicsView):
             self._sel_border.setVisible(False)
             self._quad.setVisible(False)
             self._pivot_item.setVisible(False)
+            self._cage_src_poly.setVisible(False)
+            self._cage_dst_poly.setVisible(False)
+            for item in self._cage_dots:
+                item.setVisible(False)
             for item in self._handles.values():
                 item.setVisible(False)
             for item in self._edge_lines.values():
@@ -1364,30 +2264,13 @@ class EditorCanvas(QGraphicsView):
             QRectF(pivot.x() - pr, pivot.y() - pr, pr * 2, pr * 2))
         self._pivot_item.setVisible(True)
 
+
     # ---- 「变形」的覆盖层 ----
-    @staticmethod
-    def _cage_path(points, close: bool) -> QPainterPath:
-        """顶点序列 → 路径（``close=True`` 首尾相连成闭合多边形）。"""
-        path = QPainterPath()
-        if not points:
-            return path
-        path.moveTo(points[0])
-        for point in points[1:]:
-            path.lineTo(point)
-        if close and len(points) >= 3:
-            path.closeSubpath()
-        return path
+    def _sync_pin_overlay(self) -> None:
+        """变形工具的覆盖层：图钉圆点 + 原点连线。
 
-    def _sync_cage_overlay(self) -> None:
-        """变形工具的覆盖层：原笼虚影 + 当前笼 + 节点圆点。
-
-        种两种状态：
-
-        - **手绘中**（``_cage_drawing``）：画"已点的点 + 到鼠标的皮筋"折线，
-          第一个点画得更大（点回它即闭合）；不画原位虚影——正在圈新区域，
-          画一个旧笼只会让人以为它已经生效了。
-        - **常态**：当前笼（虚线闭合）+ 原笼原位（点线，只有真的拖动过才
-          显示；没动过两条线完全重合，画出来只是糊成一条）。
+        与变换/裁剪的覆盖层互斥（:meth:`_sync_overlay` 早返回），所以这里
+        先把那些元素全部藏掉，再画自己的。
         """
         for item in self._mask:
             item.setVisible(False)
@@ -1398,138 +2281,111 @@ class EditorCanvas(QGraphicsView):
             item.setVisible(False)
         for item in self._edge_lines.values():
             item.setVisible(False)
-        if self._cage_drawing is not None:
-            points = list(self._cage_drawing)
-            # 皮筋：从最后一点连到鼠标；已点 ≥3 点时再连回起点预览闭合形状
-            rubber = points + [QPointF(self._cage_cursor)]
-            if len(points) >= 3:
-                rubber.append(QPointF(points[0]))
-            self._cage_poly.setPath(self._cage_path(rubber, close=False))
-            self._cage_poly.setVisible(True)
-            self._cage_ghost.setVisible(False)
-            self._sync_cage_dots(points, first_marked=True)
-            return
-        if self._cage is None or len(self._cage) < 3:
-            self._cage_poly.setVisible(False)
-            self._cage_ghost.setVisible(False)
-            self._sync_cage_dots([])
-            return
-        self._cage_poly.setPath(self._cage_path(list(self._cage), close=True))
-        self._cage_poly.setVisible(True)
-        moved = self._cage_home is not None and cage_moved(
-            [(p.x(), p.y()) for p in self._cage_home],
-            [(p.x(), p.y()) for p in self._cage])
-        if moved:
-            self._cage_ghost.setPolygon(QPolygonF(list(self._cage_home)))
-            self._cage_ghost.setVisible(True)
-        else:
-            self._cage_ghost.setVisible(False)
-        self._sync_cage_dots(self._cage)
+        self._sync_pin_dots()
 
-    def _sync_cage_dots(self, points, first_marked: bool = False) -> None:
-        """按顶点数增删/摆放节点圆点（视觉尺寸 = 视图像素 ÷ 当前倍率）。
+    def _sync_pin_dots(self) -> None:
+        """按图钉数增删/摆放圆点与连线（视觉尺寸 = 视图像素 ÷ 当前倍率）。
 
-        悬停/拖动中的节点放大一圈：抓没抓住看圆点大小就知道。
+        悬停/拖动中的图钉放大一圈：抓没抓住看圆点大小就知道。
+        图钉的**原点**（网格参考顶点位置）与当前位置不同时，画一根点线相连
+        ——把图钉拖远后才看得出内容是从哪儿被扯过来的。
         """
         zoom = max(self._zoom, 1e-6)
-        base = CAGE_NODE_VIEW_PX / 2.0 / zoom
-        hovered = base * 1.45
-        while len(self._cage_dots) < len(points):
+        base = PIN_NODE_VIEW_PX / 2.0 / zoom
+        hovered = base * 1.5
+        while len(self._pin_dots) < len(self._pins):
             item = QGraphicsEllipseItem()
             item.setZValue(13)
             self._scene.addItem(item)
-            self._cage_dots.append(item)
-        while len(self._cage_dots) > len(points):
-            self._scene.removeItem(self._cage_dots.pop())
-        for index, point in enumerate(points):
-            item = self._cage_dots[index]
-            big = (index == self._cage_node
-                   or (first_marked and index == 0))
+            self._pin_dots.append(item)
+        while len(self._pin_dots) > len(self._pins):
+            self._scene.removeItem(self._pin_dots.pop())
+        tail_path = QPainterPath()
+        vertices = self._mesh[0] if self._mesh is not None else None
+        any_tail = False
+        for index, (vertex, point) in enumerate(self._pins):
+            item = self._pin_dots[index]
+            big = (index == self._pin_hover)
             radius = hovered if big else base
             item.setRect(QRectF(point.x() - radius, point.y() - radius,
                                 radius * 2, radius * 2))
-            if first_marked and index == 0:
-                # 画笼时首点＝"点我闭合"的把手：换个色 + 描白边
-                item.setBrush(QBrush(QColor(T.SURFACE)))
-                item.setPen(QPen(QColor(T.ACCENT_HOVER), 0))
-            else:
-                item.setBrush(QBrush(QColor(T.ACCENT_HOVER if big else T.ACCENT)))
-                item.setPen(QPen(QColor("#ffffff"), 0))
+            item.setBrush(QBrush(QColor(T.ACCENT_HOVER if big else T.ACCENT)))
+            item.setPen(QPen(QColor("#ffffff"), 0))
             item.setVisible(True)
+            if vertices is not None and 0 <= vertex < len(vertices):
+                origin = QPointF(float(vertices[vertex, 0]),
+                                 float(vertices[vertex, 1]))
+                if QLineF(origin, point).length() > 1e-6:
+                    tail_path.moveTo(origin)
+                    tail_path.lineTo(point)
+                    any_tail = True
+        self._pin_tail.setPath(tail_path)
+        self._pin_tail.setVisible(any_tail)
 
-    def _insert_cage_node(self, view_pos: QPointF) -> int | None:
-        """点在笼边上 → 就地插一个把手，返回新把手下标。
+    # ---- 「变换笼」的覆盖层 ----
+    def _sync_cage_overlay(self) -> None:
+        """变换笼的覆盖层：原位虚点线 + 当前位置虚线 + 把手圆点。
 
-        ⚠️ 两处讲究，少一样都会"加点即变"：
-
-        1. 新把手**投到边上**，不是落在鼠标像素上（见 :func:`_project_on_segment`）；
-        2. **原位与当前位置插同一个坐标**。形变只由"动过的把手"决定
-           （``utils.cage_warp.moved_handles`` 只把 ``位移 > 0`` 的把手当约束），
-           所以原位 = 当前位置的新把手**不进方程组**，形变逐字节不变。
-           语义上也最顺：新把手抓的是"画面上现在这块内容"，
-           接着拖就是继续拉同一块。
-
-        自测盯着这条：加点前后 ``deform`` 逐字节相同（只是多个可拖的把手）。
+        与变形/变换/校正的覆盖层互斥（:meth:`_sync_overlay` 早返回），所以
+        这里先把那些元素全部藏掉，再画自己的。
         """
-        if self._cage is None or self._cage_home is None \
-                or len(self._cage) < 3:
-            return None
-        best: tuple[float, int] | None = None
-        for index in range(len(self._cage)):
-            a = QPointF(self.mapFromScene(self._cage[index]))
-            b = QPointF(self.mapFromScene(
-                self._cage[(index + 1) % len(self._cage)]))
-            distance, _ = _segment_hit(view_pos, a, b)
-            if distance <= CAGE_HIT_VIEW_PX * 1.8 \
-                    and (best is None or distance < best[0]):
-                best = (distance, index)
-        if best is None:
-            return None
-        index = best[1]
-        nxt = (index + 1) % len(self._cage)
-        inside = self.image_rect()
-        spot = self.mapToScene(view_pos.toPoint())
-        projected, _t = _project_on_segment(
-            QPointF(spot), QPointF(self._cage[index]),
-            QPointF(self._cage[nxt]))
-        added = QPointF(
-            max(inside.left(), min(projected.x(), inside.right())),
-            max(inside.top(), min(projected.y(), inside.bottom())))
-        self._cage.insert(index + 1, QPointF(added))
-        self._cage_home.insert(index + 1, QPointF(added))
-        self._clear_cage_preview()  # 只加点没位移：预览等于原图，撤掉更省
-        self._sync_overlay()
-        return index + 1
+        for item in self._mask:
+            item.setVisible(False)
+        self._sel_border.setVisible(False)
+        self._quad.setVisible(False)
+        self._pivot_item.setVisible(False)
+        for item in self._handles.values():
+            item.setVisible(False)
+        for item in self._edge_lines.values():
+            item.setVisible(False)
+        self._sync_cage_dots()
 
-    def cage_polygon(self) -> list[QPointF] | None:
-        """当前笼的顶点（图片坐标，可能已被拖动）；不足 3 点返回 None。"""
-        if self._cage is None or len(self._cage) < 3:
-            return None
-        return [QPointF(point) for point in self._cage]
+    def _sync_cage_dots(self) -> None:
+        """按把手数增删/摆放圆点与两条闭合折线（视觉尺寸 = 视图像素 ÷ 倍率）。
 
-    def adopt_cage(self, points) -> None:
-        """把 ``points`` 直接立为笼（原位 = 当前位置 = 恒等形变）。
-
-        ``points`` 收 ``QPointF`` 与 ``(x, y)`` 元组（见 :func:`_as_point`）。
-
-        「应用变形」后用：形变已经烧进像素，**笼留在原地**——用户想接着
-        微调同一块（古籍褶皱往往要来回试几次），不该逼他重新圈一遍。
+        悬停/拖动中的把手放大一圈：抓没抓住看圆点大小就知道。原位（笼贴图
+        边的矩形）画点线、当前位置画虚线——拖出去之后一眼能看出内容是从哪
+        儿被扯过来的（RBF 笼的影响半径围绕原位，与 puppet warp 语义相同）。
         """
-        inside = self.image_rect()
-        clamped = [
-            QPointF(max(inside.left(), min(point.x(), inside.right())),
-                    max(inside.top(), min(point.y(), inside.bottom())))
-            for point in map(_as_point, points)
-        ]
-        if len(clamped) < 3:
-            self.reset_cage()
-            return
-        self._clear_cage_preview()
-        self._cage_drawing = None
-        self._cage_node = None
-        self._cage_home = [QPointF(point) for point in clamped]
-        self._cage = [QPointF(point) for point in clamped]
-        self._sync_overlay()
+        self._ensure_cage()
+        zoom = max(self._zoom, 1e-6)
+        base = CAGE_HANDLE_VIEW_PX / 2.0 / zoom
+        hovered = base * 1.5
+        while len(self._cage_dots) < len(self._cage_handles):
+            item = QGraphicsEllipseItem()
+            item.setPen(QPen(QColor("#ffffff"), 0))
+            item.setZValue(13)
+            self._scene.addItem(item)
+            self._cage_dots.append(item)
+        while len(self._cage_dots) > len(self._cage_handles):
+            self._scene.removeItem(self._cage_dots.pop())
+        src_path = QPainterPath()
+        dst_path = QPainterPath()
+        src_pts = [a for a, _b in self._cage_handles]
+        dst_pts = [b for _a, b in self._cage_handles]
+        if src_pts:
+            src_path.moveTo(src_pts[0])
+            dst_path.moveTo(dst_pts[0])
+            for pt in src_pts[1:]:
+                src_path.lineTo(pt)
+            for pt in dst_pts[1:]:
+                dst_path.lineTo(pt)
+            src_path.closeSubpath()
+            dst_path.closeSubpath()
+        self._cage_src_poly.setPath(src_path)
+        self._cage_dst_poly.setPath(dst_path)
+        moved = any(QLineF(a, b).length() > 1e-6
+                    for a, b in self._cage_handles)
+        self._cage_src_poly.setVisible(bool(src_pts) and moved)
+        self._cage_dst_poly.setVisible(bool(dst_pts))
+        for index, (_origin, point) in enumerate(self._cage_handles):
+            item = self._cage_dots[index]
+            big = (index == self._cage_hover) or (index == self._cage_drag)
+            radius = hovered if big else base
+            item.setRect(QRectF(point.x() - radius, point.y() - radius,
+                                radius * 2, radius * 2))
+            item.setBrush(QBrush(QColor(T.ACCENT_HOVER if big else T.ACCENT)))
+            item.setVisible(True)
 
     def _hit_transform(self, view_pos: QPointF) -> str:
         """变换工具命中测试（视图像素口径，不随缩放变）。
@@ -1576,7 +2432,7 @@ class EditorCanvas(QGraphicsView):
         """适应窗口（整图完整可见）；``ratio`` < 1 时四周留白。
 
         留白的做法是把"要装进去的矩形"按比例放大——图片因此只占视口的
-        ``ratio``（见 :data:`CAGE_FIT_RATIO`：进「变形」时图片不顶满视口，
+        ``ratio``（见 :data:`DEFORM_FIT_RATIO`：进「变形」时图片不顶满视口，
         用户才有地方把笼把手往图外拖）。
         """
         if self._item is None or self.viewport().width() <= 1:
@@ -1598,7 +2454,7 @@ class EditorCanvas(QGraphicsView):
         self._sync_overlay()
         # 变形预览的清晰度是跟着倍率定的（见 cage_preview_scale）：倍率变了
         # 就重算一次，缩着看整页时能省下几十倍工作量
-        self._refresh_cage_preview()
+        self._refresh_deform_preview()
 
     def set_fit_ratio(self, ratio: float) -> None:
         """设「适应窗口」时图片占视口的比例（1.0 = 铺满，< 1 = 四周留白）。
@@ -1636,7 +2492,7 @@ class EditorCanvas(QGraphicsView):
         self._zoom = zoom
         self._user_zoomed = True
         self._sync_overlay()  # 手柄视觉尺寸不随缩放变，几何要重算
-        self._refresh_cage_preview()  # 同上：预览清晰度跟倍率走（有节流）
+        self._refresh_deform_preview()  # 同上：预览清晰度跟倍率走（有节流）
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
@@ -1667,7 +2523,7 @@ class EditorCanvas(QGraphicsView):
         self._zoom = zoom
         self._user_zoomed = True
         self._sync_overlay()
-        self._refresh_cage_preview()
+        self._refresh_deform_preview()
 
     def wheelEvent(self, event) -> None:  # noqa: N802
         delta = event.angleDelta().y()
@@ -1692,18 +2548,34 @@ class EditorCanvas(QGraphicsView):
 
     def _update_hover_cursor(self, view_pos: QPointF) -> None:
         """未拖拽时的悬停反馈：命中边缘给方向缩放光标 + 边界高亮。"""
-        if self._tool == "cage" and self._item is not None:
-            if self._cage_drawing is not None:
-                # 画笼：点一个落点加一个顶点
-                self.viewport().setCursor(Qt.CursorShape.CrossCursor)
-                return
-            index = self._hit_cage_node(view_pos)
-            if index != self._cage_node:
-                self._cage_node = index  # 悬停中的节点画大一圈
-                self._sync_cage_overlay()
+        if self._tool == "deform" and self._item is not None:
+            index = self._hit_pin(view_pos)
+            if index != self._pin_hover:
+                self._pin_hover = index  # 悬停中的图钉画大一圈
+                self._sync_pin_overlay()
             self.viewport().setCursor(
                 Qt.CursorShape.SizeAllCursor if index is not None
-                else Qt.CursorShape.ArrowCursor)
+                else Qt.CursorShape.CrossCursor)
+            return
+        if self._tool == "rectify" and self._item is not None:
+            index = self._hit_quad(view_pos)
+            if index != self._rect_hover:
+                self._rect_hover = index  # 悬停中的角点画大一圈
+                self._sync_quad_overlay()
+            self.viewport().setCursor(
+                Qt.CursorShape.SizeAllCursor if index is not None
+                else Qt.CursorShape.CrossCursor)
+            return
+        if self._tool == "cage" and self._item is not None:
+            index = self._hit_cage_handle(view_pos)
+            if index != self._cage_hover:
+                self._cage_hover = index  # 悬停中的把手画大一圈
+                self._sync_cage_overlay()
+            scene = self.mapToScene(view_pos.toPoint())
+            on_body = index is not None or self._hit_cage_body(scene)
+            self.viewport().setCursor(
+                Qt.CursorShape.SizeAllCursor if on_body
+                else Qt.CursorShape.CrossCursor)
             return
         if self._tool == "transform" and not self._xf_reshape \
                 and self._item is not None:
@@ -1747,11 +2619,13 @@ class EditorCanvas(QGraphicsView):
             # 裁剪默认有框：箭头（手柄收边/框内移动），不是"准备画框"的十字
             "crop": Qt.CursorShape.ArrowCursor,
             "text": Qt.CursorShape.IBeamCursor,
-            # 画笼是"点落点"的十字；常态箭头——笼上只有节点能拖，悬停到
-            # 节点时由 _update_hover_cursor 换成移动光标
-            "cage": (Qt.CursorShape.CrossCursor
-                     if self._cage_drawing is not None
-                     else Qt.CursorShape.ArrowCursor),
+            # 变形是"点一下放图钉"的十字；悬停到已有图钉时由
+            # _update_hover_cursor 换成移动光标
+            "deform": Qt.CursorShape.CrossCursor,
+            # 校正是"拖四角"的十字；悬停到角点换移动光标
+            "rectify": Qt.CursorShape.CrossCursor,
+            # 变换笼是"拖把手"的十字；悬停到把手/笼身换移动光标
+            "cage": Qt.CursorShape.CrossCursor,
         }.get(self._tool, Qt.CursorShape.ArrowCursor)
         self.viewport().setCursor(cursor)
 
@@ -1782,6 +2656,15 @@ class EditorCanvas(QGraphicsView):
     def mousePressEvent(self, event) -> None:  # noqa: N802
         button = event.button()
         if button in (Qt.MouseButton.MiddleButton, Qt.MouseButton.RightButton):
+            # ⚠️ 「变形」工具里，右键点在图钉上 = 删图钉（先于 pan 兜底）：
+            #    否则右键永远被当成平移，图钉删不掉（用户文档写了右键删钉）
+            if button == Qt.MouseButton.RightButton and self._tool == "deform" \
+                    and self._item is not None:
+                index = self._hit_pin(event.position())
+                if index is not None:
+                    self.pin_remove(index)
+                    event.accept()
+                    return
             self._mode = ("pan", event.position())
             self.viewport().setCursor(Qt.CursorShape.ClosedHandCursor)
             event.accept()
@@ -1855,31 +2738,62 @@ class EditorCanvas(QGraphicsView):
                     self._mode = ("xf_move", self._xf, pos)
             event.accept()
             return
+        if self._tool == "deform":
+            # 变形（操控变形）：点到已有图钉 = 拖它；点空白 = 放一个新图钉
+            # （新图钉立即进入拖动状态，松手即落在点到的位置）。
+            index = self._hit_pin(event.position())
+            alt = bool(event.modifiers() & Qt.KeyboardModifier.AltModifier)
+            if index is not None and alt:
+                self.pin_remove(index)          # Alt+点 = 删图钉
+                event.accept()
+                return
+            if index is None:
+                if alt:
+                    event.accept()              # Alt+点空白：不动
+                    return
+                index = self.pin_add(pos)
+                if index is None:
+                    event.accept()
+                    return
+                self.pin_move(index, pos)       # 新图钉立即跟手
+            self._pin_hover = index
+            self._mode = ("deform", index)
+            self._sync_overlay()
+            event.accept()
+            return
         if self._tool == "cage":
-            if self._cage_drawing is not None:
-                # 手绘笼：逐点圈区域；点回第一个点 = 闭合
-                if len(self._cage_drawing) >= 3 and QLineF(
-                        event.position(),
-                        QPointF(self.mapFromScene(
-                            self._cage_drawing[0]))).length() \
-                        <= CAGE_CLOSE_VIEW_PX:
-                    self._close_cage()
-                else:
-                    self._cage_drawing.append(QPointF(
-                        max(inside.left(), min(pos.x(), inside.right())),
-                        max(inside.top(), min(pos.y(), inside.bottom()))))
-                    self._cage_cursor = QPointF(pos)
-                    self._sync_overlay()
-                event.accept()
-                return
-            index = self._hit_cage_node(event.position())
-            if index is None:
-                index = self._insert_cage_node(event.position())  # 点笼线加点
+            # 变换笼（GIMP 口径）：点把手 = 拖它；点笼内/边 = 整体平移；
+            # 点空白 = 不动（避免误把笼甩走）。
+            self._ensure_cage()
+            index = self._hit_cage_handle(event.position())
+            if index is None and self._hit_cage_body(pos):
+                index = -1  # 整体平移的哨兵
             if index is None:
                 event.accept()
                 return
-            self._cage_node = index
+            if index >= 0:
+                self._cage_hover = index
+                self._cage_drag = index
+            else:
+                self._cage_hover = None
+                self._cage_drag = None
+            self._cage_drag_origin = (pos, [(a, QPointF(b))
+                                            for a, b in self._cage_handles])
             self._mode = ("cage", index)
+            self._sync_overlay()
+            event.accept()
+            return
+        if self._tool == "rectify":
+            # 校正（四点透视摆正）：拖四角。点在角上才拖，点空白不动
+            # （避免误拖把四角搞乱；要放整幅就用「重置」）。
+            self._ensure_quad()
+            index = self._hit_quad(event.position())
+            if index is None:
+                event.accept()
+                return
+            self._rect_hover = index
+            self._rect_drag = index
+            self._mode = ("rect", index)
             self._sync_overlay()
             event.accept()
             return
@@ -1928,11 +2842,6 @@ class EditorCanvas(QGraphicsView):
                     self._move_text_outline(block)
                 else:
                     self._hide_text_outline()
-            elif self._tool == "cage" and self._item is not None \
-                    and self._cage_drawing is not None:
-                # 手绘笼的**皮筋**跟随鼠标：点下一个落点之前先看见线往哪连
-                self._cage_cursor = self.mapToScene(event.position().toPoint())
-                self._sync_cage_overlay()
             self._update_hover_cursor(event.position())
             event.accept()
             return
@@ -1999,8 +2908,19 @@ class EditorCanvas(QGraphicsView):
             self._rect = moved
         elif kind == "handle":
             self._resize_rect(self._mode[1], pos)
+        elif kind == "deform":
+            self.pin_move(self._mode[1], pos)
         elif kind == "cage":
-            self.cage_move_node(self._mode[1], pos)
+            index = self._mode[1]
+            if index is None:
+                # 拖整体/边：基于按下时的快照做位移（不逐帧累加，见 cage_move_all）
+                if self._cage_drag_origin is not None:
+                    start = self._cage_drag_origin[0]
+                    self.cage_move_all(pos - start)
+            else:
+                self.cage_move(index, pos)
+        elif kind == "rect":
+            self.quad_move(self._mode[1], pos)
         elif kind == "draw":
             self._erase_at(self._mode[1], pos)
             self._move_eraser_ring(pos)
@@ -2033,11 +2953,28 @@ class EditorCanvas(QGraphicsView):
             self._mode = None
             event.accept()
             return
+        if self._mode and self._mode[0] == "deform":
+            # 松手补一次预览：拖动中可能正好被节流窗口跳过，最后一帧不补
+            # 的话停在屏幕上的就不是松手位置的结果（所见≠将得）
+            self._mode = None
+            self._refresh_deform_preview(force=True)
+            event.accept()
+            return
+        if self._mode and self._mode[0] == "rect":
+            self._mode = None
+            self._rect_drag = None
+            self._refresh_deform_preview(force=True)
+            self._sync_quad_overlay()
+            event.accept()
+            return
         if self._mode and self._mode[0] == "cage":
             # 松手补一次预览：拖动中可能正好被节流窗口跳过，最后一帧不补
             # 的话停在屏幕上的就不是松手位置的结果（所见≠将得）
             self._mode = None
+            self._cage_drag = None
+            self._cage_drag_origin = None
             self._refresh_cage_preview(force=True)
+            self._sync_cage_overlay()
             event.accept()
             return
         if self._mode and self._mode[0].startswith("xf_"):
@@ -2087,8 +3024,11 @@ class EditorCanvas(QGraphicsView):
         self._hide_eraser_ring()
         self._hide_text_outline()
         self._apply_hover_highlight()
-        if self._cage_node is not None and self._mode is None:
-            self._cage_node = None  # 悬停放大的节点缩回去
+        if self._pin_hover is not None and self._mode is None:
+            self._pin_hover = None  # 悬停放大的图钉缩回去
+            self._sync_overlay()
+        if self._cage_hover is not None and self._mode is None:
+            self._cage_hover = None  # 悬停放大的把手缩回去
             self._sync_overlay()
         self._sync_cursor()
         super().leaveEvent(event)
@@ -2097,12 +3037,6 @@ class EditorCanvas(QGraphicsView):
         # 就地编辑文字时按键（含 ←/→ 移光标）全部给文本编辑，不走翻页
         if isinstance(self._scene.focusItem(), TextBlockItem):
             super().keyPressEvent(event)
-            return
-        # 画笼中按 Esc：放弃这次手绘，保留原来的笼
-        if self._cage_drawing is not None \
-                and event.key() == Qt.Key.Key_Escape:
-            self.cancel_cage_draw()
-            event.accept()
             return
         # ←/→ 别拿去滚动画布，交还弹窗（与预览弹窗一致：方向键是翻页）
         if event.key() in (Qt.Key.Key_Left, Qt.Key.Key_Right):
@@ -2164,6 +3098,10 @@ class ImageEditorDialog(QDialog):
         self._text_family: str = T.FONT_FAMILY
         self._erase_size: int = ERASER_DEFAULT
         #: 全分辨率形变烘焙中（等待光标前会 processEvents，防重入）
+        self._deform_busy = False
+        #: 全分辨率透视校正中（同上，防重入）
+        self._rectify_busy = False
+        #: 全分辨率变换笼烘焙中（同上，防重入）
         self._cage_busy = False
 
         self.canvas = EditorCanvas(self)
@@ -2199,14 +3137,11 @@ class ImageEditorDialog(QDialog):
             QShortcut(seq, self).activated.connect(slot)
 
     def _escape(self) -> None:
-        """Esc：先吃掉"进行中的手绘笼"，其次结束文字编辑，最后才关窗。
+        """Esc：先结束文字编辑，然后才关窗。
 
-        ⚠️ 关窗 = 放弃本次全部编辑（状态行里写着），画笼画到一半一个 Esc
-        把整轮编辑清掉太伤人——所以手绘态优先吃掉这个键（GIMP 同款）。
+        ⚠️ 关窗 = 放弃本次全部编辑（状态行里写着），正在打字时一个 Esc
+        把整轮编辑清掉太伤人——所以文字编辑态优先吃掉这个键。
         """
-        if self.canvas.is_drawing_cage():
-            self.canvas.cancel_cage_draw()
-            return
         block = self.canvas.focused_text_block()
         if block is not None:
             block.clearFocus()
@@ -2298,12 +3233,19 @@ class ImageEditorDialog(QDialog):
             self._commit_text_blocks()
         if tool != "transform":
             self._commit_transform()
+        if tool != "deform":
+            self._commit_deform()
+        if tool != "rectify":
+            self._commit_rectify()
         if tool != "cage":
             self._commit_cage()
         self.canvas.set_tool(tool)
-        # 进「变形」时图片不铺满视口，四周留出可操作空间——笼把手要能往
-        # 图外拖，越靠边越需要留白（用户 2026-10-01 定）。离开时恢复铺满。
-        self.canvas.set_fit_ratio(CAGE_FIT_RATIO if tool == "cage" else 1.0)
+        # 图片**永不铺满视口**：四周恒留白（用户 2026-10-02 定：编辑区不要
+        # 铺满整个界面，上下预留空白方便操作）。变形/变换笼的把手、校正的
+        # 四角常要往图外拖，留白更多一点；其它工具也留出同样的余量，视线与
+        # 手柄不会贴控件边缘。
+        self.canvas.set_fit_ratio(
+            DEFORM_FIT_RATIO if tool in ("deform", "cage") else EDIT_FIT_RATIO)
         for key, button in self._tool_buttons.items():
             button.setChecked(key == tool)
         layout = self._swap_option_page()
@@ -2311,8 +3253,12 @@ class ImageEditorDialog(QDialog):
             self._page_crop(layout)
         elif tool == "transform":
             self._page_transform(layout)
+        elif tool == "deform":
+            self._page_deform(layout)
         elif tool == "cage":
             self._page_cage(layout)
+        elif tool == "rectify":
+            self._page_rectify(layout)
         elif tool == "erase":
             self._page_erase(layout)
         elif tool == "text":
@@ -2359,23 +3305,63 @@ class ImageEditorDialog(QDialog):
         apply_btn.clicked.connect(self._commit_transform)
         layout.addWidget(apply_btn)
 
-    def _page_cage(self, layout: QHBoxLayout) -> None:
+    def _page_deform(self, layout: QHBoxLayout) -> None:
         self._hint(layout,
-                   "拖笼上的把手：那个把手附近的内容跟着走（近处动得多、"
-                   "远处几乎不动），影响范围外的像素一动不动；"
-                   "把手能拖到图外（往外拉＝拉伸），点笼线可就地加把手，"
-                   "「重画笼」手绘任意闭合区域，点回起点闭合（Esc 放弃）")
+                   "点图放图钉 → 拖图钉：附近内容跟着走（近处动得多、远处"
+                   "几乎不动，四边默认钉住）；Alt+点或右键删图钉；"
+                   "图钉可拖到图外（往外拉＝拉伸）")
         combo = ComboBox()
         combo.setFixedWidth(150)
-        # NoFocus：别把键盘焦点从画布抢走（Esc 取消画笼要靠画布收键）
+        # NoFocus：别把键盘焦点从画布抢走
         combo.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        for per_side, label in ((1, "4 点（四角）"), (2, "8 点（含边中点）"),
-                                (3, "12 点")):
+        for cell, label in MESH_DENSITY_CHOICES:
+            combo.addItem(label, userData=cell)
+        combo.setCurrentIndex(
+            max(0, combo.findData(self.canvas.mesh_density())))
+        combo.setToolTip(
+            "网格格距：越小越细腻、解算越慢。改档会**清空图钉**，"
+            "所以有未应用的形变时先把当前形变落地")
+        layout.addWidget(QLabel("网格疏密"))
+        layout.addWidget(combo)
+
+        def apply_density(_index: int) -> None:
+            value = combo.currentData()
+            if value is None:
+                return
+            if self.canvas.pins_pending() is not None:
+                # 重建网格会把图钉清掉、已解的形变也就丢了：先落地（一个撤销点）
+                self._commit_deform()
+            self.canvas.set_mesh_density(float(value))
+
+        combo.currentIndexChanged.connect(apply_density)
+
+        reset_btn = PushButton("重置")
+        reset_btn.setToolTip("清空所有图钉，丢掉未应用的形变")
+        reset_btn.clicked.connect(self.canvas.reset_pins)
+        layout.addWidget(reset_btn)
+        apply_btn = PrimaryPushButton("应用变形")
+        apply_btn.setToolTip(
+            "把当前形变按全分辨率烘焙进图片（可撤销）；"
+            "应用后图钉留在原地，方便接着微调")
+        apply_btn.clicked.connect(self._commit_deform)
+        layout.addWidget(apply_btn)
+
+    def _page_cage(self, layout: QHBoxLayout) -> None:
+        self._hint(layout,
+                   "拖笼上的把手：只有把手附近的像素跟着走（远处逐字节不动）；"
+                   "向外拉＝拉伸、向内推＝压缩；拖边/拖笼内＝整体平移；"
+                   "把手可拖到图外")
+        combo = ComboBox()
+        combo.setFixedWidth(160)
+        combo.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        for per_side, label in CAGE_DENSITY_CHOICES:
             combo.addItem(label, userData=per_side)
         combo.setCurrentIndex(
             max(0, combo.findData(self.canvas.cage_density())))
-        combo.setToolTip("默认矩形笼的把手疏密（每边分几段）；一改就重建笼")
-        layout.addWidget(QLabel("把手疏密"))
+        combo.setToolTip(
+            "每边把手数：越多越能做出精细的局部形变。改档会**重建笼并丢掉"
+            "未应用的形变**，所以有未应用的形变时先落地")
+        layout.addWidget(QLabel("把手密度"))
         layout.addWidget(combo)
 
         def apply_density(_index: int) -> None:
@@ -2383,48 +3369,57 @@ class ImageEditorDialog(QDialog):
             if value is None:
                 return
             if self.canvas.cage_pending() is not None:
-                # 重建笼会把已拖的形变丢掉：先把它落地（一个撤销点）
+                # 重建笼会把形变清掉：先落地（一个撤销点）
                 self._commit_cage()
             self.canvas.set_cage_density(int(value))
 
         combo.currentIndexChanged.connect(apply_density)
 
-        reach = ComboBox()
-        reach.setFixedWidth(96)
-        reach.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        for index, (_times, label) in enumerate(CAGE_REACH_CHOICES):
-            reach.addItem(label, userData=index)
-        reach.setCurrentIndex(self.canvas.cage_reach())
-        reach.setToolTip(
-            "影响范围＝拖动距离的几倍：越紧凑越只动把手附近，越宽松牵连越大。"
-            "只影响之后的拖动，不必重来")
-        layout.addWidget(QLabel("影响范围"))
-        layout.addWidget(reach)
-        reach.currentIndexChanged.connect(
-            lambda _i: self.canvas.set_cage_reach(int(reach.currentData())))
-
-        draw_btn = PushButton("重画笼")
-        draw_btn.setToolTip(
-            "手绘一个闭合区域当笼：逐点点击，点回起点（或第一点）闭合；"
-            "正在画时按 Esc 放弃。要换处理区域时用它")
-        draw_btn.clicked.connect(self._begin_cage_draw)
-        layout.addWidget(draw_btn)
         reset_btn = PushButton("重置")
-        reset_btn.setToolTip("丢掉未应用的形变，笼回到覆盖整幅的默认矩形")
+        reset_btn.setToolTip("把手回到整幅图原位，丢掉未应用的形变")
         reset_btn.clicked.connect(self.canvas.reset_cage)
         layout.addWidget(reset_btn)
-        apply_btn = PrimaryPushButton("应用变形")
+        apply_btn = PrimaryPushButton("应用形态")
         apply_btn.setToolTip(
-            "把当前形变按全分辨率烘焙进图片（可撤销）；"
-            "应用后笼留在原地，方便接着微调")
+            "把当前笼形变按全分辨率烘焙进图片（可撤销）；"
+            "应用后把手留在原地，方便接着微调")
         apply_btn.clicked.connect(self._commit_cage)
         layout.addWidget(apply_btn)
 
-    def _begin_cage_draw(self) -> None:
-        """「重画笼」：先把当前形变落地，再进入手绘（否则重画即丢形变）。"""
-        if self.canvas.cage_pending() is not None:
-            self._commit_cage()
-        self.canvas.begin_cage_draw()
+    def _page_rectify(self, layout: QHBoxLayout) -> None:
+        self._hint(layout,
+                   "拖四个角框住要摆正的页面（拍摄角度/装订倾斜）："
+                   "整页会被拉成矩形——四角默认压在图片四角，"
+                   "往外拖可把拍进来的桌面也框进去")
+        combo = ComboBox()
+        combo.setFixedWidth(180)
+        combo.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        for mode, label in RECTIFY_RATIO_CHOICES:
+            combo.addItem(label, userData=mode)
+        combo.setCurrentIndex(
+            max(0, combo.findData(self.canvas.rectify_ratio())))
+        combo.setToolTip(
+            "摆正后的目标矩形：「外接框」尺寸最省；「保持原比例」按对边"
+            "平均长定宽高，内容不拉胖压扁（摆正书页推荐）")
+        layout.addWidget(QLabel("目标尺寸"))
+        layout.addWidget(combo)
+
+        def apply_mode(_index: int) -> None:
+            value = combo.currentData()
+            if value is not None:
+                self.canvas.set_rectify_ratio(str(value))
+
+        combo.currentIndexChanged.connect(apply_mode)
+
+        reset_btn = PushButton("重置")
+        reset_btn.setToolTip("四角回到整幅图四角，丢掉未应用的校正")
+        reset_btn.clicked.connect(self.canvas.reset_quad)
+        layout.addWidget(reset_btn)
+        apply_btn = PrimaryPushButton("应用校正")
+        apply_btn.setToolTip(
+            "把框住的区域透视摆正并替换整图（尺寸变为目标矩形，可撤销）")
+        apply_btn.clicked.connect(self._commit_rectify)
+        layout.addWidget(apply_btn)
 
     def _page_erase(self, layout: QHBoxLayout) -> None:
         self._hint(layout, "按住左键在污点上涂抹，把它擦成白底（古籍页面去污点）")
@@ -2594,43 +3589,128 @@ class ImageEditorDialog(QDialog):
             return
         rect, xf, region = pending
         self._push_undo()
-        self._image = bake_transform(self._image, rect, xf, region)
+        # grow：旋转/倾斜把选区送出原边界时不截，画布放大到「原图 ∪ 变换后」
+        image, _origin = bake_transform(self._image, rect, xf, region, grow=True)
+        self._image = image
         self.canvas.set_image(self._image)
 
     # ------------------------------------------------------------ 变形
-    def _commit_cage(self) -> None:
-        """把未应用的**笼形变**烘焙进图片（一个撤销点），笼留在原地。
+    def _commit_deform(self) -> None:
+        """把未应用的**变形**烘焙进图片（一个撤销点），图钉留在原地。
 
-        「应用变形」按钮、切走工具、「完成」都走这里。形变是逐像素重映射
-        （见 ``utils.cage_warp``），按**全分辨率**算——虽然影响是局部的
-        （拖 60px 只有 249×234），把影响范围调宽时仍可能到秒级，所以挂
-        等待光标；并且**防重入**——等待光标前那一下 ``processEvents``
-        会派发排队事件，不防的话一次点击可能触发两遍（第二遍把已经形变过的
-        图再形变一次，白丢一个撤销点、结果也不对）。
+        「应用变形」按钮、切走工具、「完成」都走这里。形变是 ARAP 网格逐像素
+        重映射（PS 操控变形口径，见 ``utils.puppet_warp``），按**全分辨率**算
+        ——大图上要秒级到分钟级，所以放到**后台线程**跑并显示进度对话框
+        （用户 2026-10-01 报"卡死/崩溃"：同步跑会把主线程钉死、界面假死）；
+        并且**防重入**——本函数在"切走到非变形工具"时也会被调，重入会把已经
+        形变过的图再形变一次，白丢一个撤销点、结果也不对。
+        """
+        if not hasattr(self, "canvas") or self._deform_busy:
+            return
+        pending = self.canvas.pins_pending()
+        if pending is None or self._image is None or self._image.isNull():
+            # 没有未应用的形变：预览浮层本来就不存在（它只伴随形变出现），
+            # 什么都不用清——这里**刻意不调** reset_pins：本函数在"切走到
+            # 非变形工具"时也会被调，那时清空图钉纯属白干
+            return
+        vertices, moved, triangles = pending
+        self._push_undo()
+        # ⚠️ set_image 换图会把 _pins 清空，所以**先**快照图钉顶点下标，
+        #    烘焙完再原样钉回新网格（见 adopt_pins 的说明）
+        pin_vertices = list(self.canvas.pins())
+        self._deform_busy = True
+        try:
+            baked = run_with_progress(
+                self, "应用变形", "正在把操控变形烘焙进图片……",
+                _bake_puppet_work,
+                {"image": self._image, "vertices": vertices,
+                 "moved": moved, "triangles": triangles})
+        finally:
+            self._deform_busy = False
+        if baked is None:
+            # 用户取消：不落地，退回撤销点（等于什么都没发生）
+            self._undo.pop()
+            self._sync_undo_buttons()
+            return
+        # grow：返回 (QImage, (ox, oy))；换图后网格按新图重建，坐标天然对齐
+        image, _origin = baked
+        self._image = image
+        self.canvas.set_image(self._image)
+        # 形变已烧进像素，图钉**留在原地**：古籍褶皱往往要来回试几次，
+        # 每次应用后都清空的话用户得重新钉一遍
+        self.canvas.adopt_pins(pin_vertices)
+
+    def _commit_cage(self) -> None:
+        """把未应用的**变换笼**形变烘焙进图片（一个撤销点），把手留在原地。
+
+        「应用形态」按钮、切走工具、「完成」都走这里。笼形变是 RBF 位移场
+        逐像素重映射（GIMP 变换笼口径的**局部**实现，见 ``utils.cage_warp``），
+        按**全分辨率**算——虽然影响是局部的（只重采样影响框内），大图上仍是
+        秒级，所以挂等待光标；并且**防重入**——等待光标前那一下
+        ``processEvents`` 会派发排队事件，不防的话一次点击可能触发两遍。
         """
         if not hasattr(self, "canvas") or self._cage_busy:
             return
         pending = self.canvas.cage_pending()
         if pending is None or self._image is None or self._image.isNull():
-            # 没有未应用的形变：预览浮层本来就不存在（它只伴随形变出现），
-            # 什么都不用清——这里**刻意不调** reset_cage：本函数在"切走到
-            # 非变形工具"时也会被调，那时重建一个笼纯属白干
+            # 没有未应用的形变：预览浮层本来就不存在。**刻意不调** reset_cage：
+            # 本函数在"切走到非笼工具"时也会被调，那时清空把手纯属白干。
             return
-        polygon = self.canvas.cage_polygon()
-        home, moved = pending
+        src, dst = pending
         self._push_undo()
         self._cage_busy = True
         try:
-            with wait_cursor():
-                self._image = bake_cage(self._image, home, moved,
-                                        self.canvas.cage_influence())
+            baked = run_with_progress(
+                self, "应用形态", "正在把变换笼形变烘焙进图片……",
+                _bake_cage_work,
+                {"image": self._image,
+                 "src": [(p.x(), p.y()) for p in src],
+                 "dst": [(p.x(), p.y()) for p in dst]})
         finally:
             self._cage_busy = False
+        if baked is None:
+            # 用户取消（或退化）：不落地，退回撤销点（等于什么都没发生）
+            self._undo.pop()
+            self._sync_undo_buttons()
+            return
+        # grow 模式下结果是 (QImage, (ox, oy))：(ox, oy) = 新画布左上角在原
+        # 坐标系里的位置（可为负）。换图后笼按**新图**重建，坐标天然对齐，
+        # 不需要手动平移——但要把"是否扩大过"记下来（见下）。
+        image, origin = baked
+        self._image = image
         self.canvas.set_image(self._image)
-        if polygon is not None:
-            # 形变已烧进像素，笼**留在原地**：古籍褶皱往往要来回试几次，
-            # 每次应用后都回到全幅矩形笼的话，用户得重新圈一遍
-            self.canvas.adopt_cage(polygon)
+        # 形变已烧进像素：笼回到贴图边原位（重置即身份），可以接着拖第二次。
+        # ⚠️ set_image 换图会把笼清空，所以这里必须显式重建，否则切回来时
+        #    画布上无笼可拖。
+        if self.canvas._tool == "cage":
+            self.canvas.reset_cage()
+
+    def _commit_rectify(self) -> None:
+        """把四角框住的区域透视摆正，替换整图（一个撤销点）。
+
+        ⚠️ 与「变形」不同：校正**改变图片尺寸**（摆正后是目标矩形），
+        所以这里是"换一张图"而不是"在原图上重采样"。换图后四角回到新图的
+        四角（原位），可以接着校第二次。「应用校正」按钮、切走工具都走这里。
+        """
+        if not hasattr(self, "canvas") or self._rectify_busy:
+            return
+        pending = self.canvas.quad_pending()
+        if pending is None or self._image is None or self._image.isNull():
+            return
+        quad, mode = pending
+        self._push_undo()
+        self._rectify_busy = True
+        try:
+            with wait_cursor():
+                done = rectify_qimage(self._image, quad, mode=mode)
+        finally:
+            self._rectify_busy = False
+        if done.isNull():
+            # 退化（四角近似共线）：不落地，退回撤销点（等于什么都没发生）
+            self._undo.pop()
+            return
+        self._image = done
+        self.canvas.set_image(self._image)   # 换图 → 四角按新图重建
 
     # ------------------------------------------------------------ 文字
     def _spawn_text_block(self, pos: QPointF) -> None:
@@ -2662,7 +3742,9 @@ class ImageEditorDialog(QDialog):
         self.canvas.replace_image(self._image)
 
     def _finish(self) -> None:
-        """「完成」：未应用的变形/变换/未插入的文字一并写入，再应用全部编辑。"""
+        """「完成」：未应用的形变/变换/校正/未插入的文字一并写入，再应用全部编辑。"""
+        self._commit_rectify()
+        self._commit_deform()
         self._commit_cage()
         self._commit_transform()
         self._commit_text_blocks()

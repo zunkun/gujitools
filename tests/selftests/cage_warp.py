@@ -355,3 +355,83 @@ def run(ctx) -> None:
        f"竖条 (44,20) a={shifted.pixelColor(44, 20).alpha()} "
        f"v={shifted.pixelColor(44, 20).value()} / "
        f"远背景 (57,20) a={shifted.pixelColor(57, 20).alpha()}")
+
+    # ---- progress 回调：分块上报 + 可中止（大图烘焙的"进度/取消"基础） ----
+    # ⚠️ 直接测 ``deform`` 并显式给小 ``block``：形变只处理影响框（RBF 是局部
+    #    的），框内像素常常不够一个默认分块(262144) ⇒ 一次就完事，"分块上报"
+    #    这条根本测不到。给个小 block 才能稳定拿到多次回调。
+    import numpy as _np
+
+    canvas_arr = _np.full((120, 160, 3), 255, dtype=_np.uint8)
+    canvas_arr[20:50, 60:90] = 0            # 一块黑
+    box_cage = cw.perimeter_cage((0.0, 0.0, 159.0, 119.0), 2)
+    pull = list(box_cage)
+    pull[0] = (30.0, 20.0)                  # 拖左上角，制造形变
+    ticks = []
+    done = cw.deform(canvas_arr, box_cage, pull, block=1024,
+                     progress=lambda d, t: ticks.append((d, t)))
+    ok("deform：progress 分块上报（多次回调、总量一致、最后到满）",
+       done is not None and len(ticks) >= 3
+       and all(t == ticks[0][1] for _, t in ticks)
+       and ticks[-1][0] == ticks[-1][1]
+       and all(ticks[i][0] <= ticks[i + 1][0] for i in range(len(ticks) - 1)),
+       f"回调 {len(ticks)} 次，样本 {ticks[:1]}…{ticks[-1:]}")
+
+    aborted = cw.deform(canvas_arr, box_cage, pull, block=1024,
+                        progress=lambda d, t: False)
+    ok("deform：progress 返回 False 即中止（返回 None，不落地半成品）",
+       aborted is None, f"aborted={aborted!r}")
+
+    partial = []
+    cw.deform(canvas_arr, box_cage, pull, block=1024,
+              progress=lambda d, t: partial.append((d, t)) or False)
+    ok("deform：中止发生在第一次回调之后（取消能立刻生效）",
+       len(partial) == 1, f"回调 {len(partial)} 次：{partial}")
+
+    # ---- grow：最终画布 = 形变后**内容外框**（用户 2026-10-02 的约束 2）----
+    # 用户口径：「不要截掉超出原边界的内容」「一切以新图为准，老图不要了」。
+    # 变换笼是**局部**形变：影响半径外的像素逐字节不动、仍占 [0,W]×[0,H]，
+    # 所以它是结果的一部分，必须留全 ⇒ 外框 = 原图边界 ∪ 被拖把手落点。
+    box_cr = cw.perimeter_cage((0.0, 0.0, 199.0, 119.0), 2)
+    inside = list(box_cr)
+    inside[0] = (40.0, 30.0)               # 左上角把手**向内**拖
+    ok("content_region：向内拖把手不外扩（内容没跑出去，仍是原图边界）",
+       cw.content_region(box_cr, inside, None, width=200, height=120)
+       == (0, 0, 200, 120),
+       f"{cw.content_region(box_cr, inside, None, width=200, height=120)}")
+
+    outward = list(box_cr)
+    outward[0] = (-25.0, -18.0)            # 左上角把手**向外**拖
+    reg_out = cw.content_region(box_cr, outward, None, width=200, height=120)
+    ok("content_region：向外拖把手按落点外扩（含负坐标，不夹画布）",
+       reg_out[0] <= -25 and reg_out[1] <= -18
+       and reg_out[2] == 200 and reg_out[3] == 120,
+       f"{reg_out}")
+    ok("content_region：不叠影响半径（拖 25px 不许外扩 60px）",
+       reg_out[0] >= -26 and reg_out[1] >= -19,
+       f"左上 {reg_out[:2]}（若叠了 RBF 影响半径会到 −40 以下）")
+
+    ok("content_region：没动过 → 原图边界（恒等笼不改变画布）",
+       cw.content_region(box_cr, list(box_cr), None, width=200, height=120)
+       == (0, 0, 200, 120), "")
+
+    # deform(grow=True)：返回 (结果, origin)，尺寸 = 外框，且图外那块真的画进去了
+    arr_g = _np.full((120, 200, 3), 255, dtype=_np.uint8)
+    arr_g[0:20, 0:20] = 0                  # 左上角一块黑（会被拖出去）
+    grown, origin_g = cw.deform(arr_g, box_cr, outward, grow=True)
+    ok("deform(grow=True)：返回 (结果, origin)，画布按内容外框放大",
+       grown is not None and origin_g == (reg_out[0], reg_out[1])
+       and grown.shape[0] == reg_out[3] - reg_out[1]
+       and grown.shape[1] == reg_out[2] - reg_out[0],
+       f"origin={origin_g} shape={None if grown is None else grown.shape}")
+    ok("deform(grow=True)：原图内容整体按 -origin 平移贴入新画布",
+       grown is not None
+       and int(grown[-origin_g[1] + 100, -origin_g[0] + 100, 0]) == 255,
+       "远场像素（原图 100,100）应落在新画布 (100-ox, 100-oy) 且仍为白")
+
+    ident_g, ident_o = cw.deform(arr_g, box_cr, list(box_cr), grow=True)
+    ok("deform(grow=True)：恒等笼 → origin (0,0)、尺寸不变、逐字节还原",
+       ident_g is not None and ident_o == (0, 0)
+       and ident_g.shape == arr_g.shape
+       and bool((ident_g == arr_g).all()),
+       f"origin={ident_o} shape={None if ident_g is None else ident_g.shape}")

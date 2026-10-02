@@ -104,7 +104,7 @@ def install_build_dependencies(conda_exe, project_root):
             # ⚠️ 探针里的包清单必须覆盖 requirements.txt 的全部运行时依赖：
             # 自检通过会**直接 return**，后面的 pip install 一次都不跑。
             # 曾经漏掉 markdown → 已有环境永远装不上它，手册在打包后静默退化。
-            "import importlib.metadata as metadata; import cv2, PyInstaller, torch, ultralytics, yaml, fpdf, PySide6, qfluentwidgets, markdown; has_full_opencv=any(d.metadata['Name'].lower() == 'opencv-python' for d in metadata.distributions()); raise SystemExit(torch.version.cuda is not None or has_full_opencv)",
+            "import importlib.metadata as metadata; import cv2, PyInstaller, torch, ultralytics, yaml, fpdf, PySide6, qfluentwidgets, markdown, scipy; has_full_opencv=any(d.metadata['Name'].lower() == 'opencv-python' for d in metadata.distributions()); raise SystemExit(torch.version.cuda is not None or has_full_opencv)",
         ],
         check=False,
     )
