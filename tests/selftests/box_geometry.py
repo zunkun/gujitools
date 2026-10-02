@@ -104,6 +104,65 @@ def run(ctx) -> None:
     ok("border=None → None", parse_border_mm(None) is None, str(parse_border_mm(None)))
     ok("border=0 → 全零", parse_border_mm(0) == [0, 0, 0, 0], str(parse_border_mm(0)))
 
+    # ---- 1b. 检测框的**槽位约定**只有一份实现（2026-10-02 收敛）----
+    # 半幅恒 2 槽、整幅恒 1 槽是共享契约：下游 rembg / 布局靠槽数分辨形态。
+    # 规则本体在 utils.box_geometry.page_box_slots，两个调用方（任务流程第二步
+    # 的 page_boxes 事件、独立「检测文本框」模块页）都走它。
+    from utils.box_geometry import page_box_slots, page_box_slots_from_event
+    from functions.detect import PageBoxes
+
+    ok("槽位：左右任一有值 → 2 槽（缺失侧 None）",
+       page_box_slots((1, 2, 3, 4), None, None) == [(1, 2, 3, 4), None],
+       str(page_box_slots((1, 2, 3, 4), None, None)))
+    ok("槽位：只有整幅 → 1 槽",
+       page_box_slots(None, None, (5, 6, 7, 8)) == [(5, 6, 7, 8)],
+       str(page_box_slots(None, None, (5, 6, 7, 8))))
+    ok("槽位：三类全空 → 空表", page_box_slots(None, None, None) == [])
+    ok("槽位：半幅与整幅并存时按半幅（既有明文规则）",
+       page_box_slots((1, 2, 3, 4), None, (5, 6, 7, 8)) == [(1, 2, 3, 4), None],
+       str(page_box_slots((1, 2, 3, 4), None, (5, 6, 7, 8))))
+
+    # PageBoxes.slots() 必须是**同一条规则**（委托），不是各写一遍
+    ok("PageBoxes.slots() 与 page_box_slots 结论一致（同一条规则）",
+       PageBoxes(left=(1, 2, 3, 4), right=(5, 6, 7, 8)).slots()
+       == page_box_slots((1, 2, 3, 4), (5, 6, 7, 8), None)
+       == [(1, 2, 3, 4), (5, 6, 7, 8)]
+       and PageBoxes(full=(9, 9, 9, 9)).slots() == page_box_slots(None, None, (9, 9, 9, 9))
+       and PageBoxes().slots() == [],
+       f"{PageBoxes().slots()}")
+
+    # 事件负载 → 槽位：这是任务流程与独立检测页共用的那条路
+    cases = [
+        ({"left": [1, 2, 3, 4], "right": [5, 6, 7, 8]}, [[1, 2, 3, 4], [5, 6, 7, 8]], "半幅双框"),
+        ({"left": [1, 2, 3, 4], "right": None}, [[1, 2, 3, 4], None], "半幅单左"),
+        ({"left": None, "right": [5, 6, 7, 8]}, [None, [5, 6, 7, 8]], "半幅单右"),
+        ({"full": [0, 0, 600, 600]}, [[0, 0, 600, 600]], "整幅"),
+        ({"left": None, "right": None, "full": None}, [], "无框"),
+        ({}, [], "键全缺（旧存档/异常负载）"),
+        ({"left": ["1", "2", "3", "4"]}, [[1, 2, 3, 4], None], "字符串坐标要转 int"),
+    ]
+    bad = [
+        f"{name}: {page_box_slots_from_event(payload)}"
+        for payload, want, name in cases if page_box_slots_from_event(payload) != want
+    ]
+    ok("事件负载 → 槽位逐例正确（含坐标转 int 与缺键）", not bad, "；".join(bad))
+
+    # ⚠️ utils 层不许 import functions（含**函数内**延迟导入）：规则要两个调用方
+    #    都能便宜地导入，靠的是它只依赖 dataclass/typing，而不是把 functions
+    #    拖进来——一旦拖进来，GUI 主进程 import 本模块就会连带加载 cv2。
+    #    这里必须走 AST：本文件自己的说明文字里就有「不 import functions」这句。
+    from tests.selftests._context import imported_modules
+
+    geo_src = (
+        Path(__file__).resolve().parents[2] / "utils" / "box_geometry.py"
+    ).read_text(encoding="utf-8")
+    pulled = sorted(
+        name for name in imported_modules(geo_src)
+        if name.split(".")[0] in ("functions", "desktop")
+    )
+    ok("utils/box_geometry 不 import functions/desktop（否则主进程被拖进重依赖）",
+       not pulled, str(pulled))
+
     # ---- 2. 布局层与规格逐组合一致（核心回归）----
     # 元组末位 = 是否走对称输出（对称只由调用方显式选择，布局层不猜）
     cases = [

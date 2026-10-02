@@ -29,8 +29,19 @@ _LAZY = {
     "PrintPanel": ("desktop.components.panels.print_panel", "PrintPanel"),
 }
 
-#: PANEL_CLASSES 的成员顺序 = STAGES 顺序（元组要等四个类都拿到才拼得出来）
-_PANEL_ORDER = ("ExtractPanel", "DetectPanel", "RembgPanel", "PrintPanel")
+from desktop.steps.spec import SPECS
+
+#: PANEL_CLASSES 的成员顺序 = **流程主链顺序**（元组要等类都拿到才拼得出来）。
+#:
+#: ⚠️ 从 ``desktop.steps.spec.SPECS`` 派生，不再手写第二份清单——以前这里是一份
+#: 硬编码的类名元组，与 ``STAGES`` 各写各的，加一步就要改两处（且没有任何守卫
+#: 能发现漏改）。取 ``role == "stage"`` 的 ``panel`` 字段，并把
+#: ``"模块:类名"`` 写法取后半段。
+_PANEL_ORDER = tuple(
+    spec.panel.split(":")[-1]
+    for spec in SPECS
+    if spec.role == "stage" and spec.panel
+)
 
 
 def __getattr__(name: str):

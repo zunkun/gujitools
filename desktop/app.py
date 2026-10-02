@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
-"""gujitools 桌面端主窗口：任务列表页 + 任务详情页切换。"""
+"""gujitools 桌面端主窗口：左侧导航壳层（任务管理 + 独立模块）。"""
 
 from __future__ import annotations
 import os
 import sys
-from PySide6.QtCore import QSize, Qt, QTimer
-from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget, QWidget
+from PySide6.QtCore import QSize, QTimer
+from PySide6.QtWidgets import QApplication, QMainWindow
 from PySide6.QtGui import QIcon
 from qfluentwidgets import setTheme, Theme
-from desktop.pages import TaskListPage
+from desktop.modules.shell import NAV_COMPACT_WIDTH, ModuleShell
 from desktop.store import TaskStore
 from desktop.ui import theme as T
 from desktop.utils.icon import rounded_window_icon
@@ -25,8 +25,16 @@ WINDOW_TITLE = "古籍重製"
 #:
 #: 因为默认启动即最大化（见 WINDOW_START_MAXIMIZED），这两个值的实际角色是
 #: **还原尺寸**：用户点标题栏的「还原」按钮/双击标题栏时落到的大小。
+#:
+#: ⚠️ 最小宽度**要把左侧导航栏那一截算进去**（2026-10-02）：1080 是**正文区**
+#: 的设计下限（四个步骤的参数表单在这个宽度下才不被挤扁——第三步的输入框
+#: 226px，再窄就掉到 178px），而壳层的导航栏是**常驻外框**、折叠时也占
+#: ``NAV_COMPACT_WIDTH``。只写 1080 的话，用户在最小窗口下就正好少这 48px，
+#: `tests/selftests/panel_label_fit.py` 的 200px 下限当场就红（实测 178px）。
+#: 屏幕不够宽时 window_size.apply_window_size 会把最小尺寸再夹下来，不影响小屏。
+CONTENT_MIN_WIDTH = 1080
 WINDOW_SIZE = QSize(1440, 920)
-WINDOW_MIN_SIZE = QSize(1080, 720)
+WINDOW_MIN_SIZE = QSize(CONTENT_MIN_WIDTH + NAV_COMPACT_WIDTH, 720)
 
 #: 启动时是否直接最大化（用户 2026-10-01 定：「我这个 1920 的屏幕默认就占满
 #: 屏幕吧，现在默认宽度跟 1920 差不了多少，最大化最小化没什么意义」）。
@@ -42,9 +50,17 @@ WINDOW_START_MAXIMIZED = True
 
 
 class MainWindow(QMainWindow):
-    """主窗口：在任务列表页与任务详情页之间切换。
-    创建时设定窗口最小尺寸并套用全局底色；通过 QStackedWidget 持有两页，
-    并连接列表页「打开详情」与详情页「返回」信号完成页面跳转。
+    """主窗口：左侧导航壳层（任务管理 + 独立模块）与详情页跳转。
+
+    2026-10-02 起，窗口中央从「列表页/详情页两页对切」升级为
+    :class:`desktop.modules.shell.ModuleShell`：左边一条 qfluentwidgets
+    导航栏，右边页面栈。任务管理仍是首页，其余是彼此独立的工具模块
+    （图片提取 / 去底色 / 拼图）。
+
+    ⚠️ **对外的属性名一个都没变**：``list_page`` / ``detail_page`` / ``pages``
+    / ``store`` 全部转发给壳层同名成员（见下面几个 property）。``tests/gui_shot.py``
+    与 ``tests/selftests/_context.py`` 都按这些名字取页面操作控件，转发一层
+    既升级了布局、又不改测试契约。
     """
 
     #: 启动后多久预热详情页（ms）。放在列表首帧画完之后，既不拖慢"窗口出现"，
@@ -76,48 +92,62 @@ class MainWindow(QMainWindow):
             self.setWindowIcon(icon if icon else QIcon(str(icon_path)))
         # ==========================================================
 
-        self.store = TaskStore()
-        self.pages = QStackedWidget()
-        self.pages.setObjectName("pageRoot")
-        self.list_page = TaskListPage(self.store)
-        self.pages.addWidget(self.list_page)
-        # 详情页**惰性创建**（见 _ensure_detail_page）：它带着第四步打印参数
-        # 面板等一大批控件，构造实测约 400ms。启动时用户还停在列表页，先不付
-        # 这笔钱——首次点开任务再建。
-        self._detail_page: "QWidget | None" = None
-        self.setCentralWidget(self.pages)
+        self._store = TaskStore()
+        # 壳层持有「导航栏 + 页面栈 + 各模块页」；详情页仍是惰性创建
+        # （构造约 400ms，用户还在列表页时不该付这笔钱）。
+        self.shell = ModuleShell(self._store)
+        self.setCentralWidget(self.shell)
         self.setStyleSheet(f"QMainWindow {{ background: {T.CANVAS}; }}")
-        self.list_page.open_detail.connect(self._open_detail)
+        self.shell.list_page.open_detail.connect(self._open_detail)
         # 预热详情页（见 _prewarm_detail_page）：① 刚点完导入；② 启动后空闲。
         # 两处都不占用户的操作响应路径，却把那笔 Qt 构造开销提前付掉。
-        self.list_page.import_queued.connect(self._prewarm_detail_page)
+        self.shell.list_page.import_queued.connect(self._prewarm_detail_page)
         QTimer.singleShot(self.PREWARM_DELAY_MS, self._prewarm_detail_page)
 
-    def _ensure_detail_page(self):
-        """首次需要时创建详情页，挂进堆栈并接上「返回」信号。
+    # ---------------------------------------------------- 对外契约（转发壳层）
+    # ⚠️ 这几个 property 是**测试与截图脚本的公开接口**，改名会连带弄坏它们：
+    # gui_shot.py 用 ``window.pages.setCurrentWidget(window.list_page)``、
+    # _context.py 用 ``window.detail_page`` / ``window.list_page.store``。
+    @property
+    def store(self):
+        """任务存储：转发壳层（壳层与各页面各自持有引用，见 setter 的说明）。"""
+        shell = getattr(self, "shell", None)
+        return shell.store if shell is not None else self._store
 
-        惰性化的收益只在启动那一刻：构造详情页要 ~400ms，而它内部的
-        打印参数面板（print_form / print_panel）在启动时完全用不到。
+    @store.setter
+    def store(self, value) -> None:
+        """整体换掉数据目录（测试/截图脚本把 store 指向临时目录时用）。
+
+        ⚠️ 赋值必须**传到壳层**，不能只改 MainWindow 自己：壳层存了一份（惰性
+        详情页构造时取它）、列表页存了一份、已建出来的详情页又存了一份。只改
+        这里的话，惰性构造的详情页会继续读**真实数据目录**——表现是"打开的是
+        同名任务号的另一个任务"（`tests/selftests/last_stage.py` 实测）：
+        它给 MainWindow 换 store 后 `_restore_last_task` 打开 0001，而详情页
+        拿的是真实目录里的 0001，于是落到了那台机器上真正停留的步骤。
         """
-        if self._detail_page is None:
-            from desktop.pages import TaskDetailPage
+        self._store = value
+        shell = getattr(self, "shell", None)
+        if shell is not None:
+            shell.rebind_store(value)
 
-            page = TaskDetailPage(self.store)
-            page.back_requested.connect(self._back_to_list)
-            self.pages.addWidget(page)
-            self._detail_page = page
-        return self._detail_page
+    @property
+    def pages(self):
+        """页面栈（``QStackedWidget``）：转发给壳层，兼容既有调用点。"""
+        return self.shell.pages
+
+    @property
+    def list_page(self):
+        """任务列表页：转发给壳层。"""
+        return self.shell.list_page
 
     @property
     def detail_page(self):
-        """详情页实例（惰性构造）。
+        """详情页实例（惰性构造）：转发给壳层。
 
-        保留这个公开属性名：``tests/selftests/_context.py`` 与
-        ``tests/gui_shot.py`` 都按 ``window.detail_page`` 取页面来操作控件。
         读它本身就等于声明「现在就需要详情页」，因此访问即构造——与启动期
         惰性并不冲突。
         """
-        return self._ensure_detail_page()
+        return self.shell.detail_page
 
     def _prewarm_detail_page(self) -> None:
         """预构造详情页骨架与**第一步**面板（用户一进去看到的就是它）。
@@ -131,10 +161,7 @@ class MainWindow(QMainWindow):
         PREWARM_DELAY_MS（列表已画完、用户还在看列表）。两处都不占用户的
         操作响应路径。
         """
-        page = self._ensure_detail_page()
-        first = page.control_stack.widget(0)
-        if hasattr(first, "peek") and first.peek() is None:
-            first.panel  # noqa: B018 - 触发构造，返回值不用
+        self.shell.prewarm_detail_page()
 
     def _restore_last_task(self) -> None:
         """启动恢复：上次待在哪个任务的哪一步，就回到哪里继续。
@@ -154,61 +181,33 @@ class MainWindow(QMainWindow):
         self._open_detail(record["id"])
 
     def _open_detail(self, task_id: str) -> None:
-        page = self._ensure_detail_page()
-        # ⚠️ 每次都必须真正 set_task，**不能**做"同任务已在看就早退"的优化
-        #    （2026-09-26 第二轮审计里试过，护栏当场抓回来）：任务号是顺序
-        #    复用的——用户删掉 0012 再新建，新任务也叫 0012；此时点列表必须
-        #    重新加载，否则详情页还是被删那个任务的状态（源路径、面板参数
-        #    全是旧的）。双击连点导致的重复复位是可接受的小代价。
-        if page.set_task(task_id):
-            self.pages.setCurrentWidget(page)
-        else:
-            # 两种拒绝：任务不存在（留在列表、刷新行）；子任务执行中
-            # （set_task 已弹 toast——把详情页亮出来让提示和进度被看见）
-            busy = page.running_stage is not None or (
-                page.process is not None
-                and page.process.state() != QProcess.NotRunning
-            )
-            if busy:
-                self.pages.setCurrentWidget(page)
-            self.list_page.refresh()
+        """打开任务详情页（转发壳层；那里才是唯一实现处）。"""
+        self.shell.open_detail(task_id)
 
     def _back_to_list(self) -> None:
-        self.list_page.refresh()
-        self.pages.setCurrentWidget(self.list_page)
+        """返回任务列表（转发壳层）。"""
+        self.shell.back_to_list()
 
     def keyPressEvent(self, event) -> None:  # noqa: N802
-        """←/→ 转发给详情页翻页。
+        """←/→ 转发给壳层（详情页翻页）。
 
         ⚠️ 点击预览大图（QLabel 默认不收焦点）后，焦点落在**主窗口本身**，
         按键只会到这里——不转发的话，用户点完图片按左右毫无反应
-        （用户 18:29 实测）。两条边界：
-        - 只在**详情页可见**时转发（任务列表页没有翻页语义）；
-        - 焦点在参数输入区等输入类控件时，方向键被它们自己消费（移光标/
-          改值），根本到不了这里——「焦点在输入区不切换」天然成立，
-          且详情页的 navigate_by_arrow 里还有同一道守卫兜底。
+        （用户 18:29 实测）。转发实现见 ModuleShell.keyPressEvent。
         """
-        key = event.key()
-        if key in (Qt.Key.Key_Left, Qt.Key.Key_Right) \
-                and self._detail_page is not None \
-                and self.pages.currentWidget() is self._detail_page:
-            if self._detail_page.navigate_by_arrow(key == Qt.Key.Key_Right):
-                event.accept()
-                return
-        super().keyPressEvent(event)
+        self.shell.keyPressEvent(event)
+        if not event.isAccepted():
+            super().keyPressEvent(event)
 
     def closeEvent(self, event) -> None:
-        """关闭窗口时先让详情页收尾 worker 子进程。
-        详情页持有 worker 子进程与后台线程的引用，直接退出会让进程被强杀；
-        这里把事件转交给详情页的 closeEvent 完成 kill/等待/清理后再接受关闭。
-        详情页是惰性的——没建过就说明没有 worker 需要收尾。
+        """关闭窗口时让壳层收尾所有 worker 子进程与后台线程。
 
-        列表页也要收尾：导入后的「复制源文件 + 生成缩略图」在后台队列里，
-        整本可能几千页（实测 2400 页要 69s），退出时让它尽快收手。
+        壳层会把收尾分发给任务列表页、懒建的详情页与已构造的模块页；
+        详情页持有 worker 子进程与后台线程的引用，直接退出会让进程被强杀。
         """
-        self.list_page.shutdown_workers()
-        if self._detail_page is not None:
-            self._detail_page.closeEvent(event)
+        self.shell.shutdown_workers()
+        if self.shell._detail_page is not None:
+            self.shell._detail_page.closeEvent(event)
         event.accept()  # 文件存储无需关闭
 
 

@@ -50,6 +50,7 @@ from typing import NamedTuple, Optional, Tuple
 import utils
 from core.args import default_workers
 from functions.base import FunctionBase
+from utils.box_geometry import page_box_slots
 from utils.path_utils import assert_output_not_input, resolve_final_output_dir
 
 # 一个检测框 = (x1, y1, x2, y2) 像素坐标
@@ -103,12 +104,13 @@ class PageBoxes(NamedTuple):
 
         半幅优先于整幅：万一两类同时存在（消解失灵 / 手工构造），按半幅处理——
         保证「harfcontent 逻辑与原来完全一致」，整幅不会把已检出的半幅挤掉。
+
+        ⚠️ 规则本体在 ``utils.box_geometry.page_box_slots``——独立「检测文本框」
+        模块页与任务流程第二步都要按同一条约定还原事件里的框，规则只留一份，
+        这里只是它的对象侧入口。
         """
-        if self.left is not None or self.right is not None:
-            return [self.left, self.right]
-        if self.full is not None:
-            return [self.full]
-        return []
+        return page_box_slots(self.left, self.right, self.full)
+
 
 
 def extract_first_box(boxes) -> Optional[Box]:

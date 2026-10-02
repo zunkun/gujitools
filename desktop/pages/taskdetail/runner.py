@@ -10,15 +10,18 @@ from __future__ import annotations
 
 import json
 import sys
-import time
 from pathlib import Path
 
 from PySide6.QtCore import QProcess, QProcessEnvironment, QTimer
 
 from desktop.services.print_plan import missing_extract_pages_spec
+from desktop.steps.process import StageProcess, worker_arguments
 from desktop.store.json_io import write_json
 from desktop.utils.files import list_stage_images, project_root
 from desktop.store import IMPOSITION_STAGE, STAGE_LABELS, STAGE_STEP
+
+from utils.box_geometry import page_box_slots_from_event
+
 
 STATUS_LABELS = {
     "pending": "未执行",
@@ -45,9 +48,9 @@ class StageRunnerMixin:
     _PROGRESS_UI_MS = 200
 
     #: 「多少秒没有任何 worker 输出」就提醒用户可能卡住（只提醒，不自动杀）。
-    #: 合法的慢阶段里 worker 一直在发 progress/log，所以静默 = 可疑；
-    #: 但阈值给得宽松（3 分钟），宁可晚提醒也不误报。
-    STALL_WARN_S = 180
+    #: ⚠️ 真正的实现与判定在 ``desktop.steps.process.StageProcess``
+    #: （``STALL_WARN_S``）——那里是"看门狗"的归属地；本页只负责把提醒
+    #: 画到日志与状态行上（见 :meth:`_on_stage_stalled`）。
     #: 页面尺寸/检测框的攒批落盘间隔（ms）。逐条落盘在 320 页上累计 3.1 秒
     #: 主线程阻塞（见 _store_page_size / _store_stage_boxes 的说明）。
     _ANNOT_FLUSH_MS = 400
@@ -301,14 +304,11 @@ class StageRunnerMixin:
         self.cancel_requested = False
         self.running_stage = stage
         self._last_error_line = None
-        # 看门狗的无进展预警：最后一次收到 worker 输出的时间 + 是否已提醒过
-        # （见 _warn_if_stalled —— 只提醒不自动杀，避免误杀合法的慢阶段）
-        self._last_event_at = time.time()
-        self._stall_warned = False
         # 最近一次 progress 事件 (done, total)：worker 结束时不带计数，
         # 用它把最终进度落到历史记录里（见 _worker_finished）。
         self._last_progress = (0, 0)
         # 半行缓冲/进度合并都是**每次运行**的临时状态，别把上一次的残留带过来
+        # （"无进展计时"的临时状态已随看门狗搬进传输层，不在这里）
         self._stdout_tail = ""
         self._progress_dirty = False
         self._progress_ui_timer.stop()
@@ -328,122 +328,30 @@ class StageRunnerMixin:
             self._extract_seen = len(
                 list_stage_images(self.store.extract_output_dir(self.task_id))
             )
-        self.process = QProcess(self)
-        self.process.setProgram(sys.executable)
-        self.process.setProcessEnvironment(self._worker_env())
-        if getattr(sys, "frozen", False):
-            # 打包环境：主程序即入口，--worker 路由到子任务执行
-            arguments = ["--worker", "--config", str(config_path)]
-        else:
-            # 源码环境：按模块启动，不依赖入口文件名（desktop.py 改名无影响），
-            # 工作目录必须是项目根（能解析出 desktop 包的那一级）
-            arguments = ["-m", "desktop.worker", "--config", str(config_path)]
-            self.process.setWorkingDirectory(str(project_root()))
-        self.process.setArguments(arguments)
-        self.process.readyReadStandardOutput.connect(self._read_worker_output)
-        self.process.readyReadStandardError.connect(self._read_worker_error)
-        self.process.errorOccurred.connect(self._worker_error_occurred)
-
-        # Windows 偶发丢失 finished 信号（尤其从 worker 回调链启动时）：
-        # 看门狗轮询兜底——Qt 状态滞留 Running 但 OS 进程已退出时，
-        # 直接用 Win32 探测并手动驱动完成流程。
-        self._finish_delivered = False
-        self._proc_started = False
-        proc = self.process
-        watchdog = QTimer(self)
-
-        def _finish_once(code: int, status) -> None:
-            if self._finish_delivered:
-                return
-            self._finish_delivered = True
-            watchdog.stop()  # 已收尾：定时器显式停掉（也避免长会话里对象堆积）
-            self._worker_finished(code, status)
-
-        def _process_alive(pid: int) -> bool:
-            if pid <= 0 or sys.platform != "win32":
-                return True
-            import ctypes
-
-            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-            STILL_ACTIVE = 259
-            kernel32 = ctypes.windll.kernel32
-            handle = kernel32.OpenProcess(
-                PROCESS_QUERY_LIMITED_INFORMATION, False, pid
-            )
-            if not handle:
-                return False  # 无法打开 = 已退出
-            try:
-                code = ctypes.c_ulong()
-                if kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
-                    return code.value == STILL_ACTIVE
-                return True
-            finally:
-                kernel32.CloseHandle(handle)
-
-        def _watchdog() -> None:
-            if self.process is None or self.process is not proc:
-                watchdog.stop()
-                return
-            if proc.state() == QProcess.NotRunning:
-                code = proc.exitCode()
-                # 从未成功启动时 exitCode() 仍是 0，直接当成功会误报"执行成功"
-                if not self._proc_started and code == 0:
-                    code = 1
-                _finish_once(code, proc.exitStatus())
-            elif not _process_alive(proc.processId()):
-                # OS 进程已退出，Qt 却没报 finished（Windows 偶发）。
-                # ⚠️ 这里**不能**直接 ``_finish_once(0, NormalExit)``：
-                # ① 硬编码 0 会把崩溃/失败（退出码非 0）报成"执行成功"；
-                # ② 立刻收尾会丢掉管道里还没读的 progress/log 事件。
-                # 所以先让 Qt 收尾——它会排空管道并把**真实退出码**带回来；
-                # 实在收不了尾才按失败兜底（宁可误报失败，不可误报成功）。
-                if proc.waitForFinished(1500):
-                    code = proc.exitCode()
-                    if not self._proc_started and code == 0:
-                        code = 1
-                    _finish_once(code, proc.exitStatus())
-                else:
-                    self.log_view.append(
-                        "[看门狗] 子任务进程已退出但未正常收尾，按失败处理"
-                    )
-                    self._last_error_line = "子任务进程未正常收尾（看门狗兜底）"
-                    _finish_once(1, QProcess.CrashExit)
-            else:
-                _warn_if_stalled()
-
-        def _warn_if_stalled() -> None:
-            """进程还活着、但很久没有任何事件 → 提醒用户可中断。
-
-            ⚠️ 为什么只提醒不自动杀（2026-09-26 审计）：worker 卡死（死锁、等
-            常驻 YOLO 服务、torch 卡住、管道反压）与**合法的慢阶段**（2400 页的
-            去底色/生成 PDF）在外部看是一样的——都只是"没输出"。自动杀掉会把
-            用户跑了几分钟的正常任务误杀，代价远大于收益。所以这里只把
-            "已经 N 分钟没有任何进展"摆到用户面前，让**他**决定要不要点中断。
-            """
-            last = self._last_event_at
-            if not last:
-                return
-            idle = time.time() - last
-            if idle < self.STALL_WARN_S or self._stall_warned:
-                return
-            self._stall_warned = True
-            minutes = idle / 60
-            self.log_view.append(
-                f"[看门狗] 已 {minutes:.0f} 分钟没有任何进度输出，"
-                "若确认卡住可点「中断」或关闭窗口。"
-            )
-            self._set_stage_status(
-                f"已 {minutes:.0f} 分钟无进展（可能卡住，可中断重试）"
-            )
-
-        def _mark_started() -> None:
-            self._proc_started = True
-
-        proc.started.connect(_mark_started)
-        proc.finished.connect(_finish_once)
-        watchdog.timeout.connect(_watchdog)
-        watchdog.start(300)
-        self.process.start()
+        # ---- 传输层：起进程 + 读字节流 + 看门狗（实现见 desktop.steps.process）----
+        # ⚠️ 这里只接"业务"需要的信号；半行重组 / JSON 解析 / 落盘仍在本页——
+        #    它们写 runs.json、boxes.json 与日志视图，是**页面**的事，
+        #    放进传输层会让那一层重新长出"任务流程"的触手、也就没法复用了。
+        # 上一次运行的传输层已经收尾（能走到这里说明没有进程在跑），顺手回收，
+        # 免得一场会话跑几十次就攒几十个对象。
+        previous = getattr(self, "_stage_transport", None)
+        if previous is not None:
+            previous.deleteLater()
+        transport = StageProcess(self)
+        transport.stdout.connect(self._on_stage_stdout)
+        transport.stderr.connect(self._consume_worker_stderr)
+        transport.process_error.connect(self._worker_error_occurred)
+        transport.stalled.connect(self._on_stage_stalled)
+        transport.unclean_exit.connect(self._on_stage_unclean_exit)
+        transport.finished.connect(self._on_stage_finished)
+        self._stage_transport = transport
+        self.process = transport.start(
+            sys.executable,
+            worker_arguments(config_path),
+            # 打包环境主程序即入口，工作目录随意；源码环境必须是项目根
+            # （能解析出 desktop 包的那一级）
+            workdir=None if getattr(sys, "frozen", False) else project_root(),
+        )
         # 进程真的起来了 → 防抖窗口从这里开始计时（见 _run_launched_at）
         self._mark_run_launched()
 
@@ -481,14 +389,39 @@ class StageRunnerMixin:
                 pass
 
     # ---------------------------------------------------------- 输出解析
-    def _read_worker_output(self) -> None:
-        """worker stdout 有数据到达（信号槽）：交给解析层。"""
-        if not self.process:
-            return
-        # 任何输出都算"有进展"：重置无进展计时与提醒标志（见 _warn_if_stalled）
-        self._last_event_at = time.time()
-        self._stall_warned = False
-        self._consume_worker_stdout(bytes(self.process.readAllStandardOutput()))
+    def _on_stage_stdout(self, data: bytes) -> None:
+        """传输层转来一批 stdout 原始字节：交给解析层（半行重组在这里）。
+
+        ⚠️ "有输出就算有进展"的计时与提醒标志由传输层维护（见
+        ``StageProcess._on_stdout``）——那是看门狗自己的状态。
+        """
+        self._consume_worker_stdout(data)
+
+    def _on_stage_stalled(self, minutes: float) -> None:
+        """传输层报"很久没有任何输出"：写日志 + 状态行（只提醒，不自动杀）。
+
+        ⚠️ 为什么只提醒不自动杀（2026-09-26 审计）：worker 卡死（死锁、等
+        常驻 YOLO 服务、torch 卡住、管道反压）与**合法的慢阶段**（2400 页的
+        去底色/生成 PDF）在外部看是一样的——都只是"没输出"。自动杀掉会把
+        用户跑了几分钟的正常任务误杀，代价远大于收益。所以这里只把
+        "已经 N 分钟没有任何进展"摆到用户面前，让**他**决定要不要点中断。
+        """
+        self.log_view.append(
+            f"[看门狗] 已 {minutes:.0f} 分钟没有任何进度输出，"
+            "若确认卡住可点「中断」或关闭窗口。"
+        )
+        self._set_stage_status(
+            f"已 {minutes:.0f} 分钟无进展（可能卡住，可中断重试）"
+        )
+
+    def _on_stage_unclean_exit(self) -> None:
+        """传输层报"进程已退出但 Qt 没能正常收尾"：记成失败原因（看门狗兜底）。"""
+        self.log_view.append("[看门狗] 子任务进程已退出但未正常收尾，按失败处理")
+        self._last_error_line = "子任务进程未正常收尾（看门狗兜底）"
+
+    def _on_stage_finished(self, exit_code: int, status) -> None:
+        """传输层报"进程结束"（**保证只发一次**）→ 走页面收尾链。"""
+        self._worker_finished(exit_code, status)
 
     def _consume_worker_stdout(self, data: bytes, final: bool = False) -> None:
         """解析 worker 输出的 JSON Lines 事件。
@@ -597,10 +530,11 @@ class StageRunnerMixin:
     def _store_stage_boxes(self, event: dict) -> None:
         """detect 阶段上报的框坐标 → 攒批（origin=auto；人工框不被覆盖）。
 
-        **槽位约定**（见 functions/detect.PageBoxes）：半幅(harfcontent)存
-        2 槽 ``[左, 右]``，缺失一侧为 null（保留左右身份，area=1 输出按 -r/-l
-        规范排序）；整幅(fullcontent)只存 **1 槽** ``[整幅]``——下游据此知道
-        它是"整页唯一内容"，单框时不做对称镜像、不拆左右两半。
+        槽位拼装走 **共用实现**（``utils.box_geometry.page_box_slots_from_event``，
+        ``utils`` 层无重依赖、主进程可直连）——独立「检测文本框」模块页读的是
+        同一条通道、同一个约定，两处各写一遍必然漂移。槽位约定的含义见
+        ``functions/detect.PageBoxes``（半幅 2 槽 ``[左, 右]``、整幅 1 槽
+        ``[整幅]``，下游据此分辨形态）。
 
         ⚠️ 逐条落盘是「读 boxes.json + 写回」× 页数，320 页实测累计 **1.8 秒**
         主线程阻塞；改攒批 + 一次性写。人工框的优先级判定挪到批量写里
@@ -608,17 +542,7 @@ class StageRunnerMixin:
         """
         if not self.task_id:
             return
-        full = event.get("full")
-        if full:
-            # 整幅内容：单个框、单槽
-            boxes = [[int(v) for v in full]]
-        else:
-            left = event.get("left")
-            right = event.get("right")
-            boxes = [
-                [int(v) for v in left] if left else None,
-                [int(v) for v in right] if right else None,
-            ]
+        boxes = page_box_slots_from_event(event)
         if not any(boxes):
             return
         self._pending_boxes[event.get("image", "")] = boxes

@@ -126,9 +126,14 @@ def run(ctx) -> None:
        "TemporaryDirectory" not in stage and "sweep_orphan_staging" in stage)
     runner = code_of("desktop/pages/taskdetail/runner.py")
     ok("取消阶段时顺手回收暂存目录", "sweep_orphan_staging()" in runner)
+    # ⚠️ 2026-10-02：看门狗（含"无进展预警"）已从详情页抽到共用步骤组件层
+    #    desktop/steps/process.py 的 StageProcess —— 详情页只接它的信号。
+    transport = code_of("desktop/steps/process.py")
+    ok("阶段执行走共用传输层（详情页不再自己攥 QProcess）",
+       "StageProcess" in runner and "worker_arguments" in runner)
     ok("看门狗有无进展预警（不是只能干等）",
-       "_warn_if_stalled" in runner and "STALL_WARN_S" in runner)
-    ok("worker 有输出会重置无进展计时", "_last_event_at = time.time()" in runner)
+       "_warn_if_stalled" in transport and "STALL_WARN_S" in transport)
+    ok("worker 有输出会重置无进展计时", "_last_event_at = time.time()" in transport)
     preview = code_of("desktop/workers/preview_worker.py")
     ok("PreviewWorker 有 cancel() 且渲染循环会检查它",
        "def cancel(self)" in preview and "if self._cancelled:" in preview)

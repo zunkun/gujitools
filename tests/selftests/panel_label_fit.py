@@ -32,6 +32,20 @@ TITLE = "参数标签折行"
 FIELD_MIN_WIDTH = 200
 
 
+def _min_window() -> tuple[int, int]:
+    """测布局用的窗口尺寸 = **主窗口允许的最小尺寸**。
+
+    ⛔ 别写死 1080×720：窗口中央现在还有一条**常驻的左侧导航**（折叠时也占
+    ``NAV_COMPACT_WIDTH``=48px，见 `desktop/modules/shell.py`），主窗口最小宽度
+    已经把这截算进去了（`desktop/app.py::WINDOW_MIN_SIZE`）。写死 1080 的话，
+    正文区只剩 1032，第三步输入框掉到 178px —— 那是在测一个用户拖不到、程序
+    也不允许的尺寸。取真实下限，量的才是"最小窗口下正文区够不够用"。
+    """
+    from desktop.app import WINDOW_MIN_SIZE
+
+    return (WINDOW_MIN_SIZE.width(), WINDOW_MIN_SIZE.height())
+
+
 def _form(panel):
     """取面板里参数表单所在的那个 QFormLayout。"""
     from PySide6.QtWidgets import QFormLayout
@@ -127,7 +141,7 @@ def run(ctx) -> None:
        probe._fit_label("边距(mm)\n（border）") == ("边距(mm)\n（border）", False))
 
     # ---------- 2. 真实面板的不变量（与字体无关）----------
-    rembg = show_detail(ctx, 2)
+    rembg = show_detail(ctx, 2, size=_min_window())
     rows = _rows(rembg)
     side = [r for r in rows if not r["stacked"]]
     stacked_fields = [r for r in rows if r["stacked"] and not r["is_label_row"]]
@@ -158,7 +172,7 @@ def run(ctx) -> None:
            f"跨列 {[r['field_w'] for r in stacked_fields]} / 并排最宽 {widest_field}")
 
     # ---------- 3. 第一步：标签都不长，同样只是"放得下"这条不变量 ----------
-    extract = show_detail(ctx, 0)
+    extract = show_detail(ctx, 0, size=_min_window())
     e_rows = _rows(extract)
     e_side = [r for r in e_rows if not r["stacked"]]
     ok("第一步表单已布局出多行", len(e_side) >= 5, f"并排 {len(e_side)} 行")

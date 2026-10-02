@@ -33,6 +33,29 @@ def ok(name: str, condition: bool, detail: str = "") -> None:
     print(f"  [PASS] {name}")
 
 
+def imported_modules(source: str) -> set[str]:
+    """把一段源码里所有 import 的模块名抠出来（含 ``from X import Y`` 里的 X）。
+
+    ⚠️ **必须用 AST，不能用文本/正则匹配**：注释与文档字符串里提到某个模块名
+    是**允许的**（说明文字经常要写"本模块不 import functions"这类话），
+    文本匹配会把这类说明误判成真依赖。
+
+    按设计返回**全部**缩进层级的 import（模块级 + 函数内延迟导入）——调用方
+    若只想看模块级依赖，自己按 ``col_offset == 0`` 过滤。
+    """
+    import ast
+
+    found: set[str] = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                found.add(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            if node.module:
+                found.add(node.module)
+    return found
+
+
 def make_pdf(path: Path, pages: int, text_prefix: str = "第") -> Path:
     """生成 pages 页的极简 PDF（每页一行占位文字）。"""
     import pymupdf

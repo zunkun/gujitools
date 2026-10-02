@@ -8,36 +8,39 @@ import shutil
 import time
 from pathlib import Path
 
+from desktop.steps.spec import FLOW_STAGES, OPTIONAL_STEPS, spec_by_key
 from desktop.store.json_io import read_json, write_json
 from desktop.utils.files import copy_file_atomic
 
-STAGES = ("extract", "detect", "rembg", "print")
+#: 默认流程的四个步骤（顺序即执行顺序）。
+#:
+#: ⚠️ **这里不再是独立的一份清单**：它是 ``desktop.steps.spec.SPECS`` 里
+#: ``role == "stage"`` 的派生结果。加/删一步只需改 spec，本文件自动跟着变。
+#: （以前这里是第二份硬编码清单，加一步要改两处，还容易漏。）
+STAGES = FLOW_STAGES
+
 # ⚠️ 这些是**界面文案**（步骤条/面板标题/toast/日志共用一份）：有中文就不再附
 # 英文键名 —— 用户口径「四个步骤有中文，英文就不要出现」。
-STAGE_LABELS = {
-    "extract": "提取图片",
-    "detect": "检测文本框",
-    "rembg": "图片去底色",
-    # rembg 的「提交本次任务」动作：预览图按 area/border 合成最终图片
-    "rembg_submit": "提交去底色结果",
-    "print": "生成 PDF",
-}
+#: 取值是 ``StepSpec.stage_name()``（流程条上的名字，与模块页头/导航**有意不同**）。
+STAGE_LABELS = {key: spec_by_key(key).stage_name() for key in STAGES}
+#: 「提交本次任务」（rembg_submit）**不是独立步骤**（STAGES 里没有它），而是第三步
+#: rembg 面板上的动作；它要有自己的进度/日志文案，所以补进同一张表。
+STAGE_LABELS["rembg_submit"] = "提交去底色结果"
 
 # 列表里的阶段短名（步骤条/表格空间有限，用 2~3 字表达）
-STAGE_SHORT = {
-    "extract": "提取",
-    "detect": "检测",
-    "rembg": "去底",
-    "print": "PDF",
-}
+STAGE_SHORT = {key: spec_by_key(key).short_name() for key in STAGES}
 
 # ------------------------------------------------------------ 流程条的可选节点
 #: 「图片拼版」**伪步骤**：流程条上的虚线可选节点，位于第三步（图片去底色）
 #: 与第四步（生成 PDF）之间，仅当第三步「区域模式」为 1（左右分开）时出现。
 #: 用户可以选择它（启用）也可以不选择；节点详情当前为占位（不参与任何执行
 #: 链路，STAGES/runs.json/阶段面板等机制一律不感知它）。
-IMPOSITION_STAGE = "imposition"
-IMPOSITION_LABEL = "图片拼版"
+#:
+#: ⚠️ 它**有自己的独立模块页**（``desktop/modules/imposition``）——"进不进流程"
+#: 和"有没有独立功能"是两件事，这也是 ``StepSpec.role`` 要分
+#: ``stage`` / ``optional`` 的原因。
+IMPOSITION_STAGE = OPTIONAL_STEPS[0]
+IMPOSITION_LABEL = spec_by_key(IMPOSITION_STAGE).stage_name()
 #: 伪步骤在流程条上的下标：跟在四个真实步骤之后（控制栈/预览栈里同样占
 #: 第 5 位——占位详情面板与占位预览）。
 IMPOSITION_INDEX = len(STAGES)

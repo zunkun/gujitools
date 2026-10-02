@@ -65,6 +65,20 @@ QT_QPA_PLATFORM=offscreen python tests/gui_shot.py --guide D:/tmp/shots
 - **界面**：视觉常量集中在 `desktop/ui/theme.py`，基础控件（卡片/状态胶囊/进度条/
   空状态等）为 `desktop/ui/widgets.py` 的**自绘控件**；详见
   [gui-ui-system.md](gui-ui-system.md)。
+- **左侧导航与独立模块**：主窗口中央是 `desktop/modules/shell.py` 的壳层
+  （导航栏默认折叠，点左上角菜单按钮展开）。导航条目 = 「任务管理」+ `MODULES`
+  注册表里的独立模块（图片提取 / 去底色 / 拼图）。模块页**惰性构造**、彼此零
+  import 依赖，复用 `desktop/steps/` 的**共用步骤组件**（`StepSpec` 步骤元数据 +
+  `StepKernel` 执行内核 + `SourceZone` 大输入区 + `StepControl` 控制块）。
+  目录布局与边界详见 [gui-architecture.md](gui-architecture.md) 的 §2.3。
+- **大输入区**：三个模块页在页头下方都有一块横跨整幅的 `SourceZone`——
+  拖文件、拖文件夹、点一下从对话框选、右上角一键清空；拖到页面空白处也认。
+  它只负责"用户给了哪些路径"，"这些路径算哪个源"由纯逻辑
+  `StepSpec.resolve_source()` 决定（可脱离 Qt 单测）；顶层没可用文件时
+  自动下钻 1~2 层，所以可以**直接把提取的输出根拖给「去底色」**。
+- **单步的出口**：`StepSpec.flat_output` 置真的步骤（目前只有 `extract`）在
+  **单 PDF** 时把 `<输出>/<PDF名>/**` 平铺到输出目录根下（批量仍每个 PDF
+  一个子目录）。造 job 一律走 `kernel.job_for(spec)`，别自己拼 `command_job`。
 - **阶段**：`extract`（PDF → 图片，直接输出 `stages/extract`）、`detect`（只检测
   文本框坐标，**不生成文件**——坐标经事件通道交给界面画框，与命令行
   `detect --save` 的落盘语义不同）、`rembg`（整页去底色）、`print`（合成 PDF）。

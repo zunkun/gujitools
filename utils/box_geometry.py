@@ -43,6 +43,58 @@ def is_full_content(boxes) -> bool:
     return len(list(boxes or [])) == 1
 
 
+def page_box_slots(left, right, full) -> List[Optional[list]]:
+    """三类框 → **槽位表示**（槽位约定的**唯一实现**）。
+
+    半幅优先于整幅：只要有左或右就按半幅出 **2 槽** ``[左, 右]``（缺失侧
+    ``None``）；否则整幅只占 **1 槽** ``[整幅]``；都没有则空表。
+
+    半幅优先是既有明文规则（原 ``PageBoxes.slots``）：万一两类同时存在
+    （互斥消解失灵 / 手工构造的防御场景），按半幅处理——保证 harfcontent 逻辑
+    与原来完全一致，整幅不会把已检出的半幅挤掉。正常数据下两者不可兼得
+    （见 ``functions.detect.PageBoxes.conflict``）。
+
+    调用方两处，共用本函数以免"同一件事两处定义"而漂移：
+    ``functions.detect.PageBoxes.slots``（对象侧）与
+    :func:`page_box_slots_from_event`（事件侧）。
+    """
+    if left is not None or right is not None:
+        return [left, right]
+    if full is not None:
+        return [full]
+    return []
+
+
+def page_box_slots_from_event(payload) -> List[Optional[list]]:
+    """``page_boxes`` 事件负载 → **槽位表示**（坐标一律转 int）。
+
+    ``page_boxes`` 是检测结果跨进程 / 跨线程回传的**唯一通道**，负载形如::
+
+        {"image": stem, "left": [...] | None,
+         "right": [...] | None, "full": [...] | None}
+
+    （见 ``functions.detect.DetectFunction._report_boxes``）。任务流程第二步与
+    独立「检测文本框」模块页都从这里还原形态，不再各写一遍槽位拼装。
+
+    ⚠️ 本模块（utils）**不 import functions**——分层是单向的
+    ``utils ← core ← {cli, functions, desktop}``，反过来引用会被
+    ``tests/selftests/layering.py`` 判违规。所以这里只按负载里的三个键出槽位，
+    不去构造 ``functions.detect.PageBoxes``：两侧共用的是**规则**
+    （:func:`page_box_slots`），不是类型。
+    """
+    def _box(value):
+        """一槽坐标：空 / ``None`` 归 ``None``，否则逐值转 int（长度原样保留）。"""
+        if not value:
+            return None
+        return [int(v) for v in value]
+
+    return page_box_slots(
+        _box(payload.get("left")),
+        _box(payload.get("right")),
+        _box(payload.get("full")),
+    )
+
+
 #: 页形态分类键（`classify_page_slots` 的返回值）：与检测模型的两类内容
 #: （fullcontent / harfcontent）同名的两个键是跨层文案，GUI 统计直接展示。
 PAGE_CLASS_FULLCONTENT = "fullcontent"   # 整幅：单槽（整页唯一内容区）

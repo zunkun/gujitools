@@ -163,6 +163,10 @@ class TaskDetailPage(
         #: worker stdout 的半行缓冲（管道读取会在任意字节处截断，见
         #: StageRunnerMixin._consume_worker_stdout）
         self._stdout_tail = ""
+        #: 当前阶段的**子进程传输层**（起进程/读字节流/看门狗，见
+        #: ``desktop.steps.process.StageProcess``）。由 runner 在启动阶段时建，
+        #: 收尾/中断按它取进程；未启动时为 None。
+        self._stage_transport = None
         self._init_ui()
         # 进度事件的界面刷新节流器（见 StageRunnerMixin._PROGRESS_UI_MS）
         self._init_progress_ui()

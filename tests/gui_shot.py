@@ -301,8 +301,9 @@ def seed(repo) -> list[str]:
             names[0] = "龍譚精舍叢刻"
         else:
             names[0] = stem
-    done_all = ["extract", "detect", "rembg", "print"]
-    half = ["extract", "detect"]
+    # ⚠️ 用上面已导入的 STAGES（不再手写第二份清单——它与流程主链必须同步）。
+    done_all = list(STAGES)
+    half = list(STAGES[:2])
 
     task_ids = []
     for index, name in enumerate(names):
@@ -954,7 +955,11 @@ def main() -> int:
     pump(app, 10)
 
     detail = window.detail_page
-    stages = ("extract", "detect", "rembg", "print")
+    from desktop.store import STAGES
+
+    stages = tuple(STAGES)
+    # ⚠️ labels 是**截图文件名**的一部分（docs 里按名字引用），与界面步骤文案
+    #    无关，所以**不**改成 STAGE_SHORT——改它会让文档里的图片引用全部失效。
     labels = ("提取", "检测", "去底色", "生成PDF")
     for order, (stage, label) in enumerate(zip(stages, labels), start=2):
         detail._select_stage(stages.index(stage))
