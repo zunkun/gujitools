@@ -467,3 +467,69 @@ def build_symmetric_layout(
             ),
         )
     )
+
+
+# ================================================================== 人工干预
+#
+# 「把某个框改成左框/右框/整幅」「删掉某个框」的结果计算。**纯函数**（不碰
+# Qt、不碰存储），所以任务流程第二步（`desktop/pages/taskdetail/detect.py`）
+# 与独立「检测文本框」模块页（`desktop/modules/detect/page.py`）走**同一条**
+# 规则，不会各写一遍慢慢漂移。
+#
+# ⚠️ 三条不变式（用户 2026-09-29 定的 6 条规则里最要紧的三条）：
+#   1. 类型存在**槽位**里（半幅 2 槽 / 整幅 1 槽），不按"还剩几个框"推；
+#   2. 半幅的左右由**中心位置**决定（`half_sides`），所以左/右之间切不动；
+#   3. 整幅与半幅**互斥**、整幅一页只能一个框 —— 转换时别的框要么被保留
+#      （整幅→半幅）、要么被删（半幅→整幅，调用方须先与用户确认）。
+
+def present_boxes(slots) -> List[list]:
+    """槽位 → **非空**框列表（保留顺序）。
+
+    下游所有"第 index 个框"都按这个列表的下标算：界面上的框列表、命中检测、
+    选中下标全都是过滤后的口径，混用槽位下标会选错框（半幅缺左侧时，
+    槽位 0 是 ``None``、槽位 1 才是右框）。
+    """
+    return [list(b) for b in (slots or []) if b]
+
+
+def set_box_full(slots, index: int) -> List[list]:
+    """把第 ``index`` 个框设为「整幅」→ **单槽** ``[整幅]``，其余框丢弃。
+
+    ⚠️ 整幅与半幅互斥、一页只能一个框，所以这个转换**必然丢掉其它框**。
+    调用方**必须先与用户确认**（任务流程第二步弹 Dialog，模块页弹确认框），
+    不要静默调用。
+
+    ``index`` 越界时原样返回（空表则返回空表）——非法输入不该让界面崩。
+    """
+    boxes = present_boxes(slots)
+    if not 0 <= index < len(boxes):
+        return list(slots or [])
+    return [boxes[index]]
+
+
+def set_box_half(slots, index: int, image_size) -> List[list]:
+    """把第 ``index`` 个框设为「半幅」→ **2 槽** ``[左, 右]``（按中心定左右）。
+
+    整幅页的框也能是半幅（漏检一侧的情形），所以这个方向**无损**：一个框
+    照样按它自己的中心位置落进左槽或右槽，另一侧留 ``None``。
+    """
+    boxes = present_boxes(slots)
+    if not 0 <= index < len(boxes):
+        return list(slots or [])
+    return half_slots([boxes[index]], image_size)
+
+
+def drop_box(slots, index: int, image_size) -> List[list]:
+    """删掉第 ``index`` 个框后的**新槽位**。
+
+    - 半幅页：仍写回 **2 槽**（缺失侧 ``None``）——删到只剩一个框时形态不会
+      从半幅变成整幅，这正是用户报过的"删掉整幅框后右边的框自动变成整幅"；
+    - 整幅页 / 删光了：空表（整幅只有 1 槽，删掉没有"别的框"可剩）。
+    """
+    boxes = present_boxes(slots)
+    if not 0 <= index < len(boxes):
+        return list(slots or [])
+    del boxes[index]
+    if not boxes:
+        return []
+    return half_slots(boxes, image_size)

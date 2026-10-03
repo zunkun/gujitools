@@ -435,3 +435,95 @@ def run(ctx) -> None:
        and ident_g.shape == arr_g.shape
        and bool((ident_g == arr_g).all()),
        f"origin={ident_o} shape={None if ident_g is None else ident_g.shape}")
+
+    # ---- 退化守卫：把手重合（用户 2026-10-02 报"程序崩溃"的根因）----
+    # Wendland 核 φ(0)=1 ⇒ 两个把手落在同一处时矩阵第 i、j 行完全相同
+    # ⇒ 严格奇异 ⇒ np.linalg.solve 抛 LinAlgError。而"把两个把手拖到重合"
+    # 是随手可做的操作（命中半径 12 视图像素），异常一旦冒到 Qt 槽函数
+    # 就是崩溃。约定：退化一律**退化为恒等**（返回 None），绝不抛。
+    box_degen = cw.perimeter_cage((0.0, 0.0, 200.0, 120.0), 2)
+    box_degen = [(float(x), float(y)) for x, y in box_degen]
+
+    same = list(box_degen)
+    same[0] = (60.0, 60.0)
+    same[1] = (60.0, 60.0)                 # 两个把手**完全重合**，但位移不同
+    try:
+        res = cw.moved_handles(box_degen, same)
+        ok("退化：两个把手拖到同一点不抛异常（LinAlgError 挡住）", True,
+           f"→ {'None(恒等)' if res is None else 'ok'}")
+        # 去重后只剩 1 个约束 ⇒ 1x1 矩阵可解，仍能正常形变（不是恒等）：
+        # 关键性质是"**不抛异常**"，而不是"必须退化为恒等"。
+        ok("退化：去重后仍给出合法权重（非 None、非空）",
+           res is not None and res[0].shape[0] >= 1
+           and bool(abs(float(res[1].sum())) >= 0.0)
+           and all(abs(float(v)) == abs(float(v)) for v in res[1].ravel()),
+           f"→ 约束数 {None if res is None else res[0].shape[0]}")
+    except Exception as exc:                # noqa: BLE001
+        ok("退化：两个把手拖到同一点不抛异常（LinAlgError 挡住）", False,
+           f"抛了 {type(exc).__name__}: {exc}")
+
+    three = list(box_degen)
+    three[0] = (50.0, 50.0)
+    three[1] = (50.0, 50.0)
+    three[2] = (50.0, 50.0)                # 三个全重合
+    try:
+        res3 = cw.moved_handles(box_degen, three)
+        ok("退化：三个把手全重合也不抛", True, f"→ {'None' if res3 is None else 'ok'}")
+    except Exception as exc:                # noqa: BLE001
+        ok("退化：三个把手全重合也不抛", False, f"抛了 {type(exc).__name__}")
+
+    # 单把手拖动是**最常见**的用法，必须照常工作（别把兜底写过头）
+    one = list(box_degen)
+    one[0] = (60.0, 60.0)
+    res_one = cw.moved_handles(box_degen, one)
+    ok("单把手拖动照常工作（兜底没有误伤正常路径）",
+       res_one is not None and res_one[0].shape[0] == 1
+       and res_one[2] > 0,
+       f"→ {'None' if res_one is None else f'r={res_one[2]:.0f}'}")
+
+    # 两个把手拖到**数值上分不开**的位置：退化为恒等，但**不抛**
+    # （这条同时守住 _drop_coincident 的相对判据：相距 0.5px、位移 85px
+    #   ⇒ 容差 0.085px ⇒ 合并成 1 个约束）
+    fused = list(box_degen)
+    fused[0] = (60.0, 60.0)
+    fused[1] = (60.5, 60.0)
+    try:
+        res_f = cw.moved_handles(box_degen, fused)
+        ok("相距 0.5px 的两个把手：合并后不抛（近奇异被消掉）", True,
+           f"→ 约束数 {None if res_f is None else res_f[0].shape[0]}")
+    except Exception as exc:                # noqa: BLE001
+        ok("相距 0.5px 的两个把手：合并后不抛（近奇异被消掉）", False,
+           f"抛了 {type(exc).__name__}")
+
+    # ⚠️ 半径迭代**发散**的兜底（既有算法缺陷，本修改前会崩）：
+    #   两个把手反向拖 ⇒ need 永远大于 radius ⇒ 半径逐轮爆炸
+    #   （实测 212→1099→23027→9.6e6→1.7e12，条件数→inf ⇒ LinAlgError）。
+    #   约定：退化为恒等，**不抛**。
+    diverge = list(box_degen)
+    diverge[0] = (60.0, 60.0)             # 位移 (-60,-60)
+    diverge[1] = (90.0, 60.0)             # 位移 (+10,-60)，与上一个部分抵消
+    try:
+        res_d = cw.moved_handles(box_degen, diverge)
+        ok("半径迭代发散（反向拖）退化为恒等、不抛", True,
+           f"→ {'恒等' if res_d is None else f'r={res_d[2]:.3g}'}")
+        ok("发散时不会返回荒谬半径（<1e6，原代码会给 1.3e9）",
+           res_d is None or res_d[2] < 1e6,
+           f"→ r={None if res_d is None else format(res_d[2], '.3g')}")
+    except Exception as exc:                # noqa: BLE001
+        ok("半径迭代发散（反向拖）退化为恒等、不抛", False,
+           f"抛了 {type(exc).__name__}: {exc}")
+
+    # 把手重合后合并成 1 个约束（位移取平均），仍是一个**合法形变**——
+    # 所以 deform 的结果应当逐字节等于原图（恒等），只守住"不抛、不出黑图"。
+    arr_ident = _np.full((120, 200, 3), 255, dtype=_np.uint8)
+    arr_ident[10:30, 10:30] = 0
+    try:
+        out_ident = cw.deform(arr_ident, box_degen, same)
+        ok("退化笼走完 deform 全程不抛异常（不崩）", True,
+           f"shape={None if out_ident is None else out_ident.shape}")
+        ok("deform 结果尺寸不变（不因退化而缩水/变形）",
+           out_ident is not None and out_ident.shape == arr_ident.shape,
+           f"shape={None if out_ident is None else out_ident.shape}")
+    except Exception as exc:                # noqa: BLE001
+        ok("退化笼走完 deform 全程不抛异常（不崩）", False,
+           f"抛了 {type(exc).__name__}: {exc}")

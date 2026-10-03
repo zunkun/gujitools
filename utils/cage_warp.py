@@ -88,11 +88,30 @@ FIELD_MAX = 40000
 BLOCK_PIXELS = 1 << 18
 #: 判定"把手动过 / 两点重合"的距离阈值（图片像素）。
 COINCIDENT = 1e-6
+#: 判定"两个把手位于同一处"的容差（图片像素）。去重时用
+#: （:func:`_drop_coincident`）：位置重合会让 RBF 矩阵奇异。
+#:
+#: ⚠️ **不能只用 1e-6**（实测踩过）：两个把手相距 0.5px 时矩阵只是
+#: **近**奇异，`solve` 不抛异常而是回��权重爆炸到 1e14，随后的半径
+#: 迭代（``need = |φ'|max·Σ|w|``）跟着发散，第三轮直接 LinAlgError。
+#: ⇒ 判据取"相对间距"：把手间距小于其**目标位移**的 1e-3 时，在数值上
+#: 已经无法把两个约束区分开，合并成一个是**正确**的（位移取平均，
+#: 两者本就几乎同向）；1e-3 远小于任何真实拖拽的分辨率。
+_COINCIDENT_REL = 1e-3
 #: Wendland 核梯度的上界：``|φ'(r)|`` 在 ``r = 1/4`` 处取到 ``135/64 ≈ 2.11``。
 #: 位移场梯度量级 ``≤ |φ'|max·Σ|wⱼ| / R``——拿它当作"会不会自交"的判据。
 _WENDLAND_GRAD = 135.0 / 64.0
 #: 影响半径的**起始**下限倍率（再按上面的梯度判据迭代抬高）。
 _RADIUS_FLOOR = 2.5
+#: 半径迭代的**发散上限**（相对 ``reach``，即最大位移）。超过就判定这次
+#: 拖动不可解、退化为恒等。
+#:
+#: ⚠️ 半径迭代 ``radius ← 1.1·|φ'|max·Σ|wⱼ|`` 在**位移互相抵消**时不收敛
+#: 而是爆炸：实测两个把手反向拖时半径逐轮 212 → 1099 → 23027 → 9.6e6
+#: → 1.7e12，条件数从 1.2e1 涨到 ``inf``，最后一轮 LinAlgError（这是既有
+#: 缺陷，本修改前就会崩）。取 1e4：比任何合理的形变范围（几个图宽）都大，
+#: 又远小于发散时那种量级，所以既能放过正常拖动、又能截住发散。
+_RADIUS_DIVERGE = 1e4
 
 
 def _numpy():
@@ -163,10 +182,62 @@ def wendland(r):
 
 
 def _solve_rbf(centres, shift, radius: float):
-    """解 ``Φw = shift``（``Φᵢⱼ = φ(|mᵢ−mⱼ|/R)``），返回每个把手的分量权重。"""
+    """解 ``Φw = shift``（``Φᵢⱼ = φ(|mᵢ−mⱼ|/R)``），返回每个把手的分量权重。
+
+    ⚠️ 奇异（把手重合）时抛 ``numpy.linalg.LinAlgError``。调用方
+    :func:`moved_handles` 已经把重合项去重，正常路径不该到这里；
+    这里的异常仍要能安全冒泡给上层（桌面侧有兜底）。
+    """
     np = _numpy()
     gap = np.linalg.norm(centres[:, None, :] - centres[None, :, :], axis=-1)
     return np.linalg.solve(wendland(gap / radius), shift)
+
+
+def _drop_coincident(centres, wanted):
+    """合并**数值上无法区分**的把手，返回合并后的 ``(centres, wanted)``。
+
+    为什么必须做：Wendland 核 ``φ(0) = 1``，两个位置重合的把手会让矩阵
+    第 i、j 行**完全相同** ⇒ 严格奇异 ⇒ ``np.linalg.solve`` 抛
+    ``LinAlgError``。这是随手可做的操作（把两个把手拖到同一处，命中半径
+    12 视图像素），异常一旦冒到 Qt 槽函数就是崩溃。
+
+    判据是**相对**的（:data:`_COINCIDENT_REL`）而不是绝对容差：严格重合要
+    去重，"几乎重合"更要——后者矩阵只是**近**奇异，``solve`` 不抛异常而是
+    回��爆炸的权重（实测相距 0.5px、位移 85px 时 ``|w|`` 冲到 1e14），
+    再把半径迭代（``need = |φ'|max·Σ|w|``）带进发散、第三轮 LinAlgError。
+    合并时目标位移取**算术平均**：相距 ≪1px 时两个位移在像素级本就不可分。
+
+    返回的 ``centres`` 保留每组的**第一个**原位置（位置是绘制与取半径的
+    依据，两者在容差内，取谁都行）。
+    """
+    np = _numpy()
+    if centres.shape[0] < 2:
+        return centres, wanted
+    keep: list[int] = []                 # 每组的代表下标（进 centres）
+    acc: list[list[float]] = []           # 每组已累加的位移与
+    count: list[int] = []                 # 每组的成员数
+    for i in range(centres.shape[0]):
+        gap_tol = max(float(np.linalg.norm(wanted[i])) * _COINCIDENT_REL,
+                      COINCIDENT)
+        hit = -1
+        for slot, j in enumerate(keep):
+            if float(np.linalg.norm(centres[i] - centres[j])) <= gap_tol:
+                hit = slot
+                break
+        if hit < 0:
+            keep.append(i)
+            acc.append([float(wanted[i][0]), float(wanted[i][1])])
+            count.append(1)
+        else:
+            acc[hit][0] += float(wanted[i][0])
+            acc[hit][1] += float(wanted[i][1])
+            count[hit] += 1
+    if len(keep) == centres.shape[0]:
+        return centres, wanted             # 没合并任何一项，原样返回
+    index = np.asarray(keep, dtype=np.intp)
+    merged = np.asarray(acc, dtype=np.float64) / \
+        np.asarray(count, dtype=np.float64)[:, None]
+    return centres[index], merged
 
 
 def influence_radius(cage_src, cage_dst, influence=None) -> float:
@@ -184,6 +255,12 @@ def moved_handles(cage_src, cage_dst, influence=None):
 
     没动过（或两个笼形状不一致）→ ``None``。**只有真的动过的把手**进方程
     组，所以"在笼线上加一个点"不会改变形变（自测有这个断言）。
+
+    ⚠️ **退化一律退化为恒等**（返回 ``None``），绝不把异常抛给调用方：
+    方程组在把手重合等退化配置下无解（见 :func:`_drop_coincident`），
+    异常一旦冒到 Qt 槽函数就是崩溃——而"这一帧不变形"完全可接受
+    （用户下次把把手分开一点就行）。口径与 ``solve_puppet`` 的
+    "解算失败退化为恒等"一致。
     """
     np = _numpy()
     home = np.asarray(cage_src, dtype=np.float64)
@@ -198,19 +275,48 @@ def moved_handles(cage_src, cage_dst, influence=None):
         return None
     centres = current[moved]
     wanted = shift[moved]
+    # ⚠️ 先去重再解方程组：位置重合 ⇒ 矩阵严格奇异 ⇒ 无解
+    centres, wanted = _drop_coincident(centres, wanted)
+    if centres.shape[0] == 0:
+        return None
 
     reach = float(np.linalg.norm(wanted, axis=1).max())
     radius = max(float(influence or 0.0), _RADIUS_FLOOR * reach)
-    for _ in range(8):
-        weights = _solve_rbf(centres, wanted, radius)
-        need = _WENDLAND_GRAD * float(np.linalg.norm(weights, axis=1).sum())
-        if need <= radius:
-            break
-        radius = need * 1.1
-    else:
-        # 迭代到上限还没收敛（把手挤在一起又拖得很远）：按最后的半径重解，
-        # 保证返回的权重与半径自洽。
-        weights = _solve_rbf(centres, wanted, radius)
+    # ⚠️ 方程组无解/退化时**一律退化为恒等**（返回 None），绝不把异常抛给
+    #   调用方——它会一路冒到 Qt 槽函数成为崩溃，而"这一帧不变形"完全
+    #   可接受（用户把把手分开一点再试）。口径与 ``solve_puppet`` 一致。
+    #
+    # ⚠️ **必须显式检测发散**（这是既有的算法坑，不是新引入的）：半径迭代
+    #   ``radius ← 1.1·|φ'|max·Σ|wⱼ|`` 在**位移互相抵消**时不收敛而是
+    #   **爆炸**——实测两个把手反向拖（(60,60) 拖出 (−60,−60)、(90,60)
+    #   拖出 (+10,−60)）时半径逐轮 212 → 1099 → 23027 → 9.6e6 → 1.7e12，
+    #   矩阵条件数从 1.2e1 一路涨到 ``inf``，最后一轮 LinAlgError。
+    #   单靠 `for _ in range(8)` 兜不住：第 8 轮的重解照样抛。
+    #   ⇒ 每轮检查半径是否已"大得没有意义"（超过影响盘的合理上界），
+    #   一旦发散立即返回 None。
+    span = float(max(1.0, reach)) * _RADIUS_DIVERGE
+    try:
+        weights = None
+        for _ in range(8):
+            weights = _solve_rbf(centres, wanted, radius)
+            need = _WENDLAND_GRAD * float(np.linalg.norm(weights, axis=1).sum())
+            if need <= radius:
+                break
+            if not math.isfinite(need) or need > span:
+                return None           # 发散：退化为恒等
+            radius = need * 1.1
+        else:
+            # 迭代到上限还没收敛（把手挤在一起又拖得很远）：按最后的半径重解，
+            # 保证返回的权重与半径自洽。
+            weights = _solve_rbf(centres, wanted, radius)
+    except np.linalg.LinAlgError:
+        return None
+    if weights is None:
+        return None
+    # 解出来的权重含非有限值（近似奇异时 solve 不抛异常、只回垃圾）——
+    # 同样退化为恒等：NaN 一旦流进位移场，后面逐像素采样会越界。
+    if not np.all(np.isfinite(weights)) or not math.isfinite(radius):
+        return None
     return centres, weights, radius
 
 

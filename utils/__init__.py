@@ -62,6 +62,13 @@ _LAZY = {
     "imread": ("utils.image_io", "imread"),
     "imwrite": ("utils.image_io", "imwrite"),
     "draw_boxes": ("utils.box_draw", "draw_boxes"),
+    # ⚠️ 登记 `draw_slots` 与 `draw_boxes` **同等重要**：`draw_slots` 吃的是
+    #    **槽位**（半幅 2 槽 / 整幅 1 槽，形态信息在里面），名/色由它自己按
+    #    槽位给。CLI 的 `detect --save` 与 GUI 的「导出标注图」都走它，所以
+    #    两边的标注外观不可能漂移。漏登记会让 `utils.draw_slots` 直接
+    #    AttributeError（且报错点离原因很远）。
+    "draw_slots": ("utils.box_draw", "draw_slots"),
+    "slot_names_colors": ("utils.box_draw", "slot_names_colors"),
     # 第三步提交产物的透明底编码（唯一实现，自带编码形态选择）
     "save_white_as_transparent": ("utils.transparent_png", "save_white_as_transparent"),
     # 变换笼（GIMP 口径）：RBF 位移场局部形变（numpy 延迟导入）。

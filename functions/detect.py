@@ -403,17 +403,12 @@ class DetectFunction(FunctionBase):
         只画**真正检测到的框**（None 项被 draw_boxes 跳过），因此
         「只检出左框」时不会画出错误的右框位置——与 GUI 预览一致。
         整幅页的框标为「整幅」并配专用色，不会被误读成左/右栏。
-        """
-        # 颜色/名称按框槽位覆盖：整幅用专用靛蓝 + 「整幅」，不是第 3 号的
-        # 「合并框」琥珀色。常数只在 utils.box_draw 里写一份。
-        from utils.box_draw import BOX_COLOR_FULL_BGR, BOX_COLORS_BGR  # noqa: PLC0415
 
-        annotated = utils.draw_boxes(
-            img_bgr,
-            [page.left, page.right, page.full],
-            names=["左框", "右框", "整幅"],
-            colors=[BOX_COLORS_BGR[0], BOX_COLORS_BGR[1], BOX_COLOR_FULL_BGR],
-        )
+        ⚠️ 名字/配色由 :func:`utils.box_draw.draw_slots` 按**槽位**给（不
+        在这里手写 ``[左,右,整幅]`` + 颜色表）——独立「检测文本框」模块页的
+        「导出标注图」走同一个函数，两边不可能漂移。
+        """
+        annotated = utils.draw_slots(img_bgr, page.slots())
         out_path = self.outpath / f"{image_path.stem}{self.output_suffix}"
         if not utils.imwrite(out_path, annotated):
             raise OSError(f"标注图写出失败: {out_path}")

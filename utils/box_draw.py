@@ -63,6 +63,18 @@ def box_kind_name(kind: str) -> str:
 BOX_COLOR_FULL_BGR: Tuple[int, int, int] = BOX_COLORS_BGR[3]  # 整幅（靛蓝 #4F46E5）
 BOX_NAME_FULL = "整幅"
 
+#: 半幅两槽的固定名/色（``[左, 右]`` 槽位顺序，缺失侧为 ``None``）。
+#:
+#: ⚠️ 与 :func:`slot_names_colors` 配套：**按槽位**给标注，不是按"框的序号"。
+#: 槽数就是形态（半幅 2 槽 / 整幅 1 槽，见 ``utils.box_geometry``），所以
+#: "只检出一侧"时画出来的仍是左框而不是"第 1 号框"。
+SLOT_NAMES_HALF: Tuple[str, str] = (BOX_NAMES[BOX_KIND_INDEX["left"]],
+                                    BOX_NAMES[BOX_KIND_INDEX["right"]])
+SLOT_COLORS_HALF: Tuple[Tuple[int, int, int], Tuple[int, int, int]] = (
+    BOX_COLORS_BGR[BOX_KIND_INDEX["left"]],
+    BOX_COLORS_BGR[BOX_KIND_INDEX["right"]],
+)
+
 _font_cache: dict = {}
 
 
@@ -155,6 +167,54 @@ def draw_boxes(
         label = f"{name} ({x1},{y1},{x2},{y2})"
         out = _draw_label(out, label, x1, y1, bgr, font_scale)
     return out
+
+
+def slot_names_colors(slots):
+    """**槽位**表示 → 与 ``slots`` 等长的 ``(names, colors)``（BGR）。
+
+    这是"槽位 → 标注外观"的**唯一实现**，两处调用方共用：
+
+    - ``functions.detect`` 的 ``--save`` 标注图；
+    - 独立「检测文本框」模块页的「导出标注图」。
+
+    ⚠️ 规则按**槽位**给，不按"过滤掉空项后的第几个框"：槽数就是形态
+    （半幅恒 2 槽 ``[左, 右]``、整幅 1 槽 ``[整幅]``，见
+    :mod:`utils.box_geometry`）。按序号给会让"只检出一侧"的那一页把左框
+    标成"第 1 号框"，也会把整幅标成左框。
+
+    ``None`` 项原样占位（``draw_boxes`` 会跳过它，GUI 侧则按位置对齐），
+    这样"哪一侧缺失"的信息不丢。
+    """
+    slots = list(slots or [])
+    if len(slots) == 1:
+        return [BOX_NAME_FULL] * len(slots), [BOX_COLOR_FULL_BGR] * len(slots)
+    if len(slots) == 2:
+        return list(SLOT_NAMES_HALF), list(SLOT_COLORS_HALF)
+    # 防御畸形存档（>2 槽）：退回按序号给，别让调用方炸掉
+    return [box_name(i) for i in range(len(slots))], [
+        box_color(i) for i in range(len(slots))
+    ]
+
+
+def draw_slots(img_bgr, slots, thickness: int = 4, show_label: bool = True):
+    """在图像上绘制**槽位**表示的框（标注外观由 :func:`slot_names_colors` 定）。
+
+    与 :func:`draw_boxes` 的区别只有一处，但很关键：调用方手上是**槽位**
+    （可能含 ``None``、长度 1 或 2，形态信息就在里面），不该自己拆成
+    ``[left, right, full]`` 再逐个传名/配色——那份拆法在
+    ``functions/detect`` 与 desktop 之间各写过一次，已经漂移过一次。
+
+    返回绘制后的 BGR 图像（新数组，不修改入参）。
+    """
+    names, colors = slot_names_colors(slots)
+    return draw_boxes(
+        img_bgr,
+        list(slots or []),
+        thickness=thickness,
+        show_label=show_label,
+        names=names,
+        colors=colors,
+    )
 
 
 def _pick(seq, index):
