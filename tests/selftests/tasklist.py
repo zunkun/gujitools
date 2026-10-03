@@ -90,11 +90,29 @@ def run(ctx) -> None:
         "任务名称列自适应拉伸",
         header_view.sectionResizeMode(1) == QHeaderView.ResizeMode.Stretch,
     )
+    # ⚠️ 这里守的是「列宽容得下胶囊」而不是某个具体像素值：胶囊数量**随详情
+    # 变**（启用了「图片拼版」的任务是 5 个，没启用是 4 个），钉死 256 会在
+    # 拼版那档把字裁掉。真正的不变量是：容器宽度 ≥ 全部胶囊 sizeHint 之和
+    # + 间隙 + 边距（胶囊是 QSizePolicy.Fixed，窄了直接被裁）。
+    from desktop.ui import StatusChip as _Chip
+
+    _chips_cell = table.cellWidget(0, 3)
+    _chips_cell.layout().activate()
+    _chips = _chips_cell.findChildren(_Chip)
+    _need = (
+        sum(c.sizeHint().width() for c in _chips)
+        + T.SPACE_XS * (len(_chips) - 1)
+        + 2 * T.SPACE_SM
+    )
     ok(
         "子任务状态列固定宽",
-        header_view.sectionResizeMode(3) == QHeaderView.ResizeMode.Interactive
-        and header_view.sectionSize(3) == 256,
-        str(header_view.sectionSize(3)),
+        header_view.sectionResizeMode(3) == QHeaderView.ResizeMode.Interactive,
+        str(header_view.sectionResizeMode(3)),
+    )
+    ok(
+        f"子任务状态列宽放得下全部胶囊（本行 {len(_chips)} 个也不截字）",
+        header_view.sectionSize(3) >= _need,
+        f"列宽={header_view.sectionSize(3)} 需要={_need}",
     )
 
     # 「序号」列 = 任务自己的编号（0001、0002…），不是行号；且列宽必须真的

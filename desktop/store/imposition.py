@@ -55,6 +55,23 @@ class ImpositionMixin:
         """读拼版文档（缺失/损坏一律回落成空文档，调用点不用判空）。"""
         return normalize_doc(read_json(self.imposition_doc_path(task_id), None))
 
+    def imposition_enabled(self, task_id: str) -> bool:
+        """这个任务**是否启用了拼版**（只有 ``enabled``，不看有没有拼版页）。
+
+        给**任务列表**用：列表要回答"这条任务有几个子任务"，而拼版是个可选
+        节点——详情页勾了「在流程中启用图片拼版」才把它算进流程（用户 2026-10-03
+        口径："子任务到底有几个需要根据详情决定"）。所以判据是**勾没勾**，
+        不是"生不生效"（生效还要至少一页，那是 ``imposition_active`` 的口径）。
+
+        ⚠️ 这里**只读 enabled 一个键**，不走 ``load_imposition_doc``：那份文档
+        逐页带 rect/rotation，200 页的书能有几百 KB，列表页每个任务都要读一次，
+        没必要把整份版面都反序列化。缺文件/坏文件一律当"没启用"。
+        """
+        if not task_id:
+            return False
+        data = read_json(self.imposition_doc_path(task_id), None)
+        return bool(data.get("enabled")) if isinstance(data, dict) else False
+
     def save_imposition_doc(self, task_id: str, doc: dict) -> bool:
         """写拼版文档，返回是否真的写了。
 

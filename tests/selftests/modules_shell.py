@@ -99,6 +99,8 @@ def run(ctx) -> None:
         ok("已构造的模块都属于注册表", built_before <= set(keys), str(sorted(built_before)))
 
     # ---- 5. 逐个模块：能切过去、路由能反查回来 ----
+    from desktop.steps.spec import spec_by_key
+
     for module in MODULES:
         w.shell.show_module(module.key)
         app.processEvents()
@@ -109,9 +111,14 @@ def run(ctx) -> None:
             w.shell.current_route() == module.key,
             w.shell.current_route(),
         )
+        # ⚠️ 页头标题对的是 ``spec.title``、**不是** ``module.title``（那是
+        #    ``spec.nav_name()``）。导航那一列有自己的文案（用户 2026-10-03
+        #    定的「PDF图片提取」等，导航是短标签、页头是完整标题），两者
+        #    **有意不同**。这条断言守住的是"各自都来自 spec，没有第二份
+        #    硬编码文案"，而不是"两处字面相同"。
         ok(
-            f"模块 {module.key} 页头标题与注册表一致",
-            getattr(page, "TITLE", None) == module.title,
+            f"模块 {module.key} 页头标题来自 spec.title",
+            getattr(page, "TITLE", None) == spec_by_key(module.key).title,
             str(getattr(page, "TITLE", None)),
         )
         # 用户 2026-10-02 要的"页面上的大输入框"：每个模块都要有，且横跨整幅
@@ -346,17 +353,21 @@ def _check_singletask_thumbnails(ctx, ok) -> None:
     # 真造一本 PDF，喂给真实的图片提取页
     pdf = make_pdf(Path(ctx.tmp) / "singletask_probe.pdf", 3)
     other = make_pdf(Path(ctx.tmp) / "singletask_other.pdf", 2)
-    cache = singletask_thumbnails_dir(spec.title, pdf)
+    # ⚠️ 用 ``disk_key()`` 而非 ``title``：缓存目录名锚在路由键上，改文案
+    #    不会让磁盘路径漂移（自测也必须按同一口径拼期望值，否则它跟着文案
+    #    一起错，反而查不出真的回归）。
+    cache = singletask_thumbnails_dir(spec.disk_key(), pdf)
 
     ok("singletask 落在 guji/singletask 下",
        "singletask" in cache.parts, str(cache))
     ok("不同子任务各有自己的目录",
-       cache != singletask_thumbnails_dir("去底色", pdf))
+       # ⚠️ 用另一个步骤的 disk_key（不是它的 title）：目录名锚在路由键上。
+       cache != singletask_thumbnails_dir(spec_by_key("rembg").disk_key(), pdf))
     # ⚠️ 这一条是"不同书不共用缓存"的护栏：缩略图文件名是页号，共用目录会让
     #    A 书第 1 页被当成 B 书第 1 页的命中缓存 ⇒ 翻出别本书的内容。
+    other_dir = singletask_thumbnails_dir(spec.disk_key(), other)
     ok("不同书各有自己的缓存目录（缩略图名是页号，不能混）",
-       cache != singletask_thumbnails_dir(spec.title, other),
-       f"{cache} vs {singletask_thumbnails_dir(spec.title, other)}")
+       cache != other_dir, f"{cache} vs {other_dir}")
     ok("目录名里的非法字符被洗掉",
        all(ch not in safe_dirname('a<b>c:d"e/f\\g|h?i*j') for ch in '<>:"/\\|?*'),
        safe_dirname('a<b>c:d"e/f\\g|h?i*j'))
@@ -399,7 +410,7 @@ def _check_singletask_thumbnails(ctx, ok) -> None:
         # 换一本书：页数不同的两本不能互相污染
         page.control.set_source(other)
         ctx.app.processEvents()
-        other_cache = singletask_thumbnails_dir(spec.title, other)
+        other_cache = singletask_thumbnails_dir(spec.disk_key(), other)
         other_names: list[str] = []
         for _ in range(150):
             ctx.app.processEvents()

@@ -55,7 +55,7 @@ detect    ── 检测左右文本框坐标（唯一实现；命令行须 --sav
    └──────────► cropremove  ── 裁剪 + 去底色（一步完成）
                                 （支持 area/border 精细控制）
 
-rembg     ── 整图去底色（无文本框检测）
+rembg     ── 整图去底色（无检测文本框）
    │
    ▼
 print     ── 图片目录 → PDF（支持 A3/A4/A5/B5、标题和页码）
@@ -417,9 +417,12 @@ YOLO 识别每页的**左、右文本框**，结果存入 `boxes.json`（不生�
 - 点它弹出挑选窗口，从**还没被任何一页拼版用过**的图片（第 3 步「提交本次任务」
   的成品图）里挑**两张**：**序号在前的排在右侧、序号大的排在左侧**；
 - 右侧操作区可**拖动 / 四角四边缩放拉伸 / 旋转**，把两张图摆到一张纸上；
-- **生效规则**：勾选「在流程中启用图片拼版」且至少有一页拼版时，第 4 步的
-  待打印列表与「生成PDF」改用拼版结果（`stages/imposition/`）；否则照旧用
-  第 3 步的去底色成品图（`stages/rembg/`）。拼版不是必须的。
+- **生效规则**：勾选「在流程中启用图片拼版」后，第 4 步的待打印列表与「生成PDF」
+  就改用拼版结果（`stages/imposition/`）；不勾选则用第 3 步的去底色成品图
+  （`stages/rembg/`）。拼版不是必须的；勾了但还没拼页时，第 4 步会提示先去
+  「选择拼版」。
+- 切换这个开关后，之前生成的 PDF 属于**旧来源**的产物：第四步会停用「下载PDF」
+  并提示重新生成；任务列表里该任务的「子任务状态」也会多一个「拼版」胶囊。
 
 #### 第 4 步：生成 PDF（print）
 
@@ -751,7 +754,7 @@ python cli.py run print --config ./book.yaml
 
 - [功能模块概览](docs/functions/overview.md) — 模块清单与命令关系
 - [extract 手册](docs/functions/extract.md) — 页码解析、缩放计算、渲染模式
-- [detect 手册](docs/functions/detect.md) — 左右文本框检测、坐标上报、`--save` 标注图
+- [detect 手册](docs/functions/detect.md) — 左右检测文本框、坐标上报、`--save` 标注图
 - [crop 手册](docs/functions/crop.md) — YOLO 检测、左右分割算法
 - [rembg 手册](docs/functions/rembg.md) — Otsu 阈值、HSV 印章提取
 - [cropremove 手册](docs/functions/cropremove.md) — area 区域模式、border 边框控制

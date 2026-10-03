@@ -156,9 +156,57 @@ class PrintListMixin:
             return cand
         return None
 
+    # ------------------------------------------------------- 取图来源 / 旧数据
+    def print_source_stage(self) -> str:
+        """第四步**当前**的取图来源阶段 key（``rembg_submit`` 或 ``imposition``）。
+
+        ⚠️ 与 :meth:`print_source_dir` 同源：那边取路径、这边取 key，都走
+        ``ports.print_pages_supplier(imposition_active())`` 这一次判定——
+        "PDF 是从哪儿取的"只有一个答案，不许两处各判一次。
+        """
+        from desktop.steps.ports import print_pages_supplier
+
+        return print_pages_supplier(self.imposition_active())
+
+    def _print_source_switched(self) -> bool:
+        """磁盘上那份 PDF 是不是**换了取图来源之后**生成的（旧数据）。
+
+        用户 2026-10-03："之前没有启用拼板但生成了 pdf，此时再次启用拼板，
+        则生成 PDF 的数据要来源于拼板，**旧的数据不显示**"。所以这份判定是
+        "旧数据不显示"的开关——判据与实现见
+        :func:`desktop.services.stale_chain.print_source_switched`。
+        """
+        if not self.task_id:
+            return False
+        from desktop.services.stale_chain import print_source_switched
+
+        return print_source_switched(
+            self.store.all_stage_runs(self.task_id), self.print_source_stage()
+        )
+
+    def _current_print_pdf_path(self) -> Path | None:
+        """**当前取图来源下**可用的 PDF；来源已切换则返回 ``None``。
+
+        所有"给用户看/下载这份 PDF"的地方都走这里（第四步预览的下载按钮、
+        下载动作本身），别再直接用 :meth:`_latest_print_pdf_path`——那个只
+        回答"磁盘上有没有"，不回答"还是不是当前的"。
+        """
+        if self._print_source_switched():
+            return None
+        return self._latest_print_pdf_path()
+
     def _download_print_pdf(self) -> None:
         """将已生成的 PDF 另存到用户选择的位置（默认下载目录、同名文件）。"""
         if not self.task_id:
+            return
+        # ⚠️ 换了取图来源之后，磁盘上那份 PDF 属于**旧数据**，不再提供下载
+        # （用户 2026-10-03："旧的数据不显示"）。先说清楚为什么不能下，
+        # 别让用户以为是程序坏了。
+        if self._print_source_switched():
+            self._toast(
+                "warning", "PDF 需要重新生成",
+                "取图来源已改变（图片拼版开关），请先点「生成 PDF」再下载。",
+            )
             return
         # 优先用下载按钮当前绑定的 PDF；否则按最近一次 print 参数解析
         source = getattr(self.print_preview, "_pdf_path", None)

@@ -1204,6 +1204,223 @@ def run(ctx) -> None:
            {str(Path(e["file"]).parent) for e in entries} == {str(rembg_dir)},
            str(_names([e["file"] for e in entries])))
 
+        # ------ 6b. 列表胶囊 + 「旧数据不显示」（用户 2026-10-03）------
+        # 口径一："任务列表子任务到底有几个需要根据详情决定，特别是拼板这个
+        #        节点可能存在，需要看详情里面是否启用，如果启用就添加这个节点"
+        # 口径二："如果之前流程里面没有启用拼板，但是生成了pdf，此时再次启用
+        #        拼板，则生成PDF的数据要来源于拼板，旧的数据不显示"
+        from desktop.services.stale_chain import print_source_switched
+        from desktop.store import IMPOSITION_STAGE, STAGE_SHORT
+        from desktop.workers.task_rows_worker import TaskRowsWorker
+
+        def _chips_of(task_id: str) -> list[dict]:
+            """列表行 worker 真实产出（不碰表格控件，纯数据层）。"""
+            worker = TaskRowsWorker(repo)
+            got: list = []
+            worker.completed.connect(got.append)
+            worker.failed.connect(lambda m: got.append(m))
+            worker.run()
+            rows = got[0]
+            return rows[0]["stages"] if isinstance(rows, list) else []
+
+        page._set_imposition_checked(False)
+        page._imposition_timer.stop()
+        pump(ctx.app, times=6)
+        ok("未启用拼版：列表只有四个子任务",
+           len(_chips_of(tid)) == 4, str([c["short"] for c in _chips_of(tid)]))
+        page._set_imposition_checked(True)
+        page._imposition_timer.stop()
+        pump(ctx.app, times=6)
+        chips = _chips_of(tid)
+        shorts = [c["short"] for c in chips]
+        ok("启用拼版：列表多一个子任务（共五个）",
+           len(chips) == 5, str(shorts))
+        ok("拼版胶囊排在 PDF 之前（与流程条节点同位）",
+           STAGE_SHORT[IMPOSITION_STAGE] in shorts
+           and shorts.index(STAGE_SHORT[IMPOSITION_STAGE])
+           == shorts.index(STAGE_SHORT["print"]) - 1,
+           str(shorts))
+        ok("拼版胶囊文案取自 spec 的 short_name（不另写一份中文）",
+           STAGE_SHORT[IMPOSITION_STAGE] == "拼版",
+           STAGE_SHORT[IMPOSITION_STAGE])
+        # 状态：勾了但没拼页 = 未生效（灰）；勾了且拼了页 = 生效（绿）
+        # ⚠️ 这里临时清空 pages，测完**原样恢复**第 6 节拼好的两页——后面
+        # 取图来源/旧数据的断言都建立在"拼版已生效"之上。
+        doc_backup = repo.load_imposition_doc(tid)
+        repo.save_imposition_doc(tid, {"enabled": True, "pages": []})
+        pending_chip = next(
+            c for c in _chips_of(tid) if c["short"] == STAGE_SHORT[IMPOSITION_STAGE]
+        )
+        ok("启用但还没拼页 → 拼版胶囊为未执行（灰）",
+           pending_chip["status"] == "pending", str(pending_chip))
+        repo.save_imposition_doc(tid, doc_backup)
+        live_chip = next(
+            c for c in _chips_of(tid) if c["short"] == STAGE_SHORT[IMPOSITION_STAGE]
+        )
+        ok("启用且拼了页 → 拼版胶囊为成功（绿）",
+           live_chip["status"] == "success", str(live_chip))
+
+        # 「旧数据」：伪造一份**去底色来源**下生成过的 PDF + 对应运行记录
+        print_dir = repo.stage_dir(tid, "print")
+        print_dir.mkdir(parents=True, exist_ok=True)
+        (print_dir / "print.pdf").write_bytes(b"%PDF-1.4 old")
+        old_run = repo.create_stage_run(tid, "print", {
+            "pdf_name": "print.pdf", "source_stage": "rembg_submit",
+        })
+        repo.finish_stage(tid, old_run, "success", str(print_dir))
+        page._set_imposition_checked(False)
+        page._imposition_timer.stop()
+        pump(ctx.app, times=6)
+        page._refresh_stale_notices()
+        ok("来源没变时那份 PDF 仍然可用（不误伤）",
+           not page._print_source_switched()
+           and page._current_print_pdf_path() is not None)
+        ok("从未成功生成过 → 不判过期",
+           not print_source_switched({}, "imposition"))
+        ok("老记录没有 source_stage → 不误判过期",
+           not print_source_switched(
+               {"print": [{"status": "success", "finished_at": 1.0,
+                           "parameters": {"pdf_name": "print.pdf"}}]},
+               "imposition",
+           ))
+
+        # 现在启用拼版：那份 PDF 成了旧数据
+        page._set_imposition_checked(True)
+        page._imposition_timer.stop()
+        pump(ctx.app, times=6)
+        page._select_stage(3)
+        pump(ctx.app, times=6)
+        ok("启用拼版后取图来源切到 imposition",
+           page.print_source_stage() == "imposition",
+           page.print_source_stage())
+        ok("换来源后旧 PDF 判为过期（缓存跟着开关走）",
+           page._print_source_stale)
+        ok("旧数据不显示：当前可用 PDF 为空",
+           page._current_print_pdf_path() is None,
+           str(page._current_print_pdf_path()))
+        ok("「下载 PDF」按钮随之禁用",
+           not page.print_preview.download_button.isEnabled())
+        ok("预览控件的 PDF 绑定被清空",
+           page.print_preview._pdf_path is None,
+           str(page.print_preview._pdf_path))
+        notice = page._regenerate_notice("print")
+        ok("状态行提示取图来源已改（要点名拼版）",
+           bool(notice) and "取图来源已改为" in notice
+           and "拼版" in notice, str(notice))
+        # 磁盘上那份文件**不删**（用户自己的产物），只是不再提供/不再算结果
+        ok("旧 PDF 文件仍在磁盘上（只是不显示，不删用户产物）",
+           (print_dir / "print.pdf").exists())
+        toasts: list = []
+        real_toast = page._toast
+        page._toast = lambda *a, **k: toasts.append(a)
+        try:
+            page._download_print_pdf()
+        finally:
+            page._toast = real_toast
+        ok("旧数据下载被拦下并说明原因",
+           any("重新生成" in str(t) for t in toasts), str(toasts))
+        # 反向也对称：取消启用 → 又变回去底色，但历史是去底色 → 不判旧
+        page._select_stage(IMPOSITION_INDEX)
+        pump(ctx.app, times=4)
+        page._set_imposition_checked(False)
+        page._imposition_timer.stop()
+        pump(ctx.app, times=6)
+        ok("反向切换对称：回到原来源后不再判旧、PDF 恢复可用",
+           not page._print_source_switched()
+           and page._current_print_pdf_path() is not None)
+
+        # ---- 6c. 「勾了就算启用」：不要求已经有拼版页（用户 2026-10-03 报障）----
+        # 早先 ``imposition_active()`` 额外要求"至少拼了一页"，于是用户勾了
+        # 「在流程中启用图片拼版」却还没拼页时——第四步仍取去底色图、流程条仍是
+        # 灰虚线 + 绕行线，报"启用不生效 / 流程线没更新"。现在把**启用**
+        # （用户意图）与**有没有页**（当前进度）彻底分层。
+        page._save_imposition_pages([])
+        # ⚠️ **别停合成定时器**：清空拼版页必须真的跑一轮合成（``compose_doc``
+        # 见 pages=[] 会 ``_sweep_stale(dest, 0)`` 把 stages/imposition 收干净）。
+        # 残留的 0001.png 会让第四步把上一轮的图当成本轮结果——这正是
+        # "启用后不按拼板来"的另一种形态，必须由真实路径清掉。
+        page._compose_imposition_async()
+        for _ in range(60):
+            pump(ctx.app, times=2)
+            if not page._imposition_composing and not page._imposition_dirty:
+                break
+        pump(ctx.app, times=6)
+        stale_pngs = sorted(repo.imposition_output_dir(tid).glob("*.png"))
+        ok("清空拼版页后：产物目录被一并收干净（不拿上一轮的图当结果）",
+           stale_pngs == [], str([p.name for p in stale_pngs]))
+        page._set_imposition_checked(False)
+        page._imposition_timer.stop()
+        pump(ctx.app, times=6)
+        ok("（前置）未启用：取图 = 去底色",
+           page.print_source_dir() == rembg_dir and not page.imposition_active())
+        page._set_imposition_checked(True)
+        page._imposition_timer.stop()
+        pump(ctx.app, times=6)
+        ok("勾了启用（还没拼页）→ 判定为已启用", page.imposition_active())
+        ok("勾了启用（还没拼页）→ 流程条点亮为生效态（徽标转对勾）",
+           page.step_bar.imposition_node.badge._status == "success",
+           f"badge={page.step_bar.imposition_node.badge._status}")
+        ok("勾了启用（还没拼页）→ 第四步取图已切到 stages/imposition",
+           page.print_source_dir() == repo.imposition_output_dir(tid),
+           str(page.print_source_dir()))
+        ok("启用与有无产物分两层：已启用但还没有页",
+           page.imposition_active() and not page.imposition_has_pages())
+        ok("启用但没拼页时列表为空（而不是悄悄回退去底色）",
+           page._print_entries()[0] == [],
+           str([e["file"] for e in page._print_entries()[0]]))
+        ok("启用但没拼页时状态行说清「没有拼版页」而不是「未生效」",
+           "拼版已启用" in page.imposition_panel_status.text()
+           and "没有拼版页" in page.imposition_panel_status.text(),
+           page.imposition_panel_status.text())
+        # 点「生成 PDF」必须给**拼版专属**提示，不能把人引去第三步
+        toasts2: list = []
+        real_toast2 = page._toast
+        page._toast = lambda *a, **k: toasts2.append(a)
+        try:
+            page._select_stage(3)
+            pump(ctx.app, times=4)
+            page._run_stage_unchecked(False)
+        finally:
+            page._toast = real_toast2
+        ok("启用但没拼页时生成 PDF → 提示去拼版（不是回第三步）",
+           any("拼版" in str(t) and "选择拼版" in str(t) for t in toasts2),
+           str(toasts2))
+        # 拼一页 → "有产物"成立（同一判据下只是进度变了）
+        page._select_stage(IMPOSITION_INDEX)
+        pump(ctx.app, times=4)
+        page._save_imposition_pages([{
+            "items": [
+                {"file": str(a), "rect": [0, 0, 200, 600], "rotation": 0.0},
+                {"file": str(b), "rect": [200, 0, 200, 600], "rotation": 0.0},
+            ],
+        }])
+        page._imposition_timer.stop()
+        page._compose_imposition_now()
+        pump(ctx.app, times=4)
+        ok("拼上一页后：有产物成立、来源仍是拼版",
+           page.imposition_has_pages()
+           and page.print_source_dir() == repo.imposition_output_dir(tid))
+        # ⚠️ 恢复**两页**基线：6c 只拼了一页，而第 7 节的「上一页/下一页」用例
+        # 需要能翻到第二页。别让这段的临时状态漏给后面。
+        page._save_imposition_pages([
+            {"items": [
+                {"file": str(a), "rect": [0, 0, 200, 600], "rotation": 0.0},
+                {"file": str(b), "rect": [200, 0, 200, 600], "rotation": 0.0},
+            ]},
+            {"items": [
+                {"file": str(c), "rect": [0, 0, 200, 600], "rotation": 0.0},
+                {"file": str(d), "rect": [200, 0, 200, 600], "rotation": 0.0},
+            ]},
+        ])
+        page._imposition_timer.stop()
+        page._compose_imposition_now()
+        page.imposition_view.set_current(0)
+        pump(ctx.app, times=4)
+        ok("（恢复）两页拼版就位，供第 7 节继续",
+           len(page._imposition_pages()) == 2 and page.imposition_active(),
+           f"pages={len(page._imposition_pages())} "
+           f"active={page.imposition_active()}")
+
         # ---------------- 7. 面板动作：复位 / 删除 ----------------
         # （页序在左列拖动排序，翻页在画布下方「上一页/下一页」——面板上
         #   不再有「左转/右转 90°」与「上移/下移」，用户 2026-09-30 口径）
@@ -1363,7 +1580,11 @@ def run(ctx) -> None:
            f"pages={[[Path(i['file']).name for i in p['items']] for p in page._imposition_pages()]} "
            f"cur={page.imposition_view.current_index()} "
            f"active={page.imposition_active()}")
-        # 把最后一页的两张也删光：全部页清空 → 视为未生效（取图回退去底色）
+        # 把最后一页的两张也删光：全部页清空。
+        # ⚠️ 口径（用户 2026-10-03）：**删光只是"没有可拼的图"，不等于"未启用"**
+        # ——拼版仍启用，所以取图来源仍指向 stages/imposition（此时是空目录），
+        # 第四步会提示先去拼版。早先这里断言"回退去底色"，那是"启用还要额外
+        # 满足有拼页"的旧口径，正是用户报的"启用不生效"的根源。
         page.imposition_view.canvas.select(0)
         page._on_imposition_delete_item()
         page._imposition_timer.stop()
@@ -1372,14 +1593,16 @@ def run(ctx) -> None:
         page._on_imposition_delete_item()
         page._imposition_timer.stop()
         pump(ctx.app, times=4)
-        ok("删光全部图片：页清空、视为未生效（取图回退去底色）",
+        ok("删光全部图片：页清空，但仍保持启用（取图来源不退回去底色）",
            page._imposition_pages() == []
            and page.imposition_view.current_index() == -1
-           and not page.imposition_active()
-           and page.print_source_dir() == rembg_dir,
+           and not page.imposition_has_pages()
+           and page.imposition_active()
+           and page.print_source_dir() == repo.imposition_output_dir(tid),
            f"pages={page._imposition_pages()} "
            f"cur={page.imposition_view.current_index()} "
            f"active={page.imposition_active()} "
+           f"has_pages={page.imposition_has_pages()} "
            f"src={page.print_source_dir()} vs {rembg_dir}")
         _qw.Dialog = _real_dialog  # 恢复真实弹窗
 

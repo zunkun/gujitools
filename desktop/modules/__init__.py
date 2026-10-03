@@ -28,7 +28,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
-from desktop.steps.spec import SPECS
+from desktop.steps.spec import NAV_STEPS, spec_by_key
 
 
 @dataclass(frozen=True)
@@ -73,11 +73,18 @@ def _page_factory(key: str):
 
 #: 左侧导航的模块清单（顺序即显示顺序）。
 #:
-#: ⚠️ **不是独立的一份清单**：它是 ``desktop.steps.spec.SPECS`` 里 ``nav=True``
-#: 的派生结果——标题取 ``title``、悬停提示取 ``nav_tip()``、图标取 ``nav_icon``。
+#: ⚠️ **不是独立的一份清单**：它按 ``desktop.steps.spec.NAV_STEPS``（``SPECS`` 里
+#: ``nav=True`` 者的**已排序** key 列表）逐个取 spec 派生——标题取 ``nav_name()``
+#: （**不是** ``title``：导航那一列有自己的文案，见 ``StepSpec.nav_title``）、
+#: 悬停提示取 ``nav_tip()``、图标取 ``nav_icon``。
 #: 一个步骤"要不要进左侧导航"由它自己的 spec 说（``nav``），而不是在这里再写
 #: 第二遍（以前正是两处并存，文案已经漂过一次：导航写「图片提取」、流程条写
 #: 「提取图片」，改一处忘一处）。
+#:
+#: ⚠️ **遍历 ``NAV_STEPS`` 而不是 ``SPECS``**：显示顺序由 ``StepSpec.nav_order``
+#: 决定（"生成PDF" 排最后），而 ``NAV_STEPS`` 是唯一算好这个顺序的地方。这里直接
+#: 遍历 ``SPECS`` 会拿到书写顺序 ⇒ ``nav_order`` 形同虚设（``modules_shell`` 的
+#: "注册表 = NAV_STEPS 派生（顺序一致）"就是守这条的）。
 #:
 #: 2026-10-02：四条主链步骤 + 拼版**全部**有了独立模块页，故这里现在是 5 条。
 #: 判断依据永远是 ``spec.nav``，本文件不维护数量（``modules_shell`` 自测也按
@@ -85,13 +92,12 @@ def _page_factory(key: str):
 MODULES: tuple[Module, ...] = tuple(
     Module(
         key=spec.key,
-        title=spec.title,
+        title=spec.nav_name(),
         icon=spec.nav_icon,
         subtitle=spec.nav_tip(),
         factory=_page_factory(spec.key),
     )
-    for spec in SPECS
-    if spec.nav
+    for spec in (spec_by_key(key) for key in NAV_STEPS)
 )
 
 

@@ -10,6 +10,11 @@
 ⚠️ 不比对参数。参数级的"待更新"另有专门机制（见 `submit_state.py`：
 生成预览 → 提交本次任务的 new_version / preview_stale），本模块只回答
 "上游又跑过一次、而下游还是那之前的产物吗"。
+
+另有一类**不是**时间戳的过期：第四步「生成 PDF」的取图来源可以整体换掉
+（勾上「图片拼版」后从去底色产物改成拼版产物）。换来源之后磁盘上那份 PDF
+就属于旧数据了——由 :func:`print_source_switched` 判定（比对运行记录里
+记下的来源，而不是时间）。
 """
 
 from __future__ import annotations
@@ -90,3 +95,33 @@ def stale_upstream(runs: dict) -> dict[str, dict]:
         if newest is not None:
             out[stage] = newest
     return out
+
+
+# ---------------------------------------------------------------- 拼版开关
+def print_source_switched(runs: dict, current_source: str) -> bool:
+    """已生成的 PDF 是不是在**换了取图来源之后**生成的（旧数据）。
+
+    用户 2026-10-03 的口径：
+
+    > 任务详情里面如果启用了拼板，则最后一步生成 pdf 的数据来源就是拼板，
+    > 如果之前流程里面没有启用拼板，但是生成了 pdf，此时再次启用拼板，
+    > 则生成 PDF 的数据要来源于拼板，旧的数据不显示
+
+    所以第四步要能回答"磁盘上那份 PDF 还是当前来源下的产物吗"——不能
+    变了来源还让用户下载/预览上一轮的去底色 PDF，那正是"旧数据"。
+
+    判据：最近一次**成功**的 print 运行记录里存了当时的取图来源
+    （``parameters["source_stage"]``，见 runner 注入），与当前来源不同即过期。
+
+    - 下游从未成功过 → 不判过期（界面本来就说"未执行"）；
+    - 老任务的记录里没有 ``source_stage``（本字段引入前生成的）→ **不判过期**，
+      宁可少提示也不凭空说用户的 PDF 有问题。
+    """
+    latest = latest_success(runs.get("print"))
+    if latest is None:
+        return False
+    params = latest.get("parameters") or {}
+    recorded = params.get("source_stage")
+    if not recorded:
+        return False  # 老记录没有这个字段 → 无从判断，别误报
+    return str(recorded) != str(current_source)

@@ -4,7 +4,7 @@ The worker emits JSON Lines on stdout so the GUI remains independent from
 heavy libraries. 阶段执行器按职责拆分在 desktop/stages/ 包：
 
 - desktop.stages.events        事件输出 + print 拦截/进度解析
-- desktop.stages.detect_stage  detect（YOLO 文本框检测）
+- desktop.stages.detect_stage  detect（YOLO 检测文本框）
 - desktop.stages.generic_stage 通用 CLI 阶段 + extract 渲染
 - desktop.stages.print_stage   print（效果图合成 + 生成 PDF）
 - desktop.stages.rembg_stage   rembg_submit（最终图片合成）
@@ -58,9 +58,7 @@ def _emit_fatal(exc: BaseException) -> None:
     """
     import traceback
 
-    detail = "".join(
-        traceback.format_exception(type(exc), exc, exc.__traceback__)
-    )
+    detail = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
     message = f"子任务进程启动失败：{type(exc).__name__}: {exc}"
     try:
         from desktop.stages.events import emit
@@ -135,9 +133,7 @@ def main() -> int:
     try:
         if _IMPORT_ERROR is not None:
             # 依赖/插件层面的 import 失败：连阶段模块都没加载进来
-            raise RuntimeError(
-                f"worker 依赖加载失败（import 期异常）：{_IMPORT_ERROR}"
-            ) from _IMPORT_ERROR
+            raise RuntimeError(f"worker 依赖加载失败（import 期异常）：{_IMPORT_ERROR}") from _IMPORT_ERROR
         return _run()
     except SystemExit:
         raise

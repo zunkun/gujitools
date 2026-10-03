@@ -70,10 +70,14 @@ def edited_page_dir() -> Path:
     才写进用户选的目录的。所以手改的那张先存在 singletask 下（用户 2026-10-03
     定的独立任务缓存区），导出时再盖到对应成品上——输出目录归用户，程序只往
     里写最终成品。
+
+    ⚠️ 目录名走 ``spec.disk_key()``（= ``imposition``）而不是标题：这里存着
+    用户手改过的版面图，标题一改就再也读不到（"明明改过版面，重新打开又变回
+    原样"）。见 :meth:`desktop.steps.spec.StepSpec.disk_key`。
     """
     from desktop.utils.files import singletask_dir
 
-    return singletask_dir(_SPEC.title) / EDITED_DIRNAME
+    return singletask_dir(_SPEC.disk_key()) / EDITED_DIRNAME
 
 
 def _page_overrides(doc: dict) -> list[Path | None]:
@@ -799,7 +803,7 @@ class ImpositionModulePage(ModulePage):
         #    但这里**不继承那个混入**——拼图页的"源"是一批图片而非单个源，
         #    且左栏是拼版页清单而不是 ImageViewerWidget，继承它只会拿到一堆
         #    用不上的方法。
-        cache_dir = image_thumbs_dir(_SPEC.title, THUMB_EDGE)
+        cache_dir = image_thumbs_dir(_SPEC.disk_key(), THUMB_EDGE)
         edge = THUMB_EDGE
         self.run_worker(
             lambda: ImageThumbCacheWorker(images, cache_dir, edge=edge),

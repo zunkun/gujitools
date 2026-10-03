@@ -55,7 +55,7 @@ def subs_map(parser) -> dict:
 def _extract_section(text: str, cmd: str):
     """截取 docs/guide/cli.md 里 `### <cmd> — ...` 到下一个 `### ` 之间的内容。
 
-    找不到小节时返回 None。小节标题形如 `### detect — 文本框检测（非必要）`。
+    找不到小节时返回 None。小节标题形如 `### detect — 检测文本框（非必要）`。
     """
     import re
 
@@ -86,9 +86,11 @@ def run(ctx) -> None:
 
     # ---- 1. 每个命令都有自己的小节 ----
     for cmd in _REQUIRED_SECTIONS:
-        ok(f"模板含 {cmd} 小节",
-           cmd in data and isinstance(data[cmd], dict),
-           f"实际顶层键={sorted(k for k in data if isinstance(data[k], dict))}")
+        ok(
+            f"模板含 {cmd} 小节",
+            cmd in data and isinstance(data[cmd], dict),
+            f"实际顶层键={sorted(k for k in data if isinstance(data[k], dict))}",
+        )
 
     # ---- 2. 键名不得漂移：模板里的键都要能在 CommandSpec 里找到 ----
     for cmd in _REQUIRED_SECTIONS:
@@ -96,17 +98,14 @@ def run(ctx) -> None:
         ok(f"{cmd} 已在 COMMAND_SPECS 登记", spec is not None, str(cmd))
         allowed = set(spec.defaults) | _GENERIC_KEYS
         stray = sorted(set(data[cmd]) - allowed)
-        ok(f"{cmd} 小节无未登记键（无拼写漂移）",
-           not stray, f"多余键={stray}，规格允许={sorted(allowed)}")
+        ok(f"{cmd} 小节无未登记键（无拼写漂移）", not stray, f"多余键={stray}，规格允许={sorted(allowed)}")
 
     # ---- 3. detect 必须显式标注非必要 ----
     # 注释不参与 YAML 解析，直接查原文；detect 小节之前的那段注释块里
     # 必须出现「非必要」字样。
     lines = raw.splitlines()
     # 定位 detect 小节的行号
-    detect_at = next(
-        (i for i, ln in enumerate(lines) if ln.strip().startswith("detect:")), -1
-    )
+    detect_at = next((i for i, ln in enumerate(lines) if ln.strip().startswith("detect:")), -1)
     ok("模板能找到 detect 小节行", detect_at >= 0, f"行号={detect_at}")
     # 往上回溯注释块（遇到空行或非注释即停）
     banner: list[str] = []
@@ -119,13 +118,13 @@ def run(ctx) -> None:
         banner.insert(0, stripped)
     banner_text = "\n".join(banner)
     ok("detect 小节上方有说明注释块", bool(banner), f"回溯到 {len(banner)} 行")
-    ok("detect 被显式标注为「非必要」",
-       "非必要" in banner_text, f"注释块=\n{banner_text}")
-    ok("注释块说明了 crop/cropremove 已含检测",
-       "cropremove" in banner_text and "crop" in banner_text, banner_text)
-    ok("文件头部命令清单也标注了 detect 非必要",
-       "detect" in raw.split("extract:", 1)[0] and "非必要" in raw.split("extract:", 1)[0],
-       "头部清单未标注 detect")
+    ok("detect 被显式标注为「非必要」", "非必要" in banner_text, f"注释块=\n{banner_text}")
+    ok("注释块说明了 crop/cropremove 已含检测", "cropremove" in banner_text and "crop" in banner_text, banner_text)
+    ok(
+        "文件头部命令清单也标注了 detect 非必要",
+        "detect" in raw.split("extract:", 1)[0] and "非必要" in raw.split("extract:", 1)[0],
+        "头部清单未标注 detect",
+    )
 
     # ---- 4. 模板取值能直接驱动命令（除路径外全部可校验）----
     # input 指向 ./sample/，仓库里不一定存在，这里替换成真实临时目录。
@@ -140,23 +139,31 @@ def run(ctx) -> None:
             args.validate()  # 不抛即通过
             # 注意：CommandArgs 会把 input 标准化为绝对路径（.resolve()），
             # 因此比较的是 resolve 后的结果，不是原始字符串。
-            ok(f"{cmd} 模板取值可构造 CommandArgs 并通过校验",
-               args.get("input") == work.resolve(), str(args.get("input")))
+            ok(
+                f"{cmd} 模板取值可构造 CommandArgs 并通过校验",
+                args.get("input") == work.resolve(),
+                str(args.get("input")),
+            )
 
         # detect 的模板必须开 save=true —— 否则 `guji run detect` 会被 CLI
         # 空跑拦截直接拒绝，用户照着模板抄却跑不起来（模板存在的意义就是落地标注图）。
         detect_args = CommandArgs(command="detect", **{**data["detect"], "input": str(work)})
-        ok("detect 模板 save=true（该块存在就是为了落地标注图）",
-           detect_args.get("save") is True, str(detect_args.get("save")))
-        ok("detect 模板默认 ext=png",
-           detect_args.get("ext") == "png", str(detect_args.get("ext")))
+        ok(
+            "detect 模板 save=true（该块存在就是为了落地标注图）",
+            detect_args.get("save") is True,
+            str(detect_args.get("save")),
+        )
+        ok("detect 模板默认 ext=png", detect_args.get("ext") == "png", str(detect_args.get("ext")))
 
         # 用模板参数构造真实功能实例，确认会算出输出目录（与输入并列）
         from functions.detect import DetectFunction
 
         func = DetectFunction(detect_args)
-        ok("按模板构造 detect 时有输出目录（与输入目录并列）",
-           func.outpath == work.parent / "detect", str(func.outpath))
+        ok(
+            "按模板构造 detect 时有输出目录（与输入目录并列）",
+            func.outpath == work.parent / "detect",
+            str(func.outpath),
+        )
 
         # 模板不得让用户掉进「空跑被拒」的坑：用 CLI 的同一判据验一遍
         from cli.__main__ import _reject_dry_run
@@ -175,8 +182,11 @@ def run(ctx) -> None:
         _buf2 = _io.StringIO()
         with _ctx.redirect_stdout(_buf2):
             _dry_rejected = _reject_dry_run("detect", _dry)
-        ok("（对照）save=false 时确实会被拒绝，证明上面的放行断言有效",
-           _dry_rejected is True, "判据失效，前一条断言形同虚设")
+        ok(
+            "（对照）save=false 时确实会被拒绝，证明上面的放行断言有效",
+            _dry_rejected is True,
+            "判据失效，前一条断言形同虚设",
+        )
     finally:
         import shutil
 
@@ -201,8 +211,7 @@ def run(ctx) -> None:
     ok("run 已声明 subcommand 位置参数", bool(pos), "未找到 subcommand 参数")
     run_vals = set(pos[0].choices) if pos else set()
     missing = sorted(set(COMMAND_SPECS) - run_vals)
-    ok("run 的 subcommand 覆盖全部已登记命令",
-       not missing, f"缺失={missing}；run 可选={sorted(run_vals)}")
+    ok("run 的 subcommand 覆盖全部已登记命令", not missing, f"缺失={missing}；run 可选={sorted(run_vals)}")
 
     # ---- 6. 用户文档不得漏掉任何已登记命令 ----
     # 背景：detect 变成真实命令后，README 的功能一览表、docs/README.md 的命令
@@ -219,14 +228,12 @@ def run(ctx) -> None:
         ok(f"{label} 存在", path.exists(), str(path))
         text = path.read_text(encoding="utf-8")
         absent = sorted(cmd for cmd in COMMAND_SPECS if cmd not in text)
-        ok(f"{label} 覆盖全部命令（无漏记）",
-           not absent, f"未提及={absent}")
+        ok(f"{label} 覆盖全部命令（无漏记）", not absent, f"未提及={absent}")
 
     # ---- 7. detect 的「非必要」定位必须在文档里说明 ----
     for label, path in doc_files.items():
         text = path.read_text(encoding="utf-8")
-        ok(f"{label} 说明 detect 是非必要步骤",
-           "非必要" in text, f"{label} 未标注 detect 非必要")
+        ok(f"{label} 说明 detect 是非必要步骤", "非必要" in text, f"{label} 未标注 detect 非必要")
 
     # ---- 8. 文档里列出的 CLI 参数必须真实存在 ----
     # 只校验**参数表格里的行首参数名**（形如 `| `--zoom` | 1 | ...`），
@@ -237,23 +244,19 @@ def run(ctx) -> None:
     for cmd_name, sp in subs_map(parser).items():
         if cmd_name not in COMMAND_SPECS:
             continue
-        real = {
-            o.lstrip("-")
-            for a in sp._actions
-            for o in a.option_strings
-            if o.startswith("--")
-        }
+        real = {o.lstrip("-") for a in sp._actions for o in a.option_strings if o.startswith("--")}
         section = _extract_section(docs_text, cmd_name)
         if section is None:
             ok(f"docs/guide/cli.md 有 {cmd_name} 参数小节", False, "未找到小节标题")
             continue
         # 只认表格行的第一个单元格里被反引号包住的 `--xxx`
-        mentioned = set(
-            _re.findall(r"^\|\s*`--([a-z][a-z0-9-]*)`", section, _re.MULTILINE)
-        )
+        mentioned = set(_re.findall(r"^\|\s*`--([a-z][a-z0-9-]*)`", section, _re.MULTILINE))
         bogus = sorted(m for m in mentioned if m not in real)
-        ok(f"docs/guide/cli.md 中 {cmd_name} 的参数都存在",
-           not bogus, f"文档写了但代码没有={bogus}；实际={sorted(real)}")
+        ok(
+            f"docs/guide/cli.md 中 {cmd_name} 的参数都存在",
+            not bogus,
+            f"文档写了但代码没有={bogus}；实际={sorted(real)}",
+        )
 
     # ---- 9. 模板各段的默认值必须与 CLI 逐值相等 ----
     #
@@ -269,18 +272,12 @@ def run(ctx) -> None:
     from core.command_spec import COMMAND_SPECS, normalize_margin
 
     _INTENTIONAL = {
-        ("detect", "save"):
-            "模板存在的意义就是落地标注图；save=false 会被 CLI 空跑拦截直接拒绝",
-        ("print", "pdf_name"):
-            "演示用的输出文件名；CLI 默认 None（自动按书名取）",
-        ("print", "title_printing"):
-            "模板是「已开启」样例；CLI 默认空表单",
-        ("print", "title_text"):
-            "示例书名；CLI 默认空",
-        ("print", "title_switch_nodes"):
-            "演示章节切换节点；CLI 默认无",
-        ("print", "page_number_printing"):
-            "模板是「已开启」样例；CLI 默认空表单",
+        ("detect", "save"): "模板存在的意义就是落地标注图；save=false 会被 CLI 空跑拦截直接拒绝",
+        ("print", "pdf_name"): "演示用的输出文件名；CLI 默认 None（自动按书名取）",
+        ("print", "title_printing"): "模板是「已开启」样例；CLI 默认空表单",
+        ("print", "title_text"): "示例书名；CLI 默认空",
+        ("print", "title_switch_nodes"): "演示章节切换节点；CLI 默认无",
+        ("print", "page_number_printing"): "模板是「已开启」样例；CLI 默认空表单",
     }
     _OPTIONAL = {
         ("print", "files"): "页序清单，运行时由程序作为 args['files'] 填入",
@@ -303,8 +300,7 @@ def run(ctx) -> None:
             if (cmd, key) in _OPTIONAL:
                 continue
             present = key in block
-            ok(f"模板 {cmd} 段显式给出 {key}",
-               present, f"缺失；现有键={sorted(block)}")
+            ok(f"模板 {cmd} 段显式给出 {key}", present, f"缺失；现有键={sorted(block)}")
             if not present:
                 continue
             got = block[key]
@@ -315,7 +311,8 @@ def run(ctx) -> None:
             if got == want:
                 continue
             reason = _INTENTIONAL.get((cmd, key))
-            ok(f"模板 {cmd}.{key} 与 CLI 默认值一致",
-               reason is not None,
-               f"模板={got}；CLI 默认={want}"
-               + ("" if reason is None else f"（登记为故意差异：{reason}）"))
+            ok(
+                f"模板 {cmd}.{key} 与 CLI 默认值一致",
+                reason is not None,
+                f"模板={got}；CLI 默认={want}" + ("" if reason is None else f"（登记为故意差异：{reason}）"),
+            )

@@ -152,8 +152,8 @@ class ImpositionLayoutMixin:
 
         **页保留**——剩一张时面板会自动出现「新增图片」可以再补一张；**删到
         最后一张则整页移除**（空页没有意义，与左列「✕」释放同款语义——全部
-        页删光即视为未生效，取图回退去底色；2026-09-30 用户定：整页移除前
-        要弹确认框）。被删的图不再被任何页引用，
+        页删光后拼版**仍然启用**，只是没有可拼的图，第四步会提示先去拼版；
+        2026-09-30 用户定：整页移除前要弹确认框）。被删的图不再被任何页引用，
         即自动回到「未选择列表」（下次「选择拼版」或「新增图片」都能再选它）。
         落盘走 ``_save_imposition_pages``：画布重灌会清空选中，「当前图片样式」
         区随之灰掉。
@@ -194,7 +194,7 @@ class ImpositionLayoutMixin:
             pages[index] = {**pages[index], "items": items}
         else:
             # 单图页删掉最后一张：页一并删除（空页没有意义），与左列
-            # 「✕」释放同款语义——视为未生效，取图来源回退去底色
+            # 「✕」释放同款语义——拼版仍处于**启用**态，只是没有可拼的图了
             pages.pop(index)
         self._save_imposition_pages(pages)
         view.set_current(min(index, len(pages) - 1))
@@ -485,10 +485,18 @@ class ImpositionLayoutMixin:
             slot = view.selected_slot() if view is not None else -1
             slot_text = {0: "（选中：右侧）", 1: "（选中：左侧）"}.get(slot, "")
             text = f"{cn_page_label(index)} / 共 {len(pages)} 页{slot_text}"
+        # ⚠️ 四态措辞：**启用**决定取图来源，**有没有页**决定能不能真出东西。
+        # 「已启用但一页都没拼」是最容易让人以为"没生效"的一档——必须把话说
+        # 死：流程确实已经改走拼版了，只是还没有可拼的图。
         if self.imposition_active():
-            text += "　·　拼版已生效：生成 PDF 用拼版结果"
+            text += (
+                "　·　拼版已启用：生成 PDF 用拼版结果"
+                if pages
+                else "　·　拼版已启用，但还没有拼版页——"
+                     "请先「选择拼版」，否则生成 PDF 没有输入"
+            )
         elif pages:
-            text += "　·　拼版未生效：勾选下方开关后生成 PDF 才会用拼版结果"
+            text += "　·　拼版未启用：勾选下方开关后生成 PDF 才会用拼版结果"
         label.setText(text)
         # 状态行是所有"当前页/选中变了"路径的汇聚点，旋转组件的回填搭这趟车
         self._sync_imposition_rotation_ui()
@@ -565,8 +573,12 @@ class ImpositionLayoutMixin:
         平时走后台防抖合成；用户在拼版页改完立刻去第四步点「生成 PDF」时，
         后台那一轮可能还没跑完/还没触发——这里补一次同步的，宁可等一下也不能
         让 PDF 用旧版面。
+
+        ⚠️ 前置条件用 ``imposition_has_pages()`` 而不是 ``imposition_active()``：
+        「启用」只是用户意图，一页都没拼时没有版面可合成，跑一遍只会白扫一遍
+        目录（真正的拦路在第四步：列表为空 → 点生成 PDF 会明确提示去拼版）。
         """
-        if not self.task_id or not self.imposition_active():
+        if not self.task_id or not self.imposition_has_pages():
             return
         from desktop.services.imposition import compose_doc
 

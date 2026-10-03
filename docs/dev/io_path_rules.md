@@ -94,7 +94,7 @@
 
 ---
 
-### 2. detect（文本框检测功能，非必要步骤）
+### 2. detect（检测文本框功能，非必要步骤）
 
 **输出结构**：`<根目录>/detect/标注图`
 
@@ -113,13 +113,13 @@
 
 **示例**（输入为 `/a/images/` 目录）：
 
-| 命令                              | 输出目录                                |
-| --------------------------------- | --------------------------------------- |
-| `detect -i /a/images/`            | ❌ 命令行拒绝（代码调用可无输出）        |
-| `detect -i /a/images/ --save`     | `/a/detect/`（与 images 并列）          |
-| `detect -i /a/images/ --save -o out` | `/a/out/detect/`                     |
-| `detect -i /a/images/ --save -o /abs/out` | `/abs/out/detect/`               |
-| `detect -i /a/photo.jpg --save`   | `/a/detect/`（与 photo.jpg 同目录）     |
+| 命令                                      | 输出目录                            |
+| ----------------------------------------- | ----------------------------------- |
+| `detect -i /a/images/`                    | ❌ 命令行拒绝（代码调用可无输出）   |
+| `detect -i /a/images/ --save`             | `/a/detect/`（与 images 并列）      |
+| `detect -i /a/images/ --save -o out`      | `/a/out/detect/`                    |
+| `detect -i /a/images/ --save -o /abs/out` | `/abs/out/detect/`                  |
+| `detect -i /a/photo.jpg --save`           | `/a/detect/`（与 photo.jpg 同目录） |
 
 ---
 

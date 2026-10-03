@@ -37,7 +37,9 @@ from PySide6.QtWidgets import (
 from desktop.services.font_catalog import start_background_scan
 from desktop.services.stale_chain import stale_upstream
 from desktop.steps import ports
-from desktop.store import IMPOSITION_INDEX, IMPOSITION_STAGE, STAGES, STAGE_LABELS
+from desktop.store import (
+    IMPOSITION_INDEX, IMPOSITION_LABEL, IMPOSITION_STAGE, STAGES, STAGE_LABELS,
+)
 from desktop.ui import theme as T
 from desktop.ui.widgets import apply_to, bold_button
 from desktop.workers import CopySourceWorker, WorkerHost, connect_queued
@@ -624,31 +626,54 @@ class TaskDetailPage(
 
     # ---------------------------------------------------- 上游重跑 → 产物过期
     def _refresh_stale_notices(self) -> None:
-        """重算"上游比本步新"的判定缓存。
+        """重算"上游比本步新"与"取图来源已换"的判定缓存。
 
-        ⚠️ 只在**运行收尾**与**切任务**时调，别放进 ``_refresh_stage_views`` 的
-        热路径：判定要读整份 runs.json，而那里运行期每 ≤200ms 就跑一次。
+        ⚠️ 只在**运行收尾**、**切任务**、**拼版开关变化**时调，别放进
+        ``_refresh_stage_views`` 的热路径：判定要读整份 runs.json，而那里运行期
+        每 ≤200ms 就跑一次。
         """
+        self._print_source_stale = False
         if not self.task_id:
             self._stale_notices = {}
             return
         # 一次读全（五个阶段逐个 list_stage_runs 会把 runs.json 读五遍）
-        self._stale_notices = stale_upstream(
-            self.store.all_stage_runs(self.task_id)
-        )
+        runs = self.store.all_stage_runs(self.task_id)
+        self._stale_notices = stale_upstream(runs)
+        # 取图来源是否已换（拼版开关）——同一份 runs.json 顺手算掉，不额外读盘
+        try:
+            from desktop.services.stale_chain import print_source_switched
+
+            self._print_source_stale = print_source_switched(
+                runs, self.print_source_stage()
+            )
+        except Exception:  # noqa: BLE001 - 判定失败不该拦住界面刷新
+            self._print_source_stale = False
 
     def _regenerate_notice(self, stage: str) -> str | None:
         """本步产物"需要重新生成"的提示文案（没有则 None）。
 
-        两种来源，顺序即优先级：
+        三种来源，顺序即优先级：
 
         1. 第四步的逐图坐标刚被版面编辑器改过（``_print_dirty``）——用户的直接
            改动，最该被看见；
-        2. **上游重新执行过**（``services/stale_chain``）——本步产物是那之前生成的，
-           可能已经不是最新参数下的结果。
+        2. **取图来源换了**（``_print_source_stale``）——勾上/取消「图片拼版」
+           之后，磁盘上那份 PDF 是上一轮来源的产物，旧数据不该再被当成结果；
+        3. **上游重新执行过**（``services/stale_chain`` 的时间戳链）——本步产物是
+           那之前生成的，可能已经不是最新参数下的结果。
+
+        ⚠️ 第 2 条读**缓存**（``_print_source_stale``）而不是现算：本方法经
+        ``_refresh_stage_views`` 在执行期间每 ≤200ms 被拉一次，而现算要读
+        runs.json + 拼版文档。缓存由 :meth:`_refresh_stale_notices` 在切任务/
+        运行收尾、以及拼版开关变化时重算（见 ``imposition._refresh_print_source``）。
         """
-        if stage == "print" and getattr(self, "_print_dirty", False):
-            return "● 版面已修改，点击「生成 PDF」生效"
+        if stage == "print":
+            if getattr(self, "_print_dirty", False):
+                return "● 版面已修改，点击「生成 PDF」生效"
+            if getattr(self, "_print_source_stale", False):
+                where = (
+                    IMPOSITION_LABEL if self.imposition_active() else "去底色"
+                )
+                return f"● 取图来源已改为{where}，请重新「生成 PDF」"
         info = (self._stale_notices or {}).get(stage)
         if not info:
             return None
@@ -788,8 +813,11 @@ class TaskDetailPage(
             # 缓存不重建"，不在这里补记的话，进第四步后每次后台合成回调都会
             # 把整批列表白重建一遍（同步解码首图，UI 冻结）
             self._print_source_cache = str(self.print_source_dir())
-            # 若此前已生成过 PDF，恢复下载按钮状态
-            self.print_preview.set_pdf_path(self._latest_print_pdf_path())
+            # 若此前已生成过 PDF，恢复下载按钮状态。
+            # ⚠️ 走 _current_print_pdf_path（不是 _latest_print_pdf_path）：
+            # 拼版开关一改，磁盘上那份 PDF 就是旧来源的产物，得让下载按钮
+            # 灭掉——用户 2026-10-03："旧的数据不显示"。
+            self.print_preview.set_pdf_path(self._current_print_pdf_path())
 
     # ------------------------------------------------------------------ 工具
     def _toast(self, kind: str, title: str, content: str) -> None:

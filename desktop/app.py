@@ -250,6 +250,19 @@ def main() -> int:
 
     ensure_cjk_fonts()  # 没有中文字体时先弹安装引导，再进主界面
 
+    # ---- 子任务目录改名的一次性迁移 ----
+    # singletask/<子任务>/ 以前按 spec 中文标题命名（``拼图/``、``去底色/``…），
+    # 现已改用不变的 ``disk_key``。里面是缩略图缓存与**用户手改过的版面图**，
+    # 不搬就等于丢了（"明明改过版面，重新打开又变回原样"）。放在字体引导
+    # 之后、建窗口之前：失败只记日志，不拦启动（见函数 docstring）。
+    try:
+        from desktop.utils.files import migrate_legacy_singletask_dirs
+
+        for line in migrate_legacy_singletask_dirs():
+            print(f"[guji] singletask 目录迁移：{line}")
+    except Exception as exc:  # noqa: BLE001 —— 迁移绝不该挡住进主界面
+        print(f"[guji] singletask 目录迁移跳过：{exc}")
+
     # ---- 单例守卫：同一个构建只允许一个 GUI 实例 ----
     # 已有本构建实例在跑 → 把那个窗口恢复并带到前台，本进程直接退出。
     # 身份是 **desktop 包目录**：开发版与正式版的目录不同，因此两个程序可以

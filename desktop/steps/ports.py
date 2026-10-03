@@ -215,6 +215,16 @@ def print_pages_supplier(imposition_active: bool) -> str:
     return "imposition" if imposition_active else "rembg_submit"
 
 
+#: 可选节点（拼版）在流程里**排在哪个阶段之前**。
+#:
+#: ⚠️ 这条不是"流程顺序"（那是 :data:`~desktop.steps.spec.FLOW_STAGES` 的事），
+#: 而是"拼版插在第四步前面"这一事实的**唯一声明处**：步骤条把节点插在最后一位
+#: 之前（``desktop/components/step_bar.py``），任务列表的子任务胶囊也按它把
+#: 「拼版」排在「PDF」之前（``desktop/workers/task_rows_worker.py``）。两处
+#: 都别自己数下标——BPM 换顺序时只改这里。
+IMPOSITION_ANCHOR: str = "print"
+
+
 def print_input_overrides(imposition_active: bool) -> dict[tuple[str, str], str]:
     """打印阶段的运行时连线覆盖（拼版开关 → 上游换成 imposition）。
 

@@ -30,7 +30,7 @@ from qfluentwidgets import (
 from desktop import ui
 from desktop.ui import theme as T
 from desktop.ui.help_dialog import open_manual
-from desktop.ui.icons import HELP_CIRCLE
+from desktop.ui.icons import HELP_CIRCLE, PDF_FILE
 from desktop.workers import (
     HashWorker,
     SerialJobQueue,
@@ -119,7 +119,7 @@ class TaskListPage(QWidget, WorkerHost):
         manual_button.setIconSize(QSize(18, 18))
         manual_button.clicked.connect(self._open_manual)
         header.actions.addWidget(manual_button)
-        import_button = PrimaryPushButton(FIF.DOWNLOAD, "导入 PDF")
+        import_button = PrimaryPushButton(PDF_FILE, "导入 PDF")
         import_button.setFixedHeight(34)
         import_button.clicked.connect(self.import_pdf)
         header.actions.addWidget(import_button)
@@ -162,7 +162,9 @@ class TaskListPage(QWidget, WorkerHost):
         self.empty_state = ui.EmptyState(
             "还没有任务",
             "点击右上角「导入 PDF」选择一本书，系统会自动建立任务目录并生成逐页缩略图",
-            icon=FIF.DOCUMENT,
+            # ⚠️ 空状态文案讲的就是"导入 PDF"，配``FIF.DOCUMENT``（空文档）
+            #    会被读成"文档"——用带 PDF 字样的自绘图，语义才闭环。
+            icon=PDF_FILE,
         )
         empty_card.box.addWidget(self.empty_state)
         self.content_stack.addWidget(empty_card)

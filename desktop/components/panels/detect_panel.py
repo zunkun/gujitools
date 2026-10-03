@@ -13,9 +13,7 @@ from utils.box_draw import BOX_KIND_INDEX, box_kind_name
 
 #: 框类型分段的项：(类型键, 文案)。键是跨层协议（`utils.box_draw.BOX_KIND_INDEX`），
 #: 文案与预览里的框标签同源，不再各写一份中文。
-BOX_KIND_ITEMS = tuple(
-    (kind, box_kind_name(kind)) for kind in BOX_KIND_INDEX
-)
+BOX_KIND_ITEMS = tuple((kind, box_kind_name(kind)) for kind in BOX_KIND_INDEX)
 
 
 class DetectPanel(StagePanel):
@@ -67,7 +65,7 @@ class DetectPanel(StagePanel):
         button = PrimaryPushButton("检测本页")
         # 与其它阶段面板的表单控件同高（qfluent 按钮默认只有 27px）
         button.setFixedHeight(CONTROL_HEIGHT)
-        button.setToolTip("对当前选中的页面执行一次文本框检测（需加载检测模型，耗时较长）")
+        button.setToolTip("对当前选中的页面执行一次检测文本框（需加载检测模型，耗时较长）")
         button.clicked.connect(self.detect_page_requested.emit)
         form.addRow(button)
 

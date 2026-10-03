@@ -73,6 +73,7 @@ from qfluentwidgets import FluentIcon as FIF, PushButton, Theme
 
 from desktop.steps.spec import StepSpec
 from desktop.ui import theme as T
+from desktop.ui.icons import PDF_FILE
 from desktop.utils.files import default_open_dir
 
 #: 空态高度（px）：要"大"，一眼看出这里是主入口。
@@ -175,7 +176,10 @@ class SourceZone(QWidget):
         row.setSpacing(BUTTON_GAP)
         row.addStretch(1)
 
-        self.file_button = PushButton(FIF.DOCUMENT, self.spec.pick_label, self)
+        # 图标跟着步骤的输入物走：入口是 PDF 就用带 "PDF" 字样的自绘图
+        # （``FIF.DOCUMENT`` 是空文档，会被读成"文档"），图片步骤仍旧用它。
+        file_icon = (PDF_FILE if self.spec.input_noun() == "PDF" else FIF.DOCUMENT)
+        self.file_button = PushButton(file_icon, self.spec.pick_label, self)
         self.file_button.setFixedHeight(BUTTON_HEIGHT)
         self.file_button.setToolTip(f"从磁盘上挑一个{self.spec.input_noun()}文件")
         self.file_button.clicked.connect(lambda: self._browse_kind(from_files=True))
@@ -672,8 +676,19 @@ class SourceZone(QWidget):
         FIF.CLOSE.render(painter, self._close_rect, Theme.LIGHT)
 
     def _icon(self):
-        """步骤声明的大图标（``StepSpec.drop_icon``，未知名字回退到文件夹）。"""
-        return getattr(FIF, self.spec.drop_icon, FIF.FOLDER_ADD)
+        """步骤声明的大图标（``StepSpec.drop_icon``，未知名字回退到文件夹）。
+
+        经 ``resolve_nav_icon`` 解析而不是 ``getattr(FIF, ...)``：拖放区要和
+        导航一样能用 ``svg:`` 前缀的自绘图（内置图标里没有 PDF，空文档的
+        ``DOCUMENT`` 会被读成"文档"而不是 PDF）。未知名字仍回退文件夹。
+        """
+        from desktop.ui.icons import resolve_nav_icon
+        from qfluentwidgets import FluentIcon as FIF
+
+        try:
+            return resolve_nav_icon(self.spec.drop_icon)
+        except AttributeError:
+            return FIF.FOLDER_ADD
 
     # ------------------------------------------------------------------ 文案
     def _hint_text(self) -> str:

@@ -15,6 +15,7 @@ from pathlib import Path
 from PySide6.QtCore import QProcess, QProcessEnvironment, QTimer
 
 from desktop.services.print_plan import missing_extract_pages_spec
+from desktop.steps import ports
 from desktop.steps.process import StageProcess, worker_arguments
 from desktop.store.json_io import write_json
 from desktop.utils.files import list_stage_images, project_root
@@ -206,6 +207,17 @@ class StageRunnerMixin:
             # 让其「通用边距默认」在 border 非 0 时回落为 0（避免双重留白）。
             args["upstream_border"] = border
             if not effects:
+                # ⚠️ 提示要按**当前取图来源**给：启用拼板后列表为空，原因是
+                # 「还没拼版」，而不是「第三步没提交」——照旧文案会把人引去
+                # 第三步反复重跑，解决不了问题（用户 2026-10-03）。
+                if self.imposition_active():
+                    self._toast(
+                        "warning", "没有拼版页",
+                        "已启用「图片拼版」，但拼版清单是空的。请先回到"
+                        "「图片拼版」点「＋ 选择拼版」，或取消勾选"
+                        "「在流程中启用图片拼版」改用去底色图片。",
+                    )
+                    return
                 self._toast(
                     "warning", "无输入页面",
                     "待打印列表为空，请先在第三步「生成预览」（必要时「提交"
@@ -223,6 +235,18 @@ class StageRunnerMixin:
             ]
             self.store.save_print_doc(self.task_id, doc)
             args["_effects"] = effects
+            # 记下**本次取图来源**（rembg_submit / imposition）。这是"旧数据"
+            # 判定的依据：用户随后改了拼版开关，磁盘上这份 PDF 就属于上一轮
+            # 来源的产物，界面据此停止提供下载/预览并提示重新生成
+            # （见 services/stale_chain.print_source_switched）。
+            # ⚠️ 用阶段 key 而不是布尔：BPM 换连线时这个值自动跟着变，
+            # 不必再为"多了一个上游"改判定逻辑。
+            # ⚠️ 前缀不带下划线是为了**留在 runs.json 历史里**（入史只剥
+            # _effects/files/page_rects 这几个大块派生字段）；它不是 CLI 参数，
+            # 只由 GUI 侧读取。
+            args["source_stage"] = ports.print_pages_supplier(
+                self.imposition_active()
+            )
             # 有序清单即页序：拖拽重排只改 print.json，不再物化任何文件。
             # input 仅供 CLI 作默认目录兜底，实际顺序由 files 决定。
             args["files"] = [str(Path(e["file"])) for e in entries]
@@ -763,6 +787,11 @@ class StageRunnerMixin:
                     self.print_preview.set_pdf_path(None)
                 # 重新生成完成，清除「版面已修改」标脏
                 self._print_dirty = False
+                # ⚠️ 也清「取图来源已换」：刚才这次就是按**当前**来源跑的
+                # （source_stage 随 args 落进历史），否则状态行会一直提示
+                # "请重新生成"，主按钮也一直加粗。放在 set_pdf_path 之后，
+                # 让下载按钮先恢复再撤提示。
+                self._print_source_stale = False
                 try:
                     # 同上：颜色要一起回到常规色
                     self._set_stage_status("成功")

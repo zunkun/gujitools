@@ -46,6 +46,12 @@ IMPOSITION_LABEL = spec_by_key(IMPOSITION_STAGE).stage_name()
 #: 第 5 位——占位详情面板与占位预览）。
 IMPOSITION_INDEX = len(STAGES)
 
+# 「图片拼版」**不是 STAGES 里的一步**（它是可选节点），但任务列表的「子任务
+# 状态」胶囊会按任务详情里的启用情况把它插进去，所以上面两张文案表都得有它。
+# ⚠️ 取值仍走 ``stage_name()`` / ``short_name()``，不另写一份中文。
+STAGE_LABELS[IMPOSITION_STAGE] = IMPOSITION_LABEL
+STAGE_SHORT[IMPOSITION_STAGE] = spec_by_key(IMPOSITION_STAGE).short_name()
+
 #: 运行阶段 → 它归属的**界面步骤**（值取 STAGES 里的一项）。
 #:
 #: ⚠️ 「提交本次任务」（rembg_submit）不是独立步骤，而是第三步 rembg 面板上的

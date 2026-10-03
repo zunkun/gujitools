@@ -19,8 +19,14 @@ from PySide6.QtGui import QImageReader
 from core.command_spec import WHOLE_PAGE_AREA
 from utils.box_draw import BOX_KIND_INDEX, box_kind_name
 from utils.box_geometry import (
-    classify_page_slots, compute_final_boxes, drop_box, half_slots,
-    is_full_content, present_boxes, set_box_full, set_box_half,
+    classify_page_slots,
+    compute_final_boxes,
+    drop_box,
+    half_slots,
+    is_full_content,
+    present_boxes,
+    set_box_full,
+    set_box_half,
 )
 from desktop.store.json_io import write_json
 from desktop.utils.files import project_root
@@ -32,7 +38,9 @@ KIND_LABELS = {kind: box_kind_name(kind) for kind in BOX_KIND_INDEX}
 #: `_show_boxes_info` 必须共用这一份——apply_boxes 的 info_text 也会写
 #: 信息条，两处后缀不一致时后写的会覆盖先写的（曾丢过「（手动）」标记）。
 ORIGIN_SUFFIX = {
-    "manual": "（手动）", "auto": "", "fullpage": "（整页，未检测）",
+    "manual": "（手动）",
+    "auto": "",
+    "fullpage": "（整页，未检测）",
 }
 
 
@@ -87,9 +95,9 @@ class DetectMixin:
             return
         if self._current_area() == WHOLE_PAGE_AREA:
             self._toast(
-                "warning", "整页模式",
-                "当前是整页模式（整页即唯一文本框）。要按左右/整幅标注，"
-                "请先取消第二步的「整页模式」。",
+                "warning",
+                "整页模式",
+                "当前是整页模式（整页即唯一文本框）。要按左右/整幅标注，" "请先取消第二步的「整页模式」。",
             )
             return
         index = self.detect_viewer.selected_index()
@@ -114,9 +122,9 @@ class DetectMixin:
                 self.detect_viewer.select_box(index)
                 return
         self._toast(
-            "info", f"没有「{names.get(kind, kind)}」",
-            "当前页没有这个类型的框：可先在预览里画出文本框，"
-            "或点已有框后切换类型。",
+            "info",
+            f"没有「{names.get(kind, kind)}」",
+            "当前页没有这个类型的框：可先在预览里画出文本框，" "或点已有框后切换类型。",
         )
 
     def _make_box_full(self, path_text: str, index: int) -> None:
@@ -133,8 +141,7 @@ class DetectMixin:
 
             kinds = self._box_kinds()
             labels = "、".join(
-                f"「{KIND_LABELS.get(kinds[i], '')}」"
-                for i in range(len(boxes)) if i != index and i < len(kinds)
+                f"「{KIND_LABELS.get(kinds[i], '')}」" for i in range(len(boxes)) if i != index and i < len(kinds)
             )
             dialog = Dialog(
                 "整幅只能有一个框",
@@ -149,8 +156,7 @@ class DetectMixin:
                 self._on_box_selection_changed(index)  # 回填面板高亮，别停在「整幅」
                 return
         # ⚠️ 槽位运算走 utils 的纯函数（与独立模块页同一份），不在这里重写。
-        self._store_slots(path_text, set_box_full(raw, index), "manual",
-                          select_box=boxes[index])
+        self._store_slots(path_text, set_box_full(raw, index), "manual", select_box=boxes[index])
 
     def _make_box_half(self, path_text: str, index: int, kind: str) -> None:
         """把第 index 个框改成半幅（左/右）。"""
@@ -162,15 +168,17 @@ class DetectMixin:
             # 半幅页里左/右是**位置**决定的（用户要求 2），点不出另一种来
             side = "左框" if kind == "left" else "右框"
             self._toast(
-                "info", f"「{side}」由框的位置决定",
-                f"左框/右框按框的中心位置自动判定：把这个框拖到页面的另一半，"
-                f"它就会变成{side}。",
+                "info",
+                f"「{side}」由框的位置决定",
+                f"左框/右框按框的中心位置自动判定：把这个框拖到页面的另一半，" f"它就会变成{side}。",
             )
             return
         # 整幅 → 半幅：一个框也能是半幅（漏检一侧的情形），按中心位置定左右
         size = self._image_size_for(path_text) or (0, 0)
         self._store_slots(
-            path_text, set_box_half(raw, index, size), "manual",
+            path_text,
+            set_box_half(raw, index, size),
+            "manual",
             select_box=boxes[index],
         )
 
@@ -221,9 +229,7 @@ class DetectMixin:
                 raw = boxes_all.get(path.stem, ([], "auto"))[0]
             # ⚠️ 传给分类器的是**槽位**（保留 None）：单独页（双槽缺一侧）
             #    过滤掉 None 会被误判成整幅。
-            classes.setdefault(classify_page_slots(raw), []).append(
-                (row, self._page_label(path))
-            )
+            classes.setdefault(classify_page_slots(raw), []).append((row, self._page_label(path)))
         widget.set_results(len(paths), classes)
 
     def _goto_stats_page(self, row: int) -> None:
@@ -236,14 +242,11 @@ class DetectMixin:
         """某页**槽位**表示（保留 null，形态信息就在槽数里）。"""
         raw = self.detect_cache.get(str(path_text))
         if raw is None and self.task_id:
-            entry = self.store.detect_boxes_entry(
-                self.task_id, Path(path_text).stem
-            )
+            entry = self.store.detect_boxes_entry(self.task_id, Path(path_text).stem)
             raw = entry[0] if entry else []
         return list(raw or [])
 
-    def _store_slots(self, path_text: str, raw: list, origin: str,
-                     select_box=None) -> None:
+    def _store_slots(self, path_text: str, raw: list, origin: str, select_box=None) -> None:
         """把槽位结果落库 + 进缓存 + 刷预览（人工编辑与类型切换共用一条路径）。
 
         ``select_box`` 给定某个框时，重新上屏后仍选中**同一个框**（按坐标找回）——
@@ -257,16 +260,13 @@ class DetectMixin:
         index = -1
         if select_box is not None:
             target = list(select_box)
-            index = next(
-                (i for i, b in enumerate(shown) if list(b) == target), -1
-            )
+            index = next((i for i, b in enumerate(shown) if list(b) == target), -1)
         self._apply_boxes(path_text, raw, origin, select_index=index)
         self._refresh_reference_boxes()
         # 拖动/删框/切类型都会改这一页的形态 → 右侧统计同步重算
         self._refresh_detect_stats()
 
-    def _apply_boxes(self, path_text: str, raw, origin: str | None = None,
-                     select_index: int = -1) -> None:
+    def _apply_boxes(self, path_text: str, raw, origin: str | None = None, select_index: int = -1) -> None:
         """把某页的槽位结果画到大图上。
 
         显示用的名称/颜色**由控件按中心位置现算**（`image_view.box_styles`），
@@ -283,8 +283,11 @@ class DetectMixin:
         info = self._describe_boxes(shown, names) + ORIGIN_SUFFIX.get(origin, "")
         self._show_boxes_info(shown, origin, names=names)
         self.detect_viewer.apply_boxes(
-            shown, qsize, info,
-            full=full, selected=select_index,
+            shown,
+            qsize,
+            info,
+            full=full,
+            selected=select_index,
         )
 
     # ------------------------------------------------------------ 整页模式
@@ -321,11 +324,7 @@ class DetectMixin:
         形态（半幅 2 槽 / 整幅 1 槽），过滤掉 None 后「手动半幅只剩一侧」会
         退化成 1 槽，被当成整幅。
         """
-        entry = (
-            self.store.detect_boxes_entry(self.task_id, Path(path_text).stem)
-            if self.task_id
-            else None
-        )
+        entry = self.store.detect_boxes_entry(self.task_id, Path(path_text).stem) if self.task_id else None
         if entry and entry[1] == "manual" and self._valid_boxes(entry[0]):
             return list(entry[0]), "manual"
         return self._whole_page_boxes(path_text), "fullpage"
@@ -344,9 +343,7 @@ class DetectMixin:
         if self._current_area() == WHOLE_PAGE_AREA:
             boxes, origin = self._whole_page_entry(key)
             if not boxes:
-                self.detect_viewer.info_label.setText(
-                    "整页模式：读取不到页面尺寸，请先完成第一步提取。"
-                )
+                self.detect_viewer.info_label.setText("整页模式：读取不到页面尺寸，请先完成第一步提取。")
                 return
             # 整页框是**派生**出来的：既不入库也不进缓存，避免切回 area=1
             # 时把整页框当成真实检测结果去拆左右页。
@@ -362,7 +359,9 @@ class DetectMixin:
                 # ⚠️ 无框时也要把预览的形态复位：否则上一页如果是整幅页，
                 #    本页会沿用「整幅」的框数上限（只能画一个框）。
                 self.detect_viewer.apply_boxes(
-                    [], QImageReader(key).size(), self._describe_boxes([]),
+                    [],
+                    QImageReader(key).size(),
+                    self._describe_boxes([]),
                     full=is_full_content(raw),
                 )
             self._refresh_reference_boxes()
@@ -375,16 +374,12 @@ class DetectMixin:
             self._apply_boxes(key, boxes, origin)
             self._refresh_reference_boxes()
             return
-        self.detect_viewer.info_label.setText(
-            "尚未检测：执行「本子任务」批量检测，或点击面板中的「检测本页」"
-        )
+        self.detect_viewer.info_label.setText("尚未检测：执行「本子任务」批量检测，或点击面板中的「检测本页」")
 
-        self.detect_viewer.info_label.setText(
-            "尚未检测：执行「本子任务」批量检测，或点击面板中的「检测本页」"
-        )
+        self.detect_viewer.info_label.setText("尚未检测：执行「本子任务」批量检测，或点击面板中的「检测本页」")
 
     def _detect_current_page(self) -> None:
-        """手动触发当前页的文本框检测（YOLO 子进程，重负载）。"""
+        """手动触发当前页的检测文本框（YOLO 子进程，重负载）。"""
         if not self.task_id:
             return
         path = self.detect_viewer.current_path()
@@ -401,7 +396,8 @@ class DetectMixin:
             self._apply_boxes(key, boxes, origin)
             self._refresh_reference_boxes()
             self._toast(
-                "info", "整页模式",
+                "info",
+                "整页模式",
                 "未做检测：整页作为一个文本框，可拖动四角调整或重画。",
             )
             return
@@ -432,9 +428,7 @@ class DetectMixin:
             return self._whole_page_entry(path_text)[0]
         boxes = self.detect_cache.get(str(path_text))
         if boxes is None:
-            entry = self.store.detect_boxes_entry(
-                self.task_id, Path(path_text).stem
-            )
+            entry = self.store.detect_boxes_entry(self.task_id, Path(path_text).stem)
             boxes = entry[0] if entry else []
         return boxes or []
 
@@ -479,9 +473,7 @@ class DetectMixin:
                 self.detect_viewer.set_reference_boxes([])
             else:
                 area, _border = self._current_detect_params()
-                self.detect_viewer.set_reference_boxes(
-                    compute_final_boxes(boxes, area, None)
-                )
+                self.detect_viewer.set_reference_boxes(compute_final_boxes(boxes, area, None))
         # rembg 预览的区域同步刷新（显示范围跟随检测框 + area/border）
         self.rembg_viewer.refresh_display()
 
@@ -490,9 +482,7 @@ class DetectMixin:
             self.detect_viewer.info_label.setText("正在检测文本框位置...")
             return
         suffix = ORIGIN_SUFFIX.get(origin, "")
-        self.detect_viewer.info_label.setText(
-            self._describe_boxes(boxes, names) + suffix
-        )
+        self.detect_viewer.info_label.setText(self._describe_boxes(boxes, names) + suffix)
 
     @staticmethod
     def _describe_boxes(boxes, names=None) -> str:
@@ -504,8 +494,7 @@ class DetectMixin:
             return "未检测到文本框"
         labels = list(names) if names else []
         return "  ｜  ".join(
-            f"{(labels[i] if i < len(labels) else ('左框', '右框')[i % 2])}"
-            f"({b[0]},{b[1]},{b[2]},{b[3]})"
+            f"{(labels[i] if i < len(labels) else ('左框', '右框')[i % 2])}" f"({b[0]},{b[1]},{b[2]},{b[3]})"
             for i, b in enumerate(boxes)
         )
 
@@ -644,18 +633,14 @@ class DetectMixin:
                 except (TypeError, ValueError):
                     # 畸形坐标（int() 转不动）宁可整条丢弃也别让槽抛异常——
                     # 那样 Qt 只往控制台打一句，界面毫无反应
-                    self.log_view.append(
-                        f"检测输出格式异常，已忽略：{str(event)[:120]}"
-                    )
+                    self.log_view.append(f"检测输出格式异常，已忽略：{str(event)[:120]}")
                     continue
                 if "image" not in event:
                     continue
                 self.detect_cache[event["image"]] = boxes
                 # 检测结果写回 boxes.json；无框不存，避免下次选中无法重新检测
                 if any(boxes):
-                    self.store.save_detect_boxes(
-                        self.task_id, Path(event["image"]).stem, boxes, origin="auto"
-                    )
+                    self.store.save_detect_boxes(self.task_id, Path(event["image"]).stem, boxes, origin="auto")
                 self._apply_detect_result(Path(event["image"]), boxes)
             elif event.get("type") == "log":
                 # 单页检测路径原先只认 boxes/detect_error，于是「模型加载用时」

@@ -196,7 +196,7 @@ def _edit_flow(ctx, page_cls, keyword: str, prepare, ok, has_apply: bool) -> Non
         ok(f"{page.TITLE}：左栏列的就是待编辑的那张图",
            str(target) in _viewer_paths(page.viewer), str(_viewer_paths(page.viewer)))
 
-        cached = image_thumb_cache_path(page.SPEC.title, target, page.THUMB_EDGE)
+        cached = image_thumb_cache_path(page.SPEC.disk_key(), target, page.THUMB_EDGE)
         ok(f"{page.TITLE}：选源后缩略图缓存已就绪（编辑前的白色）",
            _wait_until(app, lambda: cached.is_file() and _near(_pixel(cached), WHITE),
                        timeout=25.0),
@@ -223,7 +223,7 @@ def _edit_flow(ctx, page_cls, keyword: str, prepare, ok, has_apply: bool) -> Non
         ok(f"{page.TITLE}：左栏该条目的缩略图换成了编辑后的像素",
            _wait_until(app, lambda: _near(_icon_pixel(page.viewer, row), BLUE)),
            _icon_pixel(page.viewer, row))
-        now_key = image_thumb_cache_path(page.SPEC.title, target, page.THUMB_EDGE)
+        now_key = image_thumb_cache_path(page.SPEC.disk_key(), target, page.THUMB_EDGE)
         ok(f"{page.TITLE}：编辑后缓存按新键重渲",
            _wait_until(app, lambda: now_key.is_file() and _near(_pixel(now_key), BLUE)),
            _pixel(now_key))
@@ -232,7 +232,7 @@ def _edit_flow(ctx, page_cls, keyword: str, prepare, ok, has_apply: bool) -> Non
         edited2 = _overwrite_source(target, GREEN, size=(W2, H2), work=work)
         page.viewer.image_saved.emit(str(target), edited2)
         pump(app, times=4)
-        moved = image_thumb_cache_path(page.SPEC.title, target, page.THUMB_EDGE)
+        moved = image_thumb_cache_path(page.SPEC.disk_key(), target, page.THUMB_EDGE)
         ok(f"{page.TITLE}：换尺寸的编辑同样上屏",
            _wait_until(app, lambda: _near(_display_pixel(page.viewer), GREEN),
                        timeout=20.0),
@@ -408,7 +408,8 @@ def _pdf_mode(ctx, ok) -> None:
            [text for text, _icon, _slot in items] == ["预览图片"],
            str([t for t, _i, _s in items]))
         ok("提取页：PDF 页缩略图缓存目录仍按书分层（不被跨书污染）",
-           "thumbnails" in singletask_thumbnails_dir(page.SPEC.title, pdf).parts)
+           # disk_key()：目录名锚在路由键上，不跟显示文案漂移
+           "thumbnails" in singletask_thumbnails_dir(page.SPEC.disk_key(), pdf).parts)
     finally:
         _shutdown(page, app)
         page.deleteLater()

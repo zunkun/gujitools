@@ -90,12 +90,16 @@
 
 - 表格列固定为 5 列（序号/任务名/创建时间/子任务状态/操作）；**不单独展示源文件
   路径**，源路径放在任务名的悬浮提示里。
-- 「任务名称」列自适应拉伸、占主要宽度；「子任务状态」列固定 256px（4 个
-  胶囊的实际宽度）。表头对齐均为水平分量 + `AlignVCenter` 垂直居中。
+- 「任务名称」列自适应拉伸、占主要宽度；「子任务状态」列固定 280px（**最多
+  5 个**胶囊的实际宽度）。表头对齐均为水平分量 + `AlignVCenter` 垂直居中。
 - 「删除」按钮使用 `theme.DANGER` 危险色（实例级样式表，normal/hover/
   pressed/disabled 四态写全），在一排灰白按钮里一眼可辨。
-- "子任务状态"每行是 4 个 `StatusChip`（提取/检测/去底/PDF），颜色由
-  `theme.status_colors` 决定；已完成绿、执行中主色、未执行灰、失败红。
+- "子任务状态"每行是若干个 `StatusChip`，颜色由 `theme.status_colors` 决定；
+  已完成绿、执行中主色、未执行灰、失败红。**数量随任务详情变**：默认 4 个
+  （提取/检测/去底/PDF），该任务在详情里勾了「在流程中启用图片拼版」时，
+  「PDF」前多一个「拼版」（绿=已生效，灰=已启用但还没拼页）。判定在
+  `desktop/workers/task_rows_worker.py`，插入位置取
+  `desktop.steps.ports.IMPOSITION_ANCHOR`，**不要**在组件里写死数量。
 - 单元格容器（`StageChips`、操作列按钮容器）必须 `setFixedHeight(ROW_HEIGHT)`
   锁定为整行高：qfluent 的 `TableItemDelegate.updateEditorGeometry` 用「改高度
   前」的容器高算垂直居中偏移、随后又把高度改成整格高，容器高度不等于行高时

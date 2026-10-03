@@ -58,7 +58,9 @@ class StepSpec:
     - ``key``：唯一路由键，与 ``desktop.modules.MODULES`` 的 key 同名同义；
     - ``command``：``functions.get_function`` 的命令名；``None`` 表示这一步
       不是 CLI 命令（如拼版是纯函数 ``compose_doc``，由调用方给 job）；
-    - ``title``：**模块页头大标题 + 左侧导航条目**的名字（"图片提取"）；
+    - ``title``：**模块页头大标题**的名字（"图片提取"）。⚠️ 左侧导航那一列
+      用自己的 ``nav_title``（见下），磁盘目录用 ``disk_key()``——三者互不相干；
+    - ``nav_title``：**左侧导航条目**的名字（空则用 ``title``）；
     - ``subtitle``：**模块页头副标题**（"选择一个 PDF（…），把每页渲染成图片"）；
     - ``nav_tooltip``：**导航条目悬停提示**（空则用 ``subtitle``）；
     - ``nav_icon``：**导航条目图标**（``FluentIcon`` 成员名；或 ``svg:名字``
@@ -93,7 +95,8 @@ class StepSpec:
     ===============  ==========================================
     字段              用在哪
     ===============  ==========================================
-    ``title``         模块页头大标题、左侧导航条目
+    ``title``         模块页头大标题（**不含**左侧导航，见 ``nav_title``）
+    ``nav_title``     左侧导航条目的名字（空则用 ``title``）
     ``subtitle``      模块页头副标题
     ``nav_tooltip``   导航条目悬停提示
     ``stage_title``   流程步骤条上的名字（空则用 ``title``）
@@ -150,8 +153,19 @@ class StepSpec:
     outputs: tuple[str, ...] = ()
     # ---- 左侧导航侧（有没有独立模块页、图标、悬停提示）----
     nav: bool = False
+    nav_title: str = ""
     nav_tooltip: str = ""
     nav_icon: str = ""
+    #: 导航里的排位（**小的在前**；留空按 ``SPECS`` 的书写顺序兜底）。
+    #:
+    #: 为什么要它：``print``（生成PDF）是流程主链的第4 步，却要在导航里排到
+    #: **最后**——它吃的是前面几步的产物，"生成"这件事天然是收尾。改
+    #: ``SPECS`` 里两段的书写位置也能达到同样效果，但那是**流程顺序**的事实
+    #: 来源（``FLOW_STAGES`` 从它派生），为了导航顺序去动它等于把"导航怎么排"
+    #: 的意图藏进一个看不出因果的位置里；而且 ``imposition`` 在 ``SPECS`` 里本来
+    #: 就写在 ``print`` 之后（可选节点在主链之后），单纯对调书写位置还得再对调
+    #: 一次才走得通。显式声明排序意图更直白，也只影响导航这一条线。
+    nav_order: int = 0
     # ---- 任务流程详情页的"这一步长什么样"（2026-10-03）----
     #: 详情页**主动作按钮**文案。与 ``run_label``（独立模块页的按钮）**有意不同**：
     #: 流程里点它跑的是"本子任务"这一环节，模块页点它跑的是整个功能。
@@ -259,12 +273,9 @@ class StepSpec:
         except OSError:
             return []
         wanted = self.suffixes()
-        return [
-            p for p in children if p.is_file() and p.suffix.lower() in wanted
-        ]
+        return [p for p in children if p.is_file() and p.suffix.lower() in wanted]
 
-    def nested_listing(self, directory: Path | str,
-                       max_depth: int = AUTO_DESCEND_DEPTH) -> list[Path]:
+    def nested_listing(self, directory: Path | str, max_depth: int = AUTO_DESCEND_DEPTH) -> list[Path]:
         """在下面 1~``max_depth`` 层里找**装着本步骤文件的子目录**（广度优先）。
 
         命中一层就停在该层——找到更浅的就不再往下挖，避免把"某一层唯一"误判成
@@ -323,10 +334,7 @@ class StepSpec:
         if folders and not self.accepts_dir:
             names = "、".join(p.name for p in folders[:3])
             more = "…" if len(folders) > 3 else ""
-            return None, (
-                f"本步骤只支持{self.input_noun()}**文件**，不支持文件夹"
-                f"（收到：{names}{more}）"
-            )
+            return None, (f"本步骤只支持{self.input_noun()}**文件**，不支持文件夹" f"（收到：{names}{more}）")
 
         if folders and self.accepts_dir:
             chosen = folders[0]
@@ -353,14 +361,9 @@ class StepSpec:
 
         matched = [p for p in files if p.suffix.lower() in self.suffixes()]
         if not matched:
-            return None, (
-                f"这些文件不是本步骤支持的格式"
-                f"（{'、'.join(self.suffixes())}）"
-            )
+            return None, (f"这些文件不是本步骤支持的格式" f"（{'、'.join(self.suffixes())}）")
         if len(matched) == 1:
-            note = "" if len(matched) == len(candidates) == 1 else (
-                f"已选用「{matched[0].name}」"
-            )
+            note = "" if len(matched) == len(candidates) == 1 else (f"已选用「{matched[0].name}」")
             return matched[0], note
 
         parents = {p.parent for p in matched}
@@ -377,8 +380,7 @@ class StepSpec:
         deeper = self.nested_listing(folder)
         if len(deeper) == 1:
             return deeper[0], (
-                f"「{folder.name}」里没有直接的{self.input_noun()}文件，"
-                f"已自动指向子目录「{deeper[0].name}」"
+                f"「{folder.name}」里没有直接的{self.input_noun()}文件，" f"已自动指向子目录「{deeper[0].name}」"
             )
         if len(deeper) > 1:
             names = "、".join(p.name for p in deeper[:3])
@@ -441,6 +443,31 @@ class StepSpec:
         """导航条目悬停提示（``nav_tooltip`` 为空时用 ``subtitle``）。"""
         return self.nav_tooltip or self.subtitle
 
+    def nav_name(self) -> str:
+        """左侧导航条目上的名字（``nav_title`` 为空时用 ``title``）。
+
+        ⚠️ 与 ``title`` **有意分开**（同 :attr:`stage_title` 与 ``title`` 的
+        道理）：导航那一列是"这一步做什么"的**短标签**，页头是完整标题，
+        两处可以各说各的。用户 2026-10-03 就导航文案提过一轮（"图片提取"
+        → "PDF图片提取" 等），只改这里不会连带改掉页头与流程条。
+        """
+        return self.nav_title or self.title
+
+    def disk_key(self) -> str:
+        """``singletask/`` 下这个子任务的**目录名**（缓存/手改件的归属）。
+
+        ⚠️ **不是** ``title`` 也不是 ``nav_title``：这两者都是会随文案需求改的
+        人类可读名字，而这里是**已经在磁盘上存在的路径**。``singletask/`` 里
+        已经躺着按旧标题建的目录（``去底色`` / ``图片提取`` / ``拼图`` /
+        ``检测文本框`` / ``生成 PDF``），其中 ``拼图/edited/`` 存着用户手改过
+        的版面图——标题一改，这些缓存与手改件就再也找不到了（表现是"我明明
+        改过版面，重新打开又变回原样"）。
+
+        所以这里锚在 ``key`` 上（步骤的唯一路由键，改名不会动它）。改动此值
+        等于换一整个子任务目录，**必须**先做旧目录迁移。
+        """
+        return self.key
+
     # ------------------------------------------------------------------ 文案
     def drop_title_text(self) -> str:
         """大输入区空态的标题（``drop_title`` 为空时兜底）。"""
@@ -473,6 +500,9 @@ SPECS: tuple[StepSpec, ...] = (
         stage_title="提取图片",
         short="提取",
         nav=True,
+        # 导航文案与 ``title`` 分开：这一列回答"这一步干什么"，页头仍是
+        # 完整的「图片提取」（用户 2026-10-03 要求导航统一带对象名）。
+        nav_title="PDF图片提取",
         nav_tooltip="从 PDF 提取页面图片",
         # ⚠️ 别用 ZIP_FOLDER：那是"压缩包/解压"，用户会以为这步跟压缩文件
         #    有关；这步的真实语义是"从 PDF 把图导出来"。
@@ -493,7 +523,7 @@ SPECS: tuple[StepSpec, ...] = (
         #    自动回填它会让下一次点执行只跑那一小段页码（用户看到"只提取了一半"）。
         #    只在**自动**回填时跳过；手动挑历史仍原样回填（那是"照那次再跑一遍"）。
         auto_fill_skip=("pages",),
-        drop_icon="DOCUMENT",
+        drop_icon="svg:PDF_FILE",
         drop_title="把 PDF 拖到这里",
         drop_hint="也可以点这里选择一个 PDF 文件",
         # ⚠️ **只支持文件**（用户 2026-10-03：「PDF 只支持文件」）。
@@ -513,6 +543,7 @@ SPECS: tuple[StepSpec, ...] = (
         title="检测文本框",
         short="检测",
         nav=True,
+        nav_title="检测文本框",
         nav_tooltip="检测每页的内容框并导出坐标",
         # ⚠️ 别用 SEARCH：放大镜会被读成"查找"。这步是"框出页面内容"，
         #    内置图标没有这个图形，用自绘的取景框 + 文本行（``svg:`` 前缀 →
@@ -540,6 +571,7 @@ SPECS: tuple[StepSpec, ...] = (
         stage_title="图片去底色",
         short="去底",
         nav=True,
+        nav_title="图片去底色",
         nav_tooltip="整图去底色 / 二值化 / 保留印章",
         # ⚠️ 别用 PALETTE：调色板会被读成"调色/取色"；这步的主语义是
         #    "把底色擦掉"（二值化/保留印章是它的模式），橡皮擦更直白。
@@ -578,8 +610,13 @@ SPECS: tuple[StepSpec, ...] = (
         title="生成 PDF",
         short="PDF",
         nav=True,
+        # 导航里不加空格：「生成PDF」一格排下来与其它几项（都无空格）齐平。
+        nav_title="生成PDF",
+        # 排到导航**最后**（用户 2026-10-03）：这一步吃的是前几步的产物，
+        # "生成"是收尾动作。流程条上的第4 步位置不受影响（那是 FLOW_STAGES）。
+        nav_order=100,
         nav_tooltip="把成品图按版面合成 PDF",
-        nav_icon="DOCUMENT",
+        nav_icon="svg:PDF_FILE",
         subtitle="拖入成品图文件夹，按版面合成 PDF（页序按文件名）",
         panel="PrintPanel",
         pick_label="选择图片",
@@ -610,6 +647,7 @@ SPECS: tuple[StepSpec, ...] = (
         stage_title="图片拼版",
         short="拼版",
         nav=True,
+        nav_title="图片拼板",
         nav_tooltip="多页图片拼版与版式调整",
         # ⚠️ 别用 PHOTO：一张照片表达不出"多页拼成一版"，而且 PHOTO 同时是
         #    好几个步骤大输入区的图标，导航里再用就没辨识度。TILES 的
@@ -635,20 +673,32 @@ STEP_KEYS: tuple[str, ...] = tuple(spec.key for spec in SPECS)
 
 #: 默认流程**主链**的步骤 key（顺序即执行顺序）——即 ``desktop.store.STAGES``
 #: 的事实来源。⚠️ 只取 ``role == "stage"``：可选节点（拼版）不在主链上。
-FLOW_STAGES: tuple[str, ...] = tuple(
-    spec.key for spec in SPECS if spec.role == "stage"
-)
+FLOW_STAGES: tuple[str, ...] = tuple(spec.key for spec in SPECS if spec.role == "stage")
 
 #: 流程条上的**可选节点** key（排在主链之后的下标处，见
 #: ``desktop.store.IMPOSITION_INDEX``）。目前只有拼版一个，故用元组而非单值，
 #: 将来加第二个可选节点时不用改调用方。
-OPTIONAL_STEPS: tuple[str, ...] = tuple(
-    spec.key for spec in SPECS if spec.role == "optional"
-)
+OPTIONAL_STEPS: tuple[str, ...] = tuple(spec.key for spec in SPECS if spec.role == "optional")
+
+#: 每个 spec 在 ``SPECS`` 里的书写次序（按身份取 key，不依赖 ``__eq__``）——
+#: :data:`NAV_STEPS` 排序的次键，见那里的说明。
+_nav_written_index: dict[int, int] = {id(spec): i for i, spec in enumerate(SPECS)}
 
 #: 有独立模块页、要进左侧导航的步骤 key——即 ``desktop.modules.MODULES``
 #: 的事实来源。
-NAV_STEPS: tuple[str, ...] = tuple(spec.key for spec in SPECS if spec.nav)
+#:
+#: 排序 = ``(nav_order, 书写次序)``：显式给了 ``nav_order`` 的按它排、没给的
+#: （``0``）保持书写次序兜底。**显式带序号作次键**——只按 ``nav_order`` 排的话
+#: Python 的 ``sorted`` 恰好是稳定排序、原序即 ``SPECS`` 书写序，本就是想要的
+#: 兜底；把序号写出来是为了让"没声明的维持原位"这条规则**读得出来**，而不是要读者
+#: 知道 ``sorted`` 的稳定性质。
+NAV_STEPS: tuple[str, ...] = tuple(
+    spec.key
+    for spec in sorted(
+        (s for s in SPECS if s.nav),
+        key=lambda s: (s.nav_order, _nav_written_index[id(s)]),
+    )
+)
 
 
 def spec_by_key(key: str) -> StepSpec | None:

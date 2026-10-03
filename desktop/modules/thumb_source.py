@@ -227,10 +227,14 @@ class ThumbSourceMixin:
         return list(spec.listing(source))
 
     def _subtask(self) -> str:
-        """缓存目录的「子任务」名：取 spec 标题（与 ``singletask_thumbnails_dir``
-        的既有用法一致）。"""
+        """缓存目录的「子任务」名：取 ``spec.disk_key()``（步骤路由键）。
+
+        ⚠️ 刻意**不用** ``title`` / ``nav_title``：那是会改的显示文案，而这里
+        是磁盘上已经存在的目录名（``singletask/<子任务>/``）。改标题会让用户
+        攒下的缩略图缓存与手改件全部失联。
+        """
         spec = getattr(self, "SPEC", None)
-        return spec.title if spec else "singletask"
+        return spec.disk_key() if spec else "singletask"
 
     def _thumb_cache_dir(self) -> Path:
         """一批图片的缩略图缓存**目录**（单图文件名由 worker 逐图算键）。

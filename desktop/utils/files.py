@@ -51,6 +51,49 @@ def singletask_dir(subtask: str) -> Path:
     return guji_data_dir() / SINGLETASK_DIRNAME / safe_dirname(subtask)
 
 
+#: 子任务目录名改名时的**旧名 → 新名**映射（2026-10-03 换``disk_key``）。
+#:
+#: 目录名以前取的是 spec 的中文标题，于是它跟着文案变；而里面躺着用户攒下的
+#: 缩略图缓存与**手改过的版面图**（``拼图/edited/``）。文案一改，这些目录就成了
+#: 没人再去找的孤儿——现象是"我明明改过版面，重新打开又变回原样"。
+#:
+#: 现在目录名取 :meth:`StepSpec.disk_key`（步骤路由键，不随文案动）。这条表负责
+#: 把已经存在的老目录**搬**过去。⚠️ 它是一次性迁移，不是长期兼容层：新老并存时
+#: **以新目录为准**（旧目录留着不删，用户确认没用了自己清）。
+_LEGACY_SUBTASK_DIRS: dict[str, str] = {
+    "图片提取": "extract",
+    "检测文本框": "detect",
+    "去底色": "rembg",
+    "拼图": "imposition",
+    "生成 PDF": "print",
+}
+
+
+def migrate_legacy_singletask_dirs() -> list[str]:
+    """把按旧标题建的 ``singletask/<中文名>/`` 搬到新名（见 ``_LEGACY_SUBTASK_DIRS``）。
+
+    **幂等**：目标已存在就跳过（只当新目录存在的老数据，不会来回搬）；旧目录
+    **不删**——里面可能有用户还在意的东西，误删不可恢复。
+
+    返回实际搬动过的目录名（给自测与日志用）。
+    """
+    base = guji_data_dir() / SINGLETASK_DIRNAME
+    moved: list[str] = []
+    for old_name, new_name in _LEGACY_SUBTASK_DIRS.items():
+        old_dir = base / safe_dirname(old_name)
+        if not old_dir.is_dir():
+            continue
+        new_dir = base / safe_dirname(new_name)
+        if new_dir.exists():
+            continue  # 已有新目录（先前搬过/ 或新目录自己有了内容）⇒ 不碰
+        try:
+            old_dir.rename(new_dir)
+        except OSError:
+            continue  # 占用/权限/跨卷——留在原地，下次启动再试，绝不半途删
+        moved.append(f"{old_name} → {new_name}")
+    return moved
+
+
 def singletask_thumbnails_dir(subtask: str, book: str | Path | None = None) -> Path:
     """子任务的**页缩略图缓存**：``singletask/<子任务>/thumbnails[/<书>]``。
 

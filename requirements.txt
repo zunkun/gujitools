@@ -28,7 +28,7 @@ numpy>=1.21.0            # 数组运算
 # 上限不设——scipy 的 C API 向后兼容，且 PyInstaller 有官方 hook。
 scipy>=1.10.0            # import scipy.sparse / scipy.sparse.linalg
 
-# ---- YOLO 文本框检测 (crop / cropremove) ----
+# ---- YOLO 检测文本框 (crop / cropremove) ----
 ultralytics>=8.0.0       # YOLO 模型推理（依赖 torch，pip 会自动安装）
 
 # ---- 打包 (build.py) ----

@@ -205,6 +205,10 @@ class DetailViewMixin:
         # ⚠️ params_provider 必须传：缺了它预览永远显示"未接入打印参数，已显示原图"，
         # 标题/页码/纸张效果一概看不到（组件自测传了参数，测不出宿主漏接线）。
         self._print_dirty = False  # 版面编辑器改过坐标、尚未重新生成 PDF
+        #: 已生成的 PDF 是否已因**取图来源换掉**（拼版开关）而作废。缓存，
+        #: 由 ``_refresh_stale_notices`` 重算（见 page.py）——状态行经
+        #: ``_regenerate_notice`` 在执行期间每 ≤200ms 读它，不能现算。
+        self._print_source_stale = False
         self.print_preview = PrintPreviewWidget(
             empty_hint="暂无图片，请先在第三步「生成预览」并「提交本次任务」",
             params_provider=self._print_params,

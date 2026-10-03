@@ -100,9 +100,10 @@ class ImpositionBaseMixin:
     def _sync_imposition_step_bar(self) -> None:
         """把拼版节点三态（可见/已选择/生效）一次性同步到流程条。
 
-        「生效」= ``imposition_active()``（已启用且至少有一页拼版）：未生效时
-        流程条上拼版两侧的连接线是灰色虚线，「去底色 → 生成 PDF」走节点上方
-        的绕行线——与第四步真实取图来源（``print_source_dir``）保持一致。
+        「生效」= ``imposition_active()``（**已启用**即可，不要求已拼页）：
+        生效时拼版两侧的连接线常规点亮、徽标转绿色对勾；未生效时是灰色虚线、
+        「去底色 → 生成 PDF」走节点上方的绕行线——与第四步真实取图来源
+        （``print_source_dir``）保持一致，两处看同一个判据。
         """
         self.step_bar.set_imposition_visible(self._imposition_node_visible())
         self.step_bar.set_imposition_selected(self._load_imposition_enabled())
@@ -169,11 +170,31 @@ class ImpositionBaseMixin:
         return sorted(files, key=lambda p: pdf_custom_sort_key(p.name))
 
     def imposition_active(self) -> bool:
-        """拼版是否**生效**：已启用且至少有一页拼版。"""
+        """拼版**是否已启用**（用户勾了「在流程中启用图片拼版」就是启用）。
+
+        ⚠️ **只看勾没勾，不看有没有拼版页**（用户 2026-10-03 口径："如果启用了
+        拼板，则最后一步生成 pdf 的数据来源就是拼板"）。早先这里额外要求
+        "至少有一页"，于是勾了开关却还没拼页时——取图仍走去底色、流程条仍是
+        灰虚线 + 绕行线，用户看到的就是"启用了却不生效"。「有没有拼版页」是
+        另一件事（能不能真出东西），走 :meth:`imposition_has_pages`。
+
+        本方法是"**流程走不走拼板**"的唯一判据：第四步取图来源
+        (:meth:`print_source_dir`) 与流程条生效态
+        (:meth:`_sync_imposition_step_bar`) 都只看它。
+        """
         if not getattr(self, "task_id", None):
             return False
-        doc = self._imposition_doc()
-        return bool(doc.get("enabled")) and bool(doc.get("pages"))
+        return bool(self._imposition_doc().get("enabled"))
+
+    def imposition_has_pages(self) -> bool:
+        """拼版文档里**至少有一页**版面（能不能真的合成出图）。
+
+        与 :meth:`imposition_active` 分开：启用是**用户意图**（决定取图来源），
+        有页是**当前进度**（决定要不要提示"还没拼版，生成 PDF 没有输入"）。
+        """
+        if not getattr(self, "task_id", None):
+            return False
+        return bool(self._imposition_doc().get("pages"))
 
     def print_source_dir(self) -> Path:
         """第四步的取图目录：拼版生效 → stages/imposition，否则 stages/rembg。
@@ -269,20 +290,37 @@ class ImpositionBaseMixin:
         那一刻第四步根本不可见：进第四步时 ``_refresh_preview`` 本来就会
         重建一次，不怕漏。只有第四步**正被看着**（比如开关后停在第四步等
         后台合成收尾）才当场重建，否则用户会一直盯着旧来源。
+
+        另做两件**不重**的事（它们只动按钮/提示，不碰列表）：
+        1. 重算"取图来源已换"缓存（``_print_source_stale``）——本方法是拼版开关
+           变化的统一出口，缓存必须在这儿跟上，否则状态行还按旧来源显示提示；
+        2. 同步下载按钮：来源一换，磁盘上那份 PDF 就是旧数据，得灭掉
+           （用户 2026-10-03："旧的数据不显示"）。
         """
+        # 缓存与按钮先无条件跟上（都很轻，不碰列表）
+        try:
+            self._refresh_stale_notices()
+        except Exception:  # noqa: BLE001 - 判定失败不该拦住开关生效
+            pass
         preview = getattr(self, "print_preview", None)
         if preview is None or not self.task_id:
             return
+        try:
+            preview.set_pdf_path(self._current_print_pdf_path())
+        except Exception:  # noqa: BLE001 - 第四步尚未就绪时不该拖垮拼版页
+            pass
         source = str(self.print_source_dir())
         if getattr(self, "_print_source_cache", None) == source:
             return
         if self.preview_stack.currentIndex() != STAGES.index("print"):
             self._print_source_cache = None
+            # 第四步不可见：状态行/主按钮高亮留给进第四步时的那次刷新
             return
         self._print_source_cache = source
         try:
             entries, _doc = self._print_entries()
             preview.set_entries(entries)
+            self._refresh_stage_views()
         except Exception:  # noqa: BLE001 - 第四步尚未就绪时不该拖垮拼版页
             self._print_source_cache = None
             return

@@ -30,6 +30,7 @@ from qfluentwidgets import FluentIcon as FIF
 
 from desktop.ui import theme as T
 from desktop.ui import widgets as ui
+from desktop.ui.icons import PDF_FILE
 from desktop.ui.widgets import SegmentedToggle
 from desktop.workers import ImageListWorker, PreviewWorker, connect_queued
 from desktop.components.viewers.image_view import ImageView
@@ -178,7 +179,8 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         self.insert_button.clicked.connect(self.insert_requested.emit)
         self.delete_button = PushButton(FIF.DELETE, "删除选中")
         self.delete_button.clicked.connect(self.remove_selected)
-        self.download_button = PrimaryPushButton(FIF.SAVE, "下载 PDF")
+        # 按钮带的就是 PDF 本身，用带 "PDF" 字样的图标（``FIF.SAVE`` 只是通用存档）
+        self.download_button = PrimaryPushButton(PDF_FILE, "下载 PDF")
         self.download_button.setToolTip("请先执行「生成 PDF」后再下载")
         self.download_button.setEnabled(False)
         self.download_button.clicked.connect(self.download_requested.emit)
