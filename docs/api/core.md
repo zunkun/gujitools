@@ -4,7 +4,7 @@
 
 中立共享层：CLI 与 desktop 都依赖且语义必须一致的契约
 
-覆盖 4 个模块、9 个公开类、39 个公开函数/方法（生成于 2026-10-02）。
+覆盖 4 个模块、9 个公开类、39 个公开函数/方法（生成于 2026-10-03）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -313,6 +313,7 @@ no-op，行为与「只 print 日志」完全一致 —— 因此 CLI 路径零�
 | 名称 | 值 |
 | --- | --- |
 | EVENT_PROGRESS | `"progress"` |
+| PROGRESS_TOTAL_EVENT | `"progress_total"` |
 | EVENT_PAGE_BOXES | `"page_boxes"` |
 | EVENT_PAGE_SIZE | `"page_size"` |
 
@@ -359,8 +360,19 @@ desktop 的 JSON Lines 实现）都能直接充当 reporter，无需继承。
 | --- | --- |
 | `__init__(sink: Callable[[str, Dict[str, Any]], None])` | — |
 | `progress(done: int, total: int) -> None` | — |
-| `event(name: str, **payload: Any) -> None` | — |
+| `event(name: str, **payload: Any) -> None` | 转发具名事件；``progress_total`` 归一化成 ``done=0`` 的 progress。 |
 | `log(message: str) -> None` | — |
+
+##### `event(name: str, **payload: Any) -> None`
+
+转发具名事件；``progress_total`` 归一化成 ``done=0`` 的 progress。
+
+⚠️ 必须与 :class:`desktop.stages.events.JsonLinesReporter` **同一口径**：
+``functions/base`` 一上来就只报 ``progress_total``（总数已点清、还没开始
+处理），子进程路径把它归一化成 progress，进程内路径（独立功能页走这里）
+以前却原样当私有事件透传——于是独立页永远拿不到上限，进度条只能显示
+一个"总量未知"。两处口径分叉过一次，这里对齐；判定规则本身写在
+:data:`PROGRESS_TOTAL_EVENT`，两边共用。
 
 ### 模块函数
 

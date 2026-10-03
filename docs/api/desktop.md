@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 107 个模块、123 个公开类、781 个公开函数/方法（生成于 2026-10-02）。
+覆盖 112 个模块、126 个公开类、826 个公开函数/方法（生成于 2026-10-03）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -35,6 +35,7 @@
 | [`desktop.components.panels.print_sections`](#desktopcomponentspanelsprint_sections) | 1 | 0 |
 | [`desktop.components.panels.print_text_layout`](#desktopcomponentspanelsprint_text_layout) | 1 | 0 |
 | [`desktop.components.panels.rembg_panel`](#desktopcomponentspanelsrembg_panel) | 1 | 1 |
+| [`desktop.components.progress_row`](#desktopcomponentsprogress_row) | 1 | 8 |
 | [`desktop.components.step_bar`](#desktopcomponentsstep_bar) | 2 | 18 |
 | [`desktop.components.task_table`](#desktopcomponentstask_table) | 3 | 10 |
 | [`desktop.components.viewers.image_editor`](#desktopcomponentsviewersimage_editor) | 3 | 82 |
@@ -55,6 +56,7 @@
 | [`desktop.modules.print.page`](#desktopmodulesprintpage) | 1 | 2 |
 | [`desktop.modules.rembg.page`](#desktopmodulesrembgpage) | 1 | 2 |
 | [`desktop.modules.shell`](#desktopmodulesshell) | 1 | 15 |
+| [`desktop.modules.thumb_source`](#desktopmodulesthumb_source) | 1 | 4 |
 | [`desktop.pages.taskdetail.detect`](#desktoppagestaskdetaildetect) | 1 | 0 |
 | [`desktop.pages.taskdetail.history`](#desktoppagestaskdetailhistory) | 1 | 0 |
 | [`desktop.pages.taskdetail.imposition`](#desktoppagestaskdetailimposition) | 2 | 3 |
@@ -69,6 +71,7 @@
 | [`desktop.pages.taskdetail.submit`](#desktoppagestaskdetailsubmit) | 1 | 1 |
 | [`desktop.pages.taskdetail.view`](#desktoppagestaskdetailview) | 2 | 4 |
 | [`desktop.pages.tasklist.page`](#desktoppagestasklistpage) | 1 | 6 |
+| [`desktop.services.detect_export`](#desktopservicesdetect_export) | 0 | 3 |
 | [`desktop.services.font_catalog`](#desktopservicesfont_catalog) | 1 | 6 |
 | [`desktop.services.imposition`](#desktopservicesimposition) | 0 | 20 |
 | [`desktop.services.print_plan`](#desktopservicesprint_plan) | 0 | 5 |
@@ -83,9 +86,10 @@
 | [`desktop.stages.rembg_stage`](#desktopstagesrembg_stage) | 0 | 1 |
 | [`desktop.steps.control`](#desktopstepscontrol) | 1 | 11 |
 | [`desktop.steps.kernel`](#desktopstepskernel) | 5 | 11 |
+| [`desktop.steps.ports`](#desktopstepsports) | 0 | 14 |
 | [`desktop.steps.process`](#desktopstepsprocess) | 1 | 7 |
 | [`desktop.steps.source_zone`](#desktopstepssource_zone) | 1 | 18 |
-| [`desktop.steps.spec`](#desktopstepsspec) | 1 | 18 |
+| [`desktop.steps.spec`](#desktopstepsspec) | 1 | 19 |
 | [`desktop.store.annotations`](#desktopstoreannotations) | 1 | 9 |
 | [`desktop.store.drafts`](#desktopstoredrafts) | 1 | 5 |
 | [`desktop.store.imposition`](#desktopstoreimposition) | 1 | 3 |
@@ -103,7 +107,7 @@
 | [`desktop.ui.segmented_toggle`](#desktopuisegmented_toggle) | 1 | 11 |
 | [`desktop.ui.style`](#desktopuistyle) | 0 | 3 |
 | [`desktop.ui.theme`](#desktopuitheme) | 0 | 3 |
-| [`desktop.ui.widgets`](#desktopuiwidgets) | 9 | 36 |
+| [`desktop.ui.widgets`](#desktopuiwidgets) | 9 | 42 |
 | [`desktop.ui.window_size`](#desktopuiwindow_size) | 0 | 3 |
 | [`desktop.utils.files`](#desktoputilsfiles) | 0 | 8 |
 | [`desktop.utils.icon`](#desktoputilsicon) | 0 | 3 |
@@ -118,6 +122,7 @@
 | [`desktop.workers.serial_jobs`](#desktopworkersserial_jobs) | 1 | 9 |
 | [`desktop.workers.source_thumbnails_worker`](#desktopworkerssource_thumbnails_worker) | 1 | 4 |
 | [`desktop.workers.task_rows_worker`](#desktopworkerstask_rows_worker) | 1 | 2 |
+| [`desktop.workers.thumb_cache_worker`](#desktopworkersthumb_cache_worker) | 1 | 9 |
 | [`desktop.workers.worker_host`](#desktopworkersworker_host) | 1 | 4 |
 
 ---
@@ -1483,6 +1488,67 @@ border 决定四周留白，参数经 get_args 收集后传给子进程。默认
 
 border 留空时按 area 取默认（area=1/2/3 → 0、area=4 → 不设），
 由 runner 在续跑时与 detect 框坐标实时合成裁剪区域。
+
+---
+
+## `desktop.components.progress_row`
+
+源码：[`desktop/components/progress_row.py`](../../desktop/components/progress_row.py)
+
+执行进度：细进度条 + 计数文案（**独立功能页共用的那一条**）。
+
+为什么要有这个组件（2026-10-03）：
+
+- 任务流程页早就有进度条（``desktop/pages/taskdetail/view.py`` 的
+  ``stage_progress``），但**独立功能页一条都没有**——点「开始提取 / 去底色 /
+  生成 PDF」之后，右栏只有一行"正在处理…"的文字，几十秒的活儿看不出跑到
+  哪儿了；
+- 数字必须和条**放在一起**：页头状态行与右栏底部隔着一屏，对不上号；所以
+  计数（``12/48　25%``）直接跟在条右边，同一行读完。
+
+四个状态方法（:meth:`start` / :meth:`update` / :meth:`succeed` / :meth:`fail`）
+**谁在执行不重要**——``StepControl``（四个步骤页）与拼版页都用它，视觉与
+口径只有一份。
+
+⚠️ **总量未知**是常态而不是例外（print 的合成阶段、拼版合成、detect 出框
+之前都报不出 total），此时 :class:`~desktop.ui.widgets.ProgressLine` 走
+"来回滑动"的未知态，计数文案相应地不写 ``x/y``。
+
+### `class ProgressRow(QWidget)`
+
+一行执行进度：左侧细进度条（伸展）+ 右侧计数/状态文案。
+
+对外只认上面那四个状态方法加 :meth:`reset`。**不要**直接去摸
+``self.bar.setRange/setValue``——计数文案、颜色、未知态滑块都得跟着一起
+变，绕过方法就会漏掉其中一样。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(parent=None, noun: str='')` | ``noun`` 是这一步的计量单位（"页"/"张"），只影响完成文案。 |
+| `start(text: str='正在处理…') -> None` | 开始执行：条先摆出来（未知态滑块），计数位置显示提示文案。 |
+| `update(done: int, total: int) -> None` | 一次进度汇报：有 total 就定量显示 ``done/total  百分比``。 |
+| `succeed(text: str='') -> None` | 成功：条走到头，文案写最终计数（不给文案就只写"完成"）。 |
+| `fail(text: str='执行失败') -> None` | 失败：条**停住**（不清零——停在出错那一刻才看得出跑到哪儿），文案转红。 |
+| `reset() -> None` | 收工复位：条与文案都藏起来（下次 :meth:`start` 再点亮）。 |
+| `unit() -> str` | 计量单位后缀（"页"/"张"；没给单位就是空串）。**公开**访问器。 |
+| `done_text() -> str` | 按"最后一次已知上限"拼收尾文案（``完成 12/12 页``）。 |
+
+##### `start(text: str='正在处理…') -> None`
+
+开始执行：条先摆出来（未知态滑块），计数位置显示提示文案。
+
+⚠️ **先显示、后知总量**：多数命令第一步是"数一遍文件"，那之前 total
+拿不到；此时若把控件藏起来，用户会以为点了没反应。
+
+##### `done_text() -> str`
+
+按"最后一次已知上限"拼收尾文案（``完成 12/12 页``）。
+
+给宿主（``StepControl``）在成功时用：有些命令最后一页不补发 progress
+（print 只在 %10 与末页发，rembg 的失败张不计入 done），靠"最近一次
+进度"会停在 90%。总量未知时只说"已完成"——别写"完成 0 页"。
 
 ---
 
@@ -3396,6 +3462,93 @@ PDF 路径**回传给 ``finished``；本页据此直接把它交给左侧的 PDF
 
 ---
 
+## `desktop.modules.thumb_source`
+
+源码：[`desktop/modules/thumb_source.py`](../../desktop/modules/thumb_source.py)
+
+独立任务页左栏的**缩略图源**：把「当前源的缩略图」统一喂给查看器。
+
+用户 2026-10-03 的要求：「**所有独立任务左侧显示的都是缩略图**」。此前五个
+独立任务页各写各的：图片提取页自己拿 ``PdfViewerWidget`` 渲 PDF 页缩略图，
+detect/rembg/print 直接把**原图**塞进查看器（缩略图条每次现解码），
+拼图页压根没有缩略图条。
+
+本模块把这件事收成**一个混入**，各页只回答两个问题：
+
+1. **源是什么** → :meth:`ThumbSourceMixin.show_pdf` 或 :meth:`show_images`；
+2. **源换了/结果出来了** → 再调一次即可（同一个查看器，不重建控件）。
+
+⚠️ **只管缩略图，不管右侧大图**：大图仍是各查看器自己的事（extract 未提取时
+要从 PDF 按需渲高清页，见 :class:`~desktop.components.viewers.ImageViewerWidget`
+的 ``page_renderer``）。这一层刻意不做「一个万能预览控件」——检测框编辑、
+去底色对比、拼版画布三类左栏差异极大，硬合并只会得到一个谁都不合身的控件。
+
+⚠️ **只写缓存，不碰产物**：输出目录仍由
+:meth:`desktop.steps.spec.StepSpec.default_output` 决定。
+
+### `class ThumbSourceMixin`
+
+让一个「持有 :class:`ImageViewerWidget` 的宿主」按源类型接上缩略图缓存。
+
+使用前提：宿主自身是 :class:`~desktop.workers.WorkerHost`（所有模块页都是，
+``ModulePage`` 已 ``_init_worker_host()``），且有 ``self.SPEC`` 与
+``self.viewer``。
+
+用法::
+
+    class MyPage(StepModulePage, ThumbSourceMixin): ...
+    # _on_source_changed 里：
+    self.show_source(source)          # PDF 给路径，图片/目录给清单
+    # 跑完之后：
+    self.show_images(collect_result_images(out))
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `show_source(source, paths=None) -> None` | 按源的类型接上左栏缩略图。 |
+| `show_pdf(pdf: Path \| str) -> None` | 源是 PDF：渲页缩略图并交给查看器（大图按需渲高清页）。 |
+| `show_images(images) -> None` | 源是一批图片：清单进查看器，缩略图走 singletask 缓存。 |
+| `edit_effect_note(path: Path) -> str` | 编辑后日志里那句「**什么时候生效**」；各步骤按自己的下游覆盖。 |
+
+##### `show_source(source, paths=None) -> None`
+
+按源的类型接上左栏缩略图。
+
+``source`` 是这一步归一化后的源（``Path`` 或 ``None``）；``paths``
+给了就按图片清单处理（detect/rembg/print/拼图这类「源是一批图」的步骤
+直接把清单传进来，省得各页再各自判断一遍）。
+
+- 源是 **PDF** → 渲页缩略图到 ``singletask/<子任务>/thumbnails/<书>/``，
+  条目标签「第 N 页」，大图由查看器按需渲高清页；
+- 源是**图片或目录** → 用 ``spec.listing`` 取清单，每张渲一张缓存小图，
+  条目标签是文件名。
+
+##### `show_pdf(pdf: Path | str) -> None`
+
+源是 PDF：渲页缩略图并交给查看器（大图按需渲高清页）。
+
+⚠️ 缓存目录**必须带书**（:func:`singletask_thumbnails_dir` 的第二个
+参数）：缩略图文件名是页号（``0001.jpg``…），共用目录会让 A 书第 1 页
+被当成 B 书第 1 页的命中缓存 ⇒ 翻出别本书的内容。
+
+##### `show_images(images) -> None`
+
+源是一批图片：清单进查看器，缩略图走 singletask 缓存。
+
+清单**仍然是真实图片路径**（不是缓存路径）：右侧大图、检测框按
+``Path(path).stem`` 取键、放大弹窗的编辑回写，全都指着真实文件。
+缓存只喂左侧缩略图条（查看器的 ``thumb_provider``）。
+
+##### `edit_effect_note(path: Path) -> str`
+
+编辑后日志里那句「**什么时候生效**」；各步骤按自己的下游覆盖。
+
+默认按"本步骤的源图被改了"写——重新执行本步骤就会读新图。产物形态
+不同的步骤（提取的结果图、去底色的结果文件）各自覆盖成准确的说法。
+
+---
+
 ## `desktop.pages.taskdetail.detect`
 
 源码：[`desktop/pages/taskdetail/detect.py`](../../desktop/pages/taskdetail/detect.py)
@@ -3984,6 +4137,77 @@ parent 一般为 MainWindow；会创建 store 引用与导入按钮状态占位�
 
 ---
 
+## `desktop.services.detect_export`
+
+源码：[`desktop/services/detect_export.py`](../../desktop/services/detect_export.py)
+
+把「每页的框」画回原图并落盘（**纯函数模块，无 Qt**）。
+
+这一块原本只存在于 CLI 那条路上（``functions.detect`` 的 ``--save``），
+独立「检测文本框」模块页要导出同样的标注图时，若在页面里再写一遍，就会
+出现两套「按槽位取名/配色」的代码——那正是 :mod:`utils.box_draw` 当初被
+抽出来的原因（配色与命名必须处处一致）。所以规则本体在
+:func:`utils.box_draw.draw_slots`，本模块只做**遍历 + 落盘**。
+
+⚠️ **重依赖的导入时机**：本模块在**worker 线程**里被 :class:`CallableJob`
+调用（见 ``desktop/modules/detect/page.py``），而画框/读写图都要 ``cv2``。
+GUI 主进程**绝不能**在这里 import 到 cv2（实测 ``import functions.detect``
+会把 cv2 拖进启动路径）——所以 cv2 相关导入全部放进函数内部，让它发生
+在子线程里。这也是本模块不 import 任何 Qt 的原因：它必须能被线程安全调用。
+
+输出命名沿用 detect 的口径：``<原文件名去后缀>.png``（全分辨率无损位图，
+适合线框标注）。用 ``.png`` 而不是原图的后缀，是因为标注图是**中间核对
+产物**，不该让人误以为能替换原图。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| EXPORT_SUFFIX | `".png"` |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `annotated_name(source: Path \| str) -> str` | 原图路径 → 标注图**文件名**（``<stem>.png``）。 |
+| `export_annotated(entries: Iterable[tuple], dest: Path \| str, report: Optional[Callable[[str], None]]=None, progress: Optional[Callable[[int, int], None]]=None) -> list` | 把一批 ``(图片路径, 槽位)`` 画框后写到 ``dest``。 |
+| `entries_from_mapping(images: Sequence, boxes: Mapping[str, Sequence]) -> list` | ``(图片清单, {页名去后缀: 槽位})`` → :func:`export_annotated` 的入参。 |
+
+#### `export_annotated(entries: Iterable[tuple], dest: Path | str, report: Optional[Callable[[str], None]]=None, progress: Optional[Callable[[int, int], None]]=None) -> list`
+
+把一批 ``(图片路径, 槽位)`` 画框后写到 ``dest``。
+
+参数：
+
+- ``entries``：``[(图片路径, 槽位), …]``。``槽位`` 是
+  :mod:`utils.box_geometry` 的槽位表示（半幅 2 槽 / 整幅 1 槽，缺失侧
+  ``None``）；外观（名字与颜色）由 :func:`utils.box_draw.slot_names_colors`
+  按**槽位**给，调用方不传也不该自己拼；
+- ``dest``：输出目录，**已存在直接写**（覆盖由调用方与用户确认过，见
+  模块页的「目录已存在，是否覆盖」）；
+- ``report``：人读日志回调（``Callable[[str], None]``），每页调一次；
+- ``progress``：结构化进度回调（``Callable[[done, total], None]``），
+  每处理完一页调一次（**含读不出来/画框失败的那页**——它也被走过了）。
+  与 ``report`` 分开是因为两者用途不同、频率与内容也不同（一个给人看、
+  一个驱动进度条）；``progress`` 是可选的，CLI 那条路不传。
+
+返回：写出的文件路径列表（成功的那几张）。
+
+⚠️ **一页框都没有也照样写**（就是一张没画的原图）：用户导出的是"这批
+页面图 + 我认定的框"，漏掉没框的页会让他以为程序跳过了它。
+单页失败（文件被删、图片损坏、磁盘满）不中断整批——记进返回值之外的
+日志，由调用方决定要不要提示；只有 ``cv2``/``numpy`` 装不上这种
+整批性的问题才会抛出去。
+
+#### `entries_from_mapping(images: Sequence, boxes: Mapping[str, Sequence]) -> list`
+
+``(图片清单, {页名去后缀: 槽位})`` → :func:`export_annotated` 的入参。
+
+⚠️ **只取** ``boxes`` 里有的页：没有框的页不导出，用户要的是"我标了框
+的那些页"。（若产品口径要"整批都导出"，改这里一处即可，别改导出循环。）
+
+---
+
 ## `desktop.services.font_catalog`
 
 源码：[`desktop/services/font_catalog.py`](../../desktop/services/font_catalog.py)
@@ -4109,7 +4333,7 @@ parent 一般为 MainWindow；会创建 store 引用与导入按钮状态占位�
 | `auto_impose_pages(files: list) -> list[dict]` | 自动拼版（用户 2026-09-30 规则，**唯一实现**）： |
 | `page_bounds(page: dict) -> tuple[float, float, float, float]` | 一页的**内容范围**：所有图外接框的并集（用户说的「图片的四个区域」）。 |
 | `compose_page(page: dict)` | 一页拼版 → PIL RGB 图：**白底 + 所有图外接框的紧裁**。 |
-| `compose_doc(doc: dict, dest_dir) -> list[Path]` | 把整份拼版文档落成 ``dest_dir/0001.png`` …（列表顺序即页序）。 |
+| `compose_doc(doc: dict, dest_dir, report=None) -> list[Path]` | 把整份拼版文档落成 ``dest_dir/0001.png`` …（列表顺序即页序）。 |
 
 #### `normalize_page(page) -> dict | None`
 
@@ -4235,7 +4459,7 @@ PIL ``rotate`` 是**逆时针**，所以这里取负。两边口径写反的话�
 留白处为白：去底图的透明在此压到白底上（与 ``functions.print`` 加载图片
 时的压平规则一致）。
 
-#### `compose_doc(doc: dict, dest_dir) -> list[Path]`
+#### `compose_doc(doc: dict, dest_dir, report=None) -> list[Path]`
 
 把整份拼版文档落成 ``dest_dir/0001.png`` …（列表顺序即页序）。
 
@@ -4245,6 +4469,16 @@ PIL ``rotate`` 是**逆时针**，所以这里取负。两边口径写反的话�
 
 单页合成失败时跳过该页（不写文件），其余页照常。任务目录不存在时
 （任务被删）直接返回空列表。
+
+⚠️ 整轮**持 :data:`_COMPOSE_LOCK`**：后台防抖合成与生成 PDF 前的同步合成
+会打到同一个目录，不串行化就会出现"一个线程在写、另一个在清"——详见该锁
+的注释。
+
+``report``：可选的进度回调 ``(done, total)``，每处理完一页调一次（**含
+失败的那页**——它也被处理过了，只是不写文件）。独立拼图页靠它显示进度
+（任务流程里后台防抖那条路不传，用户不需要看）。
+⚠️ 回调在 :data:`_COMPOSE_LOCK` **内**调用，所以它只许发信号、不许做
+可能重入本模块的事（例如再调一次 ``compose_doc`` 会死锁）。
 
 ---
 
@@ -4605,6 +4839,10 @@ context 提供 task_id/stage/run_id，附加到每条事件上供 GUI 归位到�
 progress 事件：GUI 只关心 total 用来设进度条 range，因此这里
 统一映射为 done=0 的 progress，避免新增一种 GUI 不认识的事件类型。
 
+⚠️ 这条规则与 :class:`core.reporter.CallbackReporter`（进程内那条路）
+**必须同时存在且一致**——两处曾分叉过一次，导致独立功能页永远拿不到
+上限。判定用的是同一个常量 :data:`~core.reporter.PROGRESS_TOTAL_EVENT`。
+
 ### `class ProgressStream(io.TextIOBase)`
 
 拦截功能模块的 print 输出，原样转发为人读日志事件。
@@ -4800,7 +5038,9 @@ args["_effects"] = [
 信号：
 
 - ``status(text, kind)``：状态文案 + 语义（info/success/warning/error）；
-- ``progress(done, total)``：执行进度（``total=0`` 表示未知）；
+- ``progress(done, total)``：执行进度（``total=0`` 表示未知）。
+  ⚠️ 本组件**自己**也消费它来驱动 ``progress_row``，信号照常往外发——
+  宿主页面要另做呈现（例如拼图页有两条执行线）时仍接得到；
 - ``finished(output)``：成功，参数是输出目录；
 - ``failed(message)``：失败原因；
 - ``log(text)``：一行人读日志；
@@ -4839,6 +5079,15 @@ args["_effects"] = [
 
 同时把源画进大输入区（已选态）——宿主（模块页 / 拼版页）也走这里，
 保证"输入的显示"与"真正的源"永远一致，只有一份事实。
+
+##### `cancel() -> None`
+
+请求中止当前执行。
+
+⚠️ 进度条**不清零也不前进**：能不能真的停下取决于功能层是否检查标记
+（见 :meth:`StepKernel.cancel`），此刻说"0%"或"100%"都是骗人，就让
+它停在最后一格。真正收尾时 :meth:`_on_failed` / :meth:`_on_finished`
+才会改它。
 
 ---
 
@@ -4976,6 +5225,147 @@ args["_effects"] = [
 调用方（模块页 / 将来的批处理界面）不要自己拼 ``command_job``：哪一步需要
 额外的收尾（如 extract 的平铺）只有这里知道，散出去就一定会漏。
 没有命令的步骤（拼版）返回 ``None``——那种步骤由调用方给 ``CallableJob``。
+
+---
+
+## `desktop.steps.ports`
+
+源码：[`desktop/steps/ports.py`](../../desktop/steps/ports.py)
+
+步骤的**输入 / 输出端口**：把「这一步吃什么、吐什么」写成可连线的声明。
+
+用户 2026-10-03 的口径：
+
+> 任务流程每一步解耦，后续我会使用 bpm 流程处理不同的任务流程顺序，
+> 因此每一步都有输入，输出就可以了
+
+本模块只回答三个问题，**不碰界面、不碰算法、不决定顺序**：
+
+1. **数据"是什么"** —— :data:`ARTIFACTS` 里的**产物类型**（PDF / 图片 /
+   检测框）。BPM 连线按它匹配：上游只要吐出 ``pages``，无论它来自图片提取
+   还是图片拼版，下游都接得上。**这是"解耦"真正落地的地方**——下游不认
+   上游是谁，只认产物类型。
+2. **这一步要什么、给什么** —— :func:`stage_inputs` / :func:`stage_outputs`，
+   它们从 :class:`~desktop.steps.spec.StepSpec` 的 ``inputs`` / ``outputs``
+   字段派生（那是**唯一的端口声明处**），不在这里另写一份。
+3. **产物落在哪** —— :data:`STAGE_LOCATIONS` 给出每个端口在
+   ``tasks/<任务号>/`` 下的相对落点，:func:`artifact_path` 解析成绝对路径。
+
+**顺序与连线**由 :data:`SUPPLIERS` 一处决定：键是消费阶段，值是
+``{端口名: 供给阶段}``。将来的 BPM 换顺序 / 换连线只改这张表，算法、界面、
+任务目录布局全都不用动。
+
+⚠️ **运行阶段名与步骤 key 不是一回事**（本模块唯一的额外概念）：
+
+- 步骤 key 是 :data:`~desktop.steps.spec.STEP_KEYS` 里的 ``extract`` /
+  ``detect`` / ``rembg`` / ``print`` / ``imposition``，描述"这是什么功能"；
+- **运行阶段**多一个 ``rembg_submit``——它是第三步「去底色」面板上的
+  「提交本次任务」按钮触发的**同一步骤的第二个动作**（先生成整页预览图到
+  ``stages/rembgpreview``，用户确认后才把最终图落到 ``stages/rembg``）。
+  端口系统必须认得它，否则第三步的产物没有落点、第四步也没有输入。
+
+    ====================  ==========================================
+    运行阶段               步骤 key / 端口
+    ====================  ==========================================
+    ``extract``            ``extract``：in=pdf / out=pages
+    ``detect``             ``detect``：in=pages / out=boxes
+    ``rembg``              ``rembg``：in=pages,boxes / out=pages（预览）
+    ``rembg_submit``       ``rembg``：in=pages / out=pages（最终图）
+    ``print``              ``print``：in=pages / out=pdf
+    ====================  ==========================================
+
+⚠️ 本模块**纯逻辑、不 import 任何 Qt**，因此可以被自测、CLI 与将来的
+BPM 编排引擎安全导入（与 :mod:`desktop.steps.spec` 同一约束）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| ARTIFACT_PDF | `"pdf"` |
+| ARTIFACT_PAGES | `"pages"` |
+| ARTIFACT_BOXES | `"boxes"` |
+| SUPPLY_TASK_SOURCE | `"<task>"` |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `artifact_of(port: str) -> str` | 端口名 → 产物类型；未知端口按"页面图片"兜底（别让界面崩）。 |
+| `stage_inputs(stage: str) -> tuple[str, ...]` | 这一步**消费**哪些端口（来自 ``StepSpec.inputs``，不另写一份）。 |
+| `stage_outputs(stage: str) -> tuple[str, ...]` | 这一步**产出**哪些端口（来自 ``StepSpec.outputs``，不另写一份）。 |
+| `spec_for_stage(stage: str) -> StepSpec \| None` | 运行阶段 → 它对应的 :class:`StepSpec`（界面查表统一走这里）。 |
+| `stage_artifacts(stage: str) -> tuple[str, ...]` | 这一步消费哪些**产物类型**（端口名翻译过来）。 |
+| `location_of(stage: str, port: str) -> str \| None` | 运行阶段某端口的相对落点；没有登记返回 ``None``。 |
+| `artifact_path(task_dir: Path \| str, stage: str, port: str) -> Path \| None` | 产物在任务目录下的**绝对路径**；该阶段没登记这个端口则 ``None``。 |
+| `supplier_of(stage: str, port: str) -> str \| None` | 某阶段某端口由谁供给；没有连线返回 ``None``。 |
+| `print_pages_supplier(imposition_active: bool) -> str` | 生成 PDF 取图的上游：拼版生效时是 ``imposition``，否则是第三步提交。 |
+| `print_input_overrides(imposition_active: bool) -> dict[tuple[str, str], str]` | 打印阶段的运行时连线覆盖（拼版开关 → 上游换成 imposition）。 |
+| `resolve_input(task_dir: Path \| str, stage: str, port: str, overrides: dict[tuple[str, str], str] \| None=None) -> Path \| None` | **按连线**解析某阶段某端口的输入绝对路径。 |
+| `input_ready(task_dir: Path \| str, stage: str, port: str, overrides: dict[tuple[str, str], str] \| None=None) -> bool` | 这个端口的输入**已经就位**吗（落点存在且非空）。 |
+| `missing_stages(order: list[str], *, start: str \| None=None) -> list[str]` | 给定顺序，返回**输入还缺上游**的阶段（按顺序）。 |
+| `describe(stage: str) -> str` | 一行可读描述（``去底色：图片 + 检测框 → 图片``，日志/自测用）。 |
+
+#### `stage_inputs(stage: str) -> tuple[str, ...]`
+
+这一步**消费**哪些端口（来自 ``StepSpec.inputs``，不另写一份）。
+
+``rembg_submit`` 是"把预览图定稿"的提交动作，不重新检测，所以它**不吃**
+``boxes``（框在预览那一步已经用过了）；这里显式覆盖，其余阶段直接取 spec。
+
+#### `spec_for_stage(stage: str) -> StepSpec | None`
+
+运行阶段 → 它对应的 :class:`StepSpec`（界面查表统一走这里）。
+
+⚠️ 这一层映射（:data:`STAGE_STEPS`）在：``rembg_submit`` 要拿 ``rembg`` 的
+声明（它是同一步骤的第二个动作），而 ``imposition`` 虽是**伪步骤**（不在
+``STAGES`` 里）却也有自己的 spec。页面里凡是"按 stage 取这一步的界面元数据"
+（按钮文案、控制列宽度、预览控件名、右栏专属区块）都必须走本函数，
+**不要**自己 ``spec_by_key(stage)``——那会在 ``rembg_submit`` 上拿到 None。
+
+#### `artifact_path(task_dir: Path | str, stage: str, port: str) -> Path | None`
+
+产物在任务目录下的**绝对路径**；该阶段没登记这个端口则 ``None``。
+
+``task_dir`` 传 ``tasks/<任务号>/``（不是数据根）。
+
+#### `print_pages_supplier(imposition_active: bool) -> str`
+
+生成 PDF 取图的上游：拼版生效时是 ``imposition``，否则是第三步提交。
+
+⚠️ 抽成函数而不是在 :data:`SUPPLIERS` 里写死，是为了让"拼版生效"这种
+**运行态开关**（用户在详情页勾了拼版节点）有一个明确、可测的出口：
+BPM 编排时这正是"条件连线"的落点。
+
+#### `print_input_overrides(imposition_active: bool) -> dict[tuple[str, str], str]`
+
+打印阶段的运行时连线覆盖（拼版开关 → 上游换成 imposition）。
+
+传给 :func:`resolve_input` / :func:`input_ready`。⚠️ 返回**新字典**：
+调用方可能缓存它，别让一次运行的状态漏进下一次。
+
+#### `resolve_input(task_dir: Path | str, stage: str, port: str, overrides: dict[tuple[str, str], str] | None=None) -> Path | None`
+
+**按连线**解析某阶段某端口的输入绝对路径。
+
+``overrides`` 是 ``{(阶段, 端口): 供给阶段}`` 的运行时覆盖（拼版开关
+就是用它），优先级高于 :data:`SUPPLIERS`。解析不出来返回 ``None``。
+
+#### `input_ready(task_dir: Path | str, stage: str, port: str, overrides: dict[tuple[str, str], str] | None=None) -> bool`
+
+这个端口的输入**已经就位**吗（落点存在且非空）。
+
+只看"有没有东西"，不判断内容对不对——那是功能层的事。
+
+#### `missing_stages(order: list[str], *, start: str | None=None) -> list[str]`
+
+给定顺序，返回**输入还缺上游**的阶段（按顺序）。
+
+:data:`SUPPLIERS` 是静态声明，它默认"每个上游都跑过"。真要上线 BPM
+编排时，用它在执行前先做一次依赖检查：某个阶段的输入端口若由一个
+**还没执行**的上游供给，它就是当前不该跑的。
+
+⚠️ 不在这里判断"目录里有没有文件"——那要读磁盘、不是纯逻辑。运行态
+的就绪判断走 :func:`input_ready`。
 
 ---
 
@@ -5271,6 +5661,7 @@ args["_effects"] = [
 | `default_output(source: Path \| None) -> Path \| None` | 从源路径推出默认输出目录（源为空则返回 ``None``）。 |
 | `accepts_files() -> bool` | 源可以是一批文件吗（多选 / 单选都算）。 |
 | `run_text() -> str` | 执行按钮文案（``run_label`` 为空时回落到"开始 + 标题"）。 |
+| `progress_unit() -> str` | 进度计量的单位（``progress_noun`` 为空时回落到 ``input_noun``）。 |
 | `short_name() -> str` | 流程步骤条上的短名（``short`` 为空时用 ``stage_name()``）。 |
 | `stage_name() -> str` | 流程步骤条上的名字（``stage_title`` 为空时用 ``title``）。 |
 | `nav_tip() -> str` | 导航条目悬停提示（``nav_tooltip`` 为空时用 ``subtitle``）。 |
@@ -5353,6 +5744,13 @@ args["_effects"] = [
 - 固定名（``output_name``）优先，放在源的**同级目录**下；
 - 否则：源是目录 → ``<父目录>/<目录名><后缀>``；
   源是文件 → ``<父目录>/<文件名去后缀><后缀>``。
+
+##### `progress_unit() -> str`
+
+进度计量的单位（``progress_noun`` 为空时回落到 ``input_noun``）。
+
+给 :class:`~desktop.components.progress_row.ProgressRow` 用；回落到
+``input_noun`` 是为了"没显式声明也能说出个大概"，总比空着强。
 
 ##### `stage_name() -> str`
 
@@ -6582,16 +6980,41 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 比 qfluent 的 ProgressBar 更克制（没有文字、没有内边距），
 适合嵌在参数卡片里表示"这一步执行到多少页"。
 
+**总量未知**（上限为 0）时自动切成"来回滑动"的未知态：并不是所有执行
+一开始就知道总量（print 的合成阶段、拼版合成、detect 找齐框之前都是），
+这时若还画一根不动的空条，用户会以为界面卡住了。
+
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(parent=None, height: int=6)` | height 为轨道像素高度（默认 6）。 |
-| `setRange(minimum: int, maximum: int) -> None` | 设置上限，并把当前值夹到 [0, maximum]；上限为 0 时归零。 |
+| `setRange(minimum: int, maximum: int) -> None` | 设置上限，并把当前值夹到 [0, maximum]；上限为 0 时归零（切未知态）。 |
 | `setValue(value: int) -> None` | 设置当前值（超出上限时夹到上限）。 |
 | `value() -> int` | 当前值。 |
+| `maximum() -> int` | 上限（0 = 总量未知）。 |
 | `ratio() -> float` | 完成比例（0.0~1.0）；尚未设置上限时返回 0.0。 |
+| `is_unknown() -> bool` | 当前是不是"总量未知"的滑动态。 |
+| `finish() -> None` | 走到终点（成功收尾时用）；总量未知时什么也不做。 |
+| `refresh_animation() -> None` | 按当前可见性与上限重新启停动画（从隐藏切到显示时调一次）。 |
+| `showEvent(event) -> None` | Qt 事件覆写：显示时刷新状态。 |
+| `hideEvent(event) -> None` | Qt 事件覆写：隐藏时收尾。 |
 | `paintEvent(event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
+
+##### `finish() -> None`
+
+走到终点（成功收尾时用）；总量未知时什么也不做。
+
+给上层一个**公开**的收尾入口，是为了不必伸手去摸 ``_maximum``——
+进度行组件只该用这里与 :meth:`setRange` / :meth:`setValue`。
+
+##### `refresh_animation() -> None`
+
+按当前可见性与上限重新启停动画（从隐藏切到显示时调一次）。
+
+单独开这个公开方法，是因为 Qt 的 ``showEvent`` 只在**控件自己**被
+隐藏过再显示时才重入；父容器整块显隐（独立页初始只有输入区那种情形）
+不保证触发它，滑块就会停在原地不动。
 
 ### `class Pill(QWidget)`
 
@@ -7494,6 +7917,98 @@ copy_to 给了就**另起一个线程**把它复制成任务目录里的源文�
 | --- | --- |
 | `__init__(store) -> None` | store 只用于读（list_tasks / stage_states），不写。 |
 | `run() -> None` | 遍历任务生成摘要行；异常回传 failed，不抛到线程外。 |
+
+---
+
+## `desktop.workers.thumb_cache_worker`
+
+源码：[`desktop/workers/thumb_cache_worker.py`](../../desktop/workers/thumb_cache_worker.py)
+
+**独立任务左栏缩略图的统一缓存层**（``~/Documents/guji/singletask/<子任务>/``）。
+
+用户 2026-10-03 的要求之一是「**所有独立任务左侧显示的都是缩略图**」。此前
+只有图片提取页有 PDF 页缩略图（走 ``PdfViewerWidget`` 自己的缩略图通道），
+其余四页左栏塞的是**原图**或各自的专用预览控件——同一件「看一批图」的事在五个
+页面有五种实现，缓存也无处安放。
+
+本模块管**非 PDF 源**（一批图片）这一半：把每张图渲成
+``singletask/<子任务>/thumbs/<边长>/<键>.jpg``（路径规则见
+:func:`desktop.utils.files.image_thumb_cache_path`）。
+
+PDF 源**不在这里**——它已有了一份成熟实现（``PreviewWorker`` 的缩略图通道：
+单飞锁、按耗时让出 GIL、原子写、命中缓存直接读、页边界可取消），再写一份必然
+漂移，而且那份代码里每条注释都在解释踩过的坑。PDF 侧由
+:class:`~desktop.components.viewers.pdf_page_source.PdfPageSource` 直接驱动
+那个通道。
+
+⚠️ 本模块只写**缓存**，不碰产物：模块页的输出目录仍由
+:meth:`desktop.steps.spec.StepSpec.default_output` 决定（用户明确要求「生成
+目录按照原先的」）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| MIN_THUMB_BYTES | `512` |
+
+### `class ImageThumbCacheWorker(QObject)`
+
+把一批**源图片**的缩略图渲进 singletask 缓存，逐张就绪即发一次。
+
+信号口径与既有的 ``ImageListWorker`` 一致（``thumbnail_ready(int, QImage,
+str)`` / ``completed`` / ``failed``），所以各查看器的分批装载
+(:class:`~desktop.components.viewers.thumbs_loader.ThumbsMixin`) 能原样复用
+——只是这里第三参数是**缓存文件路径**而不是源图路径（缓存写完前它可能是
+空串：那一张仍然会显示，只是不承诺下次命中）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(paths: list[Path \| str], out_dir: Path \| str, edge: int=THUMBNAIL_EDGE)` | ``paths`` 为源图清单；``out_dir`` 是这一批共用的缓存目录 |
+| `cancel() -> None` | 请求中止：在**下一张**之前退出（已写好的都在盘上，重进直接命中）。 |
+| `cache_path(index: int) -> Path` | 第 index 张图的缓存路径（宿主拿去当 ``thumb_provider`` 的答案）。 |
+| `run() -> None` | 逐张：命中缓存直接读，否则渲一张并原子写盘。 |
+
+##### `__init__(paths: list[Path | str], out_dir: Path | str, edge: int=THUMBNAIL_EDGE)`
+
+``paths`` 为源图清单；``out_dir`` 是这一批共用的缓存目录
+（``singletask/<子任务>/thumbs/<边长>/``）；``edge`` 为缩略图最长边。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `thumb_cache_file(out_dir: Path \| str, image: Path \| str) -> Path` | 一张源图在 ``out_dir`` 下的缓存文件名（去后缀 + 大小 + 路径指纹）。 |
+| `stat_mtime(path) -> float` | 文件 mtime；取不到返回 0（拿不到就当"缓存都是新的"→ 不重渲）。 |
+| `cache_usable(target: Path, source_mtime: float) -> bool` | 缓存缩略图能不能用：不比源图旧，且体积不像截断。 |
+| `decode_sized(path: Path, edge: int) -> QImage` | 按最长边 ``edge`` 缩放解码一张图（尽量不把整张原图读进内存）。 |
+| `encode_jpeg(image: QImage, quality: int=80) -> bytes` | QImage → JPEG 字节。 |
+
+#### `thumb_cache_file(out_dir: Path | str, image: Path | str) -> Path`
+
+一张源图在 ``out_dir`` 下的缓存文件名（去后缀 + 大小 + 路径指纹）。
+
+⚠️ 键**必须逐图算**、不能按序号：图片源的条目名五花八门（``1.jpg`` /
+``右-01.png``…），按序号命名一旦清单顺序变了就会张冠李戴——拿到的是
+**别张图的缓存**。这与 PDF 侧「按页号命名 ⇒ 必须按书分目录」是同一个坑。
+
+#### `decode_sized(path: Path, edge: int) -> QImage`
+
+按最长边 ``edge`` 缩放解码一张图（尽量不把整张原图读进内存）。
+
+与 :class:`~desktop.workers.image_list_worker.ImageListWorker` 同一套做法：
+``QImageReader.setScaledSize`` 让解码器直接出目标尺寸；少数格式/异常文件
+缩放解码会失败，回退到整图解码后内存缩放。
+
+#### `encode_jpeg(image: QImage, quality: int=80) -> bytes`
+
+QImage → JPEG 字节。
+
+⚠️ ``QImage.save`` 只能写**文件**，这里借 ``QBuffer`` 拿字节——因为落盘
+必须走 :func:`utils.file_utils.write_bytes_atomic`（非原子写留下的截断
+JPEG，mtime 也是新的，会被上面的 :func:`cache_usable` 永久当成有效缓存
+且没有任何自愈路径）。
 
 ---
 

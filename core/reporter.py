@@ -46,6 +46,9 @@ from typing import Any, Callable, Dict, Optional, Protocol, runtime_checkable
 # 已定义的事件名。写入 payload 的 "type" 字段之前请先在此登记，
 # 免得两端各写各的字符串、拼错了也没人发现。
 EVENT_PROGRESS = "progress"
+#: 引擎"先给总数、尚无完成量"的事件名。两个 reporter 实现都把它归一化成
+#: ``done=0`` 的 progress 事件（见各自的 ``event``），免得 GUI 多认一种类型。
+PROGRESS_TOTAL_EVENT = "progress_total"
 EVENT_PAGE_BOXES = "page_boxes"
 EVENT_PAGE_SIZE = "page_size"
 
@@ -103,6 +106,18 @@ class CallbackReporter:
         self._sink(EVENT_PROGRESS, {"done": int(done), "total": int(total)})
 
     def event(self, name: str, **payload: Any) -> None:
+        """转发具名事件；``progress_total`` 归一化成 ``done=0`` 的 progress。
+
+        ⚠️ 必须与 :class:`desktop.stages.events.JsonLinesReporter` **同一口径**：
+        ``functions/base`` 一上来就只报 ``progress_total``（总数已点清、还没开始
+        处理），子进程路径把它归一化成 progress，进程内路径（独立功能页走这里）
+        以前却原样当私有事件透传——于是独立页永远拿不到上限，进度条只能显示
+        一个"总量未知"。两处口径分叉过一次，这里对齐；判定规则本身写在
+        :data:`PROGRESS_TOTAL_EVENT`，两边共用。
+        """
+        if name == PROGRESS_TOTAL_EVENT:
+            self.progress(0, int(payload.get("total", 0)))
+            return
         self._sink(name, payload)
 
     def log(self, message: str) -> None:
@@ -122,6 +137,7 @@ __all__ = [
     "EVENT_PAGE_BOXES",
     "EVENT_PAGE_SIZE",
     "EVENT_PROGRESS",
+    "PROGRESS_TOTAL_EVENT",
     "CallbackReporter",
     "CoreReporter",
     "NULL_REPORTER",

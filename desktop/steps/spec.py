@@ -140,6 +140,11 @@ class StepSpec:
     nav: bool = False
     nav_tooltip: str = ""
     nav_icon: str = ""
+    #: 进度计量的**单位**（"页"/"张"/空）。独立功能页的进度条按它写
+    #: "完成 12 页"这类收尾文案（``ProgressRow`` 的 ``noun``）。
+    #: ⚠️ 与 ``input_noun``（入口文件的称呼，"PDF"/"图片"）**不是一回事**：
+    #: 入口是 PDF、处理的是页；入口是图片、处理的是张。
+    progress_noun: str = ""
 
     # ------------------------------------------------------------------ 面板
     def panel_class(self):
@@ -372,6 +377,14 @@ class StepSpec:
         """执行按钮文案（``run_label`` 为空时回落到"开始 + 标题"）。"""
         return self.run_label or f"开始{self.title}"
 
+    def progress_unit(self) -> str:
+        """进度计量的单位（``progress_noun`` 为空时回落到 ``input_noun``）。
+
+        给 :class:`~desktop.components.progress_row.ProgressRow` 用；回落到
+        ``input_noun`` 是为了"没显式声明也能说出个大概"，总比空着强。
+        """
+        return self.progress_noun or self.input_noun()
+
     def short_name(self) -> str:
         """流程步骤条上的短名（``short`` 为空时用 ``stage_name()``）。"""
         return self.short or self.stage_name()
@@ -424,6 +437,8 @@ SPECS: tuple[StepSpec, ...] = (
         subtitle="选择一个 PDF（或一整个 PDF 文件夹），把每页渲染成图片",
         panel="ExtractPanel",
         pick_label="选择 PDF",
+        # ⚠️ 单位是"页"不是"PDF"：这一步处理的是 PDF 里的每一页。
+        progress_noun="页",
         run_label="开始提取",
         file_filter=PDF_FILTER,
         flat_output=True,
@@ -447,6 +462,7 @@ SPECS: tuple[StepSpec, ...] = (
         subtitle="拖入图片或图片文件夹，检测每页的内容框；可在图上手绘修正后导出坐标 JSON",
         panel="DetectPanel",
         pick_label="选择图片",
+        progress_noun="张",
         file_filter=IMAGE_FILTER,
         output_suffix="_检测",
         inputs=("pages",),
@@ -467,6 +483,7 @@ SPECS: tuple[StepSpec, ...] = (
         subtitle="拖入图片或图片文件夹，批量去底色 / 二值化（可保留印章）",
         panel="RembgPanel",
         pick_label="选择图片",
+        progress_noun="张",
         run_label="开始去底色",
         file_filter=IMAGE_FILTER,
         output_suffix="_去底",
@@ -489,6 +506,7 @@ SPECS: tuple[StepSpec, ...] = (
         subtitle="拖入成品图文件夹，按版面合成 PDF（页序按文件名）",
         panel="PrintPanel",
         pick_label="选择图片",
+        progress_noun="页",
         run_label="生成 PDF",
         file_filter=IMAGE_FILTER,
         artifact_is_file=True,
@@ -513,6 +531,7 @@ SPECS: tuple[StepSpec, ...] = (
         subtitle="拖入一批图片，拼版后导出成品图（每两张一页）",
         panel="desktop.components.imposition:ImpositionPanel",
         pick_label="选择图片",
+        progress_noun="页",
         file_filter=IMAGE_FILTER,
         allow_multi=True,
         output_name="拼图成品",

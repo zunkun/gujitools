@@ -127,16 +127,25 @@ def main() -> int:
     check("注入后返回值仍相同", out_d == out_a, f"{out_d} vs {out_a}")
 
     kinds = [n for n, _ in events]
-    check("注入后出现 progress_total 事件", "progress_total" in kinds, str(kinds))
     check("注入后出现 progress 事件", "progress" in kinds, str(kinds))
     progs = [p for n, p in events if n == "progress"]
     check("progress 单调不减且以 total 收尾",
           bool(progs) and progs[-1]["done"] == progs[-1]["total"] == 2
           and all(a["done"] <= b["done"] for a, b in zip(progs, progs[1:])),
           str(progs))
-    check("progress_total 的总数与实际图片数一致",
-          [p for n, p in events if n == "progress_total"] == [{"total": 2}],
-          str([p for n, p in events if n == "progress_total"]))
+    # ⚠️ ``progress_total`` **不再是独立事件类型**：它被归一化成 ``done=0`` 的
+    #    progress（判定用 ``core.reporter.PROGRESS_TOTAL_EVENT``）。
+    #    为什么改：独立功能页走**进程内**这条路（``CallbackReporter``），以前这里
+    #    原样透传，于是那一侧永远拿不到上限、进度条一直是"总量未知"；归一化后
+    #    两个 reporter 口径一致，GUI 只认一种进度事件。
+    #    断言因此改成"**一条 done=0/total 的 progress**"，见 ``reporter_worker_e2e``
+    #    与 ``tests/selftests/reporter.py`` 里的同类归一化断言。
+    check("progress_total 已归一化成 done=0 的 progress（不再单独出现）",
+          "progress_total" not in kinds
+          and any(p["done"] == 0 and p["total"] == 2 for p in progs),
+          f"kinds={kinds} progs={progs}")
+    check("归一化后总数与实际图片数一致（每条 progress 的 total 都是 2）",
+          bool(progs) and all(p["total"] == 2 for p in progs), str(progs))
     # 不注入时绝不能有任何汇报（CLI 路径零副作用）
     check("不注入时零事件", not [n for n, _ in
           run_case(tmp / "same", src, "rembg", None)[2]], "不该有事件")

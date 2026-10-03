@@ -36,6 +36,7 @@ from desktop.components.imposition import (
     ImpositionPickerDialog,
     ImpositionViewWidget,
 )
+from desktop.components.progress_row import ProgressRow
 from desktop.modules.base import ModulePage
 from desktop.services.imposition import (
     auto_impose_pages,
@@ -110,8 +111,16 @@ class ImpositionModulePage(ModulePage):
         # 导出走共用执行内核：拼版是纯函数，所以用 CallableJob
         self.kernel = StepKernel(callable_job(self._compose_job), self)
         self.kernel.log.connect(self.log)
+        self.kernel.progress.connect(self._on_progress)
         self.kernel.finished.connect(self._on_exported)
         self.kernel.failed.connect(self._on_export_failed)
+
+        # 执行进度：与四个步骤页**同一个**组件（``StepControl`` 内部那条也是
+        # 它），所以拼图页的进度条长得跟别处一模一样。
+        # ⚠️ 本页**不继承** ``StepModulePage``（源是一批图、执行是纯函数导出），
+        # 所以这条得自己摆、自己接——别以为基类会捎带带上。
+        self.progress_row = ProgressRow(noun=_SPEC.progress_unit())
+        card.box.addWidget(self.progress_row)
 
         self.auto_button = PushButton(FIF.MOVE, "自动拼版")
         self.auto_button.setFixedHeight(34)
@@ -339,13 +348,25 @@ class ImpositionModulePage(ModulePage):
         self._refresh_view()
 
     # ------------------------------------------------------------------ 导出
-    def _compose_job(self, request: StepRequest, _report) -> str | None:
+    def _compose_job(self, request: StepRequest, report) -> str | None:
         """执行内核的 job：把整份文档合成为图片（纯函数，线程里安全）。
 
         ⚠️ 写成 job 而不是页面方法，是为了让"跑什么"与"怎么跑/怎么汇报"
         分开——内核负责后者（线程 + 信号），本页只管前者。
         """
-        written = compose_doc(request.args["doc"], Path(request.dest))
+        doc = request.args["doc"]
+        dest = Path(request.dest)
+        # 逐页进度：``compose_doc`` 合成一页报一次（内核转成 progress 信号）。
+        # ⚠️ report 为 None 时整条链都不汇报（内核正常运行时一定非 None，
+        #    但 job 契约允许"只干活"——既有自测就是这么直接调本 job 的）。
+        written = compose_doc(
+            doc, dest,
+            report=None if report is None else (
+                lambda done, total: report(
+                    "progress", {"done": done, "total": total}
+                )
+            ),
+        )
         self._export_result["count"] = len(written)
         return str(request.dest)
 
@@ -370,25 +391,36 @@ class ImpositionModulePage(ModulePage):
         self._out_dir = out_dir
 
         self.export_button.setEnabled(False)
+        # 先点亮进度条再起线程：极小的一批可能瞬间跑完，先亮才不会被收尾盖掉
+        self.progress_row.start()
         self.status("正在导出…", "info")
         self.log(f"开始导出 {len(pages)} 页 → {out_dir}")
         self._export_result = {}
         request = StepRequest(dest=out_dir, args={"doc": dict(self._doc)})
         if not self.kernel.run(request):
             self.export_button.setEnabled(True)
+            self.progress_row.reset()
             self.status("正在导出", "warning")
 
+    def _on_progress(self, done: int, total: int) -> None:
+        """一条执行进度：喂给右栏那条进度行。"""
+        self.progress_row.update(done, total)
+
     def _on_exported(self, out_dir: str) -> None:
-        """导出成功：恢复按钮并提示。"""
+        """导出成功：恢复按钮、进度条走到头并提示。"""
         count = int(self._export_result.get("count", 0))
         self.export_button.setEnabled(True)
+        self.progress_row.succeed(
+            f"完成 {count} 页" if count else "已完成"
+        )
         self.status(f"导出完成：{out_dir}（{count} 页）", "success")
         self.log(f"导出完成：{count} 页 → {out_dir}")
         self.toast("success", "导出完成", f"共导出 {count} 页到：\n{out_dir}")
 
     def _on_export_failed(self, message: str) -> None:
-        """导出失败：恢复按钮并提示。"""
+        """导出失败：恢复按钮、进度条停住并提示。"""
         self.export_button.setEnabled(True)
+        self.progress_row.fail()
         self.status("导出失败", "error")
         self.log(f"导出失败：{message}")
         self.toast("error", "导出失败", message)

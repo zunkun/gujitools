@@ -42,7 +42,9 @@ class StepControl(QWidget):
     信号：
 
     - ``status(text, kind)``：状态文案 + 语义（info/success/warning/error）；
-    - ``progress(done, total)``：执行进度（``total=0`` 表示未知）；
+    - ``progress(done, total)``：执行进度（``total=0`` 表示未知）。
+      ⚠️ 本组件**自己**也消费它来驱动 ``progress_row``，信号照常往外发——
+      宿主页面要另做呈现（例如拼图页有两条执行线）时仍接得到；
     - ``finished(output)``：成功，参数是输出目录；
     - ``failed(message)``：失败原因；
     - ``log(text)``：一行人读日志；
@@ -118,6 +120,14 @@ class StepControl(QWidget):
         self.out_button.clicked.connect(self._pick_output)
         layout.addWidget(self.out_button)
 
+        # ---- 执行进度（细条 + 计数，见 ProgressRow 的类 docstring）----
+        # ⚠️ 位置在**执行按钮上方**：进度是"这次执行"的反馈，与按钮同属一个
+        #    视觉组；放页面最底部会离按钮太远，用户点了要来回找。
+        from desktop.components.progress_row import ProgressRow
+
+        self.progress_row = ProgressRow(noun=spec.progress_unit())
+        layout.addWidget(self.progress_row)
+
         # ---- 执行 / 中断 ----
         run_row = QHBoxLayout()
         run_row.setContentsMargins(0, 0, 0, 0)
@@ -190,6 +200,9 @@ class StepControl(QWidget):
             return
         request = StepRequest(source=self._source, dest=dest, args=args)
         self._set_running(True)
+        # ⚠️ 先点亮再起线程：否则内核极快跑完时，第一条 progress 可能比这条
+        #    "开始"还早到（信号是排队投递的），进度会被随后的收尾覆盖掉。
+        self.progress_row.start()
         self.status.emit("正在处理…", "info")
         self.log.emit(f"开始{self.spec.title}：{self._source} → {dest}")
         if not self.kernel.run(request):
@@ -197,7 +210,13 @@ class StepControl(QWidget):
             self.status.emit("上一次还没结束，请稍候", "warning")
 
     def cancel(self) -> None:
-        """请求中止当前执行。"""
+        """请求中止当前执行。
+
+        ⚠️ 进度条**不清零也不前进**：能不能真的停下取决于功能层是否检查标记
+        （见 :meth:`StepKernel.cancel`），此刻说"0%"或"100%"都是骗人，就让
+        它停在最后一格。真正收尾时 :meth:`_on_failed` / :meth:`_on_finished`
+        才会改它。
+        """
         self.kernel.cancel()
         self.status.emit("正在中断…", "warning")
 
@@ -258,20 +277,34 @@ class StepControl(QWidget):
 
     def _on_progress(self, done: int, total: int) -> None:
         self.progress.emit(done, total)
+        self.progress_row.update(done, total)
         if total:
             self.status.emit(f"正在处理… {done}/{total}", "info")
 
     def _on_finished(self, output: str) -> None:
         self._set_running(False)
+        # ⚠️ 收尾文案要写**最终计数**：有些命令最后一页不补发 progress
+        #    （print 只在 %10 与末页发，rembg 的失败张不计入 done），光靠
+        #    "最近一次进度"会停在 90%。所以这里按"最后一次已知 total"补齐。
+        self.progress_row.succeed(self._done_text())
         self.status.emit(f"处理完成：{output}", "success")
         self.log.emit(f"处理完成，输出目录：{output}")
         self.finished.emit(output)
 
     def _on_failed(self, message: str) -> None:
         self._set_running(False)
+        # 停在出错那一刻（不清零），用户能看出是跑到一半失败的
+        self.progress_row.fail()
         self.status.emit("处理失败", "error")
         self.log.emit(f"处理失败：{message}")
         self.failed.emit(message)
+
+    def _done_text(self) -> str:
+        """成功后的收尾文案（``完成 12/12 页`` / ``已完成``）。
+
+        转发 :meth:`ProgressRow.done_text`：口径写在组件里，宿主不重算。
+        """
+        return self.progress_row.done_text()
 
 
 __all__ = ["StepControl"]

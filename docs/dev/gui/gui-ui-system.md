@@ -88,7 +88,7 @@ status_label(status)   # -> 中文文案，未知状态原样返回
 | `Divider` | 1px 水平分隔线（固定高 1px、水平拉伸） |
 | `SectionTitle` | 带主色竖条的分区标题 |
 | `StatusChip` | 状态胶囊：圆点 + 文案 + 淡色底，`set_state(text, status)` |
-| `ProgressLine` | 细进度条，`setRange/setValue/ratio`，`height` 可调 |
+| `ProgressLine` | 细进度条，`setRange/setValue/value/maximum/finish/ratio`，`height` 可调；**上限为 0 时自动走「来回滑动」的未知态**（总量拿不到时用，别自己再画一根不动的空条） |
 | `Pill` | 文本自适应宽度的信息胶囊（超长省略） |
 | `SegmentedToggle` | 分段开关：一行内互斥选择视图形态，`current/set_current/set_item_enabled`，点击发 `current_changed` |
 | `EmptyState` | 空状态：图标 + 主文案 + 提示行，`set_text/set_hint` |
@@ -98,6 +98,37 @@ status_label(status)   # -> 中文文案，未知状态原样返回
 | `ui_font(size, bold)` | 生成统一字体的 `QFont` |
 | `apply_to(widget, size, bold, color)` | 给控件套统一字体/颜色 |
 | `icon_pixmap(icon, size, color)` | 把 `FluentIcon` 渲染成指定颜色的 `QPixmap` |
+
+### 执行进度（`ProgressRow`）
+
+**独立功能页**（提取 / 检测 / 去底色 / 生成 PDF / 拼图）执行时，右栏控制卡片里
+「执行/中断」按钮**上方**有一条进度：细条 + 右侧计数文案。用
+`desktop/components/progress_row.py::ProgressRow`，由四个方法驱动，别去直接摸
+`self.bar.setValue`（计数文案、颜色、未知态都得跟着一起变）：
+
+| 方法 | 什么时候调 | 效果 |
+| --- | --- | --- |
+| `start(text)` | 按下执行、起线程**之前** | 条摆出来（未知态滑块），文案是提示 |
+| `update(done, total)` | 每条进度事件 | 有 `total` 就 `x/y　百分比`；没有就只写「已处理 n」 |
+| `succeed(text)` | 执行成功 | 条走到头，文案转绿（`text` 省略时只写「完成<单位>」） |
+| `fail(text)` | 执行失败 | 条**停住**（不清零，看得出跑到哪儿），文案转红 |
+| `reset()` | 换源 / 起跑被拒 | 全藏，下次 `start` 再点亮 |
+
+规则：
+
+- **摆放位置是「执行入口」那一层，不是页面层**：四个步骤页的进度条在
+  `StepControl` 内部（属性 `progress_row`），因为它们的执行入口都是它——进度是
+  **执行**的一部分。**拼图页不继承 `StepModulePage`**（源是一批图、执行是纯函数
+  导出），所以自己摆了一条；`detect` 页另有「导出标注图」这条**能并行**的第二
+  执行线，也自己单配了一条（`export_progress`）——两条线共用一条进度会让用户
+  不知道「12/30」是谁在跑。
+- **先点亮再起线程**：内核极快跑完时，第一条 progress 可能比 `start()` 还早到
+  （信号是排队投递的），顺序反了进度会被随后的收尾覆盖掉。
+- **计量单位取自 `StepSpec.progress_unit()`**（`progress_noun` 字段，回落到
+  `input_noun()`）。⚠️ 与 `input_noun` 不是一回事：入口是 PDF、处理的是**页**；
+  入口是图片、处理的是**张**。
+- **总量未知是常态**：print 的合成阶段、拼版合成、detect 出框之前都报不出
+  `total`。此时 `ProgressLine` 走滑动态，计数只写已处理数。
 
 ### 分段开关（`SegmentedToggle`）
 

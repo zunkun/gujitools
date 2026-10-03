@@ -24,7 +24,12 @@ import sys
 import threading
 from typing import Any, Dict
 
-from core.reporter import EVENT_PAGE_BOXES, EVENT_PAGE_SIZE, EVENT_PROGRESS
+from core.reporter import (
+    EVENT_PAGE_BOXES,
+    EVENT_PAGE_SIZE,
+    EVENT_PROGRESS,
+    PROGRESS_TOTAL_EVENT,
+)
 
 #: 保护"写一行 JSON 到 stdout"这个动作。
 #: ⚠️ worker 里的功能模块是**线程池**并发跑的（crop/rembg/detect 都是），
@@ -92,8 +97,12 @@ class JsonLinesReporter:
         `progress_total`（引擎先给出总数、尚无完成量）在协议上仍是一条
         progress 事件：GUI 只关心 total 用来设进度条 range，因此这里
         统一映射为 done=0 的 progress，避免新增一种 GUI 不认识的事件类型。
+
+        ⚠️ 这条规则与 :class:`core.reporter.CallbackReporter`（进程内那条路）
+        **必须同时存在且一致**——两处曾分叉过一次，导致独立功能页永远拿不到
+        上限。判定用的是同一个常量 :data:`~core.reporter.PROGRESS_TOTAL_EVENT`。
         """
-        if name == "progress_total":
+        if name == PROGRESS_TOTAL_EVENT:
             self.progress(0, int(payload.get("total", 0)))
             return
         self._send({"type": name, **self._context, **payload})
@@ -170,6 +179,7 @@ __all__ = [
     "EVENT_PAGE_BOXES",
     "EVENT_PAGE_SIZE",
     "EVENT_PROGRESS",
+    "PROGRESS_TOTAL_EVENT",
     "JsonLinesReporter",
     "ProgressStream",
     "emit",

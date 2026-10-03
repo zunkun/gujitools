@@ -8,6 +8,7 @@ worker 子进程 stdout 每行一个 JSON 对象，均含 `type` 与 `task_id/st
 | --- | --- | --- |
 | `started` | 子任务启动 | stage |
 | `progress` | 进度（GUI 更新 runs.json + 进度条） | done, total |
+| ~~`progress_total`~~ | **不作为独立事件类型**：被两个 reporter 归一化成 `done=0` 的 `progress`（判定用 `core.reporter.PROGRESS_TOTAL_EVENT`） | — |
 | `log` | 日志行（进日志视图） | message |
 | `page_boxes` | detect 阶段逐页文本框坐标（入 boxes.json） | image(stem), left, right |
 | `page_size` | extract 阶段逐页图片原始尺寸（入 sizes.json） | image(stem), width, height |
@@ -32,6 +33,9 @@ worker 子进程 stdout 每行一个 JSON 对象，均含 `type` 与 `task_id/st
 `[boxes]`/`[imgsize]` 两行文本在 functions 侧兼容保留一个版本，便于对照核验，
 但 worker 已不解析它们。
 
+⚠️ **`progress_total` 的归一化必须**两个** reporter 都做**（`core.reporter.CallbackReporter` 走进程内、独立功能页那条；`desktop.stages.events.JsonLinesReporter` 走子进程、任务流程那条）。只做一处的话，独立功能页永远拿不到上限、进度条一直是「总量未知」——两处口径分叉过一次，由 `tests/selftests/module_progress.py` 钉住。
+
+⚠️ 渐进式迁移约定：
 ⚠️ `finished` 不再携带 `done/total`：进度由 `progress` 事件实时汇报，
 GUI 侧用「最近一次 progress」在 `finish_stage` 时补齐最终计数。
 

@@ -19,15 +19,36 @@
 
 from __future__ import annotations
 
+import io
 import math
 import re
+import threading
 from pathlib import Path
+
+from utils.file_utils import write_bytes_atomic
 
 #: 一页拼版固定两项（右槽、左槽）
 ITEMS_PER_PAGE = 2
 
 #: 落盘文件名：``0001.png`` …（列表顺序即页序，与第四步列表一致）
 FILE_FMT = "{:04d}.png"
+
+#: ``compose_doc`` 的**进程内**互斥锁：按目标目录串行化整轮合成。
+#:
+#: ⚠️ 为什么需要（用户 2026-10-03 报「程序容易跑崩溃」）：拼版合成有**两条**
+#: 路径会打到同一个 ``stages/imposition`` 目录——
+#:
+#: - 后台防抖合成 ``ImpositionComposeWorker``（拖版面时反复触发）；
+#: - 主线程同步合成 ``TaskDetailPage._compose_imposition_now``
+#:   （改完版面立刻点「生成 PDF」时补一轮）。
+#:
+#: 原先两条路径**没有任何互斥**：同一个 ``0003.png`` 可能被两个线程同时
+#: ``image.save()``（非原子写），第四步 PDF 会读到半张图；更糟的是
+#: :func:`_sweep_stale` 会 ``unlink`` 掉序号大的旧文件——一个线程按旧页数
+#: 清理、另一个按新页数在写，好内容会被误删。
+#:
+#: 用**进程内**的模块级锁就够：两条路径都在本进程内（同源），不涉及跨进程。
+_COMPOSE_LOCK = threading.Lock()
 
 _CN_DIGITS = "零一二三四五六七八九"
 
@@ -451,7 +472,30 @@ def compose_page(page: dict):
     return canvas.convert("RGB")
 
 
-def compose_doc(doc: dict, dest_dir) -> list[Path]:
+def _save_page_atomic(image, target: Path) -> None:
+    """把一页合成图**原子**写进 ``target``。
+
+    ⚠️ 这是**第二道防线**，别以为有 :data:`_COMPOSE_LOCK` 就够了（实测两者
+    各挡一类故障，缺一不可）：
+
+    1. **锁挡的是"线程间打架"**：两个线程同时 ``image.save()`` 同一个
+       ``0003.png``，Windows 上后者会撞上前者正开着的文件句柄直接抛
+       ``PermissionError``（实测 8 线程并发，老实现必炸）；``_sweep_stale``
+       还会在另一线程写到一半时把它 unlink 掉。
+    2. **原子写挡的是"进程内也躲不过的"**：写到一半失败/被杀/断电留下的
+       **半张 PNG**，mtime 是新的、体积也不为零 —— 第四步「生成 PDF」照单
+       全收，读出来就是半张图或直接抛解码错。锁救不了这种情况（同一个线程
+       自己也会中途挂）。
+
+    做法与项目既有的 JSON / 缩略图缓存一致：同目录临时文件 + ``os.replace``
+    （Windows 上还要短暂重试，目标正被 PDF 渲染器打开时会 ``PermissionError``）。
+    """
+    buf = io.BytesIO()
+    image.save(buf, format="PNG")
+    write_bytes_atomic(target, buf.getvalue())
+
+
+def compose_doc(doc: dict, dest_dir, report=None) -> list[Path]:
     """把整份拼版文档落成 ``dest_dir/0001.png`` …（列表顺序即页序）。
 
     返回写出的文件列表（顺序与页序一致）。**多余的旧文件会被清掉**——否则
@@ -460,6 +504,16 @@ def compose_doc(doc: dict, dest_dir) -> list[Path]:
 
     单页合成失败时跳过该页（不写文件），其余页照常。任务目录不存在时
     （任务被删）直接返回空列表。
+
+    ⚠️ 整轮**持 :data:`_COMPOSE_LOCK`**：后台防抖合成与生成 PDF 前的同步合成
+    会打到同一个目录，不串行化就会出现"一个线程在写、另一个在清"——详见该锁
+    的注释。
+
+    ``report``：可选的进度回调 ``(done, total)``，每处理完一页调一次（**含
+    失败的那页**——它也被处理过了，只是不写文件）。独立拼图页靠它显示进度
+    （任务流程里后台防抖那条路不传，用户不需要看）。
+    ⚠️ 回调在 :data:`_COMPOSE_LOCK` **内**调用，所以它只许发信号、不许做
+    可能重入本模块的事（例如再调一次 ``compose_doc`` 会死锁）。
     """
     dest = Path(dest_dir)
     pages = [
@@ -468,23 +522,47 @@ def compose_doc(doc: dict, dest_dir) -> list[Path]:
         ) if page is not None
     ]
     written: list[Path] = []
-    if not pages:
-        _sweep_stale(dest, 0)
-        return written
-    dest.mkdir(parents=True, exist_ok=True)
-    for index, page in enumerate(pages):
-        try:
-            image = compose_page(page)
-        except Exception:  # noqa: BLE001 - 单页失败不影响其余页
-            continue
-        target = dest / FILE_FMT.format(index + 1)
-        image.save(target, "PNG")
-        written.append(target)
-    # ⚠️ 清理基准是**页数**而不是"写成功的文件数"：文件名按页序下标取，
-    # 中间某一页合成失败会留下编号空洞（0001 / 0003），按写成功数（2）去清
-    # 会**误删 0003**——把一页好内容清掉比留个空洞严重得多。
-    _sweep_stale(dest, len(pages))
+    with _COMPOSE_LOCK:
+        if not pages:
+            _sweep_stale(dest, 0)
+            return written
+        dest.mkdir(parents=True, exist_ok=True)
+        total = len(pages)
+        for index, page in enumerate(pages):
+            try:
+                image = compose_page(page)
+            except Exception:  # noqa: BLE001 - 单页失败不影响其余页
+                _report_page(report, index + 1, total)
+                continue
+            target = dest / FILE_FMT.format(index + 1)
+            try:
+                _save_page_atomic(image, target)
+            except OSError as exc:
+                # 合成本身没问题、只是写不下去（PDF 正被外部程序打开等）：
+                # 记一笔继续下一页，别让整轮拼版白跑。
+                print(f"[imposition] 第 {index + 1} 页写盘失败：{exc}")
+                _report_page(report, index + 1, total)
+                continue
+            written.append(target)
+            _report_page(report, index + 1, total)
+        # ⚠️ 清理基准是**页数**而不是"写成功的文件数"：文件名按页序下标取，
+        # 中间某一页合成失败会留下编号空洞（0001 / 0003），按写成功数（2）去清
+        # 会**误删 0003**——把一页好内容清掉比留个空洞严重得多。
+        _sweep_stale(dest, len(pages))
     return written
+
+
+def _report_page(report, done: int, total: int) -> None:
+    """把"第 done / total 页处理完了"报给可选回调。
+
+    ⚠️ 回调自身抛异常必须吞掉：它是纯旁路（进度显示），带崩合成才是真事故。
+    """
+    if report is None:
+        return
+    try:
+        report(done, total)
+    except Exception:  # noqa: BLE001 - 进度汇报失败绝不能中断合成
+        pass
 
 
 def _sweep_stale(dest: Path, keep: int) -> None:
