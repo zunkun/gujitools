@@ -3,16 +3,16 @@
 古籍重製 PDF→提图→检测框→去底色→生成PDF。双入口共用算法：`cli.py`(打包`guji`)/`desktop.py`(PySide6+qfluentwidgets)。分层`utils←core←{cli,functions,desktop}`**严格单向**。分支`stitch`。⚠`docs/**`基准 main，本分支**以代码为准**。会话过程见`2026-10-0*.md`。
 （本文件有体积上限，曾被截断——**新增内容请先删旧的**，别一路堆。）
 
-## 提交纪律（本仓库长期有 60+ 未提交在制品）
-⚠️**别整文件提交**：`spec.py`/`imposition/page.py`/`detect/page.py` 常把本次改动与在制品混在一起。做法=`git show HEAD:<f>` 为基底+**精确锚点脚本**（放文件里不走 heredoc，中文 docstring 会被 shell 弄坏）重放本次那几处。⚠️hunk 级筛选会漏（本次嵌在 260/148 行大 hunk 内），要用**行级 difflib** 判归属。⚠️**纯净版不能挂靠在制品字段上**（HEAD 没有的 `auto_fill_skip`/`_export_kernel`/`draw_slots` 都是在制品）。⚠️`git stash --keep-index` 恢复时**被纯净版覆盖的文件不会回来**（git 认为已提交）⇒**提交前必须全量备份在制品**。⚠️恢复冲突时 `git add` 会把 45 个在制品一起进暂存，收尾要 `git reset`。自测里依赖在制品的断言改**能力探测**，且**要探真正用到的符号**（探模块会漏判）。
+## 提交纪律
+⚠️**长期有大量未提交在制品**（曾积 60+ 文件）。⚠️**AI 禁止自动 `git commit`**，等用户说「提交」。提交前必做：①`git diff > /tmp/b.patch` **加**逐个`cp`未跟踪文件（patch 不含新文件）——**备份放`/tmp`别放仓库内**；②先跑相关自测；③`git add -A` 后用`git diff --cached --name-only | grep -E "_out/|\.png$|\.log$"`兜临时产物（`--list`输出重定向的`_list.txt`不受`_*/`规则保护）。⚠️自测退出码 **127 是伪错误**（末段`QThread: Destroyed`）且**会吃掉收尾一批模块**⇒光看 PASS/FAIL 计数会误判全绿，**必须比对 `--list` 计划数 vs 日志`==标题==`数**再用 `--only` 补跑。⚠️要**部分**提交时（纯净版+在制品共存）才有"锚点脚本重放/行级diflib判归属/纯净版不挂靠制品字段"那套（见`2026-10-03.md`）；**全量入库时不适用**。
 
 ## 进度显示（2026-10-03 补齐独立页）
 独立功能页进度用 `desktop/components/progress_row.py::ProgressRow`（条+计数**同行**），四方法 `start/update/succeed/fail`+`reset`；条在 `StepControl` 内（执行按钮上方）⇒ 四步骤页白拿。**拼版页自备**（不继承`StepModulePage`）；**detect 导出标注图是并行第二执行线⇒单配 `export_progress`**。⚠`ProgressLine`上限0走滑动态（定时器**仅可见时**启动，点亮要显式`refresh_animation()`）。⚠单位取`StepSpec.progress_noun`（页/张，**≠`input_noun`**的PDF/图片）。⚠`progress_total`被**两个**reporter都归一化成`done=0`progress（常量`core.reporter.PROGRESS_TOTAL_EVENT`）——改协议要同步改`tests/reporter_cli_parity.py`的契约。⚠job的`report`可能是`None`（`module_edit_sync`直传None），汇报处必判。
 
 ## 事实来源（别另写一份，漂移必出 bug）
 - CLI参数`core/command_spec.py`｜桌面默认值`components/panels/params_spec.py`｜色距字号`ui/theme.py`｜JSON`store/json_io.py`(临时文件+`os.replace`原子落盘)。
-- 框几何`utils/box_geometry.py`：半幅恒2槽[左,右]/整幅恒1槽[整幅]，**下游靠槽数辨形态**(勿按"剩几个框"推)；绘制`box_draw.py`｜排版`page_layout.py`｜页序`sort_utils.pdf_custom_sort_key`。
-- 步骤`desktop/steps/spec.py::SPECS`唯一(STAGES/MODULES/PANEL_CLASSES全派生，`role`⊥`nav`；文案按界面面分字段，别合并)。详情页形态也是spec字段；页面内一律查`ports.spec_for_stage(stage)`，⚠别用`spec_by_key`(`rembg_submit`→None)。
+- 框几何`utils/box_geometry.py`：半幅恒2槽[左,右]/整幅恒1槽[整幅]，**下游靠槽数辨形态**(勿按"剩几个框"推)；绘制`box_draw.py`（⚠**标注统一走`draw_slots(img,page.slots())`**，名/色按槽位给，CLI `--save` 与 GUI「导出标注图」共用，别再手写颜色表）｜排版`page_layout.py`｜页序`sort_utils.pdf_custom_sort_key`。
+- 步骤`desktop/steps/spec.py::SPECS`唯一(STAGES/MODULES/PANEL_CLASSES全派生，`role`⊥`nav`；文案按界面面分字段，别合并)。详情页形态也是spec字段；页面内一律查`ports.spec_for_stage(stage)`，⚠别用`spec_by_key`(`rembg_submit`→None)。**连线只改`ports.SUPPLIERS`**；`inputs/outputs`是唯一真源、须与事实一致(漏写=假边)。
 - 连线`steps/ports.py`：`SUPPLIERS`=BPM的边(换序只改它)；端口只在`StepSpec.inputs/outputs`声明且**须与事实一致**(漏写=假边)；取路径只走`store.artifact()/stage_input()`；运行阶段≠步骤key，看`STAGE_STEPS`。
 - 独立页左栏=缩略图条+大图(2026-10-03定)→`modules/thumb_source.py::ThumbSourceMixin`(`show_source/show_pdf/show_images`)；⚠别自起`PreviewWorker`/`ImageThumbCacheWorker`；拼图页**不继承**(左栏是拼版页清单)，只复用`singletask_dir`。缓存`files.image_thumb_cache_path`=`singletask/<子任务>/thumbs/<边长>/<键>.jpg`，键=`book_key`**含文件大小**⇒编辑换尺寸即换键；边长须进目录名。
 - 普通步骤页外设`modules/base.py::StepModulePage`(`_build_preview`/`on_result`；钩子`source_summary/source_images/on_failed/edit_effect_note`)；拼版页**有意**不继承。
