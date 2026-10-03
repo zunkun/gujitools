@@ -176,10 +176,19 @@ class ImpositionBaseMixin:
         return bool(doc.get("enabled")) and bool(doc.get("pages"))
 
     def print_source_dir(self) -> Path:
-        """第四步的取图目录：拼版生效 → stages/imposition，否则 stages/rembg。"""
-        if self.imposition_active():
-            return self.store.imposition_output_dir(self.task_id)
-        return self.store.rembg_output_dir(self.task_id)
+        """第四步的取图目录：拼版生效 → stages/imposition，否则 stages/rembg。
+
+        ⚠️ 走的是 :mod:`desktop.steps.ports` 的**条件连线**（"print 的 pages
+        端口由谁供给"），不是在这里 if/else 挑目录——BPM 换上游时只改连线表，
+        这一行不用动。
+        """
+        source = self.store.stage_input(
+            self.task_id, "print", "pages",
+            imposition_active=self.imposition_active(),
+        )
+        # 连线表永远给得出路径（rembg_submit 是 print 的静态上游），
+        # 但仍留一道兜底：将来若有人把静态上游摘掉，这里不该抛 AttributeError。
+        return source or self.store.rembg_output_dir(self.task_id)
 
     # ------------------------------------------------------------- 视图刷新
     def _refresh_imposition_view(self) -> None:
@@ -212,8 +221,7 @@ class ImpositionBaseMixin:
         self.preview_stack.setCurrentIndex(IMPOSITION_INDEX)
         self.run_button.setVisible(False)
         self.submit_button.setVisible(False)
-        self.resume_button.setVisible(False)
-        self.cancel_button.setVisible(False)
+        self.followup_row.setVisible(False)
         self.detect_stats.setVisible(False)
         self.history_block.setVisible(False)
         self._set_stage_status(f"{IMPOSITION_LABEL}：可选节点（拼版版面）")

@@ -56,3 +56,7 @@ desktop/static/manual.html
 # .workbuddy/
 .workbuddy-ai/
 .trae/
+.workbuddy/**/*.jpg
+.workbuddy/**/*.png
+
+_*/

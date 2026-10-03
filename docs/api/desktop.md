@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 112 个模块、126 个公开类、826 个公开函数/方法（生成于 2026-10-03）。
+覆盖 112 个模块、127 个公开类、871 个公开函数/方法（生成于 2026-10-03）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -17,10 +17,10 @@
 | [`desktop.components.detect_stats`](#desktopcomponentsdetect_stats) | 1 | 4 |
 | [`desktop.components.imposition.canvas`](#desktopcomponentsimpositioncanvas) | 1 | 26 |
 | [`desktop.components.imposition.confirm_delete`](#desktopcomponentsimpositionconfirm_delete) | 1 | 1 |
-| [`desktop.components.imposition.page_list`](#desktopcomponentsimpositionpage_list) | 1 | 8 |
+| [`desktop.components.imposition.page_list`](#desktopcomponentsimpositionpage_list) | 1 | 9 |
 | [`desktop.components.imposition.panel`](#desktopcomponentsimpositionpanel) | 1 | 7 |
 | [`desktop.components.imposition.picker`](#desktopcomponentsimpositionpicker) | 1 | 9 |
-| [`desktop.components.imposition.view`](#desktopcomponentsimpositionview) | 1 | 10 |
+| [`desktop.components.imposition.view`](#desktopcomponentsimpositionview) | 1 | 11 |
 | [`desktop.components.log_panel`](#desktopcomponentslog_panel) | 1 | 9 |
 | [`desktop.components.pagination`](#desktopcomponentspagination) | 2 | 11 |
 | [`desktop.components.panels.base`](#desktopcomponentspanelsbase) | 1 | 7 |
@@ -38,23 +38,23 @@
 | [`desktop.components.progress_row`](#desktopcomponentsprogress_row) | 1 | 8 |
 | [`desktop.components.step_bar`](#desktopcomponentsstep_bar) | 2 | 18 |
 | [`desktop.components.task_table`](#desktopcomponentstask_table) | 3 | 10 |
-| [`desktop.components.viewers.image_editor`](#desktopcomponentsviewersimage_editor) | 3 | 82 |
+| [`desktop.components.viewers.image_editor`](#desktopcomponentsviewersimage_editor) | 3 | 83 |
 | [`desktop.components.viewers.image_view`](#desktopcomponentsviewersimage_view) | 1 | 23 |
-| [`desktop.components.viewers.image_viewer`](#desktopcomponentsviewersimage_viewer) | 1 | 13 |
+| [`desktop.components.viewers.image_viewer`](#desktopcomponentsviewersimage_viewer) | 1 | 18 |
 | [`desktop.components.viewers.image_zoom_dialog`](#desktopcomponentsviewersimage_zoom_dialog) | 4 | 34 |
 | [`desktop.components.viewers.pdf_viewer`](#desktopcomponentsviewerspdf_viewer) | 1 | 2 |
 | [`desktop.components.viewers.print_layout_canvas`](#desktopcomponentsviewersprint_layout_canvas) | 1 | 12 |
 | [`desktop.components.viewers.print_preview`](#desktopcomponentsviewersprint_preview) | 1 | 11 |
-| [`desktop.components.viewers.rembg_viewer`](#desktopcomponentsviewersrembg_viewer) | 1 | 9 |
+| [`desktop.components.viewers.rembg_viewer`](#desktopcomponentsviewersrembg_viewer) | 1 | 12 |
 | [`desktop.components.viewers.thumb_strip`](#desktopcomponentsviewersthumb_strip) | 1 | 10 |
 | [`desktop.components.viewers.thumbs_loader`](#desktopcomponentsviewersthumbs_loader) | 1 | 1 |
 | [`desktop.modules`](#desktopmodules) | 1 | 1 |
-| [`desktop.modules.base`](#desktopmodulesbase) | 1 | 9 |
-| [`desktop.modules.detect.page`](#desktopmodulesdetectpage) | 1 | 3 |
-| [`desktop.modules.extract.page`](#desktopmodulesextractpage) | 1 | 2 |
-| [`desktop.modules.imposition.page`](#desktopmodulesimpositionpage) | 1 | 2 |
-| [`desktop.modules.print.page`](#desktopmodulesprintpage) | 1 | 2 |
-| [`desktop.modules.rembg.page`](#desktopmodulesrembgpage) | 1 | 2 |
+| [`desktop.modules.base`](#desktopmodulesbase) | 2 | 19 |
+| [`desktop.modules.detect.page`](#desktopmodulesdetectpage) | 1 | 7 |
+| [`desktop.modules.extract.page`](#desktopmodulesextractpage) | 1 | 4 |
+| [`desktop.modules.imposition.page`](#desktopmodulesimpositionpage) | 1 | 4 |
+| [`desktop.modules.print.page`](#desktopmodulesprintpage) | 1 | 4 |
+| [`desktop.modules.rembg.page`](#desktopmodulesrembgpage) | 1 | 5 |
 | [`desktop.modules.shell`](#desktopmodulesshell) | 1 | 15 |
 | [`desktop.modules.thumb_source`](#desktopmodulesthumb_source) | 1 | 4 |
 | [`desktop.pages.taskdetail.detect`](#desktoppagestaskdetaildetect) | 1 | 0 |
@@ -88,7 +88,7 @@
 | [`desktop.steps.kernel`](#desktopstepskernel) | 5 | 11 |
 | [`desktop.steps.ports`](#desktopstepsports) | 0 | 14 |
 | [`desktop.steps.process`](#desktopstepsprocess) | 1 | 7 |
-| [`desktop.steps.source_zone`](#desktopstepssource_zone) | 1 | 18 |
+| [`desktop.steps.source_zone`](#desktopstepssource_zone) | 1 | 20 |
 | [`desktop.steps.spec`](#desktopstepsspec) | 1 | 19 |
 | [`desktop.store.annotations`](#desktopstoreannotations) | 1 | 9 |
 | [`desktop.store.drafts`](#desktopstoredrafts) | 1 | 5 |
@@ -97,19 +97,19 @@
 | [`desktop.store.pages`](#desktopstorepages) | 1 | 9 |
 | [`desktop.store.runs`](#desktopstoreruns) | 1 | 7 |
 | [`desktop.store.store`](#desktopstorestore) | 1 | 1 |
-| [`desktop.store.tasks`](#desktopstoretasks) | 1 | 21 |
+| [`desktop.store.tasks`](#desktopstoretasks) | 1 | 23 |
 | [`desktop.store.ui_state`](#desktopstoreui_state) | 1 | 6 |
 | [`desktop.ui.color_picker`](#desktopuicolor_picker) | 5 | 30 |
 | [`desktop.ui.font_setup`](#desktopuifont_setup) | 2 | 8 |
 | [`desktop.ui.fonts`](#desktopuifonts) | 0 | 2 |
 | [`desktop.ui.help_dialog`](#desktopuihelp_dialog) | 0 | 6 |
-| [`desktop.ui.icons`](#desktopuiicons) | 2 | 4 |
+| [`desktop.ui.icons`](#desktopuiicons) | 2 | 5 |
 | [`desktop.ui.segmented_toggle`](#desktopuisegmented_toggle) | 1 | 11 |
 | [`desktop.ui.style`](#desktopuistyle) | 0 | 3 |
 | [`desktop.ui.theme`](#desktopuitheme) | 0 | 3 |
 | [`desktop.ui.widgets`](#desktopuiwidgets) | 9 | 42 |
 | [`desktop.ui.window_size`](#desktopuiwindow_size) | 0 | 3 |
-| [`desktop.utils.files`](#desktoputilsfiles) | 0 | 8 |
+| [`desktop.utils.files`](#desktoputilsfiles) | 0 | 14 |
 | [`desktop.utils.icon`](#desktoputilsicon) | 0 | 3 |
 | [`desktop.worker`](#desktopworker) | 0 | 1 |
 | [`desktop.workers.copy_source_worker`](#desktopworkerscopy_source_worker) | 2 | 4 |
@@ -613,6 +613,7 @@ widget.installEventFilter(_filter)
 | `entries() -> list[_PageEntry]` | — |
 | `set_pages(captions: list[str], current: int=-1) -> None` | 按页数重建清单（``captions[i]`` 是第 i 页的副标题）。 |
 | `set_current(index: int) -> None` | 高亮当前页（-1 = 无页）。 |
+| `set_page_thumbs(thumbs: list) -> None` | 给每页条目灌缩略图（``thumbs[i]`` 是第 i 页的 ``QImage``/``QPixmap``， |
 | `current() -> int` | — |
 | `checked_indexes() -> list[int]` | 勾选了的页下标（升序）。 |
 
@@ -630,6 +631,21 @@ widget.installEventFilter(_filter)
 
 勾选集合**按副标题跨重建保留**：拖动排序/加页不丢勾选；页被删掉
 （副标题不在了）自然落选——批量删除自己就是靠这次重建清空的。
+
+##### `set_page_thumbs(thumbs: list) -> None`
+
+给每页条目灌缩略图（``thumbs[i]`` 是第 i 页的 ``QImage``/``QPixmap``，
+``None`` 表示还没渲好）。
+
+用户 2026-10-03：所有独立任务左栏都显示缩略图。**本方法只管贴图**，
+解码/缓存/异步在宿主那边做（拼图模块页用
+:class:`~desktop.workers.thumb_cache_worker.ImageThumbCacheWorker`，
+与其余四个独立任务页同一份缓存与同一份逻辑）。
+
+⚠️ 下标要**按条目自己的 index** 灌而不是按参数位置：``set_pages`` 重建
+后条目的 index 是重建时的下标，两者一致；但拖动排序后条目的 index
+仍是它创建时的下标，而 ``_entries`` 的**列表位置**才是当前页序——
+所以这里遍历 ``_entries`` 并用 ``entry.index`` 取图。
 
 ---
 
@@ -722,6 +738,7 @@ widget.installEventFilter(_filter)
 | CARD_HEAD | `30` |
 | CARD_GAP | `12` |
 | THUMB_BATCH | `6` |
+| THUMB_GAP_MS | `150` |
 
 ### `class ImpositionPickerDialog(FramelessDialog)`
 
@@ -810,6 +827,7 @@ widget.installEventFilter(_filter)
 | --- | --- |
 | `__init__(parent=None)` | — |
 | `set_pages(pages: list[dict], current: int=-1) -> None` | 整批灌入拼版页；``current`` 是当前显示的下标。 |
+| `set_page_thumbs(thumbs: list) -> None` | 把左列每页的缩略图贴上去（``thumbs[i]`` 对应第 i 页，可为 ``None``）。 |
 | `pages() -> list[dict]` | — |
 | `set_current(index: int) -> None` | 切到某一页（-1 = 无页，画布清空）。 |
 | `current_index() -> int` | — |
@@ -818,6 +836,13 @@ widget.installEventFilter(_filter)
 | `selected_slot() -> int` | — |
 | `update_current_items(items: list[dict]) -> None` | 把外部（面板按钮）改过的版面写回当前页并重画画布。 |
 | `flush_pending() -> None` | 离开页面前的补发（拖住未松手就切走时别丢改动）。 |
+
+##### `set_page_thumbs(thumbs: list) -> None`
+
+把左列每页的缩略图贴上去（``thumbs[i]`` 对应第 i 页，可为 ``None``）。
+
+转交给 :meth:`ImpositionPageList.set_page_thumbs`——本控件只做装配，
+不自己碰条目（页条目是 ``page_list`` 的私产）。
 
 ---
 
@@ -2129,7 +2154,21 @@ source_path 不单独成列，仅作任务名的悬浮提示。
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(parent=None, image: QImage \| None=None, save_back: bool=False)` | — |
+| `closeEvent(event) -> None` | 关闭时确保**没有在飞的后台线程**。 |
 | `result_image() -> QImage \| None` | 编辑结果（无图时 None；是否采纳由调用方的 exec 结果决定）。 |
+
+##### `closeEvent(event) -> None`
+
+关闭时确保**没有在飞的后台线程**。
+
+⚠️ 烘焙 worker 以对话框为 ``parent``。若在它还在跑的时候对话框被
+析构，Qt 会直接 **abort 整个进程**
+（``QThread: Destroyed while thread is still running``）。
+正常流程里 :func:`run_with_progress` 自己同步等线程结束，但
+``processEvents`` 期间用户仍可能关窗/宿主强制退出，所以这里要兜底。
+
+同时清画布：撤销栈是**整图快照**，大图下最多 12 份（见 ``UNDO_LIMIT``），
+关窗后必须释放，不能靠 Python GC（Qt 侧 C++ 对象不由引用计数托管）。
 
 ### 模块函数
 
@@ -2222,6 +2261,17 @@ source_path 不单独成列，仅作任务名的悬浮提示。
 返回工作结果；被用户取消时返回 ``None``。``work`` 必须是**纯计算**
 （只用到形参，不碰 Qt 部件/画布），这样才能安全地放进工作线程。
 小任务（预估很快）也不亏：线程启动 + 对话框开销在毫秒级。
+
+⚠️ 工作函数**抛异常**时**重新抛出**（``raise worker.error``），
+调用方负责弹错误框并退回撤销点。绝不能把它折叠成 ``None`` ——
+``None`` 的既定含义是"用户取消"，混同的结果是"点了 20 秒什么都没发生
+且无提示"（用户报过的现象，见 :meth:`_BakeWorker.run`）。
+
+⚠️ 本函数**不吞异常、也不留孤儿线程**：整体 ``try/finally``，
+``finally`` 里 ``cancel() + wait()``。异常逃出等待循环时若不收尾，
+worker 会变成孤儿线程，而它是被 ``parent``（编辑器对话框）持有的 ——
+对话框一析构就是 ``QThread: Destroyed while thread is still running``，
+**Qt 直接 abort 整个进程**（本项目 ``worker_host`` 已记过这条）。
 
 #### `draw_text(image: QImage, pos: QPointF, text: str, px: int, color: QColor, family: str | None=None) -> QImage`
 
@@ -2386,7 +2436,11 @@ Qt 在窗口 dpr 变化时发 ``DevicePixelRatioChange``，**不保证**同时�
 | `paths() -> list[Path]` | 当前页面清单（按显示顺序）。 |
 | `current_path() -> Path \| None` | 当前选中的页面路径；无选中或无清单时为 None。 |
 | `navigate(forward: bool) -> None` | 方向键翻页（详情页 ←/→ 调用；联动预览刷新，见 ThumbStrip.navigate）。 |
-| `set_images(paths: list[Path], boxes_map: dict \| None=None) -> None` | 设置页面清单并重建缩略图条；清单未变则仅通知宿主重读。 |
+| `set_images(paths: list[Path \| str], boxes_map: dict \| None=None) -> None` | 设置页面清单并重建缩略图条；清单未变则仅通知宿主重读。 |
+| `set_thumb_source(paths: list[Path], cache_dir: Path, edge: int \| None=None) -> None` | 清单是真实图片，但左侧缩略图走 ``cache_dir`` 下的**缓存小图**。 |
+| `set_pdf_source(pdf: Path \| str, cache_dir: Path \| None=None, gen: int=0) -> None` | 源是一本 **PDF**：左栏显示它的页缩略图，右侧大图按需渲高清页。 |
+| `begin_pdf_pages(count: int, path: str='') -> None` | PDF 页数已known：按「第 N 页」建缩略图条目并选中第一页。 |
+| `set_pdf_thumb(gen: int, index: int, image) -> None` | PDF 第 index 页的缩略图就绪：填进缩略图条第 index 条。 |
 | `apply_boxes(boxes: list[tuple], image_size: QSize, info_text: str='', full: bool=False, selected: int=-1) -> None` | 在当前大图上叠加切割框（图片像素坐标）；大图未就绪时挂起等待。 |
 | `set_reference_boxes(boxes: list) -> None` | 设置参考框（最终裁剪大框，虚线显示，不参与编辑）。 |
 | `select_box(index: int) -> None` | 程序化选中第 index 个框（-1 = 取消选中）。 |
@@ -2395,6 +2449,7 @@ Qt 在窗口 dpr 变化时发 ``DevicePixelRatioChange``，**不保证**同时�
 | `box_kinds() -> list` | 当前每个框的类型（"left"/"right"/"full"）。 |
 | `apply_edited_image(path_text: str, image) -> None` | 编辑结果**立即上屏**（不等文件重解码/缩略图重生成）。 |
 | `refresh_page(path_text: str) -> None` | 某页缩略图缓存重生成后刷新条目图标（大图由 apply_edited_image |
+| `reload_thumb(path_text: str) -> None` | 某张图的**文件内容**被覆盖后：忘掉旧缓存记忆并按新文件重取缩略图。 |
 
 ##### `__init__(editable: bool=False, show_boxes: bool=False, empty_hint: str='暂无图片', image_size_provider=None, thumb_provider=None, parent=None)`
 
@@ -2403,12 +2458,63 @@ Qt 在窗口 dpr 变化时发 ``DevicePixelRatioChange``，**不保证**同时�
 image_size_provider 供大图降采样时还原原始像素尺寸；thumb_provider
 让缩略图条改用预生成小图，避免反复解码原图。
 
-##### `set_images(paths: list[Path], boxes_map: dict | None=None) -> None`
+##### `set_images(paths: list[Path | str], boxes_map: dict | None=None) -> None`
 
 设置页面清单并重建缩略图条；清单未变则仅通知宿主重读。
 
-paths 为 Path 列表；boxes_map 预留（当前未用）。清单不变时跳过
-重建，但仍 emit current_changed 让宿主重新读取该页检测框/参数。
+``paths`` 元素可以是 ``Path`` **或** ``str``——统一在这里转成 ``Path``
+再往下传。⚠️ 这不是顺手为之：内部 ``_select_image`` 把元素直接交给
+:class:`~desktop.workers.PreviewWorker`，而那个 worker 在 ``run()`` 里
+要读 ``self.path.suffix``；调用方传字符串的话，异常发生在**子线程
+run() 内部**，只经 ``failed`` 信号回到预览区显示成
+「加载失败：'str' object has no attribute 'suffix'」（用户 2026-10-03 报）。
+在边界一次收干净，比让每个调用点各自记得 ``str(p)``→``p`` 可靠。
+
+``boxes_map`` 预留（当前未用）。清单不变时跳过重建，但仍 emit
+current_changed 让宿主重新读取该页检测框/参数。
+
+##### `set_thumb_source(paths: list[Path], cache_dir: Path, edge: int | None=None) -> None`
+
+清单是真实图片，但左侧缩略图走 ``cache_dir`` 下的**缓存小图**。
+
+用户 2026-10-03：所有独立任务左侧都显示缩略图，且统一缓存在
+``~/Documents/guji/singletask``。清单本身**仍然是真实图片路径**——
+右侧大图、检测框按 ``Path(path).stem`` 取键、放大弹窗的编辑回写，
+全都指着真实文件；缓存只喂缩略图条。
+
+实现方式是**替换缩略图来源**而不是替换清单：``_thumb_provider`` 由
+:meth:`set_thumb_source` 装上，:meth:`set_images` 的
+``_load_thumbs`` 会自动走它（它本来就支持 ``thumb_provider``）。
+
+##### `set_pdf_source(pdf: Path | str, cache_dir: Path | None=None, gen: int=0) -> None`
+
+源是一本 **PDF**：左栏显示它的页缩略图，右侧大图按需渲高清页。
+
+这是「图片提取」页未提取时的形态（用户 2026-10-03：「在未提取图片之前
+是按照缩略图，单独图片显示」）——选完 PDF 就能翻页看，不必先跑一遍提取。
+
+⚠️ 缩略图条显示的是 256px 缓存小图，但**右侧大图不是拿小图放大**：
+点哪页就按需从 PDF 渲那一页（``_select_image`` 见 ``_page_source``），
+所以放大事先看得清。缩略图由宿主用
+:class:`~desktop.modules.thumb_source.ThumbSourceMixin` 起 pass 填充，
+本方法只负责建条目（:meth:`begin_pdf_pages`）。
+
+``gen`` 是代际号：换书时宿主递增，本控件据此丢弃旧书迟到的缩略图信号。
+
+##### `begin_pdf_pages(count: int, path: str='') -> None`
+
+PDF 页数已known：按「第 N 页」建缩略图条目并选中第一页。
+
+⚠️ 与 ``PdfViewerWidget._metadata_ready`` 同一道护栏：后续轮次
+（回扫/补缺页）页数没变时**不能清空重建**——那会把已经加载好的图标
+全丢掉，只剩占位符。
+
+##### `set_pdf_thumb(gen: int, index: int, image) -> None`
+
+PDF 第 index 页的缩略图就绪：填进缩略图条第 index 条。
+
+``gen`` 与 :meth:`set_pdf_source` 传的一致才算数——旧书那个还在跑的
+worker 迟到时会被丢弃，否则**旧书的页会画进新书的缩略图条**。
 
 ##### `apply_boxes(boxes: list[tuple], image_size: QSize, info_text: str='', full: bool=False, selected: int=-1) -> None`
 
@@ -2430,6 +2536,15 @@ paths 为 Path 列表；boxes_map 预留（当前未用）。清单不变时跳�
 
 某页缩略图缓存重生成后刷新条目图标（大图由 apply_edited_image
 即时同步过，不再重载）。路径不在清单里时是空操作。
+
+##### `reload_thumb(path_text: str) -> None`
+
+某张图的**文件内容**被覆盖后：忘掉旧缓存记忆并按新文件重取缩略图。
+
+⚠️ 必须真的"忘掉"（:attr:`_thumb_cache_ready` 里那条）：缓存文件名带
+**大小**（``book_key`` 含 size），编辑器改了像素尺寸就换了文件名，
+而记忆里那条旧路径仍指向**覆盖前**的缓存文件——只刷不丢会一直显示
+编辑前的样子（用户报「独立步骤里编辑不生效」就是这么来的）。
 
 ---
 
@@ -2878,7 +2993,7 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(empty_hint: str='暂无图片', parent=None)` | 构建缩略图条与「去底色结果 / 原图」切换行，默认显示去底色结果。 |
-| `set_images(paths: list[Path], rembg_dir: Path \| None, boxes_provider=None, region_params_provider=None, thumb_provider=None) -> None` | 设置图片清单与去底色目录，重建输出条目并加载显示。 |
+| `set_images(paths: list[Path \| str], rembg_dir: Path \| None, boxes_provider=None, region_params_provider=None, thumb_provider=None) -> None` | 设置图片清单与去底色目录，重建输出条目并加载显示。 |
 | `refresh_display() -> None` | detect 框/area/border 变化后，重建输出条目并按新区域重新加载。 |
 | `navigate(forward: bool) -> None` | 方向键翻页（详情页 ←/→ 调用；联动预览刷新，见 ThumbStrip.navigate）。 |
 | `set_live_dir(path: Path \| None) -> None` | 设置（或传 None 清除）「实时预览」暂存目录。 |
@@ -2886,12 +3001,17 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 | `current_entry_path() -> str \| None` | 当前选中条目的源图路径（无条目时为 None）。 |
 | `show_live_pending() -> None` | 实时预览正在计算：先给个即时反馈，别让界面看起来没反应。 |
 | `refresh_page(path_text: str) -> None` | 某文件被覆盖后刷新本查看器：受影响条目图标 + 当前大图。 |
+| `set_cached_thumbs(mapping: dict[str, str]) -> None` | 告诉本控件哪些图已有缓存小图（``真实图路径 → 缓存路径``）。 |
+| `set_cached_thumb(path_text: str, cache: str) -> None` | **单张**：记下它的缓存小图并只刷相关条目 + 当前大图。 |
+| `reload_thumb(path_text: str) -> None` | 某张图的**文件内容**被覆盖后：丢掉它的缓存映射并按新文件重取。 |
 
-##### `set_images(paths: list[Path], rembg_dir: Path | None, boxes_provider=None, region_params_provider=None, thumb_provider=None) -> None`
+##### `set_images(paths: list[Path | str], rembg_dir: Path | None, boxes_provider=None, region_params_provider=None, thumb_provider=None) -> None`
 
 设置图片清单与去底色目录，重建输出条目并加载显示。
 
-paths 为源图；rembg_dir 为去底色结果目录（存在才显示结果）；
+``paths`` 为源图，元素允许是 ``str``（统一转 ``Path``，同
+:meth:`desktop.components.viewers.ImageViewerWidget.set_images`）；
+``rembg_dir`` 为去底色结果目录（存在才显示结果）；
 各 provider 给出检测框 / 区域参数 / 缩略图来源。清单变化时重建
 缩略图条，否则按最新区域重加载当前显示。
 
@@ -2908,6 +3028,38 @@ paths 为源图；rembg_dir 为去底色结果目录（存在才显示结果）�
 某文件被覆盖后刷新本查看器：受影响条目图标 + 当前大图。
 
 由宿主在缩略图重生成完毕后调用；路径与本查看器无关时是空操作。
+
+##### `set_cached_thumbs(mapping: dict[str, str]) -> None`
+
+告诉本控件哪些图已有缓存小图（``真实图路径 → 缓存路径``）。
+
+用户 2026-10-03：所有独立任务左栏都显示缩略图，且统一缓存在
+``~/Documents/guji/singletask``。这里**只换缩略图来源**、不动条目与
+大图——所以宿主渲好一张就能立刻刷那一条（``refresh_page``），
+不必重建整个缩略图条。
+
+⚠️ 缓存里存的是**整页**小图；条目若按检测框裁了一块/合成区域
+（area=1 的 ``-l``/``-r``），仍由 :meth:`_load_page_thumbs` 走区域合成
+——只是输入图从「原图」换成「已缩好的整页小图」，省掉整张解码。
+
+⚠️ 语义是**整体替换**（调用点给的就是完整的映射）。只更新一条请用
+:meth:`set_cached_thumb`。
+
+##### `set_cached_thumb(path_text: str, cache: str) -> None`
+
+**单张**：记下它的缓存小图并只刷相关条目 + 当前大图。
+
+与 :meth:`set_cached_thumbs` 的差别是**合并一条**而不是整体替换——
+宿主在"某张图被编辑后重渲缩略图"这条路上只关心这一条，整体替换会
+把其余条目的缓存映射一起丢掉（它们随后只能回落去解码原图）。
+
+##### `reload_thumb(path_text: str) -> None`
+
+某张图的**文件内容**被覆盖后：丢掉它的缓存映射并按新文件重取。
+
+⚠️ 与 :meth:`desktop.components.viewers.ImageViewerWidget.reload_thumb`
+同一个理由：缓存文件名带**大小**，编辑改了像素尺寸就换了文件名，
+留着旧映射会一直显示覆盖前的缩略图。
 
 ---
 
@@ -3065,7 +3217,9 @@ Delete/Backspace → ``delete_requested``。
 
 - ``key``：唯一路由键，同时用作 ``QStackedWidget`` 的寻址依据；
 - ``title``：导航栏文案；
-- ``icon``：``FluentIcon`` 成员（延迟到壳层再取，避免这里 import 重物）；
+- ``icon``：``nav_icon`` 字符串（``FluentIcon`` 成员名或 ``svg:名字`` 自绘图），
+  壳层经 ``desktop.ui.icons.resolve_nav_icon`` 解析成图标对象
+  （延迟到壳层再取，避免这里 import 重物）；
 - ``subtitle``：页头副标题；
 - ``factory``：``() -> QWidget``，**首次进入该模块时才调用**。
 
@@ -3108,11 +3262,30 @@ Delete/Backspace → ``delete_requested``。
 ``status(text)`` 往页头的状态行写字，``toast(kind, title, content)`` 弹
 InfoBar —— 这两个是各模块反馈执行结果的标准出口，别自己 new InfoBar。
 
+⚠️ **初始只显示大输入区**（用户 2026-10-03）：
+
+    > 初始就只有一个输入框，下面的操作面板和预览这些都要选择输入文件后
+    > 才显示出来
+
+所以左右分栏与日志区在构造完成后就被收起来，由
+:meth:`show_workspace` / :meth:`sync_workspace_visible` 在"用户真的给了
+输入"之后才点亮。⚠️ 收起来的只是**可见性**，控件照旧构造 —— 惰性构造
+会让各模块页的控件引用（``self.viewer`` / ``self.control``…）在
+``_on_source_changed`` 里才存在，而那个信号恰好在构造期之后才发，
+早绑信号会 AttributeError；而且隐藏的控件不占布局，首帧也更快。
+
+子类**只需在"源变了"的回调里调一次**
+:meth:`sync_workspace_visible`（传"有没有源"），清空源时传 ``False``
+就自动收回去。
+
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(parent=None)` | 组装骨架：页头 → 整幅输入区（可选）→ 左右分栏 → 状态行。 |
+| `show_workspace(shown: bool) -> None` | 显隐"操作界面"（左右分栏 + 日志区）。 |
+| `sync_workspace_visible(has_source) -> None` | 按"当前有没有源"开关操作界面（各模块在源变化时调一次即可）。 |
+| `workspace_shown() -> bool` | 操作界面当前是否显示（自测与截图脚本用）。 |
 | `dragEnterEvent(event) -> None` | 拖到页面空白处：当作拖向输入区（点亮它），避免"拖上去没反应"。 |
 | `dragMoveEvent(event) -> None` | 拖拽移动中：保持接受（Qt 要求显式接受才会给 drop）。 |
 | `dragLeaveEvent(event) -> None` | 拖出页面：熄灭输入区高亮。 |
@@ -3121,6 +3294,102 @@ InfoBar —— 这两个是各模块反馈执行结果的标准出口，别自�
 | `toast(kind: str, title: str, content: str) -> None` | 弹 InfoBar（右下角，与详情页 ``_toast`` 同一位置/时长）。 |
 | `log(text: str) -> None` | 往底部日志区追加一行。 |
 | `closeEvent(event) -> None` | 关闭时收尾后台线程，避免解释器退出时被强杀（同详情页规矩）。 |
+
+##### `show_workspace(shown: bool) -> None`
+
+显隐"操作界面"（左右分栏 + 日志区）。
+
+初始为 ``False``（用户 2026-10-03：「初始就只有一个输入框，下面的操作
+面板和预览这些都要选择输入文件后才显示出来」）。有输入之后由
+:meth:`sync_workspace_visible` 打开。
+
+大输入区同时切成**独占模式**（自己撑满整幅，见
+:meth:`desktop.steps.source_zone.SourceZone.set_solo_mode`）——
+否则收起分栏后页面上半屏是框、下半屏一片空白，看着像没加载完。
+
+##### `sync_workspace_visible(has_source) -> None`
+
+按"当前有没有源"开关操作界面（各模块在源变化时调一次即可）。
+
+``has_source`` 传 ``Path`` / ``None`` 都行，判的是"是不是空"。
+
+##### `log(text: str) -> None`
+
+往底部日志区追加一行。
+
+⚠️ 用 ``append`` 而不是 ``appendPlainText``：日志区换成了
+:class:`desktop.components.log_panel.LogPanel`，它的文本域是
+qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
+
+### `class StepModulePage(ModulePage)`
+
+**带完整步骤控制**的模块页：绝大多数步骤页的直接基类（需求 2 的落点）。
+
+一个"独立步骤"的页面真正只差两件事：
+
+1. 左栏用哪个预览控件（:meth:`_build_preview`）；
+2. 跑完之后怎么把产物交给它（:meth:`on_result`）。
+
+其余全是**每个步骤都一样**的外设：摆一块横跨整幅的大输入区、建
+:class:`~desktop.steps.control.StepControl`（参数 + 输出目录 + 执行/中断）、
+把控制区的状态/日志/失败接到页面的反馈出口、源变了怎么改副标题与显隐、
+收尾执行线程。这些此前在 extract/rembg/print/detect 四个页面里**逐字抄了
+四遍**——加第五个步骤就再抄一遍。现在全部收在这里。
+
+子类要做的**全部**事情：
+
+.. code-block:: python
+
+    class MyPage(StepModulePage):
+        SPEC = spec_by_key("my_step")        # 1. 认领步骤元数据
+
+        def _build_preview(self):            # 2. 左栏预览控件
+            self.viewer = SomeViewer()
+            return self.viewer
+
+        def on_result(self, output, result): # 3. 产物怎么上屏
+            self.viewer.set_images(...)
+
+⚠️ **拼版页不继承它**（``desktop/modules/imposition/page.py``）：它的"源"是
+**一批图片**而非一个源（要 ``collect_files`` 摊平），执行也是纯函数导出
+而非 ``StepSpec.command``，外壳因此对不上。它继续直接继承
+:class:`ModulePage`。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `idle_text() -> str` | — |
+| `on_result(output: Path, result: dict) -> None` | 执行成功：把产物交给左栏（子类实现）。 |
+| `on_failed(message: str) -> None` | 执行失败：给一句人话（状态行与日志已由控制区写过）。 |
+| `__init__(parent=None)` | 先把页头文案从 spec 落成实例属性，再建骨架。 |
+| `source_summary(source) -> str` | 副标题里那一行 ``<源> → <输出>``；子类可加图片张数等信息。 |
+| `source_images() -> list[Path]` | 源里的图片清单：源是文件就是它自己，是目录就取顶层（认本步后缀）。 |
+| `shutdown_workers() -> None` | 收尾执行线程（壳层关窗口时会调到这里）。 |
+
+##### `on_result(output: Path, result: dict) -> None`
+
+执行成功：把产物交给左栏（子类实现）。
+
+``output`` 是内核回传的产物路径——**目录还是文件取决于这一步**
+（``StepSpec.artifact_is_file``：``print`` 回传 PDF 文件，其余回传目录）。
+``result`` 是 job 在 worker 线程里攒下的少量数据（如导出张数）。
+
+##### `__init__(parent=None)`
+
+先把页头文案从 spec 落成实例属性，再建骨架。
+
+⚠️ 必须在 ``super().__init__()`` **之前**赋值：``ModulePage.__init__``
+构造期就会读 ``self.TITLE`` / ``self.SUBTITLE`` 去建页头，晚一步就
+建出一张空标题的页头（而它之后不会再被重建）。实例属性遮蔽类属性，
+所以各页面不必再各自写一遍 ``TITLE = _SPEC.title``。
+
+##### `source_images() -> list[Path]`
+
+源里的图片清单：源是文件就是它自己，是目录就取顶层（认本步后缀）。
+
+⚠️ 只在"这一步的输入物本身就是图片"时有意义（rembg/print）；提取的
+源是 PDF、检测的源是图片但不这么用，子类别硬调。
 
 ---
 
@@ -3133,7 +3402,7 @@ InfoBar —— 这两个是各模块反馈执行结果的标准出口，别自�
 **复用共用组件**（``desktop/steps``）：页头下方横跨整幅的**大输入区**（拖图片 /
 拖文件夹 / 点选），右栏是 :class:`StepControl`（输出目录 + 执行/中断），执行走
 ``StepKernel`` → ``functions.get_function("detect")``——与任务流程第二步是同一条
-代码路径（连参数面板都是同一个 ``DetectPanel``）。
+代码路径。
 
 **和别的模块页最大的不同：这一步的产物不是文件，是坐标。**
 
@@ -3144,19 +3413,24 @@ InfoBar —— 这两个是各模块反馈执行结果的标准出口，别自�
    2026-10-02 补的通道）——改造前它只转进度和日志，这一步的结果到不了界面；
 2. 本页把每页的框收在内存里（``self._boxes``，键 = 文件名去后缀），左栏用共享
    查看器把框画在图上，用户可直接**手绘 / 拖动 / 缩放手柄 / Delete** 修正；
-3. 交付方式是「**导出坐标 JSON**」——写 ``<输出目录>/boxes.json``，格式与任务
-   流程的 ``tasks/<id>/boxes.json`` **逐字段一致**（``{stem: {boxes, origin,
-   updated_at}}``），所以导出的文件可以直接当作下一步（或将来自定义流程里任意
-   一步）的输入。
+3. 交付有两条路（用户 2026-10-03 定的）：
+   - 「**导出标注图**」：把框画回原图写成 PNG，一眼能核对框对不对；
+   - 「**导出坐标 JSON**」：写 ``<输出目录>/boxes.json``，格式与任务流程的
+     ``tasks/<id>/boxes.json`` **逐字段一致**（``{stem: {boxes, origin,
+     updated_at}}``），可直接当作下一步（或将来自定义流程里任意一步）的输入。
 
 ⚠️ **槽位约定**（半幅 2 槽 ``[左, 右]``、整幅 1 槽 ``[整幅]``）的全部规则来自
 ``utils.box_geometry``（``page_box_slots_from_event`` 读事件、``half_slots`` 收
-人工框），本页不自己数"还剩几个框"——按个数推类型会造成"删掉整幅框后右边的框
-自动变成整幅"（用户 2026-09-29 报过的老问题）。
+人工框、``set_box_full`` / ``set_box_half`` / ``drop_box`` 做人工干预），本页不
+自己数"还剩几个框"——按个数推类型会造成"删掉整幅框后右边的框自动变成整幅"
+（用户 2026-09-29 报过的老问题）。
 
-⚠️ **为什么不摆 ``DetectPanel``**：面板里那三个控件（「整页模式」切的是**第三步**
-的 area、「选中框类型」/「删除选中框」依赖任务流程的框类型机制）全部由任务流程
-宿主驱动；本页的框编辑直接由查看器承担，留着面板就是三个点不动的死控件。
+⚠️ **框类型控件摆在这里、检测按钮不搬过来**（用户 2026-10-03）：
+- 「选中框类型 / 删除选中框」**摆出来**并接线——它们只依赖查看器，本页完全
+  驱动得了，而用户要的"手绘之后能标成左框/右框/整幅"正需要它们；
+- ``DetectPanel`` 里的「整页模式」与「检测本页」**不摆**：前者切的是**第三步**
+  的 area（单文件模式没有下游），后者由任务流程宿主用子进程驱动单页检测，
+  本页的执行入口是整批的 :class:`StepControl`。留着就是两个点不动的死控件。
 
 ### 模块常量
 
@@ -3164,7 +3438,7 @@ InfoBar —— 这两个是各模块反馈执行结果的标准出口，别自�
 | --- | --- |
 | EXPORT_NAME | `"boxes.json"` |
 
-### `class DetectModulePage(ModulePage)`
+### `class DetectModulePage(StepModulePage, ThumbSourceMixin)`
 
 检测文本框模块页：拖入图片 → 检测内容框 → 图上修正 → 导出坐标 JSON。
 
@@ -3173,14 +3447,33 @@ InfoBar —— 这两个是各模块反馈执行结果的标准出口，别自�
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(parent=None)` | 建骨架、共用步骤控件与内存中的框表。 |
+| `source_summary(source) -> str` | 在共用的 ``<源> → <输出>`` 之外，**补上待检测张数**。 |
+| `edit_effect_note(path: Path) -> str` | 编辑器改了待检测的图片：框坐标以**图片原始像素**为基准。 |
+| `on_result(out_dir: Path, _result: dict) -> None` | 检测跑完：重画当前页，并把「检出几页 / 几页无框」写到状态行。 |
 | `export_boxes() -> None` | 把各页框坐标写成 ``<输出目录>/boxes.json``（与任务流程同格式）。 |
-| `shutdown_workers() -> None` | 收尾：查看器自己的后台线程 + 共用步骤控件的执行线程。 |
+| `export_annotated_images() -> None` | 把框画回原图导出成 PNG：先选目录，**目录已存在就问是否覆盖**。 |
+| `shutdown_workers() -> None` | 收尾：查看器自己的后台线程 + 两个执行线程（检测、导出标注图）。 |
+
+##### `edit_effect_note(path: Path) -> str`
+
+编辑器改了待检测的图片：框坐标以**图片原始像素**为基准。
+
+改了尺寸就必须重跑检测（旧框还按旧图的坐标系画，会整体偏移）；只改
+像素不改尺寸时旧框仍然对得上，所以提示里区分这两种情况而不是一律要求
+重跑。
+
+##### `on_result(out_dir: Path, _result: dict) -> None`
+
+检测跑完：重画当前页，并把「检出几页 / 几页无框」写到状态行。
+
+``out_dir`` 是输出目录（``detect`` 默认不落盘，这里只是共用控件回传的
+那个路径），导出按钮会用到它。
 
 ##### `export_boxes() -> None`
 
 把各页框坐标写成 ``<输出目录>/boxes.json``（与任务流程同格式）。
 
-格式（``desktop/store/annotations.py`` 的 ``boxes.json``）：:
+格式（``desktop/store/annotations.py`` 的 ``boxes.json``）::
 
     {"<页名去后缀>": {"boxes": [[x1,y1,x2,y2], ...],
                      "origin": "auto" | "manual",
@@ -3188,6 +3481,22 @@ InfoBar —— 这两个是各模块反馈执行结果的标准出口，别自�
 
 用 ``desktop.store.json_io.write_json``（临时文件 + ``os.replace`` 原子
 落盘）——与任务流程写这份文件走的是同一个 IO，不另写一套。
+
+##### `export_annotated_images() -> None`
+
+把框画回原图导出成 PNG：先选目录，**目录已存在就问是否覆盖**。
+
+用户 2026-10-03 的原话是「导出的时候提示选择输出目录，如果输出目录
+已经存在了，则提示是否覆盖」，所以这里**一定先弹目录选择**，再用
+「目录已存在且非空」作为覆盖确认的条件：
+
+- 目录不存在 → 直接写（没什么可覆盖的）；
+- 目录存在但**空** → 直接写，不必为一个空目录打断用户；
+- 目录存在且**有文件** → 弹确认，说清"会覆盖同名标注图"。
+
+⚠️ 确认框里**不列文件名**：一屏几十页列出来反而看不过来，只说清
+「同名覆盖、其余保留」——本模块只写自己的 ``<stem>.png``，绝不动
+目录里别的文件（``export_annotated`` 没有任何删除逻辑）。
 
 ---
 
@@ -3197,26 +3506,74 @@ InfoBar —— 这两个是各模块反馈执行结果的标准出口，别自�
 
 「图片提取」独立模块页。
 
-**复用共用组件**（``desktop/steps``）：页头下方是横跨整幅的**大输入区**
-（:class:`~desktop.steps.source_zone.SourceZone`：拖 PDF、拖文件夹、点选），
-右栏是 :class:`StepControl`（参数 + 输出目录 + 执行/中断），执行走
-:class:`StepKernel` → ``functions.get_function("extract")``——与 CLI 同一条
-代码路径，本页不再自己写 worker 线程。
+**复用共用组件**：页头下方是横跨整幅的**大输入区**
+（:class:`~desktop.steps.source_zone.SourceZone`：拖 PDF、点选），右栏是
+:class:`~desktop.steps.control.StepControl`（参数 + 输出目录 + 执行/中断），
+执行走 :class:`~desktop.steps.kernel.StepKernel` →
+``functions.get_function("extract")``——与 CLI 同一条代码路径，本页不再
+自己写 worker 线程；这些外设全部由 :class:`StepModulePage` 收口。
 
-**独立**：不依赖任务、不依赖 ``TaskDetailPage``——用户自选 PDF 与输出目录，
-在后台线程里跑，产出的图片用现成的 ``ImageViewerWidget`` 展示。三个模块各持
-自己的一份 :class:`StepControl`，因此**互不影响**。
+**左栏是「缩略图条 + 右侧大图」一种形态走到底**（用户 2026-10-03）：
 
-### `class ExtractModulePage(ModulePage)`
+- **未提取**：选完 PDF 立刻把每页渲成缩略图（缓存在
+  ``~/Documents/guji/singletask/图片提取/thumbnails/<书>/``），左栏按「第 N 页」
+  列出，点哪页右侧就按需渲那一页的**高清**大图；
+- **提取完成**：清单换成输出目录里的**提取出的图片**，直接看结果。
 
-图片提取模块页：选 PDF → 调参数 → 执行 → 看结果。
+⚠️ 此前这里是个**上下分栏**（上半 PDF 预览 + 下半提取结果），两个控件各带一套
+缩略图条与线程。现在只剩一个 :class:`ImageViewerWidget`——「所有独立任务左侧
+都是缩略图」这条要求在本页就落在这一个控件上。
+
+⚠️ **产物位置不动**：输出目录仍默认在源 PDF 旁边
+（:meth:`desktop.steps.spec.StepSpec.default_output`）。singletask 下面**只放
+缩略图缓存**，不放产物（用户 2026-10-03 明确「生成目录按照原先的」）。
+
+### `class ExtractModulePage(StepModulePage, ThumbSourceMixin)`
+
+图片提取模块页：选 PDF → 看页缩略图 → 调参数 → 执行 → 看提取结果。
 
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(parent=None)` | 建骨架与共用步骤控件；预览区是空态，等执行完再灌结果。 |
-| `shutdown_workers() -> None` | 收尾共用步骤控件的执行线程（壳层关窗口时会调到这里）。 |
+| `edit_effect_note(path: Path) -> str` | 编辑器改了提取出来的图片：**这张图本身就是这一步的产物**。 |
+| `on_result(out_root: Path, _result: dict) -> None` | 成功：清单换成输出目录里的图片（**从此左栏就是提取结果**）。 |
+| `shutdown_workers() -> None` | 收尾查看器自己的后台线程（页缩略图 pass / 大图渲染）。 |
+
+##### `edit_effect_note(path: Path) -> str`
+
+编辑器改了提取出来的图片：**这张图本身就是这一步的产物**。
+
+未提取时左栏列的是 PDF 的页缩略图（虚拟页，没有可回写的文件，右键
+不提供「编辑图片」），所以能走到这里的只有产物图。
+
+##### `on_result(out_root: Path, _result: dict) -> None`
+
+成功：清单换成输出目录里的图片（**从此左栏就是提取结果**）。
+
+``show_images`` 内部会经 ``set_images`` 退出 PDF 页模式
+（见 :meth:`ImageViewerWidget.set_images` 的注释）——不退出的话点哪页
+都会回到 PDF 的同一页。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `collect_result_images(out_root: str \| Path) -> list[Path]` | 收集提取产物图片，**同名只保留一份**。 |
+
+#### `collect_result_images(out_root: str | Path) -> list[Path]`
+
+收集提取产物图片，**同名只保留一份**。
+
+⚠️ 为什么要去重（用户 2026-10-03 报）：``rglob("*")`` 会把
+``<输出>/1.jpg``（单 PDF 时的平铺产物）**和**
+``<输出>/<PDF名>/images/1.jpg``（命令自己的嵌套布局残留）一起收进来，
+同一个 PDF 跑两遍就会留下两套 ⇒ 预览里**每页出现两次**（截图里两个
+``1.jpg``），用户以为程序重复处理了。
+
+规则：**顶层优先，其次按路径排序取第一个**。顶层就是"应该在那儿"的位置
+（平铺的产物），嵌套里的是残留；同名冲突时不覆盖、不删除——**只影响
+预览显示**，产物原样留给用户。
 
 ---
 
@@ -3248,6 +3605,12 @@ InfoBar —— 这两个是各模块反馈执行结果的标准出口，别自�
 且「启用开关」决定取图来源；单文件模式下没有下游，所以这里把面板里的
 「启用开关」隐掉，只留版面操作与导出。
 
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| EDITED_DIRNAME | `"edited"` |
+
 ### `class ImpositionModulePage(ModulePage)`
 
 拼图模块页：选图 → 自动/手动拼版 → 调整版面 → 导出成品。
@@ -3257,7 +3620,23 @@ InfoBar —— 这两个是各模块反馈执行结果的标准出口，别自�
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(parent=None)` | 先建骨架，再补「选图 / 自动拼版 / 导出」这条操作链。 |
+| `close_zoom_dialog() -> None` | 关掉预览弹窗（内容失效时调：换源 / 清空）。 |
 | `shutdown_workers() -> None` | 关闭页面前中止并等待导出线程。 |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `edited_page_dir() -> Path` | 手工修饰过的整页组合的存放目录（**缓存**，不是产物）。 |
+
+#### `edited_page_dir() -> Path`
+
+手工修饰过的整页组合的存放目录（**缓存**，不是产物）。
+
+「编辑整页组合」在独立拼图页里没有现成的落点：成品是点「导出成品」那一刻
+才写进用户选的目录的。所以手改的那张先存在 singletask 下（用户 2026-10-03
+定的独立任务缓存区），导出时再盖到对应成品上——输出目录归用户，程序只往
+里写最终成品。
 
 ---
 
@@ -3267,10 +3646,11 @@ InfoBar —— 这两个是各模块反馈执行结果的标准出口，别自�
 
 独立模块「生成 PDF」：与任务流程无关，选一批成品图直接合成 PDF。
 
-**复用共用组件**（``desktop/steps``）：页头下方横跨整幅的**大输入区**（拖图片
-文件夹 / 拖一批图片 / 点选），右栏是 :class:`StepControl`（打印参数 + 输出目录 +
-执行/中断），执行走 ``StepKernel`` → ``functions.get_function("print")``——
-与任务流程第四步是同一条代码路径（连参数面板都是同一个 ``PrintPanel``）。
+**复用共用组件**：页头下方横跨整幅的**大输入区**（拖图片文件夹 / 拖一批图片 /
+点选），右栏是 :class:`~desktop.steps.control.StepControl`（打印参数 + 输出目录 +
+执行/中断），执行走 :class:`~desktop.steps.kernel.StepKernel` →
+``functions.get_function("print")``——与任务流程第四步是同一条代码路径（连参数
+面板都是同一个 ``PrintPanel``）。外设由 :class:`StepModulePage` 收口。
 
 ⚠️ **与任务流程第四步的有意差别：页序。** 流程里页序 = 第四步列表里用户手动排的
 那份清单（``functions/print`` 的 ``files`` 参数）。独立页面按用户 2026-10-02 的
@@ -3281,9 +3661,18 @@ InfoBar —— 这两个是各模块反馈执行结果的标准出口，别自�
 ⚠️ **产物形态与别的模块不同**：``print`` 产出的是**一个 PDF 文件**，不是一目录
 图片。所以 ``StepSpec.artifact_is_file=True``——执行内核**不会**把
 ``function.outpath`` 覆盖成输出目录（那样会拿目录当文件路径写），并且把**真正的
-PDF 路径**回传给 ``finished``；本页据此直接把它交给左侧的 PDF 预览控件。
+PDF 路径**回传给 ``on_result``；本页据此把左栏切到「产物 PDF 的页缩略图」。
 
-### `class PrintModulePage(ModulePage)`
+⚠️ **左栏前后两个形态**（用户 2026-10-03：「所有独立任务左侧都是缩略图」）：
+
+- **未生成**：左侧是**待打印图片**的缩略图（缓存在 ``singletask/生成 PDF/``），
+  选完源就能翻看要合进去的是哪几张；
+- **生成后**：左侧换成**产物 PDF 的页缩略图**，看成品。
+
+两种形态共用同一个 :class:`~desktop.components.viewers.ImageViewerWidget`——
+它既能显示一批图片，也能把一本 PDF 的页当"图片"列出来（``set_pdf_source``）。
+
+### `class PrintModulePage(StepModulePage, ThumbSourceMixin)`
 
 生成 PDF 模块页：拖入成品图（一批或一个文件夹）→ 调版面 → 合成 PDF。
 
@@ -3291,8 +3680,25 @@ PDF 路径**回传给 ``finished``；本页据此直接把它交给左侧的 PDF
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(parent=None)` | 建骨架与共用步骤控件。 |
-| `shutdown_workers() -> None` | 收尾：PDF 预览自己的后台线程 + 共用步骤控件的执行线程。 |
+| `source_summary(source) -> str` | 在共用的 ``<源> → <输出>`` 之外，**补上待合成张数**。 |
+| `edit_effect_note(path: Path) -> str` | 编辑器改了待打印图：那张图就是最终进 PDF 的那张。 |
+| `on_result(pdf: Path, _result: dict) -> None` | 成功：``pdf`` 是**PDF 文件路径**（见 ``StepSpec.artifact_is_file``）。 |
+| `shutdown_workers() -> None` | 收尾左栏自己的后台线程（缩略图缓存 / 大图渲染）+ 共用控件的执行线程。 |
+
+##### `edit_effect_note(path: Path) -> str`
+
+编辑器改了待打印图：那张图就是最终进 PDF 的那张。
+
+⚠️ 生成完成之后左栏切成了**产物 PDF 的页缩略图**——矢量页没有可回写
+的图片文件，右键不提供「编辑图片」，所以能走到这里的都是待打印图。
+
+##### `on_result(pdf: Path, _result: dict) -> None`
+
+成功：``pdf`` 是**PDF 文件路径**（见 ``StepSpec.artifact_is_file``）。
+
+左栏从「待打印图片」切到「产物 PDF 的页缩略图」——页缩略图缓存在
+``singletask/生成 PDF/thumbnails/<产物>/``，所以第二次看同一个成品
+是秒开。
 
 ---
 
@@ -3302,10 +3708,12 @@ PDF 路径**回传给 ``finished``；本页据此直接把它交给左侧的 PDF
 
 「去底色」独立模块页。
 
-**复用共用组件**（``desktop/steps``）：页头下方是横跨整幅的**大输入区**
-（拖图片、拖整个文件夹、点选），右栏是 :class:`StepControl`（参数 + 输出目录 +
-执行/中断），执行走 :class:`StepKernel` → ``functions.get_function("rembg")``
-——与任务流程第三步是同一条代码路径。本页不再自己写 worker 线程。
+**复用共用组件**：页头下方是横跨整幅的**大输入区**（拖图片、拖整个文件夹、
+点选），右栏是 :class:`~desktop.steps.control.StepControl`（参数 + 输出目录 +
+执行/中断），执行走 :class:`~desktop.steps.kernel.StepKernel` →
+``functions.get_function("rembg")``——与任务流程第三步是同一条代码路径。
+这些外设由 :class:`StepModulePage` 收口，本页只补两件事：左栏用哪个预览
+控件、产物怎么上屏（附带的"副标题带图片张数"由 ``source_summary`` 覆盖）。
 
 **独立**：不需要任务、不需要检测框——用户拖入**一整个图片文件夹**（批量）或
 **单张图片**，结果用原图/结果对比控件（``RembgPreviewWidget``）看。
@@ -3314,7 +3722,7 @@ PDF 路径**回传给 ``finished``；本页据此直接把它交给左侧的 PDF
 单文件模式下没有框可用，所以这里**只暴露「整图/去底参数」这一层**，area 固定
 按「图像本身」处理，不参与框裁剪。
 
-### `class RembgModulePage(ModulePage)`
+### `class RembgModulePage(StepModulePage, ThumbSourceMixin)`
 
 去底色模块页：拖入图片（单张或文件夹）→ 调参数 → 批量去底 → 对比看结果。
 
@@ -3322,8 +3730,26 @@ PDF 路径**回传给 ``finished``；本页据此直接把它交给左侧的 PDF
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(parent=None)` | 建骨架与共用步骤控件。 |
-| `shutdown_workers() -> None` | 收尾共用步骤控件的执行线程（壳层关窗口时会调到这里）。 |
+| `__init__(parent=None)` | — |
+| `source_summary(source) -> str` | 在共用的 ``<源> → <输出>`` 之外，**补上图片张数**。 |
+| `edit_effect_note(path: Path) -> str` | 编辑器改了图：**改的是源图还是去底色结果**，生效方式不一样。 |
+| `on_result(out_dir: Path, _result: dict) -> None` | 成功：把「原图 → 结果」两组图塞进对比控件。 |
+| `shutdown_workers() -> None` | 收尾查看器自己的后台线程（缩略图缓存 / 大图渲染）+ 执行线程。 |
+
+##### `edit_effect_note(path: Path) -> str`
+
+编辑器改了图：**改的是源图还是去底色结果**，生效方式不一样。
+
+- 源图（左栏「原图」形态）→ 结果还是按旧图算的，重跑一次才用上；
+- 结果文件（「去底色结果」形态）→ 它自己就是这一步的产物，下游
+  （生成 PDF）读的就是它。
+
+##### `shutdown_workers() -> None`
+
+收尾查看器自己的后台线程（缩略图缓存 / 大图渲染）+ 执行线程。
+
+与 extract / detect / print 三页一致：查看器是独立于页面外壳的
+``WorkerHost``，不给它收尾，退出时那些线程还在跑。
 
 ---
 
@@ -3624,6 +4050,14 @@ _select_stage()、_set_stage_status()、_toast()、log_view。
 | `imposition_source_files() -> list[Path]` | 可挑选的源图：第三步「提交本次任务」的成品图（stages/rembg）。 |
 | `imposition_active() -> bool` | 拼版是否**生效**：已启用且至少有一页拼版。 |
 | `print_source_dir() -> Path` | 第四步的取图目录：拼版生效 → stages/imposition，否则 stages/rembg。 |
+
+##### `print_source_dir() -> Path`
+
+第四步的取图目录：拼版生效 → stages/imposition，否则 stages/rembg。
+
+⚠️ 走的是 :mod:`desktop.steps.ports` 的**条件连线**（"print 的 pages
+端口由谁供给"），不是在这里 if/else 挑目录——BPM 换上游时只改连线表，
+这一行不用动。
 
 ### `class ImpositionMixin(ImpositionPagesMixin, ImpositionLayoutMixin, ImpositionBaseMixin)`
 
@@ -5457,7 +5891,29 @@ BPM 编排时这正是"条件连线"的落点。
 
 1. 拖**文件**进来；
 2. 拖**文件夹**进来（含图片/PDF 的目录）；
-3. **点一下**从对话框里选（``accepts_dir`` 为真时先问"选文件还是选文件夹"）。
+3. **点按钮**选（空态底部两个真按钮「选择文件 / 选择文件夹」；已选态右端
+   「更换」）——也可以点空态空白处或按回车，那条老入口仍留着。
+
+⚠️ 第 3 条为什么要做成**看得见的按钮**（用户 2026-10-03 报）：原先只有"点
+空白处弹两选项小菜单"这一条隐式入口，界面上没有任何东西提示它能点，用户看到
+的只是一句"把 PDF 拖到这里"，于是报「不能直接点击按钮选择文件或文件夹」。
+入口既然是主路径，就得画出来。
+
+⚠️⚠️ **点空白处不再弹"选文件 / 选文件夹"那个两选项小菜单**（用户 2026-10-03
+第二次提要求：「能否底部不设置选择图片或者目录的弹窗」）。那个小菜单锚在控件
+**底部**，正是用户说的"底部弹窗"。现在点空白处 = **直接开选择对话框**（选文件），
+不再先问一遍"你要文件还是目录"。
+
+⚠️⚠️⚠️ **"选择对话框" ≠ "资源管理器窗口"**（2026-10-03 用户第三次纠正）。
+曾经误实现成"弹一个 ``explorer.exe`` 窗口 + 监听用户在窗口里的选中项"，用户
+明确否掉：「不对，现在直接打开资源浏览器了，而不是调用资源浏览器选择文件或者
+目录」。二者区别很大：
+
+- **要的**：资源管理器那套**选文件/选目录的对话框**，选完直接拿到结果 ——
+  也就是 :class:`QFileDialog` 的**原生**对话框（不设 ``DontUseNativeDialog``，
+  Windows 上它本来就是资源管理器式的那套界面），有"打开/取消"、结果确定；
+- **不要的**：另开一个**浏览用的资源管理器窗口**，再靠轮询/监听去猜他点了谁 ——
+  用户还得自己双击文件夹去定位，程序只能猜，且弹出的窗口与"选文件"无关。
 
 它是 :mod:`desktop.steps` 层的一部分，所以左侧三个模块与任务流程**共用同一份
 实现**——这正是用户要的"抽成公共组件、定义好入口/出口 API"。
@@ -5468,8 +5924,16 @@ BPM 编排时这正是"条件连线"的落点。
   → 一个"源"）由 :meth:`desktop.steps.spec.StepSpec.resolve_source` 负责，
   那是纯逻辑、可以脱离 Qt 单测；本控件只把原始路径经 ``paths_chosen`` 发出去。
   这样"拼图"这种要整份清单的调用方也能直接复用本控件。
-- **自绘**（项目规矩：基础控件一律 ``paintEvent``，不引样式表）：两种形态——
-  空态是大块（图标 + 两行提示），已选态收窄成一行（图标 + 名字 + 路径 + 清空）。
+- **虚框自绘、按钮用真控件**：外框、图标、两行文案、清空 ✕ 都是 ``paintEvent``
+  画的（项目规矩：基础控件不引样式表），但「选择文件 / 选择文件夹 / 更换」
+  必须是 :class:`qfluentwidgets.PushButton` —— 它们要 hover、按下、焦点态，
+  自绘等于把这些交互重写一遍还写不好。因此本控件内部**有一个子控件层**，
+  几何由 :meth:`SourceZone._relayout_buttons` 手工摆（空态摆在文案下方、
+  已选态右端一枚），自绘内容按同一个基准排（见 :meth:`_empty_block_top`）。
+- **空态的"文案 + 按钮"是一整块、垂直居中**（用户 2026-10-03 截图反馈）：
+  独占模式下控件高达 700px+，若文案贴顶、按钮钉在框底，中间是一大片空白，
+  看着像两个不相干的区域。``_empty_block_height`` 把按钮也算进整块高度，
+  两边共用 ``_empty_block_top`` ⇒ 文案与按钮永远贴在一起、一起居中。
 - **拖拽热区**：拖到控件上（或宿主页面上，见 ``ModulePage``）时描边与底色变主色，
   给"松手就放这儿"的反馈。
 
@@ -5477,10 +5941,14 @@ BPM 编排时这正是"条件连线"的落点。
 
 | 名称 | 值 |
 | --- | --- |
-| EMPTY_HEIGHT | `132` |
+| EMPTY_HEIGHT | `168` |
 | FILLED_HEIGHT | `74` |
 | ICON_BOX | `30` |
 | CLOSE_BOX | `26` |
+| BUTTON_HEIGHT | `30` |
+| BUTTON_GAP | `10` |
+| SOLO_HEIGHT | `320` |
+| SOLO_MIN_WIDTH | `360` |
 
 ### `class SourceZone(QWidget)`
 
@@ -5509,6 +5977,7 @@ BPM 编排时这正是"条件连线"的落点。
 | `set_hot(hot: bool) -> None` | 外部（宿主页面的整页拖拽）切换"正在拖入"高亮。 |
 | `clear() -> None` | 清空当前源并发 ``cleared``（点右上角 ✕ 与宿主主动复位走同一条）。 |
 | `busy_lock(locked: bool) -> None` | 执行中禁用（拖拽也不收），并保持当前画面。 |
+| `set_solo_mode(solo: bool) -> None` | 切**独占模式**：页面上再没有别的控件，本控件撑满整幅（空态）。 |
 | `paths_from_mime(mime) -> list[str]` | 从拖拽数据里取**本地**路径（URL 形式的文件/文件夹，非本地的丢掉）。 |
 | `dragEnterEvent(event) -> None` | 有东西拖上来：认得本地文件/文件夹就收，并亮起来。 |
 | `dragMoveEvent(event) -> None` | 拖拽移动中：保持接受（Qt 要求显式接受才会给 drop）。 |
@@ -5517,8 +5986,9 @@ BPM 编排时这正是"条件连线"的落点。
 | `enterEvent(event) -> None` | 鼠标进来：底色淡一档（可点的暗示）。 |
 | `leaveEvent(event) -> None` | 鼠标离开：恢复底色。 |
 | `keyPressEvent(event) -> None` | 回车/空格 = 点一下（键盘可达）。 |
-| `mousePressEvent(event) -> None` | 点清空按钮 = 清空；点别处 = 选文件/文件夹。 |
-| `browse() -> None` | 打开对话框选输入；``accepts_dir`` 为真时先让用户挑"文件还是文件夹"。 |
+| `mousePressEvent(event) -> None` | 点清空 = 清空；点已选态的 ✕ = 清空；点其余任何地方 = 换源（开对话框）。 |
+| `browse() -> None` | 点空白处 / 按回车 = 直接开**选文件**对话框。 |
+| `resizeEvent(event) -> None` | 尺寸变了：按钮行跟着重新居中。 |
 | `paintEvent(event) -> None` | 画底（圆角虚线框）+ 内容（空态两行 / 已选态一行）。 |
 
 ##### `set_source(path: Path | str | None, detail: str='') -> None`
@@ -5535,6 +6005,18 @@ BPM 编排时这正是"条件连线"的落点。
 空列表不进主流程（避免下游收到"什么都没有"的信号），改为发一条
 ``rejected`` 让界面说话。
 
+##### `set_solo_mode(solo: bool) -> None`
+
+切**独占模式**：页面上再没有别的控件，本控件撑满整幅（空态）。
+
+由 :meth:`desktop.modules.base.ModulePage.show_workspace` 调用——
+用户 2026-10-03 要求「初始就只有一个输入框，下面的操作面板和预览
+这些都要选择输入文件后才显示出来」。分栏一收，页面上半屏是框、
+下半屏一片空白，看着像没加载完；独占模式把这个观感补回来。
+
+⚠️ **已选态不参与**：源一旦选中就切回常规高度（``FILLED_HEIGHT``），
+因为那时分栏会回来，输入区要还给预览让出纵向空间。
+
 ##### `paths_from_mime(mime) -> list[str]`
 
 装饰器：`staticmethod`
@@ -5542,6 +6024,33 @@ BPM 编排时这正是"条件连线"的落点。
 从拖拽数据里取**本地**路径（URL 形式的文件/文件夹，非本地的丢掉）。
 
 单独抽成 staticmethod 是为了能直接单测——不用去合成 Qt 拖拽事件。
+
+##### `mousePressEvent(event) -> None`
+
+点清空 = 清空；点已选态的 ✕ = 清空；点其余任何地方 = 换源（开对话框）。
+
+⚠️ **已选态"点哪都能换源"是 2026-10-03 改回来的**（此前是"只有右上角那枚
+「更换」按钮能点"，因为担心用户只是想点空白让控件失焦）。改回来的理由是
+用户报「更换点了没反应」：那一枚按钮是**子控件**（见 :meth:`_build_buttons`），
+它能否收到点击取决于几何是否已随布局重排——一旦布局晚一步（懒构造的模块页
+正是如此），按钮画出来了却还不在正确位置，事件就落到了父控件上，而父控件
+那时又什么都不做 ⇒ 用户看到的就是"点了完全没反应"。
+
+把整条已选态都做成入口，就**不再依赖任何子控件的几何**：无论按钮在哪、
+是否被盖住，点这块区域都能换源。右上角 ✕ 优先（它更靠右、语义不同）。
+
+##### `browse() -> None`
+
+点空白处 / 按回车 = 直接开**选文件**对话框。
+
+⚠️ 2026-10-03 用户要求「底部不设置选择图片或者目录的弹窗」：原先这里
+会先弹一个"选文件 / 选文件夹"的两选项小菜单（锚点就在控件**底部**，
+见旧的 ``_anchor_point``），用户点完小菜单**紧接着**才看到真正的选择
+界面——两层弹窗叠着，正对应用户说的"底部弹窗"。现在那一层整个去掉：
+点空白处直接进选择对话框。
+
+⚠️ 只能默认"选文件"：``accepts_dir=True`` 的步骤想选目录有专门的
+「选择文件夹」按钮（那是显式入口），不必在这里再问一遍。
 
 ---
 
@@ -5596,7 +6105,9 @@ BPM 编排时这正是"条件连线"的落点。
 - ``title``：**模块页头大标题 + 左侧导航条目**的名字（"图片提取"）；
 - ``subtitle``：**模块页头副标题**（"选择一个 PDF（…），把每页渲染成图片"）；
 - ``nav_tooltip``：**导航条目悬停提示**（空则用 ``subtitle``）；
-- ``nav_icon``：**导航条目图标**（``FluentIcon`` 成员名）；
+- ``nav_icon``：**导航条目图标**（``FluentIcon`` 成员名；或 ``svg:名字``
+  引用 ``desktop.ui.icons.CustomIcon`` 的自绘图——内置图标没有的图形），
+  由 ``desktop.ui.icons.resolve_nav_icon`` 统一解析；
 - ``panel``：参数面板**类名**（``desktop.components.panels`` 里的名字）；
   ``None`` 表示这一步没有可调参数；
 - ``pick_label``：源选择对话框的标题（"选择 PDF" / "选择图片"）；
@@ -5633,6 +6144,14 @@ BPM 编排时这正是"条件连线"的落点。
 ``short``         流程步骤条上的短名（空则用 ``stage_title``）
 ===============  ==========================================
 
+**详情页侧**（``run_button_text`` / ``has_submit`` / ``control_width`` /
+``preview_attr`` / ``panel_extra`` / ``history_skip`` / ``auto_fill_skip``）：
+"这一步在任务流程详情页里长什么样"。⚠️ 这些**曾经散在页面的 if-else 里**
+（``page._select_stage`` 按 stage 改按钮文案与区块显隐、``view.
+_apply_control_width`` 按 stage 换宽度、``history._history_fill_keys``
+按 stage 跳过不同键）——加一步就得改那几处 if，BPM 换顺序更是无从下手。
+现在都是**声明**：页面只查表，不认哪个 step 是谁。
+
 **流程侧**：
 
 - ``role``：``"stage"`` = 默认流程主链上的一步；``"optional"`` = 流程条上的
@@ -5641,10 +6160,12 @@ BPM 编排时这正是"条件连线"的落点。
 - ``nav``：这一步**有没有独立的模块页**、要不要进左侧导航。``False`` 表示
   还没抽出来——壳层据此不过去建页面（``desktop.modules.MODULES`` 会把它
   过滤掉），免得出现"清单里有、页面不存在"；
-- ``inputs`` / ``outputs``：**BPM 端口预留**——将来自定义流程要靠它们把步骤
-  连起来。⚠️ 现在**还没接线**：任务流程走的仍是"约定目录布局"（提取的输出
-  目录就是去底色的输入目录）。先声明出来，是为了让端口模型落地时不用回头
-  改五条 spec。
+- ``inputs`` / ``outputs``：**BPM 端口**——这一步消费/产出哪些产物
+  （``pages`` 图片 / ``boxes`` 检测框 / ``pdf``）。⚠️ **已接线**（2026-10-03
+  补完）：:mod:`desktop.steps.ports` 按这两个字段 + 它的连线表把步骤连起来，
+  任务流程不再靠"约定目录布局"。**声明必须与事实一致**——端口模型靠它做
+  依赖检查，写漏一个就等于给 BPM 一条假的边（``rembg`` 漏写 ``boxes`` 就是
+  这样被 ``tests/selftests/step_ports.py`` 逮到的）。
 
 #### 方法
 
@@ -5725,8 +6246,11 @@ BPM 编排时这正是"条件连线"的落点。
 规则（顺序即优先级）：
 
 1. 混着文件夹进来时，只要 ``accepts_dir`` 就**取第一个文件夹当源**
-   （拖一个文件夹进来是最自然的批量用法）；不接受目录的步骤则改为
-   从文件夹里挑出符合后缀的文件继续走第 3 步；
+   （拖一个文件夹进来是最自然的批量用法）；**不接受目录的步骤直接
+   拒绝**（``accepts_dir=False``，如"PDF 只支持文件"的图片提取）——
+   别在这里"从文件夹里挑出符合后缀的文件"替用户做主：挑到哪几个、
+   为什么是这几个，用户在界面上看不见，而下一步的产物又依赖这个
+   选择，错了要等到看结果时才发现；
 2. 文件夹**顶层没有**本步骤能用的文件时，往下钻一~两层（见
    :meth:`nested_listing`）：恰好一个子目录装着 → 自动指向它并说明；
    多个 → 拒绝并让用户挑一个（混着处理会把不同书的页拼在一起）；
@@ -6115,11 +6639,13 @@ JSON 文件，没有旧数据（SQLite）需要迁移。
 | `delete_task(task_id: str) -> bool` | 删除任务及其中间产物，返回是否真的删掉。 |
 | `task_dir(task_id: str) -> Path` | 任务根目录：tasks/<任务号>。 |
 | `stage_dir(task_id: str, stage: str) -> Path` | 某阶段的输出目录：tasks/<任务号>/stages/<阶段>。 |
+| `artifact(task_id: str, stage: str, port: str='pages') -> Path` | 某阶段某端口的产物绝对路径（**落点的唯一入口**）。 |
 | `extract_output_dir(task_id: str) -> Path` | 提取图片直接位于 stages/extract（无 PDF 名/嵌套子目录）。 |
 | `rembg_output_dir(task_id: str) -> Path` | 步骤三最终图片目录（「提交本次任务」产出，print 阶段从此取图）。 |
 | `rembg_preview_output_dir(task_id: str) -> Path` | 「生成预览」产出的整页去底预览图目录（中间产物，不参与 print）。 |
 | `imposition_output_dir(task_id: str) -> Path` | 「图片拼版」产出的成品拼版页图目录（列表顺序即页序）。 |
 | `print_output_pdf(task_id: str) -> Path` | print 阶段产物 print.pdf 的完整路径。 |
+| `stage_input(task_id: str, stage: str, port: str='pages', imposition_active: bool=False) -> Path \| None` | 按**连线**解析某阶段某端口的输入绝对路径。 |
 | `stage_output_dir(task_id: str, stage: str) -> Path` | 返回某阶段（GUI）应写入的输出目录。 |
 | `workset_dir(task_id: str) -> Path` | 已废弃：检测/去底直接读 extract 输出目录，不再物化输入副本。 |
 | `runs_config_dir(task_id: str) -> Path` | 子进程执行配置（run-*.json / detect-config.json）。 |
@@ -6164,12 +6690,30 @@ JSON 文件，没有旧数据（SQLite）需要迁移。
 外部编辑或别的工具写坏，一旦出现 `"id": "..\..\somewhere"` 就会
 **越界删除任务目录之外的东西**。这里只认 `create_task` 生成的形状。
 
+##### `artifact(task_id: str, stage: str, port: str='pages') -> Path`
+
+某阶段某端口的产物绝对路径（**落点的唯一入口**）。
+
+⚠️ 这四个 ``*_output_dir`` 方法以前各自写死了路径，是"加一步要改四处"
+的根源；现在它们都转调到这里，而落点表
+（:data:`desktop.steps.ports.STAGE_LOCATIONS`）是唯一事实来源。
+加一步 = 加一行表，不用动 store。
+
 ##### `imposition_output_dir(task_id: str) -> Path`
 
 「图片拼版」产出的成品拼版页图目录（列表顺序即页序）。
 
 拼版节点**生效**时（选择态为真且有拼版页），第四步「生成 PDF」与它的
 待打印列表一律从这里取图；否则仍从 ``rembg_output_dir`` 取。
+
+##### `stage_input(task_id: str, stage: str, port: str='pages', imposition_active: bool=False) -> Path | None`
+
+按**连线**解析某阶段某端口的输入绝对路径。
+
+⚠️ 这是 BPM 化的关键入口：调用方不再问"第三步的图片在哪"，而是问
+"这一步的 ``pages`` 输入在哪"——连线（谁供给它）由
+:data:`desktop.steps.ports.SUPPLIERS` 决定，``imposition_active``
+是那条唯一的**条件连线**（拼版生效时换上游）。
 
 ##### `stage_output_dir(task_id: str, stage: str) -> Path`
 
@@ -6703,6 +7247,7 @@ Markdown 里写的是 ``screenshots/guide/xxx.png`` 这样的相对路径，
 | 名称 | 值 |
 | --- | --- |
 | QUESTION_CIRCLE | `"<svg xmlns="http://www.w3.org/2000/svg" width="24" height…"` |
+| SCAN_TEXT_BOX | `"<svg xmlns="http://www.w3.org/2000/svg" width="24" height…"` |
 
 ### `class SvgIcon(FluentIconBase)`
 
@@ -6723,6 +7268,24 @@ Markdown 里写的是 ``screenshots/guide/xxx.png`` 这样的相对路径，
 ### `class CustomIcon`
 
 自定义图标集合：用法与 ``FluentIcon`` 一致（直接传给按钮等控件）。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `resolve_nav_icon(name: str)` | 按 ``nav_icon`` 的字符串取导航图标对象（壳层专用入口）。 |
+
+#### `resolve_nav_icon(name: str)`
+
+按 ``nav_icon`` 的字符串取导航图标对象（壳层专用入口）。
+
+- ``"svg:名字"`` → :class:`CustomIcon` 里的自绘图（内置图标没有的图形，
+  如检测文本框的取景框）；
+- 其它 → ``FluentIcon`` 的同名成员（历史行为，``spec.nav_icon`` 的注释
+  与各步骤的取值都按这个写）。
+
+名字不存在时**抛 AttributeError**——图标名是代码里写死的常量，写错了
+应该在启动第一时间炸出来，而不是渲染出一列空导航。
 
 ---
 
@@ -7200,12 +7763,20 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 | 名称 | 值 |
 | --- | --- |
 | THUMBNAIL_EDGE | `256` |
+| SINGLETASK_DIRNAME | `"singletask"` |
+| _SAFE_CHARS | `"<>:"/\\|?*"` |
 
 ### 模块函数
 
 | 函数 | 说明 |
 | --- | --- |
 | `guji_data_dir() -> Path` | GUI 数据根目录：用户文档目录下的 guji。 |
+| `safe_dirname(name: str) -> str` | 把任意标题洗成能当目录名的一串（去掉非法字符、收敛空白）。 |
+| `singletask_dir(subtask: str) -> Path` | 独立任务区下某个**子任务**的目录：``~/Documents/guji/singletask/<子任务>``。 |
+| `singletask_thumbnails_dir(subtask: str, book: str \| Path \| None=None) -> Path` | 子任务的**页缩略图缓存**：``singletask/<子任务>/thumbnails[/<书>]``。 |
+| `book_key(book: str \| Path) -> str` | 一本书在缓存目录里的唯一名字：``<文件名去后缀>-<大小>-<路径指纹前8位>``。 |
+| `image_thumb_cache_path(subtask: str, image: str \| Path, edge: int=THUMBNAIL_EDGE) -> Path` | 一张**源图片**在 singletask 缓存里的缩略图路径。 |
+| `image_thumbs_dir(subtask: str, edge: int=THUMBNAIL_EDGE) -> Path` | 一批**图片源**的缩略图缓存**目录**：``singletask/<子任务>/thumbs/<边长>``。 |
 | `default_open_dir() -> Path` | 文件对话框的默认打开目录：用户文档目录。 |
 | `project_root() -> Path` | 项目根目录（`desktop` 包的上一级）。 |
 | `package_dir() -> Path` | `desktop` 包目录（源码与 PyInstaller 打包两种模式下都可用）。 |
@@ -7213,6 +7784,62 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 | `copy_file_atomic(source: Path, target: Path) -> Path` | 把 source 复制到 target，**要么没有、要么完整**。 |
 | `natural_key(name: str)` | 生成自然排序键：数字段按整数、其余转小写，使 2 排在 10 前。 |
 | `list_stage_images(directory: Path) -> list[Path]` | 某阶段输出目录中的图片（自然排序）。 |
+
+#### `singletask_thumbnails_dir(subtask: str, book: str | Path | None=None) -> Path`
+
+子任务的**页缩略图缓存**：``singletask/<子任务>/thumbnails[/<书>]``。
+
+导入 PDF 时**立刻**渲染到这里（用户 2026-10-03："从上一层导入PDF，没有立即
+提取缩略图"）。命中即复用，缺页才渲染——所以第二次打开同一本书几乎不花时间。
+
+⚠️⚠️ **必须带 ``book`` 分一层目录**（2026-10-03 自测当场逮到）：缩略图文件名是
+**页号**（``0001.jpg``…），而这个缓存目录是**所有书共用**的。不按书分开，A 书
+第 1 页的缩略图会被当成 B 书第 1 页的命中缓存 ⇒ 翻页翻出**别本书的内容**。
+（任务流程那边没事，是因为 ``tasks/<id>/thumbnails/source`` 一本书一个目录。）
+
+目录名用 ``书名-大小-路径指纹前 8 位``：同名不同书靠指纹区分，同一本书改名后
+仍能命中旧缓存。
+
+⚠️ **只放缓存，不放产物**：模块页的输出目录仍然默认在源文件旁边
+（:meth:`desktop.steps.spec.StepSpec.default_output`），别把用户已经习惯的
+产物位置改掉。
+
+#### `book_key(book: str | Path) -> str`
+
+一本书在缓存目录里的唯一名字：``<文件名去后缀>-<大小>-<路径指纹前8位>``。
+
+路径参与指纹：``D:/书/甲.pdf`` 与 ``E:/书/甲.pdf`` 同名同大小，但不是同一本书。
+
+#### `image_thumb_cache_path(subtask: str, image: str | Path, edge: int=THUMBNAIL_EDGE) -> Path`
+
+一张**源图片**在 singletask 缓存里的缩略图路径。
+
+``singletask/<子任务>/thumbs/<边缘边长>/<book_key>.jpg``
+
+用户 2026-10-03 定的口径：**所有独立任务的左侧都显示缩略图**，且缩略图
+统一缓存在 ``~/Documents/guji/singletask`` 下（PDF 用
+:func:`singletask_thumbnails_dir` 的按页编号那套，这里是按图文件本身）。
+
+- **按图分文件**（不是按页号）：图片源的条目名五花八门（``1.jpg`` /
+  ``右-01.png``…），按页号命名必然撞名，撞名就是**别人的图被当成本图的
+  缓存**——与 PDF 那条护栏（``book_key`` 分目录）是同一个坑。
+- **按边长分层**：``ThumbStrip.decode_edge`` 会随 dpr 变，1.5 倍屏要
+  234px、小图要 156px。混在一个目录里，改一次 dpr 就会拿旧尺寸的缓存
+  当命中（条目里发糊），所以边长进目录名。
+- 键里带**大小与路径指纹**（复用 :func:`book_key`）：同名不同图靠它区分，
+  同图改名后仍能命中旧缓存。
+
+#### `image_thumbs_dir(subtask: str, edge: int=THUMBNAIL_EDGE) -> Path`
+
+一批**图片源**的缩略图缓存**目录**：``singletask/<子任务>/thumbs/<边长>``。
+
+与 :func:`image_thumb_cache_path` 是同一套规则的两种用法：那个给**单张图**
+的缓存文件路径，这个给**目录**（一批图共用、或宿主需要"重渲一张"时交给
+``ImageThumbCacheWorker``）。
+
+⚠️ 目录**只按「子任务 + 边长」分层**，不按单图键：单图键里带着大小与路径
+指纹，拿它当目录名既很长，也会让"同一张图被编辑后尺寸变了"直接换目录
+（旧缓存全成孤儿）。⚠️ 边长必须进目录名（``decode_edge`` 随 dpr 变）。
 
 #### `default_open_dir() -> Path`
 
@@ -7507,11 +8134,11 @@ PDF/图片渲染：整页大图、页缩略图（带磁盘缓存）与去底色�
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(path: Path, page: int=0, longest_edge: int \| None=1200, thumbnails: bool=False, cache_dir: Path \| None=None, effect: dict \| None=None, print_spec: dict \| None=None, render_missing: bool=True, pages: list[int] \| None=None)` | 构造预览渲染 worker。 |
+| `__init__(path: Path \| str, page: int=0, longest_edge: int \| None=1200, thumbnails: bool=False, cache_dir: Path \| None=None, effect: dict \| None=None, print_spec: dict \| None=None, render_missing: bool=True, pages: list[int] \| None=None)` | 构造预览渲染 worker。 |
 | `cancel() -> None` | 请求中止。 |
 | `run() -> None` | 按构造参数渲染单页大图或批量页缩略图，发出 finished/thumbnail_ready。 |
 
-##### `__init__(path: Path, page: int=0, longest_edge: int | None=1200, thumbnails: bool=False, cache_dir: Path | None=None, effect: dict | None=None, print_spec: dict | None=None, render_missing: bool=True, pages: list[int] | None=None)`
+##### `__init__(path: Path | str, page: int=0, longest_edge: int | None=1200, thumbnails: bool=False, cache_dir: Path | None=None, effect: dict | None=None, print_spec: dict | None=None, render_missing: bool=True, pages: list[int] | None=None)`
 
 构造预览渲染 worker。
 

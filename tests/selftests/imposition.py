@@ -217,6 +217,67 @@ def run(ctx) -> None:
            sorted(p.name for p in gap.glob("*.png")) == ["0001.png", "0003.png"],
            str(sorted(p.name for p in gap.glob("*.png"))))
 
+        # ---------------- 2b. 并发合成（用户 2026-10-03 报「程序容易跑崩溃」）----
+        # 根因：后台防抖合成（ImpositionComposeWorker）与生成 PDF 前的同步合成
+        # （_compose_imposition_now）打到**同一个目录**且原先**无任何互斥**，
+        # 写盘又是 `image.save()` **就地截断重写**。实测 8 线程并发时老实现直接
+        # 抛 PermissionError（一个线程正写 another's 文件句柄），页面就崩。
+        # 现在是「整轮持锁 + 原子写（临时文件 + os.replace）」。
+        #
+        # ⚠️ 源图必须**够大**：400×600 的图 save 只需几毫秒，窗口太窄，
+        #    即便去掉锁与原子写也可能假绿（第一版就栽在这）。1400×1800 才
+        #    能稳定撞上"一个线程正写 another's 文件句柄"。
+        #    实测（8 线程 × 6 页）：老实现抛 PermissionError；只加锁 ⇒ 绿；
+        #    只加原子写 ⇒ 仍绿；两道都有 ⇒ 绿。它们挡的是不同故障，见
+        #    services/imposition.py 里 _COMPOSE_LOCK 与 _save_page_atomic 的注释。
+        import threading
+
+        big = _mk(tmp / "big.png", GREEN, (1400, 1800))
+        big_page = S.normalize_page({
+            "items": [{"file": str(big), "rect": [0.0, 0.0, 1400.0, 1800.0],
+                       "rotation": 0}]
+        })
+        race_dir = tmp / "compose_race"
+        race_dir.mkdir()
+        doc_race = {"pages": [big_page] * 6}
+        errors: list = []
+
+        def _compose_many():
+            try:
+                S.compose_doc(doc_race, race_dir)
+            except Exception as exc:  # noqa: BLE001 - 自测要看到任何炸
+                errors.append(f"{type(exc).__name__}: {exc}")
+
+        threads = [threading.Thread(target=_compose_many) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=180)
+        ok("多线程并发合成不抛异常（老实现这里会 PermissionError）",
+           not errors, str(errors[:3]))
+
+        from PIL import Image as _PILImage
+
+        def _decodable(path) -> bool:
+            """真解码一遍：半张 PNG 会在这里抛或给出异常尺寸。"""
+            try:
+                with _PILImage.open(path) as im:
+                    im.load()
+                return True
+            except Exception:  # noqa: BLE001 - 打不开就是坏图
+                return False
+
+        ok("并发合成后每页都是完整可解码的 PNG（不是半张图）",
+           all(_decodable(race_dir / n)
+               for n in ("0001.png", "0003.png", "0006.png")),
+           str(sorted(p.name for p in race_dir.glob("*.png"))))
+        ok("并发合成不留 .part 临时文件",
+           list(race_dir.glob("*.part")) == [],
+           str(list(race_dir.glob("*.part"))))
+        ok("并发合成页数正确（没被 _sweep_stale 误删）",
+           len(list(race_dir.glob("*.png"))) == 6,
+           str(len(list(race_dir.glob("*.png")))))
+
         # ---------------- 3. 剩余未选清单 ----------------
         remaining = S.remaining_files([a, b, c, d], {"pages": [made]})
         ok("剩余未拼版的图片 = 未被任何页引用的那些",

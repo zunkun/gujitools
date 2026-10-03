@@ -38,6 +38,7 @@ from desktop.modules import MODULES, module_by_key
 from desktop.pages.tasklist.page import TaskListPage
 from desktop.store import TaskStore
 from desktop.ui import theme as T
+from desktop.ui.icons import resolve_nav_icon
 
 #: 导航栏**折叠**时的宽度（px）。折叠态只剩一列图标，正文区分到剩下的宽度。
 #:
@@ -135,7 +136,7 @@ class ModuleShell(QWidget):
         for module in MODULES:
             item = self.nav.addItem(
                 module.key,
-                getattr(FIF, module.icon),
+                resolve_nav_icon(module.icon),
                 module.title,
                 onClick=self._module_click_handler(module.key),
                 position=NavigationItemPosition.TOP,

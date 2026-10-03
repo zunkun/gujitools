@@ -44,6 +44,7 @@ def run(ctx) -> None:
         StepControl,
         StepKernel,
         StepRequest,
+        StepSpec,
         callable_job,
         command_job,
         spec_by_key,
@@ -86,7 +87,11 @@ def run(ctx) -> None:
     ok("输入物称呼由 pick_label 派生",
        (extract.input_noun(), rembg.input_noun()) == ("PDF", "图片"),
        f"{extract.input_noun()} / {rembg.input_noun()}")
-    ok("每条都允许直接收目录（默认值）", all(s.accepts_dir for s in SPECS))
+    # ⚠️ 「PDF 只支持文件」（用户 2026-10-03）——所以**不是**每条都收目录。
+    #    断言写成"谁不收目录"，加一条新步骤时不必回来改这里。
+    ok("只有图片提取不收目录（PDF 只支持文件）",
+       [s.key for s in SPECS if not s.accepts_dir] == ["extract"],
+       str([(s.key, s.accepts_dir) for s in SPECS]))
     ok("大输入区文案齐备（图标 + 两行）",
        all(s.drop_icon and s.drop_title_text() and s.drop_hint_text() for s in SPECS),
        str([s.drop_title_text() for s in SPECS]))
@@ -103,7 +108,8 @@ def run(ctx) -> None:
     ok("文件按后缀判定",
        extract.accepts_path(drop_dir / "a.pdf")
        and not extract.accepts_path(drop_dir / "c.png"))
-    ok("目录按 accepts_dir 判定", extract.accepts_path(drop_dir))
+    ok("目录按 accepts_dir 判定（提取这一步不收目录）",
+       not extract.accepts_path(drop_dir) and rembg.accepts_path(drop_dir))
     ok("目录清单只取本步骤的后缀",
        [p.name for p in extract.listing(drop_dir)] == ["a.pdf", "b.pdf"],
        str([p.name for p in extract.listing(drop_dir)]))
@@ -111,14 +117,18 @@ def run(ctx) -> None:
 
     ok("拖一个文件 → 就是它自己",
        extract.resolve_source([drop_dir / "a.pdf"])[0] == drop_dir / "a.pdf")
-    ok("拖一个文件夹 → 就是它",
-       extract.resolve_source([drop_dir])[0] == drop_dir)
-    ok("拖同目录多个文件 → 收成该目录",
-       extract.resolve_source([drop_dir / "a.pdf", drop_dir / "b.pdf"])[0] == drop_dir)
-    ok("跨目录多个文件 → 落到第一个文件所在目录",
-       extract.resolve_source([drop_dir / "a.pdf", other_dir / "d.pdf"])[0] == drop_dir)
-    ok("文件与文件夹混着给 → 用文件夹并交代一句",
-       (lambda r: r[0] == drop_dir and bool(r[1]))(extract.resolve_source([drop_dir / "a.pdf", drop_dir])))
+    # ⚠️ 「PDF 只支持文件」（用户 2026-10-03）：拖文件夹**直接拒绝**，不从
+    #    里面替用户挑 PDF——挑了哪几个、为什么是这几个，界面上看不见。
+    ok("拖一个文件夹 → 拒绝并说明只支持文件",
+       (lambda r: r[0] is None and "只支持" in r[1]
+        and "不支持文件夹" in r[1])(extract.resolve_source([drop_dir])),
+       str(extract.resolve_source([drop_dir])))
+    ok("文件与文件夹混着给 → 同样拒绝（按最严的来）",
+       (lambda r: r[0] is None and "只支持" in r[1])(
+           extract.resolve_source([drop_dir / "a.pdf", drop_dir])),
+       str(extract.resolve_source([drop_dir / "a.pdf", drop_dir])))
+    ok("收目录的步骤：拖文件夹就是它",
+       rembg.resolve_source([drop_dir])[0] == drop_dir)
     ok("后缀不符 → 拒绝并给理由",
        (lambda r: r[0] is None and "支持" in r[1])(extract.resolve_source([drop_dir / "c.png"])))
     ok("空输入 → 拒绝", extract.resolve_source([])[0] is None)
@@ -204,6 +214,36 @@ def run(ctx) -> None:
        and (clash_dest / "1.jpg").read_bytes() == b"root",
        "同名冲突时两处内容都得原样留着")
 
+    # ⚠️ 同一个 PDF **重跑**：根下已有上一轮平铺的同名文件，内容**完全一样**
+    #    （用户 2026-10-03 报：输出目录里躺着两套 192 张，预览里每页出现两次）。
+    #    内容相同 ⇒ 那是重跑产生的副本，不是冲突：搬上去、嵌套壳清掉。
+    rerun_dest = Path(ctx.tmp) / "flat_rerun"
+    (rerun_dest / "样书" / "images").mkdir(parents=True, exist_ok=True)
+    for name in ("1.jpg", "2.jpg"):
+        (rerun_dest / "样书" / "images" / name).write_bytes(b"same")
+        (rerun_dest / name).write_bytes(b"same")
+    _kernel._flatten_single_pdf_output(
+        StepRequest(source=single_pdf, dest=rerun_dest))
+    ok("重跑（同名同内容）：不算冲突，嵌套壳被清掉、不留两套",
+       sorted(p.name for p in rerun_dest.iterdir()) == ["1.jpg", "2.jpg"],
+       str(sorted(p.name for p in rerun_dest.iterdir())))
+
+    # 混合：1.jpg 同内容（重跑）但 2.jpg 内容不同（真冲突）⇒ 嵌套树整体保留，
+    # 且**已经搬走的也要放回去**？—— 不行：已搬走的 1.jpg 与根下同名同内容，
+    # 留在根下等价于没丢；关键是 2.jpg 必须在 nested 里还在。
+    mixed_dest = Path(ctx.tmp) / "flat_mixed"
+    (mixed_dest / "样书" / "images").mkdir(parents=True, exist_ok=True)
+    (mixed_dest / "样书" / "images" / "1.jpg").write_bytes(b"same")
+    (mixed_dest / "1.jpg").write_bytes(b"same")
+    (mixed_dest / "样书" / "images" / "2.jpg").write_bytes(b"new")
+    (mixed_dest / "2.jpg").write_bytes(b"old")
+    _kernel._flatten_single_pdf_output(
+        StepRequest(source=single_pdf, dest=mixed_dest))
+    ok("混合情况：真冲突那份留在嵌套里，且不覆盖根下的旧文件",
+       (mixed_dest / "样书" / "images" / "2.jpg").read_bytes() == b"new"
+       and (mixed_dest / "2.jpg").read_bytes() == b"old",
+       f"nested2={(mixed_dest / '样书' / 'images' / '2.jpg').exists()}")
+
     # 目录源 = 批量：每个 PDF 一个子目录是**对的**（否则大家的 1.jpg 互相覆盖）
     batch_dest = Path(ctx.tmp) / "flat_batch"
     (batch_dest / "样书" / "images").mkdir(parents=True, exist_ok=True)
@@ -229,7 +269,7 @@ def run(ctx) -> None:
     ok("每条 role 取值合法",
        all(s.role in ("stage", "optional") for s in SPECS),
        str([(s.key, s.role) for s in SPECS]))
-    ok("每条都声明了 BPM 端口（本次只声明未接线）",
+    ok("每条都声明了 BPM 端口（已由 desktop.steps.ports 接线）",
        all(s.inputs and s.outputs for s in SPECS),
        str([(s.key, s.inputs, s.outputs) for s in SPECS]))
 
@@ -465,12 +505,16 @@ def run(ctx) -> None:
     from PySide6.QtCore import QMimeData, QUrl
 
     from desktop.steps import SourceZone
+    from desktop.steps.source_zone import EMPTY_HEIGHT, FILLED_HEIGHT
 
-    zone = SourceZone(extract)
+    # ⚠️ 用 rembg（仍收目录）当夹具，不用 extract：图片提取已经改成
+    #    **只支持文件**（用户 2026-10-03），它不摆「选择文件夹」按钮。
+    zone = SourceZone(rembg)
     zone.resize(420, 240)
     ok("大输入区默认收拖拽", zone.acceptDrops() is True)
     ok("空态是大块（还没选东西）",
-       zone.source() is None and zone.height() == 132, str(zone.height()))
+       zone.source() is None and zone.height() == EMPTY_HEIGHT,
+       str(zone.height()))
 
     zone_seen: list = []
     zone_rejected: list = []
@@ -496,13 +540,15 @@ def run(ctx) -> None:
        str(zone_seen))
     zone.set_source(drop_dir, "12 个可用文件")
     ok("已选态收窄成一行",
-       zone.source() == drop_dir and zone.height() == 74, str(zone.height()))
+       zone.source() == drop_dir and zone.height() == FILLED_HEIGHT,
+       str(zone.height()))
 
     cleared: list = []
     zone.cleared.connect(lambda: cleared.append(True))
     zone.clear()
     ok("清空回到空态并发出 cleared",
-       cleared == [True] and zone.source() is None and zone.height() == 132)
+       cleared == [True] and zone.source() is None
+       and zone.height() == EMPTY_HEIGHT)
 
     # 拖动经过时的高亮开关（宿主页面转发整页拖拽时用）
     zone.set_hot(True)
@@ -510,12 +556,16 @@ def run(ctx) -> None:
     zone.set_hot(False)
     ok("可以熄灭拖拽热区", zone._hot is False)
 
-    # ---- 4b-2. 点一下 → 选择对话框（推迟到事件返回之后 + 起始目录）----
-    # ⚠️ 2026-10-02 用户报的 bug：点大输入区弹出"选择图片 / 选择文件夹"小菜单，
-    #    选完**资源管理器不出现**。根因是 `browse()` 被同步压在 mousePressEvent
-    #    里——小菜单与随后的 QFileDialog 两层模态叠在**同一个尚未返回**的鼠标事件
-    #    里。修法：用 QTimer 推迟到事件返回之后再弹。这里把两个真正弹窗的调用换成
-    #    记录器，钉住"① 不当场弹 ② 事件循环跑完才弹 ③ 起始目录不是空串"。
+    # ---- 4b-2. 点空白处 → 直接开选择对话框（无小菜单、且不压在同一鼠标事件里）----
+    # ⚠️ 2026-10-02 用户报的 bug：点大输入区弹出的选择界面不出现。根因是
+    # `browse()` 被同步压在 mousePressEvent 里——模态叠在**同一个尚未返回**的
+    # 鼠标事件里。修法：用 QTimer 推迟到事件返回之后再弹。
+    #
+    # ⚠️⚠️ 2026-10-03 用户要求：「能否底部不设置选择图片或者目录的弹窗」——
+    #    去掉的是**点空白处那个两选项小菜单**（RoundMenu，锚在控件底部）。
+    #    现在点空白处 = 直接开资源管理器的选文件对话框。
+    # ⚠️ 这里刻意**不替换 `_open_dialog`**，而是替换更底层的 `QFileDialog`：
+    #    那样才能同时钉住"没有小菜单"与"确实开的是文件对话框"。
     from PySide6.QtCore import QEvent, QPointF, Qt
     from PySide6.QtGui import QMouseEvent
     from PySide6.QtWidgets import QFileDialog
@@ -523,9 +573,14 @@ def run(ctx) -> None:
     from desktop.utils.files import default_open_dir
 
     browse_calls: list = []
-    original_ask = SourceZone._ask_kind
     original_name = QFileDialog.getOpenFileName
-    SourceZone._ask_kind = lambda self: (browse_calls.append("ask"), (True, True))[1]
+    original_menu = SourceZone._ask_kind if hasattr(SourceZone, "_ask_kind") else None
+    # 若还留着那个小菜单方法，就让它一被调用就炸（用来证明它**没**被调用）
+    def _menu_should_not_run(self):
+        browse_calls.append("MENU")
+        raise AssertionError("不该弹两选项小菜单（用户 2026-10-03 要求去掉）")
+    if original_menu is not None:
+        SourceZone._ask_kind = _menu_should_not_run
     QFileDialog.getOpenFileName = staticmethod(
         lambda *a, **k: (browse_calls.append(("file", a[2])), ("", ""))[1]
     )
@@ -536,17 +591,291 @@ def run(ctx) -> None:
             Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
             Qt.KeyboardModifier.NoModifier,
         ))
-        ok("点击大输入区**不当场**开模态（否则菜单与对话框会叠在同一个鼠标事件里）",
+        ok("点击大输入区**不当场**开模态（否则会叠在同一个鼠标事件里）",
            browse_calls == [], str(browse_calls))
-        ok("事件循环跑完才弹（先问文件/文件夹，再开对话框）",
-           wait_until(app, lambda: len(browse_calls) >= 2, timeout=3)
-           and [c[0] if isinstance(c, tuple) else c for c in browse_calls] == ["ask", "file"],
+        ok("事件循环跑完直接开选文件对话框（不再先弹两选项小菜单）",
+           wait_until(app, lambda: bool(browse_calls), timeout=3)
+           and [c[0] if isinstance(c, tuple) else c for c in browse_calls] == ["file"],
            str(browse_calls))
-        ok("对话框起始目录是文档目录，不是空串",
-           browse_calls[1][1] == str(default_open_dir()), repr(browse_calls[1][1]))
+        ok("对话框起始目录是文档目录，不是空串"
+           "（空串会回退到进程工作目录，打包后就是程序目录）",
+           browse_calls and browse_calls[0][1] == str(default_open_dir()),
+           repr(browse_calls[0][1] if browse_calls else None))
     finally:
-        SourceZone._ask_kind = original_ask
+        if original_menu is not None:
+            SourceZone._ask_kind = original_menu
         QFileDialog.getOpenFileName = original_name
+
+    # ---- 4b-3. 可见的选择按钮（用户 2026-10-03 报"不能直接点击按钮选择"）----
+    # 此前唯一入口是"点空白处弹两选项小菜单"，界面上没有任何东西提示它能点。
+    # 这里钉住：① 两个按钮真的存在且可见 ② 点了真的开对应对话框
+    # ③ 起始目录仍是文档目录 ④ 已选态换成「更换」 ⑤ accepts_dir=False 不摆目录按钮。
+    from desktop.steps.source_zone import BUTTON_HEIGHT, FILLED_HEIGHT as _FILLED
+
+    # ⚠️ 用 `isVisibleTo(zone)` 而不是 `isVisible()`：后者要求**顶层窗口已 show**，
+    #    而自测里这个 zone 从不显示，断言会假红（第一版就踩了这个）。
+    ok("空态摆出「选择文件」按钮", zone.file_button.isVisibleTo(zone))
+    ok("accepts_dir=True 时摆出「选择文件夹」按钮",
+       zone.dir_button is not None and zone.dir_button.isVisibleTo(zone))
+    ok("按钮落在虚框内、不被裁掉",
+       zone.file_button.height() == BUTTON_HEIGHT
+       and zone.file_button.geometry().bottom() <= zone.height(),
+       f"{zone.file_button.geometry()} h={zone.height()}")
+    ok("空态按钮行居中",
+       abs((zone.file_button.geometry().left()
+            + zone.file_button.width() / 2) - zone.width() / 2) < zone.width() / 2,
+       str(zone.file_button.geometry()))
+
+    # ⚠️ 2026-10-03：点按钮 = 直接开**资源管理器的选择对话框**（不是"弹一个
+    #    资源管理器窗口去监听选中项"，用户明确纠正过两者区别）。
+    #    这里钉住：文件按钮 → 选文件对话框、目录按钮 → 选目录对话框、起始目录
+    #    仍是文档目录。
+    btn_calls: list = []
+    orig_multi = QFileDialog.getOpenFileNames
+    orig_dir = QFileDialog.getExistingDirectory
+    QFileDialog.getOpenFileName = staticmethod(
+        lambda *a, **k: (btn_calls.append(("file", a[2])), ("", ""))[1]
+    )
+    QFileDialog.getExistingDirectory = staticmethod(
+        lambda *a, **k: (btn_calls.append(("dir", a[2])), "")[1]
+    )
+    try:
+        zone.file_button.click()
+        ok("点「选择文件」**不当场**弹模态（仍在同一个鼠标事件里）",
+           btn_calls == [], str(btn_calls))
+        ok("点「选择文件」弹出的是选文件对话框",
+           wait_until(app, lambda: bool(btn_calls), timeout=3)
+           and [c[0] for c in btn_calls] == ["file"], str(btn_calls))
+        ok("按钮路径的起始目录也是文档目录（不是空串）",
+           btn_calls and btn_calls[0][1] == str(default_open_dir()),
+           repr(btn_calls[0][1] if btn_calls else None))
+
+        btn_calls.clear()
+        zone.dir_button.click()
+        ok("点「选择文件夹」弹出的是选目录对话框",
+           wait_until(app, lambda: bool(btn_calls), timeout=3)
+           and [c[0] for c in btn_calls] == ["dir"], str(btn_calls))
+    finally:
+        QFileDialog.getOpenFileName = original_name
+        QFileDialog.getExistingDirectory = orig_dir
+        QFileDialog.getOpenFileNames = orig_multi
+
+    # 已选态：换成右端「更换」，两个选择按钮收起来
+    zone.set_source(drop_dir / "a.pdf")
+    ok("已选态出现「更换」按钮", zone._swap_button.isVisibleTo(zone))
+    ok("已选态收起两个选择按钮（不给人三个同权入口）",
+       not zone.file_button.isVisibleTo(zone)
+       and not (zone.dir_button is not None
+                and zone.dir_button.isVisibleTo(zone)))
+    ok("已选态高度收窄成一行", zone.height() == _FILLED, str(zone.height()))
+    ok("已选态「更换」与清空 ✕ 不重叠",
+       zone._swap_button.geometry().right()
+       < zone.width() - 26 - 8 + 1,
+       f"swap={zone._swap_button.geometry()} w={zone.width()}")
+
+    # accepts_dir=False 的步骤不该摆一个注定被拒的「选择文件夹」，
+    # 但「选择文件」要照常在（那才是它唯一的合法入口）
+    no_dir = SourceZone(
+        StepSpec(key="probe", command=None, title="探针", panel=None,
+                 pick_label="选择文件", file_filter="PDF 文件 (*.pdf)",
+                 accepts_dir=False)
+    )
+    ok("不接受目录的步骤不摆「选择文件夹」，但保留「选择文件」",
+       no_dir.dir_button is None and no_dir.file_button.isVisibleTo(no_dir))
+
+    # ---- 4b-3c. 「更换」真的能换源（用户 2026-10-03 报"点了没反应"）----
+    # ⚠️ 必须走 **QTest.mouseClick**（Qt 自己的 hit-test 路径），不能用
+    #    ``.click()`` —— 后者直接 emit ``clicked``，完全不经过命中测试，
+    #    那样测不出"按钮画出来了却点不到"这类问题（第一版探针就栽在这）。
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    swap_calls: list = []
+    orig_name2 = QFileDialog.getOpenFileName
+    # 「更换」= 再选一次，走同一条选文件对话框。这段的重点是它的**几何/命中**
+    # （QTest.mouseClick 走命中测试，测的是"画出来了却点不到"那类问题）。
+    pdf_a, pdf_b = drop_dir / "a.pdf", drop_dir / "b.pdf"
+    pdf_a.write_bytes(b"%PDF-1.4\n")
+    pdf_b.write_bytes(b"%PDF-1.4\n")
+    QFileDialog.getOpenFileName = staticmethod(
+        lambda *a, **k: (swap_calls.append(str(a[2])), (str(pdf_b), ""))[1]
+    )
+    # ⚠️ 必须 show 出来：``QTest.mouseClick`` 走的是**命中测试**路径，控件不在
+    #    任何已显示的窗口里时命中不到，事件会悄悄丢掉（自测里表现为"点了没反应"
+    #    ——正是本次要防的那个症状本身，不能自己踩一遍）。
+    no_dir.show()
+    no_dir.resize(900, _FILLED)
+    app.processEvents()
+    try:
+        no_dir.set_source(pdf_a)
+        app.processEvents()
+        ok("PDF 步骤已选态有「更换」按钮",
+           no_dir._swap_button.isVisibleTo(no_dir))
+        QTest.mouseClick(no_dir._swap_button, Qt.MouseButton.LeftButton)
+        ok("点「更换」会请求文件对话框（不是目录对话框）",
+           wait_until(app, lambda: bool(swap_calls), timeout=3),
+           str(swap_calls))
+        ok("「更换」的起始目录是文档目录",
+           swap_calls and swap_calls[0] == str(default_open_dir()),
+           repr(swap_calls[0] if swap_calls else None))
+
+        # 端到端：真的换掉（offer → paths_chosen → 宿主 set_source）
+        picked: list = []
+        no_dir.paths_chosen.connect(picked.append)
+        QFileDialog.getOpenFileName = staticmethod(
+            lambda *a, **k: (str(pdf_b), "")
+        )
+        no_dir.set_source(pdf_a)
+        app.processEvents()
+        QTest.mouseClick(no_dir._swap_button, Qt.MouseButton.LeftButton)
+        wait_until(app, lambda: bool(picked), timeout=3)
+        ok("「更换」选完真的把新路径交出去",
+           picked == [[str(pdf_b)]], str(picked))
+
+        # 点已选态的**空白处**也换源（2026-10-03 改回来：不再依赖子控件几何）
+        # ⚠️ 这里必须把 stub 换回**会记账**的那个：上一段为了验"交出去的路径"
+        #    换了个不记账的 stub，直接拿来断言 ``swap_calls`` 必然是空的
+        #    （我自己踩了一次，别再踩）。
+        QFileDialog.getOpenFileName = staticmethod(
+            lambda *a, **k: (swap_calls.append(str(a[2])), (str(pdf_b), ""))[1]
+        )
+        swap_calls.clear()
+        QTest.mouseClick(no_dir, Qt.MouseButton.LeftButton,
+                         pos=no_dir.rect().center())
+        ok("点已选态空白处也能换源（不依赖按钮几何）",
+           wait_until(app, lambda: bool(swap_calls), timeout=3),
+           str(swap_calls))
+
+        # ✕ 仍是清空（别被上面的"点哪都换源"吃掉）
+        cleared: list = []
+        no_dir.cleared.connect(lambda: cleared.append(1))
+        no_dir.set_source(pdf_a)
+        app.processEvents()
+        from PySide6.QtCore import QPointF
+        from PySide6.QtGui import QMouseEvent
+        from PySide6.QtCore import QEvent
+
+        hit = no_dir._close_rect.center().toPoint()
+        no_dir.mousePressEvent(
+            QMouseEvent(QEvent.Type.MouseButtonPress, QPointF(hit),
+                        Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
+                        Qt.KeyboardModifier.NoModifier)
+        )
+        ok("点右上角 ✕ 是清空、不是换源", bool(cleared), str(cleared))
+
+        # 对话框炸了要说给用户听（Qt 会吞掉 singleShot 回调里的异常）
+        boom: list = []
+        no_dir.rejected.connect(boom.append)
+
+        def _boom(*a, **k):
+            raise RuntimeError("模拟对话框故障")
+
+        QFileDialog.getOpenFileName = staticmethod(_boom)
+        no_dir.set_source(pdf_a)
+        app.processEvents()
+        QTest.mouseClick(no_dir._swap_button, Qt.MouseButton.LeftButton)
+        ok("对话框异常会转成 rejected 提示（而不是静默无反应）",
+           wait_until(app, lambda: bool(boom), timeout=3)
+           and "对话框" in boom[0], str(boom))
+    finally:
+        QFileDialog.getOpenFileName = orig_name2
+        no_dir.hide()
+        no_dir.deleteLater()
+
+    # ---- 4b-3b. 独占模式（用户 2026-10-03：初始只有一个输入框）----
+    # 页面上再没有别的控件时，输入区要撑满整幅——否则分栏一收，页面上半屏是
+    # 框、下半屏空白，看着像没加载完。
+    from desktop.steps.source_zone import SOLO_HEIGHT, SOLO_MIN_WIDTH
+
+    solo = SourceZone(rembg)
+    solo.resize(600, 200)
+    solo.set_solo_mode(True)
+    ok("独占模式：撑满整幅", solo.height() == SOLO_HEIGHT, str(solo.height()))
+    solo.set_solo_mode(False)
+    ok("退出独占：回到常规空态高度", solo.height() == EMPTY_HEIGHT, str(solo.height()))
+    solo.set_solo_mode(True)
+    solo.set_source(drop_dir / "a.png")
+    ok("独占模式下选中源 → 收窄成一行（纵向空间让给分栏）",
+       solo.height() == FILLED_HEIGHT, str(solo.height()))
+    solo.set_source(None)
+    ok("独占模式 + 回到空态 → 又撑满", solo.height() == SOLO_HEIGHT, str(solo.height()))
+    # ⚠️ 这条是**真实 bug 的钉子**（靠截图发现的，断言全绿时根本看不出来）：
+    #    独占模式最初用 setFixedHeight(320)，它同时钉死了 maximumHeight；
+    #    后来改成"最小 320 + 可拉伸"却只改了 minimumHeight，控件就永远长不大
+    #    ——整页只有一条 320px 的框，上下各留一片空白。
+    ok("独占模式真的能长高（不是被旧的最大高度钉住）",
+       solo.maximumHeight() > solo.minimumHeight(),
+       f"min={solo.minimumHeight()} max={solo.maximumHeight()}")
+    # ⚠️ 这条钉的是**stderr 警告**（用户 2026-10-03 报「单独拼板界面报错」）：
+    #    "QWidget::setMaximumSize: The largest allowed size is (16777215,16777215)"。
+    #    Qt 的硬上限 QWIDGETSIZE_MAX == (1<<24)-1 == 16777215，哨兵写成 1<<24
+    #    就超了 1，Qt 截断回上限并往 stderr 打警告；拼板独立页初始即独占模式，
+    #    于是每次进页面都刷一条，看着像报错。断言取"Qt 自己认的上限"。
+    ok("独占模式的最大高度哨兵不超 Qt 硬上限（否则进页面就刷警告）",
+       solo.maximumHeight() <= (1 << 24) - 1,
+       str(solo.maximumHeight()))
+    solo.set_solo_mode(False)
+
+    # 独占模式的最小宽度也要比常规宽（独占时没有分栏挤它，不必那么窄）
+    narrow = SourceZone(rembg)
+    narrow.set_solo_mode(True)
+    ok("独占模式抬高最小宽度", narrow.minimumWidth() == SOLO_MIN_WIDTH,
+       str(narrow.minimumWidth()))
+    narrow.set_solo_mode(False)
+    ok("退出独占后最小宽度复原", narrow.minimumWidth() == 260,
+       str(narrow.minimumWidth()))
+
+    # ---- 4b-4. 传 str 的路径不许流到 PreviewWorker（用户 2026-10-03 报）----
+    # 根因：模块页把 `str(p)` 列表交给 `set_images`，而 PreviewWorker.run() 里
+    # 读 `self.path.suffix` —— 异常发生在**子线程内**，只经 failed 信号显示成
+    # 「加载失败：'str' object has no attribute 'suffix'」。这里在两处边界
+    # 各钉一道：viewer 的 set_images 与 worker 的构造。
+    from desktop.components.viewers import ImageViewerWidget
+    from desktop.workers import PreviewWorker
+
+    viewer = ImageViewerWidget(editable=False)
+    viewer.set_images([str(drop_dir / "a.png"), str(drop_dir / "c.png")])
+    ok("set_images 接受 str 列表并统一转成 Path",
+       len(viewer.paths) == 2
+       and all(isinstance(p, Path) for p in viewer.paths),
+       str([type(p).__name__ for p in viewer.paths]))
+
+    worker = PreviewWorker(str(drop_dir / "a.png"))
+    ok("PreviewWorker 构造时把 str 收成 Path",
+       isinstance(worker.path, Path), str(type(worker.path).__name__))
+
+    # 真跑一次：不该出现 suffix 相关的 AttributeError
+    probe_fail: list = []
+    probe_worker = PreviewWorker(str(drop_dir / "a.png"))
+    probe_worker.failed.connect(lambda _p, m: probe_fail.append(m))
+    probe_worker.run()
+    ok("PreviewWorker(str).run() 不抛 AttributeError",
+       not any("suffix" in m for m in probe_fail), str(probe_fail))
+
+    # ⚠️ 同名只保留一份（用户 2026-10-03 报：预览里每页出现两次）
+    from desktop.modules.extract.page import collect_result_images
+
+    dup_dir = Path(ctx.tmp) / "dup_out"
+    (dup_dir / "样书" / "images").mkdir(parents=True, exist_ok=True)
+    for name in ("1.jpg", "2.jpg", "10.jpg"):
+        (dup_dir / name).write_bytes(b"x")
+        (dup_dir / "样书" / "images" / name).write_bytes(b"x")
+    picked = collect_result_images(dup_dir)
+    ok("平铺 + 嵌套两套同名：只收一份，且优先顶层",
+       [p.name for p in picked] == ["1.jpg", "2.jpg", "10.jpg"]
+       and all(p.parent == dup_dir for p in picked),
+       str([(p.name, p.parent.name) for p in picked]))
+    ok("去重后按数字自然排序（2 在 10 前面）",
+       [p.name for p in picked] == ["1.jpg", "2.jpg", "10.jpg"],
+       str([p.name for p in picked]))
+
+    # 只有嵌套那一套时也要收得到（不能因为"没有顶层"就漏掉）
+    only_nested = Path(ctx.tmp) / "only_nested"
+    (only_nested / "样书" / "images").mkdir(parents=True, exist_ok=True)
+    (only_nested / "样书" / "images" / "1.jpg").write_bytes(b"x")
+    ok("只有嵌套那一套时也能收到图",
+       [p.name for p in collect_result_images(only_nested)] == ["1.jpg"],
+       str(collect_result_images(only_nested)))
 
     # ---- 4c. 大输入区 + 控制组件：外部摆、内部接线（模块页的用法）----
     zone_c = SourceZone(rembg)

@@ -23,6 +23,109 @@ def guji_data_dir() -> Path:
     return Path.home() / "Documents" / "guji"
 
 
+#: **独立任务**数据区的目录名（相对 :func:`guji_data_dir`）。
+#:
+#: 用户 2026-10-03：
+#:
+#: > 这个缩略图也可以放在 ~/Documents/guji/singletask 下面，
+#: > singletask 是独立任务，下面有各种子任务
+#:
+#: 与任务流程那套 ``tasks/<id>/`` 是**两个世界**：那边一个 id = 一本完整的书、
+#: 带四步流程与 runs/boxes/草稿；这边是左侧导航里那**几个独立功能页**（图片提取 /
+#: 去底色 / 生成 PDF / 拼图），每个子任务自己一个目录、只放自己的缓存与中间物。
+SINGLETASK_DIRNAME = "singletask"
+
+#: 子任务目录名里不能出现的字符（Windows 文件名限制），换成一横线。
+_SAFE_CHARS = '<>:"/\\|?*'
+
+
+def safe_dirname(name: str) -> str:
+    """把任意标题洗成能当目录名的一串（去掉非法字符、收敛空白）。"""
+    text = "".join("-" if ch in _SAFE_CHARS else ch for ch in str(name)).strip()
+    text = "".join(ch for ch in text if ord(ch) >= 32).strip(" .")
+    return text or "untitled"
+
+
+def singletask_dir(subtask: str) -> Path:
+    """独立任务区下某个**子任务**的目录：``~/Documents/guji/singletask/<子任务>``。"""
+    return guji_data_dir() / SINGLETASK_DIRNAME / safe_dirname(subtask)
+
+
+def singletask_thumbnails_dir(subtask: str, book: str | Path | None = None) -> Path:
+    """子任务的**页缩略图缓存**：``singletask/<子任务>/thumbnails[/<书>]``。
+
+    导入 PDF 时**立刻**渲染到这里（用户 2026-10-03："从上一层导入PDF，没有立即
+    提取缩略图"）。命中即复用，缺页才渲染——所以第二次打开同一本书几乎不花时间。
+
+    ⚠️⚠️ **必须带 ``book`` 分一层目录**（2026-10-03 自测当场逮到）：缩略图文件名是
+    **页号**（``0001.jpg``…），而这个缓存目录是**所有书共用**的。不按书分开，A 书
+    第 1 页的缩略图会被当成 B 书第 1 页的命中缓存 ⇒ 翻页翻出**别本书的内容**。
+    （任务流程那边没事，是因为 ``tasks/<id>/thumbnails/source`` 一本书一个目录。）
+
+    目录名用 ``书名-大小-路径指纹前 8 位``：同名不同书靠指纹区分，同一本书改名后
+    仍能命中旧缓存。
+
+    ⚠️ **只放缓存，不放产物**：模块页的输出目录仍然默认在源文件旁边
+    （:meth:`desktop.steps.spec.StepSpec.default_output`），别把用户已经习惯的
+    产物位置改掉。
+    """
+    base = singletask_dir(subtask) / "thumbnails"
+    if book is None:
+        return base
+    return base / safe_dirname(book_key(book))
+
+
+def book_key(book: str | Path) -> str:
+    """一本书在缓存目录里的唯一名字：``<文件名去后缀>-<大小>-<路径指纹前8位>``。
+
+    路径参与指纹：``D:/书/甲.pdf`` 与 ``E:/书/甲.pdf`` 同名同大小，但不是同一本书。
+    """
+    path = Path(book)
+    try:
+        size = path.stat().st_size
+    except OSError:
+        size = 0
+    digest = hashlib.sha1(str(path.resolve()).encode("utf-8", "replace")).hexdigest()
+    return f"{path.stem}-{size}-{digest[:8]}"
+
+
+def image_thumb_cache_path(
+    subtask: str, image: str | Path, edge: int = THUMBNAIL_EDGE,
+) -> Path:
+    """一张**源图片**在 singletask 缓存里的缩略图路径。
+
+    ``singletask/<子任务>/thumbs/<边缘边长>/<book_key>.jpg``
+
+    用户 2026-10-03 定的口径：**所有独立任务的左侧都显示缩略图**，且缩略图
+    统一缓存在 ``~/Documents/guji/singletask`` 下（PDF 用
+    :func:`singletask_thumbnails_dir` 的按页编号那套，这里是按图文件本身）。
+
+    - **按图分文件**（不是按页号）：图片源的条目名五花八门（``1.jpg`` /
+      ``右-01.png``…），按页号命名必然撞名，撞名就是**别人的图被当成本图的
+      缓存**——与 PDF 那条护栏（``book_key`` 分目录）是同一个坑。
+    - **按边长分层**：``ThumbStrip.decode_edge`` 会随 dpr 变，1.5 倍屏要
+      234px、小图要 156px。混在一个目录里，改一次 dpr 就会拿旧尺寸的缓存
+      当命中（条目里发糊），所以边长进目录名。
+    - 键里带**大小与路径指纹**（复用 :func:`book_key`）：同名不同图靠它区分，
+      同图改名后仍能命中旧缓存。
+    """
+    return image_thumbs_dir(subtask, edge) / f"{safe_dirname(book_key(image))}.jpg"
+
+
+def image_thumbs_dir(subtask: str, edge: int = THUMBNAIL_EDGE) -> Path:
+    """一批**图片源**的缩略图缓存**目录**：``singletask/<子任务>/thumbs/<边长>``。
+
+    与 :func:`image_thumb_cache_path` 是同一套规则的两种用法：那个给**单张图**
+    的缓存文件路径，这个给**目录**（一批图共用、或宿主需要"重渲一张"时交给
+    ``ImageThumbCacheWorker``）。
+
+    ⚠️ 目录**只按「子任务 + 边长」分层**，不按单图键：单图键里带着大小与路径
+    指纹，拿它当目录名既很长，也会让"同一张图被编辑后尺寸变了"直接换目录
+    （旧缓存全成孤儿）。⚠️ 边长必须进目录名（``decode_edge`` 随 dpr 变）。
+    """
+    return singletask_dir(subtask) / "thumbs" / str(int(edge))
+
+
 def default_open_dir() -> Path:
     """文件对话框的默认打开目录：用户文档目录。
 

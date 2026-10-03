@@ -30,6 +30,7 @@ __all__ = [
     "SerialJobQueue",
     "SourceThumbnailsWorker",
     "TaskRowsWorker",
+    "ImageThumbCacheWorker",
     "WorkerHost",
     "close_cached_documents",
     "connect_queued",
@@ -47,6 +48,9 @@ _LAZY = {
     ),
     "HashWorker": ("desktop.workers.hash_worker", "HashWorker"),
     "ImageListWorker": ("desktop.workers.image_list_worker", "ImageListWorker"),
+    "ImageThumbCacheWorker": (
+        "desktop.workers.thumb_cache_worker", "ImageThumbCacheWorker",
+    ),
     "ImpositionComposeWorker": (
         "desktop.workers.imposition_worker",
         "ImpositionComposeWorker",

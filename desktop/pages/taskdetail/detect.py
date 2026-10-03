@@ -19,7 +19,8 @@ from PySide6.QtGui import QImageReader
 from core.command_spec import WHOLE_PAGE_AREA
 from utils.box_draw import BOX_KIND_INDEX, box_kind_name
 from utils.box_geometry import (
-    classify_page_slots, compute_final_boxes, half_slots, is_full_content
+    classify_page_slots, compute_final_boxes, drop_box, half_slots,
+    is_full_content, present_boxes, set_box_full, set_box_half,
 )
 from desktop.store.json_io import write_json
 from desktop.utils.files import project_root
@@ -41,10 +42,12 @@ class DetectMixin:
 
     @staticmethod
     def _valid_boxes(boxes) -> list:
-        """过滤存储中的 null 框（左右身份占位）。"""
-        if not isinstance(boxes, list):
-            return []
-        return [b for b in boxes if b]
+        """过滤存储中的 null 框（左右身份占位）。
+
+        等价于 :func:`utils.box_geometry.present_boxes`——独立「检测文本框」
+        模块页直接用那个纯函数，这里保留这个名字是因为本文件里到处都是它。
+        """
+        return present_boxes(boxes)
 
     # ------------------------------------------------------- 框类型（人工干预）
     #
@@ -145,7 +148,9 @@ class DetectMixin:
             if not dialog.exec():
                 self._on_box_selection_changed(index)  # 回填面板高亮，别停在「整幅」
                 return
-        self._store_slots(path_text, [boxes[index]], "manual", select_box=boxes[index])
+        # ⚠️ 槽位运算走 utils 的纯函数（与独立模块页同一份），不在这里重写。
+        self._store_slots(path_text, set_box_full(raw, index), "manual",
+                          select_box=boxes[index])
 
     def _make_box_half(self, path_text: str, index: int, kind: str) -> None:
         """把第 index 个框改成半幅（左/右）。"""
@@ -165,7 +170,7 @@ class DetectMixin:
         # 整幅 → 半幅：一个框也能是半幅（漏检一侧的情形），按中心位置定左右
         size = self._image_size_for(path_text) or (0, 0)
         self._store_slots(
-            path_text, half_slots([boxes[index]], size), "manual",
+            path_text, set_box_half(raw, index, size), "manual",
             select_box=boxes[index],
         )
 
@@ -181,9 +186,9 @@ class DetectMixin:
         boxes = self._valid_boxes(self._raw_boxes_for(str(path)))
         if not 0 <= index < len(boxes):
             return
-        del boxes[index]
+        raw = self._raw_boxes_for(str(path))
         size = self._image_size_for(str(path)) or (0, 0)
-        self._store_slots(str(path), half_slots(boxes, size), "manual")
+        self._store_slots(str(path), drop_box(raw, index, size), "manual")
         self.detect_viewer.select_box(-1)
 
     # ------------------------------------------------------- 检测结果统计

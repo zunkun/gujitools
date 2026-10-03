@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QStackedWidget, QTabWidget, QVBoxLayout, QWidget,
 )
 from qfluentwidgets import (
-    CaptionLabel, CheckBox, ComboBox, PrimaryPushButton, PushButton, ToolButton,
+    CaptionLabel, ComboBox, PrimaryPushButton, PushButton, ToolButton,
 )
 from qfluentwidgets import FluentIcon as FIF
 
@@ -588,27 +588,46 @@ class DetailViewMixin:
         self.submit_hint.setWordWrap(True)
         apply_to(self.submit_hint, T.SIZE_CAPTION)
         self.submit_hint.hide()
-        self.resume_button = PushButton(FIF.UPDATE, "继续执行（跳过已完成）")
+        # 「继续执行 / 中断执行」并排一行：两者是同一时刻的两种后续动作
+        # （没跑完 → 继续；跑着 → 中断），上下堆叠会让人误以为是两个步骤。
+        # 「跳过已完成」这层含义降级到 tooltip，按钮上只留动词。
+        # ⚠️ 整行包进独立 QWidget：拼版详情页要整组隐藏（见
+        #    ``_select_imposition_detail``），只藏两个按钮的话行高仍在，
+        #    控制区底部会留一条空白。
+        self.followup_row = QWidget()
+        row = QHBoxLayout(self.followup_row)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(T.SPACE_SM)
+        self.resume_button = PushButton(FIF.UPDATE, "继续执行")
         self.resume_button.setFixedHeight(34)
+        self.resume_button.setToolTip("跳过已完成的页，只补做剩下的")
         self.resume_button.clicked.connect(lambda: self.run_stage(resume=True))
         self.cancel_button = PushButton(FIF.CLOSE, "中断执行")
         self.cancel_button.setFixedHeight(34)
+        self.cancel_button.setToolTip("立刻停止当前正在执行的子任务")
         self.cancel_button.setEnabled(False)
         self.cancel_button.clicked.connect(self.cancel_stage)
+        row.addWidget(self.resume_button, 1)
+        row.addWidget(self.cancel_button, 1)
         control.addWidget(self.run_button)
         control.addWidget(self.submit_button)
         control.addWidget(self.submit_hint)
-        control.addWidget(self.resume_button)
-        control.addWidget(self.cancel_button)
+        control.addWidget(self.followup_row)
 
     # ------------------------------------------------------------------ 宽度
     def _apply_control_width(self) -> None:
-        """按当前阶段调整右侧控制面板宽度：
-        第四步 YAML 编辑器需要更宽的编辑区，其余步骤保持舒适表单宽度。"""
-        stage = self.current_stage()
-        if stage == "print":
-            self.control_widget.setMinimumWidth(400)
-            self.control_widget.setMaximumWidth(580)
-        else:
-            self.control_widget.setMinimumWidth(340)
-            self.control_widget.setMaximumWidth(440)
+        """按当前阶段调整右侧控制面板宽度：**查 spec**（不再 `if stage == "print"`）。
+
+        第四步参数最多（版面/页码/字体…），要更宽的编辑区；其余步骤用 340~440px
+        的舒适表单宽度（标签不折行、输入框不被压扁）。区间由
+        ``StepSpec.control_width`` 声明，加一步要更宽只改它的 spec。
+        """
+        from desktop.steps import ports
+        from desktop.steps.spec import StepSpec
+
+        spec = ports.spec_for_stage(self.current_stage())
+        minimum, maximum = (
+            spec.control_width if spec else StepSpec().control_width
+        )
+        self.control_widget.setMinimumWidth(minimum)
+        self.control_widget.setMaximumWidth(maximum)

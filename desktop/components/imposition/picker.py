@@ -46,6 +46,16 @@ CARD_GAP = 12
 DIALOG_W, DIALOG_H = 1000, 680
 #: 每轮事件循环补几张缩略图（避免一次性解码上百张大图把弹窗卡住）
 THUMB_BATCH = 6
+#: 批与批之间的间隔（ms）——**必须有间隔**（用户 2026-10-03 报「程序容易跑
+#: 崩溃，cpu 跑满」）。
+#:
+#: ⚠️ 这里原先是 ``QTimer.singleShot(0, self._fill_thumbs)``，即"下一轮事件
+#: 循环空闲就立刻再解一批"，批与批之间**零间隔**。配上 :func:`_source_thumb_pixmap`
+#: 的**整幅解码 + 平滑缩放**（每张源图都是几千像素见方），N 张候选图就是
+#: ``ceil(N/6)`` 轮零间隔的连续重解码，全程占着 GUI 主线程 —— 用户看到的就是
+#: "CPU 跑满、界面像崩了"。同项目别处的分批装载都留了间隔（见
+#: ``ThumbsMixin.BATCH_GAP_MS = 150``），这里属于疏漏。
+THUMB_GAP_MS = 150
 
 
 def _source_thumb_pixmap(path) -> QPixmap:
@@ -558,7 +568,13 @@ class ImpositionPickerDialog(FramelessDialog):
         QTimer.singleShot(0, self._fill_thumbs)
 
     def _fill_thumbs(self) -> None:
-        """给还没有缩略图的卡片分批解码（已删除视图访问过才解它的图）。"""
+        """给还没有缩略图的卡片分批解码（已删除视图访问过才解它的图）。
+
+        ⚠️ 批次之间走 :data:`THUMB_GAP_MS` **有间隔**，不是 ``singleShot(0)``
+        ——零间隔会让这一串重解码无缝连着跑满 CPU（用户 2026-10-03 报
+        「程序容易跑崩溃，cpu 跑满」）。间隔期间事件循环能真正空出来，
+        界面滚动/勾选/关闭都还有响应。
+        """
         try:
             self.stack.currentIndex()  # noqa: B018 - 真访问 C++：弹窗已销毁就退出
         except RuntimeError:
@@ -572,7 +588,7 @@ class ImpositionPickerDialog(FramelessDialog):
             self._pixmaps[str(card.path)] = pixmap
             card.set_pixmap(pixmap)
         if len(todo) > THUMB_BATCH:
-            QTimer.singleShot(0, self._fill_thumbs)
+            QTimer.singleShot(THUMB_GAP_MS, self._fill_thumbs)
 
     # ------------------------------------------------------------------ 状态
     def _update_status(self) -> None:

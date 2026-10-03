@@ -22,7 +22,7 @@ from PySide6.QtCore import (
     QAbstractAnimation, QPoint, QRectF, Qt, QPropertyAnimation, QTimer, Signal,
 )
 from PySide6.QtCore import QEasingCurve
-from PySide6.QtGui import QColor, QCursor, QPainter, QPen
+from PySide6.QtGui import QColor, QCursor, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QFrame, QHBoxLayout, QLabel, QScrollArea, QToolButton,
     QVBoxLayout, QWidget,
@@ -35,7 +35,7 @@ from desktop.ui.widgets import apply_to
 
 
 class _PageEntry(QFrame):
-    """左列的一页拼版：标题「第一页」+ 副标题（两张源图名），整块可点。
+    """左列的一页拼版：**缩略图** + 标题「第一页」+ 副标题（两张源图名），整块可点。
 
     ⚠️ 底色/描边**自己画**（``paintEvent``），不用样式表：样式表一旦进入子树，
     Qt 会把 QFrame 底色填白（步骤条 `_StepBadge` 那条教训），而且会连带影响
@@ -43,6 +43,11 @@ class _PageEntry(QFrame):
 
     交互：单击切页；**按住上下拖**是页排序（``drag_started``）；当前页右侧
     有一个「✕」，点了发 ``remove_clicked``（把该页两张图释放回未选择列表）。
+
+    ⚠️ **缩略图是真控件**（QLabel + ``set_thumb``），不是 paintEvent 里画：
+    用户 2026-10-03 要求左栏显示缩略图，而缩略图是**异步解码**出来的（源图
+    动辄几千像素）。自己画就得额外维护「图还没来」的占位状态与重绘时机，
+    而 QLabel 只要在拿到图时 `setPixmap` 一次。
 
     拖动排序时本条目有两种临时态：**拖动态**（``set_drag_active``，主色
     虚线描边 + 半透明）用在跟着光标走的幽灵卡上；**置灰态**（``set_dimmed``）
@@ -58,6 +63,9 @@ class _PageEntry(QFrame):
     #: 按下后移动超过该距离判为拖动（小于则仍是单击切页）
     DRAG_THRESHOLD = 8
 
+    #: 缩略图的显示高度（px）。宽度按页的宽高比自适应，但不超过本控件宽度。
+    THUMB_H = 78
+
     def __init__(self, index: int, caption: str, parent=None):
         super().__init__(parent)
         self.index = index
@@ -70,7 +78,7 @@ class _PageEntry(QFrame):
         self.setCursor(Qt.PointingHandCursor)
         root = QHBoxLayout(self)
         root.setContentsMargins(6, 7, 6, 7)
-        root.setSpacing(4)
+        root.setSpacing(6)
         # 勾选框（节点左上方，紧挨页标题）：勾选后清单下沿浮出批量操作条；
         # 点击被 QCheckBox 自行消费，不会触发本条目的单击切页/拖动。
         # ⚠️ 必须**钉死成小方块**：qfluentwidgets CheckBox 空文本的 sizeHint
@@ -84,6 +92,14 @@ class _PageEntry(QFrame):
             lambda checked: self.check_toggled.emit(self.index, checked)
         )
         root.addWidget(self.checkbox, 0, Qt.AlignTop)
+        #: 本页缩略图（还没渲好时是一块浅灰占位，见 :meth:`set_thumb`）
+        self.thumb = QLabel(self)
+        self.thumb.setFixedSize(56, self.THUMB_H)
+        self.thumb.setAlignment(Qt.AlignCenter)
+        self.thumb.setScaledContents(False)
+        apply_to(self.thumb, T.SIZE_CAPTION, color=T.INK_FAINT)
+        self.thumb.setText("···")
+        root.addWidget(self.thumb, 0, Qt.AlignTop)
         labels = QVBoxLayout()
         labels.setContentsMargins(0, 0, 0, 0)
         labels.setSpacing(1)
@@ -107,6 +123,33 @@ class _PageEntry(QFrame):
         root.addWidget(self.remove_button, 0, Qt.AlignTop)
         self.remove_button.hide()
         self._apply_style()
+
+    def set_thumb(self, image) -> None:
+        """把本页缩略图放上去（``QImage``/``QPixmap``；``None`` 回占位）。
+
+        ⚠️ **等比缩放后居中，不裁切**：拼版页是横向对开的两张图，硬裁会只剩
+        半张（用户看到的是"缩略图里图缺一块"）。放不下就留白——留白比缺内容
+        诚实。
+        """
+        if image is None or getattr(image, "isNull", lambda: True)():
+            self.thumb.clear()
+            self.thumb.setText("···")
+            return
+        pixmap = (
+            image if isinstance(image, QPixmap) else QPixmap.fromImage(image)
+        )
+        if pixmap.isNull():
+            self.thumb.clear()
+            self.thumb.setText("···")
+            return
+        self.thumb.setText("")
+        self.thumb.setPixmap(
+            pixmap.scaled(
+                self.thumb.size(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        )
 
     def set_current(self, current: bool) -> None:
         if current != self._current:
@@ -492,6 +535,26 @@ class ImpositionPageList(QWidget):
         self._current = index if index >= 0 else -1
         for entry in self._entries:
             entry.set_current(entry.index == self._current)
+
+    def set_page_thumbs(self, thumbs: list) -> None:
+        """给每页条目灌缩略图（``thumbs[i]`` 是第 i 页的 ``QImage``/``QPixmap``，
+        ``None`` 表示还没渲好）。
+
+        用户 2026-10-03：所有独立任务左栏都显示缩略图。**本方法只管贴图**，
+        解码/缓存/异步在宿主那边做（拼图模块页用
+        :class:`~desktop.workers.thumb_cache_worker.ImageThumbCacheWorker`，
+        与其余四个独立任务页同一份缓存与同一份逻辑）。
+
+        ⚠️ 下标要**按条目自己的 index** 灌而不是按参数位置：``set_pages`` 重建
+        后条目的 index 是重建时的下标，两者一致；但拖动排序后条目的 index
+        仍是它创建时的下标，而 ``_entries`` 的**列表位置**才是当前页序——
+        所以这里遍历 ``_entries`` 并用 ``entry.index`` 取图。
+        """
+        by_index = {
+            i: t for i, t in enumerate(thumbs or []) if t is not None
+        }
+        for entry in self._entries:
+            entry.set_thumb(by_index.get(entry.index))
 
     def current(self) -> int:
         return self._current

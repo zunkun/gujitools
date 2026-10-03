@@ -29,8 +29,11 @@ _MODULES_DIR = Path("desktop") / "modules"
 def run(ctx) -> None:
     from tests.selftests._context import imported_modules as _imported_modules
     from tests.selftests._context import ok
+    from PySide6.QtWidgets import QSizePolicy
+
     from desktop.modules import MODULES, module_by_key
     from desktop.steps import SourceZone
+    from desktop.ui import theme as T
 
     app, w = ctx.app, ctx.w
 
@@ -127,6 +130,97 @@ def run(ctx) -> None:
         page = w.shell.module_page(key)
         ok(f"模块 {key} 的控制列接管了同一块大输入区",
            page.control.zone is page.input_zone)
+
+    # ---- 5b. 初始只显示输入框（用户 2026-10-03）----
+    # 「初始就只有一个输入框，下面的操作面板和预览这些都要选择输入文件后
+    # 才显示出来」。这条对**每个**模块成立，所以逐个查而不是只查一个。
+    for module in MODULES:
+        page = w.shell.module_page(module.key)
+        ok(f"模块 {module.key} 初始收起操作界面",
+           page.workspace_shown() is False)
+        ok(f"模块 {module.key} 初始只留大输入区（可见）",
+           page.input_zone.isVisibleTo(page))
+        ok(f"模块 {module.key} 初始不显示预览分栏",
+           not page.splitter.isVisibleTo(page))
+        ok(f"模块 {module.key} 初始不显示日志区",
+           not page.log_view.isVisibleTo(page))
+
+    # 给了源 → 操作界面显形；清空 → 收回去（每个模块都得听话）
+    for key in ("extract", "rembg", "print", "detect"):
+        page = w.shell.module_page(key)
+        page.sync_workspace_visible(Path(ctx.tmp) / "some_source")
+        app.processEvents()
+        ok(f"模块 {key} 选了源就显出操作界面", page.workspace_shown() is True)
+        ok(f"模块 {key} 显出后分栏可见", page.splitter.isVisibleTo(page))
+        page.sync_workspace_visible(None)
+        app.processEvents()
+        ok(f"模块 {key} 清空源就收回操作界面", page.workspace_shown() is False)
+
+    # ⚠️ **页头不许纵向拉伸 + 输入区要真的撑满**（两个真实 bug 的钉子，
+    #    都是靠截图发现的、断言全绿时根本看不出来）：
+    #    ① 收掉分栏后 root 里就没有拉伸项了，Qt 按 sizePolicy 把空出来的
+    #       纵向空间摊给页头 —— 标题顶到最上面、副标题飘到页面正中、输入框
+    #       被挤到底边甚至裁掉；
+    #    ② 独占模式最初用 setFixedHeight(320)，同时钉死了 maximumHeight；
+    #       改成"最小 320 + 可拉伸"却只改 minimumHeight，控件就永远长不大
+    #       ——整页只有一条 320px 的框，上下各留一片空白。
+    #
+    # ⚠️ 必须在**真实窗口**里量：不 show / 不走事件循环时控件尺寸还是构造期
+    #    的默认值，`height()` 恒等于最小值，这条断言会**恒真**（第一版就栽在
+    #    这里：把修复去掉它照样全绿）。也不能把页面搬进另一个容器——它在
+    #    QStackedWidget 里已有几何，搬走会拿到过期尺寸。
+    w.resize(1280, 860)
+    w.show()
+    for module in MODULES:
+        w.shell.show_module(module.key)
+        # 必须先 apply 一遍 show_workspace(False)：独占模式是它顺手开的。
+        # 直接量会停在构造期的常规高度（168px），量出来的数没有意义。
+        w.shell.module_page(module.key).show_workspace(False)
+        app.processEvents()
+        pump(app, times=8, interval=0.02)
+        page = w.shell.module_page(module.key)
+        header = page.header
+        slack = header.height() - header.sizeHint().height()
+        ok(f"模块 {module.key} 的页头不吸收多余纵向空间（副标题不会飘走）",
+           slack <= T.SPACE_XL,
+           f"header={header.height()} sizeHint={header.sizeHint().height()}")
+        zone = page.input_zone
+        # 输入区应吃掉页头之外的全部纵向空间：
+        #   页面高 − 页头高 − 上下边距(2×SPACE_LG) − 页头与输入区间距(SPACE_MD)
+        # 独占模式坏掉时（setFixedHeight 钉死最大高度）这里会差出几百像素。
+        expect = page.height() - header.height() - 2 * T.SPACE_LG - T.SPACE_MD
+        ok(f"模块 {module.key} 初始输入区撑满整幅高度（独占模式）",
+           abs(zone.height() - expect) <= 2,
+           f"zone={zone.height()} expect={expect} page={page.height()}")
+        # 输入区下方应当只剩底部边距（多出来就是"被挤上去/留大片空白"）
+        below = page.height() - (zone.y() + zone.height())
+        ok(f"模块 {module.key} 输入区下方只剩底部边距（没留大片空白）",
+           below <= T.SPACE_LG + 2,
+           f"below={below}")
+        # ⚠️ 真正让输入区长起来的是**拉伸策略**（破坏它时上面两条会红），
+        #    单独钉一条：策略是 Fixed 时 Qt 不会把余量给它。
+        ok(f"模块 {module.key} 输入区在纵向可拉伸（独占模式的前提）",
+           zone.sizePolicy().verticalPolicy() == QSizePolicy.Policy.Expanding,
+           str(zone.sizePolicy().verticalPolicy()))
+    w.shell.show_tasks()
+    # 拼图不走 StepControl，源是自己维护的 —— 单独钉它的开关
+    imp = w.shell.module_page("imposition")
+    imp.sync_workspace_visible(Path(ctx.tmp) / "x.png")
+    ok("拼图选了源也显出操作界面", imp.workspace_shown() is True)
+    imp.sync_workspace_visible(None)
+    ok("拼图清空源也收回操作界面", imp.workspace_shown() is False)
+
+    # ---- 5c. 「PDF 只支持文件」：图片提取的大输入区不摆「选择文件夹」----
+    extract_page = w.shell.module_page("extract")
+    ok("图片提取不摆「选择文件夹」按钮（PDF 只支持文件）",
+       extract_page.input_zone.dir_button is None)
+    ok("图片提取保留「选择文件」按钮（那是它唯一的合法入口）",
+       extract_page.input_zone.file_button.isVisibleTo(extract_page.input_zone))
+    for key in ("rembg", "detect", "print", "imposition"):
+        zone = w.shell.module_page(key).input_zone
+        ok(f"模块 {key} 仍摆「选择文件夹」按钮",
+           zone.dir_button is not None
+           and zone.dir_button.isVisibleTo(zone))
 
     # ---- 6. 切回任务管理 ----
     w.shell.show_tasks()
@@ -226,3 +320,127 @@ def run(ctx) -> None:
     # ---- 9. 收尾 ----
     w.shell.shutdown_workers()
     ok("壳层能收尾所有 worker", True)
+
+    # ---- 10. singletask 缩略图（用户 2026-10-03）----
+    _check_singletask_thumbnails(ctx, ok)
+
+
+def _check_singletask_thumbnails(ctx, ok) -> None:
+    """⑩ 图片提取页选 PDF 后**立刻**把页缩略图渲到 singletask（用户 2026-10-03）。
+
+    起因：用户报「从上一层导入PDF，没有立即提取缩略图」——以前选完 PDF 左栏全空，
+    得先跑一遍提取才知道书里是什么。现在选完就渲，且落在
+    ``~/Documents/guji/singletask/<子任务>/thumbnails/``。
+    """
+    import time
+
+    from PySide6.QtWidgets import QSplitter
+
+    from desktop.components.viewers import ImageViewerWidget
+    from desktop.modules.extract.page import ExtractModulePage
+    from desktop.steps.spec import spec_by_key
+    from desktop.utils.files import safe_dirname, singletask_thumbnails_dir
+    from tests.selftests._context import make_pdf
+
+    spec = spec_by_key("extract")
+    # 真造一本 PDF，喂给真实的图片提取页
+    pdf = make_pdf(Path(ctx.tmp) / "singletask_probe.pdf", 3)
+    other = make_pdf(Path(ctx.tmp) / "singletask_other.pdf", 2)
+    cache = singletask_thumbnails_dir(spec.title, pdf)
+
+    ok("singletask 落在 guji/singletask 下",
+       "singletask" in cache.parts, str(cache))
+    ok("不同子任务各有自己的目录",
+       cache != singletask_thumbnails_dir("去底色", pdf))
+    # ⚠️ 这一条是"不同书不共用缓存"的护栏：缩略图文件名是页号，共用目录会让
+    #    A 书第 1 页被当成 B 书第 1 页的命中缓存 ⇒ 翻出别本书的内容。
+    ok("不同书各有自己的缓存目录（缩略图名是页号，不能混）",
+       cache != singletask_thumbnails_dir(spec.title, other),
+       f"{cache} vs {singletask_thumbnails_dir(spec.title, other)}")
+    ok("目录名里的非法字符被洗掉",
+       all(ch not in safe_dirname('a<b>c:d"e/f\\g|h?i*j') for ch in '<>:"/\\|?*'),
+       safe_dirname('a<b>c:d"e/f\\g|h?i*j'))
+
+    page = ExtractModulePage()
+    try:
+        page.resize(1200, 800)
+        page.show()
+        ctx.app.processEvents()
+        page.control.set_source(pdf)
+        ctx.app.processEvents()
+
+        # ⚠️ 左栏结构钉的是「**缩略图条 + 大图**一种形态走到底」（用户
+        #    2026-10-03）。此前这里是「上半 PDF 预览 + 下半提取结果」的上下
+        #    分栏、两个控件各带一套缩略图条与线程；那条结构已废。
+        ok("左栏就是那一个缩略图+大图控件（不再是上下分栏）",
+           isinstance(page.viewer, ImageViewerWidget)
+           and not page.preview_widget.findChild(QSplitter))
+        ok("选完 PDF 左栏进入「页缩略图」模式",
+           page.viewer._page_source is not None
+           and Path(page.viewer._page_source[0]) == pdf,
+           str(page.viewer._page_source))
+        ok("PDF 页缩略图缓存目录就是 singletask 那份",
+           str(page.viewer._page_source_cache or "") == str(cache),
+           str(page.viewer._page_source_cache))
+
+        # ⚠️ 后台渲染是异步的：**必须循环等它真出文件**。跑一次 processEvents
+        #    就断言"没报错"是自测最经典的假绿（2026-10-03 记忆里已记过一次）。
+        names: list[str] = []
+        for _ in range(150):
+            ctx.app.processEvents()
+            time.sleep(0.1)
+            names = sorted(p.name for p in cache.glob("*.jpg")) if cache.exists() else []
+            if len(names) >= 3:
+                break
+        ok("选 PDF 后立刻渲出全部页缩略图", len(names) == 3, f"{names} @ {cache}")
+        ok("缩略图非空（不是半截 JPEG）",
+           all((cache / n).stat().st_size > 0 for n in names), str(names))
+
+        # 换一本书：页数不同的两本不能互相污染
+        page.control.set_source(other)
+        ctx.app.processEvents()
+        other_cache = singletask_thumbnails_dir(spec.title, other)
+        other_names: list[str] = []
+        for _ in range(150):
+            ctx.app.processEvents()
+            time.sleep(0.1)
+            other_names = sorted(p.name for p in other_cache.glob("*.jpg")) \
+                if other_cache.exists() else []
+            if len(other_names) >= 2:
+                break
+        ok("换一本书渲出的是它自己的页数（2 页，不是上一本的 3 页）",
+           len(other_names) == 2, f"{other_names} @ {other_cache}")
+
+        # ---- ⑩b 提取完成后左栏切成**提取出的图片**（用户 2026-10-03）----
+        # 需求原文：「在未提取图片之前是按照缩略图，单独图片显示，提取后直接
+        # 显示提取的图片」。不钉这一条的话，最容易出的错是"PDF 页模式没退出"
+        # ——左栏看着有图，点哪页却都是同一页（因为还在拿 1.jpg 当页号渲 PDF）。
+        out_dir = Path(ctx.tmp) / "extract_out"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        _write_tiny_jpegs(out_dir, 2)
+        page.on_result(out_dir, {})
+        ctx.app.processEvents()
+        ok("提取后退出 PDF 页模式（否则点哪页都是同一页）",
+           page.viewer._page_source is None, str(page.viewer._page_source))
+        ok("提取后左栏换成提取出的图片",
+           [p.name for p in page.viewer.paths] == ["1.jpg", "2.jpg"],
+           str(page.viewer.paths))
+    finally:
+        page.shutdown_workers()
+        page.deleteLater()
+
+
+def _write_tiny_jpegs(out_dir: Path, count: int) -> None:
+    """在 ``out_dir`` 下写 count 张 1×1 的真 JPEG（``1.jpg``…）。
+
+    ⚠️ **必须用 Qt 现场编码**，别在源码里手写 JPEG 字节：手拼的十六进制串
+    十有八九是不合法的 SOF/量化表，症状是"文件写出来了、QImage 解出来是
+    null"——自测会红，而真正的原因（字节流坏了）藏在几百个 hex 数字里极难找。
+    """
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QImage
+
+    for index in range(count):
+        image = QImage(4, 4, QImage.Format.Format_RGB32)
+        image.fill(Qt.GlobalColor.white)
+        image.save(str(out_dir / f"{index + 1}.jpg"), "JPG")

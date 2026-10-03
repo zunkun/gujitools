@@ -1337,16 +1337,24 @@ def run(ctx) -> None:
        hasattr(detail.print_preview, "navigate"), "")
 
     # ---- 方向键翻页推广到**所有步骤**（「焦点在哪里，哪里就切换」）----
-    page_src = (Path(__file__).resolve().parents[2]
-                / "desktop/pages/taskdetail/page.py").read_text(encoding="utf-8")
-    ok("详情页按阶段分发方向键（四步的预览控件全部映射）",
-       all(k in page_src for k in (
-           "_STAGE_PREVIEW_ATTRS", '"extract_result_viewer"',
-           '"detect_viewer"', '"rembg_viewer"', '"print_preview"')), "")
+    # ⚠️ 这条护栏原先是**文本匹配** `page.py` 里的 `_STAGE_PREVIEW_ATTRS` 字面量。
+    #    2026-10-03 该映射搬进 ``StepSpec.preview_attr``（页面不再维护第二份），
+    #    于是改成**行为断言**：每一步的 spec 声明了主预览控件，且那个控件真的有
+    #    ``navigate``。比文本匹配强——它验的是"真能翻页"，而不是"源码里有这几个字"。
+    from desktop.store.tasks import STAGES
+    from desktop.steps import ports
+
+    declared = {
+        stage: ports.spec_for_stage(stage).preview_attr for stage in STAGES
+    }
+    ok("每一步都声明了主预览控件（preview_attr 非空）",
+       all(declared.values()), str(declared))
+    ok("声明的预览控件在页面上真实存在",
+       all(getattr(detail, attr, None) is not None
+           for attr in declared.values()), str(declared))
     ok("四步预览组件都有 navigate 入口",
-       all(hasattr(getattr(detail, attr, None), "navigate") for attr in (
-           "extract_result_viewer", "detect_viewer",
-           "rembg_viewer", "print_preview")), "")
+       all(hasattr(getattr(detail, attr, None), "navigate")
+           for attr in declared.values()), str(declared))
     from desktop.components.viewers.thumb_strip import ThumbStrip
 
     nav_strip = ThumbStrip()

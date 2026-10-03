@@ -144,6 +144,14 @@ class ImpositionViewWidget(QWidget):
         )
         self.set_current(min(current, len(self._pages) - 1))
 
+    def set_page_thumbs(self, thumbs: list) -> None:
+        """把左列每页的缩略图贴上去（``thumbs[i]`` 对应第 i 页，可为 ``None``）。
+
+        转交给 :meth:`ImpositionPageList.set_page_thumbs`——本控件只做装配，
+        不自己碰条目（页条目是 ``page_list`` 的私产）。
+        """
+        self.page_list.set_page_thumbs(thumbs)
+
     def pages(self) -> list[dict]:
         return list(self._pages)
 

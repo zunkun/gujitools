@@ -4,7 +4,7 @@
 
 通用工具函数：几何、排序、图像 IO、PDF、YOLO
 
-覆盖 25 个模块、11 个公开类、159 个公开函数/方法（生成于 2026-10-03）。
+覆盖 25 个模块、11 个公开类、165 个公开函数/方法（生成于 2026-10-03）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -12,8 +12,8 @@
 
 | 模块 | 类 | 函数 |
 | --- | --- | --- |
-| [`utils.box_draw`](#utilsbox_draw) | 0 | 6 |
-| [`utils.box_geometry`](#utilsbox_geometry) | 2 | 11 |
+| [`utils.box_draw`](#utilsbox_draw) | 0 | 8 |
+| [`utils.box_geometry`](#utilsbox_geometry) | 2 | 15 |
 | [`utils.cage_warp`](#utilscage_warp) | 0 | 11 |
 | [`utils.color_utils`](#utilscolor_utils) | 0 | 2 |
 | [`utils.file_utils`](#utilsfile_utils) | 0 | 4 |
@@ -77,6 +77,8 @@ PIL 绘制。字体候选路径来自 `utils.fonts`（Windows/Linux/macOS 三份
 | `box_color(index: int) -> Tuple[int, int, int]` | 按框序号取 BGR 颜色。 |
 | `box_name(index: int) -> str` | 按框序号取中文名（左框/右框/合并框）。 |
 | `draw_boxes(img_bgr, boxes: Sequence[Optional[Sequence[int]]], thickness: int=4, show_label: bool=True, color=None, names: Optional[Sequence[str]]=None, colors: Optional[Sequence[Tuple[int, int, int]]]=None)` | 在图像上绘制一组框（原地绘制并返回新图，不修改入参）。 |
+| `slot_names_colors(slots)` | **槽位**表示 → 与 ``slots`` 等长的 ``(names, colors)``（BGR）。 |
+| `draw_slots(img_bgr, slots, thickness: int=4, show_label: bool=True)` | 在图像上绘制**槽位**表示的框（标注外观由 :func:`slot_names_colors` 定）。 |
 
 #### `draw_boxes(img_bgr, boxes: Sequence[Optional[Sequence[int]]], thickness: int=4, show_label: bool=True, color=None, names: Optional[Sequence[str]]=None, colors: Optional[Sequence[Tuple[int, int, int]]]=None)`
 
@@ -97,6 +99,34 @@ PIL 绘制。字体候选路径来自 `utils.fonts`（Windows/Linux/macOS 三份
 
 返回:
     绘制后的 BGR 图像（新数组）。
+
+#### `slot_names_colors(slots)`
+
+**槽位**表示 → 与 ``slots`` 等长的 ``(names, colors)``（BGR）。
+
+这是"槽位 → 标注外观"的**唯一实现**，两处调用方共用：
+
+- ``functions.detect`` 的 ``--save`` 标注图；
+- 独立「检测文本框」模块页的「导出标注图」。
+
+⚠️ 规则按**槽位**给，不按"过滤掉空项后的第几个框"：槽数就是形态
+（半幅恒 2 槽 ``[左, 右]``、整幅 1 槽 ``[整幅]``，见
+:mod:`utils.box_geometry`）。按序号给会让"只检出一侧"的那一页把左框
+标成"第 1 号框"，也会把整幅标成左框。
+
+``None`` 项原样占位（``draw_boxes`` 会跳过它，GUI 侧则按位置对齐），
+这样"哪一侧缺失"的信息不丢。
+
+#### `draw_slots(img_bgr, slots, thickness: int=4, show_label: bool=True)`
+
+在图像上绘制**槽位**表示的框（标注外观由 :func:`slot_names_colors` 定）。
+
+与 :func:`draw_boxes` 的区别只有一处，但很关键：调用方手上是**槽位**
+（可能含 ``None``、长度 1 或 2，形态信息就在里面），不该自己拆成
+``[left, right, full]`` 再逐个传名/配色——那份拆法在
+``functions/detect`` 与 desktop 之间各写过一次，已经漂移过一次。
+
+返回绘制后的 BGR 图像（新数组，不修改入参）。
 
 ---
 
@@ -166,6 +196,10 @@ docs/functions/cropremove.md:57）。布局层统一后该分歧由本模块消�
 | `compute_final_boxes(boxes, area: int, border_mm, dpi: int=300) -> List[List[int]]` | 按 crop 命令的 area/border 规则计算最终切割框（原始图片坐标）。 |
 | `build_output_layout(boxes: Sequence[Sequence[int]], area: int, border_padding, image_size: Tuple[int, int], dpi: int=300, sides: Optional[Sequence[Optional[str]]]=None, symmetric: bool=False) -> OutputLayout` | 按 area/border 规则计算输出画布布局（area=1 / 2 / 3）。 |
 | `build_symmetric_layout(box: Sequence[int], border_padding, image_size: Tuple[int, int], is_left: bool=True, dpi: int=300) -> OutputLayout` | 单框对称输出布局：实际框 + 空白镜像 + 中间间隔。 |
+| `present_boxes(slots) -> List[list]` | 槽位 → **非空**框列表（保留顺序）。 |
+| `set_box_full(slots, index: int) -> List[list]` | 把第 ``index`` 个框设为「整幅」→ **单槽** ``[整幅]``，其余框丢弃。 |
+| `set_box_half(slots, index: int, image_size) -> List[list]` | 把第 ``index`` 个框设为「半幅」→ **2 槽** ``[左, 右]``（按中心定左右）。 |
+| `drop_box(slots, index: int, image_size) -> List[list]` | 删掉第 ``index`` 个框后的**新槽位**。 |
 
 #### `is_full_content(boxes) -> bool`
 
@@ -335,6 +369,39 @@ desktop/workers/preview_worker.compose_region_output 的几何完全等价，
 返回:
     OutputLayout（单一画布）。
 
+#### `present_boxes(slots) -> List[list]`
+
+槽位 → **非空**框列表（保留顺序）。
+
+下游所有"第 index 个框"都按这个列表的下标算：界面上的框列表、命中检测、
+选中下标全都是过滤后的口径，混用槽位下标会选错框（半幅缺左侧时，
+槽位 0 是 ``None``、槽位 1 才是右框）。
+
+#### `set_box_full(slots, index: int) -> List[list]`
+
+把第 ``index`` 个框设为「整幅」→ **单槽** ``[整幅]``，其余框丢弃。
+
+⚠️ 整幅与半幅互斥、一页只能一个框，所以这个转换**必然丢掉其它框**。
+调用方**必须先与用户确认**（任务流程第二步弹 Dialog，模块页弹确认框），
+不要静默调用。
+
+``index`` 越界时原样返回（空表则返回空表）——非法输入不该让界面崩。
+
+#### `set_box_half(slots, index: int, image_size) -> List[list]`
+
+把第 ``index`` 个框设为「半幅」→ **2 槽** ``[左, 右]``（按中心定左右）。
+
+整幅页的框也能是半幅（漏检一侧的情形），所以这个方向**无损**：一个框
+照样按它自己的中心位置落进左槽或右槽，另一侧留 ``None``。
+
+#### `drop_box(slots, index: int, image_size) -> List[list]`
+
+删掉第 ``index`` 个框后的**新槽位**。
+
+- 半幅页：仍写回 **2 槽**（缺失侧 ``None``）——删到只剩一个框时形态不会
+  从半幅变成整幅，这正是用户报过的"删掉整幅框后右边的框自动变成整幅"；
+- 整幅页 / 删光了：空表（整幅只有 1 槽，删掉没有"别的框"可剩）。
+
 ---
 
 ## `utils.cage_warp`
@@ -420,7 +487,9 @@ desktop/workers/preview_worker.compose_region_output 的几何完全等价，
 | --- | --- |
 | FIELD_MAX | `40000` |
 | COINCIDENT | `1e-06` |
+| _COINCIDENT_REL | `0.001` |
 | _RADIUS_FLOOR | `2.5` |
+| _RADIUS_DIVERGE | `10000.0` |
 
 ### 模块函数
 
@@ -469,6 +538,12 @@ Wendland **C²** 紧支撑核：``r < 1`` 时 ``(1−r)⁴(4r+1)``，否则 ``0`
 
 没动过（或两个笼形状不一致）→ ``None``。**只有真的动过的把手**进方程
 组，所以"在笼线上加一个点"不会改变形变（自测有这个断言）。
+
+⚠️ **退化一律退化为恒等**（返回 ``None``），绝不把异常抛给调用方：
+方程组在把手重合等退化配置下无解（见 :func:`_drop_coincident`），
+异常一旦冒到 Qt 槽函数就是崩溃——而"这一帧不变形"完全可接受
+（用户下次把把手分开一点就行）。口径与 ``solve_puppet`` 的
+"解算失败退化为恒等"一致。
 
 #### `warp_region(cage_src, cage_dst, influence=None, *, width: int, height: int)`
 

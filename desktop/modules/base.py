@@ -15,17 +15,20 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
-    QPlainTextEdit,
+    QSizePolicy,
     QSplitter,
     QVBoxLayout,
     QWidget,
 )
 from qfluentwidgets import InfoBar, InfoBarPosition
 
+from desktop.components.log_panel import LogPanel
 from desktop.ui import theme as T
 from desktop.ui.widgets import Card, apply_to
 from desktop.workers import WorkerHost
@@ -43,6 +46,22 @@ class ModulePage(QWidget, WorkerHost):
 
     ``status(text)`` 往页头的状态行写字，``toast(kind, title, content)`` 弹
     InfoBar —— 这两个是各模块反馈执行结果的标准出口，别自己 new InfoBar。
+
+    ⚠️ **初始只显示大输入区**（用户 2026-10-03）：
+
+        > 初始就只有一个输入框，下面的操作面板和预览这些都要选择输入文件后
+        > 才显示出来
+
+    所以左右分栏与日志区在构造完成后就被收起来，由
+    :meth:`show_workspace` / :meth:`sync_workspace_visible` 在"用户真的给了
+    输入"之后才点亮。⚠️ 收起来的只是**可见性**，控件照旧构造 —— 惰性构造
+    会让各模块页的控件引用（``self.viewer`` / ``self.control``…）在
+    ``_on_source_changed`` 里才存在，而那个信号恰好在构造期之后才发，
+    早绑信号会 AttributeError；而且隐藏的控件不占布局，首帧也更快。
+
+    子类**只需在"源变了"的回调里调一次**
+    :meth:`sync_workspace_visible`（传"有没有源"），清空源时传 ``False``
+    就自动收回去。
     """
 
     #: 页头文案；子类覆盖（这里给兜底值，避免忘记时页头是空的）
@@ -115,17 +134,54 @@ class ModulePage(QWidget, WorkerHost):
         root.addWidget(splitter, 1)
         self.splitter = splitter
 
-        self.log_view = QPlainTextEdit()
-        self.log_view.setReadOnly(True)
-        self.log_view.setFixedHeight(76)
-        self.log_view.setObjectName("logView")
-        # ⚠️ 关掉日志区自己的拖放：QPlainTextEdit 默认会**吃掉**拖拽事件，
-        #    用户把文件拖到页面底部时就落在它身上、页面级转发收不到，
-        #    表现是"拖到下面没反应"。关掉后事件冒泡到本页，统一转给输入区。
-        self.log_view.setAcceptDrops(False)
-        root.addWidget(self.log_view)
+        # ⚠️ 与详情页**用同一个**日志控件（`desktop.components.log_panel.LogPanel`：
+        #    常驻一行状态条 + 点击唤出浮层）。此前这里是一只裸 QPlainTextEdit，
+        #    常驻 76px 白框：空闲时是一块空白卡占位置，两套观感也对不上
+        #    （用户 2026-10-03：「UI 要精美，不要傻大粗」）。
+        self.log_panel = LogPanel()
+        # 页面各处沿用的 self.log_view 直接指向面板内的文本域（调用点不变）
+        self.log_view = self.log_panel.log_view
+        root.addWidget(self.log_panel)
+
+        # ---- 初始只留大输入区（用户 2026-10-03，见类 docstring）----
+        # ⚠️ 走同一个容器一起收/一起放：分栏与日志区是"操作界面"的两半，
+        #    收一半留一半会看起来像漏画了。
+        self.workspace = splitter
+        self._workspace_shown = True
+        self.show_workspace(False)
 
     # ------------------------------------------------------------------ 骨架
+    def show_workspace(self, shown: bool) -> None:
+        """显隐"操作界面"（左右分栏 + 日志区）。
+
+        初始为 ``False``（用户 2026-10-03：「初始就只有一个输入框，下面的操作
+        面板和预览这些都要选择输入文件后才显示出来」）。有输入之后由
+        :meth:`sync_workspace_visible` 打开。
+
+        大输入区同时切成**独占模式**（自己撑满整幅，见
+        :meth:`desktop.steps.source_zone.SourceZone.set_solo_mode`）——
+        否则收起分栏后页面上半屏是框、下半屏一片空白，看着像没加载完。
+        """
+        self._workspace_shown = bool(shown)
+        self.splitter.setVisible(self._workspace_shown)
+        # ⚠️ 藏**面板**而不是 log_view：日志浮层是状态条的子控件，单独藏文本域
+        #    会留下一条什么都不显示的状态条。
+        self.log_panel.setVisible(self._workspace_shown)
+        zone = getattr(self, "input_zone", None)
+        if zone is not None and hasattr(zone, "set_solo_mode"):
+            zone.set_solo_mode(not self._workspace_shown)
+
+    def sync_workspace_visible(self, has_source) -> None:
+        """按"当前有没有源"开关操作界面（各模块在源变化时调一次即可）。
+
+        ``has_source`` 传 ``Path`` / ``None`` 都行，判的是"是不是空"。
+        """
+        self.show_workspace(has_source is not None)
+
+    def workspace_shown(self) -> bool:
+        """操作界面当前是否显示（自测与截图脚本用）。"""
+        return self._workspace_shown
+
     def _build_header(self) -> QWidget:
         """页头：标题 + 副标题 + 右侧操作区（``self.header.actions`` 加按钮）。"""
         from qfluentwidgets import CaptionLabel
@@ -223,13 +279,180 @@ class ModulePage(QWidget, WorkerHost):
         )
 
     def log(self, text: str) -> None:
-        """往底部日志区追加一行。"""
-        self.log_view.appendPlainText(text)
+        """往底部日志区追加一行。
+
+        ⚠️ 用 ``append`` 而不是 ``appendPlainText``：日志区换成了
+        :class:`desktop.components.log_panel.LogPanel`，它的文本域是
+        qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
+        """
+        self.log_view.append(text)
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt 命名
         """关闭时收尾后台线程，避免解释器退出时被强杀（同详情页规矩）。"""
         self.shutdown_workers()
         event.accept()
+
+
+class StepModulePage(ModulePage):
+    """**带完整步骤控制**的模块页：绝大多数步骤页的直接基类（需求 2 的落点）。
+
+    一个"独立步骤"的页面真正只差两件事：
+
+    1. 左栏用哪个预览控件（:meth:`_build_preview`）；
+    2. 跑完之后怎么把产物交给它（:meth:`on_result`）。
+
+    其余全是**每个步骤都一样**的外设：摆一块横跨整幅的大输入区、建
+    :class:`~desktop.steps.control.StepControl`（参数 + 输出目录 + 执行/中断）、
+    把控制区的状态/日志/失败接到页面的反馈出口、源变了怎么改副标题与显隐、
+    收尾执行线程。这些此前在 extract/rembg/print/detect 四个页面里**逐字抄了
+    四遍**——加第五个步骤就再抄一遍。现在全部收在这里。
+
+    子类要做的**全部**事情：
+
+    .. code-block:: python
+
+        class MyPage(StepModulePage):
+            SPEC = spec_by_key("my_step")        # 1. 认领步骤元数据
+
+            def _build_preview(self):            # 2. 左栏预览控件
+                self.viewer = SomeViewer()
+                return self.viewer
+
+            def on_result(self, output, result): # 3. 产物怎么上屏
+                self.viewer.set_images(...)
+
+    ⚠️ **拼版页不继承它**（``desktop/modules/imposition/page.py``）：它的"源"是
+    **一批图片**而非一个源（要 ``collect_files`` 摊平），执行也是纯函数导出
+    而非 ``StepSpec.command``，外壳因此对不上。它继续直接继承
+    :class:`ModulePage`。
+    """
+
+    #: 本页对应的步骤元数据（子类必须给；页头文案也由它派生）
+    SPEC = None
+
+    #: 子类覆盖：空闲时状态行写什么（默认「尚未选择 + 输入物称呼」）
+    def idle_text(self) -> str:
+        spec = self.SPEC
+        noun = spec.input_noun() if spec else "文件"
+        return f"尚未选择{noun}"
+
+    def on_result(self, output: Path, result: dict) -> None:
+        """执行成功：把产物交给左栏（子类实现）。
+
+        ``output`` 是内核回传的产物路径——**目录还是文件取决于这一步**
+        （``StepSpec.artifact_is_file``：``print`` 回传 PDF 文件，其余回传目录）。
+        ``result`` 是 job 在 worker 线程里攒下的少量数据（如导出张数）。
+        """
+        raise NotImplementedError
+
+    def on_failed(self, message: str) -> None:
+        """执行失败：给一句人话（状态行与日志已由控制区写过）。"""
+        title = f"{self.SPEC.title}失败" if self.SPEC else "处理失败"
+        self.toast("error", title, message)
+
+    # ------------------------------------------------------------------ 骨架
+    def __init__(self, parent=None):
+        """先把页头文案从 spec 落成实例属性，再建骨架。
+
+        ⚠️ 必须在 ``super().__init__()`` **之前**赋值：``ModulePage.__init__``
+        构造期就会读 ``self.TITLE`` / ``self.SUBTITLE`` 去建页头，晚一步就
+        建出一张空标题的页头（而它之后不会再被重建）。实例属性遮蔽类属性，
+        所以各页面不必再各自写一遍 ``TITLE = _SPEC.title``。
+        """
+        spec = self.SPEC
+        self.TITLE = spec.title if spec else "模块"
+        self.SUBTITLE = spec.subtitle if spec else ""
+        #: job 在 worker 线程里写、主线程读的桥（只放标量/列表，不放控件）
+        self._job_result: dict = {}
+        super().__init__(parent)
+        self.status(self.idle_text())
+        # 左栏缩略图那一层还要接「图被编辑器覆盖」的同步（立即上屏 + 重渲缩略图
+        # + 生效提示，见 ``ThumbSourceMixin._on_source_image_saved``）。这里用
+        # ``getattr`` 探测而不是直接调用：本基类**不 import** thumb_source（守住
+        # 「只依赖共享底座」），而没混入那个混入的页面本来就不需要这一步。
+        # ⚠️ 必须在 ``super().__init__()`` **之后**：``_build_preview`` 在构造
+        # 期跑，``self.viewer`` 那时才有。
+        wire = getattr(self, "_wire_source_edit", None)
+        if callable(wire):
+            wire()
+
+    # ------------------------------------------------------------------ 输入
+    def _build_input(self):
+        """页头下方横跨整幅的**大输入区**（共用组件，见 SourceZone）。"""
+        from desktop.steps.source_zone import SourceZone
+
+        self.zone = SourceZone(self.SPEC)
+        # 归一化失败（拖进来的不是这一步要的东西）时用 toast 说话——大输入区
+        # 自己只发信号，"怎么说给用户听"是页面的事。
+        self.zone.rejected.connect(
+            lambda message: self.toast("warning", "这个用不上", message)
+        )
+        return self.zone
+
+    # ------------------------------------------------------------------ 控制
+    def _build_control(self):
+        """右栏：整块交给共用步骤控件（面板 + 输出目录 + 执行/中断）。"""
+        from desktop.steps.control import StepControl
+
+        card = Card()
+        self.control = StepControl(self.SPEC, zone=self.zone)
+        # StepControl 只发信号、不弹提示；页头状态行与日志区由本页呈现
+        self.control.status.connect(self.status)
+        self.control.log.connect(self.log)
+        self.control.source_changed.connect(self._on_source_changed)
+        self.control.finished.connect(self._on_finished)
+        self.control.failed.connect(self._on_failed)
+        card.box.addWidget(self.control)
+        return card
+
+    # ------------------------------------------------------------------ 回调
+    def _on_source_changed(self, source) -> None:
+        """换了源：开关操作界面，并把「源 → 输出」写到副标题上。
+
+        副标题按"有没有源"分两种写法：空态回落到 spec 的静态副标题（不要把
+        上一页的路径留在屏幕上），有源才显示 ``<源> → <输出目录>``。
+        """
+        self.sync_workspace_visible(source)
+        if source is None:
+            self.header.set_subtitle(self.SUBTITLE)
+            self.status(self.idle_text(), "info")
+            return
+        detail = self.source_summary(source)
+        self.header.set_subtitle(detail or self.SUBTITLE)
+        self.status(f"已选择{self.SPEC.input_noun()}，点击「{self.SPEC.run_text()}」",
+                    "info")
+
+    def source_summary(self, source) -> str:
+        """副标题里那一行 ``<源> → <输出>``；子类可加图片张数等信息。"""
+        return f"{Path(source).name} → {self.control.output()}"
+
+    def source_images(self) -> list[Path]:
+        """源里的图片清单：源是文件就是它自己，是目录就取顶层（认本步后缀）。
+
+        ⚠️ 只在"这一步的输入物本身就是图片"时有意义（rembg/print）；提取的
+        源是 PDF、检测的源是图片但不这么用，子类别硬调。
+        """
+        spec = self.SPEC
+        source = self.control.source()
+        if source is None or spec is None:
+            return []
+        source = Path(source)
+        if source.is_file():
+            return [source] if spec.accepts_path(source) else []
+        return spec.listing(source)
+
+    def _on_finished(self, output: str) -> None:
+        """成功：把产物交给 :meth:`on_result`（状态行/日志已由控制区写过）。"""
+        self.on_result(Path(output), self._job_result)
+
+    def _on_failed(self, message: str) -> None:
+        self.on_failed(message)
+
+    # ------------------------------------------------------------------ 收尾
+    def shutdown_workers(self) -> None:
+        """收尾执行线程（壳层关窗口时会调到这里）。"""
+        self.control.shutdown()
+        super().shutdown_workers()
 
 
 class _ModuleHeader(QWidget):
@@ -246,6 +469,21 @@ class _ModuleHeader(QWidget):
 
     def __init__(self, title: str, subtitle: str = "", parent=None):
         super().__init__(parent)
+        # ⚠️ **页头不参与纵向拉伸**。
+        #
+        # 起因（用户 2026-10-03 截图反馈）：做成"初始只有输入框"之后，副标题
+        # 飘到了页面正中、输入框被挤到底边。原因是 `ModulePage.root` 里唯一
+        # 带 stretch 的是分栏，分栏一隐藏，Qt 就把空出来的纵向空间按
+        # sizePolicy 摊给了页头（默认 Preferred 会长）。
+        #
+        # 现在真正让它长出来的是输入区的 `Expanding` 策略（见
+        # `SourceZone._sync_height`），所以这一行是**双保险**：万一将来输入区
+        # 走了固定高度（例如某种步骤不需要撑满），页头也不会突然长到半屏高。
+        # 实测把这一行去掉、只留输入区的拉伸策略，当前布局仍然正确。
+        self.setSizePolicy(
+            self.sizePolicy().horizontalPolicy(),
+            QSizePolicy.Policy.Maximum,
+        )
         layout = QHBoxLayout(self)
         layout.setContentsMargins(T.SPACE_XS, 0, T.SPACE_XS, T.SPACE_SM)
         layout.setSpacing(T.SPACE_MD)
@@ -274,7 +512,7 @@ class _ModuleHeader(QWidget):
         self.subtitle_label.setVisible(bool(text))
 
 
-__all__ = ["ModulePage"]
+__all__ = ["ModulePage", "StepModulePage"]
 
 
 #: 未使用但保留的提示：``Signal`` 供子类自由定义信号时直接从这里 import

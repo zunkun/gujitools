@@ -98,6 +98,7 @@ from desktop.ui import theme as T
 from desktop.ui.color_picker import ColorPickerButton
 from desktop.ui.fonts import text_font_families
 from desktop.ui.window_size import apply_window_size
+from desktop.workers.worker_host import connect_queued
 # ⚠️ utils.puppet_warp 的 numpy/scipy 是**函数内延迟导入**的，模块级 import
 #    不会把它们拖进 GUI 主进程的启动路径（与 desktop/services/rembg_live
 #    同口径）。这里只取函数引用，真正解算时才 import numpy/scipy。
@@ -475,6 +476,9 @@ class _BakeWorker(QThread):
 
     #: 进度回调在工作线程里被调用 → 用信号转发到主线程更新对话框
     ticked = Signal(int, int)
+    #: 工作函数**抛异常**时发出（``str``），主线程据此报错而不是假装取消
+    #: （见 :meth:`run` —— 异常绝不能一路逃出 ``run``）
+    failed = Signal(str)
 
     def __init__(self, work, params: dict, parent=None):
         super().__init__(parent)
@@ -482,6 +486,8 @@ class _BakeWorker(QThread):
         self._params = params
         self.cancelled = False
         self.result = None
+        #: 工作函数抛出的异常对象（主线程读），``None`` 表示没出错
+        self.error: Exception | None = None
 
     def cancel(self) -> None:
         """请求取消（主线程调；工作函数下次回调进度时即中止）。"""
@@ -493,7 +499,24 @@ class _BakeWorker(QThread):
         return not self.cancelled
 
     def run(self) -> None:  # noqa: D102（QThread 入口）
-        self.result = self._work(self._params, self.progress)
+        # ⚠️ **必须**在这里捕获所有异常（用户可见的"崩溃"头号来源）：
+        #   ``run`` 是被 C++ 调用的虚函数，Python 异常直接逃出去只会打一段
+        #   stderr（PySide6 6.9 实测，进程**存活**），但 ``self.result`` 停在
+        #   ``None`` 而 ``cancelled`` 是 ``False`` —— 调用方
+        #   （:func:`run_with_progress`）据此返回 ``None``，上层
+        #   （``_commit_deform`` 等）就会把它当成"**用户取消**"，弹掉撤销点
+        #   并且**一声不吭**。用户点了 20 秒，什么都没发生，也没提示。
+        #   ⇒ 存下异常并置位 failed，让调用方弹错误框、退回撤销点。
+        try:
+            self.result = self._work(self._params, self.progress)
+        except Exception as exc:      # noqa: BLE001（兜底，不透传）
+            self.error = exc
+            self.failed.emit(f"{type(exc).__name__}: {exc}")
+        # MemoryError / 其它 BaseException（如 QThread 被中断）也一并拦住：
+        # 任何逃逸都会让调用方误判成"取消"，比崩掉更难排查。
+        except BaseException as exc:  # noqa: BLE001
+            self.error = exc
+            self.failed.emit(f"{type(exc).__name__}: {exc}")
 
 
 def run_with_progress(parent: QWidget | None, title: str, label: str,
@@ -503,6 +526,17 @@ def run_with_progress(parent: QWidget | None, title: str, label: str,
     返回工作结果；被用户取消时返回 ``None``。``work`` 必须是**纯计算**
     （只用到形参，不碰 Qt 部件/画布），这样才能安全地放进工作线程。
     小任务（预估很快）也不亏：线程启动 + 对话框开销在毫秒级。
+
+    ⚠️ 工作函数**抛异常**时**重新抛出**（``raise worker.error``），
+    调用方负责弹错误框并退回撤销点。绝不能把它折叠成 ``None`` ——
+    ``None`` 的既定含义是"用户取消"，混同的结果是"点了 20 秒什么都没发生
+    且无提示"（用户报过的现象，见 :meth:`_BakeWorker.run`）。
+
+    ⚠️ 本函数**不吞异常、也不留孤儿线程**：整体 ``try/finally``，
+    ``finally`` 里 ``cancel() + wait()``。异常逃出等待循环时若不收尾，
+    worker 会变成孤儿线程，而它是被 ``parent``（编辑器对话框）持有的 ——
+    对话框一析构就是 ``QThread: Destroyed while thread is still running``，
+    **Qt 直接 abort 整个进程**（本项目 ``worker_host`` 已记过这条）。
     """
     worker = _BakeWorker(work, params, parent)
     dialog = QProgressDialog(label, "取消", 0, 100, parent)
@@ -527,18 +561,51 @@ def run_with_progress(parent: QWidget | None, title: str, label: str,
         if total > 0:
             dialog.setValue(min(100, int(done * 100 / total)))
 
-    worker.ticked.connect(on_tick)
-    worker.start()
-    # 主线程等它跑完，但每 50ms 醒一次让事件循环处理重绘/取消点击
-    while not worker.wait(50):
-        QApplication.processEvents()
-    state["done"] = True          # 先封住 canceled，再正常关闭
-    dialog.close()
-    dialog.deleteLater()
-    worker.wait()
-    if worker.cancelled:
+    def on_failed(message: str) -> None:
+        state["error"] = message
+
+    # ⚠️ 显式排队连接：**不依赖**"PySide6 给无接收者的闭包自动建 proxy 并
+    #   queued 连接"这一隐式行为。实测（子线程真实 emit + 主线程 wait/processEvents
+    #   循环）当前 PySide6 6.9.2 确实跑在主线程，但那是版本相关的实现细节；
+    #   一旦某个版本按 Auto→Direct 处理，就会在工作线程里碰
+    #   ``dialog.setValue``，而此刻主线程正在 ``processEvents`` 里操作同一个
+    #   对话框 ⇒ 两个线程摸同一个 widget，Windows 上是访问违例。
+    #   项目约定（``desktop/workers/worker_host.connect_queued``）也是这条。
+    #   中继对象必须挂在**主线程内的 QObject** 上，所以 ``parent`` 为 None
+    #   时退回"直接连"（本函数的所有实际调用方都传了对话框）。
+    if parent is not None:
+        connect_queued(parent, worker.ticked, on_tick, worker)
+        connect_queued(parent, worker.failed, on_failed, worker)
+    else:
+        worker.ticked.connect(on_tick)
+        worker.failed.connect(on_failed)
+    error: Exception | None = None
+    cancelled = False
+    result = None
+    try:
+        worker.start()
+        # 主线程等它跑完，但每 50ms 醒一次让事件循环处理重绘/取消点击
+        while not worker.wait(50):
+            QApplication.processEvents()
+        # 线程已停，此刻才能安全收尾（worker.error / result 已定型）。
+        # ⚠️ **必须在这里读 `cancelled`**：下面的 `finally` 为了兜底会调
+        #   `worker.cancel()`，那会把"正常跑完"也标成取消。
+        state["done"] = True          # 先封住 canceled，再正常关闭
+        error = worker.error
+        cancelled = worker.cancelled
+        result = worker.result
+    finally:
+        # 兜底：异常路径下也要确保线程结束、对话框销毁，绝不留孤儿
+        state["done"] = True
+        worker.cancel()
+        worker.wait()
+        dialog.close()
+        dialog.deleteLater()
+    if error is not None:
+        raise error
+    if cancelled:
         return None
-    return worker.result
+    return result
 
 
 def _bake_cage_work(params: dict, progress):
@@ -1570,13 +1637,27 @@ class EditorCanvas(QGraphicsView):
             return None
         return src, dst
 
+    def _clamp_cage_pos(self, pos: QPointF) -> QPointF:
+        """把手位置夹进「图片矩形 ± 一个图宽」的宽松范围。
+
+        ⚠️ 与 :meth:`pin_move` / :meth:`quad_move` 同口径：允许拖到图外
+        （往外＝拉伸），但留一个"一张图那么远"的上限，免得把手被甩到天外、
+        再也找不回来。**无上界还会放大两处内存失控**：形变后的画布按落点
+        外扩（``grow``），把手飘到几万像素外 ⇒ 画布膨胀几个数量级。
+        """
+        limit = self.image_rect()
+        offset_x, offset_y = limit.width(), limit.height()
+        return QPointF(
+            max(limit.left() - offset_x, min(pos.x(), limit.right() + offset_x)),
+            max(limit.top() - offset_y, min(pos.y(), limit.bottom() + offset_y)))
+
     def cage_move(self, index: int, pos: QPointF) -> None:
         """把第 ``index`` 个把手拖到 ``pos``（图片坐标，允许图外）。"""
         self._ensure_cage()
         if not (0 <= index < len(self._cage_handles)):
             return
         origin, _cur = self._cage_handles[index]
-        self._cage_handles[index] = (origin, QPointF(pos))
+        self._cage_handles[index] = (origin, self._clamp_cage_pos(pos))
         self._sync_cage_overlay()
         self._refresh_cage_preview()
 
@@ -1589,8 +1670,9 @@ class EditorCanvas(QGraphicsView):
         if self._cage_drag_origin is None:
             return
         _start, snapshot = self._cage_drag_origin
-        self._cage_handles = [(a, QPointF(b.x() + delta.x(), b.y() + delta.y()))
-                              for a, b in snapshot]
+        self._cage_handles = [
+            (a, self._clamp_cage_pos(QPointF(b.x() + delta.x(), b.y() + delta.y())))
+            for a, b in snapshot]
         self._sync_cage_overlay()
         self._refresh_cage_preview()
 
@@ -3103,6 +3185,10 @@ class ImageEditorDialog(QDialog):
         self._rectify_busy = False
         #: 全分辨率变换笼烘焙中（同上，防重入）
         self._cage_busy = False
+        #: 「完成」整体处理中（防**双击重入**：后台烘焙的 ``processEvents``
+        #: 会派发排队的第二次点击，三个 busy 标志各自只挡同名方法、挡不住它，
+        #: 详见 :meth:`_finish`）
+        self._finishing = False
 
         self.canvas = EditorCanvas(self)
         self.canvas.set_image(self._image)
@@ -3506,6 +3592,42 @@ class ImageEditorDialog(QDialog):
         layout.addWidget(insert_btn)
 
     # ------------------------------------------------------------ 撤销
+    def _report_bake_error(self, exc: Exception) -> None:
+        """把烘焙失败转成**用户能看懂**的提示（InfoBar），并把技术细节打到日志。
+
+        为什么不静默：烘焙失败时若什么都不说，界面看起来就是"点了没反应"
+        ——用户已经报过好几次"程序卡死/崩溃"，而这类静默失败会让他们更加
+        确信程序崩了。宁可多弹一条提示。
+
+        常见原因换成人话（``MemoryError`` 是大图下最常见的，见
+        ``_bake_puppet_work`` 的内存说明）：
+
+        - ``MemoryError``：图片太大，内存不够——建议先裁剪或缩小再处理；
+        - ``LinAlgError`` / 奇异：把图钉或把手分开一点再试；
+        - ``ValueError``：当前形状退化（如四角共线），换个操作。
+        """
+        if isinstance(exc, MemoryError):
+            title = "图片太大，处理失败"
+            content = ("这张图按全分辨率处理需要的内存超出可用量，"
+                       "操作没有生效。可以先裁剪到需要处理的区域，或缩小后重试。")
+        elif type(exc).__name__ == "LinAlgError":
+            title = "形状退化，操作没有生效"
+            content = "当前的控制点重合或共线，解不出结果。把它们分开一点再试。"
+        else:
+            title = "操作失败"
+            content = f"没有生效：{type(exc).__name__}。详细信息见日志。"
+        try:
+            import traceback
+            traceback.print_exception(type(exc), exc, exc.__traceback__)
+        except Exception:      # noqa: BLE001（日志失败绝不能连带崩掉提示）
+            pass
+        try:
+            from qfluentwidgets import InfoBar, InfoBarPosition
+            InfoBar.error(title=title, content=content, parent=self,
+                          position=InfoBarPosition.BOTTOM_RIGHT, duration=5000)
+        except Exception:      # noqa: BLE001（无宿主/组件缺失时降级为控制台）
+            print(f"[图片编辑] {title}：{exc}")
+
     def _push_undo(self) -> None:
         """把当前状态压入撤销栈（必须在任何破坏性操作**之前**调用）。"""
         if self._image is None or self._image.isNull():
@@ -3625,6 +3747,14 @@ class ImageEditorDialog(QDialog):
                 _bake_puppet_work,
                 {"image": self._image, "vertices": vertices,
                  "moved": moved, "triangles": triangles})
+        except Exception as exc:      # noqa: BLE001（要提示用户，不是吞掉）
+            # 烘焙失败（内存不足 / 方程组退化）：退回撤销点并**明确报错**。
+            # ⚠️ 绝不能静默返回——用户点了 20 秒却什么都没发生、连按钮都
+            #   没反应，只会以为程序卡了（这正是用户报过的现象）。
+            self._undo.pop()
+            self._sync_undo_buttons()
+            self._report_bake_error(exc)
+            return
         finally:
             self._deform_busy = False
         if baked is None:
@@ -3666,6 +3796,12 @@ class ImageEditorDialog(QDialog):
                 {"image": self._image,
                  "src": [(p.x(), p.y()) for p in src],
                  "dst": [(p.x(), p.y()) for p in dst]})
+        except Exception as exc:      # noqa: BLE001（要提示用户，不是吞掉）
+            # 同 _commit_deform：失败必须**明确报错**，不能静默当成取消
+            self._undo.pop()
+            self._sync_undo_buttons()
+            self._report_bake_error(exc)
+            return
         finally:
             self._cage_busy = False
         if baked is None:
@@ -3703,6 +3839,14 @@ class ImageEditorDialog(QDialog):
         try:
             with wait_cursor():
                 done = rectify_qimage(self._image, quad, mode=mode)
+        except ValueError:
+            # ⚠️ 四角退化（完全共线 / 两点重合 / 极细长）时 ``rectify_qimage``
+            #   **抛 ValueError 而不是返回 null 图**（实测三种退化输入都抛）。
+            #   这里若不接住：异常一路逸出 Qt 槽函数，且更隐蔽的是——
+            #   **上面压入的撤销点永远不会被弹出**，撤销历史从此错位
+            #   （用户按一次 Ctrl+Z 会"什么都没发生"）。必须成对处理。
+            self._undo.pop()
+            return
         finally:
             self._rectify_busy = False
         if done.isNull():
@@ -3742,15 +3886,50 @@ class ImageEditorDialog(QDialog):
         self.canvas.replace_image(self._image)
 
     def _finish(self) -> None:
-        """「完成」：未应用的形变/变换/校正/未插入的文字一并写入，再应用全部编辑。"""
-        self._commit_rectify()
-        self._commit_deform()
-        self._commit_cage()
-        self._commit_transform()
-        self._commit_text_blocks()
-        self.accept()
+        """「完成」：未应用的形变/变换/校正/未插入的文字一并写入，再应用全部编辑。
+
+        ⚠️ **必须整体防重入**：上面每一步各有一层自己的 busy 标志，但它们
+        只互相挡住**同名**方法，挡不住「完成」被整体重入。而"完成"路径上
+        一定有 ``processEvents``（后台烘焙的等待循环），它会把**排队的第二
+        次点击**派发进来 ⇒ 嵌套进第二个 ``_finish``：此时 ``_cage_busy``
+        还是 False（第一步是 ``_commit_rectify``），于是**两个 worker + 两个
+        进度对话框**同时在跑；嵌套层先 ``accept()`` 关窗，外层继续往已经
+        关闭的对话框上 ``set_image()``。快速双击「完成」就能触发。
+        """
+        if getattr(self, "_finishing", False):
+            return
+        self._finishing = True
+        try:
+            self._commit_rectify()
+            self._commit_deform()
+            self._commit_cage()
+            self._commit_transform()
+            self._commit_text_blocks()
+            self.accept()
+        finally:
+            self._finishing = False
 
     # ------------------------------------------------------------ 对外
+    def closeEvent(self, event) -> None:  # noqa: N802（Qt 回调）
+        """关闭时确保**没有在飞的后台线程**。
+
+        ⚠️ 烘焙 worker 以对话框为 ``parent``。若在它还在跑的时候对话框被
+        析构，Qt 会直接 **abort 整个进程**
+        （``QThread: Destroyed while thread is still running``）。
+        正常流程里 :func:`run_with_progress` 自己同步等线程结束，但
+        ``processEvents`` 期间用户仍可能关窗/宿主强制退出，所以这里要兜底。
+
+        同时清画布：撤销栈是**整图快照**，大图下最多 12 份（见 ``UNDO_LIMIT``），
+        关窗后必须释放，不能靠 Python GC（Qt 侧 C++ 对象不由引用计数托管）。
+        """
+        self._deform_busy = self._cage_busy = self._rectify_busy = False
+        self._finishing = True
+        try:
+            self.canvas.clear()
+        except Exception:      # noqa: BLE001（销毁期清理不该再抛）
+            pass
+        super().closeEvent(event)
+
     def result_image(self) -> QImage | None:
         """编辑结果（无图时 None；是否采纳由调用方的 exec 结果决定）。"""
         if self._image is None or self._image.isNull():

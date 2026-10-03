@@ -32,7 +32,13 @@ from qfluentwidgets.common.icon import (
     FluentIconBase, SvgIconEngine, drawSvgIcon, getIconColor,
 )
 
-__all__ = ["SvgIcon", "CustomIcon", "HELP_CIRCLE"]
+__all__ = [
+    "CustomIcon",
+    "HELP_CIRCLE",
+    "SCAN_TEXT_BOX",
+    "SvgIcon",
+    "resolve_nav_icon",
+]
 
 #: 带圆圈的问号：细圆环 + 圆头问号 + 圆点（Fluent regular 的 1.6 描边风格）。
 QUESTION_CIRCLE = (
@@ -44,6 +50,27 @@ QUESTION_CIRCLE = (
     '<path d="M9.65 9.66a2.5 2.5 0 1 1 4.7 0q0 1.34-2.35 2.34V14.2"/>'
     '</g>'
     '<circle cx="12" cy="17.5" r="1.15" fill="{c}"/>'
+    '</svg>'
+)
+
+#: 检测文本框：取景框四角 + 两条文本行（"框出页面上的文字"）。
+#:
+#: qfluentwidgets 1.11.2 内置图标里没有"扫描 / 检测框"这类图形，``SEARCH``
+#: （放大镜）会被读成"查找"。这里用取景框（scan frame）表达"检测"，
+#: 框内两条线表达"文本"。几何仍守 24×24、1.6 描边、圆头端点的内置风格，
+#: 视觉重量与其它导航条目一致。
+SCAN_TEXT_BOX = (
+    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
+    'viewBox="0 0 24 24">'
+    '<g fill="none" stroke="{c}" stroke-width="1.6" stroke-linecap="round" '
+    'stroke-linejoin="round">'
+    '<path d="M4 8.5V7a3 3 0 0 1 3-3h1.5"/>'
+    '<path d="M15.5 4H17a3 3 0 0 1 3 3v1.5"/>'
+    '<path d="M20 15.5V17a3 3 0 0 1-3 3h-1.5"/>'
+    '<path d="M8.5 20H7a3 3 0 0 1-3-3v-1.5"/>'
+    '<path d="M8 10.5h8"/>'
+    '<path d="M8 14h5"/>'
+    '</g>'
     '</svg>'
 )
 
@@ -78,7 +105,27 @@ class CustomIcon:
     """自定义图标集合：用法与 ``FluentIcon`` 一致（直接传给按钮等控件）。"""
 
     HELP_CIRCLE = SvgIcon(QUESTION_CIRCLE)
+    SCAN_TEXT_BOX = SvgIcon(SCAN_TEXT_BOX)
 
 
 #: 常用别名：``HELP_CIRCLE`` 可直接当图标对象传给 ``PushButton`` 等。
 HELP_CIRCLE = CustomIcon.HELP_CIRCLE
+SCAN_TEXT_BOX = CustomIcon.SCAN_TEXT_BOX
+
+
+def resolve_nav_icon(name: str):
+    """按 ``nav_icon`` 的字符串取导航图标对象（壳层专用入口）。
+
+    - ``"svg:名字"`` → :class:`CustomIcon` 里的自绘图（内置图标没有的图形，
+      如检测文本框的取景框）；
+    - 其它 → ``FluentIcon`` 的同名成员（历史行为，``spec.nav_icon`` 的注释
+      与各步骤的取值都按这个写）。
+
+    名字不存在时**抛 AttributeError**——图标名是代码里写死的常量，写错了
+    应该在启动第一时间炸出来，而不是渲染出一列空导航。
+    """
+    if name.startswith("svg:"):
+        return getattr(CustomIcon, name[4:])
+    from qfluentwidgets import FluentIcon
+
+    return getattr(FluentIcon, name)

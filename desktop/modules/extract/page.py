@@ -1,15 +1,27 @@
 # -*- coding: utf-8 -*-
 """「图片提取」独立模块页。
 
-**复用共用组件**（``desktop/steps``）：页头下方是横跨整幅的**大输入区**
-（:class:`~desktop.steps.source_zone.SourceZone`：拖 PDF、拖文件夹、点选），
-右栏是 :class:`StepControl`（参数 + 输出目录 + 执行/中断），执行走
-:class:`StepKernel` → ``functions.get_function("extract")``——与 CLI 同一条
-代码路径，本页不再自己写 worker 线程。
+**复用共用组件**：页头下方是横跨整幅的**大输入区**
+（:class:`~desktop.steps.source_zone.SourceZone`：拖 PDF、点选），右栏是
+:class:`~desktop.steps.control.StepControl`（参数 + 输出目录 + 执行/中断），
+执行走 :class:`~desktop.steps.kernel.StepKernel` →
+``functions.get_function("extract")``——与 CLI 同一条代码路径，本页不再
+自己写 worker 线程；这些外设全部由 :class:`StepModulePage` 收口。
 
-**独立**：不依赖任务、不依赖 ``TaskDetailPage``——用户自选 PDF 与输出目录，
-在后台线程里跑，产出的图片用现成的 ``ImageViewerWidget`` 展示。三个模块各持
-自己的一份 :class:`StepControl`，因此**互不影响**。
+**左栏是「缩略图条 + 右侧大图」一种形态走到底**（用户 2026-10-03）：
+
+- **未提取**：选完 PDF 立刻把每页渲成缩略图（缓存在
+  ``~/Documents/guji/singletask/图片提取/thumbnails/<书>/``），左栏按「第 N 页」
+  列出，点哪页右侧就按需渲那一页的**高清**大图；
+- **提取完成**：清单换成输出目录里的**提取出的图片**，直接看结果。
+
+⚠️ 此前这里是个**上下分栏**（上半 PDF 预览 + 下半提取结果），两个控件各带一套
+缩略图条与线程。现在只剩一个 :class:`ImageViewerWidget`——「所有独立任务左侧
+都是缩略图」这条要求在本页就落在这一个控件上。
+
+⚠️ **产物位置不动**：输出目录仍默认在源 PDF 旁边
+（:meth:`desktop.steps.spec.StepSpec.default_output`）。singletask 下面**只放
+缩略图缓存**，不放产物（用户 2026-10-03 明确「生成目录按照原先的」）。
 """
 
 from __future__ import annotations
@@ -18,9 +30,9 @@ import re
 from pathlib import Path
 
 from desktop.components.viewers import ImageViewerWidget
-from desktop.modules.base import ModulePage
-from desktop.steps import SourceZone, StepControl, spec_by_key
-from desktop.ui.widgets import Card
+from desktop.modules.base import StepModulePage
+from desktop.modules.thumb_source import ThumbSourceMixin
+from desktop.steps import spec_by_key
 
 #: 本页的步骤元数据（标题/副标题/面板/过滤串/默认输出后缀的唯一来源）
 _SPEC = spec_by_key("extract")
@@ -30,85 +42,64 @@ _SPEC = spec_by_key("extract")
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
 
 
-class ExtractModulePage(ModulePage):
-    """图片提取模块页：选 PDF → 调参数 → 执行 → 看结果。"""
+class ExtractModulePage(StepModulePage, ThumbSourceMixin):
+    """图片提取模块页：选 PDF → 看页缩略图 → 调参数 → 执行 → 看提取结果。"""
 
-    TITLE = _SPEC.title
-    SUBTITLE = _SPEC.subtitle
-
-    def __init__(self, parent=None):
-        """建骨架与共用步骤控件；预览区是空态，等执行完再灌结果。"""
-        super().__init__(parent)
-        self.status("尚未选择 PDF")
-
-    # ------------------------------------------------------------------ 输入
-    def _build_input(self) -> SourceZone:
-        """页头下方的**大输入区**：拖 PDF / 拖文件夹 / 点选（共用组件）。"""
-        self.zone = SourceZone(_SPEC)
-        # 归一化失败（拖进来的不是 PDF）时，用页头 toast 说话——大输入区自己
-        # 只负责发信号，"怎么说给用户听"是页面的事。
-        self.zone.rejected.connect(
-            lambda message: self.toast("warning", "这个用不上", message)
-        )
-        return self.zone
+    SPEC = _SPEC
 
     # ------------------------------------------------------------------ 预览
     def _build_preview(self) -> ImageViewerWidget:
-        """左栏：提取结果图片浏览（复用共享控件，自带缩略图条与编辑入口）。"""
+        """左栏：**缩略图条 + 大图**（复用共享控件，与其余独立任务页同一种形态）。
+
+        未提取时它是「这本 PDF 的每一页」，提取完成后是「提取出的图片」——
+        两种形态共用这一个控件，见 :meth:`_on_source_changed` 与
+        :meth:`on_result`。
+        """
         self.viewer = ImageViewerWidget(
             editable=False,
-            empty_hint="尚未提取。把 PDF 拖到上面的输入框，再点「开始提取」",
+            empty_hint="选好 PDF 之后，这里会立刻显示每一页",
         )
         return self.viewer
 
-    # ------------------------------------------------------------------ 控制
-    def _build_control(self) -> Card:
-        """右栏：整块交给共用步骤控件（面板 + 输出目录 + 执行）。"""
-        card = Card()
-        self.control = StepControl(_SPEC, zone=self.zone)
-        # StepControl 只发信号、不弹提示；页头状态行与日志区由本页负责呈现
-        self.control.status.connect(self.status)
-        self.control.log.connect(self.log)
-        self.control.source_changed.connect(self._on_source_changed)
-        self.control.finished.connect(self._on_finished)
-        self.control.failed.connect(self._on_failed)
-        card.box.addWidget(self.control)
-        return card
-
-    # ------------------------------------------------------------------ 回调
+    # ------------------------------------------------------------------ 源
     def _on_source_changed(self, source) -> None:
-        """换了源：把「PDF → 输出目录」显示到副标题上。"""
-        if source is None:
-            self.header.set_subtitle("")
-            self.status("尚未选择 PDF", "info")
-            return
-        self.header.set_subtitle(f"{Path(source).name} → {self.control.output()}")
-        self.status("已选择输入，点击「开始提取」", "info")
+        """换源：先把 PDF 的页缩略图显示出来，再走基类那套显隐/副标题。
 
-    def _on_finished(self, out_root: str) -> None:
-        """成功：把输出目录里的图片塞给预览控件。"""
-        images = sorted(
-            (
-                str(p)
-                for p in Path(out_root).rglob("*")
-                if p.suffix.lower() in _IMAGE_EXTS
-            ),
-            key=_natural_key,
-        )
+        ⚠️ **顺序要紧**：先 ``show_source``（起缩略图 pass）再 ``super()``——
+        基类会 ``source_summary()`` 并据此改副标题，缩略图那边是纯后台的，
+        两者互不依赖，但让「选完就能翻页看」这条反馈先发出去更符合直觉。
+        """
+        self.show_source(source)
+        super()._on_source_changed(source)
+
+    # ------------------------------------------------------------------ 编辑
+    def edit_effect_note(self, path: Path) -> str:
+        """编辑器改了提取出来的图片：**这张图本身就是这一步的产物**。
+
+        未提取时左栏列的是 PDF 的页缩略图（虚拟页，没有可回写的文件，右键
+        不提供「编辑图片」），所以能走到这里的只有产物图。
+        """
+        return f"已更新提取图片「{path.name}」；检测、去底色读的就是这张图。"
+
+    # ------------------------------------------------------------------ 结果
+    def on_result(self, out_root: Path, _result: dict) -> None:
+        """成功：清单换成输出目录里的图片（**从此左栏就是提取结果**）。
+
+        ``show_images`` 内部会经 ``set_images`` 退出 PDF 页模式
+        （见 :meth:`ImageViewerWidget.set_images` 的注释）——不退出的话点哪页
+        都会回到 PDF 的同一页。
+        """
+        images = collect_result_images(out_root)
         if images:
-            self.viewer.set_images(images)
+            self.show_images(images)
             self.toast("success", "提取完成", f"共生成 {len(images)} 张图片。")
         else:
             self.toast("warning", "没有产出", "输出目录里没有找到图片。")
 
-    def _on_failed(self, message: str) -> None:
-        """失败：提示（状态行与日志已由共用控件写过）。"""
-        self.toast("error", "提取失败", message)
-
     # ------------------------------------------------------------------ 收尾
     def shutdown_workers(self) -> None:
-        """收尾共用步骤控件的执行线程（壳层关窗口时会调到这里）。"""
-        self.control.shutdown()
+        """收尾查看器自己的后台线程（页缩略图 pass / 大图渲染）。"""
+        self.viewer.shutdown_workers()
         super().shutdown_workers()
 
 
@@ -118,4 +109,28 @@ def _natural_key(path: str) -> tuple:
     return tuple(int(p) if p.isdigit() else p.lower() for p in parts)
 
 
-__all__ = ["ExtractModulePage"]
+def collect_result_images(out_root: str | Path) -> list[Path]:
+    """收集提取产物图片，**同名只保留一份**。
+
+    ⚠️ 为什么要去重（用户 2026-10-03 报）：``rglob("*")`` 会把
+    ``<输出>/1.jpg``（单 PDF 时的平铺产物）**和**
+    ``<输出>/<PDF名>/images/1.jpg``（命令自己的嵌套布局残留）一起收进来，
+    同一个 PDF 跑两遍就会留下两套 ⇒ 预览里**每页出现两次**（截图里两个
+    ``1.jpg``），用户以为程序重复处理了。
+
+    规则：**顶层优先，其次按路径排序取第一个**。顶层就是"应该在那儿"的位置
+    （平铺的产物），嵌套里的是残留；同名冲突时不覆盖、不删除——**只影响
+    预览显示**，产物原样留给用户。
+    """
+    found: dict[str, Path] = {}
+    for path in Path(out_root).rglob("*"):
+        if path.suffix.lower() not in _IMAGE_EXTS or not path.is_file():
+            continue
+        key = path.name.lower()
+        previous = found.get(key)
+        if previous is None or len(path.parts) < len(previous.parts):
+            found[key] = path
+    return sorted(found.values(), key=_natural_key)
+
+
+__all__ = ["ExtractModulePage", "collect_result_images"]

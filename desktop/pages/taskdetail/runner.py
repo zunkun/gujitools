@@ -264,7 +264,20 @@ class StageRunnerMixin:
                 return
             # detect/rembg 都是逐图独立处理（不依赖顺序与命名），直接以
             # extract 输出目录为输入，不再物化 workset 副本。
-            args["input"] = str(self.store.extract_output_dir(self.task_id))
+            #
+            # ⚠️ 这里问的是「这一步的 pages 端口在哪」而不是「提取的目录在哪」
+            #    （:mod:`desktop.steps.ports` 按连线解析）：将来 BPM 把 extract
+            #    换到别的环节、或让 rembg 直接吃拼版的图，都只改 ports 的连线表，
+            #    这一行不用动。
+            pages_input = self.store.stage_input(self.task_id, stage, "pages")
+            if pages_input is None:
+                self._toast(
+                    "error", "输入未接好",
+                    f"{STAGE_LABELS.get(stage, stage)} 的图片输入没有连线，"
+                    "请检查流程配置。",
+                )
+                return
+            args["input"] = str(pages_input)
             if stage == "detect":
                 # 整页模式（area=4）：区域参数归第三步面板所有，detect 只是
                 # 借来判定「要不要加载 YOLO」，worker 侧据此整页跳过检测。

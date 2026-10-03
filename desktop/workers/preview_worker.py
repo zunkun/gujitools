@@ -464,7 +464,7 @@ class PreviewWorker(QObject):
 
     def __init__(
         self,
-        path: Path,
+        path: Path | str,
         page: int = 0,
         longest_edge: int | None = 1200,
         thumbnails: bool = False,
@@ -498,7 +498,11 @@ class PreviewWorker(QObject):
         「只把我还没有的那几页从缓存里读出来」。
         """
         super().__init__()
-        self.path = path
+        # ⚠️ 收成 Path：``run()`` 里要读 ``self.path.suffix`` 判定走 PDF 渲染
+        # 还是图片解码，传字符串会在**子线程里**抛 AttributeError，只经 failed
+        # 信号显示成「加载失败：'str' object has no attribute 'suffix'」
+        # （用户 2026-10-03 报）。在这里收口，调用点传谁都安全。
+        self.path = Path(path)
         self.page = page
         self.longest_edge = longest_edge
         self.thumbnail_edge = THUMBNAIL_EDGE

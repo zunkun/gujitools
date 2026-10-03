@@ -59,6 +59,9 @@ class RembgPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         self._boxes_provider = None  # (path_text) -> list[检测框]
         self._region_params_provider = None  # () -> (area, border)
         self._thumb_provider = None  # (path_text) -> Path | None
+        #: 宿主渲好的**整页缓存小图**：真实图路径 → 缓存路径。优先级高于
+        #: ``_thumb_provider``（见 :meth:`set_cached_thumbs`）。
+        self._cached_thumbs: dict[str, str] = {}
         self._mode = "result"  # result / original
         self._load_token = None  # 请求令牌：仅最新一次加载生效
         layout = QHBoxLayout(self)
@@ -92,7 +95,7 @@ class RembgPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
     # ------------------------------------------------------------------ API
     def set_images(
         self,
-        paths: list[Path],
+        paths: list[Path | str],
         rembg_dir: Path | None,
         boxes_provider=None,
         region_params_provider=None,
@@ -100,7 +103,9 @@ class RembgPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
     ) -> None:
         """设置图片清单与去底色目录，重建输出条目并加载显示。
 
-        paths 为源图；rembg_dir 为去底色结果目录（存在才显示结果）；
+        ``paths`` 为源图，元素允许是 ``str``（统一转 ``Path``，同
+        :meth:`desktop.components.viewers.ImageViewerWidget.set_images`）；
+        ``rembg_dir`` 为去底色结果目录（存在才显示结果）；
         各 provider 给出检测框 / 区域参数 / 缩略图来源。清单变化时重建
         缩略图条，否则按最新区域重加载当前显示。
         """
@@ -109,6 +114,7 @@ class RembgPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         self._border_mm = None
         self._thumb_provider = thumb_provider
         self._rembg_dir = rembg_dir
+        paths = [Path(p) for p in paths]
         paths_changed = list(paths) != self._paths
         self._paths = list(paths)
         self._rebuild_entries(force_strip=paths_changed)
@@ -288,7 +294,12 @@ class RembgPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         for entry in entries:
             real = entry["path"]
             spec = None
-            if self._thumb_provider:
+            # ⚠️ 缓存整页小图优先：它已经是缩放解码过的 256px 图，直接喂
+            #    ImageListWorker 比再解一遍几千像素的原图省一个数量级。
+            cached = self._cached_thumbs.get(real)
+            if cached:
+                spec = cached
+            elif self._thumb_provider:
                 spec = self._thumb_provider(
                     real, entry.get("box"), entry.get("parea", 1), border_mm,
                     boxes=entry.get("boxes"), full=entry.get("full", False),
@@ -414,6 +425,58 @@ class RembgPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
             self._load_page_thumbs(
                 [self._entries[i] for i in rows], rows=rows
             )
+
+    def set_cached_thumbs(self, mapping: dict[str, str]) -> None:
+        """告诉本控件哪些图已有缓存小图（``真实图路径 → 缓存路径``）。
+
+        用户 2026-10-03：所有独立任务左栏都显示缩略图，且统一缓存在
+        ``~/Documents/guji/singletask``。这里**只换缩略图来源**、不动条目与
+        大图——所以宿主渲好一张就能立刻刷那一条（``refresh_page``），
+        不必重建整个缩略图条。
+
+        ⚠️ 缓存里存的是**整页**小图；条目若按检测框裁了一块/合成区域
+        （area=1 的 ``-l``/``-r``），仍由 :meth:`_load_page_thumbs` 走区域合成
+        ——只是输入图从「原图」换成「已缩好的整页小图」，省掉整张解码。
+
+        ⚠️ 语义是**整体替换**（调用点给的就是完整的映射）。只更新一条请用
+        :meth:`set_cached_thumb`。
+        """
+        self._cached_thumbs = {
+            str(k): str(v) for k, v in (mapping or {}).items()
+        }
+        if not self._cached_thumbs or not self._entries:
+            return
+        rows = [
+            i for i, entry in enumerate(self._entries)
+            if entry["path"] in self._cached_thumbs
+        ]
+        if rows:
+            self._load_page_thumbs([self._entries[i] for i in rows], rows=rows)
+
+    def set_cached_thumb(self, path_text: str, cache: str) -> None:
+        """**单张**：记下它的缓存小图并只刷相关条目 + 当前大图。
+
+        与 :meth:`set_cached_thumbs` 的差别是**合并一条**而不是整体替换——
+        宿主在"某张图被编辑后重渲缩略图"这条路上只关心这一条，整体替换会
+        把其余条目的缓存映射一起丢掉（它们随后只能回落去解码原图）。
+        """
+        text = str(path_text)
+        if cache:
+            self._cached_thumbs[text] = str(cache)
+        else:
+            self._cached_thumbs.pop(text, None)
+        self.refresh_page(text)
+
+    def reload_thumb(self, path_text: str) -> None:
+        """某张图的**文件内容**被覆盖后：丢掉它的缓存映射并按新文件重取。
+
+        ⚠️ 与 :meth:`desktop.components.viewers.ImageViewerWidget.reload_thumb`
+        同一个理由：缓存文件名带**大小**，编辑改了像素尺寸就换了文件名，
+        留着旧映射会一直显示覆盖前的缩略图。
+        """
+        text = str(path_text)
+        self._cached_thumbs.pop(text, None)
+        self.refresh_page(text)
 
     # ------------------------------------------------------------------ 加载
     def _select_image(self, index: int, _path: str) -> None:

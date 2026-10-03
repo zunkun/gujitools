@@ -1506,3 +1506,98 @@ def run(ctx) -> None:
         zoom.deleteLater()
         zoom.shutdown_workers()
     app.processEvents()
+
+    # ---- 崩溃守卫（2026-10-02）：后台烘焙线程的异常/取消/收尾 ----
+    # 这几条守的都是用户报过的"程序崩溃 / 点了没反应"，且都**实测复现过**。
+    from PySide6.QtCore import QPointF as _QPointF
+    from desktop.components.viewers.image_editor import (
+        ImageEditorDialog as _Ed, _BakeWorker, run_with_progress)
+
+    def _drain(w):
+        from PySide6.QtWidgets import QApplication as _QA
+        while not w.wait(20):
+            _QA.processEvents()
+
+    # 1. worker 里抛的异常必须被**捕获**（原来它逃出 QThread.run，
+    #    result 停在 None、cancelled 是 False，被上层当成"用户取消"）
+    def _boom(_params, _progress):
+        raise MemoryError("模拟大图内存不足")
+
+    w = _BakeWorker(_boom, {})
+    w.start()
+    _drain(w)
+    ok("崩溃守卫：worker 捕获工作函数异常（不是让它逃出 QThread.run）",
+       isinstance(w.error, MemoryError),
+       f"→ error={type(w.error).__name__ if w.error else None}")
+    ok("崩溃守卫：异常时线程正常结束（不留孤儿）", w.isFinished(), "")
+
+    # 2. run_with_progress 必须**重抛**，让上层能区分"失败"与"用户取消"
+    host = _Ed()
+    try:
+        run_with_progress(host, "t", "l", _boom, {})
+        ok("崩溃守卫：失败时重抛异常（上层弹提示+退撤销点）", False, "没有抛")
+    except MemoryError:
+        ok("崩溃守卫：失败时重抛异常（上层弹提示+退撤销点）", True, "")
+    except Exception as exc:                # noqa: BLE001
+        ok("崩溃守卫：失败时重抛异常（上层弹提示+退撤销点）", False,
+           f"抛了别的 {type(exc).__name__}")
+
+    # 3. 正常完成仍要拿到结果（别被收尾的 cancel() 误标成"取消"）
+    ok("崩溃守卫：正常完成返回结果（收尾 cancel 不污染语义）",
+       run_with_progress(host, "t", "l",
+                         lambda p, pr: (pr(1, 2), "结果图")[1], {}) == "结果图", "")
+
+    # 4. progress 的取消信号：工作函数要能看见
+    wc = _BakeWorker(lambda p, pr: None, {})
+    a1 = wc.progress(1, 10)
+    wc.cancelled = True
+    a2 = wc.progress(2, 10)
+    wc.cancelled = False
+    ok("崩溃守卫：progress 取消信号（未取消 True / 取消 False）",
+       a1 is True and a2 is False, f"→ {a1}, {a2}")
+
+    # 5. closeEvent 存在且关窗不炸（缺它 ⇒ 线程在飞时析构 ⇒
+    #    QThread: Destroyed while thread is still running ⇒ abort）
+    ok("崩溃守卫：编辑器有 closeEvent（关窗时收尾在飞线程）",
+       hasattr(_Ed, "closeEvent"), "")
+    try:
+        host.close()
+        ok("崩溃守卫：关窗正常（不 abort）", True, "")
+    except Exception as exc:                # noqa: BLE001
+        ok("崩溃守卫：关窗正常（不 abort）", False, repr(exc))
+
+    # 6. 「完成」整体防重入（三个 busy 标志只挡同名方法，挡不住整体重入）
+    ed2 = _Ed()
+    calls = []
+    for name in ("_commit_rectify", "_commit_deform", "_commit_cage",
+                 "_commit_transform", "_commit_text_blocks"):
+        setattr(ed2, name, (lambda n: lambda: calls.append(n))(name))
+    ed2._finish()
+    first = list(calls)
+    ed2._finishing = True            # 模拟烘焙中 processEvents 派发第二次点击
+    ed2._finish()
+    ok("崩溃守卫：双击「完成」不重入（_finishing 挡住）",
+       calls == first, f"→ 实际 {len(calls)} 次调用")
+    ed2._finishing = False
+    ed2.deleteLater()
+
+    # 7. 校正退化**不污染撤销栈**（rectify_qimage 对退化抛 ValueError，
+    #    原来异常逸出、压入的撤销点永不弹出 ⇒ Ctrl+Z 撤销空操作）
+    img_deg = make_image(120, 90)
+    ed3 = _Ed(image=img_deg)
+    ed3.canvas.set_tool("rectify")
+    for i, pt in enumerate([(0., 0.), (120., 0.), (120., 0.), (0., 0.)]):
+        ed3.canvas.quad_move(i, _QPointF(pt[0], pt[1]))
+    before_undo = len(ed3._undo)
+    try:
+        ed3._commit_rectify()
+        ok("崩溃守卫：校正退化不抛异常（ValueError 被接住）", True, "")
+        ok("崩溃守卫：校正退化不污染撤销栈（Ctrl+Z 不撤销空操作）",
+           len(ed3._undo) == before_undo,
+           f"→ {before_undo} → {len(ed3._undo)}")
+    except Exception as exc:                # noqa: BLE001
+        ok("崩溃守卫：校正退化不抛异常（ValueError 被接住）", False,
+           f"抛了 {type(exc).__name__}: {exc}")
+    ed3.deleteLater()
+    host.deleteLater()
+    app.processEvents()

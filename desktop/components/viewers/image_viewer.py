@@ -54,6 +54,19 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         self._init_thumbs()
         self._paths: list[Path] = []
         self._empty_hint = empty_hint
+        #: PDF 页模式：``(pdf 路径, 代际号)``。非 None 时左栏是「页缩略图条」，
+        #: 大图按需从 PDF 渲那一页——而不是拿 256px 缓存小图放大（会糊）。
+        #: 见 :meth:`set_pdf_source`。
+        self._page_source: tuple[Path, int] | None = None
+        #: PDF 页模式下的页缩略图缓存目录（``None`` = 不落盘缓存）。
+        #: 供宿主/自测核对"缩略图真的落在 singletask 下"。
+        self._page_source_cache: Path | None = None
+        #: 缩略图缓存接线（:meth:`set_thumb_source` 装上）：目录、边长，
+        #: 以及「真实图片路径 → 已就绪的缓存小图」。
+        self._thumb_cache_dir: Path | None = None
+        self._thumb_cache_edge: int | None = None
+        self._thumb_cache_ready: dict[str, Path] = {}
+        self._thumb_cache_lookup = None
         # 原始尺寸提供者：(path_text) -> QSize | None。
         # 预览加载的大图可能被降采样，框坐标以原始尺寸为坐标系基准。
         self._image_size_provider = image_size_provider
@@ -116,12 +129,26 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         """方向键翻页（详情页 ←/→ 调用；联动预览刷新，见 ThumbStrip.navigate）。"""
         self.strip.navigate(forward)
 
-    def set_images(self, paths: list[Path], boxes_map: dict | None = None) -> None:
+    def set_images(self, paths: list[Path | str], boxes_map: dict | None = None) -> None:
         """设置页面清单并重建缩略图条；清单未变则仅通知宿主重读。
 
-        paths 为 Path 列表；boxes_map 预留（当前未用）。清单不变时跳过
-        重建，但仍 emit current_changed 让宿主重新读取该页检测框/参数。
+        ``paths`` 元素可以是 ``Path`` **或** ``str``——统一在这里转成 ``Path``
+        再往下传。⚠️ 这不是顺手为之：内部 ``_select_image`` 把元素直接交给
+        :class:`~desktop.workers.PreviewWorker`，而那个 worker 在 ``run()`` 里
+        要读 ``self.path.suffix``；调用方传字符串的话，异常发生在**子线程
+        run() 内部**，只经 ``failed`` 信号回到预览区显示成
+        「加载失败：'str' object has no attribute 'suffix'」（用户 2026-10-03 报）。
+        在边界一次收干净，比让每个调用点各自记得 ``str(p)``→``p`` 可靠。
+
+        ``boxes_map`` 预留（当前未用）。清单不变时跳过重建，但仍 emit
+        current_changed 让宿主重新读取该页检测框/参数。
         """
+        # ⚠️ 进图片模式先退出 PDF 页模式：``set_pdf_source`` 把清单留空、
+        #    条目标签是「第 N 页」，若不退出，:meth:`_select_image` 会把
+        #    ``1.jpg`` 当页号去 PDF 里渲第 1 页——提取完成后左栏看着有图，
+        #    点哪页都是同一页（extract 页踩过这个：上屏的是 PDF 而不是产物）。
+        self._clear_page_source()
+        paths = [Path(p) for p in paths]
         if (
             paths == self._paths
             and self.strip.count() == len(paths)
@@ -159,6 +186,202 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
             self.strip.add_page_item(Path(path).stem, str(path))
         self._load_thumbs(self.strip, paths)
         self._select_image(0, str(paths[0]))
+
+    # ------------------------------------------------------- 缩略图缓存接线
+    def set_thumb_source(
+        self, paths: list[Path], cache_dir: Path, edge: int | None = None,
+    ) -> None:
+        """清单是真实图片，但左侧缩略图走 ``cache_dir`` 下的**缓存小图**。
+
+        用户 2026-10-03：所有独立任务左侧都显示缩略图，且统一缓存在
+        ``~/Documents/guji/singletask``。清单本身**仍然是真实图片路径**——
+        右侧大图、检测框按 ``Path(path).stem`` 取键、放大弹窗的编辑回写，
+        全都指着真实文件；缓存只喂缩略图条。
+
+        实现方式是**替换缩略图来源**而不是替换清单：``_thumb_provider`` 由
+        :meth:`set_thumb_source` 装上，:meth:`set_images` 的
+        ``_load_thumbs`` 会自动走它（它本来就支持 ``thumb_provider``）。
+        """
+        self._thumb_cache_dir = Path(cache_dir)
+        self._thumb_cache_edge = edge
+        self._thumb_cache_ready: dict[str, Path] = {}
+        self._thumb_cache_worker = None
+        self.set_images(paths)
+        self._start_thumb_cache(paths)
+
+    def _start_thumb_cache(self, paths: list[Path]) -> None:
+        """后台把这批图的缩略图渲进缓存，逐张回填缩略图条。
+
+        ⚠️ **分批调度交给基类**（:meth:`ThumbsMixin._load_thumbs_chunked`，
+        首批立即、其余延后），**不要**在这里自己切两批起两个 worker：切片
+        下标要另行换算，且一批空转也会走一遍 ``set_item_icon``——那正是
+        ``worker_thread_affinity`` 自测逮到的那类"同一页被画两次"。
+
+        ⚠️ **不等它跑完就先把清单上屏**（``set_images`` 已在上一步做完）：用户
+        选完源就该立刻看到这批图（缩略图条先占位），而不是等磁盘缓存写完。
+        """
+        from desktop.workers.thumb_cache_worker import (
+            ImageThumbCacheWorker,
+            thumb_cache_file,
+        )
+
+        if not paths:
+            return
+        edge = self._thumb_cache_edge or self._decode_edge()
+        cache_dir = self._thumb_cache_dir
+        self._load_thumbs_chunked(
+            len(paths),
+            make_worker=lambda s, e: ImageThumbCacheWorker(
+                paths[s:e], cache_dir, edge=edge
+            ),
+            sink=lambda index, image, cached: self._on_thumb_cached(
+                index, image, cached
+            ),
+        )
+        # 供宿主/自测查询某张图的缓存路径
+        self._thumb_cache_lookup = lambda path: thumb_cache_file(
+            cache_dir, path
+        )
+
+    def _on_thumb_cached(self, index: int, image, cached: str) -> None:
+        """一张缓存缩略图就绪：记下路径并把缩略图条上那一条换成小图。
+
+        ⚠️ 清单已经换过（用户又选了别的源）时这一条直接跳过——否则会拿旧清单
+        的图盖到新条目上。基类的代际令牌也会挡掉上一轮的迟到回调。
+        """
+        if not (0 <= index < len(self._paths)) or index >= self.strip.count():
+            return
+        real = self._paths[index]
+        if cached:
+            self._thumb_cache_ready[str(real)] = Path(cached)
+        if image is not None and not getattr(image, "isNull", lambda: True)():
+            self.strip.set_item_icon(
+                index, image, str(real), Path(real).stem
+            )
+
+    def set_pdf_source(
+        self, pdf: Path | str, cache_dir: Path | None = None, gen: int = 0,
+    ) -> None:
+        """源是一本 **PDF**：左栏显示它的页缩略图，右侧大图按需渲高清页。
+
+        这是「图片提取」页未提取时的形态（用户 2026-10-03：「在未提取图片之前
+        是按照缩略图，单独图片显示」）——选完 PDF 就能翻页看，不必先跑一遍提取。
+
+        ⚠️ 缩略图条显示的是 256px 缓存小图，但**右侧大图不是拿小图放大**：
+        点哪页就按需从 PDF 渲那一页（``_select_image`` 见 ``_page_source``），
+        所以放大事先看得清。缩略图由宿主用
+        :class:`~desktop.modules.thumb_source.ThumbSourceMixin` 起 pass 填充，
+        本方法只负责建条目（:meth:`begin_pdf_pages`）。
+
+        ``gen`` 是代际号：换书时宿主递增，本控件据此丢弃旧书迟到的缩略图信号。
+        """
+        self._clear_page_source()
+        self._page_source = (Path(pdf), gen)
+        self._page_source_cache = Path(cache_dir) if cache_dir else None
+        self._thumb_provider = None
+        self._thumb_cache_dir = None
+        self._thumb_cache_ready = {}
+        self._paths = []
+        self.close_zoom_popup()
+        self.view.clear_image("正在加载缩略图…")
+        self.strip.clear()
+        self.strip.add_placeholder("缩略图生成中…")
+        self.info_label.setText("")
+
+    def begin_pdf_pages(self, count: int, path: str = "") -> None:
+        """PDF 页数已known：按「第 N 页」建缩略图条目并选中第一页。
+
+        ⚠️ 与 ``PdfViewerWidget._metadata_ready`` 同一道护栏：后续轮次
+        （回扫/补缺页）页数没变时**不能清空重建**——那会把已经加载好的图标
+        全丢掉，只剩占位符。
+        """
+        if self._page_source is None or count <= 0:
+            return
+        if self.strip.count() == count:
+            return
+        self.strip.clear()
+        self._paths = []
+        for page in range(count):
+            self.strip.add_page_item(f"第 {page + 1} 页", str(page))
+        self.strip.setCurrentRow(0)
+        self._select_pdf_page(0)
+
+    def set_pdf_thumb(self, gen: int, index: int, image) -> None:
+        """PDF 第 index 页的缩略图就绪：填进缩略图条第 index 条。
+
+        ``gen`` 与 :meth:`set_pdf_source` 传的一致才算数——旧书那个还在跑的
+        worker 迟到时会被丢弃，否则**旧书的页会画进新书的缩略图条**。
+        """
+        if self._page_source is None or gen != self._page_source[1]:
+            return
+        if not (0 <= index < self.strip.count()):
+            return
+        if image is None or getattr(image, "isNull", lambda: True)():
+            return
+        scaled = image.scaled(
+            ThumbStrip.ICON_SIZE, Qt.KeepAspectRatio, Qt.SmoothTransformation
+        )
+        self.strip.set_item_icon(
+            index, scaled, str(index), f"第 {index + 1} 页"
+        )
+
+    def _clear_page_source(self) -> None:
+        """退出 PDF 页模式（提取完成 → 换成提取出的图片）。"""
+        self._page_source = None
+        self._page_source_cache = None
+
+    def _select_pdf_page(self, index: int) -> None:
+        """按需渲 PDF 第 index 页的高清大图（未命中页间缓存时）。"""
+        if self._page_source is None:
+            return
+        if not (0 <= index < self.strip.count()):
+            return
+        self.strip.setCurrentRow(index)
+        self._load_token += 1
+        token = self._load_token
+        pdf = self._page_source[0]
+        self.view.clear_image(f"正在渲染第 {index + 1} 页...")
+        # ⚠️ 渲染密度在 GUI 线程先算好：worker 线程里碰 QWidget 是越界的
+        edge = self.view.preview_edge()
+        self.run_worker(
+            lambda: PreviewWorker(pdf, page=index, longest_edge=edge),
+            lambda worker, thread: (
+                connect_queued(
+                    self,
+                    worker.finished,
+                    lambda page, image, _p, t=token: (
+                        self._pdf_page_ready(t, image)
+                    ),
+                    thread,
+                ),
+                connect_queued(
+                    self,
+                    worker.failed,
+                    lambda _p, msg, t=token: self._pdf_page_failed(t, msg),
+                    thread,
+                ),
+                worker.finished.connect(thread.quit),
+                worker.failed.connect(thread.quit),
+            ),
+        )
+        self.current_changed.emit(index, str(index))
+
+    def _pdf_page_ready(self, token: int, image) -> None:
+        """PDF 高清页就绪：只有最新一次选页的结果允许上屏。"""
+        if token != self._load_token:
+            return  # 用户已经点了别的页：迟到的旧页不上屏
+        self.view.set_image(image)
+        row = max(self.strip.currentRow(), 0)
+        total = self.strip.count()
+        self.info_label.setText(
+            f"第 {row + 1}/{total} 页 · 缩略图预览"
+            if total else ""
+        )
+
+    def _pdf_page_failed(self, token: int, message: str) -> None:
+        if token != self._load_token:
+            return
+        self.view.clear_image(f"渲染失败：{message}")
 
     def apply_boxes(self, boxes: list[tuple], image_size: QSize, info_text: str = "",
                     full: bool = False, selected: int = -1) -> None:
@@ -201,6 +424,17 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
             self.boxes_edited.emit(str(path), boxes)
 
     def _thumb_for(self, path_text: str) -> Path:
+        # ⚠️ **缓存优先于 provider**：:meth:`set_thumb_source` 的缓存小图就绪后，
+        #    没必要再让宿主那个 provider 去合成区域效果（去底色页那条 provider
+        #    会现算一遍，几十页就是几十次全尺寸合成）。缓存没就绪的那张回落到
+        #    provider，最后才回落原图。
+        cached = self._thumb_cache_ready.get(path_text)
+        if cached is not None:
+            return cached
+        if self._thumb_cache_dir is not None and self._thumb_cache_lookup:
+            candidate = self._thumb_cache_lookup(path_text)
+            if candidate and Path(candidate).is_file():
+                return Path(candidate)
         if self._thumb_provider:
             spec = self._thumb_provider(path_text)
             if spec is None:
@@ -248,6 +482,11 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         令牌让**权限归最新一次选择**：递归那次会递增令牌，外层回到这里时
         发现已被顶替就直接退出，只留一个加载任务。
         """
+        # ⚠️ PDF 页模式优先：清单里存的是**页号**而不是图片路径，
+        #    交给 PreviewWorker 会去解码一个叫「0」的文件（必然失败）。
+        if self._page_source is not None:
+            self._select_pdf_page(index)
+            return
         if not self._paths or index >= len(self._paths):
             return
         self._load_token += 1
@@ -335,7 +574,25 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
 
         ``cap`` 取原图原生边长：解码到超过原生尺寸只是白放大（还会白占内存），
         所以超过就按原生渲——此时 100% 恰好是"一个原生像素对一个屏幕像素"。
+
+        ⚠️ **PDF 页模式**（图片提取页未提取时的形态）也要给得出目标：这时
+        ``_paths`` 是空的、条目上写的是**页号**，走的必须是
+        ``PreviewWorker(page=index)`` 那条渲页通道。不认这个形态的话，双击/
+        右键在那一屏上**整个没反应**（连「预览图片」都没有），而任务流程里
+        对应的「PDF 预览」标签页是能双击放大的——同一件事两处行为不一样。
+        矢量页没有可回写的图片文件，所以这一支**不给** ``edit_path``。
         """
+        if self._page_source is not None:
+            pdf = self._page_source[0]
+            total = self.strip.count()
+            if not (0 <= index < total):
+                return None
+            return ZoomTarget(
+                render=lambda edge: PreviewWorker(pdf, page=index, longest_edge=edge),
+                note=f"第 {index + 1}/{total} 页 · {pdf.name}",
+                stem=f"{pdf.stem}-{index + 1:04d}",
+                count=total,
+            )
         if not (0 <= index < len(self._paths)):
             return None
         path = self._paths[index]
@@ -398,3 +655,15 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
             self.strip.set_item_icon(
                 row, image, path_text, Path(path_text).stem
             )
+
+    def reload_thumb(self, path_text: str) -> None:
+        """某张图的**文件内容**被覆盖后：忘掉旧缓存记忆并按新文件重取缩略图。
+
+        ⚠️ 必须真的"忘掉"（:attr:`_thumb_cache_ready` 里那条）：缓存文件名带
+        **大小**（``book_key`` 含 size），编辑器改了像素尺寸就换了文件名，
+        而记忆里那条旧路径仍指向**覆盖前**的缓存文件——只刷不丢会一直显示
+        编辑前的样子（用户报「独立步骤里编辑不生效」就是这么来的）。
+        """
+        text = str(path_text)
+        self._thumb_cache_ready.pop(text, None)
+        self.refresh_page(text)

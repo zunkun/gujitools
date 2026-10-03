@@ -37,7 +37,9 @@ class Module:
 
     - ``key``：唯一路由键，同时用作 ``QStackedWidget`` 的寻址依据；
     - ``title``：导航栏文案；
-    - ``icon``：``FluentIcon`` 成员（延迟到壳层再取，避免这里 import 重物）；
+    - ``icon``：``nav_icon`` 字符串（``FluentIcon`` 成员名或 ``svg:名字`` 自绘图），
+      壳层经 ``desktop.ui.icons.resolve_nav_icon`` 解析成图标对象
+      （延迟到壳层再取，避免这里 import 重物）；
     - ``subtitle``：页头副标题；
     - ``factory``：``() -> QWidget``，**首次进入该模块时才调用**。
     """

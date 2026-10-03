@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
 
 from desktop.services.font_catalog import start_background_scan
 from desktop.services.stale_chain import stale_upstream
+from desktop.steps import ports
 from desktop.store import IMPOSITION_INDEX, IMPOSITION_STAGE, STAGES, STAGE_LABELS
 from desktop.ui import theme as T
 from desktop.ui.widgets import apply_to, bold_button
@@ -71,13 +72,15 @@ def _arrow_free_to_navigate() -> bool:
 
 
 #: 阶段 key → 主预览控件属性名（←/→ 方向键翻页的目标；
-#: 四个步骤的主预览都支持「焦点在哪里，哪里就切换」）
-_STAGE_PREVIEW_ATTRS = {
-    "extract": "extract_result_viewer",
-    "detect": "detect_viewer",
-    "rembg": "rembg_viewer",
-    "print": "print_preview",
-}
+#: 四个步骤的主预览都支持「焦点在哪里，哪里就切换」）。
+#:
+#: ⚠️ **这份映射已搬进 ``StepSpec.preview_attr``**（2026-10-03）：它是"这一步
+#: 的主预览控件是谁"，属于步骤自己的属性，不该由页面维护第二份。
+#: 现由 :func:`desktop.steps.ports.spec_for_stage` 查 spec 得到。
+def _stage_preview_attr(stage: str) -> str:
+    """当前阶段的主预览控件属性名；没有（伪步骤）返回空串。"""
+    spec = ports.spec_for_stage(stage)
+    return spec.preview_attr if spec else ""
 
 
 class TaskDetailPage(
@@ -413,7 +416,7 @@ class TaskDetailPage(
         if not _arrow_free_to_navigate():
             return False
         preview = getattr(
-            self, _STAGE_PREVIEW_ATTRS.get(self.current_stage(), ""), None
+            self, _stage_preview_attr(self.current_stage()), None
         )
         if preview is None:
             return False
@@ -507,23 +510,24 @@ class TaskDetailPage(
         # 真实步骤：执行按钮组恢复可见（拼版详情页整组藏掉，见
         # _select_imposition_detail；两种状态互斥、切换时都要还原）
         self.run_button.setVisible(True)
-        self.resume_button.setVisible(True)
-        self.cancel_button.setVisible(True)
-        # 步骤三：主按钮为「生成预览」，下方另有「提交本次任务」；
-        # 步骤四：主按钮为「生成 PDF」（按版面编辑器里的逐图坐标生成）；
-        # 其余阶段保持「执行本子任务」，提交按钮隐藏。
-        stage = STAGES[index]
-        if stage == "rembg":
-            self.run_button.setText("生成预览")
-        elif stage == "print":
-            self.run_button.setText("生成PDF")
-        else:
-            self.run_button.setText("执行本子任务")
-        self.submit_button.setVisible(stage == "rembg")
-        # 右侧面板的步骤专属区块：detect 显示「检测结果统计」，其余步骤显示
-        # 「执行记录」（detect 无表单参数，历史回填没用武之地）
-        self.detect_stats.setVisible(stage == "detect")
-        self.history_block.setVisible(stage != "detect")
+        self.followup_row.setVisible(True)
+        # 按钮文案与区块显隐**全查 spec**（不再 `if stage == ...`）：
+        # 第三步是「生成预览」+「提交本次任务」两个动作，第四步是「生成PDF」，
+        # 其余是「执行本子任务」——文案与"跑完会发生什么"绑定，所以放 spec 而
+        # 不是散在页面里（加一步 / BPM 换顺序都不必改这里）。
+        # ⚠️ 走 ``ports.spec_for_stage``：伪步骤（拼版）取不到 spec 时用默认值。
+        spec = ports.spec_for_stage(STAGES[index])
+        self.run_button.setText(
+            spec.run_button_text if spec else "执行本子任务"
+        )
+        self.submit_button.setVisible(bool(spec and spec.has_submit))
+        # 右侧面板的步骤专属区块：``spec.panel_extra`` 非空 → 显示该专属区块
+        # （detect 显示「检测结果统计」），否则显示「执行记录」
+        # （detect 无表单参数，历史回填没用武之地）。
+        self.detect_stats.setVisible(
+            bool(spec) and spec.panel_extra == "detect_stats"
+        )
+        self.history_block.setVisible(not spec or not spec.panel_extra)
         self._apply_control_width()
         self._refresh_stage_views()
         self._refresh_preview(index)

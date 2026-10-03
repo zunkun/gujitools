@@ -24,14 +24,17 @@ desktop/
   stages/               # 子进程阶段执行器：events 事件输出、detect/generic/print/rembg
   steps/                # 共用步骤组件层（与流程无关的"一个处理步骤"，见 2.3）
     spec.py             #   StepSpec：命令/面板/输入种类/后缀/默认输出/一批路径归一成源
+                         #     + inputs/outputs（**BPM 端口声明**）
     kernel.py           #   StepKernel：只认「输入 + 输出 + 参数」的进程内执行内核
     source_zone.py      #   SourceZone：大输入区（拖文件/拖文件夹/点选/清空）
     control.py          #   StepControl：把上面几件装成"选源 → 调参 → 执行/中断"
     process.py          #   StageProcess：子进程传输层（起进程/字节流/看门狗），任务管理用
+    ports.py            #   端口与连线：产物类型 / 每步的输入输出 / 落点 / 谁供给谁
   modules/              # 左侧导航的独立模块（每个条目 = 一个自包含页面，见 2.3）
     __init__.py         #   注册表 MODULES（key/标题/图标/副标题/工厂）——唯一事实来源
     shell.py            #   壳层：NavigationInterface + 页面栈（导航默认折叠）
-    base.py             #   ModulePage 基类：页头 + 整幅输入区 + 左右分栏 + 状态行
+    base.py             #   ModulePage 骨架（页头/输入区/左右分栏/状态行/日志）
+                         #     + StepModulePage（普通步骤页的共用外设，见 2.3）
     extract/page.py     #   图片提取
     rembg/page.py       #   去底色
     imposition/page.py  #   拼图（= 图片拼版）
@@ -161,9 +164,101 @@ mod = importlib.import_module("functions.crop")   # 不用 import_module(".crop"
 | --- | --- | --- |
 | `spec.py` | `StepSpec`：跑哪个命令、用哪个参数面板、输入是什么、默认输出怎么派生；**入口规则**也在这里（认哪些后缀、能不能直接收目录、用户拖进来一堆文件/文件夹到底算哪个源） | ✗ 纯逻辑 |
 | `kernel.py` | `StepKernel`：只认「源 + 输出目录 + 参数」的执行内核，跑在 QThread 里，进度/成功/失败走信号；`job_for(spec)` 是**造 job 的唯一入口** | ✓ |
-| `source_zone.py` | `SourceZone`：**大输入区**——拖文件、拖文件夹、点选、一键清空 | ✓ |
+| `source_zone.py` | `SourceZone`：**大输入区**——拖文件、拖文件夹、**「选择文件 / 选择文件夹」按钮**、已选态「更换」、一键清空；**独占模式**（页面上再没有别的控件时撑满整幅） | ✓ |
 | `control.py` | `StepControl`：把「选源 → 调参数 → 执行/中断」装成一块控件（模块页右栏就是它） | ✓ |
 | `process.py` | `StageProcess`：子进程传输层（起进程 / 转发原始字节 / 看门狗兜底） | ✓ |
+| `ports.py` | 步骤的**输入 / 输出端口** + 落点 + 连线表（BPM 换顺序只改它） | ✓ |
+
+#### 端口与连线：`desktop/steps/ports.py`（2026-10-03 补完）
+
+需求原话是「每一步都有输入，输出就可以了，后续用 bpm 处理不同的任务流程顺序」。
+此前 `StepSpec.inputs` / `outputs` 只是**声明了没人读**，任务流程仍靠"约定目录
+布局"串联——`store.tasks` 四个 `*_output_dir` 方法 + `taskdetail.runner` 里的
+`if stage == "extract" / elif "print"`。加一步或重排顺序要改这些地方，BPM 无从下手。
+
+现在这一层把"步骤怎么连"收成三张表（**纯逻辑、无 Qt**，可被 CLI/自测/将来的
+编排引擎安全导入）：
+
+| 表 | 回答什么 | 谁在用 |
+| --- | --- | --- |
+| `PORT_ARTIFACTS` | 数据"是什么"（`pdf` / `pages` / `boxes`） | BPM 按类型匹配，不认上游是谁 |
+| `STAGE_LOCATIONS` | 每个端口落在 `tasks/<id>/` 的哪里 | `store.artifact()` 及四个 `*_output_dir` |
+| `SUPPLIERS` | 谁供给哪个端口（**BPM 的边**） | `store.stage_input()` → runner / 拼版取图 |
+
+```python
+# 改连线 = 改一张表，别处不动
+ports.SUPPLIERS["print"] = {"pages": "imposition"}       # 让 PDF 直接吃拼版图
+repo.stage_input(tid, "print", "pages")                  # 自动解析成 stages/imposition
+```
+
+三处要点：
+
+- **BPM 化的前提是端口按类型匹配**：`rembg` 声明吃 `("pages", "boxes")`，
+  它不关心 `pages` 来自 `extract` 还是将来的别的步骤——这才是"解耦"。
+  ⚠️ 声明必须与事实一致：漏写一个就等于给 BPM 一条**假的边**（`rembg` 漏写
+  `boxes` 曾让依赖检查放行"先去底色后检测"的非法顺序，由
+  `tests/selftests/step_ports.py` 逮到并修掉）；
+- **运行阶段 ≠ 步骤 key**：多一个 `rembg_submit`（「提交本次任务」是 `rembg`
+  的第二个动作）。`STAGE_STEPS` 负责映射，否则第三步产物没有落点；
+- **条件连线单列**：`print` 的上游随"拼版是否生效"变化，用
+  `print_input_overrides()` 作为**运行时覆盖**传进 `resolve_input`，而不是
+  写进静态表——把运行态开关混进结构表，将来就没法枚举可能的流程了。
+
+`missing_stages(order)` 是给编排器用的**依赖检查**：按顺序列出"上游还没跑"的
+阶段。它必须放过 `SUPPLY_TASK_SOURCE`（入口阶段的输入由任务自己供给），
+否则 extract 会被永远判成不能跑。
+
+⚠️ **同一输出目录只准有一个写入者**（2026-10-03 修「程序容易跑崩溃」）：
+拼版合成有**两条**路径会打到同一个 `stages/imposition` 目录——
+
+- 后台防抖合成 `ImpositionComposeWorker`（拖版面时反复触发）；
+- 主线程同步合成 `_compose_imposition_now`（改完版面立刻点「生成 PDF」时补一轮，
+  见 `runner.py` 的 `elif stage == "print"`）。
+
+原先两条路径**无任何互斥**，写盘又是 `PIL.Image.save()` 的**就地截断重写**
+⇒ 8 线程并发实测直接抛 `PermissionError`（后者撞上前者正开着的文件句柄），
+`_sweep_stale` 还会在另一线程写到一半时把它 `unlink` 掉。现在
+`services/imposition.py` 的 `compose_doc` 整轮持 `_COMPOSE_LOCK` +
+`_save_page_atomic`（临时文件 + `os.replace`）。**两道防线各挡一类故障**：
+锁挡线程间打架，原子写挡"同一线程自己中途挂掉"留下的半张 PNG。
+新增并发路径时必须自己带锁，别直接调 `compose_page()` 落盘。
+
+⚠️ **分批解码的批次之间必须有间隔**（同一天修「cpu 跑满」）：
+`imposition/picker.py` 的 `_fill_thumbs` 原先用 `QTimer.singleShot(0, ...)`
+自我续期——0 间隔 = 事件循环一空闲就接着下一批，而每批要**整幅解码**几张几千
+像素的原图（`_source_thumb_pixmap` 不能用 `QImageReader.setScaledSize`：
+去底成品是「1bit 调色板 + tRNS」的透明 PNG，缩放解码会给出异常尺寸）。
+N 张候选图 = `ceil(N/6)` 轮零间隔重解码全程占着 GUI 主线程 ⇒ CPU 跑满、
+界面像崩了。现在批次之间走 `THUMB_GAP_MS = 150`（对齐 `ThumbsMixin.BATCH_GAP_MS`）。
+**凡是「自己续期自己」的 singleShot，一律要想清楚间隔。**
+
+#### 详情页的步骤元数据也在 spec 里（2026-10-03）
+
+连线抽完之后，任务详情页里还剩 4 条 `if stage == "..."`。它们全是
+「**这一步在详情页长什么样**」的声明性数据，于是同样搬进 `StepSpec`：
+
+| 原 if 链 | 现在查 spec 的字段 |
+| --- | --- |
+| 按钮文案 / 提交按钮显隐 / 右栏区块显隐 | `run_button_text` / `has_submit` / `panel_extra` |
+| `stage == "print"` 换控制列宽度 | `control_width` |
+| 主预览控件名（原 `_STAGE_PREVIEW_ATTRS`） | `preview_attr` |
+| 历史回填按阶段跳过不同键 | `history_skip` / `auto_fill_skip` |
+
+统一入口是 :func:`desktop.steps.ports.spec_for_stage`：
+
+```python
+spec = ports.spec_for_stage(self.current_stage())   # 处理 rembg_submit → rembg
+self.run_button.setText(spec.run_button_text)
+```
+
+⚠️ **不要用 `spec_by_key(stage)`**：`rembg_submit` 是同一步骤的第二个动作，
+直接按 key 查会拿到 `None`。护栏在 `tests/selftests/step_ports.py` 第 6 节
+（既验 spec 的值，也验页面真的读它）。
+
+**加一步现在只改两处**：`SPECS` 加一条 spec（端口 + 界面元数据）+ 一张连线表
+（谁供给谁）。页面、store、runner 里不再有任何"认得哪个 step 是谁"的代码。
+
+
 
 **`desktop/modules` —— 左侧每个条目一个自包含页面**
 
@@ -174,13 +269,178 @@ mod = importlib.import_module("functions.crop")   # 不用 import_module(".crop"
   具体页面）；
 - 模块页**惰性构造**：用户第一次点进去才建；模块之间、模块与 `TaskDetailPage`
   之间**没有 import 依赖**（由 `tests/selftests/modules_shell.py` 用 AST 静态检查）；
-- 四个模块（extract / rembg / print / imposition）**各持自己的一份** `StepControl`
-  （各自的源、输出、执行线程）⇒ 一个模块在跑，另一个模块的按钮不受影响。
+- 五个模块（extract / detect / rembg / print / imposition）**各持自己的一份**
+  `StepControl`（各自的源、输出、执行线程）⇒ 一个模块在跑，另一个模块的按钮
+  不受影响。
+
+**`StepModulePage`：普通步骤页的共用外设**（2026-10-03）。四个步骤页此前把
+`_build_input` / `_build_control` / `_on_source_changed` / `_on_failed` /
+`shutdown_workers` **逐字抄了四遍**——加第五个步骤就再抄一遍。现在这些收在
+`modules/base.py::StepModulePage`，一个步骤页只剩两件真属于自己的事：
+
+```python
+class MyPage(StepModulePage):
+    SPEC = spec_by_key("my_step")        # 1. 认领步骤元数据（页头文案也由它派生）
+
+    def _build_preview(self):            # 2. 左栏用哪个预览控件
+        self.viewer = SomeViewer()
+        return self.viewer
+
+    def on_result(self, output, result): # 3. 产物怎么上屏
+        self.viewer.set_images(...)
+```
+
+可选钩子：`source_summary()`（副标题那一行，默认 `<源> → <输出>`）、
+`source_images()`（源里的图片清单）、`on_failed()`、`idle_text()`。
+`tests/selftests/step_ports.py` 第 5 节钉住"页面里不再出现 `SourceZone(` /
+`StepControl(`"，防止又抄回来。
+
+⚠️ **拼版页有意不继承** `StepModulePage`：它的"源"是**一批图片**（要
+`collect_files` 摊平），执行也是纯函数导出而非 `StepSpec.command`，外壳对不上。
+它继续直接继承 `ModulePage`——同一条断言也钉住了这一点，别为了"统一"硬塞。
+
+**日志区与详情页同款**（2026-10-03）：`ModulePage` 的底部改用
+`components.log_panel.LogPanel`（常驻 34px 状态条 + 点击唤出浮层），此前是一块
+**常驻 76px 的裸 `QPlainTextEdit`**——空闲时白占一块位置，且与详情页两套观感。
+⚠️ 随之 `log()` 从 `appendPlainText` 改成 `append`（浮层里是 qfluentwidgets 的
+`TextEdit`）；`show_workspace()` 藏的是 **`log_panel` 本身**而不是 `log_view`，
+否则会留下一条什么都不显示的状态条。
+
+#### `singletask`：独立任务的数据区（2026-10-03）
+
+用户口径：「这个缩略图也可以放在 `~/Documents/guji/singletask` 下面，
+singletask 是独立任务，下面有各种子任务」。
+
+```
+~/Documents/guji/
+├─ tasks/          任务流程：一个 id = 一本书，四步 + runs/boxes/草稿
+├─ tasks.json
+└─ singletask/     独立任务：左侧导航那几个功能页
+   ├─ 图片提取/
+   │  ├─ thumbnails/<书名-大小-路径指纹>/0001.jpg …   PDF 的页缩略图
+   │  └─ thumbs/<边长>/<图键>.jpg …                   图片源的缩略图
+   └─ 拼图/
+      └─ edited/0001.png                              手改过的整页组合（成品口径）
+```
+
+路径入口都在 `desktop/utils/files.py`：`singletask_dir` / `singletask_thumbnails_dir`
+（PDF 按页编号那套）/ `image_thumbs_dir` + `image_thumb_cache_path`（图片源那套）/
+`book_key` / `safe_dirname`。
+
+- **只放缓存，不放产物**：模块页的输出目录仍然默认在**源文件旁边**
+  （`StepSpec.default_output`），别动用户已经习惯的产物位置（用户确认过）；
+- ⚠️ **必须按书分一层目录**（自测当场逮到）：页缩略图文件名是**页号**
+  （`0001.jpg`…），而这个目录**所有书共用**。不按书分开，A 书第 1 页会被当成
+  B 书第 1 页的命中缓存 ⇒ 翻页翻出别本书的内容。任务流程那边没这问题，因为
+  `tasks/<id>/` 一本书一个目录；
+- ⚠️ **图片源的缩略图键里带"文件大小 + 路径指纹"**（`book_key`）：图片条目名
+  五花八门（`1.jpg` / `右-01.png`…），按序号命名必然张冠李戴；⚠️ 边长必须进
+  **目录名**（`ThumbStrip.decode_edge` 随 dpr 变）。
+
+**独立任务页的左栏统一是「缩略图条 + 右侧大图」**（用户 2026-10-03：所有独立
+任务左侧都显示缩略图）。此前五个页面各写各的，现在收在两处：
+
+- `desktop/modules/thumb_source.py::ThumbSourceMixin`：`show_source()` 按源类型
+  分派（PDF → `show_pdf()`，图片/目录 → `show_images()`）。extract/detect/rembg/print
+  继承它；拼图页**不继承**（它的"源"是一批图、左栏是拼版页清单），只复用
+  `image_thumbs_dir` 这个路径事实来源；
+- `desktop/components/viewers/ImageViewerWidget` 两种形态：**图片模式**
+  （`set_images` / `set_thumb_source`）与 **PDF 页模式**（`set_pdf_source` +
+  `begin_pdf_pages(count)` + `set_pdf_thumb(gen, idx, img)`，大图按需渲高清页，
+  **不是**拿 256px 小图放大）。⚠️ `set_images` **必须先 `_clear_page_source()`**，
+  否则清单里的 `1.jpg` 会被当页号去 PDF 里渲。护栏在
+  `tests/selftests/modules_shell.py` 第 10 节（含"换一本书渲出的是它自己的页数"）。
+
+⚠️ **PDF 源走 `PreviewWorker` 的缩略图通道，图片源走 `ImageThumbCacheWorker`**：
+前者的单飞锁、按耗时让出 GIL、原子写、页边界可取消都是踩出来的，别重写。
+
+#### 独立任务页的「编辑生效链」（2026-10-03）
+
+用户口径：「**独立步骤，图片也可以编辑生效**」。编辑入口本来就是共用的
+（放大弹窗 / 右键「编辑图片」→ `ImageEditorDialog` → 原子覆盖真实文件），
+缺的是**覆盖之后界面怎么办**：此前只有任务详情页做了
+（`TaskDetailPage._on_page_image_saved`），独立页里改完，磁盘上的图确实变了，
+屏幕上的大图与缩略图却还是旧的——看着就是「编辑不生效」。
+
+现在这一半收在 `ThumbSourceMixin`（`desktop/modules/thumb_source.py`），
+由 `StepModulePage.__init__` 收尾时调 `_wire_source_edit()` 接上
+（⚠️ 用 `getattr` 探测而不是直接调用：`base.py` **不 import** thumb_source，
+守住"只依赖共享底座"）。查看器的 `image_saved` 信号到手后做三件事：
+
+1. **立即上屏**：`apply_edited_image(path, image)`（`ImageViewerWidget` 有）；
+   没这个通道的控件（`RembgPreviewWidget`）退到 `refresh_page()` 按新文件重载；
+2. **重渲缩略图缓存**：交 `ImageThumbCacheWorker` 渲那一张，渲好只刷这一条
+   （`set_cached_thumb` / `reload_thumb`）；
+3. **写一句「什么时候生效」**：`edit_effect_note(path)`，各步骤按自己的下游覆盖
+   （提取页说"检测、去底色读的就是这张图"，去底色页分"源图"与"结果"两种说法，
+   生成 PDF 页说"重新点生成 PDF 即用上"）。
+
+⚠️ **必须"忘掉旧缓存记忆"**：缓存文件名带**文件大小**（`book_key`），编辑一改
+字节数就换了键；若查看器还记着旧键那条路径，刷新出来的是**覆盖前**那张缓存
+（左栏一直是旧图）。`ImageViewerWidget.reload_thumb()` 会先 pop 掉
+`_thumb_cache_ready[path]` 再重取——这是"编辑生效"在左栏的关键一步。
+护栏：`tests/selftests/module_edit_sync.py`（同尺寸换色 / 换尺寸 / 同键 mtime
+三条路都验，并直接读左栏条目图标的像素）。
+
+**拼图独立页的四条入口**（2026-10-03 补齐）：`ImpositionViewWidget` 一直有
+`item_preview_requested` / `spread_preview_requested` / `item_edit_requested` /
+`spread_edit_requested` 四条信号，但**独立页没接线**——画布右键菜单弹得出来、
+双击也发信号，点了什么都不会发生。现在按任务流程的同一套语义接上：
+
+- 双击图上 / 空白 = 预览这张原图 / 整页左右组合（弹窗**只读**，不给 `edit_path`）；
+- 右键「编辑图片」= 不经弹窗直达编辑器：单张 → 覆盖源图 + `canvas.invalidate_image`
+  + 重渲左列缩略图；整页组合 → 合成全分辨率 → 编辑 → 存
+  `singletask/拼图/edited/<页>.png` 并把 `page["edited_file"]` 记进文档；
+  导出时 `_compose_job` 在 `compose_doc` 之上**按页盖回**这张图
+  （独立页没有任务流程那种 `stages/imposition` 落点，缓存区就是它的等价物）。
+  版面一改（`_on_items_changed` / 复位 / 删图）就作废该页手改记录。
+  ⚠️ `_page_overrides()` 的过滤口径必须与 `compose_doc` 一致（同样过
+  `normalize_page`），否则一页坏数据会让后面所有页的手改**错位到别人身上**。
 
 **「整幅大输入区」怎么来的**：`ModulePage._build_input()` 返回 `SourceZone` 时，
 它会插在页头与左右分栏之间、横跨整幅宽度；页面同时在 `_build_control()` 里
 把**同一块控件**交给 `StepControl(zone=...)`（`StepControl` 因此不重复摆一块）。
 `ModulePage` 还把**整页拖拽**转发给它——拖到页面空白处也算拖进输入区。
+
+**初始只显示输入框**（用户 2026-10-03）：`ModulePage.__init__` 收尾时调
+`show_workspace(False)`，把左右分栏与日志区一起隐藏——页面上只剩页头与
+大输入区。用户在「源变了」的回调里调 `sync_workspace_visible(source)`
+（有源就展开、清空就收回），`show_workspace` 同时把输入区切进
+`SourceZone.set_solo_mode(True)` 独占模式。
+
+⚠️ **独占模式靠 sizePolicy 长高，不靠固定高度**：`SourceZone._sync_height()`
+在独占且空态时给 `setMinimumHeight(SOLO_HEIGHT)` + `setMaximumHeight(HEIGHT_UNLIMITED)`
++ 纵向 `Expanding`。⚠️ **只改 minimumHeight 是不够的**——曾经先
+`setFixedHeight(320)`（它同时钉死 maximumHeight），后来改成"最小 320 + 可拉伸"
+却忘了放开上限，控件就永远长不大：整页只有一条 320px 的框、上下各留一片空白
+（靠截图发现，断言全绿时根本看不出来）。Qt 的 `QWIDGETSIZE_MAX` 在 PySide6
+里**没有导出**，所以用 `source_zone.HEIGHT_UNLIMITED` 这个哨兵值。
+
+⚠️ **`HEIGHT_UNLIMITED` 必须等于 `(1 << 24) - 1`，不能写 `1 << 24`**（用户
+2026-10-03 报「单独拼板界面报错」）：Qt 的硬上限 `QWIDGETSIZE_MAX` 就是
+`(1 << 24) - 1 == 16777215`，哨兵超了 1 之后 `setMaximumHeight` 会往 stderr 打
+`QWidget::setMaximumSize: The largest allowed size is (16777215,16777215)`
+并把值截断回去。功能上无害（截断后正是我们要的"不设上限"），但拼版独立页
+初始就是独占模式，每次进页面都刷这条警告，看着像报错。
+
+⚠️ **`_ModuleHeader` 钉成纵向 `Maximum`**（双保险）：页头默认 Preferred 会长大，
+一旦输入区走了固定高度，空出来的纵向空间就会被摊给页头——副标题飘到页面
+正中、输入框被挤到底边。实测只留输入区的拉伸策略时当前布局已正确，这行是
+防"将来输入区不再撑满"时退化。
+
+⚠️ **`SourceZone` 内部有一层子控件**：外框/图标/文案/清空 ✕ 是 `paintEvent`
+自绘的，但「选择文件 / 选择文件夹 / 更换」是真正的 `PushButton`（它们要 hover、
+按下、焦点态，自绘等于重写一遍交互还写不好）。几何由
+`SourceZone._relayout_buttons()` 手工摆（已选态右端一枚），空态则由
+`_empty_block_top()` 统一算：**文案 + 按钮作为一整块垂直居中**，按钮顶边 =
+`_empty_block_bottom() + BUTTON_GAP`（⚠️ 两者必须共用同一个基准，否则独占模式
+下"文案贴顶、按钮钉在框底"，中间一大片空白像两个不相干的区域——用户 2026-10-03
+截图反馈）。`_content_rect()` 只负责给整块留上下呼吸空间。加新按钮记得同步
+`_build_buttons()`、`_relayout_buttons()`、`_paint_filled()` 的右侧留白与 `__all__`。
+
+⚠️ **「选择文件夹」按钮按 `accepts_dir` 摆**：不接受目录的步骤不摆它（摆一个
+注定被拒的入口是骗人），但「选择文件」照常在——那才是它唯一的合法入口。
+「图片提取」就是这一档（`accepts_dir=False`，**PDF 只支持文件**，用户 2026-10-03）。
 
 **入口与出口的接缝（两处，都别绕过走自己那套）**：
 
@@ -193,7 +453,16 @@ mod = importlib.import_module("functions.crop")   # 不用 import_module(".crop"
 - **出口布局**：`StepSpec.flat_output` 置真的步骤（目前只有 `extract`），
   单源时由 `kernel.job_for(spec)` 装上收尾钩子，把 `<输出>/<PDF名>/**`
   **平铺到输出目录根下**再删空壳；源是**目录**（批量）时**保持**每个 PDF
-  一个子目录（否则大家的 `1.jpg` 会互相覆盖）。同名冲突时整个不动。
+  一个子目录（否则大家的 `1.jpg` 会互相覆盖）。
+  ⚠️ **同名要分两种情况**（用户 2026-10-03 报）：**内容相同** = 同一个 PDF
+  重跑产生的副本 → 当成同一份，搬上去、嵌套壳清掉；**内容不同** = 真冲突 →
+  整个嵌套树保留，绝不覆盖用户已有文件。
+  ⚠️ 少了第一条会怎样：同一个 PDF 跑两遍，根目录已有上一轮平铺的同名文件 →
+  每次都判"冲突"→ 嵌套壳**永久保留** → 输出目录躺着两套（实测 192 + 192），
+  而预览页用 `rglob` 收图 ⇒ **每页出现两次**（用户截图里两个 `1.jpg`）。
+  双保险：`extract` 模块页改用 `collect_result_images()`（同名只收一份、
+  顶层优先），即便目录里已经有历史残留也**显示正常**——去重只影响显示，
+  **不删用户的产物**。
   ⚠️ 造 job 只走 `job_for(spec)`——哪一步需要收尾只有它知道，在别处再拼一次
   `command_job` 就一定会漏（实测断过「提取 → 去底色」）。
 
