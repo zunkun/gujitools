@@ -8,6 +8,7 @@ import shutil
 import time
 from pathlib import Path
 
+from desktop.steps import ports
 from desktop.steps.spec import FLOW_STAGES, OPTIONAL_STEPS, spec_by_key
 from desktop.store.json_io import read_json, write_json
 from desktop.utils.files import copy_file_atomic
@@ -229,17 +230,31 @@ class TaskMixin:
         """某阶段的输出目录：tasks/<任务号>/stages/<阶段>。"""
         return self.task_dir(task_id) / "stages" / stage
 
+    # ---------- 产物落点（由 desktop.steps.ports 派生）----------
+    def artifact(self, task_id: str, stage: str, port: str = "pages") -> Path:
+        """某阶段某端口的产物绝对路径（**落点的唯一入口**）。
+
+        ⚠️ 这四个 ``*_output_dir`` 方法以前各自写死了路径，是"加一步要改四处"
+        的根源；现在它们都转调到这里，而落点表
+        （:data:`desktop.steps.ports.STAGE_LOCATIONS`）是唯一事实来源。
+        加一步 = 加一行表，不用动 store。
+        """
+        path = ports.artifact_path(self.task_dir(task_id), stage, port)
+        if path is None:
+            raise KeyError(f"阶段 {stage!r} 没有登记端口 {port!r} 的落点")
+        return path
+
     def extract_output_dir(self, task_id: str) -> Path:
         """提取图片直接位于 stages/extract（无 PDF 名/嵌套子目录）。"""
-        return self.stage_dir(task_id, "extract")
+        return self.artifact(task_id, "extract", "pages")
 
     def rembg_output_dir(self, task_id: str) -> Path:
         """步骤三最终图片目录（「提交本次任务」产出，print 阶段从此取图）。"""
-        return self.stage_dir(task_id, "rembg")
+        return self.artifact(task_id, "rembg_submit", "pages")
 
     def rembg_preview_output_dir(self, task_id: str) -> Path:
         """「生成预览」产出的整页去底预览图目录（中间产物，不参与 print）。"""
-        return self.stage_dir(task_id, "rembgpreview")
+        return self.artifact(task_id, "rembg", "pages")
 
     def imposition_output_dir(self, task_id: str) -> Path:
         """「图片拼版」产出的成品拼版页图目录（列表顺序即页序）。
@@ -247,11 +262,27 @@ class TaskMixin:
         拼版节点**生效**时（选择态为真且有拼版页），第四步「生成 PDF」与它的
         待打印列表一律从这里取图；否则仍从 ``rembg_output_dir`` 取。
         """
-        return self.stage_dir(task_id, "imposition")
+        return self.artifact(task_id, "imposition", "pages")
 
     def print_output_pdf(self, task_id: str) -> Path:
         """print 阶段产物 print.pdf 的完整路径。"""
-        return self.stage_dir(task_id, "print") / "print.pdf"
+        return self.artifact(task_id, "print", "pdf")
+
+    def stage_input(self, task_id: str, stage: str, port: str = "pages",
+                    imposition_active: bool = False) -> Path | None:
+        """按**连线**解析某阶段某端口的输入绝对路径。
+
+        ⚠️ 这是 BPM 化的关键入口：调用方不再问"第三步的图片在哪"，而是问
+        "这一步的 ``pages`` 输入在哪"——连线（谁供给它）由
+        :data:`desktop.steps.ports.SUPPLIERS` 决定，``imposition_active``
+        是那条唯一的**条件连线**（拼版生效时换上游）。
+        """
+        overrides = (
+            ports.print_input_overrides(True) if imposition_active else None
+        )
+        return ports.resolve_input(
+            self.task_dir(task_id), stage, port, overrides
+        )
 
     def stage_output_dir(self, task_id: str, stage: str) -> Path:
         """返回某阶段（GUI）应写入的输出目录。
@@ -259,16 +290,11 @@ class TaskMixin:
         注意 rembg 阶段返回 rembgpreview 预览目录，rembg_submit 才指向
         rembg 最终目录；print 返回 print.pdf 所在目录。
         """
-        return {
-            "extract": self.extract_output_dir(task_id),
-            # detect 只检测不落盘；若有参考缩略图放 thumbnails/detect
-            "detect": self.task_dir(task_id) / "thumbnails" / "detect",
-            # rembg 阶段的执行产物是整页去底预览图（rembgpreview）；
-            # 「提交本次任务」(rembg_submit) 才把最终图片写入 rembg。
-            "rembg": self.rembg_preview_output_dir(task_id),
-            "rembg_submit": self.rembg_output_dir(task_id),
-            "print": self.print_output_pdf(task_id).parent,
-        }[stage]
+        # detect 只检测不落盘，它的产物是坐标文件；若有参考缩略图放
+        # thumbnails/detect（那是界面缓存，不是端口产物，故不在 ports 表里）。
+        if stage == "detect":
+            return self.task_dir(task_id) / "thumbnails" / "detect"
+        return self.stage_dir(task_id, stage)
 
     def workset_dir(self, task_id: str) -> Path:
         """已废弃：检测/去底直接读 extract 输出目录，不再物化输入副本。

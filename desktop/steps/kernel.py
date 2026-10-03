@@ -28,6 +28,7 @@
 
 from __future__ import annotations
 
+import filecmp
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -183,13 +184,47 @@ def _flatten_single_pdf_output(request: StepRequest) -> None:
             continue
         target = Path(dest) / path.name
         if target.exists():
-            skip = True
-            continue
-        os.replace(path, target)
-    # ⚠️ 有没搬走的（同名冲突）就**保留整棵嵌套树**：直接 rmtree 会把那些
+            # ⚠️ **同名要分两种情况**（用户 2026-10-03 报）：同一个 PDF 重跑
+            #    一次，根目录已经有上一轮平铺出来的同名文件，而这一轮刚生成的
+            #    嵌套那份**内容完全一样**。当成"冲突"就永远 skip → 嵌套树
+            #    永久保留，于是输出目录里躺着两套（平铺 192 + 嵌套 192），
+            #    预览页用 rglob 收图 ⇒ **每页出现两次**（截图里两个 1.jpg）。
+            #    只有内容真的不同才算冲突，那时才保留嵌套树不覆盖。
+            if not _same_file(path, target):
+                skip = True
+                continue
+        try:
+            os.replace(path, target)
+        except OSError:
+            # 目标被别的程序占用（正被看图软件打开）等：换 copy + 删源，
+            # 不因为搬不动就把整棵嵌套树留着
+            try:
+                shutil.copy2(path, target)
+            except OSError:
+                skip = True
+                continue
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+    # ⚠️ 有没搬走的（真同名冲突）就**保留整棵嵌套树**：直接 rmtree 会把那些
     #    仍在嵌套里的文件一起删掉——那是用户的产物，宁可多留一层。
     if not skip:
         shutil.rmtree(nested, ignore_errors=True)
+
+
+def _same_file(left: Path, right: Path) -> bool:
+    """两个文件内容是否一致（用于判断"重跑产生的同名副本"）。
+
+    先比大小再比内容：绝大多数情况下大小不同就能立刻判否，不必整文件读进
+    内存。``shallow=False`` 走真实的逐字节比较。
+    """
+    try:
+        if left.stat().st_size != right.stat().st_size:
+            return False
+        return filecmp.cmp(str(left), str(right), shallow=False)
+    except OSError:
+        return False
 
 
 def job_for(spec) -> StepJob | None:

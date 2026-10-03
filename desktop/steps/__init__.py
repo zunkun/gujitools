@@ -20,6 +20,11 @@
    :class:`~desktop.steps.control.StepControl`：把「选源 → 调参数 → 执行/中断」
    这条操作链组装成一块可直接塞进卡片、也可只借它大输入区的控件。
 
+   ⚠️ **「点选」走的是资源管理器的选择对话框**（用户 2026-10-03：「能否底部
+   不设置选择图片或者目录的弹窗」⇒ 去掉了点空白处那个两选项小菜单），
+   **不是**"另开一个资源管理器窗口再监听选中项"—— 用户明确纠正过这两者的
+   区别，详见 :class:`SourceZone` 的类 docstring。
+
 谁在用：
 
 - **左侧导航的三个模块**（``desktop/modules/{extract,rembg,imposition}``）：
@@ -27,6 +32,11 @@
 - **任务详情页**（``desktop/pages/taskdetail``）：把子进程传输层
   （:mod:`desktop.steps.process`）交给这一层，任务管理不再自己攥着
   QProcess/看门狗/事件解析那套代码。
+
+4. **输入输出怎么连** —— :mod:`desktop.steps.ports`：产物类型、每步的输入/输出
+   端口、产物落点、以及"谁供给谁"的连线表。它是将来 BPM 换顺序/换连线的
+   **唯一改动点**（原先这些知识散在 ``desktop.store.tasks`` 的四个
+   ``*_output_dir`` 方法与 ``taskdetail.runner`` 的 if-else 里）。
 
 ⚠️ 本层**不 import** ``desktop.modules.*`` 与 ``desktop.pages.*``：依赖方向
 是单向的（调用方 → 本层），否则又绕回"改一个步骤要动三处"的老问题。
@@ -79,16 +89,25 @@ _LAZY = {
     "StageProcess": ("desktop.steps.process", "StageProcess"),
     "StepControl": ("desktop.steps.control", "StepControl"),
     "SourceZone": ("desktop.steps.source_zone", "SourceZone"),
+    # ⚠️ 端口模块走**模块**惰性导出（不是逐个名字）：它是一整套配套的表与
+    #    函数，调用方一律 ``from desktop.steps import ports`` 整体取用，
+    #    逐个转发只会让 __all__ 与 _LAZY 越滚越长（见 __getattr__ 的处理）。
+    "ports": ("desktop.steps.ports", None),
 }
 
 
 def __getattr__(name: str):
-    """按需导入（PEP 562），并把结果缓存进 globals。"""
+    """按需导入（PEP 562），并把结果缓存进 globals。
+
+    ``_LAZY`` 的值是 ``(模块名, 属性名)``；**属性名为 ``None`` 时返回整个模块**
+    （见 ``ports`` 那条）——Python 的模块对象本就是合法的导出值。
+    """
     entry = _LAZY.get(name)
     if entry is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
 
-    value = getattr(importlib.import_module(entry[0]), entry[1])
+    module = importlib.import_module(entry[0])
+    value = module if entry[1] is None else getattr(module, entry[1])
     globals()[name] = value
     return value

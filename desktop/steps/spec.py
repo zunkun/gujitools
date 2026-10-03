@@ -61,7 +61,9 @@ class StepSpec:
     - ``title``：**模块页头大标题 + 左侧导航条目**的名字（"图片提取"）；
     - ``subtitle``：**模块页头副标题**（"选择一个 PDF（…），把每页渲染成图片"）；
     - ``nav_tooltip``：**导航条目悬停提示**（空则用 ``subtitle``）；
-    - ``nav_icon``：**导航条目图标**（``FluentIcon`` 成员名）；
+    - ``nav_icon``：**导航条目图标**（``FluentIcon`` 成员名；或 ``svg:名字``
+      引用 ``desktop.ui.icons.CustomIcon`` 的自绘图——内置图标没有的图形），
+      由 ``desktop.ui.icons.resolve_nav_icon`` 统一解析；
     - ``panel``：参数面板**类名**（``desktop.components.panels`` 里的名字）；
       ``None`` 表示这一步没有可调参数；
     - ``pick_label``：源选择对话框的标题（"选择 PDF" / "选择图片"）；
@@ -98,6 +100,14 @@ class StepSpec:
     ``short``         流程步骤条上的短名（空则用 ``stage_title``）
     ===============  ==========================================
 
+    **详情页侧**（``run_button_text`` / ``has_submit`` / ``control_width`` /
+    ``preview_attr`` / ``panel_extra`` / ``history_skip`` / ``auto_fill_skip``）：
+    "这一步在任务流程详情页里长什么样"。⚠️ 这些**曾经散在页面的 if-else 里**
+    （``page._select_stage`` 按 stage 改按钮文案与区块显隐、``view.
+    _apply_control_width`` 按 stage 换宽度、``history._history_fill_keys``
+    按 stage 跳过不同键）——加一步就得改那几处 if，BPM 换顺序更是无从下手。
+    现在都是**声明**：页面只查表，不认哪个 step 是谁。
+
     **流程侧**：
 
     - ``role``：``"stage"`` = 默认流程主链上的一步；``"optional"`` = 流程条上的
@@ -106,10 +116,12 @@ class StepSpec:
     - ``nav``：这一步**有没有独立的模块页**、要不要进左侧导航。``False`` 表示
       还没抽出来——壳层据此不过去建页面（``desktop.modules.MODULES`` 会把它
       过滤掉），免得出现"清单里有、页面不存在"；
-    - ``inputs`` / ``outputs``：**BPM 端口预留**——将来自定义流程要靠它们把步骤
-      连起来。⚠️ 现在**还没接线**：任务流程走的仍是"约定目录布局"（提取的输出
-      目录就是去底色的输入目录）。先声明出来，是为了让端口模型落地时不用回头
-      改五条 spec。
+    - ``inputs`` / ``outputs``：**BPM 端口**——这一步消费/产出哪些产物
+      （``pages`` 图片 / ``boxes`` 检测框 / ``pdf``）。⚠️ **已接线**（2026-10-03
+      补完）：:mod:`desktop.steps.ports` 按这两个字段 + 它的连线表把步骤连起来，
+      任务流程不再靠"约定目录布局"。**声明必须与事实一致**——端口模型靠它做
+      依赖检查，写漏一个就等于给 BPM 一条假的边（``rembg`` 漏写 ``boxes`` 就是
+      这样被 ``tests/selftests/step_ports.py`` 逮到的）。
     """
 
     key: str
@@ -140,6 +152,24 @@ class StepSpec:
     nav: bool = False
     nav_tooltip: str = ""
     nav_icon: str = ""
+    # ---- 任务流程详情页的"这一步长什么样"（2026-10-03）----
+    #: 详情页**主动作按钮**文案。与 ``run_label``（独立模块页的按钮）**有意不同**：
+    #: 流程里点它跑的是"本子任务"这一环节，模块页点它跑的是整个功能。
+    run_button_text: str = "执行本子任务"
+    #: 有没有「提交本次任务」这类**次动作按钮**（目前只有去底色有：
+    #: 先生成预览、用户确认后才提交最终图）。
+    has_submit: bool = False
+    #: 右栏控制列的宽度区间（px）。第四步参数多，要更宽的编辑区。
+    control_width: tuple[int, int] = (340, 440)
+    #: 详情页**主预览控件**的属性名（←/→ 翻页、方向键导航都按它寻址）。
+    preview_attr: str = ""
+    #: 右栏「步骤专属区块」的名字（空 = 显示默认的「执行记录」）。detect 无表单
+    #: 参数、历史回填没用武之地，改显「检测结果统计」。页面按名字取控件。
+    panel_extra: str = ""
+    #: 历史回填（**手动挑历史 + 自动回填都**）要跳过的键。
+    history_skip: tuple[str, ...] = ()
+    #: **仅自动回填**额外跳过的键（手动挑历史仍原样回填）。
+    auto_fill_skip: tuple[str, ...] = ()
     #: 进度计量的**单位**（"页"/"张"/空）。独立功能页的进度条按它写
     #: "完成 12 页"这类收尾文案（``ProgressRow`` 的 ``noun``）。
     #: ⚠️ 与 ``input_noun``（入口文件的称呼，"PDF"/"图片"）**不是一回事**：
@@ -270,8 +300,11 @@ class StepSpec:
         规则（顺序即优先级）：
 
         1. 混着文件夹进来时，只要 ``accepts_dir`` 就**取第一个文件夹当源**
-           （拖一个文件夹进来是最自然的批量用法）；不接受目录的步骤则改为
-           从文件夹里挑出符合后缀的文件继续走第 3 步；
+           （拖一个文件夹进来是最自然的批量用法）；**不接受目录的步骤直接
+           拒绝**（``accepts_dir=False``，如"PDF 只支持文件"的图片提取）——
+           别在这里"从文件夹里挑出符合后缀的文件"替用户做主：挑到哪几个、
+           为什么是这几个，用户在界面上看不见，而下一步的产物又依赖这个
+           选择，错了要等到看结果时才发现；
         2. 文件夹**顶层没有**本步骤能用的文件时，往下钻一~两层（见
            :meth:`nested_listing`）：恰好一个子目录装着 → 自动指向它并说明；
            多个 → 拒绝并让用户挑一个（混着处理会把不同书的页拼在一起）；
@@ -286,6 +319,14 @@ class StepSpec:
 
         folders = [p for p in candidates if p.is_dir()]
         files = [p for p in candidates if p.is_file()]
+
+        if folders and not self.accepts_dir:
+            names = "、".join(p.name for p in folders[:3])
+            more = "…" if len(folders) > 3 else ""
+            return None, (
+                f"本步骤只支持{self.input_noun()}**文件**，不支持文件夹"
+                f"（收到：{names}{more}）"
+            )
 
         if folders and self.accepts_dir:
             chosen = folders[0]
@@ -433,8 +474,10 @@ SPECS: tuple[StepSpec, ...] = (
         short="提取",
         nav=True,
         nav_tooltip="从 PDF 提取页面图片",
-        nav_icon="ZIP_FOLDER",
-        subtitle="选择一个 PDF（或一整个 PDF 文件夹），把每页渲染成图片",
+        # ⚠️ 别用 ZIP_FOLDER：那是"压缩包/解压"，用户会以为这步跟压缩文件
+        #    有关；这步的真实语义是"从 PDF 把图导出来"。
+        nav_icon="IMAGE_EXPORT",
+        subtitle="选择一个 PDF，把每页渲染成图片",
         panel="ExtractPanel",
         pick_label="选择 PDF",
         # ⚠️ 单位是"页"不是"PDF"：这一步处理的是 PDF 里的每一页。
@@ -445,9 +488,22 @@ SPECS: tuple[StepSpec, ...] = (
         output_suffix="_提取",
         inputs=("pdf",),
         outputs=("pages",),
+        preview_attr="extract_result_viewer",
+        # ⚠️ ``pages`` 是「续跑」时按缺失页**派生**的一次性参数，不是用户意图：
+        #    自动回填它会让下一次点执行只跑那一小段页码（用户看到"只提取了一半"）。
+        #    只在**自动**回填时跳过；手动挑历史仍原样回填（那是"照那次再跑一遍"）。
+        auto_fill_skip=("pages",),
         drop_icon="DOCUMENT",
         drop_title="把 PDF 拖到这里",
-        drop_hint="也可以点这里选 PDF 或整个文件夹（文件夹里全部 PDF 一起提）",
+        drop_hint="也可以点这里选择一个 PDF 文件",
+        # ⚠️ **只支持文件**（用户 2026-10-03：「PDF 只支持文件」）。
+        #    extract 之前允许整个文件夹：里面每个 PDF 各自一个子目录摆图。
+        #    但那与本模块「选一个 PDF → 看它的每一页」的用法不符——一次拖一
+        #    摞书进来，用户在预览里根本分不清哪张图属于哪本书，而单 PDF 的
+        #    平铺收尾（`flat_output`）本来也只对"一个 PDF"设计。
+        #    `accepts_dir=False` 同时让大输入区不摆「选择文件夹」按钮
+        #    （摆一个注定被拒的入口是骗人，见 source_zone._build_buttons）。
+        accepts_dir=False,
     ),
     # ---- 流程主链 · 第 2 步 ----
     StepSpec(
@@ -458,7 +514,10 @@ SPECS: tuple[StepSpec, ...] = (
         short="检测",
         nav=True,
         nav_tooltip="检测每页的内容框并导出坐标",
-        nav_icon="SEARCH",
+        # ⚠️ 别用 SEARCH：放大镜会被读成"查找"。这步是"框出页面内容"，
+        #    内置图标没有这个图形，用自绘的取景框 + 文本行（``svg:`` 前缀 →
+        #    ``desktop.ui.icons.CustomIcon``，壳层经 resolve_nav_icon 解析）。
+        nav_icon="svg:SCAN_TEXT_BOX",
         subtitle="拖入图片或图片文件夹，检测每页的内容框；可在图上手绘修正后导出坐标 JSON",
         panel="DetectPanel",
         pick_label="选择图片",
@@ -467,6 +526,9 @@ SPECS: tuple[StepSpec, ...] = (
         output_suffix="_检测",
         inputs=("pages",),
         outputs=("boxes",),
+        preview_attr="detect_viewer",
+        # detect 无表单参数、历史回填没用武之地，右栏改显「检测结果统计」。
+        panel_extra="detect_stats",
         drop_icon="PHOTO",
     ),
     # ---- 流程主链 · 第 3 步 ----
@@ -479,7 +541,9 @@ SPECS: tuple[StepSpec, ...] = (
         short="去底",
         nav=True,
         nav_tooltip="整图去底色 / 二值化 / 保留印章",
-        nav_icon="PALETTE",
+        # ⚠️ 别用 PALETTE：调色板会被读成"调色/取色"；这步的主语义是
+        #    "把底色擦掉"（二值化/保留印章是它的模式），橡皮擦更直白。
+        nav_icon="ERASE_TOOL",
         subtitle="拖入图片或图片文件夹，批量去底色 / 二值化（可保留印章）",
         panel="RembgPanel",
         pick_label="选择图片",
@@ -487,8 +551,21 @@ SPECS: tuple[StepSpec, ...] = (
         run_label="开始去底色",
         file_filter=IMAGE_FILTER,
         output_suffix="_去底",
-        inputs=("pages",),
+        # ⚠️ **两个输入端口**：页面图来自 extract，检测框来自 detect。
+        #    此前这里只写了 ("pages",) —— 因为 ports 那层还没接线，写全也没有
+        #    任何地方读它，于是"去底色依赖检测框"这件事在声明上是缺失的
+        #    （2026-10-03 由 tests/selftests/step_ports.py 的 BPM 依赖检查发现：
+        #    把 rembg 提到 detect 前面跑，依赖检查没能拦住它）。
+        #    事实依据：任务流程第三步的预览用 ``boxes_provider=self._detect_boxes_for``
+        #    叠框，且 area/border 依框而变（``docs/functions/rembg.md``）。
+        inputs=("pages", "boxes"),
         outputs=("pages",),
+        preview_attr="rembg_viewer",
+        # ⚠️ 这一步有**两个动作**：先「生成预览」（跑一步看效果），再
+        #    「提交本次任务」（用户确认后才把最终图落到 stages/rembg 供下一步）。
+        #    所以按钮文案不是通用的「执行本子任务」，且多一个提交按钮。
+        run_button_text="生成预览",
+        has_submit=True,
         drop_icon="PHOTO",
         drop_title="把图片拖到这里",
         drop_hint="也可以点这里选图片或整个文件夹（一张、一批都行）",
@@ -513,6 +590,13 @@ SPECS: tuple[StepSpec, ...] = (
         output_suffix="_成书",
         inputs=("pages",),
         outputs=("pdf",),
+        preview_attr="print_preview",
+        run_button_text="生成PDF",
+        # 第四步参数最多（版面/页码/字体…），右栏要更宽才不挤。
+        control_width=(400, 580),
+        # pdf_name / title_text 始终从源 PDF 名派生：历史里存的是旧值或用户
+        # 曾经填的自定义名，**不应覆盖**当前任务的规则值（手动挑历史也不回填）。
+        history_skip=("pdf_name", "title_text"),
         drop_icon="PHOTO",
         drop_title="把成品图拖到这里",
         drop_hint="也可以点这里选图片或整个文件夹（页序按文件名排序）",
@@ -527,7 +611,10 @@ SPECS: tuple[StepSpec, ...] = (
         short="拼版",
         nav=True,
         nav_tooltip="多页图片拼版与版式调整",
-        nav_icon="PHOTO",
+        # ⚠️ 别用 PHOTO：一张照片表达不出"多页拼成一版"，而且 PHOTO 同时是
+        #    好几个步骤大输入区的图标，导航里再用就没辨识度。TILES 的
+        #    四块平铺正是"多页拼版"的形状。
+        nav_icon="TILES",
         subtitle="拖入一批图片，拼版后导出成品图（每两张一页）",
         panel="desktop.components.imposition:ImpositionPanel",
         pick_label="选择图片",
