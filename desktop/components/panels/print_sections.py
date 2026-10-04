@@ -22,11 +22,13 @@ from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 from qfluentwidgets import CaptionLabel, CheckBox, PushButton
 from qfluentwidgets import FluentIcon as FIF
 
-from desktop.components.common.safecomment import SafeSpinBox
+from desktop.components.common.safecomponents import SafeSpinBox
 from desktop.components.panels.print_inset import PrintInsetMixin
 from desktop.components.panels.print_nodes import NodeListWidget
 from desktop.components.panels.print_params import (
-    DIRECTIONS, PAGE_NUMBER_FORMATS, PAPER_SIZES,
+    DIRECTIONS,
+    PAGE_NUMBER_FORMATS,
+    PAPER_SIZES,
 )
 from desktop.services.font_catalog import catalog
 from desktop.ui.widgets import combo_box
@@ -63,9 +65,7 @@ class PrintSectionsMixin(PrintInsetMixin):
 
     def _build_margin_section(self, root: QVBoxLayout) -> None:
         form = self._section(root, "页边距（mm）")
-        hint = CaptionLabel(
-            "格式：20（四边）/ 20,30（上下,左右）/ 20,30,25,35（上,右,下,左）"
-        )
+        hint = CaptionLabel("格式：20（四边）/ 20,30（上下,左右）/ 20,30,25,35（上,右,下,左）")
         hint.setWordWrap(True)
         form.addRow(hint)
         self.page_margins = self._line_edit("如 20 或 20,30 或 20,30,25,35")
@@ -109,9 +109,7 @@ class PrintSectionsMixin(PrintInsetMixin):
         nl = QVBoxLayout(nodes_box)
         nl.setContentsMargins(0, 0, 0, 0)
         nl.setSpacing(4)
-        nodes_hint = CaptionLabel(
-            "标题切换：页码 ≥ 触发页码 时使用对应标题；侧别默认左页"
-        )
+        nodes_hint = CaptionLabel("标题切换：页码 ≥ 触发页码 时使用对应标题；侧别默认左页")
         nodes_hint.setWordWrap(True)
         nl.addWidget(nodes_hint)
         # 逐行堆叠的普通控件：高度由行数撑开，无表头、无内部滚动条
@@ -159,8 +157,7 @@ class PrintSectionsMixin(PrintInsetMixin):
         # 页码字体独立于标题：常见搭配是「书名仿宋、页码黑体」
         self.page_number_font = self._make_combo(catalog().choices())
         self.page_number_font.setToolTip(
-            "页码用哪种字体；默认为「自动」（仿宋优先，缺则逐级降级）。"
-            "与标题字体互不影响。"
+            "页码用哪种字体；默认为「自动」（仿宋优先，缺则逐级降级）。" "与标题字体互不影响。"
         )
         num_size_box, self.page_number_font_size = self._spin_with_unit(200, "pt（磅）")
         self.page_number_color, page_number_color_btn = self._color_row()
@@ -173,8 +170,7 @@ class PrintSectionsMixin(PrintInsetMixin):
         # 程序不做任何补全，免得用户想要紧凑排版时被强行塞空格。
         self.page_number_format = self._make_combo(PAGE_NUMBER_FORMATS)
         self.page_number_format.setToolTip(
-            "页码数字的样式：中文数字（五）、阿拉伯数字（5）、"
-            "干支（甲子，按六十甲子循环）"
+            "页码数字的样式：中文数字（五）、阿拉伯数字（5）、" "干支（甲子，按六十甲子循环）"
         )
         self.page_number_prefix = self._line_edit("数字前的字，如「第」")
         self.page_number_suffix = self._line_edit("数字后的字，如「頁」")
@@ -190,7 +186,5 @@ class PrintSectionsMixin(PrintInsetMixin):
 
     def _build_filter_section(self, root: QVBoxLayout) -> None:
         form = self._section(root, "过滤")
-        self.skip_pages = self._line_edit(
-            "逗号分隔的文件名（不含扩展名），如 cover,menu"
-        )
+        self.skip_pages = self._line_edit("逗号分隔的文件名（不含扩展名），如 cover,menu")
         self._add_row(form, "跳过页面", self.skip_pages)

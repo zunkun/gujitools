@@ -36,7 +36,7 @@ from qfluentwidgets import (
 )
 from qfluentwidgets import FluentIcon as FIF
 
-from desktop.components.common.safecomment import SafeSpinBox
+from desktop.components.common.safecomponents import SafeSpinBox
 from desktop.components.panels.print_params import parse_color
 from desktop.components.panels.print_sections import PrintSectionsMixin
 from desktop.components.panels.print_text_layout import PrintTextLayoutMixin
@@ -183,9 +183,7 @@ class PrintFormMixin(PrintSectionsMixin, PrintTextLayoutMixin):
         return edit
 
     @staticmethod
-    def _spin_with_unit(
-        maximum: int = 200, unit: str = "pt"
-    ) -> tuple[QWidget, SafeSpinBox]:
+    def _spin_with_unit(maximum: int = 200, unit: str = "pt") -> tuple[QWidget, SafeSpinBox]:
         """数字输入组件 + 后方单位标题，返回 (容器, SafeSpinBox)。"""
 
         box = QWidget()
@@ -236,10 +234,7 @@ class PrintFormMixin(PrintSectionsMixin, PrintTextLayoutMixin):
         # 不加 ToolButton 选择器——qfluent 的 ToolButton 自定义控件样式表解析器
         # 不识别类选择器形式，会输出 "Could not parse stylesheet" 警告；
         # 直接设属性让它继承 QToolButton 的通用样式即可。
-        btn.setStyleSheet(
-            f"background-color:{rgb}; border:1px solid #d0d0d0; "
-            "border-radius:4px; padding:2px;"
-        )
+        btn.setStyleSheet(f"background-color:{rgb}; border:1px solid #d0d0d0; " "border-radius:4px; padding:2px;")
 
     # ------------------------------------------------------------------ 节点行
     # 节点行是普通控件（见 print_nodes.NodeListWidget）：高度由行数自然撑开，

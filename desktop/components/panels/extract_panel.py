@@ -6,7 +6,7 @@ from __future__ import annotations
 from PySide6.QtWidgets import QFormLayout
 from qfluentwidgets import CheckBox, LineEdit
 
-from desktop.components.common.safecomment import SafeSpinBox
+from desktop.components.common.safecomponents import SafeSpinBox
 from desktop.components.panels.base import StagePanel, default_for
 from desktop.components.panels.params_spec import DEFAULTS, EXTRACT_EXTS
 from desktop.ui.widgets import combo_box
@@ -22,9 +22,7 @@ class ExtractPanel(StagePanel):
 
     stage = "extract"
     title = "提取图片"
-    description = (
-        "将源 PDF 每页渲染为图片。左侧可切换「PDF 预览 / 提取结果」两个标签页。"
-    )
+    description = "将源 PDF 每页渲染为图片。左侧可切换「PDF 预览 / 提取结果」两个标签页。"
 
     def _build_form(self, form: QFormLayout) -> None:
         d = DEFAULTS[self.stage]
@@ -86,4 +84,3 @@ class ExtractPanel(StagePanel):
         self.ext.setCurrentText(str(default_for(parameters, d, "ext")))
         self.quick.setChecked(bool(default_for(parameters, d, "quick")))
         self.pages_edit.setText(str(parameters.get("pages") or ""))
-

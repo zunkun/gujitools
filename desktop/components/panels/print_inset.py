@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from qfluentwidgets import CaptionLabel, CheckBox
 
-from desktop.components.common.safecomment import SafeDoubleSpinBox
+from desktop.components.common.safecomponents import SafeDoubleSpinBox
 from desktop.components.panels.params_spec import INSET_SPIN_VIEW_VALUE
 
 
@@ -149,9 +149,7 @@ class PrintInsetMixin:
         form.addRow(block["enabled"])
         which = self._inset_key(block)
         _, cross_label = self._inset_cross(which)
-        self._add_row(
-            form, f"{self._inset_side_label(which)}：", block["widgets"]["side"]
-        )
+        self._add_row(form, f"{self._inset_side_label(which)}：", block["widgets"]["side"])
         self._add_row(form, f"{cross_label}：", block["widgets"]["cross"])
         form.addRow(block["hint"])
         self._refresh_inset_hint(block["what"])  # 首帧先按"未启用"填一次释义
@@ -175,8 +173,7 @@ class PrintInsetMixin:
         if not block["enabled"].isChecked():
             return None
         return [
-            float(block["spins"].get(key).value()) if key in block["spins"] else 0.0
-            for key, _label in self.INSET_SIDES
+            float(block["spins"].get(key).value()) if key in block["spins"] else 0.0 for key, _label in self.INSET_SIDES
         ]
 
     def _set_inset_values(self, which: str, values) -> None:
@@ -228,7 +225,4 @@ class PrintInsetMixin:
         # ⚠️ 「距左右」说的是**文字轮廓边缘**到纸边的距离（不是落点/字格左缘）：
         # 右页的文字往右占一个块宽，落点会自动往左退一格来兑现这个值，
         # 所以左、右两页看到的是**对称**的白边（见 page_layout._text_anchor）。
-        block["hint"].setText(
-            f"文字轮廓距左右纸边各 {side:g}mm｜{cross_label} {cross:g}mm"
-            "（可直接压在图片上）"
-        )
+        block["hint"].setText(f"文字轮廓距左右纸边各 {side:g}mm｜{cross_label} {cross:g}mm" "（可直接压在图片上）")

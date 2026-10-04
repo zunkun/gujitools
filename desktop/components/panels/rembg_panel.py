@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QFormLayout, QHBoxLayout, QWidget
 from qfluentwidgets import CheckBox, LineEdit, Slider
 
 from core.command_spec import effective_border_default
-from desktop.components.common.safecomment import SafeSpinBox
+from desktop.components.common.safecomponents import SafeSpinBox
 from desktop.components.panels.base import StagePanel, default_for
 from desktop.components.panels.params_spec import DEFAULTS, REMBG_AREAS, REMBG_TYPES
 from desktop.ui.widgets import combo_box
@@ -26,8 +26,7 @@ class RembgPanel(StagePanel):
     stage = "rembg"
     title = "图片去底色"
     description = (
-        "整图自动二值化/灰度化去底，可保留印章。"
-        "「区域模式」与「边距」决定显示与裁剪区域（配合步骤二的检测框）。"
+        "整图自动二值化/灰度化去底，可保留印章。" "「区域模式」与「边距」决定显示与裁剪区域（配合步骤二的检测框）。"
     )
 
     def _build_form(self, form: QFormLayout) -> None:

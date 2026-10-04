@@ -19,7 +19,7 @@ from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 from qfluentwidgets import CaptionLabel, ComboBox, LineEdit, ToolButton
 from qfluentwidgets import FluentIcon as FIF
 
-from desktop.components.common.safecomment import SafeSpinBox
+from desktop.components.common.safecomponents import SafeSpinBox
 from desktop.components.panels.print_params import SIDES
 from desktop.ui.widgets import combo_box
 
@@ -65,8 +65,7 @@ class NodeRow(QWidget):
         self.page_spin.setValue(int(page))
         self.page_spin.setFixedWidth(_SPIN_W)
         self.page_spin.setToolTip(
-            "触发页码：PDF 的第几页（按待打印列表顺序，从 1 起）。"
-            "到达该页起改用本行标题，直到下一个节点"
+            "触发页码：PDF 的第几页（按待打印列表顺序，从 1 起）。" "到达该页起改用本行标题，直到下一个节点"
         )
         self.page_spin.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
 

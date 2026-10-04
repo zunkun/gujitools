@@ -110,8 +110,7 @@ def main() -> int:
             check(
                 "GUI 自检退出（未挂起）",
                 False,
-                "90s 内未退出：导入期崩溃会弹错误框挂住，"
-                "通常是被 excludes 删了必需模块（如 win32api）",
+                "90s 内未退出：导入期崩溃会弹错误框挂住，" "通常是被 excludes 删了必需模块（如 win32api）",
             )
         else:
             check("GUI 自检退出码为 0", code == 0, f"退出码 {code}")
@@ -125,14 +124,13 @@ def main() -> int:
         doc = manual.read_text(encoding="utf-8", errors="replace")
         inlined = doc.count("data:image/")
         check("手册内联了 12 张截图", inlined == 12, f"实际 {inlined} 张")
-        check("手册没有外部图片引用（装机后不会碎图）",
-              'src="file:' not in doc and 'src="screenshots/' not in doc)
-        check("手册不再引用 md 文档（包内没有 docs/guide）",
-              'href="cli.md"' not in doc and 'href="user-guide.md"' not in doc)
-    check("docs/guide 没有被打进包（省掉 md 与 6MB 截图）",
-          not (dist / "_internal" / "docs" / "guide").exists())
-    check("markdown 库没有被打进包（运行时不渲染手册）",
-          not (dist / "_internal" / "markdown").exists())
+        check("手册没有外部图片引用（装机后不会碎图）", 'src="file:' not in doc and 'src="screenshots/' not in doc)
+        check(
+            "手册不再引用 md 文档（包内没有 docs/guide）",
+            'href="cli.md"' not in doc and 'href="user-guide.md"' not in doc,
+        )
+    check("docs/guide 没有被打进包（省掉 md 与 6MB 截图）", not (dist / "_internal" / "docs" / "guide").exists())
+    check("markdown 库没有被打进包（运行时不渲染手册）", not (dist / "_internal" / "markdown").exists())
 
     with tempfile.TemporaryDirectory(prefix="guji_smoke_") as tmp:
         tmp_path = Path(tmp)
@@ -160,22 +158,14 @@ def main() -> int:
         )
         # 检测不到文本框时不产出文件也属正常，因此只报告数量、不做断言——
         # 「crop 正常退出」已经覆盖了 torch + YOLO 可用性
-        outs = (
-            list(cropped.rglob("*.jpg")) + list(cropped.rglob("*.png"))
-            if cropped.exists()
-            else []
-        )
+        outs = list(cropped.rglob("*.jpg")) + list(cropped.rglob("*.png")) if cropped.exists() else []
         print(f"       （crop 输出 {len(outs)} 个文件；无检测框时为 0 属正常）")
 
         print("\n== rembg：去底色（cv2 / numpy 路径）==")
         rembg_out = tmp_path / "rembg"
         r = run_exe(cli, ["rembg", "-i", str(img_dir), "-o", str(rembg_out)])
         check("rembg 正常退出", r.returncode == 0, (r.stderr or "")[-300:])
-        outs = (
-            list(rembg_out.rglob("*.png")) + list(rembg_out.rglob("*.jpg"))
-            if rembg_out.exists()
-            else []
-        )
+        outs = list(rembg_out.rglob("*.png")) + list(rembg_out.rglob("*.jpg")) if rembg_out.exists() else []
         check("rembg 产出 2 张结果图", len(outs) == 2, f"实际 {len(outs)} 个文件")
 
     print()
