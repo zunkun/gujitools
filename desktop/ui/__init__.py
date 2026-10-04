@@ -6,6 +6,7 @@
 
 from desktop.ui import theme
 from desktop.ui.style import apply_app_style, resolve_font_family
+from desktop.ui.toast import show_toast
 from desktop.ui.widgets import (
     CONTROL_HEIGHT, Card, Divider, EmptyState, PageHeader, Pill, ProgressLine,
     SectionTitle, SegmentedToggle, StatusChip, apply_to, combo_box, icon_pixmap,
@@ -28,6 +29,7 @@ __all__ = [
     "StatusChip",
     "apply_to",
     "combo_box",
+    "show_toast",
     "icon_pixmap",
     "ui_font",
 ]

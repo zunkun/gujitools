@@ -36,7 +36,7 @@ def _min_window() -> tuple[int, int]:
     """测布局用的窗口尺寸 = **主窗口允许的最小尺寸**。
 
     ⛔ 别写死 1080×720：窗口中央现在还有一条**常驻的左侧导航**（折叠时也占
-    ``NAV_COMPACT_WIDTH``=48px，见 `desktop/modules/shell.py`），主窗口最小宽度
+    ``NAV_COMPACT_WIDTH``=48px，见 `desktop/shell.py`），主窗口最小宽度
     已经把这截算进去了（`desktop/app.py::WINDOW_MIN_SIZE`）。写死 1080 的话，
     正文区只剩 1032，第三步输入框掉到 178px —— 那是在测一个用户拖不到、程序
     也不允许的尺寸。取真实下限，量的才是"最小窗口下正文区够不够用"。

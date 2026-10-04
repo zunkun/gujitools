@@ -34,6 +34,9 @@ from qfluentwidgets import (
     setThemeColor,
 )
 
+# ⚠️ 壳层住在 desktop 包根而不是 desktop.modules 里：它要挂任务列表页与
+# 详情页（desktop.pages），住进 modules 包就破坏了「modules 不依赖 pages」
+# 的包边界。方向只允许 shell → modules（拿注册表），绝不反向。
 from desktop.modules import MODULES, module_by_key
 from desktop.pages.tasklist.page import TaskListPage
 from desktop.store import TaskStore

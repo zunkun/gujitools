@@ -24,6 +24,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from desktop.components.viewers.edit_sync import (
+    apply_single_thumb,
+    show_edited_image,
+)
 from desktop.utils.files import (
     THUMBNAIL_EDGE,
     extract_thumb_path,
@@ -202,20 +206,10 @@ class ThumbSourceMixin:
             self.log(note)
 
     def _show_edited_image(self, path_text: str, image=None) -> None:
-        """编辑结果**立刻**上屏，不等缩略图重渲、不等重新解码文件。
-
-        ``apply_edited_image``（``ImageViewerWidget`` 有）能直接把编辑结果
-        画到大图与条目图标上；没有它的控件（``RembgPreviewWidget``）退到
-        ``refresh_page`` 按新文件重载——那一趟是异步的，但不会显示旧图。
-        """
+        """编辑结果**立刻**上屏（实现收在 :mod:`desktop.components.viewers.edit_sync`）。"""
         viewer = getattr(self, "viewer", None)
-        apply = getattr(viewer, "apply_edited_image", None)
-        if image is not None and callable(apply):
-            apply(path_text, image)
-            return
-        refresh = getattr(viewer, "refresh_page", None)
-        if callable(refresh):
-            refresh(path_text)
+        if viewer is not None:
+            show_edited_image(viewer, path_text, image)
 
     def edit_effect_note(self, path: Path) -> str:
         """编辑后日志里那句「**什么时候生效**」；各步骤按自己的下游覆盖。
@@ -286,15 +280,8 @@ class ThumbSourceMixin:
     def _on_edited_thumb(self, path_text: str, image, cached: str) -> None:
         """重渲好的缩略图到位：把这一条换成新缓存小图（其余条目不动）。"""
         viewer = getattr(self, "viewer", None)
-        if viewer is None:
-            return
-        single = getattr(viewer, "set_cached_thumb", None)
-        if cached and callable(single):
-            single(path_text, cached)  # RembgPreviewWidget：合并一条 + 刷该条
-            return
-        reload_thumb = getattr(viewer, "reload_thumb", None)
-        if callable(reload_thumb):
-            reload_thumb(path_text)  # ImageViewerWidget：忘掉旧记忆后重取
+        if viewer is not None:
+            apply_single_thumb(viewer, path_text, cached)
 
     # -------------------------------------------------------------- 内部实现
     def _listing(self, source: Path) -> list[Path]:

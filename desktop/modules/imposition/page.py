@@ -186,9 +186,9 @@ class ImpositionModulePage(ModulePage):
         self.auto_button.clicked.connect(self._auto_impose)
         card.box.addWidget(self.auto_button)
 
-        self.panel = ImpositionPanel()
-        # 单文件模式下没有「第四步取图来源」这个概念，隐掉启用开关
-        self._hide_enable_switch(self.panel)
+        # enable_switch=False：单文件模式没有「第四步取图来源」概念，
+        # 构造时声明收掉启用开关（任务流程专属概念不进独立页）
+        self.panel = ImpositionPanel(enable_switch=False)
         self.panel.reset_requested.connect(self._on_reset_layout)
         self.panel.item_rotation_edited.connect(self._on_item_rotate)
         self.panel.item_delete_requested.connect(self._on_delete_item)
@@ -200,19 +200,6 @@ class ImpositionModulePage(ModulePage):
         self.export_button.clicked.connect(self._export)
         card.box.addWidget(self.export_button)
         return card
-
-    @staticmethod
-    def _hide_enable_switch(panel: ImpositionPanel) -> None:
-        """把「启用图片拼版」开关藏掉（单文件模式没有下游流程）。
-
-        用 ``setVisible(False)`` 而不是删控件：面板的其余接线（状态行、
-        旋转、复位）都还在，藏一个控件最省事也最不易漏。
-        """
-        for attr in ("enabled_checkbox",):
-            widget = getattr(panel, attr, None)
-            if widget is not None:
-                widget.setVisible(False)
-                widget.setChecked(True)  # 让面板内部按"已启用"渲染状态
 
     # ------------------------------------------------------------------ 选图
     def _on_paths_chosen(self, paths: list) -> None:

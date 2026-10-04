@@ -26,10 +26,9 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from qfluentwidgets import InfoBar, InfoBarPosition
-
 from desktop.components.log_panel import LogPanel
 from desktop.ui import theme as T
+from desktop.ui.toast import show_toast
 from desktop.ui.widgets import Card, apply_to
 from desktop.workers import WorkerHost
 
@@ -268,15 +267,8 @@ class ModulePage(QWidget, WorkerHost):
         )
 
     def toast(self, kind: str, title: str, content: str) -> None:
-        """弹 InfoBar（右下角，与详情页 ``_toast`` 同一位置/时长）。"""
-        factory = getattr(InfoBar, kind, InfoBar.info)
-        factory(
-            title=title,
-            content=content,
-            parent=self,
-            position=InfoBarPosition.BOTTOM_RIGHT,
-            duration=2500,
-        )
+        """弹 InfoBar；实现收在 :mod:`desktop.ui.toast`（与详情页 ``_toast`` 共用）。"""
+        show_toast(self, kind, title, content)
 
     def log(self, text: str) -> None:
         """往底部日志区追加一行。

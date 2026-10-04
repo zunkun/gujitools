@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 112 个模块、127 个公开类、886 个公开函数/方法（生成于 2026-10-04）。
+覆盖 115 个模块、129 个公开类、912 个公开函数/方法（生成于 2026-10-04）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -13,6 +13,7 @@
 | 模块 | 类 | 函数 |
 | --- | --- | --- |
 | [`desktop.app`](#desktopapp) | 1 | 8 |
+| [`desktop.components.box_kinds`](#desktopcomponentsbox_kinds) | 2 | 6 |
 | [`desktop.components.common.safecomment`](#desktopcomponentscommonsafecomment) | 6 | 12 |
 | [`desktop.components.detect_stats`](#desktopcomponentsdetect_stats) | 1 | 4 |
 | [`desktop.components.imposition.canvas`](#desktopcomponentsimpositioncanvas) | 1 | 26 |
@@ -38,6 +39,7 @@
 | [`desktop.components.progress_row`](#desktopcomponentsprogress_row) | 1 | 8 |
 | [`desktop.components.step_bar`](#desktopcomponentsstep_bar) | 2 | 18 |
 | [`desktop.components.task_table`](#desktopcomponentstask_table) | 3 | 10 |
+| [`desktop.components.viewers.edit_sync`](#desktopcomponentsviewersedit_sync) | 0 | 2 |
 | [`desktop.components.viewers.image_editor`](#desktopcomponentsviewersimage_editor) | 3 | 83 |
 | [`desktop.components.viewers.image_view`](#desktopcomponentsviewersimage_view) | 1 | 23 |
 | [`desktop.components.viewers.image_viewer`](#desktopcomponentsviewersimage_viewer) | 1 | 18 |
@@ -50,14 +52,13 @@
 | [`desktop.components.viewers.thumbs_loader`](#desktopcomponentsviewersthumbs_loader) | 1 | 1 |
 | [`desktop.modules`](#desktopmodules) | 1 | 1 |
 | [`desktop.modules.base`](#desktopmodulesbase) | 2 | 19 |
-| [`desktop.modules.detect.page`](#desktopmodulesdetectpage) | 1 | 7 |
+| [`desktop.modules.detect.page`](#desktopmodulesdetectpage) | 1 | 16 |
 | [`desktop.modules.extract.page`](#desktopmodulesextractpage) | 1 | 5 |
 | [`desktop.modules.imposition.page`](#desktopmodulesimpositionpage) | 1 | 4 |
 | [`desktop.modules.print.page`](#desktopmodulesprintpage) | 1 | 4 |
 | [`desktop.modules.rembg.page`](#desktopmodulesrembgpage) | 1 | 5 |
-| [`desktop.modules.shell`](#desktopmodulesshell) | 1 | 15 |
 | [`desktop.modules.thumb_source`](#desktopmodulesthumb_source) | 1 | 4 |
-| [`desktop.pages.taskdetail.detect`](#desktoppagestaskdetaildetect) | 1 | 0 |
+| [`desktop.pages.taskdetail.detect`](#desktoppagestaskdetaildetect) | 1 | 9 |
 | [`desktop.pages.taskdetail.history`](#desktoppagestaskdetailhistory) | 1 | 0 |
 | [`desktop.pages.taskdetail.imposition`](#desktoppagestaskdetailimposition) | 2 | 4 |
 | [`desktop.pages.taskdetail.imposition_layout`](#desktoppagestaskdetailimposition_layout) | 1 | 1 |
@@ -78,6 +79,7 @@
 | [`desktop.services.rembg_live`](#desktopservicesrembg_live) | 0 | 3 |
 | [`desktop.services.stale_chain`](#desktopservicesstale_chain) | 0 | 3 |
 | [`desktop.services.submit_state`](#desktopservicessubmit_state) | 0 | 1 |
+| [`desktop.shell`](#desktopshell) | 1 | 15 |
 | [`desktop.single_instance`](#desktopsingle_instance) | 0 | 3 |
 | [`desktop.stages.detect_stage`](#desktopstagesdetect_stage) | 0 | 2 |
 | [`desktop.stages.events`](#desktopstagesevents) | 2 | 9 |
@@ -107,9 +109,10 @@
 | [`desktop.ui.segmented_toggle`](#desktopuisegmented_toggle) | 1 | 11 |
 | [`desktop.ui.style`](#desktopuistyle) | 0 | 3 |
 | [`desktop.ui.theme`](#desktopuitheme) | 0 | 3 |
+| [`desktop.ui.toast`](#desktopuitoast) | 0 | 1 |
 | [`desktop.ui.widgets`](#desktopuiwidgets) | 9 | 42 |
 | [`desktop.ui.window_size`](#desktopuiwindow_size) | 0 | 3 |
-| [`desktop.utils.files`](#desktoputilsfiles) | 0 | 19 |
+| [`desktop.utils.files`](#desktoputilsfiles) | 0 | 18 |
 | [`desktop.utils.icon`](#desktoputilsicon) | 0 | 3 |
 | [`desktop.worker`](#desktopworker) | 0 | 1 |
 | [`desktop.workers.copy_source_worker`](#desktopworkerscopy_source_worker) | 2 | 4 |
@@ -146,7 +149,7 @@ gujitools 桌面端主窗口：左侧导航壳层（任务管理 + 独立模块�
 主窗口：左侧导航壳层（任务管理 + 独立模块）与详情页跳转。
 
 2026-10-02 起，窗口中央从「列表页/详情页两页对切」升级为
-:class:`desktop.modules.shell.ModuleShell`：左边一条 qfluentwidgets
+:class:`desktop.shell.ModuleShell`：左边一条 qfluentwidgets
 导航栏，右边页面栈。任务管理仍是首页，其余是彼此独立的工具模块
 （图片提取 / 去底色 / 拼图）。
 
@@ -218,6 +221,74 @@ gujitools 桌面端主窗口：左侧导航壳层（任务管理 + 独立模块�
 自动退出（退出码 0）。仅供打包后冒烟使用——GUI 是 windowed 程序，没有
 控制台，导入期崩溃会弹错误框并一直挂住，靠"进程还活着"根本判断不了
 成败；有了这个开关就能用**退出码**判定。
+
+---
+
+## `desktop.components.box_kinds`
+
+源码：[`desktop/components/box_kinds.py`](../../desktop/components/box_kinds.py)
+
+框「类型」人工干预的共享交互流——任务流程第二步与独立检测页的唯一实现。
+
+三条约定的落点（用户 2026-09-29 定）：
+
+1. **删除不影响其他框的类型**：类型存在**槽位**里，不是"还剩几个框"推出来的；
+2. **半幅的左/右由框的中心位置决定**（``utils.box_geometry``），拖动跨过中线
+   自动换边——所以半幅页上点「左框/右框」不给切换、只解释规则；
+3. **整幅是显式类型**：用户选了就一直是整幅；整幅与半幅互斥、一页只能一个框，
+   切整幅时若有其他框，**先问再删，绝不静默删框**。
+
+这套"怎么问用户"此前在 ``pages/taskdetail/detect.py`` 与
+``modules/detect/page.py`` 各写一份（靠注释约束同步），现在收进本类：
+结果计算全部委托 ``utils.box_geometry`` 的纯函数，本类只管**交互顺序与文案**。
+
+⚠️ **本模块不含任何 Qt**：确认框通过宿主的 :meth:`BoxKindHost.box_confirm`
+回调弹（任务流程用 ``Dialog``、独立页用 ``MessageBox``——两侧各自的延迟导入
+与自测替身机制因此原样保留）。宿主协议见 :class:`BoxKindHost`。
+
+### `class BoxKindHost`
+
+宿主协议（仅说明用；两侧以同名词缀 ``box_`` 前缀实现，避免撞名）。
+
+- ``box_viewer()``：预览控件——需要 ``box_kinds()`` / ``selected_index()``
+  / ``select_box(i)``；
+- ``box_toast(kind, title, content)``：提示出口（任务流程是 ``_toast``、
+  独立页是 ``toast``，语义相同）；
+- ``box_raw_slots(path_text)``：该页**槽位**表示（保留 null，形态在槽数里）；
+- ``box_page_is_full(path_text)``：当前页是否整幅形态（半幅页上点左/右
+  只解释规则不给切换）；
+- ``box_image_size(path_text)``：原始像素 ``(w, h)``，取不到给 ``None``；
+- ``box_commit(path_text, slots, select_box=None)``：落库 + 重画——任务
+  流程写 ``boxes.json`` + 内存缓存，独立页写内存表，各自实现；
+- ``box_confirm(title, body, yes_text, cancel_text) -> bool``：确认框；
+- ``box_full_declined(index)``：用户拒绝"删除其他框并设为整幅"后的回填
+  钩子（把面板高亮从「整幅」拨回去）；
+- ``box_current_path_text()``：当前页路径（没有页时给空串）。
+
+### `class BoxKindEditor`
+
+共享交互器：类型切换 / 选框 / 整幅互斥确认 / 删框。
+
+无状态（每次操作从宿主取现值），可安全地按需构造：
+``BoxKindEditor(self).make_full(path, index)``。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(host: Any) -> None` | — |
+| `set_kind(path_text: str, index: int, kind: str) -> None` | 面板里点了「左框 / 右框 / 整幅」。 |
+| `select_box_of_kind(kind: str) -> None` | 没有选中框时，点类型＝选中该类框；该类型不存在则提示。 |
+| `make_full(path_text: str, index: int) -> None` | 把第 index 个框设为「整幅」（整幅与半幅互斥、一页只能一个框）。 |
+| `make_half(path_text: str, index: int, kind: str) -> None` | 把第 index 个框改成半幅（左/右）。 |
+| `delete_selected() -> None` | 删除当前选中的文本框（与 Delete 键同一条路径）。 |
+
+##### `set_kind(path_text: str, index: int, kind: str) -> None`
+
+面板里点了「左框 / 右框 / 整幅」。
+
+没选中框时按用户要求 6 处理：**点类型即选中该类型的框**；选中了框
+则切换它的类型（整幅要过互斥检查）。
 
 ---
 
@@ -668,7 +739,9 @@ widget.installEventFilter(_filter)
   选中了某张图时激活并高亮**（``_ItemSection``），切页 / 点空白取消选中后
   整块灰掉；
 - **「在流程中启用图片拼版」**复选框**放面板最底部**（用户 2026-09-30）：
-  决定第四步取图来源（共享基元 ``print_source_dir``）。
+  决定第四步取图来源（共享基元 ``print_source_dir``）。⚠️ 这是**任务流程
+  专属**的概念——公共面板的契约只有输入/输出；没有下游流程的宿主（独立
+  拼图页、未来的批处理界面）构造时传 ``enable_switch=False`` 收起它。
 
 「选择拼版」按钮**不在本面板**（2026-09-30 删除）：入口只有左列末尾的
 虚线「＋ 选择拼版」格（``page_list.py``），两处同义留一处。
@@ -696,13 +769,21 @@ widget.installEventFilter(_filter)
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(parent=None)` | — |
+| `__init__(parent=None, *, enable_switch: bool=True)` | ``enable_switch=False``：收起底部「在流程中启用图片拼版」开关。 |
 | `set_whole_angle(value: float) -> None` | 程序化回填整版角度（blockSignals 语义，绝不回抛增量）。 |
 | `set_item_rotation(value: float \| None) -> None` | 程序化回填选中图角度；``None`` = 没有选中。 |
 | `set_page_available(on: bool) -> None` | 有没有可操作的拼版页：没有时整版旋转组件一并禁用。 |
 | `set_single_page(on: bool) -> None` | 当前页是不是**单图页**：是才露出「新增图片」（两图页隐藏）。 |
 | `set_enabled_checked(on: bool) -> None` | 程序化回填启用开关（blockSignals 避免回抛覆盖落盘值）。 |
 | `set_status(text: str) -> None` | 状态行：当前页 + 选中槽位 + 生效与否。 |
+
+##### `__init__(parent=None, *, enable_switch: bool=True)`
+
+``enable_switch=False``：收起底部「在流程中启用图片拼版」开关。
+
+开关决定任务流程第四步的取图来源，是**任务流程专属**概念；没有
+下游流程的宿主（独立拼图页）传 ``False``。控件仍会构造（只是隐藏
+并置为已启用），宿主无需感知属性是否存在。
 
 ##### `set_item_rotation(value: float | None) -> None`
 
@@ -1830,6 +1911,50 @@ source_path 不单独成列，仅作任务名的悬浮提示。
 搜索、分页都无关，用户拿它去 ``tasks/0001`` 就能对上号。
 （早先用「页内行号 + 全局偏移」，翻页/搜索后同一条任务的号会变，
 用户按号找目录会对不上。）
+
+---
+
+## `desktop.components.viewers.edit_sync`
+
+源码：[`desktop/components/viewers/edit_sync.py`](../../desktop/components/viewers/edit_sync.py)
+
+「编辑生效链」的**查看器级原语**——编辑器覆盖文件后如何让界面跟上。
+
+编辑链的完整口径（2026-10-03/04 定）：``ImageEditorDialog``「完成」→ 覆盖真实
+文件 → 宿主收到 ``image_saved`` 信号 → 分两步走：
+
+1. **立即上屏**（本调用内）：把编辑结果直接画到大图与条目图标，不等任何
+   后台重解码——否则"改完屏幕还是旧图"，看着就是「编辑不生效」；
+2. **后台重渲缩略图**：按新文件重生成缓存缩略图，渲好只刷那一条。
+
+本模块把第 1 步与第 2 步的**收尾动作**收成函数（任务流程
+``pages/taskdetail/manifest.py`` 与独立任务页 ``modules/thumb_source.py``
+共用同一份，不再各写一份 getattr 探测）。缓存目录与重渲 worker 由各宿主
+自管——那是两套**有意不同**的缓存布局（``tasks/<id>/thumbnails/`` 与
+``singletask/<key>/`` 禁止借道），本模块不掺和。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `show_edited_image(viewer: Any, path_text: str, image=None) -> None` | 编辑结果**立刻**上屏，不等缩略图重渲、不等重新解码文件。 |
+| `apply_single_thumb(viewer: Any, path_text: str, cached: str) -> None` | 重渲好的单条缩略图到位：只换这一条，其余条目不动。 |
+
+#### `show_edited_image(viewer: Any, path_text: str, image=None) -> None`
+
+编辑结果**立刻**上屏，不等缩略图重渲、不等重新解码文件。
+
+``apply_edited_image``（``ImageViewerWidget`` 有）能直接把编辑结果画到
+大图与条目图标上；没有它的控件（``RembgPreviewWidget``）退到
+``refresh_page`` 按新文件重载——那一趟是异步的，但不会显示旧图。
+
+#### `apply_single_thumb(viewer: Any, path_text: str, cached: str) -> None`
+
+重渲好的单条缩略图到位：只换这一条，其余条目不动。
+
+``set_cached_thumb``（``RembgPreviewWidget``）：合并一条 + 刷该条；
+``reload_thumb``（``ImageViewerWidget``）：忘掉旧记忆后重取。两者都没有
+的控件安静返回（调用方通常随后有大图兜底）。
 
 ---
 
@@ -3219,7 +3344,7 @@ Delete/Backspace → ``delete_requested``。
   ``ImpositionPanel``，执行直接调 ``functions.get_function()``。新增模块的
   成本因此只有「选文件 + 放控件 + 起线程」这一层胶水。
 
-壳层（``desktop/modules/shell.py``）只从本模块拿**元数据**（key/标题/图标/
+壳层（``desktop/shell.py``，住在包根：它要挂 pages，不能住进本包）只从本模块拿**元数据**（key/标题/图标/
 工厂），从不 import 具体页面——工厂是惰性的，只有用户真正点进某个模块时
 才触发那个页面的 import。这与 ``desktop.pages`` 的 PEP 562 惰性导出同一套路：
 启动时不该为「用户可能不点」的模块付构造/导入开销。
@@ -3304,7 +3429,7 @@ InfoBar —— 这两个是各模块反馈执行结果的标准出口，别自�
 | `dragLeaveEvent(event) -> None` | 拖出页面：熄灭输入区高亮。 |
 | `dropEvent(event) -> None` | 松手：把路径交给输入区，由它按步骤规则归一成源。 |
 | `status(text: str, kind: str='info') -> None` | 写页头状态行；``kind`` 取 info/success/warning/error 决定颜色。 |
-| `toast(kind: str, title: str, content: str) -> None` | 弹 InfoBar（右下角，与详情页 ``_toast`` 同一位置/时长）。 |
+| `toast(kind: str, title: str, content: str) -> None` | 弹 InfoBar；实现收在 :mod:`desktop.ui.toast`（与详情页 ``_toast`` 共用）。 |
 | `log(text: str) -> None` | 往底部日志区追加一行。 |
 | `closeEvent(event) -> None` | 关闭时收尾后台线程，避免解释器退出时被强杀（同详情页规矩）。 |
 
@@ -3434,9 +3559,10 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 
 ⚠️ **槽位约定**（半幅 2 槽 ``[左, 右]``、整幅 1 槽 ``[整幅]``）的全部规则来自
 ``utils.box_geometry``（``page_box_slots_from_event`` 读事件、``half_slots`` 收
-人工框、``set_box_full`` / ``set_box_half`` / ``drop_box`` 做人工干预），本页不
-自己数"还剩几个框"——按个数推类型会造成"删掉整幅框后右边的框自动变成整幅"
-（用户 2026-09-29 报过的老问题）。
+人工框），人工干预的**交互流**（切类型 / 整幅互斥确认 / 删框）在
+``desktop.components.box_kinds.BoxKindEditor``（与任务流程第二步共用一份），
+本页不自己数"还剩几个框"——按个数推类型会造成"删掉整幅框后右边的框自动变成
+整幅"（用户 2026-09-29 报过的老问题）。
 
 ⚠️ **框类型控件摆在这里、检测按钮不搬过来**（用户 2026-10-03）：
 - 「选中框类型 / 删除选中框」**摆出来**并接线——它们只依赖查看器，本页完全
@@ -3463,6 +3589,15 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 | `source_summary(source) -> str` | 在共用的 ``<源> → <输出>`` 之外，**补上待检测张数**。 |
 | `edit_effect_note(path: Path) -> str` | 编辑器改了待检测的图片：框坐标以**图片原始像素**为基准。 |
 | `on_result(out_dir: Path, _result: dict) -> None` | 检测跑完：重画当前页，并把「检出几页 / 几页无框」写到状态行。 |
+| `box_viewer()` | — |
+| `box_toast(kind: str, title: str, content: str) -> None` | — |
+| `box_raw_slots(path_text: str) -> list` | — |
+| `box_page_is_full(path_text: str) -> bool` | — |
+| `box_image_size(path_text: str)` | — |
+| `box_commit(path_text: str, slots: list, select_box=None) -> None` | — |
+| `box_confirm(title: str, body: str, yes_text: str, cancel_text: str) -> bool` | — |
+| `box_full_declined(_index: int) -> None` | — |
+| `box_current_path_text() -> str` | — |
 | `export_boxes() -> None` | 把各页框坐标写成 ``<输出目录>/boxes.json``（与任务流程同格式）。 |
 | `export_annotated_images() -> None` | 把框画回原图导出成 PNG：先选目录，**目录已存在就问是否覆盖**。 |
 | `shutdown_workers() -> None` | 收尾：查看器自己的后台线程 + 两个执行线程（检测、导出标注图）。 |
@@ -3788,141 +3923,6 @@ PDF 路径**回传给 ``on_result``；本页据此把左栏切到「产物 PDF �
 
 ---
 
-## `desktop.modules.shell`
-
-源码：[`desktop/modules/shell.py`](../../desktop/modules/shell.py)
-
-左侧导航壳层：qfluentwidgets 的 ``NavigationInterface`` + 页面栈。
-
-布局照搬 ``FluentWindow`` 的做法（导航栏在左、页面栈在右、拉伸因子给页面栈），
-但不继承 ``FluentWindow``——那个类自带标题栏/亚克力/Mica 一整套窗口装饰，
-而本程序用的是原生标题栏（``desktop/app.py`` 有最大化/还原尺寸与单例逻辑），
-换标题栏会连带影响窗口尺寸夹紧与截图脚本。所以只借它的**布局套路**：
-
-    hBoxLayout { navigationInterface, pageStack( stretch=1 ) }
-
-导航条目分两组：
-
-- ``TOP``：**任务管理**（原 ``TaskListPage``，点任务仍在栈内打开详情页）+
-  各独立模块（图片提取 / 去底色 / 拼图，来自 ``desktop.modules.MODULES``）；
-- 模块条目全部**惰性构造**：第一次点进去才 ``factory()``，不点不建。
-
-⚠️ 导航栏**默认折叠**（用户 2026-10-02：「左侧的目录，默认关闭」）：启动后
-只剩一列图标，正文区拿到整幅宽度；想看到条目文字就点左上角的菜单按钮展开，
-再点一次收回。**不要**再在 resizeEvent 里替用户 `expand()`——那会让"默认
-关闭"失效（见 :meth:`resizeEvent` 的说明）。
-
-⚠️ 壳层**不 import 任何具体模块页**，只认 :class:`desktop.modules.Module` 的
-元数据与工厂——这是「模块独立」在壳层侧的落实：删模块只需要改 ``MODULES``。
-
-### 模块常量
-
-| 名称 | 值 |
-| --- | --- |
-| NAV_COMPACT_WIDTH | `48` |
-| NAV_WIDTH | `200` |
-| NAV_MIN_EXPAND_WINDOW | `720` |
-| ROUTE_TASKS | `"tasks"` |
-| ROUTE_DETAIL | `"detail"` |
-
-### `class ModuleShell(QWidget)`
-
-壳层根控件：左侧导航 + 右侧页面栈。
-
-对外暴露 :meth:`open_detail` / :meth:`back_to_list` 供 ``MainWindow``
-转发（两者都走栈切换，行为与 ``app.py`` 原来的 ``_open_detail`` /
-``_back_to_list`` 一致）。
-
-#### 方法
-
-| 方法 | 说明 |
-| --- | --- |
-| `__init__(store: TaskStore, parent=None)` | 建导航与页面栈，挂上「任务管理」页，模块条目按注册表登记。 |
-| `show_tasks() -> None` | 切回任务列表页并刷新列表。 |
-| `detail_page()` | 任务详情页（惰性构造）。 |
-| `prewarm_detail_page() -> None` | 预构造详情页骨架与**第一步**面板（同 app.py 原 ``_prewarm_detail_page``）。 |
-| `open_detail(task_id: str) -> None` | 打开某个任务的详情页（行为与 ``app.py::_open_detail`` 一致）。 |
-| `back_to_list() -> None` | 详情页「返回」→ 切回列表并刷新。 |
-| `show_module(key: str) -> None` | 切到某个模块页；首次进入时惰性构造。 |
-| `module_page(key: str) -> QWidget \| None` | 已构造的模块页；**没建过返回 None**（自测用它断言"惰性没被破坏"）。 |
-| `rebind_store(store: TaskStore) -> None` | 把壳层与**已建页面**上的 store 引用一起换掉（换数据目录用）。 |
-| `current_route() -> str` | 当前**显示中**页面的路由键。 |
-| `selected_route() -> str` | 导航栏**当前高亮**的条目路由键。 |
-| `nav_is_expanded() -> bool` | 导航栏当前是否展开（``EXPAND``）。 |
-| `toggle_nav() -> None` | 展开/收回导航栏（等价于点左上角的菜单按钮）。 |
-| `shutdown_workers() -> None` | 收尾所有页面的后台线程（壳层 + 惰性页 + 已建模块页）。 |
-| `keyPressEvent(event) -> None` | ←/→ 在详情页内转发翻页（同 app.py 原逻辑，焦点链不消费时兜底）。 |
-
-##### `show_tasks() -> None`
-
-切回任务列表页并刷新列表。
-
-⚠️ 不去手动 ``setCurrentItem``：切页会触发 ``pages.currentChanged``
-→ :meth:`_sync_nav_to_page` 统一同步高亮，单点维护不易漏。
-
-##### `detail_page()`
-
-装饰器：`property`
-
-任务详情页（惰性构造）。
-
-保留这个名字：``tests/selftests/_context.py`` 与 ``tests/gui_shot.py``
-都按 ``window.detail_page`` 取页面来操作控件（原来在 MainWindow 上，
-现在壳层转发一层，外部契约不变）。
-
-##### `show_module(key: str) -> None`
-
-切到某个模块页；首次进入时惰性构造。
-
-找不到该 key（注册表被改过、或旧导航项残留）时安静退回任务管理并提示，
-不让壳层抛异常——导航项是用户能点的东西，任何输入都不该让程序崩。
-
-##### `rebind_store(store: TaskStore) -> None`
-
-把壳层与**已建页面**上的 store 引用一起换掉（换数据目录用）。
-
-⚠️ 必须一起换：壳层自己持一份（惰性详情页构造时取的就是它）、列表页
-持一份、已经建出来的详情页又持一份。只改 ``MainWindow.store`` 而漏掉
-这里，惰性构造的详情页会继续指向**老目录**——表现是"打开的是同名任务
-号的另一个任务"（`tests/selftests/last_stage.py` 就是这么红的：真实数据
-目录里恰好也有 0001，而它停在拼版步）。测试与截图脚本的
-「换 store 指向临时目录」这一手（`_context.prepare` / `gui_shot`）全靠它。
-
-##### `current_route() -> str`
-
-当前**显示中**页面的路由键。
-
-``QStackedWidget`` 里的页面对象与路由的映射在这里反查；模块页按
-``_module_pages`` 的键匹配，任务列表/详情页按对象身份匹配。
-
-##### `selected_route() -> str`
-
-导航栏**当前高亮**的条目路由键。
-
-⚠️ ``NavigationInterface`` 没有公开的"取当前项"接口（只有
-``setCurrentItem``），所以这里自己记一份 ``_selected_route``——
-高亮是我们在 :meth:`_sync_nav_to_page` 里设的，记它准确且无副作用。
-
-##### `nav_is_expanded() -> bool`
-
-导航栏当前是否展开（``EXPAND``）。
-
-测试/截图脚本用它断言"默认是折叠的、点菜单按钮能展开"——qfluentwidgets
-没有公开的 displayMode 读取接口，所以在这里封一层。
-
-##### `toggle_nav() -> None`
-
-展开/收回导航栏（等价于点左上角的菜单按钮）。
-
-供菜单按钮之外的入口（自测、快捷键、将来的命令面板）复用同一条逻辑：
-折叠时展开、展开时收回，**不改变**默认折叠这条约定。
-
-⚠️ 必须走 ``NavigationInterface.toggle()``：``NavigationInterface``
-**只有 ``expand()`` 没有 ``collapse()``**（收回在 ``panel`` 上），
-自己拼 expand/collapse 会踩 ``AttributeError``。
-
----
-
 ## `desktop.modules.thumb_source`
 
 源码：[`desktop/modules/thumb_source.py`](../../desktop/modules/thumb_source.py)
@@ -4038,6 +4038,20 @@ detect/rembg/print 直接把**原图**塞进查看器（缩略图条每次现解
 
 依赖宿主页面提供的属性：store/task_id、detect_viewer、log_view、
 detect_process/detect_cache、current_stage()。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `box_viewer()` | — |
+| `box_toast(kind: str, title: str, content: str) -> None` | — |
+| `box_raw_slots(path_text: str) -> list` | — |
+| `box_page_is_full(_path_text: str) -> bool` | — |
+| `box_image_size(path_text: str)` | — |
+| `box_commit(path_text: str, slots: list, select_box=None) -> None` | — |
+| `box_confirm(title: str, body: str, yes_text: str, cancel_text: str) -> bool` | — |
+| `box_full_declined(index: int) -> None` | — |
+| `box_current_path_text() -> str` | — |
 
 ---
 
@@ -5255,6 +5269,141 @@ rembg「提交本次任务」按钮的版本状态机（纯函数）。
 - new_version  ：预览有新版本（重新生成过、或 area/border 已改），
                  最终图片落后于预览 → 提示需要提交；
 - up_to_date   ：最终图片已是最新预览版本。
+
+---
+
+## `desktop.shell`
+
+源码：[`desktop/shell.py`](../../desktop/shell.py)
+
+左侧导航壳层：qfluentwidgets 的 ``NavigationInterface`` + 页面栈。
+
+布局照搬 ``FluentWindow`` 的做法（导航栏在左、页面栈在右、拉伸因子给页面栈），
+但不继承 ``FluentWindow``——那个类自带标题栏/亚克力/Mica 一整套窗口装饰，
+而本程序用的是原生标题栏（``desktop/app.py`` 有最大化/还原尺寸与单例逻辑），
+换标题栏会连带影响窗口尺寸夹紧与截图脚本。所以只借它的**布局套路**：
+
+    hBoxLayout { navigationInterface, pageStack( stretch=1 ) }
+
+导航条目分两组：
+
+- ``TOP``：**任务管理**（原 ``TaskListPage``，点任务仍在栈内打开详情页）+
+  各独立模块（图片提取 / 去底色 / 拼图，来自 ``desktop.modules.MODULES``）；
+- 模块条目全部**惰性构造**：第一次点进去才 ``factory()``，不点不建。
+
+⚠️ 导航栏**默认折叠**（用户 2026-10-02：「左侧的目录，默认关闭」）：启动后
+只剩一列图标，正文区拿到整幅宽度；想看到条目文字就点左上角的菜单按钮展开，
+再点一次收回。**不要**再在 resizeEvent 里替用户 `expand()`——那会让"默认
+关闭"失效（见 :meth:`resizeEvent` 的说明）。
+
+⚠️ 壳层**不 import 任何具体模块页**，只认 :class:`desktop.modules.Module` 的
+元数据与工厂——这是「模块独立」在壳层侧的落实：删模块只需要改 ``MODULES``。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| NAV_COMPACT_WIDTH | `48` |
+| NAV_WIDTH | `200` |
+| NAV_MIN_EXPAND_WINDOW | `720` |
+| ROUTE_TASKS | `"tasks"` |
+| ROUTE_DETAIL | `"detail"` |
+
+### `class ModuleShell(QWidget)`
+
+壳层根控件：左侧导航 + 右侧页面栈。
+
+对外暴露 :meth:`open_detail` / :meth:`back_to_list` 供 ``MainWindow``
+转发（两者都走栈切换，行为与 ``app.py`` 原来的 ``_open_detail`` /
+``_back_to_list`` 一致）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(store: TaskStore, parent=None)` | 建导航与页面栈，挂上「任务管理」页，模块条目按注册表登记。 |
+| `show_tasks() -> None` | 切回任务列表页并刷新列表。 |
+| `detail_page()` | 任务详情页（惰性构造）。 |
+| `prewarm_detail_page() -> None` | 预构造详情页骨架与**第一步**面板（同 app.py 原 ``_prewarm_detail_page``）。 |
+| `open_detail(task_id: str) -> None` | 打开某个任务的详情页（行为与 ``app.py::_open_detail`` 一致）。 |
+| `back_to_list() -> None` | 详情页「返回」→ 切回列表并刷新。 |
+| `show_module(key: str) -> None` | 切到某个模块页；首次进入时惰性构造。 |
+| `module_page(key: str) -> QWidget \| None` | 已构造的模块页；**没建过返回 None**（自测用它断言"惰性没被破坏"）。 |
+| `rebind_store(store: TaskStore) -> None` | 把壳层与**已建页面**上的 store 引用一起换掉（换数据目录用）。 |
+| `current_route() -> str` | 当前**显示中**页面的路由键。 |
+| `selected_route() -> str` | 导航栏**当前高亮**的条目路由键。 |
+| `nav_is_expanded() -> bool` | 导航栏当前是否展开（``EXPAND``）。 |
+| `toggle_nav() -> None` | 展开/收回导航栏（等价于点左上角的菜单按钮）。 |
+| `shutdown_workers() -> None` | 收尾所有页面的后台线程（壳层 + 惰性页 + 已建模块页）。 |
+| `keyPressEvent(event) -> None` | ←/→ 在详情页内转发翻页（同 app.py 原逻辑，焦点链不消费时兜底）。 |
+
+##### `show_tasks() -> None`
+
+切回任务列表页并刷新列表。
+
+⚠️ 不去手动 ``setCurrentItem``：切页会触发 ``pages.currentChanged``
+→ :meth:`_sync_nav_to_page` 统一同步高亮，单点维护不易漏。
+
+##### `detail_page()`
+
+装饰器：`property`
+
+任务详情页（惰性构造）。
+
+保留这个名字：``tests/selftests/_context.py`` 与 ``tests/gui_shot.py``
+都按 ``window.detail_page`` 取页面来操作控件（原来在 MainWindow 上，
+现在壳层转发一层，外部契约不变）。
+
+##### `show_module(key: str) -> None`
+
+切到某个模块页；首次进入时惰性构造。
+
+找不到该 key（注册表被改过、或旧导航项残留）时安静退回任务管理并提示，
+不让壳层抛异常——导航项是用户能点的东西，任何输入都不该让程序崩。
+
+##### `rebind_store(store: TaskStore) -> None`
+
+把壳层与**已建页面**上的 store 引用一起换掉（换数据目录用）。
+
+⚠️ 必须一起换：壳层自己持一份（惰性详情页构造时取的就是它）、列表页
+持一份、已经建出来的详情页又持一份。只改 ``MainWindow.store`` 而漏掉
+这里，惰性构造的详情页会继续指向**老目录**——表现是"打开的是同名任务
+号的另一个任务"（`tests/selftests/last_stage.py` 就是这么红的：真实数据
+目录里恰好也有 0001，而它停在拼版步）。测试与截图脚本的
+「换 store 指向临时目录」这一手（`_context.prepare` / `gui_shot`）全靠它。
+
+##### `current_route() -> str`
+
+当前**显示中**页面的路由键。
+
+``QStackedWidget`` 里的页面对象与路由的映射在这里反查；模块页按
+``_module_pages`` 的键匹配，任务列表/详情页按对象身份匹配。
+
+##### `selected_route() -> str`
+
+导航栏**当前高亮**的条目路由键。
+
+⚠️ ``NavigationInterface`` 没有公开的"取当前项"接口（只有
+``setCurrentItem``），所以这里自己记一份 ``_selected_route``——
+高亮是我们在 :meth:`_sync_nav_to_page` 里设的，记它准确且无副作用。
+
+##### `nav_is_expanded() -> bool`
+
+导航栏当前是否展开（``EXPAND``）。
+
+测试/截图脚本用它断言"默认是折叠的、点菜单按钮能展开"——qfluentwidgets
+没有公开的 displayMode 读取接口，所以在这里封一层。
+
+##### `toggle_nav() -> None`
+
+展开/收回导航栏（等价于点左上角的菜单按钮）。
+
+供菜单按钮之外的入口（自测、快捷键、将来的命令面板）复用同一条逻辑：
+折叠时展开、展开时收回，**不改变**默认折叠这条约定。
+
+⚠️ 必须走 ``NavigationInterface.toggle()``：``NavigationInterface``
+**只有 ``expand()`` 没有 ``collapse()``**（收回在 ``panel`` 上），
+自己拼 expand/collapse 会踩 ``AttributeError``。
 
 ---
 
@@ -7643,6 +7792,42 @@ QSS 里不会生效；它由 `desktop.components.log_panel.apply_log_view_style`
 
 ---
 
+## `desktop.ui.toast`
+
+源码：[`desktop/ui/toast.py`](../../desktop/ui/toast.py)
+
+全局统一的 InfoBar 弹出工厂。
+
+桌面端两套页面宿主——任务流程页（``pages/taskdetail``）与独立任务页
+（``modules``）——都会弹「右下角、2.5 秒自动消失」的 qfluentwidgets InfoBar。
+此前 ``TaskDetailPage._toast`` 与 ``ModulePage.toast`` 各写了一份逐字相同的
+工厂，这里收成唯一实现：位置、时长、``kind`` 到 InfoBar 工厂方法的映射
+只在这一处调，两边只是薄薄一层转发。
+
+``kind`` 取 ``InfoBar`` 的类方法名（info/success/warning/error）；未知
+``kind`` 兜底为 ``info``，调用侧不必先校验。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| DURATION_MS | `2500` |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `show_toast(parent: QWidget, kind: str, title: str, content: str) -> None` | 在 ``parent`` 右下角弹一条 InfoBar。 |
+
+#### `show_toast(parent: QWidget, kind: str, title: str, content: str) -> None`
+
+在 ``parent`` 右下角弹一条 InfoBar。
+
+``kind``：``InfoBar`` 的工厂方法名（info/success/warning/error），
+未知值回落为 info。
+
+---
+
 ## `desktop.ui.widgets`
 
 源码：[`desktop/ui/widgets.py`](../../desktop/ui/widgets.py)
@@ -7956,7 +8141,6 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 | `safe_dirname(name: str) -> str` | 把任意标题洗成能当目录名的一串（去掉非法字符、收敛空白）。 |
 | `singletask_dir(subtask: str) -> Path` | 独立任务区下某个**子任务**的目录：``~/Documents/guji/singletask/<子任务>``。 |
 | `migrate_legacy_singletask_dirs() -> list[str]` | 把按旧标题建的 ``singletask/<中文名>/`` 搬到新名（见 ``_LEGACY_SUBTASK_DIRS``）。 |
-| `migrate_extract_thumbs_to_numbered(subtask: str='extract') -> list[str]` | 一次性迁移：extract 的缩略图改成「序号口径、只留一份」（2026-10-04）。 |
 | `singletask_thumbnails_dir(subtask: str, book: str \| Path \| None=None) -> Path` | 子任务的**页缩略图缓存**：``singletask/<子任务>/thumbnails[/<书>]``。 |
 | `book_key(book: str \| Path) -> str` | 一本书在缓存目录里的唯一名字：``<文件名去后缀>-<大小>-<路径指纹前8位>``。 |
 | `image_thumb_cache_path(subtask: str, image: str \| Path, edge: int=THUMBNAIL_EDGE) -> Path` | 一张**源图片**在 singletask 缓存里的缩略图路径。 |
@@ -7980,32 +8164,6 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 **不删**——里面可能有用户还在意的东西，误删不可恢复。
 
 返回实际搬动过的目录名（给自测与日志用）。
-
-#### `migrate_extract_thumbs_to_numbered(subtask: str='extract') -> list[str]`
-
-一次性迁移：extract 的缩略图改成「序号口径、只留一份」（2026-10-04）。
-
-用户原话：「我不需要太多缩略图，只保留一份就可以……既然最后是按照序号
-提取的，那么就按照序号处理」。
-
-改之前一个子任务目录下有**两套**缩略图（同一个页面被渲了两遍、存了两份）：
-
-1. ``thumbnails/<书>/0001.jpg``——PDF 页渲染（未提取时左栏显示）；
-2. ``thumbs/256/<图键>.jpg``——按提取产物重渲（提取后左栏显示）。
-
-实测同页两者像素差 < 12/255（内容基本一致），所以第 2 套是纯冗余。
-
-迁移做两件事：
-
-- 把 ``thumbnails/<书>/NNNN.jpg`` **挪进** ``thumbnails/<书>/<边长>/``，
-  文件名不变（序号口径本来就是这个名）——挪的是**目录位置**不是内容，
-  命中判据（``cache_usable`` 比 mtime）原样成立，不用重渲；
-- 删掉 ``thumbs/`` 整棵（它只服务第 2 套；⚠️ 只删 ``<子任务>/thumbs``，
-  不碰别的子任务目录）。
-
-**幂等**：目标已存在就跳过、不覆盖；删 ``thumbs/`` 前先确认里面没有别的
-子目录。⚠️ 全程 ``try/except OSError``：占用/权限/跨卷一律**留着不动**，
-下次启动再试——缓存丢了能重渲，删错了没法恢复。
 
 #### `singletask_thumbnails_dir(subtask: str, book: str | Path | None=None) -> Path`
 

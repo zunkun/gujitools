@@ -2156,6 +2156,16 @@ def run(ctx) -> None:
            panel.item_section._active, str(panel.item_section._active))
         panel.deleteLater()
 
+        # ---- 公共组件契约：无下游流程的宿主构造时声明收掉启用开关 ----
+        bare = ImpositionPanel(enable_switch=False)
+        ok("enable_switch=False 收起「在流程中启用图片拼版」开关（任务流程专属概念不进公共面板）",
+           bare.enabled_checkbox.isHidden()
+           and bare.enabled_checkbox.isChecked())
+        bare.set_enabled_checked(False)
+        ok("隐藏态下程序化回填 set_enabled_checked 仍可用",
+           not bare.enabled_checkbox.isChecked())
+        bare.deleteLater()
+
         # ---- 页级接线：面板增量 → 画布即时转 → 停顿提交落盘 + 面板回填 ----
         page._save_imposition_pages(before_release)
         page._imposition_timer.stop()

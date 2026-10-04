@@ -41,6 +41,7 @@ from desktop.store import (
     IMPOSITION_INDEX, IMPOSITION_LABEL, IMPOSITION_STAGE, STAGES, STAGE_LABELS,
 )
 from desktop.ui import theme as T
+from desktop.ui.toast import show_toast
 from desktop.ui.widgets import apply_to, bold_button
 from desktop.workers import CopySourceWorker, WorkerHost, connect_queued
 from desktop.pages.taskdetail.detect import DetectMixin
@@ -823,16 +824,8 @@ class TaskDetailPage(
 
     # ------------------------------------------------------------------ 工具
     def _toast(self, kind: str, title: str, content: str) -> None:
-        from qfluentwidgets import InfoBar, InfoBarPosition
-
-        factory = getattr(InfoBar, kind, InfoBar.info)
-        factory(
-            title=title,
-            content=content,
-            parent=self,
-            position=InfoBarPosition.BOTTOM_RIGHT,
-            duration=2500,
-        )
+        """弹 InfoBar；实现收在 :mod:`desktop.ui.toast`（与独立任务页共用）。"""
+        show_toast(self, kind, title, content)
 
     def closeEvent(self, event) -> None:
         """关闭页面时杀掉并等待 worker/detect 子进程，并关停所有后台线程。

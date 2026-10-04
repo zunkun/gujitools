@@ -23,9 +23,10 @@
 
 ⚠️ **槽位约定**（半幅 2 槽 ``[左, 右]``、整幅 1 槽 ``[整幅]``）的全部规则来自
 ``utils.box_geometry``（``page_box_slots_from_event`` 读事件、``half_slots`` 收
-人工框、``set_box_full`` / ``set_box_half`` / ``drop_box`` 做人工干预），本页不
-自己数"还剩几个框"——按个数推类型会造成"删掉整幅框后右边的框自动变成整幅"
-（用户 2026-09-29 报过的老问题）。
+人工框），人工干预的**交互流**（切类型 / 整幅互斥确认 / 删框）在
+``desktop.components.box_kinds.BoxKindEditor``（与任务流程第二步共用一份），
+本页不自己数"还剩几个框"——按个数推类型会造成"删掉整幅框后右边的框自动变成
+整幅"（用户 2026-09-29 报过的老问题）。
 
 ⚠️ **框类型控件摆在这里、检测按钮不搬过来**（用户 2026-10-03）：
 - 「选中框类型 / 删除选中框」**摆出来**并接线——它们只依赖查看器，本页完全
@@ -46,6 +47,7 @@ from PySide6.QtWidgets import QFileDialog
 from qfluentwidgets import CaptionLabel, FluentIcon as FIF
 from qfluentwidgets import PrimaryPushButton, PushButton
 
+from desktop.components.box_kinds import BoxKindEditor
 from desktop.components.progress_row import ProgressRow
 from desktop.components.viewers import ImageViewerWidget
 from desktop.components.viewers.image_view import box_names
@@ -67,12 +69,9 @@ from desktop.ui.widgets import CONTROL_HEIGHT, Card, SectionTitle, apply_to
 from desktop.utils.files import default_open_dir
 from utils.box_draw import BOX_KIND_INDEX, box_kind_name
 from utils.box_geometry import (
-    drop_box,
     half_slots,
     is_full_content,
     page_box_slots_from_event,
-    set_box_full,
-    set_box_half,
 )
 
 #: 本页的步骤元数据（标题/副标题/面板/过滤串/默认输出后缀的唯一来源）
@@ -313,9 +312,9 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
 
     # ------------------------------------------------- 框类型（人工干预）
     #
-    # 与任务流程第二步（`desktop/pages/taskdetail/detect.py` 的 DetectMixin）
-    # **同一套规则**：结果计算在 `utils.box_geometry.set_box_full` /
-    # `set_box_half` / `drop_box` 三个纯函数里，两边只各写"怎么问用户"。
+    # 与任务流程第二步**同一套规则**，且"怎么问用户"也只有一份——交互顺序、
+    # 确认框与提示文案在 `desktop/components/box_kinds.py::BoxKindEditor`
+    # （结果计算在 `utils.box_geometry` 纯函数里）；本页只提供宿主协议。
 
     def _current_slots(self) -> tuple[str, list]:
         """当前页的 ``(图片路径, 槽位)``；没有页时路径为空串。"""
@@ -337,105 +336,66 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
         self.delete_box.setEnabled(index >= 0)
 
     def _on_box_kind_changed(self, kind: str) -> None:
-        """用户点了「左框 / 右框 / 整幅」。
-
-        没选中框时按用户 2026-09-29 的要求 6 处理：**点类型即选中该类型的框**；
-        选中了框则切换它的类型（整幅要过互斥检查）。
-        """
-        path_text, slots = self._current_slots()
+        """用户点了「左框 / 右框 / 整幅」（交互实现委托共享 BoxKindEditor）。"""
+        path_text, _slots = self._current_slots()
         if not path_text:
             return
-        index = self.viewer.selected_index()
-        if index < 0:
-            self._select_box_of_kind(kind)
-            return
-        kinds = self.viewer.box_kinds()
-        current = kinds[index] if 0 <= index < len(kinds) else ""
-        if kind == current:
-            return  # 已经是这个类型（左/右按位置判定，点了也是这个结果）
-        if kind == "full":
-            self._make_box_full(path_text, index)
-        else:
-            self._make_box_half(path_text, index, kind)
+        self._box_editor().set_kind(path_text, self.viewer.selected_index(), kind)
+
+    # ---- BoxKindHost 协议（box_ 前缀，避免与页面其他成员撞名）----
+    def _box_editor(self) -> BoxKindEditor:
+        """共享交互器（无状态，按需构造）。"""
+        return BoxKindEditor(self)
+
+    def box_viewer(self):
+        return self.viewer
+
+    def box_toast(self, kind: str, title: str, content: str) -> None:
+        self.toast(kind, title, content)
+
+    def box_raw_slots(self, path_text: str) -> list:
+        return list(self._boxes.get(Path(path_text).stem, []))
+
+    def box_page_is_full(self, path_text: str) -> bool:
+        return bool(is_full_content(self._boxes.get(Path(path_text).stem, [])))
+
+    def box_image_size(self, path_text: str):
+        return self._image_size(path_text) or None
+
+    def box_commit(self, path_text: str, slots: list, select_box=None) -> None:
+        self._store_slots(path_text, slots, select=select_box)
+
+    def box_confirm(self, title: str, body: str, yes_text: str, cancel_text: str) -> bool:
+        # ⚠️ 延迟导入必须留在方法体内：自测靠替换 qfluentwidgets.MessageBox
+        #    记录/否决确认（离屏跑弹真模态会把整个用例挂住）
+        from qfluentwidgets import MessageBox  # noqa: PLC0415 - 延迟导入便于自测替换
+
+        box = MessageBox(title, body, self.window())
+        box.yesButton.setText(yes_text)
+        box.cancelButton.setText(cancel_text)
+        return bool(box.exec())
+
+    def box_full_declined(self, _index: int) -> None:
+        self._sync_box_kind()  # 回填高亮，别停在「整幅」
+
+    def box_current_path_text(self) -> str:
+        return str(self.viewer.current_path() or "")
 
     def _select_box_of_kind(self, kind: str) -> None:
         """没有选中框时，点类型＝选中该类框；该类型不存在则提示。"""
-        kinds = self.viewer.box_kinds()
-        for index, value in enumerate(kinds):
-            if value == kind:
-                self.viewer.select_box(index)
-                return
-        self.toast(
-            "info",
-            f"没有「{box_kind_name(kind)}」",
-            "当前页没有这个类型的框：可先在预览里画出文本框，或点已有框后切换类型。",
-        )
+        self._box_editor().select_box_of_kind(kind)
 
     def _make_box_full(self, path_text: str, index: int) -> None:
         """把第 index 个框设为「整幅」（整幅与半幅互斥、一页只能一个框）。"""
-        _, slots = self._current_slots()
-        boxes = [b for b in slots if b]
-        if not 0 <= index < len(boxes):
-            return
-        others = [b for i, b in enumerate(boxes) if i != index]
-        if others:
-            # 用户要求 4/5：整幅只能有一个框、且与左右半幅互斥 → 说清现状并
-            # 让用户自己决定删不删。**绝不静默删框**（用户 2026-09-29 定的）。
-            from qfluentwidgets import MessageBox  # noqa: PLC0415 - 延迟导入便于自测替换
-
-            kinds = self.viewer.box_kinds()
-            labels = "、".join(
-                f"「{box_kind_name(kinds[i])}」"
-                for i in range(len(boxes)) if i != index and i < len(kinds)
-            )
-            box = MessageBox(
-                "整幅只能有一个框",
-                f"当前页还有其他文本框（{labels}）。\n"
-                "整幅与左右半框互斥，且整幅一页只能有一个框。\n"
-                "是否删除其他文本框，把当前框设为「整幅」？",
-                self.window(),
-            )
-            box.yesButton.setText("删除其他框并设为整幅")
-            box.cancelButton.setText("取消")
-            if not box.exec():
-                self._sync_box_kind()   # 回填高亮，别停在「整幅」
-                return
-        self._store_slots(path_text, set_box_full(slots, index), select=boxes[index])
+        self._box_editor().make_full(path_text, index)
 
     def _make_box_half(self, path_text: str, index: int, kind: str) -> None:
         """把第 index 个框改成半幅（左/右）。"""
-        _, slots = self._current_slots()
-        boxes = [b for b in slots if b]
-        if not 0 <= index < len(boxes):
-            return
-        if not is_full_content(slots):
-            # 半幅页里左/右是**位置**决定的（用户要求 2），点不出另一种来
-            side = box_kind_name(kind)
-            self.toast(
-                "info",
-                f"「{side}」由框的位置决定",
-                f"左框/右框按框的中心位置自动判定：把这个框拖到页面的另一半，"
-                f"它就会变成{side}。",
-            )
-            return
-        # 整幅 → 半幅：一个框也能是半幅（漏检一侧的情形），按中心位置定左右
-        size = self._image_size(path_text) or (0, 0)
-        self._store_slots(
-            path_text, set_box_half(slots, index, size), select=boxes[index]
-        )
+        self._box_editor().make_half(path_text, index, kind)
 
     def _delete_selected_box(self) -> None:
         """删除当前选中的文本框（与 Delete 键同一条路径）。"""
-        path_text, slots = self._current_slots()
-        if not path_text:
-            return
-        index = self.viewer.selected_index()
-        if index < 0:
-            self.toast("info", "未选中文本框", "先在预览里点一下要删除的框。")
-            return
-        size = self._image_size(path_text) or (0, 0)
-        self._store_slots(path_text, drop_box(slots, index, size))
-        self.viewer.select_box(-1)
+        self._box_editor().delete_selected()
 
     def _store_slots(self, path_text: str, slots: list, select=None) -> None:
         """把槽位结果写进内存表 + 重画，并同步类型控件与导出按钮。

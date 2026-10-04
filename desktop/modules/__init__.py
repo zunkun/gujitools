@@ -17,7 +17,7 @@
   ``ImpositionPanel``，执行直接调 ``functions.get_function()``。新增模块的
   成本因此只有「选文件 + 放控件 + 起线程」这一层胶水。
 
-壳层（``desktop/modules/shell.py``）只从本模块拿**元数据**（key/标题/图标/
+壳层（``desktop/shell.py``，住在包根：它要挂 pages，不能住进本包）只从本模块拿**元数据**（key/标题/图标/
 工厂），从不 import 具体页面——工厂是惰性的，只有用户真正点进某个模块时
 才触发那个页面的 import。这与 ``desktop.pages`` 的 PEP 562 惰性导出同一套路：
 启动时不该为「用户可能不点」的模块付构造/导入开销。

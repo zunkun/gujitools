@@ -8,7 +8,7 @@ from PySide6.QtCore import QSize, QTimer
 from PySide6.QtWidgets import QApplication, QMainWindow
 from PySide6.QtGui import QIcon
 from qfluentwidgets import setTheme, Theme
-from desktop.modules.shell import NAV_COMPACT_WIDTH, ModuleShell
+from desktop.shell import NAV_COMPACT_WIDTH, ModuleShell
 from desktop.store import TaskStore
 from desktop.ui import theme as T
 from desktop.utils.icon import rounded_window_icon
@@ -53,7 +53,7 @@ class MainWindow(QMainWindow):
     """主窗口：左侧导航壳层（任务管理 + 独立模块）与详情页跳转。
 
     2026-10-02 起，窗口中央从「列表页/详情页两页对切」升级为
-    :class:`desktop.modules.shell.ModuleShell`：左边一条 qfluentwidgets
+    :class:`desktop.shell.ModuleShell`：左边一条 qfluentwidgets
     导航栏，右边页面栈。任务管理仍是首页，其余是彼此独立的工具模块
     （图片提取 / 去底色 / 拼图）。
 
@@ -262,19 +262,6 @@ def main() -> int:
             print(f"[guji] singletask 目录迁移：{line}")
     except Exception as exc:  # noqa: BLE001 —— 迁移绝不该挡住进主界面
         print(f"[guji] singletask 目录迁移跳过：{exc}")
-
-    # ---- 提取页缩略图并成一份的一次性迁移（2026-10-04）----
-    # 用户：「我不需要太多缩略图，只保留一份……既然最后是按照序号提取的，
-    # 那就按照序号处理」。改之前 extract 下有两套（PDF 页渲染 + 产物重渲），
-    # 同一个页面被渲两遍存两份；现在统一到 ``thumbnails/<书>/<边长>/NNNN.jpg``。
-    # 同样只记日志、不拦启动。
-    try:
-        from desktop.utils.files import migrate_extract_thumbs_to_numbered
-
-        for line in migrate_extract_thumbs_to_numbered():
-            print(f"[guji] 提取缩略图合并：{line}")
-    except Exception as exc:  # noqa: BLE001 —— 同上，迁移失败不该挡住进主界面
-        print(f"[guji] 提取缩略图合并跳过：{exc}")
 
     # ---- 单例守卫：同一个构建只允许一个 GUI 实例 ----
     # 已有本构建实例在跑 → 把那个窗口恢复并带到前台，本进程直接退出。

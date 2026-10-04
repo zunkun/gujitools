@@ -13,7 +13,9 @@
   选中了某张图时激活并高亮**（``_ItemSection``），切页 / 点空白取消选中后
   整块灰掉；
 - **「在流程中启用图片拼版」**复选框**放面板最底部**（用户 2026-09-30）：
-  决定第四步取图来源（共享基元 ``print_source_dir``）。
+  决定第四步取图来源（共享基元 ``print_source_dir``）。⚠️ 这是**任务流程
+  专属**的概念——公共面板的契约只有输入/输出；没有下游流程的宿主（独立
+  拼图页、未来的批处理界面）构造时传 ``enable_switch=False`` 收起它。
 
 「选择拼版」按钮**不在本面板**（2026-09-30 删除）：入口只有左列末尾的
 虚线「＋ 选择拼版」格（``page_list.py``），两处同义留一处。
@@ -32,7 +34,11 @@ from __future__ import annotations
 from PySide6.QtCore import QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
-    QBoxLayout, QFrame, QHBoxLayout, QLabel, QVBoxLayout,
+    QBoxLayout,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QVBoxLayout,
 )
 from qfluentwidgets import CaptionLabel, CheckBox, DoubleSpinBox, PushButton
 from qfluentwidgets import FluentIcon as FIF
@@ -86,9 +92,7 @@ class _ItemSection(QFrame):
         self.angle_row = QHBoxLayout()  # 通栏滑块行（面板注入滑块）
         self.angle_row.setSpacing(T.SPACE_SM)
         column.addLayout(self.angle_row)
-        self.empty_hint = CaptionLabel(
-            "未选中图片——点击画布里的某张图后在这里调整", self
-        )
+        self.empty_hint = CaptionLabel("未选中图片——点击画布里的某张图后在这里调整", self)
         self.empty_hint.setWordWrap(True)
         apply_to(self.empty_hint, T.SIZE_CAPTION, color=T.INK_FAINT)
         column.addWidget(self.empty_hint)
@@ -104,7 +108,9 @@ class _ItemSection(QFrame):
 
     def _apply_state(self) -> None:
         apply_to(
-            self.title_label, T.SIZE_CAPTION, bold=True,
+            self.title_label,
+            T.SIZE_CAPTION,
+            bold=True,
             color=T.ACCENT if self._active else T.INK_FAINT,
         )
         self.update()
@@ -142,10 +148,14 @@ class ImpositionPanel(Card):
     #: 清空全部页
     clear_requested = Signal()
 
-    def __init__(self, parent=None):
-        super().__init__(
-            padding=T.SPACE_MD, spacing=T.SPACE_MD, radius=T.RADIUS_MD
-        )
+    def __init__(self, parent=None, *, enable_switch: bool = True):
+        """``enable_switch=False``：收起底部「在流程中启用图片拼版」开关。
+
+        开关决定任务流程第四步的取图来源，是**任务流程专属**概念；没有
+        下游流程的宿主（独立拼图页）传 ``False``。控件仍会构造（只是隐藏
+        并置为已启用），宿主无需感知属性是否存在。
+        """
+        super().__init__(padding=T.SPACE_MD, spacing=T.SPACE_MD, radius=T.RADIUS_MD)
         column: QVBoxLayout = self.box
         # 标题行：说明挂问号按钮（同其他步骤面板），不再平铺占高度
         title_row = QHBoxLayout()
@@ -166,7 +176,7 @@ class ImpositionPanel(Card):
         column.addWidget(SectionTitle("操作当前图片页"))
 
         self._syncing_rotation = False  # 程序化回填滑块/输入框时挡住信号回抛
-        self._whole_angle = 0.0         # 整版旋转组件当前显示的绝对角度
+        self._whole_angle = 0.0  # 整版旋转组件当前显示的绝对角度
 
         # ---- 整体旋转（任意角度，绕两图公共中心）----
         # 用户 2026-09-30：滑块与输入框不挤一行——输入框挂说明行右侧，
@@ -186,9 +196,7 @@ class ImpositionPanel(Card):
         # 复位本页版面独占一行（block，2026-09-30 用户定：删除按钮挪去
         # 与「新增图片」同行后，复位不再拼行）
         self.reset_button = PushButton(FIF.SYNC, "复位本页版面")
-        self.reset_button.setToolTip(
-            "把本页图片恢复成刚拼好时的样子（并排、原始大小、不旋转）"
-        )
+        self.reset_button.setToolTip("把本页图片恢复成刚拼好时的样子（并排、原始大小、不旋转）")
         self.reset_button.clicked.connect(self.reset_requested)
         column.addWidget(self.reset_button)
 
@@ -198,9 +206,7 @@ class ImpositionPanel(Card):
         page_actions = QHBoxLayout()
         page_actions.setSpacing(T.SPACE_SM)
         self.add_image_button = PushButton(FIF.ADD, "新增图片")
-        self.add_image_button.setToolTip(
-            "本页只有一张图：再导入一张剩余未拼版的图片，拼成左右两图的一页"
-        )
+        self.add_image_button.setToolTip("本页只有一张图：再导入一张剩余未拼版的图片，拼成左右两图的一页")
         self.add_image_button.clicked.connect(self.add_image_requested)
         page_actions.addWidget(self.add_image_button, 1)
         self.add_image_button.hide()
@@ -246,13 +252,15 @@ class ImpositionPanel(Card):
         # 弹性空白收在启用开关之前：其余控件紧凑靠上，开关钉在面板最底部
         column.addStretch(1)
 
-        # ---- 启用开关放面板最底部（用户 2026-09-30）：决定第四步取图来源 ----
+        # ---- 启用开关放面板最底部（用户 2026-09-30）：决定第四步取图来源；
+        # 任务流程专属，独立页等无下游流程的宿主传 enable_switch=False 收起 ----
         self.enabled_checkbox = CheckBox("在流程中启用图片拼版")
-        self.enabled_checkbox.setToolTip(
-            "启用后「生成 PDF」用拼版合成结果；不启用则从去底色直接生成 PDF"
-        )
+        self.enabled_checkbox.setToolTip("启用后「生成 PDF」用拼版合成结果；不启用则从去底色直接生成 PDF")
         self.enabled_checkbox.toggled.connect(self.enabled_toggled)
         column.addWidget(self.enabled_checkbox)
+        if not enable_switch:
+            self.enabled_checkbox.setVisible(False)
+            self.enabled_checkbox.setChecked(True)  # 面板内部按"已启用"渲染
 
     # ------------------------------------------------------------------ 状态
     def _build_angle_spin(self) -> DoubleSpinBox:

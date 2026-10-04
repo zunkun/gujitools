@@ -283,7 +283,7 @@ def run(ctx) -> None:
 
     # ---- 6c. 详情页没有导航条目：高亮必须留在「任务管理」而不是丢空 ----
     # 直接驱动 _sync_nav_to_page 的映射：ROUTE_DETAIL → ROUTE_TASKS。
-    from desktop.modules.shell import ROUTE_DETAIL, ROUTE_TASKS
+    from desktop.shell import ROUTE_DETAIL, ROUTE_TASKS
 
     w.shell._selected_route = ROUTE_TASKS
     w.shell._sync_nav_to_page(0)  # 当前页是列表页 → 走一次真实同步
@@ -316,7 +316,7 @@ def run(ctx) -> None:
         ok(f"{file.parent.name}/page.py 无跨模块/详情页依赖", not clashes, str(clashes))
 
     # ---- 8. 壳层也不许静态 import 具体模块页 ----
-    shell_src = (root / _MODULES_DIR / "shell.py").read_text(encoding="utf-8")
+    shell_src = (root / "desktop" / "shell.py").read_text(encoding="utf-8")
     shell_imports = _imported_modules(shell_src)
     bad = sorted(
         entry for entry in shell_imports

@@ -10,6 +10,7 @@ from PySide6.QtCore import QUrl, QSize
 from PySide6.QtGui import QDesktopServices, QImageReader
 from PySide6.QtWidgets import QFileDialog
 
+from desktop.components.viewers.edit_sync import show_edited_image
 from desktop.utils.files import THUMBNAIL_EDGE, default_open_dir
 from desktop.workers import ImageListWorker, connect_queued
 from utils.file_utils import replace_with_retry
@@ -145,8 +146,8 @@ class PageListMixin:
                     f"（{size.width()}×{size.height()} px）；"
                     "检测框基于旧图坐标，失配时请重新执行检测。"
                 )
-            self.extract_result_viewer.apply_edited_image(path_text, image)
-            self.detect_viewer.apply_edited_image(path_text, image)
+            show_edited_image(self.extract_result_viewer, path_text, image)
+            show_edited_image(self.detect_viewer, path_text, image)
             self._regen_page_thumb(path_text)
         else:
             # rembg 结果等：无坐标基准与页缩略图要跟，按文件刷新显示即可
