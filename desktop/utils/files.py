@@ -94,6 +94,77 @@ def migrate_legacy_singletask_dirs() -> list[str]:
     return moved
 
 
+def migrate_extract_thumbs_to_numbered(subtask: str = "extract") -> list[str]:
+    """一次性迁移：extract 的缩略图改成「序号口径、只留一份」（2026-10-04）。
+
+    用户原话：「我不需要太多缩略图，只保留一份就可以……既然最后是按照序号
+    提取的，那么就按照序号处理」。
+
+    改之前一个子任务目录下有**两套**缩略图（同一个页面被渲了两遍、存了两份）：
+
+    1. ``thumbnails/<书>/0001.jpg``——PDF 页渲染（未提取时左栏显示）；
+    2. ``thumbs/256/<图键>.jpg``——按提取产物重渲（提取后左栏显示）。
+
+    实测同页两者像素差 < 12/255（内容基本一致），所以第 2 套是纯冗余。
+
+    迁移做两件事：
+
+    - 把 ``thumbnails/<书>/NNNN.jpg`` **挪进** ``thumbnails/<书>/<边长>/``，
+      文件名不变（序号口径本来就是这个名）——挪的是**目录位置**不是内容，
+      命中判据（``cache_usable`` 比 mtime）原样成立，不用重渲；
+    - 删掉 ``thumbs/`` 整棵（它只服务第 2 套；⚠️ 只删 ``<子任务>/thumbs``，
+      不碰别的子任务目录）。
+
+    **幂等**：目标已存在就跳过、不覆盖；删 ``thumbs/`` 前先确认里面没有别的
+    子目录。⚠️ 全程 ``try/except OSError``：占用/权限/跨卷一律**留着不动**，
+    下次启动再试——缓存丢了能重渲，删错了没法恢复。
+    """
+    base = singletask_dir(subtask)
+    notes: list[str] = []
+    thumbs_root = base / "thumbs"
+    book_root = base / "thumbnails"
+
+    # ---- 1. 平铺的 NNNN.jpg 挪进 <边长>/ ----
+    if book_root.is_dir():
+        for book_dir in sorted(p for p in book_root.iterdir() if p.is_dir()):
+            # 已经是分层目录（迁移过了）或就是边长目录 ⇒ 不动
+            flat = sorted(book_dir.glob("[0-9][0-9][0-9][0-9].jpg"))
+            if not flat:
+                continue
+            target_dir = book_dir / str(int(THUMBNAIL_EDGE))
+            try:
+                target_dir.mkdir(parents=True, exist_ok=True)
+            except OSError:
+                continue
+            for src in flat:
+                dst = target_dir / src.name
+                if dst.exists():
+                    continue  # 迁移过的：目标在位，绝不覆盖
+                try:
+                    src.rename(dst)
+                except OSError:
+                    continue  # 占用/跨卷：留在原地，下次再试
+            notes.append(f"{book_dir.name}: 平铺页缩略图 → {target_dir.name}/")
+
+    # ---- 2. 删掉 thumbs/（第 2 套，纯冗余）----
+    if thumbs_root.is_dir():
+        try:
+            # 只在它确实是「缩略图缓存目录」时才删：里面有非数字子目录就放弃
+            entries = list(thumbs_root.iterdir())
+            suspicious = [
+                p.name for p in entries
+                if p.is_dir() and not p.name.isdigit()
+            ]
+            if suspicious:
+                notes.append(f"thumbs/ 非纯缓存，跳过删除：{suspicious}")
+            else:
+                shutil.rmtree(thumbs_root)
+                notes.append("thumbs/ 已删除（与页缩略图重复）")
+        except OSError:
+            notes.append("thumbs/ 删除失败（占用/权限），保留")
+    return notes
+
+
 def singletask_thumbnails_dir(subtask: str, book: str | Path | None = None) -> Path:
     """子任务的**页缩略图缓存**：``singletask/<子任务>/thumbnails[/<书>]``。
 
@@ -167,6 +238,62 @@ def image_thumbs_dir(subtask: str, edge: int = THUMBNAIL_EDGE) -> Path:
     （旧缓存全成孤儿）。⚠️ 边长必须进目录名（``decode_edge`` 随 dpr 变）。
     """
     return singletask_dir(subtask) / "thumbs" / str(int(edge))
+
+
+# ---------------------------------------------------------------- 序号口径的缩略图
+#
+# 用户 2026-10-04：「我不需要太多缩略图，只保留一份就可以，一切以最终标准处理，
+# 既然最后是按照序号提取的，那么就按照序号处理；如果没有提取之前，可以写一个
+# 映射图，原始名称跟序号的映射不就行了」。
+#
+# 事实基础（``utils/pdf_extract.py`` 的两处落盘，``:254`` 与 ``:317``）：
+# **提取产物的文件名就是 ``f"{page_idx + 1}.{ext}"``**——序号 N 恒等于 PDF 的
+# 第 N 页，唯一例外是**失败页留空号**（失败页不产出文件，见 ``_report_batch``）。
+# 于是「原始名称 ↔ 序号」是恒等映射，不必真去生成一张对照表；真正需要记下来的
+# 只有「哪些序号**没**产出」，那才是映射表里唯一有信息量的部分。
+#
+# ⚠️ **这为什么能砍掉第二份缓存**：此前 extract 一个子任务目录下有两套缩略图：
+# ``thumbnails/<书>/NNNN.jpg``（PDF 整页渲染）与 ``thumbs/256/<图键>.jpg``
+# （按提取产物重渲）。实测同页两者像素差 < 12/255（内容基本一致），因为这批书
+# 每页恰好一张内嵌整页图。统一到序号口径后，同一页**只落一个文件**：
+# 未提取时它是「PDF 第 N 页的渲染」，提取后按产物重渲**覆盖同一个文件**。
+
+
+def extract_thumbs_dir(
+    subtask: str, book: str | Path, edge: int = THUMBNAIL_EDGE,
+) -> Path:
+    """某个子任务下**一本书**的序号口径缩略图目录。
+
+    ``singletask/<子任务>/thumbnails/<书>/<边长>/``
+
+    ⚠️ 仍然**必须带 ``book`` 分一层**（与 :func:`singletask_thumbnails_dir`
+    同一条护栏）：文件名是**序号**，A 书第 1 页与 B 书第 1 页会撞名 ⇒ 翻出
+    别本书的内容。
+    """
+    return (
+        singletask_thumbnails_dir(subtask, book) / str(int(edge))
+    )
+
+
+def extract_thumb_path(
+    subtask: str, book: str | Path, seq: int, edge: int = THUMBNAIL_EDGE,
+) -> Path:
+    """第 ``seq`` 页（1 起始）的缩略图路径：``<序号4位补零>.jpg``。
+
+    ⚠️ 四位补零不是装饰，是**排序键**：``1.jpg`` 排在 ``10.jpg`` 前面，
+    缩略图条的顺序必须与产物序号一致（``collect_result_images`` 用自然排序）。
+    """
+    return extract_thumbs_dir(subtask, book, edge) / f"{int(seq):04d}.jpg"
+
+
+def thumb_map_path(subtask: str, book: str | Path) -> Path:
+    """序号 ↔ 产物的映射表：``singletask/<子任务>/thumbnails/<书>/map.json``。
+
+    记录 ``{"book":…, "pages": N, "seqs": [1,2,…]}``——``seqs`` 是**真实产出
+    的序号**（失败页不在其中）。它是缩略图与产物之间的唯一权威对照：左栏条目
+    按它与缓存文件对齐，缺号的地方不会出现"有缩略图却没产物"的幽灵条目。
+    """
+    return singletask_thumbnails_dir(subtask, book) / "map.json"
 
 
 def default_open_dir() -> Path:

@@ -26,9 +26,12 @@ from pathlib import Path
 
 from desktop.utils.files import (
     THUMBNAIL_EDGE,
+    extract_thumb_path,
+    extract_thumbs_dir,
     image_thumb_cache_path,
     image_thumbs_dir,
     singletask_thumbnails_dir,
+    thumb_map_path,
 )
 
 
@@ -58,6 +61,14 @@ class ThumbSourceMixin:
     #: 页数重建条目（与 ``PdfViewerWidget._thumb_gen`` 同一个坑）。
     _pdf_gen = 0
 
+    #: 最近一次 ``show_pdf(numbered=True)`` 的书（extract 用）。提取完成后
+    #: :meth:`show_numbered_images` 据此把产物缩略图写回**同一批文件**。
+    _thumb_book: Path | None = None
+
+    #: 本步骤是否用「序号口径」的缩略图。extract 置 True（产物序号 = 页号，
+    #: 全步骤只留一份）；其余步骤置 False（源是一批图片，缩略图按图键命名）。
+    NUMBERED_THUMBS = False
+
     # ------------------------------------------------------------------ 入口
     def show_source(self, source, paths=None) -> None:
         """按源的类型接上左栏缩略图。
@@ -73,25 +84,42 @@ class ThumbSourceMixin:
         """
         if source is None:
             self.viewer.set_images([])
+            self._thumb_book = None
             return
         candidate = Path(source)
         if paths is None and candidate.suffix.lower() == ".pdf":
-            self.show_pdf(candidate)
+            self.show_pdf(candidate, numbered=self.NUMBERED_THUMBS)
             return
         images = list(paths) if paths is not None else self._listing(candidate)
+        # ⚠️ 换成**非 PDF** 源（图片/目录）时清掉 ``_thumb_book``：否则上一次
+        # 那本书的序号口径会继续生效，把这批图的缩略图写进别的书的目录。
+        if paths is not None or not candidate.is_file():
+            self._thumb_book = None
         self.show_images(images)
 
-    def show_pdf(self, pdf: Path | str) -> None:
+    def show_pdf(self, pdf: Path | str, numbered: bool = False) -> None:
         """源是 PDF：渲页缩略图并交给查看器（大图按需渲高清页）。
 
         ⚠️ 缓存目录**必须带书**（:func:`singletask_thumbnails_dir` 的第二个
         参数）：缩略图文件名是页号（``0001.jpg``…），共用目录会让 A 书第 1 页
         被当成 B 书第 1 页的命中缓存 ⇒ 翻出别本书的内容。
+
+        ``numbered=True``（**extract 专用**，用户 2026-10-04「只保留一份、
+        按序号处理」）：落到 ``thumbnails/<书>/<边长>/NNNN.jpg``——多一层
+        ``<边长>/``，让**提取后按产物重渲写的是同一批文件**，从而全步骤只有
+        一份缩略图。print 页渲的是它自己的产物 PDF，与提取序号无关，仍走
+        旧路径（``numbered=False``）。
         """
         pdf = Path(pdf)
         self._pdf_gen += 1
         gen = self._pdf_gen
-        cache_dir = singletask_thumbnails_dir(self._subtask(), pdf)
+        cache_dir = (
+            extract_thumbs_dir(self._subtask(), pdf, self.THUMB_EDGE)
+            if numbered
+            else singletask_thumbnails_dir(self._subtask(), pdf)
+        )
+        #: extract 记住「这本书」，提取后按序号重渲要写回同一个目录
+        self._thumb_book = pdf if numbered else None
         self.viewer.set_pdf_source(pdf, cache_dir=cache_dir, gen=gen)
         self._watch_pdf_thumbs(pdf, cache_dir, gen)
 
@@ -101,14 +129,43 @@ class ThumbSourceMixin:
         清单**仍然是真实图片路径**（不是缓存路径）：右侧大图、检测框按
         ``Path(path).stem`` 取键、放大弹窗的编辑回写，全都指着真实文件。
         缓存只喂左侧缩略图条（查看器的 ``thumb_provider``）。
+
+        ⚠️ ``NUMBERED_THUMBS`` 的步骤（extract）走**序号口径**：缓存名是
+        ``0001.jpg`` 而非图键，于是「未提取时的 PDF 页渲染」与「提取后的产物
+        重渲」落在**同一批文件**上——全步骤只有一份缩略图（用户 2026-10-04）。
+        序号取自产物文件名的数字部分（``pdf_extract`` 落盘名恒为
+        ``f"{page_idx+1}.{ext}"``，见 ``utils/pdf_extract.py:254/317``），
+        取不到就退回落回图键命名，绝不猜。
         """
         images = [Path(p) for p in images]
         if not images:
             self.viewer.set_images([])
             return
+        book = self._thumb_book
+        if self.NUMBERED_THUMBS and book is not None:
+            names = [self._seq_of(p) for p in images]
+            self.viewer.set_thumb_source(
+                images,
+                extract_thumbs_dir(self._subtask(), book, self.THUMB_EDGE),
+                edge=self.THUMB_EDGE,
+                names=names,
+            )
+            return
         self.viewer.set_thumb_source(
             images, self._thumb_cache_dir(), edge=self.THUMB_EDGE
         )
+
+    def _seq_of(self, image: Path) -> str | None:
+        """产物文件名里的序号 → 缓存文件名（``1.jpg`` → ``0001.jpg``）。
+
+        ⚠️ **只认纯数字文件名**（``^\\d+$``）：``0003.png`` 可以，``cover.jpg``
+        返回 None（交给调用方回落到图键命名）。宁可退回去多存一份，也不能把
+        一个名字对错的图挂到别人的缩略图上（那正是本书各处反复踩的"张冠李戴"）。
+        """
+        stem = Path(image).stem
+        if stem.isdigit():
+            return f"{int(stem):04d}.jpg"
+        return None
 
     # ------------------------------------------------- 编辑器覆盖图文件后的同步
     #
@@ -179,6 +236,12 @@ class ThumbSourceMixin:
         ⚠️ 重渲交给 ``ImageThumbCacheWorker``：它自己会判「缓存比源图旧就重渲」，
         而源图刚被覆盖、mtime 必定更新，所以这里天然会重渲一次；它同时负责
         原子写盘与逐图算键，不另写一份。
+
+        ⚠️ **必须与首次装载用同一个目标文件**，否则编辑后重渲会写到别处
+        （序号口径下就是 ``0007.jpg`` 与 ``7-…-hash.jpg`` 分道扬镳，缩略图
+        不更新）。所以这里复用 :meth:`_seq_of` / ``_thumb_cache_dir`` 同一份
+        规则，而不是各算一遍——用户 2026-10-04 明确要求「后期编辑后能够同步
+        缩略图」。
         """
         viewer = getattr(self, "viewer", None)
         if viewer is None:
@@ -187,9 +250,12 @@ class ThumbSourceMixin:
 
         text = str(path)
         edge = self.THUMB_EDGE
-        cache_dir = self._thumb_cache_dir()
+        cache_dir = self._edited_thumb_dir()
+        names = self._edited_thumb_names([path])
         self.run_worker(
-            lambda: ImageThumbCacheWorker([path], cache_dir, edge=edge),
+            lambda: ImageThumbCacheWorker(
+                [path], cache_dir, edge=edge, names=names,
+            ),
             lambda worker, thread: (
                 connect_queued(
                     self, worker.thumbnail_ready,
@@ -202,6 +268,20 @@ class ThumbSourceMixin:
                 worker.failed.connect(thread.quit),
             ),
         )
+
+    def _edited_thumb_dir(self) -> Path:
+        """编辑重渲的目标目录：与首次装载**同一个**（见 :meth:`show_images`）。"""
+        book = self._thumb_book
+        if self.NUMBERED_THUMBS and book is not None:
+            return extract_thumbs_dir(self._subtask(), book, self.THUMB_EDGE)
+        return self._thumb_cache_dir()
+
+    def _edited_thumb_names(self, paths: list[Path]) -> list[str | None] | None:
+        """编辑重渲的目标文件名：与首次装载同一份规则；无序号口径返回 None。"""
+        book = self._thumb_book
+        if not (self.NUMBERED_THUMBS and book is not None):
+            return None
+        return [self._seq_of(p) for p in paths]
 
     def _on_edited_thumb(self, path_text: str, image, cached: str) -> None:
         """重渲好的缩略图到位：把这一条换成新缓存小图（其余条目不动）。"""
@@ -301,4 +381,11 @@ class ThumbSourceMixin:
             log(f"PDF 缩略图生成失败：{message}")
 
 
-__all__ = ["ThumbSourceMixin", "image_thumb_cache_path", "image_thumbs_dir"]
+__all__ = [
+    "ThumbSourceMixin",
+    "extract_thumb_path",
+    "extract_thumbs_dir",
+    "image_thumb_cache_path",
+    "image_thumbs_dir",
+    "thumb_map_path",
+]

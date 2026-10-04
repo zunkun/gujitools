@@ -346,7 +346,10 @@ def _check_singletask_thumbnails(ctx, ok) -> None:
     from desktop.components.viewers import ImageViewerWidget
     from desktop.modules.extract.page import ExtractModulePage
     from desktop.steps.spec import spec_by_key
-    from desktop.utils.files import safe_dirname, singletask_thumbnails_dir
+    from desktop.utils.files import (
+        THUMBNAIL_EDGE, extract_thumb_path, extract_thumbs_dir,
+        safe_dirname, singletask_thumbnails_dir,
+    )
     from tests.selftests._context import make_pdf
 
     spec = spec_by_key("extract")
@@ -356,21 +359,26 @@ def _check_singletask_thumbnails(ctx, ok) -> None:
     # ⚠️ 用 ``disk_key()`` 而非 ``title``：缓存目录名锚在路由键上，改文案
     #    不会让磁盘路径漂移（自测也必须按同一口径拼期望值，否则它跟着文案
     #    一起错，反而查不出真的回归）。
-    cache = singletask_thumbnails_dir(spec.disk_key(), pdf)
+    cache = extract_thumbs_dir(spec.disk_key(), pdf, THUMBNAIL_EDGE)
 
     ok("singletask 落在 guji/singletask 下",
        "singletask" in cache.parts, str(cache))
     ok("不同子任务各有自己的目录",
        # ⚠️ 用另一个步骤的 disk_key（不是它的 title）：目录名锚在路由键上。
-       cache != singletask_thumbnails_dir(spec_by_key("rembg").disk_key(), pdf))
-    # ⚠️ 这一条是"不同书不共用缓存"的护栏：缩略图文件名是页号，共用目录会让
-    #    A 书第 1 页被当成 B 书第 1 页的命中缓存 ⇒ 翻出别本书的内容。
-    other_dir = singletask_thumbnails_dir(spec.disk_key(), other)
-    ok("不同书各有自己的缓存目录（缩略图名是页号，不能混）",
+       cache != extract_thumbs_dir(
+           spec_by_key("rembg").disk_key(), pdf, THUMBNAIL_EDGE))
+    # ⚠️ 这一条是"不同书不共用缓存"的护栏：缩略图文件名是**序号**，共用目录会
+    #    让 A 书第 1 页被当成 B 书第 1 页的命中缓存 ⇒ 翻出别本书的内容。
+    other_dir = extract_thumbs_dir(spec.disk_key(), other, THUMBNAIL_EDGE)
+    ok("不同书各有自己的缓存目录（缩略图名是序号，不能混）",
        cache != other_dir, f"{cache} vs {other_dir}")
     ok("目录名里的非法字符被洗掉",
        all(ch not in safe_dirname('a<b>c:d"e/f\\g|h?i*j') for ch in '<>:"/\\|?*'),
        safe_dirname('a<b>c:d"e/f\\g|h?i*j'))
+    ok("缓存按**序号**命名（四位补零，1 排在 10 前面）",
+       extract_thumb_path(spec.disk_key(), pdf, 7, THUMBNAIL_EDGE).name
+       == "0007.jpg",
+       extract_thumb_path(spec.disk_key(), pdf, 7, THUMBNAIL_EDGE).name)
 
     page = ExtractModulePage()
     try:
@@ -404,13 +412,15 @@ def _check_singletask_thumbnails(ctx, ok) -> None:
             if len(names) >= 3:
                 break
         ok("选 PDF 后立刻渲出全部页缩略图", len(names) == 3, f"{names} @ {cache}")
+        ok("缩略图按序号命名",
+           names == ["0001.jpg", "0002.jpg", "0003.jpg"], str(names))
         ok("缩略图非空（不是半截 JPEG）",
            all((cache / n).stat().st_size > 0 for n in names), str(names))
 
         # 换一本书：页数不同的两本不能互相污染
         page.control.set_source(other)
         ctx.app.processEvents()
-        other_cache = singletask_thumbnails_dir(spec.disk_key(), other)
+        other_cache = extract_thumbs_dir(spec.disk_key(), other, THUMBNAIL_EDGE)
         other_names: list[str] = []
         for _ in range(150):
             ctx.app.processEvents()
@@ -422,20 +432,104 @@ def _check_singletask_thumbnails(ctx, ok) -> None:
         ok("换一本书渲出的是它自己的页数（2 页，不是上一本的 3 页）",
            len(other_names) == 2, f"{other_names} @ {other_cache}")
 
+        # 换回第一本（后面几段继续用它）
+        page.control.set_source(pdf)
+        ctx.app.processEvents()
+        for _ in range(80):
+            ctx.app.processEvents()
+            time.sleep(0.1)
+            if len(list(cache.glob("*.jpg"))) >= 3:
+                break
+
         # ---- ⑩b 提取完成后左栏切成**提取出的图片**（用户 2026-10-03）----
         # 需求原文：「在未提取图片之前是按照缩略图，单独图片显示，提取后直接
         # 显示提取的图片」。不钉这一条的话，最容易出的错是"PDF 页模式没退出"
         # ——左栏看着有图，点哪页却都是同一页（因为还在拿 1.jpg 当页号渲 PDF）。
         out_dir = Path(ctx.tmp) / "extract_out"
         out_dir.mkdir(parents=True, exist_ok=True)
-        _write_tiny_jpegs(out_dir, 2)
+        _write_tiny_jpegs(out_dir, 3)
         page.on_result(out_dir, {})
         ctx.app.processEvents()
         ok("提取后退出 PDF 页模式（否则点哪页都是同一页）",
            page.viewer._page_source is None, str(page.viewer._page_source))
         ok("提取后左栏换成提取出的图片",
-           [p.name for p in page.viewer.paths] == ["1.jpg", "2.jpg"],
+           [p.name for p in page.viewer.paths] == ["1.jpg", "2.jpg", "3.jpg"],
            str(page.viewer.paths))
+
+        # ---- ⑩c「只保留一份、按序号处理」（用户 2026-10-04）----
+        # 本次改动的**核心需求**，必须钉死：否则将来任何一处改动都可能又把
+        # 第二套缩略图渲出来（改之前就是 ``thumbs/<图键>.jpg`` 与
+        # ``thumbnails/<书>/NNNN.jpg`` 并存，同一页存了两份）。
+        names_arg = page.viewer._thumb_cache_names
+        ok("产物缩略图按序号命名（与页缩略图同一个名字）",
+           names_arg is not None and list(names_arg)
+           == ["0001.jpg", "0002.jpg", "0003.jpg"], str(names_arg))
+        ok("提取后缩略图目录仍是那一个（没有第二套目录）",
+           str(Path(page.viewer._thumb_cache_dir)) == str(cache),
+           str(page.viewer._thumb_cache_dir))
+        first_target = page.viewer._lookup_thumb_path(str(page.viewer.paths[0]))
+        ok("产物 1 的缩略图就是未提取时的 0001.jpg（同一个文件）",
+           first_target is not None and Path(first_target) == cache / "0001.jpg",
+           str(first_target))
+        ok("旧的按图键目录不再是提取页的目标目录",
+           str(page._thumb_cache_dir()) != str(cache),
+           str(page._thumb_cache_dir()))
+        ok("映射表已落盘（序号 ↔ 产物）",
+           page.write_thumb_map(page.viewer.paths) is not None
+           and Path(page.write_thumb_map(page.viewer.paths)).is_file(),
+           str(page._thumb_book))
+
+        # ---- ⑩d 编辑产物后缩略图要同步（用户 2026-10-04 明确要求）----
+        # 「要保证后期编辑后能够同步缩略图」：编辑器覆盖产物图后，重渲必须
+        # 落到**同一个序号文件**（0001.jpg），否则翻回来还是编辑前那张。
+        target = cache / "0001.jpg"
+        ok("编辑重渲的目标目录与首次装载一致（不会写到别处）",
+           str(page._edited_thumb_dir()) == str(cache),
+           str(page._edited_thumb_dir()))
+        ok("编辑重渲的目标文件名也是序号（0001.jpg）",
+           page._edited_thumb_names([Path(page.viewer.paths[0])]) == ["0001.jpg"],
+           str(page._edited_thumb_names([Path(page.viewer.paths[0])])))
+        # 真跑一次重渲：目标必须是 **0001.jpg**，且**只有**它被碰到。
+        # ⚠️ 别断言"mtime 变了"：产物图在 ``on_result`` 那一步已经渲过一次，
+        # 这里再调是**命中缓存**（``cache_usable`` 比 mtime，源图没动就不重渲）
+        # ——mtime 不变才是正确行为。真正要钉的是"写到了同一个文件、没有第二份"。
+        # （"编辑后确实会更新"由 ``cache_usable`` 的 mtime 判据保证：编辑器覆盖
+        # 产物图后源图 mtime 必然更新 ⇒ 下一次重渲必重画。）
+        listing_before = sorted(p.name for p in cache.glob("*.jpg"))
+        page._reload_edited_thumb(page.viewer.paths[0])
+        alive = True
+        for _ in range(120):
+            ctx.app.processEvents()
+            time.sleep(0.1)
+            if target.exists():
+                break
+        ok("编辑后重渲后 0001.jpg 仍在位（缩略图没被写丢）",
+           alive and target.exists(), f"{target}")
+        ok("重渲后目录里仍是那一份（文件名集合不变）",
+           sorted(p.name for p in cache.glob("*.jpg")) == listing_before,
+           f"{sorted(p.name for p in cache.glob('*.jpg'))} vs {listing_before}")
+        # 且**没有**在旁边多出按图键命名的第二份
+        stray = sorted(p.name for p in cache.glob("*.jpg") if not p.stem.isdigit())
+        ok("重渲没有产生第二套（图键命名）缩略图", stray == [], str(stray))
+        # ⚠️ 真正的"编辑后会更新"在这里钉：把缓存改旧（mtime 早于产物图），
+        # 重渲**必须**把它重画一遍 —— 这正是编辑器覆盖产物后的真实状态。
+        import os as _os
+        import time as _time
+
+        product = Path(page.viewer.paths[0])
+        _os.utime(target, (1, 1))  # 缓存比产物旧 ⇒ 必然判过期
+        _os.utime(product, (_time.time(), _time.time()))
+        stale_before = target.stat().st_mtime_ns
+        page._reload_edited_thumb(product)
+        redrawn = False
+        for _ in range(120):
+            ctx.app.processEvents()
+            time.sleep(0.1)
+            if target.stat().st_mtime_ns != stale_before:
+                redrawn = True
+                break
+        ok("缓存比产物旧时重渲会真的更新 0001.jpg（编辑后能同步）", redrawn,
+           f"{target}")
     finally:
         page.shutdown_workers()
         page.deleteLater()

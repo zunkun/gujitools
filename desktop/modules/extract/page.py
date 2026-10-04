@@ -33,6 +33,8 @@ from desktop.components.viewers import ImageViewerWidget
 from desktop.modules.base import StepModulePage
 from desktop.modules.thumb_source import ThumbSourceMixin
 from desktop.steps import spec_by_key
+from desktop.utils.files import thumb_map_path
+from utils.file_utils import write_bytes_atomic
 
 #: 本页的步骤元数据（标题/副标题/面板/过滤串/默认输出后缀的唯一来源）
 _SPEC = spec_by_key("extract")
@@ -46,6 +48,12 @@ class ExtractModulePage(StepModulePage, ThumbSourceMixin):
     """图片提取模块页：选 PDF → 看页缩略图 → 调参数 → 执行 → 看提取结果。"""
 
     SPEC = _SPEC
+
+    #: 走**序号口径**的缩略图（用户 2026-10-04「只保留一份、按序号处理」）：
+    #: 缓存文件名是 ``0001.jpg``（序号 = PDF 页号 = 产物序号），于是未提取时的
+    #: 页渲染与提取后的产物重渲落在**同一批文件**上，`thumbnails/<书>/<边长>/`
+    #: 就是全步骤唯一一份缩略图目录。
+    NUMBERED_THUMBS = True
 
     # ------------------------------------------------------------------ 预览
     def _build_preview(self) -> ImageViewerWidget:
@@ -92,9 +100,55 @@ class ExtractModulePage(StepModulePage, ThumbSourceMixin):
         images = collect_result_images(out_root)
         if images:
             self.show_images(images)
+            self.write_thumb_map(images)
             self.toast("success", "提取完成", f"共生成 {len(images)} 张图片。")
         else:
             self.toast("warning", "没有产出", "输出目录里没有找到图片。")
+
+    # ------------------------------------------------------------- 序号 ↔ 产物映射
+    def write_thumb_map(self, images: list[Path]) -> Path | None:
+        """把「序号 ↔ 产物」的映射落成 ``map.json``（用户 2026-10-04）。
+
+        用户原话：「如果没有提取之前，可以写一个映射图，原始名称跟序号的映射
+        不就行了」。
+
+        ⚠️ 但真正的映射是**恒等**的，不必凭空造表：``utils/pdf_extract.py``
+        的落盘名恒为 ``f"{page_idx + 1}.{ext}"``（``:254`` 与 ``:317``），序号 N
+        就是 PDF 第 N 页。所以这张表只记**有信息量的那一半**——
+        ``{"book":…, "seq": N, "name": "1.jpg"}`` 的清单：哪个序号**真的产出了**、
+        叫什么。失败页不产出文件（``_report_batch`` 里失败页不进 done），表里
+        自然缺号，左栏也不会出现"有缩略图却没产物"的幽灵条目。
+
+        ⚠️ 写失败（权限/磁盘满）**不打断流程**：映射表是辅助产物，缺了只是
+        少一份对照，界面照常用。绝不因为写表失败让整个提取显示成失败。
+        """
+        import json
+
+        book = self._thumb_book
+        if book is None:
+            return None  # 没有选过 PDF（不该发生），无从挂靠
+        entries = []
+        for path in images:
+            stem = path.stem
+            if not stem.isdigit():
+                continue  # 非序号命名（不该发生）：不硬凑，交给图键口径
+            entries.append({"seq": int(stem), "name": path.name,
+                            "path": str(path)})
+        payload = {
+            "book": Path(book).name,
+            "count": len(entries),
+            "entries": sorted(entries, key=lambda e: e["seq"]),
+        }
+        try:
+            target = thumb_map_path(self._subtask(), book)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            # 原子写：这张表随时可能被另一个线程/进程读，半截 JSON 会让解析炸掉
+            write_bytes_atomic(target, json.dumps(
+                payload, ensure_ascii=False, indent=2,
+            ).encode("utf-8"))
+            return target
+        except OSError:
+            return None
 
     # ------------------------------------------------------------------ 收尾
     def shutdown_workers(self) -> None:

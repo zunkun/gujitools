@@ -263,6 +263,19 @@ def main() -> int:
     except Exception as exc:  # noqa: BLE001 —— 迁移绝不该挡住进主界面
         print(f"[guji] singletask 目录迁移跳过：{exc}")
 
+    # ---- 提取页缩略图并成一份的一次性迁移（2026-10-04）----
+    # 用户：「我不需要太多缩略图，只保留一份……既然最后是按照序号提取的，
+    # 那就按照序号处理」。改之前 extract 下有两套（PDF 页渲染 + 产物重渲），
+    # 同一个页面被渲两遍存两份；现在统一到 ``thumbnails/<书>/<边长>/NNNN.jpg``。
+    # 同样只记日志、不拦启动。
+    try:
+        from desktop.utils.files import migrate_extract_thumbs_to_numbered
+
+        for line in migrate_extract_thumbs_to_numbered():
+            print(f"[guji] 提取缩略图合并：{line}")
+    except Exception as exc:  # noqa: BLE001 —— 同上，迁移失败不该挡住进主界面
+        print(f"[guji] 提取缩略图合并跳过：{exc}")
+
     # ---- 单例守卫：同一个构建只允许一个 GUI 实例 ----
     # 已有本构建实例在跑 → 把那个窗口恢复并带到前台，本进程直接退出。
     # 身份是 **desktop 包目录**：开发版与正式版的目录不同，因此两个程序可以

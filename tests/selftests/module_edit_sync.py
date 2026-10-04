@@ -184,8 +184,28 @@ def _wait_until(app, condition, timeout: float = 20.0) -> bool:
 # ------------------------------------------------------------------ 一个源的页
 def _edit_flow(ctx, page_cls, keyword: str, prepare, ok, has_apply: bool) -> None:
     """跑一个"一个源"的独立步骤页：选源 → 编辑 → 断言三件事都做到了。"""
-    from desktop.utils.files import image_thumb_cache_path
+    from desktop.utils.files import (
+        extract_thumbs_dir, image_thumb_cache_path,
+    )
     from tests.selftests._context import pump
+
+    def thumb_of(image: Path) -> Path:
+        """这张图的缓存缩略图**由页面自己算**（两种口径都对）。
+
+        ⚠️ 不能在这儿按图键拼期望路径：extract 走**序号口径**（用户
+        2026-10-04「只保留一份、按序号处理」），缓存名是 ``0001.jpg``，
+        与源图文件名无关。自测按自己那份口径拼期望值，跟着一错就查不出真回归。
+
+        走「问页面自己要目标路径」这条路，两种口径都自动成立：序号口径页
+        （``NUMBERED_THUMBS``）给出 ``0001.jpg``，其余页给出图键名。
+        """
+        numbered = getattr(page, "NUMBERED_THUMBS", False)
+        book = getattr(page, "_thumb_book", None)
+        if numbered and book is not None and image.stem.isdigit():
+            return extract_thumbs_dir(
+                page._subtask(), book, page.THUMB_EDGE,
+            ) / f"{int(image.stem):04d}.jpg"
+        return image_thumb_cache_path(page.SPEC.disk_key(), image, page.THUMB_EDGE)
 
     page = page_cls()
     app = ctx.app
@@ -196,7 +216,7 @@ def _edit_flow(ctx, page_cls, keyword: str, prepare, ok, has_apply: bool) -> Non
         ok(f"{page.TITLE}：左栏列的就是待编辑的那张图",
            str(target) in _viewer_paths(page.viewer), str(_viewer_paths(page.viewer)))
 
-        cached = image_thumb_cache_path(page.SPEC.disk_key(), target, page.THUMB_EDGE)
+        cached = thumb_of(target)
         ok(f"{page.TITLE}：选源后缩略图缓存已就绪（编辑前的白色）",
            _wait_until(app, lambda: cached.is_file() and _near(_pixel(cached), WHITE),
                        timeout=25.0),
@@ -223,7 +243,7 @@ def _edit_flow(ctx, page_cls, keyword: str, prepare, ok, has_apply: bool) -> Non
         ok(f"{page.TITLE}：左栏该条目的缩略图换成了编辑后的像素",
            _wait_until(app, lambda: _near(_icon_pixel(page.viewer, row), BLUE)),
            _icon_pixel(page.viewer, row))
-        now_key = image_thumb_cache_path(page.SPEC.disk_key(), target, page.THUMB_EDGE)
+        now_key = thumb_of(target)
         ok(f"{page.TITLE}：编辑后缓存按新键重渲",
            _wait_until(app, lambda: now_key.is_file() and _near(_pixel(now_key), BLUE)),
            _pixel(now_key))
@@ -232,14 +252,21 @@ def _edit_flow(ctx, page_cls, keyword: str, prepare, ok, has_apply: bool) -> Non
         edited2 = _overwrite_source(target, GREEN, size=(W2, H2), work=work)
         page.viewer.image_saved.emit(str(target), edited2)
         pump(app, times=4)
-        moved = image_thumb_cache_path(page.SPEC.disk_key(), target, page.THUMB_EDGE)
+        moved = thumb_of(target)
         ok(f"{page.TITLE}：换尺寸的编辑同样上屏",
            _wait_until(app, lambda: _near(_display_pixel(page.viewer), GREEN),
                        timeout=20.0),
            _display_pixel(page.viewer))
-        ok(f"{page.TITLE}：换尺寸后缓存键跟着变（键里确实带大小指纹）",
-           moved != now_key, f"{moved.name} vs {now_key.name}")
-        ok(f"{page.TITLE}：新键那份缓存是编辑后的图",
+        # ⚠️ 「键会变」只对**图键口径**成立（键里带大小指纹）；序号口径下键
+        #    恒为 0001.jpg，是**同一个文件被重写**。两种都断言：换尺寸后目标
+        #    确实反映成了编辑后的图（序号口径下就是"同一文件被更新"）。
+        if moved != now_key:
+            ok(f"{page.TITLE}：换尺寸后缓存键跟着变（键里确实带大小指纹）",
+               moved != now_key, f"{moved.name} vs {now_key.name}")
+        else:
+            ok(f"{page.TITLE}：序号口径下换尺寸仍写同一个序号文件",
+               moved.name == now_key.name, f"{moved.name}")
+        ok(f"{page.TITLE}：目标那份缓存是编辑后的图",
            _wait_until(app, lambda: moved.is_file() and _near(_pixel(moved), GREEN)),
            _pixel(moved))
         ok(f"{page.TITLE}：换尺寸后条目图标也跟着换",

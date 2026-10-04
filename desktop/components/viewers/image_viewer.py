@@ -67,6 +67,9 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         self._thumb_cache_edge: int | None = None
         self._thumb_cache_ready: dict[str, Path] = {}
         self._thumb_cache_lookup = None
+        #: 每条清单对应的**显式**缓存文件名（extract 的序号口径用；None 项
+        #: 回落到图键命名）。与 :attr:`_paths` 同序，长度不一致时按越界回落。
+        self._thumb_cache_names: list[str | None] | None = None
         # 原始尺寸提供者：(path_text) -> QSize | None。
         # 预览加载的大图可能被降采样，框坐标以原始尺寸为坐标系基准。
         self._image_size_provider = image_size_provider
@@ -190,6 +193,7 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
     # ------------------------------------------------------- 缩略图缓存接线
     def set_thumb_source(
         self, paths: list[Path], cache_dir: Path, edge: int | None = None,
+        names: list[str | None] | None = None,
     ) -> None:
         """清单是真实图片，但左侧缩略图走 ``cache_dir`` 下的**缓存小图**。
 
@@ -201,13 +205,48 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         实现方式是**替换缩略图来源**而不是替换清单：``_thumb_provider`` 由
         :meth:`set_thumb_source` 装上，:meth:`set_images` 的
         ``_load_thumbs`` 会自动走它（它本来就支持 ``thumb_provider``）。
+
+        ``names``（可选，与 ``paths`` 等长）：每张图的**显式缓存文件名**。
+        extract 的缓存名是**序号**（``0001.jpg``）而非图键——同一页在
+        「未提取」阶段是 PDF 渲染、「提取后」是产物重渲，两次写**同一个文件**，
+        目标名只能由调用方给出（用户 2026-10-04「只保留一份、按序号处理」）。
         """
         self._thumb_cache_dir = Path(cache_dir)
         self._thumb_cache_edge = edge
         self._thumb_cache_ready: dict[str, Path] = {}
         self._thumb_cache_worker = None
+        #: 每条清单对应的缓存文件名（None = 按图键命名）；供 ``_thumb_cache_lookup``
+        #: 与 ``_reload_edited_thumb`` 用**同一份**规则算出目标路径。
+        self._thumb_cache_names = list(names) if names is not None else None
         self.set_images(paths)
         self._start_thumb_cache(paths)
+
+    def _thumb_cache_target(self, index: int, path: Path) -> Path:
+        """第 ``index`` 张清单项的缓存文件路径（显式名优先，否则按图键）。"""
+        names = self._thumb_cache_names
+        if names is not None and 0 <= index < len(names) and names[index]:
+            return Path(self._thumb_cache_dir) / names[index]
+        from desktop.workers.thumb_cache_worker import thumb_cache_file
+
+        return thumb_cache_file(Path(self._thumb_cache_dir), path)
+
+    def _lookup_thumb_path(self, path_text: str) -> Path | None:
+        """``thumb_provider`` 用的查询：某张清单项的缓存文件路径。
+
+        ⚠️ 必须按**清单下标**定位显式名，不能按 ``path_text`` 猜：序号口径下
+        缓存名是 ``0001.jpg``，与源图文件名无关，只有清单顺序能对上。
+        找不到就返回 None（调用点回落到 provider / 原图）。
+        """
+        if self._thumb_cache_dir is None:
+            return None
+        try:
+            index = [str(p) for p in self._paths].index(path_text)
+        except ValueError:
+            return None
+        try:
+            return self._thumb_cache_target(index, Path(path_text))
+        except (IndexError, TypeError):
+            return None
 
     def _start_thumb_cache(self, paths: list[Path]) -> None:
         """后台把这批图的缩略图渲进缓存，逐张回填缩略图条。
@@ -220,28 +259,31 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         ⚠️ **不等它跑完就先把清单上屏**（``set_images`` 已在上一步做完）：用户
         选完源就该立刻看到这批图（缩略图条先占位），而不是等磁盘缓存写完。
         """
-        from desktop.workers.thumb_cache_worker import (
-            ImageThumbCacheWorker,
-            thumb_cache_file,
-        )
+        from desktop.workers.thumb_cache_worker import ImageThumbCacheWorker
 
         if not paths:
             return
         edge = self._thumb_cache_edge or self._decode_edge()
         cache_dir = self._thumb_cache_dir
+        names = self._thumb_cache_names
+        # ⚠️ 切片要**连同 names 一起切**：序号口径下缓存文件名与清单下标一一
+        # 对应，忘了切片就会拿第 0..N 项的名字配第 N..2N 项的图（张冠李戴）。
+        # 洞位（None）会回落到图键命名，所以拼接时原样保留 None。
+        worker_names = (
+            None if names is None else names[: len(paths)]
+        )
         self._load_thumbs_chunked(
             len(paths),
             make_worker=lambda s, e: ImageThumbCacheWorker(
-                paths[s:e], cache_dir, edge=edge
+                paths[s:e], cache_dir, edge=edge,
+                names=None if worker_names is None else worker_names[s:e],
             ),
             sink=lambda index, image, cached: self._on_thumb_cached(
                 index, image, cached
             ),
         )
-        # 供宿主/自测查询某张图的缓存路径
-        self._thumb_cache_lookup = lambda path: thumb_cache_file(
-            cache_dir, path
-        )
+        # 供宿主/自测查询某张图的缓存路径（显式名优先，与 worker 同一份规则）
+        self._thumb_cache_lookup = lambda path: self._lookup_thumb_path(path)
 
     def _on_thumb_cached(self, index: int, image, cached: str) -> None:
         """一张缓存缩略图就绪：记下路径并把缩略图条上那一条换成小图。
@@ -281,6 +323,7 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         self._thumb_provider = None
         self._thumb_cache_dir = None
         self._thumb_cache_ready = {}
+        self._thumb_cache_names = None
         self._paths = []
         self.close_zoom_popup()
         self.view.clear_image("正在加载缩略图…")

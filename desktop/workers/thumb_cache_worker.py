@@ -126,14 +126,25 @@ class ImageThumbCacheWorker(QObject):
         paths: list[Path | str],
         out_dir: Path | str,
         edge: int = THUMBNAIL_EDGE,
+        names: list[str | None] | None = None,
     ):
         """``paths`` 为源图清单；``out_dir`` 是这一批共用的缓存目录
         （``singletask/<子任务>/thumbs/<边长>/``）；``edge`` 为缩略图最长边。
+
+        ``names``（可选，与 ``paths`` 等长）：每张图**显式指定的缓存文件名**。
+        给了就用它，为 ``None`` 的项回落到 :func:`thumb_cache_file` 的图键命名。
+
+        ⚠️ 什么时候需要它（用户 2026-10-04「只保留一份、按序号处理」）：extract
+        的缓存文件名是**序号**（``0001.jpg``），与源图文件名无关——同一页的缩略图
+        在「未提取」阶段是 PDF 渲染、「提取后」是产物重渲，两次都写**同一个文件**。
+        这时目标名只能由调用方按序号给出，不能从路径反推。
         """
         super().__init__()
         self.paths = [Path(p) for p in paths]
         self.out_dir = Path(out_dir)
         self.edge = int(edge)
+        #: 显式缓存文件名（可能含 ``None`` 洞位，与 paths 等长）
+        self.names = list(names) if names is not None else None
         self._cancelled = False
 
     def cancel(self) -> None:
@@ -142,6 +153,10 @@ class ImageThumbCacheWorker(QObject):
 
     def cache_path(self, index: int) -> Path:
         """第 index 张图的缓存路径（宿主拿去当 ``thumb_provider`` 的答案）。"""
+        if self.names is not None and index < len(self.names):
+            name = self.names[index]
+            if name:
+                return self.out_dir / name
         return thumb_cache_file(self.out_dir, self.paths[index])
 
     @Slot()
@@ -151,7 +166,7 @@ class ImageThumbCacheWorker(QObject):
             for index, path in enumerate(self.paths):
                 if self._cancelled:
                     break
-                target = thumb_cache_file(self.out_dir, path)
+                target = self.cache_path(index)
                 if cache_usable(target, stat_mtime(path)):
                     image = QImage(str(target))
                     if image.isNull():
