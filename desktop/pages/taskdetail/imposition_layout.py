@@ -340,6 +340,7 @@ class ImpositionLayoutMixin:
         )
 
         editor = ImageEditorDialog(self.window(), image, save_back=True)
+        editor.target_name = path.name
         if editor.exec() != QDialog.DialogCode.Accepted:
             return
         edited = editor.result_image()
@@ -422,16 +423,19 @@ class ImpositionLayoutMixin:
             overwrite_image_file,
         )
 
+        target = (
+            self.store.imposition_output_dir(self.task_id)
+            / FILE_FMT.format(page_index + 1)
+        )
         editor = ImageEditorDialog(self.window(), image, save_back=True)
+        editor.target_name = f"第{page_index + 1}页拼版成品"
+        # 这一页还没合成过 ⇒ 目标文件不存在，没有旧成品可覆盖，不弹确认。
+        editor.target_exists = target.is_file()
         if editor.exec() != QDialog.DialogCode.Accepted:
             return
         edited = editor.result_image()
         if edited is None or edited.isNull():
             return
-        target = (
-            self.store.imposition_output_dir(self.task_id)
-            / FILE_FMT.format(page_index + 1)
-        )
         if not overwrite_image_file(edited, target):
             self._toast("error", "保存失败", f"编辑未生效：{target.name}")
             return

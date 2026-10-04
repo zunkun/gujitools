@@ -382,10 +382,15 @@ class StepModulePage(ModulePage):
         from desktop.steps.source_zone import SourceZone
 
         self.zone = SourceZone(self.SPEC)
-        # 归一化失败（拖进来的不是这一步要的东西）时用 toast 说话——大输入区
+        # 控件自己没走通（如选择对话框打不开）时用 toast 说话——大输入区
         # 自己只发信号，"怎么说给用户听"是页面的事。
+        # ⚠️ **"用户取消了选择对话框"不会走到这里**（用户 2026-10-04）：
+        #    那不是错误，"这个用不上"纯属噪声。
+        # ⚠️ **"东西给过来了但一步都跑不了"也不走这里**：那由
+        #    ``StepControl._on_paths`` 经 ``resolve_source`` 给出理由，
+        #    落到页头状态行（常驻可见），不拿 toast 打断用户。
         self.zone.rejected.connect(
-            lambda message: self.toast("warning", "这个用不上", message)
+            lambda message: self.toast("warning", "没能完成这次选择", message)
         )
         return self.zone
 

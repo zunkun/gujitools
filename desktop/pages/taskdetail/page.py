@@ -511,7 +511,9 @@ class TaskDetailPage(
         self.preview_stack.setCurrentIndex(index)
         # 真实步骤：执行按钮组恢复可见（拼版详情页整组藏掉，见
         # _select_imposition_detail；两种状态互斥、切换时都要还原）
-        self.run_button.setVisible(True)
+        # ⚠️ 恢复的是**整行** action_row（「生成预览 + 提交本次任务」并排），
+        #    只恢复 run_button 的话行本身仍带着上一步的隐藏标记。
+        self.action_row.setVisible(True)
         self.followup_row.setVisible(True)
         # 按钮文案与区块显隐**全查 spec**（不再 `if stage == ...`）：
         # 第三步是「生成预览」+「提交本次任务」两个动作，第四步是「生成PDF」，
@@ -777,8 +779,8 @@ class TaskDetailPage(
     def _apply_regenerate_highlight(self) -> None:
         """本步产物过期（改了版面 / 上游又跑过）时把主按钮加粗高亮。
 
-        与第三步「提交本次任务（有新版本）」同一套视觉语言：文案里点明该动作，
-        但**不阻止**用户先干别的——只提示，不自动重跑。
+        与第三步「提交本次任务」待重新提交时的视觉语言一致：**用加粗**点明
+        该动作，但**不阻止**用户先干别的——只提示，不自动重跑。
         """
         pending = self._regenerate_notice(self.current_stage()) is not None
         # ⚠️ 加粗走 setFont，别用 setStyleSheet("…{font-weight:bold}") —— 那会把

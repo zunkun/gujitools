@@ -259,7 +259,11 @@ class ImpositionPagesMixin:
         view.set_current(index)
         self._update_imposition_status(index)
         self.log_view.append(
-            f"已在{cn_page_label(index)}新增图片「{picked[0].stem}」"
+            # ⚠️ `picked` 在边界收口成 Path：真实弹窗给 list[Path]，而自测替身
+            #    给 list[str]——此前直接 `picked[0].stem` 会让**每次全量自测**
+            #    都往 stderr 喷一条 AttributeError（图其实已加进版面，只是这行
+            #    日志炸了、断言照过，长期被当成噪声忽略）。
+            f"已在{cn_page_label(index)}新增图片「{Path(picked[0]).stem}」"
             f"（原有「{Path(items[0]['file']).stem}」的版面保持不动）。"
         )
 
@@ -309,6 +313,10 @@ class ImpositionPagesMixin:
         new_current = min(new_current, len(pages) - len(drop) - 1)
         view.set_current(new_current)
         self._update_imposition_status(view.current_index())
+        # ⚠️ 页码清单必须先拼出来再用：此前这里直接引用 `{listing}` 而未定义
+        #    ——批量删除**必定**在这条日志上抛 NameError（页已删、异常逃出，
+        #    用户见不到任何提示；自测只验了信号发射，没跑过真正的处理器）。
+        listing = "、".join(str(i + 1) for i in indexes)
         self.log_view.append(
             f"已批量删除 {len(indexes)} 页拼版（第 {listing} 页），"
             "图片已释放回未选择列表。"
@@ -378,3 +386,100 @@ class ImpositionPagesMixin:
             view.set_current(-1)
         self._update_imposition_status(-1)
         self.log_view.append("已清空全部拼版页。")
+
+    # ------------------------------------------------------------- 左列缩略图
+    def _imposition_page_reps(self, pages: list) -> list[str]:
+        """每页的**代表图**（第一张源图路径）；空页位是 ``""``。
+
+        一页拼版本来就"两张图并排"，给一张代表图已经能认出是哪页。
+        """
+        reps: list[str] = []
+        for page in pages or []:
+            files = [item.get("file") for item in page.get("items") or []]
+            reps.append(str(next((f for f in files if f), "")))
+        return reps
+
+    def _refresh_imposition_page_thumbs(self, pages: list) -> None:
+        """左列每页的缩略图：已渲好的直接贴，没渲过的起后台 pass 补。
+
+        用户 2026-10-04：「任务流程里拼板缩略图没显示，只看到占位」——这条
+        链此前**从没喂过缩略图**（占位符永远在）。每页取第一张源图当代表，
+        渲进**任务目录**的 ``thumbnails/imposition/``，键是"去后缀+大小+路径
+        指纹"，换图自然换键。
+
+        ⚠️ 与独立拼图页（``modules/imposition/page.py``）**不是一回事**：
+        组件与 worker 共用，**缓存根各归各**——独立区写
+        ``singletask/imposition/``，任务流程写 ``tasks/<id>/thumbnails/
+        imposition/``（用户 2026-10-04 明确）。
+        """
+        view = getattr(self, "imposition_view", None)
+        if view is None:
+            return
+        thumbs = getattr(self, "_imposition_source_thumbs", None)
+        if thumbs is None:
+            thumbs = self._imposition_source_thumbs = {}
+        reps = self._imposition_page_reps(pages)
+        by_index = [thumbs.get(rep) if rep else None for rep in reps]
+        view.set_page_thumbs(by_index)
+        missing = list(dict.fromkeys(r for r in reps if r and r not in thumbs))
+        if missing:
+            self._load_imposition_source_thumbs(missing)
+
+    def _load_imposition_source_thumbs(self, images: list[str]) -> None:
+        """后台把这批源图的缩略图渲进**任务目录**缓存，回来后贴进左列。
+
+        ⚠️ 缓存归属 ``tasks/<id>/thumbnails/imposition/``（任务删除时随任务
+        目录一并清掉），**不写**独立区的 ``singletask/imposition/``——两边
+        虽共用 ``ImageThumbCacheWorker`` 与条目组件，但不是一回事（用户
+        2026-10-04 明确「singletask 的缓存目录是 singletask，taskdetail 的
+        缓存目录是 tasks」）。
+        """
+        from desktop.utils.files import THUMBNAIL_EDGE
+        from desktop.workers import ImageThumbCacheWorker, connect_queued
+
+        cache_dir = self.store.imposition_thumbnails_dir(self.task_id)
+        self.run_worker(
+            lambda: ImageThumbCacheWorker(
+                images, cache_dir, edge=THUMBNAIL_EDGE
+            ),
+            lambda worker, thread: (
+                connect_queued(
+                    self, worker.thumbnail_ready,
+                    lambda index, image, _cached, items=list(images): (
+                        self._on_imposition_source_thumb(index, image, items)
+                    ),
+                    thread,
+                ),
+                worker.completed.connect(thread.quit),
+                worker.failed.connect(thread.quit),
+            ),
+        )
+
+    def _on_imposition_source_thumb(
+        self, index: int, image, images: list[str]
+    ) -> None:
+        """一张源图缩略图就绪：存起来并贴到左列（只贴图，不再起 worker）。
+
+        ⚠️ 与独立拼图页的差别：那边每次到达都重跑一遍"刷新"（会对剩余项
+        再起 worker）；这里到达时**只重贴已存下的**——worker 本身对每张图
+        都有缓存，多起几轮只会白转线程。
+        """
+        from PySide6.QtGui import QPixmap
+
+        if image is None or getattr(image, "isNull", lambda: True)():
+            return
+        if not (0 <= index < len(images)):
+            return
+        pixmap = QPixmap.fromImage(image)
+        if pixmap.isNull():
+            return
+        thumbs = getattr(self, "_imposition_source_thumbs", None)
+        if thumbs is None:
+            thumbs = self._imposition_source_thumbs = {}
+        thumbs[images[index]] = pixmap
+        view = getattr(self, "imposition_view", None)
+        if view is not None:
+            reps = self._imposition_page_reps(self._imposition_pages())
+            view.set_page_thumbs(
+                [thumbs.get(rep) if rep else None for rep in reps]
+            )

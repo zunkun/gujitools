@@ -3,7 +3,8 @@
 
 用户口径：
 1. 左侧一列「第一页 / 第二页 / …」，**虚线的「＋ 选择拼版」固定钉在左列
-   最底部**（不跟在页码下面）；页条目勾选框紧挨文字，勾选页后清单下沿
+   最底部**（不跟在页码下面）；页条目**缩略图在上、文字在下**（用户
+   2026-10-04），勾选框钉左上角、「✕」钉右上角；勾选页后清单下沿
    浮出「取消选择 / 批量删除」悬浮条，取消选择即收起；
 2. 点「选择拼版」弹窗，从**剩余未被选择拼版的图片**里勾选（**只有三种
    可选形态**：1 张单独成页；2 张拼一页；1 张半幅 + 自动拼版；勾 0/≥3 张
@@ -559,13 +560,20 @@ def run(ctx) -> None:
         ok("点「✕」发 remove_requested(该页下标)", removed == [1], str(removed))
 
         # ---- 勾选多选 + 悬浮批量操作框（用户 2026-09-30）----
-        # 每个条目左上有勾选框；勾了页，悬浮框（「已选 N 页」+「取消选择」
-        # 「批量删除」）悬在页码栏右侧中部（可拖动），勾选数归零自动收起；
-        # 勾选框点击不触发切页/排序；重建清单时勾选按副标题跨重建保留。
+        # 每个条目左上角是勾选框（2026-10-04 起：缩略图在上、文字在下，
+        # 勾选框钉左上、「✕」钉右上）；勾了页，悬浮框（「已选 N 页」+
+        # 「取消选择」「批量删除」）悬在页码栏右侧中部（可拖动），勾选数
+        # 归零自动收起；勾选框点击不触发切页/排序；重建清单时勾选按副标题
+        # 跨重建保留。
         entries = view.page_list.entries()
-        ok("条目左上有勾选框（在标题左侧）",
+        ok("条目左上有勾选框（缩略图在上、文字在下、勾选框贴左上角）",
            all(e.checkbox.isVisibleTo(e) for e in entries)
-           and all(e.checkbox.x() < e.title_label.x() for e in entries))
+           and all(e.checkbox.x() < e.width() // 2 for e in entries)
+           and all(e.checkbox.y() < e.thumb.y() for e in entries)
+           and all(e.thumb.y() < e.title_label.y() <= e.caption_label.y()
+                   for e in entries),
+           str([(e.checkbox.x(), e.checkbox.y(), e.thumb.y(),
+                 e.title_label.y()) for e in entries]))
         ok("没勾选 → 悬浮批量条收起",
            not view.page_list.select_bar.isVisibleTo(view.page_list))
         clicks = []
@@ -1173,6 +1181,72 @@ def run(ctx) -> None:
                len(page._imposition_pages()) == 2)
         finally:
             _ipick.ImpositionPickerDialog = real_dialog
+
+        # ---- 左列缩略图（用户 2026-10-04）----
+        # 「任务流程里拼板缩略图没显示、只看到占位」：这条链此前**从没喂过
+        # 缩略图**（占位符是硬编码的初始值，没有任何代码会替换它）。现在每页
+        # 取第一张源图，后台渲进 singletask 缓存后贴到条目上。
+        import time as _time
+
+        _reps = page._imposition_page_reps(page._imposition_pages())
+        for _ in range(100):  # 后台线程回填：轮询到全部到位或超时（约 5s）
+            _got = getattr(page, "_imposition_source_thumbs", {}) or {}
+            if all(r in _got for r in _reps if r):
+                break
+            ctx.app.processEvents()
+            _time.sleep(0.05)
+        _thumbs = page._imposition_source_thumbs
+        ok("左列缩略图：每页代表图（第一张源图）都渲出",
+           bool(_reps) and all(r in _thumbs for r in _reps if r),
+           f"reps={[Path(r).name for r in _reps]} got={sorted(_thumbs)}")
+        _entries = page.imposition_view.page_list.entries()
+        ok("左列缩略图：贴到条目上（pixmap 非空，不再是占位）",
+           len(_entries) == 2
+           and all(not e.thumb.pixmap().isNull() for e in _entries),
+           str([e.thumb.pixmap().isNull() for e in _entries]))
+        ok("左列版面：缩略图在上、文字在下（勾选框贴左上角）",
+           all(e.checkbox.y() < e.thumb.y() < e.title_label.y() for e in _entries)
+           and all(e.checkbox.x() < e.width() // 2 for e in _entries))
+
+        # ---- 批量删除（回归钉子）----
+        # 曾出错：确认后的日志行引用未定义的 `listing` ⇒ 页虽然删了，但方法
+        # 在日志处抛 NameError，用户什么提示都看不到（旧用例只验了信号发射，
+        # 没跑过真正的处理器——这里用替身确认弹窗把处理器跑通）。
+        _pages_backup = [dict(p) for p in page._imposition_pages()]
+        for _e in page.imposition_view.page_list.entries():
+            _e.set_checked(True)
+        import desktop.components.imposition.confirm_delete as _icdel
+
+        class _FakeConfirmDialog:
+            def __init__(self, items, parent=None):
+                self.items = list(items)
+
+            def exec(self):
+                return 1
+
+        _real_confirm = _icdel.BatchDeleteConfirmDialog
+        _icdel.BatchDeleteConfirmDialog = _FakeConfirmDialog
+        _log_at = len(page.log_view.toPlainText())
+        try:
+            page._on_imposition_batch_delete()
+            page._imposition_timer.stop()
+            pump(ctx.app, times=6)
+        finally:
+            _icdel.BatchDeleteConfirmDialog = _real_confirm
+        ok("批量删除：确认后真删了页、清单一空",
+           len(page._imposition_pages()) == 0
+           and len(page.imposition_view.page_list.entries()) == 0)
+        _tail = page.log_view.toPlainText()[_log_at:]
+        ok("批量删除：日志列出被删页码（回归：曾引用未定义变量直接崩）",
+           "已批量删除 2 页拼版（第 1、2 页）" in _tail, _tail[-160:])
+        # 恢复两页：后面的取图来源/旧数据断言都建立在"拼版已生效"之上
+        page._save_imposition_pages(_pages_backup)
+        page._imposition_timer.stop()
+        pump(ctx.app, times=6)
+        ok("批量删除回归用例收尾：页清单已恢复（2 页）",
+           len(page._imposition_pages()) == 2
+           and len(page.imposition_view.page_list.entries()) == 2)
+
         ok("拼版生效", page.imposition_active())
         ok("第四步取图目录切到 stages/imposition",
            page.print_source_dir() == repo.imposition_output_dir(tid),

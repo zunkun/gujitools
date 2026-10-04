@@ -4,8 +4,11 @@
 从图片预览弹窗（``image_zoom_dialog``）的「编辑」按钮进入，编辑的是
 **画布当前整分辨率图**（已含翻转/旋转）；「完成」后写回弹窗画布。宿主
 给 ``save_back=True``（画布显示 1:1 对应真实文件）时，「完成」= 直接
-**原子覆盖原图片文件**；虚拟预览（区域合成/打印重排/PDF 页）没有文件
-可回写，维持"满意用「下载」落盘、翻页/关窗即丢弃"的旧行为。
+**原子覆盖原图片文件**，并**先弹一次覆盖确认**（用户 2026-10-04 定的：
+原图被覆盖后不可逆，必须让用户知道；见 :meth:`ImageEditorDialog.
+_confirm_overwrite`）。虚拟预览（区域合成/打印重排/PDF 页）没有文件
+可回写，维持"满意用「下载」落盘、翻页/关窗即丢弃"的旧行为，也**不弹**
+确认框（不写盘的事不该假报警）。
 
 五个工具的行为口径：
 
@@ -3146,8 +3149,19 @@ class ImageEditorDialog(QDialog):
                  save_back: bool = False):
         super().__init__(parent)
         # 本页有真实文件可回写（宿主预览弹窗传入）：「完成」= 直接覆盖原图
-        # 文件，而不是"回画布再自己下载"。只影响文案，行为在弹窗侧。
+        # 文件，而不是"回画布再自己下载"。只影响文案与覆盖确认，行为在弹窗侧。
         self._save_back = bool(save_back)
+        #: 「完成」覆盖确认里显示的**目标文件名**（宿主在构造后回填，见
+        #: :meth:`_confirm_overwrite`）。刻意做成**属性而不是构造参数**：
+        #: 六个宿主各自算路径的位置不同，而 ``__init__`` 的签名被自测的
+        #: 替身编辑器（``_StubEditor(parent, image, save_back)``）硬编码着，
+        #: 多一个关键字参数就会让那些替身全部 TypeError。
+        self.target_name = ""
+        #: 目标文件**是否已经存在**。默认 True（绝大多数场景：改的就是
+        #: 现存原图）。少数"保存到尚不存在的文件"（整页组合第一次编辑，
+        #: 目标是缓存区里新建的 ``edited/NNNN.png``）由宿主改成 False，
+        #: 于是不弹覆盖确认——没有旧内容可丢，问了是假警报。
+        self.target_exists = True
         self.setWindowTitle("图片编辑")
         self.setModal(True)
         # 编辑要看得清字迹：默认开大，并带最小化/最大化按钮（标题栏双击
@@ -3281,7 +3295,7 @@ class ImageEditorDialog(QDialog):
         row.addStretch(1)
         self.done_btn = PrimaryPushButton(FIF.SAVE, "完成")
         self.done_btn.setToolTip(
-            "应用全部编辑并**覆盖原图片**"
+            "应用全部编辑，覆盖原图片（会先提示确认）"
             if self._save_back else
             "应用全部编辑并回到预览；满意再用预览弹窗的「下载」保存文件"
         )
@@ -3885,21 +3899,81 @@ class ImageEditorDialog(QDialog):
                 self._image, pos, text, px, color, family)
         self.canvas.replace_image(self._image)
 
+    def _confirm_overwrite(self) -> bool:
+        """「完成」前问一句"要不要覆盖原图"；用户取消返回 False。
+
+        用户 2026-10-04 定的：图片编辑最后应用时**必须提醒会覆盖原图**。
+        只在 ``save_back``（本页有真实文件可回写）时问——虚拟预览
+        （区域合成/打印重排/PDF 页）压根不写盘，问了是假警报。
+
+        ⚠️ 四个"不打扰"的短路，都走 ``return True``（当作用户同意）：
+
+        1. **无图**：没有可覆盖的东西；
+        2. **目标尚不存在**（``target_exists=False``，宿主回填）：整页组合
+           第一次编辑写的是缓存区里新建的文件，没有旧内容可丢；
+        3. **没改动**：``self._image == self._original``（QImage 逐像素相等）。
+           空跑一趟却弹"将覆盖原图"，用户只会觉得这框很蠢——真要改的话
+           改动本身就在图上，一眼看得见；
+        4. **测试替身**：``qfluentwidgets.MessageBox`` 被自测换成记录器时，
+           它没有真 ``exec()``；用 ``getattr`` 兜住，替身返回 True 直接过。
+
+        ⚠️ 延迟导入 ``MessageBox``（与 ``modules/detect/page.py`` 同款）：
+        自测要能把它换成记录器，否则离屏跑会弹真模态把整个用例挂住。
+        """
+        if not self._save_back:
+            return True
+        if not getattr(self, "target_exists", True):
+            return True
+        if self._image is None or self._image.isNull():
+            return True
+        try:
+            unchanged = self._image == self._original
+        except Exception:      # noqa: BLE001（比较失败就当"改过了"，宁可多问）
+            unchanged = False
+        if unchanged:
+            return True
+        try:
+            from qfluentwidgets import MessageBox  # noqa: PLC0415
+
+            name = str(getattr(self, "target_name", "") or "").strip()
+            detail = f"「{name}」" if name else "原图片"
+            # ⚠️ 正文**不用 markdown 粗体**（``**…**``）：MessageBox 的
+            #    contentLabel 是普通 QLabel，``**`` 会原样显示成两个星号。
+            box = MessageBox(
+                "确定要覆盖原图吗？",
+                f"应用这次编辑会覆盖掉{detail}的现有内容，"
+                "磁盘上的原图将不再保留。\n\n"
+                "若只是想先看看效果，请直接关闭本弹窗（本次编辑全部作废）。",
+                self,
+            )
+            box.yesButton.setText("覆盖并应用")
+            box.cancelButton.setText("返回继续编辑")
+            return bool(box.exec())
+        except Exception:      # noqa: BLE001（无 Qt 事件循环/替身无 exec）
+            return True
+
     def _finish(self) -> None:
         """「完成」：未应用的形变/变换/校正/未插入的文字一并写入，再应用全部编辑。
 
         ⚠️ **必须整体防重入**：上面每一步各有一层自己的 busy 标志，但它们
         只互相挡住**同名**方法，挡不住「完成」被整体重入。而"完成"路径上
-        一定有 ``processEvents``（后台烘焙的等待循环），它会把**排队的第二
-        次点击**派发进来 ⇒ 嵌套进第二个 ``_finish``：此时 ``_cage_busy``
+        一定有 ``processEvents``（后台烘焙的等待循环），它会把**排队的第二次
+        点击**派发进来 ⇒ 嵌套进第二个 ``_finish``：此时 ``_cage_busy``
         还是 False（第一步是 ``_commit_rectify``），于是**两个 worker + 两个
         进度对话框**同时在跑；嵌套层先 ``accept()`` 关窗，外层继续往已经
         关闭的对话框上 ``set_image()``。快速双击「完成」就能触发。
+
+        ⚠️ ``_finishing`` 必须在**确认框之前**就置位：``MessageBox.exec()``
+        自带事件循环，双击「完成」会在框弹出后再进一次这里⇒ 叠出第二个
+        确认框（甚至两个后台烘焙）。所以顺序是"先上锁 → 再问 → 不同意就
+        退出并解锁"，不是"问完再上锁"。
         """
         if getattr(self, "_finishing", False):
             return
         self._finishing = True
         try:
+            if not self._confirm_overwrite():
+                return
             self._commit_rectify()
             self._commit_deform()
             self._commit_cage()
@@ -3942,7 +4016,7 @@ class ImageEditorDialog(QDialog):
         row = QHBoxLayout(bar)
         row.setContentsMargins(0, 0, 0, 0)
         hint = CaptionLabel(
-            "「完成」应用编辑并覆盖原图片；直接关闭弹窗 = 放弃本次全部编辑"
+            "「完成」会提示确认后覆盖原图片；直接关闭弹窗 = 放弃本次全部编辑"
             if self._save_back else
             "「完成」应用编辑并回到预览；直接关闭弹窗 = 放弃本次全部编辑"
         )

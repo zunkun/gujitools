@@ -19,6 +19,13 @@ PDF 源**不在这里**——它已有了一份成熟实现（``PreviewWorker`` 
 ⚠️ 本模块只写**缓存**，不碰产物：模块页的输出目录仍由
 :meth:`desktop.steps.spec.StepSpec.default_output` 决定（用户明确要求「生成
 目录按照原先的」）。
+
+⚠️ **透明 = 白底**（用户 2026-10-04「拼板左列缩略图全是黑的」）：去底色
+（rembg）产物是**调色板 PNG、白底被标记为透明**（``tRNS``）。Qt 解码为
+``ARGB32_Premultiplied``（透明像素 RGB=0），而缓存是 **JPEG——没有 alpha
+通道**：直接编码时"透明 = 黑"会被**固化**成纯黑图（用户看到的黑块就是它）。
+所以本模块产出前一律过 :func:`flatten_on_white`（白纸黑字，与打印/合成
+效果一致）；修复前写坏的历史全黑缓存由 :func:`is_all_black` 兜底重渲自愈。
 """
 
 from __future__ import annotations
@@ -26,7 +33,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QBuffer, QByteArray, QObject, QSize, Qt, Signal, Slot
-from PySide6.QtGui import QImage, QImageReader
+from PySide6.QtGui import QColor, QImage, QImageReader, QPainter
 
 from desktop.utils.files import THUMBNAIL_EDGE, book_key
 from utils.file_utils import write_bytes_atomic
@@ -65,6 +72,30 @@ def cache_usable(target: Path, source_mtime: float) -> bool:
     return stat.st_mtime >= source_mtime and stat.st_size >= MIN_THUMB_BYTES
 
 
+def is_all_black(image: QImage) -> bool:
+    """整张图是否**纯黑**（历史坏缓存的"体检"，见 :func:`flatten_on_white`）。
+
+    修复透明压黑之前写下的缓存是全黑 JPEG，而 :func:`cache_usable` 只看
+    mtime/体积——这些坏缓存 mtime 比源图新（写完之后源图没再动过），会被
+    **永久命中**。读缓存时做一次纯黑体检，命中就删掉重渲，坏缓存自愈。
+
+    ⚠️ 判据是**精确纯黑**：整张 JPEG 的 DCT 系数全为 0 时解码回来精确为
+    (0,0,0)，实测成立；有内容的图绝不会落入此判据。极端的"源图本就是一
+    张全黑页"会被每次重渲一遍（毫秒级），代价可忽略、换来的是坏缓存绝不
+    会永久钉在界面上。
+    """
+    if image.isNull():
+        return False
+    rgb = image.convertToFormat(QImage.Format.Format_RGB32)
+    width, height = rgb.width(), rgb.height()
+    if width <= 0 or height <= 0:
+        return False
+    data = bytes(rgb.constBits())
+    # RGB32：每像素 [B,G,R,A] 四字节，A 恒为 0xFF（RGB32 的定义），且
+    # bytesPerLine == width*4（无行填充，实测）。全黑 ⇒ 非零字节数恰为像素数。
+    return len(data) - data.count(0) == width * height
+
+
 def decode_sized(path: Path, edge: int) -> QImage:
     """按最长边 ``edge`` 缩放解码一张图（尽量不把整张原图读进内存）。
 
@@ -89,6 +120,29 @@ def decode_sized(path: Path, edge: int) -> QImage:
             mode=Qt.TransformationMode.SmoothTransformation,
         )
     return image
+
+
+def flatten_on_white(image: QImage) -> QImage:
+    """把**带 alpha 的图**合成到白底；无 alpha（或空图）原样返回。
+
+    ⚠️ 为什么必须有这一步（用户 2026-10-04「拼板左列全是黑的」实锤往
+    事）：去底色产物是"**白底被标记为透明**"的调色板 PNG。Qt 解码成
+    ``ARGB32_Premultiplied``——透明像素的 RGB 是 0；而缓存的 JPEG 没有
+    alpha 通道，**直接编码 = 把透明固化成黑色**，于是整张缩略图纯黑
+    （实测：一张 256px 的坏缓存只有 1331 字节、全图 (0,0,0)）。
+
+    这类图"透明"的语义就是**纸色（白）**，合成到白底是唯一正确读法：
+    白纸黑字，与打印/合成后的效果一致。不给 alpha 的图（照片、扫描图）
+    原样直通，零改动成本。
+    """
+    if image.isNull() or not image.hasAlphaChannel():
+        return image
+    flattened = QImage(image.size(), QImage.Format.Format_RGB32)
+    flattened.fill(QColor(255, 255, 255))
+    painter = QPainter(flattened)
+    painter.drawImage(0, 0, image)
+    painter.end()
+    return flattened
 
 
 def encode_jpeg(image: QImage, quality: int = 80) -> bytes:
@@ -169,15 +223,18 @@ class ImageThumbCacheWorker(QObject):
                 target = self.cache_path(index)
                 if cache_usable(target, stat_mtime(path)):
                     image = QImage(str(target))
-                    if image.isNull():
-                        # 读不出来（损坏但 mtime 看着还新）：删掉重渲一次
+                    if image.isNull() or is_all_black(image):
+                        # 读不出来（损坏但 mtime 看着还新）、或纯黑（修复
+                        # flatten_on_white 之前写下的"透明被压黑"历史缓存
+                        # ——mtime 比源图新，不体检就会被永久命中）：
+                        # 删掉重渲一次
                         _unlink(target)
-                        image = decode_sized(path, self.edge)
+                        image = flatten_on_white(decode_sized(path, self.edge))
                         if image.isNull():
                             continue
                         _write_jpeg(image, target)
                 else:
-                    image = decode_sized(path, self.edge)
+                    image = flatten_on_white(decode_sized(path, self.edge))
                     if image.isNull():
                         continue  # 读不出来的图跳过，不让整批停摆
                     # 写不下去（权限/磁盘满）时仍然把图发出去：界面照常显示，
@@ -216,6 +273,8 @@ __all__ = [
     "cache_usable",
     "decode_sized",
     "encode_jpeg",
+    "flatten_on_white",
+    "is_all_black",
     "stat_mtime",
     "thumb_cache_file",
 ]

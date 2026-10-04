@@ -199,6 +199,29 @@ def run(ctx) -> None:
         str(rembg.resolve_source([multi_root])),
     )
 
+    # ⚠️ 目录里一个目标文件都没有（含往下两层也找不到）→ **当场**说清，
+    #    而不是放行、让功能层稍后报一句"未找到图片"（用户 2026-10-04：
+    #    「如果导入的是目录，可以检测是否有需要的图片或者文件，没有则可以提示」）。
+    #    那时源已选上、输出目录已推好、预览空着，用户得回头猜是哪步挑错了。
+    barren_root = Path(ctx.tmp) / "barren"
+    (barren_root / "子目录").mkdir(parents=True, exist_ok=True)
+    (barren_root / "说明.txt").write_bytes(b"x")
+    (barren_root / "子目录" / "readme.md").write_bytes(b"x")
+    _rs, _rs_note = rembg.resolve_source([barren_root])
+    ok(
+        "目录里没有目标文件（含子目录）→ 拒绝并当场说明",
+        _rs is None and "没有可用" in _rs_note,
+        str((_rs, _rs_note)),
+    )
+    #⚠️ 边界：目录**压根不存在**时也归到"这些路径都不存在"，不是"没有可用文件"
+    ok(
+        "目录不存在 → 说「路径不存在」而不是「没有可用文件」",
+        (lambda r: r[0] is None and "都不存在" in r[1])(
+            rembg.resolve_source([Path(ctx.tmp) / "ghost_dir"])
+        ),
+        str(rembg.resolve_source([Path(ctx.tmp) / "ghost_dir"])),
+    )
+
     # 拼图要的是"一份文件清单"（不是"一个源"）
     imgs_dir = Path(ctx.tmp) / "imgs"
     imgs_dir.mkdir(exist_ok=True)
@@ -622,8 +645,15 @@ def run(ctx) -> None:
     zone_rejected: list = []
     zone.paths_chosen.connect(zone_seen.append)
     zone.rejected.connect(zone_rejected.append)
+    # ⚠️ 用户 2026-10-04：「如果没有导入完全没有必要提示」。空 offer 走到这里
+    #    只有一种情形——选择对话框里点了「取消」。那是"我什么都没选"，不是
+    #    "你给的东西用不了"，弹「这个用不上」纯属噪声 ⇒ 静默（两个信号都不发）。
     zone.offer([])
-    ok("空拖拽不发路径、只报一句 rejected", zone_seen == [] and bool(zone_rejected), str(zone_rejected))
+    ok(
+        "取消选择（空 offer）完全静默：不发路径、也不报 rejected",
+        zone_seen == [] and zone_rejected == [],
+        f"seen={zone_seen} rejected={zone_rejected}",
+    )
 
     mime = QMimeData()
     mime.setUrls(

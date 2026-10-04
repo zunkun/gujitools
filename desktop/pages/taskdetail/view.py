@@ -35,6 +35,7 @@ from desktop.ui import theme as T
 from desktop.ui.widgets import (
     Card, Divider, ProgressLine, SectionTitle, apply_to, combo_box,
 )
+from desktop.pages.taskdetail.submit import SUBMIT_TEXT
 
 
 class LazyPanelHost(QWidget):
@@ -580,13 +581,29 @@ class DetailViewMixin:
         self.run_button.setFixedHeight(36)
         self.run_button.clicked.connect(lambda: self.run_stage(resume=False))
         # 步骤三（rembg）专用：把预览结果按 area/border 合成为最终图片
-        self.submit_button = PrimaryPushButton(FIF.ACCEPT, "提交本次任务")
+        # ⚠️ 文案取 SUBMIT_TEXT（submit.py 的唯一来源）：并排一行后放不下
+        #    更长的写法，"有新版本"由加粗 + 下方红字提示表达。
+        self.submit_button = PrimaryPushButton(FIF.ACCEPT, SUBMIT_TEXT)
         self.submit_button.setFixedHeight(36)
         self.submit_button.setToolTip(
             "将「生成预览」的去底色图片按「区域模式 / 边距」合成为真正想要的最终图片"
         )
         self.submit_button.clicked.connect(self.run_rembg_submit)
         self.submit_button.setVisible(False)
+        # 「生成预览 / 提交本次任务」并排一行：第三步的这两件事是**同一段动作的
+        # 前后两跳**（先看效果、再落地成最终图），竖着堆叠会让人误以为是两个
+        # 步骤。与「继续执行 / 中断执行」同一理由。
+        # ⚠️ 没有提交按钮的步骤（1/2/4）只有 run_button 可见，stretch=1 让它
+        #    自动占满整行，视觉与并排前一致。
+        # ⚠️ 整行包进独立 QWidget（与 followup_row 同理）：拼版详情页要整组隐藏
+        #    执行按钮（`_select_imposition_detail`），用 addLayout 的话行高仍在，
+        #    控制区底部会留一条空白。
+        self.action_row = QWidget()
+        action = QHBoxLayout(self.action_row)
+        action.setContentsMargins(0, 0, 0, 0)
+        action.setSpacing(T.SPACE_SM)
+        action.addWidget(self.run_button, 1)
+        action.addWidget(self.submit_button, 1)
         # 新版本提示：生成预览参数/结果变化后、提交前常驻提醒（位于提交按钮下方）
         self.submit_hint = CaptionLabel("")
         self.submit_hint.setWordWrap(True)
@@ -613,8 +630,7 @@ class DetailViewMixin:
         self.cancel_button.clicked.connect(self.cancel_stage)
         row.addWidget(self.resume_button, 1)
         row.addWidget(self.cancel_button, 1)
-        control.addWidget(self.run_button)
-        control.addWidget(self.submit_button)
+        control.addWidget(self.action_row)
         control.addWidget(self.submit_hint)
         control.addWidget(self.followup_row)
 

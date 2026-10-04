@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 112 个模块、127 个公开类、883 个公开函数/方法（生成于 2026-10-04）。
+覆盖 112 个模块、127 个公开类、885 个公开函数/方法（生成于 2026-10-04）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -122,7 +122,7 @@
 | [`desktop.workers.serial_jobs`](#desktopworkersserial_jobs) | 1 | 9 |
 | [`desktop.workers.source_thumbnails_worker`](#desktopworkerssource_thumbnails_worker) | 1 | 4 |
 | [`desktop.workers.task_rows_worker`](#desktopworkerstask_rows_worker) | 1 | 2 |
-| [`desktop.workers.thumb_cache_worker`](#desktopworkersthumb_cache_worker) | 1 | 9 |
+| [`desktop.workers.thumb_cache_worker`](#desktopworkersthumb_cache_worker) | 1 | 11 |
 | [`desktop.workers.worker_host`](#desktopworkersworker_host) | 1 | 4 |
 
 ---
@@ -579,9 +579,10 @@ widget.installEventFilter(_filter)
 点了发 ``add_requested``，由模块一控制器
 （``desktop/pages/taskdetail/imposition_pages.py``）弹窗挑图建页。
 
-页条目左上有**勾选框**（与页标题紧挨）；勾了页，一条**悬浮操作框**
-（「已选 N 页」+「取消选择」「批量删除」）悬在页码栏右侧中部，可拖动
-——取消选择即收起。
+页条目左上是**勾选框**、右上是当前页的「✕」；主体是**缩略图**，
+标题「第一页」与副标题（两张源图名）排在缩略图**下方**（用户 2026-10-04：
+文字要在缩略图下面）。勾了页，一条**悬浮操作框**（「已选 N 页」+「取消选择」
+「批量删除」）悬在页码栏右侧中部，可拖动——取消选择即收起。
 
 这里只做控件与信号：清单**只认页标题/副标题文案**，不认拼版文档本身——
 页清单的数据（``drafts/imposition.json``）由装配层
@@ -1841,8 +1842,11 @@ source_path 不单独成列，仅作任务名的悬浮提示。
 从图片预览弹窗（``image_zoom_dialog``）的「编辑」按钮进入，编辑的是
 **画布当前整分辨率图**（已含翻转/旋转）；「完成」后写回弹窗画布。宿主
 给 ``save_back=True``（画布显示 1:1 对应真实文件）时，「完成」= 直接
-**原子覆盖原图片文件**；虚拟预览（区域合成/打印重排/PDF 页）没有文件
-可回写，维持"满意用「下载」落盘、翻页/关窗即丢弃"的旧行为。
+**原子覆盖原图片文件**，并**先弹一次覆盖确认**（用户 2026-10-04 定的：
+原图被覆盖后不可逆，必须让用户知道；见 :meth:`ImageEditorDialog.
+_confirm_overwrite`）。虚拟预览（区域合成/打印重排/PDF 页）没有文件
+可回写，维持"满意用「下载」落盘、翻页/关窗即丢弃"的旧行为，也**不弹**
+确认框（不写盘的事不该假报警）。
 
 五个工具的行为口径：
 
@@ -4502,6 +4506,12 @@ control_stack、stage_* 控件、log_view、process/run_id 等。
 纯版本判定规则见 services/submit_state.py，
 条目/效果派生规则见 services/print_plan.py。
 
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| SUBMIT_TEXT | `"提交本次任务"` |
+
 ### `class SubmitMixin`
 
 依赖宿主页面提供的属性：store/task_id/source_path、process、
@@ -6066,8 +6076,13 @@ BPM 编排时这正是"条件连线"的落点。
 - ``paths_chosen(list)``：用户拖入或选中了一批路径（``list[str]``，**原始**，
   未做任何合法性判断）；空拖拽不会发。
 - ``cleared()``：用户点了右上角的清空。
-- ``rejected(str)``：拖进来的东西一件都用不了（一句给用户看的话）。
-  调用方通常转成页头的 toast/状态行。
+- ``rejected(str)``：**控件自己没能完成这次选择**（如选择对话框根本打不开）
+  —— 一句给用户看的话。调用方通常转成页头的 toast/状态行。
+
+⚠️ **"用户取消了对话框"不算 rejected**（用户2026-10-04）：那是"我什么都没
+选"，弹提示是噪声。**"给的东西一步都跑不了"也不走这里**——那属于归一化
+层的判断，由 :meth:`StepSpec.resolve_source` 给出理由并经宿主的 ``status``
+通道呈现（见 :meth:`offer`）。
 
 显示与语义分离：``set_source()`` 只负责"把现在选中的源画出来"，不发信号，
 因此宿主（:class:`~desktop.steps.control.StepControl`）说了算——它才是
@@ -6109,8 +6124,15 @@ BPM 编排时这正是"条件连线"的落点。
 
 把一批路径当作用户给的输入送出去（拖拽/点选/宿主转发都走这里）。
 
-空列表不进主流程（避免下游收到"什么都没有"的信号），改为发一条
-``rejected`` 让界面说话。
+⚠️ **空列表一律静默**（用户 2026-10-04：「如果没有导入完全没有必要提示」）：
+走到这里只有一种情形——**用户在选择对话框里点了「取消」**（`_pick` 拿到
+空结果）。那是"我什么都没选"，不是"你给的东西用不了"，弹一句
+「这个用不上 / 没有拿到可用的文件或文件夹」纯属噪声（用户反馈的正是这条）。
+
+**"东西真的给过、但一步都跑不了"是另一回事**，由
+:meth:`StepSpec.resolve_source` 给出理由（目录里没有目标文件、后缀不符…），
+走宿主的 ``status`` 通道说清楚；只有**控件自己**失败（对话框根本打不开，
+见 :meth:`_open_dialog`）才发 ``rejected``。
 
 ##### `set_solo_mode(solo: bool) -> None`
 
@@ -8796,6 +8818,13 @@ PDF 源**不在这里**——它已有了一份成熟实现（``PreviewWorker`` 
 :meth:`desktop.steps.spec.StepSpec.default_output` 决定（用户明确要求「生成
 目录按照原先的」）。
 
+⚠️ **透明 = 白底**（用户 2026-10-04「拼板左列缩略图全是黑的」）：去底色
+（rembg）产物是**调色板 PNG、白底被标记为透明**（``tRNS``）。Qt 解码为
+``ARGB32_Premultiplied``（透明像素 RGB=0），而缓存是 **JPEG——没有 alpha
+通道**：直接编码时"透明 = 黑"会被**固化**成纯黑图（用户看到的黑块就是它）。
+所以本模块产出前一律过 :func:`flatten_on_white`（白纸黑字，与打印/合成
+效果一致）；修复前写坏的历史全黑缓存由 :func:`is_all_black` 兜底重渲自愈。
+
 ### 模块常量
 
 | 名称 | 值 |
@@ -8841,7 +8870,9 @@ str)`` / ``completed`` / ``failed``），所以各查看器的分批装载
 | `thumb_cache_file(out_dir: Path \| str, image: Path \| str) -> Path` | 一张源图在 ``out_dir`` 下的缓存文件名（去后缀 + 大小 + 路径指纹）。 |
 | `stat_mtime(path) -> float` | 文件 mtime；取不到返回 0（拿不到就当"缓存都是新的"→ 不重渲）。 |
 | `cache_usable(target: Path, source_mtime: float) -> bool` | 缓存缩略图能不能用：不比源图旧，且体积不像截断。 |
+| `is_all_black(image: QImage) -> bool` | 整张图是否**纯黑**（历史坏缓存的"体检"，见 :func:`flatten_on_white`）。 |
 | `decode_sized(path: Path, edge: int) -> QImage` | 按最长边 ``edge`` 缩放解码一张图（尽量不把整张原图读进内存）。 |
+| `flatten_on_white(image: QImage) -> QImage` | 把**带 alpha 的图**合成到白底；无 alpha（或空图）原样返回。 |
 | `encode_jpeg(image: QImage, quality: int=80) -> bytes` | QImage → JPEG 字节。 |
 
 #### `thumb_cache_file(out_dir: Path | str, image: Path | str) -> Path`
@@ -8852,6 +8883,19 @@ str)`` / ``completed`` / ``failed``），所以各查看器的分批装载
 ``右-01.png``…），按序号命名一旦清单顺序变了就会张冠李戴——拿到的是
 **别张图的缓存**。这与 PDF 侧「按页号命名 ⇒ 必须按书分目录」是同一个坑。
 
+#### `is_all_black(image: QImage) -> bool`
+
+整张图是否**纯黑**（历史坏缓存的"体检"，见 :func:`flatten_on_white`）。
+
+修复透明压黑之前写下的缓存是全黑 JPEG，而 :func:`cache_usable` 只看
+mtime/体积——这些坏缓存 mtime 比源图新（写完之后源图没再动过），会被
+**永久命中**。读缓存时做一次纯黑体检，命中就删掉重渲，坏缓存自愈。
+
+⚠️ 判据是**精确纯黑**：整张 JPEG 的 DCT 系数全为 0 时解码回来精确为
+(0,0,0)，实测成立；有内容的图绝不会落入此判据。极端的"源图本就是一
+张全黑页"会被每次重渲一遍（毫秒级），代价可忽略、换来的是坏缓存绝不
+会永久钉在界面上。
+
 #### `decode_sized(path: Path, edge: int) -> QImage`
 
 按最长边 ``edge`` 缩放解码一张图（尽量不把整张原图读进内存）。
@@ -8859,6 +8903,20 @@ str)`` / ``completed`` / ``failed``），所以各查看器的分批装载
 与 :class:`~desktop.workers.image_list_worker.ImageListWorker` 同一套做法：
 ``QImageReader.setScaledSize`` 让解码器直接出目标尺寸；少数格式/异常文件
 缩放解码会失败，回退到整图解码后内存缩放。
+
+#### `flatten_on_white(image: QImage) -> QImage`
+
+把**带 alpha 的图**合成到白底；无 alpha（或空图）原样返回。
+
+⚠️ 为什么必须有这一步（用户 2026-10-04「拼板左列全是黑的」实锤往
+事）：去底色产物是"**白底被标记为透明**"的调色板 PNG。Qt 解码成
+``ARGB32_Premultiplied``——透明像素的 RGB 是 0；而缓存的 JPEG 没有
+alpha 通道，**直接编码 = 把透明固化成黑色**，于是整张缩略图纯黑
+（实测：一张 256px 的坏缓存只有 1331 字节、全图 (0,0,0)）。
+
+这类图"透明"的语义就是**纸色（白）**，合成到白底是唯一正确读法：
+白纸黑字，与打印/合成后的效果一致。不给 alpha 的图（照片、扫描图）
+原样直通，零改动成本。
 
 #### `encode_jpeg(image: QImage, quality: int=80) -> bytes`
 

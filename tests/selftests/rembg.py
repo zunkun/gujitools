@@ -18,8 +18,9 @@ def run(ctx) -> None:
     from PySide6.QtCore import QPoint, Qt
     from PySide6.QtGui import QImage
     from PySide6.QtTest import QTest
-    from PySide6.QtWidgets import QPushButton, QWidget
+    from PySide6.QtWidgets import QHBoxLayout, QPushButton, QWidget
 
+    from desktop.pages.taskdetail.submit import SUBMIT_TEXT
     from desktop.ui.widgets import SegmentedToggle
     from desktop.workers import ImageListWorker
     from tests.selftests._context import ok, wait_worker
@@ -31,6 +32,22 @@ def run(ctx) -> None:
     d.set_task(tid)
     d._select_stage(2)
     ok("步骤三主按钮为生成预览", d.run_button.text() == "生成预览")
+
+    # 「生成预览 / 提交本次任务」并排一行（2026-10-04）：两者是同一段动作的
+    # 前后两跳，竖排会被读成两个步骤 ⇒ 包进 action_row 各占一半；没有提交
+    # 按钮的步骤（1/2/4）里 submit 单独藏起、run 自动占满整行。
+    _row_layout = d.action_row.layout()
+    _run_index = _row_layout.indexOf(d.run_button)
+    _submit_index = _row_layout.indexOf(d.submit_button)
+    ok("生成预览与提交按钮并排一行（同一 HBox、各占 stretch=1）",
+       isinstance(_row_layout, QHBoxLayout)
+       and _run_index >= 0 and _submit_index >= 0
+       and _row_layout.stretch(_run_index) == 1
+       and _row_layout.stretch(_submit_index) == 1,
+       f"run@{_run_index} submit@{_submit_index}")
+    ok("第三步两按钮都在行内显示，顺序为「生成预览 | 提交本次任务」",
+       not d.run_button.isHidden() and not d.submit_button.isHidden()
+       and _run_index < _submit_index)
 
     # --- offset 必须能设成负值（阈值 = Otsu + offset，负数让文字更细更淡）---
     # 曾出错：SpinBox 下限写死 0，界面完全无法输入负数，而 CLI/functions 一直支持。
@@ -101,9 +118,10 @@ def run(ctx) -> None:
     ok("提交前 stages/rembg 为空",
        not final_dir.exists() or not any(final_dir.glob("*.png")))
     ok("预览成功后提交按钮可用", d.submit_button.isEnabled())
-    ok("预览成功即提示有新版本待提交",
+    ok("预览成功即提示有新版本待提交（文案收敛为按钮加粗 + 下方红字提示）",
        d._rembg_submit_version_state() == "new_version"
-       and "有新版本" in d.submit_button.text()
+       and d.submit_button.text() == SUBMIT_TEXT
+       and d.submit_button.font().bold()
        and not d.submit_hint.isHidden() and "#c0392b" in d.submit_hint.styleSheet())
 
     # --- 第三步条目缩略图必须按 area=1 拆分，只显示所属半页 ---
@@ -320,7 +338,7 @@ def run(ctx) -> None:
     d._update_submit_button(False)
     ok("编辑去底色结果后按钮改口：待重新提交（不再是绿色『已是最新版本』）",
        d._rembg_submit_version_state() == "new_version"
-       and "有新版本" in d.submit_button.text()
+       and d.submit_button.font().bold()
        and "#c0392b" in d.submit_hint.styleSheet(),
        f"{d._rembg_submit_version_state()} / {d.submit_button.text()}")
     os.utime(_pv_edit, (_pv_mtime, _pv_mtime))  # 还原 mtime，别影响后续模块
@@ -337,7 +355,7 @@ def run(ctx) -> None:
     d._refresh_stage_views()
     ok("再次生成预览后重新提示新版本",
        d._rembg_submit_version_state() == "new_version"
-       and "有新版本" in d.submit_button.text())
+       and d.submit_button.font().bold())
 
     # --- 第四步只排版「提交本次任务」的成品图 ---
     # 用户 2026-10-01 口径：「去底色那一步，必须提交才能传给下一步」。所以

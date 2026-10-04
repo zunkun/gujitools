@@ -226,6 +226,9 @@ class ImpositionBaseMixin:
         if index < 0 and pages:
             index = 0
         view.set_pages(pages, current=index)
+        # 左列缩略图跟着页清单走（每页取"第一张源图"的缩略图；用户 2026-10-04
+        # 报「任务流程里缩略图不显示、只有占位」——这条链此前从没喂过缩略图）
+        self._refresh_imposition_page_thumbs(pages)
 
     # ------------------------------------------------------------- 拼版详情
     def _select_imposition_detail(self) -> None:
@@ -240,8 +243,9 @@ class ImpositionBaseMixin:
             view.set_current(0)
         self.control_stack.setCurrentIndex(IMPOSITION_INDEX)
         self.preview_stack.setCurrentIndex(IMPOSITION_INDEX)
-        self.run_button.setVisible(False)
-        self.submit_button.setVisible(False)
+        # ⚠️ 藏**整行**（action_row =「生成预览 + 提交本次任务」并排），不是
+        #    单个按钮：只藏按钮的话行高仍在，控制区底部会留一条空白。
+        self.action_row.setVisible(False)
         self.followup_row.setVisible(False)
         self.detect_stats.setVisible(False)
         self.history_block.setVisible(False)
@@ -269,6 +273,9 @@ class ImpositionBaseMixin:
         self.close_imposition_zoom_popup()
         self._imposition_dirty = False
         self._imposition_composing = False
+        # 已渲好的源图缩略图按**路径**缓存，跨任务留着没有意义（还有旧图
+        # 占内存）；左列重灌时自然按新任务的路径重新渲。
+        self._imposition_source_thumbs = {}
         # 新任务的取图来源未必和上个任务一样：让 _refresh_print_source 重新判定
         self._print_source_cache = None
         self._refresh_imposition_view()

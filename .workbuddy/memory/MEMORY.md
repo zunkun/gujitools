@@ -22,6 +22,8 @@
 - `ImageViewerWidget`两形态：图片模式(`set_images`/`set_thumb_source`)、PDF页模式(`set_pdf_source`+`begin_pdf_pages`+`set_pdf_thumb`，大图按需`PreviewWorker(pdf,page=idx)`渲高清，**不是**放大256px小图)。⚠`set_images`须先`_clear_page_source()`；`gen`代际号防旧书串页。
 - print页：未生成=源图缩略图，生成后=产物PDF页缩略图。`RembgPreviewWidget.set_images(paths, rembg_dir)`**第二参是结果目录**，换源传None；缓存就绪用`set_cached_thumbs({path:cache})`(整体替换)/`set_cached_thumb`(单条)。
 - **编辑生效链**(2026-10-03补齐，五独立页全对齐)：`ZoomPopupMixin`(双击/右键预览·编辑)→`ImageEditorDialog(save_back=True)`→`overwrite_image_file`→`image_saved`信号；独立页由`ThumbSourceMixin._wire_source_edit()`接(`base.StepModulePage.__init__`末尾duck-type调，保持base不import thumb_source)：`_show_edited_image`(优先`apply_edited_image`)+`_reload_edited_thumb`(**先pop`_thumb_cache_ready[path]`再`refresh_page`**)＋各页`edit_effect_note()`提示何时生效。拼图页四条信号`item/spread_{preview,edit}_requested`由`imposition/page.py`接线：单张覆盖源图(+`canvas.invalidate_image`)；整页组合→全分辨率合成→编辑器→`singletask/拼图/edited/<页>.png`，由`_compose_job`按页盖回；版面一改即作废(`_page_overrides`口径须同`compose_doc`)。任务侧`TaskDetailPage._on_page_image_saved`。
+- **「完成」覆盖确认**(2026-10-04)：`ImageEditorDialog._confirm_overwrite()`在**任何烘焙前**问一句，选「返回继续编辑」则弹窗不关、编辑全留。⚠`_finishing`须**先于**确认框置位(`MessageBox.exec()`自带事件循环,双击会叠框)。四个短路`return True`：`not save_back`(虚拟预览不写盘)/`not target_exists`(整页组合首次编辑写的是新建文件)/`_image==_original`(没改动)/`MessageBox`抛异常(自测替身)。⚠`editor.target_name`(点名文件)**只能做属性、不能加进`_open_editor`/`__init__`**——自测替身`_StubEditor(parent,image,save_back)`按死签名覆盖，加kwarg即`TypeError`；**给自测会替身化的函数加参数前先grep替身签名**。
+- **落地口径：独立任务 vs 任务流程**(2026-10-04核实，**现状已对、勿"修"**)：独立任务页「应用」**一律落地实体文件**(`edit_current_image`走`overwrite_image_file`原子覆盖)；任务流程**看目标**——有`ZoomTarget.edit_path`才落地(区域合成/打印效果等**派生显示**改的仍是它派生的真实文件)，PDF矢量页无可回写文件、右键菜单不给「编辑图片」。判据是`edit_path`，**不是"在哪个页面"**。
 
 ## 硬规则
 - **绝对导入**；根`desktop.utils.files.project_root()`。跨层白名单`tests/selftests/layering.py`；⚠`desktop→functions`违规(函数内延迟导入合规)。
@@ -31,9 +33,8 @@
 - 跨线程用`desktop.workers.connect_queued`(`connect(lambda)`不可靠)。
 - ⚠**`QThread.run()`必须 try/except**(“点了没反应”根因)：异常逃出run不杀进程，`result=None`+`cancelled=False`⇒上层当“用户取消”静默弹撤销点。存`self.error`再raise；`run_with_progress`收尾须在**读cancelled/result之后**并 try/finally。
 - `StepKernel.event`/`StepControl.event`透传非 progress/log 事件(detect的`page_boxes`走它)。
-- ⚠**「点空白处」不弹两选项小菜单**(2026-10-03「底部不设置选择图片或目录的弹窗」=指锚在控件**底部**的`RoundMenu`)：已删`_ask_kind`/`_anchor_point`，点空白**直接**开选文件对话框。⚠⚠**"资源管理器"要分清"浏览窗口"vs"选择对话框"**：用户要**选择对话框**(`QFileDialog` **原生**，**不设**`DontUseNativeDialog`)，不是`explorer.exe`浏览窗口——曾误做成"弹浏览窗口+子线程轮询监听选中项"被否，`shell_pick.py`/`explorer_pick.py`已删除。⚠留档(别再试UIA)：Win10+文件列表是`DirectUIHWND`无`SysListView32`(`LVM_*`全废)，`CoCreateInstance(CLSID_CUIAutomation,IUIAutomation)`返`E_NOINTERFACE`(pywin32与ctypes同)。
-- ⚠**回滚未提交在制品禁用`git checkout HEAD -- <文件>`**(本仓库长期有大量未提交在制品)：用Python按**标记字符串切片替换**(`s.index(起始标记)`→`s.index(下一标记)`)，只动自己那段。
-- ⚠**禁止AI自动git提交**，等用户说「提交」。⚠绝不`git checkout HEAD -- <目录>`做二分(会连未提交在制品一起抹)，先`Copy-Item`备份；勿用`git show <sha>:<path>|Out-File -NoNewline`(换行会丢)；掉stash：`git stash pop`→`git fsck --unreachable`→`git checkout <sha> -- <路径>`。
+- ⚠**「点空白处」不弹两选项小菜单**(2026-10-03「底部不设置选择图片或目录的弹窗」=指锚在控件**底部**的`RoundMenu`)：已删`_ask_kind`/`_anchor_point`，点空白**直接**开选文件对话框。⚠⚠**"资源管理器"要分清"浏览窗口"vs"选择对话框"**：用户要**选择对话框**(`QFileDialog` **原生**，**不设**`DontUseNativeDialog`)，不是`explorer.exe`浏览窗口——曾误做成"弹浏览窗口+子线程轮询监听选中项"被否，`shell_pick.py`/`explorer_pick.py`已删除。⚠留档(别再试UIA)：Win10+文件列表是`DirectUIHWND`无`SysListView32`(`LVM_*`全废)，`CoCreateInstance(CLSID_CUIAutomation,IUIAutomation)`返`E_NOINTERFACE`。
+- ⚠**回滚/二分未提交在制品禁用`git checkout HEAD -- <文件|目录>`**(本仓库长期有大量未提交在制品，会连在制品一起抹)：用Python按**标记字符串切片替换**(`s.index(起始标记)`→`s.index(下一标记)`)，只动自己那段；必须先`Copy-Item`备份。勿用`git show <sha>:<path>|Out-File -NoNewline`(换行会丢)；掉stash：`git stash pop`→`git fsck --unreachable`→`git checkout <sha> -- <路径>`。
 - ⚠`SourceZone`内有**真按钮子控件**：几何靠`_relayout_buttons()`，改paintEvent须避开按钮区(`EMPTY_HEIGHT`=168含按钮行)；`accepts_dir=False`不摆目录按钮；**入口是主路径就必须画成按钮**；`_open_dialog`须try/except转`rejected`(内部调`_pick`弹原生`QFileDialog`)；测点击用`QTest.mouseClick`且控件须在已显示窗口。
 - ⚠按页号命名的缓存不能跨书共用(→`files.singletask_thumbnails_dir`分层)。⚠自测判子控件可见用`isHidden()`(**不是**`isVisible()`/`isVisibleTo(parent)`——前者对未挂到已显示窗口的子树恒False，独立页则因初始只显示输入区、整个分栏都藏着而两者都假红)。
 - ⚠“重跑同一个源”不是“冲突”：收尾“已存在就跳过”须先`filecmp.cmp(shallow=False)`比内容，只判存在⇒产物永久翻倍；显示侧再去重一道。
@@ -55,7 +56,7 @@
 
 ## 踩坑
 - `--clean`：CLI默认False但`FunctionBase.execute()`兜底**True**⇒自建参数字典须显式给`clean`。
-- `rembg`输出固定PNG；第三步「提交产物」是**白底透明PNG**，透明须在合成之后加。
+- `rembg`输出固定PNG；第三步「提交产物」是**白底透明PNG**，透明须在合成之后加。⚠**JPG缩略图不能直存带alpha的图**(透明固化全黑)：`thumb_cache_worker`产出前必过`flatten_on_white`(`is_all_black`体检自愈旧黑缓存)——2026-10-04修「拼板左列全黑」，同类新渲染路径照此办理。
 - `print`只能`guji run print`；页序以`files`清单为准，空才回退文件名排序。
 - 整幅页`fullcontent`：框原样下传，area=1/2/3结果一致，**只有area=4保留框外内容**。
 - 高分屏绝不手`painter.scale(dpr,dpr)`；dpr改动须用`QT_SCALE_FACTOR=1.5`**真进程**验。

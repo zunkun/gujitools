@@ -135,7 +135,7 @@ class ImpositionModulePage(ModulePage):
         self.zone.paths_chosen.connect(self._on_paths_chosen)
         self.zone.cleared.connect(self._on_clear_sources)
         self.zone.rejected.connect(
-            lambda message: self.toast("warning", "这个用不上", message)
+            lambda message: self.toast("warning", "没能完成这次选择", message)
         )
         return self.zone
 
@@ -557,6 +557,7 @@ class ImpositionModulePage(ModulePage):
         from desktop.components.viewers.image_zoom_dialog import overwrite_image_file
 
         editor = ImageEditorDialog(self.window(), image, save_back=True)
+        editor.target_name = path.name
         if editor.exec() != QDialog.DialogCode.Accepted:
             return
         edited = editor.result_image()
@@ -628,13 +629,17 @@ class ImpositionModulePage(ModulePage):
         from desktop.components.viewers.image_editor import ImageEditorDialog
         from desktop.components.viewers.image_zoom_dialog import overwrite_image_file
 
+        target = edited_page_dir() / FILE_FMT.format(page_index + 1)
         editor = ImageEditorDialog(self.window(), image, save_back=True)
+        editor.target_name = f"{cn_page_label(page_index)}的整页组合"
+        # 第一次编辑这页时 ``edited/NNNN.png`` 还不存在 ⇒ 没有旧图可覆盖，
+        # 不弹确认（第二次起才弹，见 ImageEditorDialog._confirm_overwrite）。
+        editor.target_exists = target.is_file()
         if editor.exec() != QDialog.DialogCode.Accepted:
             return
         edited = editor.result_image()
         if edited is None or edited.isNull():
             return
-        target = edited_page_dir() / FILE_FMT.format(page_index + 1)
         target.parent.mkdir(parents=True, exist_ok=True)
         if not overwrite_image_file(edited, target):
             self.toast("error", "保存失败", f"编辑未生效：{target.name}")
@@ -771,9 +776,11 @@ class ImpositionModulePage(ModulePage):
         """左列每页的缩略图：已缓存的直接贴，没缓存的起后台 pass 补。
 
         用户 2026-10-03：所有独立任务左栏都显示缩略图，且统一缓存在
-        ``~/Documents/guji/singletask/拼图/``。这里**每页取第一张源图的缩略图**
-        ——一页拼版本来就是「两张图并排」，给一张代表图已经能认出是哪页，
-        而把两张都渲出来只为在 56px 宽的格子里并排显示并不更清楚。
+        ``singletask/<子任务>/thumbs/<边长>/``（本页 = ``singletask/imposition/
+        thumbs/256/``；任务流程的拼版详情页 2026-10-04 起共用**同一份**）。
+        这里**每页取第一张源图的缩略图**——一页拼版本来就是「两张图并排」，
+        给一张代表图已经能认出是哪页，而把两张都渲出来只为在单列小格子里
+        并排显示并不更清楚。
         """
         pages = self._doc.get("pages") or []
         #: 每页的代表图（第一张源图）

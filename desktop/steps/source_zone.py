@@ -123,8 +123,13 @@ class SourceZone(QWidget):
     - ``paths_chosen(list)``：用户拖入或选中了一批路径（``list[str]``，**原始**，
       未做任何合法性判断）；空拖拽不会发。
     - ``cleared()``：用户点了右上角的清空。
-    - ``rejected(str)``：拖进来的东西一件都用不了（一句给用户看的话）。
-      调用方通常转成页头的 toast/状态行。
+    - ``rejected(str)``：**控件自己没能完成这次选择**（如选择对话框根本打不开）
+      —— 一句给用户看的话。调用方通常转成页头的 toast/状态行。
+
+    ⚠️ **"用户取消了对话框"不算 rejected**（用户2026-10-04）：那是"我什么都没
+    选"，弹提示是噪声。**"给的东西一步都跑不了"也不走这里**——那属于归一化
+    层的判断，由 :meth:`StepSpec.resolve_source` 给出理由并经宿主的 ``status``
+    通道呈现（见 :meth:`offer`）。
 
     显示与语义分离：``set_source()`` 只负责"把现在选中的源画出来"，不发信号，
     因此宿主（:class:`~desktop.steps.control.StepControl`）说了算——它才是
@@ -258,12 +263,18 @@ class SourceZone(QWidget):
     def offer(self, paths) -> None:
         """把一批路径当作用户给的输入送出去（拖拽/点选/宿主转发都走这里）。
 
-        空列表不进主流程（避免下游收到"什么都没有"的信号），改为发一条
-        ``rejected`` 让界面说话。
+        ⚠️ **空列表一律静默**（用户 2026-10-04：「如果没有导入完全没有必要提示」）：
+        走到这里只有一种情形——**用户在选择对话框里点了「取消」**（`_pick` 拿到
+        空结果）。那是"我什么都没选"，不是"你给的东西用不了"，弹一句
+        「这个用不上 / 没有拿到可用的文件或文件夹」纯属噪声（用户反馈的正是这条）。
+
+        **"东西真的给过、但一步都跑不了"是另一回事**，由
+        :meth:`StepSpec.resolve_source` 给出理由（目录里没有目标文件、后缀不符…），
+        走宿主的 ``status`` 通道说清楚；只有**控件自己**失败（对话框根本打不开，
+        见 :meth:`_open_dialog`）才发 ``rejected``。
         """
         cleaned = [str(p) for p in (paths or []) if str(p or "").strip()]
         if not cleaned:
-            self.rejected.emit("没有拿到可用的文件或文件夹")
             return
         self.paths_chosen.emit(cleaned)
 

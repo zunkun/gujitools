@@ -21,6 +21,11 @@ from desktop.ui.widgets import bold_button
 from desktop.utils.files import list_stage_images
 from desktop.pages.taskdetail.runner import STATUS_LABELS
 
+#: 提交按钮的**唯一**文案（构造处与状态刷新处共用一份，避免两处各写一遍）。
+#: ⚠️ 别再加「（有新版本）」后缀：它与「生成预览」并排后放不下（见
+#:    ``_update_submit_button`` 的实测说明），"待提交"由加粗 + 红字提示表达。
+SUBMIT_TEXT = "提交本次任务"
+
 
 class SubmitMixin:
     """依赖宿主页面提供的属性：store/task_id/source_path、process、
@@ -244,8 +249,14 @@ class SubmitMixin:
 
         # 按钮文案/高亮
         self.submit_button.setEnabled(version not in (None, NO_PREVIEW))
+        # ⚠️ 文案**始终**是「提交本次任务」：它与「生成预览」并排一行后，每颗
+        #    按钮只剩控制列（340~440px）的一半，实测 166~216px，而
+        #    「提交本次任务（有新版本）」需要 218px ⇒ 必被 qfluent 截成省略号
+        #    （见 tests/probe_row_button_width.py 的实测）。这层"有新版本待提交"
+        #    的含义由**加粗** + 下方常驻的红字提示承担，信息不丢。
+        #    （与「继续执行 / 中断执行」并排时收敛文案是同一处理原则。）
+        self.submit_button.setText(SUBMIT_TEXT)
         if version == NEW_VERSION:
-            self.submit_button.setText("提交本次任务（有新版本）")
             # ⚠️ 加粗走 setFont：setStyleSheet 会把 qfluent 按钮的整套 qss
             # （含 hasIcon=true 的 36px 左边距）整串抹掉（见 widgets.bold_button）
             bold_button(self.submit_button, True)
@@ -253,17 +264,14 @@ class SubmitMixin:
                 "● 有新版本待提交（预览/参数/去底色结果有改动）", "#c0392b"
             )
         elif version == PREVIEW_STALE:
-            self.submit_button.setText("提交本次任务")
             bold_button(self.submit_button, False)
             self._show_submit_hint(
                 "● 去底参数已修改，请重新「生成预览」后再提交", "#b8860b"
             )
         elif version == UP_TO_DATE:
-            self.submit_button.setText("提交本次任务")
             bold_button(self.submit_button, False)
             self._show_submit_hint("最终图片已是最新版本", "#3a8a3e")
         else:  # no_preview / 执行中
-            self.submit_button.setText("提交本次任务")
             bold_button(self.submit_button, False)
             self.submit_hint.hide()
 

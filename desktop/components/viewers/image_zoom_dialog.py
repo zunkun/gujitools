@@ -886,7 +886,12 @@ class ImageZoomDialog(QDialog, WorkerHost):
         """造编辑器弹窗（不 exec，便于离屏测试）。无图时返回 None。
 
         ``save_back``：本页有真实文件可回写——编辑器文案改成「完成 = 覆盖
-        原图片」，别再让用户以为还要去「下载」。
+        原图片」（并先弹覆盖确认），别再让用户以为还要去「下载」。
+
+        ⚠️ **不要给本方法加参数**：自测的替身编辑器
+        （``_StubEditor(parent, image, save_back)`` / ``_stub_open``）按死签名
+        覆盖它，多一个关键字参数就让整条自测抛 ``TypeError``。要带文件名给
+        覆盖确认，由调用方在拿到返回值后回填 ``editor.target_name``。
         """
         from desktop.components.viewers.image_editor import ImageEditorDialog
 
@@ -933,6 +938,9 @@ class ImageZoomDialog(QDialog, WorkerHost):
                         transform, Qt.TransformationMode.SmoothTransformation
                     )
             editor = self._open_editor(base, save_back=True)
+            if editor is not None:
+                # 覆盖确认里点名是哪个文件（不知道文件名的覆盖确认等于没确认）
+                editor.target_name = edit_path.name
         else:
             editor = self._open_editor(self.canvas.export_image())
         if editor is None:
@@ -1171,6 +1179,7 @@ class ZoomPopupMixin:
             return False
         parent = self.window() if isinstance(self, QWidget) else None
         editor = ImageEditorDialog(parent, image, save_back=True)
+        editor.target_name = path.name
         if editor.exec() != QDialog.DialogCode.Accepted:
             return False
         edited = editor.result_image()

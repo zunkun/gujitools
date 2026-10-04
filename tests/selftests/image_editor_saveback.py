@@ -11,7 +11,11 @@
 4. **原子覆盖的安全性**：硬链接另一头不受影响（就地写会把源文件一起改掉）、
    落盘后目录里不剩 ``.part`` 半截文件；
 5. **文案**：``save_back=True`` 的编辑器明确说「完成 = 覆盖原图片」，
-   不再让用户以为要去「下载」。
+   不再让用户以为要去「下载」；
+6. **覆盖确认**（用户 2026-10-04 需求 1）：改了图点「完成」且 ``save_back``
+   时**先弹确认**并点名目标文件；用户选「返回继续编辑」⇒ **不 accept、
+   不关窗、图还在**。虚拟预览（``save_back=False``）、图未改动、目标文件
+   尚不存在这三种都**不弹**（不写盘/没东西可丢的事不假报警）。
 """
 
 from __future__ import annotations
@@ -230,6 +234,89 @@ def run(ctx) -> None:
         finally:
             viewer.shutdown_workers()
             viewer.deleteLater()
+        pump(app, times=2)
+
+        # ---------------------------------------------------- 覆盖确认
+        # 用户 2026-10-04：图片编辑最后应用时必须提醒"会覆盖原本的图片"，
+        # 用户选「返回继续编辑」就不能关窗（编辑还在，用户能接着改）。
+        ok("准备：qfluentwidgets.MessageBox 存在（延迟导入的依赖）",
+           hasattr(__import__("qfluentwidgets"), "MessageBox"), "")
+
+        def _ask_overwrite(edited: bool, accept: bool, save_back: bool = True,
+                           **attrs):
+            """开一个编辑器并点「完成」，返回 (确认框参数列表, 弹窗对象)。"""
+            from desktop.components.viewers.image_editor import (
+                ImageEditorDialog as _Ed,
+            )
+
+            ed = _Ed(None, _make_image(), save_back=save_back)
+            ed.target_name = "0007.png"
+            for key, value in attrs.items():
+                setattr(ed, key, value)
+            if edited:                      # 改一个像素 ⇒ 真的"改过了"
+                ed._image = _make_image(color="#00ff00")
+                ed.canvas.set_image(ed._image)
+            asked: list = []
+
+            class _Box:
+                def __init__(self, title, content, parent=None):
+                    self.title, self.content = title, content
+                    asked.append({"title": title, "content": content})
+                    self.yesButton = type("B", (), {"setText": lambda *_: None})()
+                    self.cancelButton = type(
+                        "B", (), {"setText": lambda *_: None})()
+
+                def exec(self):
+                    return accept
+
+            import qfluentwidgets as _qfw
+
+            original = _qfw.MessageBox
+            _qfw.MessageBox = _Box
+            try:
+                ed._finish()
+            finally:
+                _qfw.MessageBox = original
+            return asked, ed
+
+        asked, ed_ok = _ask_overwrite(edited=True, accept=True)
+        ok("改过图 + 可回写：点「完成」弹覆盖确认",
+           len(asked) == 1 and "覆盖" in asked[0]["title"], str(asked))
+        ok("确认框点名是哪个文件（不知道文件名的覆盖确认等于没确认）",
+           bool(asked) and "0007.png" in asked[0]["content"],
+           str(asked[0]["content"] if asked else ""))
+        ok("选「覆盖并应用」→ 正常完成（accept 关窗）",
+           ed_ok.result() == QDialog.DialogCode.Accepted
+           and not ed_ok._finishing, f"result={ed_ok.result()}")
+        ed_ok.deleteLater()
+
+        asked, ed_no = _ask_overwrite(edited=True, accept=False)
+        ok("选「返回继续编辑」→ 不 accept、不关窗（能接着改）",
+           len(asked) == 1
+           and ed_no.result() == QDialog.DialogCode.Rejected,
+           f"asked={len(asked)} result={ed_no.result()}")
+        ok("取消覆盖后编辑没被丢弃（画布还是改过的图，可继续操作）",
+           ed_no.canvas.image.pixelColor(2, 2).name() == "#00ff00",
+           ed_no.canvas.image.pixelColor(2, 2).name())
+        ok("取消覆盖后解锁（能再次点「完成」，不会卡在 _finishing）",
+           ed_no._finishing is False, "")
+        ed_no.deleteLater()
+
+        asked, ed_same = _ask_overwrite(edited=False, accept=True)
+        ok("没改动不弹确认（没东西可丢，假警报只会让用户觉得这框很蠢）",
+           asked == [], str(asked))
+        ed_same.deleteLater()
+
+        asked, ed_new = _ask_overwrite(
+            edited=True, accept=True, target_exists=False)
+        ok("目标文件尚不存在（整页组合首次编辑）→ 不弹确认",
+           asked == [], str(asked))
+        ed_new.deleteLater()
+
+        asked, ed_plain = _ask_overwrite(
+            edited=True, accept=True, save_back=False)
+        ok("虚拟预览（save_back=False）不弹确认", asked == [], str(asked))
+        ed_plain.deleteLater()
         pump(app, times=2)
 
         for d in (dialog, dialog2, dialog3):

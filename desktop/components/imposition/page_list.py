@@ -5,9 +5,10 @@
 点了发 ``add_requested``，由模块一控制器
 （``desktop/pages/taskdetail/imposition_pages.py``）弹窗挑图建页。
 
-页条目左上有**勾选框**（与页标题紧挨）；勾了页，一条**悬浮操作框**
-（「已选 N 页」+「取消选择」「批量删除」）悬在页码栏右侧中部，可拖动
-——取消选择即收起。
+页条目左上是**勾选框**、右上是当前页的「✕」；主体是**缩略图**，
+标题「第一页」与副标题（两张源图名）排在缩略图**下方**（用户 2026-10-04：
+文字要在缩略图下面）。勾了页，一条**悬浮操作框**（「已选 N 页」+「取消选择」
+「批量删除」）悬在页码栏右侧中部，可拖动——取消选择即收起。
 
 这里只做控件与信号：清单**只认页标题/副标题文案**，不认拼版文档本身——
 页清单的数据（``drafts/imposition.json``）由装配层
@@ -35,13 +36,17 @@ from desktop.ui.widgets import apply_to
 
 
 class _PageEntry(QFrame):
-    """左列的一页拼版：**缩略图** + 标题「第一页」+ 副标题（两张源图名），整块可点。
+    """左列的一页拼版：**缩略图**（上）+ 标题「第一页」/ 副标题（下），整块可点。
+
+    ⚠️ 版面（用户 2026-10-04 定）：**缩略图在上、文字在下**——原先是
+    ``[勾选框][缩略图][文字]`` 横排，用户看图时把「标题在缩略图上方」读了序，
+    明确要求改成上下结构；勾选框钉左上角、「✕」钉右上角。
 
     ⚠️ 底色/描边**自己画**（``paintEvent``），不用样式表：样式表一旦进入子树，
     Qt 会把 QFrame 底色填白（步骤条 `_StepBadge` 那条教训），而且会连带影响
     子 QLabel 的取色路径（``apply_to`` 对原生 QLabel 走的是调色板）。
 
-    交互：单击切页；**按住上下拖**是页排序（``drag_started``）；当前页右侧
+    交互：单击切页；**按住上下拖**是页排序（``drag_started``）；当前页右上角
     有一个「✕」，点了发 ``remove_clicked``（把该页两张图释放回未选择列表）。
 
     ⚠️ **缩略图是真控件**（QLabel + ``set_thumb``），不是 paintEvent 里画：
@@ -63,8 +68,15 @@ class _PageEntry(QFrame):
     #: 按下后移动超过该距离判为拖动（小于则仍是单击切页）
     DRAG_THRESHOLD = 8
 
-    #: 缩略图的显示高度（px）。宽度按页的宽高比自适应，但不超过本控件宽度。
-    THUMB_H = 78
+    #: 缩略图的**固定框**（px）。条目列宽只有 150px（见
+    #: ``ImpositionPageList.list_scroll``；竖向细滚动条再咬掉几个像素），
+    #: 框取 118 宽给左右留白；高 88：对开页（约 2:1）落在 ~118×59，
+    #: 半幅（约 1:1.3）落在 ~68×88，两种形态都看得清——原先 56×78 的窄条
+    #: 只够瞄一眼（用户 2026-10-04 报"缩略图显示的小"）。
+    #: ⚠️ 框是**固定尺寸**：``set_thumb`` 按 ``self.thumb.size()`` 等比缩放，
+    #: 尺寸随布局漂移的话，缓存下来的 pixmap 就永远停在旧比例上。
+    THUMB_W = 118
+    THUMB_H = 88
 
     def __init__(self, index: int, caption: str, parent=None):
         super().__init__(parent)
@@ -76,39 +88,28 @@ class _PageEntry(QFrame):
         self._drag_active = False
         self._dimmed = False
         self.setCursor(Qt.PointingHandCursor)
-        root = QHBoxLayout(self)
-        root.setContentsMargins(6, 7, 6, 7)
-        root.setSpacing(6)
-        # 勾选框（节点左上方，紧挨页标题）：勾选后清单下沿浮出批量操作条；
-        # 点击被 QCheckBox 自行消费，不会触发本条目的单击切页/拖动。
-        # ⚠️ 必须**钉死成小方块**：qfluentwidgets CheckBox 空文本的 sizeHint
-        # 有 57px 宽（指示器只有 ~20px，qss 兜底也是 29px），不钉死的话布局
-        # 按 sizeHint 给宽，勾选框与文字之间隔着一条大空档，看着像被拆到
-        # 一行两头（用户 2026-09-30 口径：要挨着）
+        # 版面（用户 2026-10-04 定）：**缩略图在上、文字在下**；勾选框钉左上角、
+        # 「✕」钉右上角。原先是 [勾选框][缩略图][文字] 横排——用户看图时把
+        # 「标题在缩略图上方」读了序，要求改成上下结构。
+        root = QVBoxLayout(self)
+        root.setContentsMargins(6, 6, 6, 6)
+        root.setSpacing(4)
+        # 顶行：勾选框（左上）+ 弹性 + 「✕」（右上，仅当前页显示）。
+        # 点击被 QCheckBox/ToolButton 自行消费，不会触发本条目的单击切页/拖动。
+        # ⚠️ 勾选框必须**钉死成小方块**：qfluentwidgets CheckBox 空文本的
+        # sizeHint 有 57px 宽（指示器只有 ~20px，qss 兜底也是 29px），不钉死
+        # 的话布局按 sizeHint 给宽，顶行会被撑歪。
         self.checkbox = CheckBox(self)
         self.checkbox.setFixedSize(29, 22)
         self.checkbox.setToolTip("勾选本页，清单下沿会出现「批量删除」悬浮框")
         self.checkbox.toggled.connect(
             lambda checked: self.check_toggled.emit(self.index, checked)
         )
-        root.addWidget(self.checkbox, 0, Qt.AlignTop)
-        #: 本页缩略图（还没渲好时是一块浅灰占位，见 :meth:`set_thumb`）
-        self.thumb = QLabel(self)
-        self.thumb.setFixedSize(56, self.THUMB_H)
-        self.thumb.setAlignment(Qt.AlignCenter)
-        self.thumb.setScaledContents(False)
-        apply_to(self.thumb, T.SIZE_CAPTION, color=T.INK_FAINT)
-        self.thumb.setText("···")
-        root.addWidget(self.thumb, 0, Qt.AlignTop)
-        labels = QVBoxLayout()
-        labels.setContentsMargins(0, 0, 0, 0)
-        labels.setSpacing(1)
-        self.title_label = QLabel(cn_page_label(index), self)
-        self.caption_label = QLabel(caption, self)
-        self.caption_label.setWordWrap(False)
-        labels.addWidget(self.title_label)
-        labels.addWidget(self.caption_label)
-        root.addLayout(labels, 1)
+        top_row = QHBoxLayout()
+        top_row.setContentsMargins(0, 0, 0, 0)
+        top_row.setSpacing(0)
+        top_row.addWidget(self.checkbox, 0, Qt.AlignTop)
+        top_row.addStretch(1)
         self.remove_button = QToolButton(self)
         self.remove_button.setText("✕")
         self.remove_button.setAutoRaise(True)
@@ -120,27 +121,49 @@ class _PageEntry(QFrame):
         self.remove_button.clicked.connect(
             lambda: self.remove_clicked.emit(self.index)
         )
-        root.addWidget(self.remove_button, 0, Qt.AlignTop)
+        top_row.addWidget(self.remove_button, 0, Qt.AlignTop)
+        root.addLayout(top_row)
+        #: 本页缩略图（还没渲好时是**空框** + 自绘浅底，见 :meth:`set_thumb`）
+        self.thumb = QLabel(self)
+        self.thumb.setFixedSize(self.THUMB_W, self.THUMB_H)
+        self.thumb.setAlignment(Qt.AlignCenter)
+        self.thumb.setScaledContents(False)
+        apply_to(self.thumb, T.SIZE_CAPTION, color=T.INK_FAINT)
+        root.addWidget(self.thumb, 0, Qt.AlignHCenter)
+        # 文字（标题 + 副标题）在缩略图**下面**，居中对齐（与勾选框同一条
+        # 视觉中轴，名称长短不一时也不显歪）
+        labels = QVBoxLayout()
+        labels.setContentsMargins(0, 0, 0, 0)
+        labels.setSpacing(1)
+        self.title_label = QLabel(cn_page_label(index), self)
+        self.title_label.setAlignment(Qt.AlignCenter)
+        self.caption_label = QLabel(caption, self)
+        self.caption_label.setAlignment(Qt.AlignCenter)
+        self.caption_label.setWordWrap(False)
+        labels.addWidget(self.title_label)
+        labels.addWidget(self.caption_label)
+        root.addLayout(labels)
         self.remove_button.hide()
         self._apply_style()
 
     def set_thumb(self, image) -> None:
-        """把本页缩略图放上去（``QImage``/``QPixmap``；``None`` 回占位）。
+        """把本页缩略图放上去（``QImage``/``QPixmap``；``None`` 回空占位）。
 
         ⚠️ **等比缩放后居中，不裁切**：拼版页是横向对开的两张图，硬裁会只剩
         半张（用户看到的是"缩略图里图缺一块"）。放不下就留白——留白比缺内容
         诚实。
+
+        ⚠️ 没图时**不写「···」**（用户 2026-10-04 报「只看到 3 个点」）：
+        空框 + ``paintEvent`` 里的浅底框即可——"还没渲"与"渲不出来"都由它兜着。
         """
         if image is None or getattr(image, "isNull", lambda: True)():
             self.thumb.clear()
-            self.thumb.setText("···")
             return
         pixmap = (
             image if isinstance(image, QPixmap) else QPixmap.fromImage(image)
         )
         if pixmap.isNull():
             self.thumb.clear()
-            self.thumb.setText("···")
             return
         self.thumb.setText("")
         self.thumb.setPixmap(
@@ -212,6 +235,13 @@ class _PageEntry(QFrame):
             painter.setPen(QPen(QColor(T.BORDER), 1.0))
             painter.setBrush(QColor(T.SURFACE))
         painter.drawRoundedRect(rect, T.RADIUS_SM, T.RADIUS_SM)
+        # 缩略图框：浅底 + 细边（照抄选图弹窗卡片——留白/透明页也有边界感；
+        # 图是子控件、画在本层之上，这里只是它的"底"）
+        painter.setPen(QPen(QColor(T.BORDER_SOFT), 1.0))
+        painter.setBrush(QColor(T.SURFACE_SOFT))
+        painter.drawRoundedRect(
+            QRectF(self.thumb.geometry()), T.RADIUS_SM, T.RADIUS_SM
+        )
         painter.end()
 
     def mousePressEvent(self, event) -> None:  # noqa: N802
