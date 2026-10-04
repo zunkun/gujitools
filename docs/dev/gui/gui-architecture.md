@@ -30,14 +30,20 @@ desktop/
     control.py          #   StepControl：把上面几件装成"选源 → 调参 → 执行/中断"
     process.py          #   StageProcess：子进程传输层（起进程/字节流/看门狗），任务管理用
     ports.py            #   端口与连线：产物类型 / 每步的输入输出 / 落点 / 谁供给谁
-  modules/              # 左侧导航的独立模块（每个条目 = 一个自包含页面，见 2.3）
-    __init__.py         #   注册表 MODULES（key/标题/图标/副标题/工厂）——唯一事实来源
-    shell.py            #   壳层：NavigationInterface + 页面栈（导航默认折叠）
+  shell.py              # 壳层：NavigationInterface + 页面栈（导航默认折叠）。
+                         #   ⚠️ 住在 desktop 包根而非 modules/：它要挂任务列表页与
+                         #   详情页（pages），住进 modules 会破坏包边界
+  modules/              # 独立任务页（singletask）：每个条目 = 一个自包含页面，见 2.3
+    __init__.py         #   注册表 MODULES（key/标题/图标/副标题/工厂）——由
+                         #     steps/spec.py::NAV_STEPS 派生，不是独立清单
     base.py             #   ModulePage 骨架（页头/输入区/左右分栏/状态行/日志）
                          #     + StepModulePage（普通步骤页的共用外设，见 2.3）
-    extract/page.py     #   图片提取
-    rembg/page.py       #   去底色
-    imposition/page.py  #   拼图（= 图片拼版）
+    thumb_source.py     #   ThumbSourceMixin：左栏「缩略图条 + 大图」统一接线
+    extract/page.py     #   PDF图片提取
+    detect/page.py      #   检测文本框（含导出标注图 / 导出坐标 JSON）
+    rembg/page.py       #   图片去底色
+    print/page.py       #   生成PDF
+    imposition/page.py  #   图片拼板（有意不继承 StepModulePage，见 2.3）
   pages/                # 页面层：一个页面一个子包
     tasklist/page.py    #   任务列表页（首页：表格、导入、详情/删除）
     taskdetail/         #   任务详情页：一个骨架 + 按职责拆分的控制器 Mixin
@@ -315,12 +321,20 @@ singletask 是独立任务，下面有各种子任务」。
 ~/Documents/guji/
 ├─ tasks/          任务流程：一个 id = 一本书，四步 + runs/boxes/草稿
 ├─ tasks.json
-└─ singletask/     独立任务：左侧导航那几个功能页
-   ├─ 图片提取/
-   │  ├─ thumbnails/<书名-大小-路径指纹>/0001.jpg …   PDF 的页缩略图
+└─ singletask/     独立任务：左侧导航那 5 个功能页
+   ├─ extract/                       子目录名 = StepSpec.disk_key()（路由键）
+   │  ├─ thumbnails/<书键>/0001.jpg …                 PDF 的页缩略图
+   │  ├─ thumbnails/<书键>/<边长>/0001.jpg + map.json  extract 的口径（边长进目录）
    │  └─ thumbs/<边长>/<图键>.jpg …                   图片源的缩略图
-   └─ 拼图/
+   └─ imposition/
       └─ edited/0001.png                              手改过的整页组合（成品口径）
+
+⚠️ **singletask ≠ taskdetail，数据不相通（硬规则）**：独立任务页与任务流程只
+共用渲染组件、参数面板与步骤元数据；缓存根各归各——独立页缓存在
+`singletask/<key>/`，任务流程缓存在 `tasks/<id>/thumbnails/{source,print,
+imposition,detect}`。**任何一侧都禁止借道另一侧的缓存区**（历史 bug：拼板左列
+缩略图曾误写进 singletask，由 `tests/selftests/imposition.py` 的缓存边界断言
+钉住）。taskdetail 缓存随「删除任务」整体清理；singletask 缓存独立生命周期。
 ```
 
 路径入口都在 `desktop/utils/files.py`：`singletask_dir` / `singletask_thumbnails_dir`
@@ -541,8 +555,11 @@ PDF 矢量页没有可回写文件，右键菜单干脆不给「编辑图片」�
 就叫法不同（流程条说**动作**「提取图片」，导航说**东西**「图片提取」），硬合成
 一个名字必然改动其中一处界面。
 
-⚠️ **`inputs` / `outputs` 是 BPM 端口预留**：已经声明（如 extract 的
-`("pdf",)` → `("pages",)`），但**还没接线**——任务流程走的仍是"约定目录布局"。
+⚠️ **`inputs` / `outputs` 是 BPM 端口**：声明（如 extract 的 `("pdf",)` →
+`("pages",)`）已经**接线**——`steps/ports.py` 的三张表（`PORT_ARTIFACTS` /
+`STAGE_LOCATIONS` / `SUPPLIERS`）是任务流程的连线唯一事实来源，
+`store.artifact()` / `store.stage_input()` 都走它（见上文「端口与连线」）。
+"换流程顺序只改 `SUPPLIERS` 一张表"。
 
 ⚠️ **检测框的「槽位约定」只有一份实现**：半幅恒 2 槽 ``[左, 右]``（缺失侧 null）、
 整幅恒 1 槽 ``[整幅]``，下游（rembg / 布局）靠**槽数**分辨形态——所以它是跨层
@@ -583,11 +600,15 @@ guji/
     runs/               # 子进程执行配置 run-*.json / detect-config.json
     thumbnails/
       source/0001.jpg…  # 源 PDF 页缩略图（256px，导入即生成，永不清理）
+      detect/           # 检测预览缩略图
       print/            # 输出 PDF 预览缩略图（print 成功后重建）
+      imposition/       # 拼板左列缩略图（⚠️ 只在这里，禁止写 singletask/）
     stages/
       extract/          # 提取图片（1.jpg…，直接平铺）
       rembg/            # 去底色整页结果（1.png…）
+      imposition/       # 拼版成品（可选拼版节点启用时）
       print/print.pdf
+  singletask/<key>/     # 独立任务缓存区（与 tasks/ 各归各，禁止借道，见 2.3）
 ```
 
 所有 JSON 读写统一走 `store/json_io.py`：

@@ -1,6 +1,8 @@
 # gujitools（古籍重製）
 
-说明：本软件系AI编写，文档也是AI编写，文档有些混乱，技术文档和用户文档混杂在了一起，注意甄别。
+> 文档按读者分家：**想学操作** → [`docs/guide/user-guide.md`](docs/guide/user-guide.md)（用户操作手册）；
+> **想了解代码/打包/架构** → 本 README 与 [`docs/dev/`](docs/README.md)；
+> AI 助手与新人从仓库根 [`AGENTS.md`](AGENTS.md) 入手。
 
 古籍处理工具——从 PDF 提取图片、检测裁剪文本区域、去底色二值化、印章保留并生成 PDF。
 程序安装后的显示名称与开始菜单项为**古籍重製**。
@@ -31,7 +33,9 @@
 - **处理一两本书、想边看效果边调参数** → 看下面的「使用方式一：桌面端（GUI）」。
 - **批量跑几十本、或要集成进脚本 / 定时任务** → 看「使用方式二：命令行（CLI）」。
 
-桌面端的深入文档见 [`docs/dev/gui/`](docs/dev/gui/readme.md)；命令行完整参数见 [`docs/guide/cli.md`](docs/guide/cli.md)。
+桌面端**操作步骤**（配截图）见[用户操作手册](docs/guide/user-guide.md)；
+开发者向的桌面端深入文档见 [`docs/dev/gui/`](docs/dev/gui/readme.md)；
+命令行完整参数见 [`docs/guide/cli.md`](docs/guide/cli.md)。
 
 ## 功能一览
 
@@ -368,95 +372,36 @@ hupper -m desktop
 主窗口标题为**古籍重製**。所有任务数据、阶段日志、预览图和缩略图统一保存在
 `~/Documents/guji`（纯 JSON 文件，无数据库），卸载后不会被安装包清理。
 
-### 操作步骤
+### 两种页面形态
 
-#### 第 0 步：导入 PDF，建立任务
+主窗口左侧导航里并存两种形态（共用同一批界面组件与参数面板）：
 
-在**任务管理页**点右上角「导入 PDF」，选择一本书：
+| | 任务流程（taskdetail） | 独立任务页（singletask） |
+| --- | --- | --- |
+| 怎么用 | 导入 PDF 建任务（`0001`、`0002`…），沿固定四步推进 | 不建任务，选个文件/目录就能跑 |
+| 步骤 | 提取图片 → 检测文本框 → 图片去底色 →（可选拼版）→ 生成 PDF | 五个独立页：PDF图片提取 / 检测文本框 / 图片去底色 / 生成PDF / 图片拼板 |
+| 数据 | `~/Documents/guji/tasks/<任务号>/`，删任务即删目录 | 产物落在源文件旁；缓存独立在 `~/Documents/guji/singletask/` |
 
-- 系统先后台计算内容指纹做查重——同一本书重复导入会提示确认；
-- 确认后自动分配任务号（`0001`、`0002`…），复制源 PDF 到任务目录，并生成逐页缩略图；
-- 表格里每行一个任务，显示任务名、页数与各子任务状态；右侧可删除任务（会清空该任务目录）。
+**两者数据互不相通**：独立任务页是任务流程里的一步拆出来的独立功能，
+只有界面组件、参数面板是共用的（这也是未来 BPM 自定义流程的组件基础）。
 
-点某一行进入**任务详情页**，顶部步骤条即为下面四步。
+每个阶段都有实时日志、历史参数回填、预览；所有重处理都在独立 Worker 子进程
+里跑，主界面始终可响应。
 
-#### 第 1 步：提取图片（extract）
+### 操作手册
 
-把 PDF 逐页提取成图片，输出到任务目录 `stages/extract/`。
+**完整的逐步操作说明（含截图）在[用户操作手册](docs/guide/user-guide.md)**，
+包括：导入与任务管理、四步流程每步的参数与门禁、图片拼版、独立任务页用法、
+图片预览与编辑（双击/右键）、日志与常见问题排查。本 README 不再重复。
 
-- 面板可选渲染倍率（zoom）、输出格式（jpg/png）、**快速模式 quick** 等参数；
-- **quick 默认开启**：直接取 PDF 内嵌的 jpg/png 图（原样落盘，不重新编码），
-  通常更快、分辨率也更高。一页有多张图、内嵌格式是 jp2/jbig2 等、或内嵌图
-  比整页渲染还小时，会**自动降级为整页渲染**，日志里会打印降级原因；
-- 多线程并行处理（线程数 = CPU 核数），与命令行同一份实现；
-- 若中断过，可用「继续执行」只补缺失的页。
-
-#### 第 2 步：检测文本框（detect）
-
-YOLO 识别每页的**左、右文本框**，结果存入 `boxes.json`（不生成图片文件）。
-
-- 预览区可**拖拽、缩放、删除、手绘**调整检测框，手动结果不会被自动检测覆盖；
-- 这一步只记坐标，是第 3 步裁剪的依据。
-
-#### 第 3 步：图片去底色（rembg）
-
-整页去底色 / 二值化，支持保留红色印章。这一步是**两段式**，务必按顺序点：
-
-1. 点「**生成预览**」——先产出去底预览图，填好 `area`（区域模式）与 `border`（外扩边距）等参数后生成；
-2. 在预览区确认效果，可逐页查看、勾选要保留的页；
-3. 点「**提交本次任务**」——按 `area`/`border` + 检测框合成**最终图片**，这才是第 4 步的输入。
-
-> 参数改动后预览图会标记为过期，需重新「生成预览」再提交。
-
-#### 可选节点：图片拼版（imposition）
-
-第 3 步的 `area`（区域模式）选 **1（左右分开）** 时，流程条上会在「图片去底色」
-与「生成 PDF」之间多出一个**虚线可选节点「图片拼版」**——它不是必经步骤。
-
-- 左侧一列是「第一页 / 第二页 / …」，最后一格是虚线的「**＋ 选择拼版**」；
-- 点它弹出挑选窗口，从**还没被任何一页拼版用过**的图片（第 3 步「提交本次任务」
-  的成品图）里挑**两张**：**序号在前的排在右侧、序号大的排在左侧**；
-- 右侧操作区可**拖动 / 四角四边缩放拉伸 / 旋转**，把两张图摆到一张纸上；
-- **生效规则**：勾选「在流程中启用图片拼版」后，第 4 步的待打印列表与「生成PDF」
-  就改用拼版结果（`stages/imposition/`）；不勾选则用第 3 步的去底色成品图
-  （`stages/rembg/`）。拼版不是必须的；勾了但还没拼页时，第 4 步会提示先去
-  「选择拼版」。
-- 切换这个开关后，之前生成的 PDF 属于**旧来源**的产物：第四步会停用「下载PDF」
-  并提示重新生成；任务列表里该任务的「子任务状态」也会多一个「拼版」胶囊。
-
-#### 第 4 步：生成 PDF（print）
-
-设置纸张、边距、标题、页码后合成 PDF，产物落在任务目录 `stages/print/`。
-
-- PDF 文件名默认由书名派生为 `书名[重制].pdf`（与标题文字联动，可手工改写）；
-- 左侧**待打印列表**的顺序就是 PDF 的页序，**直接拖拽即可调整**（只改数据，不产生任何副本文件）；
-- 列表支持「插入图片」（在指定位置插入外部图片）与「删除选中」；
-- 右侧表单设置纸张（A3/A4/A5/B5）、横竖方向、页边距、标题文字、页码、跳过的页等；
-- 生成完成后「下载 PDF」按钮可用，默认另存到系统「下载」目录。
-
-### 每个阶段都有的能力
-
-- **实时日志**：右下日志区显示子进程输出；可展开为浮层查看完整记录。
-- **历史执行记录**：每次运行的参数会被保存，切换阶段时自动回填上次的参数；可从历史里挑一条恢复。
-- **预览**：除第 2 步外每步都有预览图，随执行结果刷新。
-- **界面不卡**：所有重处理都在独立 Worker 子进程里跑，主界面始终可响应。
-
-界面截图见 [`docs/guide/screenshots/`](docs/guide/screenshots/)：
-
-| 截图                     | 内容                     |
-| ------------------------ | ------------------------ |
-| `01-任务列表页.png`      | 任务管理、导入 PDF       |
-| `02-详情页-提取.png`     | 第 1 步 提取图片         |
-| `03-详情页-检测.png`     | 第 2 步 检测文本框       |
-| `04-详情页-去底色.png`   | 第 3 步 图片去底色       |
-| `05-详情页-生成PDF.png`  | 第 4 步 生成 PDF         |
-| `06-详情页-日志浮层.png` | 日志浮层（完整执行记录） |
+界面截图见 [`docs/guide/screenshots/`](docs/guide/screenshots/)。
 
 ### 桌面端开发相关
 
 测试**按改动范围分档跑，不必每次全量**——只跑与本次改动相关的功能模块即可，
 只有动了共享底层（`core/`、`utils` 几何单位、配置默认值、`store/`、打包入口）
-或发布打包前才跑全量。
+或发布打包前才跑全量。⚠️ 测试比较耗时，按改动攒批最后统一跑，不要每改一小处
+就跑一轮。
 
 ```bash
 # ① 日常：只跑相关模块（自动带上其依赖）
@@ -480,273 +425,74 @@ python tools/gen_api_docs.py          # 重新生成
 python tools/gen_api_docs.py --check  # 校验是否与源码一致（退出码非 0 表示过期）
 ```
 
+---
+
 ## 使用方式二：命令行（CLI）
 
-下面「帮助」「通用参数」「各命令参数」「常用示例」四节均为命令行参数速查；
-完整说明见 [CLI 使用说明](docs/guide/cli.md)。
+命令行的**完整说明**（全部参数表、`guji.yaml` 配置文件、`--config` 优先级规则、
+退出码、调用链架构）见 [CLI 使用说明](docs/guide/cli.md)；每个命令的算法与参数
+**权威手册**在 [`docs/functions/`](docs/functions/overview.md)——
+`guji help <命令>` 在终端里读的就是它们，两者内容保持一致。
 
-### 推荐工作流：先初始化配置
-
-首次使用时，建议先执行 `guji init` 生成 `guji.yaml`。初始化命令会引导设置
-项目元信息和原始 PDF 或图片目录，后续可以通过配置文件统一执行各个流程：
-
-```bash
-guji init
-```
-
-交互示例：
-
-```text
-guji.yaml 已存在，是否覆盖？(y/N) y
-请输入项目信息（直接回车使用默认值）：
-项目名称 (default: 我的古籍项目): 古籍处理
-项目描述 (default: 示例古籍数字化处理):
-版本号 (default: 1.0.0):
-原始 PDF 或图片目录 (default: ./sample.pdf): c:/a/b/c.pdf
-✅ 已生成配置文件: D:\workspace\gujitools\guji.yaml
-```
-
-生成 `guji.yaml` 后，按处理顺序执行对应子命令：
+快速上手：
 
 ```bash
-# 1. 从 PDF 提取图片
-guji run extract
+guji init                          # 首次推荐：生成 guji.yaml 配置文件
 
-# 2. 裁剪文本框
-guji run crop
+# 按配置文件执行各流程
+guji run extract                   # 1. 从 PDF 提取图片
+guji run crop                      # 2. 裁剪文本框
+guji run rembg                     # 3. 去底色
+guji run cropremove                # 裁剪+去底色一步完成
+guji run print                     # 4. 生成 PDF（只能这样执行）
 
-# 3. 去底色
-guji run rembg
-
-# 4. 裁剪并去底色
-guji run cropremove
-
-# 5. 生成 PDF
-guji run print
-```
-
-也可以指定配置文件：
-
-```bash
-guji run crop --config ./book.yaml
-guji run print --config ./book.yaml
-```
-
-`guji run <command>` 会读取配置文件中对应的配置块，例如 `run crop` 读取
-`guji.yaml` 的 `crop` 部分。执行 `print` 时必须使用 `guji run print`，不能
-直接执行 `guji print`。
-
-普通子命令也支持指定配置文件。此时 YAML 配置作为基础值，命令行中显式提供
-的参数优先级更高：
-
-```bash
-guji crop --config ./book.yaml
-guji crop --config ./book.yaml --area 2
-guji rembg --config ./book.yaml --type 3
-guji cropremove --config ./book.yaml --area 3 --border 30
-guji extract --config ./book.yaml --pages "1,3-5"
-```
-
-`--config` 会读取与命令同名的配置块，例如 `guji crop --config ./book.yaml`
-读取 `book.yaml` 中的 `crop:` 部分。`print` 仍然只能通过 `guji run print`
-执行。
-
-### 直接使用 CLI 子命令
-
-不需要配置文件时，也可以直接执行子命令，并通过参数指定输入、输出和处理选项：
-
-```bash
-# 从 PDF 提取图片
+# 不用配置文件，直接给参数（python cli.py 与 guji 等价）
 python cli.py extract -i book.pdf -o ./images --zoom 2
-
-# 把检测结果画到图片上落地（命令行必须给 --save）
-python cli.py detect -i ./images --save
-
-# 裁剪文本框
-python cli.py crop -i ./images -o ./cropped
-
-# 去底色（二值化）
-python cli.py rembg -i ./images -o ./output
-
-# 一步完成裁剪 + 去底色
-python cli.py cropremove -i ./images -o ./output --area 1
-```
-
-安装包或已加入 PATH 后，可以将 `python cli.py` 替换为 `guji`：
-
-```bash
-guji extract -i book.pdf -o ./images --zoom 2
-guji detect -i ./images --save
-guji crop -i ./images -o ./cropped
-guji rembg -i ./images -o ./output
-guji cropremove -i ./images -o ./output --area 1
-```
-
-详细参数和示例见 [CLI 使用说明](docs/guide/cli.md) 及各功能手册。
-
-### 帮助
-
-```bash
-python cli.py help                # 功能模块概览
-python cli.py help extract        # extract 命令手册
-python cli.py help detect         # detect 命令手册
-python cli.py help cropremove    # cropremove 命令手册
-python cli.py help print         # print 命令手册
-python cli.py -v                  # 版本信息
-```
-
-帮助内容直接读取 `docs/functions/*.md`，终端内分页显示。
-
-### 通用参数
-
-| 参数          | 默认值   | 说明                             |
-| ------------- | -------- | -------------------------------- |
-| `-i/--input`  | `.`      | 输入路径（文件或目录）           |
-| `-o/--output` | None     | 输出目录（未传时按规则自动生成） |
-| `--clean`     | 命令相关 | 清空输出目录                     |
-| `--workers`   | CPU 核数 | 并行线程数                       |
-
-### 各命令参数
-
-#### extract
-
-| 参数           | 默认值 | 说明                                          |
-| -------------- | ------ | --------------------------------------------- |
-| `--zoom`       | 1      | 缩放因子（2 = 2 倍分辨率）                    |
-| `--quick`      | True   | 快速模式（默认开启）：优先取内嵌的 jpg/png 图 |
-| `--no-quick`   | —      | 关闭快速模式，始终整页渲染                    |
-| `--ext`        | jpg    | 输出格式（jpg/png/tiff）                      |
-| `--pages`      | None   | 页码字符串，如 `"1,3-5,7"`                    |
-| `--start`      | None   | 起始页码（1-based）                           |
-| `--end`        | None   | 结束页码（1-based）                           |
-| `--batch-size` | 4      | 每批次处理的页数                              |
-
-#### detect（非必要）
-
-检测左右文本框并把标注图落地。**命令行下 `--save` 必须给**，不带会被拒绝：
-
-```bash
-$ python cli.py detect -i ./images
-ERROR: 'detect' 不接受空跑（既未指定 --save，就不会产生任何文件）。
-```
-
-| 参数     | 默认值 | 说明                                         |
-| -------- | ------ | -------------------------------------------- |
-| `--save` | False  | 把检测结果画到图片上并保存（**命令行必填**） |
-| `--ext`  | png    | 标注图格式（jpg/png/tiff）                   |
-
-`crop` / `cropremove` 内部已含这一步，因此日常流程不必单独执行；本命令用于
-排查「框检不到 / 框位置不对」。**代码调用**不受 `--save` 限制，可只取坐标。
-详见 [detect 手册](docs/functions/detect.md)。
-
-#### rembg
-
-| 参数            | 默认值 | 说明                                     |
-| --------------- | ------ | ---------------------------------------- |
-| `--offset`      | 0      | 阈值偏移量（正数文字加粗，负数变细）     |
-| `--type`        | 1      | 1=8位二值图，2=1bit单色位图，3=8位灰度图 |
-| `--seal`        | False  | 印章检测总开关                           |
-| `--sealcolor`   | False  | 检测到印章时输出 RGB 彩色图              |
-| `--sealarea`    | 80     | 印章最小连通域像素面积                   |
-| `--sealmin-sat` | 50     | 红色识别最低饱和度（0~255）              |
-
-> 输出格式固定为 **PNG**（没有 `--ext` 参数）：`--type 2` 的 1bit 单色位图只有
-> PNG 能无损承载，JPEG 会把它重新糊成灰阶。
-
-#### cropremove
-
-包含 rembg 全部参数，另加：
-
-| 参数       | 默认值 | 说明                                |
-| ---------- | ------ | ----------------------------------- |
-| `--area`   | 1      | 区域模式（见下表）                  |
-| `--border` | None   | 边框控制（mm），CSS 风格 1~4 值写法 |
-
-#### print
-
-`print` 通过 `guji.yaml` 配置，使用 `python cli.py run print` 执行。支持 A3、A4、A5、B5 纸张，可配置标题节点、页码和双页左右标注。页序优先取 `files:` 清单（桌面端列表顺序），清单为空时才按文件名排序。
-
-```yaml
-print:
-  input: ./rembg
-  pdf_name: book.pdf
-  paper_size: B5
-  orientation: portrait
-  title_printing: true
-  page_number_printing: true
-  page_number_start_page: 2
-  page_number_base: 200
-```
-
-完整参数说明见 [print 手册](docs/functions/print.md)。
-
-**--area 区域模式**：
-
-| area | Otsu 作用区域        | 输出方式                  | border=None 时 |
-| ---- | -------------------- | ------------------------- | -------------- |
-| 1    | 逐框独立（共享阈值） | 分框输出 `-l`/`-r` 两张图 | 裁剪到各框边界 |
-| 2    | 逐框独立（共享阈值） | 单图，ROI 写回原位置      | 输出原尺寸     |
-| 3    | 合并左右框为整体     | 单图，ROI 写回原位置      | 输出原尺寸     |
-
-**--border 写法**：
-
-```bash
---border 30              # 四边统一 30mm
---border 20,30           # 上下20，左右30
---border 20,30,25        # 上20，左右30，下25
---border 10,20,30,40     # 上右下左
-```
-
-### 常用示例
-
-```bash
-# 高分辨率提取指定页码
-python cli.py extract -i book.pdf -o ./images --zoom 2 --pages "1,3-5,7"
-
-# 输出检测标注图，确认左右框是否准确（不带 --save 会被拒绝）
-python cli.py detect -i ./images --save -o ./detect
-
-# 裁剪 + 去底色，合并模式 + 外扩 30mm 边距
 python cli.py cropremove -i ./images -o ./output --area 3 --border 30
-
-# 分框模式 + 保留红色印章
-python cli.py cropremove -i ./images -o ./output --area 1 --seal --sealcolor
-
-# 灰度输出 + 文字变细
-python cli.py rembg -i ./images -o ./output --type 3 --offset -5
-
-# 1bit 单色位图（最小体积）
 python cli.py rembg -i ./images -o ./output --type 2
-
-# 使用指定配置文件生成 PDF
-python cli.py run print --config ./book.yaml
 ```
+
+要点：
+
+- `detect` 是**非必要**步骤：`crop` / `cropremove` 内部已自动调用同一套检测算法；
+  单独执行用于查看检测结果，命令行下**必须给 `--save`**（否则没有任何产出，会被
+  直接拒绝）。
+- 通用参数 `-i/--input`、`-o/--output`、`--clean`、`--workers` 对所有命令生效；
+  输出目录未传时按规则自动生成（规则见
+  [输入/输出路径规则](docs/dev/io_path_rules.md)）。
+- `--area`（1=逐框分图 / 2=逐框写回 / 3=合并整体）与 `--border`（mm，CSS 风格
+  1~4 值写法）的完整说明见 [cropremove 手册](docs/functions/cropremove.md)。
+- 帮助：`guji help`（概览）、`guji help <命令>`（单命令手册）、`guji -v`（版本）。
+
+---
 
 ## 文档
 
-详细文档位于 [`docs/`](docs/README.md)，按**读者**分三类目录：
-[`docs/guide/`](docs/guide/) 给使用者、[`docs/dev/`](docs/dev/) 给开发者、
-[`docs/functions/`](docs/functions/) 是 `guji help` 的命令手册。
+文档按**读者**分家（这也是本 README 的定位）：
 
-### 使用指南（照着做）
+- **用户操作文档**：[`docs/guide/`](docs/guide/) —— 照着点/照着敲；
+- **开发人员文档**：本 README、[`docs/dev/`](docs/README.md)、[`docs/api/`](docs/api/README.md)；
+- **AI 助手**：从仓库根 [`AGENTS.md`](AGENTS.md) 入手（分层规则、事实来源、
+  契约、测试命令一页读完）。
 
-- [用户操作手册](docs/guide/user-guide.md) — 从导入 PDF 到出 PDF 的完整步骤（配操作截图）
+### 使用指南（给使用者）
+
+- [用户操作手册](docs/guide/user-guide.md) — 桌面端从导入 PDF 到出 PDF 的完整
+  步骤 + 独立任务页用法（配操作截图）
 - [CLI 使用说明](docs/guide/cli.md) — 命令、参数、示例、退出码、架构
 
-### 技术细节（给开发者）
+### 架构与开发（给开发者）
 
-桌面端（GUI）：
-
+- [全仓架构](docs/dev/architecture.md) — 入口/分层/两种页面形态/公共组件契约/
+  数据与缓存布局/BPM 演进方向（**新人先读这篇**）
 - [桌面端文档索引](docs/dev/gui/readme.md) — 术语、速览、快速开始
+- [桌面端架构](docs/dev/gui/gui-architecture.md) — 模块结构、进程模型、文件存储与任务目录布局
+- [模块化重构](docs/dev/refactor-modularity.md) — 模块化设计、已落地项与后续解耦路线图
 - [界面系统](docs/dev/gui/gui-ui-system.md) — 设计令牌、基础控件、自绘约束
-- [架构](docs/dev/gui/gui-architecture.md) — 模块结构、进程模型、文件存储与任务目录布局
 - [技术规范](docs/dev/gui/gui-technical-spec.md) — Worker 消息协议、JSON 格式、area/border 几何
 - [交互设计](docs/dev/gui/gui-design.md) — 导入流程、步骤条、历史配置、检测框编辑
 - [布局](docs/dev/gui/gui-layout.md) — 窗口布局与组件尺寸约定
 - [需求](docs/dev/gui/gui-requirements.md) — 功能需求与非功能需求
-
-通用：
-
 - [工具函数说明](docs/dev/utils.md) — Otsu、印章、border 解析、YOLO、PDF 渲染
 - [输入 / 输出路径规则](docs/dev/io_path_rules.md) — 输出目录解析规则
 
@@ -760,7 +506,9 @@ python cli.py run print --config ./book.yaml
 - [cropremove 手册](docs/functions/cropremove.md) — area 区域模式、border 边框控制
 - [print 手册](docs/functions/print.md) — 纸张、排序、标题和页码
 
-API 参考（由 `tools/gen_api_docs.py` 从源码自动生成，随代码同步）：
+### API 参考（自动生成，不要手编）
+
+由 `tools/gen_api_docs.py` 从源码自动生成（`--check` 校验是否过期）：
 
 - [API 参考索引](docs/api/README.md) — 收录范围与同步方式
 - [desktop API](docs/api/desktop.md) — 桌面端全部公开类与函数

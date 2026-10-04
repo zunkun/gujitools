@@ -8,12 +8,14 @@
 
 | 文档 | 内容 |
 | --- | --- |
+| [architecture.md](architecture.md) | **全仓架构**：入口/分层/两种页面形态（taskdetail 与 singletask）/公共组件契约/数据缓存/BPM 演进 |
 | [gui/readme.md](gui/readme.md) | **桌面端技术文档索引**：术语、开发约定、快速开始 |
 | [io_path_rules.md](io_path_rules.md) | 输入 / 输出路径规则（输出目录解析的唯一权威） |
 | [utils.md](utils.md) | 工具模块算法：Otsu 阈值、印章提取、border 解析、YOLO、PDF 渲染 |
+| [refactor-modularity.md](refactor-modularity.md) | 模块化设计：独立任务页（singletask）的由来、已落地项与后续解耦路线图 |
 
-桌面端（6 份）见 [gui/readme.md](gui/readme.md)：架构、技术规范、交互设计、
-布局、需求、界面系统。
+桌面端（7 份）见 [gui/readme.md](gui/readme.md)：架构、技术规范、交互设计、
+布局、需求、界面系统、手册维护说明。
 
 ## 相关
 

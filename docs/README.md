@@ -15,16 +15,21 @@
 ```
 docs/
 ├── guide/      给使用者：用户操作手册 + 命令用法 + 配图
-│   ├── user-guide.md    用户操作手册（配真实截图）
+│   ├── user-guide.md    用户操作手册（任务流程 + 独立任务页，配真实截图）
 │   ├── cli.md           命令行使用说明
 │   └── screenshots/     界面截图与用户操作手册配图
 ├── dev/        给开发者：技术细节
-│   ├── gui/             桌面端 6 份技术文档（架构/规范/设计/布局/需求/界面系统）
+│   ├── architecture.md  全仓架构（入口/分层/两种页面形态/公共组件契约）
+│   ├── gui/             桌面端 7 份技术文档（架构/规范/设计/布局/需求/界面系统等）
 │   ├── io_path_rules.md 输入 / 输出路径规则
-│   └── utils.md         工具模块算法说明
+│   ├── utils.md         工具模块算法说明
+│   └── refactor-modularity.md  模块化设计与解耦路线图
 ├── functions/  CLI 命令手册（⚠️ 位置固定：被 `guji help` 运行时读取）
 └── api/        自动生成的 API 参考
 ```
+
+> AI 助手另有仓库根 [`AGENTS.md`](../AGENTS.md) 作为一页式上手入口（分层规则、
+> 事实来源、契约、测试命令），本目录文档是它的展开。
 
 > ⚠️ **`docs/functions/` 不要移动**。它是 `guji help <命令>` 的文档来源
 > （见 `utils/help.py`），且已列入 `guji.spec` 打包清单。移动会导致
@@ -34,13 +39,14 @@ docs/
 
 | 文档                                       | 内容                                                           |
 | ------------------------------------------ | -------------------------------------------------------------- |
-| [guide/user-guide.md](guide/user-guide.md) | **用户操作手册**：从导入 PDF 到出 PDF 的完整步骤（配操作截图） |
+| [guide/user-guide.md](guide/user-guide.md) | **用户操作手册**：任务流程从导入 PDF 到出 PDF 的完整步骤 + 独立任务页用法（配操作截图） |
 | [guide/cli.md](guide/cli.md)               | **命令行使用说明**：参数表、示例、退出码、架构                 |
 
 ## 技术细节（dev/）
 
 | 文档                                                           | 内容                                                           |
 | -------------------------------------------------------------- | -------------------------------------------------------------- |
+| [dev/architecture.md](dev/architecture.md)                     | **全仓架构**：入口/分层/两种页面形态/公共组件契约/数据缓存/BPM 演进 |
 | [dev/gui/readme.md](dev/gui/readme.md)                         | 桌面端技术文档索引（术语、开发约定）                           |
 | [dev/gui/gui-architecture.md](dev/gui/gui-architecture.md)     | 模块结构、进程模型、文件存储与任务目录                         |
 | [dev/gui/gui-technical-spec.md](dev/gui/gui-technical-spec.md) | Worker 消息协议、JSON 数据格式、区域合成几何、缩略图规范       |
@@ -50,6 +56,7 @@ docs/
 | [dev/gui/gui-ui-system.md](dev/gui/gui-ui-system.md)           | 界面系统：设计令牌、基础自绘控件、全局样式                     |
 | [dev/io_path_rules.md](dev/io_path_rules.md)                   | 输入 / 输出路径规则（供开发参考）                              |
 | [dev/utils.md](dev/utils.md)                                   | 工具函数算法：Otsu 阈值、印章提取、border 解析、YOLO、PDF 渲染 |
+| [dev/refactor-modularity.md](dev/refactor-modularity.md)       | 模块化设计：独立任务页的由来、已落地项与后续解耦路线图         |
 
 ## 命令手册（functions/）
 

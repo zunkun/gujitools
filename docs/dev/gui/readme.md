@@ -15,6 +15,8 @@
 | Task / 任务 | 一个 PDF 一个任务，顺序任务号 `0001`、`0002`… 即任务目录名 |
 | Stage / 阶段（子任务） | `extract` → `detect` → `rembg` → `print`，固定顺序 |
 | StageRun / 运行记录 | 某阶段的一次执行（状态、进度、参数），存于任务目录 `runs.json` |
+| 独立任务页 / singletask | 左侧导航里**不用建任务**的独立功能页（`desktop/modules/`），把流程中的一步拆出来单独用；与任务流程**只共用组件与步骤元数据，数据不相通** |
+| 独立任务缓存区 | `~/Documents/guji/singletask/<key>/`，独立页的缩略图等缓存；与 `tasks/<id>/thumbnails/` 各归各，**禁止借道** |
 | 检测框 | YOLO（`functions.detect.detect_page_content`，与 CLI 同源）识别的内容框（半幅左右 / 整幅），存于 `boxes.json` |
 
 ## 文档
@@ -65,13 +67,18 @@ QT_QPA_PLATFORM=offscreen python tests/gui_shot.py --guide D:/tmp/shots
 - **界面**：视觉常量集中在 `desktop/ui/theme.py`，基础控件（卡片/状态胶囊/进度条/
   空状态等）为 `desktop/ui/widgets.py` 的**自绘控件**；详见
   [gui-ui-system.md](gui-ui-system.md)。
-- **左侧导航与独立模块**：主窗口中央是 `desktop/modules/shell.py` 的壳层
-  （导航栏默认折叠，点左上角菜单按钮展开）。导航条目 = 「任务管理」+ `MODULES`
-  注册表里的独立模块（图片提取 / 去底色 / 拼图）。模块页**惰性构造**、彼此零
-  import 依赖，复用 `desktop/steps/` 的**共用步骤组件**（`StepSpec` 步骤元数据 +
-  `StepKernel` 执行内核 + `SourceZone` 大输入区 + `StepControl` 控制块）。
-  目录布局与边界详见 [gui-architecture.md](gui-architecture.md) 的 §2.3。
-- **大输入区**：三个模块页在页头下方都有一块横跨整幅的 `SourceZone`——
+- **左侧导航与独立模块**：主窗口中央是 `desktop/shell.py` 的壳层
+  （导航栏默认折叠，点左上角菜单按钮展开）。导航条目 = 「任务管理」+ 独立任务页
+  （**5 个**：PDF图片提取 / 检测文本框 / 图片去底色 / 生成PDF / 图片拼板）。
+  ⚠️ 独立页注册表 `MODULES` **不是一份独立清单**：它由
+  `desktop/steps/spec.py::SPECS` 里 `nav=True` 的条目经 `NAV_STEPS` 派生
+  （标题/图标/顺序全部来自 spec）——新增一个模块 = 写一个包 + 加一条 spec，
+  壳层不用动。模块页**惰性构造**、彼此零 import 依赖，复用 `desktop/steps/`
+  的**共用步骤组件**（`StepSpec` 步骤元数据 + `StepKernel` 执行内核 +
+  `SourceZone` 大输入区 + `StepControl` 控制块）。独立任务页与任务流程的关系
+  （共用什么、什么必须隔离）见 [gui-architecture.md](gui-architecture.md) 的 §2.3
+  与 [`../architecture.md`](../architecture.md) 第 2、3 节。
+- **大输入区**：独立模块页在页头下方都有一块横跨整幅的 `SourceZone`——
   拖文件、拖文件夹、点底部「选择文件 / 选择文件夹」按钮、已选态点右端「更换」、
   右上角一键清空；拖到页面空白处也认。
   ⚠️ 那两个选择按钮是**必须有**的（用户 2026-10-03 报「有框说可以拖入，但没法

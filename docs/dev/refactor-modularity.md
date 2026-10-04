@@ -237,3 +237,26 @@ python -m pyflakes core/ cli/ functions/ utils/ desktop/
   `ctx.prepare()`，断言根本跑不到。
 * 别往方法体**中间**插行：那里常有元组拆包（`cross_key, cross_label = ...`），
   插进去就是 `SyntaxError`，同样是死在 import 阶段。
+
+## 8. 后续解耦路线图（2026-10-04 起）
+
+§7 之前的模块化已落地；本节记录**下一阶段**的解耦项，按风险从低到高排列。
+背景契约（用户 2026-10-04 口径，写代码前先读）：
+
+> 公共组件只有**输入目录 + 输出目录**，这样后期 BPM 流程可以定义各种流程出来，
+> singletask 也就能拆出来作为独立的任务处理。singletask 与 taskdetail 除了功能
+> 相似、共用渲染组件与参数面板外**没有任何关系**——singletask 是 taskdetail 中
+> 一步拆出来的独立功能，数据不相通。
+
+| # | 解耦项 | 现状 | 做法 | 风险 |
+| --- | --- | --- | --- | --- |
+| 1 | ✅ **toast 工厂合一**（2026-10-04 已做） | `TaskDetailPage._toast` 与 `ModulePage.toast` 逐字重复 | 收进 `desktop/ui/toast.py::show_toast`，两侧转发 | 低 |
+| 2 | ✅ **拼版面板「流程启用」开关参数化**（2026-10-04 已做） | 公共面板 `ImpositionPanel` 底部内置 taskdetail 专属的「在流程中启用图片拼版」复选框，独立拼图页构造后"伸手"隐藏 | `ImpositionPanel(enable_switch=False)` 构造时声明；契约钉进 `tests/selftests/imposition.py` | 低 |
+| 3 | ✅ **壳层搬出 `desktop/modules/`**（2026-10-04 已做） | `modules/shell.py` import `pages`（tasklist/TaskDetailPage），包边界与"modules 不依赖 pages"的叙述不符 | 已移到 `desktop/shell.py`；`modules_shell` 自测同步改读新位置 | 低 |
+| 4 | ✅ **detect 人工干预的共享交互器**（2026-10-04 已做） | 两页各写一份"框类型回填/删除/整幅互斥确认" | 已抽 `desktop/components/box_kinds.py::BoxKindEditor`（无 Qt；确认框走宿主 `box_confirm` 回调，两侧的 `Dialog`/`MessageBox` 自测替身机制原样保留）；两侧旧方法名保留、实现委托 | 中低 |
+| 5 | ⚖️ **`STAGE_LOCATIONS` 评估后决定保留在 `steps/ports.py`**（2026-10-04） | 曾考虑迁到 store 层 | 不迁：① 依赖方向本来就对（store→steps 单向），没有分层违规；② `PORT_ARTIFACTS`/`STAGE_LOCATIONS`/`SUPPLIERS` 三张表是同一个 BPM 连线故事（"换连线只改一张表"），拆到两个模块反而稀释叙事、破坏 `step_ports` 自测的契约面；③ 它是"落点表"，本来就是流程级知识。真正的边界守则是：**steps 包不许出现 UI/编排代码**，声明表不算 | — |
+| 6 | ✅ **"编辑图片生效"查看器级原语统一**（2026-10-04 已做） | "立即上屏 + 单条缩略图刷新"的 getattr 探测逻辑两页各一份 | 已抽 `desktop/components/viewers/edit_sync.py`（`show_edited_image` / `apply_single_thumb`），两侧共用。⚠️ **缩略图重渲的 worker 与目标目录刻意保留各自实现**：taskdetail 用 `ImageListWorker` 写 `tasks/<id>/thumbnails/source/`、singletask 用 `ImageThumbCacheWorker` 写 `singletask/<key>/`——那是两套有意不同的缓存布局（禁止借道），合并会把分支塞进组件 | 中高 |
+| 7 | 拼版模块页并入 StepModulePage 体系 | `modules/imposition/page.py`（869 行）靠 docstring 豁免，自写一套胶水 | `base.py` 扩展"多文件源"钩子后再收编 | 高（最后做） |
+
+原则（与 §2 一致）：**每完成一项就重跑相关 `--only` 自测 + `gen_api_docs --check`
++ `check_docs`**；组件层不许新增任何宿主专属概念，宿主特有 UI 一律构造参数声明。

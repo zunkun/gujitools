@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import re
 import sys
+
+print(1234)
 from pathlib import Path
 
 #: 项目根目录（本文件位于 <root>/tools/）。
@@ -106,9 +108,11 @@ def collect_anchors(md_path: Path) -> set[str]:
 def iter_md_files() -> list[Path]:
     """返回需要检查的 Markdown 文件列表。"""
     files = sorted(ROOT.joinpath("docs").rglob("*.md"))
-    readme = ROOT / "README.md"
-    if readme.exists():
-        files.append(readme)
+    for name in ("README.md", "AGENTS.md"):
+        # AGENTS.md 是 AI 助手的仓库级入口文档，同样带指向 docs/ 的相对链接
+        candidate = ROOT / name
+        if candidate.exists():
+            files.append(candidate)
     return files
 
 
@@ -137,9 +141,7 @@ def check_file(md: str, anchor_cache: dict[Path, set[str]]) -> list[str]:
             if anchor and dest.suffix == ".md":
                 cache = anchor_cache.setdefault(dest, collect_anchors(dest))
                 if anchor not in cache:
-                    problems.append(
-                        f"{path.name}:{lineno} 跨文件锚点不存在 {file_part}#{anchor}"
-                    )
+                    problems.append(f"{path.name}:{lineno} 跨文件锚点不存在 {file_part}#{anchor}")
 
     # --- 表格列数检查 ---
     i = 0
@@ -158,13 +160,9 @@ def check_file(md: str, anchor_cache: dict[Path, set[str]]) -> list[str]:
                     for lineno, raw in block[2:]:
                         cells = _split_row(raw)
                         if len(cells) != width:
-                            problems.append(
-                                f"{path.name}:{lineno} 表格列数 {len(cells)} != 表头 {width}"
-                            )
+                            problems.append(f"{path.name}:{lineno} 表格列数 {len(cells)} != 表头 {width}")
                     if len(sep) != width:
-                        problems.append(
-                            f"{path.name}:{block[1][0]} 分隔行列数 {len(sep)} != 表头 {width}"
-                        )
+                        problems.append(f"{path.name}:{block[1][0]} 分隔行列数 {len(sep)} != 表头 {width}")
             continue
         i += 1
     return problems
