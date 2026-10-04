@@ -322,6 +322,16 @@ class TaskMixin:
         缩略条直接复用，不必每次现解码 6000px 的原图。"""
         return self.task_dir(task_id) / "thumbnails" / "print"
 
+    def imposition_thumbnails_dir(self, task_id: str) -> Path:
+        """拼版页左列缩略图缓存（每页取第一张源图，``book_key`` 命名）。
+
+        ⚠️ 与独立拼图页的 ``singletask/imposition/`` **各归各**（用户
+        2026-10-04 明确「singletask 和 taskdetail 不是一回事」）：任务缓存
+        随任务目录走，``delete_task`` 整体清理时一并清掉；两边只共用组件与
+        ``ImageThumbCacheWorker``，**不共用缓存根**。
+        """
+        return self.task_dir(task_id) / "thumbnails" / "imposition"
+
     def copy_source_to_task(self, task_id: str, source_path: Path) -> Path:
         """导入时在任务目录下保留一份源文件副本（原子落地）。
 

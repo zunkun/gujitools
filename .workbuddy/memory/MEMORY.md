@@ -18,6 +18,7 @@
 - 普通步骤页外设`modules/base.py::StepModulePage`(`_build_preview`/`on_result`；钩子`source_summary/source_images/on_failed/edit_effect_note`)；拼版页**有意**不继承。
 
 ## 关键契约
+- ⚠**singletask≠taskdetail**(用户2026-10-04强调"不是一回事")：组件/worker共用但**缓存根各归各**——独立页缓存`singletask/<子任务>/`；任务流程缓存`tasks/<id>/thumbnails/{source,print,imposition}`(拼板左列缩略图=`imposition`)，**禁止借道**；taskdetail缓存随`delete_task`整体rmtree一并清理。
 - 第四步取图=第三步「提交本次任务」成品图(2026-10-01定)：改去底色结果/area/border⇒**必须重新提交**才进PDF。detect页交付`<输出目录>/boxes.json`与`tasks/<id>/boxes.json`逐字段一致。日志区`LogPanel`(`log()`=append)。
 - `ImageViewerWidget`两形态：图片模式(`set_images`/`set_thumb_source`)、PDF页模式(`set_pdf_source`+`begin_pdf_pages`+`set_pdf_thumb`，大图按需`PreviewWorker(pdf,page=idx)`渲高清，**不是**放大256px小图)。⚠`set_images`须先`_clear_page_source()`；`gen`代际号防旧书串页。
 - print页：未生成=源图缩略图，生成后=产物PDF页缩略图。`RembgPreviewWidget.set_images(paths, rembg_dir)`**第二参是结果目录**，换源传None；缓存就绪用`set_cached_thumbs({path:cache})`(整体替换)/`set_cached_thumb`(单条)。

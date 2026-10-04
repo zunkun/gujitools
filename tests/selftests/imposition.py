@@ -1185,7 +1185,10 @@ def run(ctx) -> None:
         # ---- 左列缩略图（用户 2026-10-04）----
         # 「任务流程里拼板缩略图没显示、只看到占位」：这条链此前**从没喂过
         # 缩略图**（占位符是硬编码的初始值，没有任何代码会替换它）。现在每页
-        # 取第一张源图，后台渲进 singletask 缓存后贴到条目上。
+        # 取第一张源图，后台渲进**任务目录**（tasks/<id>/thumbnails/
+        # imposition/）后贴到条目上——⚠️ 与独立拼图页共用组件与 worker 但
+        # **不共用缓存根**（用户 2026-10-04 明确「singletask 和 taskdetail
+        # 不是一回事」）。
         import time as _time
 
         _reps = page._imposition_page_reps(page._imposition_pages())
@@ -1207,6 +1210,12 @@ def run(ctx) -> None:
         ok("左列版面：缩略图在上、文字在下（勾选框贴左上角）",
            all(e.checkbox.y() < e.thumb.y() < e.title_label.y() for e in _entries)
            and all(e.checkbox.x() < e.width() // 2 for e in _entries))
+        # 缓存归属边界（用户 2026-10-04 强调）：写任务目录，不借道独立区
+        _cache_dir = page.store.imposition_thumbnails_dir(page.task_id)
+        _cached = list(_cache_dir.glob("*.jpg"))
+        ok("左列缩略图缓存写在任务目录 thumbnails/imposition/",
+           _cache_dir.exists() and len(_cached) >= 2,
+           f"{_cache_dir} jpg={len(_cached)}")
 
         # ---- 批量删除（回归钉子）----
         # 曾出错：确认后的日志行引用未定义的 `listing` ⇒ 页虽然删了，但方法

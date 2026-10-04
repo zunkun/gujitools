@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 112 个模块、127 个公开类、885 个公开函数/方法（生成于 2026-10-04）。
+覆盖 112 个模块、127 个公开类、886 个公开函数/方法（生成于 2026-10-04）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -97,7 +97,7 @@
 | [`desktop.store.pages`](#desktopstorepages) | 1 | 9 |
 | [`desktop.store.runs`](#desktopstoreruns) | 1 | 7 |
 | [`desktop.store.store`](#desktopstorestore) | 1 | 1 |
-| [`desktop.store.tasks`](#desktopstoretasks) | 1 | 23 |
+| [`desktop.store.tasks`](#desktopstoretasks) | 1 | 24 |
 | [`desktop.store.ui_state`](#desktopstoreui_state) | 1 | 6 |
 | [`desktop.ui.color_picker`](#desktopuicolor_picker) | 5 | 30 |
 | [`desktop.ui.font_setup`](#desktopuifont_setup) | 2 | 8 |
@@ -6822,6 +6822,7 @@ JSON 文件，没有旧数据（SQLite）需要迁移。
 | `runs_config_dir(task_id: str) -> Path` | 子进程执行配置（run-*.json / detect-config.json）。 |
 | `source_thumbnails_dir(task_id: str) -> Path` | 源 PDF 页缩略图：导入即生成，PDF 预览直接复用，永不清理。 |
 | `rembg_thumbnails_dir(task_id: str) -> Path` | 第四步缩略图缓存：提交阶段（rembg_submit）随最终图片一并生成， |
+| `imposition_thumbnails_dir(task_id: str) -> Path` | 拼版页左列缩略图缓存（每页取第一张源图，``book_key`` 命名）。 |
 | `copy_source_to_task(task_id: str, source_path: Path) -> Path` | 导入时在任务目录下保留一份源文件副本（原子落地）。 |
 | `source_copy_path(task_id: str) -> Path \| None` | 任务目录里的 PDF 备份路径；没有备份返回 None。 |
 | `ensure_source_copy(task_id: str) -> Path \| None` | 保证任务目录里有 PDF 备份；缺了就按索引里的 source_path 补一份。 |
@@ -6903,6 +6904,15 @@ rembg 最终目录；print 返回 print.pdf 所在目录。
 
 第四步缩略图缓存：提交阶段（rembg_submit）随最终图片一并生成，
 缩略条直接复用，不必每次现解码 6000px 的原图。
+
+##### `imposition_thumbnails_dir(task_id: str) -> Path`
+
+拼版页左列缩略图缓存（每页取第一张源图，``book_key`` 命名）。
+
+⚠️ 与独立拼图页的 ``singletask/imposition/`` **各归各**（用户
+2026-10-04 明确「singletask 和 taskdetail 不是一回事」）：任务缓存
+随任务目录走，``delete_task`` 整体清理时一并清掉；两边只共用组件与
+``ImageThumbCacheWorker``，**不共用缓存根**。
 
 ##### `copy_source_to_task(task_id: str, source_path: Path) -> Path`
 
