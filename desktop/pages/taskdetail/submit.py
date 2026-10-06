@@ -149,8 +149,24 @@ class SubmitMixin:
 
     def _run_rembg_submit_unchecked(self) -> None:
         """提交本次任务的实现体（不含执行权守卫，勿直接调用）。"""
-        if not self.task_id or not self.source_path:
-            self._toast("warning", "提示", "请先导入 PDF")
+        if not self.task_id or not self._stage_inputs_ready():
+            # ⚠️ 空壳任务（创建时没选 PDF，用户 2026-10-06）说清去哪儿补，
+            #    而不是"请先导入 PDF"——那听着像要去列表页重新导入。
+            # ⚠️ 判据是"**这一步需要的输入**齐不齐"而不是"有没有 PDF"，
+            #    与 ``runner._run_stage_unchecked`` 同一个（用户 2026-10-06）：
+            #    流程第一步不吃 PDF 时，那种任务压根不需要源文件。
+            kind = self._missing_input_kind()
+            if kind == "images":
+                self._toast(
+                    "warning", "这一步需要图片",
+                    "本流程第一步不吃 PDF，请点页头的图片按钮选择图片，"
+                    "或把图片放进任务目录下的 stages/input。",
+                )
+            else:
+                self._toast(
+                    "warning", "尚未选择 PDF",
+                    "点页头的「选择 PDF」按钮为本任务补上源文件，之后才能执行。",
+                )
             return
         # 必须以最近一次「生成预览」成功为前提（旧图残留/失败/中断均拒绝提交）
         preview_state = self.store.stage_states(self.task_id)["rembg"]["status"]

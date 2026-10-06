@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
 from desktop.services.font_catalog import start_background_scan
 from desktop.services.stale_chain import stale_upstream
 from desktop.steps import ports
+from desktop.steps.flow import FlowDefinition
 from desktop.store import (
     IMPOSITION_INDEX, IMPOSITION_LABEL, IMPOSITION_STAGE, STAGES, STAGE_LABELS,
 )
@@ -45,6 +46,7 @@ from desktop.ui.toast import show_toast
 from desktop.ui.widgets import apply_to, bold_button
 from desktop.workers import CopySourceWorker, WorkerHost, connect_queued
 from desktop.pages.taskdetail.detect import DetectMixin
+from desktop.pages.taskdetail.flow_mixin import FlowMixin
 from desktop.pages.taskdetail.history import HistoryMixin
 from desktop.pages.taskdetail.imposition import ImpositionMixin
 from desktop.pages.taskdetail.manifest import PageListMixin
@@ -97,6 +99,7 @@ class TaskDetailPage(
     ImpositionMixin,
     PageListMixin,
     DetailViewMixin,
+    FlowMixin,
     QWidget,
     WorkerHost,
 ):
@@ -107,6 +110,12 @@ class TaskDetailPage(
     """
 
     back_requested = Signal()
+    #: 页头「查看 / 编辑流程」被点了（携带任务号）——宿主（壳层）切到
+    #: **流程编辑二级页**（2026-10-06 起不再弹模态窗）。
+    #:
+    #: ⚠️ 必须声明在**这个 QWidget 子类**里：Mixin 是普通类，在里面写
+    #: ``Signal(...)`` 不会注册进 Qt 元数据（发不出去）。
+    flow_edit_requested = Signal(str)
 
     #: 源文件副本缺失时，进详情页后延时多久再后台补副本（毫秒）。
     #: 这段时间足够导入流程先落地副本；这里只为「导入时复制失败 / 老任务
@@ -124,7 +133,18 @@ class TaskDetailPage(
         self.store = store
         self._init_worker_host()
         self.task_id: str | None = None
+        #: 本任务的源 PDF 路径。**None = 还没选**（空壳任务，用户 2026-10-06
+        #: 「PDF 输入不是必须的」）；路径存在但文件不在 = "文件丢了"，两者在
+        #: 界面与执行上处理不同，别混成一个 `exists()` 判断。
         self.source_path: Path | None = None
+        #: ``source_path is not None`` 的缓存位（多处要判，别重复表达式）
+        self.has_source = False
+        #: 补选 PDF 的中间态：正在后台算指纹（按钮置灰）、等算完的文件路径
+        self._picking_source = False
+        self._pending_source: Path | None = None
+        #: 「缺源 PDF」页内提示层（懒建；见 manifest.py 与
+        #: components/missing_source_prompt.py）
+        self._source_prompt = None
         self.pages: list[dict] = []
         self.pdf_page_count = 0
         self.process: QProcess | None = None
@@ -238,11 +258,33 @@ class TaskDetailPage(
         # 卡住几秒到几十秒（用户报「进详情页要等一会」的真凶）。副本由导入
         # 后台任务负责落盘；这里只用**已落地**的副本，没有就先用源文件（两者
         # 二进制相同，渲染结果一致），后台补备份见 _schedule_source_backup()。
-        self.source_path = self.store.source_copy_path(task_id) or Path(
-            task["source_path"]
-        )
+        #
+        # ⚠️ **空壳任务**（创建时没选 PDF，用户 2026-10-06「PDF 输入不是必须
+        # 的」）：索引里 source_path 是**空串**。`Path("")` 是"."（当前目录），
+        # 直接 `or Path(task["source_path"])` 会得到一个**存在的目录**——
+        # 于是 exists() 通过、`set_pdf` 去渲染一个目录、后面 extract 拿着
+        # 它当输入，静默走到崩为止。所以这里显式判空，置成 None（"还没有
+        # 源文件"这个状态有别于"文件丢了"，UI 与执行各自处理，见下）。
+        source_text = str(task.get("source_path") or "").strip()
+        copy = self.store.source_copy_path(task_id)
+        if copy is not None:
+            self.source_path = copy
+        elif source_text and source_text != ".":
+            self.source_path = Path(source_text)
+        else:
+            self.source_path = None
+        self.has_source = self.source_path is not None
         self._schedule_source_backup(task_id)
-        if not self.source_path.exists():
+        if self.source_path is None:
+            # 空壳任务：给一句"还没选"+ 一个补选入口，**不弹错误框**——
+            # 「还没选」不是错误，「文件丢了」才是（那是下面那条）。
+            self._toast(
+                "info",
+                "尚未选择 PDF",
+                "这个任务还没有源文件。点页头的「选择 PDF」补上，"
+                "之后四个步骤才能执行。",
+            )
+        elif not self.source_path.exists():
             self._toast(
                 "error",
                 "PDF 缺失",
@@ -250,7 +292,9 @@ class TaskDetailPage(
                 "请重新导入该 PDF（或把原文件放回原处后重开任务）。",
             )
         self.detail_title.setText(task["name"])
-        self.source_label.setText(self.source_path.name)
+        self.source_label.setText(
+            self.source_path.name if self.source_path else "尚未选择 PDF")
+        self._refresh_source_actions()
         # 切任务时先把各阶段面板复位到默认：这些面板是长生命周期控件，
         # 上个任务手改过的参数（area/border/type/zoom…）否则会带到新任务上，
         # 而新任务往往没有历史记录可覆盖回来。
@@ -270,7 +314,13 @@ class TaskDetailPage(
         # ⚠️ 同样不能在这里碰面板本体：记下源名，面板真被建出来时再应用
         #    （见 _init_ui 里挂的 add_created_hook）。已有 print 历史时它会在
         #    进入第四步时再回填历史配置。
-        self._pending_source_stem = self.source_path.stem
+        # ⚠️ 空壳任务（没有源文件）没有 stem 可派生：给**任务名**当源名，
+        #    这样补选 PDF 之前第四步的参数也不是空的（补选后会被覆盖，
+        #    见 _on_pick_source）。
+        self._pending_source_stem = (
+            self.source_path.stem if self.source_path
+            else str(task.get("name") or task_id)
+        )
         self._apply_pending_source_defaults()
         self.log_view.clear()
         self.detect_cache.clear()
@@ -289,20 +339,40 @@ class TaskDetailPage(
         self._run_claim = None
         self._run_launched_at = 0.0
         self._last_error_line = None
+        # ⚠️ 空壳任务：source_path 是 None（见上面），而``set_pdf`` 本身就
+        #    接受 None（内部摆个占位就return，见 pdf_viewer.set_pdf），所以
+        #    直接传；占位文案要说清是"还没选"而不是"加载失败"。
         self.source_pdf_viewer.set_pdf(
-            self.source_path, cache_dir=self.store.source_thumbnails_dir(task_id)
+            self.source_path,
+            placeholder=None if self.source_path else "尚未选择 PDF",
+            cache_dir=self.store.source_thumbnails_dir(task_id),
         )
         self._refresh_manifest()
         # 换任务就得重算"上游比下游新"的判定缓存（读的是新任务的 runs.json）
         self._refresh_stale_notices()
         # 拼版视图/状态复位（取消在飞合成、灌新任务的拼版文档）
         self._reset_imposition_state()
+        # ⚠️ 按**本任务流程**重建步骤条（BPM 驱动）：构造期还没有任务，
+        #    ``_build_step_bar`` 只能先按默认流程建。自定义流程换了步骤
+        #    顺序/ 可选节点位置后，必须在这里按新流程重排，否则步骤条显示的
+        #    仍是默认顺序、点节点也会切错步骤。默认流程下这是**同参数重建**，
+        #    外观零变化（自测 detail_structure 钉死）。
+        self._rebuild_step_bar()
         self._refresh_stage_views()
         # 落到「上次停留的步骤」（没有记录 / 记录匹配不上时回第一步）
+        # ——这就是「点任务详情直接进上次那一步」的全部实现（用户 2026-10-06
+        #   明确保留的口径），与启动行为无关。
         self._select_stage(self._initial_stage_index())
-        # 记下「上次停留的任务」：程序重启后直接回到这个任务（落到哪一步由
-        # 该任务自己的 ui.json 另记，见 _remember_stage）——两层记录各管一半
+        # 记下「上次停留的任务」：启动不再自动跳回（用户 2026-10-06 改口径），
+        # 这条全局记录只留给将来的显式"回到上次任务"入口，步骤仍由该任务自己的
+        # ui.json 另记（见 _remember_stage）
         self.store.save_last_task(task_id)
+        # ⚠️ 弹窗提示放在**最后**：前面已经把页头、红字、按钮高亮、预览都摆好
+        #    了，用户点"现在选择"时看到的界面已经是就绪的。
+        #    判据是"流程要 PDF 而这个任务还没有"（``_missing_source``）——
+        #    有源文件的任务、流程里不需要 PDF 的任务（自定义流程删掉了
+        #    「提取图片」）都不弹。
+        self._prompt_missing_source()
         # ⚠️ 必须 True：_open_detail 靠返回值决定切不切页——漏了这句
         #    "返回 None 被当拒绝"，详情页就永远进不去（2026-09-27 事故）
         return True
@@ -386,25 +456,118 @@ class TaskDetailPage(
         self._flush_annotations()
         # 实时预览暂存同样要按"当前任务"清（覆盖 task_id 之前，见 set_task）
         self._reset_rembg_live()
+        # ⚠️ 「缺源 PDF」提示层也要收：它是这一页的子控件，不收的话回到列表
+        #    之后它还浮在那儿（页面只是被切走、并没有销毁），下次进来会看到
+        #    一个"上个任务"的提示层。
+        self._dismiss_source_prompt()
         self.task_id = None
         self.source_path = None
         # 释放 PDF：不释放的话回到列表删除该任务时，rmtree 可能撞上文件占用
         self.source_pdf_viewer.set_pdf(None)
         self.back_requested.emit()
 
+    # ------------------------------------------------------------------ 流程槽位（BPM）
+    def flow_slots(self) -> tuple:
+        """本任务流程投影出的**界面槽位**（BPM 驱动界面的唯一入口）。
+
+        没有任务（构造期/已离开）时给**默认流程**的槽位表，让步骤条在
+        还没有任务时也能正常建出来——它此时只是个静态展示。
+
+        ⚠️ 步骤条上那一格的 ``bar_index`` 就是 :attr:`StepBar._current` 的
+        语义；``stack_index`` 才是 ``control_stack`` / ``preview_stack`` 的页号。
+        两者在默认流程下与旧的 ``STAGES[index]`` / ``IMPOSITION_INDEX``
+        逐值相等（自测 ``detail_structure`` 钉死），所以换流程不用改栈的建页。
+        """
+        if not getattr(self, "task_id", None):
+            # 没任务时给**默认模板**的槽位（静态展示）。⚠️ 与任务态同源：
+            # 任务态走 store.task_slots（也是读 bpmn 文件），口径不会漂。
+            from desktop.steps.scheduler import load_default_diagram
+
+            fallback = load_default_diagram()
+            if fallback.nodes:
+                return fallback.stage_slots()
+            return FlowDefinition.default().stage_slots()
+        return self.store.task_slots(self.task_id)
+
+    def step_at_index(self, index: int) -> str | None:
+        """步骤条格序 → **界面步骤 key**；这一格不在本流程里返回 ``None``。
+
+        取代旧代码里的 ``STAGES[index]``（自定义流程下那个下标可能根本不存在）。
+        """
+        for slot in self.flow_slots():
+            if slot.bar_index == index:
+                return slot.step
+        return None
+
+    def stage_at_index(self, index: int) -> str | None:
+        """步骤条格序 → **运行阶段**（``control_stack`` 页号语义那一层）。
+
+        取代 ``ports.spec_for_stage(STAGES[index])`` 里的 ``STAGES[index]``。
+        """
+        for slot in self.flow_slots():
+            if slot.bar_index == index:
+                return slot.stage
+        return None
+
+    def stack_index_of(self, index: int) -> int:
+        """步骤条格序 → ``control_stack`` / ``preview_stack`` 的页号。
+
+        这一格不在本流程里时**兜回 0**（回第一步）并由调用方按"没找到"
+        处理——绝不能拿一个越界页号去 ``setCurrentIndex``。
+        """
+        for slot in self.flow_slots():
+            if slot.bar_index == index:
+                return slot.stack_index
+        return 0
+
+    def bar_index_of_step(self, step: str) -> int | None:
+        """界面步骤 key → 步骤条格序；这一步不在本流程里返回 ``None``。"""
+        for slot in self.flow_slots():
+            if slot.step == step:
+                return slot.bar_index
+        return None
+
+    def stage_at_stack_index(self, page: int) -> str | None:
+        """``control_stack`` / ``preview_stack`` **页号** → 运行阶段。
+
+        与 :meth:`stage_at_index` 是一对（那边是步骤条格序→ 阶段）。
+        默认流程下两种下标逐值相等，自定义流程下必须分开查。
+        """
+        for slot in self.flow_slots():
+            if slot.stack_index == page:
+                return slot.stage
+        return None
+
+    def _rembg_step_index(self) -> int:
+        """"图片去底色"这一步的**格序**（拼版节点消失时退回的那一步）。
+
+        ⚠️ 旧代码写死 ``2``（第三步）。自定义流程里第三步未必在下标 2，
+        写死会把用户送到别的步骤去。本流程里没有这一步时兜回 0。
+        """
+        index = self.bar_index_of_step("rembg")
+        return 0 if index is None else index
+
+    def stack_index_of_step(self, step: str) -> int | None:
+        """界面步骤 key → 两个栈的页号；这一步不在本流程里返回 ``None``。"""
+        for slot in self.flow_slots():
+            if slot.step == step:
+                return slot.stack_index
+        return None
+
     # ------------------------------------------------------------------ 阶段切换/状态
     def current_stage(self) -> str:
-        """返回当前所处阶段的 key（extract/detect/rembg/print/imposition）。
+        """返回当前所处阶段的key（extract/detect/rembg/print/imposition）。
 
-        以步骤条高亮下标映射到 STAGES 序列；下标为负时按 0 兜底处理。
-        「图片拼版」是**伪步骤**（下标 = IMPOSITION_INDEX），返回它的专用 key：
-        调用方凡是拿这个 key 去 STAGES/STAGE_LABELS/runs 里查的，都必须先
-        挡掉（见 _refresh_stage_views / _apply_control_width 等处的守卫）。
+        以步骤条高亮下标反查**本任务流程**的槽位表（BPM 驱动：自定义流程
+        换了顺序/删了节点，这里如实反映）；下标为负时按 0 兜底处理。
+        「图片拼版」是**可选节点**（``StepSpec.role == "optional"``），
+        返回它的专用 key：调用方凡是拿这个 key 去 STAGES/STAGE_LABELS/runs
+        里查的，都必须先挡掉（见 _refresh_stage_views / _apply_control_width
+        等处的守卫）。
         """
         current = self.step_bar._current
-        if current == IMPOSITION_INDEX:
-            return IMPOSITION_STAGE
-        return STAGES[max(current, 0)]
+        stage = self.stage_at_index(max(current, 0))
+        return stage if stage is not None else STAGES[0]
 
     def navigate_by_arrow(self, forward: bool) -> bool:
         """方向键切换当前步骤的页面（主窗口 ←/→ 转发入口）。
@@ -439,20 +602,31 @@ class TaskDetailPage(
     # 条件出现的可选节点），下标一旦错位就会把用户送到**另一个**步骤去。key 是
     # 按语义匹配的，匹配不上就回落第一步——这正是用户要的口径。
     def _stage_index_of(self, stage: str | None) -> int | None:
-        """把记录的步骤 key 映射成**当前流程**里的下标；匹配不上返回 None。
+        """把记录的步骤 key 映射成**当前流程**里的格序；匹配不上返回 None。
 
-        ⚠️ 「图片拼版」是**条件节点**：当前 area≠1 时它根本不在流程条上，
-        即便 key 认得出来也算"找不到匹配"——否则会切进一个流程条上不存在的
-        步骤，紧接着又被 ``_refresh_imposition_node`` 踢回第三步（落到哪一步
-        全看谁后跑，比"回第一步"更难解释）。
+        ⚠️ 查**本任务流程**的槽位表而不是 ``STAGES.index``：自定义流程
+        里这一步可能被删掉（``bar_index_of_step`` 返回 ``None``）→ 视为
+        "找不到匹配"，回第一步，而不是把用户送到流程条上不存在的那一格。
+        「图片拼版」另有一道条件可见性检查，见
+        :meth:`_imposition_node_visible_index`。
         """
         if not stage:
             return None
         if stage == IMPOSITION_STAGE:
-            return IMPOSITION_INDEX if self._imposition_node_visible() else None
-        if stage in STAGES:
-            return STAGES.index(stage)
-        return None
+            return self._imposition_node_visible_index()
+        return self.bar_index_of_step(stage)
+
+    def _imposition_node_visible_index(self) -> int | None:
+        """拼版节点在步骤条上的格序；本流程里没有它时 ``None``。
+
+        「图片拼版」是**条件节点**：**流程图里没画它**时它根本不在流程条上，
+        即便 key 认得出来也算"找不到匹配"——否则会切进一个流程条上不存在的
+        步骤，紧接着又被 ``_refresh_imposition_node`` 踢回第三步（落到哪一步
+        全看谁后跑，比"回第一步"更难解释）。
+        """
+        if not self._imposition_node_visible():
+            return None
+        return self.bar_index_of_step(IMPOSITION_STAGE)
 
     def _initial_stage_index(self) -> int:
         """进详情页默认落到第几步：**上次停留的步骤**，匹配不上则第一步。
@@ -475,18 +649,40 @@ class TaskDetailPage(
         """
         if not self.task_id:
             return
-        stage = IMPOSITION_STAGE if index == IMPOSITION_INDEX else STAGES[index]
+        # ⚠️ 记key 不记下标（理由见 :meth:`_stage_index_of`）。下标要**反查**
+        #    槽位表，不能用 ``STAGES[index]``——自定义流程里那一格可能是
+        #    拼版（可选节点）或换个顺序的别的步骤。
+        stage = self.step_at_index(index)
+        if stage is None:
+            return
         self.store.save_last_stage(self.task_id, stage)
 
     def _select_stage(self, index: int) -> None:
+        """切到步骤条的**第``index`` 格**（格序，含可选节点占位）。
+
+        ⚠️ **参数是格序、不是栈页号**：默认流程 ``extract=0/detect=1/rembg=2/
+        imposition=3/print=4``，而两个栈的页号是 ``extract=0/detect=1/rembg=2/
+        print=3/imposition=4``（伪步骤占末位）。混用两者 = 切错步骤或切到越界页。
+        调用方一律先 ``bar_index_of_step(step)`` / ``stack_index_of_step(step)``
+        查表，**不要写死数字**（``IMPOSITION_INDEX=len(STAGES)=4`` 是改造前的
+        遗留口径，现在落在 print 那一格）。
+        """
         # 离开当前阶段前把待写暂存落盘、把未提交的版面拖动补发
         # （防抖未到期/拖住未松手就走人不该丢改动）
         self.flush_layout_pending()
         self._flush_param_drafts()
+        # ⚠️ **在 set_current 之前**拦下"图上有、但还没有功能"的灰节点：
+        #    放行的话步骤条会高亮在这一格、还会被记成"上次停留"，而右侧显示
+        #    的仍是上一步的内容——看着就像"点了没反应"。
+        slot = self._slot_at_index(index)
+        if slot is not None and not slot.mapped:
+            self._explain_unmapped_step(slot)
+            return
         self.step_bar.set_current(index)
         # 记住这一步：下次打开任务默认回到这里
         self._remember_stage(index)
-        if index == IMPOSITION_INDEX:
+        step = self.step_at_index(index)
+        if step == IMPOSITION_STAGE:
             # ⚠️ 节点本身的显示/选择状态要在这里先补一次：真实步骤是在本方法
             #    **末尾**刷的（那边得等 area 回填完），而这条分支提前 return 了。
             #    漏掉它的后果（用户 2026-09-30 报的 bug）：上次停在「图片拼版」，
@@ -497,19 +693,32 @@ class TaskDetailPage(
             #    （见 ImpositionMixin._refresh_imposition_node）：那就跟随它，
             #    别再进拼版详情，否则步骤条说"第三步"、页面却是拼版。
             self._refresh_imposition_node()
-            if self.step_bar._current != IMPOSITION_INDEX:
+            #⚠️ 用**当前格序反查**判断有没有被踢走：`_refresh_imposition_node`
+            #    在 area≠1 时会把当前步踢回第三步，那时 ``_current`` 已不是
+            #    拼版那一格（旧代码写死 ``!= IMPOSITION_INDEX``，自定义流程
+            #    下拼版的格序会变，写死就判错了）。
+            if self.step_at_index(self.step_bar._current) != IMPOSITION_STAGE:
                 return
-            # 「图片拼版」伪步骤：右侧/预览区都是占位详情，不碰阶段面板
+            # 「图片拼版」可选节点：右侧/预览区都是占位详情，不碰阶段面板
             self._select_imposition_detail()
+            return
+        # ⚠️ 这一格不在本流程里（自定义流程删掉了对应节点，而调用方拿着
+        #    旧下标）：回第一步，别拿越界页号去 setCurrentIndex。
+        if step is None:
+            self._select_stage(0)
             return
         # ⚠️ 面板是**惰性**的：用户切到这一步，就现在把它建出来（不建的话
         #    左侧控制区是空白）。反过来，没切过来的步骤一直不建——这正是
         #    用户 2026-09-25 要求的"谁进去谁才建"。
-        target = self.control_stack.widget(index)
+        # ⚠️ 栈的页号是``stack_index`` 而非步骤条格序：可选节点在步骤条上
+        #    插在它该在的位置（bar_index），但两个栈仍按"真实步骤 + 伪步骤
+        #    占最后一位"建页（stack_index）。默认流程下两者逐值相等。
+        page = self.stack_index_of(index)
+        target = self.control_stack.widget(page)
         if hasattr(target, "peek") and target.peek() is None:
             target.panel  # noqa: B018 - 触发构造
-        self.control_stack.setCurrentIndex(index)
-        self.preview_stack.setCurrentIndex(index)
+        self.control_stack.setCurrentIndex(page)
+        self.preview_stack.setCurrentIndex(page)
         # 真实步骤：执行按钮组恢复可见（拼版详情页整组藏掉，见
         # _select_imposition_detail；两种状态互斥、切换时都要还原）
         # ⚠️ 恢复的是**整行** action_row（「生成预览 + 提交本次任务」并排），
@@ -521,7 +730,7 @@ class TaskDetailPage(
         # 其余是「执行本子任务」——文案与"跑完会发生什么"绑定，所以放 spec 而
         # 不是散在页面里（加一步 / BPM 换顺序都不必改这里）。
         # ⚠️ 走 ``ports.spec_for_stage``：伪步骤（拼版）取不到 spec 时用默认值。
-        spec = ports.spec_for_stage(STAGES[index])
+        spec = ports.spec_for_stage(step)
         self.run_button.setText(
             spec.run_button_text if spec else "执行本子任务"
         )
@@ -535,28 +744,62 @@ class TaskDetailPage(
         self.history_block.setVisible(not spec or not spec.panel_extra)
         self._apply_control_width()
         self._refresh_stage_views()
-        self._refresh_preview(index)
+        # ⚠️ 传的是**栈页号**（``_refresh_preview`` 按 ``preview_stack`` 这一层
+        #    理解入参），不是格序——自定义流程里两者不等。
+        self._refresh_preview(self.stack_index_of(index))
         self._restore_stage_params(index)
         self._refresh_history_options()
-        if STAGES[index] == "detect":
+        if step == "detect":
             # 整页开关是 area=4 的入口，切回第二步时按当前 area 回填
             self._sync_whole_page_checkbox()
         # 流程条上的「图片拼版」节点跟随当前 area（回填可能改了 area，
         # 走 blockSignals 时不会触发面板信号，这里统一补一次）
         self._refresh_imposition_node()
 
+    def _slot_at_index(self, index: int):
+        """步骤条**格序** → 槽位对象；没有这一格返回 ``None``。
+
+        与 :meth:`step_at_index` 的区别：那个只给 step key，这个给整个槽位
+        （要拿 ``optional`` / ``mapped`` 这类只有槽位才有的信息）。
+        """
+        for slot in self.flow_slots():
+            if slot.bar_index == index:
+                return slot
+        return None
+
+    def _explain_unmapped_step(self, slot) -> None:
+        """图上画了、但还没有对应功能的节点：说清怎么接上，别静默跳走。
+
+        两种出路都写进提示里，用户不用猜：改**名字**接上已有步骤，或直接
+        **删掉**不需要的那一格（编辑器工具栏有「删除」与「恢复默认」）。
+        """
+        self._toast(
+            "warning", "这一步还没有功能",
+            f"流程图里的「{slot.label}」目前没有对应的处理功能，还不能执行。"
+            "要用它：点页头「查看 / 编辑流程」把它的名字改成已有步骤"
+            "（如「图片去底色」）；不需要就把它删掉。",
+        )
+
     def _refresh_stage_views(self) -> None:
         if not self.task_id:
             return
         states = self.store.stage_states(self.task_id)
         self.step_bar.reset_statuses()
-        for index, stage in enumerate(STAGES):
-            state = states[stage]
+        # ⚠️ 按**槽位表**刷而不是 ``enumerate(STAGES)``：步骤条上的格序来自
+        #    本任务流程（BPM 驱动），自定义流程换了顺序，状态要刷到对应那一格；
+        #    可选节点（拼版）没有 runs 状态，跳过（它在下方单独给状态行文案）。
+        for slot in self.flow_slots():
+            if slot.optional:
+                continue
+            state = states.get(slot.stage)
+            if state is None:
+                continue
             progress = (state["done"], state["total"]) if state["total"] else None
             # 步骤条只表达"第几步 / 执行到哪"：completed 决定徽标是否打勾，
             # status 决定副标题文案与颜色（重试失败不会让已完成步骤退回未完成）
             self.step_bar.set_step_status(
-                index, state["status"], progress, completed=state["completed"]
+                slot.bar_index, state["status"], progress,
+                completed=state["completed"],
             )
         self._show_running_submit_on_steps(states)
         stage = self.current_stage()
@@ -641,7 +884,14 @@ class TaskDetailPage(
             return
         # 一次读全（五个阶段逐个 list_stage_runs 会把 runs.json 读五遍）
         runs = self.store.all_stage_runs(self.task_id)
-        self._stale_notices = stale_upstream(runs)
+        # ⚠️ 上游链**按本任务的流程图算**，不用写死的那张表：用户加/删/换了步骤
+        #    之后，写死的链会指错上游（提示"上游已重新执行"却指到不相干的步骤），
+        #    或者漏掉真正影响它的那一步。
+        from desktop.services.stale_chain import upstream_from_diagram
+
+        self._stale_notices = stale_upstream(
+            runs, upstream_from_diagram(self.store.task_diagram(self.task_id))
+        )
         # 取图来源是否已换（拼版开关）——同一份 runs.json 顺手算掉，不额外读盘
         try:
             from desktop.services.stale_chain import print_source_switched
@@ -673,8 +923,11 @@ class TaskDetailPage(
             if getattr(self, "_print_dirty", False):
                 return "● 版面已修改，点击「生成 PDF」生效"
             if getattr(self, "_print_source_stale", False):
+                # ⚠️ 认 effective：区域模式不支持时来源确实已回到去底色，
+                #    这里必须跟着说"去底色"而不是说"拼版"（否则界面与执行打架）
                 where = (
-                    IMPOSITION_LABEL if self.imposition_active() else "去底色"
+                    IMPOSITION_LABEL if self.imposition_effective()
+                    else "去底色"
                 )
                 return f"● 取图来源已改为{where}，请重新「生成 PDF」"
         info = (self._stale_notices or {}).get(stage)
@@ -793,8 +1046,22 @@ class TaskDetailPage(
     def _refresh_preview(self, index: int | None = None) -> None:
         if not self.task_id:
             return
-        index = self.preview_stack.currentIndex() if index is None else index
-        stage = STAGES[index]
+        # ⚠️ **两套下标，这里必须显式分开**（用户 2026-10-06 报障的根因之一）：
+        #    无参调用时手上只有 ``preview_stack.currentIndex()``，那是**栈页号**；
+        #    而 ``stage_at_index`` 收的是**步骤条格序**。自定义流程里两者不等
+        #    （detect 可以是格序 0 / 栈页号 1），混用会刷错那一步的预览——
+        #    表现为"插了图，左侧列表却不动"。
+        #    所以这里统一走 ``stage_at_stack_index``：调用方给的是栈页号或
+        #    ``None``，都按栈页号这一层理解（``_select_stage`` 传的格序经
+        #    ``stack_index`` 转一下，见调用处）。
+        page = self.preview_stack.currentIndex() if index is None else index
+        stage = self.stage_at_stack_index(page)
+        if stage is None:
+            return
+        # ⚠️ 进detect/rembg 前按"这一步的输入目录"兜一次清单：流程里没有
+        #    extract 时清单不会被任何阶段刷新，用户放进stages/input/ 的图
+        #    就成了"明明有图却显示暂无图片"（用户 2026-10-06）。
+        self._sync_manifest_to_input()
         if stage == "extract":
             self.extract_result_viewer.set_images(self._manifest_paths())
         elif stage == "detect":

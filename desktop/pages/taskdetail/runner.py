@@ -15,7 +15,6 @@ from pathlib import Path
 from PySide6.QtCore import QProcess, QProcessEnvironment, QTimer
 
 from desktop.services.print_plan import missing_extract_pages_spec
-from desktop.steps import ports
 from desktop.steps.process import StageProcess, worker_arguments
 from desktop.store.json_io import write_json
 from desktop.utils.files import list_stage_images, project_root
@@ -138,6 +137,34 @@ class StageRunnerMixin:
             if self.running_stage is None:
                 self._release_run()
 
+    def _stage_inputs_ready(self) -> bool:
+        """**当前这一步**的输入齐不齐，可以开跑吗。
+
+        ⚠️ 别拿"有没有源 PDF"当判据（用户 2026-10-06）：自定义流程把
+        「检测文本框」之类**不吃 PDF** 的步骤放第一位时，它的输入是入口图片
+        目录（``stages/input/``，见 ``store.stage_input`` 的入口回落），
+        那个目录里有图就能跑——哪怕整个任务压根没有 PDF。
+
+        判据只问**当前这一步**声明的端口：``extract`` 的 ``pages`` 还没产出
+        时当然跑不了（那是它的正常状态，由面板的"执行本子任务"自己管），
+        所以这里只在"这一步有**至少一个**输入端口"时才做检查，且任一端口
+        解析不出可用路径就算不齐。
+        """
+        from desktop.steps.ports import stage_inputs
+
+        stage = self.current_stage()
+        if not self.task_id or stage is None:
+            return False
+        ports = stage_inputs(stage)
+        if not ports:
+            return True
+        for port in ports:
+            path = self.store.stage_input(
+                self.task_id, stage, port, self.imposition_effective())
+            if path is None or not path.exists():
+                return False
+        return True
+
     def _run_stage_unchecked(self, resume: bool = False) -> None:
         """启动当前阶段的 worker 子进程（不含执行权守卫，勿直接调用）。
 
@@ -145,8 +172,29 @@ class StageRunnerMixin:
         否则 clean=True 全量重跑。会取面板参数、写运行配置、起子进程并连接
         输出/错误/完成信号，再挂看门狗兜底 Windows 偶发的 finished 丢失。
         """
-        if not self.task_id or not self.source_path:
-            self._toast("warning", "提示", "请先导入 PDF")
+        if not self.task_id or not self._stage_inputs_ready():
+            # ⚠️ 空壳任务（创建时没选 PDF，用户 2026-10-06）说清去哪儿补，
+            #    而不是"请先导入 PDF"——那听着像要去列表页重新导入。
+            #
+            # ⚠️⚠️ 判据是"**这一步需要的输入**齐不齐"，**不是"有没有 PDF"**
+            #（用户 2026-10-06：非提取节点做第一个节点时该提醒上传图片）：
+            #   · 流程第一步是 extract ⇒ 要源 PDF，没就催"补 PDF"；
+            #   · 流程第一步是「检测文本框」这类不吃 PDF 的 ⇒ 输入是入口图片
+            #     目录（``stages/input/``），**有图就能跑**，哪怕整个任务压根
+            #     没有 PDF。此前这里写死 ``not self.source_path``，于是那种
+            #     任务图都放好了也点不动（守卫比流程还严）。
+            kind = self._missing_input_kind()
+            if kind == "images":
+                self._toast(
+                    "warning", "这一步需要图片",
+                    "本流程第一步不吃 PDF，请点页头的图片按钮选择图片，"
+                    "或把图片放进任务目录下的 stages/input。",
+                )
+            else:
+                self._toast(
+                    "warning", "尚未选择 PDF",
+                    "点页头的「选择 PDF」按钮为本任务补上源文件，之后才能执行。",
+                )
             return
         if self.process and self.process.state() != QProcess.NotRunning:
             self._toast("warning", "任务进行中", "当前子任务正在执行")
@@ -156,6 +204,27 @@ class StageRunnerMixin:
         if not task:
             self._toast("error", "任务不存在", "该任务可能已被删除，请返回列表刷新。")
             return
+        # ⚠️ **状态机守卫**：这一步不在**本任务的流程图**里就别跑。
+        #    界面通常已经按图隐藏了没有的步骤，但面板/快捷键/旧引用仍可能把
+        #    一个"图上已删掉"的阶段递进来——那时它的输入目录没人产出，
+        #    跑起来只会报"找不到输入"，不如当场说清原因（用户改了流程图之后
+        #    这一条真的会中）。
+        #    ⚠️ 判据是**界面格**不是节点：`rembg_submit`（提交去底色结果）是
+        #    第三步内的第二个动作，图上通常没有它的节点，但它跟着 `rembg`
+        #    那一格一起活着——按节点判会把「提交」挡死。
+        if stage:
+            # ⚠️ effective：区域模式不支持拼版时，拼版这一步本来就跳过
+            scheduler = self.store.task_scheduler(
+                self.task_id, self.imposition_effective()
+            )
+            live_steps = {STAGE_STEP.get(s, s) for s in scheduler.stages}
+            if STAGE_STEP.get(stage, stage) not in live_steps:
+                self._toast(
+                    "warning", "这一步不在流程里",
+                    f"当前任务的流程图里没有「{STAGE_LABELS.get(stage, stage)}」，"
+                    "请先在「查看/编辑流程」里把它加回来。",
+                )
+                return
         if stage == "extract" and not Path(self.source_path).exists():
             # self.source_path 已是任务目录里的备份（见 page.set_task）
             self._toast(
@@ -210,7 +279,14 @@ class StageRunnerMixin:
                 # ⚠️ 提示要按**当前取图来源**给：启用拼板后列表为空，原因是
                 # 「还没拼版」，而不是「第三步没提交」——照旧文案会把人引去
                 # 第三步反复重跑，解决不了问题（用户 2026-10-03）。
-                if self.imposition_active():
+                if self.imposition_active() and not self.imposition_effective():
+                    # 勾了但**当前用不上**（流程图里没这一步 / 区域模式不支持）：
+                    # ⚠️ 别说成"第三步没提交"——那会把人引去第三步反复重跑，
+                    #    解决不了问题（正是用户 2026-10-03 报过的那类误导）
+                    _usable, reason = self._imposition_switch_state()
+                    self._toast("warning", "拼版当前用不上", reason)
+                    return
+                if self.imposition_effective():
                     self._toast(
                         "warning", "没有拼版页",
                         "已启用「图片拼版」，但拼版清单是空的。请先回到"
@@ -244,8 +320,10 @@ class StageRunnerMixin:
             # ⚠️ 前缀不带下划线是为了**留在 runs.json 历史里**（入史只剥
             # _effects/files/page_rects 这几个大块派生字段）；它不是 CLI 参数，
             # 只由 GUI 侧读取。
-            args["source_stage"] = ports.print_pages_supplier(
-                self.imposition_active()
+            # ⚠️ 走 store.stage_supplier（**按图求解**）：直接查端口级边表会
+            #    在"流程里没有去底色"这类自定义流程下指向不存在的产物目录。
+            args["source_stage"] = self.store.stage_supplier(
+                self.task_id, "print", "pages", self.imposition_effective()
             )
             # 有序清单即页序：拖拽重排只改 print.json，不再物化任何文件。
             # input 仅供 CLI 作默认目录兜底，实际顺序由 files 决定。
@@ -273,7 +351,7 @@ class StageRunnerMixin:
             self.log_view.append(
                 (
                     f"图片拼版：{len(effects)} 页（生成 PDF 用拼版结果）"
-                    if self.imposition_active() else
+                    if self.imposition_effective() else
                     f"生成 PDF：{len(effects)} 页"
                     "（用第三步「提交本次任务」的成品图）"
                 )
@@ -281,9 +359,13 @@ class StageRunnerMixin:
         else:
             self._refresh_manifest()
             if not self._manifest_paths():
+                # ⚠️ 别说"请先完成上一步子任务"——流程里可能**没有**上一步
+                #    （自定义流程把这一步放在第一位，用户 2026-10-06 报障）。
+                #    那时唯一说得通、也真能解决问题的出路就是"放图进来"。
                 self._toast(
                     "warning", "无输入页面",
-                    "页面清单为空，请先完成上一步子任务，或在预览区插入图片。",
+                    "这一步还没有可处理的图片：点左侧列表下方的「＋」插入图片，"
+                    "或把图片放进本任务的输入目录后重试。",
                 )
                 return
             # detect/rembg 都是逐图独立处理（不依赖顺序与命名），直接以
@@ -800,7 +882,12 @@ class StageRunnerMixin:
         self._refresh_stage_views()
         self._refresh_preview()
         if stage == "extract":
-            self._refresh_preview(1)  # 提取结果标签页
+            # ⚠️ 查表拿栈页号，别写死1（用户 2026-10-06）。自定义流程里
+            #    detect 可能是格序 0 / 栈页号 1，写死会把"刷新提取结果"刷到
+            #    别的步骤上；而且这里的目的是刷**detect**（提取结果的消费者）。
+            detect_page = self.stack_index_of_step("detect")
+            if detect_page is not None:
+                self._refresh_preview(detect_page)
         override_toast = None
         if status == "success" and stage in ("rembg", "rembg_submit"):
             version = self._rembg_submit_version_state()
@@ -817,7 +904,11 @@ class StageRunnerMixin:
                         "提示：面板参数又有修改，请确认后重新「生成预览」",
                     )
             else:  # rembg_submit
-                self._refresh_preview(3)  # 最终图变化，同步刷新第四步列表
+                # 最终图变化，同步刷新第四步（print）列表。⚠️ 查表拿栈页号，
+                # 写死3 在自定义流程下会刷错步骤（MEMORY「三套下标」那条）。
+                print_page = self.stack_index_of_step("print")
+                if print_page is not None:
+                    self._refresh_preview(print_page)
                 if version == "up_to_date":
                     override_toast = (
                         "success", "提交完成",

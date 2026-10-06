@@ -18,7 +18,9 @@
 3. **store 不再自带一份任务目录布局**——它的 ``*_output_dir`` 必须与端口表
    逐字一致（这些路径躺在用户磁盘的老任务上，改错一个就是数据事故）；
 4. **公共组件真的被复用**——四个步骤页共用 :class:`StepModulePage`，页面里
-   **不许**再抄一遍输入区/控制区/收尾那一套。
+   **不许**再抄一遍输入区/控制区/收尾那一套；
+5. **入口步骤也有输入可用**——自定义流程把某一步放在第一位时，它的
+   ``pages`` 输入回落到 ``stages/input/``，而不是"没有输入"（第 7 节）。
 
 不跑 YOLO、不起子进程，全是纯逻辑断言 + 一次不建页面的静态检查。
 """
@@ -51,6 +53,152 @@ def run(ctx) -> None:  # noqa: ARG001 - 不需要窗口夹具
     _check_store_derivation(ctx, ok)
     _check_step_module_page_reuse(ok)
     _check_detail_metadata(ctx, ok)
+    _check_entry_stage_input(ctx, ok)
+    _check_source_pdf_pairing(ok)
+
+
+# ------------------------------------------------- 7. 入口步骤（无上游也要有输入）
+def _check_entry_stage_input(ctx, ok) -> None:
+    """⑦ 自定义流程里**第一个节点一定要有输入可用**（用户 2026-10-06 报障）。
+
+    用户口径：
+
+    > 如果某个节点作为第一个节点，一定要可以有输入可用。
+
+    此前"图片输入"只有一条来路= 上游的 ``pages`` 端口，于是把「检测文本框」
+    放在流程第一位时：取图回溯不到供给方 → 落成 ``None`` → 点执行弹"输入未接好"；
+    预览永远"暂无图片，请先完成提取"；左下角插图又只往 extract 目录写。
+    本节钉住回落的三条边界：
+
+    1. ``pages`` 无上游 ⇒ 落到 ``stages/input/``（**且执行与插图同一目录**）；
+    2. ``boxes`` / ``pdf`` **不许**回落（否则"接口没接好"被伪装成"有输入了"）；
+    3. 有上游时行为**一字不变**（默认流程照旧走 extract 目录）。
+    """
+    from desktop.steps import ports
+    from desktop.store import TaskStore
+
+    task_dir = Path("X") / "t"
+    entry = ports.task_input_dir(task_dir)
+
+    # ---- 1. pages 无上游 → 入口目录 ----
+    for stage in ("detect", "rembg", "print", "imposition"):
+        got = ports.resolve_input_with_entry(task_dir, stage, "pages", None)
+        ok(f"{stage} 无上游时落到入口图片目录", got == entry, f"{got}")
+    ok("入口目录是 stages/input（布局唯一声明处）",
+       entry.as_posix().endswith("t/stages/input"), str(entry))
+
+    # ---- 2. boxes / pdf 不许回落 ----
+    ok("rembg 的 boxes 无上游时不回落（仍报接口没接好）",
+       ports.resolve_input_with_entry(task_dir, "rembg", "boxes", None) is None)
+    ok("extract 的 pdf 走任务源哨兵 → None（由调用方另判）",
+       ports.resolve_input_with_entry(task_dir, "extract", "pdf",
+                                      ports.SUPPLY_TASK_SOURCE) is None)
+    ok("extract 不吃 pages，所以问它 pages 输入不回落",
+       ports.resolve_input_with_entry(task_dir, "extract", "pages", None) is None)
+
+    # ---- 3. 有上游时一字不变 ----
+    ok("有上游时仍走上游目录（默认流程不受影响）",
+       ports.resolve_input_with_entry(task_dir, "detect", "pages", "extract")
+       == task_dir / "stages" / "extract")
+
+    # ---- 4. 按图求解：无extract 的自定义流程里 detect 就是入口 ----
+    repo = TaskStore(Path(ctx.tmp) / "entry_flow")
+    tid = repo.create_task(source_path="", source_hash="", name="入口流程")
+    (repo.task_dir(tid) / "flow.bpmn").write_text(
+        _FLOW_WITHOUT_EXTRACT, encoding="utf-8")
+    diagram = repo.task_diagram(tid)
+    ok("图上没有 extract 时流程照样解析得出来",
+       diagram.stage_order() == ("detect", "rembg", "print"),
+       str(diagram.stage_order()))
+    ok("detect 是入口（沿图没有活着的上游）",
+       ports.is_entry_stage(diagram, "detect"))
+    ok("print 不是入口（上游有 rembg_submit）",
+       not ports.is_entry_stage(diagram, "print"))
+    ok("detect 的输入回落到该任务的入口目录",
+       repo.stage_input(tid, "detect", "pages") == repo.task_input_dir(tid),
+       f"{repo.stage_input(tid, 'detect', 'pages')}")
+    ok("rembg 的图片输入同样回落到入口目录",
+       repo.stage_input(tid, "rembg", "pages") == repo.task_input_dir(tid))
+    ok("rembg 的检测框仍由 detect 供给（没被回落吃掉）",
+       repo.stage_input(tid, "rembg", "boxes")
+       == repo.task_dir(tid) / "boxes.json")
+    ok("print 仍走去底色提交产物（有上游就不该回落）",
+       repo.stage_input(tid, "print", "pages") == repo.rembg_output_dir(tid))
+    # ⚠️ 钉死下标：这条自定义流程里 detect 是**格序 0 / 栈页号 1**——两者不等
+    #    正是"插了图左侧列表不刷新"的根因（_refresh_preview 拿栈页号当格序用）。
+    slots = {s.step: (s.bar_index, s.stack_index) for s in diagram.stage_slots()}
+    ok("detect 的格序与栈页号确实不同（复现插图不刷新的条件）",
+       slots["detect"][0] != slots["detect"][1], str(slots.get("detect")))
+
+
+# ------------------------------------ 8. 源 PDF ↔ 提取图片：成对关系（纯逻辑）
+def _check_source_pdf_pairing(ok) -> None:
+    """「上传 PDF」与「提取图片」成对，判据是**图上的性质**（用户 2026-10-06）。
+
+    > 如果删除了 上传pdf 或者 pdf图片提取中的一个，另外一个的存在没有意义，
+    > 因此需要同步删除另外一个
+
+    这里只验**判据**（纯逻辑，不碰界面）；真正的联动删除在
+    ``bpmn_editor``（工具栏「删除」与 Delete 键**两条路径**都要成对），
+    由 ``flow_ui`` 第 18 节端到端验。
+
+    ⚠️ 「源 PDF」在图上**不是阶段**而是一个 ``startEvent``，所以
+    **不能按 ``stage`` 判**——只能按事件类型或节点名认。
+    """
+    from desktop.steps import ports
+    from desktop.steps.scheduler import load_default_diagram
+
+    d = load_default_diagram()
+    pdf_ids = ports.source_pdf_node_ids(d)
+    ok("默认流程里认得出「源 PDF」节点（它是 startEvent，没有 stage）",
+       len(pdf_ids) == 1, str(pdf_ids))
+    ok("它是源 PDF 节点（is_source_pdf_node）",
+       ports.is_source_pdf_node(d, pdf_ids[0]))
+    extract = next(n.id for n in d.nodes if n.stage == "extract")
+    detect = next(n.id for n in d.nodes if n.stage == "detect")
+
+    ok("删 extract ⇒ 配对节点是「源 PDF」",
+       ports.paired_node_for_stage(d, extract) in pdf_ids,
+       str(ports.paired_node_for_stage(d, extract)))
+    ok("删「源 PDF」⇒ 配对节点是 extract",
+       ports.paired_node_for_stage(d, pdf_ids[0]) == extract,
+       str(ports.paired_node_for_stage(d, pdf_ids[0])))
+    ok("删其它步骤（detect）没有配对（别乱删）",
+       ports.paired_node_for_stage(d, detect) is None,
+       str(ports.paired_node_for_stage(d, detect)))
+
+    # ⚠️ 已删掉 extract 时，删源 PDF **不能**再返回一个不存在的节点
+    trimmed = type(d)(
+        nodes=tuple(n for n in d.nodes if n.stage != "extract"),
+        flows=tuple(f for f in d.flows
+                    if f.source != extract and f.target != extract),
+    )
+    ok("extract 已经不在图里了 ⇒ 删源 PDF 没有配对（返回 None，不给幽灵 id）",
+       ports.paired_node_for_stage(trimmed, pdf_ids[0]) is None,
+       str(ports.paired_node_for_stage(trimmed, pdf_ids[0])))
+    ok("空图/None 不炸（无节点、无配对）",
+       ports.paired_node_for_stage(None, "x") is None
+       and ports.source_pdf_node_ids(None) == ())
+
+
+#: 一条**不含 extract** 的自定义流程（detect 打头）——用户 2026-10-06 的报障现场。
+_FLOW_WITHOUT_EXTRACT = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+ xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+ xmlns:guji="http://guji.local"
+ id="Defs_1" targetNamespace="http://bpmn.io/schema/bpmn">
+ <bpmn:process id="Process_1" isExecutable="false">
+  <bpmn:startEvent id="start"><bpmndi:OMNDIOSExtension/></bpmn:startEvent>
+  <bpmn:task id="t_detect" name="检测文本框" guji:stage="detect"><bpmndi:OMNDIOSExtension/></bpmn:task>
+  <bpmn:task id="t_rembg" name="图片去底色" guji:stage="rembg"><bpmndi:OMNDIOSExtension/></bpmn:task>
+  <bpmn:task id="t_print" name="生成PDF" guji:stage="print"><bpmndi:OMNDIOSExtension/></bpmn:task>
+  <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="t_detect"/>
+  <bpmn:sequenceFlow id="f2" sourceRef="t_detect" targetRef="t_rembg"/>
+  <bpmn:sequenceFlow id="f3" sourceRef="t_rembg" targetRef="t_print"/>
+ </bpmn:process>
+ <bpmndi:BPMNDiagram id="D1"><bpmndi:BPMNPlane id="P1" bpmnElement="Process_1"/></bpmndi:BPMNDiagram>
+</bpmn:definitions>
+"""
 
 
 # ---------------------------------------------------------------- 1. 端口声明
@@ -300,7 +448,7 @@ def _check_detail_metadata(ctx, ok) -> None:
         ok("第三步：按钮=生成预览、提交按钮出现",
            page.run_button.text() == "生成预览"
            and page.submit_button.isVisibleTo(page), page.run_button.text())
-        page._select_stage(3)
+        page._select_stage(page.bar_index_of_step("print"))
         ok("第四步：按钮=生成PDF、提交按钮隐藏",
            page.run_button.text() == "生成PDF"
            and not page.submit_button.isVisibleTo(page), page.run_button.text())
@@ -319,7 +467,7 @@ def _check_detail_metadata(ctx, ok) -> None:
            and not page.detect_stats.isVisibleTo(page))
 
         # 控制列宽度跟着 spec 走（第四步更宽）。
-        page._select_stage(3)
+        page._select_stage(page.bar_index_of_step("print"))
         wide = (page.control_widget.minimumWidth(),
                 page.control_widget.maximumWidth())
         page._select_stage(0)

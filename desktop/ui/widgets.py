@@ -122,6 +122,30 @@ def bold_button(button: QWidget, bold: bool) -> None:
     button.setFont(font)
 
 
+def mark_input_entry(button: QWidget) -> None:
+    """给「给这一步喂图片」这类**输入入口**按钮加**常驻红框**。
+
+    用户 2026-10-06："右上角的选择图片还可以选择目录，都是红色框住"、
+    "左下角输入图片和目录也用红色框住"。红框的作用是**标识入口**（一眼找到
+    该点哪儿喂图片），所以是**常驻**的，不随"缺不缺输入"变。
+
+    ⚠️ **别和"缺输入才亮"的那套高亮混用**：详情页
+    ``manifest._set_tool_highlight`` 是**动态**的（补上文件就灭），两套样式
+    互相覆盖——动态那套灭的时候会把常驻红框一起抹掉。同一个按钮上**只能**
+    选一套：要"入口标识"用本函数，要"缺什么提醒"用 ``_set_tool_highlight``。
+
+    ⚠️ 用样式表而不是换 ``PrimaryPushButton``：那会让这一排工具按钮的
+    **尺寸**变掉（文字按钮比图标按钮宽），把页头撑变形（同 ``bold_button``）。
+    """
+    from desktop.ui import theme as T
+
+    button.setStyleSheet(
+        f"ToolButton {{ border: 1.5px solid {T.DANGER};"
+        f" border-radius: 6px; background-color: {T.DANGER_SOFT}; }}"
+        f"ToolButton:hover {{ background-color: {T.DANGER_SOFT}; }}"
+    )
+
+
 def combo_box(
     items: Iterable[str | Sequence[Any]] | None = None,
     width: int | None = None,

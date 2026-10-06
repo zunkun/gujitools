@@ -27,6 +27,11 @@ class TaskStore(
     每任务目录下另有 drafts/<阶段>.json（用户改过但未执行的参数暂存）、
     drafts/imposition.json（图片拼版的选择态 + 逐页版面）与 ui.json
     （上次停留的步骤，用于再次打开任务时回到那一步）。
+
+    ⚠️ 索引里 ``source_path`` **可以是空串**（创建任务时 PDF 非必需，
+    用户 2026-10-06）——那种任务叫「空壳任务」，之后用
+    :meth:`TaskMixin.set_task_source` 补选。取路径的代码**不能**只判
+    ``exists()``：``Path("")`` 是 ``"."``（当前目录），恒"存在"。
     """
 
     def __init__(self, root: Path | None = None):

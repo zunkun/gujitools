@@ -119,7 +119,10 @@ def run(ctx) -> None:
     from desktop.components.imposition.view import ImpositionViewWidget
     from desktop.pages.taskdetail.page import TaskDetailPage
     from desktop.services import imposition as S
-    from desktop.store import IMPOSITION_INDEX, TaskStore
+    # ⚠️ 一并导入 IMPOSITION_STAGE：本模块多处要「切到拼版」，而格序必须
+    # 查表（``bar_index_of_step``）不能写死——``IMPOSITION_INDEX`` 那个
+    # 固定下标落在 print 那一格，是BPM 驱动前的遗留口径。
+    from desktop.store import IMPOSITION_STAGE, TaskStore
 
     tmp = Path(tempfile.mkdtemp(prefix="guji_imposition_"))
     page = None
@@ -934,9 +937,9 @@ def run(ctx) -> None:
         pdf = make_pdf(tmp / "拼版源.pdf", 2)
         tid = repo.create_task(pdf, "imposition-hash", "拼版测试")
         repo.copy_source_to_task(tid, pdf)
-        # 拼版节点只认「已知」的区域模式（2026-09-30）：草稿确定 area=1，
-        # 否则 _select_stage(拼版) 会因节点不在流程里被退回第一步
-        repo.save_draft(tid, "rembg", {"area": 1})
+        # 拼版节点是否在流程里**只看流程图**（2026-10-05 口径）：默认模板里
+        # 画了「图片拼板」，所以这里不必再配置区域模式来"让它出现"
+        # （旧口径：area=1 才显示，否则 _select_stage(拼版) 会被退回第一步）。
         # 第三步去底色产物（拼版的源图 = 「提交本次任务」的成品图）
         rembg_dir = repo.rembg_output_dir(tid)
         for name, color in (("1-r", RED), ("1-l", GREEN),
@@ -969,11 +972,113 @@ def run(ctx) -> None:
            page.print_source_dir() == rembg_dir
            and not page.imposition_active())
 
-        page._select_stage(IMPOSITION_INDEX)
+        # ---- 启用开关的可用性跟着**流程图**走（2026-10-05 口径）----
+        # 用户口径：拼版的操作就在拼版面板里（这个开关），**它可以用，但是否
+        # 生效由流程图决定**——图里没有「图片拼板」那一格时，勾了也不生效
+        # （第四步取图按图回退到去底色产物），所以开关该**置灰并说明原因**，
+        # 而不是让用户勾一个永远不会生效的框。
+        # ⚠️ 开关可用要**三个判据全过**（2026-10-05 逐层查证业务流程后定）：
+        #    图里有 + 区域模式是「左右分开」+ 用户勾了。第一条这里已满足，
+        #    第二条要显式确认区域模式（业务前提：只有左右分开才产出成对的
+        #    -l/-r 半页图，拼起来才是正刊对开版面）。
+        ok("区域模式还没确认时开关置灰（并说明要先确认）",
+           not page.imposition_enabled_checkbox.isEnabled()
+           and "确认区域模式" in page.imposition_enabled_checkbox.toolTip(),
+           page.imposition_enabled_checkbox.toolTip())
+        repo.save_draft(tid, "rembg", {"area": 1})
+        page._refresh_imposition_node()
+        pump(ctx.app, times=4)
+        ok("图里有「图片拼板」且区域模式=左右分开 → 启用开关可用",
+           page.imposition_enabled_checkbox.isEnabled(),
+           page.imposition_enabled_checkbox.toolTip())
+        # 区域模式改成"合并单图"→ 每页已是一张整图，拼版没意义 ⇒ 置灰
+        repo.save_draft(tid, "rembg", {"area": 2})
+        page._refresh_imposition_node()
+        pump(ctx.app, times=4)
+        ok("区域模式不是左右分开 → 开关置灰（拼版这一步没意义）",
+           not page.imposition_enabled_checkbox.isEnabled()
+           and "整图" in page.imposition_enabled_checkbox.toolTip(),
+           page.imposition_enabled_checkbox.toolTip())
+        repo.save_draft(tid, "rembg", {"area": 1})
+        page._refresh_imposition_node()
+        pump(ctx.app, times=4)
+        # 用**独立页面实例 + 独立任务**验"图里没有"这一侧：直接换掉上面那个
+        # page 的流程图会连累后面所有断言（它们都按默认模板的图算）。
+        from desktop.steps.bpmn_diagram import (
+            DiagramFlow, DiagramNode, FlowDiagram, KIND_TASK,
+        )
+        fog_task = repo.create_task(pdf, "imposition-fogless", "无拼版流程")
+        repo.save_task_diagram(fog_task, FlowDiagram(
+            nodes=tuple(
+                DiagramNode(f"q{i}", KIND_TASK, name)
+                for i, name in enumerate(
+                    ("提取图片", "检测文本框", "图片去底色", "PDF排版"))
+            ),
+            flows=tuple(DiagramFlow(f"qf{i}", f"q{i - 1}", f"q{i}")
+                        for i in range(1, 4)),
+        ))
+        fog = TaskDetailPage(repo)
+        fog.resize(1080, 720)
+        fog.show()
+        pump(ctx.app, times=12)
+        fog.set_task(fog_task)
         pump(ctx.app, times=8)
-        ok("切到拼版详情：两栈都在第 %d 位" % IMPOSITION_INDEX,
-           page.control_stack.currentIndex() == IMPOSITION_INDEX
-           and page.preview_stack.currentIndex() == IMPOSITION_INDEX)
+        ok("流程图里没有「图片拼板」→ 启用开关置灰（勾了也不会生效）",
+           not fog.imposition_enabled_checkbox.isEnabled())
+        ok("置灰时说明原因，不是静默失效",
+           "没有" in fog.imposition_enabled_checkbox.toolTip()
+           and "生效" in fog.imposition_enabled_checkbox.toolTip(),
+           fog.imposition_enabled_checkbox.toolTip())
+        ok("图里没有拼版 → 步骤条上也没有那一格",
+           not fog._imposition_node_visible()
+           and fog.step_bar.imposition_node.isHidden())
+        ok("图里没有拼版时，即便勾过开关也不生效（取图按图回退）",
+           not str(repo.stage_input(fog_task, "print", "pages",
+                                    imposition_active=True)).endswith(
+                                        "imposition"),
+           str(repo.stage_input(fog_task, "print", "pages",
+                                imposition_active=True)))
+        fog.deleteLater()
+        pump(ctx.app, times=4)
+        # ⚠️ **必须把它删掉**：本模块后面的断言用 ``rows[0]``（任务列表的
+        #    第一行）来找本测试的任务，多一个任务留在列表里就会把那一行抢走
+        #    （曾因此让"启用拼版：列表多一个子任务"假红）。
+        repo.delete_task(fog_task)
+
+        # ⚠️ **判据只看流程图**：改第三步的区域模式不再影响拼版节点可见性
+        # （旧口径 area==1 才显示，既语义错配又与用户的图打架）
+        before_visible = page._imposition_node_visible()
+        repo.save_draft(tid, "rembg", {"area": 2})
+        page._refresh_imposition_node()
+        pump(ctx.app, times=4)
+        ok("改第三步区域模式不影响拼版节点**显不显示**（那由流程图决定）",
+           page._imposition_node_visible() == before_visible,
+           f"{before_visible} -> {page._imposition_node_visible()}")
+        # ⚠️ 这里**恢复成 area=1** 而不是 clear_draft：区域模式是拼版的业务
+        #    前提，清掉会让后面所有"启用拼版→取图走拼版产物"的断言失效
+        #    （那正是本轮 `imposition_effective` 引入的正确依赖）。
+        repo.save_draft(tid, "rembg", {"area": 1})
+        page._refresh_imposition_node()
+        pump(ctx.app, times=4)
+
+        # ⚠️ **不能再用写死下标**：BPM 驱动后步骤条格序含可选节点占位
+        # （默认流程 extract=0/detect=1/rembg=2/imposition=3/print=4），
+        # 而 ``IMPOSITION_INDEX = len(STAGES) = 4`` 落在 **print** 那一格——
+        # 传进去切到的是第四步，不是拼版。两个下标各查各的表，别混。
+        imposition_bar = page.bar_index_of_step(IMPOSITION_STAGE)
+        ok("拼版的格序是 3（可选节点占位，≠ len(STAGES)=4）",
+           imposition_bar == 3, str(imposition_bar))
+        page._select_stage(imposition_bar)
+        pump(ctx.app, times=8)
+        # 栈页号与格序**不再相等**：两个栈按"真实步骤 + 伪步骤占最后一位"建页
+        imposition_stack = page.stack_index_of_step(IMPOSITION_STAGE)
+        ok("拼版的栈页号是 4（≠ 格序 3）",
+           imposition_stack == 4, str(imposition_stack))
+        ok("切到拼版详情：两栈都在第 %d 位" % imposition_stack,
+           page.control_stack.currentIndex() == imposition_stack
+           and page.preview_stack.currentIndex() == imposition_stack,
+           f'control={page.control_stack.currentIndex()} '
+           f'preview={page.preview_stack.currentIndex()}')
         ok("拼版详情隐藏执行按钮组",
            not page.run_button.isVisible() and not page.submit_button.isVisible()
            and not page.resume_button.isVisible()
@@ -1371,7 +1476,7 @@ def run(ctx) -> None:
         page._set_imposition_checked(True)
         page._imposition_timer.stop()
         pump(ctx.app, times=6)
-        page._select_stage(3)
+        page._select_stage(page.bar_index_of_step("print"))
         pump(ctx.app, times=6)
         ok("启用拼版后取图来源切到 imposition",
            page.print_source_stage() == "imposition",
@@ -1403,7 +1508,7 @@ def run(ctx) -> None:
         ok("旧数据下载被拦下并说明原因",
            any("重新生成" in str(t) for t in toasts), str(toasts))
         # 反向也对称：取消启用 → 又变回去底色，但历史是去底色 → 不判旧
-        page._select_stage(IMPOSITION_INDEX)
+        page._select_stage(page.bar_index_of_step(IMPOSITION_STAGE))
         pump(ctx.app, times=4)
         page._set_imposition_checked(False)
         page._imposition_timer.stop()
@@ -1460,7 +1565,7 @@ def run(ctx) -> None:
         real_toast2 = page._toast
         page._toast = lambda *a, **k: toasts2.append(a)
         try:
-            page._select_stage(3)
+            page._select_stage(page.bar_index_of_step("print"))
             pump(ctx.app, times=4)
             page._run_stage_unchecked(False)
         finally:
@@ -1469,7 +1574,7 @@ def run(ctx) -> None:
            any("拼版" in str(t) and "选择拼版" in str(t) for t in toasts2),
            str(toasts2))
         # 拼一页 → "有产物"成立（同一判据下只是进度变了）
-        page._select_stage(IMPOSITION_INDEX)
+        page._select_stage(page.bar_index_of_step(IMPOSITION_STAGE))
         pump(ctx.app, times=4)
         page._save_imposition_pages([{
             "items": [

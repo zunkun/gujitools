@@ -26,7 +26,7 @@ def run(ctx) -> None:
     img = ctx.inserted_img
 
     d.set_task(tid)
-    d._select_stage(3)
+    d._select_stage(d.bar_index_of_step("print"))
     # border=10 是本模块自己的前置条件，必须自己设好：下面的「border→边距
     # 级联」用例要它非 0。set_task 会让 rembg 面板按历史记录回填，历史里没有
     # border 就会被清空（拆分前 rembg 段设置的 "10" 会残留，掩盖这条依赖；

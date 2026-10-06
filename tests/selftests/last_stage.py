@@ -4,13 +4,14 @@
 用户口径（2026-09-30）：
 1. 每个任务各记一份：下次打开任务详情，默认回到**上次停留的步骤**；
 2. 没有记录（新任务）→ 第一步；
-3. 记录在**当前流程里匹配不上** → 回到第一步（例如「图片拼版」是虚线可选
-   节点，第三步 area≠1 时它根本不在流程里）；
+3. 记录在**当前流程里匹配不上** → 回到第一步（例如「图片拼版」那一格被
+   从流程图里删掉时，它根本不在流程里）；
 4. 记录按**语义 key** 存（"rembg" / "imposition"，不是下标）：步骤增删后
    下标会错位，那就把用户送到**另一个**步骤去了；
-5. 程序重启后**自动回到上次任务**的那一步（2026-09-30 新增）：全局记一份
-   「上次任务」（id + source_hash 指纹），启动时任务还在（指纹对得上）就
-   直接打开详情、落到步骤；已删/任务号被复用就留在列表页。
+5. **启动不再自动跳回上次任务**（2026-10-06 改口径，之前是 09-30 加的"重启
+   回到上次任务"）：启动一律停在任务列表页，由用户点哪个任务；但点进去后
+   仍然落到上次停留的步骤。全局「上次任务」记录照写不误（给将来的显式入口
+   留底子），只是不再被启动路径消费。
 
 验法：**独立构造**详情页 + 独立数据目录（同 tests/selftests/imposition.py
 第 6 节的做法），不碰 ``ctx.tid`` / ``ctx.d`` 的"当前步"——否则本模块会把
@@ -28,7 +29,7 @@ def run(ctx) -> None:
     from pathlib import Path
 
     from desktop.pages.taskdetail.page import TaskDetailPage
-    from desktop.store import IMPOSITION_INDEX, TaskStore
+    from desktop.store import IMPOSITION_STAGE, TaskStore
     from tests.selftests._context import make_pdf, ok, pump
 
     tmp = Path(tempfile.mkdtemp(prefix="last_stage_probe_"))
@@ -85,7 +86,7 @@ def run(ctx) -> None:
            page.step_bar._current == 0, f"current={page.step_bar._current}")
 
         # ---- 5. 每个任务各记一份（互不串味）----
-        page._select_stage(3)
+        page._select_stage(page.bar_index_of_step("print"))
         pump(ctx.app, times=8)
         ok("第四步被记录", repo.load_last_stage(tid) == "print")
         tid2 = repo.create_task(pdf, "last-stage-hash-2", "记忆测试2")
@@ -106,18 +107,22 @@ def run(ctx) -> None:
         tid3 = repo.create_task(pdf, "last-stage-hash-3", "记忆测试3")
         repo.copy_source_to_task(tid3, pdf)
         page2 = new_page()
-        ok("新页面的第三步面板还没被建出来（area 走暂存/默认）",
+        ok("新页面的第三步面板还没被建出来（面板是惰性构建的）",
            page2.control_stack.widget(2).peek() is None)
 
-        # 6a. 区域模式确定为 1（草稿；节点在流程里）→ 记录能匹配，落到拼版，
-        #     **且节点要显示**（⚠️ 新判据下节点只认「已知」的 area——面板值/
-        #     草稿/执行历史之一，不凭内置默认冒出来）
-        repo.save_draft(tid, "rembg", {"area": 1})
+        # 6a. 「图片拼板」在图里（默认模板就有）→ 记录能匹配，落到拼版，
+        #     **且节点要显示**（⚠️ 判据 = **流程图**，与区域模式无关，所以这里
+        #     不必再配 area）
         repo.save_last_stage(tid, "imposition")
         page2.set_task(tid)
         pump(ctx.app, times=8)
+        # ⚠️ 期望值查表拿，别写死：``IMPOSITION_INDEX`` = len(STAGES) = 4 是
+        # BPM 驱动**前**的格序；现在步骤条格序含可选节点占位，拼版在第 3 格。
+        imposition_bar = page2.bar_index_of_step(IMPOSITION_STAGE)
+        ok("拼版格序是 3（不是 len(STAGES)=4：格序含可选节点占位）",
+           imposition_bar == 3, str(imposition_bar))
         ok("记录为「图片拼版」且节点在流程里 → 落到拼版",
-           page2.step_bar._current == IMPOSITION_INDEX
+           page2.step_bar._current == imposition_bar
            and page2.current_stage() == "imposition",
            f"current={page2.step_bar._current}")
         # 回归钉子：恢复只调了 _select_stage(拼版)，而节点显示是在 _select_stage
@@ -132,17 +137,35 @@ def run(ctx) -> None:
            page2.step_bar.imposition_slot.isVisible()
            and page2.step_bar._imposition_connector.isVisible())
 
-        # 6b. 第三步区域模式改成 2（节点不在流程里）→ 记录匹配不上，回第一步
-        #     ⚠️ area 的惰性读法是「第三步面板 > 暂存 > 最近执行 > 默认」，
-        #     而上面那个页面从没进过第三步（面板没建），暂存才说话。
-        repo.save_draft(tid3, "rembg", {"area": 2})
+        # 6b. 把「图片拼板」从**流程图**里删掉 → 记录匹配不上，回第一步
+        #     ⚠️ 判据是流程图（2026-10-05 口径变更），不再是第三步的区域模式：
+        #     用户把那一格删了就该消失，而不是靠"去底色的裁剪方式"猜。
+        from desktop.steps.bpmn_diagram import (
+            DiagramFlow, DiagramNode, FlowDiagram, KIND_TASK,
+        )
+        repo.save_task_diagram(tid3, FlowDiagram(
+            nodes=tuple(
+                DiagramNode(f"s{i}", KIND_TASK, name)
+                for i, name in enumerate(
+                    ("提取图片", "检测文本框", "图片去底色", "PDF排版"))
+            ),
+            flows=tuple(DiagramFlow(f"sf{i}", f"s{i - 1}", f"s{i}")
+                        for i in range(1, 4)),
+        ))
         repo.save_last_stage(tid3, "imposition")
         page2.set_task(tid3)
         pump(ctx.app, times=8)
         ok("拼版节点不在流程里时，「拼版」这条记录匹配不上 → 回第一步",
            page2.step_bar._current == 0, f"current={page2.step_bar._current}")
         ok("此时流程条上确实没有拼版节点",
-           not page2._imposition_node_visible() and node.isHidden())
+           not page2._imposition_node_visible()
+           # ⚠️ **必须重新取节点**：``set_task`` 会走 ``_rebuild_step_bar``
+           #    重建整个步骤条（``deleteLater`` 掉旧的）——上面 6a 缓存的
+           #    ``node`` 指向的是**已析构的旧控件**，问它isHidden() 拿到的是
+           #    僵尸对象的状态，不是当前步骤条的（曾因此假红）。
+           and page2.step_bar.imposition_node.isHidden(),
+           f'visible={page2._imposition_node_visible()} '
+           f'hidden={page2.step_bar.imposition_node.isHidden()}')
 
         # ---- 7. 「重开程序」= 换一个全新详情页实例，仍回到记录的那一步 ----
         # 记录是**落盘**的，不依赖页面实例（上面 6b 那个页面从没切到过第三步）
@@ -172,10 +195,9 @@ def run(ctx) -> None:
         ok("记录缺失/写坏时回落第一步（不崩、不乱跑）",
            page.step_bar._current == 0, f"current={page.step_bar._current}")
 
-        # ---- 9. 「重启程序回到上次任务」：全局记录 + 启动恢复 ----
-        # 两层记录各管一半：「哪个任务」在数据根目录 ui.json（进入任务即写）；
-        # 「哪一步」仍在该任务自己的 ui.json。恢复入口是
-        # MainWindow._restore_last_task（main() 启动后 RESTORE_DELAY_MS 调一次）。
+        # ---- 9. 「启动不再自动跳回上次任务」（2026-10-06 改口径）----
+        # 全局「上次任务」记录（数据根目录 ui.json）**照写不误**，只是不再被
+        # 启动路径消费；「哪一步」仍在该任务自己的 ui.json，点任务详情时落上去。
         from desktop.app import MainWindow
 
         ok("进入任务时写入全局「上次任务」记录（id + 指纹）",
@@ -194,42 +216,37 @@ def run(ctx) -> None:
             global_ui.write_text(payload, encoding="utf-8")
             ok(f"全局记录{label} → 当作没有记录", repo.load_last_task() is None)
 
+        # 9a. 记录完好、指纹也对得上（就是以前会自动跳进去的那种情形）
+        repo.save_last_stage(tid, "rembg")
+        repo.save_last_task(tid)
         w = MainWindow()
-        # 同 _context.prepare：主窗口自带的 store 指向真实数据目录，换成本模块
-        # 的临时 repo（详情页是恢复时惰性建的，取的是当时的 w.store）。
+        # 同_context.prepare：主窗口自带的 store 指向真实数据目录，换成本模块
+        # 的临时 repo。
         w.store = repo
         w.list_page.store = repo
         try:
-            # 9a. 记录的任务已删 → 安静留在列表页
-            global_ui.write_text(
-                '{"last_task": "9999", "source_hash": "x"}', encoding="utf-8"
-            )
-            w._restore_last_task()
-            pump(ctx.app, times=4)
-            ok("记录的任务已不存在 → 留在列表页",
-               w.pages.currentWidget() is w.list_page)
-
-            # 9b. 防撞号：任务号顺序复用（删 0012 再新建也叫 0012），指纹
-            #     对不上说明"这个号已经不是当初那个任务"，不能往里跳。
-            global_ui.write_text(
-                '{"last_task": "%s", "source_hash": "someone-else"}' % tid,
-                encoding="utf-8",
-            )
-            w._restore_last_task()
-            pump(ctx.app, times=4)
-            ok("指纹对不上（任务号被复用）→ 留在列表页",
-               w.pages.currentWidget() is w.list_page)
-
-            # 9c. 正常恢复：自动打开上次任务，并落到上次停留的步骤
-            repo.save_last_stage(tid, "rembg")
-            repo.save_last_task(tid)
-            w._restore_last_task()
+            ok("记录完好且指纹一致（以前会自动跳进去的那种情形）",
+               repo.load_last_task() == {"id": tid, "source_hash": "last-stage-hash"},
+               repr(repo.load_last_task()))
+            # 9b. 启动路径**没有**恢复入口了：既不该有那个定时器常量，也不该
+            #     残留恢复方法（留着就是"看起来还在跳"的假象/死代码）。
+            ok("MainWindow 不再有启动恢复的常量与方法",
+               not hasattr(MainWindow, "RESTORE_DELAY_MS")
+               and not hasattr(w, "_restore_last_task"),
+               f"const={hasattr(MainWindow, 'RESTORE_DELAY_MS')} "
+               f"method={hasattr(w, '_restore_last_task')}")
+            ok("启动后停在列表页，不自动跳进上次任务",
+               w.pages.currentWidget() is w.list_page,
+               f"index={w.pages.currentIndex()}")
+            # 9c. 保留的口径：用户**自己点**进去时，仍落到上次停留的步骤
+            # 走列表页「详情」那条真实入口（list_page.open_detail 连的就是它）
+            w._open_detail(tid)
             pump(ctx.app, times=8)
-            ok("重启恢复：自动打开上次任务",
+            ok("点任务详情 → 打开该任务",
                w.pages.currentWidget() is w.detail_page
                and w.detail_page.task_id == tid,
                f"index={w.pages.currentIndex()} task={w.detail_page.task_id}")
-            ok("恢复后落到上次停留的步骤（rembg）",
+            ok("点进去仍落到上次停留的步骤（rembg）",
                w.detail_page.step_bar._current == 2
                and w.detail_page.current_stage() == "rembg",
                f"current={w.detail_page.step_bar._current}")

@@ -72,6 +72,13 @@ NAV_MIN_EXPAND_WINDOW = 720
 #: 任务管理与详情页的路由键（不是模块，所以不放进 ``MODULES``）
 ROUTE_TASKS = "tasks"
 ROUTE_DETAIL = "detail"
+#: 「创建任务」二级页（2026-10-06：原为模态弹窗）
+ROUTE_CREATE = "create"
+#: 「任务流程编辑」二级页（详情页页头进入）
+ROUTE_FLOW = "flow"
+
+#: 这两个页面**没有**自己的导航条目（它们是「任务管理」的下级，像详情页一样）
+_SUBROUTES = (ROUTE_DETAIL, ROUTE_CREATE, ROUTE_FLOW)
 
 
 class ModuleShell(QWidget):
@@ -124,6 +131,9 @@ class ModuleShell(QWidget):
         self.list_page = TaskListPage(self.store)
         self.pages.addWidget(self.list_page)
         #: 「任务管理」导航条目（自测要点它；也便于将来做快捷键/命令面板）
+        # 列表页「创建任务」按钮 → 切到创建任务二级页（不再弹模态窗）
+        self.list_page.create_requested.connect(self.open_create)
+
         self._tasks_item = self.nav.addItem(
             ROUTE_TASKS,
             FIF.HOME,
@@ -149,6 +159,9 @@ class ModuleShell(QWidget):
 
         # ---- 详情页：惰性（同 app.py 原逻辑，构造约 400ms）----
         self._detail_page: QWidget | None = None
+        # ---- 创建任务 / 流程编辑：二级页，同样惰性（都不常走）----
+        self._create_page: QWidget | None = None
+        self._flow_page: QWidget | None = None
 
     # ------------------------------------------------------------------ 点击槽
     def _module_click_handler(self, key: str):
@@ -213,9 +226,85 @@ class ModuleShell(QWidget):
 
             page = TaskDetailPage(self.store)
             page.back_requested.connect(self.back_to_list)
+            # 详情页页头「查看/编辑流程」→ **切到流程编辑页**（不再是弹窗）
+            page.flow_edit_requested.connect(self.open_flow)
             self.pages.addWidget(page)
             self._detail_page = page
         return self._detail_page
+
+    # ------------------------------------------------------- 创建任务 / 流程编辑
+    def create_page(self):
+        """创建任务页（惰性构造；外部截图/自测按这个属性取）。"""
+        if self._create_page is None:
+            from desktop.pages.createtask.page import CreateTaskPage
+
+            page = CreateTaskPage(self.store)
+            # 取消/返回 → 回列表；建任务由列表页的既有链路处理（它要算指纹、查重）
+            page.closed.connect(self.back_to_list)
+            # 提交 → 列表页走既有链路（指纹/查重/预热都在那边，一字未改）
+            page.create_requested.connect(self._on_create_submitted)
+            self.pages.addWidget(page)
+            self._create_page = page
+        return self._create_page
+
+    def _on_create_submitted(self, path: str, name: str, diagram,
+                             uses_custom: bool) -> None:
+        """创建页填完了 → 交给列表页建任务（建完它发 open_detail 进详情）。"""
+        self.list_page.start_create(path, name, diagram, uses_custom)
+
+    def open_create(self) -> None:
+        """打开「创建任务」二级页（列表页的「创建任务」按钮走这里）。
+
+        ⚠️ **每次进入都复位**（用户 2026-10-06："上一次创建任务信息没有清理"）：
+        本页是**惰性单例**（建一次就长期留着），不复位的话上一次填的任务名、
+        选的 PDF、勾的「自定义流程」、编过的流程图全都留在界面上——第二次
+        建任务等于接着上一次半途而废的表单继续填。
+        """
+        page = self.create_page()
+        # ⚠️ 复位放在"已经在这一页"判断**之前**：连着点两次「创建任务」，
+        #    第二次该把第一次填的清掉，而不是因为"没换页"就跳过。
+        page.reset()
+        self.pages.setCurrentWidget(page)
+        if self.pages.currentWidget() is page:
+            self._sync_nav_to_page(0)
+
+    def flow_page(self):
+        """任务流程编辑页（惰性构造）。"""
+        if self._flow_page is None:
+            from desktop.pages.taskflow.page import TaskFlowPage
+
+            page = TaskFlowPage(self.store)
+            page.closed.connect(self._back_from_flow)
+            page.flow_saved.connect(self._on_flow_saved)
+            self.pages.addWidget(page)
+            self._flow_page = page
+        return self._flow_page
+
+    def open_flow(self, task_id: str) -> None:
+        """打开某个任务的流程编辑页（详情页页头按钮走这里）。"""
+        page = self.flow_page()
+        if not page.open_task(task_id):
+            self._toast_flow_error()
+            return
+        self.pages.setCurrentWidget(page)
+        if self.pages.currentWidget() is page:
+            self._sync_nav_to_page(0)
+
+    def _toast_flow_error(self) -> None:
+        """流程读不出来时的提示（回列表，不留一个空白的流程页）。"""
+        self.show_tasks()
+
+    def _back_from_flow(self) -> None:
+        """流程页「返回」→ 回该任务的详情页（没打开过任务就回列表）。"""
+        task_id = getattr(self._flow_page, "_task_id", None)
+        if task_id:
+            self.open_detail(task_id)
+        else:
+            self.show_tasks()
+
+    def _on_flow_saved(self, task_id: str) -> None:
+        """流程保存后回详情页并**重载**（步骤条/槽位/取图来源要按新图重排）。"""
+        self.open_detail(task_id)
 
     def prewarm_detail_page(self) -> None:
         """预构造详情页骨架与**第一步**面板（同 app.py 原 ``_prewarm_detail_page``）。"""
@@ -236,6 +325,20 @@ class ModuleShell(QWidget):
             )
             if busy:
                 self.pages.setCurrentWidget(page)
+            # ⚠️⚠️ **别静默丢**（2026-10-06 用户报障"编辑流程后顶部流程图没更新"）：
+            #    ``set_task`` 返回 False 的原因只有两个——任务不存在，或**正在
+            #    跑子任务**（见 ``set_task`` 开头的守卫）。前一种已由 ``get_task``
+            #    兜住，后一种**原来什么都不做**：用户从流程页保存回来，被留在流程
+            #    页上，详情页的步骤条还是旧流程；等他"重新进入"才更新，全然不知
+            #    刚才那次保存其实没落到界面上。这里明确提示，并把详情页显示出来
+            #    （至少让他看到旧流程 + 一句解释，而不是停在流程编辑页）。
+            #⚠️ 不弹 MessageBox 打断，直接把详情页切出来 + toast 说明。
+            self.pages.setCurrentWidget(page)
+            if not busy:
+                page._toast(
+                    "info", "流程已保存",
+                    "本任务的流程已保存，但详情页未能重载（请稍后重进任务查看）。",
+                )
             self.list_page.refresh()
 
     def back_to_list(self) -> None:
@@ -284,6 +387,9 @@ class ModuleShell(QWidget):
         self.list_page.store = store
         if self._detail_page is not None:
             self._detail_page.store = store
+        for page in (self._create_page, self._flow_page):
+            if page is not None:
+                page.store = store
 
     def current_route(self) -> str:
         """当前**显示中**页面的路由键。
@@ -296,6 +402,10 @@ class ModuleShell(QWidget):
             return ROUTE_TASKS
         if current is self._detail_page:
             return ROUTE_DETAIL
+        if current is self._create_page:
+            return ROUTE_CREATE
+        if current is self._flow_page:
+            return ROUTE_FLOW
         for key, page in self._module_pages.items():
             if page is current:
                 return key
@@ -311,7 +421,8 @@ class ModuleShell(QWidget):
         route = self.current_route()
         if not route:
             return
-        target = ROUTE_TASKS if route == ROUTE_DETAIL else route
+        # 详情/创建/流程三个页面都没有自己的导航条目，高亮一律留在「任务管理」
+        target = ROUTE_TASKS if route in _SUBROUTES else route
         self._selected_route = target
         try:
             self.nav.setCurrentItem(target)

@@ -108,7 +108,7 @@ def run(ctx) -> None:
             "rembg_submit": [_rec("s1", "success", NOW)],
         })
         d._refresh_stale_notices()
-        d._select_stage(3)
+        d._select_stage(d.bar_index_of_step("print"))
         pump(app, 3)
         text = d.stage_status.text()
 

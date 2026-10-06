@@ -44,7 +44,7 @@ def run(ctx) -> None:
     final_dir = repo.rembg_output_dir(tid)
 
     d.set_task(tid)
-    d._select_stage(3)
+    d._select_stage(d.bar_index_of_step("print"))
 
     # ⚠️ 检测框必须**本模块自己注入**：ctx.injected_boxes 是 rembg 模块留下的
     # 跨模块状态，全量跑时会被其它模块（detect 注入的确定性框）覆盖，
@@ -138,7 +138,7 @@ def run(ctx) -> None:
     d.store.save_print_doc(tid, {"rembg_snapshot": [], "pages": []})
     d._refresh_preview(3)
     d.set_task(tid)
-    d._select_stage(3)
+    d._select_stage(d.bar_index_of_step("print"))
     _panel3 = d.control_stack.widget(2)
     _panel3.area.setCurrentIndex(1)
     _panel3.border.setText("30")

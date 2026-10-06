@@ -27,7 +27,7 @@ def run(ctx) -> None:
     tid = ctx.tid
 
     d.set_task(tid)
-    d._select_stage(3)
+    d._select_stage(d.bar_index_of_step("print"))
     d._refresh_preview(3)
 
     # ---------------------------------------------------------- 纯清单页序

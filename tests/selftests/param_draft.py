@@ -30,7 +30,7 @@ def run(ctx) -> None:
     try:
         page.set_task(tid)
         print_panel = page.control_stack.widget(3)
-        page._select_stage(3)
+        page._select_stage(page.bar_index_of_step("print"))
         pump(app, times=6)
 
         # ---- 1. 干净任务：没有暂存 ----
@@ -57,7 +57,7 @@ def run(ctx) -> None:
 
         # ---- 3. 重新进入任务：回填暂存（不是内置默认）----
         page.set_task(tid)
-        page._select_stage(3)
+        page._select_stage(page.bar_index_of_step("print"))
         pump(app, times=6)
         ok("重开任务后边距来自暂存", print_panel.page_margins.text() == "30,40",
            print_panel.page_margins.text())
@@ -71,7 +71,7 @@ def run(ctx) -> None:
             "done": 1, "total": 1, "started_at": 0, "finished_at": 0,
         }]})
         page.set_task(tid)
-        page._select_stage(3)
+        page._select_stage(page.bar_index_of_step("print"))
         pump(app, times=6)
         ok("暂存比「最近一次执行参数」优先",
            print_panel.page_margins.text() == "30,40",
@@ -80,7 +80,7 @@ def run(ctx) -> None:
         # 清掉暂存 → 这次该轮到历史参数
         repo.clear_draft(tid, "print")
         page.set_task(tid)
-        page._select_stage(3)
+        page._select_stage(page.bar_index_of_step("print"))
         pump(app, times=6)
         # 用 get_args() 比语义：文本框里是简写形式（四值相同会写成 "5"）
         ok("没有暂存时回填最近一次执行参数",
@@ -95,7 +95,7 @@ def run(ctx) -> None:
            draft.get("page_margins") == [10.0] * 4, str(draft.get("page_margins")))
 
         # ---- 6. 非法参数不覆盖上一份有效暂存 ----
-        page._select_stage(3)
+        page._select_stage(page.bar_index_of_step("print"))
         pump(app, times=6)
         print_panel.page_margins.setText("30,40")
         page._flush_param_drafts()
@@ -115,7 +115,7 @@ def run(ctx) -> None:
         # ---- 7. 程序化回填不产生暂存 ----
         repo.clear_draft(tid, "print")
         page.set_task(tid)      # 复位 + 回填全流程都是程序化 setText/setValue
-        page._select_stage(3)
+        page._select_stage(page.bar_index_of_step("print"))
         page._flush_param_drafts()
         ok("程序化回填不写暂存（不会把回填当成用户改动）",
            repo.load_draft(tid, "print") is None)

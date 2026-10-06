@@ -33,6 +33,43 @@ def ok(name: str, condition: bool, detail: str = "") -> None:
     print(f"  [PASS] {name}")
 
 
+def silence_source_prompt(page) -> list:
+    """关掉详情页的「缺源 PDF」提示层，返回"提示层可见过"的记录列表。
+
+    ⚠️ 那层提示**非模态**（`MissingSourcePrompt`，2026-10-06 从 MessageBox
+    换掉），所以离屏自测**可以直接显示它、不用挂住**——只有它上面那个
+    「现在选择」按钮会去开模态文件对话框。所以这个助手做两件事：
+
+    1. 把 ``picked`` 接到一个空实现：**点「现在选择」不会真的弹文件框**；
+    2. 返回记录列表：``_prompt_missing_source`` 每次被调用就记一笔，可用来
+       断言"进这个任务时提示层被请求过"。
+
+    ⚠️ 记录的是"**被请求**"而不是"被显示"——所以要断言"有源文件的任务不该
+    提示"时，要看 ``page._source_prompt`` 是不是``None``，别只看这个列表。
+    """
+    calls: list = []
+    picked: list = []
+    # ⚠️ 先把原方法**抓在手里**再包一层：写成 `record` 里再调
+    #    ``page._prompt_missing_source()`` 会调到自己（那个属性已被替换成
+    #    record）⇒无限递归。
+    real_prompt = page._prompt_missing_source
+    real_pick = page._on_pick_source
+
+    def record() -> None:
+        calls.append(1)
+        real_prompt()
+
+    def safe_pick() -> None:
+        picked.append(1)     # 记"用户点了现在选择"，但不真弹模态文件框
+
+    page._prompt_missing_source = record
+    page._on_pick_source = safe_pick
+    # 记录"点过现在选择"的列表挂在助手返回值上，两个用途一起拿到
+    record.picked = picked          # type: ignore[attr-defined]
+    del real_pick
+    return calls
+
+
 def imported_modules(source: str) -> set[str]:
     """把一段源码里所有 import 的模块名抠出来（含 ``from X import Y`` 里的 X）。
 

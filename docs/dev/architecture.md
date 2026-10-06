@@ -138,4 +138,13 @@ guji/
 - singletask 证明了每一步可以脱离任务上下文独立运行——这就是 BPM 单步执行器；
 - taskdetail 未来的角色收敛为「一个内置的默认流程定义」。
 
+**M1 已落地（2026-10-05）**：`desktop/steps/flow.py` 把上述形态变成了运行时载体
+——`FlowDefinition.default()` 从 ports 静态表**派生**默认流程（不另写一份连线），
+序列化成 BPMN 2.0 兼容子集；建任务时落到 `tasks/<任务号>/flow.bpmn`，
+`TaskStore.stage_input` 按**本任务的流程定义**解析输入（文件缺失/写坏回落默认）。
+自定义流程 = 换一份 `flow.bpmn` 文件，算法、落点、界面代码不动（自测：
+`tests/selftests/flow_bpm.py`）。条件连线（拼版生效 → print 换上游）用
+`guji:condition` 属性表达。后续：详情页按 BPMN 节点渲染 → 创建任务弹窗 →
+拖拽编辑画布（见 `docs/tasks/bpm.md`）。
+
 新代码请顺着这个方向写：把知识放进 spec/ports/组件参数，而不是写死在某侧页面里。

@@ -58,12 +58,24 @@ ARTIFACT_PDF = "pdf"
 ARTIFACT_PAGES = "pages"
 #: 检测框坐标（``boxes.json``，单文件）。只有 rembg 消费它。
 ARTIFACT_BOXES = "boxes"
+#: **流程入口图片**：用户直接放进任务里的那批图。
+#:
+#: ⚠️ 为什么需要这个产物类型（用户 2026-10-06）：
+#: > 如果某个节点作为第一个节点，一定要可以有输入可用。
+#:
+#: 以前"图片输入"只有一条来路——上游的 ``pages`` 端口。于是自定义流程把
+#: 「检测文本框」放在第一位时，它的 ``pages`` 输入沿图回溯不到任何供给方，
+#: 落成 ``None``⇒ 点执行弹"输入未接好"，预览永远"暂无图片，请先完成提取"。
+#: 那不是"用户没跑前一步"，而是**这条流程本来就不需要前一步**——它需要的是
+#: 一个属于自己的入口。
+ARTIFACT_INPUT = "input"
 
 #: 全部产物类型 → 中文名（提示语与界面文案用，别处不另写一份）。
 ARTIFACT_LABELS: dict[str, str] = {
     ARTIFACT_PDF: "PDF",
     ARTIFACT_PAGES: "图片",
     ARTIFACT_BOXES: "检测框",
+    ARTIFACT_INPUT: "入口图片",
 }
 
 #: 端口名 → 产物类型。:class:`StepSpec` 的 ``inputs``/``outputs`` 里写的
@@ -116,6 +128,35 @@ def stage_outputs(stage: str) -> tuple[str, ...]:
     return tuple(spec.outputs) if spec else ()
 
 
+#: 运行阶段 → 流程图上显示的**中文节点名**。
+#:
+#: ⚠️ 只有 ``rembg_submit`` 需要单独一句：它和 ``rembg`` 共用 ``rembg`` 的
+#: :class:`StepSpec`，直接取 ``stage_name()`` 会让流程图上出现**两个同名节点**
+#: （都叫「图片去底色」），用户在图上根本分不清哪个是"生成预览"、哪个是
+#: "提交定稿"。这里给它独立文案，与 :data:`desktop.store.tasks.STAGE_LABELS`
+#: 的口径一致——但**真源在这里**：store 那张表改为从本函数派生。
+#:
+#: ⚠️ 别把它当"步骤名"用：步骤条上不显示 ``rembg_submit``（它折叠进第三步格，
+#: 见 :func:`desktop.steps.flow.FlowDefinition` 的槽位折叠）。
+STAGE_LABELS: dict[str, str] = {
+    "rembg_submit": "提交去底色结果",
+}
+
+
+def stage_label(stage: str) -> str:
+    """运行阶段 → 流程图节点名（默认走 spec，只有 ``rembg_submit`` 单独一句）。
+
+    页面里凡是"按 stage 给这个阶段起个中文名"（BPMN 节点名、进度/日志文案）
+    都走本函数，**不要**自己 ``spec_by_key(stage)``——那会在
+    ``rembg_submit`` 上拿到 ``None`` 或与 ``rembg`` 同名。
+    """
+    override = STAGE_LABELS.get(stage)
+    if override:
+        return override
+    spec = spec_for_stage(stage)
+    return spec.stage_name() if spec else stage
+
+
 def spec_for_stage(stage: str) -> StepSpec | None:
     """运行阶段 → 它对应的 :class:`StepSpec`（界面查表统一走这里）。
 
@@ -131,6 +172,115 @@ def spec_for_stage(stage: str) -> StepSpec | None:
 def stage_artifacts(stage: str) -> tuple[str, ...]:
     """这一步消费哪些**产物类型**（端口名翻译过来）。"""
     return tuple(artifact_of(port) for port in stage_inputs(stage))
+
+
+#: 「上传 PDF（源）」与「提取图片」是**一对**：只有 extract 吃源 PDF，而源 PDF
+#: 在图上就是那个 ``startEvent``。删掉其中任何一个，另一个就**没有意义**——
+#: 删了 extract 而留着 startEvent＝图上有个入口却不产出图片，第一步照样跑不动；
+#: 删了 startEvent 而留着 extract＝extract 的输入没有来源，界面上还会一直催
+#: "上传 PDF"（那正是用户 2026-10-06 说的"右侧不需要 PDF 图标"）。
+#:
+#: ⚠️ 这是**成对关系**的事实声明处。删除联动（:func:`paired_node_for_stage` 的
+#: 使用方）与界面显隐都从这里取，别在两处各写一遍"extract↔startEvent"。
+SOURCE_PDF_STAGE = "extract"
+#: 源 PDF 在图上不是阶段、而是一个事件节点，用**它在这张图里的名字**认。
+SOURCE_PDF_NODE_NAMES = ("源PDF", "源 PDF", "上传PDF", "上传 PDF", "PDF")
+
+
+def source_pdf_node_ids(diagram) -> tuple[str, ...]:
+    """图里代表「源 PDF」的节点 id（没有则空元组）。
+
+    认法有两条，任一命中即可：
+
+    1. **事件型**节点（``startEvent``）——BPMN 里流程入口就是它；
+    2. **名字**在 :data:`SOURCE_PDF_NODE_NAMES` 里——用户可以把它改名，
+       事件型仍是主判据；名字判据兜住"被改成 task 型"或用户自己画的。
+
+    ⚠️ **别按 stage 判**：「源 PDF」没有 ``stage``（它不是运行阶段，
+    :data:`desktop.steps.ports.SUPPLY_TASK_SOURCE` 才是它的语义标记）。
+    """
+    if diagram is None or not getattr(diagram, "nodes", ()):
+        return ()
+    from desktop.steps.bpmn_diagram import KIND_START
+
+    return tuple(
+        n.id for n in diagram.nodes
+        if n.kind == KIND_START
+        or (n.name or "").strip() in SOURCE_PDF_NODE_NAMES
+    )
+
+
+def is_source_pdf_node(diagram, node_id: str) -> bool:
+    """这个节点是不是「源 PDF」（图上那个入口事件）。"""
+    return node_id in source_pdf_node_ids(diagram)
+
+
+def paired_node_for_stage(diagram, node_id: str) -> str | None:
+    """删掉 ``node_id`` 时**该一起删掉**的配对节点 id；没有则 ``None``。
+
+    用户 2026-10-06：
+
+    > 流程编辑中，如果删除了 上传pdf或者 pdf图片提取中的一个，
+    > 另外���个的存在没有意义，因此需要同步删除另外一个
+
+    成对关系是双向的：
+
+    - 删「源 PDF」事件 ⇒ 一并删 ``extract`` 节点；
+    - 删 ``extract`` 节点 ⇒ 一并删「源 PDF」事件。
+
+    ⚠️ **只删一个会留下坏图**：留着 startEvent 时第一步的``pages`` 沿图回溯
+    不到任何产出者，界面就一直催"上传图片"；留着 extract 时它吃的是
+    :data:`SUPPLY_TASK_SOURCE`（任务源 PDF），而界面上那个 PDF 图标会**仍然
+    亮着**催你上传——正是用户说的"不需要 PDF 上传图标"。
+
+    ⚠️ 返回 ``None``（而不是"没有配对就不删"里的空字符串）表示"无配对"；
+    调用方**必须自己再判一次** ``extract`` 节点是否真的在图里（可能已经被
+    用户先删了），别假定它一定存在。
+    """
+    if diagram is None or not getattr(diagram, "nodes", ()):
+        return None
+    if is_source_pdf_node(diagram, node_id):
+        # 反向：源 PDF 被删 ⇒ 同格删掉 extract
+        for item in diagram.nodes:
+            if item.stage == SOURCE_PDF_STAGE:
+                return item.id
+        return None
+    item = diagram.node(node_id)
+    if item is not None and item.stage == SOURCE_PDF_STAGE:
+        # 正向：extract 被删 ⇒ 同格删掉源 PDF 事件
+        for other in source_pdf_node_ids(diagram):
+            return other
+    return None
+
+
+def flow_needs_source_pdf(diagram) -> bool:
+    """**这条流程**里有没有直接吃源 PDF 的阶段吗（要问图，别写死）。
+    ⚠️ **两处界面问的是同一个问题**（用户 2026-10-06）：
+      ①创建任务页——"流程要 PDF 而用户没给，是否问一句"；
+      ②任务详情页——"流程要 PDF 而这个任务还没源文件，按钮该高亮 + 顶部
+      该红字提示 + 进页面该弹窗"。所以这个判据**只有这一份实现**，
+      别在两个页面各写一遍（漂移起来是"创建时问了、详情页却不提示"）。
+
+    阶段→"要不要源 PDF"走 :meth:`StepSpec.needs_source_pdf`（端口声明
+    ``inputs`` 含 ``pdf``）；⚠️ **别拿** ``input_noun()`` 判——它是给人看的
+    称呼，四步里三步都写着"选择图片"，用它会把去底色/生成 PDF 也算进去
+    （它们吃的是上游产出的页，不是用户的文件）。
+
+    :param diagram: :class:`~desktop.steps.bpmn_diagram.FlowDiagram`；
+        空图/``None`` 一律 False（没有流程就没有"要不要"可言）。
+    """
+    if diagram is None or not getattr(diagram, "nodes", ()):
+        return False
+    from desktop.steps.scheduler import Scheduler
+
+    # ⚠️ imposition 传 False：条件不满足时那一格被剔除，而我们问的是"有没有
+    #    哪一步要 PDF"，剔除它不影响答案。
+    sched = Scheduler.from_diagram(diagram, {"imposition": False})
+    for stage in sched.stages:
+        spec = spec_for_stage(stage)
+        if spec is not None and spec.needs_source_pdf():
+            return True
+    return False
 
 
 # ---------------------------------------------------------------- 产物落点
@@ -181,6 +331,25 @@ def artifact_path(task_dir: Path | str, stage: str, port: str) -> Path | None:
 #: :data:`SUPPLY_TASK_SOURCE` 这个哨兵值表示"由任务自己供给"（任务目录里
 #: 备份的源 PDF），不是任何阶段——它是流程的**入口**，天然无上游。
 SUPPLY_TASK_SOURCE = "<task>"
+
+#: **流程入口图片**哨兵：表示"由用户直接放进任务的图片供给"。
+#:
+#: ⚠️ 它与 :data:`SUPPLY_TASK_SOURCE`（源 PDF）**是两件事**：后者是"任务自带
+#: 备份的 PDF"，只有提取这一步吃它；本哨兵是"一批图片"，任何**缺上游的
+#: 步骤**都可以拿它当输入——流程的第一个节点就是这么跑的。
+SUPPLY_TASK_INPUT = "<task-input>"
+
+#: 入口图片在任务目录下的落点（**布局的唯一声明处**，别处不写死）。
+TASK_INPUT_LOCATION = "stages/input"
+
+
+def task_input_dir(task_dir: Path | str) -> Path:
+    """入口图片目录的绝对路径（``tasks/<任务号>/stages/input/``）。
+
+    ⚠️ **目录不需要事先存在**：它是"用户往里放图"的地方，任务刚建出来时
+    本来就是空的。判"有没有图"要看里面有没有图片文件，别只看目录在不在。
+    """
+    return Path(task_dir) / TASK_INPUT_LOCATION
 
 SUPPLIERS: dict[str, dict[str, str]] = {
     # 提取：吃任务自带的 PDF 副本，没有上游。
@@ -263,6 +432,107 @@ def input_ready(task_dir: Path | str, stage: str, port: str,
     return path.exists()
 
 
+def is_entry_stage(diagram, stage: str, active=None) -> bool:
+    """这一步在流程里是不是**入口**（沿图往前没有任何在流程里的阶段）。
+
+    判据是"上游有没有活着的阶段"，不是"它是不是 ``extract``"——判后者的
+    旧写法有一处硬伤：自定义流程把「检测文本框」放在第一位时它是入口，可
+    ``extract`` 也不在流程里，两个都"不是"，于是取图无处落地（用户
+    2026-10-06 报障：没有前置提取时检测页压根没法输入图片）。
+
+    与 :meth:`FlowDiagram.nearest_producer` 的区别：那个问"谁给我供给"，
+    这个只问"我有没有上游"——前者会返回具体阶段，后者只需要一个布尔。
+
+    :param diagram: :class:`~desktop.steps.bpmn_diagram.FlowDiagram`；
+    :param active: 本流程实际要跑的阶段集合（缺省按图求拓扑序）。
+    """
+    if diagram is None or not getattr(diagram, "nodes", ()):
+        return False
+    if stage not in ports_stage_order(diagram):
+        return False
+    return not diagram.nearest_producer(stage, "pages", set(active or ports_stage_order(diagram)))
+
+
+def flow_entry_stage(diagram) -> str | None:
+    """**流程的入口阶段**（沿图往前没有任何在流程里的阶段），没有则 ``None``。
+
+    用户 2026-10-06：「非图片提取节点如果做第一个节点，输入目前没做好，
+    应该提醒上传输入目录或者图片」。回答这个问题需要知道"第一步是谁"——
+    它是入口时，用户要往 :func:`task_input_dir`（``stages/input/``）放图，
+    界面就该提醒"上传图片"而不是"上传 PDF"。
+
+    ⚠️ **不能只问"第一个阶段是不是 ``extract``"**：自定义流程把「检测文本框」
+    放第一位时，``extract`` 压根不在流程里，两个都"不是"，于是取图无处落地
+    （用户 2026-10-06 报障）。判据统一走 :func:`is_entry_stage`（问"有没有
+    上游"），所以"入口"是一个**图上的性质**，不是某个步骤的名字。
+
+    ⚠️ 有多个入口时取**拓扑序里的第一个**（入口节点通常不止一个时，用户面对
+    的是流程的第一格）。全都不是入口（空图/只有孤立终点）⇒ ``None``。
+    """
+    if diagram is None or not getattr(diagram, "nodes", ()):
+        return None
+    order = ports_stage_order(diagram)
+    for stage in order:
+        if is_entry_stage(diagram, stage, set(order)):
+            return stage
+    return None
+
+
+def flow_needs_entry_images(diagram) -> bool:
+    """**这条流程**是不是要用户自己提供入口图片（而不是从 PDF 提取）。
+
+    判据：流程的入口阶段**不吃源 PDF**。入口阶段的 ``pages`` 输入会回落到
+    :func:`task_input_dir`（见 :func:`resolve_input_with_entry`），而那个目录
+    空着的话第一步就无从下手——所以界面要提醒"上传输入目录或者图片"
+    （用户 2026-10-06）。
+
+    ⚠️ 入口阶段是 ``extract`` 时**不算**：它吃的是源 PDF，"缺输入"该说
+    "去补 PDF"（:func:`flow_needs_source_pdf` 那一路），两件事别混。
+    """
+    stage = flow_entry_stage(diagram)
+    if stage is None:
+        return False
+    spec = spec_for_stage(stage)
+    return spec is not None and not spec.needs_source_pdf()
+
+
+def ports_stage_order(diagram) -> tuple[str, ...]:
+    """流程图上的可运行阶段（拓扑序）——``is_entry_stage`` 的内部助手。
+
+    单独抽出来只为让上面那句 ``stage not in ...`` 读起来是"这一步在流程里
+    吗"，而不是把 ``stage_order()`` 的取用摊进判断表达式里。
+    """
+    return diagram.stage_order()
+
+
+def resolve_input_with_entry(task_dir: Path | str, stage: str, port: str,
+                             supplier: str | None,
+                             overrides: dict[tuple[str, str], str] | None = None
+                             ) -> Path | None:
+    """按供给方解析输入路径，并把**入口回落**收在这一处。
+
+    :func:`resolve_input` 是纯端口查表（给自测与不关心流程的场景用）；这里
+    多做一件事：当 ``supplier`` 解析不出东西（``None``）而这一步吃的是
+    ``pages`` 时，回落到 :func:`task_input_dir`。
+
+    ⚠️ **回落只认"这一步真的吃 pages"这一个端口**：``boxes`` / ``pdf`` 没有
+    "用户直接提供"的说法（用户不会手写 boxes.json），让它们也回落等于把
+    "接口没接好"伪装成"有输入了"，那比报错更难查。
+    ⚠️ 判据必须落在**这个端口自己**身上，不能写成 ``port in stage_inputs(stage)``
+    ——``rembg`` 的输入声明是 ``("pages", "boxes")``，那种写法会让它的
+    ``boxes`` 端口也回落到入口目录，于是"没接检测框"被伪装成"有输入了"
+    （自测 ``step_ports`` 钉住这一条）。
+    同理，**产出** pages 的步骤（``extract`` 声明的是 ``("pdf",)``）压根不吃
+    pages，问它"pages 输入"会拿到入口目录，而它要的其实是那个目录**自己**
+    （产物落点），两回事。
+    """
+    if supplier is None and port == "pages" and "pages" in stage_inputs(stage):
+        return task_input_dir(task_dir)
+    if supplier in (None, SUPPLY_TASK_SOURCE, SUPPLY_TASK_INPUT):
+        return None
+    return artifact_path(task_dir, supplier, port)
+
+
 def missing_stages(order: list[str], *, start: str | None = None) -> list[str]:
     """给定顺序，返回**输入还缺上游**的阶段（按顺序）。
 
@@ -305,22 +575,35 @@ __all__ = [
     "ARTIFACT_PDF",
     "PORT_ARTIFACTS",
     "PORT_LABELS",
+    "STAGE_LABELS",
     "STAGE_LOCATIONS",
     "STAGE_STEPS",
     "SUPPLIERS",
+    "SUPPLY_TASK_INPUT",
     "SUPPLY_TASK_SOURCE",
+    "TASK_INPUT_LOCATION",
     "artifact_of",
     "artifact_path",
     "describe",
+    "flow_entry_stage",
+    "flow_needs_entry_images",
+    "flow_needs_source_pdf",
+    "is_source_pdf_node",
+    "paired_node_for_stage",
+    "source_pdf_node_ids",
     "input_ready",
+    "is_entry_stage",
     "location_of",
     "missing_stages",
     "print_input_overrides",
     "print_pages_supplier",
     "resolve_input",
+    "resolve_input_with_entry",
     "spec_for_stage",
     "stage_artifacts",
     "stage_inputs",
+    "stage_label",
     "stage_outputs",
     "supplier_of",
+    "task_input_dir",
 ]

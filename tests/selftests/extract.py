@@ -28,7 +28,11 @@ def run(ctx) -> None:
             break
         time.sleep(0.05)
     state = repo.stage_states(tid)["extract"]
-    ok("extract 成功", state["status"] == "success", str(state))
+    # ⚠️ 失败时把日志区尾巴带上：worker 是**子进程**，它报什么只落在 stderr
+    # →日志视图里，光看 stage_states 只有一句 'failed'，等于没信息量
+    # （曾经为这个查了半轮：是 worker 内核坏了还是 GUI 根本没起进程）。
+    tail = d.log_view.toPlainText()[-600:].replace("\n", " | ")
+    ok("extract 成功", state["status"] == "success", f"{state} :: {tail}")
     ok("进度 6/6", (state["done"], state["total"]) == (6, 6), str(state))
     for _ in range(15):
         app.processEvents(); time.sleep(0.1)

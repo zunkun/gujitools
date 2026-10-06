@@ -69,7 +69,12 @@ class ParamDraftMixin:
             self.save_stage_draft(index)
 
     def save_stage_draft(self, index: int) -> bool:
-        """暂存某阶段当前表单值；参数非法/没有任务时返回 False（不覆盖旧暂存）。"""
+        """暂存某阶段当前表单值；参数非法/没有任务时返回 False（不覆盖旧暂存）。
+
+        ⚠️ ``index`` 是 **control_stack 的页号**（不是步骤条格序）。暂存按
+        **运行阶段 key** 落盘，所以页号→阶段要走槽位表的反查；自定义流程
+        换了顺序后，页号 N 不再固定等于 ``STAGES[N]``。
+        """
         if not self.task_id:
             return False
         panel = self.control_stack.widget(index)
@@ -77,4 +82,7 @@ class ParamDraftMixin:
             params = panel.get_args()
         except Exception:  # 颜色/边距填到一半：保留上一份有效暂存
             return False
-        return self.store.save_draft(self.task_id, STAGES[index], params)
+        stage = self.stage_at_stack_index(index)
+        if stage is None:
+            return False
+        return self.store.save_draft(self.task_id, stage, params)

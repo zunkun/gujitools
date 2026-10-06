@@ -157,13 +157,42 @@ class RunMixin:
             stage: self._as_history(records) for stage, records in runs.items()
         }
 
+    def flow_stages(self, task_id: str) -> set[str]:
+        """本任务流程里**真实存在**的运行阶段集合（按界面格摊开）。
+
+        ⚠️ **按"界面格"判定，不按节点**：``rembg``（图片去底色）与
+        ``rembg_submit``（提交去底色结果）在界面上折成**同一格**，用户画流程图
+        时通常只画一个「图片去底色」节点。若按"图里有没有这个节点"判，会把
+        提交那一动作判成"不在流程里"⇒ 进度条上"已提交"的绿点不亮。
+
+        读盘失败（文件坏/无任务）一律**当作"只有四个静态阶段"**：宁可少报，
+        不可抛——调用方在后台线程里用它渲染整张列表。
+        """
+        from desktop.steps import ports
+
+        try:
+            steps = {slot.step for slot in self.task_slots(task_id)
+                     if not slot.optional}
+        except Exception:  # noqa: BLE001 - 读不到流程不该拖垮调用方
+            return set(STAGES)
+        return {stage for stage, step in ports.STAGE_STEPS.items()
+                if step in steps}
+
     def stage_states(self, task_id: str) -> dict[str, dict]:
         """每个阶段最近一次运行的状态与进度（页面步骤条渲染用）。
 
         ``status/done/total`` 取自最近一次运行；``completed`` 表示该阶段历史上
         是否成功执行过——重试失败不应把已经产出结果的步骤变回未完成。
+
+        ⚠️ **键集合仍是静态的四个阶段**（调用方大量硬索引，例如
+        ``stage_states(tid)["rembg"]["status"]``），另外给每个键加一个
+        ``in_flow`` 标记表示"这一阶段在本任务的流程图里"。**别把不在流程里
+        的阶段直接删掉**——那些硬索引会 KeyError，症状是"点了没反应"的崩溃
+        而不是干净降级。要"只列流程里的阶段"请走 :meth:`flow_stages` 或
+        ``task_slots``。
         """
         runs = self._load_runs(task_id)
+        in_flow = self.flow_stages(task_id)
         states = {}
         for stage in STAGES:
             history = self._as_history(runs.get(stage))
@@ -175,9 +204,11 @@ class RunMixin:
                     "done": record.get("done", 0),
                     "total": record.get("total", 0),
                     "completed": completed,
+                    "in_flow": stage in in_flow,
                 }
             else:
                 states[stage] = {
                     "status": "pending", "done": 0, "total": 0, "completed": False,
+                    "in_flow": stage in in_flow,
                 }
         return states

@@ -58,13 +58,15 @@ class HistoryMixin:
         )
 
     def _current_history_stage(self) -> str:
-        """历史回填当前对应的阶段 key。
+        """历史回填当前对应的**运行阶段**。
 
-        ⚠️ 流程条第 5 位是「图片拼版」伪步骤（无历史/无参数可回填），
-        下标越界时按第一步兜底——只走防御，正常路径不会到那里。
+        ⚠️ 走``step_at_index``（步骤条格序 → 运行阶段）而不是
+        ``STAGES[self.step_bar._current]``：自定义流程换了顺序/删了节点后，
+        那个下标在 ``STAGES`` 里指的是**别的**步骤（会往错误的阶段回填参数）。
+        本流程里找不到（可选节点/已删节点）时按第一步兜底。
         """
-        current = self.step_bar._current
-        return STAGES[current] if 0 <= current < len(STAGES) else STAGES[0]
+        stage = self.stage_at_index(self.step_bar._current)
+        return stage if stage is not None else STAGES[0]
 
     def _restore_stage_params(self, index: int) -> None:
         """进入页面/切换阶段时回填参数：**暂存优先**，其次最近一次执行。
@@ -76,13 +78,18 @@ class HistoryMixin:
         """
         if not self.task_id:
             return
-        stage = STAGES[index]
+        # ⚠️ ``index`` 是**步骤条格序**：阶段走槽位表反查，面板页号走
+        #    ``stack_index_of``（默认流程下两者都等于旧的下标）。
+        stage = self.stage_at_index(index)
+        if stage is None:
+            return
+        page = self.stack_index_of(index)
         if stage in self._history_prefilled:
             return
         self._history_prefilled.add(stage)
         draft = self.store.load_draft(self.task_id, stage)
         if draft:
-            self.control_stack.widget(index).apply_args(draft)
+            self.control_stack.widget(page).apply_args(draft)
             return
         history = self.store.list_stage_runs(self.task_id, stage)
         if history:
@@ -90,7 +97,7 @@ class HistoryMixin:
                 k: v for k, v in history[0].get("parameters", {}).items()
                 if k not in self._auto_fill_keys(stage)
             }
-            self.control_stack.widget(index).apply_args(params)
+            self.control_stack.widget(page).apply_args(params)
 
     def _refresh_history_options(self) -> None:
         """把当前阶段的历史执行记录填入下拉框（最新在前）。"""
@@ -119,12 +126,14 @@ class HistoryMixin:
         if index < 0 or index >= len(getattr(self, "_history_params", [])):
             return
         current = self.step_bar._current
-        if not 0 <= current < len(STAGES):
+        # ⚠️ 两套下标：``current`` 是步骤条格序（要反查阶段），
+        #    ``control_stack.widget()`` 收的是页号（``stack_index``）。
+        stage = self.stage_at_index(current)
+        if stage is None:
             return  # 「图片拼版」占位详情没有历史回填（下拉框也处于隐藏态）
-        stage = STAGES[current]
         params = {
             k: v for k, v in self._history_params[index].items()
             if k not in self._history_fill_keys(stage)
         }
-        self.control_stack.widget(current).apply_args(params)
+        self.control_stack.widget(self.stack_index_of(current)).apply_args(params)
         self._toast("info", "已回填历史配置", STAGE_LABELS[stage])

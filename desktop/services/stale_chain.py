@@ -59,15 +59,37 @@ def latest_success(records) -> dict | None:
     return best
 
 
-def stale_upstream(runs: dict) -> dict[str, dict]:
+def upstream_from_diagram(diagram) -> dict[str, tuple[str, ...]]:
+    """按**流程图**算"下游阶段 → 它的上游阶段"（替代写死的 :data:`UPSTREAM`）。
+
+    ⚠️ 为什么必须按图算：用户改了流程（加一步、去掉一步、换分支）之后，写死的
+    链会把不相干的步骤算成上游（提示"上游已重新执行"却指错人），或者漏掉真正
+    影响它的那一步。判定用的链必须与驱动用的图是同一份。
+
+    ``diagram`` 只要求有 ``stage_order()`` 与 ``upstream_stages(stage)``
+    （鸭子类型）——本模块是纯函数，**不 import desktop 包**。
+    """
+    out: dict[str, tuple[str, ...]] = {}
+    for stage in diagram.stage_order():
+        ups = diagram.upstream_stages(stage)
+        if ups:
+            out[stage] = ups
+    return out
+
+
+def stale_upstream(runs: dict, upstream: dict | None = None) -> dict[str, dict]:
     """runs（``{阶段: [记录, ...]}``）→ 过期判定 ``{下游阶段: 详情}``。
 
     详情：``{"stage": 更新了的上游阶段, "upstream_at": ts, "downstream_at": ts}``。
     下游**从未成功过**时不判过期——那种情况界面本来就在说"未执行"，再叠一句
     "已过期"只会让人困惑。
+
+    ``upstream`` 不给就用 :data:`UPSTREAM`（写死的那份，只适合"没有任务/读不到
+    流程图"的兜底）；有任务时应传
+    :func:`upstream_from_diagram` 的结果，让判定跟着**本任务的流程图**走。
     """
     out: dict[str, dict] = {}
-    for stage, upstreams in UPSTREAM.items():
+    for stage, upstreams in (upstream or UPSTREAM).items():
         downstream = latest_success(runs.get(stage))
         if downstream is None:
             continue

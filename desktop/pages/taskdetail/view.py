@@ -4,17 +4,19 @@
 只做控件创建与信号连接，业务动作全部委托给宿主页面的其他 Mixin。
 
 视觉结构（自上而下）：
-1. 页头卡片：返回 + 任务名 + 源文件标签 + 打开目录；
+1. 页头卡片：返回 + 任务名 + 源文件标签 + 流程编辑 + 选 PDF + 插入图片/文件夹；
 2. 步骤条卡片：四步流程与状态；
 3. 主体：左侧预览卡片（自适应）+ 右侧参数卡片（固定宽度区间）；
-4. 底部：执行日志状态条（常驻一行，点击唤出不挤压布局的日志浮层）。
+4. 底部：执行日志状态条（常驻一行，点击唤出不挤压布局的日志浮层），
+   ���**最右端是「打开任务数据目录」**（用户 2026-10-06 从页头移来）。
 """
 
 from __future__ import annotations
 
 from PySide6.QtCore import QProcess, QTimer
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QStackedWidget, QTabWidget, QVBoxLayout, QWidget,
+    QHBoxLayout, QLabel, QLineEdit, QStackedWidget, QTabWidget, QVBoxLayout,
+    QWidget,
 )
 from qfluentwidgets import (
     CaptionLabel, ComboBox, PrimaryPushButton, PushButton, ToolButton,
@@ -30,10 +32,13 @@ from desktop.components.viewers import (
     ImageViewerWidget, PdfViewerWidget,
     PrintPreviewWidget, RembgPreviewWidget,
 )
-from desktop.store import IMPOSITION_INDEX, STAGES, STAGE_LABELS
+from desktop.steps.flow import FlowDefinition
+from desktop.store import IMPOSITION_STAGE
 from desktop.ui import theme as T
+from desktop.ui.icons import PDF_FILE
 from desktop.ui.widgets import (
     Card, Divider, ProgressLine, SectionTitle, apply_to, combo_box,
+    mark_input_entry,
 )
 from desktop.pages.taskdetail.submit import SUBMIT_TEXT
 
@@ -103,9 +108,20 @@ class DetailViewMixin:
         root = QVBoxLayout(self)
         root.setContentsMargins(T.SPACE_XL, T.SPACE_LG, T.SPACE_XL, T.SPACE_LG)
         root.setSpacing(T.SPACE_MD)
+        #: 根布局留引用：``_rebuild_step_bar`` 要按位置把旧步骤条换成新的
+        #: （BPM 驱动——本任务可能是自定义流程，步骤顺序与可选节点位置不同）。
+        self._root_layout = root
 
-        root.addWidget(self._build_header())
-        root.addWidget(self._build_step_bar())
+        # ⚠️ 留个引用：提示层要按「页头下沿」定遮罩上沿（见
+        #    ``manifest.py::_content_top``）。之前只能从根布局的第 0 项
+        #    反查，那行没存引用、读起来绕。
+        self.header_card = self._build_header()
+        root.addWidget(self.header_card)
+        bar = self._build_step_bar()
+        root.addWidget(bar)
+        #: 步骤条在根布局里的位置（``_rebuild_step_bar`` 按它换控件，
+        #: 不写死 1——header 之后还有别的行时 1 就错了）。
+        self._step_bar_row = root.indexOf(bar)
         body = QHBoxLayout()
         body.setSpacing(T.SPACE_MD)
         body.addWidget(self._build_preview_card(), 1)
@@ -115,6 +131,17 @@ class DetailViewMixin:
         self.log_panel = LogPanel()
         # 页面各处沿用的 self.log_view 直接指向面板内的文本域
         self.log_view = self.log_panel.log_view
+        # ⚠️ 「打开任务数据目录」摆在**底部状态条最右端**（右下角，用户
+        #    2026-10-06："右上角的打开任务数据目录，统一放到右下角"）。
+        #    它不是输入入口，是"去磁盘上看产物/自己放文件"的辅助动作——
+        #    和页头那排输入按钮混在一起会让人以为也是一种输入方式。
+        #    ⚠️ 必须**在 addWidget 之后立刻**交给 log_panel：状态条是固定高
+        #    控件，晚一步挂进来布局要等下一次 show 才生效。
+        self.task_dir_button = ToolButton(FIF.FOLDER)
+        self.task_dir_button.setToolTip("打开任务数据目录")
+        self.task_dir_button.setFixedSize(26, 26)
+        self.task_dir_button.clicked.connect(self._open_task_dir)
+        self.log_panel.set_task_dir_action(self.task_dir_button)
         root.addWidget(self.log_panel)
 
         self._update_run_buttons({"status": "pending"})
@@ -137,28 +164,289 @@ class DetailViewMixin:
         self.detail_title = QLabel("任务详情")
         apply_to(self.detail_title, T.SIZE_SUBTITLE, bold=True, color=T.INK)
         text_column.addWidget(self.detail_title)
+        # 任务名**行内编辑**（2026-10-06「非必需，可随时修改」）。
+        # ⚠️ 不用 QInputDialog：那也是模态窗，离屏自测不能真弹（项目硬规则），
+        #    而且页头本来就有标题的位置，行内改最省一次点击。
+        self.rename_edit = QLineEdit()
+        self.rename_edit.setVisible(False)
+        self.rename_edit.editingFinished.connect(self._commit_rename)
+        self.rename_edit.installEventFilter(self)   # Esc 取消
+        text_column.addWidget(self.rename_edit)
         self.source_label = QLabel("")
         apply_to(self.source_label, T.SIZE_CAPTION, color=T.INK_FAINT)
         text_column.addWidget(self.source_label)
+        # ---- 「流程要 PDF 而这个任务还没有」的红色提示（用户 2026-10-06）----
+        # ⚠️ 放**页头里**而不是 toast：toast 会自己消失，而这件事在用户处理完
+        #    之前一直成立（四个步骤都跑不了）。它得**一直在**，直到补上文件。
+        #    默认隐藏——不是每个任务都缺文件，常驻一条红字会变成噪声。
+        self.source_warning = QLabel("")
+        apply_to(self.source_warning, T.SIZE_CAPTION, bold=True,
+                 color=T.DANGER)
+        self.source_warning.setVisible(False)
+        text_column.addWidget(self.source_warning)
         row.addLayout(text_column)
         row.addStretch()
 
-        open_dir_btn = ToolButton(FIF.FOLDER)
-        open_dir_btn.setToolTip("打开任务数据目录")
-        open_dir_btn.setFixedSize(34, 34)
-        open_dir_btn.clicked.connect(self._open_task_dir)
-        row.addWidget(open_dir_btn)
+        # ---- BPM：查看/编辑本任务流程（bpm.md「同时可以修改 bpmn 节点」）----
+        # ⚠️ 为什么放在页头而不是别处：步骤条本身**就是**流程的渲染（用户天天
+        #    看它），把"改流程"的入口放在它旁边才符合直觉；放角落会没人找得到。
+        # 改名：铅笔按钮，紧挨任务名（"可随时修改"就得伸手可及）
+        self.rename_button = ToolButton(FIF.EDIT)
+        self.rename_button.setToolTip("修改任务名称")
+        self.rename_button.setFixedSize(34, 34)
+        self.rename_button.clicked.connect(self._begin_rename)
+        row.addWidget(self.rename_button)
+
+        self.flow_button = ToolButton(FIF.LAYOUT)
+        self.flow_button.setToolTip("查看 / 编辑本任务的流程")
+        self.flow_button.setFixedSize(34, 34)
+        self.flow_button.clicked.connect(self._on_show_flow)
+        row.addWidget(self.flow_button)
+
+        # ---- 补选源 PDF（用户 2026-10-06「PDF 输入不是必须的」）----
+        # 创建任务时可以先不选文件，建出来的就是"空壳任务"。这个按钮是它的
+        # 另一半：**恒在**（不随有没有源文件显隐）——文件被移走/删除时它同样
+        # 是补救入口，藏起来等于让用户没法自己修。
+        # ⚠️ 图标用**现成的自绘 ``PDF_FILE``**（用户 2026-10-06："图标使用
+        #    PDF_FILE 现成的"）：内置 ``FIF.DOCUMENT`` 是**纯空白文档**，放进
+        #    这个按钮会被读成"打开文档"而不是"选 PDF"，与列表页「创建任务」
+        #    按钮、第四步「下载 PDF」用的都是同一枚图标才一致。
+        self.source_button = ToolButton(PDF_FILE)
+        self.source_button.setToolTip("为这个任务选择 PDF 源文件")
+        self.source_button.setFixedSize(34, 34)
+        self.source_button.clicked.connect(self._on_pick_source)
+        row.addWidget(self.source_button)
+
+        # ---- 插入图片：给「流程第一步不吃 PDF」的步骤准备输入 ----
+        # ⚠️ 为什么放**页头**而不是只靠预览区的「＋」（用户 2026-10-06）：自定义
+        #    流程把「检测文本框」之类放第一步时，它的输入是入口图片目录
+        #    （``stages/input/``），而预览区那排按钮**此刻可能被提示层盖住**
+        #    ——页头这一排永远在遮罩之上、照常可点（用户 2026-10-06 明确要求
+        #    "那个导入按钮，你不能把它给遮住啊"）。
+        # ⚠️ **红框常驻**（用户 2026-10-06"都是红色框住"）：这两个按钮是"给
+        #    这一步喂图片"的入口，自定义流程第一步不吃 PDF 时**全靠它们**。
+        #    常驻红框＝"这排按钮里红的那两个就是输入入口"，一眼能找到，不必
+        #    先判断当前缺不缺东西。⚠️ 与 ``_set_tool_highlight`` 的"缺什么亮
+        #    什么"是**两码事**：那个是动态提醒（补上就灭），这个是常驻标识。
+        #    实现上不能互相覆盖，故由 ``_INPUT_ENTRY_MARK`` 统一给样式。
+        self.insert_button = ToolButton(FIF.PHOTO)
+        self.insert_button.setToolTip(
+            "为本任务插入图片（放到入口图片目录，可多选）")
+        self.insert_button.setFixedSize(34, 34)
+        self.insert_button.clicked.connect(self.insert_pages)
+        mark_input_entry(self.insert_button)
+        row.addWidget(self.insert_button)
+
+        # 📁 同样红框：整目录导入（文件对话框选不了目录，得单独一个入口）
+        self.insert_dir_button = ToolButton(FIF.FOLDER)
+        self.insert_dir_button.setToolTip(
+            "把一个文件夹里的图片批量插入（放到入口图片目录）")
+        self.insert_dir_button.setFixedSize(34, 34)
+        self.insert_dir_button.clicked.connect(self.insert_pages_from_folder)
+        mark_input_entry(self.insert_dir_button)
+        row.addWidget(self.insert_dir_button)
+        # ⚠️「打开任务数据目录」**从页头移走**（用户 2026-10-06"统一放到右下
+        #    角"）——它不是输入入口，是"去磁盘上看产物"的辅助动作，混在输入
+        #    按钮里会让人以为也是一种输入方式。摆在底部状态条最右端。
         return card
+
+    # ------------------------------------------------------------ 任务改名
+    def _begin_rename(self) -> None:
+        """点铅笔：标题换成行内输入框（不用弹窗——见上面 rename_edit 处的注释）。"""
+        if not getattr(self, "task_id", None):
+            return
+        record = self.store.get_task(self.task_id) or {}
+        self.rename_edit.setText(str(record.get("name") or ""))
+        self.rename_edit.setVisible(True)
+        self.detail_title.setVisible(False)
+        self.rename_edit.setFocus()
+        self.rename_edit.selectAll()
+
+    def _commit_rename(self) -> None:
+        """行内编辑结束（回车/失焦）→ 落盘并刷新标题。"""
+        # ⚠️ 判"在不在编辑态"必须用 ``isHidden()``（只看控件自身显隐），
+        #    **不能**用 ``isVisible()``：后者在祖先不可见时恒为 False——详情页
+        #    不在前台时（刚从流程编辑页回来、或停在别的页）改名会被这一行
+        #    **静默丢掉**，表现为"改名没反应"。
+        #
+        # ⚠️ 方向别搞反：``isHidden()`` 为 True = 控件已被隐藏 = **没在编辑**
+        #    ⇒ 该 return。（写成 ``not isHidden()`` 会变成"可见才 return"，
+        #    改名永远不生效——这个错我犯过一次。）
+        if self.rename_edit.isHidden():
+            return                      # 没在编辑态（Esc 取消后失焦会再触发一次）
+        typed = self.rename_edit.text().strip()
+        self.rename_edit.setVisible(False)
+        self.detail_title.setVisible(True)
+        if not typed:
+            return                      # 留空 = 不改（rename_task 的空回落只在
+                                        # 明确"清空后保存"时用）
+        try:
+            changed = self.store.rename_task(self.task_id, typed)
+        except Exception as exc:        # noqa: BLE001 - 落盘失败要说清，不能静默
+            self._toast("error", "改名失败", f"{type(exc).__name__}: {exc}")
+            return
+        if changed:
+            record = self.store.get_task(self.task_id) or {}
+            self.detail_title.setText(str(record.get("name") or typed))
+            self._toast("info", "已改名", f"任务名称已改为「{typed}」")
+
+    def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt 命名
+        """任务名输入框里按 Esc = 放弃编辑（不改盘上）。
+
+        ⚠️ ``return False`` 而不是 ``super().eventFilter(...)``：本类是
+        Mixin，``super()`` 后面未必有实现 ``eventFilter`` 的类（对象默认
+        没有这个方法）⇒ 调 ``super().eventFilter`` 会 AttributeError。
+        返回 False = "不拦截，事件照常交给控件"，正是我们要的。
+        """
+        # ⚠️ ``QKeyEvent`` 在 **QtGui**（QtCore 里只有 ``QEvent`` 枚举与
+        # ``Qt``），从 QtCore import 会 ImportError（自测一跑就炸）。
+        from PySide6.QtCore import QEvent, Qt
+        from PySide6.QtGui import QKeyEvent
+
+        if (watched is self.rename_edit
+                and event.type() == QEvent.KeyPress
+                and isinstance(event, QKeyEvent)
+                and event.key() == Qt.Key_Escape):
+            # ⚠️ **先清文本再失焦**：``clearFocus`` 会触发 ``editingFinished``
+            # → ``_commit_rename``，那里看到非空文本就会**真的存下去**，
+            # Esc 等于"改名并保存"，与预期相反。
+            self.rename_edit.clear()
+            self.rename_edit.clearFocus()
+            return True
+        return False
 
     def _build_step_bar(self) -> StepBar:
         # 步骤条自带卡片底（paintEvent 绘制），不再套一层 Card，避免"卡片套卡片"
-        self.step_bar = StepBar(STAGE_LABELS[s] for s in STAGES)
-        self.step_bar.current_changed.connect(self._select_stage)
-        # 「图片拼版」虚线节点：点击切到伪步骤的占位详情（ImpositionMixin）
-        self.step_bar.imposition_clicked.connect(
-            lambda: self._select_stage(IMPOSITION_INDEX)
+        # ⚠️ **记下这份槽位快照**（2026-10-06）：重建时要用**它**把旧下标解析成
+        #    步骤 key。解析"旧高亮在哪一步"绝不能去问 ``flow_slots()``——那读的是
+        #    磁盘上那张（可能已经改过的）新流程图，旧格序会被解释成新格序，
+        #    高亮就默默挪到了别的步骤上。快照是"这条步骤条**当时**按哪张图建的"
+        #    唯一可靠凭据。
+        self._step_bar_slots = self.flow_slots()
+        self.step_bar = StepBar(
+            self._bar_step_titles(), optional_after=self._optional_after_index(),
+            unmapped=self._unmapped_step_indices(),
         )
+        self.step_bar.current_changed.connect(self._select_stage)
+        # 「图片拼版」虚线节点：点击切到可选节点的占位详情（ImpositionMixin）
+        self.step_bar.imposition_clicked.connect(self._select_optional_node)
         return self.step_bar
+
+    def _bar_step_titles(self) -> list[str]:
+        """步骤条上**真实步骤**的标题序列（按本任务流程顺序）。
+
+        可选节点（拼版）**不在这里**——它由 :class:`StepBar` 按
+        ``optional_after`` 插进去；这里只给真实步骤，顺序取槽位表的
+        ``bar_index``。构造期还没有任务（``flow_slots`` 回落默认流程），
+        此时就是默认流程的步骤序列。
+        """
+        slots = sorted(
+            (s for s in self.flow_slots() if not s.optional),
+            key=lambda s: s.bar_index,
+        )
+        return [s.label for s in slots]
+
+    def _unmapped_step_indices(self) -> set[int]:
+        """步骤条上"图上有、但还没有功能"的下标集合（2026-10-05）。
+
+        口径 = 槽位表里 ``mapped=False`` 的那些格（真实步骤序列里的下标）。
+        它们仍占格子，只是画成灰色并标注"未接入"——用户能在流程图上画任意
+        节点，界面上就必须**看得见**那一步，否则"改了流程图没反应"。
+
+        ⚠️ 只算**真实步骤**（``optional`` 的拼版不算），下标要与
+        :meth:`_bar_step_titles` 的序列一致——那个序列过滤掉了可选节点。
+        """
+        return {i for i, slot in enumerate(
+            (s for s in self.flow_slots() if not s.optional))
+            if not slot.mapped}
+
+    def _optional_after_index(self) -> int | None:
+        """可选节点插在**第几个真实步骤之后**（喂 :class:`StepBar`）。
+
+        口径与算法都在 :meth:`FlowDefinition.optional_after` / :meth:`FlowDiagram.optional_after`（⚠️ 那是
+        "真实步骤列表里的下标"，**不是**槽位表的 ``bar_index``——后者含了
+        可选节点自己占的格子，两者不相等）。本流程没有可选节点时返回
+        ``None``。
+        """
+        if not getattr(self, "task_id", None):
+            return FlowDefinition.default().optional_after(IMPOSITION_STAGE)
+        # ⚠️ 走**图模型**（能读 bpmn.io 的网关/自定义 id）；旧 `task_flow`
+        #    读不了就静默回落默认流程 ⇒ 步骤条永远长的像 task_default。
+        return self.store.task_diagram(self.task_id).optional_after(
+            IMPOSITION_STAGE)
+
+    @staticmethod
+    def _step_key_at(slots, bar_index: int) -> str | None:
+        """**给定**槽位表里第 ``bar_index`` 格的步骤 key；没有这一格返回 ``None``。
+
+        ⚠️ 为什么要单独一个"吃 slots 的"版本：解析"旧步骤条的 ``_current``
+        到底是哪一步"时，**不能**用 :meth:`flow_slots`（它读磁盘上那张图，
+        而磁盘已经是**新**流程了），必须用**旧步骤条建时那份**槽位。
+        """
+        for slot in slots or ():
+            if slot.bar_index == bar_index:
+                return slot.step
+        return None
+
+    def _rebuild_step_bar(self) -> None:
+        """按**当前任务流程**重建步骤条（BPM 驱动）。
+
+        步骤条在 ``_init_ui`` 期间就建好了，那时还没有任务、只能按默认流程
+        排；``set_task`` 拿到 ``task_id`` 后本任务可能是自定义流程（换了步骤
+        顺序或把可选节点排到别处），这时重建一次，让步骤条与流程一致。
+
+        ⚠️ 必须重建**而不是只改标题**：可选节点的位置
+        （``optional_after``）决定布局插入点与连接线/绕行线的几何，改标题
+        改不动它们。
+        ⚠️ 重建会丢当前高亮与完成态，所以先把它们按**步骤 key** 存下来，
+        重建后按新流程的格序恢复（换流程后某一步可能被删，匹配不上就回第
+        一格——那里是流程的入口，缺上游也不该从中间起跑）。
+        """
+        old_bar = getattr(self, "step_bar", None)
+        if old_bar is None:
+            return
+        # ⚠️⚠️ **用旧步骤条自己记的那份槽位解析旧下标**（2026-10-06 用户报障
+        #    "顶部流程图编辑后不立即更新"）。这里**不能**调 ``flow_slots()``：
+        #    它读的是**磁盘上那张新流程图**，而 ``old_bar._current`` 是**旧
+        #    流程**的格序——两者语义已经错位。实测：停在「图片去底色」（旧格序
+        #    2），删掉「提取图片」后它在新流程里是格序 1，用新表查旧下标 2
+        #    得到的是「图片拼版」⇒ 重建完高亮默默挪到了别的步骤上，用户看着
+        #    就是"步骤条没更新"。完成态 ``_completed`` 同理（存的是旧格序）。
+        old_slots = getattr(self, "_step_bar_slots", None)
+        if not old_slots:
+            # 没有记录（构造期的第一条）：退回按当前表解析，最坏退回第一格
+            old_slots = self.flow_slots()
+        current_step = self._step_key_at(old_slots, old_bar._current)
+        completed_steps = [
+            s.step for s in old_slots
+            if not s.optional and s.bar_index in old_bar._completed
+        ]
+        # ⚠️ 先把旧步骤条从根布局里摘掉再换新的，否则两个步骤条叠在一起
+        #    （旧控件还占着位置、只是被遮住，自测里的几何断言会全错）。
+        #    ⚠️ 不能用 ``replaceWidget(old, None)``——传 None 给它会抛
+        #    ``addLayoutOwnership`` 的 RuntimeError（Qt 不接受 None 接管布局项）。
+        root = getattr(self, "_root_layout", None)
+        if root is not None:
+            root.removeWidget(old_bar)
+            old_bar.setParent(None)
+            old_bar.deleteLater()
+        self.step_bar = self._build_step_bar()
+        if root is not None:
+            row = getattr(self, "_step_bar_row", 1)
+            root.insertWidget(row, self.step_bar)
+        for slot in self.flow_slots():
+            if slot.optional or slot.step not in completed_steps:
+                continue
+            self.step_bar.mark_completed(slot.bar_index)
+        if current_step is not None:
+            index = self.bar_index_of_step(current_step)
+            self.step_bar.set_current(0 if index is None else index)
+
+    def _select_optional_node(self) -> None:
+        """点了「图片拼版」虚线节点 → 切到它在本流程里的那一格。"""
+        index = self.bar_index_of_step(IMPOSITION_STAGE)
+        if index is not None:
+            self._select_stage(index)
 
     def _build_preview_card(self) -> Card:
         card = Card(padding=T.SPACE_SM, spacing=0, radius=T.RADIUS_MD)
@@ -179,18 +467,29 @@ class DetailViewMixin:
         self.extract_result_viewer.current_changed.connect(self._image_selected)
         self.extract_result_viewer.delete_requested.connect(self.delete_selected_page)
         self.extract_result_viewer.insert_requested.connect(self.insert_pages)
+        # 「选文件夹」：文件对话框选不了目录，整目录导入必须走这条（2026-10-06）
+        self.extract_result_viewer.insert_folder_requested.connect(
+            self.insert_pages_from_folder)
         self.extract_tabs.addTab(self.extract_result_viewer, "提取结果")
         self.preview_stack.addWidget(self.extract_tabs)
 
         # detect：图片 + 检测框
+        # ⚠️ 空态文案**不写死"请先完成提取"**（用户2026-10-06）：自定义流程
+        #    可能把这一步放在第一位、压根没有提取这一步可完成，那时这句话
+        #    会把用户引到一个不存在的目标上。统一说"插入图片/文件夹"，
+        #    对有无上游都成立。
         self.detect_viewer = ImageViewerWidget(
-            editable=True, show_boxes=True, empty_hint="暂无图片，请先完成提取",
+            editable=True, show_boxes=True,
+            empty_hint="暂无图片，请点下方「＋」插入图片或整个文件夹，"
+                       "或把图片放进本任务的输入目录",
             image_size_provider=self._original_image_size,
             thumb_provider=self._page_thumb_for,
         )
         self.detect_viewer.current_changed.connect(self._detect_image_selected)
         self.detect_viewer.delete_requested.connect(self.delete_selected_page)
         self.detect_viewer.insert_requested.connect(self.insert_pages)
+        self.detect_viewer.insert_folder_requested.connect(
+            self.insert_pages_from_folder)
         self.detect_viewer.boxes_edited.connect(self._save_manual_boxes)
         # 编辑器「完成」覆盖原图后：同步 sizes.json/缩略图并刷新显示
         self.extract_result_viewer.image_saved.connect(self._on_page_image_saved)
@@ -419,7 +718,8 @@ class DetailViewMixin:
         # 第三步 border 级联第四步默认边距：border 变化时把上游 border
         # 同步给 print 面板（用户未手动改边距时，默认值随级联变 0/20）
         self._sync_print_margin_default()
-        # 流程条上的「图片拼版」节点跟随 area（=1 出现，其余隐藏）
+        # ⚠️ 拼版节点的**可见性不看这里的参数**（2026-10-05 起只看流程图）；
+        #    但这一步仍会牵动「选择/生效态」的显示，顺手同步一次（幂等）。
         self._refresh_imposition_node()
 
     def _wire_print_panel(self, panel) -> None:

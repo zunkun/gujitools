@@ -588,7 +588,7 @@ PDF 矢量页没有可回写文件，右键菜单干脆不给「编辑图片」�
 ```text
 guji/
   tasks.json            # 任务索引（id=任务号、名称、源路径、hash、状态、时间…）
-  ui.json               # 全局界面状态（last_task + source_hash：上次停留的任务，重启恢复用）
+  ui.json               # 全局界面状态（last_task + source_hash：上次进入的任务；⚠️ 启动不再自动跳回）
   tasks/<任务号>/
     <源文件名>.pdf      # 导入时复制的源文件副本
     pages.json          # 页面清单 [{file, label}]

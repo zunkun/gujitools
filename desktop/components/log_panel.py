@@ -148,12 +148,35 @@ class LogPanel(QWidget):
         self.toggle_button.clicked.connect(self.toggle)
         row.addWidget(self.toggle_button)
 
+        #: 「打开任务数据目录」（用户 2026-10-06：从页头**移到右下角**）。
+        #: ⚠️ **宿主挂进来**而不是本类自己建：本面板是通用组件，**不知道**任务
+        #:    是什么、也没有 store——"打开哪个目录"是详情页的事。让宿主
+        #:    :meth:`set_task_dir_action` 交来一个已接好线的按钮，本面板只管摆位。
+        self.task_dir_slot = QWidget()
+        self._task_dir_layout = QHBoxLayout(self.task_dir_slot)
+        self._task_dir_layout.setContentsMargins(0, 0, 0, 0)
+        self._task_dir_layout.setSpacing(0)
+        row.addWidget(self.task_dir_slot)
+
         self.clear_button.clicked.connect(self.log_view.clear)
         self._overlay.close_button.clicked.connect(lambda: self.set_expanded(False))
         self.log_view.textChanged.connect(self._refresh_bar)
         self._sync_arrow()
 
     # ------------------------------------------------------------------ 状态
+    def set_task_dir_action(self, button) -> None:
+        """把宿主做好的「打开任务数据目录」按钮摆到状态条**最右端**（右下角）。
+
+        ⚠️ **在尺寸计算前设进去**：状态条是 ``setFixedHeight(BAR_HEIGHT)`` 的
+        固定高控件，布局在 ``show`` 时才算；按钮晚一步挂进来虽然也显示得下，
+        但自测里"它在不在、在哪"的几何断言会读到未生效的布局。宿主应在
+        构造完面板后立刻调本方法。
+        """
+        if button is None:
+            return
+        self._task_dir_layout.addWidget(button)
+        button.show()
+
     def toggle(self) -> None:
         """在展开 / 收起之间切换（取反当前状态）。"""
         self.set_expanded(not self._expanded)

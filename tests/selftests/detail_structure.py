@@ -31,21 +31,27 @@ def run(ctx) -> None:
     ok("控制面板 4 个阶段面板 + 拼版占位", d.control_stack.count() == 5)
     ok("预览区 4 个阶段预览 + 拼版占位", d.preview_stack.count() == 5)
 
-    # ---- 流程条「图片拼版」可选节点 ----
+    # ---- 流程条「图片拼版」可选节点（判据 = **流程图**）----
+    # ⚠️ 2026-10-05 口径变更：可见性看**本任务的流程图**，**不再是**第三步的
+    #    区域模式（旧的 area==1）。旧判据既语义错配（area=1 是"每个框各自
+    #    外扩"的裁剪方式，与拼版无关），又与用户画的图打架（图上把这一格删了、
+    #    area 还是 1，照样冒出来）。
     # ⚠️ isVisible 系列断言必须真显示之后才有意义（见文件头说明），先亮出详情页
     show_detail(ctx, stage=0)
-    # 新任务没配置过区域模式（无面板值/草稿/历史）→ 节点**不**出现，
-    # 绝不凭内置默认 area=1 冒出来（用户 2026-09-30）
-    ok("全新任务（区域模式未确定）→ 拼版节点不显示",
-       not d.step_bar.imposition_node.isVisible()
-       and not d._imposition_node_visible())
-    # 草稿确定 area=1 → 节点出现（虚线、未选择）；点节点进占位详情
-    d.store.save_draft(d.task_id, "rembg", {"area": 1})
+    # 默认模板（task_default.bpmn）里画了「图片拼板」→ 节点出现（虚线、未选择）
+    ok("默认流程里画了「图片拼板」→ 拼版节点显示（无需配任何参数）",
+       d.step_bar.imposition_node.isVisible() and d._imposition_node_visible())
+    ok("拼版节点默认未选择（图上有这一格 ≠ 一定要跑）",
+       not d.step_bar.imposition_node.is_selected())
+    # 反向钉子：改第三步区域模式**不再**影响可见性（判据只看流程图）
+    d.store.save_draft(d.task_id, "rembg", {"area": 2})
     d._refresh_imposition_node()
     pump(app)
-    ok("区域模式确定为 1 → 拼版节点显示",
-       d.step_bar.imposition_node.isVisible() and d._imposition_node_visible())
-    ok("拼版节点默认未选择", not d.step_bar.imposition_node.is_selected())
+    ok("改第三步区域模式**不影响**拼版节点（判据只看流程图）",
+       d._imposition_node_visible())
+    d.store.clear_draft(d.task_id, "rembg")
+    d._refresh_imposition_node()
+    pump(app)
     # 箭头顺序：节点前是「去底色→拼版」连接线、后是「拼版→PDF」连接线
     # （回归钉子：插入下标算错时节点会跑到箭头前面，用户截图报过）
     # ⚠️ 流程条里放的是节点的**等宽槽位**（imposition_slot），虚线框在槽位内靠左
@@ -70,8 +76,10 @@ def run(ctx) -> None:
     pump(app)
     ok("勾选启用 → 节点变为已选择",
        d.step_bar.imposition_node.is_selected())
-    from desktop.store import IMPOSITION_INDEX
-    d._select_stage(IMPOSITION_INDEX)
+    from desktop.store import IMPOSITION_STAGE
+    # ⚠️ 查表拿格序，别用 ``IMPOSITION_INDEX``（= len(STAGES) = 4）：BPM 驱动后
+    # 步骤条格序含可选节点占位，拼版在第 3 格，写死会切到 print 那一格。
+    d._select_stage(d.bar_index_of_step(IMPOSITION_STAGE))
     pump(app)
     ok("重新进入拼版详情回填勾选状态", d.imposition_enabled_checkbox.isChecked())
     d.imposition_enabled_checkbox.setChecked(False)
@@ -278,3 +286,74 @@ def run(ctx) -> None:
     vb.setValue(0)
     d._select_stage(0)
     pump(app)
+
+    # ---- 流程图上"画了但没功能"的节点：界面上看得见、点了有解释 ----
+    # ⚠️ 用户能在 bpmn.io 里随手加一个「OCR 识别」。以前它被静默丢掉（界面上
+    #    根本找不到那一格）＝"改了流程图程序没反应"。现在它占一格、画成灰的
+    #    并标注「未接入」，点了告诉你怎么接上或怎么删。
+    #    用**独立 store + 独立页面**，不碰 ctx.d（共享详情页）与它的任务。
+    from desktop.pages.taskdetail.page import TaskDetailPage as _TDP
+    from desktop.steps.bpmn_diagram import (
+        KIND_TASK, NO_PAGE, DiagramFlow, DiagramNode, FlowDiagram,
+        default_size, stage_of_name,
+    )
+    from desktop.store import TaskStore as _TS
+
+    probe_store = _TS(ctx.tmp / "unmapped_probe")
+    names = ["提取图片", "检测文本框", "OCR 识别", "图片去底色", "PDF排版"]
+    nodes, flows, boxes = [], [], []
+    for index, name in enumerate(names):
+        w, h = default_size(KIND_TASK)
+        nodes.append(DiagramNode(f"u{index}", KIND_TASK, name,
+                                 stage=stage_of_name(name)))
+        boxes.append((40.0 + index * 150.0, 40.0, w, h))
+        if index:
+            flows.append(DiagramFlow(f"uf{index}", f"u{index - 1}",
+                                     f"u{index}"))
+    ghost_tid = probe_store.create_task(
+        ctx.pdf, "unmapped-probe", "带未知节点",
+        diagram=FlowDiagram(nodes=tuple(nodes), flows=tuple(flows),
+                            boxes={f"u{i}": b for i, b in enumerate(boxes)}))
+    probe = _TDP(probe_store)
+    probe.resize(1280, 800)
+    probe.show()
+    pump(app, times=8)
+    probe.set_task(ghost_tid)
+    pump(app, times=10)
+
+    ghost_index = probe.bar_index_of_step("OCR 识别")
+    ok("图上没功能的节点在步骤条上有那一格（不再凭空消失）",
+       ghost_index is not None, str(ghost_index))
+    titles = [b.title_label.text() for b in probe.step_bar.buttons]
+    ok("它的标题就是图上写的节点名（不被后缀挤掉）",
+       "OCR 识别" in titles, str(titles))
+    # ⚠️ 「未接入」标在**副标题**上：标题那格宽度有限，后缀会被省略号截成
+    #    "（未接…"，反而看不出是什么步骤。
+    details = [b.detail_label.text() for b in probe.step_bar.buttons]
+    ok("它标注为「未接入」（副标题）",
+       any("未接入" in text for text in details), str(details))
+    ok("它的栈页号是 NO_PAGE（两个栈里本来就没有它的页）",
+       probe.stack_index_of_step("OCR 识别") == NO_PAGE,
+       str(probe.stack_index_of_step("OCR 识别")))
+    # 点它：停在原地 + 不被记成"上次停留"
+    probe._select_stage(probe.bar_index_of_step("detect"))
+    pump(app, times=4)
+    before = probe.step_bar._current
+    probe._select_stage(ghost_index)
+    pump(app, times=4)
+    ok("点灰节点不会跳走（仍停在原来那一步）",
+       probe.step_bar._current == before,
+       f"{before} -> {probe.step_bar._current}")
+    ok("也不会被记成上次停留（下次打开不会落到这一步）",
+       probe.store.load_last_stage(ghost_tid) != "OCR 识别",
+       str(probe.store.load_last_stage(ghost_tid)))
+    # 真实步骤照常切
+    probe._select_stage(probe.bar_index_of_step("print"))
+    pump(app, times=6)
+    ok("同一张图里真实步骤照常切（灰节点不干扰其它步骤）",
+       probe.current_stage() == "print", probe.current_stage())
+    ok("灰节点不进控制栈/预览栈（两个栈页数不变）",
+       probe.control_stack.count() == 5 and probe.preview_stack.count() == 5,
+       f"{probe.control_stack.count()}/{probe.preview_stack.count()}")
+    probe.deleteLater()
+    pump(app, times=4)

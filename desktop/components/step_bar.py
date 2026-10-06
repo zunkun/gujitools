@@ -35,6 +35,8 @@ GREEN = T.SUCCESS
 RED = T.DANGER
 AMBER = T.WARNING
 GRAY = T.INK_FAINT
+#: 「图上画了、但还没有对应功能」的节点在步骤条上的副标题（2026-10-05）
+UNMAPPED_DETAIL = "未接入"
 
 # 状态 → (徽标填充, 徽标描边, 徽标文字, 标题色, 副标题色)
 _STATUS_COLORS = {
@@ -208,6 +210,9 @@ class StepItem(QFrame):
         column = QVBoxLayout()
         column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(0)
+        self._base_title = title
+        #: 「图上画了、但还没有对应功能」的灰节点标记（2026-10-05）
+        self._unmapped = False
         self.title_label = _ElidedLabel(title, self.pill)
         self.detail_label = _ElidedLabel("", self.pill)
         self.detail_label.setVisible(False)
@@ -235,8 +240,11 @@ class StepItem(QFrame):
         self._badge_status = (
             badge_status if badge_status in _STATUS_COLORS else self._status
         )
-        self.detail_label.setText(detail)
-        self.detail_label.setVisible(bool(detail))
+        # ⚠️ 未接入的节点**固定**显示「未接入」，不被状态刷新覆盖成
+        #    "未执行"——那会把"这一步没功能"说成"这一步还没跑"。
+        self.detail_label.setText(
+            UNMAPPED_DETAIL if self._unmapped else detail)
+        self.detail_label.setVisible(self._unmapped or bool(detail))
         self.badge.set_state(self.index + 1, self._badge_status)
         self._apply_style()
 
@@ -275,6 +283,31 @@ class StepItem(QFrame):
         return self.underMouse()
 
     # ------------------------------------------------------------------ 绘制
+    def set_unmapped(self, flag: bool = True) -> None:
+        """标记为「图上有、但还没有对应功能」的**灰节点**（2026-10-05）。
+
+        用户在流程图上可以画任意节点（bpmn.io 里加一个「OCR 识别」之类），
+        本程序没有对应实现。这类节点**不再被静默丢掉**（界面上根本找不到
+        "流程节点对不上"），而是照常占一格、显示为灰色并标注「未接入」。
+
+        **仍可点**：点了由页面解释怎么接上（改名成已有步骤名）或怎么删掉
+        ——比"点了没反应"或"直接不显示"都好解释。
+        """
+        self._unmapped = bool(flag)
+        # ⚠️ 「未接入」放**副标题**而不是标题后缀：标题那格宽度有限，加后缀
+        #    会被省略号截成"（未接…"，反而看不出是什么步骤了。副标题整行都是
+        #    它的，写得下。
+        self.title_label.setText(self._base_title)
+        self.title_label.set_text_color(GRAY if self._unmapped else "#1f1f1f")
+        self.detail_label.setText(UNMAPPED_DETAIL if self._unmapped else "")
+        self.detail_label.setVisible(self._unmapped)
+        self.setToolTip(
+            "这一步还没有对应的处理功能，暂时不能执行"
+            "（可在流程图里把它改名成已有步骤，或删掉）"
+            if self._unmapped else ""
+        )
+        self.update()
+
     def paintEvent(self, _event) -> None:
         """自己画胶囊：样式表一旦出现在子树里，Qt 会把 QFrame 底色填白
         （盖住步骤条的卡片底色），所以这里不用样式表。
@@ -488,12 +521,18 @@ def _rounded_polyline(points: list[tuple[float, float]], radius: float = 6.0) ->
 
 
 class StepBar(QWidget):
-    """横向步骤条：4 个步骤按顺序排列，当前步骤高亮、已完成步骤打勾。
+    """横向步骤条：真实步骤按顺序排列，当前步骤高亮、已完成步骤打勾。
 
-    除真实步骤外还支持一个**条件虚线节点**（「图片拼版」可选步骤）：
-    默认隐藏，``set_imposition_visible(True)`` 时插到倒数两个步骤之间。
-    伪步骤下标 = 真实步骤数（``imposition_index``），``set_current`` /
-    ``current_changed`` 都以它表达"当前在看拼版详情"。
+    除真实步骤外还支持一个**条件虚线节点**（「图片拼版」可选节点）：
+    默认隐藏，``set_imposition_visible(True)`` 时插在**指定位置**——位置由
+    构造参数 ``optional_after`` 决定（默认流程 = 插在倒数两个步骤之间）。
+    伪步骤下标 ``imposition_index`` 是**步骤条上的格序**（含可选节点占位），
+    ``set_current`` / ``current_changed`` 都以它表达"当前在看拼版详情"。
+
+    ⚠️ **BPM 驱动**（``docs/tasks/bpm.md`` 的 M2）：真实步骤的顺序与可选
+    节点的位置都来自本任务流程的槽位表（宿主
+    ``TaskDetailPage._bar_step_titles`` / ``_optional_after_index`` 传入），
+    换流程只换参数——本组件不认 ``STAGES``、也不数下标猜位置。
 
     节点有两条互相独立的状态线（别合并）：
     - **选择态**（``set_imposition_selected``）：只管节点自己的外观
@@ -516,8 +555,17 @@ class StepBar(QWidget):
     #: 流程条上点了「图片拼版」虚线节点（宿主据此切到占位详情）。
     imposition_clicked = Signal()
 
-    def __init__(self, steps, parent=None):
-        """按给定步骤标题逐项构建；steps 允许传生成器。"""
+    def __init__(self, steps, parent=None, optional_after=None,
+                 unmapped=None):
+        """按给定步骤标题逐项构建；steps 允许传生成器。
+
+        ``optional_after`` 是**可选节点（拼版）插在第几个真实步骤之后**
+        （``None`` = 插在最后一步之前，沿用旧行为）。⚠️ 这是 BPM 驱动的
+        关键参数（``docs/tasks/bpm.md`` 的 M2）：默认流程下它等于
+        ``len(steps) - 1``（拼版在「图片去底色」与「生成 PDF」之间，与旧
+        硬编码一致）；自定义流程把拼版排到别处时，宿主按槽位表的
+        ``bar_index`` 算出来传进来，**连线/绕行线也跟着挪**。
+        """
         super().__init__(parent)
         steps = list(steps)  # 调用方传的是生成器（STAGE_LABELS[s] for s in STAGES）
         self.buttons: list[StepItem] = []
@@ -526,8 +574,20 @@ class StepBar(QWidget):
         self._current = 0
         #: 拼版支路是否**生效**（承载真实流程）；与节点的选择态分开
         self._imposition_flow = False
-        #: 伪步骤（拼版节点）的下标与控件；节点默认隐藏
-        self.imposition_index = len(steps)
+        #: 可选节点插在第几个真实步骤之后（构造期算出，见 ``optional_after``）。
+        #: 下游找"拼版左右邻居"一律走它，不再写死 ``buttons[-2]``。
+        self._optional_after = (
+            len(steps) - 1 if optional_after is None else int(optional_after)
+        )
+        # ⚠️ 越界兜底：可选节点插在最后（没有右邻居）或最前（没有左邻居）
+        # 都是合法自定义流程，夹进可用范围，别让 ``insert_at`` 算出负下标。
+        self._optional_after = max(
+            0, min(self._optional_after, max(len(steps) - 1, 0))
+        )
+        #: 伪步骤（拼版节点）的下标与控件；节点默认隐藏。
+        #: ⚠️ ``imposition_index`` 是**步骤条上的格序**（含可选节点占位），
+        #:    自定义流程下不再等于 ``len(steps)``。
+        self.imposition_index = self._optional_after + 1
         self.imposition_node = _ImpositionNode("图片拼版", self)
         self.imposition_node.clicked.connect(self._on_imposition_click)
         self._imposition_connector = _Connector(self)
@@ -547,8 +607,12 @@ class StepBar(QWidget):
         row.setContentsMargins(10, 6, 10, 6)
         row.setSpacing(0)
         self._row = row
+        #: 「图上有、还没功能」的下标集合——这些节点画成灰的
+        self._unmapped_indices = {int(i) for i in (unmapped or ())}
         for index, title in enumerate(steps):
             item = StepItem(index, title, self)
+            if index in self._unmapped_indices:
+                item.set_unmapped(True)
             item.clicked.connect(self._on_click)
             self.buttons.append(item)
             row.addWidget(item, 1)
@@ -556,13 +620,15 @@ class StepBar(QWidget):
                 connector = _Connector(self)
                 self.connectors.append(connector)
                 row.addWidget(connector, 0, Qt.AlignVCenter)
-        # 把「拼版节点 + 它后面的连接线」插到**最后一个步骤之前**：
-        # 布局此时为 [item0, conn0, item1, conn1, item2, conn2, item3]
-        # （stretch 还没加），最后一步的下标 = count-1。插入顺序：先 connB
-        # 再 node，各占一个槽位 → [..., item2, conn2(去底色↔拼), node, connB(拼↔PDF), item3]。
-        # ⚠️ 必须是 count-1：算成 count-2 会插到 conn2 前面，箭头全跑到
+        # 把「拼版节点 + 它后面的连接线」插到**第 ``_optional_after`` 个真实
+        # 步骤之后**：布局此时为 [item0, conn0, item1, conn1, ...]，第 k 个
+        # 真实步骤占下标 ``2k``，它**后面**那条连接件占 ``2k+1``。所以要
+        # "插在第 k 个之后"= 插到下标 ``2k+2``（即下一个步骤的原位置）。
+        # 默认流程 ``_optional_after = len(steps)-1`` 时正好等于旧口径的
+        # ``row.count()-1``（两者都是"最后一项"的位置，完全等价）。
+        # ⚠️ 必须是 2k+2：算成 2k+1 会插到 conn[k] 前面，箭头全跑到
         #    虚线框后面（用户截图报过：虚线前面没有箭头、后面挤两个）。
-        insert_at = max(row.count() - 1, 0)
+        insert_at = 2 * self._optional_after + 2
         row.insertWidget(insert_at, self._imposition_connector, 0, Qt.AlignVCenter)
         # 槽位 stretch **1**：与真实步骤平分多余空间（间距才均匀）；虚线框自身
         # 靠 Maximum 策略贴在槽位左侧，不会被拉宽。
@@ -570,8 +636,14 @@ class StepBar(QWidget):
         #: 节点**前面**那条连接线——布局上就是紧挨着槽位左边的那条，也就是原本的
         #  「去底色→PDF」。绕行线的起终点现取左右胶囊几何（见 _bypass_points），
         #  本属性只用于标认「前端那格」；线本身的点亮/虚线由
-        #  ``_connector_segments`` 按下标（len-2）判定。
-        self.imposition_front_connector = self.connectors[-1]
+        #  ``_connector_segments`` 按 ``_optional_after`` 判定。
+        # ⚠️ 可选节点插在**最后一步之后**时它没有前端连接件（左侧直接是
+        #    item[n-1]），此时取最后一条常规连接件，没有则 None。
+        self.imposition_front_connector = (
+            self.connectors[self._optional_after]
+            if self._optional_after < len(self.connectors)
+            else (self.connectors[-1] if self.connectors else None)
+        )
         self.imposition_node.setVisible(False)
         self._imposition_connector.setVisible(False)
         row.addStretch(0)
@@ -603,22 +675,32 @@ class StepBar(QWidget):
         n = len(self.buttons)
         shown = self._imposition_shown()
         flow = shown and self._imposition_flow
+        # ⚠️ 可选节点两侧的真实步骤（默认流程 = [-2] 与 [-1]）。插在最后一步
+        #    之后时没有右邻居，左侧那格就是最后一步。
+        after = self._optional_after
         segments = []
-        for index in range(n - 1):
-            if shown and index == n - 2:
+        # ⚠️ 上界取 ``n`` 而不是 ``n-1``：可选节点可以排在**最后一个真实
+        #    步骤之后**（``after == n-1``），那时它的左邻居那一段恰好在
+        #    ``index == n-1`` 处，用 ``range(n-1)`` 会漏掉这段（连接线断掉）。
+        for index in range(n):
+            if shown and index == after:
                 segments.append((
                     self.buttons[index].pill, self.imposition_node,
                     flow and index in self._completed, not flow,
                 ))
-            else:
+            elif index < n - 1:
                 segments.append((
                     self.buttons[index].pill, self.buttons[index + 1].pill,
                     index in self._completed, False,
                 ))
         if shown:
-            segments.append(
-                (self.imposition_node, self.buttons[-1].pill, flow, not flow)
-            )
+            if after < n - 1:
+                segments.append(
+                    (self.imposition_node, self.buttons[after + 1].pill,
+                     flow, not flow)
+                )
+            # after == n-1（可选节点排在最后一步之后）：它右侧没有真实
+            # 步骤可连，不补段（补了会画出指向虚空的线）。
         return segments
 
     def _draw_connectors(self, painter) -> None:
@@ -662,7 +744,7 @@ class StepBar(QWidget):
         points = self._bypass_points()
         if points is None:
             return
-        done = (len(self.connectors) - 1) in self._completed
+        done = self._optional_after in self._completed
         painter.setPen(
             QPen(
                 QColor(GREEN if done else "#d6d6d6"), 2,
@@ -691,8 +773,14 @@ class StepBar(QWidget):
         node = self.imposition_node
         if node.width() < 5:
             return None
-        left_pill = self.buttons[-2].pill
-        right_pill = self.buttons[-1].pill
+        # ⚠️ 左右邻居按 ``_optional_after`` 查（默认流程 = buttons[-2] /
+        #    buttons[-1]）。可选节点排在最后一步之后时**没有右邻居**，
+        #    也就没有"绕过它接到下一步"这根线——返回 None 不画。
+        after = self._optional_after
+        if after >= len(self.buttons) - 1:
+            return None
+        left_pill = self.buttons[after].pill
+        right_pill = self.buttons[after + 1].pill
         left_c = left_pill.mapTo(
             self, QPoint(left_pill.width() // 2, left_pill.height() // 2)
         )

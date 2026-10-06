@@ -58,6 +58,18 @@ core（命令定义、reporter）   →   utils（纯算法：box_geometry、ima
 | 桌面参数面板默认值 | `desktop/components/panels/params_spec.py` |
 | 步骤元数据（文案/过滤串/输出规则/导航/流程角色） | `desktop/steps/spec.py::SPECS`（`STAGES`/`MODULES`/`PANEL_CLASSES` 全部派生） |
 | 任务流程连线（BPM 边表） | `desktop/steps/ports.py::SUPPLIERS`；落点表 `STAGE_LOCATIONS` |
+| 流程图模型（**唯一真源**，含任意节点类型/DI 坐标/折点/边标签） | `desktop/steps/bpmn_diagram.py::FlowDiagram`（读/写 `tasks/<id>/flow.bpmn`） |
+| 流程图渲染（只读，照文件画） | `desktop/components/bpmn_view.py::BpmnView`（`paintEvent` 自绘；网关菱形、结束事件双圈） |
+| 流程图编辑（拖拽/连线/增删/改名） | `desktop/components/bpmn_editor.py::BpmnEditor`（继承 `BpmnView`） |
+| 运行顺序（**状态机**，替代端口级边表推顺序） | `desktop/steps/scheduler.py::Scheduler`（顺序取 `stage_order()` 拓扑序；跳过看 `CONDITIONS`） |
+| 流程弹窗（查看/编辑，创建任务与详情页共用） | `desktop/components/flow_dialog.py::FlowPanel` + `pages/taskdetail/flow_mixin.py::FlowMixin` |
+| 旧的运行语义模型（阶段序列 + 端口边表，仍供槽位计算） | `desktop/steps/flow.py::FlowDefinition`（页面渲染**不再**用它） |
+| 创建任务**页面**（选 PDF + 任务名 + 看/编流程） | `desktop/pages/createtask/page.py::CreateTaskPage`（内含 `components/create_task_dialog.py::CreateTaskPanel`；2026-10-06 起不再是弹窗） |
+| 任务流程编辑**页面**（详情页页头进入） | `desktop/pages/taskflow/page.py::TaskFlowPage`（内含 `components/flow_dialog.py::FlowPanel`，`close_window=False`） |
+| 详情页查看/编辑流程 | `desktop/components/flow_dialog.py::FlowPanel` + `pages/taskdetail/flow_mixin.py::FlowMixin` |
+| 弹窗外壳（标题+内容+按钮） | `desktop/components/dialog_shell.py::shell_dialog`（⚠️ **不要**用 qfluentwidgets 的 `Dialog`，它只支持"字符串+两按钮"、没有 `viewLayout`） |
+| 默认流程模板文件 | `desktop/static/task_default.bpmn`（新任务用）与 `task_detail.bpmn`（自定义初值）。**它们是真源**——页面照着渲染、状态机照着排顺序；`tools/gen_default_bpmn.py` 只是可选的重新生成工具 |
+| 运行阶段的中文节点名 | `desktop/steps/ports.py::stage_label`（`rembg_submit` 必须走它，否则流程图出现两个「图片去底色」；`store.STAGE_LABELS` 是它的派生） |
 | 框几何/绘制 | `utils/box_geometry.py`（半幅恒 2 槽、整幅恒 1 槽）；标注统一 `utils/box_draw.draw_slots` |
 | 框类型人工干预交互流（切类型/整幅互斥/删框） | `desktop/components/box_kinds.py::BoxKindEditor`（taskdetail 与独立检测页共用） |
 | 编辑生效链的查看器原语（立即上屏/单条缩略图刷新） | `desktop/components/viewers/edit_sync.py` |

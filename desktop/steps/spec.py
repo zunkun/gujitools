@@ -425,6 +425,20 @@ class StepSpec:
         """源可以是一批文件吗（多选 / 单选都算）。"""
         return bool(self.file_filter)
 
+    def needs_source_pdf(self) -> bool:
+        """这一步**直接吃一个 PDF 文件**吗（判据是端口声明 ``inputs``）。
+
+        ⚠️ 别拿 ``input_noun()`` 判：它是给人看的称呼（"PDF" / "图片"），
+        而且四步里三步都写着"选择图片"——用称呼判会把去底色/生成 PDF 也算成
+        "需要源 PDF"，而它们吃的是**上游产出的页**，不是用户的文件。真正的
+        分界是端口：只有 ``extract`` 声明 ``inputs=("pdf",)``，其余都是
+        ``("pages", …)``。
+
+        创建页用它判断"流程需不需要一个源 PDF"（用户 2026-10-06：没上传时
+        要提醒用户确认），见``CreateTaskPage._flow_needs_source_pdf``。
+        """
+        return "pdf" in self.inputs
+
     def run_text(self) -> str:
         """执行按钮文案（``run_label`` 为空时回落到"开始 + 标题"）。"""
         return self.run_label or f"开始{self.title}"

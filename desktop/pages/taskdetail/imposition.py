@@ -1,14 +1,27 @@
 # -*- coding: utf-8 -*-
 """任务详情页的「图片拼版」共享基元与 Mixin 装配。
 
-流程条上的「图片拼版」是**虚线可选节点**（``desktop.components.step_bar``）：
-仅当第三步（图片去底色）的「区域模式」为 1（左右分开）时出现在「图片去底色」
-与「生成 PDF」之间；用户可以选择它（启用）也可以不选择。
+流程条上的「图片拼版」是**虚线可选节点**（``desktop.components.step_bar``）。
+它牵涉**三个判据，各管一件事、互不替代**（2026-10-05 逐层查证业务流程后定）：
+
+1. **在不在流程里** ← **本任务的流程图**。图上画了「图片拼板」就有这一格
+   （:meth:`ImpositionBaseMixin._imposition_node_visible`）。
+2. **这一步有没有意义** ← **第三步的「区域模式」``area``**。这是**业务前提**
+   而不是显示开关：``area=1``「左右分开」时每个文本框产出**成对的两张**
+   半页图（``-l`` / ``-r``），两张并排才拼得出古籍的正刊对开版面；
+   ``area=2/3`` 输出并集整图、``area=4`` 输出整页，**本来就一张图**，
+   再拼没有意义。见 :data:`IMPOSITION_AREA` / :meth:`_imposition_area_ok`。
+3. **要不要真跑** ← **拼版面板底部的开关**（:meth:`imposition_active`
+   只看勾没勾，那是"用户意图"）。开关在 ①②不满足时**置灰并写明原因**。
+
+⚠️ **别把 ② 当成"显示开关"扔掉**（本轮曾误判过一次）：它决定"拼版这一步
+在当前参数下有没有意义"。``area`` 的其余取值与它无关，只管去底色怎么裁。
 
 按操作逻辑拆成三个文件（后续可由不同 agent 分头维护，互不影响）：
 
 - **本文件** ``ImpositionBaseMixin``：两个模块都要用的**共享基元**——
-  area 读取与节点可见性、拼版文档读写（``drafts/imposition.json``）、
+  节点可见性（查流程图）、区域模式读取（拼版的适用前提）、
+  拼版文档读写（``drafts/imposition.json``）、
   源图清单与「拼版生效」判定、第四步取图切换（``print_source_dir``）、
   视图灌装、详情进出与切任务复位；
 - **``imposition_pages.ImpositionPagesMixin``**（模块一「选择拼版」）：
@@ -26,12 +39,30 @@ from pathlib import Path
 
 from desktop.pages.taskdetail.imposition_layout import ImpositionLayoutMixin
 from desktop.pages.taskdetail.imposition_pages import ImpositionPagesMixin
-from desktop.store import IMPOSITION_INDEX, IMPOSITION_LABEL, STAGES
+from desktop.store import IMPOSITION_LABEL, IMPOSITION_STAGE
 from desktop.utils.files import list_stage_images
 from utils.sort_utils import pdf_custom_sort_key
 
-#: 拼版节点出现的条件：第三步「区域模式」= 1（左右分开）
+#: 拼版的**业务前提**：只有「左右分开」才产出成对的半页图（``-l``/``-r``），
+#:: 两张并排才拼得出正刊对开版面。
+#:
+#: ⚠️ 这**不是**"要不要显示拼版节点"的开关（那由流程图决定），而是"这一步在
+#: 当前参数下**有没有意义**"。``area=2/3`` 输出并集整图、``area=4`` 输出整页，
+#: 本来就是一张图，拼版没意义——旧代码拿它当显示条件，2026-10-05 一度被误删。
 IMPOSITION_AREA = 1
+
+#: 区域模式各值的中文名（"为什么不能拼版"的提示用，勿另写一份）
+AREA_LABELS: dict[int, str] = {
+    1: "左右分开", 2: "合并单图", 3: "整页合并", 4: "整页/不检测",
+}
+
+
+def _as_area(value) -> int:
+    """任意来源的 area 值 → 合法整数（非法/缺失返回 0 = "还不知道"）。"""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
 
 
 class ImpositionBaseMixin:
@@ -41,61 +72,106 @@ class ImpositionBaseMixin:
     _select_stage()、_set_stage_status()、_toast()、log_view。
     """
 
-    # ------------------------------------------------------------- area 读取
-    def _rembg_area_value(self) -> int:
-        """当前**已知**的 area（区域模式）：有依据才给值，没依据返回 0。
+    # ------------------------------------------------------------- 节点可见性
+    def _imposition_node_visible(self) -> bool:
+        """拼版节点是否**在本任务的流程里**（判据唯一处：**流程图**）。
 
-        优先级与 ``HistoryMixin._restore_stage_params`` 一致：第三步面板
-        当前值 > 暂存（drafts/rembg.json）> 最近一次执行参数；**不再退到
-        内置默认**（用户 2026-09-30：「图片去底色都没有生效，拼版节点更
-        不可能生效，不显示」——全新任务靠默认 area=1 冒出拼版节点就是
-        旧判据的毛病）。需要默认值兜底的调用方自己补 ``REMBG_DEFAULTS``。
-        ⚠️ 面板未构造时只读盘上数据，绝不能走 LazyPanelHost 的属性转发
-        ——那会把面板整个建出来，"谁进去谁才建"就白做了。
+        ⚠️ 2026-10-05 口径变更（用户要求）：原先看第三步的 ``area``
+        （``area == 1`` 就显示）。那是流程图还不存在时的权宜之计，既
+        **语义错配**（``area=1`` 是"每个框各自外扩产出多张图"，属裁剪方式），
+        又与用户画的图**打架**（图上把「图片拼板」删了、area 还是 1，那一格
+        照样冒出来）。现在**流程图是唯一真源**：图上画了就有这一步。
+
+        实现上直接复用 :meth:`bar_index_of_step`（它查 :meth:`flow_slots`），
+        因而与步骤条、与 ``store.task_slots()`` **必然同源**——不可能出现
+        "流程条上没有、详情却能切进去"这类不同步（那正是旧的
+        区域模式判据与流程槽位各算一套时的隐患）。
+
+        宿主判"记录的步骤 key 还能不能匹配"（``page.py::_stage_index_of``）
+        也走这里，两处同源。
+        """
+        return self.bar_index_of_step(IMPOSITION_STAGE) is not None
+
+    # ------------------------------------------------------------- 区域模式
+    def _rembg_area_value(self) -> int:
+        """当前**已知**的「区域模式」``area``；没有任何依据时返回 0。
+
+        优先级：第三步面板当前值 > 暂存（``drafts/rembg.json``）> 最近一次
+        执行参数——与 ``HistoryMixin._restore_stage_params`` 同源。
+
+        ⚠️ 面板未构造时**只读盘上数据**，绝不能走 ``LazyPanelHost`` 的属性
+        转发——那会把面板整个建出来，"谁进去谁才建"就白做了。
+
+        ⚠️ 返回 0 = **还不知道**（全新任务没配过 / 没跑过），**不等于
+        "不支持拼版"**：三态判据里它走"请先确认区域模式"那条提示。
         """
         host = self.control_stack.widget(2)
         peek = getattr(host, "peek", None)
         panel = peek() if callable(peek) else None
         if panel is not None:
             try:
-                value = panel.area.currentData()
-                if isinstance(value, int) and value > 0:
-                    return value
+                value = _as_area(panel.area.currentData())
             except Exception:  # noqa: BLE001 - 面板半构造时不该拖垮流程条
-                pass
+                value = 0
+            if value:
+                return value
         if self.task_id:
             draft = self.store.load_draft(self.task_id, "rembg") or {}
-            value = self._as_area(draft.get("area"))
+            value = _as_area(draft.get("area"))
             if value:
                 return value
             history = self.store.list_stage_runs(self.task_id, "rembg")
             if history:
-                value = self._as_area(
-                    (history[0].get("parameters") or {}).get("area")
-                )
+                value = _as_area(
+                    (history[0].get("parameters") or {}).get("area"))
                 if value:
                     return value
         return 0
 
-    @staticmethod
-    def _as_area(value) -> int:
-        """任意来源的 area 值 → 合法整数（非法返回 0，由调用方跳过）。"""
-        try:
-            return int(value)
-        except (TypeError, ValueError):
-            return 0
+    def _imposition_area_ok(self) -> bool:
+        """当前区域模式**支持拼版**（``area == 1``「左右分开」）。
 
-    # ------------------------------------------------------------- 节点刷新
-    def _imposition_node_visible(self) -> bool:
-        """拼版节点当前是否**在流程里**（判据唯一处：已知 area == 1）。
-
-        「已知」= 第三步面板当前值 / 草稿 / 最近执行参数三者之一——没有
-        任何依据（全新任务、去底色从没配置或执行过）就不显示，绝不凭内置
-        默认 area=1 冒出来（用户 2026-09-30）。
-        宿主判"记录的步骤 key 还能不能匹配"（``page.py::_stage_index_of``）
-        也走这里——两处必须同源，否则流程条上没这个节点、详情却能被切进去。
+        ⚠️ **0（还不知道）不算支持**：拼版是**业务前提**——只有左右分开才
+        产出成对的 ``-l``/``-r`` 半页图，两张并排才拼得出正刊对开版面。
+        全新任务没配过区域模式时，先让用户去第三步确认。
         """
         return self._rembg_area_value() == IMPOSITION_AREA
+
+    def _imposition_switch_state(self) -> tuple[bool, str]:
+        """「在流程中启用图片拼版」开关的**可用性与原因**（三个判据合成）。
+
+        返回 ``(可用, 原因)``，可用时原因为空串。三条判据见模块头：
+
+        1. **图里没有**「图片拼板」⇒ 勾了也不跑（它压根不在执行链里）；
+        2. **区域模式还没确认** ⇒ 先去第三步确认（这是拼版的业务前提）；
+        3. **区域模式不是「左右分开」** ⇒ 每页已经是一张整图，拼版没意义。
+
+        ⚠️ 处置是**置灰 + 说明**，不是隐藏：用户要看得见"流程里有这一步，
+        但当前参数下用不上"，才知道该去改参数还是改流程图。旧实现是
+        "``area != 1`` 就不显示"，用户报过"改了 area 节点凭空消失"。
+        """
+        if not self._imposition_node_visible():
+            return False, ("当前流程里没有「图片拼板」这一步，勾了也不会生效"
+                           "（可在页头「查看 / 编辑流程」里把它加回来）")
+        area = self._rembg_area_value()
+        if area == 0:
+            return False, ("先到第三步「图片去底色」确认区域模式"
+                           "（「左右分开」才需要拼版），再回来启用")
+        if area != IMPOSITION_AREA:
+            return False, (f"当前区域模式是「{AREA_LABELS.get(area, area)}」，"
+                           "每页已经是一张整图，不需要拼版")
+        return True, ""
+
+    def imposition_effective(self) -> bool:
+        """拼版这一步**当前能不能真跑**（三个判据全过）。
+
+        与 :meth:`imposition_active`（"用户意图：勾没勾"）**刻意分开**：
+        勾了但流程图里没这一步、或区域模式不支持，都**不会**真跑。取图来源
+        认这个，步骤条"生效态"也认这个。
+        """
+        return (self._imposition_node_visible()
+                and self._imposition_area_ok()
+                and self.imposition_active())
 
     def _sync_imposition_step_bar(self) -> None:
         """把拼版节点三态（可见/已选择/生效）一次性同步到流程条。
@@ -105,21 +181,63 @@ class ImpositionBaseMixin:
         「去底色 → 生成 PDF」走节点上方的绕行线——与第四步真实取图来源
         （``print_source_dir``）保持一致，两处看同一个判据。
         """
-        self.step_bar.set_imposition_visible(self._imposition_node_visible())
+        visible = self._imposition_node_visible()
+        self.step_bar.set_imposition_visible(visible)
         self.step_bar.set_imposition_selected(self._load_imposition_enabled())
-        self.step_bar.set_imposition_active(self.imposition_active())
+        # ⚠️ 认"能不能真跑"而不是"勾没勾"：勾了但区域模式不支持时，节点要
+        # 显示成灰虚线+绕行线（表示这一步会跳过），而不是亮起"已生效"。
+        self.step_bar.set_imposition_active(self.imposition_effective())
+        self._sync_imposition_switch(visible)
+
+    def _sync_imposition_switch(self, _visible=None) -> None:
+        """把三态判据的结果刷到拼版面板的启用开关上（可用性 + 原因）。
+
+        判据本身在 :meth:`_imposition_switch_state`；这里只负责落到控件：
+
+        - 置灰（``setEnabled(False)``）＋ tooltip 写明**为什么**——用户看到的是
+          "这一步现在用不上以及为什么"，不是"勾了没反应"；
+        - ``getattr`` 兜住"拼版面板还没构造"（``set_task`` 早期就调到这里）；
+          ``enable_switch=False`` 的宿主（独立拼图页）没有这个开关，安全跳过。
+        """
+        checkbox = getattr(self, "imposition_enabled_checkbox", None)
+        if checkbox is None:
+            return
+        usable, reason = self._imposition_switch_state()
+        checkbox.setEnabled(usable)
+        checkbox.setToolTip(
+            "启用后「生成 PDF」用拼版合成结果；不启用则从去底色直接生成 PDF"
+            if usable else reason
+        )
+        # ⚠️ **不取消勾选**（只在控件上取消会出现"控件未勾、盘上已勾"的
+        # 不一致：blockSignals 挡住了落盘信号，下次刷新又会显示成勾）。
+        # 保持"勾着但灰着"——用户改回支持拼版的区域模式就自动恢复生效，
+        # 这正是"条件决定是否生效"；tooltip 与步骤条的灰虚线+绕行线已经
+        # 说明它现在不会跑。
+        #
+        # 反过来也要**回填**：盘上才是准的（可能被历史恢复、任务列表等其他
+        # 入口改过），控件必须跟着走，否则会出现"盘上已勾、开关显示没勾"。
+        want = self._load_imposition_enabled()
+        if checkbox.isChecked() != want:
+            checkbox.blockSignals(True)
+            checkbox.setChecked(bool(want))
+            checkbox.blockSignals(False)
 
     def _refresh_imposition_node(self) -> None:
-        """按当前 area 决定拼版节点是否出现在流程条，并回填选择/生效状态。
+        """把拼版节点同步到流程条（可见性 + 选择态 + 生效态）。
 
-        触发时机：切任务（经 ``_select_stage``）、切阶段（经 ``_select_stage``）、
-        第三步面板参数变化（``_wire_rembg_panel`` 的去抖刷新）。area 离开 1
-        时节点消失；若用户正停在拼版详情上，退回第三步。
+        触发时机：切任务 / 切阶段（都经 ``_select_stage``）、**流程图保存后**
+        （:meth:`FlowMixin._apply_flow_diagram`）。
+
+        ⚠️ 可见性只看**流程图**（见 :meth:`_imposition_node_visible`），与第三步
+        的参数无关——所以第三步面板参数变化**不再**触发这里。节点从流程里
+        消失时，若用户正停在拼版详情上，退回第三步。
         """
         visible = self._imposition_node_visible()
         self._sync_imposition_step_bar()
-        if not visible and self.step_bar._current == IMPOSITION_INDEX:
-            self._select_stage(2)
+        # ⚠️ 用格序反查判断"当前是不是停在拼版"（旧代码写死
+        #    ``== IMPOSITION_INDEX``）：自定义流程里拼版的格序会变。
+        if not visible and self.step_at_index(self.step_bar._current) == IMPOSITION_STAGE:
+            self._select_stage(self._rembg_step_index())
 
     # ------------------------------------------------------------- 文档读写
     def _imposition_doc(self) -> dict:
@@ -205,7 +323,10 @@ class ImpositionBaseMixin:
         """
         source = self.store.stage_input(
             self.task_id, "print", "pages",
-            imposition_active=self.imposition_active(),
+            # ⚠️ 传"能不能真跑"而不是"勾没勾"：区域模式不支持（或图里没这一格）
+            #    时不该取拼版产物——历史脏数据（先勾了、后来改了区域模式）会
+            #    让第四步去读一个根本不该用的目录。
+            imposition_active=self.imposition_effective(),
         )
         # 连线表永远给得出路径（rembg_submit 是 print 的静态上游），
         # 但仍留一道兜底：将来若有人把静态上游摘掉，这里不该抛 AttributeError。
@@ -241,8 +362,13 @@ class ImpositionBaseMixin:
         view = getattr(self, "imposition_view", None)
         if view is not None and view.current_index() < 0 and view.pages():
             view.set_current(0)
-        self.control_stack.setCurrentIndex(IMPOSITION_INDEX)
-        self.preview_stack.setCurrentIndex(IMPOSITION_INDEX)
+        # ⚠️ 两个栈都按**页号**（``stack_index``）翻，不是步骤条格序：
+        #    拼版节点在步骤条上插在它该在的位置，但栈里仍占"伪步骤"那一页。
+        #    找不到（自定义流程删了拼版节点）就别动栈，交给调用方回退。
+        page = self.stack_index_of_step(IMPOSITION_STAGE)
+        if page is not None:
+            self.control_stack.setCurrentIndex(page)
+            self.preview_stack.setCurrentIndex(page)
         # ⚠️ 藏**整行**（action_row =「生成预览 + 提交本次任务」并排），不是
         #    单个按钮：只藏按钮的话行高仍在，控制区底部会留一条空白。
         self.action_row.setVisible(False)
@@ -319,7 +445,7 @@ class ImpositionBaseMixin:
         source = str(self.print_source_dir())
         if getattr(self, "_print_source_cache", None) == source:
             return
-        if self.preview_stack.currentIndex() != STAGES.index("print"):
+        if self.preview_stack.currentIndex() != self.stack_index_of_step("print"):
             self._print_source_cache = None
             # 第四步不可见：状态行/主按钮高亮留给进第四步时的那次刷新
             return

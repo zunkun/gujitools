@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 from qfluentwidgets import CaptionLabel, ToolButton
 from qfluentwidgets import FluentIcon as FIF
 
+from desktop.ui.widgets import mark_input_entry
 from desktop.workers import ImageListWorker, PreviewWorker, connect_queued
 from desktop.components.viewers.image_view import ImageView
 from desktop.components.viewers.image_zoom_dialog import (
@@ -26,6 +27,10 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
     current_changed = Signal(int, str)
     delete_requested = Signal()
     insert_requested = Signal()
+    #: 「选文件夹」按钮：宿主弹**目录**选择框，把一个文件夹批量插进来
+    #: （用户 2026-10-06）。⚠️ 与 :attr:`insert_requested` 分开是因为
+    #: ``QFileDialog`` 选不了目录，两者是不同的对话框、不同的语义。
+    insert_folder_requested = Signal()
     boxes_edited = Signal(str, list)  # (图片路径, 全部框坐标) 拖动结束后发出
     #: 选中框变化（-1 = 无选中）：宿主据此同步「选中框类型」控件
     selection_changed = Signal(int)
@@ -89,10 +94,24 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
             delete_btn.setToolTip("从页面清单删除所选图片")
             delete_btn.clicked.connect(self.delete_requested.emit)
             insert_btn = ToolButton(FIF.ADD)
-            insert_btn.setToolTip("插入外部图片到所选位置之后")
+            insert_btn.setToolTip("插入图片（可多选）")
             insert_btn.clicked.connect(self.insert_requested.emit)
+            # ⚠️ **「选文件夹」是独立按钮，不靠文件对话框顺带选目录**（用户
+            #    2026-10-06："是否可以选择目录"）。Qt 的 ``getOpenFileNames``
+            #    **不能**选目录（原生 Windows 对话框只接受文件），所以"把整个
+            #    扫描结果文件夹丢进来"这个最自然的批量用法**必须**有单独入口——
+            #    指望用户在文件对话框里选中文件夹是不成立的。
+            folder_btn = ToolButton(FIF.FOLDER)
+            folder_btn.setToolTip("把一个文件夹里的图片批量插入")
+            folder_btn.clicked.connect(self.insert_folder_requested.emit)
             buttons.addWidget(delete_btn)
             buttons.addWidget(insert_btn)
+            buttons.addWidget(folder_btn)
+            # ⚠️ ＋与📁 加**常驻红框**（用户 2026-10-06"左下角输入图片和目录
+            #    也用红色框住"）：它们是"给这一步喂图片"的入口，自定义流程
+            #    第一步不吃 PDF 时全靠它们。删除按钮**不标红**——删图不是入口。
+            for button in (insert_btn, folder_btn):
+                mark_input_entry(button)
             buttons.addStretch()
             left.addLayout(buttons)
         layout.addLayout(left)

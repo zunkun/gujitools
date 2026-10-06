@@ -66,9 +66,7 @@ class NameLabel(QLabel):
         统一走这个方法——hover 进入/离开都调它。
         """
         self._link_color = QColor(color)
-        super().setStyleSheet(
-            f"QLabel {{ color: {self._link_color.name()}; background:transparent; }}"
-        )
+        super().setStyleSheet(f"QLabel {{ color: {self._link_color.name()}; background:transparent; }}")
         self.update()  # 触发重绘，下划线颜色跟着变
 
     def linkColor(self) -> QColor:
@@ -85,10 +83,7 @@ class NameLabel(QLabel):
             self.setText(self._full)
             return
         fm = QFontMetrics(self.font())
-        self.setText(
-            fm.elidedText(self._full, Qt.TextElideMode.ElideMiddle, self.width())
-            or self._full
-        )
+        self.setText(fm.elidedText(self._full, Qt.TextElideMode.ElideMiddle, self.width()) or self._full)
 
     def paintEvent(self, event):
         """先让父类画文字，再在文字下方自绘一条同色下划线。
@@ -174,9 +169,9 @@ class TaskTable(QWidget):
     # 前多一个「拼版」胶囊（用户 2026-10-03：子任务有几个要看详情）。胶囊实际
     # 宽度 = 文字宽 + 30（见 ui.widgets.StatusChip.sizeHint），四个短名
     # （提取/检测/去底/拼版，各 2 字 ≈ 24px → 54px；PDF 3 字符更窄）合计
-    # ≈ 5×54 + 4×4（间隙）+ 2×8（边距）= 268，取 280 留余量。
+    # ≈ 5×54 + 4×4（间隙）+ 2×8（边距）= 268，取 300 留余量。
     # ⚠️ 胶囊用 QSizePolicy.Fixed，容器窄了会被裁；宁可留白也别截字。
-    _COLUMN_WIDTHS = [None, None, 168, 280, 132]
+    _COLUMN_WIDTHS = [None, None, 168, 300, 132]
 
     # 单元格文字的左右内边距（QCommonStyle 的 SE_ItemViewItemText 实测每个
     # 方向约 16px：56px 的列只剩 24px 能放字）
@@ -250,11 +245,7 @@ class TaskTable(QWidget):
         字体实测，字号/DPI 变了也跟得上。
         """
         metrics = QFontMetrics(self.table.font())
-        needed = (
-            metrics.horizontalAdvance("0000")
-            + 2 * self._CELL_TEXT_MARGIN
-            + 4  # 余量：不同字体/DPI 下的字宽差
-        )
+        needed = metrics.horizontalAdvance("0000") + 2 * self._CELL_TEXT_MARGIN + 4  # 余量：不同字体/DPI 下的字宽差
         return max(self._NUMBER_COLUMN_MIN, needed)
 
     def _on_cell_clicked(self, row: int, column: int) -> None:

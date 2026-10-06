@@ -42,7 +42,7 @@ def run(ctx) -> None:
     saved_stage = d.running_stage
     try:
         d.set_task(ctx.tid)
-        d._select_stage(3)                      # 停在第四步（生成PDF）
+        d._select_stage(d.bar_index_of_step("print"))                      # 停在第四步（生成PDF）
         pump(app, 3)
 
         def text() -> str:
@@ -120,7 +120,7 @@ def run(ctx) -> None:
         # ---- 6. 提交在跑时，第三步的步骤条是唯一的全局信号 ----
         d.running_stage = "rembg_submit"
         d._last_progress = (42, 91)
-        d._select_stage(3)                 # 用户切到第四步
+        d._select_stage(d.bar_index_of_step("print"))                 # 用户切到第四步
         d._refresh_stage_views()
         pump(app, 2)
         tile = d.step_bar.buttons[2]       # 第三步（去底/提交）

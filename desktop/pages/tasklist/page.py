@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""任务管理页：表格列表 + 导入PDF（先算指纹查重，确认后建任务并落副本/缩略图）。"""
+"""任务管理页：表格列表 + **创建任务**（弹窗选流程与PDF → 算指纹查重 → 建任务）。"""
 
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ from desktop.utils.files import default_open_dir
 STATUS_LABELS = T.STATUS_LABELS
 
 #: 页头副标题的默认文案；导入期间会被「正在导入 · …」临时顶掉（见 _show_import_status）
-HEADER_SUBTITLE = "导入 PDF 后按四个子任务依次处理"
+HEADER_SUBTITLE = "创建任务后按流程节点依次处理"
 
 
 class TaskListPage(QWidget, WorkerHost):
@@ -66,6 +66,9 @@ class TaskListPage(QWidget, WorkerHost):
     """
 
     open_detail = Signal(str)
+    #: 「创建任务」按钮被点了——宿主（壳层）切到**创建任务二级页**
+    #: （2026-10-06 起不再是模态弹窗）。
+    create_requested = Signal()
     #: 刚建好一条导入任务（源文件还没复制完、缩略图刚要开始渲）。
     #: 宿主据此**预热详情页**：用户下一步就是点进这一行，而详情页里惰性
     #: 构造的第四步面板要 ~150ms（机器空闲时）；等他在导入后台攥着 GIL 的
@@ -85,6 +88,13 @@ class TaskListPage(QWidget, WorkerHost):
         self.hash_thread: QThread | None = None
         self.hash_worker: HashWorker | None = None
         self._import_button: PrimaryPushButton | None = None
+        #: 当前挂着的「创建任务」弹窗（防GC；弹窗期间用户点不了列表）
+        self._create_dialog = None
+        #: **本次**建任务要用的自定义流程（BPM 驱动，M3）。None = 默认流程。
+        #⚠️ 建完任务立刻清空——留着会让下一个任务莫名其妙用上一份流程。
+        self._pending_diagram = None
+        #: 创建页填的任务名（空 = 回落源文件名）
+        self._pending_name = ""
         # ---- 导入后的后台活（复制源文件 + 整本缩略图）：串行队列 ----
         self._thumb_queue = SerialJobQueue(self)
         self._thumb_queue.job_started.connect(self._on_import_job_started)
@@ -119,7 +129,7 @@ class TaskListPage(QWidget, WorkerHost):
         manual_button.setIconSize(QSize(18, 18))
         manual_button.clicked.connect(self._open_manual)
         header.actions.addWidget(manual_button)
-        import_button = PrimaryPushButton(PDF_FILE, "导入 PDF")
+        import_button = PrimaryPushButton(PDF_FILE, "创建任务")
         import_button.setFixedHeight(34)
         import_button.clicked.connect(self.import_pdf)
         header.actions.addWidget(import_button)
@@ -161,8 +171,8 @@ class TaskListPage(QWidget, WorkerHost):
         empty_card = ui.Card(padding=0, spacing=0)
         self.empty_state = ui.EmptyState(
             "还没有任务",
-            "点击右上角「导入 PDF」选择一本书，系统会自动建立任务目录并生成逐页缩略图",
-            # ⚠️ 空状态文案讲的就是"导入 PDF"，配``FIF.DOCUMENT``（空文档）
+            "点击右上角「创建任务」选择一本书与任务流程，系统会自动建立任务目录并生成逐页缩略图",
+            # ⚠️ 空状态文案讲的就是"创建任务"，配``FIF.DOCUMENT``（空文档）
             #    会被读成"文档"——用带 PDF 字样的自绘图，语义才闭环。
             icon=PDF_FILE,
         )
@@ -338,23 +348,44 @@ class TaskListPage(QWidget, WorkerHost):
         self._page_size = page_size
         self._render()
 
-    # ------------------------------------------------------------------ 导入
-    def import_pdf(self) -> None:
-        """导入 PDF：选文件后后台算指纹并查重确认建任务。
+    # ------------------------------------------------------------------ 创建任务
+    def import_pdf(self) -> None:  # noqa: D401 - 见下方说明
+        """「创建任务」入口：**切到创建任务页**（不再弹模态窗）。
 
-        弹出文件框后若已有导入在跑则拒绝；否则起后台线程算内容指纹，
-        完成后回调按查重结果弹「创建新任务/定位已有任务」，命中也可建副本。
+        用户 2026-10-06：「创建任务不再是弹窗，而是进入二级页面」。本方法只
+        发信号，真正切页由壳层做（列表页不认识壳层）。
         """
-        # 默认从文档目录起步：传空串会回退到进程工作目录（打包后是程序所在目录）
-        filename, _ = QFileDialog.getOpenFileName(
-            self, "导入 PDF", str(default_open_dir()), "PDF (*.pdf)"
-        )
-        if not filename:
+        self.create_requested.emit()
+
+    def start_create(self, path: str, name: str, diagram,
+                      uses_custom: bool) -> None:
+        """创建任务页提交了 → 走**既有**的指纹/查重/建任务链路。
+
+        ⚠️ 这一页只负责收集输入（PDF、任务名、流程图），指纹计算、查重确认、
+        预热详情页都还在这里（逻辑一字未改）——创建页重做一遍只会引入两套
+        指纹/查重逻辑，那种重复历史上已经出过 bug。
+
+        :param path: PDF 路径；**空串 = 还没选 PDF**（用户 2026-10-06
+            「PDF 输入不是必须的」）。这时**跳过整个指纹/查重链路**直接建
+            任务：没有文件就无从算指纹，无从查重。空壳任务建好后进详情页，
+            那边有补选 PDF 的入口。
+        :param diagram: 自定义流程图（``None`` = 用默认流程模板）
+        :param uses_custom: 勾了「使用自定义任务流程」才传 ``diagram``
+        """
+        self._pending_diagram = diagram if uses_custom else None
+        self._pending_name = str(name or "").strip()
+        if not str(path or "").strip():
+            # 空壳任务：不等文件，直接建（名字留空 ⇒ store 用「任务#实际号」）
+            self._create_imported_task(Path(), "")
             return
         if self.hash_thread and self.hash_thread.isRunning():
-            self._toast("warning", "正在导入", "上一个文件指纹尚未计算完成，请稍候。")
+            self._toast("warning", "正在创建",
+                        "上一个文件指纹尚未计算完成，请稍候。")
             return
-        path = Path(filename)
+        self._start_import(Path(path))
+
+    def _start_import(self, path: Path) -> None:
+        """选定 PDF 之后：后台算指纹，完成后按查重结果建任务。"""
         self._import_button.setEnabled(False)
         # 指纹后台计算，完成后决定是否建任务（查重 → 确认）
         self.hash_thread = QThread(self)
@@ -389,6 +420,9 @@ class TaskListPage(QWidget, WorkerHost):
                         f"「{first['name']}」已在列表中选中",
                     )
                 self.refresh()
+                # ⚠️ 直接进那个任务的详情：用户刚走完"创建任务"这一页，
+                #    停在创建页上会以为还能继续点（查重已经否掉了这次创建）。
+                self.open_detail.emit(first["id"])
             return
         self._create_imported_task(path, source_hash)
 
@@ -425,12 +459,38 @@ class TaskListPage(QWidget, WorkerHost):
         - 多个渲染线程并行时主线程 ``create_task`` 中位从 5ms 涨到 929ms。
         所以：**先出行，再放后台干活**，且一次只跑一个。
         """
+        # ⚠️ 任务名：创建页填了就用它；留空回落到**源文件名**，连PDF 都没选
+        #    时回落到「任务#实际号」（两级回落都在 store.create_task 里，
+        #    用户 2026-10-06：「任务名称可以有默认的」「没填写可以是上传的
+        #    pdf 名称」）。改名入口在详情页页头的铅笔按钮。
+        task_name = self._pending_name
+        self._pending_name = ""
         task_id = self.store.create_task(
-            path, source_hash, path.stem, duplicate_confirmed=duplicate_confirmed
+            path if str(path or "").strip() else None,
+            source_hash,
+            task_name,
+            duplicate_confirmed=duplicate_confirmed,
+            # 创建任务弹窗选了「自定义流程」才传；None = 默认流程
+            # （store 内部从 ports 派生，见 TaskMixin.create_task）。
+            diagram=self._pending_diagram,
         )
+        # 流程是一次性的：只对**这一次**建的任务生效，别漏到下一个去
+        self._pending_diagram = None
         self.refresh()
         # 用户下一步必是点进这一行：趁"刚点完导入"的等待期把详情页建出来
         self.import_queued.emit()
+        # ⚠️ 直接进详情（用户 2026-10-06 第 4 条）：建完还停在列表页等于让
+        #    用户再点一次。app.py 已把本信号连到壳层的 open_detail。
+        self.open_detail.emit(task_id)
+        # ⚠️ **空壳任务没有 PDF**：不排队任何后台活——SourceThumbnailsWorker
+        #    会去开那个不存在的文件（白报错，还可能把整个串行队列卡住）。
+        #    补选 PDF 由详情页的入口负责（store.set_task_source）。
+        if not str(path or "").strip():
+            self._toast(
+                "info", "任务已创建",
+                "尚未选择 PDF，可在任务详情页右上角补选源文件。",
+            )
+            return
         # 逐页缩略图 + 源文件副本：后台生成，落到任务目录 thumbnails/ 与根目录，
         # 之后不再清理。渲染的是**副本**，源文件随后被移动/删除都不影响本任务。
         worker = SourceThumbnailsWorker(

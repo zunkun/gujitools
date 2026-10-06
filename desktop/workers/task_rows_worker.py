@@ -9,9 +9,11 @@
 与主线程的 store 访问不冲突。
 
 ⚠️ **每个任务的子任务数量不是固定的**（用户 2026-10-03 口径："任务列表子任务
-到底有几个需要根据详情决定"）：「图片拼版」是可选节点，只有在任务详情里勾了
-「在流程中启用图片拼版」才进流程，此时「PDF」前面多一个「拼版」胶囊；没勾的
-任务仍是四个。两处判据必须同源：
+到底有几个需要根据详情决定"）：胶囊**按本任务自己的流程图**给——图上有几步
+就有几枚，图上删掉的步骤不显示。叠加一条用户 2026-10-05 的口径：「图片拼版」
+要在**图里**且在详情里勾了「在流程中启用图片拼版」才进流程，此时「PDF」前面
+多一个「拼版」胶囊；没勾的、或流程图里没有这一格的，都不占子任务。两处判据
+必须同源：
 - **插不插 / 详情里流程走不走** → ``store.imposition_enabled()``（只看勾没勾，
   与 ``ImpositionMixin.imposition_active`` 同一口径）；
 - **胶囊的颜色** → 再叠一层"有没有拼版页"（绿=已能出图，灰=还没拼版）。
@@ -25,7 +27,6 @@ from PySide6.QtCore import QObject, Signal, Slot
 from desktop.store import (
     IMPOSITION_STAGE, STAGES, STAGE_LABELS, STAGE_SHORT,
 )
-from desktop.steps.ports import IMPOSITION_ANCHOR
 from desktop.ui import theme as T
 
 
@@ -70,30 +71,59 @@ class TaskRowsWorker(QObject):
         }
 
     def _stage_chips(self, task_id: str, states: dict) -> list[dict]:
-        """这一行的子任务胶囊（四个真实步骤 + 按详情决定要不要的拼版）。
+        """这一行的子任务胶囊——**按本任务自己的流程图**给。
 
-        拼版插在 :data:`~desktop.steps.ports.IMPOSITION_ANCHOR`（"print"）**之前**
-        ——与详情页流程条上节点的位置一致，别在这里数下标。
+        ⚠️ 2026-10-05 口径变更：以前硬编码 ``for stage in STAGES``（四个固定
+        阶段）+ 看 ``imposition_enabled`` 决定插不插拼版胶囊。后果是**改了
+        流程图，列表不变**：图上删掉「图片去底色」它照样显示"去底"，图上加了
+        新步骤它不显示——用户看到的"这条任务有几个子任务"与实际流程对不上。
+
+        现在走 ``store.task_slots(task_id)``（**流程图的界面投影，唯一真源**）：
+
+        - 顺序 = 步骤条格序（``bar_index``），不再靠"插在 print 之前"凑位置；
+        - 不在图里的阶段不出胶囊（``in_flow`` 兜底，双保险）；
+        - **拼版**要**在图里且已勾启用**才算一个子任务（用户 2026-10-03 口径
+          "子任务到底有几个需要根据详情决定"）：勾了但流程图里没有它 ⇒ 不生效
+          ⇒ 不占子任务；图里有但没勾 ⇒ 同样不占（与详情页那个灰色虚线一致）。
+
+        读不到流程图时**回落到四个静态阶段**（旧行为），后台线程不该因为
+        一个坏文件把整张列表刷不出来。
         """
+        chips: list[dict] = []
         try:
-            enabled = bool(self.store.imposition_enabled(task_id))
-        except Exception:  # noqa: BLE001 - 同上：读不到就当没启用
-            enabled = False
-        chips = []
-        for stage in STAGES:
-            if enabled and stage == IMPOSITION_ANCHOR:
-                chips.append(self._imposition_chip(task_id))
-            state = states[stage]
+            slots = list(self.store.task_slots(task_id))
+        except Exception:  # noqa: BLE001 - 同上：读不到流程就按旧的来
+            slots = []
+        if not slots:
+            from types import SimpleNamespace
+
+            slots = [SimpleNamespace(step=stage, stage=stage, optional=False,
+                                    bar_index=i)
+                     for i, stage in enumerate(STAGES)]
+        for slot in sorted(slots, key=lambda s: s.bar_index):
+            if slot.optional:
+                # 可选节点（拼版）：**在图里 + 已勾启用**才算一个子任务
+                try:
+                    enabled = bool(self.store.imposition_enabled(task_id))
+                except Exception:  # noqa: BLE001 - 同上：读不到就当没启用
+                    enabled = False
+                if enabled:
+                    chips.append(self._imposition_chip(task_id))
+                continue
+            stage = slot.stage or slot.step
+            state = states.get(stage)
+            if state is None or not state.get("in_flow", True):
+                continue
             status = state["status"]
             progress = (
                 f" {state['done']}/{state['total']}" if state["total"] else ""
             )
             chips.append(
                 {
-                    "short": STAGE_SHORT[stage],
+                    "short": STAGE_SHORT.get(stage, slot.step),
                     "status": status,
                     "tip": (
-                        f"{STAGE_LABELS[stage]}："
+                        f"{STAGE_LABELS.get(stage, slot.step)}："
                         f"{T.STATUS_LABELS.get(status, status)}{progress}"
                     ),
                 }
