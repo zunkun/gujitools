@@ -58,6 +58,7 @@ core（命令定义、reporter）   →   utils（纯算法：box_geometry、ima
 | 桌面参数面板默认值 | `desktop/components/panels/params_spec.py` |
 | 步骤元数据（文案/过滤串/输出规则/导航/流程角色） | `desktop/steps/spec.py::SPECS`（`STAGES`/`MODULES`/`PANEL_CLASSES` 全部派生） |
 | 任务流程连线（BPM 边表） | `desktop/steps/ports.py::SUPPLIERS`；落点表 `STAGE_LOCATIONS` |
+| 「这一步能不能跑」的就绪判据 | `desktop/steps/ports.py::stage_blocking_inputs`（**不是** `stage_inputs` 那份静态声明） |
 | 流程图模型（**唯一真源**，含任意节点类型/DI 坐标/折点/边标签） | `desktop/steps/bpmn_diagram.py::FlowDiagram`（读/写 `tasks/<id>/flow.bpmn`） |
 | 流程图渲染（只读，照文件画） | `desktop/components/bpmn_view.py::BpmnView`（`paintEvent` 自绘；网关菱形、结束事件双圈） |
 | 流程图编辑（拖拽/连线/增删/改名） | `desktop/components/bpmn_editor.py::BpmnEditor`（继承 `BpmnView`） |

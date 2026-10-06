@@ -290,6 +290,24 @@ class PageListMixin:
         stage = self.stage_at_stack_index(self.preview_stack.currentIndex())
         return self.detect_viewer if stage == "detect" else self.extract_result_viewer
 
+    def _refresh_downstream_preview(self, source_step: str) -> None:
+        """改了 ``source_step`` 那一格的图，顺手把它的下游预览也刷一遍。
+
+        ⚠️ 此前这里写死 ``preview_stack.currentIndex() == 0`` ⇒
+        ``_refresh_preview(1)``：``0``/``1`` 是**默认流程**里 extract/detect 的
+        栈页号。自定义流程把 detect 放第一位时，"extract 改完顺手刷 detect"
+        就变成了"extract 改完把 extract 自己再刷一遍"，而 detect 的预览压根
+        没刷新（用户看到的仍是旧图）。现在按 **step key** 查页号。
+
+        只有当 ``source_step`` 那一格**正被看着**时才刷下游——不是无脑全刷。
+        """
+        if self.stage_at_stack_index(self.preview_stack.currentIndex()) \
+                != source_step:
+            return
+        index = self.stack_index_of_step("detect")
+        if index is not None:
+            self._refresh_preview(index)
+
     def _viewer_index_to_manifest_index(self, viewer, row: int) -> int:
         """把预览区的行号换算成页面清单里的下标。
 
@@ -328,8 +346,7 @@ class PageListMixin:
         self.store.save_pages(self.task_id, self.pages)
         self.log_view.append(f"已删除页面：{removed.get('label')}")
         self._refresh_preview()
-        if self.preview_stack.currentIndex() == 0:
-            self._refresh_preview(1)
+        self._refresh_downstream_preview("extract")
 
     def insert_pages_from_folder(self) -> None:
         """「选文件夹」按钮：把**一个目录**里的图片批量插进来（用户 2026-10-06）。
@@ -519,8 +536,10 @@ class PageListMixin:
             self._toast("warning", "部分图片插入失败", errors[0][1])
         self.log_view.append(note)
         self._refresh_preview()
-        if self.preview_stack.currentIndex() == 0:
-            self._refresh_preview(1)
+        self._refresh_downstream_preview("extract")
+        # ⚠️ 插完图"缺入口图片"可能就解除了：红字/高亮/提示层要当场收掉，
+        #    不能等下次进任务才对（与 _apply_source 补完 PDF 同一个道理）
+        self._refresh_source_actions()
 
     # ------------------------------------------------------------------ 杂项
     def _image_selected(self, index: int, path_text: str) -> None:
@@ -533,24 +552,42 @@ class PageListMixin:
             )
 
     # ------------------------------------------------------- 补选源 PDF
+    def _entry_input_kind(self) -> str:
+        """本任务流程**入口那一步**要用户提供什么：``"pdf"/"images"/""``。
+
+        ⚠️ 判据只有一份：:func:`desktop.steps.ports.flow_entry_input_kind`
+        （用户 2026-10-06 三条规则的唯一实现处——①「图片提取」打头只显示
+        PDF；②检测/排版/去底色/生成PDF 打头只显示图片+文件夹；③非第一个
+        流程节点不配输入控件）。没有任务时按**默认流程**给（入口是
+        「图片提取」⇒ ``"pdf"``），与 :meth:`flow_slots` 的兜底同源。
+        """
+        from desktop.steps.ports import flow_entry_input_kind
+
+        if not getattr(self, "task_id", None):
+            from desktop.steps.scheduler import load_default_diagram
+
+            return flow_entry_input_kind(load_default_diagram())
+        return flow_entry_input_kind(self.store.task_diagram(self.task_id))
+
     def _missing_source(self) -> bool:
         """这个任务**现在缺源 PDF 吗**（该催用户补 PDF）。
 
         ⚠️ 两个条件都要满足，缺一不可：
-        ①**流程里真的要 PDF**（`flow_needs_source_pdf`：用户可能自定义流程
-        删掉了「提取图片」，那整条流程不碰源文件，催他上传毫无意义）；
-        ②**这个任务确实没有**（`source_path is None`，即"还没选"而不是
+        ①**流程入口要 PDF**（``_entry_input_kind() == "pdf"``）。2026-10-06
+        新口径：输入控件只跟着**第一个流程节点**走——「图片提取」不是入口
+        时页头连 PDF 按钮都不显示，红字/提示自然也不能催 PDF，否则指向一个
+        不存在的按钮（旧判据 ``flow_needs_source_pdf`` 问"流程里**任何**一步
+        要不要 PDF"，extract 挪到中间时就会催一个藏起来的按钮）；
+        ②**这个任务确实没有**（``source_path is None``，即"还没选"而不是
         "文件丢了"——文件丢了是另一条错误提示，不该混进这条）。
 
-        判据与创建页**共用** :func:`desktop.steps.ports.flow_needs_source_pdf`，
-        ①那一半走 :meth:`_flow_needs_source_pdf`（同一个方法，别在两处各判）。
         ⚠️ "缺 PDF"与"缺入口图片"是**两件不同的事**（用户 2026-10-06）：
         自定义流程把「检测文本框」放第一步时压根不碰 PDF，这时该催的是
         "往输入目录放图"。合并判据见 :meth:`_missing_input_kind`。
         """
         if self.source_path is not None:
             return False
-        return self._flow_needs_source_pdf()
+        return self._entry_input_kind() == "pdf"
 
     def _missing_entry_images(self) -> bool:
         """这个任务**现在缺入口图片吗**（该催用户上传图）。
@@ -562,16 +599,13 @@ class PageListMixin:
         空着的话，第一步就无从下手——而界面一点提示都没有，用户只能对着空的
         预览区猜。
 
-        判据 = **流程需要入口图片**（`flow_needs_entry_images`：入口阶段不吃
-        源 PDF）**且入口目录里确实没有图**。⚠️ 两个都要：用户放过图之后就不该
-        再被催。
+        判据 = **流程入口要图片**（``_entry_input_kind() == "images"``，与
+        ``flow_needs_entry_images`` 同判：入口阶段不吃源 PDF）**且入口目录里
+        确实没有图**。⚠️ 两个都要：用户放过图之后就不该再被催。
         """
         if not self.task_id:
             return False
-        from desktop.steps.ports import flow_needs_entry_images
-
-        diagram = self.store.task_diagram(self.task_id)
-        if not flow_needs_entry_images(diagram):
+        if self._entry_input_kind() != "images":
             return False
         return not self._entry_dir_has_images()
 
@@ -588,9 +622,10 @@ class PageListMixin:
     def _missing_input_kind(self) -> str:
         """当前缺哪种输入：``"pdf"`` / ``"images"`` / ``""``（什么都不缺）。
 
-        ⚠️ **PDF 优先**：两种都缺时先说 PDF，因为入口图片那一步往往要等
-        提取出来才有意义（默认流程就是 extract 打头）。用户处理完 PDF 之后
-        下一轮自然会看到"缺图片"的提示。
+        ⚠️ 入口只吃一样东西（:meth:`_entry_input_kind`），所以两种缺
+        **互斥**：入口要 PDF 就只可能缺 PDF，要图片就只可能缺图片。
+        （"PDF 优先"的旧排序已随"判据跟着入口走"作废——extract 不在入口
+        时连 PDF 按钮都不显示，不存在"两种都缺"。）
 
         ⚠️ 界面**所有**"缺输入"的表现都走这一个判据（按钮高亮 / 页头红字 /
         提示层文案）——散成两处各判各的，漂移起来就是"红字说缺图、弹窗说缺
@@ -641,37 +676,53 @@ class PageListMixin:
         }
 
     def _refresh_source_actions(self) -> None:
-        """按"缺不缺源 PDF"调页头的**按钮显隐 + 高亮 + 红字 + 提示语**。
+        """按**流程入口要什么输入**调页头三颗按钮的显隐 + 高亮 + 红字 + 提示语。
 
-        ⚠️ **PDF 按钮在"流程不吃 PDF"时整颗藏起来**（用户 2026-10-06：
-        "不需要上传 pdf 的流程右侧不需 pdf 上传图标"）——那种流程里没有
-        「提取图片」，源文件毫无用处，摆个按钮在那儿纯粹是噪声，还会让人
-        以为这步要 PDF。
-        ⚠️ 判据是 :func:`ports.flow_needs_source_pdf`（**问图**），不是"这个
-        任务有没有 PDF"：判据搞反的话，**空壳任务**（还没选 PDF、但流程要
-        PDF）会把补救入口一起藏掉，用户就再也没法自己补了——那正是它恒可见
-        的原因。所以这里只在"流程压根不碰 PDF"时藏，其余情况恒可见。
+        用户 2026-10-06 的三条规则，判据唯一来源 :meth:`_entry_input_kind`：
+          ①「图片提取」打头 ⇒ **只显示 PDF 按钮**——提取的输入是源 PDF，
+            摆着图片/目录入口会让人以为这一步要喂图；
+          ②检测/排版/去底色/生成PDF 打头 ⇒ **PDF 按钮整颗藏起来**，只留
+            图片 + 文件夹两个红框入口（用户："不显示 pdf，只显示图片输入
+            和文件输入"）；
+          ③这些输入控件只属于**第一个流程节点**——没有功能入口（打头的
+            节点没接功能）⇒ 三颗全藏；预览区左下角的「＋/📁」也只在入口
+            那一步的查看器上出现（见 :meth:`_sync_viewer_input_entries`）。
+
+        ⚠️ **显隐与"缺不缺"是两回事**：按钮在不缺时也得住着（补选/换 PDF、
+        再补几张图都靠它），高亮和红字才跟着 :meth:`_missing_input_kind`
+        走。判据搞反的话，空壳任务（还没选 PDF 但流程要）会把补救入口一起
+        藏掉，用户就再也没法自己补了。
         """
         button = getattr(self, "source_button", None)
         insert = getattr(self, "insert_button", None)
+        insert_dir = getattr(self, "insert_dir_button", None)
         # ⚠️ **所有"缺输入"的表现都读这一个判据**（``_missing_input_kind``）。
         #    缺的不只是 PDF：自定义流程第一步是「检测文本框」时该催的是
         #    "上传图片"（用户 2026-10-06），那时高亮的必须是**图片按钮**。
         kind = self._missing_input_kind()
-        # ---- PDF 按钮：流程不吃 PDF 时整颗藏起来 ----
-        needs_pdf = self._flow_needs_source_pdf()
+        entry_kind = self._entry_input_kind()
+        # ---- 显隐：入口要 PDF ⇒ 只亮 PDF；要图片 ⇒ 只亮两个图片入口 ----
+        needs_pdf = entry_kind == "pdf"
+        needs_images = entry_kind == "images"
         if button is not None:
             button.setVisible(needs_pdf)
+        if insert is not None:
+            insert.setVisible(needs_images)
+        if insert_dir is not None:
+            insert_dir.setVisible(needs_images)
+        # ---- 高亮：缺什么亮什么 ----
         _set_tool_highlight(button, needs_pdf and kind == "pdf")
-        # ⚠️⚠️ 插图按钮**同时**带"常驻红框"（入口标识）与"缺图片时高亮"
+        # ⚠️⚠️ 图片入口**同时**带"常驻红框"（入口标识）与"缺图片时高亮"
         #    （动态提醒），而 ``_set_tool_highlight(button, False)`` 会
         #    ``setStyleSheet("")`` ——**把常驻红框一起抹掉**（用户 2026-10-06
         #    要求"都是红色框住"，那红框不能只在缺图时才出现）。
         #    所以：先按动态判据走一遍，**再无条件重贴常驻红框**。
         #    ⚠️ 别"优化"成两者只用一个——那会退回"入口看不出该点哪儿"。
-        _set_tool_highlight(insert, kind == "images")
-        if insert is not None:
-            mark_input_entry(insert)
+        #    （选目录按钮原先没进这套——它同样是图片入口，缺图时一样该亮。）
+        for entry_button in (insert, insert_dir):
+            _set_tool_highlight(entry_button, kind == "images")
+            if entry_button is not None:
+                mark_input_entry(entry_button)
         # ---- 按钮提示语：跟着"缺什么"变（不变会指错方向）----
         if button is not None:
             button.setToolTip(
@@ -691,21 +742,62 @@ class PageListMixin:
         #    比如 store 侧直接改的）
         if not kind:
             self._dismiss_source_prompt()
+        # ---- 左下角「＋/📁」跟随同一个入口判据（规则③）----
+        self._sync_viewer_input_entries()
 
-    def _flow_needs_source_pdf(self) -> bool:
-        """**本任务的流程**要不要源 PDF（问图；没任务时按"要"处理）。
+    def _sync_viewer_input_entries(self) -> None:
+        """预览区左下角「＋/📁」跟随流程入口（用户 2026-10-06 规则③）。
 
-        ⚠️ 与 :meth:`_missing_source` 里的同名判据是**同一份**
-        （``ports.flow_needs_source_pdf``），别在两处各判一次。
-        没有任务时给 ``True``：构造期 ``source_button`` 还没确定该不该显，
-        按"要"走等于保持原样，等 :meth:`set_task` 调
-        :meth:`_refresh_source_actions` 时再按真实流程定。
+        这些按钮与页头那对是**同一个动作**（都往任务清单插图片），过滤口径
+        必须一致：只在**入口那一步**的查看器上出现，且入口得吃图片——
+
+        - 入口是「图片提取」⇒ 提取页的输入是 PDF（规则①），它自己那页
+          **不显示**图片入口；
+        - 入口不是某一步 ⇒ 那一步的查看器**不存在**这些输入控件（规则③），
+          它的输入来自上游产物；
+        - 入口是「检测文本框」这类吃图的 ⇒ 只有它的查看器亮出「＋/📁」。
+
+        ⚠️ 步骤→查看器走 ``StepSpec.preview_attr``（与方向键翻页同一份映射），
+        这里别再写第二份 ``stage → 控件属性名`` 表。
+        ⚠️ 空态文案只改**非入口**步骤的查看器：入口那一步的文案在构造处
+        已经说对了该干什么（extract「执行本子任务」/ detect「点下方＋」），
+        用"等上游"去覆盖反而指错方向——入口没有上游。
         """
-        if not getattr(self, "task_id", None):
-            return True
-        from desktop.steps.ports import flow_needs_source_pdf
+        from desktop.steps.ports import flow_entry_stage, spec_for_stage
 
-        return flow_needs_source_pdf(self.store.task_diagram(self.task_id))
+        #: 入口步骤自己的空态文案（与 view.py 构造处一致；入口不该被改写）
+        entry_hints = {
+            "extract": "尚未提取，点击右侧「执行本子任务」",
+            "detect": "暂无图片，请点下方「＋」插入图片或整个文件夹，"
+                      "或把图片放进本任务的输入目录",
+        }
+        entry_kind = self._entry_input_kind()
+        diagram = (
+            self.store.task_diagram(self.task_id)
+            if getattr(self, "task_id", None) else None
+        )
+        entry = flow_entry_stage(diagram) if diagram is not None else None
+        for stage in ("extract", "detect"):
+            spec = spec_for_stage(stage)
+            attr = spec.preview_attr if spec else ""
+            viewer = getattr(self, attr, None) if attr else None
+            if viewer is None:
+                continue
+            visible = entry_kind == "images" and stage == entry
+            if hasattr(viewer, "set_insert_visible"):
+                viewer.set_insert_visible(visible)
+            if hasattr(viewer, "set_empty_hint"):
+                if stage == entry:
+                    # 入口那一步：恢复构造时的说法（要图就说点＋，要 PDF
+                    # 就说去执行）——它没有"上游"可等
+                    viewer.set_empty_hint(entry_hints.get(stage, ""))
+                else:
+                    # 输入入口藏起来后，"请点下方「＋」插入图片"就指错方向
+                    # 了：非入口步骤的图来自上游，话术跟着换成"等上游执行"。
+                    viewer.set_empty_hint(
+                        "暂无图片：这一步的输入来自上游步骤，"
+                        "执行上游后这里会显示结果"
+                    )
 
     def _prompt_missing_source(self) -> None:
         """进任务详情时**提示**该上传 PDF（用户 2026-10-06）。

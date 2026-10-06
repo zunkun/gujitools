@@ -165,8 +165,15 @@ class RunMixin:
         时通常只画一个「图片去底色」节点。若按"图里有没有这个节点"判，会把
         提交那一动作判成"不在流程里"⇒ 进度条上"已提交"的绿点不亮。
 
-        读盘失败（文件坏/无任务）一律**当作"只有四个静态阶段"**：宁可少报，
-        不可抛——调用方在后台线程里用它渲染整张列表。
+        读盘失败（文件坏/无任务）一律**当作"一个阶段也不在流程里"**（空集）：
+        调用方（列表胶囊、``stage_states`` 的 ``in_flow`` 标记）据此不显示、
+        不断言，**而不是**伪造四个默认阶段——以前这里回 ``set(STAGES)``，
+        读不到流程的任务在列表里会冒出四个默认胶囊，用户还以为"默认流程
+        又出现了"（而 ``task_slots`` 读不到时列表 worker 那边是另一套伪造，
+        两边伪造的还可能对不上）。
+
+        ⚠️ 键集合不受影响：:meth:`stage_states` 照旧建四个静态键（调用方硬
+        索引），只是 ``in_flow`` 全是 False。
         """
         from desktop.steps import ports
 
@@ -174,7 +181,7 @@ class RunMixin:
             steps = {slot.step for slot in self.task_slots(task_id)
                      if not slot.optional}
         except Exception:  # noqa: BLE001 - 读不到流程不该拖垮调用方
-            return set(STAGES)
+            return set()
         return {stage for stage, step in ports.STAGE_STEPS.items()
                 if step in steps}
 

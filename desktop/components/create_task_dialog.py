@@ -22,12 +22,11 @@
 
     创建任务
     [ ] 使用自定义任务流程        ← 决定用哪份流程
-    说明文字（随勾选变化）
+    说明文字（随勾选变化，含步骤串——"当前流程"由它承担）
     ────────────────────────────
     选择 PDF   [选择文件…]  已选择：xxx.pdf     ← 两种模式都要选 PDF
     ────────────────────────────
-    当前流程：默认任务流程 / 自定义任务流程      ← 恒定显示，这就是"当前流程"
-    [编辑流程] [恢复默认流程]                  ← 仅自定义模式可用
+    [编辑流程] [恢复默认流程]                  ← 仅自定义模式可用（右对齐）
     ┌ 流程节点图（按 bpmn 文件渲染）┐
     └───────────────────────────┘
     共 4 步：提取图片 → 检测文本框 → 图片拼版 → 生成 PDF
@@ -86,12 +85,8 @@ DIALOG_TITLE = "创建任务"
 #: 生成 PDF"，与 ``task_default.bpmn`` 实际内容**各说各话**（用户 2026-10-05
 #: 明确指出："默认流程必须跟 task_default.bpmn 一样……不要你自己设计默认流程"）。
 #: 现在步骤串一律从文件读，写错的可能性被结构性消除。
-DEFAULT_HINT_PREFIX = (
-    "使用默认任务流程（下方节点图就是它，来自 task_default.bpmn）："
-)
-CUSTOM_HINT = (
-    "使用自定义任务流程（下方节点图来自 task_detail.bpmn，点「编辑流程」可改）："
-)
+DEFAULT_HINT_PREFIX = "使用默认任务流程："
+CUSTOM_HINT = "使用自定义任务流程（点「编辑流程」可改）："
 #: 自定义初值文件缺失时的告警（⚠️ 缺了它「自定义」会退化成与默认一样）
 CUSTOM_MISSING_HINT = (
     "⚠ 找不到 desktop/static/task_detail.bpmn，自定义模式暂用默认流程；"
@@ -109,9 +104,8 @@ def default_hint(diagram: FlowDiagram) -> str:
     from desktop.components.flow_dialog import summarize
 
     return DEFAULT_HINT_PREFIX + summarize(diagram)
-#: 流程区标题（按模式换）
-DEFAULT_FLOW_TITLE = "当前流程：默认任务流程（task_default.bpmn）"
-CUSTOM_FLOW_TITLE = "当前流程：自定义任务流程（task_detail.bpmn 起，可编辑）"
+
+
 #: 流程区的最小高度（节点图比它高时由滚动区接管）
 FLOW_MIN_HEIGHT = 240
 
@@ -174,7 +168,16 @@ class CreateTaskPanel(QWidget):
     #: "该清的都要清"，创建页的槽对两种情况一视同仁，所以不必区分。
     pdf_cleared = Signal(object)
 
-    def __init__(self, parent=None, flow: FlowDiagram | None = None):
+    def __init__(self, parent=None, flow: FlowDiagram | None = None, *,
+                 outer_margins: bool = True):
+        """``outer_margins``：要不要自带外层留白（默认带，弹窗形态需要）。
+
+        ⚠️ 内嵌进**创建任务页**时传 ``False``：页面根布局已有
+        ``SPACE_XL`` 边距，面板再 pad 一层就成了"任务名称顶格、创建任务
+        多缩进 24px"的双层缩进（用户 2026-10-06 截图确认）。与
+        ``ImpositionPanel(enable_switch=…)`` 同一条纪律——宿主专属的布局
+        差异用构造参数声明，组件不猜自己在哪。
+        """
         super().__init__(parent)
         # ⚠️ 自定义模式的**初值**取 ``desktop/static/task_detail.bpmn``（用户
         # 在 bpm.md 里点名的文件）。它是**整张图**（含坐标），页面照着它渲染
@@ -185,6 +188,7 @@ class CreateTaskPanel(QWidget):
         self._default_diagram = self._load_default_diagram()
         self._pdf: Path | None = None
         self._editor = None
+        self._outer_margins = bool(outer_margins)
         self._build_ui()
         self._refresh_mode()
 
@@ -197,9 +201,11 @@ class CreateTaskPanel(QWidget):
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(
-            T.SPACE_XL, T.SPACE_LG, T.SPACE_XL, T.SPACE_LG
-        )
+        if self._outer_margins:
+            layout.setContentsMargins(T.SPACE_XL, T.SPACE_LG, T.SPACE_XL, T.SPACE_LG)
+        else:
+            # 页面宿主已给外层边距，这里全归零（见 __init__ 说明）
+            layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(T.SPACE_MD)
 
         title = StrongBodyLabel(DIALOG_TITLE)
@@ -246,20 +252,21 @@ class CreateTaskPanel(QWidget):
         pick_row.addStretch(1)
         layout.addLayout(pick_row)
 
-        # ---- 当前流程：**恒定显示**（用户要求：无论勾不勾都要告诉用户）----
-        flow_title_row = QHBoxLayout()
-        flow_title_row.setSpacing(T.SPACE_SM)
-        self.flow_title = StrongBodyLabel(DEFAULT_FLOW_TITLE)
-        ui.apply_to(self.flow_title, T.SIZE_LABEL, color=T.INK)
-        flow_title_row.addWidget(self.flow_title)
-        flow_title_row.addStretch()
+        # ---- 「编辑流程/恢复默认流程」按钮行（右对齐）----
+        # ⚠️ 原来这行左边还有一个「当前流程：默认/自定义任务流程」标题
+        #    （用户 2026-10-06 要求删掉）：上面 mode_hint 已经说了用哪条流程
+        #    （默认模式是完整步骤串，自定义模式点名"自定义任务流程"），再摆
+        #    一行标题是重复信息。只留右侧两个按钮。
+        flow_button_row = QHBoxLayout()
+        flow_button_row.setSpacing(T.SPACE_SM)
+        flow_button_row.addStretch()
         self.edit_button = PushButton("编辑流程")
         self.edit_button.clicked.connect(self._on_edit_flow)
-        flow_title_row.addWidget(self.edit_button)
+        flow_button_row.addWidget(self.edit_button)
         self.reset_button = PushButton("恢复默认流程")
         self.reset_button.clicked.connect(self._on_reset_flow)
-        flow_title_row.addWidget(self.reset_button)
-        layout.addLayout(flow_title_row)
+        flow_button_row.addWidget(self.reset_button)
+        layout.addLayout(flow_button_row)
 
         self.flow_view = BpmnView(self._default_diagram)
         scroll = QScrollArea()
@@ -293,7 +300,12 @@ class CreateTaskPanel(QWidget):
         layout.addWidget(self._editor_host, 1)
 
         # ---- 底部按钮 ----
-        buttons = QHBoxLayout()
+        # ⚠️ 包一层容器而不是直接 addLayout：编辑流程时要把**整行**藏起来
+        #    （内嵌编辑器自带「关闭/保存流程」，两排确认按钮同屏会让人不知
+        #    点哪组——用户 2026-10-06 截图反馈），QLayout 没有可靠的整行显隐。
+        self._button_bar = QWidget()
+        buttons = QHBoxLayout(self._button_bar)
+        buttons.setContentsMargins(0, 0, 0, 0)
         buttons.addStretch()
         self.cancel_button = PushButton("取消")
         self.cancel_button.clicked.connect(self.reject)
@@ -301,7 +313,7 @@ class CreateTaskPanel(QWidget):
         self.confirm_button = PrimaryPushButton("创建任务")
         self.confirm_button.clicked.connect(self.submit)
         buttons.addWidget(self.confirm_button)
-        layout.addLayout(buttons)
+        layout.addWidget(self._button_bar)
 
         self._refresh_confirm()
 
@@ -317,24 +329,20 @@ class CreateTaskPanel(QWidget):
         """
         custom = self.uses_custom_flow()
         if custom:
-            self.mode_hint.setText(
-                CUSTOM_MISSING_HINT if self._custom_init_missing else CUSTOM_HINT)
+            self.mode_hint.setText(CUSTOM_MISSING_HINT if self._custom_init_missing else CUSTOM_HINT)
         else:
             self.mode_hint.setText(default_hint(self._default_diagram))
-        self.flow_title.setText(CUSTOM_FLOW_TITLE if custom else DEFAULT_FLOW_TITLE)
         self.edit_button.setVisible(custom)
         self.reset_button.setVisible(custom)
         self.confirm_button.setText("确认流程并创建" if custom else "创建任务")
         self.flow_view.set_diagram(self.current_diagram())
         # 换图后高度可能变（默认 8 节点 vs 自定义 4 节点），给个贴合的最小高度
-        self.flow_scroll.setMinimumHeight(
-            max(FLOW_MIN_HEIGHT, self.flow_view.sizeHint().height() + 24))
+        self.flow_scroll.setMinimumHeight(max(FLOW_MIN_HEIGHT, self.flow_view.sizeHint().height() + 24))
         self._flow_summary_update()
 
     def current_diagram(self) -> FlowDiagram:
         """当前**显示**的图（未勾=默认流程，勾了=自定义流程）。"""
-        return self._custom_diagram if self.uses_custom_flow() \
-            else self._default_diagram
+        return self._custom_diagram if self.uses_custom_flow() else self._default_diagram
 
     # ------------------------------------------------------------ 选 PDF
     def _on_pick_pdf(self) -> None:
@@ -343,9 +351,7 @@ class CreateTaskPanel(QWidget):
         ⚠️ 用**原生** ``QFileDialog``（不设 ``DontUseNativeDialog``）——
         项目硬规则：「资源管理器」指的是原生选择对话框，不是浏览窗口。
         """
-        filename, _ = QFileDialog.getOpenFileName(
-            self, "选择 PDF", str(default_open_dir()), "PDF (*.pdf)"
-        )
+        filename, _ = QFileDialog.getOpenFileName(self, "选择 PDF", str(default_open_dir()), "PDF (*.pdf)")
         if not filename:
             return
         self.set_pdf(Path(filename))
@@ -423,9 +429,14 @@ class CreateTaskPanel(QWidget):
         from desktop.components.flow_dialog import FlowPanel
 
         if self._editor is None:
-            panel = FlowPanel(self._custom_diagram, self, editable=True,
-                              reset_factory=load_custom_init,
-                              embedded=True, close_window=False)
+            panel = FlowPanel(
+                self._custom_diagram,
+                self,
+                editable=True,
+                reset_factory=load_custom_init,
+                embedded=True,
+                close_window=False,
+            )
             panel.done.connect(self._on_editor_done)
             self._editor = panel
             self._editor_layout.addWidget(panel)
@@ -446,15 +457,20 @@ class CreateTaskPanel(QWidget):
 
         ⚠️ 面板没有"预览/编辑"两层容器（2026-10-05 改成"恒定显示当前流程"
         之后就没有 ``content_stack`` 了），所以这里显隐的是这一组控件：
-        标题、图、摘要、编辑/恢复两个按钮。⚠️ 漏掉任何一个都会在编辑时
-        露出来——图和标题同时可见，用户以为没切进编辑。
+        图、摘要、编辑/恢复两个按钮，**以及底部按钮行**——编辑器自带
+        「关闭/保存流程」，两排确认按钮同屏分不清哪组管哪层（用户
+        2026-10-06）。⚠️ 漏掉任何一个都会在编辑时露出来——图和按钮同时
+        可见，用户以为没切进编辑。
         """
         custom = self.uses_custom_flow()
-        for widget in (self.flow_title, self.flow_scroll, self.flow_summary):
+        for widget in (self.flow_scroll, self.flow_summary):
             widget.setVisible(visible)
         # 「编辑流程/恢复默认」只在自定义模式下出现（默认流程没得编）
         self.edit_button.setVisible(visible and custom)
         self.reset_button.setVisible(visible and custom)
+        # 底部「取消/确认流程并创建」只在预览态出现（编辑态由编辑器的
+        # 「保存流程/关闭」接管，保存后自动回到预览态）
+        self._button_bar.setVisible(visible)
 
     def _on_reset_flow(self) -> None:
         """恢复默认流程：回到**初值文件**那一份（``task_detail.bpmn``）。"""
@@ -465,8 +481,7 @@ class CreateTaskPanel(QWidget):
         self._custom_diagram = diagram
         if self.uses_custom_flow():
             self.flow_view.set_diagram(diagram)
-            self.flow_scroll.setMinimumHeight(
-                max(FLOW_MIN_HEIGHT, self.flow_view.sizeHint().height() + 24))
+            self.flow_scroll.setMinimumHeight(max(FLOW_MIN_HEIGHT, self.flow_view.sizeHint().height() + 24))
             self._flow_summary_update()
 
     def _flow_summary_update(self) -> None:
@@ -547,12 +562,15 @@ class CreateTaskDialog:
         #    塞不进本面板这么成套的内容。统一走 dialog_shell（见该模块说明）。
         # own_chrome=True：面板自带标题与底部按钮（``confirm_button`` 等），
         # 外壳不再重复加一套——两套标题两排按钮会很难看。
-        #⚠️ 面板**不要**传 parent：它是外壳的内容控件，parent 给外壳即可，
+        # ⚠️ 面板**不要**传 parent：它是外壳的内容控件，parent 给外壳即可，
         #    自己再挂一层会出现"控件被 reparent 两次"，尺寸失真。
         self.panel = CreateTaskPanel(None, flow)
         self.dialog = shell_dialog(
-            DIALOG_TITLE, self.panel, parent,
-            size=(980, 760), own_chrome=True,
+            DIALOG_TITLE,
+            self.panel,
+            parent,
+            size=(980, 760),
+            own_chrome=True,
         )
         # ⚠️ 面板**只发信号不碰窗口**（它可能被内嵌进页面，那时
         #    ``self.window()`` 是那一页，自己关会把整页关没），所以关窗
@@ -580,8 +598,16 @@ class CreateTaskDialog:
 
 
 __all__ = [
-    "CUSTOM_FLOW_TITLE", "CUSTOM_HINT", "CUSTOM_INIT_FILE", "CUSTOM_MISSING_HINT",
-    "CreateTaskDialog", "CreateTaskPanel", "DEFAULT_FLOW_TITLE",
-    "DEFAULT_HINT_PREFIX", "DIALOG_TITLE", "EMPTY_PDF_HINT",
-    "custom_init_missing", "custom_init_path", "default_hint", "load_custom_init",
+    "CUSTOM_HINT",
+    "CUSTOM_INIT_FILE",
+    "CUSTOM_MISSING_HINT",
+    "CreateTaskDialog",
+    "CreateTaskPanel",
+    "DEFAULT_HINT_PREFIX",
+    "DIALOG_TITLE",
+    "EMPTY_PDF_HINT",
+    "custom_init_missing",
+    "custom_init_path",
+    "default_hint",
+    "load_custom_init",
 ]

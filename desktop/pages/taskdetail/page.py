@@ -38,8 +38,9 @@ from desktop.services.font_catalog import start_background_scan
 from desktop.services.stale_chain import stale_upstream
 from desktop.steps import ports
 from desktop.steps.flow import FlowDefinition
+from desktop.steps.spec import FLOW_STAGES
 from desktop.store import (
-    IMPOSITION_INDEX, IMPOSITION_LABEL, IMPOSITION_STAGE, STAGES, STAGE_LABELS,
+    IMPOSITION_LABEL, IMPOSITION_STAGE, STAGE_LABELS,
 )
 from desktop.ui import theme as T
 from desktop.ui.toast import show_toast
@@ -210,6 +211,33 @@ class TaskDetailPage(
         start_background_scan()
 
     # ------------------------------------------------------------------ 任务切换
+    def _warn_if_flow_degraded(self, task_id: str) -> None:
+        """本任务的流程图**读不出来时已回落默认模板** ⇒ 明确告诉用户一次。
+
+        ⚠️ 这是"自定义流程里总是冒出默认流程"这类报障**唯一**能自证的线索。
+        ``store.task_diagram`` 在三种失败形态下都会回落默认模板（文件缺失 /
+        XML 坏 / **一个步骤名都认不出**），而回落是**静默**的——用户看到的
+        现象与"我没改过它"完全一样，最隐蔽的一种是他在 bpmn.io 里改了节点名，
+        阶段按名接不回，整张自定义图被判成坏图。
+
+        ⚠️ 同一次 :meth:`set_task` 只弹一次（``set_task`` 一条链上会被
+        ``flow_slots`` 读很多次流程图，别弹成刷屏）。
+        """
+        reason = self.store.flow_degraded_reason(task_id)
+        if not reason:
+            self._flow_warned_for = None
+            return
+        if getattr(self, "_flow_warned_for", None) == task_id:
+            return
+        self._flow_warned_for = task_id
+        self._toast(
+            "warning", "流程已临时按默认显示",
+            f"{reason}。\n\n"
+            "本任务的界面暂时按**默认流程**显示（步骤条、执行顺序、取图目录"
+            "都按默认那套算）。请到「查看 / 编辑流程」里把流程修好——在修好之前，"
+            "改动这份流程不会有任何效果。",
+        )
+
     def set_task(self, task_id: str) -> bool:
         """切换当前任务：复位所有阶段面板与运行态，避免跨任务泄漏。
 
@@ -294,6 +322,7 @@ class TaskDetailPage(
         self.detail_title.setText(task["name"])
         self.source_label.setText(
             self.source_path.name if self.source_path else "尚未选择 PDF")
+        self._warn_if_flow_degraded(task_id)
         self._refresh_source_actions()
         # 切任务时先把各阶段面板复位到默认：这些面板是长生命周期控件，
         # 上个任务手改过的参数（area/border/type/zoom…）否则会带到新任务上，
@@ -302,9 +331,9 @@ class TaskDetailPage(
         #    `widget(i).reset_to_default()` 会经属性转发把面板全部现造出来，
         #    进详情页的时间就又回到"要为没进去的步骤买单"（用户明确要求
         #    第 2/3/4 步谁进去谁才建）。没建的面板本来就没动过，无需复位。
-        #    ⚠️ 只遍历真实阶段（len(STAGES)）：第 5 位是「图片拼版」占位面板，
+        #    ⚠️ 只遍历真实阶段（len(FLOW_STAGES)）：控制栈末尾是「图片拼版」占位面板，
         #    没有参数也没有 reset_to_default，混进来就是 AttributeError。
-        for index in range(len(STAGES)):
+        for index in range(len(FLOW_STAGES)):
             host = self.control_stack.widget(index)
             peek = getattr(host, "peek", None)
             panel = peek() if callable(peek) else host
@@ -475,18 +504,15 @@ class TaskDetailPage(
 
         ⚠️ 步骤条上那一格的 ``bar_index`` 就是 :attr:`StepBar._current` 的
         语义；``stack_index`` 才是 ``control_stack`` / ``preview_stack`` 的页号。
-        两者在默认流程下与旧的 ``STAGES[index]`` / ``IMPOSITION_INDEX``
-        逐值相等（自测 ``detail_structure`` 钉死），所以换流程不用改栈的建页。
+        两者在默认流程下与旧的 ``STAGES[index]`` 逐值相等（自测 ``detail_structure``
+        钉死），所以换流程不用改栈的建页。
         """
         if not getattr(self, "task_id", None):
             # 没任务时给**默认模板**的槽位（静态展示）。⚠️ 与任务态同源：
             # 任务态走 store.task_slots（也是读 bpmn 文件），口径不会漂。
             from desktop.steps.scheduler import load_default_diagram
 
-            fallback = load_default_diagram()
-            if fallback.nodes:
-                return fallback.stage_slots()
-            return FlowDefinition.default().stage_slots()
+            return load_default_diagram().stage_slots()
         return self.store.task_slots(self.task_id)
 
     def step_at_index(self, index: int) -> str | None:
@@ -527,6 +553,20 @@ class TaskDetailPage(
                 return slot.bar_index
         return None
 
+    def flow_entry_step(self) -> str | None:
+        """本流程**第一个真实步骤**的 step key（跳过可选节点）。
+
+        ⚠️ "第一步"在自定义流程里不是"静态步骤表的第一格"——预热面板、
+        缺输入提示等都得问图（``bar_index == 0`` 的那一格）。
+
+        ⚠️ 刻意**跳过可选节点**：拼版永远是占位详情页（``mapped`` 语义上
+        不算真正的入口步骤），否则"第一步是拼版"会让预热去建一个占位面板。
+        """
+        for slot in sorted(self.flow_slots(), key=lambda s: s.bar_index):
+            if not slot.optional and slot.mapped:
+                return slot.step
+        return None
+
     def stage_at_stack_index(self, page: int) -> str | None:
         """``control_stack`` / ``preview_stack`` **页号** → 运行阶段。
 
@@ -546,6 +586,30 @@ class TaskDetailPage(
         """
         index = self.bar_index_of_step("rembg")
         return 0 if index is None else index
+
+    def panel_host_of_step(self, step: str):
+        """界面步骤 key → ``control_stack`` 里那一页的宿主控件。
+
+        ⚠️ **取别的步骤的面板只有这一个入口**（MEMORY「三套下标」）：两个栈是
+        按 ``FLOW_STAGES + OPTIONAL_STEPS`` 一次建好**固定页数**的，所以
+        ``control_stack.widget(2)`` 恰好是「图片去底色」——那是"静态步骤表
+        顺序"的性质，**不是**流程图的性质。自定义流程一旦换序、``SPECS``
+        一旦增删一步，它就读错面板；流程里压根没有那一步时还会**把不在流程
+        里的面板构造出来**（破坏"谁进去谁才建"，还会读到用户没填过的参数）。
+
+        本流程没有这一步 ⇒ 返回 ``None``，调用方必须自己降级（别再兜一个
+        "随便哪一步"——那正是界面说 A、执行做 B 的来源）。
+
+        ``step`` 是**界面步骤 key**（``extract``/``detect``/``rembg``/``print``），
+        不是运行阶段 key（``rembg_submit`` 请传 ``"rembg"``）。
+        """
+        index = self.stack_index_of_step(step)
+        if index is None or index < 0:   # NO_PAGE = -1
+            return None
+        stack = getattr(self, "control_stack", None)
+        if stack is None or index >= stack.count():
+            return None
+        return stack.widget(index)
 
     def stack_index_of_step(self, step: str) -> int | None:
         """界面步骤 key → 两个栈的页号；这一步不在本流程里返回 ``None``。"""
@@ -567,7 +631,15 @@ class TaskDetailPage(
         """
         current = self.step_bar._current
         stage = self.stage_at_index(max(current, 0))
-        return stage if stage is not None else STAGES[0]
+        if stage is not None:
+            return stage
+        # ⚠️ 兜底走**本流程**第一格，不是 ``STAGES[0]``（那是静态步骤表的
+        #    第一格 = 恒为 extract）。自定义流程里压根没有 extract 时，回退到
+        #    一个不在流程里的阶段会让进度/参数回填全都打到别的步骤上。
+        for slot in sorted(self.flow_slots(), key=lambda s: s.bar_index):
+            if not slot.optional and slot.mapped:
+                return slot.stage
+        return None
 
     def navigate_by_arrow(self, forward: bool) -> bool:
         """方向键切换当前步骤的页面（主窗口 ←/→ 转发入口）。
@@ -827,8 +899,15 @@ class TaskDetailPage(
         if self.running_stage != "rembg_submit":
             return
         done, total = self._last_progress
+        # ⚠️ **查表，别写死 2**：提交折叠在「图片去底色」那一格，而那一格的
+        #    格序随流程走（自定义流程里它可能是第 1 格）。写死 2 在那条流程下
+        #    会把进度显示到别的节点上（同 ``runner`` 里那两处已改用
+        #    ``stack_index_of_step``）。
+        index = self.bar_index_of_step("rembg")
+        if index is None:
+            return
         self.step_bar.set_step_status(
-            2, "running", (done, total) if total else None,
+            index, "running", (done, total) if total else None,
             completed=states["rembg"]["completed"],
         )
 

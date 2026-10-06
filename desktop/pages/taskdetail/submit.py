@@ -46,10 +46,13 @@ class SubmitMixin:
         return None
 
     def _rembg_submit_version_state(self) -> str:
+        rembg_host = self.panel_host_of_step("rembg")
         state = rembg_submit_version_state(
             preview_run=self._latest_success_run("rembg"),
             submit_run=self._latest_success_run("rembg_submit"),
-            panel_args=self.control_stack.widget(2).get_args(),
+            # ⚠️ 流程里没有「图片去底色」这一格 ⇒ 没有可比对的表单参数，
+            #    传空字典（别借别的面板，那是一份用户没填过的值）。
+            panel_args=rembg_host.get_args() if rembg_host else {},
             preview_param_keys=self.PREVIEW_PARAM_KEYS,
         )
         if state == UP_TO_DATE and self._preview_edited_after_submit():
@@ -162,10 +165,21 @@ class SubmitMixin:
                     "本流程第一步不吃 PDF，请点页头的图片按钮选择图片，"
                     "或把图片放进任务目录下的 stages/input。",
                 )
-            else:
+            elif kind == "pdf":
+                # ⚠️ 指页头按钮前先确认它**在**（用户 2026-10-06 规则③：
+                #    输入控件只属于第一个流程节点；「图片提取」打头才显示）。
                 self._toast(
                     "warning", "尚未选择 PDF",
                     "点页头的「选择 PDF」按钮为本任务补上源文件，之后才能执行。",
+                )
+            else:
+                # 与 runner._run_stage_unchecked 同一个口径（用户 2026-10-06
+                # 规则③）：入口不吃 PDF 也不缺图时别再指"选择 PDF"——那种
+                # 流程里按钮是藏着的，指过去就是"点了没反应"。
+                self._toast(
+                    "warning", "这一步的输入还没就位",
+                    "这一步的输入由流程上游提供：先把它的上游步骤执行完，"
+                    "或到「查看 / 编辑流程」里检查连线。",
                 )
             return
         # 必须以最近一次「生成预览」成功为前提（旧图残留/失败/中断均拒绝提交）
@@ -178,7 +192,14 @@ class SubmitMixin:
                    f"（当前状态：{STATUS_LABELS.get(preview_state, preview_state)}）"),
             )
             return
-        panel = self.control_stack.widget(2)  # rembg 面板
+        panel = self.panel_host_of_step("rembg")
+        if panel is None:
+            self._toast(
+                "warning", "这一步不在流程里",
+                "当前任务的流程图里没有「图片去底色」，请先在「查看 / 编辑流程」"
+                "里把它加回来。",
+            )
+            return
         try:
             args = panel.get_args()
         except ValueError as exc:

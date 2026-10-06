@@ -152,6 +152,16 @@ class ImpositionViewWidget(QWidget):
         """
         self.page_list.set_page_thumbs(thumbs)
 
+    def set_thumb_at(self, index: int, image) -> None:
+        """只给**第 ``index`` 页**贴缩略图（"一张张到齐"的回填走这里）。
+
+        ⚠️ 别用 :meth:`set_page_thumbs` 做批量回填：它会遍历**全部**条目，
+        而每条都要重跑一次缩放——380 张陆续到达就是 7.2 万次（用户
+        2026-10-06 报"拼板阶段程序卡死"）。转发见
+        :meth:`ImpositionPageList.set_thumb_at`。
+        """
+        self.page_list.set_thumb_at(index, image)
+
     def pages(self) -> list[dict]:
         return list(self._pages)
 

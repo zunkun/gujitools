@@ -110,7 +110,13 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
             # ⚠️ ＋与📁 加**常驻红框**（用户 2026-10-06"左下角输入图片和目录
             #    也用红色框住"）：它们是"给这一步喂图片"的入口，自定义流程
             #    第一步不吃 PDF 时全靠它们。删除按钮**不标红**——删图不是入口。
-            for button in (insert_btn, folder_btn):
+            # ⚠️ 显隐归**宿主**：这些输入控件只属于流程的**入口**那一步
+            #    （用户 2026-10-06 规则③"非第一个流程节点，不存在这些输入
+            #    控件"），入口吃什么由宿主按 :func:`ports.flow_entry_input_kind`
+            #    决定后调 :meth:`set_insert_visible`。组件构造时默认显示，
+            #    免得宿主忘了调就一直没入口。
+            self._insert_buttons = (insert_btn, folder_btn)
+            for button in self._insert_buttons:
                 mark_input_entry(button)
             buttons.addStretch()
             left.addLayout(buttons)
@@ -150,6 +156,30 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
     def navigate(self, forward: bool) -> None:
         """方向键翻页（详情页 ←/→ 调用；联动预览刷新，见 ThumbStrip.navigate）。"""
         self.strip.navigate(forward)
+
+    def set_insert_visible(self, visible: bool) -> None:
+        """「＋/📁」两个**图片输入入口**的显隐（宿主按流程入口决定）。
+
+        ⚠️ 只动这两个，**不碰**🗑：删图是清单管理，不是"喂图片"的入口，
+        在哪一步都该有（详情页把它留在原地，见构造处的红框注释）。
+        ``editable=False`` 的查看器没有这两个按钮，静默忽略。
+        """
+        for button in getattr(self, "_insert_buttons", ()):
+            button.setVisible(visible)
+
+    def set_empty_hint(self, hint: str) -> None:
+        """换空态文案（输入入口藏起来后，"请点下方「＋」"就指错方向了）。
+
+        当前正空着的话立刻把两处占位（缩略图条 + 大图）一起换掉；有图时
+        只存着，等下次清空自然用新文案。⚠️ 占位要**清了重加**：
+        ``add_placeholder`` 是追加语义，直接再调会叠出两条占位条目。
+        """
+        self._empty_hint = hint
+        if self._paths:
+            return
+        self.strip.clear()
+        self.strip.add_placeholder(hint)
+        self.view.clear_image(hint)
 
     def set_images(self, paths: list[Path | str], boxes_map: dict | None = None) -> None:
         """设置页面清单并重建缩略图条；清单未变则仅通知宿主重读。

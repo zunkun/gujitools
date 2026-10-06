@@ -103,8 +103,8 @@ def run(ctx) -> None:
        and slots["imposition"].bar_index < slots["print"].bar_index,
        str({s.step: s.bar_index for s in repo.task_slots(tid)}))
     ok("可选节点插在第 2 个真实步骤之后（与改造前一致）",
-       repo.task_flow(tid).optional_after("imposition") == 2,
-       str(repo.task_flow(tid).optional_after("imposition")))
+       repo.task_diagram(tid).optional_after("imposition") == 2,
+       str(repo.task_diagram(tid).optional_after("imposition")))
 
     # 步骤条实物：4 步 + 可选节点夹在第三/第四之间（左右都是连接件）
     show_detail(ctx, stage=0)
@@ -165,8 +165,8 @@ def run(ctx) -> None:
 
         # 可选节点异位：现在插在**第一个真实步骤之后**（布局下标 2）
         ok("自定义流程：拼版插在第 0 个真实步骤之后",
-           repo.task_flow(tid).optional_after("imposition") == 0,
-           str(repo.task_flow(tid).optional_after("imposition")))
+           repo.task_diagram(tid).optional_after("imposition") == 0,
+           str(repo.task_diagram(tid).optional_after("imposition")))
         node_pos = d.step_bar._row.indexOf(d.step_bar.imposition_slot)
         ok("自定义流程：可选节点布局位置随流程改变",
            node_pos == 2, f"pos={node_pos}")
@@ -215,18 +215,135 @@ def run(ctx) -> None:
         ok("越界格序 → 页面回落到有效步骤而不是崩",
            d.current_stage() in (s.step for s in repo.task_slots(tid)),
            d.current_stage())
+
+        # ---------------------------------------------------------------- 5
+        # ⚠️⚠️ 步骤条下标**只有一种语义 = 格序 bar_index**（用户 2026-10-06
+        # 报"bug 非常多"的根因之一，**默认流程下就已经错**）。
+        #
+        # 旧实现给 StepItem 的是"真实步骤的序数"，与格序只差"可选节点之前"
+        # 那一段。默认流程 slots = extract0/detect1/rembg2/imposition3/print4，
+        # 于是「生成 PDF」序数 3、格序 4，两处后果：
+        #   ① 点「生成 PDF」发出去 3 → 宿主按格序查表得到**图片拼版**
+        #      （点一个步骤打开另一个步骤）；
+        #   ② ``set_step_status(4)`` 撞上 ``0 <= 4 < len(buttons)==4`` 被
+        #      **静默 return**，生成 PDF 的状态/进度/打勾从来不上屏。
+        #
+        # 这三条必须**逐个点按钮**验：旧自测全用 ``set_current(2)`` /
+        # ``_select_stage(2)``，那落在"序数 == 格序"的巧合区（可选节点之前），
+        # 所以一直没红。
+        _custom_slots = {s.step: s for s in repo.task_slots(tid)}
+        _expect = [
+            (item, _custom_slots.get(step))
+            for item, step in zip(
+                d.step_bar.buttons,
+                [s.step for s in sorted(repo.task_slots(tid),
+                                        key=lambda s: s.bar_index)
+                 if not s.optional],
+            )
+        ]
+        ok("自定义流程：每个 StepItem 的 index 就是它的格序（不是序数）",
+           all(item.index == slot.bar_index for item, slot in _expect
+               if slot is not None),
+           str([(i.index, s.bar_index) for i, s in _expect if s is not None]))
+
+        _bad_click = []
+        for item, slot in _expect:
+            if slot is None:
+                continue
+            item.clicked.emit(item.index)   # ⚠️ 走真实信号（带参数）
+            pump(app, times=2)
+            if d.current_stage() != slot.step:
+                _bad_click.append((item.index, slot.step, d.current_stage()))
+        ok("自定义流程：点每个按钮都落到**它自己**那一步（不再跳到拼版）",
+           not _bad_click, str(_bad_click))
+
+        _bad_status = []
+        for slot in repo.task_slots(tid):
+            if slot.optional or not slot.mapped:
+                continue
+            d.step_bar.reset_statuses()
+            d.step_bar.set_step_status(slot.bar_index, "success")
+            pump(app, times=2)
+            lit = [i for i, b in enumerate(d.step_bar.buttons)
+                   if b._badge_status == "success"]
+            want = [i for i, b in enumerate(d.step_bar.buttons)
+                    if b.index == slot.bar_index]
+            if lit != want:
+                _bad_status.append((slot.step, slot.bar_index, lit, want))
+        ok("自定义流程：按格序设状态，亮的就是那一格（可选节点之后的步骤也上屏）",
+           not _bad_status, str(_bad_status))
+
+        _bad_light = []
+        for slot in repo.task_slots(tid):
+            if slot.optional or not slot.mapped:
+                continue
+            d.step_bar.set_current(slot.bar_index)
+            pump(app, times=2)
+            lit = [i for i, b in enumerate(d.step_bar.buttons) if b.current]
+            want = [i for i, b in enumerate(d.step_bar.buttons)
+                    if b.index == slot.bar_index]
+            if lit != want:
+                _bad_light.append((slot.step, slot.bar_index, lit, want))
+        ok("自定义流程：按格序设当前步，高亮的也是那一格",
+           not _bad_light, str(_bad_light))
     finally:
         # 复原成默认流程，**必须重新 set_task** 才能把步骤条也恢复成 4 步，
         # 否则共享的 ctx.d 会给后续模块留一个 3 步的怪状态。
-        from desktop.steps.flow import FlowDefinition, default_flow_path
+        from desktop.steps.flow import default_flow_path
+        from desktop.steps.scheduler import load_default_diagram
 
-        FlowDefinition.default().save(default_flow_path(repo.task_dir(tid)))
-        getattr(repo, "_flow_cache", {}).clear()
+        load_default_diagram().save(default_flow_path(repo.task_dir(tid)))
         d.set_task(tid)
         show_detail(ctx, stage=0)
         pump(app)
         ok("复原：步骤条回到 4 个真实步骤", len(d.step_bar.buttons) == 4,
            str(len(d.step_bar.buttons)))
+
+        # ---- 同样的三条，在**默认流程**上再钉一遍 ----
+        # ⚠️ 这一段才是那个 bug 的现场（默认流程：print 序数 3 / 格序 4）。
+        # 放在"复原"之后断言，才是真的在跑默认流程。
+        _d_slots = {s.step: s for s in repo.task_slots(tid)}
+        ok("默认流程：可选节点之后的步骤，格序与序号**不再相等**"
+           "（这正是那条 bug 的成因）",
+           _d_slots["print"].bar_index == len(d.step_bar.buttons)
+           and _d_slots["print"].bar_index != len(d.step_bar.buttons) - 1,
+           f"print.bar_index={_d_slots['print'].bar_index} "
+           f"buttons={len(d.step_bar.buttons)}")
+
+        _d_bad = []
+        for item in d.step_bar.buttons:
+            item.clicked.emit(item.index)
+            pump(app, times=2)
+            slot = next((s for s in repo.task_slots(tid)
+                         if s.bar_index == item.index), None)
+            if slot is None or d.current_stage() != slot.step:
+                _d_bad.append((item.index, d.current_stage()))
+        ok("默认流程：点每个按钮都落到它自己那一步（生成PDF 不再打开拼版）",
+           not _d_bad, str(_d_bad))
+
+        d.step_bar.reset_statuses()
+        d.step_bar.set_step_status(_d_slots["print"].bar_index, "success")
+        pump(app, times=2)
+        _lit = [i for i, b in enumerate(d.step_bar.buttons)
+                if b._badge_status == "success"]
+        ok("默认流程：「生成 PDF」的状态能上屏（不再被静默 return 吃掉）",
+           len(_lit) == 1 and d.step_bar.buttons[_lit[0]].index
+           == _d_slots["print"].bar_index,
+           f"lit={_lit} bar={_d_slots['print'].bar_index}")
+
+        d.step_bar.set_current(_d_slots["print"].bar_index)
+        pump(app, times=2)
+        _hl = [i for i, b in enumerate(d.step_bar.buttons) if b.current]
+        ok("默认流程：按格序选中「生成 PDF」，高亮落在它身上",
+           len(_hl) == 1 and d.step_bar.buttons[_hl[0]].index
+           == _d_slots["print"].bar_index,
+           f"highlight={_hl}")
+
+        # 面板取用只有一个入口，且流程外的步骤返回 None（不构造面板）
+        ok("panel_host_of_step 取得到流程内的面板",
+           d.panel_host_of_step("rembg") is not None)
+        show_detail(ctx, stage=0)
+        pump(app)
 
 
 __all__ = ["NAME", "DEPENDS", "TITLE", "run"]

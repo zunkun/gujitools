@@ -49,9 +49,13 @@ STAGE_SHORT = {key: spec_by_key(key).short_name() for key in STAGES}
 #: ``stage`` / ``optional`` 的原因。
 IMPOSITION_STAGE = OPTIONAL_STEPS[0]
 IMPOSITION_LABEL = spec_by_key(IMPOSITION_STAGE).stage_name()
-#: 伪步骤在流程条上的下标：跟在四个真实步骤之后（控制栈/预览栈里同样占
-#: 第 5 位——占位详情面板与占位预览）。
-IMPOSITION_INDEX = len(STAGES)
+#: 🗑 **已删**：``IMPOSITION_INDEX``（= ``len(STAGES)``，即"拼版占第 5 位"）。
+#:
+#: 它是 BPM 改造**之前**的固定顺序口径：BPM 化后拼版插在哪一格由流程图决定
+#: （``FlowDiagram.optional_after`` / 槽位表的 ``bar_index``），这个常量既没人
+#: 用（``page.py`` 只 import 它、没有任何实际引用）又和真源矛盾——留在那儿
+#: 就是给下一个人留一个"看起来能用"的默认流程假设。查格序一律走
+#: ``TaskDetailPage.bar_index_of_step(IMPOSITION_STAGE)``。
 
 # 「图片拼版」**不是 STAGES 里的一步**（它是可选节点），但任务列表的「子任务
 # 状态」胶囊会按任务详情里的启用情况把它插进去，所以上面两张文案表都得有它。
@@ -64,19 +68,34 @@ STAGE_SHORT[IMPOSITION_STAGE] = spec_by_key(IMPOSITION_STAGE).short_name()
 #: ⚠️ 「提交本次任务」（rembg_submit）不是独立步骤，而是第三步 rembg 面板上的
 #: 动作：它的进度必须显示在第三步。有了这张表，界面才谈得上"只有当前这一步的
 #: 进度才上屏"（详见 desktop/pages/taskdetail/runner.py::_progress_belongs_here）。
-STAGE_STEP = {
-    "extract": "extract",
-    "detect": "detect",
-    "rembg": "rembg",
-    "rembg_submit": "rembg",
-    "print": "print",
-}
+STAGE_STEP = ports.STAGE_STEPS
+"""运行阶段 → 界面步骤（**别名** ``ports.STAGE_STEPS``，不是第二份）。
+
+⚠️ 此前这里是一份手写字典，与 :data:`desktop.steps.ports.STAGE_STEPS` 同源却
+不同步：漏了 ``imposition``、少了一个键就静默靠 ``.get(s, s)`` 兜底。今天两份
+逐值相同只是巧合——`ports` 那份是真源（``bpmn_diagram`` / ``flow`` / ``tasks``
+都用它），store 属于下层却反向持有一份，属于层次倒挂。现在直接别名，加/改一步
+只改 :data:`desktop.steps.spec.SPECS` 一处。
+"""
 
 
 class TaskMixin:
     """任务索引读写与任务目录/阶段输出目录的路径推导。"""
 
     root: Path
+
+    #: ``任务号 → 流程降级原因``（见 :meth:`task_diagram` / :meth:`flow_degraded_reason`）。
+    #:
+    #: ⚠️ **必须是每实例一份**，不能放类属性当默认值：键是任务号，而自测里
+    #: 一堆临时 store 都用 ``0001`` 这类同名任务 ⇒ 类属性会让 A 任务降级的
+    #: 原因"传染"给 B 任务。惰性建在实例上（见 :meth:`_degraded_map`）。
+    _flow_degraded: dict[str, str] | None = None
+
+    def _degraded_map(self) -> dict[str, str]:
+        """本实例的降级原因表（惰性建，避免覆盖类属性默认值）。"""
+        if self._flow_degraded is None:
+            self._flow_degraded = {}
+        return self._flow_degraded
 
     # ---------- tasks.json ----------
     def _tasks_path(self) -> Path:
@@ -157,6 +176,7 @@ class TaskMixin:
         flow: FlowDefinition | None = None,
         flow_layout: FlowLayout | None = None,
         diagram=None,
+        template_flow=None,
     ) -> str:
         """
         新建任务并返回任务号（四位零填充）。
@@ -165,9 +185,14 @@ class TaskMixin:
         占用则继续顺延。创建时会预建 stages/runs/thumbnails/source
         子目录，但不复制源文件（由 copy_source_to_task 负责）。
 
-        ``flow`` / ``flow_layout`` 是**自定义流程**（创建任务弹窗传进来，
-        见 ``docs/tasks/bpm.md`` 的 M3）：给了就把本任务自己的 ``flow.bpmn``
-        写成这份、坐标落进 BPMN DI 段；不给就是默认流程（从 ports 派生）。
+        ``diagram`` 是**自定义流程图**（创建任务页传进来，见 ``docs/tasks/bpm.md``）：
+        给了就把本任务自己的 ``flow.bpmn`` 写成这张图（节点类型 + 坐标 + 折点）。
+        不给就**字节拷贝**默认模板 ``task_default.bpmn``——默认流程的真源是那个
+        文件，不是代码（见 bpm.md「铁律」）。
+
+        ⚠️ ``flow`` / ``flow_layout`` 是**旧模型**（``FlowDefinition``）的入口，
+        只为兼容旧调用方保留；**新的调用方一律走 ``diagram``**。给 ``flow`` 时
+        会经 ``template_flow`` 落盘（那条路会丢掉 ``guji:port``，别用）。
 
         ⚠️ **取号靠"目录创建的原子性"，不靠"先查后建"**（2026-09-26 审计）：
         单例守卫是**按构建目录**判定的，开发版与安装版会同时运行、共用同一个
@@ -215,6 +240,12 @@ class TaskMixin:
         try:
             if diagram is not None:
                 diagram.save(default_flow_path(task_dir))
+            elif template_flow is not None:
+                template_flow.save(default_flow_path(task_dir))
+            elif flow is not None:
+                # 旧调用方兼容：FlowDefinition 自己能序列化，只是会丢
+                # ``guji:port``（新调用方请走 diagram / 模板字节拷贝）。
+                flow.save(default_flow_path(task_dir), flow_layout)
             else:
                 # ⚠️ 没给图就**原样拷贝默认模板文件**（不是重新序列化）：
                 # 模板才是真源，而 `FlowDiagram` 不建模连线上的端口标记
@@ -226,15 +257,18 @@ class TaskMixin:
                 if template.is_file():
                     copy_file_atomic(template, default_flow_path(task_dir))
                 else:
-                    fallback = load_default_diagram()
-                    if fallback.nodes:
-                        fallback.save(default_flow_path(task_dir))
-                    else:
-                        chosen = (flow if flow is not None
-                                  else FlowDefinition.default())
-                        chosen.save(default_flow_path(task_dir), flow_layout)
-        except OSError:
-            pass
+                    # 🗑 模板文件也缺 ⇒ **不写** flow.bpmn。此前这里会拿
+                    # `FlowDefinition.default()`（从 ports 边表**派生**的第三份
+                    # 默认流程）序列化一份——那正是"代码设计默认流程"，与
+                    # 「默认流程 = task_default.bpmn」的铁律冲突。留空文件时
+                    # 读取端会回落 `load_default_diagram()`（同样是空图）并
+                    # 走降级告警，比悄悄换一份流程更诚实。
+                    pass
+        except OSError as exc:
+            # ⚠️ 别再静默 ``pass``：写盘失败意味着这个任务**永远没有**自己的
+            #    流程图，之后每次读都回落默认流程——用户看到的是"我编的流程
+            #    莫名其妙变回默认的"，而且没有任何线索。至少留一条日志。
+            self._log_flow_write_error(task_id, exc)
 
         tasks = self._load_tasks_index()
         # ⚠️ 源文件可缺省（用户 2026-10-06「PDF 输入不是必须的」）：存空串，
@@ -444,110 +478,88 @@ class TaskMixin:
         """print 阶段产物 print.pdf 的完整路径。"""
         return self.artifact(task_id, "print", "pdf")
 
-    def task_flow(self, task_id: str) -> FlowDefinition:
-        """本任务的**流程定义**（BPM 驱动的运行时载体）。
-
-        优先读 ``tasks/<任务号>/flow.bpmn``（建任务时由默认流程生成，可被
-        自定义流程替换）；文件缺失、被手编坏（非法 XML / 未知阶段）一律
-        **回落默认流程**——任务必须保持可用，坏文件不能拖死整个页面。
-        按 mtime 做小缓存：外部编辑器改完文件下一次进来就能生效。
-        """
-        path = default_flow_path(self.task_dir(task_id))
-        cache = getattr(self, "_flow_cache", None)
-        if cache is None:
-            cache = self._flow_cache = {}
-        try:
-            stamp = path.stat().st_mtime_ns
-        except OSError:
-            return FlowDefinition.default()
-        cached = cache.get((task_id, stamp))
-        if cached is not None:
-            return cached
-        try:
-            loaded = FlowDefinition.load(path)
-        except (ValueError, OSError):
-            loaded = FlowDefinition.default()
-        cache[(task_id, stamp)] = loaded
-        return loaded
-
     def task_diagram(self, task_id: str):
         """本任务的**流程图**（``FlowDiagram``：节点类型 + 坐标 + 折点）。
 
-        ⚠️ 与 :meth:`task_flow` 的区别：那个给**运行语义**（阶段序列 + 端口
-        边表，``FlowDefinition``），这个给**图形**（页面渲染用）。两者读的
+        ⚠️ 与 :mod:`desktop.steps.flow`（``FlowDefinition``）的区别：那个是**旧模型**
+        （阶段序列 + 端口边表），已不再被 store 暴露给界面——页面渲染、运行
+        顺序、供给方、就绪判据全部走这张图。两者读的
         是同一个 ``flow.bpmn``——文件是唯一真源。
 
         读不到 / 文件坏一律**回落默认模板**：界面宁可显示默认流程，也不能
-        整个详情页打不开。
+        整个详情页打不开。⚠️ 但**回落必须是可见的**——见
+        :meth:`flow_degraded_reason`。
 
         ⚠️ **"解析得动但一个可执行步骤都认不出"也算坏**：那种图会让
         :meth:`stage_supplier` 的"在流程里"集合变成空集，于是**每个端口都
         解析成 None**（现象是"每一步都说找不到输入"，而流程看起来是有节点的，
         极难查）。所以这里判的是"有没有能跑的步骤"，不是"有没有节点"。
+
+        ⚠️ 第三条最隐蔽：用户在 bpmn.io 里把「图片去底色」改名成「AI 抠图」
+        ——一次完全合法的编辑——所有 ``task`` 节点的名字都认不出来，
+        ``stage_order()`` 就是空，整张自定义图被**静默**判成"坏"并换回默认
+        流程。所以回落一定要配一条提示，见 ``flow_degraded_reason``。
         """
         from desktop.steps.bpmn_diagram import FlowDiagram
         from desktop.steps.scheduler import load_default_diagram
 
         path = default_flow_path(self.task_dir(task_id))
+        reason = ""
         if path.is_file():
             try:
                 diagram = FlowDiagram.load(path)
                 if diagram.stage_order():
+                    self._degraded_map().pop(task_id, None)
                     return diagram
-            except (ValueError, OSError):
-                pass
+                reason = (
+                    f"{path.name} 里的步骤一个都认不出来"
+                    "（节点名对不上任何已有步骤——阶段是按**节点名**接回的，"
+                    "改名后要改回「提取图片 / 检测文本框 / 图片去底色 / "
+                    "图片拼版 / PDF排版」这类名字）"
+                )
+            except (ValueError, OSError) as exc:
+                reason = f"{path.name} 解析失败：{exc}"
+        else:
+            reason = f"本任务目录下没有 {path.name}"
+        self._degraded_map()[task_id] = reason
         fallback = load_default_diagram()
         if fallback.nodes:
             return fallback
         return FlowDiagram()
 
+    def flow_degraded_reason(self, task_id: str) -> str:
+        """本任务的流程图是不是**降级**了（读的是默认模板而非自己的图）。
+
+        空串 = 正常。⚠️ 这是"自定义流程莫名其妙变回默认"这类报障**唯一**的
+        线索来源：``task_diagram`` 的回落必须配一条提示，否则用户看到的现象
+        与"我没改过它"完全一样（用户 2026-10-06）。
+        """
+        return (self._flow_degraded or {}).get(task_id, "")
+
+    @staticmethod
+    def _log_flow_write_error(task_id: str, exc: OSError) -> None:
+        """建任务时写 ``flow.bpmn`` 失败：留一条可见痕迹。
+
+        ⚠️ 此前是 ``except OSError: pass``——任务照样建成，之后**每一次**读
+        流程都回落默认模板。用户报"我编的流程变回默认了"时，没有任何线索。
+        """
+        import sys
+
+        print(
+            f"[store] 任务 {task_id} 写入 flow.bpmn 失败：{exc}。"
+            "该任务将按默认流程显示，请检查目录权限。",
+            file=sys.stderr,
+        )
+
     def save_task_diagram(self, task_id: str, diagram) -> None:
         """把流程图写回 ``tasks/<任务号>/flow.bpmn``（原子写）。
 
-        写完**必须清掉 ``task_flow`` 的 mtime 缓存**：它按 ``(task_id, mtime)``
-        缓存，不清的话本次会话里再读拿到的还是旧流程——用户改完流程却看到老
-        步骤条（"改了没反应"）。
-
         ⚠️ 只改**流程定义**，不碰任何产物。改完流程后已有产物是否还有效，是
         **界面该提示的事**，由调用方判断——store 只管存。
+
+        （``task_diagram`` **无缓存**，每次读盘——"改了没反应"别往缓存上查。）
         """
         diagram.save(default_flow_path(self.task_dir(task_id)))
-        cache = getattr(self, "_flow_cache", None)
-        if cache is not None:
-            for key in [k for k in cache if k[0] == task_id]:
-                cache.pop(key, None)
-
-    def task_flow_layout(self, task_id: str) -> FlowLayout | None:
-        """本任务流程的**节点坐标**（读``flow.bpmn`` 的 BPMN DI 段）。
-
-        读不到 / 文件坏 / 没有 DI 段时返回 ``None``——调用方（弹窗）据此
-        回落自动排布。坐标是"锦上添花"，缺了不该让流程读不出来。
-        """
-        path = default_flow_path(self.task_dir(task_id))
-        if not path.is_file():
-            return None
-        layout = FlowDefinition.load_layout(path)
-        # `load_layout` 读不到时回空布局（boxes 为空）⇒ 对调用方等于"没有坐标"
-        return layout if layout.boxes else None
-
-    def save_task_flow(self, task_id: str, flow: FlowDefinition,
-                       flow_layout: FlowLayout | None = None) -> None:
-        """把新流程写回 ``tasks/<任务号>/flow.bpmn``（详情页改流程用）。
-
-        写完**必须清掉 mtime 缓存**：``task_flow`` 按 ``(task_id, mtime)`` 缓存，
-        不清的话本次会话里再读拿到的还是旧流程——用户改完流程却看到老步骤条
-        （"改了没反应"）。
-
-        ⚠️ 只改**流程定义与节点坐标**，不碰任何产物。改流程后已有产物是否还
-        有效，是**界面该提示的事**（如"新流程不含已完成的去底色"），由调用方
-        判断——store 只管存。
-        """
-        chosen = flow if flow is not None else FlowDefinition.default()
-        chosen.save(default_flow_path(self.task_dir(task_id)), flow_layout)
-        cache = getattr(self, "_flow_cache", None)
-        if cache is not None:
-            for key in [k for k in cache if k[0] == task_id]:
-                cache.pop(key, None)
 
     def task_slots(self, task_id: str) -> tuple[StageSlot, ...]:
         """本任务流程投影出的**界面槽位**（步骤条格子 + 两个栈的页号）。
@@ -606,6 +618,23 @@ class TaskMixin:
         """
         return ports.task_input_dir(self.task_dir(task_id))
 
+    def required_stage_inputs(self, task_id: str, stage: str,
+                              imposition_active: bool = False) -> tuple[str, ...]:
+        """本流程里这一步**真正要等就位**的输入端口。
+
+        规则只在 :func:`desktop.steps.ports.stage_blocking_inputs` 一份（那里
+        解释了为什么"声明的端口"不能直接当就绪判据：``pdf`` 由任务供给、
+        ``boxes`` 在没有「检测文本框」的流程里压根没人产出）。
+
+        :param imposition_active: 拼版开关的运行态（调用方传 effective）。
+        """
+        from desktop.steps.scheduler import Scheduler
+
+        diagram = self.task_diagram(task_id)
+        flags = self.scheduler_flags(task_id, imposition_active)
+        active = Scheduler.from_diagram(diagram, flags).stages
+        return ports.stage_blocking_inputs(diagram, stage, set(active))
+
     def stage_supplier(self, task_id: str, stage: str, port: str,
                        imposition_active: bool = False) -> str | None:
         """本任务里 ``(stage, port)`` 的**实际供给方**（运行时按图求解）。
@@ -630,11 +659,31 @@ class TaskMixin:
         不是用户「提交」过的成品目录，**打印出来的是没提交的图**。
         所以判据是"它所属的**界面格**在不在流程里"（:data:`ports.STAGE_STEPS`
         给出 stage→step 的折叠关系）。
+        ⚠️⚠️ **图优先，静态表兜底**（2026-10-06 掉头）。原先的规则是**反的**
+        （"先静态声明、后沿图回退"），后果是 ``ports.SUPPLIERS``——一份**写死在
+        代码里的默认流程连线**——在它给的供给方还留在流程里时**压过用户画的
+        连线**。实测两条节点集合相同、连线不同的流程（默认的
+        ``extract→detect→rembg→print`` 与用户自己连的 ``extract→print``），
+        ``print`` 的取图目录**完全一样**——用户明确要求的连线被静默丢弃。
+        这就是"自定义流程里总是冒出默认流程逻辑"的**病根**：BPM 化只覆盖了
+        **顺序**，没覆盖**语义**。
+
+        现在的规则：
+
+        1. **图能给出唯一答案**（沿图可达的产出方恰好一个）⇒ **图说了算**；
+        2. 图给不出、或给出**多个**（默认流程的「是否拼版」网关就是这种：沿图
+           回溯 ``print`` 会同时看到「图片拼板」与「图片去底色」）⇒ 退回静态
+           声明 + 条件开关（``ports.print_pages_supplier`` 建模的那一条）；
+        3. 静态声明是**任务源**哨兵（``extract`` 的 ``pdf``）⇒ 直接返回，它
+           本来就没有上游。
+
+        ⚠️ 第2 条是**确定性**的要求，不是将就：网关分支要用"拼版开关"这个
+        运行态来选，两条边在图上都是实线，靠遍历顺序选是随机的。
         """
         from desktop.steps.scheduler import Scheduler
 
         diagram = self.task_diagram(task_id)
-        flags = {"imposition": bool(imposition_active)}
+        flags = self.scheduler_flags(task_id, imposition_active)
         active = set(Scheduler.from_diagram(diagram, flags).stages)
         # 本流程里"活着"的**界面格**（例如 rembg_submit 与 rembg 同属一格）
         live_steps = {ports.STAGE_STEPS.get(s, s) for s in active}
@@ -649,11 +698,68 @@ class TaskMixin:
         if stage == "print" and port == "pages":
             # 拼版生效时换上游（这是 ports 里唯一一条条件连线）
             declared = ports.print_pages_supplier(bool(imposition_active))
-        if declared is None or declared == ports.SUPPLY_TASK_SOURCE:
+        if declared == ports.SUPPLY_TASK_SOURCE:
             return declared
-        if in_flow(declared):
+        # ⚠️⚠️ **这一步压根不声明这个端口 ⇒ 没有这个输入**（返回 ``None``）。
+        #    这一条必须在"图说了算"**之前**：``producers_of`` 只问"图上谁能产出
+        #    它"，不问"这一步吃不吃它"——于是 ``print`` 明明不吃 ``boxes``，
+        #    沿图回溯却能撞上 ``detect`` 并给出 ``boxes.json``（自测抓到）。
+        #    端口声明（``ports.stage_inputs``）才是"这一步吃什么"的唯一真源。
+        if port not in ports.stage_inputs(stage):
             return declared
-        return diagram.nearest_producer(stage, port, active)
+
+        # ---- 1. 图说了算（图能给出唯一产出方时）----
+        producers = diagram.producers_of(stage, port, active)
+        if len(producers) == 1:
+            return producers[0]
+
+        # ---- 2. 图说不清 ⇒ 退回静态声明 + 条件 ----
+        if declared is not None and in_flow(declared):
+            return declared
+        # 静态声明不可用时，最后才沿图随便取一个（老行为，保底）
+        return producers[0] if producers else diagram.nearest_producer(
+            stage, port, active
+        )
+
+    def step_enabled(self, task_id: str, step: str) -> bool:
+        """某个**可选步骤**的用户开关（``drafts/<步骤>.json`` 的 ``enabled``）。
+
+        ⚠️ 这是"条件开关"的**通用读法**：以前只有拼版有开关（读
+        ``drafts/imposition.json`` 的 ``enabled``），`store.imposition_enabled`
+        与详情页的 ``imposition_active()`` 各读各的。再加一个可选步骤就要
+        第三份读法——现在统一走这里（同一文件、同一键，行为一字不变，
+        见 :meth:`scheduler_flags`）。
+
+        ⚠️ 开关查询**永不抛错**：任务号非法/目录没了/文件坏了，一律当"没开"。
+        调用方（列表后台线程、状态机）不能因为一个开关读不出来就崩。
+        """
+        try:
+            data = read_json(self.drafts_dir(task_id) / f"{step}.json", None)
+        except (OSError, ValueError):
+            return False
+        return bool(data.get("enabled")) if isinstance(data, dict) else False
+
+    def scheduler_flags(self, task_id: str,
+                        imposition_active: bool = False) -> dict[str, bool]:
+        """本任务传给状态机的条件开关表（key = 可选步骤 key）。
+
+        ⚠️ 键集合从 ``role == "optional"`` 派生（与
+        :data:`desktop.steps.scheduler.CONDITIONS` 同源），**不是手写表**：
+        以后加第二个可选步骤，这里的键自动多一个，调用方不用改。
+
+        ⚠️ ``imposition`` 这一键**用调用方传进来的值覆盖**，不用
+        :meth:`step_enabled` 的读数——调用方传的是 ``imposition_effective()``
+        （= 在流程里 ＋ ``area == 1`` ＋ 开关三道闸），而 ``step_enabled`` 只读
+        开关。区域模式不支持时（``area != 1``），拼版产物根本不存在，必须让
+        状态机跳过它、下游退回走去底色——只传开关会把流程指去一个空目录。
+        """
+        from desktop.steps.spec import OPTIONAL_STEPS
+
+        flags = {step: self.step_enabled(task_id, step)
+                 for step in OPTIONAL_STEPS}
+        if "imposition" in flags:
+            flags["imposition"] = bool(imposition_active)
+        return flags
 
     def task_scheduler(self, task_id: str, imposition_active: bool = False):
         """本任务的**状态机**（``Scheduler``）——"下一步跑谁 / 能不能跑 / 跳谁"
@@ -661,8 +767,8 @@ class TaskMixin:
 
         ⚠️ 这是"后端按图驱动"的查询面：调用方不该再自己拼
         ``STAGES`` / ``SUPPLIERS`` 的静态知识去推断顺序或可运行性，一律问它。
-        顺序来自本任务流程图（拓扑序），跳过看 :data:`CONDITIONS`
-        （目前只有"拼版"受开关控制）。
+        顺序来自本任务流程图（拓扑序），跳过看 :meth:`scheduler_flags`
+        （可选步骤的开关表，键从 spec 派生）。
 
         与 :meth:`stage_input` 的分工：那个回答**"去哪个目录取产物"**，
         这个回答**"什么时候该跑、还差什么"**。
@@ -671,7 +777,7 @@ class TaskMixin:
 
         return Scheduler.from_diagram(
             self.task_diagram(task_id),
-            {"imposition": bool(imposition_active)},
+            self.scheduler_flags(task_id, imposition_active),
         )
 
     def stage_output_dir(self, task_id: str, stage: str) -> Path:

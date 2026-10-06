@@ -105,7 +105,7 @@ class DetectMixin:
 
     def _on_box_selection_changed(self, index: int) -> None:
         """预览里选中态变化 → 回填面板的「选中框类型」与删除按钮。"""
-        panel = self.control_stack.widget(1)
+        panel = self.panel_host_of_step("detect")
         setter = getattr(panel, "set_box_selection", None)
         if not callable(setter):
             return
@@ -381,8 +381,17 @@ class DetectMixin:
         return boxes or []
 
     def _current_detect_params(self) -> tuple[int, str | None]:
-        """区域参数（area/border）现在位于 rembg 面板（步骤三）。"""
-        args = self.control_stack.widget(2).get_args()
+        """区域参数（area/border）现在位于 rembg 面板（步骤三）。
+
+        ⚠️ 流程里**没有去底色这一步**时给 ``(1, None)``（左右分栏 + 无边距）
+        ——那是 detect 的默认口径，**不是**去兜一个别的面板：自定义流程里把
+        「图片去底色」删掉后，用户从来没填过 area，借别的面板读出来的是
+        一份没人填过的表单。
+        """
+        host = self.panel_host_of_step("rembg")
+        if host is None:
+            return 1, None
+        args = host.get_args()
         return args.get("area", 1), args.get("border")
 
     # ------------------------------------------------------ 整页模式开关联动
@@ -392,7 +401,9 @@ class DetectMixin:
         area 的唯一事实来源是第三步面板，本开关只是它的入口：勾选即把 area
         切到 4，取消则回到 1，随后刷新检测预览（整页框立即画在边界上）。
         """
-        panel = self.control_stack.widget(2)
+        panel = self.panel_host_of_step("rembg")
+        if panel is None:
+            return   # 流程里没有去底色这一步：没有 area 可切
         target = WHOLE_PAGE_AREA if on else 1
         if int(str(panel.area.currentText())[0]) != target:
             panel.area.setCurrentIndex(target - 1)  # 触发 _refresh_reference_boxes
@@ -403,7 +414,7 @@ class DetectMixin:
 
     def _sync_whole_page_checkbox(self) -> None:
         """第二步勾选状态回填自第三步 area（切阶段/改 area 时保持一致）。"""
-        panel = self.control_stack.widget(1)
+        panel = self.panel_host_of_step("detect")
         setter = getattr(panel, "set_whole_page", None)
         if callable(setter):
             setter(self._current_area() == WHOLE_PAGE_AREA)

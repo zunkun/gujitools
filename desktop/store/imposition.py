@@ -66,11 +66,10 @@ class ImpositionMixin:
         ⚠️ 这里**只读 enabled 一个键**，不走 ``load_imposition_doc``：那份文档
         逐页带 rect/rotation，200 页的书能有几百 KB，列表页每个任务都要读一次，
         没必要把整份版面都反序列化。缺文件/坏文件一律当"没启用"。
+        ⚠️ 实现走通用的 :meth:`step_enabled`（同一文件、同一键）——拼版开关
+        只是"可选步骤开关"的第一个实例，别再为第二个起一份读法。
         """
-        if not task_id:
-            return False
-        data = read_json(self.imposition_doc_path(task_id), None)
-        return bool(data.get("enabled")) if isinstance(data, dict) else False
+        return self.step_enabled(task_id, "imposition")
 
     def save_imposition_doc(self, task_id: str, doc: dict) -> bool:
         """写拼版文档，返回是否真的写了。

@@ -56,6 +56,26 @@ def _click_at(widget, x: float, y: float) -> None:
         Qt.LeftButton, Qt.NoButton, Qt.NoModifier))
 
 
+def _stroke(widget, points) -> None:
+    """合成一次「按下 → 移动 … → 松开」的鼠标轨迹（拖连接点连线的手势）。"""
+    from PySide6.QtCore import QEvent, QPointF, Qt
+    from PySide6.QtGui import QMouseEvent
+
+    def _event(type_, x, y, button, buttons):
+        pos = QPointF(float(x), float(y))
+        return QMouseEvent(type_, pos, widget.mapToGlobal(pos.toPoint()),
+                           button, buttons, Qt.NoModifier)
+
+    first, last = points[0], points[-1]
+    widget.mousePressEvent(_event(QEvent.MouseButtonPress, *first,
+                                  Qt.LeftButton, Qt.LeftButton))
+    for x, y in points[1:-1]:
+        widget.mouseMoveEvent(_event(QEvent.MouseMove, x, y,
+                                     Qt.NoButton, Qt.LeftButton))
+    widget.mouseReleaseEvent(_event(QEvent.MouseButtonRelease, *last,
+                                    Qt.LeftButton, Qt.NoButton))
+
+
 def run(ctx) -> None:
     from desktop.components import create_task_dialog
     from desktop.components.bpmn_editor import BpmnEditor
@@ -152,6 +172,42 @@ def run(ctx) -> None:
     ok("加节点", len(editor.diagram().nodes) == n_before + 1)
     editor.rename_node(new_id, "改过的名字")
     ok("改名", editor.diagram().node(new_id).name == "改过的名字")
+    # ⚠️⚠️ **改名不断绑**：阶段身份是节点的属性（落盘在 ``guji:stage``），
+    # 名字只是显示标签。以前改名会**重算**阶段——「图片去底色」改成「AI 抠图」
+    # 就接不回任何阶段，整张图被判"坏图"而回落默认流程（用户只改了个标签，
+    # 流程却被换掉了）。现在：认得出的名字换绑，认不出的名字只改显示。
+    _real_node = next(n.id for n in editor.diagram().nodes
+                      if n.stage == "rembg")
+    editor.rename_node(_real_node, "AI 抠图")
+    ok("改名成认不出的名字 ⇒ **保留原阶段**（只改显示，不断绑）",
+       editor.diagram().node(_real_node).stage == "rembg",
+       str(editor.diagram().node(_real_node).stage))
+    # 改成另一个已知阶段名 ⇒ 换绑（"改名切换步骤类型"，有意保留）
+    editor.rename_node(_real_node, "检测文本框")
+    ok("改成已知阶段名 ⇒ 换绑到那个阶段",
+       editor.diagram().node(_real_node).stage == "detect",
+       str(editor.diagram().node(_real_node).stage))
+    editor.rename_node(_real_node, "图片去底色")
+    ok("改回原来的阶段名 ⇒ 换绑回来",
+       editor.diagram().node(_real_node).stage == "rembg",
+       str(editor.diagram().node(_real_node).stage))
+    # 本来就没阶段的节点 ⇒ 改名不许凭空接上（随手一改多出运行步骤更糟）
+    editor.rename_node(new_id, "还是认不出")
+    ok("本来就没有阶段的节点改名 ⇒ 仍是 None（不凭空接上）",
+       editor.diagram().node(new_id).stage is None,
+       str(editor.diagram().node(new_id).stage))
+    # 身份落盘往返：自定义名字存进 ``guji:stage``，重读不再靠名字猜
+    editor.rename_node(_real_node, "AI 抠图")
+    _roundtrip = Path(ctx.tmp) / "rename_roundtrip.bpmn"
+    editor.diagram().save(_roundtrip)
+    _reloaded = FlowDiagram.load(_roundtrip)
+    _back = next(n for n in _reloaded.nodes if n.id == _real_node)
+    ok("存盘重读 ⇒ 自定义名字 + 原阶段都在（不再靠名字猜）",
+       _back.name == "AI 抠图" and _back.stage == "rembg",
+       f"{_back.name!r} / {_back.stage!r}")
+    _xml = _roundtrip.read_bytes()
+    ok("guji:stage 写进文件（外部工具丢弃它就退回名字匹配＋降级告警）",
+       b"guji:stage" in _xml)
     target = next(n.id for n in editor.diagram().nodes
                   if n.id != new_id and n.kind == KIND_TASK)
     flow_id = editor.connect(new_id, target, "分支")
@@ -167,7 +223,12 @@ def run(ctx) -> None:
     box = editor.diagram().node_box(new_id)
     ok("拖拽改坐标", abs(box[0] - 777.0) < 1 and abs(box[1] - 555.0) < 1,
        str(box))
-    ok("拖拽清掉过时折点（否则线会歪在旧位置）",
+    # 拖动中**冻结连接点**：折点按冻结锚点现算（线跟着节点平滑走，不猛跳），
+    # 松手 _finish_drag 才清掉、重新自动匹配——过时的旧折点不再残留
+    ok("拖拽中连线折点按冻结锚点现算（跟着节点走）",
+       flow_id in editor.diagram().waypoints)
+    editor._finish_drag()
+    ok("松手清掉临时折点（连线重新自动匹配，旧折点不残留）",
        flow_id not in editor.diagram().waypoints)
     flows_before = len(editor.diagram().flows)
     editor.remove_node(new_id)
@@ -223,6 +284,86 @@ def run(ctx) -> None:
            handmade.stage_order() == ("extract", "imposition", "print"),
            str(handmade.stage_order()))
         ok("手造图渲染不崩", BpmnView(handmade).width() > 0)
+
+        # 连线端点**自动匹配**（用户 2026-10-06）：四个中线连接点按方位挑
+        pair = FlowDiagram(
+            nodes=(DiagramNode("a", KIND_TASK, "甲", stage="extract"),
+                   DiagramNode("b", KIND_TASK, "乙", stage="detect")),
+            flows=(DiagramFlow("f1", "a", "b"),),
+            boxes={"a": (0.0, 0.0, 100.0, 80.0),
+                   "b": (300.0, 20.0, 100.0, 80.0)},
+        )
+        points = pair.route(pair.flows[0])
+        ok("横排节点：连线从右缘中点出、左缘中点入",
+           points[0] == (100.0, 40.0) and points[-1] == (300.0, 60.0),
+           str(points))
+        pair.boxes["b"] = (20.0, 300.0, 100.0, 80.0)
+        points = pair.route(pair.flows[0])
+        ok("竖排节点：连线从下缘中点出、上缘中点入（不再斜戳角落）",
+           points[0] == (50.0, 80.0) and points[-1] == (70.0, 300.0),
+           str(points))
+        pair.relayout()
+        ok("relayout 分层铺开且拓扑不变（a 排在 b 左边）",
+           pair.boxes["a"][0] < pair.boxes["b"][0]
+           and all(n.id in pair.boxes for n in pair.nodes),
+           str(pair.boxes))
+
+        # 网关的多条出边**分配到不同的角**（用户 2026-10-06："判断输入输出都从
+        # 四个角出，不是边的中间"）——早前是"同侧沿边摊开"，两条分支挤在
+        # 菱形同一段斜边上，既不是角、又叠在一起。
+        fork = FlowDiagram(
+            nodes=(DiagramNode("g", KIND_EXCLUSIVE, "是否拼版"),
+                   DiagramNode("b", KIND_TASK, "图片拼版", stage="imposition"),
+                   DiagramNode("p", KIND_TASK, "生成 PDF", stage="print")),
+            flows=(DiagramFlow("f1", "g", "p", "否"),
+                   DiagramFlow("f2", "g", "b"),
+                   DiagramFlow("f3", "b", "p")),
+            boxes={"g": (0.0, 0.0, 50.0, 50.0),
+                   "b": (300.0, 0.0, 100.0, 80.0),
+                   "p": (300.0, 300.0, 100.0, 80.0)},
+        )
+        anchor_no = fork.route_anchor(fork.flows[0])
+        anchor_yes = fork.route_anchor(fork.flows[1])
+        ok("判断节点两条出边**占不同的角**（不是同侧摊开）",
+           anchor_no[:2] != anchor_yes[:2],
+           f"{anchor_no} vs {anchor_yes}")
+        ok("起点锚点真不一样（两条线肉眼分得开）",
+           fork.route(fork.flows[0])[0] != fork.route(fork.flows[1])[0])
+
+        # ⚠️ 钉死"从**角**出，不是斜边中点"：菱形的锚点必须落在四个顶点上
+        gx, gy, gw, gh = fork.node_box("g")
+        vertices = {(gx + gw / 2, gy), (gx + gw, gy + gh / 2),
+                    (gx + gw / 2, gy + gh), (gx, gy + gh / 2)}
+        gw_points = [fork.route(f)[0] for f in fork.flows if f.source == "g"]
+        ok("网关连线起点**全部落在菱形的四个顶点上**",
+           all(any(abs(px - vx) < 0.6 and abs(py - vy) < 0.6
+                   for vx, vy in vertices) for px, py in gw_points),
+           str(gw_points))
+        ok("网关的锚点落在**四个顶点**上（左右侧只有顶点，t 不产生斜边点）",
+           all(any(abs(px - vx) < 0.6 and abs(py - vy) < 0.6
+                   for vx, vy in vertices)
+               for px, py in gw_points),
+           str(gw_points))
+        # 任务框**仍走边中点**（BPMN 惯例，别把网关的规则扩散到所有节点）
+        ok("任务框的连线仍走**边中点**（没被网关规则波及）",
+           fork.route(fork.flows[0])[-1][0] == 300.0
+           and 0.0 < fork.route(fork.flows[0])[-1][1] < 380.0,
+           str(fork.route(fork.flows[0])[-1]))
+
+        # 直线被中间节点挡住时**绕行**（不穿框、不被节点盖住）
+        trio = FlowDiagram(
+            nodes=(DiagramNode("a", KIND_TASK, "甲", stage="extract"),
+                   DiagramNode("b", KIND_TASK, "乙", stage="detect"),
+                   DiagramNode("c", KIND_TASK, "丙", stage="rembg")),
+            flows=(DiagramFlow("f1", "a", "c"),),
+            boxes={"a": (0.0, 0.0, 100.0, 80.0),
+                   "b": (150.0, 0.0, 100.0, 80.0),
+                   "c": (300.0, 0.0, 100.0, 80.0)},
+        )
+        pts = trio.route(trio.flows[0])
+        inside = any(150.0 < x < 250.0 and 0.0 < y < 80.0 for x, y in pts)
+        ok("直线被中间节点挡住时绕行（折点不落在挡路节点的框里）",
+           not inside and len(pts) >= 4, str(pts))
     finally:
         shutil.rmtree(tmp_root, ignore_errors=True)
 
@@ -269,8 +410,9 @@ def run(ctx) -> None:
                and [n.name for n in panel.flow_view.diagram().nodes]
                == default_names,
                f"{[n.name for n in panel.flow_view.diagram().nodes]}")
-            ok("默认模式下标题写明用的是默认流程",
-               "默认" in panel.flow_title.text(), panel.flow_title.text())
+            ok("默认模式下提示写明用的是默认流程（「当前流程」标题行已删，"
+               "由 mode_hint 承担告知）",
+               "默认" in panel.mode_hint.text(), panel.mode_hint.text())
             ok("默认模式不传图（走字节拷贝模板，保住 guji:port）",
                panel.result_diagram() is None)
             ok("默认模式下「编辑流程」「恢复默认」不可见",
@@ -291,8 +433,8 @@ def run(ctx) -> None:
             ok("自定义模式显示的是**初值文件**那张图",
                len(custom_names) > 0 and custom_names == init_names,
                f"{custom_names} vs {init_names}")
-            ok("自定义模式标题写明用的是自定义流程",
-               "自定义" in panel.flow_title.text(), panel.flow_title.text())
+            ok("自定义模式提示写明用的是自定义流程",
+               "自定义" in panel.mode_hint.text(), panel.mode_hint.text())
             ok("自定义模式传用户那张图（不是 None）",
                panel.result_diagram() is not None
                and [n.name for n in panel.result_diagram().nodes] == custom_names)
@@ -402,6 +544,8 @@ def run(ctx) -> None:
         gw = editor.add_gateway("判断")
         ok("「添加判断」加的是网关菱形",
            editor.diagram().node(gw).is_gateway)
+        ok("「添加判断」只摆节点、不进连线模式（判断节点不必连线）",
+           not editor.link_mode())
 
         # 两个任务关联：连线模式（点起点 → 点终点）+ connect
         ok("开始不在连线模式", not editor.link_mode())
@@ -451,7 +595,12 @@ def run(ctx) -> None:
         app.processEvents()
         moved = editor.diagram().node_box(mover)
         ok("拖节点能改坐标", abs(moved[0] - box[0]) > 40)
-        ok("拖动后该节点的连线折点被清掉（否则线会歪）",
+        ok("拖动中连线**跟着节点平滑走**（连接点冻结，不猛跳）",
+           all(f.id in editor.diagram().waypoints
+               for f in editor.diagram().flows
+               if f.source == mover or f.target == mover))
+        editor._finish_drag()
+        ok("松手后连接点重新自动匹配（临时折点清掉）",
            all(f.id not in editor.diagram().waypoints
                for f in editor.diagram().flows
                if f.source == mover or f.target == mover))
@@ -540,9 +689,58 @@ def run(ctx) -> None:
         ok("拖出来的「判断」是网关菱形",
            gateway is not None and gateway.is_gateway,
            str(gateway and gateway.kind))
-        ok("拖着时若选中了节点，自动连上一条线",
+        # ⚠️ 判断节点**不**自动接线（用户 2026-10-06）：是否拼版在排版面板
+        #    里开，判断节点摆哪儿都行、不必跟谁绑定
+        ok("「判断」拖进来不自动接线（不必与其他节点绑定）",
+           len(editor.diagram().flows) == flows_before,
+           f"{flows_before} -> {len(editor.diagram().flows)}")
+        # 任务节点仍是"接在选中节点后面"：加一个任务节点验自动连线还在
+        linked = editor.add_node(KIND_TASK, "生成 PDF", stage="print",
+                                 connect_from=some)
+        ok("任务节点拖进来时若选中了节点，仍自动连上一条线",
            len(editor.diagram().flows) == flows_before + 1,
            f"{flows_before} -> {len(editor.diagram().flows)}")
+        editor.remove_node(linked)
+
+        # ---- 四个中线连接点：按点拖到目标节点即连线（不必开连线模式）----
+        port_src = editor.diagram().nodes[0].id
+        port_dst = next(
+            n.id for n in editor.diagram().nodes
+            if n.id != port_src
+            and not any(f.source == port_src and f.target == n.id
+                        for f in editor.diagram().flows))
+        srect = editor.rect_of(port_src)
+        drect = editor.rect_of(port_dst)
+        hit = editor._port_at(QPointF(srect.right(), srect.center().y()))
+        ok("节点右缘中点是**中线连接点**（上下左右共四个）",
+           hit is not None and hit[0] == port_src and hit[1] == "right",
+           str(hit))
+        flows_before = len(editor.diagram().flows)
+        _stroke(editor, [
+            (srect.right(), srect.center().y()),
+            ((srect.right() + drect.center().x()) / 2,
+             (srect.center().y() + drect.center().y()) / 2),
+            (drect.center().x(), drect.center().y()),
+        ])
+        app.processEvents()
+        ok("按住连接点拖到目标节点即连上（松手才连，途中松手不算）",
+           len(editor.diagram().flows) == flows_before + 1,
+           f"{flows_before} -> {len(editor.diagram().flows)}")
+
+        # ---- 自动排版：分层铺开、连线重算、语义不变 ----
+        order_before = editor.diagram().stage_order()
+        editor.auto_layout()
+        app.processEvents()
+        ok("自动排版给每个节点都排了坐标",
+           all(n.id in editor.diagram().boxes
+               for n in editor.diagram().nodes))
+        ok("自动排版清掉旧折点（连线按新坐标重算）",
+           not editor.diagram().waypoints)
+        ok("自动排版不改变阶段顺序（排版是纯视觉）",
+           editor.diagram().stage_order() == order_before,
+           f"{order_before} vs {editor.diagram().stage_order()}")
+        ok("排版后画布照常渲染",
+           editor.width() > 0 and editor.content_size()[0] > 0)
 
         # 只读态：没有工具栏
         readonly = FlowPanel(init, editable=False)
@@ -659,6 +857,11 @@ def run(ctx) -> None:
     ok("清空名字（有 PDF）后提示改说用文件名",
        ctx.pdf.stem in ctx_page.name_hint.text(),
        ctx_page.name_hint.text())
+    ok("面板在页面内不带第二层边距（「创建任务」与「任务名称」左对齐）",
+       ctx_page.panel.layout().contentsMargins().left() == 0
+       and ctx_page.layout().contentsMargins().left() > 0,
+       f"panel={ctx_page.panel.layout().contentsMargins().left()} "
+       f"page={ctx_page.layout().contentsMargins().left()}")
     # 流程编辑**内嵌**：不弹窗、预览让位
     ctx_page.panel.set_custom_mode(True)
     app.processEvents()
@@ -669,7 +872,10 @@ def run(ctx) -> None:
     ok("进编辑态时流程预览让位（不与编辑器同屏）",
        ctx_page.panel._editor_host.isVisible()
        and ctx_page.panel.flow_scroll.isHidden()
-       and ctx_page.panel.flow_title.isHidden())
+       and ctx_page.panel.edit_button.isHidden())
+    ok("进编辑态时底部「取消/确认」整行收起（只留编辑器的关闭/保存，"
+       "不出现两排确认按钮）",
+       ctx_page.panel._button_bar.isHidden())
     ok("内嵌编辑器不带自己的标题（避免页面套页面）",
        ctx_page.panel._editor.title_label.isHidden())
     ok("内嵌编辑器不会去关宿主窗口（否则整页消失）",
@@ -678,7 +884,8 @@ def run(ctx) -> None:
     app.processEvents()
     ok("关掉编辑器回到流程预览",
        ctx_page.panel._editor_host.isHidden()
-       and ctx_page.panel.flow_scroll.isVisible())
+       and ctx_page.panel.flow_scroll.isVisible()
+       and ctx_page.panel._button_bar.isVisible())
 
     # 详情页「查看/编辑流程」→ 流程编辑**页面**
     ok("详情页发的是 flow_edit_requested（宿主切页，不再自己弹窗）",
@@ -845,6 +1052,16 @@ _FLOW_WITH_EXTRACT = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
+def _viewer_entry_button(viewer, tooltip: str):
+    """按 tooltip 在查看器里找那颗输入入口按钮（「＋」/「📁」；没有给 ``None``）。"""
+    from qfluentwidgets import ToolButton
+
+    for button in viewer.findChildren(ToolButton):
+        if button.toolTip() == tooltip:
+            return button
+    return None
+
+
 def _check_source_pdf_pairing() -> None:
     """「上传 PDF」与「提取图片」成对；流程不吃 PDF 时**不摆PDF 图标**。
 
@@ -869,6 +1086,7 @@ def _check_source_pdf_pairing() -> None:
 
     from desktop.shell import ModuleShell
     from desktop.store.store import TaskStore
+    from desktop.ui import theme as theme
     from tests.selftests._context import ok, silence_source_prompt
 
     app = QApplication.instance()
@@ -899,6 +1117,14 @@ def _check_source_pdf_pairing() -> None:
         app.processEvents()
         ok("流程含「提取图片」⇒ PDF 上传图标**照常显示**（空壳任务要靠它补选）",
            not page.source_button.isHidden())
+        # ---- ①b 输入按钮跟着**第一个节点**走（用户 2026-10-06 规则①）----
+        # 「图片提取」打头 ⇒ 它的输入是源 PDF：页头只显示 PDF，图片/目录
+        # 两个入口整对藏起来（摆着会让人以为这一步要喂图）。
+        ok("「图片提取」打头 ⇒ 页头图片/目录入口**藏起来**（只显示 PDF，规则①）",
+           page.insert_button.isHidden()
+           and page.insert_dir_button.isHidden())
+        ok("藏起来的入口红框仍在（常驻标识不随显隐丢）",
+           str(theme.DANGER) in (page.insert_button.styleSheet() or ""))
 
         # ---- ② 不含 extract ⇒ PDF 按钮整颗藏起来 ----
         shell.open_detail(no_pdf)
@@ -907,6 +1133,19 @@ def _check_source_pdf_pairing() -> None:
            page.source_button.isHidden())
         ok("藏 PDF 图标不影响插图按钮（那才是这一步的输入入口）",
            not page.insert_button.isHidden())
+        # ---- ②b 检测打头 ⇒ 图片 + 目录两个入口一起显示（规则②）----
+        ok("「检测文本框」打头 ⇒ 页头只显示图片输入和文件输入（规则②）",
+           not page.insert_dir_button.isHidden())
+        ok("检测打头 ⇒ 检测页左下角「＋/📁」显示（入口要图片，规则③）",
+           _viewer_entry_button(page.detect_viewer, "插入图片（可多选）")
+           is not None
+           and not _viewer_entry_button(
+               page.detect_viewer, "插入图片（可多选）").isHidden()
+           and _viewer_entry_button(
+               page.detect_viewer, "把一个文件夹里的图片批量插入") is not None
+           and not _viewer_entry_button(
+               page.detect_viewer,
+               "把一个文件夹里的图片批量插入").isHidden())
 
         # ---- ③④ 成对删除（正反两向）----
         # ⚠️ 确认框替成"是"：不替的话 ``ask_delete_selected`` 会挂住整个自测
@@ -1132,6 +1371,24 @@ def _check_input_entry_marks() -> None:
            tips.get("把一个文件夹里的图片批量插入") is True, str(tips))
         ok("预览区「删除」没有红框（删图不是入口）",
            tips.get("从页面清单删除所选图片") is False, str(tips))
+
+        # ---- ②b 显隐跟着**流程入口**走（用户 2026-10-06 三条规则）----
+        # 这个任务是默认流程（「图片提取」打头）⇒ 输入是 PDF：页头只亮
+        # PDF，图片/目录入口整对藏起来（规则①）；红框在样式表里常驻，
+        # 但按钮不可见。左下角「＋/📁」只属于**入口**那一步的查看器——
+        # 检测页不是入口，它的输入来自上游 ⇒ 藏（规则③）。
+        ok("默认流程（图片提取打头）⇒ 页头只显示 PDF，图片/目录入口藏起来",
+           not page.source_button.isHidden()
+           and page.insert_button.isHidden()
+           and page.insert_dir_button.isHidden())
+        ok("检测页左下角「＋/📁」藏起来（不是入口步骤，规则③）",
+           _viewer_entry_button(page.detect_viewer,
+                                "插入图片（可多选）") is not None
+           and _viewer_entry_button(page.detect_viewer,
+                                    "插入图片（可多选）").isHidden()
+           and _viewer_entry_button(
+               page.detect_viewer,
+               "把一个文件夹里的图片批量插入").isHidden())
 
         # ---- ③「打开任务数据目录」在右下角（底部状态条最右端）----
         ok("「打开任务数据目录」已挂进底部状态条",
@@ -1683,7 +1940,7 @@ def _check_create_page_reset(create_page, sample_pdf) -> None:
     ok("复位后流程预览回来、编辑器收起（不是留个开着的空编辑器）",
        create_page.panel._editor_host.isHidden()
        and not create_page.panel.flow_scroll.isHidden()
-       and not create_page.panel.flow_title.isHidden())
+       and not create_page.panel.flow_summary.isHidden())
     ok("复位后 busy 态与控件禁用一起清（否则这页永久半残）",
        create_page._busy is False
        and create_page.name_edit.isEnabled()
@@ -2262,6 +2519,14 @@ def _check_source_prompt_cycle(store, pdf, app) -> None:
                and probe.source_button.styleSheet() == "",
                f"insert={bool(probe.insert_button.styleSheet())} "
                f"pdf={bool(probe.source_button.styleSheet())}")
+            ok("缺图片 ⇒ 页头图片/目录入口**显示**（藏了就没法补，规则②）",
+               not probe.insert_button.isHidden()
+               and not probe.insert_dir_button.isHidden())
+            ok("缺图片 ⇒ 检测页左下角「＋/📁」显示（入口就是检测，规则③）",
+               _viewer_entry_button(probe.detect_viewer,
+                                    "插入图片（可多选）") is not None
+               and not _viewer_entry_button(
+                   probe.detect_viewer, "插入图片（可多选）").isHidden())
             ok("缺图片 ⇒ 页头红字说的是图片（不是 PDF）",
                "图片" in probe.source_warning.text()
                and "PDF" not in probe.source_warning.text(),
@@ -2304,6 +2569,61 @@ def _check_source_prompt_cycle(store, pdf, app) -> None:
                f"style={probe.insert_button.styleSheet()[:40]}")
         else:
             ok("流程里没有要 PDF 的步骤 ⇒ 不催 PDF（构造跳过）", True)
+
+        # ---- 流程读不出来 ⇒ **必须让用户看见**（不再静默回落默认流程）----
+        # ⚠️⚠️ `store.task_diagram` 在三种失败形态下都会**静默**回落默认模板：
+        #   ① `flow.bpmn` 不存在；② XML 非法；③ **解析得动但一个步骤名都认不出**。
+        # 第三种最狠：用户在 bpmn.io 里把「图片去底色」改名成「AI 抠图」——
+        # 一次完全合法的编辑——整张自定义图被判成"坏"，界面变回默认流程，
+        # 而用户看到的现象与"我没改过它"完全一样，找不到任何线索。
+        # 所以回落必须配一条提示（`flow_degraded_reason` + `_warn_if_flow_degraded`）。
+        bad_tid = store.create_task(None, "", "")
+        bad_flow = store.task_dir(bad_tid) / "flow.bpmn"
+        try:
+            bad_flow.write_text(
+                '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/'
+                '20100524/MODEL" xmlns:guji="https://guji.tools/bpmn/2025">'
+                '<bpmn:process id="p" isExecutable="false">'
+                '<bpmn:task id="a" name="AI 抠图"/>'
+                "</bpmn:process></bpmn:definitions>",
+                encoding="utf-8",
+            )
+            # 走一次读：降级原因就是这时记下的
+            store.task_diagram(bad_tid)
+            reason = store.flow_degraded_reason(bad_tid)
+            ok("步骤名一个都认不出 ⇒ 记下降级原因（不是无声换回默认流程）",
+               "认不出来" in reason or "步骤" in reason, reason)
+
+            toasts: list = []
+            _real_toast = probe._toast
+            probe._toast = (lambda kind, title, content:
+                            toasts.append((kind, title, content)))
+            try:
+                probe.set_task(bad_tid)
+                app.processEvents()
+                ok("流程降级 ⇒ 进任务就弹一次警告（告诉用户为什么变回默认）",
+                   any("默认" in t[1] for t in toasts), str(toasts[:2]))
+                ok("警告里说清了改流程不会有效果（下一步该做什么）",
+                   any("不会有任何效果" in t[2] for t in toasts),
+                   str(toasts[:1]))
+                ok("同一次进入只弹一次（flow_slots 会被读很多遍，别刷屏）",
+                   len([t for t in toasts if "默认" in t[1]]) == 1,
+                   str(toasts))
+            finally:
+                probe._toast = _real_toast
+
+            # 修好之后 ⇒ 不再提示，且降级原因被清掉
+            from desktop.steps.scheduler import load_default_diagram
+            load_default_diagram().save(bad_flow)
+            store.task_diagram(bad_tid)
+            ok("流程修好 ⇒ 不再判降级（提示会收）",
+               store.flow_degraded_reason(bad_tid) == "",
+               store.flow_degraded_reason(bad_tid))
+        finally:
+            try:
+                store.delete_task(bad_tid)
+            except OSError:
+                pass
     finally:
         probe.shutdown_all_workers()
         probe.close()

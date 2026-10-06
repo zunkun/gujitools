@@ -7,11 +7,11 @@ runs.json（阶段运行状态）、boxes.json（检测框）、sizes.json（页
 
 from desktop.store.store import TaskStore
 from desktop.store.tasks import (
-    IMPOSITION_INDEX, IMPOSITION_LABEL, IMPOSITION_STAGE,
+    IMPOSITION_LABEL, IMPOSITION_STAGE,
     STAGE_LABELS, STAGE_SHORT, STAGE_STEP, STAGES,
 )
 
 __all__ = [
     "TaskStore", "STAGES", "STAGE_LABELS", "STAGE_SHORT", "STAGE_STEP",
-    "IMPOSITION_STAGE", "IMPOSITION_LABEL", "IMPOSITION_INDEX",
+    "IMPOSITION_STAGE", "IMPOSITION_LABEL",
 ]

@@ -556,7 +556,7 @@ class StepBar(QWidget):
     imposition_clicked = Signal()
 
     def __init__(self, steps, parent=None, optional_after=None,
-                 unmapped=None):
+                 unmapped=None, bar_indices=None, optional_bar_index=None):
         """按给定步骤标题逐项构建；steps 允许传生成器。
 
         ``optional_after`` 是**可选节点（拼版）插在第几个真实步骤之后**
@@ -565,13 +565,37 @@ class StepBar(QWidget):
         ``len(steps) - 1``（拼版在「图片去底色」与「生成 PDF」之间，与旧
         硬编码一致）；自定义流程把拼版排到别处时，宿主按槽位表的
         ``bar_index`` 算出来传进来，**连线/绕行线也跟着挪**。
+
+        ⚠️⚠️ **下标只有一种语义 = 步骤条格序 ``bar_index``**（``docs/tasks/bpm.md``
+        「三套下标」里的第①种，**含可选节点自己占的格子**）。``bar_indices``
+        是"第几个真实步骤 ↔ 它的 ``bar_index``"的映射表，由宿主按本任务槽位表
+        给（``view.py::_build_step_bar``）；``optional_bar_index`` 是拼版节点
+        自己的格序。
+
+        此前 :class:`StepItem` 拿的是**真实步骤的序数**（``enumerate(steps)``），
+        与格序只差"可选节点之前"那一段——默认流程里 ``print`` 序数 3 / 格序 4，
+        于是：点「生成 PDF」发出去的是 3，宿主按格序查表得到**图片拼版**（点一个
+        步骤打开另一个步骤）；``set_step_status(4)`` 撞上 ``0 <= 4 < 4`` 被
+        **静默 return**，生成 PDF 的状态/进度/打勾从来不上屏（用户 2026-10-06
+        报"bug 非常多"）。现在寻址一律走格序，徽标数字仍按**真实步骤序**显示
+        （那是给人看的"第几步"，与寻址无关，见 :meth:`_sync`）。
         """
         super().__init__(parent)
         steps = list(steps)  # 调用方传的是生成器（STAGE_LABELS[s] for s in STAGES）
         self.buttons: list[StepItem] = []
         self.connectors: list[_Connector] = []
         self._completed: set[int] = set()
+        #: 当前步骤的**格序**（``-1`` = 无选中）。与 :attr:`imposition_index` 同口径。
         self._current = 0
+        #: 第 i 个真实步骤的格序 / 格序 → 位置的互查表（寻址全走它）
+        self._bar_of_pos = (
+            [int(b) for b in bar_indices] if bar_indices is not None
+            else list(range(len(steps)))
+        )
+        if len(self._bar_of_pos) != len(steps):
+            # 映射表与步骤数对不上 = 宿主算错了；宁可退回序数也不能错位寻址
+            self._bar_of_pos = list(range(len(steps)))
+        self._pos_of_bar = {b: i for i, b in enumerate(self._bar_of_pos)}
         #: 拼版支路是否**生效**（承载真实流程）；与节点的选择态分开
         self._imposition_flow = False
         #: 可选节点插在第几个真实步骤之后（构造期算出，见 ``optional_after``）。
@@ -586,8 +610,13 @@ class StepBar(QWidget):
         )
         #: 伪步骤（拼版节点）的下标与控件；节点默认隐藏。
         #: ⚠️ ``imposition_index`` 是**步骤条上的格序**（含可选节点占位），
-        #:    自定义流程下不再等于 ``len(steps)``。
-        self.imposition_index = self._optional_after + 1
+        #:    自定义流程下不再等于 ``len(steps)``。宿主给了
+        #:    ``optional_bar_index`` 就用它（真源＝槽位表），否则退回
+        #:    "插在第 ``_optional_after`` 个之后"这个推导值。
+        self.imposition_index = (
+            int(optional_bar_index) if optional_bar_index is not None
+            else self._optional_after + 1
+        )
         self.imposition_node = _ImpositionNode("图片拼版", self)
         self.imposition_node.clicked.connect(self._on_imposition_click)
         self._imposition_connector = _Connector(self)
@@ -607,16 +636,20 @@ class StepBar(QWidget):
         row.setContentsMargins(10, 6, 10, 6)
         row.setSpacing(0)
         self._row = row
-        #: 「图上有、还没功能」的下标集合——这些节点画成灰的
+        #: 「图上有、还没功能」的下标集合——这些节点画成灰的。
+        #: ⚠️ 这是**真实步骤的序数**（与 ``steps`` 序列一致），不是格序：
+        #:    宿主算的就是这个序列的下标。
         self._unmapped_indices = {int(i) for i in (unmapped or ())}
-        for index, title in enumerate(steps):
-            item = StepItem(index, title, self)
-            if index in self._unmapped_indices:
+        for pos, title in enumerate(steps):
+            # ⚠️ StepItem 拿的是**格序**：它 clicked 发出去的下标要能被宿主
+            #    直接当格序查表（``page._select_stage`` 收的就是格序）。
+            item = StepItem(self._bar_of_pos[pos], title, self)
+            if pos in self._unmapped_indices:
                 item.set_unmapped(True)
             item.clicked.connect(self._on_click)
             self.buttons.append(item)
             row.addWidget(item, 1)
-            if index < len(steps) - 1:
+            if pos < len(steps) - 1:
                 connector = _Connector(self)
                 self.connectors.append(connector)
                 row.addWidget(connector, 0, Qt.AlignVCenter)
@@ -683,15 +716,19 @@ class StepBar(QWidget):
         #    步骤之后**（``after == n-1``），那时它的左邻居那一段恰好在
         #    ``index == n-1`` 处，用 ``range(n-1)`` 会漏掉这段（连接线断掉）。
         for index in range(n):
+            # ⚠️ ``_completed`` 存的是**格序**，这里 ``index`` 是位置——
+            #    可选节点之前两者相等，之后差一段，必须查表（用户 2026-10-06
+            #    报"最后一段连接线永远是灰的"）。
+            done = self._bar_of_pos[index] in self._completed
             if shown and index == after:
                 segments.append((
                     self.buttons[index].pill, self.imposition_node,
-                    flow and index in self._completed, not flow,
+                    flow and done, not flow,
                 ))
             elif index < n - 1:
                 segments.append((
                     self.buttons[index].pill, self.buttons[index + 1].pill,
-                    index in self._completed, False,
+                    done, False,
                 ))
         if shown:
             if after < n - 1:
@@ -820,13 +857,18 @@ class StepBar(QWidget):
         self.imposition_clicked.emit()
 
     def set_current(self, index: int) -> None:
-        """设置当前步骤下标并同步各步骤高亮与徽标。"""
-        self._current = index
+        """设置当前步骤的**格序**并同步各步骤高亮与徽标。"""
+        self._current = int(index)
         self._sync()
 
     def mark_completed(self, index: int) -> None:
-        """标记某步骤已完成（徽标改为对勾，连接线着色）。"""
-        self._completed.add(index)
+        """标记某步骤已完成（徽标改为对勾，连接线着色）。
+
+        ``index`` 是**格序**（与 :meth:`set_step_status` 同一口径）。
+        """
+        if int(index) not in self._pos_of_bar:
+            return
+        self._completed.add(int(index))
         self._sync()
 
     def set_steps(self, texts) -> None:
@@ -878,20 +920,27 @@ class StepBar(QWidget):
     ) -> None:
         """设置某步骤状态；progress 为 (已完成, 总数) 时拼出 "成功 · 84/84"。
 
+        ``index`` 是**格序 ``bar_index``**（与 :meth:`mark_completed`、
+        :meth:`set_current`、``current_changed`` 同一口径）。⚠️ 早先这里拿它
+        当 ``self.buttons`` 的**位置**下标，于是可选节点之后的每一步都差一段
+        ——默认流程里「生成 PDF」格序 4 而 ``len(buttons) == 4``，撞上
+        ``0 <= 4 < 4`` 被**静默 return**，它的状态/进度/打勾从来不上屏。
+
         completed=False 但 status='success' 不可能出现；completed=True 而
         status 为失败/中断时，徽标保持对勾、副标题仍显示最近一次的结果。
         """
-        if not 0 <= index < len(self.buttons):
+        pos = self._pos_of_bar.get(int(index))
+        if pos is None:
             return
         detail = _STATUS_LABELS.get(status, status)
         if progress and progress[1]:
             detail = f"{detail} · {progress[0]}/{progress[1]}"
         done = status == "success" if completed is None else bool(completed)
         if done:
-            self._completed.add(index)
+            self._completed.add(int(index))
         else:
-            self._completed.discard(index)
-        self.buttons[index].set_status(
+            self._completed.discard(int(index))
+        self.buttons[pos].set_status(
             status, detail, badge_status="success" if done else status
         )
         self._sync()
@@ -914,9 +963,13 @@ class StepBar(QWidget):
 
     def _sync(self) -> None:
         imposition_current = self._current == self.imposition_index
-        for index, item in enumerate(self.buttons):
-            item.badge.set_state(index + 1, item._badge_status)
-            item.set_current(index == self._current)
+        for pos, item in enumerate(self.buttons):
+            # ⚠️ 徽标数字按**真实步骤序**（``pos + 1``，不含可选节点），
+            #    高亮判定按**格序**（``item.index``）。两者是不同的东西：
+            #    前者是给人看的"第几步"，后者是寻址用的（默认流程里生成 PDF
+            #    徽标是 4 而格序是 4——拼版占了第 3 格）。
+            item.badge.set_state(pos + 1, item._badge_status)
+            item.set_current(item.index == self._current)
         self.imposition_node.set_current(imposition_current)
         # 连接线（含拼版两侧）的点亮/虚线状态由 ``_connector_segments`` 在
         # 绘制时从 ``_completed`` / ``_imposition_flow`` 现算——控件不再存状态。

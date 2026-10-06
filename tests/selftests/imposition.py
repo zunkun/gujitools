@@ -1312,6 +1312,60 @@ def run(ctx) -> None:
            len(_entries) == 2
            and all(not e.thumb.pixmap().isNull() for e in _entries),
            str([e.thumb.pixmap().isNull() for e in _entries]))
+
+        # ---- ⚠️ 回填**不许**整列重灌（用户 2026-10-06 报"拼板阶段程序卡死"）----
+        # 旧实现在每张缩略图到达时：①重读整份 drafts/imposition.json，
+        # ②对**全部**条目重跑 set_thumb（每次都重跑一次 scaled，且无早退）。
+        # 380 页 × 380 条 ≈ 7.2 万次带缩放的重贴，全在主线程 → 离屏实测
+        # **连续占住 27.5 秒**，界面完全无响应。
+        # 这里钉的是**调用形状**（不重贴整列），不是耗时——耗时断言在机器上
+        # 太脆，但"每张到达只贴一条"这件事是可数的。
+        _entries_objs = page.imposition_view.page_list.entries()
+        _reps_now = page._imposition_page_reps(page._imposition_pages())
+        _sink: list = []
+        _docs: list = []
+        _real_doc = page.store.load_imposition_doc
+
+        def _counting_doc(tid):
+            _docs.append(tid)
+            return _real_doc(tid)
+
+        # 直接在条目实例上包一层计数（不改类，避免影响别的条目）。
+        # ⚠️ **必须先把原方法抓在手里再包一层**（MEMORY 记过的坑）：否则
+        #    ``self._t.set_thumb`` 取到的就是刚装上去的包装函数 ⇒ 无限递归
+        #    （实测直接 RecursionError 把整轮自测带崩）。
+        _orig_set_thumb = [_e.set_thumb for _e in _entries_objs]
+
+        def _make_counter(original):
+            def _counted(image):
+                _sink.append(1)
+                return original(image)
+            return _counted
+
+        try:
+            for _e, _fn in zip(_entries_objs, _orig_set_thumb):
+                _e.set_thumb = _make_counter(_fn)
+            page.store.load_imposition_doc = _counting_doc
+            # ⚠️ 回填信号 ``thumbnail_ready(int, QImage, str)`` 传的是
+            #    **QImage**（回调里会 ``QPixmap.fromImage``）——传 QPixmap
+            #    会 TypeError，把整轮自测带崩。
+            from PySide6.QtGui import QImage
+            for _i, _rep in enumerate(_reps_now):
+                _img = QImage(
+                    _entries_objs[_i].thumb.size(), QImage.Format_RGB32
+                )
+                _img.fill(0xFF404040)
+                page._on_imposition_source_thumb(_i, _img, [_rep])
+        finally:
+            page.store.load_imposition_doc = _real_doc
+            for _e, _fn in zip(_entries_objs, _orig_set_thumb):
+                _e.set_thumb = _fn
+        ok("缩略图回填：每张到达只贴**那一条**，不整列重灌（反 O(N²)）",
+           len(_sink) <= len(_entries_objs),
+           f"set_thumb 被调 {len(_sink)} 次 / {len(_entries_objs)} 条")
+        ok("缩略图回填：不重读 imposition.json（反 380×97KB 读盘）",
+           not _docs,
+           f"load_imposition_doc 被调 {len(_docs)} 次")
         ok("左列版面：缩略图在上、文字在下（勾选框贴左上角）",
            all(e.checkbox.y() < e.thumb.y() < e.title_label.y() for e in _entries)
            and all(e.checkbox.x() < e.width() // 2 for e in _entries))

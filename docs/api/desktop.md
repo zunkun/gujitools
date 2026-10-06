@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 129 个模块、151 个公开类、1138 个公开函数/方法（生成于 2026-10-06）。
+覆盖 129 个模块、151 个公开类、1152 个公开函数/方法（生成于 2026-10-06）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -14,7 +14,7 @@
 | --- | --- | --- |
 | [`desktop.app`](#desktopapp) | 1 | 8 |
 | [`desktop.components.box_kinds`](#desktopcomponentsbox_kinds) | 2 | 6 |
-| [`desktop.components.bpmn_editor`](#desktopcomponentsbpmn_editor) | 1 | 31 |
+| [`desktop.components.bpmn_editor`](#desktopcomponentsbpmn_editor) | 1 | 32 |
 | [`desktop.components.bpmn_editor_panel`](#desktopcomponentsbpmn_editor_panel) | 1 | 6 |
 | [`desktop.components.bpmn_palette`](#desktopcomponentsbpmn_palette) | 1 | 7 |
 | [`desktop.components.bpmn_view`](#desktopcomponentsbpmn_view) | 1 | 16 |
@@ -25,10 +25,10 @@
 | [`desktop.components.flow_dialog`](#desktopcomponentsflow_dialog) | 2 | 10 |
 | [`desktop.components.imposition.canvas`](#desktopcomponentsimpositioncanvas) | 1 | 26 |
 | [`desktop.components.imposition.confirm_delete`](#desktopcomponentsimpositionconfirm_delete) | 1 | 1 |
-| [`desktop.components.imposition.page_list`](#desktopcomponentsimpositionpage_list) | 1 | 9 |
+| [`desktop.components.imposition.page_list`](#desktopcomponentsimpositionpage_list) | 1 | 10 |
 | [`desktop.components.imposition.panel`](#desktopcomponentsimpositionpanel) | 1 | 7 |
 | [`desktop.components.imposition.picker`](#desktopcomponentsimpositionpicker) | 1 | 9 |
-| [`desktop.components.imposition.view`](#desktopcomponentsimpositionview) | 1 | 11 |
+| [`desktop.components.imposition.view`](#desktopcomponentsimpositionview) | 1 | 12 |
 | [`desktop.components.log_panel`](#desktopcomponentslog_panel) | 1 | 10 |
 | [`desktop.components.missing_source_prompt`](#desktopcomponentsmissing_source_prompt) | 1 | 7 |
 | [`desktop.components.pagination`](#desktopcomponentspagination) | 2 | 11 |
@@ -50,7 +50,7 @@
 | [`desktop.components.viewers.edit_sync`](#desktopcomponentsviewersedit_sync) | 0 | 2 |
 | [`desktop.components.viewers.image_editor`](#desktopcomponentsviewersimage_editor) | 3 | 83 |
 | [`desktop.components.viewers.image_view`](#desktopcomponentsviewersimage_view) | 1 | 23 |
-| [`desktop.components.viewers.image_viewer`](#desktopcomponentsviewersimage_viewer) | 1 | 18 |
+| [`desktop.components.viewers.image_viewer`](#desktopcomponentsviewersimage_viewer) | 1 | 20 |
 | [`desktop.components.viewers.image_zoom_dialog`](#desktopcomponentsviewersimage_zoom_dialog) | 4 | 34 |
 | [`desktop.components.viewers.pdf_viewer`](#desktopcomponentsviewerspdf_viewer) | 1 | 2 |
 | [`desktop.components.viewers.print_layout_canvas`](#desktopcomponentsviewersprint_layout_canvas) | 1 | 12 |
@@ -74,7 +74,7 @@
 | [`desktop.pages.taskdetail.imposition_layout`](#desktoppagestaskdetailimposition_layout) | 1 | 1 |
 | [`desktop.pages.taskdetail.imposition_pages`](#desktoppagestaskdetailimposition_pages) | 1 | 0 |
 | [`desktop.pages.taskdetail.manifest`](#desktoppagestaskdetailmanifest) | 1 | 5 |
-| [`desktop.pages.taskdetail.page`](#desktoppagestaskdetailpage) | 1 | 15 |
+| [`desktop.pages.taskdetail.page`](#desktoppagestaskdetailpage) | 1 | 17 |
 | [`desktop.pages.taskdetail.params_draft`](#desktoppagestaskdetailparams_draft) | 1 | 1 |
 | [`desktop.pages.taskdetail.print_list`](#desktoppagestaskdetailprint_list) | 1 | 1 |
 | [`desktop.pages.taskdetail.rembg_live`](#desktoppagestaskdetailrembg_live) | 1 | 0 |
@@ -97,11 +97,11 @@
 | [`desktop.stages.generic_stage`](#desktopstagesgeneric_stage) | 0 | 2 |
 | [`desktop.stages.print_stage`](#desktopstagesprint_stage) | 0 | 3 |
 | [`desktop.stages.rembg_stage`](#desktopstagesrembg_stage) | 0 | 1 |
-| [`desktop.steps.bpmn_diagram`](#desktopstepsbpmn_diagram) | 4 | 26 |
+| [`desktop.steps.bpmn_diagram`](#desktopstepsbpmn_diagram) | 4 | 30 |
 | [`desktop.steps.control`](#desktopstepscontrol) | 1 | 11 |
 | [`desktop.steps.flow`](#desktopstepsflow) | 4 | 31 |
 | [`desktop.steps.kernel`](#desktopstepskernel) | 5 | 11 |
-| [`desktop.steps.ports`](#desktopstepsports) | 0 | 25 |
+| [`desktop.steps.ports`](#desktopstepsports) | 0 | 27 |
 | [`desktop.steps.process`](#desktopstepsprocess) | 1 | 7 |
 | [`desktop.steps.scheduler`](#desktopstepsscheduler) | 2 | 13 |
 | [`desktop.steps.source_zone`](#desktopstepssource_zone) | 1 | 20 |
@@ -113,7 +113,7 @@
 | [`desktop.store.pages`](#desktopstorepages) | 1 | 9 |
 | [`desktop.store.runs`](#desktopstoreruns) | 1 | 8 |
 | [`desktop.store.store`](#desktopstorestore) | 1 | 1 |
-| [`desktop.store.tasks`](#desktopstoretasks) | 1 | 38 |
+| [`desktop.store.tasks`](#desktopstoretasks) | 1 | 39 |
 | [`desktop.store.ui_state`](#desktopstoreui_state) | 1 | 6 |
 | [`desktop.ui.color_picker`](#desktopuicolor_picker) | 5 | 30 |
 | [`desktop.ui.font_setup`](#desktopuifont_setup) | 2 | 8 |
@@ -319,9 +319,12 @@ BPMN 流程图**编辑控件**：拖节点、连边、改名、增删。
 - **拖节点只改坐标**，不动连线语义——拖拽是排版操作。连线折点若文件里
   有，拖动后**清掉重算**（旧折点会指向老地方，线会歪）。
 - **连线有两条路**（都能用，用户挑顺手的）：
-  1. **连线模式**：点工具栏「连线」→ 点起点节点 → 点终点节点（推荐，
-     命中判定宽松、有状态提示）；
-  2. **热点拖拽**：直接按住节点右缘的小圆点拖到目标节点。
+  1. **拖连接点**（推荐）：每个节点有上下左右**四个中线连接点**（悬停/
+     选中时显示），按住任一个拖到目标节点即连上；起止两端的连接点按两
+     节点相对方位**自动匹配**（横向主导走左右、纵向主导走上下）；
+  2. **连线模式**：点工具栏「连线」→ 点起点节点 → 点终点节点。
+- **判断（网关）节点不自动接线**（用户 2026-10-06）：是否拼版由「图片拼版」
+  参数面板的开关决定，判断节点摆哪儿都行、不必跟谁绑定；要手动连也允许。
 - **节点与连线各有一套选中**，互斥；选中后工具栏的「重命名 / 删除」才可用。
   这条是硬需求：之前只有"点一下变个色"，用户不知道选中能干什么。
 - 所有鼠标/键盘事件 ``try/except``（控件在弹窗里，一次未捕获异常会连用户
@@ -334,8 +337,8 @@ BPMN 流程图**编辑控件**：拖节点、连边、改名、增删。
 
 | 名称 | 值 |
 | --- | --- |
-| HANDLE_RADIUS | `7.0` |
-| HANDLE_HIT | `15.0` |
+| PORT_RADIUS | `5.0` |
+| PORT_HIT | `14.0` |
 | DRAG_THRESHOLD | `3.0` |
 | EDGE_HIT | `9.0` |
 | NEW_NODE_GAP | `40.0` |
@@ -370,6 +373,7 @@ BPMN 流程图**编辑控件**：拖节点、连边、改名、增删。
 | `rename_selected(name: str) -> bool` | 给选中的（连线优先）改名。改到了返回 ``True``。 |
 | `connect(source: str, target: str, label: str='') -> str \| None` | 连一条边；自连/重复/悬空都拒绝（返回 ``None``）。 |
 | `save_to(path: Path \| str) -> Path` | 把当前图写回 ``.bpmn`` 文件（原子写）。 |
+| `auto_layout() -> None` | 整图**自动排版**（:meth:`FlowDiagram.relayout`）。 |
 | `flow_at(point: QPointF) -> str \| None` | 点是否落在某条**连线**上（返回最近的那条）。 |
 | `mousePressEvent(event) -> None` | Qt 事件覆写：按下（选中 / 开始拖拽或绘制）。 |
 | `mouseMoveEvent(event) -> None` | Qt 事件覆写：移动（拖拽 / 缩放中的实时更新）。 |
@@ -425,12 +429,30 @@ BPMN 流程图**编辑控件**：拖节点、连边、改名、增删。
 
 ⚠️ 全程 ``try/except``：拖放异常冒泡会连用户编好的图一起丢（同鼠标事件）。
 
+##### `add_gateway(name: str='判断') -> str`
+
+加一个排他网关（分支判断）。
+
+⚠️ 只摆节点、**不自动连线**：是否拼版由「图片拼版」参数面板的开关
+决定，判断节点不需要跟谁绑定（要连线就手动拖连接点）。
+
 ##### `rename_node(node_id: str, name: str) -> None`
 
 改节点名（就地换 dataclass：frozen，只能重建）。
 
-⚠️ 名字改了要**重算 stage**：阶段是"按名字接回"的，改名后不重算，
-用户把「PDF排版」改成「生成 PDF 之外的东西」时阶段还挂在 ``print``。
+⚠️ **改名不断绑**：阶段身份是节点的属性（落盘在 ``guji:stage``，见
+:meth:`FlowDiagram.to_xml`），名字只是显示标签——**兼**给外部工具
+（bpmn.io，不写扩展属性）做绑定提示。规则：
+
+- 新名字能认出阶段 ⇒ 换绑到那个阶段（"改名切换步骤类型"，有意保留）；
+- 新名字认不出 ⇒ **保留原阶段**，只改显示（以前这里直接置空，于是
+  「图片去底色」改成「AI 抠图」就接不回任何阶段，整张图被判"坏图"
+  而回落默认流程——用户只是改了个标签，流程却被换掉了）；
+- 本来就没阶段的节点 ⇒ 仍是 None（改名不许**凭空**接上阶段，
+  否则随手一改就多出一个运行步骤）。
+
+要解绑（留着节点但不跑）请删节点——改名不提供这条路，省得一次手滑
+把运行中的步骤改成灰节点还找不到原因。
 
 ##### `remove_selected() -> bool`
 
@@ -441,6 +463,14 @@ BPMN 流程图**编辑控件**：拖节点、连边、改名、增删。
 只在 :meth:`ask_delete_selected` 里做联动，键盘删就会漏（表现为
 "按 Delete 删掉提取图片，源 PDF 还在那儿，界面照样催上传 PDF"）。
 联动判据统一走 :func:`ports.paired_node_for_stage`。
+
+##### `auto_layout() -> None`
+
+整图**自动排版**（:meth:`FlowDiagram.relayout`）。
+
+分层铺开 + 连线按新坐标现算（连接点自动匹配）。⚠️ 入口是工具栏按钮
+而不是鼠标事件——Qt 槽函数里没 catch 的话异常只进终端，用户看到的
+就是"点了没反应"（与鼠标事件同一条教训），所以这里自己兜住。
 
 ##### `ask_add_node() -> None`
 
@@ -470,10 +500,11 @@ BPMN **编辑器面板**：工具栏 + 可滚动画布 + 选中状态行。
 
 ==========================  ==========================================
 添加步骤                      从已知阶段里挑一个接上流程（能被运行时认出来）
-添加判断                      加排他网关（分支菱形）
-连线                          开连线模式：点起点 → 点终点
+添加判断                      加排他网关（分支菱形）——只摆节点，不连线
+连线                          开连线模式：点起点 → 点终点（日常用拖连接点）
 重命名                        改节点名 / 连线上的字（如「否」）
 删除                          删选中的节点或连线
+自动排版                      整图分层铺开，连线按新坐标重算
 ==========================  ==========================================
 
 画布外面套滚动区，并把画布的**下限**跟着视口走（否则图很小时没地方拖节点）。
@@ -781,12 +812,11 @@ widget.installEventFilter(_filter)
 
     创建任务
     [ ] 使用自定义任务流程        ← 决定用哪份流程
-    说明文字（随勾选变化）
+    说明文字（随勾选变化，含步骤串——"当前流程"由它承担）
     ────────────────────────────
     选择 PDF   [选择文件…]  已选择：xxx.pdf     ← 两种模式都要选 PDF
     ────────────────────────────
-    当前流程：默认任务流程 / 自定义任务流程      ← 恒定显示，这就是"当前流程"
-    [编辑流程] [恢复默认流程]                  ← 仅自定义模式可用
+    [编辑流程] [恢复默认流程]                  ← 仅自定义模式可用（右对齐）
     ┌ 流程节点图（按 bpmn 文件渲染）┐
     └───────────────────────────┘
     共 4 步：提取图片 → 检测文本框 → 图片拼版 → 生成 PDF
@@ -810,13 +840,11 @@ widget.installEventFilter(_filter)
 | 名称 | 值 |
 | --- | --- |
 | DIALOG_TITLE | `"创建任务"` |
-| DEFAULT_HINT_PREFIX | `"使用默认任务流程（下方节点图就是它，来自 task_default.bpmn）："` |
-| CUSTOM_HINT | `"使用自定义任务流程（下方节点图来自 task_detail.bpmn，点「编辑流程」可改）："` |
+| DEFAULT_HINT_PREFIX | `"使用默认任务流程："` |
+| CUSTOM_HINT | `"使用自定义任务流程（点「编辑流程」可改）："` |
 | CUSTOM_MISSING_HINT | `"⚠ 找不到 desktop/static/task_detail.bpmn，自定义模式暂用默认流程；请先恢复该文件…"` |
 | EMPTY_PDF_HINT | `"可留空，之后在任务详情里补选"` |
 | PDF_STATE_MAX_WIDTH | `420` |
-| DEFAULT_FLOW_TITLE | `"当前流程：默认任务流程（task_default.bpmn）"` |
-| CUSTOM_FLOW_TITLE | `"当前流程：自定义任务流程（task_detail.bpmn 起，可编辑）"` |
 | FLOW_MIN_HEIGHT | `240` |
 | CUSTOM_INIT_FILE | `"task_detail.bpmn"` |
 
@@ -832,7 +860,7 @@ widget.installEventFilter(_filter)
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(parent=None, flow: FlowDiagram \| None=None)` | — |
+| `__init__(parent=None, flow: FlowDiagram \| None=None, *, outer_margins: bool=True)` | ``outer_margins``：要不要自带外层留白（默认带，弹窗形态需要）。 |
 | `current_diagram() -> FlowDiagram` | 当前**显示**的图（未勾=默认流程，勾了=自定义流程）。 |
 | `set_pdf(path: Path) -> None` | 设已选 PDF（自测与"创建后直接进详情"的快路径用）。 |
 | `clear_pdf() -> None` | 清掉已选 PDF（页面上那个「清除」按钮、:meth:`reset` 与自测共用）。 |
@@ -845,6 +873,16 @@ widget.installEventFilter(_filter)
 | `can_submit() -> bool` | 能不能点「创建任务」。 |
 | `submit() -> None` | 点「创建任务」：发 :attr:`submitted`，**不碰窗口**。 |
 | `reject() -> None` | 取消：**只发 :attr:`cancelled`，不碰窗口**。 |
+
+##### `__init__(parent=None, flow: FlowDiagram | None=None, *, outer_margins: bool=True)`
+
+``outer_margins``：要不要自带外层留白（默认带，弹窗形态需要）。
+
+⚠️ 内嵌进**创建任务页**时传 ``False``：页面根布局已有
+``SPACE_XL`` 边距，面板再 pad 一层就成了"任务名称顶格、创建任务
+多缩进 24px"的双层缩进（用户 2026-10-06 截图确认）。与
+``ImpositionPanel(enable_switch=…)`` 同一条纪律——宿主专属的布局
+差异用构造参数声明，组件不猜自己在哪。
 
 ##### `clear_pdf() -> None`
 
@@ -1076,7 +1114,7 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 | --- | --- |
 | DIALOG_TITLE | `"任务流程"` |
 | VIEW_HINT | `"这是本任务当前在用的流程（就是 tasks/<任务号>/flow.bpmn 这份文件）。"` |
-| EDIT_HINT | `"从左侧面板拖一个节点到画布即可添加（已经有的会置灰）；拖动节点排版；点「连线」后先点起点、再点终点即可连起来；点空…"` |
+| EDIT_HINT | `"从左侧面板拖一个节点到画布即可添加（已经有的会置灰）；按住节点边上的圆点拖到目标节点即可连线（上下左右四个连接点，…"` |
 
 ### `class FlowPanel(QWidget)`
 
@@ -1409,6 +1447,7 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 | `set_pages(captions: list[str], current: int=-1) -> None` | 按页数重建清单（``captions[i]`` 是第 i 页的副标题）。 |
 | `set_current(index: int) -> None` | 高亮当前页（-1 = 无页）。 |
 | `set_page_thumbs(thumbs: list) -> None` | 给每页条目灌缩略图（``thumbs[i]`` 是第 i 页的 ``QImage``/``QPixmap``， |
+| `set_thumb_at(index: int, image) -> None` | 只给**指定条目**贴缩略图（``index`` 是它在当前清单里的位置）。 |
 | `current() -> int` | — |
 | `checked_indexes() -> list[int]` | 勾选了的页下标（升序）。 |
 
@@ -1441,6 +1480,26 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 后条目的 index 是重建时的下标，两者一致；但拖动排序后条目的 index
 仍是它创建时的下标，而 ``_entries`` 的**列表位置**才是当前页序——
 所以这里遍历 ``_entries`` 并用 ``entry.index`` 取图。
+
+##### `set_thumb_at(index: int, image) -> None`
+
+只给**指定条目**贴缩略图（``index`` 是它在当前清单里的位置）。
+
+⚠️ **"一张张到齐"的回填必须用它，不要用** :meth:`set_page_thumbs`：那个
+方法会遍历**全部**条目逐个 ``set_thumb``，于是"380 张缩略图陆续到达"
+变成 380 × 380 ≈ **7.2 万次** ``set_thumb``；而 ``set_thumb`` 每次都要
+重跑一次 ``pixmap.scaled(SmoothTransformation)``（现在有"同一张图早退"，
+但已贴过的那 379 条仍要走一遍字典查表 + 早退判断）。
+
+实测（离屏，380 页拼版）：整列重灌 = **主线程连续占住 27.5 秒**，
+用户看到的就是"程序卡死"；只贴单条 = **~0.03 秒**。
+
+⚠️ 这里用**位置**（``_entries`` 的下标）而不是 ``entry.index``：调用方
+传的是"清单里的第几页"（与 :meth:`_imposition_page_reps` 同序），
+拖动排序后两者会分叉——那种情况下贴错一条比不贴更难查。
+
+无此条目（清单变短了/下标越界）时**静默忽略**：那是"用户正在翻页或
+删页"，不该让一个迟到的缩略图把异常抛到事件循环外面。
 
 ---
 
@@ -1633,6 +1692,7 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 | `__init__(parent=None)` | — |
 | `set_pages(pages: list[dict], current: int=-1) -> None` | 整批灌入拼版页；``current`` 是当前显示的下标。 |
 | `set_page_thumbs(thumbs: list) -> None` | 把左列每页的缩略图贴上去（``thumbs[i]`` 对应第 i 页，可为 ``None``）。 |
+| `set_thumb_at(index: int, image) -> None` | 只给**第 ``index`` 页**贴缩略图（"一张张到齐"的回填走这里）。 |
 | `pages() -> list[dict]` | — |
 | `set_current(index: int) -> None` | 切到某一页（-1 = 无页，画布清空）。 |
 | `current_index() -> int` | — |
@@ -1648,6 +1708,15 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 
 转交给 :meth:`ImpositionPageList.set_page_thumbs`——本控件只做装配，
 不自己碰条目（页条目是 ``page_list`` 的私产）。
+
+##### `set_thumb_at(index: int, image) -> None`
+
+只给**第 ``index`` 页**贴缩略图（"一张张到齐"的回填走这里）。
+
+⚠️ 别用 :meth:`set_page_thumbs` 做批量回填：它会遍历**全部**条目，
+而每条都要重跑一次缩放——380 张陆续到达就是 7.2 万次（用户
+2026-10-06 报"拼板阶段程序卡死"）。转发见
+:meth:`ImpositionPageList.set_thumb_at`。
 
 ---
 
@@ -2648,9 +2717,9 @@ status 决定副标题/标题色，badge_status 决定徽标（缺省同 status�
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(steps, parent=None, optional_after=None, unmapped=None)` | 按给定步骤标题逐项构建；steps 允许传生成器。 |
+| `__init__(steps, parent=None, optional_after=None, unmapped=None, bar_indices=None, optional_bar_index=None)` | 按给定步骤标题逐项构建；steps 允许传生成器。 |
 | `paintEvent(_event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
-| `set_current(index: int) -> None` | 设置当前步骤下标并同步各步骤高亮与徽标。 |
+| `set_current(index: int) -> None` | 设置当前步骤的**格序**并同步各步骤高亮与徽标。 |
 | `mark_completed(index: int) -> None` | 标记某步骤已完成（徽标改为对勾，连接线着色）。 |
 | `set_steps(texts) -> None` | 兼容旧调用：只更新标题文本。 |
 | `set_imposition_visible(visible: bool) -> None` | 显示/隐藏「图片拼版」虚线节点（随第三步区域模式是否为 1）。 |
@@ -2659,7 +2728,7 @@ status 决定副标题/标题色，badge_status 决定徽标（缺省同 status�
 | `set_step_status(index: int, status: str, progress: tuple \| None=None, completed: bool \| None=None) -> None` | 设置某步骤状态；progress 为 (已完成, 总数) 时拼出 "成功 · 84/84"。 |
 | `reset_statuses() -> None` | 全部步骤恢复为未执行，并清空已完成标记。 |
 
-##### `__init__(steps, parent=None, optional_after=None, unmapped=None)`
+##### `__init__(steps, parent=None, optional_after=None, unmapped=None, bar_indices=None, optional_bar_index=None)`
 
 按给定步骤标题逐项构建；steps 允许传生成器。
 
@@ -2669,6 +2738,26 @@ status 决定副标题/标题色，badge_status 决定徽标（缺省同 status�
 ``len(steps) - 1``（拼版在「图片去底色」与「生成 PDF」之间，与旧
 硬编码一致）；自定义流程把拼版排到别处时，宿主按槽位表的
 ``bar_index`` 算出来传进来，**连线/绕行线也跟着挪**。
+
+⚠️⚠️ **下标只有一种语义 = 步骤条格序 ``bar_index``**（``docs/tasks/bpm.md``
+「三套下标」里的第①种，**含可选节点自己占的格子**）。``bar_indices``
+是"第几个真实步骤 ↔ 它的 ``bar_index``"的映射表，由宿主按本任务槽位表
+给（``view.py::_build_step_bar``）；``optional_bar_index`` 是拼版节点
+自己的格序。
+
+此前 :class:`StepItem` 拿的是**真实步骤的序数**（``enumerate(steps)``），
+与格序只差"可选节点之前"那一段——默认流程里 ``print`` 序数 3 / 格序 4，
+于是：点「生成 PDF」发出去的是 3，宿主按格序查表得到**图片拼版**（点一个
+步骤打开另一个步骤）；``set_step_status(4)`` 撞上 ``0 <= 4 < 4`` 被
+**静默 return**，生成 PDF 的状态/进度/打勾从来不上屏（用户 2026-10-06
+报"bug 非常多"）。现在寻址一律走格序，徽标数字仍按**真实步骤序**显示
+（那是给人看的"第几步"，与寻址无关，见 :meth:`_sync`）。
+
+##### `mark_completed(index: int) -> None`
+
+标记某步骤已完成（徽标改为对勾，连接线着色）。
+
+``index`` 是**格序**（与 :meth:`set_step_status` 同一口径）。
 
 ##### `set_imposition_visible(visible: bool) -> None`
 
@@ -2693,6 +2782,12 @@ status 决定副标题/标题色，badge_status 决定徽标（缺省同 status�
 ##### `set_step_status(index: int, status: str, progress: tuple | None=None, completed: bool | None=None) -> None`
 
 设置某步骤状态；progress 为 (已完成, 总数) 时拼出 "成功 · 84/84"。
+
+``index`` 是**格序 ``bar_index``**（与 :meth:`mark_completed`、
+:meth:`set_current`、``current_changed`` 同一口径）。⚠️ 早先这里拿它
+当 ``self.buttons`` 的**位置**下标，于是可选节点之后的每一步都差一段
+——默认流程里「生成 PDF」格序 4 而 ``len(buttons) == 4``，撞上
+``0 <= 4 < 4`` 被**静默 return**，它的状态/进度/打勾从来不上屏。
 
 completed=False 但 status='success' 不可能出现；completed=True 而
 status 为失败/中断时，徽标保持对勾、副标题仍显示最近一次的结果。
@@ -3463,6 +3558,8 @@ Qt 在窗口 dpr 变化时发 ``DevicePixelRatioChange``，**不保证**同时�
 | `paths() -> list[Path]` | 当前页面清单（按显示顺序）。 |
 | `current_path() -> Path \| None` | 当前选中的页面路径；无选中或无清单时为 None。 |
 | `navigate(forward: bool) -> None` | 方向键翻页（详情页 ←/→ 调用；联动预览刷新，见 ThumbStrip.navigate）。 |
+| `set_insert_visible(visible: bool) -> None` | 「＋/📁」两个**图片输入入口**的显隐（宿主按流程入口决定）。 |
+| `set_empty_hint(hint: str) -> None` | 换空态文案（输入入口藏起来后，"请点下方「＋」"就指错方向了）。 |
 | `set_images(paths: list[Path \| str], boxes_map: dict \| None=None) -> None` | 设置页面清单并重建缩略图条；清单未变则仅通知宿主重读。 |
 | `set_thumb_source(paths: list[Path], cache_dir: Path, edge: int \| None=None, names: list[str \| None] \| None=None) -> None` | 清单是真实图片，但左侧缩略图走 ``cache_dir`` 下的**缓存小图**。 |
 | `set_pdf_source(pdf: Path \| str, cache_dir: Path \| None=None, gen: int=0) -> None` | 源是一本 **PDF**：左栏显示它的页缩略图，右侧大图按需渲高清页。 |
@@ -3484,6 +3581,22 @@ Qt 在窗口 dpr 变化时发 ``DevicePixelRatioChange``，**不保证**同时�
 
 image_size_provider 供大图降采样时还原原始像素尺寸；thumb_provider
 让缩略图条改用预生成小图，避免反复解码原图。
+
+##### `set_insert_visible(visible: bool) -> None`
+
+「＋/📁」两个**图片输入入口**的显隐（宿主按流程入口决定）。
+
+⚠️ 只动这两个，**不碰**🗑：删图是清单管理，不是"喂图片"的入口，
+在哪一步都该有（详情页把它留在原地，见构造处的红框注释）。
+``editable=False`` 的查看器没有这两个按钮，静默忽略。
+
+##### `set_empty_hint(hint: str) -> None`
+
+换空态文案（输入入口藏起来后，"请点下方「＋」"就指错方向了）。
+
+当前正空着的话立刻把两处占位（缩略图条 + 大图）一起换掉；有图时
+只存着，等下次清空自然用新文案。⚠️ 占位要**清了重加**：
+``add_placeholder`` 是追加语义，直接再调会叠出两条占位条目。
 
 ##### `set_images(paths: list[Path | str], boxes_map: dict | None=None) -> None`
 
@@ -5184,7 +5297,7 @@ _select_stage()、_set_stage_status()、_toast()、log_view。
 | 方法 | 说明 |
 | --- | --- |
 | `imposition_effective() -> bool` | 拼版这一步**当前能不能真跑**（三个判据全过）。 |
-| `imposition_source_files() -> list[Path]` | 可挑选的源图：第三步「提交本次任务」的成品图（stages/rembg）。 |
+| `imposition_source_files() -> list[Path]` | 可挑选的源图：**拼版这一步的 pages 端口**指向的目录。 |
 | `imposition_active() -> bool` | 拼版**是否已启用**（用户勾了「在流程中启用图片拼版」就是启用）。 |
 | `imposition_has_pages() -> bool` | 拼版文档里**至少有一页**版面（能不能真的合成出图）。 |
 | `print_source_dir() -> Path` | 第四步的取图目录：拼版生效 → stages/imposition，否则 stages/rembg。 |
@@ -5196,6 +5309,20 @@ _select_stage()、_set_stage_status()、_toast()、log_view。
 与 :meth:`imposition_active`（"用户意图：勾没勾"）**刻意分开**：
 勾了但流程图里没这一步、或区域模式不支持，都**不会**真跑。取图来源
 认这个，步骤条"生效态"也认这个。
+
+##### `imposition_source_files() -> list[Path]`
+
+可挑选的源图：**拼版这一步的 pages 端口**指向的目录。
+
+⚠️ 此前这里写死 ``store.rembg_output_dir()``（＝``stages/rembg``）——
+那是**问输入却写成写死**：自定义流程把连线改了（或者压根没有去底色
+那一格）时，它会去读一个永远不会被产出的目录，于是「＋选择拼版」弹
+"没有可拼版的图片，请先提交本次任务"——而那一步压根不在流程里。
+现在与 :meth:`print_source_dir` 同构，走 ``store.stage_input``。
+
+⚠️ ``imposition_effective`` 传的是**图里有没有这一格 + area 前提**，
+不是"用户勾没勾"：这一格不存在时下方控件整体是置灰的，不该因为
+"还没勾" 就换一个别的取图来源。
 
 ##### `imposition_active() -> bool`
 
@@ -5210,6 +5337,11 @@ _select_stage()、_set_stage_status()、_toast()、log_view。
 本方法是"**流程走不走拼板**"的唯一判据：第四步取图来源
 (:meth:`print_source_dir`) 与流程条生效态
 (:meth:`_sync_imposition_step_bar`) 都只看它。
+
+⚠️ 实现走通用的 ``store.step_enabled``（同一文件、同一键），不再自己
+读整份文档——那份文档逐页带版面，200 页的书几百 KB，每次只为一个
+bool 反序列化整份是浪费（列表页的 ``store.imposition_enabled`` 当年
+就是为此才另起一份读法；现在两份合成一份）。
 
 ##### `imposition_has_pages() -> bool`
 
@@ -5453,7 +5585,9 @@ resize 子控件再 show），在这里重铺一次就对了。⚠️ 别改成"
 | `stage_at_index(index: int) -> str \| None` | 步骤条格序 → **运行阶段**（``control_stack`` 页号语义那一层）。 |
 | `stack_index_of(index: int) -> int` | 步骤条格序 → ``control_stack`` / ``preview_stack`` 的页号。 |
 | `bar_index_of_step(step: str) -> int \| None` | 界面步骤 key → 步骤条格序；这一步不在本流程里返回 ``None``。 |
+| `flow_entry_step() -> str \| None` | 本流程**第一个真实步骤**的 step key（跳过可选节点）。 |
 | `stage_at_stack_index(page: int) -> str \| None` | ``control_stack`` / ``preview_stack`` **页号** → 运行阶段。 |
+| `panel_host_of_step(step: str)` | 界面步骤 key → ``control_stack`` 里那一页的宿主控件。 |
 | `stack_index_of_step(step: str) -> int \| None` | 界面步骤 key → 两个栈的页号；这一步不在本流程里返回 ``None``。 |
 | `current_stage() -> str` | 返回当前所处阶段的key（extract/detect/rembg/print/imposition）。 |
 | `navigate_by_arrow(forward: bool) -> bool` | 方向键切换当前步骤的页面（主窗口 ←/→ 转发入口）。 |
@@ -5486,8 +5620,8 @@ detect 缓存/运行态引用并刷新清单与预览；防止参数或 run_id �
 
 ⚠️ 步骤条上那一格的 ``bar_index`` 就是 :attr:`StepBar._current` 的
 语义；``stack_index`` 才是 ``control_stack`` / ``preview_stack`` 的页号。
-两者在默认流程下与旧的 ``STAGES[index]`` / ``IMPOSITION_INDEX``
-逐值相等（自测 ``detail_structure`` 钉死），所以换流程不用改栈的建页。
+两者在默认流程下与旧的 ``STAGES[index]`` 逐值相等（自测 ``detail_structure``
+钉死），所以换流程不用改栈的建页。
 
 ##### `step_at_index(index: int) -> str | None`
 
@@ -5508,12 +5642,39 @@ detect 缓存/运行态引用并刷新清单与预览；防止参数或 run_id �
 这一格不在本流程里时**兜回 0**（回第一步）并由调用方按"没找到"
 处理——绝不能拿一个越界页号去 ``setCurrentIndex``。
 
+##### `flow_entry_step() -> str | None`
+
+本流程**第一个真实步骤**的 step key（跳过可选节点）。
+
+⚠️ "第一步"在自定义流程里不是"静态步骤表的第一格"——预热面板、
+缺输入提示等都得问图（``bar_index == 0`` 的那一格）。
+
+⚠️ 刻意**跳过可选节点**：拼版永远是占位详情页（``mapped`` 语义上
+不算真正的入口步骤），否则"第一步是拼版"会让预热去建一个占位面板。
+
 ##### `stage_at_stack_index(page: int) -> str | None`
 
 ``control_stack`` / ``preview_stack`` **页号** → 运行阶段。
 
 与 :meth:`stage_at_index` 是一对（那边是步骤条格序→ 阶段）。
 默认流程下两种下标逐值相等，自定义流程下必须分开查。
+
+##### `panel_host_of_step(step: str)`
+
+界面步骤 key → ``control_stack`` 里那一页的宿主控件。
+
+⚠️ **取别的步骤的面板只有这一个入口**（MEMORY「三套下标」）：两个栈是
+按 ``FLOW_STAGES + OPTIONAL_STEPS`` 一次建好**固定页数**的，所以
+``control_stack.widget(2)`` 恰好是「图片去底色」——那是"静态步骤表
+顺序"的性质，**不是**流程图的性质。自定义流程一旦换序、``SPECS``
+一旦增删一步，它就读错面板；流程里压根没有那一步时还会**把不在流程
+里的面板构造出来**（破坏"谁进去谁才建"，还会读到用户没填过的参数）。
+
+本流程没有这一步 ⇒ 返回 ``None``，调用方必须自己降级（别再兜一个
+"随便哪一步"——那正是界面说 A、执行做 B 的来源）。
+
+``step`` 是**界面步骤 key**（``extract``/``detect``/``rembg``/``print``），
+不是运行阶段 key（``rembg_submit`` 请传 ``"rembg"``）。
 
 ##### `current_stage() -> str`
 
@@ -6636,7 +6797,7 @@ rembg「提交本次任务」按钮的版本状态机（纯函数）。
 | `open_create() -> None` | 打开「创建任务」二级页（列表页的「创建任务」按钮走这里）。 |
 | `flow_page()` | 任务流程编辑页（惰性构造）。 |
 | `open_flow(task_id: str) -> None` | 打开某个任务的流程编辑页（详情页页头按钮走这里）。 |
-| `prewarm_detail_page() -> None` | 预构造详情页骨架与**第一步**面板（同 app.py 原 ``_prewarm_detail_page``）。 |
+| `prewarm_detail_page() -> None` | 预构造详情页骨架与**流程第一步**面板（同 app.py 原 ``_prewarm_detail_page``）。 |
 | `open_detail(task_id: str) -> None` | 打开某个任务的详情页（行为与 ``app.py::_open_detail`` 一致）。 |
 | `back_to_list() -> None` | 详情页「返回」→ 切回列表并刷新。 |
 | `show_module(key: str) -> None` | 切到某个模块页；首次进入时惰性构造。 |
@@ -7074,6 +7235,16 @@ startEvent / …）、带文件里 DI 段的真实坐标，连线带折点。页
 | AUTO_GAP_X | `60.0` |
 | AUTO_GAP_Y | `150.0` |
 | AUTO_PADDING | `24.0` |
+| LAYOUT_GAP_X | `80.0` |
+| LAYOUT_GAP_Y | `56.0` |
+| LAYOUT_NOTE_GAP | `30.0` |
+| LAYOUT_NOTE_STEP | `12.0` |
+| ROUTE_ALIGN_TOLERANCE | `8.0` |
+| CORNER_CELL_EPS | `12.0` |
+| NOTE_CHAR_W | `13.0` |
+| NOTE_LINE_H | `16.0` |
+| NOTE_CHROME_W | `26.0` |
+| NOTE_MIN_H | `30.0` |
 
 ### `class DiagramNode`
 
@@ -7130,6 +7301,7 @@ startEvent / …）、带文件里 DI 段的真实坐标，连线带折点。页
 | `incoming(node_id: str) -> list[DiagramFlow]` | 以该节点为**终点**的连线。 |
 | `upstream_stages(stage: str) -> tuple[str, ...]` | 沿图往前找，哪些阶段是 ``stage`` 的**上游**（传递闭包）。 |
 | `nearest_producer(stage: str, port: str, active) -> str \| None` | 沿图**往前**找最近的、产出 ``port`` 的**在流程里**的阶段。 |
+| `producers_of(stage: str, port: str, active) -> tuple[str, ...]` | 沿图往前能到达的、产出 ``port`` 的**全部**在流程阶段（已折叠）。 |
 | `stage_slots() -> tuple` | 把本图投影成**界面步骤条上的格子序列**（与 ``FlowDefinition`` |
 | `optional_after(step: str \| None=None) -> int \| None` | 可选节点插在**真实步骤数组的第几位之后**（喂 ``StepBar``）。 |
 | `slot_of(step: str)` | 按**界面步骤 key** 找槽位；不在流程里返回 ``None``。 |
@@ -7137,9 +7309,12 @@ startEvent / …）、带文件里 DI 段的真实坐标，连线带折点。页
 | `step_at(bar_index: int) -> str \| None` | 步骤条格序 → 界面步骤 key（点节点后反查）。 |
 | `contains(stage: str) -> bool` | 这个运行阶段在**本图**里吗。 |
 | `auto_layout(diagram: 'FlowDiagram') -> 'FlowDiagram'` | 给"没有 DI 段"的图排一份坐标（就地改 ``boxes``）。 |
+| `relayout() -> 'FlowDiagram'` | 整图**自动排版**（就地改 ``boxes``、清空 ``waypoints``）。 |
 | `load(path: Path \| str) -> 'FlowDiagram'` | 从 ``.bpmn`` 文件读回整张图（节点/连线/坐标）。 |
 | `to_xml() -> bytes` | 写回 BPMN 2.0（含 DI 段），保证 bpmn.io 等工具能原样打开。 |
-| `route(flow: DiagramFlow) -> list[tuple[float, float]]` | 连线的折点（文件没存 ``di:waypoint`` 时按直角走线算一份）。 |
+| `route_anchor(flow: DiagramFlow) -> tuple[str, float, str, float]` | 连线两端**该用哪个连接点**：``(源方向, 源位置t, 目标方向, 目标位置t)``。 |
+| `route(flow: DiagramFlow) -> list[tuple[float, float]]` | 连线的折点（文件没存 ``di:waypoint`` 时算一份）。 |
+| `route_sides(flow: DiagramFlow, anchor: tuple[str, float, str, float]) -> list[tuple[float, float]]` | 按**指定的连接点**算折点（锚点冻结的走线）。 |
 | `save(path: Path \| str) -> Path` | 原子落盘（写 ``.part`` 再 ``os.replace``，防半截文件）。 |
 
 ##### `content_size() -> tuple[float, float]`
@@ -7206,6 +7381,37 @@ PDF 已过期"这句提示永远不出现。所以收下阶段后要按
 ``active`` = 本流程实际要跑的阶段集合（由 :class:`Scheduler` 给，
 已排除条件不满足的步骤，如未启用拼版时的 ``imposition``）。
 
+##### `producers_of(stage: str, port: str, active) -> tuple[str, ...]`
+
+沿图往前能到达的、产出 ``port`` 的**全部**在流程阶段（已折叠）。
+
+与 :meth:`nearest_producer` 的区别是**返回全部**而不是"广度序第一个"
+——用来判断"**图能不能给出唯一答案**"。
+
+⚠️ 为什么需要这个判据（2026-10-06，用户"这个问题再次提出"）：
+``store.stage_supplier`` 原先的规则是**"先静态声明、后沿图回退"**，
+于是 ``ports.SUPPLIERS``（一份**写死在代码里的默认流程连线**）在
+静态供给方还留在流程里时**压过用户的连线**。实测：两条节点集合相同、
+连线不同的流程（`extract→detect→rembg→print` 与用户自己连的
+`extract→print`），``print`` 的取图目录**完全一样**——用户明确画的
+连线被静默丢弃。这就是"自定义流程里总是冒出默认流程逻辑"的病根：
+**BPM 化只覆盖了"顺序"，没覆盖"语义"**。
+
+⚠️ 但**不能无条件改成"图说了算"**：默认流程带一个网关（是否拼版），
+沿图回溯 ``print`` 会同时找到「图片拼板」与「图片去底色」两个产出方
+——**图说不清**。那种情况必须退回静态声明 + 条件开关（那正是
+``ports.print_pages_supplier`` 建模的东西）。所以调用方的判据是
+"**恰好一个**产出方 ⇒ 图说了算；0 个或多个 ⇒ 退回静态表"。
+
+产出方按 :func:`fold_forward` 折叠到同格最靠后的动作（去重后返回）。
+
+⚠️ **遇到产出方就停，不再往它上游走**（"谁喂我"的语义）：一条线性链
+``extract→detect→rembg→print`` 里，``print`` 的产出方是 ``rembg``，
+**不是** ``extract``——后者只是 rembg 的上游。若继续穿（把"可达"当
+"喂我"），线性链也会被判成"多个产出方"而退回静态表，等于图白做。
+真正需要"歧义"的是**网关分支**（两条**实线**都进同一个节点），那种
+情况在网关处就会同时看到两个产出方，判据照样成立。
+
 ##### `stage_slots() -> tuple`
 
 把本图投影成**界面步骤条上的格子序列**（与 ``FlowDefinition``
@@ -7257,6 +7463,34 @@ bpmn.io 生成的 id，解析失败就**静默回落到默认流程** ⇒ 用户
 
 简单横向铺开 + 分支下移：够用即可，用户拖一下就会覆盖它。
 
+##### `relayout() -> 'FlowDiagram'`
+
+整图**自动排版**（就地改 ``boxes``、清空 ``waypoints``）。
+
+与 :meth:`auto_layout` 的分工：那个只在**文件没有 DI 段**时兜底，
+这个是用户点「自动排版」时的主动整理——不管有没有坐标都重排。
+
+分层布局（Sugiyama 简化版）：
+
+1. **分层**：层号 = 无入边节点出发的最长路（Kahn 拓扑序上逐点取
+   ``max(前驱层)+1``）；环上剩下的点按声明顺序垫在最底层。
+2. **长边插虚拟节点**：跨了多层的那条边在中间层各占一个格子（经典
+   Sugiyama 的 dummy node）。少了这一步，「是否拼版 →(否)→ PDF排版」
+   会从同层的「图片拼版」框里横穿过去（用户 2026-10-06）。虚拟节点
+   **只参与排序与占行**，不落坐标、不写文件。
+3. **同层排序**：按前驱重心向下扫一遍、再按后继重心向上扫一遍，
+   减少连线交叉；重心相同时**虚拟节点优先**——让长边保持直线，
+   分支节点被挤到下一行（与 bpmn.io 画出来的一致）。
+4. **落坐标**：x 按层排开；y **按行号**排（不再"相对最宽层居中"——
+   那会让主链忽高忽低），每个节点在自己的行里**垂直居中**：要对齐
+   的是水平中线，不是顶边（36px 的事件与 80px 的任务顶边对齐会高
+   出一截）。
+5. **注释重挂**：每条注释放到**宿主节点正下方**，互相压住就往下让。
+   ⚠️ 早期做法是"注释跟着宿主一起平移"——保留文件里的旧相对偏移，
+   节点重排后那些偏移就变成一堆斜飘的注释、虚线还压着别的节点。
+
+⚠️ 只动**节点**坐标与折点；阶段顺序（语义）不受影响——排版是纯视觉。
+
 ##### `load(path: Path | str) -> 'FlowDiagram'`
 
 装饰器：`classmethod`
@@ -7274,6 +7508,38 @@ bpmn.io 生成的 id，解析失败就**静默回落到默认流程** ⇒ 用户
 ⚠️ 连线必须**双向引用**：``sourceRef``/``targetRef`` 属性给解析用，
 节点里的 ``<bpmn:incoming>``/``<bpmn:outgoing>`` 子元素给渲染器用
 —— 缺了后者，标准渲染器画不出箭头。
+
+##### `route_anchor(flow: DiagramFlow) -> tuple[str, float, str, float]`
+
+连线两端**该用哪个连接点**：``(源方向, 源位置t, 目标方向, 目标位置t)``。
+
+方向按两节点中心的相对方位挑（横向主导走左右、纵向主导走上下）。
+
+**多条边怎么分开**（用户 2026-10-06）：
+
+- **任务框 / 事件圆**：沿边摊开（``t`` 均分）——多条线从同一条边的
+  不同位置出发。
+- **网关（判断）**：**分配到不同的角**。菱形只有四个顶点，两条分支
+  若都走"右"会落在**同一段斜边**上（看着像从角出发，其实不是，
+  而且两条线叠在一起）。所以按分支的相对方位把它们分给右/下/上/左
+  四个角：正右方那条走右角，正下方那条走下角，以此类推。
+
+##### `route(flow: DiagramFlow) -> list[tuple[float, float]]`
+
+连线的折点（文件没存 ``di:waypoint`` 时算一份）。
+
+连接点自动匹配（:meth:`route_anchor`）；两端**正好共线**时走直线，
+但直线被中间节点挡住就**绕行**——线段不许被别的节点盖住（用户
+2026-10-06）。需要"锚点不动"的场合（拖动中预览）走 :meth:`route_sides`。
+
+##### `route_sides(flow: DiagramFlow, anchor: tuple[str, float, str, float]) -> list[tuple[float, float]]`
+
+按**指定的连接点**算折点（锚点冻结的走线）。
+
+⚠️ **近似共线就拉直**（容差 :data:`ROUTE_ALIGN_TOLERANCE`）：同一节点
+的多条出入边要沿边摊开（判断的「是/否」不能从同一点出发），于是出口
+与入口的 y 会差几像素——这时画成 L 形会多出一个肉眼看得见的小台阶，
+不如直接拉一条直线（BPMN 惯例）。
 
 ### 模块函数
 
@@ -7939,9 +8205,11 @@ BPM 编排引擎安全导入（与 :mod:`desktop.steps.spec` 同一约束）。
 | `print_input_overrides(imposition_active: bool) -> dict[tuple[str, str], str]` | 打印阶段的运行时连线覆盖（拼版开关 → 上游换成 imposition）。 |
 | `resolve_input(task_dir: Path \| str, stage: str, port: str, overrides: dict[tuple[str, str], str] \| None=None) -> Path \| None` | **按连线**解析某阶段某端口的输入绝对路径。 |
 | `input_ready(task_dir: Path \| str, stage: str, port: str, overrides: dict[tuple[str, str], str] \| None=None) -> bool` | 这个端口的输入**已经就位**吗（落点存在且非空）。 |
+| `stage_blocking_inputs(diagram, stage: str, active=None) -> tuple[str, ...]` | 这一步在**这张流程图上**真正要等就位的输入端口（就绪判据的唯一来源）。 |
 | `is_entry_stage(diagram, stage: str, active=None) -> bool` | 这一步在流程里是不是**入口**（沿图往前没有任何在流程里的阶段）。 |
 | `flow_entry_stage(diagram) -> str \| None` | **流程的入口阶段**（沿图往前没有任何在流程里的阶段），没有则 ``None``。 |
 | `flow_needs_entry_images(diagram) -> bool` | **这条流程**是不是要用户自己提供入口图片（而不是从 PDF 提取）。 |
+| `flow_entry_input_kind(diagram) -> str` | 流程**入口这一步**要用户提供什么输入：``"pdf"`` / ``"images"`` / ``""``。 |
 | `ports_stage_order(diagram) -> tuple[str, ...]` | 流程图上的可运行阶段（拓扑序）——``is_entry_stage`` 的内部助手。 |
 | `resolve_input_with_entry(task_dir: Path \| str, stage: str, port: str, supplier: str \| None, overrides: dict[tuple[str, str], str] \| None=None) -> Path \| None` | 按供给方解析输入路径，并把**入口回落**收在这一处。 |
 | `missing_stages(order: list[str], *, start: str \| None=None) -> list[str]` | 给定顺序，返回**输入还缺上游**的阶段（按顺序）。 |
@@ -8066,6 +8334,38 @@ BPM 编排时这正是"条件连线"的落点。
 
 只看"有没有东西"，不判断内容对不对——那是功能层的事。
 
+#### `stage_blocking_inputs(diagram, stage: str, active=None) -> tuple[str, ...]`
+
+这一步在**这张流程图上**真正要等就位的输入端口（就绪判据的唯一来源）。
+
+:func:`stage_inputs` 回答"这一步**可能**吃什么"（静态声明，来自
+``StepSpec.inputs``），本函数回答"**在本流程里**它吃什么"。自定义流程
+下两者会分叉，**就绪守卫必须用后者**，否则会出现"守卫比流程还严"：
+
+· **任务自己供给**的端口（``pdf`` ← 任务备份的源 PDF）不在列。它不是某个
+  阶段的产物目录，而是任务自己的文件（由 ``_missing_source`` 与 extract
+  分支的 ``Path(source_path).exists()`` 负责）。拿它当目录去 ``exists()``
+  恒为 ``False`` ⇒「图片提取」永远被判成"输入不齐"，**extract 被自己的
+  守卫锁死**（``resolve_input_with_entry`` 对任务哨兵返回 ``None`` 就是
+  这个意思：那里没有目录可解析）。
+· **本流程里没人产出**的端口不在列。典型：自定义流程把「图片去底色」放
+  第一个节点、没有「检测文本框」，``boxes`` 就没有供给方——那种流程里
+  这一步压根不吃检测数据（去底色按 area 处理整张图，见
+  :data:`core.command_spec.WHOLE_PAGE_AREA` 与
+  ``functions/text_region.py``），用一个解析不出东西的端口挡它，用户只
+  会看到"输入还没就位"的假提示（用户 2026-10-06 报障）。反过来，默认
+  流程里 ``boxes`` 的供给方（``detect``）**在**，它照旧是阻塞端口——
+  「去底色」仍然要等「检测文本框」跑完。
+
+在列的端口：
+
+· ``pages`` **恒在**：没有上游时它回落到入口图片目录
+  （:func:`resolve_input_with_entry`）——"没有上游"不等于"不需要图"。
+· 其余（``boxes`` 等）要**图上确实有产出方**才算。
+
+⚠️ 这一步压根不在图上时**照声明返回**：那种情况该由"这一步不在流程里"
+那条守卫（``runner`` 里的状态机守卫）来说，端口判据不该抢着给答案。
+
 #### `is_entry_stage(diagram, stage: str, active=None) -> bool`
 
 这一步在流程里是不是**入口**（沿图往前没有任何在流程里的阶段）。
@@ -8109,6 +8409,23 @@ BPM 编排时这正是"条件连线"的落点。
 
 ⚠️ 入口阶段是 ``extract`` 时**不算**：它吃的是源 PDF，"缺输入"该说
 "去补 PDF"（:func:`flow_needs_source_pdf` 那一路），两件事别混。
+
+#### `flow_entry_input_kind(diagram) -> str`
+
+流程**入口这一步**要用户提供什么输入：``"pdf"`` / ``"images"`` / ``""``。
+
+用户 2026-10-06 给输入按钮定的过滤规则，判据**只在这一份实现**：
+  ①「图片提取」打头 ⇒ 入口吃源 PDF ⇒ ``"pdf"``——界面**只显示 PDF
+    输入**（图片/目录入口整对藏起来）；
+  ②检测文本框/图片排版/图片去底色/生成PDF 打头 ⇒ 入口不吃 PDF，
+    ``pages`` 回落到入口图片目录 ⇒ ``"images"``——**不显示 PDF，只
+    显示图片输入和文件夹输入**；
+  ③图上没有可运行的入口（空图/打头的节点没接功能）⇒ ``""``——
+    **这些输入控件都不存在**。
+
+⚠️ 这些输入控件只属于**第一个流程节点**：非入口步骤的输入来自上游
+产物，不配输入控件（规则③）。页头三颗按钮、预览区左下角「＋/📁」、
+缺输入提示层全部按返回值过滤，别在界面各处自判。
 
 #### `ports_stage_order(diagram) -> tuple[str, ...]`
 
@@ -8337,6 +8654,14 @@ pages，问它"pages 输入"会拿到入口目录，而它要的其实是那个�
 
 ``port_names`` 是端口 → 落点目录/文件名的映射（默认查 ports 的
 ``PORT_ARTIFACTS``）。返回空列表 = 都齐了。
+
+⚠️ **别拿它当"能不能跑"的判据**（它现在没有生产调用方，只剩自测在碰）：
+它把 ``PORT_ARTIFACTS`` 的**产物类型**（``"pages"``/``"boxes"``）当成
+相对目录直接拼到任务目录上，跟 ports 的落点表（``STAGE_LOCATIONS``）
+和按图求解的 :func:`~desktop.store.tasks.TaskMixin.stage_input` 对不上，
+两者永远不会一致。真正的就绪判据是
+:func:`desktop.steps.ports.stage_blocking_inputs`（经
+:meth:`~desktop.store.tasks.TaskMixin.required_stage_inputs`）。
 
 ### 模块函数
 
@@ -8848,7 +9173,7 @@ boxes.json / sizes.json 读写。
 
 | 方法 | 说明 |
 | --- | --- |
-| `boxes_path(task_id: str) -> Path` | 检测框存储文件：任务目录下的 boxes.json。 |
+| `boxes_path(task_id: str) -> Path` | 检测框存储文件（任务目录下的 ``boxes.json``）。 |
 | `detect_boxes_entry(task_id: str, image_key: str) -> tuple[list, str] \| None` | 返回 (boxes, origin)；无记录时返回 None。origin: 'auto' \| 'manual'。 |
 | `detect_boxes_all(task_id: str) -> dict[str, tuple[list, str]]` | 整份 boxes.json：``image_key → (boxes, origin)``，**一次读盘**。 |
 | `save_detect_boxes(task_id: str, image_key: str, boxes: list, origin: str='auto') -> None` | 写入某页的检测框及其来源标记（auto=自动检测，manual=人工编辑）。 |
@@ -8857,6 +9182,15 @@ boxes.json / sizes.json 读写。
 | `sizes_path(task_id: str) -> Path` | 页面原始尺寸文件：任务目录下的 sizes.json。 |
 | `save_image_size(task_id: str, image_key: str, width: int, height: int) -> None` | 记录某页图片的原始像素尺寸，作为框坐标与预览映射的坐标系基准。 |
 | `image_size(task_id: str, image_key: str) -> tuple[int, int] \| None` | 返回某页原始像素尺寸 (width, height)；无记录时返回 None。 |
+
+##### `boxes_path(task_id: str) -> Path`
+
+检测框存储文件（任务目录下的 ``boxes.json``）。
+
+⚠️ 走 ``artifact("detect", "boxes")``，不写死文件名：落点的唯一真源是
+:data:`desktop.steps.ports.STAGE_LOCATIONS`。此前这里是**第二份真源**
+（``task_dir / "boxes.json"``），两处碰巧一致，改表不会同步、也永远
+不会报错——这类"双真源"是下一次数据事故的标准配方。
 
 ##### `detect_boxes_all(task_id: str) -> dict[str, tuple[list, str]]`
 
@@ -8981,6 +9315,8 @@ boxes.json / sizes.json 读写。
 ⚠️ 这里**只读 enabled 一个键**，不走 ``load_imposition_doc``：那份文档
 逐页带 rect/rotation，200 页的书能有几百 KB，列表页每个任务都要读一次，
 没必要把整份版面都反序列化。缺文件/坏文件一律当"没启用"。
+⚠️ 实现走通用的 :meth:`step_enabled`（同一文件、同一键）——拼版开关
+只是"可选步骤开关"的第一个实例，别再为第二个起一份读法。
 
 ##### `save_imposition_doc(task_id: str, doc: dict) -> bool`
 
@@ -9139,8 +9475,15 @@ error 为失败原因（退出码 / worker 的最后一行错误 / "子进程启
 时通常只画一个「图片去底色」节点。若按"图里有没有这个节点"判，会把
 提交那一动作判成"不在流程里"⇒ 进度条上"已提交"的绿点不亮。
 
-读盘失败（文件坏/无任务）一律**当作"只有四个静态阶段"**：宁可少报，
-不可抛——调用方在后台线程里用它渲染整张列表。
+读盘失败（文件坏/无任务）一律**当作"一个阶段也不在流程里"**（空集）：
+调用方（列表胶囊、``stage_states`` 的 ``in_flow`` 标记）据此不显示、
+不断言，**而不是**伪造四个默认阶段——以前这里回 ``set(STAGES)``，
+读不到流程的任务在列表里会冒出四个默认胶囊，用户还以为"默认流程
+又出现了"（而 ``task_slots`` 读不到时列表 worker 那边是另一套伪造，
+两边伪造的还可能对不上）。
+
+⚠️ 键集合不受影响：:meth:`stage_states` 照旧建四个静态键（调用方硬
+索引），只是 ``in_flow`` 全是 False。
 
 ##### `stage_states(task_id: str) -> dict[str, dict]`
 
@@ -9215,7 +9558,7 @@ JSON 文件，没有旧数据（SQLite）需要迁移。
 | `find_tasks(source_hash: str) -> list[dict]` | 按源文件指纹查重，返回全部命中的任务记录（可能多条）。 |
 | `list_tasks() -> list[dict]` | 全部任务，按 updated_at 倒序（最近改动的排在前面）。 |
 | `get_task(task_id: str) -> dict \| None` | 按任务号取任务记录；不存在返回 None。 |
-| `create_task(source_path: Path \| str \| None, source_hash: str, name: str='', duplicate_confirmed: bool=False, flow: FlowDefinition \| None=None, flow_layout: FlowLayout \| None=None, diagram=None) -> str` | 新建任务并返回任务号（四位零填充）。 |
+| `create_task(source_path: Path \| str \| None, source_hash: str, name: str='', duplicate_confirmed: bool=False, flow: FlowDefinition \| None=None, flow_layout: FlowLayout \| None=None, diagram=None, template_flow=None) -> str` | 新建任务并返回任务号（四位零填充）。 |
 | `set_task_source(task_id: str, source_path: Path \| str, source_hash: str \| None=None) -> bool` | 给**已建好但还没有 PDF** 的任务补上源文件（用户 2026-10-06）。 |
 | `rename_task(task_id: str, name: str) -> bool` | 改任务名称（用户 2026-10-06："任务名非必需，可随时修改"）。 |
 | `update_task(task_id: str, status: str) -> None` | 更新任务状态与 updated_at；任务号不存在时静默忽略。 |
@@ -9228,16 +9571,17 @@ JSON 文件，没有旧数据（SQLite）需要迁移。
 | `rembg_preview_output_dir(task_id: str) -> Path` | 「生成预览」产出的整页去底预览图目录（中间产物，不参与 print）。 |
 | `imposition_output_dir(task_id: str) -> Path` | 「图片拼版」产出的成品拼版页图目录（列表顺序即页序）。 |
 | `print_output_pdf(task_id: str) -> Path` | print 阶段产物 print.pdf 的完整路径。 |
-| `task_flow(task_id: str) -> FlowDefinition` | 本任务的**流程定义**（BPM 驱动的运行时载体）。 |
 | `task_diagram(task_id: str)` | 本任务的**流程图**（``FlowDiagram``：节点类型 + 坐标 + 折点）。 |
+| `flow_degraded_reason(task_id: str) -> str` | 本任务的流程图是不是**降级**了（读的是默认模板而非自己的图）。 |
 | `save_task_diagram(task_id: str, diagram) -> None` | 把流程图写回 ``tasks/<任务号>/flow.bpmn``（原子写）。 |
-| `task_flow_layout(task_id: str) -> FlowLayout \| None` | 本任务流程的**节点坐标**（读``flow.bpmn`` 的 BPMN DI 段）。 |
-| `save_task_flow(task_id: str, flow: FlowDefinition, flow_layout: FlowLayout \| None=None) -> None` | 把新流程写回 ``tasks/<任务号>/flow.bpmn``（详情页改流程用）。 |
 | `task_slots(task_id: str) -> tuple[StageSlot, ...]` | 本任务流程投影出的**界面槽位**（步骤条格子 + 两个栈的页号）。 |
 | `task_stage_of(task_id: str, bar_index: int) -> str \| None` | 步骤条格序 → **运行阶段**（点节点后反查该跑/该显示什么）。 |
 | `stage_input(task_id: str, stage: str, port: str='pages', imposition_active: bool=False) -> Path \| None` | 按**本任务的流程定义**解析某阶段某端口的输入绝对路径。 |
 | `task_input_dir(task_id: str) -> Path` | **流程入口图片**目录（``stages/input/``）。 |
+| `required_stage_inputs(task_id: str, stage: str, imposition_active: bool=False) -> tuple[str, ...]` | 本流程里这一步**真正要等就位**的输入端口。 |
 | `stage_supplier(task_id: str, stage: str, port: str, imposition_active: bool=False) -> str \| None` | 本任务里 ``(stage, port)`` 的**实际供给方**（运行时按图求解）。 |
+| `step_enabled(task_id: str, step: str) -> bool` | 某个**可选步骤**的用户开关（``drafts/<步骤>.json`` 的 ``enabled``）。 |
+| `scheduler_flags(task_id: str, imposition_active: bool=False) -> dict[str, bool]` | 本任务传给状态机的条件开关表（key = 可选步骤 key）。 |
 | `task_scheduler(task_id: str, imposition_active: bool=False)` | 本任务的**状态机**（``Scheduler``）——"下一步跑谁 / 能不能跑 / 跳谁" |
 | `stage_output_dir(task_id: str, stage: str) -> Path` | 返回某阶段（GUI）应写入的输出目录。 |
 | `workset_dir(task_id: str) -> Path` | 已废弃：检测/去底直接读 extract 输出目录，不再物化输入副本。 |
@@ -9271,7 +9615,7 @@ exist_ok=False``，被抢就顺延），所以并发/历史残留时**实际拿�
 只给界面做 **placeholder / 提示**用；真正落库时
 :meth:`create_task` 会用实际号重算一遍（见该方法的同名参数说明）。
 
-##### `create_task(source_path: Path | str | None, source_hash: str, name: str='', duplicate_confirmed: bool=False, flow: FlowDefinition | None=None, flow_layout: FlowLayout | None=None, diagram=None) -> str`
+##### `create_task(source_path: Path | str | None, source_hash: str, name: str='', duplicate_confirmed: bool=False, flow: FlowDefinition | None=None, flow_layout: FlowLayout | None=None, diagram=None, template_flow=None) -> str`
 
 新建任务并返回任务号（四位零填充）。
 
@@ -9279,9 +9623,14 @@ exist_ok=False``，被抢就顺延），所以并发/历史残留时**实际拿�
 占用则继续顺延。创建时会预建 stages/runs/thumbnails/source
 子目录，但不复制源文件（由 copy_source_to_task 负责）。
 
-``flow`` / ``flow_layout`` 是**自定义流程**（创建任务弹窗传进来，
-见 ``docs/tasks/bpm.md`` 的 M3）：给了就把本任务自己的 ``flow.bpmn``
-写成这份、坐标落进 BPMN DI 段；不给就是默认流程（从 ports 派生）。
+``diagram`` 是**自定义流程图**（创建任务页传进来，见 ``docs/tasks/bpm.md``）：
+给了就把本任务自己的 ``flow.bpmn`` 写成这张图（节点类型 + 坐标 + 折点）。
+不给就**字节拷贝**默认模板 ``task_default.bpmn``——默认流程的真源是那个
+文件，不是代码（见 bpm.md「铁律」）。
+
+⚠️ ``flow`` / ``flow_layout`` 是**旧模型**（``FlowDefinition``）的入口，
+只为兼容旧调用方保留；**新的调用方一律走 ``diagram``**。给 ``flow`` 时
+会经 ``template_flow`` 落盘（那条路会丢掉 ``guji:port``，别用）。
 
 ⚠️ **取号靠"目录创建的原子性"，不靠"先查后建"**（2026-09-26 审计）：
 单例守卫是**按构建目录**判定的，开发版与安装版会同时运行、共用同一个
@@ -9368,60 +9717,45 @@ exist_ok=False``，被抢就顺延），所以并发/历史残留时**实际拿�
 拼版节点**生效**时（选择态为真且有拼版页），第四步「生成 PDF」与它的
 待打印列表一律从这里取图；否则仍从 ``rembg_output_dir`` 取。
 
-##### `task_flow(task_id: str) -> FlowDefinition`
-
-本任务的**流程定义**（BPM 驱动的运行时载体）。
-
-优先读 ``tasks/<任务号>/flow.bpmn``（建任务时由默认流程生成，可被
-自定义流程替换）；文件缺失、被手编坏（非法 XML / 未知阶段）一律
-**回落默认流程**——任务必须保持可用，坏文件不能拖死整个页面。
-按 mtime 做小缓存：外部编辑器改完文件下一次进来就能生效。
-
 ##### `task_diagram(task_id: str)`
 
 本任务的**流程图**（``FlowDiagram``：节点类型 + 坐标 + 折点）。
 
-⚠️ 与 :meth:`task_flow` 的区别：那个给**运行语义**（阶段序列 + 端口
-边表，``FlowDefinition``），这个给**图形**（页面渲染用）。两者读的
+⚠️ 与 :mod:`desktop.steps.flow`（``FlowDefinition``）的区别：那个是**旧模型**
+（阶段序列 + 端口边表），已不再被 store 暴露给界面——页面渲染、运行
+顺序、供给方、就绪判据全部走这张图。两者读的
 是同一个 ``flow.bpmn``——文件是唯一真源。
 
 读不到 / 文件坏一律**回落默认模板**：界面宁可显示默认流程，也不能
-整个详情页打不开。
+整个详情页打不开。⚠️ 但**回落必须是可见的**——见
+:meth:`flow_degraded_reason`。
 
 ⚠️ **"解析得动但一个可执行步骤都认不出"也算坏**：那种图会让
 :meth:`stage_supplier` 的"在流程里"集合变成空集，于是**每个端口都
 解析成 None**（现象是"每一步都说找不到输入"，而流程看起来是有节点的，
 极难查）。所以这里判的是"有没有能跑的步骤"，不是"有没有节点"。
 
+⚠️ 第三条最隐蔽：用户在 bpmn.io 里把「图片去底色」改名成「AI 抠图」
+——一次完全合法的编辑——所有 ``task`` 节点的名字都认不出来，
+``stage_order()`` 就是空，整张自定义图被**静默**判成"坏"并换回默认
+流程。所以回落一定要配一条提示，见 ``flow_degraded_reason``。
+
+##### `flow_degraded_reason(task_id: str) -> str`
+
+本任务的流程图是不是**降级**了（读的是默认模板而非自己的图）。
+
+空串 = 正常。⚠️ 这是"自定义流程莫名其妙变回默认"这类报障**唯一**的
+线索来源：``task_diagram`` 的回落必须配一条提示，否则用户看到的现象
+与"我没改过它"完全一样（用户 2026-10-06）。
+
 ##### `save_task_diagram(task_id: str, diagram) -> None`
 
 把流程图写回 ``tasks/<任务号>/flow.bpmn``（原子写）。
 
-写完**必须清掉 ``task_flow`` 的 mtime 缓存**：它按 ``(task_id, mtime)``
-缓存，不清的话本次会话里再读拿到的还是旧流程——用户改完流程却看到老
-步骤条（"改了没反应"）。
-
 ⚠️ 只改**流程定义**，不碰任何产物。改完流程后已有产物是否还有效，是
 **界面该提示的事**，由调用方判断——store 只管存。
 
-##### `task_flow_layout(task_id: str) -> FlowLayout | None`
-
-本任务流程的**节点坐标**（读``flow.bpmn`` 的 BPMN DI 段）。
-
-读不到 / 文件坏 / 没有 DI 段时返回 ``None``——调用方（弹窗）据此
-回落自动排布。坐标是"锦上添花"，缺了不该让流程读不出来。
-
-##### `save_task_flow(task_id: str, flow: FlowDefinition, flow_layout: FlowLayout | None=None) -> None`
-
-把新流程写回 ``tasks/<任务号>/flow.bpmn``（详情页改流程用）。
-
-写完**必须清掉 mtime 缓存**：``task_flow`` 按 ``(task_id, mtime)`` 缓存，
-不清的话本次会话里再读拿到的还是旧流程——用户改完流程却看到老步骤条
-（"改了没反应"）。
-
-⚠️ 只改**流程定义与节点坐标**，不碰任何产物。改流程后已有产物是否还
-有效，是**界面该提示的事**（如"新流程不含已完成的去底色"），由调用方
-判断——store 只管存。
+（``task_diagram`` **无缓存**，每次读盘——"改了没反应"别往缓存上查。）
 
 ##### `task_slots(task_id: str) -> tuple[StageSlot, ...]`
 
@@ -9464,6 +9798,16 @@ exist_ok=False``，被抢就顺延），所以并发/历史残留时**实际拿�
 （例如自定义流程里的「检测文本框」）就拿它当pages 输入。落点由
 :data:`desktop.steps.ports.TASK_INPUT_LOCATION` 唯一声明。
 
+##### `required_stage_inputs(task_id: str, stage: str, imposition_active: bool=False) -> tuple[str, ...]`
+
+本流程里这一步**真正要等就位**的输入端口。
+
+规则只在 :func:`desktop.steps.ports.stage_blocking_inputs` 一份（那里
+解释了为什么"声明的端口"不能直接当就绪判据：``pdf`` 由任务供给、
+``boxes`` 在没有「检测文本框」的流程里压根没人产出）。
+
+:param imposition_active: 拼版开关的运行态（调用方传 effective）。
+
 ##### `stage_supplier(task_id: str, stage: str, port: str, imposition_active: bool=False) -> str | None`
 
 本任务里 ``(stage, port)`` 的**实际供给方**（运行时按图求解）。
@@ -9488,6 +9832,53 @@ exist_ok=False``，被抢就顺延），所以并发/历史残留时**实际拿�
 不是用户「提交」过的成品目录，**打印出来的是没提交的图**。
 所以判据是"它所属的**界面格**在不在流程里"（:data:`ports.STAGE_STEPS`
 给出 stage→step 的折叠关系）。
+⚠️⚠️ **图优先，静态表兜底**（2026-10-06 掉头）。原先的规则是**反的**
+（"先静态声明、后沿图回退"），后果是 ``ports.SUPPLIERS``——一份**写死在
+代码里的默认流程连线**——在它给的供给方还留在流程里时**压过用户画的
+连线**。实测两条节点集合相同、连线不同的流程（默认的
+``extract→detect→rembg→print`` 与用户自己连的 ``extract→print``），
+``print`` 的取图目录**完全一样**——用户明确要求的连线被静默丢弃。
+这就是"自定义流程里总是冒出默认流程逻辑"的**病根**：BPM 化只覆盖了
+**顺序**，没覆盖**语义**。
+
+现在的规则：
+
+1. **图能给出唯一答案**（沿图可达的产出方恰好一个）⇒ **图说了算**；
+2. 图给不出、或给出**多个**（默认流程的「是否拼版」网关就是这种：沿图
+   回溯 ``print`` 会同时看到「图片拼板」与「图片去底色」）⇒ 退回静态
+   声明 + 条件开关（``ports.print_pages_supplier`` 建模的那一条）；
+3. 静态声明是**任务源**哨兵（``extract`` 的 ``pdf``）⇒ 直接返回，它
+   本来就没有上游。
+
+⚠️ 第2 条是**确定性**的要求，不是将就：网关分支要用"拼版开关"这个
+运行态来选，两条边在图上都是实线，靠遍历顺序选是随机的。
+
+##### `step_enabled(task_id: str, step: str) -> bool`
+
+某个**可选步骤**的用户开关（``drafts/<步骤>.json`` 的 ``enabled``）。
+
+⚠️ 这是"条件开关"的**通用读法**：以前只有拼版有开关（读
+``drafts/imposition.json`` 的 ``enabled``），`store.imposition_enabled`
+与详情页的 ``imposition_active()`` 各读各的。再加一个可选步骤就要
+第三份读法——现在统一走这里（同一文件、同一键，行为一字不变，
+见 :meth:`scheduler_flags`）。
+
+⚠️ 开关查询**永不抛错**：任务号非法/目录没了/文件坏了，一律当"没开"。
+调用方（列表后台线程、状态机）不能因为一个开关读不出来就崩。
+
+##### `scheduler_flags(task_id: str, imposition_active: bool=False) -> dict[str, bool]`
+
+本任务传给状态机的条件开关表（key = 可选步骤 key）。
+
+⚠️ 键集合从 ``role == "optional"`` 派生（与
+:data:`desktop.steps.scheduler.CONDITIONS` 同源），**不是手写表**：
+以后加第二个可选步骤，这里的键自动多一个，调用方不用改。
+
+⚠️ ``imposition`` 这一键**用调用方传进来的值覆盖**，不用
+:meth:`step_enabled` 的读数——调用方传的是 ``imposition_effective()``
+（= 在流程里 ＋ ``area == 1`` ＋ 开关三道闸），而 ``step_enabled`` 只读
+开关。区域模式不支持时（``area != 1``），拼版产物根本不存在，必须让
+状态机跳过它、下游退回走去底色——只传开关会把流程指去一个空目录。
 
 ##### `task_scheduler(task_id: str, imposition_active: bool=False)`
 
@@ -9496,8 +9887,8 @@ exist_ok=False``，被抢就顺延），所以并发/历史残留时**实际拿�
 
 ⚠️ 这是"后端按图驱动"的查询面：调用方不该再自己拼
 ``STAGES`` / ``SUPPLIERS`` 的静态知识去推断顺序或可运行性，一律问它。
-顺序来自本任务流程图（拓扑序），跳过看 :data:`CONDITIONS`
-（目前只有"拼版"受开关控制）。
+顺序来自本任务流程图（拓扑序），跳过看 :meth:`scheduler_flags`
+（可选步骤的开关表，键从 spec 派生）。
 
 与 :meth:`stage_input` 的分工：那个回答**"去哪个目录取产物"**，
 这个回答**"什么时候该跑、还差什么"**。

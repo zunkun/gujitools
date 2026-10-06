@@ -257,7 +257,9 @@ def _check_task_flow(ctx, ok) -> None:
         # 没有流程文件的"老任务"（手工删掉 flow.bpmn 模拟）走默认流程。
         flow_path.unlink()
         ok("老任务（无 flow.bpmn）回落默认流程",
-           repo.task_flow(tid).supplier_of("print", "pages") == "rembg_submit")
+           repo.task_diagram(tid).stage_order()
+           == ports.ports_stage_order(load_default_diagram()),
+           str(repo.task_diagram(tid).stage_order()))
     finally:
         repo.delete_task(tid)
 
@@ -357,6 +359,7 @@ def _check_broken_flow(ctx, ok) -> None:
     from pathlib import Path
 
     from desktop.steps import ports
+    from desktop.steps.scheduler import load_default_diagram
     from desktop.store import TaskStore
 
     repo = TaskStore(ctx.tmp / "flow_store")
@@ -366,7 +369,9 @@ def _check_broken_flow(ctx, ok) -> None:
         flow_path.write_text("<bpmn:definitions><不是XML", encoding="utf-8")
         getattr(repo, "_flow_cache", {}).clear()
         ok("非法 XML 回落默认流程",
-           repo.task_flow(tid).supplier_of("print", "pages") == "rembg_submit")
+           repo.task_diagram(tid).stage_order()
+           == ports.ports_stage_order(load_default_diagram()),
+           str(repo.task_diagram(tid).stage_order()))
 
         flow_path.write_text(
             '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"'
@@ -377,7 +382,9 @@ def _check_broken_flow(ctx, ok) -> None:
         )
         getattr(repo, "_flow_cache", {}).clear()
         ok("未知阶段回落默认流程",
-           repo.task_flow(tid).supplier_of("print", "pages") == "rembg_submit")
+           repo.task_diagram(tid).stage_order()
+           == ports.ports_stage_order(load_default_diagram()),
+           str(repo.task_diagram(tid).stage_order()))
         # 回落后的解析必须与 ports 声明表一致（用**回落流程里存在**的那一步：
         # 默认模板不含 rembg，问它的 boxes 会得到 None——那是"这一步不在流程
         # 里、没有这个输入"，不是不一致）。
@@ -486,7 +493,7 @@ def _check_slots_drive_ui(ctx, ok) -> None:
     from pathlib import Path
 
     from desktop.steps import ports
-    from desktop.steps.flow import FlowDefinition
+    from desktop.steps.scheduler import load_default_diagram
     from desktop.store import TaskStore
 
     repo = TaskStore(ctx.tmp / "flow_store")
@@ -500,7 +507,7 @@ def _check_slots_drive_ui(ctx, ok) -> None:
         ), encoding="utf-8")
         getattr(repo, "_flow_cache", {}).clear()
 
-        flow = repo.task_flow(tid)
+        flow = repo.task_diagram(tid)
         slots = flow.stage_slots()
         order = [s.step for s in sorted(slots, key=lambda s: s.bar_index)]
 
@@ -520,11 +527,22 @@ def _check_slots_drive_ui(ctx, ok) -> None:
            flow.optional_after("imposition") == 0,
            str(flow.optional_after("imposition")))
         # 可选节点的 stack_index 仍排在真实步骤之后（两个栈的建页顺序不变）
+        # ⚠️⚠️ 判据是**静态表位置**（``len(FLOW_STAGES)``），**不是**"本流程里
+        #    真实步骤有几个"。两个栈按 ``FLOW_STAGES + OPTIONAL_STEPS`` 一次
+        #    建好**固定页数**，与流程图无关：这条流程摘掉了 detect（真实步骤只剩
+        #    3 个），但拼版那一页仍然是**第 5 页**（index 4）——若按"数出来的
+        #    位置"编号，后面每一步的页号都会整体前移，点「生成 PDF」就会翻到
+        #    去底色页（MEMORY「三套下标」）。
+        #    ⚠️ 这条断言此前是拿 ``task_flow``（旧模型 ``FlowDefinition``）算的，
+        #    旧模型用"数当前有几个阶段"⇒摘掉 detect 后给出 3，与真源不同。
+        from desktop.steps.spec import FLOW_STAGES
+
         by_step = {s.step: s for s in slots}
-        ok("可选节点 stack_index 仍在真实步骤区之后",
-           by_step["imposition"].stack_index == len([s for s in slots
-                                                    if not s.optional]),
-           str({s.step: s.stack_index for s in slots}))
+        ok("可选节点 stack_index = 静态表位置（不随流程里少几步而前移）",
+           by_step["imposition"].stack_index == len(FLOW_STAGES),
+           f"imposition={by_step['imposition'].stack_index} "
+           f"FLOW_STAGES={len(FLOW_STAGES)} "
+           f"{ {s.step: s.stack_index for s in slots} }")
         # 摘掉 detect 后格子前移：默认流程 rembg 在第 2 格（extract/detect/rembg），
         # 现在 detect 没了、拼版插在 extract 之后 ⇒ rembg 仍落第 2 格，但它
         # 左边换成了"extract + 拼版"。重点是 detect 整格消失、rembg 不越位。
@@ -996,6 +1014,31 @@ def _check_list_chips_follow_diagram(ctx, ok) -> None:
     ok("默认流程里 flow_stages 含同格的 rembg_submit（共存亡）",
        "rembg_submit" in repo.flow_stages(full),
        str(repo.flow_stages(full)))
+
+    # ⑤ 读不到流程 ⇒ 诚实地给空，不伪造默认胶囊
+    # 以前两处兜底都会伪造"四个默认阶段"：``flow_stages`` 异常回 ``set(STAGES)``、
+    # ``_stage_chips`` 读不到槽位就地编四个。流程图坏了的任务在列表里显示四个
+    # 默认胶囊——"自定义流程里总是冒出默认流程"的观感来源之一。
+    # ⚠️ 拿"删掉任务目录"测不到这条：``task_diagram`` 对缺失文件会回落默认模板
+    # （那是另一条有告警的降级），根本走不到 except。这里直接让 ``task_slots``
+    # 抛错，验的就是 except 里的 honesty。
+    _real_slots = repo.task_slots
+    try:
+        def _boom(task_id: str):
+            raise RuntimeError("磁盘坏了（自测模拟）")
+        repo.task_slots = _boom
+        ok("task_slots 抛错 ⇒ flow_stages 给空集（不伪造四个默认阶段）",
+           repo.flow_stages(full) == set(), str(repo.flow_stages(full)))
+        _states_boom = repo.stage_states(full)
+        ok("task_slots 抛错 ⇒ stage_states 的键还在（硬索引不崩）"
+           "，in_flow 全 False",
+           set(_states_boom) == {"extract", "detect", "rembg", "print"}
+           and all(not v["in_flow"] for v in _states_boom.values()),
+           str({k: v["in_flow"] for k, v in _states_boom.items()}))
+        ok("task_slots 抛错 ⇒ 列表胶囊是空（不伪造）",
+           chips_of(full) == [], str(chips_of(full)))
+    finally:
+        repo.task_slots = _real_slots
     for task_id in (full, task, flag_task):
         try:
             repo.delete_task(task_id)

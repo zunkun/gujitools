@@ -147,12 +147,22 @@ class _Host(DetectMixin):
         # 与 view.py 的 _wire_detect_panel 同款接线：选中态变化回填面板
         self.detect_viewer.selection_changed.connect(self._on_box_selection_changed)
         self.control_stack = _StackStub(_PanelStub())
+        self._panel = self.control_stack.widget(0)
         self.detect_stats = DetectStatsWidget()
         self._pages = [Path(f"/t/{i:04d}.png") for i in range(1, pages + 1)]
         self._size = size
         self.toasts: list = []
 
     # ---- 宿主回调/属性（真实页面里各自另有一份实现）----
+    def panel_host_of_step(self, step: str):
+        """取"某一步的面板"（真实页面在 ``page.py``；DetectMixin 只认这个入口）。
+
+        ⚠️ DetectMixin 里**不再**出现 ``control_stack.widget(1|2)``：那是静态
+        步骤表的下标，自定义流程下会读错面板、还会在流程里没有那一步时把
+        面板构造出来。这个替身保留一个恒定返回的面板即可。
+        """
+        return getattr(self, "_panel", None)
+
     def _current_area(self):
         return 1
 

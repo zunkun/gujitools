@@ -136,7 +136,9 @@ class NodePalette(ListWidget):
             self.addItem(item)
         gateway = QListWidgetItem(GATEWAY_NAME)
         gateway.setData(Qt.ItemDataRole.UserRole, GATEWAY_TOKEN)
-        gateway.setToolTip("拖到画布上添加一个分支判断（排他网关）")
+        gateway.setToolTip(
+            "拖到画布上添加一个分支判断（排他网关）。是否拼版由「图片拼版」"
+            "参数面板的开关决定，判断节点摆好即可，不必连线")
         self.addItem(gateway)
 
     # ------------------------------------------------------------ 拖放负载

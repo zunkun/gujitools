@@ -52,7 +52,13 @@ class RembgLiveMixin:
         # 两个触发点：面板参数被改（只对 rembg 面板）、预览区翻页
         # ⚠️ 第三步面板是**惰性**的：这里绝不能直接 `widget(2).param_edited`
         # （属性转发会立刻把面板建出来）。挂 created 回调，等它真被建好再接。
-        rembg_host = self.control_stack.widget(2)
+        # ⚠️ 流程里没有「图片去底色」这一格时没有面板可挂（自定义流程合法），
+        #    直接跳过——此时实时预览本来也跑不起来（``_on_live_trigger`` 第一句
+        #    就要求 ``current_stage() == "rembg"``）。
+        rembg_host = self.panel_host_of_step("rembg")
+        if rembg_host is None:
+            self.rembg_viewer.current_changed.connect(self._on_live_trigger)
+            return
         add_hook = getattr(rembg_host, "add_created_hook", None)
         if callable(add_hook):
             add_hook(
@@ -93,7 +99,9 @@ class RembgLiveMixin:
         # 全量任务正在跑时不要插队（worker 槽位是同一个 QProcess）
         if self.process and self.process.state() != QProcess.NotRunning:
             return
-        panel = self.control_stack.widget(2)
+        panel = self.panel_host_of_step("rembg")
+        if panel is None:
+            return
         try:
             args = panel.get_args()
         except ValueError:

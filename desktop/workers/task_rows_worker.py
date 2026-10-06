@@ -25,7 +25,7 @@ from __future__ import annotations
 from PySide6.QtCore import QObject, Signal, Slot
 
 from desktop.store import (
-    IMPOSITION_STAGE, STAGES, STAGE_LABELS, STAGE_SHORT,
+    IMPOSITION_STAGE, STAGE_LABELS, STAGE_SHORT,
 )
 from desktop.ui import theme as T
 
@@ -86,20 +86,17 @@ class TaskRowsWorker(QObject):
           "子任务到底有几个需要根据详情决定"）：勾了但流程图里没有它 ⇒ 不生效
           ⇒ 不占子任务；图里有但没勾 ⇒ 同样不占（与详情页那个灰色虚线一致）。
 
-        读不到流程图时**回落到四个静态阶段**（旧行为），后台线程不该因为
-        一个坏文件把整张列表刷不出来。
+        读不到流程图时**一个胶囊也不造**（空列表）：行本身照常渲染（标题/
+        时间都在），只是"有几个子任务"回答"不知道"。以前这里伪造四个静态
+        阶段——流程图坏了的任务在列表里显示四个默认胶囊，正是"自定义流程里
+        总是冒出默认流程"的观感来源之一；合法空图（用户把节点删光）也会触发
+        这条，把"没有步骤"显示成"四个步骤"。
         """
         chips: list[dict] = []
         try:
             slots = list(self.store.task_slots(task_id))
-        except Exception:  # noqa: BLE001 - 同上：读不到流程就按旧的来
-            slots = []
-        if not slots:
-            from types import SimpleNamespace
-
-            slots = [SimpleNamespace(step=stage, stage=stage, optional=False,
-                                    bar_index=i)
-                     for i, stage in enumerate(STAGES)]
+        except Exception:  # noqa: BLE001 - 读不到流程就给空，不伪造
+            return []
         for slot in sorted(slots, key=lambda s: s.bar_index):
             if slot.optional:
                 # 可选节点（拼版）：**在图里 + 已勾启用**才算一个子任务

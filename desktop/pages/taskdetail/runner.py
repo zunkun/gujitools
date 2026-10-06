@@ -145,20 +145,26 @@ class StageRunnerMixin:
         目录（``stages/input/``，见 ``store.stage_input`` 的入口回落），
         那个目录里有图就能跑——哪怕整个任务压根没有 PDF。
 
-        判据只问**当前这一步**声明的端口：``extract`` 的 ``pages`` 还没产出
-        时当然跑不了（那是它的正常状态，由面板的"执行本子任务"自己管），
-        所以这里只在"这一步有**至少一个**输入端口"时才做检查，且任一端口
-        解析不出可用路径就算不齐。
-        """
-        from desktop.steps.ports import stage_inputs
+        ⚠️ 也不能拿 ``ports.stage_inputs``（**静态声明**）当判据：声明回答的是
+        "这一步**可能**吃什么"，要问的是"**这张流程图上**它吃什么"。两者分叉的
+        两种情形都会把好端端的步骤锁死（用户 2026-10-06 现场）：
 
+        · ``extract`` 的 ``pdf`` 由**任务自己**供给（不是阶段产物目录），
+          拿它当路径查 ``exists()`` 恒为假 ⇒「图片提取」永远点不动；
+        · 自定义流程把「图片去底色」放第一个节点、没有「检测文本框」时，
+          ``boxes`` **本流程里没人产出** ⇒ 弹"这一步的输入还没就位"的假提示，
+          而那一步其实完全能跑（它按 area 处理整张图）。
+
+        所以判据走 :meth:`~desktop.store.tasks.TaskRepo.required_stage_inputs`
+        （= :func:`desktop.steps.ports.stage_blocking_inputs`）：只查**这张图上
+        确实阻塞**的端口，逐个解析出路径并确认存在。
+        """
         stage = self.current_stage()
         if not self.task_id or stage is None:
             return False
-        ports = stage_inputs(stage)
-        if not ports:
-            return True
-        for port in ports:
+        for port in self.store.required_stage_inputs(
+            self.task_id, stage, self.imposition_effective()
+        ):
             path = self.store.stage_input(
                 self.task_id, stage, port, self.imposition_effective())
             if path is None or not path.exists():
@@ -190,10 +196,23 @@ class StageRunnerMixin:
                     "本流程第一步不吃 PDF，请点页头的图片按钮选择图片，"
                     "或把图片放进任务目录下的 stages/input。",
                 )
-            else:
+            elif kind == "pdf":
+                # ⚠️ 指页头按钮前先确认它**在**（用户 2026-10-06 规则③：
+                #    输入控件只属于第一个流程节点）。「图片提取」打头时按钮
+                #    才显示，那时指它没错。
                 self._toast(
                     "warning", "尚未选择 PDF",
                     "点页头的「选择 PDF」按钮为本任务补上源文件，之后才能执行。",
+                )
+            else:
+                # 入口不吃 PDF 也不缺图，输入还是不齐 ⇒ 多半是上游没跑
+                # （或「图片提取」被挪到了中间、此刻轮到它却没有源文件）。
+                # ⚠️ 别再说"点页头的「选择 PDF」"——那种流程里按钮是藏着的
+                #    （规则①③），指一个不存在的按钮就是"点了没反应"的前奏。
+                self._toast(
+                    "warning", "这一步的输入还没就位",
+                    "这一步的输入由流程上游提供：先把它的上游步骤执行完，"
+                    "或到「查看 / 编辑流程」里检查连线。",
                 )
             return
         if self.process and self.process.state() != QProcess.NotRunning:
@@ -264,11 +283,14 @@ class StageRunnerMixin:
             self._compose_imposition_now()
             entries, doc = self._print_entries()
             entries = [e for e in entries if Path(e["file"]).exists()]
-            rembg_panel = self.control_stack.widget(2)  # 第三步 rembg 面板
+            rembg_panel = self.panel_host_of_step("rembg")
             try:
-                rargs = rembg_panel.get_args()
+                # ⚠️ 流程里没有「图片去底色」这一格时没有面板可读——那就不做
+                #    border 级联（``upstream_border`` 留 None），而不是去借
+                #    任意一个面板的 border 填进来（界面说 A、执行做 B）。
+                rargs = rembg_panel.get_args() if rembg_panel else {}
             except ValueError as exc:
-                self._toast("error", "第三步参数错误", str(exc))
+                self._toast("error", "去底色参数错误", str(exc))
                 return
             border = rargs.get("border")
             effects = self._build_print_effects(entries)
@@ -387,8 +409,12 @@ class StageRunnerMixin:
             if stage == "detect":
                 # 整页模式（area=4）：区域参数归第三步面板所有，detect 只是
                 # 借来判定「要不要加载 YOLO」，worker 侧据此整页跳过检测。
+                # ⚠️ 借的面板按**流程**找，不是 ``widget(2)``：自定义流程里
+                #    「图片去底色」可能压根不在图上，此时给默认 1（照常检测），
+                #    别把一个用户没填过的表单当参数传进 worker。
+                rembg_host = self.panel_host_of_step("rembg")
                 args["area"] = int(
-                    self.control_stack.widget(2).get_args().get("area", 1)
+                    rembg_host.get_args().get("area", 1) if rembg_host else 1
                 )
             if stage == "rembg":
                 # 「生成预览」整页去底图固定写入 stages/rembgpreview；

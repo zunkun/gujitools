@@ -23,7 +23,7 @@ from functools import partial
 
 from PySide6.QtCore import QTimer
 
-from desktop.store import STAGES
+from desktop.steps.spec import FLOW_STAGES
 
 
 class ParamDraftMixin:
@@ -35,15 +35,19 @@ class ParamDraftMixin:
     def _install_draft_hooks(self) -> None:
         """给每个阶段面板接上「用户改了参数」→ 防抖暂存。
 
-        ⚠️ 只挂真实阶段（len(STAGES)）：控制栈第 5 位是「图片拼版」占位
-        面板，没有 param_edited 信号，混进循环就是 AttributeError。
+        ⚠️ 只挂**真实阶段**的面板（``FLOW_STAGES``）：控制栈末尾还有一页
+        「图片拼版」占位面板，它没有 ``param_edited`` 信号，混进循环就是
+        AttributeError。
+        ⚠️ 页号循环用 ``FLOW_STAGES`` 的长度而不是 ``len(STAGES)``——后者是
+        store 的别名，今天同值，但那是巧合不是约定（自测 ``steps_components``
+        才钉住两者相等）。
         """
         self._draft_dirty: set[int] = set()
         self._draft_timer = QTimer(self)
         self._draft_timer.setSingleShot(True)
         self._draft_timer.setInterval(self._DRAFT_DEBOUNCE_MS)
         self._draft_timer.timeout.connect(self._flush_param_drafts)
-        for index in range(min(self.control_stack.count(), len(STAGES))):
+        for index in range(min(self.control_stack.count(), len(FLOW_STAGES))):
             host = self.control_stack.widget(index)
             register = getattr(host, "add_created_hook", None)
             if callable(register):

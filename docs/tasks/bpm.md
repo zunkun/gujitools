@@ -164,6 +164,78 @@ node_id)`（认源 PDF 走 `source_pdf_node_ids()`：事件类型**或**节点�
 
 ---
 
+### ⚠️⚠️ 铁律之二：**图必须压过静态连线表**（2026-10-06 掉头）
+
+> `ports.SUPPLIERS` 是**一份写死在代码里的默认流程连线**。它只能当**兜底**，
+> 绝不能压过用户在 `flow.bpmn` 里画的线。
+
+原规则是**反的**（"先静态声明、后沿图回退"），后果是：只要静态表给的供给方
+**还留在流程里**，用户画的所有连线一律作废。可复现的证明——两条**节点集合完全
+相同、连线不同**的流程：
+
+| 流程 | 连线 | `print` 取图目录（旧） | （新） |
+| --- | --- | --- | --- |
+| A 默认 | `extract→detect→rembg→print` | `stages/rembg` | `stages/rembg` |
+| B 用户改的 | `extract→print`（明确跳过检测/去底色）+ `rembg` 仍在流程里 | `stages/rembg` ❌ | `stages/extract` ✅ |
+
+这就是"自定义流程里总是冒出默认流程逻辑"的**病根**：**BPM 化只覆盖了"顺序"，
+没覆盖"语义"**——用户能决定跑哪几步，却决定不了数据从哪来。
+
+现在的规则（`store.stage_supplier`）：
+
+1. **不声明的端口 ⇒ 没有这个输入**（`ports.stage_inputs` 是唯一真源；这条必须
+   在查图**之前**，否则 `print` 会沿图撞上 `detect` 而拿到 `boxes.json`）；
+2. **图能给出唯一答案 ⇒ 图说了算**（`FlowDiagram.producers_of` 恰好一个产出方）；
+3. **图说不清 ⇒ 退回静态声明 + 条件开关**。
+
+⚠️ 第 3 条是**确定性**的要求，不是将就：默认流程带「是否拼版」网关，两条
+**实线**都通向「PDF排版」，沿图回溯会同时看到「图片拼板」与「图片去底色」——
+那种情况必须靠 `ports.print_pages_supplier(imposition_active)` 这个**运行态**
+来选，靠遍历顺序选是随机的。
+
+⚠️ `producers_of` **遇到产出方就停**，不继续往它上游穿：线性链里 `print` 的产出
+方是 `rembg` 而**不是** `extract`（后者只是 rembg 的上游）。若按"可达"判，线性链
+也会被误判成"多个产出方"而退回静态表，等于图白做。
+
+自测 = `step_ports` 第 9d 节（含**双向验证**：还原成静态优先即红）。
+
+### ⚠️ 铁律之三：**改名不断绑**——阶段身份是节点的属性，不是名字算出来的
+
+以前阶段是改名时**重算**的（按名字查 `STAGE_ALIASES`）：把「图片去底色」改名成
+「AI 抠图」⇒ 认不出任何阶段 ⇒ 不产出任何端口 ⇒ 整张图 `stage_order()` 为空 ⇒
+被判"坏图" ⇒ **静默回落默认流程**。用户只是改了个标签，流程却被换掉了——
+"默认流程突然出现"的机制性原因其实是**身份只活在名字里，落盘时还不保存**。
+
+现在的规则（`BpmnEditor.rename_node` + `FlowDiagram.to_xml`/`load`）：
+
+- 阶段身份落盘在 **`guji:stage`**（`load` 本来就会优先读它，只是以前 `to_xml`
+  从来不写——自己编辑器存的图重读也只能靠名字猜）；
+- 新名字能认出阶段 ⇒ 换绑到那个阶段（"改名切换步骤类型"，有意保留）；
+- 新名字认不出 ⇒ **保留原阶段**，只改显示（手滑改名不再炸掉整张流程）；
+- 本来就没阶段的节点 ⇒ 改名不许凭空接上（随手一改多出运行步骤更糟）。
+
+要解绑（留着节点但不跑）请删节点——改名不提供这条路。外部工具（bpmn.io）
+可能丢弃它不认识的 `guji:stage` 属性，丢了就退回名字匹配＋降级告警（那条路
+照旧，由 `store.flow_degraded_reason` 兜底）。
+
+自测 = `flow_ui`（保留原阶段 / 已知改名换绑 / 不凭空接上 / 存盘重读带身份，四条）。
+
+### ⚠️ 铁律之四：条件开关从 spec 派生，`SUPPLIERS` 只兜底、不优先
+
+两条容易写成"默认流程写死"的线，口径如下：
+
+- **跳过规则**（状态机）：`scheduler.CONDITIONS` 从 `SPECS` 的
+  `role == "optional"` 派生（`{步骤: 步骤}`），不是手写表。开关状态走通用的
+  `store.step_enabled`（`drafts/<步骤>.json` 的 `enabled`）+ `store.scheduler_flags`
+  一次建成——再加一个可选步骤，条件表、flags 键自动跟着走，调用方不用改。
+  唯一的调用方特例是 `imposition` 那一键用传入值覆盖：调用方传的是
+  `imposition_effective()`（在流程里 ＋ `area == 1` ＋ 开关三道闸），而纯开关
+  读数在区域模式不支持时会把下游指去一个空目录。
+- **取图目录**（`store.stage_supplier`）：铁律之二的三条规则——端口声明守门、
+  图唯一则图说了算、图说不清才退回 `SUPPLIERS` ＋条件开关。
+
+自测 = `step_ports` 第 9e 节（派生相等 / 开关同源 / flags 键集合 / 通用跳过）。
+
 ## 架构：`flow.bpmn` 是唯一真源
 
 ```
@@ -177,7 +249,7 @@ flow.bpmn ──读──> FlowDiagram        bpmn_editor.py + bpmn_editor_panel
 | --- | --- |
 | `desktop/steps/bpmn_diagram.py` | **忠实模型**：读/写整张图（任意节点类型 + DI 坐标 + 折点 + 边标签） |
 | `desktop/components/bpmn_view.py` | 照文件渲染：网关画菱形、结束事件画双圈、连线走文件折点 |
-| `desktop/components/bpmn_editor.py` | 画布交互：拖拽 / 点到点连线 / 选中（节点与连线）/ 双击改名 |
+| `desktop/components/bpmn_editor.py` | 画布交互：拖拽 / 拖**中线连接点**连线（上下左右四向自动匹配）/ 点到点连线模式 / 自动排版 / 选中（节点与连线）/ 双击改名 |
 | `desktop/components/bpmn_editor_panel.py` | **工具栏** + **固定节点面板** + 可滚动画布 + 选中状态行（"能编辑"靠它，画布本身没有按钮） |
 | `desktop/components/bpmn_palette.py` | **固定节点面板**：拖一个到画布就加一格；已在流程里的**置灰**，删掉后恢复可拖 |
 | `desktop/components/flow_dialog.py` | 查看/编辑弹窗（详情页与创建任务弹窗共用），打开即编辑态 |
@@ -247,7 +319,17 @@ python tools/gen_default_bpmn.py --check   # 校验两个模板没写坏
   - 新增 `bpmn_editor_panel.py`：工具栏（添加步骤/添加判断/连线/重命名/删除）
     + 可滚动画布 + **选中状态行**（写出"选中了什么、能做什么"）。
     此前 `ask_add_node` / `ask_delete_selected` 写好了却**没有任何按钮调它们**。
-  - 连线两种方式：点「连线」后点起点→点终点；或按住节点右缘小圆点拖到目标。
+  - 连线两种方式：**按住节点边上的中线连接点**（上下左右四个，悬停/选中时
+    显示）拖到目标节点——起止两端的连接点按两节点相对方位**自动匹配**；
+    或点「连线」后点起点→点终点（老手势保留）。
+    **拖动节点时连接点冻结**（线跟着节点平滑走，不猛跳），松手才重新匹配。
+  - **自动排版**：工具栏一键把整图分层铺开（`FlowDiagram.relayout()`），
+    同层按**水平中线对齐**（不是顶边对齐），连线按新坐标重算；多条出边/
+    入边**沿边摊开**（判断节点的「是/否」不从同一个点出发），直线被中间
+    节点挡住时**自动绕行**（线段不被别的节点盖住）。排版是纯视觉，不改阶段顺序。
+  - **判断节点不自动接线**（用户 2026-10-06）：是否拼版由「图片拼版」参数
+    面板的开关决定，判断节点摆好即可、不必与其他节点绑定；任务节点拖入时
+    若正选中着某节点，仍自动接在它后面。
   - **选中连线**：点空白处落在连线上即选中，可改文字（分支条件"是/否"）或删除。
   - 双击节点改名；改名会**重算运行阶段**（阶段是按名字接回的）。
   - 加步骤从**已有阶段里选**（不是随便起名），否则加了也不参与运行。
@@ -291,10 +373,66 @@ python tools/gen_default_bpmn.py --check   # 校验两个模板没写坏
 ### 遗留
 
 - `FlowDefinition` 仍活着（供 `StageSlot` 等类型），与 `FlowDiagram` 并存；
-  彻底统一是更大的重构。它的 `suppliers()`（端口级边表）**不是流程**，
-  别拿它当默认流程（见上文"曾经错在哪"）。
+  它的 `suppliers()`（端口级边表）**不是流程**，别拿它当默认流程（见上文
+  "曾经错在哪"）。
+  - ⚠️ **2026-10-06 已把最后两个运行时兜底也拆掉**：store 不再暴露
+    `task_flow` / `task_flow_layout` / `save_task_flow`（三个方法零生产调用方，
+    且 `save_task_flow` 走 `FlowDefinition.to_xml` 会**抹掉 `guji:port`**），
+    `page.flow_slots()` / `view._optional_after_index()` 的兜底也不再走
+    `FlowDefinition.default()`（那是**第三份**从 `ports.SUPPLIERS` 派生的默认
+    流程，算法与 `FlowDiagram` 不同）。"没有流程"现在只有一个表示：
+    `load_default_diagram()`（模板缺失时是空图）**外加一条降级告警**。
 - 执行仍是"用户点一步跑一步"：没有"一键按流程跑到底"。若要做，接
   `Scheduler.next_stage()` 即可。
+
+### 硬规则：步骤条下标**只有一种语义 = 格序 `bar_index`**（2026-10-06 血案）
+
+`StepBar` 的 `StepItem.index` / `set_step_status` / `mark_completed` /
+`set_current` / `current_changed` / `imposition_index` **全部是格序**
+（含可选节点自己占的格子）。宿主必须传 `bar_indices=`（真实步骤序列 →
+格序的映射表）与 `optional_bar_index=`，由 `view.py::_bar_step_indices()` /
+`_optional_bar_index()` 从**槽位表**算出。
+
+⚠️ 此前 `StepItem` 拿的是**真实步骤的序数**，两者只差"可选节点之前"那一段。
+默认流程 slots = `extract0/detect1/rembg2/imposition3/print4`，于是：
+
+| 症状 | 机理 |
+| --- | --- |
+| **点「生成 PDF」打开「图片拼板」** | `buttons[3].index == 3` 发出去，宿主按**格序**查表得 `imposition` |
+| 「生成 PDF」的状态/进度/打勾**永不上屏** | `set_step_status(4)` 撞 `0 <= 4 < len(buttons)==4` 被**静默 return** |
+| 最后一段连接线永远灰的 | `_connector_segments` 按**位置**查 `_completed`，而它存的是格序 |
+
+⚠️ **徽标数字仍按真实步骤序**（那是给人看的"第几步"，与寻址无关，见 `_sync`）。
+⚠️ 自测必须**逐个 `item.clicked.emit(item.index)` 真点**，不能只
+`set_current(2)`／`_select_stage(2)`——旧自测全落在"序数 == 格序"的巧合区
+（可选节点之前），所以这个 bug 在**默认流程**下长期没被发现。
+自测 = `detail_bpm_render` 第 5 节（自定义流程 + 默认流程各钉一遍）。
+
+### 硬规则：取"别的步骤的面板"只有 `panel_host_of_step(step)` 一个入口
+
+两个栈按 `FLOW_STAGES + OPTIONAL_STEPS` 一次建好**固定页数**，所以
+`control_stack.widget(2)` 恰好是「图片去底色」——那是**静态步骤表顺序**的
+性质，不是流程图的性质。自定义流程换序 / `SPECS` 增删一步，它就读错面板；
+流程里压根没有那一步时还会**把不在流程里的面板构造出来**（破坏"谁进去谁才
+建"，且读到一份用户没填过的表单）。`panel_host_of_step` 返回 `None` 时调用
+方必须**自己降级**，不许兜一个"随便哪一步"。
+
+### 硬规则：拼版的源图是**去底色提交后的成品图**（`rembg_submit`）
+
+`ports.SUPPLIERS["imposition"]["pages"]` 曾错写成 `"extract"`，而页面侧
+`imposition_source_files()` 又写死读 `stages/rembg` —— **一处错、一处掩盖**：
+默认流程下用户看到的候选池一直是对的，直到页面按连线取图才暴露出连线是错的。
+判据是业务事实：`-l`/`-r` 成对半页图**只有 area=1 的去底色产出**，且
+`task_default.bpmn` 里「图片拼板」排在「图片去底色」**之后**。
+
+### 硬规则：流程读不出来**必须让用户看见**
+
+`store.task_diagram` 在三种失败形态下都回落默认模板：① `flow.bpmn` 不存在；
+② XML 非法；③ **解析得动但一个步骤名都认不出**。第三种最狠——用户在 bpmn.io
+里把「图片去底色」改名成「AI 抠图」，阶段按**节点名**接不回，整张自定义图被
+判成"坏"、静默变回默认流程，而现象与"我没改过它"完全一样。
+所以回落一律经 `store.flow_degraded_reason(task_id)` 记原因，并由
+`TaskDetailPage._warn_if_flow_degraded` 在 `set_task` 时**弹一次**警告。
 
 ---
 
@@ -446,3 +584,13 @@ python tools/gen_default_bpmn.py --check   # 校验两个模板没写坏
 15. ⚠️ **自测里别用 `rows[0]` 找任务**（列表页断言）：模块中途新建的临时任务
    会排在更前面、把那一行抢走。曾因此让"启用拼版：列表多一个子任务"假红。
    临时任务用完要 `delete_task` 删掉。
+16. ⚠️⚠️ **左侧列表缩略图的"逐张到齐"回填不许整列重灌**（用户 2026-10-06 报
+   "拼板阶段程序卡死"）。旧实现每收一张缩略图就 ①重读整份
+   `drafts/imposition.json`（380 页 = 97KB × 7.4ms）②对**全部**条目重跑
+   `set_thumb`（每次都重跑 `scaled(SmoothTransformation)`，且无早退）——
+   380 × 380 ≈ **7.2 万次**，主线程连续占住 **27.5 秒**，事件循环一次都转不到。
+   现在只贴刚到的那一条（`ImpositionViewWidget.set_thumb_at`），定位走
+   `_imposition_rep_index` 缓存（不再重算 reps、不再读盘）。实测 **0.06 秒**。
+   同族：`ImpositionPageList.set_thumb` 还加了"同一张图早退"（判据用
+   `QPixmap.cacheKey()`）。自测 = `imposition` 第 6 节（钉**调用形状**：
+   `set_thumb` 次数 ≤ 条目数、`load_imposition_doc` 回填期间 0 次调用）。

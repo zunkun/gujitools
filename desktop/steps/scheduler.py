@@ -40,6 +40,7 @@ from dataclasses import dataclass, field
 
 from desktop.steps import ports
 from desktop.steps.bpmn_diagram import FlowDiagram
+from desktop.steps.spec import OPTIONAL_STEPS
 
 #: 阶段状态
 PENDING = "pending"     # 还没轮到
@@ -51,11 +52,13 @@ FAILED = "failed"       # 跑挂了
 
 #: 需要"条件满足"才执行的阶段 → 条件名。
 #:
-#: ⚠️ 这是**唯一的条件表**。旧实现把条件挂在连线上（``guji:condition``），
-#: 图上有多少条条件边就有多少条规则；现在收成一张表，一眼能看全有几处分支。
-CONDITIONS: dict[str, str] = {
-    "imposition": "imposition",   # 图片拼版：用户在详情页的「启用拼版」开关
-}
+#: ⚠️ 从 :data:`desktop.steps.spec.SPECS` 的 ``role == "optional"`` 派生，
+#: **不是手写表**。以前这里写死 ``{"imposition": "imposition"}``——再加一个
+#: 可选步骤（比如未来的"人工校对"），就得同时改这张表、store 的 flags 构造、
+#: 调用方的传参三处，还没有任何守卫能发现漏改（"默认流程逻辑"的标准配方）。
+#: 现在条件名恒等于步骤 key：开关状态由调用方按同名 key 传进 ``flags``。
+#: 没给的条件按 **False** 处理（可选步骤默认不跑）。
+CONDITIONS: dict[str, str] = {step: step for step in OPTIONAL_STEPS}
 
 #: 默认流程模板文件名（放在 ``desktop/static/``，随打包进 ``_internal/``）。
 DEFAULT_TEMPLATE = "task_default.bpmn"
@@ -219,6 +222,14 @@ class Scheduler:
 
         ``port_names`` 是端口 → 落点目录/文件名的映射（默认查 ports 的
         ``PORT_ARTIFACTS``）。返回空列表 = 都齐了。
+
+        ⚠️ **别拿它当"能不能跑"的判据**（它现在没有生产调用方，只剩自测在碰）：
+        它把 ``PORT_ARTIFACTS`` 的**产物类型**（``"pages"``/``"boxes"``）当成
+        相对目录直接拼到任务目录上，跟 ports 的落点表（``STAGE_LOCATIONS``）
+        和按图求解的 :func:`~desktop.store.tasks.TaskMixin.stage_input` 对不上，
+        两者永远不会一致。真正的就绪判据是
+        :func:`desktop.steps.ports.stage_blocking_inputs`（经
+        :meth:`~desktop.store.tasks.TaskMixin.required_stage_inputs`）。
         """
         from pathlib import Path
 

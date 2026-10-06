@@ -315,7 +315,6 @@ def run(ctx) -> None:
     # **步骤清单只有一个事实来源**。改造前有四份（STAGES / SPECS / MODULES /
     # PANEL_CLASSES）各写各的，加一步要改四处、漏一处没有任何守卫能发现。
     from desktop.store import (
-        IMPOSITION_INDEX,
         IMPOSITION_LABEL,
         IMPOSITION_STAGE,
         STAGE_LABELS,
@@ -358,10 +357,17 @@ def run(ctx) -> None:
 
     ok(
         "可选节点派生正确（拼版：有模块页、但不在主链上）",
-        (IMPOSITION_STAGE, IMPOSITION_LABEL, IMPOSITION_INDEX) == ("imposition", "图片拼版", len(STAGES)),
-        f"{IMPOSITION_STAGE} / {IMPOSITION_LABEL} / {IMPOSITION_INDEX}",
+        (IMPOSITION_STAGE, IMPOSITION_LABEL) == ("imposition", "图片拼版"),
+        f"{IMPOSITION_STAGE} / {IMPOSITION_LABEL}",
     )
     ok("可选节点不在主链里", all(s.key not in STAGES for s in SPECS if s.role == "optional"))
+    # ⚠️ 「拼版占第几格」**不能**有常量：`IMPOSITION_INDEX = len(STAGES)` 是
+    #    BPM 改造前的固定顺序口径，现在由流程图决定（槽位表的 bar_index）。
+    #    留着那个常量就是给下一个人留一个"看起来能用"的默认流程假设。
+    import desktop.store.tasks as _tasks_mod
+
+    ok("store 里不再有 IMPOSITION_INDEX（拼版格序问图，不问常量）",
+       not hasattr(_tasks_mod, "IMPOSITION_INDEX"))
 
     from desktop.modules import MODULES
 

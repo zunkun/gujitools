@@ -360,8 +360,19 @@ SUPPLIERS: dict[str, dict[str, str]] = {
     "rembg": {"pages": "extract", "boxes": "detect"},
     # 提交：把预览图定稿到最终目录，仍以提取的页面图为输入。
     "rembg_submit": {"pages": "extract"},
-    # 拼版：吃提取的页面图（与去底色并行，不是它的下游）。
-    "imposition": {"pages": "extract"},
+    # 拼版：吃**去底色提交后的成品图**（``rembg_submit`` → ``stages/rembg``），
+    # 不是吃提取出的原图。
+    # ⚠️⚠️ 此前这里写的是 ``"extract"``（注释说"与去底色并行，不是它的下游"）
+    #    ——**连线是错的**，而且被一处硬编码**掩盖**了：页面侧
+    #    ``imposition_source_files()`` 写死读 ``stages/rembg``，所以默认流程下
+    #    用户看到的候选池一直是对的（``1-r/1-l/2-r/2-l`` 那种成对半页图，
+    #    **只有 area=1 的去底色提交之后才存在**）；而
+    #    ``store.stage_input(imposition, pages)`` 给出的却是 ``stages/extract``
+    #    （原始扫描页）。
+    #    一旦页面改成**按连线**取图（这才是 BPM 化的正确做法），拼版就会拿原图
+    #    当源图——而 ``-l/-r`` 半页对只由 area=1 的去底色产出，拼出来必然错。
+    #    判据：``task_default.bpmn`` 里「图片拼板」排在「图片去底色」**之后**。
+    "imposition": {"pages": "rembg_submit"},
     # 生成 PDF：默认吃第三步提交的成品图；拼版生效时改由 imposition 供给
     # （见 :func:`print_pages_supplier`——那是**运行时**的一处覆盖，
     # 与这张静态表分开，免得把"用户开了拼版开关"这种运行态写成静态结构）。
@@ -432,6 +443,55 @@ def input_ready(task_dir: Path | str, stage: str, port: str,
     return path.exists()
 
 
+def stage_blocking_inputs(diagram, stage: str, active=None) -> tuple[str, ...]:
+    """这一步在**这张流程图上**真正要等就位的输入端口（就绪判据的唯一来源）。
+
+    :func:`stage_inputs` 回答"这一步**可能**吃什么"（静态声明，来自
+    ``StepSpec.inputs``），本函数回答"**在本流程里**它吃什么"。自定义流程
+    下两者会分叉，**就绪守卫必须用后者**，否则会出现"守卫比流程还严"：
+
+    · **任务自己供给**的端口（``pdf`` ← 任务备份的源 PDF）不在列。它不是某个
+      阶段的产物目录，而是任务自己的文件（由 ``_missing_source`` 与 extract
+      分支的 ``Path(source_path).exists()`` 负责）。拿它当目录去 ``exists()``
+      恒为 ``False`` ⇒「图片提取」永远被判成"输入不齐"，**extract 被自己的
+      守卫锁死**（``resolve_input_with_entry`` 对任务哨兵返回 ``None`` 就是
+      这个意思：那里没有目录可解析）。
+    · **本流程里没人产出**的端口不在列。典型：自定义流程把「图片去底色」放
+      第一个节点、没有「检测文本框」，``boxes`` 就没有供给方——那种流程里
+      这一步压根不吃检测数据（去底色按 area 处理整张图，见
+      :data:`core.command_spec.WHOLE_PAGE_AREA` 与
+      ``functions/text_region.py``），用一个解析不出东西的端口挡它，用户只
+      会看到"输入还没就位"的假提示（用户 2026-10-06 报障）。反过来，默认
+      流程里 ``boxes`` 的供给方（``detect``）**在**，它照旧是阻塞端口——
+      「去底色」仍然要等「检测文本框」跑完。
+
+    在列的端口：
+
+    · ``pages`` **恒在**：没有上游时它回落到入口图片目录
+      （:func:`resolve_input_with_entry`）——"没有上游"不等于"不需要图"。
+    · 其余（``boxes`` 等）要**图上确实有产出方**才算。
+
+    ⚠️ 这一步压根不在图上时**照声明返回**：那种情况该由"这一步不在流程里"
+    那条守卫（``runner`` 里的状态机守卫）来说，端口判据不该抢着给答案。
+    """
+    declared = stage_inputs(stage)
+    if not declared:
+        return ()
+    if diagram is None or not getattr(diagram, "nodes", ()):
+        return declared
+    order = ports_stage_order(diagram)
+    if stage not in order:
+        return declared
+    active_set = set(active) if active is not None else set(order)
+    required: list[str] = []
+    for port in declared:
+        if supplier_of(stage, port) in (SUPPLY_TASK_SOURCE, SUPPLY_TASK_INPUT):
+            continue  # 任务自己供给：不是阶段产物目录，别当路径查
+        if port == ARTIFACT_PAGES or diagram.nearest_producer(stage, port, active_set):
+            required.append(port)
+    return tuple(required)
+
+
 def is_entry_stage(diagram, stage: str, active=None) -> bool:
     """这一步在流程里是不是**入口**（沿图往前没有任何在流程里的阶段）。
 
@@ -494,6 +554,31 @@ def flow_needs_entry_images(diagram) -> bool:
         return False
     spec = spec_for_stage(stage)
     return spec is not None and not spec.needs_source_pdf()
+
+
+def flow_entry_input_kind(diagram) -> str:
+    """流程**入口这一步**要用户提供什么输入：``"pdf"`` / ``"images"`` / ``""``。
+
+    用户 2026-10-06 给输入按钮定的过滤规则，判据**只在这一份实现**：
+      ①「图片提取」打头 ⇒ 入口吃源 PDF ⇒ ``"pdf"``——界面**只显示 PDF
+        输入**（图片/目录入口整对藏起来）；
+      ②检测文本框/图片排版/图片去底色/生成PDF 打头 ⇒ 入口不吃 PDF，
+        ``pages`` 回落到入口图片目录 ⇒ ``"images"``——**不显示 PDF，只
+        显示图片输入和文件夹输入**；
+      ③图上没有可运行的入口（空图/打头的节点没接功能）⇒ ``""``——
+        **这些输入控件都不存在**。
+
+    ⚠️ 这些输入控件只属于**第一个流程节点**：非入口步骤的输入来自上游
+    产物，不配输入控件（规则③）。页头三颗按钮、预览区左下角「＋/📁」、
+    缺输入提示层全部按返回值过滤，别在界面各处自判。
+    """
+    stage = flow_entry_stage(diagram)
+    if stage is None:
+        return ""
+    spec = spec_for_stage(stage)
+    if spec is None:
+        return ""
+    return "pdf" if spec.needs_source_pdf() else "images"
 
 
 def ports_stage_order(diagram) -> tuple[str, ...]:
@@ -585,6 +670,7 @@ __all__ = [
     "artifact_of",
     "artifact_path",
     "describe",
+    "flow_entry_input_kind",
     "flow_entry_stage",
     "flow_needs_entry_images",
     "flow_needs_source_pdf",
@@ -601,6 +687,7 @@ __all__ = [
     "resolve_input_with_entry",
     "spec_for_stage",
     "stage_artifacts",
+    "stage_blocking_inputs",
     "stage_inputs",
     "stage_label",
     "stage_outputs",

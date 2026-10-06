@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import time
 
-from desktop.store import STAGES, STAGE_LABELS
+from desktop.store import STAGE_LABELS
 from desktop.pages.taskdetail.runner import STATUS_LABELS
 
 
@@ -66,7 +66,14 @@ class HistoryMixin:
         本流程里找不到（可选节点/已删节点）时按第一步兜底。
         """
         stage = self.stage_at_index(self.step_bar._current)
-        return stage if stage is not None else STAGES[0]
+        if stage is not None:
+            return stage
+        # ⚠️ 兜底走**本流程**第一格（``STAGES[0]`` 恒为 extract，自定义流程里
+        #    可能压根没有这一步——拿它回填参数会打到别的阶段上）。
+        for slot in sorted(self.flow_slots(), key=lambda s: s.bar_index):
+            if not slot.optional and slot.mapped:
+                return slot.stage
+        return ""
 
     def _restore_stage_params(self, index: int) -> None:
         """进入页面/切换阶段时回填参数：**暂存优先**，其次最近一次执行。

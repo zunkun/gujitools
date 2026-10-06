@@ -32,7 +32,7 @@ from desktop.components.viewers import (
     ImageViewerWidget, PdfViewerWidget,
     PrintPreviewWidget, RembgPreviewWidget,
 )
-from desktop.steps.flow import FlowDefinition
+from desktop.steps.spec import FLOW_STAGES
 from desktop.store import IMPOSITION_STAGE
 from desktop.ui import theme as T
 from desktop.ui.icons import PDF_FILE
@@ -326,6 +326,11 @@ class DetailViewMixin:
         self.step_bar = StepBar(
             self._bar_step_titles(), optional_after=self._optional_after_index(),
             unmapped=self._unmapped_step_indices(),
+            # ⚠️ 下标只有一种语义＝格序 bar_index（MEMORY「三套下标」第①种）。
+            #    少传这一张映射表，StepBar 就会退回"真实步骤序"，于是点「生成
+            #    PDF」打开的是「图片拼版」、它的状态也永远上不了屏。
+            bar_indices=self._bar_step_indices(),
+            optional_bar_index=self._optional_bar_index(),
         )
         self.step_bar.current_changed.connect(self._select_stage)
         # 「图片拼版」虚线节点：点击切到可选节点的占位详情（ImpositionMixin）
@@ -346,6 +351,26 @@ class DetailViewMixin:
         )
         return [s.label for s in slots]
 
+    def _bar_step_indices(self) -> list[int]:
+        """真实步骤序列里每一格的**格序 ``bar_index``**（喂 :class:`StepBar`）。
+
+        ⚠️ 与 :meth:`_bar_step_titles` **同序同长**（都过滤掉可选节点），
+        两者按下标一一对应。序数 ≠ 格序：默认流程里「生成 PDF」序数 3 而
+        格序 4（拼版占了第 3 格），两者混用就是"点一个步骤打开另一个步骤"。
+        """
+        slots = sorted(
+            (s for s in self.flow_slots() if not s.optional),
+            key=lambda s: s.bar_index,
+        )
+        return [s.bar_index for s in slots]
+
+    def _optional_bar_index(self) -> int | None:
+        """拼版节点自己的格序（``None`` = 本流程没有这一格）。"""
+        for slot in self.flow_slots():
+            if slot.optional and slot.step == IMPOSITION_STAGE:
+                return slot.bar_index
+        return None
+
     def _unmapped_step_indices(self) -> set[int]:
         """步骤条上"图上有、但还没有功能"的下标集合（2026-10-05）。
 
@@ -363,13 +388,20 @@ class DetailViewMixin:
     def _optional_after_index(self) -> int | None:
         """可选节点插在**第几个真实步骤之后**（喂 :class:`StepBar`）。
 
-        口径与算法都在 :meth:`FlowDefinition.optional_after` / :meth:`FlowDiagram.optional_after`（⚠️ 那是
+        口径与算法都在 :meth:`FlowDiagram.optional_after`（⚠️ 那是
         "真实步骤列表里的下标"，**不是**槽位表的 ``bar_index``——后者含了
         可选节点自己占的格子，两者不相等）。本流程没有可选节点时返回
         ``None``。
         """
         if not getattr(self, "task_id", None):
-            return FlowDefinition.default().optional_after(IMPOSITION_STAGE)
+            # 没任务时按**默认模板**算（静态展示）。⚠️ 此前这里是
+            # ``FlowDefinition.default().optional_after(...)``——那是**旧模型**
+            # 从端口边表派生的一份流程，与 ``FlowDiagram.optional_after``
+            # 算法不同；模板文件缺失时两条路会给出不同的插入位（步骤条上
+            # 拼版节点与槽位表对不上）。
+            from desktop.steps.scheduler import load_default_diagram
+
+            return load_default_diagram().optional_after(IMPOSITION_STAGE)
         # ⚠️ 走**图模型**（能读 bpmn.io 的网关/自定义 id）；旧 `task_flow`
         #    读不了就静默回落默认流程 ⇒ 步骤条永远长的像 task_default。
         return self.store.task_diagram(self.task_id).optional_after(
@@ -620,17 +652,22 @@ class DetailViewMixin:
         # 接线一律走 LazyPanelHost 的 created 回调（hooks），**绝不在构造期
         # 直接 `widget(i)` 取面板**——属性转发会立刻把它建出来，惰性就白做了。
         _HOOKS = {
-            1: self._wire_detect_panel,
-            2: self._wire_rembg_panel,
-            3: self._wire_print_panel,
+            "detect": self._wire_detect_panel,
+            "rembg": self._wire_rembg_panel,
+            "print": self._wire_print_panel,
         }
+        # ⚠️ 接线**按步骤 key**，不按 ``PANEL_CLASSES`` 的下标：那张元组与
+        # ``FLOW_STAGES`` 同序（都由 ``SPECS`` 的 ``role=="stage"`` 派生），
+        # 下标在这里只是巧合——``SPECS`` 前面插一个 stage，三个钩子会**集体
+        # 错位一格**（rembg 的联动刷新接到 print 上），且没有任何报错。
         for index, panel_class in enumerate(PANEL_CLASSES):
-            hook = _HOOKS.get(index)
+            key = FLOW_STAGES[index] if index < len(FLOW_STAGES) else None
+            hook = _HOOKS.get(key)
             self.control_stack.addWidget(
                 LazyPanelHost(panel_class, hooks=[hook] if hook else [])
             )
-        # 拼版伪步骤（index 4）：占位详情面板——只在流程条点了虚线节点时显示，
-        # 不属于任何真实阶段（STAGES/runs 机制不感知它）
+        # 拼版伪步骤（追加在主链之后）：占位详情面板——只在流程条点了虚线节点时
+        # 显示，不属于任何真实阶段（STAGES/runs 机制不感知它）
         self.control_stack.addWidget(self._build_imposition_panel())
         column.addWidget(self.control_stack, 1)
         # 第二步右侧的「检测结果统计」：只在 detect 阶段显示（见 _select_stage），
@@ -646,14 +683,12 @@ class DetailViewMixin:
         self._sync_print_margin_default()
         # 第四步面板建好时补「按源 PDF 名派生默认 PDF 名/古籍名」：set_task 只
         # 记下 _pending_source_stem，**不强制构造面板**（见 page.set_task）
-        self.control_stack.widget(3).add_created_hook(
-            self._apply_pending_source_defaults
-        )
-        # 同理补「切任务时挂起的第四步状态复位」（见 _apply_pending_print_reset）
-        self._pending_print_reset = False
-        self.control_stack.widget(3).add_created_hook(
-            self._apply_pending_print_reset
-        )
+        print_host = self.panel_host_of_step("print")
+        if print_host is not None:
+            print_host.add_created_hook(self._apply_pending_source_defaults)
+            # 同理补「切任务时挂起的第四步状态复位」
+            self._pending_print_reset = False
+            print_host.add_created_hook(self._apply_pending_print_reset)
 
         column.addWidget(Divider())
         self._build_history_controls(column)
@@ -745,7 +780,12 @@ class DetailViewMixin:
         由 ``PrintPreviewWidget`` 捕获后退回「原图」并在说明行给出原因，
         避免用户每敲一个字符就弹窗。
         """
-        return self.control_stack.widget(3).get_args()
+        host = self.panel_host_of_step("print")
+        if host is None:
+            # 本流程没有「生成 PDF」这一格：没有表单可读（调用方会把预览退回
+            # 「原图」，不该拿别的面板的参数冒充打印参数）
+            raise ValueError("当前流程里没有「生成 PDF」这一步")
+        return host.get_args()
 
     def _apply_pending_source_defaults(self, panel=None) -> None:
         """把「当前任务的源 PDF 名」派生的默认值补给第四步面板。
@@ -757,7 +797,9 @@ class DetailViewMixin:
         if not stem:
             return
         if panel is None:
-            host = self.control_stack.widget(3)
+            host = self.panel_host_of_step("print")
+            if host is None:
+                return
             peek = getattr(host, "peek", None)
             panel = peek() if callable(peek) else host
         if panel is None:
@@ -782,7 +824,9 @@ class DetailViewMixin:
         if not getattr(self, "_pending_print_reset", False):
             return
         if panel is None:
-            host = self.control_stack.widget(3)
+            host = self.panel_host_of_step("print")
+            if host is None:
+                return
             peek = getattr(host, "peek", None)
             panel = peek() if callable(peek) else host
             if panel is None:
@@ -800,9 +844,10 @@ class DetailViewMixin:
         填写中途的非法值抛错），交给 print 面板自行决定是否覆盖默认边距。
         """
         try:
-            rembg_host = self.control_stack.widget(2)
+            rembg_host = self.panel_host_of_step("rembg")
             # ⚠️ 必须用 peek()（不触发构造）：第三步面板没建时它的 border 就是
             # 默认空值，等它建好会由 _wire_rembg_panel 补一次同步。
+            # ⚠️ 流程里没有去底色这一格 ⇒ 没有 border 可级联，按"无上游"处理。
             rembg_peek = getattr(rembg_host, "peek", None)
             if callable(rembg_peek):
                 rembg_panel = rembg_peek()
@@ -811,11 +856,15 @@ class DetailViewMixin:
                     if rembg_panel is not None
                     else None
                 )
+            elif rembg_host is None:
+                border = None
             else:
                 border = (rembg_host.border.text() or "").strip() or None
         except Exception:
             border = None
-        host = self.control_stack.widget(3)
+        host = self.panel_host_of_step("print")
+        if host is None:
+            return
         peek = getattr(host, "peek", None)
         panel = peek() if callable(peek) else host
         if panel is None:

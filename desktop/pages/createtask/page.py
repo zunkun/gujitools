@@ -154,7 +154,10 @@ class CreateTaskPage(QWidget):
         root.addWidget(self.name_hint)
 
         # ---- 面板原样搬过来（自带标题、流程图、按钮行）----
-        self.panel = CreateTaskPanel(self)
+        # ⚠️ outer_margins=False：页面根布局已有 SPACE_XL 边距，面板再 pad
+        #    一层会让「创建任务」标题比上面的「任务名称」多缩进 24px
+        #    （用户 2026-10-06 截图反馈的对齐问题）。
+        self.panel = CreateTaskPanel(self, outer_margins=False)
         self.panel.submitted.connect(self._on_submit)
         self.panel.cancelled.connect(self._on_back)
         # ⚠️ 清掉 PDF 时，**任务名里那个自动填的文件名也要回退**（否则留下一个

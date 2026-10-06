@@ -284,15 +284,31 @@ class ModuleShell(QWidget):
         """打开某个任务的流程编辑页（详情页页头按钮走这里）。"""
         page = self.flow_page()
         if not page.open_task(task_id):
-            self._toast_flow_error()
+            self._toast_flow_error(task_id)
             return
         self.pages.setCurrentWidget(page)
         if self.pages.currentWidget() is page:
             self._sync_nav_to_page(0)
 
-    def _toast_flow_error(self) -> None:
-        """流程读不出来时的提示（回列表，不留一个空白的流程页）。"""
+    def _toast_flow_error(self, task_id: str = "") -> None:
+        """流程页打不开时的提示：**回列表 + 真的弹一条**。
+
+        ⚠️ 这个方法名叫 ``_toast_*`` 却只 ``show_tasks()`` —— 用户点「查看 /
+        编辑流程」后页面直接跳回列表，既没有提示也没有解释，看起来就是"点了
+        没反应"。⚠️ 壳层**没有**自己的 ``_toast``，借详情页的。
+        """
         self.show_tasks()
+        page = getattr(self, "_detail_page", None)
+        reason = ""
+        if task_id and page is not None and page.store is not None:
+            reason = page.store.flow_degraded_reason(task_id)
+        detail = f"：{reason}" if reason else "，请稍后重试或重新进入任务。"
+        toast = getattr(page, "_toast", None)
+        if callable(toast):
+            toast(
+                "warning", "打不开流程图",
+                f"这个任务的流程读不出来{detail}",
+            )
 
     def _back_from_flow(self) -> None:
         """流程页「返回」→ 回该任务的详情页（没打开过任务就回列表）。"""
@@ -307,9 +323,16 @@ class ModuleShell(QWidget):
         self.open_detail(task_id)
 
     def prewarm_detail_page(self) -> None:
-        """预构造详情页骨架与**第一步**面板（同 app.py 原 ``_prewarm_detail_page``）。"""
+        """预构造详情页骨架与**流程第一步**面板（同 app.py 原 ``_prewarm_detail_page``）。"""
         page = self._ensure_detail_page()
-        first = page.control_stack.widget(0)
+        # ⚠️ 按 **step key** 查，不写死 ``widget(0)``：预热的是"用户最先会看到的
+        #    那一步"，自定义流程第一步可以是「检测文本框」而不是「提取图片」
+        #    （``widget(0)`` 恒是**静态步骤表**的第一格）。没有任务时
+        #    ``panel_host_of_step`` 走默认流程兜底，行为与旧写法一致。
+        step = page.flow_entry_step()
+        first = page.panel_host_of_step(step) if step else None
+        if first is None:
+            return
         if hasattr(first, "peek") and first.peek() is None:
             first.panel  # noqa: B018 - 触发构造，返回值不用
 

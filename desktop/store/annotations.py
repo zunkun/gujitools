@@ -28,8 +28,14 @@ class AnnotationMixin:
 
     # ---------- 检测框 boxes.json ----------
     def boxes_path(self, task_id: str) -> Path:
-        """检测框存储文件：任务目录下的 boxes.json。"""
-        return self.task_dir(task_id) / "boxes.json"
+        """检测框存储文件（任务目录下的 ``boxes.json``）。
+
+        ⚠️ 走 ``artifact("detect", "boxes")``，不写死文件名：落点的唯一真源是
+        :data:`desktop.steps.ports.STAGE_LOCATIONS`。此前这里是**第二份真源**
+        （``task_dir / "boxes.json"``），两处碰巧一致，改表不会同步、也永远
+        不会报错——这类"双真源"是下一次数据事故的标准配方。
+        """
+        return self.artifact(task_id, "detect", "boxes")
 
     def detect_boxes_entry(self, task_id: str, image_key: str) -> tuple[list, str] | None:
         """返回 (boxes, origin)；无记录时返回 None。origin: 'auto' | 'manual'。"""

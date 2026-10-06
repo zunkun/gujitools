@@ -411,6 +411,11 @@ class ImpositionPagesMixin:
         组件与 worker 共用，**缓存根各归各**——独立区写
         ``singletask/imposition/``，任务流程写 ``tasks/<id>/thumbnails/
         imposition/``（用户 2026-10-04 明确）。
+
+        ⚠️ ``reps`` **在这里算一次并缓存**：回填回调（:_on_imposition_source_thumb）
+        此前每收一张缩略图就重算一次，而它为此**重读整份
+        ``drafts/imposition.json``**（380 页就是 97KB × 380 次 ≈ 2.8 秒全卡在
+        主线程）。
         """
         view = getattr(self, "imposition_view", None)
         if view is None:
@@ -419,6 +424,10 @@ class ImpositionPagesMixin:
         if thumbs is None:
             thumbs = self._imposition_source_thumbs = {}
         reps = self._imposition_page_reps(pages)
+        # ⚠️ 缓存"代表图 → 条目下标"的反查表，回填时 O(1) 定位，不必重算 reps
+        self._imposition_rep_index = {
+            rep: i for i, rep in enumerate(reps) if rep
+        }
         by_index = [thumbs.get(rep) if rep else None for rep in reps]
         view.set_page_thumbs(by_index)
         missing = list(dict.fromkeys(r for r in reps if r and r not in thumbs))
@@ -458,11 +467,23 @@ class ImpositionPagesMixin:
     def _on_imposition_source_thumb(
         self, index: int, image, images: list[str]
     ) -> None:
-        """一张源图缩略图就绪：存起来并贴到左列（只贴图，不再起 worker）。
+        """一张源图缩略图就绪：存起来并**只贴刚到的那一条**（不再起 worker）。
 
-        ⚠️ 与独立拼图页的差别：那边每次到达都重跑一遍"刷新"（会对剩余项
-        再起 worker）；这里到达时**只重贴已存下的**——worker 本身对每张图
-        都有缓存，多起几轮只会白转线程。
+        ⚠️⚠️ **绝不能在这里整列重灌**（用户 2026-10-06 报"拼板阶段程序卡死"）。
+        此前每收一张缩略图就做两件全量的事：
+
+        1. ``_imposition_pages()`` → **重读并解析整份
+           ``drafts/imposition.json``**（380 页 = 97KB，7.4ms/次）；
+        2. ``set_page_thums(整列 N 张)`` → 对**每一个**条目重跑一次
+           ``set_thumb``，而它每次都重新做 ``pixmap.scaled(SmoothTransformation)``
+           且**没有"图没变就跳过"的早退**。
+
+        于是 380 张到达 × 380 条重灌 ≈ **7.2 万次带缩放的重贴**，全在主线程、
+        事件循环一次都转不到。离屏实测**主线程被连续占住 27.5 秒**（其中
+        ``set_page_thumbs`` 24.7s + 读 JSON 2.8s）——用户看到的就是"程序卡死"。
+        而且 380 张全部命中磁盘缓存时信号挤成一团连续到达，冻结更狠。
+
+        现在只贴刚到的那一条（``set_thumb_at``），定位走缓存的反查表。
         """
         from PySide6.QtGui import QPixmap
 
@@ -476,10 +497,20 @@ class ImpositionPagesMixin:
         thumbs = getattr(self, "_imposition_source_thumbs", None)
         if thumbs is None:
             thumbs = self._imposition_source_thumbs = {}
-        thumbs[images[index]] = pixmap
+        rep = images[index]
+        thumbs[rep] = pixmap
         view = getattr(self, "imposition_view", None)
-        if view is not None:
+        if view is None:
+            return
+        rep_index = getattr(self, "_imposition_rep_index", None)
+        if rep_index is None:
+            # 没有快照（例如缩略图是本轮之外补回来的）：整列灌一次兜底
             reps = self._imposition_page_reps(self._imposition_pages())
             view.set_page_thumbs(
-                [thumbs.get(rep) if rep else None for rep in reps]
+                [thumbs.get(r) if r else None for r in reps]
             )
+            return
+        slot = rep_index.get(rep)
+        if slot is None:
+            return  # 这一页已经不在当前清单里（用户中途删了/改了流程）
+        view.set_thumb_at(slot, pixmap)

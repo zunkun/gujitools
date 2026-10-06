@@ -13,10 +13,11 @@
 
 ==========================  ==========================================
 添加步骤                      从已知阶段里挑一个接上流程（能被运行时认出来）
-添加判断                      加排他网关（分支菱形）
-连线                          开连线模式：点起点 → 点终点
+添加判断                      加排他网关（分支菱形）——只摆节点，不连线
+连线                          开连线模式：点起点 → 点终点（日常用拖连接点）
 重命名                        改节点名 / 连线上的字（如「否」）
 删除                          删选中的节点或连线
+自动排版                      整图分层铺开，连线按新坐标重算
 ==========================  ==========================================
 
 画布外面套滚动区，并把画布的**下限**跟着视口走（否则图很小时没地方拖节点）。
@@ -152,7 +153,9 @@ class BpmnEditorPanel(QWidget):
 
         self.gateway_button = PushButton("添加判断")
         self.gateway_button.setIcon(FIF.TAG)
-        self.gateway_button.setToolTip("加一个分支判断（排他网关），从它拖出两条线")
+        self.gateway_button.setToolTip(
+            "加一个分支判断（排他网关）。是否拼版由「图片拼版」参数面板的"
+            "开关决定，判断节点摆好即可，不必连线")
         self.gateway_button.clicked.connect(self._on_add_gateway)
         row.addWidget(self.gateway_button)
 
@@ -175,6 +178,12 @@ class BpmnEditorPanel(QWidget):
         row.addWidget(self.delete_button)
 
         row.addStretch()
+        self.layout_button = PushButton("自动排版")
+        self.layout_button.setIcon(FIF.LAYOUT)
+        self.layout_button.setToolTip(
+            "按流程顺序一键整理布局（节点位置与连线走线都会重排）")
+        self.layout_button.clicked.connect(self._on_auto_layout)
+        row.addWidget(self.layout_button)
         self.reset_button: PushButton | None = None
         if self._reset_factory is not None:
             self.reset_button = PushButton("恢复默认")
@@ -248,11 +257,16 @@ class BpmnEditorPanel(QWidget):
             editor.ask_add_node()
 
     def _on_add_gateway(self) -> None:
+        """加一个判断节点（只摆节点，不连线、不进连线模式）。"""
         editor = self.editor()
         if editor is not None:
             editor.add_gateway()
-            # 加完直接把连线模式打开：网关的存在意义就是分出两条线
-            editor.set_link_mode(True)
+
+    def _on_auto_layout(self) -> None:
+        """整图自动排版（分层铺开 + 连线按新坐标重算）。"""
+        editor = self.editor()
+        if editor is not None:
+            editor.auto_layout()
 
     def _on_toggle_link(self, checked: bool | None = None) -> None:
         """⚠️ ``checked`` 允许缺省：qfluentwidgets 的 ``clicked`` 在这里发的是
@@ -314,8 +328,8 @@ class BpmnEditorPanel(QWidget):
         elif editor.link_mode():
             text = "连线模式：点起点节点，再点终点节点"
         else:
-            text = ("拖动节点排版；点「连线」连两个步骤；点空白处可选中连线；"
-                    "双击节点改名")
+            text = ("按住节点边上的圆点拖到目标节点即可连线；拖动节点排版，"
+                    "点「自动排版」一键整理；点空白处可选中连线；双击节点改名")
         self.status.setText(text)
         self._sync_buttons(bool(node_id), bool(flow_id or node_id))
 

@@ -105,7 +105,10 @@ class ImpositionBaseMixin:
         ⚠️ 返回 0 = **还不知道**（全新任务没配过 / 没跑过），**不等于
         "不支持拼版"**：三态判据里它走"请先确认区域模式"那条提示。
         """
-        host = self.control_stack.widget(2)
+        host = self.panel_host_of_step("rembg")
+        # ⚠️ 流程里没有「图片去底色」这一格时 ``host`` 是 ``None``：没有任何
+        #    area 依据，直接往下走暂存/历史（自定义流程把去底色删掉是合法的）。
+        #    绝不能兜一个别的面板——那是"用户没填过的表单"。
         peek = getattr(host, "peek", None)
         panel = peek() if callable(peek) else None
         if panel is not None:
@@ -281,10 +284,25 @@ class ImpositionBaseMixin:
 
     # ------------------------------------------------------------- 源图与生效
     def imposition_source_files(self) -> list[Path]:
-        """可挑选的源图：第三步「提交本次任务」的成品图（stages/rembg）。"""
+        """可挑选的源图：**拼版这一步的 pages 端口**指向的目录。
+
+        ⚠️ 此前这里写死 ``store.rembg_output_dir()``（＝``stages/rembg``）——
+        那是**问输入却写成写死**：自定义流程把连线改了（或者压根没有去底色
+        那一格）时，它会去读一个永远不会被产出的目录，于是「＋选择拼版」弹
+        "没有可拼版的图片，请先提交本次任务"——而那一步压根不在流程里。
+        现在与 :meth:`print_source_dir` 同构，走 ``store.stage_input``。
+
+        ⚠️ ``imposition_effective`` 传的是**图里有没有这一格 + area 前提**，
+        不是"用户勾没勾"：这一格不存在时下方控件整体是置灰的，不该因为
+        "还没勾" 就换一个别的取图来源。
+        """
         if not self.task_id:
             return []
-        files = list_stage_images(self.store.rembg_output_dir(self.task_id))
+        source = self.store.stage_input(
+            self.task_id, "imposition", "pages",
+            imposition_active=self.imposition_effective(),
+        ) or self.store.rembg_output_dir(self.task_id)
+        files = list_stage_images(source)
         return sorted(files, key=lambda p: pdf_custom_sort_key(p.name))
 
     def imposition_active(self) -> bool:
@@ -299,10 +317,15 @@ class ImpositionBaseMixin:
         本方法是"**流程走不走拼板**"的唯一判据：第四步取图来源
         (:meth:`print_source_dir`) 与流程条生效态
         (:meth:`_sync_imposition_step_bar`) 都只看它。
+
+        ⚠️ 实现走通用的 ``store.step_enabled``（同一文件、同一键），不再自己
+        读整份文档——那份文档逐页带版面，200 页的书几百 KB，每次只为一个
+        bool 反序列化整份是浪费（列表页的 ``store.imposition_enabled`` 当年
+        就是为此才另起一份读法；现在两份合成一份）。
         """
         if not getattr(self, "task_id", None):
             return False
-        return bool(self._imposition_doc().get("enabled"))
+        return self.store.step_enabled(self.task_id, "imposition")
 
     def imposition_has_pages(self) -> bool:
         """拼版文档里**至少有一页**版面（能不能真的合成出图）。
@@ -402,6 +425,9 @@ class ImpositionBaseMixin:
         # 已渲好的源图缩略图按**路径**缓存，跨任务留着没有意义（还有旧图
         # 占内存）；左列重灌时自然按新任务的路径重新渲。
         self._imposition_source_thumbs = {}
+        #: 代表图路径 → 左列条目下标（``_refresh_imposition_page_thumbs`` 建）。
+        #: 回填时 O(1) 定位，不必重算（更不必重读 imposition.json）。
+        self._imposition_rep_index = {}
         # 新任务的取图来源未必和上个任务一样：让 _refresh_print_source 重新判定
         self._print_source_cache = None
         self._refresh_imposition_view()

@@ -144,6 +144,9 @@ class _PageEntry(QFrame):
         labels.addWidget(self.caption_label)
         root.addLayout(labels)
         self.remove_button.hide()
+        #: 当前已贴缩略图的 ``QPixmap.cacheKey()``（``None`` = 还没贴/已清空）。
+        #: ``set_thumb`` 的"同一张图不重贴"早退靠它，见该方法说明。
+        self._thumb_key: int | None = None
         self._apply_style()
 
     def set_thumb(self, image) -> None:
@@ -155,16 +158,30 @@ class _PageEntry(QFrame):
 
         ⚠️ 没图时**不写「···」**（用户 2026-10-04 报「只看到 3 个点」）：
         空框 + ``paintEvent`` 里的浅底框即可——"还没渲"与"渲不出来"都由它兜着。
+
+        ⚠️ **同一张图直接返回**（早退）：批量路径会重复贴同一张图，而每次都要
+        重跑一次 ``scaled``。详见 :meth:`set_thumb_at` 里的说明。
         """
         if image is None or getattr(image, "isNull", lambda: True)():
+            self._thumb_key = None
             self.thumb.clear()
             return
         pixmap = (
             image if isinstance(image, QPixmap) else QPixmap.fromImage(image)
         )
         if pixmap.isNull():
+            self._thumb_key = None
             self.thumb.clear()
             return
+        # ⚠️ **同一张图不重贴**（早退）：`set_thumb` 每次都要跑一次
+        # `pixmap.scaled(SmoothTransformation)`，在"整列批量回填"路径上会被
+        # 调用上万次（见 `set_thumb_at` 的说明）。判据用 pixmap 的
+        # `cacheKey()`——它是内容标识，两次 `fromImage` 同一张图会得到同一个
+        # key，而图内容变了 key 必变（不会"图换了却不刷新"）。
+        key = pixmap.cacheKey()
+        if key == self._thumb_key:
+            return
+        self._thumb_key = key
         self.thumb.setText("")
         self.thumb.setPixmap(
             pixmap.scaled(
@@ -585,6 +602,29 @@ class ImpositionPageList(QWidget):
         }
         for entry in self._entries:
             entry.set_thumb(by_index.get(entry.index))
+
+    def set_thumb_at(self, index: int, image) -> None:
+        """只给**指定条目**贴缩略图（``index`` 是它在当前清单里的位置）。
+
+        ⚠️ **"一张张到齐"的回填必须用它，不要用** :meth:`set_page_thumbs`：那个
+        方法会遍历**全部**条目逐个 ``set_thumb``，于是"380 张缩略图陆续到达"
+        变成 380 × 380 ≈ **7.2 万次** ``set_thumb``；而 ``set_thumb`` 每次都要
+        重跑一次 ``pixmap.scaled(SmoothTransformation)``（现在有"同一张图早退"，
+        但已贴过的那 379 条仍要走一遍字典查表 + 早退判断）。
+
+        实测（离屏，380 页拼版）：整列重灌 = **主线程连续占住 27.5 秒**，
+        用户看到的就是"程序卡死"；只贴单条 = **~0.03 秒**。
+
+        ⚠️ 这里用**位置**（``_entries`` 的下标）而不是 ``entry.index``：调用方
+        传的是"清单里的第几页"（与 :meth:`_imposition_page_reps` 同序），
+        拖动排序后两者会分叉——那种情况下贴错一条比不贴更难查。
+
+        无此条目（清单变短了/下标越界）时**静默忽略**：那是"用户正在翻页或
+        删页"，不该让一个迟到的缩略图把异常抛到事件循环外面。
+        """
+        if not (0 <= index < len(self._entries)):
+            return
+        self._entries[index].set_thumb(image)
 
     def current(self) -> int:
         return self._current

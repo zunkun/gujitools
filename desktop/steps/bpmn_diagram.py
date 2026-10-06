@@ -76,6 +76,20 @@ FALLBACK_SIZE = (100.0, 80.0)
 AUTO_GAP_X = 60.0
 AUTO_GAP_Y = 150.0
 AUTO_PADDING = 24.0
+#: 「自动排版」（:meth:`FlowDiagram.relayout`）的层间距/同层行距。
+#: 比兜底排版紧凑些——主链要一屏放得下。
+LAYOUT_GAP_X = 80.0
+LAYOUT_GAP_Y = 56.0
+#: 自动排版时注释框与**宿主节点**的间距（注释一律重挂到宿主正下方）。
+LAYOUT_NOTE_GAP = 30.0
+#: 注释互相压住时的让位步长（往下一格再试）。
+LAYOUT_NOTE_STEP = 12.0
+#: 连线两端"近似共线"的容差（px）：小于它就直接拉直线，不画L 形台阶。
+#: 同一节点的多条出入边要沿边摊开，出口与入口差几像素是常态。
+ROUTE_ALIGN_TOLERANCE = 8.0
+#: 网关分支"算同一格"的容差（px）：对端中心落在网关中心这个范围内就算
+#: 正前方/正下方，否则按九宫格分区（`_corner_pick`）。
+CORNER_CELL_EPS = 12.0
 
 #: ``StageSlot.stack_index`` 的哨兵：**两个栈里没有这一页**。
 #:
@@ -145,6 +159,44 @@ def stage_of_name(name: str, guji_stage: str | None = None) -> str | None:
         if label == compact:
             return stage
     return None
+
+
+def _overlaps(a: tuple[float, float, float, float],
+              b: tuple[float, float, float, float]) -> bool:
+    """两个 ``(x, y, w, h)`` 框是否相交（注释避让用；贴边不算交叠）。"""
+    ax, ay, aw, ah = a
+    bx, by, bw, bh = b
+    return (ax < bx + bw and bx < ax + aw
+            and ay < by + bh and by < ay + ah)
+
+
+#: 注释正文里一个字符的平均宽度/行高（px）。注释按 9pt 渲染，中文约 13px宽。
+NOTE_CHAR_W = 13.0
+NOTE_LINE_H = 16.0
+#: 注释框的文字区内边距 + 左侧开口方括号占的宽度（与 bpmn_view 的画法对齐）。
+NOTE_CHROME_W = 26.0
+#: 注释框单行时的最小/最大宽度（免得短句太空、长句溢出画布）。
+NOTE_MIN_W, NOTE_MAX_W = 110.0, 200.0
+NOTE_MIN_H = 30.0
+
+
+def _note_size(text: str,
+               old: tuple[float, float, float, float] | None,
+               ) -> tuple[float, float]:
+    """注释框该多大：按**正文长度**算，宁可一行放下也不折行。
+
+    ⚠️ 别沿用文件里的旧宽高：那些是bpmn.io 里手画的，102px 宽装不下
+    「检测古籍文本框」七个字（渲染时按框宽自动换行，注释被折成两行、
+    高度对不齐，一眼看去像"乱"）。宽高只作**下限**——用户手动拉大过就尊重。
+    """
+    need_w = min(NOTE_MAX_W,
+                 max(NOTE_MIN_W, len(text or "") * NOTE_CHAR_W + NOTE_CHROME_W))
+    lines = max(1, int((len(text or "") * NOTE_CHAR_W
+                        - (need_w - NOTE_CHROME_W)) // NOTE_LINE_H) + 1)
+    need_h = max(NOTE_MIN_H, lines * NOTE_LINE_H + 12.0)
+    if old is None:
+        return need_w, need_h
+    return max(need_w, old[2]), max(need_h, old[3])
 
 
 def default_size(kind: str) -> tuple[float, float]:
@@ -455,6 +507,67 @@ class FlowDiagram:
                 queue.append(source)
         return None
 
+    def producers_of(self, stage: str, port: str,
+                     active) -> tuple[str, ...]:
+        """沿图往前能到达的、产出 ``port`` 的**全部**在流程阶段（已折叠）。
+
+        与 :meth:`nearest_producer` 的区别是**返回全部**而不是"广度序第一个"
+        ——用来判断"**图能不能给出唯一答案**"。
+
+        ⚠️ 为什么需要这个判据（2026-10-06，用户"这个问题再次提出"）：
+        ``store.stage_supplier`` 原先的规则是**"先静态声明、后沿图回退"**，
+        于是 ``ports.SUPPLIERS``（一份**写死在代码里的默认流程连线**）在
+        静态供给方还留在流程里时**压过用户的连线**。实测：两条节点集合相同、
+        连线不同的流程（`extract→detect→rembg→print` 与用户自己连的
+        `extract→print`），``print`` 的取图目录**完全一样**——用户明确画的
+        连线被静默丢弃。这就是"自定义流程里总是冒出默认流程逻辑"的病根：
+        **BPM 化只覆盖了"顺序"，没覆盖"语义"**。
+
+        ⚠️ 但**不能无条件改成"图说了算"**：默认流程带一个网关（是否拼版），
+        沿图回溯 ``print`` 会同时找到「图片拼板」与「图片去底色」两个产出方
+        ——**图说不清**。那种情况必须退回静态声明 + 条件开关（那正是
+        ``ports.print_pages_supplier`` 建模的东西）。所以调用方的判据是
+        "**恰好一个**产出方 ⇒ 图说了算；0 个或多个 ⇒ 退回静态表"。
+
+        产出方按 :func:`fold_forward` 折叠到同格最靠后的动作（去重后返回）。
+
+        ⚠️ **遇到产出方就停，不再往它上游走**（"谁喂我"的语义）：一条线性链
+        ``extract→detect→rembg→print`` 里，``print`` 的产出方是 ``rembg``，
+        **不是** ``extract``——后者只是 rembg 的上游。若继续穿（把"可达"当
+        "喂我"），线性链也会被判成"多个产出方"而退回静态表，等于图白做。
+        真正需要"歧义"的是**网关分支**（两条**实线**都进同一个节点），那种
+        情况在网关处就会同时看到两个产出方，判据照样成立。
+        """
+        candidates = set(active)
+        if stage not in candidates:
+            return ()
+        starts = [n.id for n in self.nodes if n.stage == stage]
+        if not starts:
+            return ()
+        queue = list(starts)
+        seen = set(starts)
+        found: list[str] = []
+        while queue:
+            node_id = queue.pop(0)
+            for flow in self.incoming(node_id):
+                source = flow.source
+                if source in seen:
+                    continue
+                seen.add(source)
+                item = self.node(source)
+                if item is None or not item.stage:
+                    queue.append(source)   # 网关/事件：不产出产物，继续穿
+                    continue
+                if item.stage in candidates and port in ports.stage_outputs(
+                        item.stage):
+                    # ⚠️ 折叠到同格最靠后的动作，并**停止**这条分支的继续回溯
+                    folded = fold_forward(item.stage, port)
+                    if folded not in found:
+                        found.append(folded)
+                else:
+                    queue.append(source)
+        return tuple(found)
+
     # ------------------------------------------------------------ 界面投影
     def stage_slots(self) -> tuple:
         """把本图投影成**界面步骤条上的格子序列**（与 ``FlowDefinition``
@@ -629,6 +742,166 @@ class FlowDiagram:
             x += DEFAULT_SIZE.get(KIND_TASK, FALLBACK_SIZE)[0] + AUTO_GAP_X
         return diagram
 
+    def relayout(self) -> "FlowDiagram":
+        """整图**自动排版**（就地改 ``boxes``、清空 ``waypoints``）。
+
+        与 :meth:`auto_layout` 的分工：那个只在**文件没有 DI 段**时兜底，
+        这个是用户点「自动排版」时的主动整理——不管有没有坐标都重排。
+
+        分层布局（Sugiyama 简化版）：
+
+        1. **分层**：层号 = 无入边节点出发的最长路（Kahn 拓扑序上逐点取
+           ``max(前驱层)+1``）；环上剩下的点按声明顺序垫在最底层。
+        2. **长边插虚拟节点**：跨了多层的那条边在中间层各占一个格子（经典
+           Sugiyama 的 dummy node）。少了这一步，「是否拼版 →(否)→ PDF排版」
+           会从同层的「图片拼版」框里横穿过去（用户 2026-10-06）。虚拟节点
+           **只参与排序与占行**，不落坐标、不写文件。
+        3. **同层排序**：按前驱重心向下扫一遍、再按后继重心向上扫一遍，
+           减少连线交叉；重心相同时**虚拟节点优先**——让长边保持直线，
+           分支节点被挤到下一行（与 bpmn.io 画出来的一致）。
+        4. **落坐标**：x 按层排开；y **按行号**排（不再"相对最宽层居中"——
+           那会让主链忽高忽低），每个节点在自己的行里**垂直居中**：要对齐
+           的是水平中线，不是顶边（36px 的事件与 80px 的任务顶边对齐会高
+           出一截）。
+        5. **注释重挂**：每条注释放到**宿主节点正下方**，互相压住就往下让。
+           ⚠️ 早期做法是"注释跟着宿主一起平移"——保留文件里的旧相对偏移，
+           节点重排后那些偏移就变成一堆斜飘的注释、虚线还压着别的节点。
+
+        ⚠️ 只动**节点**坐标与折点；阶段顺序（语义）不受影响——排版是纯视觉。
+        """
+        ids = [n.id for n in self.nodes]
+        if not ids:
+            return self
+        id_set = set(ids)
+
+        # ---- 有效连线（去重、去掉自环与悬空端点） -------------------------
+        edges: list[tuple[str, str, str]] = []
+        seen: set[tuple[str, str]] = set()
+        for flow in self.flows:
+            pair = (flow.source, flow.target)
+            if (flow.source in id_set and flow.target in id_set
+                    and flow.source != flow.target and pair not in seen):
+                seen.add(pair)
+                edges.append((flow.source, flow.target, flow.id))
+        successors: dict[str, list[str]] = {nid: [] for nid in ids}
+        predecessors: dict[str, list[str]] = {nid: [] for nid in ids}
+        for source, target, _fid in edges:
+            successors[source].append(target)
+            predecessors[target].append(source)
+
+        # ---- ① 分层：Kahn 拓扑序上取最长路 ------------------------------
+        indegree = {nid: len(predecessors[nid]) for nid in ids}
+        ready = [nid for nid in ids if indegree[nid] == 0]
+        order: list[str] = []
+        while ready:
+            nid = ready.pop(0)
+            order.append(nid)
+            for target in successors[nid]:
+                indegree[target] -= 1
+                if indegree[target] == 0:
+                    ready.append(target)
+        layer: dict[str, int] = {nid: 0 for nid in order}
+        for nid in order:
+            for target in successors[nid]:
+                layer[target] = max(layer.get(target, 0), layer[nid] + 1)
+        bottom = max(layer.values(), default=0) + 1
+        for nid in ids:  # 环上没排到的：垫在最底层，不丢节点
+            layer.setdefault(nid, bottom)
+
+        # ---- ② 跨层长边插虚拟节点 --------------------------------------
+        # 「格子」= 真节点 ("n", id) 或虚拟节点 ("e", "<连线id>@<层号>")。
+        cells: dict[int, list[tuple[str, str]]] = {}
+        for nid in ids:
+            cells.setdefault(layer[nid], []).append(("n", nid))
+        cell_succ: dict[tuple[str, str], list[tuple[str, str]]] = {}
+        cell_pred: dict[tuple[str, str], list[tuple[str, str]]] = {}
+
+        def link(a: tuple[str, str], b: tuple[str, str]) -> None:
+            cell_succ.setdefault(a, []).append(b)
+            cell_pred.setdefault(b, []).append(a)
+
+        for source, target, fid in edges:
+            previous: tuple[str, str] = ("n", source)
+            for lv in range(layer[source] + 1, layer[target]):
+                current = ("e", f"{fid}@{lv}")
+                cells.setdefault(lv, []).append(current)
+                link(previous, current)
+                previous = current
+            link(previous, ("n", target))
+
+        # ---- ③ 同层排序：前驱重心 → 后继重心，各扫两遍 ------------------
+        # 重心相同按"虚拟节点优先"——长边走直线，分支垂下去。
+        for row in cells.values():
+            row.sort(key=lambda cell: 0 if cell[0] == "e" else 1)
+        pos = {cell: i for row in cells.values() for i, cell in enumerate(row)}
+
+        def barycenter(cell: tuple[str, str],
+                       table: dict[tuple[str, str], list[tuple[str, str]]],
+                       ) -> float:
+            values = [pos[n] for n in table.get(cell, ()) if n in pos]
+            return sum(values) / len(values) if values else pos[cell]
+
+        for sweep in range(4):
+            levels = sorted(cells) if sweep % 2 == 0 \
+                else sorted(cells, reverse=True)
+            table = cell_pred if sweep % 2 == 0 else cell_succ
+            for lv in levels:
+                cells[lv].sort(key=lambda cell: barycenter(cell, table))
+                for index, cell in enumerate(cells[lv]):
+                    pos[cell] = index
+
+        # ---- ④ 落坐标：x 按层、y 按行 ----------------------------------
+        task_w, task_h = DEFAULT_SIZE[KIND_TASK]
+        slot = task_h + LAYOUT_GAP_Y
+        for lv in sorted(cells):
+            x = AUTO_PADDING + lv * (task_w + LAYOUT_GAP_X)
+            for index, cell in enumerate(cells[lv]):
+                if cell[0] != "n":  # 虚拟节点只占行，不落坐标
+                    continue
+                item = self.node(cell[1])
+                w, h = default_size(item.kind if item else KIND_TASK)
+                self.boxes[cell[1]] = (
+                    x, AUTO_PADDING + index * slot + (slot - h) / 2, w, h)
+
+        # ---- ⑤ 注释重挂到宿主正下方（而不是跟着旧坐标平移） -------------
+        self._layout_notes()
+
+        # ---- ⑥ 旧折点全清：连线按新坐标由 route() 现算 -----------------
+        self.waypoints.clear()
+        return self
+
+    def _layout_notes(self) -> None:
+        """把每条注释放到**宿主节点的正下方**，互相压住就往下让一格。
+
+        没有宿主的（用户自己画上去的）保持原坐标——但仍要与别人错开。
+        """
+        if not self.notes:
+            return
+        node_boxes = {n.id: self.boxes[n.id] for n in self.nodes
+                      if n.id in self.boxes}
+        placed: list[tuple[float, float, float, float]] = []
+        for note in self.notes:
+            width, height = _note_size(note.text, self.boxes.get(note.id))
+            host = node_boxes.get(self.note_links.get(note.id, ""))
+            if host is not None:
+                # 居中于宿主下方；⚠️ 别让左边界跑到画布外（窄节点如事件圆
+                # 居中后会有一半悬在 0 左边）
+                x = max(AUTO_PADDING, host[0] + (host[2] - width) / 2)
+                y = host[1] + host[3] + LAYOUT_NOTE_GAP
+            else:
+                old = self.boxes.get(note.id)
+                x, y = (old[0], old[1]) if old else (AUTO_PADDING, AUTO_PADDING)
+            box = (x, y, width, height)
+            for _ in range(len(self.notes) * 2 + 4):
+                if (not any(_overlaps(box, other)
+                            for other in node_boxes.values())
+                        and not any(_overlaps(box, other) for other in placed)):
+                    break
+                y += LAYOUT_NOTE_STEP
+                box = (x, y, width, height)
+            self.boxes[note.id] = box
+            placed.append(box)
+
     # ------------------------------------------------------------ 解析
     @classmethod
     def load(cls, path: Path | str) -> "FlowDiagram":
@@ -734,9 +1007,17 @@ class FlowDiagram:
             {"id": self.process_id, "isExecutable": "false"},
         )
         for item in self.nodes:
-            element = ET.SubElement(process, _q(BPMN_NS, item.kind), {
-                "id": item.id, "name": item.name,
-            })
+            attrs = {"id": item.id, "name": item.name}
+            # ⚠️ **阶段身份必须落盘**（``guji:stage``），不能只活在名字里。
+            #    ``load`` 本来就会优先读它（见 :func:`stage_of_name`），但以前
+            #    ``to_xml`` 从来不写——于是我们自己编辑器存的图，重读时也只能
+            #    靠名字**猜**阶段：用户把「图片去底色」改成「AI 抠图」，存盘重进
+            #    就接不回来了（"默认流程突然出现"的机制性原因）。
+            #    外部工具（bpmn.io）可能丢弃它不认识的属性，丢了就退回名字匹配
+            #    ＋降级告警——那条路照旧，不受影响。
+            if item.kind == KIND_TASK and item.stage:
+                attrs[_q(GUJI_NS, "stage")] = item.stage
+            element = ET.SubElement(process, _q(BPMN_NS, item.kind), attrs)
             for flow in self.flows:
                 if flow.target == item.id:
                     ET.SubElement(element, _q(BPMN_NS, "incoming")).text = flow.id
@@ -803,20 +1084,250 @@ class FlowDiagram:
                 })
         return ET.tostring(definitions, encoding="utf-8", xml_declaration=True)
 
-    def route(self, flow: DiagramFlow) -> list[tuple[float, float]]:
-        """连线的折点（文件没存 ``di:waypoint`` 时按直角走线算一份）。"""
+    # ---- 连线走线：锚点自动匹配 + 多边摊开 + 遮挡绕行 ----
+    def _side_anchor(self, node_id: str, side: str,
+                     t: float) -> tuple[float, float]:
+        """某条边上参数 ``t``（0=起点端，1=终点端，0.5=中点）处的锚点。
+
+        ⚠️ **网关只认四个顶点**（用户 2026-10-06："判断输入输出都从四个角
+        出，不是边的中间"）。菱形的边是**斜边**，"右边的 t=1/3"落在斜边中段
+        ——看着像"从角上出发"，其实既不在角上，两条分支还挤在同一段斜边
+        上。所以把 ``t`` **吸到最近的角**（0.5 保持顶点，<0.5 往上角、
+        >0.5 往下角；左右两侧吸附到右/左顶点）。
+
+        非网关（任务框、事件圆）不受影响：仍是边上的 ``t`` 位置。
+        """
+        x, y, w, h = self.node_box(node_id)
+        item = self.node(node_id)
+        if item is not None and item.is_gateway:
+            cx, cy = x + w / 2, y + h / 2
+            if side in ("right", "left"):
+                px = x + w if side == "right" else x
+                # 左右两侧只有一个顶点可用（中点就是角），t 不参与
+                return (px, cy)
+            # 上/下侧：按 t 吸到上角或下角（t=0.5 是正中，落在角上）
+            py = y if t < 0.5 else y + h
+            return (cx, py)
+        if side == "right":
+            return (x + w, y + h * t)
+        if side == "left":
+            return (x, y + h * t)
+        if side == "bottom":
+            return (x + w * t, y + h)
+        return (x + w * t, y)  # top
+
+    def route_anchor(self, flow: DiagramFlow) -> tuple[str, float, str, float]:
+        """连线两端**该用哪个连接点**：``(源方向, 源位置t, 目标方向, 目标位置t)``。
+
+        方向按两节点中心的相对方位挑（横向主导走左右、纵向主导走上下）。
+
+        **多条边怎么分开**（用户 2026-10-06）：
+
+        - **任务框 / 事件圆**：沿边摊开（``t`` 均分）——多条线从同一条边的
+          不同位置出发。
+        - **网关（判断）**：**分配到不同的角**。菱形只有四个顶点，两条分支
+          若都走"右"会落在**同一段斜边**上（看着像从角出发，其实不是，
+          而且两条线叠在一起）。所以按分支的相对方位把它们分给右/下/上/左
+          四个角：正右方那条走右角，正下方那条走下角，以此类推。
+        """
+        out_index = out_count = in_index = in_count = 0
+        for other in self.flows:
+            if other.source == flow.source:
+                if other.id == flow.id:
+                    out_index = out_count
+                out_count += 1
+            if other.target == flow.target:
+                if other.id == flow.id:
+                    in_index = in_count
+                in_count += 1
+        s_side, t_side = self._ends_sides(flow)
+        s_t = (out_index + 1) / (out_count + 1) if out_count > 1 else 0.5
+        t_t = (in_index + 1) / (in_count + 1) if in_count > 1 else 0.5
+        # 网关端：方向与 t 一起由「九宫格分区」决定（保证不同分支占不同角）
+        if self._is_gateway(flow.source):
+            s_side, s_t = self._corner_pick(flow.source, flow, outgoing=True)
+        if self._is_gateway(flow.target):
+            t_side, t_t = self._corner_pick(flow.target, flow, outgoing=False)
+        return (s_side, s_t, t_side, t_t)
+
+    def _is_gateway(self, node_id: str) -> bool:
+        item = self.node(node_id)
+        return bool(item is not None and item.is_gateway)
+
+    def _ends_sides(self, flow: DiagramFlow) -> tuple[str, str]:
+        """这条连线两端各走**哪一侧**（纯几何，不看别的连线）。"""
         sx, sy, sw, sh = self.node_box(flow.source)
         tx, ty, tw, th = self.node_box(flow.target)
-        start = (sx + sw, sy + sh / 2)
-        end = (tx, ty + th / 2)
-        if abs(start[1] - end[1]) < 1.0:
-            return [start, end]
-        if end[0] >= start[0]:
+        dx = (tx + tw / 2) - (sx + sw / 2)
+        dy = (ty + th / 2) - (sy + sh / 2)
+        if abs(dx) >= abs(dy):
+            return (("right", "left") if dx >= 0 else ("left", "right"))
+        return (("bottom", "top") if dy >= 0 else ("top", "bottom"))
+
+    def _corner_pick(self, gateway_id: str, flow: DiagramFlow, *,
+                     outgoing: bool) -> tuple[str, float]:
+        """网关上这条线该占**哪个角**：返回 ``(方向, t)``。
+
+        ⚠️ 别用"方位角接近就同侧"来分——自动排版后「PDF排版」在网关**正右**、
+        「图片拼板」在**右下**，方位角只差 0.4 弧度，会被判成"同侧"而挤到
+        同一个点上（实测）。这里按**九宫格分区**：先看对端在网关的左/中/右
+        三列，再看上/中/下三行，落到哪个格就用那个格对应方向的角。
+
+        分区后若仍有两条落在同一格（对端真的重叠），才退回沿边摊开。
+        """
+        gx, gy, gw, gh = self.node_box(gateway_id)
+        gcx, gcy = gx + gw / 2, gy + gh / 2
+
+        def cell_of(other: DiagramFlow) -> int:
+            other_id = other.target if outgoing else other.source
+            ox, oy, ow, oh = self.node_box(other_id)
+            ocx, ocy = ox + ow / 2, oy + oh / 2
+            col = 0 if ocx < gcx - CORNER_CELL_EPS else (
+                2 if ocx > gcx + CORNER_CELL_EPS else 1)
+            row = 0 if ocy < gcy - CORNER_CELL_EPS else (
+                2 if ocy > gcy + CORNER_CELL_EPS else 1)
+            return row * 3 + col
+
+        others = [f for f in self.flows
+                  if (f.source if outgoing else f.target) == gateway_id]
+        cell = cell_of(flow)
+        same = [f for f in others if cell_of(f) == cell]
+        if len(same) <= 1:
+            return (self._cell_side(cell), 0.5)
+        # 真重叠：沿边摊开，保证两点不重合
+        index = next(i for i, f in enumerate(same) if f.id == flow.id)
+        return (self._cell_side(cell), (index + 1) / (len(same) + 1))
+
+    @staticmethod
+    def _cell_side(cell: int) -> str:
+        """九宫格格子 → 该占菱形的哪个**顶点方向**。
+
+        行 0=上/中/下，列 0=左/中/右。菱形只有四个顶点（上/右/下/左），
+        所以角落格要**对角映射**：右上格→右顶点、右下格→下顶点（两条分支
+        才能真的分开——早前把col==2 一律映射成"右"，右上与右下撞成同一
+        个点，实测「是否拼版」的「是/否」又叠回去了）。
+        """
+        row, col = divmod(cell, 3)
+        if row == 1 and col == 1:
+            return "right"          # 正前方：右顶点
+        if row == 0 and col >= 1:
+            return "top"             # 上方两格 → 上顶点
+        if row == 2 and col >= 1:
+            return "bottom"          # 下方两格 → 下顶点
+        return "left" if col == 0 else "right"
+
+    def route(self, flow: DiagramFlow) -> list[tuple[float, float]]:
+        """连线的折点（文件没存 ``di:waypoint`` 时算一份）。
+
+        连接点自动匹配（:meth:`route_anchor`）；两端**正好共线**时走直线，
+        但直线被中间节点挡住就**绕行**——线段不许被别的节点盖住（用户
+        2026-10-06）。需要"锚点不动"的场合（拖动中预览）走 :meth:`route_sides`。
+        """
+        return self.route_sides(flow, self.route_anchor(flow))
+
+    def route_sides(self, flow: DiagramFlow,
+                    anchor: tuple[str, float, str, float],
+                    ) -> list[tuple[float, float]]:
+        """按**指定的连接点**算折点（锚点冻结的走线）。
+
+        ⚠️ **近似共线就拉直**（容差 :data:`ROUTE_ALIGN_TOLERANCE`）：同一节点
+        的多条出入边要沿边摊开（判断的「是/否」不能从同一点出发），于是出口
+        与入口的 y 会差几像素——这时画成 L 形会多出一个肉眼看得见的小台阶，
+        不如直接拉一条直线（BPMN 惯例）。
+        """
+        s_side, s_t, t_side, t_t = anchor
+        start = self._side_anchor(flow.source, s_side, s_t)
+        end = self._side_anchor(flow.target, t_side, t_t)
+        horizontal = s_side in ("right", "left")
+        if horizontal != (t_side in ("right", "left")):
+            # 方向轴不一致（不该发生）：兜底一个 L 形
+            return [start, (end[0], start[1]), end]
+        if horizontal:
+            if abs(start[1] - end[1]) <= ROUTE_ALIGN_TOLERANCE:
+                blockers = self._blockers_on(start, end, flow)
+                if not blockers:
+                    return [start, end]
+                return self._detour_around(start, end, blockers)
+            mid = (start[0] + end[0]) / 2
+            points = [start, (mid, start[1]), (mid, end[1]), end]
+        else:
+            if abs(start[0] - end[0]) <= ROUTE_ALIGN_TOLERANCE:
+                blockers = self._blockers_on(start, end, flow)
+                if not blockers:
+                    return [start, end]
+                return self._detour_around(start, end, blockers)
+            mid = (start[1] + end[1]) / 2
+            points = [start, (start[0], mid), (end[0], mid), end]
+        # ⚠️ **L 形也要查挡路**：上面两处只在"两端共线"时才查（那时一条直线
+        # 段就够判断），L 形有两段，漏查就会让「是否拼版 →(否)→ PDF排版」那种
+        # 跨层长边从「图片拼版」的框里穿过去（用户 2026-10-06）。绕行按直线
+        # 段的挡路算——终点那一段被挡时也还有别的路可走。
+        blockers: list[tuple[float, float, float, float]] = []
+        for first, second in zip(points, points[1:]):
+            blockers.extend(self._blockers_on(first, second, flow))
+        if not blockers:
+            return points
+        return self._detour_around(start, end, blockers)
+
+    def _blockers_on(self, start: tuple[float, float],
+                     end: tuple[float, float], flow: DiagramFlow,
+                     ) -> list[tuple[float, float, float, float]]:
+        """直线段穿过的**其他节点**的框（略放大，线不贴着别人的框走）。"""
+        margin = 6.0
+        skip = {flow.source, flow.target}
+        blockers: list[tuple[float, float, float, float]] = []
+        for node in self.nodes:
+            if node.id in skip or node.id not in self.boxes:
+                continue
+            bx, by, bw, bh = self.boxes[node.id]
+            bx -= margin
+            by -= margin
+            bw += margin * 2
+            bh += margin * 2
+            lo_x, hi_x = sorted((start[0], end[0]))
+            lo_y, hi_y = sorted((start[1], end[1]))
+            if (lo_x <= bx + bw and bx <= hi_x
+                    and lo_y <= by + bh and by <= hi_y):
+                blockers.append((bx, by, bw, bh))
+        return blockers
+
+    def _detour_around(self, start: tuple[float, float],
+                       end: tuple[float, float],
+                       blockers: list[tuple[float, float, float, float]],
+                       ) -> list[tuple[float, float]]:
+        """从挡路的节点**侧面绕过去**（挑近的一侧，4 个折点）。
+
+        直线段的两端必在障碍带外侧（:meth:`_blockers_on` 只收"段中间"的
+        框），所以先沿自己这条边走到障碍带外、贴着障碍带走一段、再回到
+        终点所在的边——三段都走在空档里。起终点本身在障碍带里（绕不了）
+        就退回普通的中间通道走线。
+        """
+        margin = 10.0
+        vertical = abs(start[0] - end[0]) < 1.0
+        if vertical:
+            # 沿 y 的直线：从左右两侧绕（bus = 绕行通道的 x）
+            band_lo = min(b[1] for b in blockers) - margin
+            band_hi = max(b[1] + b[3] for b in blockers) + margin
+            left = min(b[0] for b in blockers) - margin
+            right = max(b[0] + b[2] for b in blockers) + margin
+            y1, y2 = sorted((start[1], end[1]))
+            if band_lo < y1 or band_hi > y2:
+                mid = (start[1] + end[1]) / 2
+                return [start, (start[0], mid), (end[0], mid), end]
+            bus = (left if abs(left - start[0]) <= abs(right - start[0])
+                   else right)
+            return [start, (bus, start[1]), (bus, end[1]), end]
+        # 沿 x 的直线：从上下两侧绕（bus = 绕行通道的 y）
+        band_lo = min(b[0] for b in blockers) - margin
+        band_hi = max(b[0] + b[2] for b in blockers) + margin
+        top = min(b[1] for b in blockers) - margin
+        bottom = max(b[1] + b[3] for b in blockers) + margin
+        x1, x2 = sorted((start[0], end[0]))
+        if band_lo < x1 or band_hi > x2:
             mid = (start[0] + end[0]) / 2
             return [start, (mid, start[1]), (mid, end[1]), end]
-        # 目标在左侧：从下方绕回去
-        row = max(sy + sh, ty + th) + 40
-        return [start, (start[0], row), (end[0], row), end]
+        bus = top if abs(top - start[1]) <= abs(bottom - start[1]) else bottom
+        return [start, (start[0], bus), (end[0], bus), end]
 
     def save(self, path: Path | str) -> Path:
         """原子落盘（写 ``.part`` 再 ``os.replace``，防半截文件）。"""
@@ -870,6 +1381,7 @@ __all__ = [
     "DEFAULT_SIZE", "DiagramFlow", "DiagramNode", "DiagramNote", "EVENT_KINDS",
     "FlowDiagram", "GATEWAY_KINDS", "KIND_END", "KIND_EXCLUSIVE",
     "KIND_INCLUSIVE", "KIND_INTERMEDIATE", "KIND_PARALLEL", "KIND_START",
-    "KIND_TASK", "KNOWN_KINDS", "NO_PAGE", "STAGE_ALIASES", "default_size",
+    "KIND_TASK", "KNOWN_KINDS", "LAYOUT_GAP_X", "LAYOUT_GAP_Y",
+    "NO_PAGE", "STAGE_ALIASES", "default_size",
     "fold_forward", "stage_of_name",
 ]
