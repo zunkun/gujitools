@@ -63,6 +63,7 @@ core（命令定义、reporter）   →   utils（纯算法：box_geometry、ima
 | 流程图渲染（只读，照文件画） | `desktop/components/bpmn_view.py::BpmnView`（`paintEvent` 自绘；网关菱形、结束事件双圈） |
 | 流程图编辑（拖拽/连线/增删/改名） | `desktop/components/bpmn_editor.py::BpmnEditor`（继承 `BpmnView`） |
 | 运行顺序（**状态机**，替代端口级边表推顺序） | `desktop/steps/scheduler.py::Scheduler`（顺序取 `stage_order()` 拓扑序；跳过看 `CONDITIONS`） |
+| 流程合法性（保存时拒绝不合法流程） | `desktop/steps/validate.py::validate_flow`（错误=拒绝保存，警告=只提示；规则见 `docs/tasks/bpm测试.md`） |
 | 流程弹窗（查看/编辑，创建任务与详情页共用） | `desktop/components/flow_dialog.py::FlowPanel` + `pages/taskdetail/flow_mixin.py::FlowMixin` |
 | 旧的运行语义模型（阶段序列 + 端口边表，仍供槽位计算） | `desktop/steps/flow.py::FlowDefinition`（页面渲染**不再**用它） |
 | 创建任务**页面**（选 PDF + 任务名 + 看/编流程） | `desktop/pages/createtask/page.py::CreateTaskPage`（内含 `components/create_task_dialog.py::CreateTaskPanel`；2026-10-06 起不再是弹窗） |

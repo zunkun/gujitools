@@ -7,10 +7,14 @@
 1. **在不在流程里** ← **本任务的流程图**。图上画了「图片拼板」就有这一格
    （:meth:`ImpositionBaseMixin._imposition_node_visible`）。
 2. **这一步有没有意义** ← **第三步的「区域模式」``area``**。这是**业务前提**
-   而不是显示开关：``area=1``「左右分开」时每个文本框产出**成对的两张**
-   半页图（``-l`` / ``-r``），两张并排才拼得出古籍的正刊对开版面；
-   ``area=2/3`` 输出并集整图、``area=4`` 输出整页，**本来就一张图**，
-   再拼没有意义。见 :data:`IMPOSITION_AREA` / :meth:`_imposition_area_ok`。
+   而不是显示开关：流程里**有检测数据**时（「检测文本框」在去底色上游），
+   ``area=1``「左右分开」让每个文本框产出**成对的两张**半页图
+   （``-l`` / ``-r``），两张并排才拼得出古籍的正刊对开版面；``area=2/3``
+   输出并集整图、``area=4`` 输出整页，**本来就是一张图**。而流程里**没有
+   检测数据**时（去底色不在流程里，或它自己就是入口拿不到框——判据
+   ``desktop.steps.ports.detect_feeds_rembg``），拼版吃**整图**照样拼：
+   整幅单独一页、手动任意两张一页——「拼板作为第一个节点，也不需要
+   detect 数据」（用户 2026-10-07）。见 :meth:`_imposition_area_ok`。
 3. **要不要真跑** ← **拼版面板底部的开关**（:meth:`imposition_active`
    只看勾没勾，那是"用户意图"）。开关在 ①②不满足时**置灰并写明原因**。
 
@@ -131,13 +135,35 @@ class ImpositionBaseMixin:
                     return value
         return 0
 
+    def _flow_has_detect_data(self) -> bool:
+        """本流程里「图片去底色」**能不能拿到检测框**（判据唯一处：
+        :func:`desktop.steps.ports.detect_feeds_rembg`）。
+
+        没任务（静态展示，理论上不会走到拼版开关）按**默认流程**算——
+        默认流程里有「检测文本框」。
+        """
+        if not getattr(self, "task_id", None):
+            return True
+        from desktop.steps.ports import detect_feeds_rembg
+
+        return detect_feeds_rembg(self.store.task_diagram(self.task_id))
+
     def _imposition_area_ok(self) -> bool:
         """当前区域模式**支持拼版**（``area == 1``「左右分开」）。
 
-        ⚠️ **0（还不知道）不算支持**：拼版是**业务前提**——只有左右分开才
-        产出成对的 ``-l``/``-r`` 半页图，两张并排才拼得出正刊对开版面。
-        全新任务没配过区域模式时，先让用户去第三步确认。
+        ⚠️ 分两种情形（用户 2026-10-07）：
+
+        - 流程里**有检测数据**（「检测文本框」在去底色上游）→ 仍要求
+          ``area == 1``：只有左右分开才产出成对的 ``-l``/``-r`` 半页图，
+          两张并排才拼得出正刊对开版面。**0（还不知道）不算支持**：全新
+          任务没配过区域模式时，先让用户去第三步确认。
+        - **没有检测数据**（去底色不在流程里，或它自己就是入口拿不到框，
+          此时它的 area 也被锁成 4）→ 拼版吃**整图**照样拼：整幅单独一页、
+          手动任意两张一页——「拼板作为第一个节点，也不需要 detect 数据」，
+          area 前提不再适用。
         """
+        if not self._flow_has_detect_data():
+            return True
         return self._rembg_area_value() == IMPOSITION_AREA
 
     def _imposition_switch_state(self) -> tuple[bool, str]:
@@ -149,6 +175,9 @@ class ImpositionBaseMixin:
         2. **区域模式还没确认** ⇒ 先去第三步确认（这是拼版的业务前提）；
         3. **区域模式不是「左右分开」** ⇒ 每页已经是一张整图，拼版没意义。
 
+        ⚠️ 2/3 只在流程里**有检测数据**时适用：没有检测数据（去底色不在
+        流程里 / 它自己就是入口）时拼版吃整图照样拼，直接放行。
+
         ⚠️ 处置是**置灰 + 说明**，不是隐藏：用户要看得见"流程里有这一步，
         但当前参数下用不上"，才知道该去改参数还是改流程图。旧实现是
         "``area != 1`` 就不显示"，用户报过"改了 area 节点凭空消失"。
@@ -156,6 +185,10 @@ class ImpositionBaseMixin:
         if not self._imposition_node_visible():
             return False, ("当前流程里没有「图片拼板」这一步，勾了也不会生效"
                            "（可在页头「查看 / 编辑流程」里把它加回来）")
+        if not self._flow_has_detect_data():
+            # 没有检测数据（去底色不在流程里 / 它自己就是入口）：拼版吃
+            # 整图照样拼，area 前提不适用（见 _imposition_area_ok）
+            return True, ""
         area = self._rembg_area_value()
         if area == 0:
             return False, ("先到第三步「图片去底色」确认区域模式"

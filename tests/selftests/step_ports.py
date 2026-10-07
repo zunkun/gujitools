@@ -60,6 +60,7 @@ def run(ctx) -> None:  # noqa: ARG001 - 不需要窗口夹具
     _check_entry_stage_input(ctx, ok)
     _check_blocking_inputs(ctx, ok)
     _check_source_pdf_pairing(ok)
+    _check_end_event_cascade(ok)
 
 
 # ------------------------------------------------- 7. 入口步骤（无上游也要有输入）
@@ -217,6 +218,19 @@ def _check_blocking_inputs(ctx, ok) -> None:
     ok("映射含 imposition（旧的手写表漏了它）",
        ports.STAGE_STEPS.get("imposition") == "imposition",
        str(ports.STAGE_STEPS))
+
+    # ---- 9c'. detect_feeds_rembg：去底色拿得到检测框吗（area 锁 4 的判据）----
+    # 用户 2026-10-07：去底色作为第一个节点（前面没有检测）时 area 必须
+    # 固定 4 且不可改——1/2/3 都要吃检测框，没框的页裁出来一片空白。
+    # 同一份判据还放行"没有检测数据"流程里的拼版（吃整图照样拼）。
+    ok("默认流程里 detect 在 rembg 上游 ⇒ 有检测数据",
+       ports.detect_feeds_rembg(default) is True,
+       str(ports.detect_feeds_rembg(default)))
+    ok("去底色打头、没有检测节点 ⇒ 没有检测数据（area 该锁 4）",
+       ports.detect_feeds_rembg(diagram) is False,
+       str(ports.detect_feeds_rembg(diagram)))
+    ok("空图/None ⇒ 没有检测数据（保守答案）",
+       ports.detect_feeds_rembg(None) is False)
 
     # ---- 9d. ⚠️⚠️ **图必须压过静态表**（"这个问题再次提出"的病根）----
     # 用户 2026-10-06 第二次提同一个问题："自定义流程中，总是会有默认流程以及
@@ -396,6 +410,44 @@ def _check_source_pdf_pairing(ok) -> None:
     ok("空图/None 不炸（无节点、无配对）",
        ports.paired_node_for_stage(None, "x") is None
        and ports.source_pdf_node_ids(None) == ())
+
+
+# ------------------------- 9b. 生成PDF结束事件附在PDF排版上（纯逻辑）
+def _check_end_event_cascade(ok) -> None:
+    """删「PDF排版」⇒ 附在后面的「生成PDF」结束事件被孤立（用户 2026-10-07）。
+
+    > 流程图编辑中，生成PDF附在PDF排版，如果删除了PDF排版，
+    > 那么生成PDF就一定不存在
+
+    这里只验**判据**（纯逻辑，不碰界面）；编辑器两条删除路径的端到端
+    联动由 ``flow_ui`` 第 19 节验。
+
+    ⚠️ 判据是**图上的性质**（结束事件的入线是否全部来自被删节点），
+    **不按名字认「生成PDF」**——结束事件不进拓扑序、没有运行语义。
+    """
+    from desktop.steps import ports
+    from desktop.steps.bpmn_diagram import KIND_END
+    from desktop.steps.scheduler import load_default_diagram
+
+    d = load_default_diagram()
+    print_node = next(n for n in d.nodes if n.stage == "print")
+    imposition = next(n for n in d.nodes if n.stage == "imposition")
+    detect = next(n for n in d.nodes if n.stage == "detect")
+    ends = [n for n in d.nodes if n.kind == KIND_END]
+    ok("默认流程里有一个结束事件（生成PDF），挂在「PDF排版」后面",
+       len(ends) == 1, str([n.name for n in ends]))
+    ok("删「PDF排版」⇒「生成PDF」结束事件被孤立",
+       ports.orphaned_end_event_ids(d, print_node.id) == (ends[0].id,),
+       str(ports.orphaned_end_event_ids(d, print_node.id)))
+    ok("删「图片拼板」⇒「生成PDF」**不**孤立（入线还剩 PDF排版 那条）",
+       ports.orphaned_end_event_ids(d, imposition.id) == (),
+       str(ports.orphaned_end_event_ids(d, imposition.id)))
+    ok("删其它步骤（detect）不牵连结束事件",
+       ports.orphaned_end_event_ids(d, detect.id) == (),
+       str(ports.orphaned_end_event_ids(d, detect.id)))
+    ok("None/不传节点 不炸（返回空元组）",
+       ports.orphaned_end_event_ids(None, "x") == ()
+       and ports.orphaned_end_event_ids(d) == ())
 
 
 #: 一条**不含 extract** 的自定义流程（detect 打头）——用户 2026-10-06 的报障现场。

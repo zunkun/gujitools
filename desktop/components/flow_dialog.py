@@ -186,7 +186,26 @@ class FlowPanel(QWidget):
         self._close_window()
 
     def accept(self) -> None:
-        """保存：把（可能改过的）图交给宿主，并关窗。"""
+        """保存：把（可能改过的）图交给宿主，并关窗。
+
+        ⚠️ 保存前先过**合法性校验**（:func:`desktop.steps.validate.validate_flow`
+        ——``docs/tasks/bpm测试.md``：不合法的流程在保存时当场拒绝）。
+        硬错误（如「生成 PDF」不在最后、没有任何可执行步骤）弹提示**不落盘**；
+        警告（缺判断节点之类）只提示，不拦。
+        """
+        from desktop.steps.validate import validate_flow
+        from desktop.ui.toast import show_toast
+
+        result = validate_flow(self.editor_panel.diagram())
+        if not result.ok:
+            message = "；".join(result.errors)
+            self.summary.setText(f"⚠ {message}")
+            show_toast(self.window(), "warning", "流程不合法，未保存", message)
+            return
+        if result.warnings:
+            message = "；".join(result.warnings)
+            self.summary.setText(f"⚠ {message}")
+            show_toast(self.window(), "warning", "流程已保存（有提示）", message)
         self._accepted = True
         self.done.emit(True)
         self._close_window()

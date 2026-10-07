@@ -6,10 +6,14 @@
 - 画布里拖动 / 缩放拉伸 / 旋转 → ``items_changed`` → 落盘 + 防抖合成；
 - **双击预览**（用户 2026-09-30）：双击某张图 → 弹窗预览这张原图；
   双击两图之外的空白处 → 弹窗预览整页左右组合（按产出口径合成）；
-- **右键菜单「预览图片 / 编辑图片」**（2026-10-01）：目标规则与双击一致
-  （图上 → 这张原图；空白 → 整页组合）；预览与双击同一条路，「编辑图片」
+- **右键菜单「预览图片 / 编辑单图·编辑整图」**（2026-10-01；编辑文案 2026-10-07
+  按目标区分）：目标规则与双击一致（图上 → 这张原图；空白 → 整页组合）；
+  预览与双击同一条路，「编辑单图 / 编辑整图」
   则**不经预览弹窗**直达编辑器——单张图编辑源图原图并覆盖回写（含刷新链），
   整页组合按产出口径现场合成全分辨率图、「完成」写回该页拼版成品文件；
+- **弹窗里「编辑」也落盘**（2026-10-07 用户定：预览弹窗不再只读）：单张
+  原图回写源图文件、整页组合回写本页拼版成品（成品陈旧时退回只读），
+  生效链汇聚在 ``_on_imposition_zoom_image_saved``；
 - 面板的**整体旋转**（滑块/输入框增量）、复位本页版面（对当前页或
   选中槽位做版面变换）、**删除选中图片**（2026-09-30 用户定：选中哪张
   就能删哪张，页保留、图回未选择列表）；
@@ -241,9 +245,11 @@ class ImpositionLayoutMixin:
         if factory(index) is None:
             return
         if getattr(self, "_imposition_zoom_dialog", None) is None:
-            self._imposition_zoom_dialog = ImageZoomDialog(
+            self._imposition_zoom_dialog = dialog = ImageZoomDialog(
                 self.window() or self, factory=factory
             )
+            # 弹窗里「编辑」覆盖了真实文件 → 生效链（与各步骤预览区同一套）
+            dialog.image_saved.connect(self._on_imposition_zoom_image_saved)
         dialog = self._imposition_zoom_dialog
         # 先 show 再 show_for：视口有了真实尺寸，渲染密度才算得准
         # （ImageZoomDialog 渲染走自己的 worker 线程，不占界面）
@@ -254,7 +260,12 @@ class ImpositionLayoutMixin:
 
     def _imposition_item_target(self, page_index: int,
                                 slot: int) -> "object | None":
-        """弹窗「**单张原图**」来源：``slot`` 即弹窗页码（0 右槽 / 1 左槽）。"""
+        """弹窗「**单张原图**」来源：``slot`` 即弹窗页码（0 右槽 / 1 左槽）。
+
+        ``edit_path`` = 这张源图文件：弹窗里「编辑」「完成」后原子覆盖回源图，
+        由 :meth:`_on_imposition_zoom_image_saved` 接生效链（2026-10-07 用户定：
+        预览弹窗里的编辑也要生效，不再只读）。
+        """
         from desktop.workers import PreviewWorker
         from desktop.components.viewers.image_zoom_dialog import ZoomTarget
 
@@ -273,10 +284,22 @@ class ImpositionLayoutMixin:
             note=f"{cn_page_label(page_index)} · {side}「{path.name}」",
             stem=path.stem,
             count=len(items),
+            edit_path=path,
+            edit_label="编辑单图",
         )
 
     def _imposition_spread_target(self, page_index: int) -> "object | None":
-        """弹窗「**整页左右组合**」来源：构造时快照版面，合成在 worker 线程。"""
+        """弹窗「**整页左右组合**」来源：构造时快照版面，合成在 worker 线程。
+
+        ``edit_path`` = 本页**拼版成品**文件（``stages/imposition/NNNN.png``，
+        生成 PDF 用的就是它）——但只在它**存在且不陈旧**（没有挂着的防抖
+        合成，即版面改动都已合成完）时给；否则弹窗退回只读（画布右键空白
+        「编辑整图」不受此限，它现场合成全分辨率、永远以最新版面为准）。
+        ``save_path`` 一并指向同一文件：弹窗画布显示的整页组合与成品是同一套
+        合成代码的同一份内容（整页对整页，不是区域合成那种"裁一块"），满足
+        ``ZoomTarget`` 对 1:1 的要求——这样编辑器加载的是成品**全分辨率**
+        原图，「完成」后弹窗直接显示编辑结果、不回退成重合成。
+        """
         from desktop.workers import ImpositionPagePreviewWorker
         from desktop.components.viewers.image_zoom_dialog import ZoomTarget
 
@@ -289,12 +312,24 @@ class ImpositionLayoutMixin:
         stems = page_source_stems(pages[page_index])
         right = stems[0] if stems else ""
         left = stems[1] if len(stems) > 1 else ""
+        edit_path = None
+        if getattr(self, "task_id", None) and not getattr(
+            self, "_imposition_dirty", False
+        ):
+            output = self.store.imposition_output_dir(self.task_id) / (
+                FILE_FMT.format(page_index + 1)
+            )
+            if output.is_file():
+                edit_path = output
         return ZoomTarget(
             render=lambda edge,
             page={"items": items}: ImpositionPagePreviewWorker(page, edge),
             note=f"{cn_page_label(page_index)} 左右组合（左「{left}」+ 右「{right}」）",
             stem=f"imposition-{page_index + 1:02d}",
             count=1,
+            save_path=edit_path,
+            edit_path=edit_path,
+            edit_label="编辑整图",
         )
 
     def close_imposition_zoom_popup(self) -> None:
@@ -305,7 +340,7 @@ class ImpositionLayoutMixin:
 
     # ------------------------------------------------------------- 右键直接编辑
     def _open_imposition_item_edit(self, slot: int) -> None:
-        """画布**右键某张图 →「编辑图片」**：不经预览弹窗，直接编辑原图。
+        """画布**右键某张图 →「编辑单图」**：不经预览弹窗，直接编辑原图。
 
         编辑的是 ``slot`` 对应的**源图全分辨率原图**（第三步去底色的成品
         文件），编辑器「完成」后原子覆盖回该文件（与 extract/detect 页面
@@ -351,16 +386,27 @@ class ImpositionLayoutMixin:
                 "error", "保存失败", f"编辑未生效：{path.name}",
             )
             return
-        view.canvas.invalidate_image(str(path))
-        self._on_page_image_saved(str(path), edited)
+        self._on_imposition_source_edited(str(path), edited)
+
+    def _on_imposition_source_edited(self, path_text: str, edited) -> None:
+        """拼版源图被覆盖（画布右键或预览弹窗）：统一的生效链。
+
+        ① 画布丢掉这张图的解码缓存并重绘；② 主页面 ``_on_page_image_saved``
+        刷新各查看器（rembg 输出无坐标基准，走其"按文件刷新"分支）；
+        ③ 重新防抖合成——拼版成品里嵌着这张源图，不重合成就白改了。
+        """
+        view = getattr(self, "imposition_view", None)
+        if view is not None:
+            view.canvas.invalidate_image(path_text)
+        self._on_page_image_saved(path_text, edited)
         self._schedule_imposition_compose()
         self.log_view.append(
-            f"已编辑拼版源图「{path.stem}」并覆盖原图"
+            f"已编辑拼版源图「{Path(path_text).stem}」并覆盖原图"
             f"（{edited.width()}×{edited.height()} px），拼版成品将重新合成。"
         )
 
     def _open_imposition_spread_edit(self) -> None:
-        """画布**右键空白处 →「编辑图片」**：直接编辑整页左右组合。
+        """画布**右键空白处 →「编辑整图」**：直接编辑整页左右组合。
 
         组合图是**虚拟图**（没有源文件），所以这里按产出口径（``compose_page``
         的紧裁合成，与落盘成品同一套代码）在 worker 线程现场合成**全分辨率**
@@ -445,6 +491,37 @@ class ImpositionLayoutMixin:
             f"「{target.name}」（生成 PDF 用这张）；"
             "再次调整该页版面会重新合成、覆盖这次编辑。"
         )
+
+    def _on_imposition_zoom_image_saved(self, path_text: str,
+                                        image=None) -> None:
+        """预览弹窗里「编辑」覆盖了真实文件（``image_saved``）：按落点接链。
+
+        回写目标由 ``ZoomTarget.edit_path`` 给（2026-10-07 用户定：预览弹窗里
+        的编辑也要生效）——落点只有两种：
+
+        - **拼版成品**（整页组合编辑）：挂着的防抖合成必须取消（定时器停 +
+          清脏标记），否则旧合成跑完会把刚覆盖的手改冲掉；版面没变不需要
+          再合成，刷新打印源即可。与画布右键空白编辑同一套善后。
+        - **拼版源图**（单张原图编辑）：走 :meth:`_on_imposition_source_edited`
+          与画布右键完全相同的生效链。
+        """
+        if image is None or image.isNull():
+            return
+        path = Path(path_text)
+        if getattr(self, "task_id", None) and path.parent == \
+                self.store.imposition_output_dir(self.task_id):
+            timer = getattr(self, "_imposition_timer", None)
+            if timer is not None:
+                timer.stop()
+            self._imposition_dirty = False
+            self._refresh_print_source()
+            self.log_view.append(
+                f"已编辑整页组合并覆盖拼版成品「{path.name}」"
+                f"（{image.width()}×{image.height()} px，生成 PDF 用这张）；"
+                "再次调整该页版面会重新合成、覆盖这次编辑。"
+            )
+            return
+        self._on_imposition_source_edited(path_text, image)
 
     # ------------------------------------------------------------- 版面落盘
     def _on_imposition_slot_selected(self, _slot: int) -> None:

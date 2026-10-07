@@ -149,7 +149,7 @@ class ImpositionModulePage(ModulePage):
         self.view.items_changed.connect(self._on_items_changed)
         self.view.page_reorder_requested.connect(self._on_reorder)
         self.view.pages_batch_delete_requested.connect(self._on_batch_delete)
-        # 双击 / 右键：预览（单张原图 · 整页左右组合）与「编辑图片」直达编辑器。
+        # 双击 / 右键：预览（单张原图 · 整页左右组合）与「编辑单图 / 编辑整图」直达编辑器。
         # 与任务流程的拼版步骤**同一组信号、同一套语义**——此前这四条没接线，
         # 画布右键菜单弹得出来、双击也有反应信号，但**点了什么都不会发生**
         # （用户 2026-10-03：「独立步骤，图片也可以编辑生效」）。
@@ -427,8 +427,9 @@ class ImpositionModulePage(ModulePage):
     # 用户 2026-10-03：「**独立步骤，图片也可以编辑生效**」。这四条此前在独立
     # 拼图页**整个没接线**——画布的右键菜单弹得出来、双击也会发信号，但点了
     # 什么都不会发生（信号发出去没人接）。语义与任务流程的拼版步骤逐条对齐：
-    # 双击图上/空白 = 预览单张原图 / 整页左右组合；右键「编辑图片」= 不经预览
-    # 弹窗直接进编辑器，编辑结果覆盖真实文件并在导出时生效。
+    # 双击图上/空白 = 预览单张原图 / 整页左右组合（弹窗里「编辑」同样写回
+    # 真实文件并接生效链）；右键「编辑单图 / 编辑整图」= 不经预览弹窗直接进编辑器，
+    # 编辑结果覆盖真实文件并在导出时生效。
 
     def _open_item_preview(self, slot: int) -> None:
         """画布**双击某张图**：弹窗预览这张原图（可缩放、下载）。"""
@@ -447,9 +448,11 @@ class ImpositionModulePage(ModulePage):
         if factory(index) is None:
             return
         if self._zoom_dialog is None:
-            self._zoom_dialog = ImageZoomDialog(
+            self._zoom_dialog = dialog = ImageZoomDialog(
                 self.window() or self, factory=factory
             )
+            # 弹窗里「编辑」覆盖了真实文件 → 生效链（与各步骤预览区同一套）
+            dialog.image_saved.connect(self._on_zoom_image_saved)
         dialog = self._zoom_dialog
         # 先 show 再 show_for：视口有了真实尺寸，渲染密度才算得准
         dialog.show()
@@ -465,10 +468,9 @@ class ImpositionModulePage(ModulePage):
     def _item_target(self, page_index: int, slot: int):
         """弹窗「**单张原图**」来源：``slot`` 即弹窗页码（0 右槽 / 1 左槽）。
 
-        ⚠️ **不给 ``edit_path``**：弹窗是只读预览，编辑走画布右键
-        （:meth:`_open_item_edit`）——与任务流程的拼版步骤完全一致。若这里也
-        给 ``edit_path``，弹窗里那个「编辑」按钮**只改弹窗画布副本、不落盘**
-        （它没有回写目标），同一件事就出现两套语义。
+        ``edit_path`` = 这张源图文件：弹窗里「编辑」「完成」后原子覆盖回源图，
+        由 :meth:`_on_zoom_image_saved` 接生效链（2026-10-07 用户定：预览弹窗
+        里的编辑也要生效，不再只读——与任务流程的拼版步骤保持一致）。
         """
         from desktop.components.viewers.image_zoom_dialog import ZoomTarget
         from desktop.workers import PreviewWorker
@@ -488,6 +490,8 @@ class ImpositionModulePage(ModulePage):
             note=f"{cn_page_label(page_index)} · {side}「{path.name}」",
             stem=path.stem,
             count=len(items),
+            edit_path=path,
+            edit_label="编辑单图",
         )
 
     def _spread_target(self, page_index: int):
@@ -504,6 +508,15 @@ class ImpositionModulePage(ModulePage):
         stems = page_source_stems(pages[page_index])
         right = stems[0] if stems else ""
         left = stems[1] if len(stems) > 1 else ""
+        # 整页组合是虚拟图，回写目标是**手改缓存**（edited/NNNN.png，导出时
+        # 盖回成品）——只在 doc 里这一页的手改记录还挂着且文件在时给：记录
+        # 在就代表版面自手改后没动过（一动手 ``_drop_page_override`` 就清），
+        # 手改文件与当前版面内容一致，拿它当编辑基底不会张冠李戴。没手改过
+        # 时弹窗退回只读（画布右键空白「编辑整图」不受限，它现场合成）。
+        # ``save_path`` 一并给：显示与回写是同一份内容的整页图（非裁剪区域），
+        # 编辑器加载的是全分辨率手改图，「完成」后弹窗直接显示编辑结果。
+        edited = pages[page_index].get("edited_file")
+        edit_path = Path(edited) if edited and Path(edited).is_file() else None
         return ZoomTarget(
             render=lambda edge, page={"items": items}: (
                 ImpositionPagePreviewWorker(page, edge)
@@ -511,10 +524,13 @@ class ImpositionModulePage(ModulePage):
             note=f"{cn_page_label(page_index)} 左右组合（左「{left}」+ 右「{right}」）",
             stem=f"imposition-{page_index + 1:02d}",
             count=1,
+            save_path=edit_path,
+            edit_path=edit_path,
+            edit_label="编辑整图",
         )
 
     def _open_item_edit(self, slot: int) -> None:
-        """画布**右键某张图 →「编辑图片」**：不经预览弹窗，直接编辑原图。
+        """画布**右键某张图 →「编辑单图」**：不经预览弹窗，直接编辑原图。
 
         编辑的是该槽位对应的**源图全分辨率原图**，「完成」= 原子覆盖回该文件
         （与其余独立步骤、任务流程同一套 ``overwrite_image_file``）。落盘后的
@@ -562,7 +578,7 @@ class ImpositionModulePage(ModulePage):
         )
 
     def _open_spread_edit(self) -> None:
-        """画布**右键空白处 →「编辑图片」**：直接编辑整页左右组合（成品口径）。
+        """画布**右键空白处 →「编辑整图」**：直接编辑整页左右组合（成品口径）。
 
         组合图是**虚拟图**（没有源文件），所以这里按导出口径（``compose_page``
         的紧裁合成，与落盘成品同一套代码）在 worker 线程现场合成**全分辨率**
@@ -639,6 +655,42 @@ class ImpositionModulePage(ModulePage):
         )
         self.toast("success", "整页组合已编辑", "导出成品时这一页用编辑后的图。")
 
+    def _on_zoom_image_saved(self, path_text: str, image=None) -> None:
+        """预览弹窗里「编辑」覆盖了真实文件（``image_saved``）：按落点接链。
+
+        回写目标由 ``ZoomTarget.edit_path`` 给（2026-10-07 用户定：预览弹窗里
+        的编辑也要生效）——落点只有两种：
+
+        - **源图**（单张原图编辑）：走与画布右键 :meth:`_open_item_edit`
+          完全相同的善后——画布丢解码缓存、左列缩略图重渲、日志说明
+          「导出成品」时生效。
+        - **整页组合的手改缓存**（``edited/``）：给 ``edit_path`` 的前提就是
+          doc 的 ``edited_file`` 本来指着它，文件已被覆盖成最新，补一句日志。
+        """
+        if image is None or image.isNull():
+            return
+        path = Path(path_text)
+        pages = self._doc.get("pages") or []
+        for page in pages:
+            if any(
+                str(item.get("file") or "") == path_text
+                for item in page.get("items") or []
+            ):
+                self.view.canvas.invalidate_image(path_text)
+                self._load_source_thumbs([path_text])
+                self.log(
+                    f"已编辑拼版源图「{path.stem}」并覆盖原图"
+                    f"（{image.width()}×{image.height()} px）；"
+                    "点「导出成品」即用上这次修改。"
+                )
+                return
+        if path.parent == edited_page_dir():
+            self.log(
+                f"已编辑整页组合「{path.name}」"
+                f"（{image.width()}×{image.height()} px）；"
+                "点「导出成品」时这一页用手改图。"
+            )
+
     # ------------------------------------------------------------------ 导出
     def _compose_job(self, request: StepRequest, report) -> str | None:
         """执行内核的 job：把整份文档合成为图片（纯函数，线程里安全）。
@@ -646,7 +698,7 @@ class ImpositionModulePage(ModulePage):
         ⚠️ 写成 job 而不是页面方法，是为了让"跑什么"与"怎么跑/怎么汇报"
         分开——内核负责后者（线程 + 信号），本页只管前者。
 
-        **手工修饰过的整页组合优先**：右键空白处「编辑图片」改出来的那张图
+        **手工修饰过的整页组合优先**：右键空白处「编辑整图」改出来的那张图
         存在 ``singletask/拼图/edited/`` 里（见 :meth:`_open_spread_edit`），
         这里在整套合成之上把它按页盖回去——不盖的话，用户改完一看导出的
         成品还是老样子（这就是"编辑没生效"）。

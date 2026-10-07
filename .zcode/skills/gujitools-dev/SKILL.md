@@ -47,6 +47,7 @@ python tools/check_docs.py
 | 改了什么 | --only 跑什么 |
 | --- | --- |
 | `desktop/steps/`（spec/ports/kernel/source_zone） | `steps_components,step_ports,modules_shell` |
+| `desktop/steps/validate.py`（流程合法性） | `flow_validate,flow_bpm` |
 | `desktop/components/panels/` | `params_spec,detail_structure` |
 | `desktop/components/viewers/` | `preview,imposition`（按具体 viewer） |
 | `desktop/modules/`（独立任务页） | `modules_shell,module_edit_sync,detect_module_page` |

@@ -20,7 +20,6 @@
 
 ::
 
-    创建任务
     [ ] 使用自定义任务流程        ← 决定用哪份流程
     说明文字（随勾选变化，含步骤串——"当前流程"由它承担）
     ────────────────────────────
@@ -48,6 +47,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
@@ -65,7 +65,6 @@ from qfluentwidgets import (
     FluentIcon as FIF,
     PrimaryPushButton,
     PushButton,
-    StrongBodyLabel,
     ToolButton,
 )
 
@@ -208,8 +207,9 @@ class CreateTaskPanel(QWidget):
             layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(T.SPACE_MD)
 
-        title = StrongBodyLabel(DIALOG_TITLE)
-        layout.addWidget(title)
+        # ⚠️ 面板**不带**「创建任务」标题（用户 2026-10-07）：内嵌进创建任务页
+        #    后页头已有标题，再摆一行就是重复；弹窗形态（``CreateTaskDialog``）
+        #    的窗口标题栏仍由 ``DIALOG_TITLE`` 提供。
 
         # ---- 流程模式 checkbox（文档要求的核心组件）----
         self.custom_check = CheckBox("使用自定义任务流程")
@@ -398,13 +398,21 @@ class CreateTaskPanel(QWidget):
         那张图——他要建第二个任务时会以为"又得从头编一遍"（其实这是上一本
         书的流程）。回到 ``load_custom_init()`` 才是"每次都从初值起步"的
         干净语义。
-        ⚠️ **编辑器要收起**：``_editor_host`` 可见时复位，用户会看到一个
-        开着的编辑器却已经没有任何输入了。
+        ⚠️ **编辑器要销毁**：``_editor_host`` 可见时复位，用户会看到一个
+        开着的编辑器却已经没有任何输入了；而且编辑器面板里抱着旧图，不销毁
+        就会被下次「编辑流程」复用（见 :meth:`_on_edit_flow`）。
         """
         self.clear_pdf()
         if self._editor is not None:
-            self._editor_host.setVisible(False)
-            self._set_flow_preview_visible(True)
+            # ⚠️ **销毁**而不是只收起：编辑器是**原地改图**的，面板里还抱着
+            #    上一次那张图；只收起的话下次「编辑流程」会复用旧面板——用户
+            #    看到的就是上一本书的流程（2026-10-07 报的正是这个现象）。
+            #    反正每次进编辑都会重建（见 _on_edit_flow），这里直接丢掉。
+            self._editor.setParent(None)
+            self._editor.deleteLater()
+            self._editor = None
+        self._editor_host.setVisible(False)
+        self._set_flow_preview_visible(True)
         # ⚠️ 顺序要紧：先清 checkbox（触发 _refresh_mode 走一遍默认流程），
         #    再换自定义图——反过来会拿着旧的自定义图去刷默认模式的预览。
         self.custom_check.setChecked(False)
@@ -421,6 +429,15 @@ class CreateTaskPanel(QWidget):
         点「编辑流程」→ 上面的流程图预览**换成**编辑器；「保存流程」回写并
         切回预览，「关闭」丢弃改动。
 
+        ⚠️ **每次进编辑都重建编辑器**（2026-10-07 用户报"流程编辑保存着上次
+        编辑的数据，没有恢复到默认流程图"）：上一版把面板缓存进
+        ``self._editor`` 复用——``reset()`` 换掉 ``_custom_diagram`` 之后，旧
+        编辑器还抱着**上一本书那张图**，再点「编辑流程」看到的不是当前流程。
+        重建还顺带修好「关闭丢不掉改动」：编辑器是**原地改图**的
+        （``BpmnEditor.add_node`` 等直接改持有的对象），所以传进去的是
+        ``_custom_diagram`` 的**副本**——「保存」把改完的副本交回来
+        （:meth:`set_custom_diagram`），「关闭」把副本扔掉，原图毫发无损。
+
         ⚠️ ``FlowPanel(embedded=True, close_window=False)``：藏掉它自带的标题
         （本面板已经有标题），且**不让它去关所属窗口**——内嵌时
         ``self.window()`` 就是宿主页面，关掉会把整页关没。
@@ -428,18 +445,21 @@ class CreateTaskPanel(QWidget):
         """
         from desktop.components.flow_dialog import FlowPanel
 
-        if self._editor is None:
-            panel = FlowPanel(
-                self._custom_diagram,
-                self,
-                editable=True,
-                reset_factory=load_custom_init,
-                embedded=True,
-                close_window=False,
-            )
-            panel.done.connect(self._on_editor_done)
-            self._editor = panel
-            self._editor_layout.addWidget(panel)
+        if self._editor is not None:
+            self._editor.setParent(None)
+            self._editor.deleteLater()
+            self._editor = None
+        panel = FlowPanel(
+            deepcopy(self._custom_diagram),
+            self,
+            editable=True,
+            reset_factory=load_custom_init,
+            embedded=True,
+            close_window=False,
+        )
+        panel.done.connect(self._on_editor_done)
+        self._editor = panel
+        self._editor_layout.addWidget(panel)
         self._set_flow_preview_visible(False)
         self._editor_host.setVisible(True)
 

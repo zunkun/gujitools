@@ -388,11 +388,12 @@ class DetailViewMixin:
     def _optional_after_index(self) -> int | None:
         """可选节点插在**第几个真实步骤之后**（喂 :class:`StepBar`）。
 
-        口径与算法都在 :meth:`FlowDiagram.optional_after`（⚠️ 那是
-        "真实步骤列表里的下标"，**不是**槽位表的 ``bar_index``——后者含了
-        可选节点自己占的格子，两者不相等）。本流程没有可选节点时返回
-        ``None``。
-        """
+    口径与算法都在 :meth:`FlowDiagram.optional_after`（⚠️ 那是
+    "真实步骤列表里的下标"，**不是**槽位表的 ``bar_index``——后者含了
+    可选节点自己占的格子，两者不相等）。本流程没有可选节点时返回
+    ``None``；可选节点排在**最前**（没有左邻居）时返回 ``-1``，
+    :class:`StepBar` 据此把节点插在第一个真实步骤之前。
+    """
         if not getattr(self, "task_id", None):
             # 没任务时按**默认模板**算（静态展示）。⚠️ 此前这里是
             # ``FlowDefinition.default().optional_after(...)``——那是**旧模型**
@@ -663,8 +664,15 @@ class DetailViewMixin:
         for index, panel_class in enumerate(PANEL_CLASSES):
             key = FLOW_STAGES[index] if index < len(FLOW_STAGES) else None
             hook = _HOOKS.get(key)
+            # ⚠️ rembg 的面板要**按当前流程**决定 area 是否锁整页
+            #    （「检测文本框」不在它上游 ⇒ 拿不到检测框 ⇒ area 锁 4，
+            #    用户 2026-10-07）：不能直接把类当工厂，要走
+            #    _rembg_panel_factory 在**面板真正构造时**（任务已就位）
+            #    查一次流程图。
+            factory = (self._rembg_panel_factory if key == "rembg"
+                       else panel_class)
             self.control_stack.addWidget(
-                LazyPanelHost(panel_class, hooks=[hook] if hook else [])
+                LazyPanelHost(factory, hooks=[hook] if hook else [])
             )
         # 拼版伪步骤（追加在主链之后）：占位详情面板——只在流程条点了虚线节点时
         # 显示，不属于任何真实阶段（STAGES/runs 机制不感知它）
@@ -699,6 +707,25 @@ class DetailViewMixin:
         self.control_widget = card
         self._apply_control_width()
         return self.control_widget
+
+    def _rembg_panel_factory(self) -> QWidget:
+        """第三步面板的**构造工厂**：按当前流程决定 area 是否锁整页。
+
+        判据唯一处 :func:`desktop.steps.ports.detect_feeds_rembg`：流程里
+        「图片去底色」吃不到检测框（它前面没有「检测文本框」）⇒ area 锁 4
+        且不可改（用户 2026-10-07）。⚠️ 判断必须在**面板构造时**做而不是
+        ``_init_ui`` 期：那时还没任务、查不了流程图。
+
+        没任务（理论上面板不会在无任务时构造，兜一手）按默认流程算——
+        默认流程里有「检测文本框」，不锁。
+        """
+        from desktop.components.panels.rembg_panel import RembgPanel
+        from desktop.steps.ports import detect_feeds_rembg
+
+        if not self.task_id:
+            return RembgPanel()
+        diagram = self.store.task_diagram(self.task_id)
+        return RembgPanel(whole_page_only=not detect_feeds_rembg(diagram))
 
     def _wire_detect_panel(self, detect_panel) -> None:
         """第二步面板**首次构造后**的接线（LazyPanelHost 的 created 回调）。"""

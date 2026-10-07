@@ -662,6 +662,12 @@ class FlowDiagram:
 
         语义抄自 ``FlowDefinition.optional_after``（那里有详细推演，别重推）：
         ``after`` 指的是**最后一个左邻居的下标**，不是左邻居的个数。
+
+        ⚠️ 返回值三态（2026-10-07，任务 #0027 踩坑）：``None`` 只表示**本图
+        没有可选节点**；图里有拼版但它排在**最前**（没有任何左邻居）时返回
+        ``-1``——早先这种情况也回 ``None``，``StepBar`` 把 ``None`` 当"按默认
+        位插到最后"，于是「拼板→PDF排版」的流程在步骤条上显示成
+        「生成PDF → 图片拼版」，与图相反。
         """
         slots = self.stage_slots()
         optional = [s for s in slots if s.optional]
@@ -671,7 +677,7 @@ class FlowDiagram:
         if step is not None:
             target = next((s for s in optional if s.step == step), None)
         node = target or optional[0]
-        after: int | None = None
+        after = -1
         position = 0
         for slot in slots:
             if slot.optional:

@@ -121,10 +121,10 @@ class ImpositionCanvas(QWidget):
     item_double_clicked = Signal(int)
     #: **双击了图片之外的空白处**：请求预览整页左右组合
     spread_double_clicked = Signal()
-    #: **右键菜单「编辑图片」**（0 右槽 / 1 左槽）：不经预览弹窗，直接编辑
+    #: **右键菜单「编辑单图」**（0 右槽 / 1 左槽）：不经预览弹窗，直接编辑
     #: 这张原图（2026-10-01 用户定：编辑原本是预览弹窗里的按钮，现在右键直达）
     item_edit_requested = Signal(int)
-    #: **右键菜单在空白处选了「编辑图片」**：直接编辑整页左右组合（成品口径）
+    #: **右键菜单在空白处选了「编辑整图」**：直接编辑整页左右组合（成品口径）
     spread_edit_requested = Signal()
 
     def __init__(self, parent=None):
@@ -581,12 +581,16 @@ class ImpositionCanvas(QWidget):
         self.update()
 
     def contextMenuEvent(self, event) -> None:  # noqa: N802
-        """右键菜单：**预览图片 / 编辑图片**（2026-10-01 用户定）。
+        """右键菜单：**预览图片 / 编辑单图·编辑整图**（2026-10-01 用户定）。
 
         目标规则与双击一致：**图上** → 这张原图；**两图之外的空白** →
         整页左右组合（成品口径）。预览与双击走**同一组信号**（行为完全
         一样，只是入口多一个）；编辑是新加的直接入口——原本编辑是预览
         弹窗工具条里的按钮，现在不经过弹窗、右键直达，由控制器接管。
+        编辑文案按目标区分（2026-10-07 用户定）：图上是「编辑单图」、
+        空白是「编辑整图」——拼版页一张成品图由多张子图组成，目标是两
+        种东西，同一句「编辑图片」让人不知道要改哪张。其余步骤没有这个
+        区分，右键仍是「编辑图片」。
         右键即选中（与左键点击同款语义），右侧「当前图片样式」跟着激活。
         空画布没有菜单（没有可预览/可编辑的东西）。
         """
@@ -600,7 +604,8 @@ class ImpositionCanvas(QWidget):
         menu = RoundMenu(parent=self)
         for text, icon, slot in (
             ("预览图片", FIF.PHOTO, lambda: self._emit_context(index, False)),
-            ("编辑图片", FIF.EDIT, lambda: self._emit_context(index, True)),
+            ("编辑单图" if index >= 0 else "编辑整图", FIF.EDIT,
+             lambda: self._emit_context(index, True)),
         ):
             action = Action(icon, text, menu)
             action.triggered.connect(slot)

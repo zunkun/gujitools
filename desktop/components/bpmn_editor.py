@@ -415,6 +415,9 @@ class BpmnEditor(BpmnView):
         只在 :meth:`ask_delete_selected` 里做联动，键盘删就会漏（表现为
         "按 Delete 删掉提取图片，源 PDF 还在那儿，界面照样催上传 PDF"）。
         联动判据统一走 :func:`ports.paired_node_for_stage`。
+        ⚠️ 附在它后面的**结束事件**也跟着删（用户 2026-10-07）：删掉
+        「PDF排版」后「生成PDF」一条入线不剩，留着就是误导——判据走
+        :func:`ports.orphaned_end_event_ids`。
         """
         flow_id = self.selected_flow()
         if flow_id:
@@ -425,9 +428,14 @@ class BpmnEditor(BpmnView):
             from desktop.steps import ports
 
             partner_id = ports.paired_node_for_stage(self.diagram(), node_id)
+            orphan_ids = ports.orphaned_end_event_ids(
+                self.diagram(), node_id,
+                *([partner_id] if partner_id else []))
             self.remove_node(node_id)
             if partner_id:
                 self.remove_node(partner_id)
+            for orphan_id in orphan_ids:
+                self.remove_node(orphan_id)
             return True
         return False
 
@@ -849,28 +857,44 @@ class BpmnEditor(BpmnView):
         #   删掉任一个，另一个就**没有意义**（留着 startEvent 图上有个入口却
         #    不产出图片；留着 extract 则界面那个 PDF 图标会一直催你上传）。
         #    判据在 :func:`ports.paired_node_for_stage`，**不在这里写死**
-        #    "extract↔startEvent"——那是对��模型的声明，不是编辑器的事。
+        #    "extract↔startEvent"——那是流程模型的声明，不是编辑器的事。
+        # ⚠️ **结束事件跟着删**（用户2026-10-07）：「生成PDF」附在「PDF排版」
+        #   后面，删掉 PDF排版 它就一条入线不剩——图上写着"生成PDF"却不再
+        #    产出 PDF，是句谎话。判据在 :func:`ports.orphaned_end_event_ids`。
         from desktop.steps import ports
 
         partner_id = ports.paired_node_for_stage(self.diagram(), node_id)
+        orphan_ids = ports.orphaned_end_event_ids(
+            self.diagram(), node_id, *([partner_id] if partner_id else []))
         partner = (self.diagram().node(partner_id) if partner_id else None)
+        notes = []
         if partner is not None:
+            notes.append(
+                f"「{partner.name}」是它的**配套节点**（上传 PDF 与提取图片"
+                f"必须成对存在）")
+        for orphan_id in orphan_ids:
+            orphan = self.diagram().node(orphan_id)
+            notes.append(
+                f"「{orphan.name if orphan else orphan_id}」是附在它后面的"
+                "收尾事件，流程不再走到收尾")
+        if notes:
             answer = QMessageBox.question(
                 self, "删除节点",
                 f"确定删除「{label}」？\n\n"
-                f"「{partner.name}」是它的**配套节点**（上传 PDF 与提取图片"
-                f"必须成对存在），会**一起删除**。")
+                f"{'；'.join(notes)}，会**一起删除**。")
         else:
             answer = QMessageBox.question(
                 self, "删除节点",
                 f"确定删除「{label}」？连到它的连线会一起删除。")
         if answer == QMessageBox.StandardButton.Yes:
             self.remove_node(node_id)
-            # ⚠️ **配对节点跟着删**（正反两向都走这里，所以删哪个都成对消失）。
-            #    用``remove_node`` 而不是直接改 diagram：它会连带清掉挂在这
-            #    个节点上的连线、坐标、注释——漏一处就留下一堆悬空引用。
+            # ⚠️ **配对/收尾节点跟着删**（正反两向都走这里，所以删哪个都成对
+            #    消失）。用``remove_node`` 而不是直接改 diagram：它会连带清掉
+            #    挂在这个节点上的连线、坐标、注释——漏一处就留下一堆悬空引用。
             if partner_id:
                 self.remove_node(partner_id)
+            for orphan_id in orphan_ids:
+                self.remove_node(orphan_id)
 
 
 def _stage_options() -> list[str]:

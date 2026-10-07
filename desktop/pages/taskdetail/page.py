@@ -303,16 +303,14 @@ class TaskDetailPage(
             self.source_path = None
         self.has_source = self.source_path is not None
         self._schedule_source_backup(task_id)
-        if self.source_path is None:
-            # 空壳任务：给一句"还没选"+ 一个补选入口，**不弹错误框**——
-            # 「还没选」不是错误，「文件丢了」才是（那是下面那条）。
-            self._toast(
-                "info",
-                "尚未选择 PDF",
-                "这个任务还没有源文件。点页头的「选择 PDF」补上，"
-                "之后四个步骤才能执行。",
-            )
-        elif not self.source_path.exists():
+        # ⚠️ 空壳任务（没选源文件）在这里**什么都不弹**：「还没选」不是错误，
+        #    而且**并非所有流程都需要 PDF**——要不要催、催什么（补 PDF 还是
+        #    补入口图片）由 ``_missing_input_kind()`` 按流程入口判，提示统一
+        #    走 set_task 末尾的 ``_prompt_missing_source()``（页内提示层）
+        #    与页头红字/按钮高亮，这里再来一条 toast 就是重复+误导（用户
+        #    2026-10-07：右下角「尚未选择 PDF」不再需要）。「文件丢了」才是
+        #    错误，仍在下面单独说。
+        if self.source_path is not None and not self.source_path.exists():
             self._toast(
                 "error",
                 "PDF 缺失",

@@ -253,6 +253,41 @@ def paired_node_for_stage(diagram, node_id: str) -> str | None:
     return None
 
 
+def orphaned_end_event_ids(diagram, *node_ids: str) -> tuple[str, ...]:
+    """删掉 ``node_ids`` 后会**悬空**的结束事件 id；没有则空元组。
+
+    用户 2026-10-07：
+
+    > 流程图编辑中，生成PDF附在PDF排版，如果删除了PDF排版，
+    > 那么生成PDF就一定不存在
+
+    默认流程里「生成PDF」是挂在「PDF排版」（``print``）后面的**结束事件**
+    ——它不进拓扑序、没有运行语义，唯一意义是图示"流程在此收尾"。
+    「PDF排版」一删它就一条入线不剩，留着是句谎话：图上写着"生成PDF"，
+    流程却不再产出 PDF。
+
+    ⚠️ 判据是**图上的性质**（入线是否全部来自将被删的节点），**不按名字
+    认「生成PDF」**——用户改了名、自己画的收尾事件同理；反之「图片拼板」
+    被删时「生成PDF」的入线还剩「PDF排版」那条，不跟着删。
+
+    ⚠️ 只收**入线非空**的结束事件：本来就悬空的事件不是这次删除造成的，
+    不归这里管（别借删除顺手清扫，删除面越界）。
+    """
+    if diagram is None or not node_ids or not getattr(diagram, "nodes", ()):
+        return ()
+    from desktop.steps.bpmn_diagram import KIND_END
+
+    doomed = set(node_ids)
+    orphans: list[str] = []
+    for node in diagram.nodes:
+        if node.kind != KIND_END or node.id in doomed:
+            continue
+        incoming = [f for f in diagram.flows if f.target == node.id]
+        if incoming and all(f.source in doomed for f in incoming):
+            orphans.append(node.id)
+    return tuple(orphans)
+
+
 def flow_needs_source_pdf(diagram) -> bool:
     """**这条流程**里有没有直接吃源 PDF 的阶段吗（要问图，别写死）。
     ⚠️ **两处界面问的是同一个问题**（用户 2026-10-06）：
@@ -281,6 +316,33 @@ def flow_needs_source_pdf(diagram) -> bool:
         if spec is not None and spec.needs_source_pdf():
             return True
     return False
+
+
+def detect_feeds_rembg(diagram) -> bool:
+    """这张流程图上「图片去底色」**能不能拿到检测框**。
+
+    用户 2026-10-07：去底色作为流程第一个节点（前面没有「检测文本框」）时，
+    area 的 1/2/3 都要吃检测框、没有框的页裁出来就是一片空白——那种流程里
+    area 必须固定 4（整页）且不可改。这个判据要在**两处**用，都别另写一份：
+
+    1. 详情页第三步面板——没有检测数据时 area 锁 4（``RembgPanel`` 的
+       ``whole_page_only``）；
+    2. 拼版的前提判据——没有检测数据时拼版吃整图照样拼，不再要求
+       ``area=1``（「拼板作为第一个节点，也不需要 detect 数据」）。
+
+    判据：``rembg`` 在流程里**且**沿图回溯 ``boxes`` 有产出方（「检测文本框」
+    在它上游，不要求直接相连——中间隔网关也算）。空图 / ``rembg`` 不在流程里
+    ⇒ ``False``：这是保守答案——面板锁整页不会错（那种流程里面板根本不该
+    出现 1/2/3），拼版放行也合理（吃入口图片/整图）。
+    """
+    if diagram is None or not getattr(diagram, "nodes", ()):
+        return False
+    from desktop.steps.scheduler import Scheduler
+
+    active = set(Scheduler.from_diagram(diagram, {"imposition": False}).stages)
+    if "rembg" not in active:
+        return False
+    return diagram.nearest_producer("rembg", "boxes", active) is not None
 
 
 # ---------------------------------------------------------------- 产物落点
@@ -670,6 +732,7 @@ __all__ = [
     "artifact_of",
     "artifact_path",
     "describe",
+    "detect_feeds_rembg",
     "flow_entry_input_kind",
     "flow_entry_stage",
     "flow_needs_entry_images",
@@ -681,6 +744,7 @@ __all__ = [
     "is_entry_stage",
     "location_of",
     "missing_stages",
+    "orphaned_end_event_ids",
     "print_input_overrides",
     "print_pages_supplier",
     "resolve_input",

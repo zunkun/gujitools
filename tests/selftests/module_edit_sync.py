@@ -334,14 +334,19 @@ def _imposition_flow(ctx, ok) -> None:
            bool(page._doc.get("pages")) and page.view.current_index() == 0,
            f"{page._doc} / {page.view.current_index()}")
 
-        # ---- 预览目标：单张原图 / 整页组合都拿得出，且都是只读预览 ----
+        # ---- 预览目标：单张原图可编辑（回写源文件）、整页组合未手改前只读 ----
         item = page._item_target(0, 0)
+        item_file = str(page._doc["pages"][0]["items"][0]["file"])
         ok("拼图页：单张原图预览目标可渲染", item is not None and callable(item.render))
-        ok("拼图页：预览弹窗是只读的（编辑走画布右键，两套入口不打架）",
-           item is not None and item.edit_path is None)
+        ok("拼图页：单张原图预览的编辑回写目标就是那张源文件",
+           item is not None and str(item.edit_path or "") == item_file,
+           f"edit={item.edit_path if item else None}")
         spread = page._spread_target(0)
         ok("拼图页：整页组合预览目标可渲染",
            spread is not None and callable(spread.render))
+        ok("拼图页：整页组合未手改过时预览只读（右键编辑不受限）",
+           spread is not None and spread.edit_path is None,
+           f"edit={spread.edit_path if spread else None}")
 
         # ---- 四条信号真的接到处理函数上（此前四条全空着）----
         opened: list = []
@@ -393,6 +398,20 @@ def _imposition_flow(ctx, ok) -> None:
         ok("拼图页：手改图存在 singletask 缓存区（不污染用户输出目录）",
            bool(record) and "singletask" in Path(record).parts
            and imp.EDITED_DIRNAME in Path(record).parts, str(record))
+
+        # ---- 手改后：整页组合预览的回写目标 = 手改缓存；弹窗 image_saved 接链 ----
+        spread2 = page._spread_target(0)
+        ok("拼图页：手改后整页组合预览可编辑，回写目标就是手改缓存",
+           spread2 is not None and str(spread2.edit_path or "") == str(record),
+           f"edit={spread2.edit_path if spread2 else None} / record={record}")
+        page.view.canvas._image(item_file)  # 预热画布解码缓存
+        page._on_zoom_image_saved(item_file, QImage(str(art)))
+        ok("拼图页：弹窗编辑源图 → 画布缓存被丢（重绘读新图）",
+           item_file not in page.view.canvas._images)
+        page._on_zoom_image_saved(str(record), QImage(str(art)))
+        ok("拼图页：弹窗编辑整页组合的日志说明导出用手改图",
+           "手改图" in page.log_view.toPlainText(),
+           page.log_view.toPlainText()[-80:])
 
         # ---- 导出时手改图优先 ----
         out = Path(ctx.tmp) / "edit_imposition_out"

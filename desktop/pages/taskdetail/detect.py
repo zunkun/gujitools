@@ -404,6 +404,20 @@ class DetectMixin:
         panel = self.panel_host_of_step("rembg")
         if panel is None:
             return   # 流程里没有去底色这一步：没有 area 可切
+        if getattr(panel, "whole_page_only", False):
+            # area 锁 4（本流程里去底色拿不到检测框，1/2/3 没框可裁——
+            # 见 ports.detect_feeds_rembg）：整页模式**关不掉**，取消勾选
+            # 直接回填、area 保持 4，并说明原因（用户 2026-10-07）
+            if not on:
+                host = self.panel_host_of_step("detect")
+                if host is not None:
+                    host.set_whole_page(True)
+                self._toast(
+                    "info", "整页模式",
+                    "本流程里「图片去底色」前面没有「检测文本框」，"
+                    "区域模式 1/2/3 没有检测框可用，只能整页模式。",
+                )
+            return
         target = WHOLE_PAGE_AREA if on else 1
         if int(str(panel.area.currentText())[0]) != target:
             panel.area.setCurrentIndex(target - 1)  # 触发 _refresh_reference_boxes

@@ -16,11 +16,10 @@
 
 ::
 
-    [← 任务管理]
+    [← 创建任务]
     任务名称  [ 一本古籍            ]  ← 最多 360px，placeholder＝任务#0007
     留空则使用默认名「任务#0007」；PDF 可以之后在任务详情里补选。
     ┌ CreateTaskPanel ────────────────────────┐
-    │ 创建任务                                 │  ← 面板自带标题
     │ ☑ 使用自定义任务流程                     │
     │ …                                        │
     │ [取消]                     [创建任务]    │  ← 面板自带按钮
@@ -120,7 +119,7 @@ class CreateTaskPage(QWidget):
         self.back_button.setFixedSize(34, 34)
         self.back_button.clicked.connect(self._on_back)
         top.addWidget(self.back_button)
-        top.addWidget(StrongBodyLabel("任务管理"))
+        top.addWidget(StrongBodyLabel("创建任务"))
         top.addStretch()
         root.addLayout(top)
 

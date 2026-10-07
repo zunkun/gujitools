@@ -560,7 +560,9 @@ class StepBar(QWidget):
         """按给定步骤标题逐项构建；steps 允许传生成器。
 
         ``optional_after`` 是**可选节点（拼版）插在第几个真实步骤之后**
-        （``None`` = 插在最后一步之前，沿用旧行为）。⚠️ 这是 BPM 驱动的
+        （``None`` = 插在最后一步之前，沿用旧行为；``-1`` = 插在**最前**，
+        拼版排在所有真实步骤之前——流程图这么画时宿主要能如实渲染，
+        任务 #0027 踩坑）。⚠️ 这是 BPM 驱动的
         关键参数（``docs/tasks/bpm.md`` 的 M2）：默认流程下它等于
         ``len(steps) - 1``（拼版在「图片去底色」与「生成 PDF」之间，与旧
         硬编码一致）；自定义流程把拼版排到别处时，宿主按槽位表的
@@ -600,13 +602,18 @@ class StepBar(QWidget):
         self._imposition_flow = False
         #: 可选节点插在第几个真实步骤之后（构造期算出，见 ``optional_after``）。
         #: 下游找"拼版左右邻居"一律走它，不再写死 ``buttons[-2]``。
+        #: ⚠️ **-1 = 插在最前**（拼版排在所有真实步骤之前，任务 #0027 的
+        #:    「拼板→PDF排版」流程）：不能按旧口径钳到 0，否则视觉上跑到
+        #:    第一步后面，与流程图相反。``None``（宿主没传）仍按旧默认
+        #:    "最后一步之前"处理，那是默认流程的形状。
         self._optional_after = (
             len(steps) - 1 if optional_after is None else int(optional_after)
         )
-        # ⚠️ 越界兜底：可选节点插在最后（没有右邻居）或最前（没有左邻居）
-        # 都是合法自定义流程，夹进可用范围，别让 ``insert_at`` 算出负下标。
+        # ⚠️ 越界兜底：-1（最前，没有左邻居）到 len(steps)-1（最后，没有
+        #    右邻居）都是合法自定义流程，夹进可用范围，别让 ``insert_at``
+        #    算出负下标或越界下标。
         self._optional_after = max(
-            0, min(self._optional_after, max(len(steps) - 1, 0))
+            -1, min(self._optional_after, max(len(steps) - 1, 0))
         )
         #: 伪步骤（拼版节点）的下标与控件；节点默认隐藏。
         #: ⚠️ ``imposition_index`` 是**步骤条上的格序**（含可选节点占位），
@@ -670,13 +677,19 @@ class StepBar(QWidget):
         #  「去底色→PDF」。绕行线的起终点现取左右胶囊几何（见 _bypass_points），
         #  本属性只用于标认「前端那格」；线本身的点亮/虚线由
         #  ``_connector_segments`` 按 ``_optional_after`` 判定。
-        # ⚠️ 可选节点插在**最后一步之后**时它没有前端连接件（左侧直接是
-        #    item[n-1]），此时取最后一条常规连接件，没有则 None。
-        self.imposition_front_connector = (
-            self.connectors[self._optional_after]
-            if self._optional_after < len(self.connectors)
-            else (self.connectors[-1] if self.connectors else None)
-        )
+        # ⚠️ 可选节点插在**最前**（after = -1）时它左边没有任何连接件；
+        #    插在**最后一步之后**时同理（左侧直接是 item[n-1]），取最后一条
+        #    常规连接件，没有则 None。
+        if self._optional_after < 0:
+            self.imposition_front_connector = None
+        elif self._optional_after < len(self.connectors):
+            self.imposition_front_connector = self.connectors[
+                self._optional_after
+            ]
+        else:
+            self.imposition_front_connector = (
+                self.connectors[-1] if self.connectors else None
+            )
         self.imposition_node.setVisible(False)
         self._imposition_connector.setVisible(False)
         row.addStretch(0)
@@ -811,10 +824,12 @@ class StepBar(QWidget):
         if node.width() < 5:
             return None
         # ⚠️ 左右邻居按 ``_optional_after`` 查（默认流程 = buttons[-2] /
-        #    buttons[-1]）。可选节点排在最后一步之后时**没有右邻居**，
-        #    也就没有"绕过它接到下一步"这根线——返回 None 不画。
+        #    buttons[-1]）。可选节点排在**最前**（after = -1）时没有左邻居
+        #    ——没有"绕过它接到下一步"的起点（不该用 buttons[-1] 兜底，
+        #    Python 负下标会静默取到最后一步）；排在最后一步之后时没有右
+        #    邻居。两种情况都返回 None 不画。
         after = self._optional_after
-        if after >= len(self.buttons) - 1:
+        if after < 0 or after >= len(self.buttons) - 1:
             return None
         left_pill = self.buttons[after].pill
         right_pill = self.buttons[after + 1].pill

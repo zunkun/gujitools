@@ -10,7 +10,9 @@ M1 只做了数据层（``desktop/steps/flow.py`` 的流程定义 + 落盘 + 解
    相等）。这条是 M2 的**回归底线**：投影层算错一个下标，用户就会看到
    步骤乱序或点节点跳错步骤。
 2. **换流程即换步骤条**——手写一份 ``flow.bpmn``（摘掉 detect、拼版异位）
-   后重进任务，步骤条按新顺序重建、可选节点挪到新位置。
+   后重进任务，步骤条按新顺序重建、可选节点挪到新位置。拼版排**最前**
+   （任务 #0027）也占一条：``optional_after`` 必须回 -1，拼版节点要画在
+   生成 PDF 前面（早先回 None 被当成"插到最后"，界面与流程图相反）。
 3. **寻址跟着流程走**——``current_stage()`` / ``_stage_index_of()`` 查的是
    **本任务流程的槽位表**，不是 ``STAGES`` 固定下标：流程外的步骤匹配不上
    （回第一步），流程内换了序的步骤能正确互相定位。
@@ -46,6 +48,25 @@ _CUSTOM_FLOW = """\
     <bpmn:sequenceFlow id="f1" sourceRef="extract" targetRef="imposition" guji:port="pages"/>
     <bpmn:sequenceFlow id="f2" sourceRef="imposition" targetRef="rembg" guji:port="pages"/>
     <bpmn:sequenceFlow id="f3" sourceRef="rembg_submit" targetRef="print" guji:port="pages"/>
+  </bpmn:process>
+</bpmn:definitions>
+"""
+
+#: 拼版排**最前**的流程（任务 #0027 原样：网关「是否拼版」分叉，
+#: 「是」→ 拼板 → PDF排版，「否」→ PDF排版 直达；节点声明顺序也照抄——
+#: print 在 imposition 之前声明，广度遍历会把它排到拼版前面）。
+_IMPOSITION_FIRST_FLOW = """\
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:guji="https://guji.tools/bpmn/2025">
+  <bpmn:process id="guji_imposition_first" isExecutable="false">
+    <bpmn:exclusiveGateway id="gw" name="是否拼版"/>
+    <bpmn:task id="print" name="PDF排版" guji:stage="print"/>
+    <bpmn:endEvent id="end" name="生成PDF"/>
+    <bpmn:task id="imposition" name="图片拼板" guji:stage="imposition"/>
+    <bpmn:sequenceFlow id="g0" sourceRef="gw" targetRef="print" name="否"/>
+    <bpmn:sequenceFlow id="g1" sourceRef="gw" targetRef="imposition" name="是"/>
+    <bpmn:sequenceFlow id="g2" sourceRef="imposition" targetRef="print"/>
+    <bpmn:sequenceFlow id="g3" sourceRef="print" targetRef="end"/>
   </bpmn:process>
 </bpmn:definitions>
 """
@@ -286,6 +307,50 @@ def run(ctx) -> None:
                 _bad_light.append((slot.step, slot.bar_index, lit, want))
         ok("自定义流程：按格序设当前步，高亮的也是那一格",
            not _bad_light, str(_bad_light))
+
+        # ---------------------------------------------------------------- 6
+        # 拼版排在**最前**（任务 #0027 的「拼板→PDF排版→生成PDF」流程，
+        # 连线与节点声明顺序都照抄）。两个坑一起钉：
+        # ① 拓扑序不能被"短路的 print"抢跑（广度遍历会排反）；
+        # ② ``optional_after`` 对"没有左邻居"要回 **-1**——早先回 ``None``，
+        #    StepBar 按默认位把拼版插到生成 PDF **后面**，与流程图相反。
+        _write_flow(repo, tid, _IMPOSITION_FIRST_FLOW)
+        ok("拼版最前：切任务被接受", d.set_task(tid))
+        show_detail(ctx, stage=0)
+        pump(app)
+
+        _first_slots = sorted(repo.task_slots(tid), key=lambda s: s.bar_index)
+        ok("拼版最前：槽位表拼版在前、生成PDF在后",
+           [s.step for s in _first_slots] == ["imposition", "print"],
+           str([s.step for s in _first_slots]))
+        ok("拼版最前：拓扑序 imposition < print",
+           repo.task_diagram(tid).stage_order() == ("imposition", "print"),
+           str(repo.task_diagram(tid).stage_order()))
+        ok("拼版最前：optional_after = -1（不是 None）",
+           repo.task_diagram(tid).optional_after("imposition") == -1,
+           str(repo.task_diagram(tid).optional_after("imposition")))
+        ok("拼版最前：真实步骤只剩生成PDF",
+           _bar_labels(d.step_bar) == ["生成 PDF"], str(_bar_labels(d.step_bar)))
+        _node_pos = d.step_bar._row.indexOf(d.step_bar.imposition_slot)
+        ok("拼版最前：拼版节点排在生成PDF**前面**（布局第 0 格）",
+           _node_pos == 0
+           and d.step_bar.imposition_index == 0
+           and d.step_bar.imposition_front_connector is None
+           and isinstance(d.step_bar._row.itemAt(_node_pos + 1).widget(),
+                          _Connector),
+           f"pos={_node_pos} imposition_index="
+           f"{d.step_bar.imposition_index}")
+        _print_slot = next(s for s in _first_slots if s.step == "print")
+        d.step_bar.buttons[0].clicked.emit(d.step_bar.buttons[0].index)
+        pump(app, times=2)
+        ok("拼版最前：点「生成PDF」落到 print",
+           d.current_stage() == "print", d.current_stage())
+        d.step_bar.reset_statuses()
+        d.step_bar.set_step_status(_print_slot.bar_index, "success")
+        pump(app, times=2)
+        ok("拼版最前：生成PDF 的状态能上屏",
+           any(b._badge_status == "success" for b in d.step_bar.buttons),
+           str([b._badge_status for b in d.step_bar.buttons]))
     finally:
         # 复原成默认流程，**必须重新 set_task** 才能把步骤条也恢复成 4 步，
         # 否则共享的 ctx.d 会给后续模块留一个 3 步的怪状态。

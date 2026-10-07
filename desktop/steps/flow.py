@@ -567,15 +567,18 @@ class FlowDefinition:
         ⚠️ 直接数"``bar_index`` 比可选节点小的真实步骤**个数**"会得 3
         （extract/detect/rembg），插到那儿就跑到 print 后面去了——因为
         ``after`` 指的是**最后一个左邻居的下标**，不是左邻居的个数。
-        本流程没有可选节点（或它排在最前、没有左邻居）时返回 ``None``，
-        调用方按默认位处理。
+
+        ⚠️ 返回值三态（2026-10-07，与 ``FlowDiagram.optional_after`` 同步）：
+        ``None`` = 本流程**没有**可选节点；图里有拼版但它排在**最前**、没有
+        左邻居时返回 ``-1``——早先这种情况也回 ``None``，``StepBar`` 按"默认
+        位插到最后"处理，拼版被排到了「生成PDF」后面（任务 #0027）。
         """
         slots = self.stage_slots()
         optional = [s for s in slots if s.optional]
         if not optional:
             return None
         node = next((s for s in optional if s.step == step), optional[0])
-        after: int | None = None
+        after = -1
         position = 0
         for slot in slots:
             if slot.optional:

@@ -2472,6 +2472,12 @@ def run(ctx) -> None:
                 _seen_zoom["factory"] = k.get("factory")
                 _seen_zoom["shown"] = 0
                 _seen_zoom["show_for"] = []
+                # 控制器会把弹窗编辑的 image_saved 接到生效链上（鸭子类型即可）
+                class _Sig:
+                    def connect(self, _slot):
+                        pass
+
+                self.image_saved = _Sig()
 
             def show(self):
                 _seen_zoom["shown"] += 1
@@ -2505,10 +2511,13 @@ def run(ctx) -> None:
             _izd.ImageZoomDialog = _real_zoom_cls
             page._imposition_zoom_dialog = None
 
-        # ---------------- 9. 右键菜单：预览图片 / 编辑图片（不经预览弹窗）
+        # ---------------- 9. 右键菜单：预览图片 / 编辑单图·编辑整图（不经预览弹窗）
         # 用户 2026-10-01：右键菜单两个入口，目标规则与双击一致（图上 →
         # 这张原图；空白 → 整页组合）；「编辑图片」原本是预览弹窗里的按钮，
         # 现在右键直达——单张图覆盖回写源图原图，整页组合写回拼版成品。
+        # 2026-10-07 用户定：编辑文案按目标区分（图上「编辑单图」/空白
+        # 「编辑整图」），一张成品图由多张子图组成，同一句「编辑图片」
+        # 让人不知道要改哪张。
         from PySide6.QtCore import QEvent, QPoint
         from PySide6.QtGui import QContextMenuEvent
         from PySide6.QtWidgets import QDialog
@@ -2558,9 +2567,9 @@ def run(ctx) -> None:
 
             ix, iy = _item_pt(canvas4, 0)
             canvas4.contextMenuEvent(_ctx(canvas4, ix, iy))
-            ok("右键图上弹出菜单：两项是「预览图片 / 编辑图片」",
+            ok("右键图上弹出菜单：两项是「预览图片 / 编辑单图」",
                [act.text() for act in _menu.get("actions", [])]
-               == ["预览图片", "编辑图片"],
+               == ["预览图片", "编辑单图"],
                str([act.text() for act in _menu.get("actions", [])]))
             ok("右键即选中那张图（与左键点击同款语义）",
                canvas4.selected() == 0 and selections == [0],
@@ -2570,12 +2579,16 @@ def run(ctx) -> None:
                hits["preview_item"] == [0] and hits["preview_spread"] == 0,
                str(hits))
             _pick(1)
-            ok("右键图上点「编辑图片」→ 发 item_edit_requested（同槽位）",
+            ok("右键图上点「编辑单图」→ 发 item_edit_requested（同槽位）",
                hits["edit_item"] == [0] and hits["edit_spread"] == 0,
                str(hits))
 
             bx, by = _blank_pt(canvas4)
             canvas4.contextMenuEvent(_ctx(canvas4, bx, by))
+            ok("右键空白处菜单：编辑项文案是「编辑整图」",
+               [act.text() for act in _menu.get("actions", [])]
+               == ["预览图片", "编辑整图"],
+               str([act.text() for act in _menu.get("actions", [])]))
             _pick(0)
             _pick(1)
             ok("右键空白处：预览走 spread 信号、编辑走 spread_edit 信号",
@@ -2662,6 +2675,17 @@ def run(ctx) -> None:
                 page._imposition_timer.stop()
                 page._imposition_dirty = False
 
+                # 预览弹窗里「编辑」也落盘：image_saved → 生效链（2026-10-07）
+                page.imposition_view.canvas._image(str(item_path))
+                page._on_imposition_zoom_image_saved(str(item_path), _edited)
+                ok("弹窗编辑源图：画布缓存被丢 + 重新防抖合成已挂上",
+                   str(item_path) not in page.imposition_view.canvas._images
+                   and page._imposition_dirty,
+                   f"cached={str(item_path) in page.imposition_view.canvas._images} "
+                   f"dirty={page._imposition_dirty}")
+                page._imposition_timer.stop()
+                page._imposition_dirty = False
+
                 # 取消编辑：不覆盖
                 _edit_seen.clear()
                 _edit_seen["mode"] = "reject"
@@ -2723,6 +2747,20 @@ def run(ctx) -> None:
                    str(_spread_seen))
                 ok("挂着的防抖合成被取消（不会用未编辑结果冲掉手工修饰）",
                    not page._imposition_dirty,
+                   f"dirty={page._imposition_dirty}")
+
+                # 预览弹窗里「编辑」也落盘：成品已最新时回写目标 = 成品文件
+                spread_target = page._imposition_spread_target(0)
+                ok("整页组合预览弹窗：成品最新时回写目标 = 成品文件",
+                   spread_target is not None
+                   and str(spread_target.edit_path or "") == str(out_path),
+                   f"edit={spread_target.edit_path if spread_target else None}")
+                page._on_imposition_zoom_image_saved(
+                    str(out_path), _spread_edited
+                )
+                ok("弹窗编辑整页组合：落到成品分支（不触发重合成冲掉手改）",
+                   "已编辑整页组合并覆盖拼版成品" in page.log_view.toPlainText()
+                   and not page._imposition_dirty,
                    f"dirty={page._imposition_dirty}")
             finally:
                 _ied.ImageEditorDialog = _real_editor_cls

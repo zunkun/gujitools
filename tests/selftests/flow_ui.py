@@ -987,6 +987,9 @@ def run(ctx) -> None:
     # ---------------------------------------------------------------- 18
     # 不需要 PDF 的流程藏 PDF 图标 + extract/源PDF 成对删除
     _check_source_pdf_pairing()
+    # ---------------------------------------------------------------- 19
+    # 删「PDF排版」⇒ 附在后面的「生成PDF」结束事件跟着删（用户 2026-10-07）
+    _check_end_event_cascade()
 
 
 # ------------------------------------------------- 14. 保存流程 → 步骤条立即刷新
@@ -1187,6 +1190,135 @@ def _check_source_pdf_pairing() -> None:
         left = sorted(n.name for n in editor.diagram().nodes)
         ok("Delete 键删除**同样成对**（它与工具栏是同一动作的两条入口）",
            "源PDF" not in left and "提取图片" not in left, str(left))
+
+        shell.close()
+    finally:
+        QMessageBox.question = orig_question
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+#: 源PDF → 提取图片 → PDF排版(print) → 生成PDF（结束事件）——默认主链的收尾。
+_FLOW_PRINT_WITH_END = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+ xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:guji="http://guji.local"
+ id="D1" targetNamespace="http://bpmn.io/schema/bpmn">
+ <bpmn:process id="P1" isExecutable="false">
+  <bpmn:startEvent id="pdf" name="源PDF"><bpmndi:OMNDIOSExtension/></bpmn:startEvent>
+  <bpmn:task id="ex" name="提取图片" guji:stage="extract"><bpmndi:OMNDIOSExtension/></bpmn:task>
+  <bpmn:task id="pr" name="PDF排版" guji:stage="print"><bpmndi:OMNDIOSExtension/></bpmn:task>
+  <bpmn:endEvent id="end" name="生成PDF"><bpmndi:OMNDIOSExtension/></bpmn:endEvent>
+  <bpmn:sequenceFlow id="f1" sourceRef="pdf" targetRef="ex"/>
+  <bpmn:sequenceFlow id="f2" sourceRef="ex" targetRef="pr"/>
+  <bpmn:sequenceFlow id="f3" sourceRef="pr" targetRef="end"/>
+ </bpmn:process>
+ <bpmndi:BPMNDiagram id="DD"><bpmndi:BPMNPlane id="PP" bpmnElement="P1"/></bpmndi:BPMNDiagram>
+</bpmn:definitions>
+"""
+
+
+def _check_end_event_cascade() -> None:
+    """删「PDF排版」⇒ 附在后面的「生成PDF」结束事件**一定不存在**。
+
+    用户 2026-10-07：
+
+    > 流程图编辑中，生成PDF附在PDF排版，如果删除了PDF排版，
+    > 那么生成PDF就一定不存在
+
+    「生成PDF」是结束事件，不进拓扑序、没有运行语义——「PDF排版」删了
+    它就一条入线不剩，留着就是句谎话。钉四件事：①工具栏删除路径联动；
+    ②**Delete 键那条路径同样联动**（与成对删除同一纪律：它是同一个动作
+    的两条入口）；③删上游（提取图片）**不**牵连结束事件——它的入线还在；
+    ④确认框说明"会一起删除"（用户得知道删除面变大了）。
+
+    判据本身（纯逻辑）由 ``step_ports`` 第 9b 节验。
+    """
+    import shutil
+    import tempfile
+
+    from pathlib import Path
+
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from desktop.shell import ModuleShell
+    from desktop.store.store import TaskStore
+    from tests.selftests._context import ok, silence_source_prompt
+
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication([])
+
+    tmp = Path(tempfile.mkdtemp(prefix="guji_end_event_"))
+    orig_question = QMessageBox.question
+    try:
+        store = TaskStore(tmp / "data")
+        shell = ModuleShell(store)
+        shell.resize(1400, 900)
+        shell.show()
+        app.processEvents()
+        silence_source_prompt(shell.detail_page)
+        task_id = store.create_task(source_path="", source_hash="",
+                                    name="带收尾")
+        (store.task_dir(task_id) / "flow.bpmn").write_text(
+            _FLOW_PRINT_WITH_END, encoding="utf-8")
+        QMessageBox.question = staticmethod(
+            lambda *a, **k: QMessageBox.StandardButton.Yes)
+
+        def open_editor() -> object:
+            shell.open_detail(task_id)
+            app.processEvents()
+            shell.open_flow(task_id)
+            app.processEvents()
+            return shell.flow_page()._panel.editor_panel.editor()
+
+        # ---- ① 工具栏删除路径：删「PDF排版」⇒「生成PDF」跟着没了 ----
+        editor = open_editor()
+        editor.set_selected("pr")
+        editor.ask_delete_selected()
+        app.processEvents()
+        left = sorted(n.name for n in editor.diagram().nodes)
+        ok("删「PDF排版」⇒「生成PDF」结束事件**跟着一起没了**",
+           "生成PDF" not in left, str(left))
+        ok("  上游步骤不受影响（只删这一支收尾）",
+           "提取图片" in left and "源PDF" in left, str(left))
+
+        # ---- ② Delete 键那条路径（重开一张新图）----
+        (store.task_dir(task_id) / "flow.bpmn").write_text(
+            _FLOW_PRINT_WITH_END, encoding="utf-8")
+        editor = open_editor()
+        editor.set_selected("pr")
+        editor.remove_selected()
+        app.processEvents()
+        left = sorted(n.name for n in editor.diagram().nodes)
+        ok("Delete 键删除**同样联动**（它与工具栏是同一动作的两条入口）",
+           "生成PDF" not in left and "PDF排版" not in left, str(left))
+
+        # ---- ③ 删上游不牵连：入线还剩「PDF排版」那条 ----
+        (store.task_dir(task_id) / "flow.bpmn").write_text(
+            _FLOW_PRINT_WITH_END, encoding="utf-8")
+        editor = open_editor()
+        editor.set_selected("ex")
+        editor.remove_selected()
+        app.processEvents()
+        left = sorted(n.name for n in editor.diagram().nodes)
+        ok("删「提取图片」⇒「生成PDF」**留在图上**（入线没断，别越界删）",
+           "生成PDF" in left, str(left))
+
+        # ---- ④ 确认框说明删除面变大了 ----
+        (store.task_dir(task_id) / "flow.bpmn").write_text(
+            _FLOW_PRINT_WITH_END, encoding="utf-8")
+        editor = open_editor()
+        seen: dict = {}
+
+        def spy_question(*args, **kwargs):
+            seen["text"] = args[2] if len(args) > 2 else kwargs.get("text", "")
+            return QMessageBox.StandardButton.Yes
+
+        QMessageBox.question = staticmethod(spy_question)
+        editor.set_selected("pr")
+        editor.ask_delete_selected()
+        app.processEvents()
+        ok("确认框写明「生成PDF」会一起删除（用户得知道删除面变大）",
+           "生成PDF" in seen.get("text", ""), str(seen.get("text", "")))
 
         shell.close()
     finally:
@@ -1941,6 +2073,9 @@ def _check_create_page_reset(create_page, sample_pdf) -> None:
        create_page.panel._editor_host.isHidden()
        and not create_page.panel.flow_scroll.isHidden()
        and not create_page.panel.flow_summary.isHidden())
+    ok("复位后编辑器面板被销毁（不是留着等下次复用旧图）",
+       create_page.panel._editor is None,
+       repr(create_page.panel._editor))
     ok("复位后 busy 态与控件禁用一起清（否则这页永久半残）",
        create_page._busy is False
        and create_page.name_edit.isEnabled()
@@ -1953,6 +2088,33 @@ def _check_create_page_reset(create_page, sample_pdf) -> None:
        create_page.name_edit.placeholderText() == create_page.default_name()
        and create_page.name_edit.placeholderText().startswith("任务#"),
        create_page.name_edit.placeholderText())
+
+    # ---- 2026-10-07 事故回归钉：编辑器复用会抱着上一次编的图 ----
+    # 现象：编过一次自定义流程 → 建任务 → 再进创建页，点「编辑流程」看到的
+    # 还是上一本书的图，不是当前的初值。根因是编辑器面板被缓存复用（它又是
+    # 原地改图的）。现在：复位销毁编辑器 + 每次进编辑从当前图重建。
+    create_page.panel.set_custom_mode(True)
+    create_page.panel._on_edit_flow()
+    editor = create_page.panel._editor.editor_panel.editor()
+    editor.add_node(name="上一本书才有的步骤")
+    create_page.panel._editor.accept()         # 「保存流程」→ 回写 _custom_diagram
+    ok("先摆出事故现场：编辑器里加过节点并保存",
+       any(n.name == "上一本书才有的步骤"
+           for n in create_page.panel._custom_diagram.nodes))
+    create_page.panel.reset()                  # 建完任务再进来（open_create 会调）
+    create_page.panel._on_edit_flow()
+    editor_again = create_page.panel._editor.editor_panel.editor()
+    ok("编过流程并复位后，再进编辑器显示的是当前初值（不是上一次编的图）",
+       all(n.name != "上一本书才有的步骤"
+           for n in editor_again.diagram().nodes),
+       [n.name for n in editor_again.diagram().nodes])
+    # 「关闭」= 丢弃：在编辑器里改的不能漏进 _custom_diagram（它是副本）
+    editor_again.add_node(name="这次不要了")
+    create_page.panel._editor._close()         # 「关闭」（不保存）
+    ok("编辑器里改了但「关闭」＝丢弃（_custom_diagram 不被原地污染）",
+       all(n.name != "这次不要了"
+           for n in create_page.panel._custom_diagram.nodes),
+       [n.name for n in create_page.panel._custom_diagram.nodes])
 
 
 def _check_pdf_button_icon(detail) -> None:

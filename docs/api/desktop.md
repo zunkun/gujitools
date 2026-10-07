@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 129 个模块、151 个公开类、1152 个公开函数/方法（生成于 2026-10-06）。
+覆盖 130 个模块、152 个公开类、1158 个公开函数/方法（生成于 2026-10-07）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -43,7 +43,7 @@
 | [`desktop.components.panels.print_params`](#desktopcomponentspanelsprint_params) | 0 | 5 |
 | [`desktop.components.panels.print_sections`](#desktopcomponentspanelsprint_sections) | 1 | 0 |
 | [`desktop.components.panels.print_text_layout`](#desktopcomponentspanelsprint_text_layout) | 1 | 0 |
-| [`desktop.components.panels.rembg_panel`](#desktopcomponentspanelsrembg_panel) | 1 | 1 |
+| [`desktop.components.panels.rembg_panel`](#desktopcomponentspanelsrembg_panel) | 1 | 3 |
 | [`desktop.components.progress_row`](#desktopcomponentsprogress_row) | 1 | 8 |
 | [`desktop.components.step_bar`](#desktopcomponentsstep_bar) | 2 | 19 |
 | [`desktop.components.task_table`](#desktopcomponentstask_table) | 3 | 10 |
@@ -101,11 +101,12 @@
 | [`desktop.steps.control`](#desktopstepscontrol) | 1 | 11 |
 | [`desktop.steps.flow`](#desktopstepsflow) | 4 | 31 |
 | [`desktop.steps.kernel`](#desktopstepskernel) | 5 | 11 |
-| [`desktop.steps.ports`](#desktopstepsports) | 0 | 27 |
+| [`desktop.steps.ports`](#desktopstepsports) | 0 | 29 |
 | [`desktop.steps.process`](#desktopstepsprocess) | 1 | 7 |
 | [`desktop.steps.scheduler`](#desktopstepsscheduler) | 2 | 13 |
 | [`desktop.steps.source_zone`](#desktopstepssource_zone) | 1 | 20 |
 | [`desktop.steps.spec`](#desktopstepsspec) | 1 | 22 |
+| [`desktop.steps.validate`](#desktopstepsvalidate) | 1 | 2 |
 | [`desktop.store.annotations`](#desktopstoreannotations) | 1 | 9 |
 | [`desktop.store.drafts`](#desktopstoredrafts) | 1 | 5 |
 | [`desktop.store.imposition`](#desktopstoreimposition) | 1 | 4 |
@@ -463,6 +464,9 @@ BPMN 流程图**编辑控件**：拖节点、连边、改名、增删。
 只在 :meth:`ask_delete_selected` 里做联动，键盘删就会漏（表现为
 "按 Delete 删掉提取图片，源 PDF 还在那儿，界面照样催上传 PDF"）。
 联动判据统一走 :func:`ports.paired_node_for_stage`。
+⚠️ 附在它后面的**结束事件**也跟着删（用户 2026-10-07）：删掉
+「PDF排版」后「生成PDF」一条入线不剩，留着就是误导——判据走
+:func:`ports.orphaned_end_event_ids`。
 
 ##### `auto_layout() -> None`
 
@@ -810,7 +814,6 @@ widget.installEventFilter(_filter)
 
 ::
 
-    创建任务
     [ ] 使用自定义任务流程        ← 决定用哪份流程
     说明文字（随勾选变化，含步骤串——"当前流程"由它承担）
     ────────────────────────────
@@ -905,8 +908,9 @@ widget.installEventFilter(_filter)
 那张图——他要建第二个任务时会以为"又得从头编一遍"（其实这是上一本
 书的流程）。回到 ``load_custom_init()`` 才是"每次都从初值起步"的
 干净语义。
-⚠️ **编辑器要收起**：``_editor_host`` 可见时复位，用户会看到一个
-开着的编辑器却已经没有任何输入了。
+⚠️ **编辑器要销毁**：``_editor_host`` 可见时复位，用户会看到一个
+开着的编辑器却已经没有任何输入了；而且编辑器面板里抱着旧图，不销毁
+就会被下次「编辑流程」复用（见 :meth:`_on_edit_flow`）。
 
 ##### `result_diagram() -> FlowDiagram | None`
 
@@ -1143,6 +1147,15 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 关掉（用户点"取消"结果页面消失）。这两种场合传 ``False``，改由宿主
 听 :attr:`done` 信号自己切页。
 
+##### `accept() -> None`
+
+保存：把（可能改过的）图交给宿主，并关窗。
+
+⚠️ 保存前先过**合法性校验**（:func:`desktop.steps.validate.validate_flow`
+——``docs/tasks/bpm测试.md``：不合法的流程在保存时当场拒绝）。
+硬错误（如「生成 PDF」不在最后、没有任何可执行步骤）弹提示**不落盘**；
+警告（缺判断节点之类）只提示，不拦。
+
 ### `class FlowDialog`
 
 把 :class:`FlowPanel` 装进外壳的薄壳。
@@ -1260,7 +1273,7 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 | `resizeEvent(event) -> None` | Qt 事件覆写：尺寸变化时重算布局 / 重新缩放。 |
 | `showEvent(event) -> None` | Qt 事件覆写：显示时刷新状态。 |
 | `invalidate_image(path: str) -> None` | 某个源图文件被外部覆盖（编辑器「完成」回写）后：丢掉它的解码 |
-| `contextMenuEvent(event) -> None` | 右键菜单：**预览图片 / 编辑图片**（2026-10-01 用户定）。 |
+| `contextMenuEvent(event) -> None` | 右键菜单：**预览图片 / 编辑单图·编辑整图**（2026-10-01 用户定）。 |
 | `mouseDoubleClickEvent(event) -> None` | 双击：**图上 → 预览这张原图**；**两图之外的空白 → 预览左右组合**。 |
 | `mousePressEvent(event) -> None` | Qt 事件覆写：按下（选中 / 开始拖拽或绘制）。 |
 | `mouseMoveEvent(event) -> None` | Qt 事件覆写：移动（拖拽 / 缩放中的实时更新）。 |
@@ -1323,12 +1336,16 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 
 ##### `contextMenuEvent(event) -> None`
 
-右键菜单：**预览图片 / 编辑图片**（2026-10-01 用户定）。
+右键菜单：**预览图片 / 编辑单图·编辑整图**（2026-10-01 用户定）。
 
 目标规则与双击一致：**图上** → 这张原图；**两图之外的空白** →
 整页左右组合（成品口径）。预览与双击走**同一组信号**（行为完全
 一样，只是入口多一个）；编辑是新加的直接入口——原本编辑是预览
 弹窗工具条里的按钮，现在不经过弹窗、右键直达，由控制器接管。
+编辑文案按目标区分（2026-10-07 用户定）：图上是「编辑单图」、
+空白是「编辑整图」——拼版页一张成品图由多张子图组成，目标是两
+种东西，同一句「编辑图片」让人不知道要改哪张。其余步骤没有这个
+区分，右键仍是「编辑图片」。
 右键即选中（与左键点击同款语义），右侧「当前图片样式」跟着激活。
 空画布没有菜单（没有可预览/可编辑的东西）。
 
@@ -2520,7 +2537,19 @@ border 决定四周留白，参数经 get_args 收集后传给子进程。默认
 
 | 方法 | 说明 |
 | --- | --- |
+| `__init__(parent=None, *, whole_page_only: bool=False)` | ``whole_page_only=True``：area 锁定 4（整页/不检测）且不可改。 |
+| `whole_page_only() -> bool` | area 是否被锁定为 4（宿主读它来联动第二步「整页模式」开关）。 |
 | `get_args() -> dict` | 收集去底色参数：area/type/offset/seal/border 等。 |
+
+##### `__init__(parent=None, *, whole_page_only: bool=False)`
+
+``whole_page_only=True``：area 锁定 4（整页/不检测）且不可改。
+
+流程里本步**拿不到检测框**（「检测文本框」不在它上游）时，area 的
+1/2/3 都没框可裁、页面只会一片空白——area 必须固定 4（用户
+2026-10-07：「图片去底色作为第一个节点，则 area 默认 = 4，并且不可
+修改」）。判据唯一处 :func:`desktop.steps.ports.detect_feeds_rembg`，
+由宿主按当前流程决定传值；独立任务页/默认流程不传（可自由选）。
 
 ##### `get_args() -> dict`
 
@@ -2733,7 +2762,9 @@ status 决定副标题/标题色，badge_status 决定徽标（缺省同 status�
 按给定步骤标题逐项构建；steps 允许传生成器。
 
 ``optional_after`` 是**可选节点（拼版）插在第几个真实步骤之后**
-（``None`` = 插在最后一步之前，沿用旧行为）。⚠️ 这是 BPM 驱动的
+（``None`` = 插在最后一步之前，沿用旧行为；``-1`` = 插在**最前**，
+拼版排在所有真实步骤之前——流程图这么画时宿主要能如实渲染，
+任务 #0027 踩坑）。⚠️ 这是 BPM 驱动的
 关键参数（``docs/tasks/bpm.md`` 的 M2）：默认流程下它等于
 ``len(steps) - 1``（拼版在「图片去底色」与「生成 PDF」之间，与旧
 硬编码一致）；自定义流程把拼版排到别处时，宿主按槽位表的
@@ -3737,9 +3768,9 @@ worker 迟到时会被丢弃，否则**旧书的页会画进新书的缩略图�
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(render, note: str='', stem: str='', count: int=1, original=None, cap: int \| None=None, save_path=None, edit_path=None)` | render: ``(edge:int) -> worker``；cap: 渲染密度上限（如原图原生边长）。 |
+| `__init__(render, note: str='', stem: str='', count: int=1, original=None, cap: int \| None=None, save_path=None, edit_path=None, edit_label: str='编辑图片')` | render: ``(edge:int) -> worker``；cap: 渲染密度上限（如原图原生边长）。 |
 
-##### `__init__(render, note: str='', stem: str='', count: int=1, original=None, cap: int | None=None, save_path=None, edit_path=None)`
+##### `__init__(render, note: str='', stem: str='', count: int=1, original=None, cap: int | None=None, save_path=None, edit_path=None, edit_label: str='编辑图片')`
 
 render: ``(edge:int) -> worker``；cap: 渲染密度上限（如原图原生边长）。
 
@@ -3755,6 +3786,10 @@ render: ``(edge:int) -> worker``；cap: 渲染密度上限（如原图原生边�
 要改的是那个文件（各步骤改动因此串成一条链，最终落到 PDF）。
 不传时回落 ``save_path``（1:1 显示的情形）。两者都为 None 表示
 没有可回写的文件（PDF 矢量页等），右键菜单不提供「编辑图片」。
+
+``edit_label``：右键菜单「编辑…」的文案，默认「编辑图片」。拼版
+有「单图 vs 整页组合」之分（2026-10-07 用户定），宿主构造目标时
+分别传「编辑单图」/「编辑整图」；其余步骤保持默认。
 
 ### `class ZoomableCanvas(QGraphicsView)`
 
@@ -5051,11 +5086,10 @@ detect/rembg/print 直接把**原图**塞进查看器（缩略图条每次现解
 
 ::
 
-    [← 任务管理]
+    [← 创建任务]
     任务名称  [ 一本古籍            ]  ← 最多 360px，placeholder＝任务#0007
     留空则使用默认名「任务#0007」；PDF 可以之后在任务详情里补选。
     ┌ CreateTaskPanel ────────────────────────┐
-    │ 创建任务                                 │  ← 面板自带标题
     │ ☑ 使用自定义任务流程                     │
     │ …                                        │
     │ [取消]                     [创建任务]    │  ← 面板自带按钮
@@ -5254,10 +5288,14 @@ history_combo、_toast()。
 1. **在不在流程里** ← **本任务的流程图**。图上画了「图片拼板」就有这一格
    （:meth:`ImpositionBaseMixin._imposition_node_visible`）。
 2. **这一步有没有意义** ← **第三步的「区域模式」``area``**。这是**业务前提**
-   而不是显示开关：``area=1``「左右分开」时每个文本框产出**成对的两张**
-   半页图（``-l`` / ``-r``），两张并排才拼得出古籍的正刊对开版面；
-   ``area=2/3`` 输出并集整图、``area=4`` 输出整页，**本来就一张图**，
-   再拼没有意义。见 :data:`IMPOSITION_AREA` / :meth:`_imposition_area_ok`。
+   而不是显示开关：流程里**有检测数据**时（「检测文本框」在去底色上游），
+   ``area=1``「左右分开」让每个文本框产出**成对的两张**半页图
+   （``-l`` / ``-r``），两张并排才拼得出古籍的正刊对开版面；``area=2/3``
+   输出并集整图、``area=4`` 输出整页，**本来就是一张图**。而流程里**没有
+   检测数据**时（去底色不在流程里，或它自己就是入口拿不到框——判据
+   ``desktop.steps.ports.detect_feeds_rembg``），拼版吃**整图**照样拼：
+   整幅单独一页、手动任意两张一页——「拼板作为第一个节点，也不需要
+   detect 数据」（用户 2026-10-07）。见 :meth:`_imposition_area_ok`。
 3. **要不要真跑** ← **拼版面板底部的开关**（:meth:`imposition_active`
    只看勾没勾，那是"用户意图"）。开关在 ①②不满足时**置灰并写明原因**。
 
@@ -5378,10 +5416,14 @@ bool 反序列化整份是浪费（列表页的 ``store.imposition_enabled`` 当
 - 画布里拖动 / 缩放拉伸 / 旋转 → ``items_changed`` → 落盘 + 防抖合成；
 - **双击预览**（用户 2026-09-30）：双击某张图 → 弹窗预览这张原图；
   双击两图之外的空白处 → 弹窗预览整页左右组合（按产出口径合成）；
-- **右键菜单「预览图片 / 编辑图片」**（2026-10-01）：目标规则与双击一致
-  （图上 → 这张原图；空白 → 整页组合）；预览与双击同一条路，「编辑图片」
+- **右键菜单「预览图片 / 编辑单图·编辑整图」**（2026-10-01；编辑文案 2026-10-07
+  按目标区分）：目标规则与双击一致（图上 → 这张原图；空白 → 整页组合）；
+  预览与双击同一条路，「编辑单图 / 编辑整图」
   则**不经预览弹窗**直达编辑器——单张图编辑源图原图并覆盖回写（含刷新链），
   整页组合按产出口径现场合成全分辨率图、「完成」写回该页拼版成品文件；
+- **弹窗里「编辑」也落盘**（2026-10-07 用户定：预览弹窗不再只读）：单张
+  原图回写源图文件、整页组合回写本页拼版成品（成品陈旧时退回只读），
+  生效链汇聚在 ``_on_imposition_zoom_image_saved``；
 - 面板的**整体旋转**（滑块/输入框增量）、复位本页版面（对当前页或
   选中槽位做版面变换）、**删除选中图片**（2026-09-30 用户定：选中哪张
   就能删哪张，页保留、图回未选择列表）；
@@ -7455,6 +7497,12 @@ bpmn.io 生成的 id，解析失败就**静默回落到默认流程** ⇒ 用户
 语义抄自 ``FlowDefinition.optional_after``（那里有详细推演，别重推）：
 ``after`` 指的是**最后一个左邻居的下标**，不是左邻居的个数。
 
+⚠️ 返回值三态（2026-10-07，任务 #0027 踩坑）：``None`` 只表示**本图
+没有可选节点**；图里有拼版但它排在**最前**（没有任何左邻居）时返回
+``-1``——早先这种情况也回 ``None``，``StepBar`` 把 ``None`` 当"按默认
+位插到最后"，于是「拼板→PDF排版」的流程在步骤条上显示成
+「生成PDF → 图片拼版」，与图相反。
+
 ##### `auto_layout(diagram: 'FlowDiagram') -> 'FlowDiagram'`
 
 装饰器：`classmethod`
@@ -7915,8 +7963,11 @@ BPMN 子集（只取表达本仓库流程所需的最小面，不做完整 BPMN 
 ⚠️ 直接数"``bar_index`` 比可选节点小的真实步骤**个数**"会得 3
 （extract/detect/rembg），插到那儿就跑到 print 后面去了——因为
 ``after`` 指的是**最后一个左邻居的下标**，不是左邻居的个数。
-本流程没有可选节点（或它排在最前、没有左邻居）时返回 ``None``，
-调用方按默认位处理。
+
+⚠️ 返回值三态（2026-10-07，与 ``FlowDiagram.optional_after`` 同步）：
+``None`` = 本流程**没有**可选节点；图里有拼版但它排在**最前**、没有
+左邻居时返回 ``-1``——早先这种情况也回 ``None``，``StepBar`` 按"默认
+位插到最后"处理，拼版被排到了「生成PDF」后面（任务 #0027）。
 
 ##### `default() -> 'FlowDefinition'`
 
@@ -8196,7 +8247,9 @@ BPM 编排引擎安全导入（与 :mod:`desktop.steps.spec` 同一约束）。
 | `source_pdf_node_ids(diagram) -> tuple[str, ...]` | 图里代表「源 PDF」的节点 id（没有则空元组）。 |
 | `is_source_pdf_node(diagram, node_id: str) -> bool` | 这个节点是不是「源 PDF」（图上那个入口事件）。 |
 | `paired_node_for_stage(diagram, node_id: str) -> str \| None` | 删掉 ``node_id`` 时**该一起删掉**的配对节点 id；没有则 ``None``。 |
+| `orphaned_end_event_ids(diagram, *node_ids: str) -> tuple[str, ...]` | 删掉 ``node_ids`` 后会**悬空**的结束事件 id；没有则空元组。 |
 | `flow_needs_source_pdf(diagram) -> bool` | **这条流程**里有没有直接吃源 PDF 的阶段吗（要问图，别写死）。 |
+| `detect_feeds_rembg(diagram) -> bool` | 这张流程图上「图片去底色」**能不能拿到检测框**。 |
 | `location_of(stage: str, port: str) -> str \| None` | 运行阶段某端口的相对落点；没有登记返回 ``None``。 |
 | `artifact_path(task_dir: Path \| str, stage: str, port: str) -> Path \| None` | 产物在任务目录下的**绝对路径**；该阶段没登记这个端口则 ``None``。 |
 | `task_input_dir(task_dir: Path \| str) -> Path` | 入口图片目录的绝对路径（``tasks/<任务号>/stages/input/``）。 |
@@ -8276,6 +8329,27 @@ BPM 编排引擎安全导入（与 :mod:`desktop.steps.spec` 同一约束）。
 调用方**必须自己再判一次** ``extract`` 节点是否真的在图里（可能已经被
 用户先删了），别假定它一定存在。
 
+#### `orphaned_end_event_ids(diagram, *node_ids: str) -> tuple[str, ...]`
+
+删掉 ``node_ids`` 后会**悬空**的结束事件 id；没有则空元组。
+
+用户 2026-10-07：
+
+> 流程图编辑中，生成PDF附在PDF排版，如果删除了PDF排版，
+> 那么生成PDF就一定不存在
+
+默认流程里「生成PDF」是挂在「PDF排版」（``print``）后面的**结束事件**
+——它不进拓扑序、没有运行语义，唯一意义是图示"流程在此收尾"。
+「PDF排版」一删它就一条入线不剩，留着是句谎话：图上写着"生成PDF"，
+流程却不再产出 PDF。
+
+⚠️ 判据是**图上的性质**（入线是否全部来自将被删的节点），**不按名字
+认「生成PDF」**——用户改了名、自己画的收尾事件同理；反之「图片拼板」
+被删时「生成PDF」的入线还剩「PDF排版」那条，不跟着删。
+
+⚠️ 只收**入线非空**的结束事件：本来就悬空的事件不是这次删除造成的，
+不归这里管（别借删除顺手清扫，删除面越界）。
+
 #### `flow_needs_source_pdf(diagram) -> bool`
 
 **这条流程**里有没有直接吃源 PDF 的阶段吗（要问图，别写死）。
@@ -8292,6 +8366,24 @@ BPM 编排引擎安全导入（与 :mod:`desktop.steps.spec` 同一约束）。
 
 :param diagram: :class:`~desktop.steps.bpmn_diagram.FlowDiagram`；
     空图/``None`` 一律 False（没有流程就没有"要不要"可言）。
+
+#### `detect_feeds_rembg(diagram) -> bool`
+
+这张流程图上「图片去底色」**能不能拿到检测框**。
+
+用户 2026-10-07：去底色作为流程第一个节点（前面没有「检测文本框」）时，
+area 的 1/2/3 都要吃检测框、没有框的页裁出来就是一片空白——那种流程里
+area 必须固定 4（整页）且不可改。这个判据要在**两处**用，都别另写一份：
+
+1. 详情页第三步面板——没有检测数据时 area 锁 4（``RembgPanel`` 的
+   ``whole_page_only``）；
+2. 拼版的前提判据——没有检测数据时拼版吃整图照样拼，不再要求
+   ``area=1``（「拼板作为第一个节点，也不需要 detect 数据」）。
+
+判据：``rembg`` 在流程里**且**沿图回溯 ``boxes`` 有产出方（「检测文本框」
+在它上游，不要求直接相连——中间隔网关也算）。空图 / ``rembg`` 不在流程里
+⇒ ``False``：这是保守答案——面板锁整页不会错（那种流程里面板根本不该
+出现 1/2/3），拼版放行也合理（吃入口图片/整图）。
 
 #### `artifact_path(task_dir: Path | str, stage: str, port: str) -> Path | None`
 
@@ -9152,6 +9244,70 @@ _apply_control_width`` 按 stage 换宽度、``history._history_fill_keys``
 | 函数 | 说明 |
 | --- | --- |
 | `spec_by_key(key: str) -> StepSpec \| None` | 按 key 取步骤元数据；不存在返回 ``None``。 |
+
+---
+
+## `desktop.steps.validate`
+
+源码：[`desktop/steps/validate.py`](../../desktop/steps/validate.py)
+
+流程**合法性校验**：保存前回答"这条流程能不能这么跑"。
+
+对应 ``docs/tasks/bpm测试.md``：BPM 可以任意组合，但**并非所有组合都合法**
+——不合法的流程要在**创建或编辑保存时**当场判出来、拒绝保存。
+
+## 规则从哪来
+
+用户 2026-10-06 列了 10 条合法组合（``docs/tasks/bpm测试.md``），归纳后
+**硬规则只有两条**，其余组合都放行：
+
+1. **流程里必须有可运行的步骤**。只有源PDF/网关/结束事件的图什么都跑不了
+   ——详情页本来就拦"流程为空"，这里把同一道闸装到保存口上；
+2. **「生成 PDF」（``print``）如果在流程里，必须排在最后**。它是收尾动作，
+   排在它后面的步骤产出没人消费（``print → 去底色`` 这种就是用户给的
+   反例；「拼版」排在「生成 PDF」之后同样被这条拦住）。
+
+其余组合（``detect`` 打头、``rembg`` 不带 ``detect``、单步流程、
+``detect/rembg/imposition`` 任意顺序）都是**合法**的——运行时有
+:func:`desktop.steps.ports.stage_blocking_inputs` 按图判就绪、
+入口图片回落 ``stages/input/``，这些"缺上游"的流程本来就跑得通，
+不能拿保存校验把它们挡死。
+
+## 错误与警告分两档
+
+- **errors**（拒绝保存）：上面两条硬规则；
+- **warnings**（提示但不拦）：``extract`` 不在第一位、有 ``extract`` 却没有
+  「源PDF」入口节点、有「拼版」却没有判断节点（文档"特殊"节说二者一般
+  同在）、同一阶段画了多个节点、图上有未接入运行的节点。这些**跑得通**，
+  只是与习惯不符——拦下来会把合法操作堵死（与状态机"缺上游只提示不硬拦"
+  同一条纪律）。
+
+⚠️ 本模块**纯逻辑、不 import Qt**（与 ports/scheduler 同一约束）。
+
+### `class FlowValidation`
+
+一次校验的结果：``errors`` 拒绝保存，``warnings`` 只提示。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `ok() -> bool` | 没有硬错误（有警告也算合法）。 |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `validate_flow(diagram: FlowDiagram \| None) -> FlowValidation` | 校验一张流程图；返回 :class:`FlowValidation`。 |
+
+#### `validate_flow(diagram: FlowDiagram | None) -> FlowValidation`
+
+校验一张流程图；返回 :class:`FlowValidation`。
+
+⚠️ 判"顺序"用的是 :meth:`FlowDiagram.stage_order`（拓扑序）——与状态机
+同一份答案，别在这里另写一份顺序推导。网关/事件/认不出阶段的节点都不
+进拓扑序，天然不参与校验（结束事件常叫「生成PDF」，但它不是 ``print``，
+见 ``bpmn_diagram.load`` 的说明）。
 
 ---
 

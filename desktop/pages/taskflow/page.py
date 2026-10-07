@@ -132,6 +132,9 @@ class TaskFlowPage(QWidget):
 
         ⚠️ 顶部按钮直接走这里，**不**绕 ``FlowPanel.accept()``——那个方法会
         再发一次 ``done`` 信号（页面自己就是发起方，转一圈会重复落盘）。
+        所以**合法性校验要在这里再做一遍**（与 ``FlowPanel.accept`` 同一份
+        :func:`desktop.steps.validate.validate_flow`）：不合法的流程弹提示、
+        不落盘、也不切页，用户留在本页改。
         """
         task_id = self._task_id
         if ok and self._panel is not None and task_id:
@@ -139,6 +142,17 @@ class TaskFlowPage(QWidget):
             #    「保存」之后才非 None，而本页把按钮收走了（show_buttons=False）。
             diagram = self._panel.editor_panel.editor().diagram()
             if diagram is not None:
+                from desktop.steps.validate import validate_flow
+                from desktop.ui.toast import show_toast
+
+                result = validate_flow(diagram)
+                if not result.ok:
+                    show_toast(self, "warning", "流程不合法，未保存",
+                               "；".join(result.errors))
+                    return
+                if result.warnings:
+                    show_toast(self, "warning", "流程已保存（有提示）",
+                               "；".join(result.warnings))
                 self.store.save_task_diagram(task_id, diagram)
                 self.flow_saved.emit(task_id)
                 return

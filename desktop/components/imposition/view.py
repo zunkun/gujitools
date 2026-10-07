@@ -53,9 +53,9 @@ class ImpositionViewWidget(QWidget):
     item_preview_requested = Signal(int)
     #: 画布内双击了图片之外的空白处：请求预览整页左右组合
     spread_preview_requested = Signal()
-    #: 画布右键菜单「编辑图片」（0 右槽 / 1 左槽）：不经预览弹窗直接编辑
+    #: 画布右键菜单「编辑单图」（0 右槽 / 1 左槽）：不经预览弹窗直接编辑
     item_edit_requested = Signal(int)
-    #: 画布右键菜单在空白处选了「编辑图片」：直接编辑整页左右组合
+    #: 画布右键菜单在空白处选了「编辑整图」：直接编辑整页左右组合
     spread_edit_requested = Signal()
 
     def __init__(self, parent=None):
@@ -93,7 +93,7 @@ class ImpositionViewWidget(QWidget):
         self.canvas.spread_double_clicked.connect(
             self.spread_preview_requested
         )
-        # 右键「编辑图片」同款直连：不经预览弹窗的编辑入口归控制器管
+        # 右键「编辑单图 / 编辑整图」同款直连：不经预览弹窗的编辑入口归控制器管
         self.canvas.item_edit_requested.connect(self.item_edit_requested)
         self.canvas.spread_edit_requested.connect(self.spread_edit_requested)
         right.addWidget(self.canvas, 1)

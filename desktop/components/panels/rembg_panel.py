@@ -8,7 +8,7 @@ from PySide6.QtGui import QIntValidator
 from PySide6.QtWidgets import QFormLayout, QHBoxLayout, QWidget
 from qfluentwidgets import CheckBox, LineEdit, Slider
 
-from core.command_spec import effective_border_default
+from core.command_spec import WHOLE_PAGE_AREA, effective_border_default
 from desktop.components.common.safecomponents import SafeSpinBox
 from desktop.components.panels.base import StagePanel, default_for
 from desktop.components.panels.params_spec import DEFAULTS, REMBG_AREAS, REMBG_TYPES
@@ -29,6 +29,23 @@ class RembgPanel(StagePanel):
         "整图自动二值化/灰度化去底，可保留印章。" "「区域模式」与「边距」决定显示与裁剪区域（配合步骤二的检测框）。"
     )
 
+    def __init__(self, parent=None, *, whole_page_only: bool = False):
+        """``whole_page_only=True``：area 锁定 4（整页/不检测）且不可改。
+
+        流程里本步**拿不到检测框**（「检测文本框」不在它上游）时，area 的
+        1/2/3 都没框可裁、页面只会一片空白——area 必须固定 4（用户
+        2026-10-07：「图片去底色作为第一个节点，则 area 默认 = 4，并且不可
+        修改」）。判据唯一处 :func:`desktop.steps.ports.detect_feeds_rembg`，
+        由宿主按当前流程决定传值；独立任务页/默认流程不传（可自由选）。
+        """
+        self._whole_page_only = bool(whole_page_only)
+        super().__init__(parent)
+
+    @property
+    def whole_page_only(self) -> bool:
+        """area 是否被锁定为 4（宿主读它来联动第二步「整页模式」开关）。"""
+        return self._whole_page_only
+
     def _build_form(self, form: QFormLayout) -> None:
         d = DEFAULTS[self.stage]
         # 用户是否手填过 border：手填过就不再被 area 的默认值覆盖
@@ -43,6 +60,8 @@ class RembgPanel(StagePanel):
             "4 = 整页：把整页当作唯一文本框（不做检测），边框画在页面边界，"
             "仍可在第二步拖动/重画；适合普通文档或古籍检测失败时整页去底色"
         )
+        if self._whole_page_only:
+            self._lock_area_whole_page()
         self.border = LineEdit()
         self.border.setPlaceholderText("留空 或 30 / 20,30 / 20,30,25,35")
         # 初值 = 当前 area 的 border 默认（area=1/2/3 → 0、area=4 → 空）
@@ -111,6 +130,19 @@ class RembgPanel(StagePanel):
         """按 itemData 找下标；找不到时回落 0（下拉第一项）。"""
         idx = combo.findData(value)
         return idx if idx >= 0 else 0
+
+    def _lock_area_whole_page(self) -> None:
+        """area 锁 4 并禁用下拉（``whole_page_only`` 构造参数的唯一落点）。
+
+        ⚠️ 置灰而不是隐藏：用户要看得见「区域模式」这一行并知道**为什么**
+        改不了（tooltip 写明），而不是凭空少一个参数。
+        """
+        self.area.setCurrentIndex(self._index_of(self.area, WHOLE_PAGE_AREA))
+        self.area.setEnabled(False)
+        self.area.setToolTip(
+            "本流程里「图片去底色」前面没有「检测文本框」，区域模式 1/2/3 "
+            "需要检测框才能裁剪（没框的页只会一片空白），因此固定整页（4）"
+        )
 
     def _combo_value(self, combo):
         """读下拉的参数值（itemData），缺失时退回显示文本。"""
@@ -183,7 +215,9 @@ class RembgPanel(StagePanel):
         border 留空时按 area 取默认（area=1/2/3 → 0、area=4 → 不设），
         由 runner 在续跑时与 detect 框坐标实时合成裁剪区域。
         """
-        area = int(self._combo_value(self.area))
+        # 锁整页时下拉已禁用、值恒为 4，这里再兜一道：流程换过、暂存/历史
+        # 里残留 area=1/2/3 的旧值也不能漏出去（子进程按它找 boxes.json）
+        area = WHOLE_PAGE_AREA if self._whole_page_only else int(self._combo_value(self.area))
         args = {
             "area": area,
             "type": int(self._combo_value(self.type)),
@@ -201,6 +235,9 @@ class RembgPanel(StagePanel):
     def _apply_args(self, parameters: dict) -> None:
         d = DEFAULTS[self.stage]
         area_value = default_for(parameters, d, "area")
+        if self._whole_page_only:
+            # 锁整页：暂存/历史里残留的 area 一律不回填（下拉也已禁用）
+            area_value = WHOLE_PAGE_AREA
         self.area.setCurrentIndex(self._index_of(self.area, area_value))
         # border 留空（含"没这个键"）→ 按 area 取默认；显式给的值原样回填，
         # 且与默认值不同就视为"用户手填过"，后续 area 切换不覆盖

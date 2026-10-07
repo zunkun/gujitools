@@ -218,11 +218,11 @@ class ZoomTarget:
     """
 
     __slots__ = ("render", "note", "stem", "count", "original", "cap",
-                 "save_path", "edit_path")
+                 "save_path", "edit_path", "edit_label")
 
     def __init__(self, render, note: str = "", stem: str = "", count: int = 1,
                  original=None, cap: int | None = None, save_path=None,
-                 edit_path=None):
+                 edit_path=None, edit_label: str = "编辑图片"):
         """render: ``(edge:int) -> worker``；cap: 渲染密度上限（如原图原生边长）。
 
         ``save_path``：本页显示的像素**就是**这个真实文件（Path | None）。
@@ -237,6 +237,10 @@ class ZoomTarget:
         要改的是那个文件（各步骤改动因此串成一条链，最终落到 PDF）。
         不传时回落 ``save_path``（1:1 显示的情形）。两者都为 None 表示
         没有可回写的文件（PDF 矢量页等），右键菜单不提供「编辑图片」。
+
+        ``edit_label``：右键菜单「编辑…」的文案，默认「编辑图片」。拼版
+        有「单图 vs 整页组合」之分（2026-10-07 用户定），宿主构造目标时
+        分别传「编辑单图」/「编辑整图」；其余步骤保持默认。
         """
         self.render = render
         self.note = note or "预览"
@@ -246,6 +250,7 @@ class ZoomTarget:
         self.cap = cap            # int | None：超过它渲染没有意义（会白放大）
         self.save_path = Path(save_path) if save_path else None
         self.edit_path = Path(edit_path) if edit_path else self.save_path
+        self.edit_label = edit_label
 
 
 class ZoomableCanvas(QGraphicsView):
@@ -1141,17 +1146,18 @@ class ZoomPopupMixin:
         menu.exec(QCursor.pos())
 
     def _zoom_menu_items(self, target) -> list:
-        """右键菜单项 ``[(文案, 图标, 槽)]``：有可回写文件才给「编辑图片」。
+        """右键菜单项 ``[(文案, 图标, 槽)]``：有可回写文件才给「编辑…」。
 
-        文案与拼版画布的右键菜单**保持一致**（预览图片 / 编辑图片），四个步骤
-        加拼版是同一套入口。抽成方法是为了可测——``_open_zoom_menu`` 要
-        ``exec`` 模态，离屏测不了；这里只算"该有哪些项"，与弹菜单解耦。
+        编辑文案由 ``ZoomTarget.edit_label`` 决定（默认「编辑图片」；拼版
+        传「编辑单图」/「编辑整图」，与拼版画布的右键菜单一致——2026-10-07
+        用户定）。抽成方法是为了可测——``_open_zoom_menu`` 要 ``exec`` 模态，
+        离屏测不了；这里只算"该有哪些项"，与弹菜单解耦。
         """
         from qfluentwidgets import FluentIcon as FIF
 
         items = [("预览图片", FIF.PHOTO, self._open_zoom_popup)]
         if target is not None and target.edit_path is not None:
-            items.append(("编辑图片", FIF.EDIT, self.edit_current_image))
+            items.append((target.edit_label, FIF.EDIT, self.edit_current_image))
         return items
 
     def edit_current_image(self) -> bool:

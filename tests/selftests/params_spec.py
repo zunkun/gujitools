@@ -187,6 +187,21 @@ def run(ctx) -> None:
        rembg.get_args()["area"] == 1 and rembg.get_args()["type"] == 1,
        f"{rembg.get_args()['area']}/{rembg.get_args()['type']}")
 
+    # ------------------------------------------------- 4b. whole_page_only 锁定
+    # 用户 2026-10-07：流程里「图片去底色」前面没有「检测文本框」时（判据
+    # ports.detect_feeds_rembg），area 必须固定 4 且不可改——1/2/3 没框可裁。
+    locked = type(rembg)(whole_page_only=True)
+    ok("锁整页面板：area 恒为 4",
+       locked.get_args()["area"] == 4, f"get_args={locked.get_args()['area']!r}")
+    ok("锁整页面板：area 下拉被禁用（不可改）",
+       not locked.area.isEnabled())
+    # 暂存/历史里残留 area=1 的旧值也不能把它改回去
+    locked._apply_args_guarded({"area": 1})
+    ok("锁整页面板：回填旧 area=1 仍保持 4",
+       locked.get_args()["area"] == 4, f"get_args={locked.get_args()['area']!r}")
+    ok("非锁面板不受影响（默认可改）",
+       rembg.area.isEnabled() and rembg.whole_page_only is False)
+
     # ------------------------------------------------- 5. default_for 的语义
     # ⚠️ None 默认值陷阱：p.get(key, default) 在值是 None 时兜底永不生效；
     # 而 `p.get(key) or default` 会把合法的 False / 0 也吃掉。两者都不能用。
