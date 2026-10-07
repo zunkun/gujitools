@@ -24,7 +24,7 @@ guji crop --config ./book.yaml
 > （detect 阶段）走的是同一个函数，所以命令行与界面看到的框完全一致。
 > 需要单独查看检测结果时用 `guji detect -i ./images --save`。
 >
-> 内容框有两类（模型 `weights/bookcontent.pt`，对一页互斥）：`harfcontent`
+> 内容框有两类（模型 `static/weights/bookcontent.pt`，对一页互斥）：`harfcontent`
 > 半幅（左右两栏）→ 分 left / right 两组；`fullcontent` 整幅（整页单一
 > 内容区）→ 只有一个框，**不拆左右**（area=1 只输出一张、无 `-l/-r` 后缀；
 > area=2/3 单框**不**做对称镜像）。
@@ -39,7 +39,7 @@ guji crop --config ./book.yaml
 
 ### 模型加载
 
-- 权重文件路径：`gujitools/weights/bookcontent.pt`
+- 权重文件路径：`gujitools/static/weights/bookcontent.pt`
 - 延迟加载 + 模块级单例 + 双重检查锁，确保多线程下只加载一次
 - 强制 CPU 模式运行
 

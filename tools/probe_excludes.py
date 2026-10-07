@@ -97,7 +97,10 @@ def run_chain() -> tuple[bool, str]:
         import torchvision  # noqa: F401
         from ultralytics import YOLO
 
-        weights = Path("weights/bookcontent.pt")
+        weights = (
+            Path(__file__).resolve().parents[1]
+            / "static" / "weights" / "bookcontent.pt"
+        )
         if weights.is_file():
             model = YOLO(str(weights))
             model.predict(np.zeros((640, 640, 3), dtype=np.uint8), verbose=False)

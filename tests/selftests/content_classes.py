@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """内容类别自测：harfcontent（半幅）/ fullcontent（整幅）在下游的落地行为。
 
-新模型 `weights/bookcontent.pt` 是**两类**：harfcontent（半幅，原 bookcontent
+新模型 `static/weights/bookcontent.pt` 是**两类**：harfcontent（半幅，原 bookcontent
 改名）与 fullcontent（整幅，整页单一内容区），两类对一页互斥。本模块守住
 「整幅」这条新增语义在三处的行为（都不需要真的跑 YOLO，纯规则断言）：
 
@@ -330,7 +330,7 @@ def run(ctx) -> None:
         Path(__file__).resolve().parents[2] / "tools" / "dump_detect.py"
     ).read_text(encoding="utf-8")
     ok("诊断工具用项目权重解析（不写死权重路径）",
-       "utils.model_path()" in tool_src and "weights/bookcontent.pt" not in tool_src,
+       "utils.model_path()" in tool_src and "bookcontent.pt" not in tool_src,
        "工具绕开了 utils.model_path")
     ok("诊断工具不写配置/不改状态（只可选另存标注图）",
        "write_text" not in tool_src and "json.dump" not in tool_src

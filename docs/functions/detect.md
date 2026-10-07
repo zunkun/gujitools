@@ -1,6 +1,6 @@
 # detect 功能说明
 
-在整页图片中检测**内容框**，输出像素坐标。模型 `weights/bookcontent.pt`
+在整页图片中检测**内容框**，输出像素坐标。模型 `static/weights/bookcontent.pt`
 有**两类**，对一页互斥：
 
 - **harfcontent（半幅）**：双栏排版中的一栏，一页最多左右两个框；
@@ -151,7 +151,7 @@ python tools/dump_detect.py 可疑页.jpg --save out/ # 另存标注图
 
 ### 模型加载
 
-- 权重文件路径：`gujitools/weights/bookcontent.pt`
+- 权重文件路径：`gujitools/static/weights/bookcontent.pt`
 - 进程内单例加载（双重检查锁定），多线程复用同一实例。
 
 ## 输出

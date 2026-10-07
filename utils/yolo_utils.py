@@ -4,10 +4,10 @@
 
 1. **模型加载** (`load_yolo_model`)
    延迟加载 + 模块级单例 + 双重检查锁，确保多线程下模型只加载一次。
-   权重文件查找路径: `gujitools/weights/bookcontent.pt`。
+   权重文件查找路径: `gujitools/static/weights/bookcontent.pt`。
 
 2. **页面内容框检测** (`detect_content_boxes`)
-   权重 `weights/bookcontent.pt` 是**两类**模型，两类对一页而言互斥：
+   权重 `static/weights/bookcontent.pt` 是**两类**模型，两类对一页而言互斥：
 
    - ``harfcontent``（半幅，即原 `bookcontent` 改名）——双栏排版中的**一栏**。
      双页扫描时一页出左右两栏，故按检测框水平中心与图像中线的关系分为
@@ -157,13 +157,13 @@ def model_path() -> Path:
     漂移，所以统一收在这里。
 
     返回:
-        `gujitools/weights/bookcontent.pt` 的绝对路径。
+        `gujitools/static/weights/bookcontent.pt` 的绝对路径。
 
     异常:
         FileNotFoundError: 权重文件不存在（打包遗漏或安装损坏）。
     """
     project_root = Path(__file__).resolve().parents[1]
-    candidate = project_root / "weights" / "bookcontent.pt"
+    candidate = project_root / "static" / "weights" / "bookcontent.pt"
     if not candidate.exists():
         raise FileNotFoundError(
             "未找到 YOLO 模型权重文件 bookcontent.pt。\n"
@@ -225,7 +225,7 @@ def load_yolo_model() -> object:
         ultralytics.YOLO 实例（CPU 模式）。
 
     异常:
-        FileNotFoundError: 未在候选路径找到 weights/bookcontent.pt。
+        FileNotFoundError: 未找到 static/weights/bookcontent.pt。
     """
     global _YOLO_MODEL
     if _YOLO_MODEL is not None:
@@ -294,7 +294,7 @@ def load_yolo_model() -> object:
         return _YOLO_MODEL
 
 
-#: 内容类别名。模型 `weights/bookcontent.pt` 的 `names` 就是这两个，
+#: 内容类别名。模型 `static/weights/bookcontent.pt` 的 `names` 就是这两个，
 #: 但这里只用于**按名解析类别号**（见 :func:`_content_class_ids`），
 #: 不假设它们在 `names` 里的下标顺序。
 CONTENT_CLASS_HARF = "harfcontent"

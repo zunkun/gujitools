@@ -133,7 +133,7 @@ CUDA 版本或找不到对应版本。
 | ultralytics            | YOLO 模型推理 | detect / crop / cropremove            |
 | fpdf2                  | PDF 生成      | run                                   |
 
-YOLO 模型权重文件需放置于 `weights/bookcontent.pt`。
+YOLO 模型权重文件需放置于 `static/weights/bookcontent.pt`。
 
 ### Windows CPU 环境与打包体积
 

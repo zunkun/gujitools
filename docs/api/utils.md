@@ -2704,10 +2704,10 @@ YOLO 检测封装：模型加载与页面内容框检测。
 
 1. **模型加载** (`load_yolo_model`)
    延迟加载 + 模块级单例 + 双重检查锁，确保多线程下模型只加载一次。
-   权重文件查找路径: `gujitools/weights/bookcontent.pt`。
+   权重文件查找路径: `gujitools/static/weights/bookcontent.pt`。
 
 2. **页面内容框检测** (`detect_content_boxes`)
-   权重 `weights/bookcontent.pt` 是**两类**模型，两类对一页而言互斥：
+   权重 `static/weights/bookcontent.pt` 是**两类**模型，两类对一页而言互斥：
 
    - ``harfcontent``（半幅，即原 `bookcontent` 改名）——双栏排版中的**一栏**。
      双页扫描时一页出左右两栏，故按检测框水平中心与图像中线的关系分为
@@ -2775,7 +2775,7 @@ YOLO 权重文件路径（候选表只保留这一份）。
 漂移，所以统一收在这里。
 
 返回:
-    `gujitools/weights/bookcontent.pt` 的绝对路径。
+    `gujitools/static/weights/bookcontent.pt` 的绝对路径。
 
 异常:
     FileNotFoundError: 权重文件不存在（打包遗漏或安装损坏）。
@@ -2802,7 +2802,7 @@ YOLO 权重文件路径（候选表只保留这一份）。
     ultralytics.YOLO 实例（CPU 模式）。
 
 异常:
-    FileNotFoundError: 未在候选路径找到 weights/bookcontent.pt。
+    FileNotFoundError: 未找到 static/weights/bookcontent.pt。
 
 #### `resolve_content_boxes(raw_boxes, img_w: float, harf_id: int, full_id: int) -> Tuple[List[tuple], List[tuple], List[tuple], Tuple[str, ...]]`
 

@@ -204,13 +204,13 @@ GUI 的预览控件也要画同样的框。配色与命名必须一致，否则�
 
 **延迟加载 YOLO 模型单例**：双重检查锁定（double-checked locking）确保多线程下只加载一次。
 
-- 权重文件路径：`gujitools/weights/bookcontent.pt`
+- 权重文件路径：`gujitools/static/weights/bookcontent.pt`
 - 强制 CPU 模式（兼容无 GPU 环境）
 - 找不到权重文件时抛出 `FileNotFoundError`
 
 ### `detect_content_boxes(image_bgr, model) -> ContentBoxes`
 
-**内容框检测 + 按类别分流 + 互斥消解**（模型 `weights/bookcontent.pt` 两类）：
+**内容框检测 + 按类别分流 + 互斥消解**（模型 `static/weights/bookcontent.pt` 两类）：
 
 | 参数      | 类型       | 说明                                                                     |
 | --------- | ---------- | ------------------------------------------------------------------------ |
