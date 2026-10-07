@@ -23,7 +23,7 @@ def _tmp_png(path, w: int, h: int):
     """造一张纯白测试图（QPainter 随手画两笔，便于肉眼区分）。"""
     from PySide6.QtGui import QColor, QImage, QPainter
 
-    img = QImage(w, h, QImage.Format_RGB32)
+    img = QImage(w, h, QImage.Format.Format_RGB32)
     img.fill(QColor("#f2f2f2"))
     painter = QPainter(img)
     painter.setPen(QColor("#333333"))
@@ -113,12 +113,15 @@ def run(ctx) -> None:
     ok("页码为「第…頁」且按物理页序 + base",
        plan2.page_number is not None and plan2.page_number.text == "第三頁",
        str(plan2.page_number))
+    _title2 = plan2.title
+    _pn2 = plan2.page_number
+    assert _title2 is not None and _pn2 is not None  # 上两条 ok 已断言二者存在
     ok("标题/页码默认竖排且同侧",
-       plan2.title.vertical and plan2.page_number.vertical
+       _title2.vertical and _pn2.vertical
        and plan2.side == "left", str(plan2.side))
     ok("竖排在页边、横排另有基线",
-       plan2.title.baseline_mm is None
-       and plan2.title.x_mm < 10.0, str(plan2.title.x_mm))
+       _title2.baseline_mm is None
+       and _title2.x_mm < 10.0, str(_title2.x_mm))
 
     # 奇偶页边距
     odd_even = dict(full)
@@ -153,6 +156,7 @@ def run(ctx) -> None:
     # 几何错了"的假失败（本轮就踩到）。
     legacy_l = plan_print_page((800, 1200), full, 0, 2)
     legacy_r = plan_print_page((800, 1200), full, 1, 2)
+    assert legacy_l.title is not None and legacy_r.title is not None  # full 开了标题
     ok("未配置距页边 → 左页仍是 ml/2",
        abs(legacy_l.title.x_mm - 5.0) < 1e-6, str(legacy_l.title.x_mm))
     ok("未配置距页边 → 右页 = mr - TEXT_SIDE_OFFSET_MM",
@@ -167,6 +171,9 @@ def run(ctx) -> None:
                       page_number_margins=[2, 14, 2, 10])
     ins_l = plan_print_page((800, 1200), inset_args, 0, 2)
     ins_r = plan_print_page((800, 1200), inset_args, 1, 2)
+    assert (ins_l.title is not None and ins_r.title is not None
+            and ins_l.page_number is not None
+            and ins_r.page_number is not None)  # inset_args 开了标题与页码
     ok("左页标题距左边界 = 左值（文字轮廓左边缘就是落点）",
        abs(ins_l.title.x_mm - 10.0) < 1e-6, str(ins_l.title.x_mm))
     # ⚠️ 右页口径（用户明确要求）：填的是**文字轮廓右边缘**到纸边的距离，
@@ -213,6 +220,7 @@ def run(ctx) -> None:
     # 图片范围内，而且仍在用户设的距离上（没被"自动避让"顶到图片外）
     wide_full = dict(full, title_margins=[2, 2, 2, 30])
     overlap = plan_print_page((2400, 800), wide_full, 0, 2)
+    assert overlap.title is not None  # wide_full 开了标题
     ok("距左调大 → 文字按用户设的距离落点",
        abs(overlap.title.x_mm - 30.0) < 1e-6, str(overlap.title.x_mm))
     ok("文字允许压在图片上（不再自动避让到图片外）",
@@ -273,14 +281,17 @@ def run(ctx) -> None:
                           sorted_nodes=resolved)
     _t3 = plan_print_page((800, 1200), node_args, 2, 3, image_name="0003",
                           sorted_nodes=resolved)
+    assert (_t1.title is not None and _t2.title is not None
+            and _t3.title is not None)  # 节点页都有标题
     ok("节点页起标题切换且延续到后续页",
        _t1.title.text == "测试古籍" and _t2.title.text == "卷二"
        and _t3.title.text == "卷二",
        f"{_t1.title.text} / {_t2.title.text} / {_t3.title.text}")
+    _fallback = plan_print_page(
+        (800, 1200), node_args, 1, 3, image_name="0002")
+    assert _fallback.title is not None  # node_args 开了标题
     ok("不传清单解析结果时节点整体失效（兜底语义：调用方必须传 sorted_nodes）",
-       plan_print_page(
-           (800, 1200), node_args, 1, 3, image_name="0002"
-       ).title.text == "测试古籍")
+       _fallback.title.text == "测试古籍")
     # 条目页名有缺口（3..5）时，节点 1 必须命中**列表第 1 项**（位置语义）
     gap_resolved = resolve_title_nodes(
         ["1", "2", "3"], [[1, "首页标题"]])  # _resolved_nodes 的输入形态
@@ -291,6 +302,7 @@ def run(ctx) -> None:
         0, 3, image_name="0003",           # 该条目的真实页名是 3
         sorted_nodes=resolve_title_nodes(["1", "2", "3"], [[1, "首页标题"]]),
     )
+    assert _gap_plan.title is not None  # 该页有节点标题
     ok("缺口页名条目（页名 3 的第 1 项）页面标题 = 节点标题",
        _gap_plan.title.text == "首页标题", str(_gap_plan.title))
     pv_src = (Path(__file__).resolve().parents[2]
@@ -316,7 +328,7 @@ def run(ctx) -> None:
     # 第二张：第 5b 节要验**右页**（第 2 页）的文字轮廓右边距，必须有 2 页
     _tmp_png(img_dir / "0002.png", 800, 1200)
 
-    pdf_args = {
+    pdf_args: dict[str, object] = {
         # 与 CommandArgs 一致：input/output 必须是 Path，不是字符串
         "input": img_dir,
         "output": tmp / "out",
@@ -328,7 +340,7 @@ def run(ctx) -> None:
         "page_number_printing": False,
         "workers": 1,
     }
-    PrintFunction(dict(pdf_args)).execute()
+    PrintFunction(dict(pdf_args)).execute()  # type: ignore[reportArgumentType]  # 测试直接喂 dict（运行时按 get 取值，与 ArgsProvider 协议兼容）
     pdf_path = tmp / "out" / "parity.pdf"
     ok("测试 PDF 已生成", pdf_path.exists(), str(pdf_path))
 
@@ -371,7 +383,7 @@ def run(ctx) -> None:
         "page_number_printing": True, "page_number_font_size": 12,
         "title_margins": "2,14,2,10", "page_number_margins": "2,14,2,10",
     })
-    PrintFunction(dict(inset_pdf_args)).execute()
+    PrintFunction(dict(inset_pdf_args)).execute()  # type: ignore[reportArgumentType]  # 同上：dict 与 ArgsProvider 协议运行时兼容
     pdf_path2 = tmp / "out" / "parity_inset.pdf"
     ok("带距页边的 PDF 已生成", pdf_path2.exists(), str(pdf_path2))
 
@@ -434,9 +446,12 @@ def run(ctx) -> None:
         page_w_pt = page2.rect.width
         # 用 get_text 的字形 bbox 取整串轮廓：竖排文字逐字落在同一列，
         # 取所有字符 x1 的最大值即轮廓右边。
+        from typing import cast
+
+        _rawdict = cast(dict, page2.get_text("rawdict"))  # pymupdf 存根把 rawdict 标成 str，运行时是 dict
         _chars = [
             ch
-            for block in page2.get_text("rawdict")["blocks"]
+            for block in _rawdict["blocks"]
             if block.get("type") == 0
             for line in block["lines"]
             for span in line["spans"]
@@ -520,6 +535,7 @@ def run(ctx) -> None:
         widget._set_mode("effect")
         first = _wait_new_image(widget, app, None)
         ok("效果预览已渲染", first is not None and first.width() > 0)
+        assert first is not None  # 上一条 ok 已断言渲染成功
         ok("效果页是横版（A4 landscape）", first.width() > first.height(),
            f"{first.width()}x{first.height()}")
         ok("说明行明确「不会生成 PDF」",
@@ -529,6 +545,7 @@ def run(ctx) -> None:
         widget._params_provider = lambda: dict(full, orientation="portrait")
         widget.refresh_display()
         second = _wait_new_image(widget, app, (first.width(), first.height()))
+        assert second is not None  # 竖版渲染必有新图（同上）
         ok("改成竖版后效果页随之变竖",
            second is not None and second.height() > second.width(),
            f"{second.width()}x{second.height()}")
@@ -537,6 +554,7 @@ def run(ctx) -> None:
         widget._params_provider = lambda: dict(full)
         widget._set_mode("original")
         third = _wait_new_image(widget, app, (second.width(), second.height()))
+        assert third is not None  # 「原图」模式渲染必有新图（同上）
         ok("「原图」显示图片本身（不再是纸张比例）",
            third is not None
            and abs(third.height() / third.width() - 1200 / 800) < 0.02,
@@ -711,12 +729,15 @@ def run(ctx) -> None:
                      "page_number_position", "page_number_orientation"):
             ok(f"面板不再有 {attr} 控件",
                not hasattr(panel, attr), f"仍有 {attr}")
+        from PySide6.QtWidgets import QLabel
+
         _labels = []
         for _form in panel.findChildren(QFormLayout):
             for _row in range(_form.rowCount()):
-                _item = _form.itemAt(_row, QFormLayout.LabelRole)
-                if _item is not None and _item.widget() is not None:
-                    _labels.append(_item.widget().text())
+                _item = _form.itemAt(_row, QFormLayout.ItemRole.LabelRole)
+                _w = _item.widget() if _item is not None else None
+                if isinstance(_w, QLabel):
+                    _labels.append(_w.text())
         ok("表单里不再出现「位置」「文字方向」两行",
            "位置" not in _labels and "文字方向" not in _labels,
            str(_labels))
@@ -812,18 +833,21 @@ def run(ctx) -> None:
         # ---- 行序与标签（控件先建、行后加，顺序最容易写错，已踩过一次）----
         forms = panel.findChildren(QFormLayout)
 
+        from PySide6.QtWidgets import QLabel
+
         def _find(widget):
             """返回 (所属表单, 行号, 行标签文本)；找不到返回 (None, -1, None)。"""
             for form in forms:
                 for row in range(form.rowCount()):
-                    for role in (QFormLayout.FieldRole, QFormLayout.LabelRole,
-                                 QFormLayout.SpanningRole):
+                    for role in (QFormLayout.ItemRole.FieldRole, QFormLayout.ItemRole.LabelRole,
+                                 QFormLayout.ItemRole.SpanningRole):
                         item = form.itemAt(row, role)
                         if item is not None and item.widget() is widget:
-                            lab = form.itemAt(row, QFormLayout.LabelRole)
+                            lab = form.itemAt(row, QFormLayout.ItemRole.LabelRole)
                             text = None
-                            if lab is not None and lab.widget() is not None:
-                                text = lab.widget().text()
+                            _lw = lab.widget() if lab is not None else None
+                            if isinstance(_lw, QLabel):
+                                text = _lw.text()
                             return form, row, text
             return None, -1, None
 
@@ -1007,7 +1031,7 @@ def run(ctx) -> None:
         vertical=True, font_size_pt=24.0, color=(0, 0, 0),
     )
     spy = _SpyPainter()
-    _draw_print_text(spy, spec, 1.0)
+    _draw_print_text(spy, spec, 1.0)  # type: ignore[reportArgumentType]  # 测试替身：鸭子类型的记录器，签名与 QPainter 兼容
     texts = [call[1] for call in spy.calls if call[0] == "text"]
     ok("预览：英文整段一次画完（不是每个字母一次）",
        texts == ["呵", "呵", "Happiness"], str(texts))
@@ -1027,15 +1051,18 @@ def run(ctx) -> None:
         "title_orientation": "vertical",
         "page_number_printing": False,
     })
-    PrintFunction(dict(mixed_args)).execute()
+    PrintFunction(dict(mixed_args)).execute()  # type: ignore[reportArgumentType]  # 同上
     mixed_pdf = tmp / "out" / "vertical_mixed.pdf"
     ok("混排标题的 PDF 已生成", mixed_pdf.exists(), str(mixed_pdf))
+    from typing import cast
+
     doc3 = pymupdf.open(str(mixed_pdf))
     try:
         # 逐行取：既能看"分成几行"，也能看每行的书写方向（dir）
+        _rawdict3 = cast(dict, doc3[0].get_text("rawdict"))  # 同上：存根偏差
         lines = [
             line
-            for block in doc3[0].get_text("rawdict")["blocks"]
+            for block in _rawdict3["blocks"]
             if block.get("type") == 0
             for line in block["lines"]
         ]
@@ -1345,7 +1372,8 @@ def run(ctx) -> None:
     from desktop.steps import ports
 
     declared = {
-        stage: ports.spec_for_stage(stage).preview_attr for stage in STAGES
+        stage: ports.spec_for_stage(stage).preview_attr  # type: ignore[reportOptionalMemberAccess]  # STAGES 里的每个阶段都注册了 spec
+        for stage in STAGES
     }
     ok("每一步都声明了主预览控件（preview_attr 非空）",
        all(declared.values()), str(declared))
@@ -1380,11 +1408,11 @@ def run(ctx) -> None:
     kb_strip.setFocus()
     pump(app, times=2)
     kb_strip.setCurrentRow(0)
-    QTest.keyClick(kb_strip, Qt.Key_Right)
+    QTest.keyClick(kb_strip, Qt.Key.Key_Right)
     pump(app, times=2)
     ok("条内按 → 翻页（焦点在缩略图条上也要能左右切换）",
        kb_strip.currentRow() == 1, str(kb_strip.currentRow()))
-    QTest.keyClick(kb_strip, Qt.Key_Left)
+    QTest.keyClick(kb_strip, Qt.Key.Key_Left)
     pump(app, times=2)
     ok("条内按 ← 翻回", kb_strip.currentRow() == 0, str(kb_strip.currentRow()))
     kb_strip.deleteLater()

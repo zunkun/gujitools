@@ -20,9 +20,11 @@ TITLE = "页码样式（中文/阿拉伯/干支）与前后缀"
 def run(ctx) -> None:
     import os
     from pathlib import Path
+    from typing import cast
 
     from tests.selftests._context import ok
 
+    from core.args import ArgsProvider
     from utils.string_utils import format_page_number, num_to_ganzhi
 
     # ---- 1. 干支：六十甲子且循环 ----
@@ -192,11 +194,11 @@ def run(ctx) -> None:
     work = Path(ctx.tmp) / "number_format_e2e"
     imgs = work / "imgs"
     imgs.mkdir(parents=True, exist_ok=True)
-    pic = QImage(400, 600, QImage.Format_RGB32)
+    pic = QImage(400, 600, QImage.Format.Format_RGB32)
     pic.fill(QColor("#f5f0e6"))
     pic.save(str(imgs / "0001-l.png"))
 
-    PrintFunction({
+    PrintFunction(cast(ArgsProvider, {
         "input": imgs, "output": work / "out", "pdf_name": "n.pdf",
         "paper_size": "A4", "orientation": "landscape",
         "page_margins": [20, 20, 20, 20],
@@ -208,13 +210,13 @@ def run(ctx) -> None:
         "page_number_format": "ganzhi",
         "page_number_prefix": "第", "page_number_suffix": "葉",
         "workers": 1,
-    }).execute()
+    })).execute()
     produced = work / "out" / "n.pdf"
     ok("端到端：PDF 已生成", produced.exists(), str(produced))
     if produced.exists():
         doc = pymupdf.open(str(produced))
         try:
-            flat = "".join(doc[0].get_text().split())
+            flat = "".join(cast(str, doc[0].get_text()).split())
             ok("端到端：成品 PDF 的页码是干支「第甲子葉」",
                flat == "第甲子葉", repr(flat))
         finally:

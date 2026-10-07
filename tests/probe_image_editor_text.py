@@ -38,7 +38,7 @@ from qfluentwidgets import ComboBox, Slider  # noqa: E402
 
 OUT = Path(__file__).parent
 
-image = QImage(560, 300, QImage.Format_ARGB32)
+image = QImage(560, 300, QImage.Format.Format_ARGB32)
 image.fill(QColor("#fbf8f1"))
 
 dialog = ImageEditorDialog(None, image)
@@ -51,9 +51,14 @@ for _ in range(6):
     app.processEvents()
 
 page = dialog._option_page
+# 切成 text 工具后 _option_page 才被换上（源码侧标注是 QWidget | None）
+assert page is not None
 combo = page.findChild(ComboBox)
 slider = page.findChild(Slider)
 picker = page.findChild(ColorPickerButton)
+# 这三个控件由 ImageEditorDialog 建的时候挂上去的，拿不到就是源码变了，
+# 直接断掉（否则下面全是 AttributeError，读不出真正的失败原因）
+assert combo is not None and slider is not None and picker is not None
 
 print("字体下拉：%d 项" % combo.count())
 print("  前 12：", [combo.itemText(i) for i in range(min(12, combo.count()))])
@@ -82,6 +87,7 @@ print("字号 48→120：块高 %.0f → %.0f（生效=%s）"
 picker._open_popup()
 app.processEvents()
 panel = picker.popup()
+assert panel is not None     # ⚠️ _open_popup 之后必然弹出面板
 print("颜色面板：%dx%d，色块 %d 个"
       % (panel.size().width(), panel.size().height(), len(panel._swatches)))
 panel.grab().save(str(OUT / "_probe_color_panel.png"))

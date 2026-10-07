@@ -458,10 +458,11 @@ def compose_page(page: dict):
         except Exception:  # noqa: BLE001 - 单张坏图不该毁掉整页
             continue
         image = image.resize((max(1, int(round(w))), max(1, int(round(h)))),
-                             Image.LANCZOS)
+                             Image.Resampling.LANCZOS)
         rotation = float(item.get("rotation") or 0.0)
         if rotation:
-            image = image.rotate(-rotation, expand=True, resample=Image.BICUBIC)
+            image = image.rotate(
+                -rotation, expand=True, resample=Image.Resampling.BICUBIC)
         center_x = x + w / 2.0 - left
         center_y = y + h / 2.0 - top
         canvas.alpha_composite(

@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+from typing import Any
 
 from PySide6.QtCore import QProcess, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
@@ -116,7 +117,9 @@ class TaskDetailPage(
     #:
     #: ⚠️ 必须声明在**这个 QWidget 子类**里：Mixin 是普通类，在里面写
     #: ``Signal(...)`` 不会注册进 Qt 元数据（发不出去）。
-    flow_edit_requested = Signal(str)
+    # ⚠️ FlowMixin 把它声明成 ``Callable[..., Any]``（Mixin 是普通类，声明不了
+    # Signal），运行时这里才是真身。故意覆盖、不改名——改名会断掉壳层的连接。
+    flow_edit_requested = Signal(str)  # type: ignore[reportAssignmentType]
 
     #: 源文件副本缺失时，进详情页后延时多久再后台补副本（毫秒）。
     #: 这段时间足够导入流程先落地副本；这里只为「导入时复制失败 / 老任务
@@ -251,7 +254,7 @@ class TaskDetailPage(
         # ⚠️ 子任务执行中禁止切换（2026-09-26 第二轮审计）：runner 的收尾
         #    全部按 self.task_id 落盘，切走后事件到达就会写进**新任务**的
         #    runs.json / 输出目录。单页检测是几秒的辅助操作，直接停掉即可。
-        if self.process and self.process.state() != QProcess.NotRunning:
+        if self.process and self.process.state() != QProcess.ProcessState.NotRunning:
             self._toast(
                 "warning", "任务进行中", "请先中断当前子任务再切换其他任务。"
             )
@@ -334,7 +337,9 @@ class TaskDetailPage(
         for index in range(len(FLOW_STAGES)):
             host = self.control_stack.widget(index)
             peek = getattr(host, "peek", None)
-            panel = peek() if callable(peek) else host
+            # ⚠️ 按鸭子类型取用：host 可能是 LazyPanelHost（惰性）也可能是
+            #    真面板，panel 的类型检查器看不见，两种都得能调 reset_to_default。
+            panel: Any = peek() if callable(peek) else host
             if panel is not None:
                 panel.reset_to_default()
         # 第四步默认 PDF 名/古籍名随源 PDF 名派生（xxx[重制].pdf / xxx）；
@@ -472,7 +477,7 @@ class TaskDetailPage(
         )
 
     def _on_back(self) -> None:
-        if self.process and self.process.state() != QProcess.NotRunning:
+        if self.process and self.process.state() != QProcess.ProcessState.NotRunning:
             self._toast("warning", "任务进行中", "请先中断当前子任务再返回。")
             return
         # ⚠️ 检测是几秒到十几秒的慢活：返回后旧进程的 boxes 事件才到达，
@@ -505,13 +510,16 @@ class TaskDetailPage(
         两者在默认流程下与旧的 ``STAGES[index]`` 逐值相等（自测 ``detail_structure``
         钉死），所以换流程不用改栈的建页。
         """
-        if not getattr(self, "task_id", None):
+        task_id = self.task_id
+        if not task_id:
             # 没任务时给**默认模板**的槽位（静态展示）。⚠️ 与任务态同源：
             # 任务态走 store.task_slots（也是读 bpmn 文件），口径不会漂。
             from desktop.steps.scheduler import load_default_diagram
 
             return load_default_diagram().stage_slots()
-        return self.store.task_slots(self.task_id)
+        # ⚠️ 先收窄到局部变量再调：self.task_id 是 str | None，
+        # getattr 那道判空对类型检查器不生效（它不跟踪 getattr）。
+        return self.store.task_slots(task_id)
 
     def step_at_index(self, index: int) -> str | None:
         """步骤条格序 → **界面步骤 key**；这一格不在本流程里返回 ``None``。
@@ -585,7 +593,7 @@ class TaskDetailPage(
         index = self.bar_index_of_step("rembg")
         return 0 if index is None else index
 
-    def panel_host_of_step(self, step: str):
+    def panel_host_of_step(self, step: str) -> Any:
         """界面步骤 key → ``control_stack`` 里那一页的宿主控件。
 
         ⚠️ **取别的步骤的面板只有这一个入口**（MEMORY「三套下标」）：两个栈是
@@ -594,6 +602,11 @@ class TaskDetailPage(
         顺序"的性质，**不是**流程图的性质。自定义流程一旦换序、``SPECS``
         一旦增删一步，它就读错面板；流程里压根没有那一步时还会**把不在流程
         里的面板构造出来**（破坏"谁进去谁才建"，还会读到用户没填过的参数）。
+
+        ⚠️ 返回 ``Any``：拿到的要么是 ``LazyPanelHost``（惰性宿主，属性转发给
+        内部面板），要么是真面板本身——调用方一律按鸭子类型用（``peek`` /
+        ``get_args`` / ``apply_args`` …），标成 QWidget 会让这些全变成
+        「未知属性」。
 
         本流程没有这一步 ⇒ 返回 ``None``，调用方必须自己降级（别再兜一个
         "随便哪一步"——那正是界面说 A、执行做 B 的来源）。
@@ -637,7 +650,10 @@ class TaskDetailPage(
         for slot in sorted(self.flow_slots(), key=lambda s: s.bar_index):
             if not slot.optional and slot.mapped:
                 return slot.stage
-        return None
+        # ⚠️ 本流程里一个「非可选且已映射」的槽位都没有（畸形流程/全空流程）：
+        #    返回空串当"当前阶段"的哨值，而不是 None——本方法的返回类型是 str，
+        #    调方都拿它去查 STAGES/STAGE_LABELS，None 会一路炸到那里。
+        return ""
 
     def navigate_by_arrow(self, forward: bool) -> bool:
         """方向键切换当前步骤的页面（主窗口 ←/→ 转发入口）。
@@ -784,7 +800,9 @@ class TaskDetailPage(
         #    插在它该在的位置（bar_index），但两个栈仍按"真实步骤 + 伪步骤
         #    占最后一位"建页（stack_index）。默认流程下两者逐值相等。
         page = self.stack_index_of(index)
-        target = self.control_stack.widget(page)
+        # ``peek`` / ``panel`` 是惰性面板宿主（LazyPanelHost）上的属性，QWidget
+        # 类型里没有；标成 ``Any`` 即可按鸭子类型直接访问（运行时完全一致）。
+        target: Any = self.control_stack.widget(page)
         if hasattr(target, "peek") and target.peek() is None:
             target.panel  # noqa: B018 - 触发构造
         self.control_stack.setCurrentIndex(page)
@@ -1035,7 +1053,7 @@ class TaskDetailPage(
         """
         for attr, label in (("process", "子任务"), ("detect_process", "单页检测")):
             proc = getattr(self, attr, None)
-            if proc is not None and proc.state() != QProcess.NotRunning:
+            if proc is not None and proc.state() != QProcess.ProcessState.NotRunning:
                 return label
         if self._run_claim and self.process is None and self.detect_process is None:
             return self._run_claim
@@ -1047,7 +1065,7 @@ class TaskDetailPage(
         比 :meth:`_busy_label` 更窄：单页检测**不算**，因为「中断」按钮只杀
         子任务进程，检测在跑时给它点亮的会是个杀不掉东西的按钮。
         """
-        if self.process is not None and self.process.state() != QProcess.NotRunning:
+        if self.process is not None and self.process.state() != QProcess.ProcessState.NotRunning:
             return True
         return bool(
             self._run_claim == "子任务"
@@ -1178,10 +1196,10 @@ class TaskDetailPage(
         检测子进程并等待（最多 1.5s），再 shutdown_all_workers 收尾其余线程，
         最后接受关闭事件，避免解释器退出时被强杀崩溃。
         """
-        if self.process and self.process.state() != QProcess.NotRunning:
+        if self.process and self.process.state() != QProcess.ProcessState.NotRunning:
             self.process.kill()
             self.process.waitForFinished(1500)
-        if self.detect_process and self.detect_process.state() != QProcess.NotRunning:
+        if self.detect_process and self.detect_process.state() != QProcess.ProcessState.NotRunning:
             self.detect_process.kill()
         # ⚠️ 先把「拖住图片框不松手」的版面改动补发出去，再走落盘与线程收尾：
         #    rect_changed 只在 mouseRelease 发，不补发就会**丢掉这次拖动**
@@ -1220,7 +1238,10 @@ class TaskDetailPage(
         只停页面的会让其余线程在解释器退出时被强杀（偶发崩溃/卡顿）。
         """
         self.shutdown_workers()
-        for widget in self.findChildren(QWidget):
+        # ``peek`` / ``panel`` 是 LazyPanelHost 上的属性，QWidget 类型里没有；
+        # 标成 ``Any`` 即可按鸭子类型直接访问（运行时完全一致）。
+        widgets: list[Any] = list(self.findChildren(QWidget))
+        for widget in widgets:
             # ⚠️ 没建过的惰性面板直接跳过：`getattr` 探测会被 `LazyPanelHost` 的
             #    属性转发接住，顺手把面板构造出来——关页面时白建四个面板
             #    （2026-09-26 审计：同一类坑见 flush_layout_pending）。

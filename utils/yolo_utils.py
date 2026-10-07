@@ -38,8 +38,9 @@ import types
 import threading
 import warnings
 from pathlib import Path
+from importlib.abc import Loader
 from importlib.machinery import ModuleSpec
-from typing import List, NamedTuple, Tuple
+from typing import Any, Callable, List, NamedTuple, Tuple, cast
 
 import numpy as np
 
@@ -86,7 +87,7 @@ def _stub_unneeded_modules():
                 return ModuleSpec(fullname, _StubLoader(_Stub), is_package=True)
             return None
 
-    class _StubLoader:
+    class _StubLoader(Loader):
         """配合 find_spec 的 loader，创建 stub 模块并注入 sys.modules。"""
 
         def __init__(self, stub_cls):
@@ -469,7 +470,7 @@ def detect_content_boxes(image_bgr: np.ndarray, model: object) -> ContentBoxes:
     h, w = image_bgr.shape[:2]
     # 设备跟模型走（load 时已选定并 to() 过）。写死 "cpu" 是无 GPU 时代的
     # 兼容行为；GPU 时代它就是纯浪费（2026-09-27 用户指出"GPU 好就吃 GPU"）。
-    results = model(image_bgr, verbose=False, device=_YOLO_DEVICE)
+    results = cast(Callable[..., Any], model)(image_bgr, verbose=False, device=_YOLO_DEVICE)
     boxes = results[0].boxes
     harf_id, full_id = _content_class_ids(model)
 

@@ -20,6 +20,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+# 测试临时文件统一落点：tests/tmp/（见 tests/tmpdir.py）。
+from tests.tmpdir import install as _install_tmpdir  # noqa: E402
+
+_install_tmpdir()
+
 from PIL import Image  # noqa: E402
 
 from cli.command_args import CommandArgs  # noqa: E402
@@ -94,6 +99,7 @@ def run_case(tmp: Path, src: Path, command: str, reporter, extra: dict | None = 
     else:
         rep = None
     fn = get_function(command, CommandArgs(**kwargs), rep)
+    assert fn is not None
     out, text = capture(fn.execute)
     return out, text, events
 
@@ -193,6 +199,7 @@ def main() -> int:
     ev: list[tuple[str, dict]] = []
     fn = get_function("extract", CommandArgs(**args),
                       CallbackReporter(lambda n, p: ev.append((n, p))))
+    assert fn is not None
     _, text_f = capture(fn.execute)
 
     kinds_f = [n for n, _ in ev]
@@ -208,6 +215,7 @@ def main() -> int:
     # 不注入的 extract 必须与注入的逐字相同（同一输出目录）
     args2 = dict(command="extract", input=str(pdf), output=str(tmp / "ex"))
     fn2 = get_function("extract", CommandArgs(**args2))
+    assert fn2 is not None
     _, text_h = capture(fn2.execute)
     check("extract 注入/不注入 stdout 行集合一致", sorted_lines(text_f) == sorted_lines(text_h),
           _show(sorted_lines(text_f), sorted_lines(text_h)))
@@ -222,6 +230,7 @@ def main() -> int:
         CommandArgs(command="rembg", input=str(src), output=str(tmp / "jl")),
         rep,
     )
+    assert fn3 is not None
     fn3.execute()
     bad = []
     for line in buf.getvalue().splitlines():

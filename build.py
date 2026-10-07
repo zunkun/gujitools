@@ -43,6 +43,7 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
+from collections.abc import Callable
 
 from config import VERSION
 
@@ -391,7 +392,7 @@ def refresh_manual_only(project_root) -> int:
         print("❌ 没有 dist/guji，请先跑一次完整打包：python build.py")
         return 1
 
-    steps: list[tuple[str, object]] = [("预生成手册", lambda: build_manual_html(dist_dir))]
+    steps: list[tuple[str, Callable[[], object]]] = [("预生成手册", lambda: build_manual_html(dist_dir))]
     if IS_WINDOWS:
         # ⚠️ 这里曾经还有一步「复制到 C:\Software」把产物部署一份出去。
         # 已删除：构建只产出安装包，部署由安装包负责（否则本机同时存在
@@ -469,7 +470,7 @@ def main():
         else:
             print("\n✅ 打包完成: dist/guji/")
 
-        steps: list[tuple[str, object]] = [
+        steps: list[tuple[str, Callable[[], object]]] = [
             ("校验产物", lambda: verify_outputs(dist_dir)),
             ("预生成手册", lambda: build_manual_html(dist_dir)),
             ("体积瘦身", lambda: prune_bloat(dist_dir)),
@@ -787,6 +788,7 @@ def print_font_hint():
 
     check = check_cjk_font()
     if check.found:
+        assert check.path is not None
         print(
             f"   本机有中文字体（{Path(check.path).name}），目标机若缺替代也没问题："
             "程序会在首次启动时提示安装"

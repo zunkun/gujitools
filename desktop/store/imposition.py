@@ -35,6 +35,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING, Callable
 
 from desktop.services.imposition import ITEMS_PER_PAGE, normalize_doc
 from desktop.store.json_io import read_json, write_json
@@ -46,6 +47,12 @@ class ImpositionMixin:
     """``drafts/imposition.json`` 的读写。"""
 
     root: Path
+
+    if TYPE_CHECKING:
+        # 宿主 TaskStore（或同级 Mixin）提供：只做类型声明，运行时零副作用。
+        task_dir: Callable[[str], Path]
+        drafts_dir: Callable[[str], Path]
+        step_enabled: Callable[..., bool]
 
     def imposition_doc_path(self, task_id: str) -> Path:
         """拼版文档：``tasks/<任务号>/drafts/imposition.json``。"""

@@ -69,8 +69,8 @@ def box_names(boxes, image_size=None, full: bool = False) -> list:
 
 # 选中框四角手柄：0=左上 1=右上 2=右下 3=左下
 _HANDLE_CURSORS = [
-    Qt.SizeFDiagCursor, Qt.SizeBDiagCursor,
-    Qt.SizeFDiagCursor, Qt.SizeBDiagCursor,
+    Qt.CursorShape.SizeFDiagCursor, Qt.CursorShape.SizeBDiagCursor,
+    Qt.CursorShape.SizeFDiagCursor, Qt.CursorShape.SizeBDiagCursor,
 ]
 
 
@@ -97,7 +97,7 @@ class ImageView(QLabel):
     def __init__(self, placeholder: str = "无预览", parent=None):
         """初始化画布与框编辑状态；placeholder 为空图时的占位文案。"""
         super().__init__(parent)
-        self.setAlignment(Qt.AlignCenter)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setMinimumSize(320, 300)
         self.setText(placeholder)
         # 浅色画布：古籍页面本身是白底，深色底会把页面衬得像悬浮贴片；
@@ -114,7 +114,7 @@ class ImageView(QLabel):
         self._reference_boxes: list = []  # 参考框（最终裁剪大框），虚线显示
         self._image_size: QSize | None = None
         self.setMouseTracking(True)
-        self.setFocusPolicy(Qt.NoFocus)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._boxes_editable = False
         self._selected: int | None = None
         self._mode: str | None = None  # move / resize / new
@@ -207,7 +207,7 @@ class ImageView(QLabel):
     def set_boxes_editable(self, editable: bool) -> None:
         """开关框编辑；开启时接受点击焦点以响应键盘删除。"""
         self._boxes_editable = editable
-        self.setFocusPolicy(Qt.ClickFocus if editable else Qt.NoFocus)
+        self.setFocusPolicy(Qt.FocusPolicy.ClickFocus if editable else Qt.FocusPolicy.NoFocus)
 
     def set_reference_boxes(self, boxes: list) -> None:
         """设置参考框（橙色虚线，不参与编辑）并重绘。"""
@@ -336,7 +336,7 @@ class ImageView(QLabel):
 
     # ------------------------------------------------------------------ 鼠标
     def mousePressEvent(self, event) -> None:  # noqa: N802
-        if self._boxes_editable and event.button() == Qt.LeftButton and self._pixmap is not None:
+        if self._boxes_editable and event.button() == Qt.MouseButton.LeftButton and self._pixmap is not None:
             ix, iy = self._to_image_coords(event.position())
             # 1) 选中框的缩放手柄
             corner = self._hit_handle(event.position())
@@ -356,7 +356,7 @@ class ImageView(QLabel):
                 x1, y1, _, _ = self._boxes[index]
                 self._grab_dx = ix - x1
                 self._grab_dy = iy - y1
-                self.setCursor(Qt.ClosedHandCursor)
+                self.setCursor(Qt.CursorShape.ClosedHandCursor)
                 self._rerender()
                 return
             # 3) 空白处 → 手绘新框（已达上限则拒绝，宿主弹提示）
@@ -406,6 +406,7 @@ class ImageView(QLabel):
             # ⚠️ 拖角必须夹在图幅内（与 move 分支、new 松手时的夹取同口径）：
             #    不夹的话 boxes.json 里会存进负坐标/超界框，下游 rembg 预览、
             #    提交合成、打印按越界框算出错误区域（2026-09-26 第二轮审计）。
+            assert self._image_size is not None  # resize 模式下必有图幅尺寸
             ix = min(max(ix, 0), self._image_size.width())
             iy = min(max(iy, 0), self._image_size.height())
             self._boxes[self._drag_index] = self._normalize(
@@ -426,9 +427,9 @@ class ImageView(QLabel):
                 self.setCursor(_HANDLE_CURSORS[corner])
                 return
             if self._hit_box(ix, iy) is not None:
-                self.setCursor(Qt.PointingHandCursor)
+                self.setCursor(Qt.CursorShape.PointingHandCursor)
                 return
-            self.setCursor(Qt.ArrowCursor)
+            self.setCursor(Qt.CursorShape.ArrowCursor)
             return
         super().mouseMoveEvent(event)
 
@@ -436,7 +437,7 @@ class ImageView(QLabel):
         if self._mode == "move" and self._drag_index is not None:
             self._drag_index = None
             self._mode = None
-            self.setCursor(Qt.PointingHandCursor)
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
             if self._dirty:
                 self._commit_edit()
             self._dirty = False
@@ -480,7 +481,7 @@ class ImageView(QLabel):
         ``mousePressEvent`` 的"空白处 → 手绘"分支，不清就会在图上留一个跟着
         鼠标跑的橡皮筋残影，而且第二下松开还会真的落一个框。
         """
-        if event.button() == Qt.LeftButton and self._pixmap is not None:
+        if event.button() == Qt.MouseButton.LeftButton and self._pixmap is not None:
             self._mode = None
             self._new_start = None
             self._drag_index = None
@@ -504,7 +505,7 @@ class ImageView(QLabel):
 
     def keyPressEvent(self, event) -> None:  # noqa: N802
         if self._boxes_editable and self._selected is not None and event.key() in (
-            Qt.Key_Delete, Qt.Key_Backspace,
+            Qt.Key.Key_Delete, Qt.Key.Key_Backspace,
         ):
             del self._boxes[self._selected]
             # ⚠️ 先清选中再提交：只剩一个框时它的**类型不会被删除影响**
@@ -526,8 +527,10 @@ class ImageView(QLabel):
         必须换算回逻辑尺寸再算映射与居中偏移——把物理尺寸当逻辑尺寸用，
         在高分屏下恰好差一个 dpr，框会整体放大并偏移。
         """
-        ref_w = self._image_size.width() if self._image_size else self._pixmap.width()
-        ref_h = self._image_size.height() if self._image_size else self._pixmap.height()
+        pix = self._pixmap
+        assert pix is not None  # _rerender 已挡住 _pixmap 为空的情况
+        ref_w = self._image_size.width() if self._image_size else pix.width()
+        ref_h = self._image_size.height() if self._image_size else pix.height()
         dpr = scaled.devicePixelRatio() or 1.0
         disp_w = scaled.width() / dpr
         disp_h = scaled.height() / dpr
@@ -574,7 +577,7 @@ class ImageView(QLabel):
         key = (self._pixmap_version, target, dpr)
         if key != self._scaled_key or self._scaled_base is None:
             self._scaled_base = self._pixmap.scaled(
-                target, Qt.KeepAspectRatio, Qt.SmoothTransformation
+                target, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
             )
             self._scaled_base.setDevicePixelRatio(dpr)
             self._scaled_key = key
@@ -589,7 +592,7 @@ class ImageView(QLabel):
             self._draw_boxes(painter)
         ghost = getattr(self, "_ghost_box", None)
         if ghost:
-            painter.setPen(QPen(QColor("#8b949e"), 1, Qt.DashLine))
+            painter.setPen(QPen(QColor("#8b949e"), 1, Qt.PenStyle.DashLine))
             painter.drawRect(
                 round(ghost[0] * self._scale_x), round(ghost[1] * self._scale_y),
                 round((ghost[2] - ghost[0]) * self._scale_x),
@@ -611,7 +614,7 @@ class ImageView(QLabel):
 
     def _draw_reference_boxes(self, painter: QPainter) -> None:
         """参考框：按 area/border 规则推导的最终裁剪大框，橙色虚线。"""
-        pen = QPen(REFERENCE_COLOR, self._pen_width(2), Qt.DashLine)
+        pen = QPen(REFERENCE_COLOR, self._pen_width(2), Qt.PenStyle.DashLine)
         painter.setPen(pen)
         for box in self._reference_boxes:
             x1, y1, x2, y2 = box
@@ -659,5 +662,5 @@ class ImageView(QLabel):
             painter.setPen(QPen(QColor("#ffffff")))
             painter.setBrush(QColor(0, 0, 0, 160))
             for _corner, cx, cy, r in self._handle_rects(self._boxes[self._selected]):
-                painter.drawRect(round(cx - r), round(cy - r), 2 * r, 2 * r)
-            painter.setBrush(Qt.NoBrush)
+                painter.drawRect(round(cx - r), round(cy - r), round(2 * r), round(2 * r))
+            painter.setBrush(Qt.BrushStyle.NoBrush)

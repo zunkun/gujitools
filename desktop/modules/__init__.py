@@ -26,9 +26,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
 from desktop.steps.spec import NAV_STEPS, spec_by_key
+
+if TYPE_CHECKING:
+    from PySide6.QtWidgets import QWidget
 
 
 @dataclass(frozen=True)
@@ -48,7 +51,9 @@ class Module:
     title: str
     icon: str
     subtitle: str
-    factory: Callable[[], object]
+    # ⚠️ 返回 QWidget 而不是 object：壳层拿到工厂产物就直接 addWidget /
+    # setCurrentWidget，写 object 会让每次调用都变成类型错误。
+    factory: Callable[[], QWidget]
 
 
 def _page_factory(key: str):
@@ -89,16 +94,25 @@ def _page_factory(key: str):
 #: 2026-10-02：四条主链步骤 + 拼版**全部**有了独立模块页，故这里现在是 5 条。
 #: 判断依据永远是 ``spec.nav``，本文件不维护数量（``modules_shell`` 自测也按
 #: ``NAV_STEPS`` 派生校验，不写死数字）。
-MODULES: tuple[Module, ...] = tuple(
-    Module(
+def _module_for(key: str) -> Module:
+    """按 ``NAV_STEPS`` 里的 key 造一条模块元数据。
+
+    ⚠️ ``spec_by_key`` 声明返回 ``StepSpec | None``，但这里的 key 全都来自
+    ``NAV_STEPS``（``SPECS`` 里 ``nav=True`` 者的 key），**必然**能在表里找到。
+    与其在每个取用处判空，不如在源头断言一次——真缺了当场就炸，位置也清楚。
+    """
+    spec = spec_by_key(key)
+    assert spec is not None, f"NAV_STEPS 里的 key 不在 SPECS 中：{key}"
+    return Module(
         key=spec.key,
         title=spec.nav_name(),
         icon=spec.nav_icon,
         subtitle=spec.nav_tip(),
         factory=_page_factory(spec.key),
     )
-    for spec in (spec_by_key(key) for key in NAV_STEPS)
-)
+
+
+MODULES: tuple[Module, ...] = tuple(_module_for(key) for key in NAV_STEPS)
 
 
 def module_by_key(key: str) -> Module | None:

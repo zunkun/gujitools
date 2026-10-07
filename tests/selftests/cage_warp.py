@@ -52,6 +52,11 @@ def run(ctx) -> None:
 
     from utils import cage_warp as cw
 
+    def as_array(result):
+        """deform 默认（grow=False）返回同尺寸数组；存根把 grow=True 的元组返回也算进类型里。"""
+        assert result is not None and not isinstance(result, tuple)
+        return result
+
     # ---- 1. 把手的构造：只有周长，没有内部网格 ----
     square = cw.perimeter_cage((0.0, 0.0, 10.0, 10.0), 1)
     ok("perimeter_cage：每边 1 段 = 四个角（按周长顺序）",
@@ -88,6 +93,7 @@ def run(ctx) -> None:
        handles is not None and handles[0].shape == (1, 2)
        and tuple(np.round(handles[0][0], 6)) == (12.0, 8.0),
        f"约束集 {None if handles is None else handles[0].shape}")
+    assert handles is not None  # 上一条 ok 已断言约束集存在
 
     # ---- 4. 影响半径：用户下限 + 防自交下限 ----
     drag = math.hypot(12.0, 8.0)
@@ -108,7 +114,7 @@ def run(ctx) -> None:
     probe_img = _coord_image(width, height)
     pulled = list(home)
     pulled[0] = (12.0, 8.0)
-    out = cw.deform(probe_img, home, pulled)
+    out = as_array(cw.deform(probe_img, home, pulled))
     # out[y, x] 的 R/G 就是"该像素取自原图哪个坐标"
     src_x = out[:, :, 0].astype(float)
     src_y = out[:, :, 1].astype(float)
@@ -195,8 +201,9 @@ def run(ctx) -> None:
     out_drag = list(home)
     out_drag[0] = (-30.0, -22.0)
     out_handles = cw.moved_handles(home, out_drag)
+    assert out_handles is not None  # 有把手真的动了，必有约束集
     far_out = np.hypot(coords_x + 30.0, coords_y + 22.0) > out_handles[2] + 1.0
-    stretched = cw.deform(probe_img, home, out_drag)
+    stretched = as_array(cw.deform(probe_img, home, out_drag))
     ok("往外拖：图片正常产出（没黑没空），且影响半径外逐字节原样",
        stretched.dtype == np.uint8 and stretched.shape == probe_img.shape
        and bool((stretched[far_out] == probe_img[far_out]).all()),
@@ -212,11 +219,11 @@ def run(ctx) -> None:
     exact = {}
     for per_side in (1, 2, 3):
         cage_n = cw.perimeter_cage((0.0, 0.0, 50.0, 40.0), per_side)
-        same = cw.deform(noisy, cage_n, cage_n)
+        same = as_array(cw.deform(noisy, cage_n, cage_n))
         exact[f"矩形{per_side}"] = int(
             np.abs(same.astype(int) - noisy.astype(int)).max())
     odd = [(2.0, 3.0), (45.0, 7.0), (30.0, 37.0)]
-    same = cw.deform(noisy, odd, odd)
+    same = as_array(cw.deform(noisy, odd, odd))
     exact["三角形"] = int(np.abs(same.astype(int) - noisy.astype(int)).max())
     ok("恒等笼逐字节还原原图（矩形 3 种疏密 + 三角形非矩形笼）",
        not any(exact.values()), f"最大差 {exact}")
@@ -227,7 +234,7 @@ def run(ctx) -> None:
                   (home[0][1] + home[1][1]) / 2.0)
     extra_home.insert(1, extra_spot)      # 原位与当前位置**同一个坐标**
     extra_dst.insert(1, extra_spot)
-    with_extra = cw.deform(probe_img, extra_home, extra_dst)
+    with_extra = as_array(cw.deform(probe_img, extra_home, extra_dst))
     ok("加点中性：在笼上插一个把手（原位=当前位置）形变逐字节不变",
        bool((with_extra == out).all()),
        f"加点前后差异 {int((with_extra != out).any(axis=2).sum())} 像素")
@@ -278,7 +285,7 @@ def run(ctx) -> None:
     big_dst = list(big_home)
     big_dst[0] = (60.0, 45.0)
     started = time.perf_counter()
-    warped = cw.deform(big, big_home, big_dst)
+    warped = as_array(cw.deform(big, big_home, big_dst))
     elapsed = time.perf_counter() - started
     ok("局部性⇒代价：整页图上拖 60px 只重采样影响半径那一块（< 1.5s）",
        elapsed < 1.5 and warped.shape == big.shape
@@ -289,13 +296,18 @@ def run(ctx) -> None:
     # ---- 13. QImage 版（编辑器实际调用的一层）：保透明是硬要求 ----
     from PySide6.QtGui import QColor, QImage
 
+    def as_qimage(result):
+        """deform_qimage 默认（grow=False）返回单张 QImage；存根把 grow=True 的元组也算进类型里。"""
+        assert isinstance(result, QImage)
+        return result
+
     qimage = QImage(60, 40, QImage.Format.Format_ARGB32)
     qimage.fill(QColor("#ffffff"))
     for x in range(40, 50):          # 白色背景上一根 10px 宽的黑竖条
         for y in range(40):
             qimage.setPixelColor(x, y, QColor("#000000"))
     same_cage = cw.perimeter_cage((0.0, 0.0, 59.0, 39.0), 1)
-    identical = cw.deform_qimage(qimage, same_cage, same_cage)
+    identical = as_qimage(cw.deform_qimage(qimage, same_cage, same_cage))
     unchanged = all(
         identical.pixelColor(x, y).rgba() == qimage.pixelColor(x, y).rgba()
         for y in range(0, 40, 5) for x in range(0, 60, 5))
@@ -304,9 +316,9 @@ def run(ctx) -> None:
        f"尺寸 {identical.width()}×{identical.height()}，全等 {unchanged}")
 
     # 黑竖条在 x=40~49；把笼的左边界往右挪 → 竖条跟着往右走
-    dragged = cw.deform_qimage(
+    dragged = as_qimage(cw.deform_qimage(
         qimage, same_cage,
-        [(0.0, 0.0), (59.0, 0.0), (59.0, 39.0), (0.0, 39.0)])
+        [(0.0, 0.0), (59.0, 0.0), (59.0, 39.0), (0.0, 39.0)]))
     ok("deform_qimage：没拖动就是原样（把手全在原位）",
        all(dragged.pixelColor(x, 20).rgba() == qimage.pixelColor(x, 20).rgba()
            for x in range(60)),
@@ -326,7 +338,7 @@ def run(ctx) -> None:
     # 老实现会把它整片变成不透明纯黑——这是"变黑"最狠的复现。
     blank = QImage(60, 40, QImage.Format.Format_ARGB32)
     blank.fill(QColor(0, 0, 0, 0))
-    massaged = cw.deform_qimage(blank, same_cage, left_pull)
+    massaged = as_qimage(cw.deform_qimage(blank, same_cage, left_pull))
     alive = [(x, y) for y in range(40) for x in range(60)
              if massaged.pixelColor(x, y).alpha() != 0]
     ok("deform_qimage：整幅全透明的图变形后仍**全透明**（最狠的变黑复现）",
@@ -341,7 +353,7 @@ def run(ctx) -> None:
         for y in range(40):
             clear.setPixelColor(x, y, QColor("#000000"))
     before_opaque = opaque_count(clear)
-    shifted = cw.deform_qimage(clear, same_cage, left_pull)
+    shifted = as_qimage(cw.deform_qimage(clear, same_cage, left_pull))
     ok("deform_qimage：**透明底保持透明**（不透明像素不许变多）",
        opaque_count(shifted) == before_opaque and before_opaque == 400,
        f"不透明像素 形变前 {before_opaque} → 形变后 {opaque_count(shifted)}"
@@ -418,7 +430,9 @@ def run(ctx) -> None:
     # deform(grow=True)：返回 (结果, origin)，尺寸 = 外框，且图外那块真的画进去了
     arr_g = _np.full((120, 200, 3), 255, dtype=_np.uint8)
     arr_g[0:20, 0:20] = 0                  # 左上角一块黑（会被拖出去）
-    grown, origin_g = cw.deform(arr_g, box_cr, outward, grow=True)
+    _grown = cw.deform(arr_g, box_cr, outward, grow=True)
+    assert _grown is not None  # 未中止必返回结果
+    grown, origin_g = _grown
     ok("deform(grow=True)：返回 (结果, origin)，画布按内容外框放大",
        grown is not None and origin_g == (reg_out[0], reg_out[1])
        and grown.shape[0] == reg_out[3] - reg_out[1]
@@ -429,7 +443,9 @@ def run(ctx) -> None:
        and int(grown[-origin_g[1] + 100, -origin_g[0] + 100, 0]) == 255,
        "远场像素（原图 100,100）应落在新画布 (100-ox, 100-oy) 且仍为白")
 
-    ident_g, ident_o = cw.deform(arr_g, box_cr, list(box_cr), grow=True)
+    _ident = cw.deform(arr_g, box_cr, list(box_cr), grow=True)
+    assert _ident is not None  # 未中止必返回结果
+    ident_g, ident_o = _ident
     ok("deform(grow=True)：恒等笼 → origin (0,0)、尺寸不变、逐字节还原",
        ident_g is not None and ident_o == (0, 0)
        and ident_g.shape == arr_g.shape
@@ -520,10 +536,10 @@ def run(ctx) -> None:
     try:
         out_ident = cw.deform(arr_ident, box_degen, same)
         ok("退化笼走完 deform 全程不抛异常（不崩）", True,
-           f"shape={None if out_ident is None else out_ident.shape}")
+           f"shape={None if out_ident is None else out_ident.shape}")  # type: ignore[reportAttributeAccessIssue]  # deform 存根含 grow=True 的元组返回，这里 grow=False 必为数组
         ok("deform 结果尺寸不变（不因退化而缩水/变形）",
-           out_ident is not None and out_ident.shape == arr_ident.shape,
-           f"shape={None if out_ident is None else out_ident.shape}")
+           out_ident is not None and out_ident.shape == arr_ident.shape,  # type: ignore[reportAttributeAccessIssue,reportOptionalMemberAccess]  # 同上
+           f"shape={None if out_ident is None else out_ident.shape}")  # type: ignore[reportAttributeAccessIssue]  # 同上
     except Exception as exc:                # noqa: BLE001
         ok("退化笼走完 deform 全程不抛异常（不崩）", False,
            f"抛了 {type(exc).__name__}: {exc}")

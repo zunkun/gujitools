@@ -65,7 +65,7 @@ def _green_mask(pixmap):
     import numpy as np
     from PySide6.QtGui import QImage
 
-    img = pixmap.toImage().convertToFormat(QImage.Format_RGB888)
+    img = pixmap.toImage().convertToFormat(QImage.Format.Format_RGB888)
     raw = np.frombuffer(bytes(img.constBits()), dtype=np.uint8)
     raw = raw[: img.height() * img.bytesPerLine()]
     arr = raw.reshape(img.height(), img.bytesPerLine())[
@@ -132,7 +132,7 @@ def run(ctx) -> None:
     for dpr in (1.0, 1.25, 1.5, 2.0):
         view = ImageView()
         view.resize(800, 600)
-        source = QImage(1000, 1400, QImage.Format_RGB32)
+        source = QImage(1000, 1400, QImage.Format.Format_RGB32)
         source.fill(QColor("#ffffff"))
         view.set_image(source, boxes=[[100, 200, 400, 700]],
                        image_size=QSize(1000, 1400))

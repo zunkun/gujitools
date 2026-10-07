@@ -88,6 +88,7 @@ def save_white_as_transparent(
     # 判据（唯一处）：灰阶页走调色板（体积最小），彩色页（印章原色）必须 RGBA
     route, levels = _classify(arr)
     if route == "P":
+        assert levels is not None
         return _save_gray_palette(arr[:, :, 2], levels, Path(path), compress_level)
     return _save_rgba(arr, Path(path), compress_level)
 
@@ -185,6 +186,7 @@ def describe_encoding(rgb: np.ndarray) -> Optional[dict]:
         return None
     route, levels = _classify(arr[:, :, :3])
     if route == "P":
+        assert levels is not None
         return {"encoding": "P", "colors": int(levels.size),
                 "bits": _palette_bits(int(levels.size))}
     return {"encoding": "RGBA", "colors": None, "bits": 32}

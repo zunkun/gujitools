@@ -21,7 +21,7 @@
 
 import numpy as np
 import cv2
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, cast
 
 
 # ---------- 阈值计算 ----------
@@ -42,7 +42,7 @@ def calculate_auto_threshold(pixels: np.ndarray) -> int:
     - sum_total 预算所有像素值之和，避免重复求和；
     - 当前景或背景像素数为 0 时跳过该阈值。
     """
-    hist, _ = np.histogram(pixels, bins=256, range=[0, 256])
+    hist, _ = np.histogram(pixels, bins=256, range=(0, 256))
     total = pixels.size
     sum_total = np.dot(np.arange(256), hist)  # 所有像素灰度值之和
     sum_b = 0      # 前景像素灰度值累计和
@@ -101,7 +101,7 @@ def extract_red_seal(rgb_img: np.ndarray, min_seal_area: int, min_saturation: in
 
     # 形态学清理：先开运算去孤立点，再膨胀修补断裂
     kernel_clean = np.ones((2, 2), np.uint8)
-    red_clean = cv2.morphologyEx(red_raw, cv2.MORPH_OPEN, kernel_clean, iterations=1)
+    red_clean = cv2.morphologyEx(cast("np.ndarray", red_raw), cv2.MORPH_OPEN, kernel_clean, iterations=1)
     kernel_dilate = np.ones((1, 1), np.uint8)
     red_clean = cv2.morphologyEx(red_clean, cv2.MORPH_DILATE, kernel_dilate, iterations=1)
 

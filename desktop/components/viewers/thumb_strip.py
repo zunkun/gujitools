@@ -162,7 +162,7 @@ class ThumbStrip(QListWidget):
         item = self.item(row)
         if item is None:
             return
-        self.current_path_changed.emit(row, item.data(Qt.UserRole) or "")
+        self.current_path_changed.emit(row, item.data(Qt.ItemDataRole.UserRole) or "")
 
     # ---------------------------------------------------------------- 排序
     def set_reorderable(self, on: bool) -> None:
@@ -173,7 +173,7 @@ class ThumbStrip(QListWidget):
             if self._reorderable
             else QAbstractItemView.DragDropMode.NoDragDrop
         )
-        self.setDefaultDropAction(Qt.MoveAction)
+        self.setDefaultDropAction(Qt.DropAction.MoveAction)
         self.setDragEnabled(self._reorderable)
         self.setAcceptDrops(self._reorderable)
         self.viewport().setAcceptDrops(self._reorderable)
@@ -231,7 +231,7 @@ class ThumbStrip(QListWidget):
         pixmap = QPixmap(size.width(), size.height())
         pixmap.fill(QColor("#e8ecf1"))
         painter = QPainter(pixmap)
-        pen = QPen(QColor("#b8c0cc"), 1, Qt.DashLine)
+        pen = QPen(QColor("#b8c0cc"), 1, Qt.PenStyle.DashLine)
         painter.setPen(pen)
         painter.drawRect(2, 2, size.width() - 5, size.height() - 5)
         painter.end()
@@ -249,7 +249,7 @@ class ThumbStrip(QListWidget):
         真实缩略图一到就由 set_item_icon 按实际比例改小。
         """
         item = QListWidgetItem(self._placeholder, label)
-        item.setData(Qt.UserRole, path)
+        item.setData(Qt.ItemDataRole.UserRole, path)
         item.setSizeHint(self._item_hint(ThumbStrip.ICON_SIZE.height()))
         self.addItem(item)
         self._invalidate_prefix()
@@ -262,7 +262,7 @@ class ThumbStrip(QListWidget):
         pixmap = QPixmap.fromImage(image)
         item.setIcon(QIcon(pixmap))
         item.setText(label)
-        item.setData(Qt.UserRole, path)
+        item.setData(Qt.ItemDataRole.UserRole, path)
         # 该图放进 116×156 框后的实际显示高度（等比缩放取小系数）——
         # 条目高度就按它定（_item_hint），条目内不再留任何空白
         display = pixmap.size().scaled(

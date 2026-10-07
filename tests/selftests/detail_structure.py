@@ -79,7 +79,9 @@ def run(ctx) -> None:
     from desktop.store import IMPOSITION_STAGE
     # ⚠️ 查表拿格序，别用 ``IMPOSITION_INDEX``（= len(STAGES) = 4）：BPM 驱动后
     # 步骤条格序含可选节点占位，拼版在第 3 格，写死会切到 print 那一格。
-    d._select_stage(d.bar_index_of_step(IMPOSITION_STAGE))
+    imposition_bar = d.bar_index_of_step(IMPOSITION_STAGE)
+    assert imposition_bar is not None     # ⚠️ 图里有「图片拼版」这一格
+    d._select_stage(imposition_bar)
     pump(app)
     ok("重新进入拼版详情回填勾选状态", d.imposition_enabled_checkbox.isChecked())
     d.imposition_enabled_checkbox.setChecked(False)
@@ -336,9 +338,12 @@ def run(ctx) -> None:
        probe.stack_index_of_step("OCR 识别") == NO_PAGE,
        str(probe.stack_index_of_step("OCR 识别")))
     # 点它：停在原地 + 不被记成"上次停留"
-    probe._select_stage(probe.bar_index_of_step("detect"))
+    detect_index = probe.bar_index_of_step("detect")
+    assert detect_index is not None      # ⚠️ 默认流程里有「检测」这一格
+    probe._select_stage(detect_index)
     pump(app, times=4)
     before = probe.step_bar._current
+    assert ghost_index is not None       # ⚠️ 上一段已判过那一格存在
     probe._select_stage(ghost_index)
     pump(app, times=4)
     ok("点灰节点不会跳走（仍停在原来那一步）",
@@ -348,7 +353,9 @@ def run(ctx) -> None:
        probe.store.load_last_stage(ghost_tid) != "OCR 识别",
        str(probe.store.load_last_stage(ghost_tid)))
     # 真实步骤照常切
-    probe._select_stage(probe.bar_index_of_step("print"))
+    print_index = probe.bar_index_of_step("print")
+    assert print_index is not None        # ⚠️ 默认流程里有「生成PDF」这一格
+    probe._select_stage(print_index)
     pump(app, times=6)
     ok("同一张图里真实步骤照常切（灰节点不干扰其它步骤）",
        probe.current_stage() == "print", probe.current_stage())

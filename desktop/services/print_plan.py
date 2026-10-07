@@ -41,16 +41,19 @@ def missing_extract_pages_spec(output_dir: Path, total: int) -> str | None:
     if not missing or not total:
         return None
     parts: list[str] = []
-    start = prev = None
+    start: int | None = None
+    prev: int | None = None
     for n in missing:
         if start is None:
             start = prev = n
-        elif n == prev + 1:
+        elif prev is not None and n == prev + 1:
             prev = n
         else:
+            assert prev is not None
             parts.append(f"{start}-{prev}" if prev > start else f"{start}")
             start = prev = n
     if start is not None:
+        assert prev is not None
         parts.append(f"{start}-{prev}" if prev > start else f"{start}")
     return ",".join(parts)
 

@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Callable, cast
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPageLayout, QPageSize, QImage, QPainter
@@ -84,7 +85,7 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
     def __init__(
         self,
         empty_hint: str = "暂无图片，请先完成去底色",
-        params_provider=None,
+        params_provider: Callable[[], dict] | None = None,
         thumb_provider=None,
         parent=None,
     ):
@@ -243,7 +244,7 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         for index, entry in enumerate(entries):
             label = entry.get("label") or Path(entry["file"]).stem
             self.strip.add_page_item(str(label), str(entry["file"]))
-            self.strip.item(index).setData(Qt.UserRole + 1, index)
+            self.strip.item(index).setData(Qt.ItemDataRole.UserRole + 1, index)
         self._load_page_thumbs()
         self._select_entry(0)
 
@@ -327,7 +328,8 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         if isinstance(spec, dict) and spec.get("path"):
             return Path(spec["path"])
         if spec:
-            return Path(spec)
+            # thumb 合法形态是 dict（已处理）或路径类（str/Path）
+            return Path(cast("str | Path", spec))
         file_text = str(entry["file"])
         if self._thumb_provider is not None:
             try:
@@ -337,7 +339,7 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
             if isinstance(provided, dict) and provided.get("path"):
                 return Path(provided["path"])
             if provided:
-                return Path(provided)
+                return Path(cast("str | Path", provided))
         return Path(file_text)
 
     def _load_page_thumbs(self) -> None:
@@ -422,7 +424,7 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         """按当前视觉顺序重排富条目缓存，并重分配条目索引。"""
         order = []
         for row in range(self.strip.count()):
-            index = self.strip.item(row).data(Qt.UserRole + 1)
+            index = self.strip.item(row).data(Qt.ItemDataRole.UserRole + 1)
             if index is not None and 0 <= index < len(self._entries_cache):
                 order.append(int(index))
         # 删除后 order 会短于缓存——这正是"去掉被删条目"的效果，不能拦
@@ -436,7 +438,7 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         # 当前所在的行号，两者一旦错位就会把缩略图写到别的页上
         self._entry_keys = [keys[i] for i in order]
         for row in range(self.strip.count()):
-            self.strip.item(row).setData(Qt.UserRole + 1, row)
+            self.strip.item(row).setData(Qt.ItemDataRole.UserRole + 1, row)
 
     def _emit_order_changed(self) -> None:
         if self._entries_cache:
@@ -475,8 +477,9 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
     # ------------------------------------------------------------------ 版面编辑
     def _page_size_mm(self) -> tuple[float, float]:
         """当前纸张尺寸（mm），由打印参数推导；非法时回落 A4 横版。"""
+        provider = self._params_provider
         try:
-            args = self._params_provider() or {}
+            args = (provider() if provider is not None else None) or {}
         except Exception:
             args = {}
         return print_page_size_mm(
@@ -514,8 +517,9 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         算出来（它们的落点只取决于 page_margins，但 skipped/side 等仍需
         plan 给出）。返回 ``(plan, image)``，读图失败时为 ``(None, None)``。
         """
+        provider = self._params_provider
         try:
-            args = self._params_provider() or {}
+            args = (provider() if provider is not None else None) or {}
         except Exception:
             args = {}
         image = QImage(str(path))

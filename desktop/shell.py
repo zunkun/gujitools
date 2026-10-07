@@ -25,7 +25,9 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from typing import TYPE_CHECKING
+
+from PySide6.QtCore import Qt, QProcess
 from PySide6.QtWidgets import QHBoxLayout, QStackedWidget, QWidget
 from qfluentwidgets import (
     FluentIcon as FIF,
@@ -42,6 +44,11 @@ from desktop.pages.tasklist.page import TaskListPage
 from desktop.store import TaskStore
 from desktop.ui import theme as T
 from desktop.ui.icons import resolve_nav_icon
+
+if TYPE_CHECKING:
+    from desktop.pages.createtask.page import CreateTaskPage
+    from desktop.pages.taskdetail.page import TaskDetailPage
+    from desktop.pages.taskflow.page import TaskFlowPage
 
 #: 导航栏**折叠**时的宽度（px）。折叠态只剩一列图标，正文区分到剩下的宽度。
 #:
@@ -158,10 +165,15 @@ class ModuleShell(QWidget):
             self._module_items[module.key] = item
 
         # ---- 详情页：惰性（同 app.py 原逻辑，构造约 400ms）----
-        self._detail_page: QWidget | None = None
+        # ⚠️ 标注成 TaskDetailPage 而不是 QWidget：下面几十处都在用它的专有
+        # 成员（set_task / panel_host_of_step / process …）。详情页本身是惰性
+        # 导入的（PEP 562，见 desktop/pages/__init__.py），这里用 TYPE_CHECKING
+        # 导入只给类型检查看，运行时零开销、惰性不变。
+        self._detail_page: TaskDetailPage | None = None
         # ---- 创建任务 / 流程编辑：二级页，同样惰性（都不常走）----
-        self._create_page: QWidget | None = None
-        self._flow_page: QWidget | None = None
+        # 同 _detail_page：标注成各自的真类型（惰性导入只给类型检查看）。
+        self._create_page: CreateTaskPage | None = None
+        self._flow_page: TaskFlowPage | None = None
 
     # ------------------------------------------------------------------ 点击槽
     def _module_click_handler(self, key: str):
@@ -344,7 +356,7 @@ class ModuleShell(QWidget):
         else:
             busy = page.running_stage is not None or (
                 page.process is not None
-                and page.process.state() != page.process.NotRunning
+                and page.process.state() != QProcess.ProcessState.NotRunning
             )
             if busy:
                 self.pages.setCurrentWidget(page)

@@ -14,6 +14,20 @@ Python 在导入子模块前一定会先执行父包的 ``__init__``，所以只
 真正取用的那一刻。
 """
 
+from typing import TYPE_CHECKING
+
+#: 惰性导出的**类型**侧声明（见模块 docstring）：类型检查器看不见 PEP 562 的
+#: ``__getattr__``，缺这一段会把下面 ``_LAZY`` 的名字全当成未定义。
+#: **只影响类型检查**——运行时的惰性加载照旧（启动期不会拉进任何查看器）。
+if TYPE_CHECKING:
+    from desktop.components.viewers.image_view import ImageView
+    from desktop.components.viewers.image_viewer import ImageViewerWidget
+    from desktop.components.viewers.image_zoom_dialog import ImageZoomDialog
+    from desktop.components.viewers.pdf_viewer import PdfViewerWidget
+    from desktop.components.viewers.print_preview import PrintPreviewWidget
+    from desktop.components.viewers.rembg_viewer import RembgPreviewWidget
+    from desktop.components.viewers.thumb_strip import ThumbStrip
+
 __all__ = [
     "ImageView",
     "ImageZoomDialog",

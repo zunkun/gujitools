@@ -5,6 +5,8 @@ from __future__ import annotations
 
 from PySide6.QtCore import QObject, QThread
 
+from typing import cast
+
 
 class _SlotRelay(QObject):
     """主线程里的中继对象：把 worker 线程 emit 的参数转交闭包执行。
@@ -101,7 +103,7 @@ class WorkerHost:
         factory() 负责造 worker，wire(worker, thread) 负责连信号；线程结束后
         worker 自动 deleteLater 并移出引用表，避免长会话下线程对象堆积。
         """
-        thread = QThread(self)
+        thread = QThread(cast(QObject, self))
         worker = factory()
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
@@ -118,10 +120,12 @@ class WorkerHost:
 
     def _forget_worker(self, worker: QObject, thread: QThread) -> None:
         for container in (self._workers, self._threads):
-            if worker in container:
-                container.remove(worker)
-            if thread in container:
-                container.remove(thread)
+            # 两个容器的元素类型不同（QObject / QThread），统一按 QObject 容器操作
+            box = cast(list[QObject], container)
+            if worker in box:
+                box.remove(worker)
+            if thread in box:
+                box.remove(thread)
 
     def shutdown_workers(self) -> None:
         """退出并等待所有后台线程，随后清空引用表。

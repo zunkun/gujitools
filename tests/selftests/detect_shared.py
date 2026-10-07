@@ -28,6 +28,7 @@ def run(ctx) -> None:
     import inspect
     import re
     from pathlib import Path
+    from typing import Any, cast
 
     from tests.selftests._context import ok
 
@@ -158,7 +159,7 @@ def run(ctx) -> None:
     from utils.box_draw import BOX_NAMES as _UTIL_N
 
     ok("GUI 框颜色与 utils 同源（GUI 不再自带色值）",
-       [tuple(c.getRgb()[:3]) for c in _GUI_C] == list(_RGB),
+       [tuple(cast(Any, c.getRgb())[:3]) for c in _GUI_C] == list(_RGB),
        f"GUI={[c.name() for c in _GUI_C]} utils={list(_RGB)}")
     ok("BGR 由 RGB 推导，不会手写漂移",
        _BGR == tuple((b, g, r) for r, g, b in _RGB), str(_BGR))
@@ -195,6 +196,7 @@ def run(ctx) -> None:
        saved.outpath == work.parent / "detect", str(saved.outpath))
     ok("--save 时输出目录不是嵌套在输入目录内",
        saved.outpath != work / "detect", "又嵌回输入目录里了")
+    assert saved.outpath is not None
     ok("--save 时输出目录尚未创建（延迟到 execute）",
        not saved.outpath.exists(), "构造即建目录不符合预期")
     ok("默认后缀为 .png", saved.output_suffix == ".png", saved.output_suffix)
@@ -315,12 +317,12 @@ def run(ctx) -> None:
     import ast as _ast
     import core.command_spec as _cs
 
-    _fn = _ast.parse(inspect.getsource(_cs._validate_detect).strip()).body[0]
+    _fn = cast(_ast.FunctionDef, _ast.parse(inspect.getsource(_cs._validate_detect).strip()).body[0])
     _body = [
         node for node in _fn.body
         if not (isinstance(node, _ast.Expr) and isinstance(node.value, _ast.Constant))
     ]
-    _body_src = _ast.unparse(_body)
+    _body_src = _ast.unparse(_ast.Module(body=_body, type_ignores=[]))
     ok("validate() 的函数体不读取 save（GUI 不落盘也要能过）",
        "save" not in _body_src, f"校验器体里出现了 save：{_body_src}")
     ok("validate() 仍正常校验 detect 的 ext",

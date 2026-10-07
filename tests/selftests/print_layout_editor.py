@@ -25,7 +25,7 @@ import time
 def _tmp_png(path, w: int, h: int):
     from PySide6.QtGui import QColor, QImage, QPainter
 
-    img = QImage(w, h, QImage.Format_RGB32)
+    img = QImage(w, h, QImage.Format.Format_RGB32)
     img.fill(QColor("#f2f2f2"))
     painter = QPainter(img)
     painter.setPen(QColor("#333333"))
@@ -91,17 +91,17 @@ def run(ctx) -> None:
     def _press(px, py):
         canvas.mousePressEvent(QMouseEvent(
             QEvent.Type.MouseButtonPress, QPointF(px, py),
-            Qt.LeftButton, Qt.LeftButton, Qt.NoModifier))
+            Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier))
 
     def _move(px, py):
         canvas.mouseMoveEvent(QMouseEvent(
             QEvent.Type.MouseMove, QPointF(px, py),
-            Qt.LeftButton, Qt.LeftButton, Qt.NoModifier))
+            Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier))
 
     def _release(px, py):
         canvas.mouseReleaseEvent(QMouseEvent(
             QEvent.Type.MouseButtonRelease, QPointF(px, py),
-            Qt.LeftButton, Qt.NoButton, Qt.NoModifier))
+            Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier))
 
     # ---- 2. 框内拖动 = 整体移动 ----
     r = canvas._rect_px()
@@ -189,11 +189,13 @@ def run(ctx) -> None:
     )
     widget.refresh_layout()
     pump(app, 6)
+    _plan = canvas._plan
+    assert _plan is not None            # ⚠️ 上面刚 set_entries，必然排出版面
     ok("版面编辑的 plan 带标题与页码",
-       canvas._plan.title is not None
-       and canvas._plan.title.text == "測試古籍"
-       and canvas._plan.page_number is not None,
-       f"title={getattr(canvas._plan.title, 'text', None)}")
+       _plan.title is not None
+       and _plan.title.text == "測試古籍"
+       and _plan.page_number is not None,
+       f"title={getattr(_plan.title, 'text', None)}")
     ok("标题/页码真的画在画布上（深色像素增加）",
        _ink_count() > ink_plain, f"{ink_plain} -> {_ink_count()}")
 
@@ -203,7 +205,8 @@ def run(ctx) -> None:
         MM_PER_PT, preview_text_font,
     )
 
-    _spec_t = canvas._plan.title
+    _spec_t = _plan.title
+    assert _spec_t is not None          # ⚠️ 上一段已判过标题存在
     _font = preview_text_font(_spec_t, canvas._px_per_mm)
     _want_px = max(1, round(_spec_t.font_size_pt * MM_PER_PT
                             * canvas._px_per_mm))
@@ -248,7 +251,7 @@ def run(ctx) -> None:
         # 原比例：角拖拽保持宽高比（鼠标给的宽高里取更受限的维度配对；
         # 超出页面时整体等比缩回，不做单维度夹取——夹取会破坏比例）。
         ratio_canvas._keep_ratio = True
-        ratio_canvas._rect_mm = [100, 100, 200, 300]     # w/h = 2/3
+        ratio_canvas._rect_mm = [100.0, 100.0, 200.0, 300.0]   # w/h = 2/3
         ratio_canvas._grab_rect = list(ratio_canvas._rect_mm)
         ratio_canvas._corner = 0                          # 左上，锚点 = 右下
         rect = ratio_canvas._resize_from_handle(50, 50)
@@ -265,7 +268,7 @@ def run(ctx) -> None:
 
         # 非原比例：边手柄只改一个维度（这正是"可以上下左右拉伸"）
         ratio_canvas._keep_ratio = False
-        ratio_canvas._rect_mm = [100, 100, 200, 100]
+        ratio_canvas._rect_mm = [100.0, 100.0, 200.0, 100.0]
         ratio_canvas._corner = 4                          # 上边
         rect = ratio_canvas._resize_from_handle(150, 40)
         ok("上边手柄单独拉伸：高度变、宽度不动（比例随之改变）",
@@ -279,7 +282,7 @@ def run(ctx) -> None:
         # ⚠️ 边手柄**不看** keep_ratio：勾着「原比例缩放」也必须能单方向拉伸
         # （用户 16:58 报：「四边也可以拉伸调整，这样可以自由缩放宽高」）。
         ratio_canvas._keep_ratio = True
-        ratio_canvas._rect_mm = [100, 100, 200, 100]
+        ratio_canvas._rect_mm = [100.0, 100.0, 200.0, 100.0]
         ratio_canvas._corner = 4                          # 上边
         rect = ratio_canvas._resize_from_handle(150, 40)
         ok("勾着原比例时边手柄仍可单独拉伸（等比只约束四角）",

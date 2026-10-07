@@ -71,7 +71,7 @@ def run(ctx) -> None:
     ok("PreviewWorker：取消后仍发 completed（宿主状态能收尾）", done["completed"], str(done))
 
     # ---- 3. 队列按任务取消 ----
-    from PySide6.QtCore import QObject
+    from PySide6.QtCore import QObject, Signal
 
     from desktop.workers.serial_jobs import SerialJobQueue
 
@@ -81,6 +81,16 @@ def run(ctx) -> None:
     queue = SerialJobQueue(owner)
     try:
         class _W(QObject):
+            # 满足 JobWorker 协议（job 被 gate 扣住、不会真跑，仅需类型对齐）
+            finished = Signal()
+            failed = Signal()
+            progress = Signal()
+
+            # 签名与 ``QObject.moveToThread`` 一致（位置参数 + 返回 bool），
+            # 否则不满足 ``JobWorker`` 协议。
+            def moveToThread(self, thread, /) -> bool:  # noqa: N802 - 对齐 Qt 命名
+                return True
+
             def run(self):  # pragma: no cover - 不会真跑（被 gate 扣住）
                 pass
 

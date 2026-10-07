@@ -25,6 +25,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+# 测试临时文件统一落点：tests/tmp/（见 tests/tmpdir.py）。
+# ⚠️ 必须在下面 gettempdir() 之前——它算过一次就缓存，晚了不生效。
+from tests.tmpdir import install as _install_tmpdir  # noqa: E402
+
+_install_tmpdir()
+
 PY = sys.executable
 TMP = Path(tempfile.gettempdir()) / "guji_cli_smoke"
 IMG = TMP / "in"

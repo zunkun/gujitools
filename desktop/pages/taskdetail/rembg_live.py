@@ -21,17 +21,37 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, Callable, cast
 
-from PySide6.QtCore import QProcess, QTimer
+from PySide6.QtCore import QObject, QProcess, QTimer
 
 from desktop.services import rembg_live
 from desktop.workers import RembgLiveWorker, connect_queued
+
+if TYPE_CHECKING:
+    from desktop.components.viewers import RembgPreviewWidget
+    from desktop.store.store import TaskStore
 
 
 class RembgLiveMixin:
     """依赖宿主页面提供：store / task_id / process / control_stack /
     rembg_viewer / log_view / current_stage() / run_worker /
     _latest_success_run() / PREVIEW_PARAM_KEYS。"""
+
+    if TYPE_CHECKING:
+        # 宿主 TaskDetailPage（或同级 Mixin）提供的属性/方法：Mixin 本体不持有，
+        # 这里只做类型声明（类级注解、无赋值），运行时零副作用。
+        store: TaskStore
+        task_id: str | None
+        process: QProcess | None
+        rembg_viewer: RembgPreviewWidget
+        log_view: Any  # 宿主 log_panel 里的 QTextEdit（.append 取用）
+        run_worker: Callable[..., Any]
+        current_stage: Callable[[], str]
+        _latest_success_run: Callable[..., Any]
+        # ⚠️ 返回值是 LazyPanelHost 或真面板（属性转发、鸭子类型），用 Any 承接
+        panel_host_of_step: Callable[[str], Any]
+        PREVIEW_PARAM_KEYS: Any  # 宿主从 desktop.services.rembg_live 取的键元组
 
     #: 参数连发时的防抖窗口（拖一次滑块会发几十次 valueChanged）
     LIVE_DEBOUNCE_MS = 350
@@ -44,7 +64,9 @@ class RembgLiveMixin:
         self._live_pending: dict | None = None  # 正在算的那份参数快照
         self.rembg_viewer.set_live_dir(None)
 
-        self._live_timer = QTimer(self)
+        # ⚠️ Mixin 本体是普通类，类型检查器看不到宿主是 QObject，故收窄后当
+        #    QTimer 的 parent 用（运行时是恒等）。
+        self._live_timer = QTimer(cast(QObject, self))
         self._live_timer.setSingleShot(True)
         self._live_timer.setInterval(self.LIVE_DEBOUNCE_MS)
         self._live_timer.timeout.connect(self._maybe_run_live_preview)
@@ -97,7 +119,7 @@ class RembgLiveMixin:
         if self.current_stage() != "rembg" or not self.task_id:
             return
         # 全量任务正在跑时不要插队（worker 槽位是同一个 QProcess）
-        if self.process and self.process.state() != QProcess.NotRunning:
+        if self.process and self.process.state() != QProcess.ProcessState.NotRunning:
             return
         panel = self.panel_host_of_step("rembg")
         if panel is None:
@@ -123,7 +145,11 @@ class RembgLiveMixin:
 
     def _start_live_render(self, image_path: str, args: dict, snapshot: dict) -> None:
         """派发单页去底色到后台线程，结果写实时暂存目录。"""
-        live = rembg_live.live_dir(self.task_id)
+        # 实时暂存目录按任务归属；没有任务就没有落点（调用方都在任务态进这里）
+        task_id = self.task_id
+        if not task_id:
+            return
+        live = rembg_live.live_dir(task_id)
         token = object()
         self._live_token = token
         self._live_pending = snapshot

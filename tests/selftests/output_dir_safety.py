@@ -86,7 +86,9 @@ def run(ctx) -> None:
             type=1, offset=0, area=4, border="0", clean=clean,
         )
         try:
-            get_function("rembg", args, None).execute()
+            _fn = get_function("rembg", args, None)
+            assert _fn is not None
+            _fn.execute()
         except ValueError as exc:
             refused = "输出目录与输入目录相同" in str(exc)
         else:

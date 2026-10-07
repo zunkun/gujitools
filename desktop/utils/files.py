@@ -258,7 +258,9 @@ def package_dir() -> Path:
     import sys
 
     if getattr(sys, "frozen", False):
-        return Path(sys._MEIPASS) / "desktop"
+        # ``_MEIPASS`` 是 PyInstaller 运行时注入的临时解包目录，类型存根里没有，
+        # 故走 getattr（缺省空串：只在 frozen 分支取用，那里它一定存在）。
+        return Path(getattr(sys, "_MEIPASS", "")) / "desktop"
     return Path(__file__).resolve().parents[1]
 
 

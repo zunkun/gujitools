@@ -117,7 +117,7 @@ class _ItemSection(QFrame):
 
     def paintEvent(self, _event) -> None:  # noqa: N802
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(0.5, 0.5, self.width() - 1, self.height() - 1)
         if self._active:
             painter.setPen(QPen(QColor(T.ACCENT), 1.4))
@@ -156,7 +156,7 @@ class ImpositionPanel(Card):
         并置为已启用），宿主无需感知属性是否存在。
         """
         super().__init__(padding=T.SPACE_MD, spacing=T.SPACE_MD, radius=T.RADIUS_MD)
-        column: QVBoxLayout = self.box
+        column: QVBoxLayout | QHBoxLayout = self.box
         # 标题行：说明挂问号按钮（同其他步骤面板），不再平铺占高度
         title_row = QHBoxLayout()
         title_row.setContentsMargins(0, 0, 0, 0)
@@ -274,7 +274,7 @@ class ImpositionPanel(Card):
 
     def _build_angle_slider(self, box: QBoxLayout) -> Slider:
         """通栏旋转滑块：值 = 度数 ×100，即 **0.01°/格**（键盘 1 格、翻页 1°）。"""
-        slider = Slider(Qt.Horizontal)
+        slider = Slider(Qt.Orientation.Horizontal)
         slider.setRange(*ANGLE_SLIDER_RANGE)
         slider.setSingleStep(1)
         slider.setPageStep(ANGLE_SLIDER_SCALE)

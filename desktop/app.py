@@ -207,7 +207,9 @@ def _install_sigint_handler(app: QApplication) -> None:
     keepalive = QTimer()
     keepalive.timeout.connect(lambda: None)
     keepalive.start(200)
-    app._sigint_keepalive = keepalive  # 持有引用，防止被 GC
+    # 持有引用，防止被 GC。⚠️ ``_sigint_keepalive`` 是动态挂到 QApplication 上的
+    # 私有属性，类型存根里没有，用 ``setattr`` 挂（运行时与直接赋值一样）。
+    setattr(app, "_sigint_keepalive", keepalive)
 
 
 def main() -> int:

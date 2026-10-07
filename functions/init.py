@@ -21,16 +21,24 @@ File: functions/init.py
 
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING
+
 from functions.base import DEFAULT_TEMP_NAME_MAP
 from utils.file_utils import replace_with_retry
+
+if TYPE_CHECKING:
+    # 仅类型检查期导入：为下方惰性导入的占位名声明真实类型
+    from prompt_toolkit import prompt as pt_prompt
+    from prompt_toolkit.completion import PathCompleter
 
 DEFAULT_EXTRACT_NAME = DEFAULT_TEMP_NAME_MAP["extract"]  # 通常为 "images"
 DEFAULT_REMBG_NAME = DEFAULT_TEMP_NAME_MAP["rembg"]  # 通常为 "rembg"
 
 # -------- 可选 prompt‑toolkit 懒加载 --------
 _pt_available = False
-PathCompleter = None
-pt_prompt = None
+if not TYPE_CHECKING:  # 运行期先置 None 占位，再由下方 try 覆盖为真实实现
+    PathCompleter = None
+    pt_prompt = None
 try:
     from prompt_toolkit import prompt as pt_prompt
     from prompt_toolkit.completion import PathCompleter

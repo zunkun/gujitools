@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, cast
 
 from PySide6.QtCore import QObject, Signal
 
@@ -139,11 +140,12 @@ class _Host(DetectMixin):
         from desktop.components.detect_stats import DetectStatsWidget
 
         self.task_id = "t1"
-        self.store = _StoreStub()
+        # 这些桩的属性类型与宿主声明不一致，用 setattr 绕过类级注解
+        setattr(self, "store", _StoreStub())
         self.detect_cache: dict = {}
-        self.detect_viewer = _ViewerStub()
-        self.detect_viewer.path = path
-        self.detect_viewer.strip = _StripStub(pages)
+        setattr(self, "detect_viewer", _ViewerStub())
+        setattr(self.detect_viewer, "path", path)
+        setattr(self.detect_viewer, "strip", _StripStub(pages))
         # 与 view.py 的 _wire_detect_panel 同款接线：选中态变化回填面板
         self.detect_viewer.selection_changed.connect(self._on_box_selection_changed)
         self.control_stack = _StackStub(_PanelStub())
@@ -214,8 +216,8 @@ def _press(widget, point=(5, 5)) -> None:
     widget._boxes_editable = True
     widget._pixmap = QPixmap(2, 2)
     event = QMouseEvent(
-        QEvent.MouseButtonPress, QPointF(*point),
-        Qt.LeftButton, Qt.LeftButton, Qt.NoModifier,
+        QEvent.Type.MouseButtonPress, QPointF(*point),
+        Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
     )
     widget.mousePressEvent(event)
 
@@ -281,7 +283,7 @@ def run(ctx) -> None:  # noqa: ARG001 - 本模块自带夹具，不用共享 ctx
     ok("整幅页的框数上限为 1", full_view.max_boxes == 1, str(full_view.max_boxes))
     _press(full_view)
     ok("整幅页里手绘第二个框被拒绝，且提示怎么改",
-       rejected and "整幅" in rejected[0] and "左框" in rejected[0], str(rejected))
+       bool(rejected and "整幅" in rejected[0] and "左框" in rejected[0]), str(rejected))
     half_view = ImageView()
     half_view.set_boxes([LEFT, RIGHT], QSize(W, H), full=False)
     rejected2: list = []
@@ -289,7 +291,7 @@ def run(ctx) -> None:  # noqa: ARG001 - 本模块自带夹具，不用共享 ctx
     ok("半幅页的框数上限为 2", half_view.max_boxes == 2)
     _press(half_view)
     ok("半幅页画第三个框被拒绝并提示",
-       rejected2 and "最多" in rejected2[0], str(rejected2))
+       bool(rejected2 and "最多" in rejected2[0]), str(rejected2))
     _press_image(half_view, 100, 200)  # 落在左框内 → 只是选中，不算新增
     ok("点在已有框上不算新增（不会误报上限）", len(rejected2) == 1, str(rejected2))
     ok("点在已有框上会选中它", half_view.selected_index() == 0,
@@ -297,7 +299,7 @@ def run(ctx) -> None:  # noqa: ARG001 - 本模块自带夹具，不用共享 ctx
 
     # ================= 宿主侧：入库形态与类型切换 =================
     host = _Host("/t/0001.png", SIZE)
-    KEY = host.detect_viewer.path
+    KEY = cast(Any, host.detect_viewer).path
 
     # 规则 1：删掉一个框，另一个框的类型不变
     host._store_slots(KEY, [LEFT, RIGHT], "manual")
@@ -379,7 +381,7 @@ def run(ctx) -> None:  # noqa: ARG001 - 本模块自带夹具，不用共享 ctx
     before = host.entry()
     host._set_selected_box_kind("full")
     ok("规则6：页内没有「整幅」框时点击 → 只提示、不改数据",
-       host.toasts and host.entry() == before, f"{host.toasts} / {host.entry()}")
+       bool(host.toasts and host.entry() == before), f"{host.toasts} / {host.entry()}")
 
     # 规则 6：点当前已经是的类型 → 幂等（不弹互斥框）
     host._save_manual_boxes(KEY, [LEFT, RIGHT])
@@ -393,7 +395,7 @@ def run(ctx) -> None:  # noqa: ARG001 - 本模块自带夹具，不用共享 ctx
     host.toasts.clear()
     host._set_selected_box_kind("right")
     ok("规则6：半幅里点另一侧 → 提示「由框的位置决定」",
-       host.toasts and "位置" in host.toasts[-1][2], str(host.toasts))
+       bool(host.toasts and "位置" in host.toasts[-1][2]), str(host.toasts))
     ok("规则6：这条提示不修改框坐标", host.entry() == [LEFT, RIGHT], str(host.entry()))
 
     # 规则 6：整幅 → 半幅（切回来）

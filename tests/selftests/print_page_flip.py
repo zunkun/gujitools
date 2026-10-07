@@ -24,7 +24,7 @@ SIZES = [(1200, 1800), (800, 2000), (1600, 1200)]
 def _tmp_png(path, w: int, h: int):
     from PySide6.QtGui import QColor, QImage, QPainter
 
-    img = QImage(w, h, QImage.Format_RGB32)
+    img = QImage(w, h, QImage.Format.Format_RGB32)
     img.fill(QColor("#f2f2f2"))
     painter = QPainter(img)
     painter.setPen(QColor("#333333"))

@@ -403,7 +403,7 @@ class CliArgsParser:
                 # run/init 等没有手册文件的命令：打印 argparse 自己的用法，
                 # 而不是甩一句「未知主题」（2026-09-26 审计 #11）
                 for action in self.parser._actions:
-                    if action.dest == "command" and hasattr(action, "choices"):
+                    if action.dest == "command" and isinstance(action.choices, dict):
                         sub = action.choices.get(topic)
                         if sub is not None:
                             print(sub.format_help())

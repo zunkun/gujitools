@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from typing import cast
 
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QFileDialog
@@ -52,12 +53,26 @@ from desktop.services.imposition import (
     page_source_stems,
     removed_source_files,
 )
-from desktop.steps import SourceZone, StepKernel, StepRequest, callable_job, spec_by_key
+from desktop.steps import (
+    SourceZone,
+    StepKernel,
+    StepRequest,
+    StepSpec,
+    callable_job,
+    spec_by_key,
+)
 from desktop.ui.widgets import Card
 from desktop.utils.files import THUMBNAIL_EDGE as THUMB_EDGE
 
-#: 本页的步骤元数据（标题/副标题/过滤串的唯一来源）
-_SPEC = spec_by_key("imposition")
+#: 本页的步骤元数据（标题/副标题/过滤串的唯一来源）。⚠️ spec_by_key 的声明
+#: 返回 StepSpec | None，但 spec 表里 imposition 是**写死存在**的一条（删掉它
+#: 整条模块就没了），这里显式断言一次：与其在每个用到 _SPEC 的地方写一堆判空，
+#: 不如在源头把「这条 spec 必须存在」这条不变量钉住（缺了就立刻炸，位置也清楚）。
+_SPEC_OR_NONE = spec_by_key("imposition")
+assert _SPEC_OR_NONE is not None, "spec 表里缺少 imposition 这一步"
+#: 断言后的**非空别名**：模块级变量在函数体里不会被类型检查器保持收窄，故这里
+#: 显式再声明一次类型（运行时就是上面那个对象，零开销）。
+_SPEC: StepSpec = _SPEC_OR_NONE
 
 #: 手工修饰过的整页组合落在 ``singletask/<子任务>/`` 下的哪个子目录。
 EDITED_DIRNAME = "edited"
@@ -704,7 +719,10 @@ class ImpositionModulePage(ModulePage):
         成品还是老样子（这就是"编辑没生效"）。
         """
         doc = request.args["doc"]
-        dest = Path(request.dest)
+        dest = request.dest
+        # job 契约：导出一定带输出目录（执行内核总会把 dest 设好）
+        assert dest is not None, "拼图导出 job 必须带输出目录"
+        dest = Path(dest)
         # ⚠️ 页数按 **compose_doc 的过滤后口径**取（``normalize_page`` 会静默
         #    丢掉不可修复的页），否则这里算出的分母与合成循环报的分母不一致，
         #    进度条会在末页突然倒退。``_page_overrides`` 用的也是这套口径。
@@ -852,7 +870,10 @@ class ImpositionModulePage(ModulePage):
         cache_dir = image_thumbs_dir(_SPEC.disk_key(), THUMB_EDGE)
         edge = THUMB_EDGE
         self.run_worker(
-            lambda: ImageThumbCacheWorker(images, cache_dir, edge=edge),
+            lambda: ImageThumbCacheWorker(
+                # list 不变型：本页清单是 list[str]，worker 收 list[Path | str]
+                cast("list[Path | str]", images), cache_dir, edge=edge,
+            ),
             lambda worker, thread: (
                 connect_queued(
                     self, worker.thumbnail_ready,

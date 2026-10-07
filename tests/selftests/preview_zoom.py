@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+from typing import cast
 
 NAME = "preview_zoom"
 DEPENDS: list[str] = []
@@ -40,7 +41,7 @@ def make_image(width: int, height: int, marks: bool = False):
     """造一张测试图；marks=True 时在左上/右上放不同颜色（验翻转方向用）。"""
     from PySide6.QtGui import QColor, QImage
 
-    image = QImage(width, height, QImage.Format_RGB32)
+    image = QImage(width, height, QImage.Format.Format_RGB32)
     image.fill(QColor("#ffffff"))
     if marks:
         image.setPixelColor(0, 0, QColor("#ff0000"))          # 左上 红
@@ -53,7 +54,7 @@ def rgb_array(image):
     import numpy as np
     from PySide6.QtGui import QImage
 
-    img = image.convertToFormat(QImage.Format_RGB888)
+    img = image.convertToFormat(QImage.Format.Format_RGB888)
     raw = np.frombuffer(bytes(img.constBits()), dtype=np.uint8)
     raw = raw[: img.height() * img.bytesPerLine()]
     return raw.reshape(img.height(), img.bytesPerLine())[
@@ -331,10 +332,12 @@ def run(ctx) -> None:
 
     # ---------------------------------------------------------------- 6~7
     canvas.set_image(make_image(4, 2, marks=True))
-    ok("未做变换时导出即原图", canvas.export_image().size().width() == 4,
-       str(canvas.export_image().size()))
+    plain = canvas.export_image()
+    assert plain is not None          # ⚠️ 画布上有图时导出不会返回空
+    ok("未做变换时导出即原图", plain.size().width() == 4, str(plain.size()))
     canvas.flip_horizontal()
     flipped = canvas.export_image()
+    assert flipped is not None
     ok("导出已应用水平翻转（左右像素真的换了）",
        flipped.pixelColor(3, 0) == QColor("#ff0000")
        and flipped.pixelColor(0, 0) == QColor("#0000ff"),
@@ -342,6 +345,7 @@ def run(ctx) -> None:
     canvas.flip_horizontal()
     canvas.rotate_clockwise()
     rotated = canvas.export_image()
+    assert rotated is not None
     ok("导出已应用旋转（尺寸互换）",
        rotated.width() == 2 and rotated.height() == 4, str(rotated.size()))
     ok("导出与屏幕用同一套变换（旋转+翻转组合一致）",
@@ -349,10 +353,10 @@ def run(ctx) -> None:
 
     png_path = tmp / "out.png"
     ok("保存 PNG 成功（无损）",
-       save_image(canvas.export_image(), png_path)
+       save_image(plain, png_path)
        and png_path.stat().st_size > 0, "")
     ok("PNG 回读尺寸与导出图一致",
-       QImage(str(png_path)).size() == canvas.export_image().size(),
+       QImage(str(png_path)).size() == plain.size(),
        str(QImage(str(png_path)).size()))
 
     # JPEG 质量参数必须真的传下去（用噪声图才看得出差别：纯色图两种质量都极小）
@@ -361,7 +365,7 @@ def run(ctx) -> None:
     rng = np.random.default_rng(7)
     arr = rng.integers(0, 256, (240, 240, 3), dtype=np.uint8)
     noisy = QImage(arr.data, 240, 240, 240 * 3,
-                   QImage.Format_RGB888).copy()
+                   QImage.Format.Format_RGB888).copy()
     q95_path = tmp / "q95.jpg"
     q30_path = tmp / "q30.jpg"
     ok("保存 JPEG 成功", save_image(noisy, q95_path, 95), "")
@@ -378,7 +382,9 @@ def run(ctx) -> None:
 
     # ---------------------------------------------------------------- 8~9
     edges: list[int] = []
-    fake = {"image": None}
+    # ⚠️ 显式标注成 ``dict``：否则推断成 ``dict[str, None]``，后面塞进真图
+    #    会被判成类型错误（运行期当然塞得进去）。
+    fake: dict = {"image": None}
 
     def render(edge: int):
         edges.append(edge)
@@ -516,10 +522,10 @@ def run(ctx) -> None:
                       Qt.KeyboardModifier.NoModifier, QPoint(600, 6))
     pump(app, times=4)
     ok("再双击顶部栏 → 还原", not dialog.isFullScreen(), "")
-    QTest.keyClick(dialog, Qt.Key_F11)
+    QTest.keyClick(dialog, Qt.Key.Key_F11)
     pump(app, times=4)
     ok("F11 → 全屏", dialog.isFullScreen(), "")
-    QTest.keyClick(dialog, Qt.Key_F11)
+    QTest.keyClick(dialog, Qt.Key.Key_F11)
     pump(app, times=4)
     ok("再按 F11 → 还原", not dialog.isFullScreen(), "")
     # 点「百分比」标签 → 回 100%：由 dialog 的 eventFilter 消费按压实现
@@ -616,7 +622,7 @@ def run(ctx) -> None:
     textured = np.clip(base.astype(np.int16) + noise, 0, 255).astype(np.uint8)
     src_path = tmp / "page.png"
     QImage(textured.data, 1240, 1754, 1240 * 3,
-           QImage.Format_RGB888).copy().save(str(src_path))
+           QImage.Format.Format_RGB888).copy().save(str(src_path))
     base_spec = {
         "args": {"title_printing": True, "title_text": "古籍重製",
                  "title_font_size": 12},
@@ -632,7 +638,9 @@ def run(ctx) -> None:
             lambda _p, image, _s: captured.update(image=image)
         )
         worker.run()
-        return captured.get("image")
+        # ⚠️ cast 而非收窄：下面几处断言里仍保留 ``is not None`` 的判据，
+        #    这里先按「worker 跑完必然出图」把类型定死，失败照样由 ok() 报。
+        return cast("QImage", captured.get("image"))
 
     # 两者输出边长相同，差别只在"排版密度"：不指定 target_edge 时是
     # 「按 1600px 密度合成 → 再缩放到请求边长」，指定时才是按请求边长重排。
@@ -666,10 +674,11 @@ def run(ctx) -> None:
             lambda _p, image, _s: captured.update(image=image)
         )
         worker.run()
-        return captured.get("image")
+        # ⚠️ 同上：cast 定死类型，"没出图"的判据留给调用点的 ok()
+        return cast("QImage", captured.get("image"))
 
     small_path = tmp / "small.png"
-    QImage(800, 1131, QImage.Format_RGB888).copy().save(str(small_path))
+    QImage(800, 1131, QImage.Format.Format_RGB888).copy().save(str(small_path))
     # 夹住的是**图片区域**的密度，不是画布（画布还要放标题/纸面留白）。
     # 所以这里不比画布尺寸，而是比"要更大的边长能不能拿到更多像素"——
     # 上限一旦存在，4000 与 8000 必然得到同一张画布。

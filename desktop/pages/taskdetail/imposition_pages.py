@@ -21,15 +21,39 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, Callable, cast
 
 from desktop.services.imposition import (
     ITEMS_PER_PAGE, append_item_to_page, auto_impose_pages, cn_page_label,
     excluded_files, make_page, make_single_page, used_source_files,
 )
 
+if TYPE_CHECKING:
+    from desktop.store.store import TaskStore
+
 
 class ImpositionPagesMixin:
     """拼版页管理（模块一）：启用开关、加页、删页、清空。"""
+
+    if TYPE_CHECKING:
+        # 宿主 TaskDetailPage 提供的属性（store/task_id/log_view/run_worker/window）
+        # 与同级 Mixin 共享的基元（ImpositionBaseMixin 那一组）：本 Mixin 本体不
+        # 持有，只做类型声明（类级注解、无赋值），运行时零副作用。
+        store: TaskStore
+        task_id: str | None
+        log_view: Any  # 宿主 log_panel 里的 QTextEdit（.append 取用）
+        run_worker: Callable[..., Any]
+        window: Callable[[], Any]
+        _toast: Callable[..., None]
+        _imposition_pages: Callable[[], list]
+        _imposition_doc: Callable[[], dict[str, Any]]
+        _refresh_print_source: Callable[..., None]
+        _save_imposition_pages: Callable[..., None]
+        _schedule_imposition_compose: Callable[..., None]
+        _set_imposition_checked: Callable[..., None]
+        _sync_imposition_step_bar: Callable[..., None]
+        _update_imposition_status: Callable[..., None]
+        imposition_source_files: Callable[[], list]
 
     # ------------------------------------------------------------- 选择状态
     def _load_imposition_enabled(self) -> bool:
@@ -446,10 +470,15 @@ class ImpositionPagesMixin:
         from desktop.utils.files import THUMBNAIL_EDGE
         from desktop.workers import ImageThumbCacheWorker, connect_queued
 
-        cache_dir = self.store.imposition_thumbnails_dir(self.task_id)
+        # 缓存落在**任务目录**下，没有任务就没有落点（调用方都在任务态进这里）
+        task_id = self.task_id
+        if not task_id:
+            return
+        cache_dir = self.store.imposition_thumbnails_dir(task_id)
         self.run_worker(
             lambda: ImageThumbCacheWorker(
-                images, cache_dir, edge=THUMBNAIL_EDGE
+                # list 不变型：清单是 list[str]，worker 收 list[Path | str]
+                cast("list[Path | str]", images), cache_dir, edge=THUMBNAIL_EDGE
             ),
             lambda worker, thread: (
                 connect_queued(

@@ -13,10 +13,12 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QProcess, QTimer
+from typing import TYPE_CHECKING, Any, Callable, cast
+
+from PySide6.QtCore import QObject, QProcess, QTimer
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QLineEdit, QStackedWidget, QTabWidget, QVBoxLayout,
-    QWidget,
+    QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QStackedWidget, QTabWidget,
+    QVBoxLayout, QWidget,
 )
 from qfluentwidgets import (
     CaptionLabel, ComboBox, PrimaryPushButton, PushButton, ToolButton,
@@ -42,6 +44,9 @@ from desktop.ui.widgets import (
 )
 from desktop.pages.taskdetail.submit import SUBMIT_TEXT
 
+if TYPE_CHECKING:
+    from desktop.store.store import TaskStore
+
 
 class LazyPanelHost(QWidget):
     """阶段面板的**惰性宿主**：真正被取用时才构造内部面板。
@@ -55,7 +60,7 @@ class LazyPanelHost(QWidget):
     层调用，**不走 Python 的 __getattr__**，不会误触发构造。
     """
 
-    def __init__(self, factory, hooks=(), parent=None):
+    def __init__(self, factory: Callable[[], QWidget], hooks=(), parent=None):
         """factory() 造真面板；hooks 是"内部面板构造完成"后的回调（接线用）。"""
         super().__init__(parent)
         self._factory = factory
@@ -83,13 +88,15 @@ class LazyPanelHost(QWidget):
     @property
     def panel(self) -> QWidget:
         """内部真面板，首次访问时构造（并把挂着的回调全部执行一遍）。"""
-        if self._inner is None:
-            self._inner = self._factory()
-            self._host_layout.addWidget(self._inner)
+        inner = self._inner
+        if inner is None:
+            inner = self._factory()
+            self._inner = inner
+            self._host_layout.addWidget(inner)
             hooks, self._hooks = self._hooks, []
             for hook in hooks:
-                hook(self._inner)
-        return self._inner
+                hook(inner)
+        return inner
 
     def __getattr__(self, name: str):
         # 只有在类上找不到该属性时才会走到这里；_factory/_inner 都在 __dict__
@@ -103,9 +110,85 @@ class DetailViewMixin:
     """依赖宿主页面提供的方法：_on_back、_select_stage、各预览联动槽、
     current_stage()、_update_run_buttons() 等。"""
 
+    if TYPE_CHECKING:
+        # 宿主 TaskDetailPage（或同级 Mixin）提供的属性/方法：Mixin 本体不持有，
+        # 这里只做类型声明（类级注解、无赋值），运行时零副作用。
+        store: TaskStore
+        task_id: str | None
+        process: QProcess | None
+        detect_process: QProcess | None
+        _toast: Callable[..., None]
+        _update_run_buttons: Callable[[dict], None]
+        _on_back: Callable[[], None]
+        _on_show_flow: Callable[[], None]
+        _on_pick_source: Callable[[], None]
+        _open_task_dir: Callable[[], None]
+        insert_pages: Callable[..., None]
+        insert_pages_from_folder: Callable[..., None]
+        flow_slots: Callable[[], tuple]
+        _select_stage: Callable[[int], None]
+        bar_index_of_step: Callable[[str], int | None]
+        current_stage: Callable[[], str]
+        # ⚠️ 返回值是 LazyPanelHost 或真面板（属性转发、鸭子类型），用 Any 承接
+        panel_host_of_step: Callable[[str], Any]
+        _pdf_page_count_ready: Callable[..., None]
+        _page_thumb_for: Callable[..., Any]
+        _image_selected: Callable[..., None]
+        delete_selected_page: Callable[..., None]
+        _original_image_size: Callable[..., Any]
+        _detect_image_selected: Callable[..., None]
+        _save_manual_boxes: Callable[..., None]
+        _on_page_image_saved: Callable[..., None]
+        _print_thumb_provider: Callable[..., Any]
+        _save_print_order: Callable[..., None]
+        _insert_print_images: Callable[..., None]
+        _download_print_pdf: Callable[..., None]
+        _export_print_image: Callable[..., None]
+        _on_export_finished: Callable[..., None]
+        _on_export_failed: Callable[..., None]
+        _on_print_finished: Callable[..., None]
+        _on_print_failed: Callable[..., None]
+        _goto_stats_page: Callable[..., None]
+        _detect_current_page: Callable[..., None]
+        _set_whole_page_mode: Callable[..., None]
+        _set_selected_box_kind: Callable[..., None]
+        _delete_selected_box: Callable[..., None]
+        _on_box_selection_changed: Callable[..., None]
+        _on_box_edit_rejected: Callable[..., None]
+        _sync_whole_page_checkbox: Callable[..., None]
+        _refresh_reference_boxes: Callable[..., None]
+        _update_submit_button: Callable[..., None]
+        _refresh_imposition_node: Callable[..., None]
+        _on_history_selected: Callable[..., None]
+        run_stage: Callable[..., None]
+        run_rembg_submit: Callable[[], None]
+        cancel_stage: Callable[[], None]
+        _set_stage_status: Callable[..., None]
+        # 「图片拼版」占位详情页与拼版画布的动作槽（ImpositionMixin 提供）
+        _on_imposition_page_selected: Callable[..., None]
+        _on_imposition_add_requested: Callable[..., None]
+        _on_imposition_page_reorder: Callable[..., None]
+        _on_imposition_release_page: Callable[..., None]
+        _on_imposition_batch_delete: Callable[..., None]
+        _on_imposition_items_changed: Callable[..., None]
+        _on_imposition_slot_selected: Callable[..., None]
+        _open_imposition_item_preview: Callable[..., None]
+        _open_imposition_spread_preview: Callable[..., None]
+        _open_imposition_item_edit: Callable[..., None]
+        _open_imposition_spread_edit: Callable[..., None]
+        _on_imposition_enabled_toggled: Callable[..., None]
+        _on_imposition_whole_rotate: Callable[..., None]
+        _on_imposition_item_rotate: Callable[..., None]
+        _on_imposition_reset_layout: Callable[..., None]
+        _on_imposition_add_image: Callable[..., None]
+        _on_imposition_delete_item: Callable[..., None]
+        _on_imposition_clear: Callable[..., None]
+
     # ------------------------------------------------------------------ 组装
     def _init_ui(self) -> None:
-        root = QVBoxLayout(self)
+        # ⚠️ Mixin 里 self 的静态类型不是 QWidget；宿主 TaskDetailPage 必是
+        #    QWidget，cast 只是给类型检查看的（运行时原样返回）。
+        root = QVBoxLayout(cast("QWidget", self))
         root.setContentsMargins(T.SPACE_XL, T.SPACE_LG, T.SPACE_XL, T.SPACE_LG)
         root.setSpacing(T.SPACE_MD)
         #: 根布局留引用：``_rebuild_step_bar`` 要按位置把旧步骤条换成新的
@@ -170,7 +253,7 @@ class DetailViewMixin:
         self.rename_edit = QLineEdit()
         self.rename_edit.setVisible(False)
         self.rename_edit.editingFinished.connect(self._commit_rename)
-        self.rename_edit.installEventFilter(self)   # Esc 取消
+        self.rename_edit.installEventFilter(cast("QObject", self))   # Esc 取消
         text_column.addWidget(self.rename_edit)
         self.source_label = QLabel("")
         apply_to(self.source_label, T.SIZE_CAPTION, color=T.INK_FAINT)
@@ -253,9 +336,10 @@ class DetailViewMixin:
     # ------------------------------------------------------------ 任务改名
     def _begin_rename(self) -> None:
         """点铅笔：标题换成行内输入框（不用弹窗——见上面 rename_edit 处的注释）。"""
-        if not getattr(self, "task_id", None):
+        task_id = getattr(self, "task_id", None)
+        if not task_id:
             return
-        record = self.store.get_task(self.task_id) or {}
+        record = self.store.get_task(task_id) or {}
         self.rename_edit.setText(str(record.get("name") or ""))
         self.rename_edit.setVisible(True)
         self.detail_title.setVisible(False)
@@ -280,13 +364,16 @@ class DetailViewMixin:
         if not typed:
             return                      # 留空 = 不改（rename_task 的空回落只在
                                         # 明确"清空后保存"时用）
+        task_id = self.task_id
+        if task_id is None:
+            return                      # 没有任务可改（详情页必然已开任务）
         try:
-            changed = self.store.rename_task(self.task_id, typed)
+            changed = self.store.rename_task(task_id, typed)
         except Exception as exc:        # noqa: BLE001 - 落盘失败要说清，不能静默
             self._toast("error", "改名失败", f"{type(exc).__name__}: {exc}")
             return
         if changed:
-            record = self.store.get_task(self.task_id) or {}
+            record = self.store.get_task(task_id) or {}
             self.detail_title.setText(str(record.get("name") or typed))
             self._toast("info", "已改名", f"任务名称已改为「{typed}」")
 
@@ -304,9 +391,9 @@ class DetailViewMixin:
         from PySide6.QtGui import QKeyEvent
 
         if (watched is self.rename_edit
-                and event.type() == QEvent.KeyPress
+                and event.type() == QEvent.Type.KeyPress
                 and isinstance(event, QKeyEvent)
-                and event.key() == Qt.Key_Escape):
+                and event.key() == Qt.Key.Key_Escape):
             # ⚠️ **先清文本再失焦**：``clearFocus`` 会触发 ``editingFinished``
             # → ``_commit_rename``，那里看到非空文本就会**真的存下去**，
             # Esc 等于"改名并保存"，与预期相反。
@@ -394,7 +481,8 @@ class DetailViewMixin:
     ``None``；可选节点排在**最前**（没有左邻居）时返回 ``-1``，
     :class:`StepBar` 据此把节点插在第一个真实步骤之前。
     """
-        if not getattr(self, "task_id", None):
+        task_id = getattr(self, "task_id", None)
+        if not task_id:
             # 没任务时按**默认模板**算（静态展示）。⚠️ 此前这里是
             # ``FlowDefinition.default().optional_after(...)``——那是**旧模型**
             # 从端口边表派生的一份流程，与 ``FlowDiagram.optional_after``
@@ -405,7 +493,7 @@ class DetailViewMixin:
             return load_default_diagram().optional_after(IMPOSITION_STAGE)
         # ⚠️ 走**图模型**（能读 bpmn.io 的网关/自定义 id）；旧 `task_flow`
         #    读不了就静默回落默认流程 ⇒ 步骤条永远长的像 task_default。
-        return self.store.task_diagram(self.task_id).optional_after(
+        return self.store.task_diagram(task_id).optional_after(
             IMPOSITION_STAGE)
 
     @staticmethod
@@ -663,7 +751,8 @@ class DetailViewMixin:
         # 错位一格**（rembg 的联动刷新接到 print 上），且没有任何报错。
         for index, panel_class in enumerate(PANEL_CLASSES):
             key = FLOW_STAGES[index] if index < len(FLOW_STAGES) else None
-            hook = _HOOKS.get(key)
+            # ⚠️ dict.get(None) 运行时合法（返回 None）；这里显式判空语义相同
+            hook = _HOOKS.get(key) if key is not None else None
             # ⚠️ rembg 的面板要**按当前流程**决定 area 是否锁整页
             #    （「检测文本框」不在它上游 ⇒ 拿不到检测框 ⇒ area 锁 4，
             #    用户 2026-10-07）：不能直接把类当工厂，要走
@@ -748,7 +837,7 @@ class DetailViewMixin:
         #    重读（_refresh_reference_boxes → _build_entries 逐页查 detect_cache）
         #    + runs.json × 3 次读 + 目录扫描（_update_submit_button）。大任务上
         #    逐字符输入明显卡顿。200ms 防抖与第四步 _print_preview_timer 同法。
-        self._rembg_panel_timer = QTimer(self)
+        self._rembg_panel_timer = QTimer(cast("QObject", self))
         self._rembg_panel_timer.setSingleShot(True)
         self._rembg_panel_timer.setInterval(200)
         self._rembg_panel_timer.timeout.connect(self._on_rembg_panel_refresh)
@@ -775,7 +864,7 @@ class DetailViewMixin:
         self._sync_whole_page_checkbox()
         self._refresh_reference_boxes()
         self._update_submit_button(
-            bool(self.process and self.process.state() != QProcess.NotRunning)
+            bool(self.process and self.process.state() != QProcess.ProcessState.NotRunning)
         )
         # 第三步 border 级联第四步默认边距：border 变化时把上游 border
         # 同步给 print 面板（用户未手动改边距时，默认值随级联变 0/20）
@@ -789,7 +878,7 @@ class DetailViewMixin:
         # 参数变化 → 效果预览按新参数重画（只是重画内存位图，不执行、不提交、
         # 不生成 PDF）。防抖 250ms：边距/颜色是逐字符输入，每次都重载一遍大图
         # 会明显卡顿。
-        self._print_preview_timer = QTimer(self)
+        self._print_preview_timer = QTimer(cast("QObject", self))
         self._print_preview_timer.setSingleShot(True)
         self._print_preview_timer.setInterval(250)
         self._print_preview_timer.timeout.connect(self.print_preview.refresh_display)
@@ -814,7 +903,7 @@ class DetailViewMixin:
             raise ValueError("当前流程里没有「PDF排版」这一步")
         return host.get_args()
 
-    def _apply_pending_source_defaults(self, panel=None) -> None:
+    def _apply_pending_source_defaults(self, panel: Any = None) -> None:
         """把「当前任务的源 PDF 名」派生的默认值补给第四步面板。
 
         ⚠️ 面板是惰性的：``set_task`` 只记下 ``_pending_source_stem``，真正应用
@@ -827,7 +916,7 @@ class DetailViewMixin:
             host = self.panel_host_of_step("print")
             if host is None:
                 return
-            peek = getattr(host, "peek", None)
+            peek: Any = getattr(host, "peek", None)
             panel = peek() if callable(peek) else host
         if panel is None:
             return
@@ -836,7 +925,7 @@ class DetailViewMixin:
         except Exception:  # noqa: BLE001 - 面板版本差异不该影响进任务
             pass
 
-    def _apply_pending_print_reset(self, panel=None) -> None:
+    def _apply_pending_print_reset(self, panel: Any = None) -> None:
         """清掉第四步面板上「属于上一个任务」的已应用参数快照。
 
         ⚠️ 为什么需要（2026-09-26 审计）：`print_panel._last_applied` 是「放弃本次
@@ -854,7 +943,7 @@ class DetailViewMixin:
             host = self.panel_host_of_step("print")
             if host is None:
                 return
-            peek = getattr(host, "peek", None)
+            peek: Any = getattr(host, "peek", None)
             panel = peek() if callable(peek) else host
             if panel is None:
                 return  # 还没建：留着标记，等 created 回调
@@ -875,9 +964,9 @@ class DetailViewMixin:
             # ⚠️ 必须用 peek()（不触发构造）：第三步面板没建时它的 border 就是
             # 默认空值，等它建好会由 _wire_rembg_panel 补一次同步。
             # ⚠️ 流程里没有去底色这一格 ⇒ 没有 border 可级联，按"无上游"处理。
-            rembg_peek = getattr(rembg_host, "peek", None)
+            rembg_peek: Any = getattr(rembg_host, "peek", None)
             if callable(rembg_peek):
-                rembg_panel = rembg_peek()
+                rembg_panel: Any = rembg_peek()
                 border = (
                     (rembg_panel.border.text() or "").strip() or None
                     if rembg_panel is not None
@@ -892,8 +981,8 @@ class DetailViewMixin:
         host = self.panel_host_of_step("print")
         if host is None:
             return
-        peek = getattr(host, "peek", None)
-        panel = peek() if callable(peek) else host
+        peek: Any = getattr(host, "peek", None)
+        panel: Any = peek() if callable(peek) else host
         if panel is None:
             # 第四步面板还没构造：先记住，等它建好时由 _wire_print_panel 补同步。
             # ⚠️ 这里绝不能走属性转发——rembg 参数一变就会把它建出来，
@@ -924,7 +1013,7 @@ class DetailViewMixin:
             f"w={rw:.0f}, h={rh:.0f} mm），点击「生成PDF」生效"
         )
 
-    def _build_history_controls(self, control: QVBoxLayout) -> None:
+    def _build_history_controls(self, control: QBoxLayout) -> None:
         # ---- 历史执行配置选择（detect 阶段整体隐藏，见 _select_stage）----
         # ⚠️ 必须包成独立 block 再整体 setVisible：散着藏的话，切到第二步要
         #    记住藏三个控件，漏一个就露出半截「执行记录」。
@@ -952,7 +1041,7 @@ class DetailViewMixin:
         combo.currentIndexChanged.connect(self._on_history_selected)
         return combo
 
-    def _build_run_controls(self, control: QVBoxLayout) -> None:
+    def _build_run_controls(self, control: QBoxLayout) -> None:
         self.run_button = PrimaryPushButton(FIF.PLAY, "执行本子任务")
         self.run_button.setFixedHeight(36)
         self.run_button.clicked.connect(lambda: self.run_stage(resume=False))
@@ -1022,8 +1111,10 @@ class DetailViewMixin:
         from desktop.steps.spec import StepSpec
 
         spec = ports.spec_for_stage(self.current_stage())
+        # ⚠️ 兜底分支正常走不到（伪步骤也有自己的 spec）；StepSpec 必填字段
+        #    无法空构造，这里保持原行为、不另造默认值。
         minimum, maximum = (
-            spec.control_width if spec else StepSpec().control_width
+            spec.control_width if spec else StepSpec().control_width  # type: ignore[reportCallIssue]
         )
         self.control_widget.setMinimumWidth(minimum)
         self.control_widget.setMaximumWidth(maximum)

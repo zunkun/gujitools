@@ -14,16 +14,22 @@ import shutil
 import sys
 import tempfile
 from pathlib import Path
+from typing import cast
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+# 测试临时文件统一落点：tests/tmp/（见 tests/tmpdir.py）。
+from tests.tmpdir import install as _install_tmpdir  # noqa: E402
+
+_install_tmpdir()
+
 
 def _img(color: str, w: int = 64, h: int = 48):
     from PySide6.QtGui import QColor, QImage
 
-    im = QImage(w, h, QImage.Format_RGB32)
+    im = QImage(w, h, QImage.Format.Format_RGB32)
     im.fill(QColor(color))
     return im
 
@@ -74,9 +80,11 @@ def main() -> int:
         for d in (extract, preview, rembg):
             d.mkdir(parents=True)
         page = extract / "0001.png"
-        _img("#ffffff").save(str(page), "PNG")
-        _img("#ffffff").save(str(preview / "0001.png"), "PNG")
-        _img("#ffffff").save(str(rembg / "0001.png"), "PNG")
+        # ⚠️ type: ignore —— PySide6 把 QImage.save 的 format 标成 bytes 系，
+        # 运行期却收 str（这里和 thumb_cache_worker 里同一处坑）。
+        _img("#ffffff").save(str(page), "PNG")  # type: ignore[reportCallIssue]
+        _img("#ffffff").save(str(preview / "0001.png"), "PNG")  # type: ignore[reportCallIssue]
+        _img("#ffffff").save(str(rembg / "0001.png"), "PNG")  # type: ignore[reportCallIssue]
 
         # ============ ① 第三步「去底色结果」右键编辑 → 覆盖 rembgpreview
         check("编辑前 rembgpreview 是白底",
@@ -113,7 +121,8 @@ def main() -> int:
         try:
             # 第四步列表 = 提交产物（2026-10-01 起取图只透传它）
             list_entries = [{"file": str(rembg / "0001.png"), "label": "0001"}]
-            effects = SubmitMixin._build_print_effects(object(), list_entries)
+            effects = SubmitMixin._build_print_effects(
+                cast("SubmitMixin", object()), list_entries)
             print_stage.run_print_stage({
                 "task_id": "t", "stage": "print", "run_id": "r2",
                 "args": {

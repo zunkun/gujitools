@@ -49,14 +49,14 @@ def _click_at(widget, x: float, y: float) -> None:
 
     pos = QPointF(float(x), float(y))
     widget.mousePressEvent(QMouseEvent(
-        QEvent.MouseButtonPress, pos, widget.mapToGlobal(pos.toPoint()),
-        Qt.LeftButton, Qt.LeftButton, Qt.NoModifier))
+        QEvent.Type.MouseButtonPress, pos, widget.mapToGlobal(pos.toPoint()),
+        Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier))
     widget.mouseReleaseEvent(QMouseEvent(
-        QEvent.MouseButtonRelease, pos, widget.mapToGlobal(pos.toPoint()),
-        Qt.LeftButton, Qt.NoButton, Qt.NoModifier))
+        QEvent.Type.MouseButtonRelease, pos, widget.mapToGlobal(pos.toPoint()),
+        Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier))
 
 
-def _stroke(widget, points) -> None:
+def _stroke(widget, points: list[tuple[float, float]]) -> None:
     """合成一次「按下 → 移动 … → 松开」的鼠标轨迹（拖连接点连线的手势）。"""
     from PySide6.QtCore import QEvent, QPointF, Qt
     from PySide6.QtGui import QMouseEvent
@@ -64,16 +64,16 @@ def _stroke(widget, points) -> None:
     def _event(type_, x, y, button, buttons):
         pos = QPointF(float(x), float(y))
         return QMouseEvent(type_, pos, widget.mapToGlobal(pos.toPoint()),
-                           button, buttons, Qt.NoModifier)
+                           button, buttons, Qt.KeyboardModifier.NoModifier)
 
     first, last = points[0], points[-1]
-    widget.mousePressEvent(_event(QEvent.MouseButtonPress, *first,
-                                  Qt.LeftButton, Qt.LeftButton))
+    widget.mousePressEvent(_event(QEvent.Type.MouseButtonPress, *first,
+                                  Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton))
     for x, y in points[1:-1]:
-        widget.mouseMoveEvent(_event(QEvent.MouseMove, x, y,
-                                     Qt.NoButton, Qt.LeftButton))
-    widget.mouseReleaseEvent(_event(QEvent.MouseButtonRelease, *last,
-                                    Qt.LeftButton, Qt.NoButton))
+        widget.mouseMoveEvent(_event(QEvent.Type.MouseMove, x, y,
+                                     Qt.MouseButton.NoButton, Qt.MouseButton.LeftButton))
+    widget.mouseReleaseEvent(_event(QEvent.Type.MouseButtonRelease, *last,
+                                    Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton))
 
 
 def run(ctx) -> None:
@@ -171,31 +171,45 @@ def run(ctx) -> None:
     new_id = editor.add_node(name="新步骤")
     ok("加节点", len(editor.diagram().nodes) == n_before + 1)
     editor.rename_node(new_id, "改过的名字")
-    ok("改名", editor.diagram().node(new_id).name == "改过的名字")
+    _renamed = editor.diagram().node(new_id)
+    assert _renamed is not None  # 刚加的节点必然还在图上
+    ok("改名", _renamed.name == "改过的名字")
     # ⚠️⚠️ **改名不断绑**：阶段身份是节点的属性（落盘在 ``guji:stage``），
     # 名字只是显示标签。以前改名会**重算**阶段——「图片去底色」改成「AI 抠图」
     # 就接不回任何阶段，整张图被判"坏图"而回落默认流程（用户只改了个标签，
     # 流程却被换掉了）。现在：认得出的名字换绑，认不出的名字只改显示。
     _real_node = next(n.id for n in editor.diagram().nodes
                       if n.stage == "rembg")
+    # 先把图对象取出来绑定好：``editor`` 在后面的用例里会被重新赋值（含 None），
+    # 嵌套函数里读它 pyright 会当成 ``BpmnEditor | None``；绑成局部变量即可。
+    _diagram = editor.diagram()
+
+    def _stage_of(node_id: str):
+        # ⚠️ ``rename_node`` 会**重建**节点（DiagramNode 是 frozen，只能换新
+        #    对象），所以改名后旧节点对象就作废了。每次断言都必须从图上现取，
+        #    不能把节点对象缓存下来——缓存了就会一直读到改名前的旧阶段。
+        node = _diagram.node(node_id)
+        assert node is not None  # 节点刚改过名，必然还在图上
+        return node.stage
+
     editor.rename_node(_real_node, "AI 抠图")
     ok("改名成认不出的名字 ⇒ **保留原阶段**（只改显示，不断绑）",
-       editor.diagram().node(_real_node).stage == "rembg",
-       str(editor.diagram().node(_real_node).stage))
+       _stage_of(_real_node) == "rembg",
+       str(_stage_of(_real_node)))
     # 改成另一个已知阶段名 ⇒ 换绑（"改名切换步骤类型"，有意保留）
     editor.rename_node(_real_node, "检测文本框")
     ok("改成已知阶段名 ⇒ 换绑到那个阶段",
-       editor.diagram().node(_real_node).stage == "detect",
-       str(editor.diagram().node(_real_node).stage))
+       _stage_of(_real_node) == "detect",
+       str(_stage_of(_real_node)))
     editor.rename_node(_real_node, "图片去底色")
     ok("改回原来的阶段名 ⇒ 换绑回来",
-       editor.diagram().node(_real_node).stage == "rembg",
-       str(editor.diagram().node(_real_node).stage))
+       _stage_of(_real_node) == "rembg",
+       str(_stage_of(_real_node)))
     # 本来就没阶段的节点 ⇒ 改名不许凭空接上（随手一改多出运行步骤更糟）
     editor.rename_node(new_id, "还是认不出")
     ok("本来就没有阶段的节点改名 ⇒ 仍是 None（不凭空接上）",
-       editor.diagram().node(new_id).stage is None,
-       str(editor.diagram().node(new_id).stage))
+       _stage_of(new_id) is None,
+       str(_stage_of(new_id)))
     # 身份落盘往返：自定义名字存进 ``guji:stage``，重读不再靠名字猜
     editor.rename_node(_real_node, "AI 抠图")
     _roundtrip = Path(ctx.tmp) / "rename_roundtrip.bpmn"
@@ -495,9 +509,10 @@ def run(ctx) -> None:
                f"{custom_names} vs {init_names}")
             ok("自定义模式提示写明用的是自定义流程",
                "自定义" in panel.mode_hint.text(), panel.mode_hint.text())
+            _result = panel.result_diagram()
             ok("自定义模式传用户那张图（不是 None）",
-               panel.result_diagram() is not None
-               and [n.name for n in panel.result_diagram().nodes] == custom_names)
+               _result is not None
+               and [n.name for n in _result.nodes] == custom_names)
             ok("有「编辑流程」入口",
                hasattr(panel, "edit_button") and "编辑流程" in panel.edit_button.text())
             ok("有「恢复默认流程」入口",
@@ -539,6 +554,7 @@ def run(ctx) -> None:
         editor = board.editor()
         ok("流程弹窗打开就是编辑态（不用再点一次「编辑流程」）",
            editor is not None and isinstance(editor, BpmnEditor))
+        assert editor is not None  # 上一条 ok 已断言编辑态必有编辑器
         ok("工具栏有全部编辑动作",
            board.toolbar is not None
            and [b.text() for b in (board.add_button, board.gateway_button,
@@ -560,15 +576,17 @@ def run(ctx) -> None:
         ok("点节点能选中", editor.selected() == target, str(editor.selected()))
         ok("选中后「重命名/删除」变可用",
            board.rename_button.isEnabled() and board.delete_button.isEnabled())
+        _target_node = editor.diagram().node(target)
+        assert _target_node is not None  # target 刚从图里挑出来，必然存在
         ok("状态行写出了选中的是哪个步骤与它的运行阶段",
            "已选中" in board.status.text()
-           and editor.diagram().node(target).name in board.status.text(),
+           and _target_node.name in board.status.text(),
            board.status.text())
 
         # 动作按钮**真的接上了**编辑器（接不上就是死按钮——上一版的毛病）
         fired: list[str] = []
         editor.ask_add_node = lambda: fired.append("add")
-        editor.add_gateway = lambda *a, **k: fired.append("gateway")
+        editor.add_gateway = lambda *a, **k: fired.append("gateway")  # type: ignore[reportAttributeAccessIssue]  # 测试替身：临时把返回 str 的方法换成记录器
         editor.ask_rename_selected = lambda: fired.append("rename")
         editor.ask_delete_selected = lambda: fired.append("delete")
         board.add_button.click()
@@ -598,12 +616,16 @@ def run(ctx) -> None:
         new_id = editor.add_node(KIND_TASK, "图片拼版")
         app.processEvents()
         ok("「添加步骤」能加节点", len(editor.diagram().nodes) == before + 1)
+        _added = editor.diagram().node(new_id)
+        assert _added is not None  # 刚加的节点必然还在图上
         ok("新加的节点按名字接上了运行阶段（否则加了也不跑）",
-           editor.diagram().node(new_id).stage == "imposition",
-           str(editor.diagram().node(new_id).stage))
+           _added.stage == "imposition",
+           str(_added.stage))
         gw = editor.add_gateway("判断")
+        _gw_node = editor.diagram().node(gw)
+        assert _gw_node is not None  # 刚加的网关必然还在图上
         ok("「添加判断」加的是网关菱形",
-           editor.diagram().node(gw).is_gateway)
+           _gw_node.is_gateway)
         ok("「添加判断」只摆节点、不进连线模式（判断节点不必连线）",
            not editor.link_mode())
 
@@ -688,6 +710,7 @@ def run(ctx) -> None:
 
         palette = board.palette
         ok("编辑态有固定节点面板", palette is not None)
+        assert palette is not None  # 上一条 ok 已断言面板存在
 
         def _palette_state() -> dict:
             return {
@@ -701,7 +724,7 @@ def run(ctx) -> None:
             mime.setData(NODE_MIME, token.encode("utf-8"))
             editor.dropEvent(QDropEvent(
                 QPointF(x, y), Qt.DropAction.CopyAction, mime,
-                Qt.LeftButton, Qt.NoModifier))
+                Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier))
 
         state = _palette_state()
         ok("面板条目 = 固定步骤集 + 「判断」",
@@ -728,7 +751,9 @@ def run(ctx) -> None:
             ok("从面板拖出一个节点即加了一格",
                len(editor.diagram().nodes) == before_nodes,
                f"{before_nodes} -> {len(editor.diagram().nodes)}")
-            made = editor.diagram().node(editor.selected())
+            _sel = editor.selected()
+            assert _sel is not None  # 拖放完成后新节点处于选中态
+            made = editor.diagram().node(_sel)
             ok("拖出来的节点接得上运行阶段（名字 → 阶段表）",
                made is not None and made.stage == "rembg",
                str(made and (made.name, made.stage)))
@@ -745,7 +770,9 @@ def run(ctx) -> None:
         flows_before = len(editor.diagram().flows)
         _drop(GATEWAY_TOKEN, 700.0, 520.0)
         app.processEvents()
-        gateway = editor.diagram().node(editor.selected())
+        _sel_gw = editor.selected()
+        assert _sel_gw is not None  # 拖放完成后新节点处于选中态
+        gateway = editor.diagram().node(_sel_gw)
         ok("拖出来的「判断」是网关菱形",
            gateway is not None and gateway.is_gateway,
            str(gateway and gateway.kind))
@@ -860,7 +887,8 @@ def run(ctx) -> None:
     detail = ctx.d
     ok("详情页页头有「查看/编辑流程」入口",
        hasattr(detail, "flow_button") and "流程" in detail.flow_button.toolTip(),
-       getattr(detail, "flow_button", None) and detail.flow_button.toolTip())
+       getattr(detail, "flow_button", None)
+       and detail.flow_button.toolTip() or "")
     ok("详情页能读出本任务流程图（弹窗的数据源）",
        len(page.store.task_diagram(detail.task_id).nodes) > 0)
     ok("store.save_task_diagram 存在（改流程要能落盘）",
@@ -917,11 +945,14 @@ def run(ctx) -> None:
     ok("清空名字（有 PDF）后提示改说用文件名",
        ctx.pdf.stem in ctx_page.name_hint.text(),
        ctx_page.name_hint.text())
+    _panel_layout = ctx_page.panel.layout()
+    _page_layout = ctx_page.layout()
+    assert _panel_layout is not None and _page_layout is not None  # 布局必然已建
     ok("面板在页面内不带第二层边距（「创建任务」与「任务名称」左对齐）",
-       ctx_page.panel.layout().contentsMargins().left() == 0
-       and ctx_page.layout().contentsMargins().left() > 0,
-       f"panel={ctx_page.panel.layout().contentsMargins().left()} "
-       f"page={ctx_page.layout().contentsMargins().left()}")
+       _panel_layout.contentsMargins().left() == 0
+       and _page_layout.contentsMargins().left() > 0,
+       f"panel={_panel_layout.contentsMargins().left()} "
+       f"page={_page_layout.contentsMargins().left()}")
     # 流程编辑**内嵌**：不弹窗、预览让位
     ctx_page.panel.set_custom_mode(True)
     app.processEvents()
@@ -929,6 +960,7 @@ def run(ctx) -> None:
     app.processEvents()
     ok("「编辑流程」就地展开在本页里（编辑器已建）",
        ctx_page.panel._editor is not None)
+    assert ctx_page.panel._editor is not None  # 上一条 ok 已断言编辑器已建
     ok("进编辑态时流程预览让位（不与编辑器同屏）",
        ctx_page.panel._editor_host.isVisible()
        and ctx_page.panel.flow_scroll.isHidden()
@@ -961,6 +993,7 @@ def run(ctx) -> None:
     ok("流程页的编辑器不会去关整页（close_window=False）",
        flow_page._panel is not None
        and flow_page._panel._close_window_on_end is False)
+    assert flow_page._panel is not None  # 上一条 ok 已断言面板已建
     # 保存 → 落盘
     before = len(page.store.task_diagram(detail.task_id).nodes)
     flow_page._panel.accept()
@@ -1147,6 +1180,8 @@ def _check_source_pdf_pairing() -> None:
 
     from PySide6.QtWidgets import QApplication, QMessageBox
 
+    from desktop.pages.taskdetail.page import TaskDetailPage
+    from desktop.pages.taskflow.page import TaskFlowPage
     from desktop.shell import ModuleShell
     from desktop.store.store import TaskStore
     from desktop.ui import theme as theme
@@ -1165,6 +1200,7 @@ def _check_source_pdf_pairing() -> None:
         shell.show()
         app.processEvents()
         page = shell.detail_page
+        assert isinstance(page, TaskDetailPage)  # 壳层惰性建的详情页
         silence_source_prompt(page)
 
         with_pdf = store.create_task(source_path="", source_hash="",
@@ -1200,29 +1236,32 @@ def _check_source_pdf_pairing() -> None:
         ok("「检测文本框」打头 ⇒ 页头只显示图片输入和文件输入（规则②）",
            not page.insert_dir_button.isHidden())
         ok("检测打头 ⇒ 检测页左下角「＋/📁」显示（入口要图片，规则③）",
-           _viewer_entry_button(page.detect_viewer, "插入图片（可多选）")
-           is not None
-           and not _viewer_entry_button(
-               page.detect_viewer, "插入图片（可多选）").isHidden()
-           and _viewer_entry_button(
-               page.detect_viewer, "把一个文件夹里的图片批量插入") is not None
-           and not _viewer_entry_button(
-               page.detect_viewer,
-               "把一个文件夹里的图片批量插入").isHidden())
+           (_btn_img := _viewer_entry_button(
+               page.detect_viewer, "插入图片（可多选）")) is not None
+           and not _btn_img.isHidden()
+           and (_btn_dir := _viewer_entry_button(
+               page.detect_viewer, "把一个文件夹里的图片批量插入")) is not None
+           and not _btn_dir.isHidden())
 
         # ---- ③④ 成对删除（正反两向）----
         # ⚠️ 确认框替成"是"：不替的话 ``ask_delete_selected`` 会挂住整个自测
         #    （离屏下真弹模态＝看门狗 os._exit(3)）。
-        QMessageBox.question = staticmethod(
+        QMessageBox.question = staticmethod(  # type: ignore[reportAttributeAccessIssue]  # 测试替身：把确认框换成自动答「是」，离屏不许真弹模态
             lambda *a, **k: QMessageBox.StandardButton.Yes)
 
         def names_after_deleting(task_id: str, node_id: str) -> list[str]:
             """选中原生节点 → 走工具栏那条删除路径 → 剩下哪些节点名。"""
+            from desktop.pages.taskflow.page import TaskFlowPage
+
             shell.open_detail(task_id)
             app.processEvents()
             shell.open_flow(task_id)
             app.processEvents()
-            editor = shell.flow_page()._panel.editor_panel.editor()
+            _flow_page = shell.flow_page()
+            assert isinstance(_flow_page, TaskFlowPage)  # 壳层惰性建的流程页
+            assert _flow_page._panel is not None  # 打开后面板必然已建
+            editor = _flow_page._panel.editor_panel.editor()
+            assert editor is not None  # 打开后编辑器必然已建
             editor.set_selected(node_id)
             editor.ask_delete_selected()
             app.processEvents()
@@ -1243,7 +1282,11 @@ def _check_source_pdf_pairing() -> None:
         app.processEvents()
         shell.open_flow(with_pdf)
         app.processEvents()
-        editor = shell.flow_page()._panel.editor_panel.editor()
+        _flow_page = shell.flow_page()
+        assert isinstance(_flow_page, TaskFlowPage)  # 壳层惰性建的流程页
+        assert _flow_page._panel is not None  # 打开后面板必然已建
+        editor = _flow_page._panel.editor_panel.editor()
+        assert editor is not None  # 打开后编辑器必然已建
         editor.set_selected("ex")
         editor.remove_selected()
         app.processEvents()
@@ -1299,6 +1342,7 @@ def _check_end_event_cascade() -> None:
 
     from PySide6.QtWidgets import QApplication, QMessageBox
 
+    from desktop.components.bpmn_editor import BpmnEditor
     from desktop.shell import ModuleShell
     from desktop.store.store import TaskStore
     from tests.selftests._context import ok, silence_source_prompt
@@ -1320,15 +1364,22 @@ def _check_end_event_cascade() -> None:
                                     name="带收尾")
         (store.task_dir(task_id) / "flow.bpmn").write_text(
             _FLOW_PRINT_WITH_END, encoding="utf-8")
-        QMessageBox.question = staticmethod(
+        QMessageBox.question = staticmethod(  # type: ignore[reportAttributeAccessIssue]  # 测试替身：把确认框换成自动答「是」，离屏不许真弹模态
             lambda *a, **k: QMessageBox.StandardButton.Yes)
 
-        def open_editor() -> object:
+        def open_editor() -> BpmnEditor:
+            from desktop.pages.taskflow.page import TaskFlowPage
+
             shell.open_detail(task_id)
             app.processEvents()
             shell.open_flow(task_id)
             app.processEvents()
-            return shell.flow_page()._panel.editor_panel.editor()
+            _flow_page = shell.flow_page()
+            assert isinstance(_flow_page, TaskFlowPage)  # 壳层惰性建的流程页
+            assert _flow_page._panel is not None  # 打开后面板必然已建
+            editor = _flow_page._panel.editor_panel.editor()
+            assert editor is not None  # 打开后编辑器必然已建
+            return editor
 
         # ---- ① 工具栏删除路径：删「PDF排版」⇒「生成PDF」跟着没了 ----
         editor = open_editor()
@@ -1373,7 +1424,7 @@ def _check_end_event_cascade() -> None:
             seen["text"] = args[2] if len(args) > 2 else kwargs.get("text", "")
             return QMessageBox.StandardButton.Yes
 
-        QMessageBox.question = staticmethod(spy_question)
+        QMessageBox.question = staticmethod(spy_question)  # type: ignore[reportAttributeAccessIssue]  # 测试替身：换成记录确认框文案的探针，离屏不许真弹模态
         editor.set_selected("pr")
         editor.ask_delete_selected()
         app.processEvents()
@@ -1406,6 +1457,7 @@ def _check_prompt_picks_folder() -> None:
     from PySide6.QtTest import QTest
     from PySide6.QtWidgets import QApplication, QFileDialog
 
+    from desktop.pages.taskdetail.page import TaskDetailPage
     from desktop.shell import ModuleShell
     from desktop.store.store import TaskStore
     from tests.selftests._context import ok, silence_source_prompt
@@ -1434,11 +1486,13 @@ def _check_prompt_picks_folder() -> None:
             _FLOW_DETECT_FIRST, encoding="utf-8")
 
         page = shell.detail_page
+        assert isinstance(page, TaskDetailPage)  # 壳层惰性建的详情页
         silence_source_prompt(page)
         shell.open_detail(tid)
         app.processEvents()
 
         prompt = page._source_prompt
+        assert prompt is not None  # 缺源任务进详情后提示层必然已建
         ok("第一步不吃 PDF ⇒ 判据是「缺图片」",
            page._missing_input_kind() == "images",
            repr(page._missing_input_kind()))
@@ -1448,9 +1502,9 @@ def _check_prompt_picks_folder() -> None:
 
         # ---- 真点一次，记录开的是哪个对话框 ----
         opened: list[str] = []
-        QFileDialog.getExistingDirectory = staticmethod(
+        QFileDialog.getExistingDirectory = staticmethod(  # type: ignore[reportAttributeAccessIssue]  # 测试替身：把目录框换成记录器，离屏不许真弹
             lambda *a, **k: (opened.append("目录"), str(source))[1])
-        QFileDialog.getOpenFileNames = staticmethod(
+        QFileDialog.getOpenFileNames = staticmethod(  # type: ignore[reportAttributeAccessIssue]  # 测试替身：把文件框换成记录器，离屏不许真弹
             lambda *a, **k: (opened.append("文件"), ([], ""))[1])
         prompt.show_prompt()
         app.processEvents()
@@ -1516,6 +1570,7 @@ def _check_input_entry_marks() -> None:
     from PySide6.QtWidgets import QApplication
     from qfluentwidgets import ToolButton
 
+    from desktop.pages.taskdetail.page import TaskDetailPage
     from desktop.shell import ModuleShell
     from desktop.store.store import TaskStore
     from desktop.ui import theme as theme
@@ -1535,6 +1590,7 @@ def _check_input_entry_marks() -> None:
 
         tid = store.create_task(source_path="", source_hash="", name="红框")
         page = shell.detail_page
+        assert isinstance(page, TaskDetailPage)  # 壳层惰性建的详情页
         silence_source_prompt(page)
         shell.open_detail(tid)
         app.processEvents()
@@ -1574,13 +1630,13 @@ def _check_input_entry_marks() -> None:
            and page.insert_button.isHidden()
            and page.insert_dir_button.isHidden())
         ok("检测页左下角「＋/📁」藏起来（不是入口步骤，规则③）",
-           _viewer_entry_button(page.detect_viewer,
-                                "插入图片（可多选）") is not None
-           and _viewer_entry_button(page.detect_viewer,
-                                    "插入图片（可多选）").isHidden()
-           and _viewer_entry_button(
+           (_btn_img := _viewer_entry_button(
+               page.detect_viewer, "插入图片（可多选）")) is not None
+           and _btn_img.isHidden()
+           and (_btn_dir := _viewer_entry_button(
                page.detect_viewer,
-               "把一个文件夹里的图片批量插入").isHidden())
+               "把一个文件夹里的图片批量插入")) is not None
+           and _btn_dir.isHidden())
 
         # ---- ③「打开任务数据目录」在右下角（底部状态条最右端）----
         ok("「打开任务数据目录」已挂进底部状态条",
@@ -1618,6 +1674,7 @@ def _check_insert_from_folder() -> None:
     from PySide6.QtWidgets import QApplication, QFileDialog
     from qfluentwidgets import ToolButton
 
+    from desktop.pages.taskdetail.page import TaskDetailPage
     from desktop.shell import ModuleShell
     from desktop.store.store import TaskStore
     from tests.selftests._context import ok, silence_source_prompt
@@ -1646,10 +1703,13 @@ def _check_insert_from_folder() -> None:
             _FLOW_REMBG_FIRST, encoding="utf-8")
 
         page = shell.detail_page
+        assert isinstance(page, TaskDetailPage)  # 壳层惰性建的详情页
         silence_source_prompt(page)
         shell.open_detail(tid)
         app.processEvents()
-        page._select_stage(page.bar_index_of_step("rembg"))
+        _bar_idx = page.bar_index_of_step("rembg")
+        assert _bar_idx is not None  # 流程里有「图片去底色」这一格
+        page._select_stage(_bar_idx)
         app.processEvents()
 
         # ---- ① 按钮在（提示语要说清是"文件夹"）----
@@ -1658,7 +1718,7 @@ def _check_insert_from_folder() -> None:
            any("文件夹" in t for t in tips), str(tips))
 
         # ---- ②③④ 走真实导入链路 ----
-        QFileDialog.getExistingDirectory = staticmethod(
+        QFileDialog.getExistingDirectory = staticmethod(  # type: ignore[reportAttributeAccessIssue]  # 测试替身：把目录框换成固定返回，离屏不许真弹
             lambda *a, **k: str(source))
         page.insert_pages_from_folder()
         _pump(app)
@@ -1666,7 +1726,8 @@ def _check_insert_from_folder() -> None:
         target = page._current_stage_input_dir()
         ok("去底色作为入口节点时，输入目录是入口图片目录",
            target is not None and target.name == "input", str(target))
-        copied = sorted(p.name for p in target.iterdir()) if target else []
+        assert target is not None  # 上一条 ok 已断言目录存在
+        copied = sorted(p.name for p in target.iterdir())
         ok("整个目录被展开复制（非图片被忽略）",
            copied == ["0001.jpg", "0002.png", "0003.jpg"], str(copied))
         ok("清单按文件名排序（页序稳定，不靠目录枚举顺序）",
@@ -1679,7 +1740,7 @@ def _check_insert_from_folder() -> None:
            str([p.name for p in page._manifest_paths()]))
 
         # ---- 再选一次输入目录本身：不得重复 ----
-        QFileDialog.getExistingDirectory = staticmethod(
+        QFileDialog.getExistingDirectory = staticmethod(  # type: ignore[reportAttributeAccessIssue]  # 测试替身：把目录框换成固定返回，离屏不许真弹
             lambda *a, **k: str(target))
         page.insert_pages_from_folder()
         _pump(app)
@@ -1730,6 +1791,8 @@ def _check_flow_saved_refreshes_bar() -> None:
 
     from PySide6.QtWidgets import QApplication
 
+    from desktop.pages.taskdetail.page import TaskDetailPage
+    from desktop.pages.taskflow.page import TaskFlowPage
     from desktop.shell import ModuleShell
     from desktop.store.store import TaskStore
     from tests.selftests._context import ok, silence_source_prompt
@@ -1751,6 +1814,7 @@ def _check_flow_saved_refreshes_bar() -> None:
             _FLOW_4_SLOTS, encoding="utf-8")
 
         page = shell.detail_page
+        assert isinstance(page, TaskDetailPage)  # 壳层惰性建的详情页
         silence_source_prompt(page)
         shell.open_detail(tid)
         app.processEvents()
@@ -1759,7 +1823,9 @@ def _check_flow_saved_refreshes_bar() -> None:
            before == ["detect", "rembg", "imposition", "print"], str(before))
 
         # 停在 detect 并标记完成（重建后要靠 key 找回这两样）
-        page._select_stage(page.bar_index_of_step("detect"))
+        _bar_idx = page.bar_index_of_step("detect")
+        assert _bar_idx is not None  # 四格流程里必有「检测文本框」
+        page._select_stage(_bar_idx)
         page.step_bar.mark_completed(0)
         app.processEvents()
 
@@ -1770,13 +1836,15 @@ def _check_flow_saved_refreshes_bar() -> None:
         ok("流程页打开的是本任务的流程",
            getattr(flow_page, "_task_id", None) == tid,
            str(getattr(flow_page, "_task_id", None)))
-
+        assert isinstance(flow_page, TaskFlowPage)  # 壳层惰性建的流程页
+        assert flow_page._panel is not None  # 打开后面板必然已建
         editor = flow_page._panel.editor_panel.editor()
+        assert editor is not None  # 打开后编辑器必然已建
         new = copy.deepcopy(editor.diagram())
         victim = next(n for n in new.nodes if n.stage == "imposition")
-        new.nodes = [n for n in new.nodes if n.id != victim.id]
-        new.flows = [f for f in new.flows
-                     if f.source != victim.id and f.target != victim.id]
+        new.nodes = tuple(n for n in new.nodes if n.id != victim.id)
+        new.flows = tuple(f for f in new.flows
+                          if f.source != victim.id and f.target != victim.id)
         editor.set_diagram(new)
         flow_page._on_done(True)
         app.processEvents()
@@ -1855,9 +1923,9 @@ def _rebuild_keeps_highlight(page, store, task_id: str) -> bool:
     if victim is None:
         return False
     trimmed = FlowDiagram(
-        nodes=[n for n in diagram.nodes if n.id != victim.id],
-        flows=[f for f in diagram.flows
-               if f.source != victim.id and f.target != victim.id],
+        nodes=tuple(n for n in diagram.nodes if n.id != victim.id),
+        flows=tuple(f for f in diagram.flows
+                    if f.source != victim.id and f.target != victim.id),
     )
     store.save_task_diagram(task_id, trimmed)
 
@@ -1912,6 +1980,7 @@ def _check_clear_pdf(create_page, sample_pdf) -> None:
     ok("创建页有「清除已选 PDF」的入口",
        button is not None and "PDF" in button.toolTip(),
        button.toolTip() if button is not None else "无按钮")
+    assert button is not None  # 上一条 ok 已断言按钮存在
     ok("没选文件时清除按钮不出现（没东西可清）",
        button.isHidden(), f"visible={button.isVisible()}")
 
@@ -1973,6 +2042,7 @@ def _check_first_entry_shows_prompt(app) -> None:
     import tempfile as _tempfile
 
     from desktop.app import WINDOW_SIZE
+    from desktop.pages.taskdetail.page import TaskDetailPage
     from desktop.shell import ModuleShell
     from desktop.store import TaskStore
     from tests.selftests._context import ok
@@ -1988,9 +2058,16 @@ def _check_first_entry_shows_prompt(app) -> None:
         shell.resize(WINDOW_SIZE)
         shell.show()
         app.processEvents()
+        # ⚠️ **必须等 resize/show 之后再取**：``shell.detail_page`` 是**惰性构造**
+        #    的（第一次访问才建），提前取会在壳层还是默认 640×480 时把详情页
+        #    建出来，页头卡片按错尺寸布局 ⇒ 遮罩上沿差几像素（本用例的
+        #    "第一次 vs 再进来几何一致" 当场就挂）。取到之后是同一个对象，
+        #    后面反复用没问题。
+        _page = shell.detail_page
+        assert isinstance(_page, TaskDetailPage)  # 壳层惰性建的详情页
 
         def prompt_state() -> tuple:
-            prompt = shell.detail_page._source_prompt
+            prompt = _page._source_prompt
             if prompt is None:
                 return (False, None)
             return (prompt.isVisible(), prompt.geometry().getRect())
@@ -1999,7 +2076,7 @@ def _check_first_entry_shows_prompt(app) -> None:
         shell.open_detail(empty_id)
         app.processEvents()
         visible, rect = prompt_state()
-        page = shell.detail_page
+        page = _page
         ok("**第一次**进入缺源任务就弹出提示层（此前零次）",
            visible is True, f"visible={visible}")
         ok("第一次弹出的遮罩有**实际高度**（不是布局未就绪时的 0 高）",
@@ -2028,7 +2105,9 @@ def _check_first_entry_shows_prompt(app) -> None:
            f"visible={visible_again} rect={rect_again} vs {rect}")
 
         # ---- ④ 答「稍后再说」后切走再回来：每次进入都弹 ----
-        shell.detail_page._source_prompt.dismiss()
+        _prompt_now = _page._source_prompt
+        assert _prompt_now is not None  # ③ 回到缺源任务后提示层必然还在
+        _prompt_now.dismiss()
         app.processEvents()
         shell.open_detail(full_id)
         app.processEvents()
@@ -2040,13 +2119,14 @@ def _check_first_entry_shows_prompt(app) -> None:
            f"visible={visible_third} rect={rect_third}")
 
         # ---- ⑤ 窗口尺寸变了，遮罩要跟着重铺 ----
-        prompt = shell.detail_page._source_prompt
+        prompt = _page._source_prompt
+        assert prompt is not None  # 提示层仍在（上面刚验证过每次进入都弹）
         shell.resize(1200, 700)
         app.processEvents()
         ok("窗口拉小后遮罩跟着重铺（不是留在旧尺寸上）",
-           prompt.geometry().width() == shell.detail_page.width(),
+           prompt.geometry().width() == _page.width(),
            f"mask={prompt.geometry().getRect()} "
-           f"page={shell.detail_page.width()}")
+           f"page={_page.width()}")
     finally:
         shell.shutdown_workers()
         shell.close()
@@ -2060,6 +2140,7 @@ def _check_open_create_resets() -> None:
     **壳层真的调了它**。少一步就会出现"复位方法写得挺好、但没人调用"——
     那种改动自测一片绿、用户照旧看见上一次的表单。
     """
+    from desktop.pages.createtask.page import CreateTaskPage
     from desktop.shell import ModuleShell
     from desktop.store import TaskStore
     from tests.selftests._context import ok
@@ -2070,6 +2151,7 @@ def _check_open_create_resets() -> None:
     try:
         shell.open_create()
         page = shell.create_page()
+        assert isinstance(page, CreateTaskPage)  # 壳层惰性建的创建页
         page.set_name("上一次的书")
         page.panel.set_custom_mode(True)
         # 第二次进入（模拟建完一个任务后回来再建）
@@ -2155,26 +2237,32 @@ def _check_create_page_reset(create_page, sample_pdf) -> None:
     # 原地改图的）。现在：复位销毁编辑器 + 每次进编辑从当前图重建。
     create_page.panel.set_custom_mode(True)
     create_page.panel._on_edit_flow()
-    editor = create_page.panel._editor.editor_panel.editor()
+    _flow_editor = create_page.panel._editor
+    assert _flow_editor is not None  # _on_edit_flow 后编辑器必然已建
+    editor = _flow_editor.editor_panel.editor()
+    assert editor is not None  # 编辑态必然有编辑器
     editor.add_node(name="上一本书才有的步骤")
-    create_page.panel._editor.accept()         # 「保存流程」→ 回写 _custom_diagram
+    _flow_editor.accept()         # 「保存流程」→ 回写 _custom_diagram
     ok("先摆出事故现场：编辑器里加过节点并保存",
        any(n.name == "上一本书才有的步骤"
            for n in create_page.panel._custom_diagram.nodes))
     create_page.panel.reset()                  # 建完任务再进来（open_create 会调）
     create_page.panel._on_edit_flow()
-    editor_again = create_page.panel._editor.editor_panel.editor()
+    _flow_editor2 = create_page.panel._editor
+    assert _flow_editor2 is not None  # 再次 _on_edit_flow 后编辑器必然已建
+    editor_again = _flow_editor2.editor_panel.editor()
+    assert editor_again is not None  # 编辑态必然有编辑器
     ok("编过流程并复位后，再进编辑器显示的是当前初值（不是上一次编的图）",
        all(n.name != "上一本书才有的步骤"
            for n in editor_again.diagram().nodes),
-       [n.name for n in editor_again.diagram().nodes])
+       str([n.name for n in editor_again.diagram().nodes]))
     # 「关闭」= 丢弃：在编辑器里改的不能漏进 _custom_diagram（它是副本）
     editor_again.add_node(name="这次不要了")
-    create_page.panel._editor._close()         # 「关闭」（不保存）
+    _flow_editor2._close()         # 「关闭」（不保存）
     ok("编辑器里改了但「关闭」＝丢弃（_custom_diagram 不被原地污染）",
        all(n.name != "这次不要了"
            for n in create_page.panel._custom_diagram.nodes),
-       [n.name for n in create_page.panel._custom_diagram.nodes])
+       str([n.name for n in create_page.panel._custom_diagram.nodes]))
 
 
 def _check_pdf_button_icon(detail) -> None:
@@ -2264,7 +2352,7 @@ def _check_source_pick_flow(store, pdf, app) -> None:
         prompt_calls = silence_source_prompt(probe)
         ok("能进详情页", probe.set_task(tid) is True)
         ok("**有**源文件的任务不弹「缺源 PDF」提示（提示层压根没建）",
-           prompt_calls and probe._source_prompt is None,
+           bool(prompt_calls) and probe._source_prompt is None,
            f"calls={len(prompt_calls)} "
            f"prompt={probe._source_prompt}")
         kept = store.get_task(tid)["source_path"]
@@ -2293,7 +2381,7 @@ def _check_source_pick_flow(store, pdf, app) -> None:
            probe2._duplicate_source_needs_confirm(
                store.get_task(tid_other)) is False)
         # 答「取消」⇒ 什么都不做
-        probe2._confirm_duplicate_source = lambda _s, _o: False
+        probe2._confirm_duplicate_source = lambda source, other: False
         probe2._pending_source = pdf
         probe2._on_source_hash_ready(str(pdf), real_hash)
         app.processEvents()
@@ -2301,7 +2389,7 @@ def _check_source_pick_flow(store, pdf, app) -> None:
            store.get_task(tid_other)["source_path"] == before,
            store.get_task(tid_other)["source_path"])
         # 答「仍然使用」⇒ 换源（与外层查重确认同一个模式）
-        probe2._confirm_duplicate_source = lambda _s, _o: True
+        probe2._confirm_duplicate_source = lambda source, other: True
         probe2._pending_source = pdf
         probe2._on_source_hash_ready(str(pdf), real_hash)
         app.processEvents()
@@ -2316,7 +2404,7 @@ def _check_source_pick_flow(store, pdf, app) -> None:
         # ---- 新的 PDF：先确认、换了之后指纹写进索引、后续节点数据清空 ----
         (store.task_dir(tid) / "pages.json").write_text("[]", encoding="utf-8")
         # 挡住确认框（离屏不许真弹）：用户答"不换"
-        probe._confirm_replace_source = lambda _p: False
+        probe._confirm_replace_source = lambda source: False
         probe._pending_source = other
         probe._on_source_hash_ready(str(other), other_hash)
         app.processEvents()
@@ -2326,7 +2414,7 @@ def _check_source_pick_flow(store, pdf, app) -> None:
         ok("用户答「不换」⇒ 旧书的中间产物也还在（没白清）",
            (store.task_dir(tid) / "pages.json").exists())
         # 用户答"换"
-        probe._confirm_replace_source = lambda _p: True
+        probe._confirm_replace_source = lambda source: True
         probe._pending_source = other
         probe._on_source_hash_ready(str(other), other_hash)
         app.processEvents()
@@ -2415,7 +2503,7 @@ def _check_shell_task(store, pdf, app) -> None:
     ok("没给名字时默认名是「任务#<实际任务号>」",
        record.get("name") == f"任务#{tid}", repr(record.get("name")))
     ok("⚠️ 名字里的序号用的是**实际分配到的号**（不是预测值）",
-       record.get("name", "").endswith(tid), record.get("name"))
+       record.get("name", "").endswith(tid), str(record.get("name")))
     ok("没给 PDF 时source_path 存空串（不是 '.' 那类假路径）",
        record.get("source_path") == "", repr(record.get("source_path")))
 
@@ -2441,7 +2529,7 @@ def _check_shell_task(store, pdf, app) -> None:
     store.rename_task(tid2, "  ")
     ok("空壳任务清空名字回落到「任务#号」（不是留空、也不是文件名）",
        (store.get_task(tid2) or {}).get("name") == f"任务#{tid2}",
-       (store.get_task(tid2) or {}).get("name"))
+       str((store.get_task(tid2) or {}).get("name")))
     # 详情页对空壳任务的处理
     from desktop.pages.taskdetail.page import TaskDetailPage
     from desktop.steps.flow import default_flow_path
@@ -2462,6 +2550,7 @@ def _check_shell_task(store, pdf, app) -> None:
         ok("进空壳任务详情时**弹出**了「缺源 PDF」提示层（用户 2026-10-06）",
            prompt is not None and prompt.isVisible(),
            f"prompt={prompt} calls={len(prompt_calls)}")
+        assert prompt is not None  # 上一条 ok 已断言提示层已弹出
         # ---- 用户截图三条：遮罩完整 / 盖住流程条 / 按钮在遮罩之上 ----
         geo = prompt.geometry() if prompt else None
         # ⚠️ 「内容区上沿」用**根布局里主体那一行**（页头之后那项）的位置，
@@ -2521,7 +2610,7 @@ def _check_shell_task(store, pdf, app) -> None:
         from PySide6.QtCore import QPointF, QEvent as QEventEnum
 
         ev = QMouseEvent(
-            QEventEnum.MouseButtonPress, QPointF(prompt.width() / 2,
+            QEventEnum.Type.MouseButtonPress, QPointF(prompt.width() / 2,
                                                 prompt.height() / 2),
             Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
             Qt.KeyboardModifier.NoModifier,
@@ -2553,11 +2642,11 @@ def _check_shell_task(store, pdf, app) -> None:
         origin = prompt.card.pos()
         center = prompt.card.rect().center()
         for _kind, _pos, _btn, _btns in (
-            (_QE.MouseButtonPress, QPointF(center),
+            (_QE.Type.MouseButtonPress, QPointF(center),
              Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton),
-            (_QE.MouseMove, QPointF(center + QPoint(90, 45)),
+            (_QE.Type.MouseMove, QPointF(center + QPoint(90, 45)),
              Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton),
-            (_QE.MouseButtonRelease, QPointF(center + QPoint(90, 45)),
+            (_QE.Type.MouseButtonRelease, QPointF(center + QPoint(90, 45)),
              Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton),
         ):
             app.sendEvent(prompt.card, _QMouseEvent(
@@ -2643,7 +2732,7 @@ def _check_shell_task(store, pdf, app) -> None:
         # ⚠️ 造两个"待写"标记：set_task 开头的 flush 会把它们落盘。若换源
         #    只删文件不清标记，旧书的参数暂存/检测框就复活了。
         probe._draft_dirty = {0}
-        probe._pending_sizes = {"0001.jpg": [10, 20]}
+        probe._pending_sizes = {"0001.jpg": (10, 20)}
         probe._pending_boxes = {"0001.jpg": [[0, 0, 5, 5]]}
         probe._reset_artifacts_for_new_source()
         ok("换源文件清掉旧书的中间产物（否则界面混着两本书的结果）",
@@ -2745,27 +2834,30 @@ def _check_source_prompt_cycle(store, pdf, app) -> None:
                not probe.insert_button.isHidden()
                and not probe.insert_dir_button.isHidden())
             ok("缺图片 ⇒ 检测页左下角「＋/📁」显示（入口就是检测，规则③）",
-               _viewer_entry_button(probe.detect_viewer,
-                                    "插入图片（可多选）") is not None
-               and not _viewer_entry_button(
-                   probe.detect_viewer, "插入图片（可多选）").isHidden())
+               (_btn_img := _viewer_entry_button(
+                   probe.detect_viewer, "插入图片（可多选）")) is not None
+               and not _btn_img.isHidden())
             ok("缺图片 ⇒ 页头红字说的是图片（不是 PDF）",
                "图片" in probe.source_warning.text()
                and "PDF" not in probe.source_warning.text(),
                probe.source_warning.text())
+            _sp = probe._source_prompt
             ok("缺图片 ⇒ 提示层文案说图片，不说 PDF",
-               shown and "图片" in probe._source_prompt.title_label.text()
-               and "PDF" not in probe._source_prompt.title_label.text(),
-               probe._source_prompt.title_label.text() if shown else "")
+               shown and _sp is not None
+               and "图片" in _sp.title_label.text()
+               and "PDF" not in _sp.title_label.text(),
+               _sp.title_label.text() if _sp is not None else "")
             ok("缺图片 ⇒ 主按钮文案是**选择图片目录**（用户 2026-10-06）",
-               shown and probe._source_prompt.pick_button.text() == "选择图片目录",
-               probe._source_prompt.pick_button.text() if shown else "")
+               shown and _sp is not None
+               and _sp.pick_button.text() == "选择图片目录",
+               _sp.pick_button.text() if _sp is not None else "")
             # ⚠️ **文案与行为必须一致**：按钮写着"选目录"，点了就必须真开
             #    **目录**框。`getOpenFileNames` 选不了目录，所以这条钉的是
             #    `pick_kind` 传出去的值——它决定宿主走哪个 QFileDialog。
             ok("缺图片 ⇒ 该按钮声明自己要**目录框**（点下去开目录对话框）",
-               shown and probe._source_prompt._content.get("pick_kind") == "folder",
-               str(probe._source_prompt._content.get("pick_kind")))
+               shown and _sp is not None
+               and _sp._content.get("pick_kind") == "folder",
+               str(_sp._content.get("pick_kind")) if _sp is not None else "")
             # ---- 往入口目录放一张图 ⇒ 提示全收 ----
             entry = store.task_input_dir(no_pdf_flow)
             entry.mkdir(parents=True, exist_ok=True)

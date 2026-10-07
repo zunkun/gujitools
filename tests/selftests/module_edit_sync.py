@@ -44,7 +44,7 @@ def _png(path: Path, color: str, size: tuple[int, int] = (W, H)) -> Path:
     image = QImage(size[0], size[1], QImage.Format.Format_RGB32)
     image.fill(QColor(color))
     path.parent.mkdir(parents=True, exist_ok=True)
-    assert image.save(str(path), "PNG"), f"写不出测试图：{path}"
+    assert image.save(str(path), "PNG"), f"写不出测试图：{path}"  # type: ignore[reportCallIssue]  # 存根把 format 标成 bytes，运行时只收 str
     return path
 
 
@@ -455,7 +455,7 @@ def _pdf_mode(ctx, ok) -> None:
            str([t for t, _i, _s in items]))
         ok("提取页：PDF 页缩略图缓存目录仍按书分层（不被跨书污染）",
            # disk_key()：目录名锚在路由键上，不跟显示文案漂移
-           "thumbnails" in singletask_thumbnails_dir(page.SPEC.disk_key(), pdf).parts)
+           "thumbnails" in singletask_thumbnails_dir(getattr(page, "SPEC").disk_key(), pdf).parts)
     finally:
         _shutdown(page, app)
         page.deleteLater()

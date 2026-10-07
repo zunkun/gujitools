@@ -52,12 +52,12 @@ HANDLE_RADIUS = 6  # 手柄半径（控件像素）
 # 手柄光标：0~3 = 四角（左上/右上/右下/左下），4~7 = 四边（上/右/下/左）。
 # ⚠️ 四边手柄**只在取消「原比例缩放」时出现**（那时才允许单方向拉伸）。
 _CORNER_CURSORS = [
-    Qt.SizeFDiagCursor, Qt.SizeBDiagCursor,
-    Qt.SizeFDiagCursor, Qt.SizeBDiagCursor,
+    Qt.CursorShape.SizeFDiagCursor, Qt.CursorShape.SizeBDiagCursor,
+    Qt.CursorShape.SizeFDiagCursor, Qt.CursorShape.SizeBDiagCursor,
 ]
 _EDGE_CURSORS = [
-    Qt.SizeVerCursor, Qt.SizeHorCursor,
-    Qt.SizeVerCursor, Qt.SizeHorCursor,
+    Qt.CursorShape.SizeVerCursor, Qt.CursorShape.SizeHorCursor,
+    Qt.CursorShape.SizeVerCursor, Qt.CursorShape.SizeHorCursor,
 ]
 _HANDLE_CURSORS = _CORNER_CURSORS + _EDGE_CURSORS
 
@@ -252,7 +252,7 @@ class PrintLayoutCanvas(QWidget):
 
     # ------------------------------------------------------------------ 鼠标
     def mousePressEvent(self, event) -> None:  # noqa: N802
-        if self._image is None or event.button() != Qt.LeftButton:
+        if self._image is None or event.button() != Qt.MouseButton.LeftButton:
             return super().mousePressEvent(event)
         corner = self._hit_handle(event.position())
         if corner is not None:
@@ -270,7 +270,7 @@ class PrintLayoutCanvas(QWidget):
             mx, my = self._to_mm(event.position())
             self._grab_x = mx - self._rect_mm[0]
             self._grab_y = my - self._rect_mm[1]
-            self.setCursor(Qt.ClosedHandCursor)
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
             self.update()
             return
         return super().mousePressEvent(event)
@@ -300,9 +300,9 @@ class PrintLayoutCanvas(QWidget):
                 self.setCursor(_HANDLE_CURSORS[corner])
                 return
             if self._hit_rect(event.position()):
-                self.setCursor(Qt.OpenHandCursor)
+                self.setCursor(Qt.CursorShape.OpenHandCursor)
                 return
-            self.setCursor(Qt.ArrowCursor)
+            self.setCursor(Qt.CursorShape.ArrowCursor)
             return
         return super().mouseMoveEvent(event)
 
@@ -400,7 +400,7 @@ class PrintLayoutCanvas(QWidget):
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802
         if self._mode in ("move", "resize"):
             self._mode = None
-            self.setCursor(Qt.ArrowCursor)
+            self.setCursor(Qt.CursorShape.ArrowCursor)
             if self._dirty:
                 self.rect_changed.emit([round(v, 2) for v in self._rect_mm])
             self._dirty = False
@@ -423,7 +423,7 @@ class PrintLayoutCanvas(QWidget):
             painter.fillRect(page_rect, SKIP_COLOR)
             painter.setPen(SKIP_INK)
             painter.setFont(_pick_preview_font(14))
-            painter.drawText(page_rect, Qt.AlignCenter, "该页已跳过，不会输出到 PDF")
+            painter.drawText(page_rect, Qt.AlignmentFlag.AlignCenter, "该页已跳过，不会输出到 PDF")
             painter.end()
             return
         painter.fillRect(page_rect, PAGE_COLOR)

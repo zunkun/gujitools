@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -31,6 +32,10 @@ from desktop.ui import theme as T
 from desktop.ui.toast import show_toast
 from desktop.ui.widgets import Card, apply_to
 from desktop.workers import WorkerHost
+
+if TYPE_CHECKING:
+    from desktop.steps.spec import StepSpec
+    from desktop.steps.source_zone import SourceZone
 
 
 class ModulePage(QWidget, WorkerHost):
@@ -92,7 +97,7 @@ class ModulePage(QWidget, WorkerHost):
 
         # ⚠️ 「整幅输入区」要在建控制列**之前**建好：控制列里的 StepControl 会
         #    把它接管过去（共用同一块控件），顺序反了就会各建一块、显示两份。
-        self.input_zone = self._build_input()
+        self.input_zone: SourceZone | None = self._build_input()
         if self.input_zone is not None:
             root.addWidget(self.input_zone)
             # 拖到页面任何空白处也算拖进输入区（用户 2026-10-02 要的"拖进来"，
@@ -195,7 +200,7 @@ class ModulePage(QWidget, WorkerHost):
     def _build_preview(self) -> QWidget:  # pragma: no cover - 子类实现
         raise NotImplementedError
 
-    def _build_input(self) -> QWidget | None:
+    def _build_input(self) -> SourceZone | None:
         """可选的**整幅输入区**（默认没有，子类覆盖）。
 
         返回一个控件时，它会插在页头与左右分栏之间、**横跨整幅宽度**——左侧
@@ -320,7 +325,7 @@ class StepModulePage(ModulePage):
     """
 
     #: 本页对应的步骤元数据（子类必须给；页头文案也由它派生）
-    SPEC = None
+    SPEC: StepSpec | None = None
 
     #: 子类覆盖：空闲时状态行写什么（默认「尚未选择 + 输入物称呼」）
     def idle_text(self) -> str:
@@ -373,7 +378,10 @@ class StepModulePage(ModulePage):
         """页头下方横跨整幅的**大输入区**（共用组件，见 SourceZone）。"""
         from desktop.steps.source_zone import SourceZone
 
-        self.zone = SourceZone(self.SPEC)
+        spec = self.SPEC
+        # 子类必须声明 SPEC（本类只做基类，不直接实例化）
+        assert spec is not None, "步骤模块页必须声明 SPEC"
+        self.zone = SourceZone(spec)
         # 控件自己没走通（如选择对话框打不开）时用 toast 说话——大输入区
         # 自己只发信号，"怎么说给用户听"是页面的事。
         # ⚠️ **"用户取消了选择对话框"不会走到这里**（用户 2026-10-04）：
@@ -391,8 +399,11 @@ class StepModulePage(ModulePage):
         """右栏：整块交给共用步骤控件（面板 + 输出目录 + 执行/中断）。"""
         from desktop.steps.control import StepControl
 
+        spec = self.SPEC
+        # 子类必须声明 SPEC（本类只做基类，不直接实例化）
+        assert spec is not None, "步骤模块页必须声明 SPEC"
         card = Card()
-        self.control = StepControl(self.SPEC, zone=self.zone)
+        self.control = StepControl(spec, zone=self.zone)
         # StepControl 只发信号、不弹提示；页头状态行与日志区由本页呈现
         self.control.status.connect(self.status)
         self.control.log.connect(self.log)
@@ -416,7 +427,10 @@ class StepModulePage(ModulePage):
             return
         detail = self.source_summary(source)
         self.header.set_subtitle(detail or self.SUBTITLE)
-        self.status(f"已选择{self.SPEC.input_noun()}，点击「{self.SPEC.run_text()}」",
+        spec = self.SPEC
+        # 子类必须声明 SPEC（本类只做基类，不直接实例化）
+        assert spec is not None, "步骤模块页必须声明 SPEC"
+        self.status(f"已选择{spec.input_noun()}，点击「{spec.run_text()}」",
                     "info")
 
     def source_summary(self, source) -> str:
@@ -463,6 +477,12 @@ class _ModuleHeader(QWidget):
     结构与 ``PageHeader`` 保持一致（title_label / subtitle_label / actions），
     子类/壳层的用法不必分两套。
     """
+
+    if TYPE_CHECKING:
+        # ⚠️ ``actions`` 遮住了基类 QWidget.actions() 方法（同 PageHeader.actions
+        # 的情况），类型检查器会按基类方法解析 → 判成「布局没有 addWidget」。
+        # 这条类型侧声明把它钉回布局，只影响类型检查。
+        actions: QHBoxLayout
 
     def __init__(self, title: str, subtitle: str = "", parent=None):
         super().__init__(parent)

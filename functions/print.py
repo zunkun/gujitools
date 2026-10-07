@@ -9,7 +9,7 @@
 import os
 from pathlib import Path
 from typing import List, Optional, Tuple
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 
 from fpdf.syntax import DestinationXYZ
 from PIL import Image, ImageOps
@@ -212,6 +212,7 @@ class PrintFunction(FunctionBase):
                 self.input, None, self.is_file, self.default_temp_name
             )
         self.outpath = out_dir / pdf_name
+        assert self.outpath is not None
         self.outpath.parent.mkdir(parents=True, exist_ok=True)
 
     def execute(self) -> dict:
@@ -224,6 +225,7 @@ class PrintFunction(FunctionBase):
         """
         input_dir = self.input
         output_pdf = self.outpath
+        assert output_pdf is not None
 
         paper_size = self.command_args.get("paper_size", "A4")
         orient_map = {"landscape": "L", "l": "L", "portrait": "P", "p": "P"}
@@ -244,6 +246,7 @@ class PrintFunction(FunctionBase):
             self.command_args.get("page_margins") or margin_default,
             default=margin_default,
         )
+        assert margins is not None
         # ⚠️ normalize_margin(None) 会回落默认 [20,20,20,20]，直接对左右页调用
         # 会让「未填左右页」变成「左右页都是默认 20」——于是通用页边距
         # 永远不生效（曾经的实际行为）。只在用户真的填了才解析。
@@ -554,7 +557,7 @@ class PrintFunction(FunctionBase):
         #    数线性增长——2400 页的书就是几十 GB，直接 OOM。
         #    现在只保留 `workers` 张在飞、按序号消费，写完立刻丢掉引用。
         executor = ThreadPoolExecutor(max_workers=workers)
-        pending: dict[int, object] = {}
+        pending: dict[int, Future[dict | None]] = {}
         submit_cursor = 0
 
         def _submit_until_window_full() -> None:
@@ -691,7 +694,7 @@ class PrintFunction(FunctionBase):
                     max(1, int(w * scale)),
                     max(1, int(h * scale)),
                 )
-                img = img.resize(target, Image.LANCZOS)
+                img = img.resize(target, Image.Resampling.LANCZOS)
             return {"idx": idx, "img": img, "path": path, "size": img.size}
         except Exception as e:
             print(f"加载图片失败 {path}: {e}")

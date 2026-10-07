@@ -54,8 +54,8 @@ def _qimage_rgb_array(image):
     import numpy as np
     from PySide6.QtGui import QImage
 
-    if image.format() != QImage.Format_RGB32:
-        image = image.convertToFormat(QImage.Format_RGB32)
+    if image.format() != QImage.Format.Format_RGB32:
+        image = image.convertToFormat(QImage.Format.Format_RGB32)
     height, width = image.height(), image.width()
     stride = image.bytesPerLine()
     buffer = np.frombuffer(image.constBits(), np.uint8)
@@ -92,12 +92,12 @@ def _save_step4_thumb(image, name: str, thumb_dir: Path) -> None:
     try:
         small = image.scaled(
             THUMBNAIL_EDGE, THUMBNAIL_EDGE,
-            Qt.KeepAspectRatio, Qt.SmoothTransformation,
+            Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation,
         )
         buf = QBuffer()
         buf.open(QIODevice.OpenModeFlag.WriteOnly)
         small.save(buf, "JPG", quality=80)
-        write_bytes_atomic(thumb_dir / f"{Path(name).stem}.jpg", bytes(buf.data()))
+        write_bytes_atomic(thumb_dir / f"{Path(name).stem}.jpg", bytes(buf.data().data()))
     except Exception:  # noqa: BLE001 - 加速件不许拖垮主流程
         pass
 

@@ -145,6 +145,7 @@ def run(ctx) -> None:
     print_index = fresh.bar_index_of_step("print")
     ok("第四步的格序是 4（不是 3：格序含拼版占位）",
        print_index == 4, str(print_index))
+    assert print_index is not None      # ⚠️ 上一行已判过等于 4
     fresh._select_stage(print_index)
     app.processEvents()
     ok("切到第四步时第四步面板才被构造",

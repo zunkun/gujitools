@@ -36,7 +36,7 @@ from __future__ import annotations
 import hashlib
 import os
 from pathlib import Path
-from typing import BinaryIO
+from typing import BinaryIO, cast
 
 from fpdf import FPDF
 from fpdf.output import OutputProducer
@@ -132,7 +132,9 @@ def write_streaming(pdf: PdfDocument, path: str | os.PathLike[str]) -> None:
 
     try:
         # 不给 name：fpdf 就不会 write_bytes；落盘已经在 bufferize() 里做完了
-        pdf.output(output_producer_class=_producer)
+        # fpdf 的注解写的是 Type[OutputProducer]，运行时只按"可调用 + 传 FPDF"
+        # 使用（见 fpdf.py:6534 output_producer_class(self)），故传工厂函数等价
+        pdf.output(output_producer_class=cast("type[OutputProducer]", _producer))
     except BaseException:
         spool.close()
         try:

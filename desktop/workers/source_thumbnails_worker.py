@@ -131,6 +131,7 @@ class SourceThumbnailsWorker(QObject):
     # ------------------------------------------------------------ 复制（并行）
     def _copy_source(self) -> None:
         """把源文件复制成任务目录里的副本（原子落地）。失败只告警，不中断。"""
+        assert self.copy_to is not None
         try:
             copy_file_atomic(self.pdf_path, self.copy_to)
             self._copied = True

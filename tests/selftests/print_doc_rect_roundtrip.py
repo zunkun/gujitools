@@ -54,6 +54,6 @@ def run(ctx) -> None:
     }
     entries3, _ = plan_print_entries([a], doc_ext)
     ok("产物集合变化后仍保留已存 rect",
-       entries3 and entries3[0].get("rect") == [1, 2, 3, 4], str(entries3))
+       bool(entries3 and entries3[0].get("rect") == [1, 2, 3, 4]), str(entries3))
 
     shutil.rmtree(tmp, ignore_errors=True)

@@ -148,7 +148,7 @@ def run(ctx) -> None:
            dialog.windowTitle())
         ok("GUI：有候选时显示「自动安装」按钮", not dialog._install_btn.isHidden())
         ok("GUI：手动安装步骤已填好且默认收起",
-           dialog._manual.toPlainText() and dialog._manual.isHidden())
+           bool(dialog._manual.toPlainText() and dialog._manual.isHidden()))
         ok("GUI：候选包名原样交给安装器",
            dialog._packages() == ("fonts-cwtex-fs", "fonts-arphic-uming"),
            str(dialog._packages()))

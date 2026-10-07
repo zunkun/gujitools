@@ -7,6 +7,7 @@ import re
 import shutil
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING, Callable, cast
 
 from desktop.steps import ports
 from desktop.steps.flow import (
@@ -15,7 +16,7 @@ from desktop.steps.flow import (
     StageSlot,
     default_flow_path,
 )
-from desktop.steps.spec import FLOW_STAGES, OPTIONAL_STEPS, spec_by_key
+from desktop.steps.spec import FLOW_STAGES, OPTIONAL_STEPS, StepSpec, spec_by_key
 from desktop.store.json_io import read_json, write_json
 from desktop.utils.files import copy_file_atomic
 
@@ -36,7 +37,7 @@ STAGE_LABELS = {key: ports.stage_label(key) for key in STAGES}
 STAGE_LABELS["rembg_submit"] = ports.stage_label("rembg_submit")
 
 # 列表里的阶段短名（步骤条/表格空间有限，用 2~3 字表达）
-STAGE_SHORT = {key: spec_by_key(key).short_name() for key in STAGES}
+STAGE_SHORT = {key: cast(StepSpec, spec_by_key(key)).short_name() for key in STAGES}
 
 # ------------------------------------------------------------ 流程条的可选节点
 #: 「图片拼版」**伪步骤**：流程条上的虚线可选节点，位于第三步（图片去底色）
@@ -48,7 +49,7 @@ STAGE_SHORT = {key: spec_by_key(key).short_name() for key in STAGES}
 #: 和"有没有独立功能"是两件事，这也是 ``StepSpec.role`` 要分
 #: ``stage`` / ``optional`` 的原因。
 IMPOSITION_STAGE = OPTIONAL_STEPS[0]
-IMPOSITION_LABEL = spec_by_key(IMPOSITION_STAGE).stage_name()
+IMPOSITION_LABEL = cast(StepSpec, spec_by_key(IMPOSITION_STAGE)).stage_name()
 #: 🗑 **已删**：``IMPOSITION_INDEX``（= ``len(STAGES)``，即"拼版占第 5 位"）。
 #:
 #: 它是 BPM 改造**之前**的固定顺序口径：BPM 化后拼版插在哪一格由流程图决定
@@ -61,7 +62,7 @@ IMPOSITION_LABEL = spec_by_key(IMPOSITION_STAGE).stage_name()
 # 状态」胶囊会按任务详情里的启用情况把它插进去，所以上面两张文案表都得有它。
 # ⚠️ 取值仍走 ``stage_name()`` / ``short_name()``，不另写一份中文。
 STAGE_LABELS[IMPOSITION_STAGE] = IMPOSITION_LABEL
-STAGE_SHORT[IMPOSITION_STAGE] = spec_by_key(IMPOSITION_STAGE).short_name()
+STAGE_SHORT[IMPOSITION_STAGE] = cast(StepSpec, spec_by_key(IMPOSITION_STAGE)).short_name()
 
 #: 运行阶段 → 它归属的**界面步骤**（值取 STAGES 里的一项）。
 #:
@@ -83,6 +84,10 @@ class TaskMixin:
     """任务索引读写与任务目录/阶段输出目录的路径推导。"""
 
     root: Path
+
+    if TYPE_CHECKING:
+        # 宿主 TaskStore（或同级 Mixin）提供：只做类型声明，运行时零副作用。
+        drafts_dir: Callable[[str], Path]
 
     #: ``任务号 → 流程降级原因``（见 :meth:`task_diagram` / :meth:`flow_degraded_reason`）。
     #:

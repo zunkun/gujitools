@@ -11,8 +11,9 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, Callable, cast
 
-from PySide6.QtCore import QProcess, QProcessEnvironment, QTimer
+from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer
 
 from desktop.services.print_plan import missing_extract_pages_spec
 from desktop.steps.process import StageProcess, worker_arguments
@@ -21,6 +22,14 @@ from desktop.utils.files import list_stage_images, project_root
 from desktop.store import IMPOSITION_STAGE, STAGE_LABELS, STAGE_STEP
 
 from utils.box_geometry import page_box_slots_from_event
+
+if TYPE_CHECKING:
+    from PySide6.QtWidgets import QStackedWidget, QTextEdit
+    from desktop.components.detect_stats import DetectStatsWidget
+    from desktop.components.log_panel import LogPanel
+    from desktop.components.viewers import ImageViewerWidget, PrintPreviewWidget
+    from desktop.store.store import TaskStore
+    from desktop.ui.widgets import ProgressLine
 
 
 STATUS_LABELS = {
@@ -35,6 +44,46 @@ STATUS_LABELS = {
 class StageRunnerMixin:
     """依赖宿主页面提供的属性：store/task_id/source_path/pages、
     control_stack、stage_* 控件、log_view、process/run_id 等。"""
+
+    if TYPE_CHECKING:
+        # 宿主 TaskDetailPage（或同级 Mixin）提供的属性/方法：Mixin 本体不持有，
+        # 这里只做类型声明（类级注解、无赋值），运行时零副作用。
+        store: TaskStore
+        task_id: str | None
+        source_path: Path | None
+        pdf_page_count: int
+        detect_process: QProcess | None
+        control_stack: QStackedWidget
+        log_view: QTextEdit
+        log_panel: LogPanel
+        stage_progress: ProgressLine
+        extract_result_viewer: ImageViewerWidget
+        print_preview: PrintPreviewWidget
+        detect_stats: DetectStatsWidget
+        current_stage: Callable[[], str]
+        _acquire_run: Callable[..., bool]
+        _release_run: Callable[[], None]
+        _mark_run_launched: Callable[[], None]
+        _missing_input_kind: Callable[[], str]
+        _toast: Callable[..., None]
+        _refresh_stage_views: Callable[[], None]
+        _set_stage_status: Callable[..., None]
+        _refresh_manifest: Callable[[], None]
+        _manifest_paths: Callable[[], list]
+        _refresh_detect_stats: Callable[[], None]
+        _refresh_preview: Callable[..., None]
+        _refresh_stale_notices: Callable[[], None]
+        _compose_imposition_now: Callable[[], None]
+        _print_entries: Callable[[], tuple]
+        _build_print_effects: Callable[..., Any]
+        _imposition_switch_state: Callable[[], tuple]
+        _latest_print_pdf_path: Callable[[], Path | None]
+        _rembg_submit_version_state: Callable[[], str]
+        imposition_effective: Callable[[], bool]
+        imposition_active: Callable[[], bool]
+        # ⚠️ 返回值是 LazyPanelHost 或真面板（属性转发、鸭子类型），用 Any 承接
+        panel_host_of_step: Callable[[str], Any]
+        stack_index_of_step: Callable[[str], int | None]
 
     #: 进度事件的**界面刷新合并窗口**(ms)。
     #:
@@ -57,7 +106,7 @@ class StageRunnerMixin:
 
     def _init_progress_ui(self) -> None:
         """建进度刷新节流器（宿主页面 __init__ 里调一次，须在 _init_ui 之后）。"""
-        self._progress_ui_timer = QTimer(self)
+        self._progress_ui_timer = QTimer(cast("QObject", self))
         self._progress_ui_timer.setSingleShot(True)
         self._progress_ui_timer.setInterval(self._PROGRESS_UI_MS)
         self._progress_ui_timer.timeout.connect(self._flush_progress_ui)
@@ -215,7 +264,7 @@ class StageRunnerMixin:
                     "或到「查看 / 编辑流程」里检查连线。",
                 )
             return
-        if self.process and self.process.state() != QProcess.NotRunning:
+        if self.process and self.process.state() != QProcess.ProcessState.NotRunning:
             self._toast("warning", "任务进行中", "当前子任务正在执行")
             return
         stage = self.current_stage()
@@ -244,14 +293,16 @@ class StageRunnerMixin:
                     "请先在「查看/编辑流程」里把它加回来。",
                 )
                 return
-        if stage == "extract" and not Path(self.source_path).exists():
-            # self.source_path 已是任务目录里的备份（见 page.set_task）
+        if stage == "extract" and (
+                self.source_path is None or not Path(self.source_path).exists()):
+            # self.source_path 已是任务目录里的备份（见 page.set_task）；
+            # ⚠️ 空壳任务（还没补 PDF）source_path 为 None，一并按缺失处理
             self._toast(
                 "error", "PDF 缺失", f"任务备份 PDF 不存在：{self.source_path}"
             )
             return
 
-        panel = self.control_stack.currentWidget()
+        panel: Any = self.control_stack.currentWidget()
         try:
             args = panel.get_args()
         except ValueError as exc:
@@ -438,8 +489,11 @@ class StageRunnerMixin:
 
     def _launch_stage_process(self, stage: str, args: dict, resume: bool = False) -> None:
         """写入运行配置并启动 worker 子进程。"""
-        self.run_id = self.store.create_stage_run(self.task_id, stage, args, resume)
-        runs_dir = self.store.runs_config_dir(self.task_id)
+        # ⚠️ 调用前 _run_stage_unchecked 的输入守卫已保证有任务在身
+        task_id = self.task_id
+        assert task_id is not None, "启动子任务时没有任务在身"
+        self.run_id = self.store.create_stage_run(task_id, stage, args, resume)
+        runs_dir = self.store.runs_config_dir(task_id)
         runs_dir.mkdir(parents=True, exist_ok=True)
         config_path = runs_dir / f"run-{self.run_id}.json"
         write_json(
@@ -471,7 +525,7 @@ class StageRunnerMixin:
             )
         if stage == "extract":
             self._extract_seen = len(
-                list_stage_images(self.store.extract_output_dir(self.task_id))
+                list_stage_images(self.store.extract_output_dir(task_id))
             )
         # ---- 传输层：起进程 + 读字节流 + 看门狗（实现见 desktop.steps.process）----
         # ⚠️ 这里只接"业务"需要的信号；半行重组 / JSON 解析 / 落盘仍在本页——
@@ -500,7 +554,7 @@ class StageRunnerMixin:
         # 进程真的起来了 → 防抖窗口从这里开始计时（见 _run_launched_at）
         self._mark_run_launched()
 
-        self.store.update_task(self.task_id, "running")
+        self.store.update_task(task_id, "running")
         self._refresh_stage_views()
         # 开始执行时自动展开日志：用户此刻最需要看到实时输出
         self.log_panel.set_expanded(True)
@@ -514,14 +568,17 @@ class StageRunnerMixin:
         先立即把运行记录置为 cancelled——防止进程被强杀来不及回调时状态永远
         停留 running（重启后按钮状态错乱）；随后置 cancel_requested 并 kill。
         """
-        if self.process and self.process.state() != QProcess.NotRunning:
+        if self.process and self.process.state() != QProcess.ProcessState.NotRunning:
             self.cancel_requested = True
             self._set_stage_status("正在中断子任务...")
             self.log_view.append("已请求中断，正在终止子任务进程...")
             # 立即把运行记录置为已中断：进程被强杀来不及回调时，
             # 状态不会永远停留在 "running"（否则重启后按钮状态是错的）
+            # ⚠️ 有进程在跑必有任务在身（见 run_stage 的守卫）
+            task_id = self.task_id
+            assert task_id is not None, "中断子任务时没有任务在身"
             if self.run_id:
-                self.store.finish_stage(self.task_id, self.run_id, "cancelled")
+                self.store.finish_stage(task_id, self.run_id, "cancelled")
             self.process.kill()
             # kill 是 TerminateProcess：worker 里的 `finally`/`with` 都不会执行，
             # 「PDF排版」的效果图暂存目录（整页 PNG，几百 MB~GB）会留在 %TEMP%。
@@ -732,7 +789,7 @@ class StageRunnerMixin:
         """建标注攒批器（宿主页面 __init__ 里调一次）。"""
         self._pending_sizes: dict[str, tuple[int, int]] = {}
         self._pending_boxes: dict[str, list] = {}
-        self._annot_timer = QTimer(self)
+        self._annot_timer = QTimer(cast("QObject", self))
         self._annot_timer.setSingleShot(True)
         self._annot_timer.setInterval(self._ANNOT_FLUSH_MS)
         self._annot_timer.timeout.connect(self._flush_annotations)
@@ -742,7 +799,10 @@ class StageRunnerMixin:
         source = self.process or self.detect_process
         if not source:
             return
-        self._consume_worker_stderr(bytes(source.readAllStandardError()))
+        # PySide6 的 QByteArray 运行时可直接 bytes()（存根不认 SupportsBytes）
+        self._consume_worker_stderr(
+            bytes(source.readAllStandardError())  # type: ignore[reportArgumentType]
+        )
 
     def _consume_worker_stderr(self, data: bytes) -> None:
         """解析 stderr 字节：逐行进日志，并记下像错误的那一行（失败提示用）。
@@ -781,7 +841,10 @@ class StageRunnerMixin:
         paths = list_stage_images(self.store.extract_output_dir(self.task_id))
         if len(paths) != self._extract_seen:
             self._extract_seen = len(paths)
-            self.extract_result_viewer.set_images(paths)
+            # list 不变型：清单是 list[Path]，查看器收 list[Path | str]
+            self.extract_result_viewer.set_images(
+                cast("list[Path | str]", paths)
+            )
 
     def _worker_finished(self, exit_code: int, _status) -> None:
         """顶层兜底：收尾链里任何一环（store 写盘 / 读盘 / 刷新）抛异常，
@@ -820,7 +883,7 @@ class StageRunnerMixin:
         # "像被中断了/只提取了一半"。排空 + 落最后一次进度之后再清引用。
         proc = self.process
         if proc is not None:
-            if proc.state() != QProcess.NotRunning:
+            if proc.state() != QProcess.ProcessState.NotRunning:
                 try:
                     proc.waitForFinished(300)  # 让 Qt 收尾并排空管道
                 except RuntimeError:
@@ -847,7 +910,9 @@ class StageRunnerMixin:
         failure = None
         if status == "failed":
             failure = self._last_error_line or f"退出码 {exit_code}"
-        if self.run_id:
+        # ⚠️ 有 run_id 必有任务在身（两者同生共死，见 set_task 的复位）；显式
+        #    并判只为让类型收窄，运行时行为不变。
+        if self.run_id and self.task_id:
             # worker 的 finished 事件不带 done/total（进度由结构化事件实时汇报），
             # 用最近一次进度补齐，否则历史记录会停在中间的 done 值上。
             self.store.finish_stage(
@@ -944,13 +1009,15 @@ class StageRunnerMixin:
             reason = failure or "退出码 " + str(exit_code)
             # 先落一行日志再弹 toast：toast 会自己消失，日志留在面板里
             self.log_view.append(f"失败原因：{reason}")
-            self._toast("error", f"{STAGE_LABELS.get(stage, '')}失败", reason)
+            self._toast("error", f"{STAGE_LABELS.get(stage or '', '')}失败", reason)
         elif override_toast is not None:
             self._toast(*override_toast)
         else:
             self._toast(
                 "success" if status == "success" else "error",
-                STAGE_LABELS.get(stage, ""),
+                # ⚠️ stage 收尾时可能已被清成 None（get(None) 运行时返回默认值，
+                #    这里显式兜成空串语义相同）
+                STAGE_LABELS.get(stage or "", ""),
                 STATUS_LABELS.get(status, status),
             )
 

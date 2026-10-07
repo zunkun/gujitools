@@ -204,6 +204,7 @@ def _check_control(ctx, ok) -> None:
     from desktop.components.progress_row import ProgressRow
 
     spec = spec_by_key("rembg")
+    assert spec is not None
     page = RembgModulePage()
     control = page.control
     try:
@@ -229,7 +230,7 @@ def _check_control(ctx, ok) -> None:
         ok("状态行也写了 done/total",
            "3/10" in _last_status(control), _last_status(control))
 
-        control._on_finished(str(spec.default_output("x.jpg")))
+        control._on_finished(str(spec.default_output(Path("x.jpg"))))
         ok("成功后条走到头", row.bar.value() == 10)
         ok("成功后文案是完成计数", "完成" in row.count.text(),
            row.count.text())
@@ -322,7 +323,7 @@ def _check_extra_lines(ctx, ok) -> None:
     job_page = ImpositionModulePage()
     try:
         written = job_page._compose_job(
-            StepRequest(dest=str(out), args={"doc": doc}), None
+            StepRequest(dest=out, args={"doc": doc}), None
         )
         ok("拼版 job 传 report=None 也能跑完（不汇报≠不能干活）",
            isinstance(written, str) and list(out.glob("*.png")),

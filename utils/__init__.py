@@ -36,11 +36,39 @@
 # desktop/stages/detect_stage.py 等均以 `utils.xxx` 形式取用）。
 # 这些名字是包对外的公开别名，pyflakes 会报「未使用」——属预期，故整体禁用该检查。
 # flake8: noqa: F401
+from typing import TYPE_CHECKING
+
 from utils.file_utils import IMAGE_EXTS, collect_image_files, is_valid_image_size
 from utils.path_utils import get_extract_output_root, resolve_final_output_dir
 from utils.sort_utils import natural_sort_key
 
 # 重依赖模块的函数名 → (模块路径, 函数名) 映射，首次访问时按需加载
+# ⚠️ 类型检查器看不见下面的 ``__getattr__``（PEP 562），缺了 _LAZY 的类型侧
+# 声明会把这些名字全判成未定义，故补一段只在 TYPE_CHECKING 下生效的导入：
+# **运行时的延迟加载一点没变**（`from utils import x` 仍不会拉进 cv2/numpy）。
+if TYPE_CHECKING:
+    from utils.cage_warp import (
+        cage_moved, deform, deform_qimage, influence_radius, moved_handles,
+        perimeter_cage, warp_region,
+    )
+    from utils.image_utils import (
+        apply_otsu_to_region, apply_otsu_whole, calculate_auto_threshold,
+        extract_red_seal, parse_border, rembg_page,
+    )
+    from utils.perspective import (
+        homography, quad_moved, rectify, rectify_qimage, rectify_region,
+        target_rect,
+    )
+    from utils.puppet_warp import (
+        border_vertices, build_mesh, drag_cell, grid_cell, mesh_moved,
+        mesh_region, nearest_vertex, puppet_warp, puppet_warp_qimage, solve_arap,
+        solve_puppet,
+    )
+    from utils.yolo_utils import (
+        detect_content_boxes, is_model_loaded, load_seconds_used, load_yolo_model,
+        model_path,
+    )
+
 _LAZY = {
     "load_yolo_model": ("utils.yolo_utils", "load_yolo_model"),
     "detect_content_boxes": ("utils.yolo_utils", "detect_content_boxes"),

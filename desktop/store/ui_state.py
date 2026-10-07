@@ -28,6 +28,7 @@ key 取自 ``desktop.store.tasks``：``STAGES`` 里的一项，或伪步骤
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, Callable
 
 from desktop.store.json_io import read_json, write_json
 
@@ -38,6 +39,12 @@ class UIStateMixin:
     """``ui.json`` 的读写（任务级 + 全局）。"""
 
     root: Path
+
+    if TYPE_CHECKING:
+        # 宿主 TaskStore（或同级 Mixin）提供：Mixin 本体不持有，只做类型声明，
+        # 运行时零副作用（与 taskdetail 侧 Mixin 同一套路）。
+        task_dir: Callable[[str], Path]
+        get_task: Callable[[str], Any]
 
     # ---------- 全局：上次停留的任务（记录；不再当启动入口） ----------
     def app_ui_path(self) -> Path:

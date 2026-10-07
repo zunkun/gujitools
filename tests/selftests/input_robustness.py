@@ -27,6 +27,7 @@ TITLE = "输入健壮性"
 def run(ctx) -> None:
     import re
     from pathlib import Path
+    from typing import Any, cast
 
     from tests.selftests._context import ok
 
@@ -94,7 +95,8 @@ def run(ctx) -> None:
     from functions.print import _collect_image_files
 
     try:
-        _collect_image_files(src, "不是列表")
+        # 故意喂字符串（非法样本），cast 只为过类型检查、不改运行时取值
+        _collect_image_files(src, cast(Any, "不是列表"))
     except ValueError as exc:
         ok("files 写成字符串被拒绝（不被逐字符迭代）", "files" in str(exc), str(exc)[:70])
     else:
@@ -127,6 +129,7 @@ def run(ctx) -> None:
         from functions import get_function
 
         fn = get_function(command, args, None)
+        assert fn is not None
         ok(f"{command} 的输出后缀跟着 ext（不是硬编码 .png）",
            fn.output_suffix == ".jpg", str(fn.output_suffix))
     crop_code = code_of("functions/crop.py")
@@ -146,7 +149,9 @@ def run(ctx) -> None:
     store_false_dests = set(
         re.findall(r'action="store_false"[^)]*?dest="(\w+)"', (repo / "cli" / "cli_args.py").read_text(encoding="utf-8"), re.S)
     )
-    registered = set(re.findall(r'"(\w+)"', re.search(r"_EXPLICIT_FALSE_KEYS\s*=\s*\{([^}]*)\}", main_code).group(1)))
+    _false_keys = re.search(r"_EXPLICIT_FALSE_KEYS\s*=\s*\{([^}]*)\}", main_code)
+    assert _false_keys is not None
+    registered = set(re.findall(r'"(\w+)"', _false_keys.group(1)))
     ok("每个 store_false 开关都登记在例外集合里（不会悄悄失效）",
        store_false_dests <= registered,
        f"未登记={sorted(store_false_dests - registered)}")

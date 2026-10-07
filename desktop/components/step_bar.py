@@ -90,7 +90,7 @@ class _StepBadge(QWidget):
             self._status, _STATUS_COLORS["pending"]
         )[:3]
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(0.5, 0.5, self.width() - 1, self.height() - 1)
         painter.setPen(QPen(QColor(border), 1.4))
         painter.setBrush(QColor(fill))
@@ -103,9 +103,9 @@ class _StepBadge(QWidget):
             path.lineTo(w * 0.44, h * 0.67)
             path.lineTo(w * 0.72, h * 0.35)
             painter.setPen(
-                QPen(QColor(text_color), 2.0, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+                QPen(QColor(text_color), 2.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
             )
-            painter.setBrush(Qt.NoBrush)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawPath(path)
         elif self._symbol:
             font = QFont(self.font())
@@ -113,14 +113,14 @@ class _StepBadge(QWidget):
             font.setBold(True)
             painter.setFont(font)
             painter.setPen(QColor(text_color))
-            painter.drawText(self.rect(), Qt.AlignCenter, self._symbol)
+            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self._symbol)
         else:
             font = QFont(self.font())
             font.setPixelSize(12)
             font.setBold(True)
             painter.setFont(font)
             painter.setPen(QColor(text_color))
-            painter.drawText(self.rect(), Qt.AlignCenter, str(self._number))
+            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, str(self._number))
         painter.end()
 
 
@@ -136,7 +136,7 @@ class _Connector(QWidget):
         super().__init__(parent)
         self.setFixedWidth(_CONNECTOR_W)
         self.setFixedHeight(18)
-        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
 
 class _ElidedLabel(QLabel):
@@ -159,9 +159,9 @@ class _ElidedLabel(QLabel):
         painter.setFont(self.font())
         painter.setPen(self._color)
         text = painter.fontMetrics().elidedText(
-            self.text(), Qt.ElideRight, self.width()
+            self.text(), Qt.TextElideMode.ElideRight, self.width()
         )
-        painter.drawText(self.rect(), Qt.AlignLeft | Qt.AlignVCenter, text)
+        painter.drawText(self.rect(), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, text)
         painter.end()
 
 
@@ -188,8 +188,8 @@ class StepItem(QFrame):
         self._background: QColor | None = None
         self.current = False
         self.setObjectName("stepItem")
-        self.setCursor(Qt.PointingHandCursor)
-        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
 
         outer = QHBoxLayout(self)
         outer.setContentsMargins(0, 0, 8, 0)
@@ -197,7 +197,7 @@ class StepItem(QFrame):
 
         self.pill = QFrame(self)
         self.pill.setObjectName("stepPill")
-        self.pill.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+        self.pill.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         # 统一默认宽度（_NODE_MIN_W）：节点之间宽窄一致，状态变化不引起跳动
         self.pill.setMinimumWidth(_NODE_MIN_W)
         row = QHBoxLayout(self.pill)
@@ -205,7 +205,7 @@ class StepItem(QFrame):
         row.setSpacing(9)
 
         self.badge = _StepBadge(self.pill)
-        row.addWidget(self.badge, 0, Qt.AlignVCenter)
+        row.addWidget(self.badge, 0, Qt.AlignmentFlag.AlignVCenter)
 
         column = QVBoxLayout()
         column.setContentsMargins(0, 0, 0, 0)
@@ -220,7 +220,7 @@ class StepItem(QFrame):
         column.addWidget(self.detail_label)
         row.addLayout(column, 1)
 
-        outer.addWidget(self.pill, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        outer.addWidget(self.pill, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         outer.addStretch(0)
 
         self._apply_style()
@@ -318,16 +318,16 @@ class StepItem(QFrame):
         叠在实底之上。
         """
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(self.pill.geometry())
-        painter.setPen(Qt.NoPen)
+        painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(T.SURFACE))
         painter.drawRoundedRect(rect, 8, 8)
         if self._background is not None:
             painter.setBrush(self._background)
             painter.drawRoundedRect(rect, 8, 8)
         painter.setPen(QPen(QColor(T.BORDER), 1))
-        painter.setBrush(Qt.NoBrush)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRoundedRect(rect.adjusted(0.5, 0.5, -0.5, -0.5), 8, 8)
         painter.end()
 
@@ -341,7 +341,7 @@ class StepItem(QFrame):
         super().leaveEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:
-        if event.button() == Qt.LeftButton and self.rect().contains(event.position().toPoint()):
+        if event.button() == Qt.MouseButton.LeftButton and self.rect().contains(event.position().toPoint()):
             self.clicked.emit(self.index)
         super().mouseReleaseEvent(event)
 
@@ -375,13 +375,13 @@ class _ImpositionNode(QFrame):
         self._current = False
         self._flow = False
         self.setObjectName("impositionNode")
-        self.setCursor(Qt.PointingHandCursor)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
         # ⚠️ **不许被拉宽**：节点只包住自己的内容（用户 2026-09-30 报「虚线框
         # 宽度太宽」——它跟真实步骤平分了流程条的多余空间，实测 303px vs 步骤
         # 胶囊 145px）。Maximum = 宽度上限就是 sizeHint，窗口变窄时仍可压缩
         # （标题走省略号）；多余空间留给真实步骤。统一默认宽度由
         # ``setMinimumWidth(_NODE_MIN_W)`` 给下限。
-        self.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Preferred)
+        self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
         self.setMinimumWidth(_NODE_MIN_W)
         self.setToolTip(
             "可选节点：第三步「区域模式」为 1（左右分开）时出现，"
@@ -393,7 +393,7 @@ class _ImpositionNode(QFrame):
         row.setSpacing(9)
         self.badge = _StepBadge(self)
         self.badge.set_symbol("＋")           # 未生效：灰色「＋」；生效后转对勾
-        row.addWidget(self.badge, 0, Qt.AlignVCenter)
+        row.addWidget(self.badge, 0, Qt.AlignmentFlag.AlignVCenter)
 
         column = QVBoxLayout()
         column.setContentsMargins(0, 0, 0, 0)
@@ -458,16 +458,16 @@ class _ImpositionNode(QFrame):
         选中也没有 border，只有背景色）。实底用来遮住从框后面穿过的连接线。
         """
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(0.5, 0.5, self.width() - 1, self.height() - 1)
-        painter.setPen(Qt.NoPen)
+        painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(T.SURFACE))
         painter.drawRoundedRect(rect, 8, 8)
         if self._background is not None:
             painter.setBrush(self._background)
             painter.drawRoundedRect(rect, 8, 8)
         painter.setPen(QPen(QColor(T.BORDER), 1))
-        painter.setBrush(Qt.NoBrush)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRoundedRect(rect.adjusted(0.5, 0.5, -0.5, -0.5), 8, 8)
         painter.end()
 
@@ -480,7 +480,7 @@ class _ImpositionNode(QFrame):
         super().leaveEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:
-        if event.button() == Qt.LeftButton and self.rect().contains(event.position().toPoint()):
+        if event.button() == Qt.MouseButton.LeftButton and self.rect().contains(event.position().toPoint()):
             self.clicked.emit()
         super().mouseReleaseEvent(event)
 
@@ -636,7 +636,7 @@ class StepBar(QWidget):
         slot_row = QHBoxLayout(self.imposition_slot)
         slot_row.setContentsMargins(0, 0, 8, 0)  # 与 StepItem 外边距一致
         slot_row.setSpacing(0)
-        slot_row.addWidget(self.imposition_node, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        slot_row.addWidget(self.imposition_node, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         slot_row.addStretch(0)
 
         row = QHBoxLayout(self)
@@ -659,7 +659,7 @@ class StepBar(QWidget):
             if pos < len(steps) - 1:
                 connector = _Connector(self)
                 self.connectors.append(connector)
-                row.addWidget(connector, 0, Qt.AlignVCenter)
+                row.addWidget(connector, 0, Qt.AlignmentFlag.AlignVCenter)
         # 把「拼版节点 + 它后面的连接线」插到**第 ``_optional_after`` 个真实
         # 步骤之后**：布局此时为 [item0, conn0, item1, conn1, ...]，第 k 个
         # 真实步骤占下标 ``2k``，它**后面**那条连接件占 ``2k+1``。所以要
@@ -669,7 +669,7 @@ class StepBar(QWidget):
         # ⚠️ 必须是 2k+2：算成 2k+1 会插到 conn[k] 前面，箭头全跑到
         #    虚线框后面（用户截图报过：虚线前面没有箭头、后面挤两个）。
         insert_at = 2 * self._optional_after + 2
-        row.insertWidget(insert_at, self._imposition_connector, 0, Qt.AlignVCenter)
+        row.insertWidget(insert_at, self._imposition_connector, 0, Qt.AlignmentFlag.AlignVCenter)
         # 槽位 stretch **1**：与真实步骤平分多余空间（间距才均匀）；虚线框自身
         # 靠 Maximum 策略贴在槽位左侧，不会被拉宽。
         row.insertWidget(insert_at, self.imposition_slot, 1)
@@ -698,7 +698,7 @@ class StepBar(QWidget):
     # ------------------------------------------------------------------ 绘制
     def paintEvent(self, _event) -> None:
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(0.5, 0.5, self.width() - 1, self.height() - 1)
         painter.setPen(QPen(QColor(T.BORDER), 1))
         painter.setBrush(QColor(T.SURFACE))
@@ -767,12 +767,12 @@ class StepBar(QWidget):
             color = QColor(GREEN if done else "#d6d6d6")
             painter.setPen(
                 QPen(
-                    color, 2, Qt.DashLine if dash else Qt.SolidLine, Qt.RoundCap
+                    color, 2, Qt.PenStyle.DashLine if dash else Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap
                 )
             )
             painter.drawLine(QPointF(a.x(), a.y()), QPointF(b.x(), b.y()))
             painter.setPen(
-                QPen(color, 2, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+                QPen(color, 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
             )
             tip = b.x() - right.width() // 2 - 2
             arrow = QPainterPath()
@@ -798,10 +798,10 @@ class StepBar(QWidget):
         painter.setPen(
             QPen(
                 QColor(GREEN if done else "#d6d6d6"), 2,
-                Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin,
+                Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin,
             )
         )
-        painter.setBrush(Qt.NoBrush)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawPath(_rounded_polyline(points))
 
     def _bypass_points(self) -> list[tuple[float, float]] | None:

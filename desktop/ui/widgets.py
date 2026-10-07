@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import textwrap
 from collections.abc import Iterable, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QEvent, QObject, QRectF, QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
@@ -79,8 +79,8 @@ def apply_to(
     size: int = T.SIZE_BODY,
     bold: bool = False,
     color: str | None = None,
-) -> QLabel:
-    """给 QLabel 统一设置字体与颜色。
+) -> QWidget:
+    """给控件统一设置字体与颜色（返回原控件，便于链式书写）。
 
     ⚠️ **上色有两条路，按控件类型分流**：
 
@@ -198,7 +198,7 @@ class Card(QFrame):
         self._fill = QColor(fill)
         self._border = QColor(border) if border else None
         self._radius = radius
-        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         box = QVBoxLayout(self) if layout == "v" else QHBoxLayout(self)
         box.setContentsMargins(padding, padding, padding, padding)
         box.setSpacing(spacing)
@@ -231,7 +231,7 @@ class Divider(QFrame):
         """固定高 1px、水平拉伸的水平分隔线。"""
         super().__init__(parent)
         self.setFixedHeight(1)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self)
@@ -267,7 +267,7 @@ class StatusChip(QWidget):
         self._text = text
         self._color, self._soft = T.status_colors(status)
         self.setFont(ui_font(T.SIZE_CAPTION))
-        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
     def set_state(self, text: str, status: str) -> None:
         """更新文案与状态色，并按新文案重算最小尺寸。"""
@@ -336,7 +336,7 @@ class ProgressLine(QWidget):
         self._timer.setInterval(40)
         self._timer.timeout.connect(self._advance)
         self.setFixedHeight(height)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
     def setRange(self, minimum: int, maximum: int) -> None:  # noqa: N802
         """设置上限，并把当前值夹到 [0, maximum]；上限为 0 时归零（切未知态）。"""
@@ -456,7 +456,7 @@ class Pill(QWidget):
         self._fg = fg
         self._bg = bg
         self.setFont(ui_font(T.SIZE_CAPTION))
-        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
 
     def setText(self, text: str) -> None:  # noqa: N802 (对齐 QLabel 习惯)
         """更新文案并按新文案重算宽度。"""
@@ -553,6 +553,15 @@ class PageHeader(QWidget):
     带一条底部分隔线，把页头和内容区分开——原来只有一行孤立的标题，
     和下面的内容混在一起，层次不清。
     """
+
+    if TYPE_CHECKING:
+        # ⚠️ ``actions`` 这个名字**遮住了基类 QWidget.actions() 方法**（Qt 的
+        # 动作列表 API）。运行上没问题（__init__ 里赋的是布局），但类型检查器
+        # 会按基类方法解析、于是判成「布局没有 addWidget」。这里补一条类型侧
+        # 声明把它钉回布局——只影响类型检查，运行时零副作用。
+        # ⚠️ 对外名字不能改：页头操作区的用法 ``header.actions.addWidget(...)``
+        # 被 tests/selftests/manual_dialog.py 按源码文本钉住。
+        actions: QHBoxLayout
 
     def __init__(self, title: str, subtitle: str = "", parent=None):
         """固定高 64px；右侧操作区通过 ``self.actions`` 布局添加按钮。"""
@@ -691,5 +700,7 @@ def install_button_pointer_cursor(app: QApplication) -> None:
     guard = getattr(app, "_button_cursor_filter", None)
     if guard is None:
         guard = _ButtonCursorFilter(app)
-        app._button_cursor_filter = guard  # 过滤器必须保引用，否则被 GC 摘掉
+        # 过滤器必须保引用，否则被 GC 摘掉。⚠️ 属性是动态挂到 QApplication 上的，
+        # 类型存根里没有，用 setattr（运行时与直接赋值一样）。
+        setattr(app, "_button_cursor_filter", guard)
         app.installEventFilter(guard)

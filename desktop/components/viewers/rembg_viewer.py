@@ -114,9 +114,9 @@ class RembgPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         self._border_mm = None
         self._thumb_provider = thumb_provider
         self._rembg_dir = rembg_dir
-        paths = [Path(p) for p in paths]
-        paths_changed = list(paths) != self._paths
-        self._paths = list(paths)
+        resolved = [Path(p) for p in paths]
+        paths_changed = resolved != self._paths
+        self._paths = resolved
         self._rebuild_entries(force_strip=paths_changed)
         if not self._entries:
             self.view.clear_image("暂无图片")
@@ -342,8 +342,8 @@ class RembgPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
             scaled = image.scaled(
                 round(image.width() * scale),
                 round(image.height() * scale),
-                Qt.IgnoreAspectRatio,
-                Qt.SmoothTransformation,
+                Qt.AspectRatioMode.IgnoreAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
             )
         x = (scaled.width() - target.width()) // 2
         y = (scaled.height() - target.height()) // 2
@@ -557,7 +557,8 @@ class RembgPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
                 return None, None, False, f"区域计算失败：{exc}"
         result_img = self._result_full_image(entry)
         show_result = self._mode == "result" and result_img is not None
-        source = result_img if show_result else Path(path_text)
+        # show_result 已蕴含 result_img 非 None，这里再判一次让类型收窄到 Path
+        source = result_img if (show_result and result_img is not None) else Path(path_text)
         if not source.exists():
             return None, None, result_img is not None, "暂无图片"
         return source, effect, result_img is not None, ""

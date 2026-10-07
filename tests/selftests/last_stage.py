@@ -86,7 +86,9 @@ def run(ctx) -> None:
            page.step_bar._current == 0, f"current={page.step_bar._current}")
 
         # ---- 5. 每个任务各记一份（互不串味）----
-        page._select_stage(page.bar_index_of_step("print"))
+        print_bar = page.bar_index_of_step("print")
+        assert print_bar is not None      # ⚠️ 默认流程里有「生成PDF」这一格
+        page._select_stage(print_bar)
         pump(ctx.app, times=8)
         ok("第四步被记录", repo.load_last_stage(tid) == "print")
         tid2 = repo.create_task(pdf, "last-stage-hash-2", "记忆测试2")
@@ -107,8 +109,10 @@ def run(ctx) -> None:
         tid3 = repo.create_task(pdf, "last-stage-hash-3", "记忆测试3")
         repo.copy_source_to_task(tid3, pdf)
         page2 = new_page()
+        _lazy_host = page2.control_stack.widget(2)
         ok("新页面的第三步面板还没被建出来（面板是惰性构建的）",
-           page2.control_stack.widget(2).peek() is None)
+           # ⚠️ LazyPanelHost 的 peek() 只在真惰性宿主上有，源码标注退化成 QWidget
+           _lazy_host is not None and getattr(_lazy_host, "peek")() is None)
 
         # 6a. 「图片拼板」在图里（默认模板就有）→ 记录能匹配，落到拼版，
         #     **且节点要显示**（⚠️ 判据 = **流程图**，与区域模式无关，所以这里
@@ -205,7 +209,7 @@ def run(ctx) -> None:
            repr(repo.load_last_task()))
         ok("save_last_task 拒绝给不存在的任务留指针",
            repo.save_last_task("9999") is False
-           and repo.load_last_task()["id"] == tid)
+           and (repo.load_last_task() or {}).get("id") == tid)
         global_ui = repo.app_ui_path()
         for payload, label in (
             ('{"last_task": 3, "source_hash": "x"}', "任务号非字符串"),

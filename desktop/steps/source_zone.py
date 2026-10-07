@@ -227,7 +227,7 @@ class SourceZone(QWidget):
         if empty:
             # 按钮顶边 = 整块内容（图标+标题+提示）底边，再加一点间距
             top = self._empty_block_bottom() + BUTTON_GAP
-            row.setGeometry(0, top, self.width(), BUTTON_HEIGHT)
+            row.setGeometry(0, int(top), self.width(), BUTTON_HEIGHT)
         else:
             # 已选态：右端并排放「更换」与清空 ✕
             w = self._swap_button.sizeHint().width()
@@ -649,6 +649,7 @@ class SourceZone(QWidget):
 
     def _paint_filled(self, painter: QPainter, rect: QRectF) -> None:
         """已选态：图标 + 名字 + 路径 + 右侧「更换」与清空 ✕。"""
+        assert self._source is not None
         icon_rect = QRectF(
             rect.left() + PAD, rect.center().y() - ICON_BOX / 2 * 0.8,
             ICON_BOX * 0.8, ICON_BOX * 0.8,

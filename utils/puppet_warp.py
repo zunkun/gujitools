@@ -92,6 +92,7 @@ ARAP（As-Rigid-As-Possible）恰好相反：能量函数直接惩罚"每个三�
 from __future__ import annotations
 
 import math
+from typing import cast
 
 #: 采样越界时填的底色（不透明源图：古籍白纸）
 FILL = (255, 255, 255)
@@ -488,7 +489,7 @@ def solve_arap(vertices, triangles, pins, *, iterations: int = ARAP_ITERATIONS,
             b[pin_index, 1] = pin_target[:, 1]
         new_x = spsolve(A, b[:, 0])
         new_y = spsolve(A, b[:, 1])
-        pos = np.stack([new_x, new_y], axis=1)
+        pos = np.stack(cast(list, [new_x, new_y]), axis=1)
         if np.abs(pos - prev).max() < tolerance:
             break
         prev = pos.copy()

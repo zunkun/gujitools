@@ -81,7 +81,7 @@ def _compose_to_qimage(page: dict, longest_edge: int) -> QImage:
 
     pil_image = compose_page(page).convert("RGBA")
     if longest_edge:
-        pil_image.thumbnail((longest_edge, longest_edge), Image.LANCZOS)
+        pil_image.thumbnail((longest_edge, longest_edge), Image.Resampling.LANCZOS)
     raw = pil_image.tobytes("raw", "RGBA")
     image = QImage(
         raw, pil_image.width, pil_image.height,

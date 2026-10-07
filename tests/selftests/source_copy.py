@@ -74,6 +74,7 @@ def run(ctx) -> None:
     ok("备份丢失后按源补回", healed is not None and healed.is_file(), str(healed))
 
     # ---- 备份与源都没了：明确报错而不是静默渲染失败 ----
+    assert healed is not None
     os.remove(healed)
     os.remove(ctx.tmp / "会被移走的古籍.pdf")
     ok("源与备份都缺失时返回 None", repo.ensure_source_copy(tid) is None)

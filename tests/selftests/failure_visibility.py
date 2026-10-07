@@ -27,6 +27,7 @@ def run(ctx) -> None:
     import sys
     import tempfile
     from pathlib import Path
+    from typing import Any
 
     from tests.selftests._context import ok
 
@@ -64,11 +65,14 @@ def run(ctx) -> None:
     from desktop.pages.taskdetail.runner import StageRunnerMixin
 
     class _Stub:
+        # 由下面 monkeypatch 挂上真实方法，这里只做类型声明
+        _consume_worker_stderr: Any
+
         def __init__(self):
             self.log_view = []
             self._last_error_line = None
 
-    _Stub._consume_worker_stderr = StageRunnerMixin._consume_worker_stderr
+    setattr(_Stub, "_consume_worker_stderr", StageRunnerMixin._consume_worker_stderr)
     for raw, want in (
         (b"prog: error: the following arguments are required: --config", True),
         (b"Traceback (most recent call last):", True),
@@ -93,12 +97,14 @@ def run(ctx) -> None:
         # 远小于 is_valid_image_size 的 100 字节阈值 → 全部 skipped
         (tiny / f"{i + 1}.png").write_bytes(b"x")
     try:
-        get_function(
+        _fn_rembg = get_function(
             "rembg",
             CommandArgs(command="rembg", input=str(tiny), output=str(tiny / "out"),
                         type=1, offset=0, area=1, border="0"),
             None,
-        ).execute()
+        )
+        assert _fn_rembg is not None
+        _fn_rembg.execute()
     except RuntimeError as exc:
         ok("全部输入被跳过时报错（不是 exit 0）", "没有产出" in str(exc), str(exc)[:90])
     except Exception as exc:  # noqa: BLE001
@@ -110,12 +116,14 @@ def run(ctx) -> None:
     good = Path(tempfile.mkdtemp(prefix="guji_failvis_good_"))
     for i in range(2):
         Image.new("RGB", (240, 180), (200, 210, 190)).save(good / f"{i + 1}.png")
-    result = get_function(
+    _fn_good = get_function(
         "rembg",
         CommandArgs(command="rembg", input=str(good), output=str(good / "out"),
                     type=1, offset=0, area=1, border="0"),
         None,
-    ).execute()
+    )
+    assert _fn_good is not None
+    result = _fn_good.execute()
     ok("正常输入返回 produced 计数", result.get("produced") == 2, str(result))
 
     # ---- 5. 回归形态：这几处不许退回「静默吞掉」----

@@ -107,9 +107,9 @@ class BpmnEditor(BpmnView):
         self._link_from: str | None = None
         self._link_pos: QPointF | None = None
         self._link_mode = False
-        self.setCursor(Qt.ArrowCursor)
+        self.setCursor(Qt.CursorShape.ArrowCursor)
         # 键盘（Delete 删选中）需要焦点
-        self.setFocusPolicy(Qt.StrongFocus)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
     # ------------------------------------------------------------ 数据
     def set_diagram(self, diagram: FlowDiagram) -> None:
@@ -177,7 +177,7 @@ class BpmnEditor(BpmnView):
         self._link_mode = enabled
         self._link_from = None
         self._link_pos = None
-        self.setCursor(Qt.CrossCursor if enabled else Qt.ArrowCursor)
+        self.setCursor(Qt.CursorShape.CrossCursor if enabled else Qt.CursorShape.ArrowCursor)
         self.link_mode_changed.emit(enabled)
         self.update()
 
@@ -595,9 +595,9 @@ class BpmnEditor(BpmnView):
             pass
 
     def _on_press(self, event) -> None:
-        if event.button() != Qt.LeftButton:
+        if event.button() != Qt.MouseButton.LeftButton:
             return
-        self.setFocus(Qt.MouseFocusReason)
+        self.setFocus(Qt.FocusReason.MouseFocusReason)
         point = QPointF(event.position())
         self._press_pos = QPointF(point)
         self._moved = False
@@ -659,7 +659,7 @@ class BpmnEditor(BpmnView):
             super().mouseMoveEvent(event)  # 悬停高亮
             # 悬停在连接点上换十字光标——提示"这里能拖出连线"
             if self._port_at(point) is not None:
-                self.setCursor(Qt.CrossCursor)
+                self.setCursor(Qt.CursorShape.CrossCursor)
             return
         if self._press_pos is not None and not self._moved:
             dx = point.x() - self._press_pos.x()
@@ -741,7 +741,7 @@ class BpmnEditor(BpmnView):
             pass
 
     def keyPressEvent(self, event) -> None:  # noqa: N802
-        if event.key() in (Qt.Key_Delete, Qt.Key_Backspace):
+        if event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
             try:
                 self.ask_delete_selected()
             except Exception:  # noqa: BLE001
@@ -755,7 +755,7 @@ class BpmnEditor(BpmnView):
         from PySide6.QtGui import QPainter
 
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         # 悬停/选中的节点显示**四个中线连接点**（连线中的起点节点画大加白心）
         show_ports = {nid for nid in (self.selected(), self._hovered) if nid}
         if self._link_from is not None:
@@ -771,25 +771,25 @@ class BpmnEditor(BpmnView):
                     radius = PORT_RADIUS * 1.6
                 else:
                     painter.setBrush(QColor(T.ACCENT))
-                    painter.setPen(Qt.NoPen)
+                    painter.setPen(Qt.PenStyle.NoPen)
                     radius = PORT_RADIUS
                 painter.drawEllipse(center, radius, radius)
         # 连线待连节点高亮
         if self._link_from is not None:
             rect = self.rect_of(self._link_from)
-            painter.setBrush(Qt.NoBrush)
-            painter.setPen(QPen(QColor(T.ACCENT), 2.0, Qt.DashLine))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(QColor(T.ACCENT), 2.0, Qt.PenStyle.DashLine))
             painter.drawRect(rect.adjusted(-3, -3, 3, 3))
         if self._link_from and self._link_pos:
             # 橡皮筋：从起点节点**离鼠标最近的连接点**出发（起点也自动匹配），
             # 压着的目标节点加虚线框——落点在哪一眼可见
             start = self._nearest_port(self._link_from, self._link_pos)
-            painter.setPen(QPen(QColor(T.ACCENT), 1.8, Qt.DashLine))
-            painter.setBrush(Qt.NoBrush)
+            painter.setPen(QPen(QColor(T.ACCENT), 1.8, Qt.PenStyle.DashLine))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawLine(start, self._link_pos)
             target = self.node_at(self._link_pos)
             if target is not None and target != self._link_from:
-                painter.setPen(QPen(QColor(T.ACCENT), 2.0, Qt.DashLine))
+                painter.setPen(QPen(QColor(T.ACCENT), 2.0, Qt.PenStyle.DashLine))
                 painter.drawRect(self.rect_of(target).adjusted(-3, -3, 3, 3))
 
     # ------------------------------------------------------------ 对话框动作

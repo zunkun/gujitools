@@ -34,7 +34,8 @@ os.environ["GUJI_YOLO_SERVICE"] = "0"
 if sys.platform == "win32":
     for _stream in (sys.stdout, sys.stderr):
         if hasattr(_stream, "reconfigure"):
-            _stream.reconfigure(encoding="utf-8", errors="replace")
+            # getattr 规避 TextIO 类型未声明 reconfigure 的报错
+            getattr(_stream, "reconfigure")(encoding="utf-8", errors="replace")
 
 from cli.__main__ import main as cli_main
 

@@ -5,10 +5,13 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, Callable, cast
 
 from PySide6.QtCore import QUrl, QSize
 from PySide6.QtGui import QDesktopServices, QImageReader
-from PySide6.QtWidgets import QFileDialog
+from PySide6.QtWidgets import (
+    QFileDialog, QStackedWidget, QTextEdit, QWidget,
+)
 from qfluentwidgets import MessageBox
 
 from desktop.components.viewers.edit_sync import show_edited_image
@@ -20,10 +23,42 @@ from desktop.utils.files import (
 from desktop.workers import HashWorker, ImageListWorker, connect_queued
 from utils.file_utils import replace_with_retry
 
+if TYPE_CHECKING:
+    from desktop.components.viewers import (
+        ImageViewerWidget, RembgPreviewWidget,
+    )
+    from desktop.store.store import TaskStore
+
 
 class PageListMixin:
     """依赖宿主页面提供的属性：store/task_id、pages、pdf_page_count、
     preview_stack、detect_viewer、extract_result_viewer、log_view、_toast()。"""
+
+    if TYPE_CHECKING:
+        # 宿主 TaskDetailPage（或同级 Mixin）提供的属性/方法：Mixin 本体不持有，
+        # 这里只做类型声明（类级注解、无赋值），运行时零副作用。
+        store: TaskStore
+        task_id: str | None
+        source_path: Path | None
+        pages: list[dict]
+        pdf_page_count: int
+        # 缓存值可能是槽位列表、也可能被置 None（防重复派发），用宽松值类型
+        detect_cache: dict[str, Any]
+        running_stage: str | None
+        log_view: QTextEdit
+        preview_stack: QStackedWidget
+        extract_result_viewer: ImageViewerWidget
+        detect_viewer: ImageViewerWidget
+        rembg_viewer: RembgPreviewWidget
+        current_stage: Callable[[], str]
+        imposition_effective: Callable[[], bool]
+        stage_at_stack_index: Callable[[int], str | None]
+        stack_index_of_step: Callable[[str], int | None]
+        _refresh_preview: Callable[..., None]
+        _update_submit_button: Callable[..., None]
+        _toast: Callable[..., None]
+        run_worker: Callable[..., None]
+        set_task: Callable[[str], bool]
 
     #: 页缩略图的**图头尺寸**缓存（审计 D9）：键 = (路径, mtime)。
     #: 清单每次增删/重排都会重建，对 320 个条目逐个 `QImageReader.size()`
@@ -206,8 +241,11 @@ class PageListMixin:
         被第四步取用；第四步待打印图与拼版成品改了点「生成PDF」即生效。
         不属于这两类的路径（外部插入图等）不打日志。
         """
+        task_id = self.task_id
+        if task_id is None:
+            return  # 已切走任务：既没有阶段目录可比，也没有按钮可改
         try:
-            if path.parent == self.store.rembg_preview_output_dir(self.task_id):
+            if path.parent == self.store.rembg_preview_output_dir(task_id):
                 self.log_view.append(
                     f"已编辑去底色结果「{path.name}」；"
                     "点「提交本次任务」后，第四步（PDF排版）才会用上这次修改。"
@@ -216,8 +254,8 @@ class PageListMixin:
                 # 重新提交才传给第四步，见 submit._preview_edited_after_submit
                 self._update_submit_button(self.running_stage is not None)
             elif path.parent in (
-                self.store.rembg_output_dir(self.task_id),
-                self.store.imposition_output_dir(self.task_id),
+                self.store.rembg_output_dir(task_id),
+                self.store.imposition_output_dir(task_id),
             ):
                 self.log_view.append(
                     f"已编辑待打印图片「{path.name}」；"
@@ -229,7 +267,9 @@ class PageListMixin:
     def _regen_page_thumb(self, path_text: str) -> None:
         """后台重生成某页的 source 缩略图（256px），完成后刷新各查看器。"""
         worker = ImageListWorker([Path(path_text)], edge=THUMBNAIL_EDGE)
+        # ⚠️ 调用方 _on_page_image_saved 已保证有任务在身
         owner_task = self.task_id
+        assert owner_task is not None, "刷新缩略图时没有任务在身"
         self.run_worker(
             lambda: worker,
             lambda w, thread: (
@@ -259,7 +299,7 @@ class PageListMixin:
         大图已在 _on_page_image_saved 里用编辑结果即时上屏，这里只把
         图标从「编辑结果现缩的临时版」换成「与文件一致的缓存版」。
         """
-        if owner_task != self.task_id or image.isNull():
+        if owner_task != self.task_id or image.isNull() or self.task_id is None:
             return  # 复制/编辑期间切了任务，旧任务的缩略图不能写进新任务
         path = Path(path_text)
         if not path.stem.isdigit():
@@ -363,7 +403,7 @@ class PageListMixin:
         if not self.task_id:
             return
         directory = QFileDialog.getExistingDirectory(
-            self, "选择图片文件夹（把里面的图片批量插入）",
+            cast("QWidget", self), "选择图片文件夹（把里面的图片批量插入）",
             str(default_open_dir()),
         )
         if not directory:
@@ -473,7 +513,7 @@ class PageListMixin:
         if not self.task_id:
             return
         paths, _ = QFileDialog.getOpenFileNames(
-            self,
+            cast("QWidget", self),
             "插入图片（可多选）",
             str(default_open_dir()),
             "图片 (*.png *.jpg *.jpeg *.bmp *.tif *.tiff)",
@@ -495,6 +535,9 @@ class PageListMixin:
         """
         if not files:
             return 0
+        # ⚠️ 调用链（insert_pages / insert_pages_from_folder）已保证有任务在身
+        task_id = self.task_id
+        assert task_id is not None, "追加页面清单时没有任务在身"
         known = {str(p.get("file")) for p in self.pages}
         added = 0
         for source in files:
@@ -506,7 +549,7 @@ class PageListMixin:
             added += 1
         if not added:
             return 0
-        self.store.save_pages(self.task_id, self.pages)
+        self.store.save_pages(task_id, self.pages)
         return added
 
     def _on_pages_copied(self, done: list, errors: list) -> None:
@@ -563,11 +606,12 @@ class PageListMixin:
         """
         from desktop.steps.ports import flow_entry_input_kind
 
-        if not getattr(self, "task_id", None):
+        task_id = getattr(self, "task_id", None)
+        if not task_id:
             from desktop.steps.scheduler import load_default_diagram
 
             return flow_entry_input_kind(load_default_diagram())
-        return flow_entry_input_kind(self.store.task_diagram(self.task_id))
+        return flow_entry_input_kind(self.store.task_diagram(task_id))
 
     def _missing_source(self) -> bool:
         """这个任务**现在缺源 PDF 吗**（该催用户补 PDF）。
@@ -611,8 +655,10 @@ class PageListMixin:
 
     def _entry_dir_has_images(self) -> bool:
         """入口图片目录（``stages/input/``）里有没有可用的图。"""
+        task_id = self.task_id
+        assert task_id is not None, "入口目录检查只会在任务态出现"
         try:
-            directory = self.store.task_input_dir(self.task_id)
+            directory = self.store.task_input_dir(task_id)
         except ValueError:
             return False
         # ⚠️ 用现成的 ``list_stage_images``（同一套后缀表+ 自然排序，
@@ -648,9 +694,12 @@ class PageListMixin:
 
         if self._missing_input_kind() != "images":
             return {}
+        # ⚠️ 只有任务态才会判成"缺入口图片"（见 _missing_entry_images）
+        task_id = self.task_id
+        assert task_id is not None, "缺入口图片提示只会在任务态出现"
         try:
-            entry = stage_label(flow_entry_stage(
-                self.store.task_diagram(self.task_id)))
+            entry_stage = flow_entry_stage(self.store.task_diagram(task_id))
+            entry = stage_label(entry_stage) if entry_stage else "第一步"
         except (OSError, ValueError):
             entry = "第一步"
         return {
@@ -772,10 +821,8 @@ class PageListMixin:
                       "或把图片放进本任务的输入目录",
         }
         entry_kind = self._entry_input_kind()
-        diagram = (
-            self.store.task_diagram(self.task_id)
-            if getattr(self, "task_id", None) else None
-        )
+        task_id = getattr(self, "task_id", None)
+        diagram = self.store.task_diagram(task_id) if task_id else None
         entry = flow_entry_stage(diagram) if diagram is not None else None
         for stage in ("extract", "detect"):
             spec = spec_for_stage(stage)
@@ -878,7 +925,8 @@ class PageListMixin:
         ``mask=(0, 491, 640, 0)``）——用户看到的就是"压根没弹"。
         重铺一个隐藏的层是无害的，所以这里只判"有没有建过"。
         """
-        super().resizeEvent(event)
+        # 宿主 MRO 里 QWidget 会接住（Mixin 的静态 super() 视图看不到）
+        super().resizeEvent(event)  # type: ignore[reportAttributeAccessIssue]
         prompt = getattr(self, "_source_prompt", None)
         if prompt is not None:
             prompt._reanchor()
@@ -903,7 +951,8 @@ class PageListMixin:
         真正显示出来时这一句会重新 ``show_prompt()``（内部先重铺再 show），
         用户看到的才是铺好的那一版。
         """
-        super().showEvent(event)
+        # 宿主 MRO 里 QWidget 会接住（Mixin 的静态 super() 视图看不到）
+        super().showEvent(event)  # type: ignore[reportAttributeAccessIssue]
         # ⚠️⚠️ **必须先判 ``task_id``**：详情页是 ``addWidget`` 进栈的，那一下就会
         # 触发 ``showEvent``——**早于第一次 ``set_task``**，此时 ``task_id`` 还是
         # ``None``。而 ``_missing_source()`` 会拿它去查流程图，
@@ -988,7 +1037,8 @@ class PageListMixin:
         # ⚠️ 用**原生** QFileDialog（项目硬规则：「资源管理器」= 原生选择
         #    对话框，不是浏览窗口）。
         filename, _ = QFileDialog.getOpenFileName(
-            self, "选择 PDF 源文件", str(default_open_dir()), "PDF (*.pdf)"
+            cast("QWidget", self), "选择 PDF 源文件",
+            str(default_open_dir()), "PDF (*.pdf)",
         )
         if not filename:
             return
@@ -1117,11 +1167,14 @@ class PageListMixin:
         里要点出"另一个任务也在处理同一本"，否则用户回头在两个任务的页面上
         看到同一批页，会以为哪里出了错。
         """
+        # ⚠️ 调用方 _on_source_hash_ready 已保证有任务在身
+        task_id = self.task_id
+        assert task_id is not None, "换源时没有任务在身"
         replacing = self.source_path is not None
         # 复制进任务目录 + 改索引（store.set_task_source 内部做拷贝；失败
         # 返回 False 时不碰界面——索引指向一个不存在的文件比什么都不做更糟）
         try:
-            ok = self.store.set_task_source(self.task_id, source,
+            ok = self.store.set_task_source(task_id, source,
                                             source_hash=source_hash)
         except OSError as exc:
             self._toast("error", "选择失败", f"{type(exc).__name__}: {exc}")
@@ -1145,7 +1198,7 @@ class PageListMixin:
         else:
             self._toast("info", "已选择", f"源文件：{source.name}")
         # 重载任务：走一遍 set_task 的全套（源路径、页头、清单、预览、步骤记忆）
-        self.set_task(self.task_id)
+        self.set_task(task_id)
 
     def _confirm_replace_source(self, source: Path) -> bool:
         """换源文件前的确认（``False`` = 取消）。
@@ -1177,11 +1230,13 @@ class PageListMixin:
 
     def _has_task_artifacts(self) -> bool:
         """这个任务目录里有没有任何中间产物（页清单/执行记录/阶段输出）。"""
+        task_id = self.task_id
+        assert task_id is not None, "产物检查只会在任务态出现"
         try:
             for name in ("pages.json", "runs.json", "boxes.json", "sizes.json"):
-                if (self.store.task_dir(self.task_id) / name).exists():
+                if (self.store.task_dir(task_id) / name).exists():
                     return True
-            stages = self.store.task_dir(self.task_id) / "stages"
+            stages = self.store.task_dir(task_id) / "stages"
             if stages.is_dir() and any(stages.iterdir()):
                 return True
         except OSError:
@@ -1199,7 +1254,8 @@ class PageListMixin:
         """
         import shutil
 
-        task_dir = self.store.task_dir(self.task_id)
+        # ⚠️ 调用方 _apply_source 已保证有任务在身
+        task_dir = self.store.task_dir(self.task_id)  # type: ignore[reportArgumentType]
         for name in ("pages.json", "runs.json", "boxes.json", "sizes.json",
                      "print.json"):
             try:

@@ -26,7 +26,13 @@ import shutil
 import tempfile
 from pathlib import Path
 
+from typing import TYPE_CHECKING
+
 from desktop.steps import ports
+
+if TYPE_CHECKING:
+    # _chain 里是函数内延迟导入（保持自测启动轻），但返回注解引它 —— 类型侧声明。
+    from desktop.steps.bpmn_diagram import FlowDiagram
 
 NAME = "flow_validate"
 DEPENDS: list[str] = ["flow_bpm"]
@@ -408,6 +414,7 @@ def _check_flow_page_gate(ctx, ok) -> None:
 
             page.open_task(tid)
             app.processEvents()
+            assert page._panel is not None
             page._panel.editor_panel._canvas.set_diagram(
                 _chain("detect", "rembg", "print"))
             page._on_done(True)

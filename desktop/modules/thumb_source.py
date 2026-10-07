@@ -23,6 +23,7 @@ detect/rembg/print 直接把**原图**塞进查看器（缩略图条每次现解
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, Callable, cast
 
 from desktop.components.viewers.edit_sync import (
     apply_single_thumb,
@@ -37,6 +38,9 @@ from desktop.utils.files import (
     singletask_thumbnails_dir,
     thumb_map_path,
 )
+
+if TYPE_CHECKING:
+    from desktop.components.viewers.image_viewer import ImageViewerWidget
 
 
 class ThumbSourceMixin:
@@ -54,6 +58,13 @@ class ThumbSourceMixin:
         # 跑完之后：
         self.show_images(collect_result_images(out))
     """
+
+    if TYPE_CHECKING:
+        # 宿主（``StepModulePage`` 子类 + ``WorkerHost``）提供的属性：Mixin 本体
+        # 不持有，只做类型声明（类级注解、无赋值），运行时零副作用。
+        viewer: ImageViewerWidget
+        log: Callable[..., None]
+        run_worker: Callable[..., Any]
 
     #: 缩略图最长边。取 :data:`desktop.utils.files.THUMBNAIL_EDGE`（256px），
     #: 与 PDF 页缩略图、任务导入缩略图**同一个值**——三套缓存同源同尺寸，
@@ -148,15 +159,17 @@ class ThumbSourceMixin:
         book = self._thumb_book
         if self.NUMBERED_THUMBS and book is not None:
             names = [self._seq_of(p) for p in images]
+            # list 不变型：清单是 list[Path]，查看器收 list[Path | str]
             self.viewer.set_thumb_source(
-                images,
+                cast("list[Path | str]", images),
                 extract_thumbs_dir(self._subtask(), book, self.THUMB_EDGE),
                 edge=self.THUMB_EDGE,
                 names=names,
             )
             return
         self.viewer.set_thumb_source(
-            images, self._thumb_cache_dir(), edge=self.THUMB_EDGE
+            cast("list[Path | str]", images),
+            self._thumb_cache_dir(), edge=self.THUMB_EDGE
         )
 
     def _seq_of(self, image: Path) -> str | None:

@@ -37,6 +37,7 @@ TITLE = "缩略图透明压黑修复"
 def run(ctx) -> None:
     import shutil
     import tempfile
+    from typing import Any, cast
 
     from PySide6.QtGui import QColor, QImage, QPainter
 
@@ -55,7 +56,7 @@ def run(ctx) -> None:
         flat = flatten_on_white(transparent)
         ok("全透明图合成后没有 alpha 通道", not flat.hasAlphaChannel())
         ok("全透明图合成后是白底",
-           flat.pixelColor(5, 5).getRgb()[:3] == (255, 255, 255))
+           cast(Any, flat.pixelColor(5, 5).getRgb())[:3] == (255, 255, 255))
 
         painted = QImage(20, 10, QImage.Format.Format_ARGB32)
         painted.fill(QColor(255, 255, 255, 0))
@@ -64,8 +65,8 @@ def run(ctx) -> None:
         painter.end()
         flat2 = flatten_on_white(painted)
         ok("透明底 + 黑块 → 白底黑块",
-           flat2.pixelColor(3, 3).getRgb()[:3] == (0, 0, 0)
-           and flat2.pixelColor(15, 8).getRgb()[:3] == (255, 255, 255))
+           cast(Any, flat2.pixelColor(3, 3).getRgb())[:3] == (0, 0, 0)
+           and cast(Any, flat2.pixelColor(15, 8).getRgb())[:3] == (255, 255, 255))
 
         opaque = QImage(20, 10, QImage.Format.Format_RGB32)
         opaque.fill(QColor(30, 30, 30))
@@ -88,7 +89,7 @@ def run(ctx) -> None:
         painter = QPainter(src_img)
         painter.fillRect(60, 30, 80, 60, QColor(0, 0, 0, 255))
         painter.end()
-        ok("测试源图（透明底 PNG）已生成", src_img.save(str(src), "PNG"))
+        ok("测试源图（透明底 PNG）已生成", src_img.save(str(src), "PNG"))  # type: ignore[reportCallIssue]  # 存根标 bytes，运行时只收 str
 
         out_dir = tmp / "thumbs"
         first = ImageThumbCacheWorker([src], out_dir, edge=64)
@@ -106,9 +107,9 @@ def run(ctx) -> None:
         # 64px 边长下黑块缩到中心 (32,19) 附近；JPG 有损，容忍 ±6
         center = cached.pixelColor(32, 19)
         corner = cached.pixelColor(3, 3)
-        ok("缓存里黑块保留（中心仍是黑）", max(center.getRgb()[:3]) < 6,
+        ok("缓存里黑块保留（中心仍是黑）", max(cast(Any, center.getRgb())[:3]) < 6,
            f"center={center.getRgb()}")
-        ok("缓存里透明处变白（角落是白）", min(corner.getRgb()[:3]) > 250,
+        ok("缓存里透明处变白（角落是白）", min(cast(Any, corner.getRgb())[:3]) > 250,
            f"corner={corner.getRgb()}")
         ok("信号发出的图同样不是全黑",
            bool(arrived) and not is_all_black(arrived[0][1]))
@@ -116,7 +117,7 @@ def run(ctx) -> None:
         # ---- 4. 历史坏缓存自愈 ----
         black_cache = QImage(64, 38, QImage.Format.Format_RGB32)
         black_cache.fill(QColor(0, 0, 0))
-        ok("预置全黑缓存已写入", black_cache.save(str(target), "JPG", 80))
+        ok("预置全黑缓存已写入", black_cache.save(str(target), "JPG", 80))  # type: ignore[reportCallIssue]  # 存根标 bytes，运行时只收 str
         ok("预置缓存确实是全黑", is_all_black(QImage(str(target))))
         # 源图 mtime 拨早 ⇒ 缓存 mtime 更新 ⇒ cache_usable 命中 ⇒ 走体检路径
         old = time.time() - 3600
@@ -130,6 +131,6 @@ def run(ctx) -> None:
         healed = QImage(str(target))
         ok("全黑历史缓存被重渲自愈", not is_all_black(healed))
         ok("自愈后内容与首次渲染一致（角落是白）",
-           min(healed.pixelColor(3, 3).getRgb()[:3]) > 250)
+           min(cast(Any, healed.pixelColor(3, 3).getRgb())[:3]) > 250)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

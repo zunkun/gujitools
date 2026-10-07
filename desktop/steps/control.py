@@ -63,7 +63,8 @@ class StepControl(QWidget):
     running_changed = Signal(bool)
     #: 步骤私有的结构化事件 ``(事件名, 负载)``，如 ``page_boxes``。
     #: 模块页据此接住"这一步本身的产物不是文件"的结果（detect 报坐标）。
-    event = Signal(str, object)
+    # ⚠️ 与基类 QWidget.event() 同名：此处是信号，语义不同，故意覆盖，不改名。
+    event = Signal(str, object)  # type: ignore[reportAssignmentType]
 
     def __init__(self, spec: StepSpec, job=None, zone: SourceZone | None = None,
                  parent=None):
@@ -91,7 +92,7 @@ class StepControl(QWidget):
         self.kernel.log.connect(self.log)
         self.kernel.finished.connect(self._on_finished)
         self.kernel.failed.connect(self._on_failed)
-        self.kernel.event.connect(self.event)
+        self.kernel.event.connect(self.event)  # type: ignore[reportAttributeAccessIssue]  # ``event`` 与 QObject.event 同名，运行时是 Signal
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)

@@ -61,7 +61,7 @@ def rounded_frame(
     """把源图裁成 ``size × size`` 的圆角 RGBA 帧（透明底）。"""
     n = size * supersample
     pct = effective_radius_pct(size, radius_pct)
-    hi = src.convert("RGBA").resize((n, n), Image.LANCZOS)
+    hi = src.convert("RGBA").resize((n, n), Image.Resampling.LANCZOS)
     mask = Image.new("L", (n, n), 0)
     ImageDraw.Draw(mask).rounded_rectangle(
         [0, 0, n - 1, n - 1], radius=int(n * pct / 100), fill=255
@@ -69,7 +69,7 @@ def rounded_frame(
     alpha = np.array(hi.getchannel("A")).astype(np.uint16) * np.array(mask)
     hi.putalpha(Image.fromarray((alpha // 255).astype("uint8")))
 
-    out = hi.resize((size, size), Image.LANCZOS)
+    out = hi.resize((size, size), Image.Resampling.LANCZOS)
     arr = np.array(out)
     a = arr[..., 3].astype(int)
     a = np.where(

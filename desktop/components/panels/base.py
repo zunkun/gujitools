@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import re
 
+from typing import Any
+
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QLabel,
@@ -21,7 +23,7 @@ from desktop.ui import theme as T
 from desktop.ui.widgets import HelpButton, apply_to
 
 
-def default_for(parameters: dict, defaults: dict, key: str):
+def default_for(parameters: dict, defaults: dict, key: str) -> Any:
     """取回填值：``parameters`` 里有且**不为 None** 时用它，否则回落 ``defaults[key]``。
 
     ⚠️ 不能写成 ``parameters.get(key, defaults[key])``——历史配置里存着

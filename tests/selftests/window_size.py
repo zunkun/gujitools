@@ -39,6 +39,7 @@ def run(ctx) -> None:
 
     # ---- 1. 纯函数：屏幕够大时逐像素不变（只夹不涨） ----
     size, minimum = fit_sizes(WINDOW_SIZE, WINDOW_MIN_SIZE, QRect(0, 0, 2560, 1400))
+    assert minimum is not None    # ⚠️ 传了 min 就一定会还回来
     ok("大屏：期望尺寸与最小尺寸原样保留（只夹不涨）",
        (size.width(), size.height()) == (WINDOW_SIZE.width(), WINDOW_SIZE.height())
        and (minimum.width(), minimum.height())
@@ -47,6 +48,7 @@ def run(ctx) -> None:
 
     # ---- 2. 纯函数：用户现场（1536×824），高度必须让位于任务栏 ----
     size, minimum = fit_sizes(WINDOW_SIZE, WINDOW_MIN_SIZE, USER_SCREEN_AREA)
+    assert minimum is not None
     cap_h = int((USER_SCREEN_AREA.height() - FRAME_ALLOWANCE.height()) * FIT_RATIO)
     ok("1920×1080@125%（可用 1536×824）：高被夹住，外框仍放得下",
        size.height() == cap_h and size.height() + FRAME_ALLOWANCE.height()
@@ -61,6 +63,7 @@ def run(ctx) -> None:
     # ---- 3. 纯函数：极窄屏 —— 最小尺寸也要跟着降，否则用户被卡死 ----
     tiny = QRect(0, 0, 1092, 574)   # 1366×768 @125%
     size, minimum = fit_sizes(WINDOW_SIZE, WINDOW_MIN_SIZE, tiny)
+    assert minimum is not None
     ok("1366×768@125%（可用 1092×574）：最小尺寸跟着夹到窗口尺寸",
        minimum.width() == size.width() and minimum.height() == size.height()
        and size.width() <= tiny.width() and size.height() <= tiny.height(),
@@ -75,6 +78,8 @@ def run(ctx) -> None:
     area = available_area()
     ok("离屏环境下拿得到可用区域", area is not None and not area.isEmpty(),
        f"area={area.getRect() if area else None}")
+    # ⚠️ 下面每一段都在拿 area 比几何，断言不到就等于拿 None 比——直接断掉
+    assert area is not None, "离屏环境拿不到屏幕可用区域"
 
     window = MainWindow()
     window.show()
@@ -107,6 +112,7 @@ def run(ctx) -> None:
 
     # ---- 6. 期望尺寸远超屏幕时，尺寸与位置同时被收住 ----
     area = available_area()
+    assert area is not None    # ⚠️ 同一块屏幕，第 5 段已确认拿得到
     expected = fit_sizes(QSize(10_000, 10_000), None, area)[0]
     probe = MainWindow()
     apply_window_size(probe, QSize(10_000, 10_000))

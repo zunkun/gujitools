@@ -65,6 +65,7 @@ class TextRegionProcessor(FunctionBase):
 
     def _process_single_image(self, image_path: Path) -> dict:
         """完整处理流程：读取 → 检测 → area/border 规则 → 输出。"""
+        assert self.outpath is not None
         if not utils.is_valid_image_size(image_path):
             return {
                 "status": "skipped",

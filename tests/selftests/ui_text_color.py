@@ -83,15 +83,15 @@ def run(ctx) -> None:
                 continue
             owner = min(
                 ((end - start, name) for start, end, name in spans
-                 if start <= node.lineno <= end),
+                 if start <= getattr(node, "lineno") <= end),
                 default=(0, None),
             )[1]
-            where = f"{path.name}:{node.lineno}"
+            where = f"{path.name}:{getattr(node, 'lineno')}"
             if owner == "_set_stage_status":
                 writers.append(where)
             else:
                 bypass.append(f"{where}({owner})")
 
-    ok("状态行的写入点存在（别因为扫描没匹配上而假绿）", writers, str(writers))
+    ok("状态行的写入点存在（别因为扫描没匹配上而假绿）", bool(writers), str(writers))
     ok("状态行只有 _set_stage_status 一个写入口（颜色才会跟着一起重置）",
        not bypass, f"绕过颜色的写法：{bypass}")

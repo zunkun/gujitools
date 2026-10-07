@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING, Callable
 
 from desktop.store.json_io import read_json, write_json
 
@@ -32,6 +33,10 @@ class DraftMixin:
     """``drafts/<阶段>.json`` 的读写。"""
 
     root: Path
+
+    if TYPE_CHECKING:
+        # 宿主 TaskStore（或同级 Mixin）提供：只做类型声明，运行时零副作用。
+        task_dir: Callable[[str], Path]
 
     def drafts_dir(self, task_id: str) -> Path:
         """暂存目录：``tasks/<任务号>/drafts``。"""

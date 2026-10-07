@@ -121,6 +121,7 @@ class CropRemoveFunction(TextRegionProcessor):
 
     def _handle_no_boxes(self, img_bgr, image_path, area_mode):
         """无检测框：area=1 输出原图；area=2/3 整图 Otsu。"""
+        assert self.outpath is not None
         if area_mode == 1:
             # 修复：img_bgr 是 BGR，_save_output 假定 RGB，需先转换
             img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)

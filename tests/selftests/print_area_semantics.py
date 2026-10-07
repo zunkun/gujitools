@@ -40,7 +40,7 @@ def run(ctx) -> None:
     )
     from desktop.workers.preview_worker import compose_region_output
 
-    img = QImage(W, H, QImage.Format_RGB32)
+    img = QImage(W, H, QImage.Format.Format_RGB32)
     img.fill(QColor("white"))
     p = QPainter(img)
     for box, color in ((LEFT, QColor("#8899aa")), (RIGHT, QColor("#aa9988"))):

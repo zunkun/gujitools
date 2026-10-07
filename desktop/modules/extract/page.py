@@ -157,8 +157,12 @@ class ExtractModulePage(StepModulePage, ThumbSourceMixin):
         super().shutdown_workers()
 
 
-def _natural_key(path: str) -> tuple:
-    """按文件名里的数字自然排序（page2 排在 page10 前面）。"""
+def _natural_key(path: str | Path) -> tuple:
+    """按文件名里的数字自然排序（page2 排在 page10 前面）。
+
+    ⚠️ 两种入参都收：collect_result_images 传 ``Path``，别处按名字传 ``str``
+    （内部一律 ``Path(path).name`` 取名，两种都对）。
+    """
     parts = re.split(r"(\d+)", Path(path).name)
     return tuple(int(p) if p.isdigit() else p.lower() for p in parts)
 

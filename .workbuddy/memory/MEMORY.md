@@ -5,6 +5,9 @@
 ## 提交纪律
 ⚠️长期大量未提交在制品。**AI 禁止自动 `git commit`**。提交前：①`git diff > /tmp/b.patch` **加**逐个`cp`未跟踪文件；②跑相关自测；③`git add -A` 后 `git diff --cached --name-only | grep -E "_out/|\.png$|\.log$"` 兜产物。⚠自测退出码 **127 是伪错误**（末段`QThread: Destroyed`）且**会吃掉收尾一批模块**⇒必须比对 `--list` 计划数 vs 日志`==标题==`数再用 `--only` 补跑。
 
+## AI 写文件落点 & 临时文件纪律（2026-10-07 定）
+**测试代码只进 `tests/`**——可被自测框架发现的用例＝`tests/selftests/<名>.py`（须带 `NAME`/`TITLE`/`DEPENDS`）；探针/截图类放 `tests/`（如 `probe_*.py`）；**禁止在仓库根新建测试脚本**。**测试产生的临时数据一律落 `tests/tmp/`**（唯一落点 `tests/tmpdir.py`：新码 `from tests.tmpdir import temp_dir`→`temp_dir("前缀_")`；存量/测试入口在最顶部调一次 `install()`——它把 `tempfile.tempdir` **和** `TMPDIR/TEMP/TMP` 一起指过去，故**worker 子进程也覆盖**；⚠️必须早于任何 `tempfile` 调用，`gettempdir()` 算过一次就缓存；收工 `clean()`）。该目录已被 `.gitignore` 忽略（`git check-ignore -v tests/tmp/` 自证）。⚠️两种错法：落**系统临时目录**⇒产物散项目外、看不见清不掉；落**仓库内普通目录**⇒被 `git add -A` 当普通文件收进仓库。**临时脚本/日志/JSON dump 一律放 `_scratch/`，收工前删净**——该目录被 `.gitignore` 的 `_*/` **整目录**忽略（`git check-ignore -v _scratch/` 可自证），`git add -A` 带不走。⚠️`_*/` 只忽略**目录**、**不忽略文件**⇒根目录散落的 `_pwrun.py`/`_selftests.log` 会被 `git add -A` 收走（真发生过，见 `2026-10-07.md` 收尾节）。⚠️**别往 `.gitignore` 补 `_*.py`**：它同时匹配 `__init__.py`（用户当场指出）；只能补窄模式 `/_pw*.py`、`/_pyright_*.py`。收工自查 `git status --short` 无 `??` 临时文件。
+
 ## 事实来源（别另写一份，漂移必出 bug）
 - CLI参数`core/command_spec.py`｜桌面默认值`components/panels/params_spec.py`｜色距字号`ui/theme.py`｜JSON`store/json_io.py`(临时文件+`os.replace`)。
 - 框几何`utils/box_geometry.py`：半幅恒2槽[左,右]/整幅恒1槽，**下游靠槽数辨形态**；绘制统一`box_draw.draw_slots`；排版`page_layout.py`；页序`sort_utils.pdf_custom_sort_key`。

@@ -156,9 +156,11 @@ def encode_jpeg(image: QImage, quality: int = 80) -> bytes:
     array = QByteArray()
     buffer = QBuffer(array)
     buffer.open(QBuffer.OpenModeFlag.WriteOnly)
-    image.save(buffer, "JPG", quality)
+    # ⚠️ type: ignore —— PySide6 的 save() 类型注解把 format 写成
+    # ``bytes | ...``，运行时却接受 str（实测 str 正常编码）。
+    image.save(buffer, "JPG", quality)  # type: ignore[reportCallIssue]
     buffer.close()
-    return bytes(array)
+    return bytes(array.data())
 
 
 class ImageThumbCacheWorker(QObject):

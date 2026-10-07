@@ -35,21 +35,25 @@ def run(ctx) -> None:
 
     app = ctx.app
 
-    from desktop.steps import (
+    # ⚠️ 直接从子模块导入（desktop.steps 包是 PEP 562 惰性导出，pyright 对
+    #    __getattr__ 的返回值只能推成 ModuleType；子模块导入运行时等价）。
+    from desktop.steps.control import StepControl
+    from desktop.steps.kernel import (
+        CommandJob,
+        StepKernel,
+        StepRequest,
+        callable_job,
+        command_job,
+    )
+    from desktop.steps.process import StageProcess, worker_arguments, worker_env
+    from desktop.steps.spec import (
         FLOW_STAGES,
         NAV_STEPS,
         SPECS,
         STEP_KEYS,
-        StageProcess,
-        StepControl,
-        StepKernel,
-        StepRequest,
         StepSpec,
-        callable_job,
-        command_job,
         spec_by_key,
     )
-    from desktop.steps.process import worker_arguments, worker_env
 
     # ---- 1. 步骤元数据 ----
     ok(
@@ -61,11 +65,19 @@ def run(ctx) -> None:
     ok("未知 key 返回 None", spec_by_key("nope") is None)
     ok("每条都声明了参数面板", all(s.panel for s in SPECS), str([s.panel for s in SPECS]))
     ok("面板类都能解析出来", all(s.panel_class() is not None for s in SPECS))
-    ok("执行按钮文案", spec_by_key("extract").run_text() == "开始提取", spec_by_key("extract").run_text())
 
-    extract = spec_by_key("extract")
-    rembg = spec_by_key("rembg")
-    imposition = spec_by_key("imposition")
+    def spec_of(key: str) -> StepSpec:
+        """查注册表里**必然存在**的 key（None 只会出现在"未知 key"用例里）。"""
+        s = spec_by_key(key)
+        assert s is not None
+        return s
+
+    extract = spec_of("extract")
+    rembg = spec_of("rembg")
+    imposition = spec_of("imposition")
+
+    ok("执行按钮文案", extract.run_text() == "开始提取", extract.run_text())
+
     ok("拼图允许对话框里一次多选（拖拽天然支持多选）", imposition.allow_multi and not extract.allow_multi)
     ok(
         "默认输出：文件源 → 父目录/文件名+后缀",
@@ -167,12 +179,14 @@ def run(ctx) -> None:
     ok(
         "job 一律经 job_for 装配（唯一入口）",
         (
-            lambda je, jr, ji: je.command == "extract"
-            and je._after is not None
-            and jr.command == "rembg"
-            and jr._after is None
-            and ji is None
-        )(_kernel.job_for(extract), _kernel.job_for(rembg), _kernel.job_for(imposition)),
+            isinstance(_je := _kernel.job_for(extract), CommandJob)
+            and isinstance(_jr := _kernel.job_for(rembg), CommandJob)
+            and _je.command == "extract"
+            and _je._after is not None
+            and _jr.command == "rembg"
+            and _jr._after is None
+            and _kernel.job_for(imposition) is None
+        ),
         "extract 要带收尾钩子、rembg 不带、拼图无命令",
     )
     ok("没有命令的步骤不造 job", _kernel.job_for(imposition) is None)
@@ -337,12 +351,12 @@ def run(ctx) -> None:
 
     ok(
         "步骤条文案由 stage_name() 派生",
-        all(STAGE_LABELS[k] == spec_by_key(k).stage_name() for k in STAGES),
+        all(STAGE_LABELS[k] == spec_of(k).stage_name() for k in STAGES),
         str(STAGE_LABELS),
     )
     ok(
         "步骤条短名由 short_name() 派生",
-        all(STAGE_SHORT[k] == spec_by_key(k).short_name() for k in STAGES),
+        all(STAGE_SHORT[k] == spec_of(k).short_name() for k in STAGES),
         str(STAGE_SHORT),
     )
     ok(
@@ -375,15 +389,15 @@ def run(ctx) -> None:
     ok(
         "导航文案/悬停提示/图标都由 spec 提供",
         all(
-            m.title == spec_by_key(m.key).nav_name()
-            and m.subtitle == spec_by_key(m.key).nav_tip()
-            and m.icon == spec_by_key(m.key).nav_icon
+            m.title == spec_of(m.key).nav_name()
+            and m.subtitle == spec_of(m.key).nav_tip()
+            and m.icon == spec_of(m.key).nav_icon
             for m in MODULES
         ),
     )
     ok(
         "没有独立模块页的步骤不进导航（免得壳层去建不存在的页面）",
-        all(spec_by_key(m.key).nav for m in MODULES) and set(NAV_STEPS) == {m.key for m in MODULES},
+        all(spec_of(m.key).nav for m in MODULES) and set(NAV_STEPS) == {m.key for m in MODULES},
         str(NAV_STEPS),
     )
     # ⚠️ 逐字锁死：导航文案改动**必须**显式改spec.nav_title，而不是碰title
@@ -406,14 +420,14 @@ def run(ctx) -> None:
     )
     ok(
         "nav_order 只影响导航、不泄漏到流程顺序",
-        spec_by_key("print").nav_order != 0 and FLOW_STAGES[-1] == "print",
-        f"nav_order={spec_by_key('print').nav_order}, FLOW={FLOW_STAGES}",
+        spec_of("print").nav_order != 0 and FLOW_STAGES[-1] == "print",
+        f"nav_order={spec_of('print').nav_order}, FLOW={FLOW_STAGES}",
     )
     # 开了 nav 却忘了文案/图标 = 导航上出现一个没提示的空条目，肉眼很难发现。
     ok(
         "每个 nav=True 的 spec 都填了导航三件套（标题/悬停提示/图标）",
-        all(spec_by_key(k).nav_name() and spec_by_key(k).nav_tip() and spec_by_key(k).nav_icon for k in NAV_STEPS),
-        str([(k, spec_by_key(k).nav_tooltip, spec_by_key(k).nav_icon) for k in NAV_STEPS]),
+        all(spec_of(k).nav_name() and spec_of(k).nav_tip() and spec_of(k).nav_icon for k in NAV_STEPS),
+        str([(k, spec_of(k).nav_tooltip, spec_of(k).nav_icon) for k in NAV_STEPS]),
     )
 
     # ---- 子任务目录名（磁盘路径）与显示文案**必须解耦** ----
@@ -422,12 +436,12 @@ def run(ctx) -> None:
     # 变回原样"）。所以目录名锚在 disk_key（路由键）上，与 title/nav_title 无关。
     ok(
         "磁盘子任务目录名取 disk_key，不取任何显示文案",
-        all(spec_by_key(k).disk_key() == k for k in NAV_STEPS),
-        str([(k, spec_by_key(k).disk_key()) for k in NAV_STEPS]),
+        all(spec_of(k).disk_key() == k for k in NAV_STEPS),
+        str([(k, spec_of(k).disk_key()) for k in NAV_STEPS]),
     )
     ok(
         "磁盘目录名与导航/页头文案完全无关（改文案不会动磁盘路径）",
-        all(spec_by_key(k).disk_key() not in (spec_by_key(k).title, spec_by_key(k).nav_name()) for k in NAV_STEPS),
+        all(spec_of(k).disk_key() not in (spec_of(k).title, spec_of(k).nav_name()) for k in NAV_STEPS),
     )
 
     ok(
@@ -444,7 +458,8 @@ def run(ctx) -> None:
 
     ok(
         "面板清单顺序 = 流程主链顺序（同样是派生的）",
-        tuple(c.__name__ for c in PANEL_CLASSES) == tuple(spec_by_key(k).panel.split(":")[-1] for k in STAGES),
+        tuple(c.__name__ for c in PANEL_CLASSES)
+        == tuple((spec_of(k).panel or "").split(":")[-1] for k in STAGES),
         str([c.__name__ for c in PANEL_CLASSES]),
     )
     ok(
@@ -465,7 +480,7 @@ def run(ctx) -> None:
     got: dict = {"progress": [], "logs": [], "events": []}
     kernel.progress.connect(lambda d, t: got["progress"].append((d, t)))
     kernel.log.connect(got["logs"].append)
-    kernel.event.connect(lambda name, payload: got["events"].append((name, payload)))
+    kernel.event.connect(lambda name, payload: got["events"].append((name, payload)))  # type: ignore[reportAttributeAccessIssue]  # ``event`` 与 QObject.event 同名，运行时是 Signal（pyright 按基类方法解析）
     kernel.finished.connect(lambda out: got.update(out=out))
     kernel.failed.connect(lambda msg: got.update(err=msg))
     ok("内核受理请求", kernel.run(StepRequest(source=Path("s"), dest=Path("d"))) is True)
@@ -573,7 +588,8 @@ def run(ctx) -> None:
     functions.get_function = lambda cmd, ca, reporter=None: _FakeFileFunction(ca, reporter)
     try:
         pdf_dir = Path(ctx.tmp) / "pdf_out"
-        pdf_job = _kernel.job_for(spec_by_key("print"))
+        pdf_job = _kernel.job_for(spec_of("print"))
+        assert pdf_job is not None  # print 声明了命令，必造得出 job
         pdf_result = pdf_job(StepRequest(source=tmp_in, dest=pdf_dir, args={}), lambda *a: None)
         ok(
             "产物是文件：--output 传目录、命令自己取名（outpath 不被覆盖）",
@@ -611,8 +627,8 @@ def run(ctx) -> None:
         f"kernel={hasattr(_K, 'event')} control={hasattr(StepControl, 'event')}",
     )
     event_sink: list = []
-    control_a.event.connect(lambda name, payload: event_sink.append((name, payload)))
-    control_a.kernel.event.emit("page_boxes", {"image": "0009"})
+    control_a.event.connect(lambda name, payload: event_sink.append((name, payload)))  # type: ignore[reportAttributeAccessIssue]  # 同上：event 与 QObject.event 同名
+    control_a.kernel.event.emit("page_boxes", {"image": "0009"})  # type: ignore[reportAttributeAccessIssue]  # 同上
     app.processEvents()
     ok(
         "内核事件能经共用控件转出来（模块页的接入点）",
@@ -638,8 +654,7 @@ def run(ctx) -> None:
     # ---- 4b. 大输入区（用户要的那块"大的输入框"）----
     from PySide6.QtCore import QMimeData, QUrl
 
-    from desktop.steps import SourceZone
-    from desktop.steps.source_zone import EMPTY_HEIGHT, FILLED_HEIGHT
+    from desktop.steps.source_zone import EMPTY_HEIGHT, FILLED_HEIGHT, SourceZone
 
     # ⚠️ 用 rembg（仍收目录）当夹具，不用 extract：图片提取已经改成
     #    **只支持文件**（用户 2026-10-03），它不摆「选择文件夹」按钮。
@@ -714,7 +729,7 @@ def run(ctx) -> None:
 
     browse_calls: list = []
     original_name = QFileDialog.getOpenFileName
-    original_menu = SourceZone._ask_kind if hasattr(SourceZone, "_ask_kind") else None
+    original_menu = getattr(SourceZone, "_ask_kind", None)
 
     # 若还留着那个小菜单方法，就让它一被调用就炸（用来证明它**没**被调用）
     def _menu_should_not_run(self):
@@ -722,8 +737,8 @@ def run(ctx) -> None:
         raise AssertionError("不该弹两选项小菜单（用户 2026-10-03 要求去掉）")
 
     if original_menu is not None:
-        SourceZone._ask_kind = _menu_should_not_run
-    QFileDialog.getOpenFileName = staticmethod(lambda *a, **k: (browse_calls.append(("file", a[2])), ("", ""))[1])
+        SourceZone._ask_kind = _menu_should_not_run  # type: ignore[reportAttributeAccessIssue]  # 该属性已被移除，hasattr 兜底（防回归期间方法复活）
+    QFileDialog.getOpenFileName = staticmethod(lambda *a, **k: (browse_calls.append(("file", a[2])), ("", ""))[1])  # type: ignore[reportAttributeAccessIssue]  # 测试替身：离屏不许真弹文件对话框，换成记录器
     try:
         zone.mousePressEvent(
             QMouseEvent(
@@ -743,12 +758,12 @@ def run(ctx) -> None:
         )
         ok(
             "对话框起始目录是文档目录，不是空串" "（空串会回退到进程工作目录，打包后就是程序目录）",
-            browse_calls and browse_calls[0][1] == str(default_open_dir()),
+            bool(browse_calls) and browse_calls[0][1] == str(default_open_dir()),
             repr(browse_calls[0][1] if browse_calls else None),
         )
     finally:
         if original_menu is not None:
-            SourceZone._ask_kind = original_menu
+            SourceZone._ask_kind = original_menu  # type: ignore[reportAttributeAccessIssue]  # 该属性已被移除，hasattr 兜底（防回归期间方法复活）
         QFileDialog.getOpenFileName = original_name
 
     # ---- 4b-3. 可见的选择按钮（用户 2026-10-03 报"不能直接点击按钮选择"）----
@@ -779,8 +794,8 @@ def run(ctx) -> None:
     btn_calls: list = []
     orig_multi = QFileDialog.getOpenFileNames
     orig_dir = QFileDialog.getExistingDirectory
-    QFileDialog.getOpenFileName = staticmethod(lambda *a, **k: (btn_calls.append(("file", a[2])), ("", ""))[1])
-    QFileDialog.getExistingDirectory = staticmethod(lambda *a, **k: (btn_calls.append(("dir", a[2])), "")[1])
+    QFileDialog.getOpenFileName = staticmethod(lambda *a, **k: (btn_calls.append(("file", a[2])), ("", ""))[1])  # type: ignore[reportAttributeAccessIssue]  # 测试替身：离屏不许真弹文件对话框，换成记录器
+    QFileDialog.getExistingDirectory = staticmethod(lambda *a, **k: (btn_calls.append(("dir", a[2])), "")[1])  # type: ignore[reportAttributeAccessIssue]  # 测试替身：离屏不许真弹文件对话框，换成记录器
     try:
         zone.file_button.click()
         ok("点「选择文件」**不当场**弹模态（仍在同一个鼠标事件里）", btn_calls == [], str(btn_calls))
@@ -791,11 +806,12 @@ def run(ctx) -> None:
         )
         ok(
             "按钮路径的起始目录也是文档目录（不是空串）",
-            btn_calls and btn_calls[0][1] == str(default_open_dir()),
+            bool(btn_calls) and btn_calls[0][1] == str(default_open_dir()),
             repr(btn_calls[0][1] if btn_calls else None),
         )
 
         btn_calls.clear()
+        assert zone.dir_button is not None  # rembg 收目录，目录按钮必已建
         zone.dir_button.click()
         ok(
             "点「选择文件夹」弹出的是选目录对话框",
@@ -854,7 +870,7 @@ def run(ctx) -> None:
     pdf_a, pdf_b = drop_dir / "a.pdf", drop_dir / "b.pdf"
     pdf_a.write_bytes(b"%PDF-1.4\n")
     pdf_b.write_bytes(b"%PDF-1.4\n")
-    QFileDialog.getOpenFileName = staticmethod(lambda *a, **k: (swap_calls.append(str(a[2])), (str(pdf_b), ""))[1])
+    QFileDialog.getOpenFileName = staticmethod(lambda *a, **k: (swap_calls.append(str(a[2])), (str(pdf_b), ""))[1])  # type: ignore[reportAttributeAccessIssue]  # 测试替身：离屏不许真弹文件对话框，换成记录器
     # ⚠️ 必须 show 出来：``QTest.mouseClick`` 走的是**命中测试**路径，控件不在
     #    任何已显示的窗口里时命中不到，事件会悄悄丢掉（自测里表现为"点了没反应"
     #    ——正是本次要防的那个症状本身，不能自己踩一遍）。
@@ -873,14 +889,14 @@ def run(ctx) -> None:
         )
         ok(
             "「更换」的起始目录是文档目录",
-            swap_calls and swap_calls[0] == str(default_open_dir()),
+            bool(swap_calls) and swap_calls[0] == str(default_open_dir()),
             repr(swap_calls[0] if swap_calls else None),
         )
 
         # 端到端：真的换掉（offer → paths_chosen → 宿主 set_source）
         picked: list = []
         no_dir.paths_chosen.connect(picked.append)
-        QFileDialog.getOpenFileName = staticmethod(lambda *a, **k: (str(pdf_b), ""))
+        QFileDialog.getOpenFileName = staticmethod(lambda *a, **k: (str(pdf_b), ""))  # type: ignore[reportAttributeAccessIssue]  # 测试替身：离屏不许真弹文件对话框，换成记录器
         no_dir.set_source(pdf_a)
         app.processEvents()
         QTest.mouseClick(no_dir._swap_button, Qt.MouseButton.LeftButton)
@@ -891,7 +907,7 @@ def run(ctx) -> None:
         # ⚠️ 这里必须把 stub 换回**会记账**的那个：上一段为了验"交出去的路径"
         #    换了个不记账的 stub，直接拿来断言 ``swap_calls`` 必然是空的
         #    （我自己踩了一次，别再踩）。
-        QFileDialog.getOpenFileName = staticmethod(lambda *a, **k: (swap_calls.append(str(a[2])), (str(pdf_b), ""))[1])
+        QFileDialog.getOpenFileName = staticmethod(lambda *a, **k: (swap_calls.append(str(a[2])), (str(pdf_b), ""))[1])  # type: ignore[reportAttributeAccessIssue]  # 测试替身：离屏不许真弹文件对话框，换成记录器
         swap_calls.clear()
         QTest.mouseClick(no_dir, Qt.MouseButton.LeftButton, pos=no_dir.rect().center())
         ok(
@@ -928,7 +944,7 @@ def run(ctx) -> None:
         def _boom(*a, **k):
             raise RuntimeError("模拟对话框故障")
 
-        QFileDialog.getOpenFileName = staticmethod(_boom)
+        QFileDialog.getOpenFileName = staticmethod(_boom)  # type: ignore[reportAttributeAccessIssue]  # 测试替身：离屏不许真弹文件对话框，换成记录器
         no_dir.set_source(pdf_a)
         app.processEvents()
         QTest.mouseClick(no_dir._swap_button, Qt.MouseButton.LeftButton)
@@ -991,8 +1007,8 @@ def run(ctx) -> None:
     # 读 `self.path.suffix` —— 异常发生在**子线程内**，只经 failed 信号显示成
     # 「加载失败：'str' object has no attribute 'suffix'」。这里在两处边界
     # 各钉一道：viewer 的 set_images 与 worker 的构造。
-    from desktop.components.viewers import ImageViewerWidget
-    from desktop.workers import PreviewWorker
+    from desktop.components.viewers.image_viewer import ImageViewerWidget
+    from desktop.workers.preview_worker import PreviewWorker
 
     viewer = ImageViewerWidget(editable=False)
     viewer.set_images([str(drop_dir / "a.png"), str(drop_dir / "c.png")])

@@ -10,12 +10,18 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING, Callable
 
 from desktop.store.json_io import read_json, write_json
 
 
 class AnnotationMixin:
     """boxes.json / sizes.json 读写。"""
+
+    if TYPE_CHECKING:
+        # 宿主 TaskStore（或同级 Mixin）提供：只做类型声明，运行时零副作用。
+        artifact: Callable[..., Path]
+        task_dir: Callable[[str], Path]
 
     def _load_json(self, path: Path) -> dict:
         data = read_json(path, {})

@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
 
 from desktop.components.viewers import RembgPreviewWidget
 from desktop.modules.base import StepModulePage
@@ -33,6 +34,14 @@ class RembgModulePage(StepModulePage, ThumbSourceMixin):
     """去底色模块页：拖入图片（单张或文件夹）→ 调参数 → 批量去底 → 对比看结果。"""
 
     SPEC = _SPEC
+
+    if TYPE_CHECKING:
+        # ⚠️ 本页左栏是「原图 / 去底结果对比」控件 ``RembgPreviewWidget``，它
+        # **不是** ``ImageViewerWidget``（两类控件各实现自己的接口，没有继承
+        # 关系）。这里按**实际控件类型**重新声明 ``viewer``，覆盖
+        # ``ThumbSourceMixin`` 里那条通用声明；因两者无继承关系，pyright 会报
+        # 「override 不兼容」——按实际类型覆盖是这里唯一正确的写法。
+        viewer: RembgPreviewWidget  # type: ignore[reportIncompatibleVariableOverride]
 
     def __init__(self, parent=None):
         #: 已就绪的缓存缩略图：真实图路径 → 缓存小图路径。缩略图条按这个
@@ -58,7 +67,8 @@ class RembgModulePage(StepModulePage, ThumbSourceMixin):
         """
         self._cached_thumbs.clear()
         images = self.source_images() if source is not None else []
-        self.viewer.set_images(images, None)
+        # list 不变型：清单是 list[Path]，控件收 list[Path | str]
+        self.viewer.set_images(cast("list[Path | str]", images), None)
         self._warm_thumb_cache(images)
         super()._on_source_changed(source)
 
@@ -72,7 +82,10 @@ class RembgModulePage(StepModulePage, ThumbSourceMixin):
         cache_dir = self._thumb_cache_dir()
         edge = self.THUMB_EDGE
         self.run_worker(
-            lambda: ImageThumbCacheWorker(images, cache_dir, edge=edge),
+            lambda: ImageThumbCacheWorker(
+                # list 不变型：清单是 list[Path]，worker 收 list[Path | str]
+                cast("list[Path | str]", images), cache_dir, edge=edge,
+            ),
             lambda worker, thread: (
                 connect_queued(
                     self,
@@ -131,7 +144,8 @@ class RembgModulePage(StepModulePage, ThumbSourceMixin):
             return
         # RembgPreviewWidget.set_images(原图列表, 结果目录, ...)：
         # 传输出目录让它按同名文件找去底结果并做成左右对比。
-        self.viewer.set_images(sources, out_dir)
+        # list 不变型：清单是 list[Path]，控件收 list[Path | str]
+        self.viewer.set_images(cast("list[Path | str]", sources), out_dir)
         self.toast("success", "处理完成", f"共处理 {len(sources)} 张图片。")
 
 

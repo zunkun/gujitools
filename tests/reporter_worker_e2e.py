@@ -18,6 +18,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+# 测试临时文件统一落点：tests/tmp/（见 tests/tmpdir.py）。
+from tests.tmpdir import install as _install_tmpdir  # noqa: E402
+
+_install_tmpdir()
+
 from PIL import Image  # noqa: E402
 
 PY = sys.executable

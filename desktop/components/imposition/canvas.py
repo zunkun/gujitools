@@ -63,7 +63,7 @@ from desktop.ui import theme as T
 #: 背景恒白（用户口径：拼版不需要纸张，白底就行）
 PAGE_COLOR = QColor("#ffffff")
 #: 选中框是**虚线**（用户 2026-09-30：默认不显示蓝边，按住操作时才出现虚线）
-FRAME_STYLE = Qt.DashLine
+FRAME_STYLE = Qt.PenStyle.DashLine
 FRAME_COLOR = QColor("#0E7C8B")
 HANDLE_STROKE = QColor("#0E7C8B")
 HANDLE_FILL = QColor("#ffffff")
@@ -72,11 +72,11 @@ ROTATE_KNOB_RADIUS = 6
 ROTATE_KNOB_GAP = 26  # 旋转钮距框上边的距离（控件像素）
 
 _CORNER_CURSORS = [
-    Qt.SizeFDiagCursor, Qt.SizeBDiagCursor,
-    Qt.SizeFDiagCursor, Qt.SizeBDiagCursor,
+    Qt.CursorShape.SizeFDiagCursor, Qt.CursorShape.SizeBDiagCursor,
+    Qt.CursorShape.SizeFDiagCursor, Qt.CursorShape.SizeBDiagCursor,
 ]
 _EDGE_CURSORS = [
-    Qt.SizeVerCursor, Qt.SizeHorCursor, Qt.SizeVerCursor, Qt.SizeHorCursor,
+    Qt.CursorShape.SizeVerCursor, Qt.CursorShape.SizeHorCursor, Qt.CursorShape.SizeVerCursor, Qt.CursorShape.SizeHorCursor,
 ]
 _HANDLE_CURSORS = _CORNER_CURSORS + _EDGE_CURSORS
 
@@ -632,7 +632,7 @@ class ImpositionCanvas(QWidget):
         那会走进 ``mousePressEvent`` 把编辑手势带起来（用户双击预览、松手时
         画布却以为刚拖动过一下）。
         """
-        if event.button() != Qt.LeftButton or not self._items:
+        if event.button() != Qt.MouseButton.LeftButton or not self._items:
             return super().mouseDoubleClickEvent(event)
         index = self._item_at(event.position())
         if index >= 0:
@@ -642,7 +642,7 @@ class ImpositionCanvas(QWidget):
         event.accept()
 
     def mousePressEvent(self, event) -> None:  # noqa: N802
-        if not self._items or event.button() != Qt.LeftButton:
+        if not self._items or event.button() != Qt.MouseButton.LeftButton:
             return super().mousePressEvent(event)
         # 按住期间才画框线/手柄（松手即消失，见模块 docstring）
         self._pressed = True
@@ -688,7 +688,7 @@ class ImpositionCanvas(QWidget):
             mx, my = self._to_units(event.position())
             self._grab_x = mx - item["rect"][0]
             self._grab_y = my - item["rect"][1]
-            self.setCursor(Qt.ClosedHandCursor)
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
         self._dirty = False
         self.update()
 
@@ -703,7 +703,7 @@ class ImpositionCanvas(QWidget):
             return
         if self._mode == "resize":
             self._items[self._selected]["rect"] = self._resize_from_handle(
-                event, bool(event.modifiers() & Qt.ShiftModifier)
+                event, bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
             )
             self._dirty = True
             self.update()
@@ -716,7 +716,7 @@ class ImpositionCanvas(QWidget):
                 math.atan2(mx - center.x(), center.y() - my)
             )
             item["rotation"] = (self._grab_rotation + angle - self._grab_angle) % 360.0
-            if event.modifiers() & Qt.ShiftModifier:
+            if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
                 item["rotation"] = (
                     round(item["rotation"] / SNAP_DEGREES) * SNAP_DEGREES
                 ) % 360.0
@@ -731,15 +731,15 @@ class ImpositionCanvas(QWidget):
             if index >= 0:
                 handle = self._hit_handle(index, event.position())
                 if handle == 8:
-                    self.setCursor(Qt.CrossCursor)
+                    self.setCursor(Qt.CursorShape.CrossCursor)
                     return
                 if handle is not None:
                     self.setCursor(_HANDLE_CURSORS[handle])
                     return
                 if self._item_contains_px(index, event.position()):
-                    self.setCursor(Qt.OpenHandCursor)
+                    self.setCursor(Qt.CursorShape.OpenHandCursor)
                     return
-            self.setCursor(Qt.ArrowCursor)
+            self.setCursor(Qt.CursorShape.ArrowCursor)
             return
         return super().mouseMoveEvent(event)
 
@@ -805,7 +805,7 @@ class ImpositionCanvas(QWidget):
         if self._mode is not None or self._pressed:
             self._mode = None
             self._pressed = False      # 松手 → 框线/手柄立即消失
-            self.setCursor(Qt.ArrowCursor)
+            self.setCursor(Qt.CursorShape.ArrowCursor)
             if self._dirty:
                 self._emit_changed()
             else:
@@ -902,7 +902,7 @@ class ImpositionCanvas(QWidget):
         # 滚轮连发期间走快速档（不做平滑采样，大图缩放的重头开销在这）；
         # 停稳后由 _on_wheel_frame 关掉快速档并补一帧高质量重绘
         painter.setRenderHint(
-            QPainter.SmoothPixmapTransform, not self._wheel_burst
+            QPainter.RenderHint.SmoothPixmapTransform, not self._wheel_burst
         )
         # 纯白底（用户口径：拼版不需要纸张，白底就行）——没有纸张矩形要画，
         # 控件自身的样式表已经是白的。
@@ -918,7 +918,7 @@ class ImpositionCanvas(QWidget):
                 center_x, _ = self._spread_center_units()
                 x = self._off_x + center_x * self._px_per_unit
                 # 宽度 1.0（用户 2026-09-30：1.5 的红线渲染出来约 2px，嫌太宽）
-                painter.setPen(QPen(SPINE_COLOR, 1.0, Qt.DashLine, Qt.RoundCap))
+                painter.setPen(QPen(SPINE_COLOR, 1.0, Qt.PenStyle.DashLine, Qt.PenCapStyle.RoundCap))
                 painter.drawLine(
                     QPointF(x, 0.0), QPointF(x, float(self.height()))
                 )
@@ -945,9 +945,9 @@ class ImpositionCanvas(QWidget):
         top = min(b[1] for b in boxes)
         right = max(b[2] for b in boxes)
         bottom = max(b[3] for b in boxes)
-        painter.setBrush(Qt.NoBrush)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.setPen(
-            QPen(CROP_COLOR, 1.2, FRAME_STYLE, Qt.RoundCap, Qt.RoundJoin)
+            QPen(CROP_COLOR, 1.2, FRAME_STYLE, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
         )
         painter.drawRect(QRectF(
             self._off_x + left * self._px_per_unit,
@@ -994,9 +994,9 @@ class ImpositionCanvas(QWidget):
         local = QRectF(
             -r.width() / 2.0, -r.height() / 2.0, r.width(), r.height()
         )
-        painter.setBrush(Qt.NoBrush)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.setPen(
-            QPen(FRAME_COLOR, 1.6, FRAME_STYLE, Qt.RoundCap, Qt.RoundJoin)
+            QPen(FRAME_COLOR, 1.6, FRAME_STYLE, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
         )
         painter.drawRect(local)
         painter.setPen(QPen(HANDLE_STROKE, 1.5))
@@ -1024,9 +1024,9 @@ class ImpositionCanvas(QWidget):
         painter.save()
         painter.translate(r.center())
         painter.rotate(float(self._items[index].get("rotation") or 0.0))
-        painter.setBrush(Qt.NoBrush)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.setPen(
-            QPen(FRAME_COLOR, 1.2, FRAME_STYLE, Qt.RoundCap, Qt.RoundJoin)
+            QPen(FRAME_COLOR, 1.2, FRAME_STYLE, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
         )
         painter.drawRect(QRectF(
             -r.width() / 2.0, -r.height() / 2.0, r.width(), r.height()

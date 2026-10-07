@@ -40,9 +40,25 @@ bpmn.io 画的图进页面长得一样。
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any, Callable
+
+if TYPE_CHECKING:
+    from desktop.store.store import TaskStore
+
 
 class FlowMixin:
     """详情页的流程查看/编辑入口。"""
+
+    if TYPE_CHECKING:
+        # 宿主 TaskDetailPage（或同级 Mixin）提供的属性/方法：Mixin 本体不持有，
+        # 这里只做类型声明（类级注解、无赋值），运行时零副作用。
+        store: TaskStore
+        task_id: str | None
+        _toast: Callable[..., None]
+        _refresh_imposition_node: Callable[..., None]
+        _refresh_source_actions: Callable[..., None]
+        # 流程编辑请求（本 Mixin 发出，壳层接）：参数是本次编辑的流程定义
+        flow_edit_requested: Callable[..., Any]
 
     def _on_show_flow(self) -> None:
         """页头「查看 / 编辑本任务的流程」→ **请求切到流程编辑页**。

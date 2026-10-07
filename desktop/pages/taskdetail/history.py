@@ -4,14 +4,36 @@
 from __future__ import annotations
 
 import time
+from typing import TYPE_CHECKING, Any, Callable
 
+from PySide6.QtWidgets import QComboBox, QStackedWidget
+
+from desktop.components.step_bar import StepBar
 from desktop.store import STAGE_LABELS
 from desktop.pages.taskdetail.runner import STATUS_LABELS
+
+if TYPE_CHECKING:
+    from desktop.store.store import TaskStore
 
 
 class HistoryMixin:
     """依赖宿主页面提供的属性：store/task_id、control_stack、step_bar、
     history_combo、_toast()。"""
+
+    if TYPE_CHECKING:
+        # 宿主 TaskDetailPage（或同级 Mixin）提供的属性/方法：Mixin 本体不持有，
+        # 这里只做类型声明（类级注解、无赋值），运行时零副作用。
+        store: TaskStore
+        task_id: str | None
+        control_stack: QStackedWidget
+        step_bar: StepBar
+        history_combo: QComboBox
+        _toast: Callable[..., None]
+        flow_slots: Callable[[], tuple]
+        stage_at_index: Callable[[int], str | None]
+        stack_index_of: Callable[[int], int]
+        # 历史参数预填已完成的任务号集合（宿主 init 时建，见 page.py）
+        _history_prefilled: set[str]
 
     # 各阶段历史回填时要跳过的字段（临时/派生/运行时覆盖）
     _HISTORY_SKIP = frozenset(
@@ -91,12 +113,15 @@ class HistoryMixin:
         if stage is None:
             return
         page = self.stack_index_of(index)
+        # ⚠️ page 是 control_stack 的页号（int，非负）——流程槽位表保证它在
+        #    栈范围内；面板可能是 LazyPanelHost，按鸭子类型取 apply_args。
+        panel: Any = self.control_stack.widget(page)
         if stage in self._history_prefilled:
             return
         self._history_prefilled.add(stage)
         draft = self.store.load_draft(self.task_id, stage)
         if draft:
-            self.control_stack.widget(page).apply_args(draft)
+            panel.apply_args(draft)
             return
         history = self.store.list_stage_runs(self.task_id, stage)
         if history:
@@ -104,7 +129,7 @@ class HistoryMixin:
                 k: v for k, v in history[0].get("parameters", {}).items()
                 if k not in self._auto_fill_keys(stage)
             }
-            self.control_stack.widget(page).apply_args(params)
+            panel.apply_args(params)
 
     def _refresh_history_options(self) -> None:
         """把当前阶段的历史执行记录填入下拉框（最新在前）。"""
@@ -142,5 +167,6 @@ class HistoryMixin:
             k: v for k, v in self._history_params[index].items()
             if k not in self._history_fill_keys(stage)
         }
-        self.control_stack.widget(self.stack_index_of(current)).apply_args(params)
+        panel: Any = self.control_stack.widget(self.stack_index_of(current))
+        panel.apply_args(params)
         self._toast("info", "已回填历史配置", STAGE_LABELS[stage])

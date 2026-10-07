@@ -14,7 +14,14 @@ PEP 562 的模块级 ``__getattr__``，属性首次被访问时才真正导入�
 ``from desktop.pages import TaskDetailPage`` 依然可用，只是变懒了。
 """
 
+from typing import TYPE_CHECKING
+
 from desktop.pages.tasklist.page import TaskListPage
+
+#: 惰性导出的类型侧声明（见模块 docstring）：类型检查器看不见下面的 PEP 562
+#: ``__getattr__``。**只影响类型检查**——详情页仍在真正访问时才导入。
+if TYPE_CHECKING:
+    from desktop.pages.taskdetail.page import TaskDetailPage as TaskDetailPage
 
 __all__ = ["TaskDetailPage", "TaskListPage"]
 

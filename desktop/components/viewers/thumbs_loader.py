@@ -14,8 +14,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QObject, QTimer
+from PySide6.QtWidgets import QWidget
 
 from desktop.components.viewers.thumb_strip import ThumbStrip
 from desktop.workers import ImageListWorker, WorkerHost, connect_queued
@@ -52,7 +54,8 @@ class ThumbsMixin(WorkerHost):
         #: 单次触发的定时器，负责在间隙后拉起下一批
         #: ⚠️ 必须给 parent：无主 QTimer 只靠 shutdown_workers 停，控件若未走
         #:    该路径销毁，定时器仍会触发并碰已析构的 C++ 对象（审计 L3）
-        self._thumb_timer = QTimer(self)
+        #:    宿主是 QWidget（QWidget + 本 Mixin 混入），self 需 cast 成 QObject。
+        self._thumb_timer = QTimer(cast(QObject, self))
         self._thumb_timer.setSingleShot(True)
         self._thumb_timer.timeout.connect(self._dispatch_next_thumb_batch)
 
@@ -63,10 +66,10 @@ class ThumbsMixin(WorkerHost):
         线程里被调用的，那里碰 QWidget（``devicePixelRatioF``）是越界的
         （见 selftests/worker_thread_affinity.py）。
         """
-        return ThumbStrip.decode_edge(self.devicePixelRatioF() or 1.0, base)
+        return ThumbStrip.decode_edge(cast(QWidget, self).devicePixelRatioF() or 1.0, base)
 
     # ------------------------------------------------------------ 对外入口
-    def _load_thumbs(self, strip: ThumbStrip, paths: list[Path],
+    def _load_thumbs(self, strip: ThumbStrip, paths: list[Path | str],
                      start: int = 0) -> None:
         """按路径加载缩略图；标签取文件名。
 
@@ -81,7 +84,7 @@ class ThumbsMixin(WorkerHost):
         self._load_thumbs_chunked(
             len(paths),
             make_worker=lambda s, e: ImageListWorker(
-                list(paths[s:e]), edge=edge
+                [Path(p) for p in paths[s:e]], edge=edge
             ),
             sink=lambda index, image, path: strip.set_item_icon(
                 index, image, path, Path(path).name

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from qframelesswindow import FramelessDialog
 from PySide6.QtCore import QPoint, QRectF, QSize, Qt, QTimer, Signal
@@ -103,7 +104,7 @@ class _SourceCard(QFrame):
         self._checked = False
         self._pixmap = QPixmap()
         self.setFixedSize(CARD_W, CARD_H)
-        self.setCursor(Qt.PointingHandCursor)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setToolTip(f"{self.path}\n勾选后：序号在前的排到拼版页右侧")
 
         column = QVBoxLayout(self)
@@ -114,10 +115,10 @@ class _SourceCard(QFrame):
         column.setSpacing(6)
         self.thumb = QLabel(self)
         self.thumb.setFixedSize(THUMB_W, THUMB_H)
-        self.thumb.setAlignment(Qt.AlignCenter)
-        column.addWidget(self.thumb, 0, Qt.AlignHCenter)
+        self.thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        column.addWidget(self.thumb, 0, Qt.AlignmentFlag.AlignHCenter)
         self.name = QLabel(self.path.stem, self)
-        self.name.setAlignment(Qt.AlignCenter)
+        self.name.setAlignment(Qt.AlignmentFlag.AlignCenter)
         apply_to(self.name, T.SIZE_CAPTION, color=T.INK)
         column.addWidget(self.name, 0)
         column.addStretch(1)
@@ -151,7 +152,7 @@ class _SourceCard(QFrame):
         改子 QLabel 的取色路径（见 step_bar 的教训）。
         """
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(0.5, 0.5, self.width() - 1, self.height() - 1)
         if self._checked:
             painter.setPen(QPen(QColor(T.ACCENT), 1.6))
@@ -178,14 +179,14 @@ class _SourceCard(QFrame):
             path.moveTo(box.x() + 4.0, box.y() + 8.4)
             path.lineTo(box.x() + 6.8, box.y() + 11.2)
             path.lineTo(box.x() + 12.2, box.y() + 4.8)
-            painter.setPen(QPen(QColor(T.ACCENT), 2.0, Qt.SolidLine,
-                                Qt.RoundCap, Qt.RoundJoin))
-            painter.setBrush(Qt.NoBrush)
+            painter.setPen(QPen(QColor(T.ACCENT), 2.0, Qt.PenStyle.SolidLine,
+                                Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawPath(path)
         painter.end()
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802
-        if event.button() == Qt.LeftButton and self.rect().contains(
+        if event.button() == Qt.MouseButton.LeftButton and self.rect().contains(
             event.position().toPoint()
         ):
             self.clicked.emit(self)
@@ -207,7 +208,7 @@ class _CardGrid(QWidget):
         self.grid.setContentsMargins(0, 0, 0, 0)
         self.grid.setHorizontalSpacing(CARD_GAP)
         self.grid.setVerticalSpacing(CARD_GAP)
-        self.grid.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        self.grid.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
 
     def add_card(self, card: _SourceCard) -> None:
         self._cards.append(card)
@@ -277,6 +278,12 @@ class ImpositionPickerDialog(FramelessDialog):
     展示，勾选结果也按**源清单顺序**返回（不是点选先后）。
     """
 
+    if TYPE_CHECKING:
+        # ⚠️ ``scroll`` 遮住了基类 FramelessDialog.scroll() 方法，类型检查器
+        # 会按基类方法解析、判成「不是 QScrollArea」。类型侧声明钉回真实类型，
+        # 只影响类型检查、运行时零副作用。
+        scroll: QScrollArea
+
     def __init__(self, files: list, parent=None, removed_files=None,
                  mode: str = "pick"):
         super().__init__(parent)
@@ -322,7 +329,7 @@ class ImpositionPickerDialog(FramelessDialog):
 
         self.scroll = QScrollArea(self)
         self.scroll.setWidgetResizable(True)
-        self.scroll.setFrameShape(QFrame.NoFrame)
+        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.body = _CardGrid()  # 第 0 页：候选
         self.removed_body = _CardGrid()  # 第 1 页：已删除
         self.stack = QStackedWidget(self)
@@ -401,7 +408,7 @@ class ImpositionPickerDialog(FramelessDialog):
         title = QLabel(self.windowTitle(), self.titleBar)
         apply_to(title, T.SIZE_BODY, bold=True, color=T.INK)
         self.titleBar.hBoxLayout.insertSpacing(0, 12)
-        self.titleBar.hBoxLayout.insertWidget(1, title, 0, Qt.AlignLeft)
+        self.titleBar.hBoxLayout.insertWidget(1, title, 0, Qt.AlignmentFlag.AlignLeft)
 
     def _restore_maximize_style(self) -> None:
         """把被基类清掉的 ``WS_MAXIMIZEBOX`` 加回去（win32 样式位）。

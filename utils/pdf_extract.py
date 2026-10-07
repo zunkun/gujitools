@@ -250,7 +250,9 @@ def _render_page(page, out_dir: str, page_idx: int, ext: str, actual_zoom: float
 
     mat = fitz.Matrix(actual_zoom, actual_zoom)
     pix = page.get_pixmap(matrix=mat, alpha=False)
-    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+    # ⚠️ size 必须给**元组**：PIL 的注解是 tuple[int, int]，给 list 会被
+    # 类型检查判错（运行时两者都收，但别依赖这点）。
+    img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
     img_path = os.path.join(out_dir, f"{page_idx + 1}.{ext}")
     _save_pil(img, img_path, ext)
     return img_path, pix.width, pix.height
@@ -340,13 +342,16 @@ def _save_embedded_image(info, out_dir: str, page_idx: int, ext: str,
     if not math.isclose(actual_zoom, 1.0):
         img = img.resize(
             (max(1, int(img.width * actual_zoom)), max(1, int(img.height * actual_zoom))),
-            Image.LANCZOS,
+            # ⚠️ type: ignore[attr-defined] —— ``Image.LANCZOS`` 在新版 Pillow
+            # 里搬到了 ``Image.Resampling.LANCZOS``，旧名只是别名、运行时一直
+            # 有效（这里要与旧 Pillow 兼容，故保留写法）。
+            Image.LANCZOS,  # type: ignore[attr-defined]
         )
     _save_pil(img, img_path, ext)
     return img_path, img.width, img.height
 
 
-def _report_batch(result: dict, progress: dict, reporter) -> None:
+def _report_batch(result: dict, progress: Optional[dict], reporter) -> None:
     """父进程侧：把一批渲染结果落到进度 / 日志 / 结构化通道。
 
     ⚠️ 子进程只返回数据（见 ``_render_batch_in_worker``），所有 ``print`` 与
@@ -504,7 +509,7 @@ def process_page_batch(
     # quick=True）：以前这里写的是 zoom=2 / quick=False，于是「直接调库」与
     # 「走 CLI/GUI」是两套行为，默认值等于有了第二个来源（2026-09-26 审计）。
     quick: bool = True,
-    progress: dict = None,
+    progress: Optional[dict] = None,
     reporter=None,
     dpi: float = DEFAULT_RENDER_DPI,
 ) -> List[bool]:
@@ -550,7 +555,7 @@ def render_pages_parallel(
     quick: bool = True,
     workers: int = 4,
     batch_size: int = 4,
-    progress: dict = None,
+    progress: Optional[dict] = None,
     reporter=None,
     dpi: float = DEFAULT_RENDER_DPI,
 ) -> List[bool]:
@@ -654,9 +659,9 @@ def extract_pdf_optimized(
     # quick=True）：以前这里写的是 zoom=2 / quick=False，于是「直接调库」与
     # 「走 CLI/GUI」是两套行为，默认值等于有了第二个来源（2026-09-26 审计）。
     quick: bool = True,
-    pages: str = None,
-    start: int = None,
-    end: int = None,
+    pages: Optional[str] = None,
+    start: Optional[int] = None,
+    end: Optional[int] = None,
     batch_size: int = 4,
     clean: bool = False,
     reporter=None,
@@ -768,9 +773,9 @@ def run_on_input_directory(
     # quick=True）：以前这里写的是 zoom=2 / quick=False，于是「直接调库」与
     # 「走 CLI/GUI」是两套行为，默认值等于有了第二个来源（2026-09-26 审计）。
     quick: bool = True,
-    pages: str = None,
-    start: int = None,
-    end: int = None,
+    pages: Optional[str] = None,
+    start: Optional[int] = None,
+    end: Optional[int] = None,
     batch_size: int = 4,
     clean: bool = False,
     subdir_name: str = "images",  # 新增参数，默认保持兼容

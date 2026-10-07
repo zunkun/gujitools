@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QFrame,
     QHBoxLayout,
     QListWidget,
     QListWidgetItem,
@@ -110,16 +112,16 @@ class DetectStatsWidget(QWidget):
         layout.addWidget(self.detail_caption)
         # 页码用 IconMode + 自动换行的列表：页多时自带滚动，不撑破面板
         self.page_list = QListWidget()
-        self.page_list.setViewMode(QListView.IconMode)
-        self.page_list.setFlow(QListView.LeftToRight)
+        self.page_list.setViewMode(QListView.ViewMode.IconMode)
+        self.page_list.setFlow(QListView.Flow.LeftToRight)
         self.page_list.setWrapping(True)
-        self.page_list.setResizeMode(QListView.Adjust)
-        self.page_list.setMovement(QListView.Static)
-        self.page_list.setSelectionMode(QListView.NoSelection)
+        self.page_list.setResizeMode(QListView.ResizeMode.Adjust)
+        self.page_list.setMovement(QListView.Movement.Static)
+        self.page_list.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self.page_list.setGridSize(QSize(46, 26))
         self.page_list.setUniformItemSizes(True)
         self.page_list.setMaximumHeight(LIST_MAX_HEIGHT)
-        self.page_list.setFrameShape(QListWidget.NoFrame)
+        self.page_list.setFrameShape(QFrame.Shape.NoFrame)
         self.page_list.setStyleSheet(
             "QListWidget::item {"
             f" background: {T.SURFACE_SOFT}; border-radius: {T.RADIUS_SM}px;"

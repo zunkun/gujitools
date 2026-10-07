@@ -18,6 +18,25 @@ import 了一遍，于是详情页的活——``preview_worker``（PDF 渲染 + 
 from desktop.workers.worker_host import WorkerHost, connect_queued
 from desktop.workers.serial_jobs import SerialJobQueue
 
+from typing import TYPE_CHECKING
+
+#: 惰性导出的**类型**侧声明（见模块 docstring）：类型检查器看不见 PEP 562 的
+#: ``__getattr__``，缺这一段会把下面 ``_LAZY`` 里的名字全当成未定义。
+#: **只影响类型检查**——运行时的惰性导入一点没变（启动期仍不会拉进
+#: preview_worker 等重模块）。
+if TYPE_CHECKING:
+    from desktop.workers.copy_source_worker import CopyFilesWorker, CopySourceWorker
+    from desktop.workers.hash_worker import HashWorker
+    from desktop.workers.image_list_worker import ImageListWorker
+    from desktop.workers.imposition_worker import (
+        ImpositionComposeWorker, ImpositionPagePreviewWorker,
+    )
+    from desktop.workers.preview_worker import PreviewWorker, close_cached_documents
+    from desktop.workers.rembg_live_worker import RembgLiveWorker
+    from desktop.workers.source_thumbnails_worker import SourceThumbnailsWorker
+    from desktop.workers.task_rows_worker import TaskRowsWorker
+    from desktop.workers.thumb_cache_worker import ImageThumbCacheWorker
+
 __all__ = [
     "CopyFilesWorker",
     "CopySourceWorker",

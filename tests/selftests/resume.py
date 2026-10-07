@@ -140,7 +140,7 @@ class _FakeProc:
     def state(self):
         from PySide6.QtCore import QProcess
 
-        return QProcess.NotRunning
+        return QProcess.ProcessState.NotRunning
 
     def readAllStandardOutput(self) -> bytes:
         data, self._chunks = b"".join(self._chunks), []

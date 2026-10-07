@@ -12,8 +12,9 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, Callable, cast
 
-from PySide6.QtCore import QProcess, QProcessEnvironment, QSize
+from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QSize
 from PySide6.QtGui import QImageReader
 
 from core.command_spec import WHOLE_PAGE_AREA
@@ -28,6 +29,11 @@ from utils.box_geometry import (
 from desktop.store.json_io import write_json
 from desktop.utils.files import project_root
 
+if TYPE_CHECKING:
+    from PySide6.QtWidgets import QTextEdit, QWidget
+    from desktop.components.viewers import ImageViewerWidget, RembgPreviewWidget
+    from desktop.store.store import TaskStore
+
 #: 信息条尾注：按本次框的来源（origin）标注。⚠️ `_apply_boxes` 与
 #: `_show_boxes_info` 必须共用这一份——apply_boxes 的 info_text 也会写
 #: 信息条，两处后缀不一致时后写的会覆盖先写的（曾丢过「（手动）」标记）。
@@ -41,6 +47,31 @@ ORIGIN_SUFFIX = {
 class DetectMixin:
     """依赖宿主页面提供的属性：store/task_id、detect_viewer、log_view、
     detect_process/detect_cache、current_stage()。"""
+
+    if TYPE_CHECKING:
+        # 宿主 TaskDetailPage（或同级 Mixin）提供的属性/方法：Mixin 本体不持有，
+        # 这里只做类型声明（类级注解、无赋值），运行时零副作用。
+        store: TaskStore
+        task_id: str | None
+        # 缓存值可能是槽位列表、也可能被置 None（防重复派发），用宽松值类型
+        detect_cache: dict[str, Any]
+        detect_process: QProcess | None
+        detect_viewer: ImageViewerWidget
+        rembg_viewer: RembgPreviewWidget
+        log_view: QTextEdit
+        _toast: Callable[..., None]
+        _acquire_run: Callable[..., bool]
+        _release_run: Callable[[], None]
+        _mark_run_launched: Callable[[], None]
+        _read_worker_error: Callable[[], None]
+        _worker_env: Callable[[], QProcessEnvironment]
+        _manifest_paths: Callable[[], list]
+        current_stage: Callable[[], str]
+        window: Callable[[], QWidget]
+        # QObject.sender() 在宿主（QWidget）上返回发出信号的对象
+        sender: Callable[[], QObject | None]
+        # ⚠️ 返回值是 LazyPanelHost 或真面板（属性转发、鸭子类型），用 Any 承接
+        panel_host_of_step: Callable[[str], Any]
 
     @staticmethod
     def _valid_boxes(boxes) -> list:
@@ -228,7 +259,7 @@ class DetectMixin:
         size = self._image_size_for(path_text)
         qsize = QSize(size[0], size[1]) if size else QImageReader(str(path_text)).size()
         names = box_names(shown, size, full)
-        info = self._describe_boxes(shown, names) + ORIGIN_SUFFIX.get(origin, "")
+        info = self._describe_boxes(shown, names) + ORIGIN_SUFFIX.get(origin or "", "")
         self._show_boxes_info(shown, origin, names=names)
         self.detect_viewer.apply_boxes(
             shown,
@@ -315,7 +346,10 @@ class DetectMixin:
             self._refresh_reference_boxes()
             return
         # 优先使用库里的框（含手动调整过的）
-        entry = self.store.detect_boxes_entry(self.task_id, path.stem)
+        entry = (
+            self.store.detect_boxes_entry(self.task_id, path.stem)
+            if self.task_id else None
+        )
         if entry is not None:
             boxes, origin = entry
             self.detect_cache[key] = boxes
@@ -376,7 +410,10 @@ class DetectMixin:
             return self._whole_page_entry(path_text)[0]
         boxes = self.detect_cache.get(str(path_text))
         if boxes is None:
-            entry = self.store.detect_boxes_entry(self.task_id, Path(path_text).stem)
+            entry = (
+                self.store.detect_boxes_entry(self.task_id, Path(path_text).stem)
+                if self.task_id else []
+            )
             boxes = entry[0] if entry else []
         return boxes or []
 
@@ -454,7 +491,7 @@ class DetectMixin:
         if boxes is None:
             self.detect_viewer.info_label.setText("正在检测文本框位置...")
             return
-        suffix = ORIGIN_SUFFIX.get(origin, "")
+        suffix = ORIGIN_SUFFIX.get(origin or "", "")
         self.detect_viewer.info_label.setText(self._describe_boxes(boxes, names) + suffix)
 
     @staticmethod
@@ -510,7 +547,7 @@ class DetectMixin:
         proc = self.detect_process
         if proc is None:
             return
-        if proc.state() != QProcess.NotRunning:
+        if proc.state() != QProcess.ProcessState.NotRunning:
             for signal in (
                 proc.readyReadStandardOutput,
                 proc.readyReadStandardError,
@@ -528,7 +565,7 @@ class DetectMixin:
 
     def _start_detect(self, path: Path) -> None:
         old = self.detect_process
-        if old is not None and old.state() != QProcess.NotRunning:
+        if old is not None and old.state() != QProcess.ProcessState.NotRunning:
             # 关键：先断开旧进程的全部信号再杀。否则旧进程迟到的 finished
             # 会把 self.detect_process 清空，新进程的输出就被当成无主的丢弃。
             for signal in (
@@ -542,14 +579,16 @@ class DetectMixin:
                     pass
             old.kill()
             old.waitForFinished(1000)
-        runs_dir = self.store.runs_config_dir(self.task_id)
+        task_id = self.task_id
+        assert task_id is not None, "单页检测时没有任务在身"
+        runs_dir = self.store.runs_config_dir(task_id)
         runs_dir.mkdir(parents=True, exist_ok=True)
         config_path = runs_dir / "detect-config.json"
         write_json(
             config_path,
             {"mode": "detect", "image": str(path), "area": self._current_area()},
         )
-        self.detect_process = QProcess(self)
+        self.detect_process = QProcess(cast("QObject", self))
         self._detect_out_buffer = ""  # stdout 半行重组缓冲（见 _read_detect_output）
         self.detect_process.setProgram(sys.executable)
         self.detect_process.setProcessEnvironment(self._worker_env())
@@ -569,7 +608,10 @@ class DetectMixin:
     def _read_detect_output(self) -> None:
         if not self.detect_process:
             return
-        data = bytes(self.detect_process.readAllStandardOutput()).decode("utf-8", errors="replace")
+        # PySide6 的 QByteArray 运行时可直接 bytes()（存根不认 SupportsBytes）
+        data = bytes(
+            self.detect_process.readAllStandardOutput()  # type: ignore[reportArgumentType]
+        ).decode("utf-8", errors="replace")
         # ⚠️ 半行重组（审计 P2）：readyRead 只保证"有字节"，不保证按行切齐。
         # JSON Lines 事件被切成两半时，两半都 json.loads 失败 → boxes 事件
         # 整条静默丢弃，界面上表现为"检测完了但框没了"。把不完整的首段
@@ -612,8 +654,11 @@ class DetectMixin:
                     continue
                 self.detect_cache[event["image"]] = boxes
                 # 检测结果写回 boxes.json；无框不存，避免下次选中无法重新检测
-                if any(boxes):
-                    self.store.save_detect_boxes(self.task_id, Path(event["image"]).stem, boxes, origin="auto")
+                if any(boxes) and self.task_id:
+                    self.store.save_detect_boxes(
+                        self.task_id, Path(event["image"]).stem, boxes,
+                        origin="auto",
+                    )
                 self._apply_detect_result(Path(event["image"]), boxes)
             elif event.get("type") == "log":
                 # 单页检测路径原先只认 boxes/detect_error，于是「模型加载用时」

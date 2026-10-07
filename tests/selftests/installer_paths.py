@@ -111,10 +111,13 @@ def run(ctx) -> None:
     for legacy in LEGACY_DIRS:
         ok(f"guji_setup.iss：清理历史 PATH 条目 {legacy}",
            legacy in iss, "历史条目不清，PATH 里会留下死路径")
+    _uninstall_block = (
+        re.search(r"procedure CurUninstallStepChanged.*?end;", iss, re.S)
+        or re.match(r"$", "")
+    )
+    assert _uninstall_block is not None
     ok("guji_setup.iss：卸载时也清历史条目",
-       "RemoveLegacyPathEntries;" in
-       (re.search(r"procedure CurUninstallStepChanged.*?end;", iss, re.S) or
-        re.match(r"$", "")).group(0))
+       "RemoveLegacyPathEntries;" in _uninstall_block.group(0))
 
     # ---- 5. Inno 的 { } 注释不能嵌套 {}：注释在第一个 } 就闭合 ----
     # （真踩过：注释里写 {app} 会让后半句变成代码 → 编译报错）

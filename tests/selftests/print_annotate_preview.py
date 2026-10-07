@@ -52,6 +52,9 @@ class _StubPlan:
 def run(ctx) -> None:
     import os
     from pathlib import Path
+    from typing import cast
+
+    from core.args import ArgsProvider
 
     from PySide6.QtGui import QColor, QImage
 
@@ -71,7 +74,7 @@ def run(ctx) -> None:
     # ---- 2. 预览里不再出现标注红像素 ----
     plan = _StubPlan()
     density = 4.0  # 20mm×4 = 80×80px，像素计数的迭代量可接受
-    white = QImage(100, 100, QImage.Format_RGB32)
+    white = QImage(100, 100, QImage.Format.Format_RGB32)
     white.fill(QColor("#ffffff"))
     rendered = compose_print_page(white, plan, px_per_mm=density)
     ok("预览位图里没有标注红框/红字",
@@ -120,7 +123,7 @@ def run(ctx) -> None:
     img_dir = tmp / "imgs"
     img_dir.mkdir(parents=True, exist_ok=True)
     src_png = img_dir / "0001.png"
-    _q = QImage(800, 1200, QImage.Format_RGB32)
+    _q = QImage(800, 1200, QImage.Format.Format_RGB32)
     _q.fill(QColor("#f2f2f2"))
     _q.save(str(src_png))
 
@@ -135,7 +138,7 @@ def run(ctx) -> None:
         "page_number_printing": False,
         "workers": 1,
     }
-    PrintFunction(dict(pdf_args)).execute()
+    PrintFunction(cast(ArgsProvider, dict(pdf_args))).execute()
     pdf_path = tmp / "out" / "clean.pdf"
     ok("不带预览专属键也能正常生成 PDF", pdf_path.exists(), str(pdf_path))
     doc = pymupdf.open(str(pdf_path))

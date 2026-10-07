@@ -96,9 +96,11 @@ def run(ctx) -> None:
                picked is not None and supports(picked, _RARE_CHAR),
                f"{picked.display if picked else None}")
         # 常用字必须仍留在首选字体上
+        _picked_common = pick_font(chain, _COMMON_CHAR)
+        assert _picked_common is not None
         ok("常用字仍用首选字体（降级不误伤）",
-           pick_font(chain, _COMMON_CHAR).path == chain[0].path,
-           pick_font(chain, _COMMON_CHAR).display)
+           _picked_common.path == chain[0].path,
+           _picked_common.display)
 
     # ---- 5. PDF 侧：只注册**实际用到**的字体 ----
     from fpdf import FPDF
@@ -257,6 +259,7 @@ def run(ctx) -> None:
     ok("页码 spec 带上了 page_number_font",
        plan.page_number is not None and plan.page_number.font == "宋体",
        f"{plan.page_number.font if plan.page_number else None}")
+    assert plan.title is not None and plan.page_number is not None
     ok("两个字体互不影响（标题与页码各一个）",
        plan.title.font != plan.page_number.font)
 

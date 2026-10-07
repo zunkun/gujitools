@@ -42,7 +42,9 @@ def run(ctx) -> None:
         command="print", input=str(src), output=str(root / "out"),
         page_margins="10", workers=4,
     )
-    result = get_function("print", args, None).execute()
+    _fn = get_function("print", args, None)
+    assert _fn is not None
+    result = _fn.execute()
     pdf_path = Path(result["output"])
     ok("print 产出 PDF 文件", pdf_path.is_file(), str(pdf_path))
     doc = fitz.open(str(pdf_path))

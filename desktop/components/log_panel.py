@@ -78,7 +78,7 @@ class _LogOverlay(Card):
             fill=T.SURFACE, border=T.BORDER_STRONG,
         )
         self.setObjectName("logOverlay")
-        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
 
         header = QHBoxLayout()
         header.setContentsMargins(T.SPACE_XS, 0, 0, 0)
@@ -120,7 +120,7 @@ class LogPanel(QWidget):
         self.log_view = self._overlay.log_view
 
         self.setFixedHeight(BAR_HEIGHT)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setToolTip("点击查看完整执行日志")
 

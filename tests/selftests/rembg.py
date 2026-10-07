@@ -14,6 +14,7 @@ def run(ctx) -> None:
     import os
     import time
     from pathlib import Path
+    from typing import Any, cast
 
     from PySide6.QtCore import QPoint, Qt
     from PySide6.QtGui import QImage
@@ -216,9 +217,11 @@ def run(ctx) -> None:
     _track_px = _shot.pixelColor(2 + _seg_widths[0] + _seg_widths[1] // 2, 4)
     _thumb_px = _shot.pixelColor(2 + 10, SegmentedToggle.HEIGHT // 2)
     _tg.resize(_old_size)
-    _gap = (sum(_thumb_px.getRgb()[:3]) - sum(_track_px.getRgb()[:3])) // 3
+    _track_rgb = cast(Any, _track_px.getRgb())[:3]
+    _thumb_rgb = cast(Any, _thumb_px.getRgb())[:3]
+    _gap = (sum(_thumb_rgb) - sum(_track_rgb)) // 3
     ok("分段开关轨道比选中滑块明显更深（选中态有对比度）",
-       _gap >= 12 and min(_thumb_px.getRgb()[:3]) >= 250,
+       _gap >= 12 and min(_thumb_rgb) >= 250,
        f"轨道 {_track_px.name()} / 滑块 {_thumb_px.name()}，平均亮度差 {_gap}")
     ok("有去底色结果时「去底色结果」项可用且默认选中（结果优先）",
        _tg.is_item_enabled("result") and _tg.current() == "result",

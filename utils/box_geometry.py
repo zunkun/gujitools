@@ -351,7 +351,16 @@ def build_output_layout(
     返回:
         OutputLayout。调用方按 canvases 顺序渲染并保存。
     """
-    present = [tuple(int(v) for v in b) for b in boxes if b]
+    # ⚠️ 逐个解包成 4 元组：`tuple(int(v) for v in b)` 推出来是长度不定的
+    # ``tuple[int, ...]``，与 Canvas.sources 声明的 ``(x1,y1,x2,y2)`` 不匹配。
+    # 解包同时起到「必须正好 4 个数」的校验作用（畸形存档会当场炸，而不是
+    # 悄悄把长度不对的框贴出去）。
+    present: List[Tuple[int, int, int, int]] = []
+    for b in boxes:
+        if not b:
+            continue
+        x1, y1, x2, y2 = (int(v) for v in b)
+        present.append((x1, y1, x2, y2))
     if not present:
         return OutputLayout(canvases=(Canvas(size=image_size),), full_page=True)
 
@@ -446,11 +455,14 @@ def build_symmetric_layout(
         OutputLayout（单一画布）。
     """
     x1, y1, x2, y2 = (int(v) for v in box)
+    # ⚠️ 落到 sources 里的是这 4 元组本身（不是 tuple(box)：那样推出来是长度
+    # 不定的 tuple[int, ...]，与 Canvas.sources 声明的 4 元组不匹配）。
+    int_box: Tuple[int, int, int, int] = (x1, y1, x2, y2)
     W, H = int(image_size[0]), int(image_size[1])
 
     if border_padding is None:
         return OutputLayout(
-            canvases=(Canvas(size=(W, H), sources=((tuple(box), x1, y1),)),),
+            canvases=(Canvas(size=(W, H), sources=((int_box, x1, y1),)),),
             full_page=True,
         )
 
@@ -463,7 +475,7 @@ def build_symmetric_layout(
         canvases=(
             Canvas(
                 size=(l + bw * 2 + gap_px + r, t + bh + b),
-                sources=((tuple(box), ox, t),),
+                sources=((int_box, ox, t),),
             ),
         )
     )
@@ -492,7 +504,7 @@ def present_boxes(slots) -> List[list]:
     return [list(b) for b in (slots or []) if b]
 
 
-def set_box_full(slots, index: int) -> List[list]:
+def set_box_full(slots, index: int) -> List[Optional[list]]:
     """把第 ``index`` 个框设为「整幅」→ **单槽** ``[整幅]``，其余框丢弃。
 
     ⚠️ 整幅与半幅互斥、一页只能一个框，所以这个转换**必然丢掉其它框**。
@@ -507,7 +519,7 @@ def set_box_full(slots, index: int) -> List[list]:
     return [boxes[index]]
 
 
-def set_box_half(slots, index: int, image_size) -> List[list]:
+def set_box_half(slots, index: int, image_size) -> List[Optional[list]]:
     """把第 ``index`` 个框设为「半幅」→ **2 槽** ``[左, 右]``（按中心定左右）。
 
     整幅页的框也能是半幅（漏检一侧的情形），所以这个方向**无损**：一个框
@@ -519,7 +531,7 @@ def set_box_half(slots, index: int, image_size) -> List[list]:
     return half_slots([boxes[index]], image_size)
 
 
-def drop_box(slots, index: int, image_size) -> List[list]:
+def drop_box(slots, index: int, image_size) -> List[Optional[list]]:
     """删掉第 ``index`` 个框后的**新槽位**。
 
     - 半幅页：仍写回 **2 槽**（缺失侧 ``None``）——删到只剩一个框时形态不会

@@ -29,6 +29,7 @@ TITLE = "图片拼版"
 import shutil
 import tempfile
 from pathlib import Path
+from typing import cast
 
 from tests.selftests._context import make_pdf, ok, pump
 
@@ -63,7 +64,7 @@ def _solid_qimage(color, width: int = 64, height: int = 48):
     """纯色 QImage（编辑结果的替身）。"""
     from PySide6.QtGui import QColor, QImage
 
-    image = QImage(width, height, QImage.Format_RGB32)
+    image = QImage(width, height, QImage.Format.Format_RGB32)
     image.fill(QColor(*color))
     return image
 
@@ -108,6 +109,13 @@ def _count_non_white(image, tol: int = 12, step: int = 2) -> int:
     return total
 
 
+def _bar_of(page, step: str) -> int:
+    """查某一步在步骤条里的格序；图里没有这一格就直接断（别静默切别的格）。"""
+    index = page.bar_index_of_step(step)
+    assert index is not None, f"流程图里没有「{step}」这一格"
+    return index
+
+
 def run(ctx) -> None:
     from PySide6.QtCore import QPointF, QSize, Qt
 
@@ -117,6 +125,7 @@ def run(ctx) -> None:
     )
     from desktop.components.imposition.page_list import _AddEntry, _PageEntry
     from desktop.components.imposition.view import ImpositionViewWidget
+    from desktop.components.viewers.image_zoom_dialog import ZoomTarget
     from desktop.pages.taskdetail.page import TaskDetailPage
     from desktop.services import imposition as S
     # ⚠️ 一并导入 IMPOSITION_STAGE：本模块多处要「切到拼版」，而格序必须
@@ -136,6 +145,7 @@ def run(ctx) -> None:
 
         made = S.make_page([a, b])
         ok("make_page 能造出一页拼版", made is not None)
+        assert made is not None      # ⚠️ 上一行已判过；这里只为类型检查器收窄
         right, left = made["items"]
         ok("序号在前的图片落在**右侧**槽位",
            Path(right["file"]).name == "1-r.png"
@@ -173,6 +183,7 @@ def run(ctx) -> None:
             "items": [{"file": str(striped_path), "rect": [0.0, 0.0, 400.0, 600.0],
                        "rotation": 90.0}],
         })
+        assert rotated_page is not None   # ⚠️ 上面这一项结构合法，normalize 必过
         shot = S.compose_page(rotated_page)
         # 无纸张：产出图 = 旋转后的外接框（400×600 转 90° → 600×400）
         ok("旋转后的产出图按外接框紧裁",
@@ -327,6 +338,7 @@ def run(ctx) -> None:
            and Path(single["items"][0]["file"]).name == "3.png"
            and single["items"][0]["rect"][2:] == [400.0, 600.0],
            str(single))
+        assert single is not None    # ⚠️ 上一行已判过
         ok("单图页产出 = 原图尺寸紧裁",
            S.compose_page(single).size == (400, 600),
            str(S.compose_page(single).size))
@@ -455,7 +467,7 @@ def run(ctx) -> None:
         def _mouse(kind, pos):
             return QMouseEvent(
                 kind, QPointF(pos[0], pos[1]),
-                Qt.LeftButton, Qt.LeftButton, Qt.NoModifier,
+                Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
             )
 
         canvas.select(1)
@@ -484,8 +496,11 @@ def run(ctx) -> None:
             Path(__file__).resolve().parents[2]
             / "desktop" / "components" / "imposition" / "canvas.py"
         ).read_text(encoding="utf-8")
-        ok("选中框用的是 Qt.DashLine（虚线）",
-           "FRAME_STYLE = Qt.DashLine" in canvas_src
+        # PySide6 6.x 的存根把枚举收进了 ``Qt.PenStyle``：未限定的 ``Qt.DashLine``
+        # 在运行期仍可用（同一值），但 pyright 会报 reportAttributeAccessIssue，
+        # 所以全仓统一写限定形式，这里跟着钉限定形式。
+        ok("选中框用的是 Qt.PenStyle.DashLine（虚线）",
+           "FRAME_STYLE = Qt.PenStyle.DashLine" in canvas_src
            and "FRAME_STYLE," in canvas_src,
            "框线样式定义/使用处不匹配")
 
@@ -544,9 +559,12 @@ def run(ctx) -> None:
            [e.title_label.text() for e in view.page_list.entries()] == ["第一页", "第二页"])
         ok("末格是虚线「＋ 选择拼版」", isinstance(view.page_list.add_entry, _AddEntry))
         # 「＋ 选择拼版」钉在左列最底部（滚动区之外，页多页少都看得见）
+        _pl_layout = view.page_list.layout()
+        assert _pl_layout is not None
+        _last_item = _pl_layout.itemAt(_pl_layout.count() - 1)
         ok("虚线格钉在左列最底部（滚动区之外、列内最后一格）",
-           view.page_list.layout().itemAt(view.page_list.layout().count() - 1).widget()
-           is view.page_list.add_entry
+           _last_item is not None
+           and _last_item.widget() is view.page_list.add_entry
            and view.page_list.add_entry.parent() is view.page_list
            and view.page_list.list_box.indexOf(view.page_list.add_entry) == -1)
         view.show()
@@ -677,6 +695,7 @@ def run(ctx) -> None:
 
         # ---- 选中态（用户 2026-09-30：点图才有选中；切页后图片操作区不激活）
         made2 = S.make_page([c, d])
+        assert made2 is not None
         view.set_pages([made, made2], current=0)
         ok("载页后默认不选中", view.canvas.selected() == -1,
            str(view.canvas.selected()))
@@ -808,10 +827,10 @@ def run(ctx) -> None:
         dialog.auto_checkbox.setChecked(True)
         ok("勾上自动拼版后「开始拼版」可点",
            dialog.ok_button.isEnabled())
+        _auto_file = dialog.auto_mode_file()
         ok("auto_mode_file = 勾选的那张",
-           dialog.auto_mode_file() is not None
-           and dialog.auto_mode_file().name == "2-r.png",
-           str(dialog.auto_mode_file()))
+           _auto_file is not None and _auto_file.name == "2-r.png",
+           str(_auto_file))
         ok("auto_sequence = 从勾选那张起到候选末尾（源清单顺序）",
            _names(dialog.auto_sequence()) == ["2-r.png", "2-l.png"],
            str(_names(dialog.auto_sequence())))
@@ -964,6 +983,8 @@ def run(ctx) -> None:
         page.show()
         pump(ctx.app, times=12)
         ok("进入拼版测试任务", page.set_task(tid))
+        # ⚠️ 下面按任务目录取缓存/产物的调用都要 task_id，set_task 过才有
+        assert page.task_id is not None
         pump(ctx.app, times=8)
 
         ok("详情页控制栈/预览栈都多了拼版这一位",
@@ -1068,6 +1089,7 @@ def run(ctx) -> None:
         imposition_bar = page.bar_index_of_step(IMPOSITION_STAGE)
         ok("拼版的格序是 3（可选节点占位，≠ len(STAGES)=4）",
            imposition_bar == 3, str(imposition_bar))
+        assert imposition_bar is not None    # ⚠️ 图里有这一格
         page._select_stage(imposition_bar)
         pump(ctx.app, times=8)
         # 栈页号与格序**不再相等**：两个栈按"真实步骤 + 伪步骤占最后一位"建页
@@ -1326,9 +1348,9 @@ def run(ctx) -> None:
         _docs: list = []
         _real_doc = page.store.load_imposition_doc
 
-        def _counting_doc(tid):
-            _docs.append(tid)
-            return _real_doc(tid)
+        def _counting_doc(task_id):
+            _docs.append(task_id)
+            return _real_doc(task_id)
 
         # 直接在条目实例上包一层计数（不改类，避免影响别的条目）。
         # ⚠️ **必须先把原方法抓在手里再包一层**（MEMORY 记过的坑）：否则
@@ -1352,7 +1374,7 @@ def run(ctx) -> None:
             from PySide6.QtGui import QImage
             for _i, _rep in enumerate(_reps_now):
                 _img = QImage(
-                    _entries_objs[_i].thumb.size(), QImage.Format_RGB32
+                    _entries_objs[_i].thumb.size(), QImage.Format.Format_RGB32
                 )
                 _img.fill(0xFF404040)
                 page._on_imposition_source_thumb(_i, _img, [_rep])
@@ -1530,7 +1552,7 @@ def run(ctx) -> None:
         page._set_imposition_checked(True)
         page._imposition_timer.stop()
         pump(ctx.app, times=6)
-        page._select_stage(page.bar_index_of_step("print"))
+        page._select_stage(_bar_of(page, "print"))
         pump(ctx.app, times=6)
         ok("启用拼版后取图来源切到 imposition",
            page.print_source_stage() == "imposition",
@@ -1562,7 +1584,7 @@ def run(ctx) -> None:
         ok("旧数据下载被拦下并说明原因",
            any("重新生成" in str(t) for t in toasts), str(toasts))
         # 反向也对称：取消启用 → 又变回去底色，但历史是去底色 → 不判旧
-        page._select_stage(page.bar_index_of_step(IMPOSITION_STAGE))
+        page._select_stage(_bar_of(page, IMPOSITION_STAGE))
         pump(ctx.app, times=4)
         page._set_imposition_checked(False)
         page._imposition_timer.stop()
@@ -1619,7 +1641,7 @@ def run(ctx) -> None:
         real_toast2 = page._toast
         page._toast = lambda *a, **k: toasts2.append(a)
         try:
-            page._select_stage(page.bar_index_of_step("print"))
+            page._select_stage(_bar_of(page, "print"))
             pump(ctx.app, times=4)
             page._run_stage_unchecked(False)
         finally:
@@ -1628,7 +1650,7 @@ def run(ctx) -> None:
            any("拼版" in str(t) and "选择拼版" in str(t) for t in toasts2),
            str(toasts2))
         # 拼一页 → "有产物"成立（同一判据下只是进度变了）
-        page._select_stage(page.bar_index_of_step(IMPOSITION_STAGE))
+        page._select_stage(_bar_of(page, IMPOSITION_STAGE))
         pump(ctx.app, times=4)
         page._save_imposition_pages([{
             "items": [
@@ -1851,6 +1873,7 @@ def run(ctx) -> None:
         # 单图页「新增图片」：append 弹窗替身返回 1 张右半幅「2-r」
         # ——原图是左半幅「1-l」→ 新图进右槽、贴在原图右边（原图版面不动）
         single_left = S.single_items(str(b))  # 1-l（左半幅，GREEN）
+        assert single_left is not None    # ⚠️ 传的是存在的图，必然造得出单项
         page._save_imposition_pages([{"items": single_left}])
         page._imposition_timer.stop()
         page.imposition_view.set_current(0)
@@ -1957,9 +1980,11 @@ def run(ctx) -> None:
         ok("整版旋转：两图 rotation 都叠加增量（自转）",
            all(abs(it["rotation"] - 30.0) < 0.01 for it in canvas2.items()),
            str([it["rotation"] for it in canvas2.items()]))
+        _spread_rot = canvas2.spread_rotation()
+        assert _spread_rot is not None      # ⚠️ 两张图都有 rotation，必然有公共角
         ok("spread_rotation = 两图平均角",
-           abs(canvas2.spread_rotation() - 30.0) < 0.01,
-           str(canvas2.spread_rotation()))
+           abs(_spread_rot - 30.0) < 0.01,
+           str(_spread_rot))
 
         # ---- 单图绝对角度：只改选中的那张 ----
         canvas2.set_item_rotation(45.0)
@@ -1967,8 +1992,9 @@ def run(ctx) -> None:
            abs(canvas2.items()[0]["rotation"] - 45.0) < 0.01
            and abs(canvas2.items()[1]["rotation"] - 30.0) < 0.01,
            str([it["rotation"] for it in canvas2.items()]))
-        ok("selected_rotation 读到选中角",
-           abs(canvas2.selected_rotation() - 45.0) < 0.01)
+        _sel_rot = canvas2.selected_rotation()
+        assert _sel_rot is not None        # ⚠️ 刚选中过，必然读得到
+        ok("selected_rotation 读到选中角", abs(_sel_rot - 45.0) < 0.01)
         canvas2.deleteLater()
 
         # ---- 红色对齐线恒显（对比：框线未按住时不画，对齐线必须一直在）----
@@ -2212,6 +2238,15 @@ def run(ctx) -> None:
                     return i
             return -1
 
+        def _row_layout_of(box, widget):
+            """面板里**含 ``widget`` 的那一行**的行布局（找不到返回 None）。"""
+            for i in range(box.count()):
+                _item = box.itemAt(i)
+                _row = _item.layout() if _item is not None else None
+                if _row is not None and _row.indexOf(widget) >= 0:
+                    return _row
+            return None
+
         panel = ImpositionPanel()
         deltas: list[float] = []
         item_angles: list[float] = []
@@ -2268,15 +2303,13 @@ def run(ctx) -> None:
            not hasattr(panel, "add_button"))
         ok("「复位本页版面」独占一行 block（删除按钮挪走后不再拼行）",
            _column_index(panel.box, panel.reset_button) >= 0)
-        _actions_row = next(
-            (panel.box.itemAt(i).layout() for i in range(panel.box.count())
-             if panel.box.itemAt(i).layout() is not None
-             and panel.box.itemAt(i).layout().indexOf(panel.add_image_button) >= 0),
-            None)
+        _actions_row = _row_layout_of(panel.box, panel.add_image_button)
+        _section_layout = panel.item_section.layout()
+        assert _section_layout is not None
         ok("「删除选中图片」挪进页级区，与「新增图片」同一行（不在图片样式区块里）",
            _actions_row is not None
            and _actions_row.indexOf(panel.delete_item_button) >= 0
-           and panel.item_section.layout().indexOf(panel.delete_item_button) < 0)
+           and _section_layout.indexOf(panel.delete_item_button) < 0)
         ok("未选中图时删除按钮隐藏、新增按钮隐藏（两图页初始态）",
            panel.delete_item_button.isHidden()
            and panel.add_image_button.isHidden())
@@ -2441,10 +2474,13 @@ def run(ctx) -> None:
 
         # ---- worker 层：合成结果 = page_bounds 紧裁（即灰色虚线框那块）----
         page_items = page._imposition_pages()[0]["items"]
-        target = page._imposition_spread_target(0)
+        # ⚠️ 该方法的返回标注是 ``object | None``（宿主侧没写具体类型），
+        #    这里按"就是 ZoomTarget"定死；None 的判据留给下一条 ok。
+        target = cast("ZoomTarget", page._imposition_spread_target(0))
         ok("弹窗来源目标：整页左右组合（count=1，非单张原图）",
            target is not None and target.count == 1
            and "左右组合" in target.note, str(target and target.note))
+        assert target is not None   # ⚠️ 上一行已判过
         bounds = S.page_bounds({"items": [dict(i) for i in page_items]})
         _worker = target.render(1600)
         _got: dict = {}
@@ -2509,7 +2545,8 @@ def run(ctx) -> None:
                str(zoom_target and zoom_target.note))
         finally:
             _izd.ImageZoomDialog = _real_zoom_cls
-            page._imposition_zoom_dialog = None
+            # ⚠️ 弹窗已关掉，宿主把持有者置回 None（源码侧标注成非 Optional）
+            page._imposition_zoom_dialog = None  # type: ignore[reportAttributeAccessIssue]
 
         # ---------------- 9. 右键菜单：预览图片 / 编辑单图·编辑整图（不经预览弹窗）
         # 用户 2026-10-01：右键菜单两个入口，目标规则与双击一致（图上 →
@@ -2644,7 +2681,7 @@ def run(ctx) -> None:
             _ied.ImageEditorDialog = _FakeEditorDialog
 
             from desktop.components.viewers.image_zoom_dialog import (
-                overwrite_image_file,
+                ZoomTarget, overwrite_image_file,
             )
 
             def _pixel_of(path: Path):
@@ -2751,6 +2788,9 @@ def run(ctx) -> None:
 
                 # 预览弹窗里「编辑」也落盘：成品已最新时回写目标 = 成品文件
                 spread_target = page._imposition_spread_target(0)
+                # ⚠️ 该方法的返回标注是 ``object | None``（宿主侧没写具体类型），
+                #    这里按"就是 ZoomTarget"定死，None 的判据仍由下一条 ok 负责。
+                spread_target = cast("ZoomTarget", spread_target)
                 ok("整页组合预览弹窗：成品最新时回写目标 = 成品文件",
                    spread_target is not None
                    and str(spread_target.edit_path or "") == str(out_path),

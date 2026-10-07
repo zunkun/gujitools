@@ -196,12 +196,12 @@ class BpmnView(QWidget):
         if hovered != self._hovered:
             self._hovered = hovered
             self.setCursor(
-                Qt.PointingHandCursor if hovered else Qt.ArrowCursor
+                Qt.CursorShape.PointingHandCursor if hovered else Qt.CursorShape.ArrowCursor
             )
             self.update()
 
     def mousePressEvent(self, event) -> None:  # noqa: N802
-        if event.button() != Qt.LeftButton:
+        if event.button() != Qt.MouseButton.LeftButton:
             return
         node_id = self.node_at(event.position())
         if node_id:
@@ -211,7 +211,7 @@ class BpmnView(QWidget):
     # ------------------------------------------------------------ 绘制
     def paintEvent(self, _event) -> None:  # noqa: N802
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.fillRect(self.rect(), QColor(T.SURFACE_SOFT))
         # 先画线、再画注释、最后画节点：节点实底会盖住线头，接缝干净
         for flow in self._diagram.flows:
@@ -238,10 +238,10 @@ class BpmnView(QWidget):
         chosen = flow.id == self._selected_flow
         pen = QPen(QColor(T.ACCENT if chosen else EDGE_COLOR),
                    SELECTED_EDGE_WIDTH if chosen else EDGE_WIDTH)
-        pen.setCapStyle(Qt.RoundCap)
-        pen.setJoinStyle(Qt.RoundJoin)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
         painter.setPen(pen)
-        painter.setBrush(Qt.NoBrush)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
         for first, second in zip(points, points[1:]):
             painter.drawLine(first, second)
         self._draw_arrow(painter, points[-2], points[-1],
@@ -262,7 +262,7 @@ class BpmnView(QWidget):
             return
         ux, uy = dx / length, dy / length
         px, py = -uy, ux
-        painter.setPen(Qt.NoPen)
+        painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(color or QColor(EDGE_COLOR))
         painter.drawPolygon(QPolygonF([
             tip,
@@ -287,7 +287,7 @@ class BpmnView(QWidget):
         painter.setFont(font)
         painter.setPen(QColor(FAINT))
         painter.drawText(QRectF(mid_x - 20, mid_y - 18, 40, 15),
-                         Qt.AlignCenter, text)
+                         Qt.AlignmentFlag.AlignCenter, text)
 
     def _draw_node(self, painter: QPainter, item: DiagramNode) -> None:
         rect = self.rect_of(item.id)
@@ -306,7 +306,7 @@ class BpmnView(QWidget):
             painter.setPen(QPen(border, END_EVENT_BORDER))
             painter.drawEllipse(rect)
             painter.setPen(QPen(border, EVENT_BORDER))
-            painter.setBrush(Qt.NoBrush)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawEllipse(rect.adjusted(4, 4, -4, -4))
         elif item.is_gateway:
             self._draw_gateway(painter, rect, item.kind, border)
@@ -353,15 +353,15 @@ class BpmnView(QWidget):
         if item.is_gateway:
             painter.drawText(
                 QRectF(rect.left() - 40, rect.top() - 22, rect.width() + 80, 18),
-                Qt.AlignCenter, text)
+                Qt.AlignmentFlag.AlignCenter, text)
         elif item.kind in (KIND_START, KIND_END):
             painter.drawText(
                 QRectF(rect.left() - 40, rect.bottom() + LABEL_GAP,
                        rect.width() + 80, 18),
-                Qt.AlignCenter, text)
+                Qt.AlignmentFlag.AlignCenter, text)
         else:
             painter.drawText(rect.adjusted(6, 4, -6, -4),
-                             Qt.AlignCenter | Qt.TextWordWrap, text)
+                             Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap, text)
 
 
     # ------------------------------------------------------------ 注释
@@ -383,15 +383,15 @@ class BpmnView(QWidget):
             return
         host = self._diagram.note_links.get(note.id)
         if host and self._diagram.node(host) is not None:
-            painter.setPen(QPen(QColor(NOTE_COLOR), 1.2, Qt.DashLine))
-            painter.setBrush(Qt.NoBrush)
+            painter.setPen(QPen(QColor(NOTE_COLOR), 1.2, Qt.PenStyle.DashLine))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
             # 挂接线**斜着连到左侧括号**（不是注释框中心）：括号才是注释的
             # "接头"，连中心会让线扎进文字、左边的括号像悬空断开的（用户
             # 2026-10-07）。直线允许倾斜——与「用户上传PDF」那种斜挂一致。
             painter.drawLine(self._anchor_point(host, rect),
                              QPointF(rect.left(), rect.center().y()))
         painter.setPen(QPen(QColor(NOTE_COLOR), 1.4))
-        painter.setBrush(Qt.NoBrush)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
         bracket = min(12.0, rect.width() * 0.3)
         top, bottom = rect.top(), rect.bottom()
         painter.drawLine(QPointF(rect.left(), top),
@@ -407,7 +407,7 @@ class BpmnView(QWidget):
             painter.setPen(QColor(FAINT))
             painter.drawText(
                 rect.adjusted(bracket + 4, 2, -4, -2),
-                Qt.AlignLeft | Qt.AlignVCenter | Qt.TextWordWrap,
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter | Qt.TextFlag.TextWordWrap,
                 note.text,
             )
 

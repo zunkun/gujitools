@@ -129,7 +129,10 @@ def extract_first_box(boxes) -> Optional[Box]:
     """
     if not boxes:
         return None
-    return tuple(int(v) for v in boxes[0][:4])
+    # ⚠️ 显式解包成 4 元组：``tuple(...)`` 推出来是 ``tuple[int, ...]``（长度不定），
+    # 与 ``Box = tuple[int, int, int, int]`` 不匹配。写法仍是一次性裁剪。
+    x1, y1, x2, y2 = (int(v) for v in boxes[0][:4])
+    return (x1, y1, x2, y2)
 
 
 #: 最近一次「按路径检测」的附加信息，供调用方打日志。**按线程存**：
@@ -409,6 +412,7 @@ class DetectFunction(FunctionBase):
         「导出标注图」走同一个函数，两边不可能漂移。
         """
         annotated = utils.draw_slots(img_bgr, page.slots())
+        assert self.outpath is not None
         out_path = self.outpath / f"{image_path.stem}{self.output_suffix}"
         if not utils.imwrite(out_path, annotated):
             raise OSError(f"标注图写出失败: {out_path}")
@@ -478,6 +482,7 @@ class DetectFunction(FunctionBase):
             )
 
         if self.save:
+            assert self.outpath is not None
             # 纵深防线：`detect --save` 的输出名与输入同名（`<stem>.png`），
             # outpath 一旦等于输入目录就会把原图覆盖成标注图，clean 时更会直接
             # 删掉输入。见 utils/path_utils.assert_output_not_input。

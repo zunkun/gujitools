@@ -97,6 +97,29 @@ python tools/check_docs.py
 必须比对 `--list` 计划数与日志中 `==标题==` 数，缺了用 `--only` 补跑。
 ⚠️ 测试耗时，**不要每改一小处就跑**：按改动攒批，最后统一跑相关模块。
 
+## AI 写代码 / 写文件的落点（临时文件必清理）
+
+- **测试代码只进 `tests/`**：能被自测框架发现的用例放 `tests/selftests/<模块名>.py`
+  （顶部必须有 `NAME` / `TITLE`，依赖写 `DEPENDS`）；探针、截图等辅助脚本放 `tests/`
+  （如 `probe_*.py`）。**禁止在仓库根目录新建测试脚本。**
+- **测试产生的临时数据一律落 `tests/tmp/`**——`tests/tmpdir.py` 是唯一落点：
+  新代码 `from tests.tmpdir import temp_dir` 用 `temp_dir("前缀_")`；存量代码/测试入口
+  在**最顶部**调一次 `install()`（它把 `tempfile.tempdir` 与 `TMPDIR/TEMP/TMP` 一起
+  指过去，连 **worker 子进程**也覆盖）。
+  ⚠️ 两个"落错地方"都不行：落**系统临时目录** ⇒ 产物散在项目外、看不见清不掉；
+  落**仓库里**（根目录/`tests/` 顶层）⇒ 被 `git add -A` 当**普通文件**收进仓库。
+  `tests/tmp/` 在仓库内、且已被 `.gitignore` 忽略（`git check-ignore -v tests/tmp/`
+  可自证）⇒ 既能翻看现场，又不会被追踪。⚠️ `install()` 必须**早于任何 `tempfile`
+  调用**（`gettempdir()` 算过一次就缓存，晚了改不动）。收工 `clean()` 清空。
+- **临时脚本 / 日志 / JSON dump 一律放 `_scratch/`**（仓库根下，自己 `mkdir -p` 即可），
+  **收工前必须删净**。它已被 `.gitignore` 的 `_*/` 整目录忽略
+  （`git check-ignore -v _scratch/` 可自证），所以 `git add -A` 带不走。
+- ⚠️ **根目录散落的 `_xxx.py` / `_xxx.log` 是漏网的**：`_*/` 只忽略**目录**，不忽略
+  **文件** ⇒ 曾经的 `_pwrun.py`、`_selftests.log` 差点被提交（已实际发生过一次）。
+- ⚠️ **别往 `.gitignore` 补 `_*.py`**：它**同时匹配 `__init__.py`**（`_`+`_init`+`.py`）。
+  真要补只能补窄模式（如 `/_pw*.py`、`/_pyright_*.py`）。
+- 收工自查：`git status --short` 里不该出现 `??` 的临时文件；必要时 `git clean -nd` 看一眼。
+
 ## 其他硬规则（违反过、踩过坑）
 
 - 绝对导入；仓库根用 `desktop.utils.files.project_root()`。

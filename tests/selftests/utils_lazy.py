@@ -64,6 +64,7 @@ def run(ctx) -> None:
     ok("utils._LAZY 存在（惰性表没有被删）",
        isinstance(lazy, dict) and len(lazy) >= 5,
        f"取到 {type(lazy).__name__}")
+    assert isinstance(lazy, dict)
     missing = sorted(name for name in lazy if not hasattr(utils, name))
     ok("惰性表登记的名字全部能从包属性取到（抓目标名写错/漏实现）",
        not missing, f"取不到的名字：{missing}")

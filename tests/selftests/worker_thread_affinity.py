@@ -40,6 +40,7 @@ def run(ctx) -> None:
     from tests.selftests._context import ok
 
     app = QApplication.instance()
+    assert app is not None
     main_thread = app.thread()
 
     def on_main() -> bool:

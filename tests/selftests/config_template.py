@@ -96,6 +96,7 @@ def run(ctx) -> None:
     for cmd in _REQUIRED_SECTIONS:
         spec = COMMAND_SPECS.get(cmd)
         ok(f"{cmd} 已在 COMMAND_SPECS 登记", spec is not None, str(cmd))
+        assert spec is not None
         allowed = set(spec.defaults) | _GENERIC_KEYS
         stray = sorted(set(data[cmd]) - allowed)
         ok(f"{cmd} 小节无未登记键（无拼写漂移）", not stray, f"多余键={stray}，规格允许={sorted(allowed)}")
@@ -196,17 +197,19 @@ def run(ctx) -> None:
     from cli.cli_args import CliArgsParser
 
     parser = CliArgsParser().parser
+    assert parser._subparsers is not None
     run_parser = next(
         (
             choice
             for action in parser._subparsers._group_actions
             if getattr(action, "choices", None)
-            for name, choice in action.choices.items()
+            for name, choice in (getattr(action, "choices", None) or {}).items()
             if name == "run"
         ),
         None,
     )
     ok("CLI 已注册 run 子命令", run_parser is not None, "未找到 run 子命令")
+    assert run_parser is not None
     pos = [a for a in run_parser._actions if a.dest == "subcommand"]
     ok("run 已声明 subcommand 位置参数", bool(pos), "未找到 subcommand 参数")
     run_vals = set(pos[0].choices) if pos else set()

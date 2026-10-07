@@ -297,7 +297,10 @@ def glyphs(entry: FontEntry) -> frozenset | None:
             fonts = [TTFont(path, lazy=True)]
         codepoints: set[int] = set()
         for font in fonts:
-            codepoints.update(font.getBestCmap().keys())
+            cmap = font.getBestCmap()
+            # getBestCmap 可能返回 None（无 cmap 表）：按原行为抛错 → coverage 置 None
+            assert cmap is not None
+            codepoints.update(cmap.keys())
         coverage = frozenset(codepoints) if codepoints else None
     except Exception:
         coverage = None

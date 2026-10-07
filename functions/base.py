@@ -44,7 +44,8 @@ class FunctionBase:
     - `execute()`：负责并发调度、重试、日志写入与最终统计。
     """
 
-    def __init__(self, command_args: ArgsProvider, reporter: Reporter = None):
+    def __init__(self, command_args: ArgsProvider,
+                 reporter: Optional[Reporter] = None):
         """
         解析输入路径与输出占位，输入不存在时直接抛 FileNotFoundError。
 
@@ -86,7 +87,8 @@ class FunctionBase:
     def _parse_path(self, path_str: str) -> Path:
         return Path(path_str).expanduser().resolve()
 
-    def parse_user_output(self, raw_out: Optional[str], file_stem: str = None) -> Path:
+    def parse_user_output(self, raw_out: Optional[str],
+                          file_stem: Optional[str] = None) -> Path:
         """统一解析用户传入的 `--output` 参数。
 
         规则：
@@ -152,6 +154,11 @@ class FunctionBase:
                 f"未在 {self.input} 找到任何图片"
                 "（支持 jpg/jpeg/png 等；若图片在子目录里，请指向该子目录）"
             )
+
+        # ⚠️ 与 make_out_dir 同一道闸：outpath 由子类初始化阶段算好，没算就
+        # 早失败（原来会一路走到 self.outpath.mkdir 才炸 AttributeError）。
+        if self.outpath is None:
+            raise RuntimeError("未计算最终输出路径 self.outpath")
 
         # 清理输出目录（仅当用户显式指定 clean=True）。
         # 默认值 False 与 core.command_spec 保持一致——绝不能在缺省情况下

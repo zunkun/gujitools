@@ -31,6 +31,12 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
+# 测试临时文件统一落点：tests/tmp/（见 tests/tmpdir.py）。
+# ⚠️ 必须早于任何 tempfile 调用，否则 gettempdir() 已缓存、改不回来。
+from tests.tmpdir import install as _install_tmpdir  # noqa: E402
+
+_install_tmpdir()
+
 
 def discover_modules() -> dict:
     """扫描 tests/selftests/*.py 动态发现用例模块，返回 {NAME: module}。"""

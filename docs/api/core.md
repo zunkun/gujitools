@@ -4,7 +4,7 @@
 
 中立共享层：CLI 与 desktop 都依赖且语义必须一致的契约
 
-覆盖 4 个模块、9 个公开类、39 个公开函数/方法（生成于 2026-10-07）。
+覆盖 4 个模块、9 个公开类、41 个公开函数/方法（生成于 2026-10-07）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -12,7 +12,7 @@
 
 | 模块 | 类 | 函数 |
 | --- | --- | --- |
-| [`core.args`](#coreargs) | 3 | 12 |
+| [`core.args`](#coreargs) | 3 | 14 |
 | [`core.command_spec`](#corecommand_spec) | 1 | 10 |
 | [`core.reporter`](#corereporter) | 3 | 11 |
 | [`core.result`](#coreresult) | 2 | 6 |
@@ -63,6 +63,16 @@ YAML 配置还是 Qt 表单。满足此协议的对象即可直接传入 Functio
 | 方法 | 说明 |
 | --- | --- |
 | `get(key: str, default: Any=None) -> Any` | 按 key 获取参数值，缺失或为 None 时返回 default。 |
+| `is_defaulted(key: str) -> bool` | 该键的当前值是「注入的默认值」吗？**可选**：自建参数字典没实现它。 |
+
+##### `is_defaulted(key: str) -> bool`
+
+该键的当前值是「注入的默认值」吗？**可选**：自建参数字典没实现它。
+
+放在协议里但调用方仍按「有则用、无则跳过」用（见
+``functions/base.py`` 的 ``try/except AttributeError``）——因为自建
+容器（测试替身等）只满足 ``get``，硬要求会逼所有调用方补一个空实现。
+声明它是为了让类型检查器认得 ``CommandArgs`` 上那个真方法。
 
 ### `class CommandArgs`
 
@@ -118,12 +128,19 @@ command 后调用 _build_args 注入默认值并标准化 input/output/workers �
 | `__init__(raw: Optional[Dict[str, Any]]=None)` | 参数: |
 | `get(key: str, default: Any=None) -> Any` | 仅在用户显式提供时返回其值，否则返回 default（不注入任何默认值）。 |
 | `as_dict() -> Dict[str, Any]` | — |
+| `is_defaulted(key: str) -> bool` | init 不注入任何默认值：一切以用户显式传入为准，故恒为 False。 |
 
 ##### `__init__(raw: Optional[Dict[str, Any]]=None)`
 
 参数:
     raw: 原始参数字典。若为 None 则回退读取 sys.argv
          （直接构造 InitArgs() 时的便利行为）。
+
+##### `is_defaulted(key: str) -> bool`
+
+init 不注入任何默认值：一切以用户显式传入为准，故恒为 False。
+
+（实现 ArgsProvider 协议的该成员，避免类型检查器把本类判为抽象。）
 
 ### 模块函数
 

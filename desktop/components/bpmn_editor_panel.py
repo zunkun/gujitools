@@ -28,7 +28,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QHBoxLayout, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QScrollArea, QVBoxLayout, QWidget
 
 from qfluentwidgets import CaptionLabel, PushButton, ToolButton
 from qfluentwidgets import FluentIcon as FIF
@@ -93,10 +93,10 @@ class BpmnEditorPanel(QWidget):
 
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(False)
-        self._scroll.setFrameShape(QScrollArea.NoFrame)
+        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
         # ⚠️ 编辑态用**左上对齐**（不是居中）：拖动时鼠标坐标直接映射到画布
         #    坐标，居中会在不同窗口尺寸下产生不同的偏移，手感飘。
-        self._scroll.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        self._scroll.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         if self._editable:
             canvas = BpmnEditor(self._diagram, name_source=self._name_source())
             canvas.diagram_changed.connect(self._on_changed)
@@ -205,7 +205,12 @@ class BpmnEditorPanel(QWidget):
         return self._canvas
 
     def editor(self) -> BpmnEditor | None:
-        return self._canvas if self._editable else None
+        if not self._editable:
+            return None
+        canvas = self._canvas
+        # 编辑态下 _canvas 恒为 BpmnEditor（见 _build_ui 的两个分支）
+        assert isinstance(canvas, BpmnEditor)
+        return canvas
 
     # ------------------------------------------------------------ 事件
     def eventFilter(self, obj, event):  # noqa: N802 - Qt 命名

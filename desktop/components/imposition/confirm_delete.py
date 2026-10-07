@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
 from qfluentwidgets import MessageBoxBase, ScrollArea
 
 from desktop.services.imposition import cn_page_label, page_source_stems
@@ -99,11 +99,11 @@ class BatchDeleteConfirmDialog(MessageBoxBase):
 
         scroll = ScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setFrameShape(ScrollArea.NoFrame)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setWidget(container)
         scroll.setMaximumHeight(LIST_MAX_H)
         # 透明底：列表融进弹窗白底（qfluent 提供的现成方法，避免自己写
         # 样式表把整棵子树填白——page_list 的老教训）
         scroll.enableTransparentBackground()
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         return scroll

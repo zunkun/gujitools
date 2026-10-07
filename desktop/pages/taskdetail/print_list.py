@@ -4,8 +4,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, Callable, cast
 
-from PySide6.QtWidgets import QFileDialog
+from PySide6.QtWidgets import QFileDialog, QWidget
 
 from desktop.services.print_plan import (
     drop_foreign_stage_pages, plan_print_entries,
@@ -13,10 +14,37 @@ from desktop.services.print_plan import (
 from desktop.utils.files import default_open_dir, list_stage_images
 from utils.sort_utils import pdf_custom_sort_key
 
+if TYPE_CHECKING:
+    from desktop.components.viewers.print_preview import PrintPreviewWidget
+    from desktop.store.store import TaskStore
+
+
+def _parent(page) -> "QWidget":
+    """Mixin 里的 ``self`` 当文件对话框的 parent 用——宿主是 QWidget。
+
+    ⚠️ 类型检查器看 Mixin 只看到「一个普通类」，故这里 cast 一下；运行时
+    什么也没做（cast 是恒等函数）。
+    """
+    return cast(QWidget, page)
+
 
 class PrintListMixin:
     """依赖宿主页面提供的属性：store/task_id、print_preview、log_view、
     _toast()。"""
+
+    if TYPE_CHECKING:
+        # 宿主 TaskDetailPage（或同级 Mixin）提供的属性/方法：Mixin 本体不持有，
+        # 这里只做类型声明（类级注解、无赋值），运行时零副作用。
+        store: TaskStore
+        task_id: str | None
+        print_preview: PrintPreviewWidget
+        log_view: Any  # 宿主 log_panel 里的 QTextEdit（.append 取用）
+        _toast: Callable[..., None]
+        run_worker: Callable[..., Any]
+        print_source_dir: Callable[[], Any]
+        imposition_effective: Callable[[], bool]
+        # 本 Mixin 内部在多个方法间传递的快照（_print_entries 写、落盘读）
+        _print_doc_snapshot: dict[str, Any]
 
     def _print_thumb_provider(self, file_text: str):
         """第四步缩略条的小图来源：提交阶段预生成的缩略图（无则回落原图解码）。
@@ -56,22 +84,27 @@ class PrintListMixin:
             list_stage_images(source_dir),
             key=lambda p: pdf_custom_sort_key(p.name),
         )
-        doc = self.store.load_print_doc(self.task_id)
+        # ⚠️ 没有任务（task_id 为 None）时这份清单无处可落。调用方都在有任务时
+        #    才进这里，这里显式挡一道：早失败比把 None 拼进路径好。
+        task_id = self.task_id
+        if not task_id:
+            return [], {"rembg_snapshot": [], "pages": []}
+        doc = self.store.load_print_doc(task_id)
         # ⚠️ 来源切换（拼版 ↔ 去底色）后，旧来源那一批还留在 print.json 里；
         # 不剔掉就会被当成"用户插入的外部图片"追加进 PDF（见 print_plan 的
         # drop_foreign_stage_pages）。
         cleaned = drop_foreign_stage_pages(
             doc.get("pages") if doc else None,
             source_dir,
-            self.store.task_dir(self.task_id) / "stages",
+            self.store.task_dir(task_id) / "stages",
         )
         if doc and len(cleaned) != len(doc.get("pages") or []):
             doc = {**doc, "pages": cleaned}
-            self.store.save_print_doc(self.task_id, doc)
+            self.store.save_print_doc(task_id, doc)
         entries, new_doc = plan_print_entries(rembg_files, doc)
         self._print_doc_snapshot = new_doc
         if not doc or set(doc.get("rembg_snapshot") or []) != set(new_doc["rembg_snapshot"]):
-            self.store.save_print_doc(self.task_id, new_doc)
+            self.store.save_print_doc(task_id, new_doc)
         return entries, new_doc
 
     def _save_print_order(self, silent: bool = False) -> None:
@@ -115,7 +148,7 @@ class PrintListMixin:
         if not self.task_id:
             return
         filenames, _ = QFileDialog.getOpenFileNames(
-            self,
+            _parent(self),
             "插入图片",
             str(default_open_dir()),
             "图片 (*.png *.jpg *.jpeg *.bmp *.tif *.tiff)",
@@ -134,7 +167,8 @@ class PrintListMixin:
             self.log_view.append(message)
             self._toast("error", "列表未保存", message)
             return
-        self.print_preview.set_entries(self._print_entries())
+        # ⚠️ _print_entries 返回 (条目, 文档) 两件，set_entries 只要前者。
+        self.print_preview.set_entries(self._print_entries()[0])
         self.log_view.append(f"已插入 {len(filenames)} 张图片到待打印列表。")
 
     def _latest_print_pdf_path(self) -> Path | None:
@@ -223,7 +257,7 @@ class PrintListMixin:
         downloads = Path.home() / "Downloads"
         default_dir = downloads if downloads.exists() else Path.home()
         target, _ = QFileDialog.getSaveFileName(
-            self, "下载 PDF", str(default_dir / source.name), "PDF 文件 (*.pdf)",
+            _parent(self), "下载 PDF", str(default_dir / source.name), "PDF 文件 (*.pdf)",
         )
         if not target:
             return
@@ -277,7 +311,7 @@ class PrintListMixin:
         downloads = Path.home() / "Downloads"
         default_dir = downloads if downloads.exists() else Path.home()
         target, _ = QFileDialog.getSaveFileName(
-            self, "下载本页图片", str(default_dir / default_name),
+            _parent(self), "下载本页图片", str(default_dir / default_name),
             "PNG 图片 (*.png);;JPEG 图片 (*.jpg)",
         )
         if not target:

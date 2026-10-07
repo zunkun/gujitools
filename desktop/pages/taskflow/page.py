@@ -112,6 +112,8 @@ class TaskFlowPage(QWidget):
         # 旧的编辑器先摘掉（deleteLater，不能只 hide——换任务后旧图还在内存里）
         while self._host_layout.count():
             item = self._host_layout.takeAt(0)
+            # count() 非零时 takeAt 必返回条目，这里只为让类型检查器收窄
+            assert item is not None
             widget = item.widget()
             if widget is not None:
                 widget.setParent(None)
@@ -140,7 +142,8 @@ class TaskFlowPage(QWidget):
         if ok and self._panel is not None and task_id:
             # ⚠️ 取"当前图"而不是 ``result_diagram()``：后者只在点过面板自己的
             #    「保存」之后才非 None，而本页把按钮收走了（show_buttons=False）。
-            diagram = self._panel.editor_panel.editor().diagram()
+            # 直接问面板要图（``editor()`` 在可编辑时返回画布本身，本页恒为可编辑）。
+            diagram = self._panel.editor_panel.diagram()
             if diagram is not None:
                 from desktop.steps.validate import validate_flow
                 from desktop.ui.toast import show_toast

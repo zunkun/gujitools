@@ -31,6 +31,7 @@ def run(ctx) -> None:
     import shutil
     import tempfile
     from pathlib import Path
+    from typing import cast
 
     import numpy as np
     from PIL import Image
@@ -80,9 +81,11 @@ def run(ctx) -> None:
             rgba = np.array(im.convert("RGBA"))
         white = (rgba[:, :, :3] == 255).all(axis=2)
         wanted_ink = ~white
+        _enc = describe_encoding(arr)
+        assert _enc is not None
         ok(f"单元/{tag} 编码形态与判据同源",
            info["encoding"] == expect_enc and depth == expect_bits
-           and (describe_encoding(arr)["bits"] == info["bits"]),
+           and (_enc["bits"] == info["bits"]),
            f"{info} 位深={depth}")
         ok(f"单元/{tag} 白底透明、墨色不透明且 RGB 逐位不变",
            bool((rgba[:, :, 3][white] == 0).all())
@@ -124,6 +127,7 @@ def run(ctx) -> None:
     thumbs = sorted(repo.rembg_thumbnails_dir(tid).glob("*.jpg"))
     ok("第四步缩略图数量与最终图一致", len(thumbs) == len(finals) > 0)
     ok("缩略图底色为白（JPEG 丢 α 取 RGB，不能被清零成黑底）",
-       all(min(Image.open(t).convert("RGB").getpixel((2, 2))) > 200 for t in thumbs))
+       all(min(cast(tuple[int, ...], Image.open(t).convert("RGB").getpixel((2, 2)))) > 200
+           for t in thumbs))
 
     shutil.rmtree(tmp_dir, ignore_errors=True)

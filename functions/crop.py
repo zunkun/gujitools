@@ -49,6 +49,7 @@ class CropFunction(TextRegionProcessor):
 
     def _handle_no_boxes(self, img_bgr, image_path, area_mode):
         """无检测框：输出原图，使用配置的输出后缀"""
+        assert self.outpath is not None
         out_path = self.outpath / f"{image_path.stem}{self.output_suffix}"
         self._save_output(img_bgr, out_path)
         return {

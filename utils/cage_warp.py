@@ -75,6 +75,7 @@
 from __future__ import annotations
 
 import math
+from typing import Any
 
 #: 采样越界时填的底色（不透明源图：古籍白纸）
 FILL = (255, 255, 255)
@@ -665,6 +666,11 @@ def deform_qimage(image, cage_src, cage_dst, *, influence=None, fill=None,
                   bounds=None, grow=False, progress=None):
     """QImage 版 :func:`deform`（**保留 alpha 通道**）。
 
+    ⚠️ 返回类型是**多形态**的（``None`` / ``QImage`` / ``(QImage, (ox, oy))``），
+    刻意不加注解：不加时类型检查器只会看到 Unknown，调用点解包不会报错；
+    一旦标成联合类型，``preview, origin = deform_qimage(...)`` 这种解包就会因
+    "QImage 不可迭代"而报错。见 image_editor.bake_transform 的同款说明。
+
     不透明图走 3 通道（比 4 通道少 1/4 的采样量）；带 alpha 的图走 4 通道，
     越界填充取 :data:`FILL_CLEAR`（白 + 透明），免得透明底变实心。
 
@@ -686,8 +692,8 @@ def deform_qimage(image, cage_src, cage_dst, *, influence=None, fill=None,
 
     rgba = qimage_to_rgba(image)
     opaque = bool(rgba[:, :, 3].min() == 255)
-    common = dict(influence=influence, bounds=bounds, grow=grow,
-                  progress=progress)
+    common: dict[str, Any] = dict(influence=influence, bounds=bounds, grow=grow,
+                                  progress=progress)
     if opaque:
         warped = deform(np.ascontiguousarray(rgba[:, :, :3]),
                         cage_src, cage_dst,
@@ -702,6 +708,8 @@ def deform_qimage(image, cage_src, cage_dst, *, influence=None, fill=None,
     if grow:
         array, origin = warped
         return array_to_qimage(np.ascontiguousarray(array)), origin
+    # grow=False 时 deform 返回同尺寸 ndarray（grow 分支已在上方 return）
+    assert not isinstance(warped, tuple)
     if bounds is not None:
         x0, y0, x1, y1 = (int(bounds[0]), int(bounds[1]),
                           int(bounds[2]), int(bounds[3]))

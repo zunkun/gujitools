@@ -62,10 +62,10 @@ def run(ctx) -> None:
             paths.append(path)
 
         # 缩小批尺寸/缩短延迟让用例跑得快；**策略本身不变**
-        mixin.FIRST_BATCH = 5
-        mixin.SUCCESSIVE_BATCH = 8
-        mixin.BATCH_DELAY_MS = 800
-        mixin.BATCH_GAP_MS = 60
+        setattr(mixin, "FIRST_BATCH", 5)
+        setattr(mixin, "SUCCESSIVE_BATCH", 8)
+        setattr(mixin, "BATCH_DELAY_MS", 800)
+        setattr(mixin, "BATCH_GAP_MS", 60)
 
         # ⚠️ 先把图条造好再打补丁：补丁要按**本条图条**过滤。set_item_icon 打
         # 在类上，而前面的用例可能还留着详情页自己的图条在后台回填，不筛就会

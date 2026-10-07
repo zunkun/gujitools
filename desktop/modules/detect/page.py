@@ -126,7 +126,9 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
         """
         card = super()._build_control()
         #: 步骤私有事件：这一步的产物（每页框坐标）就是从这里上来的。
-        self.control.event.connect(self._on_step_event)
+        self.control.event.connect(  # type: ignore[reportAttributeAccessIssue]  # ``event`` 与 QObject.event 同名，运行时是 Signal
+            self._on_step_event
+        )
         if self.control.panel is not None:
             # 面板的控件全由任务流程宿主驱动，本页接管不了（见模块 docstring）：
             # 「整页模式」切的是第三步 area，「检测本页」要子进程单页检测。
@@ -599,16 +601,19 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
         进程不会因此付出几百毫秒的启动代价（见
         :mod:`desktop.services.detect_export` 的模块 docstring）。
         """
+        dest = request.dest
+        # job 契约：导出一定带输出目录（执行内核总会把 dest 设好）
+        assert dest is not None, "标注导出 job 必须带输出目录"
         written = export_annotated(
             [(Path(p), slots) for p, slots in request.args["entries"]],
-            request.dest,
+            dest,
             report=lambda text: report("log", {"message": text}),
             progress=lambda done, total: report(
                 "progress", {"done": done, "total": total}
             ),
         )
         self._exported = written
-        return str(request.dest)
+        return str(dest)
 
     def _on_annotated_progress(self, done: int, total: int) -> None:
         """一条导出进度：喂给本页第二条执行线自己的进度行。"""

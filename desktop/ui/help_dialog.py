@@ -1187,11 +1187,11 @@ def _notify_open_failed(path: Path) -> None:
     if QApplication.instance() is None:
         return
     box = QMessageBox(
-        QMessageBox.Warning,
+        QMessageBox.Icon.Warning,
         "用户手册",
         "没能唤起系统浏览器，手册已经生成好了。\n"
         "可以复制下面的路径，手动粘到浏览器地址栏（或双击文件）打开：",
-        QMessageBox.Ok,
+        QMessageBox.StandardButton.Ok,
     )
     box.setInformativeText(str(path))
     box.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)

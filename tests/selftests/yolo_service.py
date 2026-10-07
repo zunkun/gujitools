@@ -78,7 +78,7 @@ def run(ctx) -> None:
         ok("首次预热如实报出加载用时（>0）", seconds > 0.1, f"seconds={seconds}")
 
         status = ys.service_status()
-        ok("服务可用且模型已就绪", bool(status) and status.get("model_loaded"),
+        ok("服务可用且模型已就绪", bool(status) and bool(status.get("model_loaded")),
            str(status))
         first_pid = (status or {}).get("service_pid")
 
@@ -87,10 +87,10 @@ def run(ctx) -> None:
            found is not None and found[1] == ys._fingerprint(), str(found))
 
         # ---- 2. 真正做一次检测：服务代劳，served 递增 ----
-        before = ys.service_status().get("served", 0)
+        before = (ys.service_status() or {}).get("served", 0)
         boxes = ys.detect_boxes_via_service(img_path)
         ok("服务可用时检测走服务（不是 None）", boxes is not None, str(boxes))
-        after = ys.service_status().get("served", 0)
+        after = (ys.service_status() or {}).get("served", 0)
         ok("服务侧计数递增（确实由服务完成）", after > before,
            f"{before} → {after}")
 
@@ -99,8 +99,8 @@ def run(ctx) -> None:
         ok("再次预热仍是服务后端", backend2 == "service", str(backend2))
         ok("再次预热不再加载模型（应得 0）", seconds2 == 0.0, f"seconds={seconds2}")
         ok("复用同一个服务进程",
-           ys.service_status().get("service_pid") == first_pid,
-           f"{first_pid} → {ys.service_status().get('service_pid')}")
+           (ys.service_status() or {}).get("service_pid") == first_pid,
+           f"{first_pid} → {(ys.service_status() or {}).get('service_pid')}")
 
         # ---- 4. 陈旧发现文件不得把客户端卡死 ----
         fp = ys._fingerprint()

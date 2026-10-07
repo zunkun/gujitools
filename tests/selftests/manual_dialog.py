@@ -88,16 +88,16 @@ def run(ctx) -> None:
     _pma = _ic.pixmap(32, 32)
     ok("HELP_CIRCLE 能出图", not _pma.isNull(), "")
     ok("HELP_CIRCLE 有可见笔画（不是空白画布）",
-       _ink(_pma.toImage().convertToFormat(QImage.Format_ARGB32)) > 100,
+       _ink(_pma.toImage().convertToFormat(QImage.Format.Format_ARGB32)) > 100,
        "画出来是空的")
 
     # render() 才是按钮自绘真正走的那条路径（paintEvent → _drawIcon → render）
     _canvas = QPixmap(32, 32)
-    _canvas.fill(Qt.transparent)
+    _canvas.fill(Qt.GlobalColor.transparent)
     _painter = QPainter(_canvas)
     HELP_CIRCLE.render(_painter, QRectF(0, 0, 32, 32))
     _painter.end()
-    _rimg = _canvas.toImage().convertToFormat(QImage.Format_ARGB32)
+    _rimg = _canvas.toImage().convertToFormat(QImage.Format.Format_ARGB32)
     ok("HELP_CIRCLE.render() 也画得出（按钮自绘走这条）", _ink(_rimg) > 100,
        f"不透明像素={_ink(_rimg)}")
     # 结构：必须是「环」而不是实心饼（圆内镂空），且外圈确实有笔画
@@ -269,12 +269,16 @@ def run(ctx) -> None:
     # ⚠️ 这条是上一轮漏掉的硬断言：markdown 真的转了，原始符号必须消失
     # 注意：必须**剥掉代码块**再查，否则 ``# 操作指南配图`` 之类的 shell 注释
     # 会误判。代码块外的 `# `（行首 + 空格 + 标题）才是 markdown 标题原文。
-    gui_section = re.search(
+    _gui_match = re.search(
         r'id="tab-gui"[^>]*>(.*?)</section>', html, re.S
-    ).group(1)
-    cli_section = re.search(
+    )
+    assert _gui_match is not None
+    gui_section = _gui_match.group(1)
+    _cli_match = re.search(
         r'id="tab-cli"[^>]*>(.*?)</section>', html, re.S
-    ).group(1)
+    )
+    assert _cli_match is not None
+    cli_section = _cli_match.group(1)
 
     def _strip_code_blocks(s: str) -> str:
         # 围栏代码块 ```...```（可能是 <pre><code>...</code></pre> 或裸转义）

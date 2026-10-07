@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 130 个模块、152 个公开类、1158 个公开函数/方法（生成于 2026-10-07）。
+覆盖 130 个模块、153 个公开类、1161 个公开函数/方法（生成于 2026-10-07）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -137,7 +137,7 @@
 | [`desktop.workers.preview_worker`](#desktopworkerspreview_worker) | 1 | 11 |
 | [`desktop.workers.rembg_live_worker`](#desktopworkersrembg_live_worker) | 1 | 3 |
 | [`desktop.workers.render_lock`](#desktopworkersrender_lock) | 0 | 1 |
-| [`desktop.workers.serial_jobs`](#desktopworkersserial_jobs) | 1 | 9 |
+| [`desktop.workers.serial_jobs`](#desktopworkersserial_jobs) | 2 | 12 |
 | [`desktop.workers.source_thumbnails_worker`](#desktopworkerssource_thumbnails_worker) | 1 | 4 |
 | [`desktop.workers.task_rows_worker`](#desktopworkerstask_rows_worker) | 1 | 2 |
 | [`desktop.workers.thumb_cache_worker`](#desktopworkersthumb_cache_worker) | 1 | 11 |
@@ -2080,9 +2080,9 @@ build_form 生成子类表单并占满剩余垂直空间，最后统一把表单
 
 | 函数 | 说明 |
 | --- | --- |
-| `default_for(parameters: dict, defaults: dict, key: str)` | 取回填值：``parameters`` 里有且**不为 None** 时用它，否则回落 ``defaults[key]``。 |
+| `default_for(parameters: dict, defaults: dict, key: str) -> Any` | 取回填值：``parameters`` 里有且**不为 None** 时用它，否则回落 ``defaults[key]``。 |
 
-#### `default_for(parameters: dict, defaults: dict, key: str)`
+#### `default_for(parameters: dict, defaults: dict, key: str) -> Any`
 
 取回填值：``parameters`` 里有且**不为 None** 时用它，否则回落 ``defaults[key]``。
 
@@ -3332,17 +3332,22 @@ _confirm_overwrite`）。虚拟预览（区域合成/打印重排/PDF 页）没�
 | `rotate_about(point: QPointF, degrees: float) -> QTransform` | 绕 ``point`` 旋转 ``degrees``（正=顺时针）。 |
 | `scale_about(point: QPointF, sx: float, sy: float) -> QTransform` | 绕 ``point`` 缩放（sx/sy 为 0 会退化，调用方保证非零）。 |
 | `shear_about(point: QPointF, sh: float, sv: float) -> QTransform` | 绕 ``point`` 切变：水平 sh（x 随 y 斜切）、垂直 sv（y 随 x 斜切）。 |
-| `bake_transform(image: QImage, rect: QRectF, xf: QTransform, region: QImage, grow: bool=False)` | 把「选区内容经 ``xf`` 变换」烘焙进图片。 |
+| `bake_transform(image: QImage, rect: QRectF, xf: QTransform, region: QImage, grow: bool=False) -> Any` | 把「选区内容经 ``xf`` 变换」烘焙进图片。 |
 | `transform_region(image: QImage, rect: QRectF, xf: QTransform)` | ``grow`` 模式的目标画布：``(ox, oy, width, height)``。 |
-| `bake_puppet(image: QImage, vertices_rest, vertices_moved, triangles, grow=False, progress=None)` | 把「网格 ``vertices_rest`` → ``vertices_moved``」的形变烘焙进图片。 |
+| `bake_puppet(image: QImage, vertices_rest, vertices_moved, triangles, grow=False, progress=None) -> Any` | 把「网格 ``vertices_rest`` → ``vertices_moved``」的形变烘焙进图片。 |
 | `cage_preview_scale(span_x: float, span_y: float, on_screen: float=1.0, budget_pixels: float=DEFORM_PREVIEW_PIXELS) -> float` | 拖动预览的降采样倍率：清晰度与成本的**取小**。 |
 | `wait_cursor()` | 耗时操作期间挂等待光标。 |
 | `run_with_progress(parent: QWidget \| None, title: str, label: str, work, params: dict)` | 在后台线程跑 ``work(params, progress)`` 并显示进度对话框。 |
 | `draw_text(image: QImage, pos: QPointF, text: str, px: int, color: QColor, family: str \| None=None) -> QImage` | 在 ``pos``（文字块左上角）画文字（可多行，行距 1.25 倍）；空文本原样返回。 |
 
-#### `bake_transform(image: QImage, rect: QRectF, xf: QTransform, region: QImage, grow: bool=False)`
+#### `bake_transform(image: QImage, rect: QRectF, xf: QTransform, region: QImage, grow: bool=False) -> Any`
 
 把「选区内容经 ``xf`` 变换」烘焙进图片。
+
+⚠️ 返回类型刻意标成 ``Any``（**多形态返回值**，见下）：
+``grow=False`` 返 ``QImage``、``grow=True`` 返 ``(QImage, (ox, oy))``。
+标成联合类型会让 ``image, _origin = bake_transform(..., grow=True)``
+这种解包报错（联合里含 QImage，QImage 不可迭代）。
 
 ``grow=False``（旧行为）：画布尺寸不变——先把**原区域**填白（内容被挪走/
 变形后空出来的地方），再在 ``xf`` 变换下把选区快照画回去。古籍整页白底，
@@ -3365,9 +3370,12 @@ _confirm_overwrite`）。虚拟预览（区域合成/打印重排/PDF 页）没�
 选区原位被移走、内容被填白，所以**不再算进外框**——若按"原图边界"取并，
 整体平移就会凭空多出一条填白边（用户要的正是把它去掉）。
 
-#### `bake_puppet(image: QImage, vertices_rest, vertices_moved, triangles, grow=False, progress=None)`
+#### `bake_puppet(image: QImage, vertices_rest, vertices_moved, triangles, grow=False, progress=None) -> Any`
 
 把「网格 ``vertices_rest`` → ``vertices_moved``」的形变烘焙进图片。
+
+⚠️ 返回 ``Any``：多形态返回（``QImage`` / ``(QImage, (ox, oy))`` / ``None``），
+同 :func:`bake_transform` 的理由——标联合类型会让调用点的解包报错。
 
 与 :func:`bake_transform` 同口径：**没动过的网格区域**逐字节不动，只是
 这里不是仿射矩阵，而是 ARAP 三角网格逐像素重映射（PS 操控变形口径，
@@ -3587,13 +3595,13 @@ Qt 在窗口 dpr 变化时发 ``DevicePixelRatioChange``，**不保证**同时�
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(editable: bool=False, show_boxes: bool=False, empty_hint: str='暂无图片', image_size_provider=None, thumb_provider=None, parent=None)` | 构建左侧缩略图条与右侧大图；editable 时追加删除/插入按钮。 |
-| `paths() -> list[Path]` | 当前页面清单（按显示顺序）。 |
+| `paths() -> list[Path \| str]` | 当前页面清单（按显示顺序）。 |
 | `current_path() -> Path \| None` | 当前选中的页面路径；无选中或无清单时为 None。 |
 | `navigate(forward: bool) -> None` | 方向键翻页（详情页 ←/→ 调用；联动预览刷新，见 ThumbStrip.navigate）。 |
 | `set_insert_visible(visible: bool) -> None` | 「＋/📁」两个**图片输入入口**的显隐（宿主按流程入口决定）。 |
 | `set_empty_hint(hint: str) -> None` | 换空态文案（输入入口藏起来后，"请点下方「＋」"就指错方向了）。 |
 | `set_images(paths: list[Path \| str], boxes_map: dict \| None=None) -> None` | 设置页面清单并重建缩略图条；清单未变则仅通知宿主重读。 |
-| `set_thumb_source(paths: list[Path], cache_dir: Path, edge: int \| None=None, names: list[str \| None] \| None=None) -> None` | 清单是真实图片，但左侧缩略图走 ``cache_dir`` 下的**缓存小图**。 |
+| `set_thumb_source(paths: list[Path \| str], cache_dir: Path \| str, edge: int \| None=None, names: list[str \| None] \| None=None) -> None` | 清单是真实图片，但左侧缩略图走 ``cache_dir`` 下的**缓存小图**。 |
 | `set_pdf_source(pdf: Path \| str, cache_dir: Path \| None=None, gen: int=0) -> None` | 源是一本 **PDF**：左栏显示它的页缩略图，右侧大图按需渲高清页。 |
 | `begin_pdf_pages(count: int, path: str='') -> None` | PDF 页数已known：按「第 N 页」建缩略图条目并选中第一页。 |
 | `set_pdf_thumb(gen: int, index: int, image) -> None` | PDF 第 index 页的缩略图就绪：填进缩略图条第 index 条。 |
@@ -3613,6 +3621,22 @@ Qt 在窗口 dpr 变化时发 ``DevicePixelRatioChange``，**不保证**同时�
 
 image_size_provider 供大图降采样时还原原始像素尺寸；thumb_provider
 让缩略图条改用预生成小图，避免反复解码原图。
+
+##### `paths() -> list[Path | str]`
+
+装饰器：`property`
+
+当前页面清单（按显示顺序）。
+
+⚠️ 元素是 ``Path | str``（与 :meth:`set_images` 的入参一致）：调用方
+两种都传，要拿名字/后缀时用 ``Path(x)`` 收一下。
+
+##### `current_path() -> Path | None`
+
+当前选中的页面路径；无选中或无清单时为 None。
+
+返回 ``Path``：清单元素可能是 str，这里统一成 Path 交出去，调用方
+就直接 ``.name`` / ``.stem`` 了。
 
 ##### `set_insert_visible(visible: bool) -> None`
 
@@ -3645,7 +3669,7 @@ run() 内部**，只经 ``failed`` 信号回到预览区显示成
 ``boxes_map`` 预留（当前未用）。清单不变时跳过重建，但仍 emit
 current_changed 让宿主重新读取该页检测框/参数。
 
-##### `set_thumb_source(paths: list[Path], cache_dir: Path, edge: int | None=None, names: list[str | None] | None=None) -> None`
+##### `set_thumb_source(paths: list[Path | str], cache_dir: Path | str, edge: int | None=None, names: list[str | None] | None=None) -> None`
 
 清单是真实图片，但左侧缩略图走 ``cache_dir`` 下的**缓存小图**。
 
@@ -4123,7 +4147,7 @@ PDF排版预览：左侧待打印缩略图条（可拖动排序）+ 右侧单页
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(empty_hint: str='暂无图片，请先完成去底色', params_provider=None, thumb_provider=None, parent=None)` | 构建工具栏 + 左缩略图条 + 右效果预览。 |
+| `__init__(empty_hint: str='暂无图片，请先完成去底色', params_provider: Callable[[], dict] \| None=None, thumb_provider=None, parent=None)` | 构建工具栏 + 左缩略图条 + 右效果预览。 |
 | `set_entries(entries: list[dict]) -> None` | 重建列表：entries = [{file, label}]，可按条目自带 thumb 指定小图。 |
 | `entries() -> list[dict]` | 当前视觉顺序的富条目列表。 |
 | `count() -> int` | 列表当前条目数。 |
@@ -4135,7 +4159,7 @@ PDF排版预览：左侧待打印缩略图条（可拖动排序）+ 右侧单页
 | `export_default_name() -> str \| None` | 导出对话框的默认文件名；没有可导出的页时返回 None。 |
 | `export_current_effect(target: str \| Path) -> None` | 把**当前页**排进纸面后的 A4 效果图按 300dpi 写到 ``target``。 |
 
-##### `__init__(empty_hint: str='暂无图片，请先完成去底色', params_provider=None, thumb_provider=None, parent=None)`
+##### `__init__(empty_hint: str='暂无图片，请先完成去底色', params_provider: Callable[[], dict] | None=None, thumb_provider=None, parent=None)`
 
 构建工具栏 + 左缩略图条 + 右效果预览。
 
@@ -5630,7 +5654,7 @@ resize 子控件再 show），在这里重铺一次就对了。⚠️ 别改成"
 | `bar_index_of_step(step: str) -> int \| None` | 界面步骤 key → 步骤条格序；这一步不在本流程里返回 ``None``。 |
 | `flow_entry_step() -> str \| None` | 本流程**第一个真实步骤**的 step key（跳过可选节点）。 |
 | `stage_at_stack_index(page: int) -> str \| None` | ``control_stack`` / ``preview_stack`` **页号** → 运行阶段。 |
-| `panel_host_of_step(step: str)` | 界面步骤 key → ``control_stack`` 里那一页的宿主控件。 |
+| `panel_host_of_step(step: str) -> Any` | 界面步骤 key → ``control_stack`` 里那一页的宿主控件。 |
 | `stack_index_of_step(step: str) -> int \| None` | 界面步骤 key → 两个栈的页号；这一步不在本流程里返回 ``None``。 |
 | `current_stage() -> str` | 返回当前所处阶段的key（extract/detect/rembg/print/imposition）。 |
 | `navigate_by_arrow(forward: bool) -> bool` | 方向键切换当前步骤的页面（主窗口 ←/→ 转发入口）。 |
@@ -5702,7 +5726,7 @@ detect 缓存/运行态引用并刷新清单与预览；防止参数或 run_id �
 与 :meth:`stage_at_index` 是一对（那边是步骤条格序→ 阶段）。
 默认流程下两种下标逐值相等，自定义流程下必须分开查。
 
-##### `panel_host_of_step(step: str)`
+##### `panel_host_of_step(step: str) -> Any`
 
 界面步骤 key → ``control_stack`` 里那一页的宿主控件。
 
@@ -5712,6 +5736,11 @@ detect 缓存/运行态引用并刷新清单与预览；防止参数或 run_id �
 顺序"的性质，**不是**流程图的性质。自定义流程一旦换序、``SPECS``
 一旦增删一步，它就读错面板；流程里压根没有那一步时还会**把不在流程
 里的面板构造出来**（破坏"谁进去谁才建"，还会读到用户没填过的参数）。
+
+⚠️ 返回 ``Any``：拿到的要么是 ``LazyPanelHost``（惰性宿主，属性转发给
+内部面板），要么是真面板本身——调用方一律按鸭子类型用（``peek`` /
+``get_args`` / ``apply_args`` …），标成 QWidget 会让这些全变成
+「未知属性」。
 
 本流程没有这一步 ⇒ 返回 ``None``，调用方必须自己降级（别再兜一个
 "随便哪一步"——那正是界面说 A、执行做 B 的来源）。
@@ -5986,7 +6015,7 @@ control_stack、submit_button/submit_hint、log_view、_toast()。
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(factory, hooks=(), parent=None)` | factory() 造真面板；hooks 是"内部面板构造完成"后的回调（接线用）。 |
+| `__init__(factory: Callable[[], QWidget], hooks=(), parent=None)` | factory() 造真面板；hooks 是"内部面板构造完成"后的回调（接线用）。 |
 | `add_created_hook(fn) -> None` | 注册"内部面板构造完成"回调；**若已构造则立刻执行**。 |
 | `peek() -> QWidget \| None` | **不触发构造**地看内部面板；尚未构造时返回 None。 |
 | `panel() -> QWidget` | 内部真面板，首次访问时构造（并把挂着的回调全部执行一遍）。 |
@@ -11030,16 +11059,16 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 
 | 函数 | 说明 |
 | --- | --- |
-| `apply_to(widget: QWidget, size: int=T.SIZE_BODY, bold: bool=False, color: str \| None=None) -> QLabel` | 给 QLabel 统一设置字体与颜色。 |
+| `apply_to(widget: QWidget, size: int=T.SIZE_BODY, bold: bool=False, color: str \| None=None) -> QWidget` | 给控件统一设置字体与颜色（返回原控件，便于链式书写）。 |
 | `bold_button(button: QWidget, bold: bool) -> None` | 把按钮文字加粗 / 还原（高亮用）。 |
 | `mark_input_entry(button: QWidget) -> None` | 给「给这一步喂图片」这类**输入入口**按钮加**常驻红框**。 |
 | `combo_box(items: Iterable[str \| Sequence[Any]] \| None=None, width: int \| None=None) -> ComboBox` | 创建与输入框同高的下拉框（统一表单的行高节奏）。 |
 | `icon_pixmap(icon, size: int=24, color: str=T.INK_FAINT) -> QPixmap` | 把 FluentIcon 渲染成指定颜色的 pixmap（用于空状态插画）。 |
 | `install_button_pointer_cursor(app: QApplication) -> None` | 给整个应用的按钮启用 hover 手型光标（见 :class:`_ButtonCursorFilter`）。 |
 
-#### `apply_to(widget: QWidget, size: int=T.SIZE_BODY, bold: bool=False, color: str | None=None) -> QLabel`
+#### `apply_to(widget: QWidget, size: int=T.SIZE_BODY, bold: bool=False, color: str | None=None) -> QWidget`
 
-给 QLabel 统一设置字体与颜色。
+给控件统一设置字体与颜色（返回原控件，便于链式书写）。
 
 ⚠️ **上色有两条路，按控件类型分流**：
 
@@ -11823,6 +11852,28 @@ PDF 页渲染的**单飞锁**：全进程同一时刻只允许一个 PyMuPDF 页
 0.2s 变成 0.5~2.5s。所以新 job 提交后先**扣住**，等页面把列表画完调
 ``release()`` 再开工；同时留一个超时兜底，信号丢了也不会永远不干活。
 
+### `class JobWorker(Protocol)`
+
+排队器对 worker 的**鸭子类型契约**（结构化子类型）。
+
+为什么用 Protocol 而不是真基类：各 worker（``SourceThumbnailsWorker`` /
+``HashWorker`` / ``CopyFilesWorker`` …）本来就都是独立的 ``QObject`` 子类，
+信号签名各不相同（``finished(str)`` / ``finished(str, int)`` …），硬拉一个
+基类只会污染它们。而排队器真正用到的只有这几项——``moveToThread`` /
+``run`` / 那几个信号 / 可选的 ``cancel`` 与 ``wait_copy``，都是既有实现里
+已经满足的。
+
+⚠️ 写成 ``QObject`` 时类型检查器只会看到基类那套 API，``worker.run`` /
+``worker.finished`` 这些就全成了「未知属性」——这就是本协议存在的意义。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `moveToThread(thread: QThread, /) -> bool` | — |
+| `deleteLater() -> None` | — |
+| `run() -> None` | — |
+
 ### `class SerialJobQueue(QObject)`
 
 把一次性后台 job 串成一条队列，并支持「界面画完再放行」。
@@ -11838,7 +11889,7 @@ PDF 页渲染的**单飞锁**：全进程同一时刻只允许一个 PyMuPDF 页
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(owner: QObject)` | owner 为宿主 widget（主线程）；线程与中继都挂在它下面。 |
-| `submit(worker: QObject, label: str='', on_warning=None, on_failed=None, tag: str \| None=None) -> None` | 排队一个 job；等 ``release()``（或超时）后按提交顺序执行。 |
+| `submit(worker: JobWorker, label: str='', on_warning=None, on_failed=None, tag: str \| None=None) -> None` | 排队一个 job；等 ``release()``（或超时）后按提交顺序执行。 |
 | `release() -> None` | 界面画完了：放行排队中的 job（重复调用无副作用）。 |
 | `running_count() -> int` | 正在跑的 job 数（0 或 1）。 |
 | `pending_count() -> int` | 排队中的 job 数。 |
@@ -11847,7 +11898,7 @@ PDF 页渲染的**单飞锁**：全进程同一时刻只允许一个 PyMuPDF 页
 | `cancel_tag(tag: str \| None, wait_ms: int=3000) -> bool` | 取消某个 tag（任务）名下的活：丢掉排队的、让在跑的收手并等它。 |
 | `shutdown(wait_ms: int=800) -> None` | 退出收尾：停表、丢弃排队的活、让当前 job 尽快退出。 |
 
-##### `submit(worker: QObject, label: str='', on_warning=None, on_failed=None, tag: str | None=None) -> None`
+##### `submit(worker: JobWorker, label: str='', on_warning=None, on_failed=None, tag: str | None=None) -> None`
 
 排队一个 job；等 ``release()``（或超时）后按提交顺序执行。
 

@@ -43,7 +43,9 @@ def run(ctx) -> None:
             command=command, input=str(empty), output=str(root / command), **extra
         )
         try:
-            get_function(command, args, None).execute()
+            fn = get_function(command, args, None)
+            assert fn is not None
+            fn.execute()
         except FileNotFoundError as exc:
             ok(f"{command}：{label}", True, f"{exc}")
         except Exception as exc:  # noqa: BLE001 - 抛了但类型不对，也算不合格
@@ -67,14 +69,16 @@ def run(ctx) -> None:
     for i in range(3):
         Image.new("RGB", (200, 300), (210, 200, 190)).save(src / f"{i + 1}.jpg")
     try:
-        get_function(
+        _fn_print = get_function(
             "print",
             CommandArgs(
                 command="print", input=str(src), output=str(root / "o2"),
                 skip_pages=[1, 2, 3],
             ),
             None,
-        ).execute()
+        )
+        assert _fn_print is not None
+        _fn_print.execute()
     except ValueError as exc:
         ok("print：图片全被 skip_pages 排除时报错", True, f"{exc}")
     except Exception as exc:  # noqa: BLE001
@@ -90,9 +94,11 @@ def run(ctx) -> None:
     bad = root / "broken.pdf"
     bad.write_bytes(b"%PDF-1.4\nnot a real pdf\n%%EOF\n")
     try:
-        get_function(
+        _fn_extract = get_function(
             "extract", CommandArgs(command="extract", input=str(bad), output=str(root / "o3")), None
-        ).execute()
+        )
+        assert _fn_extract is not None
+        _fn_extract.execute()
     except Exception as exc:  # noqa: BLE001 - 只关心"有没有报错"
         ok("extract：PDF 无法解析时报错（不是零产物报成功）", True, f"{type(exc).__name__}: {exc}")
     else:

@@ -119,7 +119,7 @@ def run(ctx) -> None:
         t.join()
     data = dst.read_bytes()
     ok("并发原子写同一目标不炸、不落半截",
-       not errors and data and (data.startswith(b"t") or data.startswith(b"t")),
+       bool(not errors and data and (data.startswith(b"t") or data.startswith(b"t"))),
        f"errors={errors[:2]}")
     ok("原子写临时名带 pid/线程号（并发不再共用一个 .part）",
        "-" in _unique_tmp_name(dst) and _unique_tmp_name(dst).endswith(".part"),

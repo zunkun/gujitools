@@ -94,7 +94,7 @@ def _wait_all_thumbs(widget, app, expect_calls: int, timeout: float = 30.0) -> N
         time.sleep(0.02)
 
 
-def _audit(widget, label: str, ok, expect: list) -> None:
+def _audit(widget, label: str, ok, expect: dict) -> None:
     """逐行核对：缩略图颜色 / 文字 / 路径 都必须属于该行自己的那一页。"""
     bad_color, bad_text, bad_path, blank = [], [], [], []
     for row in range(widget.strip.count()):
@@ -145,7 +145,7 @@ def run(ctx) -> None:
         )
         widgets.append(widget)
         # 统计到达次数（判"批次真的跑完了"），不改行为
-        widget._thumb_probe_calls = 0
+        setattr(widget, "_thumb_probe_calls", 0)
 
         def _counted(self, key, image):
             if self is widget:
@@ -157,10 +157,10 @@ def run(ctx) -> None:
 
     try:
         # 缩短分批节奏（策略不变，只是别让用例等好几秒）
-        mixin.FIRST_BATCH = 4
-        mixin.SUCCESSIVE_BATCH = 5
-        mixin.BATCH_DELAY_MS = 500
-        mixin.BATCH_GAP_MS = 30
+        setattr(mixin, "FIRST_BATCH", 4)
+        setattr(mixin, "SUCCESSIVE_BATCH", 5)
+        setattr(mixin, "BATCH_DELAY_MS", 500)
+        setattr(mixin, "BATCH_GAP_MS", 30)
 
         pages = _make_pages(tmp, 26)
         expect = {str(p): rgb for p, rgb in pages}

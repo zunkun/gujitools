@@ -23,7 +23,7 @@
 
 from __future__ import annotations
 
-from typing import Iterable
+from typing import Iterable, cast
 
 from PySide6.QtCore import QPoint, QPointF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import (
@@ -466,7 +466,11 @@ class ColorPickerPopup(QWidget):
         color = QColor(color)
         if not color.isValid():
             return
-        hue, sat, val, _ = color.getHsvF()
+        # ⚠️ PySide6 存根把 ``QColor.getHsvF()`` 的返回标成 ``object``（实际是
+        # ``(h, s, v, a)`` 四元组），故显式 cast 一次再解包。
+        hue, sat, val, _ = cast(
+            "tuple[float, float, float, float]", color.getHsvF()
+        )
         if hue >= 0:
             self._hue = hue
         self._sat, self._val = sat, val

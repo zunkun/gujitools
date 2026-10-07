@@ -54,7 +54,9 @@ def run(ctx) -> None:
     from utils.units import mm_to_px
 
     W, H = 1000, 800
-    pad = parse_border_mm("10", 300)[0]          # 10mm @300dpi
+    _pad_px = parse_border_mm("10", 300)          # 10mm @300dpi
+    assert _pad_px is not None
+    pad = _pad_px[0]
     gap = round(mm_to_px(SYMMETRIC_GAP_MM, 300))  # 对称输出的中间间隔
     detected_full = [40, 30, 960, 770]            # 检测到的整幅框（略小于整页）
     page_box = whole_page_box((W, H))
@@ -177,8 +179,8 @@ def run(ctx) -> None:
 
     from desktop.workers.preview_worker import compose_region_output
 
-    src = QImage(400, 300, QImage.Format_RGB32)
-    src.fill(Qt.darkGray)
+    src = QImage(400, 300, QImage.Format.Format_RGB32)
+    src.fill(Qt.GlobalColor.darkGray)
     full_entry = _entries(lambda _p: [[40, 30, 360, 270]], 2)[0]
     eff = entry_to_effect_spec(full_entry, None)["effect"]
     outs = compose_region_output(
@@ -186,8 +188,8 @@ def run(ctx) -> None:
     ok("整幅页 area=2（border 空）合成产物＝整页尺寸、框内容写回原位置",
        len(outs) == 1 and outs[0].size() == src.size(), str(outs[0].size()))
     ok("整幅页框外留白、框内是内容（区域随整幅框走，不再整页铺满）",
-       outs[0].pixelColor(0, 0) == Qt.white
-       and outs[0].pixelColor(200, 150) != Qt.white,
+       outs[0].pixelColor(0, 0) == Qt.GlobalColor.white
+       and outs[0].pixelColor(200, 150) != Qt.GlobalColor.white,
        f"角落 {outs[0].pixelColor(0, 0).name()} 中心 {outs[0].pixelColor(200, 150).name()}")
     ok("整幅页 area=1/2/3 合成产物完全一致",
        all(
@@ -200,7 +202,7 @@ def run(ctx) -> None:
     out4 = compose_region_output(src, _e4["boxes"], 4, None, full=True)[0]
     ok("整幅页 area=4 保留框外内容（四角都是原图内容）",
        out4.size() == src.size()
-       and all(out4.pixelColor(x, y) != Qt.white
+       and all(out4.pixelColor(x, y) != Qt.GlobalColor.white
                for x, y in ((0, 0), (399, 0), (0, 299), (399, 299))),
        f"{out4.pixelColor(0, 0).name()} {out4.pixelColor(399, 299).name()}")
 
@@ -234,7 +236,7 @@ def run(ctx) -> None:
     left, right, full, notes = resolve_content_boxes(
         _raw((FULL, 0.9, 100, 700)), IW, HARF, FULL)
     ok("规则1：窄整幅(60%)被剔除，且给出说明",
-       full == [] and notes and "整幅" in notes[0], f"{full} {notes}")
+       bool(full == [] and notes and "整幅" in notes[0]), f"{full} {notes}")
     left, right, full, notes = resolve_content_boxes(
         _raw((FULL, 0.9, 50, 850)), IW, HARF, FULL)
     ok("规则1：够宽(80%)的整幅保留，无说明",
@@ -245,7 +247,7 @@ def run(ctx) -> None:
         _raw((HARF, 0.9, 20, 460), (HARF, 0.9, 540, 980), (FULL, 0.99, 10, 900)),
         IW, HARF, FULL)
     ok("规则2：两个半幅 → 整幅被剔除（即使整幅置信度更高）",
-       full == [] and left and right and any("冲突" in n for n in notes),
+       bool(full == [] and left and right and any("冲突" in n for n in notes)),
        f"left={len(left)} right={len(right)} full={full} {notes}")
 
     # 规则3a：单半幅(<整幅置信度) → 剔半幅、留整幅
@@ -293,9 +295,11 @@ def run(ctx) -> None:
     # ---- 5b. 消解说明必须对用户可见（CLI + GUI 共四处）----
     ok("无消解时不产生说明行", resolution_note(PageBoxes(left=(1, 1, 2, 2))) is None)
     _page = PageBoxes(left=(1, 1, 2, 2), notes=("剔除1个整幅框(宽≤70%)",))
+    _page_note = resolution_note(_page)
+    assert _page_note is not None
     ok("有消解时给出可读说明行",
-       isinstance(resolution_note(_page), str) and "整幅" in resolution_note(_page),
-       str(resolution_note(_page)))
+       isinstance(_page_note, str) and "整幅" in _page_note,
+       str(_page_note))
     # 防御：绕过消解、两类并存时也要说清（slots 仍按半幅优先）
     _bad = PageBoxes(left=(1, 1, 2, 2), full=(0, 0, 9, 9))
     ok("未消解的两类并存仍会被指出来",

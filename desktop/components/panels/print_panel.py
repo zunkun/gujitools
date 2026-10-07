@@ -9,6 +9,7 @@ input/output/workers/clean 由系统管理，不出现在表单中。
 from __future__ import annotations
 
 from PySide6.QtCore import Signal
+from PySide6.QtWidgets import QVBoxLayout
 
 from desktop.components.panels.base import StagePanel, default_for
 from desktop.components.panels.params_spec import DEFAULTS
@@ -52,7 +53,10 @@ class PrintPanel(PrintFormMixin, StagePanel):
         super().__init__(parent)
         # 表单内容较高，让滚动区占满标题行以下的全部空间
         # （基类布局：0=标题行（说明已并入问号按钮）、1=表单滚动区、2=弹簧）
-        self.layout().setStretch(1, 1)
+        # ⚠️ 基类装的是 QVBoxLayout（不是 QLayout），setStretch 只有它有。
+        root_layout = self.layout()
+        assert isinstance(root_layout, QVBoxLayout)
+        root_layout.setStretch(1, 1)
         self._last_applied: dict | None = None
         # 「位置」「文字方向」界面已删除（见 PrintFormMixin.FIXED_TEXT_LAYOUT）。
         # 这里记住**历史参数里的原值**：桌面端不能改这两个键，但也不能把它们

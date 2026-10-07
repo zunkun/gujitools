@@ -111,7 +111,7 @@ def _check_drawing(page, tmp: Path, ok) -> None:
             QEvent.Type.MouseButtonPress,
             QPointF(ix * view._scale_x + view._offset_x,
                     iy * view._scale_y + view._offset_y),
-            Qt.LeftButton, Qt.LeftButton, Qt.NoModifier,
+            Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
         ))
 
     def release(ix, iy):
@@ -119,7 +119,7 @@ def _check_drawing(page, tmp: Path, ok) -> None:
             QEvent.Type.MouseButtonRelease,
             QPointF(ix * view._scale_x + view._offset_x,
                     iy * view._scale_y + view._offset_y),
-            Qt.LeftButton, Qt.NoButton, Qt.NoModifier,
+            Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier,
         ))
 
     press(*LEFT[:2])

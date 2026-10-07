@@ -56,6 +56,11 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
+# 测试临时文件统一落点：tests/tmp/（见 tests/tmpdir.py）。
+from tests.tmpdir import install as _install_tmpdir  # noqa: E402
+
+_install_tmpdir()
+
 from PySide6.QtCore import Qt  # noqa: E402
 
 FONT_CANDIDATES = (
@@ -203,7 +208,9 @@ def _copy_real_demo(repo, task_id: str, work_dir: Path, page: int) -> bool:
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             )
-        image.save(str(thumb), "JPG", 88)
+        # ⚠️ type: ignore —— PySide6 的 save() 注解把 format 写成
+        # ``bytes | ...``，运行时却接受 str（实测 str 正常编码）。
+        image.save(str(thumb), "JPG", 88)  # type: ignore[reportCallIssue]
         entries.append({"file": str(target), "label": f"{index:03d}"})
 
     repo.save_pages(task_id, entries)
@@ -353,7 +360,8 @@ def seed(repo) -> list[str]:
             print(f"⚠️ 真实古籍数据灌入失败，回退占位图：{exc!r}")
             used_real = False
         else:
-            if used_real:
+            # work_dir 只有在真找到 PDF 时才非空 ⇒ real_pdf 必然在
+            if used_real and real_pdf is not None:
                 print(f"✓ 演示数据：{real_pdf.name} 第 {DEMO_PAGE} 页起（真实版面）")
 
     if used_real:

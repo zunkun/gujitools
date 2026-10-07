@@ -21,8 +21,14 @@ from __future__ import annotations
 import os
 import threading
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from utils.file_utils import replace_with_retry
+
+if TYPE_CHECKING:
+    # ImageEditorDialog 在 _open_editor 里**延迟导入**（编辑器模块重，不能拖进
+    # 启动），但本文件的返回注解/形参要引它 —— 类型侧先声明，运行时不动。
+    from desktop.components.viewers.image_editor import ImageEditorDialog
 
 from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import (
@@ -165,9 +171,12 @@ def save_image(image: QImage, path: str | Path,
     单独抽出来是为了可测——保存对话框在离屏环境里弹不出来。
     """
     target = Path(path)
+    # ⚠️ type: ignore —— PySide6 的 save() 类型注解把 format 写成
+    # ``bytes | bytearray | memoryview | None``，但**运行时接受 str**（官方
+    # 示例也传字符串）。这里按运行时的写法保持不变。
     if target.suffix.lower() in (".jpg", ".jpeg"):
-        return bool(image.save(str(target), "JPEG", quality))
-    return bool(image.save(str(target)))
+        return bool(image.save(str(target), "JPEG", quality))  # type: ignore[reportCallIssue]
+    return bool(image.save(str(target)))  # type: ignore[reportCallIssue]
 
 
 #: 覆盖原图时的 JPEG 画质：比「下载另存」高一档——写回的是任务里唯一
@@ -197,7 +206,9 @@ def overwrite_image_file(image: QImage, target: Path,
         f"{target.suffix}.part"
     )
     try:
-        if not image.save(str(temp), fmt, quality):
+        # ⚠️ type: ignore —— 同 _save_image：PySide6 的 save() 注解要求
+        # format 是 bytes，但运行时接受 str（实测 str 正常编码）。
+        if not image.save(str(temp), fmt, quality):  # type: ignore[reportCallIssue]
             return False
         replace_with_retry(temp, target)
         return True
@@ -1087,6 +1098,11 @@ class ZoomPopupMixin:
     ``__init__`` 里调 :meth:`_init_zoom_popup`。
     """
 
+    if TYPE_CHECKING:
+        # 宿主是 QWidget 子类（QWidget + 本 Mixin 混入）：window() 由 QWidget
+        # 提供，这里只做类型侧声明，运行时零副作用。
+        def window(self) -> QWidget: ...
+
     #: 弹窗实例（懒建）。类属性给个 None 兜底：子类可能在 _init_zoom_popup
     #: 之前（如构造中途换数据）就调到 close_zoom_popup。
     _zoom_dialog: "ImageZoomDialog | None" = None
@@ -1155,7 +1171,7 @@ class ZoomPopupMixin:
         """
         from qfluentwidgets import FluentIcon as FIF
 
-        items = [("预览图片", FIF.PHOTO, self._open_zoom_popup)]
+        items: list[tuple] = [("预览图片", FIF.PHOTO, self._open_zoom_popup)]
         if target is not None and target.edit_path is not None:
             items.append((target.edit_label, FIF.EDIT, self.edit_current_image))
         return items

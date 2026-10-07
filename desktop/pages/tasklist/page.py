@@ -386,6 +386,8 @@ class TaskListPage(QWidget, WorkerHost):
 
     def _start_import(self, path: Path) -> None:
         """选定 PDF 之后：后台算指纹，完成后按查重结果建任务。"""
+        # 按钮由 _init_ui 建好；这里断言只为让类型检查器收窄（可能为 None 的声明）
+        assert self._import_button is not None
         self._import_button.setEnabled(False)
         # 指纹后台计算，完成后决定是否建任务（查重 → 确认）
         self.hash_thread = QThread(self)
@@ -401,6 +403,8 @@ class TaskListPage(QWidget, WorkerHost):
         self.hash_thread.start()
 
     def _hash_thread_done(self) -> None:
+        # 按钮由 _init_ui 建好；这里断言只为让类型检查器收窄（可能为 None 的声明）
+        assert self._import_button is not None
         self._import_button.setEnabled(True)
 
     @Slot(str, str)
@@ -580,7 +584,9 @@ class TaskListPage(QWidget, WorkerHost):
         """
         from desktop.workers.worker_host import stop_thread
 
-        stop_thread(self.hash_thread, self.HASH_SHUTDOWN_WAIT_MS, "指纹线程")
+        # stop_thread 自己会处理 None，这里显式跳过省一次调用（语义等价）
+        if self.hash_thread is not None:
+            stop_thread(self.hash_thread, self.HASH_SHUTDOWN_WAIT_MS, "指纹线程")
 
     #: 指纹线程的收尾等待上限（毫秒）：整本 PDF 的 SHA-256，留够余量
     HASH_SHUTDOWN_WAIT_MS = 5000

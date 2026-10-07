@@ -18,6 +18,8 @@ File: functions/__init__.py
   不会触发 crop.py 的 cv2 依赖。这使得 `guji extract` 在未安装 cv2 的环境也能运行。
 """
 
+from typing import TYPE_CHECKING, Optional
+
 from core.args import ArgsProvider
 from core.reporter import Reporter
 
@@ -33,7 +35,8 @@ _COMMAND_MAP = {
 }
 
 
-def get_function(command: str, command_args: ArgsProvider, reporter: Reporter = None):
+def get_function(command: str, command_args: ArgsProvider,
+                 reporter: Optional[Reporter] = None):
     """工厂函数：根据命令字符串返回对应的功能实例。
 
     延迟导入对应模块，避免未使用的命令触发重依赖（如 crop 触发 cv2）。
@@ -56,6 +59,17 @@ def get_function(command: str, command_args: ArgsProvider, reporter: Reporter = 
     mod = importlib.import_module(module_path)
     cls = getattr(mod, class_name)
     return cls(command_args, reporter)
+
+
+if TYPE_CHECKING:
+    from functions.base import FunctionBase as FunctionBase
+    from functions.crop import CropFunction as CropFunction
+    from functions.crop_remove import CropRemoveFunction as CropRemoveFunction
+    from functions.detect import DetectFunction as DetectFunction
+    from functions.extract import ExtractFunction as ExtractFunction
+    from functions.init import InitFunction as InitFunction
+    from functions.print import PrintFunction as PrintFunction
+    from functions.rembg import RembgFunction as RembgFunction
 
 
 # 延迟加载 base.FunctionBase（外部需要继承时才导入）

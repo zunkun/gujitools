@@ -396,7 +396,8 @@ def _escalation() -> list[str] | None:
     **pkexec 优先于 sudo**：GUI 里没有终端，``sudo`` 会直接失败
     （``no tty present and no askpass program``），而 pkexec 弹的是图形授权框。
     """
-    if getattr(os, "geteuid", None) and os.geteuid() == 0:
+    geteuid = getattr(os, "geteuid", None)
+    if geteuid is not None and geteuid() == 0:
         return []
     if shutil.which("pkexec"):
         return ["pkexec"]

@@ -216,7 +216,7 @@ def run(ctx) -> None:
     # 先按真实行高给它尺寸，再渲染
     name_label.resize(max(name_label.width(), 160), ROW_HEIGHT)
     pm = QPixmap(name_label.size())
-    pm.fill(Qt.white)
+    pm.fill(Qt.GlobalColor.white)
     name_label.render(pm)
     img = pm.toImage()
     # ⚠️ 按「非白像素」而不是「等于主色」统计：1px 的线落在半像素上会被
@@ -259,7 +259,7 @@ def run(ctx) -> None:
     ok(
         "名称格仍保留数据项（select_task 依赖）",
         table.item(0, 1) is not None
-        and table.item(0, 1).data(Qt.UserRole) is not None,
+        and table.item(0, 1).data(Qt.ItemDataRole.UserRole) is not None,
     )
     # ⚠️ 单元格控件是透明的：item 里再写一遍名字就是「一条名字显示两次」
     ok(
@@ -281,7 +281,7 @@ def run(ctx) -> None:
     name_label.mousePressEvent(press)
     ok(
         "点击任务名称跳详情",
-        got == [table.item(0, 1).data(Qt.UserRole)],
+        got == [table.item(0, 1).data(Qt.ItemDataRole.UserRole)],
         str(got),
     )
     # 不 accept 的话事件会冒泡到视口，cellClicked 再跳一次

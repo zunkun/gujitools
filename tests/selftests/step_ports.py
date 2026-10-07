@@ -48,6 +48,15 @@ _MODULES_DIR = Path("desktop") / "modules"
 _REGULAR_KEYS = ("extract", "detect", "rembg", "print")
 
 
+def _spec_for(stage: str):
+    """取某一步的元数据；查不到直接断（查不到就是元数据表漏了，不是"没关系"）。"""
+    from desktop.steps import ports
+
+    spec = ports.spec_for_stage(stage)
+    assert spec is not None, f"步骤表里没有「{stage}」这一项"
+    return spec
+
+
 def run(ctx) -> None:  # noqa: ARG001 - 不需要窗口夹具
     from tests.selftests._context import ok
 
@@ -324,9 +333,7 @@ def _check_blocking_inputs(ctx, ok) -> None:
        CONDITIONS == {step: step for step in OPTIONAL_STEPS},
        str(CONDITIONS))
     ok("CONDITIONS 里只有可选步骤（主链步骤不受开关控制）",
-       all(ports.spec_for_stage(s) is not None
-           and ports.spec_for_stage(s).role == "optional"
-           for s in CONDITIONS),
+       all(_spec_for(s).role == "optional" for s in CONDITIONS),
        str(CONDITIONS))
     _flag_task = repo.create_task("", "", "开关读写")
     ok("新任务的可选开关默认全关",
@@ -506,7 +513,7 @@ def _check_ports(ok) -> None:
 
     # 运行阶段的输入/输出应当**等于**对应 spec 的声明。
     for stage in ("extract", "detect", "rembg", "print"):
-        spec = spec_by_key(stage)
+        spec = _spec_for(stage)
         ok(f"{stage} 的输入端口 = spec.inputs",
            ports.stage_inputs(stage) == tuple(spec.inputs),
            f"{ports.stage_inputs(stage)} vs {spec.inputs}")
@@ -693,30 +700,30 @@ def _check_detail_metadata(ctx, ok) -> None:
 
     # --- spec 层面的值（与改动前的 if-else 逐条对照）---
     ok("extract 按钮是「执行本子任务」",
-       ports.spec_for_stage("extract").run_button_text == "执行本子任务")
+       _spec_for("extract").run_button_text == "执行本子任务")
     ok("rembg 按钮是「生成预览」且有提交按钮",
-       ports.spec_for_stage("rembg").run_button_text == "生成预览"
-       and ports.spec_for_stage("rembg").has_submit is True)
+       _spec_for("rembg").run_button_text == "生成预览"
+       and _spec_for("rembg").has_submit is True)
     ok("print 按钮是「生成PDF」且无提交按钮",
-       ports.spec_for_stage("print").run_button_text == "生成PDF"
-       and ports.spec_for_stage("print").has_submit is False)
+       _spec_for("print").run_button_text == "生成PDF"
+       and _spec_for("print").has_submit is False)
     ok("只有 rembg 声明了提交按钮",
-       [s for s in STAGES if ports.spec_for_stage(s).has_submit] == ["rembg"])
+       [s for s in STAGES if _spec_for(s).has_submit] == ["rembg"])
     ok("print 控制列更宽（400~580），其余 340~440",
-       ports.spec_for_stage("print").control_width == (400, 580)
-       and all(ports.spec_for_stage(s).control_width == (340, 440)
+       _spec_for("print").control_width == (400, 580)
+       and all(_spec_for(s).control_width == (340, 440)
                for s in STAGES if s != "print"))
     ok("detect 用专属区块，其余用「执行记录」",
-       [s for s in STAGES if ports.spec_for_stage(s).panel_extra] == ["detect"]
-       and ports.spec_for_stage("detect").panel_extra == "detect_stats")
+       [s for s in STAGES if _spec_for(s).panel_extra] == ["detect"]
+       and _spec_for("detect").panel_extra == "detect_stats")
     ok("print 历史回填跳过 pdf_name/title_text",
-       set(ports.spec_for_stage("print").history_skip) == {"pdf_name", "title_text"})
+       set(_spec_for("print").history_skip) == {"pdf_name", "title_text"})
     ok("extract 的 pages 只在自动回填时跳过",
-       ports.spec_for_stage("extract").auto_fill_skip == ("pages",)
-       and ports.spec_for_stage("extract").history_skip == ())
+       _spec_for("extract").auto_fill_skip == ("pages",)
+       and _spec_for("extract").history_skip == ())
     ok("每一步都声明了主预览控件",
-       all(ports.spec_for_stage(s).preview_attr for s in STAGES),
-       str({s: ports.spec_for_stage(s).preview_attr for s in STAGES}))
+       all(_spec_for(s).preview_attr for s in STAGES),
+       str({s: _spec_for(s).preview_attr for s in STAGES}))
 
     # --- 页面层面：真的读 spec，而不是又写回 if stage ---
     # ⚠️ **另建一个详情页 + 一个任务**，不要动共享的 ``ctx.d``/``ctx.tid``：
@@ -736,7 +743,9 @@ def _check_detail_metadata(ctx, ok) -> None:
         ok("第三步：按钮=生成预览、提交按钮出现",
            page.run_button.text() == "生成预览"
            and page.submit_button.isVisibleTo(page), page.run_button.text())
-        page._select_stage(page.bar_index_of_step("print"))
+        print_bar = page.bar_index_of_step("print")
+        assert print_bar is not None      # ⚠️ 默认流程里有「生成PDF」这一格
+        page._select_stage(print_bar)
         ok("第四步：按钮=生成PDF、提交按钮隐藏",
            page.run_button.text() == "生成PDF"
            and not page.submit_button.isVisibleTo(page), page.run_button.text())
@@ -755,7 +764,7 @@ def _check_detail_metadata(ctx, ok) -> None:
            and not page.detect_stats.isVisibleTo(page))
 
         # 控制列宽度跟着 spec 走（第四步更宽）。
-        page._select_stage(page.bar_index_of_step("print"))
+        page._select_stage(print_bar)
         wide = (page.control_widget.minimumWidth(),
                 page.control_widget.maximumWidth())
         page._select_stage(0)

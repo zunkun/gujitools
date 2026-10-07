@@ -11,8 +11,14 @@ import shutil
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any, cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+# 测试临时文件统一落点：tests/tmp/（见 tests/tmpdir.py）。
+from tests.tmpdir import install as _install_tmpdir  # noqa: E402
+
+_install_tmpdir()
 
 
 def main() -> int:
@@ -59,20 +65,24 @@ def main() -> int:
         # ⚠️ 流程条里放的是节点的**等宽槽位**（imposition_slot），虚线框在槽位里
         #     靠左贴合文字——见 desktop/components/step_bar.py 的说明。
         row = d.step_bar.layout()
+        assert row is not None        # ⚠️ 步骤条必带布局
         pos = row.indexOf(d.step_bar.imposition_slot)
         order = []
         for i in range(row.count()):
-            widget = row.itemAt(i).widget()
+            _it = row.itemAt(i)
+            widget = _it.widget() if _it is not None else None
             if widget is d.step_bar.imposition_slot:
                 order.append("拼")
             elif isinstance(widget, _Connector):
                 order.append("→")
             elif widget is not None:
                 order.append("步")
+        _before = row.itemAt(pos - 1)
         ok("节点前有「去底色→拼版」箭头",
-           pos > 0 and isinstance(row.itemAt(pos - 1).widget(), _Connector))
+           pos > 0 and isinstance(_before.widget() if _before else None, _Connector))
+        _after = row.itemAt(pos + 1)
         ok("节点后有「拼版→PDF」箭头",
-           isinstance(row.itemAt(pos + 1).widget(), _Connector))
+           isinstance(_after.widget() if _after else None, _Connector))
         ok("整体顺序 步→步→步→箭→拼→箭→步",
            order[-8:] == ["步", "→", "步", "→", "步", "→", "拼", "→", "步"][-8:]
            or order == ["步", "→", "步", "→", "步", "→", "拼", "→", "步", None][:9],
@@ -91,7 +101,9 @@ def main() -> int:
         ok("取消 → 恢复未选择", not d.step_bar.imposition_node.is_selected())
 
         # ---- area 离开 1 → 节点消失 ----
-        host = d.control_stack.widget(2)
+        # host 是这一格的面板宿主（去底色面板），源码侧标注是 QWidget；
+        # 运行时是带 area 属性的具体面板，这里按鸭子类型取用。
+        host = cast(Any, d.control_stack.widget(2))
         host.area.setCurrentIndex(1)  # area=2
         d._flush_param_drafts()
         d._refresh_imposition_node()

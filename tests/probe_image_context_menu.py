@@ -21,6 +21,11 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+# 测试临时文件统一落点：tests/tmp/（见 tests/tmpdir.py）。
+from tests.tmpdir import install as _install_tmpdir  # noqa: E402
+
+_install_tmpdir()
+
 
 def _capture(host, out: Path) -> None:
     import qfluentwidgets
@@ -50,7 +55,10 @@ def main() -> int:
         ZoomPopupMixin, ZoomTarget,
     )
 
-    out_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("D:/tmp/shots")
+    from tests.tmpdir import tmp_root
+
+    # ⚠️ 默认输出目录别再写 `D:/tmp`（项目外）——统一落 tests/tmp/shots
+    out_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else tmp_root() / "shots"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     app = QApplication([])

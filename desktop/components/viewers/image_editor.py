@@ -75,6 +75,7 @@ from __future__ import annotations
 import contextlib
 import math
 import time
+from typing import Any, cast
 
 from PySide6.QtCore import (
     QLineF, QPointF, QRect, QRectF, QSize, QSizeF, Qt, QThread, QTimer,
@@ -298,8 +299,13 @@ def shear_about(point: QPointF, sh: float, sv: float) -> QTransform:
 
 
 def bake_transform(image: QImage, rect: QRectF, xf: QTransform,
-                   region: QImage, grow: bool = False):
+                   region: QImage, grow: bool = False) -> Any:
     """把「选区内容经 ``xf`` 变换」烘焙进图片。
+
+    ⚠️ 返回类型刻意标成 ``Any``（**多形态返回值**，见下）：
+    ``grow=False`` 返 ``QImage``、``grow=True`` 返 ``(QImage, (ox, oy))``。
+    标成联合类型会让 ``image, _origin = bake_transform(..., grow=True)``
+    这种解包报错（联合里含 QImage，QImage 不可迭代）。
 
     ``grow=False``（旧行为）：画布尺寸不变——先把**原区域**填白（内容被挪走/
     变形后空出来的地方），再在 ``xf`` 变换下把选区快照画回去。古籍整页白底，
@@ -402,8 +408,11 @@ def transform_region(image: QImage, rect: QRectF, xf: QTransform):
 
 
 def bake_puppet(image: QImage, vertices_rest, vertices_moved,
-                triangles, grow=False, progress=None):
+                triangles, grow=False, progress=None) -> Any:
     """把「网格 ``vertices_rest`` → ``vertices_moved``」的形变烘焙进图片。
+
+    ⚠️ 返回 ``Any``：多形态返回（``QImage`` / ``(QImage, (ox, oy))`` / ``None``），
+    同 :func:`bake_transform` 的理由——标联合类型会让调用点的解包报错。
 
     与 :func:`bake_transform` 同口径：**没动过的网格区域**逐字节不动，只是
     这里不是仿射矩阵，而是 ARAP 三角网格逐像素重映射（PS 操控变形口径，
@@ -489,8 +498,10 @@ class _BakeWorker(QThread):
         self._params = params
         self.cancelled = False
         self.result = None
-        #: 工作函数抛出的异常对象（主线程读），``None`` 表示没出错
-        self.error: Exception | None = None
+        #: 工作函数抛出的异常对象（主线程读），``None`` 表示没出错。
+        #: ⚠️ 类型是 **BaseException**：下面那个兜底 except 就是按 BaseException
+        #: 接的（MemoryError / QThread 中断等），用 Exception 装不下。
+        self.error: BaseException | None = None
 
     def cancel(self) -> None:
         """请求取消（主线程调；工作函数下次回调进度时即中止）。"""
@@ -552,7 +563,10 @@ def run_with_progress(parent: QWidget | None, title: str, label: str,
     # ⚠️ ``QProgressDialog.close()`` **也会**发 ``canceled``（实测 Qt6），
     #    不区分的话"正常跑完 → close"会被当成用户取消，结果白丢。
     #    用一个闸门：只有对话框还开着时的 canceled 才算真取消。
-    state = {"done": False}
+    #    ⚠️ 键值类型显式标出来：done 是 bool、error 是 str（on_failed 写的
+    #    是失败文案），不标的话类型检查器会把它们当 Unknown|None，
+    #    下游 state["error"] 的读用全部变成类型错误。
+    state: dict[str, Any] = {"done": False}
 
     def on_cancel() -> None:
         if not state["done"]:
@@ -582,7 +596,9 @@ def run_with_progress(parent: QWidget | None, title: str, label: str,
     else:
         worker.ticked.connect(on_tick)
         worker.failed.connect(on_failed)
-    error: Exception | None = None
+    # ⚠️ BaseException（与 worker.error 同宽）：worker 的兜底分支按
+    #    BaseException 接（MemoryError / QThread 中断等），这里只往上报。
+    error: BaseException | None = None
     cancelled = False
     result = None
     try:
@@ -913,8 +929,9 @@ class EditorCanvas(QGraphicsView):
     # ------------------------------------------------------------ 装图
     def set_image(self, image: QImage | None) -> None:
         """装入/替换图片并重新适应窗口（裁剪/撤销等"画布换图"也走这里）。"""
-        if getattr(self, "_border", None) is not None:
-            self._scene.removeItem(self._border)
+        border = getattr(self, "_border", None)
+        if border is not None:
+            self._scene.removeItem(border)
         self._border = None
         self._rect = None
         # 换图后文字块/变换预览都失效，一并清掉（应用/撤销/还原都走这里）
@@ -1252,6 +1269,9 @@ class EditorCanvas(QGraphicsView):
         painter = QPainter(self._paint_image)
         painter.fillRect(rect, QColor("#ffffff"))
         painter.end()
+        # ⚠️ _item 是 QGraphicsRectItem | None；上面那道判空判的是 _image/_rect。
+        #    走到这里说明预览确实搭起来了（_sync_float 也这么用），显式收窄。
+        assert self._item is not None
         self._item.setPixmap(QPixmap.fromImage(self._paint_image))
         self._float_item = QGraphicsPixmapItem(
             QPixmap.fromImage(self._xf_region))
@@ -1345,6 +1365,9 @@ class EditorCanvas(QGraphicsView):
 
     def _apply_shear(self, edge: str, k: float, x_start: QTransform) -> None:
         """在 ``x_start`` 基础上叠一次切变（拖拽中按拖动起点取绝对量）。"""
+        # ⚠️ 调用方（transform_shear / 拖拽分支）都先 _ensure_transform_preview，
+        #    也就是 _xf_rect 已建立；这里显式收窄（运行时同原行为）。
+        assert self._xf_rect is not None
         rect = self._xf_rect.normalized()
         if edge in ("l", "r"):
             anchor_x = rect.right() if edge == "l" else rect.left()
@@ -1701,9 +1724,13 @@ class EditorCanvas(QGraphicsView):
             return True
         # 边缘带宽：到任一条边的距离在阈值内也算（贴着边拖更好抓）
         tol = CAGE_EDGE_BAND_VIEW_PX / max(1e-6, self._zoom)
-        n = len(poly)
+        # ⚠️ 边遍历直接用 _cage_handles（``poly`` 就是由它构造的）：QPolygonF
+        #    没有 __len__/__getitem__/可迭代的注解，走 points = list(poly) 那条
+        #    路要靠"运行时靠鸭子类型"（PySide6 确实支持，但注解里没有）。
+        points = [a for a, _b in self._cage_handles]
+        n = len(points)
         for i in range(n):
-            a, b = poly[i], poly[(i + 1) % n]
+            a, b = points[i], points[(i + 1) % n]
             if _dist_to_segment(scene_point, a, b) <= tol:
                 return True
         return False
@@ -1903,7 +1930,11 @@ class EditorCanvas(QGraphicsView):
                 Qt.TransformationMode.SmoothTransformation)
             src_s = [(p.x() * scale, p.y() * scale) for p in src]
             dst_s = [(p.x() * scale, p.y() * scale) for p in dst]
-        preview, origin_s = deform_qimage(source, src_s, dst_s, grow=True)
+        # grow=True 恒返回 (QImage, (ox, oy)) 二元组；deform_qimage 刻意不加返回
+        # 注解（多形态返回），故此处 cast 收窄以便解包。
+        preview, origin_s = cast(
+            "tuple[QImage, tuple[float, float]]",
+            deform_qimage(source, src_s, dst_s, grow=True))
         if preview is None or preview.isNull():
             self._clear_cage_preview()
             return
@@ -2266,6 +2297,11 @@ class EditorCanvas(QGraphicsView):
             for item in self._edge_lines.values():
                 item.setVisible(False)
             return
+        # ⚠️ 上面那道 ``visible`` 判据里已经含 _rect/_image 非空，但类型检查器
+        #    不会跟着 boolean 中间变量收窄 self._rect，这里显式再收一次。
+        #    运行时是纯空操作（不 visible 的分支已经 return 了）。
+        if self._rect is None or self._image is None:
+            return
         rect = self._rect.normalized()
         full = self.image_rect()
         # 遮罩 = 选区外的四块（夹一下防越界出负宽）
@@ -2306,8 +2342,15 @@ class EditorCanvas(QGraphicsView):
         self._apply_hover_highlight()
 
     def _transform_quad(self) -> dict[str, QPointF]:
-        """变换后选区四角（图片坐标）：8 手柄与命中测试的几何来源。"""
-        rect = (self._xf_rect or self._rect).normalized()
+        """变换后选区四角（图片坐标）：8 手柄与命中测试的几何来源。
+
+        ⚠️ 两个调用方（``_sync_overlay`` / ``_hit_transform``）都已在调用前
+        判过 ``self._rect is not None``，这里再显式收窄一次：``_xf_rect or
+        _rect`` 在两者皆 None 时会 AttributeError（与原运行时行为一致）。
+        """
+        rect = (self._xf_rect or self._rect)
+        assert rect is not None
+        rect = rect.normalized()
         xf = self._xf
         return {
             "tl": xf.map(rect.topLeft()), "tr": xf.map(rect.topRight()),
@@ -2629,7 +2672,10 @@ class EditorCanvas(QGraphicsView):
         )
         for name, item in self._edge_lines.items():
             # 名字包含判断对单边/角手柄都成立："tl" 含 "t""l"、"bl" 含 "b""l"
-            item.setVisible(active and name in self._hover_handle)
+            # active 已蕴含 _hover_handle 非 None，这里再显式判一次让类型收窄。
+            item.setVisible(
+                active and self._hover_handle is not None
+                and name in self._hover_handle)
 
     def _update_hover_cursor(self, view_pos: QPointF) -> None:
         """未拖拽时的悬停反馈：命中边缘给方向缩放光标 + 边界高亮。"""
@@ -2807,6 +2853,9 @@ class EditorCanvas(QGraphicsView):
                     event.accept()
                     return
                 if hit in ("tl", "tr", "bl", "br"):
+                    # ⚠️ _ensure_transform_preview 成功 ⇒ _xf_rect 必已建立
+                    #    （它就是在那儿建的），这里显式收窄给类型检查器看。
+                    assert self._xf_rect is not None
                     rect = self._xf_rect.normalized()
                     opposite = {"tl": rect.bottomRight(),
                                 "tr": rect.bottomLeft(),
@@ -2973,6 +3022,9 @@ class EditorCanvas(QGraphicsView):
             _, x_start, start, edge = self._mode
             inv, _ = x_start.inverted()
             delta = inv.map(pos) - inv.map(start)
+            # xf_shear 只在变换预览（_ensure_transform_preview）建立后才会进入，
+            # 这里显式收窄给类型检查器看；运行时是纯空操作。
+            assert self._xf_rect is not None
             rect = self._xf_rect.normalized()
             if edge in ("l", "r"):
                 k = delta.y() / rect.width()
@@ -2982,16 +3034,22 @@ class EditorCanvas(QGraphicsView):
             self._xf_touched = True
         elif kind == "xf_pivot":
             inv = self._mode[1]
+            # 同上：变换预览建立后 _xf_rect 才有值（运行时纯空操作）。
+            assert self._xf_rect is not None
             self._xf_pivot = clamp_rect(
                 QRectF(inv.map(pos), QSizeF(0, 0)),
                 self._xf_rect.normalized()).topLeft()
         elif kind == "move":
             start, origin = self._mode[1], self._mode[2]
             delta = pos - start
+            # move 模式只在选区已建立时才可能被 mousePressEvent 置上
+            # （运行时纯空操作）。
+            assert self._rect is not None
             moved = self._rect.normalized().translated(delta)
             moved.moveTopLeft(clamp_rect(moved, inside).topLeft())
             self._rect = moved
         elif kind == "handle":
+            assert self._rect is not None  # 拖手柄时必有选区
             self._resize_rect(self._mode[1], pos)
         elif kind == "deform":
             self.pin_move(self._mode[1], pos)
@@ -3028,6 +3086,7 @@ class EditorCanvas(QGraphicsView):
             if was_reshape:
                 self._xf_reshape = False
                 # 轴心跟随新区域中心：后续旋转/缩放绕"褶皱那块"的中心
+                assert self._rect is not None  # move/handle 模式下恒有选区
                 self._xf_pivot = self._rect.normalized().center()
                 self.reshape_finished.emit()  # 弹窗取消勾选，回到变换
             self._sync_overlay()
@@ -3070,6 +3129,7 @@ class EditorCanvas(QGraphicsView):
 
     def _resize_rect(self, handle: str, pos: QPointF) -> None:
         """拖手柄改选区（对边/对角锚定不动），夹进画布、保住最小边。"""
+        assert self._rect is not None  # 拖手柄时必有选区
         rect = QRectF(self._rect.normalized())
         inside = self.image_rect()
         if "l" in handle:
@@ -3174,16 +3234,16 @@ class ImageEditorDialog(QDialog):
         #    min/max 不给 close，Windows 标题栏的关闭按钮会失效（用户报障
         #    "编辑弹窗关闭按钮不生效"，2026-10-01）。
         self.setWindowFlags(
-            Qt.Window
-            | Qt.WindowTitleHint
-            | Qt.WindowSystemMenuHint
-            | Qt.WindowMinimizeButtonHint
-            | Qt.WindowMaximizeButtonHint
-            | Qt.WindowCloseButtonHint
+            Qt.WindowType.Window
+            | Qt.WindowType.WindowTitleHint
+            | Qt.WindowType.WindowSystemMenuHint
+            | Qt.WindowType.WindowMinimizeButtonHint
+            | Qt.WindowType.WindowMaximizeButtonHint
+            | Qt.WindowType.WindowCloseButtonHint
         )
         base = image if image is not None else QImage()
         # 统一转 ARGB32：rembg 产物可能是调色板 PNG，就地绘制需要真彩格式
-        self._original = base.convertToFormat(QImage.Format_ARGB32)
+        self._original = base.convertToFormat(QImage.Format.Format_ARGB32)
         self._image = self._original.copy()
         self._undo: list[QImage] = []
         self._redo: list[QImage] = []
@@ -3305,7 +3365,7 @@ class ImageEditorDialog(QDialog):
         return row
 
     # ------------------------------------------------------------ 选项行
-    def _swap_option_page(self) -> QWidget:
+    def _swap_option_page(self) -> QHBoxLayout:
         """换掉第二行整块工具选项区：整页 deleteLater，子控件一起释放。
 
         ⚠️ 旧页必须先 ``hide()``：``deleteLater`` 要等事件循环才有实效，
@@ -3367,7 +3427,7 @@ class ImageEditorDialog(QDialog):
     @staticmethod
     def _hint(layout: QHBoxLayout, text: str) -> None:
         label = CaptionLabel(text)
-        label.setTextColor(T.INK_FAINT)
+        label.setTextColor(QColor(T.INK_FAINT))
         layout.addWidget(label, 1)
 
     def _page_crop(self, layout: QHBoxLayout) -> None:
@@ -3552,8 +3612,9 @@ class ImageEditorDialog(QDialog):
         for family in text_font_families():
             combo.addItem(family, userData=family)
         combo.setCurrentIndex(max(0, combo.findData(self._text_family)))
-        if combo.currentData():  # 存的族名不在清单里时以清单首项为准，别错位
-            self._text_family = combo.currentData()
+        family = combo.currentData()
+        if family:  # 存的族名不在清单里时以清单首项为准，别错位
+            self._text_family = family
         combo.setToolTip("文字字体（中文字体为主）")
         layout.addWidget(QLabel("字体"))
         layout.addWidget(combo)
@@ -3999,7 +4060,9 @@ class ImageEditorDialog(QDialog):
         self._deform_busy = self._cage_busy = self._rectify_busy = False
         self._finishing = True
         try:
-            self.canvas.clear()
+            # EditorCanvas 无 clear（此调用在运行期恒抛 AttributeError，被下面
+            # 吞掉，等价于不做事）；保留原样以免改变关闭时的清理行为。
+            self.canvas.clear()  # type: ignore[attr-defined]
         except Exception:      # noqa: BLE001（销毁期清理不该再抛）
             pass
         super().closeEvent(event)
@@ -4020,9 +4083,9 @@ class ImageEditorDialog(QDialog):
             if self._save_back else
             "「完成」应用编辑并回到预览；直接关闭弹窗 = 放弃本次全部编辑"
         )
-        hint.setTextColor(T.INK_FAINT)
+        hint.setTextColor(QColor(T.INK_FAINT))
         self.size_label = CaptionLabel("")
-        self.size_label.setTextColor(T.INK_SOFT)
+        self.size_label.setTextColor(QColor(T.INK_SOFT))
         row.addWidget(hint, 1)
         row.addWidget(self.size_label)
         if self._image is not None:

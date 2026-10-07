@@ -47,14 +47,14 @@ def run(ctx) -> None:
 
     src = tmp / "src" / "1.png"
     src.parent.mkdir()
-    image = QImage(600, 800, QImage.Format_RGB32)
+    image = QImage(600, 800, QImage.Format.Format_RGB32)
     image.fill(QColor("#ffffff"))
     image.save(str(src))
 
     result_dir = tmp / "rembg"
     result_dir.mkdir()
     result = result_dir / "1.png"          # 与源同名 → 会被认成"该页的结果"
-    result_image = QImage(600, 800, QImage.Format_RGB32)
+    result_image = QImage(600, 800, QImage.Format.Format_RGB32)
     result_image.fill(QColor("#f0e8d8"))
     result_image.save(str(result))
     no_result_dir = tmp / "no_such_dir"    # 目录不存在 = 还没有结果

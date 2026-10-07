@@ -34,7 +34,9 @@ def run(ctx) -> None:
 
     # 最终裁剪框规则与 crop 命令一致（utils.box_geometry）
     _left, _right = [100, 100, 200, 200], [300, 100, 500, 300]
-    _d = _pbm("10")[0]
+    _border_px = _pbm("10")
+    assert _border_px is not None
+    _d = _border_px[0]
     ok("area=1 逐框外扩 border",
        compute_final_boxes([_left, _right], 1, "10")
        == [[100 - _d, 100 - _d, 200 + _d, 200 + _d],

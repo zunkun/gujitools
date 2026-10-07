@@ -119,9 +119,9 @@ class MissingSourcePrompt(QWidget):
         self.setObjectName("missingSourcePrompt")
         # ⚠️ 非模态：右上角那排按钮要照常可点（模态会把它们的事件全吃掉）。
         #   提示层只是"盖住 + 变暗"，不接管交互。
-        self.setWindowModality(Qt.NonModal)
+        self.setWindowModality(Qt.WindowModality.NonModal)
         # 盖在兄弟控件之上；不抢焦点（用户不该被强行打断当前操作）
-        self.setAttribute(Qt.WA_TransparentForMouseEvents, False)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
         self.setStyleSheet(_mask_style())
         self._build_card(parent)
         self._reanchor()
@@ -169,12 +169,15 @@ class MissingSourcePrompt(QWidget):
 
         # ⚠️ **投影**：遮罩是半透明白，卡片也是白底，不给阴影它就"糊"在遮罩
         #    里看不出边界（第一版没加，出图只看到一条白条还以为卡片没渲染）。
-        self.card.setGraphicsEffect(
-            QGraphicsDropShadowEffect(self.card)
-        )
-        self.card.graphicsEffect().setBlurRadius(40)
-        self.card.graphicsEffect().setOffset(0, 8)
-        self.card.graphicsEffect().setColor(QColor(0, 0, 0, 60))
+        # ⚠️ 留着局部变量再用：``graphicsEffect()`` 的注解是 QGraphicsEffect
+        # （| None），而 setBlurRadius/setOffset/setColor 是
+        # QGraphicsDropShadowEffect 才有的 API——写局部变量既让类型检查器
+        # 看得见真类型，也省掉三次取属性。
+        shadow = QGraphicsDropShadowEffect(self.card)
+        self.card.setGraphicsEffect(shadow)
+        shadow.setBlurRadius(40)
+        shadow.setOffset(0, 8)
+        shadow.setColor(QColor(0, 0, 0, 60))
         # ⚠️ 过滤器**只装在卡片上**，且只对"按在空白处"生效（见 eventFilter 的
         #    警告：装到按钮上会��按钮点不动）。
         self._drag_pos = QPoint()

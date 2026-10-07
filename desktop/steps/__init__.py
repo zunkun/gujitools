@@ -44,6 +44,26 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+#: 惰性导出的**类型**侧声明。PEP 562 的 ``__getattr__`` 是运行时行为，类型
+#: 检查器（Pylance/Pyright）看不见它——缺了这一段，所有
+#: ``from desktop.steps import StepKernel`` 的调用方都会把名字当成未知/模块。
+#: 只在类型检查期导入，**运行时的惰性加载一点没变**（启动期仍然不会拉进
+#: control/process 这些 PySide6 依赖）。
+if TYPE_CHECKING:
+    from desktop.steps import ports
+    from desktop.steps.control import SourceZone, StepControl
+    from desktop.steps.kernel import (
+        CallableJob, CommandJob, StepJob, StepKernel, StepRequest,
+        callable_job, command_job, extract_job, job_for,
+    )
+    from desktop.steps.process import StageProcess
+    from desktop.steps.spec import (
+        FLOW_STAGES, NAV_STEPS, OPTIONAL_STEPS, SPECS, STEP_KEYS, StepSpec,
+        spec_by_key,
+    )
+
 __all__ = [
     "StepSpec",
     "SPECS",

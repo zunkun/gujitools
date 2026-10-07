@@ -33,6 +33,11 @@ os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+# 测试临时文件统一落点：tests/tmp/（见 tests/tmpdir.py）。
+from tests.tmpdir import install as _install_tmpdir  # noqa: E402
+
+_install_tmpdir()
+
 from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget  # noqa: E402
 from PySide6.QtGui import QFontDatabase  # noqa: E402
 
@@ -163,9 +168,9 @@ def _press_event(canvas, node_id):
 
     center = canvas.rect_of(node_id).center()
     pos = QPointF(center.x(), center.y())
-    return QMouseEvent(QEvent.MouseButtonPress, pos,
+    return QMouseEvent(QEvent.Type.MouseButtonPress, pos,
                        canvas.mapToGlobal(pos.toPoint()),
-                       Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
+                       Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
 
 
 if __name__ == "__main__":

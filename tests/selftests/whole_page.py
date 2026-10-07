@@ -49,8 +49,8 @@ def run(ctx) -> None:
     tmp = Path(tempfile.mkdtemp(prefix="guji_whole_page_"))
     page = tmp / "0001.png"
     W, H = 120, 160
-    canvas = QImage(W, H, QImage.Format_RGB32)
-    canvas.fill(Qt.white)
+    canvas = QImage(W, H, QImage.Format.Format_RGB32)
+    canvas.fill(Qt.GlobalColor.white)
     ok("样例页写入成功（检测断言前提）", canvas.save(str(page)))
 
     collected: list = []
@@ -63,10 +63,10 @@ def run(ctx) -> None:
     ok("整页模式单图检测返回 0", code == 0, str(code))
     boxes_events = [e for e in collected if e.get("type") == "boxes"]
     ok("整页模式直接给出整页框",
-       boxes_events and boxes_events[0].get("left") == [0, 0, W, H],
+       bool(boxes_events and boxes_events[0].get("left") == [0, 0, W, H]),
        str(boxes_events))
     ok("整页模式不产出右框（不拆左右页）",
-       boxes_events and boxes_events[0].get("right") is None, str(boxes_events))
+       bool(boxes_events and boxes_events[0].get("right") is None), str(boxes_events))
 
     # 批量阶段：不加载模型，也不往 boxes.json 写自动框（无 page_boxes 事件）
     collected.clear()
@@ -90,7 +90,7 @@ def run(ctx) -> None:
        str(collected))
     finished = [e for e in collected if e.get("type") == "finished"]
     ok("批量整页检测进度走满",
-       finished and finished[0].get("done") == finished[0].get("total") == 1,
+       bool(finished and finished[0].get("done") == finished[0].get("total") == 1),
        str(finished))
 
     # ---- 3. 几何层：整页框 = 整页画布，border 只加留白、不镜像 ----

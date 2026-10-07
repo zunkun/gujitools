@@ -14,23 +14,50 @@
 避免把暂存文件留给后面的模块（历史回填类断言会被暂存抢先命中）。
 """
 
+from typing import TypeVar
+
 NAME = "param_draft"
 DEPENDS: list[str] = ["tasklist"]
 TITLE = "参数暂存（改过没执行也不丢）"
+
+#: ``stage_panel`` 用：把 ``type[PanelT]`` 传进来，返回类型就能收窄成 PanelT
+_PanelT = TypeVar("_PanelT")
 
 
 def run(ctx) -> None:
     from tests.selftests._context import ok, pump
 
+    from desktop.components.panels.extract_panel import ExtractPanel
+    from desktop.components.panels.print_panel import PrintPanel
     from desktop.pages.taskdetail.page import TaskDetailPage
+    from desktop.pages.taskdetail.view import LazyPanelHost
+
+    def stage_panel(stack_index: int, cls: type[_PanelT]) -> _PanelT:
+        """取 ``control_stack`` 某一格里的**真面板**。
+
+        ⚠️ 格子里放的是 :class:`LazyPanelHost`（惰性宿主，进详情只建第一步），
+        不是面板本身——``isinstance(widget, PrintPanel)`` 恒为 False。要走
+        ``.panel`` 把内部面板取出来（首次访问时构造），断言才有意义。
+        """
+        host = page.control_stack.widget(stack_index)
+        assert isinstance(host, LazyPanelHost)  # 每一格都是惰性宿主
+        panel = host.panel
+        assert isinstance(panel, cls)
+        return panel
+
+    def stage_index(step: str) -> int:
+        """查步骤条格序（本模块只查注册过的步骤，必命中）。"""
+        idx = page.bar_index_of_step(step)
+        assert idx is not None
+        return idx
 
     app, repo = ctx.app, ctx.repo
     tid = repo.create_task(ctx.pdf, "hash-param-draft", "暂存样本")
     page = TaskDetailPage(repo)
     try:
         page.set_task(tid)
-        print_panel = page.control_stack.widget(3)
-        page._select_stage(page.bar_index_of_step("print"))
+        print_panel = stage_panel(3, PrintPanel)  # 第 4 格是「PDF排版」面板
+        page._select_stage(stage_index("print"))
         pump(app, times=6)
 
         # ---- 1. 干净任务：没有暂存 ----
@@ -57,7 +84,7 @@ def run(ctx) -> None:
 
         # ---- 3. 重新进入任务：回填暂存（不是内置默认）----
         page.set_task(tid)
-        page._select_stage(page.bar_index_of_step("print"))
+        page._select_stage(stage_index("print"))
         pump(app, times=6)
         ok("重开任务后边距来自暂存", print_panel.page_margins.text() == "30,40",
            print_panel.page_margins.text())
@@ -71,7 +98,7 @@ def run(ctx) -> None:
             "done": 1, "total": 1, "started_at": 0, "finished_at": 0,
         }]})
         page.set_task(tid)
-        page._select_stage(page.bar_index_of_step("print"))
+        page._select_stage(stage_index("print"))
         pump(app, times=6)
         ok("暂存比「最近一次执行参数」优先",
            print_panel.page_margins.text() == "30,40",
@@ -80,7 +107,7 @@ def run(ctx) -> None:
         # 清掉暂存 → 这次该轮到历史参数
         repo.clear_draft(tid, "print")
         page.set_task(tid)
-        page._select_stage(page.bar_index_of_step("print"))
+        page._select_stage(stage_index("print"))
         pump(app, times=6)
         # 用 get_args() 比语义：文本框里是简写形式（四值相同会写成 "5"）
         ok("没有暂存时回填最近一次执行参数",
@@ -95,7 +122,7 @@ def run(ctx) -> None:
            draft.get("page_margins") == [10.0] * 4, str(draft.get("page_margins")))
 
         # ---- 6. 非法参数不覆盖上一份有效暂存 ----
-        page._select_stage(page.bar_index_of_step("print"))
+        page._select_stage(stage_index("print"))
         pump(app, times=6)
         print_panel.page_margins.setText("30,40")
         page._flush_param_drafts()
@@ -115,7 +142,7 @@ def run(ctx) -> None:
         # ---- 7. 程序化回填不产生暂存 ----
         repo.clear_draft(tid, "print")
         page.set_task(tid)      # 复位 + 回填全流程都是程序化 setText/setValue
-        page._select_stage(page.bar_index_of_step("print"))
+        page._select_stage(stage_index("print"))
         page._flush_param_drafts()
         ok("程序化回填不写暂存（不会把回填当成用户改动）",
            repo.load_draft(tid, "print") is None)
@@ -126,11 +153,11 @@ def run(ctx) -> None:
            all(hasattr(page.control_stack.widget(i), "param_edited")
                for i in range(4)))
         seen: list[int] = []
-        page.control_stack.widget(0).param_edited.connect(lambda: seen.append(1))
-        extract_panel = page.control_stack.widget(0)
-        extract_panel.zooms = getattr(extract_panel, "zoom", None)
-        if extract_panel.zooms is not None:
-            extract_panel.zoom.setValue(extract_panel.zoom.value() + 1)
+        extract_panel = stage_panel(0, ExtractPanel)  # 第 1 格是「提取图片」面板
+        extract_panel.param_edited.connect(lambda: seen.append(1))
+        zoom_ctrl = getattr(extract_panel, "zoom", None)
+        if zoom_ctrl is not None:
+            zoom_ctrl.setValue(zoom_ctrl.value() + 1)
         ok("改 extract 的参数也会上报（不只第四步）", bool(seen), str(seen))
     finally:
         try:

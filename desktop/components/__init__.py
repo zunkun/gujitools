@@ -16,6 +16,25 @@ Python 在导入子模块前一定会先执行父包的 ``__init__``，所以只
 只是推迟到真正取用它的那一刻。
 """
 
+from typing import TYPE_CHECKING
+
+#: 惰性导出的**类型**侧声明（见模块 docstring）：类型检查器看不见 PEP 562 的
+#: ``__getattr__``，缺这一段会把本包的导出全当成未定义。**只影响类型检查**，
+#: 运行时的惰性加载照旧（启动期不会因此多加载组件）。
+if TYPE_CHECKING:
+    from desktop.components.detect_stats import DetectStatsWidget
+    from desktop.components.pagination import (
+        DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS, Pager, Pagination,
+    )
+    from desktop.components.panels import PANEL_CLASSES
+    from desktop.components.progress_row import ProgressRow
+    from desktop.components.step_bar import StepBar
+    from desktop.components.task_table import TaskTable
+    from desktop.components.viewers import (
+        ImageView, ImageViewerWidget, PdfViewerWidget, RembgPreviewWidget,
+        ThumbStrip,
+    )
+
 __all__ = [
     "PANEL_CLASSES",
     "Pager",

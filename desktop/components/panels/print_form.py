@@ -16,6 +16,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Callable, cast
+
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
@@ -52,6 +54,14 @@ class PrintFormMixin(PrintSectionsMixin, PrintTextLayoutMixin):
     提供的 ``_add_row`` 等基础能力。
     """
 
+    if TYPE_CHECKING:
+        # 分区构建里要回调宿主的这几项（都在 ``PrintPanel`` 里）：
+        # 只做类型声明（类级注解、无赋值），运行时零副作用。
+        _connect_title_pdf_link: Callable[[], None]
+        mark_params_edited: Callable[[], None]
+        reset_edits: Callable[[], None]
+        reset_to_default: Callable[[], None]
+
     # ------------------------------------------------------------------ 构建
     def build_form(self) -> QWidget:
         """构建 print 面板表单：滚动区 + 各分区控件 + 节点表。
@@ -62,7 +72,7 @@ class PrintFormMixin(PrintSectionsMixin, PrintTextLayoutMixin):
         """
         scroll = ScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         # 去掉滚动区自带的白底与描边：它现在嵌在参数卡片里，
         # 再画一层边框就成了"卡片套卡片"
         scroll.enableTransparentBackground()
@@ -128,8 +138,8 @@ class PrintFormMixin(PrintSectionsMixin, PrintTextLayoutMixin):
         form = QFormLayout()
         form.setSpacing(6)
         # 标签列不强制占宽，字段列吃掉剩余空间
-        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-        form.setLabelAlignment(Qt.AlignLeft)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
         root.addLayout(form)
         return form
 
@@ -214,7 +224,7 @@ class PrintFormMixin(PrintSectionsMixin, PrintTextLayoutMixin):
 
         def choose():
             color = parse_color(edit.text()) if edit.text().strip() else QColor(0, 0, 0)
-            chosen = QColorDialog.getColor(color, self, "选择颜色")
+            chosen = QColorDialog.getColor(color, cast(QWidget, self), "选择颜色")
             if chosen.isValid():
                 edit.setText(f"{chosen.red()},{chosen.green()},{chosen.blue()}")
 

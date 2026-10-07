@@ -126,7 +126,7 @@ class StageProcess(QObject):
         """进程是否还在跑。"""
         return (
             self._process is not None
-            and self._process.state() != QProcess.NotRunning
+            and self._process.state() != QProcess.ProcessState.NotRunning
         )
 
     # ------------------------------------------------------------------ 启动
@@ -173,6 +173,7 @@ class StageProcess(QObject):
     def kill(self) -> None:
         """杀掉子进程（不等待；等待由宿主决定）。"""
         if self.running():
+            assert self._process is not None
             self._process.kill()
 
     # ------------------------------------------------------------------ 读取
@@ -183,7 +184,7 @@ class StageProcess(QObject):
         self._last_event_at = time.time()
         self._stall_warned = False
         try:
-            self.stdout.emit(bytes(self._process.readAllStandardOutput()))
+            self.stdout.emit(bytes(self._process.readAllStandardOutput().data()))
         except RuntimeError:
             pass  # 底层对象已析构
 
@@ -192,7 +193,7 @@ class StageProcess(QObject):
         if self._process is None:
             return
         try:
-            self.stderr.emit(bytes(self._process.readAllStandardError()))
+            self.stderr.emit(bytes(self._process.readAllStandardError().data()))
         except RuntimeError:
             pass
 
@@ -210,7 +211,7 @@ class StageProcess(QObject):
         if process is None:
             self._stop_watchdog()
             return
-        if process.state() == QProcess.NotRunning:
+        if process.state() == QProcess.ProcessState.NotRunning:
             code = process.exitCode()
             # 从未成功启动时 exitCode() 仍是 0，直接当成功会误报"执行成功"
             if not self._proc_started and code == 0:
@@ -231,7 +232,7 @@ class StageProcess(QObject):
             else:
                 # 宿主据此把"未正常收尾"记成失败原因（本类不碰它的状态）
                 self.unclean_exit.emit()
-                self._deliver(1, QProcess.CrashExit)
+                self._deliver(1, QProcess.ExitStatus.CrashExit)
         else:
             self._warn_if_stalled()
 

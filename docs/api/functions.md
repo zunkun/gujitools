@@ -52,9 +52,9 @@ File: functions/__init__.py
 
 | 函数 | 说明 |
 | --- | --- |
-| `get_function(command: str, command_args: ArgsProvider, reporter: Reporter=None)` | 工厂函数：根据命令字符串返回对应的功能实例。 |
+| `get_function(command: str, command_args: ArgsProvider, reporter: Optional[Reporter]=None)` | 工厂函数：根据命令字符串返回对应的功能实例。 |
 
-#### `get_function(command: str, command_args: ArgsProvider, reporter: Reporter=None)`
+#### `get_function(command: str, command_args: ArgsProvider, reporter: Optional[Reporter]=None)`
 
 工厂函数：根据命令字符串返回对应的功能实例。
 
@@ -98,12 +98,12 @@ Function 基类与并行执行引擎。
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(command_args: ArgsProvider, reporter: Reporter=None)` | 解析输入路径与输出占位，输入不存在时直接抛 FileNotFoundError。 |
-| `parse_user_output(raw_out: Optional[str], file_stem: str=None) -> Path` | 统一解析用户传入的 `--output` 参数。 |
+| `__init__(command_args: ArgsProvider, reporter: Optional[Reporter]=None)` | 解析输入路径与输出占位，输入不存在时直接抛 FileNotFoundError。 |
+| `parse_user_output(raw_out: Optional[str], file_stem: Optional[str]=None) -> Path` | 统一解析用户传入的 `--output` 参数。 |
 | `make_out_dir()` | 创建最终输出目录 self.outpath。 |
 | `execute() -> dict` | 执行入口：并行处理所有输入图片，支持多轮重试与日志记录。 |
 
-##### `__init__(command_args: ArgsProvider, reporter: Reporter=None)`
+##### `__init__(command_args: ArgsProvider, reporter: Optional[Reporter]=None)`
 
 解析输入路径与输出占位，输入不存在时直接抛 FileNotFoundError。
 
@@ -114,7 +114,7 @@ reporter 是结构化汇报通道（进度 / 检测框 / 尺寸）：CLI 不传 
 实际输出与人读日志逐字不变；desktop 传 JSON Lines 实现 → 不必再跑正则
 去解析中文提示文案。
 
-##### `parse_user_output(raw_out: Optional[str], file_stem: str=None) -> Path`
+##### `parse_user_output(raw_out: Optional[str], file_stem: Optional[str]=None) -> Path`
 
 统一解析用户传入的 `--output` 参数。
 

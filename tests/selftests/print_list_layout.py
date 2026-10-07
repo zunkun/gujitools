@@ -17,6 +17,8 @@ TITLE = "第四步预览布局形态"
 
 
 def run(ctx) -> None:
+    from typing import cast
+
     from tests.selftests._context import ok
 
     from desktop.components.viewers.image_view import ImageView
@@ -181,7 +183,8 @@ def run(ctx) -> None:
     ]
     # ⚠️ 用最小替身调用：取图规则**不再依赖页面/面板/拼版状态**（这也正是
     #    新契约的一部分）；一旦有人往方法里塞 self.xxx，这里会立刻红。
-    effects = SubmitMixin._build_print_effects(object(), entries)
+    effects = SubmitMixin._build_print_effects(
+        cast("SubmitMixin", object()), entries)
     ok("取图 = 列表顺序逐条透传（含外部插入图）",
        [e["file"] for e in effects]
        == [entries[0]["file"], entries[1]["file"], str(outside)],

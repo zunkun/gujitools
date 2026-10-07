@@ -245,6 +245,16 @@ class ArgsProvider(Protocol):
         """按 key 获取参数值，缺失或为 None 时返回 default。"""
         ...
 
+    def is_defaulted(self, key: str) -> bool:
+        """该键的当前值是「注入的默认值」吗？**可选**：自建参数字典没实现它。
+
+        放在协议里但调用方仍按「有则用、无则跳过」用（见
+        ``functions/base.py`` 的 ``try/except AttributeError``）——因为自建
+        容器（测试替身等）只满足 ``get``，硬要求会逼所有调用方补一个空实现。
+        声明它是为了让类型检查器认得 ``CommandArgs`` 上那个真方法。
+        """
+        ...
+
 
 class CommandArgs:
     """解析后参数的轻量容器。
@@ -433,3 +443,10 @@ class InitArgs(ArgsProvider):
 
     def as_dict(self) -> Dict[str, Any]:
         return dict(self.raw)
+
+    def is_defaulted(self, key: str) -> bool:
+        """init 不注入任何默认值：一切以用户显式传入为准，故恒为 False。
+
+        （实现 ArgsProvider 协议的该成员，避免类型检查器把本类判为抽象。）
+        """
+        return False

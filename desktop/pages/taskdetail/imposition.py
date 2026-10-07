@@ -40,12 +40,19 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, Callable
 
 from desktop.pages.taskdetail.imposition_layout import ImpositionLayoutMixin
 from desktop.pages.taskdetail.imposition_pages import ImpositionPagesMixin
 from desktop.store import IMPOSITION_LABEL, IMPOSITION_STAGE
 from desktop.utils.files import list_stage_images
 from utils.sort_utils import pdf_custom_sort_key
+
+if TYPE_CHECKING:
+    from PySide6.QtWidgets import QStackedWidget, QWidget
+    from desktop.components.detect_stats import DetectStatsWidget
+    from desktop.components.step_bar import StepBar
+    from desktop.store.store import TaskStore
 
 #: 拼版的**业务前提**：只有「左右分开」才产出成对的半页图（``-l``/``-r``），
 #:: 两张并排才拼得出正刊对开版面。
@@ -75,6 +82,38 @@ class ImpositionBaseMixin:
     依赖宿主页面提供：store/task_id、control_stack、step_bar、
     _select_stage()、_set_stage_status()、_toast()、log_view。
     """
+
+    if TYPE_CHECKING:
+        # 宿主 TaskDetailPage（或同级 Mixin）提供的属性/方法：Mixin 本体不持有，
+        # 这里只做类型声明（类级注解、无赋值），运行时零副作用。
+        store: TaskStore
+        task_id: str | None
+        step_bar: StepBar
+        control_stack: QStackedWidget
+        preview_stack: QStackedWidget
+        action_row: QWidget
+        followup_row: QWidget
+        detect_stats: DetectStatsWidget
+        history_block: QWidget
+        bar_index_of_step: Callable[[str], int | None]
+        step_at_index: Callable[[int], str | None]
+        _rembg_step_index: Callable[[], int]
+        _select_stage: Callable[[int], None]
+        _set_stage_status: Callable[..., None]
+        _apply_control_width: Callable[[], None]
+        _refresh_stage_views: Callable[[], None]
+        _refresh_stale_notices: Callable[[], None]
+        _load_imposition_enabled: Callable[[], bool]
+        _save_imposition_enabled: Callable[[bool], None]
+        _schedule_imposition_compose: Callable[[], None]
+        _refresh_imposition_page_thumbs: Callable[..., None]
+        _update_imposition_status: Callable[[int], None]
+        close_imposition_zoom_popup: Callable[[], None]
+        _current_print_pdf_path: Callable[[], Any]
+        _print_entries: Callable[[], tuple]
+        # ⚠️ 返回值是 LazyPanelHost 或真面板（属性转发、鸭子类型），用 Any 承接
+        panel_host_of_step: Callable[[str], Any]
+        stack_index_of_step: Callable[[str], int | None]
 
     # ------------------------------------------------------------- 节点可见性
     def _imposition_node_visible(self) -> bool:
@@ -113,8 +152,8 @@ class ImpositionBaseMixin:
         # ⚠️ 流程里没有「图片去底色」这一格时 ``host`` 是 ``None``：没有任何
         #    area 依据，直接往下走暂存/历史（自定义流程把去底色删掉是合法的）。
         #    绝不能兜一个别的面板——那是"用户没填过的表单"。
-        peek = getattr(host, "peek", None)
-        panel = peek() if callable(peek) else None
+        peek: Any = getattr(host, "peek", None)
+        panel: Any = peek() if callable(peek) else None
         if panel is not None:
             try:
                 value = _as_area(panel.area.currentData())
@@ -142,11 +181,12 @@ class ImpositionBaseMixin:
         没任务（静态展示，理论上不会走到拼版开关）按**默认流程**算——
         默认流程里有「检测文本框」。
         """
-        if not getattr(self, "task_id", None):
+        task_id = getattr(self, "task_id", None)
+        if not task_id:
             return True
         from desktop.steps.ports import detect_feeds_rembg
 
-        return detect_feeds_rembg(self.store.task_diagram(self.task_id))
+        return detect_feeds_rembg(self.store.task_diagram(task_id))
 
     def _imposition_area_ok(self) -> bool:
         """当前区域模式**支持拼版**（``area == 1``「左右分开」）。
@@ -356,9 +396,10 @@ class ImpositionBaseMixin:
         bool 反序列化整份是浪费（列表页的 ``store.imposition_enabled`` 当年
         就是为此才另起一份读法；现在两份合成一份）。
         """
-        if not getattr(self, "task_id", None):
+        task_id = getattr(self, "task_id", None)
+        if not task_id:
             return False
-        return self.store.step_enabled(self.task_id, "imposition")
+        return self.store.step_enabled(task_id, "imposition")
 
     def imposition_has_pages(self) -> bool:
         """拼版文档里**至少有一页**版面（能不能真的合成出图）。
@@ -377,8 +418,10 @@ class ImpositionBaseMixin:
         端口由谁供给"），不是在这里 if/else 挑目录——BPM 换上游时只改连线表，
         这一行不用动。
         """
+        task_id = self.task_id
+        assert task_id is not None, "取图来源只在任务态被读取"
         source = self.store.stage_input(
-            self.task_id, "print", "pages",
+            task_id, "print", "pages",
             # ⚠️ 传"能不能真跑"而不是"勾没勾"：区域模式不支持（或图里没这一格）
             #    时不该取拼版产物——历史脏数据（先勾了、后来改了区域模式）会
             #    让第四步去读一个根本不该用的目录。
@@ -386,7 +429,7 @@ class ImpositionBaseMixin:
         )
         # 连线表永远给得出路径（rembg_submit 是 print 的静态上游），
         # 但仍留一道兜底：将来若有人把静态上游摘掉，这里不该抛 AttributeError。
-        return source or self.store.rembg_output_dir(self.task_id)
+        return source or self.store.rembg_output_dir(task_id)
 
     # ------------------------------------------------------------- 视图刷新
     def _refresh_imposition_view(self) -> None:

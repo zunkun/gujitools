@@ -43,7 +43,7 @@ view.grab().save(str(out))
 
 def _mouse(kind, pos):
     return QMouseEvent(kind, QPointF(pos[0], pos[1]),
-                       Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
+                       Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
 
 bar.mousePressEvent(_mouse(QEvent.Type.MouseButtonPress, (5, 5)))
 bar.mouseMoveEvent(_mouse(QEvent.Type.MouseMove, (5, 65)))

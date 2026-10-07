@@ -645,6 +645,7 @@ def _check_bpmn2_structure(ok) -> None:
     ok("BPMNPlane 指向 process（图形与语义挂钩）",
        plane is not None and plane.get("bpmnElement") == "guji_task",
        str(plane.get("bpmnElement") if plane is not None else None))
+    assert plane is not None
     shapes = plane.findall(f"{{{BPMNDI_NS}}}BPMNShape")
     edges = plane.findall(f"{{{BPMNDI_NS}}}BPMNEdge")
     ok("每个节点都有 BPMNShape + dc:Bounds",

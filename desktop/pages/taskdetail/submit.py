@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, Callable
 
 from desktop.services.print_plan import entry_to_effect_spec, plan_rembg_submit_entries
 from desktop.services.submit_state import (
@@ -21,6 +22,9 @@ from desktop.ui.widgets import bold_button
 from desktop.utils.files import list_stage_images
 from desktop.pages.taskdetail.runner import STATUS_LABELS
 
+if TYPE_CHECKING:
+    from desktop.store.store import TaskStore
+
 #: 提交按钮的**唯一**文案（构造处与状态刷新处共用一份，避免两处各写一遍）。
 #: ⚠️ 别再加「（有新版本）」后缀：它与「生成预览」并排后放不下（见
 #:    ``_update_submit_button`` 的实测说明），"待提交"由加粗 + 红字提示表达。
@@ -30,6 +34,28 @@ SUBMIT_TEXT = "提交本次任务"
 class SubmitMixin:
     """依赖宿主页面提供的属性：store/task_id/source_path、process、
     control_stack、submit_button/submit_hint、log_view、_toast()。"""
+
+    if TYPE_CHECKING:
+        # 宿主 TaskDetailPage（或同级 Mixin）提供的属性/方法：Mixin 本体不持有，
+        # 这里只做类型声明（类级注解、无赋值），运行时零副作用。
+        store: TaskStore
+        task_id: str | None
+        running_stage: str | None
+        log_view: Any  # 宿主 log_panel 里的 QTextEdit（.append 取用）
+        submit_button: Any  # 第三步「提交本次任务」按钮
+        submit_hint: Any  # 提交区文案标签
+        _toast: Callable[..., None]
+        current_stage: Callable[[], str]
+        # ⚠️ 返回值是 LazyPanelHost 或真面板（属性转发、鸭子类型），用 Any 承接
+        panel_host_of_step: Callable[[str], Any]
+        _acquire_run: Callable[..., bool]
+        _release_run: Callable[[], None]
+        _launch_stage_process: Callable[..., Any]
+        _stage_inputs_ready: Callable[..., Any]
+        _missing_input_kind: Callable[..., Any]
+        _manifest_paths: Callable[[], list]
+        _refresh_manifest: Callable[..., None]
+        _detect_boxes_for: Callable[..., Any]
 
     # 影响「生成预览」产物（去底预览图）的参数；变化后预览图即过期
     PREVIEW_PARAM_KEYS = (
@@ -92,7 +118,11 @@ class SubmitMixin:
     # ---------------------------------------------------------- 派生条目
     def _rembg_result_path(self, stem: str) -> Path | None:
         """某页面对应的「生成预览」去底色结果（stages/rembgpreview）。"""
-        rembg_dir = self.store.rembg_preview_output_dir(self.task_id)
+        # 结果目录按任务归属；没有任务就没有结果可指（调用方都在任务态进这里）
+        task_id = self.task_id
+        if not task_id:
+            return None
+        rembg_dir = self.store.rembg_preview_output_dir(task_id)
         for ext in ("png", "jpg", "jpeg"):
             candidate = rembg_dir / f"{stem}.{ext}"
             if candidate.exists():

@@ -16,6 +16,9 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any, Callable
+
+from PySide6.QtWidgets import QWidget
 from qfluentwidgets import CaptionLabel, CheckBox
 
 from desktop.components.common.safecomponents import SafeDoubleSpinBox
@@ -24,6 +27,10 @@ from desktop.components.panels.params_spec import INSET_SPIN_VIEW_VALUE
 
 class PrintInsetMixin:
     """print 面板「距页边」控件组（由 PrintFormMixin 继承）。"""
+
+    if TYPE_CHECKING:
+        # 宿主（base.StagePanel）提供的加行能力；仅类型侧声明，运行时零副作用。
+        _add_row: Callable[..., Any]
 
     # ------------------------------------------------------------------ 距页边
     # 界面就是**两行、每行一个通栏输入框**（用户明确要求，别再摊成一排小格子）：
@@ -76,8 +83,10 @@ class PrintInsetMixin:
             "⚠️ 填了之后图片**不会**再收窄让位：文字就画在你设的距离上，\n"
             "   即使压在图片上也是你的选择。"
         )
-        spins: dict[str, object] = {}
-        widgets: dict[str, object] = {}
+        # ⚠️ 别写 object：那会让下面 spins/widgets 的控件调用（setEnabled /
+        # valueChanged）全变成「未知属性」。两者的真实类型是固定的。
+        spins: dict[str, SafeDoubleSpinBox] = {}
+        widgets: dict[str, QWidget] = {}
         for key in ("side", "cross"):
             spin = SafeDoubleSpinBox()
             spin.setRange(0.0, 3000.0)

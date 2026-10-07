@@ -35,7 +35,7 @@ TITLE = "图片预览右键查看/编辑"
 def _make_image(width: int = 64, height: int = 48, color: str = "#ffffff"):
     from PySide6.QtGui import QColor, QImage
 
-    image = QImage(width, height, QImage.Format_RGB32)
+    image = QImage(width, height, QImage.Format.Format_RGB32)
     image.fill(QColor(color))
     return image
 
@@ -140,20 +140,24 @@ def run(ctx) -> None:
 
         # -------------------------------------------------- edit_path 语义
         fallback = ZoomTarget(render=lambda edge: None, save_path=tmp / "b.png")
+        _fb_edit = fallback.edit_path
+        assert _fb_edit is not None        # ⚠️ 给了 save_path 就会派生出 edit_path
         ok("不给 edit_path 时回落 save_path（1:1 老用法不变）",
-           fallback.edit_path == fallback.save_path
-           and fallback.edit_path.name == "b.png",
-           str(fallback.edit_path))
+           _fb_edit == fallback.save_path
+           and _fb_edit.name == "b.png",
+           str(_fb_edit))
         explicit = ZoomTarget(
             render=lambda edge: None, edit_path=tmp / "c.png"
         )
+        _exp_edit = explicit.edit_path
+        assert _exp_edit is not None
         ok("显式 edit_path 且无 save_path：派生显示也能编辑真实文件",
-           explicit.save_path is None and explicit.edit_path.name == "c.png",
-           f"save={explicit.save_path} edit={explicit.edit_path}")
+           explicit.save_path is None and _exp_edit.name == "c.png",
+           f"save={explicit.save_path} edit={_exp_edit}")
 
         # -------------------------------------------------- 回写真实文件
         target = tmp / "page.png"
-        ok("准备：原图可写出", _make_image().save(str(target), "PNG"))
+        ok("准备：原图可写出", _make_image().save(str(target), "PNG"))  # type: ignore[reportCallIssue]
 
         class _WriteHost(QWidget, ZoomPopupMixin):
             def __init__(self, tgt):
@@ -221,7 +225,7 @@ def run(ctx) -> None:
 
         page = tmp / "extract" / "0001.png"
         page.parent.mkdir()
-        _make_image().save(str(page), "PNG")
+        _make_image().save(str(page), "PNG")  # type: ignore[reportCallIssue]
         viewer = ImageViewerWidget()
         try:
             viewer.set_images([page])
@@ -256,11 +260,11 @@ def run(ctx) -> None:
 
         src = tmp / "src" / "1.png"
         src.parent.mkdir()
-        _make_image(color="#ffffff").save(str(src), "PNG")
+        _make_image(color="#ffffff").save(str(src), "PNG")  # type: ignore[reportCallIssue]
         result_dir = tmp / "rembgpreview"
         result_dir.mkdir()
         result = result_dir / "1.png"      # 与源同名 → 认作该页去底色结果
-        _make_image(color="#f0e8d8").save(str(result), "PNG")
+        _make_image(color="#f0e8d8").save(str(result), "PNG")  # type: ignore[reportCallIssue]
 
         rembg = RembgPreviewWidget()
         try:
@@ -282,7 +286,7 @@ def run(ctx) -> None:
             # 编辑它会被下次实时预览覆盖、也不进提交产物 → 不给编辑
             live_dir = tmp / "live"
             live_dir.mkdir()
-            _make_image(color="#dddddd").save(str(live_dir / "1.png"), "PNG")
+            _make_image(color="#dddddd").save(str(live_dir / "1.png"), "PNG")  # type: ignore[reportCallIssue]  # PySide6 存根把 format 标成 bytes，运行时只收 str
             rembg.set_live_dir(live_dir)
             tgt_live = rembg._zoom_target(0)
             ok("第三步实时暂存结果 → 不给编辑（改了不生效，宁可不给）",
@@ -297,7 +301,7 @@ def run(ctx) -> None:
 
         entry = tmp / "rembg_out" / "1.png"
         entry.parent.mkdir()
-        _make_image().save(str(entry), "PNG")
+        _make_image().save(str(entry), "PNG")  # type: ignore[reportCallIssue]
         preview = PrintPreviewWidget(
             params_provider=lambda: {
                 "paper_size": "A4", "orientation": "landscape",

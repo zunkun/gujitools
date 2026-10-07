@@ -84,6 +84,7 @@ class RembgFunction(FunctionBase):
         返回:
             {"status": "success/skipped", "file": filename, "output": path}
         """
+        assert self.outpath is not None
         # 过滤异常小文件（下载不完整或占位符）
         if not utils.is_valid_image_size(image_path):
             return {

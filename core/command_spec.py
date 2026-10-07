@@ -425,6 +425,8 @@ def effective_border_default(area=None):
     联合外边界」的紧裁，``None`` 输出整页原尺寸——这是用户确认过的取舍
     （第四步会重新排版，紧裁后的图在 A4 上更好排，见 docs/functions/crop.md）。
     """
+    if area is None:
+        return "0"
     try:
         value = int(area)
     except (TypeError, ValueError):

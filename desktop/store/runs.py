@@ -14,6 +14,7 @@ from __future__ import annotations
 import time
 import uuid
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, Callable
 
 from desktop.store.json_io import read_json, write_json
 from desktop.store.tasks import STAGES
@@ -32,6 +33,12 @@ _RUN_STRIP_KEYS = frozenset({"_effects", "files", "page_rects"})
 
 class RunMixin:
     """runs.json 读写。"""
+
+    if TYPE_CHECKING:
+        # 宿主 TaskStore（或同级 Mixin）提供：只做类型声明，运行时零副作用。
+        root: Path
+        task_dir: Callable[[str], Path]
+        task_slots: Callable[[str], Any]
 
     def runs_path(self, task_id: str) -> Path:
         """运行历史文件：任务目录下的 runs.json。"""

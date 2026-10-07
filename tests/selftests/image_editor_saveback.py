@@ -32,7 +32,7 @@ TITLE = "图片编辑器覆盖原图"
 def _make_image(width: int = 64, height: int = 48, color: str = "#ffffff"):
     from PySide6.QtGui import QColor, QImage
 
-    image = QImage(width, height, QImage.Format_RGB32)
+    image = QImage(width, height, QImage.Format.Format_RGB32)
     image.fill(QColor(color))
     return image
 
@@ -81,7 +81,10 @@ def run(ctx) -> None:
         # ---------------------------------------------------- 原子覆盖工具
         target = tmp / "0001.jpg"
         original = _make_image(color="#ffffff")
-        ok("准备：原图可写出", original.save(str(target), "JPEG", 90))
+        ok("准备：原图可写出",
+           # ⚠️ type: ignore —— PySide6 把 QImage.save 的 format 标成 bytes 系，
+           # 运行期却收 str。
+           original.save(str(target), "JPEG", 90))  # type: ignore[reportCallIssue]
 
         hardlink = tmp / "hardlink.jpg"
         if not hardlink.exists():
@@ -127,7 +130,8 @@ def run(ctx) -> None:
 
         # ---------------------------------------------------- 回写路径
         real_target = tmp / "0002.png"
-        ok("准备：PNG 原图可写出", _make_image().save(str(real_target), "PNG"))
+        ok("准备：PNG 原图可写出",
+           _make_image().save(str(real_target), "PNG"))  # type: ignore[reportCallIssue]
 
         dialog = ImageZoomDialog()
         dialog._target = ZoomTarget(
@@ -144,24 +148,29 @@ def run(ctx) -> None:
             return _StubEditor(red, QDialog.DialogCode.Accepted)
 
         try:
-            ImageZoomDialog._open_editor = _stub_open
+            # ⚠️ type: ignore —— 把真方法临时换成替身（源码侧是普通方法）
+            ImageZoomDialog._open_editor = _stub_open  # type: ignore[reportAttributeAccessIssue]
             dialog._edit_image()
         finally:
-            ImageZoomDialog._open_editor = original_open
+            ImageZoomDialog._open_editor = original_open  # type: ignore[reportAttributeAccessIssue]
 
-        ok("编辑器以 save_back 模式打开", dialog._stub_save_back is True)
+        # ⚠️ ``_stub_save_back`` 是替身往实例上挂的记号，真类上没有
+        ok("编辑器以 save_back 模式打开",
+           dialog._stub_save_back is True)  # type: ignore[reportAttributeAccessIssue]
         ok("「完成」发出 image_saved（路径 + 编辑图）",
            len(saved) == 1 and saved[0][0] == str(real_target)
            and saved[0][1].pixelColor(2, 2).name() == "#00aa00",
            str([(p, i.pixelColor(2, 2).name()) for p, i in saved]))
         ok("原文件被覆盖为编辑结果",
            _pixel_is(QImage(str(real_target)), 2, 2, "#00aa00"))
+        _exported = dialog.canvas.export_image()
+        assert _exported is not None     # ⚠️ 画布上有图，导出不会是空
         ok("画布同步更新为编辑结果",
-           dialog.canvas.export_image().pixelColor(2, 2).name() == "#00aa00")
+           _exported.pixelColor(2, 2).name() == "#00aa00")
 
         # ---------------------------------------------------- 拒绝 = 不写
         saved.clear()
-        dialog._open_editor = lambda image, save_back=False: _StubEditor(
+        dialog._open_editor = lambda image, save_back=False: _StubEditor(  # type: ignore[reportAttributeAccessIssue]
             red, QDialog.DialogCode.Rejected
         )
         dialog._edit_image()
@@ -171,7 +180,8 @@ def run(ctx) -> None:
 
         # ---------------------------------------------------- 虚拟图
         virtual = tmp / "virtual.jpg"
-        ok("准备：虚拟参照文件可写出", _make_image().save(str(virtual), "JPEG"))
+        ok("准备：虚拟参照文件可写出",
+           _make_image().save(str(virtual), "JPEG"))  # type: ignore[reportCallIssue]
         dialog2 = ImageZoomDialog()
         dialog2.canvas.set_image(_make_image(color="#ffffff"))
         dialog2._target = ZoomTarget(render=lambda edge: None)  # 无 save_path
@@ -184,14 +194,17 @@ def run(ctx) -> None:
             return _StubEditor(blue, QDialog.DialogCode.Accepted)
 
         try:
-            ImageZoomDialog._open_editor = _stub_open2
+            ImageZoomDialog._open_editor = _stub_open2  # type: ignore[reportAttributeAccessIssue]
             dialog2._edit_image()
         finally:
-            ImageZoomDialog._open_editor = original_open
+            ImageZoomDialog._open_editor = original_open  # type: ignore[reportAttributeAccessIssue]
 
-        ok("虚拟图不走 save_back 模式", dialog2._stub_save_back is False)
+        ok("虚拟图不走 save_back 模式",
+           dialog2._stub_save_back is False)  # type: ignore[reportAttributeAccessIssue]
+        _exported2 = dialog2.canvas.export_image()
+        assert _exported2 is not None    # ⚠️ 画布上有图，导出不会是空
         ok("虚拟图只更新画布、不覆盖文件",
-           dialog2.canvas.export_image().pixelColor(2, 2).name() == "#0000ff"
+           _exported2.pixelColor(2, 2).name() == "#0000ff"
            and _pixel_is(QImage(str(virtual)), 2, 2, "#ffffff"))
         ok("虚拟图不发 image_saved", saved2 == [])
 
@@ -204,14 +217,16 @@ def run(ctx) -> None:
         saved3: list[tuple] = []
         dialog3.image_saved.connect(lambda p, img: saved3.append((p, img)))
         try:
-            ImageZoomDialog._open_editor = _stub_open2
+            ImageZoomDialog._open_editor = _stub_open2  # type: ignore[reportAttributeAccessIssue]
             dialog3._edit_image()
         finally:
-            ImageZoomDialog._open_editor = original_open
+            ImageZoomDialog._open_editor = original_open  # type: ignore[reportAttributeAccessIssue]
 
+        _exported3 = dialog3.canvas.export_image()
+        assert _exported3 is not None    # ⚠️ 画布上有图，导出不会是空
         ok("原图读不到：不动编辑器、不覆盖、不发信号",
            saved3 == []
-           and dialog3.canvas.export_image().pixelColor(2, 2).name() == "#ffffff"
+           and _exported3.pixelColor(2, 2).name() == "#ffffff"
            and "无法读取原图" in dialog3.tip_label.text(),
            dialog3.tip_label.text())
 
@@ -219,7 +234,8 @@ def run(ctx) -> None:
         from desktop.components.viewers.image_viewer import ImageViewerWidget
 
         page = tmp / "0003.png"
-        ok("准备：主查看器页面图可写出", _make_image().save(str(page), "PNG"))
+        ok("准备：主查看器页面图可写出",
+           _make_image().save(str(page), "PNG"))  # type: ignore[reportCallIssue]
         viewer = ImageViewerWidget()
         try:
             viewer.set_images([page])
@@ -295,9 +311,11 @@ def run(ctx) -> None:
            len(asked) == 1
            and ed_no.result() == QDialog.DialogCode.Rejected,
            f"asked={len(asked)} result={ed_no.result()}")
+        _kept = ed_no.canvas.image
+        assert _kept is not None      # ⚠️ 取消覆盖不该清空画布
         ok("取消覆盖后编辑没被丢弃（画布还是改过的图，可继续操作）",
-           ed_no.canvas.image.pixelColor(2, 2).name() == "#00ff00",
-           ed_no.canvas.image.pixelColor(2, 2).name())
+           _kept.pixelColor(2, 2).name() == "#00ff00",
+           _kept.pixelColor(2, 2).name())
         ok("取消覆盖后解锁（能再次点「完成」，不会卡在 _finishing）",
            ed_no._finishing is False, "")
         ed_no.deleteLater()

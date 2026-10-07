@@ -18,8 +18,10 @@ self 上的控件名，否则漏挂没人会发现。
 
 from __future__ import annotations
 
-from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
-from qfluentwidgets import CaptionLabel, CheckBox, PushButton
+from typing import TYPE_CHECKING, Any, Callable
+
+from PySide6.QtWidgets import QFormLayout, QHBoxLayout, QVBoxLayout, QWidget
+from qfluentwidgets import CaptionLabel, CheckBox, LineEdit, PushButton
 from qfluentwidgets import FluentIcon as FIF
 
 from desktop.components.common.safecomponents import SafeSpinBox
@@ -41,6 +43,21 @@ class PrintSectionsMixin(PrintInsetMixin):
     ``_add_inset_rows``；MRO 上它排在 ``PrintFormMixin`` 之后，通用工具
     （``_section`` 等）由最终类 ``PrintPanel`` 的线性化解析到，无需再继承。
     """
+
+    if TYPE_CHECKING:
+        # 通用工具由 ``PrintFormMixin``（本类在 MRO 上的后继）提供，
+        # ``_add_row`` / ``mark_params_edited`` 来自 ``StagePanel``。
+        # 本 Mixin 本体不持有这些，只做类型声明（类级注解、无赋值），
+        # 运行时零副作用。
+        _add_row: Callable[..., None]
+        _section: Callable[[QVBoxLayout, str], QFormLayout]
+        _line_edit: Callable[..., LineEdit]
+        _make_combo: Callable[..., Any]
+        _spin_with_unit: Callable[..., tuple]
+        _color_row: Callable[[], Any]
+        _add_node_row: Callable[..., None]
+        _clear_node_rows: Callable[[], None]
+        _sync_enabled: Callable[[], None]
 
     def _build_output_section(self, root: QVBoxLayout) -> None:
         form = self._section(root, "输出与纸张")

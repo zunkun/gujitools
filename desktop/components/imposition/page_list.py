@@ -87,7 +87,7 @@ class _PageEntry(QFrame):
         self._dragging = False
         self._drag_active = False
         self._dimmed = False
-        self.setCursor(Qt.PointingHandCursor)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
         # 版面（用户 2026-10-04 定）：**缩略图在上、文字在下**；勾选框钉左上角、
         # 「✕」钉右上角。原先是 [勾选框][缩略图][文字] 横排——用户看图时把
         # 「标题在缩略图上方」读了序，要求改成上下结构。
@@ -108,37 +108,37 @@ class _PageEntry(QFrame):
         top_row = QHBoxLayout()
         top_row.setContentsMargins(0, 0, 0, 0)
         top_row.setSpacing(0)
-        top_row.addWidget(self.checkbox, 0, Qt.AlignTop)
+        top_row.addWidget(self.checkbox, 0, Qt.AlignmentFlag.AlignTop)
         top_row.addStretch(1)
         self.remove_button = QToolButton(self)
         self.remove_button.setText("✕")
         self.remove_button.setAutoRaise(True)
         self.remove_button.setFixedSize(18, 18)
-        self.remove_button.setCursor(Qt.PointingHandCursor)
+        self.remove_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.remove_button.setToolTip(
             "删除本页拼版，把这两张图释放回未选择列表（源图不受影响）"
         )
         self.remove_button.clicked.connect(
             lambda: self.remove_clicked.emit(self.index)
         )
-        top_row.addWidget(self.remove_button, 0, Qt.AlignTop)
+        top_row.addWidget(self.remove_button, 0, Qt.AlignmentFlag.AlignTop)
         root.addLayout(top_row)
         #: 本页缩略图（还没渲好时是**空框** + 自绘浅底，见 :meth:`set_thumb`）
         self.thumb = QLabel(self)
         self.thumb.setFixedSize(self.THUMB_W, self.THUMB_H)
-        self.thumb.setAlignment(Qt.AlignCenter)
+        self.thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.thumb.setScaledContents(False)
         apply_to(self.thumb, T.SIZE_CAPTION, color=T.INK_FAINT)
-        root.addWidget(self.thumb, 0, Qt.AlignHCenter)
+        root.addWidget(self.thumb, 0, Qt.AlignmentFlag.AlignHCenter)
         # 文字（标题 + 副标题）在缩略图**下面**，居中对齐（与勾选框同一条
         # 视觉中轴，名称长短不一时也不显歪）
         labels = QVBoxLayout()
         labels.setContentsMargins(0, 0, 0, 0)
         labels.setSpacing(1)
         self.title_label = QLabel(cn_page_label(index), self)
-        self.title_label.setAlignment(Qt.AlignCenter)
+        self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.caption_label = QLabel(caption, self)
-        self.caption_label.setAlignment(Qt.AlignCenter)
+        self.caption_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.caption_label.setWordWrap(False)
         labels.addWidget(self.title_label)
         labels.addWidget(self.caption_label)
@@ -202,7 +202,7 @@ class _PageEntry(QFrame):
         """进入/退出拖动态（样式 + 关闭手型光标，暗示「抓着了」）。"""
         if on != self._drag_active:
             self._drag_active = on
-            self.setCursor(Qt.ClosedHandCursor if on else Qt.PointingHandCursor)
+            self.setCursor(Qt.CursorShape.ClosedHandCursor if on else Qt.CursorShape.PointingHandCursor)
             self.update()
 
     def set_dimmed(self, on: bool) -> None:
@@ -231,7 +231,7 @@ class _PageEntry(QFrame):
 
     def paintEvent(self, _event) -> None:  # noqa: N802
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(0.5, 0.5, self.width() - 1, self.height() - 1)
         if self._dimmed:
             # 拖动中的本体：原地置灰半透明（正被拖走的是幽灵卡）
@@ -242,7 +242,7 @@ class _PageEntry(QFrame):
             # 幽灵卡：主色虚线描边 + 半透明（盖在别的页上也能看出来）
             painter.setOpacity(0.85)
             painter.setPen(
-                QPen(QColor(T.ACCENT), 1.6, Qt.DashLine, Qt.RoundCap, Qt.RoundJoin)
+                QPen(QColor(T.ACCENT), 1.6, Qt.PenStyle.DashLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
             )
             painter.setBrush(QColor(T.SURFACE))
         elif self._current:
@@ -262,14 +262,14 @@ class _PageEntry(QFrame):
         painter.end()
 
     def mousePressEvent(self, event) -> None:  # noqa: N802
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             self._press_pos = event.position().toPoint()
             self._dragging = False
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event) -> None:  # noqa: N802
         if (
-            event.buttons() & Qt.LeftButton
+            event.buttons() & Qt.MouseButton.LeftButton
             and self._press_pos is not None
             and not self._dragging
             and (event.position().toPoint() - self._press_pos).manhattanLength()
@@ -280,7 +280,7 @@ class _PageEntry(QFrame):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             if self._dragging:
                 self._dragging = False  # 拖动结束，不算单击切页
             elif self.rect().contains(event.position().toPoint()):
@@ -296,12 +296,12 @@ class _AddEntry(QFrame):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setCursor(Qt.PointingHandCursor)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
         row = QVBoxLayout(self)
         row.setContentsMargins(10, 8, 10, 8)
         row.setSpacing(0)
         label = QLabel("＋ 选择拼版", self)
-        label.setAlignment(Qt.AlignCenter)
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         apply_to(label, T.SIZE_BODY, color=T.ACCENT)
         row.addWidget(label)
         self.setToolTip("从剩余未被选择拼版的图片里自由勾选（不限张数），"
@@ -309,17 +309,17 @@ class _AddEntry(QFrame):
 
     def paintEvent(self, _event) -> None:  # noqa: N802
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(0.9, 0.9, self.width() - 1.8, self.height() - 1.8)
         painter.setPen(
-            QPen(QColor(T.ACCENT), 1.4, Qt.DashLine, Qt.RoundCap, Qt.RoundJoin)
+            QPen(QColor(T.ACCENT), 1.4, Qt.PenStyle.DashLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
         )
-        painter.setBrush(Qt.NoBrush)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRoundedRect(rect, T.RADIUS_SM, T.RADIUS_SM)
         painter.end()
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802
-        if event.button() == Qt.LeftButton and self.rect().contains(
+        if event.button() == Qt.MouseButton.LeftButton and self.rect().contains(
             event.position().toPoint()
         ):
             self.clicked.emit()
@@ -353,10 +353,10 @@ class _SelectBar(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._drag_from = None     # 按下时的光标全局位置（拖动用）
-        self._drag_origin = None   # 按下时自己的位置
+        self._drag_origin: QPoint | None = None   # 按下时自己的位置
         self._user_moved = False   # 用户拖过 → 宿主不再自动摆位
         # 空白处/计数行可拖动：光标给「移动」暗示（按钮自己会盖成手型）
-        self.setCursor(Qt.SizeAllCursor)
+        self.setCursor(Qt.CursorShape.SizeAllCursor)
         self.setToolTip("按住空白处或「已选 N 页」可拖动本悬浮框")
         column = QVBoxLayout(self)
         column.setContentsMargins(10, 8, 10, 8)
@@ -405,17 +405,19 @@ class _SelectBar(QFrame):
         return self.mapToGlobal(event.position().toPoint())
 
     def mousePressEvent(self, event) -> None:  # noqa: N802
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             self._drag_from = self._cursor_global(event)
             self._drag_origin = self.pos()
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event) -> None:  # noqa: N802
-        if self._drag_from is not None and event.buttons() & Qt.LeftButton:
+        if self._drag_from is not None and event.buttons() & Qt.MouseButton.LeftButton:
             delta = self._cursor_global(event) - self._drag_from
             if delta.manhattanLength() > 2:
                 host = self.parentWidget()
-                if host is not None:
+                # ⚠️ _drag_origin 与 _drag_from 同进同出（mousePressEvent 一起
+                # 设、mouseReleaseEvent 一起清），判完前者再判它即可收窄。
+                if host is not None and self._drag_origin is not None:
                     x = self._drag_origin.x() + delta.x()
                     y = self._drag_origin.y() + delta.y()
                     x = max(0, min(x, host.width() - self.width()))
@@ -431,7 +433,7 @@ class _SelectBar(QFrame):
 
     def paintEvent(self, _event) -> None:  # noqa: N802
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(0.5, 0.5, self.width() - 1, self.height() - 1)
         painter.setPen(QPen(QColor(T.BORDER_STRONG), 1.0))
         painter.setBrush(QColor(T.SURFACE))
@@ -497,7 +499,7 @@ class ImpositionPageList(QWidget):
         self.list_scroll = QScrollArea()
         self.list_scroll.setWidgetResizable(True)
         self.list_scroll.setFixedWidth(150)
-        self.list_scroll.setFrameShape(QFrame.NoFrame)
+        self.list_scroll.setFrameShape(QFrame.Shape.NoFrame)
         container = QWidget()
         self.list_box = QVBoxLayout(container)
         self.list_box.setContentsMargins(0, 0, 0, 0)
@@ -693,6 +695,8 @@ class ImpositionPageList(QWidget):
         self._flow = [e for e in self._entries if e is not entry]
         entry.set_dimmed(True)
         container = self.list_scroll.widget()
+        if container is None:  # 滚动区没内容 ⇒ 没有可拖的列表，收手
+            return
         self._ghost = _PageEntry(index, entry.caption, container)
         self._ghost.set_drag_active(True)
         self._ghost.setGeometry(entry.geometry())
@@ -705,12 +709,16 @@ class ImpositionPageList(QWidget):
 
     def _poll_drag(self) -> None:
         """拖动中：幽灵卡贴着光标走；光标越过哪页中线，落点细线就移到那里。"""
-        if QApplication.mouseButtons() != Qt.LeftButton:
+        if QApplication.mouseButtons() != Qt.MouseButton.LeftButton:
             self._finish_drag()
             return
         if self._ghost is None:
             return
         container = self.list_scroll.widget()
+        # ⚠️ list_scroll.widget() 的注解是 QWidget | None：理论上滚动区没装
+        #     内容时会是 None（那就没列表可拖，直接收手）。
+        if container is None:
+            return
         pos = container.mapFromGlobal(QCursor.pos())
         y = max(0, min(pos.y() - self._grab_dy,
                        container.height() - self._ghost.height()))
@@ -820,7 +828,7 @@ class ImpositionPageList(QWidget):
         anim.setDuration(self._ANIM_MS)
         anim.setStartValue(ghost.pos())
         anim.setEndValue(QPoint(self._drag_x, self._slot_y(drop)))
-        anim.setEasingCurve(QEasingCurve.OutCubic)
+        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
         anim.finished.connect(
             partial(self._emit_reorder, source, target, ghost))
         self._register_anim(anim)

@@ -9,7 +9,11 @@ from __future__ import annotations
 import atexit
 from collections import OrderedDict
 from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
+
+if TYPE_CHECKING:
+    # 仅类型检查期导入：为共享文档缓存声明元素类型（运行期 fitz 惰性导入）
+    import fitz
 
 from PySide6.QtCore import QObject, QPointF, Qt, Signal, Slot
 from PySide6.QtGui import QColor, QFont, QImage, QFontMetrics, QPainter
@@ -95,8 +99,8 @@ def compose_region_output(image: QImage, boxes: list, area: int, border_mm,
     specs = region_canvas_specs((W, H), boxes, area, border_mm, dpi, full=full)
     result = []
     for size, sources in specs:
-        canvas = QImage(max(size[0], 1), max(size[1], 1), QImage.Format_RGB32)
-        canvas.fill(Qt.white)
+        canvas = QImage(max(size[0], 1), max(size[1], 1), QImage.Format.Format_RGB32)
+        canvas.fill(Qt.GlobalColor.white)
         for source, ox, oy in sources:
             x1, y1, x2, y2 = source
             sx1, sy1 = max(0, x1), max(0, y1)
@@ -146,7 +150,7 @@ THUMB_YIELD_RATIO = 0.5
 #: 共享文档缓存的容量（本）。第二本是给放大弹窗换 PDF 场景的余量。
 _PDF_DOC_CACHE_MAX = 2
 #: 路径 → 已打开的 fitz.Document（LRU，最近用的在队尾）
-_PDF_DOC_CACHE: "OrderedDict[str, object]" = OrderedDict()
+_PDF_DOC_CACHE: "OrderedDict[str, fitz.Document]" = OrderedDict()
 # 单页渲染的全局互斥锁：同时只允许一个渲染使用共享文档（fitz.Document
 # 不是线程安全的，且渲染全程攥 GIL，多线程并行只会互相拖慢 + 冻住界面）。
 # ⚠️ 锁本体已挪到 `desktop/workers/render_lock.py`（零依赖小模块）：**批量
@@ -403,7 +407,7 @@ def compose_print_page(
         )
     page_w = max(1, round(plan.page_w_mm * density))
     page_h = max(1, round(plan.page_h_mm * density))
-    page = QImage(page_w, page_h, QImage.Format_RGB32)
+    page = QImage(page_w, page_h, QImage.Format.Format_RGB32)
     if plan.skipped:
         # 命中 skip_pages：成品里没有这一页，预览给一张留白的灰页，
         # 明确告诉用户"这页不会输出"
@@ -411,17 +415,17 @@ def compose_print_page(
         painter = QPainter(page)
         painter.setPen(QColor("#98a2b3"))
         painter.setFont(_pick_preview_font(14))
-        painter.drawText(page.rect(), Qt.AlignCenter, "该页已跳过，不会输出到 PDF")
+        painter.drawText(page.rect(), Qt.AlignmentFlag.AlignCenter, "该页已跳过，不会输出到 PDF")
         painter.end()
         return page
-    page.fill(Qt.white)
+    page.fill(Qt.GlobalColor.white)
     painter = QPainter(page)
     x_mm, y_mm, w_mm, h_mm = plan.image
     target_w = max(1, round(w_mm * density))
     target_h = max(1, round(h_mm * density))
     if target_w > 0 and target_h > 0 and not image.isNull():
         scaled = image.scaled(
-            target_w, target_h, Qt.IgnoreAspectRatio, Qt.SmoothTransformation
+            target_w, target_h, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation
         )
         painter.drawImage(round(x_mm * density), round(y_mm * density), scaled)
     for spec in (plan.title, plan.page_number):
@@ -439,8 +443,8 @@ def compose_outputs_horizontal(outputs: list, gap: int = 12) -> QImage:
         return outputs[0]
     height = max(c.height() for c in outputs)
     total_w = sum(c.width() for c in outputs) + gap * (len(outputs) - 1)
-    out = QImage(total_w, height, QImage.Format_RGB32)
-    out.fill(Qt.darkGray)
+    out = QImage(total_w, height, QImage.Format.Format_RGB32)
+    out.fill(Qt.GlobalColor.darkGray)
     painter = QPainter(out)
     offset_x = 0
     for crop in outputs:
@@ -585,7 +589,9 @@ class PreviewWorker(QObject):
             # 途中攥着 GIL 105ms）。加载图片的路径（_load_image）不经过这里，
             # 缓存只对 PDF 页有效，见 pdf_viewer 的 _page_cache。
             self.last_jpeg = pixmap.tobytes("jpg", jpg_quality=80)
-            return QImage.fromData(self.last_jpeg)
+            jpeg = self.last_jpeg
+            assert jpeg is not None
+            return QImage.fromData(jpeg)
 
     def _render_all_thumbnails(self) -> None:
         """逐页取缩略图：**命中缓存就直接用**，缺页按 ``render_missing`` 决定渲不渲。
@@ -707,6 +713,6 @@ class PreviewWorker(QObject):
         return image.scaled(
             self.longest_edge,
             self.longest_edge,
-            aspectMode=Qt.KeepAspectRatio,
-            mode=Qt.SmoothTransformation,
+            aspectMode=Qt.AspectRatioMode.KeepAspectRatio,
+            mode=Qt.TransformationMode.SmoothTransformation,
         )

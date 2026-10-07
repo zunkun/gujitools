@@ -261,7 +261,8 @@ class _JobWorker(QObject):
     #: ``progress`` / ``log`` 已有专用信号（也最常用），这里只走其余事件——
     #: 典型是 ``page_boxes``（detect 报的每页框坐标）。内核不认识这些事件名，
     #: 只负责原样透传；认不认识由上层（模块页 / 详情页）自己决定。
-    event = Signal(str, object)
+    # ⚠️ 与基类 QObject.event() 同名：此处是信号，语义不同，故意覆盖，不改名。
+    event = Signal(str, object)  # type: ignore[reportAssignmentType]
 
     def __init__(self, job: StepJob, request: StepRequest):
         super().__init__()
@@ -300,7 +301,7 @@ class _JobWorker(QObject):
             if message:
                 self.log.emit(str(message))
         else:
-            self.event.emit(name, payload or {})
+            self.event.emit(name, payload or {})  # type: ignore[reportAttributeAccessIssue]  # ``event`` 与 QObject.event 同名，运行时是 Signal（pyright 按基类方法解析）
 
 
 class StepKernel(QObject):
@@ -317,7 +318,8 @@ class StepKernel(QObject):
     finished = Signal(str)        # 输出目录（或输出文件）
     failed = Signal(str)          # 失败原因
     #: 步骤私有的结构化事件 ``(事件名, 负载)``；见 ``_JobWorker.event``。
-    event = Signal(str, object)
+    # ⚠️ 与基类 QObject.event() 同名：此处是信号，语义不同，故意覆盖，不改名。
+    event = Signal(str, object)  # type: ignore[reportAssignmentType]
 
     def __init__(self, job: StepJob | None, parent=None):
         super().__init__(parent)
@@ -340,7 +342,7 @@ class StepKernel(QObject):
         worker.log.connect(self._on_log)
         worker.finished.connect(self._on_finished)
         worker.failed.connect(self._on_failed)
-        worker.event.connect(self._on_event)
+        worker.event.connect(self._on_event)  # type: ignore[reportAttributeAccessIssue]  # 同上：``event`` 与 QObject.event 同名，运行时是 Signal
         worker.finished.connect(thread.quit)
         worker.failed.connect(thread.quit)
         thread.started.connect(worker.run)
@@ -390,7 +392,7 @@ class StepKernel(QObject):
 
     def _on_event(self, name: str, payload) -> None:
         """透传步骤私有事件（已在主线程，因为连的是本对象的绑定方法）。"""
-        self.event.emit(name, payload)
+        self.event.emit(name, payload)  # type: ignore[reportAttributeAccessIssue]  # 同上：``event`` 与 QObject.event 同名
 
     def _on_thread_finished(self) -> None:
         self._thread = None

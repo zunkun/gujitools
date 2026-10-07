@@ -37,10 +37,12 @@ def _prepare_gui_startup() -> None:
     if "darkdetect" in sys.modules:
         return
     stub = types.ModuleType("darkdetect")
-    stub.theme = lambda: "Light"
-    stub.isDark = lambda: False
-    stub.isLight = lambda: True
-    stub.listener = lambda callback=None: None
+    # ⚠️ 往模块对象上挂属性：``ModuleType`` 没有这几个成员，用 ``setattr``
+    #    避开静态检查（运行时与直接赋值完全一样）。
+    setattr(stub, "theme", lambda: "Light")
+    setattr(stub, "isDark", lambda: False)
+    setattr(stub, "isLight", lambda: True)
+    setattr(stub, "listener", lambda callback=None: None)
     sys.modules["darkdetect"] = stub
 
 

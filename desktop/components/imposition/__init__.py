@@ -14,6 +14,18 @@
 详情页的组件不该被启动流程拖出来。
 """
 
+from typing import TYPE_CHECKING
+
+#: 惰性导出的**类型**侧声明（见模块 docstring）：类型检查器看不见 PEP 562 的
+#: ``__getattr__``，缺这一段会把下面 ``_LAZY`` 的名字全当成未定义。
+#: **只影响类型检查**——运行时的惰性加载照旧。
+if TYPE_CHECKING:
+    from desktop.components.imposition.canvas import ImpositionCanvas
+    from desktop.components.imposition.page_list import ImpositionPageList
+    from desktop.components.imposition.panel import ImpositionPanel
+    from desktop.components.imposition.picker import ImpositionPickerDialog
+    from desktop.components.imposition.view import ImpositionViewWidget
+
 __all__ = [
     "ImpositionCanvas",
     "ImpositionPageList",

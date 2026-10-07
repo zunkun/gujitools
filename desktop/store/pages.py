@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING, Callable
 
 from desktop.utils.files import IMAGE_SUFFIXES, natural_key
 from desktop.store.json_io import read_json, write_json
@@ -11,6 +12,10 @@ from desktop.store.json_io import read_json, write_json
 
 class PageManifestMixin:
     """pages.json 的读写与按阶段输出目录重建。"""
+
+    if TYPE_CHECKING:
+        # 宿主 TaskStore（或同级 Mixin）提供：只做类型声明，运行时零副作用。
+        task_dir: Callable[[str], Path]
 
     def pages_path(self, task_id: str) -> Path:
         """当前任务的页面清单文件：任务目录下的 pages.json。"""

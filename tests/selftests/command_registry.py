@@ -58,6 +58,7 @@ def run(ctx) -> None:
 
     parser = CliArgsParser().parser
     run_parser = None
+    assert parser._subparsers is not None
     for action in parser._subparsers._group_actions:
         for name, choice in (getattr(action, "choices", None) or {}).items():
             if name == "run":
@@ -66,6 +67,7 @@ def run(ctx) -> None:
         if run_parser is not None:
             break
     ok("CLI 已注册 run 子命令", run_parser is not None, "未找到 run 子命令")
+    assert run_parser is not None
     pos = [a for a in run_parser._actions if a.dest == "subcommand"]
     run_vals = set(pos[0].choices) if pos else set()
     ok("CLI run 子命令覆盖全部命令",

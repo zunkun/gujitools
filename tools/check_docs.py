@@ -171,7 +171,7 @@ def check_file(md: str, anchor_cache: dict[Path, set[str]]) -> list[str]:
 def main() -> int:
     """执行全部检查并输出结果。"""
     try:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        getattr(sys.stdout, "reconfigure")(encoding="utf-8", errors="replace")
     except (AttributeError, ValueError):
         pass
 

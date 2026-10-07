@@ -197,9 +197,9 @@ docs/functions/cropremove.md:57）。布局层统一后该分歧由本模块消�
 | `build_output_layout(boxes: Sequence[Sequence[int]], area: int, border_padding, image_size: Tuple[int, int], dpi: int=300, sides: Optional[Sequence[Optional[str]]]=None, symmetric: bool=False) -> OutputLayout` | 按 area/border 规则计算输出画布布局（area=1 / 2 / 3）。 |
 | `build_symmetric_layout(box: Sequence[int], border_padding, image_size: Tuple[int, int], is_left: bool=True, dpi: int=300) -> OutputLayout` | 单框对称输出布局：实际框 + 空白镜像 + 中间间隔。 |
 | `present_boxes(slots) -> List[list]` | 槽位 → **非空**框列表（保留顺序）。 |
-| `set_box_full(slots, index: int) -> List[list]` | 把第 ``index`` 个框设为「整幅」→ **单槽** ``[整幅]``，其余框丢弃。 |
-| `set_box_half(slots, index: int, image_size) -> List[list]` | 把第 ``index`` 个框设为「半幅」→ **2 槽** ``[左, 右]``（按中心定左右）。 |
-| `drop_box(slots, index: int, image_size) -> List[list]` | 删掉第 ``index`` 个框后的**新槽位**。 |
+| `set_box_full(slots, index: int) -> List[Optional[list]]` | 把第 ``index`` 个框设为「整幅」→ **单槽** ``[整幅]``，其余框丢弃。 |
+| `set_box_half(slots, index: int, image_size) -> List[Optional[list]]` | 把第 ``index`` 个框设为「半幅」→ **2 槽** ``[左, 右]``（按中心定左右）。 |
+| `drop_box(slots, index: int, image_size) -> List[Optional[list]]` | 删掉第 ``index`` 个框后的**新槽位**。 |
 
 #### `is_full_content(boxes) -> bool`
 
@@ -377,7 +377,7 @@ desktop/workers/preview_worker.compose_region_output 的几何完全等价，
 选中下标全都是过滤后的口径，混用槽位下标会选错框（半幅缺左侧时，
 槽位 0 是 ``None``、槽位 1 才是右框）。
 
-#### `set_box_full(slots, index: int) -> List[list]`
+#### `set_box_full(slots, index: int) -> List[Optional[list]]`
 
 把第 ``index`` 个框设为「整幅」→ **单槽** ``[整幅]``，其余框丢弃。
 
@@ -387,14 +387,14 @@ desktop/workers/preview_worker.compose_region_output 的几何完全等价，
 
 ``index`` 越界时原样返回（空表则返回空表）——非法输入不该让界面崩。
 
-#### `set_box_half(slots, index: int, image_size) -> List[list]`
+#### `set_box_half(slots, index: int, image_size) -> List[Optional[list]]`
 
 把第 ``index`` 个框设为「半幅」→ **2 槽** ``[左, 右]``（按中心定左右）。
 
 整幅页的框也能是半幅（漏检一侧的情形），所以这个方向**无损**：一个框
 照样按它自己的中心位置落进左槽或右槽，另一侧留 ``None``。
 
-#### `drop_box(slots, index: int, image_size) -> List[list]`
+#### `drop_box(slots, index: int, image_size) -> List[Optional[list]]`
 
 删掉第 ``index`` 个框后的**新槽位**。
 
@@ -618,6 +618,11 @@ QImage → ``(H, W, 4)`` uint8 **RGBA**（ARGB32 在小端机器上是 B,G,R,A�
 #### `deform_qimage(image, cage_src, cage_dst, *, influence=None, fill=None, bounds=None, grow=False, progress=None)`
 
 QImage 版 :func:`deform`（**保留 alpha 通道**）。
+
+⚠️ 返回类型是**多形态**的（``None`` / ``QImage`` / ``(QImage, (ox, oy))``），
+刻意不加注解：不加时类型检查器只会看到 Unknown，调用点解包不会报错；
+一旦标成联合类型，``preview, origin = deform_qimage(...)`` 这种解包就会因
+"QImage 不可迭代"而报错。见 image_editor.bake_transform 的同款说明。
 
 不透明图走 3 通道（比 4 通道少 1/4 的采样量）；带 alpha 的图走 4 通道，
 越界填充取 :data:`FILL_CLEAR`（白 + 透明），免得透明底变实心。
@@ -1859,10 +1864,10 @@ PDF 页面提取：把 PDF 每页渲染成图片并保存。
 | `calculate_zoom(page_width: float, requested_zoom: float=1) -> float` | 计算实际缩放因子，限制最大输出宽度为 6000px。 |
 | `render_zoom(page_width: float, requested_zoom: float=1, dpi: float=DEFAULT_RENDER_DPI) -> float` | 整页渲染实际使用的缩放因子 = max(用户 zoom, DPI 下限)，再受宽度封顶。 |
 | `report_image_size(img_path, width: int, height: int, reporter=None) -> None` | 汇报一页输出图片的尺寸。 |
-| `process_page_batch(pdf_path: str, page_indices: List[int], out_dir: str, zoom: float, ext: str, quick: bool=True, progress: dict=None, reporter=None, dpi: float=DEFAULT_RENDER_DPI) -> List[bool]` | 处理一批 PDF 页面，返回每页的成功状态。 |
-| `render_pages_parallel(pdf_path: str, page_indices: List[int], out_dir: str, zoom: float, ext: str, quick: bool=True, workers: int=4, batch_size: int=4, progress: dict=None, reporter=None, dpi: float=DEFAULT_RENDER_DPI) -> List[bool]` | 多**进程**提取指定页，返回每页成功状态。 |
-| `extract_pdf_optimized(pdf_path: str, out_dir: str, zoom: float=1, ext: str='jpg', workers: int=4, quick: bool=True, pages: str=None, start: int=None, end: int=None, batch_size: int=4, clean: bool=False, reporter=None, dpi: float=DEFAULT_RENDER_DPI) -> bool` | 提取 PDF 页面为图片，支持多线程批次处理。 |
-| `run_on_input_directory(input_path: str, out_root: str, zoom: float=1, ext: str='jpg', workers: int=4, quick: bool=True, pages: str=None, start: int=None, end: int=None, batch_size: int=4, clean: bool=False, subdir_name: str='images', reporter=None, dpi: float=DEFAULT_RENDER_DPI)` | 处理输入路径（文件或目录），对每个 PDF 在 out_root 下创建以其文件名命名的子目录， |
+| `process_page_batch(pdf_path: str, page_indices: List[int], out_dir: str, zoom: float, ext: str, quick: bool=True, progress: Optional[dict]=None, reporter=None, dpi: float=DEFAULT_RENDER_DPI) -> List[bool]` | 处理一批 PDF 页面，返回每页的成功状态。 |
+| `render_pages_parallel(pdf_path: str, page_indices: List[int], out_dir: str, zoom: float, ext: str, quick: bool=True, workers: int=4, batch_size: int=4, progress: Optional[dict]=None, reporter=None, dpi: float=DEFAULT_RENDER_DPI) -> List[bool]` | 多**进程**提取指定页，返回每页成功状态。 |
+| `extract_pdf_optimized(pdf_path: str, out_dir: str, zoom: float=1, ext: str='jpg', workers: int=4, quick: bool=True, pages: Optional[str]=None, start: Optional[int]=None, end: Optional[int]=None, batch_size: int=4, clean: bool=False, reporter=None, dpi: float=DEFAULT_RENDER_DPI) -> bool` | 提取 PDF 页面为图片，支持多线程批次处理。 |
+| `run_on_input_directory(input_path: str, out_root: str, zoom: float=1, ext: str='jpg', workers: int=4, quick: bool=True, pages: Optional[str]=None, start: Optional[int]=None, end: Optional[int]=None, batch_size: int=4, clean: bool=False, subdir_name: str='images', reporter=None, dpi: float=DEFAULT_RENDER_DPI)` | 处理输入路径（文件或目录），对每个 PDF 在 out_root 下创建以其文件名命名的子目录， |
 
 #### `parse_pages(pages_str: str, total_pages: int) -> List[int]`
 
@@ -1930,7 +1935,7 @@ PDF 页面提取：把 PDF 每页渲染成图片并保存。
 
 reporter 缺省为 None —— CLI 不注入，行为与原先「只 print 一行」完全一致。
 
-#### `process_page_batch(pdf_path: str, page_indices: List[int], out_dir: str, zoom: float, ext: str, quick: bool=True, progress: dict=None, reporter=None, dpi: float=DEFAULT_RENDER_DPI) -> List[bool]`
+#### `process_page_batch(pdf_path: str, page_indices: List[int], out_dir: str, zoom: float, ext: str, quick: bool=True, progress: Optional[dict]=None, reporter=None, dpi: float=DEFAULT_RENDER_DPI) -> List[bool]`
 
 处理一批 PDF 页面，返回每页的成功状态。
 
@@ -1951,7 +1956,7 @@ reporter 缺省为 None —— CLI 不注入，行为与原先「只 print 一�
 返回:
     每页成功/失败的 bool 列表。
 
-#### `render_pages_parallel(pdf_path: str, page_indices: List[int], out_dir: str, zoom: float, ext: str, quick: bool=True, workers: int=4, batch_size: int=4, progress: dict=None, reporter=None, dpi: float=DEFAULT_RENDER_DPI) -> List[bool]`
+#### `render_pages_parallel(pdf_path: str, page_indices: List[int], out_dir: str, zoom: float, ext: str, quick: bool=True, workers: int=4, batch_size: int=4, progress: Optional[dict]=None, reporter=None, dpi: float=DEFAULT_RENDER_DPI) -> List[bool]`
 
 多**进程**提取指定页，返回每页成功状态。
 
@@ -1979,7 +1984,7 @@ CLI（`extract_pdf_optimized`）与 GUI（`run_extract_stage`）共用这一份�
 
 reporter 为结构化汇报通道（进度 + 页尺寸）；None → 保持纯 print 行为。
 
-#### `extract_pdf_optimized(pdf_path: str, out_dir: str, zoom: float=1, ext: str='jpg', workers: int=4, quick: bool=True, pages: str=None, start: int=None, end: int=None, batch_size: int=4, clean: bool=False, reporter=None, dpi: float=DEFAULT_RENDER_DPI) -> bool`
+#### `extract_pdf_optimized(pdf_path: str, out_dir: str, zoom: float=1, ext: str='jpg', workers: int=4, quick: bool=True, pages: Optional[str]=None, start: Optional[int]=None, end: Optional[int]=None, batch_size: int=4, clean: bool=False, reporter=None, dpi: float=DEFAULT_RENDER_DPI) -> bool`
 
 提取 PDF 页面为图片，支持多线程批次处理。
 
@@ -2001,7 +2006,7 @@ reporter 为结构化汇报通道（进度 + 页尺寸）；None → 保持纯 p
 返回:
     True=处理完成（部分页面可能失败，查看日志），False=整体失败。
 
-#### `run_on_input_directory(input_path: str, out_root: str, zoom: float=1, ext: str='jpg', workers: int=4, quick: bool=True, pages: str=None, start: int=None, end: int=None, batch_size: int=4, clean: bool=False, subdir_name: str='images', reporter=None, dpi: float=DEFAULT_RENDER_DPI)`
+#### `run_on_input_directory(input_path: str, out_root: str, zoom: float=1, ext: str='jpg', workers: int=4, quick: bool=True, pages: Optional[str]=None, start: Optional[int]=None, end: Optional[int]=None, batch_size: int=4, clean: bool=False, subdir_name: str='images', reporter=None, dpi: float=DEFAULT_RENDER_DPI)`
 
 处理输入路径（文件或目录），对每个 PDF 在 out_root 下创建以其文件名命名的子目录，
 并在该子目录下创建 subdir_name 目录存放图片。

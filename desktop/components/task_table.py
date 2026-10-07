@@ -57,7 +57,7 @@ class NameLabel(QLabel):
         # 当前链接色：paintEvent 画下划线时取这个值，与文字颜色保持一致。
         self._link_color = QColor(T.ACCENT)
         # 开启文字垂直居中
-        self.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
     def setLinkColor(self, color: QColor) -> None:
         """同步文字颜色与下划线颜色。
@@ -120,7 +120,7 @@ class NameLabel(QLabel):
         # 基线向下偏移，就是下划线位置，_UNDERLINE_GAP 可以随便改 0~15 都生效
         line_y = baseline_y + self._UNDERLINE_GAP
 
-        painter.drawLine(x1, line_y, x2, line_y)
+        painter.drawLine(x1, round(line_y), x2, round(line_y))
         painter.end()
 
 
@@ -261,7 +261,7 @@ class TaskTable(QWidget):
         item = self.table.item(row, column)
         if not item:
             return
-        task_id = item.data(Qt.UserRole)
+        task_id = item.data(Qt.ItemDataRole.UserRole)
         if task_id:
             self.open_detail.emit(task_id)
 
@@ -346,7 +346,8 @@ class TaskTable(QWidget):
             # ⚠️ 名称格的 item **不能省**：select_task() 靠它取 UserRole 定位行。
             # 不要 setForeground——item 透明绘制，否则会和 NameLabel 文字重影。
             name_item = self.table.item(row, 1)
-            name_item.setData(Qt.UserRole, task["id"])
+            assert name_item is not None  # 上一行刚 setItem，恒存在
+            name_item.setData(Qt.ItemDataRole.UserRole, task["id"])
 
             self.table.setCellWidget(row, 1, self._name_widget(task))
             self.table.setCellWidget(row, 3, StageChips(task.get("stages", [])))
@@ -359,7 +360,7 @@ class TaskTable(QWidget):
         """选中并滚动到指定任务所在行，返回是否找到。"""
         for row in range(self.table.rowCount()):
             item = self.table.item(row, 1)
-            if item and item.data(Qt.UserRole) == task_id:
+            if item and item.data(Qt.ItemDataRole.UserRole) == task_id:
                 self.table.selectRow(row)
                 self.table.scrollToItem(item)
                 return True

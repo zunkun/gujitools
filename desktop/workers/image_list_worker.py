@@ -48,12 +48,10 @@ class ImageListWorker(QObject):
         """逐图生成缩略图，发 thumbnail_ready(index, image, path)，结束发 completed。"""
         try:
             for index, path in enumerate(self.paths):
-                crop = self.crops[index] if getattr(self, "crops", None) else None
-                effect = (
-                    self.effects[index]
-                    if getattr(self, "effects", None)
-                    else None
-                )
+                crops = getattr(self, "crops", None)
+                crop = crops[index] if crops else None
+                effects = getattr(self, "effects", None)
+                effect = effects[index] if effects else None
                 reader = QImageReader(str(path))
                 reader.setAutoTransform(True)
                 if crop is None and not effect:
@@ -61,7 +59,7 @@ class ImageListWorker(QObject):
                     if size.isValid():
                         reader.setScaledSize(
                             size.scaled(
-                                QSize(self.edge, self.edge), Qt.KeepAspectRatio
+                                QSize(self.edge, self.edge), Qt.AspectRatioMode.KeepAspectRatio
                             )
                         )
                 image = reader.read()
@@ -94,8 +92,8 @@ class ImageListWorker(QObject):
                     image = image.scaled(
                         self.edge,
                         self.edge,
-                        aspectMode=Qt.KeepAspectRatio,
-                        mode=Qt.SmoothTransformation,
+                        aspectMode=Qt.AspectRatioMode.KeepAspectRatio,
+                        mode=Qt.TransformationMode.SmoothTransformation,
                     )
                 self.thumbnail_ready.emit(index, image, str(path))
             self.completed.emit()

@@ -142,6 +142,7 @@ class PdfViewerWidget(QWidget, WorkerHost, ZoomPopupMixin):
                          render_missing: bool = True) -> None:
         """跑一轮缩略图：``pages`` 限定页号，``render_missing`` 决定缺页渲不渲。"""
         self._pass_kind = "fill" if render_missing else "read"
+        assert self._pdf_path is not None  # 仅在装入 PDF 后调用
         worker_path = Path(self._pdf_path)
         worker_cache = self._cache_dir
         self.run_worker(
@@ -189,7 +190,9 @@ class PdfViewerWidget(QWidget, WorkerHost, ZoomPopupMixin):
         return bool(newest) and (time.time() - newest) < self.CACHE_ACTIVE_WINDOW_S
 
     def _wire_thumbnails(self, worker: PreviewWorker, thread) -> None:
-        worker.thumb_gen = self._thumb_gen  # 迟到信号按代际丢弃（见 _thumb_gen）
+        # 迟到信号按代际丢弃（见 _thumb_gen）；thumb_gen 是 PreviewWorker 的
+        # 运行期动态属性（_thumb_worker_is_stale 用 getattr 读取），类里未声明。
+        worker.thumb_gen = self._thumb_gen  # type: ignore[attr-defined]
         worker.metadata.connect(self._metadata_ready)
         worker.thumbnail_ready.connect(self._thumb_ready)
         worker.completed.connect(self._thumbs_completed)
@@ -224,7 +227,7 @@ class PdfViewerWidget(QWidget, WorkerHost, ZoomPopupMixin):
         self._thumb_received.add(index)
         # 磁盘缓存为 256px；条目显示按图标尺寸降采样，控制大文档内存
         scaled = image.scaled(
-            ThumbStrip.ICON_SIZE, Qt.KeepAspectRatio, Qt.SmoothTransformation
+            ThumbStrip.ICON_SIZE, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
         )
         self.strip.set_item_icon(index, scaled, str(index), f"第 {index + 1} 页")
 
@@ -439,13 +442,14 @@ class PdfViewerWidget(QWidget, WorkerHost, ZoomPopupMixin):
         密度越高越清晰（文字/线条不会像位图那样到顶）。
         """
         count = self.strip.count()
-        if not self._pdf_path or count <= 0 or not (0 <= index < count):
+        pdf_path = self._pdf_path
+        if not pdf_path or count <= 0 or not (0 <= index < count):
             return None
         return ZoomTarget(
             render=lambda edge: PreviewWorker(
-                self._pdf_path, index, longest_edge=edge
+                pdf_path, index, longest_edge=edge
             ),
-            note=f"第 {index + 1}/{count} 页 · {self._pdf_path.name}",
-            stem=f"{self._pdf_path.stem}_{index + 1}",
+            note=f"第 {index + 1}/{count} 页 · {pdf_path.name}",
+            stem=f"{pdf_path.stem}_{index + 1}",
             count=count,
         )

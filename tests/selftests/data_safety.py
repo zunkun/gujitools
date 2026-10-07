@@ -21,6 +21,7 @@ TITLE = "数据安全（越界/半截文件）"
 def run(ctx) -> None:
     import os
     from pathlib import Path
+    from typing import cast
 
     from tests.selftests._context import ok
 
@@ -36,7 +37,8 @@ def run(ctx) -> None:
     store = TaskStore(ctx.tmp / "data_safety")
     for bad in ("../evil", "..\\evil", "", "abc", "0001/../..", "٠٠٠١", 1, None):
         try:
-            store.task_dir(bad)
+            # 故意喂非法样本（含非 str），cast 只为过类型检查、不改运行时取值
+            store.task_dir(cast(str, bad))
         except ValueError:
             ok(f"task_dir 拒绝非法任务号 {bad!r}", True)
         except Exception as exc:  # noqa: BLE001

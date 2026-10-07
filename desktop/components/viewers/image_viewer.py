@@ -57,7 +57,10 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         """
         super().__init__(parent)
         self._init_thumbs()
-        self._paths: list[Path] = []
+        # ⚠️ 元素类型是 ``Path | str``（set_images 的入参就是两者都收，调用方
+        # 有时给 Path、有时给字符串路径），不是 list[Path]：list 不协变，写成
+        # list[Path] 会让每一处 list(paths) 赋值都变成类型错误。
+        self._paths: list[Path | str] = []
         self._empty_hint = empty_hint
         #: PDF 页模式：``(pdf 路径, 代际号)``。非 None 时左栏是「页缩略图条」，
         #: 大图按需从 PDF 渲那一页——而不是拿 256px 缓存小图放大（会糊）。
@@ -142,15 +145,23 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         self._load_token = 0
 
     @property
-    def paths(self) -> list[Path]:
-        """当前页面清单（按显示顺序）。"""
+    def paths(self) -> list[Path | str]:
+        """当前页面清单（按显示顺序）。
+
+        ⚠️ 元素是 ``Path | str``（与 :meth:`set_images` 的入参一致）：调用方
+        两种都传，要拿名字/后缀时用 ``Path(x)`` 收一下。
+        """
         return self._paths
 
     def current_path(self) -> Path | None:
-        """当前选中的页面路径；无选中或无清单时为 None。"""
+        """当前选中的页面路径；无选中或无清单时为 None。
+
+        返回 ``Path``：清单元素可能是 str，这里统一成 Path 交出去，调用方
+        就直接 ``.name`` / ``.stem`` 了。
+        """
         row = max(self.strip.currentRow(), 0)
         if row < len(self._paths):
-            return self._paths[row]
+            return Path(self._paths[row])
         return None
 
     def navigate(self, forward: bool) -> None:
@@ -241,7 +252,8 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
 
     # ------------------------------------------------------- 缩略图缓存接线
     def set_thumb_source(
-        self, paths: list[Path], cache_dir: Path, edge: int | None = None,
+        self, paths: list[Path | str], cache_dir: Path | str,
+        edge: int | None = None,
         names: list[str | None] | None = None,
     ) -> None:
         """清单是真实图片，但左侧缩略图走 ``cache_dir`` 下的**缓存小图**。
@@ -272,12 +284,16 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
 
     def _thumb_cache_target(self, index: int, path: Path) -> Path:
         """第 ``index`` 张清单项的缓存文件路径（显式名优先，否则按图键）。"""
+        cache_dir = self._thumb_cache_dir
+        assert cache_dir is not None  # 调用点（_lookup_thumb_path）已判过 None
         names = self._thumb_cache_names
         if names is not None and 0 <= index < len(names) and names[index]:
-            return Path(self._thumb_cache_dir) / names[index]
+            # ⚠️ names[index] 已判过非空，这里再 cast 一次让类型收窄落到 str：
+            # 索引取值后类型检查器不再记得上面的真值判断。
+            return cache_dir / str(names[index])
         from desktop.workers.thumb_cache_worker import thumb_cache_file
 
-        return thumb_cache_file(Path(self._thumb_cache_dir), path)
+        return thumb_cache_file(cache_dir, path)
 
     def _lookup_thumb_path(self, path_text: str) -> Path | None:
         """``thumb_provider`` 用的查询：某张清单项的缓存文件路径。
@@ -297,7 +313,7 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         except (IndexError, TypeError):
             return None
 
-    def _start_thumb_cache(self, paths: list[Path]) -> None:
+    def _start_thumb_cache(self, paths: list[Path | str]) -> None:
         """后台把这批图的缩略图渲进缓存，逐张回填缩略图条。
 
         ⚠️ **分批调度交给基类**（:meth:`ThumbsMixin._load_thumbs_chunked`，
@@ -314,6 +330,10 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
             return
         edge = self._thumb_cache_edge or self._decode_edge()
         cache_dir = self._thumb_cache_dir
+        # ⚠️ 没设缓存目录（set_thumb_source 没调）时下面拼不出缩略图路径，
+        #     直接不启动——与 _lookup_thumb_path 的同一道守卫。
+        if cache_dir is None:
+            return
         names = self._thumb_cache_names
         # ⚠️ 切片要**连同 names 一起切**：序号口径下缓存文件名与清单下标一一
         # 对应，忘了切片就会拿第 0..N 项的名字配第 N..2N 项的图（张冠李戴）。
@@ -411,7 +431,7 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         if image is None or getattr(image, "isNull", lambda: True)():
             return
         scaled = image.scaled(
-            ThumbStrip.ICON_SIZE, Qt.KeepAspectRatio, Qt.SmoothTransformation
+            ThumbStrip.ICON_SIZE, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
         )
         self.strip.set_item_icon(
             index, scaled, str(index), f"第 {index + 1} 页"
@@ -536,7 +556,7 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
             return Path(spec)
         return Path(path_text)
 
-    def _load_thumbs(self, strip, paths: list[Path], start: int = 0) -> None:
+    def _load_thumbs(self, strip, paths: list[Path | str], start: int = 0) -> None:
         """带提供者时加载映射后的缩略图，标签仍使用真实页面名。
 
         ⚠️ 分批调度走基类的 ``_load_thumbs_chunked``（首批立即、其余延后），
@@ -692,8 +712,8 @@ class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         cap = max(original.width(), original.height()) if original else None
         return ZoomTarget(
             render=lambda edge: PreviewWorker(path, longest_edge=edge),
-            note=f"第 {index + 1}/{len(self._paths)} 页 · {path.name}",
-            stem=path.stem,
+            note=f"第 {index + 1}/{len(self._paths)} 页 · {Path(path).name}",
+            stem=Path(path).stem,
             count=len(self._paths),
             original=original,
             cap=cap,

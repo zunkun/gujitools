@@ -12,6 +12,20 @@
 只是推迟到真正取用它的那一刻。
 """
 
+from typing import TYPE_CHECKING
+
+#: 惰性导出的**类型**侧声明（见模块 docstring）：类型检查器看不见 PEP 562 的
+#: ``__getattr__``（含下面 PANEL_CLASSES 的组装分支），缺这一段会把这些名字
+#: 全判成未定义。**只影响类型检查**——运行时仍是按需导入。
+if TYPE_CHECKING:
+    from desktop.components.panels.base import StagePanel
+    from desktop.components.panels.detect_panel import DetectPanel
+    from desktop.components.panels.extract_panel import ExtractPanel
+    from desktop.components.panels.print_panel import PrintPanel
+    from desktop.components.panels.rembg_panel import RembgPanel
+
+    PANEL_CLASSES: tuple[type, ...]
+
 __all__ = [
     "StagePanel",
     "ExtractPanel",

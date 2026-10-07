@@ -199,9 +199,15 @@ def run_detect_stage(config: dict) -> int:
             with lock:
                 stat["done"] += 1
                 stat["cost"] += elapsed
-                if failure:
+                if failure or page is None:
+                    # ⚠️ ``page is None`` 与 failure 同一分支：检测没抛异常时
+                    # 一定给了结果对象，走到这儿拿不到就按失败记，别让它掉进
+                    # 下面的成功分支去读 page.left。
                     stat["failed"] += 1
-                    _emit_log(f"detect {path.name} 失败: {failure}", context)
+                    _emit_log(
+                        f"detect {path.name} 失败: {failure or '无检测结果'}",
+                        context,
+                    )
                 else:
                     if page.left:
                         stat["left"] += 1

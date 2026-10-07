@@ -27,11 +27,38 @@
 from __future__ import annotations
 
 from collections import deque
-from typing import NamedTuple
+from typing import Any, NamedTuple, Protocol
 
 from PySide6.QtCore import QObject, QThread, QTimer, Signal
 
 from desktop.workers.worker_host import connect_queued
+
+
+class JobWorker(Protocol):
+    """排队器对 worker 的**鸭子类型契约**（结构化子类型）。
+
+    为什么用 Protocol 而不是真基类：各 worker（``SourceThumbnailsWorker`` /
+    ``HashWorker`` / ``CopyFilesWorker`` …）本来就都是独立的 ``QObject`` 子类，
+    信号签名各不相同（``finished(str)`` / ``finished(str, int)`` …），硬拉一个
+    基类只会污染它们。而排队器真正用到的只有这几项——``moveToThread`` /
+    ``run`` / 那几个信号 / 可选的 ``cancel`` 与 ``wait_copy``，都是既有实现里
+    已经满足的。
+
+    ⚠️ 写成 ``QObject`` 时类型检查器只会看到基类那套 API，``worker.run`` /
+    ``worker.finished`` 这些就全成了「未知属性」——这就是本协议存在的意义。
+    """
+
+    # ⚠️ 签名与 Qt 的 ``QObject.moveToThread`` 保持一致：``thread`` 是位置参数、
+    #    返回 ``bool``。写成 ``(self, thread: QThread) -> None`` 会让所有真 worker
+    #    （继承自 QObject）被判成不满足协议。
+    def moveToThread(self, thread: QThread, /) -> bool: ...
+    def deleteLater(self) -> None: ...
+    def run(self) -> None: ...
+
+    #: 下面几项都是 PySide6 的 ``SignalInstance``（connect/emit/disconnect）。
+    finished: Any
+    failed: Any
+    progress: Any
 
 
 class _Job(NamedTuple):
@@ -41,7 +68,7 @@ class _Job(NamedTuple):
     job，而不是把整个队列一刀切（见 `cancel_tag`）。
     """
 
-    worker: QObject
+    worker: JobWorker
     label: str
     callbacks: dict
     tag: str | None = None
@@ -75,7 +102,7 @@ class SerialJobQueue(QObject):
         #: 待跑的 job（见 _Job）
         self._pending: deque[_Job] = deque()
         self._thread: QThread | None = None
-        self._worker: QObject | None = None
+        self._worker: JobWorker | None = None
         self._label = ""
         #: 正在跑的 job 的 tag（用于按任务取消，见 cancel_tag）
         self._running_tag: str | None = None
@@ -89,7 +116,7 @@ class SerialJobQueue(QObject):
     # ------------------------------------------------------------ 对外接口
     def submit(
         self,
-        worker: QObject,
+        worker: JobWorker,
         label: str = "",
         on_warning=None,
         on_failed=None,
@@ -152,7 +179,7 @@ class SerialJobQueue(QObject):
         worker, thread = self._worker, self._thread
         if worker is not None and hasattr(worker, "cancel"):
             # 缩略图渲染循环会在下一页开头退出（单页最长约一两百毫秒）
-            worker.cancel()
+            worker.cancel()  # type: ignore[attr-defined]  # cancel 是可选能力，故走 hasattr 门
         # 复制线程是 daemon，cancel() 打不断它；worker 自己会在收手时短暂 join
         # 一下（否则 .part 文件还开着，rmtree 照样失败）。
         waiter = getattr(worker, "wait_copy", None)
@@ -176,7 +203,7 @@ class SerialJobQueue(QObject):
         self._gated = False
         worker, thread = self._worker, self._thread
         if worker is not None and hasattr(worker, "cancel"):
-            worker.cancel()
+            worker.cancel()  # type: ignore[attr-defined]  # 同上：可选能力
         if thread is not None:
             thread.quit()
             thread.wait(wait_ms)
@@ -203,12 +230,16 @@ class SerialJobQueue(QObject):
         worker.failed.connect(thread.quit)
         if hasattr(worker, "cancelled"):
             # 取消也是终态：worker 在循环边界收手时必须能退出线程事件循环
-            worker.cancelled.connect(thread.quit)
+            worker.cancelled.connect(thread.quit)  # type: ignore[attr-defined]  # 可选能力，走 hasattr 门
         thread.finished.connect(worker.deleteLater)
         # 子线程 emit → 排队回主线程再弹 toast（闭包必须走 connect_queued）
         on_warning = callbacks.get("warning")
         if on_warning is not None and hasattr(worker, "warning"):
-            self._relays.append(connect_queued(self, worker.warning, on_warning, thread))
+            self._relays.append(
+                connect_queued(
+                    self, worker.warning, on_warning, thread  # type: ignore[attr-defined]  # warning 是可选能力，走 hasattr 门
+                )
+            )
         on_failed = callbacks.get("failed")
         if on_failed is not None:
             self._relays.append(connect_queued(self, worker.failed, on_failed, thread))

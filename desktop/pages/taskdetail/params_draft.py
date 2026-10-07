@@ -20,14 +20,27 @@
 from __future__ import annotations
 
 from functools import partial
+from typing import TYPE_CHECKING, Callable, cast
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QObject, QTimer
+from PySide6.QtWidgets import QStackedWidget
 
 from desktop.steps.spec import FLOW_STAGES
+
+if TYPE_CHECKING:
+    from desktop.store.store import TaskStore
 
 
 class ParamDraftMixin:
     """依赖宿主提供：store、task_id、control_stack。"""
+
+    if TYPE_CHECKING:
+        # 宿主 TaskDetailPage（或同级 Mixin）提供的属性/方法：Mixin 本体不持有，
+        # 这里只做类型声明（类级注解、无赋值），运行时零副作用。
+        store: TaskStore
+        task_id: str | None
+        control_stack: QStackedWidget
+        stage_at_stack_index: Callable[[int], str | None]
 
     # 编辑防抖：边距/颜色/跳过页都是逐字符输入，每敲一下就写盘没必要
     _DRAFT_DEBOUNCE_MS = 400
@@ -43,7 +56,9 @@ class ParamDraftMixin:
         才钉住两者相等）。
         """
         self._draft_dirty: set[int] = set()
-        self._draft_timer = QTimer(self)
+        # ⚠️ Mixin 本体是普通类，类型检查器看不到宿主是 QObject，故收窄后当
+        #    QTimer 的 parent 用（运行时是恒等）。
+        self._draft_timer = QTimer(cast(QObject, self))
         self._draft_timer.setSingleShot(True)
         self._draft_timer.setInterval(self._DRAFT_DEBOUNCE_MS)
         self._draft_timer.timeout.connect(self._flush_param_drafts)
@@ -83,7 +98,9 @@ class ParamDraftMixin:
             return False
         panel = self.control_stack.widget(index)
         try:
-            params = panel.get_args()
+            # ``get_args`` 是各阶段面板自己的方法（QWidget 类型里没有），用
+            # getattr 取；取不到时抛 AttributeError，同样落到下面的兜底分支。
+            params = getattr(panel, "get_args")()
         except Exception:  # 颜色/边距填到一半：保留上一份有效暂存
             return False
         stage = self.stage_at_stack_index(index)

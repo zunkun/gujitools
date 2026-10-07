@@ -48,7 +48,7 @@ TITLE = "图片编辑弹窗（裁剪/变换/擦除/文字）"
 def make_image(width: int, height: int):
     from PySide6.QtGui import QColor, QImage
 
-    image = QImage(width, height, QImage.Format_ARGB32)
+    image = QImage(width, height, QImage.Format.Format_ARGB32)
     image.fill(QColor("#ffffff"))
     return image
 
@@ -56,6 +56,13 @@ def make_image(width: int, height: int):
 def is_dark(color) -> bool:
     """足够深的像素（文字/黑笔刷落点，抗锯齿边缘不算）。"""
     return color.red() < 100 and color.green() < 100 and color.blue() < 100
+
+
+def canvas_img(canvas):
+    """取画布当前图（``canvas.image`` 声明为可空，但本文件用例都在有图态访问）。"""
+    img = canvas.image
+    assert img is not None  # 编辑过程中画布必有图
+    return img
 
 
 def run(ctx) -> None:
@@ -125,8 +132,8 @@ def run(ctx) -> None:
     dialog = ImageEditorDialog(None, img)
     try:
         ok("弹窗：编辑画布装入了整图",
-           dialog.canvas.image.width() == 200
-           and dialog.canvas.image.height() == 120, "")
+           canvas_img(dialog.canvas).width() == 200
+           and canvas_img(dialog.canvas).height() == 120, "")
 
         # ---- 弹窗开大 + 最小化/最大化/关闭按钮 + 工具按钮选中高亮 ----
         # ⚠️ 期望 1440×940 只是**上限**：落地尺寸会被 apply_window_size 夹进
@@ -140,6 +147,7 @@ def run(ctx) -> None:
         )
 
         area = available_area(dialog)
+        assert area is not None  # 离屏环境下可用区域总能取到
         expect_w = min(EDITOR_SIZE.width(),
                        int((area.width() - FRAME_ALLOWANCE.width()) * FIT_RATIO))
         expect_h = min(EDITOR_SIZE.height(),
@@ -149,9 +157,9 @@ def run(ctx) -> None:
            dialog.width() == expect_w and dialog.height() == expect_h
            and dialog.width() <= area.width()
            and dialog.height() + FRAME_ALLOWANCE.height() <= area.height()
-           and bool(dialog.windowFlags() & Qt.WindowMinimizeButtonHint)
-           and bool(dialog.windowFlags() & Qt.WindowMaximizeButtonHint)
-           and bool(dialog.windowFlags() & Qt.WindowCloseButtonHint),
+           and bool(dialog.windowFlags() & Qt.WindowType.WindowMinimizeButtonHint)
+           and bool(dialog.windowFlags() & Qt.WindowType.WindowMaximizeButtonHint)
+           and bool(dialog.windowFlags() & Qt.WindowType.WindowCloseButtonHint),
            f"size={dialog.width()}x{dialog.height()} 期望={expect_w}x{expect_h} "
            f"可用区={area.width()}x{area.height()} "
            f"flags={hex(int(dialog.windowFlags()))}")
@@ -269,7 +277,9 @@ def run(ctx) -> None:
         ok("裁剪：松手后视图自动放大到新选区",
            canvas._zoom > zoom_before,
            f"zoom {zoom_before:.2f} -> {canvas._zoom:.2f}")
-        sel_view = canvas.mapFromScene(canvas.selection()).boundingRect()
+        sel_sel = canvas.selection()
+        assert sel_sel is not None  # 裁剪态必有选区
+        sel_view = canvas.mapFromScene(sel_sel).boundingRect()
         vp = canvas.viewport().rect()
         ok("裁剪：适配选区后四周留白（选区约占 80% 视口，不顶边）",
            sel_view.width() < vp.width() and sel_view.height() < vp.height(),
@@ -279,6 +289,7 @@ def run(ctx) -> None:
         # ---- 悬停反馈：光标形态 + 边界高亮（用户 20:28 定） ----
         app.processEvents()
         sel_now = canvas.selection()
+        assert sel_now is not None  # 裁剪态必有选区
         hover_l = QPointF(canvas.mapFromScene(QPointF(
             sel_now.left() - 1.0, sel_now.center().y())))
         canvas.mouseMoveEvent(mouse_event("move", hover_l))
@@ -334,7 +345,7 @@ def run(ctx) -> None:
            dialog._option_page is not None
            and dialog._option_page.y()
            >= dialog.undo_btn.y() + dialog.undo_btn.height(),
-           f"page.y={dialog._option_page.y()} "
+           f"page.y={dialog._option_page.y() if dialog._option_page else None} "
            f"undo.bottom={dialog.undo_btn.y() + dialog.undo_btn.height()}")
         # 回归（2026-09-30 用户截图）：__init__ 里 _set_tool 被调两次，
         # 被遗弃的旧选项页以默认几何 (0,0,100,30) 悬在左上角盖住撤销按钮
@@ -363,22 +374,22 @@ def run(ctx) -> None:
         dialog.canvas._rect = QRectF(0, 0, 100, 120)
         dialog._apply_crop()
         ok("裁剪：应用后画布尺寸 = 选区尺寸",
-           dialog.canvas.image.width() == 100
-           and dialog.canvas.image.height() == 120, "")
+           canvas_img(dialog.canvas).width() == 100
+           and canvas_img(dialog.canvas).height() == 120, "")
         ok("裁剪：应用（换图）后裁剪区重新默认全选新图",
            dialog.canvas.selection() == dialog.canvas.image_rect(),
            f"sel={dialog.canvas.selection()}")
         dialog._undo_now()
         ok("撤销：裁剪被完整回退",
-           dialog.canvas.image.width() == 200
-           and dialog.canvas.image.height() == 120, "")
+           canvas_img(dialog.canvas).width() == 200
+           and canvas_img(dialog.canvas).height() == 120, "")
         dialog._redo_now()
-        ok("重做：裁剪被重新应用", dialog.canvas.image.width() == 100, "")
+        ok("重做：裁剪被重新应用", canvas_img(dialog.canvas).width() == 100, "")
         dialog._reset_all()
-        ok("还原：回到打开时的图", dialog.canvas.image.width() == 200, "")
+        ok("还原：回到打开时的图", canvas_img(dialog.canvas).width() == 200, "")
         dialog._undo_now()
         ok("还原本身可撤销：回到还原前的裁剪结果",
-           dialog.canvas.image.width() == 100, "")
+           canvas_img(dialog.canvas).width() == 100, "")
 
         # 栈深上限
         for _ in range(20):
@@ -398,7 +409,7 @@ def run(ctx) -> None:
             # 真实一笔 = 先发 stroke_started（压撤销点）再擦
             dialog2.canvas.stroke_started.emit()
             dialog2.canvas._erase_at(QPointF(100, 60), QPointF(120, 60))
-            wiped = dialog2.canvas.image.pixelColor(100, 60)
+            wiped = canvas_img(dialog2.canvas).pixelColor(100, 60)
             ok("擦除：橡皮擦涂过的污点被擦成白底", wiped.value() > 230,
                f"pixel={wiped.value()}")
             ok("擦除：一笔开始压了撤销点（stroke_started 接线）",
@@ -466,7 +477,7 @@ def run(ctx) -> None:
 
             undo_before = len(dialog3._undo)
             dialog3._commit_text_blocks()
-            burned = dialog3.canvas.image
+            burned = canvas_img(dialog3.canvas)
             has_dark = any(
                 is_dark(burned.pixelColor(x, y))
                 for y in range(40, 130, 3) for x in range(60, 200, 3)
@@ -501,7 +512,9 @@ def run(ctx) -> None:
             from desktop.ui.fonts import LATIN_TEXT_FONTS, text_font_families
 
             dialog3._set_tool("text")
-            combo = dialog3._option_page.findChild(ComboBox)
+            _op3 = dialog3._option_page
+            assert _op3 is not None  # 文字工具的选项行必然已建
+            combo = _op3.findChild(ComboBox)
             texts = ([combo.itemText(i) for i in range(combo.count())]
                      if combo is not None else [])
             latin_here = [t for t in texts if t in LATIN_TEXT_FONTS]
@@ -525,13 +538,14 @@ def run(ctx) -> None:
 
             from desktop.components.viewers.image_editor import TEXT_SWATCHES
 
-            picker = dialog3._option_page.findChild(GujiColorPicker)
+            picker = _op3.findChild(GujiColorPicker)
             ok("文字：选项行是一个颜色按钮（色点 + 十六进制 + 下拉）",
                picker is not None
                and picker.color().name() == dialog3._text_color,
                f"picker={picker}")
+            assert picker is not None  # 上一条 ok 已断言颜色按钮存在
             ok("文字：常用色块不再散在选项行上（已搬进选择器面板）",
-               dialog3._option_page.findChildren(SwatchButton) == [], "")
+               _op3.findChildren(SwatchButton) == [], "")
             styled = canvas3.add_text_block(
                 QPointF(150, 110), 48, QColor("#000000"), "SimSun")
             styled.setPlainText("样式块")
@@ -544,6 +558,7 @@ def run(ctx) -> None:
                panel is not None and len(swatches) == len(TEXT_SWATCHES)
                and all(s.toolTip() for s in swatches),
                f"n={len(swatches)}")
+            assert panel is not None  # 上一条 ok 已断言面板存在
             zhu = next(s for s in swatches
                        if s.color().name().lower() == "#d32f2f")
             dialog3._text_color = "#000000"
@@ -570,6 +585,7 @@ def run(ctx) -> None:
             if target_family is None or target_family == "SimSun":
                 others = [t for t in texts if t != "SimSun"]
                 target_family = others[-1] if others else None
+            assert combo is not None  # 上一条 ok 已断言字体下拉存在
             combo.setCurrentIndex(max(0, combo.findData(target_family)))
             app.processEvents()
             ok("文字：换字体对整块即时生效（整体切换，非逐字；"
@@ -585,11 +601,14 @@ def run(ctx) -> None:
             # 找块的样式改动全部落空。样式现在走"当前样式块"，与焦点解耦。
             from qfluentwidgets import Slider as FluentSlider
 
-            size_slider = dialog3._option_page.findChild(FluentSlider)
+            _op3b = dialog3._option_page
+            assert _op3b is not None  # 文字工具的选项行必然已建
+            size_slider = _op3b.findChild(FluentSlider)
             ok("回归：字号滑杆是 NoFocus（拖动不抢画布焦点、光标不丢）",
                size_slider is not None
                and size_slider.focusPolicy() == Qt.FocusPolicy.NoFocus,
                f"policy={size_slider.focusPolicy() if size_slider else None}")
+            assert size_slider is not None  # 上一条 ok 已断言滑杆存在
             # ⚠️ 必须真显示弹窗：控件焦点只在真窗口里才生效（不显示时
             #    setFocus 是空操作，场景焦点项也不会被清）
             dialog3.show()
@@ -712,13 +731,16 @@ def run(ctx) -> None:
             app.processEvents()
             app.processEvents()
             canvas4.mousePressEvent(mouse_event("press", vpos(QPointF(160, 60))))
+            _paint = canvas4._paint_image
+            _base = canvas4._image
+            assert _paint is not None and _base is not None  # 进入预览态后浮层/底图必有
             ok("变换：按下即进入实时预览（底图填白 + 浮层，真像素未动）",
                canvas4._mode is not None and canvas4._mode[0] == "xf_move"
                and canvas4._float_item is not None
-               and canvas4._paint_image.pixelColor(160, 60).value() > 230
-               and canvas4._image.pixelColor(160, 60).value() < 128,
+               and _paint.pixelColor(160, 60).value() > 230
+               and _base.pixelColor(160, 60).value() < 128,
                f"mode={canvas4._mode} "
-               f"paint={canvas4._paint_image.pixelColor(160, 60).value()}")
+               f"paint={_paint.pixelColor(160, 60).value()}")
             canvas4.mouseMoveEvent(mouse_event("move", vpos(QPointF(130, 60))))
             canvas4.mouseReleaseEvent(mouse_event(
                 "release", vpos(QPointF(130, 60))))
@@ -729,7 +751,7 @@ def run(ctx) -> None:
 
             undo_before = len(dialog4._undo)
             dialog4._commit_transform()
-            baked = canvas4.image
+            baked = canvas_img(canvas4)
             # grow：整幅选区左移 30 ⇒ 新画布 = 原图 ∪ 移位后内容，左上角在
             # 原坐标 (−30, 0)，尺寸不变（移位量正好等于外扩量）。新画布里的
             # 坐标 = 原坐标 − origin = 原坐标 + 30。
@@ -762,9 +784,10 @@ def run(ctx) -> None:
             # grow：200×120 全选旋转 90°，内容真占了 120×200 那一整块 ⇒
             # 画布按**内容外框**收成 120×200（不是"原图 ∪ 内容"=200×200）。
             # 老图不要了：旋转后原位早被填白，没理由留着 200×200 的空白。
+            _rotated = canvas_img(canvas4)
             ok("变换：非正方图旋转 90° ⇒ 画布按内容外框收成 120×200",
-               (canvas4.image.width(), canvas4.image.height()) == (120, 200),
-               f"size={canvas4.image.width()}x{canvas4.image.height()}")
+               (_rotated.width(), _rotated.height()) == (120, 200),
+               f"size={_rotated.width()}x{_rotated.height()}")
 
             # 切变：右缘下斜、左缘锚定（尺寸随轮转后的图走，不写死 200×120）
             # 语义见「变换数学：绕锚点切变」——绕 ``rect.top()`` 做 y 随 x 斜切：
@@ -854,7 +877,7 @@ def run(ctx) -> None:
             undo_before = len(dialog5._undo)
             canvas5.transform_scale(0.5, 0.5)  # 区域内容向轴心收缩一半
             dialog5._commit_transform()
-            baked5 = canvas5.image
+            baked5 = canvas_img(canvas5)
             # grow：区域 x∈[0,180) 收缩到 x∈[45,135)（×0.5 绕轴心 90）⇒ 画布
             # 按**内容外框**重裁，左上角落在原坐标 (45, 0)、尺寸 155×120。
             # 新画布坐标 = 原坐标 − 45。折叠块原 150→新 0.5·150=75 处；
@@ -896,8 +919,10 @@ def run(ctx) -> None:
             from qfluentwidgets import ComboBox as _Combo
             from qfluentwidgets import PushButton as _Push
 
-            texts = [b.text() for b in dialog6._option_page.findChildren(_Push)]
-            combos = dialog6._option_page.findChildren(_Combo)
+            _op6 = dialog6._option_page
+            assert _op6 is not None  # 变形工具的选项行必然已建
+            texts = [b.text() for b in _op6.findChildren(_Push)]
+            combos = _op6.findChildren(_Combo)
             ok("变形：选项行有「重置 / 应用变形」按钮与「网格疏密」下拉",
                {"重置", "应用变形"} <= set(texts)
                and len(combos) == 1
@@ -991,14 +1016,18 @@ def run(ctx) -> None:
 
             # 拖动只改被抓的那个钉：另一个钉原地不动
             moved_pins = canvas6.pins()
+            _mesh6 = canvas6._mesh
+            assert _mesh6 is not None  # 放钉后网格必已建立
             ok("变形：只有被拖的图钉动了，其余图钉原地不动",
                len(moved_pins) == 2
                and moved_pins[0][0] != moved_pins[1][0]
-               and abs(moved_pins[1][1].x() - canvas6._mesh[0][moved_pins[1][0]][0])
+               and abs(moved_pins[1][1].x() - _mesh6[0][moved_pins[1][0]][0])
                < 1e-6,
                f"钉位 {[(i, (round(p.x(), 1), round(p.y(), 1))) for i, p in moved_pins]}")
 
-            home6, moved6, _tri6 = canvas6.pins_pending()
+            _pending6 = canvas6.pins_pending()
+            assert _pending6 is not None  # 拖钉后待应用形变必已产生
+            home6, moved6, _tri6 = _pending6
             ok("变形：待应用形变的网格确实动过（rest ≠ moved）",
                float(abs(moved6 - home6).max()) > 0.1,
                f"最大位移 {float(abs(moved6 - home6).max()):.2f}px")
@@ -1023,11 +1052,11 @@ def run(ctx) -> None:
                f"松手={cage_preview_scale(4000, 3000, 1.0, DEFORM_PREVIEW_SETTLE_PIXELS):.3f}")
 
             # 应用：内容跟着图钉走、远处不动、压一个撤销点、图钉留在原地
-            snapshot6 = canvas6.image.copy()
+            snapshot6 = canvas_img(canvas6).copy()
             pins_before6 = [(i, (p.x(), p.y())) for i, p in canvas6.pins()]
             undo_before6 = len(dialog6._undo)
             dialog6._commit_deform()
-            baked6 = dialog6.canvas.image
+            baked6 = canvas_img(dialog6.canvas)
             inside_changed = any(
                 baked6.pixelColor(x, y).rgba() != snapshot6.pixelColor(x, y).rgba()
                 for y in range(0, 120, 2) for x in range(0, 200, 2))
@@ -1052,7 +1081,7 @@ def run(ctx) -> None:
                f"钉 {[(i, (round(p.x(), 1), round(p.y(), 1))) for i, p in dialog6.canvas.pins()]}")
             dialog6._undo_now()
             ok("变形：撤销回到形变前（整图逐字节一致）",
-               all(dialog6.canvas.image.pixelColor(x, y).rgba()
+               all(canvas_img(dialog6.canvas).pixelColor(x, y).rgba()
                    == snapshot6.pixelColor(x, y).rgba()
                    for y in range(0, 120, 2) for x in range(0, 200, 2)),
                f"undo={len(dialog6._undo)}")
@@ -1078,10 +1107,10 @@ def run(ctx) -> None:
 
             # 切走工具自动烘焙（与变换、文字同款口径：不留"未落地"的编辑）
             canvas6.pin_move(0, QPointF(90.0, 100.0))
-            snapshot6b = dialog6.canvas.image.copy()
+            snapshot6b = canvas_img(dialog6.canvas).copy()
             undo_before6c = len(dialog6._undo)
             dialog6._set_tool("crop")
-            baked6b = dialog6.canvas.image
+            baked6b = canvas_img(dialog6.canvas)
             ok("变形：切走工具自动烘焙未应用的形变（压撤销点、像素真的变了）",
                len(dialog6._undo) == undo_before6c + 1
                and dialog6.canvas._tool == "crop"
@@ -1119,8 +1148,10 @@ def run(ctx) -> None:
         from qfluentwidgets import ComboBox as _Combo8
         from qfluentwidgets import PushButton as _Push8
 
-        texts8 = [b.text() for b in dialog8._option_page.findChildren(_Push8)]
-        combos8 = dialog8._option_page.findChildren(_Combo8)
+        _op8 = dialog8._option_page
+        assert _op8 is not None  # 变换笼工具的选项行必然已建
+        texts8 = [b.text() for b in _op8.findChildren(_Push8)]
+        combos8 = _op8.findChildren(_Combo8)
         ok("变换笼：选项行有「重置 / 应用形态」按钮与「把手密度」下拉",
            {"重置", "应用形态"} <= set(texts8)
            and len(combos8) == 1
@@ -1201,7 +1232,9 @@ def run(ctx) -> None:
         ok("变换笼：松手后模式复位、预览保留（松手的是最终结果）",
            canvas8._mode is None and canvas8._cage_preview_item is not None, "")
 
-        src8, dst8 = canvas8.cage_pending()
+        _pending8 = canvas8.cage_pending()
+        assert _pending8 is not None  # 拖把手后待应用形变必已产生
+        src8, dst8 = _pending8
         ok("变换笼：待应用形变的把手确实动过（原位 ≠ 当前位置）",
            any((a - b).manhattanLength() > 1e-6 for a, b in zip(src8, dst8)),
            f"位移 {[(round(b.x() - a.x(), 1), round(b.y() - a.y(), 1)) for a, b in zip(src8, dst8)]}")
@@ -1213,10 +1246,10 @@ def run(ctx) -> None:
            f"{cage_preview_scale(100, 100, 1.0, 200_000)}")
 
         # 应用：局部内容跟着把手走、远处逐字节不动、压一个撤销点、把手留在原位
-        snapshot8 = canvas8.image.copy()
+        snapshot8 = canvas_img(canvas8).copy()
         undo_before8 = len(dialog8._undo)
         dialog8._commit_cage()
-        baked8 = dialog8.canvas.image
+        baked8 = canvas_img(dialog8.canvas)
         changed8 = any(baked8.pixelColor(x, y).rgba()
                        != snapshot8.pixelColor(x, y).rgba()
                        for y in range(0, 120, 2) for x in range(0, 200, 2))
@@ -1239,7 +1272,7 @@ def run(ctx) -> None:
            f"把手 {[(round(a.x()), round(a.y())) for a, _b in dialog8.canvas.cage()][:2]}")
         dialog8._undo_now()
         ok("变换笼：撤销回到形变前（整图逐字节一致）",
-           all(dialog8.canvas.image.pixelColor(x, y).rgba()
+           all(canvas_img(dialog8.canvas).pixelColor(x, y).rgba()
                == snapshot8.pixelColor(x, y).rgba()
                for y in range(0, 120, 2) for x in range(0, 200, 2)),
            f"undo={len(dialog8._undo)}")
@@ -1248,10 +1281,10 @@ def run(ctx) -> None:
         dialog8._set_tool("cage")
         c0 = dialog8.canvas.cage()[0][1]
         dialog8.canvas.cage_move(0, QPointF(c0.x() + 20, c0.y() + 20))
-        snapshot8b = dialog8.canvas.image.copy()
+        snapshot8b = canvas_img(dialog8.canvas).copy()
         undo_before8c = len(dialog8._undo)
         dialog8._set_tool("crop")
-        baked8b = dialog8.canvas.image
+        baked8b = canvas_img(dialog8.canvas)
         ok("变换笼：切走工具自动烘焙未应用的形变（压撤销点、像素真的变了）",
            len(dialog8._undo) == undo_before8c + 1
            and dialog8.canvas._tool == "crop"
@@ -1288,9 +1321,12 @@ def run(ctx) -> None:
         box = gcanvas._preview_cutout
         ok("重影修复（笼）：预览时底图上确实挖了框",
            box is not None and not box.isEmpty(), f"cutout={box}")
+        assert box is not None  # 上一条 ok 已断言挖空框存在
+        _pitem = gcanvas._item
+        assert _pitem is not None  # 预览浮层刷新后必然已建
         # 挖空框内应当是纯白（源图不透明 ⇒ 填白），而不是原来的浅灰
         cx, cy = box.center().x(), box.center().y()
-        center = gcanvas._item.pixmap().toImage().pixelColor(int(cx), int(cy))
+        center = _pitem.pixmap().toImage().pixelColor(int(cx), int(cy))
         ok("重影修复（笼）：挖空框内是纯白（旧像素不再透出）",
            (center.red(), center.green(), center.blue()) == (255, 255, 255),
            f"中心色 {center.red(), center.green(), center.blue()}")
@@ -1302,7 +1338,7 @@ def run(ctx) -> None:
            f"cutout={box} 原图={gimg.width()}x{gimg.height()}")
         # 清预览 → 回填：中心恢复浅灰（不留白洞）
         gcanvas._clear_cage_preview()
-        restored = gcanvas._item.pixmap().toImage().pixelColor(int(cx), int(cy))
+        restored = _pitem.pixmap().toImage().pixelColor(int(cx), int(cy))
         ok("重影修复（笼）：清预览后底图回填（不留白洞）",
            (restored.red(), restored.green(), restored.blue()) == (232, 232, 232)
            and gcanvas._preview_cutout is None,
@@ -1319,13 +1355,16 @@ def run(ctx) -> None:
         dbox = gcanvas._preview_cutout
         ok("重影修复（变形）：预览时底图上确实挖了框",
            dbox is not None and not dbox.isEmpty(), f"cutout={dbox}")
+        assert dbox is not None  # 上一条 ok 已断言挖空框存在
+        _ditem = gcanvas._item
+        assert _ditem is not None  # 预览浮层刷新后必然已建
         dcx, dcy = dbox.center().x(), dbox.center().y()
-        dcenter = gcanvas._item.pixmap().toImage().pixelColor(int(dcx), int(dcy))
+        dcenter = _ditem.pixmap().toImage().pixelColor(int(dcx), int(dcy))
         ok("重影修复（变形）：挖空框内是纯白（旧像素不再透出）",
            (dcenter.red(), dcenter.green(), dcenter.blue()) == (255, 255, 255),
            f"中心色 {dcenter.red(), dcenter.green(), dcenter.blue()}")
         gcanvas._clear_deform_preview()
-        drestored = gcanvas._item.pixmap().toImage().pixelColor(int(dcx), int(dcy))
+        drestored = _ditem.pixmap().toImage().pixelColor(int(dcx), int(dcy))
         ok("重影修复（变形）：清预览后底图回填（不留白洞）",
            (drestored.red(), drestored.green(), drestored.blue())
            == (232, 232, 232) and gcanvas._preview_cutout is None,
@@ -1342,7 +1381,9 @@ def run(ctx) -> None:
         ok("重影修复：透明源图判定为『有透明像素』",
            tcanvas._has_alpha() is True, "")
         tcanvas._paint_canvas_cutout(QRect(0, 0, 120, 80))
-        ta = tcanvas._item.pixmap().toImage().pixelColor(60, 20)
+        _titem = tcanvas._item
+        assert _titem is not None  # 挖空后浮层必然已建
+        ta = _titem.pixmap().toImage().pixelColor(60, 20)
         ok("重影修复：透明源图挖空填透明（保持白底透明 PNG 不成白块）",
            ta.alpha() == 0, f"alpha={ta.alpha()}")
     finally:
@@ -1371,8 +1412,10 @@ def run(ctx) -> None:
         from qfluentwidgets import ComboBox as _C7
         from qfluentwidgets import PushButton as _P7
 
-        texts7 = [b.text() for b in dialog7._option_page.findChildren(_P7)]
-        combos7 = dialog7._option_page.findChildren(_C7)
+        _op7 = dialog7._option_page
+        assert _op7 is not None  # 校正工具的选项行必然已建
+        texts7 = [b.text() for b in _op7.findChildren(_P7)]
+        combos7 = _op7.findChildren(_C7)
         ok("校正：选项行有「重置 / 应用校正」按钮与「目标尺寸」下拉",
            {"重置", "应用校正"} <= set(texts7)
            and len(combos7) == 1
@@ -1427,10 +1470,10 @@ def run(ctx) -> None:
         canvas7.quad_move(1, QPointF(75.0, 5.0))
         canvas7.quad_move(2, QPointF(145.0, 118.0))
         canvas7.quad_move(3, QPointF(80.0, 118.0))
-        size_before7 = (canvas7.image.width(), canvas7.image.height())
+        size_before7 = (canvas_img(canvas7).width(), canvas_img(canvas7).height())
         undo_before7 = len(dialog7._undo)
         dialog7._commit_rectify()
-        baked7 = dialog7.canvas.image
+        baked7 = canvas_img(dialog7.canvas)
         ok("校正：应用后整图被替换成摆正图（尺寸变为目标矩形）",
            (baked7.width(), baked7.height()) != size_before7
            and baked7.width() > 0 and baked7.height() > 0,
@@ -1446,9 +1489,9 @@ def run(ctx) -> None:
            f"四角 {[(round(p.x()), round(p.y())) for p in dialog7.canvas.quad()]}")
         dialog7._undo_now()
         ok("校正：撤销回到校正前（尺寸与像素都还原）",
-           (dialog7.canvas.image.width(), dialog7.canvas.image.height())
+           (canvas_img(dialog7.canvas).width(), canvas_img(dialog7.canvas).height())
            == size_before7,
-           f"undo 后 {dialog7.canvas.image.width()}×{dialog7.canvas.image.height()}")
+           f"undo 后 {canvas_img(dialog7.canvas).width()}×{canvas_img(dialog7.canvas).height()}")
 
         # 切走工具自动烘焙
         canvas7.quad_move(1, QPointF(190.0, 20.0))
@@ -1477,6 +1520,7 @@ def run(ctx) -> None:
         )
 
         zoom_area = available_area(zoom)
+        assert zoom_area is not None  # 离屏环境下可用区域总能取到
         zoom_w = min(ZOOM_DIALOG_SIZE.width(),
                      int((zoom_area.width() - FRAME_ALLOWANCE.width()) * FIT_RATIO))
         ok("预览弹窗：宽度取满（理想 1360，超出屏幕时夹进可用区域）",
@@ -1487,11 +1531,14 @@ def run(ctx) -> None:
         zoom._sync_controls()
         ok("预览弹窗：有图时编辑按钮可用", zoom.edit_btn.isEnabled(), "")
         source = zoom.canvas.export_image()
+        assert source is not None  # 刚 set 过图，导出必有
         editor = zoom._open_editor(source)
         ok("预览弹窗：_open_editor 拿到画布整图",
            editor is not None
+           and editor.canvas.image is not None
            and editor.canvas.image.width() == source.width()
            and editor.canvas.image.height() == source.height(), "")
+        assert editor is not None  # 上一条 ok 已断言编辑器打开成功
         ok("预览弹窗：编辑器以弹窗为父（生命周期跟随）",
            editor.parent() is zoom, "")
         editor.deleteLater()
@@ -1499,8 +1546,10 @@ def run(ctx) -> None:
         # 编辑结果写回：set_image 通道替换画布图（_edit_image 内同款调用）
         edited = make_image(30, 20)
         zoom.canvas.set_image(edited)
+        _written_back = zoom.canvas.export_image()
+        assert _written_back is not None  # 刚 set 过图，导出必有
         ok("预览弹窗：编辑结果写回后画布就是新图",
-           zoom.canvas.export_image().width() == 30, "")
+           _written_back.width() == 30, "")
         zoom._sync_controls()
     finally:
         zoom.deleteLater()

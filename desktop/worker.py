@@ -90,7 +90,9 @@ def _prepare_process() -> None:
     for stream in (sys.stdout, sys.stderr, sys.__stdout__, sys.__stderr__):
         if stream is not None and hasattr(stream, "reconfigure"):
             try:
-                stream.reconfigure(encoding="utf-8", errors="replace")
+                # ``reconfigure`` 是 TextIOWrapper 的扩展 API，类型存根里没有，
+                # 故走 getattr（hasattr 已保证存在）。
+                getattr(stream, "reconfigure")(encoding="utf-8", errors="replace")
             except (ValueError, OSError):
                 pass
 

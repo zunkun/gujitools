@@ -135,6 +135,8 @@ def _probe_file(path: str) -> tuple[str, bool] | None:
                 cmap = font.getBestCmap()
             except Exception:
                 continue
+            # getBestCmap 可能返回 None（无 cmap 表）：此时按原行为抛错跳过该字体
+            assert cmap is not None
             if all(code in cmap for code in _PROBE_CODEPOINTS):
                 has_cjk = True
             if not display:

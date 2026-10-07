@@ -21,6 +21,13 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+# 测试临时文件统一落点（见 tests/tmpdir.py）：本模块被运行器与**每个**用例
+# 模块导入，在这里装一次即可覆盖整轮自测（含 worker 子进程）。
+# ⚠️ 必须早于任何 tempfile 调用——gettempdir() 算过就缓存，晚了不生效。
+from tests.tmpdir import install as _install_tmpdir  # noqa: E402
+
+_install_tmpdir()
+
 PASS = 0
 
 
@@ -165,6 +172,16 @@ def painted_color(widget) -> tuple[int, int, int] | None:
     return (best.red(), best.green(), best.blue()) if best is not None else None
 
 
+def rgb3(color) -> tuple[int, ...]:
+    """取一个 QColor 的 (r, g, b) 三个分量（丢掉 alpha）。
+
+    ⚠️ PySide6 的 ``QColor.getRgb()`` 注解写成 ``-> object``（其实返回 4 元组），
+    这里收口一次，免得每处切片都写 ``cast``。
+    """
+    r, g, b, _a = color.getRgb()
+    return (r, g, b)
+
+
 def is_reddish(rgb: tuple[int, int, int] | None, margin: int = 40) -> bool:
     """这个颜色算不算"红字"（红通道明显高于绿蓝）。
 
@@ -202,14 +219,13 @@ class Context:
 
     def prepare(self) -> None:
         """构建 QApplication + 主窗口，并把数据目录重定向到临时目录。"""
-        import tempfile
-
         from PySide6.QtWidgets import QApplication
 
         from desktop.app import MainWindow
         from desktop.store import TaskStore
+        from tests.tmpdir import temp_dir
 
-        self.tmp = Path(tempfile.mkdtemp(prefix="guji_selftest_"))
+        self.tmp = temp_dir("guji_selftest_")
         print(f"工作目录：{self.tmp}")
         self.pdf = make_pdf(self.tmp / "古籍样例.pdf", 6)
         self.big_pdf = make_pdf(self.tmp / "大部头.pdf", 80)

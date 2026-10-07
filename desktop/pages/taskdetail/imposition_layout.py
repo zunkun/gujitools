@@ -29,12 +29,18 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, Callable, cast
 
 from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import QWidget
 
 from desktop.services.imposition import (
     FILE_FMT, cn_page_label, default_items, page_source_stems, single_items,
 )
+
+if TYPE_CHECKING:
+    from desktop.store.store import TaskStore
+
 #: 版面改动 → 后台重新合成落盘的防抖（拖动会连续改版面）
 COMPOSE_DEBOUNCE_MS = 500
 #: 旋转组件（滑块/输入框）连续吐增量 → 停顿多久算"改完了"再统一落盘
@@ -43,6 +49,26 @@ EDIT_COMMIT_DEBOUNCE_MS = 250
 
 class ImpositionLayoutMixin:
     """拼版版面操作（模块二）：旋转/复位、版面落盘、防抖后台合成。"""
+
+    if TYPE_CHECKING:
+        # 宿主 TaskDetailPage 提供的属性（store/task_id/log_view/run_worker/window）
+        # 与同级 Mixin 共享的基元（ImpositionBaseMixin 那一组）：本 Mixin 本体不
+        # 持有，只做类型声明（类级注解、无赋值），运行时零副作用。
+        store: TaskStore
+        task_id: str | None
+        log_view: Any  # 宿主 log_panel 里的 QTextEdit（.append 取用）
+        run_worker: Callable[..., Any]
+        window: Callable[[], Any]
+        _toast: Callable[..., None]
+        _imposition_pages: Callable[[], list]
+        _imposition_doc: Callable[[], dict[str, Any]]
+        _imposition_switch_state: Any  # 拼版启用开关控件
+        _refresh_print_source: Callable[..., None]
+        _save_imposition_pages: Callable[..., None]
+        _on_page_image_saved: Callable[..., None]
+        imposition_active: Callable[[], bool]
+        imposition_effective: Callable[[], bool]
+        imposition_has_pages: Callable[[], bool]
 
     # ------------------------------------------------------------- 版面操作
     def _on_imposition_whole_rotate(self, delta: float) -> None:
@@ -313,10 +339,9 @@ class ImpositionLayoutMixin:
         right = stems[0] if stems else ""
         left = stems[1] if len(stems) > 1 else ""
         edit_path = None
-        if getattr(self, "task_id", None) and not getattr(
-            self, "_imposition_dirty", False
-        ):
-            output = self.store.imposition_output_dir(self.task_id) / (
+        task_id = getattr(self, "task_id", None)
+        if task_id and not getattr(self, "_imposition_dirty", False):
+            output = self.store.imposition_output_dir(task_id) / (
                 FILE_FMT.format(page_index + 1)
             )
             if output.is_file():
@@ -458,11 +483,17 @@ class ImpositionLayoutMixin:
         )
 
     def _on_imposition_spread_edit_ready(self, page_index: int, image,
-                                         owner_task: str) -> None:
+                                         owner_task: str | None) -> None:
         """组合图合成完毕（主线程）：开编辑器，「完成」写回成品文件。"""
         from PySide6.QtWidgets import QDialog
 
-        if owner_task != self.task_id or image is None or image.isNull():
+        task_id = self.task_id
+        if (
+            owner_task != task_id
+            or image is None
+            or image.isNull()
+            or task_id is None
+        ):
             return
         from desktop.components.viewers.image_editor import ImageEditorDialog
         from desktop.components.viewers.image_zoom_dialog import (
@@ -470,7 +501,7 @@ class ImpositionLayoutMixin:
         )
 
         target = (
-            self.store.imposition_output_dir(self.task_id)
+            self.store.imposition_output_dir(task_id)
             / FILE_FMT.format(page_index + 1)
         )
         editor = ImageEditorDialog(self.window(), image, save_back=True)
@@ -508,8 +539,8 @@ class ImpositionLayoutMixin:
         if image is None or image.isNull():
             return
         path = Path(path_text)
-        if getattr(self, "task_id", None) and path.parent == \
-                self.store.imposition_output_dir(self.task_id):
+        task_id = getattr(self, "task_id", None)
+        if task_id and path.parent == self.store.imposition_output_dir(task_id):
             timer = getattr(self, "_imposition_timer", None)
             if timer is not None:
                 timer.stop()
@@ -605,12 +636,14 @@ class ImpositionLayoutMixin:
         """建防抖定时器（页面构造期一次）。"""
         self._imposition_dirty = False
         self._imposition_composing = False
-        self._imposition_timer = QTimer(self)
+        # ⚠️ Mixin 本体是普通类，类型检查器看不到宿主（TaskDetailPage）是 QWidget，
+        #    故把 self 收窄成 QWidget 再当 QTimer 的 parent 用；运行时是恒等。
+        self._imposition_timer = QTimer(cast(QWidget, self))
         self._imposition_timer.setSingleShot(True)
         self._imposition_timer.setInterval(COMPOSE_DEBOUNCE_MS)
         self._imposition_timer.timeout.connect(self._compose_imposition_async)
         # 旋转组件的停顿提交计时器（滑块连续吐增量期间只转画布，停手才落盘）
-        self._imposition_edit_timer = QTimer(self)
+        self._imposition_edit_timer = QTimer(cast(QWidget, self))
         self._imposition_edit_timer.setSingleShot(True)
         self._imposition_edit_timer.setInterval(EDIT_COMMIT_DEBOUNCE_MS)
         self._imposition_edit_timer.timeout.connect(self._commit_imposition_edit)

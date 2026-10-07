@@ -116,9 +116,11 @@ def run(ctx) -> None:
         #    定的「PDF图片提取」等，导航是短标签、页头是完整标题），两者
         #    **有意不同**。这条断言守住的是"各自都来自 spec，没有第二份
         #    硬编码文案"，而不是"两处字面相同"。
+        _spec = spec_by_key(module.key)
+        assert _spec is not None
         ok(
             f"模块 {module.key} 页头标题来自 spec.title",
-            getattr(page, "TITLE", None) == spec_by_key(module.key).title,
+            getattr(page, "TITLE", None) == _spec.title,
             str(getattr(page, "TITLE", None)),
         )
         # 用户 2026-10-02 要的"页面上的大输入框"：每个模块都要有，且横跨整幅
@@ -353,6 +355,9 @@ def _check_singletask_thumbnails(ctx, ok) -> None:
     from tests.selftests._context import make_pdf
 
     spec = spec_by_key("extract")
+    assert spec is not None            # ⚠️ 步骤表里一定有「图片提取」这一项
+    rembg_spec = spec_by_key("rembg")
+    assert rembg_spec is not None      # ⚠️ 同上
     # 真造一本 PDF，喂给真实的图片提取页
     pdf = make_pdf(Path(ctx.tmp) / "singletask_probe.pdf", 3)
     other = make_pdf(Path(ctx.tmp) / "singletask_other.pdf", 2)
@@ -366,7 +371,7 @@ def _check_singletask_thumbnails(ctx, ok) -> None:
     ok("不同子任务各有自己的目录",
        # ⚠️ 用另一个步骤的 disk_key（不是它的 title）：目录名锚在路由键上。
        cache != extract_thumbs_dir(
-           spec_by_key("rembg").disk_key(), pdf, THUMBNAIL_EDGE))
+           rembg_spec.disk_key(), pdf, THUMBNAIL_EDGE))
     # ⚠️ 这一条是"不同书不共用缓存"的护栏：缩略图文件名是**序号**，共用目录会
     #    让 A 书第 1 页被当成 B 书第 1 页的命中缓存 ⇒ 翻出别本书的内容。
     other_dir = extract_thumbs_dir(spec.disk_key(), other, THUMBNAIL_EDGE)
@@ -453,7 +458,7 @@ def _check_singletask_thumbnails(ctx, ok) -> None:
         ok("提取后退出 PDF 页模式（否则点哪页都是同一页）",
            page.viewer._page_source is None, str(page.viewer._page_source))
         ok("提取后左栏换成提取出的图片",
-           [p.name for p in page.viewer.paths] == ["1.jpg", "2.jpg", "3.jpg"],
+           [Path(p).name for p in page.viewer.paths] == ["1.jpg", "2.jpg", "3.jpg"],
            str(page.viewer.paths))
 
         # ---- ⑩c「只保留一份、按序号处理」（用户 2026-10-04）----
@@ -464,19 +469,28 @@ def _check_singletask_thumbnails(ctx, ok) -> None:
         ok("产物缩略图按序号命名（与页缩略图同一个名字）",
            names_arg is not None and list(names_arg)
            == ["0001.jpg", "0002.jpg", "0003.jpg"], str(names_arg))
+        _module_thumb_dir = page._thumb_cache_dir()
+        assert _module_thumb_dir is not None      # ⚠️ 目录已由上面的渲染建出来
+        _viewer_dir = page.viewer._thumb_cache_dir
+        assert _viewer_dir is not None
         ok("提取后缩略图目录仍是那一个（没有第二套目录）",
-           str(Path(page.viewer._thumb_cache_dir)) == str(cache),
-           str(page.viewer._thumb_cache_dir))
+           str(Path(_viewer_dir)) == str(cache),
+           str(_viewer_dir))
         first_target = page.viewer._lookup_thumb_path(str(page.viewer.paths[0]))
         ok("产物 1 的缩略图就是未提取时的 0001.jpg（同一个文件）",
            first_target is not None and Path(first_target) == cache / "0001.jpg",
            str(first_target))
         ok("旧的按图键目录不再是提取页的目标目录",
-           str(page._thumb_cache_dir()) != str(cache),
-           str(page._thumb_cache_dir()))
+           str(_module_thumb_dir) != str(cache),
+           str(_module_thumb_dir))
+        # ⚠️ ``viewer.paths`` 标注成 ``list[Path | str]``，这里按"都是刚写出的
+        #    Path"定死（落盘接口本来就只吃 Path）
+        _product_paths = [Path(p) for p in page.viewer.paths]
+        _map_a = page.write_thumb_map(_product_paths)
+        _map_b = page.write_thumb_map(_product_paths)
+        assert _map_b is not None
         ok("映射表已落盘（序号 ↔ 产物）",
-           page.write_thumb_map(page.viewer.paths) is not None
-           and Path(page.write_thumb_map(page.viewer.paths)).is_file(),
+           _map_a is not None and Path(_map_b).is_file(),
            str(page._thumb_book))
 
         # ---- ⑩d 编辑产物后缩略图要同步（用户 2026-10-04 明确要求）----
@@ -496,7 +510,7 @@ def _check_singletask_thumbnails(ctx, ok) -> None:
         # （"编辑后确实会更新"由 ``cache_usable`` 的 mtime 判据保证：编辑器覆盖
         # 产物图后源图 mtime 必然更新 ⇒ 下一次重渲必重画。）
         listing_before = sorted(p.name for p in cache.glob("*.jpg"))
-        page._reload_edited_thumb(page.viewer.paths[0])
+        page._reload_edited_thumb(Path(page.viewer.paths[0]))
         alive = True
         for _ in range(120):
             ctx.app.processEvents()
@@ -548,4 +562,6 @@ def _write_tiny_jpegs(out_dir: Path, count: int) -> None:
     for index in range(count):
         image = QImage(4, 4, QImage.Format.Format_RGB32)
         image.fill(Qt.GlobalColor.white)
-        image.save(str(out_dir / f"{index + 1}.jpg"), "JPG")
+        # ⚠️ type: ignore —— PySide6 把 QImage.save 的 format 标成 bytes 系，
+        # 运行期却收 str。
+        image.save(str(out_dir / f"{index + 1}.jpg"), "JPG")  # type: ignore[reportCallIssue]

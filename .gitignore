@@ -32,6 +32,10 @@ Thumbs.db
 
 tests/docs/*
 tests/images/*
+
+# 测试临时文件统一落点（tests/tmpdir.py）。测试产物一律进这里，
+# 别散落到仓库根目录或系统临时目录——散在仓库里会被 git 当普通文件收走
+tests/tmp/
 *pdf
 build/
 dist/
