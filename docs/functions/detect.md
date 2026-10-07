@@ -70,7 +70,7 @@ YOLO 推理，程序直接拒绝并给出替代方案。
   标注「整幅 (x1,y1,x2,y2)」。
 
 配色与命名跟 GUI 预览**完全一致**：唯一事实来源是 `utils/box_draw.py`
-（GUI 的 `desktop/components/viewers/image_view.py` 直接 import 它的
+（GUI 的 `desktop/components/viewers/image_view/` 子包直接 import 它的
 `BOX_COLORS_RGB` / `BOX_NAMES`），因此「命令行看到的」和「界面看到的」是同一套视觉。
 
 只画**真正检测到的框**：某侧无框时对应的框不绘制，不会画出错误的

@@ -74,7 +74,12 @@ def run(ctx) -> None:
     # PreviewWorker，两个都走 `_image_ready` → `view.set_image()`，后到的那个
     # 把已经画好的框清成 `[]`。这里用「一次选页只起一个加载任务」+「框与信息条
     # 真的上屏」两条断言钉住（框走内存缓存注入，不落盘、不影响后续模块）。
-    from desktop.components.viewers import image_viewer as _iv
+    # ⚠️ 2026-10-07 起 ``image_viewer`` 是**子包**：``_select_image`` 住在
+    #    ``image_viewer/core.py``，而 Python 的名字解析看的是**定义处**那个
+    #    模块的 globals——所以打桩必须落在 ``image_viewer.core`` 上。
+    #    打 ``image_viewer.PreviewWorker``（包级）只是多挂一个属性，
+    #    ``core.PreviewWorker`` 仍是真货，计数会恒为 0（假绿）。
+    from desktop.components.viewers.image_viewer import core as _iv
 
     from tests.selftests._context import pump
 

@@ -77,6 +77,159 @@ def silence_source_prompt(page) -> list:
     return calls
 
 
+def module_sources(root: Path, rel: str) -> list[Path]:
+    """把仓库相对路径 ``rel`` 解析成**实际源文件列表**（子包感知）。
+
+    2026-10-07 起若干查看器从**单文件**拆成**子包**（同名目录 + ``__init__.py``）：
+    ``image_editor`` / ``image_view`` / ``image_zoom_dialog`` / ``print_preview`` /
+    ``image_viewer`` / ``rembg_viewer``。护栏里"读源码文本做断言"的地方若还按
+    老路径 ``xxx.py`` 读，会直接 ``FileNotFoundError``（或更糟：断言悄悄变成
+    永远为真）。统一走本函数：
+
+    - 仍是单文件（如 ``pdf_viewer.py``）→ 就它一个；
+    - 已拆成子包 → 目录下所有 ``.py``（含孙目录，如 ``image_editor/canvas/``）。
+
+    ``__init__.py`` 也在内：它是包的一部分，重导出/惰性导出就写在那儿。
+    """
+    path = root / rel
+    if path.is_dir():
+        return sorted(path.rglob("*.py"))
+    return [path]
+
+
+def module_source_text(root: Path, rel: str) -> str:
+    """``module_sources`` 的文本版：把解析出的源文件拼成一段（空行分隔）。
+
+    多文件拼接后做 ``in`` 断言时，命中来自哪个文件不重要——这些护栏问的是
+    "整条链路里还有没有这个写法"，不是"在哪一行"。
+    """
+    return "\n".join(
+        p.read_text(encoding="utf-8") for p in module_sources(root, rel)
+    )
+
+
+def _class_members(node) -> set[str]:
+    """类体成员名：方法 + 类属性 + **实例属性**（``self.X = ...``）。
+
+    ⚠️ 实例属性必须算进来：宿主面声明的正是这些（``_image`` / ``_zoom`` …），
+    只数类体赋值会把它们全判成"多余的桩"。
+    """
+    import ast
+
+    out: set[str] = set()
+    for m in node.body:
+        if isinstance(m, ast.FunctionDef):
+            out.add(m.name)
+        elif isinstance(m, ast.Assign):
+            for t in m.targets:
+                if isinstance(t, ast.Name):
+                    out.add(t.id)
+        elif isinstance(m, ast.AnnAssign) and isinstance(m.target, ast.Name):
+            out.add(m.target.id)
+    for s in ast.walk(node):
+        if isinstance(s, ast.Assign):
+            targets = s.targets
+        elif isinstance(s, ast.AnnAssign):
+            targets = [s.target]
+        else:
+            continue
+        for t in targets:
+            if (isinstance(t, ast.Attribute)
+                    and isinstance(t.value, ast.Name)
+                    and t.value.id == "self"):
+                out.add(t.attr)
+    return out
+
+
+def _find_class(path: Path, name: str):
+    import ast
+
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    return next(n for n in tree.body
+                if isinstance(n, ast.ClassDef) and n.name == name)
+
+
+def check_type_only_host(ok, *, label, root, pkg_rel, host_file, host_cls,
+                         main_file, main_cls, mixin_modules, expected_bases):
+    """钉住「**类型检查期宿主协议**」的四条不变量（2026-10-07 引入）。
+
+    拆分后每个 Mixin 都是独立类，pyright 看不到兄弟 Mixin / 主类 / Qt 基类上的
+    成员，于是整块报 ``reportAttributeAccessIssue``。修法是每个子包一个
+    ``_host.py``：里面一个宿主类声明「主类 + 全部兄弟 Mixin」的成员面，各 Mixin
+    在**类型检查期**继承它（``if TYPE_CHECKING: from ._host import X`` /
+    ``else: X = object``）。
+
+    ⚠️ 这套写法一旦漂移就是**静默**的：宿主面漏一个成员 = 某个工具在类型检查里
+    失明；宿主类被真继承（而不是 ``object`` 兜底）= 运行期 MRO 变了、行为可能
+    悄悄改。四条都钉死：
+
+    1. ``_host.py`` 存在，且宿主类的基类就是主类去掉本地 Mixin 后剩下的那些；
+    2. 宿主面**恰好**覆盖主类 + 各 Mixin 的成员（不许漏、也不许留没人用的桩）；
+    3. 每个 Mixin 都是「TYPE_CHECKING 期继承宿主、运行期继承 object」的写法；
+    4. 运行期主类的 MRO 里**没有**宿主类（证明零副作用）。
+
+    成员数按 ``min_members`` 之类阈值不设——(2) 的双向相等本身就是元守卫。
+    """
+    import ast
+    import importlib
+
+    pkg_dir = root / pkg_rel
+    host_path = pkg_dir / host_file
+
+    ok(f"{label}：类型检查期宿主面 {host_file} 存在", host_path.is_file(),
+       f"缺 {host_path}")
+    if not host_path.is_file():
+        return
+
+    host_node = _find_class(host_path, host_cls)
+    bases = [ast.unparse(b) for b in host_node.bases]
+    ok(f"{label}：宿主类 {host_cls} 的基类 = 主类去掉本地 Mixin 后的基类",
+       bases == list(expected_bases), f"实际={bases}，期望={expected_bases}")
+
+    # ---- (2) 宿主面恰好覆盖 主类 + 各 Mixin 的成员 ----
+    expected: set[str] = set()
+    for name in _class_members(_find_class(pkg_dir / main_file, main_cls)):
+        expected.add(name)
+    for fname, cname in mixin_modules:
+        expected |= _class_members(_find_class(pkg_dir / fname, cname))
+    # ⚠️ dunder（只有 __init__）刻意不声明：声明了主类的 super().__init__(parent)
+    #    会命中宿主里的桩，parent 被当成别的参数报类型错。
+    expected = {n for n in expected if not (n.startswith("__")
+                                            and n.endswith("__"))}
+    declared = {n for n in _class_members(host_node)
+                if not (n.startswith("__") and n.endswith("__"))}
+
+    ok(f"{label}：宿主面没有漏掉任何成员（漏了 = 该成员在类型检查里失明）",
+       not (expected - declared), f"漏={sorted(expected - declared)}")
+    ok(f"{label}：宿主面没有多余的桩（多了 = 与拆分现状漂移）",
+       not (declared - expected), f"多={sorted(declared - expected)}")
+
+    # ---- (3) 各 Mixin 都是「TYPE_CHECKING 期继承、运行期 object」----
+    bad: dict[str, str] = {}
+    for fname, cname in mixin_modules:
+        src = (pkg_dir / fname).read_text(encoding="utf-8")
+        cls = _find_class(pkg_dir / fname, cname)
+        base_names = [ast.unparse(b) for b in cls.bases]
+        guarded = (
+            "if TYPE_CHECKING:" in src
+            and f"from ._host import {host_cls}" in src
+            and f"{host_cls} = object" in src
+        )
+        if not guarded:
+            bad[fname] = "缺 TYPE_CHECKING 条件导入"
+        elif base_names != [host_cls]:
+            bad[fname] = f"类基类={base_names}"
+    ok(f"{label}：各 Mixin 都在类型检查期继承宿主、运行期退化成 object",
+       not bad, f"问题={bad}")
+
+    # ---- (4) 运行期 MRO 里没有宿主类 ----
+    mod = importlib.import_module(pkg_rel.replace("/", "."))
+    runtime_cls = getattr(mod, main_cls)
+    leaked = [b.__name__ for b in runtime_cls.__mro__ if b.__name__ == host_cls]
+    ok(f"{label}：运行期 {main_cls} 的 MRO 里没有 {host_cls}（零副作用）",
+       not leaked, f"MRO 泄漏={leaked}")
+
+
 def imported_modules(source: str) -> set[str]:
     """把一段源码里所有 import 的模块名抠出来（含 ``from X import Y`` 里的 X）。
 

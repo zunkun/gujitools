@@ -305,9 +305,13 @@ def run(ctx) -> None:
     assert _gap_plan.title is not None  # 该页有节点标题
     ok("缺口页名条目（页名 3 的第 1 项）页面标题 = 节点标题",
        _gap_plan.title.text == "首页标题", str(_gap_plan.title))
-    pv_src = (Path(__file__).resolve().parents[2]
-              / "desktop" / "components" / "viewers" / "print_preview.py"
-              ).read_text(encoding="utf-8")
+    # ⚠️ print_preview 2026-10-07 起是**子包**：读源码要合起包内所有文件看。
+    from tests.selftests._context import module_source_text
+
+    pv_src = module_source_text(
+        Path(__file__).resolve().parents[2],
+        "desktop/components/viewers/print_preview",
+    )
     pw_src = (Path(__file__).resolve().parents[2]
               / "desktop" / "workers" / "preview_worker.py"
               ).read_text(encoding="utf-8")
@@ -1324,10 +1328,11 @@ def run(ctx) -> None:
     # ---- 参数变化 → 已打开的弹窗重渲染（纸张快照不再过期）----
     # 渲染链路本就跟随配置（A4/A5/B5 × 横竖实测全对）；要补的是「弹窗开着
     # 改参数」时快照过期的问题：refresh_display 必须触发弹窗重渲染。
+    # ⚠️ print_preview 2026-10-07 起是**子包**（见 _context.module_source_text）。
     ok("详情页接了参数变化 → 弹窗重渲染的钩子",
-       "_refresh_zoom_popup_if_open" in (Path(__file__).resolve().parents[2]
-                                         / "desktop/components/viewers/print_preview.py").read_text(
-                                             encoding="utf-8"), "")
+       "_refresh_zoom_popup_if_open" in module_source_text(
+           Path(__file__).resolve().parents[2],
+           "desktop/components/viewers/print_preview"), "")
     stale = PrintPreviewWidget(params_provider=lambda: dict(full))
     try:
         stale.set_entries([{"file": str(print_src), "label": "0001"}])

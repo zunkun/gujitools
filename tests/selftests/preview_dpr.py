@@ -37,11 +37,13 @@ DEPENDS: list[str] = []
 TITLE = "预览清晰度（高分屏 dpr）"
 
 #: 必须按显示物理像素给渲染密度的四个调用点（写死 1600 就是回归）
+#: ⚠️ 前三个 2026-10-07 起是**子包**（目录），故不写 ``.py``；
+#:    ``module_source_text`` 两种形态都能解析。
 VIEWER_FILES = [
-    "desktop/components/viewers/image_viewer.py",
+    "desktop/components/viewers/image_viewer",
     "desktop/components/viewers/pdf_viewer.py",
-    "desktop/components/viewers/rembg_viewer.py",
-    "desktop/components/viewers/print_preview.py",
+    "desktop/components/viewers/rembg_viewer",
+    "desktop/components/viewers/print_preview",
 ]
 
 
@@ -235,8 +237,13 @@ def run(ctx) -> None:
     view.deleteLater()
 
     # ---------------------------------------------------------------- 5~6
+    # ⚠️ image_viewer / rembg_viewer / print_preview 已是**子包**：读源码要合起
+    #    包内所有文件看（见 _context.module_source_text），否则老路径直接报
+    #    FileNotFoundError。
+    from tests.selftests._context import module_source_text
+
     for rel in VIEWER_FILES:
-        text = (root / rel).read_text(encoding="utf-8")
+        text = module_source_text(root, rel)
         ok(f"{rel}：不再写死 longest_edge=1600",
            "longest_edge=1600" not in text, "")
         ok(f"{rel}：渲染密度由 preview_edge() 给出",
@@ -250,12 +257,12 @@ def run(ctx) -> None:
            not offenders, str(offenders))
 
     for rel in [
-        "desktop/components/viewers/image_viewer.py",
-        "desktop/components/viewers/rembg_viewer.py",
-        "desktop/components/viewers/print_preview.py",
+        "desktop/components/viewers/image_viewer",
+        "desktop/components/viewers/rembg_viewer",
+        "desktop/components/viewers/print_preview",
         "desktop/components/viewers/thumbs_loader.py",
     ]:
-        text = (root / rel).read_text(encoding="utf-8")
+        text = module_source_text(root, rel)
         offenders = [
             line.strip() for line in text.splitlines()
             if "_decode_edge(" in line and "lambda" in line

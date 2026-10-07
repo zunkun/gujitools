@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 130 个模块、153 个公开类、1161 个公开函数/方法（生成于 2026-10-07）。
+覆盖 162 个模块、174 个公开类、1161 个公开函数/方法（生成于 2026-10-08）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -48,14 +48,46 @@
 | [`desktop.components.step_bar`](#desktopcomponentsstep_bar) | 2 | 19 |
 | [`desktop.components.task_table`](#desktopcomponentstask_table) | 3 | 10 |
 | [`desktop.components.viewers.edit_sync`](#desktopcomponentsviewersedit_sync) | 0 | 2 |
-| [`desktop.components.viewers.image_editor`](#desktopcomponentsviewersimage_editor) | 3 | 83 |
-| [`desktop.components.viewers.image_view`](#desktopcomponentsviewersimage_view) | 1 | 23 |
-| [`desktop.components.viewers.image_viewer`](#desktopcomponentsviewersimage_viewer) | 1 | 20 |
-| [`desktop.components.viewers.image_zoom_dialog`](#desktopcomponentsviewersimage_zoom_dialog) | 4 | 34 |
+| [`desktop.components.viewers.image_editor.bake`](#desktopcomponentsviewersimage_editorbake) | 0 | 2 |
+| [`desktop.components.viewers.image_editor.canvas.cage`](#desktopcomponentsviewersimage_editorcanvascage) | 1 | 9 |
+| [`desktop.components.viewers.image_editor.canvas.core`](#desktopcomponentsviewersimage_editorcanvascore) | 1 | 15 |
+| [`desktop.components.viewers.image_editor.canvas.deform`](#desktopcomponentsviewersimage_editorcanvasdeform) | 1 | 10 |
+| [`desktop.components.viewers.image_editor.canvas.interaction`](#desktopcomponentsviewersimage_editorcanvasinteraction) | 1 | 7 |
+| [`desktop.components.viewers.image_editor.canvas.overlay`](#desktopcomponentsviewersimage_editorcanvasoverlay) | 1 | 0 |
+| [`desktop.components.viewers.image_editor.canvas.rectify`](#desktopcomponentsviewersimage_editorcanvasrectify) | 1 | 6 |
+| [`desktop.components.viewers.image_editor.canvas.text`](#desktopcomponentsviewersimage_editorcanvastext) | 1 | 6 |
+| [`desktop.components.viewers.image_editor.canvas.transform`](#desktopcomponentsviewersimage_editorcanvastransform) | 1 | 8 |
+| [`desktop.components.viewers.image_editor.consts`](#desktopcomponentsviewersimage_editorconsts) | 0 | 0 |
+| [`desktop.components.viewers.image_editor.dialog`](#desktopcomponentsviewersimage_editordialog) | 1 | 3 |
+| [`desktop.components.viewers.image_editor.dialog_commit`](#desktopcomponentsviewersimage_editordialog_commit) | 1 | 0 |
+| [`desktop.components.viewers.image_editor.dialog_pages`](#desktopcomponentsviewersimage_editordialog_pages) | 1 | 0 |
+| [`desktop.components.viewers.image_editor.dialog_toolbar`](#desktopcomponentsviewersimage_editordialog_toolbar) | 1 | 0 |
+| [`desktop.components.viewers.image_editor.dialog_undo`](#desktopcomponentsviewersimage_editordialog_undo) | 1 | 0 |
+| [`desktop.components.viewers.image_editor.geometry`](#desktopcomponentsviewersimage_editorgeometry) | 0 | 9 |
+| [`desktop.components.viewers.image_editor.text_item`](#desktopcomponentsviewersimage_editortext_item) | 1 | 8 |
+| [`desktop.components.viewers.image_view.core`](#desktopcomponentsviewersimage_viewcore) | 1 | 13 |
+| [`desktop.components.viewers.image_view.edit`](#desktopcomponentsviewersimage_viewedit) | 1 | 6 |
+| [`desktop.components.viewers.image_view.render`](#desktopcomponentsviewersimage_viewrender) | 1 | 2 |
+| [`desktop.components.viewers.image_view.styles`](#desktopcomponentsviewersimage_viewstyles) | 0 | 2 |
+| [`desktop.components.viewers.image_viewer.boxes`](#desktopcomponentsviewersimage_viewerboxes) | 1 | 6 |
+| [`desktop.components.viewers.image_viewer.core`](#desktopcomponentsviewersimage_viewercore) | 1 | 10 |
+| [`desktop.components.viewers.image_viewer.pdf`](#desktopcomponentsviewersimage_viewerpdf) | 1 | 3 |
+| [`desktop.components.viewers.image_viewer.thumbs`](#desktopcomponentsviewersimage_viewerthumbs) | 1 | 1 |
+| [`desktop.components.viewers.image_zoom_dialog.canvas`](#desktopcomponentsviewersimage_zoom_dialogcanvas) | 2 | 21 |
+| [`desktop.components.viewers.image_zoom_dialog.consts`](#desktopcomponentsviewersimage_zoom_dialogconsts) | 0 | 0 |
+| [`desktop.components.viewers.image_zoom_dialog.dialog`](#desktopcomponentsviewersimage_zoom_dialogdialog) | 1 | 6 |
+| [`desktop.components.viewers.image_zoom_dialog.icons`](#desktopcomponentsviewersimage_zoom_dialogicons) | 0 | 3 |
+| [`desktop.components.viewers.image_zoom_dialog.io`](#desktopcomponentsviewersimage_zoom_dialogio) | 0 | 2 |
+| [`desktop.components.viewers.image_zoom_dialog.popup`](#desktopcomponentsviewersimage_zoom_dialogpopup) | 1 | 2 |
 | [`desktop.components.viewers.pdf_viewer`](#desktopcomponentsviewerspdf_viewer) | 1 | 2 |
 | [`desktop.components.viewers.print_layout_canvas`](#desktopcomponentsviewersprint_layout_canvas) | 1 | 12 |
-| [`desktop.components.viewers.print_preview`](#desktopcomponentsviewersprint_preview) | 1 | 11 |
-| [`desktop.components.viewers.rembg_viewer`](#desktopcomponentsviewersrembg_viewer) | 1 | 12 |
+| [`desktop.components.viewers.print_preview.export`](#desktopcomponentsviewersprint_previewexport) | 1 | 1 |
+| [`desktop.components.viewers.print_preview.layout`](#desktopcomponentsviewersprint_previewlayout) | 1 | 1 |
+| [`desktop.components.viewers.print_preview.thumbs`](#desktopcomponentsviewersprint_previewthumbs) | 1 | 0 |
+| [`desktop.components.viewers.print_preview.widget`](#desktopcomponentsviewersprint_previewwidget) | 1 | 9 |
+| [`desktop.components.viewers.rembg_viewer.core`](#desktopcomponentsviewersrembg_viewercore) | 1 | 9 |
+| [`desktop.components.viewers.rembg_viewer.entries`](#desktopcomponentsviewersrembg_viewerentries) | 1 | 0 |
+| [`desktop.components.viewers.rembg_viewer.thumbs`](#desktopcomponentsviewersrembg_viewerthumbs) | 1 | 3 |
 | [`desktop.components.viewers.thumb_strip`](#desktopcomponentsviewersthumb_strip) | 1 | 10 |
 | [`desktop.components.viewers.thumbs_loader`](#desktopcomponentsviewersthumbs_loader) | 1 | 1 |
 | [`desktop.modules`](#desktopmodules) | 1 | 1 |
@@ -2979,144 +3011,108 @@ source_path 不单独成列，仅作任务名的悬浮提示。
 
 ---
 
-## `desktop.components.viewers.image_editor`
+## `desktop.components.viewers.image_editor.bake`
 
-源码：[`desktop/components/viewers/image_editor.py`](../../desktop/components/viewers/image_editor.py)
+源码：[`desktop/components/viewers/image_editor/bake.py`](../../desktop/components/viewers/image_editor/bake.py)
 
-图片编辑弹窗：裁剪 / 擦除 / 插入文字（Win10 照片风格）。
+全分辨率烘焙的**后台线程 + 进度对话框**（从 ``image_editor.py`` 拆出）。
 
-从图片预览弹窗（``image_zoom_dialog``）的「编辑」按钮进入，编辑的是
-**画布当前整分辨率图**（已含翻转/旋转）；「完成」后写回弹窗画布。宿主
-给 ``save_back=True``（画布显示 1:1 对应真实文件）时，「完成」= 直接
-**原子覆盖原图片文件**，并**先弹一次覆盖确认**（用户 2026-10-04 定的：
-原图被覆盖后不可逆，必须让用户知道；见 :meth:`ImageEditorDialog.
-_confirm_overwrite`）。虚拟预览（区域合成/打印重排/PDF 页）没有文件
-可回写，维持"满意用「下载」落盘、翻页/关窗即丢弃"的旧行为，也**不弹**
-确认框（不写盘的事不该假报警）。
+重活（逐像素重映射）放这里跑，避免钉死 GUI 主线程。见 ``_BakeWorker`` 的
+长注释。纯计算的工作函数（``_bake_*_work``）也在本模块。
 
-五个工具的行为口径：
+### 模块函数
 
-- **裁剪**：**默认选中整幅图**，沿四边/四角**任意位置**向内拖收边（整条
-  边都是命中带，不只手柄小方块）、拖框中间移动；松手后**视图自动适配新
-  选区**（选区变小就放大查看）。不做截图式"拖拽画框"——那是截图的交互，
-  裁剪的语义是"从原图里收出想要的部分"（用户 20:05 定）。
-- **变换**（GIMP「统一变换」口径，处理古籍褶皱/歪斜）：**默认选中整幅
-  图**，拖角=缩放（Shift 等比）、拖边=切变、框内拖=移动、框外拖=**绕
-  轴心旋转**（Shift 每 15° 吸附）；轴心圆点可拖动，「从轴心」勾选后
-  缩放/切变也以轴心为锚。勾选「**调整范围**」后沿边拖动**收小要处理的
-  区域**（收完自动回到变换模式）——小范围修褶皱就是"收小区域 → 旋转/
-  切变把它正回来"。拖动即实时预览（原区域填白，变换后的内容以
-  浮层显示）；「应用变换」（或切走工具/「完成」）才烘焙进像素——原
-  区域填白、只把选区内容按仿射矩阵画回去，画布尺寸不变，**区域外的
-  像素一动不动**。一批一个撤销点。
-- **变形**（**PS 操控变形 Puppet Warp 口径**，处理古籍褶皱/卷曲/线段倾斜）：
-  在图上**打图钉**（点一下放一个）→ 拖某个图钉，**它附近的内容跟着走、
-  离得越远动得越少、没被钉住的远处几乎不动**（"像扯弹簧"/"像揉面团"）。
-  - **加图钉**：工具激活时直接点图上的位置；点已有图钉附近＝选中它而不是
-    新建（吸附半径 :data:`PIN_HIT_VIEW_PX`）。
-  - **删图钉**：`Alt`+点，或右键点。
-  - **图钉拖到图外**：允许（往外拉＝把那块内容往外拉伸），越界部分填底。
-  - **网格疏密**：算法把图片切成三角网格，格距在选项行选（见
-    :data:`MESH_DENSITY_CHOICES`）；越密越细腻、解方程越慢。
-  - ⚠️ **边框自动锚定**：ARAP 能量对整体平移/旋转不变，只钉一个图钉时整张
-    网格会"一起漂移"（实测每个顶点都平移 14px）。所以默认把**图片四边**
-    视为固定（PS 的做法），拖内部图钉时边框被拉住，形变才收敛成"近处大、
-    远处为零"（见 ``utils.puppet_warp.solve_puppet``）。
-  - 拖动即实时预览（只算动过的网格凸包包围盒 + 按屏幕清晰度降采样，见
-    :func:`cage_preview_scale`），松手补一帧更清楚的；「应用变形」（或切走
-    工具/「完成」）才烘焙进像素（有等待光标）。
-  - ⚠️ 「应用变形」后**图钉留在原地**（``adopt_pins``）：古籍褶皱往往要来回
-    试几次，每次应用后都清空图钉的话用户得重新钉一遍。
-  算法与口径见 ``utils/puppet_warp.py``。
-  ⚠️ 进这个工具时图片**不铺满视口**（:data:`DEFORM_FIT_RATIO`），四周留白
-  方便把图钉往图外拖。
-- **擦除**：按住左键涂抹把污点**擦成白底**（古籍页面去污点就是涂白）；
-  直径在选项行可调；光标处有**实圈指示**，直径恒等于实际擦除直径
-  （所见即所擦）。一笔一个撤销点。
-  （原「拉伸」与笔刷配色已按用户 2026-10-01 要求移除；同日按 GIMP
-  变换笼方案重新实现为上面的「变形」。）
-- **文字**：点击落点 → 画布上**就地输入**（光标可见，点已有块可继续
-  编辑）→ 选项行可调字体 family / 字号 / **颜色选择器**（对整块即时
-  生效，样式是段落属性，与手机作图App同口径）→ 鼠标悬停在文字上出现
-  **边界虚线框**，按住拖动整块移动（虚线框跟随，松手即消失）→
-  「插入文字」把块写进图片（切走工具或点「完成」时未插入的块也自动
-  写入）。一个批次一个撤销点。
-
-  选项行的字体下拉**以中文字体为主**、只带几个常用西文字体（系统字体库
-  动辄两三百个族，全列出来反而找不到"仿宋"，见 `ui.fonts`）；颜色是
-  **一个按钮**，常用色块收在它弹出的面板里（见 `ui.color_picker`）。
-
-  ⚠️ 样式改动作用在"**当前样式块**"（``EditorCanvas.style_target_block``）
-  上，而不是"场景焦点项"：选项行的控件（尤其 qfluentwidgets 的 Slider，
-  它是 ``StrongFocus``）一被点击就会抢走键盘焦点，场景焦点项随之变 None，
-  按焦点项找块的话**改字号/颜色全部落空**（用户 2026-10-01 报障）。
-
-⚠️ 撤销栈存的是**整图快照**（QImage 写时复制在就地绘制时仍会共享底层数据，
-必须 ``copy()``），上限 12 步——4000px 预览约 60MB/步，再多内存吃不消。
-
-### 模块常量
-
-| 名称 | 值 |
+| 函数 | 说明 |
 | --- | --- |
-| UNDO_LIMIT | `12` |
-| WHEEL_STEP | `1.15` |
-| MIN_RECT_EDGE | `4.0` |
-| HANDLE_VIEW_PX | `12.0` |
-| EDGE_BAND_VIEW_PX | `8.0` |
-| SEL_FIT_RATIO | `0.8` |
-| EDIT_FIT_RATIO | `0.8` |
-| PIVOT_VIEW_PX | `14.0` |
-| ROTATE_SNAP_DEG | `15.0` |
-| MESH_DENSITY_DEFAULT | `40.0` |
-| DEFORM_FIT_RATIO | `0.8` |
-| PIN_NODE_VIEW_PX | `9.0` |
-| PIN_HIT_VIEW_PX | `11.0` |
-| QUAD_HANDLE_VIEW_PX | `8.0` |
-| QUAD_HIT_VIEW_PX | `12.0` |
-| RECTIFY_RATIO_DEFAULT | `"area"` |
-| DEFORM_PREVIEW_PIXELS | `120000` |
-| DEFORM_PREVIEW_SETTLE_PIXELS | `2500000` |
-| DEFORM_PREVIEW_INTERVAL | `0.08` |
-| CAGE_HANDLE_VIEW_PX | `8.0` |
-| CAGE_HIT_VIEW_PX | `12.0` |
-| CAGE_EDGE_BAND_VIEW_PX | `8.0` |
-| CAGE_PREVIEW_PIXELS | `250000` |
-| CAGE_PREVIEW_SETTLE_PIXELS | `2500000` |
-| CAGE_PREVIEW_INTERVAL | `0.08` |
-| CAGE_FIT_RATIO | `0.8` |
-| CAGE_DENSITY_DEFAULT | `2` |
+| `wait_cursor()` | 耗时操作期间挂等待光标。 |
+| `run_with_progress(parent: QWidget \| None, title: str, label: str, work, params: dict)` | 在后台线程跑 ``work(params, progress)`` 并显示进度对话框。 |
 
-### `class TextBlockItem(QGraphicsTextItem)`
+#### `wait_cursor()`
 
-画布上的待插入文字块：就地编辑（光标可见），按住拖动整体移动。
+装饰器：`contextlib.contextmanager`
 
-交互口径：**单击**进编辑态放光标（QGraphicsTextItem 原生），**按住
-拖动**超过阈值 = 移动整块。刻意不复用 ``ItemIsMovable``——它与文本
-编辑的"按住选字"打架，这里按位移阈值自己分流。拖动全程由画布的
-**边界虚线框**跟随（悬停即显示、松手即消失），用户随时知道"这一块
-会被整体挪走"（用户 2026-10-01：手机作图式文字）。
+耗时操作期间挂等待光标。
+
+⚠️ 必须 ``processEvents`` 一下，否则光标要等界面回到事件循环才换，
+而那时的等待已经结束了（等于没挂）。调用方负责别在里面重入。
+
+#### `run_with_progress(parent: QWidget | None, title: str, label: str, work, params: dict)`
+
+在后台线程跑 ``work(params, progress)`` 并显示进度对话框。
+
+返回工作结果；被用户取消时返回 ``None``。``work`` 必须是**纯计算**
+（只用到形参，不碰 Qt 部件/画布），这样才能安全地放进工作线程。
+小任务（预估很快）也不亏：线程启动 + 对话框开销在毫秒级。
+
+⚠️ 工作函数**抛异常**时**重新抛出**（``raise worker.error``），
+调用方负责弹错误框并退回撤销点。绝不能把它折叠成 ``None`` ——
+``None`` 的既定含义是"用户取消"，混同的结果是"点了 20 秒什么都没发生
+且无提示"（用户报过的现象，见 :meth:`_BakeWorker.run`）。
+
+⚠️ 本函数**不吞异常、也不留孤儿线程**：整体 ``try/finally``，
+``finally`` 里 ``cancel() + wait()``。异常逃出等待循环时若不收尾，
+worker 会变成孤儿线程，而它是被 ``parent``（编辑器对话框）持有的 ——
+对话框一析构就是 ``QThread: Destroyed while thread is still running``，
+**Qt 直接 abort 整个进程**（本项目 ``worker_host`` 已记过这条）。
+
+---
+
+## `desktop.components.viewers.image_editor.canvas.cage`
+
+源码：[`desktop/components/viewers/image_editor/canvas/cage.py`](../../desktop/components/viewers/image_editor/canvas/cage.py)
+
+画布 Mixin：**变换笼**（GIMP 口径：RBF 局部光滑形变）。
+
+从 ``EditorCanvas`` 拆出（2026-10-07）。方法体逐字未改。
+
+### `class CageMixin(CanvasHost)`
+
+变换笼工具：把手/命中/拖动/预览/覆盖层。
 
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(pos: QPointF, px: int, color: QColor, family: str)` | — |
-| `apply_style(family: str, px: int, color: QColor) -> None` | 选项行改字体/字号/颜色时对块即时生效（编辑中也能改）。 |
-| `mousePressEvent(event) -> None` | Qt 事件覆写：按下（选中 / 开始拖拽或绘制）。 |
-| `mouseMoveEvent(event) -> None` | Qt 事件覆写：移动（拖拽 / 缩放中的实时更新）。 |
-| `mouseReleaseEvent(event) -> None` | Qt 事件覆写：松开（提交本次编辑）。 |
-| `keyPressEvent(event) -> None` | Qt 事件覆写：键盘操作（如 Delete 删除选中项）。 |
-| `focusInEvent(event) -> None` | — |
-| `focusOutEvent(event) -> None` | — |
+| `reset_cage() -> None` | 「重置」：把手回到整幅图原位（丢掉未应用的形变）。 |
+| `cage_density() -> int` | 当前每边把手数档位。 |
+| `set_cage_density(per_side: int) -> None` | 改每边把手数：**重建笼并清掉未应用的形变**（把手序号全变了）。 |
+| `cage() -> list` | 当前把手副本 ``[(原位, 当前位置), ...]``——给自测与外部读。 |
+| `cage_source() -> list[QPointF]` | 把手**原位**序列（形变映射的左端）。 |
+| `cage_target() -> list[QPointF]` | 把手**当前位置**序列（形变映射的右端）。 |
+| `cage_pending()` | 未应用的笼形变 ``(cage_src, cage_dst)``；没动过返回 ``None``。 |
+| `cage_move(index: int, pos: QPointF) -> None` | 把第 ``index`` 个把手拖到 ``pos``（图片坐标，允许图外）。 |
+| `cage_move_all(delta: QPointF) -> None` | 整体平移笼（拖边/拖笼内部）：把所有把手在**按下时的快照**上位移。 |
 
-##### `apply_style(family: str, px: int, color: QColor) -> None`
+##### `cage_pending()`
 
-选项行改字体/字号/颜色时对块即时生效（编辑中也能改）。
+未应用的笼形变 ``(cage_src, cage_dst)``；没动过返回 ``None``。
 
-⚠️ 是**整块**生效：setFont/setDefaultTextColor 作用于整个文档，
-与手机作图App一致——样式是段落属性，不做逐字混排。
+口径与 :meth:`pins_pending` 一致：只有"把手真的动过"才算待应用。
 
-### `class EditorCanvas(QGraphicsView)`
+##### `cage_move_all(delta: QPointF) -> None`
+
+整体平移笼（拖边/拖笼内部）：把所有把手在**按下时的快照**上位移。
+
+必须基于快照位移，不能逐帧累加——否则每帧都从"当前值"再位移一次，
+手一停位置就漂（浮点累积）。
+
+---
+
+## `desktop.components.viewers.image_editor.canvas.core`
+
+源码：[`desktop/components/viewers/image_editor/canvas/core.py`](../../desktop/components/viewers/image_editor/canvas/core.py)
+
+编辑画布 ``EditorCanvas``：**基座 + 各工具 Mixin 的装配点**。
+
+从 ``image_editor.py`` 拆出（2026-10-07）。本文件只放：类头（信号）、
+``__init__``，以及**与工具无关的基座方法**（装图/取图/缩放适配/工具切换）。
+各工具（裁剪/变换/变形/变换笼/校正/擦除/文字）在兄弟模块里以 Mixin 提供，
+方法体逐字未改；成员归属由 ``tests/selftests/image_editor_split.py`` 钉住。
+
+⚠️ 信号必须定义在**这个 QObject 子类**上（PySide6 的 ``Signal`` 描述符
+要求宿主是 QObject）；Mixin 只 emit，不声明。
+
+### `class EditorCanvas(InteractionMixin, OverlayMixin, TextMixin, RectifyMixin, CageMixin, DeformMixin, TransformMixin, QGraphicsView)`
 
 编辑画布：滚轮缩放、中/右键拖拽平移、左键按工具交互。
 
@@ -3137,20 +3133,55 @@ _confirm_overwrite`）。虚拟预览（区域合成/打印重排/PDF 页）没�
 | `set_tool(tool: str) -> None` | 切换工具：裁剪/变换/变形默认全选，其余清选区、换光标。 |
 | `set_eraser(size: int) -> None` | 设置橡皮擦直径（图片像素）；擦除固定涂白，没有颜色可选。 |
 | `selection() -> QRectF \| None` | 当前选区（图片坐标）；不足最小边视为没有。 |
-| `add_text_block(pos: QPointF, px: int, color: QColor, family: str) -> TextBlockItem` | 在落点放一个可就地编辑的文字块并给它焦点（光标闪烁）。 |
-| `text_blocks() -> list[TextBlockItem]` | 画布上所有待插入文字块。 |
-| `focused_text_block() -> TextBlockItem \| None` | 正在编辑的文字块（场景焦点项；键盘输入路由用）。 |
-| `style_target_block() -> TextBlockItem \| None` | 选项行改样式时作用的那一块：优先正在编辑的，其次"当前样式块"。 |
-| `focus_text_block(block: TextBlockItem \| None=None) -> None` | 把键盘焦点还给文字块（颜色面板关掉后接着打字用）。 |
-| `clear_text_blocks() -> None` | 清掉所有文字块（插入/换图/关编辑时）。 |
-| `set_transform_about_pivot(about: bool) -> None` | 「从轴心」：缩放/切变以轴心为锚（旋转永远绕轴心）。 |
-| `set_transform_reshape(on: bool) -> None` | 「调整范围」模式：拖手柄/边=收小变换区域，而不是缩放内容。 |
-| `reset_transform() -> None` | 「重置」：丢弃未应用的变换，选区回到整幅、轴心回到中心。 |
-| `transform_pending() -> tuple[QRectF, QTransform, QImage] \| None` | 未应用的变换 ``(选区, 矩阵, 选区像素快照)``；没有则 None。 |
-| `transform_move(dx: float, dy: float) -> None` | 整体平移 ``dx, dy``（图片像素）。 |
-| `transform_rotate(degrees: float) -> None` | 绕**轴心当前视觉位置**旋转（轴心保持不动）。 |
-| `transform_scale(sx: float, sy: float, anchor: QPointF \| None=None) -> None` | 缩放（局部空间，锚点缺省=轴心；sx/sy 是相对当前内容的倍率）。 |
-| `transform_shear(edge: str, k: float) -> None` | 拖边切变：``edge`` 是被抓的边（l/r/t/b），``k`` 是切变系数， |
+| `fit(ratio: float \| None=None) -> None` | 适应窗口（整图完整可见）；``ratio`` < 1 时四周留白。 |
+| `set_fit_ratio(ratio: float) -> None` | 设「适应窗口」时图片占视口的比例（1.0 = 铺满，< 1 = 四周留白）。 |
+| `zoom_in() -> None` | 放大一档（工具栏按钮用；无档位表，连续乘 1.25）。 |
+| `zoom_out() -> None` | 缩小一档。 |
+| `set_zoom(zoom: float, anchor_view: QPointF \| None=None) -> None` | 锚点缩放（同预览弹窗的 translate 补偿法，缩放不漂移）。 |
+| `fit_selection() -> None` | 视图适配当前选区（选区约占视口 80%，四周留出可操作白边）。 |
+
+##### `fit(ratio: float | None=None) -> None`
+
+适应窗口（整图完整可见）；``ratio`` < 1 时四周留白。
+
+留白的做法是把"要装进去的矩形"按比例放大——图片因此只占视口的
+``ratio``（见 :data:`DEFORM_FIT_RATIO`：进「变形」时图片不顶满视口，
+用户才有地方把笼把手往图外拖）。
+
+##### `set_fit_ratio(ratio: float) -> None`
+
+设「适应窗口」时图片占视口的比例（1.0 = 铺满，< 1 = 四周留白）。
+
+只在用户**没手动缩放过**时立刻生效——手动缩放是明确意图，不该被悄悄
+改掉；但他下次点「适应窗口」或改窗口大小时就按新比例来。
+
+##### `fit_selection() -> None`
+
+视图适配当前选区（选区约占视口 80%，四周留出可操作白边）。
+
+裁剪区收小后松手时调用——选区变小了就要放大查看（用户 20:18 定）。
+⚠️ 不填满视口：顶满时选区边界贴着视口边缘，看不到上下文、手柄
+也挤在边上不好抓（用户 20:28 定"缩放至选区时留出边距"）。
+视图从此锚定选区（``_user_zoomed``），窗口 resize 不再拉回整图。
+
+---
+
+## `desktop.components.viewers.image_editor.canvas.deform`
+
+源码：[`desktop/components/viewers/image_editor/canvas/deform.py`](../../desktop/components/viewers/image_editor/canvas/deform.py)
+
+画布 Mixin：**操控变形**（PS 口径：ARAP 三角网格 + 图钉）。
+
+从 ``EditorCanvas`` 拆出（2026-10-07）。方法体逐字未改。
+
+### `class DeformMixin(CanvasHost)`
+
+变形工具：网格/图钉/解算/预览/覆盖层。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
 | `mesh_density() -> float` | 当前网格格距（图片像素档位）。 |
 | `set_mesh_density(cell: float) -> None` | 改网格格距：**重建网格并清空图钉**（顶点下标全变了，旧钉无意义）。 |
 | `reset_pins() -> None` | 「重置」：清空所有图钉，丢掉未应用的形变（网格本身保留）。 |
@@ -3161,62 +3192,6 @@ _confirm_overwrite`）。虚拟预览（区域合成/打印重排/PDF 页）没�
 | `pin_move(index: int, pos: QPointF) -> None` | 把第 ``index`` 个图钉拖到 ``pos``（图片坐标）。 |
 | `pins_pending()` | 未应用的形变 ``(vertices_rest, vertices_moved, triangles)``；无则 None。 |
 | `adopt_pins(pin_vertices=None) -> None` | 「应用变形」后用：把图钉**原地保留**（目标位置 = 新网格的原位）。 |
-| `reset_cage() -> None` | 「重置」：把手回到整幅图原位（丢掉未应用的形变）。 |
-| `cage_density() -> int` | 当前每边把手数档位。 |
-| `set_cage_density(per_side: int) -> None` | 改每边把手数：**重建笼并清掉未应用的形变**（把手序号全变了）。 |
-| `cage() -> list` | 当前把手副本 ``[(原位, 当前位置), ...]``——给自测与外部读。 |
-| `cage_source() -> list[QPointF]` | 把手**原位**序列（形变映射的左端）。 |
-| `cage_target() -> list[QPointF]` | 把手**当前位置**序列（形变映射的右端）。 |
-| `cage_pending()` | 未应用的笼形变 ``(cage_src, cage_dst)``；没动过返回 ``None``。 |
-| `cage_move(index: int, pos: QPointF) -> None` | 把第 ``index`` 个把手拖到 ``pos``（图片坐标，允许图外）。 |
-| `cage_move_all(delta: QPointF) -> None` | 整体平移笼（拖边/拖笼内部）：把所有把手在**按下时的快照**上位移。 |
-| `reset_quad() -> None` | 「重置」：四角回到整幅图四角（丢掉未应用的校正）。 |
-| `quad() -> list` | 当前四边形四角副本（``QPointF`` 列表）——给自测与外部读。 |
-| `rectify_ratio() -> str` | 目标矩形宽高比口径（见 RECTIFY_RATIO_CHOICES）。 |
-| `set_rectify_ratio(mode: str) -> None` | 改目标矩形口径：只影响**之后的**预览，不必丢掉当前四角。 |
-| `quad_move(index: int, pos: QPointF) -> None` | 把第 ``index`` 个角拖到 ``pos``（图片坐标）。 |
-| `quad_pending()` | 未应用的校正 ``(quad, mode)``；四角没动过则 None。 |
-| `fit(ratio: float \| None=None) -> None` | 适应窗口（整图完整可见）；``ratio`` < 1 时四周留白。 |
-| `set_fit_ratio(ratio: float) -> None` | 设「适应窗口」时图片占视口的比例（1.0 = 铺满，< 1 = 四周留白）。 |
-| `zoom_in() -> None` | 放大一档（工具栏按钮用；无档位表，连续乘 1.25）。 |
-| `zoom_out() -> None` | 缩小一档。 |
-| `set_zoom(zoom: float, anchor_view: QPointF \| None=None) -> None` | 锚点缩放（同预览弹窗的 translate 补偿法，缩放不漂移）。 |
-| `resizeEvent(event) -> None` | Qt 事件覆写：尺寸变化时重算布局 / 重新缩放。 |
-| `fit_selection() -> None` | 视图适配当前选区（选区约占视口 80%，四周留出可操作白边）。 |
-| `wheelEvent(event) -> None` | Qt 事件覆写：滚轮（缩放 / 滚动）。 |
-| `mousePressEvent(event) -> None` | Qt 事件覆写：按下（选中 / 开始拖拽或绘制）。 |
-| `mouseMoveEvent(event) -> None` | Qt 事件覆写：移动（拖拽 / 缩放中的实时更新）。 |
-| `mouseReleaseEvent(event) -> None` | Qt 事件覆写：松开（提交本次编辑）。 |
-| `leaveEvent(event) -> None` | Qt 事件覆写：鼠标移出时恢复常态。 |
-| `keyPressEvent(event) -> None` | Qt 事件覆写：键盘操作（如 Delete 删除选中项）。 |
-
-##### `add_text_block(pos: QPointF, px: int, color: QColor, family: str) -> TextBlockItem`
-
-在落点放一个可就地编辑的文字块并给它焦点（光标闪烁）。
-
-⚠️ 顺便把键盘焦点拿回视图：场景焦点项的输入要靠「视图持有键盘
-焦点 → keyPressEvent 转发」这条链，视图没焦点时打字全落空。
-
-##### `style_target_block() -> TextBlockItem | None`
-
-选项行改样式时作用的那一块：优先正在编辑的，其次"当前样式块"。
-
-⚠️ 与 :meth:`focused_text_block` 分开是刻意的：点选项行的滑杆/按钮
-会抢走键盘焦点，此时"正在编辑"已经没了，但用户**期望**改动仍落在他
-刚点的那个文字块上（用户 2026-10-01 报"字号不生效"就是这个原因）。
-
-##### `set_transform_reshape(on: bool) -> None`
-
-「调整范围」模式：拖手柄/边=收小变换区域，而不是缩放内容。
-
-进入时必须丢掉未应用的变换预览——浮层与填白底都是按**旧区域**
-快照做的，区域一变它们就与画布对不上了。退出（收边完成/取消
-勾选）后保留收小的区域，下一次拖动即以它为变换对象。
-
-##### `transform_shear(edge: str, k: float) -> None`
-
-拖边切变：``edge`` 是被抓的边（l/r/t/b），``k`` 是切变系数，
-对边为锚（抓右边往下拖 = 内容随 x 增大而下斜）。
 
 ##### `pin_add(pos: QPointF) -> int | None`
 
@@ -3253,18 +3228,70 @@ _confirm_overwrite`）。虚拟预览（区域合成/打印重排/PDF 页）没�
 所以这里不能指望调用时 ``self._pins`` 还在。传 ``None`` 时退回读
 当前 ``self._pins``（兼容直接调用）。
 
-##### `cage_pending()`
+---
 
-未应用的笼形变 ``(cage_src, cage_dst)``；没动过返回 ``None``。
+## `desktop.components.viewers.image_editor.canvas.interaction`
 
-口径与 :meth:`pins_pending` 一致：只有"把手真的动过"才算待应用。
+源码：[`desktop/components/viewers/image_editor/canvas/interaction.py`](../../desktop/components/viewers/image_editor/canvas/interaction.py)
 
-##### `cage_move_all(delta: QPointF) -> None`
+画布 Mixin：**鼠标/键盘交互**（缩放平移、工具分流、命中与光标）。
 
-整体平移笼（拖边/拖笼内部）：把所有把手在**按下时的快照**上位移。
+从 ``EditorCanvas`` 拆出（2026-10-07）。方法体逐字未改。
 
-必须基于快照位移，不能逐帧累加——否则每帧都从"当前值"再位移一次，
-手一停位置就漂（浮点累积）。
+### `class InteractionMixin(CanvasHost)`
+
+交互：滚轮/拖拽/悬停光标/命中测试/擦除/裁剪收边。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `resizeEvent(event) -> None` | Qt 事件覆写：尺寸变化时重算布局 / 重新缩放。 |
+| `wheelEvent(event) -> None` | Qt 事件覆写：滚轮（缩放 / 滚动）。 |
+| `mousePressEvent(event) -> None` | Qt 事件覆写：按下（选中 / 开始拖拽或绘制）。 |
+| `mouseMoveEvent(event) -> None` | Qt 事件覆写：移动（拖拽 / 缩放中的实时更新）。 |
+| `mouseReleaseEvent(event) -> None` | Qt 事件覆写：松开（提交本次编辑）。 |
+| `leaveEvent(event) -> None` | Qt 事件覆写：鼠标移出时恢复常态。 |
+| `keyPressEvent(event) -> None` | Qt 事件覆写：键盘操作（如 Delete 删除选中项）。 |
+
+---
+
+## `desktop.components.viewers.image_editor.canvas.overlay`
+
+源码：[`desktop/components/viewers/image_editor/canvas/overlay.py`](../../desktop/components/viewers/image_editor/canvas/overlay.py)
+
+画布 Mixin：**覆盖层装配**（选中框/手柄/橡皮圈等场景项的建与同步）。
+
+从 ``EditorCanvas`` 拆出（2026-10-07）。方法体逐字未改。
+
+### `class OverlayMixin(CanvasHost)`
+
+覆盖层：选中框/手柄/橡皮圈/整幅虚线框的创建与同步。
+
+---
+
+## `desktop.components.viewers.image_editor.canvas.rectify`
+
+源码：[`desktop/components/viewers/image_editor/canvas/rectify.py`](../../desktop/components/viewers/image_editor/canvas/rectify.py)
+
+画布 Mixin：**校正**（四角透视校正 + 目标宽高比）。
+
+从 ``EditorCanvas`` 拆出（2026-10-07）。方法体逐字未改。
+
+### `class RectifyMixin(CanvasHost)`
+
+校正工具：四角手柄/命中/拖动/预览/覆盖层。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `reset_quad() -> None` | 「重置」：四角回到整幅图四角（丢掉未应用的校正）。 |
+| `quad() -> list` | 当前四边形四角副本（``QPointF`` 列表）——给自测与外部读。 |
+| `rectify_ratio() -> str` | 目标矩形宽高比口径（见 RECTIFY_RATIO_CHOICES）。 |
+| `set_rectify_ratio(mode: str) -> None` | 改目标矩形口径：只影响**之后的**预览，不必丢掉当前四角。 |
+| `quad_move(index: int, pos: QPointF) -> None` | 把第 ``index`` 个角拖到 ``pos``（图片坐标）。 |
+| `quad_pending()` | 未应用的校正 ``(quad, mode)``；四角没动过则 None。 |
 
 ##### `quad_move(index: int, pos: QPointF) -> None`
 
@@ -3273,35 +3300,145 @@ _confirm_overwrite`）。虚拟预览（区域合成/打印重排/PDF 页）没�
 ⚠️ **允许拖到图片外面**（四角要能框住"拍摄时把纸张也拍进来了"的
 边界）。只留一个"一张图那么远"的宽松上限，免得角点被甩丢。
 
-##### `fit(ratio: float | None=None) -> None`
+---
 
-适应窗口（整图完整可见）；``ratio`` < 1 时四周留白。
+## `desktop.components.viewers.image_editor.canvas.text`
 
-留白的做法是把"要装进去的矩形"按比例放大——图片因此只占视口的
-``ratio``（见 :data:`DEFORM_FIT_RATIO`：进「变形」时图片不顶满视口，
-用户才有地方把笼把手往图外拖）。
+源码：[`desktop/components/viewers/image_editor/canvas/text.py`](../../desktop/components/viewers/image_editor/canvas/text.py)
 
-##### `set_fit_ratio(ratio: float) -> None`
+画布 Mixin：**插入文字块**（就地编辑/整块拖动/样式目标）。
 
-设「适应窗口」时图片占视口的比例（1.0 = 铺满，< 1 = 四周留白）。
+从 ``EditorCanvas`` 拆出（2026-10-07）。方法体逐字未改。
 
-只在用户**没手动缩放过**时立刻生效——手动缩放是明确意图，不该被悄悄
-改掉；但他下次点「适应窗口」或改窗口大小时就按新比例来。
+### `class TextMixin(CanvasHost)`
 
-##### `fit_selection() -> None`
+文字工具：造块/移动/焦点/样式目标/清空。
 
-视图适配当前选区（选区约占视口 80%，四周留出可操作白边）。
+#### 方法
 
-裁剪区收小后松手时调用——选区变小了就要放大查看（用户 20:18 定）。
-⚠️ 不填满视口：顶满时选区边界贴着视口边缘，看不到上下文、手柄
-也挤在边上不好抓（用户 20:28 定"缩放至选区时留出边距"）。
-视图从此锚定选区（``_user_zoomed``），窗口 resize 不再拉回整图。
+| 方法 | 说明 |
+| --- | --- |
+| `add_text_block(pos: QPointF, px: int, color: QColor, family: str) -> TextBlockItem` | 在落点放一个可就地编辑的文字块并给它焦点（光标闪烁）。 |
+| `text_blocks() -> list[TextBlockItem]` | 画布上所有待插入文字块。 |
+| `focused_text_block() -> TextBlockItem \| None` | 正在编辑的文字块（场景焦点项；键盘输入路由用）。 |
+| `style_target_block() -> TextBlockItem \| None` | 选项行改样式时作用的那一块：优先正在编辑的，其次"当前样式块"。 |
+| `focus_text_block(block: TextBlockItem \| None=None) -> None` | 把键盘焦点还给文字块（颜色面板关掉后接着打字用）。 |
+| `clear_text_blocks() -> None` | 清掉所有文字块（插入/换图/关编辑时）。 |
 
-### `class ImageEditorDialog(QDialog)`
+##### `add_text_block(pos: QPointF, px: int, color: QColor, family: str) -> TextBlockItem`
 
-图片编辑弹窗：顶部工具/选项行 + 中央画布 + 底部状态行。
+在落点放一个可就地编辑的文字块并给它焦点（光标闪烁）。
 
-``accepted`` 后用 :meth:`result_image` 取编辑结果；关闭/拒绝即放弃。
+⚠️ 顺便把键盘焦点拿回视图：场景焦点项的输入要靠「视图持有键盘
+焦点 → keyPressEvent 转发」这条链，视图没焦点时打字全落空。
+
+##### `style_target_block() -> TextBlockItem | None`
+
+选项行改样式时作用的那一块：优先正在编辑的，其次"当前样式块"。
+
+⚠️ 与 :meth:`focused_text_block` 分开是刻意的：点选项行的滑杆/按钮
+会抢走键盘焦点，此时"正在编辑"已经没了，但用户**期望**改动仍落在他
+刚点的那个文字块上（用户 2026-10-01 报"字号不生效"就是这个原因）。
+
+---
+
+## `desktop.components.viewers.image_editor.canvas.transform`
+
+源码：[`desktop/components/viewers/image_editor/canvas/transform.py`](../../desktop/components/viewers/image_editor/canvas/transform.py)
+
+画布 Mixin：**统一变换**（GIMP 口径：缩放/切变/旋转/移动 + 调整范围）。
+
+从 ``EditorCanvas`` 拆出（2026-10-07）。方法体逐字未改。
+
+### `class TransformMixin(CanvasHost)`
+
+变换工具：实时预览浮层 + 变换矩阵 + 变换框覆盖层。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `set_transform_about_pivot(about: bool) -> None` | 「从轴心」：缩放/切变以轴心为锚（旋转永远绕轴心）。 |
+| `set_transform_reshape(on: bool) -> None` | 「调整范围」模式：拖手柄/边=收小变换区域，而不是缩放内容。 |
+| `reset_transform() -> None` | 「重置」：丢弃未应用的变换，选区回到整幅、轴心回到中心。 |
+| `transform_pending() -> tuple[QRectF, QTransform, QImage] \| None` | 未应用的变换 ``(选区, 矩阵, 选区像素快照)``；没有则 None。 |
+| `transform_move(dx: float, dy: float) -> None` | 整体平移 ``dx, dy``（图片像素）。 |
+| `transform_rotate(degrees: float) -> None` | 绕**轴心当前视觉位置**旋转（轴心保持不动）。 |
+| `transform_scale(sx: float, sy: float, anchor: QPointF \| None=None) -> None` | 缩放（局部空间，锚点缺省=轴心；sx/sy 是相对当前内容的倍率）。 |
+| `transform_shear(edge: str, k: float) -> None` | 拖边切变：``edge`` 是被抓的边（l/r/t/b），``k`` 是切变系数， |
+
+##### `set_transform_reshape(on: bool) -> None`
+
+「调整范围」模式：拖手柄/边=收小变换区域，而不是缩放内容。
+
+进入时必须丢掉未应用的变换预览——浮层与填白底都是按**旧区域**
+快照做的，区域一变它们就与画布对不上了。退出（收边完成/取消
+勾选）后保留收小的区域，下一次拖动即以它为变换对象。
+
+##### `transform_shear(edge: str, k: float) -> None`
+
+拖边切变：``edge`` 是被抓的边（l/r/t/b），``k`` 是切变系数，
+对边为锚（抓右边往下拖 = 内容随 x 增大而下斜）。
+
+---
+
+## `desktop.components.viewers.image_editor.consts`
+
+源码：[`desktop/components/viewers/image_editor/consts.py`](../../desktop/components/viewers/image_editor/consts.py)
+
+图片编辑器的**全部模块级常量**（含工具表 :data:`TOOLS`）。
+
+从 ``image_editor.py`` 拆出（2026-10-07），只放常量，不放逻辑。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| UNDO_LIMIT | `12` |
+| WHEEL_STEP | `1.15` |
+| MIN_RECT_EDGE | `4.0` |
+| HANDLE_VIEW_PX | `12.0` |
+| EDGE_BAND_VIEW_PX | `8.0` |
+| SEL_FIT_RATIO | `0.8` |
+| EDIT_FIT_RATIO | `0.8` |
+| PIVOT_VIEW_PX | `14.0` |
+| ROTATE_SNAP_DEG | `15.0` |
+| MESH_DENSITY_DEFAULT | `40.0` |
+| DEFORM_FIT_RATIO | `0.8` |
+| PIN_NODE_VIEW_PX | `9.0` |
+| PIN_HIT_VIEW_PX | `11.0` |
+| QUAD_HANDLE_VIEW_PX | `8.0` |
+| QUAD_HIT_VIEW_PX | `12.0` |
+| RECTIFY_RATIO_DEFAULT | `"area"` |
+| DEFORM_PREVIEW_PIXELS | `120000` |
+| DEFORM_PREVIEW_SETTLE_PIXELS | `2500000` |
+| DEFORM_PREVIEW_INTERVAL | `0.08` |
+| CAGE_HANDLE_VIEW_PX | `8.0` |
+| CAGE_HIT_VIEW_PX | `12.0` |
+| CAGE_EDGE_BAND_VIEW_PX | `8.0` |
+| CAGE_PREVIEW_PIXELS | `250000` |
+| CAGE_PREVIEW_SETTLE_PIXELS | `2500000` |
+| CAGE_PREVIEW_INTERVAL | `0.08` |
+| CAGE_FIT_RATIO | `0.8` |
+| CAGE_DENSITY_DEFAULT | `2` |
+
+---
+
+## `desktop.components.viewers.image_editor.dialog`
+
+源码：[`desktop/components/viewers/image_editor/dialog.py`](../../desktop/components/viewers/image_editor/dialog.py)
+
+``ImageEditorDialog``：**装配点 + 基座 + 收尾**。
+
+从 894 行的单类拆出（2026-10-07）。本文件放模块级常量、类头（类属性）、
+``__init__``、快捷键、覆盖确认与「完成」收尾；工具栏、各工具选项页、撤销栈、
+工具提交分别在兄弟模块的 Mixin 里。方法体逐字未改。
+
+MRO 顺序：工具栏/选项页在前（``__init__`` 里就要用），提交与撤销在后。
+
+### `class ImageEditorDialog(ToolbarMixin, ToolPagesMixin, UndoMixin, CommitMixin, QDialog)`
+
+图片编辑器弹窗：左工具栏 + 中间画布 + 右侧选项页 + 底部状态栏。
 
 #### 方法
 
@@ -3324,6 +3461,73 @@ _confirm_overwrite`）。虚拟预览（区域合成/打印重排/PDF 页）没�
 同时清画布：撤销栈是**整图快照**，大图下最多 12 份（见 ``UNDO_LIMIT``），
 关窗后必须释放，不能靠 Python GC（Qt 侧 C++ 对象不由引用计数托管）。
 
+---
+
+## `desktop.components.viewers.image_editor.dialog_commit`
+
+源码：[`desktop/components/viewers/image_editor/dialog_commit.py`](../../desktop/components/viewers/image_editor/dialog_commit.py)
+
+``ImageEditorDialog`` Mixin：**工具提交**。
+
+把画布上的临时状态烘焙进当前图像（含后台烘焙与失败提示）。（从 ``image_editor/dialog.py`` 拆出，2026-10-07；方法体逐字未改）。
+
+### `class CommitMixin(DialogHost)`
+
+把画布上的临时状态烘焙进当前图像（含后台烘焙与失败提示）。
+
+---
+
+## `desktop.components.viewers.image_editor.dialog_pages`
+
+源码：[`desktop/components/viewers/image_editor/dialog_pages.py`](../../desktop/components/viewers/image_editor/dialog_pages.py)
+
+``ImageEditorDialog`` Mixin：**各工具的选项页**。
+
+每个工具右侧的选项面板（裁剪/变换/变形/笼/校正/擦除/文字）。（从 ``image_editor/dialog.py`` 拆出，2026-10-07；方法体逐字未改）。
+
+### `class ToolPagesMixin(DialogHost)`
+
+每个工具右侧的选项面板（裁剪/变换/变形/笼/校正/擦除/文字）。
+
+---
+
+## `desktop.components.viewers.image_editor.dialog_toolbar`
+
+源码：[`desktop/components/viewers/image_editor/dialog_toolbar.py`](../../desktop/components/viewers/image_editor/dialog_toolbar.py)
+
+``ImageEditorDialog`` Mixin：**工具栏与状态栏**。
+
+左侧工具竖排按钮、右侧选项页切换、底部状态提示。（从 ``image_editor/dialog.py`` 拆出，2026-10-07；方法体逐字未改）。
+
+### `class ToolbarMixin(DialogHost)`
+
+左侧工具竖排按钮、右侧选项页切换、底部状态提示。
+
+---
+
+## `desktop.components.viewers.image_editor.dialog_undo`
+
+源码：[`desktop/components/viewers/image_editor/dialog_undo.py`](../../desktop/components/viewers/image_editor/dialog_undo.py)
+
+``ImageEditorDialog`` Mixin：**撤销栈**。
+
+快照入栈/撤销/重做/全部复位。（从 ``image_editor/dialog.py`` 拆出，2026-10-07；方法体逐字未改）。
+
+### `class UndoMixin(DialogHost)`
+
+快照入栈/撤销/重做/全部复位。
+
+---
+
+## `desktop.components.viewers.image_editor.geometry`
+
+源码：[`desktop/components/viewers/image_editor/geometry.py`](../../desktop/components/viewers/image_editor/geometry.py)
+
+图片编辑器的**纯几何/变换数学**与图像合成原语（无 Qt 部件依赖）。
+
+从 ``image_editor.py`` 拆出（2026-10-07）。这里只做像素与矩阵运算，
+不碰 QWidget / 画布状态，因此可被任何宿主复用（含后台线程）。
+
 ### 模块函数
 
 | 函数 | 说明 |
@@ -3336,8 +3540,6 @@ _confirm_overwrite`）。虚拟预览（区域合成/打印重排/PDF 页）没�
 | `transform_region(image: QImage, rect: QRectF, xf: QTransform)` | ``grow`` 模式的目标画布：``(ox, oy, width, height)``。 |
 | `bake_puppet(image: QImage, vertices_rest, vertices_moved, triangles, grow=False, progress=None) -> Any` | 把「网格 ``vertices_rest`` → ``vertices_moved``」的形变烘焙进图片。 |
 | `cage_preview_scale(span_x: float, span_y: float, on_screen: float=1.0, budget_pixels: float=DEFORM_PREVIEW_PIXELS) -> float` | 拖动预览的降采样倍率：清晰度与成本的**取小**。 |
-| `wait_cursor()` | 耗时操作期间挂等待光标。 |
-| `run_with_progress(parent: QWidget \| None, title: str, label: str, work, params: dict)` | 在后台线程跑 ``work(params, progress)`` 并显示进度对话框。 |
 | `draw_text(image: QImage, pos: QPointF, text: str, px: int, color: QColor, family: str \| None=None) -> QImage` | 在 ``pos``（文字块左上角）画文字（可多行，行距 1.25 倍）；空文本原样返回。 |
 
 #### `bake_transform(image: QImage, rect: QRectF, xf: QTransform, region: QImage, grow: bool=False) -> Any`
@@ -3407,34 +3609,6 @@ _confirm_overwrite`）。虚拟预览（区域合成/打印重排/PDF 页）没�
 :data:`DEFORM_PREVIEW_PIXELS`（要跟手），松手后给
 :data:`DEFORM_PREVIEW_SETTLE_PIXELS`（停下来看结果，宁可慢一点也要清楚）。
 
-#### `wait_cursor()`
-
-装饰器：`contextlib.contextmanager`
-
-耗时操作期间挂等待光标。
-
-⚠️ 必须 ``processEvents`` 一下，否则光标要等界面回到事件循环才换，
-而那时的等待已经结束了（等于没挂）。调用方负责别在里面重入。
-
-#### `run_with_progress(parent: QWidget | None, title: str, label: str, work, params: dict)`
-
-在后台线程跑 ``work(params, progress)`` 并显示进度对话框。
-
-返回工作结果；被用户取消时返回 ``None``。``work`` 必须是**纯计算**
-（只用到形参，不碰 Qt 部件/画布），这样才能安全地放进工作线程。
-小任务（预估很快）也不亏：线程启动 + 对话框开销在毫秒级。
-
-⚠️ 工作函数**抛异常**时**重新抛出**（``raise worker.error``），
-调用方负责弹错误框并退回撤销点。绝不能把它折叠成 ``None`` ——
-``None`` 的既定含义是"用户取消"，混同的结果是"点了 20 秒什么都没发生
-且无提示"（用户报过的现象，见 :meth:`_BakeWorker.run`）。
-
-⚠️ 本函数**不吞异常、也不留孤儿线程**：整体 ``try/finally``，
-``finally`` 里 ``cancel() + wait()``。异常逃出等待循环时若不收尾，
-worker 会变成孤儿线程，而它是被 ``parent``（编辑器对话框）持有的 ——
-对话框一析构就是 ``QThread: Destroyed while thread is still running``，
-**Qt 直接 abort 整个进程**（本项目 ``worker_host`` 已记过这条）。
-
 #### `draw_text(image: QImage, pos: QPointF, text: str, px: int, color: QColor, family: str | None=None) -> QImage`
 
 在 ``pos``（文字块左上角）画文字（可多行，行距 1.25 倍）；空文本原样返回。
@@ -3444,30 +3618,59 @@ family，保证"所见即所得"。
 
 ---
 
-## `desktop.components.viewers.image_view`
+## `desktop.components.viewers.image_editor.text_item`
 
-源码：[`desktop/components/viewers/image_view.py`](../../desktop/components/viewers/image_view.py)
+源码：[`desktop/components/viewers/image_editor/text_item.py`](../../desktop/components/viewers/image_editor/text_item.py)
 
-大图查看控件：随控件尺寸缩放，支持叠加切割框。
+画布上的**就地编辑文字块**（从 ``image_editor.py`` 拆出）。
 
-坐标基准是图片原始像素坐标（_image_size），与预览显示缩放无关。
+``TextBlockItem`` 只依赖画布的少量回调（``_move_text_outline`` /
+``_hide_text_outline`` / ``_active_text_block``），刻意不 import 画布，
+避免循环依赖。
 
-开启 boxes_editable 后：
-- 点击框选中（四角出现缩放手柄），拖动框内移动整框，拖手柄缩放；
-- 在空白处按下并拖动可手绘一个新框；
-- Delete/Backspace 删除选中框；
-- 每次修改结束通过 boxes_edited 发出全部框（仅内存与信号，不落盘）。
+### `class TextBlockItem(QGraphicsTextItem)`
 
-reference_boxes 为参考框（如按 area/border 规则推导的最终裁剪大框），
-橙色虚线显示，不参与编辑。
+画布上的待插入文字块：就地编辑（光标可见），按住拖动整体移动。
 
-### 模块常量
+交互口径：**单击**进编辑态放光标（QGraphicsTextItem 原生），**按住
+拖动**超过阈值 = 移动整块。刻意不复用 ``ItemIsMovable``——它与文本
+编辑的"按住选字"打架，这里按位移阈值自己分流。拖动全程由画布的
+**边界虚线框**跟随（悬停即显示、松手即消失），用户随时知道"这一块
+会被整体挪走"（用户 2026-10-01：手机作图式文字）。
 
-| 名称 | 值 |
+#### 方法
+
+| 方法 | 说明 |
 | --- | --- |
-| HANDLE_RADIUS | `5` |
+| `__init__(pos: QPointF, px: int, color: QColor, family: str)` | — |
+| `apply_style(family: str, px: int, color: QColor) -> None` | 选项行改字体/字号/颜色时对块即时生效（编辑中也能改）。 |
+| `mousePressEvent(event) -> None` | Qt 事件覆写：按下（选中 / 开始拖拽或绘制）。 |
+| `mouseMoveEvent(event) -> None` | Qt 事件覆写：移动（拖拽 / 缩放中的实时更新）。 |
+| `mouseReleaseEvent(event) -> None` | Qt 事件覆写：松开（提交本次编辑）。 |
+| `keyPressEvent(event) -> None` | Qt 事件覆写：键盘操作（如 Delete 删除选中项）。 |
+| `focusInEvent(event) -> None` | — |
+| `focusOutEvent(event) -> None` | — |
 
-### `class ImageView(QLabel)`
+##### `apply_style(family: str, px: int, color: QColor) -> None`
+
+选项行改字体/字号/颜色时对块即时生效（编辑中也能改）。
+
+⚠️ 是**整块**生效：setFont/setDefaultTextColor 作用于整个文档，
+与手机作图App一致——样式是段落属性，不做逐字混排。
+
+---
+
+## `desktop.components.viewers.image_view.core`
+
+源码：[`desktop/components/viewers/image_view/core.py`](../../desktop/components/viewers/image_view/core.py)
+
+框编辑画布 ``ImageView``：**装配点 + 基座**。
+
+从 ``image_view.py`` 拆出（2026-10-07）。本文件放类头（信号/类属性）、
+``__init__``、装图/取图、选中与框数据访问；绘制在 ``render``，编辑交互在
+``edit``（Mixin）。方法体逐字未改。
+
+### `class ImageView(RenderMixin, EditMixin, QLabel)`
 
 大图查看：随控件尺寸实时缩放，支持在图片坐标系叠加切割框。
 
@@ -3482,20 +3685,12 @@ reference_boxes 为参考框（如按 area/border 规则推导的最终裁剪大
 | `selected_index() -> int` | 当前选中的框下标；无选中为 -1。 |
 | `select_box(index: int) -> None` | 程序化选中第 index 个框（-1 = 取消选中）并重绘。 |
 | `box_kinds() -> list` | 当前每个框的类型：``"left"`` / ``"right"`` / ``"full"``。 |
-| `preview_edge() -> int` | 当前控件需要多高的预览分辨率（**最长边**像素数）。 |
 | `set_boxes_editable(editable: bool) -> None` | 开关框编辑；开启时接受点击焦点以响应键盘删除。 |
 | `set_reference_boxes(boxes: list) -> None` | 设置参考框（橙色虚线，不参与编辑）并重绘。 |
 | `set_image(image, boxes=None, image_size: QSize \| None=None) -> None` | 装入图片并重置编辑状态。 |
 | `set_boxes(boxes: list, image_size: QSize, full: bool=False, selected: int \| None=None) -> None` | 仅更新切割框、形态与图片原始尺寸并重绘（不换图）。 |
 | `clear_image(text: str='无预览') -> None` | 清空图片与全部框（含参考框），显示占位文案。 |
-| `resizeEvent(event) -> None` | Qt 事件覆写：尺寸变化时重算布局 / 重新缩放。 |
-| `event(event) -> bool` | 跨显示器拖动（dpr 变化）时按新 dpr 重画。 |
-| `mousePressEvent(event) -> None` | Qt 事件覆写：按下（选中 / 开始拖拽或绘制）。 |
-| `mouseMoveEvent(event) -> None` | Qt 事件覆写：移动（拖拽 / 缩放中的实时更新）。 |
-| `mouseReleaseEvent(event) -> None` | Qt 事件覆写：松开（提交本次编辑）。 |
-| `mouseDoubleClickEvent(event) -> None` | 双击 → ``double_clicked``（宿主打开图片预览弹窗）。 |
-| `contextMenuEvent(event) -> None` | 右键大图 → ``context_menu_requested``（宿主弹「查看 / 编辑」菜单）。 |
-| `keyPressEvent(event) -> None` | Qt 事件覆写：键盘操作（如 Delete 删除选中项）。 |
+| `preview_edge() -> int` | 当前控件需要多高的预览分辨率（**最长边**像素数）。 |
 
 ##### `box_kinds() -> list`
 
@@ -3503,18 +3698,6 @@ reference_boxes 为参考框（如按 area/border 规则推导的最终裁剪大
 
 与 :meth:`_draw_boxes` 用的是**同一份规则**（整幅页恒为 full；半幅页按
 中心位置判左右），所以面板高亮与实际画出的标签永远一致。
-
-##### `preview_edge() -> int`
-
-当前控件需要多高的预览分辨率（**最长边**像素数）。
-
-按控件的**物理**像素算（逻辑尺寸 × dpr），取宽高较大者：图片按等比
-缩放适配控件，长边必定落在控件的长边上，所以按较大边给就够。
-
-交给 ``PreviewWorker(longest_edge=...)`` 用。⚠️ 早先四处调用点都写死
-1600：高分屏（150%~200%）或大窗口下屏幕需要的像素比 1600 还多，
-源图只能被放大 → 糊。实测（.workbuddy/perf/2026-09-24-preview-sharpness.md）
-把密度拉满后 RMSE 再降 30~50%、锐度再涨 1.4~1.7 倍，代价是每页多 25~160ms。
 
 ##### `set_image(image, boxes=None, image_size: QSize | None=None) -> None`
 
@@ -3535,13 +3718,42 @@ boxes 为图片像素坐标；image_size 为坐标映射基准，与显示缩放
 ⚠️ 名称/颜色不在这里传：它们由 `box_styles` 按**中心位置**每帧现算，
 这样拖动框跨过中线时名字与颜色会立刻跟着换（用户 2026-09-29 要求）。
 
-##### `event(event) -> bool`
+##### `preview_edge() -> int`
 
-跨显示器拖动（dpr 变化）时按新 dpr 重画。
+当前控件需要多高的预览分辨率（**最长边**像素数）。
 
-Qt 在窗口 dpr 变化时发 ``DevicePixelRatioChange``，**不保证**同时发
-``resizeEvent``。不接这个事件的话，把窗口从 100% 屏拖到 200% 屏，
-图会一直停在按旧 dpr 出的那版（明显发糊），要等下次换页才恢复。
+按控件的**物理**像素算（逻辑尺寸 × dpr），取宽高较大者：图片按等比
+缩放适配控件，长边必定落在控件的长边上，所以按较大边给就够。
+
+交给 ``PreviewWorker(longest_edge=...)`` 用。⚠️ 早先四处调用点都写死
+1600：高分屏（150%~200%）或大窗口下屏幕需要的像素比 1600 还多，
+源图只能被放大 → 糊。实测（.workbuddy/perf/2026-09-24-preview-sharpness.md）
+把密度拉满后 RMSE 再降 30~50%、锐度再涨 1.4~1.7 倍，代价是每页多 25~160ms。
+
+---
+
+## `desktop.components.viewers.image_view.edit`
+
+源码：[`desktop/components/viewers/image_view/edit.py`](../../desktop/components/viewers/image_view/edit.py)
+
+``ImageView`` Mixin：**鼠标/键盘编辑**。
+
+框的选中/拖拽/四角缩放/双击/右键/键盘删除。（从 ``image_view.py`` 拆出，2026-10-07；方法体逐字未改）。
+
+### `class EditMixin(ImageViewHost)`
+
+框的选中/拖拽/四角缩放/双击/右键/键盘删除。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `mousePressEvent(event) -> None` | Qt 事件覆写：按下（选中 / 开始拖拽或绘制）。 |
+| `mouseMoveEvent(event) -> None` | Qt 事件覆写：移动（拖拽 / 缩放中的实时更新）。 |
+| `mouseReleaseEvent(event) -> None` | Qt 事件覆写：松开（提交本次编辑）。 |
+| `mouseDoubleClickEvent(event) -> None` | 双击 → ``double_clicked``（宿主打开图片预览弹窗）。 |
+| `contextMenuEvent(event) -> None` | 右键大图 → ``context_menu_requested``（宿主弹「查看 / 编辑」菜单）。 |
+| `keyPressEvent(event) -> None` | Qt 事件覆写：键盘操作（如 Delete 删除选中项）。 |
 
 ##### `mouseDoubleClickEvent(event) -> None`
 
@@ -3557,6 +3769,52 @@ Qt 在窗口 dpr 变化时发 ``DevicePixelRatioChange``，**不保证**同时�
 
 没有图时不弹（没有可查看/可编辑的东西），交给默认处理。框编辑用的是
 左键（见 mousePressEvent），右键不参与，两者不打架。
+
+---
+
+## `desktop.components.viewers.image_view.render`
+
+源码：[`desktop/components/viewers/image_view/render.py`](../../desktop/components/viewers/image_view/render.py)
+
+``ImageView`` Mixin：**绘制与坐标映射**。
+
+重绘整张预览（框/参考框/整幅虚框）与图↔屏坐标映射。（从 ``image_view.py`` 拆出，2026-10-07；方法体逐字未改）。
+
+### `class RenderMixin(ImageViewHost)`
+
+重绘整张预览（框/参考框/整幅虚框）与图↔屏坐标映射。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `resizeEvent(event) -> None` | Qt 事件覆写：尺寸变化时重算布局 / 重新缩放。 |
+| `event(event) -> bool` | 跨显示器拖动（dpr 变化）时按新 dpr 重画。 |
+
+##### `event(event) -> bool`
+
+跨显示器拖动（dpr 变化）时按新 dpr 重画。
+
+Qt 在窗口 dpr 变化时发 ``DevicePixelRatioChange``，**不保证**同时发
+``resizeEvent``。不接这个事件的话，把窗口从 100% 屏拖到 200% 屏，
+图会一直停在按旧 dpr 出的那版（明显发糊），要等下次换页才恢复。
+
+---
+
+## `desktop.components.viewers.image_view.styles`
+
+源码：[`desktop/components/viewers/image_view/styles.py`](../../desktop/components/viewers/image_view/styles.py)
+
+框的配色/名称与绘制样式（**纯数据 + 纯函数**，无 Qt 部件依赖）。
+
+从 ``image_view.py`` 拆出（2026-10-07）。其它模块（检测框/去底色/打印预览）
+可直接复用这里的框配色口径，不必依赖画布控件。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| HANDLE_RADIUS | `5` |
 
 ### 模块函数
 
@@ -3580,13 +3838,52 @@ Qt 在窗口 dpr 变化时发 ``DevicePixelRatioChange``，**不保证**同时�
 
 ---
 
-## `desktop.components.viewers.image_viewer`
+## `desktop.components.viewers.image_viewer.boxes`
 
-源码：[`desktop/components/viewers/image_viewer.py`](../../desktop/components/viewers/image_viewer.py)
+源码：[`desktop/components/viewers/image_viewer/boxes.py`](../../desktop/components/viewers/image_viewer/boxes.py)
 
-图片查看器：缩略图条 + 大图，支持切割框叠加与页面增删按钮。
+``ImageViewerWidget`` Mixin：**框数据接口**。
 
-### `class ImageViewerWidget(QWidget, ThumbsMixin, ZoomPopupMixin)`
+把检测框交给画布、选中与整幅模式查询。（从 ``image_viewer.py`` 拆出，2026-10-07；方法体逐字未改）。
+
+### `class BoxesMixin(ImageViewerHost)`
+
+把检测框交给画布、选中与整幅模式查询。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `apply_boxes(boxes: list[tuple], image_size: QSize, info_text: str='', full: bool=False, selected: int=-1) -> None` | 在当前大图上叠加切割框（图片像素坐标）；大图未就绪时挂起等待。 |
+| `set_reference_boxes(boxes: list) -> None` | 设置参考框（最终裁剪大框，虚线显示，不参与编辑）。 |
+| `select_box(index: int) -> None` | 程序化选中第 index 个框（-1 = 取消选中）。 |
+| `selected_index() -> int` | 当前选中的框下标；无选中为 -1。 |
+| `box_full_mode() -> bool` | 本页是否为整幅(fullcontent)。 |
+| `box_kinds() -> list` | 当前每个框的类型（"left"/"right"/"full"）。 |
+
+##### `apply_boxes(boxes: list[tuple], image_size: QSize, info_text: str='', full: bool=False, selected: int=-1) -> None`
+
+在当前大图上叠加切割框（图片像素坐标）；大图未就绪时挂起等待。
+
+``full=True`` 表示本页是整幅(fullcontent)：框显示为「整幅」且只允许一个；
+否则按框的**中心位置**显示为左/右框。名称/颜色由控件每帧现算，不用传。
+``selected`` 为要选中的框下标（-1 = 不选），用于切换类型后保持选中。
+
+---
+
+## `desktop.components.viewers.image_viewer.core`
+
+源码：[`desktop/components/viewers/image_viewer/core.py`](../../desktop/components/viewers/image_viewer/core.py)
+
+``ImageViewerWidget``：**装配点 + 基座 + 展示主路径**。
+
+从 ``image_viewer.py`` 拆出（2026-10-07）。本文件放类头（信号/类属性）、
+``__init__``、条目装填与当前页展示、以及宿主协议（``_zoom_*``）。
+缩略图缓存、PDF 页源、框数据分别在兄弟模块的 Mixin 里；方法体逐字未改。
+
+⚠️ 宿主协议三个方法留在本类，才能盖住 ``ZoomPopupMixin`` 的默认实现。
+
+### `class ImageViewerWidget(ThumbsCacheMixin, PdfSourceMixin, BoxesMixin, QWidget, ThumbsMixin, ZoomPopupMixin)`
 
 图片查看器：缩略图条 + 大图，支持切割框叠加、拖动与页面增删按钮。
 
@@ -3601,16 +3898,6 @@ Qt 在窗口 dpr 变化时发 ``DevicePixelRatioChange``，**不保证**同时�
 | `set_insert_visible(visible: bool) -> None` | 「＋/📁」两个**图片输入入口**的显隐（宿主按流程入口决定）。 |
 | `set_empty_hint(hint: str) -> None` | 换空态文案（输入入口藏起来后，"请点下方「＋」"就指错方向了）。 |
 | `set_images(paths: list[Path \| str], boxes_map: dict \| None=None) -> None` | 设置页面清单并重建缩略图条；清单未变则仅通知宿主重读。 |
-| `set_thumb_source(paths: list[Path \| str], cache_dir: Path \| str, edge: int \| None=None, names: list[str \| None] \| None=None) -> None` | 清单是真实图片，但左侧缩略图走 ``cache_dir`` 下的**缓存小图**。 |
-| `set_pdf_source(pdf: Path \| str, cache_dir: Path \| None=None, gen: int=0) -> None` | 源是一本 **PDF**：左栏显示它的页缩略图，右侧大图按需渲高清页。 |
-| `begin_pdf_pages(count: int, path: str='') -> None` | PDF 页数已known：按「第 N 页」建缩略图条目并选中第一页。 |
-| `set_pdf_thumb(gen: int, index: int, image) -> None` | PDF 第 index 页的缩略图就绪：填进缩略图条第 index 条。 |
-| `apply_boxes(boxes: list[tuple], image_size: QSize, info_text: str='', full: bool=False, selected: int=-1) -> None` | 在当前大图上叠加切割框（图片像素坐标）；大图未就绪时挂起等待。 |
-| `set_reference_boxes(boxes: list) -> None` | 设置参考框（最终裁剪大框，虚线显示，不参与编辑）。 |
-| `select_box(index: int) -> None` | 程序化选中第 index 个框（-1 = 取消选中）。 |
-| `selected_index() -> int` | 当前选中的框下标；无选中为 -1。 |
-| `box_full_mode() -> bool` | 本页是否为整幅(fullcontent)。 |
-| `box_kinds() -> list` | 当前每个框的类型（"left"/"right"/"full"）。 |
 | `apply_edited_image(path_text: str, image) -> None` | 编辑结果**立即上屏**（不等文件重解码/缩略图重生成）。 |
 | `refresh_page(path_text: str) -> None` | 某页缩略图缓存重生成后刷新条目图标（大图由 apply_edited_image |
 | `reload_thumb(path_text: str) -> None` | 某张图的**文件内容**被覆盖后：忘掉旧缓存记忆并按新文件重取缩略图。 |
@@ -3669,23 +3956,49 @@ run() 内部**，只经 ``failed`` 信号回到预览区显示成
 ``boxes_map`` 预留（当前未用）。清单不变时跳过重建，但仍 emit
 current_changed 让宿主重新读取该页检测框/参数。
 
-##### `set_thumb_source(paths: list[Path | str], cache_dir: Path | str, edge: int | None=None, names: list[str | None] | None=None) -> None`
+##### `apply_edited_image(path_text: str, image) -> None`
 
-清单是真实图片，但左侧缩略图走 ``cache_dir`` 下的**缓存小图**。
+编辑结果**立即上屏**（不等文件重解码/缩略图重生成）。
 
-用户 2026-10-03：所有独立任务左侧都显示缩略图，且统一缓存在
-``~/Documents/guji/singletask``。清单本身**仍然是真实图片路径**——
-右侧大图、检测框按 ``Path(path).stem`` 取键、放大弹窗的编辑回写，
-全都指着真实文件；缓存只喂缩略图条。
+编辑弹窗确认后由宿主调用：当前页大图直接换成编辑结果，条目图标
+用编辑结果现缩一张，缩略图缓存随后由宿主后台重生兜底。清单里没有
+这个路径（或图无效）时是空操作。
 
-实现方式是**替换缩略图来源**而不是替换清单：``_thumb_provider`` 由
-:meth:`set_thumb_source` 装上，:meth:`set_images` 的
-``_load_thumbs`` 会自动走它（它本来就支持 ``thumb_provider``）。
+##### `refresh_page(path_text: str) -> None`
 
-``names``（可选，与 ``paths`` 等长）：每张图的**显式缓存文件名**。
-extract 的缓存名是**序号**（``0001.jpg``）而非图键——同一页在
-「未提取」阶段是 PDF 渲染、「提取后」是产物重渲，两次写**同一个文件**，
-目标名只能由调用方给出（用户 2026-10-04「只保留一份、按序号处理」）。
+某页缩略图缓存重生成后刷新条目图标（大图由 apply_edited_image
+即时同步过，不再重载）。路径不在清单里时是空操作。
+
+##### `reload_thumb(path_text: str) -> None`
+
+某张图的**文件内容**被覆盖后：忘掉旧缓存记忆并按新文件重取缩略图。
+
+⚠️ 必须真的"忘掉"（:attr:`_thumb_cache_ready` 里那条）：缓存文件名带
+**大小**（``book_key`` 含 size），编辑器改了像素尺寸就换了文件名，
+而记忆里那条旧路径仍指向**覆盖前**的缓存文件——只刷不丢会一直显示
+编辑前的样子（用户报「独立步骤里编辑不生效」就是这么来的）。
+
+---
+
+## `desktop.components.viewers.image_viewer.pdf`
+
+源码：[`desktop/components/viewers/image_viewer/pdf.py`](../../desktop/components/viewers/image_viewer/pdf.py)
+
+``ImageViewerWidget`` Mixin：**PDF 页源**。
+
+把 PDF 页当图片源（懒渲染 + 缓存）。（从 ``image_viewer.py`` 拆出，2026-10-07；方法体逐字未改）。
+
+### `class PdfSourceMixin(ImageViewerHost)`
+
+把 PDF 页当图片源（懒渲染 + 缓存）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `set_pdf_source(pdf: Path \| str, cache_dir: Path \| None=None, gen: int=0) -> None` | 源是一本 **PDF**：左栏显示它的页缩略图，右侧大图按需渲高清页。 |
+| `begin_pdf_pages(count: int, path: str='') -> None` | PDF 页数已known：按「第 N 页」建缩略图条目并选中第一页。 |
+| `set_pdf_thumb(gen: int, index: int, image) -> None` | PDF 第 index 页的缩略图就绪：填进缩略图条第 index 条。 |
 
 ##### `set_pdf_source(pdf: Path | str, cache_dir: Path | None=None, gen: int=0) -> None`
 
@@ -3717,69 +4030,53 @@ PDF 第 index 页的缩略图就绪：填进缩略图条第 index 条。
 ``gen`` 与 :meth:`set_pdf_source` 传的一致才算数——旧书那个还在跑的
 worker 迟到时会被丢弃，否则**旧书的页会画进新书的缩略图条**。
 
-##### `apply_boxes(boxes: list[tuple], image_size: QSize, info_text: str='', full: bool=False, selected: int=-1) -> None`
+---
 
-在当前大图上叠加切割框（图片像素坐标）；大图未就绪时挂起等待。
+## `desktop.components.viewers.image_viewer.thumbs`
 
-``full=True`` 表示本页是整幅(fullcontent)：框显示为「整幅」且只允许一个；
-否则按框的**中心位置**显示为左/右框。名称/颜色由控件每帧现算，不用传。
-``selected`` 为要选中的框下标（-1 = 不选），用于切换类型后保持选中。
+源码：[`desktop/components/viewers/image_viewer/thumbs.py`](../../desktop/components/viewers/image_viewer/thumbs.py)
 
-##### `apply_edited_image(path_text: str, image) -> None`
+``ImageViewerWidget`` Mixin：**缩略图缓存**。
 
-编辑结果**立即上屏**（不等文件重解码/缩略图重生成）。
+缩略图来源/缓存键/后台重渲。（从 ``image_viewer.py`` 拆出，2026-10-07；方法体逐字未改）。
 
-编辑弹窗确认后由宿主调用：当前页大图直接换成编辑结果，条目图标
-用编辑结果现缩一张，缩略图缓存随后由宿主后台重生兜底。清单里没有
-这个路径（或图无效）时是空操作。
+### `class ThumbsCacheMixin(ImageViewerHost)`
 
-##### `refresh_page(path_text: str) -> None`
+缩略图来源/缓存键/后台重渲。
 
-某页缩略图缓存重生成后刷新条目图标（大图由 apply_edited_image
-即时同步过，不再重载）。路径不在清单里时是空操作。
+#### 方法
 
-##### `reload_thumb(path_text: str) -> None`
+| 方法 | 说明 |
+| --- | --- |
+| `set_thumb_source(paths: list[Path \| str], cache_dir: Path \| str, edge: int \| None=None, names: list[str \| None] \| None=None) -> None` | 清单是真实图片，但左侧缩略图走 ``cache_dir`` 下的**缓存小图**。 |
 
-某张图的**文件内容**被覆盖后：忘掉旧缓存记忆并按新文件重取缩略图。
+##### `set_thumb_source(paths: list[Path | str], cache_dir: Path | str, edge: int | None=None, names: list[str | None] | None=None) -> None`
 
-⚠️ 必须真的"忘掉"（:attr:`_thumb_cache_ready` 里那条）：缓存文件名带
-**大小**（``book_key`` 含 size），编辑器改了像素尺寸就换了文件名，
-而记忆里那条旧路径仍指向**覆盖前**的缓存文件——只刷不丢会一直显示
-编辑前的样子（用户报「独立步骤里编辑不生效」就是这么来的）。
+清单是真实图片，但左侧缩略图走 ``cache_dir`` 下的**缓存小图**。
+
+用户 2026-10-03：所有独立任务左侧都显示缩略图，且统一缓存在
+``~/Documents/guji/singletask``。清单本身**仍然是真实图片路径**——
+右侧大图、检测框按 ``Path(path).stem`` 取键、放大弹窗的编辑回写，
+全都指着真实文件；缓存只喂缩略图条。
+
+实现方式是**替换缩略图来源**而不是替换清单：``_thumb_provider`` 由
+:meth:`set_thumb_source` 装上，:meth:`set_images` 的
+``_load_thumbs`` 会自动走它（它本来就支持 ``thumb_provider``）。
+
+``names``（可选，与 ``paths`` 等长）：每张图的**显式缓存文件名**。
+extract 的缓存名是**序号**（``0001.jpg``）而非图键——同一页在
+「未提取」阶段是 PDF 渲染、「提取后」是产物重渲，两次写**同一个文件**，
+目标名只能由调用方给出（用户 2026-10-04「只保留一份、按序号处理」）。
 
 ---
 
-## `desktop.components.viewers.image_zoom_dialog`
+## `desktop.components.viewers.image_zoom_dialog.canvas`
 
-源码：[`desktop/components/viewers/image_zoom_dialog.py`](../../desktop/components/viewers/image_zoom_dialog.py)
+源码：[`desktop/components/viewers/image_zoom_dialog/canvas.py`](../../desktop/components/viewers/image_zoom_dialog/canvas.py)
 
-图片预览弹窗：拖拽平移、滚轮/按钮缩放、翻转旋转、下载、翻页。
+预览画布：``ZoomTarget`` 与 ``ZoomableCanvas``。
 
-为什么不把缩放直接做在 ``ImageView`` 上：那是**框编辑**画布——点击选中、
-拖拽移动整框、四角缩放、空白拖拽手绘。再叠一层"滚轮缩放 + 拖拽平移"，
-两种拖拽立刻打架（拖框 vs 拖画布），而框坐标是 detect/rembg 的实际输出依据，
-误操作代价高。所以编辑仍留在原处（固定"适应窗口"），弹窗只做**只读**查看。
-
-渲染密度由弹窗自己算（``_render_edge``：视口物理长边 × ``RENDER_HEADROOM``，
-再受宿主给的 ``ZoomTarget.cap`` 与 :data:`MAX_RENDER_EDGE` 约束），宿主只提供
-``render(edge) -> worker``。这样「图片按最长边解码」「PDF 按该边长渲染」
-「打印效果按该边长反推 px/mm 重新排版」三种口径各归各家，弹窗不必区分。
-
-⚠️ 缩放倍率的语义：**1.0 = 100% = 1 图片像素对 1 设备像素**（QGraphicsView 的
-变换比例 = 倍率 ÷ dpr）。所以场景里的 pixmap 刻意**不设** devicePixelRatio
-（1 场景单位 = 1 图片像素），否则这套换算会再叠一个 dpr。
-
-### 模块常量
-
-| 名称 | 值 |
-| --- | --- |
-| WHEEL_STEP | `1.15` |
-| RENDER_HEADROOM | `1.5` |
-| MIN_RENDER_EDGE | `1600` |
-| MAX_RENDER_EDGE | `4000` |
-| JPEG_QUALITY | `90` |
-| PAN_MARGIN_RATIO | `0.25` |
-| OVERWRITE_JPEG_QUALITY | `95` |
+从 ``image_zoom_dialog.py`` 拆出（2026-10-07）。方法体逐字未改。
 
 ### `class ZoomTarget`
 
@@ -3879,6 +4176,38 @@ render: ``(edge:int) -> worker``；cap: 渲染密度上限（如原图原生边�
 编辑器回写原图时用它把朝向"烤"进全分辨率原图——见
 ``ImageZoomDialog._edit_image``。
 
+---
+
+## `desktop.components.viewers.image_zoom_dialog.consts`
+
+源码：[`desktop/components/viewers/image_zoom_dialog/consts.py`](../../desktop/components/viewers/image_zoom_dialog/consts.py)
+
+图片预览弹窗的**模块级常量**（缩放档位/渲染密度/尺寸等）。
+
+从 ``image_zoom_dialog.py`` 拆出（2026-10-07）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| WHEEL_STEP | `1.15` |
+| RENDER_HEADROOM | `1.5` |
+| MIN_RENDER_EDGE | `1600` |
+| MAX_RENDER_EDGE | `4000` |
+| JPEG_QUALITY | `90` |
+| PAN_MARGIN_RATIO | `0.25` |
+| OVERWRITE_JPEG_QUALITY | `95` |
+
+---
+
+## `desktop.components.viewers.image_zoom_dialog.dialog`
+
+源码：[`desktop/components/viewers/image_zoom_dialog/dialog.py`](../../desktop/components/viewers/image_zoom_dialog/dialog.py)
+
+图片预览弹窗 ``ImageZoomDialog``（工具栏/缩放/翻页/下载/编辑入口）。
+
+从 ``image_zoom_dialog.py`` 拆出（2026-10-07）。方法体逐字未改。
+
 ### `class ImageZoomDialog(QDialog, WorkerHost)`
 
 图片预览弹窗：拖拽平移、滚轮/按钮缩放、翻转旋转、下载、翻页。
@@ -3909,6 +4238,92 @@ render: ``(edge:int) -> worker``；cap: 渲染密度上限（如原图原生边�
 
 Esc 交给 QDialog 自己处理（关窗）。
 
+---
+
+## `desktop.components.viewers.image_zoom_dialog.icons`
+
+源码：[`desktop/components/viewers/image_zoom_dialog/icons.py`](../../desktop/components/viewers/image_zoom_dialog/icons.py)
+
+预览弹窗的**图标与朝向变换**（自绘翻转/旋转图标 + 显示矩阵）。
+
+从 ``image_zoom_dialog.py`` 拆出（2026-10-07）。方法体逐字未改。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `display_transform(rotation: int=0, flip_h: bool=False, flip_v: bool=False) -> QTransform` | 翻转/旋转的变换矩阵——**屏幕与导出必须共用这一个**。 |
+| `mirrored_rotate_icon() -> QIcon` | ``FIF.ROTATE`` 的水平镜像 = **逆时针（左旋）**。 |
+| `flip_icon(horizontal: bool=True, color: QColor \| None=None) -> QIcon` | 翻转按钮的图标（水平/垂直 = 同一个图形转 90°）。 |
+
+#### `display_transform(rotation: int=0, flip_h: bool=False, flip_v: bool=False) -> QTransform`
+
+翻转/旋转的变换矩阵——**屏幕与导出必须共用这一个**。
+
+⚠️ 屏幕侧走 ``QGraphicsPixmapItem.setTransform``、导出侧走
+``QImage.transformed``。两处若各写一份，改一处就会出现「看到的和下载的
+不一样」（翻转轴或旋转方向不一致）。
+
+#### `mirrored_rotate_icon() -> QIcon`
+
+``FIF.ROTATE`` 的水平镜像 = **逆时针（左旋）**。
+
+qfluentwidgets 只提供一个旋转图标：ROTATE 的箭头在弧线底部**指向左**，
+即顺时针（右旋）。左旋用它的镜像，两颗按钮的笔触天然一致、只差方向。
+
+多档位 pixmap 是为了高分屏下不掉清晰度（图标源是 SVG，按需渲染）。
+
+#### `flip_icon(horizontal: bool=True, color: QColor | None=None) -> QIcon`
+
+翻转按钮的图标（水平/垂直 = 同一个图形转 90°）。
+
+qfluentwidgets 没有可用的翻转图标：``SEARCH_MIRROR`` 是"带镜子的放大镜"，
+语义不对；``SYNC`` 是循环箭头。自绘还有个好处——一对图标笔触完全一致，
+且按需渲染，任意 dpr 下都锐利。
+
+---
+
+## `desktop.components.viewers.image_zoom_dialog.io`
+
+源码：[`desktop/components/viewers/image_zoom_dialog/io.py`](../../desktop/components/viewers/image_zoom_dialog/io.py)
+
+预览弹窗的**存盘原语**（下载另存 / 原子覆盖原图）。
+
+从 ``image_zoom_dialog.py`` 拆出（2026-10-07）。方法体逐字未改。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `save_image(image: QImage, path: str \| Path, quality: int=JPEG_QUALITY) -> bool` | 把 QImage 写到磁盘：``.jpg``/``.jpeg`` 走有损（quality），其余交给 Qt。 |
+| `overwrite_image_file(image: QImage, target: Path, quality: int=OVERWRITE_JPEG_QUALITY) -> bool` | 把 ``image`` **原子**覆盖到 ``target``（格式按目标后缀）。 |
+
+#### `save_image(image: QImage, path: str | Path, quality: int=JPEG_QUALITY) -> bool`
+
+把 QImage 写到磁盘：``.jpg``/``.jpeg`` 走有损（quality），其余交给 Qt。
+
+单独抽出来是为了可测——保存对话框在离屏环境里弹不出来。
+
+#### `overwrite_image_file(image: QImage, target: Path, quality: int=OVERWRITE_JPEG_QUALITY) -> bool`
+
+把 ``image`` **原子**覆盖到 ``target``（格式按目标后缀）。
+
+⚠️ 必须走「临时文件 + os.replace」，不能就地写：任务目录里的页面图
+可能是硬链接（workset 时代的遗产），就地写会把链接另一头的源文件一起
+改掉；且覆盖途中被 200ms 一次的 extract 轮询/预览读到半截也是事故。
+``os.replace`` 换的是目录项——读者要么看到完整旧图、要么看到完整新图，
+旧 inode 原样留在硬链接另一头。
+
+---
+
+## `desktop.components.viewers.image_zoom_dialog.popup`
+
+源码：[`desktop/components/viewers/image_zoom_dialog/popup.py`](../../desktop/components/viewers/image_zoom_dialog/popup.py)
+
+宿主侧混入 ``ZoomPopupMixin``：双击/右键开预览弹窗与「预览 / 编辑」菜单。
+
+从 ``image_zoom_dialog.py`` 拆出（2026-10-07）。方法体逐字未改。
+
 ### `class ZoomPopupMixin`
 
 宿主侧混入：双击/右键大图打开图片预览弹窗与「预览 / 编辑」菜单。
@@ -3936,57 +4351,6 @@ Esc 交给 QDialog 自己处理（关窗）。
 
 编辑器「完成」后：原子覆盖该文件 → ``_on_zoom_image_saved`` 通知宿主
 刷新（尺寸 / 缩略图 / 各处大图）。返回是否真的写回了文件。
-
-### 模块函数
-
-| 函数 | 说明 |
-| --- | --- |
-| `display_transform(rotation: int=0, flip_h: bool=False, flip_v: bool=False) -> QTransform` | 翻转/旋转的变换矩阵——**屏幕与导出必须共用这一个**。 |
-| `mirrored_rotate_icon() -> QIcon` | ``FIF.ROTATE`` 的水平镜像 = **逆时针（左旋）**。 |
-| `flip_icon(horizontal: bool=True, color: QColor \| None=None) -> QIcon` | 翻转按钮的图标（水平/垂直 = 同一个图形转 90°）。 |
-| `save_image(image: QImage, path: str \| Path, quality: int=JPEG_QUALITY) -> bool` | 把 QImage 写到磁盘：``.jpg``/``.jpeg`` 走有损（quality），其余交给 Qt。 |
-| `overwrite_image_file(image: QImage, target: Path, quality: int=OVERWRITE_JPEG_QUALITY) -> bool` | 把 ``image`` **原子**覆盖到 ``target``（格式按目标后缀）。 |
-
-#### `display_transform(rotation: int=0, flip_h: bool=False, flip_v: bool=False) -> QTransform`
-
-翻转/旋转的变换矩阵——**屏幕与导出必须共用这一个**。
-
-⚠️ 屏幕侧走 ``QGraphicsPixmapItem.setTransform``、导出侧走
-``QImage.transformed``。两处若各写一份，改一处就会出现「看到的和下载的
-不一样」（翻转轴或旋转方向不一致）。
-
-#### `mirrored_rotate_icon() -> QIcon`
-
-``FIF.ROTATE`` 的水平镜像 = **逆时针（左旋）**。
-
-qfluentwidgets 只提供一个旋转图标：ROTATE 的箭头在弧线底部**指向左**，
-即顺时针（右旋）。左旋用它的镜像，两颗按钮的笔触天然一致、只差方向。
-
-多档位 pixmap 是为了高分屏下不掉清晰度（图标源是 SVG，按需渲染）。
-
-#### `flip_icon(horizontal: bool=True, color: QColor | None=None) -> QIcon`
-
-翻转按钮的图标（水平/垂直 = 同一个图形转 90°）。
-
-qfluentwidgets 没有可用的翻转图标：``SEARCH_MIRROR`` 是"带镜子的放大镜"，
-语义不对；``SYNC`` 是循环箭头。自绘还有个好处——一对图标笔触完全一致，
-且按需渲染，任意 dpr 下都锐利。
-
-#### `save_image(image: QImage, path: str | Path, quality: int=JPEG_QUALITY) -> bool`
-
-把 QImage 写到磁盘：``.jpg``/``.jpeg`` 走有损（quality），其余交给 Qt。
-
-单独抽出来是为了可测——保存对话框在离屏环境里弹不出来。
-
-#### `overwrite_image_file(image: QImage, target: Path, quality: int=OVERWRITE_JPEG_QUALITY) -> bool`
-
-把 ``image`` **原子**覆盖到 ``target``（格式按目标后缀）。
-
-⚠️ 必须走「临时文件 + os.replace」，不能就地写：任务目录里的页面图
-可能是硬链接（workset 时代的遗产），就地写会把链接另一头的源文件一起
-改掉；且覆盖途中被 200ms 一次的 extract 轮询/预览读到半截也是事故。
-``os.replace`` 换的是目录项——读者要么看到完整旧图、要么看到完整新图，
-旧 inode 原样留在硬链接另一头。
 
 ---
 
@@ -4120,26 +4484,83 @@ A4 纸上的图片拖拽/缩放画布；rect_changed 发出页面 mm 坐标。
 
 ---
 
-## `desktop.components.viewers.print_preview`
+## `desktop.components.viewers.print_preview.export`
 
-源码：[`desktop/components/viewers/print_preview.py`](../../desktop/components/viewers/print_preview.py)
+源码：[`desktop/components/viewers/print_preview/export.py`](../../desktop/components/viewers/print_preview/export.py)
 
-PDF排版（print）预览：左侧缩略图条 + 右侧单页效果预览。
+print 预览 Mixin：**导出与打印**。
 
-布局与前三步保持一致（``ImageViewerWidget`` / ``RembgPreviewWidget`` 的
-「左缩略图 + 右大图」），右侧不再是网格瀑布流：
+把当前页导出为 A4 效果图 / 直接打印。（从 ``print_preview.py`` 拆出，2026-10-07；方法体逐字未改）。
 
-- **打印效果**：按右侧表单参数（纸张/方向/边距/标题/页码）把图片排进一
-  张纸里给用户在屏幕上看到——**只是效果，不执行、不提交、不生成 PDF**；
-- **原图**：待打印图片本身（第三步「提交本次任务」的最终图）。
+### `class PrintExportMixin(PrintPreviewHost)`
 
-几何全部来自 ``utils.page_layout.plan_print_page``，而真正生成 PDF 的
-``functions/print.py`` 用的是同一个函数，所以预览与成品不会漂移。
+把当前页导出为 A4 效果图 / 直接打印。
 
-缩略图默认用条目图片本身（``ImageListWorker`` 走 QImageReader 缩放解码，
-等于现算缩略图）；传入 ``thumb_provider`` 时改用它给出的预生成小图。
+#### 方法
 
-### `class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin)`
+| 方法 | 说明 |
+| --- | --- |
+| `export_current_effect(target: str \| Path) -> None` | 把**当前页**排进纸面后的 A4 效果图按 300dpi 写到 ``target``。 |
+
+##### `export_current_effect(target: str | Path) -> None`
+
+把**当前页**排进纸面后的 A4 效果图按 300dpi 写到 ``target``。
+
+单页、不生成 PDF。走 worker 合成（与预览同一条 ``compose_print_page``
+链路），所以"下载的图 = 屏幕上看到的效果"，只是精度与 PDF 同级而非
+受屏幕像素限制。参数不合法/无条目时发 :attr:`export_failed`。
+
+---
+
+## `desktop.components.viewers.print_preview.layout`
+
+源码：[`desktop/components/viewers/print_preview/layout.py`](../../desktop/components/viewers/print_preview/layout.py)
+
+print 预览 Mixin：**版面规划与画布**。
+
+把打印参数解成版面计划并交给版面画布显示。（从 ``print_preview.py`` 拆出，2026-10-07；方法体逐字未改）。
+
+### `class PrintLayoutMixin(PrintPreviewHost)`
+
+把打印参数解成版面计划并交给版面画布显示。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `refresh_layout() -> None` | 参数（纸张/方向）变化后刷新画布：保留已存坐标，仅重算页面尺寸。 |
+
+---
+
+## `desktop.components.viewers.print_preview.thumbs`
+
+源码：[`desktop/components/viewers/print_preview/thumbs.py`](../../desktop/components/viewers/print_preview/thumbs.py)
+
+print 预览 Mixin：**缩略图与排序**。
+
+缩略图路径/批量加载/条目排序缓存同步。（从 ``print_preview.py`` 拆出，2026-10-07；方法体逐字未改）。
+
+### `class PrintThumbsMixin(PrintPreviewHost)`
+
+缩略图路径/批量加载/条目排序缓存同步。
+
+---
+
+## `desktop.components.viewers.print_preview.widget`
+
+源码：[`desktop/components/viewers/print_preview/widget.py`](../../desktop/components/viewers/print_preview/widget.py)
+
+print 预览主控件 ``PrintPreviewWidget``：**装配点 + 展示主路径**。
+
+从 ``print_preview.py`` 拆出（2026-10-07）。本文件放：类头（信号/类属性）、
+``__init__``、工具栏、条目增删、当前页展示（``_load_display`` 等），以及
+宿主协议（``_zoom_index`` / ``_zoom_target`` / ``_on_zoom_image_saved``）。
+缩略图、版面、导出分别由兄弟模块的 Mixin 提供；方法体逐字未改。
+
+⚠️ 宿主协议三个方法必须**留在本类**（不能下沉到 Mixin）——它们要盖住
+``ZoomPopupMixin`` 的同名默认实现，靠的是"本类方法优先于基类"。
+
+### `class PrintPreviewWidget(PrintExportMixin, PrintLayoutMixin, PrintThumbsMixin, QWidget, ThumbsMixin, ZoomPopupMixin)`
 
 PDF排版预览：左侧待打印缩略图条（可拖动排序）+ 右侧单页效果。
 
@@ -4155,9 +4576,7 @@ PDF排版预览：左侧待打印缩略图条（可拖动排序）+ 右侧单页
 | `remove_selected() -> None` | 删除所有选中条目，未选中则通过 hint 信号提示。 |
 | `refresh_display() -> None` | 右侧参数变化后按最新参数重画当前页（不生成任何文件）。 |
 | `navigate(forward: bool) -> None` | 方向键翻页（详情页 ←/→ 调用；联动预览刷新，见 ThumbStrip.navigate）。 |
-| `refresh_layout() -> None` | 参数（纸张/方向）变化后刷新画布：保留已存坐标，仅重算页面尺寸。 |
 | `export_default_name() -> str \| None` | 导出对话框的默认文件名；没有可导出的页时返回 None。 |
-| `export_current_effect(target: str \| Path) -> None` | 把**当前页**排进纸面后的 A4 效果图按 300dpi 写到 ``target``。 |
 
 ##### `__init__(empty_hint: str='暂无图片，请先完成去底色', params_provider: Callable[[], dict] | None=None, thumb_provider=None, parent=None)`
 
@@ -4167,29 +4586,19 @@ params_provider: () -> print 参数字典；非法时抛异常（由本控件捕
     并退回「原图」显示）。为 None 时关闭「打印效果」项。
 thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 
-##### `export_current_effect(target: str | Path) -> None`
-
-把**当前页**排进纸面后的 A4 效果图按 300dpi 写到 ``target``。
-
-单页、不生成 PDF。走 worker 合成（与预览同一条 ``compose_print_page``
-链路），所以"下载的图 = 屏幕上看到的效果"，只是精度与 PDF 同级而非
-受屏幕像素限制。参数不合法/无条目时发 :attr:`export_failed`。
-
 ---
 
-## `desktop.components.viewers.rembg_viewer`
+## `desktop.components.viewers.rembg_viewer.core`
 
-源码：[`desktop/components/viewers/rembg_viewer.py`](../../desktop/components/viewers/rembg_viewer.py)
+源码：[`desktop/components/viewers/rembg_viewer/core.py`](../../desktop/components/viewers/rembg_viewer/core.py)
 
-去底色预览：单视图显示，去底色结果优先，顶部用分段开关切换原图。
+``RembgPreviewWidget``：**装配点 + 基座 + 展示主路径**。
 
-左侧缩略图条按"输出条目"组织：
-- area=1：每个文本框一条（标签 <页>-l / <页>-r），右侧显示该框 + border 区域；
-- area=2/3：每页一条，右侧显示按 crop/cropremove 规则合成的效果区域。
+从 ``rembg_viewer.py`` 拆出（2026-10-07）。本文件放类头（信号/类属性）、
+``__init__``、源切换与当前页展示、宿主协议（``_zoom_*``）；条目构建与缩略图
+缓存在兄弟模块的 Mixin 里。方法体逐字未改。
 
-区域合成在 worker 线程完成，不生成文件；通过请求令牌避免快速切换串台。
-
-### `class RembgPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin)`
+### `class RembgPreviewWidget(EntriesMixin, ThumbsCacheMixin, QWidget, ThumbsMixin, ZoomPopupMixin)`
 
 去底色预览：左侧输出条目列表 + 右侧单视图（去底色结果 / 原图切换）。
 
@@ -4206,9 +4615,6 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 | `current_entry_path() -> str \| None` | 当前选中条目的源图路径（无条目时为 None）。 |
 | `show_live_pending() -> None` | 实时预览正在计算：先给个即时反馈，别让界面看起来没反应。 |
 | `refresh_page(path_text: str) -> None` | 某文件被覆盖后刷新本查看器：受影响条目图标 + 当前大图。 |
-| `set_cached_thumbs(mapping: dict[str, str]) -> None` | 告诉本控件哪些图已有缓存小图（``真实图路径 → 缓存路径``）。 |
-| `set_cached_thumb(path_text: str, cache: str) -> None` | **单张**：记下它的缓存小图并只刷相关条目 + 当前大图。 |
-| `reload_thumb(path_text: str) -> None` | 某张图的**文件内容**被覆盖后：丢掉它的缓存映射并按新文件重取。 |
 
 ##### `set_images(paths: list[Path | str], rembg_dir: Path | None, boxes_provider=None, region_params_provider=None, thumb_provider=None) -> None`
 
@@ -4233,6 +4639,42 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 某文件被覆盖后刷新本查看器：受影响条目图标 + 当前大图。
 
 由宿主在缩略图重生成完毕后调用；路径与本查看器无关时是空操作。
+
+---
+
+## `desktop.components.viewers.rembg_viewer.entries`
+
+源码：[`desktop/components/viewers/rembg_viewer/entries.py`](../../desktop/components/viewers/rembg_viewer/entries.py)
+
+``RembgPreviewWidget`` Mixin：**条目构建**。
+
+把「原图 + 结果 + 实时合成」拼成条目（含尺寸键、联合框）。（从 ``rembg_viewer.py`` 拆出，2026-10-07；方法体逐字未改）。
+
+### `class EntriesMixin(RembgViewerHost)`
+
+把「原图 + 结果 + 实时合成」拼成条目（含尺寸键、联合框）。
+
+---
+
+## `desktop.components.viewers.rembg_viewer.thumbs`
+
+源码：[`desktop/components/viewers/rembg_viewer/thumbs.py`](../../desktop/components/viewers/rembg_viewer/thumbs.py)
+
+``RembgPreviewWidget`` Mixin：**缩略图缓存**。
+
+缩略图批量加载与缓存回填/重渲。（从 ``rembg_viewer.py`` 拆出，2026-10-07；方法体逐字未改）。
+
+### `class ThumbsCacheMixin(RembgViewerHost)`
+
+缩略图批量加载与缓存回填/重渲。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `set_cached_thumbs(mapping: dict[str, str]) -> None` | 告诉本控件哪些图已有缓存小图（``真实图路径 → 缓存路径``）。 |
+| `set_cached_thumb(path_text: str, cache: str) -> None` | **单张**：记下它的缓存小图并只刷相关条目 + 当前大图。 |
+| `reload_thumb(path_text: str) -> None` | 某张图的**文件内容**被覆盖后：丢掉它的缓存映射并按新文件重取。 |
 
 ##### `set_cached_thumbs(mapping: dict[str, str]) -> None`
 

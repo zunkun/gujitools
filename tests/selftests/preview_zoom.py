@@ -29,11 +29,13 @@ DEPENDS: list[str] = []
 TITLE = "图片预览弹窗"
 
 #: 必须接上放大弹窗的四个预览宿主
+#: ⚠️ 前三个 2026-10-07 起是**子包**（目录），故不写 ``.py``；
+#:    ``module_source_text`` 两种形态都能解析。
 HOST_FILES = [
-    "desktop/components/viewers/image_viewer.py",
+    "desktop/components/viewers/image_viewer",
     "desktop/components/viewers/pdf_viewer.py",
-    "desktop/components/viewers/rembg_viewer.py",
-    "desktop/components/viewers/print_preview.py",
+    "desktop/components/viewers/rembg_viewer",
+    "desktop/components/viewers/print_preview",
 ]
 
 
@@ -704,17 +706,23 @@ def run(ctx) -> None:
        pdf_img is not None and not pdf_img.isNull() and pdf_img.width() >= 590,
        f"{pdf_img.width()}x{pdf_img.height()}")
 
-    host_text = (
-        root / "desktop/components/viewers/print_preview.py"
-    ).read_text(encoding="utf-8")
+    # 2026-10-07 起 print_preview 是**子包**：把包内所有源文件合起来看。
+    _pp_pkg = root / "desktop/components/viewers/print_preview"
+    host_text = "\n".join(
+        p.read_text(encoding="utf-8") for p in sorted(_pp_pkg.rglob("*.py"))
+    )
     ok("第四步主预览：打印效果按 target_edge 重排（密度不写死 1600）",
        "target_edge" in host_text and "MAX_PREVIEW_EDGE" in host_text, "")
     ok("第四步主预览：给了 target_edge 就不再做 longest_edge 缩放",
        "longest_edge=0" in host_text, "")
 
     # ---------------------------------------------------------------- 12
+    # ⚠️ 这几个宿主里 image_viewer / rembg_viewer / print_preview 已是**子包**，
+    #    读源码要合起包内所有文件看（见 _context.module_source_text）。
+    from tests.selftests._context import module_source_text
+
     for rel in HOST_FILES:
-        text = (root / rel).read_text(encoding="utf-8")
+        text = module_source_text(root, rel)
         ok(f"{rel}：接上了弹窗", "_init_zoom_popup(self.view)" in text, "")
         ok(f"{rel}：实现了 _zoom_target", "def _zoom_target(" in text, "")
 
@@ -741,8 +749,10 @@ def run(ctx) -> None:
            hasattr(host, "_open_zoom_popup") and hasattr(host, "_zoom_target"), "")
         host.deleteLater()
 
-    text = (root / "desktop/components/viewers/image_zoom_dialog.py").read_text(
-        encoding="utf-8"
+    # 2026-10-07 起 image_zoom_dialog 是**子包**：把包内所有源文件合起来看。
+    _zdlg_pkg = root / "desktop/components/viewers/image_zoom_dialog"
+    text = "\n".join(
+        p.read_text(encoding="utf-8") for p in sorted(_zdlg_pkg.rglob("*.py"))
     )
     ok("弹窗不自己拼图片路径（渲染口径交给宿主）",
        "PreviewWorker" not in text, "")

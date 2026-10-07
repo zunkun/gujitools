@@ -260,3 +260,168 @@ python -m pyflakes core/ cli/ functions/ utils/ desktop/
 
 原则（与 §2 一致）：**每完成一项就重跑相关 `--only` 自测 + `gen_api_docs --check`
 + `check_docs`**；组件层不许新增任何宿主专属概念，宿主特有 UI 一律构造参数声明。
+
+---
+
+## 9. viewer 包拆分（2026-10-07）
+
+起因（用户原话）："viewer 下的一些文件行数太多，文件大，维护困难，拆分成组件
+或者模块，是否可以复用"；口径选择 **先做 viewer 包** + **彻底拆**（单文件
+200~500 行，大类拆成 per-tool Mixin）。
+
+### 9.1 六个单文件 → 六个子包
+
+| 原文件 | 行数 | 拆成 |
+| --- | --- | --- |
+| `image_editor.py` | 4095 | `image_editor/`：`consts` / `geometry` / `bake` / `text_item` / `dialog` + `canvas/`（基座 + 7 个工具 Mixin） |
+| `image_zoom_dialog.py` | 1246 | `image_zoom_dialog/`：`consts` / `icons` / `io` / `canvas` / `dialog` / `popup` |
+| `print_preview.py` | 904 | `print_preview/`：`thumbs` / `layout` / `export` + `widget` |
+| `image_viewer.py` | 781 | `image_viewer/`：`thumbs` / `pdf` / `boxes` + `core` |
+| `image_view.py` | 666 | `image_view/`：`styles` / `render` / `edit` + `core` |
+| `rembg_viewer.py` | 625 | `rembg_viewer/`：`entries` / `thumbs` + `core` |
+
+收尾（同一轮）：`image_editor/dialog.py` 拆分后仍有 894 行（单类
+`ImageEditorDialog`），再按职责拆成 4 个 Mixin —— `dialog_toolbar` /
+`dialog_pages` / `dialog_undo` / `dialog_commit` + 基座（最大 270 行）。
+
+**子包 = 同名目录 + `__init__.py`**。Python 的 `FileFinder` **先查目录再查
+文件**，所以只要目录里有 `__init__.py` 就一定赢；但**旧单文件必须删掉**，
+否则两份实现并存、改一份不生效（守卫里有专门一条断言钉这个）。
+
+### 9.2 机械拆分流程（不手抄方法体）
+
+```text
+① AST 取方法/函数的 lineno~end_lineno → 按字节切片
+② 每个新模块的 import 由"该模块用到的自由名字"反推（别名感知：
+   FluentIcon as FIF / theme as T / widgets as ui 原样保留）
+③ AST 等价校验：原文件 166 个方法逐个 ast.dump 对比新包（必须 0 差异）
+④ pyflakes 不得新增条目
+⑤ 自测 + 守卫双向验证
+```
+
+⚠️ 三个踩过的坑：
+
+* **相对导入的 `level` 必须带上**。`from .canvas import X` 的 `n.module` 只是
+  `"canvas"`，拼成 `from canvas import X` 就是 `ModuleNotFoundError`。
+* **模块级常量别丢**。`ImageEditorDialog` 拆 Mixin 时 `EDITOR_SIZE` /
+  `EDITOR_MIN_SIZE` 必须留在 `dialog.py`（`__init__.py` 还在 `from .dialog
+  import EDITOR_MIN_SIZE, EDITOR_SIZE, ...`）。
+* **测试里打桩要看"定义处"的模块**。`detect.py` 原先打
+  `image_viewer.PreviewWorker`；拆包后 `_select_image` 住在
+  `image_viewer/core.py`，名字解析看的是**那个模块的 globals** ——
+  打包级属性只会多挂一个没人用的名字，计数恒为 0（**假绿**）。
+  正确做法是打 `image_viewer.core.PreviewWorker`。
+
+### 9.3 三条不变量（AST 守卫）
+
+| 守卫 | 覆盖 | 钉什么 |
+| --- | --- | --- |
+| `tests/selftests/image_editor_split.py` | `EditorCanvas`（99 成员）+ `ImageEditorDialog`（32 成员） | 成员归属 / 无同名 / 跨 Mixin 依赖白名单 / 对外 API |
+| `tests/selftests/image_zoom_dialog_split.py` | `image_zoom_dialog` 子包 | 子包结构 / 对外 API / 四个宿主仍可导入 |
+| `tests/selftests/viewer_split.py` | `image_view` / `image_viewer` / `rembg_viewer` / `print_preview` | 上面四条 + 旧单文件已删 + 模块级函数仍在包命名空间 |
+
+⚠️ **MRO 遮蔽是这次拆分的头号风险**：两个 Mixin 出现同名方法**不报错**，
+排在前的静默赢 —— 等于偷偷改了行为。所以"无同名成员"必须**单独**断言一次。
+
+⚠️ 宿主协议方法（`_zoom_index` / `_zoom_target` / `_on_zoom_image_saved`）
+**刻意留在主类**，才能盖住 `ZoomPopupMixin` 的默认实现 —— 这条"派生类赢基类"
+是**有意的**，不是遮蔽事故。
+
+### 9.4 复用结论：**没有**抽公共基类
+
+`image_viewer` / `rembg_viewer` / `print_preview` 三个宿主长得像，但逐方法
+AST 比对后**只有 `navigate` 一个方法三处完全相同**，其余同名方法体都不同
+（缩略图重渲的 worker、缓存目录、取图口径各自有别）。这与 §8 第 6 项的
+「禁止借道」约定一致 —— **强行合并会把分支塞进组件**。故只做"按职责拆文件
++ Mixin"，不做"跨宿主继承"。
+
+### 9.5 顺带修掉的测试脆弱点
+
+护栏里"读源码文本做断言"的地方原先按老路径读 `xxx.py`，拆包后要么
+`FileNotFoundError`、要么断言恒真。统一收进
+`tests/selftests/_context.py::module_source_text()` —— 单文件/子包两种形态
+都能解析（子包时 `rglob("*.py")` 合起来看）。
+
+
+## 10. 拆分后的类型检查期宿主面（2026-10-08）
+
+拆成 Mixin 之后，pyright 从 **837 个 error** 起步——全是
+`reportAttributeAccessIssue`。根因很单纯：每个 Mixin 都是独立类，pyright
+解析 `self` 时只看到它自己那一小块，于是
+
+- 兄弟 Mixin / 主类上的成员（`self._image` / `self._sync_overlay` …）看不到；
+- Qt 基类上的成员（`self.mapFromScene` / `self.viewport()` …）也看不到——
+  更麻烦的是 `super().mousePressEvent(...)` 会解析到 **`object`**；
+- 顺带 `self._fit_ratio` 之类退化成 `Any`，把下游 `float(ratio)` 也带红。
+
+### 10.1 做法：每个子包一个 `_host.py`
+
+```python
+# desktop/components/viewers/image_editor/canvas/_host.py
+class CanvasHost(QGraphicsView):      # 基类 = 主类去掉本地 Mixin 后剩下的基类
+    """``EditorCanvas`` 的成员面：主类 + 7 个 Mixin。"""
+    _image: Any
+    def image_rect(self) -> QRectF: ...
+    def _sync_cursor(self) -> None: ...
+```
+
+```python
+# 各 Mixin
+if TYPE_CHECKING:
+    from ._host import CanvasHost
+else:
+    CanvasHost = object          # 运行期退化成 object ⇒ MRO 与行为零改动
+
+class CageMixin(CanvasHost):
+```
+
+宿主类里**只有注解与 `...` 桩**，且 `_host.py` 只在类型检查期被导入
+（`if TYPE_CHECKING` 分支），运行期从不加载。六个子包六个宿主：
+`CanvasHost` / `DialogHost` / `ImageViewHost` / `ImageViewerHost` /
+`RembgViewerHost` / `PrintPreviewHost`。
+
+### 10.2 ⚠️ 四个必须踩过的坑
+
+1. **`__init__` 绝不能进宿主面**。主类里的 `super().__init__(parent)` 会顺着
+   MRO 命中宿主里的 `__init__` 桩，于是 `parent` 被当成 `placeholder` /
+   `empty_hint` 报参数类型错（`image_view` / `image_viewer` / `print_preview` /
+   `rembg_viewer` 四处同时中招）。**dunder 一律不声明**。
+2. **只有首字母大写的名字才当类型**。否则 `max(...)` / `tuple(...)` /
+   `build_mesh(...)` 会被当成类型，pyright 直接报 "not a valid type"。
+3. **相对导入的 `level` 要解析成绝对模块名**。同一个 `ZoomTarget` 在
+   `image_zoom_dialog/popup.py` 里写作 `from .canvas import ZoomTarget`，
+   直接搬进 `image_editor/canvas/_host.py` 会指向不存在的 `canvas` 包。
+4. **属性类型别一律给 `Any`**：`self._fit_ratio = EDIT_FIT_RATIO` 里的
+   `EDIT_FIT_RATIO` 是模块级常量（`consts.py` 里 `= 0.98`），要查常量表拿到
+   `float`；给 `Any` 会让下游 `float(ratio)` 因为 `float | None` 报错。
+
+### 10.3 `TextBlockItem._canvas` 的类型换成宿主面
+
+`text_item.py` 里 `self._canvas: "EditorCanvas | None"`，而 `add_text_block`
+在 `text.py`（`TextMixin`）里写 `item._canvas = self` —— 拆分后 `self` 是
+`TextMixin`（不是 `EditorCanvas`），赋值报类型错。改成 `"CanvasHost | None"`
+即可：文字块本来只用得上 `_move_text_outline` / `_hide_text_outline` /
+`_active_text_block` 这几个回调，**宿主面恰好就是它的真实依赖**。
+（纯注解改动，运行期零影响。）
+
+### 10.4 守卫
+
+`tests/selftests/_context.py::check_type_only_host()` 把四条不变量钉死，
+`viewer_split.py`（4 个包）与 `image_editor_split.py`（画布 + 弹窗）各调一遍：
+
+1. `_host.py` 存在，宿主类基类 = 主类去掉本地 Mixin 后的基类；
+2. 宿主面**恰好**覆盖 主类 + 各 Mixin 的成员（漏一个 = 该成员在类型检查里
+   失明；多一个 = 与拆分现状漂移）；
+3. 每个 Mixin 都是「TYPE_CHECKING 期继承宿主、运行期退化成 `object`」；
+4. 运行期主类 MRO 里**没有**宿主类（证明零副作用）。
+
+双向验证过：宿主面漏成员 → 断言红；去掉运行期兜底 → 红；还原 → 绿。
+
+### 10.5 顺带
+
+- `image_editor/__init__.py` 的 `__all__` 原先写成**裸名字**（`__all__ =
+  [UNDO_LIMIT, ...]`，是**值**不是**名字**），pyright 报
+  `reportUnsupportedDunderAll`。已改成 64 个字符串字面量。
+- `tools/gen_api_docs.py` 现在**跳过单下划线开头的私有模块**（`_host.py`），
+  但保留 `__init__` / `__main__` 这类双下划线门面。
+- 结果：项目本体 pyright **0 error 0 warning**（拆分时是 837）。

@@ -78,7 +78,8 @@ GUI 的预览控件也要画同样的框。配色与命名必须一致，否则�
 - **返回新数组，不修改入参**（便于调用方复用原图）。
 
 颜色常量 `BOX_COLORS_BGR` / `BOX_NAMES` 与
-`desktop/components/viewers/image_view.py` 保持一致。
+`desktop/components/viewers/image_view/`（子包，配色常量在 `styles.py`）
+保持一致。
 
 ---
 

@@ -300,6 +300,12 @@ def collect(target_dir: str | None, dotted_prefix: str) -> list[ApiModule]:
         for p in sorted(base.rglob("*.py")):
             if "__pycache__" in p.parts:
                 continue
+            # ⚠️ 单下划线开头的**私有模块**不进 API 参考（`__init__` / `__main__`
+            # 这类双下划线模块是包的对外门面，必须留）。2026-10-08 起拆分出的
+            # `_host.py` 就是这种：只在类型检查期被导入、运行期从不加载，
+            # 写进"公开 API"会误导。
+            if p.stem.startswith("_") and not p.stem.startswith("__"):
+                continue
             rel = p.relative_to(ROOT).with_suffix("")
             dotted = ".".join(rel.parts)
             if dotted.endswith(".__init__"):
