@@ -12,7 +12,7 @@ M1 只做了数据层（``desktop/steps/flow.py`` 的流程定义 + 落盘 + 解
 2. **换流程即换步骤条**——手写一份 ``flow.bpmn``（摘掉 detect、拼版异位）
    后重进任务，步骤条按新顺序重建、可选节点挪到新位置。拼版排**最前**
    （任务 #0027）也占一条：``optional_after`` 必须回 -1，拼版节点要画在
-   生成 PDF 前面（早先回 None 被当成"插到最后"，界面与流程图相反）。
+   PDF排版 前面（早先回 None 被当成"插到最后"，界面与流程图相反）。
 3. **寻址跟着流程走**——``current_stage()`` / ``_stage_index_of()`` 查的是
    **本任务流程的槽位表**，不是 ``STAGES`` 固定下标：流程外的步骤匹配不上
    （回第一步），流程内换了序的步骤能正确互相定位。
@@ -42,7 +42,7 @@ _CUSTOM_FLOW = """\
     <bpmn:task id="imposition" name="图片拼版" guji:stage="imposition"/>
     <bpmn:task id="rembg" name="图片去底色" guji:stage="rembg"/>
     <bpmn:task id="rembg_submit" name="提交" guji:stage="rembg_submit"/>
-    <bpmn:task id="print" name="生成PDF" guji:stage="print"/>
+    <bpmn:task id="print" name="PDF排版" guji:stage="print"/>
     <bpmn:endEvent id="end" name="完成"/>
     <bpmn:sequenceFlow id="f0" sourceRef="start" targetRef="extract" guji:port="pdf"/>
     <bpmn:sequenceFlow id="f1" sourceRef="extract" targetRef="imposition" guji:port="pages"/>
@@ -243,11 +243,11 @@ def run(ctx) -> None:
         #
         # 旧实现给 StepItem 的是"真实步骤的序数"，与格序只差"可选节点之前"
         # 那一段。默认流程 slots = extract0/detect1/rembg2/imposition3/print4，
-        # 于是「生成 PDF」序数 3、格序 4，两处后果：
-        #   ① 点「生成 PDF」发出去 3 → 宿主按格序查表得到**图片拼版**
+        # 于是「PDF排版」序数 3、格序 4，两处后果：
+        #   ① 点「PDF排版」发出去 3 → 宿主按格序查表得到**图片拼版**
         #      （点一个步骤打开另一个步骤）；
         #   ② ``set_step_status(4)`` 撞上 ``0 <= 4 < len(buttons)==4`` 被
-        #      **静默 return**，生成 PDF 的状态/进度/打勾从来不上屏。
+        #      **静默 return**，PDF排版的状态/进度/打勾从来不上屏。
         #
         # 这三条必须**逐个点按钮**验：旧自测全用 ``set_current(2)`` /
         # ``_select_stage(2)``，那落在"序数 == 格序"的巧合区（可选节点之前），
@@ -313,14 +313,14 @@ def run(ctx) -> None:
         # 连线与节点声明顺序都照抄）。两个坑一起钉：
         # ① 拓扑序不能被"短路的 print"抢跑（广度遍历会排反）；
         # ② ``optional_after`` 对"没有左邻居"要回 **-1**——早先回 ``None``，
-        #    StepBar 按默认位把拼版插到生成 PDF **后面**，与流程图相反。
+        #    StepBar 按默认位把拼版插到 PDF排版 **后面**，与流程图相反。
         _write_flow(repo, tid, _IMPOSITION_FIRST_FLOW)
         ok("拼版最前：切任务被接受", d.set_task(tid))
         show_detail(ctx, stage=0)
         pump(app)
 
         _first_slots = sorted(repo.task_slots(tid), key=lambda s: s.bar_index)
-        ok("拼版最前：槽位表拼版在前、生成PDF在后",
+        ok("拼版最前：槽位表拼版在前、PDF排版在后",
            [s.step for s in _first_slots] == ["imposition", "print"],
            str([s.step for s in _first_slots]))
         ok("拼版最前：拓扑序 imposition < print",
@@ -329,10 +329,10 @@ def run(ctx) -> None:
         ok("拼版最前：optional_after = -1（不是 None）",
            repo.task_diagram(tid).optional_after("imposition") == -1,
            str(repo.task_diagram(tid).optional_after("imposition")))
-        ok("拼版最前：真实步骤只剩生成PDF",
-           _bar_labels(d.step_bar) == ["生成 PDF"], str(_bar_labels(d.step_bar)))
+        ok("拼版最前：真实步骤只剩 PDF排版",
+           _bar_labels(d.step_bar) == ["PDF排版"], str(_bar_labels(d.step_bar)))
         _node_pos = d.step_bar._row.indexOf(d.step_bar.imposition_slot)
-        ok("拼版最前：拼版节点排在生成PDF**前面**（布局第 0 格）",
+        ok("拼版最前：拼版节点排在 PDF排版**前面**（布局第 0 格）",
            _node_pos == 0
            and d.step_bar.imposition_index == 0
            and d.step_bar.imposition_front_connector is None
@@ -343,12 +343,12 @@ def run(ctx) -> None:
         _print_slot = next(s for s in _first_slots if s.step == "print")
         d.step_bar.buttons[0].clicked.emit(d.step_bar.buttons[0].index)
         pump(app, times=2)
-        ok("拼版最前：点「生成PDF」落到 print",
+        ok("拼版最前：点「PDF排版」落到 print",
            d.current_stage() == "print", d.current_stage())
         d.step_bar.reset_statuses()
         d.step_bar.set_step_status(_print_slot.bar_index, "success")
         pump(app, times=2)
-        ok("拼版最前：生成PDF 的状态能上屏",
+        ok("拼版最前：PDF排版 的状态能上屏",
            any(b._badge_status == "success" for b in d.step_bar.buttons),
            str([b._badge_status for b in d.step_bar.buttons]))
     finally:
@@ -383,7 +383,7 @@ def run(ctx) -> None:
                          if s.bar_index == item.index), None)
             if slot is None or d.current_stage() != slot.step:
                 _d_bad.append((item.index, d.current_stage()))
-        ok("默认流程：点每个按钮都落到它自己那一步（生成PDF 不再打开拼版）",
+        ok("默认流程：点每个按钮都落到它自己那一步（PDF排版 不再打开拼版）",
            not _d_bad, str(_d_bad))
 
         d.step_bar.reset_statuses()
@@ -391,7 +391,7 @@ def run(ctx) -> None:
         pump(app, times=2)
         _lit = [i for i, b in enumerate(d.step_bar.buttons)
                 if b._badge_status == "success"]
-        ok("默认流程：「生成 PDF」的状态能上屏（不再被静默 return 吃掉）",
+        ok("默认流程：「PDF排版」的状态能上屏（不再被静默 return 吃掉）",
            len(_lit) == 1 and d.step_bar.buttons[_lit[0]].index
            == _d_slots["print"].bar_index,
            f"lit={_lit} bar={_d_slots['print'].bar_index}")
@@ -399,7 +399,7 @@ def run(ctx) -> None:
         d.step_bar.set_current(_d_slots["print"].bar_index)
         pump(app, times=2)
         _hl = [i for i, b in enumerate(d.step_bar.buttons) if b.current]
-        ok("默认流程：按格序选中「生成 PDF」，高亮落在它身上",
+        ok("默认流程：按格序选中「PDF排版」，高亮落在它身上",
            len(_hl) == 1 and d.step_bar.buttons[_hl[0]].index
            == _d_slots["print"].bar_index,
            f"highlight={_hl}")

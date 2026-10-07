@@ -15,8 +15,9 @@
 
 1. **已在流程里的步骤置灰**：同一步骤加两遍没有意义（运行阶段是按名字接回的，
    两个同名节点只会让 :meth:`FlowDiagram.stage_order` 去重、界面更乱）。
-2. **节点名沿用流程图里已有的叫法**：用户把「生成 PDF」写成「PDF排版」，
-   再拖一次就该还叫「PDF排版」——不要凭空长出一个新名字，更别和结束事件重名。
+2. **节点名沿用流程图里已有的叫法**：``print`` 那格在默认模板里叫「PDF排版」
+   （与 :attr:`StepSpec.stage_title` 一致），再拖一次就该还叫「PDF排版」——
+   不要凭空长出一个新名字，更别和结束事件「生成PDF」重名。
 """
 
 from __future__ import annotations
@@ -64,8 +65,8 @@ def palette_name(step: str, *diagrams) -> str:
     """这一格该叫什么名字。
 
     优先沿用**已有流程图**里的叫法（用户的词汇），其次 ``ports.stage_label``。
-    ⚠️ 一定要沿用：用户把 ``print`` 那格叫「PDF排版」，若面板另起一个
-    「生成 PDF」，拖进去就会与结束事件同名（渲染与自检都会炸）。
+    ⚠️ 一定要沿用：``print`` 那格现在正式叫「PDF排版」，若面板另起一个
+    「生成PDF」，拖进去就会与**结束事件**同名（渲染与自检都会炸）。
     """
     for diagram in diagrams:
         if diagram is None:

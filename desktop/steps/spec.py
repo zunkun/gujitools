@@ -158,8 +158,8 @@ class StepSpec:
     nav_icon: str = ""
     #: 导航里的排位（**小的在前**；留空按 ``SPECS`` 的书写顺序兜底）。
     #:
-    #: 为什么要它：``print``（生成PDF）是流程主链的第4 步，却要在导航里排到
-    #: **最后**——它吃的是前面几步的产物，"生成"这件事天然是收尾。改
+    #: 为什么要它：``print``（PDF排版）是流程主链的第4 步，却要在导航里排到
+    #: **最后**——它吃的是前面几步的产物，"出书"这件事天然是收尾。改
     #: ``SPECS`` 里两段的书写位置也能达到同样效果，但那是**流程顺序**的事实
     #: 来源（``FLOW_STAGES`` 从它派生），为了导航顺序去动它等于把"导航怎么排"
     #: 的意图藏进一个看不出因果的位置里；而且 ``imposition`` 在 ``SPECS`` 里本来
@@ -429,7 +429,7 @@ class StepSpec:
         """这一步**直接吃一个 PDF 文件**吗（判据是端口声明 ``inputs``）。
 
         ⚠️ 别拿 ``input_noun()`` 判：它是给人看的称呼（"PDF" / "图片"），
-        而且四步里三步都写着"选择图片"——用称呼判会把去底色/生成 PDF 也算成
+        而且四步里三步都写着"选择图片"——用称呼判会把去底色/PDF排版也算成
         "需要源 PDF"，而它们吃的是**上游产出的页**，不是用户的文件。真正的
         分界是端口：只有 ``extract`` 声明 ``inputs=("pdf",)``，其余都是
         ``("pages", …)``。
@@ -630,13 +630,27 @@ SPECS: tuple[StepSpec, ...] = (
         key="print",
         role="stage",
         command="print",
-        title="生成 PDF",
+        # ⚠️ 步骤名 = 「PDF排版」，**不是**「生成PDF」（用户 2026-10-07）：
+        #    默认流程图 ``static/task_default.bpmn`` 里那格本来就叫「PDF排版」
+        #    （用户自己在 bpmn.io 上起的名），而「生成PDF」是挂在它后面的**结束
+        #    事件**。以前步骤名与图上叫法各说各话，于是流程条/面板/进度写
+        #    「生成 PDF」、图上写「PDF排版」，同一件事两个名字。现在统一成图上的
+        #    叫法：`title`/`nav_title`/`stage_title` 都是「PDF排版」，
+        #    `ports.stage_label("print")` 派生的 `STAGE_LABELS`、BPM 调色板新节点
+        #    的默认名也就自动与流程图一致了。
+        #    而**动作按钮仍叫「生成PDF」**（`run_label` / `run_button_text`）——
+        #    「PDF排版」是这一步的**名字**，「生成PDF」是这一下**按下去做的事**，
+        #    两者刻意分开（`run_button_text` 与 `title` 本来就是两组字段）。
+        title="PDF排版",
+        # 流程条 / BPMN 节点名（用户 2026-10-07 与流程图统一）：见上面那段。
+        # 显式写出来而不是靠 `stage_title` 为空回落到 `title`——这一格有
+        # endEvent 叫「生成PDF」，两处的区别正是本条注释在说的事，值得钉住。
+        stage_title="PDF排版",
         short="PDF",
         nav=True,
-        # 导航里不加空格：「生成PDF」一格排下来与其它几项（都无空格）齐平。
-        nav_title="生成PDF",
+        nav_title="PDF排版",
         # 排到导航**最后**（用户 2026-10-03）：这一步吃的是前几步的产物，
-        # "生成"是收尾动作。流程条上的第4 步位置不受影响（那是 FLOW_STAGES）。
+        # 出书是收尾动作。流程条上的第4 步位置不受影响（那是 FLOW_STAGES）。
         nav_order=100,
         nav_tooltip="把成品图按版面合成 PDF",
         nav_icon="svg:PDF_FILE",
@@ -644,7 +658,9 @@ SPECS: tuple[StepSpec, ...] = (
         panel="PrintPanel",
         pick_label="选择图片",
         progress_noun="页",
-        run_label="生成 PDF",
+        # ⚠️ 按钮文案**刻意**留在「生成PDF」：它是这一下按下去做的事，不是这一步
+        #    的名字（步骤名见上面的 ``title``/``stage_title`` =「PDF排版」）。
+        run_label="生成PDF",
         file_filter=IMAGE_FILTER,
         artifact_is_file=True,
         output_suffix="_成书",

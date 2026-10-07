@@ -5,7 +5,7 @@
 ——**页面毫米，左上原点，x 向右、y 向下**。控件把页面等比缩放到可视区，
 用 ``px_per_mm`` 在「页面 mm」与「控件像素」之间换算；用户拖拽/缩放得到的
 ``[x_mm, y_mm, w_mm, h_mm]`` 直接写回 ``print.json`` 的 ``pages[].rect``，
-生成 PDF 时由 ``plan_print_page(image_rect=...)`` 原样采用——所见即所得。
+出 PDF 时由 ``plan_print_page(image_rect=...)`` 原样采用——所见即所得。
 
 交互（与 detect/rembg 的裁剪框编辑同款手感）：
 - 框内拖动 → 整体移动；**四角**手柄拖动 → 缩放（勾「原比例缩放」时等比）；

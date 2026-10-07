@@ -57,7 +57,7 @@ ANGLE_SLIDER_RANGE = (-180 * ANGLE_SLIDER_SCALE, 180 * ANGLE_SLIDER_SCALE)
 #: 问号按钮里的面板说明（与流程条虚线节点的提示同一件事）
 PANEL_DESCRIPTION = (
     "可选节点：第三步「区域模式」为 1（左右分开）时出现在流程中，位于"
-    "「图片去底色」与「生成 PDF」之间。勾选下方开关后，「生成 PDF」将"
+    "「图片去底色」与「PDF排版」之间。勾选下方开关后，「PDF排版」将"
     "使用拼版结果；不勾选则用第三步的去底色产物。"
 )
 
@@ -255,7 +255,7 @@ class ImpositionPanel(Card):
         # ---- 启用开关放面板最底部（用户 2026-09-30）：决定第四步取图来源；
         # 任务流程专属，独立页等无下游流程的宿主传 enable_switch=False 收起 ----
         self.enabled_checkbox = CheckBox("在流程中启用图片拼版")
-        self.enabled_checkbox.setToolTip("启用后「生成 PDF」用拼版合成结果；不启用则从去底色直接生成 PDF")
+        self.enabled_checkbox.setToolTip("启用后「PDF排版」用拼版合成结果；不启用则从去底色直接出 PDF")
         self.enabled_checkbox.toggled.connect(self.enabled_toggled)
         column.addWidget(self.enabled_checkbox)
         if not enable_switch:

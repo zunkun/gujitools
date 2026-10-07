@@ -190,7 +190,7 @@ class FlowPanel(QWidget):
 
         ⚠️ 保存前先过**合法性校验**（:func:`desktop.steps.validate.validate_flow`
         ——``docs/tasks/bpm测试.md``：不合法的流程在保存时当场拒绝）。
-        硬错误（如「生成 PDF」不在最后、没有任何可执行步骤）弹提示**不落盘**；
+        硬错误（如「PDF排版」不在最后、没有任何可执行步骤）弹提示**不落盘**；
         警告（缺判断节点之类）只提示，不拦。
         """
         from desktop.steps.validate import validate_flow

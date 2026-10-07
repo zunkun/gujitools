@@ -56,9 +56,9 @@ class ImpositionPagesMixin:
         self._sync_imposition_step_bar()
         self._toast(
             "info", "图片拼版",
-            "已启用「图片拼版」：第四步「生成 PDF」将使用拼版结果。"
+            "已启用「图片拼版」：第四步「PDF排版」将使用拼版结果。"
             if on else
-            "已取消「图片拼版」：第四步「生成 PDF」回到第三步的去底色产物。",
+            "已取消「图片拼版」：第四步「PDF排版」回到第三步的去底色产物。",
         )
         if on:
             self._schedule_imposition_compose()

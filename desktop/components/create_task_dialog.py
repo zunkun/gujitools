@@ -28,7 +28,7 @@
     [编辑流程] [恢复默认流程]                  ← 仅自定义模式可用（右对齐）
     ┌ 流程节点图（按 bpmn 文件渲染）┐
     └───────────────────────────┘
-    共 4 步：提取图片 → 检测文本框 → 图片拼版 → 生成 PDF
+    共 4 步：提取图片 → 检测文本框 → 图片拼板 → PDF排版
     ────────────────────────────
     [取消]  [创建任务]
 
@@ -81,7 +81,7 @@ DIALOG_TITLE = "创建任务"
 #: :func:`default_hint`。
 #:
 #: ⚠️ 为什么拆开：以前这里手写死了"提取图片 → 检测文本框 → 图片去底色 →
-#: 生成 PDF"，与 ``task_default.bpmn`` 实际内容**各说各话**（用户 2026-10-05
+#: PDF排版"，与 ``task_default.bpmn`` 实际内容**各说各话**（用户 2026-10-05
 #: 明确指出："默认流程必须跟 task_default.bpmn 一样……不要你自己设计默认流程"）。
 #: 现在步骤串一律从文件读，写错的可能性被结构性消除。
 DEFAULT_HINT_PREFIX = "使用默认任务流程："
@@ -167,8 +167,13 @@ class CreateTaskPanel(QWidget):
     #: "该清的都要清"，创建页的槽对两种情况一视同仁，所以不必区分。
     pdf_cleared = Signal(object)
 
-    def __init__(self, parent=None, flow: FlowDiagram | None = None, *,
-                 outer_margins: bool = True):
+    def __init__(
+        self,
+        parent=None,
+        flow: FlowDiagram | None = None,
+        *,
+        outer_margins: bool = True,
+    ):
         """``outer_margins``：要不要自带外层留白（默认带，弹窗形态需要）。
 
         ⚠️ 内嵌进**创建任务页**时传 ``False``：页面根布局已有
@@ -227,7 +232,7 @@ class CreateTaskPanel(QWidget):
         pick_row.setSpacing(T.SPACE_SM)
         self.pdf_label = BodyLabel("PDF 源文件：")
         pick_row.addWidget(self.pdf_label)
-        self.pick_button = PushButton("选择文件…")
+        self.pick_button = PushButton("选择PDF文件…")
         self.pick_button.clicked.connect(self._on_pick_pdf)
         pick_row.addWidget(self.pick_button)
         self.pdf_state = BodyLabel(EMPTY_PDF_HINT)
@@ -277,8 +282,8 @@ class CreateTaskPanel(QWidget):
         #    对称分到上下，观感是"图居中显示"。横向仍左对齐——图比视口宽时
         #    居中会导致左边一截永远够不着、横向滚动条起点诡异。
         scroll.setWidgetResizable(False)
-        scroll.setFrameShape(QScrollArea.NoFrame)
-        scroll.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         scroll.setWidget(self.flow_view)
         scroll.setMinimumHeight(FLOW_MIN_HEIGHT)
         layout.addWidget(scroll, 1)
@@ -329,7 +334,9 @@ class CreateTaskPanel(QWidget):
         """
         custom = self.uses_custom_flow()
         if custom:
-            self.mode_hint.setText(CUSTOM_MISSING_HINT if self._custom_init_missing else CUSTOM_HINT)
+            self.mode_hint.setText(
+                CUSTOM_MISSING_HINT if self._custom_init_missing else CUSTOM_HINT
+            )
         else:
             self.mode_hint.setText(default_hint(self._default_diagram))
         self.edit_button.setVisible(custom)
@@ -337,12 +344,16 @@ class CreateTaskPanel(QWidget):
         self.confirm_button.setText("确认流程并创建" if custom else "创建任务")
         self.flow_view.set_diagram(self.current_diagram())
         # 换图后高度可能变（默认 8 节点 vs 自定义 4 节点），给个贴合的最小高度
-        self.flow_scroll.setMinimumHeight(max(FLOW_MIN_HEIGHT, self.flow_view.sizeHint().height() + 24))
+        self.flow_scroll.setMinimumHeight(
+            max(FLOW_MIN_HEIGHT, self.flow_view.sizeHint().height() + 24)
+        )
         self._flow_summary_update()
 
     def current_diagram(self) -> FlowDiagram:
         """当前**显示**的图（未勾=默认流程，勾了=自定义流程）。"""
-        return self._custom_diagram if self.uses_custom_flow() else self._default_diagram
+        return (
+            self._custom_diagram if self.uses_custom_flow() else self._default_diagram
+        )
 
     # ------------------------------------------------------------ 选 PDF
     def _on_pick_pdf(self) -> None:
@@ -351,7 +362,9 @@ class CreateTaskPanel(QWidget):
         ⚠️ 用**原生** ``QFileDialog``（不设 ``DontUseNativeDialog``）——
         项目硬规则：「资源管理器」指的是原生选择对话框，不是浏览窗口。
         """
-        filename, _ = QFileDialog.getOpenFileName(self, "选择 PDF", str(default_open_dir()), "PDF (*.pdf)")
+        filename, _ = QFileDialog.getOpenFileName(
+            self, "选择 PDF", str(default_open_dir()), "PDF (*.pdf)"
+        )
         if not filename:
             return
         self.set_pdf(Path(filename))
@@ -501,7 +514,9 @@ class CreateTaskPanel(QWidget):
         self._custom_diagram = diagram
         if self.uses_custom_flow():
             self.flow_view.set_diagram(diagram)
-            self.flow_scroll.setMinimumHeight(max(FLOW_MIN_HEIGHT, self.flow_view.sizeHint().height() + 24))
+            self.flow_scroll.setMinimumHeight(
+                max(FLOW_MIN_HEIGHT, self.flow_view.sizeHint().height() + 24)
+            )
             self._flow_summary_update()
 
     def _flow_summary_update(self) -> None:

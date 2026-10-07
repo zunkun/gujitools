@@ -571,7 +571,7 @@ class FlowDefinition:
         ⚠️ 返回值三态（2026-10-07，与 ``FlowDiagram.optional_after`` 同步）：
         ``None`` = 本流程**没有**可选节点；图里有拼版但它排在**最前**、没有
         左邻居时返回 ``-1``——早先这种情况也回 ``None``，``StepBar`` 按"默认
-        位插到最后"处理，拼版被排到了「生成PDF」后面（任务 #0027）。
+        位插到最后"处理，拼版被排到了「PDF排版」后面（任务 #0027）。
         """
         slots = self.stage_slots()
         optional = [s for s in slots if s.optional]

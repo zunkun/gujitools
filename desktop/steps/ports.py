@@ -266,6 +266,10 @@ def orphaned_end_event_ids(diagram, *node_ids: str) -> tuple[str, ...]:
     「PDF排版」一删它就一条入线不剩，留着是句谎话：图上写着"生成PDF"，
     流程却不再产出 PDF。
 
+    ⚠️ 同名不同物（用户同日定的口径）：**步骤名**已改成「PDF排版」，与流程图
+    那一格统一；而「生成PDF」现在只指两样东西——**结束事件**的名字，与**执行
+    按钮**的文案（``StepSpec.run_label`` / ``run_button_text``）。
+
     ⚠️ 判据是**图上的性质**（入线是否全部来自将被删的节点），**不按名字
     认「生成PDF」**——用户改了名、自己画的收尾事件同理；反之「图片拼板」
     被删时「生成PDF」的入线还剩「PDF排版」那条，不跟着删。
@@ -298,7 +302,7 @@ def flow_needs_source_pdf(diagram) -> bool:
 
     阶段→"要不要源 PDF"走 :meth:`StepSpec.needs_source_pdf`（端口声明
     ``inputs`` 含 ``pdf``）；⚠️ **别拿** ``input_noun()`` 判——它是给人看的
-    称呼，四步里三步都写着"选择图片"，用它会把去底色/生成 PDF 也算进去
+    称呼，四步里三步都写着"选择图片"，用它会把去底色/PDF排版也算进去
     （它们吃的是上游产出的页，不是用户的文件）。
 
     :param diagram: :class:`~desktop.steps.bpmn_diagram.FlowDiagram`；
@@ -435,7 +439,7 @@ SUPPLIERS: dict[str, dict[str, str]] = {
     #    当源图——而 ``-l/-r`` 半页对只由 area=1 的去底色产出，拼出来必然错。
     #    判据：``task_default.bpmn`` 里「图片拼板」排在「图片去底色」**之后**。
     "imposition": {"pages": "rembg_submit"},
-    # 生成 PDF：默认吃第三步提交的成品图；拼版生效时改由 imposition 供给
+    # PDF排版：默认吃第三步提交的成品图；拼版生效时改由 imposition 供给
     # （见 :func:`print_pages_supplier`——那是**运行时**的一处覆盖，
     # 与这张静态表分开，免得把"用户开了拼版开关"这种运行态写成静态结构）。
     "print": {"pages": "rembg_submit"},
@@ -448,7 +452,7 @@ def supplier_of(stage: str, port: str) -> str | None:
 
 
 def print_pages_supplier(imposition_active: bool) -> str:
-    """生成 PDF 取图的上游：拼版生效时是 ``imposition``，否则是第三步提交。
+    """PDF排版（``print``）取图的上游：拼版生效时是 ``imposition``，否则是第三步提交。
 
     ⚠️ 抽成函数而不是在 :data:`SUPPLIERS` 里写死，是为了让"拼版生效"这种
     **运行态开关**（用户在详情页勾了拼版节点）有一个明确、可测的出口：

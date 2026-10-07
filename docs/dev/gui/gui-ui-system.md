@@ -101,7 +101,7 @@ status_label(status)   # -> 中文文案，未知状态原样返回
 
 ### 执行进度（`ProgressRow`）
 
-**独立功能页**（提取 / 检测 / 去底色 / 生成 PDF / 拼图）执行时，右栏控制卡片里
+**独立功能页**（提取 / 检测 / 去底色 / PDF排版 / 拼图）执行时，右栏控制卡片里
 「执行/中断」按钮**上方**有一条进度：细条 + 右侧计数文案。用
 `desktop/components/progress_row.py::ProgressRow`，由四个方法驱动，别去直接摸
 `self.bar.setValue`（计数文案、颜色、未知态都得跟着一起变）：

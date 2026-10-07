@@ -83,7 +83,7 @@ def run(ctx) -> None:
     from desktop.components.flow_dialog import FlowDialog, FlowPanel
     from desktop.steps.bpmn_diagram import (
         KIND_END, KIND_EXCLUSIVE, KIND_START, KIND_TASK, DiagramFlow,
-        DiagramNode, FlowDiagram,
+        DiagramNode, DiagramNote, FlowDiagram,
     )
     from desktop.steps.scheduler import (
         DONE, SKIPPED, Scheduler, load_default_diagram,
@@ -133,7 +133,7 @@ def run(ctx) -> None:
     # ---------------------------------------------------------------- 3
     # 拓扑顺序：短路分支不能把下游阶段排到前面
     order = init.stage_order()
-    ok("阶段顺序是拓扑序（拼版排在生成 PDF 之前）",
+    ok("阶段顺序是拓扑序（拼版排在 PDF排版 之前）",
        order.index("imposition") < order.index("print"), str(order))
 
     # ---------------------------------------------------------------- 4
@@ -267,7 +267,7 @@ def run(ctx) -> None:
                 DiagramNode("a", KIND_TASK, "提取图片", stage="extract"),
                 DiagramNode("g", KIND_EXCLUSIVE, "是否拼版"),
                 DiagramNode("b", KIND_TASK, "图片拼版", stage="imposition"),
-                DiagramNode("p", KIND_TASK, "生成 PDF", stage="print"),
+                DiagramNode("p", KIND_TASK, "PDF排版", stage="print"),
                 DiagramNode("e", KIND_END, "完成"),
             ),
             flows=(
@@ -314,7 +314,7 @@ def run(ctx) -> None:
         fork = FlowDiagram(
             nodes=(DiagramNode("g", KIND_EXCLUSIVE, "是否拼版"),
                    DiagramNode("b", KIND_TASK, "图片拼版", stage="imposition"),
-                   DiagramNode("p", KIND_TASK, "生成 PDF", stage="print")),
+                   DiagramNode("p", KIND_TASK, "PDF排版", stage="print")),
             flows=(DiagramFlow("f1", "g", "p", "否"),
                    DiagramFlow("f2", "g", "b"),
                    DiagramFlow("f3", "b", "p")),
@@ -349,6 +349,66 @@ def run(ctx) -> None:
            fork.route(fork.flows[0])[-1][0] == 300.0
            and 0.0 < fork.route(fork.flows[0])[-1][1] < 380.0,
            str(fork.route(fork.flows[0])[-1]))
+
+        # 多个来源**按方位分边**（用户 2026-10-07）：齐行的留横边中线，
+        # 下方来的改走下边——不再挤同一条横边、把中线那条顶偏。
+        multi = FlowDiagram(
+            nodes=(DiagramNode("g", KIND_EXCLUSIVE, "是否拼版"),
+                   DiagramNode("p", KIND_TASK, "PDF排版", stage="print"),
+                   DiagramNode("i", KIND_TASK, "图片拼版", stage="imposition")),
+            flows=(DiagramFlow("f_no", "g", "p", "否"),
+                   DiagramFlow("f_yes", "g", "i", "是"),
+                   DiagramFlow("f_imp", "i", "p")),
+            boxes={"g": (1005.0, 67.0, 50.0, 50.0),
+                   "p": (1424.0, 48.0, 116.0, 87.0),
+                   "i": (1215.0, 205.0, 115.0, 85.0)},
+        )
+        no_pts = multi.route(multi.flows[0])
+        p_mid = multi.node_box("p")[1] + multi.node_box("p")[3] / 2
+        ok("「否」直达 PDF排版 **左边中线**（同行的独苗，直线对齐）",
+           len(no_pts) == 2 and abs(no_pts[-1][1] - p_mid) < 0.6,
+           str(no_pts))
+        imp_pts = multi.route(multi.flows[2])
+        p_box = multi.node_box("p")
+        ok("「图片拼版 → PDF排版」从**下边中点**进（不从左边挤车）",
+           abs(imp_pts[-1][1] - (p_box[1] + p_box[3])) < 0.6
+           and abs(imp_pts[-1][0] - (p_box[0] + p_box[2] / 2)) < 0.6,
+           str(imp_pts))
+        yes_pts = multi.route(multi.flows[1])
+        i_mid = multi.node_box("i")[1] + multi.node_box("i")[3] / 2
+        ok("网关下顶点出来的线**先竖后横**、水平进入图片拼版左边中点",
+           yes_pts[1][0] == yes_pts[0][0]
+           and abs(yes_pts[-1][1] - i_mid) < 0.6,
+           str(yes_pts))
+
+        # 入口/出口**不共点**（用户 2026-10-07）：同一节点的入边锚点与
+        # 出边锚点不许重合——往左回头的数据流里，"从左边进"和"往左边出"
+        # 不能都占左边中点，后算的沿边让到四分点。
+        loop = FlowDiagram(
+            nodes=(DiagramNode("a", KIND_TASK, "甲", stage="extract"),
+                   DiagramNode("b", KIND_TASK, "乙", stage="detect")),
+            flows=(DiagramFlow("f1", "a", "b"), DiagramFlow("f2", "b", "a")),
+            boxes={"a": (0.0, 0.0, 100.0, 80.0),
+                   "b": (300.0, 0.0, 100.0, 80.0)},
+        )
+        loop_a = loop.route(loop.flows[0])
+        loop_b = loop.route(loop.flows[1])
+        ok("双向两条线的四个端点**互不重合**（入口/出口不共点）",
+           len({loop_a[0], loop_a[-1], loop_b[0], loop_b[-1]}) == 4,
+           f"{loop_a} vs {loop_b}")
+
+        # 注释挂接线也要**避开连线的出入口**（同一规则覆盖注释）：
+        # 图片拼版右缘中点已被出边占用，挂接线得沿边滑开。
+        multi.notes = (DiagramNote("nt", "古籍图片拼版"),)
+        multi.note_links = {"nt": "i"}
+        multi.boxes["nt"] = (1360.0, 300.0, 102.0, 40.0)
+        view = BpmnView(multi)
+        note_anchor = view._anchor_point("i", view.note_rect_of("nt"))
+        edge_pts = view._edge_anchor_points("i")
+        ok("注释挂接线**避开连线的出入口**（不与实线共点）",
+           all(abs(note_anchor.x() - q.x()) >= 2.0
+               or abs(note_anchor.y() - q.y()) >= 2.0 for q in edge_pts),
+           f"注释锚点 {note_anchor.x()},{note_anchor.y()} vs 连线 {edge_pts}")
 
         # 直线被中间节点挡住时**绕行**（不穿框、不被节点盖住）
         trio = FlowDiagram(
@@ -695,7 +755,7 @@ def run(ctx) -> None:
            len(editor.diagram().flows) == flows_before,
            f"{flows_before} -> {len(editor.diagram().flows)}")
         # 任务节点仍是"接在选中节点后面"：加一个任务节点验自动连线还在
-        linked = editor.add_node(KIND_TASK, "生成 PDF", stage="print",
+        linked = editor.add_node(KIND_TASK, "PDF排版", stage="print",
                                  connect_from=some)
         ok("任务节点拖进来时若选中了节点，仍自动连上一条线",
            len(editor.diagram().flows) == flows_before + 1,
@@ -779,7 +839,7 @@ def run(ctx) -> None:
         # 改流程 → 落盘 → 立刻读得到（缓存必须失效）
         modified = FlowDiagram(
             nodes=tuple(n for n in got.nodes if n.stage != "print") + (
-                DiagramNode("p2", KIND_TASK, "生成 PDF", stage="print"),
+                DiagramNode("p2", KIND_TASK, "PDF排版", stage="print"),
             ),
             flows=got.flows, boxes=got.boxes, waypoints=got.waypoints,
         )
@@ -1003,7 +1063,7 @@ _FLOW_4_SLOTS = """<?xml version="1.0" encoding="UTF-8"?>
   <bpmn:task id="a" name="检测文本框" guji:stage="detect"><bpmndi:OMNDIOSExtension/></bpmn:task>
   <bpmn:task id="b" name="图片去底色" guji:stage="rembg"><bpmndi:OMNDIOSExtension/></bpmn:task>
   <bpmn:task id="c" name="图片拼版" guji:stage="imposition"><bpmndi:OMNDIOSExtension/></bpmn:task>
-  <bpmn:task id="d" name="生成PDF" guji:stage="print"><bpmndi:OMNDIOSExtension/></bpmn:task>
+  <bpmn:task id="d" name="PDF排版" guji:stage="print"><bpmndi:OMNDIOSExtension/></bpmn:task>
   <bpmn:sequenceFlow id="f1" sourceRef="s" targetRef="a"/>
   <bpmn:sequenceFlow id="f2" sourceRef="a" targetRef="b"/>
   <bpmn:sequenceFlow id="f3" sourceRef="b" targetRef="c"/>
@@ -1024,7 +1084,7 @@ _FLOW_REMBG_FIRST = """<?xml version="1.0" encoding="UTF-8"?>
  <bpmn:process id="P1" isExecutable="false">
   <bpmn:startEvent id="s"><bpmndi:OMNDIOSExtension/></bpmn:startEvent>
   <bpmn:task id="a" name="图片去底色" guji:stage="rembg"><bpmndi:OMNDIOSExtension/></bpmn:task>
-  <bpmn:task id="b" name="生成PDF" guji:stage="print"><bpmndi:OMNDIOSExtension/></bpmn:task>
+  <bpmn:task id="b" name="PDF排版" guji:stage="print"><bpmndi:OMNDIOSExtension/></bpmn:task>
   <bpmn:sequenceFlow id="f1" sourceRef="s" targetRef="a"/>
   <bpmn:sequenceFlow id="f2" sourceRef="a" targetRef="b"/>
  </bpmn:process>
@@ -1045,7 +1105,7 @@ _FLOW_WITH_EXTRACT = """<?xml version="1.0" encoding="UTF-8"?>
   <bpmn:startEvent id="pdf" name="源PDF"><bpmndi:OMNDIOSExtension/></bpmn:startEvent>
   <bpmn:task id="ex" name="提取图片" guji:stage="extract"><bpmndi:OMNDIOSExtension/></bpmn:task>
   <bpmn:task id="dt" name="检测文本框" guji:stage="detect"><bpmndi:OMNDIOSExtension/></bpmn:task>
-  <bpmn:task id="pr" name="生成PDF" guji:stage="print"><bpmndi:OMNDIOSExtension/></bpmn:task>
+  <bpmn:task id="pr" name="PDF排版" guji:stage="print"><bpmndi:OMNDIOSExtension/></bpmn:task>
   <bpmn:sequenceFlow id="f1" sourceRef="pdf" targetRef="ex"/>
   <bpmn:sequenceFlow id="f2" sourceRef="ex" targetRef="dt"/>
   <bpmn:sequenceFlow id="f3" sourceRef="dt" targetRef="pr"/>
@@ -1426,7 +1486,7 @@ _FLOW_DETECT_FIRST = """<?xml version="1.0" encoding="UTF-8"?>
  <bpmn:process id="P1" isExecutable="false">
   <bpmn:startEvent id="s"><bpmndi:OMNDIOSExtension/></bpmn:startEvent>
   <bpmn:task id="a" name="检测文本框" guji:stage="detect"><bpmndi:OMNDIOSExtension/></bpmn:task>
-  <bpmn:task id="b" name="生成PDF" guji:stage="print"><bpmndi:OMNDIOSExtension/></bpmn:task>
+  <bpmn:task id="b" name="PDF排版" guji:stage="print"><bpmndi:OMNDIOSExtension/></bpmn:task>
   <bpmn:sequenceFlow id="f1" sourceRef="s" targetRef="a"/>
   <bpmn:sequenceFlow id="f2" sourceRef="a" targetRef="b"/>
  </bpmn:process>

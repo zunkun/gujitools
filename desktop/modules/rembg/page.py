@@ -115,7 +115,7 @@ class RembgModulePage(StepModulePage, ThumbSourceMixin):
 
         - 源图（左栏「原图」形态）→ 结果还是按旧图算的，重跑一次才用上；
         - 结果文件（「去底色结果」形态）→ 它自己就是这一步的产物，下游
-          （生成 PDF）读的就是它。
+          （PDF排版）读的就是它。
         """
         sources = {str(p) for p in self.source_images()}
         if str(path) in sources:

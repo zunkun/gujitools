@@ -62,7 +62,7 @@ class TaskRowsWorker(QObject):
         status = "success" if active else "pending"
         tip = (
             f"{STAGE_LABELS[IMPOSITION_STAGE]}："
-            f"{'已生效（生成 PDF 使用拼版结果）' if active else '已启用，尚未拼版'}"
+            f"{'已生效（PDF排版使用拼版结果）' if active else '已启用，尚未拼版'}"
         )
         return {
             "short": STAGE_SHORT[IMPOSITION_STAGE],

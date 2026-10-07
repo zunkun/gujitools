@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""生成 PDF（print）阶段面板：表单状态（取值/回填/重置）。
+"""PDF排版（print）阶段面板：表单状态（取值/回填/重置）。
 
 表单控件构建见 print_form.py，参数解析见 print_params.py，
 默认值统一取 params_spec.DEFAULTS["print"]。
@@ -23,21 +23,24 @@ from desktop.components.panels.print_params import (
 
 
 class PrintPanel(PrintFormMixin, StagePanel):
-    """生成 PDF 阶段面板：纸张/边距/标题/页码等参数与状态。
+    """PDF排版阶段面板：纸张/边距/标题/页码等参数与状态。
 
     input/output/workers/clean 由系统管理；表单构建见 print_form，取值/
     回填/重置等状态见本类（含标题切换节点与 pdf_name/title 联动）。
     """
 
     stage = "print"
-    title = "生成 PDF"
+    # ⚠️ 必须**逐字等于** ``store.STAGE_LABELS["print"]``（= ``stage_label``
+    #    → ``StepSpec.stage_title``）：``tests/selftests/gui_guide.py`` 拿它跟
+    #    用户手册的小节标题对照，改一处漏一处会立刻红。
+    title = "PDF排版"
     description = (
         "设置 PDF 纸张、边距、标题、页码等参数。"
         "左侧列表决定参与生成的图片与顺序。"
     )
 
     # 任一影响排版的控件变化 → 第四步「打印效果」预览按新参数重画
-    # （只是重画内存位图，不执行生成 PDF）
+    # （只是重画内存位图，不点「生成PDF」就不出成品）
     params_changed = Signal()
 
     def __init__(self, parent=None):

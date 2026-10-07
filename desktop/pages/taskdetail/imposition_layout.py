@@ -18,7 +18,7 @@
   选中槽位做版面变换）、**删除选中图片**（2026-09-30 用户定：选中哪张
   就能删哪张，页保留、图回未选择列表）；
 - 状态行（当前页 / 选中槽位 / 拼版是否生效 / 单图页显隐「新增图片」）；
-- **后台防抖合成**（``stages/imposition/``，列表顺序即页序）与生成 PDF 前
+- **后台防抖合成**（``stages/imposition/``，列表顺序即页序）与点「生成PDF」前
   的同步兜底合成。
 
 只通过 ``self`` 依赖共享基元（``imposition.ImpositionBaseMixin``）与宿主
@@ -292,7 +292,7 @@ class ImpositionLayoutMixin:
         """弹窗「**整页左右组合**」来源：构造时快照版面，合成在 worker 线程。
 
         ``edit_path`` = 本页**拼版成品**文件（``stages/imposition/NNNN.png``，
-        生成 PDF 用的就是它）——但只在它**存在且不陈旧**（没有挂着的防抖
+        PDF排版用的就是它）——但只在它**存在且不陈旧**（没有挂着的防抖
         合成，即版面改动都已合成完）时给；否则弹窗退回只读（画布右键空白
         「编辑整图」不受此限，它现场合成全分辨率、永远以最新版面为准）。
         ``save_path`` 一并指向同一文件：弹窗画布显示的整页组合与成品是同一套
@@ -411,7 +411,7 @@ class ImpositionLayoutMixin:
         组合图是**虚拟图**（没有源文件），所以这里按产出口径（``compose_page``
         的紧裁合成，与落盘成品同一套代码）在 worker 线程现场合成**全分辨率**
         图给编辑器；「完成」把结果原子覆盖到本页的拼版成品文件
-        ``stages/imposition/0001.png``——生成 PDF 用的就是它。
+        ``stages/imposition/0001.png``——PDF排版用的就是它。
 
         ⚠️ 覆盖前把挂着的防抖合成取消（定时器停 + 清脏标记）：挂着的这一轮
         若在我们的写回之后再跑，会用未编辑的合成结果把刚覆盖的成品冲掉。
@@ -488,7 +488,7 @@ class ImpositionLayoutMixin:
         self._refresh_print_source()
         self.log_view.append(
             f"已编辑{cn_page_label(page_index)}的整页组合并覆盖拼版成品"
-            f"「{target.name}」（生成 PDF 用这张）；"
+            f"「{target.name}」（PDF排版用这张）；"
             "再次调整该页版面会重新合成、覆盖这次编辑。"
         )
 
@@ -517,7 +517,7 @@ class ImpositionLayoutMixin:
             self._refresh_print_source()
             self.log_view.append(
                 f"已编辑整页组合并覆盖拼版成品「{path.name}」"
-                f"（{image.width()}×{image.height()} px，生成 PDF 用这张）；"
+                f"（{image.width()}×{image.height()} px，PDF排版用这张）；"
                 "再次调整该页版面会重新合成、覆盖这次编辑。"
             )
             return
@@ -577,13 +577,13 @@ class ImpositionLayoutMixin:
             text += f"　·　已勾选但当前用不上：{_reason}"
         elif self.imposition_effective():
             text += (
-                "　·　拼版已启用：生成 PDF 用拼版结果"
+                "　·　拼版已启用：PDF排版用拼版结果"
                 if pages
                 else "　·　拼版已启用，但还没有拼版页——"
-                     "请先「选择拼版」，否则生成 PDF 没有输入"
+                     "请先「选择拼版」，否则 PDF排版没有输入"
             )
         elif pages:
-            text += "　·　拼版未启用：勾选下方开关后生成 PDF 才会用拼版结果"
+            text += "　·　拼版未启用：勾选下方开关后 PDF排版 才会用拼版结果"
         label.setText(text)
         # 状态行是所有"当前页/选中变了"路径的汇聚点，旋转组件的回填搭这趟车
         self._sync_imposition_rotation_ui()
@@ -655,15 +655,15 @@ class ImpositionLayoutMixin:
         self._toast("error", "拼版合成失败", message)
 
     def _compose_imposition_now(self) -> None:
-        """同步合成（**只在生成 PDF 前调用**：保证 PDF 用的一定是最新版面）。
+        """同步合成（**只在点「生成PDF」前调用**：保证 PDF 用的一定是最新版面）。
 
-        平时走后台防抖合成；用户在拼版页改完立刻去第四步点「生成 PDF」时，
+        平时走后台防抖合成；用户在拼版页改完立刻去第四步点「生成PDF」时，
         后台那一轮可能还没跑完/还没触发——这里补一次同步的，宁可等一下也不能
         让 PDF 用旧版面。
 
         ⚠️ 前置条件用 ``imposition_has_pages()`` 而不是 ``imposition_active()``：
         「启用」只是用户意图，一页都没拼时没有版面可合成，跑一遍只会白扫一遍
-        目录（真正的拦路在第四步：列表为空 → 点生成 PDF 会明确提示去拼版）。
+        目录（真正的拦路在第四步：列表为空 → 点「生成PDF」会明确提示去拼版）。
         """
         if not self.task_id or not self.imposition_has_pages():
             return

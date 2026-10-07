@@ -259,7 +259,7 @@ class TaskDetailPage(
         self._stop_detect_process()
         # ⚠️ 复位**跨任务会串味**的两个第四步状态（2026-09-26 审计）：
         #    ① `_print_dirty`：在任务 A 拖过版面，打开任务 B 时 B 的第四步会误显示
-        #       「● 版面已修改，点击「生成 PDF」生效」并把主按钮加粗；
+        #       「● 版面已修改，点击「生成PDF」生效」并把主按钮加粗；
         #    ② print 面板的 `_last_applied`（供「放弃本次修改」回填）：不重置的话
         #       在 B 点「放弃本次修改」会把 A 的参数（含 A 派生的 pdf_name/title_text）
         #       回填进来 —— 后续可能用 A 的名字生成 B 的 PDF。
@@ -878,7 +878,7 @@ class TaskDetailPage(
             # 整体隐藏（见 _select_imposition_detail），这里只给状态行文案。
             self._set_stage_status(
                 "图片拼版：可选节点（勾选「在流程中启用图片拼版」后，"
-                "生成 PDF 使用拼版结果）"
+                "PDF排版使用拼版结果）"
             )
             return
         self._apply_stage_state(stage, states[stage])
@@ -998,7 +998,7 @@ class TaskDetailPage(
         """
         if stage == "print":
             if getattr(self, "_print_dirty", False):
-                return "● 版面已修改，点击「生成 PDF」生效"
+                return "● 版面已修改，点击「生成PDF」生效"
             if getattr(self, "_print_source_stale", False):
                 # ⚠️ 认 effective：区域模式不支持时来源确实已回到去底色，
                 #    这里必须跟着说"去底色"而不是说"拼版"（否则界面与执行打架）
@@ -1006,7 +1006,7 @@ class TaskDetailPage(
                     IMPOSITION_LABEL if self.imposition_effective()
                     else "去底色"
                 )
-                return f"● 取图来源已改为{where}，请重新「生成 PDF」"
+                return f"● 取图来源已改为{where}，请重新「生成PDF」"
         info = (self._stale_notices or {}).get(stage)
         if not info:
             return None

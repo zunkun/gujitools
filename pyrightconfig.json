@@ -1,0 +1,6 @@
+{
+  "venvPath": "C:/Users/liuzu/anaconda3/envs",
+  "venv": "py310",
+  "typeCheckingMode": "basic",
+  "exclude": ["build", "dist", ".zcode", "docs"]
+}

@@ -203,14 +203,14 @@ class PageListMixin:
         """按被编辑文件所处阶段，提示"下一步怎么让这次编辑生效"。
 
         第三步「去底色结果」要重新「提交本次任务」才会合成到 stages/rembg
-        被第四步取用；第四步待打印图与拼版成品改了「生成 PDF」即生效。
+        被第四步取用；第四步待打印图与拼版成品改了点「生成PDF」即生效。
         不属于这两类的路径（外部插入图等）不打日志。
         """
         try:
             if path.parent == self.store.rembg_preview_output_dir(self.task_id):
                 self.log_view.append(
                     f"已编辑去底色结果「{path.name}」；"
-                    "点「提交本次任务」后，第四步（生成 PDF）才会用上这次修改。"
+                    "点「提交本次任务」后，第四步（PDF排版）才会用上这次修改。"
                 )
                 # 按钮立刻改口（绿色「已是最新版本」在这里是假话）：编辑后必须
                 # 重新提交才传给第四步，见 submit._preview_edited_after_submit
@@ -221,7 +221,7 @@ class PageListMixin:
             ):
                 self.log_view.append(
                     f"已编辑待打印图片「{path.name}」；"
-                    "点「生成 PDF」即用上这次修改。"
+                    "点「生成PDF」即用上这次修改。"
                 )
         except Exception:  # noqa: BLE001 - 提示不该影响刷新主链路
             pass
@@ -557,7 +557,7 @@ class PageListMixin:
 
         ⚠️ 判据只有一份：:func:`desktop.steps.ports.flow_entry_input_kind`
         （用户 2026-10-06 三条规则的唯一实现处——①「图片提取」打头只显示
-        PDF；②检测/排版/去底色/生成PDF 打头只显示图片+文件夹；③非第一个
+        PDF；②检测/排版/去底色/PDF排版 打头只显示图片+文件夹；③非第一个
         流程节点不配输入控件）。没有任务时按**默认流程**给（入口是
         「图片提取」⇒ ``"pdf"``），与 :meth:`flow_slots` 的兜底同源。
         """
@@ -681,7 +681,7 @@ class PageListMixin:
         用户 2026-10-06 的三条规则，判据唯一来源 :meth:`_entry_input_kind`：
           ①「图片提取」打头 ⇒ **只显示 PDF 按钮**——提取的输入是源 PDF，
             摆着图片/目录入口会让人以为这一步要喂图；
-          ②检测/排版/去底色/生成PDF 打头 ⇒ **PDF 按钮整颗藏起来**，只留
+          ②检测/排版/去底色/PDF排版 打头 ⇒ **PDF 按钮整颗藏起来**，只留
             图片 + 文件夹两个红框入口（用户："不显示 pdf，只显示图片输入
             和文件输入"）；
           ③这些输入控件只属于**第一个流程节点**——没有功能入口（打头的

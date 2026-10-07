@@ -385,7 +385,7 @@ class _ImpositionNode(QFrame):
         self.setMinimumWidth(_NODE_MIN_W)
         self.setToolTip(
             "可选节点：第三步「区域模式」为 1（左右分开）时出现，"
-            "位于「图片去底色」与「生成 PDF」之间。点击查看/选择。"
+            "位于「图片去底色」与「PDF排版」之间。点击查看/选择。"
         )
 
         row = QHBoxLayout(self)
@@ -541,7 +541,7 @@ class StepBar(QWidget):
     - **生效态**（``set_imposition_active``）：这条支路是否真的承载流程
       （已启用且至少有一页拼版）。生效 → 两侧连接线常规点亮、节点徽标
       转绿色对勾；未生效 → 两侧连接线灰色虚线、徽标灰色「＋」，同时
-      「去底色 → 生成 PDF」画一条从节点上方绕过的绕行线
+      「去底色 → PDF排版」画一条从节点上方绕过的绕行线
       （``_draw_imposition_bypass``）——选了拼版但还没有拼版页时，
       第四步实际取的仍是第三步产物，线不能说谎。
 
@@ -564,7 +564,7 @@ class StepBar(QWidget):
         拼版排在所有真实步骤之前——流程图这么画时宿主要能如实渲染，
         任务 #0027 踩坑）。⚠️ 这是 BPM 驱动的
         关键参数（``docs/tasks/bpm.md`` 的 M2）：默认流程下它等于
-        ``len(steps) - 1``（拼版在「图片去底色」与「生成 PDF」之间，与旧
+        ``len(steps) - 1``（拼版在「图片去底色」与「PDF排版」之间，与旧
         硬编码一致）；自定义流程把拼版排到别处时，宿主按槽位表的
         ``bar_index`` 算出来传进来，**连线/绕行线也跟着挪**。
 
@@ -576,9 +576,9 @@ class StepBar(QWidget):
 
         此前 :class:`StepItem` 拿的是**真实步骤的序数**（``enumerate(steps)``），
         与格序只差"可选节点之前"那一段——默认流程里 ``print`` 序数 3 / 格序 4，
-        于是：点「生成 PDF」发出去的是 3，宿主按格序查表得到**图片拼版**（点一个
+        于是：点「PDF排版」发出去的是 3，宿主按格序查表得到**图片拼版**（点一个
         步骤打开另一个步骤）；``set_step_status(4)`` 撞上 ``0 <= 4 < 4`` 被
-        **静默 return**，生成 PDF 的状态/进度/打勾从来不上屏（用户 2026-10-06
+        **静默 return**，PDF排版的状态/进度/打勾从来不上屏（用户 2026-10-06
         报"bug 非常多"）。现在寻址一律走格序，徽标数字仍按**真实步骤序**显示
         （那是给人看的"第几步"，与寻址无关，见 :meth:`_sync`）。
         """
@@ -782,10 +782,10 @@ class StepBar(QWidget):
             painter.drawPath(arrow)
 
     def _draw_imposition_bypass(self, painter) -> None:
-        """「去底色 → 生成 PDF」绕行线：拼版节点在流程里但**未生效**时画。
+        """「去底色 → PDF排版」绕行线：拼版节点在流程里但**未生效**时画。
 
         此刻第四步实际取的是第三步产物（``print_source_dir``），主线必须在
-        节点上方绕过去，否则流程条上「去底色」和「生成 PDF」之间没有真实
+        节点上方绕过去，否则流程条上「去底色」和「PDF排版」之间没有真实
         连接。颜色规则与普通连接线一致：左侧步骤（去底色）完成即绿。
         拼版支路自己的两条线此时是灰色虚线（见 ``_sync``）。
         """
@@ -807,7 +807,7 @@ class StepBar(QWidget):
     def _bypass_points(self) -> list[tuple[float, float]] | None:
         """绕行线折点（**纯 float 元组**，见 ``_rounded_polyline`` 的警示）：
         **从「去底色」胶囊中心出发** → 向右 → **直角上折** → 向右越过节点
-        上方 → **直角下折** → 向右接到「生成 PDF」胶囊左缘——**全部横平
+        上方 → **直角下折** → 向右接到「PDF排版」胶囊左缘——**全部横平
         竖直**，像管道工铺管（用户 2026-09-30：不要任意角度的斜线）。
 
         ⚠️ 起点必须是**胶囊中心**而不是前端连接件的左缘（用户 2026-09-30
@@ -897,7 +897,7 @@ class StepBar(QWidget):
         ⚠️ 槽位要一起隐藏：只藏节点的话，那格等宽槽位还占着位置，流程条上会
         留出一段空白（第四步/PDF 看起来被推远）。
         另外节点显示时行顶边距 6→18：给绕行线留一条**走线带**——拼版未生效
-        时「去底色 → 生成 PDF」的线要贴着节点上方绕过去（见
+        时「去底色 → PDF排版」的线要贴着节点上方绕过去（见
         ``_draw_imposition_bypass``），不预留高度弧线会顶到卡片边框。
         """
         self.imposition_node.setVisible(visible)
@@ -938,7 +938,7 @@ class StepBar(QWidget):
         ``index`` 是**格序 ``bar_index``**（与 :meth:`mark_completed`、
         :meth:`set_current`、``current_changed`` 同一口径）。⚠️ 早先这里拿它
         当 ``self.buttons`` 的**位置**下标，于是可选节点之后的每一步都差一段
-        ——默认流程里「生成 PDF」格序 4 而 ``len(buttons) == 4``，撞上
+        ——默认流程里「PDF排版」格序 4 而 ``len(buttons) == 4``，撞上
         ``0 <= 4 < 4`` 被**静默 return**，它的状态/进度/打勾从来不上屏。
 
         completed=False 但 status='success' 不可能出现；completed=True 而
@@ -981,7 +981,7 @@ class StepBar(QWidget):
         for pos, item in enumerate(self.buttons):
             # ⚠️ 徽标数字按**真实步骤序**（``pos + 1``，不含可选节点），
             #    高亮判定按**格序**（``item.index``）。两者是不同的东西：
-            #    前者是给人看的"第几步"，后者是寻址用的（默认流程里生成 PDF
+            #    前者是给人看的"第几步"，后者是寻址用的（默认流程里 PDF排版
             #    徽标是 4 而格序是 4——拼版占了第 3 格）。
             item.badge.set_state(pos + 1, item._badge_status)
             item.set_current(item.index == self._current)

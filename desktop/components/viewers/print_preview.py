@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""生成 PDF（print）预览：左侧缩略图条 + 右侧单页效果预览。
+"""PDF排版（print）预览：左侧缩略图条 + 右侧单页效果预览。
 
 布局与前三步保持一致（``ImageViewerWidget`` / ``RembgPreviewWidget`` 的
 「左缩略图 + 右大图」），右侧不再是网格瀑布流：
@@ -46,7 +46,7 @@ from utils.page_layout import (
 
 
 class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
-    """生成 PDF 预览：左侧待打印缩略图条（可拖动排序）+ 右侧单页效果。"""
+    """PDF排版预览：左侧待打印缩略图条（可拖动排序）+ 右侧单页效果。"""
 
     order_changed = Signal()        # 列表内容/顺序变化（含拖动与删除）
     insert_requested = Signal()     # 请求插入图片
@@ -61,7 +61,7 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
     # 版面编辑：某一页的图片坐标（[x,y,w,h] mm）被拖拽/缩放改了
     layout_changed = Signal(int, list)
     #: 编辑器覆盖了某张待打印图 ``image_saved(path, edited)``：宿主据此记日志
-    #: （提示"点「生成 PDF」即生效"）——待打印图就是最终进 PDF 的那张
+    #: （提示"点「生成PDF」即生效"）——待打印图就是最终进 PDF 的那张
     image_saved = Signal(str, object)
 
     #: 导出图片的精度：与 PDF **同级**（`functions/print.py` 的 `PRINT_IMAGE_DPI`）。
@@ -181,7 +181,7 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         self.delete_button.clicked.connect(self.remove_selected)
         # 按钮带的就是 PDF 本身，用带 "PDF" 字样的图标（``FIF.SAVE`` 只是通用存档）
         self.download_button = PrimaryPushButton(PDF_FILE, "下载 PDF")
-        self.download_button.setToolTip("请先执行「生成 PDF」后再下载")
+        self.download_button.setToolTip("请先执行「生成PDF」后再下载")
         self.download_button.setEnabled(False)
         self.download_button.clicked.connect(self.download_requested.emit)
         # 单页导出：当前页排进 A4 纸后的**最终效果**（与 PDF 同精度），不生成 PDF
@@ -263,7 +263,7 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
         if self._pdf_path is not None:
             self.download_button.setToolTip(f"下载 PDF：{self._pdf_path.name}")
         else:
-            self.download_button.setToolTip("请先执行「生成 PDF」后再下载")
+            self.download_button.setToolTip("请先执行「生成PDF」后再下载")
 
     def remove_selected(self) -> None:
         """删除所有选中条目，未选中则通过 hint 信号提示。"""
@@ -869,7 +869,7 @@ class PrintPreviewWidget(QWidget, ThumbsMixin, ZoomPopupMixin):
                 # 原图模式显示的就是这个文件的全部像素：编辑器「完成」可覆盖它
                 save_path=path,
                 # 编辑目标 = 待打印的这张图（第三步提交产物/拼版成品），
-                # 也就是最终进 PDF 的那张——改了它生成 PDF 即生效
+                # 也就是最终进 PDF 的那张——改了它点「生成PDF」即生效
                 edit_path=path,
             )
         spec, note = self._print_spec(index, path)

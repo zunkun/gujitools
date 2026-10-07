@@ -104,8 +104,13 @@ NO_PAGE = -1
 #:
 #: ⚠️ 只在**没有** ``guji:stage`` 属性时才查这张表（属性是显式声明，优先）。
 #: 用户用 bpmn.io 画图时不会写扩展属性，只能靠名字接——所以别名要写全
-#: （"图片拼版"/"古籍拼板" 都指 ``imposition``，"生成 PDF"/"PDF排版" 都指
-#: ``print``）。匹配时先去掉所有空白，避免"生成 PDF"与"生成PDF"不一致。
+#: （"图片拼版"/"古籍拼板" 都指 ``imposition``）。匹配时先去掉所有空白，
+#: 避免"生成 PDF"与"生成PDF"不一致。
+#:
+#: ⚠️「生成pdf」这个别名**留着**（用户 2026-10-07 之前画的老流程图上，那格就叫
+#: 这个名；现在步骤名已统一成「PDF排版」，见 ``StepSpec.stage_title``，但老图
+#: 还得认）。删了它，那些老任务的 ``print`` 阶段会掉回"认不出"——节点还在图上，
+#: 却不参与运行。
 STAGE_ALIASES: dict[str, str] = {
     "提取图片": "extract",
     "提取pdf图片": "extract",
@@ -417,7 +422,7 @@ class FlowDiagram:
 
         ⚠️⚠️ **要按"界面格"摊开，而不是只认图上出现的阶段**：
         ``rembg_submit``（提交去底色结果）是第三步内的第二个动作，用户画图时
-        不会给它单独开节点——但它**确实**是「生成 PDF」的输入（``print.pages
+        不会给它单独开节点——但它**确实**是「PDF排版」的输入（``print.pages
         ← rembg_submit``）。只按图上的阶段算，链里就少了它，于是"提交过之后
         PDF 已过期"这句提示永远不出现。所以收下阶段后要按
         ``ports.STAGE_STEPS`` 反查它那一格里的**所有**阶段。
@@ -599,7 +604,7 @@ class FlowDiagram:
 
         - 文件里**少了**某一步（例如默认流程改成不含「图片去底色」）时，若还
           按"数当前有几格"来编号，后面每一步的页号都会**整体前移**——
-          点「生成 PDF」会翻到「图片去底色」那一页（用户报的"改了文件程序
+          点「PDF排版」会翻到「图片去底色」那一页（用户报的"改了文件程序
           没跟着变"就是这个）。
         - 文件里**多了/调换了顺序**也一样：页号只认静态位置，步骤条上哪一格
           对应哪一页由 :meth:`slot_of` / ``_select_stage`` 查出来。
@@ -1127,28 +1132,18 @@ class FlowDiagram:
 
         方向按两节点中心的相对方位挑（横向主导走左右、纵向主导走上下）。
 
-        **多条边怎么分开**（用户 2026-10-06）：
+        **多条边怎么分开**（用户 2026-10-06，2026-10-07 细化）：
 
-        - **任务框 / 事件圆**：沿边摊开（``t`` 均分）——多条线从同一条边的
-          不同位置出发。
-        - **网关（判断）**：**分配到不同的角**。菱形只有四个顶点，两条分支
-          若都走"右"会落在**同一段斜边**上（看着像从角出发，其实不是，
-          而且两条线叠在一起）。所以按分支的相对方位把它们分给右/下/上/左
-          四个角：正右方那条走右角，正下方那条走下角，以此类推。
+        - **同侧挤车先改侧**：一个节点有多条入边/出边、且多条按方位落到
+          同一条**横向边**上时，只留与它**同一行**的那条（保持中线对齐），
+          其余按"对端在下方→走下边、在上方→走上边"改走竖边——
+          「图片拼版 → PDF排版」因此从**下边**进，不再把网关「否」那条
+          顶得偏离 PDF排版 的水平中线。竖边内部真撞车才沿边摊开。
+        - **任务框 / 事件圆**：改侧之后仍同侧的多条边沿边摊开（``t`` 均分）。
+        - **网关（判断）**：**分配到不同的角**（:meth:`_corner_pick`）。
         """
-        out_index = out_count = in_index = in_count = 0
-        for other in self.flows:
-            if other.source == flow.source:
-                if other.id == flow.id:
-                    out_index = out_count
-                out_count += 1
-            if other.target == flow.target:
-                if other.id == flow.id:
-                    in_index = in_count
-                in_count += 1
-        s_side, t_side = self._ends_sides(flow)
-        s_t = (out_index + 1) / (out_count + 1) if out_count > 1 else 0.5
-        t_t = (in_index + 1) / (in_count + 1) if in_count > 1 else 0.5
+        s_side, s_t = self._end_anchor(flow, outgoing=True)
+        t_side, t_t = self._end_anchor(flow, outgoing=False)
         # 网关端：方向与 t 一起由「九宫格分区」决定（保证不同分支占不同角）
         if self._is_gateway(flow.source):
             s_side, s_t = self._corner_pick(flow.source, flow, outgoing=True)
@@ -1156,19 +1151,92 @@ class FlowDiagram:
             t_side, t_t = self._corner_pick(flow.target, flow, outgoing=False)
         return (s_side, s_t, t_side, t_t)
 
+    def _end_anchor(self, flow: DiagramFlow, *, outgoing: bool,
+                    ) -> tuple[str, float]:
+        """非网关一端的 ``(方向, t)``：同侧撞车先改侧，入口/出口**不共点**。
+
+        ``outgoing=True`` 算**源端**（对端是 target），否则算**目标端**
+        （对端是 source）。横向边上的撞车按"同一行"判：对端中心与
+        本节点中心的 ``|dy|`` 超过两边高之和的 1/4 就算不齐行——
+        网关与任务框同行（dy≈0）留左边，正下方的任务框让出左边改走下边。
+
+        ⚠️ **入口/出口不共点**（用户 2026-10-07）：同一个节点、同一条边
+        上，**反向**的那条连线已经占了某个位置（比如"从左边进来"和"往
+        左边出去"都想要中点），本端沿边挪到四分点让开。网关只有四个
+        顶点、``t`` 产生不出新位置，保持九宫格分角的结果不让。
+        """
+        node_id = flow.source if outgoing else flow.target
+        side, t = self._raw_end_anchor(flow, outgoing=outgoing)
+        if not self._is_gateway(node_id):
+            # 撞车的不止一对时按**声明顺序**分空档：排在前面的挑第一个
+            # 空位——两边各自计算也能算出互补的错位点（不然会一起挪到
+            # 同一个四分点上，白让）。
+            occupied: set[float] = set()
+            my_index = next(i for i, f in enumerate(self.flows)
+                            if f is flow)
+            rank = 0
+            for other_index, other in enumerate(self.flows):
+                if other is flow:
+                    continue
+                if (other.target if outgoing else other.source) != node_id:
+                    continue
+                o_side, o_t = self._raw_end_anchor(other,
+                                                   outgoing=not outgoing)
+                if o_side != side:
+                    continue
+                o_t = round(o_t, 6)
+                occupied.add(o_t)
+                if o_t == round(t, 6) and other_index < my_index:
+                    rank += 1
+            if round(t, 6) in occupied:
+                free_slots = [c for c in (0.25, 0.75, 0.125, 0.375, 0.625,
+                                          0.875)
+                              if round(c, 6) not in occupied]
+                if rank < len(free_slots):
+                    t = free_slots[rank]
+        return side, t
+
+    def _raw_end_anchor(self, flow: DiagramFlow, *, outgoing: bool,
+                        ) -> tuple[str, float]:
+        """不看反向共点的 ``(方向, t)``（纯几何方位 + 同侧摊开）。"""
+        node_id = flow.source if outgoing else flow.target
+        others = [f for f in self.flows
+                  if (f.source if outgoing else f.target) == node_id]
+        nx, ny, nw, nh = self.node_box(node_id)
+        ncx, ncy = nx + nw / 2, ny + nh / 2
+        opposite = [self.node_box(f.target if outgoing else f.source)
+                    for f in others]
+        sides: list[str] = []
+        for box in opposite:
+            bx, by, bw, bh = box
+            dx = (bx + bw / 2) - ncx
+            dy = (by + bh / 2) - ncy
+            if abs(dx) >= abs(dy):
+                # 横向主导：走**朝向对端**的那条边（源端朝对端出、
+                # 目标端从对端来的那面进——两个方向的表达式相同）
+                sides.append("right" if dx >= 0 else "left")
+            else:
+                sides.append("bottom" if dy >= 0 else "top")
+        # 横向边撞车：不齐行的让出横边，改走对着对端的竖边
+        for horiz in ("left", "right"):
+            members = [i for i, s in enumerate(sides) if s == horiz]
+            if len(members) <= 1:
+                continue
+            for i in members:
+                bx, by, bw, bh = opposite[i]
+                dy = (by + bh / 2) - ncy
+                if abs(dy) > (nh + bh) / 4:
+                    sides[i] = "bottom" if dy > 0 else "top"
+        index = others.index(flow)
+        side = sides[index]
+        group = [i for i, s in enumerate(sides) if s == side]
+        if len(group) <= 1:
+            return side, 0.5
+        return side, (group.index(index) + 1) / (len(group) + 1)
+
     def _is_gateway(self, node_id: str) -> bool:
         item = self.node(node_id)
         return bool(item is not None and item.is_gateway)
-
-    def _ends_sides(self, flow: DiagramFlow) -> tuple[str, str]:
-        """这条连线两端各走**哪一侧**（纯几何，不看别的连线）。"""
-        sx, sy, sw, sh = self.node_box(flow.source)
-        tx, ty, tw, th = self.node_box(flow.target)
-        dx = (tx + tw / 2) - (sx + sw / 2)
-        dy = (ty + th / 2) - (sy + sh / 2)
-        if abs(dx) >= abs(dy):
-            return (("right", "left") if dx >= 0 else ("left", "right"))
-        return (("bottom", "top") if dy >= 0 else ("top", "bottom"))
 
     def _corner_pick(self, gateway_id: str, flow: DiagramFlow, *,
                      outgoing: bool) -> tuple[str, float]:
@@ -1244,11 +1312,24 @@ class FlowDiagram:
         s_side, s_t, t_side, t_t = anchor
         start = self._side_anchor(flow.source, s_side, s_t)
         end = self._side_anchor(flow.target, t_side, t_t)
-        horizontal = s_side in ("right", "left")
-        if horizontal != (t_side in ("right", "left")):
-            # 方向轴不一致（不该发生）：兜底一个 L 形
-            return [start, (end[0], start[1]), end]
-        if horizontal:
+        s_horizontal = s_side in ("right", "left")
+        t_horizontal = t_side in ("right", "left")
+        if s_horizontal != t_horizontal:
+            # 混合轴（如"任务框右边 → 目标下边"）：第一段沿**源**的轴离开、
+            # 末段沿**目标**的轴进入——箭头永远垂直于被进入的那条边。早前
+            # 一律"先横后竖"，从竖边（网下角）出来的线会先横着拐、箭头变成
+            # 向下斜戳进目标的横边（用户 2026-10-07）。
+            if s_horizontal:
+                points = [start, (end[0], start[1]), end]
+            else:
+                points = [start, (start[0], end[1]), end]
+            blockers: list[tuple[float, float, float, float]] = []
+            for first, second in zip(points, points[1:]):
+                blockers.extend(self._blockers_on(first, second, flow))
+            if not blockers:
+                return points
+            return self._detour_around(start, end, blockers)
+        if s_horizontal:
             if abs(start[1] - end[1]) <= ROUTE_ALIGN_TOLERANCE:
                 blockers = self._blockers_on(start, end, flow)
                 if not blockers:

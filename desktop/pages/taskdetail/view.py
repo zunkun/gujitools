@@ -355,7 +355,7 @@ class DetailViewMixin:
         """真实步骤序列里每一格的**格序 ``bar_index``**（喂 :class:`StepBar`）。
 
         ⚠️ 与 :meth:`_bar_step_titles` **同序同长**（都过滤掉可选节点），
-        两者按下标一一对应。序数 ≠ 格序：默认流程里「生成 PDF」序数 3 而
+        两者按下标一一对应。序数 ≠ 格序：默认流程里「PDF排版」序数 3 而
         格序 4（拼版占了第 3 格），两者混用就是"点一个步骤打开另一个步骤"。
         """
         slots = sorted(
@@ -809,9 +809,9 @@ class DetailViewMixin:
         """
         host = self.panel_host_of_step("print")
         if host is None:
-            # 本流程没有「生成 PDF」这一格：没有表单可读（调用方会把预览退回
+            # 本流程没有「PDF排版」这一格：没有表单可读（调用方会把预览退回
             # 「原图」，不该拿别的面板的参数冒充打印参数）
-            raise ValueError("当前流程里没有「生成 PDF」这一步")
+            raise ValueError("当前流程里没有「PDF排版」这一步")
         return host.get_args()
 
     def _apply_pending_source_defaults(self, panel=None) -> None:
@@ -909,7 +909,7 @@ class DetailViewMixin:
         """版面编辑器改了某页坐标：落盘 print.json 并标脏，提示可重新生成 PDF。
 
         落盘走 ``_save_print_order``（直接序列化当前条目，rect 已随条目携带），
-        下次点「生成 PDF」时 runner 会从 print.json 收集 page_rects 注入生成。
+        下次点「生成PDF」时 runner 会从 print.json 收集 page_rects 注入生成。
         """
         if not self.task_id:
             return
@@ -917,11 +917,11 @@ class DetailViewMixin:
         self._print_dirty = True
         # 与"上游已重跑"共用同一套产出（文案 + 警示色），避免两处各写一份；
         # 下一次 _refresh_stage_views 也由 _regenerate_notice 把它重新显出
-        self._set_stage_status("● 版面已修改，点击「生成 PDF」生效", alert=True)
+        self._set_stage_status("● 版面已修改，点击「生成PDF」生效", alert=True)
         rx, ry, rw, rh = (list(rect) + [0, 0, 0, 0])[:4]
         self.log_view.append(
             f"第 {index + 1} 页版面已更新（x={rx:.0f}, y={ry:.0f}, "
-            f"w={rw:.0f}, h={rh:.0f} mm），点击「生成 PDF」生效"
+            f"w={rw:.0f}, h={rh:.0f} mm），点击「生成PDF」生效"
         )
 
     def _build_history_controls(self, control: QVBoxLayout) -> None:

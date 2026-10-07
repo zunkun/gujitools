@@ -387,7 +387,7 @@ def compose_print_page(
     """按 ``utils.page_layout.PrintPagePlan`` 合成"打印效果"位图。
 
     **只画内存位图，不写任何文件**——第四步的效果预览就是它；真正生成
-    PDF 仍要走「生成 PDF」按钮（functions/print.py）。
+    PDF 仍要走「生成PDF」按钮（functions/print.py）。
 
     几何全部取自 ``plan``，而 ``plan`` 由 PDF 生成与预览共用，所以用户
     按预览调好的边距/纸张/标题，与最终 PDF 必然一致。

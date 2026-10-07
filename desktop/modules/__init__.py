@@ -82,7 +82,7 @@ def _page_factory(key: str):
 #: 「提取图片」，改一处忘一处）。
 #:
 #: ⚠️ **遍历 ``NAV_STEPS`` 而不是 ``SPECS``**：显示顺序由 ``StepSpec.nav_order``
-#: 决定（"生成PDF" 排最后），而 ``NAV_STEPS`` 是唯一算好这个顺序的地方。这里直接
+#: 决定（"PDF排版" 排最后），而 ``NAV_STEPS`` 是唯一算好这个顺序的地方。这里直接
 #: 遍历 ``SPECS`` 会拿到书写顺序 ⇒ ``nav_order`` 形同虚设（``modules_shell`` 的
 #: "注册表 = NAV_STEPS 派生（顺序一致）"就是守这条的）。
 #:

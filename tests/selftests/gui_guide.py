@@ -81,7 +81,7 @@ def run(ctx) -> None:
     # ---- 4. 四个步骤与命令名一一对应（指南不得漏步或臆造步骤）----
     for stage, label in (
         ("extract", "提取"), ("detect", "检测"),
-        ("rembg", "去底色"), ("print", "生成 PDF"),
+        ("rembg", "去底色"), ("print", "PDF排版"),
     ):
         ok(f"指南覆盖 {label} 步骤（{stage}）",
            label in guide, f"指南里找不到「{label}」")
@@ -95,7 +95,7 @@ def run(ctx) -> None:
     # 也出现一次，用 find 会拿总览句的位置当顺序（标题写反也测不出来）。
     heads = [ln for ln in guide.splitlines() if ln.startswith("## ")]
     positions = []
-    for label in ("提取图片", "检测文本框", "图片去底色", "生成 PDF"):
+    for label in ("提取图片", "检测文本框", "图片去底色", "PDF排版"):
         found = [i for i, head in enumerate(heads) if label in head]
         positions.append(found[0] if found else -1)
     ok("指南里四个步骤的叙述顺序正确",

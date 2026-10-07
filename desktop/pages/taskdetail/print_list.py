@@ -175,7 +175,7 @@ class PrintListMixin:
         """磁盘上那份 PDF 是不是**换了取图来源之后**生成的（旧数据）。
 
         用户 2026-10-03："之前没有启用拼板但生成了 pdf，此时再次启用拼板，
-        则生成 PDF 的数据要来源于拼板，**旧的数据不显示**"。所以这份判定是
+        则 PDF排版的数据要来源于拼板，**旧的数据不显示**"。所以这份判定是
         "旧数据不显示"的开关——判据与实现见
         :func:`desktop.services.stale_chain.print_source_switched`。
         """
@@ -208,7 +208,7 @@ class PrintListMixin:
         if self._print_source_switched():
             self._toast(
                 "warning", "PDF 需要重新生成",
-                "取图来源已改变（图片拼版开关），请先点「生成 PDF」再下载。",
+                "取图来源已改变（图片拼版开关），请先点「生成PDF」再下载。",
             )
             return
         # 优先用下载按钮当前绑定的 PDF；否则按最近一次 print 参数解析
@@ -216,7 +216,7 @@ class PrintListMixin:
         if source is None or not Path(source).exists():
             source = self._latest_print_pdf_path()
         if source is None or not Path(source).exists():
-            self._toast("warning", "无可下载 PDF", "请先执行「生成 PDF」。")
+            self._toast("warning", "无可下载 PDF", "请先执行「生成PDF」。")
             return
         source = Path(source)
         # 默认保存到系统「下载」目录，文件名与生成的 PDF 一致

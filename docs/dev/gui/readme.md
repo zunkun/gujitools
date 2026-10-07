@@ -69,7 +69,7 @@ QT_QPA_PLATFORM=offscreen python tests/gui_shot.py --guide D:/tmp/shots
   [gui-ui-system.md](gui-ui-system.md)。
 - **左侧导航与独立模块**：主窗口中央是 `desktop/shell.py` 的壳层
   （导航栏默认折叠，点左上角菜单按钮展开）。导航条目 = 「任务管理」+ 独立任务页
-  （**5 个**：PDF图片提取 / 检测文本框 / 图片去底色 / 生成PDF / 图片拼板）。
+  （**5 个**：PDF图片提取 / 检测文本框 / 图片去底色 / PDF排版 / 图片拼板）。
   ⚠️ 独立页注册表 `MODULES` **不是一份独立清单**：它由
   `desktop/steps/spec.py::SPECS` 里 `nav=True` 的条目经 `NAV_STEPS` 派生
   （标题/图标/顺序全部来自 spec）——新增一个模块 = 写一个包 + 加一条 spec，

@@ -245,7 +245,7 @@ def _check_blocking_inputs(ctx, ok) -> None:
     # 旧规则下 B 的 print 也读 stages/rembg——**用户画的线被静默丢弃**。
     _STAGE_NODES = {
         "extract": "提取图片", "detect": "检测文本框",
-        "rembg": "图片去底色", "print": "生成PDF",
+        "rembg": "图片去底色", "print": "PDF排版",
     }
 
     def _flow(wiring, stages=None):

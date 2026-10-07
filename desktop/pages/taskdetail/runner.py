@@ -91,7 +91,7 @@ class StageRunnerMixin:
         ⚠️ 进度条与状态文字是**全页面共享**的一份控件，必须只服务当前这一步。
         以前无条件更新，于是第三步「提交本次任务」的进度被画在第四步的界面上：
         走动的进度条 +「进度 42/91」+ 灰掉的「生成PDF」按钮 —— 看起来就像第四步
-        在自己生成 PDF（用户报的「在第三步提交，然后进第四步，pdf 在生成过程中」）。
+        在自己出 PDF（用户报的「在第三步提交，然后进第四步，pdf 在生成过程中」）。
 
         跨步骤的进度一律不上屏：想知道它还在跑，看「中断」按钮点得亮、日志在滚。
         """
@@ -279,7 +279,7 @@ class StageRunnerMixin:
             # ⚠️ 拼版生效时**取图来源换到 stages/imposition**（见
             #    ImpositionMixin.print_source_dir）：这里先同步补一次合成，
             #    保证 PDF 用的拼版版面是最新的——用户改完版面立刻点
-            #    「生成 PDF」时，后台那轮防抖合成可能还没跑完。
+            #    「生成PDF」时，后台那轮防抖合成可能还没跑完。
             self._compose_imposition_now()
             entries, doc = self._print_entries()
             entries = [e for e in entries if Path(e["file"]).exists()]
@@ -372,9 +372,9 @@ class StageRunnerMixin:
                 pass
             self.log_view.append(
                 (
-                    f"图片拼版：{len(effects)} 页（生成 PDF 用拼版结果）"
+                    f"图片拼版：{len(effects)} 页（PDF排版用拼版结果）"
                     if self.imposition_effective() else
-                    f"生成 PDF：{len(effects)} 页"
+                    f"PDF排版：{len(effects)} 页"
                     "（用第三步「提交本次任务」的成品图）"
                 )
             )
@@ -524,7 +524,7 @@ class StageRunnerMixin:
                 self.store.finish_stage(self.task_id, self.run_id, "cancelled")
             self.process.kill()
             # kill 是 TerminateProcess：worker 里的 `finally`/`with` 都不会执行，
-            # 「生成 PDF」的效果图暂存目录（整页 PNG，几百 MB~GB）会留在 %TEMP%。
+            # 「PDF排版」的效果图暂存目录（整页 PNG，几百 MB~GB）会留在 %TEMP%。
             # 这里立刻扫一次（按属主 pid 判死活），不等下一次生成 PDF 才回收。
             try:
                 from desktop.stages import sweep_orphan_staging

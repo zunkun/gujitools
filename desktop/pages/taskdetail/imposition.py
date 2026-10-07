@@ -214,7 +214,7 @@ class ImpositionBaseMixin:
 
         「生效」= ``imposition_active()``（**已启用**即可，不要求已拼页）：
         生效时拼版两侧的连接线常规点亮、徽标转绿色对勾；未生效时是灰色虚线、
-        「去底色 → 生成 PDF」走节点上方的绕行线——与第四步真实取图来源
+        「去底色 → PDF排版」走节点上方的绕行线——与第四步真实取图来源
         （``print_source_dir``）保持一致，两处看同一个判据。
         """
         visible = self._imposition_node_visible()
@@ -241,7 +241,7 @@ class ImpositionBaseMixin:
         usable, reason = self._imposition_switch_state()
         checkbox.setEnabled(usable)
         checkbox.setToolTip(
-            "启用后「生成 PDF」用拼版合成结果；不启用则从去底色直接生成 PDF"
+            "启用后「PDF排版」用拼版合成结果；不启用则从去底色直接出 PDF"
             if usable else reason
         )
         # ⚠️ **不取消勾选**（只在控件上取消会出现"控件未勾、盘上已勾"的
@@ -364,7 +364,7 @@ class ImpositionBaseMixin:
         """拼版文档里**至少有一页**版面（能不能真的合成出图）。
 
         与 :meth:`imposition_active` 分开：启用是**用户意图**（决定取图来源），
-        有页是**当前进度**（决定要不要提示"还没拼版，生成 PDF 没有输入"）。
+        有页是**当前进度**（决定要不要提示"还没拼版，PDF排版没有输入"）。
         """
         if not getattr(self, "task_id", None):
             return False

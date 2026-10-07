@@ -42,7 +42,7 @@ desktop/
     extract/page.py     #   PDF图片提取
     detect/page.py      #   检测文本框（含导出标注图 / 导出坐标 JSON）
     rembg/page.py       #   图片去底色
-    print/page.py       #   生成PDF
+    print/page.py       #   PDF排版
     imposition/page.py  #   图片拼板（有意不继承 StepModulePage，见 2.3）
   pages/                # 页面层：一个页面一个子包
     tasklist/page.py    #   任务列表页（首页：表格、导入、详情/删除）
@@ -218,7 +218,7 @@ repo.stage_input(tid, "print", "pages")                  # 自动解析成 stage
 拼版合成有**两条**路径会打到同一个 `stages/imposition` 目录——
 
 - 后台防抖合成 `ImpositionComposeWorker`（拖版面时反复触发）；
-- 主线程同步合成 `_compose_imposition_now`（改完版面立刻点「生成 PDF」时补一轮，
+- 主线程同步合成 `_compose_imposition_now`（改完版面立刻点「生成PDF」时补一轮，
   见 `runner.py` 的 `elif stage == "print"`）。
 
 原先两条路径**无任何互斥**，写盘又是 `PIL.Image.save()` 的**就地截断重写**
@@ -420,7 +420,7 @@ PDF 矢量页没有可回写文件，右键菜单干脆不给「编辑图片」�
    （`set_cached_thumb` / `reload_thumb`）；
 3. **写一句「什么时候生效」**：`edit_effect_note(path)`，各步骤按自己的下游覆盖
    （提取页说"检测、去底色读的就是这张图"，去底色页分"源图"与"结果"两种说法，
-   生成 PDF 页说"重新点生成 PDF 即用上"）。
+   PDF排版 页说"重新点生成PDF 即用上"）。
 
 ⚠️ **必须"忘掉旧缓存记忆"**：缓存文件名带**文件大小**（`book_key`），编辑一改
 字节数就换了键；若查看器还记着旧键那条路径，刷新出来的是**覆盖前**那张缓存

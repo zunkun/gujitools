@@ -19,8 +19,13 @@ BPM 允许任意组合节点，但**并非所有组合都合法**。我们希望
 | 文本框识别（检测文本框） | `detect` | 吃 `pages`，产出 `boxes.json` |
 | 去底色（图片去底色） | `rembg`（+ 同格的 `rembg_submit`「提交去底色结果」） | 预览/提交是同一步的两个动作，`rembg_submit` 不单独占格 |
 | 拼版（图片拼板） | `imposition` | 可选步骤；是否拼版在参数面板里开关，判断节点摆好即可、不必连线 |
-| 生成 PDF（PDF排版） | `print` | 收尾动作 |
+| PDF排版（`print` 任务节点，按钮「生成PDF」） | `print` | 收尾动作 |
 | 生成PDF（结束事件） | —（`endEvent`） | 图形节点；不进拓扑序，只图示"流程在此收尾" |
+
+⚠️ **同名不同物**：「PDF排版」是**这一步的名字**（流程图节点 / 步骤条 / 面板 /
+导航都是它），「生成PDF」是**这一下按下去做的事**（详情页与独立页的执行按钮），
+外加默认流程里挂在它后面的**结束事件**也用这个名字。三处撞名不是笔误——
+认节点时看 `kind`（只有 `task` 才映射阶段），认界面步骤时看 `stage_label`。
 
 ## 删除联动（编辑时级联，非合法性规则）
 
@@ -42,7 +47,7 @@ Delete 键）都联动，确认框写明"会一起删除"。
 | # | 规则 | 级别 |
 | --- | --- | --- |
 | R1 | 流程里必须有可执行步骤（只有起止事件/网关的空流程拒绝） | 错误，拒绝保存 |
-| R2 | 「生成 PDF」（`print`）如果在流程里，必须排在**最后**——它后面的产出没人消费。覆盖全部反例：`print→rembg`、`print→imposition`、`rembg→print→detect` 等 | 错误，拒绝保存 |
+| R2 | 「PDF排版」（`print`）如果在流程里，必须排在**最后**——它后面的产出没人消费。覆盖全部反例：`print→rembg`、`print→imposition`、`rembg→print→detect` 等 | 错误，拒绝保存 |
 | W1 | `extract` 不在第一位（它吃任务源 PDF，习惯上打头） | 警告，放行 |
 | W2 | 有 `extract` 但图上没有「源PDF」入口节点 | 警告，放行 |
 | W3 | 有 `imposition` 但没有判断节点（二者一般同在；是否拼版在「图片拼版」面板里开） | 警告，放行 |
@@ -71,7 +76,7 @@ Delete 键）都联动，确认框写明"会一起删除"。
 
 - **校验器**：`desktop/steps/validate.py::validate_flow(diagram) →
   FlowValidation`（纯逻辑，不 import Qt）。`errors` 拒绝保存；
-  `warnings` 只提示。错误信息点名问题步骤（如"「生成 PDF」必须放在流程
+  `warnings` 只提示。错误信息点名问题步骤（如"「PDF排版」必须放在流程
   最后——它后面还有：去底色"）。
 - **接入点（保存时拦截）**：
   - `desktop/components/flow_dialog.py::FlowPanel.accept` ——
@@ -144,7 +149,7 @@ imposition → print` 逐跳核对（rembg 吃入口目录 → 提交成品传 i
 `tests/selftests/flow_validate.py`（依赖 `flow_bpm`）钉四件事：
 
 1. 上面 10 条合法组合全部放行；「去底色+提交」同格两动作不误判重复；
-2. 反例全部拒绝（含空流程、`None` 图），错误信息点名「生成 PDF」；
+2. 反例全部拒绝（含空流程、`None` 图），错误信息点名「PDF排版」；
 3. 警告（W1–W5）只提示不拦，`ok` 仍为真；完整默认流程零警告；
 4. 两个模板（`task_default.bpmn` / `task_detail.bpmn`）必须**零错误零
    警告**——模板是用户起点，一打开就警告等于说"程序自己的东西不合法"；

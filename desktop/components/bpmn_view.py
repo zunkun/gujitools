@@ -385,7 +385,11 @@ class BpmnView(QWidget):
         if host and self._diagram.node(host) is not None:
             painter.setPen(QPen(QColor(NOTE_COLOR), 1.2, Qt.DashLine))
             painter.setBrush(Qt.NoBrush)
-            painter.drawLine(self._anchor_point(host, rect), rect.center())
+            # 挂接线**斜着连到左侧括号**（不是注释框中心）：括号才是注释的
+            # "接头"，连中心会让线扎进文字、左边的括号像悬空断开的（用户
+            # 2026-10-07）。直线允许倾斜——与「用户上传PDF」那种斜挂一致。
+            painter.drawLine(self._anchor_point(host, rect),
+                             QPointF(rect.left(), rect.center().y()))
         painter.setPen(QPen(QColor(NOTE_COLOR), 1.4))
         painter.setBrush(Qt.NoBrush)
         bracket = min(12.0, rect.width() * 0.3)
@@ -407,17 +411,58 @@ class BpmnView(QWidget):
                 note.text,
             )
 
+    def _edge_anchor_points(self, node_id: str) -> list[QPointF]:
+        """所有**流程连线**接到这个节点上的点（入口 + 出口）。
+
+        注释挂接线要跟它们**错开**——实线和虚线从同一个点出发，看起来
+        像一根线分了叉（用户 2026-10-07）。优先取**画出来的**折点
+        （拖动中的临时折点也算），拖动时挂接线跟着实时让开。
+        """
+        points: list[QPointF] = []
+        diagram = self._diagram
+        ox, oy = self._offset()
+        for flow in diagram.flows:
+            raw = diagram.waypoints.get(flow.id) or diagram.route(flow)
+            if flow.source == node_id:
+                points.append(QPointF(raw[0][0] + ox, raw[0][1] + oy))
+            if flow.target == node_id:
+                points.append(QPointF(raw[-1][0] + ox, raw[-1][1] + oy))
+        return points
+
     def _anchor_point(self, node_id: str, rect: QRectF) -> QPointF:
         """虚线从**节点框离注释最近的那条边**出发（不是节点中心）。
 
         从中心出发的线会穿过节点本体，看着像把节点划了一刀。
+        ⚠️ 还要**避开流程连线的出入口**（:meth:`_edge_anchor_points`）：
+        中点被占就沿这条边滑到四分点，再不行滑到 3/8 处。
         """
         box = self.rect_of(node_id)
         cx, cy = box.center().x(), box.center().y()
         tx, ty = rect.center().x(), rect.center().y()
+        occupied = self._edge_anchor_points(node_id)
+
+        def free(point: QPointF) -> bool:
+            return not any(abs(point.x() - q.x()) < 2.0
+                           and abs(point.y() - q.y()) < 2.0
+                           for q in occupied)
+
+        # 往注释那一侧先让（让出来的点离注释近，线不回头）
+        sign = 1.0 if ty >= cy else -1.0
         if abs(tx - cx) >= abs(ty - cy):
-            return QPointF(box.right() if tx > cx else box.left(), cy)
-        return QPointF(cx, box.bottom() if ty > cy else box.top())
+            x = box.right() if tx > cx else box.left()
+            span = box.height() / 2
+            for part in (0.0, 0.5, -0.5, 0.75, -0.75):
+                point = QPointF(x, cy + sign * part * span)
+                if free(point):
+                    return point
+            return QPointF(x, cy)
+        y = box.bottom() if ty > cy else box.top()
+        span = box.width() / 2
+        for part in (0.0, 0.5, -0.5, 0.75, -0.75):
+            point = QPointF(cx + sign * part * span, y)
+            if free(point):
+                return point
+        return QPointF(cx, y)
 
 
 def _border_of(item: DiagramNode) -> str:

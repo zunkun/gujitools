@@ -11,9 +11,9 @@
 
 1. **流程里必须有可运行的步骤**。只有源PDF/网关/结束事件的图什么都跑不了
    ——详情页本来就拦"流程为空"，这里把同一道闸装到保存口上；
-2. **「生成 PDF」（``print``）如果在流程里，必须排在最后**。它是收尾动作，
+2. **「PDF排版」（``print``）如果在流程里，必须排在最后**。它是收尾动作，
    排在它后面的步骤产出没人消费（``print → 去底色`` 这种就是用户给的
-   反例；「拼版」排在「生成 PDF」之后同样被这条拦住）。
+   反例；「拼版」排在「PDF排版」之后同样被这条拦住）。
 
 其余组合（``detect`` 打头、``rembg`` 不带 ``detect``、单步流程、
 ``detect/rembg/imposition`` 任意顺序）都是**合法**的——运行时有
@@ -72,7 +72,7 @@ def validate_flow(diagram: FlowDiagram | None) -> FlowValidation:
     if not order:
         return FlowValidation(errors=(
             "流程里没有可执行的步骤：至少要保留一个功能节点"
-            "（提取/检测/去底色/拼版/生成 PDF）。",))
+            "（提取/检测/去底色/拼版/PDF排版）。",))
 
     # ---- 硬规则 ②：print 在流程里就必须排最后 -------------------------
     steps = _step_sequence(order)
@@ -80,7 +80,7 @@ def validate_flow(diagram: FlowDiagram | None) -> FlowValidation:
         after = [ports.stage_label(ports.STAGE_STEPS.get(s, s))
                  for s in steps[steps.index("print") + 1:]]
         errors.append(
-            "「生成 PDF」必须放在流程最后——"
+            "「PDF排版」必须放在流程最后——"
             f"它后面还有：{'、'.join(after)}。")
 
     warnings.extend(_habit_warnings(diagram, order))

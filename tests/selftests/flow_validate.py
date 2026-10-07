@@ -8,9 +8,9 @@
 
 1. **文档里的 10 条合法组合全部放行**——包括"没有提取"的入口流程
    （detect/rembg/imposition 任意顺序任意个数）、单步流程（只留一个
-   生成 PDF）；
+   PDF排版）；
 2. **反例全部拒绝**——``print → rembg``（用户给的原例）、拼版排在
-   生成 PDF 之后、只摆起止事件没有可执行步骤的空流程；
+   PDF排版 之后、只摆起止事件没有可执行步骤的空流程；
 3. **警告只提示不拦**——缺判断节点、extract 不在第一位、同一阶段
    多个节点、未接入运行的节点，``ok`` 仍为真；
 4. **保存入口真的拦**——``FlowPanel.accept``（弹窗/创建页内嵌编辑器）
@@ -124,8 +124,8 @@ def _check_legal_combos(ok) -> None:
                            stage=stage_of_name("图片去底色")),
                DiagramNode("b", KIND_TASK, "提交去底色结果",
                            stage=stage_of_name("提交去底色结果")),
-               DiagramNode("c", KIND_TASK, "生成 PDF",
-                           stage=stage_of_name("生成 PDF"))),
+               DiagramNode("c", KIND_TASK, "PDF排版",
+                           stage=stage_of_name("PDF排版"))),
         flows=(DiagramFlow("f1", "a", "b"), DiagramFlow("f2", "b", "c")),
     )
     result = validate_flow(diagram)
@@ -140,20 +140,20 @@ def _check_illegal_combos(ok) -> None:
     from desktop.steps.validate import validate_flow
 
     illegal = [
-        # 用户原例：生成 PDF 后面还有去底色
+        # 用户原例：PDF排版 后面还有去底色
         ("print", "rembg"),
-        # 拼版排在生成 PDF 之后（生成 PDF 不是最后）
+        # 拼版排在 PDF排版 之后（PDF排版 不是最后）
         ("print", "imposition"),
-        # 生成 PDF 夹在中间
+        # PDF排版 夹在中间
         ("rembg", "print", "detect"),
-        # 生成 PDF 后又回到提取
+        # PDF排版 后又回到提取
         ("print", "extract"),
         ("extract", "print", "detect"),
     ]
     for stages in illegal:
         result = validate_flow(_chain(*stages))
         ok(f"不合法组合 {' → '.join(stages)} 被拒绝",
-           not result.ok and any("生成 PDF" in e for e in result.errors),
+           not result.ok and any("PDF排版" in e for e in result.errors),
            f"errors={result.errors}")
 
     # 空流程：只有起止事件，没有可执行步骤
@@ -166,8 +166,8 @@ def _check_illegal_combos(ok) -> None:
 
     # 错误信息要点名问题步骤（用户得知道改哪儿）
     result = validate_flow(_chain("print", "rembg"))
-    ok("错误信息点名「生成 PDF」与其后的步骤",
-       any("生成 PDF" in e and "去底色" in e for e in result.errors),
+    ok("错误信息点名「PDF排版」与其后的步骤",
+       any("PDF排版" in e and "去底色" in e for e in result.errors),
        str(result.errors))
 
 
@@ -194,16 +194,16 @@ def _check_warnings(ok) -> None:
        result.ok and any("源PDF" in w for w in result.warnings),
        f"warnings={result.warnings}")
 
-    # 同一阶段两个节点（两个「生成 PDF」）
+    # 同一阶段两个节点（两个「PDF排版」）
     from desktop.steps.bpmn_diagram import (
         KIND_TASK, DiagramFlow, DiagramNode, FlowDiagram, stage_of_name,
     )
 
     diagram = FlowDiagram(
-        nodes=(DiagramNode("a", KIND_TASK, "生成 PDF",
-                           stage=stage_of_name("生成 PDF")),
-               DiagramNode("b", KIND_TASK, "PDF排版",
-                           stage=stage_of_name("生成 PDF"))),
+        nodes=(DiagramNode("a", KIND_TASK, "PDF排版",
+                           stage=stage_of_name("PDF排版")),
+               DiagramNode("b", KIND_TASK, "PDF排版2",
+                           stage=stage_of_name("PDF排版"))),
         flows=(DiagramFlow("f1", "a", "b"),),
     )
     result = validate_flow(diagram)
@@ -358,8 +358,8 @@ def _check_panel_gate(ctx, ok) -> None:
         ok("不合法流程点「保存流程」被拒绝（不置 accepted）",
            not panel.edited() and panel.result_diagram() is None,
            str(panel.edited()))
-        ok("拒绝时摘要行写明原因（点名「生成 PDF」）",
-           "生成 PDF" in panel.summary.text(), panel.summary.text())
+        ok("拒绝时摘要行写明原因（点名「PDF排版」）",
+           "PDF排版" in panel.summary.text(), panel.summary.text())
 
         # 换成合法的图：同一个面板、同一颗按钮，要能正常保存
         panel.editor_panel._canvas.set_diagram(_chain("detect", "rembg",

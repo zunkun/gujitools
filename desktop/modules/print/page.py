@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""独立模块「生成 PDF」：与任务流程无关，选一批成品图直接合成 PDF。
+"""独立模块「PDF排版」：与任务流程无关，选一批成品图直接合成 PDF。
 
 **复用共用组件**：页头下方横跨整幅的**大输入区**（拖图片文件夹 / 拖一批图片 /
 点选），右栏是 :class:`~desktop.steps.control.StepControl`（打印参数 + 输出目录 +
@@ -20,7 +20,7 @@ PDF 路径**回传给 ``on_result``；本页据此把左栏切到「产物 PDF �
 
 ⚠️ **左栏前后两个形态**（用户 2026-10-03：「所有独立任务左侧都是缩略图」）：
 
-- **未生成**：左侧是**待打印图片**的缩略图（缓存在 ``singletask/生成 PDF/``），
+- **未生成**：左侧是**待打印图片**的缩略图（缓存在 ``singletask/print/``），
   选完源就能翻看要合进去的是哪几张；
 - **生成后**：左侧换成**产物 PDF 的页缩略图**，看成品。
 
@@ -42,7 +42,7 @@ _SPEC = spec_by_key("print")
 
 
 class PrintModulePage(StepModulePage, ThumbSourceMixin):
-    """生成 PDF 模块页：拖入成品图（一批或一个文件夹）→ 调版面 → 合成 PDF。"""
+    """PDF排版模块页：拖入成品图（一批或一个文件夹）→ 调版面 → 合成 PDF。"""
 
     SPEC = _SPEC
 
@@ -82,14 +82,14 @@ class PrintModulePage(StepModulePage, ThumbSourceMixin):
         ⚠️ 生成完成之后左栏切成了**产物 PDF 的页缩略图**——矢量页没有可回写
         的图片文件，右键不提供「编辑图片」，所以能走到这里的都是待打印图。
         """
-        return f"已更新待打印图「{path.name}」；重新点「生成 PDF」即用上这次修改。"
+        return f"已更新待打印图「{path.name}」；重新点「生成PDF」即用上这次修改。"
 
     # ------------------------------------------------------------------ 结果
     def on_result(self, pdf: Path, _result: dict) -> None:
         """成功：``pdf`` 是**PDF 文件路径**（见 ``StepSpec.artifact_is_file``）。
 
         左栏从「待打印图片」切到「产物 PDF 的页缩略图」——页缩略图缓存在
-        ``singletask/生成 PDF/thumbnails/<产物>/``，所以第二次看同一个成品
+        ``singletask/print/thumbnails/<产物>/``，所以第二次看同一个成品
         是秒开。
         """
         if not pdf.is_file():

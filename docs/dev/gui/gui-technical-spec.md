@@ -229,7 +229,7 @@ GUI（QImage 渲染）共同消费同一份 `OutputLayout`，不得各自推导
   第四步**不再**拿去底图（`stages/rembgpreview`）+ 当前 area/border 现场合成：
   area/border 在提交那一刻就兑现进 `stages/rembg`（拼版生效时是
   `stages/imposition`），第四步只把列表**整图透传**（`effect=None`）——列表顺序
-  即页序、删掉即消失；编辑第四步的「待打印图」则「生成 PDF」即生效。
+  即页序、删掉即消失；编辑第四步的「待打印图」则点「生成PDF」即生效。
   ⚠️ 之前的 `plan_print_effects` 要按 label 把列表与"当前 area 派生集合"对齐
   （形态不同时还得按基础页名重映射），一旦对齐出错，用户在第四步**删掉的页会被
   补回来**（实际事故：列表 101 条却生成 198 页 PDF）。这套对齐逻辑已随该契约

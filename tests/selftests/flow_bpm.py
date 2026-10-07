@@ -413,7 +413,7 @@ _CUSTOM_ORDER_WIRING = """\
     <bpmn:task id="imposition" name="图片拼版" guji:stage="imposition"/>
     <bpmn:task id="rembg" name="图片去底色" guji:stage="rembg"/>
     <bpmn:task id="rembg_submit" name="提交" guji:stage="rembg_submit"/>
-    <bpmn:task id="print" name="生成PDF" guji:stage="print"/>
+    <bpmn:task id="print" name="PDF排版" guji:stage="print"/>
     <bpmn:endEvent id="end" name="完成"/>
     <bpmn:sequenceFlow id="f0" sourceRef="start" targetRef="extract" guji:port="pdf"/>
     <bpmn:sequenceFlow id="f1" sourceRef="extract" targetRef="imposition" guji:port="pages"/>
@@ -849,7 +849,7 @@ def _check_stack_pages_use_static_table(ok) -> None:
         return FlowDiagram(nodes=tuple(nodes), flows=tuple(flows))
 
     # ① 少了「图片去底色」的图（曾把 print 的页号算成 2）
-    short = chain("提取图片", "检测文本框", "生成 PDF").stage_slots()
+    short = chain("提取图片", "检测文本框", "PDF排版").stage_slots()
     by_step = {slot.step: slot for slot in short}
     ok("少一步时 print 的栈页号仍是静态页号（不是被数出来的 2）",
        by_step["print"].stack_index == static_page["print"],
@@ -859,7 +859,7 @@ def _check_stack_pages_use_static_table(ok) -> None:
 
     # ② 全都有（含可选拼版）——页号必须与旧的硬编码口径一致
     full = chain("提取图片", "检测文本框", "图片去底色",
-                 "提交去底色结果", "图片拼版", "生成 PDF").stage_slots()
+                 "提交去底色结果", "图片拼版", "PDF排版").stage_slots()
     pages = {slot.step: slot.stack_index for slot in full}
     ok("全流程下页号与旧口径逐值相等"
        "（提取0/检测1/去底色2/生成PDF3/拼版4）",
