@@ -4,7 +4,7 @@
 
 通用工具函数：几何、排序、图像 IO、PDF、YOLO
 
-覆盖 25 个模块、11 个公开类、165 个公开函数/方法（生成于 2026-10-08）。
+覆盖 26 个模块、11 个公开类、174 个公开函数/方法（生成于 2026-10-08）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -23,6 +23,7 @@
 | [`utils.help`](#utilshelp) | 0 | 7 |
 | [`utils.image_io`](#utilsimage_io) | 0 | 2 |
 | [`utils.image_utils`](#utilsimage_utils) | 0 | 7 |
+| [`utils.local_adjust`](#utilslocal_adjust) | 0 | 9 |
 | [`utils.margin_utils`](#utilsmargin_utils) | 0 | 2 |
 | [`utils.page_layout`](#utilspage_layout) | 2 | 13 |
 | [`utils.path_utils`](#utilspath_utils) | 0 | 3 |
@@ -1361,6 +1362,111 @@ CLI（``functions.rembg``）与桌面端第三步的「实时预览」都调这�
 
 实现已迁移到 `utils.box_geometry.parse_border_mm`（无重依赖，GUI 共用），
 此处保留 re-export 以兼容 `utils.parse_border_mm` 的延迟加载入口。
+
+---
+
+## `utils.local_adjust`
+
+源码：[`utils/local_adjust.py`](../../utils/local_adjust.py)
+
+局部微调：框住一小块 → 透视拉直 → 羽化贴回（框外逐字节不动）。
+
+口径（2026-10-08：替代「变换 / 变形 / 变换笼 / 校正」四遗留的第一步）
+------------------------------------------------------------------
+古籍翻拍的常见毛病是**局部**的：整页里某一小块倾斜、有褶皱、某条框线/
+栏线弯了。用户要的是"只修这一小块，别处一动不动"。
+
+做法是刻意做"小"的透视：
+
+1. 用户在图上框出四角 ``quad_src``（顺序 左上/右上/右下/左下），默认
+   框住整幅图（与裁剪/校正一致）；向内收四角贴住要修的一小块；
+2. 目标 ``quad_dst`` 缺省 = 它的**轴对齐外接框**（即"拉直"：歪的框变正）；
+3. 用单应 ``H: quad_src → quad_dst`` 把源内容搬到目标处，
+   再用 ``quad_dst`` 的羽化掩膜贴回原图。
+
+三条可断言的性质（自测钉死）：
+
+1. **框外不动**：掩膜外的像素**逐字节**等于原图（羽化带除外，见下）；
+2. **恒等即原图**：``quad_src == quad_dst`` 时直接返回原数组副本；
+3. **退化抛错**：四点近似共线 / 面积过小时抛 ``ValueError``（供 UI 拦截，
+   而不是产出一张乱飞的图）。
+
+羽化（``feather``，图片像素）：掩膜边缘的高斯模糊半径。``0`` = 硬边
+（框内外以像素精度分界）；缺省 12px = 2~3px 的过渡带在 4000px 页上肉眼
+不可见，又能吞掉透视重采样在边上的半像素错位。羽化带内像素是混合值，
+"框外不动"的断言只查带外。
+
+与四遗留的分工：
+
+- 「变换」（仿射）做不到梯形/波浪，只能整块转；
+- 「变形」ARAP 位移场全局衰减、整图 96~98% 受影响（见
+  ``utils.puppet_warp`` 模块文档），"局部"是近似的；
+- 「变换笼」RBF 防自交会自动放大影响半径（见 ``utils.cage_warp``）；
+- 「校正」一次管整页，管不了局部。
+  本模块反过来：影响域就是 ``quad_dst`` + 羽化带，写死在掩膜里。
+
+性能：``cv2.warpPerspective`` 整页 4000×3000 约 100~200ms，主线程同步跑
+即可（``wait_cursor``），不需要后台线程 + 进度对话框那一套。
+
+几何约定：图片像素坐标，y 向下；cv2 / numpy 一律**延迟导入**
+（桌面主进程 import 本模块时不背重依赖）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| MIN_AREA | `0.001` |
+| FEATHER_DEFAULT | `12` |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `quad_area(quad) -> float` | 四边形（按序 左上/右上/右下/左下）的面积（恒非负）。 |
+| `quad_degenerate(quad) -> bool` | 四边形是否退化（面积过小）——退化时不做微调，直接放弃。 |
+| `straight_rect(quad)` | 当前四边形的"拉直"目标：轴对齐外接框四角（同顺序）。 |
+| `tweak_moved(quad_src, quad_dst=None, epsilon: float=1e-06) -> bool` | 这次微调是否有实质变化（区分"框过但没歪"与"真要修"）。 |
+| `tweak_region(quad_dst, feather: float=0.0, *, width: int, height: int)` | 这次微调的影响范围（图片坐标，开区间右端，含羽化外扩）。 |
+| `quad_warp(src, quad_src, quad_dst=None, *, feather: float=FEATHER_DEFAULT, fill=FILL)` | 把 ``quad_src`` 围的内容透视搬到 ``quad_dst``，羽化贴回原图。 |
+| `qimage_to_rgba(image)` | QImage → ``(H, W, 4)`` uint8 **RGBA**（保留 alpha，见 puppet_warp）。 |
+| `array_to_qimage(rgb)` | ``(H, W, 3\|4)`` uint8 → QImage（ARGB32）；3 通道按不透明处理。 |
+| `quad_warp_qimage(image, quad_src, quad_dst=None, *, feather: float=FEATHER_DEFAULT, fill=None)` | QImage 版 :func:`quad_warp`（保留 alpha；带 alpha 的图越界填透明白）。 |
+
+#### `straight_rect(quad)`
+
+当前四边形的"拉直"目标：轴对齐外接框四角（同顺序）。
+
+返回 ``[(x0,y0),(x1,y0),(x1,y1),(x0,y1)]``（浮点，未取整：取整会差
+1px，恒等小框就还原不了原图）。
+
+#### `tweak_moved(quad_src, quad_dst=None, epsilon: float=1e-06) -> bool`
+
+这次微调是否有实质变化（区分"框过但没歪"与"真要修"）。
+
+``quad_dst`` 缺省按 :func:`straight_rect` 推（即"拉直"语义）。
+
+#### `tweak_region(quad_dst, feather: float=0.0, *, width: int, height: int)`
+
+这次微调的影响范围（图片坐标，开区间右端，含羽化外扩）。
+
+画布侧据此判断"框外逐字节不动"。返回 ``(x0, y0, x1, y1)``。
+
+#### `quad_warp(src, quad_src, quad_dst=None, *, feather: float=FEATHER_DEFAULT, fill=FILL)`
+
+把 ``quad_src`` 围的内容透视搬到 ``quad_dst``，羽化贴回原图。
+
+- ``src``：``(H, W)`` 或 ``(H, W, C)``（uint8）。
+- ``quad_dst`` 缺省 = :func:`straight_rect`（"拉直"）。
+- 返回与 ``src`` **同尺寸同 dtype** 的新数组（尺寸不变，框外不动）。
+- ``quad_src == quad_dst`` 时返回原数组副本（恒等即原图）。
+- 退化四边形抛 ``ValueError``。
+
+#### `quad_warp_qimage(image, quad_src, quad_dst=None, *, feather: float=FEATHER_DEFAULT, fill=None)`
+
+QImage 版 :func:`quad_warp`（保留 alpha；带 alpha 的图越界填透明白）。
+
+不透明图走 3 通道；带 alpha 的图走 4 通道。退化时抛 ``ValueError``
+（调用方退回撤销点）。
 
 ---
 

@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""全分辨率烘焙的**后台线程 + 进度对话框**（从 ``image_editor.py`` 拆出）。
+"""耗时任务的**后台线程 + 进度对话框**（从 ``image_editor.py`` 拆出）。
 
-重活（逐像素重映射）放这里跑，避免钉死 GUI 主线程。见 ``_BakeWorker`` 的
-长注释。纯计算的工作函数（``_bake_*_work``）也在本模块。
+见 ``_BakeWorker`` 的长注释。当前生产代码里暂无耗时烘焙调用，
+本模块保留作通用基础设施（自测的崩溃守卫直接覆盖它）。
 """
 from __future__ import annotations
 
@@ -13,9 +13,6 @@ from PySide6.QtCore import QThread, Qt, Signal
 from PySide6.QtWidgets import QApplication, QProgressDialog, QWidget
 
 from desktop.workers.worker_host import connect_queued
-from utils.cage_warp import deform_qimage
-
-from .geometry import bake_puppet
 
 @contextlib.contextmanager
 def wait_cursor():
@@ -33,12 +30,10 @@ def wait_cursor():
 
 
 class _BakeWorker(QThread):
-    """把**全分辨率烘焙**放到后台线程跑，并用进度对话框报告进度。
+    """把**耗时计算**放到后台线程跑，并用进度对话框报告进度。
 
-    为什么需要它（用户 2026-10-01 报"程序卡死崩溃，不能实时查看"）：
-    ``deform_qimage`` / ``puppet_warp_qimage`` 是逐像素重映射，整页
-    4000×3000 要 3~15 秒、12000×9000 到分钟级。**同步**跑会把 GUI 主线程
-    钉死——界面不重绘、不响应点击，用户看到的就是"卡死/崩溃"（其实是假死）。
+    秒级以上的同步计算会把 GUI 主线程钉死——界面不重绘、不响应点击，
+    用户看到的就是"卡死/崩溃"（其实是假死）。
 
     做法：把"重活"（``work(params, progress)`` 返回结果）丢进本线程；工作
     函数通过 ``progress(done, total)`` 回调报进度，主线程每来一次就把
@@ -188,27 +183,3 @@ def run_with_progress(parent: QWidget | None, title: str, label: str,
     if cancelled:
         return None
     return result
-
-
-def _bake_cage_work(params: dict, progress):
-    """后台线程里的笼形变烘焙（纯计算，不碰 Qt 部件）。
-
-    见 :func:`run_with_progress`：只读 ``params``、只写返回值，形变本身由
-    ``utils.cage_warp.deform_qimage`` 完成（QImage 是隐式共享的值对象，
-    在工作线程里用/生成是安全的——这里全程不触碰任何 QWidget/画布）。
-
-    ``grow=True``：内容被拖出原边界时**不裁**，返回 ``(QImage, (ox, oy))``
-    （用户 2026-10-02：「超出原本区域的不要截，最终结果要按最后图片的范围」）。
-    """
-    return deform_qimage(params["image"], params["src"], params["dst"],
-                         grow=True, progress=progress)
-
-
-def _bake_puppet_work(params: dict, progress):
-    """后台线程里的 ARAP 形变烘焙（纯计算，不碰 Qt 部件）。见上。
-
-    ``grow=True``：图钉被拖出原边界时**不裁**，返回 ``(QImage, (ox, oy))``
-    （用户 2026-10-02：「超出原本区域的不要截」）。
-    """
-    return bake_puppet(params["image"], params["vertices"], params["moved"],
-                       params["triangles"], grow=True, progress=progress)

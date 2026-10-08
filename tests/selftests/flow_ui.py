@@ -86,9 +86,8 @@ def run(ctx) -> None:
         DiagramNode, DiagramNote, FlowDiagram,
     )
     from desktop.steps.scheduler import (
-        DONE, SKIPPED, Scheduler, load_default_diagram,
+        DONE, SKIPPED, Scheduler, default_template_path, load_default_diagram,
     )
-    from desktop.utils.files import package_dir
     from tests.selftests._context import ok
 
     app, w = ctx.app, ctx.w
@@ -105,7 +104,7 @@ def run(ctx) -> None:
     # ---------------------------------------------------------------- 2
     # 渲染：**照着 bpmn 文件**（含网关、事件、DI 坐标）
     init = create_task_dialog.load_custom_init()
-    ok("初值文件 task_detail.bpmn 能解析出节点", len(init.nodes) > 0,
+    ok("默认模板 task_default.bpmn 能解析出节点", len(init.nodes) > 0,
        str(len(init.nodes)))
     kinds = {n.kind for n in init.nodes}
     ok("初值里有网关（写 bpmn.io 画的图带 exclusiveGateway）",
@@ -165,8 +164,7 @@ def run(ctx) -> None:
 
     # ---------------------------------------------------------------- 5
     # 编辑：增删改连拖，落盘往返不丢
-    editor = BpmnEditor(FlowDiagram.load(
-        package_dir() / "static" / create_task_dialog.CUSTOM_INIT_FILE))
+    editor = BpmnEditor(FlowDiagram.load(default_template_path()))
     n_before = len(editor.diagram().nodes)
     new_id = editor.add_node(name="新步骤")
     ok("加节点", len(editor.diagram().nodes) == n_before + 1)
@@ -233,7 +231,11 @@ def run(ctx) -> None:
     editor._drag_id = new_id
     editor._moved = False
     editor._press_pos = None
-    editor._move_node(QPointF(777.0, 555.0))
+    # ⚠️ 传的是**视图坐标**（鼠标点），``_move_node`` 负责换算成文件坐标。
+    #    不换算的话写回去的坐标会带上画布偏移（``_offset()``，默认模板约
+    #    126px）——现象是"鼠标一动节点先飞一截再跟着走"（2026-10-08 修）。
+    _ox, _oy = editor._offset()
+    editor._move_node(QPointF(777.0 + _ox, 555.0 + _oy))
     box = editor.diagram().node_box(new_id)
     ok("拖拽改坐标", abs(box[0] - 777.0) < 1 and abs(box[1] - 555.0) < 1,
        str(box))
@@ -499,12 +501,11 @@ def run(ctx) -> None:
             app.processEvents()
             ok("勾上 checkbox 切自定义模式", panel.uses_custom_flow())
             custom_names = [n.name for n in panel.flow_view.diagram().nodes]
-            # ⚠️ 不要求两张图"必须不同"：用户常只维护 task_default.bpmn，
-            #    自定义初值就是它的副本（"从默认流程开始改"的合理起点）。
-            #    要钉的是**显示的是"自定义那份图"**，而不是又一次默认图。
+            # 自定义初值即默认模板（"从默认流程开始改"的起点）。
+            # 要钉的是**显示的是"自定义那份图"**，而不是又一次默认图。
             init_names = [n.name for n in
                           create_task_dialog.load_custom_init().nodes]
-            ok("自定义模式显示的是**初值文件**那张图",
+            ok("自定义模式显示的是**初值**那张图",
                len(custom_names) > 0 and custom_names == init_names,
                f"{custom_names} vs {init_names}")
             ok("自定义模式提示写明用的是自定义流程",
@@ -557,11 +558,16 @@ def run(ctx) -> None:
         assert editor is not None  # 上一条 ok 已断言编辑态必有编辑器
         ok("工具栏有全部编辑动作",
            board.toolbar is not None
-           and [b.text() for b in (board.add_button, board.gateway_button,
+           and [b.text() for b in (board.add_button,
                                    board.link_button, board.rename_button,
                                    board.delete_button)]
-           == ["添加步骤", "添加判断", "连线", "重命名", "删除"],
+           == ["添加步骤", "连线", "重命名", "删除"],
            str(board.toolbar))
+        # ⚠️ 「添加判断」入口已撤（用户 2026-10-08："其实根本就没有判断这个
+        #    组件，只有「是否拼版」这个特殊的判断组件……是否拼版依附拼版"）。
+        #    网关只能随模板文件来，界面上**不该**再有加它的按钮。
+        ok("工具栏**没有**「添加判断」（网关依附图片拼版，不是独立组件）",
+           not hasattr(board, "gateway_button"), str(dir(board)))
         # 选择：点节点能选中，且状态行说清"选中了什么"
         node_ids = [n.id for n in editor.diagram().nodes if n.kind == KIND_TASK]
         target = node_ids[0]
@@ -586,18 +592,15 @@ def run(ctx) -> None:
         # 动作按钮**真的接上了**编辑器（接不上就是死按钮——上一版的毛病）
         fired: list[str] = []
         editor.ask_add_node = lambda: fired.append("add")
-        editor.add_gateway = lambda *a, **k: fired.append("gateway")  # type: ignore[reportAttributeAccessIssue]  # 测试替身：临时把返回 str 的方法换成记录器
         editor.ask_rename_selected = lambda: fired.append("rename")
         editor.ask_delete_selected = lambda: fired.append("delete")
         board.add_button.click()
-        board.gateway_button.click()
         board.rename_button.click()
         board.delete_button.click()
         ok("工具栏按钮都真的接到编辑器动作上（不是死按钮）",
-           fired == ["add", "gateway", "rename", "delete"], str(fired))
-        # 撤掉落上的替身（实例属性会盖住类方法），并把"添加判断"顺手打开的
-        # 连线模式复位——后面要用**真**方法验证行为。
-        del editor.ask_add_node, editor.add_gateway
+           fired == ["add", "rename", "delete"], str(fired))
+        # 撤掉落上的替身（实例属性会盖住类方法）——后面要用**真**方法验证行为。
+        del editor.ask_add_node
         del editor.ask_rename_selected, editor.ask_delete_selected
         editor.set_link_mode(False)
         board.link_button.setChecked(False)
@@ -621,14 +624,15 @@ def run(ctx) -> None:
         ok("新加的节点按名字接上了运行阶段（否则加了也不跑）",
            _added.stage == "imposition",
            str(_added.stage))
-        gw = editor.add_gateway("判断")
-        _gw_node = editor.diagram().node(gw)
-        assert _gw_node is not None  # 刚加的网关必然还在图上
-        ok("「添加判断」加的是网关菱形",
-           _gw_node.is_gateway)
-        ok("「添加判断」只摆节点、不进连线模式（判断节点不必连线）",
-           not editor.link_mode())
-
+        # ⚠️ 网关**不再是可加的组件**（用户 2026-10-08："其实根本就没有判断
+        #    这个组件，只有「是否拼版」这个特殊的判断组件……是否拼版依附拼版"）。
+        #    编辑器不再有"加网关"的入口；认不出的拖放 token 一律拒绝，
+        #    不凭空造节点（凭空造的节点接不上任何运行阶段）。
+        ok("编辑器不再提供「加网关」入口",
+           not hasattr(editor, "add_gateway"), str(dir(editor)))
+        ok("认不出的拖放 token 被拒绝（不凭空造节点）",
+           editor.add_step("__gateway__") is None
+           and editor.add_step("") is None)
         # 两个任务关联：连线模式（点起点 → 点终点）+ connect
         ok("开始不在连线模式", not editor.link_mode())
         board.link_button.click()
@@ -665,18 +669,56 @@ def run(ctx) -> None:
            all(f.source != doomed and f.target != doomed
                for f in editor.diagram().flows))
 
+        # ⚠️ 「是否拼版」网关**依附图片拼版**（用户 2026-10-08："其实根本
+        #    就没有判断这个组件，只有「是否拼版」这个特殊的判断组件……是否
+        #    拼版依附拼版"）：删掉最后一个「图片拼版」时它跟着删；图里还剩
+        #    拼版节点就不动它（那只是删重复）。用一张**新图**验，免得把后面
+        #    用例还要用的那张改掉。
+        cascade = BpmnEditor(FlowDiagram.load(default_template_path()))
+        gws = [n.id for n in cascade.diagram().nodes if n.is_gateway]
+        imps = [n.id for n in cascade.diagram().nodes
+                if n.stage == "imposition"]
+        ok("默认图里有「是否拼版」网关与「图片拼版」（前提成立）",
+           len(gws) == 1 and len(imps) == 1, f"{gws} {imps}")
+        extra_imp = cascade.add_node(KIND_TASK, "图片拼版")
+        cascade.set_selected(extra_imp)
+        cascade.remove_selected()
+        ok("删掉重复的「图片拼版」⇒ 网关**不**跟着删（还依附得起）",
+           cascade.diagram().node(gws[0]) is not None
+           and cascade.diagram().node(imps[0]) is not None)
+        cascade.set_selected(imps[0])
+        cascade.remove_selected()
+        app.processEvents()
+        ok("删掉最后一个「图片拼版」⇒ 依附它的「是否拼版」网关一起删",
+           cascade.diagram().node(imps[0]) is None
+           and cascade.diagram().node(gws[0]) is None,
+           str([n.id for n in cascade.diagram().nodes]))
+        ok("网关删掉后没有悬空连线（一起删干净）",
+           all(f.source != gws[0] and f.target != gws[0]
+               for f in cascade.diagram().flows))
+
         # 拖拽：坐标变了，且折点被清掉重算
         from PySide6.QtCore import QPointF
 
         mover = editor.diagram().nodes[1].id
         box = editor.diagram().node_box(mover)
+        view0 = editor.rect_of(mover)
         editor._drag_id = mover
         editor._moved = True
-        editor._drag_offset = QPointF(1.0, 1.0)
-        editor._move_node(QPointF(box[0] + 77, box[1] + 55))
+        # 按 ``_on_press`` 的同一算法造出"鼠标相对左上角的位移"，
+        # 再按**视图坐标**给一个 +80/+40 的落点（与真实拖拽同一条路径）
+        editor._drag_offset = QPointF(view0.center().x() - view0.left(),
+                                      view0.center().y() - view0.top())
+        editor._move_node(QPointF(view0.center().x() + 80.0,
+                                  view0.center().y() + 40.0))
         app.processEvents()
         moved = editor.diagram().node_box(mover)
+        view1 = editor.rect_of(mover)
         ok("拖节点能改坐标", abs(moved[0] - box[0]) > 40)
+        ok("拖动**跟着鼠标走**（视图位移 == 鼠标位移，不因画布偏移跳一截）",
+           abs((view1.left() - view0.left()) - 80.0) < 1
+           and abs((view1.top() - view0.top()) - 40.0) < 1,
+           f"{view0} -> {view1}")
         ok("拖动中连线**跟着节点平滑走**（连接点冻结，不猛跳）",
            all(f.id in editor.diagram().waypoints
                for f in editor.diagram().flows
@@ -687,6 +729,79 @@ def run(ctx) -> None:
                for f in editor.diagram().flows
                if f.source == mover or f.target == mover))
         editor._drag_id = None
+
+        # ---- 文字注释：跟着宿主节点走 + 自己能拖（用户 2026-10-08）----
+        # 用户原话："流程图编辑注释无法变动，比如任务位置变动，注释也理当一起
+        # 变动合适位置，另外注释也需要可以拖动"
+        # ⚠️ 选**不在包围盒边缘**的宿主（视图坐标 = 文件坐标 + 画布偏移，
+        #    偏移由整图最小 x/y 决定）：拖最左/最上的节点会连偏移一起搬，
+        #    视图位移就不再等于鼠标位移——那不是 bug，是居中画布的定义。
+        #    拿中间的节点断言，文件坐标与视图坐标两套都成立。
+        candidates = [n.id for n in editor.diagram().nodes
+                      if editor.diagram().notes_of(n.id)]
+        ok("默认图里有挂在节点上的注释（前提成立）", bool(candidates))
+        assert candidates  # 上一条 ok 已断言存在
+        boxes_now = dict(editor.diagram().boxes)
+        min_x = min((b[0] for b in boxes_now.values()), default=0.0)
+        min_y = min((b[1] for b in boxes_now.values()), default=0.0)
+        noted = max(
+            candidates,
+            key=lambda nid: min(
+                (boxes_now.get(note.id, (min_x, min_y, 0, 0))[0] - min_x)
+                + (boxes_now.get(note.id, (min_x, min_y, 0, 0))[1] - min_y)
+                for note in editor.diagram().notes_of(nid)
+            ),
+        )
+        note = editor.diagram().notes_of(noted)[0]
+        note_view0 = editor.note_rect_of(note.id)
+        host_view = editor.rect_of(noted)
+        editor._drag_id = noted
+        editor._moved = True
+        # 与真实拖拽同一条路径：按 ``_on_press`` 的算法造位移，落点用**视图坐标**
+        editor._drag_offset = QPointF(0.0, 0.0)
+        editor._move_node(QPointF(host_view.left() + 120.0,
+                                  host_view.top() + 60.0))
+        app.processEvents()
+        note_view1 = editor.note_rect_of(note.id)
+        ok("拖动节点时**注释跟着一起走**（位移与节点一致，不用手动摆）",
+           abs((note_view1.left() - note_view0.left()) - 120.0) < 1
+           and abs((note_view1.top() - note_view0.top()) - 60.0) < 1,
+           f"{note_view0} -> {note_view1}")
+        ok("注释与宿主节点的**相对位置不变**（不是被重新挂到别处）",
+           abs((note_view1.left() - editor.rect_of(noted).left())
+               - (note_view0.left() - host_view.left())) < 1,
+           f"note {note_view1} host {editor.rect_of(noted)}")
+        editor._drag_id = None
+
+        # 注释**自己能拖**：合成一次真实鼠标轨迹（按下 → 移动 → 松开）
+        # ⚠️ ``_stroke`` 只把中间点当移动、最后一点当松开位置，所以落点要写
+        #    两遍（移到终点，再在终点松开），否则停在倒数第二点上。
+        nrect = editor.note_rect_of(note.id)
+        _stroke(editor, [
+            (nrect.center().x(), nrect.center().y()),
+            (nrect.center().x() + 45.0, nrect.center().y() + 20.0),
+            (nrect.center().x() + 90.0, nrect.center().y() + 40.0),
+            (nrect.center().x() + 90.0, nrect.center().y() + 40.0),
+        ])
+        app.processEvents()
+        nrect2 = editor.note_rect_of(note.id)
+        ok("注释可以**单独拖动**（视图位移 == 鼠标位移）",
+           abs((nrect2.left() - nrect.left()) - 90.0) < 1
+           and abs((nrect2.top() - nrect.top()) - 40.0) < 1,
+           f"{nrect} -> {nrect2}")
+        ok("拖注释**不改挂接关系**（虚线仍连回原来那个节点）",
+           editor.diagram().note_links.get(note.id) == noted,
+           str(editor.diagram().note_links.get(note.id)))
+        ok("拖注释不改尺寸（只挪位置）",
+           abs(nrect2.width() - nrect.width()) < 0.01
+           and abs(nrect2.height() - nrect.height()) < 0.01,
+           f"{nrect} -> {nrect2}")
+        # 点一下注释（不拖）不该被当成拖动：低于阈值的手抖不移动它
+        _click_at(editor, nrect2.center().x(), nrect2.center().y())
+        app.processEvents()
+        ok("点注释（不拖）不移动它（拖动阈值挡住手抖）",
+           editor.note_rect_of(note.id) == nrect2,
+           f"{nrect2} -> {editor.note_rect_of(note.id)}")
 
         # 落盘往返：编辑结果必须能存进 bpmn 并被读回
         tmp_file = Path(tempfile.mkdtemp(prefix="flow_edit_")) / "edited.bpmn"
@@ -704,9 +819,7 @@ def run(ctx) -> None:
         from PySide6.QtCore import QMimeData, QPointF, Qt
         from PySide6.QtGui import QDropEvent
 
-        from desktop.components.bpmn_palette import (
-            GATEWAY_TOKEN, NODE_MIME, palette_steps,
-        )
+        from desktop.components.bpmn_palette import NODE_MIME, palette_steps
 
         palette = board.palette
         ok("编辑态有固定节点面板", palette is not None)
@@ -727,10 +840,12 @@ def run(ctx) -> None:
                 Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier))
 
         state = _palette_state()
-        ok("面板条目 = 固定步骤集 + 「判断」",
-           set(palette_steps()).issubset(set(state))
-           and GATEWAY_TOKEN in state,
-           str(sorted(state)))
+        # ⚠️ 面板条目**只有步骤**，没有「判断」（用户 2026-10-08）：网关依附
+        #    「图片拼版」，不是可拖出来的独立组件——面板上多一条就等于告诉
+        #    用户可以凭空加一个判断。
+        ok("面板条目 = 固定步骤集（**没有**「判断」条目）",
+           set(palette_steps()) == set(state),
+           f"面板 {sorted(state)} vs 步骤表 {sorted(palette_steps())}")
         # 当前图（默认模板）里已有的步骤必须**置灰**，否则能拖出重复节点
         live = _palette_state()
         before_nodes = len(editor.diagram().nodes)
@@ -768,19 +883,16 @@ def run(ctx) -> None:
         some = editor.diagram().nodes[0].id
         editor.set_selected(some)
         flows_before = len(editor.diagram().flows)
-        _drop(GATEWAY_TOKEN, 700.0, 520.0)
+        # ⚠️ 拖放负载里塞网关 token 也**不该**造出节点（用户 2026-10-08）：
+        #    面板已经没有这一项，但拖放是公开入口，仍要挡住。
+        nodes_before = len(editor.diagram().nodes)
+        _drop("__gateway__", 700.0, 520.0)
         app.processEvents()
-        _sel_gw = editor.selected()
-        assert _sel_gw is not None  # 拖放完成后新节点处于选中态
-        gateway = editor.diagram().node(_sel_gw)
-        ok("拖出来的「判断」是网关菱形",
-           gateway is not None and gateway.is_gateway,
-           str(gateway and gateway.kind))
-        # ⚠️ 判断节点**不**自动接线（用户 2026-10-06）：是否拼版在排版面板
-        #    里开，判断节点摆哪儿都行、不必跟谁绑定
-        ok("「判断」拖进来不自动接线（不必与其他节点绑定）",
-           len(editor.diagram().flows) == flows_before,
-           f"{flows_before} -> {len(editor.diagram().flows)}")
+        ok("往画布拖「网关 token」什么也不加（网关不是可拖的组件）",
+           len(editor.diagram().nodes) == nodes_before
+           and len(editor.diagram().flows) == flows_before,
+           f"节点 {nodes_before} -> {len(editor.diagram().nodes)}，"
+           f"连线 {flows_before} -> {len(editor.diagram().flows)}")
         # 任务节点仍是"接在选中节点后面"：加一个任务节点验自动连线还在
         linked = editor.add_node(KIND_TASK, "PDF排版", stage="print",
                                  connect_from=some)

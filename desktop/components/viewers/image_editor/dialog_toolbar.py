@@ -9,7 +9,7 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QHBoxLayout, QWidget
 from qfluentwidgets import CaptionLabel, FluentIcon as FIF, PrimaryPushButton, PushButton, ToggleButton, ToolButton
 from desktop.ui import theme as T
-from .consts import DEFORM_FIT_RATIO, EDIT_FIT_RATIO, TOOLS
+from .consts import EDIT_FIT_RATIO, TOOLS
 from typing import TYPE_CHECKING
 
 
@@ -24,7 +24,7 @@ class ToolbarMixin(DialogHost):
 
     # ------------------------------------------------------------ 构建
     def _build_toolbar_row(self) -> QHBoxLayout:
-        """主工具栏：撤销/还原 ｜ 缩放 ｜ 五个工具 ｜ … ｜ 完成。"""
+        """主工具栏：撤销/还原 ｜ 缩放 ｜ 四个工具 ｜ … ｜ 完成。"""
         row = QHBoxLayout()
         row.setSpacing(T.SPACE_SM)
         self.undo_btn = ToolButton(FIF.RETURN)
@@ -109,19 +109,10 @@ class ToolbarMixin(DialogHost):
             self._commit_text_blocks()
         if tool != "transform":
             self._commit_transform()
-        if tool != "deform":
-            self._commit_deform()
-        if tool != "rectify":
-            self._commit_rectify()
-        if tool != "cage":
-            self._commit_cage()
         self.canvas.set_tool(tool)
         # 图片**永不铺满视口**：四周恒留白（用户 2026-10-02 定：编辑区不要
-        # 铺满整个界面，上下预留空白方便操作）。变形/变换笼的把手、校正的
-        # 四角常要往图外拖，留白更多一点；其它工具也留出同样的余量，视线与
-        # 手柄不会贴控件边缘。
-        self.canvas.set_fit_ratio(
-            DEFORM_FIT_RATIO if tool in ("deform", "cage") else EDIT_FIT_RATIO)
+        # 铺满整个界面，上下预留空白方便操作）。
+        self.canvas.set_fit_ratio(EDIT_FIT_RATIO)
         for key, button in self._tool_buttons.items():
             button.setChecked(key == tool)
         layout = self._swap_option_page()
@@ -129,12 +120,6 @@ class ToolbarMixin(DialogHost):
             self._page_crop(layout)
         elif tool == "transform":
             self._page_transform(layout)
-        elif tool == "deform":
-            self._page_deform(layout)
-        elif tool == "cage":
-            self._page_cage(layout)
-        elif tool == "rectify":
-            self._page_rectify(layout)
         elif tool == "erase":
             self._page_erase(layout)
         elif tool == "text":

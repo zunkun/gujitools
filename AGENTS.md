@@ -70,7 +70,7 @@ core（命令定义、reporter）   →   utils（纯算法：box_geometry、ima
 | 任务流程编辑**页面**（详情页页头进入） | `desktop/pages/taskflow/page.py::TaskFlowPage`（内含 `components/flow_dialog.py::FlowPanel`，`close_window=False`） |
 | 详情页查看/编辑流程 | `desktop/components/flow_dialog.py::FlowPanel` + `pages/taskdetail/flow_mixin.py::FlowMixin` |
 | 弹窗外壳（标题+内容+按钮） | `desktop/components/dialog_shell.py::shell_dialog`（⚠️ **不要**用 qfluentwidgets 的 `Dialog`，它只支持"字符串+两按钮"、没有 `viewLayout`） |
-| 默认流程模板文件 | `desktop/static/task_default.bpmn`（新任务用）与 `task_detail.bpmn`（自定义初值）。**它们是真源**——页面照着渲染、状态机照着排顺序；`tools/gen_default_bpmn.py` 只是可选的重新生成工具 |
+| 默认流程模板文件 | `desktop/static/task_default.bpmn`（新任务用，自定义初值也是它）。**它是真源**——页面照着渲染、状态机照着排顺序；`tools/gen_default_bpmn.py` 只是校验工具 |
 | 运行阶段的中文节点名 | `desktop/steps/ports.py::stage_label`（`rembg_submit` 必须走它，否则流程图出现两个「图片去底色」；`store.STAGE_LABELS` 是它的派生） |
 | 框几何/绘制 | `utils/box_geometry.py`（半幅恒 2 槽、整幅恒 1 槽）；标注统一 `utils/box_draw.draw_slots` |
 | 框类型人工干预交互流（切类型/整幅互斥/删框） | `desktop/components/box_kinds.py::BoxKindEditor`（taskdetail 与独立检测页共用） |

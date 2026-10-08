@@ -61,35 +61,6 @@ class InteractionMixin(CanvasHost):
 
     def _update_hover_cursor(self, view_pos: QPointF) -> None:
         """未拖拽时的悬停反馈：命中边缘给方向缩放光标 + 边界高亮。"""
-        if self._tool == "deform" and self._item is not None:
-            index = self._hit_pin(view_pos)
-            if index != self._pin_hover:
-                self._pin_hover = index  # 悬停中的图钉画大一圈
-                self._sync_pin_overlay()
-            self.viewport().setCursor(
-                Qt.CursorShape.SizeAllCursor if index is not None
-                else Qt.CursorShape.CrossCursor)
-            return
-        if self._tool == "rectify" and self._item is not None:
-            index = self._hit_quad(view_pos)
-            if index != self._rect_hover:
-                self._rect_hover = index  # 悬停中的角点画大一圈
-                self._sync_quad_overlay()
-            self.viewport().setCursor(
-                Qt.CursorShape.SizeAllCursor if index is not None
-                else Qt.CursorShape.CrossCursor)
-            return
-        if self._tool == "cage" and self._item is not None:
-            index = self._hit_cage_handle(view_pos)
-            if index != self._cage_hover:
-                self._cage_hover = index  # 悬停中的把手画大一圈
-                self._sync_cage_overlay()
-            scene = self.mapToScene(view_pos.toPoint())
-            on_body = index is not None or self._hit_cage_body(scene)
-            self.viewport().setCursor(
-                Qt.CursorShape.SizeAllCursor if on_body
-                else Qt.CursorShape.CrossCursor)
-            return
         if self._tool == "transform" and not self._xf_reshape \
                 and self._item is not None:
             hit = self._hit_transform(view_pos)
@@ -133,13 +104,6 @@ class InteractionMixin(CanvasHost):
             # 裁剪默认有框：箭头（手柄收边/框内移动），不是"准备画框"的十字
             "crop": Qt.CursorShape.ArrowCursor,
             "text": Qt.CursorShape.IBeamCursor,
-            # 变形是"点一下放图钉"的十字；悬停到已有图钉时由
-            # _update_hover_cursor 换成移动光标
-            "deform": Qt.CursorShape.CrossCursor,
-            # 校正是"拖四角"的十字；悬停到角点换移动光标
-            "rectify": Qt.CursorShape.CrossCursor,
-            # 变换笼是"拖把手"的十字；悬停到把手/笼身换移动光标
-            "cage": Qt.CursorShape.CrossCursor,
         }.get(self._tool, Qt.CursorShape.ArrowCursor)
         self.viewport().setCursor(cursor)
 
@@ -172,15 +136,6 @@ class InteractionMixin(CanvasHost):
     def mousePressEvent(self, event) -> None:  # noqa: N802
         button = event.button()
         if button in (Qt.MouseButton.MiddleButton, Qt.MouseButton.RightButton):
-            # ⚠️ 「变形」工具里，右键点在图钉上 = 删图钉（先于 pan 兜底）：
-            #    否则右键永远被当成平移，图钉删不掉（用户文档写了右键删钉）
-            if button == Qt.MouseButton.RightButton and self._tool == "deform" \
-                    and self._item is not None:
-                index = self._hit_pin(event.position())
-                if index is not None:
-                    self.pin_remove(index)
-                    event.accept()
-                    return
             self._mode = ("pan", event.position())
             self.viewport().setCursor(Qt.CursorShape.ClosedHandCursor)
             event.accept()
@@ -230,6 +185,14 @@ class InteractionMixin(CanvasHost):
                     pos.y() - center.y(), pos.x() - center.x()))
                 self._mode = ("xf_rotate", self._xf, center, angle0)
             elif hit == "pivot":
+                # ⚠️ 轴心拖动也要先建预览：刚进变换工具就抓轴心时预览还没建，
+                #    直接进 xf_pivot 的话随后 mouseMove 里 `assert _xf_rect`
+                #    必炸（用户 2026-10-08 报的 AssertionError 刷屏）——拖动
+                #    轴心本身不改矩阵，但预览三件套是拖动状态机的前提。
+                self._ensure_transform_preview()
+                if self._float_item is None:
+                    event.accept()
+                    return
                 inv, _ = self._xf.inverted()
                 self._mode = ("xf_pivot", inv)
             else:
@@ -255,65 +218,6 @@ class InteractionMixin(CanvasHost):
                     self._mode = ("xf_shear", self._xf, pos, hit)
                 else:  # 框内 = 移动
                     self._mode = ("xf_move", self._xf, pos)
-            event.accept()
-            return
-        if self._tool == "deform":
-            # 变形（操控变形）：点到已有图钉 = 拖它；点空白 = 放一个新图钉
-            # （新图钉立即进入拖动状态，松手即落在点到的位置）。
-            index = self._hit_pin(event.position())
-            alt = bool(event.modifiers() & Qt.KeyboardModifier.AltModifier)
-            if index is not None and alt:
-                self.pin_remove(index)          # Alt+点 = 删图钉
-                event.accept()
-                return
-            if index is None:
-                if alt:
-                    event.accept()              # Alt+点空白：不动
-                    return
-                index = self.pin_add(pos)
-                if index is None:
-                    event.accept()
-                    return
-                self.pin_move(index, pos)       # 新图钉立即跟手
-            self._pin_hover = index
-            self._mode = ("deform", index)
-            self._sync_overlay()
-            event.accept()
-            return
-        if self._tool == "cage":
-            # 变换笼（GIMP 口径）：点把手 = 拖它；点笼内/边 = 整体平移；
-            # 点空白 = 不动（避免误把笼甩走）。
-            self._ensure_cage()
-            index = self._hit_cage_handle(event.position())
-            if index is None and self._hit_cage_body(pos):
-                index = -1  # 整体平移的哨兵
-            if index is None:
-                event.accept()
-                return
-            if index >= 0:
-                self._cage_hover = index
-                self._cage_drag = index
-            else:
-                self._cage_hover = None
-                self._cage_drag = None
-            self._cage_drag_origin = (pos, [(a, QPointF(b))
-                                            for a, b in self._cage_handles])
-            self._mode = ("cage", index)
-            self._sync_overlay()
-            event.accept()
-            return
-        if self._tool == "rectify":
-            # 校正（四点透视摆正）：拖四角。点在角上才拖，点空白不动
-            # （避免误拖把四角搞乱；要放整幅就用「重置」）。
-            self._ensure_quad()
-            index = self._hit_quad(event.position())
-            if index is None:
-                event.accept()
-                return
-            self._rect_hover = index
-            self._rect_drag = index
-            self._mode = ("rect", index)
-            self._sync_overlay()
             event.accept()
             return
         if self._tool == "erase":
@@ -437,19 +341,6 @@ class InteractionMixin(CanvasHost):
         elif kind == "handle":
             assert self._rect is not None  # 拖手柄时必有选区
             self._resize_rect(self._mode[1], pos)
-        elif kind == "deform":
-            self.pin_move(self._mode[1], pos)
-        elif kind == "cage":
-            index = self._mode[1]
-            if index is None:
-                # 拖整体/边：基于按下时的快照做位移（不逐帧累加，见 cage_move_all）
-                if self._cage_drag_origin is not None:
-                    start = self._cage_drag_origin[0]
-                    self.cage_move_all(pos - start)
-            else:
-                self.cage_move(index, pos)
-        elif kind == "rect":
-            self.quad_move(self._mode[1], pos)
         elif kind == "draw":
             self._erase_at(self._mode[1], pos)
             self._move_eraser_ring(pos)
@@ -482,30 +373,6 @@ class InteractionMixin(CanvasHost):
             return
         if self._mode and self._mode[0] == "draw":
             self._mode = None
-            event.accept()
-            return
-        if self._mode and self._mode[0] == "deform":
-            # 松手补一次预览：拖动中可能正好被节流窗口跳过，最后一帧不补
-            # 的话停在屏幕上的就不是松手位置的结果（所见≠将得）
-            self._mode = None
-            self._refresh_deform_preview(force=True)
-            event.accept()
-            return
-        if self._mode and self._mode[0] == "rect":
-            self._mode = None
-            self._rect_drag = None
-            self._refresh_deform_preview(force=True)
-            self._sync_quad_overlay()
-            event.accept()
-            return
-        if self._mode and self._mode[0] == "cage":
-            # 松手补一次预览：拖动中可能正好被节流窗口跳过，最后一帧不补
-            # 的话停在屏幕上的就不是松手位置的结果（所见≠将得）
-            self._mode = None
-            self._cage_drag = None
-            self._cage_drag_origin = None
-            self._refresh_cage_preview(force=True)
-            self._sync_cage_overlay()
             event.accept()
             return
         if self._mode and self._mode[0].startswith("xf_"):
@@ -559,12 +426,6 @@ class InteractionMixin(CanvasHost):
         self._hide_eraser_ring()
         self._hide_text_outline()
         self._apply_hover_highlight()
-        if self._pin_hover is not None and self._mode is None:
-            self._pin_hover = None  # 悬停放大的图钉缩回去
-            self._sync_overlay()
-        if self._cage_hover is not None and self._mode is None:
-            self._cage_hover = None  # 悬停放大的把手缩回去
-            self._sync_overlay()
         self._sync_cursor()
         super().leaveEvent(event)
 

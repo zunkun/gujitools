@@ -31,16 +31,14 @@ class DialogHost(QDialog):
     """
 
     # ---- 状态 ----
-    _cage_busy: bool
-    _deform_busy: bool
     _erase_size: Any
     _finishing: bool
     _image: Any
     _option_page: Any
     _option_row: QHBoxLayout
     _original: Any
-    _rectify_busy: bool
     _redo: list[QImage]
+    _reshape_uncheck: Any
     _save_back: bool
     _text_color: str
     _text_family: Any
@@ -69,15 +67,6 @@ class DialogHost(QDialog):
     def _build_toolbar_row(self) -> QHBoxLayout:
         ...
 
-    def _commit_cage(self) -> None:
-        ...
-
-    def _commit_deform(self) -> None:
-        ...
-
-    def _commit_rectify(self) -> None:
-        ...
-
     def _commit_text_blocks(self) -> None:
         ...
 
@@ -97,19 +86,10 @@ class DialogHost(QDialog):
     def _hint(layout: QHBoxLayout, text: str) -> None:
         ...
 
-    def _page_cage(self, layout: QHBoxLayout) -> None:
-        ...
-
     def _page_crop(self, layout: QHBoxLayout) -> None:
         ...
 
-    def _page_deform(self, layout: QHBoxLayout) -> None:
-        ...
-
     def _page_erase(self, layout: QHBoxLayout) -> None:
-        ...
-
-    def _page_rectify(self, layout: QHBoxLayout) -> None:
         ...
 
     def _page_text(self, layout: QHBoxLayout) -> None:
@@ -122,9 +102,6 @@ class DialogHost(QDialog):
         ...
 
     def _redo_now(self) -> None:
-        ...
-
-    def _report_bake_error(self, exc: Exception) -> None:
         ...
 
     def _reset_all(self) -> None:

@@ -6,14 +6,21 @@
 - **改的是同一份 :class:`FlowDiagram`**（页面看到的图 = 文件里的图），保存
   即写回 ``.bpmn``。没有"界面模型"与"文件模型"两份东西。
 - **拖节点只改坐标**，不动连线语义——拖拽是排版操作。连线折点若文件里
-  有，拖动后**清掉重算**（旧折点会指向老地方，线会歪）。
+  有，拖动后**清掉重算**（旧折点会指向老地方，线会歪）。挂在节点上的
+  **文字注释跟着节点一起走**（用户 2026-10-08：注释是写在节点旁的说明，
+  节点挪了而注释留在原地，虚线会横穿整张图）。
+- **注释也能单独拖**（用户 2026-10-08）：注释是图上的内容，位置该由用户说了算；
+  拖它只改坐标，**挂接关系不变**（虚线依旧连回原来那个节点）。
 - **连线有两条路**（都能用，用户挑顺手的）：
   1. **拖连接点**（推荐）：每个节点有上下左右**四个中线连接点**（悬停/
      选中时显示），按住任一个拖到目标节点即连上；起止两端的连接点按两
      节点相对方位**自动匹配**（横向主导走左右、纵向主导走上下）；
   2. **连线模式**：点工具栏「连线」→ 点起点节点 → 点终点节点。
-- **判断（网关）节点不自动接线**（用户 2026-10-06）：是否拼版由「图片拼版」
-  参数面板的开关决定，判断节点摆哪儿都行、不必跟谁绑定；要手动连也允许。
+- **「是否拼版」网关不是可自由增删的组件**（用户 2026-10-08）：它依附
+  「图片拼版」那一步，只能随模板文件来——面板与工具栏都**没有**"添加判断"
+  入口（用户原话："其实根本就没有判断这个组件"）。删掉「图片拼版」时它
+  跟着删（判据在 :func:`desktop.steps.ports.orphaned_gateway_ids`）；
+  反方向不成立——「图片拼版」可以没有网关。
 - **节点与连线各有一套选中**，互斥；选中后工具栏的「重命名 / 删除」才可用。
   这条是硬需求：之前只有"点一下变个色"，用户不知道选中能干什么。
 - 所有鼠标/键盘事件 ``try/except``（控件在弹窗里，一次未捕获异常会连用户
@@ -33,8 +40,7 @@ from PySide6.QtWidgets import QInputDialog, QMessageBox, QSizePolicy
 
 from desktop.components.bpmn_view import BpmnView
 from desktop.steps.bpmn_diagram import (
-    KIND_EXCLUSIVE, KIND_TASK, DiagramFlow, DiagramNode, FlowDiagram,
-    default_size,
+    KIND_TASK, DiagramFlow, DiagramNode, FlowDiagram, default_size,
 )
 from desktop.ui import theme as T
 
@@ -99,6 +105,9 @@ class BpmnEditor(BpmnView):
         self.setAcceptDrops(True)
         self._drag_id: str | None = None
         self._drag_offset = QPointF()
+        #: 正在拖动的**注释** id（与 ``_drag_id`` 互斥：一次只拖一个东西）
+        self._drag_note: str | None = None
+        self._drag_note_offset = QPointF()
         # 拖动中**冻结的连接点**（flow_id → route_anchor 结果）：拖动时连线
         # 的锚点不换边、线跟着节点平滑走；松手 :meth:`_finish_drag` 清掉重匹配
         self._drag_sides: dict[str, tuple] = {}
@@ -115,6 +124,7 @@ class BpmnEditor(BpmnView):
     def set_diagram(self, diagram: FlowDiagram) -> None:
         super().set_diagram(diagram)
         self._drag_id = None
+        self._drag_note = None
         self._link_from = None
         self._link_pos = None
         self._drag_sides = {}
@@ -199,23 +209,17 @@ class BpmnEditor(BpmnView):
                  connect_from: str | None = None) -> str | None:
         """按**步骤 key**加节点（固定节点面板拖放的入口）。
 
-        ``token`` 是 :data:`~desktop.components.bpmn_palette.GATEWAY_TOKEN`
-        时加的是排他网关；否则按步骤 key 取名字与运行阶段。
+        ⚠️ **只认步骤 key**：网关（「是否拼版」）不再是可拖的条目——它依附
+        「图片拼版」那一步、只能随模板文件来（见模块文档）。认不出的 token
+        一律返回 ``None``，不凭空造节点。
         """
-        from desktop.components.bpmn_palette import (
-            GATEWAY_NAME, GATEWAY_TOKEN, palette_name, step_stage,
-        )
+        from desktop.components.bpmn_palette import palette_name, step_stage
         from desktop.steps import ports
 
         def step_stage_of(stage_key: str) -> str:
             """运行阶段 → 它归属的**界面格**（`rembg_submit` 归 `rembg`）。"""
             return ports.STAGE_STEPS.get(stage_key, stage_key)
 
-        if token == GATEWAY_TOKEN:
-            # ⚠️ 判断节点**不自动接线**（用户 2026-10-06）：是否拼版由「图片
-            #    拼版」参数面板的开关决定，判断节点摆哪儿都行、不必跟谁绑定
-            #    ——拖放时就算正选中着节点也不接（要连线就手动拖连接点）。
-            return self._add_node(KIND_EXCLUSIVE, GATEWAY_NAME, None, at, None)
         if not token:
             return None
         stage = step_stage(token)
@@ -310,14 +314,6 @@ class BpmnEditor(BpmnView):
         except Exception:  # noqa: BLE001 - 编辑期异常绝不冒泡
             return
         event.acceptProposedAction()
-
-    def add_gateway(self, name: str = "判断") -> str:
-        """加一个排他网关（分支判断）。
-
-        ⚠️ 只摆节点、**不自动连线**：是否拼版由「图片拼版」参数面板的开关
-        决定，判断节点不需要跟谁绑定（要连线就手动拖连接点）。
-        """
-        return self.add_node(KIND_EXCLUSIVE, name, stage=None)
 
     def rename_node(self, node_id: str, name: str) -> None:
         """改节点名（就地换 dataclass：frozen，只能重建）。
@@ -418,6 +414,9 @@ class BpmnEditor(BpmnView):
         ⚠️ 附在它后面的**结束事件**也跟着删（用户 2026-10-07）：删掉
         「PDF排版」后「生成PDF」一条入线不剩，留着就是误导——判据走
         :func:`ports.orphaned_end_event_ids`。
+        ⚠️ 依附它的**「是否拼版」网关**也跟着删（用户 2026-10-08）：网关不是
+        独立组件，只服务于「图片拼版」——判据走
+        :func:`ports.orphaned_gateway_ids`。
         """
         flow_id = self.selected_flow()
         if flow_id:
@@ -428,14 +427,13 @@ class BpmnEditor(BpmnView):
             from desktop.steps import ports
 
             partner_id = ports.paired_node_for_stage(self.diagram(), node_id)
-            orphan_ids = ports.orphaned_end_event_ids(
-                self.diagram(), node_id,
-                *([partner_id] if partner_id else []))
+            doomed = [node_id, *([partner_id] if partner_id else [])]
+            orphan_ids = ports.orphaned_end_event_ids(self.diagram(), *doomed)
+            gateway_ids = ports.orphaned_gateway_ids(self.diagram(), *doomed)
             self.remove_node(node_id)
-            if partner_id:
-                self.remove_node(partner_id)
-            for orphan_id in orphan_ids:
-                self.remove_node(orphan_id)
+            for other in (partner_id, *orphan_ids, *gateway_ids):
+                if other:
+                    self.remove_node(other)
             return True
         return False
 
@@ -627,8 +625,19 @@ class BpmnEditor(BpmnView):
             self._link_pos = QPointF(point)
             return
 
-        # ③ 点空白：先看有没有点中连线（连线的可点范围比节点小，放后面判）
+        # ③ 点空白：先看有没有点中**注释**，再看连线（连线的可点范围比节点小，
+        #    放后面判）。⚠️ 顺序是"节点 → 注释 → 连线"：与绘制层次一致
+        #    （节点实底盖住注释，注释又盖住连线），点到的总是看得见的那一个。
         if node_id is None:
+            note_id = self.note_at(point)
+            if note_id is not None:
+                self.set_selected(None)
+                self.set_selected_flow(None)
+                rect = self.note_rect_of(note_id)
+                self._drag_note = note_id
+                self._drag_note_offset = QPointF(point.x() - rect.left(),
+                                                 point.y() - rect.top())
+                return
             flow_id = self.flow_at(point)
             self.set_selected(None)
             self.set_selected_flow(flow_id)
@@ -655,19 +664,39 @@ class BpmnEditor(BpmnView):
             self._link_pos = QPointF(point)
             self.update()
             return
+        if self._drag_note is not None:
+            if self._passes_threshold(point):
+                self._move_note(point)
+            return
         if self._drag_id is None:
             super().mouseMoveEvent(event)  # 悬停高亮
-            # 悬停在连接点上换十字光标——提示"这里能拖出连线"
+            # 悬停在连接点上换十字光标——提示"这里能拖出连线"；
+            # 悬停在**注释**上换四向箭头——提示"这个能拖走"
             if self._port_at(point) is not None:
                 self.setCursor(Qt.CursorShape.CrossCursor)
+            elif self.note_at(point) is not None:
+                self.setCursor(Qt.CursorShape.SizeAllCursor)
             return
-        if self._press_pos is not None and not self._moved:
-            dx = point.x() - self._press_pos.x()
-            dy = point.y() - self._press_pos.y()
-            if dx * dx + dy * dy < DRAG_THRESHOLD * DRAG_THRESHOLD:
-                return
+        if self._passes_threshold(point):
+            self._move_node(point)
+
+    def _passes_threshold(self, point: QPointF) -> bool:
+        """这次移动算不算"拖动"（低于 :data:`DRAG_THRESHOLD` 仍算点击）。
+
+        ⚠️ 阈值只判一次（``_moved`` 一旦为真就不再回头）：拖动过程中鼠标
+        抖动回到起点附近，也不该被当成"没拖过"。
+        """
+        if self._moved:
+            return True
+        if self._press_pos is None:
             self._moved = True
-        self._move_node(point)
+            return True
+        dx = point.x() - self._press_pos.x()
+        dy = point.y() - self._press_pos.y()
+        if dx * dx + dy * dy < DRAG_THRESHOLD * DRAG_THRESHOLD:
+            return False
+        self._moved = True
+        return True
 
     def _move_node(self, point: QPointF) -> None:
         """把拖拽中的节点挪到鼠标位置（限制在画布内）。"""
@@ -676,12 +705,22 @@ class BpmnEditor(BpmnView):
             return
         diagram = self.diagram()
         box = diagram.node_box(node_id)
-        x = point.x() - self._drag_offset.x()
-        y = point.y() - self._drag_offset.y()
+        # ⚠️ **必须减掉画布偏移**（``_offset()``）：鼠标点与 ``_drag_offset``
+        #    都是**视图坐标**，而 ``boxes`` 存的是**文件坐标**。不减这一下，
+        #    写回去的坐标就带上了画布偏移（默认模板约 126px）——现象是
+        #    "鼠标一动，节点先朝左上飞一截再跟着走"（2026-10-08 实测）。
+        #    减掉之后视图位置严格等于"按下时的位置 + 鼠标位移"，与偏移无关。
+        ox, oy = self._offset()
+        x = point.x() - self._drag_offset.x() - ox
+        y = point.y() - self._drag_offset.y() - oy
         # 夹在留白之内，别拖到负坐标（会被当作"图外"看不见）
         x = max(x, 4.0)
         y = max(y, 4.0)
         diagram.boxes[node_id] = (float(x), float(y), box[2], box[3])
+        # ⚠️ 挂在它身上的**注释跟着走**（用户 2026-10-08）：注释是写在节点旁的
+        #    说明，节点挪了而注释留在原地，虚线就会横穿整张图、还压在别的节点上。
+        #    平移同样的量（而不是"重新挂到正下方"）——用户自己摆的位置得留住。
+        self._shift_notes(node_id, x - box[0], y - box[1])
         # ⚠️ 拖动中**冻结连接点**（用户 2026-10-06）：按拖动开始那一刻的
         #    连接点现算折点，线跟着节点平滑移动。要是每帧都自动换边，节点
         #    一过中线线就猛跳一大截，微调根本没法看。松手才清掉重匹配
@@ -693,6 +732,42 @@ class BpmnEditor(BpmnView):
                     anchor = diagram.route_anchor(flow)
                     self._drag_sides[flow.id] = anchor
                 diagram.waypoints[flow.id] = diagram.route_sides(flow, anchor)
+        self._update_size()
+        self.update()
+
+    def _shift_notes(self, node_id: str, dx: float, dy: float) -> None:
+        """把挂在 ``node_id`` 上的注释**平移同样的量**（相对位置保持不变）。
+
+        ⚠️ 增量式（每次按当前坐标算差值）而不是"记住拖动起点一次性挪"：
+        ``_move_node`` 是逐帧调的，增量写法不需要额外的拖动起始快照，
+        也就不会在拖动被打断时留下对不上的偏移。
+        """
+        if dx == 0.0 and dy == 0.0:
+            return
+        diagram = self.diagram()
+        for note in diagram.notes_of(node_id):
+            box = diagram.boxes.get(note.id)
+            if box is None:  # 没坐标的注释（文件缺 DI 段）不硬塞一个位置
+                continue
+            diagram.boxes[note.id] = (box[0] + dx, box[1] + dy, box[2], box[3])
+
+    def _move_note(self, point: QPointF) -> None:
+        """把拖拽中的**注释**挪到鼠标位置（同样夹在留白之内）。
+
+        ⚠️ 只改坐标，**不动挂接关系**（``note_links``）：拖注释是排版，
+        不是"改挂到别的节点上"——虚线依旧连回原来那个节点，只是起点跟着
+        注释的新位置重新算（``BpmnView._anchor_point`` 每次绘制现算）。
+        """
+        note_id = self._drag_note
+        if note_id is None:
+            return
+        diagram = self.diagram()
+        box = diagram.note_box(note_id)
+        # ⚠️ 与 :meth:`_move_node` 同一条：视图坐标 → 文件坐标要减掉画布偏移
+        ox, oy = self._offset()
+        x = max(point.x() - self._drag_note_offset.x() - ox, 4.0)
+        y = max(point.y() - self._drag_note_offset.y() - oy, 4.0)
+        diagram.boxes[note_id] = (float(x), float(y), box[2], box[3])
         self._update_size()
         self.update()
 
@@ -717,6 +792,16 @@ class BpmnEditor(BpmnView):
             target = self.node_at(event.position())
             if target is not None:
                 self.connect(source, target)
+            self.update()
+            return
+        if self._drag_note is not None:
+            # 拖注释：坐标在 :meth:`_move_note` 里已经改完了，这里只收尾。
+            # ⚠️ 只有真拖动过（越过阈值）才算"图被改动"，否则点一下就标脏。
+            moved = self._moved
+            self._drag_note = None
+            self._press_pos = None
+            if moved:
+                self.diagram_changed.emit()
             self.update()
             return
         if self._drag_id is not None:
@@ -861,11 +946,15 @@ class BpmnEditor(BpmnView):
         # ⚠️ **结束事件跟着删**（用户2026-10-07）：「生成PDF」附在「PDF排版」
         #   后面，删掉 PDF排版 它就一条入线不剩——图上写着"生成PDF"却不再
         #    产出 PDF，是句谎话。判据在 :func:`ports.orphaned_end_event_ids`。
+        # ⚠️ **「是否拼版」网关跟着删**（用户2026-10-08）：网关依附「图片拼版」
+        #   （"其实根本就没有判断这个组件"），拼版没了它就无所依附。
+        #   判据在 :func:`ports.orphaned_gateway_ids`。
         from desktop.steps import ports
 
         partner_id = ports.paired_node_for_stage(self.diagram(), node_id)
-        orphan_ids = ports.orphaned_end_event_ids(
-            self.diagram(), node_id, *([partner_id] if partner_id else []))
+        doomed = [node_id, *([partner_id] if partner_id else [])]
+        orphan_ids = ports.orphaned_end_event_ids(self.diagram(), *doomed)
+        gateway_ids = ports.orphaned_gateway_ids(self.diagram(), *doomed)
         partner = (self.diagram().node(partner_id) if partner_id else None)
         notes = []
         if partner is not None:
@@ -877,6 +966,11 @@ class BpmnEditor(BpmnView):
             notes.append(
                 f"「{orphan.name if orphan else orphan_id}」是附在它后面的"
                 "收尾事件，流程不再走到收尾")
+        for gateway_id in gateway_ids:
+            gateway = self.diagram().node(gateway_id)
+            notes.append(
+                f"「{gateway.name if gateway else gateway_id}」是依附它的"
+                "「是否拼版」判断，拼版没了它也就没有意义")
         if notes:
             answer = QMessageBox.question(
                 self, "删除节点",
@@ -888,13 +982,12 @@ class BpmnEditor(BpmnView):
                 f"确定删除「{label}」？连到它的连线会一起删除。")
         if answer == QMessageBox.StandardButton.Yes:
             self.remove_node(node_id)
-            # ⚠️ **配对/收尾节点跟着删**（正反两向都走这里，所以删哪个都成对
-            #    消失）。用``remove_node`` 而不是直接改 diagram：它会连带清掉
-            #    挂在这个节点上的连线、坐标、注释——漏一处就留下一堆悬空引用。
-            if partner_id:
-                self.remove_node(partner_id)
-            for orphan_id in orphan_ids:
-                self.remove_node(orphan_id)
+            # ⚠️ **配对/收尾/网关节点跟着删**（正反两向都走这里，所以删哪个都
+            #    成对消失）。用``remove_node`` 而不是直接改 diagram：它会连带
+            #    清掉挂在这个节点上的连线、坐标、注释——漏一处就留下一堆悬空引用。
+            for other in (partner_id, *orphan_ids, *gateway_ids):
+                if other:
+                    self.remove_node(other)
 
 
 def _stage_options() -> list[str]:

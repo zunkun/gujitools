@@ -96,15 +96,8 @@ class ImageEditorDialog(
         self._text_color: str = "#000000"
         self._text_family: str = T.FONT_FAMILY
         self._erase_size: int = ERASER_DEFAULT
-        #: 全分辨率形变烘焙中（等待光标前会 processEvents，防重入）
-        self._deform_busy = False
-        #: 全分辨率透视校正中（同上，防重入）
-        self._rectify_busy = False
-        #: 全分辨率变换笼烘焙中（同上，防重入）
-        self._cage_busy = False
-        #: 「完成」整体处理中（防**双击重入**：后台烘焙的 ``processEvents``
-        #: 会派发排队的第二次点击，三个 busy 标志各自只挡同名方法、挡不住它，
-        #: 详见 :meth:`_finish`）
+        #: 「完成」整体处理中（防**双击重入**：确认框的 ``exec()`` 自带
+        #: 事件循环，会派发排队的第二次点击）
         self._finishing = False
 
         self.canvas = EditorCanvas(self)
@@ -116,7 +109,7 @@ class ImageEditorDialog(
         root.setContentsMargins(T.SPACE_MD, T.SPACE_MD, T.SPACE_MD, T.SPACE_MD)
         root.setSpacing(T.SPACE_SM)
         # ⚠️ 两行结构（Win10 照片的布局）：主工具栏一行摆不下撤销/还原/
-        #    缩放/五个工具/提示/应用/完成，一行时左侧按钮会被挤出窗口
+        #    缩放/四个工具/提示/应用/完成，一行时左侧按钮会被挤出窗口
         #    （用户 19:36 截图报"左上边有按钮隐藏掉了"）。
         # ⚠️ _option_row 必须先建：_build_toolbar_row 末尾的 _set_tool
         #    就会往里插第一份选项页。
@@ -208,20 +201,12 @@ class ImageEditorDialog(
 
 
     def _finish(self) -> None:
-        """「完成」：未应用的形变/变换/校正/未插入的文字一并写入，再应用全部编辑。
-
-        ⚠️ **必须整体防重入**：上面每一步各有一层自己的 busy 标志，但它们
-        只互相挡住**同名**方法，挡不住「完成」被整体重入。而"完成"路径上
-        一定有 ``processEvents``（后台烘焙的等待循环），它会把**排队的第二次
-        点击**派发进来 ⇒ 嵌套进第二个 ``_finish``：此时 ``_cage_busy``
-        还是 False（第一步是 ``_commit_rectify``），于是**两个 worker + 两个
-        进度对话框**同时在跑；嵌套层先 ``accept()`` 关窗，外层继续往已经
-        关闭的对话框上 ``set_image()``。快速双击「完成」就能触发。
+        """「完成」：未应用的变换/未插入的文字一并写入，再应用全部编辑。
 
         ⚠️ ``_finishing`` 必须在**确认框之前**就置位：``MessageBox.exec()``
         自带事件循环，双击「完成」会在框弹出后再进一次这里⇒ 叠出第二个
-        确认框（甚至两个后台烘焙）。所以顺序是"先上锁 → 再问 → 不同意就
-        退出并解锁"，不是"问完再上锁"。
+        确认框。所以顺序是"先上锁 → 再问 → 不同意就退出并解锁"，
+        不是"问完再上锁"。
         """
         if getattr(self, "_finishing", False):
             return
@@ -229,9 +214,6 @@ class ImageEditorDialog(
         try:
             if not self._confirm_overwrite():
                 return
-            self._commit_rectify()
-            self._commit_deform()
-            self._commit_cage()
             self._commit_transform()
             self._commit_text_blocks()
             self.accept()
@@ -241,18 +223,11 @@ class ImageEditorDialog(
 
     # ------------------------------------------------------------ 对外
     def closeEvent(self, event) -> None:  # noqa: N802（Qt 回调）
-        """关闭时确保**没有在飞的后台线程**。
+        """关闭时清理画布引用。
 
-        ⚠️ 烘焙 worker 以对话框为 ``parent``。若在它还在跑的时候对话框被
-        析构，Qt 会直接 **abort 整个进程**
-        （``QThread: Destroyed while thread is still running``）。
-        正常流程里 :func:`run_with_progress` 自己同步等线程结束，但
-        ``processEvents`` 期间用户仍可能关窗/宿主强制退出，所以这里要兜底。
-
-        同时清画布：撤销栈是**整图快照**，大图下最多 12 份（见 ``UNDO_LIMIT``），
+        撤销栈是**整图快照**，大图下最多 12 份（见 ``UNDO_LIMIT``），
         关窗后必须释放，不能靠 Python GC（Qt 侧 C++ 对象不由引用计数托管）。
         """
-        self._deform_busy = self._cage_busy = self._rectify_busy = False
         self._finishing = True
         try:
             # EditorCanvas 无 clear（此调用在运行期恒抛 AttributeError，被下面

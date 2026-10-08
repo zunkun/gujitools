@@ -13,12 +13,20 @@
 
 ==========================  ==========================================
 添加步骤                      从已知阶段里挑一个接上流程（能被运行时认出来）
-添加判断                      加排他网关（分支菱形）——只摆节点，不连线
 连线                          开连线模式：点起点 → 点终点（日常用拖连接点）
 重命名                        改节点名 / 连线上的字（如「否」）
 删除                          删选中的节点或连线
 自动排版                      整图分层铺开，连线按新坐标重算
 ==========================  ==========================================
+
+⚠️ **没有「添加判断」**（用户 2026-10-08）：
+
+> 其实根本就没有判断这个组件，只有「是否拼版」这个特殊的判断组件，
+> 也就是说是否拼版依附拼版，因此删除左侧的判断 gateway、顶部的添加判断按钮
+
+图上那个网关是「图片拼版」的附属图形（是否拼版是那一步的属性），只能随
+模板文件来；删掉「图片拼版」时它跟着删
+（:func:`desktop.steps.ports.orphaned_gateway_ids`）。
 
 画布外面套滚动区，并把画布的**下限**跟着视口走（否则图很小时没地方拖节点）。
 
@@ -151,14 +159,6 @@ class BpmnEditorPanel(QWidget):
         self.add_button.clicked.connect(self._on_add)
         row.addWidget(self.add_button)
 
-        self.gateway_button = PushButton("添加判断")
-        self.gateway_button.setIcon(FIF.TAG)
-        self.gateway_button.setToolTip(
-            "加一个分支判断（排他网关）。是否拼版由「图片拼版」参数面板的"
-            "开关决定，判断节点摆好即可，不必连线")
-        self.gateway_button.clicked.connect(self._on_add_gateway)
-        row.addWidget(self.gateway_button)
-
         self.link_button = PushButton("连线")
         self.link_button.setIcon(FIF.LINK)
         self.link_button.setCheckable(True)
@@ -261,12 +261,6 @@ class BpmnEditorPanel(QWidget):
         if editor is not None:
             editor.ask_add_node()
 
-    def _on_add_gateway(self) -> None:
-        """加一个判断节点（只摆节点，不连线、不进连线模式）。"""
-        editor = self.editor()
-        if editor is not None:
-            editor.add_gateway()
-
     def _on_auto_layout(self) -> None:
         """整图自动排版（分层铺开 + 连线按新坐标重算）。"""
         editor = self.editor()
@@ -333,7 +327,8 @@ class BpmnEditorPanel(QWidget):
         elif editor.link_mode():
             text = "连线模式：点起点节点，再点终点节点"
         else:
-            text = ("按住节点边上的圆点拖到目标节点即可连线；拖动节点排版，"
+            text = ("按住节点边上的圆点拖到目标节点即可连线；拖动节点排版"
+                    "（挂在它旁边的注释会跟着走），注释也可以单独拖动；"
                     "点「自动排版」一键整理；点空白处可选中连线；双击节点改名")
         self.status.setText(text)
         self._sync_buttons(bool(node_id), bool(flow_id or node_id))

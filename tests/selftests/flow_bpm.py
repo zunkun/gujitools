@@ -23,8 +23,8 @@
    图形段（``dc:Bounds`` 坐标 + ``di:waypoint`` 折点）；
 7. **拖拽只改坐标**——``FlowLayout.move`` 不动语义，坐标经 DI 段往返一致，
    条件边永远绕行（不因同行就与主路径重合）；
-8. **两个模板可用**——``task_default.bpmn``（默认流程）与 ``task_detail.bpmn``
-   （自定义初值）都存在、都解析得动、都有可执行步骤；默认模板的连线**不带
+8. **模板可用**——``task_default.bpmn``（默认流程，自定义初值也是它）
+   存在、解析得动、有可执行步骤；连线**不带
    ``guji:port``**（带了就是端口依赖表冒充流程图）；
 9. **流程图上没有重名节点**——节点名一律走 ``ports.stage_label()``，
    ``rembg_submit`` 与 ``rembg`` 不同名（曾两个都叫「图片去底色」），
@@ -727,46 +727,27 @@ def _check_di_layout(ok) -> None:
 
 # ------------------------------------------------------------ 8. 默认模板文件
 def _check_default_template(ok) -> None:
-    """两个流程模板必须存在、能解析、有可执行步骤，**而且互不相同**。
+    """默认流程模板必须存在、能解析、有可执行步骤。
 
-    ⚠️ 口径（2026-10-05）：模板是**手工真源**，页面照着它渲染、状态机照着它
-    排顺序，用户直接编辑它。所以：
-
-    - **不比内容与代码是否一致**——内容由人决定，没有"正确答案"；
-    - 但**必须比"两张图不能一样"**：自定义初值若退化成默认流程的副本，
-      用户在弹窗里勾「自定义」看到的图和默认一模一样，勾了等于没勾
-      （真实发生过：``task_detail.bpmn`` 缺失时 ``load_custom_init`` 静默回落）。
+    ⚠️ 口径：模板是**手工真源**，页面照着它渲染、状态机照着它排顺序，
+    用户直接编辑它；自定义流程的初值就是这份模板（"从默认流程开始改"）。
+    所以**不比内容与代码是否一致**——内容由人决定，没有"正确答案"。
     """
     import sys
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-    from tools.gen_default_bpmn import (
-        CUSTOM_INIT_NAME, TEMPLATE_NAME, custom_init_path, template_path,
-    )
+    from tools.gen_default_bpmn import TEMPLATE_NAME, template_path
 
     from desktop.steps.bpmn_diagram import FlowDiagram
 
-    loaded: dict[str, object] = {}
-    for name, path in ((TEMPLATE_NAME, template_path()),
-                       (CUSTOM_INIT_NAME, custom_init_path())):
-        ok(f"流程模板 {name} 存在", path.is_file(), str(path))
-        if not path.is_file():
-            continue
+    path = template_path()
+    ok(f"流程模板 {TEMPLATE_NAME} 存在", path.is_file(), str(path))
+    if path.is_file():
         diagram = FlowDiagram.load(path)
-        loaded[name] = diagram
-        ok(f"{name} 有节点", len(diagram.nodes) > 0, str(len(diagram.nodes)))
-        ok(f"{name} 有可执行步骤（节点能认出运行阶段）",
+        ok(f"{TEMPLATE_NAME} 有节点", len(diagram.nodes) > 0,
+           str(len(diagram.nodes)))
+        ok(f"{TEMPLATE_NAME} 有可执行步骤（节点能认出运行阶段）",
            len(diagram.stage_order()) > 0, str(diagram.stage_order()))
-
-    # ⚠️ 这里**不要求两张图不同**：用户常只维护 `task_default.bpmn`，自定义初值
-    #    就是它的副本——那正是"自定义从默认流程开始改"的合理起点。
-    #    真正要防的是**文件不见了**：`load_custom_init()` 会静默回落默认流程，
-    #    于是勾不勾「自定义」看到的图一模一样（用户报过这个现象）。
-    #    所以钉的是"初值文件必须在"，并由 `custom_init_missing()` 让界面能告警。
-    from desktop.components.create_task_dialog import custom_init_missing
-
-    ok("自定义初值文件在（不在时必须显式告警，不能静默回落）",
-       not custom_init_missing(), str(custom_init_path()))
 
     # 默认流程**必须是流程图，不是端口依赖表**。端口依赖表的指纹很明确：
     # 每条 `sequenceFlow` 上都带 `guji:port`（那是"取哪个产物端口"，

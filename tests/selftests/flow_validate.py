@@ -11,8 +11,10 @@
    PDF排版）；
 2. **反例全部拒绝**——``print → rembg``（用户给的原例）、拼版排在
    PDF排版 之后、只摆起止事件没有可执行步骤的空流程；
-3. **警告只提示不拦**——缺判断节点、extract 不在第一位、同一阶段
-   多个节点、未接入运行的节点，``ok`` 仍为真；
+3. **警告只提示不拦**——extract 不在第一位、同一阶段多个节点、未接入
+   运行的节点，``ok`` 仍为真。⚠️ 「有拼版没判断节点」这条警告已于
+   2026-10-08 删除（网关依附「图片拼版」，界面上没有"添加判断"入口，
+   提示用户去做一件做不到的事就是死胡同）。
 4. **保存入口真的拦**——``FlowPanel.accept``（弹窗/创建页内嵌编辑器）
    与 ``TaskFlowPage._on_done``（流程编辑二级页）对不合法的图都
    **不落盘、不切页**。
@@ -182,10 +184,13 @@ def _check_warnings(ok) -> None:
     """与习惯不符但跑得通的组合：只给警告，``ok`` 仍为真。"""
     from desktop.steps.validate import validate_flow
 
-    # 拼版在但没有判断节点
+    # 拼版在但没有判断节点：⚠️ 2026-10-08 起**不再警告**——网关依附「图片拼版」
+    # 且界面上已没有"添加判断"入口（用户："其实根本就没有判断这个组件"），
+    # 提示用户去做一件界面上做不到的事就是死胡同。这是合法且常见的状态：
+    # 那一步无条件执行，启用与否由「图片拼版」面板的开关决定。
     result = validate_flow(_chain("imposition", "print"))
-    ok("有拼版没判断节点 ⇒ 警告且不拦",
-       result.ok and any("判断" in w for w in result.warnings),
+    ok("有拼版没判断节点 ⇒ 合法且**不再**警告（入口已撤，提示无用）",
+       result.ok and not any("判断" in w for w in result.warnings),
        f"warnings={result.warnings}")
 
     # extract 不在第一位
@@ -238,19 +243,15 @@ def _check_warnings(ok) -> None:
 
 # ------------------------------------------------- ④ 模板必须干净通过
 def _check_templates_clean(ok) -> None:
-    """默认模板与自定义初值模板都必须**零错误零警告**——模板是用户起点，
+    """默认模板必须**零错误零警告**——模板是用户起点，
     一打开编辑器就被警告轰炸等于告诉用户"程序自己给的东西不合法"。"""
     from desktop.steps.scheduler import load_default_diagram
     from desktop.steps.validate import validate_flow
 
-    from desktop.components.create_task_dialog import load_custom_init
-
-    for name, diagram in (("task_default", load_default_diagram()),
-                          ("task_detail", load_custom_init())):
-        result = validate_flow(diagram)
-        ok(f"模板 {name}.bpmn 零错误零警告",
-           result.ok and not result.warnings,
-           f"errors={result.errors} warnings={result.warnings}")
+    result = validate_flow(load_default_diagram())
+    ok("模板 task_default.bpmn 零错误零警告",
+       result.ok and not result.warnings,
+       f"errors={result.errors} warnings={result.warnings}")
 
 
 # ---------------------------------------------- ④b 数据链：每步都有输入

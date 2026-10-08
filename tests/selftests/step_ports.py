@@ -70,6 +70,7 @@ def run(ctx) -> None:  # noqa: ARG001 - 不需要窗口夹具
     _check_blocking_inputs(ctx, ok)
     _check_source_pdf_pairing(ok)
     _check_end_event_cascade(ok)
+    _check_gateway_dependency(ok)
 
 
 # ------------------------------------------------- 7. 入口步骤（无上游也要有输入）
@@ -455,6 +456,55 @@ def _check_end_event_cascade(ok) -> None:
     ok("None/不传节点 不炸（返回空元组）",
        ports.orphaned_end_event_ids(None, "x") == ()
        and ports.orphaned_end_event_ids(d) == ())
+
+
+# --------------------- 9c. 「是否拼版」网关依附「图片拼版」（纯逻辑）
+def _check_gateway_dependency(ok) -> None:
+    """网关**不是独立组件**：它依附「图片拼版」（用户 2026-10-08）。
+
+    > 其实根本就没有判断这个组件，只有「是否拼版」这个特殊的判断组件，
+    > 也就是说是否拼版依附拼版，因此删除左侧的判断 gateway、顶部的添加判断按钮
+
+    本节只验**判据**（纯逻辑，不碰界面）：删掉最后一个「图片拼版」时网关
+    跟着删；图里还剩拼版节点就不动它（那只是删重复）。界面上"能不能加网关"
+    由"没有入口"这件事保证（``flow_ui`` 端到端验：面板与工具栏都没有那一项）。
+
+    ⚠️ **反方向不成立**：删网关不动「图片拼版」（用户同日的前一条口径：
+    "图片拼版可以不需要判断是否拼版"）。
+    """
+    from desktop.steps import ports
+    from desktop.steps.scheduler import load_default_diagram
+
+    d = load_default_diagram()
+    gateways = [n.id for n in d.nodes if n.is_gateway]
+    imposition = next(n for n in d.nodes if n.stage == "imposition")
+    detect = next(n for n in d.nodes if n.stage == "detect")
+    ok("默认流程里有一个「是否拼版」网关（它守着 imposition）",
+       len(gateways) == 1 and ports.GATEWAY_GUARD_STAGE == "imposition",
+       f"{gateways} guard={ports.GATEWAY_GUARD_STAGE}")
+
+    ok("删「图片拼版」⇒ 依附它的网关一起删",
+       ports.orphaned_gateway_ids(d, imposition.id) == (gateways[0],),
+       str(ports.orphaned_gateway_ids(d, imposition.id)))
+    ok("删别的步骤（detect）不牵连网关",
+       ports.orphaned_gateway_ids(d, detect.id) == (),
+       str(ports.orphaned_gateway_ids(d, detect.id)))
+    ok("None/不传节点 不炸（返回空元组）",
+       ports.orphaned_gateway_ids(None, "x") == ()
+       and ports.orphaned_gateway_ids(d) == ())
+
+    # ⚠️ 图里还剩**另一个**「图片拼版」时（``add_node`` / bpmn.io 画的图都可能
+    #    有两个）删其中一个只是"删重复"，网关仍有依附对象，不该被带走。
+    from desktop.steps.bpmn_diagram import KIND_TASK, DiagramNode
+
+    twin = type(d)(
+        nodes=tuple(d.nodes) + (DiagramNode("dup", KIND_TASK, "图片拼版",
+                                            stage="imposition"),),
+        flows=d.flows,
+    )
+    ok("图里还剩别的「图片拼版」⇒ 网关不跟着删（那只是删重复）",
+       ports.orphaned_gateway_ids(twin, imposition.id) == (),
+       str(ports.orphaned_gateway_ids(twin, imposition.id)))
 
 
 #: 一条**不含 extract** 的自定义流程（detect 打头）——用户 2026-10-06 的报障现场。

@@ -7,11 +7,14 @@
 ```text
 image_editor/
 ├── consts.py      常量           geometry.py  纯几何/变换数学
-├── bake.py        后台烘焙线程    text_item.py 就地编辑文字块
-├── canvas/        EditorCanvas（基座 + 7 个工具 Mixin）
+├── bake.py        后台线程       text_item.py 就地编辑文字块
+├── canvas/        EditorCanvas（基座 + 3 个工具 Mixin）
 ├── dialog.py      ImageEditorDialog（基座 + 收尾）+ 弹窗尺寸常量
 └── dialog_*.py    弹窗的 4 个 Mixin：工具栏 / 选项页 / 撤销栈 / 工具提交
 ```
+
+（2026-10-08 起画布只剩裁剪/变换/擦除/文字四个工具，变形/变换笼/
+校正/微调及其 Mixin 已随功能删除。）
 
 拆分前提是「**只挪位置，不改行为**」，而 Mixin 靠 ``self._xxx`` 共享状态，
 挪错一个方法不会报错、只会让某个工具悄悄失效。这里把四个不变量钉死：
@@ -44,17 +47,12 @@ _MODULES = [
     ("interaction.py", "InteractionMixin"),
     ("overlay.py", "OverlayMixin"),
     ("text.py", "TextMixin"),
-    ("rectify.py", "RectifyMixin"),
-    ("cage.py", "CageMixin"),
-    ("deform.py", "DeformMixin"),
     ("transform.py", "TransformMixin"),
 ]
 
 #: 每个画布成员**应当**归属的类（成员名 → 类名）。
 _EXPECTED_HOME = {
     "__init__": "EditorCanvas",
-    "_has_alpha": "EditorCanvas",
-    "_paint_canvas_cutout": "EditorCanvas",
     "_sync_scene_rect": "EditorCanvas",
     "fit": "EditorCanvas",
     "fit_selection": "EditorCanvas",
@@ -100,51 +98,6 @@ _EXPECTED_HOME = {
     "focused_text_block": "TextMixin",
     "style_target_block": "TextMixin",
     "text_blocks": "TextMixin",
-    "_ensure_quad": "RectifyMixin",
-    "_hit_quad": "RectifyMixin",
-    "_refresh_rectify_preview": "RectifyMixin",
-    "_sync_quad_overlay": "RectifyMixin",
-    "quad": "RectifyMixin",
-    "quad_move": "RectifyMixin",
-    "quad_pending": "RectifyMixin",
-    "rectify_ratio": "RectifyMixin",
-    "reset_quad": "RectifyMixin",
-    "set_rectify_ratio": "RectifyMixin",
-    "_clamp_cage_pos": "CageMixin",
-    "_clear_cage_preview": "CageMixin",
-    "_ensure_cage": "CageMixin",
-    "_hit_cage_body": "CageMixin",
-    "_hit_cage_handle": "CageMixin",
-    "_refresh_cage_preview": "CageMixin",
-    "_sync_cage_dots": "CageMixin",
-    "_sync_cage_overlay": "CageMixin",
-    "cage": "CageMixin",
-    "cage_density": "CageMixin",
-    "cage_move": "CageMixin",
-    "cage_move_all": "CageMixin",
-    "cage_pending": "CageMixin",
-    "cage_source": "CageMixin",
-    "cage_target": "CageMixin",
-    "reset_cage": "CageMixin",
-    "set_cage_density": "CageMixin",
-    "_clear_deform_preview": "DeformMixin",
-    "_drag_mesh": "DeformMixin",
-    "_ensure_mesh": "DeformMixin",
-    "_hit_pin": "DeformMixin",
-    "_refresh_deform_preview": "DeformMixin",
-    "_solve_pins": "DeformMixin",
-    "_sync_pin_dots": "DeformMixin",
-    "_sync_pin_overlay": "DeformMixin",
-    "adopt_pins": "DeformMixin",
-    "mesh_density": "DeformMixin",
-    "pin_add": "DeformMixin",
-    "pin_count": "DeformMixin",
-    "pin_move": "DeformMixin",
-    "pin_remove": "DeformMixin",
-    "pins": "DeformMixin",
-    "pins_pending": "DeformMixin",
-    "reset_pins": "DeformMixin",
-    "set_mesh_density": "DeformMixin",
     "_apply_shear": "TransformMixin",
     "_clear_transform_preview": "TransformMixin",
     "_ensure_transform_preview": "TransformMixin",
@@ -165,44 +118,30 @@ _EXPECTED_HOME = {
 #: Mixin 调用**别的 Mixin/基座**的成员 —— 登记的隐式契约。
 _CROSS_METHOD_DEPS = {
     "EditorCanvas": {
-        "_build_overlay", "_clear_cage_preview", "_clear_deform_preview",
-        "_clear_transform_preview", "_ensure_cage", "_ensure_mesh",
-        "_ensure_quad", "_hide_eraser_ring", "_hide_text_outline",
-        "_move_eraser_ring", "_refresh_deform_preview", "_sync_cursor",
+        "_build_overlay",
+        "_clear_transform_preview",
+        "_hide_eraser_ring", "_hide_text_outline",
+        "_move_eraser_ring", "_sync_cursor",
         "_sync_overlay", "clear_text_blocks",
     },
     "InteractionMixin": {
-        "_apply_shear", "_ensure_cage", "_ensure_quad",
-        "_ensure_transform_preview", "_hide_eraser_ring",
-        "_hide_text_outline", "_hit_cage_body", "_hit_cage_handle",
-        "_hit_pin", "_hit_quad", "_hit_transform", "_move_eraser_ring",
-        "_move_text_outline", "_refresh_cage_preview",
-        "_refresh_deform_preview", "_sync_cage_overlay", "_sync_float",
-        "_sync_overlay", "_sync_pin_overlay", "_sync_quad_overlay",
-        "_text_block_at", "cage_move", "cage_move_all", "fit",
-        "fit_selection", "image_rect", "pin_add", "pin_move",
-        "pin_remove", "quad_move", "refresh", "reshape_finished",
+        "_apply_shear",
+        "_ensure_transform_preview",
+        "_hide_eraser_ring",
+        "_hide_text_outline", "_hit_transform",
+        "_move_eraser_ring",
+        "_move_text_outline",
+        "_sync_float",
+        "_sync_overlay",
+        "_text_block_at", "fit",
+        "fit_selection", "image_rect", "refresh", "reshape_finished",
         "set_zoom", "stroke_started", "text_requested",
     },
     "OverlayMixin": {
-        "_apply_hover_highlight", "_sync_cage_overlay",
-        "_sync_pin_overlay", "_sync_quad_overlay",
+        "_apply_hover_highlight",
         "_sync_transform_overlay", "image_rect",
     },
     "TextMixin": set(),
-    "RectifyMixin": {
-        "_clear_deform_preview", "_refresh_deform_preview",
-        "_sync_cursor", "image_rect",
-    },
-    "CageMixin": {
-        "_paint_canvas_cutout", "_sync_cursor", "_sync_scene_rect",
-        "image_rect",
-    },
-    "DeformMixin": {
-        "_paint_canvas_cutout", "_refresh_rectify_preview",
-        "_sync_cursor", "_sync_overlay", "_sync_scene_rect",
-        "image_rect",
-    },
     "TransformMixin": {
         "_sync_cursor", "_sync_overlay", "_sync_scene_rect",
         "image_rect", "refresh",
@@ -233,12 +172,9 @@ _DIALOG_EXPECTED_HOME = {
     "_hint": "ToolbarMixin",
     "_set_tool": "ToolbarMixin",
     "_swap_option_page": "ToolbarMixin",
-    # dialog_pages.py -> ToolPagesMixin（7 个）
-    "_page_cage": "ToolPagesMixin",
+    # dialog_pages.py -> ToolPagesMixin（4 个）
     "_page_crop": "ToolPagesMixin",
-    "_page_deform": "ToolPagesMixin",
     "_page_erase": "ToolPagesMixin",
-    "_page_rectify": "ToolPagesMixin",
     "_page_text": "ToolPagesMixin",
     "_page_transform": "ToolPagesMixin",
     # dialog_undo.py -> UndoMixin（5 个）
@@ -247,14 +183,10 @@ _DIALOG_EXPECTED_HOME = {
     "_reset_all": "UndoMixin",
     "_sync_undo_buttons": "UndoMixin",
     "_undo_now": "UndoMixin",
-    # dialog_commit.py -> CommitMixin（9 个）
+    # dialog_commit.py -> CommitMixin（5 个）
     "_apply_crop": "CommitMixin",
-    "_commit_cage": "CommitMixin",
-    "_commit_deform": "CommitMixin",
-    "_commit_rectify": "CommitMixin",
     "_commit_text_blocks": "CommitMixin",
     "_commit_transform": "CommitMixin",
-    "_report_bake_error": "CommitMixin",
     "_selection": "CommitMixin",
     "_spawn_text_block": "CommitMixin",
 }
@@ -262,19 +194,20 @@ _DIALOG_EXPECTED_HOME = {
 #: 弹窗 Mixin 调用**别的 Mixin/基座**的成员 —— 登记的隐式契约。
 _DIALOG_CROSS_DEPS = {
     "ImageEditorDialog": {
-        "_build_status", "_build_toolbar_row", "_commit_cage", "_commit_deform",
-        "_commit_rectify", "_commit_text_blocks", "_commit_transform",
+        "_build_status", "_build_toolbar_row",
+        "_commit_text_blocks", "_commit_transform",
         "_push_undo", "_redo_now", "_spawn_text_block", "_undo_now",
     },
     "ToolbarMixin": {
-        "_commit_cage", "_commit_deform", "_commit_rectify",
-        "_commit_text_blocks", "_commit_transform", "_finish", "_page_cage",
-        "_page_crop", "_page_deform", "_page_erase", "_page_rectify",
-        "_page_text", "_page_transform", "_redo_now", "_reset_all",
+        "_commit_text_blocks", "_commit_transform",
+        "_finish", "_page_crop",
+        "_page_erase",
+        "_page_text", "_page_transform", "_redo_now",
+        "_reset_all",
         "_undo_now",
     },
     "ToolPagesMixin": {
-        "_apply_crop", "_commit_cage", "_commit_deform", "_commit_rectify",
+        "_apply_crop",
         "_commit_text_blocks", "_commit_transform", "_hint",
     },
     "UndoMixin": set(),
@@ -286,8 +219,7 @@ _REQUIRED_FILES = [
     "__init__.py", "consts.py", "geometry.py", "bake.py", "text_item.py",
     "dialog.py", "canvas/__init__.py",
     "canvas/core.py", "canvas/interaction.py", "canvas/overlay.py",
-    "canvas/text.py", "canvas/rectify.py", "canvas/cage.py",
-    "canvas/deform.py", "canvas/transform.py",
+    "canvas/text.py", "canvas/transform.py",
     # 2026-10-07 二次拆分：894 行的 ImageEditorDialog 再按职责拆 4 个 Mixin
     "dialog_toolbar.py", "dialog_pages.py", "dialog_undo.py",
     "dialog_commit.py",
@@ -298,13 +230,10 @@ _REQUIRED_FILES = [
 
 #: 对外 API：外部（生产代码 + 测试）实际导入的名字，一个都不能少。
 _PUBLIC_API = [
-    "CAGE_DENSITY_CHOICES", "CAGE_DENSITY_DEFAULT", "CAGE_PREVIEW_PIXELS",
-    "CAGE_PREVIEW_SETTLE_PIXELS", "DEFORM_FIT_RATIO", "DEFORM_PREVIEW_PIXELS",
-    "DEFORM_PREVIEW_SETTLE_PIXELS", "EDITOR_MIN_SIZE", "EDITOR_SIZE",
     "EDIT_FIT_RATIO", "ERASER_DEFAULT", "EditorCanvas", "ImageEditorDialog",
-    "MESH_DENSITY_CHOICES", "MESH_DENSITY_DEFAULT", "RECTIFY_RATIO_CHOICES",
-    "RECTIFY_RATIO_DEFAULT", "TEXT_SWATCHES", "TextBlockItem", "_BakeWorker",
-    "bake_transform", "cage_preview_scale", "clamp_rect", "draw_text",
+    "EDITOR_MIN_SIZE", "EDITOR_SIZE",
+    "TEXT_SWATCHES", "TextBlockItem", "_BakeWorker",
+    "bake_transform", "clamp_rect", "draw_text",
     "rotate_about", "run_with_progress", "scale_about", "shear_about",
 ]
 
@@ -420,7 +349,7 @@ def run(ctx) -> None:
     # ---- 1~4. 画布与弹窗各钉一遍 ----
     _check_assembly(
         "画布", "EditorCanvas", _load_classes(_MODULES, _CANVAS),
-        _EXPECTED_HOME, _CROSS_METHOD_DEPS, min_members=90,
+        _EXPECTED_HOME, _CROSS_METHOD_DEPS, min_members=45,
     )
     _check_assembly(
         "弹窗", "ImageEditorDialog", _load_classes(_DIALOG_MODULES, _PKG),

@@ -3,7 +3,7 @@
 
 从 ``image_editor.py`` 拆出（2026-10-07）。本文件只放：类头（信号）、
 ``__init__``，以及**与工具无关的基座方法**（装图/取图/缩放适配/工具切换）。
-各工具（裁剪/变换/变形/变换笼/校正/擦除/文字）在兄弟模块里以 Mixin 提供，
+各工具（裁剪/变换/擦除/文字）在兄弟模块里以 Mixin 提供，
 方法体逐字未改；成员归属由 ``tests/selftests/image_editor_split.py`` 钉住。
 
 ⚠️ 信号必须定义在**这个 QObject 子类**上（PySide6 的 ``Signal`` 描述符
@@ -11,7 +11,7 @@
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QPointF, QRect, QRectF, Qt, Signal
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap, QTransform
 from PySide6.QtWidgets import (
     QFrame, QGraphicsPixmapItem, QGraphicsRectItem, QGraphicsScene, QGraphicsView,
@@ -20,15 +20,12 @@ from PySide6.QtWidgets import (
 from desktop.ui import theme as T
 
 from ..consts import (
-    EDIT_FIT_RATIO, ERASER_DEFAULT, MAX_ZOOM, MESH_DENSITY_DEFAULT, MIN_RECT_EDGE,
-    MIN_ZOOM, RECTIFY_RATIO_DEFAULT, SEL_FIT_RATIO,
+    EDIT_FIT_RATIO, ERASER_DEFAULT, MAX_ZOOM, MIN_RECT_EDGE, MIN_ZOOM,
+    SEL_FIT_RATIO,
 )
 from ..text_item import TextBlockItem
-from .cage import CageMixin
-from .deform import DeformMixin
 from .interaction import InteractionMixin
 from .overlay import OverlayMixin
-from .rectify import RectifyMixin
 from .text import TextMixin
 from .transform import TransformMixin
 
@@ -37,9 +34,6 @@ class EditorCanvas(
     InteractionMixin,
     OverlayMixin,
     TextMixin,
-    RectifyMixin,
-    CageMixin,
-    DeformMixin,
     TransformMixin,
     QGraphicsView,
 ):
@@ -101,58 +95,6 @@ class EditorCanvas(
         self._paint_image: QImage | None = None
         #: 变换内容的浮层（跟随 _xf 实时变形，烘焙语义与预览一致）
         self._float_item: QGraphicsPixmapItem | None = None
-        # ---- 「变形」（PS 操控变形 Puppet Warp）状态 ----
-        #: 三角网格的**参考顶点**（图片像素坐标，建好就不变），
-        #: ``(vertices, triangles, cols, rows, cell)``；懒建，见 _ensure_mesh
-        self._mesh: tuple | None = None
-        #: 网格格距（图片像素档位，见 MESH_DENSITY_CHOICES）
-        self._mesh_cell = MESH_DENSITY_DEFAULT
-        #: 图钉列表：``[(顶点下标, QPointF 当前目标位置), ...]``。
-        #: 顶点下标由 ``nearest_vertex`` 把用户点击吸附到最近网格顶点得到；
-        #: 目标位置是用户拖到的地方（**允许在图外**，用来看图钉本体画在哪）。
-        self._pins: list[tuple[int, QPointF]] = []
-        #: 解算出来的**当前网格顶点位置**（拖动后），烘焙/预览的映射右端；
-        #: None = 还没解过（等于参考网格，恒等）
-        self._mesh_moved = None
-        #: 拖动预览用的**粗网格**缓存（格距见 utils.puppet_warp.drag_cell）
-        self._drag_cache: tuple | None = None
-        #: 悬停中的图钉下标
-        self._pin_hover: int | None = None
-        #: 像素预览浮层 + 上次重算的时刻（节流用，见 _refresh_deform_preview）
-        self._deform_item: QGraphicsPixmapItem | None = None
-        self._deform_painted_at = 0.0
-        #: 形变预览时**底图上被挖空的矩形**（图片坐标，整数）：浮层盖住的这块
-        #: 在底图里被填白（透明图填透明），否则原像素会从形变结果底下透出来
-        #: ——用户 2026-10-02 报的"图片变换了，原图还在背景上面"就是这个重影。
-        #: 每帧按新框回填旧框、再挖新框（见 _paint_canvas_cutout）。
-        self._preview_cutout: QRect | None = None
-        #: 源图是否真有透明像素的缓存（None = 还没算过；见 _has_alpha）
-        self._alpha_known: bool | None = None
-        # ---- 「变换笼」（GIMP 口径）状态 ----
-        #: 笼把手：``[(原位 QPointF, 当前位置 QPointF), ...]``，闭合顺序。
-        #: 进工具时 = 贴图边的矩形笼（≡ 没动过）；拖任一把手即产生形变。
-        self._cage_handles: list[tuple[QPointF, QPointF]] = []
-        #: 每边把手数档位（见 CAGE_DENSITY_CHOICES）
-        self._cage_per_side = 2
-        #: 悬停中的把手下标
-        self._cage_hover: int | None = None
-        #: 拖动中的把手下标（None = 拖的是整体/边走）
-        self._cage_drag: int | None = None
-        #: 拖整体时记下的"按下点 → 当时的把手快照"
-        self._cage_drag_origin: tuple[QPointF, list] | None = None
-        #: 笼形变的像素预览浮层 + 节流时间戳
-        self._cage_preview_item: QGraphicsPixmapItem | None = None
-        self._cage_preview_at = 0.0
-        # ---- 「校正」（四点透视摆正）状态 ----
-        #: 源四边形四个角（图片坐标，顺序 左上/右上/右下/左下）。
-        #: 进工具时 = 整幅图四角（≡ 没动过）；拖任一角即产生校正。
-        self._rect_quad: list[QPointF] = []
-        #: 目标矩形宽高比口径（见 RECTIFY_RATIO_CHOICES）
-        self._rectify_ratio = RECTIFY_RATIO_DEFAULT
-        #: 拖过的角下标（None = 没拖过）
-        self._rect_drag: int | None = None
-        #: 悬停中的角下标
-        self._rect_hover: int | None = None
         self.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setBackgroundBrush(QColor(T.SURFACE_SOFT))
@@ -181,26 +123,8 @@ class EditorCanvas(
         # 换图后文字块/变换预览都失效，一并清掉（应用/撤销/还原都走这里）
         self.clear_text_blocks()
         self._clear_transform_preview()
-        self._clear_deform_preview()
-        self._clear_cage_preview()
         self._xf = QTransform()
         self._xf_touched = False
-        self._mesh = None          # 换图后网格重建（新尺寸/新格距）
-        self._mesh_moved = None
-        self._pins = []
-        self._pin_hover = None
-        # 换图后笼失效（新尺寸）：清掉，进工具时按新图重建
-        self._cage_handles = []
-        self._cage_hover = None
-        self._cage_drag = None
-        self._cage_drag_origin = None
-        # 换图后四边形失效（新尺寸）：清掉，进工具时按新图重建
-        self._rect_quad = []
-        self._rect_hover = None
-        self._rect_drag = None
-        # 换图后形变预览的"挖空"与 alpha 缓存都失效（新图、新像素）
-        self._preview_cutout = None
-        self._alpha_known = None
         if self._item is not None:
             self._scene.removeItem(self._item)
             self._item = None
@@ -220,32 +144,23 @@ class EditorCanvas(
         self._item = item
         self.setSceneRect(item.boundingRect())
         self.fit()
-        if self._tool in ("crop", "transform", "deform"):
+        if self._tool in ("crop", "transform"):
             # 换图（应用/撤销/还原都走这里）后选区重新默认全选：
             # 裁剪/变换的语义都是"从当前原图出发"，不是沿用旧图上的框
             self._rect = QRectF(self.image_rect())
             self._xf_pivot = self._rect.center()
-        if self._tool == "deform":
-            self._ensure_mesh()
-        if self._tool == "cage":
-            self._ensure_cage()
         self._sync_overlay()
 
 
     def _sync_scene_rect(self) -> None:
-        """把场景矩形扩到"底图 ∪ 形变预览浮层"。
+        """把场景矩形扩到"底图 ∪ 变换浮层"。
 
-        grow 模式下形变预览会画到原图边界**之外**，若场景矩形仍等于图片
-        边界（``set_image`` 里设的），图外那块会被视口裁掉、看不见（滚不
-        过去）。这里取并集后恢复；没有浮层时退化为图片边界。
+        变换把选区送出原边界时浮层会跑到图片外，场景矩形取并集后才看得见；
+        没有浮层时退化为图片边界。
         """
         if self._item is None:
             return
         rect = self._item.boundingRect()
-        if self._deform_item is not None:
-            rect = rect.united(self._deform_item.sceneBoundingRect())
-        if self._cage_preview_item is not None:
-            rect = rect.united(self._cage_preview_item.sceneBoundingRect())
         if self._float_item is not None:
             rect = rect.united(self._float_item.sceneBoundingRect())
         self.setSceneRect(rect)
@@ -255,84 +170,12 @@ class EditorCanvas(
         """像素被就地改过（擦除）后只刷显示，不动缩放与滚动位置。"""
         if self._item is not None and self._image is not None:
             self._item.setPixmap(QPixmap.fromImage(self._image))
-            # ⚠️ 重刷底图会连同"挖空"一起抹掉：形变预览的浮层还盖在上面，
-            #    底图恢复原样就会从浮层底下透出旧内容（重影重新出现）。
-            #    这里把上次挖空的框重新挖一遍（见 _paint_canvas_cutout）。
-            if self._preview_cutout is not None:
-                self._paint_canvas_cutout(self._preview_cutout)
 
 
     def replace_image(self, image: QImage) -> None:
         """就地换图（尺寸不变的语义，如文字写入）：不动缩放与滚动位置。"""
         self._image = image
-        self._alpha_known = None   # 像素变了，透明判定要重算
         self.refresh()
-
-
-    def _paint_canvas_cutout(self, rect: QRect | None) -> None:
-        """把底图重画成"原图 + 指定矩形挖空"，供形变预览浮层盖住。
-
-        为什么需要它（用户 2026-10-02 报："拖动图片变化形态，图片变换了，
-        但是原图片还是在背景上面"）：形变预览是**局部浮层**，底图仍是一整
-        张原图。往图外拖/向内推时，形变结果会让开一些位置，那些位置底图里
-        的**旧像素就透出来了**——看上去像两张图叠着。变换工具早就有这个
-        处理（把选区填白再画浮层），这里把同一口径搬到形变工具。
-
-        ⚠️ 调用方传的是**整张原图** ``QRect(0, 0, width, height)``，不是
-        "受影响的小框"：grow 之后浮层已经被移到任意 ``origin``（可能为负），
-        形变过的内容会离开原来的位置；只挖局部小框的话，凡是浮层没盖住、
-        但原图里有旧像素的地方都会透出来。整块挖空最稳。
-
-        ``rect`` = 要挖空的框（图片坐标，整数）。旧框若与它不同要先按
-        ``self._image`` 重铺（回填旧框），否则拖远后旧框的白洞留在原地。
-        透明源图挖成透明（保持"白底透明 PNG"不变成白块）。
-        """
-        if self._item is None or self._image is None:
-            return
-        canvas = self._image.copy()
-        if rect is not None:
-            clipped = rect.intersected(
-                QRect(0, 0, canvas.width(), canvas.height()))
-            if not clipped.isEmpty():
-                painter = QPainter(canvas)
-                # 源图带 alpha ⇒ 挖成透明；不透明源图 ⇒ 填白（与变换/烘焙填白一致）
-                fill = (QColor(0, 0, 0, 0) if self._has_alpha()
-                        else QColor("#ffffff"))
-                painter.setCompositionMode(
-                    QPainter.CompositionMode.CompositionMode_Source)
-                painter.fillRect(clipped, fill)
-                painter.end()
-        pixmap = QPixmap.fromImage(canvas)
-        pixmap.setDevicePixelRatio(1.0)
-        self._item.setPixmap(pixmap)
-        self._preview_cutout = rect
-
-
-    def _has_alpha(self) -> bool:
-        """源图是否有**真的透明像素**（决定形变挖空填透明还是填白）。
-
-        不能用 ``hasAlphaChannel()`` 单判——ARGB32 格式"有 alpha 通道"不代表
-        真有透明像素（整幅全不透明时填透明会在 Windows 上显成黑）。这里实际
-        扫一遍 alpha：整幅不透明 ⇒ 填白；有任一透明像素 ⇒ 填透明。
-
-        ⚠️ 结果**按图缓存**（``_alpha_known``）：整页扫 alpha 是 O(像素)，
-        每帧调用会白白吃掉几十毫秒（预览要跟手）。换图/就地改像素时失效。
-        """
-        if self._alpha_known is not None:
-            return self._alpha_known
-        if self._image is None:
-            return False
-        rgba = self._image.convertToFormat(QImage.Format.Format_RGBA8888)
-        raw = bytes(rgba.constBits())
-        step = rgba.width() * 4
-        result = False
-        for y in range(rgba.height()):
-            row = raw[y * step:(y + 1) * step]
-            if row[3::4].count(255) != rgba.width():
-                result = True
-                break
-        self._alpha_known = result
-        return result
 
 
     @property
@@ -349,37 +192,22 @@ class EditorCanvas(
 
     # ------------------------------------------------------------ 工具
     def set_tool(self, tool: str) -> None:
-        """切换工具：裁剪/变换/变形默认全选，其余清选区、换光标。"""
+        """切换工具：裁剪/变换默认全选，其余清选区、换光标。"""
         self._tool = tool
         self._mode = None
         self._clear_transform_preview()
-        self._clear_deform_preview()
-        self._clear_cage_preview()
-        self._pin_hover = None
-        self._cage_hover = None
-        self._cage_drag = None
-        self._cage_drag_origin = None
         self._xf = QTransform()
         self._xf_touched = False
         self._xf_reshape = False  # 调整范围是勾选态，换工具即复位
         self._hide_text_outline()
         if tool != "erase":
             self._hide_eraser_ring()
-        if tool in ("crop", "transform", "deform") \
+        if tool in ("crop", "transform") \
                 and not self.image_rect().isNull():
             self._rect = QRectF(self.image_rect())
             self._xf_pivot = self._rect.center()
         else:
             self._rect = None
-        if tool == "deform":
-            self._ensure_mesh()
-        elif tool == "cage":
-            self._ensure_cage()
-        elif tool == "rectify":
-            self._rect_quad = []      # 换工具进来 = 从整幅四角重新开始
-            self._ensure_quad()
-            self._rect_hover = None
-            self._rect_drag = None
         self._sync_overlay()
         self._sync_cursor()
 
@@ -407,8 +235,7 @@ class EditorCanvas(
         """适应窗口（整图完整可见）；``ratio`` < 1 时四周留白。
 
         留白的做法是把"要装进去的矩形"按比例放大——图片因此只占视口的
-        ``ratio``（见 :data:`DEFORM_FIT_RATIO`：进「变形」时图片不顶满视口，
-        用户才有地方把笼把手往图外拖）。
+        ``ratio``（缺省 0.8，上下左右各留约 10% 视口）。
         """
         if self._item is None or self.viewport().width() <= 1:
             return  # 控件还没布局：此时 fit 算出来的是脏值，等 resizeEvent 再来
@@ -427,9 +254,6 @@ class EditorCanvas(
         #    不然 set_image 时用脏 viewport 算的小倍率会留下巨型手柄
         #    （离屏渲染抓出来的：手柄有 ~150 视图像素，应为 12）。
         self._sync_overlay()
-        # 变形预览的清晰度是跟着倍率定的（见 cage_preview_scale）：倍率变了
-        # 就重算一次，缩着看整页时能省下几十倍工作量
-        self._refresh_deform_preview()
 
 
     def set_fit_ratio(self, ratio: float) -> None:
@@ -471,7 +295,6 @@ class EditorCanvas(
         self._zoom = zoom
         self._user_zoomed = True
         self._sync_overlay()  # 手柄视觉尺寸不随缩放变，几何要重算
-        self._refresh_deform_preview()  # 同上：预览清晰度跟倍率走（有节流）
 
 
     def fit_selection(self) -> None:
@@ -498,4 +321,3 @@ class EditorCanvas(
         self._zoom = zoom
         self._user_zoomed = True
         self._sync_overlay()
-        self._refresh_deform_preview()

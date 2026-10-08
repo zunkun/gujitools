@@ -8,7 +8,7 @@ from __future__ import annotations
 from PySide6.QtCore import QLineF, QPointF, QRectF, Qt
 from PySide6.QtGui import QBrush, QColor, QPen
 from PySide6.QtWidgets import (
-    QGraphicsEllipseItem, QGraphicsLineItem, QGraphicsPathItem,
+    QGraphicsEllipseItem, QGraphicsLineItem,
     QGraphicsPolygonItem, QGraphicsRectItem,
 )
 
@@ -107,59 +107,6 @@ class OverlayMixin(CanvasHost):
         self._text_outline.setZValue(18)
         self._text_outline.hide()
         self._scene.addItem(self._text_outline)
-        # 「变形」的**图钉**：每个图钉一根"钉子"（原点→当前位置的细线，
-        # 拖远时看得出内容被从哪儿扯过来）+ 一个圆点。钉子用区分色，
-        # 拖远时不会和图片内容糊在一起。
-        self._pin_tail = QGraphicsPathItem()
-        self._pin_tail.setBrush(QBrush(Qt.BrushStyle.NoBrush))
-        tail_pen = QPen(QColor(T.INK_FAINT), 0, Qt.PenStyle.DotLine)
-        tail_pen.setCosmetic(True)
-        self._pin_tail.setPen(tail_pen)
-        self._pin_tail.setZValue(11)
-        self._pin_tail.hide()
-        self._scene.addItem(self._pin_tail)
-        #: 图钉圆点（数量随用户增删，按需增删）
-        self._pin_dots: list[QGraphicsEllipseItem] = []
-        # 「校正」的**四角手柄**：一个四边形轮廓 + 4 个方块角点。
-        # 轮廓画源四边形（要摆正的区域），方块是抓点。
-        self._rect_poly = QGraphicsPathItem()
-        self._rect_poly.setBrush(QBrush(Qt.BrushStyle.NoBrush))
-        quad_pen = QPen(QColor(T.ACCENT), 0, Qt.PenStyle.DashLine)
-        quad_pen.setCosmetic(True)
-        self._rect_poly.setPen(quad_pen)
-        self._rect_poly.setZValue(13)
-        self._rect_poly.hide()
-        self._scene.addItem(self._rect_poly)
-        #: 四个方块角点
-        self._rect_dots: list[QGraphicsRectItem] = []
-        for _ in range(4):
-            item = QGraphicsRectItem()
-            item.setPen(QPen(QColor("#ffffff"), 0))
-            item.setBrush(QBrush(QColor(T.ACCENT)))
-            item.setZValue(14)
-            item.hide()
-            self._scene.addItem(item)
-            self._rect_dots.append(item)
-        # 「变换笼」的**边框**：闭合折线（原位实线 + 当前位置虚线）。
-        # 原位实线让人看见"笼本来贴在哪"，当前位置虚线是拖到的地方。
-        self._cage_src_poly = QGraphicsPathItem()
-        self._cage_src_poly.setBrush(QBrush(Qt.BrushStyle.NoBrush))
-        src_pen = QPen(QColor(T.INK_FAINT), 0, Qt.PenStyle.DotLine)
-        src_pen.setCosmetic(True)
-        self._cage_src_poly.setPen(src_pen)
-        self._cage_src_poly.setZValue(11)
-        self._cage_src_poly.hide()
-        self._scene.addItem(self._cage_src_poly)
-        self._cage_dst_poly = QGraphicsPathItem()
-        self._cage_dst_poly.setBrush(QBrush(Qt.BrushStyle.NoBrush))
-        dst_pen = QPen(QColor(T.ACCENT), 0, Qt.PenStyle.DashLine)
-        dst_pen.setCosmetic(True)
-        self._cage_dst_poly.setPen(dst_pen)
-        self._cage_dst_poly.setZValue(12)
-        self._cage_dst_poly.hide()
-        self._scene.addItem(self._cage_dst_poly)
-        #: 笼把手圆点（数量随密度档位变，按需增删）
-        self._cage_dots: list[QGraphicsEllipseItem] = []
 
 
     def _move_eraser_ring(self, pos: QPointF, show: bool = True) -> None:
@@ -195,19 +142,10 @@ class OverlayMixin(CanvasHost):
 
 
     def _sync_overlay(self) -> None:
-        """按当前选区刷新遮罩/边框/手柄几何与可见性。"""
+        """按当前工具刷新覆盖层：变换画自己的，其余只留裁剪选框或全藏。"""
         if (self._tool == "transform" and self._rect is not None
                 and self._image is not None):
             self._sync_transform_overlay()
-            return
-        if self._tool == "deform" and self._image is not None:
-            self._sync_pin_overlay()
-            return
-        if self._tool == "cage" and self._image is not None:
-            self._sync_cage_overlay()
-            return
-        if self._tool == "rectify" and self._image is not None:
-            self._sync_quad_overlay()
             return
         visible = (
             self._tool == "crop"
@@ -219,10 +157,6 @@ class OverlayMixin(CanvasHost):
             self._sel_border.setVisible(False)
             self._quad.setVisible(False)
             self._pivot_item.setVisible(False)
-            self._cage_src_poly.setVisible(False)
-            self._cage_dst_poly.setVisible(False)
-            for item in self._cage_dots:
-                item.setVisible(False)
             for item in self._handles.values():
                 item.setVisible(False)
             for item in self._edge_lines.values():

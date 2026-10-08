@@ -186,6 +186,26 @@ SOURCE_PDF_STAGE = "extract"
 #: 源 PDF 在图上不是阶段、而是一个事件节点，用**它在这张图里的名字**认。
 SOURCE_PDF_NODE_NAMES = ("源PDF", "源 PDF", "上传PDF", "上传 PDF", "PDF")
 
+#: 「是否拼版」（排他网关）守着的那一格。
+#:
+#: 用户 2026-10-08：
+#:
+#: > 其实根本就没有判断这个组件，只有「是否拼版」这个特殊的判断组件，
+#: > 也就是说是否拼版依附拼版……是否拼版其实是拼版组件中的一个属性是否启用
+#:
+#: 所以图上的网关**不是**一个可自由增删的独立组件，它是「图片拼版」这一步的
+#: 附属图形（与 :func:`paired_node_for_stage` 同一类事实，只是方向是单向的）：
+#:
+#: - 「图片拼版」没了 ⇒ 它守着的那个问题不存在，网关跟着删
+#:   （:func:`orphaned_gateway_ids`）；
+#: - 反方向**不成立**——「图片拼版」可以没有网关（用户 2026-10-08 前一条口径：
+#:   "图片拼版可以不需要判断是否拼版"），那时这一步无条件执行，启用与否仍由
+#:   「图片拼版」参数面板的开关决定（:data:`~desktop.steps.scheduler.CONDITIONS`）。
+#:
+#: ⚠️ 这也是编辑器**不再提供"添加判断"入口**的理由：网关只能随模板文件来，
+#: 不由用户在界面上凭空摆一个。
+GATEWAY_GUARD_STAGE = "imposition"
+
 
 def source_pdf_node_ids(diagram) -> tuple[str, ...]:
     """图里代表「源 PDF」的节点 id（没有则空元组）。
@@ -290,6 +310,47 @@ def orphaned_end_event_ids(diagram, *node_ids: str) -> tuple[str, ...]:
         if incoming and all(f.source in doomed for f in incoming):
             orphans.append(node.id)
     return tuple(orphans)
+
+
+def orphaned_gateway_ids(diagram, *node_ids: str) -> tuple[str, ...]:
+    """删掉 ``node_ids`` 后会**失去依附对象**的「是否拼版」网关 id；没有则空元组。
+
+    用户 2026-10-08：
+
+    > 是否拼版依附拼版……因此删除左侧的判断 gateway、顶部的添加判断按钮
+
+    图上的排他网关就是「是否拼版」这个判断（见 :data:`GATEWAY_GUARD_STAGE`）：
+    它问的问题只对「图片拼版」这一步成立。删掉「图片拼版」之后，网关的两条
+    分支里有一条已经悬空（``remove_node`` 会连带删掉那半条线），剩下一个
+    "无条件放行"的菱形——图上写着"是否拼版"，流程里却已经没有拼版这一步，
+    留着就是误导。所以跟着删。
+
+    ⚠️ **反方向不删**（用户同日的前一条口径："图片拼版可以不需要判断是否拼版"）：
+    删网关不动「图片拼版」——那一步照跑，只是不再画那个分支。
+
+    ⚠️ 判据只看"删完之后图里**还剩不剩** ``imposition``"，**不看网关连在谁身上**：
+    网关是这一步的附属图形（不是独立组件），一个流程里本就只该有一个
+    （网关问的是同一件事，问两遍没有意义）。
+    """
+    if diagram is None or not node_ids or not getattr(diagram, "nodes", ()):
+        return ()
+    doomed = set(node_ids)
+    if not any(
+        getattr(diagram.node(node_id), "stage", None) == GATEWAY_GUARD_STAGE
+        for node_id in doomed
+    ):
+        return ()
+    # 图里还剩别的「图片拼版」节点 ⇒ 网关仍有依附对象，不跟着删
+    # （理论上只该有一个，但 ``add_node`` / bpmn.io 画的图都可能有两个——
+    #  删掉其中一个是"删重复"，不该顺手把网关也带走）
+    if any(node.id not in doomed
+           and getattr(node, "stage", None) == GATEWAY_GUARD_STAGE
+           for node in diagram.nodes):
+        return ()
+    return tuple(
+        node.id for node in diagram.nodes
+        if getattr(node, "is_gateway", False) and node.id not in doomed
+    )
 
 
 def flow_needs_source_pdf(diagram) -> bool:
@@ -724,6 +785,7 @@ __all__ = [
     "ARTIFACT_LABELS",
     "ARTIFACT_PAGES",
     "ARTIFACT_PDF",
+    "GATEWAY_GUARD_STAGE",
     "PORT_ARTIFACTS",
     "PORT_LABELS",
     "STAGE_LABELS",
@@ -749,6 +811,7 @@ __all__ = [
     "location_of",
     "missing_stages",
     "orphaned_end_event_ids",
+    "orphaned_gateway_ids",
     "print_input_overrides",
     "print_pages_supplier",
     "resolve_input",

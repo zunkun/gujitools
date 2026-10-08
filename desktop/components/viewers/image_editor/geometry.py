@@ -15,9 +15,6 @@ from PySide6.QtGui import (
 )
 
 from desktop.ui import theme as T
-from utils.puppet_warp import puppet_warp_qimage
-
-from .consts import DEFORM_PREVIEW_PIXELS
 
 # ------------------------------------------------------------------ 纯逻辑
 def clamp_rect(rect: QRectF, bounds: QRectF) -> QRectF:
@@ -172,53 +169,6 @@ def transform_region(image: QImage, rect: QRectF, xf: QTransform):
         x1 = max(x1, math.ceil(bx1))
         y1 = max(y1, math.ceil(by1))
     return x0, y0, max(1, x1 - x0), max(1, y1 - y0)
-
-
-def bake_puppet(image: QImage, vertices_rest, vertices_moved,
-                triangles, grow=False, progress=None) -> Any:
-    """把「网格 ``vertices_rest`` → ``vertices_moved``」的形变烘焙进图片。
-
-    ⚠️ 返回 ``Any``：多形态返回（``QImage`` / ``(QImage, (ox, oy))`` / ``None``），
-    同 :func:`bake_transform` 的理由——标联合类型会让调用点的解包报错。
-
-    与 :func:`bake_transform` 同口径：**没动过的网格区域**逐字节不动，只是
-    这里不是仿射矩阵，而是 ARAP 三角网格逐像素重映射（PS 操控变形口径，
-    见 ``utils.puppet_warp``）。
-    ⚠️ **保留 alpha**：桌面侧编辑的常常是第三步产物「白底透明 PNG」，
-    丢掉 alpha 会让整片透明背景变成不透明黑（用户 2026-10-01 报过）。
-
-    ``grow=True``：图钉拖出原边界时不裁，画布放大，返回 ``(QImage, (ox, oy))``
-    （用户 2026-10-02：「超出原本区域的不要截，最终结果按最后图片的范围」）。
-
-    ``progress`` 透传（见 ``utils.puppet_warp.puppet_warp``）；被中止时
-    返回 ``None``。
-    """
-    return puppet_warp_qimage(image, vertices_rest, vertices_moved, triangles,
-                              grow=grow, progress=progress)
-
-
-def cage_preview_scale(span_x: float, span_y: float,
-                       on_screen: float = 1.0,
-                       budget_pixels: float = DEFORM_PREVIEW_PIXELS) -> float:
-    """拖动预览的降采样倍率：清晰度与成本的**取小**。
-
-    两个约束：
-
-    1. **清晰度**：``on_screen`` = 场景 1 单位对应多少**设备像素**
-       （= 当前缩放 × dpr）。预览取到这个倍率时，预览图上的 1 像素正好
-       落在屏幕 1 设备像素上——看着与原图一样清楚，再取大就是纯浪费。
-    2. **成本**：处理面积不超过 ``budget_pixels``。
-
-    缩到 1/3 看整页时清晰度约束直接给出 1/3：比按成本算还省 9 倍工作量，
-    而且屏幕上看不出区别（这正是"预览"该有的样子）。
-
-    ``budget_pixels`` 由调用方按场合给：拖动中给
-    :data:`DEFORM_PREVIEW_PIXELS`（要跟手），松手后给
-    :data:`DEFORM_PREVIEW_SETTLE_PIXELS`（停下来看结果，宁可慢一点也要清楚）。
-    """
-    area = max(1.0, float(span_x) * float(span_y))
-    budget = math.sqrt(float(budget_pixels) / area)
-    return max(1e-3, min(1.0, float(on_screen), budget))
 
 
 def draw_text(image: QImage, pos: QPointF, text: str, px: int,

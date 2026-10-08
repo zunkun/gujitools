@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""流程模板**校验**工具（两个模板都在 ``desktop/static/`` 下）。
+"""流程模板**校验**工具（``desktop/static/task_default.bpmn``）。
 
 ## 为什么只剩校验（历史教训）
 
@@ -20,8 +20,8 @@
 
 所以现在：
 
-- **两个模板都是手工真源**，本脚本**不生成、不改写、不覆盖**任何模板；
-- 只做一件事：**校验**它们存在、能被 :class:`FlowDiagram` 解析、且至少能
+- **模板是手工真源**，本脚本**不生成、不改写、不覆盖**它；
+- 只做一件事：**校验**它存在、能被 :class:`FlowDiagram` 解析、且至少能
   认出一个可执行步骤（也就是"页面画得出来、状态机跑得起来"）；
 - 直接改模板文件即可（或在页面里用「编辑流程」改），改完跑 ``--check`` 确认
   没写坏。
@@ -42,11 +42,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from desktop.steps.bpmn_diagram import FlowDiagram  # noqa: E402
 from desktop.utils.files import package_dir  # noqa: E402
 
-#: 默认流程模板（新任务用这份）
+#: 默认流程模板（新任务用这份；自定义流程的初值也是它）
 TEMPLATE_NAME = "task_default.bpmn"
-
-#: 自定义流程初值（建任务弹窗勾「自定义」时的起点）
-CUSTOM_INIT_NAME = "task_detail.bpmn"
 
 
 def template_path() -> Path:
@@ -59,15 +56,9 @@ def template_path() -> Path:
     return package_dir() / "static" / TEMPLATE_NAME
 
 
-def custom_init_path() -> Path:
-    """自定义初值的标准位置。"""
-    return package_dir() / "static" / CUSTOM_INIT_NAME
-
-
 def _targets() -> list[tuple[Path, str]]:
     return [
         (template_path(), "默认流程模板"),
-        (custom_init_path(), "自定义流程初值"),
     ]
 
 

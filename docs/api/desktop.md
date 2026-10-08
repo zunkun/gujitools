@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 162 个模块、174 个公开类、1161 个公开函数/方法（生成于 2026-10-08）。
+覆盖 163 个模块、175 个公开类、1167 个公开函数/方法（生成于 2026-10-08）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -14,12 +14,12 @@
 | --- | --- | --- |
 | [`desktop.app`](#desktopapp) | 1 | 8 |
 | [`desktop.components.box_kinds`](#desktopcomponentsbox_kinds) | 2 | 6 |
-| [`desktop.components.bpmn_editor`](#desktopcomponentsbpmn_editor) | 1 | 32 |
+| [`desktop.components.bpmn_editor`](#desktopcomponentsbpmn_editor) | 1 | 31 |
 | [`desktop.components.bpmn_editor_panel`](#desktopcomponentsbpmn_editor_panel) | 1 | 6 |
 | [`desktop.components.bpmn_palette`](#desktopcomponentsbpmn_palette) | 1 | 7 |
-| [`desktop.components.bpmn_view`](#desktopcomponentsbpmn_view) | 1 | 16 |
+| [`desktop.components.bpmn_view`](#desktopcomponentsbpmn_view) | 1 | 17 |
 | [`desktop.components.common.safecomponents`](#desktopcomponentscommonsafecomponents) | 6 | 12 |
-| [`desktop.components.create_task_dialog`](#desktopcomponentscreate_task_dialog) | 2 | 22 |
+| [`desktop.components.create_task_dialog`](#desktopcomponentscreate_task_dialog) | 2 | 20 |
 | [`desktop.components.detect_stats`](#desktopcomponentsdetect_stats) | 1 | 4 |
 | [`desktop.components.dialog_shell`](#desktopcomponentsdialog_shell) | 0 | 1 |
 | [`desktop.components.flow_dialog`](#desktopcomponentsflow_dialog) | 2 | 10 |
@@ -57,6 +57,7 @@
 | [`desktop.components.viewers.image_editor.canvas.rectify`](#desktopcomponentsviewersimage_editorcanvasrectify) | 1 | 6 |
 | [`desktop.components.viewers.image_editor.canvas.text`](#desktopcomponentsviewersimage_editorcanvastext) | 1 | 6 |
 | [`desktop.components.viewers.image_editor.canvas.transform`](#desktopcomponentsviewersimage_editorcanvastransform) | 1 | 8 |
+| [`desktop.components.viewers.image_editor.canvas.tweak`](#desktopcomponentsviewersimage_editorcanvastweak) | 1 | 7 |
 | [`desktop.components.viewers.image_editor.consts`](#desktopcomponentsviewersimage_editorconsts) | 0 | 0 |
 | [`desktop.components.viewers.image_editor.dialog`](#desktopcomponentsviewersimage_editordialog) | 1 | 3 |
 | [`desktop.components.viewers.image_editor.dialog_commit`](#desktopcomponentsviewersimage_editordialog_commit) | 1 | 0 |
@@ -133,7 +134,7 @@
 | [`desktop.steps.control`](#desktopstepscontrol) | 1 | 11 |
 | [`desktop.steps.flow`](#desktopstepsflow) | 4 | 31 |
 | [`desktop.steps.kernel`](#desktopstepskernel) | 5 | 11 |
-| [`desktop.steps.ports`](#desktopstepsports) | 0 | 29 |
+| [`desktop.steps.ports`](#desktopstepsports) | 0 | 30 |
 | [`desktop.steps.process`](#desktopstepsprocess) | 1 | 7 |
 | [`desktop.steps.scheduler`](#desktopstepsscheduler) | 2 | 13 |
 | [`desktop.steps.source_zone`](#desktopstepssource_zone) | 1 | 20 |
@@ -350,14 +351,21 @@ BPMN 流程图**编辑控件**：拖节点、连边、改名、增删。
 - **改的是同一份 :class:`FlowDiagram`**（页面看到的图 = 文件里的图），保存
   即写回 ``.bpmn``。没有"界面模型"与"文件模型"两份东西。
 - **拖节点只改坐标**，不动连线语义——拖拽是排版操作。连线折点若文件里
-  有，拖动后**清掉重算**（旧折点会指向老地方，线会歪）。
+  有，拖动后**清掉重算**（旧折点会指向老地方，线会歪）。挂在节点上的
+  **文字注释跟着节点一起走**（用户 2026-10-08：注释是写在节点旁的说明，
+  节点挪了而注释留在原地，虚线会横穿整张图）。
+- **注释也能单独拖**（用户 2026-10-08）：注释是图上的内容，位置该由用户说了算；
+  拖它只改坐标，**挂接关系不变**（虚线依旧连回原来那个节点）。
 - **连线有两条路**（都能用，用户挑顺手的）：
   1. **拖连接点**（推荐）：每个节点有上下左右**四个中线连接点**（悬停/
      选中时显示），按住任一个拖到目标节点即连上；起止两端的连接点按两
      节点相对方位**自动匹配**（横向主导走左右、纵向主导走上下）；
   2. **连线模式**：点工具栏「连线」→ 点起点节点 → 点终点节点。
-- **判断（网关）节点不自动接线**（用户 2026-10-06）：是否拼版由「图片拼版」
-  参数面板的开关决定，判断节点摆哪儿都行、不必跟谁绑定；要手动连也允许。
+- **「是否拼版」网关不是可自由增删的组件**（用户 2026-10-08）：它依附
+  「图片拼版」那一步，只能随模板文件来——面板与工具栏都**没有**"添加判断"
+  入口（用户原话："其实根本就没有判断这个组件"）。删掉「图片拼版」时它
+  跟着删（判据在 :func:`desktop.steps.ports.orphaned_gateway_ids`）；
+  反方向不成立——「图片拼版」可以没有网关。
 - **节点与连线各有一套选中**，互斥；选中后工具栏的「重命名 / 删除」才可用。
   这条是硬需求：之前只有"点一下变个色"，用户不知道选中能干什么。
 - 所有鼠标/键盘事件 ``try/except``（控件在弹窗里，一次未捕获异常会连用户
@@ -397,7 +405,6 @@ BPMN 流程图**编辑控件**：拖节点、连边、改名、增删。
 | `dragEnterEvent(event) -> None` | Qt 事件覆写：拖入时校验并接受拖放。 |
 | `dragMoveEvent(event) -> None` | Qt 事件覆写：拖动过程中更新落点提示。 |
 | `dropEvent(event) -> None` | 面板拖过来的节点在这里落地。 |
-| `add_gateway(name: str='判断') -> str` | 加一个排他网关（分支判断）。 |
 | `rename_node(node_id: str, name: str) -> None` | 改节点名（就地换 dataclass：frozen，只能重建）。 |
 | `rename_flow(flow_id: str, label: str) -> None` | 改连线上的文字（如网关分支的「否」）。 |
 | `remove_node(node_id: str) -> None` | 删节点：连到它的线一起删（悬空连线会让渲染与解析都出错）。 |
@@ -453,21 +460,15 @@ BPMN 流程图**编辑控件**：拖节点、连边、改名、增删。
 
 按**步骤 key**加节点（固定节点面板拖放的入口）。
 
-``token`` 是 :data:`~desktop.components.bpmn_palette.GATEWAY_TOKEN`
-时加的是排他网关；否则按步骤 key 取名字与运行阶段。
+⚠️ **只认步骤 key**：网关（「是否拼版」）不再是可拖的条目——它依附
+「图片拼版」那一步、只能随模板文件来（见模块文档）。认不出的 token
+一律返回 ``None``，不凭空造节点。
 
 ##### `dropEvent(event) -> None`
 
 面板拖过来的节点在这里落地。
 
 ⚠️ 全程 ``try/except``：拖放异常冒泡会连用户编好的图一起丢（同鼠标事件）。
-
-##### `add_gateway(name: str='判断') -> str`
-
-加一个排他网关（分支判断）。
-
-⚠️ 只摆节点、**不自动连线**：是否拼版由「图片拼版」参数面板的开关
-决定，判断节点不需要跟谁绑定（要连线就手动拖连接点）。
 
 ##### `rename_node(node_id: str, name: str) -> None`
 
@@ -499,6 +500,9 @@ BPMN 流程图**编辑控件**：拖节点、连边、改名、增删。
 ⚠️ 附在它后面的**结束事件**也跟着删（用户 2026-10-07）：删掉
 「PDF排版」后「生成PDF」一条入线不剩，留着就是误导——判据走
 :func:`ports.orphaned_end_event_ids`。
+⚠️ 依附它的**「是否拼版」网关**也跟着删（用户 2026-10-08）：网关不是
+独立组件，只服务于「图片拼版」——判据走
+:func:`ports.orphaned_gateway_ids`。
 
 ##### `auto_layout() -> None`
 
@@ -536,12 +540,20 @@ BPMN **编辑器面板**：工具栏 + 可滚动画布 + 选中状态行。
 
 ==========================  ==========================================
 添加步骤                      从已知阶段里挑一个接上流程（能被运行时认出来）
-添加判断                      加排他网关（分支菱形）——只摆节点，不连线
 连线                          开连线模式：点起点 → 点终点（日常用拖连接点）
 重命名                        改节点名 / 连线上的字（如「否」）
 删除                          删选中的节点或连线
 自动排版                      整图分层铺开，连线按新坐标重算
 ==========================  ==========================================
+
+⚠️ **没有「添加判断」**（用户 2026-10-08）：
+
+> 其实根本就没有判断这个组件，只有「是否拼版」这个特殊的判断组件，
+> 也就是说是否拼版依附拼版，因此删除左侧的判断 gateway、顶部的添加判断按钮
+
+图上那个网关是「图片拼版」的附属图形（是否拼版是那一步的属性），只能随
+模板文件来；删掉「图片拼版」时它跟着删
+（:func:`desktop.steps.ports.orphaned_gateway_ids`）。
 
 画布外面套滚动区，并把画布的**下限**跟着视口走（否则图很小时没地方拖节点）。
 
@@ -593,8 +605,17 @@ BPMN **固定节点面板**：拖一个节点到画布上，就加了一格。
 > 的，它可能有些节点不需要，他就删了就行了，可以恢复。
 
 所以这里**不提供"任意节点类型"**：条目就是本工具认识的步骤
-（提取图片 / 检测文本框 / 图片去底色 / 图片拼板 / PDF 排版）+ 一个「判断」网关。
+（提取图片 / 检测文本框 / 图片去底色 / 图片拼板 / PDF 排版）。
 拖到画布上是"添加"，画布上删掉是"不需要"，工具栏「恢复默认」是"恢复"。
+
+⚠️ **没有「判断」这一项**（用户 2026-10-08）：
+
+> 其实根本就没有判断这个组件，只有「是否拼版」这个特殊的判断组件，
+> 也就是说是否拼版依附拼版，因此删除左侧的判断 gateway、顶部的添加判断按钮
+
+图上那个排他网关是「图片拼版」的**附属图形**（它问的问题只对那一步成立），
+不是可自由增删的独立组件——它只能随模板文件来，删掉「图片拼版」时跟着删
+（:func:`desktop.steps.ports.orphaned_gateway_ids`）。
 
 ## 两个细节
 
@@ -609,8 +630,6 @@ BPMN **固定节点面板**：拖一个节点到画布上，就加了一格。
 | 名称 | 值 |
 | --- | --- |
 | NODE_MIME | `"application/x-guji-bpmn-node"` |
-| GATEWAY_TOKEN | `"__gateway__"` |
-| GATEWAY_NAME | `"判断"` |
 | PALETTE_WIDTH | `132` |
 
 ### `class NodePalette(ListWidget)`
@@ -735,10 +754,19 @@ BPMN 流程图**渲染控件**：照着 :class:`FlowDiagram` 画出标准的 BPM
 | `minimumSizeHint()` | Qt 覆写：最小建议尺寸。 |
 | `rect_of(node_id: str) -> QRectF` | 节点的绘制矩形（文件坐标 + 偏移）。 |
 | `node_at(point: QPointF) -> str \| None` | 命中测试：从**后往前**找（后画的在上层，符合视觉直觉）。 |
+| `note_at(point: QPointF) -> str \| None` | 命中测试：点到哪条**文字注释**上（同样从后往前找）。 |
 | `mouseMoveEvent(event) -> None` | Qt 事件覆写：移动（拖拽 / 缩放中的实时更新）。 |
 | `mousePressEvent(event) -> None` | Qt 事件覆写：按下（选中 / 开始拖拽或绘制）。 |
 | `paintEvent(_event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
 | `note_rect_of(note_id: str) -> QRectF` | 注释框的绘制矩形（文件坐标 + 偏移）。 |
+
+##### `note_at(point: QPointF) -> str | None`
+
+命中测试：点到哪条**文字注释**上（同样从后往前找）。
+
+与 :meth:`node_at` 的分工：节点画在注释**之上**（见 ``paintEvent`` 的
+绘制顺序），所以调用方要**先问节点、再问注释**——重叠处点到的该是
+看得见的那一个。
 
 ---
 
@@ -834,8 +862,8 @@ widget.installEventFilter(_filter)
 >
 > - 默认任务流程/自定义任务流程 checkbox 组件
 > - 默认任务流程下有选择PDF，上传 PDF 后自动进入任务详情界面
-> - 自定义任务流程下面有任务流程bpmn 节点渲染，默认是 task_detail.bpmn 的
->   节点渲染，同时提供按钮 "编辑流程" 点击调用 bpmn 自定义面板，编辑后同步到
+> - 自定义任务流程下面有任务流程bpmn 节点渲染，默认是 task_default.bpmn 的
+>   节点渲染（自定义初值即默认模板），同时提供按钮 "编辑流程" 点击调用 bpmn 自定义面板，编辑后同步到
 >   弹窗中，同时提供确认流程 按钮，进入详情页面
 
 后来用户又补了一条（这就是本版改动的由来）：
@@ -878,11 +906,9 @@ widget.installEventFilter(_filter)
 | DIALOG_TITLE | `"创建任务"` |
 | DEFAULT_HINT_PREFIX | `"使用默认任务流程："` |
 | CUSTOM_HINT | `"使用自定义任务流程（点「编辑流程」可改）："` |
-| CUSTOM_MISSING_HINT | `"⚠ 找不到 desktop/static/task_detail.bpmn，自定义模式暂用默认流程；请先恢复该文件…"` |
 | EMPTY_PDF_HINT | `"可留空，之后在任务详情里补选"` |
 | PDF_STATE_MAX_WIDTH | `420` |
 | FLOW_MIN_HEIGHT | `240` |
-| CUSTOM_INIT_FILE | `"task_detail.bpmn"` |
 
 ### `class CreateTaskPanel(QWidget)`
 
@@ -934,7 +960,7 @@ widget.installEventFilter(_filter)
 
 回到**刚打开**的样子（用户 2026-10-06：上一次创建任务信息要清掉）。
 
-清四样：已选 PDF、勾选状态、自定义流程图（回到初值文件那份）、以及
+清四样：已选 PDF、勾选状态、自定义流程图（回到默认模板那份）、以及
 正开着的流程编辑器。
 
 ⚠️ **自定义流程图也要清**：用户编了半天流程，建完任务再进来却还带着
@@ -1013,28 +1039,18 @@ True——按钮的可用性不该由"还没挑文件"决定（用户同一条�
 | 函数 | 说明 |
 | --- | --- |
 | `default_hint(diagram: FlowDiagram) -> str` | 默认模式的完整提示：前缀 + **文件里真实的**步骤串。 |
-| `custom_init_path() -> Path` | 自定义流程初值文件的标准位置。 |
-| `custom_init_missing() -> bool` | 初值文件是不是不见了。 |
-| `load_custom_init() -> FlowDiagram` | 读 ``desktop/static/task_detail.bpmn`` 作自定义模式的初值（整张图）。 |
-
-#### `custom_init_missing() -> bool`
-
-初值文件是不是不见了。
-
-⚠️ 单独暴露这个判断，是因为"文件不见了"必须**说出来**：
-:func:`load_custom_init` 找不到文件会回落默认流程（功能不能崩），但那样
-「自定义」和「默认」长得一模一样——用户会以为"勾了没用"。这个现象真的
-发生过（2026-10-05）。
+| `load_custom_init() -> FlowDiagram` | 自定义模式的初值（整张图）——即默认模板那份图。 |
 
 #### `load_custom_init() -> FlowDiagram`
 
-读 ``desktop/static/task_detail.bpmn`` 作自定义模式的初值（整张图）。
+自定义模式的初值（整张图）——即默认模板那份图。
 
-返回 :class:`FlowDiagram`——**坐标就在图里**（来自文件的 DI 段），不再
-单独返回一份布局对象：页面渲染的就是文件本身，两份东西必然漂移。
+⚠️ 历史别名：以前初值是独立的 ``desktop/static/task_detail.bpmn``，
+2026-10-08 起只保留 ``task_default.bpmn``，自定义就是"从默认流程开始改"。
+保留本函数只是为了兼容既有调用方（自测/截图脚本），新代码请直接用
+:func:`desktop.steps.scheduler.load_default_diagram`。
 
-⚠️ 文件缺失或损坏**一律回落默认流程**（不抛）：这是"给用户一个可上手
-改的起点"的增强项，缺了它功能应当退化而不是崩。调用方不必处理异常。
+模板缺失/损坏时返回空图（不抛）：调用方不必处理异常。
 
 ---
 
@@ -3112,7 +3128,7 @@ worker 会变成孤儿线程，而它是被 ``parent``（编辑器对话框）�
 ⚠️ 信号必须定义在**这个 QObject 子类**上（PySide6 的 ``Signal`` 描述符
 要求宿主是 QObject）；Mixin 只 emit，不声明。
 
-### `class EditorCanvas(InteractionMixin, OverlayMixin, TextMixin, RectifyMixin, CageMixin, DeformMixin, TransformMixin, QGraphicsView)`
+### `class EditorCanvas(InteractionMixin, OverlayMixin, TextMixin, RectifyMixin, TweakMixin, CageMixin, DeformMixin, TransformMixin, QGraphicsView)`
 
 编辑画布：滚轮缩放、中/右键拖拽平移、左键按工具交互。
 
@@ -3379,6 +3395,48 @@ worker 会变成孤儿线程，而它是被 ``parent``（编辑器对话框）�
 
 拖边切变：``edge`` 是被抓的边（l/r/t/b），``k`` 是切变系数，
 对边为锚（抓右边往下拖 = 内容随 x 增大而下斜）。
+
+---
+
+## `desktop.components.viewers.image_editor.canvas.tweak`
+
+源码：[`desktop/components/viewers/image_editor/canvas/tweak.py`](../../desktop/components/viewers/image_editor/canvas/tweak.py)
+
+画布 Mixin：**微调**（局部框选 → 透视拉直 → 羽化贴回）。
+
+算法与口径见 ``utils.local_adjust``。画布只管：四角手柄/命中/拖动/预览/
+覆盖层。预览复用「变形」的 ``_deform_item`` 浮层（与「校正」同款做法），
+提交时按全分辨率一次性算（``cv2.warpPerspective`` 整页约 0.1~0.2s，
+主线程同步跑即可，不进后台线程）。
+
+### `class TweakMixin(CanvasHost)`
+
+微调工具：局部四角/羽化/拉直预览。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `reset_tweak() -> None` | 「重置」：四角回到整幅图，丢掉未应用的微调。 |
+| `tweak_quad() -> list` | 当前四边形四角副本（``QPointF`` 列表）。 |
+| `tweak_feather() -> float` | 当前羽化半径（图片像素）。 |
+| `set_tweak_feather(value: float) -> None` | 改羽化半径：只影响**之后**的预览/落地，不必丢四角。 |
+| `tweak_move(index: int, pos: QPointF) -> None` | 把第 ``index`` 个角拖到 ``pos``（图片坐标，允许拖到图外一图之距）。 |
+| `tweak_move_all(delta: QPointF) -> None` | 整体平移四角（框内拖 = 搬动整个框，形状不变）。 |
+| `tweak_pending()` | 未应用的微调 ``(quad_src, quad_dst, feather)``；没歪则 None。 |
+
+##### `tweak_move(index: int, pos: QPointF) -> None`
+
+把第 ``index`` 个角拖到 ``pos``（图片坐标，允许拖到图外一图之距）。
+
+拖动即实时预览"拉直后"的样子（源=当前四角，目标=其外接框）。
+
+##### `tweak_move_all(delta: QPointF) -> None`
+
+整体平移四角（框内拖 = 搬动整个框，形状不变）。
+
+小框挪地方不用四个角逐个拖。位移按增量给（调用方记上次位置），
+与变换笼 ``cage_move_all`` 同口径；同样允许拖到图外一图之距。
 
 ---
 
@@ -8702,6 +8760,7 @@ BPM 编排引擎安全导入（与 :mod:`desktop.steps.spec` 同一约束）。
 | ARTIFACT_BOXES | `"boxes"` |
 | ARTIFACT_INPUT | `"input"` |
 | SOURCE_PDF_STAGE | `"extract"` |
+| GATEWAY_GUARD_STAGE | `"imposition"` |
 | SUPPLY_TASK_SOURCE | `"<task>"` |
 | SUPPLY_TASK_INPUT | `"<task-input>"` |
 | TASK_INPUT_LOCATION | `"stages/input"` |
@@ -8721,6 +8780,7 @@ BPM 编排引擎安全导入（与 :mod:`desktop.steps.spec` 同一约束）。
 | `is_source_pdf_node(diagram, node_id: str) -> bool` | 这个节点是不是「源 PDF」（图上那个入口事件）。 |
 | `paired_node_for_stage(diagram, node_id: str) -> str \| None` | 删掉 ``node_id`` 时**该一起删掉**的配对节点 id；没有则 ``None``。 |
 | `orphaned_end_event_ids(diagram, *node_ids: str) -> tuple[str, ...]` | 删掉 ``node_ids`` 后会**悬空**的结束事件 id；没有则空元组。 |
+| `orphaned_gateway_ids(diagram, *node_ids: str) -> tuple[str, ...]` | 删掉 ``node_ids`` 后会**失去依附对象**的「是否拼版」网关 id；没有则空元组。 |
 | `flow_needs_source_pdf(diagram) -> bool` | **这条流程**里有没有直接吃源 PDF 的阶段吗（要问图，别写死）。 |
 | `detect_feeds_rembg(diagram) -> bool` | 这张流程图上「图片去底色」**能不能拿到检测框**。 |
 | `location_of(stage: str, port: str) -> str \| None` | 运行阶段某端口的相对落点；没有登记返回 ``None``。 |
@@ -8826,6 +8886,27 @@ BPM 编排引擎安全导入（与 :mod:`desktop.steps.spec` 同一约束）。
 
 ⚠️ 只收**入线非空**的结束事件：本来就悬空的事件不是这次删除造成的，
 不归这里管（别借删除顺手清扫，删除面越界）。
+
+#### `orphaned_gateway_ids(diagram, *node_ids: str) -> tuple[str, ...]`
+
+删掉 ``node_ids`` 后会**失去依附对象**的「是否拼版」网关 id；没有则空元组。
+
+用户 2026-10-08：
+
+> 是否拼版依附拼版……因此删除左侧的判断 gateway、顶部的添加判断按钮
+
+图上的排他网关就是「是否拼版」这个判断（见 :data:`GATEWAY_GUARD_STAGE`）：
+它问的问题只对「图片拼版」这一步成立。删掉「图片拼版」之后，网关的两条
+分支里有一条已经悬空（``remove_node`` 会连带删掉那半条线），剩下一个
+"无条件放行"的菱形——图上写着"是否拼版"，流程里却已经没有拼版这一步，
+留着就是误导。所以跟着删。
+
+⚠️ **反方向不删**（用户同日的前一条口径："图片拼版可以不需要判断是否拼版"）：
+删网关不动「图片拼版」——那一步照跑，只是不再画那个分支。
+
+⚠️ 判据只看"删完之后图里**还剩不剩** ``imposition``"，**不看网关连在谁身上**：
+网关是这一步的附属图形（不是独立组件），一个流程里本就只该有一个
+（网关问的是同一件事，问两遍没有意义）。
 
 #### `flow_needs_source_pdf(diagram) -> bool`
 
@@ -9754,10 +9835,14 @@ _apply_control_width`` 按 stage 换宽度、``history._history_fill_keys``
 
 - **errors**（拒绝保存）：上面两条硬规则；
 - **warnings**（提示但不拦）：``extract`` 不在第一位、有 ``extract`` 却没有
-  「源PDF」入口节点、有「拼版」却没有判断节点（文档"特殊"节说二者一般
-  同在）、同一阶段画了多个节点、图上有未接入运行的节点。这些**跑得通**，
-  只是与习惯不符——拦下来会把合法操作堵死（与状态机"缺上游只提示不硬拦"
-  同一条纪律）。
+  「源PDF」入口节点、同一阶段画了多个节点、图上有未接入运行的节点。这些
+  **跑得通**，只是与习惯不符——拦下来会把合法操作堵死（与状态机"缺上游只
+  提示不硬拦"同一条纪律）。
+
+  ⚠️ **"有「拼版」却没有判断节点"这条警告已于 2026-10-08 删除**：网关依附
+  「图片拼版」（用户："其实根本就没有判断这个组件，只有「是否拼版」这个特殊
+  的判断组件"），界面上的"添加判断"入口也已撤掉——留着它等于让用户去做一件
+  界面上做不到的事。见 :func:`desktop.steps.ports.orphaned_gateway_ids`。
 
 ⚠️ 本模块**纯逻辑、不 import Qt**（与 ports/scheduler 同一约束）。
 

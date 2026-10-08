@@ -7,8 +7,8 @@
 >
 > - 默认任务流程/自定义任务流程 checkbox 组件
 > - 默认任务流程下有选择PDF，上传 PDF 后自动进入任务详情界面
-> - 自定义任务流程下面有任务流程bpmn 节点渲染，默认是 task_detail.bpmn 的
->   节点渲染，同时提供按钮 "编辑流程" 点击调用 bpmn 自定义面板，编辑后同步到
+> - 自定义任务流程下面有任务流程bpmn 节点渲染，默认是 task_default.bpmn 的
+>   节点渲染（自定义初值即默认模板），同时提供按钮 "编辑流程" 点击调用 bpmn 自定义面板，编辑后同步到
 >   弹窗中，同时提供确认流程 按钮，进入详情页面
 
 后来用户又补了一条（这就是本版改动的由来）：
@@ -73,7 +73,7 @@ from desktop.components.bpmn_view import BpmnView
 from desktop.components.dialog_shell import shell_dialog
 from desktop.steps.bpmn_diagram import FlowDiagram
 from desktop.ui import theme as T
-from desktop.utils.files import default_open_dir, package_dir
+from desktop.utils.files import default_open_dir
 
 #: 弹窗标题
 DIALOG_TITLE = "创建任务"
@@ -86,11 +86,6 @@ DIALOG_TITLE = "创建任务"
 #: 现在步骤串一律从文件读，写错的可能性被结构性消除。
 DEFAULT_HINT_PREFIX = "使用默认任务流程："
 CUSTOM_HINT = "使用自定义任务流程（点「编辑流程」可改）："
-#: 自定义初值文件缺失时的告警（⚠️ 缺了它「自定义」会退化成与默认一样）
-CUSTOM_MISSING_HINT = (
-    "⚠ 找不到 desktop/static/task_detail.bpmn，自定义模式暂用默认流程；"
-    "请先恢复该文件，否则「自定义」与「默认」看起来一模一样。"
-)
 #: **没选** PDF 时那一行的提示（唯一来源，:meth:`CreateTaskPanel.clear_pdf` 也用）
 EMPTY_PDF_HINT = "可留空，之后在任务详情里补选"
 #: 「已选择：xxx.pdf」那行文字的宽度上限（px）。封顶是为了长书名不会把后面的
@@ -108,43 +103,19 @@ def default_hint(diagram: FlowDiagram) -> str:
 #: 流程区的最小高度（节点图比它高时由滚动区接管）
 FLOW_MIN_HEIGHT = 240
 
-#: 自定义流程的初值文件名（放在 ``desktop/static/``，随打包进``_internal/``）。
-CUSTOM_INIT_FILE = "task_detail.bpmn"
-
-
-def custom_init_path() -> Path:
-    """自定义流程初值文件的标准位置。"""
-    return package_dir() / "static" / CUSTOM_INIT_FILE
-
-
-def custom_init_missing() -> bool:
-    """初值文件是不是不见了。
-
-    ⚠️ 单独暴露这个判断，是因为"文件不见了"必须**说出来**：
-    :func:`load_custom_init` 找不到文件会回落默认流程（功能不能崩），但那样
-    「自定义」和「默认」长得一模一样——用户会以为"勾了没用"。这个现象真的
-    发生过（2026-10-05）。
-    """
-    return not custom_init_path().is_file()
-
 
 def load_custom_init() -> FlowDiagram:
-    """读 ``desktop/static/task_detail.bpmn`` 作自定义模式的初值（整张图）。
+    """自定义模式的初值（整张图）——即默认模板那份图。
 
-    返回 :class:`FlowDiagram`——**坐标就在图里**（来自文件的 DI 段），不再
-    单独返回一份布局对象：页面渲染的就是文件本身，两份东西必然漂移。
+    ⚠️ 历史别名：以前初值是独立的 ``desktop/static/task_detail.bpmn``，
+    2026-10-08 起只保留 ``task_default.bpmn``，自定义就是"从默认流程开始改"。
+    保留本函数只是为了兼容既有调用方（自测/截图脚本），新代码请直接用
+    :func:`desktop.steps.scheduler.load_default_diagram`。
 
-    ⚠️ 文件缺失或损坏**一律回落默认流程**（不抛）：这是"给用户一个可上手
-    改的起点"的增强项，缺了它功能应当退化而不是崩。调用方不必处理异常。
+    模板缺失/损坏时返回空图（不抛）：调用方不必处理异常。
     """
     from desktop.steps.scheduler import load_default_diagram
 
-    path = custom_init_path()
-    try:
-        if path.is_file():
-            return FlowDiagram.load(path)
-    except (OSError, ValueError):
-        pass
     fallback = load_default_diagram()
     return fallback if fallback.nodes else FlowDiagram()
 
@@ -183,10 +154,8 @@ class CreateTaskPanel(QWidget):
         差异用构造参数声明，组件不猜自己在哪。
         """
         super().__init__(parent)
-        # ⚠️ 自定义模式的**初值**取 ``desktop/static/task_detail.bpmn``（用户
-        # 在 bpm.md 里点名的文件）。它是**整张图**（含坐标），页面照着它渲染
-        # ——与 bpmn.io 里看到的完全一致。文件缺失/损坏 → 回落默认模板。
-        self._custom_init_missing = custom_init_missing()
+        # ⚠️ 自定义模式的**初值**即默认模板那份图（整张图，含坐标），
+        # 页面照着它渲染。文件缺失/损坏 → 空图（由 load_default_diagram 兜底）。
         self._custom_diagram = flow or load_custom_init()
         # 默认流程 = 默认模板文件那份图（**只用于预览**；建任务时走字节拷贝）
         self._default_diagram = self._load_default_diagram()
@@ -334,9 +303,7 @@ class CreateTaskPanel(QWidget):
         """
         custom = self.uses_custom_flow()
         if custom:
-            self.mode_hint.setText(
-                CUSTOM_MISSING_HINT if self._custom_init_missing else CUSTOM_HINT
-            )
+            self.mode_hint.setText(CUSTOM_HINT)
         else:
             self.mode_hint.setText(default_hint(self._default_diagram))
         self.edit_button.setVisible(custom)
@@ -404,7 +371,7 @@ class CreateTaskPanel(QWidget):
     def reset(self) -> None:
         """回到**刚打开**的样子（用户 2026-10-06：上一次创建任务信息要清掉）。
 
-        清四样：已选 PDF、勾选状态、自定义流程图（回到初值文件那份）、以及
+        清四样：已选 PDF、勾选状态、自定义流程图（回到默认模板那份）、以及
         正开着的流程编辑器。
 
         ⚠️ **自定义流程图也要清**：用户编了半天流程，建完任务再进来却还带着
@@ -454,7 +421,7 @@ class CreateTaskPanel(QWidget):
         ⚠️ ``FlowPanel(embedded=True, close_window=False)``：藏掉它自带的标题
         （本面板已经有标题），且**不让它去关所属窗口**——内嵌时
         ``self.window()`` 就是宿主页面，关掉会把整页关没。
-        「恢复默认」= 回到自定义初值文件（``task_detail.bpmn``）。
+        「恢复默认」= 回到默认模板那一份（``task_default.bpmn``）。
         """
         from desktop.components.flow_dialog import FlowPanel
 
@@ -506,7 +473,7 @@ class CreateTaskPanel(QWidget):
         self._button_bar.setVisible(visible)
 
     def _on_reset_flow(self) -> None:
-        """恢复默认流程：回到**初值文件**那一份（``task_detail.bpmn``）。"""
+        """恢复默认流程：回到默认模板那一份（``task_default.bpmn``）。"""
         self.set_custom_diagram(load_custom_init())
 
     def set_custom_diagram(self, diagram: FlowDiagram) -> None:
@@ -634,15 +601,11 @@ class CreateTaskDialog:
 
 __all__ = [
     "CUSTOM_HINT",
-    "CUSTOM_INIT_FILE",
-    "CUSTOM_MISSING_HINT",
     "CreateTaskDialog",
     "CreateTaskPanel",
     "DEFAULT_HINT_PREFIX",
     "DIALOG_TITLE",
     "EMPTY_PDF_HINT",
-    "custom_init_missing",
-    "custom_init_path",
     "default_hint",
     "load_custom_init",
 ]

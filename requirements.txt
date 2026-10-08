@@ -21,13 +21,6 @@ Pillow>=9.0.0            # PIL Image
 opencv-python-headless>=4.5.0  # cv2（无 GUI 依赖，适合服务器和打包）
 numpy>=1.21.0            # 数组运算
 
-# ---- 桌面端操控变形 (utils/puppet_warp) ----
-# ⚠️ 只有**桌面端的操控变形**用得上：ARAP 形变要解一个稀疏线性方程组
-# （余切拉普拉斯），scipy.sparse.linalg.spsolve 是这件事的标准做法。
-# 下限 1.10 起支持 numpy 2.x（<1.10 的 scipy 与 numpy>=2 会 ABI 冲突）；
-# 上限不设——scipy 的 C API 向后兼容，且 PyInstaller 有官方 hook。
-scipy>=1.10.0            # import scipy.sparse / scipy.sparse.linalg
-
 # ---- YOLO 检测文本框 (crop / cropremove) ----
 ultralytics>=8.0.0       # YOLO 模型推理（依赖 torch，pip 会自动安装）
 

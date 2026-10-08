@@ -15,9 +15,6 @@
 - `color_utils`: 颜色 'r,g,b' 解析（非法值抛错，不静默降级为黑）。
 - `margin_utils`: 边距 CSS 简写标准化（单/两/三/四值 → [上,右,下,左]）。
 - `transparent_png`: 白底 → 透明底的 PNG 编码（第三步提交产物专用，自带最省形态选择）。
-- `cage_warp`: 变换笼（GIMP 口径）——RBF（Wendland 紧支撑核）位移场 + 稀格求场 + 双线性取样，拖把手做局部形变（numpy 延迟导入）。与 `puppet_warp` **并存**：桌面「变换笼」工具走这条，「变形」工具走图钉那条。
-- `puppet_warp`: 操控变形（PS Puppet Warp 口径）——ARAP 三角网格形变，图钉 + 隐式边框锚点（numpy/scipy 延迟导入）。
-- `perspective`: 四点透视校正（古籍页形/拍摄角度摆正）——四点 DLT 单应矩阵 + 逆向采样（numpy 延迟导入）。
 - `help`: man 风格帮助文本加载与分页显示。
 
 `color_utils` 与 `margin_utils` 位于最低层，供 core 与 functions 共用，
@@ -47,22 +44,9 @@ from utils.sort_utils import natural_sort_key
 # 声明会把这些名字全判成未定义，故补一段只在 TYPE_CHECKING 下生效的导入：
 # **运行时的延迟加载一点没变**（`from utils import x` 仍不会拉进 cv2/numpy）。
 if TYPE_CHECKING:
-    from utils.cage_warp import (
-        cage_moved, deform, deform_qimage, influence_radius, moved_handles,
-        perimeter_cage, warp_region,
-    )
     from utils.image_utils import (
         apply_otsu_to_region, apply_otsu_whole, calculate_auto_threshold,
         extract_red_seal, parse_border, rembg_page,
-    )
-    from utils.perspective import (
-        homography, quad_moved, rectify, rectify_qimage, rectify_region,
-        target_rect,
-    )
-    from utils.puppet_warp import (
-        border_vertices, build_mesh, drag_cell, grid_cell, mesh_moved,
-        mesh_region, nearest_vertex, puppet_warp, puppet_warp_qimage, solve_arap,
-        solve_puppet,
     )
     from utils.yolo_utils import (
         detect_content_boxes, is_model_loaded, load_seconds_used, load_yolo_model,
@@ -99,34 +83,6 @@ _LAZY = {
     "slot_names_colors": ("utils.box_draw", "slot_names_colors"),
     # 第三步提交产物的透明底编码（唯一实现，自带编码形态选择）
     "save_white_as_transparent": ("utils.transparent_png", "save_white_as_transparent"),
-    # 变换笼（GIMP 口径）：RBF 位移场局部形变（numpy 延迟导入）。
-    # 与下面的 puppet_warp（ARAP 图钉）**并存**，桌面是两个独立工具。
-    "perimeter_cage": ("utils.cage_warp", "perimeter_cage"),
-    "influence_radius": ("utils.cage_warp", "influence_radius"),
-    "moved_handles": ("utils.cage_warp", "moved_handles"),
-    "warp_region": ("utils.cage_warp", "warp_region"),
-    "cage_moved": ("utils.cage_warp", "cage_moved"),
-    "deform": ("utils.cage_warp", "deform"),
-    "deform_qimage": ("utils.cage_warp", "deform_qimage"),
-    # 操控变形（PS Puppet Warp 口径）：ARAP 网格形变（scipy/numpy 延迟导入）
-    "build_mesh": ("utils.puppet_warp", "build_mesh"),
-    "grid_cell": ("utils.puppet_warp", "grid_cell"),
-    "drag_cell": ("utils.puppet_warp", "drag_cell"),
-    "solve_arap": ("utils.puppet_warp", "solve_arap"),
-    "solve_puppet": ("utils.puppet_warp", "solve_puppet"),
-    "border_vertices": ("utils.puppet_warp", "border_vertices"),
-    "nearest_vertex": ("utils.puppet_warp", "nearest_vertex"),
-    "puppet_warp": ("utils.puppet_warp", "puppet_warp"),
-    "puppet_warp_qimage": ("utils.puppet_warp", "puppet_warp_qimage"),
-    "mesh_moved": ("utils.puppet_warp", "mesh_moved"),
-    "mesh_region": ("utils.puppet_warp", "mesh_region"),
-    # 四点透视校正（古籍页形/拍摄角度摆正，numpy 延迟导入）
-    "rectify": ("utils.perspective", "rectify"),
-    "rectify_qimage": ("utils.perspective", "rectify_qimage"),
-    "homography": ("utils.perspective", "homography"),
-    "target_rect": ("utils.perspective", "target_rect"),
-    "rectify_region": ("utils.perspective", "rectify_region"),
-    "quad_moved": ("utils.perspective", "quad_moved"),
 }
 
 

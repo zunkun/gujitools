@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """``ImageEditorDialog`` Mixin：**各工具的选项页**。
 
-每个工具右侧的选项面板（裁剪/变换/变形/笼/校正/擦除/文字）。（从 ``image_editor/dialog.py`` 拆出，2026-10-07；方法体逐字未改）。
+每个工具右侧的选项面板（裁剪/变换/擦除/文字）。（从 ``image_editor/dialog.py`` 拆出，2026-10-07；方法体逐字未改）。
 """
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel
 from qfluentwidgets import CaptionLabel, CheckBox, ComboBox, PrimaryPushButton, PushButton, Slider
 from desktop.ui.color_picker import ColorPickerButton
 from desktop.ui.fonts import text_font_families
-from .consts import CAGE_DENSITY_CHOICES, ERASER_MAX, ERASER_MIN, MESH_DENSITY_CHOICES, RECTIFY_RATIO_CHOICES, TEXT_MAX, TEXT_MIN, TEXT_SWATCHES
+from .consts import ERASER_MAX, ERASER_MIN, TEXT_MAX, TEXT_MIN, TEXT_SWATCHES
 from typing import TYPE_CHECKING
 
 
@@ -22,7 +22,7 @@ else:
 
 
 class ToolPagesMixin(DialogHost):
-    """每个工具右侧的选项面板（裁剪/变换/变形/笼/校正/擦除/文字）。"""
+    """每个工具右侧的选项面板（裁剪/变换/擦除/文字）。"""
 
     def _page_crop(self, layout: QHBoxLayout) -> None:
         self._hint(layout,
@@ -44,8 +44,25 @@ class ToolPagesMixin(DialogHost):
         )
         reshape.setChecked(self.canvas._xf_reshape)
         reshape.toggled.connect(self.canvas.set_transform_reshape)
-        self.canvas.reshape_finished.connect(
-            lambda: reshape.setChecked(False))
+        # ⚠️ 选项页每次切工具都重建，旧复选框随旧页销毁；画布信号上的连接
+        #    却一直活着——下次 reshape 完成时会调到已销毁的控件上抛
+        #    RuntimeError（用户 2026-10-08 报的刷屏）。所以先解掉上一份页
+        #    留下的连接，再连新的（回调里也兜住"页已重建"的竞态）。
+        old_uncheck = getattr(self, "_reshape_uncheck", None)
+        if old_uncheck is not None:
+            try:
+                self.canvas.reshape_finished.disconnect(old_uncheck)
+            except (RuntimeError, TypeError):
+                pass  # 从没连上 / 接收端已死：本来就是要清掉的状态
+
+        def _uncheck_reshape() -> None:
+            try:
+                reshape.setChecked(False)
+            except RuntimeError:
+                pass  # 切工具时选项页已重建，老复选框随旧页销毁
+
+        self._reshape_uncheck = _uncheck_reshape
+        self.canvas.reshape_finished.connect(_uncheck_reshape)
         layout.addWidget(reshape)
         check = CheckBox("从轴心缩放/切变")
         check.setChecked(self.canvas._xf_about_pivot)
@@ -58,125 +75,6 @@ class ToolPagesMixin(DialogHost):
         apply_btn = PrimaryPushButton("应用变换")
         apply_btn.setToolTip("把当前变换烘焙进图片：原区域填白（可撤销）")
         apply_btn.clicked.connect(self._commit_transform)
-        layout.addWidget(apply_btn)
-
-
-    def _page_deform(self, layout: QHBoxLayout) -> None:
-        self._hint(layout,
-                   "点图放图钉 → 拖图钉：附近内容跟着走（近处动得多、远处"
-                   "几乎不动，四边默认钉住）；Alt+点或右键删图钉；"
-                   "图钉可拖到图外（往外拉＝拉伸）")
-        combo = ComboBox()
-        combo.setFixedWidth(150)
-        # NoFocus：别把键盘焦点从画布抢走
-        combo.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        for cell, label in MESH_DENSITY_CHOICES:
-            combo.addItem(label, userData=cell)
-        combo.setCurrentIndex(
-            max(0, combo.findData(self.canvas.mesh_density())))
-        combo.setToolTip(
-            "网格格距：越小越细腻、解算越慢。改档会**清空图钉**，"
-            "所以有未应用的形变时先把当前形变落地")
-        layout.addWidget(QLabel("网格疏密"))
-        layout.addWidget(combo)
-
-        def apply_density(_index: int) -> None:
-            value = combo.currentData()
-            if value is None:
-                return
-            if self.canvas.pins_pending() is not None:
-                # 重建网格会把图钉清掉、已解的形变也就丢了：先落地（一个撤销点）
-                self._commit_deform()
-            self.canvas.set_mesh_density(float(value))
-
-        combo.currentIndexChanged.connect(apply_density)
-
-        reset_btn = PushButton("重置")
-        reset_btn.setToolTip("清空所有图钉，丢掉未应用的形变")
-        reset_btn.clicked.connect(self.canvas.reset_pins)
-        layout.addWidget(reset_btn)
-        apply_btn = PrimaryPushButton("应用变形")
-        apply_btn.setToolTip(
-            "把当前形变按全分辨率烘焙进图片（可撤销）；"
-            "应用后图钉留在原地，方便接着微调")
-        apply_btn.clicked.connect(self._commit_deform)
-        layout.addWidget(apply_btn)
-
-
-    def _page_cage(self, layout: QHBoxLayout) -> None:
-        self._hint(layout,
-                   "拖笼上的把手：只有把手附近的像素跟着走（远处逐字节不动）；"
-                   "向外拉＝拉伸、向内推＝压缩；拖边/拖笼内＝整体平移；"
-                   "把手可拖到图外")
-        combo = ComboBox()
-        combo.setFixedWidth(160)
-        combo.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        for per_side, label in CAGE_DENSITY_CHOICES:
-            combo.addItem(label, userData=per_side)
-        combo.setCurrentIndex(
-            max(0, combo.findData(self.canvas.cage_density())))
-        combo.setToolTip(
-            "每边把手数：越多越能做出精细的局部形变。改档会**重建笼并丢掉"
-            "未应用的形变**，所以有未应用的形变时先落地")
-        layout.addWidget(QLabel("把手密度"))
-        layout.addWidget(combo)
-
-        def apply_density(_index: int) -> None:
-            value = combo.currentData()
-            if value is None:
-                return
-            if self.canvas.cage_pending() is not None:
-                # 重建笼会把形变清掉：先落地（一个撤销点）
-                self._commit_cage()
-            self.canvas.set_cage_density(int(value))
-
-        combo.currentIndexChanged.connect(apply_density)
-
-        reset_btn = PushButton("重置")
-        reset_btn.setToolTip("把手回到整幅图原位，丢掉未应用的形变")
-        reset_btn.clicked.connect(self.canvas.reset_cage)
-        layout.addWidget(reset_btn)
-        apply_btn = PrimaryPushButton("应用形态")
-        apply_btn.setToolTip(
-            "把当前笼形变按全分辨率烘焙进图片（可撤销）；"
-            "应用后把手留在原地，方便接着微调")
-        apply_btn.clicked.connect(self._commit_cage)
-        layout.addWidget(apply_btn)
-
-
-    def _page_rectify(self, layout: QHBoxLayout) -> None:
-        self._hint(layout,
-                   "拖四个角框住要摆正的页面（拍摄角度/装订倾斜）："
-                   "整页会被拉成矩形——四角默认压在图片四角，"
-                   "往外拖可把拍进来的桌面也框进去")
-        combo = ComboBox()
-        combo.setFixedWidth(180)
-        combo.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        for mode, label in RECTIFY_RATIO_CHOICES:
-            combo.addItem(label, userData=mode)
-        combo.setCurrentIndex(
-            max(0, combo.findData(self.canvas.rectify_ratio())))
-        combo.setToolTip(
-            "摆正后的目标矩形：「外接框」尺寸最省；「保持原比例」按对边"
-            "平均长定宽高，内容不拉胖压扁（摆正书页推荐）")
-        layout.addWidget(QLabel("目标尺寸"))
-        layout.addWidget(combo)
-
-        def apply_mode(_index: int) -> None:
-            value = combo.currentData()
-            if value is not None:
-                self.canvas.set_rectify_ratio(str(value))
-
-        combo.currentIndexChanged.connect(apply_mode)
-
-        reset_btn = PushButton("重置")
-        reset_btn.setToolTip("四角回到整幅图四角，丢掉未应用的校正")
-        reset_btn.clicked.connect(self.canvas.reset_quad)
-        layout.addWidget(reset_btn)
-        apply_btn = PrimaryPushButton("应用校正")
-        apply_btn.setToolTip(
-            "把框住的区域透视摆正并替换整图（尺寸变为目标矩形，可撤销）")
-        apply_btn.clicked.connect(self._commit_rectify)
         layout.addWidget(apply_btn)
 
 

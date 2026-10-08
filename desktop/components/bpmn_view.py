@@ -190,6 +190,18 @@ class BpmnView(QWidget):
                 return item.id
         return None
 
+    def note_at(self, point: QPointF) -> str | None:
+        """命中测试：点到哪条**文字注释**上（同样从后往前找）。
+
+        与 :meth:`node_at` 的分工：节点画在注释**之上**（见 ``paintEvent`` 的
+        绘制顺序），所以调用方要**先问节点、再问注释**——重叠处点到的该是
+        看得见的那一个。
+        """
+        for note in reversed(self._diagram.notes):
+            if self.note_rect_of(note.id).contains(point):
+                return note.id
+        return None
+
     # ------------------------------------------------------------ 交互
     def mouseMoveEvent(self, event) -> None:  # noqa: N802
         hovered = self.node_at(event.position())

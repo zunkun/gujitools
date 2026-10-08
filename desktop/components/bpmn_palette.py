@@ -8,8 +8,17 @@
 > 的，它可能有些节点不需要，他就删了就行了，可以恢复。
 
 所以这里**不提供"任意节点类型"**：条目就是本工具认识的步骤
-（提取图片 / 检测文本框 / 图片去底色 / 图片拼板 / PDF 排版）+ 一个「判断」网关。
+（提取图片 / 检测文本框 / 图片去底色 / 图片拼板 / PDF 排版）。
 拖到画布上是"添加"，画布上删掉是"不需要"，工具栏「恢复默认」是"恢复"。
+
+⚠️ **没有「判断」这一项**（用户 2026-10-08）：
+
+> 其实根本就没有判断这个组件，只有「是否拼版」这个特殊的判断组件，
+> 也就是说是否拼版依附拼版，因此删除左侧的判断 gateway、顶部的添加判断按钮
+
+图上那个排他网关是「图片拼版」的**附属图形**（它问的问题只对那一步成立），
+不是可自由增删的独立组件——它只能随模板文件来，删掉「图片拼版」时跟着删
+（:func:`desktop.steps.ports.orphaned_gateway_ids`）。
 
 ## 两个细节
 
@@ -31,12 +40,8 @@ from desktop.steps import ports
 from desktop.ui import theme as T
 from desktop.steps.spec import FLOW_STAGES, OPTIONAL_STEPS, spec_by_key
 
-#: 拖放用的自定义 MIME 类型；负载 = 步骤 key（网关用 :data:`GATEWAY_TOKEN`）
+#: 拖放用的自定义 MIME 类型；负载 = 步骤 key
 NODE_MIME = "application/x-guji-bpmn-node"
-#: 面板里「判断」那一项的负载（不是步骤 key，画布据此建排他网关）
-GATEWAY_TOKEN = "__gateway__"
-#: 「判断」节点的默认名
-GATEWAY_NAME = "判断"
 
 #: 面板宽度（够放"检测文本框"四个字 + 拖拽手柄）
 PALETTE_WIDTH = 132
@@ -135,12 +140,6 @@ class NodePalette(ListWidget):
             else:
                 item.setToolTip("拖到画布上添加这一步")
             self.addItem(item)
-        gateway = QListWidgetItem(GATEWAY_NAME)
-        gateway.setData(Qt.ItemDataRole.UserRole, GATEWAY_TOKEN)
-        gateway.setToolTip(
-            "拖到画布上添加一个分支判断（排他网关）。是否拼版由「图片拼版」"
-            "参数面板的开关决定，判断节点摆好即可，不必连线")
-        self.addItem(gateway)
 
     # ------------------------------------------------------------ 拖放负载
     def mimeData(self, items):  # noqa: N802 - Qt 命名
@@ -152,7 +151,6 @@ class NodePalette(ListWidget):
 
 
 __all__ = [
-    "GATEWAY_NAME", "GATEWAY_TOKEN", "NODE_MIME", "NodePalette",
-    "PALETTE_WIDTH", "is_optional_step", "palette_name", "palette_steps",
-    "step_stage",
+    "NODE_MIME", "NodePalette", "PALETTE_WIDTH", "is_optional_step",
+    "palette_name", "palette_steps", "step_stage",
 ]
