@@ -3,7 +3,7 @@
 
 从 ``image_editor.py`` 拆出（2026-10-07）。本文件只放：类头（信号）、
 ``__init__``，以及**与工具无关的基座方法**（装图/取图/缩放适配/工具切换）。
-各工具（裁剪/变换/擦除/文字）在兄弟模块里以 Mixin 提供，
+各工具（裁剪/变换/扭曲/擦除/文字）在兄弟模块里以 Mixin 提供，
 方法体逐字未改；成员归属由 ``tests/selftests/image_editor_split.py`` 钉住。
 
 ⚠️ 信号必须定义在**这个 QObject 子类**上（PySide6 的 ``Signal`` 描述符
@@ -11,7 +11,9 @@
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from typing import Any
+
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal, QTimer
 from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap, QTransform
 from PySide6.QtWidgets import (
     QFrame, QGraphicsPixmapItem, QGraphicsRectItem, QGraphicsScene, QGraphicsView,
@@ -20,6 +22,7 @@ from PySide6.QtWidgets import (
 from desktop.ui import theme as T
 
 from ..consts import (
+    DISTORT_HARDNESS, DISTORT_SIZE, DISTORT_SPACING, DISTORT_STRENGTH,
     EDIT_FIT_RATIO, ERASER_DEFAULT, MAX_ZOOM, MIN_RECT_EDGE, MIN_ZOOM,
     SEL_FIT_RATIO,
 )
@@ -28,6 +31,7 @@ from .interaction import InteractionMixin
 from .overlay import OverlayMixin
 from .text import TextMixin
 from .transform import TransformMixin
+from .distortion import DistortionMixin
 
 
 class EditorCanvas(
@@ -35,6 +39,7 @@ class EditorCanvas(
     OverlayMixin,
     TextMixin,
     TransformMixin,
+    DistortionMixin,
     QGraphicsView,
 ):
     """编辑画布：滚轮缩放、中/右键拖拽平移、左键按工具交互。
@@ -50,6 +55,10 @@ class EditorCanvas(
     text_requested = Signal(QPointF)
     #: 「调整范围」收边完成（弹窗借此取消勾选，自动回到变换模式）
     reshape_finished = Signal()
+    #: 裁剪框拖完松手（弹窗借此**立即**把图裁成当前选区 = 松手即应用）
+    crop_committed = Signal()
+    #: 变换拖完松手（弹窗借此**立即**把变换烘焙进像素 = 松手即应用）
+    transform_committed = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -71,7 +80,30 @@ class EditorCanvas(
         self._mode: tuple | None = None           # 进行中的拖拽
         self._hover_handle: str | None = None     # 悬停/拖动中的手柄（光标+高亮）
         self._erase_size = ERASER_DEFAULT
-        self._eraser_pos = QPointF()   # 橡皮擦圈当前位置（图片坐标）
+        self._eraser_pos = QPointF()   # 笔刷圈当前位置（图片坐标）
+        self._distort_size = DISTORT_SIZE
+        self._distort_hardness = DISTORT_HARDNESS
+        self._distort_strength = DISTORT_STRENGTH
+        self._distort_spacing = DISTORT_SPACING
+        self._distort_mode = "move"
+        self._distort_interpolation = "cubic"
+        self._distort_high_quality_preview = True
+        self._distort_realtime = True
+        self._distort_stroke_origin: QImage | None = None
+        #: 这一笔的位移场 / 等距落点采样器（拖动时增量累加，松手只渲染包围盒）
+        self._distort_field: Any = None
+        self._distort_sampler: Any = None
+        #: 提交中：挡住重复落笔（否则前台右键/左键能插进后台提交里）
+        self._distort_busy = False
+        self._distort_preview_image: QImage | None = None
+        self._distort_preview_items: dict[tuple[int, int], QGraphicsPixmapItem] = {}
+        self._distort_preview_dirty_tiles: set[tuple[int, int]] = set()
+        #: 本帧累积出来的待重渲染区域（预览尺度，[left, top, right, bottom]）
+        self._distort_preview_dirty_rect: list[float] | None = None
+        self._distort_preview_timer: QTimer | None = None
+        self._distort_preview_pending_end: QPointF | None = None
+        self._distort_preview_scale_x = 1.0
+        self._distort_preview_scale_y = 1.0
         #: **当前样式作用块**：选项行改字体/字号/颜色时作用在它身上。由
         #: 新建/聚焦/点击文字块时刷新（见 TextBlockItem.focusInEvent）。
         #: ⚠️ 不能用"场景焦点项"代替：选项行的 Slider 是 StrongFocus，一拖
@@ -123,8 +155,12 @@ class EditorCanvas(
         # 换图后文字块/变换预览都失效，一并清掉（应用/撤销/还原都走这里）
         self.clear_text_blocks()
         self._clear_transform_preview()
+        self._clear_distortion_preview()
         self._xf = QTransform()
         self._xf_touched = False
+        self._distort_stroke_origin = None
+        self._distort_field = None
+        self._distort_sampler = None
         if self._item is not None:
             self._scene.removeItem(self._item)
             self._item = None
@@ -182,6 +218,15 @@ class EditorCanvas(
     def image(self) -> QImage | None:
         return self._image
 
+    @property
+    def tool(self) -> str:
+        """当前工具键（``crop``/``transform``/``distort``/``erase``/``text``）。
+
+        弹窗侧只读用（例如 ``stroke_started`` 到达时判断该记成"擦除"还是
+        "扭曲"），刻意不给 setter——换工具一律走 :meth:`set_tool`。
+        """
+        return self._tool
+
 
     def image_rect(self) -> QRectF:
         """图片占位（= 场景坐标，1 场景单位 = 1 图片像素）。"""
@@ -193,6 +238,8 @@ class EditorCanvas(
     # ------------------------------------------------------------ 工具
     def set_tool(self, tool: str) -> None:
         """切换工具：裁剪/变换默认全选，其余清选区、换光标。"""
+        if self._tool == "distort" and self._distort_stroke_origin is not None:
+            self._finish_distortion_stroke()
         self._tool = tool
         self._mode = None
         self._clear_transform_preview()
@@ -200,7 +247,7 @@ class EditorCanvas(
         self._xf_touched = False
         self._xf_reshape = False  # 调整范围是勾选态，换工具即复位
         self._hide_text_outline()
-        if tool != "erase":
+        if tool not in ("erase", "distort"):
             self._hide_eraser_ring()
         if tool in ("crop", "transform") \
                 and not self.image_rect().isNull():

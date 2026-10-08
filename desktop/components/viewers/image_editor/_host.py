@@ -18,9 +18,12 @@ from __future__ import annotations
 
 from PySide6.QtCore import QPointF, QRectF
 from PySide6.QtGui import QImage
-from PySide6.QtWidgets import QDialog, QHBoxLayout, QWidget
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QWidget
 from desktop.components.viewers.image_editor.canvas import EditorCanvas
-from qfluentwidgets import CaptionLabel, PrimaryPushButton, PushButton, ToggleButton, ToolButton
+from qfluentwidgets import (
+    CaptionLabel, ListWidget, PrimaryPushButton, PushButton, StrongBodyLabel,
+    ToggleButton, ToolButton,
+)
 from typing import Any
 
 
@@ -33,9 +36,13 @@ class DialogHost(QDialog):
     # ---- 状态 ----
     _erase_size: Any
     _finishing: bool
+    _history_syncing: bool
     _image: Any
+    _labels: list[str]
+    _option_host: QWidget
+    _option_host_layout: QVBoxLayout
     _option_page: Any
-    _option_row: QHBoxLayout
+    _origin_label: str
     _original: Any
     _redo: list[QImage]
     _reshape_uncheck: Any
@@ -48,6 +55,8 @@ class DialogHost(QDialog):
     canvas: EditorCanvas
     done_btn: PrimaryPushButton
     fit_btn: PushButton
+    history_list: ListWidget
+    panel_title: StrongBodyLabel
     redo_btn: ToolButton
     reset_btn: PushButton
     size_label: CaptionLabel
@@ -61,10 +70,13 @@ class DialogHost(QDialog):
     def _apply_crop(self) -> None:
         ...
 
+    def _build_side_panel(self) -> QWidget:
+        ...
+
     def _build_status(self) -> QWidget:
         ...
 
-    def _build_toolbar_row(self) -> QHBoxLayout:
+    def _build_toolbar_row(self) -> QVBoxLayout:
         ...
 
     def _commit_text_blocks(self) -> None:
@@ -83,25 +95,47 @@ class DialogHost(QDialog):
         ...
 
     @staticmethod
-    def _hint(layout: QHBoxLayout, text: str) -> None:
+    def _hint(layout: QVBoxLayout, text: str) -> None:
         ...
 
-    def _page_crop(self, layout: QHBoxLayout) -> None:
+    def _history_cursor(self) -> int:
         ...
 
-    def _page_erase(self, layout: QHBoxLayout) -> None:
+    def _history_nodes(self) -> list[str]:
         ...
 
-    def _page_text(self, layout: QHBoxLayout) -> None:
+    @staticmethod
+    def _labeled(title: str, control: QWidget) -> QWidget:
         ...
 
-    def _page_transform(self, layout: QHBoxLayout) -> None:
+    def _on_history_row(self, row: int) -> None:
         ...
 
-    def _push_undo(self) -> None:
+    def _on_stroke_started(self) -> None:
+        ...
+
+    def _page_crop(self, layout: QVBoxLayout) -> None:
+        ...
+
+    def _page_distort(self, layout: QVBoxLayout) -> None:
+        ...
+
+    def _page_erase(self, layout: QVBoxLayout) -> None:
+        ...
+
+    def _page_text(self, layout: QVBoxLayout) -> None:
+        ...
+
+    def _page_transform(self, layout: QVBoxLayout) -> None:
+        ...
+
+    def _push_undo(self, label: str = "") -> None:
         ...
 
     def _redo_now(self) -> None:
+        ...
+
+    def _refresh_size_label(self) -> None:
         ...
 
     def _reset_all(self) -> None:
@@ -113,10 +147,17 @@ class DialogHost(QDialog):
     def _set_tool(self, tool: str) -> None:
         ...
 
+    def _slider_group(self, title: str, key: str, low: int, high: int,
+                      suffix: str) -> QWidget:
+        ...
+
     def _spawn_text_block(self, pos: QPointF) -> None:
         ...
 
-    def _swap_option_page(self) -> QHBoxLayout:
+    def _swap_option_page(self) -> QVBoxLayout:
+        ...
+
+    def _sync_history(self) -> None:
         ...
 
     def _sync_undo_buttons(self) -> None:

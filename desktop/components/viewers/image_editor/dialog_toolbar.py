@@ -1,15 +1,40 @@
 # -*- coding: utf-8 -*-
-"""``ImageEditorDialog`` Mixin：**工具栏与状态栏**。
+"""``ImageEditorDialog`` Mixin：**顶部功能条 + 右侧参数面板 + 状态栏**。
 
-左侧工具竖排按钮、右侧选项页切换、底部状态提示。（从 ``image_editor/dialog.py`` 拆出，2026-10-07；方法体逐字未改）。
+布局（2026-10-08 重排，用户定：「顶部是功能选择，右侧是每个功能的相关参数
+面板」）::
+
+    ┌──────────────────────────────────────────────────────┐
+    │ 撤销 重做 还原 │ 缩小 放大 适应窗口 │        │  完成   │  ← _build_toolbar_row 上半
+    ├──────────────────────────────────────────────────────┤
+    │ 裁剪  变换  扭曲  擦除  文字                          │  ← _build_toolbar_row 下半
+    ├───────────────────────────────┬──────────────────────┤
+    │                               │  裁剪                │
+    │          画布                  │  （提示）            │
+    │                               │  ── 参数（随功能换）── │
+    │                               │  ── 编辑历史 ──────── │
+    ├───────────────────────────────┴──────────────────────┤
+    │ 状态提示                                    200×120px │
+    └──────────────────────────────────────────────────────┘
+
+旧版把工具按钮挤在动作行、参数挤在第二行横向排——一行摆不下时左侧按钮被
+挤出窗口（用户截图报过），而且参数一多就横向溢出。现在动作行只放全局动作、
+功能单独一行、参数竖排在右侧固定宽度面板里。
+
+（原「左侧工具竖排 + 第二行选项」版从 ``image_editor/dialog.py`` 拆出，
+2026-10-07。）
 """
 from __future__ import annotations
 
+from PySide6.QtCore import QSize
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import QHBoxLayout, QWidget
-from qfluentwidgets import CaptionLabel, FluentIcon as FIF, PrimaryPushButton, PushButton, ToggleButton, ToolButton
+from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
+from qfluentwidgets import (
+    CaptionLabel, FluentIcon as FIF, ListWidget, PrimaryPushButton,
+    PushButton, StrongBodyLabel, ToggleButton, ToolButton,
+)
 from desktop.ui import theme as T
-from .consts import EDIT_FIT_RATIO, TOOLS
+from .consts import EDIT_FIT_RATIO, HISTORY_HEIGHT, PANEL_WIDTH, TOOLS
 from typing import TYPE_CHECKING
 
 
@@ -19,12 +44,19 @@ else:
     DialogHost = object
 
 
+#: 工具键 → 中文名（面板标题用）
+TOOL_LABELS = {key: label for key, _icon, label in TOOLS}
+
+
 class ToolbarMixin(DialogHost):
-    """左侧工具竖排按钮、右侧选项页切换、底部状态提示。"""
+    """顶部功能条、右侧参数面板、底部状态提示。"""
 
     # ------------------------------------------------------------ 构建
-    def _build_toolbar_row(self) -> QHBoxLayout:
-        """主工具栏：撤销/还原 ｜ 缩放 ｜ 四个工具 ｜ … ｜ 完成。"""
+    def _build_toolbar_row(self) -> QVBoxLayout:
+        """顶部两段：动作行（撤销/缩放/完成）+ 功能选择行。"""
+        column = QVBoxLayout()
+        column.setSpacing(T.SPACE_SM)
+
         row = QHBoxLayout()
         row.setSpacing(T.SPACE_SM)
         self.undo_btn = ToolButton(FIF.RETURN)
@@ -54,18 +86,6 @@ class ToolbarMixin(DialogHost):
         row.addWidget(self.zoom_in_btn)
         row.addWidget(self.fit_btn)
 
-        row.addSpacing(T.SPACE_MD)
-        # 工具按钮用 ToggleButton：选中态有主色高亮（用户 20:18 定"选中后
-        # 有相应颜色高亮"），PushButton 的 checked 视觉不明显
-        self._tool_buttons: dict[str, ToggleButton] = {}
-        for key, icon, label in TOOLS:
-            button = ToggleButton(icon, label)
-            button.setChecked(False)
-            button.setToolTip(f"{label}工具")
-            button.clicked.connect(lambda _=False, k=key: self._set_tool(k))
-            self._tool_buttons[key] = button
-            row.addWidget(button)
-
         row.addStretch(1)
         self.done_btn = PrimaryPushButton(FIF.SAVE, "完成")
         self.done_btn.setToolTip(
@@ -75,34 +95,90 @@ class ToolbarMixin(DialogHost):
         )
         self.done_btn.clicked.connect(self._finish)
         row.addWidget(self.done_btn)
-        self._set_tool("crop")  # 填充第二行选项（工具按钮已就位）
-        return row
+        column.addLayout(row)
+
+        # ---- 功能选择行（切功能 = 换右侧参数面板）----
+        tabs = QHBoxLayout()
+        tabs.setSpacing(T.SPACE_SM)
+        # 工具按钮用 ToggleButton：选中态有主色高亮（用户 20:18 定"选中后
+        # 有相应颜色高亮"），PushButton 的 checked 视觉不明显
+        self._tool_buttons: dict[str, ToggleButton] = {}
+        for key, icon, label in TOOLS:
+            button = ToggleButton(icon, label)
+            button.setIconSize(QSize(14, 14))
+            button.setChecked(False)
+            button.setToolTip(f"{label}（顶部切功能，参数在右侧面板）")
+            button.clicked.connect(lambda _=False, k=key: self._set_tool(k))
+            self._tool_buttons[key] = button
+            tabs.addWidget(button)
+        tabs.addStretch(1)
+        column.addLayout(tabs)
+
+        self._set_tool("crop")  # 填充右侧面板的第一份参数页
+        return column
 
 
-    # ------------------------------------------------------------ 选项行
-    def _swap_option_page(self) -> QHBoxLayout:
-        """换掉第二行整块工具选项区：整页 deleteLater，子控件一起释放。
+    def _build_side_panel(self) -> QWidget:
+        """右侧参数面板：功能名 + 提示 + 参数区 + 编辑历史。
+
+        ⚠️ 必须在 ``_build_toolbar_row`` **之前**建好：那个函数末尾的
+        ``_set_tool`` 就会往 ``_option_host`` 里插第一份参数页。
+        """
+        panel = QWidget(self)
+        panel.setFixedWidth(PANEL_WIDTH)
+        column = QVBoxLayout(panel)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(T.SPACE_SM)
+
+        self.panel_title = StrongBodyLabel(TOOL_LABELS["crop"])
+        self.panel_title.setToolTip("当前功能；参数在下面")
+        column.addWidget(self.panel_title)
+
+        self._option_host = QWidget(panel)
+        self._option_host_layout = QVBoxLayout(self._option_host)
+        self._option_host_layout.setContentsMargins(0, 0, 0, 0)
+        self._option_host_layout.setSpacing(T.SPACE_SM)
+        column.addWidget(self._option_host)
+
+        column.addStretch(1)
+        history_title = CaptionLabel("编辑历史")
+        history_title.setTextColor(QColor(T.INK_SOFT))
+        history_title.setToolTip(
+            "每一步一个节点，点某一格可直接回退或前进到那一步（同 Ctrl+Z / Ctrl+Y）")
+        column.addWidget(history_title)
+        self.history_list = ListWidget(panel)
+        self.history_list.setFixedHeight(HISTORY_HEIGHT)
+        self.history_list.setToolTip(
+            "第 0 格是打开时的状态；当前停在的一格会被选中")
+        self.history_list.currentRowChanged.connect(self._on_history_row)
+        column.addWidget(self.history_list)
+        return panel
+
+
+    # ------------------------------------------------------------ 参数面板
+    def _swap_option_page(self) -> QVBoxLayout:
+        """换掉右侧面板里的整块参数区：整页 deleteLater，子控件一起释放。
 
         ⚠️ 旧页必须先 ``hide()``：``deleteLater`` 要等事件循环才有实效，
-        在此期间旧页还挂在弹窗上，不藏起来的话会以默认几何 (0,0) 压在
-        工具栏上（用户报的"左上角按钮被隐藏"就是它）。
+        在此期间旧页还挂在面板上，不藏起来的话会以默认几何 (0,0) 压住
+        新页（旧版挤在工具栏行里时表现为"左上角按钮被隐藏"）。
         """
         if self._option_page is not None:
-            self._option_row.removeWidget(self._option_page)
+            self._option_host_layout.removeWidget(self._option_page)
             self._option_page.hide()
             self._option_page.deleteLater()
             self._option_page = None
-        page = QWidget(self)
-        layout = QHBoxLayout(page)
+        page = QWidget(self._option_host)
+        layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(T.SPACE_SM)
         self._option_page = page
-        self._option_row.insertWidget(0, page, 1)
+        self._option_host_layout.addWidget(page)
         return layout
 
 
     def _set_tool(self, tool: str) -> None:
-        """切换工具并重建选项区；离开文字/变换工具前把进行中的工作写进图。"""
+        """切换功能并重建右侧参数页；离开文字/变换前把进行中的工作写进图。"""
         if not hasattr(self, "canvas"):
             return  # 构建期先于画布存在，等 __init__ 末尾再真切换
         if tool != "text":
@@ -115,11 +191,14 @@ class ToolbarMixin(DialogHost):
         self.canvas.set_fit_ratio(EDIT_FIT_RATIO)
         for key, button in self._tool_buttons.items():
             button.setChecked(key == tool)
+        self.panel_title.setText(TOOL_LABELS.get(tool, tool))
         layout = self._swap_option_page()
         if tool == "crop":
             self._page_crop(layout)
         elif tool == "transform":
             self._page_transform(layout)
+        elif tool == "distort":
+            self._page_distort(layout)
         elif tool == "erase":
             self._page_erase(layout)
         elif tool == "text":
@@ -127,10 +206,12 @@ class ToolbarMixin(DialogHost):
 
 
     @staticmethod
-    def _hint(layout: QHBoxLayout, text: str) -> None:
+    def _hint(layout: QVBoxLayout, text: str) -> None:
+        """参数区顶部的一行说明（竖排 + 自动换行，面板窄）。"""
         label = CaptionLabel(text)
         label.setTextColor(QColor(T.INK_FAINT))
-        layout.addWidget(label, 1)
+        label.setWordWrap(True)
+        layout.addWidget(label)
 
 
     def _build_status(self) -> QWidget:
@@ -139,9 +220,10 @@ class ToolbarMixin(DialogHost):
         row = QHBoxLayout(bar)
         row.setContentsMargins(0, 0, 0, 0)
         hint = CaptionLabel(
-            "「完成」会提示确认后覆盖原图片；直接关闭弹窗 = 放弃本次全部编辑"
-            if self._save_back else
-            "「完成」应用编辑并回到预览；直接关闭弹窗 = 放弃本次全部编辑"
+            "编辑即时生效（松手即应用）；Ctrl+Z 撤销上一步，右侧「编辑历史」可点选跳转；"
+            + ("「完成」会提示确认后覆盖原图片"
+               if self._save_back else "「完成」应用编辑并回到预览")
+            + "；直接关闭弹窗 = 放弃本次全部编辑"
         )
         hint.setTextColor(QColor(T.INK_FAINT))
         self.size_label = CaptionLabel("")
@@ -153,3 +235,11 @@ class ToolbarMixin(DialogHost):
                 f"{self._image.width()} × {self._image.height()} px"
             )
         return bar
+
+
+    def _refresh_size_label(self) -> None:
+        """裁剪/变换换了画布尺寸后刷新右下角的尺寸提示。"""
+        label = getattr(self, "size_label", None)
+        if label is None or self._image is None:
+            return
+        label.setText(f"{self._image.width()} × {self._image.height()} px")

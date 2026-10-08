@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 163 个模块、175 个公开类、1167 个公开函数/方法（生成于 2026-10-08）。
+覆盖 161 个模块、174 个公开类、1149 个公开函数/方法（生成于 2026-10-08）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -49,22 +49,20 @@
 | [`desktop.components.task_table`](#desktopcomponentstask_table) | 3 | 10 |
 | [`desktop.components.viewers.edit_sync`](#desktopcomponentsviewersedit_sync) | 0 | 2 |
 | [`desktop.components.viewers.image_editor.bake`](#desktopcomponentsviewersimage_editorbake) | 0 | 2 |
-| [`desktop.components.viewers.image_editor.canvas.cage`](#desktopcomponentsviewersimage_editorcanvascage) | 1 | 9 |
-| [`desktop.components.viewers.image_editor.canvas.core`](#desktopcomponentsviewersimage_editorcanvascore) | 1 | 15 |
-| [`desktop.components.viewers.image_editor.canvas.deform`](#desktopcomponentsviewersimage_editorcanvasdeform) | 1 | 10 |
+| [`desktop.components.viewers.image_editor.canvas.core`](#desktopcomponentsviewersimage_editorcanvascore) | 1 | 16 |
+| [`desktop.components.viewers.image_editor.canvas.distortion`](#desktopcomponentsviewersimage_editorcanvasdistortion) | 1 | 1 |
 | [`desktop.components.viewers.image_editor.canvas.interaction`](#desktopcomponentsviewersimage_editorcanvasinteraction) | 1 | 7 |
 | [`desktop.components.viewers.image_editor.canvas.overlay`](#desktopcomponentsviewersimage_editorcanvasoverlay) | 1 | 0 |
-| [`desktop.components.viewers.image_editor.canvas.rectify`](#desktopcomponentsviewersimage_editorcanvasrectify) | 1 | 6 |
 | [`desktop.components.viewers.image_editor.canvas.text`](#desktopcomponentsviewersimage_editorcanvastext) | 1 | 6 |
 | [`desktop.components.viewers.image_editor.canvas.transform`](#desktopcomponentsviewersimage_editorcanvastransform) | 1 | 8 |
-| [`desktop.components.viewers.image_editor.canvas.tweak`](#desktopcomponentsviewersimage_editorcanvastweak) | 1 | 7 |
 | [`desktop.components.viewers.image_editor.consts`](#desktopcomponentsviewersimage_editorconsts) | 0 | 0 |
 | [`desktop.components.viewers.image_editor.dialog`](#desktopcomponentsviewersimage_editordialog) | 1 | 3 |
 | [`desktop.components.viewers.image_editor.dialog_commit`](#desktopcomponentsviewersimage_editordialog_commit) | 1 | 0 |
 | [`desktop.components.viewers.image_editor.dialog_pages`](#desktopcomponentsviewersimage_editordialog_pages) | 1 | 0 |
 | [`desktop.components.viewers.image_editor.dialog_toolbar`](#desktopcomponentsviewersimage_editordialog_toolbar) | 1 | 0 |
 | [`desktop.components.viewers.image_editor.dialog_undo`](#desktopcomponentsviewersimage_editordialog_undo) | 1 | 0 |
-| [`desktop.components.viewers.image_editor.geometry`](#desktopcomponentsviewersimage_editorgeometry) | 0 | 9 |
+| [`desktop.components.viewers.image_editor.distortion`](#desktopcomponentsviewersimage_editordistortion) | 2 | 14 |
+| [`desktop.components.viewers.image_editor.geometry`](#desktopcomponentsviewersimage_editorgeometry) | 0 | 7 |
 | [`desktop.components.viewers.image_editor.text_item`](#desktopcomponentsviewersimage_editortext_item) | 1 | 8 |
 | [`desktop.components.viewers.image_view.core`](#desktopcomponentsviewersimage_viewcore) | 1 | 13 |
 | [`desktop.components.viewers.image_view.edit`](#desktopcomponentsviewersimage_viewedit) | 1 | 6 |
@@ -3031,10 +3029,10 @@ source_path 不单独成列，仅作任务名的悬浮提示。
 
 源码：[`desktop/components/viewers/image_editor/bake.py`](../../desktop/components/viewers/image_editor/bake.py)
 
-全分辨率烘焙的**后台线程 + 进度对话框**（从 ``image_editor.py`` 拆出）。
+耗时任务的**后台线程 + 进度对话框**（从 ``image_editor.py`` 拆出）。
 
-重活（逐像素重映射）放这里跑，避免钉死 GUI 主线程。见 ``_BakeWorker`` 的
-长注释。纯计算的工作函数（``_bake_*_work``）也在本模块。
+见 ``_BakeWorker`` 的长注释。当前生产代码里暂无耗时烘焙调用，
+本模块保留作通用基础设施（自测的崩溃守卫直接覆盖它）。
 
 ### 模块函数
 
@@ -3073,47 +3071,6 @@ worker 会变成孤儿线程，而它是被 ``parent``（编辑器对话框）�
 
 ---
 
-## `desktop.components.viewers.image_editor.canvas.cage`
-
-源码：[`desktop/components/viewers/image_editor/canvas/cage.py`](../../desktop/components/viewers/image_editor/canvas/cage.py)
-
-画布 Mixin：**变换笼**（GIMP 口径：RBF 局部光滑形变）。
-
-从 ``EditorCanvas`` 拆出（2026-10-07）。方法体逐字未改。
-
-### `class CageMixin(CanvasHost)`
-
-变换笼工具：把手/命中/拖动/预览/覆盖层。
-
-#### 方法
-
-| 方法 | 说明 |
-| --- | --- |
-| `reset_cage() -> None` | 「重置」：把手回到整幅图原位（丢掉未应用的形变）。 |
-| `cage_density() -> int` | 当前每边把手数档位。 |
-| `set_cage_density(per_side: int) -> None` | 改每边把手数：**重建笼并清掉未应用的形变**（把手序号全变了）。 |
-| `cage() -> list` | 当前把手副本 ``[(原位, 当前位置), ...]``——给自测与外部读。 |
-| `cage_source() -> list[QPointF]` | 把手**原位**序列（形变映射的左端）。 |
-| `cage_target() -> list[QPointF]` | 把手**当前位置**序列（形变映射的右端）。 |
-| `cage_pending()` | 未应用的笼形变 ``(cage_src, cage_dst)``；没动过返回 ``None``。 |
-| `cage_move(index: int, pos: QPointF) -> None` | 把第 ``index`` 个把手拖到 ``pos``（图片坐标，允许图外）。 |
-| `cage_move_all(delta: QPointF) -> None` | 整体平移笼（拖边/拖笼内部）：把所有把手在**按下时的快照**上位移。 |
-
-##### `cage_pending()`
-
-未应用的笼形变 ``(cage_src, cage_dst)``；没动过返回 ``None``。
-
-口径与 :meth:`pins_pending` 一致：只有"把手真的动过"才算待应用。
-
-##### `cage_move_all(delta: QPointF) -> None`
-
-整体平移笼（拖边/拖笼内部）：把所有把手在**按下时的快照**上位移。
-
-必须基于快照位移，不能逐帧累加——否则每帧都从"当前值"再位移一次，
-手一停位置就漂（浮点累积）。
-
----
-
 ## `desktop.components.viewers.image_editor.canvas.core`
 
 源码：[`desktop/components/viewers/image_editor/canvas/core.py`](../../desktop/components/viewers/image_editor/canvas/core.py)
@@ -3122,13 +3079,13 @@ worker 会变成孤儿线程，而它是被 ``parent``（编辑器对话框）�
 
 从 ``image_editor.py`` 拆出（2026-10-07）。本文件只放：类头（信号）、
 ``__init__``，以及**与工具无关的基座方法**（装图/取图/缩放适配/工具切换）。
-各工具（裁剪/变换/变形/变换笼/校正/擦除/文字）在兄弟模块里以 Mixin 提供，
+各工具（裁剪/变换/扭曲/擦除/文字）在兄弟模块里以 Mixin 提供，
 方法体逐字未改；成员归属由 ``tests/selftests/image_editor_split.py`` 钉住。
 
 ⚠️ 信号必须定义在**这个 QObject 子类**上（PySide6 的 ``Signal`` 描述符
 要求宿主是 QObject）；Mixin 只 emit，不声明。
 
-### `class EditorCanvas(InteractionMixin, OverlayMixin, TextMixin, RectifyMixin, TweakMixin, CageMixin, DeformMixin, TransformMixin, QGraphicsView)`
+### `class EditorCanvas(InteractionMixin, OverlayMixin, TextMixin, TransformMixin, DistortionMixin, QGraphicsView)`
 
 编辑画布：滚轮缩放、中/右键拖拽平移、左键按工具交互。
 
@@ -3145,8 +3102,9 @@ worker 会变成孤儿线程，而它是被 ``parent``（编辑器对话框）�
 | `refresh() -> None` | 像素被就地改过（擦除）后只刷显示，不动缩放与滚动位置。 |
 | `replace_image(image: QImage) -> None` | 就地换图（尺寸不变的语义，如文字写入）：不动缩放与滚动位置。 |
 | `image() -> QImage \| None` | — |
+| `tool() -> str` | 当前工具键（``crop``/``transform``/``distort``/``erase``/``text``）。 |
 | `image_rect() -> QRectF` | 图片占位（= 场景坐标，1 场景单位 = 1 图片像素）。 |
-| `set_tool(tool: str) -> None` | 切换工具：裁剪/变换/变形默认全选，其余清选区、换光标。 |
+| `set_tool(tool: str) -> None` | 切换工具：裁剪/变换默认全选，其余清选区、换光标。 |
 | `set_eraser(size: int) -> None` | 设置橡皮擦直径（图片像素）；擦除固定涂白，没有颜色可选。 |
 | `selection() -> QRectF \| None` | 当前选区（图片坐标）；不足最小边视为没有。 |
 | `fit(ratio: float \| None=None) -> None` | 适应窗口（整图完整可见）；``ratio`` < 1 时四周留白。 |
@@ -3156,13 +3114,21 @@ worker 会变成孤儿线程，而它是被 ``parent``（编辑器对话框）�
 | `set_zoom(zoom: float, anchor_view: QPointF \| None=None) -> None` | 锚点缩放（同预览弹窗的 translate 补偿法，缩放不漂移）。 |
 | `fit_selection() -> None` | 视图适配当前选区（选区约占视口 80%，四周留出可操作白边）。 |
 
+##### `tool() -> str`
+
+装饰器：`property`
+
+当前工具键（``crop``/``transform``/``distort``/``erase``/``text``）。
+
+弹窗侧只读用（例如 ``stroke_started`` 到达时判断该记成"擦除"还是
+"扭曲"），刻意不给 setter——换工具一律走 :meth:`set_tool`。
+
 ##### `fit(ratio: float | None=None) -> None`
 
 适应窗口（整图完整可见）；``ratio`` < 1 时四周留白。
 
 留白的做法是把"要装进去的矩形"按比例放大——图片因此只占视口的
-``ratio``（见 :data:`DEFORM_FIT_RATIO`：进「变形」时图片不顶满视口，
-用户才有地方把笼把手往图外拖）。
+``ratio``（缺省 0.8，上下左右各留约 10% 视口）。
 
 ##### `set_fit_ratio(ratio: float) -> None`
 
@@ -3182,67 +3148,31 @@ worker 会变成孤儿线程，而它是被 ``parent``（编辑器对话框）�
 
 ---
 
-## `desktop.components.viewers.image_editor.canvas.deform`
+## `desktop.components.viewers.image_editor.canvas.distortion`
 
-源码：[`desktop/components/viewers/image_editor/canvas/deform.py`](../../desktop/components/viewers/image_editor/canvas/deform.py)
+源码：[`desktop/components/viewers/image_editor/canvas/distortion.py`](../../desktop/components/viewers/image_editor/canvas/distortion.py)
 
-画布 Mixin：**操控变形**（PS 口径：ARAP 三角网格 + 图钉）。
+画布 Mixin：GIMP 风格的笔刷扭曲笔划。
 
-从 ``EditorCanvas`` 拆出（2026-10-07）。方法体逐字未改。
+拖动时**只累加位移场**（纯加减法，实测 0.08 ms/落点），显示用的预览按
+16 ms 节流、每帧只重渲染鼠标这一帧扫过的那一小块；松手时渲染一次
+**笔划包围盒**。因此：
 
-### `class DeformMixin(CanvasHost)`
+- 拖动过程中没有"算不动"的帧；
+- 松手提交的成本只跟笔划覆盖了多大面积有关，**与拖动时长无关**（旧实现
+  是每个落点都把整个圆盘重采样一遍，一笔 30 秒要 66 秒才算完）。
 
-变形工具：网格/图钉/解算/预览/覆盖层。
+预览与提交共用同一张场，所以预览看到的就是最终结果（只是分辨率低一档）。
+
+### `class DistortionMixin(CanvasHost)`
+
+局部笔刷形变：拖动走位移场预览，松手只渲染笔划包围盒，每笔一个撤销点。
 
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
-| `mesh_density() -> float` | 当前网格格距（图片像素档位）。 |
-| `set_mesh_density(cell: float) -> None` | 改网格格距：**重建网格并清空图钉**（顶点下标全变了，旧钉无意义）。 |
-| `reset_pins() -> None` | 「重置」：清空所有图钉，丢掉未应用的形变（网格本身保留）。 |
-| `pins() -> list` | 当前图钉的副本（``(顶点下标, QPointF)`` 列表）——给自测与外部读。 |
-| `pin_count() -> int` | 当前图钉个数。 |
-| `pin_add(pos: QPointF) -> int \| None` | 在 ``pos``（图片坐标）加一个图钉，返回它在 ``_pins`` 里的下标。 |
-| `pin_remove(index: int) -> None` | 删掉第 ``index`` 个图钉（形变随之重解）。 |
-| `pin_move(index: int, pos: QPointF) -> None` | 把第 ``index`` 个图钉拖到 ``pos``（图片坐标）。 |
-| `pins_pending()` | 未应用的形变 ``(vertices_rest, vertices_moved, triangles)``；无则 None。 |
-| `adopt_pins(pin_vertices=None) -> None` | 「应用变形」后用：把图钉**原地保留**（目标位置 = 新网格的原位）。 |
-
-##### `pin_add(pos: QPointF) -> int | None`
-
-在 ``pos``（图片坐标）加一个图钉，返回它在 ``_pins`` 里的下标。
-
-图钉**吸附到最近的网格顶点**（ARAP 的硬约束只能钉在顶点上）；同一
-顶点已有图钉时不再重复加，直接返回已有的那个。
-
-##### `pin_move(index: int, pos: QPointF) -> None`
-
-把第 ``index`` 个图钉拖到 ``pos``（图片坐标）。
-
-⚠️ **允许拖到图片外面**（用户 2026-10-01：「任意点只能向内，不能向外」）。
-往外拖＝把那块内容往外**拉伸**，拉出画布的部分按越界填底。这里只留一个
-"一张图那么远"的宽松上限，免得图钉被甩到天外、再也找不回来。
-
-##### `pins_pending()`
-
-未应用的形变 ``(vertices_rest, vertices_moved, triangles)``；无则 None。
-
-「未应用」= 解出的网格确实动过。全都没动时返回 None，调用方据此
-跳过烘焙（不产生多余的撤销点）。
-
-##### `adopt_pins(pin_vertices=None) -> None`
-
-「应用变形」后用：把图钉**原地保留**（目标位置 = 新网格的原位）。
-
-⚠️ 为什么不清空：古籍褶皱往往要来回试几次，每次应用后都清空图钉的话
-用户得重新钉一遍。保留图钉、并让它们落在**刚烘焙完的图**的原位，
-就可以接着微调同一块。
-
-⚠️ ``pin_vertices`` 必须由调用方在 ``set_image`` **之前**快照传入：
-:meth:`set_image` 换图时会把 ``_pins`` 清空（换图后旧钉无意义），
-所以这里不能指望调用时 ``self._pins`` 还在。传 ``None`` 时退回读
-当前 ``self._pins``（兼容直接调用）。
+| `set_distortion_options(**options: Any) -> None` | 更新扭曲参数，并将各值限制在界面允许范围内。 |
 
 ---
 
@@ -3283,38 +3213,6 @@ worker 会变成孤儿线程，而它是被 ``parent``（编辑器对话框）�
 ### `class OverlayMixin(CanvasHost)`
 
 覆盖层：选中框/手柄/橡皮圈/整幅虚线框的创建与同步。
-
----
-
-## `desktop.components.viewers.image_editor.canvas.rectify`
-
-源码：[`desktop/components/viewers/image_editor/canvas/rectify.py`](../../desktop/components/viewers/image_editor/canvas/rectify.py)
-
-画布 Mixin：**校正**（四角透视校正 + 目标宽高比）。
-
-从 ``EditorCanvas`` 拆出（2026-10-07）。方法体逐字未改。
-
-### `class RectifyMixin(CanvasHost)`
-
-校正工具：四角手柄/命中/拖动/预览/覆盖层。
-
-#### 方法
-
-| 方法 | 说明 |
-| --- | --- |
-| `reset_quad() -> None` | 「重置」：四角回到整幅图四角（丢掉未应用的校正）。 |
-| `quad() -> list` | 当前四边形四角副本（``QPointF`` 列表）——给自测与外部读。 |
-| `rectify_ratio() -> str` | 目标矩形宽高比口径（见 RECTIFY_RATIO_CHOICES）。 |
-| `set_rectify_ratio(mode: str) -> None` | 改目标矩形口径：只影响**之后的**预览，不必丢掉当前四角。 |
-| `quad_move(index: int, pos: QPointF) -> None` | 把第 ``index`` 个角拖到 ``pos``（图片坐标）。 |
-| `quad_pending()` | 未应用的校正 ``(quad, mode)``；四角没动过则 None。 |
-
-##### `quad_move(index: int, pos: QPointF) -> None`
-
-把第 ``index`` 个角拖到 ``pos``（图片坐标）。
-
-⚠️ **允许拖到图片外面**（四角要能框住"拍摄时把纸张也拍进来了"的
-边界）。只留一个"一张图那么远"的宽松上限，免得角点被甩丢。
 
 ---
 
@@ -3398,48 +3296,6 @@ worker 会变成孤儿线程，而它是被 ``parent``（编辑器对话框）�
 
 ---
 
-## `desktop.components.viewers.image_editor.canvas.tweak`
-
-源码：[`desktop/components/viewers/image_editor/canvas/tweak.py`](../../desktop/components/viewers/image_editor/canvas/tweak.py)
-
-画布 Mixin：**微调**（局部框选 → 透视拉直 → 羽化贴回）。
-
-算法与口径见 ``utils.local_adjust``。画布只管：四角手柄/命中/拖动/预览/
-覆盖层。预览复用「变形」的 ``_deform_item`` 浮层（与「校正」同款做法），
-提交时按全分辨率一次性算（``cv2.warpPerspective`` 整页约 0.1~0.2s，
-主线程同步跑即可，不进后台线程）。
-
-### `class TweakMixin(CanvasHost)`
-
-微调工具：局部四角/羽化/拉直预览。
-
-#### 方法
-
-| 方法 | 说明 |
-| --- | --- |
-| `reset_tweak() -> None` | 「重置」：四角回到整幅图，丢掉未应用的微调。 |
-| `tweak_quad() -> list` | 当前四边形四角副本（``QPointF`` 列表）。 |
-| `tweak_feather() -> float` | 当前羽化半径（图片像素）。 |
-| `set_tweak_feather(value: float) -> None` | 改羽化半径：只影响**之后**的预览/落地，不必丢四角。 |
-| `tweak_move(index: int, pos: QPointF) -> None` | 把第 ``index`` 个角拖到 ``pos``（图片坐标，允许拖到图外一图之距）。 |
-| `tweak_move_all(delta: QPointF) -> None` | 整体平移四角（框内拖 = 搬动整个框，形状不变）。 |
-| `tweak_pending()` | 未应用的微调 ``(quad_src, quad_dst, feather)``；没歪则 None。 |
-
-##### `tweak_move(index: int, pos: QPointF) -> None`
-
-把第 ``index`` 个角拖到 ``pos``（图片坐标，允许拖到图外一图之距）。
-
-拖动即实时预览"拉直后"的样子（源=当前四角，目标=其外接框）。
-
-##### `tweak_move_all(delta: QPointF) -> None`
-
-整体平移四角（框内拖 = 搬动整个框，形状不变）。
-
-小框挪地方不用四个角逐个拖。位移按增量给（调用方记上次位置），
-与变换笼 ``cage_move_all`` 同口径；同样允许拖到图外一图之距。
-
----
-
 ## `desktop.components.viewers.image_editor.consts`
 
 源码：[`desktop/components/viewers/image_editor/consts.py`](../../desktop/components/viewers/image_editor/consts.py)
@@ -3461,24 +3317,20 @@ worker 会变成孤儿线程，而它是被 ``parent``（编辑器对话框）�
 | EDIT_FIT_RATIO | `0.8` |
 | PIVOT_VIEW_PX | `14.0` |
 | ROTATE_SNAP_DEG | `15.0` |
-| MESH_DENSITY_DEFAULT | `40.0` |
-| DEFORM_FIT_RATIO | `0.8` |
-| PIN_NODE_VIEW_PX | `9.0` |
-| PIN_HIT_VIEW_PX | `11.0` |
-| QUAD_HANDLE_VIEW_PX | `8.0` |
-| QUAD_HIT_VIEW_PX | `12.0` |
-| RECTIFY_RATIO_DEFAULT | `"area"` |
-| DEFORM_PREVIEW_PIXELS | `120000` |
-| DEFORM_PREVIEW_SETTLE_PIXELS | `2500000` |
-| DEFORM_PREVIEW_INTERVAL | `0.08` |
-| CAGE_HANDLE_VIEW_PX | `8.0` |
-| CAGE_HIT_VIEW_PX | `12.0` |
-| CAGE_EDGE_BAND_VIEW_PX | `8.0` |
-| CAGE_PREVIEW_PIXELS | `250000` |
-| CAGE_PREVIEW_SETTLE_PIXELS | `2500000` |
-| CAGE_PREVIEW_INTERVAL | `0.08` |
-| CAGE_FIT_RATIO | `0.8` |
-| CAGE_DENSITY_DEFAULT | `2` |
+| DISTORT_PREVIEW_PIXELS | `2000000` |
+| DISTORT_PREVIEW_TILE | `128` |
+| DISTORT_PREVIEW_TILES_PER_TICK | `16` |
+| DISTORT_PREVIEW_RENDER_PIXELS | `60000` |
+| DISTORT_SYNC_RENDER_PIXELS | `4000000` |
+| PANEL_WIDTH | `300` |
+| HISTORY_HEIGHT | `150` |
+| HISTORY_ORIGIN_LABEL | `"打开"` |
+| STEP_CROP | `"裁剪"` |
+| STEP_TRANSFORM | `"变换"` |
+| STEP_ERASE | `"擦除"` |
+| STEP_DISTORT | `"扭曲"` |
+| STEP_TEXT | `"文字"` |
+| STEP_RESET | `"还原"` |
 
 ---
 
@@ -3489,34 +3341,37 @@ worker 会变成孤儿线程，而它是被 ``parent``（编辑器对话框）�
 ``ImageEditorDialog``：**装配点 + 基座 + 收尾**。
 
 从 894 行的单类拆出（2026-10-07）。本文件放模块级常量、类头（类属性）、
-``__init__``、快捷键、覆盖确认与「完成」收尾；工具栏、各工具选项页、撤销栈、
-工具提交分别在兄弟模块的 Mixin 里。方法体逐字未改。
+``__init__``、快捷键、覆盖确认与「完成」收尾；顶部功能条/右侧参数面板、
+各功能参数页、撤销与步骤历史、工具提交分别在兄弟模块的 Mixin 里。
 
-MRO 顺序：工具栏/选项页在前（``__init__`` 里就要用），提交与撤销在后。
+MRO 顺序：功能条/参数页在前（``__init__`` 里就要用），提交与历史在后。
+
+版面（2026-10-08 重排）：**顶部功能选择 + 中间画布 + 右侧参数面板 + 底部状态**，
+另有右侧面板里的「编辑历史」步骤列表。编辑**实时生效**——裁剪/变换松手即
+应用，文字块本身就是预览、切功能或「完成」时自动写入，因此没有「应用裁剪」
+「应用变换」「插入文字」三个确认按钮。
+
+⚠️ 「完成」仍然要求一次覆盖确认（``_confirm_overwrite``）：这一步不是"单步
+变更确认"，而是"要不要覆盖磁盘上的原图"，原图被覆盖后不可逆，用户
+2026-10-04 明确要求必须问。
 
 ### `class ImageEditorDialog(ToolbarMixin, ToolPagesMixin, UndoMixin, CommitMixin, QDialog)`
 
-图片编辑器弹窗：左工具栏 + 中间画布 + 右侧选项页 + 底部状态栏。
+图片编辑器弹窗：顶部功能条 + 中间画布 + 右侧参数面板 + 底部状态栏。
 
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(parent=None, image: QImage \| None=None, save_back: bool=False)` | — |
-| `closeEvent(event) -> None` | 关闭时确保**没有在飞的后台线程**。 |
+| `closeEvent(event) -> None` | 关闭时清理画布引用。 |
 | `result_image() -> QImage \| None` | 编辑结果（无图时 None；是否采纳由调用方的 exec 结果决定）。 |
 
 ##### `closeEvent(event) -> None`
 
-关闭时确保**没有在飞的后台线程**。
+关闭时清理画布引用。
 
-⚠️ 烘焙 worker 以对话框为 ``parent``。若在它还在跑的时候对话框被
-析构，Qt 会直接 **abort 整个进程**
-（``QThread: Destroyed while thread is still running``）。
-正常流程里 :func:`run_with_progress` 自己同步等线程结束，但
-``processEvents`` 期间用户仍可能关窗/宿主强制退出，所以这里要兜底。
-
-同时清画布：撤销栈是**整图快照**，大图下最多 12 份（见 ``UNDO_LIMIT``），
+撤销栈是**整图快照**，大图下最多 12 份（见 ``UNDO_LIMIT``），
 关窗后必须释放，不能靠 Python GC（Qt 侧 C++ 对象不由引用计数托管）。
 
 ---
@@ -3539,13 +3394,17 @@ MRO 顺序：工具栏/选项页在前（``__init__`` 里就要用），提交�
 
 源码：[`desktop/components/viewers/image_editor/dialog_pages.py`](../../desktop/components/viewers/image_editor/dialog_pages.py)
 
-``ImageEditorDialog`` Mixin：**各工具的选项页**。
+``ImageEditorDialog`` Mixin：**各功能的参数页**（右侧面板里那一块）。
 
-每个工具右侧的选项面板（裁剪/变换/变形/笼/校正/擦除/文字）。（从 ``image_editor/dialog.py`` 拆出，2026-10-07；方法体逐字未改）。
+每个功能一张竖排参数页（裁剪/变换/扭曲/擦除/文字）。（从
+``image_editor/dialog.py`` 拆出，2026-10-07；2026-10-08 由"横向选项行"改成
+"右侧面板竖排"，并**删掉三个单步确认按钮**——「应用裁剪」「应用变换」
+「插入文字」：编辑改为实时生效，见 ``canvas/interaction.py`` 的
+``crop_committed`` / ``transform_committed`` 与 ``_set_tool`` 里的自动提交。）
 
 ### `class ToolPagesMixin(DialogHost)`
 
-每个工具右侧的选项面板（裁剪/变换/变形/笼/校正/擦除/文字）。
+每个功能右侧的参数面板（裁剪/变换/扭曲/擦除/文字）。
 
 ---
 
@@ -3553,13 +3412,34 @@ MRO 顺序：工具栏/选项页在前（``__init__`` 里就要用），提交�
 
 源码：[`desktop/components/viewers/image_editor/dialog_toolbar.py`](../../desktop/components/viewers/image_editor/dialog_toolbar.py)
 
-``ImageEditorDialog`` Mixin：**工具栏与状态栏**。
+``ImageEditorDialog`` Mixin：**顶部功能条 + 右侧参数面板 + 状态栏**。
 
-左侧工具竖排按钮、右侧选项页切换、底部状态提示。（从 ``image_editor/dialog.py`` 拆出，2026-10-07；方法体逐字未改）。
+布局（2026-10-08 重排，用户定：「顶部是功能选择，右侧是每个功能的相关参数
+面板」）::
+
+    ┌──────────────────────────────────────────────────────┐
+    │ 撤销 重做 还原 │ 缩小 放大 适应窗口 │        │  完成   │  ← _build_toolbar_row 上半
+    ├──────────────────────────────────────────────────────┤
+    │ 裁剪  变换  扭曲  擦除  文字                          │  ← _build_toolbar_row 下半
+    ├───────────────────────────────┬──────────────────────┤
+    │                               │  裁剪                │
+    │          画布                  │  （提示）            │
+    │                               │  ── 参数（随功能换）── │
+    │                               │  ── 编辑历史 ──────── │
+    ├───────────────────────────────┴──────────────────────┤
+    │ 状态提示                                    200×120px │
+    └──────────────────────────────────────────────────────┘
+
+旧版把工具按钮挤在动作行、参数挤在第二行横向排——一行摆不下时左侧按钮被
+挤出窗口（用户截图报过），而且参数一多就横向溢出。现在动作行只放全局动作、
+功能单独一行、参数竖排在右侧固定宽度面板里。
+
+（原「左侧工具竖排 + 第二行选项」版从 ``image_editor/dialog.py`` 拆出，
+2026-10-07。）
 
 ### `class ToolbarMixin(DialogHost)`
 
-左侧工具竖排按钮、右侧选项页切换、底部状态提示。
+顶部功能条、右侧参数面板、底部状态提示。
 
 ---
 
@@ -3567,13 +3447,187 @@ MRO 顺序：工具栏/选项页在前（``__init__`` 里就要用），提交�
 
 源码：[`desktop/components/viewers/image_editor/dialog_undo.py`](../../desktop/components/viewers/image_editor/dialog_undo.py)
 
-``ImageEditorDialog`` Mixin：**撤销栈**。
+``ImageEditorDialog`` Mixin：**撤销栈 + 步骤历史**。
 
-快照入栈/撤销/重做/全部复位。（从 ``image_editor/dialog.py`` 拆出，2026-10-07；方法体逐字未改）。
+快照入栈/撤销/重做/全部复位，以及右侧「编辑历史」面板的同步与点选跳转。
+（从 ``image_editor/dialog.py`` 拆出，2026-10-07；2026-10-08 加**步骤名**与
+历史面板——用户要"记录步骤数据、Ctrl+Z 撤销上一步、可点选回退"。）
+
+数据模型（三个列表，靠索引对齐）
+--------------------------------
+
+``_undo`` 存的是**变更前**的整图快照，``_redo`` 存撤销时吐出来的状态，
+``_image`` 永远是"当前"。于是**时间轴**是：
+
+```text
+节点 0 .. U            U+1 .. N
+_undo[0..U-1] + _image + reversed(_redo)
+```
+
+``_labels[i]`` 是**把 ``_undo[i]`` 这一步的状态改掉的那一步的名字**（也就是
+"节点 i → 节点 i+1"这一步）。因此：
+
+- ``len(_labels) == len(_undo) + len(_redo)`` —— 不变量，撤销/重做只挪光标；
+- 节点 ``t``（``t>=1``）的名字 = ``_labels[t-1]``；
+- 节点 ``0`` 的名字 = ``_origin_label``：正常是"打开"，而**栈被截断**（超过
+  ``UNDO_LIMIT`` 丢掉了最老的状态）之后，它变成被丢掉那一步的名字——那一格
+  已经不是原始图了，还写"打开"就是骗人。
+
+⚠️ 只改 ``_undo``/``_redo`` 而不动 ``_labels``（或反过来）会让历史面板与
+真实状态错位：点某一格跳过去的图不是那一格标的步骤。所有改动都收敛在
+:meth:`_push_undo` / :meth:`_undo_now` / :meth:`_redo_now` / :meth:`_reset_all`。
 
 ### `class UndoMixin(DialogHost)`
 
-快照入栈/撤销/重做/全部复位。
+快照入栈/撤销/重做/全部复位 + 步骤历史。
+
+---
+
+## `desktop.components.viewers.image_editor.distortion`
+
+源码：[`desktop/components/viewers/image_editor/distortion.py`](../../desktop/components/viewers/image_editor/distortion.py)
+
+图片扭曲变换的像素级算法：**位移场累积 + 区域重采样**。
+
+## 为什么不再"逐落点重采样"
+
+GIMP 风格笔刷扭曲沿鼠标轨迹落下密集的笔刷。旧实现是**每个落点都把整个
+笔刷圆盘重采样一遍**，而落点间距只有笔刷直径的 ~1/10 ⇒ 相邻圆盘重叠 ~90%，
+同一片像素被反复重采样。实测（3000×4000 扫描件、笔刷 117、拖 30 秒）：
+
+- 单次落点重采样 **9.7 ms**，一笔累计 ~3600 个落点 ⇒ 松手后要 **66 秒** 才出结果；
+- 计算量正比于**拖动时长**，越拖越慢，最后把程序顶死（用户报的"崩溃"）。
+
+## 现在：两段式
+
+1. :func:`plan_stroke_stamps` 把鼠标轨迹重采样成等距落点（**唯一一份**，
+   预览与提交共用）；
+2. :class:`StrokeField` 把每个落点的**作用**（位移量 / 混合量）**累加**进场：
+   纯加减法，实测 **0.08 ms/落点**，比逐点重采样快两个数量级；
+3. :func:`render_field_region` 把场作用到笔划起点图上，**只重采样非零区域**
+   并分块处理。
+
+于是松手提交的成本只跟"这一笔覆盖了多大面积"有关，**与拖动时长解耦**：
+拖 3 秒和拖 3 分钟一样快。同一次 30 秒拖动实测 66 s → **~1 s**。
+
+## 语义
+
+位移场是"逐落点重采样"在落点间距趋于 0 时的极限，也正是 GIMP/PS 变形笔刷
+的标准做法：叠加的是**位移**，而不是反复重采样已经变形的像素——因此不会像
+旧实现那样在软笔刷下越拖越"漂"。**单落点**没有叠加，结果与旧实现逐像素一致
+（:func:`apply_distortion_stamp` 即"只含一个落点的笔划"）。
+
+NumPy 是项目已有依赖，延迟到首次用到时导入，避免打开编辑器时增加启动开销。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| DISTORT_FIELD_PIXELS | `2000000` |
+| RENDER_CHUNK_PIXELS | `400000` |
+
+### `class StrokeSampler`
+
+把鼠标轨迹**增量**重采样成等距落点（间距 = 笔刷直径 × ``spacing%``）。
+
+第一条落点位移恒为 ``(0, 0)``：径向/旋涡类模式落笔就要生效（``move``
+因为位移为零自然没有影响）。``carry`` 跨段累计，所以分段喂和一次喂
+得到的落点序列完全一样。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(size: int, spacing: int) -> None` | — |
+| `start(point: Any) -> list[tuple[float, float, float, float]]` | 落笔：记录起点并给出第一个落点（零位移）。 |
+| `extend(point: Any) -> list[tuple[float, float, float, float]]` | 接过鼠标新位置，返回这一段新产生的落点。 |
+| `flush() -> list[tuple[float, float, float, float]]` | 收笔：把最后一个鼠标位置补成落点（没走出去就不补）。 |
+
+##### `extend(point: Any) -> list[tuple[float, float, float, float]]`
+
+接过鼠标新位置，返回这一段新产生的落点。
+
+``_carry`` 是**距上一个落点已经走过的距离**（0 ≤ carry < step），
+跨段累计，所以分段喂和一次喂得到的落点序列完全一样。
+
+⚠️ 这里的记账必须写成 ``carry = length - (needed - step)``：``needed``
+是本段内"下一个落点距段首的距离"。旧写法把已经用掉的旧 ``carry``
+又加回一次，于是 ``carry`` 随每一段**单调增长**；一旦 ``carry > step``，
+``step - carry`` 变负、循环每段空转 ``carry/step`` 次，抛出成百个
+远在天边的假落点（实测拖 30 秒后每段 184 个、脏区 2000 图像 px）——
+这正是"拖得越久越卡、最后崩溃"的机制性原因。
+
+### `class StrokeField`
+
+一笔形变累积出来的场（图像坐标，可降采样）。
+
+- 几何模式累加 ``disp_x`` / ``disp_y``（采样点该往哪偏多少像素）；
+- 混合模式累加 ``mix``（0~1，把多少比例的"笔划起点内容"混回来）。
+
+``x0/y0/x1/y1`` 是**非零区域**（图像坐标）：渲染只看这一块——这正是
+"提交成本与拖动时长解耦"的关键。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(width: int, height: int, mode: str, np: Any=None, budget: int=DISTORT_FIELD_PIXELS) -> None` | — |
+| `empty() -> bool` | 这一笔有没有真落过笔（没落过就不必渲染）。 |
+| `add_stamp(cx: float, cy: float, dx: float, dy: float, size: int, hardness: int, strength: int) -> None` | 把一个笔刷落点的作用累加进场（纯加减法，笔刷外补零）。 |
+| `active_rect(width: int, height: int) -> tuple[int, int, int, int] \| None` | 非零区域换算回图像像素矩形（外扩 2 px 兜住跨边界的取样点）。 |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `plan_stroke_stamps(points: list[tuple[float, float]], size: int, spacing: int) -> list[tuple[float, float, float, float]]` | 把整条鼠标轨迹重采样成等距落点，返回 ``[(cx, cy, dx, dy), ...]``。 |
+| `build_stroke_field(width: int, height: int, stamps: list[tuple[float, float, float, float]], size: int, hardness: int, strength: int, mode: str, budget: int=DISTORT_FIELD_PIXELS) -> StrokeField` | 按等距落点建出整笔的形变场（纯计算，可安全放进工作线程）。 |
+| `render_field_region(dest_pixels: Any, dest_rect: tuple[int, int, int, int], src_pixels: Any, src_origin: tuple[float, float], field: StrokeField, scale: float, interpolation: str, np: Any, restore_pixels: Any=None, restore_origin: tuple[float, float]=(0.0, 0.0), progress: Any=None) -> None` | 把场作用到 ``src_pixels``，只写 ``dest_pixels`` 的 ``dest_rect`` 区域。 |
+| `render_stroke_field(image: QImage, field: StrokeField, interpolation: str, restore_image: QImage \| None=None, progress: Any=None) -> QImage` | 把场作用到 ``image`` 上，返回新图（非零区域之外逐像素不变）。 |
+| `render_rect_into(image: QImage, origin: QImage, field: StrokeField, scale: float, rect: tuple[int, int, int, int], interpolation: str) -> None` | 把 ``rect``（预览图自己的像素下标）按场重渲染进 ``image``（实时预览用）。 |
+| `apply_distortion_stamp(image: QImage, center_x: float, center_y: float, delta_x: float, delta_y: float, size: int, hardness: int, strength: int, mode: str, interpolation: str, restore_image: QImage \| None=None) -> None` | 原地应用一次笔刷采样（= 只含一个落点的笔划）。 |
+
+#### `plan_stroke_stamps(points: list[tuple[float, float]], size: int, spacing: int) -> list[tuple[float, float, float, float]]`
+
+把整条鼠标轨迹重采样成等距落点，返回 ``[(cx, cy, dx, dy), ...]``。
+
+一次性入口；拖动过程中用的是 :class:`StrokeSampler`（同一个算法，
+落点一边拖一边攒，不必在松手时回放整条路径）。
+
+#### `render_field_region(dest_pixels: Any, dest_rect: tuple[int, int, int, int], src_pixels: Any, src_origin: tuple[float, float], field: StrokeField, scale: float, interpolation: str, np: Any, restore_pixels: Any=None, restore_origin: tuple[float, float]=(0.0, 0.0), progress: Any=None) -> None`
+
+把场作用到 ``src_pixels``，只写 ``dest_pixels`` 的 ``dest_rect`` 区域。
+
+``dest_rect`` 是**目标缓冲自己的像素下标**；``scale`` = 目标像素 / 图像
+像素（预览用缩小图 < 1，全分辨率提交 = 1）。``src_pixels`` 与目标同尺度，
+``src_origin`` 是它左上角对应的图像坐标。只重采样非零区域，且按
+:data:`RENDER_CHUNK_PIXELS` 分块，临时内存有界。
+
+#### `render_stroke_field(image: QImage, field: StrokeField, interpolation: str, restore_image: QImage | None=None, progress: Any=None) -> QImage`
+
+把场作用到 ``image`` 上，返回新图（非零区域之外逐像素不变）。
+
+纯计算入口，可安全放进工作线程；``progress(done, total)`` 返回 ``False``
+即中止（已写的分块保留，调用方按需丢弃）。
+
+#### `render_rect_into(image: QImage, origin: QImage, field: StrokeField, scale: float, rect: tuple[int, int, int, int], interpolation: str) -> None`
+
+把 ``rect``（预览图自己的像素下标）按场重渲染进 ``image``（实时预览用）。
+
+``image`` 是降采样的预览图、``origin`` 是笔划起点图（同尺度）。**每次都
+从起点图重算整片**，所以同一片区域被后续落点反复覆盖也不会累积出错
+——旧实现"就地改预览像素"在重叠区域会越描越花。
+
+⚠️ 按**精确脏矩形**渲染，不要改成"先凑成整块 128×128 瓦片再渲染"：
+一次落点的脏区通常只有 ~50×60 px，按瓦片渲染等于多算 10 倍（实测每帧
+10 ms 里有 9 ms 是这么浪费掉的）。
+
+#### `apply_distortion_stamp(image: QImage, center_x: float, center_y: float, delta_x: float, delta_y: float, size: int, hardness: int, strength: int, mode: str, interpolation: str, restore_image: QImage | None=None) -> None`
+
+原地应用一次笔刷采样（= 只含一个落点的笔划）。
+
+单落点没有叠加，结果与"逐落点重采样"的旧实现**逐像素一致**；只读写
+笔刷圆盘那一小块，因此可以在一笔里反复调用而不用整图拷贝。
 
 ---
 
@@ -3596,8 +3650,6 @@ MRO 顺序：工具栏/选项页在前（``__init__`` 里就要用），提交�
 | `shear_about(point: QPointF, sh: float, sv: float) -> QTransform` | 绕 ``point`` 切变：水平 sh（x 随 y 斜切）、垂直 sv（y 随 x 斜切）。 |
 | `bake_transform(image: QImage, rect: QRectF, xf: QTransform, region: QImage, grow: bool=False) -> Any` | 把「选区内容经 ``xf`` 变换」烘焙进图片。 |
 | `transform_region(image: QImage, rect: QRectF, xf: QTransform)` | ``grow`` 模式的目标画布：``(ox, oy, width, height)``。 |
-| `bake_puppet(image: QImage, vertices_rest, vertices_moved, triangles, grow=False, progress=None) -> Any` | 把「网格 ``vertices_rest`` → ``vertices_moved``」的形变烘焙进图片。 |
-| `cage_preview_scale(span_x: float, span_y: float, on_screen: float=1.0, budget_pixels: float=DEFORM_PREVIEW_PIXELS) -> float` | 拖动预览的降采样倍率：清晰度与成本的**取小**。 |
 | `draw_text(image: QImage, pos: QPointF, text: str, px: int, color: QColor, family: str \| None=None) -> QImage` | 在 ``pos``（文字块左上角）画文字（可多行，行距 1.25 倍）；空文本原样返回。 |
 
 #### `bake_transform(image: QImage, rect: QRectF, xf: QTransform, region: QImage, grow: bool=False) -> Any`
@@ -3629,43 +3681,6 @@ MRO 顺序：工具栏/选项页在前（``__init__`` 里就要用），提交�
 ∪ ②**选区之外**原本就留着的那部分原图（选区整体移走时这块为空）。
 选区原位被移走、内容被填白，所以**不再算进外框**——若按"原图边界"取并，
 整体平移就会凭空多出一条填白边（用户要的正是把它去掉）。
-
-#### `bake_puppet(image: QImage, vertices_rest, vertices_moved, triangles, grow=False, progress=None) -> Any`
-
-把「网格 ``vertices_rest`` → ``vertices_moved``」的形变烘焙进图片。
-
-⚠️ 返回 ``Any``：多形态返回（``QImage`` / ``(QImage, (ox, oy))`` / ``None``），
-同 :func:`bake_transform` 的理由——标联合类型会让调用点的解包报错。
-
-与 :func:`bake_transform` 同口径：**没动过的网格区域**逐字节不动，只是
-这里不是仿射矩阵，而是 ARAP 三角网格逐像素重映射（PS 操控变形口径，
-见 ``utils.puppet_warp``）。
-⚠️ **保留 alpha**：桌面侧编辑的常常是第三步产物「白底透明 PNG」，
-丢掉 alpha 会让整片透明背景变成不透明黑（用户 2026-10-01 报过）。
-
-``grow=True``：图钉拖出原边界时不裁，画布放大，返回 ``(QImage, (ox, oy))``
-（用户 2026-10-02：「超出原本区域的不要截，最终结果按最后图片的范围」）。
-
-``progress`` 透传（见 ``utils.puppet_warp.puppet_warp``）；被中止时
-返回 ``None``。
-
-#### `cage_preview_scale(span_x: float, span_y: float, on_screen: float=1.0, budget_pixels: float=DEFORM_PREVIEW_PIXELS) -> float`
-
-拖动预览的降采样倍率：清晰度与成本的**取小**。
-
-两个约束：
-
-1. **清晰度**：``on_screen`` = 场景 1 单位对应多少**设备像素**
-   （= 当前缩放 × dpr）。预览取到这个倍率时，预览图上的 1 像素正好
-   落在屏幕 1 设备像素上——看着与原图一样清楚，再取大就是纯浪费。
-2. **成本**：处理面积不超过 ``budget_pixels``。
-
-缩到 1/3 看整页时清晰度约束直接给出 1/3：比按成本算还省 9 倍工作量，
-而且屏幕上看不出区别（这正是"预览"该有的样子）。
-
-``budget_pixels`` 由调用方按场合给：拖动中给
-:data:`DEFORM_PREVIEW_PIXELS`（要跟手），松手后给
-:data:`DEFORM_PREVIEW_SETTLE_PIXELS`（停下来看结果，宁可慢一点也要清楚）。
 
 #### `draw_text(image: QImage, pos: QPointF, text: str, px: int, color: QColor, family: str | None=None) -> QImage`
 

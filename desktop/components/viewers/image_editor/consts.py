@@ -56,6 +56,27 @@ ROTATE_SNAP_DEG = 15.0
 #: 橡皮擦直径范围（图片像素）
 ERASER_MIN, ERASER_MAX, ERASER_DEFAULT = 4, 160, 24
 
+#: 扭曲笔刷默认参数（图片像素 / 百分比）
+DISTORT_SIZE, DISTORT_HARDNESS = 117, 50
+DISTORT_STRENGTH, DISTORT_SPACING = 50, 10
+
+#: 实时预览的像素预算与瓦片尺寸（预览按此降采样，逐帧只重渲染脏瓦片）
+DISTORT_PREVIEW_PIXELS = 2_000_000
+DISTORT_PREVIEW_TILE = 128
+
+#: 单帧最多上传多少块预览瓦片——鼠标跳一下会一次脏掉很多块，
+#: 全传完就是一次可感知的卡顿（剩下的留给下一帧）。
+DISTORT_PREVIEW_TILES_PER_TICK = 16
+
+#: 单帧最多**重渲染**多少个预览像素。脏区可以一下子很大（鼠标猛地一跳、
+#: 或系统把一串 move 并成一个事件），一次渲染完就是一帧卡顿；超预算的部分
+#: 整段留给下一次 tick，于是每帧成本恒定。实测局部脏区 ~3 千像素约 0.8 ms。
+DISTORT_PREVIEW_RENDER_PIXELS = 60_000
+
+#: 提交时同步渲染的像素上限；超过则移入后台线程 + 进度对话框。
+#: 实测 12 MP 图整页（8.9 Mpx）三次插值约 9 秒，局部笔划（0.1 Mpx）0.2 秒。
+DISTORT_SYNC_RENDER_PIXELS = 4_000_000
+
 #: 插入文字字号范围（图片像素高）
 TEXT_MIN, TEXT_MAX, TEXT_DEFAULT = 12, 240, 48
 
@@ -70,10 +91,28 @@ TEXT_SWATCHES = (
     ("黛绿", "#2e7d32"),
 )
 
-#: 左侧工具栏：（键, 图标, 中文名）
+#: 顶部**功能选择**条：（键, 图标, 中文名）。切功能 = 换右侧参数面板。
 TOOLS = (
     ("crop", FIF.CUT, "裁剪"),
     ("transform", FIF.MOVE, "变换"),
+    ("distort", FIF.BRUSH, "扭曲"),
     ("erase", FIF.ERASE_TOOL, "擦除"),
     ("text", FIF.FONT, "文字"),
 )
+
+#: 右侧参数面板宽度（逻辑像素）。控件按**竖排**堆，够放一条滑杆 + 数字。
+PANEL_WIDTH = 300
+
+#: 右侧「编辑历史」列表高度（逻辑像素）——步骤多了在里面滚动。
+HISTORY_HEIGHT = 150
+
+#: 历史里第 0 个节点（打开编辑器时的状态）的文案。
+HISTORY_ORIGIN_LABEL = "打开"
+
+#: 各功能写进历史时的步骤名（``_push_undo`` 的 label）。
+STEP_CROP = "裁剪"
+STEP_TRANSFORM = "变换"
+STEP_ERASE = "擦除"
+STEP_DISTORT = "扭曲"
+STEP_TEXT = "文字"
+STEP_RESET = "还原"

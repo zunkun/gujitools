@@ -2,10 +2,19 @@
 """``ImageEditorDialog``：**装配点 + 基座 + 收尾**。
 
 从 894 行的单类拆出（2026-10-07）。本文件放模块级常量、类头（类属性）、
-``__init__``、快捷键、覆盖确认与「完成」收尾；工具栏、各工具选项页、撤销栈、
-工具提交分别在兄弟模块的 Mixin 里。方法体逐字未改。
+``__init__``、快捷键、覆盖确认与「完成」收尾；顶部功能条/右侧参数面板、
+各功能参数页、撤销与步骤历史、工具提交分别在兄弟模块的 Mixin 里。
 
-MRO 顺序：工具栏/选项页在前（``__init__`` 里就要用），提交与撤销在后。
+MRO 顺序：功能条/参数页在前（``__init__`` 里就要用），提交与历史在后。
+
+版面（2026-10-08 重排）：**顶部功能选择 + 中间画布 + 右侧参数面板 + 底部状态**，
+另有右侧面板里的「编辑历史」步骤列表。编辑**实时生效**——裁剪/变换松手即
+应用，文字块本身就是预览、切功能或「完成」时自动写入，因此没有「应用裁剪」
+「应用变换」「插入文字」三个确认按钮。
+
+⚠️ 「完成」仍然要求一次覆盖确认（``_confirm_overwrite``）：这一步不是"单步
+变更确认"，而是"要不要覆盖磁盘上的原图"，原图被覆盖后不可逆，用户
+2026-10-04 明确要求必须问。
 """
 from __future__ import annotations
 
@@ -15,7 +24,9 @@ from PySide6.QtWidgets import QDialog, QHBoxLayout, QVBoxLayout, QWidget
 from desktop.ui import theme as T
 from desktop.ui.window_size import apply_window_size
 from .canvas import EditorCanvas
-from .consts import ERASER_DEFAULT, TEXT_DEFAULT
+from .consts import (
+    ERASER_DEFAULT, HISTORY_ORIGIN_LABEL, TEXT_DEFAULT,
+)
 
 
 # ------------------------------------------------------------------ 弹窗
@@ -26,7 +37,7 @@ from .consts import ERASER_DEFAULT, TEXT_DEFAULT
 EDITOR_SIZE = QSize(1440, 940)
 
 
-EDITOR_MIN_SIZE = QSize(1000, 680)
+EDITOR_MIN_SIZE = QSize(1040, 680)
 
 
 
@@ -44,7 +55,7 @@ class ImageEditorDialog(
     CommitMixin,
     QDialog,
 ):
-    """图片编辑器弹窗：左工具栏 + 中间画布 + 右侧选项页 + 底部状态栏。"""
+    """图片编辑器弹窗：顶部功能条 + 中间画布 + 右侧参数面板 + 底部状态栏。"""
 
 
 
@@ -69,7 +80,7 @@ class ImageEditorDialog(
         self.setModal(True)
         # 编辑要看得清字迹：默认开大，并带最小化/最大化按钮（标题栏双击
         # 最大化也随 maximize 按钮生效），用户 20:18 定
-        # ✳️ 但默认尺寸与最小尺寸都要先夹进屏幕可用区域：1440×940 / 1000×680
+        # ✳️ 但默认尺寸与最小尺寸都要先夹进屏幕可用区域：1440×940 / 1040×680
         # 在 1920×1080 @125%（逻辑可用 1536×824）下都会被任务栏吃掉一截，
         # 高缩放的笔记本上最小尺寸甚至比可用区域还大、用户连拖小都做不到。
         apply_window_size(self, EDITOR_SIZE, EDITOR_MIN_SIZE)
@@ -88,10 +99,18 @@ class ImageEditorDialog(
         # 统一转 ARGB32：rembg 产物可能是调色板 PNG，就地绘制需要真彩格式
         self._original = base.convertToFormat(QImage.Format.Format_ARGB32)
         self._image = self._original.copy()
+        # 撤销栈 + **步骤名**。三者的对齐关系写在 ``dialog_undo.py`` 的开头：
+        # ``_labels[i]`` 是"把 ``_undo[i]`` 这个状态改掉的那一步"的名字，
+        # 长度恒等于 ``len(_undo) + len(_redo)``。
         self._undo: list[QImage] = []
         self._redo: list[QImage] = []
+        self._labels: list[str] = []
+        #: 时间轴第 0 格的名字（栈被截断后它换成被丢掉那一步的名字）
+        self._origin_label: str = HISTORY_ORIGIN_LABEL
+        #: 程序化刷新历史列表时的闸门（挡住 ``currentRowChanged`` 回灌）
+        self._history_syncing = False
         self._option_page: QWidget | None = None
-        # 文字工具选项的活性引用（插入时现读，见 _commit_text_blocks）
+        # 文字工具参数的活性引用（插入时现读，见 _commit_text_blocks）
         self._text_size: int = TEXT_DEFAULT
         self._text_color: str = "#000000"
         self._text_family: str = T.FONT_FAMILY
@@ -102,28 +121,28 @@ class ImageEditorDialog(
 
         self.canvas = EditorCanvas(self)
         self.canvas.set_image(self._image)
-        self.canvas.stroke_started.connect(self._push_undo)
+        # 一笔开始（擦除按下 / 扭曲提交前）⇒ 压撤销点，步骤名按当前功能取
+        self.canvas.stroke_started.connect(self._on_stroke_started)
         self.canvas.text_requested.connect(self._spawn_text_block)
+        # 裁剪/变换**没有**确认按钮：拖完松手由画布发信号，弹窗立即落定
+        self.canvas.crop_committed.connect(self._apply_crop)
+        self.canvas.transform_committed.connect(self._commit_transform)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(T.SPACE_MD, T.SPACE_MD, T.SPACE_MD, T.SPACE_MD)
         root.setSpacing(T.SPACE_SM)
-        # ⚠️ 两行结构（Win10 照片的布局）：主工具栏一行摆不下撤销/还原/
-        #    缩放/四个工具/提示/应用/完成，一行时左侧按钮会被挤出窗口
-        #    （用户 19:36 截图报"左上边有按钮隐藏掉了"）。
-        # ⚠️ _option_row 必须先建：_build_toolbar_row 末尾的 _set_tool
-        #    就会往里插第一份选项页。
-        self._option_row = QHBoxLayout()
-        self._option_row.setSpacing(T.SPACE_SM)
+        # ⚠️ 右侧面板必须先建：``_build_toolbar_row`` 末尾的 ``_set_tool``
+        #    就会往面板的参数区里插第一份参数页。
+        side_panel = self._build_side_panel()
         root.addLayout(self._build_toolbar_row())
-        # 第二行：随工具切换的上下文选项（提示/滑杆/应用按钮）
-        root.addLayout(self._option_row)
-        root.addWidget(self.canvas, 1)
+        body = QHBoxLayout()
+        body.setSpacing(T.SPACE_MD)
+        body.addWidget(self.canvas, 1)
+        body.addWidget(side_panel)
+        root.addLayout(body, 1)
         root.addWidget(self._build_status())
-        # ⚠️ 不要在这里再调 _set_tool("crop")：_build_toolbar_row 末尾已经
-        #    调过一次。调两次会遗弃一份旧选项页——removeWidget+deleteLater
-        #    在构造期不生效，旧页就以默认几何 (0,0,100,30) 悬在左上角，
-        #    盖住撤销按钮（用户截图报"左上角有个按钮被隐藏了"）。
+        # 历史列表/尺寸提示要等面板与状态栏都在了才刷得动
+        self._sync_history()
 
         for seq, slot in (
             (QKeySequence("Ctrl+Z"), self._undo_now),
@@ -152,6 +171,9 @@ class ImageEditorDialog(
         用户 2026-10-04 定的：图片编辑最后应用时**必须提醒会覆盖原图**。
         只在 ``save_back``（本页有真实文件可回写）时问——虚拟预览
         （区域合成/打印重排/PDF 页）压根不写盘，问了是假警报。
+
+        ⚠️ 这不是"单步变更确认"：单步确认按钮已经全部删掉、编辑实时生效，
+        唯一保留的确认是"覆盖磁盘原图"这件不可逆的事。
 
         ⚠️ 四个"不打扰"的短路，都走 ``return True``（当作用户同意）：
 
@@ -201,7 +223,10 @@ class ImageEditorDialog(
 
 
     def _finish(self) -> None:
-        """「完成」：未应用的变换/未插入的文字一并写入，再应用全部编辑。
+        """「完成」：未提交的文字一并写入，再应用全部编辑。
+
+        ⚠️ 变换已经"松手即应用"，这里再调一次 ``_commit_transform`` 只是兜底
+        （拖动中直接点「完成」时预览还没落定）。
 
         ⚠️ ``_finishing`` 必须在**确认框之前**就置位：``MessageBox.exec()``
         自带事件循环，双击「完成」会在框弹出后再进一次这里⇒ 叠出第二个

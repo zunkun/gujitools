@@ -16,7 +16,7 @@
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QPointF, QRectF, Signal
+from PySide6.QtCore import QPointF, QRectF, Signal, QTimer
 from PySide6.QtGui import QColor, QImage, QTransform
 from PySide6.QtWidgets import QGraphicsEllipseItem, QGraphicsLineItem, QGraphicsPixmapItem, QGraphicsPolygonItem, QGraphicsRectItem, QGraphicsScene, QGraphicsView
 from desktop.components.viewers.image_editor.text_item import TextBlockItem
@@ -24,7 +24,7 @@ from typing import Any
 
 
 class CanvasHost(QGraphicsView):
-    """``EditorCanvas`` 的成员面：主类 + 3 个 Mixin。
+    """``EditorCanvas`` 的成员面：主类 + 5 个工具/界面 Mixin。
 
     只有注解与 ``...`` 桩，没有任何实现——不要在这里写逻辑。
     """
@@ -36,6 +36,27 @@ class CanvasHost(QGraphicsView):
     _erase_size: Any
     _eraser_pos: QPointF
     _eraser_ring: list[QGraphicsEllipseItem]
+    _distort_hardness: int
+    _distort_high_quality_preview: bool
+    _distort_interpolation: str
+    _distort_mode: str
+    _distort_field: Any
+    _distort_sampler: Any
+    _distort_busy: bool
+    _distort_preview_image: QImage | None
+    _distort_preview_items: dict[tuple[int, int], QGraphicsPixmapItem]
+    _distort_preview_dirty_tiles: set[tuple[int, int]]
+    _distort_preview_dirty_rect: list[float] | None
+    _distort_preview_timer: QTimer | None
+    _distort_preview_pending_end: QPointF | None
+    _distort_preview_origin: QImage | None
+    _distort_preview_scale_x: float
+    _distort_preview_scale_y: float
+    _distort_realtime: bool
+    _distort_size: int
+    _distort_spacing: int
+    _distort_stroke_origin: QImage | None
+    _distort_strength: int
     _fit_ratio: float
     _float_item: QGraphicsPixmapItem | None
     _handles: dict[str, QGraphicsRectItem]
@@ -61,9 +82,11 @@ class CanvasHost(QGraphicsView):
     _xf_reshape: Any
     _xf_touched: bool
     _zoom: Any
+    crop_committed: Signal
     reshape_finished: Signal
     stroke_started: Signal
     text_requested: Signal
+    transform_committed: Signal
 
     # ---- 方法（主类 + 各 Mixin）----
     def _apply_hover_highlight(self) -> None:
@@ -72,7 +95,57 @@ class CanvasHost(QGraphicsView):
     def _apply_shear(self, edge: str, k: float, x_start: QTransform) -> None:
         ...
 
+    def _accumulate(self, stamps: Any) -> None:
+        ...
+
+    def _apply_distortion_segment(self, start: QPointF, end: QPointF) -> None:
+        ...
+
+    def _begin_distortion_stroke(self, pos: QPointF) -> None:
+        ...
+
+    def _render_distortion_field(self) -> QImage | None:
+        ...
+
+    def _report_distortion_failure(self, exc: BaseException) -> None:
+        ...
+
+    def _start_distortion_field(self) -> None:
+        ...
+
+    def _upload_distortion_tiles(self) -> None:
+        ...
+
+    def _distort_preview_filter(self) -> str:
+        ...
+
+    def _distort_segment(self, start: QPointF, end: QPointF) -> None:
+        ...
+
+    def _finish_distortion_stroke(self) -> None:
+        ...
+
+    def set_distortion_options(self, **options: Any) -> None:
+        ...
+
     def _build_overlay(self) -> None:
+        ...
+
+    def _clear_distortion_preview(self) -> None:
+        ...
+
+    def _create_distortion_preview(self) -> None:
+        ...
+
+    def _queue_distortion_preview(
+        self, center_x: float, center_y: float, radius: float,
+    ) -> None:
+        ...
+
+    def _flush_distortion_preview(self) -> None:
+        ...
+
+    def _on_distortion_preview_tick(self) -> None:
         ...
 
     def _clear_transform_preview(self) -> None:
@@ -153,6 +226,10 @@ class CanvasHost(QGraphicsView):
 
     @property
     def image(self) -> QImage | None:
+        ...
+
+    @property
+    def tool(self) -> str:
         ...
 
     def image_rect(self) -> QRectF:

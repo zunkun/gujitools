@@ -110,11 +110,12 @@ class OverlayMixin(CanvasHost):
 
 
     def _move_eraser_ring(self, pos: QPointF, show: bool = True) -> None:
-        """橡皮擦圈挪到 ``pos``（图片坐标，圈心 = 笔刷中心 = 光标处）。"""
+        """笔刷圈挪到 ``pos``（图片坐标，圈心 = 笔刷中心 = 光标处）。"""
         self._eraser_pos = QPointF(pos)
-        radius = self._erase_size / 2.0
-        rect = QRectF(pos.x() - radius, pos.y() - radius,
-                      self._erase_size, self._erase_size)
+        size = (self._distort_size if self._tool == "distort"
+                else self._erase_size)
+        radius = size / 2.0
+        rect = QRectF(pos.x() - radius, pos.y() - radius, size, size)
         for item in self._eraser_ring:
             item.setRect(rect)
             item.setVisible(show and self._item is not None)

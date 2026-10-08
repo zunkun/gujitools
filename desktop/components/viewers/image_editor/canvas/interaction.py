@@ -97,7 +97,7 @@ class InteractionMixin(CanvasHost):
 
     def _sync_cursor(self) -> None:
         """按工具换光标：擦除藏系统光标——实圈就是光标（直径=擦除直径）。"""
-        if self._tool == "erase":
+        if self._tool in ("erase", "distort"):
             self.viewport().setCursor(Qt.CursorShape.BlankCursor)
             return
         cursor = {
@@ -220,6 +220,13 @@ class InteractionMixin(CanvasHost):
                     self._mode = ("xf_move", self._xf, pos)
             event.accept()
             return
+        if self._tool == "distort":
+            self._begin_distortion_stroke(pos)
+            if self._distort_stroke_origin is not None:
+                self._mode = ("distort", pos)
+                self._move_eraser_ring(pos)
+            event.accept()
+            return
         if self._tool == "erase":
             self.stroke_started.emit()
             self._erase_at(pos, pos)
@@ -256,7 +263,7 @@ class InteractionMixin(CanvasHost):
                 event.accept()
                 return
             # 未拖拽：橡皮擦圈/文字边界框跟随鼠标 + 悬停反馈（需要 mouseTracking）
-            if self._tool == "erase" and self._item is not None:
+            if self._tool in ("erase", "distort") and self._item is not None:
                 self._move_eraser_ring(
                     self.mapToScene(event.position().toPoint()))
             elif self._tool == "text" and self._item is not None:
@@ -345,6 +352,10 @@ class InteractionMixin(CanvasHost):
             self._erase_at(self._mode[1], pos)
             self._move_eraser_ring(pos)
             self._mode = ("draw", pos)
+        elif kind == "distort":
+            self._distort_segment(self._mode[1], pos)
+            self._move_eraser_ring(pos)
+            self._mode = ("distort", pos)
         self._sync_float()
         self._sync_overlay()
         event.accept()
@@ -357,9 +368,9 @@ class InteractionMixin(CanvasHost):
             event.accept()
             return
         if self._mode and self._mode[0] in ("move", "handle"):
-            # move/handle 只在裁剪与变换「调整范围」下出现；两者松手都
-            # 把视图适配到新选区（变小就放大，修褶皱要对准那一小块）
+            # move/handle 只在裁剪与变换「调整范围」下出现
             was_reshape = self._tool == "transform" and self._xf_reshape
+            was_crop = self._tool == "crop"
             self._mode = None
             if was_reshape:
                 self._xf_reshape = False
@@ -367,16 +378,39 @@ class InteractionMixin(CanvasHost):
                 assert self._rect is not None  # move/handle 模式下恒有选区
                 self._xf_pivot = self._rect.normalized().center()
                 self.reshape_finished.emit()  # 弹窗取消勾选，回到变换
-            self._sync_overlay()
-            self.fit_selection()
+                self._sync_overlay()
+                self.fit_selection()
+            elif was_crop:
+                # ⚠️ 裁剪**没有**「应用裁剪」按钮：拖完松手就通知弹窗把图裁成
+                #    当前选区（松手即应用）。选区没被改动过（点一下/拖回原位）
+                #    时弹窗侧会自己短路，不产生空撤销步。
+                self._sync_overlay()
+                if self.selection() is not None:
+                    self.crop_committed.emit()
+            else:
+                self._sync_overlay()
+                self.fit_selection()
             event.accept()
             return
         if self._mode and self._mode[0] == "draw":
             self._mode = None
             event.accept()
             return
-        if self._mode and self._mode[0].startswith("xf_"):
+        if self._mode and self._mode[0] == "distort":
+            end = self.mapToScene(event.position().toPoint())
+            self._distort_segment(self._mode[1], end)
+            self._finish_distortion_stroke()
             self._mode = None
+            event.accept()
+            return
+        if self._mode and self._mode[0].startswith("xf_"):
+            # ⚠️ 变换**没有**「应用变换」按钮：拖完松手立即通知弹窗烘焙进
+            #    像素（松手即应用，一步一个撤销点）。拖轴心不改矩阵，不发信号
+            #    ——预览留着，用户接着拖就是绕新轴心转（与原行为一致）。
+            kind = self._mode[0]
+            self._mode = None
+            if kind != "xf_pivot":
+                self.transform_committed.emit()
             event.accept()
             return
         super().mouseReleaseEvent(event)

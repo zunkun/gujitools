@@ -8,13 +8,13 @@
 image_editor/
 ├── consts.py      常量           geometry.py  纯几何/变换数学
 ├── bake.py        后台线程       text_item.py 就地编辑文字块
-├── canvas/        EditorCanvas（基座 + 3 个工具 Mixin）
+├── canvas/        EditorCanvas（基座 + 工具交互 Mixin）
 ├── dialog.py      ImageEditorDialog（基座 + 收尾）+ 弹窗尺寸常量
 └── dialog_*.py    弹窗的 4 个 Mixin：工具栏 / 选项页 / 撤销栈 / 工具提交
 ```
 
-（2026-10-08 起画布只剩裁剪/变换/擦除/文字四个工具，变形/变换笼/
-校正/微调及其 Mixin 已随功能删除。）
+（2026-10-08 起画布拆分并按需扩展；早前的 PS 操控变形/变换笼/校正/微调
+Mixin 已删除，GIMP 风格笔刷扭曲由独立 ``DistortionMixin`` 提供。）
 
 拆分前提是「**只挪位置，不改行为**」，而 Mixin 靠 ``self._xxx`` 共享状态，
 挪错一个方法不会报错、只会让某个工具悄悄失效。这里把四个不变量钉死：
@@ -48,12 +48,14 @@ _MODULES = [
     ("overlay.py", "OverlayMixin"),
     ("text.py", "TextMixin"),
     ("transform.py", "TransformMixin"),
+    ("distortion.py", "DistortionMixin"),
 ]
 
 #: 每个画布成员**应当**归属的类（成员名 → 类名）。
 _EXPECTED_HOME = {
     "__init__": "EditorCanvas",
     "_sync_scene_rect": "EditorCanvas",
+    "crop_committed": "EditorCanvas",
     "fit": "EditorCanvas",
     "fit_selection": "EditorCanvas",
     "image": "EditorCanvas",
@@ -69,6 +71,8 @@ _EXPECTED_HOME = {
     "set_zoom": "EditorCanvas",
     "stroke_started": "EditorCanvas",
     "text_requested": "EditorCanvas",
+    "tool": "EditorCanvas",
+    "transform_committed": "EditorCanvas",
     "zoom_in": "EditorCanvas",
     "zoom_out": "EditorCanvas",
     "_apply_hover_highlight": "InteractionMixin",
@@ -99,6 +103,22 @@ _EXPECTED_HOME = {
     "style_target_block": "TextMixin",
     "text_blocks": "TextMixin",
     "_apply_shear": "TransformMixin",
+    "_accumulate": "DistortionMixin",
+    "_apply_distortion_segment": "DistortionMixin",
+    "_begin_distortion_stroke": "DistortionMixin",
+    "_clear_distortion_preview": "DistortionMixin",
+    "_create_distortion_preview": "DistortionMixin",
+    "_distort_preview_filter": "DistortionMixin",
+    "_distort_segment": "DistortionMixin",
+    "_finish_distortion_stroke": "DistortionMixin",
+    "_render_distortion_field": "DistortionMixin",
+    "_report_distortion_failure": "DistortionMixin",
+    "_start_distortion_field": "DistortionMixin",
+    "_upload_distortion_tiles": "DistortionMixin",
+    "_queue_distortion_preview": "DistortionMixin",
+    "_flush_distortion_preview": "DistortionMixin",
+    "_on_distortion_preview_tick": "DistortionMixin",
+    "set_distortion_options": "DistortionMixin",
     "_clear_transform_preview": "TransformMixin",
     "_ensure_transform_preview": "TransformMixin",
     "_hit_transform": "TransformMixin",
@@ -119,13 +139,16 @@ _EXPECTED_HOME = {
 _CROSS_METHOD_DEPS = {
     "EditorCanvas": {
         "_build_overlay",
-        "_clear_transform_preview",
+        "_clear_distortion_preview", "_clear_transform_preview",
+        "_finish_distortion_stroke",
         "_hide_eraser_ring", "_hide_text_outline",
         "_move_eraser_ring", "_sync_cursor",
         "_sync_overlay", "clear_text_blocks",
     },
     "InteractionMixin": {
         "_apply_shear",
+        "_begin_distortion_stroke", "_distort_segment",
+        "_finish_distortion_stroke",
         "_ensure_transform_preview",
         "_hide_eraser_ring",
         "_hide_text_outline", "_hit_transform",
@@ -133,9 +156,10 @@ _CROSS_METHOD_DEPS = {
         "_move_text_outline",
         "_sync_float",
         "_sync_overlay",
-        "_text_block_at", "fit",
+        "_text_block_at", "crop_committed", "fit",
         "fit_selection", "image_rect", "refresh", "reshape_finished",
-        "set_zoom", "stroke_started", "text_requested",
+        "selection", "set_zoom", "stroke_started", "text_requested",
+        "transform_committed",
     },
     "OverlayMixin": {
         "_apply_hover_highlight",
@@ -145,6 +169,9 @@ _CROSS_METHOD_DEPS = {
     "TransformMixin": {
         "_sync_cursor", "_sync_overlay", "_sync_scene_rect",
         "image_rect", "refresh",
+    },
+    "DistortionMixin": {
+        "_move_eraser_ring", "image_rect", "refresh", "stroke_started",
     },
 }
 
@@ -166,27 +193,37 @@ _DIALOG_EXPECTED_HOME = {
     "_finish": "ImageEditorDialog",
     "closeEvent": "ImageEditorDialog",
     "result_image": "ImageEditorDialog",
-    # dialog_toolbar.py -> ToolbarMixin（5 个）
+    # dialog_toolbar.py -> ToolbarMixin（7 个）
+    "_build_side_panel": "ToolbarMixin",
     "_build_status": "ToolbarMixin",
     "_build_toolbar_row": "ToolbarMixin",
     "_hint": "ToolbarMixin",
+    "_refresh_size_label": "ToolbarMixin",
     "_set_tool": "ToolbarMixin",
     "_swap_option_page": "ToolbarMixin",
-    # dialog_pages.py -> ToolPagesMixin（4 个）
+    # dialog_pages.py -> ToolPagesMixin（7 个）
+    "_labeled": "ToolPagesMixin",
     "_page_crop": "ToolPagesMixin",
+    "_page_distort": "ToolPagesMixin",
     "_page_erase": "ToolPagesMixin",
     "_page_text": "ToolPagesMixin",
     "_page_transform": "ToolPagesMixin",
-    # dialog_undo.py -> UndoMixin（5 个）
+    "_slider_group": "ToolPagesMixin",
+    # dialog_undo.py -> UndoMixin（9 个）
+    "_history_cursor": "UndoMixin",
+    "_history_nodes": "UndoMixin",
+    "_on_history_row": "UndoMixin",
     "_push_undo": "UndoMixin",
     "_redo_now": "UndoMixin",
     "_reset_all": "UndoMixin",
+    "_sync_history": "UndoMixin",
     "_sync_undo_buttons": "UndoMixin",
     "_undo_now": "UndoMixin",
-    # dialog_commit.py -> CommitMixin（5 个）
+    # dialog_commit.py -> CommitMixin（6 个）
     "_apply_crop": "CommitMixin",
     "_commit_text_blocks": "CommitMixin",
     "_commit_transform": "CommitMixin",
+    "_on_stroke_started": "CommitMixin",
     "_selection": "CommitMixin",
     "_spawn_text_block": "CommitMixin",
 }
@@ -194,32 +231,33 @@ _DIALOG_EXPECTED_HOME = {
 #: 弹窗 Mixin 调用**别的 Mixin/基座**的成员 —— 登记的隐式契约。
 _DIALOG_CROSS_DEPS = {
     "ImageEditorDialog": {
-        "_build_status", "_build_toolbar_row",
+        "_apply_crop", "_build_side_panel", "_build_status",
+        "_build_toolbar_row",
         "_commit_text_blocks", "_commit_transform",
-        "_push_undo", "_redo_now", "_spawn_text_block", "_undo_now",
+        "_on_stroke_started",
+        "_push_undo", "_redo_now", "_spawn_text_block", "_sync_history",
+        "_undo_now",
     },
     "ToolbarMixin": {
         "_commit_text_blocks", "_commit_transform",
-        "_finish", "_page_crop",
+        "_finish", "_on_history_row", "_page_crop", "_page_distort",
         "_page_erase",
         "_page_text", "_page_transform", "_redo_now",
         "_reset_all",
         "_undo_now",
     },
-    "ToolPagesMixin": {
-        "_apply_crop",
-        "_commit_text_blocks", "_commit_transform", "_hint",
-    },
-    "UndoMixin": set(),
-    "CommitMixin": {"_push_undo", "_sync_undo_buttons"},
+    "ToolPagesMixin": {"_hint"},
+    "UndoMixin": {"_refresh_size_label"},
+    "CommitMixin": {"_push_undo", "_refresh_size_label"},
 }
 
 #: 子包必须存在的模块（拆分是真的、不是把文件改名了事）。
 _REQUIRED_FILES = [
-    "__init__.py", "consts.py", "geometry.py", "bake.py", "text_item.py",
+    "__init__.py", "consts.py", "geometry.py", "distortion.py",
+    "bake.py", "text_item.py",
     "dialog.py", "canvas/__init__.py",
     "canvas/core.py", "canvas/interaction.py", "canvas/overlay.py",
-    "canvas/text.py", "canvas/transform.py",
+    "canvas/text.py", "canvas/transform.py", "canvas/distortion.py",
     # 2026-10-07 二次拆分：894 行的 ImageEditorDialog 再按职责拆 4 个 Mixin
     "dialog_toolbar.py", "dialog_pages.py", "dialog_undo.py",
     "dialog_commit.py",

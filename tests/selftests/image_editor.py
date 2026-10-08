@@ -26,6 +26,9 @@
    点图放钉（吸附最近顶点、同一顶点不重复）、拖动图钉→附近内容跟着走、
    远场逐字节不动（ARAP 局部 + 边框锚点）、松手/应用/切走工具都烘焙、
    应用后图钉留在原地、重置/右键删除、改网格疏密清空图钉；
+2c. **扭曲笔刷**：落点重采样分段喂 == 一次喂、`carry` 恒小于落点间距、
+   落点位移恒等于一个间距（不会再出现"拖得越久飞点越多"，2026-10-08 报障）；
+   拖动时只刷新邻近脏区、单帧渲染量有像素预算、大图预览自动降采样；
 4. **撤销/重做/还原**：状态按步回退/前进，还原可撤销，栈深 ≤ 12；
 5. **选区门槛**：小于 4px 的选区视为没有（误点不产生 1px 裁剪）；
 6. **初始自适应**：窗口就位/改变大小后画布自动适应窗口（没手动缩放过时），
@@ -42,7 +45,7 @@ from __future__ import annotations
 
 NAME = "image_editor"
 DEPENDS: list[str] = []
-TITLE = "图片编辑弹窗（裁剪/变换/擦除/文字）"
+TITLE = "图片编辑弹窗（裁剪/变换/扭曲/擦除/文字）"
 
 
 def make_image(width: int, height: int):
@@ -68,7 +71,7 @@ def canvas_img(canvas):
 def run(ctx) -> None:
     import math
 
-    from PySide6.QtCore import QPointF, QRect, QRectF, Qt
+    from PySide6.QtCore import QPointF, QRect, QRectF, QSize, Qt
     from PySide6.QtGui import QColor, QImage
 
     from tests.selftests._context import ok
@@ -122,6 +125,88 @@ def run(ctx) -> None:
     )
     ok("文字：空白文本不改动图片", same, "")
 
+    from desktop.components.viewers.image_editor.distortion import (
+        apply_distortion_stamp,
+    )
+
+    warp = make_image(80, 40)
+    for x in range(30, 33):
+        for y in range(18, 23):
+            warp.setPixel(x, y, 0xFF000000)
+    apply_distortion_stamp(
+        warp, 32.0, 20.0, 4.0, 0.0, 32, 100, 100,
+        "move", "nearest")
+    ok("扭曲算法：移动像素沿笔划方向移动，笔刷外区域不变",
+       is_dark(warp.pixelColor(34, 20))
+       and warp.pixelColor(30, 20).value() > 230
+       and warp.pixelColor(5, 5).value() > 230,
+       f"moved={warp.pixelColor(34, 20).value()} "
+       f"old={warp.pixelColor(30, 20).value()}")
+
+    pattern = make_image(80, 80)
+    for x in range(44, 49):
+        for y in range(38, 43):
+            pattern.setPixel(x, y, 0xFF000000)
+    for mode in ("grow", "shrink", "swirl_cw", "swirl_ccw", "smooth"):
+        candidate = pattern.copy()
+        apply_distortion_stamp(
+            candidate, 40.0, 40.0, 3.0, 0.0, 40, 60, 100,
+            mode, "cubic")
+        ok(f"扭曲算法：{mode}模式可改变笔刷区域", candidate != pattern, "")
+    restored = pattern.copy()
+    restored.setPixel(40, 40, 0xFF000000)
+    apply_distortion_stamp(
+        restored, 40.0, 40.0, 0.0, 0.0, 40, 100, 100,
+        "restore", "linear", pattern)
+    ok("扭曲算法：恢复原状模式回到笔划起点图像",
+       restored == pattern, "")
+    for interpolation in ("nearest", "linear", "cubic"):
+        candidate = pattern.copy()
+        apply_distortion_stamp(
+            candidate, 40.0, 40.0, 3.5, 0.0, 40, 60, 100,
+            "move", interpolation)
+        ok(f"扭曲算法：{interpolation}插值可用", candidate != pattern, "")
+
+    # ---- 2c. 落点重采样（扭曲笔划的"粒度"唯一来源）----
+    # ⚠️ 回归（2026-10-08 用户报"拖动越久越卡、最后崩溃"）：旧 `extend` 把
+    #    **已经用掉的旧 carry 又加回一次**，于是 `_carry` 每段单调增长；一旦
+    #    `carry > step`，`step - carry` 变负、循环每段空转 `carry/step` 次，
+    #    抛出成百个远在天边的假落点（实测拖 30 秒后每段 184 个、脏区 2000
+    #    图像 px、每帧 56 ms）。下面三条把机制钉死，别再写成"累加式记账"。
+    from desktop.components.viewers.image_editor.distortion import (
+        StrokeSampler, plan_stroke_stamps,
+    )
+
+    path = [(0.0, 0.0), (37.0, 11.0), (91.0, 40.0), (60.0, 120.0), (10.0, 200.0)]
+    one_shot = plan_stroke_stamps(path, 30, 20)      # step = 30×20% = 6
+    sampler = StrokeSampler(30, 20)
+    fed = list(sampler.start(path[0]))
+    for point in path[1:]:
+        fed.extend(sampler.extend(point))
+    fed.extend(sampler.flush())
+    ok("扭曲采样：分段喂与一次喂得到同一条落点序列",
+       fed == one_shot, f"fed={len(fed)} one_shot={len(one_shot)}")
+
+    sampler = StrokeSampler(30, 20)                  # step = 6
+    sampler.start((0.0, 0.0))
+    stamps: list[tuple[float, float, float, float]] = []
+    carry_max = 0.0
+    travelled = 0.0
+    for i in range(1, 2001):                         # 2000 段小步 ≈ 长时间拖动
+        point = (i * 1.3, i * 0.7)
+        travelled += math.hypot(point[0] - (i - 1) * 1.3,
+                                point[1] - (i - 1) * 0.7)
+        stamps.extend(sampler.extend(point))
+        carry_max = max(carry_max, sampler._carry)
+    step = sampler.step
+    max_delta = max(math.hypot(s[2], s[3]) for s in stamps)
+    ok("扭曲采样：carry 恒小于落点间距（旧实现会单调增长）",
+       carry_max < step, f"carry_max={carry_max} step={step}")
+    ok("扭曲采样：落点只落在路径上、位移恒等于一个间距（不出现飞点）",
+       max_delta <= step + 1e-6
+       and len(stamps) <= travelled / step + 1,
+       f"max_delta={max_delta} stamps={len(stamps)} 上限={travelled / step + 1:.0f}")
+
     # ---- 3/5/6. 弹窗级：擦除、撤销、选区门槛 ----
     app = ctx.app
     img = make_image(200, 120)
@@ -164,16 +249,43 @@ def run(ctx) -> None:
            and dialog.minimumHeight() <= min(EDITOR_MIN_SIZE.height(), dialog.height()),
            f"min={dialog.minimumWidth()}x{dialog.minimumHeight()}")
         ok("工具栏：工具按钮是 ToggleButton（选中态有主色高亮），"
-           "裁剪/变换/擦除/文字四个",
+           "裁剪/变换/扭曲/擦除/文字五个",
            all(type(dialog._tool_buttons[k]).__name__ == "ToggleButton"
                for k in dialog._tool_buttons)
-           and set(dialog._tool_buttons) == {"crop", "transform", "erase",
-                                             "text"}
+           and set(dialog._tool_buttons) == {"crop", "transform", "distort",
+                                             "erase", "text"}
            and dialog._tool_buttons["crop"].isChecked()
-           and not dialog._tool_buttons["erase"].isChecked(),
+           and not dialog._tool_buttons["erase"].isChecked()
+           and dialog._tool_buttons["distort"].iconSize() == QSize(14, 14),
            f"tools={sorted(dialog._tool_buttons)} "
            f"crop={dialog._tool_buttons['crop'].isChecked()} "
            f"erase={dialog._tool_buttons['erase'].isChecked()}")
+
+        dialog._set_tool("distort")
+        from qfluentwidgets import CheckBox as FluentCheckBox
+        from qfluentwidgets import Slider as FluentSlider
+        from qfluentwidgets import ComboBox as FluentComboBox
+
+        distortion_page = dialog._option_page
+        assert distortion_page is not None
+        distortion_combos = distortion_page.findChildren(FluentComboBox)
+        distortion_sliders = distortion_page.findChildren(FluentSlider)
+        distortion_checks = distortion_page.findChildren(FluentCheckBox)
+        ok("扭曲工具：参数面板提供七种笔刷模式、三种插值、大小/硬度/强度/间距和预览开关",
+           dialog.canvas._tool == "distort"
+           and {combo.currentData() for combo in distortion_combos}
+           == {"move", "cubic"}
+           and sorted(slider.value() for slider in distortion_sliders)
+           == [10, 50, 50, 117]
+           and len(distortion_checks) == 2
+           and any(check.text() == "实时预览" and check.isChecked()
+                   for check in distortion_checks)
+           and any(check.text() == "高质量预览" and check.isChecked()
+                   for check in distortion_checks),
+           f"combos={[c.currentData() for c in distortion_combos]} "
+           f"sliders={[s.value() for s in distortion_sliders]} "
+           f"checks={len(distortion_checks)}")
+        dialog._set_tool("crop")
 
         # ---- 裁剪交互（2026-09-30 用户定）：默认全选 + 手柄内收，不做画框 ----
         full = dialog.canvas.image_rect()
@@ -255,31 +367,71 @@ def run(ctx) -> None:
            canvas._hit_handle(middle) is None,
            f"hit={canvas._hit_handle(middle)}")
         zoom_before = canvas._zoom
+        undo_before = len(dialog._undo)
+        history_before = dialog.history_list.count()
         canvas.mousePressEvent(mouse_event("press", corner))
         ok("裁剪：角部按下进入收边状态",
            canvas._mode is not None and canvas._mode[0] == "handle"
            and canvas._mode[1] == "tl", f"mode={canvas._mode}")
         canvas.mouseMoveEvent(mouse_event(
             "move", QPointF(canvas.mapFromScene(QPointF(60, 30)))))
+        ok("裁剪：拖动过程中图仍是整幅（松手才落定）",
+           canvas_img(canvas).width() == 200
+           and canvas.selection() is not None
+           and abs(canvas.selection().left() - 60) < 1,
+           f"w={canvas_img(canvas).width()} sel={canvas.selection()}")
         canvas.mouseReleaseEvent(mouse_event(
             "release", QPointF(canvas.mapFromScene(QPointF(60, 30)))))
-        sel = canvas.selection()
-        ok("裁剪：边缘拖动后选区收窄（视图取整容差 <1px）",
-           sel is not None and abs(sel.left() - 60) < 1
-           and abs(sel.top() - 30) < 1
-           and abs(sel.right() - 200) < 1 and abs(sel.bottom() - 120) < 1,
-           f"sel={sel}")
-        ok("裁剪：松手后视图自动放大到新选区",
+        cropped = canvas_img(canvas)
+        ok("裁剪：松手即裁剪＝画布尺寸变选区尺寸（没有「应用裁剪」按钮）",
+           abs(cropped.width() - 140) < 1 and abs(cropped.height() - 90) < 1,
+           f"size={cropped.width()}x{cropped.height()}")
+        ok("裁剪：裁剪后选区重新默认全选新图",
+           canvas.selection() == canvas.image_rect(),
+           f"sel={canvas.selection()} full={canvas.image_rect()}")
+        ok("裁剪：一步一个撤销点，历史多一格「裁剪」且光标停在那儿",
+           len(dialog._undo) == undo_before + 1
+           and dialog.history_list.count() == history_before + 1
+           and dialog.history_list.item(
+               dialog.history_list.count() - 1).text() == "裁剪"
+           and dialog.history_list.currentRow()
+           == dialog.history_list.count() - 1,
+           f"undo={len(dialog._undo)} 行={dialog.history_list.currentRow()} "
+           f"历史={[dialog.history_list.item(i).text()
+                  for i in range(dialog.history_list.count())]}")
+        ok("裁剪：松手后视图重新适应新图（形状变了，倍率随之重算）",
            canvas._zoom > zoom_before,
            f"zoom {zoom_before:.2f} -> {canvas._zoom:.2f}")
         sel_sel = canvas.selection()
         assert sel_sel is not None  # 裁剪态必有选区
         sel_view = canvas.mapFromScene(sel_sel).boundingRect()
         vp = canvas.viewport().rect()
-        ok("裁剪：适配选区后四周留白（选区约占 80% 视口，不顶边）",
+        ok("裁剪：适应后四周留白（图约占 80% 视口，不顶边）",
            sel_view.width() < vp.width() and sel_view.height() < vp.height(),
            f"sel_view={sel_view.width():.0f}x{sel_view.height():.0f} "
            f"viewport={vp.width()}x{vp.height()}")
+        # 撤销/重做把裁剪整段退回去又前进回来（历史光标跟着走）
+        dialog._undo_now()
+        ok("裁剪：撤销把裁剪完整回退（图回 200×120、历史光标回第 0 格）",
+           canvas_img(canvas).width() == 200
+           and dialog.history_list.currentRow() == 0,
+           f"w={canvas_img(canvas).width()} "
+           f"行={dialog.history_list.currentRow()}")
+        dialog._redo_now()
+        ok("裁剪：重做回到裁后 140×90、历史光标回末格",
+           canvas_img(canvas).width() == 140
+           and dialog.history_list.currentRow()
+           == dialog.history_list.count() - 1, "")
+        # 选区没变（点一下手柄但不拖）时松手：不许白压一个空撤销步
+        steps_now = len(dialog._undo)
+        handle_top = QPointF(canvas.mapFromScene(
+            canvas.image_rect().topLeft()))
+        canvas.mousePressEvent(mouse_event("press", handle_top))
+        canvas.mouseReleaseEvent(mouse_event("release", handle_top))
+        ok("裁剪：选区没变时松手不产生空撤销步（点一下不算一步）",
+           len(dialog._undo) == steps_now
+           and canvas_img(canvas).width() == 140,
+           f"undo={len(dialog._undo)} before={steps_now}")
 
         # ---- 悬停反馈：光标形态 + 边界高亮（用户 20:28 定） ----
         app.processEvents()
@@ -328,7 +480,7 @@ def run(ctx) -> None:
            f"undo.x={dialog.undo_btn.x()} "
            f"done.right={dialog.done_btn.geometry().right()} "
            f"win={dialog.width()}")
-        ok("工具栏：缩放按钮进了主工具栏行（在「还原」右侧、有宽度）",
+        ok("工具栏：缩放按钮进了顶部动作行（在「还原」右侧、有宽度）",
            all(
                getattr(dialog, n).x() > dialog.reset_btn.x()
                and getattr(dialog, n).width() > 0
@@ -336,12 +488,39 @@ def run(ctx) -> None:
            ),
            f"reset.x={dialog.reset_btn.x()} "
            f"zoom.x={[getattr(dialog, n).x() for n in ('zoom_in_btn', 'zoom_out_btn', 'fit_btn')]}")
-        ok("工具栏：两行结构（选项行在主工具栏下方）",
-           dialog._option_page is not None
-           and dialog._option_page.y()
-           >= dialog.undo_btn.y() + dialog.undo_btn.height(),
-           f"page.y={dialog._option_page.y() if dialog._option_page else None} "
-           f"undo.bottom={dialog.undo_btn.y() + dialog.undo_btn.height()}")
+        # ---- 布局（2026-10-08 重排）：顶部功能选择 + 右侧参数面板 ----
+        from PySide6.QtCore import QPoint
+        from PySide6.QtWidgets import QAbstractButton
+
+        header_bottom = dialog.undo_btn.y() + dialog.undo_btn.height()
+        tools_at = dialog._tool_buttons["crop"].mapTo(dialog, QPoint(0, 0))
+        page_at = dialog._option_page.mapTo(dialog, QPoint(0, 0))
+        ok("布局：功能选择条在顶部（动作行下方），五个工具都在窗口内",
+           tools_at.y() >= header_bottom
+           and all(
+               dialog._tool_buttons[k].mapTo(dialog, QPoint(0, 0)).x() >= 0
+               and dialog._tool_buttons[k].geometry().right()
+               <= dialog.width()
+               for k in dialog._tool_buttons
+           ),
+           f"tools@{tools_at} header.bottom={header_bottom}")
+        ok("布局：参数面板在画布右侧（不在工具栏那一行里）",
+           page_at.x() >= dialog.canvas.geometry().right()
+           and page_at.y() >= header_bottom,
+           f"page@{page_at} canvas.right={dialog.canvas.geometry().right()}")
+        ok("布局：右侧面板有「编辑历史」列表（第 0 格是打开时的状态）",
+           dialog.history_list.isVisible()
+           and dialog.history_list.count() >= 1
+           and dialog.history_list.item(0).text() == "打开"
+           and dialog.history_list.currentRow()
+           == dialog.history_list.count() - 1,
+           f"n={dialog.history_list.count()} "
+           f"行={dialog.history_list.currentRow()}")
+        banned = {"应用裁剪", "应用变换", "插入文字"}
+        leftovers = [b.text() for b in dialog.findChildren(QAbstractButton)
+                     if b.text() in banned]
+        ok("布局：三个单步确认按钮已全部删除（编辑改为实时生效）",
+           not leftovers, f"残留={leftovers}")
         # 回归（2026-09-30 用户截图）：__init__ 里 _set_tool 被调两次，
         # 被遗弃的旧选项页以默认几何 (0,0,100,30) 悬在左上角盖住撤销按钮
         # （deleteLater 在构造期不生效）。所有可见直儿子都不许落在 (0,0)。
@@ -366,6 +545,7 @@ def run(ctx) -> None:
            dialog.canvas.selection() is None, "")
 
         # 裁剪 + 撤销 + 重做 + 还原
+        dialog._reset_all()          # 前面的用例已把图裁成 140×90，先回 200×120
         dialog.canvas._rect = QRectF(0, 0, 100, 120)
         dialog._apply_crop()
         ok("裁剪：应用后画布尺寸 = 选区尺寸",
@@ -391,6 +571,69 @@ def run(ctx) -> None:
             dialog._push_undo()
         ok("撤销栈：深度被夹在 12 以内", len(dialog._undo) <= 12,
            f"depth={len(dialog._undo)}")
+        ok("撤销栈：步骤名与快照一一对齐（截断后序号也不漂移）",
+           len(dialog._labels) == len(dialog._undo) + len(dialog._redo)
+           and dialog._origin_label != "打开",
+           f"labels={len(dialog._labels)} undo={len(dialog._undo)} "
+           f"redo={len(dialog._redo)} origin={dialog._origin_label!r}")
+
+        # ---- 步骤历史面板：记录步骤数据 + 点选跳转（2026-10-08 用户定）----
+        hist_img = make_image(120, 80)
+        dialog_h = ImageEditorDialog(None, hist_img)
+        try:
+            cvh = dialog_h.canvas
+            ctrl = dialog_h.history_list
+            ok("步骤历史：初始一格「打开」、光标停在它上面",
+               ctrl.count() == 1 and ctrl.item(0).text() == "打开"
+               and ctrl.currentRow() == 0,
+               f"n={ctrl.count()} row={ctrl.currentRow()}")
+            # 三步真实动作：擦除一笔 / 裁剪 / 写入文字
+            cvh.set_eraser(16)
+            cvh.set_tool("erase")
+            cvh.stroke_started.emit()
+            cvh._erase_at(QPointF(20, 40), QPointF(40, 40))
+            dialog_h._set_tool("crop")
+            cvh._rect = QRectF(0, 0, 60, 80)
+            dialog_h._apply_crop()
+            dialog_h._set_tool("text")
+            block = cvh.add_text_block(
+                QPointF(6, 6), 24, QColor("#000000"), "SimSun")
+            block.setPlainText("历")
+            dialog_h._commit_text_blocks()
+            labels = [ctrl.item(i).text() for i in range(ctrl.count())]
+            ok("步骤历史：三步各记一格、名字按功能取（打开/擦除/裁剪/文字）",
+               labels == ["打开", "擦除", "裁剪", "文字"]
+               and ctrl.currentRow() == 3,
+               f"labels={labels} row={ctrl.currentRow()}")
+            ok("步骤历史：三步走完图是 60×80",
+               canvas_img(cvh).width() == 60
+               and canvas_img(cvh).height() == 80,
+               f"size={canvas_img(cvh).width()}x{canvas_img(cvh).height()}")
+            ctrl.setCurrentRow(0)
+            app.processEvents()
+            ok("步骤历史：点第 0 格 → 图回到打开时（120×80）、三步进重做",
+               canvas_img(cvh).width() == 120 and len(dialog_h._redo) == 3
+               and ctrl.currentRow() == 0,
+               f"w={canvas_img(cvh).width()} redo={len(dialog_h._redo)} "
+               f"row={ctrl.currentRow()}")
+            ctrl.setCurrentRow(2)
+            app.processEvents()
+            ok("步骤历史：点第 2 格 → 前进到「裁剪」那一步（60×80）",
+               canvas_img(cvh).width() == 60 and ctrl.currentRow() == 2,
+               f"w={canvas_img(cvh).width()} row={ctrl.currentRow()}")
+            # 在历史中间做新动作 ⇒ 后面那格作废（重做链被截断）
+            dialog_h._set_tool("crop")
+            cvh._rect = QRectF(0, 0, 30, 80)
+            dialog_h._apply_crop()
+            labels = [ctrl.item(i).text() for i in range(ctrl.count())]
+            ok("步骤历史：跳回中间后再改动 ⇒ 后面的「文字」那格作废",
+               labels == ["打开", "擦除", "裁剪", "裁剪"]
+               and ctrl.currentRow() == 3
+               and canvas_img(cvh).width() == 30,
+               f"labels={labels} row={ctrl.currentRow()} "
+               f"w={canvas_img(cvh).width()}")
+        finally:
+            dialog_h.deleteLater()
 
         # 擦除：橡皮擦涂过的地方污点被擦成白底（白 → 黑 → 白）
         white_img = make_image(200, 120)
@@ -411,6 +654,130 @@ def run(ctx) -> None:
                len(dialog2._undo) == 1, f"undo={len(dialog2._undo)}")
         finally:
             dialog2.deleteLater()
+
+        # 扭曲：一笔一个撤销点；非实时预览在松手时回放完整笔划
+        distort_img = make_image(200, 120)
+        for x in range(70, 73):
+            for y in range(58, 63):
+                distort_img.setPixel(x, y, 0xFF000000)
+        dialog_distort = ImageEditorDialog(None, distort_img)
+        try:
+            distort_canvas = dialog_distort.canvas
+            dialog_distort.show()
+            app.processEvents()
+            distort_canvas.set_tool("distort")
+            distort_canvas.set_distortion_options(
+                size=40, hardness=100, strength=100, spacing=25,
+                mode="move", interpolation="nearest",
+                high_quality_preview=True, realtime=True)
+            start = QPointF(70, 60)
+            end = QPointF(80, 60)
+            start_view = QPointF(distort_canvas.mapFromScene(start))
+            end_view = QPointF(distort_canvas.mapFromScene(end))
+            distort_canvas.mousePressEvent(mouse_event("press", start_view))
+            preview_before_move = distort_canvas._distort_preview_image.copy()
+            distort_canvas.mouseMoveEvent(mouse_event("move", end_view))
+            ok("扭曲：鼠标事件先合并，预览计算由 16ms 节流器统一调度",
+               distort_canvas._distort_preview_pending_end is not None
+               and distort_canvas._distort_preview_image == preview_before_move
+               and distort_canvas._distort_preview_timer is not None
+               and distort_canvas._distort_preview_timer.isActive(),
+               "")
+            distort_canvas._on_distortion_preview_tick()
+            ok("扭曲：拖动时只刷新邻近瓦片，原始全分辨率图保持不变",
+               bool(distort_canvas._distort_preview_items)
+               and not distort_canvas._distort_preview_dirty_tiles
+               and is_dark(canvas_img(distort_canvas).pixelColor(70, 60))
+               and canvas_img(distort_canvas).pixelColor(80, 60).value() > 230,
+               f"tiles={len(distort_canvas._distort_preview_items)}")
+            distort_canvas.mouseReleaseEvent(mouse_event("release", end_view))
+            ok("扭曲：松开后提交整笔并清除预览瓦片",
+               not distort_canvas._distort_preview_items,
+               "")
+            result_after_stroke = dialog_distort.result_image()
+            ok("扭曲：实时笔划移动像素、同步返回图像并压入一个撤销点",
+               is_dark(canvas_img(distort_canvas).pixelColor(80, 60))
+               and canvas_img(distort_canvas).pixelColor(70, 60).value() > 230
+               and result_after_stroke is not None
+               and is_dark(result_after_stroke.pixelColor(80, 60))
+               and len(dialog_distort._undo) == 1,
+               f"target={canvas_img(distort_canvas).pixelColor(80, 60).value()} "
+               f"undo={len(dialog_distort._undo)}")
+            dialog_distort._undo_now()
+            ok("扭曲：撤销整笔恢复原图",
+               is_dark(canvas_img(distort_canvas).pixelColor(70, 60))
+               and canvas_img(distort_canvas).pixelColor(80, 60).value() > 230,
+               "")
+
+            distort_canvas.set_distortion_options(realtime=False)
+            distort_canvas.mousePressEvent(mouse_event("press", start_view))
+            distort_canvas.mouseMoveEvent(mouse_event("move", end_view))
+            ok("扭曲：关闭实时预览时拖动暂不改像素",
+               is_dark(canvas_img(distort_canvas).pixelColor(70, 60))
+               and canvas_img(distort_canvas).pixelColor(80, 60).value() > 230,
+               "")
+            distort_canvas.mouseReleaseEvent(mouse_event("release", end_view))
+            ok("扭曲：关闭实时预览后松手应用完整笔划",
+               is_dark(canvas_img(distort_canvas).pixelColor(80, 60))
+               and canvas_img(distort_canvas).pixelColor(70, 60).value() > 230,
+               "")
+
+            distort_canvas.set_image(make_image(2400, 1400))
+            distort_canvas.set_distortion_options(realtime=True)
+            distort_canvas._begin_distortion_stroke(QPointF(1200, 700))
+            preview = distort_canvas._distort_preview_image
+            ok("扭曲：大图实时预览自动降采样至 200 万像素预算",
+               preview is not None
+               and preview.width() * preview.height() <= 2_000_000
+               and preview.width() * preview.height() < 2400 * 1400,
+               f"preview={preview.size() if preview is not None else None}")
+            distort_canvas._finish_distortion_stroke()
+
+            # ⚠️ 单帧渲染量必须有预算：鼠标猛地一跳（或系统把一串 move 并成
+            #    一个事件）时脏区能横跨上千像素，一次渲染完就是一次卡顿。
+            #    超预算的部分**整段挂回脏矩形**留给下一次 tick，且节流器不许停。
+            import desktop.components.viewers.image_editor.canvas.distortion \
+                as canvas_distortion_mod
+            original_budget = canvas_distortion_mod.DISTORT_PREVIEW_RENDER_PIXELS
+            real_render = canvas_distortion_mod.render_rect_into
+            rendered: list[tuple[int, int, int, int]] = []
+
+            def spy_render(image, origin, field, scale, rect, interpolation):
+                rendered.append(rect)
+                return real_render(image, origin, field, scale, rect,
+                                   interpolation)
+
+            canvas_distortion_mod.DISTORT_PREVIEW_RENDER_PIXELS = 4096
+            canvas_distortion_mod.render_rect_into = spy_render
+            try:
+                distort_canvas.set_distortion_options(
+                    size=200, hardness=50, strength=50, spacing=5,
+                    mode="move", interpolation="nearest", realtime=True)
+                jump_start = QPointF(600, 700)
+                jump_end = QPointF(1800, 700)
+                distort_canvas.mousePressEvent(mouse_event(
+                    "press", QPointF(distort_canvas.mapFromScene(jump_start))))
+                distort_canvas.mouseMoveEvent(mouse_event(
+                    "move", QPointF(distort_canvas.mapFromScene(jump_end))))
+                distort_canvas._on_distortion_preview_tick()
+                pending = distort_canvas._distort_preview_dirty_rect
+                budget_rows = 4096 // max(1, rendered[0][2] - rendered[0][0]) \
+                    if rendered else 0
+                ok("扭曲预览：单帧渲染量受像素预算约束，超出的脏区挂给下一帧",
+                   len(rendered) == 1
+                   and rendered[0][3] - rendered[0][1] <= budget_rows
+                   and pending is not None
+                   and pending[3] - pending[1] > rendered[0][3] - rendered[0][1]
+                   and distort_canvas._distort_preview_timer is not None
+                   and distort_canvas._distort_preview_timer.isActive(),
+                   f"rendered={rendered} 预算行={budget_rows} pending={pending}")
+                distort_canvas.mouseReleaseEvent(mouse_event(
+                    "release", QPointF(distort_canvas.mapFromScene(jump_end))))
+            finally:
+                canvas_distortion_mod.DISTORT_PREVIEW_RENDER_PIXELS = original_budget
+                canvas_distortion_mod.render_rect_into = real_render
+        finally:
+            dialog_distort.deleteLater()
 
         # 文字：就地文字块（编辑态 + 拖拽移动 + 插入写图 + 切工具自动写入）
         from PySide6.QtCore import QEvent
@@ -721,10 +1088,11 @@ def run(ctx) -> None:
             def vpos(scene: QPointF) -> QPointF:
                 return QPointF(canvas4.mapFromScene(scene))
 
-            # 框内拖 = 移动（真实鼠标事件走一遍）
+            # 框内拖 = 移动（真实鼠标事件走一遍）；**松手即应用**（无按钮）
             dialog4.show()
             app.processEvents()
             app.processEvents()
+            undo_before = len(dialog4._undo)
             canvas4.mousePressEvent(mouse_event("press", vpos(QPointF(160, 60))))
             _paint = canvas4._paint_image
             _base = canvas4._image
@@ -739,29 +1107,29 @@ def run(ctx) -> None:
             canvas4.mouseMoveEvent(mouse_event("move", vpos(QPointF(130, 60))))
             canvas4.mouseReleaseEvent(mouse_event(
                 "release", vpos(QPointF(130, 60))))
-            origin = canvas4._xf.map(QPointF(0, 0))
-            ok("变换：框内拖动 = 平移（−30,0，视口取整容差 <1.5px）",
-               (origin - QPointF(-30, 0)).manhattanLength() <= 1.5,
-               f"origin={origin}")
-
-            undo_before = len(dialog4._undo)
-            dialog4._commit_transform()
             baked = canvas_img(canvas4)
             # grow：整幅选区左移 30 ⇒ 新画布 = 原图 ∪ 移位后内容，左上角在
             # 原坐标 (−30, 0)，尺寸不变（移位量正好等于外扩量）。新画布里的
             # 坐标 = 原坐标 − origin = 原坐标 + 30。
-            ok("变换：应用后画布按内容外扩（左移 30 ⇒ 原位置 −30 起算）",
-               baked.width() == 200 and baked.height() == 120,
-               f"size={baked.width()}x{baked.height()}")
-            ok("变换：应用后内容平移、原位置填白（烘焙与预览一致）",
+            ok("变换：松手即应用（−30,0 平移已烘焙，画布尺寸不变）",
+               baked.width() == 200 and baked.height() == 120
+               and canvas4.transform_pending() is None,
+               f"size={baked.width()}x{baked.height()} "
+               f"pending={canvas4.transform_pending()}")
+            ok("变换：松手即应用后内容平移、原位置填白（烘焙与预览一致）",
                baked.pixelColor(125 + 30, 60).value() < 128
                and baked.pixelColor(160 + 30, 60).value() > 230,
                f"dark={baked.pixelColor(155, 60).value()} "
                f"white={baked.pixelColor(190, 60).value()}")
-            ok("变换：应用压撤销点并清掉待应用状态",
+            ok("变换：一步一个撤销点、历史多一格「变换」",
                len(dialog4._undo) == undo_before + 1
-               and canvas4.transform_pending() is None,
-               f"undo={len(dialog4._undo)} before={undo_before}")
+               and dialog4.history_list.item(
+                   dialog4.history_list.count() - 1).text() == "变换"
+               and dialog4.history_list.currentRow()
+               == dialog4.history_list.count() - 1,
+               f"undo={len(dialog4._undo)} before={undo_before} "
+               f"历史={[dialog4.history_list.item(i).text()
+                      for i in range(dialog4.history_list.count())]}")
 
             # 旋转：绕轴心（轴心不动）；切走工具自动烘焙
             canvas4.set_tool("transform")
@@ -931,6 +1299,8 @@ def run(ctx) -> None:
                reshape_ok, "")
         finally:
             dialog5.deleteLater()
+    finally:
+        dialog.deleteLater()
 
     # ---- 7/8. 预览弹窗接线 ----
     from desktop.components.viewers.image_zoom_dialog import ImageZoomDialog
