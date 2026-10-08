@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import io
 import math
+import os
 import re
 import threading
 from pathlib import Path
@@ -206,6 +207,47 @@ def page_source_stems(page: dict) -> list[str]:
     return [
         Path(str(item.get("file") or "")).stem
         for item in (page or {}).get("items") or []
+    ]
+
+
+def same_path(left, right) -> bool:
+    """两个路径串是否指同一处文件（**形态无关**）。
+
+    文档里存的是路径**原样字符串**，而"编辑器刚覆盖的那个文件"往往是从
+    ``Path(...)`` 取出来的——Windows 上 ``Path`` 会把 ``/`` 翻成 ``\\``，
+    大小写也可能有差异。拿字符串直接 ``==`` 比会**静默落空**（用户
+    2026-10-08 报的"预览弹窗里编辑完，拼版页还是老图"就是这个）。
+    比较前一律 ``normpath`` + ``normcase``；空串永远不相等（``Path("")``
+    会退化成 ``"."``，那是"还没选文件"，不是同一处）。
+    """
+    if not left or not right:
+        return False
+    return _path_key(left) == _path_key(right)
+
+
+def _path_key(value) -> str:
+    """路径的比较键：展开 ``~`` → 绝对化 → 统一分隔符 → 统一大小写。
+
+    ⚠️ 只在"比较"里用，**不要**拿它当落盘值——落盘仍写原路径。
+    """
+    return os.path.normcase(
+        os.path.normpath(os.path.abspath(os.path.expanduser(str(value))))
+    )
+
+
+def page_has_file(page: dict, path_text: str) -> bool:
+    """这一页的某张源图是否就是这个文件（形态无关比较）。"""
+    return any(
+        same_path(item.get("file"), path_text)
+        for item in (page or {}).get("items") or []
+    )
+
+
+def pages_having_file(pages: list, path_text: str) -> list[int]:
+    """哪些页用了这个源文件（页号列表）。"""
+    return [
+        index for index, page in enumerate(pages or [])
+        if page_has_file(page, path_text)
     ]
 
 

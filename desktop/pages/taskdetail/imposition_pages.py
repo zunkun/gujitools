@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any, Callable, cast
 
 from desktop.services.imposition import (
     ITEMS_PER_PAGE, append_item_to_page, auto_impose_pages, cn_page_label,
-    excluded_files, make_page, make_single_page, used_source_files,
+    excluded_files, make_page, make_single_page, same_path, used_source_files,
 )
 
 if TYPE_CHECKING:
@@ -457,6 +457,27 @@ class ImpositionPagesMixin:
         missing = list(dict.fromkeys(r for r in reps if r and r not in thumbs))
         if missing:
             self._load_imposition_source_thumbs(missing)
+
+    def _drop_imposition_source_thumb(self, path_text: str) -> None:
+        """某个源图文件被覆盖后：丢掉左列那条**内存**缩略图并重渲那一条。
+
+        ⚠️⚠️ ``_imposition_source_thumbs`` 的键是"代表图路径"，命中只看路径
+        ——同一个路径换了内容它照旧贴回旧 ``QPixmap`` ⇒ 左列那片缩略图**永远
+        停在编辑前的样子**（用户 2026-10-08 报：从预览弹窗里编辑完，关掉
+        弹窗拼版页还是老图；画布那条链是好的，就这里没跟上）。
+
+        删掉命中项后交给 :meth:`_refresh_imposition_page_thumbs` 走它既有的
+        "缺的补渲"——磁盘缓存键含文件指纹（大小/路径），换图自然换键，
+        所以重渲拿到的是新图；没删干净也只会重渲一次，不会贴错。
+        """
+        thumbs = getattr(self, "_imposition_source_thumbs", None)
+        if not thumbs:
+            return
+        stale = [key for key in thumbs if same_path(key, path_text)]
+        for key in stale:
+            thumbs.pop(key, None)
+        if stale:
+            self._refresh_imposition_page_thumbs(self._imposition_pages())
 
     def _load_imposition_source_thumbs(self, images: list[str]) -> None:
         """后台把这批源图的缩略图渲进**任务目录**缓存，回来后贴进左列。

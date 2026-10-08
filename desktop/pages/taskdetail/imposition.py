@@ -107,6 +107,7 @@ class ImpositionBaseMixin:
         _save_imposition_enabled: Callable[[bool], None]
         _schedule_imposition_compose: Callable[[], None]
         _refresh_imposition_page_thumbs: Callable[..., None]
+        _drop_imposition_source_thumb: Callable[[str], None]
         _update_imposition_status: Callable[[int], None]
         close_imposition_zoom_popup: Callable[[], None]
         _current_print_pdf_path: Callable[[], Any]

@@ -259,7 +259,7 @@ class PageListMixin:
             ):
                 self.log_view.append(
                     f"已编辑待打印图片「{path.name}」；"
-                    "点「生成PDF」即用上这次修改。"
+                    "点「生成 PDF」即用上这次修改。"
                 )
         except Exception:  # noqa: BLE001 - 提示不该影响刷新主链路
             pass

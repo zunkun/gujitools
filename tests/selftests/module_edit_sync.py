@@ -408,6 +408,28 @@ def _imposition_flow(ctx, ok) -> None:
         page._on_zoom_image_saved(item_file, QImage(str(art)))
         ok("拼图页：弹窗编辑源图 → 画布缓存被丢（重绘读新图）",
            item_file not in page.view.canvas._images)
+
+        # ---- 路径**形态**不同也必须刷新（2026-10-08 用户报障的机制）----
+        # ``path_text`` 来自 ``Path(...)``（Windows 上斜杠被翻成 ``\``），而
+        # 缓存键/doc 里存的是原样字符串；旧代码拿字符串直接比 ⇒ 落空就整段
+        # return，用户看到的是"预览弹窗里编辑完，关掉弹窗拼版页还是老图"。
+        page.view.canvas._image(item_file)
+        page._on_zoom_image_saved(item_file.replace("\\", "/"), QImage(str(art)))
+        ok("拼图页：路径换一种斜杠形态，弹窗编辑仍能落到画布上",
+           item_file not in page.view.canvas._images,
+           str(list(page.view.canvas._images)))
+
+        # 认不出属于哪一页时也要先丢缓存（否则就是静默不刷新）
+        # ⚠️ 孤立图必须**真存在**：``_image`` 解不出图时压根不写缓存，
+        #    那样断言"缓存里没有它"是假绿。
+        orphan_path = _png(work / "不在任何拼版页里的图.png", BLUE, (200, 300))
+        orphan = str(orphan_path)
+        page.view.canvas._image(orphan)
+        assert orphan in page.view.canvas._images  # 先确认真的进了缓存
+        page._on_zoom_image_saved(orphan, QImage(str(art)))
+        ok("拼图页：认不出归属的路径也先丢缓存，不做静默 return",
+           orphan not in page.view.canvas._images,
+           str(list(page.view.canvas._images)))
         page._on_zoom_image_saved(str(record), QImage(str(art)))
         ok("拼图页：弹窗编辑整页组合的日志说明导出用手改图",
            "手改图" in page.log_view.toPlainText(),

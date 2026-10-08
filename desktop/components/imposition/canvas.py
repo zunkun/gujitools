@@ -51,6 +51,7 @@
 from __future__ import annotations
 
 import math
+import os
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QImage, QPainter, QPen
@@ -576,8 +577,24 @@ class ImpositionCanvas(QWidget):
     def invalidate_image(self, path: str) -> None:
         """某个源图文件被外部覆盖（编辑器「完成」回写）后：丢掉它的解码
         缓存并重绘——不丢的话画布会一直显示覆盖前的旧图。
+
+        ⚠️⚠️ 命中判据必须**规范化**（``normpath`` + ``normcase``），不能拿
+        字符串直接比：缓存键是 ``item["file"]`` 原样存进来的，而调用方给的
+        路径可能来自 ``Path(...)``（Windows 上斜杠会被翻成 ``\\``）、
+        ``QFileDialog``（给的是 ``/``）或带大小写差异——只要有一处形态不同，
+        ``pop`` 就落空、画布**静默地继续显示旧图**（用户 2026-10-08 报：
+        从预览弹窗里编辑完，关掉弹窗拼版页还是老图）。这里把"同一路径的
+        各种写法"一并清掉，调用方传哪种形态都能命中。
         """
-        self._images.pop(str(path), None)
+        text = str(path)
+        self._images.pop(text, None)
+        want = os.path.normcase(os.path.normpath(text))
+        stale = [
+            key for key in self._images
+            if os.path.normcase(os.path.normpath(key)) == want
+        ]
+        for key in stale:
+            self._images.pop(key, None)
         self.update()
 
     def contextMenuEvent(self, event) -> None:  # noqa: N802

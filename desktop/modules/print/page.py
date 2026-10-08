@@ -82,7 +82,7 @@ class PrintModulePage(StepModulePage, ThumbSourceMixin):
         ⚠️ 生成完成之后左栏切成了**产物 PDF 的页缩略图**——矢量页没有可回写
         的图片文件，右键不提供「编辑图片」，所以能走到这里的都是待打印图。
         """
-        return f"已更新待打印图「{path.name}」；重新点「生成PDF」即用上这次修改。"
+        return f"已更新待打印图「{path.name}」；重新点「生成 PDF」即用上这次修改。"
 
     # ------------------------------------------------------------------ 结果
     def on_result(self, pdf: Path, _result: dict) -> None:

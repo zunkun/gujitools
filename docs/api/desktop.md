@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 161 个模块、174 个公开类、1149 个公开函数/方法（生成于 2026-10-08）。
+覆盖 161 个模块、174 个公开类、1152 个公开函数/方法（生成于 2026-10-08）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -116,7 +116,7 @@
 | [`desktop.pages.tasklist.page`](#desktoppagestasklistpage) | 1 | 7 |
 | [`desktop.services.detect_export`](#desktopservicesdetect_export) | 0 | 3 |
 | [`desktop.services.font_catalog`](#desktopservicesfont_catalog) | 1 | 6 |
-| [`desktop.services.imposition`](#desktopservicesimposition) | 0 | 20 |
+| [`desktop.services.imposition`](#desktopservicesimposition) | 0 | 23 |
 | [`desktop.services.print_plan`](#desktopservicesprint_plan) | 0 | 5 |
 | [`desktop.services.rembg_live`](#desktopservicesrembg_live) | 0 | 3 |
 | [`desktop.services.stale_chain`](#desktopservicesstale_chain) | 0 | 4 |
@@ -1380,6 +1380,14 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 
 某个源图文件被外部覆盖（编辑器「完成」回写）后：丢掉它的解码
 缓存并重绘——不丢的话画布会一直显示覆盖前的旧图。
+
+⚠️⚠️ 命中判据必须**规范化**（``normpath`` + ``normcase``），不能拿
+字符串直接比：缓存键是 ``item["file"]`` 原样存进来的，而调用方给的
+路径可能来自 ``Path(...)``（Windows 上斜杠会被翻成 ``\``）、
+``QFileDialog``（给的是 ``/``）或带大小写差异——只要有一处形态不同，
+``pop`` 就落空、画布**静默地继续显示旧图**（用户 2026-10-08 报：
+从预览弹窗里编辑完，关掉弹窗拼版页还是老图）。这里把"同一路径的
+各种写法"一并清掉，调用方传哪种形态都能命中。
 
 ##### `contextMenuEvent(event) -> None`
 
@@ -3129,6 +3137,12 @@ worker 会变成孤儿线程，而它是被 ``parent``（编辑器对话框）�
 
 留白的做法是把"要装进去的矩形"按比例放大——图片因此只占视口的
 ``ratio``（缺省 0.8，上下左右各留约 10% 视口）。
+
+⚠️ ``ratio`` 收到**非数**（``bool``）时按缺省处理：``clicked`` 这类
+信号会顺手塞一个 ``checked`` 布尔进来，而 ``float(False) == 0.0``
+会被夹成下限 ⇒ 图被缩成视口的 1/4（用户 2026-10-08 报障）。
+接线侧已用 lambda 挡掉，这里再兜一层，免得以后又有人直接
+``button.clicked.connect(canvas.fit)``。
 
 ##### `set_fit_ratio(ratio: float) -> None`
 
@@ -6899,6 +6913,9 @@ GUI 主进程**绝不能**在这里 import 到 cv2（实测 ``import functions.d
 | `removed_source_files(doc: dict) -> set[str]` | 被用户「删除图片」移出选择范围的源图路径集合（软删除黑名单）。 |
 | `excluded_files(files: list, doc: dict) -> list` | 源清单里被删除的图（**按源清单顺序**）——给弹窗的「已删除」视图展示。 |
 | `page_source_stems(page: dict) -> list[str]` | 一页拼版两张源图的名字（去扩展名），按槽位顺序（右、左）。 |
+| `same_path(left, right) -> bool` | 两个路径串是否指同一处文件（**形态无关**）。 |
+| `page_has_file(page: dict, path_text: str) -> bool` | 这一页的某张源图是否就是这个文件（形态无关比较）。 |
+| `pages_having_file(pages: list, path_text: str) -> list[int]` | 哪些页用了这个源文件（页号列表）。 |
 | `default_items(files: list) -> list[dict] \| None` | 两张源图 → **默认并排版面**（各按原始像素，不改动用户的图）。 |
 | `make_page(sources: list) -> dict \| None` | 按**源清单顺序**取两张图造一页拼版版面。 |
 | `single_items(file) -> list[dict] \| None` | 一张源图 → **单图版面**（整幅图 / 落单图专用：原始像素、不旋转）。 |
@@ -6943,6 +6960,17 @@ GUI 主进程**绝不能**在这里 import 到 cv2（实测 ``import functions.d
 
 「删除」是黑名单（``removed``，弹窗里用户主动移出选择范围的图），
 不是删文件——恢复后重新回到候选范围。
+
+#### `same_path(left, right) -> bool`
+
+两个路径串是否指同一处文件（**形态无关**）。
+
+文档里存的是路径**原样字符串**，而"编辑器刚覆盖的那个文件"往往是从
+``Path(...)`` 取出来的——Windows 上 ``Path`` 会把 ``/`` 翻成 ``\``，
+大小写也可能有差异。拿字符串直接 ``==`` 比会**静默落空**（用户
+2026-10-08 报的"预览弹窗里编辑完，拼版页还是老图"就是这个）。
+比较前一律 ``normpath`` + ``normcase``；空串永远不相等（``Path("")``
+会退化成 ``"."``，那是"还没选文件"，不是同一处）。
 
 #### `default_items(files: list) -> list[dict] | None`
 

@@ -340,6 +340,25 @@ def run(ctx) -> None:
            7 <= tl_view.width() <= 20 and 7 <= tl_view.height() <= 20,
            f"tl_view={tl_view.width():.1f}x{tl_view.height():.1f}")
 
+        # ---- 「适应窗口」按钮：**真点一次**（clicked 会塞 checked=False 进来）----
+        # 回归（2026-10-08 用户报「使用窗口，图片立马变得非常小」）：此前是
+        # ``fit_btn.clicked.connect(self.canvas.fit)``，fit(ratio) 收到
+        # checked=False ⇒ float(False)=0.0 被夹成下限 0.2，图缩成视口的 1/4。
+        canvas.zoom_in()
+        canvas.zoom_in()
+        zoomed = canvas.transform().m11()
+        assert zoomed > expected * 1.05  # 先确认真的偏离了 fit 值，否则下条是假绿
+        dialog.fit_btn.click()
+        app.processEvents()
+        fit_m11 = canvas.transform().m11()
+        ok("「适应窗口」按钮：点一下回到 fit 倍率（不再被 clicked 的 False 缩成 1/4）",
+           abs(fit_m11 - expected) <= expected * 0.05,
+           f"点前 {zoomed:.3f} 点后 {fit_m11:.3f} expected={expected:.3f}")
+        ok("「适应窗口」按钮：直接喂一个 bool 也不会缩水（兜底）",
+           (canvas.fit(False), app.processEvents())[1] is None
+           and abs(canvas.transform().m11() - expected) <= expected * 0.05,
+           f"m11={canvas.transform().m11():.3f} expected={expected:.3f}")
+
         # ---- 边缘命中带 + 松手视图适配新选区（用户 20:18 定） ----
         def mouse_event(kind: str, view_pos: QPointF,
                         button: Qt.MouseButton = Qt.MouseButton.LeftButton):

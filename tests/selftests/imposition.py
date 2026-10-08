@@ -2723,6 +2723,55 @@ def run(ctx) -> None:
                 page._imposition_timer.stop()
                 page._imposition_dirty = False
 
+                # ---- 编辑生效链：**左列该页缩略图**也必须跟上（2026-10-08）----
+                # 用户报：预览弹窗里编辑完，关掉弹窗拼版页还是老图。画布那条链
+                # 是好的，漏的是左列——它按"代表图路径"缓存在内存里
+                # （``_imposition_source_thumbs``），同一个路径换了内容照旧贴回
+                # 旧 QPixmap。这里钉住"必须把那条丢掉"。
+                from PySide6.QtGui import QPixmap
+
+                rep = str(item_path)
+                page._imposition_source_thumbs = {
+                    rep: QPixmap(8, 8),
+                    "另一个页的第一张图": QPixmap(8, 8),
+                }
+                # ⚠️ 走**真入口**（_on_imposition_source_edited）而不是直接调那
+                #    个丢缓存的助手：要钉的是"生效链里真的调了它"。
+                page._on_imposition_source_edited(rep, _edited)
+                ok("编辑源图后：左列那条内存缩略图被丢掉（不留旧 QPixmap）",
+                   rep not in page._imposition_source_thumbs
+                   and "另一个页的第一张图" in page._imposition_source_thumbs,
+                   str(list(page._imposition_source_thumbs)))
+                page._imposition_timer.stop()
+                page._imposition_dirty = False
+
+                # ---- 路径**形态**不同也要命中（分隔符/大小写）----
+                # 缓存键是 ``item["file"]`` 原样字符串，而调用方给的路径常来自
+                # ``Path(...)``（Windows 上斜杠被翻成 ``\``）⇒ 直接字符串比会
+                # 静默落空，用户看到的就是"编辑不生效"。
+                from desktop.services.imposition import same_path
+
+                ok("路径比较：分隔符/大小写不同的同一路径判为同一处",
+                   same_path(rep, rep.replace("\\", "/"))
+                   and same_path(rep, rep.upper())
+                   and not same_path(rep, rep + "x")
+                   and not same_path("", rep),
+                   f"rep={rep}")
+
+                page.imposition_view.canvas._image(rep)
+                page.imposition_view.canvas.invalidate_image(rep.replace("\\", "/"))
+                ok("画布失效：用另一种斜杠形态也能丢中解码缓存",
+                   rep not in page.imposition_view.canvas._images,
+                   str(list(page.imposition_view.canvas._images)))
+
+                page._imposition_source_thumbs = {
+                    rep: QPixmap(8, 8),
+                }
+                page._drop_imposition_source_thumb(rep.replace("\\", "/"))
+                ok("左列缩略图失效：用另一种斜杠形态也能丢中",
+                   not page._imposition_source_thumbs,
+                   str(list(page._imposition_source_thumbs)))
+
                 # 取消编辑：不覆盖
                 _edit_seen.clear()
                 _edit_seen["mode"] = "reject"

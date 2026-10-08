@@ -416,13 +416,17 @@ class ImpositionLayoutMixin:
     def _on_imposition_source_edited(self, path_text: str, edited) -> None:
         """拼版源图被覆盖（画布右键或预览弹窗）：统一的生效链。
 
-        ① 画布丢掉这张图的解码缓存并重绘；② 主页面 ``_on_page_image_saved``
-        刷新各查看器（rembg 输出无坐标基准，走其"按文件刷新"分支）；
-        ③ 重新防抖合成——拼版成品里嵌着这张源图，不重合成就白改了。
+        ① 画布丢掉这张图的解码缓存并重绘；② **左列该页的缩略图**也要丢掉
+        重渲（它按路径缓存在内存里，不清就永远停在旧图——用户 2026-10-08
+        报"预览弹窗里编辑完，拼版页还是老图"就是漏了这一步）；③ 主页面
+        ``_on_page_image_saved`` 刷新各查看器（rembg 输出无坐标基准，走其
+        "按文件刷新"分支）；④ 重新防抖合成——拼版成品里嵌着这张源图，
+        不重合成就白改了。
         """
         view = getattr(self, "imposition_view", None)
         if view is not None:
             view.canvas.invalidate_image(path_text)
+        self._drop_imposition_source_thumb(path_text)
         self._on_page_image_saved(path_text, edited)
         self._schedule_imposition_compose()
         self.log_view.append(

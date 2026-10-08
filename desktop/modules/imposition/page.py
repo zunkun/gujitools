@@ -50,6 +50,7 @@ from desktop.services.imposition import (
     make_single_page,
     normalize_doc,
     normalize_page,
+    page_has_file,
     page_source_stems,
     removed_source_files,
 )
@@ -681,17 +682,23 @@ class ImpositionModulePage(ModulePage):
           「导出成品」时生效。
         - **整页组合的手改缓存**（``edited/``）：给 ``edit_path`` 的前提就是
           doc 的 ``edited_file`` 本来指着它，文件已被覆盖成最新，补一句日志。
+
+        ⚠️⚠️ **先无条件把画布那张图的解码缓存丢掉，再去认它属于哪一页**：
+        认页靠路径比较，而缓存键是 ``item["file"]`` 原样字符串、``path_text``
+        来自 ``Path(...)``——两边只要有一处形态不同（Windows 分隔符、大小写、
+        相对/绝对），比较就落空，旧代码于是**整段 return 什么都不做**，
+        用户看到的就是"从预览弹窗里编辑完，关掉弹窗拼版页还是老图"
+        （2026-10-08 报障）。丢缓存本身按路径规范化命中、对不属于本页的
+        路径也无害，所以放在判断之前；认页只用来决定"打哪句日志、刷哪条
+        缩略图"。
         """
         if image is None or image.isNull():
             return
         path = Path(path_text)
+        self.view.canvas.invalidate_image(path_text)
         pages = self._doc.get("pages") or []
         for page in pages:
-            if any(
-                str(item.get("file") or "") == path_text
-                for item in page.get("items") or []
-            ):
-                self.view.canvas.invalidate_image(path_text)
+            if page_has_file(page, path_text):
                 self._load_source_thumbs([path_text])
                 self.log(
                     f"已编辑拼版源图「{path.stem}」并覆盖原图"

@@ -81,7 +81,12 @@ class ToolbarMixin(DialogHost):
         self.zoom_in_btn.clicked.connect(self.canvas.zoom_in)
         self.fit_btn = PushButton("适应窗口")
         self.fit_btn.setToolTip("整图完整可见")
-        self.fit_btn.clicked.connect(self.canvas.fit)
+        # ⚠️⚠️ **必须套一层 lambda**：``clicked`` 会顺手塞一个 ``checked: bool``
+        #    进来，而 ``fit(ratio=None)`` 正好能接一个位置参数 ⇒ 收到的是
+        #    ``False``；``float(False) == 0.0`` 被夹成下限 0.2，"适应窗口"
+        #    于是把图缩成视口的 1/4 大小（用户 2026-10-08 报"图片立马变得非常小"）。
+        #    同行的 ``zoom_in/zoom_out`` 没有参数，PySide6 才不会多塞这一个。
+        self.fit_btn.clicked.connect(lambda: self.canvas.fit())
         row.addWidget(self.zoom_out_btn)
         row.addWidget(self.zoom_in_btn)
         row.addWidget(self.fit_btn)

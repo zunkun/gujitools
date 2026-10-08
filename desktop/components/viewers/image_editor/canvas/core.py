@@ -283,11 +283,18 @@ class EditorCanvas(
 
         留白的做法是把"要装进去的矩形"按比例放大——图片因此只占视口的
         ``ratio``（缺省 0.8，上下左右各留约 10% 视口）。
+
+        ⚠️ ``ratio`` 收到**非数**（``bool``）时按缺省处理：``clicked`` 这类
+        信号会顺手塞一个 ``checked`` 布尔进来，而 ``float(False) == 0.0``
+        会被夹成下限 ⇒ 图被缩成视口的 1/4（用户 2026-10-08 报障）。
+        接线侧已用 lambda 挡掉，这里再兜一层，免得以后又有人直接
+        ``button.clicked.connect(canvas.fit)``。
         """
         if self._item is None or self.viewport().width() <= 1:
             return  # 控件还没布局：此时 fit 算出来的是脏值，等 resizeEvent 再来
         rect = self.image_rect()
-        if ratio is None:
+        if ratio is None or isinstance(ratio, bool) \
+                or not isinstance(ratio, (int, float)):
             ratio = self._fit_ratio
         ratio = max(0.2, min(1.0, float(ratio)))
         if ratio < 1.0 and not rect.isNull():
