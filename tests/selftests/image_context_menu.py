@@ -20,6 +20,11 @@ PDF**。所以每个步骤的预览区都要能右键，且「编辑图片」改
    - 第三步结果形态（``RembgPreviewWidget``）→ **去底色结果文件**（区域合成
      只是显示口径，save_path 为 None，但 edit_path 必须是结果文件）；
    - 第四步打印效果形态（``PrintPreviewWidget``）→ 待打印的条目图。
+6. **编辑开关**（2026-10-09 用户：图片去底色阶段只许预览不许编辑）：
+   ``image_editable=False`` 的宿主——右键菜单只给「预览图片」、
+   ``edit_current_image`` 直接拒绝（不弹编辑器不写文件）、预览弹窗不渲染
+   「编辑」按钮；``set_image_editable`` 运行期可重开；默认（不传参数）
+   仍可编辑，其余宿主零改动。
 """
 
 from __future__ import annotations
@@ -295,6 +300,87 @@ def run(ctx) -> None:
         finally:
             rembg.shutdown_workers()
             rembg.deleteLater()
+        pump(app, times=1)
+
+        # ---------------------------------- 编辑开关（2026-10-09 只许预览）
+        # 去底色阶段（taskdetail 与独立页）都传 image_editable=False：
+        # 门装在**入口层**（菜单/按钮/edit_current_image），不在目标层——
+        # _zoom_target 仍如实报告可回写文件，关掉的是"允许编辑"这件事。
+        rembg_ro = RembgPreviewWidget(image_editable=False)
+        try:
+            rembg_ro.set_images(
+                [src], result_dir,
+                boxes_provider=lambda _p: [[10, 20, 300, 700]],
+                region_params_provider=lambda: (1, None),
+            )
+            pump(app, times=6)
+            ok("image_editable=False：开关确实关上",
+               rembg_ro._zoom_editable is False)
+            tgt_ro = rembg_ro._zoom_target(0)
+            ok("开关关了但编辑目标如实指向结果文件（门在入口层）",
+               tgt_ro is not None and tgt_ro.edit_path == result,
+               str(getattr(tgt_ro, "edit_path", None)))
+            texts_ro = [item[0] for item in rembg_ro._zoom_menu_items(tgt_ro)]
+            ok("image_editable=False：右键菜单只给「预览图片」",
+               texts_ro == ["预览图片"], str(texts_ro))
+
+            # 端到端：右键真的只弹一项（patch exec，避免模态阻塞）
+            import qfluentwidgets
+
+            captured_ro: list = []
+            orig_exec = qfluentwidgets.RoundMenu.exec
+            qfluentwidgets.RoundMenu.exec = (
+                lambda self, *a, **k: captured_ro.append(
+                    [act.text() for act in self.menuActions()]
+                )
+            )
+            try:
+                rembg_ro.view.context_menu_requested.emit()
+            finally:
+                qfluentwidgets.RoundMenu.exec = orig_exec
+            ok("image_editable=False：右键端到端只弹「预览图片」",
+               captured_ro == [["预览图片"]], str(captured_ro))
+
+            before = QImage(str(result)).pixelColor(2, 2).name()
+            ok("image_editable=False：edit_current_image 直接拒绝（不写文件）",
+               rembg_ro.edit_current_image() is False
+               and QImage(str(result)).pixelColor(2, 2).name() == before)
+
+            # 运行期重开：菜单恢复「编辑图片」项
+            rembg_ro.set_image_editable(True)
+            texts_re = [
+                item[0]
+                for item in rembg_ro._zoom_menu_items(rembg_ro._zoom_target(0))
+            ]
+            ok("set_image_editable(True)：菜单恢复「编辑图片」",
+               texts_re == ["预览图片", "编辑图片"], str(texts_re))
+        finally:
+            rembg_ro.shutdown_workers()
+            rembg_ro.deleteLater()
+        pump(app, times=1)
+
+        # 预览弹窗：editable=False 不渲染「编辑」按钮；运行期可来回切换
+        from desktop.components.viewers.image_zoom_dialog import ImageZoomDialog
+
+        dlg_ro = ImageZoomDialog(factory=lambda _i: None, editable=False)
+        try:
+            ok("弹窗 editable=False：工具栏不渲染「编辑」按钮",
+               dlg_ro.edit_btn.isHidden())
+            dlg_ro.set_editable(True)
+            ok("弹窗 set_editable(True)：「编辑」按钮恢复",
+               not dlg_ro.edit_btn.isHidden())
+            dlg_ro.set_editable(False)
+            ok("弹窗 set_editable(False)：「编辑」按钮再次隐藏",
+               dlg_ro.edit_btn.isHidden())
+        finally:
+            dlg_ro.deleteLater()
+        pump(app, times=1)
+        dlg_default = ImageZoomDialog(factory=lambda _i: None)
+        try:
+            ok("弹窗默认（不传 editable）：「编辑」按钮照常在",
+               not dlg_default.edit_btn.isHidden())
+        finally:
+            dlg_default.deleteLater()
         pump(app, times=1)
 
         from desktop.components.viewers.print_preview import PrintPreviewWidget

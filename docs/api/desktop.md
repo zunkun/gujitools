@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 163 个模块、175 个公开类、1179 个公开函数/方法（生成于 2026-10-09）。
+覆盖 164 个模块、177 个公开类、1198 个公开函数/方法（生成于 2026-10-09）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -26,7 +26,7 @@
 | [`desktop.components.imposition.canvas`](#desktopcomponentsimpositioncanvas) | 1 | 26 |
 | [`desktop.components.imposition.confirm_delete`](#desktopcomponentsimpositionconfirm_delete) | 1 | 1 |
 | [`desktop.components.imposition.page_list`](#desktopcomponentsimpositionpage_list) | 1 | 10 |
-| [`desktop.components.imposition.page_thumb`](#desktopcomponentsimpositionpage_thumb) | 0 | 2 |
+| [`desktop.components.imposition.page_thumb`](#desktopcomponentsimpositionpage_thumb) | 1 | 14 |
 | [`desktop.components.imposition.panel`](#desktopcomponentsimpositionpanel) | 1 | 7 |
 | [`desktop.components.imposition.picker`](#desktopcomponentsimpositionpicker) | 1 | 9 |
 | [`desktop.components.imposition.view`](#desktopcomponentsimpositionview) | 1 | 12 |
@@ -76,10 +76,10 @@
 | [`desktop.components.viewers.image_viewer.thumbs`](#desktopcomponentsviewersimage_viewerthumbs) | 1 | 1 |
 | [`desktop.components.viewers.image_zoom_dialog.canvas`](#desktopcomponentsviewersimage_zoom_dialogcanvas) | 2 | 21 |
 | [`desktop.components.viewers.image_zoom_dialog.consts`](#desktopcomponentsviewersimage_zoom_dialogconsts) | 0 | 0 |
-| [`desktop.components.viewers.image_zoom_dialog.dialog`](#desktopcomponentsviewersimage_zoom_dialogdialog) | 1 | 6 |
+| [`desktop.components.viewers.image_zoom_dialog.dialog`](#desktopcomponentsviewersimage_zoom_dialogdialog) | 1 | 7 |
 | [`desktop.components.viewers.image_zoom_dialog.icons`](#desktopcomponentsviewersimage_zoom_dialogicons) | 0 | 3 |
 | [`desktop.components.viewers.image_zoom_dialog.io`](#desktopcomponentsviewersimage_zoom_dialogio) | 0 | 2 |
-| [`desktop.components.viewers.image_zoom_dialog.popup`](#desktopcomponentsviewersimage_zoom_dialogpopup) | 1 | 2 |
+| [`desktop.components.viewers.image_zoom_dialog.popup`](#desktopcomponentsviewersimage_zoom_dialogpopup) | 1 | 3 |
 | [`desktop.components.viewers.pdf_viewer`](#desktopcomponentsviewerspdf_viewer) | 1 | 2 |
 | [`desktop.components.viewers.print_layout_canvas`](#desktopcomponentsviewersprint_layout_canvas) | 1 | 12 |
 | [`desktop.components.viewers.print_preview.export`](#desktopcomponentsviewersprint_previewexport) | 1 | 1 |
@@ -147,7 +147,7 @@
 | [`desktop.store.pages`](#desktopstorepages) | 1 | 9 |
 | [`desktop.store.runs`](#desktopstoreruns) | 1 | 8 |
 | [`desktop.store.store`](#desktopstorestore) | 1 | 1 |
-| [`desktop.store.tasks`](#desktopstoretasks) | 1 | 39 |
+| [`desktop.store.tasks`](#desktopstoretasks) | 1 | 40 |
 | [`desktop.store.ui_state`](#desktopstoreui_state) | 1 | 6 |
 | [`desktop.ui.color_picker`](#desktopuicolor_picker) | 5 | 30 |
 | [`desktop.ui.font_setup`](#desktopuifont_setup) | 2 | 8 |
@@ -160,12 +160,13 @@
 | [`desktop.ui.toast`](#desktopuitoast) | 0 | 1 |
 | [`desktop.ui.widgets`](#desktopuiwidgets) | 9 | 43 |
 | [`desktop.ui.window_size`](#desktopuiwindow_size) | 0 | 3 |
-| [`desktop.utils.files`](#desktoputilsfiles) | 0 | 18 |
+| [`desktop.utils.files`](#desktoputilsfiles) | 0 | 19 |
 | [`desktop.utils.icon`](#desktoputilsicon) | 0 | 3 |
 | [`desktop.worker`](#desktopworker) | 0 | 1 |
 | [`desktop.workers.copy_source_worker`](#desktopworkerscopy_source_worker) | 2 | 4 |
 | [`desktop.workers.hash_worker`](#desktopworkershash_worker) | 1 | 2 |
 | [`desktop.workers.image_list_worker`](#desktopworkersimage_list_worker) | 1 | 2 |
+| [`desktop.workers.imposition_page_thumb_worker`](#desktopworkersimposition_page_thumb_worker) | 1 | 3 |
 | [`desktop.workers.imposition_worker`](#desktopworkersimposition_worker) | 2 | 4 |
 | [`desktop.workers.preview_worker`](#desktopworkerspreview_worker) | 1 | 11 |
 | [`desktop.workers.rembg_live_worker`](#desktopworkersrembg_live_worker) | 1 | 3 |
@@ -1569,8 +1570,8 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 用户看到的就是"程序卡死"；只贴单条 = **~0.03 秒**。
 
 ⚠️ 这里用**位置**（``_entries`` 的下标）而不是 ``entry.index``：调用方
-传的是"清单里的第几页"（与 :meth:`_imposition_page_reps` 同序），
-拖动排序后两者会分叉——那种情况下贴错一条比不贴更难查。
+传的是"清单里的第几页"（与页面清单同序），拖动排序后两者会分叉
+——那种情况下贴错一条比不贴更难查。
 
 无此条目（清单变短了/下标越界）时**静默忽略**：那是"用户正在翻页或
 删页"，不该让一个迟到的缩略图把异常抛到事件循环外面。
@@ -1581,60 +1582,125 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 
 源码：[`desktop/components/imposition/page_thumb.py`](../../desktop/components/imposition/page_thumb.py)
 
-拼版页的**"页面效果"缩略图**——按版面把一页的源图缩略图合成一张小图。
+拼版页的**"页面效果"缩略图实体**——按版面合成整页、落盘、带映射数据。
 
-为什么要有这一层（用户 2026-10-09 报障）：左列每页的缩略图此前**只贴第一张
-源图**当代表（"一页拼版本来就是两张图并排，给一张代表图已经能认出是哪页"
-——2026-10-04 的口径），但一页拼版是**两张图合成的页面**，只显示一张会让
-用户误以为这页只有半幅（比如 ``3-l`` + ``4-r`` 拼成一页，缩略图里只有
-``3-l``）。缩略图应该按**页面效果**显示——与右侧画布/成品同一版面。
+为什么是"实体"而不是内存合成（用户 2026-10-09 两轮报障的合流）：
 
-做法：不再单独渲"代表图"，而是把页内**每张源图的缩略图**（复用既有的
-后台缩略图缓存与 worker，解码零新增）按 ``rect`` 相对
-:func:`services.imposition.page_bounds` 的位置**缩放贴到白底**上——
-合成规则与 :func:`services.imposition.compose_page`（成品落盘）同一条：
-白底 + 各图按 rect 摆放 + 外接框紧裁，只是像素密度低得多（显示用）。
+1. 第一轮：一页拼版是两张图合成的页面（``3-l`` + ``4-r``），旧口径"每页取
+   第一张源图当代表"让缩略图只显示半幅——缩略图必须按**页面效果**显示；
+2. 第二轮（0002 任务实测）：内存合成依赖"页内每张源图的缩略图都已在内存"，
+   任何一张没到就出**半张**；而且回填反查表只登记每页第一张，第二张到了
+   也不重贴。用户拍板：**缩略图实体要生成落地**——组合成拼版图片另放一个
+   目录，直接按 ``page1 page2`` 命名，做好映射数据。
 
-旋转口径：``rotation`` 是**顺时针角度**（Qt 口径），与操作画布
-（``canvas.py`` ``painter.rotate``）同向——PIL 那边取负是 PIL 逆时针的
-缘故，这里在 Qt 里画，直接正角即可。
+本模块给两层东西：
 
-两张函数都给宿主用：
+- **纯函数**：:func:`page_signature`（这一页的内容签名：版面 + 每张源图的
+  文件指纹——大小/mtime，编辑覆盖后指纹变 ⇒ 签名变 ⇒ 重生成）、
+  :func:`compose_page_thumb_from_files`（从**全尺寸源图**直接合成整页
+  缩略图，等比缩放解码、白底压平、rect 比例映射、绕中心顺时针旋转）、
+  :func:`thumb_file_name` / :func:`load_page_index` / :func:`write_page_index`
+  （``pageN.jpg`` 命名与 ``index.json`` 映射的读写）；
+- **宿主侧管理者** :class:`PageThumbManager`：签名命中贴**落盘实体**、
+  未命中排队交后台 worker（:class:`~desktop.workers.imposition_page_thumb_worker.ImpositionPageThumbWorker`）生成落盘——UI 永远
+  只认实体文件，重进任务零生成。
 
-- :func:`page_thumb_signature`：这一页缩略图的**内容签名**（含每张源图
-  缩略图的 ``cacheKey``）——宿主拿它做 memo，源图缩略图没换/版面没动就
-  不重合成（380 页批量回填路径上这是保命符）；
-- :func:`compose_page_thumb`：真合成（白底 QImage，缺哪张源图缩略图就
-  留白——"还没渲"与"渲不出来"由白底兜着，等它到了签名变、自然重合成）。
+两处宿主（任务流程的拼版详情页与独立拼图页）目录各归各（用户 2026-10-04
+明确「singletask 和 taskdetail 不是一回事」）：任务写
+``tasks/<id>/thumbnails/imposition_pages/``，独立区写
+``singletask/<子任务>/page_thumbs/``。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| INDEX_NAME | `"index.json"` |
+| INDEX_VERSION | `1` |
+
+### `class PageThumbManager(QObject)`
+
+页面缩略图**实体**的管理者：命中贴实体、未命中排队后台生成落盘。
+
+宿主只做三件事：刷新时对每页调 :meth:`pixmap_for`（命中回 QPixmap、
+未命中回 ``None`` 占位并自动排队）→ :meth:`flush`（把排队页交后台
+worker）→ 连 :attr:`page_ready` 把生成好的那条贴回左列。版面/源图
+变了调 :meth:`invalidate`（宿主的防抖计时器到点后）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(out_dir: Path \| str, edge: int, submit: Callable, parent: QObject \| None=None)` | ``out_dir`` 实体目录；``edge`` 最长边；``submit``＝宿主的 |
+| `directory() -> Path` | — |
+| `bind(out_dir: Path \| str) -> None` | 换目录（换任务/换子任务）：状态全清、重读那份映射。 |
+| `reset() -> None` | 清空内存态（映射/位图缓存/排队）；盘上实体不动。 |
+| `reload() -> None` | 从盘上重读映射数据。 |
+| `retain(count: int) -> None` | 页清单缩到 ``count`` 后：多出来的映射删掉、孤儿实体清掉。 |
+| `pixmap_for(index: int, page: dict) -> QPixmap \| None` | 这一页的缩略图：实体命中回 QPixmap；映射对不上就排队补实体。 |
+| `flush() -> None` | 把排队的页整批交给后台 worker（一批一个；在跑就等它收尾续批）。 |
+| `invalidate(indexes, pages: list) -> None` | 版面/源图变了：把这几页排进重生成批次（签名不匹配自然排队）。 |
+
+##### `__init__(out_dir: Path | str, edge: int, submit: Callable, parent: QObject | None=None)`
+
+``out_dir`` 实体目录；``edge`` 最长边；``submit``＝宿主的
+``run_worker(factory, wire)``（线程的创建与回收归宿主管）。
+
+##### `retain(count: int) -> None`
+
+页清单缩到 ``count`` 后：多出来的映射删掉、孤儿实体清掉。
+
+⚠️ ``count <= 0``（文档还没灌进来/被清空的**暂态**）直接忽略——
+空清单 ≠ "用户删光了所有页"，此刻拿着旧映射对账会把整批实体当
+孤儿删光（实测：0002 任务上每次生成完紧跟一次空刷新，实体刚落盘
+就被清掉，左列永远占位）。真正的删页走 ``count > 0`` 的对账。
+
+##### `pixmap_for(index: int, page: dict) -> QPixmap | None`
+
+这一页的缩略图：实体命中回 QPixmap；映射对不上就排队补实体。
+
+- **映射命中**（这一页的签名与映射一致且实体文件读得出来）：直接
+  回盘上那张——重进任务零生成；
+- **映射不符**（没有实体/版面或源图变了/实体被暂态清掉后同一版面
+  又回来了）：内存 memo 里有这一版就**先贴着**保显示，同时**排队**
+  把实体补回盘上——显示与落盘最终一致（实测坑：只贴不排队的话，
+  实体被清掉的页永远不会再落盘，重进任务就没图了）。
 
 ### 模块函数
 
 | 函数 | 说明 |
 | --- | --- |
-| `page_thumb_signature(page: dict, source_thumbs: Mapping) -> tuple \| None` | 一页拼版缩略图的**内容签名**；空页/不可修复页返回 ``None``。 |
-| `compose_page_thumb(page: dict, source_thumbs: Mapping, edge: int=256) -> QImage \| None` | 一页拼版 → **页面效果**缩略图（白底 QImage）。 |
+| `page_signature(page: dict) -> str \| None` | 一页拼版缩略图实体的**内容签名**；空页/不可修复页返回 ``None``。 |
+| `compose_page_thumb_from_files(page: dict, edge: int=256) -> QImage \| None` | 一页拼版 → **页面效果**缩略图实体（白底 QImage，从全尺寸源图合成）。 |
+| `thumb_file_name(page_index: int) -> str` | 页号（0 基）→ 实体文件名：``page1.jpg`` 从第一页起数（用户口径）。 |
+| `load_page_index(out_dir: Path, edge: int) -> dict[int, str]` | 读映射数据：``{页号(0基): 签名}``；没有/坏档/边长不符给空表。 |
+| `write_page_index(out_dir: Path, mapping: dict[int, str], edge: int) -> bool` | 把映射数据原子落盘；失败返回 False（实体文件还在，下次重写即可）。 |
 
-#### `page_thumb_signature(page: dict, source_thumbs: Mapping) -> tuple | None`
+#### `page_signature(page: dict) -> str | None`
 
-一页拼版缩略图的**内容签名**；空页/不可修复页返回 ``None``。
+一页拼版缩略图实体的**内容签名**；空页/不可修复页返回 ``None``。
 
-签名覆盖三件事：页内**有哪些图**、版面（rect/rotation）、每张源图
-缩略图的当前内容（cacheKey）。任何一件变了签名就变——宿主的 memo
-据此决定要不要重合成。
+签名覆盖：页内**有哪些文件**（含文件指纹）、版面（rect/rotation）。
+任何一件变了签名就变——管理者的"命中/重生成"判据就这一个。
 
-#### `compose_page_thumb(page: dict, source_thumbs: Mapping, edge: int=256) -> QImage | None`
+#### `compose_page_thumb_from_files(page: dict, edge: int=256) -> QImage | None`
 
-一页拼版 → **页面效果**缩略图（白底 QImage）。
+一页拼版 → **页面效果**缩略图实体（白底 QImage，从全尺寸源图合成）。
 
-- 外框 = :func:`page_bounds`（所有图外接框的并集，与成品紧裁同一块），
-  等比缩到最长边 ``edge``——左列条目（118×88 固定框）还会再等比缩
-  一次，256 的密度足够；
-- 页内每张源图取它在 ``source_thumbs`` 里的缩略图，按 ``rect`` 相对
-  外框的比例缩放贴到对应位置（``rect`` 存的是源图像素，比例映射即
-  是版面）；有 ``rotation`` 就绕该项中心顺时针转（与画布同口径）；
-- **缺哪张源图的缩略图就留白**（不返回 None）：半张页面效果也比空框
-  诚实，且它到了之后签名变、宿主自然重合成。只有整页非法（没有有效
-  项 / 外框退化）才返回 ``None``。
+与成品 :func:`services.imposition.compose_page` 同一条版面规则：白底 +
+各图按 ``rect`` 相对 :func:`page_bounds` 外接框的比例摆放 + 外框紧裁，
+只是像素密度低（最长边 ``edge``）；有 ``rotation`` 绕该项中心顺时针转
+（与操作画布 ``canvas.py`` 同口径）。页内某张源图读不出来就**留白**
+（半张也比空框诚实；文件真丢了签名里的指纹是 ``missing``，不会反复
+重生成）。只有整页非法（没有有效项 / 外框退化）才返回 ``None``。
+
+#### `load_page_index(out_dir: Path, edge: int) -> dict[int, str]`
+
+读映射数据：``{页号(0基): 签名}``；没有/坏档/边长不符给空表。
+
+``index.json`` 形如
+``{"version": 1, "edge": 256, "pages": [{"page": 1, "thumb":
+"page1.jpg", "signature": "..."}]}``——页号从 1 起存（人看的口径），
+0 基换算只在内存里做。
 
 ---
 
@@ -4356,7 +4422,7 @@ Qt 在窗口 dpr 变化时发 ``DevicePixelRatioChange``，**不保证**同时�
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(editable: bool=False, show_boxes: bool=False, empty_hint: str='暂无图片', image_size_provider=None, thumb_provider=None, parent=None)` | 构建左侧缩略图条与右侧大图；editable 时追加删除/插入按钮。 |
+| `__init__(editable: bool=False, show_boxes: bool=False, empty_hint: str='暂无图片', image_size_provider=None, thumb_provider=None, image_editable: bool=True, parent=None)` | 构建左侧缩略图条与右侧大图；editable 时追加删除/插入按钮。 |
 | `paths() -> list[Path \| str]` | 当前页面清单（按显示顺序）。 |
 | `current_path() -> Path \| None` | 当前选中的页面路径；无选中或无清单时为 None。 |
 | `navigate(forward: bool) -> None` | 方向键翻页（详情页 ←/→ 调用；联动预览刷新，见 ThumbStrip.navigate）。 |
@@ -4367,12 +4433,17 @@ Qt 在窗口 dpr 变化时发 ``DevicePixelRatioChange``，**不保证**同时�
 | `refresh_page(path_text: str) -> None` | 某页缩略图缓存重生成后刷新条目图标（大图由 apply_edited_image |
 | `reload_thumb(path_text: str) -> None` | 某张图的**文件内容**被覆盖后：忘掉旧缓存记忆并按新文件重取缩略图。 |
 
-##### `__init__(editable: bool=False, show_boxes: bool=False, empty_hint: str='暂无图片', image_size_provider=None, thumb_provider=None, parent=None)`
+##### `__init__(editable: bool=False, show_boxes: bool=False, empty_hint: str='暂无图片', image_size_provider=None, thumb_provider=None, image_editable: bool=True, parent=None)`
 
 构建左侧缩略图条与右侧大图；editable 时追加删除/插入按钮。
 
 image_size_provider 供大图降采样时还原原始像素尺寸；thumb_provider
 让缩略图条改用预生成小图，避免反复解码原图。
+
+⚠️ ``editable`` 与 ``image_editable`` 是**两件事**：前者管**页面清单**
+（增删/插入按钮，提取页等只读宿主传 False），后者管**图片内容**
+（右键「编辑图片」+ 预览弹窗「编辑」按钮，2026-10-09 新增接口；
+去底色阶段的 ``RembgPreviewWidget`` 传 False，只许预览）。
 
 ##### `paths() -> list[Path | str]`
 
@@ -4681,12 +4752,27 @@ render: ``(edge:int) -> worker``；cap: 渲染密度上限（如原图原生边�
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(parent=None, factory=None, max_edge: int=MAX_RENDER_EDGE)` | ``factory(index) -> ZoomTarget \| None``，在**主线程**里现造该页来源。 |
+| `__init__(parent=None, factory=None, max_edge: int=MAX_RENDER_EDGE, editable: bool=True)` | ``factory(index) -> ZoomTarget \| None``，在**主线程**里现造该页来源。 |
+| `set_editable(editable: bool) -> None` | 运行期改「是否可以编辑」：工具栏「编辑」按钮显隐随之同步。 |
 | `show_for(factory=None, index: int=0) -> None` | 打开/翻到某一页。``factory(index) -> ZoomTarget \| None``（主线程现造）。 |
 | `mouseDoubleClickEvent(event) -> None` | 双击**顶部工具栏**空白 → 全屏/还原。 |
 | `eventFilter(obj, event) -> bool` | 点「百分比」标签 → 回 100%（标签兼做缩放复位的入口）。 |
 | `keyPressEvent(event) -> None` | 快捷键：←/→ 翻页、+/- 缩放、0 适应窗口、1 原始比例、R 旋转。 |
 | `closeEvent(event) -> None` | 关窗即作废在飞的渲染并释放大图（一张 4000px 预览约 45MB）。 |
+
+##### `__init__(parent=None, factory=None, max_edge: int=MAX_RENDER_EDGE, editable: bool=True)`
+
+``factory(index) -> ZoomTarget | None``，在**主线程**里现造该页来源。
+
+``editable=False``：本弹窗**只许预览、不许编辑**——工具栏不给「编辑」
+按钮（图片去底色阶段的预览，2026-10-09 用户）。
+
+##### `set_editable(editable: bool) -> None`
+
+运行期改「是否可以编辑」：工具栏「编辑」按钮显隐随之同步。
+
+由宿主混入（``ZoomPopupMixin.set_image_editable``）在每次打开弹窗时
+校准；直接改 ``edit_btn`` 显隐会绕过 :meth:`_edit_image` 的守卫，别那么做。
 
 ##### `mouseDoubleClickEvent(event) -> None`
 
@@ -4800,8 +4886,16 @@ qfluentwidgets 没有可用的翻转图标：``SEARCH_MIRROR`` 是"带镜子的�
 
 | 方法 | 说明 |
 | --- | --- |
+| `set_image_editable(editable: bool) -> None` | 运行期改「是否可以编辑图片」：菜单项与弹窗按钮随之同步。 |
 | `close_zoom_popup() -> None` | 内容被换掉时关掉弹窗（弹窗里那页是打开时的快照，留着就是旧数据）。 |
 | `edit_current_image() -> bool` | 右键「编辑图片」：直接编辑当前显示图对应的**真实文件**并覆盖回写。 |
+
+##### `set_image_editable(editable: bool) -> None`
+
+运行期改「是否可以编辑图片」：菜单项与弹窗按钮随之同步。
+
+弹窗已建的就地更新；还没建也不要紧——:meth:`_open_zoom_popup`
+每次打开都会按当前开关校准一次。
 
 ##### `edit_current_image() -> bool`
 
@@ -5071,7 +5165,7 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(empty_hint: str='暂无图片', parent=None)` | 构建缩略图条与「去底色结果 / 原图」切换行，默认显示去底色结果。 |
+| `__init__(empty_hint: str='暂无图片', image_editable: bool=True, parent=None)` | 构建缩略图条与「去底色结果 / 原图」切换行，默认显示去底色结果。 |
 | `set_images(paths: list[Path \| str], rembg_dir: Path \| None, boxes_provider=None, region_params_provider=None, thumb_provider=None) -> None` | 设置图片清单与去底色目录，重建输出条目并加载显示。 |
 | `refresh_display() -> None` | detect 框/area/border 变化后，重建输出条目并按新区域重新加载。 |
 | `navigate(forward: bool) -> None` | 方向键翻页（详情页 ←/→ 调用；联动预览刷新，见 ThumbStrip.navigate）。 |
@@ -5080,6 +5174,14 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 | `current_entry_path() -> str \| None` | 当前选中条目的源图路径（无条目时为 None）。 |
 | `show_live_pending() -> None` | 实时预览正在计算：先给个即时反馈，别让界面看起来没反应。 |
 | `refresh_page(path_text: str) -> None` | 某文件被覆盖后刷新本查看器：受影响条目图标 + 当前大图。 |
+
+##### `__init__(empty_hint: str='暂无图片', image_editable: bool=True, parent=None)`
+
+构建缩略图条与「去底色结果 / 原图」切换行，默认显示去底色结果。
+
+``image_editable``：**是否可以编辑图片**（对外接口参数，2026-10-09
+用户）。False 时本控件只许预览——预览区右键不给「编辑图片」、放大
+弹窗不给「编辑」按钮（图片去底色阶段两处入口都传 False）。
 
 ##### `set_images(paths: list[Path | str], rembg_dir: Path | None, boxes_provider=None, region_params_provider=None, thumb_provider=None) -> None`
 
@@ -10733,6 +10835,7 @@ JSON 文件，没有旧数据（SQLite）需要迁移。
 | `source_thumbnails_dir(task_id: str) -> Path` | 源 PDF 页缩略图：导入即生成，PDF 预览直接复用，永不清理。 |
 | `rembg_thumbnails_dir(task_id: str) -> Path` | 第四步缩略图缓存：提交阶段（rembg_submit）随最终图片一并生成， |
 | `imposition_thumbnails_dir(task_id: str) -> Path` | 拼版页左列缩略图缓存（每页取第一张源图，``book_key`` 命名）。 |
+| `imposition_page_thumbs_dir(task_id: str) -> Path` | 拼版**页面效果缩略图实体**目录：``tasks/<id>/thumbnails/imposition_pages/``。 |
 | `copy_source_to_task(task_id: str, source_path: Path) -> Path` | 导入时在任务目录下保留一份源文件副本（原子落地）。 |
 | `source_copy_path(task_id: str) -> Path \| None` | 任务目录里的 PDF 备份路径；没有备份返回 None。 |
 | `ensure_source_copy(task_id: str) -> Path \| None` | 保证任务目录里有 PDF 备份；缺了就按索引里的 source_path 补一份。 |
@@ -11063,6 +11166,17 @@ rembg 最终目录；print 返回 print.pdf 所在目录。
 2026-10-04 明确「singletask 和 taskdetail 不是一回事」）：任务缓存
 随任务目录走，``delete_task`` 整体清理时一并清掉；两边只共用组件与
 ``ImageThumbCacheWorker``，**不共用缓存根**。
+
+##### `imposition_page_thumbs_dir(task_id: str) -> Path`
+
+拼版**页面效果缩略图实体**目录：``tasks/<id>/thumbnails/imposition_pages/``。
+
+与 :meth:`imposition_thumbnails_dir`（页内**单张源图**的缩略图）
+不是一层：这里放按版面合成的**整页**实体，``page1.jpg`` 从第一页
+起数，映射数据（页号 ↔ 文件 ↔ 内容签名）在同目录 ``index.json``
+（用户 2026-10-09：「缩略图实体其实没有生成落地……组合成拼版图片
+应该另外放在一个目录中，直接按照 page1 page2 命名，注意做好映射
+数据」）。随任务目录走，``delete_task`` 一并清掉。
 
 ##### `copy_source_to_task(task_id: str, source_path: Path) -> Path`
 
@@ -12166,6 +12280,7 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 | `book_key(book: str \| Path) -> str` | 一本书在缓存目录里的唯一名字：``<文件名去后缀>-<大小>-<路径指纹前8位>``。 |
 | `image_thumb_cache_path(subtask: str, image: str \| Path, edge: int=THUMBNAIL_EDGE) -> Path` | 一张**源图片**在 singletask 缓存里的缩略图路径。 |
 | `image_thumbs_dir(subtask: str, edge: int=THUMBNAIL_EDGE) -> Path` | 一批**图片源**的缩略图缓存**目录**：``singletask/<子任务>/thumbs/<边长>``。 |
+| `page_thumbs_dir(subtask: str) -> Path` | 独立拼图页的**页面效果缩略图实体**目录：``singletask/<子任务>/page_thumbs/``。 |
 | `extract_thumbs_dir(subtask: str, book: str \| Path, edge: int=THUMBNAIL_EDGE) -> Path` | 某个子任务下**一本书**的序号口径缩略图目录。 |
 | `extract_thumb_path(subtask: str, book: str \| Path, seq: int, edge: int=THUMBNAIL_EDGE) -> Path` | 第 ``seq`` 页（1 起始）的缩略图路径：``<序号4位补零>.jpg``。 |
 | `thumb_map_path(subtask: str, book: str \| Path) -> Path` | 序号 ↔ 产物的映射表：``singletask/<子任务>/thumbnails/<书>/map.json``。 |
@@ -12241,6 +12356,18 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 ⚠️ 目录**只按「子任务 + 边长」分层**，不按单图键：单图键里带着大小与路径
 指纹，拿它当目录名既很长，也会让"同一张图被编辑后尺寸变了"直接换目录
 （旧缓存全成孤儿）。⚠️ 边长必须进目录名（``decode_edge`` 随 dpr 变）。
+
+#### `page_thumbs_dir(subtask: str) -> Path`
+
+独立拼图页的**页面效果缩略图实体**目录：``singletask/<子任务>/page_thumbs/``。
+
+与 :func:`image_thumbs_dir`（页内**单张源图**的缩略图）各归各：这里放
+按版面合成的**整页**实体——``page1.jpg`` 从第一页起数，映射数据（页号
+↔ 文件 ↔ 内容签名）在同目录 ``index.json``（用户 2026-10-09：「缩略图
+实体其实没有生成落地……组合成拼版图片应该另外放在一个目录中，直接
+按照 page1 page2 命名，注意做好映射数据」）。任务流程那边写
+``tasks/<id>/thumbnails/imposition_pages/``，两边不共用（2026-10-04
+「singletask 和 taskdetail 不是一回事」）。
 
 #### `extract_thumbs_dir(subtask: str, book: str | Path, edge: int=THUMBNAIL_EDGE) -> Path`
 
@@ -12483,6 +12610,36 @@ effects 与 paths 对齐：非空时先按 area/border 规则合成效果再缩�
 paths 为目标图片；edge 为缩略图最长边（默认 96）。effects/crops
 与 paths 对齐：非空时先按 area/border 合成效果或按像素框裁剪，
 再缩放到 edge（用于 print 列表效果预览）。
+
+---
+
+## `desktop.workers.imposition_page_thumb_worker`
+
+源码：[`desktop/workers/imposition_page_thumb_worker.py`](../../desktop/workers/imposition_page_thumb_worker.py)
+
+拼版**页面效果缩略图实体**的后台生成器。
+
+用户 2026-10-09（0002 任务）：页面缩略图不再在内存里临时拼——**实体落盘**
+（``pageN.jpg`` + ``index.json`` 映射）。本 worker 收一批
+``{"index", "name", "signature", "page"}`` 任务，逐页从全尺寸源图合成整页
+缩略图、原子写盘、逐页上报；UI 拿到就贴，重进任务直接命中实体零生成。
+
+### `class ImpositionPageThumbWorker(QObject)`
+
+逐页合成**整页**缩略图并落盘；每页就绪即发一次 :attr:`page_ready`。
+
+合成在 worker 线程做（QImage/QPainter 画非界面图，线程安全——与
+:class:`~desktop.workers.thumb_cache_worker.ImageThumbCacheWorker`
+同一套做法）；只写 ``pageN.jpg``，**不碰** ``index.json``（映射数据
+由主线程的 :class:`~desktop.components.imposition.page_thumb.PageThumbManager` 统一维护，同一文件永远只有一个写入者）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(jobs: list[dict], out_dir: Path \| str, edge: int)` | — |
+| `cancel() -> None` | 请求中止：在**下一页**之前退出（已写好的都在盘上，重进直接命中）。 |
+| `run() -> None` | 逐页：合成 → 原子写盘 → 上报；单页失败跳过，不让整批停摆。 |
 
 ---
 

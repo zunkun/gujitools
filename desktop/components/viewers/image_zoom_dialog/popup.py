@@ -29,12 +29,32 @@ class ZoomPopupMixin:
     #: 弹窗实例（懒建）。类属性给个 None 兜底：子类可能在 _init_zoom_popup
     #: 之前（如构造中途换数据）就调到 close_zoom_popup。
     _zoom_dialog: "ImageZoomDialog | None" = None
+    #: 本宿主的图**允许编辑**（对外接口参数，2026-10-09 用户：图片去底色
+    #: 阶段只许预览不许编辑）。类属性 True 兜底：子类还没调
+    #: ``_init_zoom_popup`` 就读它也不炸；默认可编辑，其余宿主零改动。
+    _zoom_editable: bool = True
 
-    def _init_zoom_popup(self, view) -> None:
-        """把 ``view``（``ImageView``）的双击/右键接到弹窗与菜单上。"""
+    def _init_zoom_popup(self, view, editable: bool = True) -> None:
+        """把 ``view``（``ImageView``）的双击/右键接到弹窗与菜单上。
+
+        ``editable=False``：本宿主的图**只许预览、不许编辑**——右键菜单不给
+        「编辑图片」、预览弹窗不给「编辑」按钮、:meth:`edit_current_image`
+        直接拒绝（图片去底色阶段，2026-10-09 用户）。
+        """
+        self._zoom_editable = bool(editable)
         self._zoom_dialog = None
         view.double_clicked.connect(self._open_zoom_popup)
         view.context_menu_requested.connect(self._open_zoom_menu)
+
+    def set_image_editable(self, editable: bool) -> None:
+        """运行期改「是否可以编辑图片」：菜单项与弹窗按钮随之同步。
+
+        弹窗已建的就地更新；还没建也不要紧——:meth:`_open_zoom_popup`
+        每次打开都会按当前开关校准一次。
+        """
+        self._zoom_editable = bool(editable)
+        if self._zoom_dialog is not None:
+            self._zoom_dialog.set_editable(self._zoom_editable)
 
     def _open_zoom_popup(self) -> None:
         """打开弹窗；没有可预览的页时静默返回。"""
@@ -43,13 +63,17 @@ class ZoomPopupMixin:
             return
         if self._zoom_dialog is None:
             self._zoom_dialog = ImageZoomDialog(
-                self.window() or self, factory=self._zoom_target
+                self.window() or self, factory=self._zoom_target,
+                editable=self._zoom_editable,
             )
             dialog = self._zoom_dialog
             # 编辑器覆盖了原图：宿主要同步尺寸/缩略图/大图（默认空实现，
             # 有真实文件的宿主各自覆写）
             dialog.image_saved.connect(self._on_zoom_image_saved)
         dialog = self._zoom_dialog
+        # 每次打开都校准一次编辑开关：宿主中途 set_image_editable 过的话，
+        # 早已建好的弹窗也得跟上
+        dialog.set_editable(self._zoom_editable)
         # 先 show 再 show_for：视口有了真实尺寸，渲染密度才算得准
         dialog.show()
         dialog.raise_()
@@ -95,7 +119,13 @@ class ZoomPopupMixin:
         from qfluentwidgets import FluentIcon as FIF
 
         items: list[tuple] = [("预览图片", FIF.PHOTO, self._open_zoom_popup)]
-        if target is not None and target.edit_path is not None:
+        # 「编辑图片」三重把关：有可回写文件 **且** 宿主开了编辑开关
+        # （image_editable=False 的宿主——去底色阶段——只给预览）。
+        if (
+            target is not None
+            and target.edit_path is not None
+            and getattr(self, "_zoom_editable", True)
+        ):
             items.append((target.edit_label, FIF.EDIT, self.edit_current_image))
         return items
 
@@ -112,6 +142,8 @@ class ZoomPopupMixin:
         编辑器「完成」后：原子覆盖该文件 → ``_on_zoom_image_saved`` 通知宿主
         刷新（尺寸 / 缩略图 / 各处大图）。返回是否真的写回了文件。
         """
+        if not getattr(self, "_zoom_editable", True):
+            return False  # 本宿主不许编辑（去底色阶段），菜单层已不给入口
         from desktop.components.viewers.image_editor import ImageEditorDialog
 
         target = self._zoom_target(self._zoom_index())

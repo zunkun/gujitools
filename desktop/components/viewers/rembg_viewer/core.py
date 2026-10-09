@@ -36,8 +36,18 @@ class RembgPreviewWidget(
     #: 宿主据此刷新尺寸记录/缩略图/各处显示（真实文件才可能发出）
     image_saved = Signal(str, object)
 
-    def __init__(self, empty_hint: str = "暂无图片", parent=None):
-        """构建缩略图条与「去底色结果 / 原图」切换行，默认显示去底色结果。"""
+    def __init__(
+        self,
+        empty_hint: str = "暂无图片",
+        image_editable: bool = True,
+        parent=None,
+    ):
+        """构建缩略图条与「去底色结果 / 原图」切换行，默认显示去底色结果。
+
+        ``image_editable``：**是否可以编辑图片**（对外接口参数，2026-10-09
+        用户）。False 时本控件只许预览——预览区右键不给「编辑图片」、放大
+        弹窗不给「编辑」按钮（图片去底色阶段两处入口都传 False）。
+        """
         super().__init__(parent)
         self._init_thumbs()
         self._paths: list[Path] = []
@@ -79,7 +89,7 @@ class RembgPreviewWidget(
         right.addWidget(self.view, 1)
         layout.addLayout(right, 1)
         # 双击大图 → 图片预览弹窗（与主预览同一份区域规则，见 _resolve_source）
-        self._init_zoom_popup(self.view)
+        self._init_zoom_popup(self.view, editable=image_editable)
         self._sync_toggle(False)
 
 

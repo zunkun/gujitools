@@ -56,10 +56,6 @@ PageThumbManager` 统一维护，同一文件永远只有一个写入者）。
                 if self._cancelled:
                     break
                 image = compose_page_thumb_from_files(job["page"], self.edge)
-                import sys as _s
-                print(f"[dbg-w] job={job['index']} name={job['name']} "
-                      f"img={None if image is None else (image.width(), image.height())} "
-                      f"cancelled={self._cancelled}", file=_s.stderr)
                 if image is None or image.isNull():
                     continue  # 源图读不出来等：这页先占位，下次刷新再试
                 target = self.out_dir / str(job["name"])
@@ -74,8 +70,6 @@ PageThumbManager` 统一维护，同一文件永远只有一个写入者）。
                     int(job["index"]), image, str(target),
                     str(job["signature"]),
                 )
-            import sys as _s; print('[dbg-w] completed', file=_s.stderr)
-            import sys as _s; print('[dbg-w] completed', file=_s.stderr)
             self.completed.emit()
         except Exception as exc:  # noqa: BLE001 - 兜底：别让线程静默死掉
             self.failed.emit(str(exc))

@@ -282,7 +282,15 @@ class PageThumbManager(QObject):
 
     # ------------------------------------------------------------- 宿主接口
     def retain(self, count: int) -> None:
-        """页清单缩到 ``count`` 后：多出来的映射删掉、孤儿实体清掉。"""
+        """页清单缩到 ``count`` 后：多出来的映射删掉、孤儿实体清掉。
+
+        ⚠️ ``count <= 0``（文档还没灌进来/被清空的**暂态**）直接忽略——
+        空清单 ≠ "用户删光了所有页"，此刻拿着旧映射对账会把整批实体当
+        孤儿删光（实测：0002 任务上每次生成完紧跟一次空刷新，实体刚落盘
+        就被清掉，左列永远占位）。真正的删页走 ``count > 0`` 的对账。
+        """
+        if count <= 0:
+            return
         stale = [index for index in self._mapping if index >= count]
         for index in stale:
             del self._mapping[index]
@@ -293,16 +301,18 @@ class PageThumbManager(QObject):
             self._save_index()
 
     def pixmap_for(self, index: int, page: dict) -> QPixmap | None:
-        """这一页的缩略图：实体命中回 QPixmap；未命中排队并回 ``None``。
+        """这一页的缩略图：实体命中回 QPixmap；映射对不上就排队补实体。
 
-        "命中"＝映射里这一页的签名与当前签名一致**且**实体文件读得出来。
-        未命中（没有实体/版面或源图变了/实体损坏）自动排队，:meth:`flush`
-        时交给后台 worker。
+        - **映射命中**（这一页的签名与映射一致且实体文件读得出来）：直接
+          回盘上那张——重进任务零生成；
+        - **映射不符**（没有实体/版面或源图变了/实体被暂态清掉后同一版面
+          又回来了）：内存 memo 里有这一版就**先贴着**保显示，同时**排队**
+          把实体补回盘上——显示与落盘最终一致（实测坑：只贴不排队的话，
+          实体被清掉的页永远不会再落盘，重进任务就没图了）。
         """
         signature = page_signature(page)
         if signature is None:
             return None
-        pixmap = None
         if self._mapping.get(index) == signature:
             pixmap = self._pix.get(signature)
             if pixmap is None:
@@ -310,15 +320,15 @@ class PageThumbManager(QObject):
                 if not image.isNull():
                     pixmap = QPixmap.fromImage(image)
                     self._pix[signature] = pixmap
-        if pixmap is None:
-            # 版面"改过去又改回来"时 memo 里可能还有这一版（内容寻址）：
-            # 直接复用，不必等重生成
+            if pixmap is not None:
+                return pixmap
+        else:
             pixmap = self._pix.get(signature)
-        if pixmap is None:
+        job = self._pending.get(index)
+        if job is None or job["signature"] != signature:
             self._pending[index] = {
                 "page": _snapshot_page(page), "signature": signature,
             }
-            return None
         return pixmap
 
     def flush(self) -> None:
@@ -340,14 +350,12 @@ class PageThumbManager(QObject):
                 "page": job["page"],
             })
         self._inflight = True
-        import sys as _sys; print(f"[dbg] mgr{id(self):x} flush jobs={len(jobs)} dir={self._dir}", file=_sys.stderr)
         self._submit(
             lambda: ImpositionPageThumbWorker(jobs, self._dir, self._edge),
             lambda worker, thread: (
                 connect_queued(
                     self, worker.page_ready, self._on_page_ready, thread),
                 connect_queued(self, worker.completed, self._on_done, thread),
-                worker.failed.connect(lambda m: print(f"[dbg] worker failed: {m}")),
                 worker.failed.connect(thread.quit),
             ),
         )
@@ -365,19 +373,19 @@ class PageThumbManager(QObject):
         pixmap = QPixmap.fromImage(image)
         if pixmap.isNull():
             return
-        import sys as _s
-        print(f"[dbg-m] mgr{id(self):x} page_ready index={index}", file=_s.stderr)
-        import sys as _s
-        print(f"[dbg-m] mgr{id(self):x} page_ready index={index}", file=_s.stderr)
+        # 同一内容复用 memo 里的**原对象**：左列"同一张图不重贴"的早退靠
+        # cacheKey，实体重生成（内容没变）不该把那条挤重贴
+        cached = self._pix.get(sig)
+        if cached is not None:
+            pixmap = cached
+        else:
+            self._pix[sig] = pixmap
         self._mapping[index] = sig
-        self._pix[sig] = pixmap
         self._pending.pop(index, None)
         self.page_ready.emit(index, pixmap)
 
     @Slot()
     def _on_done(self) -> None:
-        import sys as _s
-        print(f"[dbg-m] mgr{id(self):x} on_done mapping={self._mapping} pending={sorted(self._pending)}", file=_s.stderr)
         self._inflight = False
         self._save_index()
         self._cleanup_orphans()
@@ -391,8 +399,6 @@ class PageThumbManager(QObject):
     def _cleanup_orphans(self) -> None:
         """删掉映射里已经没有的 ``pageN.jpg``（删页后留下的孤儿实体）。"""
         keep = {thumb_file_name(index) for index in self._mapping}
-        import sys as _s
-        print(f"[dbg-m] cleanup keep={keep}", file=_s.stderr)
         try:
             entries = list(self._dir.iterdir())
         except OSError:
@@ -401,8 +407,6 @@ class PageThumbManager(QObject):
             if entry.name == INDEX_NAME or entry.suffix.lower() != ".jpg":
                 continue
             if entry.name not in keep:
-                import sys as _s
-                print(f"[dbg-m] mgr{id(self):x} orphan deleted: {entry.name}", file=_s.stderr)
                 try:
                     entry.unlink()
                 except OSError:

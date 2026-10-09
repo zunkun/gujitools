@@ -51,8 +51,12 @@ class RembgModulePage(StepModulePage, ThumbSourceMixin):
 
     # ------------------------------------------------------------------ 预览
     def _build_preview(self) -> RembgPreviewWidget:
-        """左栏：原图 / 去底结果对比（复用共享控件）。"""
-        self.viewer = RembgPreviewWidget()
+        """左栏：原图 / 去底结果对比（复用共享控件）。
+
+        ⚠️ ``image_editable=False``（2026-10-09 用户）：去底色阶段**只许
+        预览、不许编辑**——右键不给「编辑图片」、弹窗不给「编辑」按钮。
+        """
+        self.viewer = RembgPreviewWidget(image_editable=False)
         return self.viewer
 
     # ------------------------------------------------------------------ 源

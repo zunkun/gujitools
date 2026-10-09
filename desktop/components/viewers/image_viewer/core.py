@@ -59,6 +59,7 @@ class ImageViewerWidget(
         empty_hint: str = "暂无图片",
         image_size_provider=None,
         thumb_provider=None,
+        image_editable: bool = True,
         parent=None,
     ):
         """
@@ -66,6 +67,11 @@ class ImageViewerWidget(
 
         image_size_provider 供大图降采样时还原原始像素尺寸；thumb_provider
         让缩略图条改用预生成小图，避免反复解码原图。
+
+        ⚠️ ``editable`` 与 ``image_editable`` 是**两件事**：前者管**页面清单**
+        （增删/插入按钮，提取页等只读宿主传 False），后者管**图片内容**
+        （右键「编辑图片」+ 预览弹窗「编辑」按钮，2026-10-09 新增接口；
+        去底色阶段的 ``RembgPreviewWidget`` 传 False，只许预览）。
         """
         super().__init__(parent)
         self._init_thumbs()
@@ -149,7 +155,7 @@ class ImageViewerWidget(
         self.view.selection_changed.connect(self.selection_changed.emit)
         self.view.edit_rejected.connect(self.box_edit_rejected.emit)
         # 双击大图 → 图片预览弹窗（只读查看；编辑仍在原画布上做）
-        self._init_zoom_popup(self.view)
+        self._init_zoom_popup(self.view, editable=image_editable)
         self._pending_boxes: tuple | None = None  # (boxes, image_size, info, full)，等大图加载后应用
         #: 每次选页递增的加载令牌，只有最新一次选择的渲染结果允许上屏。
         #: ⚠️ 不能改用「路径是否相同」判断：同一页也会被重复选择（见

@@ -619,7 +619,9 @@ class DetailViewMixin:
         self.preview_stack.addWidget(self.detect_viewer)
 
         # rembg：原图/结果对比
-        self.rembg_viewer = RembgPreviewWidget()
+        # ⚠️ image_editable=False（2026-10-09 用户）：去底色阶段**只许预览、
+        #    不许编辑**——右键不给「编辑图片」、弹窗不给「编辑」按钮。
+        self.rembg_viewer = RembgPreviewWidget(image_editable=False)
         self.rembg_viewer.image_saved.connect(self._on_page_image_saved)
         self.preview_stack.addWidget(self.rembg_viewer)
 

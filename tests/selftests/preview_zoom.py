@@ -723,7 +723,9 @@ def run(ctx) -> None:
 
     for rel in HOST_FILES:
         text = module_source_text(root, rel)
-        ok(f"{rel}：接上了弹窗", "_init_zoom_popup(self.view)" in text, "")
+        # 2026-10-09 起调用形态多了 editable 参数（image_editable 接口），
+        # 守卫只认"self.view 接上了弹窗"这件事本身，不锁死参数列表
+        ok(f"{rel}：接上了弹窗", "_init_zoom_popup(self.view" in text, "")
         ok(f"{rel}：实现了 _zoom_target", "def _zoom_target(" in text, "")
 
     # 混入 ZoomPopupMixin 不能和既有的 ThumbsMixin/WorkerHost 抢方法：

@@ -42,9 +42,15 @@ class ImageZoomDialog(QDialog, WorkerHost):
     #: 只在 ``ZoomTarget.save_path`` 回写路径上发出。
     image_saved = Signal(str, object)
 
-    def __init__(self, parent=None, factory=None, max_edge: int = MAX_RENDER_EDGE):
-        """``factory(index) -> ZoomTarget | None``，在**主线程**里现造该页来源。"""
+    def __init__(self, parent=None, factory=None, max_edge: int = MAX_RENDER_EDGE,
+                 editable: bool = True):
+        """``factory(index) -> ZoomTarget | None``，在**主线程**里现造该页来源。
+
+        ``editable=False``：本弹窗**只许预览、不许编辑**——工具栏不给「编辑」
+        按钮（图片去底色阶段的预览，2026-10-09 用户）。
+        """
         super().__init__(parent)
+        self._edit_enabled = bool(editable)
         self._init_worker_host()
         self._factory = factory
         self._max_edge = int(max_edge)
@@ -160,6 +166,9 @@ class ImageZoomDialog(QDialog, WorkerHost):
         self.edit_btn = PushButton(FIF.EDIT, "编辑")
         self.edit_btn.setToolTip("打开图片编辑器：裁剪 / 变换 / 擦除 / 插入文字")
         self.edit_btn.clicked.connect(self._edit_image)
+        # 只许预览的宿主（image_editable=False）连按钮都不给，而不是置灰：
+        # 「编辑」在这个步骤就不是能力（2026-10-09 用户）。
+        self.edit_btn.setVisible(self._edit_enabled)
         row.addWidget(self.edit_btn)
         self.print_btn = PushButton(FIF.PRINT, "打印")
         self.print_btn.setToolTip("把当前图（含翻转/旋转）送到打印机")
@@ -189,6 +198,15 @@ class ImageZoomDialog(QDialog, WorkerHost):
         return bar
 
     # ------------------------------------------------------------------ 对外
+    def set_editable(self, editable: bool) -> None:
+        """运行期改「是否可以编辑」：工具栏「编辑」按钮显隐随之同步。
+
+        由宿主混入（``ZoomPopupMixin.set_image_editable``）在每次打开弹窗时
+        校准；直接改 ``edit_btn`` 显隐会绕过 :meth:`_edit_image` 的守卫，别那么做。
+        """
+        self._edit_enabled = bool(editable)
+        self.edit_btn.setVisible(self._edit_enabled)
+
     def show_for(self, factory=None, index: int = 0) -> None:
         """打开/翻到某一页。``factory(index) -> ZoomTarget | None``（主线程现造）。"""
         if factory is not None:
@@ -388,6 +406,8 @@ class ImageZoomDialog(QDialog, WorkerHost):
 
         没有真实文件（PDF 矢量页）时维持旧行为：只改画布，满意用「下载」落盘。
         """
+        if not self._edit_enabled:
+            return  # 只许预览的宿主：按钮已藏，键盘/其他路径兜底拒绝
         target = self._target
         edit_path = target.edit_path if target else None
         is_direct = (
