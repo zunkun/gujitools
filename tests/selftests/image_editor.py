@@ -7,8 +7,9 @@
    截图式"拖拽画框"；应用后画布尺寸 = 选区尺寸，换图（应用/撤销/还原）
    后重新默认全选；
 1b. **变换数学**：绕点旋转/缩放/切变（轴心不动、方向与系数钉死）；
-1c. **变换**：默认全选、框内拖=移动、按下即实时预览（底图填白+浮层）、
-   应用烘焙（原位置填白、内容落位）、切走工具自动烘焙、从轴心缩放、
+1c. **变换**：默认全选、框内拖=移动、按下即实时预览（底图=原图矩形那块的
+   残余、选区擦成透明；范围**恒定**不跟变换走）、应用烘焙（原位置填白、
+   内容落位）、切走工具自动烘焙、从轴心缩放、
    重置、命中测试；「调整范围」收边进入小区域（自动退出+轴心跟随）、
    局部烘焙后**区域外像素一动不动**；
 2. **擦除**：橡皮擦涂过的污点被擦成白底；一笔开始就压撤销点
@@ -61,6 +62,25 @@ def is_dark(color) -> bool:
     return color.red() < 100 and color.green() < 100 and color.blue() < 100
 
 
+def plane_diff(a, b) -> float:
+    """两张**同尺寸**图的平均通道差（隔点采样，够用又便宜）。
+
+    用于"画布预览 == 烘焙结果"的像素级对照：同一条数学算出来的两张图，
+    差别只该来自抗锯齿（实测 1–2），差到几十就是"内容落在别处/被裁掉"。
+    """
+    if a.size() != b.size():
+        return 999.0
+    total = 0
+    count = 0
+    for y in range(0, a.height(), 2):
+        for x in range(0, a.width(), 2):
+            ca, cb = a.pixelColor(x, y), b.pixelColor(x, y)
+            total += (abs(ca.red() - cb.red()) + abs(ca.green() - cb.green())
+                      + abs(ca.blue() - cb.blue()))
+            count += 3
+    return total / max(1, count)
+
+
 def canvas_img(canvas):
     """取画布当前图（``canvas.image`` 声明为可空，但本文件用例都在有图态访问）。"""
     img = canvas.image
@@ -71,16 +91,21 @@ def canvas_img(canvas):
 def run(ctx) -> None:
     import math
 
-    from PySide6.QtCore import QPointF, QRect, QRectF, QSize, Qt
-    from PySide6.QtGui import QColor, QImage
+    from PySide6.QtCore import QPointF, QRectF, QSize, Qt
+    from PySide6.QtGui import QColor, QImage, QPainter, QTransform
 
     from tests.selftests._context import ok
 
     from desktop.components.viewers.image_editor import (
         EDIT_FIT_RATIO, ERASER_DEFAULT,
-        EditorCanvas, ImageEditorDialog, TextBlockItem, bake_transform,
-        clamp_rect, draw_text, rotate_about, scale_about,
-        shear_about,
+        ImageEditorDialog, TextBlockItem,
+        center_crop_aspect, clamp_rect, compose_transform, draw_text,
+        rotate_about, scale_about, shear_about, transform_region,
+        warp_placement,
+    )
+    from desktop.components.viewers.image_editor.consts import (
+        CANVAS_OUTSIDE, CHECKER_DARK, CHECKER_LIGHT, CORNER_HIT_VIEW_PX,
+        PERSP_HIT_VIEW_PX, PERSP_VIEW_PX,
     )
 
     # ---- 1. clamp_rect ----
@@ -109,6 +134,64 @@ def run(ctx) -> None:
     ok("变换数学：绕锚点切变（y 随 x 斜切）",
        (sheared - QPointF(200, 100)).manhattanLength() < 1e-6,
        f"sheared={sheared}")
+
+    # ---- 1c. 病态投影的"尺寸闸门"（2026-10-09 崩溃回归）----
+    # ⚠️⚠️ 用户报障：统一变换里把**透视角拖到对角附近**，整个编辑器崩掉——
+    #    `geometry.py:311 QImage(width, height)` 拿到 2.18e9 × 1.49e9 直接
+    #    OverflowError（同一句先连出 3 次"Paint device returned engine == 0"，
+    #    那是 QImage 已失效、QPainter 画不上去）。根因有两层，缺一不可：
+    #    ① 近共线的四点让 `quadToQuad` 给出一个"**可逆**但把内容放大百万倍"
+    #       的矩阵（外框坐标实测 1e9、面积 4.8e17）——所以"查共线 + 查可逆"
+    #       挡不住它；
+    #    ② `warp_region` 已经**正确**地拒绝了（超 WARP_MAX_PIXELS），但
+    #       `warp_placement` 的 QPainter 兜底**没挡**，硬拿天文数字去建 QImage。
+    #    现在闸门统一在 `geometry.mapped_bounds`（非有限 / >ABSURD_COORD /
+    #    超 WARP_MAX_PIXELS 一律 None），四个入口共用：重采样、兜底、烘焙画布、
+    #    透视步进。下面把闸门本身、兜底、烘焙三处各钉一条。
+    from desktop.components.viewers.image_editor import geometry as editor_geometry
+    from desktop.components.viewers.image_editor.geometry import (
+        ABSURD_COORD, mapped_bounds,
+    )
+
+    bad_xf = QTransform(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1e-9)
+    ok("几何：病态投影的外框被判为不可用（闸门就是崩溃的解药）",
+       mapped_bounds(bad_xf, QRectF(0, 0, 600, 800)) is None
+       and mapped_bounds(QTransform(), QRectF(0, 0, 600, 800))
+       == (0, 0, 600, 800)
+       and ABSURD_COORD >= 1e6,
+       f"bad={mapped_bounds(bad_xf, QRectF(0, 0, 600, 800))} "
+       f"identity={mapped_bounds(QTransform(), QRectF(0, 0, 600, 800))}")
+
+    plane = make_image(60, 40)
+    plane_rect = QRectF(0, 0, 60, 40)
+    ok("几何：transform_region 遇病态投影退回原图边界（不造天文数字画布）",
+       transform_region(plane, plane_rect, bad_xf) == (0, 0, 60, 40),
+       f"{transform_region(plane, plane_rect, bad_xf)}")
+
+    # 让 `warp_region` 返回 None（模拟"取不到 numpy"）⇒ 逼真地走到 QPainter
+    # 兜底那条路。⚠️ 必须 try/finally 还原（`warp_placement` 是在**模块全局**
+    # 里找 `warp_region` 的，打桩即改全局）。
+    _real_warp_region = editor_geometry.warp_region
+    editor_geometry.warp_region = lambda *args, **kwargs: None
+    try:
+        bad_out = warp_placement(plane, bad_xf, "linear")
+        good_out = warp_placement(plane, QTransform(), "linear")
+    finally:
+        editor_geometry.warp_region = _real_warp_region
+    ok("几何：兜底路径遇病态投影返回空图（不再 QImage(2e9) 崩溃）",
+       isinstance(bad_out, tuple) and bad_out[0].isNull()
+       and bad_out[1:] == (0, 0)
+       and good_out is not None and not good_out[0].isNull()
+       # ⚠️ 外框是"含两端"的口径 ⇒ 恒比区域大 1 像素（两档一致的老约定）
+       and (good_out[0].width(), good_out[0].height()) == (61, 41),
+       f"bad={bad_out if bad_out is None else (bad_out[0].size(), bad_out[1:])} "
+       f"good={None if good_out is None else good_out[0].size()}")
+
+    grew = compose_transform(make_image(600, 800), QRectF(0, 0, 600, 800),
+                             bad_xf, plane, grow=True)
+    ok("几何：grow 档烘焙遇病态投影也不炸（画布退回原图尺寸）",
+       grew is not None and grew[0].width() == 600 and grew[0].height() == 800,
+       f"grew={None if grew is None else grew[0].size()}")
 
     # ---- 4. draw_text ----
     text_base = make_image(400, 120)
@@ -339,6 +422,17 @@ def run(ctx) -> None:
         ok("画布：手柄视觉尺寸 ≈ 12px（fit 换倍率后覆盖层已重算）",
            7 <= tl_view.width() <= 20 and 7 <= tl_view.height() <= 20,
            f"tl_view={tl_view.width():.1f}x{tl_view.height():.1f}")
+
+        # 画布配色（用户 2026-10-09 追加：「背景灰色太突兀」）：图外必须是**浅**底，
+        # 同时又得和图内棋盘格拉开明度，才既柔和不抢戏、又分得清"哪块是图的地盘"。
+        # ⚠️ 这条挡住"为了好看把底色改深/改到和格子一样"的回归——两者是矛盾的，
+        #    改动时必须同时满足（底色浅 ⇒ 格子的暗格要跟着压深，见 consts 注释）。
+        ok("画布：图外底色够浅、且与棋盘格仍有明度反差（不突兀也分得清）",
+           CANVAS_OUTSIDE.lightness() >= 220
+           and CHECKER_LIGHT.lightness() - CHECKER_DARK.lightness() >= 12
+           and abs(CANVAS_OUTSIDE.lightness() - CHECKER_DARK.lightness()) >= 12,
+           f"outside={CANVAS_OUTSIDE.lightness()} "
+           f"light={CHECKER_LIGHT.lightness()} dark={CHECKER_DARK.lightness()}")
 
         # ---- 「适应窗口」按钮：**真点一次**（clicked 会塞 checked=False 进来）----
         # 回归（2026-10-08 用户报「使用窗口，图片立马变得非常小」）：此前是
@@ -1107,7 +1201,7 @@ def run(ctx) -> None:
             def vpos(scene: QPointF) -> QPointF:
                 return QPointF(canvas4.mapFromScene(scene))
 
-            # 框内拖 = 移动（真实鼠标事件走一遍）；**松手即应用**（无按钮）
+            # 框内拖 = 移动（真实鼠标事件走一遍）；**松手只挂起、离开工具才烘焙**
             dialog4.show()
             app.processEvents()
             app.processEvents()
@@ -1116,26 +1210,36 @@ def run(ctx) -> None:
             _paint = canvas4._paint_image
             _base = canvas4._image
             assert _paint is not None and _base is not None  # 进入预览态后浮层/底图必有
-            ok("变换：按下即进入实时预览（底图填白 + 浮层，真像素未动）",
+            ok("变换：按下即进入实时预览（浮层出现、真像素未动）",
                canvas4._mode is not None and canvas4._mode[0] == "xf_move"
                and canvas4._float_item is not None
-               and _paint.pixelColor(160, 60).value() > 230
                and _base.pixelColor(160, 60).value() < 128,
                f"mode={canvas4._mode} "
-               f"paint={_paint.pixelColor(160, 60).value()}")
+               f"base={_base.pixelColor(160, 60).value()}")
             canvas4.mouseMoveEvent(mouse_event("move", vpos(QPointF(130, 60))))
             canvas4.mouseReleaseEvent(mouse_event(
                 "release", vpos(QPointF(130, 60))))
+            # ⚠️ 2026-10-09 起**松手不烘焙**（用户报"不能实时预览、最后才预览"）：
+            #    松手只是把这次变换挂起，画布上的浮层继续实时显示；整幅重采样
+            #    推迟到离开变换工具/点「完成」——所以此刻像素、撤销点都没动。
+            ok("变换：松手只挂起预览（像素与撤销栈都没动）",
+               canvas4.has_pending_transform()
+               and len(dialog4._undo) == undo_before
+               and canvas_img(canvas4).pixelColor(160, 60).value() < 128,
+               f"pending={canvas4.has_pending_transform()} "
+               f"undo={len(dialog4._undo)} before={undo_before}")
+            # 离开变换工具 → 此刻才烘焙，且一步一个撤销点
+            dialog4._set_tool("erase")
             baked = canvas_img(canvas4)
             # grow：整幅选区左移 30 ⇒ 新画布 = 原图 ∪ 移位后内容，左上角在
             # 原坐标 (−30, 0)，尺寸不变（移位量正好等于外扩量）。新画布里的
             # 坐标 = 原坐标 − origin = 原坐标 + 30。
-            ok("变换：松手即应用（−30,0 平移已烘焙，画布尺寸不变）",
+            ok("变换：切走工具才烘焙（−30,0 平移已落地，画布尺寸不变）",
                baked.width() == 200 and baked.height() == 120
                and canvas4.transform_pending() is None,
                f"size={baked.width()}x{baked.height()} "
                f"pending={canvas4.transform_pending()}")
-            ok("变换：松手即应用后内容平移、原位置填白（烘焙与预览一致）",
+            ok("变换：烘焙后内容平移、原位置填白（烘焙与预览一致）",
                baked.pixelColor(125 + 30, 60).value() < 128
                and baked.pixelColor(160 + 30, 60).value() > 230,
                f"dark={baked.pixelColor(155, 60).value()} "
@@ -1203,16 +1307,514 @@ def run(ctx) -> None:
                canvas4.transform_pending() is None
                and canvas4.selection() == canvas4.image_rect(), "")
 
-            # 命中测试：角手柄 / 框外（旋转）
-            tl_view = vpos(QPointF(canvas4.image_rect().topLeft()))
+            # 命中测试：角点**中心** = 透视小菱形、方框描边那圈 = 角缩放、框外 = 旋转。
+            # ⚠️ 2026-10-09 起菱形与角方框**同心**（用户口径「四个边角的菱形要在
+            #    方块正中心」），所以"角点归谁"改由**半径**分：≤ PERSP_HIT(8) 是
+            #    透视，往外到 CORNER_HIT(13) 的方形环带仍是缩放。
+            _pts = canvas4._transform_handle_points()
+            ok("变换：透视小菱形与角方框同心（不再向框内偏置）",
+               _pts["p_tl"] == _pts["tl"] and _pts["p_br"] == _pts["br"]
+               and _pts["p_tr"] == _pts["tr"] and _pts["p_bl"] == _pts["bl"],
+               f"p_tl={_pts['p_tl']} tl={_pts['tl']}")
+            tl_view = vpos(_pts["tl"])
+            # 沿 tl→tr 走 10 视图像素：出了透视半径(8)、仍在角方框方形判定(13)内
+            _dir = vpos(_pts["tr"]) - tl_view
+            _len = math.hypot(_dir.x(), _dir.y())
+            edge_view = tl_view + _dir / _len * 10.0
             far_view = vpos(QPointF(-60, -60))
-            ok("变换：命中测试（角=手柄、远处=框外旋转）",
-               canvas4._hit_transform(tl_view) == "tl"
+            ok("变换：命中测试（角心=透视、方框边=缩放、远处=框外旋转）",
+               canvas4._hit_transform(tl_view) == "p_tl"
+               and canvas4._hit_transform(edge_view) == "tl"
                and canvas4._hit_transform(far_view) == "outside",
-               f"tl={canvas4._hit_transform(tl_view)} "
+               f"center={canvas4._hit_transform(tl_view)} "
+               f"edge={canvas4._hit_transform(edge_view)} "
                f"far={canvas4._hit_transform(far_view)}")
+
+            # 手柄**尺寸**（用户 2026-10-09：「菱形大一些，四边中间的拉伸方块
+            # 也大一些」）：四类节点里的菱形现在**一样大**，边中方框也长到同尺寸。
+            # ⚠️ 读的是**画出来的多边形/矩形**（场景单位）再乘回倍率 ⇒ 断言的是
+            #    视图像素，不是常量本身，改常量漏改绘制也照样红。
+            canvas4._sync_overlay()
+            _zoom = max(canvas4._zoom, 1e-6)
+            _persp_px = (canvas4._persp["p_tl"].polygon().boundingRect().width()
+                         * _zoom)
+            _shear_px = (canvas4._diamonds["s_t"].polygon().boundingRect().width()
+                         * _zoom)
+            _side_px = canvas4._handles["t"].rect().width() * _zoom
+            _corner_px = canvas4._handles["tl"].rect().width() * _zoom
+            ok("变换：菱形放大到 16、边中方框也 16、角方框 28（视图像素）",
+               abs(_persp_px - 16.0) < 0.6 and abs(_shear_px - 16.0) < 0.6
+               and abs(_side_px - 16.0) < 0.6 and abs(_corner_px - 28.0) < 0.6,
+               f"透视={_persp_px:.1f} 切变={_shear_px:.1f} "
+               f"边中={_side_px:.1f} 角={_corner_px:.1f}")
+
+            # 命中半径必须**正好**是菱形的视觉半径：小了 ⇒ 画出来的菱形点不着，
+            # 大了 ⇒ 抢掉角方框的缩放。同时仍要小于角方框的方形判定。
+            ok("变换：透视命中半径 = 菱形视觉半径，且仍小于角方框判定",
+               abs(PERSP_HIT_VIEW_PX - PERSP_VIEW_PX / 2.0) < 1e-9
+               and PERSP_HIT_VIEW_PX < CORNER_HIT_VIEW_PX,
+               f"hit={PERSP_HIT_VIEW_PX} 视觉半径={PERSP_VIEW_PX / 2.0} "
+               f"角判定={CORNER_HIT_VIEW_PX}")
+
+            # 节点**底色**（用户 2026-10-09：「操作节点未选中，不要有背景色——
+            # 拉伸方块不要用绿色，而是中空的」）：默认一律中空，**只有"当前
+            # 节点"实心**。方框与菱形共用一套配色（形状才是语义）。
+            canvas4._set_handle_focus("tl")
+            ok("变换：未选中的节点中空、当前节点实心（不再是清一色绿块）",
+               canvas4._handles["tl"].brush().style()
+               == Qt.BrushStyle.SolidPattern
+               and canvas4._handles["tr"].brush().style()
+               == Qt.BrushStyle.NoBrush
+               and canvas4._handles["t"].brush().style()
+               == Qt.BrushStyle.NoBrush
+               and canvas4._persp["p_tl"].brush().style()
+               == Qt.BrushStyle.SolidPattern
+               and canvas4._persp["p_tr"].brush().style()
+               == Qt.BrushStyle.NoBrush,
+               f"tl={canvas4._handles['tl'].brush().style()} "
+               f"tr={canvas4._handles['tr'].brush().style()} "
+               f"p_tl={canvas4._persp['p_tl'].brush().style()}")
+            canvas4._set_handle_focus(None)
+            ok("变换：焦点清掉后所有节点都回到中空",
+               all(item.brush().style() == Qt.BrushStyle.NoBrush
+                   for item in (*canvas4._handles.values(),
+                                *canvas4._diamonds.values(),
+                                *canvas4._persp.values())),
+               f"{[item.brush().style() for item in canvas4._handles.values()]}")
+
+            # 裁剪/收边下是**同一批方框**，反馈改由悬停那个承担——不能变成
+            # "全是空的、没有任何反馈"。
+            canvas4._hover_handle = "bl"
+            canvas4._apply_hover_highlight()
+            ok("裁剪：悬停的方框实心、其余中空（与变换共用同一批图元）",
+               canvas4._handles["bl"].brush().style()
+               == Qt.BrushStyle.SolidPattern
+               and canvas4._handles["br"].brush().style()
+               == Qt.BrushStyle.NoBrush,
+               f"bl={canvas4._handles['bl'].brush().style()} "
+               f"br={canvas4._handles['br'].brush().style()}")
+            canvas4._hover_handle = None
+            canvas4._apply_hover_highlight()
+
+            # ⚠️⚠️ 崩溃回归（用户 2026-10-09）：把透视角拖到**对角附近** ⇒
+            # `quadToQuad` 给出"可逆但放大百万倍"的矩阵（外框 4.8e17）⇒ 预览
+            # 重采样/烘焙画布全被撑爆（QImage(2.18e9) OverflowError）。现在这
+            # 一步被判病态并**丢弃**：手柄停住、矩阵保持不变。
+            canvas4.reset_transform()
+            _paper = canvas4.image_rect()
+            _before_xf = QTransform(canvas4._xf)
+            canvas4.transform_perspective(
+                "tl", _paper.bottomRight() - QPointF(1, 1))
+            _sel = canvas4._xf_rect
+            ok("变换：透视拖到对角附近被拒（矩阵不变形、不再算出天文数字外框）",
+               QTransform(canvas4._xf) == _before_xf
+               and _sel is not None
+               and mapped_bounds(canvas4._xf, _sel) is not None,
+               f"xf={canvas4._xf} bounds="
+               f"{None if _sel is None else mapped_bounds(canvas4._xf, _sel)}")
+            canvas4.transform_perspective("tl", _paper.topLeft() - QPointF(48, 36))
+            ok("变换：正常透视仍然生效（只挡自交/塌陷的那一步）",
+               QTransform(canvas4._xf) != _before_xf,
+               f"xf={canvas4._xf}")
+
+            # ⚠️⚠️ 回归（2026-10-09 用户报障「统一变换只旋转也有 bug」）：
+            # ①"原本图片底还在"——旧版把整幅原图钉在 (0,0) 当底图，于是图转过
+            #   来了、原来的图还在原地叠着看；②"旋转后图片不完整显示"——旧版把
+            #   变换矩阵在"渲染浮层像素"和"浮层图元的 transform"里各套了一遍，
+            #   内容被转两遍、还被固定大小的画布裁掉一半。
+            # 这里把"预览 == 烘焙"钉成一条**像素级**断言：预览渲染成图，与
+            # compose_transform（烘焙唯一实现）逐像素比。
+            def scene_shot(canvas, rect: QRectF) -> QImage:
+                """把场景按 ``rect``（图片坐标、1:1）渲染成一张图。
+
+                ⚠️ 垫底用**白**：画布上"空"的那块（选区被搬走之后）现在是
+                **透明**的（用户 2026-10-09：「图片旋转不再有白色的区域」），
+                而烘焙产物那边仍是白底——这里比的是"内容落在纸上"，垫纸色再比
+                才对得上。
+                ⚠️ 构图参考线默认**五分**（2026-10-09）：它是纯 UI 叠加、烘焙
+                里没有，拍进画面会把"预览 == 烘焙"的像素差顶过阈值——拍摄前
+                先藏、拍完还原（四边形框/手柄一直都在画面里，阈值本来就有
+                它们的余量，不动）。
+                """
+                guides = [item for item in canvas._guides if item.isVisible()]
+                for item in guides:
+                    item.setVisible(False)
+                shot = QImage(max(1, int(rect.width())),
+                              max(1, int(rect.height())),
+                              QImage.Format.Format_ARGB32)
+                shot.fill(QColor("#ffffff"))
+                painter = QPainter(shot)
+                painter.setRenderHint(
+                    QPainter.RenderHint.SmoothPixmapTransform, True)
+                canvas._scene.render(painter, QRectF(shot.rect()), rect)
+                painter.end()
+                for item in guides:
+                    item.setVisible(True)
+                return shot
+
+            def check_parity(canvas, label: str) -> None:
+                pending = canvas.transform_pending()
+                assert pending is not None  # 用例里必已发生一次变换
+                sel, xf, region = pending
+                if getattr(canvas, "_xf_direction", "forward") == "backward":
+                    inverse, ok_inv = xf.inverted()
+                    if ok_inv:
+                        xf = inverse
+                clipping = getattr(canvas, "_xf_clipping", "adjust")
+                grow = clipping != "clip"
+                bake = compose_transform(
+                    canvas_img(canvas), sel, xf, region, grow=grow,
+                    interpolation="linear")
+                origin = (0.0, 0.0)
+                if grow:
+                    bake, origin = bake
+                if clipping == "aspect":
+                    crop = center_crop_aspect(
+                        bake, canvas_img(canvas).width(),
+                        canvas_img(canvas).height())
+                    origin = (origin[0] + (bake.width() - crop.width()) // 2,
+                              origin[1] + (bake.height() - crop.height()) // 2)
+                    bake = crop
+                shot = scene_shot(canvas, QRectF(
+                    origin[0], origin[1], bake.width(), bake.height()))
+                value = plane_diff(shot, bake)
+                ok(f"变换：{label}的预览 == 烘焙（逐像素平均通道差 < 6）",
+                   value < 6.0, f"diff={value:.2f} "
+                   f"bake={bake.width()}x{bake.height()}@{origin}")
+
+            canvas4.set_tool("transform")
+            undo_live = len(dialog4._undo)
+            canvas4.transform_rotate(30)
+            frame_before = canvas4._float_item.pixmap().cacheKey()
+            pose_before = QTransform(canvas4._float_item.transform())
+            canvas4.transform_rotate(15)
+            ok("变换：只旋转就实时出画面（浮层像素与摆位都跟着变、像素没落地）",
+               canvas4._float_item.pixmap().cacheKey() != frame_before
+               and canvas4._float_item.transform() != pose_before
+               and canvas_img(canvas4) is canvas4._image
+               and len(dialog4._undo) == undo_live,
+               f"key={canvas4._float_item.pixmap().cacheKey()} "
+               f"before={frame_before} undo={len(dialog4._undo)} "
+               f"expect={undo_live}")
+            placement = canvas4._float_item.transform()
+            ok("变换：浮层图元只做摆位（不带旋转 ⇒ 内容不会被转两次）",
+               abs(placement.m12()) < 1e-9 and abs(placement.m21()) < 1e-9,
+               f"transform={placement}")
+            quad = canvas4._transform_quad()
+            xs = [point.x() for point in quad.values()]
+            ys = [point.y() for point in quad.values()]
+            expect = QRectF(min(xs), min(ys),
+                            max(xs) - min(xs), max(ys) - min(ys))
+            got = canvas4._float_item.sceneBoundingRect()
+            # ⚠️ 判据是"**盖住**内容外框"而不是"尺寸相等"：``warp_placement``
+            #    取外框时向下取整/向上取整各留半像素，正好比精确外框大一点。
+            ok("变换：浮层画布覆盖变换后内容的完整外框（不会裁掉一块）",
+               got.contains(expect)
+               and abs(got.width() - expect.width()) <= 3.0
+               and abs(got.height() - expect.height()) <= 3.0,
+               f"float={got} expect={expect}")
+            # ⚠️⚠️ 用户第二轮报障（2026-10-09）：「白底和当前图片位置总是变化
+            #   漂移……白底不应该扩大，应该是图片初始位置和大小」。旧版底图跟着
+            #   旋转外框每帧重算：整幅转 30° 就涨到 920×992、原点跑到 (-160,-96)，
+            #   再叠上 setSceneRect 一起变 ⇒ 看着就是"白底和图片一直在漂"。
+            #   现在钉死：**恒定 = 原图矩形**。
+            paper = QRectF(canvas4.image_rect())
+            ok("变换：底图（纸）恒定 = 原图矩形，不随旋转长大（不再漂移）",
+               canvas4._paint_image is not canvas4._image
+               and canvas4._base_current_rect() == paper
+               and canvas4._base_target_rect() == paper
+               and canvas4._xf_base_origin == QPointF(0.0, 0.0),
+               f"base={canvas4._base_current_rect()} "
+               f"target={canvas4._base_target_rect()} "
+               f"origin={canvas4._xf_base_origin} expect={paper}")
+            # 「图片旋转不再有白色的区域」：整幅选区时底图整块**透明**
+            #   （1×1 空图被缩放矩阵拉成原图矩形），露出来的画布条纹格才说得通。
+            plane = canvas4._paint_image
+            ok("变换：底图不再有白色区域（整幅选区时整块透明）",
+               plane is not None and plane.width() == 1
+               and plane.height() == 1 and plane.pixelColor(0, 0).alpha() == 0,
+               f"paint={None if plane is None else (plane.width(), plane.height(), plane.pixelColor(0, 0).alpha())}")
+            # 两个虚线框合成一个：固定在原位的纸边框改成**细实线**，
+            #   虚线只留给跟着内容转的 _quad（用户截图里指出"两个框的虚线、
+            #   颜色还不一样"）。
+            ok("变换：只剩一个虚线框（原位那条已改成细实线）",
+               canvas4._border is not None
+               and canvas4._border.pen().style() != Qt.PenStyle.DashLine
+               and canvas4._quad.pen().style() == Qt.PenStyle.DashLine,
+               f"border={canvas4._border.pen().style() if canvas4._border else None} "
+               f"quad={canvas4._quad.pen().style()}")
+            check_parity(canvas4, "整幅旋转")
+            # 校正（向后）走同一条路：反向矩阵同样要"预览 == 烘焙"
+            canvas4.set_transform_options(direction="backward")
+            check_parity(canvas4, "整幅校正（向后）")
+            canvas4.set_transform_options(direction="forward")
+            # 裁剪档：内容越出画布的部分要按画布边界切掉（与烘焙一致）
+            canvas4.set_transform_options(clipping="clip")
+            check_parity(canvas4, "裁剪到原画布")
+            canvas4.set_transform_options(clipping="adjust")
+
+            # ⚠️⚠️ 拖动中必须**实时**（2026-10-09 用户报障「只旋转不能实时渲染」）：
+            # 精确档一帧要逐像素重采样整块选区（实测 12 MP `linear` 158 ms、
+            # `nohalo` 442 ms），拖动根本跟不上。拖动中改成"像素不重采样、
+            # 变换交给图元"（Qt 光栅器，实测 0.6–2.2 ms/帧），松手那一帧再回
+            # 精确档——"预览 == 烘焙"的判据一点没松。这里把两条都钉死。
+            canvas4.reset_transform()
+            canvas4.set_tool("transform")
+            canvas4.transform_rotate(25)
+            resample_calls = []
+            original_plane = canvas4._render_float_plane
+
+            def counting_plane():
+                resample_calls.append(1)
+                return original_plane()
+
+            canvas4._render_float_plane = counting_plane
+            try:
+                canvas4._xf_dragging = True
+                for _ in range(5):
+                    canvas4.transform_rotate(1.0)
+                fast_pose = QTransform(canvas4._float_item.transform())
+                ok("变换：拖动中不逐像素重采样（每帧只改图元 ⇒ 才是实时）",
+                   not resample_calls, f"重采样次数={len(resample_calls)}")
+                ok("变换：拖动中由浮层图元承担变换本身"
+                   "（与松手后的纯摆位不同口径）",
+                   fast_pose == canvas4._float_fast_xf()
+                   and (abs(fast_pose.m12()) > 1e-6
+                        or abs(fast_pose.m21()) > 1e-6),
+                   f"transform={fast_pose}")
+                ok("变换：拖动中的浮层画布 = 预览缩放的选区原图"
+                   "（不是重采样后的外框）",
+                   canvas4._float_item.pixmap().size()
+                   == canvas4._float_fast_plane().size(),
+                   f"pixmap={canvas4._float_item.pixmap().size()} "
+                   f"plane={canvas4._float_fast_plane().size()}")
+
+                # 快档 vs 精确档：**同一处内容**（只差插值），取景框固定成
+                # "图片 ∪ 变换后选区外框"，免得两边的 sceneRect 取整差把判据带偏
+                quad_fast = canvas4._transform_quad()
+                xs_fast = [point.x() for point in quad_fast.values()]
+                ys_fast = [point.y() for point in quad_fast.values()]
+                frame = QRectF(canvas4.image_rect()).united(
+                    QRectF(min(xs_fast), min(ys_fast),
+                           max(xs_fast) - min(xs_fast),
+                           max(ys_fast) - min(ys_fast))
+                ).adjusted(-40, -40, 40, 40)
+                fast_shot = scene_shot(canvas4, frame)
+                canvas4.finish_transform_drag()
+                exact_shot = scene_shot(canvas4, frame)
+                settled_pose = QTransform(canvas4._float_item.transform())
+            finally:
+                del canvas4._render_float_plane
+            fast_vs_exact = plane_diff(fast_shot, exact_shot)
+            ok("变换：拖动中的快预览与松手后的精确预览逐像素一致（只差插值）",
+               fast_vs_exact < 6.0, f"diff={fast_vs_exact:.2f}")
+            ok("变换：松手立刻回到精确档（重新逐像素重采样 + 图元回到纯摆位）",
+               resample_calls == [1]
+               and abs(settled_pose.m12()) < 1e-9
+               and abs(settled_pose.m21()) < 1e-9,
+               f"重采样={len(resample_calls)} transform={settled_pose}")
+
+            # ⚠️ 拖动中的裁剪掩膜方向（踩过的坑）：``setClipPath`` 是把笔限制在
+            #    路径**之内**，配 ``CompositionMode_Clear`` 必须传**补集**——
+            #    传原集会清反（该留的透明、该清的留着，画面像内容整块消失）。
+            canvas4.set_transform_options(clipping="clip")
+            canvas4._xf_dragging = True
+            canvas4._sync_float()
+            mask_plane = canvas4._float_fast_plane()
+            mask_mid = mask_plane.pixelColor(mask_plane.width() // 2,
+                                             mask_plane.height() // 2).alpha()
+            # 全幅选区 + 旋转 ⇒ 区域局部坐标里"图片矩形"是一个被转过的平行
+            # 四边形，四角必然落在画布外 ⇒ 必须被清成透明
+            mask_corner = mask_plane.pixelColor(1, 1).alpha()
+            ok("变换：拖动中的裁剪掩膜方向正确（中间留内容、画布外清透明）",
+               mask_mid > 200 and mask_corner == 0,
+               f"mid_alpha={mask_mid} corner_alpha={mask_corner}")
+            canvas4._xf_dragging = False
+            canvas4._xf_preview_keyframe = None
+            canvas4._sync_float()
+            canvas4.set_transform_options(clipping="adjust")
+            canvas4.reset_transform()
         finally:
             dialog4.deleteLater()
+
+        # ⚠️⚠️ 回归（2026-10-09 第三轮用户报障）：「图片边框那些操作框也应该
+        #   跟着图片移动旋转，现在是分离了」「格子区域块跟图片相互远离」
+        #   「画布画面是不变的」。
+        #   根因是 ``QTransform`` 的复合顺序：``A * B`` 是**先 A 后 B**（行向量
+        #   约定），而 ``S(k) ∘ placed ∘ S(1/k)`` 那种数学记号是**先右后左**。
+        #   旧版按记号直译成 ``S(k) * placed * S(1/k)`` ⇒ 矩阵成了
+        #   ``placed(k·u)/k``，**平移量被多除一个 k**，内容整体偏 ``t·(1/k−1)``
+        #   （k=0.6 时 100px 的位移能偏出 66px）。
+        #   ⚠️ 600×800 只有 0.48 MP，`_xf_preview_scale` 恒为 1 ⇒ 这个错**完全
+        #   测不出来**，旧自测全绿。所以这条用例必须用**大于预览预算**的图。
+        img6 = QImage(1000, 1400, QImage.Format.Format_ARGB32)
+        img6.fill(QColor("#f2ecdd"))
+        dialog6 = ImageEditorDialog(None, img6)
+        try:
+            canvas6 = dialog6.canvas
+            canvas6.set_tool("transform")
+            dialog6.show()
+            app.processEvents()
+            app.processEvents()
+            canvas6.fit()
+            app.processEvents()
+            # ⚠️ 锚点在**动手之前**取：用户说的是"画布画面是不变的"——从操作前
+            #   到操作后整幅画面都不能动，而不只是"转两次之间别动"。
+            anchor6 = canvas6.mapFromScene(QPointF(0, 0))
+            scene6 = QRectF(canvas6.sceneRect())
+            # ⚠️ 先**平移**再转：绕中心的旋转外框是对称的、并集中心几乎不动，
+            #   旧实现那点漂移会被"看不出来"；平移之后并集一边倒，旧实现就会
+            #   把整幅画面推走（实测同样是"转+移"，用户截图里就是这么偏的）。
+            canvas6.transform_move(160, -110)
+            canvas6.transform_rotate(20)
+            region6 = canvas6._xf_region
+            ok("变换（大图）：选区大于预览预算 ⇒ 真的走降采样档（k<1）",
+               canvas6._xf_preview_scale < 0.9,
+               f"k={canvas6._xf_preview_scale:.3f} 区域="
+               + (f"{region6.width()}x{region6.height()}"
+                  if region6 is not None else "未建预览"))
+            placed6 = canvas6._placed_xf()
+            ok("变换（大图）：拖动档把区域像素**原样**映到图片坐标"
+               "（不再多除一个 k）",
+               (canvas6._float_fast_xf().map(QPointF(0, 0))
+                - placed6.map(QPointF(0, 0))).manhattanLength() < 1e-6,
+               f"fast={canvas6._float_fast_xf().map(QPointF(0, 0))} "
+               f"placed={placed6.map(QPointF(0, 0))}")
+            quad6 = canvas6._transform_quad()
+            xs6 = [point.x() for point in quad6.values()]
+            ys6 = [point.y() for point in quad6.values()]
+            expect6 = QRectF(min(xs6), min(ys6),
+                             max(xs6) - min(xs6), max(ys6) - min(ys6))
+            got6 = canvas6._float_item.sceneBoundingRect()
+            ok("变换（大图）：浮层内容落在变换框上（框与内容不再分离）",
+               got6.contains(expect6)
+               and abs(got6.width() - expect6.width()) <= 8.0
+               and abs(got6.height() - expect6.height()) <= 8.0,
+               f"float={got6} expect={expect6}")
+            pivot6 = canvas6._xf.map(canvas6._xf_pivot)
+            center6 = QPointF((got6.left() + got6.right()) / 2,
+                              (got6.top() + got6.bottom()) / 2)
+            ok("变换（大图）：内容中心恒在轴心上（绕轴心变换，不跑位）",
+               (center6 - pivot6).manhattanLength() < 6.0,
+               f"center={center6} pivot={pivot6}")
+            for _ in range(4):
+                canvas6.transform_rotate(9)
+            ok("变换（大图）：转多少圈画布画面都不动（视图锚点恒定）",
+               canvas6.mapFromScene(QPointF(0, 0)) == anchor6,
+               f"anchor={canvas6.mapFromScene(QPointF(0, 0))} vs {anchor6}")
+            ok("变换（大图）：场景矩形恒定（不跟变换长大）",
+               QRectF(canvas6.sceneRect()) == scene6,
+               f"sceneRect={canvas6.sceneRect()} vs {scene6}")
+            paper6 = QRectF(canvas6.image_rect())
+            ok("变换（大图）：底图（纸）仍恒定 = 原图矩形（不跟变换长）",
+               canvas6._base_target_rect() == paper6
+               and canvas6._base_current_rect() == paper6,
+               f"target={canvas6._base_target_rect()} "
+               f"base={canvas6._base_current_rect()} expect={paper6}")
+            canvas6.reset_transform()
+        finally:
+            dialog6.deleteLater()
+
+        # ⚠️⚠️ 回归（2026-10-09 用户报障三项）：①「统一变换参考线不显眼，
+        #   太细了看不清，默认 5 分构图」②「方向：校正，图片和操作框方向
+        #   相反」③「水平翻转、垂直翻转卡顿，太慢」。
+        img7 = make_image(300, 200)
+        for x in range(200, 230):  # 黑块 x∈[200,230)×y∈[80,110)（翻转方向用）
+            for y in range(80, 110):
+                img7.setPixel(x, y, 0xFF000000)
+        dialog7 = ImageEditorDialog(None, img7)
+        try:
+            canvas7 = dialog7.canvas
+            canvas7.set_tool("transform")
+            dialog7.show()
+            app.processEvents()
+            app.processEvents()
+
+            # ---- ① 参考线：默认五分 + 2 设备像素虚线（cosmetic 不随缩放变细）
+            visible7 = sum(1 for item in canvas7._guides if item.isVisible())
+            ok("变换：参考线默认五分构图（8 根全显示）",
+               canvas7._xf_guide == "fifths" and visible7 == 8,
+               f"guide={canvas7._xf_guide} visible={visible7}")
+            gpen = canvas7._guides[0].pen()
+            ok("变换：参考线加粗为 2 设备像素虚线（cosmetic，缩放不变细）",
+               gpen.isCosmetic() and gpen.widthF() >= 2.0
+               and gpen.style() == Qt.PenStyle.DashLine,
+               f"cosmetic={gpen.isCosmetic()} width={gpen.widthF()} "
+               f"style={gpen.style()}")
+
+            # ---- ② 校正（向后）：框与内容同向
+            #   旧 bug：框画 ``_xf``、内容走 ``_preview_xf``（=逆），平移时
+            #   内容往 −x 跑、框往 +x 跑。现在两者统一吃视觉矩阵。
+            canvas7.set_transform_options(direction="backward")
+            canvas7.reset_transform()
+            canvas7.transform_move(40, 0)
+            quad7 = canvas7._transform_quad()
+            float7 = canvas7._float_item.sceneBoundingRect()
+            ok("变换（校正）：平移后框与内容同向（都向 +x 40，不再相反）",
+               abs(quad7["tl"].x() - 40.0) < 1e-6
+               and abs(float7.left() - 40.0) <= 2.0,
+               f"quad_tl={quad7['tl']} float_left={float7.left()}")
+            # 旋转同理：校正模式下的视觉框必须与正向**同一操作**一致
+            # （旧 bug：框用正向矩阵画 ⇒ 与浮层内容反向转）
+            canvas7.set_transform_options(direction="forward")
+            canvas7.reset_transform()
+            canvas7.transform_rotate(90)
+            quad_fwd = dict(canvas7._transform_quad())
+            canvas7.set_transform_options(direction="backward")
+            canvas7.reset_transform()
+            canvas7.transform_rotate(90)
+            quad_bwd = dict(canvas7._transform_quad())
+            ok("变换（校正）：旋转后框的视觉位置与正向一致（跟随内容）",
+               all((quad_fwd[k] - quad_bwd[k]).manhattanLength() < 1e-6
+                   for k in quad_fwd),
+               f"fwd_tl={quad_fwd['tl']} bwd_tl={quad_bwd['tl']}")
+
+            # ---- ③ 翻转快路径：纯镜像不走逐像素重采样（12MP 曾 ~11 秒）
+            #   ⚠️ 别用 _set_tool 离开变换——切工具会把挂起变换**烘焙**掉
+            #   （这里要的是丢弃）；reset_transform 才是"丢弃不烘焙"。
+            canvas7.set_transform_options(direction="forward")
+            canvas7.reset_transform()
+            before7 = canvas_img(canvas7).copy()
+            undo7 = len(dialog7._undo)
+            # 快路径判据：纯镜像**不该**触发整幅重采样（compose_transform），
+            # 也不该建预览浮层——打桩计数，旧实现（全走烘焙通道）会红。
+            import desktop.components.viewers.image_editor.dialog_commit \
+                as commit_mod
+            real_compose = commit_mod.compose_transform
+            compose_calls: list[int] = []
+
+            def _counting_compose(*args, **kwargs):
+                compose_calls.append(1)
+                return real_compose(*args, **kwargs)
+
+            commit_mod.compose_transform = _counting_compose
+            try:
+                dialog7._flip_transform(True)
+            finally:
+                commit_mod.compose_transform = real_compose
+            flipped7 = canvas_img(canvas7)
+            ok("翻转：纯镜像走快路径（零整幅重采样、不留预览浮层）",
+               not compose_calls and canvas7._float_item is None,
+               f"compose={len(compose_calls)} float={canvas7._float_item}")
+            ok("翻转：水平翻转 = 整幅镜像（黑块从 [200,230) 到 [70,100)，尺寸不变）",
+               flipped7.size() == before7.size()
+               and canvas7.transform_pending() is None
+               and all(flipped7.pixelColor(x, 90).value() < 128
+                       for x in (75, 85, 95))
+               and all(flipped7.pixelColor(x, 90).value() > 230
+                       for x in (205, 215, 225)),
+               f"size={flipped7.width()}x{flipped7.height()} "
+               f"pending={canvas7.transform_pending()}")
+            ok("翻转：一步一个撤销点、名字记「翻转」",
+               len(dialog7._undo) == undo7 + 1
+               and dialog7.history_list.item(
+                   dialog7.history_list.count() - 1).text() == "翻转",
+               f"undo={len(dialog7._undo)} before={undo7}")
+            dialog7._flip_transform(True)      # 再翻一次 = 回到原图
+            ok("翻转：翻两次精确复原（像素级一致，快路径产物与烘焙一致）",
+               plane_diff(canvas_img(canvas7), before7) < 1.0, "")
+        finally:
+            dialog7.deleteLater()
 
         # ---- 调整范围 + 局部变换（小范围修褶皱的核心路径） ----
         img5 = make_image(200, 120)

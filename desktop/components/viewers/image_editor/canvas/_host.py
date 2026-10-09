@@ -16,7 +16,7 @@
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QPointF, QRectF, Signal, QTimer
+from PySide6.QtCore import QPointF, QRect, QRectF, Signal, QTimer
 from PySide6.QtGui import QColor, QImage, QTransform
 from PySide6.QtWidgets import QGraphicsEllipseItem, QGraphicsLineItem, QGraphicsPixmapItem, QGraphicsPolygonItem, QGraphicsRectItem, QGraphicsScene, QGraphicsView
 from desktop.components.viewers.image_editor.text_item import TextBlockItem
@@ -32,6 +32,7 @@ class CanvasHost(QGraphicsView):
     # ---- 状态 ----
     _active_text_block: Any
     _border: QGraphicsRectItem | None
+    _diamonds: dict[str, QGraphicsPolygonItem]
     _edge_lines: dict[str, QGraphicsLineItem]
     _erase_size: Any
     _eraser_pos: QPointF
@@ -58,7 +59,10 @@ class CanvasHost(QGraphicsView):
     _distort_stroke_origin: QImage | None
     _distort_strength: int
     _fit_ratio: float
+    _focus_handle: Any
+    _focus_ring: QGraphicsRectItem
     _float_item: QGraphicsPixmapItem | None
+    _guides: list[QGraphicsLineItem]
     _handles: dict[str, QGraphicsRectItem]
     _hover_handle: Any
     _image: Any
@@ -66,6 +70,7 @@ class CanvasHost(QGraphicsView):
     _mask: list[QGraphicsRectItem]
     _mode: tuple | tuple[Any, ...] | None
     _paint_image: Any
+    _persp: dict[str, QGraphicsPolygonItem]
     _pivot_item: QGraphicsEllipseItem
     _quad: QGraphicsPolygonItem
     _rect: Any
@@ -76,10 +81,31 @@ class CanvasHost(QGraphicsView):
     _user_zoomed: bool
     _xf: Any
     _xf_about_pivot: bool
+    _xf_base_origin: Any
+    _xf_base_scale: Any
+    _xf_clipping: str
+    _xf_compose_preview: bool
+    _xf_constraints: dict[str, bool]
+    _xf_direction: str
+    _xf_dragging: bool
+    _xf_pending: bool
+    _xf_guide: str
+    _xf_interpolation: str
+    _xf_lock_pivot: bool
     _xf_pivot: Any
+    _xf_pivot_ops: dict[str, bool]
+    _xf_pivot_saved: Any
+    _xf_preview_direction: str
+    _xf_preview_keyframe: Any
+    _xf_preview_origin: Any
+    _xf_preview_opacity: int
+    _xf_preview_region: Any
+    _xf_preview_scale: float
     _xf_rect: QRectF | None
     _xf_region: Any
     _xf_reshape: Any
+    _xf_show_preview: bool
+    _xf_snap_pivot: bool
     _xf_touched: bool
     _zoom: Any
     crop_committed: Signal
@@ -92,7 +118,8 @@ class CanvasHost(QGraphicsView):
     def _apply_hover_highlight(self) -> None:
         ...
 
-    def _apply_shear(self, edge: str, k: float, x_start: QTransform) -> None:
+    def _apply_shear(self, edge: str, k: float,
+                     x_start: QTransform) -> QTransform:
         ...
 
     def _accumulate(self, stamps: Any) -> None:
@@ -154,6 +181,140 @@ class CanvasHost(QGraphicsView):
     def _ensure_transform_preview(self) -> None:
         ...
 
+    # ---- 统一变换：手柄几何 / 命中 / 拖拽（TransformMixin）----
+    def _apply_transform_drag(self, mode: tuple, pos: QPointF,
+                              modifiers) -> None:
+        ...
+
+    def _begin_transform_drag(self, hit: str, pos: QPointF,
+                              modifiers) -> tuple | None:
+        ...
+
+    def _constrain(self, op: str, modifiers) -> bool:
+        ...
+
+    def _edge_handles_active(self,
+                             corners: dict[str, QPointF] | None = None) -> bool:
+        ...
+
+    def _from_pivot(self, op: str, modifiers) -> bool:
+        ...
+
+    def _pivot_ops(self) -> dict[str, bool]:
+        ...
+
+    def _preview_xf(self, source: QTransform) -> QTransform:
+        ...
+
+    def _visual_xf(self) -> QTransform:
+        ...
+
+    def _apply_visual(self, visual: QTransform) -> None:
+        ...
+
+    def _apply_border_pen(self) -> None:
+        ...
+
+    def _backdrop_is_whole(self) -> bool:
+        ...
+
+    def _backdrop_needs_resize(self) -> bool:
+        ...
+
+    def _base_current_rect(self) -> QRectF:
+        ...
+
+    def _base_target_rect(self) -> QRectF:
+        ...
+
+    def _bake_canvas_rect(self) -> QRectF:
+        ...
+
+    def _cut_plane(self, image: QImage) -> QImage:
+        ...
+
+    def _plane_clip_rect(self) -> QRectF | None:
+        ...
+
+    def _paper_image(self, target: QRect) -> Any:
+        ...
+
+    def _preview_placement_xf(self) -> QTransform:
+        ...
+
+    def _placed_xf(self) -> QTransform:
+        ...
+
+    def _float_placement(self) -> QTransform:
+        ...
+
+    def _float_fast_xf(self) -> QTransform:
+        ...
+
+    def _float_fast_plane(self) -> QImage:
+        ...
+
+    def _apply_float_fast(self) -> None:
+        ...
+
+    def _border_pen(self) -> Any:
+        ...
+
+    def _realtime_budget(self) -> bool:
+        ...
+
+    def _rebuild_backdrop(self) -> None:
+        ...
+
+    def _render_float_plane(self) -> None:
+        ...
+
+    def _set_base_pixmap(self) -> None:
+        ...
+
+    def finish_transform_drag(self) -> None:
+        ...
+
+    def has_pending_transform(self) -> bool:
+        ...
+
+    def make_transform_pending(self) -> None:
+        ...
+
+    def reset_transform_preview_flags(self) -> None:
+        ...
+
+    def _set_handle_focus(self, name: str | None) -> None:
+        ...
+
+    def _shear_anchor(self, edge: str) -> QPointF:
+        ...
+
+    def _snap_pivot(self, point: QPointF) -> QPointF:
+        ...
+
+    def _sync_focus_ring(self, points: dict[str, QPointF], edges_active: bool,
+                         zoom: float) -> None:
+        ...
+
+    def _sync_transform_guides(self, corners: dict[str, QPointF]) -> None:
+        ...
+
+    def _transform_handle_points(self) -> dict[str, QPointF]:
+        ...
+
+    def _transform_local_corners(self) -> list[QPointF]:
+        ...
+
+    def _transform_local_handles(self) -> dict[str, QPointF]:
+        ...
+
+    def _transform_local_rect(self) -> QRectF | None:
+        ...
+
+    def _transform_side_anchor(self, edge: str) -> QPointF:
+        ...
+
     def _erase_at(self, start: QPointF, end: QPointF) -> None:
         ...
 
@@ -164,6 +325,9 @@ class CanvasHost(QGraphicsView):
         ...
 
     def _hide_text_outline(self) -> None:
+        ...
+
+    def _hide_transform_extras(self) -> None:
         ...
 
     def _hit_handle(self, view_pos: QPointF) -> str | None:
@@ -252,6 +416,9 @@ class CanvasHost(QGraphicsView):
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802
         ...
 
+    def paintEvent(self, event) -> None:  # noqa: N802
+        ...
+
     def refresh(self) -> None:
         ...
 
@@ -282,6 +449,15 @@ class CanvasHost(QGraphicsView):
     def set_transform_about_pivot(self, about: bool) -> None:
         ...
 
+    def set_transform_constraint(self, op: str, on: bool) -> None:
+        ...
+
+    def set_transform_options(self, **options: Any) -> None:
+        ...
+
+    def set_transform_pivot_op(self, op: str, on: bool) -> None:
+        ...
+
     def set_transform_reshape(self, on: bool) -> None:
         ...
 
@@ -297,6 +473,12 @@ class CanvasHost(QGraphicsView):
     def transform_move(self, dx: float, dy: float) -> None:
         ...
 
+    def transform_flip(self, horizontal: bool = True) -> None:
+        ...
+
+    def transform_perspective(self, corner: str, point: QPointF) -> None:
+        ...
+
     def transform_pending(self) -> tuple[QRectF, QTransform, QImage] | None:
         ...
 
@@ -305,6 +487,10 @@ class CanvasHost(QGraphicsView):
 
     def transform_scale(self, sx: float, sy: float,
                         anchor: QPointF | None = None) -> None:
+        ...
+
+    def transform_scale_axis(self, edge: str, factor: float,
+                             anchor: QPointF | None = None) -> None:
         ...
 
     def transform_shear(self, edge: str, k: float) -> None:

@@ -13,13 +13,16 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 from qfluentwidgets import (
-    CaptionLabel, CheckBox, ComboBox, Slider,
+    CaptionLabel, CheckBox, ComboBox, PushButton, Slider, StrongBodyLabel,
 )
 from desktop.ui.widgets import combo_box
 from desktop.ui import theme as T
 from desktop.ui.color_picker import ColorPickerButton
 from desktop.ui.fonts import text_font_families
-from .consts import ERASER_MAX, ERASER_MIN, TEXT_MAX, TEXT_MIN, TEXT_SWATCHES
+from .consts import (
+    CLIPPINGS, DIRECTIONS, ERASER_MAX, ERASER_MIN, GUIDES, INTERPOLATIONS,
+    TEXT_MAX, TEXT_MIN, TEXT_SWATCHES,
+)
 from typing import TYPE_CHECKING
 
 
@@ -44,6 +47,17 @@ class ToolPagesMixin(DialogHost):
         row.addWidget(control)
         row.addStretch(1)
         return box
+
+    @staticmethod
+    def _section(layout: QVBoxLayout, title: str) -> None:
+        """参数区里的一节标题（照 GIMP 工具选项那样分节）。
+
+        右侧面板窄、参数竖排，靠标题分组读起来才不乱；用 ``StrongBodyLabel``
+        与 ``_hint`` 的 ``CaptionLabel`` 拉开层次（同一面板里两种字号）。
+        """
+        label = StrongBodyLabel(title)
+        label.setToolTip(title)
+        layout.addWidget(label)
 
 
     def _slider_group(self, title: str, key: str, low: int, high: int,
@@ -92,18 +106,160 @@ class ToolPagesMixin(DialogHost):
 
 
     def _page_transform(self, layout: QVBoxLayout) -> None:
-        """变换：**没有**「应用变换」按钮——拖完松手即烘焙（实时）。"""
+        """统一变换（GIMP「Unified Transform」口径）：**没有**「应用变换」按钮，
+        拖完松手即烘焙。
+
+        版面照 GIMP 的工具选项分节：**方向 → 插值 → 剪裁 → 预览 →
+        参考线 → 限制 (Shift) → 从轴心 (Ctrl) → 轴心 → 其它**。
+        """
+        canvas = self.canvas
         self._hint(
             layout,
-            "拖角=缩放（Shift 等比）· 拖边=切变 · 框内拖=移动 · 框外拖=绕轴心"
-            "旋转（Shift 每 15°）。松手即应用（原区域填白），一步一个撤销点。")
+            "方框=缩放（角=双轴、边中=单轴）· 菱形=切变 · 角内小菱形=透视 · "
+            "框内拖=移动 · 框外拖=绕轴心旋转。松手后由画布实时预览（原位置"
+            "留白），离开本功能时才落地，一步一个撤销点。")
+        note = CaptionLabel(
+            "「方向：校正（向后）」= 把框摆到歪掉的那一块上，按反向矩阵"
+            "把它掰正（预览里看到的就是校正后的样子）。")
+        note.setTextColor(QColor(T.INK_SOFT))
+        note.setWordWrap(True)
+        layout.addWidget(note)
+
+        direction = combo_box(DIRECTIONS, width=150)
+        direction.setCurrentIndex(max(0, direction.findData(canvas._xf_direction)))
+        direction.setToolTip(
+            "正常（向前）：把内容搬到框的位置；校正（向后）：按**反向**矩阵烘焙"
+            "——扫描件拍歪了，把框摆到歪的那块上再校正回正的")
+        direction.currentIndexChanged.connect(
+            lambda _index: canvas.set_transform_options(
+                direction=direction.currentData()))
+        layout.addWidget(self._labeled("方向", direction))
+
+        interpolation = combo_box(INTERPOLATIONS, width=150)
+        interpolation.setCurrentIndex(max(
+            0, interpolation.findData(canvas._xf_interpolation)))
+        interpolation.setToolTip(
+            "无光晕：缩小按倍数叠加子采样再平均（最干净，默认）；"
+            "立方：放大最平滑；线性：折中；最近邻：保留硬边（做像素画/线稿）")
+        interpolation.currentIndexChanged.connect(
+            lambda _index: canvas.set_transform_options(
+                interpolation=interpolation.currentData()))
+        layout.addWidget(self._labeled("插值", interpolation))
+
+        clipping = combo_box(CLIPPINGS, width=150)
+        clipping.setCurrentIndex(max(0, clipping.findData(canvas._xf_clipping)))
+        clipping.setToolTip(
+            "调整：画布跟着内容长（超出边界的部分不丢）；"
+            "裁剪到原画布：保持原尺寸，超出的内容裁掉；"
+            "裁剪到原比例：先按内容长，再居中裁回原来的长宽比")
+        clipping.currentIndexChanged.connect(
+            lambda _index: canvas.set_transform_options(
+                clipping=clipping.currentData()))
+        layout.addWidget(self._labeled("剪裁", clipping))
+
+        show_preview = CheckBox("显示图像预览")
+        show_preview.setChecked(canvas._xf_show_preview)
+        show_preview.setToolTip("取消后只留变换框，看不到内容是怎么变的")
+        show_preview.toggled.connect(
+            lambda checked: canvas.set_transform_options(show_preview=checked))
+        layout.addWidget(show_preview)
+
+        compose = CheckBox("合成预览")
+        compose.setChecked(canvas._xf_compose_preview)
+        compose.setToolTip(
+            "勾选=变形内容画在底图（选区原位留白）上——预览与烘焙一致；"
+            "取消=底图也藏起来，只显示变形后的那一块")
+        compose.toggled.connect(
+            lambda checked: canvas.set_transform_options(compose_preview=checked))
+        layout.addWidget(compose)
+
+        opacity_label = CaptionLabel(f"{canvas._xf_preview_opacity}%")
+        opacity_label.setTextColor(QColor(T.INK_SOFT))
+        head = QHBoxLayout()
+        head.setContentsMargins(0, 0, 0, 0)
+        head.addWidget(QLabel("图像不透明度"))
+        head.addStretch(1)
+        head.addWidget(opacity_label)
+        layout.addLayout(head)
+        opacity = Slider(Qt.Orientation.Horizontal)
+        opacity.setRange(0, 100)
+        opacity.setValue(canvas._xf_preview_opacity)
+        opacity.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        opacity.setToolTip("只影响**预览**的浓淡，不影响烘焙结果")
+
+        def apply_opacity(value: int) -> None:
+            opacity_label.setText(f"{value}%")
+            canvas.set_transform_options(opacity=value)
+
+        opacity.valueChanged.connect(apply_opacity)
+        layout.addWidget(opacity)
+
+        guide = combo_box(GUIDES, width=150)
+        guide.setCurrentIndex(max(0, guide.findData(canvas._xf_guide)))
+        guide.setToolTip("框内的构图辅助线（跟着变换一起变形）")
+        guide.currentIndexChanged.connect(
+            lambda _index: canvas.set_transform_options(
+                guide=guide.currentData()))
+        layout.addWidget(self._labeled("参考线", guide))
+
+        # ---- 限制 (Shift) ----
+        self._section(layout, "限制 (Shift)")
+        constraints = (
+            ("移动", "move", "位移吸附到 45° 的整数倍"),
+            ("缩放", "scale", "保持长宽比（等比缩放）"),
+            ("旋转", "rotate", "旋转吸附到 15° 一档"),
+            ("切变", "shear", "切变时被抓的边不离开原边线"),
+            ("透视", "perspective", "透视手柄只能沿边或对角线走"),
+        )
+        for title, key, tip in constraints:
+            box = CheckBox(title)
+            box.setChecked(bool(canvas._xf_constraints.get(key, False)))
+            box.setToolTip(
+                f"{tip}；按住 Shift 可临时**取反**（GIMP 同款：没勾的勾上、"
+                "勾了的取消）")
+            box.toggled.connect(
+                lambda checked, k=key: canvas.set_transform_constraint(k, checked))
+            layout.addWidget(box)
+
+        # ---- 从轴心 (Ctrl) ----
+        self._section(layout, "从轴心 (Ctrl)")
+        pivot_boxes = (
+            ("缩放", "scale", "以轴心为锚缩放（默认锚在对角/对边）"),
+            ("切变", "shear", "绕轴心切变：两边反向各走一半"),
+            ("透视", "perspective", "透视时轴心位置保持不动"),
+        )
+        for title, key, tip in pivot_boxes:
+            box = CheckBox(title)
+            box.setChecked(bool(canvas._xf_pivot_ops.get(key, False)))
+            box.setToolTip(f"{tip}；按住 Ctrl 可临时取反")
+            box.toggled.connect(
+                lambda checked, k=key: canvas.set_transform_pivot_op(k, checked))
+            layout.addWidget(box)
+
+        # ---- 轴心 ----
+        self._section(layout, "轴心")
+        snap = CheckBox("吸附 (Shift)")
+        snap.setChecked(canvas._xf_snap_pivot)
+        snap.setToolTip("轴心拖到框中心/四角附近时自动贴上去")
+        snap.toggled.connect(
+            lambda checked: canvas.set_transform_options(snap_pivot=checked))
+        layout.addWidget(snap)
+        lock = CheckBox("锁定")
+        lock.setChecked(canvas._xf_lock_pivot)
+        lock.setToolTip("锁住轴心：只能绕当前位置旋转/缩放，拖不动它")
+        lock.toggled.connect(
+            lambda checked: canvas.set_transform_options(lock_pivot=checked))
+        layout.addWidget(lock)
+
+        # ---- 其它：调整范围 + 翻转 ----
+        self._section(layout, "其它")
         reshape = CheckBox("调整范围")
         reshape.setToolTip(
             "勾选后沿边拖动收小要处理的区域（收完自动回到变换模式）——"
             "小范围修褶皱：先框住褶皱，再旋转/切变把它正回来"
         )
-        reshape.setChecked(self.canvas._xf_reshape)
-        reshape.toggled.connect(self.canvas.set_transform_reshape)
+        reshape.setChecked(canvas._xf_reshape)
+        reshape.toggled.connect(canvas.set_transform_reshape)
         # ⚠️ 参数页每次切功能都重建，旧复选框随旧页销毁；画布信号上的连接
         #    却一直活着——下次 reshape 完成时会调到已销毁的控件上抛
         #    RuntimeError（用户 2026-10-08 报的刷屏）。所以先解掉上一份页
@@ -111,7 +267,7 @@ class ToolPagesMixin(DialogHost):
         old_uncheck = getattr(self, "_reshape_uncheck", None)
         if old_uncheck is not None:
             try:
-                self.canvas.reshape_finished.disconnect(old_uncheck)
+                canvas.reshape_finished.disconnect(old_uncheck)
             except (RuntimeError, TypeError):
                 pass  # 从没连上 / 接收端已死：本来就是要清掉的状态
 
@@ -122,13 +278,24 @@ class ToolPagesMixin(DialogHost):
                 pass  # 切功能时参数页已重建，老复选框随旧页销毁
 
         self._reshape_uncheck = _uncheck_reshape
-        self.canvas.reshape_finished.connect(_uncheck_reshape)
+        canvas.reshape_finished.connect(_uncheck_reshape)
         layout.addWidget(reshape)
-        check = CheckBox("从轴心缩放/切变")
-        check.setToolTip("勾选后缩放/切变以轴心为锚（旋转永远绕轴心）")
-        check.setChecked(self.canvas._xf_about_pivot)
-        check.toggled.connect(self.canvas.set_transform_about_pivot)
-        layout.addWidget(check)
+
+        flip_row = QWidget(self._option_page)
+        flips = QHBoxLayout(flip_row)
+        flips.setContentsMargins(0, 0, 0, 0)
+        flips.setSpacing(T.SPACE_SM)
+        for title, horizontal, tip in (
+            ("水平翻转", True, "左右镜像（立即应用，一步一个撤销点）"),
+            ("垂直翻转", False, "上下镜像（立即应用，一步一个撤销点）"),
+        ):
+            button = PushButton(title)
+            button.setToolTip(tip)
+            button.clicked.connect(
+                lambda _checked=False, h=horizontal: self._flip_transform(h))
+            flips.addWidget(button)
+        flips.addStretch(1)
+        layout.addWidget(flip_row)
 
 
     def _page_distort(self, layout: QVBoxLayout) -> None:

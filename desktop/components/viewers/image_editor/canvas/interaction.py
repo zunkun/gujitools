@@ -5,16 +5,16 @@
 """
 from __future__ import annotations
 
-import math
-
-from PySide6.QtCore import QPointF, QRectF, QSizeF, Qt
+from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPen, QTransform
 
 from ..consts import (
-    EDGE_BAND_VIEW_PX, HOVER_CURSORS, MIN_RECT_EDGE, ROTATE_SNAP_DEG, WHEEL_STEP,
+    CORNER_HANDLES, EDGE_BAND_VIEW_PX, HOVER_CURSORS, MIN_RECT_EDGE,
+    PERSP_HANDLES, SHEAR_HANDLES, SIDE_HANDLES, WHEEL_STEP,
 )
-from ..geometry import clamp_rect, rotate_about, scale_about
+from ..geometry import clamp_rect
 from ..text_item import TextBlockItem
+from .overlay import _style_node
 from typing import TYPE_CHECKING
 
 
@@ -22,6 +22,11 @@ if TYPE_CHECKING:
     from ._host import CanvasHost
 else:
     CanvasHost = object
+
+
+#: 统一变换里算"节点"的命中名（悬停/点选都要高亮它们；边带与框内不算）
+_HANDLE_HITS = frozenset(
+    CORNER_HANDLES + SIDE_HANDLES + SHEAR_HANDLES + PERSP_HANDLES)
 
 
 class InteractionMixin(CanvasHost):
@@ -57,15 +62,28 @@ class InteractionMixin(CanvasHost):
             item.setVisible(
                 active and self._hover_handle is not None
                 and name in self._hover_handle)
+        # 手柄底色：同统一变换那套——**默认中空，当前那个实心**（用户 2026-10-09
+        # 「操作节点未选中不要有背景色」）。⚠️ 那 8 个方框是**同一批图元**，变换
+        # （非收边）时由 ``transform._sync_transform_overlay`` 按 ``_focus_handle``
+        # 上色，两条路各自负责自己那种工具，不会互相覆盖。
+        for name, item in self._handles.items():
+            _style_node(item, name == self._hover_handle)
 
 
     def _update_hover_cursor(self, view_pos: QPointF) -> None:
-        """未拖拽时的悬停反馈：命中边缘给方向缩放光标 + 边界高亮。"""
+        """未拖拽时的悬停反馈：命中手柄给语义光标 + 该手柄高亮（边线随动）。
+
+        ⚠️ 统一变换下悬停**不写** ``_hover_handle``（那是裁剪/收边的整边线
+        高亮用的）：变换的工具是"**节点**"，高亮由 ``_focus_handle`` 管，
+        见 :meth:`_set_handle_focus`。这样"点节点 → 节点亮"与"悬停边线亮"
+        两套反馈不会互相覆盖。
+        """
         if self._tool == "transform" and not self._xf_reshape \
                 and self._item is not None:
             hit = self._hit_transform(view_pos)
+            self._set_handle_focus(hit if hit in _HANDLE_HITS else None)
             if hit in HOVER_CURSORS:
-                cursor = HOVER_CURSORS[hit]  # 角/边：方向光标
+                cursor = HOVER_CURSORS[hit]  # 角/边/菱形：语义光标
             elif hit in ("pivot", "inside"):
                 cursor = Qt.CursorShape.SizeAllCursor
             elif hit == "outside":
@@ -74,6 +92,7 @@ class InteractionMixin(CanvasHost):
                 cursor = Qt.CursorShape.ArrowCursor
             self.viewport().setCursor(cursor)
             return
+        self._set_handle_focus(None)
         if self._tool not in ("crop", "transform") or self._item is None:
             if self._hover_handle is not None:
                 self._hover_handle = None
@@ -174,50 +193,10 @@ class InteractionMixin(CanvasHost):
                 event.accept()
                 return
             hit = self._hit_transform(event.position())
-            if hit == "outside":
-                # 松手前没建过预览的话，这次按下也不产生任何变换
-                self._ensure_transform_preview()
-                if self._float_item is None:
-                    event.accept()
-                    return
-                center = self._xf.map(self._xf_pivot)
-                angle0 = math.degrees(math.atan2(
-                    pos.y() - center.y(), pos.x() - center.x()))
-                self._mode = ("xf_rotate", self._xf, center, angle0)
-            elif hit == "pivot":
-                # ⚠️ 轴心拖动也要先建预览：刚进变换工具就抓轴心时预览还没建，
-                #    直接进 xf_pivot 的话随后 mouseMove 里 `assert _xf_rect`
-                #    必炸（用户 2026-10-08 报的 AssertionError 刷屏）——拖动
-                #    轴心本身不改矩阵，但预览三件套是拖动状态机的前提。
-                self._ensure_transform_preview()
-                if self._float_item is None:
-                    event.accept()
-                    return
-                inv, _ = self._xf.inverted()
-                self._mode = ("xf_pivot", inv)
-            else:
-                self._ensure_transform_preview()
-                if self._float_item is None:
-                    event.accept()
-                    return
-                if hit in ("tl", "tr", "bl", "br"):
-                    # ⚠️ _ensure_transform_preview 成功 ⇒ _xf_rect 必已建立
-                    #    （它就是在那儿建的），这里显式收窄给类型检查器看。
-                    assert self._xf_rect is not None
-                    rect = self._xf_rect.normalized()
-                    opposite = {"tl": rect.bottomRight(),
-                                "tr": rect.bottomLeft(),
-                                "bl": rect.topRight(),
-                                "br": rect.topLeft()}[hit]
-                    anchor = (self._xf_pivot if self._xf_about_pivot
-                              else QPointF(opposite))
-                    inv, _ = self._xf.inverted()
-                    self._mode = (
-                        "xf_scale", self._xf, inv.map(pos), QPointF(anchor))
-                elif hit in ("t", "b", "l", "r"):
-                    self._mode = ("xf_shear", self._xf, pos, hit)
-                else:  # 框内 = 移动
-                    self._mode = ("xf_move", self._xf, pos)
+            # ⚠️ 拖拽状态机在 TransformMixin（手柄语义与变换应用是同一件事），
+            #    这里只负责"按下了、按在哪儿、按着什么修饰键"。
+            self._mode = self._begin_transform_drag(
+                hit, pos, event.modifiers())
             event.accept()
             return
         if self._tool == "distort":
@@ -288,54 +267,10 @@ class InteractionMixin(CanvasHost):
             return
         pos = self.mapToScene(event.position().toPoint())
         inside = self.image_rect()
-        if kind == "xf_move":
-            _, x_start, start = self._mode
-            delta = pos - start
-            self._xf = x_start * QTransform().translate(delta.x(), delta.y())
-            self._xf_touched = True
-        elif kind == "xf_rotate":
-            _, x_start, center, angle0 = self._mode
-            angle = math.degrees(math.atan2(
-                pos.y() - center.y(), pos.x() - center.x()))
-            delta = (angle - angle0 + 180.0) % 360.0 - 180.0
-            if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
-                delta = round(delta / ROTATE_SNAP_DEG) * ROTATE_SNAP_DEG
-            # 旋转发生在累计矩阵之后（轴心是视觉位置）：(T * R) 先 T 后 R
-            self._xf = x_start * rotate_about(center, delta)
-            self._xf_touched = True
-        elif kind == "xf_scale":
-            _, x_start, p0_local, anchor = self._mode
-            inv, _ = x_start.inverted()
-            cur = inv.map(pos)
-            sx = ((cur.x() - anchor.x()) / (p0_local.x() - anchor.x())
-                  if abs(p0_local.x() - anchor.x()) > 1e-6 else 1.0)
-            sy = ((cur.y() - anchor.y()) / (p0_local.y() - anchor.y())
-                  if abs(p0_local.y() - anchor.y()) > 1e-6 else 1.0)
-            if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
-                sx = sy = (sx + sy) / 2.0  # 等比
-            self._xf = scale_about(anchor, sx, sy) * x_start
-            self._xf_touched = True
-        elif kind == "xf_shear":
-            _, x_start, start, edge = self._mode
-            inv, _ = x_start.inverted()
-            delta = inv.map(pos) - inv.map(start)
-            # xf_shear 只在变换预览（_ensure_transform_preview）建立后才会进入，
-            # 这里显式收窄给类型检查器看；运行时是纯空操作。
-            assert self._xf_rect is not None
-            rect = self._xf_rect.normalized()
-            if edge in ("l", "r"):
-                k = delta.y() / rect.width()
-            else:
-                k = delta.x() / rect.height()
-            self._apply_shear(edge, k, x_start)
-            self._xf_touched = True
-        elif kind == "xf_pivot":
-            inv = self._mode[1]
-            # 同上：变换预览建立后 _xf_rect 才有值（运行时纯空操作）。
-            assert self._xf_rect is not None
-            self._xf_pivot = clamp_rect(
-                QRectF(inv.map(pos), QSizeF(0, 0)),
-                self._xf_rect.normalized()).topLeft()
+        if kind.startswith("xf_"):
+            # 统一变换的七种拖拽（移动/旋转/双轴缩放/单轴缩放/切变/透视/轴心）
+            # 全在 TransformMixin 里，这里只转发位置与修饰键
+            self._apply_transform_drag(self._mode, pos, event.modifiers())
         elif kind == "move":
             start, origin = self._mode[1], self._mode[2]
             delta = pos - start
@@ -404,13 +339,18 @@ class InteractionMixin(CanvasHost):
             event.accept()
             return
         if self._mode and self._mode[0].startswith("xf_"):
-            # ⚠️ 变换**没有**「应用变换」按钮：拖完松手立即通知弹窗烘焙进
-            #    像素（松手即应用，一步一个撤销点）。拖轴心不改矩阵，不发信号
-            #    ——预览留着，用户接着拖就是绕新轴心转（与原行为一致）。
+            # ⚠️⚠️ **松手不烘焙**（用户 2026-10-09 报障："仍然不能实时预览，
+            #    而是最后才预览"）。原来的"松手即应用"= 每次松手都把整幅重采样
+            #    一遍（12 MP 要 11 秒），所以只能"最后才看到结果"。
+            #    现在改成 GIMP 口径：**松手保持预览**，继续拖/滚轮继续改
+            #    （都是便宜的画布变换），离开工具/点「完成」时才真正烘焙一次。
             kind = self._mode[0]
             self._mode = None
-            if kind != "xf_pivot":
-                self.transform_committed.emit()
+            # 先把预览升回精确档（拖动中像素不重采样、变换由图元做，
+            # 松手这一帧才按烘焙那套数学重算一次）
+            self.finish_transform_drag()
+            if kind != "xf_pivot" and self.transform_pending() is not None:
+                self.make_transform_pending()
             event.accept()
             return
         super().mouseReleaseEvent(event)

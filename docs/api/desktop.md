@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 161 个模块、174 个公开类、1152 个公开函数/方法（生成于 2026-10-08）。
+覆盖 161 个模块、174 个公开类、1171 个公开函数/方法（生成于 2026-10-09）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -49,12 +49,12 @@
 | [`desktop.components.task_table`](#desktopcomponentstask_table) | 3 | 10 |
 | [`desktop.components.viewers.edit_sync`](#desktopcomponentsviewersedit_sync) | 0 | 2 |
 | [`desktop.components.viewers.image_editor.bake`](#desktopcomponentsviewersimage_editorbake) | 0 | 2 |
-| [`desktop.components.viewers.image_editor.canvas.core`](#desktopcomponentsviewersimage_editorcanvascore) | 1 | 16 |
+| [`desktop.components.viewers.image_editor.canvas.core`](#desktopcomponentsviewersimage_editorcanvascore) | 1 | 17 |
 | [`desktop.components.viewers.image_editor.canvas.distortion`](#desktopcomponentsviewersimage_editorcanvasdistortion) | 1 | 1 |
 | [`desktop.components.viewers.image_editor.canvas.interaction`](#desktopcomponentsviewersimage_editorcanvasinteraction) | 1 | 7 |
 | [`desktop.components.viewers.image_editor.canvas.overlay`](#desktopcomponentsviewersimage_editorcanvasoverlay) | 1 | 0 |
 | [`desktop.components.viewers.image_editor.canvas.text`](#desktopcomponentsviewersimage_editorcanvastext) | 1 | 6 |
-| [`desktop.components.viewers.image_editor.canvas.transform`](#desktopcomponentsviewersimage_editorcanvastransform) | 1 | 8 |
+| [`desktop.components.viewers.image_editor.canvas.transform`](#desktopcomponentsviewersimage_editorcanvastransform) | 1 | 18 |
 | [`desktop.components.viewers.image_editor.consts`](#desktopcomponentsviewersimage_editorconsts) | 0 | 0 |
 | [`desktop.components.viewers.image_editor.dialog`](#desktopcomponentsviewersimage_editordialog) | 1 | 3 |
 | [`desktop.components.viewers.image_editor.dialog_commit`](#desktopcomponentsviewersimage_editordialog_commit) | 1 | 0 |
@@ -62,7 +62,7 @@
 | [`desktop.components.viewers.image_editor.dialog_toolbar`](#desktopcomponentsviewersimage_editordialog_toolbar) | 1 | 0 |
 | [`desktop.components.viewers.image_editor.dialog_undo`](#desktopcomponentsviewersimage_editordialog_undo) | 1 | 0 |
 | [`desktop.components.viewers.image_editor.distortion`](#desktopcomponentsviewersimage_editordistortion) | 2 | 14 |
-| [`desktop.components.viewers.image_editor.geometry`](#desktopcomponentsviewersimage_editorgeometry) | 0 | 7 |
+| [`desktop.components.viewers.image_editor.geometry`](#desktopcomponentsviewersimage_editorgeometry) | 0 | 15 |
 | [`desktop.components.viewers.image_editor.text_item`](#desktopcomponentsviewersimage_editortext_item) | 1 | 8 |
 | [`desktop.components.viewers.image_view.core`](#desktopcomponentsviewersimage_viewcore) | 1 | 13 |
 | [`desktop.components.viewers.image_view.edit`](#desktopcomponentsviewersimage_viewedit) | 1 | 6 |
@@ -3106,8 +3106,9 @@ worker 会变成孤儿线程，而它是被 ``parent``（编辑器对话框）�
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(parent=None)` | — |
-| `set_image(image: QImage \| None) -> None` | 装入/替换图片并重新适应窗口（裁剪/撤销等"画布换图"也走这里）。 |
+| `set_image(image: QImage \| None, refit: bool=True) -> None` | 装入/替换图片。 |
 | `refresh() -> None` | 像素被就地改过（擦除）后只刷显示，不动缩放与滚动位置。 |
+| `paintEvent(event) -> None` | 铺**「图外素灰 + 图内条纹格」**，再让场景画上去。 |
 | `replace_image(image: QImage) -> None` | 就地换图（尺寸不变的语义，如文字写入）：不动缩放与滚动位置。 |
 | `image() -> QImage \| None` | — |
 | `tool() -> str` | 当前工具键（``crop``/``transform``/``distort``/``erase``/``text``）。 |
@@ -3121,6 +3122,31 @@ worker 会变成孤儿线程，而它是被 ``parent``（编辑器对话框）�
 | `zoom_out() -> None` | 缩小一档。 |
 | `set_zoom(zoom: float, anchor_view: QPointF \| None=None) -> None` | 锚点缩放（同预览弹窗的 translate 补偿法，缩放不漂移）。 |
 | `fit_selection() -> None` | 视图适配当前选区（选区约占视口 80%，四周留出可操作白边）。 |
+
+##### `set_image(image: QImage | None, refit: bool=True) -> None`
+
+装入/替换图片。
+
+``refit=True``（缺省）：重新适应窗口（打开、裁剪、撤销/还原都走这条）。
+``refit=False``：**保持当前倍率**——变换提交后画布会长大一点，重新
+fit 就等于"每次松手都把图缩小一档"，反复旋转会越转越小（用户报的
+"越旋转图形越小"）。所以提交走这条，只换像素、不动视图。
+
+##### `paintEvent(event) -> None`
+
+铺**「图外素灰 + 图内条纹格」**，再让场景画上去。
+
+⚠️ 用户 2026-10-09 口径：「背景是灰色的，**原本图片大小位置固定是条纹
+格子**，图片旋转不再有白色的区域」。所以条纹格只画在 :meth:`image_rect`
+（= 这张图的原始地盘）**里面**，且**不随变换走**——图被挪走/转歪之后，
+原位露出来的就是"格子的老地方"，一眼看出那块已经空了；图外一圈是
+浅底（``CANVAS_OUTSIDE``，用户同日追加「灰色太突兀」后调浅了）。
+
+旧版把格子铺满整个视口、中间再拿一张**白纸**盖住：纸按旋转外框重铺，
+于是"白底一直在涨、看着像在漂"（用户报障）。现在没有纸，也就没有白底。
+
+格子**相位锚在图片原点**（不是视口原点），滚动/缩放时格子跟着图走，
+不会在图上"滑来滑去"。
 
 ##### `tool() -> str`
 
@@ -3274,39 +3300,147 @@ worker 会变成孤儿线程，而它是被 ``parent``（编辑器对话框）�
 
 源码：[`desktop/components/viewers/image_editor/canvas/transform.py`](../../desktop/components/viewers/image_editor/canvas/transform.py)
 
-画布 Mixin：**统一变换**（GIMP 口径：缩放/切变/旋转/移动 + 调整范围）。
+画布 Mixin：**统一变换**（GIMP「Unified Transform」口径）。
 
-从 ``EditorCanvas`` 拆出（2026-10-07）。方法体逐字未改。
+从 ``EditorCanvas`` 拆出（2026-10-07）。2026-10-08 按 GIMP 统一变换重做：
+手柄从"8 个方向缩放方块"扩成 **角方框(双轴缩放) / 角内小菱形(透视) /
+边中方框(单轴缩放) / 边上菱形(切变)** 四类，并接上 GIMP 的选项
+（方向 / 插值 / 剪裁 / 预览不透明度 / 参考线 / 限制 / 从轴心 / 轴心吸附锁定）。
+
+手柄词汇表与理由见 ``consts.py`` 里那一段长注释——**方框=缩放、菱形=切变、
+角上的小菱形=透视**，位置全部由 :meth:`TransformMixin._transform_local_handles`
+从 ``_xf_rect`` 的参数坐标算出来，绘制与命中用的是**同一份**结果
+（:meth:`TransformMixin._transform_handle_points`），不会再出现"画在这里、
+却要点那里"。
+
+⚠️ 累计矩阵 ``_xf`` 的复合约定（与 ``geometry.py`` 同一条）：``(A * B)``
+= **先 A 后 B**。于是
+  * 在**原图坐标**里发生的操作（缩放/切变/翻转）写成 ``局部操作 * _xf``；
+  * 在**画布坐标**里发生的操作（透视把四角重映射）写成 ``_xf * 步骤``。
+搞反的话表现是"拖动方向对、但位置整体偏掉"，很难看出来。
+
+⚠️⚠️ **视觉矩阵**（2026-10-09 修「方向=校正，图片和操作框方向相反」）：
+屏幕上真正呈现的矩阵是 :meth:`_visual_xf`——正向 = ``_xf`` 本身，
+**校正（向后）= ``_xf`` 的逆**（``_preview_xf``，与浮层内容、烘焙同口径）。
+覆盖层（四边形框/手柄/参考线/轴心）与拖拽数学一律吃**视觉矩阵**，
+算完经 :meth:`_apply_visual` 落账回 ``_xf``。旧版框画的是 ``_xf``、
+内容走的是 ``_preview_xf``，校正模式下两套口径各动各的 ⇒ 图往左转、
+框往右转。语义入口（``transform_*``）同理：先在视觉空间里叠操作。
 
 ### `class TransformMixin(CanvasHost)`
 
-变换工具：实时预览浮层 + 变换矩阵 + 变换框覆盖层。
+统一变换：手柄几何与命中、变换应用、实时预览与覆盖层。
 
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
-| `set_transform_about_pivot(about: bool) -> None` | 「从轴心」：缩放/切变以轴心为锚（旋转永远绕轴心）。 |
-| `set_transform_reshape(on: bool) -> None` | 「调整范围」模式：拖手柄/边=收小变换区域，而不是缩放内容。 |
+| `set_transform_options(**options) -> None` | 改统一变换的选项；认不出的键直接忽略（同 ``set_distortion_options``）。 |
+| `set_transform_about_pivot(about: bool) -> None` | 「从轴心」总开关：三个动作（缩放/切变/透视）一起切。 |
+| `set_transform_pivot_op(op: str, on: bool) -> None` | 「从轴心 (Ctrl)」单个动作：勾上后该动作以轴心为锚。 |
+| `set_transform_constraint(op: str, on: bool) -> None` | 「限制 (Shift)」单个动作：移动 45° / 缩放等比 / 旋转 15° / |
+| `set_transform_reshape(on: bool) -> None` | 「调整范围」模式：拖手柄/边 = 收小变换区域，而不是缩放内容。 |
+| `make_transform_pending() -> None` | **挂起**这次变换：松手后保留预览，等离开工具再烘焙（GIMP 口径）。 |
+| `has_pending_transform() -> bool` | 有"已预览但还没烘焙"的变换？（弹窗据此在切工具/完成时收尾） |
+| `reset_transform_preview_flags() -> None` | 取消"挂起"标记（松手后不烘焙那一支走这里），矩阵与预览都留着。 |
+| `finish_transform_drag() -> None` | 松手：把预览从"拖动快档"升回**精确档**（与烘焙同一套数学）。 |
 | `reset_transform() -> None` | 「重置」：丢弃未应用的变换，选区回到整幅、轴心回到中心。 |
 | `transform_pending() -> tuple[QRectF, QTransform, QImage] \| None` | 未应用的变换 ``(选区, 矩阵, 选区像素快照)``；没有则 None。 |
-| `transform_move(dx: float, dy: float) -> None` | 整体平移 ``dx, dy``（图片像素）。 |
+| `transform_move(dx: float, dy: float) -> None` | 整体平移 ``dx, dy``（图片像素，**视觉方向**）。 |
 | `transform_rotate(degrees: float) -> None` | 绕**轴心当前视觉位置**旋转（轴心保持不动）。 |
 | `transform_scale(sx: float, sy: float, anchor: QPointF \| None=None) -> None` | 缩放（局部空间，锚点缺省=轴心；sx/sy 是相对当前内容的倍率）。 |
+| `transform_scale_axis(edge: str, factor: float, anchor: QPointF \| None=None) -> None` | **单轴**缩放：抓 ``edge``（l/r/t/b）方向的边，只改这一个轴。 |
 | `transform_shear(edge: str, k: float) -> None` | 拖边切变：``edge`` 是被抓的边（l/r/t/b），``k`` 是切变系数， |
+| `transform_perspective(corner: str, point: QPointF) -> None` | 把 ``corner`` 这个角拖到 ``point``（图片坐标）——投影（透视）。 |
+| `transform_flip(horizontal: bool=True) -> None` | 绕选区中心翻转（内容镜像；提交时由弹窗烘焙成一步）。 |
+
+##### `set_transform_options(**options) -> None`
+
+改统一变换的选项；认不出的键直接忽略（同 ``set_distortion_options``）。
+
+可用的键与取值范围见 ``consts.py``：``interpolation`` / ``clipping`` /
+``direction`` / ``guide`` / ``show_preview`` / ``compose_preview`` /
+``opacity``（0–100）/ ``constrain``+``value`` / ``pivot_op``+``value`` /
+``snap_pivot`` / ``lock_pivot``。
+
+##### `set_transform_about_pivot(about: bool) -> None`
+
+「从轴心」总开关：三个动作（缩放/切变/透视）一起切。
+
+保留旧入口（自测与老调用方在用它）；面板上是**三个独立复选框**，
+走 :meth:`set_transform_pivot_op`。
+
+##### `set_transform_constraint(op: str, on: bool) -> None`
+
+「限制 (Shift)」单个动作：移动 45° / 缩放等比 / 旋转 15° /
+切变贴边 / 透视沿对角线。
 
 ##### `set_transform_reshape(on: bool) -> None`
 
-「调整范围」模式：拖手柄/边=收小变换区域，而不是缩放内容。
+「调整范围」模式：拖手柄/边 = 收小变换区域，而不是缩放内容。
 
 进入时必须丢掉未应用的变换预览——浮层与填白底都是按**旧区域**
 快照做的，区域一变它们就与画布对不上了。退出（收边完成/取消
 勾选）后保留收小的区域，下一次拖动即以它为变换对象。
 
+##### `make_transform_pending() -> None`
+
+**挂起**这次变换：松手后保留预览，等离开工具再烘焙（GIMP 口径）。
+
+⚠️ 这是"能不能实时预览"的关键（用户 2026-10-09 报障）：原来松手就把
+整幅重采样一遍（12 MP 约 11 秒），所以只能"最后才看到结果"。现在松手
+只是**记下"有东西没应用"**，内容继续由画布上的浮层实时显示——拖动中
+连像素都不重采样（见 :meth:`_apply_float_fast`），随便转多少圈都不用等。
+
+**例外**：选区的预览版大到连一帧都出不来时（:meth:`_realtime_budget`）
+就退回"松手即烘焙"——宁可慢一次，也不要拖不动的假实时。
+
+##### `finish_transform_drag() -> None`
+
+松手：把预览从"拖动快档"升回**精确档**（与烘焙同一套数学）。
+
+拖动中像素不重采样、变换交给图元（亚毫秒级，见
+:meth:`_apply_float_fast`）；松手瞬间图不再动，这一次重采样只做一遍
+（用户看不到卡），于是**松手后看到的预览就是烘焙结果**——"预览 ==
+烘焙"的判据一点没松。
+
+##### `transform_rotate(degrees: float) -> None`
+
+绕**轴心当前视觉位置**旋转（轴心保持不动）。
+
+⚠️ 在**视觉空间**里叠旋转：校正（向后）模式下内容与框也同向转
+（旧版直接转 ``_xf`` ⇒ 图片和操作框方向相反，用户 2026-10-09 报障）。
+
+##### `transform_scale_axis(edge: str, factor: float, anchor: QPointF | None=None) -> None`
+
+**单轴**缩放：抓 ``edge``（l/r/t/b）方向的边，只改这一个轴。
+
+这是统一变换相对"只能整体放大缩小"的关键补充：横拉左边=只改宽度、
+竖拉上边=只改高度。锚点缺省 = 对边中点（拖动时锚在轴心）。
+
 ##### `transform_shear(edge: str, k: float) -> None`
 
 拖边切变：``edge`` 是被抓的边（l/r/t/b），``k`` 是切变系数，
 对边为锚（抓右边往下拖 = 内容随 x 增大而下斜）。
+
+##### `transform_perspective(corner: str, point: QPointF) -> None`
+
+把 ``corner`` 这个角拖到 ``point``（图片坐标）——投影（透视）。
+
+四个角各自可动 ⇒ 平面不再是平行四边形：扫描件拍歪、书页中间鼓起
+这类"四条边对不上"的情况靠它掰正（GIMP 的透视手柄同款）。
+
+⚠️ 拖成自交 / 塌陷（把角推到对角附近）的那一步会被
+:func:`_perspective_step` 判为病态并**丢弃**——保持原样，绝不把
+"把内容放大百万倍"的矩阵交给重采样（那会崩，见该函数）。
+
+##### `transform_flip(horizontal: bool=True) -> None`
+
+绕选区中心翻转（内容镜像；提交时由弹窗烘焙成一步）。
+
+⚠️ 在**视觉空间**里叠镜像（``F * 视觉矩阵``）：正向与旧版完全一致；
+校正（向后）模式下旧版直接叠 ``_xf``，视觉上变成"先转再绕**原位**
+中心镜像"，与拖拽/旋转的视觉口径不一致。
 
 ---
 
@@ -3336,8 +3470,26 @@ worker 会变成孤儿线程，而它是被 ``parent``（编辑器对话框）�
 | DISTORT_PREVIEW_TILES_PER_TICK | `16` |
 | DISTORT_PREVIEW_RENDER_PIXELS | `60000` |
 | DISTORT_SYNC_RENDER_PIXELS | `4000000` |
+| SHEAR_AT | `0.75` |
+| SIDE_VIEW_PX | `16.0` |
+| SHEAR_VIEW_PX | `16.0` |
+| CORNER_VIEW_PX | `28.0` |
+| PERSP_VIEW_PX | `16.0` |
+| PERSP_INSET_VIEW_PX | `0.0` |
+| HANDLE_HIT_VIEW_PX | `9.0` |
+| CORNER_HIT_VIEW_PX | `13.0` |
+| SHEAR_HIT_VIEW_PX | `10.0` |
+| PERSP_HIT_VIEW_PX | `8.0` |
+| EDGE_HANDLE_MIN_VIEW_PX | `56.0` |
+| INTERPOLATION_DEFAULT | `"nohalo"` |
+| CLIPPING_DEFAULT | `"adjust"` |
+| DIRECTION_DEFAULT | `"forward"` |
+| GUIDE_DEFAULT | `"fifths"` |
+| PREVIEW_OPACITY_DEFAULT | `100` |
 | PANEL_WIDTH | `300` |
 | HISTORY_HEIGHT | `150` |
+| TRANSFORM_PREVIEW_PIXELS | `500000` |
+| CHECKER_STEP | `9` |
 | HISTORY_ORIGIN_LABEL | `"打开"` |
 | STEP_CROP | `"裁剪"` |
 | STEP_TRANSFORM | `"变换"` |
@@ -3345,6 +3497,7 @@ worker 会变成孤儿线程，而它是被 ``parent``（编辑器对话框）�
 | STEP_DISTORT | `"扭曲"` |
 | STEP_TEXT | `"文字"` |
 | STEP_RESET | `"还原"` |
+| STEP_FLIP | `"翻转"` |
 
 ---
 
@@ -3654,6 +3807,14 @@ NumPy 是项目已有依赖，延迟到首次用到时导入，避免打开编�
 从 ``image_editor.py`` 拆出（2026-10-07）。这里只做像素与矩阵运算，
 不碰 QWidget / 画布状态，因此可被任何宿主复用（含后台线程）。
 
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| WARP_MAX_PIXELS | `40000000` |
+| ABSURD_COORD | `100000000.0` |
+| _WARP_CHUNK_PIXELS | `400000` |
+
 ### 模块函数
 
 | 函数 | 说明 |
@@ -3662,27 +3823,121 @@ NumPy 是项目已有依赖，延迟到首次用到时导入，避免打开编�
 | `rotate_about(point: QPointF, degrees: float) -> QTransform` | 绕 ``point`` 旋转 ``degrees``（正=顺时针）。 |
 | `scale_about(point: QPointF, sx: float, sy: float) -> QTransform` | 绕 ``point`` 缩放（sx/sy 为 0 会退化，调用方保证非零）。 |
 | `shear_about(point: QPointF, sh: float, sv: float) -> QTransform` | 绕 ``point`` 切变：水平 sh（x 随 y 斜切）、垂直 sv（y 随 x 斜切）。 |
-| `bake_transform(image: QImage, rect: QRectF, xf: QTransform, region: QImage, grow: bool=False) -> Any` | 把「选区内容经 ``xf`` 变换」烘焙进图片。 |
+| `quad_to_quad_transform(src, dst) -> QTransform \| None` | ``src`` 四点 → ``dst`` 四点的**投影**变换（同序、顺时针逆时针都行）。 |
+| `flip_transform(rect: QRectF, horizontal: bool) -> QTransform` | 绕 ``rect`` 中心做水平/垂直翻转（统一变换面板的「翻转」）。 |
+| `quad_point(corners, u: float, v: float) -> QPointF` | 四边形的双线性插值点；``corners`` = ``(tl, tr, br, bl)``（或同序四元组）。 |
+| `mapped_bounds(xf: QTransform, rect: QRectF, limit: int=WARP_MAX_PIXELS) -> tuple[int, int, int, int] \| None` | ``xf`` 把 ``rect`` 这张矩形映出去后，落在哪个整数外框里。 |
+| `warp_region(region: QImage, xf: QTransform, interpolation: str='linear', progress=None) -> tuple[QImage, int, int] \| None` | 把 ``region`` 按 ``xf`` 重采样成一张新图（``xf``：区域坐标 → 输出坐标）。 |
+| `center_crop_aspect(image: QImage, width: int, height: int) -> QImage` | 把 ``image`` **居中**裁成 ``width:height`` 这个长宽比（居中不动内容）。 |
+| `warp_placement(region: QImage, xf: QTransform, interpolation: str, progress=None) -> tuple[QImage, int, int] \| None` | ``region`` 按 ``xf`` 重采样（``xf``：区域局部坐标 → 输出坐标）。 |
+| `compose_transform(image: QImage, rect: QRectF, xf: QTransform, region: QImage, grow: bool=False, interpolation: str='smooth', progress=None) -> Any` | 把「选区内容经 ``xf`` 变换」合成进图片——**预览与烘焙共用的唯一实现**。 |
+| `bake_transform(image: QImage, rect: QRectF, xf: QTransform, region: QImage, grow: bool=False, interpolation: str='smooth') -> Any` | 旧名保留：等价于 :func:`compose_transform`（对外 API 不变）。 |
 | `transform_region(image: QImage, rect: QRectF, xf: QTransform)` | ``grow`` 模式的目标画布：``(ox, oy, width, height)``。 |
 | `draw_text(image: QImage, pos: QPointF, text: str, px: int, color: QColor, family: str \| None=None) -> QImage` | 在 ``pos``（文字块左上角）画文字（可多行，行距 1.25 倍）；空文本原样返回。 |
 
-#### `bake_transform(image: QImage, rect: QRectF, xf: QTransform, region: QImage, grow: bool=False) -> Any`
+#### `quad_to_quad_transform(src, dst) -> QTransform | None`
 
-把「选区内容经 ``xf`` 变换」烘焙进图片。
+``src`` 四点 → ``dst`` 四点的**投影**变换（同序、顺时针逆时针都行）。
+
+统一变换的"透视"手柄靠它：把当前四边形整体映到"挪了一个角"的新四边形。
+四点退化（共线 / 重合）时 ``quadToQuad`` 失败，这里返回 ``None``——
+调用方把这一步当"没发生"，不要留下一个把内容甩到无穷远的矩阵。
+
+#### `quad_point(corners, u: float, v: float) -> QPointF`
+
+四边形的双线性插值点；``corners`` = ``(tl, tr, br, bl)``（或同序四元组）。
+
+``u/v`` ∈ [0, 1]：``(0,0)`` = tl、``(1,1)`` = br。参考线、角点与
+"框内/框外"判定都要按**变形后的四边形**插值，不能拿原矩形算。
+
+#### `mapped_bounds(xf: QTransform, rect: QRectF, limit: int=WARP_MAX_PIXELS) -> tuple[int, int, int, int] | None`
+
+``xf`` 把 ``rect`` 这张矩形映出去后，落在哪个整数外框里。
+
+``rect`` 必须用**与 ``xf`` 同域**的坐标（``xf`` 的输入系）。返回
+``(x0, y0, x1, y1)``（**含两端**，与 :func:`warp_region` 里那段同口径）。
+
+⚠️⚠️ **返回 ``None`` 表示"这个外框根本不能用"，调用方一律"宁可不画"**：
+坐标非有限（投影在 w→0 处把角甩到无穷远）、坐标大到天文数字
+（``ABSURD_COORD``；近共线投影实测到 1e9）、或外框像素数超过 ``limit``。
+
+⚠️ 这是**唯一**该拿来做"尺寸闸门"的判据：这是本项目里崩溃的直接来源——
+2026-10-09 用户把透视角拖到对角附近，``warp_region`` 已经拒绝了（超 40 MP），
+但 :func:`warp_placement` 的 QPainter 兜底没挡，``QImage(2.18e9, 1.49e9)``
+直接 OverflowError（另一路 ``compose_transform(grow=True)`` 的
+``QImage(width, height)`` 同病）。**别在各处另写一遍 min/max/floor/ceil**。
+
+#### `warp_region(region: QImage, xf: QTransform, interpolation: str='linear', progress=None) -> tuple[QImage, int, int] | None`
+
+把 ``region`` 按 ``xf`` 重采样成一张新图（``xf``：区域坐标 → 输出坐标）。
+
+返回 ``(新图, x, y)``，``(x, y)`` = 新图左上角在**输出坐标系**里的位置。
+取不到 numpy / 变换退化 / 目标尺寸离谱时返回 ``None``，调用方退回
+QPainter 平滑路径（旧行为）。
+
+``progress(done, total)`` 是可选的进度回调（后台烘焙用）；返回 ``False``
+表示用户取消，本函数**立刻返回 ``None``**（半成品不返回，免得算出一张
+缺一块的图）。逐行分块算，所以取消能在一帧之内生效。
+
+做法是**反向映射**：对每个目标像素求它在源块里的浮点坐标再采样。所以
+透视（投影）变换也天然支持——QPainter 的投影绘制是近似的，而这里
+逐像素精确，烘焙结果与预览框的角点严格对应。
+
+#### `center_crop_aspect(image: QImage, width: int, height: int) -> QImage`
+
+把 ``image`` **居中**裁成 ``width:height`` 这个长宽比（居中不动内容）。
+
+统一变换面板的「裁剪到原比例」用它：先按「调整」让画布跟着内容长，再拿
+原始尺寸的长宽比居中裁回来——结果尺寸可能比原图大也可能小，但**比例
+不变**（GIMP 的 "Crop to original aspect ratio" 同口径）。
+
+``width/height`` 非法或图是空的时原样返回（宁可不动，也不裁出 0 像素）。
+
+#### `warp_placement(region: QImage, xf: QTransform, interpolation: str, progress=None) -> tuple[QImage, int, int] | None`
+
+``region`` 按 ``xf`` 重采样（``xf``：区域局部坐标 → 输出坐标）。
+
+返回 ``(新图, x0, y0)``，``(x0, y0)`` = 新图左上角在**输出坐标系**里的位置；
+**用户取消返回 ``None``**（宁可整步作废，也不交付一张缺一块的图）。
+
+⚠️ 这是烘焙的**唯一**像素入口（预览与提交共用同一条数学）。以前还有一条
+"``interpolation="smooth"`` 就直接 ``painter.setTransform(xf)`` +
+``drawImage(rect, region)``"的 QPainter 兜底路径，实测**内容整体漂移约
+10px**：``QPainter.drawImage(rect, image)`` 在带变换的 painter 下并不等价
+于 ``map(rect)``（平移量会被加回去、旋转会绕错原点），而且它只支持仿射、
+投影（透视）会被 Qt 近似掉。现在统一走逐像素反向重采样，结果与画布上的
+预览框严格一致。
+
+只有"取不到 numpy"这一种极端情况才退回 QPainter 平滑档——那时只保证
+看得见，不保证与框严格对齐。⚠️ "病态矩阵 / 外框离谱"**不算**这一种：
+退回去的那条路自己也要先过 :func:`mapped_bounds`，过不了就返回空图。
+
+#### `compose_transform(image: QImage, rect: QRectF, xf: QTransform, region: QImage, grow: bool=False, interpolation: str='smooth', progress=None) -> Any`
+
+把「选区内容经 ``xf`` 变换」合成进图片——**预览与烘焙共用的唯一实现**。
 
 ⚠️ 返回类型刻意标成 ``Any``（**多形态返回值**，见下）：
 ``grow=False`` 返 ``QImage``、``grow=True`` 返 ``(QImage, (ox, oy))``。
-标成联合类型会让 ``image, _origin = bake_transform(..., grow=True)``
+标成联合类型会让 ``image, _origin = compose_transform(..., grow=True)``
 这种解包报错（联合里含 QImage，QImage 不可迭代）。
 
-``grow=False``（旧行为）：画布尺寸不变——先把**原区域**填白（内容被挪走/
-变形后空出来的地方），再在 ``xf`` 变换下把选区快照画回去。古籍整页白底，
-填白视觉上最干净。
+``interpolation`` 是统一变换面板的「插值」档位（``nohalo`` / ``linear`` /
+``cubic`` / ``nearest`` / ``smooth``），交给 :func:`warp_placement` 的
+逐像素反向重采样档位。
 
-``grow=True``（用户 2026-10-02）：「图片倾斜后一部分区域超出原本边界，
-现在会被截掉」——**不截**。最终画布 = 「原图边界 ∪ 变换后选区的外框」
-（:func:`transform_region`）。返回 ``(QImage, (ox, oy))``，``(ox, oy)`` =
-新画布左上角在原坐标系里的位置（可为负）。
+``progress(done, total)``（可选）用于**后台烘焙**报进度；返回 ``False``
+表示用户取消，这时本函数返回 ``None``（整步作废，绝不交付半张图）。
+预览调用不传它（前端只要快）。
+
+``grow=False``：画布尺寸不变——先把**原区域**填白（内容被搬走了），再把
+变换后的选区内容画到它该在的位置（透视/平移空出来的地方留白）。
+
+``grow=True``：**不截**超出的部分——新画布 = 「变换后内容的完整外框」
+（见 :func:`transform_region`）。返回 ``(QImage, (ox, oy))``，
+``(ox, oy)`` = 新画布左上角在原坐标系里的位置。
+
+这套几何是画布预览的**同一份**：``_ensure_transform_preview`` 直接调它
+拿底图，所以"松手之后图变成什么样"在按下拖动的第一帧就已经定死了。
 
 #### `transform_region(image: QImage, rect: QRectF, xf: QTransform)`
 

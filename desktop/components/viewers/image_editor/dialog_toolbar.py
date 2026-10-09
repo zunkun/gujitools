@@ -26,12 +26,12 @@
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QSize
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 from qfluentwidgets import (
     CaptionLabel, FluentIcon as FIF, ListWidget, PrimaryPushButton,
-    PushButton, StrongBodyLabel, ToggleButton, ToolButton,
+    PushButton, ScrollArea, StrongBodyLabel, ToggleButton, ToolButton,
 )
 from desktop.ui import theme as T
 from .consts import EDIT_FIT_RATIO, HISTORY_HEIGHT, PANEL_WIDTH, TOOLS
@@ -124,10 +124,18 @@ class ToolbarMixin(DialogHost):
 
 
     def _build_side_panel(self) -> QWidget:
-        """右侧参数面板：功能名 + 提示 + 参数区 + 编辑历史。
+        """右侧参数面板：功能名 + **可滚动**参数区 + 编辑历史。
 
         ⚠️ 必须在 ``_build_toolbar_row`` **之前**建好：那个函数末尾的
         ``_set_tool`` 就会往 ``_option_host`` 里插第一份参数页。
+
+        ⚠️⚠️ 参数区**必须装在滚动容器里**。统一变换那张页有二十来个控件
+        （方向/插值/剪裁/预览/参考线 + 限制 5 项 + 从轴心 3 项 + 轴心 2 项 +
+        调整范围 + 翻转），实测总高 ≈1000px 而面板只有 ≈720px。以前参数区
+        直接挂在列布局里 ⇒ Qt 只能把整页**压到最小高度**：三个下拉被压成
+        「一条线」（连字都看不见），提示文字也整段消失——用户在截图上报的
+        就是"参数看起来是坏的"。装进 ScrollArea 后内容按自然高度展开，
+        超出部分滚动（顶部标题与底部「编辑历史」不跟着滚）。
         """
         panel = QWidget(self)
         panel.setFixedWidth(PANEL_WIDTH)
@@ -139,13 +147,25 @@ class ToolbarMixin(DialogHost):
         self.panel_title.setToolTip("当前功能；参数在下面")
         column.addWidget(self.panel_title)
 
-        self._option_host = QWidget(panel)
+        content = QWidget(panel)
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(T.SPACE_SM)
+        self._option_host = QWidget(content)
         self._option_host_layout = QVBoxLayout(self._option_host)
         self._option_host_layout.setContentsMargins(0, 0, 0, 0)
         self._option_host_layout.setSpacing(T.SPACE_SM)
-        column.addWidget(self._option_host)
+        content_layout.addWidget(self._option_host)
+        content_layout.addStretch(1)
 
-        column.addStretch(1)
+        self._option_scroll = ScrollArea(panel)
+        self._option_scroll.setWidgetResizable(True)
+        self._option_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._option_scroll.enableTransparentBackground()
+        self._option_scroll.setWidget(content)
+        column.addWidget(self._option_scroll, 1)
+
         history_title = CaptionLabel("编辑历史")
         history_title.setTextColor(QColor(T.INK_SOFT))
         history_title.setToolTip(
@@ -189,7 +209,9 @@ class ToolbarMixin(DialogHost):
         if tool != "text":
             self._commit_text_blocks()
         if tool != "transform":
-            self._commit_transform()
+            # ⚠️ **force=True**：离开变换工具是"必须烘焙"的时机（拖动中不烘，
+            #    松手也不烘——内容靠画布浮层实时显示，见 dialog_commit）
+            self._commit_transform(force=True)
         self.canvas.set_tool(tool)
         # 图片**永不铺满视口**：四周恒留白（用户 2026-10-02 定：编辑区不要
         # 铺满整个界面，上下预留空白方便操作）。

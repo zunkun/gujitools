@@ -13,18 +13,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal, QTimer
+from PySide6.QtCore import QPointF, QRect, QRectF, Qt, Signal, QTimer
 from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap, QTransform
 from PySide6.QtWidgets import (
     QFrame, QGraphicsPixmapItem, QGraphicsRectItem, QGraphicsScene, QGraphicsView,
 )
 
-from desktop.ui import theme as T
-
 from ..consts import (
-    DISTORT_HARDNESS, DISTORT_SIZE, DISTORT_SPACING, DISTORT_STRENGTH,
-    EDIT_FIT_RATIO, ERASER_DEFAULT, MAX_ZOOM, MIN_RECT_EDGE, MIN_ZOOM,
-    SEL_FIT_RATIO,
+    CANVAS_OUTSIDE, CHECKER_DARK, CHECKER_LIGHT, CHECKER_STEP, CLIPPING_DEFAULT,
+    DIRECTION_DEFAULT, DISTORT_HARDNESS, DISTORT_SIZE, DISTORT_SPACING,
+    DISTORT_STRENGTH, EDIT_FIT_RATIO, ERASER_DEFAULT, GUIDE_DEFAULT,
+    INTERPOLATION_DEFAULT, MAX_ZOOM, MIN_RECT_EDGE, MIN_ZOOM,
+    PREVIEW_OPACITY_DEFAULT, SEL_FIT_RATIO,
 )
 from ..text_item import TextBlockItem
 from .interaction import InteractionMixin
@@ -71,6 +71,10 @@ class EditorCanvas(
         #: 用户是否手动缩放过。没动过就随窗口 resize 自动"适应窗口"——
         #: ⚠️ 没有它，弹窗刚打开（布局未定）时 fit 算出的脏尺寸会把大图
         #: 缩成指甲盖大小且再也不修正（用户截图报过）。
+        #: 用户手动缩放过？没手动缩放过时窗口 resize 会自动"适应窗口"。
+        #: ⚠️ ``fit()`` **不许**把它清掉（曾经清过 ⇒ 提交后的 fitInView 把
+        #: 闸门打开，之后任何 resize 都自动重 fit，倍率在 0.99/1.11 之间来回
+        #: 跳，看着像"图自己忽大忽小"）。
         self._user_zoomed = False
         #: 「适应窗口」时图片占视口的比例（1.0 = 铺满；见 set_fit_ratio）。
         #: 缺省即留白（EDIT_FIT_RATIO），用户 2026-10-02：「编辑区不要铺满整个
@@ -114,6 +118,11 @@ class EditorCanvas(
         self._xf = QTransform()
         #: 轴心（**选区局部坐标**，显示时经 _xf 映到画布）
         self._xf_pivot = QPointF()
+        #: 用户摆过的轴心（图片坐标，跨"提交/换图"保留）。
+        #: ⚠️ 每次提交都把它重置成新画布中心的话，反复旋转就变成"绕不同点转"，
+        #: 内容越扫越远、画布越撑越大（用户报的"越旋转空白越多、图形越小"）。
+        #: ``None`` = 还没摆过（用当前选区中心）。只在「重置」/「还原」时清空。
+        self._xf_pivot_saved: QPointF | None = None
         #: 发生过任何变换操作（区分"真变换"与"动了手但没动矩阵"）
         self._xf_touched = False
         #: 从轴心缩放/切变（旋转永远绕轴心）
@@ -125,11 +134,67 @@ class EditorCanvas(
         self._xf_rect: QRectF | None = None
         self._xf_region: QImage | None = None
         self._paint_image: QImage | None = None
+        #: 底图左上角在图片坐标里的位置。⚠️ **不再是 (0, 0)**：底图（"纸"）按
+        #: 烘焙画布（``geometry.transform_region``）摆位，整幅旋转时它会被搬到
+        #: 负坐标去（内容转到画外，白纸要跟过去）。
+        self._xf_base_origin = QPointF(0.0, 0.0)
+        #: 底图图元的缩放（``None`` = 原样）。整幅选区时底图是**纯白一片**，
+        #: 用 1×1 白图 + 这个缩放代替"每帧新建一张 12 MP 白图"——
+        #: 白纸换个大小只是改个矩阵，不用重铺像素。
+        self._xf_base_scale: QPointF | None = None
+        #: 建预览那一刻的「方向」选项。方向一变底图就失效（它是按当时的矩阵
+        #: 画的结果），_sync_float 据此整块重建，免得画面停在旧方向上骗人。
+        self._xf_preview_direction = DIRECTION_DEFAULT
+        #: 预览降采样：浮层每帧都要重采样一次，大图按 ``DISTORT_PREVIEW_PIXELS``
+        #: 预算缩一版（``_xf_preview_region`` = 缩过的选区，``scale`` = 倍率）。
+        self._xf_preview_region: QImage | None = None
+        self._xf_preview_scale = 1.0
+        #: 浮层上一次渲染用的矩阵。矩阵没变就不重算像素（悬停/光标变化不重采样）。
+        self._xf_preview_keyframe: QTransform | None = None
+        #: 浮层像素左上角在**预览尺度图片坐标**里的位置（= 变换后选区的外框
+        #: 左上角）。浮层的图元变换 = 「除以预览倍率 + 挪到这儿」，是一步纯
+        #: 仿射——**矩阵只在渲染像素里用一次**（重复套会造成双重变换）。
+        self._xf_preview_origin = QPointF(0.0, 0.0)
+        #: 正在拖动统一变换。拖动中用轻量插值出预览（快），松手后按用户选的
+        #: 插值补一帧高质量预览——「拖动跟手」与「所见即所得」两边都要。
+        self._xf_dragging = False
+        #: 有"已预览、还没烘焙"的变换（松手挂起，离开工具才烘焙）。
+        #: 见 ``TransformMixin.make_transform_pending``。
+        self._xf_pending = False
         #: 变换内容的浮层（跟随 _xf 实时变形，烘焙语义与预览一致）
         self._float_item: QGraphicsPixmapItem | None = None
+        #: 「统一变换」的选项（与 _distort_* 同款：画布持有、面板读写）
+        #: 插值档位：nohalo（默认）/ linear / cubic / nearest——**全部**走
+        #: geometry.warp_placement 的逐像素反向重采样（与烘焙同一条数学）。
+        self._xf_interpolation = INTERPOLATION_DEFAULT
+        #: 剪裁：adjust（画布跟着内容长）/ clip（保持原画布，超出部分裁掉）/ aspect
+        self._xf_clipping = CLIPPING_DEFAULT
+        #: 方向：forward（正常，内容搬到框的位置）/ backward（校正——预览与
+        #: 烘焙都用**反向**矩阵：框摆到歪掉的那块上，掰正它）
+        self._xf_direction = DIRECTION_DEFAULT
+        #: 参考线（构图辅助线）
+        self._xf_guide = GUIDE_DEFAULT
+        #: 预览：显示变换后的内容 / 与原图合成 / 浮层不透明度（%）
+        self._xf_show_preview = True
+        self._xf_compose_preview = True
+        self._xf_preview_opacity = PREVIEW_OPACITY_DEFAULT
+        #: 「限制 (Shift)」与「从轴心 (Ctrl)」的逐动作开关
+        self._xf_constraints: dict[str, bool] = {}
+        self._xf_pivot_ops: dict[str, bool] = {}
+        #: 轴心：吸附（靠近中心/角点自动贴上去）/ 锁定（拖不动）
+        self._xf_snap_pivot = True
+        self._xf_lock_pivot = False
+        #: **当前节点**（统一变换里"亮着/激活"的那一个）：角方框/边中方框/
+        #: 切变菱形/透视小菱形/``pivot``。悬停与按下共用它，"点哪个节点哪个
+        #: 节点亮"就是它；``None`` = 谁都不亮。见 ``_set_handle_focus``。
+        self._focus_handle: str | None = None
         self.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
         self.setFrameShape(QFrame.Shape.NoFrame)
-        self.setBackgroundBrush(QColor(T.SURFACE_SOFT))
+        # ⚠️ **不要**设 ``setBackgroundBrush``：``QGraphicsScene.drawBackground``
+        #    会把视口整个刷成那个颜色，把 ``paintEvent`` 里铺的棋盘格整块盖掉
+        #    （实测：设了就只剩纯色，背景格看不见）。空白处由 paintEvent 的
+        #    棋盘格负责。
+        self.setBackgroundBrush(Qt.BrushStyle.NoBrush)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.NoAnchor)
@@ -145,8 +210,14 @@ class EditorCanvas(
 
 
     # ------------------------------------------------------------ 装图
-    def set_image(self, image: QImage | None) -> None:
-        """装入/替换图片并重新适应窗口（裁剪/撤销等"画布换图"也走这里）。"""
+    def set_image(self, image: QImage | None, refit: bool = True) -> None:
+        """装入/替换图片。
+
+        ``refit=True``（缺省）：重新适应窗口（打开、裁剪、撤销/还原都走这条）。
+        ``refit=False``：**保持当前倍率**——变换提交后画布会长大一点，重新
+        fit 就等于"每次松手都把图缩小一档"，反复旋转会越转越小（用户报的
+        "越旋转图形越小"）。所以提交走这条，只换像素、不动视图。
+        """
         border = getattr(self, "_border", None)
         if border is not None:
             self._scene.removeItem(border)
@@ -175,37 +246,118 @@ class EditorCanvas(
         self._scene.addItem(item)
         # 纸边细框（cosmetic：任何倍率下都是 1 设备像素），白纸与背景才分得开
         self._border = QGraphicsRectItem(item.boundingRect())
-        self._border.setPen(QPen(QColor("#8a93a3"), 0))
+        self._border.setPen(self._border_pen())
         self._scene.addItem(self._border)
         self._item = item
         self.setSceneRect(item.boundingRect())
-        self.fit()
+        if refit:
+            self.fit()
         if self._tool in ("crop", "transform"):
             # 换图（应用/撤销/还原都走这里）后选区重新默认全选：
             # 裁剪/变换的语义都是"从当前原图出发"，不是沿用旧图上的框
             self._rect = QRectF(self.image_rect())
-            self._xf_pivot = self._rect.center()
+            # ⚠️ 轴心**不重置**：它记在 ``_xf_pivot_saved`` 里（用户自己摆的）。
+            #    每次提交都重置成"新画布中心"的话，反复旋转就变成"绕不同点转"，
+            #    内容越扫越远、画布越撑越大（用户报的"四周空白越来越多"）。
+            self._xf_pivot = (QPointF(self._xf_pivot_saved)
+                              if self._xf_pivot_saved is not None
+                              else self._rect.center())
         self._sync_overlay()
 
 
-    def _sync_scene_rect(self) -> None:
-        """把场景矩形扩到"底图 ∪ 变换浮层"。
+    def _border_pen(self) -> QPen:
+        """纸边框的画笔：**一律细实线**（cosmetic ⇒ 任何倍率下都是 1.5px）。
 
-        变换把选区送出原边界时浮层会跑到图片外，场景矩形取并集后才看得见；
-        没有浮层时退化为图片边界。
+        它就是这张纸的原始边界：变换时内容搬走了/转歪了，这圈边**不动**，好当
+        参照。⚠️ 变换工具下**不再**画成虚线（用户 2026-10-09 第二轮报障
+        「同时存在两个框的虚线，颜色不一样」）——虚线只留给跟着内容转的
+        ``_quad`` 变换框，这条实线专门负责标"原始位置和大小"。
+        """
+        pen = QPen(QColor("#5b6472") if self._tool == "transform"
+                   else QColor("#8a93a3"))
+        pen.setCosmetic(True)
+        pen.setWidthF(1.5 if self._tool == "transform" else 1.0)
+        return pen
+
+    def _apply_border_pen(self) -> None:
+        """按当前工具刷新纸边框的画笔（换工具/装图时调）。"""
+        if self._border is not None:
+            self._border.setPen(self._border_pen())
+
+    def _sync_scene_rect(self) -> None:
+        """场景矩形**恒定**＝原图矩形：变换预览期间绝不再改。
+
+        ⚠️⚠️ 用户 2026-10-09 口径：「画布画面是不变的」。旧版把场景矩形扩成
+        「底图 ∪ 变换浮层」——变换把内容送出原边界时矩形一帧帧长大，而视图是
+        ``AlignCenter``：场景矩形变 ⇒ 它的中心变 ⇒ **整幅画面跟着平移**
+        （实测视图中心 (498,699)→(674,664)→(639,842)，``mapFromScene(0,0)``
+        从 (244,91) 漂到 (172,18)）。用户看到的"格子跟图片相互远离、画布一直
+        在漂"就是它。
+
+        "要让浮层跑到画外也看得见"这个初衷**不需要**动场景矩形：场景矩形只管
+        滚动条范围，**不影响绘制**——只要控件覆盖得到，画到矩形外的图元照样
+        画出来（实测：把内容挪到原图矩形右下方 300px 外，控件里像素依然是页面
+        色）。所以这里钉死成原图矩形，画面一动不动。
         """
         if self._item is None:
             return
-        rect = self._item.boundingRect()
-        if self._float_item is not None:
-            rect = rect.united(self._float_item.sceneBoundingRect())
-        self.setSceneRect(rect)
+        rect = QRectF(self.image_rect())
+        if self.sceneRect() != rect:
+            self.setSceneRect(rect)
 
 
     def refresh(self) -> None:
         """像素被就地改过（擦除）后只刷显示，不动缩放与滚动位置。"""
         if self._item is not None and self._image is not None:
             self._item.setPixmap(QPixmap.fromImage(self._image))
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        """铺**「图外素灰 + 图内条纹格」**，再让场景画上去。
+
+        ⚠️ 用户 2026-10-09 口径：「背景是灰色的，**原本图片大小位置固定是条纹
+        格子**，图片旋转不再有白色的区域」。所以条纹格只画在 :meth:`image_rect`
+        （= 这张图的原始地盘）**里面**，且**不随变换走**——图被挪走/转歪之后，
+        原位露出来的就是"格子的老地方"，一眼看出那块已经空了；图外一圈是
+        浅底（``CANVAS_OUTSIDE``，用户同日追加「灰色太突兀」后调浅了）。
+
+        旧版把格子铺满整个视口、中间再拿一张**白纸**盖住：纸按旋转外框重铺，
+        于是"白底一直在涨、看着像在漂"（用户报障）。现在没有纸，也就没有白底。
+
+        格子**相位锚在图片原点**（不是视口原点），滚动/缩放时格子跟着图走，
+        不会在图上"滑来滑去"。
+        """
+        painter = QPainter(self.viewport())
+        area = event.rect()
+        painter.fillRect(area, CANVAS_OUTSIDE)   # 图外那圈浅底（见 consts.CANVAS_OUTSIDE）
+        # ⚠️ 循环必须夹在**可见区域**里：格子按"图片矩形"铺，但放大到 8× 时
+        #    那个矩形在视口坐标里能有几万像素宽，照它迭代＝每次重绘几十万次
+        #    drawRect（实测会卡死）。夹完只剩视口那几十格。
+        board = self.mapFromScene(self.image_rect()).boundingRect()
+        vis = board.intersected(area)
+        if self._image is not None and not vis.isEmpty():
+            origin = self.mapFromScene(QPointF(0.0, 0.0))
+            step = CHECKER_STEP
+            painter.save()
+            painter.setClipRect(vis)
+            painter.fillRect(vis, CHECKER_LIGHT)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(CHECKER_DARK)
+            # 起点按"图片原点往左上取整到格线"，这样第 (0,0) 格永远贴着图角。
+            row = int((vis.top() - origin.y()) // step)
+            y = origin.y() + row * step
+            while y <= vis.bottom():
+                col = int((vis.left() - origin.x()) // step)
+                x = origin.x() + col * step
+                while x <= vis.right():
+                    if (row + col) % 2:
+                        painter.drawRect(QRect(int(x), int(y), step, step))
+                    x += step
+                    col += 1
+                y += step
+                row += 1
+            painter.restore()
+        painter.end()
+        super().paintEvent(event)
 
 
     def replace_image(self, image: QImage) -> None:
@@ -246,15 +398,20 @@ class EditorCanvas(
         self._xf = QTransform()
         self._xf_touched = False
         self._xf_reshape = False  # 调整范围是勾选态，换工具即复位
+        self._focus_handle = None  # 换工具后没有"当前节点"（高亮环一并收起）
         self._hide_text_outline()
         if tool not in ("erase", "distort"):
             self._hide_eraser_ring()
         if tool in ("crop", "transform") \
                 and not self.image_rect().isNull():
             self._rect = QRectF(self.image_rect())
-            self._xf_pivot = self._rect.center()
+            # 轴心：用户摆过就沿用（换工具不该把它甩回中心）
+            self._xf_pivot = (QPointF(self._xf_pivot_saved)
+                              if self._xf_pivot_saved is not None
+                              else self._rect.center())
         else:
             self._rect = None
+        self._apply_border_pen()      # 变换工具下纸边框画成虚线（原图轮廓）
         self._sync_overlay()
         self._sync_cursor()
 
@@ -303,7 +460,6 @@ class EditorCanvas(
             rect = rect.adjusted(-grow_x, -grow_y, grow_x, grow_y)
         self.fitInView(rect, Qt.AspectRatioMode.KeepAspectRatio)
         self._zoom = max(MIN_ZOOM, min(MAX_ZOOM, self.transform().m11()))
-        self._user_zoomed = False
         # ⚠️ 手柄的几何 = 视图像素 ÷ 当前倍率，倍率变了必须重算覆盖层；
         #    不然 set_image 时用脏 viewport 算的小倍率会留下巨型手柄
         #    （离屏渲染抓出来的：手柄有 ~150 视图像素，应为 12）。

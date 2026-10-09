@@ -21,8 +21,8 @@ from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QWidget
 from desktop.components.viewers.image_editor.canvas import EditorCanvas
 from qfluentwidgets import (
-    CaptionLabel, ListWidget, PrimaryPushButton, PushButton, StrongBodyLabel,
-    ToggleButton, ToolButton,
+    CaptionLabel, ListWidget, PrimaryPushButton, PushButton, ScrollArea,
+    StrongBodyLabel, ToggleButton, ToolButton,
 )
 from typing import Any
 
@@ -42,6 +42,7 @@ class DialogHost(QDialog):
     _option_host: QWidget
     _option_host_layout: QVBoxLayout
     _option_page: Any
+    _option_scroll: ScrollArea
     _origin_label: str
     _original: Any
     _redo: list[QImage]
@@ -82,7 +83,7 @@ class DialogHost(QDialog):
     def _commit_text_blocks(self) -> None:
         ...
 
-    def _commit_transform(self) -> None:
+    def _commit_transform(self, label: str = "") -> None:
         ...
 
     def _confirm_overwrite(self) -> bool:
@@ -92,6 +93,9 @@ class DialogHost(QDialog):
         ...
 
     def _finish(self) -> None:
+        ...
+
+    def _flip_transform(self, horizontal: bool = True) -> None:
         ...
 
     @staticmethod
@@ -109,6 +113,14 @@ class DialogHost(QDialog):
         ...
 
     def _on_history_row(self, row: int) -> None:
+        ...
+
+    def _bake_transform_async(self, rect: QRectF, xf: Any, region: Any,
+                              grow: bool, clipping: str,
+                              interpolation: str) -> Any:
+        ...
+
+    def _report_transform_failure(self, exc: BaseException) -> None:
         ...
 
     def _on_stroke_started(self) -> None:
@@ -139,6 +151,10 @@ class DialogHost(QDialog):
         ...
 
     def _reset_all(self) -> None:
+        ...
+
+    @staticmethod
+    def _section(layout: QVBoxLayout, title: str) -> None:
         ...
 
     def _selection(self) -> QRectF | None:

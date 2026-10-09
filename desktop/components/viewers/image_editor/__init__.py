@@ -26,13 +26,18 @@ _confirm_overwrite`）。虚拟预览（区域合成/打印重排/PDF 页）没�
   （再点按钮那一版已删），画布尺寸随之收小、视图重新适应新图。不做截图式
   "拖拽画框"——那是截图的交互，裁剪的语义是"从原图里收出想要的部分"
   （用户 20:05 定）。
-- **变换**（GIMP「统一变换」口径）：**默认选中整幅
-  图**，拖角=缩放（Shift 等比）、拖边=切变、框内拖=移动、框外拖=**绕
-  轴心旋转**（Shift 每 15° 吸附）；轴心圆点可拖动，「从轴心」勾选后
-  缩放/切变也以轴心为锚。勾选「**调整范围**」后沿边拖动**收小要处理的
-  区域**（收完自动回到变换模式）。拖动即实时预览（原区域填白、变换后的
-  内容以浮层显示），**松手即烘焙进像素**——原区域填白、只把选区内容按
-  仿射矩阵画回去，**区域外像素一动不动**。一步一个撤销点。
+- **变换**（GIMP「统一变换」口径，`Shift+T` 那套）：**默认选中整幅图**，
+  手柄按形状分语义——**四角大方框=双轴缩放**（内嵌小菱形=**透视**，单独挪
+  一个角）、**四边中方框=单轴缩放**（只改宽或只改高，对边锚定）、**边上
+  两个菱形=切变**（被抓的边不离开原边线）；框内拖=移动、框外拖=**绕轴心
+  旋转**、轴心圆点可拖。面板照 GIMP 分节：方向 / 插值 / 剪裁 / 预览 /
+  参考线 / 限制(Shift) / 从轴心(Ctrl) / 轴心 / 调整范围 / 翻转。
+  勾选「**调整范围**」后沿边拖动**收小要处理的区域**（收完自动回到变换
+  模式）——小范围修褶皱的入口。拖动即实时预览，**松手即烘焙进像素**——
+  一步一个撤销点。
+  ⚠️ 预览与烘焙走**同一个** `geometry.compose_transform`：拖动期间看到的
+  内容落点 = 松手之后图变成的样子（含「校正（向后）」按反向矩阵掰正的
+  那一档），不会出现"框在这里、内容却落在别处"。
 - **扭曲**（GIMP「扭曲变换」口径）：圆形软笔刷支持移动像素、扩张/收缩、顺/逆时针旋转、平滑与恢复；大小/硬度/强度/间距均可调，支持最近邻/线性/立方插值。实时预览可关闭（松开时回放整笔），高质量预览可在拖动时使用所选插值；一笔一个撤销点。
 - **擦除**：按住左键涂抹把污点**擦成白底**（古籍页面去污点就是涂白）；
   直径在参数面板可调；光标处有**实圈指示**，直径恒等于实际擦除直径
@@ -70,11 +75,19 @@ from .consts import (
     EDIT_FIT_RATIO, PIVOT_VIEW_PX, ROTATE_SNAP_DEG, ERASER_MIN,
     ERASER_MAX, ERASER_DEFAULT, TEXT_MIN, TEXT_MAX, TEXT_DEFAULT,
     TEXT_SWATCHES, TOOLS,
+    CORNER_HANDLES, SIDE_HANDLES, SHEAR_HANDLES, PERSP_HANDLES, SHEAR_AT,
+    SIDE_VIEW_PX, SHEAR_VIEW_PX, PERSP_VIEW_PX, PERSP_INSET_VIEW_PX,
+    HANDLE_HIT_VIEW_PX, EDGE_HANDLE_MIN_VIEW_PX,
+    INTERPOLATIONS, INTERPOLATION_DEFAULT, CLIPPINGS, CLIPPING_DEFAULT,
+    DIRECTIONS, DIRECTION_DEFAULT, GUIDES, GUIDE_RATIOS, GUIDE_DEFAULT,
+    CONSTRAIN_OPS, PIVOT_OPS, PREVIEW_OPACITY_DEFAULT, STEP_FLIP,
 )
 from .dialog import EDITOR_MIN_SIZE, EDITOR_SIZE, ImageEditorDialog
 from .geometry import (
     clamp_rect, rotate_about, scale_about, shear_about, bake_transform,
-    _image_has_alpha, transform_region,
+    compose_transform, warp_placement,
+    _image_has_alpha, transform_region, warp_region, quad_point,
+    quad_to_quad_transform, flip_transform, center_crop_aspect,
     draw_text, _project_on_segment, _segment_hit,
     _dist_to_segment,
 )
@@ -88,9 +101,18 @@ __all__ = [
     "ERASER_MIN", "ERASER_MAX", "ERASER_DEFAULT",
     "TEXT_MIN", "TEXT_MAX", "TEXT_DEFAULT",
     "TEXT_SWATCHES", "TOOLS", "EDITOR_SIZE",
+    "CORNER_HANDLES", "SIDE_HANDLES", "SHEAR_HANDLES", "PERSP_HANDLES",
+    "SHEAR_AT", "SIDE_VIEW_PX", "SHEAR_VIEW_PX", "PERSP_VIEW_PX",
+    "PERSP_INSET_VIEW_PX", "HANDLE_HIT_VIEW_PX",
+    "EDGE_HANDLE_MIN_VIEW_PX", "INTERPOLATIONS", "INTERPOLATION_DEFAULT",
+    "CLIPPINGS", "CLIPPING_DEFAULT", "DIRECTIONS", "DIRECTION_DEFAULT",
+    "GUIDES", "GUIDE_RATIOS", "GUIDE_DEFAULT", "CONSTRAIN_OPS", "PIVOT_OPS",
+    "PREVIEW_OPACITY_DEFAULT", "STEP_FLIP",
     "EDITOR_MIN_SIZE", "clamp_rect", "rotate_about",
     "scale_about", "shear_about", "bake_transform",
-    "_image_has_alpha", "transform_region",
+    "compose_transform", "warp_placement",
+    "_image_has_alpha", "transform_region", "warp_region", "quad_point",
+    "quad_to_quad_transform", "flip_transform", "center_crop_aspect",
     "draw_text", "_project_on_segment",
     "_segment_hit", "_dist_to_segment", "wait_cursor",
     "_BakeWorker", "run_with_progress",
