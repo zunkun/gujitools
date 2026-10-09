@@ -4,7 +4,7 @@
 
 通用工具函数：几何、排序、图像 IO、PDF、YOLO
 
-覆盖 22 个模块、11 个公开类、127 个公开函数/方法（生成于 2026-10-09）。
+覆盖 22 个模块、11 个公开类、128 个公开函数/方法（生成于 2026-10-09）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -26,7 +26,7 @@
 | [`utils.page_layout`](#utilspage_layout) | 2 | 13 |
 | [`utils.path_utils`](#utilspath_utils) | 0 | 3 |
 | [`utils.pdf_draw`](#utilspdf_draw) | 1 | 9 |
-| [`utils.pdf_extract`](#utilspdf_extract) | 0 | 9 |
+| [`utils.pdf_extract`](#utilspdf_extract) | 0 | 10 |
 | [`utils.pdf_stream`](#utilspdf_stream) | 1 | 2 |
 | [`utils.proc_utils`](#utilsproc_utils) | 0 | 1 |
 | [`utils.sort_utils`](#utilssort_utils) | 0 | 2 |
@@ -1622,6 +1622,7 @@ PDF 页面提取：把 PDF 每页渲染成图片并保存。
 | `calculate_zoom(page_width: float, requested_zoom: float=1) -> float` | 计算实际缩放因子，限制最大输出宽度为 6000px。 |
 | `render_zoom(page_width: float, requested_zoom: float=1, dpi: float=DEFAULT_RENDER_DPI) -> float` | 整页渲染实际使用的缩放因子 = max(用户 zoom, DPI 下限)，再受宽度封顶。 |
 | `report_image_size(img_path, width: int, height: int, reporter=None) -> None` | 汇报一页输出图片的尺寸。 |
+| `extract_single_page(pdf_path: str, page_idx: int, out_dir: str, zoom: float=1, ext: str='jpg', quick: bool=True, dpi: float=DEFAULT_RENDER_DPI) -> dict` | 提取**单页**落盘，返回结构化结果（GUI「翻到哪页就提取哪页」用）。 |
 | `process_page_batch(pdf_path: str, page_indices: List[int], out_dir: str, zoom: float, ext: str, quick: bool=True, progress: Optional[dict]=None, reporter=None, dpi: float=DEFAULT_RENDER_DPI) -> List[bool]` | 处理一批 PDF 页面，返回每页的成功状态。 |
 | `render_pages_parallel(pdf_path: str, page_indices: List[int], out_dir: str, zoom: float, ext: str, quick: bool=True, workers: int=4, batch_size: int=4, progress: Optional[dict]=None, reporter=None, dpi: float=DEFAULT_RENDER_DPI) -> List[bool]` | 多**进程**提取指定页，返回每页成功状态。 |
 | `extract_pdf_optimized(pdf_path: str, out_dir: str, zoom: float=1, ext: str='jpg', workers: int=4, quick: bool=True, pages: Optional[str]=None, start: Optional[int]=None, end: Optional[int]=None, batch_size: int=4, clean: bool=False, reporter=None, dpi: float=DEFAULT_RENDER_DPI) -> bool` | 提取 PDF 页面为图片，支持多线程批次处理。 |
@@ -1692,6 +1693,19 @@ PDF 页面提取：把 PDF 每页渲染成图片并保存。
 `[imgsize]` 文本行仅为**兼容保留**。
 
 reporter 缺省为 None —— CLI 不注入，行为与原先「只 print 一行」完全一致。
+
+#### `extract_single_page(pdf_path: str, page_idx: int, out_dir: str, zoom: float=1, ext: str='jpg', quick: bool=True, dpi: float=DEFAULT_RENDER_DPI) -> dict`
+
+提取**单页**落盘，返回结构化结果（GUI「翻到哪页就提取哪页」用）。
+
+复用批量提取的 ``_render_batch_in_worker``（quick 自适应 / DPI 下限 /
+原子写全部同一条实现）——单页提取的产物与批量提取**逐位一致**，浏览过
+的页再跑批量提取也只是幂等覆盖。本函数**不 print、不汇报**：调用方
+（GUI worker 线程）自己负责界面反馈，别把批量那条进度刷屏带进来。
+
+返回::
+
+    {"ok": bool, "path": str | None, "w": int, "h": int, "err": str | None}
 
 #### `process_page_batch(pdf_path: str, page_indices: List[int], out_dir: str, zoom: float, ext: str, quick: bool=True, progress: Optional[dict]=None, reporter=None, dpi: float=DEFAULT_RENDER_DPI) -> List[bool]`
 

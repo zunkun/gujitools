@@ -169,6 +169,20 @@ def image_thumbs_dir(subtask: str, edge: int = THUMBNAIL_EDGE) -> Path:
     return singletask_dir(subtask) / "thumbs" / str(int(edge))
 
 
+def page_thumbs_dir(subtask: str) -> Path:
+    """独立拼图页的**页面效果缩略图实体**目录：``singletask/<子任务>/page_thumbs/``。
+
+    与 :func:`image_thumbs_dir`（页内**单张源图**的缩略图）各归各：这里放
+    按版面合成的**整页**实体——``page1.jpg`` 从第一页起数，映射数据（页号
+    ↔ 文件 ↔ 内容签名）在同目录 ``index.json``（用户 2026-10-09：「缩略图
+    实体其实没有生成落地……组合成拼版图片应该另外放在一个目录中，直接
+    按照 page1 page2 命名，注意做好映射数据」）。任务流程那边写
+    ``tasks/<id>/thumbnails/imposition_pages/``，两边不共用（2026-10-04
+    「singletask 和 taskdetail 不是一回事」）。
+    """
+    return singletask_dir(subtask) / "page_thumbs"
+
+
 # ---------------------------------------------------------------- 序号口径的缩略图
 #
 # 用户 2026-10-04：「我不需要太多缩略图，只保留一份就可以，一切以最终标准处理，

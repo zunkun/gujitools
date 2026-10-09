@@ -23,9 +23,14 @@ def run(ctx) -> None:
 
     app, w, d = ctx.app, ctx.w, ctx.d
 
-    ok("extract 双标签页", d.extract_tabs.count() == 2
-       and d.extract_tabs.tabText(0) == "PDF 预览"
-       and d.extract_tabs.tabText(1) == "提取结果")
+    # ⚠️ 2026-10-09 合并双标签（用户：只保留一份缩略图）：extract 预览是
+    #    ExtractPreviewWidget 单控件——左栏 PDF 页缩略图，切页按需提取显示
+    #    产物；不再有 extract_tabs。
+    from desktop.components.viewers import ExtractPreviewWidget
+
+    ok("extract 单缩略图预览（双标签已合并）",
+       isinstance(d.extract_result_viewer, ExtractPreviewWidget)
+       and getattr(d, "extract_tabs", None) is None)
     ok("步骤条 4 步", len(d.step_bar.buttons) == 4)
     # 控制栈/预览栈第 5 位 = 「图片拼版」伪步骤的占位详情（不占步骤条按钮位）
     ok("控制面板 4 个阶段面板 + 拼版占位", d.control_stack.count() == 5)

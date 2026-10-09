@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 161 个模块、174 个公开类、1171 个公开函数/方法（生成于 2026-10-09）。
+覆盖 163 个模块、175 个公开类、1179 个公开函数/方法（生成于 2026-10-09）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -26,6 +26,7 @@
 | [`desktop.components.imposition.canvas`](#desktopcomponentsimpositioncanvas) | 1 | 26 |
 | [`desktop.components.imposition.confirm_delete`](#desktopcomponentsimpositionconfirm_delete) | 1 | 1 |
 | [`desktop.components.imposition.page_list`](#desktopcomponentsimpositionpage_list) | 1 | 10 |
+| [`desktop.components.imposition.page_thumb`](#desktopcomponentsimpositionpage_thumb) | 0 | 2 |
 | [`desktop.components.imposition.panel`](#desktopcomponentsimpositionpanel) | 1 | 7 |
 | [`desktop.components.imposition.picker`](#desktopcomponentsimpositionpicker) | 1 | 9 |
 | [`desktop.components.imposition.view`](#desktopcomponentsimpositionview) | 1 | 12 |
@@ -48,6 +49,7 @@
 | [`desktop.components.step_bar`](#desktopcomponentsstep_bar) | 2 | 19 |
 | [`desktop.components.task_table`](#desktopcomponentstask_table) | 3 | 10 |
 | [`desktop.components.viewers.edit_sync`](#desktopcomponentsviewersedit_sync) | 0 | 2 |
+| [`desktop.components.viewers.extract_viewer`](#desktopcomponentsviewersextract_viewer) | 1 | 6 |
 | [`desktop.components.viewers.image_editor.bake`](#desktopcomponentsviewersimage_editorbake) | 0 | 2 |
 | [`desktop.components.viewers.image_editor.canvas.core`](#desktopcomponentsviewersimage_editorcanvascore) | 1 | 17 |
 | [`desktop.components.viewers.image_editor.canvas.distortion`](#desktopcomponentsviewersimage_editorcanvasdistortion) | 1 | 1 |
@@ -1575,6 +1577,67 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 
 ---
 
+## `desktop.components.imposition.page_thumb`
+
+源码：[`desktop/components/imposition/page_thumb.py`](../../desktop/components/imposition/page_thumb.py)
+
+拼版页的**"页面效果"缩略图**——按版面把一页的源图缩略图合成一张小图。
+
+为什么要有这一层（用户 2026-10-09 报障）：左列每页的缩略图此前**只贴第一张
+源图**当代表（"一页拼版本来就是两张图并排，给一张代表图已经能认出是哪页"
+——2026-10-04 的口径），但一页拼版是**两张图合成的页面**，只显示一张会让
+用户误以为这页只有半幅（比如 ``3-l`` + ``4-r`` 拼成一页，缩略图里只有
+``3-l``）。缩略图应该按**页面效果**显示——与右侧画布/成品同一版面。
+
+做法：不再单独渲"代表图"，而是把页内**每张源图的缩略图**（复用既有的
+后台缩略图缓存与 worker，解码零新增）按 ``rect`` 相对
+:func:`services.imposition.page_bounds` 的位置**缩放贴到白底**上——
+合成规则与 :func:`services.imposition.compose_page`（成品落盘）同一条：
+白底 + 各图按 rect 摆放 + 外接框紧裁，只是像素密度低得多（显示用）。
+
+旋转口径：``rotation`` 是**顺时针角度**（Qt 口径），与操作画布
+（``canvas.py`` ``painter.rotate``）同向——PIL 那边取负是 PIL 逆时针的
+缘故，这里在 Qt 里画，直接正角即可。
+
+两张函数都给宿主用：
+
+- :func:`page_thumb_signature`：这一页缩略图的**内容签名**（含每张源图
+  缩略图的 ``cacheKey``）——宿主拿它做 memo，源图缩略图没换/版面没动就
+  不重合成（380 页批量回填路径上这是保命符）；
+- :func:`compose_page_thumb`：真合成（白底 QImage，缺哪张源图缩略图就
+  留白——"还没渲"与"渲不出来"由白底兜着，等它到了签名变、自然重合成）。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `page_thumb_signature(page: dict, source_thumbs: Mapping) -> tuple \| None` | 一页拼版缩略图的**内容签名**；空页/不可修复页返回 ``None``。 |
+| `compose_page_thumb(page: dict, source_thumbs: Mapping, edge: int=256) -> QImage \| None` | 一页拼版 → **页面效果**缩略图（白底 QImage）。 |
+
+#### `page_thumb_signature(page: dict, source_thumbs: Mapping) -> tuple | None`
+
+一页拼版缩略图的**内容签名**；空页/不可修复页返回 ``None``。
+
+签名覆盖三件事：页内**有哪些图**、版面（rect/rotation）、每张源图
+缩略图的当前内容（cacheKey）。任何一件变了签名就变——宿主的 memo
+据此决定要不要重合成。
+
+#### `compose_page_thumb(page: dict, source_thumbs: Mapping, edge: int=256) -> QImage | None`
+
+一页拼版 → **页面效果**缩略图（白底 QImage）。
+
+- 外框 = :func:`page_bounds`（所有图外接框的并集，与成品紧裁同一块），
+  等比缩到最长边 ``edge``——左列条目（118×88 固定框）还会再等比缩
+  一次，256 的密度足够；
+- 页内每张源图取它在 ``source_thumbs`` 里的缩略图，按 ``rect`` 相对
+  外框的比例缩放贴到对应位置（``rect`` 存的是源图像素，比例映射即
+  是版面）；有 ``rotation`` 就绕该项中心顺时针转（与画布同口径）；
+- **缺哪张源图的缩略图就留白**（不返回 None）：半张页面效果也比空框
+  诚实，且它到了之后签名变、宿主自然重合成。只有整页非法（没有有效
+  项 / 外框退化）才返回 ``None``。
+
+---
+
 ## `desktop.components.imposition.panel`
 
 源码：[`desktop/components/imposition/panel.py`](../../desktop/components/imposition/panel.py)
@@ -3030,6 +3093,66 @@ source_path 不单独成列，仅作任务名的悬浮提示。
 ``set_cached_thumb``（``RembgPreviewWidget``）：合并一条 + 刷该条；
 ``reload_thumb``（``ImageViewerWidget``）：忘掉旧记忆后重取。两者都没有
 的控件安静返回（调用方通常随后有大图兜底）。
+
+---
+
+## `desktop.components.viewers.extract_viewer`
+
+源码：[`desktop/components/viewers/extract_viewer.py`](../../desktop/components/viewers/extract_viewer.py)
+
+提取预览控件：左侧**一份** PDF 页缩略图，右侧按页显示提取结果。
+
+用户 2026-10-09 定稿（替换任务详情页旧的「PDF 预览 | 提取结果」双标签——
+两个标签各带一套缩略图条，同一本书在界面上出现两份清单）：
+
+- 左侧**只有一份**缩略图：PDF 的每一页（缓存于 ``thumbnails/source``，
+  与导入后台任务共用同一条生产链，见 :class:`PdfViewerWidget.set_pdf`）；
+- 切到第 N 页时：``stages/extract/N.<ext>`` **已存在** → 直接显示提取结果；
+  **不存在** → 后台把这一页**真的提取落盘**（与批量提取同一条渲染实现，
+  :func:`utils.pdf_extract.extract_single_page`），完成后上屏提取结果——
+  「预览即产物」，不再有"预览渲的和提取存的不是同一张图"的两套口径；
+- 批量提取照旧落同一目录：浏览过的页已提好，批量跑只是幂等覆盖（原子写）。
+
+参数（zoom/ext/quick/dpi）由宿主经 :meth:`set_params_provider` 注入——读
+「图片提取」面板当前的表单值，保证单页提取与点「执行本子任务」的批量提取
+产物一致。表单填到一半 ``get_args()`` 抛 ``ValueError`` 时按默认参数兜底。
+
+编辑链：产物是磁盘上的真实文件，放大弹窗/右键对**已提取**的页给
+``edit_path``（右键「编辑图片」覆盖回写）；未提取的页仍是矢量页，只有
+「预览图片」。回写后经 :attr:`image_saved` 通知宿主（登记 sizes.json、
+重生成页缩略图、同步各查看器）——与旧 ``ImageViewerWidget`` 的信号同形，
+宿主侧接线不变。
+
+### `class ExtractPreviewWidget(PdfViewerWidget)`
+
+「图片提取」步骤的预览：PDF 页缩略图 + 按页按需提取的产物大图。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(placeholder: str='暂无 PDF', parent=None)` | — |
+| `set_extract_dir(extract_dir: Path \| None) -> None` | 记录/刷新产物目录；当前页已有产物就**立即**切换显示。 |
+| `set_params_provider(provider: Callable[[], dict] \| None) -> None` | 注入提取参数来源（宿主读「图片提取」面板表单）。 |
+| `extract_path_for(page: int) -> Path \| None` | 第 page 页（0-based）的产物路径；没有产物目录时为 None。 |
+| `set_pdf(path, placeholder=None, cache_dir=None) -> None` | 换 PDF：提取态全部作废（在飞的提取结果按代际丢弃）。 |
+| `refresh_page(path_text: str) -> None` | 某页产物文件被覆盖（编辑器完成/缩略图重生成）：重载当前页大图。 |
+
+##### `set_extract_dir(extract_dir: Path | None) -> None`
+
+记录/刷新产物目录；当前页已有产物就**立即**切换显示。
+
+批量提取的轮询（``runner._poll_extract_results``）与每次进本步骤的
+``_refresh_preview`` 都走这里：文件一出现，大图马上从"等提取"换成
+提取结果。还没有产物的页**不打断**当前显示——提取只由「切页」触发，
+刷新不该替用户发起提取。
+
+##### `refresh_page(path_text: str) -> None`
+
+某页产物文件被覆盖（编辑器完成/缩略图重生成）：重载当前页大图。
+
+``show_edited_image`` 在本控件上没有 ``apply_edited_image``，会退到
+这里；按路径匹配**当前页的产物**才动，其余页不打扰。
 
 ---
 
@@ -5627,6 +5750,7 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 | 名称 | 值 |
 | --- | --- |
 | EDITED_DIRNAME | `"edited"` |
+| THUMB_REFRESH_DEBOUNCE_MS | `2000` |
 
 ### `class ImpositionModulePage(ModulePage)`
 
@@ -6250,6 +6374,7 @@ bool 反序列化整份是浪费（列表页的 ``store.imposition_enabled`` 当
 | --- | --- |
 | COMPOSE_DEBOUNCE_MS | `500` |
 | EDIT_COMMIT_DEBOUNCE_MS | `250` |
+| THUMB_REFRESH_DEBOUNCE_MS | `2000` |
 
 ### `class ImpositionLayoutMixin`
 
@@ -6398,7 +6523,10 @@ resize 子控件再 show），在这里重铺一次就对了。⚠️ 别改成"
 任务详情页：顶部步骤条 + 左侧多标签预览 + 右侧阶段控制面板。
 
 预览区按阶段组织：
-- extract：[PDF 预览 | 提取结果] 双标签页；
+- extract：**单缩略图**预览——左栏是 PDF 每页一份缩略图，切到某页时
+  该页的提取产物已存在就显示产物，没有就后台单页提取落盘
+  （``stages/extract``，与批量提取同一条实现）后显示（用户 2026-10-09：
+  不再分「PDF 预览 | 提取结果」双标签）；
 - detect：图片预览，叠加显示每张图的检测框位置；
 - rembg：原图 / 去底结果对比；
 - print：输出 PDF 预览。

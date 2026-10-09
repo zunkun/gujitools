@@ -64,7 +64,7 @@ def run(ctx) -> None:
     # 抢着删会撞上 WinError 32（另一个程序正在使用此文件）
     from tests.selftests._context import pump
 
-    d.source_pdf_viewer.set_pdf(None)
+    d.extract_result_viewer.set_pdf(None)
     pump(app, times=15)
 
     # ---- 备份被误删、源还在：自愈补一份 ----

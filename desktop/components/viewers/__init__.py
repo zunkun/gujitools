@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 #: ``__getattr__``，缺这一段会把下面 ``_LAZY`` 的名字全当成未定义。
 #: **只影响类型检查**——运行时的惰性加载照旧（启动期不会拉进任何查看器）。
 if TYPE_CHECKING:
+    from desktop.components.viewers.extract_viewer import ExtractPreviewWidget
     from desktop.components.viewers.image_view import ImageView
     from desktop.components.viewers.image_viewer import ImageViewerWidget
     from desktop.components.viewers.image_zoom_dialog import ImageZoomDialog
@@ -29,6 +30,7 @@ if TYPE_CHECKING:
     from desktop.components.viewers.thumb_strip import ThumbStrip
 
 __all__ = [
+    "ExtractPreviewWidget",
     "ImageView",
     "ImageZoomDialog",
     "ImageViewerWidget",
@@ -39,6 +41,9 @@ __all__ = [
 ]
 
 _LAZY = {
+    "ExtractPreviewWidget": (
+        "desktop.components.viewers.extract_viewer", "ExtractPreviewWidget",
+    ),
     "ImageView": ("desktop.components.viewers.image_view", "ImageView"),
     "ImageZoomDialog": (
         "desktop.components.viewers.image_zoom_dialog", "ImageZoomDialog",

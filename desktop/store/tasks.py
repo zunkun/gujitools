@@ -827,6 +827,18 @@ class TaskMixin:
         """
         return self.task_dir(task_id) / "thumbnails" / "imposition"
 
+    def imposition_page_thumbs_dir(self, task_id: str) -> Path:
+        """拼版**页面效果缩略图实体**目录：``tasks/<id>/thumbnails/imposition_pages/``。
+
+        与 :meth:`imposition_thumbnails_dir`（页内**单张源图**的缩略图）
+        不是一层：这里放按版面合成的**整页**实体，``page1.jpg`` 从第一页
+        起数，映射数据（页号 ↔ 文件 ↔ 内容签名）在同目录 ``index.json``
+        （用户 2026-10-09：「缩略图实体其实没有生成落地……组合成拼版图片
+        应该另外放在一个目录中，直接按照 page1 page2 命名，注意做好映射
+        数据」）。随任务目录走，``delete_task`` 一并清掉。
+        """
+        return self.task_dir(task_id) / "thumbnails" / "imposition_pages"
+
     def copy_source_to_task(self, task_id: str, source_path: Path) -> Path:
         """导入时在任务目录下保留一份源文件副本（原子落地）。
 

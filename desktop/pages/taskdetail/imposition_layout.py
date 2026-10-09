@@ -45,6 +45,10 @@ if TYPE_CHECKING:
 COMPOSE_DEBOUNCE_MS = 500
 #: 旋转组件（滑块/输入框）连续吐增量 → 停顿多久算"改完了"再统一落盘
 EDIT_COMMIT_DEBOUNCE_MS = 250
+#: 版面改动 → 左列**单页缩略图**重合成的防抖（用户 2026-10-09：拖动松手/
+#: 面板调整/编辑回写之后几秒内，缩略图要跟上页面效果）。比合成防抖长
+#: 一截：拖动中签名每帧都在变，等真的停手了再合成一次就够。
+THUMB_REFRESH_DEBOUNCE_MS = 2000
 
 
 class ImpositionLayoutMixin:
@@ -66,6 +70,8 @@ class ImpositionLayoutMixin:
         _refresh_print_source: Callable[..., None]
         _save_imposition_pages: Callable[..., None]
         _on_page_image_saved: Callable[..., None]
+        #: 同级 Mixin（imposition_pages）提供的页面缩略图实体管理者
+        _imposition_page_thumb_manager: Callable[..., Any]
         imposition_active: Callable[[], bool]
         imposition_effective: Callable[[], bool]
         imposition_has_pages: Callable[[], bool]
@@ -174,6 +180,7 @@ class ImpositionLayoutMixin:
         self.store.save_imposition_doc(self.task_id, doc)
         view.update_current_items(reset)
         self._schedule_imposition_compose()
+        self._schedule_imposition_page_thumb(index)
         self._update_imposition_status(index)
         self.log_view.append(f"第 {index + 1} 页拼版已复位为默认并排版面。")
 
@@ -577,6 +584,7 @@ class ImpositionLayoutMixin:
         doc["pages"] = pages
         self.store.save_imposition_doc(self.task_id, doc)
         self._schedule_imposition_compose()
+        self._schedule_imposition_page_thumb(index)
         self._update_imposition_status(index)
 
     def _update_imposition_status(self, index: int) -> None:
@@ -624,6 +632,35 @@ class ImpositionLayoutMixin:
         self._sync_imposition_rotation_ui()
 
     # ------------------------------------------------------------- 合成落盘
+    def _schedule_imposition_page_thumb(self, index: int) -> None:
+        """版面改动 → 防抖后**只重合成这一页**的左列缩略图（用户 2026-10-09）。
+
+        拖动/缩放/旋转/复位落盘后，左列那条缩略图还是旧版面——攒下页号、
+        停手 :data:`THUMB_REFRESH_DEBOUNCE_MS` 后单页重合成（memo 判据：
+        版面没真变就原样回缓存里的同一张，不白跑）。页数增删/排序走
+        ``_save_imposition_pages`` → ``_refresh_imposition_page_thumbs``
+        的整列刷新，不经这里。
+        """
+        dirty = getattr(self, "_imposition_thumb_dirty", None)
+        if dirty is None:
+            dirty = self._imposition_thumb_dirty = set()
+        dirty.add(int(index))
+        timer = getattr(self, "_imposition_thumb_timer", None)
+        if timer is not None:
+            timer.start()
+
+    def _refresh_imposition_dirty_page_thumbs(self) -> None:
+        """防抖到期：把攒下的那几页**单页**重生成缩略图实体并贴回左列。"""
+        view = getattr(self, "imposition_view", None)
+        dirty = getattr(self, "_imposition_thumb_dirty", None)
+        if view is None or not dirty:
+            return
+        self._imposition_thumb_dirty = set()
+        pages = self._imposition_pages()
+        manager = self._imposition_page_thumb_manager()
+        if manager is not None:
+            manager.invalidate(sorted(dirty), pages)
+
     def _schedule_imposition_compose(self) -> None:
         """版面/页数变化 → 防抖后**后台**把拼版页重写到 stages/imposition。"""
         if not getattr(self, "task_id", None):
@@ -651,6 +688,14 @@ class ImpositionLayoutMixin:
         self._imposition_edit_timer.setSingleShot(True)
         self._imposition_edit_timer.setInterval(EDIT_COMMIT_DEBOUNCE_MS)
         self._imposition_edit_timer.timeout.connect(self._commit_imposition_edit)
+        # 左列单页缩略图的重合成计时器（版面停手后几秒内跟上页面效果）
+        self._imposition_thumb_dirty: set[int] = set()
+        self._imposition_thumb_timer = QTimer(cast(QWidget, self))
+        self._imposition_thumb_timer.setSingleShot(True)
+        self._imposition_thumb_timer.setInterval(THUMB_REFRESH_DEBOUNCE_MS)
+        self._imposition_thumb_timer.timeout.connect(
+            self._refresh_imposition_dirty_page_thumbs
+        )
 
     def _compose_imposition_async(self) -> None:
         """后台合成（不阻塞界面）：拖动版面时会被反复触发。"""

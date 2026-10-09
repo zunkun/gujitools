@@ -21,7 +21,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, cast
+from typing import TYPE_CHECKING, Any, Callable
 
 from desktop.services.imposition import (
     ITEMS_PER_PAGE, append_item_to_page, auto_impose_pages, cn_page_label,
@@ -412,155 +412,77 @@ class ImpositionPagesMixin:
         self.log_view.append("已清空全部拼版页。")
 
     # ------------------------------------------------------------- 左列缩略图
-    def _imposition_page_reps(self, pages: list) -> list[str]:
-        """每页的**代表图**（第一张源图路径）；空页位是 ``""``。
+    def _imposition_page_thumb_manager(self):
+        """页面缩略图**实体**的管理者（懒建；换任务自动换目录重读映射）。"""
+        from desktop.components.imposition.page_thumb import PageThumbManager
+        from desktop.utils.files import THUMBNAIL_EDGE
 
-        一页拼版本来就"两张图并排"，给一张代表图已经能认出是哪页。
-        """
-        reps: list[str] = []
-        for page in pages or []:
-            files = [item.get("file") for item in page.get("items") or []]
-            reps.append(str(next((f for f in files if f), "")))
-        return reps
+        if not self.task_id:
+            return None
+        manager = getattr(self, "_page_thumb_mgr", None)
+        if manager is None:
+            manager = PageThumbManager(
+                self.store.imposition_page_thumbs_dir(self.task_id),
+                THUMBNAIL_EDGE, self.run_worker, parent=self,
+            )
+            manager.page_ready.connect(self._on_imposition_page_thumb_ready)
+            self._page_thumb_mgr = manager
+        else:
+            target = self.store.imposition_page_thumbs_dir(self.task_id)
+            if manager.directory != target:
+                manager.bind(target)
+        return manager
+
+    def _on_imposition_page_thumb_ready(self, index: int, pixmap) -> None:
+        """一页的实体缩略图生成完：**只贴那一条**（反 O(N²) 护栏，2026-10-06）。"""
+        view = getattr(self, "imposition_view", None)
+        if view is not None and pixmap is not None and not pixmap.isNull():
+            view.set_thumb_at(index, pixmap)
 
     def _refresh_imposition_page_thumbs(self, pages: list) -> None:
-        """左列每页的缩略图：已渲好的直接贴，没渲过的起后台 pass 补。
+        """左列每页的缩略图：**落盘实体**（页面效果，``pageN.jpg``）。
 
-        用户 2026-10-04：「任务流程里拼板缩略图没显示，只看到占位」——这条
-        链此前**从没喂过缩略图**（占位符永远在）。每页取第一张源图当代表，
-        渲进**任务目录**的 ``thumbnails/imposition/``，键是"去后缀+大小+路径
-        指纹"，换图自然换键。
+        用户 2026-10-09 两轮报障的合流：①一页拼版是两张图合成的页面，旧
+        口径"每页取第一张源图当代表"只显示半幅；②内存合成口径页内某张
+        源图缩略图没到就出半张、且回填反查表只登记每页第一张（0002 任务
+        实测 3-l·4-r 页只有半边有内容）。现在改**实体**口径：按版面把整页
+        合成一张小图落盘（``tasks/<id>/thumbnails/imposition_pages/
+        page<N>.jpg`` + ``index.json`` 映射），UI 只贴实体文件；签名（版面
+        + 源图文件指纹）不匹配的页后台重生成。命中的页直接读盘——重进
+        任务零生成。
 
-        ⚠️ 与独立拼图页（``modules/imposition/page.py``）**不是一回事**：
-        组件与 worker 共用，**缓存根各归各**——独立区写
-        ``singletask/imposition/``，任务流程写 ``tasks/<id>/thumbnails/
-        imposition/``（用户 2026-10-04 明确）。
-
-        ⚠️ ``reps`` **在这里算一次并缓存**：回填回调（:_on_imposition_source_thumb）
-        此前每收一张缩略图就重算一次，而它为此**重读整份
-        ``drafts/imposition.json``**（380 页就是 97KB × 380 次 ≈ 2.8 秒全卡在
-        主线程）。
+        ⚠️ 与独立拼图页（``modules/imposition/page.py``）共用管理者组件，
+        但**缓存根各归各**（用户 2026-10-04 明确「singletask 和 taskdetail
+        不是一回事」）。
         """
         view = getattr(self, "imposition_view", None)
         if view is None:
             return
-        thumbs = getattr(self, "_imposition_source_thumbs", None)
-        if thumbs is None:
-            thumbs = self._imposition_source_thumbs = {}
-        reps = self._imposition_page_reps(pages)
-        # ⚠️ 缓存"代表图 → 条目下标"的反查表，回填时 O(1) 定位，不必重算 reps
-        self._imposition_rep_index = {
-            rep: i for i, rep in enumerate(reps) if rep
-        }
-        by_index = [thumbs.get(rep) if rep else None for rep in reps]
+        manager = self._imposition_page_thumb_manager()
+        if manager is None:
+            return
+        manager.retain(len(pages))
+        by_index = [manager.pixmap_for(i, page) for i, page in enumerate(pages)]
         view.set_page_thumbs(by_index)
-        missing = list(dict.fromkeys(r for r in reps if r and r not in thumbs))
-        if missing:
-            self._load_imposition_source_thumbs(missing)
+        manager.flush()
 
     def _drop_imposition_source_thumb(self, path_text: str) -> None:
-        """某个源图文件被覆盖后：丢掉左列那条**内存**缩略图并重渲那一条。
+        """某个源图被覆盖（编辑落盘）：含它的页重新生成缩略图实体。
 
-        ⚠️⚠️ ``_imposition_source_thumbs`` 的键是"代表图路径"，命中只看路径
-        ——同一个路径换了内容它照旧贴回旧 ``QPixmap`` ⇒ 左列那片缩略图**永远
-        停在编辑前的样子**（用户 2026-10-08 报：从预览弹窗里编辑完，关掉
-        弹窗拼版页还是老图；画布那条链是好的，就这里没跟上）。
-
-        删掉命中项后交给 :meth:`_refresh_imposition_page_thumbs` 走它既有的
-        "缺的补渲"——磁盘缓存键含文件指纹（大小/路径），换图自然换键，
-        所以重渲拿到的是新图；没删干净也只会重渲一次，不会贴错。
+        ⚠️ 签名里带**源图文件指纹**（大小 + mtime）：覆盖后签名必然变
+        ⇒ 把含这个路径的页排进重生成批次即可，不用逐张清内存缓存（旧
+        内存口径的坑：同路径换内容照旧贴回旧 QPixmap——用户 2026-10-08
+        报"编辑完左列还是老图"）。路径形态（斜杠/大小写）仍走
+        :func:`same_path` 判等。
         """
-        thumbs = getattr(self, "_imposition_source_thumbs", None)
-        if not thumbs:
-            return
-        stale = [key for key in thumbs if same_path(key, path_text)]
-        for key in stale:
-            thumbs.pop(key, None)
-        if stale:
-            self._refresh_imposition_page_thumbs(self._imposition_pages())
-
-    def _load_imposition_source_thumbs(self, images: list[str]) -> None:
-        """后台把这批源图的缩略图渲进**任务目录**缓存，回来后贴进左列。
-
-        ⚠️ 缓存归属 ``tasks/<id>/thumbnails/imposition/``（任务删除时随任务
-        目录一并清掉），**不写**独立区的 ``singletask/imposition/``——两边
-        虽共用 ``ImageThumbCacheWorker`` 与条目组件，但不是一回事（用户
-        2026-10-04 明确「singletask 的缓存目录是 singletask，taskdetail 的
-        缓存目录是 tasks」）。
-        """
-        from desktop.utils.files import THUMBNAIL_EDGE
-        from desktop.workers import ImageThumbCacheWorker, connect_queued
-
-        # 缓存落在**任务目录**下，没有任务就没有落点（调用方都在任务态进这里）
-        task_id = self.task_id
-        if not task_id:
-            return
-        cache_dir = self.store.imposition_thumbnails_dir(task_id)
-        self.run_worker(
-            lambda: ImageThumbCacheWorker(
-                # list 不变型：清单是 list[str]，worker 收 list[Path | str]
-                cast("list[Path | str]", images), cache_dir, edge=THUMBNAIL_EDGE
-            ),
-            lambda worker, thread: (
-                connect_queued(
-                    self, worker.thumbnail_ready,
-                    lambda index, image, _cached, items=list(images): (
-                        self._on_imposition_source_thumb(index, image, items)
-                    ),
-                    thread,
-                ),
-                worker.completed.connect(thread.quit),
-                worker.failed.connect(thread.quit),
-            ),
-        )
-
-    def _on_imposition_source_thumb(
-        self, index: int, image, images: list[str]
-    ) -> None:
-        """一张源图缩略图就绪：存起来并**只贴刚到的那一条**（不再起 worker）。
-
-        ⚠️⚠️ **绝不能在这里整列重灌**（用户 2026-10-06 报"拼板阶段程序卡死"）。
-        此前每收一张缩略图就做两件全量的事：
-
-        1. ``_imposition_pages()`` → **重读并解析整份
-           ``drafts/imposition.json``**（380 页 = 97KB，7.4ms/次）；
-        2. ``set_page_thums(整列 N 张)`` → 对**每一个**条目重跑一次
-           ``set_thumb``，而它每次都重新做 ``pixmap.scaled(SmoothTransformation)``
-           且**没有"图没变就跳过"的早退**。
-
-        于是 380 张到达 × 380 条重灌 ≈ **7.2 万次带缩放的重贴**，全在主线程、
-        事件循环一次都转不到。离屏实测**主线程被连续占住 27.5 秒**（其中
-        ``set_page_thumbs`` 24.7s + 读 JSON 2.8s）——用户看到的就是"程序卡死"。
-        而且 380 张全部命中磁盘缓存时信号挤成一团连续到达，冻结更狠。
-
-        现在只贴刚到的那一条（``set_thumb_at``），定位走缓存的反查表。
-        """
-        from PySide6.QtGui import QPixmap
-
-        if image is None or getattr(image, "isNull", lambda: True)():
-            return
-        if not (0 <= index < len(images)):
-            return
-        pixmap = QPixmap.fromImage(image)
-        if pixmap.isNull():
-            return
-        thumbs = getattr(self, "_imposition_source_thumbs", None)
-        if thumbs is None:
-            thumbs = self._imposition_source_thumbs = {}
-        rep = images[index]
-        thumbs[rep] = pixmap
-        view = getattr(self, "imposition_view", None)
-        if view is None:
-            return
-        rep_index = getattr(self, "_imposition_rep_index", None)
-        if rep_index is None:
-            # 没有快照（例如缩略图是本轮之外补回来的）：整列灌一次兜底
-            reps = self._imposition_page_reps(self._imposition_pages())
-            view.set_page_thumbs(
-                [thumbs.get(r) if r else None for r in reps]
+        pages = self._imposition_pages()
+        hits = [
+            index for index, page in enumerate(pages)
+            if any(
+                same_path(str(item.get("file") or ""), path_text)
+                for item in page.get("items") or []
             )
-            return
-        slot = rep_index.get(rep)
-        if slot is None:
-            return  # 这一页已经不在当前清单里（用户中途删了/改了流程）
-        view.set_thumb_at(slot, pixmap)
+        ]
+        manager = self._imposition_page_thumb_manager()
+        if hits and manager is not None:
+            manager.invalidate(hits, pages)

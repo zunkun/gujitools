@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any, Callable, cast
 
 from PySide6.QtCore import QObject, QProcess, QTimer
 from PySide6.QtWidgets import (
-    QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QStackedWidget, QTabWidget,
+    QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QStackedWidget,
     QVBoxLayout, QWidget,
 )
 from qfluentwidgets import (
@@ -31,7 +31,7 @@ from desktop.components.imposition import ImpositionPanel, ImpositionViewWidget
 from desktop.components.log_panel import LogPanel
 from desktop.components.step_bar import StepBar
 from desktop.components.viewers import (
-    ImageViewerWidget, PdfViewerWidget,
+    ExtractPreviewWidget, ImageViewerWidget,
     PrintPreviewWidget, RembgPreviewWidget,
 )
 from desktop.steps.spec import FLOW_STAGES
@@ -139,6 +139,9 @@ class DetailViewMixin:
         _detect_image_selected: Callable[..., None]
         _save_manual_boxes: Callable[..., None]
         _on_page_image_saved: Callable[..., None]
+        # 单页按需提取（ExtractPreviewWidget，2026-10-09）
+        _on_single_extract_saved: Callable[[str], None]
+        _extract_params: Callable[[], dict]
         _print_thumb_provider: Callable[..., Any]
         _save_print_order: Callable[..., None]
         _insert_print_images: Callable[..., None]
@@ -576,23 +579,22 @@ class DetailViewMixin:
 
     def _build_preview_stack(self) -> QStackedWidget:
         self.preview_stack = QStackedWidget()
-        # extract：双标签页
-        self.extract_tabs = QTabWidget()
-        self.source_pdf_viewer = PdfViewerWidget("尚未导入 PDF")
-        self.source_pdf_viewer.page_count_changed.connect(self._pdf_page_count_ready)
-        self.extract_tabs.addTab(self.source_pdf_viewer, "PDF 预览")
-        self.extract_result_viewer = ImageViewerWidget(
-            editable=True, empty_hint="尚未提取，点击右侧「执行本子任务」",
-            thumb_provider=self._page_thumb_for,
-        )
-        self.extract_result_viewer.current_changed.connect(self._image_selected)
-        self.extract_result_viewer.delete_requested.connect(self.delete_selected_page)
-        self.extract_result_viewer.insert_requested.connect(self.insert_pages)
-        # 「选文件夹」：文件对话框选不了目录，整目录导入必须走这条（2026-10-06）
-        self.extract_result_viewer.insert_folder_requested.connect(
-            self.insert_pages_from_folder)
-        self.extract_tabs.addTab(self.extract_result_viewer, "提取结果")
-        self.preview_stack.addWidget(self.extract_tabs)
+        # extract：**单缩略图**预览（用户 2026-10-09：不再分「PDF 预览 |
+        # 提取结果」双标签——那是一本书两份清单）。左栏是 PDF 每页一份
+        # 缩略图；切到某页时该页的提取产物已存在就显示产物，没有就后台
+        # 单页提取落盘（stages/extract）后显示。产物目录与参数由宿主注入。
+        self.extract_result_viewer = ExtractPreviewWidget("尚未导入 PDF")
+        self.extract_result_viewer.page_count_changed.connect(
+            self._pdf_page_count_ready)
+        # 单页提取落盘完成 → 宿主登记 sizes.json / 重建页面清单
+        self.extract_result_viewer.extract_saved.connect(
+            self._on_single_extract_saved)
+        # 右键「编辑图片」覆盖了产物文件 → 与旧 ImageViewerWidget 同形接线
+        self.extract_result_viewer.image_saved.connect(
+            self._on_page_image_saved)
+        # 单页提取参数跟「图片提取」面板的当前表单走（与批量提取一致）
+        self.extract_result_viewer.set_params_provider(self._extract_params)
+        self.preview_stack.addWidget(self.extract_result_viewer)
 
         # detect：图片 + 检测框
         # ⚠️ 空态文案**不写死"请先完成提取"**（用户2026-10-06）：自定义流程
@@ -613,7 +615,6 @@ class DetailViewMixin:
             self.insert_pages_from_folder)
         self.detect_viewer.boxes_edited.connect(self._save_manual_boxes)
         # 编辑器「完成」覆盖原图后：同步 sizes.json/缩略图并刷新显示
-        self.extract_result_viewer.image_saved.connect(self._on_page_image_saved)
         self.detect_viewer.image_saved.connect(self._on_page_image_saved)
         self.preview_stack.addWidget(self.detect_viewer)
 

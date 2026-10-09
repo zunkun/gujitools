@@ -31,6 +31,9 @@ if TYPE_CHECKING:
     from desktop.workers.imposition_worker import (
         ImpositionComposeWorker, ImpositionPagePreviewWorker,
     )
+    from desktop.workers.imposition_page_thumb_worker import (
+        ImpositionPageThumbWorker,
+    )
     from desktop.workers.preview_worker import PreviewWorker, close_cached_documents
     from desktop.workers.rembg_live_worker import RembgLiveWorker
     from desktop.workers.source_thumbnails_worker import SourceThumbnailsWorker
@@ -44,6 +47,7 @@ __all__ = [
     "ImageListWorker",
     "ImpositionComposeWorker",
     "ImpositionPagePreviewWorker",
+    "ImpositionPageThumbWorker",
     "PreviewWorker",
     "RembgLiveWorker",
     "SerialJobQueue",
@@ -77,6 +81,10 @@ _LAZY = {
     "ImpositionPagePreviewWorker": (
         "desktop.workers.imposition_worker",
         "ImpositionPagePreviewWorker",
+    ),
+    "ImpositionPageThumbWorker": (
+        "desktop.workers.imposition_page_thumb_worker",
+        "ImpositionPageThumbWorker",
     ),
     "PreviewWorker": ("desktop.workers.preview_worker", "PreviewWorker"),
     "RembgLiveWorker": ("desktop.workers.rembg_live_worker", "RembgLiveWorker"),

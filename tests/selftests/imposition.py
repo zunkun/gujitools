@@ -109,6 +109,18 @@ def _count_non_white(image, tol: int = 12, step: int = 2) -> int:
     return total
 
 
+def _px_near(image, x: int, y: int, rgb, tol: int = 24) -> bool:
+    """图上 (x, y) 一个像素是否接近 ``rgb``（合成缩略图的左右半判色用）。"""
+    if image is None or image.isNull():
+        return False
+    if not (0 <= x < image.width() and 0 <= y < image.height()):
+        return False
+    c = image.pixelColor(x, y)
+    return (abs(c.red() - rgb[0]) <= tol
+            and abs(c.green() - rgb[1]) <= tol
+            and abs(c.blue() - rgb[2]) <= tol)
+
+
 def _bar_of(page, step: str) -> int:
     """查某一步在步骤条里的格序；图里没有这一格就直接断（别静默切别的格）。"""
     index = page.bar_index_of_step(step)
@@ -209,6 +221,62 @@ def run(ctx) -> None:
         ok("中文页码标签",
            [S.cn_page_label(i) for i in (0, 1, 9, 10, 19)] ==
            ["第一页", "第二页", "第十页", "第十一页", "第二十页"])
+
+        # ---------------- 1b. 页面效果缩略图**实体**（用户 2026-10-09）--------
+        # 一页拼版是两张图的合成，缩略图必须按**页面效果**显示且**实体落盘**
+        # （用户拍板：另放目录、按 page1 page2 命名、做好映射数据）。
+        import os as _os
+
+        from desktop.components.imposition.page_thumb import (
+            compose_page_thumb_from_files, load_page_index,
+            page_signature, thumb_file_name, write_page_index,
+        )
+
+        _pt = compose_page_thumb_from_files(made, edge=128)
+        ok("页面效果缩略图：能从源图文件合成出来（非空、横向对开）",
+           _pt is not None and not _pt.isNull()
+           and _pt.width() > _pt.height(),
+           f"{None if _pt is None else (_pt.width(), _pt.height())}")
+        ok("页面效果缩略图：左半是左槽图、右半是右槽图（像素级）",
+           _pt is not None
+           and _px_near(_pt, _pt.width() // 4, _pt.height() // 2, GREEN)
+           and _px_near(_pt, _pt.width() * 3 // 4, _pt.height() // 2, RED),
+           "左半应 GREEN / 右半应 RED")
+        ok("页面效果缩略图：坏页返回 None",
+           compose_page_thumb_from_files({"items": []}) is None)
+
+        # 内容签名（文件指纹口径）：版面/源图文件任一变了都得变
+        _sig0 = page_signature(made)
+        ok("内容签名：同一页 ⇒ 签名稳定",
+           _sig0 is not None and _sig0 == page_signature(made))
+        _moved_page = S.normalize_page(made)
+        assert _moved_page is not None
+        _moved_page["items"][0]["rect"][0] += 7.0
+        ok("内容签名：版面动了 ⇒ 签名变（拖图后缩略图要跟上）",
+           page_signature(_moved_page) != _sig0)
+        _st_b = b.stat()
+        _os.utime(b, ns=(_st_b.st_atime_ns, _st_b.st_mtime_ns + 1_000_000))
+        ok("内容签名：源图文件被覆盖（mtime 变）⇒ 签名变（编辑覆盖后要重生成）",
+           page_signature(made) != _sig0)
+        _os.utime(b, ns=(_st_b.st_atime_ns, _st_b.st_mtime_ns))
+        ok("内容签名：源图复原 ⇒ 签名复原", page_signature(made) == _sig0)
+        ok("内容签名：空页返回 None", page_signature({"items": []}) is None)
+
+        # 映射数据：pageN 命名 + index.json 往返（用户要求"做好映射数据"）
+        _idx_dir = tmp / "page_thumbs_probe"
+        ok("映射数据：页号（0 基）→ page1.jpg 从第一页起数",
+           thumb_file_name(0) == "page1.jpg"
+           and thumb_file_name(9) == "page10.jpg")
+        ok("映射数据：写入成功（index.json 落盘）",
+           write_page_index(_idx_dir, {0: _sig0, 1: "abc"}, 256)
+           and (_idx_dir / "index.json").is_file())
+        ok("映射数据：读回一致（页号 ↔ 签名）",
+           load_page_index(_idx_dir, 256) == {0: _sig0, 1: "abc"})
+        ok("映射数据：边长不符 ⇒ 当空表（整批重生成）",
+           load_page_index(_idx_dir, 512) == {})
+        (_idx_dir / "index.json").write_text("垃圾", encoding="utf-8")
+        ok("映射数据：坏档 ⇒ 当空表（不抛异常）",
+           load_page_index(_idx_dir, 256) == {})
 
         # ---------------- 2. 落盘与清理 ----------------
         out = tmp / "sweep"
@@ -1309,41 +1377,95 @@ def run(ctx) -> None:
         finally:
             _ipick.ImpositionPickerDialog = real_dialog
 
-        # ---- 左列缩略图（用户 2026-10-04）----
-        # 「任务流程里拼板缩略图没显示、只看到占位」：这条链此前**从没喂过
-        # 缩略图**（占位符是硬编码的初始值，没有任何代码会替换它）。现在每页
-        # 取第一张源图，后台渲进**任务目录**（tasks/<id>/thumbnails/
-        # imposition/）后贴到条目上——⚠️ 与独立拼图页共用组件与 worker 但
-        # **不共用缓存根**（用户 2026-10-04 明确「singletask 和 taskdetail
-        # 不是一回事」）。
+        # ---- 左列缩略图实体（用户 2026-10-09：生成落地、pageN 命名、映射数据）----
+        # 一页拼版是两张图的合成（第二页 = 右槽 2-r 蓝、左槽 2-l 黄），
+        # 缩略图必须**整页**落盘（page1.jpg / page2.jpg + index.json 映射），
+        # 两半各显示那张图——只贴第一张源图/内存半张的旧口径在这里都露馅。
         import time as _time
 
-        _reps = page._imposition_page_reps(page._imposition_pages())
-        for _ in range(100):  # 后台线程回填：轮询到全部到位或超时（约 5s）
-            _got = getattr(page, "_imposition_source_thumbs", {}) or {}
-            if all(r in _got for r in _reps if r):
+        from desktop.components.imposition.page_thumb import load_page_index
+        from desktop.utils.files import THUMBNAIL_EDGE as _EDGE
+
+        _pthumb_dir = page.store.imposition_page_thumbs_dir(page.task_id)
+        for _ in range(240):  # 后台 worker 逐页生成：轮询到实体落盘或超时
+            if (_pthumb_dir / "page1.jpg").is_file() \
+                    and (_pthumb_dir / "page2.jpg").is_file():
                 break
             ctx.app.processEvents()
             _time.sleep(0.05)
-        _thumbs = page._imposition_source_thumbs
-        ok("左列缩略图：每页代表图（第一张源图）都渲出",
-           bool(_reps) and all(r in _thumbs for r in _reps if r),
-           f"reps={[Path(r).name for r in _reps]} got={sorted(_thumbs)}")
+        ok("左列缩略图实体：page1.jpg / page2.jpg 落地（页面效果、页号命名）",
+           (_pthumb_dir / "page1.jpg").is_file()
+           and (_pthumb_dir / "page2.jpg").is_file(),
+           f"{_pthumb_dir} -> "
+           f"{sorted(x.name for x in _pthumb_dir.glob('*.jpg'))}")
+        _pmap = load_page_index(_pthumb_dir, _EDGE)
+        ok("映射数据：index.json 记好 页号 ↔ 文件 ↔ 签名",
+           sorted(_pmap) == [0, 1] and all(_pmap.values()),
+           str(_pmap))
         _entries = page.imposition_view.page_list.entries()
         ok("左列缩略图：贴到条目上（pixmap 非空，不再是占位）",
            len(_entries) == 2
            and all(not e.thumb.pixmap().isNull() for e in _entries),
            str([e.thumb.pixmap().isNull() for e in _entries]))
+        for _ in range(100):  # 等左列贴上**整页**实体
+            _p2 = _entries[1].thumb.pixmap()
+            if not _p2.isNull() and _p2.toImage().width() > 1:
+                break
+            ctx.app.processEvents()
+            _time.sleep(0.05)
+        _p2img = _entries[1].thumb.pixmap().toImage()
+        ok("左列缩略图 = 页面效果：两图页两半各显示一张（非单张）",
+           _px_near(_p2img, _p2img.width() // 4, _p2img.height() // 2, YELLOW)
+           and _px_near(_p2img, _p2img.width() * 3 // 4,
+                        _p2img.height() // 2, BLUE),
+           f"size={(_p2img.width(), _p2img.height())} "
+           f"左半={_p2img.pixelColor(_p2img.width() // 4, _p2img.height() // 2).getRgb()[:3]} "
+           f"右半={_p2img.pixelColor(_p2img.width() * 3 // 4, _p2img.height() // 2).getRgb()[:3]}")
+
+        # ---- 单步操作（拖动/复位落盘）后几秒内更新**单页**缩略图（2026-10-09）----
+        _key_before = _entries[1]._thumb_key
+        _pages_now = page._imposition_pages()
+        _moved_items = [dict(it) for it in _pages_now[1]["items"]]
+        _moved_items[1] = {
+            **_moved_items[1],
+            "rect": [900.0, 0.0, float(_moved_items[1]["rect"][2]),
+                     float(_moved_items[1]["rect"][3])],
+        }
+        page._on_imposition_items_changed(1, _moved_items)
+        ok("版面落盘后：攒页号等防抖（不立刻重灌、更不整列）",
+           page._imposition_thumb_dirty == {1}
+           and page._imposition_thumb_timer.isActive()
+           and _entries[1]._thumb_key == _key_before,
+           f"dirty={page._imposition_thumb_dirty}")
+        page._imposition_thumb_timer.stop()
+        page._refresh_imposition_dirty_page_thumbs()  # 防抖到期（手动触发）
+        for _ in range(240):  # 等后台把这一页的实体重生成并贴回
+            if _entries[1]._thumb_key != _key_before:
+                break
+            ctx.app.processEvents()
+            _time.sleep(0.05)
+        ok("版面落盘后：防抖到期**单页**重生成实体（缩略图跟上版面）",
+           _entries[1]._thumb_key != _key_before)
+        page._imposition_timer.stop()
+        page._imposition_dirty = False
+        # 还原版面（后续用例还要用这两页）
+        page._on_imposition_items_changed(
+            1, [dict(it) for it in _pages_now[1]["items"]])
+        page._imposition_thumb_timer.stop()
+        page._refresh_imposition_dirty_page_thumbs()
+        for _ in range(240):  # 版面改回去了：memo 命中/重生成后应回到原来的图
+            if _entries[1]._thumb_key == _key_before:
+                break
+            ctx.app.processEvents()
+            _time.sleep(0.05)
+        ok("（恢复）版面还原后缩略图跟着复原",
+           _entries[1]._thumb_key == _key_before)
 
         # ---- ⚠️ 回填**不许**整列重灌（用户 2026-10-06 报"拼板阶段程序卡死"）----
-        # 旧实现在每张缩略图到达时：①重读整份 drafts/imposition.json，
-        # ②对**全部**条目重跑 set_thumb（每次都重跑一次 scaled，且无早退）。
-        # 380 页 × 380 条 ≈ 7.2 万次带缩放的重贴，全在主线程 → 离屏实测
-        # **连续占住 27.5 秒**，界面完全无响应。
-        # 这里钉的是**调用形状**（不重贴整列），不是耗时——耗时断言在机器上
-        # 太脆，但"每张到达只贴一条"这件事是可数的。
+        # 历史教训：整列重灌 = 380 × 380 ≈ 7.2 万次带缩放的重贴，主线程连续
+        # 占住 27.5 秒。实体口径下"一页生成完"也只贴**那一条**——钉的是
+        # **调用形状**（不重贴整列），不是耗时。
         _entries_objs = page.imposition_view.page_list.entries()
-        _reps_now = page._imposition_page_reps(page._imposition_pages())
         _sink: list = []
         _docs: list = []
         _real_doc = page.store.load_imposition_doc
@@ -1352,10 +1474,8 @@ def run(ctx) -> None:
             _docs.append(task_id)
             return _real_doc(task_id)
 
-        # 直接在条目实例上包一层计数（不改类，避免影响别的条目）。
         # ⚠️ **必须先把原方法抓在手里再包一层**（MEMORY 记过的坑）：否则
-        #    ``self._t.set_thumb`` 取到的就是刚装上去的包装函数 ⇒ 无限递归
-        #    （实测直接 RecursionError 把整轮自测带崩）。
+        #    无限递归把整轮自测带崩。
         _orig_set_thumb = [_e.set_thumb for _e in _entries_objs]
 
         def _make_counter(original):
@@ -1364,20 +1484,14 @@ def run(ctx) -> None:
                 return original(image)
             return _counted
 
+        from PySide6.QtGui import QPixmap as _QPixmap
+
         try:
             for _e, _fn in zip(_entries_objs, _orig_set_thumb):
                 _e.set_thumb = _make_counter(_fn)
             page.store.load_imposition_doc = _counting_doc
-            # ⚠️ 回填信号 ``thumbnail_ready(int, QImage, str)`` 传的是
-            #    **QImage**（回调里会 ``QPixmap.fromImage``）——传 QPixmap
-            #    会 TypeError，把整轮自测带崩。
-            from PySide6.QtGui import QImage
-            for _i, _rep in enumerate(_reps_now):
-                _img = QImage(
-                    _entries_objs[_i].thumb.size(), QImage.Format.Format_RGB32
-                )
-                _img.fill(0xFF404040)
-                page._on_imposition_source_thumb(_i, _img, [_rep])
+            for _i in range(len(_entries_objs)):
+                page._on_imposition_page_thumb_ready(_i, _QPixmap(8, 8))
         finally:
             page.store.load_imposition_doc = _real_doc
             for _e, _fn in zip(_entries_objs, _orig_set_thumb):
@@ -1391,12 +1505,71 @@ def run(ctx) -> None:
         ok("左列版面：缩略图在上、文字在下（勾选框贴左上角）",
            all(e.checkbox.y() < e.thumb.y() < e.title_label.y() for e in _entries)
            and all(e.checkbox.x() < e.width() // 2 for e in _entries))
-        # 缓存归属边界（用户 2026-10-04 强调）：写任务目录，不借道独立区
-        _cache_dir = page.store.imposition_thumbnails_dir(page.task_id)
-        _cached = list(_cache_dir.glob("*.jpg"))
-        ok("左列缩略图缓存写在任务目录 thumbnails/imposition/",
-           _cache_dir.exists() and len(_cached) >= 2,
-           f"{_cache_dir} jpg={len(_cached)}")
+        # 实体归属边界（2026-10-04 目录各归各 + 2026-10-09 pageN 命名）
+        _cache_dir = page.store.imposition_page_thumbs_dir(page.task_id)
+        _cached = sorted(x.name for x in _cache_dir.glob("*.jpg"))
+        ok("左列缩略图实体写在任务目录 thumbnails/imposition_pages/（pageN 命名）",
+           _cache_dir.is_dir() and _cached == ["page1.jpg", "page2.jpg"],
+           f"{_cache_dir} -> {_cached}")
+
+        # ---- 独立拼图页同一条实体链（真入口 + 后台 worker）----
+        from desktop.modules.imposition.page import ImpositionModulePage
+
+        _mod = ImpositionModulePage()
+        try:
+            _mod._doc = {
+                "enabled": True, "pages": [S.make_page([a, b])], "removed": [],
+            }
+            _mod._refresh_view()  # 建条目并触发实体生成（真入口）
+            _mgr = _mod._page_thumb_manager()
+            _mdir = _mgr.directory
+            for _ in range(240):  # 等后台把 page1.jpg 生成并贴回
+                _mentry = _mod.view.page_list.entries()[0]
+                if (_mdir / "page1.jpg").is_file() \
+                        and not _mentry.thumb.pixmap().isNull():
+                    break
+                ctx.app.processEvents()
+                _time.sleep(0.05)
+            _mentry = _mod.view.page_list.entries()[0]
+            _mimg = _mentry.thumb.pixmap().toImage()
+            ok("独立拼图页：实体落盘 page1.jpg + 左列 = 页面效果（两半各一张图）",
+               (_mdir / "page1.jpg").is_file()
+               and _px_near(_mimg, _mimg.width() // 4, _mimg.height() // 2, GREEN)
+               and _px_near(_mimg, _mimg.width() * 3 // 4,
+                            _mimg.height() // 2, RED),
+               f"size={(_mimg.width(), _mimg.height())} dir={_mdir}")
+            _first = _mgr.pixmap_for(0, _mod._doc["pages"][0])
+            _again = _mgr.pixmap_for(0, _mod._doc["pages"][0])
+            ok("独立拼图页：版面没动 ⇒ 命中回**同一个** QPixmap（不重生成不重读盘）",
+               _first is not None and _first is _again)
+            _mod._doc["pages"][0]["items"][0]["rect"][0] += 11.0
+            _moved = _mgr.pixmap_for(0, _mod._doc["pages"][0])
+            ok("独立拼图页：版面动了 ⇒ 排队重生成（不拿旧图充数）",
+               _moved is None and 0 in _mgr._pending,
+               f"moved-null={_moved is None}")
+            # ---- 单步操作后防抖单页更新（2026-10-09）----
+            _mkey = _mentry._thumb_key
+            _mitems = [dict(it) for it in _mod._doc["pages"][0]["items"]]
+            _mitems[0] = {**_mitems[0],
+                          "rect": [500.0, *_mitems[0]["rect"][1:]]}
+            _mod._on_items_changed(0, _mitems)
+            ok("独立拼图页：版面改动攒页号等防抖（不立刻重灌）",
+               _mod._thumb_dirty_pages == {0} and _mod._thumb_timer.isActive())
+            _mod._thumb_timer.stop()
+            _mod._refresh_dirty_page_thumbs()
+            for _ in range(240):  # 等这一页的实体重生成并贴回
+                if _mentry._thumb_key != _mkey:
+                    break
+                ctx.app.processEvents()
+                _time.sleep(0.05)
+            ok("独立拼图页：防抖到期**单页**重生成实体并贴回",
+               _mentry._thumb_key != _mkey)
+        finally:
+            try:
+                _mod.shutdown_workers()
+            except RuntimeError:
+                pass
+            _mod.deleteLater()
 
         # ---- 批量删除（回归钉子）----
         # 曾出错：确认后的日志行引用未定义的 `listing` ⇒ 页虽然删了，但方法
@@ -2723,32 +2896,21 @@ def run(ctx) -> None:
                 page._imposition_timer.stop()
                 page._imposition_dirty = False
 
-                # ---- 编辑生效链：**左列该页缩略图**也必须跟上（2026-10-08）----
-                # 用户报：预览弹窗里编辑完，关掉弹窗拼版页还是老图。画布那条链
-                # 是好的，漏的是左列——它按"代表图路径"缓存在内存里
-                # （``_imposition_source_thumbs``），同一个路径换了内容照旧贴回
-                # 旧 QPixmap。这里钉住"必须把那条丢掉"。
-                from PySide6.QtGui import QPixmap
-
+                # ---- 编辑生效链：**左列该页缩略图**也必须跟上（2026-10-08/09）----
+                # 用户报：预览弹窗里编辑完，关掉弹窗拼版页还是老图。实体口径下
+                # 签名带**源图文件指纹**，覆盖后指纹变 ⇒ 含它的页排进重生成
+                # 批次。这里钉住"必须把那页排进队列"。
                 rep = str(item_path)
-                page._imposition_source_thumbs = {
-                    rep: QPixmap(8, 8),
-                    "另一个页的第一张图": QPixmap(8, 8),
-                }
-                # ⚠️ 走**真入口**（_on_imposition_source_edited）而不是直接调那
-                #    个丢缓存的助手：要钉的是"生效链里真的调了它"。
                 page._on_imposition_source_edited(rep, _edited)
-                ok("编辑源图后：左列那条内存缩略图被丢掉（不留旧 QPixmap）",
-                   rep not in page._imposition_source_thumbs
-                   and "另一个页的第一张图" in page._imposition_source_thumbs,
-                   str(list(page._imposition_source_thumbs)))
+                _mgr_ed = getattr(page, "_page_thumb_mgr", None)
+                _hit_pages = set(
+                    _mgr_ed._pending) if _mgr_ed is not None else set()
+                ok("编辑源图后：含它的页排进缩略图重生成批次（实体签名失效）",
+                   bool(_hit_pages), f"pending={_hit_pages}")
                 page._imposition_timer.stop()
                 page._imposition_dirty = False
 
                 # ---- 路径**形态**不同也要命中（分隔符/大小写）----
-                # 缓存键是 ``item["file"]`` 原样字符串，而调用方给的路径常来自
-                # ``Path(...)``（Windows 上斜杠被翻成 ``\``）⇒ 直接字符串比会
-                # 静默落空，用户看到的就是"编辑不生效"。
                 from desktop.services.imposition import same_path
 
                 ok("路径比较：分隔符/大小写不同的同一路径判为同一处",
@@ -2764,13 +2926,12 @@ def run(ctx) -> None:
                    rep not in page.imposition_view.canvas._images,
                    str(list(page.imposition_view.canvas._images)))
 
-                page._imposition_source_thumbs = {
-                    rep: QPixmap(8, 8),
-                }
+                if _mgr_ed is not None:
+                    _mgr_ed._pending.clear()
                 page._drop_imposition_source_thumb(rep.replace("\\", "/"))
-                ok("左列缩略图失效：用另一种斜杠形态也能丢中",
-                   not page._imposition_source_thumbs,
-                   str(list(page._imposition_source_thumbs)))
+                ok("左列缩略图失效：用另一种斜杠形态也能丢中（排进重生成批次）",
+                   _mgr_ed is not None and bool(_mgr_ed._pending),
+                   str(set(_mgr_ed._pending) if _mgr_ed is not None else set()))
 
                 # 取消编辑：不覆盖
                 _edit_seen.clear()

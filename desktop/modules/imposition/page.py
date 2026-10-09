@@ -28,9 +28,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
-from typing import cast
-
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QFileDialog
 from qfluentwidgets import FluentIcon as FIF, PrimaryPushButton, PushButton
 
@@ -53,6 +51,7 @@ from desktop.services.imposition import (
     page_has_file,
     page_source_stems,
     removed_source_files,
+    same_path,
 )
 from desktop.steps import (
     SourceZone,
@@ -77,6 +76,11 @@ _SPEC: StepSpec = _SPEC_OR_NONE
 
 #: 手工修饰过的整页组合落在 ``singletask/<子任务>/`` 下的哪个子目录。
 EDITED_DIRNAME = "edited"
+
+#: 版面改动 → 左列**单页缩略图**重合成的防抖（用户 2026-10-09：拖动松手/
+#: 面板调整/编辑回写之后几秒内，缩略图要跟上页面效果）。拖动中签名每帧
+#: 都在变，等真的停手了再合成一次就够。
+THUMB_REFRESH_DEBOUNCE_MS = 2000
 
 
 def edited_page_dir() -> Path:
@@ -131,12 +135,15 @@ class ImpositionModulePage(ModulePage):
         self._export_result: dict = {}
         #: 左列每页的缩略图（QPixmap 列表，页序；未就绪处是 None）
         self._page_thumbs: list = []
-        #: 已渲好的**源图**缩略图：源图路径 → QPixmap（跨页复用：同一张图
-        #: 可能在两页里都出现，重复解码就是白花 CPU）
-        self._source_thumbs: dict[str, object] = {}
         #: 预览弹窗（懒建，与任务流程的拼版步骤同一个控件）
         self._zoom_dialog = None
         super().__init__(parent)
+        # 版面改动 → 防抖后单页重合成左列缩略图（见 _on_items_changed）
+        self._thumb_dirty_pages: set[int] = set()
+        self._thumb_timer = QTimer(self)
+        self._thumb_timer.setSingleShot(True)
+        self._thumb_timer.setInterval(THUMB_REFRESH_DEBOUNCE_MS)
+        self._thumb_timer.timeout.connect(self._refresh_dirty_page_thumbs)
         self.status("尚未选择图片")
 
     # ------------------------------------------------------------------ 输入
@@ -272,7 +279,9 @@ class ImpositionModulePage(ModulePage):
         self._doc = normalize_doc({})
         self._out_dir = None
         self._page_thumbs = []
-        self._source_thumbs.clear()
+        self._page_thumb_manager().reset()
+        self._thumb_timer.stop()
+        self._thumb_dirty_pages.clear()
         self.close_zoom_dialog()
         self.sync_workspace_visible(None)
         self.header.set_subtitle("")
@@ -343,15 +352,30 @@ class ImpositionModulePage(ModulePage):
 
     # ------------------------------------------------------------------ 版面
     def _on_items_changed(self, index: int, items: list) -> None:
-        """画布改了当前页版面：写回文档（内存态）。
+        """画布改了当前页版面：写回文档（内存态）+ 攒一拍单页缩略图重合成。
 
         ⚠️ 顺带**作废这一页的手改记录**（``edited_file``）：版面一变，导出时
         会按新版面重新合成，手改的那张图已经不代表这一页了。
+
+        缩略图（用户 2026-10-09）：拖动/缩放/旋转停手后，左列那条缩略图
+        不能停在旧版面——页号攒进 ``_thumb_dirty_pages``，防抖
+        (:data:`THUMB_REFRESH_DEBOUNCE_MS`) 到期单页重合成（拖动中签名
+        每帧都在变，等真的停手了再合成一次就够）。
         """
         pages = self._doc.get("pages") or []
         if 0 <= index < len(pages):
             pages[index]["items"] = list(items)
             self._drop_page_override(index)
+            self._thumb_dirty_pages.add(int(index))
+            self._thumb_timer.start()
+
+    def _refresh_dirty_page_thumbs(self) -> None:
+        """防抖到期：把攒下的那几页**单页**重生成缩略图实体并贴回左列。"""
+        dirty, self._thumb_dirty_pages = self._thumb_dirty_pages, set()
+        if not dirty:
+            return
+        pages = self._doc.get("pages") or []
+        self._page_thumb_manager().invalidate(sorted(dirty), pages)
 
     def _drop_page_override(self, index: int, reason: str = "版面已改动") -> None:
         """丢掉第 ``index`` 页的整页手改记录（有的话写一句日志）。"""
@@ -586,7 +610,7 @@ class ImpositionModulePage(ModulePage):
             self.toast("error", "保存失败", f"编辑未生效：{path.name}")
             return
         self.view.canvas.invalidate_image(file_text)
-        self._load_source_thumbs([file_text])  # 左列那条缩略图按新图重渲
+        self._invalidate_page_thumbs_for(file_text)  # 含它的页重生成实体
         self.log(
             f"已编辑拼版源图「{path.name}」并覆盖原图"
             f"（{edited.width()}×{edited.height()} px）；"
@@ -697,15 +721,18 @@ class ImpositionModulePage(ModulePage):
         path = Path(path_text)
         self.view.canvas.invalidate_image(path_text)
         pages = self._doc.get("pages") or []
-        for page in pages:
-            if page_has_file(page, path_text):
-                self._load_source_thumbs([path_text])
-                self.log(
-                    f"已编辑拼版源图「{path.stem}」并覆盖原图"
-                    f"（{image.width()}×{image.height()} px）；"
-                    "点「导出成品」即用上这次修改。"
-                )
-                return
+        hits = [
+            index for index, page in enumerate(pages)
+            if page_has_file(page, path_text)
+        ]
+        if hits:
+            self._invalidate_page_thumbs_for(path_text, hits)
+            self.log(
+                f"已编辑拼版源图「{path.stem}」并覆盖原图"
+                f"（{image.width()}×{image.height()} px）；"
+                "点「导出成品」即用上这次修改。"
+            )
+            return
         if path.parent == edited_page_dir():
             self.log(
                 f"已编辑整页组合「{path.name}」"
@@ -836,75 +863,67 @@ class ImpositionModulePage(ModulePage):
         self.export_button.setEnabled(bool(pages))
 
     # -------------------------------------------------------------- 缩略图
-    def _refresh_page_thumbs(self) -> None:
-        """左列每页的缩略图：已缓存的直接贴，没缓存的起后台 pass 补。
+    def _page_thumb_manager(self):
+        """页面缩略图**实体**的管理者（懒建，首用即钉在独立区目录上）。"""
+        from desktop.components.imposition.page_thumb import PageThumbManager
+        from desktop.utils.files import page_thumbs_dir
 
-        用户 2026-10-03：所有独立任务左栏都显示缩略图，且统一缓存在
-        ``singletask/<子任务>/thumbs/<边长>/``（本页 = ``singletask/imposition/
-        thumbs/256/``；任务流程的拼版详情页 2026-10-04 起共用**同一份**）。
-        这里**每页取第一张源图的缩略图**——一页拼版本来就是「两张图并排」，
-        给一张代表图已经能认出是哪页，而把两张都渲出来只为在单列小格子里
-        并排显示并不更清楚。
+        manager = getattr(self, "_page_thumb_mgr", None)
+        if manager is None:
+            manager = PageThumbManager(
+                page_thumbs_dir(_SPEC.disk_key()), THUMB_EDGE,
+                self.run_worker, parent=self,
+            )
+            manager.page_ready.connect(self._on_page_thumb_ready)
+            self._page_thumb_mgr = manager
+        return manager
+
+    def _on_page_thumb_ready(self, index: int, pixmap) -> None:
+        """一页的实体缩略图生成完：贴回左列那一条。"""
+        if pixmap is not None and not pixmap.isNull():
+            self.view.set_thumb_at(index, pixmap)
+
+    def _invalidate_page_thumbs_for(
+        self, path_text: str, hits: list[int] | None = None
+    ) -> None:
+        """某张源图被覆盖（编辑落盘）：含它的页重新生成缩略图实体。
+
+        ⚠️ 签名里带**源图文件指纹**（大小+mtime）：覆盖后签名必然变
+        ⇒ 把含这个路径的页排进重生成批次即可。路径形态（斜杠/大小写）
+        走 :func:`services.imposition.same_path` 判等（2026-10-08 报障
+        "编辑完左列还是老图"的实体版防复发）。
         """
         pages = self._doc.get("pages") or []
-        #: 每页的代表图（第一张源图）
-        reps = []
-        for page in pages:
-            files = [item.get("file") for item in page.get("items") or []]
-            reps.append(str(next((f for f in files if f), "")))
-        # 已有的先贴上（换页/排序不该让已渲好的缩略图闪一下）
-        thumbs = []
-        for rep in reps:
-            thumbs.append(self._source_thumbs.get(rep) if rep else None)
+        if hits is None:
+            hits = [
+                index for index, page in enumerate(pages)
+                if any(same_path(str(item.get("file") or ""), path_text)
+                       for item in page.get("items") or [])
+            ]
+        if hits:
+            self._page_thumb_manager().invalidate(hits, pages)
+
+    def _refresh_page_thumbs(self) -> None:
+        """左列每页的缩略图：**页面效果**（落盘实体 ``pageN.jpg``）。
+
+        旧口径"每页取第一张源图当代表"只显示半幅；上一版内存合成口径
+        页内某张源图缩略图没到就出半张（用户 2026-10-09 在 0002 任务上
+        二次报障，拍板：**缩略图实体要生成落地**，另放目录、按 page1
+        page2 命名、做好映射数据）。现在是实体口径：按版面把整页合成
+        一张小图落盘（``singletask/imposition/page_thumbs/page<N>.jpg``
+        + ``index.json`` 映射），UI 只贴实体文件；签名（版面 + 源图文件
+        指纹）不匹配的页后台重生成。命中的页直接读盘——重进页面零生成。
+
+        ⚠️ 与任务流程拼版页共用管理者组件，但**缓存根各归各**（用户
+        2026-10-04 明确「singletask 和 taskdetail 不是一回事」）。
+        """
+        pages = self._doc.get("pages") or []
+        manager = self._page_thumb_manager()
+        manager.retain(len(pages))
+        thumbs = [manager.pixmap_for(i, page) for i, page in enumerate(pages)]
         self._page_thumbs = thumbs
         self.view.set_page_thumbs(thumbs)
-        missing = [
-            rep for rep in reps if rep and rep not in self._source_thumbs
-        ]
-        if missing:
-            self._load_source_thumbs(list(dict.fromkeys(missing)))
-
-    def _load_source_thumbs(self, images: list[str]) -> None:
-        """后台把这些源图的缩略图渲进 singletask 缓存，回来后贴进左列。"""
-        from desktop.utils.files import image_thumbs_dir
-        from desktop.workers import ImageThumbCacheWorker, connect_queued
-
-        # ⚠️ 目录规则与 :class:`ThumbSourceMixin` 同源
-        #    （``desktop.utils.files.image_thumbs_dir``，两份都取那一个函数），
-        #    但这里**不继承那个混入**——拼图页的"源"是一批图片而非单个源，
-        #    且左栏是拼版页清单而不是 ImageViewerWidget，继承它只会拿到一堆
-        #    用不上的方法。
-        cache_dir = image_thumbs_dir(_SPEC.disk_key(), THUMB_EDGE)
-        edge = THUMB_EDGE
-        self.run_worker(
-            lambda: ImageThumbCacheWorker(
-                # list 不变型：本页清单是 list[str]，worker 收 list[Path | str]
-                cast("list[Path | str]", images), cache_dir, edge=edge,
-            ),
-            lambda worker, thread: (
-                connect_queued(
-                    self, worker.thumbnail_ready,
-                    lambda index, image, _cached, items=list(images): (
-                        self._on_source_thumb(index, image, items)
-                    ),
-                    thread,
-                ),
-                worker.completed.connect(thread.quit),
-                worker.failed.connect(thread.quit),
-            ),
-        )
-
-    def _on_source_thumb(self, index: int, image, images: list[str]) -> None:
-        """一张源图缩略图就绪：存起来并刷左列（只刷，不重建条目）。"""
-        if image is None or getattr(image, "isNull", lambda: True)():
-            return
-        if not (0 <= index < len(images)):
-            return
-        pixmap = QPixmap.fromImage(image)
-        if pixmap.isNull():
-            return
-        self._source_thumbs[images[index]] = pixmap
-        self._refresh_page_thumbs()
+        manager.flush()
 
     def _refresh_panel(self) -> None:
         """刷新右侧面板的状态文案与选中图信息（面板自绘，这里只给文案）。"""

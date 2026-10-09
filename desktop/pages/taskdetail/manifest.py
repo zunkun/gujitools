@@ -25,7 +25,7 @@ from utils.file_utils import replace_with_retry
 
 if TYPE_CHECKING:
     from desktop.components.viewers import (
-        ImageViewerWidget, RembgPreviewWidget,
+        ExtractPreviewWidget, ImageViewerWidget, RembgPreviewWidget,
     )
     from desktop.store.store import TaskStore
 
@@ -47,7 +47,10 @@ class PageListMixin:
         running_stage: str | None
         log_view: QTextEdit
         preview_stack: QStackedWidget
-        extract_result_viewer: ImageViewerWidget
+        # ⚠️ 2026-10-09 起是 ExtractPreviewWidget（PDF 页缩略图 + 按页按需
+        #    提取，合并了旧「PDF 预览 | 提取结果」双标签）；编辑同步走它的
+        #    refresh_page / image_saved，与旧 ImageViewerWidget 同形。
+        extract_result_viewer: ExtractPreviewWidget
         detect_viewer: ImageViewerWidget
         rembg_viewer: RembgPreviewWidget
         current_stage: Callable[[], str]
@@ -263,6 +266,33 @@ class PageListMixin:
                 )
         except Exception:  # noqa: BLE001 - 提示不该影响刷新主链路
             pass
+
+    def _on_single_extract_saved(self, path_text: str) -> None:
+        """单页按需提取落盘完成（用户在 extract 预览里翻到了没提过的页）。
+
+        与批量提取收尾**同一口径**：
+        1. ``sizes.json`` 登记该页尺寸（检测框/预览映射的坐标基准）；
+        2. ``refresh_pages_from_dir`` 按产物目录重建页面清单（runner 在批量
+           提取成功后就是这么做的；单页提取产物也是 extract 目录的正式成员，
+           下游 detect/rembg 必须能看到）。
+        """
+        if not self.task_id:
+            return
+        path = Path(path_text)
+        if path.parent != self.store.extract_output_dir(self.task_id) \
+                or not path.stem.isdigit():
+            return
+        reader = QImageReader(path_text)
+        size = reader.size()
+        if size.isValid():
+            self.store.save_image_size(
+                self.task_id, path.stem, size.width(), size.height()
+            )
+        self.store.refresh_pages_from_dir(
+            self.task_id, self.store.extract_output_dir(self.task_id)
+        )
+        self._refresh_manifest()
+        self.log_view.append(f"第 {int(path.stem)} 页已提取（单页）。")
 
     def _regen_page_thumb(self, path_text: str) -> None:
         """后台重生成某页的 source 缩略图（256px），完成后刷新各查看器。"""

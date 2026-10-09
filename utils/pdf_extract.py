@@ -499,6 +499,49 @@ def _render_batch_in_worker(payload: tuple) -> dict:
     return {"pages": pages, "reasons": reasons, "fallback": fallback}
 
 
+def extract_single_page(
+    pdf_path: str,
+    page_idx: int,
+    out_dir: str,
+    zoom: float = 1,
+    ext: str = "jpg",
+    quick: bool = True,
+    dpi: float = DEFAULT_RENDER_DPI,
+) -> dict:
+    """提取**单页**落盘，返回结构化结果（GUI「翻到哪页就提取哪页」用）。
+
+    复用批量提取的 ``_render_batch_in_worker``（quick 自适应 / DPI 下限 /
+    原子写全部同一条实现）——单页提取的产物与批量提取**逐位一致**，浏览过
+    的页再跑批量提取也只是幂等覆盖。本函数**不 print、不汇报**：调用方
+    （GUI worker 线程）自己负责界面反馈，别把批量那条进度刷屏带进来。
+
+    返回::
+
+        {"ok": bool, "path": str | None, "w": int, "h": int, "err": str | None}
+    """
+    try:
+        # ⚠️ 与批量路径的 extract_pdf_optimized 对齐：先保证输出目录在。
+        # （批量里由 extract_pdf_optimized 建；这里单独建，否则 PIL 落盘
+        #   直接 FileNotFoundError。）
+        os.makedirs(out_dir, exist_ok=True)
+        result = _render_batch_in_worker(
+            (str(pdf_path), [int(page_idx)], str(out_dir), zoom, ext, quick, dpi)
+        )
+    except Exception as e:  # noqa: BLE001 - 兜底：调用方只认结构化结果
+        return {"ok": False, "path": None, "w": 0, "h": 0,
+                "err": f"{type(e).__name__}: {e}"}
+    pages = result.get("pages") or []
+    page = pages[0] if pages else {}
+    ok = bool(page.get("ok"))
+    return {
+        "ok": ok,
+        "path": str(page.get("path")) if ok and page.get("path") else None,
+        "w": int(page.get("w") or 0),
+        "h": int(page.get("h") or 0),
+        "err": None if ok else str(page.get("err") or "提取失败"),
+    }
+
+
 def process_page_batch(
     pdf_path: str,
     page_indices: List[int],

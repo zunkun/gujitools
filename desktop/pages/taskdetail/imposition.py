@@ -495,16 +495,21 @@ class ImpositionBaseMixin:
         edit_timer = getattr(self, "_imposition_edit_timer", None)
         if edit_timer is not None:
             edit_timer.stop()  # 上一任务的旋转组件停顿提交别再落进新任务
+        # 单页缩略图的重合成计时器同理：旧任务攒的页号不能落进新任务
+        thumb_timer = getattr(self, "_imposition_thumb_timer", None)
+        if thumb_timer is not None:
+            thumb_timer.stop()
+        self._imposition_thumb_dirty = set()
         # 预览弹窗里那页是上个任务打开时的快照，留着就是旧任务的图
         self.close_imposition_zoom_popup()
         self._imposition_dirty = False
         self._imposition_composing = False
-        # 已渲好的源图缩略图按**路径**缓存，跨任务留着没有意义（还有旧图
-        # 占内存）；左列重灌时自然按新任务的路径重新渲。
-        self._imposition_source_thumbs = {}
-        #: 代表图路径 → 左列条目下标（``_refresh_imposition_page_thumbs`` 建）。
-        #: 回填时 O(1) 定位，不必重算（更不必重读 imposition.json）。
-        self._imposition_rep_index = {}
+        # 页面缩略图实体的管理者：清空内存态（旧任务的位图/排队页不能带进
+        # 新任务）；目录切换交给下次刷新时的访问器判等（实体按内容签名寻址，
+        # 目录不换就不会拿旧任务的实体）
+        mgr = getattr(self, "_page_thumb_mgr", None)
+        if mgr is not None:
+            mgr.reset()
         # 新任务的取图来源未必和上个任务一样：让 _refresh_print_source 重新判定
         self._print_source_cache = None
         self._refresh_imposition_view()

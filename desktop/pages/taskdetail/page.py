@@ -2,7 +2,10 @@
 """任务详情页：顶部步骤条 + 左侧多标签预览 + 右侧阶段控制面板。
 
 预览区按阶段组织：
-- extract：[PDF 预览 | 提取结果] 双标签页；
+- extract：**单缩略图**预览——左栏是 PDF 每页一份缩略图，切到某页时
+  该页的提取产物已存在就显示产物，没有就后台单页提取落盘
+  （``stages/extract``，与批量提取同一条实现）后显示（用户 2026-10-09：
+  不再分「PDF 预览 | 提取结果」双标签）；
 - detect：图片预览，叠加显示每张图的检测框位置；
 - rembg：原图 / 去底结果对比；
 - print：输出 PDF 预览。
@@ -374,10 +377,15 @@ class TaskDetailPage(
         # ⚠️ 空壳任务：source_path 是 None（见上面），而``set_pdf`` 本身就
         #    接受 None（内部摆个占位就return，见 pdf_viewer.set_pdf），所以
         #    直接传；占位文案要说清是"还没选"而不是"加载失败"。
-        self.source_pdf_viewer.set_pdf(
+        #    ⚠️ 查看器是 ExtractPreviewWidget（extract 预览的唯一控件，
+        #    用户 2026-10-09 合并双标签）：PDF 页缩略图与提取产物同屏。
+        self.extract_result_viewer.set_pdf(
             self.source_path,
             placeholder=None if self.source_path else "尚未选择 PDF",
             cache_dir=self.store.source_thumbnails_dir(task_id),
+        )
+        self.extract_result_viewer.set_extract_dir(
+            self.store.extract_output_dir(task_id)
         )
         self._refresh_manifest()
         # 换任务就得重算"上游比下游新"的判定缓存（读的是新任务的 runs.json）
@@ -472,8 +480,11 @@ class TaskDetailPage(
             return
         self.source_path = copy
         self.source_label.setText(copy.name)
-        self.source_pdf_viewer.set_pdf(
+        self.extract_result_viewer.set_pdf(
             copy, cache_dir=self.store.source_thumbnails_dir(self.task_id)
+        )
+        self.extract_result_viewer.set_extract_dir(
+            self.store.extract_output_dir(self.task_id)
         )
 
     def _on_back(self) -> None:
@@ -495,7 +506,8 @@ class TaskDetailPage(
         self.task_id = None
         self.source_path = None
         # 释放 PDF：不释放的话回到列表删除该任务时，rmtree 可能撞上文件占用
-        self.source_pdf_viewer.set_pdf(None)
+        self.extract_result_viewer.set_pdf(None)
+        self.extract_result_viewer.set_extract_dir(None)
         self.back_requested.emit()
 
     # ------------------------------------------------------------------ 流程槽位（BPM）
@@ -1158,7 +1170,12 @@ class TaskDetailPage(
         #    就成了"明明有图却显示暂无图片"（用户 2026-10-06）。
         self._sync_manifest_to_input()
         if stage == "extract":
-            self.extract_result_viewer.set_images(self._manifest_paths())
+            # ⚠️ 不再 set_images(manifest)（用户 2026-10-09 合并双标签）：
+            #    左栏恒是 PDF 页缩略图；这里只把产物目录交给查看器——
+            #    当前页已有产物就立即显示产物，没有等切页时现场提取。
+            self.extract_result_viewer.set_extract_dir(
+                self.store.extract_output_dir(self.task_id)
+            )
         elif stage == "detect":
             self.detect_viewer.set_images(self._manifest_paths())
             # 清单可能变了（增删页/切任务/批量检测跑完）→ 统计跟着重算
@@ -1183,6 +1200,22 @@ class TaskDetailPage(
             # 拼版开关一改，磁盘上那份 PDF 就是旧来源的产物，得让下载按钮
             # 灭掉——用户 2026-10-03："旧的数据不显示"。
             self.print_preview.set_pdf_path(self._current_print_pdf_path())
+
+    def _extract_params(self) -> dict:
+        """第一步「图片提取」参数（单页按需提取用）：读当前面板表单。
+
+        只在**正看着 extract 这一步**时读——面板是当前控制页，必然已构造；
+        别的时候（别的步骤/离开任务）给空表，查看器按默认参数兜底。
+        ⚠️ 表单填到一半 ``get_args()`` 会抛 ``ValueError``：不弹窗、按空表
+        兜底（单页提取是预览性质的顺手活，不值得为它打断用户输入）。
+        """
+        if self.current_stage() != "extract" or not self.task_id:
+            return {}
+        panel: Any = self.control_stack.currentWidget()
+        try:
+            return dict(panel.get_args())
+        except (ValueError, AttributeError, RuntimeError):
+            return {}
 
     # ------------------------------------------------------------------ 工具
     def _toast(self, kind: str, title: str, content: str) -> None:

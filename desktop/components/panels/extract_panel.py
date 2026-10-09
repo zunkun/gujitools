@@ -22,7 +22,7 @@ class ExtractPanel(StagePanel):
 
     stage = "extract"
     title = "提取图片"
-    description = "将源 PDF 每页渲染为图片。左侧可切换「PDF 预览 / 提取结果」两个标签页。"
+    description = "将源 PDF 每页渲染为图片。左侧预览切到哪页就提取哪页（产物落 extract 目录）。"
 
     def _build_form(self, form: QFormLayout) -> None:
         d = DEFAULTS[self.stage]

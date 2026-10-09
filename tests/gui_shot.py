@@ -632,7 +632,7 @@ def _visible_strips(detail) -> list:
     """
     candidates = [
         getattr(detail, "rembg_viewer", None),
-        getattr(detail, "source_pdf_viewer", None),
+        # 2026-10-09 合并双标签后 extract 预览只有这一个控件（PDF 页缩略条）
         getattr(detail, "extract_result_viewer", None),
         getattr(detail, "detect_viewer", None),
     ]
@@ -715,28 +715,26 @@ def shoot_guide(app, window, out_dir: Path, task_id: str,
 
     # ---- 步骤 1：提取图片 ----
     detail._select_stage(0)
-    detail.extract_tabs.setCurrentIndex(1)  # 「提取结果」页，能看到产出
+    # 2026-10-09 合并双标签：单缩略图预览，切页即显示该页的提取产物
     snap("s1-提取-结果.png", "第一步：提取结果")
 
     extract_panel = detail.control_stack.widget(0)
     extract_panel.zoom.setValue(2)
     extract_panel.ext.setCurrentText("png")
-    detail.extract_tabs.setCurrentIndex(0)  # 切回 PDF 预览，展示参数与源文件对照
 
-    # PDF 预览翻到**第 DEMO_PAGE 页**（默认停在第 1 页——多为封面/空白页，
+    # 翻到**第 DEMO_PAGE 页**（默认停在第 1 页——多为封面/空白页，
     # 读者对不上正文；全手册的图都统一在同一演示页上）。选页是异步加载
     # （先 clear 再 worker 渲染），必须等完成再截。
     def _open_pdf_demo_page() -> None:
-        strip = detail.source_pdf_viewer.strip
+        strip = detail.extract_result_viewer.strip
         if strip.count() >= DEMO_PAGE:
             strip.setCurrentRow(DEMO_PAGE - 1)
-            wait_view_ready(app, detail.source_pdf_viewer.view, timeout=20)
+            wait_view_ready(app, detail.extract_result_viewer.view, timeout=20)
 
     snap("s1-提取-参数.png", "第一步：调 zoom / dpi / ext 参数",
          before=_open_pdf_demo_page)
 
     # ---- 步骤 2：检测文本框 ----
-    detail.extract_tabs.setCurrentIndex(0)
     detail._select_stage(1)
     viewer = detail.detect_viewer
     # ⚠️ 框状态在内层 `ImageView` 上（`detect_viewer.view`），不是外层
@@ -971,10 +969,7 @@ def main() -> int:
     labels = ("提取", "检测", "去底色", "生成PDF")
     for order, (stage, label) in enumerate(zip(stages, labels), start=2):
         detail._select_stage(stages.index(stage))
-        if stage == "extract":
-            # 切到「提取结果」标签页，展示实际产出（PDF 预览页也能看真源文件，
-            # 但这一步的主角是提取出来的页面图）。
-            detail.extract_tabs.setCurrentIndex(1)
+        # 2026-10-09 合并双标签：extract 预览单控件，无需再切标签页
         pump(app, 10)
         # ⚠️ 与 guide 模式同理：缩略图是后台线程回填的，不等会拍到灰色占位块
         wait_for_thumbnails(app, _visible_strips(detail))

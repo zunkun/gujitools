@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from PySide6.QtWidgets import QStackedWidget, QTextEdit
     from desktop.components.detect_stats import DetectStatsWidget
     from desktop.components.log_panel import LogPanel
-    from desktop.components.viewers import ImageViewerWidget, PrintPreviewWidget
+    from desktop.components.viewers import ExtractPreviewWidget, PrintPreviewWidget
     from desktop.store.store import TaskStore
     from desktop.ui.widgets import ProgressLine
 
@@ -57,7 +57,7 @@ class StageRunnerMixin:
         log_view: QTextEdit
         log_panel: LogPanel
         stage_progress: ProgressLine
-        extract_result_viewer: ImageViewerWidget
+        extract_result_viewer: ExtractPreviewWidget
         print_preview: PrintPreviewWidget
         detect_stats: DetectStatsWidget
         current_stage: Callable[[], str]
@@ -835,15 +835,18 @@ class StageRunnerMixin:
             self._last_error_line = f"子进程启动失败：{program}"
 
     def _poll_extract_results(self) -> None:
-        """提取过程中：一旦输出目录出现新图片，立即在「提取结果」里展示。"""
+        """提取过程中：输出目录一有新图片，当前页的预览立即跟上。
+
+        ⚠️ 2026-10-09 合并双标签后左栏恒是 PDF 页缩略图，不再 ``set_images``
+        重建清单；把产物目录交给查看器，当前页的产物一出现大图就切过去。
+        """
         if not self.task_id:
             return
         paths = list_stage_images(self.store.extract_output_dir(self.task_id))
         if len(paths) != self._extract_seen:
             self._extract_seen = len(paths)
-            # list 不变型：清单是 list[Path]，查看器收 list[Path | str]
-            self.extract_result_viewer.set_images(
-                cast("list[Path | str]", paths)
+            self.extract_result_viewer.set_extract_dir(
+                self.store.extract_output_dir(self.task_id)
             )
 
     def _worker_finished(self, exit_code: int, _status) -> None:
