@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 165 个模块、177 个公开类、1214 个公开函数/方法（生成于 2026-10-10）。
+覆盖 165 个模块、177 个公开类、1215 个公开函数/方法（生成于 2026-10-11）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -56,7 +56,7 @@
 | [`desktop.components.viewers.image_editor.canvas.interaction`](#desktopcomponentsviewersimage_editorcanvasinteraction) | 1 | 7 |
 | [`desktop.components.viewers.image_editor.canvas.overlay`](#desktopcomponentsviewersimage_editorcanvasoverlay) | 1 | 0 |
 | [`desktop.components.viewers.image_editor.canvas.text`](#desktopcomponentsviewersimage_editorcanvastext) | 1 | 6 |
-| [`desktop.components.viewers.image_editor.canvas.transform`](#desktopcomponentsviewersimage_editorcanvastransform) | 1 | 20 |
+| [`desktop.components.viewers.image_editor.canvas.transform`](#desktopcomponentsviewersimage_editorcanvastransform) | 1 | 21 |
 | [`desktop.components.viewers.image_editor.consts`](#desktopcomponentsviewersimage_editorconsts) | 0 | 0 |
 | [`desktop.components.viewers.image_editor.content_quad`](#desktopcomponentsviewersimage_editorcontent_quad) | 0 | 7 |
 | [`desktop.components.viewers.image_editor.dialog`](#desktopcomponentsviewersimage_editordialog) | 1 | 3 |
@@ -3577,6 +3577,7 @@ fit 就等于"每次松手都把图缩小一档"，反复旋转会越转越小�
 | `reset_transform() -> None` | 「重置」：丢弃未应用的变换，选区回到整幅、轴心回到中心。 |
 | `transform_pending() -> tuple[QRectF, QTransform, QImage] \| None` | 未应用的变换 ``(选区, 矩阵, 选区像素快照)``；没有则 None。 |
 | `consume_content_restore() -> None` | 标记 sidecar 恢复已处理（无数据/失败/完成）：本会话不再触发。 |
+| `rearm_content_restore() -> None` | 内容节点仍有效时，允许下次进变换工具**重新触发** sidecar 恢复。 |
 | `begin_restored_transform(xf: QTransform, region: QImage \| None=None, rect0: QRectF \| None=None) -> None` | 把恢复出来的矩阵挂成**未触摸**的待定变换（画布保持文件原样）。 |
 | `transform_move(dx: float, dy: float) -> None` | 整体平移 ``dx, dy``（图片像素，**视觉方向**）。 |
 | `transform_rotate(degrees: float) -> None` | 绕**轴心当前视觉位置**旋转（轴心保持不动）。 |
@@ -3635,6 +3636,18 @@ fit 就等于"每次松手都把图缩小一档"，反复旋转会越转越小�
 :meth:`_apply_float_fast`）；松手瞬间图不再动，这一次重采样只做一遍
 （用户看不到卡），于是**松手后看到的预览就是烘焙结果**——"预览 ==
 烘焙"的判据一点没松。
+
+##### `rearm_content_restore() -> None`
+
+内容节点仍有效时，允许下次进变换工具**重新触发** sidecar 恢复。
+
+恢复会话没拖就切走（切到裁剪没裁/文字/擦除/扭曲——都不改图片边缘），
+再切回「统一变换」时 PA1 框要重新挂上（用户 2026-10-10 口径）。
+``_content_restore_done`` 是"已处理过"的一次性闸门，这里把它退回；
+弹窗重进 ``_on_content_restore_requested`` 时节点数据还在，
+重新武装是零成本的（只挂框/矩阵，反变换依旧延迟到首次拖动）。
+真裁剪/撤销/翻转已把节点整组作废（``_content_state=None``），
+弹窗侧不会走到重挂——这里只管放行信号。
 
 ##### `begin_restored_transform(xf: QTransform, region: QImage | None=None, rect0: QRectF | None=None) -> None`
 
@@ -7535,7 +7548,7 @@ GUI 主进程**绝不能**在这里 import 到 cv2（实测 ``import functions.d
 
 图片拼版的派生与合成规则（纯函数 + PIL，无 Qt 依赖，便于独立测试）。
 
-一句话职责：**把每页的两张源图按版面摆到白底上，落成 ``stages/imposition``
+一句话职责：**把每页的两张源图按版面摆到透明底上，落成 ``stages/imposition``
 里的成品页图**，供第四步「PDF排版」当整页图片直接用。
 
 三件事在这里定死（别在别处再写一份）：
@@ -7546,9 +7559,12 @@ GUI 主进程**绝不能**在这里 import 到 cv2（实测 ``import functions.d
 2. **坐标口径**：``rect`` 是**源图像素**，左上原点、x 向右、y 向下；
    ``rotation`` 是**顺时针角度**（Qt 口径；PIL 侧取负），绕该项 ``rect`` 的中心。
 3. **没有"纸张"**（用户 2026-09-30：「这个拼版不需要设置纸张，只需要背景是白色的
-   就行，后续提交的时候根据图片的四个区域合并出一张图片」）：版面只有白底，
-   图可以随意移动/拉伸；**产出图 = 所有图外接框的紧裁**（``page_bounds`` →
-   ``compose_page``），所以加多少留白、挪多远，用户自己说了算。
+   就行，后续提交的时候根据图片的四个区域合并出一张图片」；⚠️ 2026-10-10 修订：
+   背景**不再铺白**，改透明底——白底会烙进成品页图，编辑器里统一变换/裁剪
+   全都带着白底走。PDF 侧 ``functions/print._load_image`` 会把 RGBA 压平到
+   白纸，成书效果不变）：版面只有透明底，图可以随意移动/拉伸；
+   **产出图 = 所有图外接框的紧裁**（``page_bounds`` → ``compose_page``），
+   所以加多少留白、挪多远，用户自己说了算。
 
 ### 模块常量
 
@@ -7588,7 +7604,7 @@ GUI 主进程**绝不能**在这里 import 到 cv2（实测 ``import functions.d
 | `source_page_number(path) -> int \| None` | 源图**页号**：文件名开头的连续数字（``3-r`` → 3、``004-l`` → 4）。 |
 | `auto_impose_pages(files: list) -> list[dict]` | 自动拼版（用户 2026-09-30 规则，**唯一实现**）： |
 | `page_bounds(page: dict) -> tuple[float, float, float, float]` | 一页的**内容范围**：所有图外接框的并集（用户说的「图片的四个区域」）。 |
-| `compose_page(page: dict)` | 一页拼版 → PIL RGB 图：**白底 + 所有图外接框的紧裁**。 |
+| `compose_page(page: dict)` | 一页拼版 → PIL **RGBA 透明底**图：所有图外接框的紧裁。 |
 | `compose_doc(doc: dict, dest_dir, report=None) -> list[Path]` | 把整份拼版文档落成 ``dest_dir/0001.png`` …（列表顺序即页序）。 |
 
 #### `normalize_page(page) -> dict | None`
@@ -7739,14 +7755,16 @@ for_edited_source` 读到的还是旧尺寸。
 
 #### `compose_page(page: dict)`
 
-一页拼版 → PIL RGB 图：**白底 + 所有图外接框的紧裁**。
+一页拼版 → PIL **RGBA 透明底**图：所有图外接框的紧裁。
 
 ⚠️ 旋转方向必须与画布一致：``rotation`` 按 **Qt 顺时针**口径存，
 PIL ``rotate`` 是**逆时针**，所以这里取负。两边口径写反的话，画布上
 转 90°、落盘却反向 90°，用户会看到"生成的 PDF 和图里不一样"。
 
-留白处为白：去底图的透明在此压到白底上（与 ``functions.print`` 加载图片
-时的压平规则一致）。
+⚠️ **底是透明的，不铺白**（用户 2026-10-10：白底烙进成品页图后，编辑器
+里统一变换/裁剪全带着白底走，去底图白拼了）。消费方各自处理 alpha：
+PDF 侧 ``functions/print._load_image`` 压平到白纸；编辑器/预览按 RGBA
+显示。⚠️ 返回 **RGBA**，调用方别再 ``convert("RGB")``（透明处会变黑）。
 
 #### `compose_doc(doc: dict, dest_dir, report=None) -> list[Path]`
 

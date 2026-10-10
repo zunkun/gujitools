@@ -142,6 +142,11 @@ class ImageEditorDialog(
         self._content_restored = False
         self._content_seed = None
         self._content_upright = None
+        #: upright 缓存是否失效（2026-10-11）：只有**真改像素**的操作
+        #: （擦除/文字/扭曲）置 True；旋转/空裁剪不改像素 ⇒ 缓存复用，
+        #: 切走再切回零重算、烘焙单代次（否则每轮多一代重采样＝PA1
+        #: 边缘元素逐轮流失 + 每次切换秒级卡顿）。
+        self._content_pixels_dirty = False
         #: 延迟恢复（2026-10-10「切换卡顿」）：进变换工具只挂矩阵/框，
         #: upright 反变换的参数与目标像素量存在这儿，第一次拖动时由
         #: ``_on_restore_pixels_requested`` 用掉（用完清 None）。

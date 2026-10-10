@@ -1655,8 +1655,115 @@ def run(ctx) -> None:
                    == (look.width(), look.height()),
                    f"size={gotR.width()}x{gotR.height()} "
                    f"expect={look.width()}x{look.height()}")
+                # ⚠️ 2026-10-10「切走再切回要恢复」：图片边缘没变（裁剪没裁/
+                #    文字/擦除/扭曲都不改边缘）⇒ 切回统一变换 PA1 重新武装
+                editorR.canvas.set_tool("transform")
+                ok("内容节点：切走没拖再切回 ⇒ PA1 重新武装（框/矩阵/待定像素）",
+                   editorR.canvas._xf_restore_pending
+                   and editorR.canvas._xf_restore_region is None
+                   and editorR.canvas._xf_rect is not None
+                   and editorR._content_restored,
+                   f"pending={editorR.canvas._xf_restore_pending} "
+                   f"restored={editorR._content_restored}")
+                ok("内容节点：重挂矩阵＝同一颗种子（框回到内容四边形）",
+                   editorR.canvas._xf == editorR._content_seed, "")
+                # 首次拖动要用的反变换参数必须来自**当前画布**（擦除原地改
+                # 引用不变，旧 upright 缓存作废重算才不丢改动）
+                _prm = editorR._content_restore_params
+                ok("内容节点：重挂后反变换参数引用当前画布像素",
+                   _prm is not None and _prm["image"] is editorR._image, "")
             finally:
                 editorR.deleteLater()
+
+            # ---- 真裁剪 ⇒ 节点整组作废（边缘变了不恢复，2026-10-10 口径） ----
+            editorC = ImageEditorDialog(None, look, save_back=True)
+            try:
+                editorC.source_path = str(_qpath)
+                editorC.canvas.set_tool("transform")     # 先武装恢复会话
+                editorC._pending_crop = QRectF(10, 10, 80, 60)
+                editorC._commit_crop()                   # 真裁一刀（尺寸变了）
+                ok("内容节点：真裁剪 ⇒ 节点整组作废",
+                   editorC._content_state is None
+                   and not editorC._content_restored,
+                   f"state={editorC._content_state is not None}")
+                editorC._commit_transform()              # 切走（无待定变换）
+                editorC.canvas.set_tool("transform")
+                ok("内容节点：真裁剪后切回 ⇒ 不再恢复（整幅矩形框架）",
+                   not editorC.canvas._xf_restore_pending
+                   and editorC._content_state is None,
+                   f"pending={editorC.canvas._xf_restore_pending}")
+            finally:
+                editorC.deleteLater()
+
+            # ---- 首次会话：旋转→烘焙→切走→切回 ⇒ PA1 延续（2026-10-10 报障） ----
+            # 没有 sidecar 的第一次编辑里转了 30°、切到别的工具（触发烘焙）、
+            # 再切回「统一变换」：节点链已在内存里建起来（_content_after_bake），
+            # 恢复闸门必须重新武装、框回到内容四边形——之前带挂起变换的烘焙
+            # 分支不 rearm，切回后框退成整幅（用户截图：p5..p8 而非 p11..p41）。
+            # ⚠️ 用带透明边的图：烘焙后画布＝烘焙产物（自洽成帧），入口收紧
+            #    偏移 t 必须清零——不清的话重挂种子矩阵 V·T(-(o+t)) 整体错位 t。
+            _imgS = make_image(300, 220)
+            _imgS.fill(_QC(0, 0, 0, 0))
+            for _sx in range(70, 230):
+                for _sy in range(60, 160):
+                    _imgS.setPixel(_sx, _sy, 0xFF888888)
+            for _sx in range(80, 100):          # 蓝块标记：内容原位可查
+                for _sy in range(70, 90):
+                    _imgS.setPixel(_sx, _sy, 0xFF0000FF)
+            editorS = ImageEditorDialog(None, _imgS, save_back=True)
+            try:
+                # ⚠️ rearm 只在有底片文件时发生（sidecar 机制围着文件转）：
+                #    给一个临时路径（不真写盘），模拟拼版宿主回填 source_path
+                editorS.source_path = str(_qdir / "first_session.png")
+                editorS.canvas.set_tool("transform")
+                editorS.canvas.transform_rotate(30)
+                _baked = editorS._commit_transform(force=True)
+                _st1 = editorS.content_state()
+                ok("内容节点：首次会话烘焙 ⇒ 节点链建立（rect0=画布整幅）",
+                   _baked and _st1 is not None
+                   and abs(_st1[0].width() - 160) <= 1
+                   and abs(_st1[0].height() - 100) <= 1,
+                   f"baked={_baked} state={'None' if _st1 is None else 'ok'}")
+                ok("内容节点：烘焙后入口收紧偏移清零（画布＝烘焙产物自洽成帧）",
+                   getattr(editorS, "_content_trim_offset", None) == (0.0, 0.0),
+                   f"trim={getattr(editorS, '_content_trim_offset', None)}")
+                ok("内容节点：烘焙后恢复闸门重新武装（切回要能恢复）",
+                   editorS.canvas._content_restore_done is False,
+                   f"done={editorS.canvas._content_restore_done}")
+                editorS.canvas.set_tool("crop")
+                editorS.canvas.set_tool("transform")
+                _csize = editorS.canvas.image.rect()
+                _quad = (editorS._content_seed.mapRect(
+                    QRectF(0, 0, 160, 100)).toRect()
+                    if editorS._content_seed else None)
+                ok("内容节点：旋转切走再切回 ⇒ PA1 恢复（全量武装、像素就位）",
+                   editorS.canvas._xf_restore_pending is False
+                   and editorS.canvas._xf_restore_region is not None
+                   and (editorS.canvas._xf_restore_region.width(),
+                        editorS.canvas._xf_restore_region.height())
+                   == (editorS._content_upright.width(),
+                       editorS._content_upright.height())
+                   and editorS._content_restored
+                   and editorS.canvas._xf_rect is not None
+                   and abs(editorS.canvas._xf_rect.width() - 160) <= 1
+                   and abs(editorS.canvas._xf_rect.height() - 100) <= 1,
+                   f"pending={editorS.canvas._xf_restore_pending} "
+                   f"region={'None' if editorS.canvas._xf_restore_region is None else 'ok'} "
+                   f"xf_rect={None if editorS.canvas._xf_rect is None else (editorS.canvas._xf_rect.width(), editorS.canvas._xf_rect.height())}")
+                ok("内容节点：切回零等待（upright 缓存复用、无重算参数）",
+                   editorS._content_upright is not None
+                   and editorS._content_restore_params is None
+                   and not editorS._content_pixels_dirty,
+                   f"upright={'None' if editorS._content_upright is None else 'ok'} "
+                   f"params={editorS._content_restore_params}")
+                ok("内容节点：重挂种子不含旧收紧偏移（内容四边形=烘焙画布原位）",
+                   _quad is not None
+                   and abs(_quad.x()) <= 1 and abs(_quad.y()) <= 1
+                   and abs(_quad.width() - _csize.width()) <= 2
+                   and abs(_quad.height() - _csize.height()) <= 2,
+                   f"quad={_quad} canvas={_csize.width()}x{_csize.height()}")
+            finally:
+                editorS.deleteLater()
 
             # ---- 延迟恢复 + 拖动守卫（2026-10-10「切换卡顿」） ----
             # 等待恢复像素的那次等待里有模态进度框（processEvents），用户的

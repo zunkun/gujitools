@@ -177,9 +177,29 @@ def run(ctx) -> None:
         ok("产出图 = 两张图外接框的紧裁（无纸张：图上多大就多大）",
            composed.size == (800, 600), str(composed.size))
         ok("合成后：左侧是 1-l、右侧是 1-r（像素级）",
-           composed.getpixel((700, 300)) == RED
-           and composed.getpixel((100, 300)) == GREEN,
+           composed.getpixel((700, 300))[:3] == RED
+           and composed.getpixel((100, 300))[:3] == GREEN,
            f"{composed.getpixel((700, 300))} / {composed.getpixel((100, 300))}")
+        # ⚠️ 2026-10-10 用户修订：拼版结果**不再铺白底**（白底会烙进成品页图，
+        # 编辑器里统一变换/裁剪全带着白底走）。默认版面两图相邻没有留白，
+        # 用 30° 旋转的外接框（内容距画布角有 300px 空白）验证：角落透明、
+        # 内容照旧。
+        from PIL import Image as _PILImage
+
+        _diag = _PILImage.new("RGB", (400, 600), GREEN)
+        _diag_path = tmp / "diag-probe.png"
+        _diag.save(_diag_path)
+        _diag_page = S.normalize_page({
+            "items": [{"file": str(_diag_path),
+                       "rect": [0.0, 0.0, 400.0, 600.0], "rotation": 30.0}],
+        })
+        assert _diag_page is not None   # 结构合法，normalize 必过
+        _diag_shot = S.compose_page(_diag_page)
+        ok("合成后留白处透明（30° 外接框角落不铺白，返回 RGBA）",
+           _diag_shot.mode == "RGBA"
+           and _diag_shot.getpixel((2, 2))[3] == 0
+           and _diag_shot.getpixel((400, 360))[:3] == GREEN,
+           f"mode={_diag_shot.mode} corner={_diag_shot.getpixel((2, 2))}")
 
         # 旋转是**顺时针**口径：PIL 侧取负，两边必须一致。
         # ⚠️ 判据必须用**非均匀**图案，否则 ±90° 的中心像素一样，注入翻转方向
@@ -201,8 +221,8 @@ def run(ctx) -> None:
         ok("旋转后的产出图按外接框紧裁",
            shot.size == (600, 400), str(shot.size))
         ok("旋转 90° 是**顺时针**（左半转到上边、右半转到下边）",
-           shot.getpixel((300, 80)) == BLUE
-           and shot.getpixel((300, 320)) == GREEN,
+           shot.getpixel((300, 80))[:3] == BLUE
+           and shot.getpixel((300, 320))[:3] == GREEN,
            f"上={shot.getpixel((300, 80))} 下={shot.getpixel((300, 320))}")
 
         # ---------------- 1a. 编辑覆盖源图后 rect 刷新（用户 2026-10-10）--------
@@ -236,8 +256,8 @@ def run(ctx) -> None:
         fixed = S.compose_page(doc_probe["pages"][0])
         ok("刷新后合成不压扁（新图原样落位：左半红、右半蓝）",
            fixed.size == (600, 400)
-           and fixed.getpixel((150, 200)) == RED
-           and fixed.getpixel((450, 200)) == BLUE,
+           and fixed.getpixel((150, 200))[:3] == RED
+           and fixed.getpixel((450, 200))[:3] == BLUE,
            f"size={fixed.size} {fixed.getpixel((150, 200))} / "
            f"{fixed.getpixel((450, 200))}")
 

@@ -187,6 +187,12 @@ class CommitMixin(DialogHost):
             self.canvas.reset_selection()
             return
         self._push_undo(STEP_CROP)
+        if box.size() != self._image.size():
+            # ⚠️ 真裁了（尺寸变了）：内容四边形 (rect0, V) 对新尺寸的像素
+            #    不再成立，整组作废——切回「统一变换」退回整幅矩形框架，
+            #    宁可不恢复也不能错恢复（用户 2026-10-10 口径「边缘变了
+            #    就不恢复」）。选区＝整幅的"裁剪"像素没变，节点保留。
+            self._content_clear()
         self._image = self._image.copy(box)
         self.canvas.set_image(self._image)   # 换图后选区重置为新图的整幅
         self._refresh_size_label()
@@ -215,6 +221,9 @@ class CommitMixin(DialogHost):
         """
         label = STEP_DISTORT if self.canvas.tool == "distort" else STEP_ERASE
         self._push_undo(label)
+        # ⚠️ 擦除/扭曲**真的改像素**（擦除原地画、扭曲整幅重采样）：upright
+        #    缓存作废，下次进「统一变换」要从当前画布重算（2026-10-11 脏位）
+        self._content_pixels_dirty = True
 
 
     # ------------------------------------------------------------ 变换
@@ -237,6 +246,7 @@ class CommitMixin(DialogHost):
         self._content_upright = None
         self._content_seed = None
         self._content_restored = False
+        self._content_pixels_dirty = False
         canvas = getattr(self, "canvas", None)
         if canvas is not None and hasattr(canvas, "consume_content_restore"):
             canvas.consume_content_restore()
@@ -298,12 +308,24 @@ class CommitMixin(DialogHost):
                 * QTransform().translate(-(ox + tx), -(oy + ty)))
         self._content_seed = seed
         canvas.consume_content_restore()
+        # ⚠️ upright 缓存**只在像素真变过时作废**（2026-10-11：之前"一律
+        #    作废"让每轮切走再切回都重算秒级反变换＝切换卡顿，且重算产物
+        #    是烘焙产物的再采样 ⇒ 每轮多一代重采样、PA1 边缘元素逐轮流失）。
+        #    擦除/文字/扭曲会置脏位；旋转/空裁剪不改像素 ⇒ 缓存仍有效 ⇒
+        #    **全量武装**（零等待，烘焙仍从同一份 upright 单代次重采样）。
         upright = getattr(self, "_content_upright", None)
-        if upright is not None and not upright.isNull():
-            canvas.begin_restored_transform(seed, upright)
+        if upright is not None and not getattr(
+                self, "_content_pixels_dirty", False):
+            self._content_restore_params = None
             self._content_restored = True
+            canvas.begin_restored_transform(seed, upright)
             return
-        # 像素还没算：挂"框 + 矩阵"的延迟版，反变换参数留给补像素槽。
+        # 像素变过（或还没算过）：作废缓存，挂"框 + 矩阵"的延迟版，反变换
+        # 参数留给补像素槽（首次拖动才算，源＝**当前画布**——擦除原地改
+        # 引用不变，身份比对不可靠，脏位是唯一可靠信号）。
+        self._content_upright = None
+        self._content_pixels_dirty = False   # 重算源＝当前画布，自此一致
+        # 挂"框 + 矩阵"的延迟版，反变换参数留给补像素槽（首次拖动才算）。
         # ⚠️ ``_content_restored`` 此刻就要置位：它标记"本会话是恢复会话"
         #    （烘焙源＝upright、V 链延续），与"像素算没算"是两回事——等
         #    像素补上用户才拖得动，那时烘焙源必须是 upright。
@@ -364,6 +386,28 @@ class CommitMixin(DialogHost):
             # 输入＝upright（恢复会话）或首次建链：xf 就是"upright→呈现"
             # 的纯总量矩阵（拖拽都叠加在种子矩阵上），rect0＝本次输入整幅。
             self._content_state = (QRectF(rect), QTransform(xf))
+            # ⚠️ 烘焙输入**就是** upright 基准像素（恢复会话 original＝
+            #    upright 本身；首次建链 original＝烘焙前的画布——V 正是
+            #    从它出发的）。缓存住它：之后切走再切回全量武装零重算，
+            #    每轮烘焙都从同一份像素单代次重采样（不缓存的话下一轮
+            #    得从烘焙产物再采样一代，PA1 边缘逐轮流失——2026-10-11）。
+            self._content_upright = original
+            self._content_pixels_dirty = False
+            # ⚠️ 画布此刻已是**烘焙产物**（＝新底片的坐标，自洽成帧）：入口
+            #    收紧偏移 t 是"打开文件那一刻"的量，对新画布不再成立——不清
+            #    掉的话，重挂种子矩阵 V·T(-(o+t)) 会整体错位 t。
+            self._content_trim_offset = (0.0, 0.0)
+            # ⚠️ 节点有效 ⇒ 重新武装恢复闸门（用户 2026-10-10 报障：旋转后
+            #    切到裁剪再切回，「统一变换」的 PA1 框丢了——带挂起变换的
+            #    烘焙分支之前不 rearm，``_content_restore_done`` 永久为 True，
+            #    再进变换工具不会发恢复请求，框退成整幅）。只在**有底片文件**
+            #    时武装：sidecar 机制围着文件转，无 source_path 的会话（测试
+            #    裸画布等）保持普通会话语义。
+            if str(getattr(self, "source_path", "") or ""):
+                canvas = getattr(self, "canvas", None)
+                if canvas is not None and hasattr(
+                        canvas, "rearm_content_restore"):
+                    canvas.rearm_content_restore()
             return
         self._content_clear()             # 链路断了：宁可不恢复
 
@@ -414,7 +458,16 @@ class CommitMixin(DialogHost):
         pending = canvas.transform_pending()
         if pending is None:
             canvas.reset_transform()
+            was_restored = getattr(self, "_content_restored", False)
             self._content_exit_restore()  # 恢复会话没拖就走：画布本来就是原样
+            # ⚠️ 恢复会话没拖就切走（裁剪没裁/文字/擦除/扭曲——都不改图片
+            #    边缘）：下次进「统一变换」要重新恢复 PA1（用户 2026-10-10
+            #    口径「图片边缘没有变化的话，切回统一变换需要恢复原先状态」）。
+            #    节点仍有效才重挂：真裁剪/撤销/翻转已走 ``_content_clear``
+            #    （state=None），这里自然放行不过。
+            if was_restored and getattr(self, "_content_state", None) \
+                    is not None:
+                canvas.rearm_content_restore()
             return True
         # ⚠️ 松手挂起（没 force）时**不烘**：内容已经在画布上实时显示，
         #    再烘一遍就是"每次松手等 11 秒"（就是用户报的那个问题）。
@@ -626,6 +679,10 @@ class CommitMixin(DialogHost):
                 self._content_after_bake(state["rect"], state["xf"],
                                          state["clipping"],
                                          state["original"])
+                if state["payload"]:
+                    # 文字是烘焙**之后**重放到画布像素上的：upright 缓存已
+                    # 不含文字 ⇒ 置脏（下次恢复会话从当前画布重算）
+                    self._content_pixels_dirty = True
                 sync_content_quad(path_text, self)
                 self.apply_completed.emit(path_text, QImage(image))
         finally:
@@ -713,6 +770,7 @@ class CommitMixin(DialogHost):
         for pos, text, px, color, family in payload:
             self._image = draw_text(
                 self._image, pos, text, px, color, family)
+        self._content_pixels_dirty = True   # 文字改了像素：upright 缓存作废
         self.canvas.replace_image(self._image)
 
     def _apply_text_payload(self, payload: list, image: QImage) -> QImage:

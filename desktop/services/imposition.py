@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """图片拼版的派生与合成规则（纯函数 + PIL，无 Qt 依赖，便于独立测试）。
 
-一句话职责：**把每页的两张源图按版面摆到白底上，落成 ``stages/imposition``
+一句话职责：**把每页的两张源图按版面摆到透明底上，落成 ``stages/imposition``
 里的成品页图**，供第四步「PDF排版」当整页图片直接用。
 
 三件事在这里定死（别在别处再写一份）：
@@ -12,9 +12,12 @@
 2. **坐标口径**：``rect`` 是**源图像素**，左上原点、x 向右、y 向下；
    ``rotation`` 是**顺时针角度**（Qt 口径；PIL 侧取负），绕该项 ``rect`` 的中心。
 3. **没有"纸张"**（用户 2026-09-30：「这个拼版不需要设置纸张，只需要背景是白色的
-   就行，后续提交的时候根据图片的四个区域合并出一张图片」）：版面只有白底，
-   图可以随意移动/拉伸；**产出图 = 所有图外接框的紧裁**（``page_bounds`` →
-   ``compose_page``），所以加多少留白、挪多远，用户自己说了算。
+   就行，后续提交的时候根据图片的四个区域合并出一张图片」；⚠️ 2026-10-10 修订：
+   背景**不再铺白**，改透明底——白底会烙进成品页图，编辑器里统一变换/裁剪
+   全都带着白底走。PDF 侧 ``functions/print._load_image`` 会把 RGBA 压平到
+   白纸，成书效果不变）：版面只有透明底，图可以随意移动/拉伸；
+   **产出图 = 所有图外接框的紧裁**（``page_bounds`` → ``compose_page``），
+   所以加多少留白、挪多远，用户自己说了算。
 """
 
 from __future__ import annotations
@@ -520,21 +523,23 @@ def page_bounds(page: dict) -> tuple[float, float, float, float]:
 
 
 def compose_page(page: dict):
-    """一页拼版 → PIL RGB 图：**白底 + 所有图外接框的紧裁**。
+    """一页拼版 → PIL **RGBA 透明底**图：所有图外接框的紧裁。
 
     ⚠️ 旋转方向必须与画布一致：``rotation`` 按 **Qt 顺时针**口径存，
     PIL ``rotate`` 是**逆时针**，所以这里取负。两边口径写反的话，画布上
     转 90°、落盘却反向 90°，用户会看到"生成的 PDF 和图里不一样"。
 
-    留白处为白：去底图的透明在此压到白底上（与 ``functions.print`` 加载图片
-    时的压平规则一致）。
+    ⚠️ **底是透明的，不铺白**（用户 2026-10-10：白底烙进成品页图后，编辑器
+    里统一变换/裁剪全带着白底走，去底图白拼了）。消费方各自处理 alpha：
+    PDF 侧 ``functions/print._load_image`` 压平到白纸；编辑器/预览按 RGBA
+    显示。⚠️ 返回 **RGBA**，调用方别再 ``convert("RGB")``（透明处会变黑）。
     """
     from PIL import Image
 
     left, top, right, bottom = page_bounds(page)
     width = max(1, int(round(right - left)))
     height = max(1, int(round(bottom - top)))
-    canvas = Image.new("RGBA", (width, height), (255, 255, 255, 255))
+    canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     for item in page.get("items") or []:
         x, y, w, h = item["rect"]
         if w <= 0 or h <= 0:
@@ -556,7 +561,7 @@ def compose_page(page: dict):
             (int(round(center_x - image.width / 2.0)),
              int(round(center_y - image.height / 2.0))),
         )
-    return canvas.convert("RGB")
+    return canvas
 
 
 def _save_page_atomic(image, target: Path) -> None:

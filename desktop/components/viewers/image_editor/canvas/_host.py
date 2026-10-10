@@ -191,6 +191,9 @@ class CanvasHost(QGraphicsView):
     def consume_content_restore(self) -> None:
         ...
 
+    def rearm_content_restore(self) -> None:
+        ...
+
     def begin_restored_transform(self, xf: QTransform,
                                  region: Any = None,
                                  rect0: Any = None) -> None:

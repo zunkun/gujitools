@@ -61,6 +61,7 @@ class DialogHost(QDialog):
     _content_restored: bool
     _content_seed: Any
     _content_upright: Any
+    _content_pixels_dirty: bool
     _content_restore_params: Any
     _content_restore_target: float
     _content_trim_offset: tuple[int, int]

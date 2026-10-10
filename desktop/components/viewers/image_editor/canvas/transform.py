@@ -1003,6 +1003,19 @@ class TransformMixin(CanvasHost):
         """标记 sidecar 恢复已处理（无数据/失败/完成）：本会话不再触发。"""
         self._content_restore_done = True
 
+    def rearm_content_restore(self) -> None:
+        """内容节点仍有效时，允许下次进变换工具**重新触发** sidecar 恢复。
+
+        恢复会话没拖就切走（切到裁剪没裁/文字/擦除/扭曲——都不改图片边缘），
+        再切回「统一变换」时 PA1 框要重新挂上（用户 2026-10-10 口径）。
+        ``_content_restore_done`` 是"已处理过"的一次性闸门，这里把它退回；
+        弹窗重进 ``_on_content_restore_requested`` 时节点数据还在，
+        重新武装是零成本的（只挂框/矩阵，反变换依旧延迟到首次拖动）。
+        真裁剪/撤销/翻转已把节点整组作废（``_content_state=None``），
+        弹窗侧不会走到重挂——这里只管放行信号。
+        """
+        self._content_restore_done = False
+
     def begin_restored_transform(self, xf: QTransform,
                                  region: QImage | None = None,
                                  rect0: QRectF | None = None) -> None:
