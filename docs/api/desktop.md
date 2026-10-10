@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 164 个模块、177 个公开类、1198 个公开函数/方法（生成于 2026-10-09）。
+覆盖 165 个模块、177 个公开类、1211 个公开函数/方法（生成于 2026-10-10）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -51,15 +51,16 @@
 | [`desktop.components.viewers.edit_sync`](#desktopcomponentsviewersedit_sync) | 0 | 2 |
 | [`desktop.components.viewers.extract_viewer`](#desktopcomponentsviewersextract_viewer) | 1 | 6 |
 | [`desktop.components.viewers.image_editor.bake`](#desktopcomponentsviewersimage_editorbake) | 0 | 2 |
-| [`desktop.components.viewers.image_editor.canvas.core`](#desktopcomponentsviewersimage_editorcanvascore) | 1 | 17 |
+| [`desktop.components.viewers.image_editor.canvas.core`](#desktopcomponentsviewersimage_editorcanvascore) | 1 | 18 |
 | [`desktop.components.viewers.image_editor.canvas.distortion`](#desktopcomponentsviewersimage_editorcanvasdistortion) | 1 | 1 |
 | [`desktop.components.viewers.image_editor.canvas.interaction`](#desktopcomponentsviewersimage_editorcanvasinteraction) | 1 | 7 |
 | [`desktop.components.viewers.image_editor.canvas.overlay`](#desktopcomponentsviewersimage_editorcanvasoverlay) | 1 | 0 |
 | [`desktop.components.viewers.image_editor.canvas.text`](#desktopcomponentsviewersimage_editorcanvastext) | 1 | 6 |
-| [`desktop.components.viewers.image_editor.canvas.transform`](#desktopcomponentsviewersimage_editorcanvastransform) | 1 | 18 |
+| [`desktop.components.viewers.image_editor.canvas.transform`](#desktopcomponentsviewersimage_editorcanvastransform) | 1 | 20 |
 | [`desktop.components.viewers.image_editor.consts`](#desktopcomponentsviewersimage_editorconsts) | 0 | 0 |
+| [`desktop.components.viewers.image_editor.content_quad`](#desktopcomponentsviewersimage_editorcontent_quad) | 0 | 7 |
 | [`desktop.components.viewers.image_editor.dialog`](#desktopcomponentsviewersimage_editordialog) | 1 | 3 |
-| [`desktop.components.viewers.image_editor.dialog_commit`](#desktopcomponentsviewersimage_editordialog_commit) | 1 | 0 |
+| [`desktop.components.viewers.image_editor.dialog_commit`](#desktopcomponentsviewersimage_editordialog_commit) | 1 | 1 |
 | [`desktop.components.viewers.image_editor.dialog_pages`](#desktopcomponentsviewersimage_editordialog_pages) | 1 | 0 |
 | [`desktop.components.viewers.image_editor.dialog_toolbar`](#desktopcomponentsviewersimage_editordialog_toolbar) | 1 | 0 |
 | [`desktop.components.viewers.image_editor.dialog_undo`](#desktopcomponentsviewersimage_editordialog_undo) | 1 | 0 |
@@ -118,7 +119,7 @@
 | [`desktop.pages.tasklist.page`](#desktoppagestasklistpage) | 1 | 7 |
 | [`desktop.services.detect_export`](#desktopservicesdetect_export) | 0 | 3 |
 | [`desktop.services.font_catalog`](#desktopservicesfont_catalog) | 1 | 6 |
-| [`desktop.services.imposition`](#desktopservicesimposition) | 0 | 23 |
+| [`desktop.services.imposition`](#desktopservicesimposition) | 0 | 25 |
 | [`desktop.services.print_plan`](#desktopservicesprint_plan) | 0 | 5 |
 | [`desktop.services.rembg_live`](#desktopservicesrembg_live) | 0 | 3 |
 | [`desktop.services.stale_chain`](#desktopservicesstale_chain) | 0 | 4 |
@@ -1251,6 +1252,9 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
   **跟着图一起转**——用户 2026-09-30 报过"旋转后高亮框不跟着转"）；
   **按住鼠标操作期间**才升级为带手柄/旋转钮的完整虚线框，**一松手回到
   细框**（2026-09-30：选中态要一直看得见，右侧「当前图片样式」区跟着激活）；
+- **选中的图永远画在最上面**（用户 2026-10-10：类似 CSS 里 ``z-index``
+  更大）——两图重叠时，被压住的那张一旦选中就得浮上来，否则看不清在
+  操作哪张；命中判定（``_item_at``）同样优先命中选中图；
 - **切页 / 点空白处 → 取消选中**（右侧图片操作区随之灰掉）；
 - **双击某张图 → 预览这张原图**；**双击两图之外的空白处 → 预览左右组合**
   （整页按产出口径合成的效果，``emit`` 给控制器开预览弹窗，画布自己不管弹窗）；
@@ -3290,6 +3294,12 @@ worker 会变成孤儿线程，而它是被 ``parent``（编辑器对话框）�
 口径）。选区矩形（裁剪）几何全部落在**图片坐标系**，缩放只影响显示。
 裁剪不做"拖拽画框"：**默认全选**，只许收边/框内移动。
 
+⚠️ 裁剪是**非破坏性**的：这里画的始终是**原图**，收边只是让选区外多一层
+变暗的遮罩（``overlay._sync_overlay`` 每帧按选区重算，所以向外拖时那块
+区域立刻重新露出来）。真正的 ``QImage.copy`` 由弹窗在**切走裁剪工具 /
+点「完成」**时才做（``dialog_commit._commit_crop``）——于是裁剪线在整段
+编辑过程中都能来回推拉，而不会被上一次的"落定"顶死在边界上。
+
 #### 方法
 
 | 方法 | 说明 |
@@ -3305,6 +3315,7 @@ worker 会变成孤儿线程，而它是被 ``parent``（编辑器对话框）�
 | `set_tool(tool: str) -> None` | 切换工具：裁剪/变换默认全选，其余清选区、换光标。 |
 | `set_eraser(size: int) -> None` | 设置橡皮擦直径（图片像素）；擦除固定涂白，没有颜色可选。 |
 | `selection() -> QRectF \| None` | 当前选区（图片坐标）；不足最小边视为没有。 |
+| `reset_selection() -> None` | 选区恢复到整幅图，**像素一个都不动**。 |
 | `fit(ratio: float \| None=None) -> None` | 适应窗口（整图完整可见）；``ratio`` < 1 时四周留白。 |
 | `set_fit_ratio(ratio: float) -> None` | 设「适应窗口」时图片占视口的比例（1.0 = 铺满，< 1 = 四周留白）。 |
 | `zoom_in() -> None` | 放大一档（工具栏按钮用；无档位表，连续乘 1.25）。 |
@@ -3345,6 +3356,19 @@ fit 就等于"每次松手都把图缩小一档"，反复旋转会越转越小�
 
 弹窗侧只读用（例如 ``stroke_started`` 到达时判断该记成"擦除"还是
 "扭曲"），刻意不给 setter——换工具一律走 :meth:`set_tool`。
+
+##### `reset_selection() -> None`
+
+选区恢复到整幅图，**像素一个都不动**。
+
+两种场景用：
+
+- 弹窗丢掉一次**待定**裁剪（Ctrl+Z 优先退掉的就是它，参数页也有
+  「重置选区」）——像素本来就没被裁，框弹回整幅就等于反悔成功；
+- 选区被拖成小于 ``MIN_RECT_EDGE`` 的"废框"时的兜底。
+
+⚠️ 与 :meth:`set_tool` 的差别只在于**不动工具、不清变换预览**，所以
+拿它撤销"待定裁剪"是安全的（不会把正在预览的变换一起掀掉）。
 
 ##### `fit(ratio: float | None=None) -> None`
 
@@ -3535,6 +3559,8 @@ fit 就等于"每次松手都把图缩小一档"，反复旋转会越转越小�
 | `finish_transform_drag() -> None` | 松手：把预览从"拖动快档"升回**精确档**（与烘焙同一套数学）。 |
 | `reset_transform() -> None` | 「重置」：丢弃未应用的变换，选区回到整幅、轴心回到中心。 |
 | `transform_pending() -> tuple[QRectF, QTransform, QImage] \| None` | 未应用的变换 ``(选区, 矩阵, 选区像素快照)``；没有则 None。 |
+| `consume_content_restore() -> None` | 标记 sidecar 恢复已处理（无数据/失败/完成）：本会话不再触发。 |
+| `begin_restored_transform(xf: QTransform, region: QImage \| None=None) -> None` | 把恢复出来的矩阵挂成**未触摸**的待定变换（画布保持文件原样）。 |
 | `transform_move(dx: float, dy: float) -> None` | 整体平移 ``dx, dy``（图片像素，**视觉方向**）。 |
 | `transform_rotate(degrees: float) -> None` | 绕**轴心当前视觉位置**旋转（轴心保持不动）。 |
 | `transform_scale(sx: float, sy: float, anchor: QPointF \| None=None) -> None` | 缩放（局部空间，锚点缺省=轴心；sx/sy 是相对当前内容的倍率）。 |
@@ -3592,6 +3618,26 @@ fit 就等于"每次松手都把图缩小一档"，反复旋转会越转越小�
 :meth:`_apply_float_fast`）；松手瞬间图不再动，这一次重采样只做一遍
 （用户看不到卡），于是**松手后看到的预览就是烘焙结果**——"预览 ==
 烘焙"的判据一点没松。
+
+##### `begin_restored_transform(xf: QTransform, region: QImage | None=None) -> None`
+
+把恢复出来的矩阵挂成**未触摸**的待定变换（画布保持文件原样）。
+
+用户 2026-10-10 口径：「编辑 PB1 图片的时候，正常显示的是 PB1；
+执行统一形变的时候，PB1 要作为画布，PA1 要作为可操作的区域恢复」：
+
+* **画布（``_image``）一个像素都不换**：仍是落盘文件 PB1（内容四边形
+  PA1 已烘焙在内、四角透明）；
+* ``region``（upright 内容，sidecar 反变换产物）成为浮层像素源，
+  选区局部矩形＝rect0（upright 整幅）；纸面清空，浮层正好盖在 PB1
+  里已烘焙的内容上——视觉与打开时完全一致（零跳变）；
+* 矩阵 ``xf``＝**画布系**总量矩阵（弹窗已把 sidecar 的文件系 V 平移
+  到 PB1 坐标）：框/手柄/轴心立刻落在 PA1 四边形上（＝上次保存前
+  的操作状态）；
+* ⚠️ ``_xf_touched`` **保持 False**：用户不再动就没有任何烘焙（切
+  工具/「完成」都不重采样，零代次损失）；一旦拖动，走正常挂起→
+  烘焙链，烘焙输入＝upright、矩阵＝总量 ⇒ 每次保存只损失一次
+  重采样代次。
 
 ##### `transform_rotate(degrees: float) -> None`
 
@@ -3690,6 +3736,81 @@ fit 就等于"每次松手都把图缩小一档"，反复旋转会越转越小�
 
 ---
 
+## `desktop.components.viewers.image_editor.content_quad`
+
+源码：[`desktop/components/viewers/image_editor/content_quad.py`](../../desktop/components/viewers/image_editor/content_quad.py)
+
+内容四角节点（quad）sidecar：「统一变换」的可编辑区域随图片落盘。
+
+用户口径（2026-10-10）：图片四顶点 (p1..p4) 经一系列变换变成 (p11..p41)，
+保存时把节点数据一起写到旁路文件；二次编辑时读回来，「统一变换」的可编辑
+区域就是这四个顶点组成的四边形——**区域之外都是无意义的空白**。这样无论
+旋转、保存、再编辑多少轮，编辑的主体永远是内容本身，而不是扩版后的画布。
+
+表示：**(rect0, V)**
+
+- ``rect0``：内容**摆正**（upright）时的矩形（编辑器工作画布，QRectF）；
+- ``V``：upright 坐标 → 呈现坐标 的**纯**变换矩阵（不含落盘裁剪的原点
+  平移）。落盘文件 = V×rect0 外框的裁剪，原点 o = :func:`quad_frame` 给出，
+  所以从文件反推 upright 用 T = V⁻¹∘translate(o)（:func:`upright_image`）。
+
+sidecar 路径 = ``<图片文件>.quad.json``。任何几何语义变化（裁剪、镜像、
+clip/aspect 档、历史跳转）都整组作废——**宁可不恢复，也不能错恢复**。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| SIDECAR_SUFFIX | `".quad.json"` |
+| _VERSION | `1` |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `quad_path(path: str \| Path) -> Path` | 图片文件的 sidecar 路径：``<图片>.quad.json``（同目录伴随）。 |
+| `quad_frame(xf: QTransform, rect: QRectF) -> tuple[int, int, int, int]` | V 把 upright 矩形映出去后的整数外框 ``(ox, oy, w, h)``。 |
+| `read_quad(path: str \| Path) -> tuple[QRectF, QTransform] \| None` | 读 sidecar，返回 ``(rect0, V)``；不存在/损坏/病态一律 ``None``。 |
+| `write_quad(path: str \| Path, rect: QRectF, xf: QTransform) -> None` | 把 ``(rect0, V)`` 写进 sidecar；写失败静默（节点是增强，不是关键数据）。 |
+| `clear_quad(path: str \| Path) -> None` | 删 sidecar（几何语义已变，节点作废）；不存在即无事。 |
+| `upright_image(image, rect: QRectF, xf: QTransform, interpolation: str='linear', progress=None, origin_shift: tuple[float, float]=(0.0, 0.0))` | 把落盘文件反变换回**摆正的内容**（upright，rect0 大小）。 |
+| `sync_content_quad(path: str \| Path, editor) -> None` | 宿主覆盖图片文件后调用：按编辑器的内容节点状态写/清 sidecar。 |
+
+#### `quad_frame(xf: QTransform, rect: QRectF) -> tuple[int, int, int, int]`
+
+V 把 upright 矩形映出去后的整数外框 ``(ox, oy, w, h)``。
+
+⚠️ 取整口径必须与 ``geometry.transform_region`` 的变换部分**一致**
+（对变换后坐标用 ``round``，拖拽平移的浮点尾巴才不会凭空多出一列）。
+
+#### `upright_image(image, rect: QRectF, xf: QTransform, interpolation: str='linear', progress=None, origin_shift: tuple[float, float]=(0.0, 0.0))`
+
+把落盘文件反变换回**摆正的内容**（upright，rect0 大小）。
+
+文件像素 p 对应 upright 坐标 u = V⁻¹(p + o)（o = :func:`quad_frame` 的
+原点），所以 source(file)→dest(upright) 的矩阵 = ``V⁻¹ * translate(o)``。
+
+``origin_shift``＝**入口收紧偏移** t（``dialog.__init__`` 装图时裁掉的
+透明边宽）：传进来的 ``image`` 是收紧后的 PB1（文件平移 -t），而 o 以
+未收紧文件为基准，所以实际原点＝o + t。``rect`` 一律传 rect0 本身
+（upright 坐标）。反变换走 ``geometry.warp_region`` 的逐像素反向重采样
+（与烘焙同一条数学）；失败/退化返回 ``None``，调用方退回"无节点"模式。
+
+⚠️⚠️ 矩阵是 ``shift * inverse``（**先平移、后逆旋转**，Qt 行向量
+"A*B＝先A后B"）：u = V⁻¹(p + o + t) 里的 ``+（o+t)`` 发生在 V⁻¹
+**内部**。旧版写成 ``inverse * shift``＝先逆旋转、后平移 ⇒ 摆正结果
+整体位移 o − V⁻¹(o)（45° 时实测绿块 4 角采样错 3 个、内容顶被推出
+rect0 裁掉——用户报的「PA1 顶部被削去一段」正是它）。
+
+#### `sync_content_quad(path: str | Path, editor) -> None`
+
+宿主覆盖图片文件后调用：按编辑器的内容节点状态写/清 sidecar。
+
+``editor.content_state()`` 返回 ``(rect0, V)`` 或 None；sidecar 任何
+异常都**不许**绊倒图片保存本身（节点是增强，不是关键数据）。
+
+---
+
 ## `desktop.components.viewers.image_editor.dialog`
 
 源码：[`desktop/components/viewers/image_editor/dialog.py`](../../desktop/components/viewers/image_editor/dialog.py)
@@ -3702,10 +3823,16 @@ fit 就等于"每次松手都把图缩小一档"，反复旋转会越转越小�
 
 MRO 顺序：功能条/参数页在前（``__init__`` 里就要用），提交与历史在后。
 
-版面（2026-10-08 重排）：**顶部功能选择 + 中间画布 + 右侧参数面板 + 底部状态**，
-另有右侧面板里的「编辑历史」步骤列表。编辑**实时生效**——裁剪/变换松手即
-应用，文字块本身就是预览、切功能或「完成」时自动写入，因此没有「应用裁剪」
+版式（2026-10-08 重排）：**顶部功能选择 + 中间画布 + 右侧参数面板 + 底部状态**，
+另有右侧面板里的「编辑历史」步骤列表。编辑**实时生效**——文字块本身就是预览、
+切功能或「完成」时自动写入，变换拖动中由画布浮层实时显示，因此没有「应用裁剪」
 「应用变换」「插入文字」三个确认按钮。
+
+⚠️ **裁剪是非破坏性的**（用户 2026-10-10：「裁剪线可以向内移动也可以向外移动，
+向外移动，原本被隐藏的区域要显示出来」）：裁剪框松手只**记下选区**，不切像素，
+画布画的始终是原图 + 选区外的半透明遮罩 ⇒ 裁剪线在整段编辑里都能来回推拉。
+落定时机 = **切走裁剪工具**或点**「完成」**（各调一次 ``_commit_crop``，一步一个
+撤销点）；Ctrl+Z / Ctrl+Y / 「还原」遇到待定裁剪先把它退掉（像素没动过，不记步）。
 
 ⚠️ 「完成」仍然要求一次覆盖确认（``_confirm_overwrite``）：这一步不是"单步
 变更确认"，而是"要不要覆盖磁盘上的原图"，原图被覆盖后不可逆，用户
@@ -3744,6 +3871,12 @@ MRO 顺序：功能条/参数页在前（``__init__`` 里就要用），提交�
 
 把画布上的临时状态烘焙进当前图像（含后台烘焙与失败提示）。
 
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `content_state()` | 内容节点 ``(rect0, V)``；None = 无节点（宿主据此写/清 sidecar）。 |
+
 ---
 
 ## `desktop.components.viewers.image_editor.dialog_pages`
@@ -3755,8 +3888,9 @@ MRO 顺序：功能条/参数页在前（``__init__`` 里就要用），提交�
 每个功能一张竖排参数页（裁剪/变换/扭曲/擦除/文字）。（从
 ``image_editor/dialog.py`` 拆出，2026-10-07；2026-10-08 由"横向选项行"改成
 "右侧面板竖排"，并**删掉三个单步确认按钮**——「应用裁剪」「应用变换」
-「插入文字」：编辑改为实时生效，见 ``canvas/interaction.py`` 的
-``crop_committed`` / ``transform_committed`` 与 ``_set_tool`` 里的自动提交。）
+「插入文字」：裁剪改为**非破坏性**（松手只记选区，切走功能/「完成」才落定），
+文字块本身就是画布预览，见 ``canvas/interaction.py`` 的
+``crop_selection_changed`` 与 ``_set_tool`` 里的自动提交。）
 
 ### `class ToolPagesMixin(DialogHost)`
 
@@ -4118,8 +4252,9 @@ QPainter 平滑路径（旧行为）。
 表示用户取消，这时本函数返回 ``None``（整步作废，绝不交付半张图）。
 预览调用不传它（前端只要快）。
 
-``grow=False``：画布尺寸不变——先把**原区域**填白（内容被搬走了），再把
-变换后的选区内容画到它该在的位置（透视/平移空出来的地方留白）。
+``grow=False``：画布尺寸不变——先把**原区域**填"空色"（内容被搬走了；
+源图有真透明就填透明、否则填白，见 :func:`_empty_fill`），再把变换后的
+选区内容画到它该在的位置。
 
 ``grow=True``：**不截**超出的部分——新画布 = 「变换后内容的完整外框」
 （见 :func:`transform_region`）。返回 ``(QImage, (ox, oy))``，
@@ -7393,6 +7528,8 @@ GUI 主进程**绝不能**在这里 import 到 cv2（实测 ``import functions.d
 | `normalize_doc(doc) -> dict` | 整份文档收敛：``{"enabled", "pages", "removed"}``（永不为 None）。 |
 | `cn_page_label(index: int) -> str` | 页序（0 起）→ 中文页码标签：``第一页`` / ``第十二页`` / ``第100页``。 |
 | `image_size(path) -> tuple[int, int]` | 图片像素尺寸（读文件头，不解码整图）；读不到返回 (0, 0)。 |
+| `invalidate_size(path) -> None` | 源图被外部覆盖（图片编辑器写回）后丢掉它的尺寸缓存。 |
+| `refresh_rects_for_edited_source(doc: dict, path_text: str) -> bool` | 源图被编辑覆盖后，把文档里引用它的 ``rect`` 刷成**新图的真实尺寸**。 |
 | `used_source_files(doc: dict) -> set[str]` | 已被任何一页拼版引用的源图（用于算「剩余未被选择拼版的图片」）。 |
 | `remaining_files(files: list, doc: dict) -> list` | 源清单里**还没被任何拼版页用过、也没被删除**的图片（顺序沿用源清单）。 |
 | `removed_source_files(doc: dict) -> set[str]` | 被用户「删除图片」移出选择范围的源图路径集合（软删除黑名单）。 |
@@ -7438,6 +7575,28 @@ GUI 主进程**绝不能**在这里 import 到 cv2（实测 ``import functions.d
 
 只覆盖 1~99 的中文写法（古籍拼版页数够用），超出退回阿拉伯数字——
 这里只是**界面文案**，不参与任何匹配，宁可难看也不要写错数字。
+
+#### `invalidate_size(path) -> None`
+
+源图被外部覆盖（图片编辑器写回）后丢掉它的尺寸缓存。
+
+⚠️ :func:`image_size` 的缓存**只进不出**：编辑器把图旋转/裁剪后覆盖回
+同一文件，不丢缓存的话后续 :func:`default_items` / :func:`refresh_rects_
+for_edited_source` 读到的还是旧尺寸。
+
+#### `refresh_rects_for_edited_source(doc: dict, path_text: str) -> bool`
+
+源图被编辑覆盖后，把文档里引用它的 ``rect`` 刷成**新图的真实尺寸**。
+
+⚠️⚠️ 版面 ``rect`` 的宽高是**按源图像素**记的（见 :func:`default_items`）。
+编辑器把图旋转 90°（宽高互换）或裁剪后**覆盖回同一文件**，旧 rect 就成了
+压扁新图的"模子"：:func:`compose_page` 会把新图无条件 ``resize`` 回旧
+宽高——旋转 90° 的图被横向压扁（3500px 的宽压进 2480px），既变形又
+清晰度下降（用户 2026-10-10 报障："旋转后拼版里图片被压宽"）。
+
+规则：宽度高度改成新图的真实尺寸，**绕 rect 中心**保持位置（图还待在
+用户摆的地方，按新形状向四周长开/收拢）；尺寸没变（普通修饰）就一个
+字节都不动。返回是否有 rect 被改过（调用方据此决定要不要落盘/刷视图）。
 
 #### `remaining_files(files: list, doc: dict) -> list`
 

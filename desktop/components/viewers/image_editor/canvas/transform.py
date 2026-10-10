@@ -451,9 +451,18 @@ class TransformMixin(CanvasHost):
         if self._float_item is not None or self._image is None \
                 or self._rect is None:
             return
-        rect = self._rect.normalized()
+        # ⚠️ 内容节点恢复会话（2026-10-10）：浮层像素源＝sidecar 反变换出的
+        #    upright 内容，选区局部矩形＝rect0（upright 整幅）——**画布不动**，
+        #    不像普通会话那样从 ``_image`` 拍快照（用户口径「PB1 作为画布，
+        #    PA1 作为可操作区域恢复」）。
+        restore = self._xf_restore_region
+        if restore is not None:
+            rect = QRectF(0, 0, restore.width(), restore.height())
+            self._xf_region = QImage(restore)
+        else:
+            rect = self._rect.normalized()
+            self._xf_region = self._image.copy(rect.toRect())
         self._xf_rect = QRectF(rect)
-        self._xf_region = self._image.copy(rect.toRect())
         # 预览降采样：浮层像素按预算缩一版（``TRANSFORM_PREVIEW_PIXELS``）。
         # 拖动中这一版**直接**当浮层画布用（不重采样，见 ``_float_fast_plane``），
         # 所以它同时也是"拖动中看到的清晰度"；松手后它是精确档的采样源。
@@ -627,6 +636,10 @@ class TransformMixin(CanvasHost):
         """选区是不是整幅（此时没有任何"原图残余"要画，纸就是纯白）？"""
         if self._image is None or self._xf_rect is None:
             return False
+        if self._xf_restore_region is not None:
+            # 恢复会话：整个画布的内容（PA1）都被"搬上浮层"了，纸＝纯透明。
+            # PB1 的四角本来就是透明的，视觉与打开时完全一致（零跳变）。
+            return True
         rect = self._xf_rect.normalized()
         return (abs(rect.left()) < 0.5 and abs(rect.top()) < 0.5
                 and abs(rect.width() - self._image.width()) < 0.5
@@ -897,11 +910,15 @@ class TransformMixin(CanvasHost):
 
         方向切换时底图会失效（它按"那一刻的矩阵"画好了结果），所以这里发
         现方向与建预览时不一致就整块重建——否则画面会停在旧方向上骗人。
+        ⚠️ 恢复会话的浮层源（upright）要**跨重建保留**：重建只是换方向，
+        不是结束恢复。
         """
         if self._float_item is None or self._xf_rect is None:
             return
         if self._xf_preview_direction != self._xf_direction:
+            restore = self._xf_restore_region
             self._clear_transform_preview()
+            self._xf_restore_region = restore
             self._ensure_transform_preview()
             return
         # 底图范围恒定（= 原图矩形），拖动中不会长大 ⇒ 这里几乎恒不触发；
@@ -939,6 +956,7 @@ class TransformMixin(CanvasHost):
             self._xf_preview_keyframe = None
             self._xf_rect = None
             self.refresh()
+        self._xf_restore_region = None   # 恢复会话一并结束（换图/换工具/重置）
         if self._item is not None:
             self._item.setVisible(True)   # 「合成预览」关掉过的话要还回来
             self._item.setPos(0.0, 0.0)   # 向后预览的底图被挪过位置，要还回来
@@ -967,6 +985,44 @@ class TransformMixin(CanvasHost):
             return None
         return (QRectF(self._xf_rect), QTransform(self._xf),
                 QImage(self._xf_region))
+
+    # ---- 内容节点恢复（二次编辑，2026-10-10） ----
+    def consume_content_restore(self) -> None:
+        """标记 sidecar 恢复已处理（无数据/失败/完成）：本会话不再触发。"""
+        self._content_restore_done = True
+
+    def begin_restored_transform(self, xf: QTransform,
+                                 region: QImage | None = None) -> None:
+        """把恢复出来的矩阵挂成**未触摸**的待定变换（画布保持文件原样）。
+
+        用户 2026-10-10 口径：「编辑 PB1 图片的时候，正常显示的是 PB1；
+        执行统一形变的时候，PB1 要作为画布，PA1 要作为可操作的区域恢复」：
+
+        * **画布（``_image``）一个像素都不换**：仍是落盘文件 PB1（内容四边形
+          PA1 已烘焙在内、四角透明）；
+        * ``region``（upright 内容，sidecar 反变换产物）成为浮层像素源，
+          选区局部矩形＝rect0（upright 整幅）；纸面清空，浮层正好盖在 PB1
+          里已烘焙的内容上——视觉与打开时完全一致（零跳变）；
+        * 矩阵 ``xf``＝**画布系**总量矩阵（弹窗已把 sidecar 的文件系 V 平移
+          到 PB1 坐标）：框/手柄/轴心立刻落在 PA1 四边形上（＝上次保存前
+          的操作状态）；
+        * ⚠️ ``_xf_touched`` **保持 False**：用户不再动就没有任何烘焙（切
+          工具/「完成」都不重采样，零代次损失）；一旦拖动，走正常挂起→
+          烘焙链，烘焙输入＝upright、矩阵＝总量 ⇒ 每次保存只损失一次
+          重采样代次。
+        """
+        if self._tool != "transform" or self._image is None:
+            return
+        if region is not None and not region.isNull():
+            self._xf_restore_region = QImage(region)
+        self._ensure_transform_preview()
+        self._xf = QTransform(xf)
+        if self._xf_rect is not None:
+            # 轴心跟着换到 rect0（upright 局部坐标）中心：视觉上＝内容四边形
+            # 中心，旋转/缩放的语义与"保存前那一刻"一致。
+            self._xf_pivot = self._xf_rect.center()
+        self._sync_float()
+        self._sync_overlay()
 
     # ---- 变换操作（拖拽处理器与自测共用的语义级入口） ----
     def transform_move(self, dx: float, dy: float) -> None:

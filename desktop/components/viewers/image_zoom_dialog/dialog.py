@@ -432,6 +432,8 @@ class ImageZoomDialog(QDialog, WorkerHost):
             if editor is not None:
                 # 覆盖确认里点名是哪个文件（不知道文件名的覆盖确认等于没确认）
                 editor.target_name = edit_path.name
+                # 内容节点 sidecar（统一变换二次编辑恢复，2026-10-10）
+                editor.source_path = str(edit_path)
         else:
             editor = self._open_editor(self.canvas.export_image())
         if editor is None:
@@ -446,6 +448,11 @@ class ImageZoomDialog(QDialog, WorkerHost):
             if not overwrite_image_file(edited, edit_path):
                 self.tip_label.setText(f"保存失败，编辑未生效：{edit_path}")
                 return
+            from desktop.components.viewers.image_editor import (
+                sync_content_quad,
+            )
+
+            sync_content_quad(str(edit_path), editor)
             # 三处同步：① 主查看器（信号携带编辑图，宿主立即上屏并登记尺寸）
             # ② 本弹窗画布 ③ 磁盘文件（上面已原子覆盖）。缩略图缓存由宿主
             # 后台重生，不阻塞前两处。

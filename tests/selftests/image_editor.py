@@ -3,9 +3,10 @@
 
 断言线（只看可观测行为）：
 
-1. **裁剪**：进入工具**默认选中整幅图**、只许手柄内收/框内移动，不做
-   截图式"拖拽画框"；应用后画布尺寸 = 选区尺寸，换图（应用/撤销/还原）
-   后重新默认全选；
+1. **裁剪**：进入工具**默认选中整幅图**、只许拖边/框内移动，不做
+   截图式"拖拽画框"；**非破坏性**——松手只记下待定裁剪（像素不动、可
+   继续向外拖把变暗的区域拉回来），切走工具/「完成」才落定成"画布尺寸 =
+   选区尺寸"；落定后换图重新默认全选；待定不进历史（Ctrl+Z 先退它）；
 1b. **变换数学**：绕点旋转/缩放/切变（轴心不动、方向与系数钉死）；
 1c. **变换**：默认全选、框内拖=移动、按下即实时预览（底图=原图矩形那块的
    残余、选区擦成透明；范围**恒定**不跟变换走）、应用烘焙（原位置填白、
@@ -86,6 +87,19 @@ def canvas_img(canvas):
     img = canvas.image
     assert img is not None  # 编辑过程中画布必有图
     return img
+
+
+def history_labels(dialog) -> str:
+    """右侧「编辑历史」每一格的文案，拼成一行放进断言信息里。
+
+    ⚠️ **不要写成 f-string 里的多行推导式**（``f"{[x.text() for x in
+    lst\\n ...]}"``）：替换字段里出现物理换行是 **Python 3.12+（PEP 701）
+    才有的语法**，仓库跑 conda py310 ⇒ 那会让**整个自测模块 import 失败**
+    （`gui_selftest.discover_modules` 直接崩，整个套件都跑不了）。
+    2026-10-08 那次布局调整就是这么把本文件写坏的，到 2026-10-10 才发现。
+    """
+    return str([dialog.history_list.item(i).text()
+                for i in range(dialog.history_list.count())])
 
 
 def run(ctx) -> None:
@@ -479,6 +493,12 @@ def run(ctx) -> None:
         ok("裁剪：远离边缘的框内不命中手柄（那是移动）",
            canvas._hit_handle(middle) is None,
            f"hit={canvas._hit_handle(middle)}")
+
+        def mask_area(cv) -> float:
+            """选区外那 4 块遮罩的总面积（= 被"藏起来"的像素数）。"""
+            return sum(max(0.0, it.rect().width()) * max(0.0, it.rect().height())
+                       for it in cv._mask)
+
         zoom_before = canvas._zoom
         undo_before = len(dialog._undo)
         history_before = dialog.history_list.count()
@@ -488,21 +508,89 @@ def run(ctx) -> None:
            and canvas._mode[1] == "tl", f"mode={canvas._mode}")
         canvas.mouseMoveEvent(mouse_event(
             "move", QPointF(canvas.mapFromScene(QPointF(60, 30)))))
-        ok("裁剪：拖动过程中图仍是整幅（松手才落定）",
+        ok("裁剪：拖动过程中图仍是整幅（松手也不切像素）",
            canvas_img(canvas).width() == 200
            and canvas.selection() is not None
            and abs(canvas.selection().left() - 60) < 1,
            f"w={canvas_img(canvas).width()} sel={canvas.selection()}")
         canvas.mouseReleaseEvent(mouse_event(
             "release", QPointF(canvas.mapFromScene(QPointF(60, 30)))))
+        sel_now2 = canvas.selection()
+        masked_in = mask_area(canvas)
+        ok("裁剪：松手**不落定**＝画布仍是原图、选区留着、不进历史",
+           canvas_img(canvas).width() == 200
+           and canvas_img(canvas).height() == 120
+           and sel_now2 is not None
+           and abs(sel_now2.left() - 60) < 1
+           and dialog._pending_crop is not None
+           and len(dialog._undo) == undo_before
+           and dialog.history_list.count() == history_before,
+           f"w={canvas_img(canvas).width()} sel={sel_now2} "
+           f"待定={dialog._pending_crop} undo={len(dialog._undo)}")
+        ok("裁剪：待定期间右下角并排写出「裁完是多大」",
+           "裁剪后 140 × 90 px" in dialog.size_label.text(),
+           f"label={dialog.size_label.text()!r}")
+        ok("裁剪：待定期间视图不跳（画面不动，用户才好继续推拉）",
+           canvas._zoom == zoom_before,
+           f"zoom {zoom_before:.2f} -> {canvas._zoom:.2f}")
+
+        # ---- 回归（用户 2026-10-10 报障）：裁剪线要能向外拖回去 ----
+        # 旧版松手即 QImage.copy，把图裁小、选区重置成新图整幅 ⇒ 第二次拖动
+        # 时手柄已经压在边界上，向外无处可拖；现在待定状态下画布始终是原图，
+        # 往外拖时被遮罩盖住的区域会重新露出来。
+        tl_now = QPointF(canvas.mapFromScene(QPointF(60, 30)))
+        canvas.mousePressEvent(mouse_event("press", tl_now))
+        ok("裁剪：收小后角手柄仍可再抓（没有换图把手柄顶到新边界上）",
+           canvas._mode is not None and canvas._mode[0] == "handle"
+           and canvas._mode[1] == "tl", f"mode={canvas._mode}")
+        canvas.mouseMoveEvent(mouse_event(
+            "move", QPointF(canvas.mapFromScene(QPointF(10, 8)))))
+        canvas.mouseReleaseEvent(mouse_event(
+            "release", QPointF(canvas.mapFromScene(QPointF(10, 8)))))
+        sel_out = canvas.selection()
+        masked_out = mask_area(canvas)
+        ok("裁剪：向外拖回去＝原本被隐藏的区域重新显示（遮罩显著缩小）",
+           sel_out is not None
+           and abs(sel_out.left() - 10) < 1 and abs(sel_out.top() - 8) < 1
+           and abs(sel_out.width() - 190) < 1
+           and masked_out < masked_in / 2
+           and canvas_img(canvas).width() == 200,
+           f"sel={sel_out} 遮罩 {masked_in:.0f} -> {masked_out:.0f} "
+           f"w={canvas_img(canvas).width()}")
+        ok("裁剪：反复推拉期间图一直是原图、历史一步都不增",
+           canvas_img(canvas).height() == 120
+           and dialog._pending_crop is not None
+           and len(dialog._undo) == undo_before
+           and dialog.history_list.count() == history_before,
+           f"待定={dialog._pending_crop} undo={len(dialog._undo)}")
+        # 再拖一次回到整幅：这一下等于"没裁"，待定就该自己消失
+        tl_out = QPointF(canvas.mapFromScene(QPointF(10, 8)))
+        canvas.mousePressEvent(mouse_event("press", tl_out))
+        canvas.mouseMoveEvent(mouse_event(
+            "move", QPointF(canvas.mapFromScene(QPointF(0, 0)))))
+        canvas.mouseReleaseEvent(mouse_event(
+            "release", QPointF(canvas.mapFromScene(QPointF(0, 0)))))
+        ok("裁剪：一路拖回整幅＝当成没裁（待定清空、历史不增）",
+           canvas.selection() == canvas.image_rect()
+           and dialog._pending_crop is None
+           and len(dialog._undo) == undo_before
+           and dialog.history_list.count() == history_before,
+           f"sel={canvas.selection()} 待定={dialog._pending_crop} "
+           f"undo={len(dialog._undo)}")
+
+        # 再收小一次，然后**切走裁剪工具**才真正落定（GIMP 口径）
+        canvas._rect = QRectF(60, 30, 140, 90)
+        dialog._preview_crop()
+        ok("裁剪：切走工具前仍是原图（待定没落定）",
+           canvas_img(canvas).width() == 200, "")
+        dialog._set_tool("erase")
         cropped = canvas_img(canvas)
-        ok("裁剪：松手即裁剪＝画布尺寸变选区尺寸（没有「应用裁剪」按钮）",
+        ok("裁剪：切走裁剪工具＝确认这次裁剪（画布尺寸 = 选区尺寸）",
            abs(cropped.width() - 140) < 1 and abs(cropped.height() - 90) < 1,
            f"size={cropped.width()}x{cropped.height()}")
-        ok("裁剪：裁剪后选区重新默认全选新图",
-           canvas.selection() == canvas.image_rect(),
-           f"sel={canvas.selection()} full={canvas.image_rect()}")
-        ok("裁剪：一步一个撤销点，历史多一格「裁剪」且光标停在那儿",
+        ok("裁剪：落定后待定状态清空（不会二次落定）",
+           dialog._pending_crop is None, f"待定={dialog._pending_crop}")
+        ok("裁剪：落定是一步撤销点，历史多一格「裁剪」且光标停在那儿",
            len(dialog._undo) == undo_before + 1
            and dialog.history_list.count() == history_before + 1
            and dialog.history_list.item(
@@ -510,9 +598,13 @@ def run(ctx) -> None:
            and dialog.history_list.currentRow()
            == dialog.history_list.count() - 1,
            f"undo={len(dialog._undo)} 行={dialog.history_list.currentRow()} "
-           f"历史={[dialog.history_list.item(i).text()
-                  for i in range(dialog.history_list.count())]}")
-        ok("裁剪：松手后视图重新适应新图（形状变了，倍率随之重算）",
+           f"历史={history_labels(dialog)}")
+        # 回到裁剪工具：换图后选区重新默认全选新图
+        dialog._set_tool("crop")
+        ok("裁剪：落定后选区重新默认全选新图",
+           canvas.selection() == canvas.image_rect(),
+           f"sel={canvas.selection()} full={canvas.image_rect()}")
+        ok("裁剪：落定后视图重新适应新图（形状变了，倍率随之重算）",
            canvas._zoom > zoom_before,
            f"zoom {zoom_before:.2f} -> {canvas._zoom:.2f}")
         sel_sel = canvas.selection()
@@ -535,6 +627,21 @@ def run(ctx) -> None:
            canvas_img(canvas).width() == 140
            and dialog.history_list.currentRow()
            == dialog.history_list.count() - 1, "")
+        # 待定裁剪不进历史：Ctrl+Z 要先退掉它（框弹回整幅），再按一次才撤真步骤
+        dialog._redo_now()          # 先把重做链走空，保证下面按一次就能撤到 140
+        canvas.set_tool("crop")
+        canvas._rect = QRectF(10, 10, 120, 70)      # 当前图已是 140×90
+        dialog._preview_crop()
+        steps_now = len(dialog._undo)
+        dialog._undo_now()
+        ok("裁剪：待定时 Ctrl+Z 先退掉裁剪框（图不动、历史不撤）",
+           dialog._pending_crop is None
+           and canvas.selection() == canvas.image_rect()
+           and len(dialog._undo) == steps_now
+           and canvas_img(canvas).width() == 140,
+           f"待定={dialog._pending_crop} sel={canvas.selection()} "
+           f"undo={len(dialog._undo)} before={steps_now} "
+           f"w={canvas_img(canvas).width()}")
         # 选区没变（点一下手柄但不拖）时松手：不许白压一个空撤销步
         steps_now = len(dialog._undo)
         handle_top = QPointF(canvas.mapFromScene(
@@ -543,6 +650,7 @@ def run(ctx) -> None:
         canvas.mouseReleaseEvent(mouse_event("release", handle_top))
         ok("裁剪：选区没变时松手不产生空撤销步（点一下不算一步）",
            len(dialog._undo) == steps_now
+           and dialog._pending_crop is None
            and canvas_img(canvas).width() == 140,
            f"undo={len(dialog._undo)} before={steps_now}")
 
@@ -660,11 +768,16 @@ def run(ctx) -> None:
         # 裁剪 + 撤销 + 重做 + 还原
         dialog._reset_all()          # 前面的用例已把图裁成 140×90，先回 200×120
         dialog.canvas._rect = QRectF(0, 0, 100, 120)
-        dialog._apply_crop()
-        ok("裁剪：应用后画布尺寸 = 选区尺寸",
+        dialog._preview_crop()
+        ok("裁剪：松手只记下待定裁剪、像素一个都没动",
+           canvas_img(dialog.canvas).width() == 200
+           and canvas_img(dialog.canvas).height() == 120
+           and dialog._pending_crop is not None, "")
+        dialog._commit_crop()
+        ok("裁剪：落定后画布尺寸 = 选区尺寸",
            canvas_img(dialog.canvas).width() == 100
            and canvas_img(dialog.canvas).height() == 120, "")
-        ok("裁剪：应用（换图）后裁剪区重新默认全选新图",
+        ok("裁剪：落定（换图）后裁剪区重新默认全选新图",
            dialog.canvas.selection() == dialog.canvas.image_rect(),
            f"sel={dialog.canvas.selection()}")
         dialog._undo_now()
@@ -707,7 +820,7 @@ def run(ctx) -> None:
             cvh._erase_at(QPointF(20, 40), QPointF(40, 40))
             dialog_h._set_tool("crop")
             cvh._rect = QRectF(0, 0, 60, 80)
-            dialog_h._apply_crop()
+            dialog_h._preview_crop()
             dialog_h._set_tool("text")
             block = cvh.add_text_block(
                 QPointF(6, 6), 24, QColor("#000000"), "SimSun")
@@ -737,7 +850,8 @@ def run(ctx) -> None:
             # 在历史中间做新动作 ⇒ 后面那格作废（重做链被截断）
             dialog_h._set_tool("crop")
             cvh._rect = QRectF(0, 0, 30, 80)
-            dialog_h._apply_crop()
+            dialog_h._preview_crop()
+            dialog_h._commit_crop()
             labels = [ctrl.item(i).text() for i in range(ctrl.count())]
             ok("步骤历史：跳回中间后再改动 ⇒ 后面的「文字」那格作废",
                labels == ["打开", "擦除", "裁剪", "裁剪"]
@@ -1251,8 +1365,288 @@ def run(ctx) -> None:
                and dialog4.history_list.currentRow()
                == dialog4.history_list.count() - 1,
                f"undo={len(dialog4._undo)} before={undo_before} "
-               f"历史={[dialog4.history_list.item(i).text()
-                      for i in range(dialog4.history_list.count())]}")
+               f"历史={history_labels(dialog4)}")
+
+            # ---- 「完成」直接收尾：挂起的变换必须落到实体图（2026-10-10 报障） ----
+            # 松手只挂起（上面的用例刚验过），此后**不切工具**、直接点「完成」：
+            # _finish 里的 _commit_transform 不带 force 的话会被"挂起跳过"分支
+            # 原样退回，烘焙整个被跳过 ⇒ 结果图还是原图（用户报的正是它）。
+            from PySide6.QtWidgets import QDialog
+
+            dialogF = ImageEditorDialog(None, timg)
+            try:
+                canvasF = dialogF.canvas
+                canvasF.set_tool("transform")
+                canvasF.transform_rotate(90)
+                canvasF.make_transform_pending()   # 模拟真实拖动松手后的挂起态
+                ok("变换：挂起态直接点「完成」前像素未动",
+                   canvasF.has_pending_transform()
+                   and canvas_img(canvasF).size() == timg.size(), "")
+                dialogF._finish()
+                done = dialogF.result_image()
+                ok("变换：「完成」直接收尾也烘焙（结果 = 旋转后 120×200）",
+                   dialogF.result() == QDialog.DialogCode.Accepted
+                   and done is not None
+                   and (done.width(), done.height()) == (120, 200)
+                   and canvasF.transform_pending() is None,
+                   f"result={dialogF.result()} size="
+                   + ("None" if done is None
+                      else f"{done.width()}x{done.height()}"))
+            finally:
+                dialogF.deleteLater()
+
+            # ---- 透明源图：烘焙后空出来的地方保持透明（2026-10-10 报障） ----
+            # 去底色产物整幅旋转：画布预览（10-09 起）空处透明，烘焙却留着
+            # 两处硬编码填白（原位 fillRect + grow 底图）⇒ 存盘变白底。
+            # 空处填色统一为 _empty_fill：源图真有 alpha ⇒ 透明，否则白。
+            # 内容铺满整幅（只留一个透明孔）：内容收紧（_trim_transparent_edges）
+            # 对"贴边内容"是 no-op，90° 互换的尺寸口径不变。
+            from PySide6.QtGui import QColor as _QC
+
+            timgA = make_image(200, 120)
+            timgA.fill(_QC(255, 0, 0, 255))
+            for x in range(96, 104):            # 中央 8×8 透明孔
+                for y in range(56, 64):
+                    timgA.setPixel(x, y, 0x00000000)
+            dialogA = ImageEditorDialog(None, timgA)
+            try:
+                canvasA = dialogA.canvas
+                canvasA.set_tool("transform")
+                canvasA.transform_rotate(90)
+                dialogA._commit_transform(force=True)
+                got = canvas_img(canvasA)
+                ok("变换：透明源图烘焙不染白（尺寸 90° 互换、中心孔保持透明）",
+                   abs(got.width() - 120) <= 1 and abs(got.height() - 200) <= 1
+                   and got.pixelColor(60, 100).alpha() == 0,
+                   f"size={got.width()}x{got.height()} "
+                   f"hole_a={got.pixelColor(60, 100).alpha()}")
+                _reds = [
+                    (x, y)
+                    for x in range(0, got.width(), 2)
+                    for y in range(0, got.height(), 2)
+                    if got.pixelColor(x, y).alpha() > 200
+                    and got.pixelColor(x, y).red() > 150
+                    and got.pixelColor(x, y).green() < 100
+                ]
+                ok("变换：透明源图烘焙后红块完好（内容没被垫底吃掉）",
+                   len(_reds) >= 5000
+                   and got.pixelColor(2, 2).red() > 150,
+                   f"红块采样点={len(_reds)} "
+                   f"角={got.pixelColor(2, 2).name()}")
+                # clip 档：画布尺寸不变，原位必须真清除（Clear）——
+                # 透明色 SourceOver 盖不住，会留 ghost + 白底双重 bug。
+                # ⚠️ 入口内容提取后主体＝内容块本身（20×20），转 90° 会铺满
+                #    整幅、没有空处可验 ghost ⇒ 转 45°，四角空出来。
+                timgC = make_image(200, 120)
+                timgC.fill(_QC(0, 0, 0, 0))
+                for x in range(150, 170):
+                    for y in range(50, 70):
+                        timgC.setPixel(x, y, 0xFFFF0000)
+                timgC.setPixel(169, 69, 0x00000000)   # 缺角 ⇒ 真有 alpha
+                timgC.setPixel(168, 69, 0x00000000)
+                timgC.setPixel(169, 68, 0x00000000)
+                dialogC = ImageEditorDialog(None, timgC)
+                try:
+                    canvasC = dialogC.canvas
+                    gotC = canvas_img(canvasC)
+                    ok("编辑入口内容提取：打开带空白边的透明图，主体＝内容外框",
+                       (gotC.width(), gotC.height()) == (20, 20)
+                       and gotC.pixelColor(10, 10).alpha() > 200,
+                       f"size={gotC.width()}x{gotC.height()}")
+                    canvasC.set_tool("transform")
+                    canvasC._xf_clipping = "clip"
+                    canvasC.transform_rotate(45)
+                    dialogC._commit_transform(force=True)
+                    got2 = canvas_img(canvasC)
+                    _reds2 = [
+                        (x, y)
+                        for x in range(0, got2.width(), 2)
+                        for y in range(0, got2.height(), 2)
+                        if got2.pixelColor(x, y).alpha() > 200
+                        and got2.pixelColor(x, y).red() > 150
+                        and got2.pixelColor(x, y).green() < 100
+                    ]
+                    ok("变换：透明源图 clip 档不染白、原位不留 ghost（红块只有一份）",
+                       abs(got2.width() - 20) <= 1
+                       and abs(got2.height() - 20) <= 1
+                       and got2.pixelColor(2, 2).alpha() == 0
+                       and 20 <= len(_reds2) <= 90,
+                       f"size={got2.width()}x{got2.height()} "
+                       f"corner_a={got2.pixelColor(2, 2).alpha()} "
+                       f"红块采样点={len(_reds2)}")
+                finally:
+                    dialogC.deleteLater()
+
+                # 入口提取**不碰**不透明图：白边可能是"纸"的内容。
+                dialogO = ImageEditorDialog(None, make_image(200, 120))
+                try:
+                    gotO = canvas_img(dialogO.canvas)
+                    ok("编辑入口不裁不透明图（白边可能是纸的内容）",
+                       (gotO.width(), gotO.height()) == (200, 120),
+                       f"size={gotO.width()}x{gotO.height()}")
+                finally:
+                    dialogO.deleteLater()
+            finally:
+                dialogA.deleteLater()
+
+            # ---- 透明源图「旋转→保存→再旋转」不再越滚越大（2026-10-10） ----
+            # 旧版外框按**画布矩形四角**算：A(200×120, 内容 100×60) 转 45° →
+            # 外框 ≈114²（恰＝内容外框，暂无多余边）；存盘后二次编辑的主体
+            # 变成 A1（含四角空白），再转 45° 外框按 A1 四角又扩 √2 倍 ≈161²，
+            # 内容占比每转一次缩一截。内容收紧后：烘焙结果裁到**非透明像素**
+            # 的真实外框，二次旋转回到内容本身的 90° 外框 ≈62×102。
+            timgB = make_image(200, 120)
+            timgB.fill(_QC(0, 0, 0, 0))
+            for x in range(50, 150):
+                for y in range(30, 90):
+                    timgB.setPixel(x, y, 0xFF00FF00)   # 居中绿块 100×60
+            for x in range(96, 104):            # 中央 8×8 透明孔：去底色
+                for y in range(56, 64):         # 产物 bbox 内总有透明像素
+                    timgB.setPixel(x, y, 0x00000000)
+            dialogB = ImageEditorDialog(None, timgB)
+            try:
+                canvasB = dialogB.canvas
+                canvasB.set_tool("transform")
+                canvasB.transform_rotate(45)
+                dialogB._commit_transform(force=True)
+                r1 = canvas_img(canvasB)
+                ok("变换：透明图转 45° 外框＝内容外框（≈114²，无多余边）",
+                   106 <= r1.width() <= 122 and 106 <= r1.height() <= 122,
+                   f"r1={r1.width()}x{r1.height()}")
+                canvasB.set_tool("transform")
+                canvasB.transform_rotate(45)
+                dialogB._commit_transform(force=True)
+                r2 = canvas_img(canvasB)
+                _area1, _area2 = r1.width() * r1.height(), \
+                    r2.width() * r2.height()
+                ok("变换：再转 45° 内容收紧回 90° 外框（≈62×102，不按 √2 滚大）",
+                   54 <= r2.width() <= 72 and 94 <= r2.height() <= 112
+                   and _area2 < _area1 * 0.6,
+                   f"r2={r2.width()}x{r2.height()} "
+                   f"面积比={_area2 / _area1:.2f}")
+            finally:
+                dialogB.deleteLater()
+
+            # ---- 内容四角节点：sidecar 落盘 + 二次编辑恢复（2026-10-10） ----
+            # 用户口径：p1..p4 旋转后变成 p11..p41，节点数据随图片一起保存；
+            # 二次编辑时读回来，「统一变换」的可编辑区域＝内容四边形本身，
+            # 框/手柄恢复到"没保存时"的状态，区域外都是无意义空白。
+            from pathlib import Path as _Path
+
+            from desktop.components.viewers.image_editor import (
+                quad_path, read_quad, sync_content_quad, upright_image,
+                write_quad,
+            )
+            from tests.tmpdir import temp_dir as _temp_dir
+
+            _qdir = _temp_dir("quad_")
+            _qpath = _qdir / "page.png"
+            baseA = make_image(200, 120)
+            # ⚠️ 打一个色块标记：纯白图查不出"反变换位移"（旧回归只查尺寸，
+            #    矩阵顺序错了照样绿——2026-10-10「PA1 顶部被削一段」漏网）。
+            for _mx in range(30, 50):
+                for _my in range(15, 35):
+                    baseA.setPixel(_mx, _my, 0xFF0000FF)   # 蓝块 20×20
+            rect0 = QRectF(0, 0, 200, 120)
+            v45 = rotate_about(QPointF(100, 60), 45.0)
+            look = compose_transform(
+                baseA, rect0, v45, baseA.copy(), grow=True)[0]
+            look.save(str(_qpath), "PNG")
+            write_quad(_qpath, rect0, v45)
+            _rq = read_quad(_qpath)
+            ok("内容节点：sidecar 写读回环（rect0/V 保真）",
+               _rq is not None and _rq[0] == rect0 and _rq[1] == v45,
+               f"rect={None if _rq is None else _rq[0]}")
+            up = upright_image(look, rect0, v45, "linear")
+            _up_ok = up is not None and (up.width(), up.height()) == (200, 120)
+            _mark = [
+                (36, 21), (44, 29), (40, 25),   # 蓝块内点：原位才算恢复对
+                (100, 60),                       # 中心（rotate_about 的轴心）
+            ]
+            _mark_hits = [
+                _up_ok
+                and up.pixelColor(x, y).alpha() > 200
+                and up.pixelColor(x, y).blue() > 150
+                and up.pixelColor(x, y).red() < 100
+                for x, y in _mark[:3]]
+            ok("内容节点：反变换回 upright（尺寸回到 rect0）",
+               _up_ok,
+               "size=" + ("None" if up is None
+                          else f"{up.width()}x{up.height()}"))
+            ok("内容节点：反变换内容**原位**（蓝块 3 内点全中，矩阵顺序正确）",
+               all(_mark_hits),
+               f"hits={_mark_hits} center={_up_ok and up.pixelColor(100, 60).name()}")
+
+            editorQ = ImageEditorDialog(None, look, save_back=True)
+            try:
+                editorQ.source_path = str(_qpath)
+                # 进变换工具 ⇒ 触发 sidecar 恢复（小图走同步档，无进度框）
+                editorQ.canvas.set_tool("transform")
+                gotQ = canvas_img(editorQ.canvas)
+
+                from desktop.components.viewers.image_editor.content_quad \
+                    import quad_frame as _quad_frame
+                from PySide6.QtGui import QTransform as _QTx
+
+                _ox, _oy, _fw, _fh = _quad_frame(v45, rect0)
+                seedQ = _QTx(v45) * _QTx().translate(-_ox, -_oy)
+                ok("内容节点：PB1 作画布不换图（画布＝文件原样、恢复已武装）",
+                   (gotQ.width(), gotQ.height())
+                   == (look.width(), look.height())
+                   and gotQ == look
+                   and editorQ.canvas._xf_restore_region is not None
+                   and editorQ._content_restored,
+                   f"size={gotQ.width()}x{gotQ.height()} "
+                   f"restored={editorQ._content_restored}")
+                quadQ = editorQ.canvas._transform_quad()
+                wantQ = {
+                    "tl": seedQ.map(rect0.topLeft()),
+                    "tr": seedQ.map(rect0.topRight()),
+                    "br": seedQ.map(rect0.bottomRight()),
+                    "bl": seedQ.map(rect0.bottomLeft()),
+                }
+                ok("内容节点：PB1 作画布、PA1 恢复为可操作四边形（框在内容节点上）",
+                   all((quadQ[k] - wantQ[k]).manhattanLength() < 2.5
+                       for k in wantQ),
+                   f"tl={quadQ['tl']} want_tl={wantQ['tl']}")
+                _xfq = editorQ.canvas._xf
+                ok("内容节点：矩阵挂回画布系种子 V（未触摸、零烘焙）",
+                   _xfq == seedQ and not editorQ.canvas._xf_touched,
+                   f"touched={editorQ.canvas._xf_touched}")
+                # 恢复态继续转 45° ⇒ 总量 90°，烘焙＝从 upright 单次重采样
+                editorQ.canvas.transform_rotate(45)
+                editorQ._commit_transform(force=True)
+                doneQ = canvas_img(editorQ.canvas)
+                ok("内容节点：恢复态再转 45° ⇒ 总量 90°（120×200，单次代次）",
+                   abs(doneQ.width() - 120) <= 1
+                   and abs(doneQ.height() - 200) <= 1,
+                   f"size={doneQ.width()}x{doneQ.height()}")
+                _st = editorQ.content_state()
+                sync_content_quad(str(_qpath), editorQ)
+                _rq2 = read_quad(_qpath)
+                ok("内容节点：烘焙后 V=总量矩阵并已写回 sidecar",
+                   _st is not None and _st[0] == rect0 and _rq2 is not None
+                   and _rq2[1] == _st[1],
+                   "state=" + ("None" if _st is None else "ok"))
+            finally:
+                editorQ.deleteLater()
+
+            editorR = ImageEditorDialog(None, look, save_back=True)
+            try:
+                editorR.source_path = str(_qpath)
+                editorR.canvas.set_tool("transform")   # 恢复（PB1 画布＋种子矩阵）
+                # 什么都没拖就切走：真实路径先 _commit_transform（无待定 ⇒
+                # 退回文件原样），画布不许把 upright 当结果
+                editorR._commit_transform()
+                editorR.canvas.set_tool("erase")
+                gotR = canvas_img(editorR.canvas)
+                ok("内容节点：未拖动退出恢复会话 ⇒ 画布回文件原样",
+                   (gotR.width(), gotR.height())
+                   == (look.width(), look.height()),
+                   f"size={gotR.width()}x{gotR.height()} "
+                   f"expect={look.width()}x{look.height()}")
+            finally:
+                editorR.deleteLater()
 
             # 旋转：绕轴心（轴心不动）；切走工具自动烘焙
             canvas4.set_tool("transform")
@@ -2036,7 +2430,10 @@ def run(ctx) -> None:
     ed2 = _Ed()
     calls = []
     for name in ("_commit_transform", "_commit_text_blocks"):
-        setattr(ed2, name, (lambda n: lambda: calls.append(n))(name))
+        # ⚠️ *a, **k：_commit_transform 现在带 force 关键字（「完成」收尾用），
+        #    桩只管记账，别绑死签名。
+        setattr(ed2, name,
+                (lambda n: lambda *a, **k: calls.append(n))(name))
     ed2._finish()
     first = list(calls)
     ed2._finishing = True            # 模拟烘焙中 processEvents 派发第二次点击

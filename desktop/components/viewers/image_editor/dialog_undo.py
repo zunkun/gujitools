@@ -31,7 +31,9 @@ _undo[0..U-1] + _image + reversed(_redo)
 """
 from __future__ import annotations
 
-from .consts import STEP_RESET, UNDO_LIMIT
+from .consts import (
+    STEP_CROP, STEP_FLIP, STEP_RESET, STEP_TRANSFORM, UNDO_LIMIT,
+)
 from typing import TYPE_CHECKING
 
 
@@ -64,11 +66,26 @@ class UndoMixin(DialogHost):
             self._undo.pop(0)
             # 最老的状态没了 ⇒ 第 0 节点换人：它现在是被丢掉那一步的结果
             self._origin_label = self._labels.pop(0)
+        # ---- 内容节点维护（2026-10-10） ----
+        # 变换烘焙：upright 缓存与 (rect0, V) 链保持有效（弹窗侧在烘焙成功后
+        # 更新 V）；其余像素提交都会让 upright 缓存过期——裁剪/镜像还改变了
+        # 几何语义，节点整组作废（宁可不恢复也不能错恢复）。
+        if label != STEP_TRANSFORM:
+            self._content_upright = None
+            if label in (STEP_CROP, STEP_FLIP):
+                self._content_clear()
         self._sync_undo_buttons()
         self._sync_history()
 
 
     def _undo_now(self) -> None:
+        # ⚠️ **待定裁剪优先**：它还没落到像素上，历史里没有这一步。硬去撤上一
+        #    步已应用的编辑会"图没变、历史却退了一格"，用户看着莫名其妙。
+        #    所以有待定时先把它收回去（框弹回整幅，像素本来就没动过），再按
+        #    一次 Ctrl+Z 才真的撤销上一步。
+        if getattr(self, "_pending_crop", None) is not None:
+            self._discard_crop()
+            return
         if not self._undo:
             return
         # 正在就地编辑文字时不撤图：Ctrl+Z 被弹窗快捷键截走，这里必须
@@ -80,11 +97,16 @@ class UndoMixin(DialogHost):
         self._redo.append(self._image.copy())
         self._image = self._undo.pop()
         self.canvas.set_image(self._image)
+        self._content_on_history_jump()
         self._sync_undo_buttons()
         self._sync_history()
 
 
     def _redo_now(self) -> None:
+        # 同 _undo_now：待定裁剪先退掉再动历史（它不在历史里）
+        if getattr(self, "_pending_crop", None) is not None:
+            self._discard_crop()
+            return
         if not self._redo:
             return
         if self.canvas.focused_text_block() is not None:
@@ -93,6 +115,7 @@ class UndoMixin(DialogHost):
         self._undo.append(self._image.copy())
         self._image = self._redo.pop()
         self.canvas.set_image(self._image)
+        self._content_on_history_jump()
         self._sync_undo_buttons()
         self._sync_history()
 
@@ -101,12 +124,16 @@ class UndoMixin(DialogHost):
         """还原到打开时的图（还原本身可撤销）。"""
         if self._original.isNull():
             return
+        # 待定裁剪是"还没落定"的东西：还原的语义是"回到打开时"，必须连它一起
+        # 清掉，否则会出现"图是原图、画布上还挂着半张的裁剪框"。
+        self._pending_crop = None
         self.canvas.clear_text_blocks()
         if self._undo and self._image is not None:
             self._push_undo(STEP_RESET)
         self._image = self._original.copy()
         self._redo.clear()
         self.canvas.set_image(self._image)
+        self._content_on_history_jump()
         self._sync_undo_buttons()
         self._sync_history()
 

@@ -4,8 +4,9 @@
 每个功能一张竖排参数页（裁剪/变换/扭曲/擦除/文字）。（从
 ``image_editor/dialog.py`` 拆出，2026-10-07；2026-10-08 由"横向选项行"改成
 "右侧面板竖排"，并**删掉三个单步确认按钮**——「应用裁剪」「应用变换」
-「插入文字」：编辑改为实时生效，见 ``canvas/interaction.py`` 的
-``crop_committed`` / ``transform_committed`` 与 ``_set_tool`` 里的自动提交。）
+「插入文字」：裁剪改为**非破坏性**（松手只记选区，切走功能/「完成」才落定），
+文字块本身就是画布预览，见 ``canvas/interaction.py`` 的
+``crop_selection_changed`` 与 ``_set_tool`` 里的自动提交。）
 """
 from __future__ import annotations
 
@@ -94,15 +95,35 @@ class ToolPagesMixin(DialogHost):
 
     # ------------------------------------------------------------ 各功能
     def _page_crop(self, layout: QVBoxLayout) -> None:
-        """裁剪：**没有**「应用裁剪」按钮——拖完松手就裁（实时）。"""
+        """裁剪：**非破坏性**——松手只定下选区，像素不切，可来回推拉。"""
         self._hint(
             layout,
-            "默认选中整幅图：沿四边/四角任意位置向内拖收小选区，拖框中间移动。"
-            "松手即裁到当前选区（不用再点按钮）；裁错了按 Ctrl+Z 退回。")
-        note = CaptionLabel("拖动中变暗的部分就是将要被裁掉的范围。")
+            "默认选中整幅图：沿四边/四角任意位置拖动收放选区，拖框中间移动。"
+            "松手只是定下选区，原图不会被切掉——向外拖回去，裁剪线外原本变暗的"
+            "区域会重新显示出来，可以反复推拉；切到别的功能或点「完成」时才真正裁。")
+        note = CaptionLabel("裁剪线外变暗的部分就是将要被裁掉的范围。")
         note.setTextColor(QColor(T.INK_SOFT))
         note.setWordWrap(True)
         layout.addWidget(note)
+        # ⚠️ 按钮行要留 ``addStretch``（同「翻转」那两个）：面板竖排，裸
+        #    ``addWidget`` 会把按钮拉成整行宽，看着像一块大色块。
+        reset_row = QWidget(self._option_page)
+        reset_layout = QHBoxLayout(reset_row)
+        reset_layout.setContentsMargins(0, 0, 0, 0)
+        reset_layout.setSpacing(T.SPACE_SM)
+        reset = PushButton("重置选区")
+        reset.setToolTip(
+            "选区恢复到整幅图（原图像素本来就没被裁，不算一步编辑，随时可再拖）")
+        reset.clicked.connect(self._reset_crop_selection)
+        reset_layout.addWidget(reset)
+        reset_layout.addStretch(1)
+        layout.addWidget(reset_row)
+
+
+    def _reset_crop_selection(self) -> None:
+        """参数页「重置选区」：框弹回整幅，待定裁剪一并丢掉（不产生撤销点）。"""
+        self._discard_crop()
+        self.canvas.reset_selection()
 
 
     def _page_transform(self, layout: QVBoxLayout) -> None:

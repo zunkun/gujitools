@@ -16,6 +16,9 @@
   **跟着图一起转**——用户 2026-09-30 报过"旋转后高亮框不跟着转"）；
   **按住鼠标操作期间**才升级为带手柄/旋转钮的完整虚线框，**一松手回到
   细框**（2026-09-30：选中态要一直看得见，右侧「当前图片样式」区跟着激活）；
+- **选中的图永远画在最上面**（用户 2026-10-10：类似 CSS 里 ``z-index``
+  更大）——两图重叠时，被压住的那张一旦选中就得浮上来，否则看不清在
+  操作哪张；命中判定（``_item_at``）同样优先命中选中图；
 - **切页 / 点空白处 → 取消选中**（右侧图片操作区随之灰掉）；
 - **双击某张图 → 预览这张原图**；**双击两图之外的空白处 → 预览左右组合**
   （整页按产出口径合成的效果，``emit`` 给控制器开预览弹窗，画布自己不管弹窗）；
@@ -567,8 +570,16 @@ class ImpositionCanvas(QWidget):
         """最上面一张命中的图（后画的在上 → 倒序找）。
 
         ⚠️ 命中按**旋转后**的图算：每个项各自反转自己的旋转角再判包含。
+        ⚠️ **选中的图优先**（用户 2026-10-10）：它在画面上永远垫在最上面
+        （zIndex 语义，见 ``paintEvent``），重叠区点下去就该点到它——否则
+        "看着在最上面、点下去选中的却是底下那张"。
         """
+        if (0 <= self._selected < len(self._items)
+                and self._item_contains_px(self._selected, pos)):
+            return self._selected
         for index in range(len(self._items) - 1, -1, -1):
+            if index == self._selected:
+                continue
             if self._item_contains_px(index, pos):
                 return index
         return -1
@@ -923,8 +934,18 @@ class ImpositionCanvas(QWidget):
         )
         # 纯白底（用户口径：拼版不需要纸张，白底就行）——没有纸张矩形要画，
         # 控件自身的样式表已经是白的。
+        # 选中的那张图**永远画在最上面**（用户 2026-10-10：类似 CSS 里
+        # zIndex 更大）——两图重叠时，被压住的那张一旦选中就得浮上来，
+        # 否则看不清在操作哪张。其余仍按清单顺序画（落盘/合成顺序不变，
+        # 这是纯显示层的拾升）。
+        selected = (
+            self._selected if 0 <= self._selected < len(self._items) else None
+        )
         for index, item in enumerate(self._items):
-            self._draw_item(painter, index, item)
+            if index != selected:
+                self._draw_item(painter, index, item)
+        if selected is not None:
+            self._draw_item(painter, selected, self._items[selected])
         # 红色对齐线（用户 2026-09-30）：两图公共中心所在竖线，**恒显**——
         # 不管有没有选中、有没有在拖动，它都在；整版旋转时拿它当对比基准。
         # ⚠️ 单图页只认横图（源图宽>高；2026-09-30 晚用户定：单张半页图

@@ -108,7 +108,7 @@ class CanvasHost(QGraphicsView):
     _xf_snap_pivot: bool
     _xf_touched: bool
     _zoom: Any
-    crop_committed: Signal
+    crop_selection_changed: Signal
     reshape_finished: Signal
     stroke_started: Signal
     text_requested: Signal
@@ -423,6 +423,9 @@ class CanvasHost(QGraphicsView):
         ...
 
     def replace_image(self, image: QImage) -> None:
+        ...
+
+    def reset_selection(self) -> None:
         ...
 
     def reset_transform(self) -> None:

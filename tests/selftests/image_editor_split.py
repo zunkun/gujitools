@@ -57,7 +57,7 @@ _EXPECTED_HOME = {
     "_apply_border_pen": "EditorCanvas",
     "_border_pen": "EditorCanvas",
     "_sync_scene_rect": "EditorCanvas",
-    "crop_committed": "EditorCanvas",
+    "crop_selection_changed": "EditorCanvas",
     "fit": "EditorCanvas",
     "fit_selection": "EditorCanvas",
     "image": "EditorCanvas",
@@ -65,6 +65,7 @@ _EXPECTED_HOME = {
     "paintEvent": "EditorCanvas",
     "refresh": "EditorCanvas",
     "replace_image": "EditorCanvas",
+    "reset_selection": "EditorCanvas",
     "reshape_finished": "EditorCanvas",
     "selection": "EditorCanvas",
     "set_eraser": "EditorCanvas",
@@ -202,7 +203,7 @@ _CROSS_METHOD_DEPS = {
         "_move_text_outline",
         "_sync_float",
         "_sync_overlay",
-        "_text_block_at", "crop_committed", "fit",
+        "_text_block_at", "crop_selection_changed", "fit",
         "fit_selection", "image_rect", "refresh", "reshape_finished",
         "selection", "set_zoom", "stroke_started", "text_requested",
         "transform_committed", "transform_pending",
@@ -232,8 +233,9 @@ _DIALOG_MODULES = [
 
 #: 每个弹窗成员**应当**归属的类（成员名 → 类名）。
 _DIALOG_EXPECTED_HOME = {
-    # dialog.py -> ImageEditorDialog（6 个）
+    # dialog.py -> ImageEditorDialog（7 个）
     "__init__": "ImageEditorDialog",
+    "_ask_overwrite": "ImageEditorDialog",
     "_confirm_overwrite": "ImageEditorDialog",
     "_escape": "ImageEditorDialog",
     "_finish": "ImageEditorDialog",
@@ -247,13 +249,14 @@ _DIALOG_EXPECTED_HOME = {
     "_refresh_size_label": "ToolbarMixin",
     "_set_tool": "ToolbarMixin",
     "_swap_option_page": "ToolbarMixin",
-    # dialog_pages.py -> ToolPagesMixin（8 个）
+    # dialog_pages.py -> ToolPagesMixin（9 个）
     "_labeled": "ToolPagesMixin",
     "_page_crop": "ToolPagesMixin",
     "_page_distort": "ToolPagesMixin",
     "_page_erase": "ToolPagesMixin",
     "_page_text": "ToolPagesMixin",
     "_page_transform": "ToolPagesMixin",
+    "_reset_crop_selection": "ToolPagesMixin",
     "_section": "ToolPagesMixin",
     "_slider_group": "ToolPagesMixin",
     # dialog_undo.py -> UndoMixin（9 个）
@@ -266,13 +269,15 @@ _DIALOG_EXPECTED_HOME = {
     "_sync_history": "UndoMixin",
     "_sync_undo_buttons": "UndoMixin",
     "_undo_now": "UndoMixin",
-    # dialog_commit.py -> CommitMixin（9 个）
-    "_apply_crop": "CommitMixin",
+    # dialog_commit.py -> CommitMixin（11 个）
     "_bake_transform_async": "CommitMixin",
+    "_commit_crop": "CommitMixin",
     "_commit_text_blocks": "CommitMixin",
     "_commit_transform": "CommitMixin",
+    "_discard_crop": "CommitMixin",
     "_flip_transform": "CommitMixin",
     "_on_stroke_started": "CommitMixin",
+    "_preview_crop": "CommitMixin",
     "_report_transform_failure": "CommitMixin",
     "_selection": "CommitMixin",
     "_spawn_text_block": "CommitMixin",
@@ -281,23 +286,23 @@ _DIALOG_EXPECTED_HOME = {
 #: 弹窗 Mixin 调用**别的 Mixin/基座**的成员 —— 登记的隐式契约。
 _DIALOG_CROSS_DEPS = {
     "ImageEditorDialog": {
-        "_apply_crop", "_build_side_panel", "_build_status",
+        "_build_side_panel", "_build_status",
         "_build_toolbar_row",
-        "_commit_text_blocks", "_commit_transform",
-        "_on_stroke_started",
+        "_commit_crop", "_commit_text_blocks", "_commit_transform",
+        "_on_stroke_started", "_preview_crop",
         "_push_undo", "_redo_now", "_spawn_text_block", "_sync_history",
         "_undo_now",
     },
     "ToolbarMixin": {
-        "_commit_text_blocks", "_commit_transform",
+        "_commit_crop", "_commit_text_blocks", "_commit_transform",
         "_finish", "_on_history_row", "_page_crop", "_page_distort",
         "_page_erase",
         "_page_text", "_page_transform", "_redo_now",
         "_reset_all",
         "_undo_now",
     },
-    "ToolPagesMixin": {"_flip_transform", "_hint"},
-    "UndoMixin": {"_refresh_size_label"},
+    "ToolPagesMixin": {"_discard_crop", "_flip_transform", "_hint"},
+    "UndoMixin": {"_discard_crop", "_refresh_size_label"},
     "CommitMixin": {"_push_undo", "_refresh_size_label", "_undo_now"},
 }
 

@@ -355,6 +355,59 @@ def warp_placement(region: QImage, xf: QTransform, interpolation: str,
     return out, x0, y0
 
 
+def _empty_fill(image: QImage) -> QColor:
+    """变换后**空出来的地方**填什么色（预览与烘焙共用的唯一口径）。
+
+    - 源图**真有透明像素**（去底色产物）：填**透明**——旋转/平移空出的地方
+      必须保持透明，不能染白（用户 2026-10-10 报障："保存落地的图片会增加
+      白色背景色，这个不需要"）。画布预览 2026-10-09 起就把选区擦透明了，
+      烘焙不同步的话就是"预览透明、存盘变白"。
+    - 源图全不透明（扫描件）：填白——外扩区没有内容可透，存 JPEG 时透明
+      会被压成黑底，白更接近"纸"的预期。
+    """
+    if image.hasAlphaChannel() and _image_has_alpha(image):
+        return QColor(0, 0, 0, 0)
+    return QColor("#ffffff")
+
+
+def _trim_transparent_edges(base: QImage):
+    """把 grow 底图四周**纯透明**的边裁掉，返回 ``(裁后图, dx, dy)``。
+
+    为什么要有这一步（2026-10-10 用户报障「旋转保存再旋转保存，图片越来
+    越大，内容占比越来越小」）：``transform_region`` 的外框是按**画布矩形
+    四角**映射算的。第一次旋转 45°，外框恰好＝内容的完整外框（没有多余边）；
+    可这张图存盘后二次编辑，编辑主体变成了 A1（含四角空白），再转 45° 时
+    外框按 A1 的四角又扩 √2 倍——空白越滚越大，内容占比每转一次缩一截。
+    把结果裁到**非透明像素的真实外框**，存盘的图每一步都＝内容本身的
+    外框（用户口径里的 B1），下次编辑的主体天然就是内容，不需要任何
+    旁路的"内容区域元数据"。
+
+    只在**透明档**（源图真有 alpha）做：不透明扫描件的四周白边可能就是
+    "纸"的内容，按非白裁会切掉真内容。缺 numpy 时返回 ``None`` 跳过
+    （宁可不裁，不能错裁）。
+    """
+    try:
+        import numpy as np
+        from .distortion import _pixel_view
+    except Exception:                      # noqa: BLE001（缺 numpy ⇒ 不裁）
+        return None
+    source = (base if base.format() == QImage.Format.Format_ARGB32
+              else base.convertToFormat(QImage.Format.Format_ARGB32))
+    if source.isNull() or source.width() <= 2 or source.height() <= 2:
+        return None
+    alpha = _pixel_view(source, np, False)[..., 3]
+    rows = np.nonzero((alpha > 0).any(axis=1))[0]
+    cols = np.nonzero((alpha > 0).any(axis=0))[0]
+    if rows.size == 0 or cols.size == 0:
+        return None                        # 全透明：没有"内容"可对齐，不裁
+    y0, y1 = int(rows[0]), int(rows[-1])
+    x0, x1 = int(cols[0]), int(cols[-1])
+    if x0 == 0 and y0 == 0 and x1 == source.width() - 1 \
+            and y1 == source.height() - 1:
+        return source, 0, 0                # 四边都贴着内容：无需裁
+    return (source.copy(x0, y0, x1 - x0 + 1, y1 - y0 + 1), x0, y0)
+
+
 def compose_transform(image: QImage, rect: QRectF, xf: QTransform,
                       region: QImage, grow: bool = False,
                       interpolation: str = "smooth",
@@ -374,8 +427,9 @@ def compose_transform(image: QImage, rect: QRectF, xf: QTransform,
     表示用户取消，这时本函数返回 ``None``（整步作废，绝不交付半张图）。
     预览调用不传它（前端只要快）。
 
-    ``grow=False``：画布尺寸不变——先把**原区域**填白（内容被搬走了），再把
-    变换后的选区内容画到它该在的位置（透视/平移空出来的地方留白）。
+    ``grow=False``：画布尺寸不变——先把**原区域**填"空色"（内容被搬走了；
+    源图有真透明就填透明、否则填白，见 :func:`_empty_fill`），再把变换后的
+    选区内容画到它该在的位置。
 
     ``grow=True``：**不截**超出的部分——新画布 = 「变换后内容的完整外框」
     （见 :func:`transform_region`）。返回 ``(QImage, (ox, oy))``，
@@ -392,24 +446,55 @@ def compose_transform(image: QImage, rect: QRectF, xf: QTransform,
     if warped is None:
         return None                         # 用户取消
     warped, wx, wy = warped
+    # ⚠️ 空处填色只有一种口径（_empty_fill）：源图真有透明像素 ⇒ 透明，
+    #    否则白。下面三处（clip 的原位、grow 的底图与原位）必须同一色，
+    #    否则透明源图会被某一条白填底染回白背景（2026-10-10 报障）。
+    empty = _empty_fill(image)
+    # ⚠️ 透明色在 SourceOver 下 fillRect 是**空操作**（alpha 0 盖不住任何
+    #    东西）：clip 档的底图是 ``image.copy()``，原位残留的旧内容必须真
+    #    清掉（否则内容搬走了原地还留个 ghost）——透明档要切 Clear 模式。
+    clearing = empty.alpha() == 0
     if not grow:
         result = image.copy()
         painter = QPainter(result)
-        painter.fillRect(rect, QColor("#ffffff"))
+        if clearing:
+            painter.setCompositionMode(
+                QPainter.CompositionMode.CompositionMode_Clear)
+        painter.fillRect(rect, empty)
+        if clearing:
+            painter.setCompositionMode(
+                QPainter.CompositionMode.CompositionMode_SourceOver)
         painter.drawImage(QPointF(wx, wy), warped)
         painter.end()
         return result
-    # grow：新画布 = 内容外框 ∪ 原图边界（原选区已被搬走、填白，不再算进
-    # 外框，否则整体平移会凭空多出一条填白边）。
+    # grow：新画布 = 内容外框 ∪ 原图边界（原选区已被搬走、填空色，不再算进
+    # 外框，否则整体平移会凭空多出一条填色边）。
+    # ⚠️ drawImage 画的是**整张原图**（含选区里的旧内容）：白档靠下面的
+    #    fillRect 盖掉它；透明档 SourceOver 盖不住 ⇒ 同样切 Clear 真清除，
+    #    否则内容搬走了原地还留个 ghost（2026-10-10）。
     ox, oy, width, height = transform_region(image, rect, placed)
-    transparent = image.hasAlphaChannel() and _image_has_alpha(image)
     base = QImage(width, height, QImage.Format.Format_ARGB32)
-    base.fill(QColor(0, 0, 0, 0) if transparent else QColor("#ffffff"))
+    base.fill(empty)
     painter = QPainter(base)
     painter.drawImage(QPointF(-ox, -oy), image)
-    painter.fillRect(rect.translated(-ox, -oy), QColor("#ffffff"))
+    if clearing:
+        painter.setCompositionMode(
+            QPainter.CompositionMode.CompositionMode_Clear)
+    painter.fillRect(rect.translated(-ox, -oy), empty)
+    if clearing:
+        painter.setCompositionMode(
+            QPainter.CompositionMode.CompositionMode_SourceOver)
     painter.drawImage(QPointF(wx - ox, wy - oy), warped)
     painter.end()
+    # ⚠️ 透明档**内容收紧**：外框是按画布矩形四角算的，二次编辑再旋转时
+    #    会把上一轮的四角空白也当内容扩进来（越转越大，见
+    #    :func:`_trim_transparent_edges`）。裁到非透明像素的真实外框，
+    #    原点平移量必须跟着裁剪量走（origin 语义 = 新画布左上角在原坐标系）。
+    if clearing:
+        trimmed = _trim_transparent_edges(base)
+        if trimmed is not None:
+            base, tx, ty = trimmed
+            ox, oy = ox + tx, oy + ty
     return base, (ox, oy)
 
 

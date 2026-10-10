@@ -319,7 +319,7 @@ python -m pyflakes core/ cli/ functions/ utils/ desktop/
 
 | 守卫                                           | 覆盖                                                               | 钉什么                                 |
 | -------------------------------------------- | ---------------------------------------------------------------- | ----------------------------------- |
-| `tests/selftests/image_editor_split.py`      | `EditorCanvas`（99 成员）+ `ImageEditorDialog`（32 成员）                | 成员归属 / 无同名 / 跨 Mixin 依赖白名单 / 对外 API |
+| `tests/selftests/image_editor_split.py`      | `EditorCanvas` / `ImageEditorDialog` 的全部成员（成员数会随工具增删变，别在文档里写死） | 成员归属 / 无同名 / 跨 Mixin 依赖白名单 / 对外 API |
 | `tests/selftests/image_zoom_dialog_split.py` | `image_zoom_dialog` 子包                                           | 子包结构 / 对外 API / 四个宿主仍可导入            |
 | `tests/selftests/viewer_split.py`            | `image_view` / `image_viewer` / `rembg_viewer` / `print_preview` | 上面四条 + 旧单文件已删 + 模块级函数仍在包命名空间        |
 

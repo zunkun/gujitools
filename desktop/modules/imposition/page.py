@@ -50,6 +50,7 @@ from desktop.services.imposition import (
     normalize_page,
     page_has_file,
     page_source_stems,
+    refresh_rects_for_edited_source,
     removed_source_files,
     same_path,
 )
@@ -596,11 +597,14 @@ class ImpositionModulePage(ModulePage):
                 f"读不到原图：{path.name}（文件可能已被移动或删除）。",
             )
             return
-        from desktop.components.viewers.image_editor import ImageEditorDialog
+        from desktop.components.viewers.image_editor import (
+            ImageEditorDialog, sync_content_quad,
+        )
         from desktop.components.viewers.image_zoom_dialog import overwrite_image_file
 
         editor = ImageEditorDialog(self.window(), image, save_back=True)
         editor.target_name = path.name
+        editor.source_path = file_text
         if editor.exec() != QDialog.DialogCode.Accepted:
             return
         edited = editor.result_image()
@@ -609,7 +613,14 @@ class ImpositionModulePage(ModulePage):
         if not overwrite_image_file(edited, path):
             self.toast("error", "保存失败", f"编辑未生效：{path.name}")
             return
+        sync_content_quad(file_text, editor)
         self.view.canvas.invalidate_image(file_text)
+        # ⚠️⚠️ 源图尺寸可能变了（编辑器里旋转/裁剪后覆盖回同一文件）：版面
+        #    rect 还按旧尺寸记着，合成时 compose_page 会把新图硬 resize 回
+        #    旧宽高 ⇒ 形变 + 清晰度下降（2026-10-10 报障）。先刷新 rect 再
+        #    刷视图，画布/缩略图/导出用的才是新几何。
+        if refresh_rects_for_edited_source(self._doc, file_text):
+            self._refresh_view()
         self._invalidate_page_thumbs_for(file_text)  # 含它的页重生成实体
         self.log(
             f"已编辑拼版源图「{path.name}」并覆盖原图"
@@ -669,12 +680,15 @@ class ImpositionModulePage(ModulePage):
         pages = self._doc.get("pages") or []
         if not (0 <= page_index < len(pages)):
             return
-        from desktop.components.viewers.image_editor import ImageEditorDialog
+        from desktop.components.viewers.image_editor import (
+            ImageEditorDialog, sync_content_quad,
+        )
         from desktop.components.viewers.image_zoom_dialog import overwrite_image_file
 
         target = edited_page_dir() / FILE_FMT.format(page_index + 1)
         editor = ImageEditorDialog(self.window(), image, save_back=True)
         editor.target_name = f"{cn_page_label(page_index)}的整页组合"
+        editor.source_path = str(target)
         # 第一次编辑这页时 ``edited/NNNN.png`` 还不存在 ⇒ 没有旧图可覆盖，
         # 不弹确认（第二次起才弹，见 ImageEditorDialog._confirm_overwrite）。
         editor.target_exists = target.is_file()
@@ -687,6 +701,7 @@ class ImpositionModulePage(ModulePage):
         if not overwrite_image_file(edited, target):
             self.toast("error", "保存失败", f"编辑未生效：{target.name}")
             return
+        sync_content_quad(str(target), editor)
         pages[page_index]["edited_file"] = str(target)
         self.log(
             f"已编辑{cn_page_label(page_index)}的整页组合并保存"
@@ -726,6 +741,10 @@ class ImpositionModulePage(ModulePage):
             if page_has_file(page, path_text)
         ]
         if hits:
+            # ⚠️ 同 _open_item_edit：源图尺寸可能变了，先刷 rect 再刷视图
+            #    （否则 compose_page 把新图硬 resize 回旧宽高 ⇒ 压扁变形）。
+            if refresh_rects_for_edited_source(self._doc, path_text):
+                self._refresh_view()
             self._invalidate_page_thumbs_for(path_text, hits)
             self.log(
                 f"已编辑拼版源图「{path.stem}」并覆盖原图"

@@ -45,6 +45,8 @@ class DialogHost(QDialog):
     _option_scroll: ScrollArea
     _origin_label: str
     _original: Any
+    #: **待定裁剪**：裁剪工具里定下、还没落到像素上的选区（见 ``dialog_commit``）
+    _pending_crop: QRectF | None
     _redo: list[QImage]
     _reshape_uncheck: Any
     _save_back: bool
@@ -68,7 +70,7 @@ class DialogHost(QDialog):
     zoom_out_btn: ToolButton
 
     # ---- 方法（主类 + 各 Mixin）----
-    def _apply_crop(self) -> None:
+    def _ask_overwrite(self) -> bool:
         ...
 
     def _build_side_panel(self) -> QWidget:
@@ -80,6 +82,9 @@ class DialogHost(QDialog):
     def _build_toolbar_row(self) -> QVBoxLayout:
         ...
 
+    def _commit_crop(self) -> None:
+        ...
+
     def _commit_text_blocks(self) -> None:
         ...
 
@@ -87,6 +92,9 @@ class DialogHost(QDialog):
         ...
 
     def _confirm_overwrite(self) -> bool:
+        ...
+
+    def _discard_crop(self) -> None:
         ...
 
     def _escape(self) -> None:
@@ -113,6 +121,9 @@ class DialogHost(QDialog):
         ...
 
     def _on_history_row(self, row: int) -> None:
+        ...
+
+    def _preview_crop(self) -> None:
         ...
 
     def _bake_transform_async(self, rect: QRectF, xf: Any, region: Any,
@@ -151,6 +162,9 @@ class DialogHost(QDialog):
         ...
 
     def _reset_all(self) -> None:
+        ...
+
+    def _reset_crop_selection(self) -> None:
         ...
 
     @staticmethod

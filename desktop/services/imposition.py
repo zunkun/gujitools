@@ -167,6 +167,50 @@ def image_size(path) -> tuple[int, int]:
     return size
 
 
+def invalidate_size(path) -> None:
+    """源图被外部覆盖（图片编辑器写回）后丢掉它的尺寸缓存。
+
+    ⚠️ :func:`image_size` 的缓存**只进不出**：编辑器把图旋转/裁剪后覆盖回
+    同一文件，不丢缓存的话后续 :func:`default_items` / :func:`refresh_rects_
+    for_edited_source` 读到的还是旧尺寸。
+    """
+    _SIZE_CACHE.pop(str(path), None)
+
+
+def refresh_rects_for_edited_source(doc: dict, path_text: str) -> bool:
+    """源图被编辑覆盖后，把文档里引用它的 ``rect`` 刷成**新图的真实尺寸**。
+
+    ⚠️⚠️ 版面 ``rect`` 的宽高是**按源图像素**记的（见 :func:`default_items`）。
+    编辑器把图旋转 90°（宽高互换）或裁剪后**覆盖回同一文件**，旧 rect 就成了
+    压扁新图的"模子"：:func:`compose_page` 会把新图无条件 ``resize`` 回旧
+    宽高——旋转 90° 的图被横向压扁（3500px 的宽压进 2480px），既变形又
+    清晰度下降（用户 2026-10-10 报障："旋转后拼版里图片被压宽"）。
+
+    规则：宽度高度改成新图的真实尺寸，**绕 rect 中心**保持位置（图还待在
+    用户摆的地方，按新形状向四周长开/收拢）；尺寸没变（普通修饰）就一个
+    字节都不动。返回是否有 rect 被改过（调用方据此决定要不要落盘/刷视图）。
+    """
+    invalidate_size(path_text)
+    width, height = image_size(path_text)
+    if width <= 0 or height <= 0:
+        return False                      # 读不到新尺寸：保持原状别瞎改
+    changed = False
+    for page in (doc or {}).get("pages") or []:
+        for item in page.get("items") or []:
+            rect = item.get("rect")
+            if not rect or not same_path(item.get("file"), path_text):
+                continue
+            x, y, w, h = (float(v) for v in rect)
+            new_w, new_h = float(width), float(height)
+            if abs(new_w - w) < 0.5 and abs(new_h - h) < 0.5:
+                continue                  # 尺寸没变（旋转 0°/纯修饰）：不动
+            center_x, center_y = x + w / 2.0, y + h / 2.0
+            item["rect"] = [center_x - new_w / 2.0,
+                            center_y - new_h / 2.0, new_w, new_h]
+            changed = True
+    return changed
+
+
 def used_source_files(doc: dict) -> set[str]:
     """已被任何一页拼版引用的源图（用于算「剩余未被选择拼版的图片」）。"""
     used: set[str] = set()

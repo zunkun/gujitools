@@ -35,7 +35,8 @@ from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QWidget
 
 from desktop.services.imposition import (
-    FILE_FMT, cn_page_label, default_items, page_source_stems, single_items,
+    FILE_FMT, cn_page_label, default_items, page_source_stems,
+    refresh_rects_for_edited_source, single_items,
 )
 
 if TYPE_CHECKING:
@@ -405,9 +406,11 @@ class ImpositionLayoutMixin:
         from desktop.components.viewers.image_zoom_dialog import (
             overwrite_image_file,
         )
+        from desktop.components.viewers.image_editor import sync_content_quad
 
         editor = ImageEditorDialog(self.window(), image, save_back=True)
         editor.target_name = path.name
+        editor.source_path = str(path)
         if editor.exec() != QDialog.DialogCode.Accepted:
             return
         edited = editor.result_image()
@@ -418,6 +421,7 @@ class ImpositionLayoutMixin:
                 "error", "保存失败", f"编辑未生效：{path.name}",
             )
             return
+        sync_content_quad(str(path), editor)
         self._on_imposition_source_edited(str(path), edited)
 
     def _on_imposition_source_edited(self, path_text: str, edited) -> None:
@@ -433,6 +437,14 @@ class ImpositionLayoutMixin:
         view = getattr(self, "imposition_view", None)
         if view is not None:
             view.canvas.invalidate_image(path_text)
+        # ⚠️⚠️ 源图尺寸可能变了（编辑器里旋转/裁剪后覆盖回**同一文件**）：
+        #    版面 rect 是按旧图尺寸记的，不刷新的话 compose_page 会把新图
+        #    硬 resize 回旧宽高 ⇒ 旋转 90° 的图被横向压扁（形变 + 清晰度
+        #    下降，用户 2026-10-10 报障）。先把引用它的 rect 刷成新尺寸
+        #    （绕中心保持位置）并落盘，缩略图/画布/重合成用的才是新几何。
+        pages = self._imposition_pages()
+        if refresh_rects_for_edited_source({"pages": pages}, path_text):
+            self._save_imposition_pages(pages)
         self._drop_imposition_source_thumb(path_text)
         self._on_page_image_saved(path_text, edited)
         self._schedule_imposition_compose()
@@ -506,7 +518,9 @@ class ImpositionLayoutMixin:
             or task_id is None
         ):
             return
-        from desktop.components.viewers.image_editor import ImageEditorDialog
+        from desktop.components.viewers.image_editor import (
+            ImageEditorDialog, sync_content_quad,
+        )
         from desktop.components.viewers.image_zoom_dialog import (
             overwrite_image_file,
         )
@@ -517,6 +531,7 @@ class ImpositionLayoutMixin:
         )
         editor = ImageEditorDialog(self.window(), image, save_back=True)
         editor.target_name = f"第{page_index + 1}页拼版成品"
+        editor.source_path = str(target)
         # 这一页还没合成过 ⇒ 目标文件不存在，没有旧成品可覆盖，不弹确认。
         editor.target_exists = target.is_file()
         if editor.exec() != QDialog.DialogCode.Accepted:
@@ -527,6 +542,7 @@ class ImpositionLayoutMixin:
         if not overwrite_image_file(edited, target):
             self._toast("error", "保存失败", f"编辑未生效：{target.name}")
             return
+        sync_content_quad(str(target), editor)
         self._refresh_print_source()
         self.log_view.append(
             f"已编辑{cn_page_label(page_index)}的整页组合并覆盖拼版成品"

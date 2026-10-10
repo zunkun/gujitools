@@ -144,7 +144,9 @@ class ZoomPopupMixin:
         """
         if not getattr(self, "_zoom_editable", True):
             return False  # 本宿主不许编辑（去底色阶段），菜单层已不给入口
-        from desktop.components.viewers.image_editor import ImageEditorDialog
+        from desktop.components.viewers.image_editor import (
+            ImageEditorDialog, sync_content_quad,
+        )
 
         target = self._zoom_target(self._zoom_index())
         if target is None or target.edit_path is None:
@@ -157,6 +159,7 @@ class ZoomPopupMixin:
         parent = self.window() if isinstance(self, QWidget) else None
         editor = ImageEditorDialog(parent, image, save_back=True)
         editor.target_name = path.name
+        editor.source_path = str(path)
         if editor.exec() != QDialog.DialogCode.Accepted:
             return False
         edited = editor.result_image()
@@ -165,6 +168,7 @@ class ZoomPopupMixin:
         if not overwrite_image_file(edited, path):
             self._notify_edit("error", "保存失败", f"编辑未生效：{path.name}")
             return False
+        sync_content_quad(str(path), editor)
         self._on_zoom_image_saved(str(path), edited)
         return True
 

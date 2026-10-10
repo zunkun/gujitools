@@ -205,6 +205,42 @@ def run(ctx) -> None:
            and shot.getpixel((300, 320)) == GREEN,
            f"上={shot.getpixel((300, 80))} 下={shot.getpixel((300, 320))}")
 
+        # ---------------- 1a. 编辑覆盖源图后 rect 刷新（用户 2026-10-10）--------
+        # 编辑器把图旋转后**覆盖回同一文件**：版面 rect 还按旧尺寸记着，
+        # compose_page 会把新图硬 resize 回旧宽高 ⇒ 旋转 90° 的图被横向压扁
+        # （形变 + 清晰度下降）。refresh_rects_for_edited_source 必须把 rect
+        # 刷成新尺寸（绕 rect 中心保持位置），并失效 image_size 的尺寸缓存。
+        probe = tmp / "edited-probe.png"
+        _mk(probe, RED)                        # 覆盖前：400×600 竖图
+        page_stale = S.normalize_page({
+            "items": [{"file": str(probe),
+                       "rect": [100.0, 50.0, 400.0, 600.0], "rotation": 0.0}],
+        })
+        assert page_stale is not None   # ⚠️ 结构合法，normalize 必过
+        wide = Image.new("RGB", (600, 400), BLUE)
+        wide.paste(RED, (0, 0, 300, 400))      # "转了 90°"：600×400，左红右蓝
+        wide.save(probe)
+        doc_probe = {"pages": [page_stale]}
+        ok("编辑覆盖源图后 rect 刷新（返回 True）",
+           S.refresh_rects_for_edited_source(doc_probe, str(probe)) is True)
+        new_rect = [round(float(v), 3)
+                    for v in doc_probe["pages"][0]["items"][0]["rect"]]
+        # 旧 rect 中心 = (300, 350)；新 600×400 绕中心 ⇒ [0, 150, 600, 400]
+        ok("rect 宽高 = 新图尺寸、中心保持不动",
+           new_rect == [0.0, 150.0, 600.0, 400.0], str(new_rect))
+        ok("尺寸没变时刷新是 no-op（返回 False）",
+           S.refresh_rects_for_edited_source(doc_probe, str(probe)) is False)
+        ok("尺寸缓存随覆盖失效（重读到新尺寸）",
+           S.image_size(probe) == (600, 400), str(S.image_size(probe)))
+        # 合成不再压扁：600×400 按原始像素落位（旧 rect 会把它压成 400×600）
+        fixed = S.compose_page(doc_probe["pages"][0])
+        ok("刷新后合成不压扁（新图原样落位：左半红、右半蓝）",
+           fixed.size == (600, 400)
+           and fixed.getpixel((150, 200)) == RED
+           and fixed.getpixel((450, 200)) == BLUE,
+           f"size={fixed.size} {fixed.getpixel((150, 200))} / "
+           f"{fixed.getpixel((450, 200))}")
+
         ok("坏页被过滤（项为空 / 无文件 / 非字典）",
            all(S.normalize_page(bad) is None for bad in (
                {"items": []},
@@ -571,6 +607,38 @@ def run(ctx) -> None:
            "FRAME_STYLE = Qt.PenStyle.DashLine" in canvas_src
            and "FRAME_STYLE," in canvas_src,
            "框线样式定义/使用处不匹配")
+
+        # ---------------- 4b-2. 选中的图永远画在最上面（用户 2026-10-10）------
+        # 「那张图选中，那张图就应该在另外一张图上面」（类似 CSS zIndex）：
+        # 绘制 = 其余按清单顺序画、选中的最后画；命中判定也优先命中选中图。
+        # 用蓝/黄两色（避开红线 SPINE 的红色系），在重叠区取点判色。
+        overlap = ImpositionCanvas()
+        overlap.resize(600, 600)
+        overlap.set_page([
+            {"file": str(c), "rect": [0.0, 0.0, 400.0, 600.0], "rotation": 0.0},
+            {"file": str(d), "rect": [200.0, 0.0, 400.0, 600.0], "rotation": 0.0},
+        ])
+        # 探针取在重叠区内、避开红色对齐线（x=300 units）：x 取 240 units
+        probe = QPointF(
+            overlap._rect_px(1).x() + overlap._rect_px(0).width() * 0.1,
+            overlap._rect_px(0).center().y(),
+        )
+        shot = overlap.grab().toImage()
+        ok("未选中时按清单顺序画（后画的黄图盖住蓝图）",
+           _px_near(shot, int(probe.x()), int(probe.y()), YELLOW)
+           and not _px_near(shot, int(probe.x()), int(probe.y()), BLUE))
+        overlap.select(0)
+        shot = overlap.grab().toImage()
+        ok("选中蓝图 → 蓝图浮到最上面（重叠区变蓝）",
+           _px_near(shot, int(probe.x()), int(probe.y()), BLUE)
+           and not _px_near(shot, int(probe.x()), int(probe.y()), YELLOW),
+           f"probe=({probe.x():.0f},{probe.y():.0f})")
+        ok("命中判定优先命中选中的图（重叠区点到的是它）",
+           overlap._item_at(probe) == 0, str(overlap._item_at(probe)))
+        overlap.select(-1)
+        shot = overlap.grab().toImage()
+        ok("取消选中 → 恢复清单顺序（重叠区回到黄）",
+           _px_near(shot, int(probe.x()), int(probe.y()), YELLOW))
 
         # ---------------- 4c. 无纸张 + 不限制图片位置/大小（用户 2026-09-30）------
         # 「拼版不需要设置纸张，只需要背景是白色的」「拉伸、移动后可能超出原本

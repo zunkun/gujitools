@@ -26,7 +26,7 @@
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import QRectF, QSize, Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 from qfluentwidgets import (
@@ -203,11 +203,16 @@ class ToolbarMixin(DialogHost):
 
 
     def _set_tool(self, tool: str) -> None:
-        """切换功能并重建右侧参数页；离开文字/变换前把进行中的工作写进图。"""
+        """切换功能并重建右侧参数页；离开某个功能前把进行中的工作落进图。"""
         if not hasattr(self, "canvas"):
             return  # 构建期先于画布存在，等 __init__ 末尾再真切换
         if tool != "text":
             self._commit_text_blocks()
+        if tool != "crop":
+            # ⚠️ **切走裁剪工具 = 确认这次裁剪**（GIMP 口径）。裁剪是非破坏性的
+            #    （松手只记选区、像素没动），不在这儿落定就没有别的落定时机：
+            #    留着的话画布上仍是整幅原图，用户会以为刚才那一下白裁了。
+            self._commit_crop()
         if tool != "transform":
             # ⚠️ **force=True**：离开变换工具是"必须烘焙"的时机（拖动中不烘，
             #    松手也不烘——内容靠画布浮层实时显示，见 dialog_commit）
@@ -247,7 +252,8 @@ class ToolbarMixin(DialogHost):
         row = QHBoxLayout(bar)
         row.setContentsMargins(0, 0, 0, 0)
         hint = CaptionLabel(
-            "编辑即时生效（松手即应用）；Ctrl+Z 撤销上一步，右侧「编辑历史」可点选跳转；"
+            "编辑即时生效；Ctrl+Z 撤销上一步（有待定裁剪时先退掉它），"
+            "右侧「编辑历史」可点选跳转；"
             + ("「完成」会提示确认后覆盖原图片"
                if self._save_back else "「完成」应用编辑并回到预览")
             + "；直接关闭弹窗 = 放弃本次全部编辑"
@@ -265,8 +271,21 @@ class ToolbarMixin(DialogHost):
 
 
     def _refresh_size_label(self) -> None:
-        """裁剪/变换换了画布尺寸后刷新右下角的尺寸提示。"""
+        """右下角尺寸提示；有**待定裁剪**时连"裁完是多大"一起报出来。
+
+        ⚠️ 待定裁剪期间 ``_image`` 还是整幅原图（像素没动），只报原图尺寸的话
+        用户完全看不出"这次要裁成多大"——所以并排写出结果尺寸。
+        """
         label = getattr(self, "size_label", None)
-        if label is None or self._image is None:
+        if label is None or self._image is None or self._image.isNull():
             return
-        label.setText(f"{self._image.width()} × {self._image.height()} px")
+        current = f"{self._image.width()} × {self._image.height()} px"
+        pending = getattr(self, "_pending_crop", None)
+        if pending is not None:
+            box = QRectF(pending).toRect()
+            if not box.isEmpty():
+                label.setText(
+                    f"裁剪后 {box.width()} × {box.height()} px"
+                    f"（当前 {current}）")
+                return
+        label.setText(current)

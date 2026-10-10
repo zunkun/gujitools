@@ -47,6 +47,12 @@ class EditorCanvas(
     场景坐标 = 图片像素（pixmap 刻意不设 devicePixelRatio，与预览弹窗同
     口径）。选区矩形（裁剪）几何全部落在**图片坐标系**，缩放只影响显示。
     裁剪不做"拖拽画框"：**默认全选**，只许收边/框内移动。
+
+    ⚠️ 裁剪是**非破坏性**的：这里画的始终是**原图**，收边只是让选区外多一层
+    变暗的遮罩（``overlay._sync_overlay`` 每帧按选区重算，所以向外拖时那块
+    区域立刻重新露出来）。真正的 ``QImage.copy`` 由弹窗在**切走裁剪工具 /
+    点「完成」**时才做（``dialog_commit._commit_crop``）——于是裁剪线在整段
+    编辑过程中都能来回推拉，而不会被上一次的"落定"顶死在边界上。
     """
 
     #: 擦除一笔开始（弹窗借此压撤销点）
@@ -55,10 +61,12 @@ class EditorCanvas(
     text_requested = Signal(QPointF)
     #: 「调整范围」收边完成（弹窗借此取消勾选，自动回到变换模式）
     reshape_finished = Signal()
-    #: 裁剪框拖完松手（弹窗借此**立即**把图裁成当前选区 = 松手即应用）
-    crop_committed = Signal()
+    #: 裁剪框拖完松手（弹窗据此**记下**选区；像素不动，裁剪仍是"待定"）
+    crop_selection_changed = Signal()
     #: 变换拖完松手（弹窗借此**立即**把变换烘焙进像素 = 松手即应用）
     transform_committed = Signal()
+    #: 进入变换工具（弹窗据此从 sidecar 恢复"内容四角节点"，2026-10-10）
+    content_restore_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -133,6 +141,11 @@ class EditorCanvas(
         #: 预览三件套：锁定的选区 / 选区像素快照 / 填白后的底图
         self._xf_rect: QRectF | None = None
         self._xf_region: QImage | None = None
+        #: 内容节点恢复会话（2026-10-10）：浮层像素源＝sidecar 反变换出的
+        #: **upright 内容**。⚠️ 画布（``_image``）保持文件原样一个像素不换
+        #: （用户口径「PB1 作为画布，PA1 作为可操作区域」），只有浮层与
+        #: 矩阵来自恢复数据。``None`` = 普通会话（浮层取自画布选区）。
+        self._xf_restore_region: QImage | None = None
         self._paint_image: QImage | None = None
         #: 底图左上角在图片坐标里的位置。⚠️ **不再是 (0, 0)**：底图（"纸"）按
         #: 烘焙画布（``geometry.transform_region``）摆位，整幅旋转时它会被搬到
@@ -414,6 +427,13 @@ class EditorCanvas(
         self._apply_border_pen()      # 变换工具下纸边框画成虚线（原图轮廓）
         self._sync_overlay()
         self._sync_cursor()
+        # ⚠️ 内容节点恢复（2026-10-10）：进入变换工具且 sidecar 还没恢复过
+        #    时通知弹窗——由它读 ``(rect0, V)``、把像素反变换回 upright 后
+        #    调 :meth:`begin_restored_transform`（框/手柄落在内容四边形上）。
+        #    恢复过/无 sidecar 时弹窗会 consume，这里不再重复发。
+        if tool == "transform" and not self.image_rect().isNull() \
+                and not getattr(self, "_content_restore_done", False):
+            self.content_restore_requested.emit()
 
 
     def set_eraser(self, size: int) -> None:
@@ -432,6 +452,26 @@ class EditorCanvas(
         if rect.width() < MIN_RECT_EDGE or rect.height() < MIN_RECT_EDGE:
             return None
         return rect
+
+
+    def reset_selection(self) -> None:
+        """选区恢复到整幅图，**像素一个都不动**。
+
+        两种场景用：
+
+        - 弹窗丢掉一次**待定**裁剪（Ctrl+Z 优先退掉的就是它，参数页也有
+          「重置选区」）——像素本来就没被裁，框弹回整幅就等于反悔成功；
+        - 选区被拖成小于 ``MIN_RECT_EDGE`` 的"废框"时的兜底。
+
+        ⚠️ 与 :meth:`set_tool` 的差别只在于**不动工具、不清变换预览**，所以
+        拿它撤销"待定裁剪"是安全的（不会把正在预览的变换一起掀掉）。
+        """
+        if self._tool in ("crop", "transform") and self._image is not None:
+            self._rect = QRectF(self.image_rect())
+            self._xf_pivot = (QPointF(self._xf_pivot_saved)
+                              if self._xf_pivot_saved is not None
+                              else self._rect.center())
+        self._sync_overlay()
 
 
     # ------------------------------------------------------------ 缩放

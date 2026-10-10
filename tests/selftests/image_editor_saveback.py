@@ -15,7 +15,13 @@
 6. **覆盖确认**（用户 2026-10-04 需求 1）：改了图点「完成」且 ``save_back``
    时**先弹确认**并点名目标文件；用户选「返回继续编辑」⇒ **不 accept、
    不关窗、图还在**。虚拟预览（``save_back=False``）、图未改动、目标文件
-   尚不存在这三种都**不弹**（不写盘/没东西可丢的事不假报警）。
+   尚不存在这三种都**不弹**（不写盘/没东西可丢的事不假报警）；
+6b. **"只裁不改"也要问**（非破坏性裁剪，2026-10-10）：待定裁剪还没落到像素上、
+   ``_image`` 仍是原图，但「完成」马上就要裁掉并写盘 ⇒ 同样弹确认，且确认后
+   才真正裁（这条挡的是"原图被无声裁小"）；
+6c. **"只转不改"也要问**（统一变换挂起，2026-10-10）：松手只挂起预览、像素
+   没动，但「完成」马上就要烘焙变换并写盘 ⇒ 同样弹确认；确认后挂起的变换
+   **必须真的烘焙进结果**（同日报障「统一变换不能落地到实体图片」的回归线）。
 """
 
 from __future__ import annotations
@@ -259,7 +265,8 @@ def run(ctx) -> None:
            hasattr(__import__("qfluentwidgets"), "MessageBox"), "")
 
         def _ask_overwrite(edited: bool, accept: bool, save_back: bool = True,
-                           **attrs):
+                           pending_crop: bool = False,
+                           pending_transform: bool = False, **attrs):
             """开一个编辑器并点「完成」，返回 (确认框参数列表, 弹窗对象)。"""
             from desktop.components.viewers.image_editor import (
                 ImageEditorDialog as _Ed,
@@ -272,6 +279,20 @@ def run(ctx) -> None:
             if edited:                      # 改一个像素 ⇒ 真的"改过了"
                 ed._image = _make_image(color="#00ff00")
                 ed.canvas.set_image(ed._image)
+            if pending_crop:
+                # ⚠️ **只裁不改**：待定裁剪还没落到像素上，`_image` 仍是原图。
+                #    只比 `_image == _original` 的话这条编辑会一声不吭地把原图
+                #    裁小写回去 —— 必须照样弹覆盖确认（见 dialog_commit
+                #    的非破坏性裁剪）。
+                ed.canvas._rect = ed.canvas.image_rect().adjusted(2, 2, -2, -2)
+                ed._preview_crop()
+            if pending_transform:
+                # ⚠️ **只转不改**：统一变换松手只挂起预览（像素没动、`_image`
+                #    仍是原图），但「完成」马上就要把变换烘焙进去并覆盖磁盘
+                #    ——同样必须弹覆盖确认（2026-10-10）。
+                ed.canvas.set_tool("transform")
+                ed.canvas.transform_rotate(90)
+                ed.canvas.make_transform_pending()
             asked: list = []
 
             class _Box:
@@ -319,6 +340,30 @@ def run(ctx) -> None:
         ok("取消覆盖后解锁（能再次点「完成」，不会卡在 _finishing）",
            ed_no._finishing is False, "")
         ed_no.deleteLater()
+
+        # ⚠️ 只裁不改：待定裁剪还没落到像素上（`_image` 仍是原图），但「完成」
+        #    马上就要把它裁掉并覆盖磁盘 —— 照样必须问，否则原图被无声裁小。
+        asked, ed_crop = _ask_overwrite(
+            edited=False, accept=True, pending_crop=True)
+        ok("只裁不改（待定裁剪尚未落像素）也要弹覆盖确认",
+           len(asked) == 1 and "覆盖" in asked[0]["title"], str(asked))
+        _out = ed_crop.result_image()
+        ok("确认后待定裁剪才真正落到像素（这里从 64×48 裁到 60×44）",
+           _out is not None and _out.width() == 60 and _out.height() == 44,
+           f"size={_out.width()}x{_out.height()}" if _out else "None")
+        ed_crop.deleteLater()
+
+        # ⚠️ 只转不改：挂起的统一变换还没落到像素上（`_image` 仍是原图），
+        #    但「完成」马上就要烘焙并覆盖磁盘 —— 照样必须问（2026-10-10）。
+        asked, ed_xf = _ask_overwrite(
+            edited=False, accept=True, pending_transform=True)
+        ok("只转不改（统一变换挂起未落像素）也要弹覆盖确认",
+           len(asked) == 1 and "覆盖" in asked[0]["title"], str(asked))
+        _out = ed_xf.result_image()
+        ok("确认后挂起的变换真的烘焙进结果（64×48 旋转成 48×64）",
+           _out is not None and _out.width() == 48 and _out.height() == 64,
+           f"size={_out.width()}x{_out.height()}" if _out else "None")
+        ed_xf.deleteLater()
 
         asked, ed_same = _ask_overwrite(edited=False, accept=True)
         ok("没改动不弹确认（没东西可丢，假警报只会让用户觉得这框很蠢）",

@@ -6,8 +6,8 @@
 切功能 = 换右侧参数面板，参数竖排不横向溢出。
 
 **编辑实时生效**：「应用裁剪」「应用变换」「插入文字」三个单步确认按钮已删除
-——裁剪/变换**拖完松手即应用**，文字块本身就是画布上的实时预览、切功能或
-「完成」时自动写入。每一步都会进撤销栈，右侧「编辑历史」里点某一格可直接
+——文字块本身就是画布上的实时预览、切功能或「完成」时自动写入，变换拖动中由
+画布浮层实时显示。每一步都会进撤销栈，右侧「编辑历史」里点某一格可直接
 回退/前进到那一步（同 Ctrl+Z / Ctrl+Y）。
 
 从图片预览弹窗（``image_zoom_dialog``）的「编辑」按钮进入，编辑的是
@@ -21,10 +21,15 @@ _confirm_overwrite`）。虚拟预览（区域合成/打印重排/PDF 页）没�
 
 五个功能的行为口径：
 
-- **裁剪**：**默认选中整幅图**，沿四边/四角**任意位置**向内拖收边（整条
-  边都是命中带，不只手柄小方块）、拖框中间移动；**松手即裁到当前选区**
-  （再点按钮那一版已删），画布尺寸随之收小、视图重新适应新图。不做截图式
-  "拖拽画框"——那是截图的交互，裁剪的语义是"从原图里收出想要的部分"
+- **裁剪**：**非破坏性**——**默认选中整幅图**，沿四边/四角**任意位置**拖动收放
+  选区（整条边都是命中带，不只手柄小方块）、拖框中间移动。松手**只定下选区、
+  不切像素**：画布画的始终是原图，选区外盖一层半透明遮罩，所以裁剪线在整段
+  编辑里都能**来回推拉**——向外拖回去时，原本被遮住的区域会重新显示出来
+  （用户 2026-10-10：「裁剪线可以向内移动也可以向外移动，向外移动，原本被隐藏
+  的区域要显示出来」）。落定时机 = **切走裁剪工具**或点**「完成」**，一次落定
+  = 一个撤销点，右下角尺寸提示会并排写出"裁完是多大"。参数页有「重置选区」，
+  Ctrl+Z / Ctrl+Y / 「还原」遇到待定裁剪也先把它退掉（像素没动过，不记步）。
+  不做截图式"拖拽画框"——那是截图的交互，裁剪的语义是"从原图里收出想要的部分"
   （用户 20:05 定）。
 - **变换**（GIMP「统一变换」口径，`Shift+T` 那套）：**默认选中整幅图**，
   手柄按形状分语义——**四角大方框=双轴缩放**（内嵌小菱形=**透视**，单独挪
@@ -83,6 +88,10 @@ from .consts import (
     CONSTRAIN_OPS, PIVOT_OPS, PREVIEW_OPACITY_DEFAULT, STEP_FLIP,
 )
 from .dialog import EDITOR_MIN_SIZE, EDITOR_SIZE, ImageEditorDialog
+from .content_quad import (
+    clear_quad, quad_frame, quad_path, read_quad, sync_content_quad,
+    upright_image, write_quad,
+)
 from .geometry import (
     clamp_rect, rotate_about, scale_about, shear_about, bake_transform,
     compose_transform, warp_placement,
@@ -118,4 +127,6 @@ __all__ = [
     "_BakeWorker", "run_with_progress",
     "TextBlockItem", "EditorCanvas",
     "ImageEditorDialog",
+    "quad_path", "quad_frame", "read_quad", "write_quad", "clear_quad",
+    "upright_image", "sync_content_quad",
 ]

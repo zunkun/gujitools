@@ -132,7 +132,7 @@ class InteractionMixin(CanvasHost):
 
         不只认 8 个小方块：**整条边**都在命中带内（带宽 EDGE_BAND_VIEW_PX，
         以边线为中心向内外各半），四角的双边交叠区是角手柄——沿边任意
-        位置都能抓着向内拖（用户 20:18 定："四边大部分区域都可以向内移动"）。
+        位置都能抓着拖（用户 20:18 定："四边大部分区域都可以移动裁剪线"）。
         """
         if self._rect is None:
             return None
@@ -164,7 +164,9 @@ class InteractionMixin(CanvasHost):
         pos = self.mapToScene(event.position().toPoint())
         inside = self.image_rect()
         if self._tool == "crop":
-            # 裁剪不做"拖拽画框"（那是截图的交互）：默认全选，只能收边/移动
+            # 裁剪不做"拖拽画框"（那是截图的交互）：默认全选，只能拖边/移动。
+            # 拖边**双向**都行 —— 画布在待定期间一直是原图，往外拖回去就是
+            # 把刚才变暗的区域重新放出来（见 dialog_commit._preview_crop）。
             handle = self._hit_handle(event.position())
             self._hover_handle = handle
             self._apply_hover_highlight()
@@ -316,12 +318,16 @@ class InteractionMixin(CanvasHost):
                 self._sync_overlay()
                 self.fit_selection()
             elif was_crop:
-                # ⚠️ 裁剪**没有**「应用裁剪」按钮：拖完松手就通知弹窗把图裁成
-                #    当前选区（松手即应用）。选区没被改动过（点一下/拖回原位）
-                #    时弹窗侧会自己短路，不产生空撤销步。
+                # ⚠️ 裁剪是**非破坏性**的：松手只把选区告诉弹窗记下来，**不动
+                #    像素**。画布上画的始终是原图，选区外的遮罩（4 块半透明黑）
+                #    每帧按选区重算 ⇒ 向外拖时被变暗的那块立刻重新露出来，
+                #    裁剪线在整段编辑里都能来回推。真正的 ``QImage.copy`` 在
+                #    切走裁剪工具 / 点「完成」时才做（``_commit_crop``）。
+                #    选区没被改动过（点一下/拖回原位）时弹窗侧会自己清掉待定
+                #    裁剪，不产生空撤销步。
                 self._sync_overlay()
                 if self.selection() is not None:
-                    self.crop_committed.emit()
+                    self.crop_selection_changed.emit()
             else:
                 self._sync_overlay()
                 self.fit_selection()
@@ -357,7 +363,12 @@ class InteractionMixin(CanvasHost):
 
 
     def _resize_rect(self, handle: str, pos: QPointF) -> None:
-        """拖手柄改选区（对边/对角锚定不动），夹进画布、保住最小边。"""
+        """拖手柄改选区（对边/对角锚定不动），夹进画布、保住最小边。
+
+        ⚠️ 夹取上界是 ``image_rect()``＝**当前原图**。因为裁剪是非破坏性的
+        （松手不换图），这块画布在整个裁剪工具会话里一直是原图，所以往外拖
+        能一路拉回原图的边界、被遮住的老区域同步重新显出来。
+        """
         assert self._rect is not None  # 拖手柄时必有选区
         rect = QRectF(self._rect.normalized())
         inside = self.image_rect()
