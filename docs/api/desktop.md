@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 165 个模块、177 个公开类、1211 个公开函数/方法（生成于 2026-10-10）。
+覆盖 165 个模块、177 个公开类、1214 个公开函数/方法（生成于 2026-10-10）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -51,7 +51,7 @@
 | [`desktop.components.viewers.edit_sync`](#desktopcomponentsviewersedit_sync) | 0 | 2 |
 | [`desktop.components.viewers.extract_viewer`](#desktopcomponentsviewersextract_viewer) | 1 | 6 |
 | [`desktop.components.viewers.image_editor.bake`](#desktopcomponentsviewersimage_editorbake) | 0 | 2 |
-| [`desktop.components.viewers.image_editor.canvas.core`](#desktopcomponentsviewersimage_editorcanvascore) | 1 | 18 |
+| [`desktop.components.viewers.image_editor.canvas.core`](#desktopcomponentsviewersimage_editorcanvascore) | 1 | 20 |
 | [`desktop.components.viewers.image_editor.canvas.distortion`](#desktopcomponentsviewersimage_editorcanvasdistortion) | 1 | 1 |
 | [`desktop.components.viewers.image_editor.canvas.interaction`](#desktopcomponentsviewersimage_editorcanvasinteraction) | 1 | 7 |
 | [`desktop.components.viewers.image_editor.canvas.overlay`](#desktopcomponentsviewersimage_editorcanvasoverlay) | 1 | 0 |
@@ -60,7 +60,7 @@
 | [`desktop.components.viewers.image_editor.consts`](#desktopcomponentsviewersimage_editorconsts) | 0 | 0 |
 | [`desktop.components.viewers.image_editor.content_quad`](#desktopcomponentsviewersimage_editorcontent_quad) | 0 | 7 |
 | [`desktop.components.viewers.image_editor.dialog`](#desktopcomponentsviewersimage_editordialog) | 1 | 3 |
-| [`desktop.components.viewers.image_editor.dialog_commit`](#desktopcomponentsviewersimage_editordialog_commit) | 1 | 1 |
+| [`desktop.components.viewers.image_editor.dialog_commit`](#desktopcomponentsviewersimage_editordialog_commit) | 1 | 2 |
 | [`desktop.components.viewers.image_editor.dialog_pages`](#desktopcomponentsviewersimage_editordialog_pages) | 1 | 0 |
 | [`desktop.components.viewers.image_editor.dialog_toolbar`](#desktopcomponentsviewersimage_editordialog_toolbar) | 1 | 0 |
 | [`desktop.components.viewers.image_editor.dialog_undo`](#desktopcomponentsviewersimage_editordialog_undo) | 1 | 0 |
@@ -3313,6 +3313,8 @@ worker 会变成孤儿线程，而它是被 ``parent``（编辑器对话框）�
 | `tool() -> str` | 当前工具键（``crop``/``transform``/``distort``/``erase``/``text``）。 |
 | `image_rect() -> QRectF` | 图片占位（= 场景坐标，1 场景单位 = 1 图片像素）。 |
 | `set_tool(tool: str) -> None` | 切换工具：裁剪/变换默认全选，其余清选区、换光标。 |
+| `provide_restore_pixels(upright: QImage) -> None` | 弹窗把延迟计算的 upright 内容补回来（:meth:`abort_content_restore` |
+| `abort_content_restore() -> None` | 放弃恢复会话（sidecar 缺失/损坏/反变换失败）：退回普通会话。 |
 | `set_eraser(size: int) -> None` | 设置橡皮擦直径（图片像素）；擦除固定涂白，没有颜色可选。 |
 | `selection() -> QRectF \| None` | 当前选区（图片坐标）；不足最小边视为没有。 |
 | `reset_selection() -> None` | 选区恢复到整幅图，**像素一个都不动**。 |
@@ -3356,6 +3358,21 @@ fit 就等于"每次松手都把图缩小一档"，反复旋转会越转越小�
 
 弹窗侧只读用（例如 ``stroke_started`` 到达时判断该记成"擦除"还是
 "扭曲"），刻意不给 setter——换工具一律走 :meth:`set_tool`。
+
+##### `provide_restore_pixels(upright: QImage) -> None`
+
+弹窗把延迟计算的 upright 内容补回来（:meth:`abort_content_restore`
+的反面）。调用方是 :meth:`TransformMixin._ensure_transform_preview`
+发出 ``restore_pixels_requested`` 后被同步回调的弹窗槽——像素一到，
+预览就能照常搭起来。
+
+##### `abort_content_restore() -> None`
+
+放弃恢复会话（sidecar 缺失/损坏/反变换失败）：退回普通会话。
+
+延迟供像素模式下框已经按 rect0 挂出来了，这里要把那套"挂起"状态
+整体撤掉——框弹回整幅、矩阵归零，与"从来没有 sidecar"一致
+（口径：宁可不恢复，也不能错恢复）。
 
 ##### `reset_selection() -> None`
 
@@ -3560,7 +3577,7 @@ fit 就等于"每次松手都把图缩小一档"，反复旋转会越转越小�
 | `reset_transform() -> None` | 「重置」：丢弃未应用的变换，选区回到整幅、轴心回到中心。 |
 | `transform_pending() -> tuple[QRectF, QTransform, QImage] \| None` | 未应用的变换 ``(选区, 矩阵, 选区像素快照)``；没有则 None。 |
 | `consume_content_restore() -> None` | 标记 sidecar 恢复已处理（无数据/失败/完成）：本会话不再触发。 |
-| `begin_restored_transform(xf: QTransform, region: QImage \| None=None) -> None` | 把恢复出来的矩阵挂成**未触摸**的待定变换（画布保持文件原样）。 |
+| `begin_restored_transform(xf: QTransform, region: QImage \| None=None, rect0: QRectF \| None=None) -> None` | 把恢复出来的矩阵挂成**未触摸**的待定变换（画布保持文件原样）。 |
 | `transform_move(dx: float, dy: float) -> None` | 整体平移 ``dx, dy``（图片像素，**视觉方向**）。 |
 | `transform_rotate(degrees: float) -> None` | 绕**轴心当前视觉位置**旋转（轴心保持不动）。 |
 | `transform_scale(sx: float, sy: float, anchor: QPointF \| None=None) -> None` | 缩放（局部空间，锚点缺省=轴心；sx/sy 是相对当前内容的倍率）。 |
@@ -3619,7 +3636,7 @@ fit 就等于"每次松手都把图缩小一档"，反复旋转会越转越小�
 （用户看不到卡），于是**松手后看到的预览就是烘焙结果**——"预览 ==
 烘焙"的判据一点没松。
 
-##### `begin_restored_transform(xf: QTransform, region: QImage | None=None) -> None`
+##### `begin_restored_transform(xf: QTransform, region: QImage | None=None, rect0: QRectF | None=None) -> None`
 
 把恢复出来的矩阵挂成**未触摸**的待定变换（画布保持文件原样）。
 
@@ -3638,6 +3655,14 @@ fit 就等于"每次松手都把图缩小一档"，反复旋转会越转越小�
   工具/「完成」都不重采样，零代次损失）；一旦拖动，走正常挂起→
   烘焙链，烘焙输入＝upright、矩阵＝总量 ⇒ 每次保存只损失一次
   重采样代次。
+
+⚠️⚠️ **延迟供像素**（2026-10-10「切换卡顿」）：``region`` 为 ``None``
+时**只**挂矩阵、框（``rect0``＝sidecar 里的 rect0，必传）和轴心——
+**不**建预览、**不**算 upright 反变换（那是秒级重活，之前每次进
+变换工具都要等它，用户报的正是这个）。像素推迟到第一次建预览
+（＝第一次拖动）时由 :meth:`_ensure_transform_preview` 经
+``restore_pixels_requested`` 向弹窗要。之前把反变换算好再调
+``begin_restored_transform(seed, upright)`` 的旧入口原样可用。
 
 ##### `transform_rotate(degrees: float) -> None`
 
@@ -3705,6 +3730,7 @@ fit 就等于"每次松手都把图缩小一档"，反复旋转会越转越小�
 | DISTORT_PREVIEW_TILES_PER_TICK | `16` |
 | DISTORT_PREVIEW_RENDER_PIXELS | `60000` |
 | DISTORT_SYNC_RENDER_PIXELS | `4000000` |
+| TRANSFORM_SYNC_RENDER_PIXELS | `250000` |
 | SHEAR_AT | `0.75` |
 | SIDE_VIEW_PX | `16.0` |
 | SHEAR_VIEW_PX | `16.0` |
@@ -3867,6 +3893,12 @@ MRO 顺序：功能条/参数页在前（``__init__`` 里就要用），提交�
 
 把画布上的临时状态烘焙进当前图像（含后台烘焙与失败提示）。（从 ``image_editor/dialog.py`` 拆出，2026-10-07；方法体逐字未改）。
 
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| _ACTIVE_APPLIES | `[]` |
+
 ### `class CommitMixin(DialogHost)`
 
 把画布上的临时状态烘焙进当前图像（含后台烘焙与失败提示）。
@@ -3876,6 +3908,15 @@ MRO 顺序：功能条/参数页在前（``__init__`` 里就要用），提交�
 | 方法 | 说明 |
 | --- | --- |
 | `content_state()` | 内容节点 ``(rect0, V)``；None = 无节点（宿主据此写/清 sidecar）。 |
+| `apply_in_progress() -> bool` | 「完成」的**后台应用**是否进行中（宿主在 ``exec()`` 返回后分流）。 |
+
+##### `apply_in_progress() -> bool`
+
+「完成」的**后台应用**是否进行中（宿主在 ``exec()`` 返回后分流）。
+
+True = 编辑器已关、烘焙+写底片在工作线程里跑；宿主不要再走
+``result_image()`` → 写盘那条同步路（图还没烘出来），改接
+``apply_completed`` / ``apply_failed`` 信号收尾（2026-10-10）。
 
 ---
 

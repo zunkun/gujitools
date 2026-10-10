@@ -441,6 +441,16 @@ class ImageZoomDialog(QDialog, WorkerHost):
             return
         if editor.exec() != QDialog.DialogCode.Accepted:
             return
+        if edit_path is not None and editor.apply_in_progress():
+            # ⚠️ 后台应用中（2026-10-10「应用卡顿」）：编辑器已关，烘焙+写盘
+            #    在工作线程；这里不再读 result_image/写盘，改接完成信号收尾。
+            editor.apply_completed.connect(
+                lambda _path, image: self._after_editor_apply(
+                    edit_path, is_direct, image))
+            editor.apply_failed.connect(
+                lambda _path, reason: self.tip_label.setText(
+                    f"编辑未生效：{edit_path.name}（{reason}）"))
+            return
         edited = editor.result_image()
         if edited is None or edited.isNull():
             return
@@ -453,23 +463,30 @@ class ImageZoomDialog(QDialog, WorkerHost):
             )
 
             sync_content_quad(str(edit_path), editor)
-            # 三处同步：① 主查看器（信号携带编辑图，宿主立即上屏并登记尺寸）
-            # ② 本弹窗画布 ③ 磁盘文件（上面已原子覆盖）。缩略图缓存由宿主
-            # 后台重生，不阻塞前两处。
-            self.image_saved.emit(str(edit_path), edited)
-            if is_direct:
-                self.canvas.set_image(edited)
-                self._on_zoom_changed(self.canvas.zoom)
-            else:
-                # 派生显示：按新文件重新合成当前页（区域/打印效果随之更新）
-                self.show_for(index=self._index)
-            self.tip_label.setText(
-                f"已覆盖原图：{edit_path.name}（后续步骤将使用编辑后的图）"
-            )
+            self._after_editor_apply(edit_path, is_direct, edited)
             return
         self.canvas.set_image(edited)
         self._on_zoom_changed(self.canvas.zoom)
         self.tip_label.setText("已应用编辑：满意就用「下载」保存；翻页会丢弃未保存的修改")
+
+    def _after_editor_apply(self, edit_path, is_direct: bool, edited) -> None:
+        """编辑器应用完成后的**刷新链**（同步/后台应用两条路共用，2026-10-10）。
+
+        磁盘文件与 sidecar 都已落好（同步路在调用方、后台路在编辑器侧），
+        这里只做三处同步：① 主查看器（信号携带编辑图，宿主立即上屏并登记
+        尺寸）② 本弹窗画布 ③ 派生显示按新文件重新合成当前页。缩略图缓存由
+        宿主后台重生，不阻塞前两处。
+        """
+        self.image_saved.emit(str(edit_path), edited)
+        if is_direct:
+            self.canvas.set_image(edited)
+            self._on_zoom_changed(self.canvas.zoom)
+        else:
+            # 派生显示：按新文件重新合成当前页（区域/打印效果随之更新）
+            self.show_for(index=self._index)
+        self.tip_label.setText(
+            f"已覆盖原图：{edit_path.name}（后续步骤将使用编辑后的图）"
+        )
 
     def _print_image(self) -> None:
         """把当前图送到打印机（对话框里选打印机/纸张/份数）。

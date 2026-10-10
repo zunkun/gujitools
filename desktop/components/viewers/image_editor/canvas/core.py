@@ -67,6 +67,10 @@ class EditorCanvas(
     transform_committed = Signal()
     #: 进入变换工具（弹窗据此从 sidecar 恢复"内容四角节点"，2026-10-10）
     content_restore_requested = Signal()
+    #: 恢复会话第一次真正需要像素（第一次建预览/拖动）：upright 反变换是
+    #: 秒级重活，弹窗在此刻才算它（带进度框），算完调
+    #: :meth:`provide_restore_pixels` 补回来（2026-10-10「切换卡顿」）。
+    restore_pixels_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -146,6 +150,12 @@ class EditorCanvas(
         #: （用户口径「PB1 作为画布，PA1 作为可操作区域」），只有浮层与
         #: 矩阵来自恢复数据。``None`` = 普通会话（浮层取自画布选区）。
         self._xf_restore_region: QImage | None = None
+        #: 恢复会话**延迟供像素**（2026-10-10「切换卡顿」）：True = 框/手柄已按
+        #: 种子矩阵挂好，但 upright 反变换还没算（进入工具零等待）；第一次
+        #: 建预览（:meth:`TransformMixin._ensure_transform_preview`）时发
+        #: ``restore_pixels_requested``，弹窗算完经 :meth:`provide_restore_pixels`
+        #: 补回，或 :meth:`abort_content_restore` 放弃。
+        self._xf_restore_pending = False
         self._paint_image: QImage | None = None
         #: 底图左上角在图片坐标里的位置。⚠️ **不再是 (0, 0)**：底图（"纸"）按
         #: 烘焙画布（``geometry.transform_region``）摆位，整幅旋转时它会被搬到
@@ -434,6 +444,30 @@ class EditorCanvas(
         if tool == "transform" and not self.image_rect().isNull() \
                 and not getattr(self, "_content_restore_done", False):
             self.content_restore_requested.emit()
+
+    def provide_restore_pixels(self, upright: QImage) -> None:
+        """弹窗把延迟计算的 upright 内容补回来（:meth:`abort_content_restore`
+        的反面）。调用方是 :meth:`TransformMixin._ensure_transform_preview`
+        发出 ``restore_pixels_requested`` 后被同步回调的弹窗槽——像素一到，
+        预览就能照常搭起来。"""
+        if upright is None or upright.isNull():
+            return
+        self._xf_restore_region = QImage(upright)
+        self._xf_restore_pending = False
+
+    def abort_content_restore(self) -> None:
+        """放弃恢复会话（sidecar 缺失/损坏/反变换失败）：退回普通会话。
+
+        延迟供像素模式下框已经按 rect0 挂出来了，这里要把那套"挂起"状态
+        整体撤掉——框弹回整幅、矩阵归零，与"从来没有 sidecar"一致
+        （口径：宁可不恢复，也不能错恢复）。"""
+        self._xf_restore_pending = False
+        self._xf_restore_region = None
+        self._xf_rect = None
+        self._xf = QTransform()
+        self._xf_touched = False
+        self._sync_overlay()
+        self._sync_cursor()
 
 
     def set_eraser(self, size: int) -> None:

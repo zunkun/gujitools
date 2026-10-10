@@ -162,6 +162,15 @@ class ZoomPopupMixin:
         editor.source_path = str(path)
         if editor.exec() != QDialog.DialogCode.Accepted:
             return False
+        if editor.apply_in_progress():
+            # ⚠️ 后台应用中（2026-10-10「应用卡顿」）：编辑器已关，烘焙+写盘
+            #    在工作线程；完成/失败信号回到本函数的收尾链。
+            editor.apply_completed.connect(
+                lambda _path, image: self._after_editor_saved(path, image))
+            editor.apply_failed.connect(
+                lambda _path, reason: self._notify_edit(
+                    "error", "保存失败", f"编辑未生效：{path.name}（{reason}）"))
+            return True          # 写盘进行中，按"已受理"回报
         edited = editor.result_image()
         if edited is None or edited.isNull():
             return False
@@ -169,8 +178,12 @@ class ZoomPopupMixin:
             self._notify_edit("error", "保存失败", f"编辑未生效：{path.name}")
             return False
         sync_content_quad(str(path), editor)
-        self._on_zoom_image_saved(str(path), edited)
+        self._after_editor_saved(path, edited)
         return True
+
+    def _after_editor_saved(self, path, edited) -> None:
+        """编辑器应用完成（磁盘与 sidecar 已落好）的刷新链（两条路共用）。"""
+        self._on_zoom_image_saved(str(path), edited)
 
     def _notify_edit(self, kind: str, title: str, content: str) -> None:
         """编辑失败的提示（InfoBar）。没有可用的宿主窗口时静默。"""

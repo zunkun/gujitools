@@ -55,6 +55,23 @@ class DialogHost(QDialog):
     _text_size: int
     _tool_buttons: dict[str, ToggleButton]
     _undo: list[QImage]
+    # ---- 内容四角节点（sidecar 恢复，2026-10-10）----
+    _content_state: Any
+    _content_read: bool
+    _content_restored: bool
+    _content_seed: Any
+    _content_upright: Any
+    _content_restore_params: Any
+    _content_restore_target: float
+    _content_trim_offset: tuple[int, int]
+    _content_in_cancel: bool
+    # ---- 「完成」的后台应用（2026-10-10「应用卡顿」）----
+    _async_apply: Any
+    _async_worker: Any
+    _async_quit_hooked: bool
+    #: 信号定义在主类 ImageEditorDialog（PySide6 要求 QObject 宿主）
+    apply_completed: Any
+    apply_failed: Any
     canvas: EditorCanvas
     done_btn: PrimaryPushButton
     fit_btn: PushButton
@@ -65,6 +82,8 @@ class DialogHost(QDialog):
     size_label: CaptionLabel
     target_exists: bool
     target_name: str
+    #: 编辑源文件路径（宿主构造后回填；sidecar 读写与后台写盘的落点）
+    source_path: str
     undo_btn: ToolButton
     zoom_in_btn: ToolButton
     zoom_out_btn: ToolButton
@@ -89,6 +108,48 @@ class DialogHost(QDialog):
         ...
 
     def _commit_transform(self, label: str = "") -> None:
+        ...
+
+    # ---- 内容四角节点（sidecar 恢复，2026-10-10）----
+    def content_state(self) -> Any:
+        ...
+
+    def _content_clear(self) -> None:
+        ...
+
+    def _content_exit_restore(self) -> None:
+        ...
+
+    def _content_on_history_jump(self) -> None:
+        ...
+
+    def _on_content_restore_requested(self) -> None:
+        ...
+
+    def _on_restore_pixels_requested(self) -> None:
+        ...
+
+    def _content_after_bake(self, rect: QRectF, xf: Any, clipping: str,
+                            original: Any) -> None:
+        ...
+
+    # ---- 「完成」的后台应用（2026-10-10「应用卡顿」）----
+    def apply_in_progress(self) -> bool:
+        ...
+
+    def _begin_background_apply(self) -> bool:
+        ...
+
+    def _on_async_apply_done(self) -> None:
+        ...
+
+    def _cancel_async_apply(self) -> None:
+        ...
+
+    def _text_payload(self) -> list:
+        ...
+
+    def _apply_text_payload(self, payload: list, image: Any) -> Any:
         ...
 
     def _confirm_overwrite(self) -> bool:

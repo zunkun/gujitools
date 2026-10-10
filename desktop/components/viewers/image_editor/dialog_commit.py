@@ -5,14 +5,17 @@
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import QPointF, QRectF
-from PySide6.QtGui import QColor, QTransform
-from .bake import run_with_progress
-from .content_quad import quad_frame, read_quad, upright_image
+from PySide6.QtGui import QColor, QImage, QTransform
+from PySide6.QtWidgets import QApplication
+from .bake import _BakeWorker, run_with_progress
+from .content_quad import quad_frame, read_quad, sync_content_quad, upright_image
 from .consts import (
     CLIPPING_DEFAULT, DIRECTION_DEFAULT, DISTORT_SYNC_RENDER_PIXELS,
     INTERPOLATION_DEFAULT, STEP_CROP, STEP_DISTORT, STEP_ERASE, STEP_FLIP,
-    STEP_TEXT, STEP_TRANSFORM,
+    STEP_TEXT, STEP_TRANSFORM, TRANSFORM_SYNC_RENDER_PIXELS,
 )
 from .geometry import (
     center_crop_aspect, clamp_rect, compose_transform, draw_text,
@@ -24,6 +27,13 @@ if TYPE_CHECKING:
     from ._host import DialogHost
 else:
     DialogHost = object
+
+
+#: 后台应用进行中的编辑器（「完成」关窗即返回，烘焙+写底片在工作线程）。
+#: ⚠️ 必须持有**Python 强引用**：``exec()`` 返回后宿主的局部变量会释放，
+#: 没有它 dialog（连同工作线程）会被 GC 掉 ⇒ ``QThread: Destroyed while
+#: thread is still running`` 直接 abort 整个进程。完成/失败回调里移除。
+_ACTIVE_APPLIES: list = []
 
 
 def _same_rect(a: QRectF, b: QRectF, tol: float = 0.5) -> bool:
@@ -89,6 +99,30 @@ def _unrotate_job(values: dict, progress=None):
     return upright_image(values["image"], values["rect"], values["xf"],
                          values["interpolation"], progress,
                          values.get("origin_shift", (0.0, 0.0)))
+
+
+def _apply_job(values: dict, progress=None):
+    """后台线程里跑的**纯计算**：「完成」的烘焙 + **原子写盘**（底片）。
+
+    用户 2026-10-10 口径：「应用保存的时候页面上的数据可以不保存，只需要
+    将数据存到相应的底片上」——弹窗在确认后**立即**关闭，本函数在工作线程
+    里把变换烘焙出来并直接覆盖到 ``values["target"]``（宿主回填的
+    ``source_path``，与各宿主自己的写盘目标是同一个文件，已逐一核对）。
+
+    返回 ``(image, saved: bool)``；用户取消返回 ``(None, False)``。
+    ⚠️ ``QImage.save`` / ``os.replace`` 都不碰 GUI 对象，工作线程里跑是
+    安全的（``overwrite_image_file`` 的临时文件名自带线程 id）；它**必须**
+    延迟导入——``image_zoom_dialog`` 包反过来导入本包，模块级导入会成环。
+    """
+    from desktop.components.viewers.image_zoom_dialog.io import (
+        overwrite_image_file,
+    )
+
+    image = _transform_job(values, progress)
+    if image is None:
+        return None, False
+    saved = overwrite_image_file(image, Path(values["target"]))
+    return image, saved
 
 
 class CommitMixin(DialogHost):
@@ -235,10 +269,12 @@ class CommitMixin(DialogHost):
         （sidecar 反变换产物）只作浮层源与烘焙源，种子矩阵挂回变换工具后
         框/手柄/轴心直接落在内容四边形上，视觉与打开时零跳变。
 
-        懒读取（sidecar 很小，纯 JSON 微秒级）：宿主构造**后**才回填
-        :attr:`source_path`，所以读这件事推迟到第一次进变换工具。反变换
-        大图像烘焙一样走后台线程 + 进度框；失败/无数据就 consume（本会话
-        退回"整幅矩形"框架，入口收紧仍保证主体是内容）。
+        ⚠️⚠️ **反变换延迟**（2026-10-10「切换卡顿」）：这里**只**做读
+        sidecar + 算种子矩阵（JSON 微秒级 + 矩阵乘法，零等待），像素反变换
+        （秒级重活）推迟到第一次建预览（＝第一次拖动）——画布发
+        ``restore_pixels_requested``、本类 :meth:`_on_restore_pixels_requested`
+        接住才算。之前每次进变换工具都卡在那里等它，用户报的正是这个。
+        已有 upright 缓存（本会话早先烘焙过）时直接挂完整版，零额外成本。
         """
         canvas = self.canvas
         if not getattr(self, "_content_read", False):
@@ -253,12 +289,50 @@ class CommitMixin(DialogHost):
             return
         rect0, xf = state
         tx, ty = getattr(self, "_content_trim_offset", (0, 0))
-        target = rect0.width() * rect0.height()
+        # ⚠️ 种子矩阵＝**画布系**：sidecar 的 V 是文件系（文件＝V×rect0 外框
+        #    裁剪，外框左上角 o＝quad_frame），入口收紧又把文件平移了 -t，
+        #    所以内容四边形在 PB1 里 ＝ V×rect0 −(o+t)——挂到画布的矩阵要
+        #    补上这两个平移，浮层/框/手柄才与已烘焙的内容严丝合缝。
+        ox, oy, _fw, _fh = quad_frame(xf, rect0)
+        seed = (QTransform(xf)
+                * QTransform().translate(-(ox + tx), -(oy + ty)))
+        self._content_seed = seed
+        canvas.consume_content_restore()
         upright = getattr(self, "_content_upright", None)
-        if upright is None:
-            params = {"image": self._image, "rect": QRectF(rect0),
-                      "xf": QTransform(xf), "origin_shift": (tx, ty),
-                      "interpolation": INTERPOLATION_DEFAULT}
+        if upright is not None and not upright.isNull():
+            canvas.begin_restored_transform(seed, upright)
+            self._content_restored = True
+            return
+        # 像素还没算：挂"框 + 矩阵"的延迟版，反变换参数留给补像素槽。
+        # ⚠️ ``_content_restored`` 此刻就要置位：它标记"本会话是恢复会话"
+        #    （烘焙源＝upright、V 链延续），与"像素算没算"是两回事——等
+        #    像素补上用户才拖得动，那时烘焙源必须是 upright。
+        self._content_restore_params = {
+            "image": self._image, "rect": QRectF(rect0),
+            "xf": QTransform(xf), "origin_shift": (tx, ty),
+            "interpolation": INTERPOLATION_DEFAULT,
+        }
+        self._content_restore_target = rect0.width() * rect0.height()
+        self._content_restored = True
+        canvas.begin_restored_transform(seed, None, QRectF(rect0))
+
+    def _on_restore_pixels_requested(self) -> None:
+        """画布第一次建预览（＝第一次拖动）要 upright 像素了：现在才算。
+
+        进变换工具那一刻（:meth:`_on_content_restore_requested`）是零等待
+        的；真正的秒级反变换挪到这一刻，且只此一次（算完进
+        ``_content_upright`` 缓存）。失败/取消 = 整组放弃（画布退回普通
+        会话），口径同前：**宁可不恢复，也不能错恢复**。
+        """
+        canvas = self.canvas
+        upright = getattr(self, "_content_upright", None)
+        if upright is None or upright.isNull():
+            params = getattr(self, "_content_restore_params", None)
+            if not params:
+                self._content_clear()
+                canvas.abort_content_restore()
+                return
+            target = getattr(self, "_content_restore_target", 0.0)
             if target <= DISTORT_SYNC_RENDER_PIXELS:
                 upright = _unrotate_job(params)
             else:
@@ -271,20 +345,12 @@ class CommitMixin(DialogHost):
                     self._report_transform_failure(exc)
                     upright = None
             if upright is None or upright.isNull():
-                self._content_clear()         # 反变换失败：宁可不恢复
+                self._content_clear()
+                canvas.abort_content_restore()
                 return
             self._content_upright = upright
-        # ⚠️ 种子矩阵＝**画布系**：sidecar 的 V 是文件系（文件＝V×rect0 外框
-        #    裁剪，外框左上角 o＝quad_frame），入口收紧又把文件平移了 -t，
-        #    所以内容四边形在 PB1 里 ＝ V×rect0 −(o+t)——挂到画布的矩阵要
-        #    补上这两个平移，浮层/框/手柄才与已烘焙的内容严丝合缝。
-        ox, oy, _fw, _fh = quad_frame(xf, rect0)
-        seed = (QTransform(xf)
-                * QTransform().translate(-(ox + tx), -(oy + ty)))
-        self._content_seed = seed
-        canvas.consume_content_restore()
-        canvas.begin_restored_transform(seed, upright)
-        self._content_restored = True
+            self._content_restore_params = None
+        canvas.provide_restore_pixels(upright)
 
     def _content_after_bake(self, rect: QRectF, xf, clipping: str,
                             original) -> None:
@@ -302,7 +368,8 @@ class CommitMixin(DialogHost):
         self._content_clear()             # 链路断了：宁可不恢复
 
     def _commit_transform(self, label: str = STEP_TRANSFORM,
-                          force: bool = False) -> bool:
+                          force: bool = False,
+                          update_canvas: bool = True) -> bool:
         """把未应用的变换烘焙进图片（一个撤销点）；没有变换就只清预览。
 
         返回 ``True`` = 没有变换或烘焙成功；``False`` = 用户在进度框里取消
@@ -379,7 +446,7 @@ class CommitMixin(DialogHost):
         # ⚠️ 撤销点**先压、两条路只压一次**：后台那条是模态进度框，用户能看见
         #    "在做什么"；点了取消就走 _undo_now() 把它退掉（不留空撤销步）。
         self._push_undo(label)
-        if target <= DISTORT_SYNC_RENDER_PIXELS:
+        if target <= TRANSFORM_SYNC_RENDER_PIXELS:
             result = compose_transform(original, rect, xf, region, grow=grow,
                                        interpolation=interpolation)
             image = result[0] if grow else result
@@ -413,8 +480,17 @@ class CommitMixin(DialogHost):
         self._image = image
         # ⚠️ ``refit=False``：画布会长大一点，但**不要**重新适应窗口——否则
         #    每次松手都把图缩小一档，反复旋转就是"越转越小"（用户报障）。
-        self.canvas.set_image(self._image, refit=False)
-        self._refresh_size_label()
+        # ⚠️ ``update_canvas=False``（「完成」收尾传）：弹窗马上就关，页面
+        #    上的重渲染（QPixmap 转换 + 场景重建）纯属浪费——用户 2026-10-10
+        #    口径「页面上的数据可以不保存，只需要将数据存到相应的底片上」。
+        if update_canvas:
+            self.canvas.set_image(self._image, refit=False)
+            self._refresh_size_label()
+        else:
+            # 「完成」收尾不重渲染页面（弹窗马上关），但**变换状态必须清**：
+            # 旧版是 set_image 顺手干的（换图清一切），跳过它就得显式清——
+            # 否则 ``transform_pending()`` 仍非空，弹窗关闭前挂着假状态。
+            self.canvas.reset_transform()
         self._content_after_bake(rect, xf, clipping, original)
         return True
 
@@ -446,6 +522,125 @@ class CommitMixin(DialogHost):
 
         show_toast(self, "error", "变换没能应用",
                    f"已退回变换前的样子：{type(exc).__name__}: {exc}")
+
+    # ------------------------------------------------------------ 后台应用
+    def apply_in_progress(self) -> bool:
+        """「完成」的**后台应用**是否进行中（宿主在 ``exec()`` 返回后分流）。
+
+        True = 编辑器已关、烘焙+写底片在工作线程里跑；宿主不要再走
+        ``result_image()`` → 写盘那条同步路（图还没烘出来），改接
+        ``apply_completed`` / ``apply_failed`` 信号收尾（2026-10-10）。
+        """
+        return getattr(self, "_async_apply", None) is not None
+
+    def _begin_background_apply(self) -> bool:
+        """「完成」→ **立即关窗**，烘焙+写底片放后台线程；启动成功返回 True。
+
+        用户 2026-10-10 口径：「应用保存的时候页面上的数据可以不保存，只
+        需要将数据存到相应的底片上」。之前「覆盖并应用」要点着等整幅重采样
+        （12 MP 实测 11 秒）+ 写盘，界面全程钉死。现在：
+
+        * 确认后弹窗**立刻** ``accept()``，宿主页恢复可交互；
+        * 工作线程里烘焙（``_apply_job``：compose + 原子覆盖 ``source_path``）；
+        * 完成回调里补文字块、维护内容节点、写 sidecar，然后发
+          ``apply_completed(底片路径, 最终图)`` ——宿主接它做刷新链；
+        * 失败/取消发 ``apply_failed(路径, 原因)``，底片原样未动（原子写）。
+
+        前提：``save_back`` + 宿主回填了 ``source_path`` + 有挂起变换。只有
+        统一变换的烘焙是秒级重活；裁剪/文字毫秒级，不值得异步（那些走原
+        同步路，宿主代码零改动）。返回 False = 条件不满足，调用方退回原路。
+        """
+        if not getattr(self, "_save_back", False):
+            return False
+        path = str(getattr(self, "source_path", "") or "")
+        if not path:
+            return False
+        pending = self.canvas.transform_pending()
+        if pending is None:
+            return False
+        rect, xf, region = pending
+        if getattr(self.canvas, "_xf_direction", DIRECTION_DEFAULT) == "backward":
+            inverse, ok = xf.inverted()
+            if ok:
+                xf = inverse
+        interpolation = getattr(self.canvas, "_xf_interpolation",
+                                INTERPOLATION_DEFAULT)
+        clipping = getattr(self.canvas, "_xf_clipping", CLIPPING_DEFAULT)
+        upright = getattr(self, "_content_upright", None)
+        if getattr(self, "_content_restored", False) and upright is not None:
+            original = upright          # 恢复会话：从 upright 一次重采样
+        else:
+            original = self._image
+        grow = clipping != "clip"
+        # 文字块先摘走（画布立刻干净）；烘焙完成后重放到最终图上——与同步
+        # 路径「先变换后写字」的顺序一致（文字不被一起转掉）
+        payload = self._text_payload()
+        params = {"image": original, "rect": QRectF(rect),
+                  "xf": QTransform(xf), "region": QImage(region),
+                  "grow": grow, "clipping": clipping,
+                  "interpolation": interpolation, "target": path}
+        self._async_apply = {
+            "path": path, "rect": QRectF(rect), "xf": QTransform(xf),
+            "clipping": clipping, "original": original, "payload": payload,
+        }
+        # ⚠️ worker 不能以 dialog 为 parent：exec() 一返回宿主的引用就松了，
+        #    GC 掉 dialog 会连坐 QThread ⇒ abort。改为 _ACTIVE_APPLIES 持
+        #    强引用（完成/失败回调里移除），worker 无 parent 由 dialog 持。
+        worker = _BakeWorker(_apply_job, params, None)
+        self._async_worker = worker
+        _ACTIVE_APPLIES.append(self)
+        app = QApplication.instance()
+        if app is not None and not getattr(self, "_async_quit_hooked", False):
+            self._async_quit_hooked = True
+            # 退出时把在跑的烘焙收掉：进度回调粒度足够细，cancel 后
+            # wait() 只等一瞬间；绝不留"线程还跑着对象全没了"的局面
+            app.aboutToQuit.connect(self._cancel_async_apply)
+        worker.finished.connect(self._on_async_apply_done)
+        worker.start()
+        self.accept()
+        return True
+
+    def _on_async_apply_done(self) -> None:
+        """后台应用完成（``worker.finished``，排队回主线程）：收尾 + 发信号。"""
+        state = getattr(self, "_async_apply", None)
+        worker = getattr(self, "_async_worker", None)
+        if state is None or worker is None:
+            return
+        self._async_worker = None
+        result = worker.result
+        image, saved = result if isinstance(result, tuple) else (None, False)
+        path_text = str(state["path"])
+        try:
+            if worker.error is not None:
+                detail = worker.error
+                self.apply_failed.emit(
+                    path_text, f"{type(detail).__name__}: {detail}")
+            elif worker.cancelled or image is None:
+                self.apply_failed.emit(path_text, "应用已取消，底片未改动")
+            elif not saved:
+                self.apply_failed.emit(path_text,
+                                       "写入底片失败（文件可能被占用）")
+            else:
+                image = self._apply_text_payload(state["payload"], image)
+                self._image = image
+                self._content_after_bake(state["rect"], state["xf"],
+                                         state["clipping"],
+                                         state["original"])
+                sync_content_quad(path_text, self)
+                self.apply_completed.emit(path_text, QImage(image))
+        finally:
+            self._async_apply = None
+            if self in _ACTIVE_APPLIES:
+                _ACTIVE_APPLIES.remove(self)
+            worker.deleteLater()
+            self.deleteLater()
+
+    def _cancel_async_apply(self) -> None:
+        """应用退出时的兜底：请求取消在跑的烘焙并等它停下（不写半截文件）。"""
+        worker = getattr(self, "_async_worker", None)
+        if worker is not None and worker.isRunning():
+            worker.cancel()
+            worker.wait()
 
     def _flip_transform(self, horizontal: bool = True) -> None:
         """水平/垂直翻转：立即镜像并烘焙（一步撤销点，名字是「翻转」）。
@@ -491,10 +686,15 @@ class CommitMixin(DialogHost):
         )
 
 
-    def _commit_text_blocks(self) -> None:
-        """把画布上非空文字块写进图片（一个批次一个撤销点），然后清块。"""
+    def _text_payload(self) -> list:
+        """摘走画布上的非空文字块，返回可重放的 ``(pos,text,px,color,family)``。
+
+        「完成」的**后台应用**要用两段式：关窗前先把块摘下来（画布立即干净、
+        ``_commit_crop`` 拿到的是干净图），烘焙完成后在回调里重放到最终图上
+        （普通路径由 :meth:`_commit_text_blocks` 一次做完，语义不变）。
+        """
         if not hasattr(self, "canvas"):
-            return
+            return []
         blocks = self.canvas.text_blocks()
         payload = [
             (b.pos(), b.toPlainText(), b.font().pixelSize(),
@@ -502,6 +702,11 @@ class CommitMixin(DialogHost):
             for b in blocks if b.toPlainText().strip()
         ]
         self.canvas.clear_text_blocks()
+        return payload
+
+    def _commit_text_blocks(self) -> None:
+        """把画布上非空文字块写进图片（一个批次一个撤销点），然后清块。"""
+        payload = self._text_payload()
         if not payload or self._image is None or self._image.isNull():
             return
         self._push_undo(STEP_TEXT)
@@ -509,3 +714,16 @@ class CommitMixin(DialogHost):
             self._image = draw_text(
                 self._image, pos, text, px, color, family)
         self.canvas.replace_image(self._image)
+
+    def _apply_text_payload(self, payload: list, image: QImage) -> QImage:
+        """把 :meth:`_text_payload` 摘走的文字块重放到 ``image`` 上。
+
+        ⚠️ 只碰像素（``draw_text`` 纯 QPainter），不碰撤销栈与画布——调用
+        方是「完成」的完成回调（弹窗已关、栈已无用），**普通路径不走这里**
+        （那边走 :meth:`_commit_text_blocks`，带撤销点）。
+        """
+        if image is None or image.isNull():
+            return image
+        for pos, text, px, color, family in payload:
+            image = draw_text(image, pos, text, px, QColor(color), family)
+        return image

@@ -1594,10 +1594,20 @@ def run(ctx) -> None:
                    (gotQ.width(), gotQ.height())
                    == (look.width(), look.height())
                    and gotQ == look
-                   and editorQ.canvas._xf_restore_region is not None
+                   and editorQ.canvas._xf_restore_region is None
+                   and editorQ.canvas._xf_restore_pending
                    and editorQ._content_restored,
                    f"size={gotQ.width()}x{gotQ.height()} "
-                   f"restored={editorQ._content_restored}")
+                   f"restored={editorQ._content_restored} "
+                   f"pending={editorQ.canvas._xf_restore_pending}")
+                # ⚠️ 2026-10-10「切换卡顿」：upright 反变换**延迟**到第一次
+                #    建预览才算——进工具后浮层还没像素（restore_region None），
+                #    但框/矩阵已经挂好；第一次建预览后像素必须到位。
+                editorQ.canvas._ensure_transform_preview()
+                ok("内容节点：首次预览补齐 upright 像素（延迟反变换到位）",
+                   editorQ.canvas._xf_restore_region is not None
+                   and not editorQ.canvas._xf_restore_pending
+                   and editorQ.canvas._float_item is not None, "")
                 quadQ = editorQ.canvas._transform_quad()
                 wantQ = {
                     "tl": seedQ.map(rect0.topLeft()),
@@ -1647,6 +1657,28 @@ def run(ctx) -> None:
                    f"expect={look.width()}x{look.height()}")
             finally:
                 editorR.deleteLater()
+
+            # ---- 延迟恢复 + 拖动守卫（2026-10-10「切换卡顿」） ----
+            # 等待恢复像素的那次等待里有模态进度框（processEvents），用户的
+            # 左键可能已在等待中松开——那个 release 被进度框吃掉，画布永远
+            # 等不到；不守卫的话"拖动"一直挂着，鼠标一动内容就跟着跑。
+            # 离屏环境没有真实按键 ⇒ mouseButtons() 恒空 ⇒ 恰好走进守卫。
+            editorD = ImageEditorDialog(None, look, save_back=True)
+            try:
+                editorD.source_path = str(_qpath)
+                editorD.canvas.set_tool("transform")
+                ok("内容节点：延迟武装（进工具零反变换、框已就位）",
+                   editorD.canvas._xf_restore_pending
+                   and editorD.canvas._xf_restore_region is None
+                   and editorD.canvas._xf_rect is not None, "")
+                modeD = editorD.canvas._begin_transform_drag(
+                    "inside", QPointF(100, 60), Qt.KeyboardModifier.NoModifier)
+                ok("内容节点：等待像素期间左键已松 ⇒ 取消本次拖拽（防挂死）",
+                   modeD is None
+                   and editorD.canvas._xf_restore_region is not None
+                   and not editorD.canvas._xf_restore_pending, "")
+            finally:
+                editorD.deleteLater()
 
             # 旋转：绕轴心（轴心不动）；切走工具自动烘焙
             canvas4.set_tool("transform")

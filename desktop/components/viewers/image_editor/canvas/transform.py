@@ -34,7 +34,7 @@ from PySide6.QtCore import QLineF, QPointF, QRect, QRectF, QSizeF, Qt
 from PySide6.QtGui import (
     QColor, QImage, QPainter, QPainterPath, QPixmap, QPolygonF, QTransform,
 )
-from PySide6.QtWidgets import QGraphicsPixmapItem
+from PySide6.QtWidgets import QApplication, QGraphicsPixmapItem
 
 from ..consts import (
     CLIPPINGS, CORNER_HANDLES, CORNER_HIT_VIEW_PX, CORNER_VIEW_PX, DIRECTIONS,
@@ -451,6 +451,17 @@ class TransformMixin(CanvasHost):
         if self._float_item is not None or self._image is None \
                 or self._rect is None:
             return
+        # ⚠️ 延迟供像素（2026-10-10「切换卡顿」）：恢复会话进工具时只挂了
+        #    矩阵和框，upright 反变换（秒级重活）被推迟到这一刻才算——第一
+        #    次真正需要像素（建预览 = 第一次拖动/语义入口）时发信号让弹窗
+        #    补（带进度框）。补不上（无数据/失败/取消）就整组放弃，退回
+        #    普通会话，本方法继续走"从画布选区拍快照"那条路。
+        if self._xf_restore_pending:
+            if self._xf_restore_region is None:
+                self.restore_pixels_requested.emit()
+                if self._xf_restore_region is None:
+                    self.abort_content_restore()
+            self._xf_restore_pending = False
         # ⚠️ 内容节点恢复会话（2026-10-10）：浮层像素源＝sidecar 反变换出的
         #    upright 内容，选区局部矩形＝rect0（upright 整幅）——**画布不动**，
         #    不像普通会话那样从 ``_image`` 拍快照（用户口径「PB1 作为画布，
@@ -957,6 +968,7 @@ class TransformMixin(CanvasHost):
             self._xf_rect = None
             self.refresh()
         self._xf_restore_region = None   # 恢复会话一并结束（换图/换工具/重置）
+        self._xf_restore_pending = False  # 延迟供像素的"挂起"也一样结束
         if self._item is not None:
             self._item.setVisible(True)   # 「合成预览」关掉过的话要还回来
             self._item.setPos(0.0, 0.0)   # 向后预览的底图被挪过位置，要还回来
@@ -992,7 +1004,8 @@ class TransformMixin(CanvasHost):
         self._content_restore_done = True
 
     def begin_restored_transform(self, xf: QTransform,
-                                 region: QImage | None = None) -> None:
+                                 region: QImage | None = None,
+                                 rect0: QRectF | None = None) -> None:
         """把恢复出来的矩阵挂成**未触摸**的待定变换（画布保持文件原样）。
 
         用户 2026-10-10 口径：「编辑 PB1 图片的时候，正常显示的是 PB1；
@@ -1010,11 +1023,30 @@ class TransformMixin(CanvasHost):
           工具/「完成」都不重采样，零代次损失）；一旦拖动，走正常挂起→
           烘焙链，烘焙输入＝upright、矩阵＝总量 ⇒ 每次保存只损失一次
           重采样代次。
+
+        ⚠️⚠️ **延迟供像素**（2026-10-10「切换卡顿」）：``region`` 为 ``None``
+        时**只**挂矩阵、框（``rect0``＝sidecar 里的 rect0，必传）和轴心——
+        **不**建预览、**不**算 upright 反变换（那是秒级重活，之前每次进
+        变换工具都要等它，用户报的正是这个）。像素推迟到第一次建预览
+        （＝第一次拖动）时由 :meth:`_ensure_transform_preview` 经
+        ``restore_pixels_requested`` 向弹窗要。之前把反变换算好再调
+        ``begin_restored_transform(seed, upright)`` 的旧入口原样可用。
         """
         if self._tool != "transform" or self._image is None:
             return
-        if region is not None and not region.isNull():
+        if region is None:
+            if rect0 is None or rect0.isEmpty():
+                return
+            self._xf_restore_pending = True
+            self._xf_restore_region = None
+            self._xf_rect = QRectF(rect0)
+            self._xf = QTransform(xf)
+            self._xf_pivot = self._xf_rect.center()
+            self._sync_overlay()
+            return
+        if not region.isNull():
             self._xf_restore_region = QImage(region)
+        self._xf_restore_pending = False
         self._ensure_transform_preview()
         self._xf = QTransform(xf)
         if self._xf_rect is not None:
@@ -1186,8 +1218,18 @@ class TransformMixin(CanvasHost):
         （而不是在上一帧结果上叠加），所以来回甩鼠标不会累积误差，松手回到
         原位也能精确复原。
         """
+        # ⚠️ 延迟供像素的那次等待里有模态进度框（processEvents），用户可能
+        #    已经松开了左键——那个 release 被进度框的事件循环吃掉了，画布
+        #    永远等不到；不查的话"拖动"会一直挂着，鼠标移动就跟着变形。
+        #    ⚠️ 只在**这次按下真的经历了等待**时才查（ waited）：测试用裸
+        #    构造的 QMouseEvent 不经过 Qt 的按钮状态机，一律查会把它们误杀。
+        waited_for_restore = (self._xf_restore_pending
+                              and self._xf_restore_region is None)
         self._ensure_transform_preview()
         if self._float_item is None or self._xf_rect is None:
+            return None
+        if waited_for_restore and not (
+                QApplication.mouseButtons() & Qt.MouseButton.LeftButton):
             return None
         # 按下的节点立刻成为"激活节点"（高亮跟随），不冒泡到移动/旋转
         self._set_handle_focus(hit if hit in _HANDLE_HITS else None)

@@ -216,6 +216,9 @@ _CROSS_METHOD_DEPS = {
     "TransformMixin": {
         "_sync_cursor", "_sync_overlay", "_sync_scene_rect",
         "image_rect", "refresh", "transform_committed",
+        # 延迟供像素（2026-10-10「切换卡顿」）：恢复会话第一次建预览时
+        # 发基座信号让弹窗补 upright；补不上则整组放弃退回普通会话
+        "abort_content_restore", "restore_pixels_requested",
     },
     "DistortionMixin": {
         "_move_eraser_ring", "image_rect", "refresh", "stroke_started",
@@ -269,7 +272,7 @@ _DIALOG_EXPECTED_HOME = {
     "_sync_history": "UndoMixin",
     "_sync_undo_buttons": "UndoMixin",
     "_undo_now": "UndoMixin",
-    # dialog_commit.py -> CommitMixin（11 个）
+    # dialog_commit.py -> CommitMixin（11 个 + 内容节点/后台应用，2026-10-10）
     "_bake_transform_async": "CommitMixin",
     "_commit_crop": "CommitMixin",
     "_commit_text_blocks": "CommitMixin",
@@ -281,6 +284,18 @@ _DIALOG_EXPECTED_HOME = {
     "_report_transform_failure": "CommitMixin",
     "_selection": "CommitMixin",
     "_spawn_text_block": "CommitMixin",
+    "_content_after_bake": "CommitMixin",
+    "_content_clear": "CommitMixin",
+    "_content_exit_restore": "CommitMixin",
+    "_content_on_history_jump": "CommitMixin",
+    "_on_content_restore_requested": "CommitMixin",
+    "_on_restore_pixels_requested": "CommitMixin",
+    "_text_payload": "CommitMixin",
+    "_apply_text_payload": "CommitMixin",
+    "apply_in_progress": "CommitMixin",
+    "_begin_background_apply": "CommitMixin",
+    "_on_async_apply_done": "CommitMixin",
+    "_cancel_async_apply": "CommitMixin",
 }
 
 #: 弹窗 Mixin 调用**别的 Mixin/基座**的成员 —— 登记的隐式契约。
@@ -292,6 +307,9 @@ _DIALOG_CROSS_DEPS = {
         "_on_stroke_started", "_preview_crop",
         "_push_undo", "_redo_now", "_spawn_text_block", "_sync_history",
         "_undo_now",
+        # 「完成」的后台应用与延迟恢复（2026-10-10）
+        "_begin_background_apply", "_on_content_restore_requested",
+        "_on_restore_pixels_requested",
     },
     "ToolbarMixin": {
         "_commit_crop", "_commit_text_blocks", "_commit_transform",
@@ -302,8 +320,10 @@ _DIALOG_CROSS_DEPS = {
         "_undo_now",
     },
     "ToolPagesMixin": {"_discard_crop", "_flip_transform", "_hint"},
-    "UndoMixin": {"_discard_crop", "_refresh_size_label"},
-    "CommitMixin": {"_push_undo", "_refresh_size_label", "_undo_now"},
+    "UndoMixin": {"_discard_crop", "_refresh_size_label",
+                  "_content_clear", "_content_on_history_jump"},
+    "CommitMixin": {"_push_undo", "_refresh_size_label", "_undo_now",
+                    "apply_completed", "apply_failed"},
 }
 
 #: 子包必须存在的模块（拆分是真的、不是把文件改名了事）。

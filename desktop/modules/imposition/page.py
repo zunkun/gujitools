@@ -607,6 +607,17 @@ class ImpositionModulePage(ModulePage):
         editor.source_path = file_text
         if editor.exec() != QDialog.DialogCode.Accepted:
             return
+        if editor.apply_in_progress():
+            # ⚠️ 后台应用中（2026-10-10「应用卡顿」）：烘焙+写盘在工作线程，
+            #    完成回调里做刷新链（磁盘与 sidecar 已由编辑器落好）。
+            editor.apply_completed.connect(
+                lambda _path, edited: self._after_source_edited(
+                    file_text, edited))
+            editor.apply_failed.connect(
+                lambda _path, reason: self.toast(
+                    "error", "保存失败",
+                    f"编辑未生效：{path.name}（{reason}）"))
+            return
         edited = editor.result_image()
         if edited is None or edited.isNull():
             return
@@ -614,6 +625,10 @@ class ImpositionModulePage(ModulePage):
             self.toast("error", "保存失败", f"编辑未生效：{path.name}")
             return
         sync_content_quad(file_text, editor)
+        self._after_source_edited(file_text, edited)
+
+    def _after_source_edited(self, file_text: str, edited) -> None:
+        """拼版源图编辑生效后的**刷新链**（同步/后台应用两条路共用）。"""
         self.view.canvas.invalidate_image(file_text)
         # ⚠️⚠️ 源图尺寸可能变了（编辑器里旋转/裁剪后覆盖回同一文件）：版面
         #    rect 还按旧尺寸记着，合成时 compose_page 会把新图硬 resize 回
@@ -623,7 +638,7 @@ class ImpositionModulePage(ModulePage):
             self._refresh_view()
         self._invalidate_page_thumbs_for(file_text)  # 含它的页重生成实体
         self.log(
-            f"已编辑拼版源图「{path.name}」并覆盖原图"
+            f"已编辑拼版源图「{Path(file_text).name}」并覆盖原图"
             f"（{edited.width()}×{edited.height()} px）；"
             "点「导出成品」即用上这次修改。"
         )
@@ -694,6 +709,16 @@ class ImpositionModulePage(ModulePage):
         editor.target_exists = target.is_file()
         if editor.exec() != QDialog.DialogCode.Accepted:
             return
+        if editor.apply_in_progress():
+            # ⚠️ 后台应用中（2026-10-10「应用卡顿」）：完成回调接链
+            editor.apply_completed.connect(
+                lambda _path, edited: self._after_spread_edited(
+                    page_index, target, edited))
+            editor.apply_failed.connect(
+                lambda _path, reason: self.toast(
+                    "error", "保存失败",
+                    f"编辑未生效：{target.name}（{reason}）"))
+            return
         edited = editor.result_image()
         if edited is None or edited.isNull():
             return
@@ -702,7 +727,13 @@ class ImpositionModulePage(ModulePage):
             self.toast("error", "保存失败", f"编辑未生效：{target.name}")
             return
         sync_content_quad(str(target), editor)
-        pages[page_index]["edited_file"] = str(target)
+        self._after_spread_edited(page_index, target, edited)
+
+    def _after_spread_edited(self, page_index: int, target, edited) -> None:
+        """整页组合编辑生效后的收尾（磁盘与 sidecar 已落好，两条路共用）。"""
+        pages = self._doc.get("pages") or []
+        if 0 <= page_index < len(pages):
+            pages[page_index]["edited_file"] = str(target)
         self.log(
             f"已编辑{cn_page_label(page_index)}的整页组合并保存"
             f"（{edited.width()}×{edited.height()} px）；"

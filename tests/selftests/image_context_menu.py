@@ -83,6 +83,10 @@ def _stub_editor(edited, accepted: bool = True):
         def result_image(self):
             return edited
 
+        def apply_in_progress(self) -> bool:
+            """替身永远走同步路（后台应用只在真编辑器上出现）。"""
+            return False
+
     return _Stub
 
 

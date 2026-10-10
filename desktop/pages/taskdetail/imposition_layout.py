@@ -413,6 +413,15 @@ class ImpositionLayoutMixin:
         editor.source_path = str(path)
         if editor.exec() != QDialog.DialogCode.Accepted:
             return
+        if editor.apply_in_progress():
+            # ⚠️ 后台应用中（2026-10-10「应用卡顿」）：完成回调接链
+            editor.apply_completed.connect(
+                lambda _path, edited: self._after_slot_edited(path, edited))
+            editor.apply_failed.connect(
+                lambda _path, reason: self._toast(
+                    "error", "保存失败",
+                    f"编辑未生效：{path.name}（{reason}）"))
+            return
         edited = editor.result_image()
         if edited is None or edited.isNull():
             return
@@ -422,6 +431,10 @@ class ImpositionLayoutMixin:
             )
             return
         sync_content_quad(str(path), editor)
+        self._after_slot_edited(path, edited)
+
+    def _after_slot_edited(self, path, edited) -> None:
+        """拼版源图编辑生效后的统一刷新链（同步/后台应用两条路共用）。"""
         self._on_imposition_source_edited(str(path), edited)
 
     def _on_imposition_source_edited(self, path_text: str, edited) -> None:
@@ -536,6 +549,16 @@ class ImpositionLayoutMixin:
         editor.target_exists = target.is_file()
         if editor.exec() != QDialog.DialogCode.Accepted:
             return
+        if editor.apply_in_progress():
+            # ⚠️ 后台应用中（2026-10-10「应用卡顿」）：完成回调接链
+            editor.apply_completed.connect(
+                lambda _path, edited: self._after_spread_saved(
+                    page_index, target, edited))
+            editor.apply_failed.connect(
+                lambda _path, reason: self._toast(
+                    "error", "保存失败",
+                    f"编辑未生效：{target.name}（{reason}）"))
+            return
         edited = editor.result_image()
         if edited is None or edited.isNull():
             return
@@ -543,6 +566,10 @@ class ImpositionLayoutMixin:
             self._toast("error", "保存失败", f"编辑未生效：{target.name}")
             return
         sync_content_quad(str(target), editor)
+        self._after_spread_saved(page_index, target, edited)
+
+    def _after_spread_saved(self, page_index: int, target, edited) -> None:
+        """整页组合编辑生效后的收尾（磁盘与 sidecar 已落好，两条路共用）。"""
         self._refresh_print_source()
         self.log_view.append(
             f"已编辑{cn_page_label(page_index)}的整页组合并覆盖拼版成品"

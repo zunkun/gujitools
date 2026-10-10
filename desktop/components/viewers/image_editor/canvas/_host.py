@@ -113,6 +113,12 @@ class CanvasHost(QGraphicsView):
     stroke_started: Signal
     text_requested: Signal
     transform_committed: Signal
+    # ---- 内容节点恢复会话（2026-10-10；信号定义在 core.EditorCanvas）----
+    _content_restore_done: bool
+    _xf_restore_pending: bool
+    _xf_restore_region: Any
+    content_restore_requested: Signal
+    restore_pixels_requested: Signal
 
     # ---- 方法（主类 + 各 Mixin）----
     def _apply_hover_highlight(self) -> None:
@@ -179,6 +185,21 @@ class CanvasHost(QGraphicsView):
         ...
 
     def _ensure_transform_preview(self) -> None:
+        ...
+
+    # ---- 内容节点恢复会话（core 基座 + TransformMixin，2026-10-10）----
+    def consume_content_restore(self) -> None:
+        ...
+
+    def begin_restored_transform(self, xf: QTransform,
+                                 region: Any = None,
+                                 rect0: Any = None) -> None:
+        ...
+
+    def provide_restore_pixels(self, upright: Any) -> None:
+        ...
+
+    def abort_content_restore(self) -> None:
         ...
 
     # ---- 统一变换：手柄几何 / 命中 / 拖拽（TransformMixin）----

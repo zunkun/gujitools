@@ -2918,6 +2918,10 @@ def run(ctx) -> None:
                 def result_image(self):
                     return _edited
 
+                def apply_in_progress(self) -> bool:
+                    """替身永远走同步路（后台应用只在真编辑器上出现）。"""
+                    return False
+
             _real_editor_cls = _ied.ImageEditorDialog
             _ied.ImageEditorDialog = _FakeEditorDialog
 
@@ -3037,6 +3041,10 @@ def run(ctx) -> None:
 
                 def result_image(self):
                     return _spread_edited
+
+                def apply_in_progress(self) -> bool:
+                    """替身永远走同步路（后台应用只在真编辑器上出现）。"""
+                    return False
 
             _ied.ImageEditorDialog = _FakeSpreadEditor
             try:

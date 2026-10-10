@@ -71,6 +71,10 @@ class _StubEditor:
     def result_image(self):
         return self._result
 
+    def apply_in_progress(self) -> bool:
+        """替身永远走同步路（后台应用分支只在真编辑器上出现）。"""
+        return False
+
 
 def run(ctx) -> None:
     from PySide6.QtWidgets import QDialog
@@ -364,6 +368,80 @@ def run(ctx) -> None:
            _out is not None and _out.width() == 48 and _out.height() == 64,
            f"size={_out.width()}x{_out.height()}" if _out else "None")
         ed_xf.deleteLater()
+
+        # ---------------------------------------------------- 后台应用
+        # 用户 2026-10-10「应用卡顿」：save_back + 宿主回填 source_path +
+        # 挂起变换 ⇒ 「覆盖并应用」后**立即关窗**，烘焙+原子写盘在工作线程，
+        # 完成后 apply_completed 携带 (底片路径, 最终图)。同步路不发光这个
+        # 信号，用它区分两条路径。
+        async_target = tmp / "0008.png"
+        ok("准备：后台应用目标可写出",
+           _make_image().save(str(async_target), "PNG"))  # type: ignore[reportCallIssue]
+        from desktop.components.viewers.image_editor import (
+            ImageEditorDialog as _EdAsync,
+        )
+        from desktop.components.viewers.image_editor.content_quad import (
+            read_quad as _read_quad_async,
+        )
+
+        ed_async = _EdAsync(None, _make_image(), save_back=True)
+        ed_async.target_name = "0008.png"
+        ed_async.source_path = str(async_target)
+        ed_async.canvas.set_tool("transform")
+        ed_async.canvas.transform_rotate(90)
+        ed_async.canvas.make_transform_pending()
+        done_log: list = []
+        ed_async.apply_completed.connect(
+            lambda p, img: done_log.append((p, img)))
+        ed_async.apply_failed.connect(
+            lambda p, r: done_log.append(("FAIL", p, r)))
+
+        class _BoxAsync:
+            def __init__(self, title, content, parent=None):
+                self.yesButton = type("B", (), {"setText": lambda *_: None})()
+                self.cancelButton = type(
+                    "B", (), {"setText": lambda *_: None})()
+
+            def exec(self):
+                return True
+
+        import qfluentwidgets as _qfw2
+
+        original_box = _qfw2.MessageBox
+        _qfw2.MessageBox = _BoxAsync
+        try:
+            ed_async._finish()
+        finally:
+            _qfw2.MessageBox = original_box
+        ok("后台应用：确认后立即关窗（accept，不等烘焙）",
+           ed_async.result() == QDialog.DialogCode.Accepted, "")
+        for _ in range(400):                # 等工作线程收尾（小图毫秒级）
+            if not ed_async.apply_in_progress():
+                break
+            pump(app, times=1)
+        pump(app, times=2)
+        _done = done_log[0] if len(done_log) == 1 else None
+        _done_img = _done[1] if (_done and _done[0] != "FAIL") else None
+        ok("后台应用：完成信号恰好一次、携带底片路径与最终图（48×64）",
+           _done_img is not None and _done[0] == str(async_target)
+           and (_done_img.width(), _done_img.height()) == (48, 64),
+           str([(d[0], None if len(d) < 2 or d[1] is None
+                 else f"{d[1].width()}x{d[1].height()}") for d in done_log]))
+        _disk = QImage(str(async_target))
+        ok("后台应用：底片真的被覆盖（磁盘 48×64 = 旋转结果）",
+           not _disk.isNull() and (_disk.width(), _disk.height()) == (48, 64),
+           f"size={_disk.width()}x{_disk.height()}")
+        ok("后台应用：result_image() 也是最终图（关窗后仍可取）",
+           ed_async.result_image() is not None
+           and (ed_async.result_image().width(),
+                ed_async.result_image().height()) == (48, 64), "")
+        _quad_async = _read_quad_async(async_target)
+        ok("后台应用：sidecar 已同步（adjust+整幅 ⇒ V 链延续）",
+           _quad_async is not None, "")
+        try:
+            ed_async.deleteLater()
+        except RuntimeError:
+            pass    # ⚠️ 完成回调里已 deleteLater（后台应用生命周期自管）
 
         asked, ed_same = _ask_overwrite(edited=False, accept=True)
         ok("没改动不弹确认（没东西可丢，假警报只会让用户觉得这框很蠢）",

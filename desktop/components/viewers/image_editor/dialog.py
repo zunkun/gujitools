@@ -24,7 +24,7 @@ MRO 顺序：功能条/参数页在前（``__init__`` 里就要用），提交�
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QRectF, QSize, Qt
+from PySide6.QtCore import QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QImage, QKeySequence, QShortcut
 from PySide6.QtWidgets import QDialog, QHBoxLayout, QVBoxLayout, QWidget
 from desktop.ui import theme as T
@@ -64,6 +64,13 @@ class ImageEditorDialog(
 ):
     """图片编辑器弹窗：顶部功能条 + 中间画布 + 右侧参数面板 + 底部状态栏。"""
 
+    #: 「完成」的**后台应用**成功（2026-10-10）：底片已原子覆盖、sidecar 已
+    #: 写，参数 ``(底片路径, 最终图)``。宿主在 ``exec()`` 返回后发现
+    #: :meth:`apply_in_progress` 为真时改接本信号做刷新链（不再自己写盘）。
+    apply_completed = Signal(str, QImage)
+    #: 后台应用失败/被取消：参数 ``(底片路径, 原因)``，底片原样未动
+    #: （原子写保证：要么完整旧图、要么完整新图）。宿主据此报错即可。
+    apply_failed = Signal(str, str)
 
 
     def __init__(self, parent=None, image: QImage | None = None,
@@ -135,6 +142,11 @@ class ImageEditorDialog(
         self._content_restored = False
         self._content_seed = None
         self._content_upright = None
+        #: 延迟恢复（2026-10-10「切换卡顿」）：进变换工具只挂矩阵/框，
+        #: upright 反变换的参数与目标像素量存在这儿，第一次拖动时由
+        #: ``_on_restore_pixels_requested`` 用掉（用完清 None）。
+        self._content_restore_params: dict | None = None
+        self._content_restore_target = 0.0
         #: **待定裁剪**（``QRectF`` 或 ``None``）：裁剪工具里松手定下的选区，
         #: 像素**还没动**。裁剪是非破坏性的——不落定就能继续向外拖，把变暗
         #: 的老区域拉回来；切走裁剪工具 / 点「完成」时才由
@@ -167,6 +179,10 @@ class ImageEditorDialog(
         # 进入变换工具 ⇒ 尝试从 sidecar 恢复"内容四角节点"（二次编辑）
         self.canvas.content_restore_requested.connect(
             self._on_content_restore_requested)
+        # 恢复会话第一次需要像素（第一次拖动）⇒ 此刻才算 upright 反变换
+        # （进工具零等待，2026-10-10「切换卡顿」）
+        self.canvas.restore_pixels_requested.connect(
+            self._on_restore_pixels_requested)
         self.canvas.text_requested.connect(self._spawn_text_block)
         # 裁剪**松手不落定**（选区可来回推拉），变换同理先在画布浮层预览
         self.canvas.crop_selection_changed.connect(self._preview_crop)
@@ -295,10 +311,18 @@ class ImageEditorDialog(
         所以都正常）。这里不是"兜底"，是挂起机制下**唯一的烘焙时机**之一
         （另一个是离开变换工具，走 ``_set_tool`` 的 force=True）。
 
+        ⚠️⚠️ **save_back 且有挂起变换时走后台应用**（``_begin_background_apply``
+        返回 True 就直接 return，``accept()`` 在启动器里已经调了）：弹窗立刻
+        关闭，烘焙 + 写底片在工作线程里跑，完成后经 ``apply_completed`` 通
+        知宿主刷新。用户 2026-10-10 口径：「应用保存时页面上的数据可以不
+        保存，只需要将数据存到相应的底片上」——此前整幅重采样（12 MP 约
+        11 秒）+ 写盘全程把界面钉死，正是「应用卡顿」的来源。
+
         ⚠️ 烘焙被用户取消（进度框点取消）/ 失败时 ``_commit_transform``
         返回 ``False``：**中止收尾**、留在编辑器里继续改——绝不能往下
         ``accept()`` 把"没变换的图"当结果交出去（save_back 时那会无声
-        覆盖磁盘原图）。
+        覆盖磁盘原图）。（后台应用没有"留在编辑器"一说：取消/失败经
+        ``apply_failed`` 告知宿主，底片未动。）
 
         ⚠️ ``_finishing`` 必须在**确认框之前**就置位：``MessageBox.exec()``
         自带事件循环，双击「完成」会在框弹出后再进一次这里⇒ 叠出第二个
@@ -312,7 +336,9 @@ class ImageEditorDialog(
             if not self._confirm_overwrite():
                 return
             self._commit_crop()
-            if not self._commit_transform(force=True):
+            if self._begin_background_apply():
+                return
+            if not self._commit_transform(force=True, update_canvas=False):
                 return
             self._commit_text_blocks()
             self.accept()
