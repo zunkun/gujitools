@@ -44,9 +44,11 @@ class RembgModulePage(StepModulePage, ThumbSourceMixin):
         viewer: RembgPreviewWidget  # type: ignore[reportIncompatibleVariableOverride]
 
     def __init__(self, parent=None):
-        #: 已就绪的缓存缩略图：真实图路径 → 缓存小图路径。缩略图条按这个
-        #: 取图（``RembgPreviewWidget.refresh_page`` 刷单条）。
-        self._cached_thumbs: dict[str, str] = {}
+        #: 当前缓存 pass 的映射（真实图路径 → 缓存小图路径）。换源即换新
+        #: 对象＝代际：旧 worker 的迟到信号按**对象身份**丢弃。缓存 pass
+        #: 结束时它被整体交给查看器（``RembgPreviewWidget.set_cached_thumbs``
+        #: 的整体替换语义）。
+        self._thumb_cache_batch: dict[str, str] = {}
         super().__init__(parent)
 
     # ------------------------------------------------------------------ 预览
@@ -69,7 +71,7 @@ class RembgModulePage(StepModulePage, ThumbSourceMixin):
         ``set_images`` 的第二参是**去底色结果目录**，这里传 ``None``：条目照源图
         建好、显示原图，结果生成后 :meth:`on_result` 再传真目录。
         """
-        self._cached_thumbs.clear()
+        self._thumb_cache_batch = {}
         images = self.source_images() if source is not None else []
         # list 不变型：清单是 list[Path]，控件收 list[Path | str]
         self.viewer.set_images(cast("list[Path | str]", images), None)
@@ -77,12 +79,22 @@ class RembgModulePage(StepModulePage, ThumbSourceMixin):
         super()._on_source_changed(source)
 
     def _warm_thumb_cache(self, images) -> None:
-        """后台把这批图的缩略图渲进 singletask 缓存（命中即复用）。"""
+        """后台把这批图的缩略图渲进 singletask 缓存（命中即复用）。
+
+        ⚠️ **只记映射、不逐张刷**（2026-10-11 用户报「左栏缩略图不显示」）：
+        此前每张就绪都调 ``viewer.set_cached_thumbs({单条})``，而那个调用
+        内部走 ``_load_thumbs_chunked``＝「重新装载」——代际令牌 +1、批次
+        光标重置。结果是初始批次的在飞回调全被作废、单张刷新又被下一张的
+        代际作废，左栏缩略图几乎一张都落不了地。缓存小图与初始批次解码
+        原图得到的是**同一内容**，等缓存 pass 结束整体替换一次即可。
+        """
         if not images:
             return
         from desktop.workers import ImageThumbCacheWorker, connect_queued
 
         images = [Path(p) for p in images]
+        mapping: dict[str, str] = {}
+        self._thumb_cache_batch = mapping
         cache_dir = self._thumb_cache_dir()
         edge = self.THUMB_EDGE
         self.run_worker(
@@ -94,9 +106,15 @@ class RembgModulePage(StepModulePage, ThumbSourceMixin):
                 connect_queued(
                     self,
                     worker.thumbnail_ready,
-                    lambda index, image, cached, items=list(images): (
-                        self._on_thumb_cached(index, cached, items)
+                    lambda index, image, cached, items=list(images), m=mapping: (
+                        self._on_thumb_cached(index, cached, items, m)
                     ),
+                    thread,
+                ),
+                connect_queued(
+                    self,
+                    worker.completed,
+                    lambda m=mapping: self._apply_cached_thumbs(m),
                     thread,
                 ),
                 worker.completed.connect(thread.quit),
@@ -104,19 +122,29 @@ class RembgModulePage(StepModulePage, ThumbSourceMixin):
             ),
         )
 
-    def _on_thumb_cached(self, index: int, cached: str, images: list[Path]) -> None:
-        """一张缓存缩略图就绪：记下路径并**只刷相关条目**。
+    def _on_thumb_cached(
+        self, index: int, cached: str, images: list[Path],
+        mapping: dict[str, str],
+    ) -> None:
+        """一张缓存缩略图就绪：记进**本批**映射，不碰缩略图条。
 
-        ⚠️ 走 ``set_cached_thumbs``（单文件映射，内部只重画命中的条目）而不是
-        重建整个缩略图条：重建会把已加载好的图标全丢掉重来。
-        ⚠️ 每张都用当前 ``images`` 的同一张回查下标——宿主换源后 worker 可能
-        还在跑，索引已经错位了。
+        ⚠️ 下标回查用 ``_warm_thumb_cache`` 捕获的那份 ``images``——宿主换源
+        后 worker 可能还在跑，索引已经错位；换过源的话 ``mapping`` 也不是
+        当前的批（对象身份不等），整条丢弃（完成回调里的整体替换同样有
+        这道身份闸）。
         """
         if not cached or not (0 <= index < len(images)):
             return
-        path_text = str(images[index])
-        self._cached_thumbs[path_text] = cached
-        self.viewer.set_cached_thumbs({path_text: cached})
+        mapping[str(images[index])] = cached
+
+    def _apply_cached_thumbs(self, mapping: dict[str, str]) -> None:
+        """缓存 pass 结束：把攒好的映射**整体**交给查看器（整体替换语义）。
+
+        此刻初始批次的原图解码若还在跑，会被这次重装载的代际作废，后续
+        批次改用已缩好的缓存图——正好省掉整张原图解码。
+        """
+        if mapping and mapping is self._thumb_cache_batch:
+            self.viewer.set_cached_thumbs(dict(mapping))
 
     # ------------------------------------------------------------------ 副标题
     def source_summary(self, source) -> str:
