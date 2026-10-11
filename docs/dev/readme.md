@@ -9,6 +9,7 @@
 | 文档 | 内容 |
 | --- | --- |
 | [architecture.md](architecture.md) | **全仓架构**：入口/分层/两种页面形态（taskdetail 与 singletask）/公共组件契约/数据缓存/BPM 演进 |
+| [build.md](build.md) | **构建与打包**：开发环境、CPU 打包环境、Linux 打包、双 EXE 一体打包、体积瘦身 |
 | [gui/readme.md](gui/readme.md) | **桌面端技术文档索引**：术语、开发约定、快速开始 |
 | [io_path_rules.md](io_path_rules.md) | 输入 / 输出路径规则（输出目录解析的唯一权威） |
 | [utils.md](utils.md) | 工具模块算法：Otsu 阈值、印章提取、border 解析、YOLO、PDF 渲染 |

@@ -123,7 +123,7 @@ def main() -> int:
     if manual.is_file():
         doc = manual.read_text(encoding="utf-8", errors="replace")
         inlined = doc.count("data:image/")
-        check("手册内联了 12 张截图", inlined == 12, f"实际 {inlined} 张")
+        check("手册内联了 13 张截图", inlined == 13, f"实际 {inlined} 张")
         check("手册没有外部图片引用（装机后不会碎图）", 'src="file:' not in doc and 'src="screenshots/' not in doc)
         check(
             "手册不再引用 md 文档（包内没有 docs/guide）",

@@ -16,12 +16,12 @@
 
 | 文档 | 内容 |
 | --- | --- |
-| [user-guide.md](user-guide.md) | **用户操作手册**：任务流程（导入 PDF → 提取 → 检测 → 去底色 → 生成 PDF）+ 独立任务页用法 + 预览编辑 + 排查，全程配真实截图 |
+| [user-guide.md](user-guide.md) | **用户操作手册**：桌面端任务流程（导入 PDF → 提取 → 检测 → 去底色 → **图片拼版** → 生成 PDF）+ 独立任务页用法 + 命令行快速上手 + 预览编辑 + 排查，全程配真实截图；**图片拼版（拼图）为重点功能，单独成节详述** |
 | [cli.md](cli.md) | **命令行使用说明**：命令、参数表、示例、退出码、架构 |
 
 ## 配图
 
-- [screenshots/](screenshots/) — 界面总览截图（6 张）
+- [screenshots/](screenshots/) — 界面总览截图（7 张，含「图片拼版」）
 - [screenshots/guide/](screenshots/guide/) — 用户操作手册配图（12 张）
 
 截图以《龍譚精舍叢刻》真实扫描件演示（第 4 页），由 `tests/gui_shot.py`

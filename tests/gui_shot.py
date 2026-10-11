@@ -9,13 +9,14 @@
 
 两种模式：
 
-- **默认（界面总览）**：6 张，按「页面」组织，供布局文档引用：
+- **默认（界面总览）**：7 张，按「页面」组织，供布局文档与 README 引用：
     01-任务列表页.png
     02-详情页-提取.png
     03-详情页-检测.png
     04-详情页-去底色.png
     05-详情页-生成PDF.png
     06-详情页-日志浮层.png
+    07-详情页-拼版.png
   文件名与 `docs/guide/screenshots/` 下的同名文件一致，可直接覆盖。
 
 - **`--guide`（操作步骤）**：写入 `<输出目录>/guide/`，按「用户操作」组织，
@@ -33,15 +34,15 @@
 找不到真实 PDF 时自动回退到内置的合成占位页（`make_fake_page_image`），
 因此本脚本在任何机器上都能跑。
 
-## ⚠️ 演示页固定用第 4 页
+## ⚠️ 演示页固定用第 6 页（龍譚精舍叢刻 v.9）
 
-`DEMO_PAGE = 4`。这个常量同时决定三件事：任务列表/详情页选中哪一页、
+`DEMO_PAGE = 6`。这个常量同时决定三件事：任务列表/详情页选中哪一页、
 检测框按哪一页的真实坐标渲染、第四步 PDF 名称怎么取。
 **改这个常量必须同步跑 `tests/gui_selftest.py --only gui_guide`**
 （指南里引用了这些截图，护栏会核对页序与文件名）。
 
-原本用第 3 页，但第 3 页正文只占右半栏、版面偏空，做演示不够典型；
-第 4 页是左右两栏都排满的规整正文页，更适合展示检测框与去底色效果。
+演示用书是**龍譚精舍叢刻 v.9**（用户 2026-10-11 指定）；该书第 1~5 页是
+封面/序/目录，不适合做演示，所以从**第 6 页**开始取（连续 6 页：6~11）。
 """
 
 from __future__ import annotations
@@ -77,9 +78,9 @@ REAL_PDF_DIRS = (
 )
 REAL_PDF_PREFERRED = "龍譚精舍叢刻"
 
-# 演示页：第 4 页（左右两栏都排满的规整正文页）。
+# 演示页：第 6 页（龍譚精舍叢刻 v.9；1~5 页是封面/序/目录，不适合演示）。
 # ⚠️ 改动此常量会改变截图内容，指南护栏会核对页序，改完必须重跑 gui_guide 自测。
-DEMO_PAGE = 4
+DEMO_PAGE = 6
 
 
 def load_fonts(app) -> list[str]:
@@ -864,6 +865,71 @@ def shoot_guide(app, window, out_dir: Path, task_id: str,
     return shots
 
 
+def shoot_imposition(app, window, out_dir: Path, task_id: str) -> Path:
+    """截「图片拼版」详情页（总览第 7 张，README 与用户手册共用）。
+
+    拼版是条件节点：先把第三步「区域模式」设为 1（左右分开）让节点出现，
+    再把第 DEMO_PAGE 页的去底色结果从中线切成左右半幅、写一页拼版文档
+    （启用开关 + 序号在前→右槽），等后台防抖合成落盘后切到拼版步骤截图。
+    """
+    from PySide6.QtGui import QImage
+
+    from desktop.services.imposition import make_page
+    from desktop.store import IMPOSITION_STAGE
+
+    detail = window.detail_page
+    repo = window.store
+
+    # 1) area=1 → 拼版节点可见（_imposition_area_ok 还要求有检测数据，seed 已铺）
+    detail._select_stage(2)
+    pump(app, 8)
+    rembg_panel = detail.control_stack.widget(2)
+    rembg_panel.area.setCurrentText("1 (左右分开)")
+    wait_view_settled(app, detail.rembg_viewer.view)
+
+    # 2) 第 DEMO_PAGE 页去底色结果 → 左右半幅两个文件（文件名 -l/-r 与真实
+    #    area=1 落盘口径一致，见 services.imposition.classify_source）
+    rembg_dir = repo.stage_dir(task_id, "rembg")
+    src = rembg_dir / f"{DEMO_PAGE:03d}.png"
+    image = QImage(str(src))
+    width, height = image.width(), image.height()
+    right_path = rembg_dir / f"{DEMO_PAGE:03d}-r.png"
+    left_path = rembg_dir / f"{DEMO_PAGE:03d}-l.png"
+    image.copy(width // 2, 0, width - width // 2, height).save(str(right_path), "PNG")
+    image.copy(0, 0, width // 2, height).save(str(left_path), "PNG")
+
+    # 3) 拼版文档：启用 + 一页（make_page 把 sources[0] 放右槽——序号在前在右）
+    page = make_page([str(right_path), str(left_path)])
+    doc = dict(repo.load_imposition_doc(task_id) or {})
+    doc["enabled"] = True
+    doc["pages"] = [page]
+    repo.save_imposition_doc(task_id, doc)
+    detail._refresh_imposition_node()
+    detail._schedule_imposition_compose()
+
+    # 4) 等后台防抖合成把成品写进 stages/imposition（compose 是 QThread，
+    #    只 pump 固定次数会拍到"还没合成完"的空列表）
+    out_dir_compose = repo.imposition_output_dir(task_id)
+    deadline = time.time() + 30
+    while time.time() < deadline:
+        app.processEvents()
+        time.sleep(0.05)
+        if out_dir_compose.is_dir() and any(out_dir_compose.glob("*.png")):
+            break
+    else:
+        print("⚠️ 拼版合成等待超时，仍按当前画面截图")
+
+    # 5) 切到拼版步骤，等左列页面缩略图就绪后截图
+    index = detail.bar_index_of_step(IMPOSITION_STAGE)
+    detail._select_stage(index)
+    pump(app, 16)
+    wait_for_thumbnails(app, _visible_strips(detail))
+    path = out_dir / "07-详情页-拼版.png"
+    window.grab().save(str(path))
+    print(f"已生成 {path.name}  — 拼版画布：左右半幅合成一页")
+    return path
+
+
 def sample_log_lines(book_title: str, demo_page: int, page_count: int = 6) -> list[str]:
     """日志浮层示例：模仿一次真实 extract 的输出节奏。
 
@@ -990,6 +1056,9 @@ def main() -> int:
     window.grab().save(str(log_png))
     shots.append(log_png)
     detail.log_panel.set_expanded(False)
+
+    # 第七张：图片拼版（条件节点，需要专门造数据，见函数内说明）
+    shots.append(shoot_imposition(app, window, out_dir, task_ids[0]))
 
     for path in shots:
         print(f"已生成 {path}  ({path.stat().st_size // 1024} KB)")

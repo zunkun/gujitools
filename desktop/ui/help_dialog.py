@@ -262,7 +262,7 @@ def _inline_image_srcs(fragment: str, guide_dir: Path) -> str:
     ``screenshots/guide/*.png``，也不能写构建机的绝对路径。内联之后手册是
     一个自包含文件——复制到任何机器、任何路径都完整显示。
 
-    代价是 HTML 变大（12 张 PNG 约 6MB → base64 后约 8MB）。可接受：这只在
+    代价是 HTML 变大（13 张 PNG 约 6MB → base64 后约 8MB）。可接受：这只在
     构建期算一次，装到磁盘上仍是同一个量级，而安装包里的 lzma2 对 PNG 的
     base64 文本仍能压掉约三成。
 
@@ -788,7 +788,7 @@ def _css() -> str:
 # ---------------------------------------------------------------------------- JS
 # 纯原生 JS，无外部依赖（手册页是 file:// 打开的，绝不能引 CDN）。
 # ⚠️ 放大浮层的 <img> 由 JS 动态创建，**不要**在 HTML 里写死一个空的
-#    <img ...>：护栏按「<img 」计数核对 12 张截图，多一个空标签就红。
+#    <img ...>：护栏按「<img 」计数核对 13 张截图，多一个空标签就红。
 _JS = """
 (function () {
   const tocNav = document.getElementById('toc-nav');

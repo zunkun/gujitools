@@ -733,8 +733,8 @@ def build_manual_html(dist_dir):
     document = out.read_text(encoding="utf-8")
     inlined = document.count("data:image/")
     problems = []
-    if inlined != 12:
-        problems.append(f"内联截图 {inlined} 张（期望 12）")
+    if inlined != 13:
+        problems.append(f"内联截图 {inlined} 张（期望 13）")
     if 'src="file:' in document or 'src="screenshots/' in document:
         problems.append("仍存在外部图片引用（装机后会碎图）")
     size_mb = out.stat().st_size / 1024 / 1024
