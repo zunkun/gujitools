@@ -13,7 +13,7 @@
 ## 自测
 - `QT_QPA_PLATFORM=offscreen KMP_DUPLICATE_LIB_OK=TRUE python -u tests/gui_selftest.py`，⚠**必带 `-u`**；一次全量+`--skip`(逗号串)，`--only <mod>` 定位。用例自动发现；**运行器遇模块异常 re-raise ⇒全量在第一个 FAIL 处停**。解释器＝`C:/Users/liuzu/anaconda3/python.exe`（managed 3.13 无 PySide6）。
 - ⚠别拿 PASS 计数判"新断言跑了没"＝**grep 日志里的断言文本**。⚠长跑末 `QThread: Destroyed` 硬中止**吃掉其后模块**（退出码 127＝伪错误）⇒核对 `--list` 清单、`--only` 补跑。⚠**本会话沙箱**会在第 1 个模块后整体中止（日志见 `safe-delete` 钩子拦截批量删临时目录；`--only` 单跑正常）⇒全量要**沙箱外**跑。
-- 本机环境性红：缺 `static/guji.yaml`/fpdf2/`guji.spec`/ultralytics；⚠**QProcess 一律 FailedToStart**⇒所有真起 worker 子进程的模块都红（`extract` 起的整条链）。跑前 `grep -ln "guji.spec\|guji.yaml\|fpdf\|ultralytics" tests/selftests/*.py`。
+- 本机环境性红：缺 `static/guji.yaml`/fpdf2/`guji.spec`/ultralytics；⚠**QProcess 一律 FailedToStart**⇒所有真起 worker 子进程的模块都红（`extract` 起的整条链）。跑前 `grep -ln "guji.spec\|guji.yaml\|fpdf\|ultralytics" tests/selftests/*.py`。⚠用例名含 `⇒` 等非 GBK 字符时**本机跑要带 `PYTHONIOENCODING=utf-8`**（默认 GBK 在 print 处 UnicodeEncodeError，看着像用例崩）。⚠**跑大批量测试前先清 `tests/tmp/`**（用 `python -c "from tests.tmpdir import clean; clean()"` 一次删完可绕 bash safe-delete 批量确认；bash `rm` 一次删 >20 个会被 SIGTERM 掐，分批 ≤12）。
 - ⚠⚠⚠**四件套**：①**绝不真弹模态**（挂住整轮、看门狗 `os._exit(3)`）；QGraphicsView 拖拽走 `QTest.mousePress`，自绘走合成 `QMouseEvent` 直调。②`set_task` 加新弹窗**必须在 `_context.py` 加公共旁路助手**；包装助手**先抓原方法**再包、自己先过判据。③判"提示层没出现"看**实体建没建出来**。④信号 `connect` 已绑死 callable ⇒ 拦副作用**直连信号**。
 - ⚠"控件能不能点"：❌`parentWidget().childAt()`；⚠`widgetAt` 离屏对按钮返 None；✅权威＝`QTest.mouseClick` 真点看槽有没有被调。⚠`show()` 异步，不跑 `processEvents` 会点空（假红）。⚠`QRect.bottom()` 包含式。
 - ⚠**"改前会红吗"必须双向验证**：注入在**独立子进程**跑、`cp` 备份不用 git、先 `assert count==1`、确认红的是**目标断言**。假绿三例：①只验"详情页在前台"恒真；②`_toast(kind,title,content)` 标题是**第二**参；③在完整 `set_task` 链上验"高亮别跳格"改前也绿（须**直接调 `_rebuild_step_bar()`**）。⚠替身要在 `shell.close()` 前用完；⚠**别 `git stash`**；⚠**未提交在制品禁用 `git checkout HEAD -- <路径>`**。
@@ -21,7 +21,7 @@
 - 改 `functions/`|`utils/` 必跑 `reporter_cli_parity.py`|`reporter_worker_e2e.py`|`cli_print_smoke.py`。文档 `gen_api_docs.py --check`+`check_docs.py`（私有方法不进 API 文档）；视觉自查 `gui_shot.py`、BPM 截图 `bpm_shot.py`。
 
 ## 事实来源（别另写一份）
-CLI参数`core/command_spec.py`｜桌面默认值`components/panels/params_spec.py`｜色距字号`ui/theme.py`｜JSON`store/json_io.py`。框几何`utils/box_geometry.py`：半幅恒2槽[左,右]/整幅恒1槽，**下游靠槽数辨形态**；绘制`box_draw.draw_slots`；排版`page_layout.py`；页序`sort_utils.pdf_custom_sort_key`。步骤`steps/spec.py::SPECS`唯一（`STEP_KEYS`/`FLOW_STAGES`/`OPTIONAL_STEPS`/`NAV_STEPS`/`PANEL_CLASSES` 全派生；`role`⊥`nav`）；页面内查`ports.spec_for_stage(stage)`（⚠别用`spec_by_key`：`rembg_submit`→None），中文名走`ports.stage_label()`。
+CLI参数`core/command_spec.py`｜桌面默认值`components/panels/params_spec.py`｜色距字号`ui/theme.py`｜JSON`store/json_io.py`。框几何`utils/box_geometry.py`：半幅恒2槽[左,右]/整幅恒1槽，**下游靠槽数辨形态**；绘制`box_draw.draw_slots`；排版`page_layout.py`；页序`sort_utils.natural_sort_key`（2026-10-11 合并两键为唯一排序键）。步骤`steps/spec.py::SPECS`唯一（`STEP_KEYS`/`FLOW_STAGES`/`OPTIONAL_STEPS`/`NAV_STEPS`/`PANEL_CLASSES` 全派生；`role`⊥`nav`）；页面内查`ports.spec_for_stage(stage)`（⚠别用`spec_by_key`：`rembg_submit`→None），中文名走`ports.stage_label()`。
 
 ## 图片编辑器（当前重点）
 - ⚠⚠**子包拆分**：`viewers/` 六个大文件已拆同名子包（`image_editor/`、`image_zoom_dialog/`、`print_preview/`、`image_viewer/`、`image_view/`、`rembg_viewer/`；全量 re-export）。改前读 `tests/selftests/{image_editor,image_zoom_dialog,viewer}_split.py`：**Mixin 间不许同名成员**（MRO 静默遮蔽）；成员换落点同步 `_EXPECTED_HOME`；跨 Mixin 调用登记白名单；**打桩看「定义处」的模块**。每包有**类型检查期宿主面 `_host.py`**（`else: XHost = object`），改成员须同步 `_context.check_type_only_host()` 四条不变量（宿主面**恰好**＝主类＋各 Mixin 成员；⚠`__init__` 绝不进宿主面）。见 `docs/dev/refactor-modularity.md` §9/§10。
