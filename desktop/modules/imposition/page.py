@@ -223,6 +223,16 @@ class ImpositionModulePage(ModulePage):
         self.export_button.setFixedHeight(36)
         self.export_button.clicked.connect(self._export)
         card.box.addWidget(self.export_button)
+
+        # ---- 查看处理文件（2026-10-11 用户：执行成功后右侧下边的入口）----
+        # 导出成功才出现，指向最近一次导出的目录；再次导出/清空输入即收起。
+        self._last_output: Path | None = None
+        self.view_output_button = PushButton(FIF.FOLDER, "查看处理文件")
+        self.view_output_button.setFixedHeight(34)
+        self.view_output_button.setToolTip("在资源管理器中打开本次导出结果")
+        self.view_output_button.setVisible(False)
+        self.view_output_button.clicked.connect(self._open_last_output)
+        card.box.addWidget(self.view_output_button)
         return card
 
     # ------------------------------------------------------------------ 选图
@@ -279,6 +289,8 @@ class ImpositionModulePage(ModulePage):
         self._sources = []
         self._doc = normalize_doc({})
         self._out_dir = None
+        self._last_output = None
+        self.view_output_button.setVisible(False)
         self._page_thumbs = []
         self._page_thumb_manager().reset()
         self._thumb_timer.stop()
@@ -868,6 +880,8 @@ class ImpositionModulePage(ModulePage):
         self._out_dir = out_dir
 
         self.export_button.setEnabled(False)
+        # 再导一次：上一轮的「查看处理文件」先收起，成功后按新目录再亮
+        self.view_output_button.setVisible(False)
         # 先点亮进度条再起线程：极小的一批可能瞬间跑完，先亮才不会被收尾盖掉
         self.progress_row.start()
         self.status("正在导出…", "info")
@@ -884,15 +898,25 @@ class ImpositionModulePage(ModulePage):
         self.progress_row.update(done, total)
 
     def _on_exported(self, out_dir: str) -> None:
-        """导出成功：恢复按钮、进度条走到头并提示。"""
+        """导出成功：恢复按钮、进度条走到头并提示，亮出「查看处理文件」。"""
         count = int(self._export_result.get("count", 0))
         self.export_button.setEnabled(True)
+        self._last_output = Path(out_dir)
+        self.view_output_button.setVisible(True)
         self.progress_row.succeed(
             f"完成 {count} 页" if count else "已完成"
         )
         self.status(f"导出完成：{out_dir}（{count} 页）", "success")
         self.log(f"导出完成：{count} 页 → {out_dir}")
         self.toast("success", "导出完成", f"共导出 {count} 页到：\n{out_dir}")
+
+    def _open_last_output(self) -> None:
+        """「查看处理文件」：资源管理器打开最近一次导出的目录。"""
+        if self._last_output is None:
+            return
+        from desktop.utils.files import reveal_in_explorer
+
+        reveal_in_explorer(self._last_output)
 
     def _on_export_failed(self, message: str) -> None:
         """导出失败：恢复按钮、进度条停住并提示。"""

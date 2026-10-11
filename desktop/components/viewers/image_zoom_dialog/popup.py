@@ -127,7 +127,22 @@ class ZoomPopupMixin:
             and getattr(self, "_zoom_editable", True)
         ):
             items.append((target.edit_label, FIF.EDIT, self.edit_current_image))
+        # 「定位图片资源」（2026-10-11 用户）：资源管理器打开本页显示内容
+        # 背后的**真实文件**位置（``edit_path``：1:1 显示时即文件本身，
+        # 派生显示时是它派生自的那个文件）。只读动作，**不受编辑开关
+        # 限制**——去底色阶段不许编辑，但"这张图的文件在哪儿"仍要能看。
+        if target is not None and target.edit_path is not None:
+            items.append(("定位图片资源", FIF.FOLDER, self._locate_current_image))
         return items
+
+    def _locate_current_image(self) -> None:
+        """右键「定位图片资源」：资源管理器定位当前图对应的真实文件。"""
+        target = self._zoom_target(self._zoom_index())
+        if target is None or target.edit_path is None:
+            return
+        from desktop.utils.files import reveal_in_explorer
+
+        reveal_in_explorer(target.edit_path)
 
     def edit_current_image(self) -> bool:
         """右键「编辑图片」：直接编辑当前显示图对应的**真实文件**并覆盖回写。

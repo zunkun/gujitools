@@ -90,7 +90,7 @@ def plan_rembg_submit_entries(
     area=1 与「双框 + area=2/3」在 border 为空时**不等价**，曾导致第三步
     预览是整页、而提交产物与 PDF 被紧裁（用户报的「PDF 成了 area=1 效果」）。
     """
-    from utils.sort_utils import pdf_custom_sort_key
+    from utils.sort_utils import natural_sort_key
 
     entries: list[dict] = []
     for path in manifest_paths:
@@ -150,7 +150,7 @@ def plan_rembg_submit_entries(
                 {"file": str(result), "label": stem,
                  "box": None, "boxes": [], "parea": area, "full": False}
             )
-    entries.sort(key=lambda e: pdf_custom_sort_key(e["label"]))
+    entries.sort(key=lambda e: natural_sort_key(e["label"]))
     return entries
 
 

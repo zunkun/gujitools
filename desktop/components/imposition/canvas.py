@@ -638,8 +638,28 @@ class ImpositionCanvas(QWidget):
             action = Action(icon, text, menu)
             action.triggered.connect(slot)
             menu.addAction(action)
+        # 「定位图片资源」（2026-10-11 用户）：只在**图上**给——右键的那张
+        # 子图有真实源文件可定位；空白处的整页组合是虚拟图（合成物），没有
+        # 对应的"那一个文件"，不给死按钮。
+        if index >= 0:
+            action = Action(FIF.FOLDER, "定位图片资源", menu)
+            action.triggered.connect(
+                lambda: self._locate_item_file(index)
+            )
+            menu.addAction(action)
         menu.exec(event.globalPos())
         event.accept()
+
+    def _locate_item_file(self, index: int) -> None:
+        """右键「定位图片资源」：资源管理器定位第 index 张子图的源文件。"""
+        if not (0 <= index < len(self._items)):
+            return
+        file_text = str(self._items[index].get("file") or "")
+        if not file_text:
+            return
+        from desktop.utils.files import reveal_in_explorer
+
+        reveal_in_explorer(file_text)
 
     def _emit_context(self, index: int, edit: bool) -> None:
         """右键菜单点了某一项：按目标（图上/空白）发出对应的请求信号。

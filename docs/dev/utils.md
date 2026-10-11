@@ -20,7 +20,7 @@
 | `pdf_utils.py`    | PDF 渲染与提取                 | `parse_pages`, `validate_page_range`, `calculate_zoom`, `process_page_batch`, `extract_pdf_optimized`, `run_on_input_directory` |
 | `pdf_stream.py`   | PDF **边写边落盘**（省掉整本输出缓冲） | `PdfDocument`, `write_streaming`                                                                                                |
 | `path_utils.py`   | 输出目录解析                   | `resolve_final_output_dir`, `get_extract_output_root`                                                                           |
-| `sort_utils.py`   | 自然排序                       | `natural_sort_key`, `pdf_custom_sort_key`                                                                                       |
+| `sort_utils.py`   | 自然排序（cover/menu 优先 + 数字感知页序） | `natural_sort_key`                                                                                                              |
 | `string_utils.py` | 字符串辅助                     | `num_to_chinese`                                                                                                                |
 | `fonts.py`        | 中文字体候选（跨平台）         | `cjk_font_paths`, `cjk_font_families`, `first_existing_cjk_font`, `GUJI_FONT_ENV`                                               |
 | `font_setup.py`   | 中文字体体检与 Linux 补装      | `check_cjk_font`, `install_plan`, `install_cjk_fonts`, `classify_failure`, `manual_install_text`                                |
@@ -349,28 +349,25 @@ trailer 的 /ID，`output.py:650`）。不碰 fpdf 内部，而是覆盖 `file_i
 
 ## sort_utils.py — 自然排序
 
-### `natural_sort_key(filename) -> tuple`
+### `natural_sort_key(file_path) -> tuple`
 
-生成自然排序键，封面和菜单排在最前。
+**唯一排序键**（2026-10-11 由 `natural_sort_key` + `pdf_custom_sort_key`
+两个键合并而来）：cover/menu 优先 + 数字感知页序。逐级比较：
 
-**排序规则**：
-
-1. 优先级：`cover*.png` 和 `menu.png` 排在所有文件之前（priority=0）；
-2. 数字感知：将文件名拆分为 [文字, 数字, 文字, ...] 序列，数字部分按整数值比较。
-
-**示例**：`["page10.png", "page2.png", "cover.png"]` → `["cover.png", "page2.png", "page10.png"]`
-
-### `pdf_custom_sort_key(file_path) -> tuple`
-
-**PDF 页面专用排序键**（`natural_sort_key` 不区分左右页，不足以表达双页扫描件的
-阅读顺序）。逐级比较：
-
-1. `cover*` 优先，编号小的在前；
+1. `cover*` 优先，编号小的在前（无编号=0）；
 2. `menu` 次之；
-3. `<页号>` / `<页号>-l` / `<页号>-r`：先按页号数值，再按侧边 **r → l → 无后缀**；
-4. 其余按文件名排在最后。
+3. `<页号>` / `<页号>-l` / `<页号>-r`（`_` 亦可）：先按页号数值，再按侧边
+   **r → l → 无后缀**（双页扫描件右侧页先读）；
+4. 其余文件垫底，但按文件名里的数字**数值**排序（`page2` < `page10`）。
 
-GUI 的待打印列表与 CLI `print` 都使用它，保证页序一致。
+每级末尾追加**原文件名**做兜底键：`page1.png` 与 `page01.png`、`1.png` 与
+`01.png` 的主键相同，不加原名则顺序随 `iterdir()` 漂移（破坏幂等）。
+
+**示例**：`["10.png", "2.png", "2-l.png", "2-r.png", "cover.png", "page10.png",
+"page2.png"]` → `["cover.png", "2-r.png", "2-l.png", "2.png", "10.png",
+"page2.png", "page10.png"]`
+
+GUI 的待打印列表、拼版、去底色查看器与 CLI `print` 都使用它，保证页序一致。
 
 ---
 

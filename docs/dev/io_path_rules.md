@@ -38,7 +38,7 @@
 - `crop`、`rembg`、`cropremove`：支持输入为图片文件或目录（目录下可包含多种图片格式），无强制文件类型限制。
 - `print`：额外支持可选参数 `files`（图片绝对路径列表），**该列表顺序即最终 PDF 页序**。
   - 传入时：按列表顺序加载图片（仅过滤不存在的路径），完全**不读目录、不解析文件名**——因此拖拽重排 / 删除条目无需改动任何物理文件；
-  - 不传时：回退为遍历 `input` 目录并按 `pdf_custom_sort_key`（`utils/sort_utils.py`）排序，保持 CLI 独立用法不变；
+  - 不传时：回退为遍历 `input` 目录并按 `natural_sort_key`（`utils/sort_utils.py`）排序，保持 CLI 独立用法不变；
   - `skip_pages` 与 `title_switch_nodes` 中的纯页码按**清单序号**（1 起）匹配，与文件名无关。
 
 ---

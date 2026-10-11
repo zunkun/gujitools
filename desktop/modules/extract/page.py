@@ -26,7 +26,6 @@
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 from desktop.components.viewers import ImageViewerWidget
@@ -35,6 +34,7 @@ from desktop.modules.thumb_source import ThumbSourceMixin
 from desktop.steps import spec_by_key
 from desktop.utils.files import thumb_map_path
 from utils.file_utils import write_bytes_atomic
+from utils.sort_utils import natural_sort_key
 
 #: 本页的步骤元数据（标题/副标题/面板/过滤串/默认输出后缀的唯一来源）
 _SPEC = spec_by_key("extract")
@@ -157,16 +157,6 @@ class ExtractModulePage(StepModulePage, ThumbSourceMixin):
         super().shutdown_workers()
 
 
-def _natural_key(path: str | Path) -> tuple:
-    """按文件名里的数字自然排序（page2 排在 page10 前面）。
-
-    ⚠️ 两种入参都收：collect_result_images 传 ``Path``，别处按名字传 ``str``
-    （内部一律 ``Path(path).name`` 取名，两种都对）。
-    """
-    parts = re.split(r"(\d+)", Path(path).name)
-    return tuple(int(p) if p.isdigit() else p.lower() for p in parts)
-
-
 def collect_result_images(out_root: str | Path) -> list[Path]:
     """收集提取产物图片，**同名只保留一份**。
 
@@ -188,7 +178,11 @@ def collect_result_images(out_root: str | Path) -> list[Path]:
         previous = found.get(key)
         if previous is None or len(path.parts) < len(previous.parts):
             found[key] = path
-    return sorted(found.values(), key=_natural_key)
+    # 自然排序收口到 utils.sort_utils（2026-10-11 去重：这里原来有一份自己写的
+    # ``_natural_key``，与 ``natural_sort_key`` 核心相同——统一走 sort_utils，
+    # 与 CLI ``collect_image_files`` 同口径；差别仅是 cover/menu 提前 + 大小写
+    # 不敏感程度略变，对提取产物页序无实质影响）。
+    return sorted(found.values(), key=lambda p: natural_sort_key(p.name))
 
 
 __all__ = ["ExtractModulePage", "collect_result_images"]

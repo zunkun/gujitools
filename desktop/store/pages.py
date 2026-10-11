@@ -6,8 +6,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
-from desktop.utils.files import IMAGE_SUFFIXES, natural_key
+from desktop.utils.files import IMAGE_SUFFIXES
 from desktop.store.json_io import read_json, write_json
+from utils.sort_utils import natural_sort_key
 
 
 class PageManifestMixin:
@@ -38,7 +39,7 @@ class PageManifestMixin:
         if directory.exists():
             files = sorted(
                 (f for f in directory.iterdir() if f.suffix.lower() in IMAGE_SUFFIXES),
-                key=lambda f: natural_key(f.name),
+                key=lambda f: natural_sort_key(f.name),
             )
             pages = [{"file": str(f), "label": f.stem} for f in files]
         self.save_pages(task_id, pages)

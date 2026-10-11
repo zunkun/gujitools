@@ -16,6 +16,7 @@
 | G13 | `--no-quick` + 配置里 `quick: true` | False 被当"未显式开启"丢掉 → **关不掉** |
 | G14 | `--bordr 20`（拼错） | 只打一行警告继续跑，参数落到默认值、退出码 0 |
 | G15 | 极小页宽 + 大 zoom | `MAX_OUTPUT_WIDTH_PX // int(page_width)` 除零 |
+| G16 | 输入目录名含点（如提取产物 `书名_v.5 提取`） | `is_file` 用「带后缀」兜底，`.5 提取` 被当成后缀 → 目录误判成文件，抛「输入文件不是图片」 |
 | - | `--pages "1-2-3"` | 原生 `ValueError: too many values to unpack` |
 """
 
@@ -114,6 +115,25 @@ def run(ctx) -> None:
     # 单文件输入（以前 os.listdir 会抛 NotADirectoryError）
     ok("print 的单文件输入被正确接受",
        _collect_image_files(real) == [str(real)], str(_collect_image_files(real)))
+
+    # ---- G16：目录名含点不被误判成文件（2026-10-11 用户报）----
+    # 提取产物目录形如 "书名_v.5 提取"，Path 把 ".5 提取" 算成 suffix；
+    # 旧代码 `is_file = input.is_file() or bool(input.suffix)` 因此把目录
+    # 判成文件，detect/rembg 一执行就抛「输入文件不是图片」。
+    from functions import get_function as _get_function_for_g16
+
+    dotted = work / "书名_v.5 提取"
+    dotted.mkdir(exist_ok=True)
+    Image.new("RGB", (120, 160), (9, 9, 9)).save(dotted / "1.jpg")
+    g16_args = CommandArgs(command="detect", input=str(dotted))
+    g16_args.validate()
+    g16_fn = _get_function_for_g16("detect", g16_args, None)
+    assert g16_fn is not None
+    ok("目录名带点（书名_v.5 提取）不被误判成文件",
+       g16_fn.is_file is False, f"is_file={g16_fn.is_file}")
+    g16_files = g16_fn._collect_input_files()
+    ok("带点目录里的图片仍被正常收集",
+       g16_files == [dotted / "1.jpg"], str(g16_files))
 
     # ---- G6：只配一侧奇偶边距也要生效 ----
     from utils.page_layout import _margins_for_page

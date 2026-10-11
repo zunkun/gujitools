@@ -46,7 +46,7 @@ from desktop.pages.taskdetail.imposition_layout import ImpositionLayoutMixin
 from desktop.pages.taskdetail.imposition_pages import ImpositionPagesMixin
 from desktop.store import IMPOSITION_LABEL, IMPOSITION_STAGE
 from desktop.utils.files import list_stage_images
-from utils.sort_utils import pdf_custom_sort_key
+from utils.sort_utils import natural_sort_key
 
 if TYPE_CHECKING:
     from PySide6.QtWidgets import QStackedWidget, QWidget
@@ -377,7 +377,7 @@ class ImpositionBaseMixin:
             imposition_active=self.imposition_effective(),
         ) or self.store.rembg_output_dir(self.task_id)
         files = list_stage_images(source)
-        return sorted(files, key=lambda p: pdf_custom_sort_key(p.name))
+        return sorted(files, key=lambda p: natural_sort_key(p.name))
 
     def imposition_active(self) -> bool:
         """拼版**是否已启用**（用户勾了「在流程中启用图片拼版」就是启用）。

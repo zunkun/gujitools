@@ -65,8 +65,14 @@ class FunctionBase:
         self.input_raw = command_args.get("input", ".")
         self.input: Path = self.input_raw
 
-        # 判断输入是文件还是目录
-        self.is_file = self.input.is_file() or bool(self.input.suffix)
+        # 判断输入是文件还是目录。
+        # ⚠️ 只认 is_file() 的实际结果，**不许**拿「带后缀名」当文件判据：
+        #    目录名完全可以含点（真实案例：提取产物 "书名_v.5 提取"，Path 把
+        #    ".5 提取" 算成 suffix），按后缀兜底就会把目录误判成文件，
+        #    collect_image_files 直接抛「输入文件不是图片」，整步跑不起来
+        #    （2026-10-11 用户报，singletask 检测/去底色导入目录均中招）。
+        #    不存在的路径由下面的 exists() 检查统一报错，这里不需要兜底。
+        self.is_file = self.input.is_file()
         if self.is_file:
             self.parent_path = self.input.parent
         else:

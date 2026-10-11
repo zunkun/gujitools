@@ -439,7 +439,7 @@ def auto_impose_pages(files: list) -> list[dict]:
        上一张因此落单、也单独一页；整幅之后拼版重新开始；末尾落单的
        左半幅同样单独一页。
 
-    遍历按源清单顺序（``pdf_custom_sort_key``：同页号 r 在前），产出的
+    遍历按源清单顺序（``natural_sort_key``：同页号 r 在前），产出的
     页清单顺序即 PDF 页序。尺寸读不到的图跳过（不产出残页）。
     """
     pages: list[dict] = []

@@ -142,6 +142,17 @@ def run(ctx) -> None:
         str([p.name for p in extract.listing(drop_dir)]),
     )
     ok("读不了的目录返回空表", extract.listing(Path(ctx.tmp) / "nope") == [])
+    # ⚠️ listing 顺序有真实消费方（singletask 左栏缩略图条/source_images）
+    #    ——必须自然排序，不能字典序（2026-10-11 用户报障"1,10,11,2…"）。
+    nat_drop = Path(ctx.tmp) / "drop_nat"
+    nat_drop.mkdir(exist_ok=True)
+    for name in ("10.png", "2.png", "1.png"):
+        (nat_drop / name).write_bytes(b"x")
+    ok(
+        "目录清单按页序自然排序（1,2,10 而非 1,10,2）",
+        [p.name for p in rembg.listing(nat_drop)] == ["1.png", "2.png", "10.png"],
+        str([p.name for p in rembg.listing(nat_drop)]),
+    )
 
     ok("拖一个文件 → 就是它自己", extract.resolve_source([drop_dir / "a.pdf"])[0] == drop_dir / "a.pdf")
     # ⚠️ 「PDF 只支持文件」（用户 2026-10-03）：拖文件夹**直接拒绝**，不从
@@ -243,9 +254,21 @@ def run(ctx) -> None:
         (imgs_dir / name).write_bytes(b"x")
     (imgs_dir / "note.txt").write_bytes(b"x")
     ok(
-        "拼图清单：只要图片、按名排序、忽略别的文件",
+        "拼图清单：只要图片、按页序排序、忽略别的文件",
         [p.name for p in imposition.collect_files([imgs_dir])] == ["a.png", "m.jpg", "z.png"],
         str([p.name for p in imposition.collect_files([imgs_dir])]),
+    )
+    # ⚠️ 页序必须**自然排序**（natural_sort_key），不能用字典序——
+    #    否则 "page10" 排到 "page2" 前面，拼版左右半幅配错对（2026-10-11 报障）。
+    nat_dir = Path(ctx.tmp) / "nat"
+    nat_dir.mkdir(exist_ok=True)
+    for name in ("10.png", "2.png", "2-l.png", "2-r.png", "cover.png"):
+        (nat_dir / name).write_bytes(b"x")
+    ok(
+        "拼图清单：页号按数值（2<10）、同页号 r 在 l 前、cover 优先",
+        [p.name for p in imposition.collect_files([nat_dir])]
+        == ["cover.png", "2-r.png", "2-l.png", "2.png", "10.png"],
+        str([p.name for p in imposition.collect_files([nat_dir])]),
     )
     ok(
         "拼图清单：复用下钻规则（顶层没图、唯一子目录装着）",
@@ -647,6 +670,28 @@ def run(ctx) -> None:
         str(blocked),
     )
     idle.shutdown()
+
+    # ---- 4a. 「查看处理文件」入口（2026-10-11 用户：singletask 执行成功
+    #      之后，右侧下边要有入口查看处理文件）----
+    ok("初始不显示「查看处理文件」", control_a.view_output_button.isHidden())
+    import desktop.utils.files as _files_mod
+
+    _opened: list = []
+    _real_reveal = _files_mod.reveal_in_explorer
+    _files_mod.reveal_in_explorer = lambda p: _opened.append(Path(p)) or True
+    try:
+        control_a.kernel.finished.emit(str(Path("/x/a_提取")))
+        app.processEvents()
+        ok("执行成功后亮出「查看处理文件」",
+           not control_a.view_output_button.isHidden())
+        control_a.view_output_button.click()
+        ok("点「查看处理文件」→ 资源管理器打开成功输出目录",
+           _opened == [Path("/x/a_提取")], str(_opened))
+    finally:
+        _files_mod.reveal_in_explorer = _real_reveal
+    control_a.set_source(Path("/x/c.pdf"))
+    ok("换源后入口收起（旧结果对不上新源）",
+       control_a.view_output_button.isHidden())
 
     control_a.shutdown()
     control_b.shutdown()

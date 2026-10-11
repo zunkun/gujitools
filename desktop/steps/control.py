@@ -145,6 +145,18 @@ class StepControl(QWidget):
         run_row.addWidget(self.cancel_button, 0)
         layout.addLayout(run_row)
 
+        # ---- 查看处理文件（2026-10-11 用户：singletask 执行成功之后，
+        #      右侧下边要有入口查看处理文件）----
+        # 执行成功才出现，指向**最近一次成功**的输出目录；再跑/换源即收起，
+        # 避免按钮指着一份已经对不上的旧结果。
+        self._last_output: Path | None = None
+        self.view_output_button = PushButton(FIF.FOLDER, "查看处理文件")
+        self.view_output_button.setFixedHeight(34)
+        self.view_output_button.setToolTip("在资源管理器中打开本次处理结果")
+        self.view_output_button.setVisible(False)
+        self.view_output_button.clicked.connect(self._open_last_output)
+        layout.addWidget(self.view_output_button)
+
     # ------------------------------------------------------------------ 源/输出
     def source(self) -> Path | None:
         """当前源（文件或目录）；未选为 ``None``。"""
@@ -159,6 +171,9 @@ class StepControl(QWidget):
         self._source = Path(path) if path else None
         if self._source is not None and not self._out_manual:
             self._out = self.spec.default_output(self._source)
+        # 换了源：上次成功的输出入口收起来（结果已经对不上新源了）
+        self._last_output = None
+        self.view_output_button.setVisible(False)
         self.zone.set_source(self._source, self._zone_detail(self._source))
         self.source_changed.emit(self._source)
 
@@ -201,6 +216,8 @@ class StepControl(QWidget):
             return
         request = StepRequest(source=self._source, dest=dest, args=args)
         self._set_running(True)
+        # 再跑一次：上一轮的「查看处理文件」先收起，成功后按新结果再亮
+        self.view_output_button.setVisible(False)
         # ⚠️ 先点亮再起线程：否则内核极快跑完时，第一条 progress 可能比这条
         #    "开始"还早到（信号是排队投递的），进度会被随后的收尾覆盖掉。
         self.progress_row.start()
@@ -284,6 +301,9 @@ class StepControl(QWidget):
 
     def _on_finished(self, output: str) -> None:
         self._set_running(False)
+        # 成功：亮出「查看处理文件」入口（指向这次的结果目录）
+        self._last_output = Path(output)
+        self.view_output_button.setVisible(True)
         # ⚠️ 收尾文案要写**最终计数**：有些命令最后一页不补发 progress
         #    （print 只在 %10 与末页发，rembg 的失败张不计入 done），光靠
         #    "最近一次进度"会停在 90%。所以这里按"最后一次已知 total"补齐。
@@ -291,6 +311,14 @@ class StepControl(QWidget):
         self.status.emit(f"处理完成：{output}", "success")
         self.log.emit(f"处理完成，输出目录：{output}")
         self.finished.emit(output)
+
+    def _open_last_output(self) -> None:
+        """「查看处理文件」：资源管理器打开最近一次成功的输出目录。"""
+        if self._last_output is None:
+            return
+        from desktop.utils.files import reveal_in_explorer
+
+        reveal_in_explorer(self._last_output)
 
     def _on_failed(self, message: str) -> None:
         self._set_running(False)

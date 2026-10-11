@@ -34,7 +34,7 @@ from utils.pdf_draw import (
     build_font_chain, draw_horizontal_text, draw_vertical_text,
 )
 from utils.pdf_stream import PdfDocument, write_streaming
-from utils.sort_utils import pdf_custom_sort_key
+from utils.sort_utils import natural_sort_key
 
 # 嵌入 PDF 前把超大扫描图缩放到的打印分辨率（仅缩小、不放大）。
 # 300DPI 对古籍扫描足够清晰，同时避免 fpdf 对数千像素原图逐页 zlib 压缩。
@@ -137,7 +137,7 @@ def _collect_image_files(input_dir: Path, files: Optional[List[str]] = None) -> 
       ``print.json`` 的 pages 数组序）。**不再解析文件名**——文件名只是
       标识，顺序完全由数据层决定，拖拽重排无需改动任何物理文件。
     - ``files`` 为空：退回 CLI 独立用法——扫描目录并按
-      ``pdf_custom_sort_key``（cover/menu 优先、同编号 r→l、数字自然序）
+      ``natural_sort_key``（cover/menu 优先、同编号 r→l、数字自然序）
       推导顺序。
 
     清单中不存在的路径会被跳过（让「数据表里有记录但物理文件已删」的条目失效
@@ -180,7 +180,7 @@ def _collect_image_files(input_dir: Path, files: Optional[List[str]] = None) -> 
     for name in os.listdir(input_dir):
         if name.lower().endswith((".png", ".jpg", ".jpeg", ".bmp", ".gif")):
             image_files.append(os.path.join(str(input_dir), name))
-    image_files.sort(key=pdf_custom_sort_key)
+    image_files.sort(key=natural_sort_key)
     return image_files
 
 

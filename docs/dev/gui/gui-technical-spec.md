@@ -175,7 +175,7 @@ GUI（QImage 渲染）共同消费同一份 `OutputLayout`，不得各自推导
   取框宽会让缩略图只占条目宽度的一半。⚠️ 还要乘 dpr：条目本身是按 dpr 放大
   绘制的，只解码到逻辑尺寸等于让 Qt 再放大一次（与大图预览同源的问题）；
   dpr 必须在**主线程**算好（批次工厂 `make_worker` 跑在 worker 线程里）。
-- 排序：条目按 `pdf_custom_sort_key`（数字感知、同页 r→l、cover/menu 优先）。
+- 排序：条目按 `natural_sort_key`（数字感知、同页 r→l、cover/menu 优先）。
 
 ## 6. print 页面列表与参数表单
 
@@ -185,7 +185,7 @@ GUI（QImage 渲染）共同消费同一份 `OutputLayout`，不得各自推导
 - **有序清单**：执行时把数组顺序作为 `args["files"]` 交给 CLI，效果图按该
   顺序在一次性临时目录中合成（`0001.png`…），CLI 直接按清单加载、不再读
   目录解析文件名。因此不需要 workset 这类「把顺序烧进文件名」的物化目录。
-  不传清单时 CLI 仍回退到 `pdf_custom_sort_key` 文件名排序（独立用法兼容）。
+  不传清单时 CLI 仍回退到 `natural_sort_key` 文件名排序（独立用法兼容）。
 - **参数表单**（阶段面板控件，**不是文本编辑框**）：键集与 CLI `print` 命令一致
   （pdf_name、paper_size、orientation、page_margins、title_*、
   title_switch_nodes、page_number_*、skip_pages）；

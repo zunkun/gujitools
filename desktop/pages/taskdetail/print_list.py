@@ -12,7 +12,7 @@ from desktop.services.print_plan import (
     drop_foreign_stage_pages, plan_print_entries,
 )
 from desktop.utils.files import default_open_dir, list_stage_images
-from utils.sort_utils import pdf_custom_sort_key
+from utils.sort_utils import natural_sort_key
 
 if TYPE_CHECKING:
     from desktop.components.viewers.print_preview import PrintPreviewWidget
@@ -82,7 +82,7 @@ class PrintListMixin:
         source_dir = self.print_source_dir()
         rembg_files = sorted(
             list_stage_images(source_dir),
-            key=lambda p: pdf_custom_sort_key(p.name),
+            key=lambda p: natural_sort_key(p.name),
         )
         # ⚠️ 没有任务（task_id 为 None）时这份清单无处可落。调用方都在有任务时
         #    才进这里，这里显式挡一道：早失败比把 None 拼进路径好。

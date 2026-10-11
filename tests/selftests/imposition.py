@@ -2865,9 +2865,9 @@ def run(ctx) -> None:
 
             ix, iy = _item_pt(canvas4, 0)
             canvas4.contextMenuEvent(_ctx(canvas4, ix, iy))
-            ok("右键图上弹出菜单：两项是「预览图片 / 编辑单图」",
+            ok("右键图上弹出菜单：「预览图片 / 编辑单图 / 定位图片资源」",
                [act.text() for act in _menu.get("actions", [])]
-               == ["预览图片", "编辑单图"],
+               == ["预览图片", "编辑单图", "定位图片资源"],
                str([act.text() for act in _menu.get("actions", [])]))
             ok("右键即选中那张图（与左键点击同款语义）",
                canvas4.selected() == 0 and selections == [0],
@@ -2880,6 +2880,21 @@ def run(ctx) -> None:
             ok("右键图上点「编辑单图」→ 发 item_edit_requested（同槽位）",
                hits["edit_item"] == [0] and hits["edit_spread"] == 0,
                str(hits))
+            # 定位图片资源（2026-10-11 用户）：资源管理器定位那张子图的源文件
+            import desktop.utils.files as _files_mod
+
+            _located: list = []
+            _real_reveal = _files_mod.reveal_in_explorer
+            _files_mod.reveal_in_explorer = (
+                lambda p: _located.append(Path(p)) or True
+            )
+            try:
+                _pick(2)
+            finally:
+                _files_mod.reveal_in_explorer = _real_reveal
+            item_file = Path(str(canvas4._items[0]["file"]))
+            ok("右键图上点「定位图片资源」→ 资源管理器定位该子图源文件",
+               _located == [item_file], f"located={_located}")
 
             bx, by = _blank_pt(canvas4)
             canvas4.contextMenuEvent(_ctx(canvas4, bx, by))

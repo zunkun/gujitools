@@ -666,7 +666,7 @@ guji/
 | area/border → 效果区域合成 | `desktop/workers/preview_worker.compose_region_output` |
 | 几何规则（GUI/CLI 共用） | `utils/box_geometry.py`（parse_border_mm、compute_final_boxes） |
 | 检测框标注绘制（GUI/CLI 共用） | `utils/box_draw.py`（draw_boxes，配色与 GUI 预览一致） |
-| 自然排序（r 在 l 前） | `utils/sort_utils.pdf_custom_sort_key` |
+| 自然排序（r 在 l 前） | `utils/sort_utils.natural_sort_key` |
 | 页缩略图生成 | `desktop/workers/source_thumbnails_worker.py` |
 | 文件指纹 | `desktop/utils/files.file_hash` |
 

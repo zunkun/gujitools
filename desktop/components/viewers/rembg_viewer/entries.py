@@ -11,7 +11,7 @@ from PySide6.QtGui import QImage
 from desktop.components.viewers.thumb_strip import ThumbStrip
 from core.command_spec import WHOLE_PAGE_AREA
 from utils.box_geometry import is_full_content
-from utils.sort_utils import pdf_custom_sort_key
+from utils.sort_utils import natural_sort_key
 from typing import TYPE_CHECKING
 
 
@@ -37,7 +37,7 @@ class EntriesMixin(RembgViewerHost):
         """manifest 路径 → 输出条目。
 
         area=1 时每框一条（左右身份来自存储的 [左框, 右框] 列表，缺失为 null）；
-        全部条目最终按 CLI 规范（utils/sort_utils.pdf_custom_sort_key）排序：
+        全部条目最终按 CLI 规范（utils/sort_utils.natural_sort_key）排序：
         同页编号 r 在 l 前，页码数字感知排序。
 
         ``full`` 标记整幅内容(fullcontent)的**单槽**条目——框原样下传
@@ -105,7 +105,7 @@ class EntriesMixin(RembgViewerHost):
                 page_entries = [{"label": stem, "path": path_text, "box": None,
                                  "full": False}]
             entries.extend(page_entries)
-        entries.sort(key=lambda e: pdf_custom_sort_key(e["label"]))
+        entries.sort(key=lambda e: natural_sort_key(e["label"]))
         return entries
 
 

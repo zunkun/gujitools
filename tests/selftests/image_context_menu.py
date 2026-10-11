@@ -9,8 +9,9 @@ PDF**。所以每个步骤的预览区都要能右键，且「编辑图片」改
 断言线（都只看可观测行为，不看实现细节）：
 
 1. ``ImageView`` 有图才发 ``context_menu_requested``，无图不发（不弹空菜单）；
-2. 右键菜单项：有可回写文件 → 「预览图片 + 编辑图片」；PDF 矢量页这类没有
-   → 只给「预览图片」（不给死按钮）；
+2. 右键菜单项：有可回写文件 → 「预览图片 + 编辑图片 + 定位图片资源」（2026-10-11
+   加定位：资源管理器定位本页背后的真实文件，只读、不受编辑开关限制）；
+   PDF 矢量页这类没有 → 只给「预览图片」（不给死按钮）；
 3. ``edit_current_image`` 把编辑结果**原子覆盖到 edit_path** 指向的真实文件，
    并通知宿主 ``_on_zoom_image_saved``（刷新尺寸/缩略图/各处大图）；
 4. ``ZoomTarget.edit_path`` 语义：显式给出时不回落 save_path；不给时回落
@@ -136,8 +137,8 @@ def run(ctx) -> None:
         direct = ZoomTarget(render=lambda edge: None, edit_path=tmp / "a.png")
         host = _MenuHost(direct)
         texts = [item[0] for item in host._zoom_menu_items(direct)]
-        ok("有可回写文件 → 菜单含「预览图片」+「编辑图片」",
-           texts == ["预览图片", "编辑图片"], str(texts))
+        ok("有可回写文件 → 菜单含「预览图片」+「编辑图片」+「定位图片资源」",
+           texts == ["预览图片", "编辑图片", "定位图片资源"], str(texts))
         virtual = ZoomTarget(render=lambda edge: None)  # 无 save/edit
         texts2 = [item[0] for item in host._zoom_menu_items(virtual)]
         ok("PDF 矢量页这类无文件 → 只给「预览图片」（不留死按钮）",
@@ -145,6 +146,26 @@ def run(ctx) -> None:
         ok("无 target 时同样只给预览（防御）",
            [t[0] for t in host._zoom_menu_items(None)] == ["预览图片"])
         host.deleteLater()
+        pump(app, times=1)
+
+        # ---------------------------------- 定位图片资源（2026-10-11 需求）
+        # 只读动作：资源管理器定位本页背后的真实文件；不受编辑开关限制。
+        import desktop.utils.files as files_mod
+
+        located: list = []
+        real_reveal = files_mod.reveal_in_explorer
+        files_mod.reveal_in_explorer = lambda p: located.append(Path(p)) or True
+        try:
+            host._locate_current_image()
+            ok("「定位图片资源」→ 资源管理器定位 edit_path 指向的真实文件",
+               located == [tmp / "a.png"], str(located))
+            host2 = _MenuHost(virtual)
+            host2._locate_current_image()
+            ok("无真实文件的页（PDF 矢量页）定位是无害 no-op",
+               located == [tmp / "a.png"], str(located))
+            host2.deleteLater()
+        finally:
+            files_mod.reveal_in_explorer = real_reveal
         pump(app, times=1)
 
         # -------------------------------------------------- edit_path 语义
@@ -258,8 +279,8 @@ def run(ctx) -> None:
                 viewer.view.context_menu_requested.emit()
             finally:
                 qfluentwidgets.RoundMenu.exec = orig_exec
-            ok("预览区右键 → 真的弹出「预览图片 / 编辑图片」两项",
-               captured == [["预览图片", "编辑图片"]], str(captured))
+            ok("预览区右键 → 真的弹出「预览图片 / 编辑图片 / 定位图片资源」三项",
+               captured == [["预览图片", "编辑图片", "定位图片资源"]], str(captured))
         finally:
             viewer.shutdown_workers()
             viewer.deleteLater()
@@ -325,8 +346,9 @@ def run(ctx) -> None:
                tgt_ro is not None and tgt_ro.edit_path == result,
                str(getattr(tgt_ro, "edit_path", None)))
             texts_ro = [item[0] for item in rembg_ro._zoom_menu_items(tgt_ro)]
-            ok("image_editable=False：右键菜单只给「预览图片」",
-               texts_ro == ["预览图片"], str(texts_ro))
+            ok("image_editable=False：右键菜单只给「预览图片 + 定位图片资源」"
+               "（定位是只读动作，不受编辑开关限制）",
+               texts_ro == ["预览图片", "定位图片资源"], str(texts_ro))
 
             # 端到端：右键真的只弹一项（patch exec，避免模态阻塞）
             import qfluentwidgets
@@ -342,8 +364,8 @@ def run(ctx) -> None:
                 rembg_ro.view.context_menu_requested.emit()
             finally:
                 qfluentwidgets.RoundMenu.exec = orig_exec
-            ok("image_editable=False：右键端到端只弹「预览图片」",
-               captured_ro == [["预览图片"]], str(captured_ro))
+            ok("image_editable=False：右键端到端弹「预览图片 / 定位图片资源」",
+               captured_ro == [["预览图片", "定位图片资源"]], str(captured_ro))
 
             before = QImage(str(result)).pixelColor(2, 2).name()
             ok("image_editable=False：edit_current_image 直接拒绝（不写文件）",
@@ -357,7 +379,7 @@ def run(ctx) -> None:
                 for item in rembg_ro._zoom_menu_items(rembg_ro._zoom_target(0))
             ]
             ok("set_image_editable(True)：菜单恢复「编辑图片」",
-               texts_re == ["预览图片", "编辑图片"], str(texts_re))
+               texts_re == ["预览图片", "编辑图片", "定位图片资源"], str(texts_re))
         finally:
             rembg_ro.shutdown_workers()
             rembg_ro.deleteLater()

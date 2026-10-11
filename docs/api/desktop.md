@@ -6091,7 +6091,7 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 ⚠️ **与任务流程第四步的有意差别：页序。** 流程里页序 = 第四步列表里用户手动排的
 那份清单（``functions/print`` 的 ``files`` 参数）。独立页面按用户 2026-10-02 的
 选择**不提供手动排序**——页序就是文件名顺序
-（``utils.sort_utils.pdf_custom_sort_key``，与 CLI 直跑 ``guji run print <目录>``
+（``utils.sort_utils.natural_sort_key``，与 CLI 直跑 ``guji run print <目录>``
 一致）。要调页序，先用「拼图」模块把版面排好再拖过来。
 
 ⚠️ **产物形态与别的模块不同**：``print`` 产出的是**一个 PDF 文件**，不是一目录
@@ -7743,7 +7743,7 @@ for_edited_source` 读到的还是旧尺寸。
    上一张因此落单、也单独一页；整幅之后拼版重新开始；末尾落单的
    左半幅同样单独一页。
 
-遍历按源清单顺序（``pdf_custom_sort_key``：同页号 r 在前），产出的
+遍历按源清单顺序（``natural_sort_key``：同页号 r 在前），产出的
 页清单顺序即 PDF 页序。尺寸读不到的图跳过（不产出残页）。
 
 #### `page_bounds(page: dict) -> tuple[float, float, float, float]`
@@ -10444,13 +10444,22 @@ _apply_control_width`` 按 stage 换宽度、``history._history_fill_keys``
 - 目录：先取顶层的；顶层没有、但只有**一个**子目录装着 → 用那一层
   （同 :meth:`resolve_source` 的下钻理由：提取模块的产物是
   ``<输出根>/<PDF名>/images/``）；
-- 结果去重并按文件名排序（"前一页左半幅 + 当前页右半幅"的配对规则
-  依赖一个稳定顺序）。
+- 结果去重并按**页序自然排序**（``utils.sort_utils.natural_sort_key``，
+  与 taskdetail 拼版 / 打印同口径）：页号按数值（``2`` < ``10``），
+  同页号 ``r`` 在 ``l`` 前，cover/menu 优先。拼版"前一页左半幅 +
+  当前页右半幅"的配对规则依赖这个稳定顺序——**不能用字典序**，
+  否则 ``page10`` 会排到 ``page2`` 前面、左右半幅配错对。
 
 ##### `listing(directory: Path | str) -> list[Path]`
 
 目录里符合本步骤后缀的文件（**只看顶层**，与功能层
-``collect_image_files`` / ``run_on_input_directory`` 同口径）。
+``collect_image_files`` / ``run_on_input_directory`` 同口径），
+按**页序自然排序**（``utils.sort_utils.natural_sort_key``）。
+
+⚠️ 顺序有真实消费方：singletask 各页左栏缩略图条
+（``ThumbSourceMixin._listing``）与 ``source_images()`` 都直接用
+本方法的顺序——**不能用字典序**，否则缩略图条出现
+"1, 10, 11, 2…"（2026-10-11 用户报障）。
 
 读不了（不存在/没权限）时返回空表——调用方据此给"这里没有可用文件"。
 
@@ -12490,6 +12499,7 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 
 | 函数 | 说明 |
 | --- | --- |
+| `reveal_in_explorer(path) -> bool` | 在 Windows 资源管理器里打开 ``path`` 的位置（2026-10-11 用户需求）。 |
 | `guji_data_dir() -> Path` | GUI 数据根目录：用户文档目录下的 guji。 |
 | `safe_dirname(name: str) -> str` | 把任意标题洗成能当目录名的一串（去掉非法字符、收敛空白）。 |
 | `singletask_dir(subtask: str) -> Path` | 独立任务区下某个**子任务**的目录：``~/Documents/guji/singletask/<子任务>``。 |
@@ -12507,8 +12517,16 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 | `package_dir() -> Path` | `desktop` 包目录（源码与 PyInstaller 打包两种模式下都可用）。 |
 | `file_hash(path: Path, chunk_size: int=1024 * 1024) -> str` | 流式计算文件 SHA-256（分块读取，避免大 PDF 撑爆内存）。 |
 | `copy_file_atomic(source: Path, target: Path) -> Path` | 把 source 复制到 target，**要么没有、要么完整**。 |
-| `natural_key(name: str)` | 生成自然排序键：数字段按整数、其余转小写，使 2 排在 10 前。 |
-| `list_stage_images(directory: Path) -> list[Path]` | 某阶段输出目录中的图片（自然排序）。 |
+| `list_stage_images(directory: Path) -> list[Path]` | 某阶段输出目录中的图片（按页序自然排序，唯一排序键 |
+
+#### `reveal_in_explorer(path) -> bool`
+
+在 Windows 资源管理器里打开 ``path`` 的位置（2026-10-11 用户需求）。
+
+- ``path`` 是**文件**：打开它所在目录并**选中**该文件（``explorer /select,``）；
+- ``path`` 是**目录**：直接打开这个目录。
+
+返回是否真的发起了打开——路径不存在时为 ``False``，调用方不必再判存在性。
 
 #### `migrate_legacy_singletask_dirs() -> list[str]`
 
@@ -12652,6 +12670,12 @@ PDF——渲染失败、甚至静默出一张残缺页。
 （后台队列复制中，用户已经点进详情页 → ``ensure_source_copy`` 又复制
 一遍）。共用一个临时名的话两边会交叉写同一个文件；各自写自己的临时
 文件则内容相同，谁最后 replace 都对。
+
+#### `list_stage_images(directory: Path) -> list[Path]`
+
+某阶段输出目录中的图片（按页序自然排序，唯一排序键
+``utils.sort_utils.natural_sort_key``；原这里的 ``natural_key`` 是
+重复实现，2026-10-11 收口）。
 
 ---
 

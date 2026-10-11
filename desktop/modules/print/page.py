@@ -10,7 +10,7 @@
 ⚠️ **与任务流程第四步的有意差别：页序。** 流程里页序 = 第四步列表里用户手动排的
 那份清单（``functions/print`` 的 ``files`` 参数）。独立页面按用户 2026-10-02 的
 选择**不提供手动排序**——页序就是文件名顺序
-（``utils.sort_utils.pdf_custom_sort_key``，与 CLI 直跑 ``guji run print <目录>``
+（``utils.sort_utils.natural_sort_key``，与 CLI 直跑 ``guji run print <目录>``
 一致）。要调页序，先用「拼图」模块把版面排好再拖过来。
 
 ⚠️ **产物形态与别的模块不同**：``print`` 产出的是**一个 PDF 文件**，不是一目录

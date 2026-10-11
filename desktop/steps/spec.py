@@ -33,6 +33,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from utils.sort_utils import natural_sort_key
+
 #: 认得的图片后缀（选文件时的过滤串与"这是不是图片"的判断共用一份）
 IMAGE_FILTER = "图片 (*.jpg *.jpeg *.png *.bmp *.tif *.tiff *.webp)"
 PDF_FILTER = "PDF 文件 (*.pdf)"
@@ -241,8 +243,11 @@ class StepSpec:
         - 目录：先取顶层的；顶层没有、但只有**一个**子目录装着 → 用那一层
           （同 :meth:`resolve_source` 的下钻理由：提取模块的产物是
           ``<输出根>/<PDF名>/images/``）；
-        - 结果去重并按文件名排序（"前一页左半幅 + 当前页右半幅"的配对规则
-          依赖一个稳定顺序）。
+        - 结果去重并按**页序自然排序**（``utils.sort_utils.natural_sort_key``，
+          与 taskdetail 拼版 / 打印同口径）：页号按数值（``2`` < ``10``），
+          同页号 ``r`` 在 ``l`` 前，cover/menu 优先。拼版"前一页左半幅 +
+          当前页右半幅"的配对规则依赖这个稳定顺序——**不能用字典序**，
+          否则 ``page10`` 会排到 ``page2`` 前面、左右半幅配错对。
         """
         found: dict[str, Path] = {}
         for raw in paths or []:
@@ -259,17 +264,23 @@ class StepSpec:
                 files = []
             for file in files:
                 found.setdefault(str(file), file)
-        return sorted(found.values(), key=lambda p: p.name.lower())
+        return sorted(found.values(), key=lambda p: natural_sort_key(p.name))
 
     def listing(self, directory: Path | str) -> list[Path]:
         """目录里符合本步骤后缀的文件（**只看顶层**，与功能层
-        ``collect_image_files`` / ``run_on_input_directory`` 同口径）。
+        ``collect_image_files`` / ``run_on_input_directory`` 同口径），
+        按**页序自然排序**（``utils.sort_utils.natural_sort_key``）。
+
+        ⚠️ 顺序有真实消费方：singletask 各页左栏缩略图条
+        （``ThumbSourceMixin._listing``）与 ``source_images()`` 都直接用
+        本方法的顺序——**不能用字典序**，否则缩略图条出现
+        "1, 10, 11, 2…"（2026-10-11 用户报障）。
 
         读不了（不存在/没权限）时返回空表——调用方据此给"这里没有可用文件"。
         """
         directory = Path(directory)
         try:
-            children = sorted(directory.iterdir(), key=lambda p: p.name.lower())
+            children = sorted(directory.iterdir(), key=lambda p: natural_sort_key(p.name))
         except OSError:
             return []
         wanted = self.suffixes()

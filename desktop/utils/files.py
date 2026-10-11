@@ -5,14 +5,39 @@ from __future__ import annotations
 
 import hashlib
 import os
-import re
 import shutil
+import subprocess
 import threading
 from pathlib import Path
 
 from utils.file_utils import replace_with_retry
+from utils.sort_utils import natural_sort_key
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
+
+
+def reveal_in_explorer(path) -> bool:
+    """在 Windows 资源管理器里打开 ``path`` 的位置（2026-10-11 用户需求）。
+
+    - ``path`` 是**文件**：打开它所在目录并**选中**该文件（``explorer /select,``）；
+    - ``path`` 是**目录**：直接打开这个目录。
+
+    返回是否真的发起了打开——路径不存在时为 ``False``，调用方不必再判存在性。
+    """
+    target = Path(path)
+    if not target.exists():
+        return False
+    if target.is_dir():
+        os.startfile(str(target))  # type: ignore[attr-defined]
+    else:
+        # ⚠️ "/select," 与路径必须是**两个参数**：合成一个参数会被当成
+        #    名为 "/select,<file>" 的文件名，资源管理器只弹"找不到"。
+        #    路径先 normpath 成反斜杠形态——explorer 对正斜杠的 /select
+        #    支持不稳（实测会打开库视图而不是定位文件）。
+        subprocess.Popen(
+            ["explorer", "/select,", os.path.normpath(str(target))]
+        )
+    return True
 
 # 页缩略图（thumbnails/source 等）的最长边；256px 保证 area=1 半幅裁剪后仍清晰
 THUMBNAIL_EDGE = 256
@@ -326,16 +351,13 @@ def copy_file_atomic(source: Path, target: Path) -> Path:
     return target
 
 
-def natural_key(name: str):
-    """生成自然排序键：数字段按整数、其余转小写，使 2 排在 10 前。"""
-    return [int(p) if p.isdigit() else p.lower() for p in re.split(r"(\d+)", name)]
-
-
 def list_stage_images(directory: Path) -> list[Path]:
-    """某阶段输出目录中的图片（自然排序）。"""
+    """某阶段输出目录中的图片（按页序自然排序，唯一排序键
+    ``utils.sort_utils.natural_sort_key``；原这里的 ``natural_key`` 是
+    重复实现，2026-10-11 收口）。"""
     if not directory.exists():
         return []
     return sorted(
         (f for f in directory.iterdir() if f.suffix.lower() in IMAGE_SUFFIXES),
-        key=lambda f: natural_key(f.name),
+        key=lambda f: natural_sort_key(f.name),
     )
