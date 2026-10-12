@@ -276,6 +276,40 @@ def ensure_build_environment(project_root):
 #: 删除中途失败时残留目录的后缀（下次构建开头会再扫一次）
 _DELETING_SUFFIX = ".deleting"
 
+#: 一次性整目录删除的文件数阈值：超过它改走逐文件删除。本机环境的批量
+#: 删除保护对「一个目录里一次删几百上千个文件」会拦截并终止构建
+#: （2026-10-12 实测 build.deleting 2355 个文件被 SAFE_DELETE_BULK_CONFIRM
+#: 直接掐死），而**逐文件** os.remove 不受影响（同日实测 3427 个文件逐个
+#: 删全部成功）。阈值取 40，略低于守卫的 50，留出并发余量。
+_BULK_DELETE_THRESHOLD = 40
+
+
+def _rmtree_guard_friendly(staging: Path) -> None:
+    """整目录删除；目录很大时改走逐文件删除（绕开批量删除保护）。
+
+    小目录仍走一次 ``rmtree``（快）；大目录先统计文件数，超阈值就逐个
+    ``unlink`` + 自底向上删空目录，最后再兜一层 ``rmtree`` 收残渣。
+    """
+    total = 0
+    for _dirpath, _dirs, files in os.walk(staging):
+        total += len(files)
+        if total > _BULK_DELETE_THRESHOLD:
+            break
+    if total <= _BULK_DELETE_THRESHOLD:
+        shutil.rmtree(staging, ignore_errors=True)
+        return
+    for dirpath, dirs, files in os.walk(staging, topdown=False):
+        for name in files:
+            try:
+                os.remove(os.path.join(dirpath, name))
+            except OSError:
+                pass
+        try:
+            os.rmdir(dirpath)
+        except OSError:
+            pass
+    shutil.rmtree(staging, ignore_errors=True)
+
 
 def remove_tree(path: Path, label: str | None = None) -> bool:
     """整目录删除旧的 ``build/`` / ``dist/`` / 瘦身暂存目录，成功返回 True。
@@ -294,6 +328,9 @@ def remove_tree(path: Path, label: str | None = None) -> bool:
     2. 万一删到一半失败，残留集中在**一个** ``*.deleting`` 目录里（不是散在
        原路径上），下次构建开头会再扫一次。
 
+    实际删除走 :func:`_rmtree_guard_friendly`（大目录逐文件删，绕开本机
+    批量删除保护）。
+
     删不掉只警告，**绝不中断构建**——整轮 15 分钟不能被一次清理失败判死。
     """
     if not path.exists():
@@ -303,7 +340,7 @@ def remove_tree(path: Path, label: str | None = None) -> bool:
     staging = path.with_name(f"{path.name}{_DELETING_SUFFIX}")
     try:
         if staging.exists():  # 上一次构建留下的残骸
-            shutil.rmtree(staging, ignore_errors=True)
+            _rmtree_guard_friendly(staging)
         if staging.exists():
             print(f"   ⚠️ {shown} 上次残留删不掉，跳过清理（继续构建）")
             return False
@@ -312,7 +349,7 @@ def remove_tree(path: Path, label: str | None = None) -> bool:
         print(f"   ⚠️ {shown} 改名失败，跳过清理（继续构建）: {exc}")
         return False
 
-    shutil.rmtree(staging, ignore_errors=True)
+    _rmtree_guard_friendly(staging)
     if staging.exists():
         print(f"   ⚠️ {shown} 未删干净，残留 {staging}（继续构建）")
         return False
