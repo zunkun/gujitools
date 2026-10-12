@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 166 个模块、177 个公开类、1219 个公开函数/方法（生成于 2026-10-13）。
+覆盖 166 个模块、177 个公开类、1221 个公开函数/方法（生成于 2026-10-13）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -126,7 +126,7 @@
 | [`desktop.services.submit_state`](#desktopservicessubmit_state) | 0 | 1 |
 | [`desktop.services.yolo_prewarm`](#desktopservicesyolo_prewarm) | 0 | 3 |
 | [`desktop.shell`](#desktopshell) | 1 | 19 |
-| [`desktop.single_instance`](#desktopsingle_instance) | 0 | 3 |
+| [`desktop.single_instance`](#desktopsingle_instance) | 0 | 5 |
 | [`desktop.stages.detect_stage`](#desktopstagesdetect_stage) | 0 | 2 |
 | [`desktop.stages.events`](#desktopstagesevents) | 2 | 9 |
 | [`desktop.stages.generic_stage`](#desktopstagesgeneric_stage) | 0 | 2 |
@@ -8331,36 +8331,50 @@ done/total 为 0、completed 为 False）。执行过哪怕失败/中断都算�
 desktop 单例守卫：**同一个构建**同时只允许一个 GUI 实例。
 
 用户原则：开发版（源码 / hupper 启动）与正式版（安装的 guji-desktop.exe）是
-两个不同的程序，**可以同时存在**——所以互斥体按「构建身份」区分：
+两个不同的程序，**可以同时存在**——所以守卫按「构建身份」区分：
 
-- 同一个构建第二次启动 → 检测到已有实例，把已有窗口带到前台、自己退出；
+- 同一个构建第二次启动 → 检测到已有实例，把**那个**窗口带到前台、自己退出；
 - 两个构建各跑各的，互不阻拦（即便它们共用 `~/Documents/guji` 数据区）。
 
-实现（win32）：
-- **互斥体**判定"是否已有本构建实例"：`CreateMutexW`，若 `GetLastError` 返回
-  ERROR_ALREADY_EXISTS 则说明已有。句柄必须**存进模块级变量**——句柄被垃圾回收
-  互斥体就销毁了，守卫随之失效（活到进程退出，正合需求）。
-- **把已有窗口带到前台**：`FindWindowW` 按窗口标题找，`ShowWindow(SW_RESTORE)`
-  + `SetForegroundWindow`。不做跨进程消息通道，够用且零依赖。
+实现分两层：
 
-⚠️ 仅 win32 生效；其它平台直接放行（本项目只在 Windows 打包发行）。
+- **互斥体**判定"是否已有本构建实例"：`CreateMutexW`，若 `GetLastError` 返回
+  ERROR_ALREADY_EXISTS 则说明已有。句柄必须**存进模块级变量**——句柄被垃圾
+  回收互斥体就销毁了，守卫随之失效（活到进程退出，正合需求）。
+- **定向激活**（QLocalServer/QLocalSocket，按构建身份命名）：第二实例连上
+  本构建专属的命名管道，请求"报出你的主窗口 HWND"，再由**自己**（刚被用户
+  双击、握有前台权限的新进程）对该 HWND 做 ShowWindow/SetForegroundWindow。
+  既有实例这边收到请求也会顺手 showNormal/raise/activateWindow 兜底。
+
+⚠️ **绝不能按窗口标题找窗口**（旧行为 `FindWindowW(None, "古籍重製")`）：
+开发版与正式版的窗口标题一模一样，两个窗口**同时开着**时再点一次图标，
+按标题找会命中 Z 序里随便哪一个——把另一个构建的窗口带到前台、而自己退出，
+用户看到的是"点 A 图标、弹出 B 窗口"。命名管道按构建身份命名（package_dir
+的哈希），从机制上保证激活的永远是本构建自己的窗口。
+
+⚠️ 仅 win32 有互斥体/前台 API；其它平台互斥体直接放行（本项目只在 Windows
+打包发行），socket 激活通道跨平台可用。
 
 ### 模块常量
 
 | 名称 | 值 |
 | --- | --- |
 | _MUTEX_PREFIX | `"Local\\GujiZhiZuo-Desktop-"` |
+| _CHANNEL_PREFIX | `"GujiZhiZuo-Desktop-"` |
 | _ERROR_ALREADY_EXISTS | `183` |
 | _SW_RESTORE | `9` |
 | _SW_SHOW | `5` |
+| _CONNECT_TIMEOUT_MS | `1000` |
 
 ### 模块函数
 
 | 函数 | 说明 |
 | --- | --- |
 | `mutex_name(identity: str) -> str` | 由构建身份推出互斥体名。 |
+| `channel_name(identity: str) -> str` | 激活通道（QLocalServer）名，与互斥体同一套身份哈希、前缀不同。 |
 | `acquire(identity: str) -> bool` | 尝试持有本构建的单例互斥体。False = 已有本构建实例（调用方应退出）。 |
-| `activate_existing_window(title: str) -> bool` | 把已有实例的窗口恢复并带到前台。找不到（返回 False）也不影响退出。 |
+| `try_activate_existing(identity: str) -> bool` | 已有本构建实例在监听 → 让它报出主窗口 HWND，并把**那个**窗口带到前台。 |
+| `start_activation_server(identity: str, window_provider) -> bool` | 为本构建架起激活通道。第二实例连上来时报出主窗口 HWND。 |
 
 #### `mutex_name(identity: str) -> str`
 
@@ -8370,14 +8384,31 @@ identity 用 **desktop 包目录**（`desktop.utils.files.package_dir()`）：
 源码是 `D:\...\desktop`，打包是 `...\guji\_internal\desktop`——同一构建
 稳定不变，两个构建互不相同。
 
-#### `activate_existing_window(title: str) -> bool`
+#### `try_activate_existing(identity: str) -> bool`
 
-把已有实例的窗口恢复并带到前台。找不到（返回 False）也不影响退出。
+已有本构建实例在监听 → 让它报出主窗口 HWND，并把**那个**窗口带到前台。
 
-⚠️ **只在窗口被最小化时才用 SW_RESTORE**。``SW_RESTORE`` 的语义是"把最小化
-**或最大化**的窗口还原到原始尺寸"，主窗口默认就是最大化（见 app.py 的
-WINDOW_START_MAXIMIZED），一律 SW_RESTORE 会让"再点一次快捷方式"变成
-"把窗口缩回去"——用户会以为程序自己变小了。非最小化一律 SW_SHOW。
+返回 False = 没连上（没有实例，或它的通道没架起来）；调用方无论如何都
+应该退出——互斥体已经判过"本构建只能有一个实例"。
+
+⚠️ 客户端用**信号驱动 + 嵌套 QEventLoop**，不要用 ``waitFor*`` 阻塞式：
+实测（2026-10-13 offscreen 探针）"工作线程里 waitFor*"形态下，客户端
+报告已写出、服务端却一个字节都收不到、readyRead 永不触发；纯事件循环
+形态全链路通。第二实例走到这里时 QApplication 已建好、exec() 还没跑，
+嵌套 loop 正好把双方事件都转起来。
+⚠️ 前台调用由**本进程**做：它是刚被用户双击启动的进程，握有 Windows 的
+前台设置权限；既有实例在后台调 SetForegroundWindow 通常会被系统拦下
+（只闪任务栏）。
+
+#### `start_activation_server(identity: str, window_provider) -> bool`
+
+为本构建架起激活通道。第二实例连上来时报出主窗口 HWND。
+
+``window_provider`` 是惰性取窗口的回调（启动期通道要先于主窗口架起来，
+占住"第一个实例"的位置；等第二实例真连上来时窗口早已建好）。回 None
+时只回 "0"，客户端不去动前台。
+
+返回 False = 监听失败（极少见；此时第二实例只能安静退出，无伤大雅）。
 
 ---
 

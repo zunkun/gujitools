@@ -16,7 +16,8 @@ from desktop.ui.style import apply_app_style
 from desktop.ui.window_size import apply_window_size
 from desktop.utils.files import package_dir
 
-#: 主窗口标题（单例守卫按它找已有实例的窗口，见 desktop/single_instance.py）
+#: 主窗口标题（仅显示用；单例激活**不**按标题找窗口——开发版与正式版标题
+#: 相同，两个窗口同开时按标题找会激活错构建，见 desktop/single_instance.py）
 WINDOW_TITLE = "古籍重製"
 
 #: 主窗口**期望**尺寸与最小尺寸（逻辑像素）。**只是期望**：真正落地前会按屏幕
@@ -244,18 +245,31 @@ def main() -> int:
         print(f"[guji] singletask 目录迁移跳过：{exc}")
 
     # ---- 单例守卫：同一个构建只允许一个 GUI 实例 ----
-    # 已有本构建实例在跑 → 把那个窗口恢复并带到前台，本进程直接退出。
+    # 已有本构建实例在跑 → 经本构建专属通道把**那个**窗口带到前台，本进程退出。
+    # ⚠️ 激活不按窗口标题找（旧行为）：开发版与正式版标题同为「古籍重製」，
+    # 两个窗口同开时按标题找会命中另一个构建的窗口。现在走按构建身份命名的
+    # QLocalServer 通道，第二实例让第一实例报出主窗口 HWND 再做前台切换。
     # 身份是 **desktop 包目录**：开发版与正式版的目录不同，因此两个程序可以
     # 同时存在、互不阻拦（用户原则）。冒烟模式（GUJI_GUI_SELFTEST）不检查：
     # 打包冒烟可能在 GUI 开着时运行，不该让它被单例挡住而"空过"。
+    window_holder: dict = {"window": None}
     if not os.environ.get("GUJI_GUI_SELFTEST"):
-        from desktop.single_instance import acquire, activate_existing_window
+        from desktop.single_instance import (
+            acquire,
+            start_activation_server,
+            try_activate_existing,
+        )
 
-        if not acquire(str(package_dir())):
-            activate_existing_window(WINDOW_TITLE)
+        identity = str(package_dir())
+        if not acquire(identity):
+            try_activate_existing(identity)
             return 0
+        # 我是本构建的第一个实例：先架起激活通道占住位子（窗口建好前也可能
+        # 有第二实例连上来），窗口经 provider 惰性取得。
+        start_activation_server(identity, lambda: window_holder["window"])
 
     window = MainWindow()
+    window_holder["window"] = window
     # 默认占满屏幕（见 WINDOW_START_MAXIMIZED）；夹紧后的 WINDOW_SIZE 是还原
     # 尺寸。冒烟模式仍走 show()：无头环境不该依赖窗口管理器对最大化的处理。
     if WINDOW_START_MAXIMIZED and not os.environ.get("GUJI_GUI_SELFTEST"):
