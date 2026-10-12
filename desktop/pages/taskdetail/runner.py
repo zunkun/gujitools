@@ -332,9 +332,11 @@ class StageRunnerMixin:
             # 2026-10-01：「去底色那一步，必须提交才能传给下一步」）。
             #
             # ⚠️ 拼版生效时**取图来源换到 stages/imposition**（见
-            #    ImpositionMixin.print_source_dir）：这里先同步补一次合成，
-            #    保证 PDF 用的拼版版面是最新的——用户改完版面立刻点
-            #    「生成PDF」时，后台那轮防抖合成可能还没跑完。
+            #    ImpositionMixin.print_source_dir）：这里先保证拼版成品是
+            #    最新版面——2026-10-12 改造：磁盘成品已覆盖落盘版面就直接
+            #    跳过（旧版每次点击都在 GUI 主线程全量重合成，点「生成PDF」
+            #    界面立刻冻结）；真要合成时也转后台线程 + 事件循环等待，
+            #    界面保持响应（详见 _compose_imposition_now 的说明）。
             self._compose_imposition_now()
             entries, doc = self._print_entries()
             entries = [e for e in entries if Path(e["file"]).exists()]

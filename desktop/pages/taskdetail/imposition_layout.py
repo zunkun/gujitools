@@ -50,6 +50,9 @@ EDIT_COMMIT_DEBOUNCE_MS = 250
 #: 面板调整/编辑回写之后几秒内，缩略图要跟上页面效果）。比合成防抖长
 #: 一截：拖动中签名每帧都在变，等真的停手了再合成一次就够。
 THUMB_REFRESH_DEBOUNCE_MS = 2000
+#: 「生成PDF」前等后台拼版合成收敛的轮询间隔（ms）。轮询只查两个内存
+#: 布尔（在飞/待合成），100ms 足够跟手，事件循环里的开销可忽略。
+PRINT_WAIT_POLL_MS = 100
 
 
 class ImpositionLayoutMixin:
@@ -779,26 +782,121 @@ class ImpositionLayoutMixin:
         self.log_view.append(f"拼版合成失败：{message}")
         self._toast("error", "拼版合成失败", message)
 
+    def _imposition_products_fresh(self) -> bool:
+        """stages/imposition 的成品是否已覆盖**落盘版面**（mtime + 页数，不解码）。
+
+        「点生成PDF先同步合成」的**快路径判据**（2026-10-12，用户报障
+        「点生成PDF后界面立刻冻结」）：用两个便宜的磁盘事实回答"还要不要
+        合成"，避免每次点击都全量重合成——
+
+        - **页数**：``NNNN.png`` 的个数 == 文档页数（compose_doc 收尾会清掉
+          多余编号；页数不符 = 有增删还没合出来）；
+        - **新旧**：成品里**最旧**一张的 mtime ≥ 拼版文档的 mtime。编辑总是
+          先落文档、再防抖合成，文档比成品新 = 有改动还没合出来。
+
+        ⚠️ 只回答**磁盘**问题，刻意不看 `_imposition_dirty` /
+        `_imposition_composing` 这两个内存态：跨会话的陈旧（上次编辑后进程
+        被杀、防抖合成没跑成）只有磁盘对比能兜住——快路径靠它兜底，后续
+        改动别把"无条件全量合成"加回来。
+        """
+        if not self.task_id:
+            return True
+        pages = self._imposition_pages()
+        if not pages:
+            return True
+        out_dir = self.store.imposition_output_dir(self.task_id)
+        if not out_dir.is_dir():
+            return False
+        products = [
+            entry
+            for entry in out_dir.iterdir()
+            if entry.is_file()
+            and entry.suffix == ".png"
+            and entry.stem.isdigit()
+            and len(entry.stem) == 4
+        ]
+        if len(products) != len(pages):
+            return False
+        try:
+            doc_mtime = self.store.imposition_doc_path(
+                self.task_id
+            ).stat().st_mtime
+            oldest = min(entry.stat().st_mtime for entry in products)
+        except OSError:
+            # 读不到（任务目录被删/竞态）就当不新鲜：重合成一遍无害
+            return False
+        return oldest >= doc_mtime
+
     def _compose_imposition_now(self) -> None:
-        """同步合成（**只在点「生成PDF」前调用**：保证 PDF 用的一定是最新版面）。
+        """点「生成PDF」前保证 stages/imposition 是**最新版面**。
 
-        平时走后台防抖合成；用户在拼版页改完立刻去第四步点「生成PDF」时，
-        后台那一轮可能还没跑完/还没触发——这里补一次同步的，宁可等一下也不能
-        让 PDF 用旧版面。
+        2026-10-12 改造（用户报障「点生成PDF后界面立刻冻结」，拼版生效时）：
+        旧版在这里**无条件**把全部拼版页同步重合成一遍（加载原图→缩放→
+        旋转→alpha 合成→整页 PNG 编码，全在 GUI 主线程），几百页的书每次
+        点击都冻结几十秒——而绝大多数点击时版面根本没改过。现在分三层：
 
-        ⚠️ 前置条件用 ``imposition_has_pages()`` 而不是 ``imposition_active()``：
-        「启用」只是用户意图，一页都没拼时没有版面可合成，跑一遍只会白扫一遍
-        目录（真正的拦路在第四步：列表为空 → 点「生成PDF」会明确提示去拼版）。
+        1. **磁盘新鲜度快路径**（`_imposition_products_fresh`）：成品已覆盖
+           落盘版面 → 一个字节都不碰，立即返回（常见情形，零开销）；
+        2. 拼版未生效 → 直接返回（第四步根本不读拼版目录，合成了也白合；
+           重新启用时 `_set_imposition_checked` 会重新调度合成）；
+        3. 真要合成 → **后台线程**合成（复用 `_compose_imposition_async` 的
+           单飞/补轮机制），主线程用 QEventLoop 等收敛——界面保持响应
+           （能看日志、滚动界面），执行权仍在 run_stage 手里（按钮已置灰，
+           不会重入）。
+
+        ⚠️ 前置条件含 `imposition_has_pages()`：一页都没拼时没有版面可合成
+        （真正的拦路在第四步：列表为空 → 点「生成PDF」会明确提示去拼版）。
+        ⚠️ 等待期间用户再改版面：`_on_imposition_composed` 的补轮机制会再排
+        一轮，本循环等到"无在飞、无待合成"才放行；等待期间切走任务则立即
+        放手（磁盘与内存状态由 `_reset_imposition_state` 复位）。
+        ⚠️ 合成失败不拦住后续（与旧版同口径）：`_on_imposition_compose_failed`
+        会弹 toast，这里把"PDF 按现有成品继续"说进日志。
         """
         if not self.task_id or not self.imposition_has_pages():
             return
-        from desktop.services.imposition import compose_doc
-
+        if not self.imposition_effective():
+            return
+        if self._imposition_products_fresh():
+            self._imposition_dirty = False
+            return
+        owner_task = self.task_id
+        self.log_view.append(
+            "拼版版面有更新：正在后台合成（界面不阻塞），完成后继续生成PDF…"
+        )
         try:
-            compose_doc(
-                self._imposition_doc(),
-                self.store.imposition_output_dir(self.task_id),
-            )
-        except Exception as exc:  # noqa: BLE001 - 合成失败不该拦住后续提示
-            self.log_view.append(f"拼版合成失败：{exc}")
+            self._set_stage_status("正在合成最新拼版页…")
+        except Exception:  # noqa: BLE001 - 状态行只是提示，不该拖垮流程
+            pass
+        timer = getattr(self, "_imposition_timer", None)
+        if timer is not None:
+            # 防抖别再插队：改动已落盘，直接走单飞的异步合成
+            timer.stop()
+        from PySide6.QtCore import QEventLoop, QTimer
+
+        loop = QEventLoop()
+        poll = QTimer(cast(QWidget, self))
+        poll.setInterval(PRINT_WAIT_POLL_MS)
+
+        def _settled() -> None:
+            """收敛判据：没有在飞合成、没有待合成的改动（或任务已切走）。"""
+            if self.task_id != owner_task or (
+                not self._imposition_composing and not self._imposition_dirty
+            ):
+                loop.quit()
+
+        poll.timeout.connect(_settled)
+        poll.start()
+        try:
+            self._compose_imposition_async()
+            # ⚠️ 事件循环里界面照常收事件（这正是"不冻结"的实现方式）；
+            #    期间用户改版面 → 补轮机制再排合成 → 下一轮收敛才放行。
+            loop.exec()
+        finally:
+            poll.stop()
+        if self.task_id != owner_task:
+            # 等待期间切了任务：内存态已被 _reset_imposition_state 复位，
+            # 旧任务的合成自会收尾，这里什么都不补。
+            return
         self._imposition_dirty = False
+        if not self._imposition_products_fresh():
+            self.log_view.append("⚠️ 拼版合成未完成，PDF 将按现有成品页继续。")

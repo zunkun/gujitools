@@ -708,6 +708,30 @@ def build_installer(project_root, icon=None):
     print(f"✅ 安装包生成完成: dist/guji_setup_{VERSION}_{timestamp}.exe")
 
 
+def _manual_image_reference_count():
+    """手册源 md 里的 ``![…]`` 图片引用总数（内联期望数的**唯一来源**）。
+
+    ⚠️ 不写死数字：截图增删是常态，写死必过时（曾写死 13、手册改到 17 张，
+    每次打包都报一条假警告——2026-10-12 改为从源推导）。推导失败返回
+    ``None``（打包不该因为手册检查挂掉，只放弃这一条计数核对）。
+    """
+    import re
+
+    try:
+        from desktop.ui.help_dialog import manual_dir
+    except Exception:  # noqa: BLE001
+        return None
+    try:
+        total = 0
+        for md in sorted(manual_dir().glob("*.md")):
+            total += len(
+                re.findall(r"!\[[^\]]*\]\([^)]+\)", md.read_text(encoding="utf-8"))
+            )
+        return total
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def build_manual_html(dist_dir):
     """把用户手册预渲染成**自包含**静态 HTML 放进产物（`_internal/desktop/static/`）。
 
@@ -733,8 +757,9 @@ def build_manual_html(dist_dir):
     document = out.read_text(encoding="utf-8")
     inlined = document.count("data:image/")
     problems = []
-    if inlined != 13:
-        problems.append(f"内联截图 {inlined} 张（期望 13）")
+    expected = _manual_image_reference_count()
+    if expected is not None and inlined != expected:
+        problems.append(f"内联截图 {inlined} 张（源引用 {expected} 张）")
     if 'src="file:' in document or 'src="screenshots/' in document:
         problems.append("仍存在外部图片引用（装机后会碎图）")
     size_mb = out.stat().st_size / 1024 / 1024

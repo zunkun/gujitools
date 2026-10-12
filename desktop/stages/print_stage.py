@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
-"""print 阶段执行器：合成效果图后按**有序清单**生成 PDF。
+"""print 阶段执行器：成品图**直通** + 需要区域拼接的效果图落暂存，再生成 PDF。
 
-页序完全由 ``args["files"]``（GUI 第四步列表顺序）决定，不再依赖文件名
-排序——因此不再需要把顺序「烧」进文件名的 workset 目录。合成结果写入
-一次性临时目录，交给 print 时同时给出有序清单，执行结束即随临时目录删除。
+页序完全由 ``args["files"]``（GUI 第四步列表顺序）决定，不依赖文件名
+排序。取图（``_effects``）绝大多数是**上一步已落地的成品实体文件**
+（拼版产物 / 「提交本次任务」产物，2026-10-12 用户口径：第四步只做
+"上纸"排版，不重拼版）——这些条目原路径直通给 PDF 生成，不做任何
+解码/转码；只有带区域合成规格的条目才经一次性暂存目录物化。
 """
 
 from __future__ import annotations
@@ -79,7 +81,7 @@ def sweep_orphan_staging(exclude: Path | None = None) -> int:
 
 
 def run_print_stage(config: dict) -> int:
-    """print 阶段：把 rembg 结果按 area/border 合成为效果图，再生成 PDF。
+    """print 阶段：需要区域拼接的效果图合成落暂存，其余成品图**直通**，再生成 PDF。
 
     效果合成放在子进程而非 GUI 线程：既不阻塞界面，也避免 GUI 侧
     QProcess 从回调链启动时 Windows 下通知丢失的问题。
@@ -90,9 +92,15 @@ def run_print_stage(config: dict) -> int:
         …
     ]
 
-    合成结果按**列表顺序**以 ``0001.png`` 命名写入临时暂存目录，并把
-    ``args["files"]`` 设为这份有序清单——CLI 侧不再读目录、不再解析
-    文件名，页序与第四步列表严格一致（拖拽重排无需任何物理文件改动）。
+    ⚠️ **成品直通**（2026-10-12 用户口径）：拼版 /「提交本次任务」的产物在
+    **上一步就已经落成实体文件**，第四步只做"上纸"排版（纸张/边距/标题/
+    页码）——预览与 PDF 都不重拼版。因此 ``effect`` 为空的条目把**原路径**
+    直接交给 PDF 生成，不再整图 QImage 解码 + PNG 重编码写暂存：几百页的
+    书原本要白做两轮全分辨率编解码，"合成效果图"阶段也因此几乎瞬间完成。
+    暂存目录只在真有区域合成条目时才创建（懒创建）。
+
+    页序完全由 ``args["files"]`` 这份**有序清单**决定——CLI 侧不读目录、
+    不解析文件名，页序与第四步列表严格一致（拖拽重排无需任何物理文件改动）。
     """
     task_id = config["task_id"]
     stage = config["stage"]
@@ -107,40 +115,62 @@ def run_print_stage(config: dict) -> int:
 
         from desktop.workers.preview_worker import compose_region_output
 
+        def _needs_compose(spec: dict) -> bool:
+            """该条目是否真的需要区域合成（effect 为空 = 成品整图直通）。"""
+            effect = spec.get("effect")
+            return bool(effect and any(effect.get("boxes") or []))
+
         total = len(effects)
         counter = 1
         saved = 0
         files: list[str] = []
-        # 固定暂存目录 + 属主标记：被 kill 也不会留下永久垃圾（见模块文档）
-        staging = staging_root() / f"{task_id}-{run_id}"
-        staging.mkdir(parents=True, exist_ok=True)
-        (staging / _OWNER_FILE).write_text(str(os.getpid()), encoding="utf-8")
-        sweep_orphan_staging(exclude=staging)
+        # ⚠️ 暂存目录懒创建：纯直通的运行（当前 GUI 的常规形态——取图全是
+        #    成品图）连 %TEMP% 都不用碰；只有混入区域合成条目才建。
+        needs_staging = any(_needs_compose(spec) for spec in effects)
+        if needs_staging:
+            # 固定暂存目录 + 属主标记：被 kill 也不会留下永久垃圾（见模块文档）
+            staging = staging_root() / f"{task_id}-{run_id}"
+            staging.mkdir(parents=True, exist_ok=True)
+            (staging / _OWNER_FILE).write_text(str(os.getpid()), encoding="utf-8")
+            sweep_orphan_staging(exclude=staging)
         for index, spec in enumerate(effects):
             # ⚠️ 合成阶段**不发 progress 事件**：整个 print 阶段只有一条进度条，
             # 唯一来源是 CLI 侧的「已写入页数」（functions/print.py 走 reporter）。
             # 这里再发一份，进度条就会先跑完合成、再由写入**从 0 重跑**，
             # 用户看到的是"顶部 197/198、底部 160/198 两个数字对不上"
-            # （实测症状）。合成很快（每页约 25ms），用日志给反馈就够。
+            # （实测症状）。用日志给反馈就够。
             if index % 10 == 0 or index + 1 == total:
                 emit({"type": "log", **context,
-                      "message": f"合成效果图 {index + 1}/{total}"})
+                      "message": (
+                          f"合成效果图 {index + 1}/{total}"
+                          if needs_staging
+                          else f"清点待打印页面 {index + 1}/{total}"
+                      )})
+            if not _needs_compose(spec):
+                # ---- 成品直通：这份文件的全部像素就是要排版的内容 ----
+                src_text = str(spec.get("file") or "")
+                if not src_text or not Path(src_text).is_file():
+                    emit({"type": "log", **context,
+                          "message": f"无法读取图片: {src_text}"})
+                    continue
+                files.append(src_text)
+                counter += 1
+                saved += 1
+                continue
+            # ---- 区域合成条目：QImage 解码 → 合成 → 落暂存 ----
             image = QImage(spec["file"])
             if image.isNull():
                 emit({"type": "log", **context,
                       "message": f"无法读取图片: {spec['file']}"})
                 continue
             effect = spec.get("effect")
-            if effect and any(effect.get("boxes") or []):
-                outputs = compose_region_output(
-                    image,
-                    effect.get("boxes", []),
-                    int(effect.get("area", 1)),
-                    effect.get("border"),
-                    full=bool(effect.get("full")),
-                )
-            else:
-                outputs = [image]
+            outputs = compose_region_output(
+                image,
+                effect.get("boxes", []),
+                int(effect.get("area", 1)),
+                effect.get("border"),
+                full=bool(effect.get("full")),
+            )
             for out in outputs:
                 dst = staging / f"{counter:04d}.png"
                 if out.save(str(dst)):
@@ -154,7 +184,11 @@ def run_print_stage(config: dict) -> int:
         if not saved:
             emit({"type": "error", **context, "message": "没有可用的效果图输入"})
             return 1
-        args["input"] = str(staging)
+        # input 仅供 CLI 在 files 为空时兜底扫描目录；有序清单已给出时不用它。
+        # 直通运行没有暂存目录，回落到第一页所在目录（同样是合法的图片目录）。
+        args["input"] = (
+            str(staging) if staging is not None else str(Path(files[0]).parent)
+        )
         args["files"] = files  # 有序清单 = 页序，CLI 不再按文件名排序
         inner = dict(config)
         inner["args"] = args

@@ -6666,6 +6666,7 @@ bool 反序列化整份是浪费（列表页的 ``store.imposition_enabled`` 当
 | COMPOSE_DEBOUNCE_MS | `500` |
 | EDIT_COMMIT_DEBOUNCE_MS | `250` |
 | THUMB_REFRESH_DEBOUNCE_MS | `2000` |
+| PRINT_WAIT_POLL_MS | `100` |
 
 ### `class ImpositionLayoutMixin`
 
@@ -8425,11 +8426,13 @@ GUI 提取因此比 CLI 慢数倍。并发逻辑在 render_pages_parallel 里。
 
 源码：[`desktop/stages/print_stage.py`](../../desktop/stages/print_stage.py)
 
-print 阶段执行器：合成效果图后按**有序清单**生成 PDF。
+print 阶段执行器：成品图**直通** + 需要区域拼接的效果图落暂存，再生成 PDF。
 
-页序完全由 ``args["files"]``（GUI 第四步列表顺序）决定，不再依赖文件名
-排序——因此不再需要把顺序「烧」进文件名的 workset 目录。合成结果写入
-一次性临时目录，交给 print 时同时给出有序清单，执行结束即随临时目录删除。
+页序完全由 ``args["files"]``（GUI 第四步列表顺序）决定，不依赖文件名
+排序。取图（``_effects``）绝大多数是**上一步已落地的成品实体文件**
+（拼版产物 / 「提交本次任务」产物，2026-10-12 用户口径：第四步只做
+"上纸"排版，不重拼版）——这些条目原路径直通给 PDF 生成，不做任何
+解码/转码；只有带区域合成规格的条目才经一次性暂存目录物化。
 
 ### 模块常量
 
@@ -8444,7 +8447,7 @@ print 阶段执行器：合成效果图后按**有序清单**生成 PDF。
 | --- | --- |
 | `staging_root() -> Path` | 所有效果图暂存目录的固定根。 |
 | `sweep_orphan_staging(exclude: Path \| None=None) -> int` | 删掉「属主进程已死」的暂存目录，返回删除个数。 |
-| `run_print_stage(config: dict) -> int` | print 阶段：把 rembg 结果按 area/border 合成为效果图，再生成 PDF。 |
+| `run_print_stage(config: dict) -> int` | print 阶段：需要区域拼接的效果图合成落暂存，其余成品图**直通**，再生成 PDF。 |
 
 #### `sweep_orphan_staging(exclude: Path | None=None) -> int`
 
@@ -8454,7 +8457,7 @@ print 阶段执行器：合成效果图后按**有序清单**生成 PDF。
 
 #### `run_print_stage(config: dict) -> int`
 
-print 阶段：把 rembg 结果按 area/border 合成为效果图，再生成 PDF。
+print 阶段：需要区域拼接的效果图合成落暂存，其余成品图**直通**，再生成 PDF。
 
 效果合成放在子进程而非 GUI 线程：既不阻塞界面，也避免 GUI 侧
 QProcess 从回调链启动时 Windows 下通知丢失的问题。
@@ -8465,9 +8468,15 @@ args["_effects"] = [
     …
 ]
 
-合成结果按**列表顺序**以 ``0001.png`` 命名写入临时暂存目录，并把
-``args["files"]`` 设为这份有序清单——CLI 侧不再读目录、不再解析
-文件名，页序与第四步列表严格一致（拖拽重排无需任何物理文件改动）。
+⚠️ **成品直通**（2026-10-12 用户口径）：拼版 /「提交本次任务」的产物在
+**上一步就已经落成实体文件**，第四步只做"上纸"排版（纸张/边距/标题/
+页码）——预览与 PDF 都不重拼版。因此 ``effect`` 为空的条目把**原路径**
+直接交给 PDF 生成，不再整图 QImage 解码 + PNG 重编码写暂存：几百页的
+书原本要白做两轮全分辨率编解码，"合成效果图"阶段也因此几乎瞬间完成。
+暂存目录只在真有区域合成条目时才创建（懒创建）。
+
+页序完全由 ``args["files"]`` 这份**有序清单**决定——CLI 侧不读目录、
+不解析文件名，页序与第四步列表严格一致（拖拽重排无需任何物理文件改动）。
 
 ---
 
