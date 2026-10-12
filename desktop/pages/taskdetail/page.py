@@ -413,9 +413,33 @@ class TaskDetailPage(
         #    有源文件的任务、流程里不需要 PDF 的任务（自定义流程删掉了
         #    「提取图片」）都不弹。
         self._prompt_missing_source()
+        # YOLO 预加载（用户 2026-10-13）：流程里有「检测文本框」且还没执行过
+        # 时，趁用户在页面里逗留把常驻服务的模型在后台热好——之后点「执行」
+        # 不用再等那约 5 秒的模型加载。全局只加载一次（本会话），二次进入
+        # 只做轻量探测；重活全在服务子进程（低优先级，让出 CPU），主线程
+        # 只做毫秒级判定。失败无声，绝不影响进页面。
+        self._schedule_yolo_prewarm()
         # ⚠️ 必须 True：_open_detail 靠返回值决定切不切页——漏了这句
         #    "返回 None 被当拒绝"，详情页就永远进不去（2026-09-27 事故）
         return True
+
+    def _schedule_yolo_prewarm(self) -> None:
+        """按预加载条件排一次 YOLO 预热（判定在主线程，重活在后台）。"""
+        task_id = self.task_id
+        if not task_id:
+            return
+        try:
+            from desktop.services.yolo_prewarm import (  # noqa: PLC0415
+                detect_pending, request_prewarm,
+            )
+
+            if detect_pending(
+                self.flow_slots(),
+                self.store.stage_states(task_id).get("detect"),
+            ):
+                request_prewarm()
+        except Exception:  # noqa: BLE001 - 预加载是体验优化，任何失败都放行
+            pass
 
     def _schedule_source_backup(self, task_id: str) -> None:
         """副本缺失且源还在时，**延时在后台**补一份（绝不在主线程里复制）。

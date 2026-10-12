@@ -168,6 +168,61 @@ LOG_MAX_BYTES = 2 * 1024 * 1024
 #: 不留引用的话 Popen 对象会被立刻 GC，服务退出后没人 wait → POSIX 上留僵尸。
 _SERVICE_PROCS: list = []
 
+# ---------------------------------------------------------------- 进程优先级
+#: Windows 优先级类别：BELOW_NORMAL（空闲/预热时让出 CPU）与 NORMAL（真检测）
+_BELOW_NORMAL_PRIORITY_CLASS = 0x00004000
+_NORMAL_PRIORITY_CLASS = 0x00000020
+
+#: 服务端是否已把自身优先级升回正常（一次性；真检测开始时触发）
+_priority_boosted = False
+
+
+def _set_process_priority(proc, priority_class: int) -> None:
+    """设置刚拉起的服务进程优先级（仅 Windows；其他平台无事可做）。
+
+    服务的两种生活状态：
+    - **空闲/预热**（大多数时候）：预加载（见 desktop/services/yolo_prewarm）
+      会在用户正在翻界面时后台导入 torch、载模型——同优先级会跟 GUI 抢 CPU
+      造成页面卡顿。降到 BELOW_NORMAL 后调度器让所有正常优先级的活儿先行，
+      页面渲染、参数面板、缩略图一律不吃亏（用户 2026-10-13「让出 CPU」）。
+    - **真检测**：服务端收到第一条 ``detect`` 请求时自己升回 NORMAL
+      （见 :func:`_boost_priority`），批量推理不吃亏。
+    """
+    if sys.platform != "win32":
+        return
+    handle = getattr(proc, "handle", None)
+    if not handle:
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.kernel32.SetPriorityClass(handle, priority_class)
+    except Exception:  # noqa: BLE001 - 优先级是锦上添花，失败绝不影响拉起
+        pass
+
+
+def _boost_priority() -> None:
+    """服务端：真检测开始时把自己升回**正常**优先级（一次性）。
+
+    空闲/预热期服务是 BELOW_NORMAL（见 _set_process_priority 的说明）；
+    一旦有真实的检测请求进来，说明用户正在等结果——批量推理不该再让路。
+    SetPriorityClass 是微秒级调用，每条请求调一次也无妨，这里仍用一次性
+    标记避免日志噪音。
+    """
+    global _priority_boosted
+    if _priority_boosted or sys.platform != "win32":
+        return
+    _priority_boosted = True
+    try:
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        kernel32.SetPriorityClass(
+            kernel32.GetCurrentProcess(), _NORMAL_PRIORITY_CLASS)
+        _log("检测开始，服务优先级升回正常（NORMAL_PRIORITY_CLASS）")
+    except Exception:  # noqa: BLE001
+        pass
+
 
 def _rotate_log_if_huge() -> None:
     """日志过大就删掉重开（服务启动时调一次）。
@@ -320,6 +375,9 @@ def _dispatch(request: dict, state: _ServiceState, fp: str) -> dict:
             "idle": round(state.idle_seconds(), 1),
         }
     if cmd == "detect":
+        # 真检测 = 用户在等结果：先把自己升回正常优先级再干活（见
+        # _boost_priority；预热/空闲期的 BELOW_NORMAL 只影响加载与等待）
+        _boost_priority()
         state.enter()
         try:
             page, load_seconds = _detect_file(str(request.get("image") or ""))
@@ -576,7 +634,10 @@ def _spawn_service() -> bool:
         _SERVICE_PROCS.append(proc)
         for done in [p for p in _SERVICE_PROCS if p.poll() is not None]:
             _SERVICE_PROCS.remove(done)
-        _client_log(f"已拉起服务：{' '.join(command)}")
+        # 预加载/预热期的服务让出 CPU：降到 BELOW_NORMAL，真检测开始时
+        # 服务端自己升回（见 _boost_priority 与 _set_process_priority 说明）
+        _set_process_priority(proc, _BELOW_NORMAL_PRIORITY_CLASS)
+        _client_log(f"已拉起服务（低于正常优先级）：{' '.join(command)}")
         return True
     except OSError as exc:
         _client_log(f"拉起服务失败：{type(exc).__name__}: {exc}")
@@ -730,6 +791,59 @@ def warm_up() -> tuple[str, float]:
     already = utils.is_model_loaded()
     utils.load_yolo_model()
     return "in-process", 0.0 if already else utils.load_seconds_used()
+
+
+def warm_up_service_only() -> tuple[str, float]:
+    """预加载专用：**只走常驻服务**，绝不回落本进程内加载。
+
+    与 :func:`warm_up` 的唯一区别是失败语义：服务连不上/拉不起时返回
+    ``("unavailable", 0.0)``，而**不会**在调用进程里 `load_yolo_model()`。
+    这是给 GUI 主进程（desktop 侧预加载）用的——GUI 主进程禁重依赖
+    （torch/ultralytics 不许进主进程，见 AGENTS.md 分层守卫），回落加载
+    等于把约 350MB 的 torch 拽进界面进程。
+
+    返回 ``(backend, 加载耗时秒)``：backend 为 ``"service"``（服务里就绪）、
+    ``"disabled"``（GUJI_YOLO_SERVICE 关闭）或 ``"unavailable"``（服务没走成）。
+    耗时 0.0 表示模型本来就绪或没有加载发生。
+    """
+    if not _service_enabled():
+        return "disabled", 0.0
+    # 顺手清掉「属主已死」的旧发现文件（同 warm_up；见 sweep_stale_service_files）
+    try:
+        sweep_stale_service_files()
+    except Exception:  # noqa: BLE001 - 清理是尽力而为，不能影响预热
+        pass
+    conn = _thread_client()
+    if conn is None:
+        # 注意：**不**置 _given_up——预加载失败不该替真正的检测放弃服务路，
+        # worker 子进程各有各的客户端状态，这里只影响 GUI 主进程自己。
+        return "unavailable", 0.0
+    try:
+        resp = conn.request({"cmd": "warmup"}, timeout=DETECT_TIMEOUT)
+        if resp.get("ok"):
+            return "service", float(resp.get("model_load_seconds") or 0.0)
+        _client_log(f"预热被拒：{resp.get('error')}")
+    except Exception as exc:  # noqa: BLE001
+        _client_log(f"预热请求失败：{type(exc).__name__}: {exc}")
+        _drop_thread_client()
+    return "unavailable", 0.0
+
+
+def service_model_loaded(timeout: float = CONNECT_TIMEOUT) -> bool | None:
+    """轻量探测：常驻服务里模型是否**已经**就绪（不拉起、不加载）。
+
+    预加载调度的「二次进入只检测是否加载」用：只发一条 ``status`` 指令，
+    没有服务时直接 ``None``，绝不 spawn、绝不触发模型加载。
+    """
+    status = service_status(timeout=timeout)
+    if not status:
+        return None
+    return bool(status.get("model_loaded"))
+
+
+def client_log(message: str) -> None:
+    """客户端侧诊断写服务日志（公开入口；GUI 侧预加载调度也用它）。"""
+    _client_log(message)
 
 
 def service_status(timeout: float = CONNECT_TIMEOUT):

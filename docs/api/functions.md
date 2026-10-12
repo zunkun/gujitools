@@ -4,7 +4,7 @@
 
 图像处理功能模块：GUI 与 CLI 共用同一套算法
 
-覆盖 11 个模块、12 个公开类、43 个公开函数/方法（生成于 2026-10-12）。
+覆盖 11 个模块、12 个公开类、46 个公开函数/方法（生成于 2026-10-13）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -22,7 +22,7 @@
 | [`functions.print`](#functionsprint) | 1 | 2 |
 | [`functions.rembg`](#functionsrembg) | 1 | 2 |
 | [`functions.text_region`](#functionstext_region) | 1 | 2 |
-| [`functions.yolo_service`](#functionsyolo_service) | 1 | 9 |
+| [`functions.yolo_service`](#functionsyolo_service) | 1 | 12 |
 
 ---
 
@@ -784,6 +784,8 @@ frozen 打包下 `import torch` + 首次 `YOLO(weights)` 要 **约 5.4 秒**，d
 | DETECT_TIMEOUT | `300.0` |
 | SPAWN_WAIT | `25.0` |
 | _SERVICE_PROCS | `[]` |
+| _BELOW_NORMAL_PRIORITY_CLASS | `16384` |
+| _NORMAL_PRIORITY_CLASS | `32` |
 
 ### `class ServiceDetect(NamedTuple)`
 
@@ -806,6 +808,9 @@ frozen 打包下 `import torch` + 首次 `YOLO(weights)` 要 **约 5.4 秒**，d
 | `service_in_use() -> bool` | 本线程是否已经在用常驻服务（日志里说明"模型住在哪"用）。 |
 | `detect_boxes_via_service(image_path, area: int=1) -> ServiceDetect \| None` | 把一张图交给常驻服务检测，返回 :class:`ServiceDetect`。 |
 | `warm_up() -> tuple[str, float]` | 确保模型就绪，返回 ``(backend, 本次加载耗时秒)``。 |
+| `warm_up_service_only() -> tuple[str, float]` | 预加载专用：**只走常驻服务**，绝不回落本进程内加载。 |
+| `service_model_loaded(timeout: float=CONNECT_TIMEOUT) -> bool \| None` | 轻量探测：常驻服务里模型是否**已经**就绪（不拉起、不加载）。 |
+| `client_log(message: str) -> None` | 客户端侧诊断写服务日志（公开入口；GUI 侧预加载调度也用它）。 |
 | `service_status(timeout: float=CONNECT_TIMEOUT)` | 查询当前服务的状态（测试与排障用）；没有服务返回 None。 |
 | `shutdown_service(timeout: float=CONNECT_TIMEOUT) -> bool` | 让**本构建**的服务退出（desktop 关闭时调用；测试收尾也用它）。 |
 
@@ -838,6 +843,27 @@ frozen 打包下 `import torch` + 首次 `YOLO(weights)` 要 **约 5.4 秒**，d
 
 backend 为 ``"service"``（常驻服务里就绪）或 ``"in-process"``（服务不可用，
 本进程内加载）。耗时 0.0 表示模型本来就绪、这次没花时间——正常复用时的样子。
+
+#### `warm_up_service_only() -> tuple[str, float]`
+
+预加载专用：**只走常驻服务**，绝不回落本进程内加载。
+
+与 :func:`warm_up` 的唯一区别是失败语义：服务连不上/拉不起时返回
+``("unavailable", 0.0)``，而**不会**在调用进程里 `load_yolo_model()`。
+这是给 GUI 主进程（desktop 侧预加载）用的——GUI 主进程禁重依赖
+（torch/ultralytics 不许进主进程，见 AGENTS.md 分层守卫），回落加载
+等于把约 350MB 的 torch 拽进界面进程。
+
+返回 ``(backend, 加载耗时秒)``：backend 为 ``"service"``（服务里就绪）、
+``"disabled"``（GUJI_YOLO_SERVICE 关闭）或 ``"unavailable"``（服务没走成）。
+耗时 0.0 表示模型本来就绪或没有加载发生。
+
+#### `service_model_loaded(timeout: float=CONNECT_TIMEOUT) -> bool | None`
+
+轻量探测：常驻服务里模型是否**已经**就绪（不拉起、不加载）。
+
+预加载调度的「二次进入只检测是否加载」用：只发一条 ``status`` 指令，
+没有服务时直接 ``None``，绝不 spawn、绝不触发模型加载。
 
 #### `shutdown_service(timeout: float=CONNECT_TIMEOUT) -> bool`
 

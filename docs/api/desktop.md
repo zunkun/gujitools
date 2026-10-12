@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 165 个模块、177 个公开类、1215 个公开函数/方法（生成于 2026-10-12）。
+覆盖 166 个模块、177 个公开类、1218 个公开函数/方法（生成于 2026-10-13）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -124,6 +124,7 @@
 | [`desktop.services.rembg_live`](#desktopservicesrembg_live) | 0 | 3 |
 | [`desktop.services.stale_chain`](#desktopservicesstale_chain) | 0 | 4 |
 | [`desktop.services.submit_state`](#desktopservicessubmit_state) | 0 | 1 |
+| [`desktop.services.yolo_prewarm`](#desktopservicesyolo_prewarm) | 0 | 3 |
 | [`desktop.shell`](#desktopshell) | 1 | 19 |
 | [`desktop.single_instance`](#desktopsingle_instance) | 0 | 3 |
 | [`desktop.stages.detect_stage`](#desktopstagesdetect_stage) | 0 | 2 |
@@ -8055,6 +8056,87 @@ rembg「提交本次任务」按钮的版本状态机（纯函数）。
 - new_version  ：预览有新版本（重新生成过、或 area/border 已改），
                  最终图片落后于预览 → 提示需要提交；
 - up_to_date   ：最终图片已是最新预览版本。
+
+---
+
+## `desktop.services.yolo_prewarm`
+
+源码：[`desktop/services/yolo_prewarm.py`](../../desktop/services/yolo_prewarm.py)
+
+YOLO 预加载：进任务详情页时，趁用户逗把常驻服务的模型在后台热好。
+
+## 为什么
+
+「检测文本框」真正执行时，常驻 YOLO 服务若还没载模型，第一页要白等约 5 秒
+（frozen 下 `import torch` + 首次 `YOLO(weights)`）。用户点「执行」之前通常
+已经进过详情页、在页面里停留了一阵——这段时间足够后台把模型热好，等他真点
+「执行」时服务里早就是现成的。
+
+## 设计口径（用户 2026-10-13）
+
+1. **加载条件**：本任务的流程图里有「检测文本框」节点，**且**这一步从没
+   执行过（跑过一次就不预载——要么模型已就绪、要么用户根本不走这条路）。
+   判定收在纯函数 :func:`detect_pending` 里，可脱离页面单测。
+2. **全局只加载一次**：本会话只做一次真正的预热（:func:`claim_prewarm_slot`
+   的槽位语义）；之后每次进任务详情只做一次**轻量探测**（向服务发一条
+   ``status``，不拉起、不加载）。
+3. **不影响主线程 / 让出 CPU**：
+   - 主线程只做毫秒级的条件判定与 ``QTimer.singleShot`` 排程；
+   - 重活（拉起服务、torch 导入、载模型）全部发生在**常驻服务子进程**里，
+     而那个进程被降到「低于正常」优先级（见
+     ``functions/yolo_service._set_process_priority``），界面渲染一路先行，
+     真检测开始时服务端自己升回正常；
+   - 调度线程只是 socket 收发，OS 阻塞等待，不占 CPU。
+4. **失败无声**：预加载是体验优化，任何失败（服务起不来、权重缺失、Qt
+   环境缺失）都只写服务日志，绝不影响进页面，也绝不回落到 GUI 主进程内
+   加载模型（那会违反「GUI 主进程禁重依赖」）。
+
+⚠️ 注意与常驻服务 TTL 的关系：预热后的服务空闲 5 分钟（默认 TTL）仍会
+自行退出释放内存——预加载不是「永久常驻」，只是把「第一次点执行」的 5 秒
+提前到进页面时付掉。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| PREWARM_DELAY_MS | `2000` |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `detect_pending(slots, detect_state: dict \| None) -> bool` | 预加载条件：流程里有「检测文本框」节点，且这一步没执行过。 |
+| `claim_prewarm_slot() -> str \| None` | 领取本会话的排程槽位：第一次 ``"prewarm"``，之后 ``"probe"``。 |
+| `request_prewarm(delay_ms: int=PREWARM_DELAY_MS) -> None` | 进任务详情页时调用（**主线程**，条件已由页面核过）。 |
+
+#### `detect_pending(slots, detect_state: dict | None) -> bool`
+
+预加载条件：流程里有「检测文本框」节点，且这一步没执行过。
+
+``slots``：本任务流程的槽位表（``store.task_slots`` / 页面 ``flow_slots``，
+元素带 ``step`` 属性——鸭子类型访问，不 import 页面层的东西）；
+``detect_state``：``store.stage_states(task_id)["detect"]``（无记录时
+传 ``None`` 或让页面直接取，``stage_states`` 的静态键永远存在）。
+
+「没执行过」= runs.json 里没有这一步的任何记录（status 停在 pending、
+done/total 为 0、completed 为 False）。执行过哪怕失败/中断都算执行过
+——那时模型多半已经就绪，或用户在走整页兜底，都轮不到预加载。
+
+#### `claim_prewarm_slot() -> str | None`
+
+领取本会话的排程槽位：第一次 ``"prewarm"``，之后 ``"probe"``。
+
+纯逻辑、锁内一次判定，调用方据此决定起哪条后台线（自测直接驱动它
+验证「全局只加载一次、二次只检测」）。返回 ``None`` 不会发生——每次
+进入详情页至少值得探测一次；将来若要限频在这里改。
+
+#### `request_prewarm(delay_ms: int=PREWARM_DELAY_MS) -> None`
+
+进任务详情页时调用（**主线程**，条件已由页面核过）。
+
+第一次：延迟 ``delay_ms`` 后在后台线程做真正的预热；之后：只做轻量
+探测。没有 Qt 环境（CLI / 无 QApplication 的场景）时静默放弃——预加载
+本来就不属于 CLI。
 
 ---
 
