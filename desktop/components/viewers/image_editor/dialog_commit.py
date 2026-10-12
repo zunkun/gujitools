@@ -690,6 +690,15 @@ class CommitMixin(DialogHost):
             if self in _ACTIVE_APPLIES:
                 _ACTIVE_APPLIES.remove(self)
             worker.deleteLater()
+            # ⚠️ 释放整图级缓冲再析构（2026-10-13「内存越来越大」）：deleteLater
+            #    只销毁 C++ 对象，Python 侧 ``_original``/``_undo`` 等 QImage 引用
+            #    还被宿主的 ``_editor`` 属性攥着——不显式清掉，整图（撤销栈最多
+            #    12 份）会跨任务驻留。信号已在上面发完，宿主拿到的是拷贝。
+            #    ⚠️ keep_result：宿主约定「关窗后仍可取 result_image()」（自测
+            #    image_editor_saveback 钉死），``_image`` 这一份要留着。
+            release = getattr(self, "release_buffers", None)
+            if callable(release):
+                release(keep_result=True)
             self.deleteLater()
 
     def _cancel_async_apply(self) -> None:

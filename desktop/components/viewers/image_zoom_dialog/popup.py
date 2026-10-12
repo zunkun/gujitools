@@ -175,26 +175,48 @@ class ZoomPopupMixin:
         editor = ImageEditorDialog(parent, image, save_back=True)
         editor.target_name = path.name
         editor.source_path = str(path)
-        if editor.exec() != QDialog.DialogCode.Accepted:
-            return False
-        if editor.apply_in_progress():
-            # ⚠️ 后台应用中（2026-10-10「应用卡顿」）：编辑器已关，烘焙+写盘
-            #    在工作线程；完成/失败信号回到本函数的收尾链。
-            editor.apply_completed.connect(
-                lambda _path, image: self._after_editor_saved(path, image))
-            editor.apply_failed.connect(
-                lambda _path, reason: self._notify_edit(
-                    "error", "保存失败", f"编辑未生效：{path.name}（{reason}）"))
-            return True          # 写盘进行中，按"已受理"回报
-        edited = editor.result_image()
-        if edited is None or edited.isNull():
-            return False
-        if not overwrite_image_file(edited, path):
-            self._notify_edit("error", "保存失败", f"编辑未生效：{path.name}")
-            return False
-        sync_content_quad(str(path), editor)
-        self._after_editor_saved(path, edited)
-        return True
+        try:
+            accepted = editor.exec() == QDialog.DialogCode.Accepted
+            if not accepted:
+                return False
+            if editor.apply_in_progress():
+                # ⚠️ 后台应用中（2026-10-10「应用卡顿」）：编辑器已关，烘焙+写盘
+                #    在工作线程；完成/失败信号回到本函数的收尾链。
+                editor.apply_completed.connect(
+                    lambda _path, image: self._after_editor_saved(path, image))
+                editor.apply_failed.connect(
+                    lambda _path, reason: self._notify_edit(
+                        "error", "保存失败", f"编辑未生效：{path.name}（{reason}）"))
+                return True          # 写盘进行中，按"已受理"回报
+            edited = editor.result_image()
+            if edited is None or edited.isNull():
+                return False
+            if not overwrite_image_file(edited, path):
+                self._notify_edit("error", "保存失败", f"编辑未生效：{path.name}")
+                return False
+            sync_content_quad(str(path), editor)
+            self._after_editor_saved(path, edited)
+            return True
+        finally:
+            # ⚠️ 内存（2026-10-13「程序内存越来越大」）：这是本函数的局部
+            #    编辑器、parent 到主窗口，exec 返回后没人再释放——整图 ×2 +
+            #    撤销栈最多 12 份整图快照就这样每编辑一次攒一份。结果已消费
+            #    （QImage 隐式共享，写盘/刷新各持自己的引用），缓冲放掉、
+            #    C++ 对象析构。后台应用中的不动它（完成链自己收尾）。
+            if not (
+                callable(getattr(editor, "apply_in_progress", None))
+                and editor.apply_in_progress()
+            ):
+                release = getattr(editor, "release_buffers", None)
+                if callable(release):
+                    try:
+                        release()
+                    except RuntimeError:  # noqa: BLE001 - 已析构
+                        pass
+                try:
+                    editor.deleteLater()
+                except RuntimeError:  # noqa: BLE001
+                    pass
 
     def _after_editor_saved(self, path, edited) -> None:
         """编辑器应用完成（磁盘与 sidecar 已落好）的刷新链（两条路共用）。"""

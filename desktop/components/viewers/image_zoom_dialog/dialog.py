@@ -381,13 +381,44 @@ class ImageZoomDialog(QDialog, WorkerHost):
         （``_StubEditor(parent, image, save_back)`` / ``_stub_open``）按死签名
         覆盖它，多一个关键字参数就让整条自测抛 ``TypeError``。要带文件名给
         覆盖确认，由调用方在拿到返回值后回填 ``editor.target_name``。
+
+        ⚠️ 内存（2026-10-13「程序内存越来越大」）：本弹窗长期持有 ``_editor``，
+        换图再开编辑器时旧的编辑器（整图 ×2 + 撤销栈最多 12 份整图快照）
+        就被替换引用悄悄漏掉——开新的之前先把旧的释放干净。
         """
         from desktop.components.viewers.image_editor import ImageEditorDialog
 
         if image is None or image.isNull():
             return None
+        self._release_editor()
         self._editor = ImageEditorDialog(self, image, save_back=save_back)
         return self._editor
+
+    def _release_editor(self) -> None:
+        """释放当前编辑器（缓冲 + deleteLater + 引用置空）。
+
+        ⚠️ **后台应用进行中绝不能动**：编辑器正被 ``_ACTIVE_APPLIES`` 持有、
+        完成信号还要发回宿主——那条链会在收尾时自己释放（见
+        ``dialog_commit._on_async_apply_done``）。替身编辑器（自测）没有这些
+        方法，按鸭子类型全guarded。
+        """
+        editor = getattr(self, "_editor", None)
+        if editor is None:
+            return
+        apply_in_progress = getattr(editor, "apply_in_progress", None)
+        if callable(apply_in_progress) and apply_in_progress():
+            return  # 烘焙/写盘进行中：交给后台完成链收尾
+        release = getattr(editor, "release_buffers", None)
+        if callable(release):
+            try:
+                release()
+            except RuntimeError:  # noqa: BLE001 - C++ 对象已析构
+                pass
+        try:
+            editor.deleteLater()
+        except RuntimeError:  # noqa: BLE001
+            pass
+        self._editor = None
 
     def _edit_image(self) -> None:
         """打开编辑器；「完成」后把编辑结果写回**真实文件**（可回写时）。
@@ -453,7 +484,12 @@ class ImageZoomDialog(QDialog, WorkerHost):
             return
         edited = editor.result_image()
         if edited is None or edited.isNull():
+            self._release_editor()
             return
+        # ⚠️ 结果已取走（QImage 隐式共享，画布/写盘各有自己的引用），编辑器
+        #    的整图缓冲（原图 + 撤销栈最多 12 份）到这里就该放掉了——本弹窗
+        #    是长生命周期对象，不释放就是跨页/跨任务的驻留（2026-10-13）。
+        self._release_editor()
         if edit_path is not None:
             if not overwrite_image_file(edited, edit_path):
                 self.tip_label.setText(f"保存失败，编辑未生效：{edit_path}")
@@ -583,8 +619,15 @@ class ImageZoomDialog(QDialog, WorkerHost):
         super().keyPressEvent(event)
 
     def closeEvent(self, event) -> None:  # noqa: N802
-        """关窗即作废在飞的渲染并释放大图（一张 4000px 预览约 45MB）。"""
+        """关窗即作废在飞的渲染并释放大图（一张 4000px 预览约 45MB）。
+
+        ⚠️ 顺带释放挂着的编辑器（``_editor``）：它持有整图 ×2 + 撤销栈
+        最多 12 份整图快照，弹窗只 close 不销毁的话跨任务一直驻留
+        （2026-10-13「程序内存越来越大」）。后台应用进行中不动它——
+        完成链自己会收尾。
+        """
         self._token = None
         self.shutdown_workers()
         self.canvas.clear()
+        self._release_editor()
         super().closeEvent(event)

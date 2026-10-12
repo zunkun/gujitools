@@ -16,6 +16,12 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+# ⚠️ 自测默认**关掉**常驻 YOLO 服务（2026-10-13）：服务已是常驻不退出，
+#    任何调 set_task 的用例（detail_* 一大串）都会经 _schedule_yolo_prewarm
+#    **真的拉起服务并载模型**——350MB 常驻 + 撞红 yolo_service 用例的清场
+#    （预热线程在它清场后 ~2s 又把服务拉回来）。要测服务本身的
+#    ``yolo_service`` 用例会自己显式置 1（见其 run() 开头）。
+os.environ.setdefault("GUJI_YOLO_SERVICE", "0")
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:

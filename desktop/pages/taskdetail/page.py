@@ -532,6 +532,32 @@ class TaskDetailPage(
         # 释放 PDF：不释放的话回到列表删除该任务时，rmtree 可能撞上文件占用
         self.extract_result_viewer.set_pdf(None)
         self.extract_result_viewer.set_extract_dir(None)
+        # ⚠️ **内存释放（2026-10-13 用户报「反复导入 PDF 内存越来越大」）**：
+        #    详情页是惰性单例、返回主界面不销毁，下面三个 viewer 里还驻留着
+        #    上个任务的数据——detect/rembg 的整包页面清单 + 当前页大图
+        #    QPixmap（数千像素见方 = 十几 MB），print 的待打印条目。不清的话
+        #    用户停在主界面期间这些就一直压着，和下个任务的导入期叠加推高
+        #    峰值。set_task 进下一个任务时本来就会重建替换，这里只是把
+        #    "返回主界面"这段时间的驻留放掉。
+        self.detect_viewer.set_images([])
+        self.rembg_viewer.set_images([], None)
+        self.print_preview.set_entries([])
+        self.print_preview.set_pdf_path(None)
+        # 拼版侧同理：页面缩略图位图 memo（PageThumbManager._pix，无上限）
+        # 与画布全分辨率解码缓存整包放掉（内部会停计时器/关预览弹窗）。
+        self._reset_imposition_state()
+        # ⚠️ 共享 fitz 文档缓存（LRU 最多 2 本）只在"删除任务/进程退出"时关，
+        #    反复导入的场景永远走不到——每本扫描 PDF 的 Document 连同 MuPDF
+        #    内部解码缓存可达数百 MB，跨任务常驻就是"内存阶梯式上涨且不回落"
+        #    的最大单一来源。返回主界面 = 离开本任务，此刻没有任何渲染在用它
+        #    （单页渲染走 single_flight，这里最多等当次 ~160ms 的渲染收尾），
+        #    全部关掉；下次进任务再打开就是一次性的 xref 解析，不构成卡顿。
+        try:
+            from desktop.workers.preview_worker import close_cached_documents
+
+            close_cached_documents()
+        except Exception:  # noqa: BLE001 - 释放失败不该拦住返回
+            pass
         self.back_requested.emit()
 
     # ------------------------------------------------------------------ 流程槽位（BPM）

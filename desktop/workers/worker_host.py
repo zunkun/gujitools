@@ -60,6 +60,25 @@ def connect_queued(owner, signal, slot, thread=None) -> QObject:
 _DETACHED_THREADS: list[QThread] = []
 
 
+def _prune_detached_threads() -> None:
+    """惰性剪枝：摘出去的线程**已经跑完**的从注册表移除。
+
+    （2026-10-13「内存越来越大」补）：列表原本只 append 不移除，线程栈 +
+    挂着的 worker（可能带图像缓冲）会在会话内永久驻留。线程结束时有
+    ``finished → deleteLater`` 兜底析构，这里的剪枝把析构后的失效包装从
+    列表里放掉，避免只进不出。C++ 对象已销毁的包装 ``isRunning`` 会抛
+    ``RuntimeError``——那正是"可以放手"的信号。
+    """
+    alive: list[QThread] = []
+    for thread in _DETACHED_THREADS:
+        try:
+            if thread.isRunning():
+                alive.append(thread)
+        except RuntimeError:
+            pass  # C++ 对象已被 finished→deleteLater 销毁：放心丢
+    _DETACHED_THREADS[:] = alive
+
+
 def stop_thread(thread: QThread, timeout_ms: int, label: str) -> bool:
     """请线程收手并最多等 `timeout_ms`；等不到就**摘下来别让它被销毁**。
 
@@ -80,7 +99,11 @@ def stop_thread(thread: QThread, timeout_ms: int, label: str) -> bool:
     if thread.wait(timeout_ms):
         return True
     # 等不到：保命优先 —— 换父、留住引用，绝不让它在跑着的时候被析构
+    _prune_detached_threads()
     _DETACHED_THREADS.append(thread)
+    # 跑完后兜底析构（线程已停，销毁安全；连接随对象一起销毁），列表里的
+    # 失效包装由下一次 stop_thread 的剪枝放掉——注册表不再只进不出。
+    thread.finished.connect(thread.deleteLater)
     try:
         thread.setParent(None)
     except (RuntimeError, TypeError):  # 对象已在 C++ 侧销毁

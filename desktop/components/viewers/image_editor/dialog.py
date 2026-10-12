@@ -352,14 +352,48 @@ class ImageEditorDialog(
 
 
     # ------------------------------------------------------------ 对外
+    def release_buffers(self, keep_result: bool = False) -> None:
+        """释放**整图级**缓冲（原图/当前图/撤销与重做快照/upright 缓存）。
+
+        为什么必须有（2026-10-13「程序内存越来越大」）：编辑器的缓冲全是
+        原分辨率整图——``_original`` + ``_image`` 两份，外加撤销栈最多
+        ``UNDO_LIMIT`` 份整图快照（大图下可达 GB 级）。编辑器是 QDialog、
+        由宿主长期持有，只 close 不销毁的话这些像素**一直驻留**，跨任务
+        都不释放。宿主在结果消费完（或弹窗整体关闭）后调用本方法即可放掉。
+
+        ``keep_result=True``：保留 ``_image``（后台应用完成链用——宿主约定
+        「关窗后仍可取 ``result_image()``」，见 ``image_editor_saveback``
+        自测）。其余整图缓冲照放：撤销栈 + 原图 + upright 才是大头。
+
+        ⚠️ ``keep_result=False``（默认）时结果即作废：只能在"不再需要
+        ``result_image()``"之后调用。
+        """
+        self._original = None
+        if not keep_result:
+            self._image = None
+        self._undo = []
+        self._redo = []
+        self._labels = []
+        # 内容节点 sidecar 的 upright 是另一份全分辨率反变换缓存，一并放掉
+        self._content_upright = None
+        self._content_restore_params = None
+
     def closeEvent(self, event) -> None:  # noqa: N802（Qt 回调）
         """关闭时清理画布引用。
 
         撤销栈是**整图快照**，大图下最多 12 份（见 ``UNDO_LIMIT``），
         关窗后必须释放，不能靠 Python GC（Qt 侧 C++ 对象不由引用计数托管）。
+
+        ⚠️ 只有**未采纳**的关闭（X / Esc / reject）能在这里直接放缓冲：
+        accept() 的关闭不触发 closeEvent，而调用方在 ``exec()`` 返回后还要
+        读 ``result_image()``——采纳路径的释放由调用方消费完结果后显式调
+        :meth:`release_buffers`（或后台应用链在 ``_on_async_apply_done``
+        里兜底）。
         """
         self._finishing = True
         try:
+            if self.result() != QDialog.DialogCode.Accepted:
+                self.release_buffers()
             # EditorCanvas 无 clear（此调用在运行期恒抛 AttributeError，被下面
             # 吞掉，等价于不做事）；保留原样以免改变关闭时的清理行为。
             self.canvas.clear()  # type: ignore[attr-defined]

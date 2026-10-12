@@ -10,7 +10,9 @@
 3. 端口发现文件与指纹一致，且**陈旧文件**（指向已死进程）不会把客户端卡死；
 4. `GUJI_YOLO_SERVICE=0` 能一键关掉服务，且检测照样跑得通（回落本进程内）
    ——**服务不可用绝不能让检测不可用**；
-5. 空闲超过 TTL 服务自行退出、把内存还掉。
+5. **默认常驻不退出**（用户 2026-10-13 口径："加载到内存全局，只加载一次，
+   不要释放"）——不设 `GUJI_YOLO_TTL` 时服务不该有任何空闲自退；
+6. 显式设了 `GUJI_YOLO_TTL` 时自退机制仍然可用（测试/排障的逃生门）。
 
 ⚠️ 本用例会真的拉起服务、真的加载 torch（数秒），并把 TTL 调小以便验证自退；
 收尾必须把服务和环境变量都还原，否则会污染后续用例。
@@ -42,6 +44,21 @@ def _reset_client_state(ys) -> None:
     ys._local.client = None
 
 
+def _wait_service_gone(ys, seconds: float = 10.0) -> None:
+    """发 shutdown 后**等服务真的消失**（有界轮询）。
+
+    ⚠️ 不能只 `shutdown()+固定 sleep`：服务若正在加载模型（约 5-8s，真实
+    场景＝用户桌面端正预热时跑本用例），shutdown 请求要等那轮加载收尾才
+    生效——固定睡 1.5s 会偶发假红（2026-10-13 实测）。这里最多等 10s。
+    """
+    ys.shutdown_service()
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        time.sleep(0.5)
+        if ys.service_status() is None:
+            return
+
+
 def run(ctx) -> None:
     import tempfile
 
@@ -67,8 +84,7 @@ def run(ctx) -> None:
         canvas.save(str(img_path))
 
         # ---- 清场：先把上一轮可能残留的服务收掉 ----
-        ys.shutdown_service()
-        time.sleep(1.5)
+        _wait_service_gone(ys)
         _reset_client_state(ys)
         ok("清场后没有可用服务", ys.service_status() is None)
 
@@ -126,11 +142,20 @@ def run(ctx) -> None:
         os.environ.pop("GUJI_YOLO_SERVICE", None)
         _reset_client_state(ys)
 
-        # ---- 6. TTL：空闲超时自行退出，把内存还掉 ----
-        ys.shutdown_service()
-        time.sleep(1.5)
+        # ---- 6. 默认常驻：不设 TTL 就不该有自退（2026-10-13 用户口径）----
+        ok("未设 GUJI_YOLO_TTL 时默认 TTL 为 None（常驻）",
+           ys._ttl_seconds() is None,
+           f"实际={ys._ttl_seconds()!r} —— 常驻口径被改回有限值了")
+        ok("DEFAULT_TTL_SECONDS 是 None（常驻）",
+           ys.DEFAULT_TTL_SECONDS is None,
+           f"实际={ys.DEFAULT_TTL_SECONDS!r}")
+
+        # ---- 7. TTL 机制：显式设了才生效，空闲超时自行退出 ----
+        _wait_service_gone(ys)
         _reset_client_state(ys)
         os.environ["GUJI_YOLO_TTL"] = str(int(TTL_PROBE))
+        ok("显式 TTL 覆盖生效（下限 5 秒）",
+           ys._ttl_seconds() == max(5.0, TTL_PROBE), str(ys._ttl_seconds()))
         backend3, _ = ys.warm_up()
         ok("短 TTL 下服务仍能拉起", backend3 == "service", str(backend3))
         ok("服务在跑", ys.service_status() is not None)
@@ -139,9 +164,9 @@ def run(ctx) -> None:
         #    `touch()` 空闲计时，观测行为本身就会让它永远不空闲——用例会假红。
         #    睡够 TTL + 余量之后查一次即可。
         time.sleep(TTL_PROBE + 5.0)
-        ok(f"空闲超过 {TTL_PROBE:.0f}s 后服务自行退出（释放常驻内存）",
+        ok(f"空闲超过 {TTL_PROBE:.0f}s 后服务自行退出（显式 TTL 才有的行为）",
            ys.service_status() is None,
-           "服务仍在运行 —— TTL 失效会导致 torch 运行时长期占着内存")
+           "服务仍在运行 —— 显式 TTL 的自退机制失效了")
     finally:
         # 收尾：还原环境变量、收掉服务，别把状态留给后续用例
         for key, value in saved_env.items():

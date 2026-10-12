@@ -6,8 +6,9 @@
 原则（用户定）：**cli 与 desktop 是两套系统，内存不互通**。
 
 - **desktop**：GUI 每点一次「检测」都是新的 worker 子进程，进程一退模型就没了，
-  下一次又从头付一遍——所以模型放进这里这个常驻进程，desktop 的多次执行共用，
-  空闲 `TTL`（默认 5 分钟）没人用就自行退出、把约 350MB 还给系统。
+  下一次又从头付一遍——所以模型放进这里这个常驻进程，desktop 的多次执行共用。
+  **常驻不退出**（用户 2026-10-13 口径："yolo 加载到内存全局，会只加载一次，
+  不要释放"——约 350MB 换每一轮会话都零加载等待，且跨 app 重启仍命中）。
   `desktop.py` 会把 ``GUJI_YOLO_SERVICE`` 置 ``1`` 并传给它派生的全部 worker。
 - **CLI**：一次性任务，模型在本进程内加载、进程退出即释放，**不占常驻内存**。
   `cli.py` 显式把 ``GUJI_YOLO_SERVICE`` 置 ``0``，因此 CLI 的 crop/detect/cropremove
@@ -35,8 +36,10 @@ frozen 打包下 `import torch` + 首次 `YOLO(weights)` 要 **约 5.4 秒**，d
 
 服务把 `{port, fp, pid}` 写进 ``%TEMP%/guji-yolo-service.json``，客户端读它来
 连接；``fp`` 是**身份指纹**（版本 + 权重路径 + 权重大小/修改时间），不一致就
-（多半是升级后残留的旧服务）忽略并另起一个，旧的靠 TTL 自灭——**不做互相驱逐**，
-免得两个版本互相杀。
+（多半是升级后残留的旧服务）忽略并另起一个——**不做互相驱逐**，免得两个
+版本互相杀。⚠️ 默认已无常驻 TTL（见下），升级残留的旧服务不会再"自灭"：
+它无害（指纹不符没人连它），只是白占一份内存，手动清掉或重启后想清可用
+环境变量 `GUJI_YOLO_TTL` 给新服务加空闲上限。
 
 服务端**允许并发连接**（每个客户端线程一条）：desktop 的批量检测本来就是
 多线程共享一个模型并发推理，服务里也必须保持同样的并发度，否则等于把并行度
@@ -66,8 +69,11 @@ import utils
 #: 文件，另一方读到的端口不是自己的服务，就被迫重拉一个新服务、无限往复。
 SERVICE_FILE_PREFIX = "guji-yolo-service-"
 
-#: 空闲多久没人用就退出（秒）。可用环境变量覆盖——测试用一个很小的值来验。
-DEFAULT_TTL_SECONDS = 300.0
+#: 空闲多久没人用就退出（秒）；**None＝常驻不退出**（2026-10-13 用户口径：
+#: "yolo 加载到内存全局，会只加载一次，不要释放"——模型约 350MB 一直驻留，
+#: 每次检测、每个会话都零加载等待）。环境变量 `GUJI_YOLO_TTL` 可显式给一个
+#: 有限值（下限 5 秒）——自测与排障用它验证自退机制；不给就是常驻。
+DEFAULT_TTL_SECONDS: float | None = None
 
 #: 建连与握手超时（秒）
 CONNECT_TIMEOUT = 3.0
@@ -99,8 +105,9 @@ def _service_enabled() -> bool:
     return raw.strip().lower() not in ("0", "false", "no", "off")
 
 
-def _ttl_seconds() -> float:
-    """空闲 TTL（秒）。环境变量 `GUJI_YOLO_TTL` 可覆盖，下限 5 秒。"""
+def _ttl_seconds() -> float | None:
+    """空闲 TTL（秒）；**None＝常驻**（默认）。环境变量 `GUJI_YOLO_TTL`
+    可显式覆盖成有限值，下限 5 秒——仅测试/排障用。"""
     raw = os.environ.get("GUJI_YOLO_TTL")
     if raw:
         try:
@@ -340,7 +347,8 @@ def _dispatch(request: dict, state: _ServiceState, fp: str) -> dict:
     if cmd == "hello":
         if request.get("fp") != fp:
             # 指纹不匹配：多半是升级后残留的旧服务。只拒绝，**不自杀**——
-            # 两个版本互相驱逐会打成死循环，让 TTL 自然收走它。
+            # 两个版本（开发版+正式版）可能同时开着，互相驱逐会打成死循环；
+            # 旧服务就让它常驻（指纹不符没人连它，无害），想清走手动处理。
             return {
                 "ok": False,
                 "error": "fingerprint-mismatch",
@@ -471,7 +479,8 @@ def _redirect_stdio_to_log() -> None:
 
 
 def serve() -> int:
-    """服务主循环：绑定回环端口、写发现文件、按 TTL 空闲自退。返回进程退出码。"""
+    """服务主循环：绑定回环端口、写发现文件、**默认常驻**（TTL 仅在显式
+    设了 `GUJI_YOLO_TTL` 时生效）。返回进程退出码。"""
     _redirect_stdio_to_log()
     state = _ServiceState()
     fp = _fingerprint()
@@ -487,7 +496,8 @@ def serve() -> int:
     port = server.getsockname()[1]
     _write_service_file(port, fp)
     ttl = _ttl_seconds()
-    _log(f"服务已启动 port={port} pid={os.getpid()} ttl={ttl:.0f}s fp={fp}")
+    ttl_text = "常驻" if ttl is None else f"{ttl:.0f}s"
+    _log(f"服务已启动 port={port} pid={os.getpid()} ttl={ttl_text} fp={fp}")
     server.settimeout(1.0)
     stop = threading.Event()
     try:
@@ -495,7 +505,9 @@ def serve() -> int:
             try:
                 conn, _addr = server.accept()
             except socket.timeout:
-                if state.idle_seconds() > ttl:
+                # ⚠️ 默认 ttl=None＝常驻：模型加载一次就不再释放（用户口径），
+                #    只有显式给了 GUJI_YOLO_TTL 才按空闲退出。
+                if ttl is not None and state.idle_seconds() > ttl:
                     _log(f"空闲 {state.idle_seconds():.0f}s 超过 TTL {ttl:.0f}s，退出释放内存")
                     break
                 continue

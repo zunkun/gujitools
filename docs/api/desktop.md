@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 166 个模块、177 个公开类、1218 个公开函数/方法（生成于 2026-10-13）。
+覆盖 166 个模块、177 个公开类、1219 个公开函数/方法（生成于 2026-10-13）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -59,7 +59,7 @@
 | [`desktop.components.viewers.image_editor.canvas.transform`](#desktopcomponentsviewersimage_editorcanvastransform) | 1 | 21 |
 | [`desktop.components.viewers.image_editor.consts`](#desktopcomponentsviewersimage_editorconsts) | 0 | 0 |
 | [`desktop.components.viewers.image_editor.content_quad`](#desktopcomponentsviewersimage_editorcontent_quad) | 0 | 7 |
-| [`desktop.components.viewers.image_editor.dialog`](#desktopcomponentsviewersimage_editordialog) | 1 | 3 |
+| [`desktop.components.viewers.image_editor.dialog`](#desktopcomponentsviewersimage_editordialog) | 1 | 4 |
 | [`desktop.components.viewers.image_editor.dialog_commit`](#desktopcomponentsviewersimage_editordialog_commit) | 1 | 2 |
 | [`desktop.components.viewers.image_editor.dialog_pages`](#desktopcomponentsviewersimage_editordialog_pages) | 1 | 0 |
 | [`desktop.components.viewers.image_editor.dialog_toolbar`](#desktopcomponentsviewersimage_editordialog_toolbar) | 1 | 0 |
@@ -3887,8 +3887,26 @@ MRO 顺序：功能条/参数页在前（``__init__`` 里就要用），提交�
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(parent=None, image: QImage \| None=None, save_back: bool=False)` | — |
+| `release_buffers(keep_result: bool=False) -> None` | 释放**整图级**缓冲（原图/当前图/撤销与重做快照/upright 缓存）。 |
 | `closeEvent(event) -> None` | 关闭时清理画布引用。 |
 | `result_image() -> QImage \| None` | 编辑结果（无图时 None；是否采纳由调用方的 exec 结果决定）。 |
+
+##### `release_buffers(keep_result: bool=False) -> None`
+
+释放**整图级**缓冲（原图/当前图/撤销与重做快照/upright 缓存）。
+
+为什么必须有（2026-10-13「程序内存越来越大」）：编辑器的缓冲全是
+原分辨率整图——``_original`` + ``_image`` 两份，外加撤销栈最多
+``UNDO_LIMIT`` 份整图快照（大图下可达 GB 级）。编辑器是 QDialog、
+由宿主长期持有，只 close 不销毁的话这些像素**一直驻留**，跨任务
+都不释放。宿主在结果消费完（或弹窗整体关闭）后调用本方法即可放掉。
+
+``keep_result=True``：保留 ``_image``（后台应用完成链用——宿主约定
+「关窗后仍可取 ``result_image()``」，见 ``image_editor_saveback``
+自测）。其余整图缓冲照放：撤销栈 + 原图 + upright 才是大头。
+
+⚠️ ``keep_result=False``（默认）时结果即作废：只能在"不再需要
+``result_image()``"之后调用。
 
 ##### `closeEvent(event) -> None`
 
@@ -3896,6 +3914,12 @@ MRO 顺序：功能条/参数页在前（``__init__`` 里就要用），提交�
 
 撤销栈是**整图快照**，大图下最多 12 份（见 ``UNDO_LIMIT``），
 关窗后必须释放，不能靠 Python GC（Qt 侧 C++ 对象不由引用计数托管）。
+
+⚠️ 只有**未采纳**的关闭（X / Esc / reject）能在这里直接放缓冲：
+accept() 的关闭不触发 closeEvent，而调用方在 ``exec()`` 返回后还要
+读 ``result_image()``——采纳路径的释放由调用方消费完结果后显式调
+:meth:`release_buffers`（或后台应用链在 ``_on_async_apply_done``
+里兜底）。
 
 ---
 
@@ -4978,6 +5002,15 @@ render: ``(edge:int) -> worker``；cap: 渲染密度上限（如原图原生边�
 快捷键：←/→ 翻页、+/- 缩放、0 适应窗口、1 原始比例、R 旋转。
 
 Esc 交给 QDialog 自己处理（关窗）。
+
+##### `closeEvent(event) -> None`
+
+关窗即作废在飞的渲染并释放大图（一张 4000px 预览约 45MB）。
+
+⚠️ 顺带释放挂着的编辑器（``_editor``）：它持有整图 ×2 + 撤销栈
+最多 12 份整图快照，弹窗只 close 不销毁的话跨任务一直驻留
+（2026-10-13「程序内存越来越大」）。后台应用进行中不动它——
+完成链自己会收尾。
 
 ---
 
@@ -8091,9 +8124,10 @@ YOLO 预加载：进任务详情页时，趁用户逗把常驻服务的模型在
    环境缺失）都只写服务日志，绝不影响进页面，也绝不回落到 GUI 主进程内
    加载模型（那会违反「GUI 主进程禁重依赖」）。
 
-⚠️ 注意与常驻服务 TTL 的关系：预热后的服务空闲 5 分钟（默认 TTL）仍会
-自行退出释放内存——预加载不是「永久常驻」，只是把「第一次点执行」的 5 秒
-提前到进页面时付掉。
+⚠️ 与常驻服务生命周期的关系（2026-10-13 用户口径更新）：服务**默认常驻不
+退出**（"yolo 加载到内存全局，会只加载一次，不要释放"）——预加载热好的
+模型整个会话都在，跨 app 重启也命中；只有显式设 `GUJI_YOLO_TTL` 才有
+空闲自退（测试/排障用）。
 
 ### 模块常量
 

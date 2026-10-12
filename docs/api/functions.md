@@ -738,8 +738,9 @@ area=4 整页模式完全不用 YOLO，故先判断再预热，避免白加载�
 原则（用户定）：**cli 与 desktop 是两套系统，内存不互通**。
 
 - **desktop**：GUI 每点一次「检测」都是新的 worker 子进程，进程一退模型就没了，
-  下一次又从头付一遍——所以模型放进这里这个常驻进程，desktop 的多次执行共用，
-  空闲 `TTL`（默认 5 分钟）没人用就自行退出、把约 350MB 还给系统。
+  下一次又从头付一遍——所以模型放进这里这个常驻进程，desktop 的多次执行共用。
+  **常驻不退出**（用户 2026-10-13 口径："yolo 加载到内存全局，会只加载一次，
+  不要释放"——约 350MB 换每一轮会话都零加载等待，且跨 app 重启仍命中）。
   `desktop.py` 会把 ``GUJI_YOLO_SERVICE`` 置 ``1`` 并传给它派生的全部 worker。
 - **CLI**：一次性任务，模型在本进程内加载、进程退出即释放，**不占常驻内存**。
   `cli.py` 显式把 ``GUJI_YOLO_SERVICE`` 置 ``0``，因此 CLI 的 crop/detect/cropremove
@@ -767,8 +768,10 @@ frozen 打包下 `import torch` + 首次 `YOLO(weights)` 要 **约 5.4 秒**，d
 
 服务把 `{port, fp, pid}` 写进 ``%TEMP%/guji-yolo-service.json``，客户端读它来
 连接；``fp`` 是**身份指纹**（版本 + 权重路径 + 权重大小/修改时间），不一致就
-（多半是升级后残留的旧服务）忽略并另起一个，旧的靠 TTL 自灭——**不做互相驱逐**，
-免得两个版本互相杀。
+（多半是升级后残留的旧服务）忽略并另起一个——**不做互相驱逐**，免得两个
+版本互相杀。⚠️ 默认已无常驻 TTL（见下），升级残留的旧服务不会再"自灭"：
+它无害（指纹不符没人连它），只是白占一份内存，手动清掉或重启后想清可用
+环境变量 `GUJI_YOLO_TTL` 给新服务加空闲上限。
 
 服务端**允许并发连接**（每个客户端线程一条）：desktop 的批量检测本来就是
 多线程共享一个模型并发推理，服务里也必须保持同样的并发度，否则等于把并行度
@@ -779,7 +782,7 @@ frozen 打包下 `import torch` + 首次 `YOLO(weights)` 要 **约 5.4 秒**，d
 | 名称 | 值 |
 | --- | --- |
 | SERVICE_FILE_PREFIX | `"guji-yolo-service-"` |
-| DEFAULT_TTL_SECONDS | `300.0` |
+| DEFAULT_TTL_SECONDS | `None` |
 | CONNECT_TIMEOUT | `3.0` |
 | DETECT_TIMEOUT | `300.0` |
 | SPAWN_WAIT | `25.0` |
@@ -804,7 +807,7 @@ frozen 打包下 `import torch` + 首次 `YOLO(weights)` 要 **约 5.4 秒**，d
 | `service_file(fp: str) -> Path` | 发现文件的完整路径（**按指纹区分**，开发版与正式版各用各的）。 |
 | `log_file() -> Path` | 服务日志路径（服务是分离进程、没有控制台，日志必须落文件才可诊断）。 |
 | `sweep_stale_service_files() -> int` | 删掉「属主进程已死」的发现文件，返回删除个数。 |
-| `serve() -> int` | 服务主循环：绑定回环端口、写发现文件、按 TTL 空闲自退。返回进程退出码。 |
+| `serve() -> int` | 服务主循环：绑定回环端口、写发现文件、**默认常驻**（TTL 仅在显式 |
 | `service_in_use() -> bool` | 本线程是否已经在用常驻服务（日志里说明"模型住在哪"用）。 |
 | `detect_boxes_via_service(image_path, area: int=1) -> ServiceDetect \| None` | 把一张图交给常驻服务检测，返回 :class:`ServiceDetect`。 |
 | `warm_up() -> tuple[str, float]` | 确保模型就绪，返回 ``(backend, 本次加载耗时秒)``。 |
@@ -822,6 +825,11 @@ frozen 打包下 `import torch` + 首次 `YOLO(weights)` 要 **约 5.4 秒**，d
 断电都会留下它，而且它是**按指纹分文件**的——换权重、升级版本各留一份、
 从不回收（2026-09-26 审计）。留着不只是垃圾：客户端扫到陈旧文件会去连一个
 已经不存在的端口，白等一轮建连超时。
+
+#### `serve() -> int`
+
+服务主循环：绑定回环端口、写发现文件、**默认常驻**（TTL 仅在显式
+设了 `GUJI_YOLO_TTL` 时生效）。返回进程退出码。
 
 #### `detect_boxes_via_service(image_path, area: int=1) -> ServiceDetect | None`
 
