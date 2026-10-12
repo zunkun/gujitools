@@ -114,7 +114,7 @@ def run(ctx) -> None:
            # ⚠️ LazyPanelHost 的 peek() 只在真惰性宿主上有，源码标注退化成 QWidget
            _lazy_host is not None and getattr(_lazy_host, "peek")() is None)
 
-        # 6a. 「图片拼板」在图里（默认模板就有）→ 记录能匹配，落到拼版，
+        # 6a. 「图片拼版」在图里（默认模板就有）→ 记录能匹配，落到拼版，
         #     **且节点要显示**（⚠️ 判据 = **流程图**，与区域模式无关，所以这里
         #     不必再配 area）
         repo.save_last_stage(tid, "imposition")
@@ -141,7 +141,7 @@ def run(ctx) -> None:
            page2.step_bar.imposition_slot.isVisible()
            and page2.step_bar._imposition_connector.isVisible())
 
-        # 6b. 把「图片拼板」从**流程图**里删掉 → 记录匹配不上，回第一步
+        # 6b. 把「图片拼版」从**流程图**里删掉 → 记录匹配不上，回第一步
         #     ⚠️ 判据是流程图（2026-10-05 口径变更），不再是第三步的区域模式：
         #     用户把那一格删了就该消失，而不是靠"去底色的裁剪方式"猜。
         from desktop.steps.bpmn_diagram import (

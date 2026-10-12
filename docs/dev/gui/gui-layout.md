@@ -161,8 +161,8 @@
 
 ![详情页 · 日志浮层](../../guide/screenshots/06-详情页-日志浮层.png)
 
-> 截图由 `tests/gui_shot.py` 离屏渲染生成（演示数据，文件名与 `docs/guide/screenshots/`
-> 一致，可直接覆盖使用），改界面后可重跑覆盖。
+> 截图由人工截取（2026-10-12 起旧的离屏截图脚本已退役），直接覆盖
+> `docs/guide/screenshots/` 下的同名文件即可。
 
 ## 4. 组件尺寸约定
 

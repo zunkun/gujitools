@@ -47,7 +47,7 @@
 ### 独立任务 singletask（`desktop/modules/<key>/`）
 
 - 把流程中的一步**拆出来**的独立功能页：PDF图片提取 / 检测文本框 / 图片去底色 /
-  PDF排版 / 图片拼板，共 5 个（数量由 spec 派生，别写死）；
+  PDF排版 / 图片拼版，共 5 个（数量由 spec 派生，别写死）；
 - **没有任务上下文**：不建任务、不进任务目录，选个文件/目录就能跑；
   产物默认落在源文件旁（`<源名>_提取/`、`<源名>_去底/`…）；
 - 它的存在有两个原因：① 临时处理一两张图/一本小册子不值得建任务；
@@ -56,11 +56,11 @@
 
 ### 两者的关系（契约）
 
-| 维度 | 关系 |
-| --- | --- |
-| 共用 | 渲染组件（`components/viewers/`，含编辑生效原语 `viewers/edit_sync.py`）、参数面板（`components/panels/`）、检测框人工干预交互（`components/box_kinds.py`）、执行内核（`steps/kernel.py`）、worker（`workers/`）、日志/进度组件 |
-| 不共用 | **数据**：任务目录 `tasks/<id>/` 与独立页缓存 `singletask/<key>/` 各归各，**互不相通、禁止借道** |
-| 代码方向 | taskdetail 不 import `desktop.modules`；模块页不 import `desktop.pages`（导航壳层除外） |
+| 维度     | 关系                                                                                                                                                                                                                            |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 共用     | 渲染组件（`components/viewers/`，含编辑生效原语 `viewers/edit_sync.py`）、参数面板（`components/panels/`）、检测框人工干预交互（`components/box_kinds.py`）、执行内核（`steps/kernel.py`）、worker（`workers/`）、日志/进度组件 |
+| 不共用   | **数据**：任务目录 `tasks/<id>/` 与独立页缓存 `singletask/<key>/` 各归各，**互不相通、禁止借道**                                                                                                                                |
+| 代码方向 | taskdetail 不 import `desktop.modules`；模块页不 import `desktop.pages`（导航壳层除外）                                                                                                                                         |
 
 singletask 与 taskdetail 功能相似是**设计结果**而非耦合：同一批公共组件 +
 同一条 `SPECS` 元数据，分别在两种宿主里实例化。改公共组件两边同时受益；
@@ -123,7 +123,7 @@ guji/
   - `selftests/layering.py` — 分层白名单（含「desktop 不 import cli」）；
   - `selftests/modules_shell.py` — 导航注册表 = `NAV_STEPS` 派生、模块惰性构造；
   - `selftests/step_ports.py` — BPM 端口：spec 声明的 inputs/outputs 与落点一致；
-  - `selftests/imposition.py` — 拼版全链，含**缓存边界断言**（拼板缩略图必须写
+  - `selftests/imposition.py` — 拼版全链，含**缓存边界断言**（拼版缩略图必须写
     进 `tasks/<id>/thumbnails/imposition/`，不许借道 singletask）；
   - `selftests/params_spec.py` — 面板默认值单一来源。
 - CLI 侧契约：`tests/reporter_cli_parity.py` 等（改 progress 事件协议前先看它）。

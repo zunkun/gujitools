@@ -23,8 +23,8 @@
 ⚠️ 两个必须守住的边界：
 
 - **只在构造那一刻算一次**，不做持续约束（不装事件过滤器、不重写
-  ``resizeEvent``）。自测与截图脚本会显式 ``resize()`` 到指定尺寸
-  （``tests/gui_shot.py``、``tests/selftests/_context.py``），持续夹紧会让
+  ``resizeEvent``）。自测会显式 ``resize()`` 到指定尺寸
+  （``tests/selftests/_context.py``），持续夹紧会让
   它们拿到别的尺寸，护栏随即失真。
 - 拿不到屏幕信息时**原样返回、不做任何猜测**：宁可维持旧行为，也不要凭空
   给一个尺寸（离屏/无头环境下 ``primaryScreen()`` 可能为空）。

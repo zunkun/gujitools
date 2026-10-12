@@ -43,8 +43,8 @@ def run(ctx) -> None:
     #    area 还是 1，照样冒出来）。
     # ⚠️ isVisible 系列断言必须真显示之后才有意义（见文件头说明），先亮出详情页
     show_detail(ctx, stage=0)
-    # 默认模板（task_default.bpmn）里画了「图片拼板」→ 节点出现（虚线、未选择）
-    ok("默认流程里画了「图片拼板」→ 拼版节点显示（无需配任何参数）",
+    # 默认模板（task_default.bpmn）里画了「图片拼版」→ 节点出现（虚线、未选择）
+    ok("默认流程里画了「图片拼版」→ 拼版节点显示（无需配任何参数）",
        d.step_bar.imposition_node.isVisible() and d._imposition_node_visible())
     ok("拼版节点默认未选择（图上有这一格 ≠ 一定要跑）",
        not d.step_bar.imposition_node.is_selected())

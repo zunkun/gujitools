@@ -5,7 +5,7 @@
 
 1. **壳层的结构契约**：导航条目与 ``MODULES`` 注册表一一对应；
    ``MainWindow`` 的 ``list_page`` / ``detail_page`` / ``pages`` / ``store``
-   仍然可访问（gui_shot.py 与 _context.py 都按这些名字取页面，改名即断）；
+   仍然可访问（_context.py 按这些名字取页面，改名即断）；
    点模块能切到对应页面且路由反查正确。
 2. **「独立」这条设计底线**：模块页**惰性构造**（不点不建）；
    模块页之间、模块页与 ``TaskDetailPage`` **没有 import 依赖**
@@ -264,7 +264,7 @@ def run(ctx) -> None:
        w.shell.current_route() == "tasks", w.shell.current_route())
 
     # ---- 6b. 直接操作 pages 切页时，导航高亮跟着走 ----
-    # gui_shot.py 就是这么切的（``window.pages.setCurrentWidget(...)``），
+    # 自测就是这么切的（``window.pages.setCurrentWidget(...)``），
     # 不走 show_module；若不同步，截图里会出现"左边高亮一页、右边显示另一页"。
     w.shell.show_module("rembg")
     app.processEvents()

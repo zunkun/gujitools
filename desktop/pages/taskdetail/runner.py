@@ -215,7 +215,8 @@ class StageRunnerMixin:
             self.task_id, stage, self.imposition_effective()
         ):
             path = self.store.stage_input(
-                self.task_id, stage, port, self.imposition_effective())
+                self.task_id, stage, port, self.imposition_effective()
+            )
             if path is None or not path.exists():
                 return False
         return True
@@ -232,7 +233,7 @@ class StageRunnerMixin:
             #    而不是"请先导入 PDF"——那听着像要去列表页重新导入。
             #
             # ⚠️⚠️ 判据是"**这一步需要的输入**齐不齐"，**不是"有没有 PDF"**
-            #（用户 2026-10-06：非提取节点做第一个节点时该提醒上传图片）：
+            # （用户 2026-10-06：非提取节点做第一个节点时该提醒上传图片）：
             #   · 流程第一步是 extract ⇒ 要源 PDF，没就催"补 PDF"；
             #   · 流程第一步是「检测文本框」这类不吃 PDF 的 ⇒ 输入是入口图片
             #     目录（``stages/input/``），**有图就能跑**，哪怕整个任务压根
@@ -241,7 +242,8 @@ class StageRunnerMixin:
             kind = self._missing_input_kind()
             if kind == "images":
                 self._toast(
-                    "warning", "这一步需要图片",
+                    "warning",
+                    "这一步需要图片",
                     "本流程第一步不吃 PDF，请点页头的图片按钮选择图片，"
                     "或把图片放进任务目录下的 stages/input。",
                 )
@@ -250,7 +252,8 @@ class StageRunnerMixin:
                 #    输入控件只属于第一个流程节点）。「图片提取」打头时按钮
                 #    才显示，那时指它没错。
                 self._toast(
-                    "warning", "尚未选择 PDF",
+                    "warning",
+                    "尚未选择 PDF",
                     "点页头的「选择 PDF」按钮为本任务补上源文件，之后才能执行。",
                 )
             else:
@@ -259,7 +262,8 @@ class StageRunnerMixin:
                 # ⚠️ 别再说"点页头的「选择 PDF」"——那种流程里按钮是藏着的
                 #    （规则①③），指一个不存在的按钮就是"点了没反应"的前奏。
                 self._toast(
-                    "warning", "这一步的输入还没就位",
+                    "warning",
+                    "这一步的输入还没就位",
                     "这一步的输入由流程上游提供：先把它的上游步骤执行完，"
                     "或到「查看 / 编辑流程」里检查连线。",
                 )
@@ -288,18 +292,18 @@ class StageRunnerMixin:
             live_steps = {STAGE_STEP.get(s, s) for s in scheduler.stages}
             if STAGE_STEP.get(stage, stage) not in live_steps:
                 self._toast(
-                    "warning", "这一步不在流程里",
+                    "warning",
+                    "这一步不在流程里",
                     f"当前任务的流程图里没有「{STAGE_LABELS.get(stage, stage)}」，"
                     "请先在「查看/编辑流程」里把它加回来。",
                 )
                 return
         if stage == "extract" and (
-                self.source_path is None or not Path(self.source_path).exists()):
+            self.source_path is None or not Path(self.source_path).exists()
+        ):
             # self.source_path 已是任务目录里的备份（见 page.set_task）；
             # ⚠️ 空壳任务（还没补 PDF）source_path 为 None，一并按缺失处理
-            self._toast(
-                "error", "PDF 缺失", f"任务备份 PDF 不存在：{self.source_path}"
-            )
+            self._toast("error", "PDF 缺失", f"任务备份 PDF 不存在：{self.source_path}")
             return
 
         panel: Any = self.control_stack.currentWidget()
@@ -349,7 +353,7 @@ class StageRunnerMixin:
             # 让其「通用边距默认」在 border 非 0 时回落为 0（避免双重留白）。
             args["upstream_border"] = border
             if not effects:
-                # ⚠️ 提示要按**当前取图来源**给：启用拼板后列表为空，原因是
+                # ⚠️ 提示要按**当前取图来源**给：启用拼版后列表为空，原因是
                 # 「还没拼版」，而不是「第三步没提交」——照旧文案会把人引去
                 # 第三步反复重跑，解决不了问题（用户 2026-10-03）。
                 if self.imposition_active() and not self.imposition_effective():
@@ -361,22 +365,23 @@ class StageRunnerMixin:
                     return
                 if self.imposition_effective():
                     self._toast(
-                        "warning", "没有拼版页",
+                        "warning",
+                        "没有拼版页",
                         "已启用「图片拼版」，但拼版清单是空的。请先回到"
                         "「图片拼版」点「＋ 选择拼版」，或取消勾选"
                         "「在流程中启用图片拼版」改用去底色图片。",
                     )
                     return
                 self._toast(
-                    "warning", "无输入页面",
+                    "warning",
+                    "无输入页面",
                     "待打印列表为空，请先在第三步「生成预览」（必要时「提交"
                     "本次任务」选页），或在左侧列表插入图片。",
                 )
                 return
             doc["pages"] = [
                 (
-                    {"file": e.get("file"), "label": e.get("label"),
-                     "rect": e["rect"]}
+                    {"file": e.get("file"), "label": e.get("label"), "rect": e["rect"]}
                     if e.get("rect") is not None
                     else {"file": e.get("file"), "label": e.get("label")}
                 )
@@ -424,8 +429,8 @@ class StageRunnerMixin:
             self.log_view.append(
                 (
                     f"图片拼版：{len(effects)} 页（PDF排版用拼版结果）"
-                    if self.imposition_effective() else
-                    f"PDF排版：{len(effects)} 页"
+                    if self.imposition_effective()
+                    else f"PDF排版：{len(effects)} 页"
                     "（用第三步「提交本次任务」的成品图）"
                 )
             )
@@ -436,7 +441,8 @@ class StageRunnerMixin:
                 #    （自定义流程把这一步放在第一位，用户 2026-10-06 报障）。
                 #    那时唯一说得通、也真能解决问题的出路就是"放图进来"。
                 self._toast(
-                    "warning", "无输入页面",
+                    "warning",
+                    "无输入页面",
                     "这一步还没有可处理的图片：点左侧列表下方的「＋」插入图片，"
                     "或把图片放进本任务的输入目录后重试。",
                 )
@@ -451,7 +457,8 @@ class StageRunnerMixin:
             pages_input = self.store.stage_input(self.task_id, stage, "pages")
             if pages_input is None:
                 self._toast(
-                    "error", "输入未接好",
+                    "error",
+                    "输入未接好",
                     f"{STAGE_LABELS.get(stage, stage)} 的图片输入没有连线，"
                     "请检查流程配置。",
                 )
@@ -487,7 +494,9 @@ class StageRunnerMixin:
 
         self._launch_stage_process(stage, args, resume)
 
-    def _launch_stage_process(self, stage: str, args: dict, resume: bool = False) -> None:
+    def _launch_stage_process(
+        self, stage: str, args: dict, resume: bool = False
+    ) -> None:
         """写入运行配置并启动 worker 子进程。"""
         # ⚠️ 调用前 _run_stage_unchecked 的输入守卫已保证有任务在身
         task_id = self.task_id
@@ -498,7 +507,12 @@ class StageRunnerMixin:
         config_path = runs_dir / f"run-{self.run_id}.json"
         write_json(
             config_path,
-            {"task_id": self.task_id, "stage": stage, "run_id": self.run_id, "args": args},
+            {
+                "task_id": self.task_id,
+                "stage": stage,
+                "run_id": self.run_id,
+                "args": args,
+            },
         )
         self.cancel_requested = False
         self.running_stage = stage
@@ -520,9 +534,7 @@ class StageRunnerMixin:
             self.stage_progress.setValue(0)
             # 走 _set_stage_status 而不是 setText：颜色要跟着回到常规色，
             # 否则上一条"上游已重跑/版面已修改"的红字会留在「执行中」上
-            self._set_stage_status(
-                f"{STAGE_LABELS[stage]}：{STATUS_LABELS['running']}"
-            )
+            self._set_stage_status(f"{STAGE_LABELS[stage]}：{STATUS_LABELS['running']}")
         if stage == "extract":
             self._extract_seen = len(
                 list_stage_images(self.store.extract_output_dir(task_id))
@@ -612,9 +624,7 @@ class StageRunnerMixin:
             f"[看门狗] 已 {minutes:.0f} 分钟没有任何进度输出，"
             "若确认卡住可点「中断」或关闭窗口。"
         )
-        self._set_stage_status(
-            f"已 {minutes:.0f} 分钟无进展（可能卡住，可中断重试）"
-        )
+        self._set_stage_status(f"已 {minutes:.0f} 分钟无进展（可能卡住，可中断重试）")
 
     def _on_stage_unclean_exit(self) -> None:
         """传输层报"进程已退出但 Qt 没能正常收尾"：记成失败原因（看门狗兜底）。"""
@@ -671,7 +681,9 @@ class StageRunnerMixin:
             elif etype == "page_size":
                 self._store_page_size(event)
             elif etype == "started":
-                self.log_view.append(f"子任务进程已启动：{STAGE_LABELS.get(event.get('stage'), event.get('stage'))}")
+                self.log_view.append(
+                    f"子任务进程已启动：{STAGE_LABELS.get(event.get('stage'), event.get('stage'))}"
+                )
             elif etype == "error":
                 # ⚠️ 结构化 error 事件是 worker 侧**最准确的失败原因**（stage 自己发的，
                 # 比 stderr 里那行启发式匹配可靠）。必须同时记进 _last_error_line：
@@ -725,7 +737,8 @@ class StageRunnerMixin:
         if not self.task_id:
             return
         self._pending_sizes[event.get("image", "")] = (
-            int(event.get("width", 0)), int(event.get("height", 0)),
+            int(event.get("width", 0)),
+            int(event.get("height", 0)),
         )
         self._annot_timer.start(self._ANNOT_FLUSH_MS)
 
@@ -769,8 +782,7 @@ class StageRunnerMixin:
                 self.store.save_detect_boxes_batch(self.task_id, boxes)
                 # detect 批量检测中：落了一批框 → 右侧统计跟着实时重算
                 # （boxes.json 一次读盘 ~1ms，400ms 一次可忽略）
-                if self.current_stage() == "detect" \
-                        and self.detect_stats.isVisible():
+                if self.current_stage() == "detect" and self.detect_stats.isVisible():
                     self._refresh_detect_stats()
         except Exception as exc:  # noqa: BLE001 - 落盘失败不该打断阶段收尾
             # ⚠️ 但不能**静默**吞掉（2026-09-26 审计）：磁盘满 / 任务目录被删 /
@@ -813,10 +825,23 @@ class StageRunnerMixin:
         `_last_error_line` 仍是 None，用户看到的还是「退出码 1」。
         """
         _MARKERS = (
-            "error", "traceback", "exception", "failed", "failure", "unable",
-            "cannot", "can't", "no such", "no space", "denied", "errno",
-            "not found", "missing",
-            "错误", "失败", "异常",
+            "error",
+            "traceback",
+            "exception",
+            "failed",
+            "failure",
+            "unable",
+            "cannot",
+            "can't",
+            "no such",
+            "no space",
+            "denied",
+            "errno",
+            "not found",
+            "missing",
+            "错误",
+            "失败",
+            "异常",
         )
         for line in data.decode("utf-8", errors="replace").splitlines():
             line = line.strip()
@@ -919,8 +944,14 @@ class StageRunnerMixin:
             # worker 的 finished 事件不带 done/total（进度由结构化事件实时汇报），
             # 用最近一次进度补齐，否则历史记录会停在中间的 done 值上。
             self.store.finish_stage(
-                self.task_id, self.run_id, status,
-                str(self.store.stage_output_dir(self.task_id, stage)) if stage else None,
+                self.task_id,
+                self.run_id,
+                status,
+                (
+                    str(self.store.stage_output_dir(self.task_id, stage))
+                    if stage
+                    else None
+                ),
                 progress=self._last_progress,
                 error=failure,
             )
@@ -946,12 +977,15 @@ class StageRunnerMixin:
                 # 页面清单只由 extract 输出决定；detect/rembg 结果留在各自目录，
                 # 不回写清单，避免污染 extract 预览和后续子任务的输入。
                 output_dir = self.store.stage_output_dir(self.task_id, stage)
-                page_count = len(self.store.refresh_pages_from_dir(self.task_id, output_dir))
+                page_count = len(
+                    self.store.refresh_pages_from_dir(self.task_id, output_dir)
+                )
                 self.log_view.append(f"页面清单已刷新（{page_count} 页）。")
                 self._refresh_manifest()
                 if page_count == 0:
                     self._toast(
-                        "warning", "结果为空",
+                        "warning",
+                        "结果为空",
                         f"{STAGE_LABELS[stage]} 未产生任何图片，请查看日志（可能参数有误）。",
                     )
             if stage == "print":
@@ -989,12 +1023,14 @@ class StageRunnerMixin:
                 # 新预览图已落盘：若与最近一次提交不一致，提示有新版本待提交
                 if version == "new_version":
                     override_toast = (
-                        "info", "已生成新的预览版本",
+                        "info",
+                        "已生成新的预览版本",
                         "去底预览图片已更新，请点击「提交本次任务」生成最终图片",
                     )
                 elif version == "preview_stale":
                     override_toast = (
-                        "info", "预览已生成",
+                        "info",
+                        "预览已生成",
                         "提示：面板参数又有修改，请确认后重新「生成预览」",
                     )
             else:  # rembg_submit
@@ -1005,7 +1041,8 @@ class StageRunnerMixin:
                     self._refresh_preview(print_page)
                 if version == "up_to_date":
                     override_toast = (
-                        "success", "提交完成",
+                        "success",
+                        "提交完成",
                         "最终图片已是最新预览版本，可前往第四步生成 PDF",
                     )
         if status == "failed":

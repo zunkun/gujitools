@@ -20,7 +20,7 @@ PDF 源**不在这里**——它已有了一份成熟实现（``PreviewWorker`` 
 :meth:`desktop.steps.spec.StepSpec.default_output` 决定（用户明确要求「生成
 目录按照原先的」）。
 
-⚠️ **透明 = 白底**（用户 2026-10-04「拼板左列缩略图全是黑的」）：去底色
+⚠️ **透明 = 白底**（用户 2026-10-04「拼版左列缩略图全是黑的」）：去底色
 （rembg）产物是**调色板 PNG、白底被标记为透明**（``tRNS``）。Qt 解码为
 ``ARGB32_Premultiplied``（透明像素 RGB=0），而缓存是 **JPEG——没有 alpha
 通道**：直接编码时"透明 = 黑"会被**固化**成纯黑图（用户看到的黑块就是它）。
@@ -115,7 +115,8 @@ def decode_sized(path: Path, edge: int) -> QImage:
         image = QImage(str(path))
     if not image.isNull() and (image.width() > edge or image.height() > edge):
         image = image.scaled(
-            edge, edge,
+            edge,
+            edge,
             aspectMode=Qt.AspectRatioMode.KeepAspectRatio,
             mode=Qt.TransformationMode.SmoothTransformation,
         )
@@ -125,7 +126,7 @@ def decode_sized(path: Path, edge: int) -> QImage:
 def flatten_on_white(image: QImage) -> QImage:
     """把**带 alpha 的图**合成到白底；无 alpha（或空图）原样返回。
 
-    ⚠️ 为什么必须有这一步（用户 2026-10-04「拼板左列全是黑的」实锤往
+    ⚠️ 为什么必须有这一步（用户 2026-10-04「拼版左列全是黑的」实锤往
     事）：去底色产物是"**白底被标记为透明**"的调色板 PNG。Qt 解码成
     ``ARGB32_Premultiplied``——透明像素的 RGB 是 0；而缓存的 JPEG 没有
     alpha 通道，**直接编码 = 把透明固化成黑色**，于是整张缩略图纯黑

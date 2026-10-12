@@ -42,6 +42,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from utils.file_utils import write_bytes_atomic
+from utils.sort_utils import natural_sort_key
 from utils.units import DEFAULT_RENDER_DPI as DEFAULT_UNITS_DPI
 
 # ------------------------------------------------------------------ quick
@@ -837,9 +838,6 @@ def run_on_input_directory(
         subdir_name: 每个 PDF 子目录下存放图片的子目录名。
         reporter: 结构化汇报通道；None → 只 print（CLI 默认）。
     """
-    print(
-        f"[debug] run_on_input_directory called with: {input_path}, out_root={out_root}, subdir_name={subdir_name}"
-    )
     if not os.path.exists(input_path):
         raise ValueError(f"路径不存在: {input_path}")
 
@@ -852,7 +850,6 @@ def run_on_input_directory(
             if f.lower().endswith(".pdf")
         ]
 
-    print(f"[debug] Found {len(pdfs)} pdf(s) to process")
     if not pdfs:
         raise ValueError(f"目录中没有 PDF 文件: {input_path}")
 
@@ -861,14 +858,16 @@ def run_on_input_directory(
 
     # 单个 PDF 失败不打断批量处理，但必须让调用方最终知道"有失败"，
     # 否则脚本/子进程会把失败当成功（退出码 0）
+    # ⚠️ 排序用**自然序**（全仓唯一排序键 utils.sort_utils）：字典序会让
+    #    「书2.pdf」排在「书10.pdf」后面，批量处理的先后与输出子目录的
+    #    创建顺序都和用户对页序的直觉相反（2026-10-12 排序统一审计）。
     failures: list[str] = []
-    for pdf in sorted(pdfs):
+    for pdf in sorted(pdfs, key=lambda p: natural_sort_key(Path(p).name)):
         try:
             fname = os.path.basename(pdf)
             folder_name = os.path.splitext(fname)[0]
             # 使用 subdir_name 拼接最终输出目录
             out_dir = os.path.join(out_root, folder_name, subdir_name)
-            print(f"[debug] processing {pdf} -> {out_dir}")
             ok = extract_pdf_optimized(
                 pdf,
                 out_dir,

@@ -24,7 +24,12 @@ from __future__ import annotations
 from PySide6.QtCore import QPoint, QPointF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
 )
 
 from desktop.ui import theme as T
@@ -40,16 +45,18 @@ UNMAPPED_DETAIL = "未接入"
 
 # 状态 → (徽标填充, 徽标描边, 徽标文字, 标题色, 副标题色)
 _STATUS_COLORS = {
-    "pending":   (T.SURFACE, "#C8C6C4", T.INK_SOFT, T.INK_SOFT, T.INK_FAINT),
-    "running":   (ACCENT, ACCENT, T.SURFACE, ACCENT, ACCENT),
-    "success":   (GREEN, GREEN, T.SURFACE, T.INK, GREEN),
-    "failed":    (RED, RED, T.SURFACE, RED, RED),
+    "pending": (T.SURFACE, "#C8C6C4", T.INK_SOFT, T.INK_SOFT, T.INK_FAINT),
+    "running": (ACCENT, ACCENT, T.SURFACE, ACCENT, ACCENT),
+    "success": (GREEN, GREEN, T.SURFACE, T.INK, GREEN),
+    "failed": (RED, RED, T.SURFACE, RED, RED),
     "cancelled": (T.SURFACE, AMBER, AMBER, T.INK, AMBER),
 }
 
-_BADGE = 26          # 徽标直径
-_CONNECTOR_W = 38    # 连接线宽度（含箭头）
-_BYPASS_CLEAR = 28   # 绕行线上下竖线离拼版节点左右缘的距离（用户 2026-09-30：别贴着按钮拐弯）
+_BADGE = 26  # 徽标直径
+_CONNECTOR_W = 38  # 连接线宽度（含箭头）
+_BYPASS_CLEAR = (
+    28  # 绕行线上下竖线离拼版节点左右缘的距离（用户 2026-09-30：别贴着按钮拐弯）
+)
 # 所有节点的**统一默认宽度**（用户 2026-09-30：所有节点设置一个默认宽度，
 # 生效/不生效、选择/未选择都不改变宽度——状态只表达在徽标与副标题上）。
 # 只是下限：状态副标题更长时节点仍可以变宽（文字走省略号兜底）。
@@ -103,7 +110,13 @@ class _StepBadge(QWidget):
             path.lineTo(w * 0.44, h * 0.67)
             path.lineTo(w * 0.72, h * 0.35)
             painter.setPen(
-                QPen(QColor(text_color), 2.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+                QPen(
+                    QColor(text_color),
+                    2.0,
+                    Qt.PenStyle.SolidLine,
+                    Qt.PenCapStyle.RoundCap,
+                    Qt.PenJoinStyle.RoundJoin,
+                )
             )
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawPath(path)
@@ -120,7 +133,9 @@ class _StepBadge(QWidget):
             font.setBold(True)
             painter.setFont(font)
             painter.setPen(QColor(text_color))
-            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, str(self._number))
+            painter.drawText(
+                self.rect(), Qt.AlignmentFlag.AlignCenter, str(self._number)
+            )
         painter.end()
 
 
@@ -161,7 +176,11 @@ class _ElidedLabel(QLabel):
         text = painter.fontMetrics().elidedText(
             self.text(), Qt.TextElideMode.ElideRight, self.width()
         )
-        painter.drawText(self.rect(), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, text)
+        painter.drawText(
+            self.rect(),
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+            text,
+        )
         painter.end()
 
 
@@ -197,7 +216,9 @@ class StepItem(QFrame):
 
         self.pill = QFrame(self)
         self.pill.setObjectName("stepPill")
-        self.pill.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        self.pill.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred
+        )
         # 统一默认宽度（_NODE_MIN_W）：节点之间宽窄一致，状态变化不引起跳动
         self.pill.setMinimumWidth(_NODE_MIN_W)
         row = QHBoxLayout(self.pill)
@@ -220,7 +241,9 @@ class StepItem(QFrame):
         column.addWidget(self.detail_label)
         row.addLayout(column, 1)
 
-        outer.addWidget(self.pill, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        outer.addWidget(
+            self.pill, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
         outer.addStretch(0)
 
         self._apply_style()
@@ -242,8 +265,7 @@ class StepItem(QFrame):
         )
         # ⚠️ 未接入的节点**固定**显示「未接入」，不被状态刷新覆盖成
         #    "未执行"——那会把"这一步没功能"说成"这一步还没跑"。
-        self.detail_label.setText(
-            UNMAPPED_DETAIL if self._unmapped else detail)
+        self.detail_label.setText(UNMAPPED_DETAIL if self._unmapped else detail)
         self.detail_label.setVisible(self._unmapped or bool(detail))
         self.badge.set_state(self.index + 1, self._badge_status)
         self._apply_style()
@@ -258,9 +280,7 @@ class StepItem(QFrame):
         _, _, _, title_color, _ = _STATUS_COLORS.get(
             self._badge_status, _STATUS_COLORS["pending"]
         )
-        detail_color = _STATUS_COLORS.get(
-            self._status, _STATUS_COLORS["pending"]
-        )[4]
+        detail_color = _STATUS_COLORS.get(self._status, _STATUS_COLORS["pending"])[4]
         if self.current:
             self._background = QColor(0, 120, 212, 26)
         elif self._hovered():
@@ -304,7 +324,8 @@ class StepItem(QFrame):
         self.setToolTip(
             "这一步还没有对应的处理功能，暂时不能执行"
             "（可在流程图里把它改名成已有步骤，或删掉）"
-            if self._unmapped else ""
+            if self._unmapped
+            else ""
         )
         self.update()
 
@@ -341,7 +362,9 @@ class StepItem(QFrame):
         super().leaveEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:
-        if event.button() == Qt.MouseButton.LeftButton and self.rect().contains(event.position().toPoint()):
+        if event.button() == Qt.MouseButton.LeftButton and self.rect().contains(
+            event.position().toPoint()
+        ):
             self.clicked.emit(self.index)
         super().mouseReleaseEvent(event)
 
@@ -389,10 +412,10 @@ class _ImpositionNode(QFrame):
         )
 
         row = QHBoxLayout(self)
-        row.setContentsMargins(8, 5, 12, 5)   # 与 StepItem 胶囊一致
+        row.setContentsMargins(8, 5, 12, 5)  # 与 StepItem 胶囊一致
         row.setSpacing(9)
         self.badge = _StepBadge(self)
-        self.badge.set_symbol("＋")           # 未生效：灰色「＋」；生效后转对勾
+        self.badge.set_symbol("＋")  # 未生效：灰色「＋」；生效后转对勾
         row.addWidget(self.badge, 0, Qt.AlignmentFlag.AlignVCenter)
 
         column = QVBoxLayout()
@@ -480,12 +503,16 @@ class _ImpositionNode(QFrame):
         super().leaveEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:
-        if event.button() == Qt.MouseButton.LeftButton and self.rect().contains(event.position().toPoint()):
+        if event.button() == Qt.MouseButton.LeftButton and self.rect().contains(
+            event.position().toPoint()
+        ):
             self.clicked.emit()
         super().mouseReleaseEvent(event)
 
 
-def _rounded_polyline(points: list[tuple[float, float]], radius: float = 6.0) -> QPainterPath:
+def _rounded_polyline(
+    points: list[tuple[float, float]], radius: float = 6.0
+) -> QPainterPath:
     """带圆角的折线（``points`` 是 **(x, y) float 元组**）。
 
     ⚠️ 全程用 ``QPainterPath`` 的 float 重载（``moveTo(x, y)``），**不要**换成
@@ -555,8 +582,15 @@ class StepBar(QWidget):
     #: 流程条上点了「图片拼版」虚线节点（宿主据此切到占位详情）。
     imposition_clicked = Signal()
 
-    def __init__(self, steps, parent=None, optional_after=None,
-                 unmapped=None, bar_indices=None, optional_bar_index=None):
+    def __init__(
+        self,
+        steps,
+        parent=None,
+        optional_after=None,
+        unmapped=None,
+        bar_indices=None,
+        optional_bar_index=None,
+    ):
         """按给定步骤标题逐项构建；steps 允许传生成器。
 
         ``optional_after`` 是**可选节点（拼版）插在第几个真实步骤之后**
@@ -591,7 +625,8 @@ class StepBar(QWidget):
         self._current = 0
         #: 第 i 个真实步骤的格序 / 格序 → 位置的互查表（寻址全走它）
         self._bar_of_pos = (
-            [int(b) for b in bar_indices] if bar_indices is not None
+            [int(b) for b in bar_indices]
+            if bar_indices is not None
             else list(range(len(steps)))
         )
         if len(self._bar_of_pos) != len(steps):
@@ -603,7 +638,7 @@ class StepBar(QWidget):
         #: 可选节点插在第几个真实步骤之后（构造期算出，见 ``optional_after``）。
         #: 下游找"拼版左右邻居"一律走它，不再写死 ``buttons[-2]``。
         #: ⚠️ **-1 = 插在最前**（拼版排在所有真实步骤之前，任务 #0027 的
-        #:    「拼板→PDF排版」流程）：不能按旧口径钳到 0，否则视觉上跑到
+        #:    「拼版→PDF排版」流程）：不能按旧口径钳到 0，否则视觉上跑到
         #:    第一步后面，与流程图相反。``None``（宿主没传）仍按旧默认
         #:    "最后一步之前"处理，那是默认流程的形状。
         self._optional_after = (
@@ -621,7 +656,8 @@ class StepBar(QWidget):
         #:    ``optional_bar_index`` 就用它（真源＝槽位表），否则退回
         #:    "插在第 ``_optional_after`` 个之后"这个推导值。
         self.imposition_index = (
-            int(optional_bar_index) if optional_bar_index is not None
+            int(optional_bar_index)
+            if optional_bar_index is not None
             else self._optional_after + 1
         )
         self.imposition_node = _ImpositionNode("图片拼版", self)
@@ -636,7 +672,11 @@ class StepBar(QWidget):
         slot_row = QHBoxLayout(self.imposition_slot)
         slot_row.setContentsMargins(0, 0, 8, 0)  # 与 StepItem 外边距一致
         slot_row.setSpacing(0)
-        slot_row.addWidget(self.imposition_node, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        slot_row.addWidget(
+            self.imposition_node,
+            0,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+        )
         slot_row.addStretch(0)
 
         row = QHBoxLayout(self)
@@ -669,7 +709,9 @@ class StepBar(QWidget):
         # ⚠️ 必须是 2k+2：算成 2k+1 会插到 conn[k] 前面，箭头全跑到
         #    虚线框后面（用户截图报过：虚线前面没有箭头、后面挤两个）。
         insert_at = 2 * self._optional_after + 2
-        row.insertWidget(insert_at, self._imposition_connector, 0, Qt.AlignmentFlag.AlignVCenter)
+        row.insertWidget(
+            insert_at, self._imposition_connector, 0, Qt.AlignmentFlag.AlignVCenter
+        )
         # 槽位 stretch **1**：与真实步骤平分多余空间（间距才均匀）；虚线框自身
         # 靠 Maximum 策略贴在槽位左侧，不会被拉宽。
         row.insertWidget(insert_at, self.imposition_slot, 1)
@@ -683,9 +725,7 @@ class StepBar(QWidget):
         if self._optional_after < 0:
             self.imposition_front_connector = None
         elif self._optional_after < len(self.connectors):
-            self.imposition_front_connector = self.connectors[
-                self._optional_after
-            ]
+            self.imposition_front_connector = self.connectors[self._optional_after]
         else:
             self.imposition_front_connector = (
                 self.connectors[-1] if self.connectors else None
@@ -734,20 +774,27 @@ class StepBar(QWidget):
             #    报"最后一段连接线永远是灰的"）。
             done = self._bar_of_pos[index] in self._completed
             if shown and index == after:
-                segments.append((
-                    self.buttons[index].pill, self.imposition_node,
-                    flow and done, not flow,
-                ))
+                segments.append(
+                    (
+                        self.buttons[index].pill,
+                        self.imposition_node,
+                        flow and done,
+                        not flow,
+                    )
+                )
             elif index < n - 1:
-                segments.append((
-                    self.buttons[index].pill, self.buttons[index + 1].pill,
-                    done, False,
-                ))
+                segments.append(
+                    (
+                        self.buttons[index].pill,
+                        self.buttons[index + 1].pill,
+                        done,
+                        False,
+                    )
+                )
         if shown:
             if after < n - 1:
                 segments.append(
-                    (self.imposition_node, self.buttons[after + 1].pill,
-                     flow, not flow)
+                    (self.imposition_node, self.buttons[after + 1].pill, flow, not flow)
                 )
             # after == n-1（可选节点排在最后一步之后）：它右侧没有真实
             # 步骤可连，不补段（补了会画出指向虚空的线）。
@@ -767,12 +814,21 @@ class StepBar(QWidget):
             color = QColor(GREEN if done else "#d6d6d6")
             painter.setPen(
                 QPen(
-                    color, 2, Qt.PenStyle.DashLine if dash else Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap
+                    color,
+                    2,
+                    Qt.PenStyle.DashLine if dash else Qt.PenStyle.SolidLine,
+                    Qt.PenCapStyle.RoundCap,
                 )
             )
             painter.drawLine(QPointF(a.x(), a.y()), QPointF(b.x(), b.y()))
             painter.setPen(
-                QPen(color, 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+                QPen(
+                    color,
+                    2,
+                    Qt.PenStyle.SolidLine,
+                    Qt.PenCapStyle.RoundCap,
+                    Qt.PenJoinStyle.RoundJoin,
+                )
             )
             tip = b.x() - right.width() // 2 - 2
             arrow = QPainterPath()
@@ -797,8 +853,11 @@ class StepBar(QWidget):
         done = self._optional_after in self._completed
         painter.setPen(
             QPen(
-                QColor(GREEN if done else "#d6d6d6"), 2,
-                Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin,
+                QColor(GREEN if done else "#d6d6d6"),
+                2,
+                Qt.PenStyle.SolidLine,
+                Qt.PenCapStyle.RoundCap,
+                Qt.PenJoinStyle.RoundJoin,
             )
         )
         painter.setBrush(Qt.BrushStyle.NoBrush)
@@ -930,7 +989,10 @@ class StepBar(QWidget):
             self._sync()
 
     def set_step_status(
-        self, index: int, status: str, progress: tuple | None = None,
+        self,
+        index: int,
+        status: str,
+        progress: tuple | None = None,
         completed: bool | None = None,
     ) -> None:
         """设置某步骤状态；progress 为 (已完成, 总数) 时拼出 "成功 · 84/84"。

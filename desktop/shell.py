@@ -127,7 +127,7 @@ class ModuleShell(QWidget):
 
         self.pages = QStackedWidget()
         self.pages.setObjectName("pageRoot")
-        # ⚠️ 外部（gui_shot.py / 自测）会直接 ``window.pages.setCurrentWidget(page)``
+        # ⚠️ 外部（自测）会直接 ``window.pages.setCurrentWidget(page)``
         #    切页，那条路绕过 show_tasks/show_module，导航高亮就会与实际页面
         #    不同步（截图里左边高亮"任务管理"、右边却是别的页）。这里监听栈的
         #    页面变化，把导航选中态**跟着页面走**，两条入口就一致了。
@@ -225,8 +225,8 @@ class ModuleShell(QWidget):
     def detail_page(self):
         """任务详情页（惰性构造）。
 
-        保留这个名字：``tests/selftests/_context.py`` 与 ``tests/gui_shot.py``
-        都按 ``window.detail_page`` 取页面来操作控件（原来在 MainWindow 上，
+        保留这个名字：``tests/selftests/_context.py``
+        按 ``window.detail_page`` 取页面来操作控件（原来在 MainWindow 上，
         现在壳层转发一层，外部契约不变）。
         """
         return self._ensure_detail_page()
@@ -415,8 +415,8 @@ class ModuleShell(QWidget):
         持一份、已经建出来的详情页又持一份。只改 ``MainWindow.store`` 而漏掉
         这里，惰性构造的详情页会继续指向**老目录**——表现是"打开的是同名任务
         号的另一个任务"（`tests/selftests/last_stage.py` 就是这么红的：真实数据
-        目录里恰好也有 0001，而它停在拼版步）。测试与截图脚本的
-        「换 store 指向临时目录」这一手（`_context.prepare` / `gui_shot`）全靠它。
+        目录里恰好也有 0001，而它停在拼版步）。测试的
+        「换 store 指向临时目录」这一手（`_context.prepare`）全靠它。
         """
         self.store = store
         self.list_page.store = store

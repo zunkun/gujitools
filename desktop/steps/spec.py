@@ -299,7 +299,11 @@ class StepSpec:
             nxt: list[Path] = []
             for current in frontier:
                 try:
-                    children = sorted(current.iterdir(), key=lambda p: p.name.lower())
+                    # ⚠️ 目录清单也按**自然序**（与 listing/collect_image_files
+                    #    同一把排序键）：字典序「第10课」会排在「第2课」前面，
+                    #    多个候选子目录时"选哪个/按什么顺序"就跟页序直觉相反。
+                    children = sorted(current.iterdir(),
+                                      key=lambda p: natural_sort_key(p.name))
                 except OSError:
                     continue
                 for child in children:
@@ -697,7 +701,7 @@ SPECS: tuple[StepSpec, ...] = (
         stage_title="图片拼版",
         short="拼版",
         nav=True,
-        nav_title="图片拼板",
+        nav_title="图片拼版",
         nav_tooltip="多页图片拼版与版式调整",
         # ⚠️ 别用 PHOTO：一张照片表达不出"多页拼成一版"，而且 PHOTO 同时是
         #    好几个步骤大输入区的图标，导航里再用就没辨识度。TILES 的

@@ -21,11 +21,7 @@
 
 ## 配图
 
-- [screenshots/](screenshots/) — 界面总览截图（7 张，含「图片拼版」）
-- [screenshots/guide/](screenshots/guide/) — 用户操作手册配图（12 张）
-
-截图以《龍譚精舍叢刻》真实扫描件演示（第 4 页），由 `tests/gui_shot.py`
-离屏渲染生成，改界面后重跑即可刷新。
+- [screenshots/](screenshots/) — 界面截图（总览 + 用户操作手册配图，人工截取）
 
 ## 查更深的东西
 

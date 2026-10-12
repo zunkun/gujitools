@@ -222,16 +222,10 @@ apply_app_style(app)
 
 ## 6. 视觉自查
 
-离屏渲染截图工具（无需真机窗口，可脚本化回归）：
-
-```bash
-QT_QPA_PLATFORM=offscreen python tests/gui_shot.py D:/tmp/shots
-```
-
-它会注册 Windows 中文字体、造 3 条演示任务，输出 **6 张**截图（任务列表页、四步
-详情页、以及点击日志状态条唤出的日志浮层），文件名与 `docs/guide/screenshots/` 下的
-文件一致，可直接覆盖使用。便于逐张核对排版；改完界面后建议至少跑一次，配合
-`tests/gui_selftest.py`（功能断言）一起作为回归。
+界面截图已改由**人工截取**（2026-10-12 起旧的离屏截图脚本 `tests/gui_shot.py`
+退役删除），文件放 `docs/guide/screenshots/`，命名与文档引用一致即可。
+`tests/gui_shot.py` 退役后，视觉自查靠：真机过一遍主流程 + BPM 截图工具
+（`tests/bpm_shot.py`，流程图专用）+ `tests/gui_selftest.py`（功能断言）。
 
 ## 7. 用户手册页（浏览器里渲染的那一页）
 

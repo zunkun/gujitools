@@ -90,9 +90,11 @@ def _count_near(image, rgb, tol: int = 28, step: int = 2) -> int:
     for y in range(0, image.height(), step):
         for x in range(0, image.width(), step):
             color = image.pixelColor(x, y)
-            if (abs(color.red() - rgb[0]) <= tol
-                    and abs(color.green() - rgb[1]) <= tol
-                    and abs(color.blue() - rgb[2]) <= tol):
+            if (
+                abs(color.red() - rgb[0]) <= tol
+                and abs(color.green() - rgb[1]) <= tol
+                and abs(color.blue() - rgb[2]) <= tol
+            ):
                 total += 1
     return total
 
@@ -103,8 +105,11 @@ def _count_non_white(image, tol: int = 12, step: int = 2) -> int:
     for y in range(0, image.height(), step):
         for x in range(0, image.width(), step):
             color = image.pixelColor(x, y)
-            if (color.red() < 255 - tol or color.green() < 255 - tol
-                    or color.blue() < 255 - tol):
+            if (
+                color.red() < 255 - tol
+                or color.green() < 255 - tol
+                or color.blue() < 255 - tol
+            ):
                 total += 1
     return total
 
@@ -116,9 +121,11 @@ def _px_near(image, x: int, y: int, rgb, tol: int = 24) -> bool:
     if not (0 <= x < image.width() and 0 <= y < image.height()):
         return False
     c = image.pixelColor(x, y)
-    return (abs(c.red() - rgb[0]) <= tol
-            and abs(c.green() - rgb[1]) <= tol
-            and abs(c.blue() - rgb[2]) <= tol)
+    return (
+        abs(c.red() - rgb[0]) <= tol
+        and abs(c.green() - rgb[1]) <= tol
+        and abs(c.blue() - rgb[2]) <= tol
+    )
 
 
 def _bar_of(page, step: str) -> int:
@@ -133,13 +140,18 @@ def run(ctx) -> None:
 
     from desktop.components.imposition.canvas import ImpositionCanvas
     from desktop.components.imposition.picker import (
-        DIALOG_H, DIALOG_W, THUMB_H, THUMB_W, ImpositionPickerDialog,
+        DIALOG_H,
+        DIALOG_W,
+        THUMB_H,
+        THUMB_W,
+        ImpositionPickerDialog,
     )
     from desktop.components.imposition.page_list import _AddEntry, _PageEntry
     from desktop.components.imposition.view import ImpositionViewWidget
     from desktop.components.viewers.image_zoom_dialog import ZoomTarget
     from desktop.pages.taskdetail.page import TaskDetailPage
     from desktop.services import imposition as S
+
     # ⚠️ 一并导入 IMPOSITION_STAGE：本模块多处要「切到拼版」，而格序必须
     # 查表（``bar_index_of_step``）不能写死——``IMPOSITION_INDEX`` 那个
     # 固定下标落在 print 那一格，是BPM 驱动前的遗留口径。
@@ -157,29 +169,38 @@ def run(ctx) -> None:
 
         made = S.make_page([a, b])
         ok("make_page 能造出一页拼版", made is not None)
-        assert made is not None      # ⚠️ 上一行已判过；这里只为类型检查器收窄
+        assert made is not None  # ⚠️ 上一行已判过；这里只为类型检查器收窄
         right, left = made["items"]
-        ok("序号在前的图片落在**右侧**槽位",
-           Path(right["file"]).name == "1-r.png"
-           and Path(left["file"]).name == "1-l.png")
-        ok("右侧槽位的 x 大于左侧（版面左右就位）",
-           right["rect"][0] > left["rect"][0],
-           f"{right['rect']} vs {left['rect']}")
-        ok("页面里**没有纸张**（sheet 键已删除）",
-           "sheet" not in made, str(list(made)))
-        ok("默认版面按**原始像素**摆放（不改动用户的图）",
-           right["rect"][2:] == [400.0, 600.0]
-           and left["rect"][2:] == [400.0, 600.0],
-           f"{right['rect']} / {left['rect']}")
+        ok(
+            "序号在前的图片落在**右侧**槽位",
+            Path(right["file"]).name == "1-r.png"
+            and Path(left["file"]).name == "1-l.png",
+        )
+        ok(
+            "右侧槽位的 x 大于左侧（版面左右就位）",
+            right["rect"][0] > left["rect"][0],
+            f"{right['rect']} vs {left['rect']}",
+        )
+        ok("页面里**没有纸张**（sheet 键已删除）", "sheet" not in made, str(list(made)))
+        ok(
+            "默认版面按**原始像素**摆放（不改动用户的图）",
+            right["rect"][2:] == [400.0, 600.0] and left["rect"][2:] == [400.0, 600.0],
+            f"{right['rect']} / {left['rect']}",
+        )
         ok("只给一张图造不出一页拼版", S.make_page([a]) is None)
 
         composed = S.compose_page(made)
-        ok("产出图 = 两张图外接框的紧裁（无纸张：图上多大就多大）",
-           composed.size == (800, 600), str(composed.size))
-        ok("合成后：左侧是 1-l、右侧是 1-r（像素级）",
-           composed.getpixel((700, 300))[:3] == RED
-           and composed.getpixel((100, 300))[:3] == GREEN,
-           f"{composed.getpixel((700, 300))} / {composed.getpixel((100, 300))}")
+        ok(
+            "产出图 = 两张图外接框的紧裁（无纸张：图上多大就多大）",
+            composed.size == (800, 600),
+            str(composed.size),
+        )
+        ok(
+            "合成后：左侧是 1-l、右侧是 1-r（像素级）",
+            composed.getpixel((700, 300))[:3] == RED
+            and composed.getpixel((100, 300))[:3] == GREEN,
+            f"{composed.getpixel((700, 300))} / {composed.getpixel((100, 300))}",
+        )
         # ⚠️ 2026-10-10 用户修订：拼版结果**不再铺白底**（白底会烙进成品页图，
         # 编辑器里统一变换/裁剪全带着白底走）。默认版面两图相邻没有留白，
         # 用 30° 旋转的外接框（内容距画布角有 300px 空白）验证：角落透明、
@@ -189,17 +210,26 @@ def run(ctx) -> None:
         _diag = _PILImage.new("RGB", (400, 600), GREEN)
         _diag_path = tmp / "diag-probe.png"
         _diag.save(_diag_path)
-        _diag_page = S.normalize_page({
-            "items": [{"file": str(_diag_path),
-                       "rect": [0.0, 0.0, 400.0, 600.0], "rotation": 30.0}],
-        })
-        assert _diag_page is not None   # 结构合法，normalize 必过
+        _diag_page = S.normalize_page(
+            {
+                "items": [
+                    {
+                        "file": str(_diag_path),
+                        "rect": [0.0, 0.0, 400.0, 600.0],
+                        "rotation": 30.0,
+                    }
+                ],
+            }
+        )
+        assert _diag_page is not None  # 结构合法，normalize 必过
         _diag_shot = S.compose_page(_diag_page)
-        ok("合成后留白处透明（30° 外接框角落不铺白，返回 RGBA）",
-           _diag_shot.mode == "RGBA"
-           and _diag_shot.getpixel((2, 2))[3] == 0
-           and _diag_shot.getpixel((400, 360))[:3] == GREEN,
-           f"mode={_diag_shot.mode} corner={_diag_shot.getpixel((2, 2))}")
+        ok(
+            "合成后留白处透明（30° 外接框角落不铺白，返回 RGBA）",
+            _diag_shot.mode == "RGBA"
+            and _diag_shot.getpixel((2, 2))[3] == 0
+            and _diag_shot.getpixel((400, 360))[:3] == GREEN,
+            f"mode={_diag_shot.mode} corner={_diag_shot.getpixel((2, 2))}",
+        )
 
         # 旋转是**顺时针**口径：PIL 侧取负，两边必须一致。
         # ⚠️ 判据必须用**非均匀**图案，否则 ±90° 的中心像素一样，注入翻转方向
@@ -211,19 +241,27 @@ def run(ctx) -> None:
         striped.paste(BLUE, (0, 0, 200, 600))
         striped_path = tmp / "rotate-probe.png"
         striped.save(striped_path)
-        rotated_page = S.normalize_page({
-            "items": [{"file": str(striped_path), "rect": [0.0, 0.0, 400.0, 600.0],
-                       "rotation": 90.0}],
-        })
-        assert rotated_page is not None   # ⚠️ 上面这一项结构合法，normalize 必过
+        rotated_page = S.normalize_page(
+            {
+                "items": [
+                    {
+                        "file": str(striped_path),
+                        "rect": [0.0, 0.0, 400.0, 600.0],
+                        "rotation": 90.0,
+                    }
+                ],
+            }
+        )
+        assert rotated_page is not None  # ⚠️ 上面这一项结构合法，normalize 必过
         shot = S.compose_page(rotated_page)
         # 无纸张：产出图 = 旋转后的外接框（400×600 转 90° → 600×400）
-        ok("旋转后的产出图按外接框紧裁",
-           shot.size == (600, 400), str(shot.size))
-        ok("旋转 90° 是**顺时针**（左半转到上边、右半转到下边）",
-           shot.getpixel((300, 80))[:3] == BLUE
-           and shot.getpixel((300, 320))[:3] == GREEN,
-           f"上={shot.getpixel((300, 80))} 下={shot.getpixel((300, 320))}")
+        ok("旋转后的产出图按外接框紧裁", shot.size == (600, 400), str(shot.size))
+        ok(
+            "旋转 90° 是**顺时针**（左半转到上边、右半转到下边）",
+            shot.getpixel((300, 80))[:3] == BLUE
+            and shot.getpixel((300, 320))[:3] == GREEN,
+            f"上={shot.getpixel((300, 80))} 下={shot.getpixel((300, 320))}",
+        )
 
         # ---------------- 1a. 编辑覆盖源图后 rect 刷新（用户 2026-10-10）--------
         # 编辑器把图旋转后**覆盖回同一文件**：版面 rect 还按旧尺寸记着，
@@ -231,52 +269,81 @@ def run(ctx) -> None:
         # （形变 + 清晰度下降）。refresh_rects_for_edited_source 必须把 rect
         # 刷成新尺寸（绕 rect 中心保持位置），并失效 image_size 的尺寸缓存。
         probe = tmp / "edited-probe.png"
-        _mk(probe, RED)                        # 覆盖前：400×600 竖图
-        page_stale = S.normalize_page({
-            "items": [{"file": str(probe),
-                       "rect": [100.0, 50.0, 400.0, 600.0], "rotation": 0.0}],
-        })
-        assert page_stale is not None   # ⚠️ 结构合法，normalize 必过
+        _mk(probe, RED)  # 覆盖前：400×600 竖图
+        page_stale = S.normalize_page(
+            {
+                "items": [
+                    {
+                        "file": str(probe),
+                        "rect": [100.0, 50.0, 400.0, 600.0],
+                        "rotation": 0.0,
+                    }
+                ],
+            }
+        )
+        assert page_stale is not None  # ⚠️ 结构合法，normalize 必过
         wide = Image.new("RGB", (600, 400), BLUE)
-        wide.paste(RED, (0, 0, 300, 400))      # "转了 90°"：600×400，左红右蓝
+        wide.paste(RED, (0, 0, 300, 400))  # "转了 90°"：600×400，左红右蓝
         wide.save(probe)
         doc_probe = {"pages": [page_stale]}
-        ok("编辑覆盖源图后 rect 刷新（返回 True）",
-           S.refresh_rects_for_edited_source(doc_probe, str(probe)) is True)
-        new_rect = [round(float(v), 3)
-                    for v in doc_probe["pages"][0]["items"][0]["rect"]]
+        ok(
+            "编辑覆盖源图后 rect 刷新（返回 True）",
+            S.refresh_rects_for_edited_source(doc_probe, str(probe)) is True,
+        )
+        new_rect = [
+            round(float(v), 3) for v in doc_probe["pages"][0]["items"][0]["rect"]
+        ]
         # 旧 rect 中心 = (300, 350)；新 600×400 绕中心 ⇒ [0, 150, 600, 400]
-        ok("rect 宽高 = 新图尺寸、中心保持不动",
-           new_rect == [0.0, 150.0, 600.0, 400.0], str(new_rect))
-        ok("尺寸没变时刷新是 no-op（返回 False）",
-           S.refresh_rects_for_edited_source(doc_probe, str(probe)) is False)
-        ok("尺寸缓存随覆盖失效（重读到新尺寸）",
-           S.image_size(probe) == (600, 400), str(S.image_size(probe)))
+        ok(
+            "rect 宽高 = 新图尺寸、中心保持不动",
+            new_rect == [0.0, 150.0, 600.0, 400.0],
+            str(new_rect),
+        )
+        ok(
+            "尺寸没变时刷新是 no-op（返回 False）",
+            S.refresh_rects_for_edited_source(doc_probe, str(probe)) is False,
+        )
+        ok(
+            "尺寸缓存随覆盖失效（重读到新尺寸）",
+            S.image_size(probe) == (600, 400),
+            str(S.image_size(probe)),
+        )
         # 合成不再压扁：600×400 按原始像素落位（旧 rect 会把它压成 400×600）
         fixed = S.compose_page(doc_probe["pages"][0])
-        ok("刷新后合成不压扁（新图原样落位：左半红、右半蓝）",
-           fixed.size == (600, 400)
-           and fixed.getpixel((150, 200))[:3] == RED
-           and fixed.getpixel((450, 200))[:3] == BLUE,
-           f"size={fixed.size} {fixed.getpixel((150, 200))} / "
-           f"{fixed.getpixel((450, 200))}")
+        ok(
+            "刷新后合成不压扁（新图原样落位：左半红、右半蓝）",
+            fixed.size == (600, 400)
+            and fixed.getpixel((150, 200))[:3] == RED
+            and fixed.getpixel((450, 200))[:3] == BLUE,
+            f"size={fixed.size} {fixed.getpixel((150, 200))} / "
+            f"{fixed.getpixel((450, 200))}",
+        )
 
-        ok("坏页被过滤（项为空 / 无文件 / 非字典）",
-           all(S.normalize_page(bad) is None for bad in (
-               {"items": []},
-               {"items": [{"file": "", "rect": [0, 0, 9, 9]}]},
-               "垃圾",
-           )))
+        ok(
+            "坏页被过滤（项为空 / 无文件 / 非字典）",
+            all(
+                S.normalize_page(bad) is None
+                for bad in (
+                    {"items": []},
+                    {"items": [{"file": "", "rect": [0, 0, 9, 9]}]},
+                    "垃圾",
+                )
+            ),
+        )
         # 老任务存过 "sheet"：读进来要**忽略**它，不能因此判成坏页
         legacy = S.normalize_page(
-            {"sheet": [800, 600],
-             "items": [{"file": "x.png", "rect": [0, 0, 9, 9]}]}
+            {"sheet": [800, 600], "items": [{"file": "x.png", "rect": [0, 0, 9, 9]}]}
         )
-        ok("老文档里的 sheet 被忽略（老任务照样能读）",
-           legacy is not None and "sheet" not in legacy, str(legacy))
-        ok("中文页码标签",
-           [S.cn_page_label(i) for i in (0, 1, 9, 10, 19)] ==
-           ["第一页", "第二页", "第十页", "第十一页", "第二十页"])
+        ok(
+            "老文档里的 sheet 被忽略（老任务照样能读）",
+            legacy is not None and "sheet" not in legacy,
+            str(legacy),
+        )
+        ok(
+            "中文页码标签",
+            [S.cn_page_label(i) for i in (0, 1, 9, 10, 19)]
+            == ["第一页", "第二页", "第十页", "第十一页", "第二十页"],
+        )
 
         # ---------------- 1b. 页面效果缩略图**实体**（用户 2026-10-09）--------
         # 一页拼版是两张图的合成，缩略图必须按**页面效果**显示且**实体落盘**
@@ -284,63 +351,86 @@ def run(ctx) -> None:
         import os as _os
 
         from desktop.components.imposition.page_thumb import (
-            compose_page_thumb_from_files, load_page_index,
-            page_signature, thumb_file_name, write_page_index,
+            compose_page_thumb_from_files,
+            load_page_index,
+            page_signature,
+            thumb_file_name,
+            write_page_index,
         )
 
         _pt = compose_page_thumb_from_files(made, edge=128)
-        ok("页面效果缩略图：能从源图文件合成出来（非空、横向对开）",
-           _pt is not None and not _pt.isNull()
-           and _pt.width() > _pt.height(),
-           f"{None if _pt is None else (_pt.width(), _pt.height())}")
-        ok("页面效果缩略图：左半是左槽图、右半是右槽图（像素级）",
-           _pt is not None
-           and _px_near(_pt, _pt.width() // 4, _pt.height() // 2, GREEN)
-           and _px_near(_pt, _pt.width() * 3 // 4, _pt.height() // 2, RED),
-           "左半应 GREEN / 右半应 RED")
-        ok("页面效果缩略图：坏页返回 None",
-           compose_page_thumb_from_files({"items": []}) is None)
+        ok(
+            "页面效果缩略图：能从源图文件合成出来（非空、横向对开）",
+            _pt is not None and not _pt.isNull() and _pt.width() > _pt.height(),
+            f"{None if _pt is None else (_pt.width(), _pt.height())}",
+        )
+        ok(
+            "页面效果缩略图：左半是左槽图、右半是右槽图（像素级）",
+            _pt is not None
+            and _px_near(_pt, _pt.width() // 4, _pt.height() // 2, GREEN)
+            and _px_near(_pt, _pt.width() * 3 // 4, _pt.height() // 2, RED),
+            "左半应 GREEN / 右半应 RED",
+        )
+        ok(
+            "页面效果缩略图：坏页返回 None",
+            compose_page_thumb_from_files({"items": []}) is None,
+        )
 
         # 内容签名（文件指纹口径）：版面/源图文件任一变了都得变
         _sig0 = page_signature(made)
-        ok("内容签名：同一页 ⇒ 签名稳定",
-           _sig0 is not None and _sig0 == page_signature(made))
+        ok(
+            "内容签名：同一页 ⇒ 签名稳定",
+            _sig0 is not None and _sig0 == page_signature(made),
+        )
         _moved_page = S.normalize_page(made)
         assert _moved_page is not None
         _moved_page["items"][0]["rect"][0] += 7.0
-        ok("内容签名：版面动了 ⇒ 签名变（拖图后缩略图要跟上）",
-           page_signature(_moved_page) != _sig0)
+        ok(
+            "内容签名：版面动了 ⇒ 签名变（拖图后缩略图要跟上）",
+            page_signature(_moved_page) != _sig0,
+        )
         _st_b = b.stat()
         _os.utime(b, ns=(_st_b.st_atime_ns, _st_b.st_mtime_ns + 1_000_000))
-        ok("内容签名：源图文件被覆盖（mtime 变）⇒ 签名变（编辑覆盖后要重生成）",
-           page_signature(made) != _sig0)
+        ok(
+            "内容签名：源图文件被覆盖（mtime 变）⇒ 签名变（编辑覆盖后要重生成）",
+            page_signature(made) != _sig0,
+        )
         _os.utime(b, ns=(_st_b.st_atime_ns, _st_b.st_mtime_ns))
         ok("内容签名：源图复原 ⇒ 签名复原", page_signature(made) == _sig0)
         ok("内容签名：空页返回 None", page_signature({"items": []}) is None)
 
         # 映射数据：pageN 命名 + index.json 往返（用户要求"做好映射数据"）
         _idx_dir = tmp / "page_thumbs_probe"
-        ok("映射数据：页号（0 基）→ page1.jpg 从第一页起数",
-           thumb_file_name(0) == "page1.jpg"
-           and thumb_file_name(9) == "page10.jpg")
-        ok("映射数据：写入成功（index.json 落盘）",
-           write_page_index(_idx_dir, {0: _sig0, 1: "abc"}, 256)
-           and (_idx_dir / "index.json").is_file())
-        ok("映射数据：读回一致（页号 ↔ 签名）",
-           load_page_index(_idx_dir, 256) == {0: _sig0, 1: "abc"})
-        ok("映射数据：边长不符 ⇒ 当空表（整批重生成）",
-           load_page_index(_idx_dir, 512) == {})
+        ok(
+            "映射数据：页号（0 基）→ page1.jpg 从第一页起数",
+            thumb_file_name(0) == "page1.jpg" and thumb_file_name(9) == "page10.jpg",
+        )
+        ok(
+            "映射数据：写入成功（index.json 落盘）",
+            write_page_index(_idx_dir, {0: _sig0, 1: "abc"}, 256)
+            and (_idx_dir / "index.json").is_file(),
+        )
+        ok(
+            "映射数据：读回一致（页号 ↔ 签名）",
+            load_page_index(_idx_dir, 256) == {0: _sig0, 1: "abc"},
+        )
+        ok(
+            "映射数据：边长不符 ⇒ 当空表（整批重生成）",
+            load_page_index(_idx_dir, 512) == {},
+        )
         (_idx_dir / "index.json").write_text("垃圾", encoding="utf-8")
-        ok("映射数据：坏档 ⇒ 当空表（不抛异常）",
-           load_page_index(_idx_dir, 256) == {})
+        ok("映射数据：坏档 ⇒ 当空表（不抛异常）", load_page_index(_idx_dir, 256) == {})
 
         # ---------------- 2. 落盘与清理 ----------------
         out = tmp / "sweep"
         out.mkdir()
         _mk(out / "0009.png", (0, 0, 0), (8, 8))  # 上一轮多出来的页
         written = S.compose_doc({"pages": [made, made]}, out)
-        ok("落盘按页码命名 0001/0002",
-           _names(written) == ["0001.png", "0002.png"], str(_names(written)))
+        ok(
+            "落盘按页码命名 0001/0002",
+            _names(written) == ["0001.png", "0002.png"],
+            str(_names(written)),
+        )
         ok("上一轮多出来的 0009.png 被清掉", not (out / "0009.png").exists())
         S.compose_doc({"pages": []}, out)
         ok("清空拼版后产物目录也清空", list(out.glob("*.png")) == [])
@@ -352,9 +442,11 @@ def run(ctx) -> None:
         for name in ("0001.png", "0003.png", "0004.png"):
             _mk(gap / name, (0, 0, 0), (8, 8))
         S._sweep_stale(gap, 3)
-        ok("编号空洞里的页不会被误删（只清超出页数的）",
-           sorted(p.name for p in gap.glob("*.png")) == ["0001.png", "0003.png"],
-           str(sorted(p.name for p in gap.glob("*.png"))))
+        ok(
+            "编号空洞里的页不会被误删（只清超出页数的）",
+            sorted(p.name for p in gap.glob("*.png")) == ["0001.png", "0003.png"],
+            str(sorted(p.name for p in gap.glob("*.png"))),
+        )
 
         # ---------------- 2b. 并发合成（用户 2026-10-03 报「程序容易跑崩溃」）----
         # 根因：后台防抖合成（ImpositionComposeWorker）与生成 PDF 前的同步合成
@@ -372,10 +464,17 @@ def run(ctx) -> None:
         import threading
 
         big = _mk(tmp / "big.png", GREEN, (1400, 1800))
-        big_page = S.normalize_page({
-            "items": [{"file": str(big), "rect": [0.0, 0.0, 1400.0, 1800.0],
-                       "rotation": 0}]
-        })
+        big_page = S.normalize_page(
+            {
+                "items": [
+                    {
+                        "file": str(big),
+                        "rect": [0.0, 0.0, 1400.0, 1800.0],
+                        "rotation": 0,
+                    }
+                ]
+            }
+        )
         race_dir = tmp / "compose_race"
         race_dir.mkdir()
         doc_race = {"pages": [big_page] * 6}
@@ -392,8 +491,11 @@ def run(ctx) -> None:
             t.start()
         for t in threads:
             t.join(timeout=180)
-        ok("多线程并发合成不抛异常（老实现这里会 PermissionError）",
-           not errors, str(errors[:3]))
+        ok(
+            "多线程并发合成不抛异常（老实现这里会 PermissionError）",
+            not errors,
+            str(errors[:3]),
+        )
 
         from PIL import Image as _PILImage
 
@@ -406,38 +508,62 @@ def run(ctx) -> None:
             except Exception:  # noqa: BLE001 - 打不开就是坏图
                 return False
 
-        ok("并发合成后每页都是完整可解码的 PNG（不是半张图）",
-           all(_decodable(race_dir / n)
-               for n in ("0001.png", "0003.png", "0006.png")),
-           str(sorted(p.name for p in race_dir.glob("*.png"))))
-        ok("并发合成不留 .part 临时文件",
-           list(race_dir.glob("*.part")) == [],
-           str(list(race_dir.glob("*.part"))))
-        ok("并发合成页数正确（没被 _sweep_stale 误删）",
-           len(list(race_dir.glob("*.png"))) == 6,
-           str(len(list(race_dir.glob("*.png")))))
+        ok(
+            "并发合成后每页都是完整可解码的 PNG（不是半张图）",
+            all(_decodable(race_dir / n) for n in ("0001.png", "0003.png", "0006.png")),
+            str(sorted(p.name for p in race_dir.glob("*.png"))),
+        )
+        ok(
+            "并发合成不留 .part 临时文件",
+            list(race_dir.glob("*.part")) == [],
+            str(list(race_dir.glob("*.part"))),
+        )
+        ok(
+            "并发合成页数正确（没被 _sweep_stale 误删）",
+            len(list(race_dir.glob("*.png"))) == 6,
+            str(len(list(race_dir.glob("*.png")))),
+        )
 
         # ---------------- 3. 剩余未选清单 ----------------
         remaining = S.remaining_files([a, b, c, d], {"pages": [made]})
-        ok("剩余未拼版的图片 = 未被任何页引用的那些",
-           _names(remaining) == ["2-r.png", "2-l.png"], str(_names(remaining)))
+        ok(
+            "剩余未拼版的图片 = 未被任何页引用的那些",
+            _names(remaining) == ["2-r.png", "2-l.png"],
+            str(_names(remaining)),
+        )
         # 「删除图片」黑名单（removed 字段）：软删除，恢复即回到候选
-        norm = S.normalize_doc({"enabled": True, "pages": [made],
-                                "removed": [str(c), str(c), "", "  "]})
-        ok("normalize_doc 保留黑名单（去重、丢空项、保序）",
-           norm["removed"] == [str(c)], str(norm.get("removed")))
-        ok("老文档没有 removed 键也能读",
-           S.normalize_doc({"enabled": False, "pages": []})["removed"] == [])
-        ok("remaining_files 同时排除已用与已删除的图",
-           _names(S.remaining_files([a, b, c, d],
-                  {"pages": [made], "removed": [str(c)]})) == ["2-l.png"],
-           str(_names(S.remaining_files([a, b, c, d],
-                      {"pages": [made], "removed": [str(c)]}))))
-        ok("excluded_files 按源清单顺序列出被删除的图",
-           _names(S.excluded_files([a, b, c, d], {"removed": [str(d), str(c)]}))
-           == ["2-r.png", "2-l.png"],
-           str(_names(S.excluded_files([a, b, c, d],
-                      {"removed": [str(d), str(c)]}))))
+        norm = S.normalize_doc(
+            {"enabled": True, "pages": [made], "removed": [str(c), str(c), "", "  "]}
+        )
+        ok(
+            "normalize_doc 保留黑名单（去重、丢空项、保序）",
+            norm["removed"] == [str(c)],
+            str(norm.get("removed")),
+        )
+        ok(
+            "老文档没有 removed 键也能读",
+            S.normalize_doc({"enabled": False, "pages": []})["removed"] == [],
+        )
+        ok(
+            "remaining_files 同时排除已用与已删除的图",
+            _names(
+                S.remaining_files([a, b, c, d], {"pages": [made], "removed": [str(c)]})
+            )
+            == ["2-l.png"],
+            str(
+                _names(
+                    S.remaining_files(
+                        [a, b, c, d], {"pages": [made], "removed": [str(c)]}
+                    )
+                )
+            ),
+        )
+        ok(
+            "excluded_files 按源清单顺序列出被删除的图",
+            _names(S.excluded_files([a, b, c, d], {"removed": [str(d), str(c)]}))
+            == ["2-r.png", "2-l.png"],
+            str(_names(S.excluded_files([a, b, c, d], {"removed": [str(d), str(c)]}))),
+        )
 
         # ---------------- 3b. 自动拼版规则（用户 2026-09-30）----------------
         # 1. 默认两张半栏拼一页：配对必须是「前一个左半幅 + 当前右半幅」；
@@ -447,76 +573,99 @@ def run(ctx) -> None:
         full = _mk(src / "3.png", (128, 128, 128))
 
         def _page_shapes(pages):
-            return [tuple(Path(i["file"]).name for i in p["items"])
-                    for p in pages]
+            return [tuple(Path(i["file"]).name for i in p["items"]) for p in pages]
 
-        ok("classify_source 按文件名后缀分形态（-r/-l/无后缀）",
-           S.classify_source(a) == S.SOURCE_RIGHT
-           and S.classify_source(b) == S.SOURCE_LEFT
-           and S.classify_source(full) == S.SOURCE_FULL,
-           f"{S.classify_source(a)}/{S.classify_source(b)}/"
-           f"{S.classify_source(full)}")
+        ok(
+            "classify_source 按文件名后缀分形态（-r/-l/无后缀）",
+            S.classify_source(a) == S.SOURCE_RIGHT
+            and S.classify_source(b) == S.SOURCE_LEFT
+            and S.classify_source(full) == S.SOURCE_FULL,
+            f"{S.classify_source(a)}/{S.classify_source(b)}/"
+            f"{S.classify_source(full)}",
+        )
         single = S.make_single_page(full)
-        ok("整幅图自成一页（版面只有一项、原始尺寸）",
-           single is not None and len(single["items"]) == 1
-           and Path(single["items"][0]["file"]).name == "3.png"
-           and single["items"][0]["rect"][2:] == [400.0, 600.0],
-           str(single))
-        assert single is not None    # ⚠️ 上一行已判过
-        ok("单图页产出 = 原图尺寸紧裁",
-           S.compose_page(single).size == (400, 600),
-           str(S.compose_page(single).size))
+        ok(
+            "整幅图自成一页（版面只有一项、原始尺寸）",
+            single is not None
+            and len(single["items"]) == 1
+            and Path(single["items"][0]["file"]).name == "3.png"
+            and single["items"][0]["rect"][2:] == [400.0, 600.0],
+            str(single),
+        )
+        assert single is not None  # ⚠️ 上一行已判过
+        ok(
+            "单图页产出 = 原图尺寸紧裁",
+            S.compose_page(single).size == (400, 600),
+            str(S.compose_page(single).size),
+        )
 
         auto = S.auto_impose_pages([a, b, c, d])
-        ok("自动拼版（r,l,r,l）：首位 -r 单独一页，左半幅与下一个右半幅配对",
-           _page_shapes(auto) == [("1-r.png",), ("1-l.png", "2-r.png"),
-                                  ("2-l.png",)],
-           str(_page_shapes(auto)))
-        ok("自动配对同样序号在前的进右槽",
-           Path(auto[1]["items"][0]["file"]).name == "1-l.png")
-        ok("自动拼版：末尾落单的左半幅单独一页",
-           len(auto[-1]["items"]) == 1
-           and Path(auto[-1]["items"][0]["file"]).name == "2-l.png")
+        ok(
+            "自动拼版（r,l,r,l）：首位 -r 单独一页，左半幅与下一个右半幅配对",
+            _page_shapes(auto) == [("1-r.png",), ("1-l.png", "2-r.png"), ("2-l.png",)],
+            str(_page_shapes(auto)),
+        )
+        ok(
+            "自动配对同样序号在前的进右槽",
+            Path(auto[1]["items"][0]["file"]).name == "1-l.png",
+        )
+        ok(
+            "自动拼版：末尾落单的左半幅单独一页",
+            len(auto[-1]["items"]) == 1
+            and Path(auto[-1]["items"][0]["file"]).name == "2-l.png",
+        )
 
         auto_full = S.auto_impose_pages([full, a, b, c, d])
-        ok("整幅后拼版重开：整幅单独一页、随后首位 -r 单独一页、再左+右配对",
-           _page_shapes(auto_full) == [("3.png",), ("1-r.png",),
-                                       ("1-l.png", "2-r.png"), ("2-l.png",)],
-           str(_page_shapes(auto_full)))
-        ok("上一张等配对时遇到整幅 → 上一张单独一页（整幅不与它拼）",
-           _page_shapes(S.auto_impose_pages([b, full])) == [("1-l.png",),
-                                                            ("3.png",)],
-           str(_page_shapes(S.auto_impose_pages([b, full]))))
-        ok("整幅夹在中间同样断开配对",
-           _page_shapes(S.auto_impose_pages([a, b, full, c, d]))
-           == [("1-r.png",), ("1-l.png",), ("3.png",), ("2-r.png",),
-               ("2-l.png",)],
-           str(_page_shapes(S.auto_impose_pages([a, b, full, c, d]))))
+        ok(
+            "整幅后拼版重开：整幅单独一页、随后首位 -r 单独一页、再左+右配对",
+            _page_shapes(auto_full)
+            == [("3.png",), ("1-r.png",), ("1-l.png", "2-r.png"), ("2-l.png",)],
+            str(_page_shapes(auto_full)),
+        )
+        ok(
+            "上一张等配对时遇到整幅 → 上一张单独一页（整幅不与它拼）",
+            _page_shapes(S.auto_impose_pages([b, full])) == [("1-l.png",), ("3.png",)],
+            str(_page_shapes(S.auto_impose_pages([b, full]))),
+        )
+        ok(
+            "整幅夹在中间同样断开配对",
+            _page_shapes(S.auto_impose_pages([a, b, full, c, d]))
+            == [("1-r.png",), ("1-l.png",), ("3.png",), ("2-r.png",), ("2-l.png",)],
+            str(_page_shapes(S.auto_impose_pages([a, b, full, c, d]))),
+        )
 
         # 页号必须连续（用户 2026-09-30：不连续的图片不可以合并在一页）
         e = _mk(src / "5-r.png", RED)
         f2 = _mk(src / "4-l.png", GREEN)
-        ok("source_page_number 按文件名前缀解析（1-r→1、004-l→4、cover→None）",
-           S.source_page_number(a) == 1
-           and S.source_page_number(src / "004-l.png") == 4
-           and S.source_page_number(src / "cover.png") is None,
-           f"{S.source_page_number(a)}/"
-           f"{S.source_page_number(src / '004-l.png')}/"
-           f"{S.source_page_number(src / 'cover.png')}")
-        ok("页号不连续（1-l 之后直接 5-r）→ 不配对、各自单独一页",
-           _page_shapes(S.auto_impose_pages([b, e])) == [("1-l.png",),
-                                                         ("5-r.png",)],
-           str(_page_shapes(S.auto_impose_pages([b, e]))))
-        ok("断口后重新开始：5-r 等不到 4-l（序号也不连续）、4-l 落单",
-           _page_shapes(S.auto_impose_pages([a, b, e, f2]))
-           == [("1-r.png",), ("1-l.png",), ("5-r.png",), ("4-l.png",)],
-           str(_page_shapes(S.auto_impose_pages([a, b, e, f2]))))
-        ok("同一页号的 l→r 不配对（必须跨页号：前一左＋后一右）",
-           _page_shapes(S.auto_impose_pages([d, c]))
-           == [("2-l.png",), ("2-r.png",)],
-           str(_page_shapes(S.auto_impose_pages([d, c]))))
-        ok("读不到尺寸的图跳过（不产出残页）",
-           S.auto_impose_pages([tmp / "missing.png"]) == [])
+        ok(
+            "source_page_number 按文件名前缀解析（1-r→1、004-l→4、cover→None）",
+            S.source_page_number(a) == 1
+            and S.source_page_number(src / "004-l.png") == 4
+            and S.source_page_number(src / "cover.png") is None,
+            f"{S.source_page_number(a)}/"
+            f"{S.source_page_number(src / '004-l.png')}/"
+            f"{S.source_page_number(src / 'cover.png')}",
+        )
+        ok(
+            "页号不连续（1-l 之后直接 5-r）→ 不配对、各自单独一页",
+            _page_shapes(S.auto_impose_pages([b, e])) == [("1-l.png",), ("5-r.png",)],
+            str(_page_shapes(S.auto_impose_pages([b, e]))),
+        )
+        ok(
+            "断口后重新开始：5-r 等不到 4-l（序号也不连续）、4-l 落单",
+            _page_shapes(S.auto_impose_pages([a, b, e, f2]))
+            == [("1-r.png",), ("1-l.png",), ("5-r.png",), ("4-l.png",)],
+            str(_page_shapes(S.auto_impose_pages([a, b, e, f2]))),
+        )
+        ok(
+            "同一页号的 l→r 不配对（必须跨页号：前一左＋后一右）",
+            _page_shapes(S.auto_impose_pages([d, c])) == [("2-l.png",), ("2-r.png",)],
+            str(_page_shapes(S.auto_impose_pages([d, c]))),
+        )
+        ok(
+            "读不到尺寸的图跳过（不产出残页）",
+            S.auto_impose_pages([tmp / "missing.png"]) == [],
+        )
         ok("空清单自动拼版 = 空页清单", S.auto_impose_pages([]) == [])
 
         # ---------------- 4. 操作画布（拖动 / 缩放 / 旋转 / 复位）----------------
@@ -525,11 +674,15 @@ def run(ctx) -> None:
         canvas = ImpositionCanvas()
         canvas.resize(600, 600)
         canvas.set_page(made["items"])
-        ok("画布载入两张图、默认不选中（切页后图片操作区不激活）",
-           len(canvas.items()) == 2 and canvas.selected() == -1,
-           str(canvas.selected()))
-        ok("画布能从文件解出图（不是空图）",
-           not QImage(made["items"][0]["file"]).isNull())
+        ok(
+            "画布载入两张图、默认不选中（切页后图片操作区不激活）",
+            len(canvas.items()) == 2 and canvas.selected() == -1,
+            str(canvas.selected()),
+        )
+        ok(
+            "画布能从文件解出图（不是空图）",
+            not QImage(made["items"][0]["file"]).isNull(),
+        )
         # 图缓存必须随换页清掉：一页两张几千像素见方的原图，一路翻页会吃到 GB 级
         canvas._image(made["items"][0]["file"])
         ok("画布按需缓存当前页的图", len(canvas._images) == 1)
@@ -538,35 +691,48 @@ def run(ctx) -> None:
 
         canvas.select(1)
         knob = canvas._rotate_knob(1)
-        ok("选中项上方有旋转钮（在框外、水平居中）",
-           abs(knob.x() - canvas._rect_px(1).center().x()) < 0.01
-           and knob.y() < canvas._rect_px(1).y(),
-           f"{knob.x():.1f},{knob.y():.1f}")
+        ok(
+            "选中项上方有旋转钮（在框外、水平居中）",
+            abs(knob.x() - canvas._rect_px(1).center().x()) < 0.01
+            and knob.y() < canvas._rect_px(1).y(),
+            f"{knob.x():.1f},{knob.y():.1f}",
+        )
         hit = canvas._hit_handle(1, knob)
         local = canvas._to_local_px(1, knob)
         klocal = canvas._rotate_knob_local(1)
-        ok("旋转钮能被命中", hit == 8,
-           f"hit={hit} local=({local.x():.2f},{local.y():.2f}) "
-           f"knob_local=({klocal.x():.2f},{klocal.y():.2f})")
+        ok(
+            "旋转钮能被命中",
+            hit == 8,
+            f"hit={hit} local=({local.x():.2f},{local.y():.2f}) "
+            f"knob_local=({klocal.x():.2f},{klocal.y():.2f})",
+        )
         corners = [QPointF(x, y) for x, y in canvas._handle_positions(1)]
-        ok("四角手柄能按位置命中（左上=0 / 右上=1 / 右下=2 / 左下=3）",
-           [canvas._hit_handle(1, pos) for pos in corners[:4]] == [0, 1, 2, 3],
-           str([canvas._hit_handle(1, pos) for pos in corners[:4]]))
-        ok("四边命中带落在边上（上边=4 / 右边=5）",
-           canvas._hit_handle(1, corners[4]) == 4
-           and canvas._hit_handle(1, corners[5]) == 5)
+        ok(
+            "四角手柄能按位置命中（左上=0 / 右上=1 / 右下=2 / 左下=3）",
+            [canvas._hit_handle(1, pos) for pos in corners[:4]] == [0, 1, 2, 3],
+            str([canvas._hit_handle(1, pos) for pos in corners[:4]]),
+        )
+        ok(
+            "四边命中带落在边上（上边=4 / 右边=5）",
+            canvas._hit_handle(1, corners[4]) == 4
+            and canvas._hit_handle(1, corners[5]) == 5,
+        )
         canvas.rotate_selected(90.0)
-        ok("旋转 90° 写进 items",
-           abs(canvas.items()[1]["rotation"] - 90.0) < 0.01,
-           str(canvas.items()[1]["rotation"]))
+        ok(
+            "旋转 90° 写进 items",
+            abs(canvas.items()[1]["rotation"] - 90.0) < 0.01,
+            str(canvas.items()[1]["rotation"]),
+        )
         # 默认版面（复位用）：按两张图的**原始像素**并排，旋转归零
         reset = S.default_items([str(a), str(b)])
-        ok("默认版面 = 原始尺寸并排 + 无旋转（复位用）",
-           reset is not None
-           and reset[0]["rect"] == [400.0, 0.0, 400.0, 600.0]
-           and reset[1]["rect"] == [0.0, 0.0, 400.0, 600.0]
-           and all(item["rotation"] == 0.0 for item in reset),
-           str(reset))
+        ok(
+            "默认版面 = 原始尺寸并排 + 无旋转（复位用）",
+            reset is not None
+            and reset[0]["rect"] == [400.0, 0.0, 400.0, 600.0]
+            and reset[1]["rect"] == [0.0, 0.0, 400.0, 600.0]
+            and all(item["rotation"] == 0.0 for item in reset),
+            str(reset),
+        )
 
         events: list[list] = []
         canvas.items_changed.connect(events.append)
@@ -576,10 +742,11 @@ def run(ctx) -> None:
         canvas._dirty = True
         ok("未松手时还不发信号（拖动过程只重绘）", not events)
         canvas.flush_pending()
-        ok("flush_pending 补齐未松手的改动",
-           len(events) == 1
-           and abs(events[0][0]["rect"][0] - (rect0 + 25.0)) < 0.01,
-           str(events[0][0]["rect"] if events else None))
+        ok(
+            "flush_pending 补齐未松手的改动",
+            len(events) == 1 and abs(events[0][0]["rect"][0] - (rect0 + 25.0)) < 0.01,
+            str(events[0][0]["rect"] if events else None),
+        )
         ok("松手后不再重复发（dirty 已清）", not canvas.flush_pending())
 
         # ---------------- 4b. 选中态常显 + 操作框只在按住期间（用户 2026-09-30）
@@ -590,43 +757,57 @@ def run(ctx) -> None:
 
         def _mouse(kind, pos):
             return QMouseEvent(
-                kind, QPointF(pos[0], pos[1]),
-                Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
+                kind,
+                QPointF(pos[0], pos[1]),
+                Qt.MouseButton.LeftButton,
+                Qt.MouseButton.LeftButton,
+                Qt.KeyboardModifier.NoModifier,
             )
 
         canvas.select(1)
         selected_px = _count_near(canvas.grab().toImage(), FRAME_RGB)
-        ok("只选中（没按住）也画**细选中框**（选中状态常显）",
-           selected_px > 20 and not canvas.frame_visible(),
-           f"选中框像素={selected_px}")
+        ok(
+            "只选中（没按住）也画**细选中框**（选中状态常显）",
+            selected_px > 20 and not canvas.frame_visible(),
+            f"选中框像素={selected_px}",
+        )
         center = canvas._rect_px(1).center()
         canvas.mousePressEvent(
             _mouse(QEvent.Type.MouseButtonPress, (center.x(), center.y()))
         )
         ok("按下鼠标 → 升级为带手柄的完整操作框", canvas.frame_visible())
         pressed_px = _count_near(canvas.grab().toImage(), FRAME_RGB)
-        ok("按住时确实画出了虚线框 + 手柄 + 旋转钮",
-           pressed_px > selected_px + 100,
-           f"选中框 {selected_px} → 按住 {pressed_px} 像素")
+        ok(
+            "按住时确实画出了虚线框 + 手柄 + 旋转钮",
+            pressed_px > selected_px + 100,
+            f"选中框 {selected_px} → 按住 {pressed_px} 像素",
+        )
         canvas.mouseReleaseEvent(
             _mouse(QEvent.Type.MouseButtonRelease, (center.x(), center.y()))
         )
         released_px = _count_near(canvas.grab().toImage(), FRAME_RGB)
-        ok("松手 → 手柄全框消失、回到常显选中细框",
-           not canvas.frame_visible() and 0 < released_px < pressed_px,
-           f"选中={selected_px} 按住={pressed_px} 松手={released_px}")
+        ok(
+            "松手 → 手柄全框消失、回到常显选中细框",
+            not canvas.frame_visible() and 0 < released_px < pressed_px,
+            f"选中={selected_px} 按住={pressed_px} 松手={released_px}",
+        )
         # 虚线是**样式常量**层面的要求（像素级"是不是虚线"太脆，改查定义处）
         canvas_src = (
             Path(__file__).resolve().parents[2]
-            / "desktop" / "components" / "imposition" / "canvas.py"
+            / "desktop"
+            / "components"
+            / "imposition"
+            / "canvas.py"
         ).read_text(encoding="utf-8")
         # PySide6 6.x 的存根把枚举收进了 ``Qt.PenStyle``：未限定的 ``Qt.DashLine``
         # 在运行期仍可用（同一值），但 pyright 会报 reportAttributeAccessIssue，
         # 所以全仓统一写限定形式，这里跟着钉限定形式。
-        ok("选中框用的是 Qt.PenStyle.DashLine（虚线）",
-           "FRAME_STYLE = Qt.PenStyle.DashLine" in canvas_src
-           and "FRAME_STYLE," in canvas_src,
-           "框线样式定义/使用处不匹配")
+        ok(
+            "选中框用的是 Qt.PenStyle.DashLine（虚线）",
+            "FRAME_STYLE = Qt.PenStyle.DashLine" in canvas_src
+            and "FRAME_STYLE," in canvas_src,
+            "框线样式定义/使用处不匹配",
+        )
 
         # ---------------- 4b-2. 选中的图永远画在最上面（用户 2026-10-10）------
         # 「那张图选中，那张图就应该在另外一张图上面」（类似 CSS zIndex）：
@@ -634,47 +815,61 @@ def run(ctx) -> None:
         # 用蓝/黄两色（避开红线 SPINE 的红色系），在重叠区取点判色。
         overlap = ImpositionCanvas()
         overlap.resize(600, 600)
-        overlap.set_page([
-            {"file": str(c), "rect": [0.0, 0.0, 400.0, 600.0], "rotation": 0.0},
-            {"file": str(d), "rect": [200.0, 0.0, 400.0, 600.0], "rotation": 0.0},
-        ])
+        overlap.set_page(
+            [
+                {"file": str(c), "rect": [0.0, 0.0, 400.0, 600.0], "rotation": 0.0},
+                {"file": str(d), "rect": [200.0, 0.0, 400.0, 600.0], "rotation": 0.0},
+            ]
+        )
         # 探针取在重叠区内、避开红色对齐线（x=300 units）：x 取 240 units
         probe = QPointF(
             overlap._rect_px(1).x() + overlap._rect_px(0).width() * 0.1,
             overlap._rect_px(0).center().y(),
         )
         shot = overlap.grab().toImage()
-        ok("未选中时按清单顺序画（后画的黄图盖住蓝图）",
-           _px_near(shot, int(probe.x()), int(probe.y()), YELLOW)
-           and not _px_near(shot, int(probe.x()), int(probe.y()), BLUE))
+        ok(
+            "未选中时按清单顺序画（后画的黄图盖住蓝图）",
+            _px_near(shot, int(probe.x()), int(probe.y()), YELLOW)
+            and not _px_near(shot, int(probe.x()), int(probe.y()), BLUE),
+        )
         overlap.select(0)
         shot = overlap.grab().toImage()
-        ok("选中蓝图 → 蓝图浮到最上面（重叠区变蓝）",
-           _px_near(shot, int(probe.x()), int(probe.y()), BLUE)
-           and not _px_near(shot, int(probe.x()), int(probe.y()), YELLOW),
-           f"probe=({probe.x():.0f},{probe.y():.0f})")
-        ok("命中判定优先命中选中的图（重叠区点到的是它）",
-           overlap._item_at(probe) == 0, str(overlap._item_at(probe)))
+        ok(
+            "选中蓝图 → 蓝图浮到最上面（重叠区变蓝）",
+            _px_near(shot, int(probe.x()), int(probe.y()), BLUE)
+            and not _px_near(shot, int(probe.x()), int(probe.y()), YELLOW),
+            f"probe=({probe.x():.0f},{probe.y():.0f})",
+        )
+        ok(
+            "命中判定优先命中选中的图（重叠区点到的是它）",
+            overlap._item_at(probe) == 0,
+            str(overlap._item_at(probe)),
+        )
         overlap.select(-1)
         shot = overlap.grab().toImage()
-        ok("取消选中 → 恢复清单顺序（重叠区回到黄）",
-           _px_near(shot, int(probe.x()), int(probe.y()), YELLOW))
+        ok(
+            "取消选中 → 恢复清单顺序（重叠区回到黄）",
+            _px_near(shot, int(probe.x()), int(probe.y()), YELLOW),
+        )
 
         # ---------------- 4c. 无纸张 + 不限制图片位置/大小（用户 2026-09-30）------
         # 「拼版不需要设置纸张，只需要背景是白色的」「拉伸、移动后可能超出原本
         # 界限，现在是不显示了，现在不要限制」
         outside = ImpositionCanvas()
         outside.resize(600, 600)
-        far = [{"file": str(a), "rect": [700.0, 0.0, 400.0, 600.0],
-                "rotation": 0.0}]
+        far = [{"file": str(a), "rect": [700.0, 0.0, 400.0, 600.0], "rotation": 0.0}]
         outside.set_page(far)
         scene = outside._scene_rect()
-        ok("可视范围就是图的外接框（没有纸张框着）",
-           abs(scene.x() - 700.0) < 0.01 and abs(scene.width() - 400.0) < 0.01,
-           f"x={scene.x():.0f} w={scene.width():.0f}")
-        ok("摆到很远的图**照常画出来**（不再被裁掉）",
-           _count_near(outside.grab().toImage(), RED) > 50,
-           f"红色采样={_count_near(outside.grab().toImage(), RED)}")
+        ok(
+            "可视范围就是图的外接框（没有纸张框着）",
+            abs(scene.x() - 700.0) < 0.01 and abs(scene.width() - 400.0) < 0.01,
+            f"x={scene.x():.0f} w={scene.width():.0f}",
+        )
+        ok(
+            "摆到很远的图**照常画出来**（不再被裁掉）",
+            _count_near(outside.grab().toImage(), RED) > 50,
+            f"红色采样={_count_near(outside.grab().toImage(), RED)}",
+        )
 
         # 拖动没有任何范围夹取：拖多远就停多远
         outside.select(0)
@@ -689,8 +884,11 @@ def run(ctx) -> None:
             _mouse(QEvent.Type.MouseButtonRelease, (start.x() + 200, start.y() + 120))
         )
         moved = outside.items()[0]["rect"]
-        ok("拖动不设范围限制（拖多远就停多远）",
-           moved[0] > 900.0 and moved[1] > 100.0, f"x={moved[0]:.0f} y={moved[1]:.0f}")
+        ok(
+            "拖动不设范围限制（拖多远就停多远）",
+            moved[0] > 900.0 and moved[1] > 100.0,
+            f"x={moved[0]:.0f} y={moved[1]:.0f}",
+        )
 
         # 缩放/拉伸同样不设上限
         outside._items[0]["rect"] = [0.0, 0.0, 400.0, 600.0]
@@ -699,8 +897,7 @@ def run(ctx) -> None:
         big = outside._resize_from_handle(
             _mouse(QEvent.Type.MouseMove, (1400.0, 300.0)), False
         )
-        ok("缩放不设上限（想拉多宽就多宽）",
-           big[2] > 1000.0, f"宽={big[2]:.0f}")
+        ok("缩放不设上限（想拉多宽就多宽）", big[2] > 1000.0, f"宽={big[2]:.0f}")
         outside.deleteLater()
         canvas.deleteLater()
 
@@ -708,29 +905,38 @@ def run(ctx) -> None:
         view = ImpositionViewWidget()
         view.resize(900, 600)
         view.set_pages([made, made])
-        ok("左列 = 每页一个条目",
-           len(view.page_list.entries()) == 2
-           and all(isinstance(e, _PageEntry) for e in view.page_list.entries()))
-        ok("左列条目是中文页码",
-           [e.title_label.text() for e in view.page_list.entries()] == ["第一页", "第二页"])
+        ok(
+            "左列 = 每页一个条目",
+            len(view.page_list.entries()) == 2
+            and all(isinstance(e, _PageEntry) for e in view.page_list.entries()),
+        )
+        ok(
+            "左列条目是中文页码",
+            [e.title_label.text() for e in view.page_list.entries()]
+            == ["第一页", "第二页"],
+        )
         ok("末格是虚线「＋ 选择拼版」", isinstance(view.page_list.add_entry, _AddEntry))
         # 「＋ 选择拼版」钉在左列最底部（滚动区之外，页多页少都看得见）
         _pl_layout = view.page_list.layout()
         assert _pl_layout is not None
         _last_item = _pl_layout.itemAt(_pl_layout.count() - 1)
-        ok("虚线格钉在左列最底部（滚动区之外、列内最后一格）",
-           _last_item is not None
-           and _last_item.widget() is view.page_list.add_entry
-           and view.page_list.add_entry.parent() is view.page_list
-           and view.page_list.list_box.indexOf(view.page_list.add_entry) == -1)
+        ok(
+            "虚线格钉在左列最底部（滚动区之外、列内最后一格）",
+            _last_item is not None
+            and _last_item.widget() is view.page_list.add_entry
+            and view.page_list.add_entry.parent() is view.page_list
+            and view.page_list.list_box.indexOf(view.page_list.add_entry) == -1,
+        )
         view.show()
         pump(ctx.app, times=6)
 
         # 「✕」只在当前页右侧显示；点它发 remove_requested（释放该页图片）
         view.set_current(1)
-        ok("「✕」只在当前页右侧显示",
-           not view.page_list.entries()[0].remove_button.isVisibleTo(view.page_list)
-           and view.page_list.entries()[1].remove_button.isVisibleTo(view.page_list))
+        ok(
+            "「✕」只在当前页右侧显示",
+            not view.page_list.entries()[0].remove_button.isVisibleTo(view.page_list)
+            and view.page_list.entries()[1].remove_button.isVisibleTo(view.page_list),
+        )
         removed = []
         view.page_remove_requested.connect(removed.append)
         view.page_list.entries()[1].remove_button.click()
@@ -743,85 +949,116 @@ def run(ctx) -> None:
         # 归零自动收起；勾选框点击不触发切页/排序；重建清单时勾选按副标题
         # 跨重建保留。
         entries = view.page_list.entries()
-        ok("条目左上有勾选框（缩略图在上、文字在下、勾选框贴左上角）",
-           all(e.checkbox.isVisibleTo(e) for e in entries)
-           and all(e.checkbox.x() < e.width() // 2 for e in entries)
-           and all(e.checkbox.y() < e.thumb.y() for e in entries)
-           and all(e.thumb.y() < e.title_label.y() <= e.caption_label.y()
-                   for e in entries),
-           str([(e.checkbox.x(), e.checkbox.y(), e.thumb.y(),
-                 e.title_label.y()) for e in entries]))
-        ok("没勾选 → 悬浮批量条收起",
-           not view.page_list.select_bar.isVisibleTo(view.page_list))
+        ok(
+            "条目左上有勾选框（缩略图在上、文字在下、勾选框贴左上角）",
+            all(e.checkbox.isVisibleTo(e) for e in entries)
+            and all(e.checkbox.x() < e.width() // 2 for e in entries)
+            and all(e.checkbox.y() < e.thumb.y() for e in entries)
+            and all(
+                e.thumb.y() < e.title_label.y() <= e.caption_label.y() for e in entries
+            ),
+            str(
+                [
+                    (e.checkbox.x(), e.checkbox.y(), e.thumb.y(), e.title_label.y())
+                    for e in entries
+                ]
+            ),
+        )
+        ok(
+            "没勾选 → 悬浮批量条收起",
+            not view.page_list.select_bar.isVisibleTo(view.page_list),
+        )
         clicks = []
         view.page_selected.connect(clicks.append)
         entries[0].checkbox.click()
         ok("点勾选框不触发切页", clicks == [], str(clicks))
-        ok("勾 1 页 → 悬浮条浮出、计数正确",
-           view.page_list.checked_indexes() == [0]
-           and view.page_list.select_bar.isVisibleTo(view.page_list)
-           and view.page_list.select_bar.count_label.text() == "已选 1 页",
-           view.page_list.select_bar.count_label.text())
+        ok(
+            "勾 1 页 → 悬浮条浮出、计数正确",
+            view.page_list.checked_indexes() == [0]
+            and view.page_list.select_bar.isVisibleTo(view.page_list)
+            and view.page_list.select_bar.count_label.text() == "已选 1 页",
+            view.page_list.select_bar.count_label.text(),
+        )
         entries[1].checkbox.setChecked(True)
-        ok("第二个也勾上 → 升序两页",
-           view.page_list.checked_indexes() == [0, 1]
-           and view.page_list.select_bar.count_label.text() == "已选 2 页",
-           view.page_list.select_bar.count_label.text())
+        ok(
+            "第二个也勾上 → 升序两页",
+            view.page_list.checked_indexes() == [0, 1]
+            and view.page_list.select_bar.count_label.text() == "已选 2 页",
+            view.page_list.select_bar.count_label.text(),
+        )
         view.page_list.set_pages(
             [" · ".join(S.page_source_stems(p)) for p in (made, made)],
             current=0,
         )  # 同样两页重建（caption 不变）→ 勾选跨重建保留
-        ok("重建清单后勾选保留（拖动排序不丢勾）",
-           view.page_list.checked_indexes() == [0, 1]
-           and view.page_list.select_bar.isVisibleTo(view.page_list),
-           str(view.page_list.checked_indexes()))
+        ok(
+            "重建清单后勾选保留（拖动排序不丢勾）",
+            view.page_list.checked_indexes() == [0, 1]
+            and view.page_list.select_bar.isVisibleTo(view.page_list),
+            str(view.page_list.checked_indexes()),
+        )
         view.page_list.set_pages(["甲右 · 甲左", "乙右 · 乙左"], current=0)
         # 两页副标题都换了 → 保留集合里没有它们的 caption → 全部落选
-        ok("重建后只保留仍在的勾选（悬浮条随之收起）",
-           view.page_list.checked_indexes() == []
-           and not view.page_list.select_bar.isVisibleTo(view.page_list),
-           str(view.page_list.checked_indexes()))
+        ok(
+            "重建后只保留仍在的勾选（悬浮条随之收起）",
+            view.page_list.checked_indexes() == []
+            and not view.page_list.select_bar.isVisibleTo(view.page_list),
+            str(view.page_list.checked_indexes()),
+        )
         entries = view.page_list.entries()
         batches = []
         view.pages_batch_delete_requested.connect(lambda: batches.append(1))
         entries[0].checkbox.setChecked(True)
         view.page_list.select_bar.delete_button.click()
-        ok("点悬浮条「批量删除」发批量删除信号",
-           batches == [1] and view.page_list.checked_indexes() == [0],
-           str(batches))
+        ok(
+            "点悬浮条「批量删除」发批量删除信号",
+            batches == [1] and view.page_list.checked_indexes() == [0],
+            str(batches),
+        )
         view.page_list.select_bar.clear_button.click()
-        ok("点「取消选择」清空勾选、悬浮条收起",
-           view.page_list.checked_indexes() == []
-           and not view.page_list.select_bar.isVisibleTo(view.page_list),
-           str(view.page_list.checked_indexes()))
+        ok(
+            "点「取消选择」清空勾选、悬浮条收起",
+            view.page_list.checked_indexes() == []
+            and not view.page_list.select_bar.isVisibleTo(view.page_list),
+            str(view.page_list.checked_indexes()),
+        )
 
         # ---- 悬浮框摆位与拖动（用户 2026-09-30：页码栏右侧中部、可拖）----
         bar = view.page_list.select_bar
         entries[0].checkbox.setChecked(True)
         col = view.page_list.geometry()  # 页码栏在视图坐标系里的位置
         geo = bar.geometry()
-        ok("悬浮框悬在页码栏右缘（浮到右侧画布上，不压底部）",
-           geo.x() + geo.width() > col.right() - 12
-           and geo.y() + geo.height() < col.bottom(),
-           f"bar={geo} col={col}")
-        ok("悬浮框垂直居中于页码栏",
-           abs(geo.center().y() - col.center().y()) <= 2,
-           f"{geo.center().y()} vs {col.center().y()}")
-        ok("「批量删除」红底高亮、「取消选择」主色标记",
-           "#E02020" in bar.delete_button.styleSheet()
-           and "#E6F2F4" in bar.clear_button.styleSheet())
+        ok(
+            "悬浮框悬在页码栏右缘（浮到右侧画布上，不压底部）",
+            geo.x() + geo.width() > col.right() - 12
+            and geo.y() + geo.height() < col.bottom(),
+            f"bar={geo} col={col}",
+        )
+        ok(
+            "悬浮框垂直居中于页码栏",
+            abs(geo.center().y() - col.center().y()) <= 2,
+            f"{geo.center().y()} vs {col.center().y()}",
+        )
+        ok(
+            "「批量删除」红底高亮、「取消选择」主色标记",
+            "#E02020" in bar.delete_button.styleSheet()
+            and "#E6F2F4" in bar.clear_button.styleSheet(),
+        )
         # 合成鼠标拖一下：光标全局位置走 mapToGlobal 口径，delta 可预期
         bar.mousePressEvent(_mouse(QEvent.Type.MouseButtonPress, (5, 5)))
         bar.mouseMoveEvent(_mouse(QEvent.Type.MouseMove, (5, 65)))
         bar.mouseReleaseEvent(_mouse(QEvent.Type.MouseButtonRelease, (5, 65)))
-        ok("按住可拖动悬浮框（拖过就不再自动摆位）",
-           bar._user_moved and bar.geometry().y() == geo.y() + 60,
-           str(bar.geometry()))
+        ok(
+            "按住可拖动悬浮框（拖过就不再自动摆位）",
+            bar._user_moved and bar.geometry().y() == geo.y() + 60,
+            str(bar.geometry()),
+        )
         bar.clear_button.click()
-        ok("拖动后「取消选择」照常清空并收起",
-           view.page_list.checked_indexes() == []
-           and not bar.isVisibleTo(view.page_list),
-           str(view.page_list.checked_indexes()))
+        ok(
+            "拖动后「取消选择」照常清空并收起",
+            view.page_list.checked_indexes() == []
+            and not bar.isVisibleTo(view.page_list),
+            str(view.page_list.checked_indexes()),
+        )
 
         # 拖动排序：按住移动进入拖动态、松手不算单击；落点换算口径（移除后）
         selection = []
@@ -833,8 +1070,7 @@ def run(ctx) -> None:
         entry.mouseReleaseEvent(_mouse(QEvent.Type.MouseButtonRelease, (10, 60)))
         ok("拖动松手不算单击切页", selection == [], str(selection))
         reorders = []
-        view.page_reorder_requested.connect(
-            lambda a, b: reorders.append((a, b)))
+        view.page_reorder_requested.connect(lambda a, b: reorders.append((a, b)))
         view.page_list._drag_from = 0
         view.page_list._drag_drop = 2
         view.page_list._finish_drag()
@@ -842,8 +1078,7 @@ def run(ctx) -> None:
         view.page_list._drag_from = 1
         view.page_list._drag_drop = 0
         view.page_list._finish_drag()
-        ok("拖动排序：1 拖到最前 → (1, 0)", reorders == [(0, 1), (1, 0)],
-           str(reorders))
+        ok("拖动排序：1 拖到最前 → (1, 0)", reorders == [(0, 1), (1, 0)], str(reorders))
         view.page_list._drag_from = 1
         view.page_list._drag_drop = 2  # 落回原位（自己后面一格也是原位）
         view.page_list._finish_drag()
@@ -853,15 +1088,24 @@ def run(ctx) -> None:
         made2 = S.make_page([c, d])
         assert made2 is not None
         view.set_pages([made, made2], current=0)
-        ok("载页后默认不选中", view.canvas.selected() == -1,
-           str(view.canvas.selected()))
+        ok(
+            "载页后默认不选中",
+            view.canvas.selected() == -1,
+            str(view.canvas.selected()),
+        )
         view.canvas.select(1)
         view.set_pages([made, made2], current=0)
-        ok("同页数据回灌不清选中（拖动落盘后的刷新不掉选中态）",
-           view.canvas.selected() == 1, str(view.canvas.selected()))
+        ok(
+            "同页数据回灌不清选中（拖动落盘后的刷新不掉选中态）",
+            view.canvas.selected() == 1,
+            str(view.canvas.selected()),
+        )
         view.set_current(1)
-        ok("切到另一页后选中清空",
-           view.canvas.selected() == -1, str(view.canvas.selected()))
+        ok(
+            "切到另一页后选中清空",
+            view.canvas.selected() == -1,
+            str(view.canvas.selected()),
+        )
 
         # ---- 拖动排序（2026-09-30 三稿口径：拖动中清单一动不动、不留空档
         # ——本体置灰留原位，幽灵卡跟光标走，细线指示落点；松手滑进落点才发信号）
@@ -877,29 +1121,42 @@ def run(ctx) -> None:
         pl._poll_drag = lambda: None
         pl._on_drag_started(0)
         del pl._poll_drag
-        ok("拖动开始：本体置灰留原位、幽灵卡跟进（不是本体自己动）",
-           drag._dimmed and not drag._drag_active
-           and pl._ghost is not None and pl._ghost is not drag
-           and pl._ghost._drag_active and pl._flow == [other],
-           f"ghost={pl._ghost}")
-        ok("清单纹丝不动、无空档（原位置不被空出来）",
-           drag.y() == y_drag and other.y() == y_other,
-           f"drag.y={drag.y()} vs {y_drag} other.y={other.y()} vs {y_other}")
+        ok(
+            "拖动开始：本体置灰留原位、幽灵卡跟进（不是本体自己动）",
+            drag._dimmed
+            and not drag._drag_active
+            and pl._ghost is not None
+            and pl._ghost is not drag
+            and pl._ghost._drag_active
+            and pl._flow == [other],
+            f"ghost={pl._ghost}",
+        )
+        ok(
+            "清单纹丝不动、无空档（原位置不被空出来）",
+            drag.y() == y_drag and other.y() == y_other,
+            f"drag.y={drag.y()} vs {y_drag} other.y={other.y()} vs {y_other}",
+        )
         ok("落点还在原位 → 指示线藏着", not pl._indicator.isVisible())
         pl._drag_drop = 1
         pl._place_indicator()
-        ok("落点变了 → 指示线画在落点条目下缘",
-           pl._indicator.isVisible() and pl._indicator.y() > other.y(),
-           f"y={pl._indicator.y()} other.y={other.y()}")
+        ok(
+            "落点变了 → 指示线画在落点条目下缘",
+            pl._indicator.isVisible() and pl._indicator.y() > other.y(),
+            f"y={pl._indicator.y()} other.y={other.y()}",
+        )
         pl._finish_drag()  # 幽灵卡滑进落点的动画启动，动画走完才发信号
         ok("松手瞬间未发信号（先滑进落点）", live == [], str(live))
         ok("落位动画进行中", pl._committing)
         pump(ctx.app, times=6, interval=0.05)  # 等落位动画走完（140ms）
         ok("落位完成发信号 (0,1)", live == [(0, 1)], str(live))
-        ok("收尾干净：幽灵卡消散、本体回亮、流程态清零",
-           not drag._dimmed and pl._ghost is None
-           and not pl._committing and pl._flow == [],
-           f"dim={drag._dimmed} ghost={pl._ghost} committing={pl._committing}")
+        ok(
+            "收尾干净：幽灵卡消散、本体回亮、流程态清零",
+            not drag._dimmed
+            and pl._ghost is None
+            and not pl._committing
+            and pl._flow == [],
+            f"dim={drag._dimmed} ghost={pl._ghost} committing={pl._committing}",
+        )
 
         # 拖回原位：不发信号、无残留
         pl._poll_drag = lambda: None
@@ -907,99 +1164,140 @@ def run(ctx) -> None:
         del pl._poll_drag
         pl._finish_drag()  # drop 仍是原位 → 幽灵卡就地消散，不发信号
         pump(ctx.app, times=4, interval=0.05)
-        ok("拖回原位不发信号、无残留",
-           len(live) == 1 and pl._ghost is None and not pl._committing
-           and pl._drag_entry is None and not other._dimmed,
-           f"live={live} ghost={pl._ghost}")
+        ok(
+            "拖回原位不发信号、无残留",
+            len(live) == 1
+            and pl._ghost is None
+            and not pl._committing
+            and pl._drag_entry is None
+            and not other._dimmed,
+            f"live={live} ghost={pl._ghost}",
+        )
 
         view.hide()
         view.deleteLater()
 
         dialog = ImpositionPickerDialog([c, d])
-        ok("弹窗列出两张候选",
-           dialog.count() == 2
-           and dialog.cards[0].path.name == "2-r.png",
-           f"count={dialog.count()}")
+        ok(
+            "弹窗列出两张候选",
+            dialog.count() == 2 and dialog.cards[0].path.name == "2-r.png",
+            f"count={dialog.count()}",
+        )
         # 「选择图片采用 GRID 模式或者 flex 模式，一行好几个，选框宽一些」
         dialog.resize(820, 640)
         dialog.show()
         pump(ctx.app, times=10)
-        ok("卡片网格按宽度自动排成多列（flex 换行）",
-           dialog.body.columns() >= 3, f"列数={dialog.body.columns()}")
-        ok("卡片够宽够高（≥ 180×240）",
-           dialog.cards[0].width() >= 180 and dialog.cards[0].height() >= 240,
-           f"{dialog.cards[0].width()}x{dialog.cards[0].height()}")
+        ok(
+            "卡片网格按宽度自动排成多列（flex 换行）",
+            dialog.body.columns() >= 3,
+            f"列数={dialog.body.columns()}",
+        )
+        ok(
+            "卡片够宽够高（≥ 180×240）",
+            dialog.cards[0].width() >= 180 and dialog.cards[0].height() >= 240,
+            f"{dialog.cards[0].width()}x{dialog.cards[0].height()}",
+        )
         ok("弹窗够宽（≥ 760px）", dialog.width() >= 760, str(dialog.width()))
         # 用户截图报过「图片没有正常显示、也没有文字」：缩略图必须是**固定尺寸**
         # 且真的画进了内容（不是空白小条），名字标签必须有文字。
         pump(ctx.app, times=20)
         card = dialog.cards[0]
-        ok("缩略图是固定尺寸的图（不是一小条）",
-           card.thumb.size() == QSize(THUMB_W, THUMB_H),
-           f"{card.thumb.size()}")
-        ok("缩略图真的画上了内容（不是全白/空图）",
-           card._pixmap.width() == THUMB_W and card._pixmap.height() == THUMB_H
-           and _count_non_white(card._pixmap.toImage()) > 0,
-           f"pixmap={card._pixmap.size()} 非白像素={_count_non_white(card._pixmap.toImage())}")
-        ok("卡片有名字文字（用户报过『没有显示文字』）",
-           card.name.text() == "2-r.png".removesuffix(".png")
-           and not card.name.isHidden(),
-           f"{card.name.text()!r}")
+        ok(
+            "缩略图是固定尺寸的图（不是一小条）",
+            card.thumb.size() == QSize(THUMB_W, THUMB_H),
+            f"{card.thumb.size()}",
+        )
+        ok(
+            "缩略图真的画上了内容（不是全白/空图）",
+            card._pixmap.width() == THUMB_W
+            and card._pixmap.height() == THUMB_H
+            and _count_non_white(card._pixmap.toImage()) > 0,
+            f"pixmap={card._pixmap.size()} 非白像素={_count_non_white(card._pixmap.toImage())}",
+        )
+        ok(
+            "卡片有名字文字（用户报过『没有显示文字』）",
+            card.name.text() == "2-r.png".removesuffix(".png")
+            and not card.name.isHidden(),
+            f"{card.name.text()!r}",
+        )
         ok("没勾选时「开始拼版」不可点", not dialog.ok_button.isEnabled())
         # 「只有三种可选形态」（用户 2026-09-30）：1 张单独成页 / 2 张拼一页 /
         # 1 张半幅 + 自动拼版
         dialog.cards[0].toggle()
-        ok("只勾 1 张：「开始拼版」可点（单张单独成页），提示单独成一页",
-           dialog.ok_button.isEnabled() and "单独成一页" in dialog.status.text(),
-           dialog.status.text())
+        ok(
+            "只勾 1 张：「开始拼版」可点（单张单独成页），提示单独成一页",
+            dialog.ok_button.isEnabled() and "单独成一页" in dialog.status.text(),
+            dialog.status.text(),
+        )
         dialog.cards[1].toggle()
-        ok("勾满两张：「开始拼版」可点，提示拼成一页",
-           dialog.ok_button.isEnabled() and "拼成一页" in dialog.status.text(),
-           dialog.status.text())
-        ok("点卡片即可勾选（整张卡片都是热区）",
-           dialog.cards[0].is_checked() and dialog.cards[1].is_checked())
-        ok("勾选结果按**源清单顺序**返回（不是点击顺序）",
-           _names(dialog.picked_files()) == ["2-r.png", "2-l.png"],
-           str(_names(dialog.picked_files())))
+        ok(
+            "勾满两张：「开始拼版」可点，提示拼成一页",
+            dialog.ok_button.isEnabled() and "拼成一页" in dialog.status.text(),
+            dialog.status.text(),
+        )
+        ok(
+            "点卡片即可勾选（整张卡片都是热区）",
+            dialog.cards[0].is_checked() and dialog.cards[1].is_checked(),
+        )
+        ok(
+            "勾选结果按**源清单顺序**返回（不是点击顺序）",
+            _names(dialog.picked_files()) == ["2-r.png", "2-l.png"],
+            str(_names(dialog.picked_files())),
+        )
         dialog.cards[0].toggle()
-        ok("取消勾选回到 1 张 → 仍可点（单张单独成页）",
-           not dialog.cards[0].is_checked() and dialog.ok_button.isEnabled())
+        ok(
+            "取消勾选回到 1 张 → 仍可点（单张单独成页）",
+            not dialog.cards[0].is_checked() and dialog.ok_button.isEnabled(),
+        )
         dialog.cards[1].toggle()
-        ok("两张都取消 → 「开始拼版」变灰",
-           not dialog.cards[1].is_checked() and not dialog.ok_button.isEnabled())
+        ok(
+            "两张都取消 → 「开始拼版」变灰",
+            not dialog.cards[1].is_checked() and not dialog.ok_button.isEnabled(),
+        )
         dialog.cards[0].toggle()
         ok("勾中的卡片进入选中态（浅底 + 对勾）", dialog.cards[0].is_checked())
 
         # ---- 「从这张图片开始自动拼版」复选框（用户 2026-10-01：恰好勾 1 张
         #      就出现，**不限整幅/半幅**；勾上后「开始拼版」走自动拼版）----
         # （当前状态：只勾 cards[0] 一张半幅）
-        ok("只勾 1 张：下方出现「从这张图片开始自动拼版」复选框（默认未勾）",
-           dialog.auto_checkbox.isVisibleTo(dialog)
-           and not dialog.auto_checkbox.isChecked(),
-           f"visible={not dialog.auto_checkbox.isHidden()} "
-           f"checked={dialog.auto_checkbox.isChecked()}")
-        ok("复选框没勾时「开始拼版」也可点（单张单独成页）",
-           dialog.ok_button.isEnabled())
+        ok(
+            "只勾 1 张：下方出现「从这张图片开始自动拼版」复选框（默认未勾）",
+            dialog.auto_checkbox.isVisibleTo(dialog)
+            and not dialog.auto_checkbox.isChecked(),
+            f"visible={not dialog.auto_checkbox.isHidden()} "
+            f"checked={dialog.auto_checkbox.isChecked()}",
+        )
+        ok(
+            "复选框没勾时「开始拼版」也可点（单张单独成页）",
+            dialog.ok_button.isEnabled(),
+        )
         dialog.auto_checkbox.setChecked(True)
-        ok("勾上自动拼版后「开始拼版」可点",
-           dialog.ok_button.isEnabled())
+        ok("勾上自动拼版后「开始拼版」可点", dialog.ok_button.isEnabled())
         _auto_file = dialog.auto_mode_file()
-        ok("auto_mode_file = 勾选的那张",
-           _auto_file is not None and _auto_file.name == "2-r.png",
-           str(_auto_file))
-        ok("auto_sequence = 从勾选那张起到候选末尾（源清单顺序）",
-           _names(dialog.auto_sequence()) == ["2-r.png", "2-l.png"],
-           str(_names(dialog.auto_sequence())))
+        ok(
+            "auto_mode_file = 勾选的那张",
+            _auto_file is not None and _auto_file.name == "2-r.png",
+            str(_auto_file),
+        )
+        ok(
+            "auto_sequence = 从勾选那张起到候选末尾（源清单顺序）",
+            _names(dialog.auto_sequence()) == ["2-r.png", "2-l.png"],
+            str(_names(dialog.auto_sequence())),
+        )
         dialog.cards[1].toggle()
-        ok("勾到 2 张：复选框隐藏并复位（走手动拼一页）",
-           not dialog.auto_checkbox.isVisibleTo(dialog)
-           and not dialog.auto_checkbox.isChecked()
-           and dialog.ok_button.isEnabled())
+        ok(
+            "勾到 2 张：复选框隐藏并复位（走手动拼一页）",
+            not dialog.auto_checkbox.isVisibleTo(dialog)
+            and not dialog.auto_checkbox.isChecked()
+            and dialog.ok_button.isEnabled(),
+        )
         dialog.cards[1].toggle()
-        ok("回到只勾 1 张：复选框重新出现（未勾），「开始拼版」可点",
-           dialog.auto_checkbox.isVisibleTo(dialog)
-           and not dialog.auto_checkbox.isChecked()
-           and dialog.ok_button.isEnabled())
+        ok(
+            "回到只勾 1 张：复选框重新出现（未勾），「开始拼版」可点",
+            dialog.auto_checkbox.isVisibleTo(dialog)
+            and not dialog.auto_checkbox.isChecked()
+            and dialog.ok_button.isEnabled(),
+        )
         dialog.deleteLater()
 
         # 勾 3 张：可以勾，但「开始拼版」不可点（用户 2026-09-30：最多 2 张）
@@ -1008,73 +1306,97 @@ def run(ctx) -> None:
         third.cards[0].toggle()
         third.cards[1].toggle()
         third.cards[2].toggle()
-        ok("勾 3 张 → 「开始拼版」不可点，提示最多勾 2 张",
-           len(third.checked_files()) == 3 and not third.ok_button.isEnabled()
-           and "最多勾 2 张" in third.status.text(),
-           f"勾中 {_names(third.checked_files())} / {third.status.text()}")
+        ok(
+            "勾 3 张 → 「开始拼版」不可点，提示最多勾 2 张",
+            len(third.checked_files()) == 3
+            and not third.ok_button.isEnabled()
+            and "最多勾 2 张" in third.status.text(),
+            f"勾中 {_names(third.checked_files())} / {third.status.text()}",
+        )
         third.cards[1].toggle()
-        ok("回到勾 2 张 → 可点，提示拼成一页",
-           third.ok_button.isEnabled() and "拼成一页" in third.status.text(),
-           third.status.text())
+        ok(
+            "回到勾 2 张 → 可点，提示拼成一页",
+            third.ok_button.isEnabled() and "拼成一页" in third.status.text(),
+            third.status.text(),
+        )
         third.deleteLater()
 
         # 1 张整幅：单独成页可点，自动拼版选项同样出现（用户 2026-10-01：
         # 不再限制半幅，整幅起自动 = 整幅单独一页后继续往下配）
         full_only = ImpositionPickerDialog([full])
         full_only.cards[0].toggle()
-        ok("只勾 1 张整幅：「开始拼版」可点、自动拼版选项同样出现",
-           full_only.ok_button.isEnabled()
-           and full_only.auto_checkbox.isVisibleTo(full_only)
-           and "整幅" in full_only.status.text(),
-           full_only.status.text())
+        ok(
+            "只勾 1 张整幅：「开始拼版」可点、自动拼版选项同样出现",
+            full_only.ok_button.isEnabled()
+            and full_only.auto_checkbox.isVisibleTo(full_only)
+            and "整幅" in full_only.status.text(),
+            full_only.status.text(),
+        )
         full_only.auto_checkbox.setChecked(True)
-        ok("勾上后整幅也能走自动拼版（auto_mode_file 生效）",
-           full_only.auto_mode_file() == full,
-           str(full_only.auto_mode_file()))
+        ok(
+            "勾上后整幅也能走自动拼版（auto_mode_file 生效）",
+            full_only.auto_mode_file() == full,
+            str(full_only.auto_mode_file()),
+        )
         full_only.deleteLater()
 
         # ---- 「删除图片」/「查看删除的图片」（用户 2026-09-30）----
         del_dlg = ImpositionPickerDialog([a, b, c, d])
-        ok("「确定」按钮已改为「开始拼版」",
-           del_dlg.ok_button.text() == "开始拼版", del_dlg.ok_button.text())
+        ok(
+            "「确定」按钮已改为「开始拼版」",
+            del_dlg.ok_button.text() == "开始拼版",
+            del_dlg.ok_button.text(),
+        )
         ok("没勾选时「删除图片」不可点", not del_dlg.delete_button.isEnabled())
         del_dlg.cards[0].toggle()
         del_dlg.cards[1].toggle()
         ok("勾选后「删除图片」可点", del_dlg.delete_button.isEnabled())
         del_dlg.delete_button.click()
-        ok("删除后两张移出候选（候选剩 2 张）",
-           del_dlg.count() == 2
-           and _names(del_dlg.removed_files()) == ["1-r.png", "1-l.png"],
-           f"count={del_dlg.count()} removed={_names(del_dlg.removed_files())}")
-        ok("「查看删除的图片」入口带数量提示",
-           "(2)" in del_dlg.removed_entry_button.text(),
-           del_dlg.removed_entry_button.text())
+        ok(
+            "删除后两张移出候选（候选剩 2 张）",
+            del_dlg.count() == 2
+            and _names(del_dlg.removed_files()) == ["1-r.png", "1-l.png"],
+            f"count={del_dlg.count()} removed={_names(del_dlg.removed_files())}",
+        )
+        ok(
+            "「查看删除的图片」入口带数量提示",
+            "(2)" in del_dlg.removed_entry_button.text(),
+            del_dlg.removed_entry_button.text(),
+        )
         del_dlg.removed_entry_button.click()
-        ok("切到已删除视图：列出两张被删卡片",
-           del_dlg.stack.currentIndex() == 1 and len(del_dlg.removed_cards) == 2)
+        ok(
+            "切到已删除视图：列出两张被删卡片",
+            del_dlg.stack.currentIndex() == 1 and len(del_dlg.removed_cards) == 2,
+        )
         del_dlg.removed_cards[0].toggle()
         ok("勾选已删除卡片后「恢复选中」可用", del_dlg.restore_button.isEnabled())
         del_dlg.restore_button.click()
-        ok("恢复一张：候选 3 张、黑名单剩 1 张",
-           del_dlg.count() == 3 and _names(del_dlg.removed_files()) == ["1-l.png"],
-           f"count={del_dlg.count()} removed={_names(del_dlg.removed_files())}")
+        ok(
+            "恢复一张：候选 3 张、黑名单剩 1 张",
+            del_dlg.count() == 3 and _names(del_dlg.removed_files()) == ["1-l.png"],
+            f"count={del_dlg.count()} removed={_names(del_dlg.removed_files())}",
+        )
         ok("黑名单与打开时不同（宿主需落盘）", del_dlg.removed_changed())
         del_dlg.restore_all_button.click()
-        ok("全部恢复：候选 4 张、黑名单清空、视为未变化",
-           del_dlg.count() == 4 and not del_dlg.removed_files()
-           and not del_dlg.removed_changed())
+        ok(
+            "全部恢复：候选 4 张、黑名单清空、视为未变化",
+            del_dlg.count() == 4
+            and not del_dlg.removed_files()
+            and not del_dlg.removed_changed(),
+        )
         del_dlg.deleteLater()
 
         # 打开时就带黑名单：已删除的不占候选，可一键恢复
         preset = ImpositionPickerDialog([a, b, c, d], removed_files=[a])
-        ok("打开时已删除的图不占候选",
-           preset.count() == 3 and _names(preset.removed_files()) == ["1-r.png"],
-           f"count={preset.count()}")
+        ok(
+            "打开时已删除的图不占候选",
+            preset.count() == 3 and _names(preset.removed_files()) == ["1-r.png"],
+            f"count={preset.count()}",
+        )
         preset.removed_entry_button.click()
         ok("黑名单视图列出打开时已删除的卡片", len(preset.removed_cards) == 1)
         preset.restore_all_button.click()
-        ok("一键恢复后回到候选",
-           preset.count() == 4 and not preset.removed_files())
+        ok("一键恢复后回到候选", preset.count() == 4 and not preset.removed_files())
         preset.deleteLater()
         # ⚠️ 立刻驱动一轮事件：延迟删除在这里处理完，别拖到详情页的 pump 里
         pump(ctx.app, times=10)
@@ -1095,17 +1417,23 @@ def run(ctx) -> None:
         real.show()
         pump(ctx.app, times=20)
         card_real = real.cards[0]
-        ink = _count_non_white(card_real._pixmap.toImage()) if (
-            card_real._pixmap.size() == QSize(THUMB_W, THUMB_H)
-        ) else -1
-        ok("白底透明 PNG（1bit 调色板 + tRNS）也能正常出缩略图",
-           ink > 20, f"缩略图={card_real._pixmap.size()} 非白采样={ink}")
-        ok("缩略图与卡片尺寸是固定值（不受源图尺寸影响）",
-           card_real.thumb.size() == QSize(THUMB_W, THUMB_H)
-           and card_real.size().width() >= 180,
-           f"thumb={card_real.thumb.size()} card={card_real.size()}")
+        ink = (
+            _count_non_white(card_real._pixmap.toImage())
+            if (card_real._pixmap.size() == QSize(THUMB_W, THUMB_H))
+            else -1
+        )
+        ok(
+            "白底透明 PNG（1bit 调色板 + tRNS）也能正常出缩略图",
+            ink > 20,
+            f"缩略图={card_real._pixmap.size()} 非白采样={ink}",
+        )
+        ok(
+            "缩略图与卡片尺寸是固定值（不受源图尺寸影响）",
+            card_real.thumb.size() == QSize(THUMB_W, THUMB_H)
+            and card_real.size().width() >= 180,
+            f"thumb={card_real.thumb.size()} card={card_real.size()}",
+        )
         real.deleteLater()
-
 
         # ---------------- 6. 详情页接线：取图来源切换 ----------------
         repo = TaskStore(tmp / "data")
@@ -1113,12 +1441,16 @@ def run(ctx) -> None:
         tid = repo.create_task(pdf, "imposition-hash", "拼版测试")
         repo.copy_source_to_task(tid, pdf)
         # 拼版节点是否在流程里**只看流程图**（2026-10-05 口径）：默认模板里
-        # 画了「图片拼板」，所以这里不必再配置区域模式来"让它出现"
+        # 画了「图片拼版」，所以这里不必再配置区域模式来"让它出现"
         # （旧口径：area=1 才显示，否则 _select_stage(拼版) 会被退回第一步）。
         # 第三步去底色产物（拼版的源图 = 「提交本次任务」的成品图）
         rembg_dir = repo.rembg_output_dir(tid)
-        for name, color in (("1-r", RED), ("1-l", GREEN),
-                            ("2-r", BLUE), ("2-l", YELLOW)):
+        for name, color in (
+            ("1-r", RED),
+            ("1-l", GREEN),
+            ("2-r", BLUE),
+            ("2-l", YELLOW),
+        ):
             _mk(rembg_dir / f"{name}.png", color)
         # 顺带铺好上游夹具（提取清单 / 去底预览 / 检测框）：它们已不参与第四步
         # 合成（2026-10-01 起只透传提交产物），但保留成"真实任务该有的样子"，
@@ -1143,78 +1475,103 @@ def run(ctx) -> None:
         assert page.task_id is not None
         pump(ctx.app, times=8)
 
-        ok("详情页控制栈/预览栈都多了拼版这一位",
-           page.control_stack.count() == 5 and page.preview_stack.count() == 5)
-        ok("默认未启用拼版时，第四步取图 = 第三步去底色",
-           page.print_source_dir() == rembg_dir
-           and not page.imposition_active())
+        ok(
+            "详情页控制栈/预览栈都多了拼版这一位",
+            page.control_stack.count() == 5 and page.preview_stack.count() == 5,
+        )
+        ok(
+            "默认未启用拼版时，第四步取图 = 第三步去底色",
+            page.print_source_dir() == rembg_dir and not page.imposition_active(),
+        )
 
         # ---- 启用开关的可用性跟着**流程图**走（2026-10-05 口径）----
         # 用户口径：拼版的操作就在拼版面板里（这个开关），**它可以用，但是否
-        # 生效由流程图决定**——图里没有「图片拼板」那一格时，勾了也不生效
+        # 生效由流程图决定**——图里没有「图片拼版」那一格时，勾了也不生效
         # （第四步取图按图回退到去底色产物），所以开关该**置灰并说明原因**，
         # 而不是让用户勾一个永远不会生效的框。
         # ⚠️ 开关可用要**三个判据全过**（2026-10-05 逐层查证业务流程后定）：
         #    图里有 + 区域模式是「左右分开」+ 用户勾了。第一条这里已满足，
         #    第二条要显式确认区域模式（业务前提：只有左右分开才产出成对的
         #    -l/-r 半页图，拼起来才是正刊对开版面）。
-        ok("区域模式还没确认时开关置灰（并说明要先确认）",
-           not page.imposition_enabled_checkbox.isEnabled()
-           and "确认区域模式" in page.imposition_enabled_checkbox.toolTip(),
-           page.imposition_enabled_checkbox.toolTip())
+        ok(
+            "区域模式还没确认时开关置灰（并说明要先确认）",
+            not page.imposition_enabled_checkbox.isEnabled()
+            and "确认区域模式" in page.imposition_enabled_checkbox.toolTip(),
+            page.imposition_enabled_checkbox.toolTip(),
+        )
         repo.save_draft(tid, "rembg", {"area": 1})
         page._refresh_imposition_node()
         pump(ctx.app, times=4)
-        ok("图里有「图片拼板」且区域模式=左右分开 → 启用开关可用",
-           page.imposition_enabled_checkbox.isEnabled(),
-           page.imposition_enabled_checkbox.toolTip())
+        ok(
+            "图里有「图片拼版」且区域模式=左右分开 → 启用开关可用",
+            page.imposition_enabled_checkbox.isEnabled(),
+            page.imposition_enabled_checkbox.toolTip(),
+        )
         # 区域模式改成"合并单图"→ 每页已是一张整图，拼版没意义 ⇒ 置灰
         repo.save_draft(tid, "rembg", {"area": 2})
         page._refresh_imposition_node()
         pump(ctx.app, times=4)
-        ok("区域模式不是左右分开 → 开关置灰（拼版这一步没意义）",
-           not page.imposition_enabled_checkbox.isEnabled()
-           and "整图" in page.imposition_enabled_checkbox.toolTip(),
-           page.imposition_enabled_checkbox.toolTip())
+        ok(
+            "区域模式不是左右分开 → 开关置灰（拼版这一步没意义）",
+            not page.imposition_enabled_checkbox.isEnabled()
+            and "整图" in page.imposition_enabled_checkbox.toolTip(),
+            page.imposition_enabled_checkbox.toolTip(),
+        )
         repo.save_draft(tid, "rembg", {"area": 1})
         page._refresh_imposition_node()
         pump(ctx.app, times=4)
         # 用**独立页面实例 + 独立任务**验"图里没有"这一侧：直接换掉上面那个
         # page 的流程图会连累后面所有断言（它们都按默认模板的图算）。
         from desktop.steps.bpmn_diagram import (
-            DiagramFlow, DiagramNode, FlowDiagram, KIND_TASK,
+            DiagramFlow,
+            DiagramNode,
+            FlowDiagram,
+            KIND_TASK,
         )
+
         fog_task = repo.create_task(pdf, "imposition-fogless", "无拼版流程")
-        repo.save_task_diagram(fog_task, FlowDiagram(
-            nodes=tuple(
-                DiagramNode(f"q{i}", KIND_TASK, name)
-                for i, name in enumerate(
-                    ("提取图片", "检测文本框", "图片去底色", "PDF排版"))
+        repo.save_task_diagram(
+            fog_task,
+            FlowDiagram(
+                nodes=tuple(
+                    DiagramNode(f"q{i}", KIND_TASK, name)
+                    for i, name in enumerate(
+                        ("提取图片", "检测文本框", "图片去底色", "PDF排版")
+                    )
+                ),
+                flows=tuple(
+                    DiagramFlow(f"qf{i}", f"q{i - 1}", f"q{i}") for i in range(1, 4)
+                ),
             ),
-            flows=tuple(DiagramFlow(f"qf{i}", f"q{i - 1}", f"q{i}")
-                        for i in range(1, 4)),
-        ))
+        )
         fog = TaskDetailPage(repo)
         fog.resize(1080, 720)
         fog.show()
         pump(ctx.app, times=12)
         fog.set_task(fog_task)
         pump(ctx.app, times=8)
-        ok("流程图里没有「图片拼板」→ 启用开关置灰（勾了也不会生效）",
-           not fog.imposition_enabled_checkbox.isEnabled())
-        ok("置灰时说明原因，不是静默失效",
-           "没有" in fog.imposition_enabled_checkbox.toolTip()
-           and "生效" in fog.imposition_enabled_checkbox.toolTip(),
-           fog.imposition_enabled_checkbox.toolTip())
-        ok("图里没有拼版 → 步骤条上也没有那一格",
-           not fog._imposition_node_visible()
-           and fog.step_bar.imposition_node.isHidden())
-        ok("图里没有拼版时，即便勾过开关也不生效（取图按图回退）",
-           not str(repo.stage_input(fog_task, "print", "pages",
-                                    imposition_active=True)).endswith(
-                                        "imposition"),
-           str(repo.stage_input(fog_task, "print", "pages",
-                                imposition_active=True)))
+        ok(
+            "流程图里没有「图片拼版」→ 启用开关置灰（勾了也不会生效）",
+            not fog.imposition_enabled_checkbox.isEnabled(),
+        )
+        ok(
+            "置灰时说明原因，不是静默失效",
+            "没有" in fog.imposition_enabled_checkbox.toolTip()
+            and "生效" in fog.imposition_enabled_checkbox.toolTip(),
+            fog.imposition_enabled_checkbox.toolTip(),
+        )
+        ok(
+            "图里没有拼版 → 步骤条上也没有那一格",
+            not fog._imposition_node_visible()
+            and fog.step_bar.imposition_node.isHidden(),
+        )
+        ok(
+            "图里没有拼版时，即便勾过开关也不生效（取图按图回退）",
+            not str(
+                repo.stage_input(fog_task, "print", "pages", imposition_active=True)
+            ).endswith("imposition"),
+            str(repo.stage_input(fog_task, "print", "pages", imposition_active=True)),
+        )
         fog.deleteLater()
         pump(ctx.app, times=4)
         # ⚠️ **必须把它删掉**：本模块后面的断言用 ``rows[0]``（任务列表的
@@ -1228,9 +1585,11 @@ def run(ctx) -> None:
         repo.save_draft(tid, "rembg", {"area": 2})
         page._refresh_imposition_node()
         pump(ctx.app, times=4)
-        ok("改第三步区域模式不影响拼版节点**显不显示**（那由流程图决定）",
-           page._imposition_node_visible() == before_visible,
-           f"{before_visible} -> {page._imposition_node_visible()}")
+        ok(
+            "改第三步区域模式不影响拼版节点**显不显示**（那由流程图决定）",
+            page._imposition_node_visible() == before_visible,
+            f"{before_visible} -> {page._imposition_node_visible()}",
+        )
         # ⚠️ 这里**恢复成 area=1** 而不是 clear_draft：区域模式是拼版的业务
         #    前提，清掉会让后面所有"启用拼版→取图走拼版产物"的断言失效
         #    （那正是本轮 `imposition_effective` 引入的正确依赖）。
@@ -1243,36 +1602,47 @@ def run(ctx) -> None:
         # 而 ``IMPOSITION_INDEX = len(STAGES) = 4`` 落在 **print** 那一格——
         # 传进去切到的是第四步，不是拼版。两个下标各查各的表，别混。
         imposition_bar = page.bar_index_of_step(IMPOSITION_STAGE)
-        ok("拼版的格序是 3（可选节点占位，≠ len(STAGES)=4）",
-           imposition_bar == 3, str(imposition_bar))
-        assert imposition_bar is not None    # ⚠️ 图里有这一格
+        ok(
+            "拼版的格序是 3（可选节点占位，≠ len(STAGES)=4）",
+            imposition_bar == 3,
+            str(imposition_bar),
+        )
+        assert imposition_bar is not None  # ⚠️ 图里有这一格
         page._select_stage(imposition_bar)
         pump(ctx.app, times=8)
         # 栈页号与格序**不再相等**：两个栈按"真实步骤 + 伪步骤占最后一位"建页
         imposition_stack = page.stack_index_of_step(IMPOSITION_STAGE)
-        ok("拼版的栈页号是 4（≠ 格序 3）",
-           imposition_stack == 4, str(imposition_stack))
-        ok("切到拼版详情：两栈都在第 %d 位" % imposition_stack,
-           page.control_stack.currentIndex() == imposition_stack
-           and page.preview_stack.currentIndex() == imposition_stack,
-           f'control={page.control_stack.currentIndex()} '
-           f'preview={page.preview_stack.currentIndex()}')
-        ok("拼版详情隐藏执行按钮组",
-           not page.run_button.isVisible() and not page.submit_button.isVisible()
-           and not page.resume_button.isVisible()
-           and not page.cancel_button.isVisible())
-        ok("详情里的拼版视图就是刚验证的那个控件",
-           isinstance(page.imposition_view, ImpositionViewWidget))
+        ok("拼版的栈页号是 4（≠ 格序 3）", imposition_stack == 4, str(imposition_stack))
+        ok(
+            "切到拼版详情：两栈都在第 %d 位" % imposition_stack,
+            page.control_stack.currentIndex() == imposition_stack
+            and page.preview_stack.currentIndex() == imposition_stack,
+            f"control={page.control_stack.currentIndex()} "
+            f"preview={page.preview_stack.currentIndex()}",
+        )
+        ok(
+            "拼版详情隐藏执行按钮组",
+            not page.run_button.isVisible()
+            and not page.submit_button.isVisible()
+            and not page.resume_button.isVisible()
+            and not page.cancel_button.isVisible(),
+        )
+        ok(
+            "详情里的拼版视图就是刚验证的那个控件",
+            isinstance(page.imposition_view, ImpositionViewWidget),
+        )
 
         # 未生效时：第四步也只排版第三步「提交本次任务」的成品图（整图透传）。
         # 2026-10-01 起不再拿去底图按 area/border 现算——见 submit.py。
         base_entries, _doc = page._print_entries()
         base_effects = page._build_print_effects(base_entries)
-        ok("未生效时也整图透传提交产物（不再按 area/border 现算）",
-           len(base_effects) == 4
-           and all(e["effect"] is None for e in base_effects)
-           and {str(Path(e["file"]).parent) for e in base_effects} == {str(rembg_dir)},
-           str(base_effects[:1]))
+        ok(
+            "未生效时也整图透传提交产物（不再按 area/border 现算）",
+            len(base_effects) == 4
+            and all(e["effect"] is None for e in base_effects)
+            and {str(Path(e["file"]).parent) for e in base_effects} == {str(rembg_dir)},
+            str(base_effects[:1]),
+        )
 
         pages = None
         import desktop.components.imposition.picker as _ipick
@@ -1341,30 +1711,38 @@ def run(ctx) -> None:
             page._imposition_timer.stop()
             pump(ctx.app, times=4)
             doc = page._imposition_doc()
-            ok("弹窗里删除的图片落盘到 removed 字段",
-               [Path(f).name for f in doc.get("removed") or []] == ["1-r.png"],
-               str(doc.get("removed")))
-            ok("被删除的图片不再进入「选择拼版」候选",
-               "1-r.png" not in _names(S.remaining_files(
-                   page.imposition_source_files(), doc)))
+            ok(
+                "弹窗里删除的图片落盘到 removed 字段",
+                [Path(f).name for f in doc.get("removed") or []] == ["1-r.png"],
+                str(doc.get("removed")),
+            )
+            ok(
+                "被删除的图片不再进入「选择拼版」候选",
+                "1-r.png"
+                not in _names(S.remaining_files(page.imposition_source_files(), doc)),
+            )
             # 全部恢复：黑名单清空，图片回到候选范围
             _ipick.ImpositionPickerDialog = _FakeRestoreDialog
             page._on_imposition_add_requested()
             page._imposition_timer.stop()
             pump(ctx.app, times=4)
-            ok("恢复后黑名单清空（重新进入候选范围）",
-               page._imposition_doc().get("removed") == [])
+            ok(
+                "恢复后黑名单清空（重新进入候选范围）",
+                page._imposition_doc().get("removed") == [],
+            )
             # 只勾一张 → 单图单独一页（用户 2026-09-30：单张允许拼版）
             _ipick.ImpositionPickerDialog = _FakeOneDialog
             page._on_imposition_add_requested()
             page._imposition_timer.stop()
             pump(ctx.app, times=6)
             one_pages = page._imposition_pages()
-            ok("只勾一张 → 单图单独一页（1 项、原图 1-r）",
-               len(one_pages) == 1 and len(one_pages[0]["items"]) == 1
-               and Path(one_pages[0]["items"][0]["file"]).name == "1-r.png",
-               str([[Path(i["file"]).name for i in p["items"]]
-                    for p in one_pages]))
+            ok(
+                "只勾一张 → 单图单独一页（1 项、原图 1-r）",
+                len(one_pages) == 1
+                and len(one_pages[0]["items"]) == 1
+                and Path(one_pages[0]["items"][0]["file"]).name == "1-r.png",
+                str([[Path(i["file"]).name for i in p["items"]] for p in one_pages]),
+            )
             # 清空，接原有「手动两张」流程
             page._save_imposition_pages([])
             page._imposition_timer.stop()
@@ -1379,15 +1757,20 @@ def run(ctx) -> None:
             page._imposition_timer.stop()
             pump(ctx.app, times=6)
             pages = page._imposition_pages()
-            ok("多选 4 张：开始拼版两两成页（共 2 页）",
-               len(pages) == 2 and all(len(p["items"]) == 2 for p in pages)
-               and Path(pages[0]["items"][0]["file"]).name == "1-r.png"
-               and Path(pages[1]["items"][0]["file"]).name == "2-r.png",
-               str([[Path(i["file"]).name for i in p["items"]] for p in pages]))
-            ok("多选拼版后左列两页、停在第一页",
-               len(page.imposition_view.page_list.entries()) == 2
-               and page.imposition_view.current_index() == 0,
-               str(page.imposition_view.current_index()))
+            ok(
+                "多选 4 张：开始拼版两两成页（共 2 页）",
+                len(pages) == 2
+                and all(len(p["items"]) == 2 for p in pages)
+                and Path(pages[0]["items"][0]["file"]).name == "1-r.png"
+                and Path(pages[1]["items"][0]["file"]).name == "2-r.png",
+                str([[Path(i["file"]).name for i in p["items"]] for p in pages]),
+            )
+            ok(
+                "多选拼版后左列两页、停在第一页",
+                len(page.imposition_view.page_list.entries()) == 2
+                and page.imposition_view.current_index() == 0,
+                str(page.imposition_view.current_index()),
+            )
             # 清空，接原有「手动两张」流程
             page._save_imposition_pages([])
             page._imposition_timer.stop()
@@ -1415,17 +1798,21 @@ def run(ctx) -> None:
             page._imposition_timer.stop()
             pump(ctx.app, times=6)
             auto_pages = page._imposition_pages()
-            ok("自动拼版落盘：首位 1-r 单独一页、(1-l,2-r) 配对、末尾 2-l 单独",
-               len(auto_pages) == 3
-               and [tuple(Path(i["file"]).name for i in p["items"])
-                    for p in auto_pages]
-               == [("1-r.png",), ("1-l.png", "2-r.png"), ("2-l.png",)],
-               str([[Path(i["file"]).name for i in p["items"]]
-                    for p in auto_pages]))
-            ok("自动拼版后左列 3 页、停在第一页",
-               len(page.imposition_view.page_list.entries()) == 3
-               and page.imposition_view.current_index() == 0,
-               str(page.imposition_view.current_index()))
+            ok(
+                "自动拼版落盘：首位 1-r 单独一页、(1-l,2-r) 配对、末尾 2-l 单独",
+                len(auto_pages) == 3
+                and [
+                    tuple(Path(i["file"]).name for i in p["items"]) for p in auto_pages
+                ]
+                == [("1-r.png",), ("1-l.png", "2-r.png"), ("2-l.png",)],
+                str([[Path(i["file"]).name for i in p["items"]] for p in auto_pages]),
+            )
+            ok(
+                "自动拼版后左列 3 页、停在第一页",
+                len(page.imposition_view.page_list.entries()) == 3
+                and page.imposition_view.current_index() == 0,
+                str(page.imposition_view.current_index()),
+            )
             # 清空，接原有「手动两张」流程
             page._save_imposition_pages([])
             page._imposition_timer.stop()
@@ -1439,29 +1826,39 @@ def run(ctx) -> None:
             page._imposition_timer.stop()
             pump(ctx.app, times=6)
             pages = page._imposition_pages()
-            ok("「选择拼版」→ 追加一页并要求两张",
-               len(pages) == 1 and len(pages[0]["items"]) == 2, str(pages))
-            ok("落盘后左列同步成 1 页并停在该页",
-               len(page.imposition_view.page_list.entries()) == 1
-               and page.imposition_view.current_index() == 0,
-               str(page.imposition_view.current_index()))
-            ok("加页后自动启用（否则第四步根本用不到它）",
-               page._load_imposition_enabled())
-            ok("跳过已用过的图：第二页拿到的是剩下那两张",
-               [Path(i["file"]).name for i in pages[0]["items"]]
-               == ["1-r.png", "1-l.png"],
-               str([Path(i["file"]).name for i in pages[0]["items"]]))
+            ok(
+                "「选择拼版」→ 追加一页并要求两张",
+                len(pages) == 1 and len(pages[0]["items"]) == 2,
+                str(pages),
+            )
+            ok(
+                "落盘后左列同步成 1 页并停在该页",
+                len(page.imposition_view.page_list.entries()) == 1
+                and page.imposition_view.current_index() == 0,
+                str(page.imposition_view.current_index()),
+            )
+            ok(
+                "加页后自动启用（否则第四步根本用不到它）",
+                page._load_imposition_enabled(),
+            )
+            ok(
+                "跳过已用过的图：第二页拿到的是剩下那两张",
+                [Path(i["file"]).name for i in pages[0]["items"]]
+                == ["1-r.png", "1-l.png"],
+                str([Path(i["file"]).name for i in pages[0]["items"]]),
+            )
             page._on_imposition_add_requested()
             page._imposition_timer.stop()
             pump(ctx.app, times=6)
             pages = page._imposition_pages()
-            ok("再加一页 → 共两页，左列两条 + 虚线格",
-               len(pages) == 2 and len(page.imposition_view.page_list.entries()) == 2)
+            ok(
+                "再加一页 → 共两页，左列两条 + 虚线格",
+                len(pages) == 2 and len(page.imposition_view.page_list.entries()) == 2,
+            )
             # 四张都用完了：再点只能提示，不许造出半页
             page._on_imposition_add_requested()
             page._imposition_timer.stop()
-            ok("没有剩余图片时不会造出残页",
-               len(page._imposition_pages()) == 2)
+            ok("没有剩余图片时不会造出残页", len(page._imposition_pages()) == 2)
         finally:
             _ipick.ImpositionPickerDialog = real_dialog
 
@@ -1476,25 +1873,30 @@ def run(ctx) -> None:
 
         _pthumb_dir = page.store.imposition_page_thumbs_dir(page.task_id)
         for _ in range(240):  # 后台 worker 逐页生成：轮询到实体落盘或超时
-            if (_pthumb_dir / "page1.jpg").is_file() \
-                    and (_pthumb_dir / "page2.jpg").is_file():
+            if (_pthumb_dir / "page1.jpg").is_file() and (
+                _pthumb_dir / "page2.jpg"
+            ).is_file():
                 break
             ctx.app.processEvents()
             _time.sleep(0.05)
-        ok("左列缩略图实体：page1.jpg / page2.jpg 落地（页面效果、页号命名）",
-           (_pthumb_dir / "page1.jpg").is_file()
-           and (_pthumb_dir / "page2.jpg").is_file(),
-           f"{_pthumb_dir} -> "
-           f"{sorted(x.name for x in _pthumb_dir.glob('*.jpg'))}")
+        ok(
+            "左列缩略图实体：page1.jpg / page2.jpg 落地（页面效果、页号命名）",
+            (_pthumb_dir / "page1.jpg").is_file()
+            and (_pthumb_dir / "page2.jpg").is_file(),
+            f"{_pthumb_dir} -> " f"{sorted(x.name for x in _pthumb_dir.glob('*.jpg'))}",
+        )
         _pmap = load_page_index(_pthumb_dir, _EDGE)
-        ok("映射数据：index.json 记好 页号 ↔ 文件 ↔ 签名",
-           sorted(_pmap) == [0, 1] and all(_pmap.values()),
-           str(_pmap))
+        ok(
+            "映射数据：index.json 记好 页号 ↔ 文件 ↔ 签名",
+            sorted(_pmap) == [0, 1] and all(_pmap.values()),
+            str(_pmap),
+        )
         _entries = page.imposition_view.page_list.entries()
-        ok("左列缩略图：贴到条目上（pixmap 非空，不再是占位）",
-           len(_entries) == 2
-           and all(not e.thumb.pixmap().isNull() for e in _entries),
-           str([e.thumb.pixmap().isNull() for e in _entries]))
+        ok(
+            "左列缩略图：贴到条目上（pixmap 非空，不再是占位）",
+            len(_entries) == 2 and all(not e.thumb.pixmap().isNull() for e in _entries),
+            str([e.thumb.pixmap().isNull() for e in _entries]),
+        )
         for _ in range(100):  # 等左列贴上**整页**实体
             _p2 = _entries[1].thumb.pixmap()
             if not _p2.isNull() and _p2.toImage().width() > 1:
@@ -1502,13 +1904,14 @@ def run(ctx) -> None:
             ctx.app.processEvents()
             _time.sleep(0.05)
         _p2img = _entries[1].thumb.pixmap().toImage()
-        ok("左列缩略图 = 页面效果：两图页两半各显示一张（非单张）",
-           _px_near(_p2img, _p2img.width() // 4, _p2img.height() // 2, YELLOW)
-           and _px_near(_p2img, _p2img.width() * 3 // 4,
-                        _p2img.height() // 2, BLUE),
-           f"size={(_p2img.width(), _p2img.height())} "
-           f"左半={_p2img.pixelColor(_p2img.width() // 4, _p2img.height() // 2).getRgb()[:3]} "
-           f"右半={_p2img.pixelColor(_p2img.width() * 3 // 4, _p2img.height() // 2).getRgb()[:3]}")
+        ok(
+            "左列缩略图 = 页面效果：两图页两半各显示一张（非单张）",
+            _px_near(_p2img, _p2img.width() // 4, _p2img.height() // 2, YELLOW)
+            and _px_near(_p2img, _p2img.width() * 3 // 4, _p2img.height() // 2, BLUE),
+            f"size={(_p2img.width(), _p2img.height())} "
+            f"左半={_p2img.pixelColor(_p2img.width() // 4, _p2img.height() // 2).getRgb()[:3]} "
+            f"右半={_p2img.pixelColor(_p2img.width() * 3 // 4, _p2img.height() // 2).getRgb()[:3]}",
+        )
 
         # ---- 单步操作（拖动/复位落盘）后几秒内更新**单页**缩略图（2026-10-09）----
         _key_before = _entries[1]._thumb_key
@@ -1516,15 +1919,21 @@ def run(ctx) -> None:
         _moved_items = [dict(it) for it in _pages_now[1]["items"]]
         _moved_items[1] = {
             **_moved_items[1],
-            "rect": [900.0, 0.0, float(_moved_items[1]["rect"][2]),
-                     float(_moved_items[1]["rect"][3])],
+            "rect": [
+                900.0,
+                0.0,
+                float(_moved_items[1]["rect"][2]),
+                float(_moved_items[1]["rect"][3]),
+            ],
         }
         page._on_imposition_items_changed(1, _moved_items)
-        ok("版面落盘后：攒页号等防抖（不立刻重灌、更不整列）",
-           page._imposition_thumb_dirty == {1}
-           and page._imposition_thumb_timer.isActive()
-           and _entries[1]._thumb_key == _key_before,
-           f"dirty={page._imposition_thumb_dirty}")
+        ok(
+            "版面落盘后：攒页号等防抖（不立刻重灌、更不整列）",
+            page._imposition_thumb_dirty == {1}
+            and page._imposition_thumb_timer.isActive()
+            and _entries[1]._thumb_key == _key_before,
+            f"dirty={page._imposition_thumb_dirty}",
+        )
         page._imposition_thumb_timer.stop()
         page._refresh_imposition_dirty_page_thumbs()  # 防抖到期（手动触发）
         for _ in range(240):  # 等后台把这一页的实体重生成并贴回
@@ -1532,13 +1941,16 @@ def run(ctx) -> None:
                 break
             ctx.app.processEvents()
             _time.sleep(0.05)
-        ok("版面落盘后：防抖到期**单页**重生成实体（缩略图跟上版面）",
-           _entries[1]._thumb_key != _key_before)
+        ok(
+            "版面落盘后：防抖到期**单页**重生成实体（缩略图跟上版面）",
+            _entries[1]._thumb_key != _key_before,
+        )
         page._imposition_timer.stop()
         page._imposition_dirty = False
         # 还原版面（后续用例还要用这两页）
         page._on_imposition_items_changed(
-            1, [dict(it) for it in _pages_now[1]["items"]])
+            1, [dict(it) for it in _pages_now[1]["items"]]
+        )
         page._imposition_thumb_timer.stop()
         page._refresh_imposition_dirty_page_thumbs()
         for _ in range(240):  # 版面改回去了：memo 命中/重生成后应回到原来的图
@@ -1546,10 +1958,9 @@ def run(ctx) -> None:
                 break
             ctx.app.processEvents()
             _time.sleep(0.05)
-        ok("（恢复）版面还原后缩略图跟着复原",
-           _entries[1]._thumb_key == _key_before)
+        ok("（恢复）版面还原后缩略图跟着复原", _entries[1]._thumb_key == _key_before)
 
-        # ---- ⚠️ 回填**不许**整列重灌（用户 2026-10-06 报"拼板阶段程序卡死"）----
+        # ---- ⚠️ 回填**不许**整列重灌（用户 2026-10-06 报"拼版阶段程序卡死"）----
         # 历史教训：整列重灌 = 380 × 380 ≈ 7.2 万次带缩放的重贴，主线程连续
         # 占住 27.5 秒。实体口径下"一页生成完"也只贴**那一条**——钉的是
         # **调用形状**（不重贴整列），不是耗时。
@@ -1570,6 +1981,7 @@ def run(ctx) -> None:
             def _counted(image):
                 _sink.append(1)
                 return original(image)
+
             return _counted
 
         from PySide6.QtGui import QPixmap as _QPixmap
@@ -1584,21 +1996,29 @@ def run(ctx) -> None:
             page.store.load_imposition_doc = _real_doc
             for _e, _fn in zip(_entries_objs, _orig_set_thumb):
                 _e.set_thumb = _fn
-        ok("缩略图回填：每张到达只贴**那一条**，不整列重灌（反 O(N²)）",
-           len(_sink) <= len(_entries_objs),
-           f"set_thumb 被调 {len(_sink)} 次 / {len(_entries_objs)} 条")
-        ok("缩略图回填：不重读 imposition.json（反 380×97KB 读盘）",
-           not _docs,
-           f"load_imposition_doc 被调 {len(_docs)} 次")
-        ok("左列版面：缩略图在上、文字在下（勾选框贴左上角）",
-           all(e.checkbox.y() < e.thumb.y() < e.title_label.y() for e in _entries)
-           and all(e.checkbox.x() < e.width() // 2 for e in _entries))
+        ok(
+            "缩略图回填：每张到达只贴**那一条**，不整列重灌（反 O(N²)）",
+            len(_sink) <= len(_entries_objs),
+            f"set_thumb 被调 {len(_sink)} 次 / {len(_entries_objs)} 条",
+        )
+        ok(
+            "缩略图回填：不重读 imposition.json（反 380×97KB 读盘）",
+            not _docs,
+            f"load_imposition_doc 被调 {len(_docs)} 次",
+        )
+        ok(
+            "左列版面：缩略图在上、文字在下（勾选框贴左上角）",
+            all(e.checkbox.y() < e.thumb.y() < e.title_label.y() for e in _entries)
+            and all(e.checkbox.x() < e.width() // 2 for e in _entries),
+        )
         # 实体归属边界（2026-10-04 目录各归各 + 2026-10-09 pageN 命名）
         _cache_dir = page.store.imposition_page_thumbs_dir(page.task_id)
         _cached = sorted(x.name for x in _cache_dir.glob("*.jpg"))
-        ok("左列缩略图实体写在任务目录 thumbnails/imposition_pages/（pageN 命名）",
-           _cache_dir.is_dir() and _cached == ["page1.jpg", "page2.jpg"],
-           f"{_cache_dir} -> {_cached}")
+        ok(
+            "左列缩略图实体写在任务目录 thumbnails/imposition_pages/（pageN 命名）",
+            _cache_dir.is_dir() and _cached == ["page1.jpg", "page2.jpg"],
+            f"{_cache_dir} -> {_cached}",
+        )
 
         # ---- 独立拼图页同一条实体链（真入口 + 后台 worker）----
         from desktop.modules.imposition.page import ImpositionModulePage
@@ -1606,43 +2026,52 @@ def run(ctx) -> None:
         _mod = ImpositionModulePage()
         try:
             _mod._doc = {
-                "enabled": True, "pages": [S.make_page([a, b])], "removed": [],
+                "enabled": True,
+                "pages": [S.make_page([a, b])],
+                "removed": [],
             }
             _mod._refresh_view()  # 建条目并触发实体生成（真入口）
             _mgr = _mod._page_thumb_manager()
             _mdir = _mgr.directory
             for _ in range(240):  # 等后台把 page1.jpg 生成并贴回
                 _mentry = _mod.view.page_list.entries()[0]
-                if (_mdir / "page1.jpg").is_file() \
-                        and not _mentry.thumb.pixmap().isNull():
+                if (
+                    _mdir / "page1.jpg"
+                ).is_file() and not _mentry.thumb.pixmap().isNull():
                     break
                 ctx.app.processEvents()
                 _time.sleep(0.05)
             _mentry = _mod.view.page_list.entries()[0]
             _mimg = _mentry.thumb.pixmap().toImage()
-            ok("独立拼图页：实体落盘 page1.jpg + 左列 = 页面效果（两半各一张图）",
-               (_mdir / "page1.jpg").is_file()
-               and _px_near(_mimg, _mimg.width() // 4, _mimg.height() // 2, GREEN)
-               and _px_near(_mimg, _mimg.width() * 3 // 4,
-                            _mimg.height() // 2, RED),
-               f"size={(_mimg.width(), _mimg.height())} dir={_mdir}")
+            ok(
+                "独立拼图页：实体落盘 page1.jpg + 左列 = 页面效果（两半各一张图）",
+                (_mdir / "page1.jpg").is_file()
+                and _px_near(_mimg, _mimg.width() // 4, _mimg.height() // 2, GREEN)
+                and _px_near(_mimg, _mimg.width() * 3 // 4, _mimg.height() // 2, RED),
+                f"size={(_mimg.width(), _mimg.height())} dir={_mdir}",
+            )
             _first = _mgr.pixmap_for(0, _mod._doc["pages"][0])
             _again = _mgr.pixmap_for(0, _mod._doc["pages"][0])
-            ok("独立拼图页：版面没动 ⇒ 命中回**同一个** QPixmap（不重生成不重读盘）",
-               _first is not None and _first is _again)
+            ok(
+                "独立拼图页：版面没动 ⇒ 命中回**同一个** QPixmap（不重生成不重读盘）",
+                _first is not None and _first is _again,
+            )
             _mod._doc["pages"][0]["items"][0]["rect"][0] += 11.0
             _moved = _mgr.pixmap_for(0, _mod._doc["pages"][0])
-            ok("独立拼图页：版面动了 ⇒ 排队重生成（不拿旧图充数）",
-               _moved is None and 0 in _mgr._pending,
-               f"moved-null={_moved is None}")
+            ok(
+                "独立拼图页：版面动了 ⇒ 排队重生成（不拿旧图充数）",
+                _moved is None and 0 in _mgr._pending,
+                f"moved-null={_moved is None}",
+            )
             # ---- 单步操作后防抖单页更新（2026-10-09）----
             _mkey = _mentry._thumb_key
             _mitems = [dict(it) for it in _mod._doc["pages"][0]["items"]]
-            _mitems[0] = {**_mitems[0],
-                          "rect": [500.0, *_mitems[0]["rect"][1:]]}
+            _mitems[0] = {**_mitems[0], "rect": [500.0, *_mitems[0]["rect"][1:]]}
             _mod._on_items_changed(0, _mitems)
-            ok("独立拼图页：版面改动攒页号等防抖（不立刻重灌）",
-               _mod._thumb_dirty_pages == {0} and _mod._thumb_timer.isActive())
+            ok(
+                "独立拼图页：版面改动攒页号等防抖（不立刻重灌）",
+                _mod._thumb_dirty_pages == {0} and _mod._thumb_timer.isActive(),
+            )
             _mod._thumb_timer.stop()
             _mod._refresh_dirty_page_thumbs()
             for _ in range(240):  # 等这一页的实体重生成并贴回
@@ -1650,8 +2079,10 @@ def run(ctx) -> None:
                     break
                 ctx.app.processEvents()
                 _time.sleep(0.05)
-            ok("独立拼图页：防抖到期**单页**重生成实体并贴回",
-               _mentry._thumb_key != _mkey)
+            ok(
+                "独立拼图页：防抖到期**单页**重生成实体并贴回",
+                _mentry._thumb_key != _mkey,
+            )
         finally:
             try:
                 _mod.shutdown_workers()
@@ -1684,56 +2115,76 @@ def run(ctx) -> None:
             pump(ctx.app, times=6)
         finally:
             _icdel.BatchDeleteConfirmDialog = _real_confirm
-        ok("批量删除：确认后真删了页、清单一空",
-           len(page._imposition_pages()) == 0
-           and len(page.imposition_view.page_list.entries()) == 0)
+        ok(
+            "批量删除：确认后真删了页、清单一空",
+            len(page._imposition_pages()) == 0
+            and len(page.imposition_view.page_list.entries()) == 0,
+        )
         _tail = page.log_view.toPlainText()[_log_at:]
-        ok("批量删除：日志列出被删页码（回归：曾引用未定义变量直接崩）",
-           "已批量删除 2 页拼版（第 1、2 页）" in _tail, _tail[-160:])
+        ok(
+            "批量删除：日志列出被删页码（回归：曾引用未定义变量直接崩）",
+            "已批量删除 2 页拼版（第 1、2 页）" in _tail,
+            _tail[-160:],
+        )
         # 恢复两页：后面的取图来源/旧数据断言都建立在"拼版已生效"之上
         page._save_imposition_pages(_pages_backup)
         page._imposition_timer.stop()
         pump(ctx.app, times=6)
-        ok("批量删除回归用例收尾：页清单已恢复（2 页）",
-           len(page._imposition_pages()) == 2
-           and len(page.imposition_view.page_list.entries()) == 2)
+        ok(
+            "批量删除回归用例收尾：页清单已恢复（2 页）",
+            len(page._imposition_pages()) == 2
+            and len(page.imposition_view.page_list.entries()) == 2,
+        )
 
         ok("拼版生效", page.imposition_active())
-        ok("第四步取图目录切到 stages/imposition",
-           page.print_source_dir() == repo.imposition_output_dir(tid),
-           str(page.print_source_dir()))
+        ok(
+            "第四步取图目录切到 stages/imposition",
+            page.print_source_dir() == repo.imposition_output_dir(tid),
+            str(page.print_source_dir()),
+        )
 
         # 同步合成一次（点「生成 PDF」前走的就是这条），产物可查
         page._compose_imposition_now()
         produced = sorted(repo.imposition_output_dir(tid).glob("*.png"))
-        ok("拼版产物落盘为 0001/0002",
-           _names(produced) == ["0001.png", "0002.png"], str(_names(produced)))
+        ok(
+            "拼版产物落盘为 0001/0002",
+            _names(produced) == ["0001.png", "0002.png"],
+            str(_names(produced)),
+        )
         entries, _doc = page._print_entries()
-        ok("待打印列表改从拼版产物取",
-           {str(Path(e["file"]).parent) for e in entries}
-           == {str(repo.imposition_output_dir(tid))},
-           str(_names([e["file"] for e in entries])))
+        ok(
+            "待打印列表改从拼版产物取",
+            {str(Path(e["file"]).parent) for e in entries}
+            == {str(repo.imposition_output_dir(tid))},
+            str(_names([e["file"] for e in entries])),
+        )
         effects = page._build_print_effects(entries)
-        ok("拼版生效时整页透传（拼版页本身就是成品）",
-           len(effects) == 2 and all(e["effect"] is None for e in effects),
-           str(effects))
+        ok(
+            "拼版生效时整页透传（拼版页本身就是成品）",
+            len(effects) == 2 and all(e["effect"] is None for e in effects),
+            str(effects),
+        )
 
         # 取消启用 → 回到去底色（用户口径：「否则从第三步去底色获取」）
         page._set_imposition_checked(False)
         page._imposition_timer.stop()
         pump(ctx.app, times=6)
-        ok("取消启用后取图回到第三步去底色",
-           page.print_source_dir() == rembg_dir and not page.imposition_active())
+        ok(
+            "取消启用后取图回到第三步去底色",
+            page.print_source_dir() == rembg_dir and not page.imposition_active(),
+        )
         entries, _doc = page._print_entries()
-        ok("取消启用后待打印列表回到去底色产物",
-           {str(Path(e["file"]).parent) for e in entries} == {str(rembg_dir)},
-           str(_names([e["file"] for e in entries])))
+        ok(
+            "取消启用后待打印列表回到去底色产物",
+            {str(Path(e["file"]).parent) for e in entries} == {str(rembg_dir)},
+            str(_names([e["file"] for e in entries])),
+        )
 
         # ------ 6b. 列表胶囊 + 「旧数据不显示」（用户 2026-10-03）------
-        # 口径一："任务列表子任务到底有几个需要根据详情决定，特别是拼板这个
+        # 口径一："任务列表子任务到底有几个需要根据详情决定，特别是拼版这个
         #        节点可能存在，需要看详情里面是否启用，如果启用就添加这个节点"
-        # 口径二："如果之前流程里面没有启用拼板，但是生成了pdf，此时再次启用
-        #        拼板，则生成PDF的数据要来源于拼板，旧的数据不显示"
+        # 口径二："如果之前流程里面没有启用拼版，但是生成了pdf，此时再次启用
+        #        拼版，则生成PDF的数据要来源于拼版，旧的数据不显示"
         from desktop.services.stale_chain import print_source_switched
         from desktop.store import IMPOSITION_STAGE, STAGE_SHORT
         from desktop.workers.task_rows_worker import TaskRowsWorker
@@ -1751,23 +2202,29 @@ def run(ctx) -> None:
         page._set_imposition_checked(False)
         page._imposition_timer.stop()
         pump(ctx.app, times=6)
-        ok("未启用拼版：列表只有四个子任务",
-           len(_chips_of(tid)) == 4, str([c["short"] for c in _chips_of(tid)]))
+        ok(
+            "未启用拼版：列表只有四个子任务",
+            len(_chips_of(tid)) == 4,
+            str([c["short"] for c in _chips_of(tid)]),
+        )
         page._set_imposition_checked(True)
         page._imposition_timer.stop()
         pump(ctx.app, times=6)
         chips = _chips_of(tid)
         shorts = [c["short"] for c in chips]
-        ok("启用拼版：列表多一个子任务（共五个）",
-           len(chips) == 5, str(shorts))
-        ok("拼版胶囊排在 PDF 之前（与流程条节点同位）",
-           STAGE_SHORT[IMPOSITION_STAGE] in shorts
-           and shorts.index(STAGE_SHORT[IMPOSITION_STAGE])
-           == shorts.index(STAGE_SHORT["print"]) - 1,
-           str(shorts))
-        ok("拼版胶囊文案取自 spec 的 short_name（不另写一份中文）",
-           STAGE_SHORT[IMPOSITION_STAGE] == "拼版",
-           STAGE_SHORT[IMPOSITION_STAGE])
+        ok("启用拼版：列表多一个子任务（共五个）", len(chips) == 5, str(shorts))
+        ok(
+            "拼版胶囊排在 PDF 之前（与流程条节点同位）",
+            STAGE_SHORT[IMPOSITION_STAGE] in shorts
+            and shorts.index(STAGE_SHORT[IMPOSITION_STAGE])
+            == shorts.index(STAGE_SHORT["print"]) - 1,
+            str(shorts),
+        )
+        ok(
+            "拼版胶囊文案取自 spec 的 short_name（不另写一份中文）",
+            STAGE_SHORT[IMPOSITION_STAGE] == "拼版",
+            STAGE_SHORT[IMPOSITION_STAGE],
+        )
         # 状态：勾了但没拼页 = 未生效（灰）；勾了且拼了页 = 生效（绿）
         # ⚠️ 这里临时清空 pages，测完**原样恢复**第 6 节拼好的两页——后面
         # 取图来源/旧数据的断言都建立在"拼版已生效"之上。
@@ -1776,38 +2233,59 @@ def run(ctx) -> None:
         pending_chip = next(
             c for c in _chips_of(tid) if c["short"] == STAGE_SHORT[IMPOSITION_STAGE]
         )
-        ok("启用但还没拼页 → 拼版胶囊为未执行（灰）",
-           pending_chip["status"] == "pending", str(pending_chip))
+        ok(
+            "启用但还没拼页 → 拼版胶囊为未执行（灰）",
+            pending_chip["status"] == "pending",
+            str(pending_chip),
+        )
         repo.save_imposition_doc(tid, doc_backup)
         live_chip = next(
             c for c in _chips_of(tid) if c["short"] == STAGE_SHORT[IMPOSITION_STAGE]
         )
-        ok("启用且拼了页 → 拼版胶囊为成功（绿）",
-           live_chip["status"] == "success", str(live_chip))
+        ok(
+            "启用且拼了页 → 拼版胶囊为成功（绿）",
+            live_chip["status"] == "success",
+            str(live_chip),
+        )
 
         # 「旧数据」：伪造一份**去底色来源**下生成过的 PDF + 对应运行记录
         print_dir = repo.stage_dir(tid, "print")
         print_dir.mkdir(parents=True, exist_ok=True)
         (print_dir / "print.pdf").write_bytes(b"%PDF-1.4 old")
-        old_run = repo.create_stage_run(tid, "print", {
-            "pdf_name": "print.pdf", "source_stage": "rembg_submit",
-        })
+        old_run = repo.create_stage_run(
+            tid,
+            "print",
+            {
+                "pdf_name": "print.pdf",
+                "source_stage": "rembg_submit",
+            },
+        )
         repo.finish_stage(tid, old_run, "success", str(print_dir))
         page._set_imposition_checked(False)
         page._imposition_timer.stop()
         pump(ctx.app, times=6)
         page._refresh_stale_notices()
-        ok("来源没变时那份 PDF 仍然可用（不误伤）",
-           not page._print_source_switched()
-           and page._current_print_pdf_path() is not None)
-        ok("从未成功生成过 → 不判过期",
-           not print_source_switched({}, "imposition"))
-        ok("老记录没有 source_stage → 不误判过期",
-           not print_source_switched(
-               {"print": [{"status": "success", "finished_at": 1.0,
-                           "parameters": {"pdf_name": "print.pdf"}}]},
-               "imposition",
-           ))
+        ok(
+            "来源没变时那份 PDF 仍然可用（不误伤）",
+            not page._print_source_switched()
+            and page._current_print_pdf_path() is not None,
+        )
+        ok("从未成功生成过 → 不判过期", not print_source_switched({}, "imposition"))
+        ok(
+            "老记录没有 source_stage → 不误判过期",
+            not print_source_switched(
+                {
+                    "print": [
+                        {
+                            "status": "success",
+                            "finished_at": 1.0,
+                            "parameters": {"pdf_name": "print.pdf"},
+                        }
+                    ]
+                },
+                "imposition",
+            ),
+        )
 
         # 现在启用拼版：那份 PDF 成了旧数据
         page._set_imposition_checked(True)
@@ -1815,26 +2293,37 @@ def run(ctx) -> None:
         pump(ctx.app, times=6)
         page._select_stage(_bar_of(page, "print"))
         pump(ctx.app, times=6)
-        ok("启用拼版后取图来源切到 imposition",
-           page.print_source_stage() == "imposition",
-           page.print_source_stage())
-        ok("换来源后旧 PDF 判为过期（缓存跟着开关走）",
-           page._print_source_stale)
-        ok("旧数据不显示：当前可用 PDF 为空",
-           page._current_print_pdf_path() is None,
-           str(page._current_print_pdf_path()))
-        ok("「下载 PDF」按钮随之禁用",
-           not page.print_preview.download_button.isEnabled())
-        ok("预览控件的 PDF 绑定被清空",
-           page.print_preview._pdf_path is None,
-           str(page.print_preview._pdf_path))
+        ok(
+            "启用拼版后取图来源切到 imposition",
+            page.print_source_stage() == "imposition",
+            page.print_source_stage(),
+        )
+        ok("换来源后旧 PDF 判为过期（缓存跟着开关走）", page._print_source_stale)
+        ok(
+            "旧数据不显示：当前可用 PDF 为空",
+            page._current_print_pdf_path() is None,
+            str(page._current_print_pdf_path()),
+        )
+        ok(
+            "「下载 PDF」按钮随之禁用",
+            not page.print_preview.download_button.isEnabled(),
+        )
+        ok(
+            "预览控件的 PDF 绑定被清空",
+            page.print_preview._pdf_path is None,
+            str(page.print_preview._pdf_path),
+        )
         notice = page._regenerate_notice("print")
-        ok("状态行提示取图来源已改（要点名拼版）",
-           bool(notice) and "取图来源已改为" in notice
-           and "拼版" in notice, str(notice))
+        ok(
+            "状态行提示取图来源已改（要点名拼版）",
+            bool(notice) and "取图来源已改为" in notice and "拼版" in notice,
+            str(notice),
+        )
         # 磁盘上那份文件**不删**（用户自己的产物），只是不再提供/不再算结果
-        ok("旧 PDF 文件仍在磁盘上（只是不显示，不删用户产物）",
-           (print_dir / "print.pdf").exists())
+        ok(
+            "旧 PDF 文件仍在磁盘上（只是不显示，不删用户产物）",
+            (print_dir / "print.pdf").exists(),
+        )
         toasts: list = []
         real_toast = page._toast
         page._toast = lambda *a, **k: toasts.append(a)
@@ -1842,17 +2331,22 @@ def run(ctx) -> None:
             page._download_print_pdf()
         finally:
             page._toast = real_toast
-        ok("旧数据下载被拦下并说明原因",
-           any("重新生成" in str(t) for t in toasts), str(toasts))
+        ok(
+            "旧数据下载被拦下并说明原因",
+            any("重新生成" in str(t) for t in toasts),
+            str(toasts),
+        )
         # 反向也对称：取消启用 → 又变回去底色，但历史是去底色 → 不判旧
         page._select_stage(_bar_of(page, IMPOSITION_STAGE))
         pump(ctx.app, times=4)
         page._set_imposition_checked(False)
         page._imposition_timer.stop()
         pump(ctx.app, times=6)
-        ok("反向切换对称：回到原来源后不再判旧、PDF 恢复可用",
-           not page._print_source_switched()
-           and page._current_print_pdf_path() is not None)
+        ok(
+            "反向切换对称：回到原来源后不再判旧、PDF 恢复可用",
+            not page._print_source_switched()
+            and page._current_print_pdf_path() is not None,
+        )
 
         # ---- 6c. 「勾了就算启用」：不要求已经有拼版页（用户 2026-10-03 报障）----
         # 早先 ``imposition_active()`` 额外要求"至少拼了一页"，于是用户勾了
@@ -1863,7 +2357,7 @@ def run(ctx) -> None:
         # ⚠️ **别停合成定时器**：清空拼版页必须真的跑一轮合成（``compose_doc``
         # 见 pages=[] 会 ``_sweep_stale(dest, 0)`` 把 stages/imposition 收干净）。
         # 残留的 0001.png 会让第四步把上一轮的图当成本轮结果——这正是
-        # "启用后不按拼板来"的另一种形态，必须由真实路径清掉。
+        # "启用后不按拼版来"的另一种形态，必须由真实路径清掉。
         page._compose_imposition_async()
         for _ in range(60):
             pump(ctx.app, times=2)
@@ -1871,32 +2365,47 @@ def run(ctx) -> None:
                 break
         pump(ctx.app, times=6)
         stale_pngs = sorted(repo.imposition_output_dir(tid).glob("*.png"))
-        ok("清空拼版页后：产物目录被一并收干净（不拿上一轮的图当结果）",
-           stale_pngs == [], str([p.name for p in stale_pngs]))
+        ok(
+            "清空拼版页后：产物目录被一并收干净（不拿上一轮的图当结果）",
+            stale_pngs == [],
+            str([p.name for p in stale_pngs]),
+        )
         page._set_imposition_checked(False)
         page._imposition_timer.stop()
         pump(ctx.app, times=6)
-        ok("（前置）未启用：取图 = 去底色",
-           page.print_source_dir() == rembg_dir and not page.imposition_active())
+        ok(
+            "（前置）未启用：取图 = 去底色",
+            page.print_source_dir() == rembg_dir and not page.imposition_active(),
+        )
         page._set_imposition_checked(True)
         page._imposition_timer.stop()
         pump(ctx.app, times=6)
         ok("勾了启用（还没拼页）→ 判定为已启用", page.imposition_active())
-        ok("勾了启用（还没拼页）→ 流程条点亮为生效态（徽标转对勾）",
-           page.step_bar.imposition_node.badge._status == "success",
-           f"badge={page.step_bar.imposition_node.badge._status}")
-        ok("勾了启用（还没拼页）→ 第四步取图已切到 stages/imposition",
-           page.print_source_dir() == repo.imposition_output_dir(tid),
-           str(page.print_source_dir()))
-        ok("启用与有无产物分两层：已启用但还没有页",
-           page.imposition_active() and not page.imposition_has_pages())
-        ok("启用但没拼页时列表为空（而不是悄悄回退去底色）",
-           page._print_entries()[0] == [],
-           str([e["file"] for e in page._print_entries()[0]]))
-        ok("启用但没拼页时状态行说清「没有拼版页」而不是「未生效」",
-           "拼版已启用" in page.imposition_panel_status.text()
-           and "没有拼版页" in page.imposition_panel_status.text(),
-           page.imposition_panel_status.text())
+        ok(
+            "勾了启用（还没拼页）→ 流程条点亮为生效态（徽标转对勾）",
+            page.step_bar.imposition_node.badge._status == "success",
+            f"badge={page.step_bar.imposition_node.badge._status}",
+        )
+        ok(
+            "勾了启用（还没拼页）→ 第四步取图已切到 stages/imposition",
+            page.print_source_dir() == repo.imposition_output_dir(tid),
+            str(page.print_source_dir()),
+        )
+        ok(
+            "启用与有无产物分两层：已启用但还没有页",
+            page.imposition_active() and not page.imposition_has_pages(),
+        )
+        ok(
+            "启用但没拼页时列表为空（而不是悄悄回退去底色）",
+            page._print_entries()[0] == [],
+            str([e["file"] for e in page._print_entries()[0]]),
+        )
+        ok(
+            "启用但没拼页时状态行说清「没有拼版页」而不是「未生效」",
+            "拼版已启用" in page.imposition_panel_status.text()
+            and "没有拼版页" in page.imposition_panel_status.text(),
+            page.imposition_panel_status.text(),
+        )
         # 点「生成 PDF」必须给**拼版专属**提示，不能把人引去第三步
         toasts2: list = []
         real_toast2 = page._toast
@@ -1907,44 +2416,60 @@ def run(ctx) -> None:
             page._run_stage_unchecked(False)
         finally:
             page._toast = real_toast2
-        ok("启用但没拼页时生成 PDF → 提示去拼版（不是回第三步）",
-           any("拼版" in str(t) and "选择拼版" in str(t) for t in toasts2),
-           str(toasts2))
+        ok(
+            "启用但没拼页时生成 PDF → 提示去拼版（不是回第三步）",
+            any("拼版" in str(t) and "选择拼版" in str(t) for t in toasts2),
+            str(toasts2),
+        )
         # 拼一页 → "有产物"成立（同一判据下只是进度变了）
         page._select_stage(_bar_of(page, IMPOSITION_STAGE))
         pump(ctx.app, times=4)
-        page._save_imposition_pages([{
-            "items": [
-                {"file": str(a), "rect": [0, 0, 200, 600], "rotation": 0.0},
-                {"file": str(b), "rect": [200, 0, 200, 600], "rotation": 0.0},
-            ],
-        }])
+        page._save_imposition_pages(
+            [
+                {
+                    "items": [
+                        {"file": str(a), "rect": [0, 0, 200, 600], "rotation": 0.0},
+                        {"file": str(b), "rect": [200, 0, 200, 600], "rotation": 0.0},
+                    ],
+                }
+            ]
+        )
         page._imposition_timer.stop()
         page._compose_imposition_now()
         pump(ctx.app, times=4)
-        ok("拼上一页后：有产物成立、来源仍是拼版",
-           page.imposition_has_pages()
-           and page.print_source_dir() == repo.imposition_output_dir(tid))
+        ok(
+            "拼上一页后：有产物成立、来源仍是拼版",
+            page.imposition_has_pages()
+            and page.print_source_dir() == repo.imposition_output_dir(tid),
+        )
         # ⚠️ 恢复**两页**基线：6c 只拼了一页，而第 7 节的「上一页/下一页」用例
         # 需要能翻到第二页。别让这段的临时状态漏给后面。
-        page._save_imposition_pages([
-            {"items": [
-                {"file": str(a), "rect": [0, 0, 200, 600], "rotation": 0.0},
-                {"file": str(b), "rect": [200, 0, 200, 600], "rotation": 0.0},
-            ]},
-            {"items": [
-                {"file": str(c), "rect": [0, 0, 200, 600], "rotation": 0.0},
-                {"file": str(d), "rect": [200, 0, 200, 600], "rotation": 0.0},
-            ]},
-        ])
+        page._save_imposition_pages(
+            [
+                {
+                    "items": [
+                        {"file": str(a), "rect": [0, 0, 200, 600], "rotation": 0.0},
+                        {"file": str(b), "rect": [200, 0, 200, 600], "rotation": 0.0},
+                    ]
+                },
+                {
+                    "items": [
+                        {"file": str(c), "rect": [0, 0, 200, 600], "rotation": 0.0},
+                        {"file": str(d), "rect": [200, 0, 200, 600], "rotation": 0.0},
+                    ]
+                },
+            ]
+        )
         page._imposition_timer.stop()
         page._compose_imposition_now()
         page.imposition_view.set_current(0)
         pump(ctx.app, times=4)
-        ok("（恢复）两页拼版就位，供第 7 节继续",
-           len(page._imposition_pages()) == 2 and page.imposition_active(),
-           f"pages={len(page._imposition_pages())} "
-           f"active={page.imposition_active()}")
+        ok(
+            "（恢复）两页拼版就位，供第 7 节继续",
+            len(page._imposition_pages()) == 2 and page.imposition_active(),
+            f"pages={len(page._imposition_pages())} "
+            f"active={page.imposition_active()}",
+        )
 
         # ---------------- 7. 面板动作：复位 / 删除 ----------------
         # （页序在左列拖动排序，翻页在画布下方「上一页/下一页」——面板上
@@ -1955,40 +2480,51 @@ def run(ctx) -> None:
         page.imposition_view.canvas.select(0)
         page.imposition_view.canvas.rotate_selected(90.0)
         page._imposition_timer.stop()
-        ok("画布旋转选中图作用到版面",
-           abs(page.imposition_view.current_items()[0]["rotation"] - 90.0) < 0.01,
-           str(page.imposition_view.current_items()[0]["rotation"]))
+        ok(
+            "画布旋转选中图作用到版面",
+            abs(page.imposition_view.current_items()[0]["rotation"] - 90.0) < 0.01,
+            str(page.imposition_view.current_items()[0]["rotation"]),
+        )
 
         page._on_imposition_reset_layout()
         page._imposition_timer.stop()
         reset_items = page._imposition_pages()[0]["items"]
-        ok("「复位本页版面」把两张图恢复成默认并排（尺寸回原始、旋转归零）",
-           [item["rotation"] for item in reset_items] == [0.0, 0.0]
-           and reset_items[1]["rect"][:2] == [0.0, 0.0]
-           and reset_items[0]["rect"][0] == reset_items[1]["rect"][2],
-           str(reset_items))
-        ok("复位后画布也同步了", page.imposition_view.current_items()
-           == reset_items)
+        ok(
+            "「复位本页版面」把两张图恢复成默认并排（尺寸回原始、旋转归零）",
+            [item["rotation"] for item in reset_items] == [0.0, 0.0]
+            and reset_items[1]["rect"][:2] == [0.0, 0.0]
+            and reset_items[0]["rect"][0] == reset_items[1]["rect"][2],
+            str(reset_items),
+        )
+        ok("复位后画布也同步了", page.imposition_view.current_items() == reset_items)
 
         # ---- 「上一页/下一页」：翻页在中间编辑区底部右侧（用户 2026-09-30）----
         nav_seen: list[int] = []
         page.imposition_view.page_selected.connect(nav_seen.append)
-        ok("第一页：「上一页」禁用、「下一页」可用",
-           not page.imposition_view.prev_button.isEnabled()
-           and page.imposition_view.next_button.isEnabled())
+        ok(
+            "第一页：「上一页」禁用、「下一页」可用",
+            not page.imposition_view.prev_button.isEnabled()
+            and page.imposition_view.next_button.isEnabled(),
+        )
         page.imposition_view.next_button.click()
         page._imposition_timer.stop()
-        ok("「下一页」切到第二页（与左列点选同一条路径）",
-           page.imposition_view.current_index() == 1 and nav_seen == [1],
-           f"current={page.imposition_view.current_index()} nav={nav_seen}")
-        ok("末页：「下一页」禁用、「上一页」可用",
-           not page.imposition_view.next_button.isEnabled()
-           and page.imposition_view.prev_button.isEnabled())
+        ok(
+            "「下一页」切到第二页（与左列点选同一条路径）",
+            page.imposition_view.current_index() == 1 and nav_seen == [1],
+            f"current={page.imposition_view.current_index()} nav={nav_seen}",
+        )
+        ok(
+            "末页：「下一页」禁用、「上一页」可用",
+            not page.imposition_view.next_button.isEnabled()
+            and page.imposition_view.prev_button.isEnabled(),
+        )
         page.imposition_view.prev_button.click()
         page._imposition_timer.stop()
-        ok("「上一页」切回第一页",
-           page.imposition_view.current_index() == 0 and nav_seen == [1, 0],
-           f"current={page.imposition_view.current_index()} nav={nav_seen}")
+        ok(
+            "「上一页」切回第一页",
+            page.imposition_view.current_index() == 0 and nav_seen == [1, 0],
+            f"current={page.imposition_view.current_index()} nav={nav_seen}",
+        )
         page.imposition_view.page_selected.disconnect(nav_seen.append)
 
         # ---------------- 7b. 拖动排序与「✕」释放图片 ----------------
@@ -1996,18 +2532,23 @@ def run(ctx) -> None:
         page._imposition_timer.stop()
         pump(ctx.app, times=4)
         reordered = page._imposition_pages()
-        ok("拖动排序：原第二页变第一页（顺序即 PDF 页序）",
-           len(reordered) == 2
-           and Path(reordered[0]["items"][0]["file"]).name == "2-r.png"
-           and Path(reordered[1]["items"][0]["file"]).name == "1-r.png",
-           str([Path(i["items"][0]["file"]).name for i in reordered]))
-        ok("左列页码标签随新顺序重建（第几页同步）",
-           [e.title_label.text()
-            for e in page.imposition_view.page_list.entries()]
-           == ["第一页", "第二页"])
-        ok("画布落到拖动后的那一页",
-           page.imposition_view.current_index() == 0,
-           str(page.imposition_view.current_index()))
+        ok(
+            "拖动排序：原第二页变第一页（顺序即 PDF 页序）",
+            len(reordered) == 2
+            and Path(reordered[0]["items"][0]["file"]).name == "2-r.png"
+            and Path(reordered[1]["items"][0]["file"]).name == "1-r.png",
+            str([Path(i["items"][0]["file"]).name for i in reordered]),
+        )
+        ok(
+            "左列页码标签随新顺序重建（第几页同步）",
+            [e.title_label.text() for e in page.imposition_view.page_list.entries()]
+            == ["第一页", "第二页"],
+        )
+        ok(
+            "画布落到拖动后的那一页",
+            page.imposition_view.current_index() == 0,
+            str(page.imposition_view.current_index()),
+        )
         page._on_imposition_page_reorder(1, 0)  # 拖回去，恢复原顺序
         page._imposition_timer.stop()
 
@@ -2015,14 +2556,19 @@ def run(ctx) -> None:
         page._on_imposition_release_page(0)
         page._imposition_timer.stop()
         pump(ctx.app, times=4)
-        remaining = _names(S.remaining_files(
-            page.imposition_source_files(), page._imposition_doc()))
-        ok("「✕」删掉该页，另一页保留",
-           len(page._imposition_pages()) == 1
-           and Path(page._imposition_pages()[0]["items"][0]["file"]).name
-           == "2-r.png")
-        ok("被释放的两张回到未选择列表",
-           "1-r.png" in remaining and "1-l.png" in remaining, str(remaining))
+        remaining = _names(
+            S.remaining_files(page.imposition_source_files(), page._imposition_doc())
+        )
+        ok(
+            "「✕」删掉该页，另一页保留",
+            len(page._imposition_pages()) == 1
+            and Path(page._imposition_pages()[0]["items"][0]["file"]).name == "2-r.png",
+        )
+        ok(
+            "被释放的两张回到未选择列表",
+            "1-r.png" in remaining and "1-l.png" in remaining,
+            str(remaining),
+        )
         page._save_imposition_pages(before_release)
         page._imposition_timer.stop()
         page.imposition_view.set_current(0)
@@ -2040,14 +2586,19 @@ def run(ctx) -> None:
         page._imposition_timer.stop()
         pump(ctx.app, times=4)
         kept = page._imposition_pages()
-        ok("「删除选中图片」：页保留、只删被选中的那一张",
-           len(kept) == 2 and len(kept[0]["items"]) == 1
-           and Path(kept[0]["items"][0]["file"]).name == "1-r.png",
-           str([[Path(i["file"]).name for i in p["items"]] for p in kept]))
-        ok("删完后面板出现「新增图片」（单图页），画布选中清空",
-           not page.imposition_panel.add_image_button.isHidden()
-           and page.imposition_view.selected_slot() < 0
-           and page.imposition_view.current_index() == 0)
+        ok(
+            "「删除选中图片」：页保留、只删被选中的那一张",
+            len(kept) == 2
+            and len(kept[0]["items"]) == 1
+            and Path(kept[0]["items"][0]["file"]).name == "1-r.png",
+            str([[Path(i["file"]).name for i in p["items"]] for p in kept]),
+        )
+        ok(
+            "删完后面板出现「新增图片」（单图页），画布选中清空",
+            not page.imposition_panel.add_image_button.isHidden()
+            and page.imposition_view.selected_slot() < 0
+            and page.imposition_view.current_index() == 0,
+        )
         # 删掉单图页的最后一张图：页整个消失（空页没有意义）——另一页保留，
         # 仍是生效态；把剩余页也删光才回退去底色。
         # （2026-09-30 用户定：删最后一张=整页移除，要弹确认框——真实弹窗是
@@ -2080,31 +2631,34 @@ def run(ctx) -> None:
         page._on_imposition_delete_item()
         page._imposition_timer.stop()
         pump(ctx.app, times=4)
-        ok("删最后一张弹确认框、点「取消」：页保留不动",
-           len(page._imposition_pages()) == 2
-           and [Path(i["file"]).name
-                for i in page._imposition_pages()[0]["items"]] == ["1-r.png"]
-           and _FakeConfirm.asked[-1][0] == "删除图片"
-           and "整页拼版" in _FakeConfirm.asked[-1][1],
-           f"pages={[[Path(i['file']).name for i in p['items']] for p in page._imposition_pages()]} "
-           f"asked={_FakeConfirm.asked}")
+        ok(
+            "删最后一张弹确认框、点「取消」：页保留不动",
+            len(page._imposition_pages()) == 2
+            and [Path(i["file"]).name for i in page._imposition_pages()[0]["items"]]
+            == ["1-r.png"]
+            and _FakeConfirm.asked[-1][0] == "删除图片"
+            and "整页拼版" in _FakeConfirm.asked[-1][1],
+            f"pages={[[Path(i['file']).name for i in p['items']] for p in page._imposition_pages()]} "
+            f"asked={_FakeConfirm.asked}",
+        )
 
         page.imposition_view.canvas.select(0)
         _FakeConfirm.result = 1  # 「删除」
         page._on_imposition_delete_item()
         page._imposition_timer.stop()
         pump(ctx.app, times=4)
-        ok("删掉单图页最后一张：页一并删除，另一页保留（仍是生效态）",
-           len(page._imposition_pages()) == 1
-           and [Path(i["file"]).name
-                for i in page._imposition_pages()[0]["items"]]
-           == ["2-r.png", "2-l.png"]
-           and page.imposition_view.current_index() == 0
-           and page.imposition_active()
-           and page.print_source_dir() != rembg_dir,
-           f"pages={[[Path(i['file']).name for i in p['items']] for p in page._imposition_pages()]} "
-           f"cur={page.imposition_view.current_index()} "
-           f"active={page.imposition_active()}")
+        ok(
+            "删掉单图页最后一张：页一并删除，另一页保留（仍是生效态）",
+            len(page._imposition_pages()) == 1
+            and [Path(i["file"]).name for i in page._imposition_pages()[0]["items"]]
+            == ["2-r.png", "2-l.png"]
+            and page.imposition_view.current_index() == 0
+            and page.imposition_active()
+            and page.print_source_dir() != rembg_dir,
+            f"pages={[[Path(i['file']).name for i in p['items']] for p in page._imposition_pages()]} "
+            f"cur={page.imposition_view.current_index()} "
+            f"active={page.imposition_active()}",
+        )
         # 把最后一页的两张也删光：全部页清空。
         # ⚠️ 口径（用户 2026-10-03）：**删光只是"没有可拼的图"，不等于"未启用"**
         # ——拼版仍启用，所以取图来源仍指向 stages/imposition（此时是空目录），
@@ -2118,29 +2672,33 @@ def run(ctx) -> None:
         page._on_imposition_delete_item()
         page._imposition_timer.stop()
         pump(ctx.app, times=4)
-        ok("删光全部图片：页清空，但仍保持启用（取图来源不退回去底色）",
-           page._imposition_pages() == []
-           and page.imposition_view.current_index() == -1
-           and not page.imposition_has_pages()
-           and page.imposition_active()
-           and page.print_source_dir() == repo.imposition_output_dir(tid),
-           f"pages={page._imposition_pages()} "
-           f"cur={page.imposition_view.current_index()} "
-           f"active={page.imposition_active()} "
-           f"has_pages={page.imposition_has_pages()} "
-           f"src={page.print_source_dir()} vs {rembg_dir}")
+        ok(
+            "删光全部图片：页清空，但仍保持启用（取图来源不退回去底色）",
+            page._imposition_pages() == []
+            and page.imposition_view.current_index() == -1
+            and not page.imposition_has_pages()
+            and page.imposition_active()
+            and page.print_source_dir() == repo.imposition_output_dir(tid),
+            f"pages={page._imposition_pages()} "
+            f"cur={page.imposition_view.current_index()} "
+            f"active={page.imposition_active()} "
+            f"has_pages={page.imposition_has_pages()} "
+            f"src={page.print_source_dir()} vs {rembg_dir}",
+        )
         _qw.Dialog = _real_dialog  # 恢复真实弹窗
 
         # 单图页「新增图片」：append 弹窗替身返回 1 张右半幅「2-r」
         # ——原图是左半幅「1-l」→ 新图进右槽、贴在原图右边（原图版面不动）
         single_left = S.single_items(str(b))  # 1-l（左半幅，GREEN）
-        assert single_left is not None    # ⚠️ 传的是存在的图，必然造得出单项
+        assert single_left is not None  # ⚠️ 传的是存在的图，必然造得出单项
         page._save_imposition_pages([{"items": single_left}])
         page._imposition_timer.stop()
         page.imposition_view.set_current(0)
         pump(ctx.app, times=4)
-        ok("单图页进入后面板露出「新增图片」",
-           not page.imposition_panel.add_image_button.isHidden())
+        ok(
+            "单图页进入后面板露出「新增图片」",
+            not page.imposition_panel.add_image_button.isHidden(),
+        )
         import desktop.components.imposition.picker as _picker_mod
 
         _real_picker = _picker_mod.ImpositionPickerDialog
@@ -2151,6 +2709,7 @@ def run(ctx) -> None:
             def __init__(self, picked):
                 self._picked = picked
                 import sys
+
                 print("PROBE fake picker constructed", file=sys.stderr)
 
             def exec(self):
@@ -2167,22 +2726,25 @@ def run(ctx) -> None:
 
         # ⚠️ 赋给弹窗槽位的必须是**可调用对象**（工厂），不能是替身实例——
         # 控制器拿到的是 `ImpositionPickerDialog(...)` 调用形式。
-        _picker_mod.ImpositionPickerDialog = (
-            lambda *a, **k: _FakeAppend([str(c)]))  # 2-r
+        _picker_mod.ImpositionPickerDialog = lambda *a, **k: _FakeAppend(
+            [str(c)]
+        )  # 2-r
         try:
             page.imposition_panel.add_image_button.click()
             page._imposition_timer.stop()
             pump(ctx.app, times=4)
             merged = page._imposition_pages()
-            ok("左半幅原图 + 新增右半幅：新图进右槽、贴原图右边",
-               len(merged) == 1 and len(merged[0]["items"]) == 2
-               and Path(merged[0]["items"][0]["file"]).name == "2-r.png"
-               and Path(merged[0]["items"][1]["file"]).name == "1-l.png"
-               and merged[0]["items"][0]["rect"][0]
-               == merged[0]["items"][1]["rect"][0] + 400.0
-               and merged[0]["items"][1]["rect"] == single_left[0]["rect"],
-               str([[Path(i["file"]).name for i in p["items"]]
-                    for p in merged]))
+            ok(
+                "左半幅原图 + 新增右半幅：新图进右槽、贴原图右边",
+                len(merged) == 1
+                and len(merged[0]["items"]) == 2
+                and Path(merged[0]["items"][0]["file"]).name == "2-r.png"
+                and Path(merged[0]["items"][1]["file"]).name == "1-l.png"
+                and merged[0]["items"][0]["rect"][0]
+                == merged[0]["items"][1]["rect"][0] + 400.0
+                and merged[0]["items"][1]["rect"] == single_left[0]["rect"],
+                str([[Path(i["file"]).name for i in p["items"]] for p in merged]),
+            )
         finally:
             _picker_mod.ImpositionPickerDialog = _real_picker
 
@@ -2191,19 +2753,23 @@ def run(ctx) -> None:
         page._imposition_timer.stop()
         page.imposition_view.set_current(0)
         pump(ctx.app, times=4)
-        _picker_mod.ImpositionPickerDialog = (
-            lambda *a, **k: _FakeAppend([str(d)]))  # 2-l
+        _picker_mod.ImpositionPickerDialog = lambda *a, **k: _FakeAppend(
+            [str(d)]
+        )  # 2-l
         try:
             page.imposition_panel.add_image_button.click()
             page._imposition_timer.stop()
             pump(ctx.app, times=4)
             merged = page._imposition_pages()
-            ok("右半幅原图 + 新增左半幅：新图进左槽、贴原图左边",
-               len(merged) == 1 and len(merged[0]["items"]) == 2
-               and Path(merged[0]["items"][0]["file"]).name == "1-r.png"
-               and Path(merged[0]["items"][1]["file"]).name == "2-l.png"
-               and merged[0]["items"][1]["rect"][0] == -400.0,
-               str([i["rect"] for i in merged[0]["items"]]))
+            ok(
+                "右半幅原图 + 新增左半幅：新图进左槽、贴原图左边",
+                len(merged) == 1
+                and len(merged[0]["items"]) == 2
+                and Path(merged[0]["items"][0]["file"]).name == "1-r.png"
+                and Path(merged[0]["items"][1]["file"]).name == "2-l.png"
+                and merged[0]["items"][1]["rect"][0] == -400.0,
+                str([i["rect"] for i in merged[0]["items"]]),
+            )
         finally:
             _picker_mod.ImpositionPickerDialog = _real_picker
         page._save_imposition_pages(before_release)
@@ -2220,8 +2786,13 @@ def run(ctx) -> None:
         from desktop.ui.widgets import HelpButton
 
         def _centers(items):
-            return [(it["rect"][0] + it["rect"][2] / 2.0,
-                     it["rect"][1] + it["rect"][3] / 2.0) for it in items]
+            return [
+                (
+                    it["rect"][0] + it["rect"][2] / 2.0,
+                    it["rect"][1] + it["rect"][3] / 2.0,
+                )
+                for it in items
+            ]
 
         # ---- 整版旋转的几何：绕公共中心公转 + 自转，公共中心不动 ----
         canvas2 = ImpositionCanvas()
@@ -2233,28 +2804,41 @@ def run(ctx) -> None:
         canvas2.rotate_whole(30.0)
         centers_after = _centers(canvas2._items)
         mid_after = canvas2._spread_center_units()
-        ok("整版旋转：两图中心间距不变（相对位置不动）",
-           abs(math.dist(centers_after[0], centers_after[1])
-               - math.dist(centers_before[0], centers_before[1])) < 1e-6)
-        ok("整版旋转：公共中心（红色对齐线落点）不动",
-           all(abs(a - b) < 1e-9 for a, b in zip(mid_before, mid_after)))
-        ok("整版旋转：两图 rotation 都叠加增量（自转）",
-           all(abs(it["rotation"] - 30.0) < 0.01 for it in canvas2.items()),
-           str([it["rotation"] for it in canvas2.items()]))
+        ok(
+            "整版旋转：两图中心间距不变（相对位置不动）",
+            abs(
+                math.dist(centers_after[0], centers_after[1])
+                - math.dist(centers_before[0], centers_before[1])
+            )
+            < 1e-6,
+        )
+        ok(
+            "整版旋转：公共中心（红色对齐线落点）不动",
+            all(abs(a - b) < 1e-9 for a, b in zip(mid_before, mid_after)),
+        )
+        ok(
+            "整版旋转：两图 rotation 都叠加增量（自转）",
+            all(abs(it["rotation"] - 30.0) < 0.01 for it in canvas2.items()),
+            str([it["rotation"] for it in canvas2.items()]),
+        )
         _spread_rot = canvas2.spread_rotation()
-        assert _spread_rot is not None      # ⚠️ 两张图都有 rotation，必然有公共角
-        ok("spread_rotation = 两图平均角",
-           abs(_spread_rot - 30.0) < 0.01,
-           str(_spread_rot))
+        assert _spread_rot is not None  # ⚠️ 两张图都有 rotation，必然有公共角
+        ok(
+            "spread_rotation = 两图平均角",
+            abs(_spread_rot - 30.0) < 0.01,
+            str(_spread_rot),
+        )
 
         # ---- 单图绝对角度：只改选中的那张 ----
         canvas2.set_item_rotation(45.0)
-        ok("set_item_rotation 只改选中图的绝对角度",
-           abs(canvas2.items()[0]["rotation"] - 45.0) < 0.01
-           and abs(canvas2.items()[1]["rotation"] - 30.0) < 0.01,
-           str([it["rotation"] for it in canvas2.items()]))
+        ok(
+            "set_item_rotation 只改选中图的绝对角度",
+            abs(canvas2.items()[0]["rotation"] - 45.0) < 0.01
+            and abs(canvas2.items()[1]["rotation"] - 30.0) < 0.01,
+            str([it["rotation"] for it in canvas2.items()]),
+        )
         _sel_rot = canvas2.selected_rotation()
-        assert _sel_rot is not None        # ⚠️ 刚选中过，必然读得到
+        assert _sel_rot is not None  # ⚠️ 刚选中过，必然读得到
         ok("selected_rotation 读到选中角", abs(_sel_rot - 45.0) < 0.01)
         canvas2.deleteLater()
 
@@ -2263,69 +2847,93 @@ def run(ctx) -> None:
         spine_cv.resize(600, 600)
         # ⚠️ 判据用 BLUE/YELLOW 图：测试用的 RED (220,40,40) 与对齐线
         # (224,32,32) 太接近，会污染像素计数
-        spine_cv.set_page([
-            {"file": str(c), "rect": [400.0, 0.0, 400.0, 600.0], "rotation": 0.0},
-            {"file": str(d), "rect": [0.0, 0.0, 400.0, 600.0], "rotation": 0.0},
-        ])
+        spine_cv.set_page(
+            [
+                {"file": str(c), "rect": [400.0, 0.0, 400.0, 600.0], "rotation": 0.0},
+                {"file": str(d), "rect": [0.0, 0.0, 400.0, 600.0], "rotation": 0.0},
+            ]
+        )
 
         def _red_hits(image, x_px, band=8):
             """数 ``x_px ± band`` 这一竖条里的对齐线红像素（窄带扫描，快）。"""
             total = 0
-            for x in range(max(0, x_px - band),
-                           min(image.width(), x_px + band + 1)):
+            for x in range(max(0, x_px - band), min(image.width(), x_px + band + 1)):
                 for y in range(0, image.height()):
                     color = image.pixelColor(x, y)
-                    if (abs(color.red() - SPINE_RGB[0]) <= 40
-                            and abs(color.green() - SPINE_RGB[1]) <= 40
-                            and abs(color.blue() - SPINE_RGB[2]) <= 40):
+                    if (
+                        abs(color.red() - SPINE_RGB[0]) <= 40
+                        and abs(color.green() - SPINE_RGB[1]) <= 40
+                        and abs(color.blue() - SPINE_RGB[2]) <= 40
+                    ):
                         total += 1
             return total
 
         spine_img = spine_cv.grab().toImage()
         x_units, _ = spine_cv._spread_center_units()
         x_px = int(round(spine_cv._off_x + x_units * spine_cv._px_per_unit))
-        ok("红色对齐线**恒显**（未按住鼠标也在画）",
-           _red_hits(spine_img, x_px) > 20,
-           f"命中 {_red_hits(spine_img, x_px)} 像素")
-        ok("对齐线只画在两图中心中点那条竖线上（别处没有）",
-           _red_hits(spine_img, x_px + 150, band=4) == 0,
-           f"远处命中 {_red_hits(spine_img, x_px + 150, band=4)}")
+        ok(
+            "红色对齐线**恒显**（未按住鼠标也在画）",
+            _red_hits(spine_img, x_px) > 20,
+            f"命中 {_red_hits(spine_img, x_px)} 像素",
+        )
+        ok(
+            "对齐线只画在两图中心中点那条竖线上（别处没有）",
+            _red_hits(spine_img, x_px + 150, band=4) == 0,
+            f"远处命中 {_red_hits(spine_img, x_px + 150, band=4)}",
+        )
 
         # ---- 单图页红线判据（用户 2026-09-30 晚：单独一张半页图片在某页，
         # 不显示中间红线）----实际任务里**无 -l/-r 后缀的竖图也可能是半页**
         # （整幅误检 / 封面插页，任务 0020 的 3.png 实测 1070×1536），文件名
         # 认不出来——判据是源图宽高比：竖图（高≥宽）不画、横图（宽>高）才画。
         single_portrait = _mk(tmp / "single-half.png", BLUE)  # 400×600 竖图
-        spine_cv.set_page([
-            {"file": str(single_portrait),
-             "rect": [0.0, 0.0, 400.0, 600.0], "rotation": 0.0},
-        ])
+        spine_cv.set_page(
+            [
+                {
+                    "file": str(single_portrait),
+                    "rect": [0.0, 0.0, 400.0, 600.0],
+                    "rotation": 0.0,
+                },
+            ]
+        )
         portrait_img = spine_cv.grab().toImage()
-        ok("单图页是**竖图**（半页/单页，含无后缀的）：整幅画面没有红线",
-           _count_near(portrait_img, SPINE_RGB) == 0,
-           f"命中 {_count_near(portrait_img, SPINE_RGB)} 像素")
+        ok(
+            "单图页是**竖图**（半页/单页，含无后缀的）：整幅画面没有红线",
+            _count_near(portrait_img, SPINE_RGB) == 0,
+            f"命中 {_count_near(portrait_img, SPINE_RGB)} 像素",
+        )
         single_land = _mk(tmp / "single-spread.png", BLUE, size=(600, 400))
-        spine_cv.set_page([
-            {"file": str(single_land),
-             "rect": [0.0, 0.0, 600.0, 400.0], "rotation": 0.0},
-        ])
+        spine_cv.set_page(
+            [
+                {
+                    "file": str(single_land),
+                    "rect": [0.0, 0.0, 600.0, 400.0],
+                    "rotation": 0.0,
+                },
+            ]
+        )
         land_img = spine_cv.grab().toImage()
-        ok("单图页是**横图**（整幅对开）：红色对齐线仍要画（旋转基准）",
-           _count_near(land_img, SPINE_RGB) > 20,
-           f"命中 {_count_near(land_img, SPINE_RGB)} 像素")
+        ok(
+            "单图页是**横图**（整幅对开）：红色对齐线仍要画（旋转基准）",
+            _count_near(land_img, SPINE_RGB) > 20,
+            f"命中 {_count_near(land_img, SPINE_RGB)} 像素",
+        )
 
         # ---- 成品截图范围框：两图外接框并集的灰虚线（用户 2026-09-30）----
         def _crop_hits_x(image, x_px, band=6, y_from=None, y_to=None):
             """数 ``x_px ± band`` 竖条里的截图框灰像素；y 范围可裁（避开横边）。"""
             total = 0
-            for x in range(max(0, x_px - band),
-                           min(image.width(), x_px + band + 1)):
-                for y in range(y_from if y_from is not None else 0,
-                               y_to if y_to is not None else image.height()):
+            for x in range(max(0, x_px - band), min(image.width(), x_px + band + 1)):
+                for y in range(
+                    y_from if y_from is not None else 0,
+                    y_to if y_to is not None else image.height(),
+                ):
                     color = image.pixelColor(x, y)
-                    if (abs(color.red() - CROP_RGB[0]) <= 40
-                            and abs(color.green() - CROP_RGB[1]) <= 40
-                            and abs(color.blue() - CROP_RGB[2]) <= 40):
+                    if (
+                        abs(color.red() - CROP_RGB[0]) <= 40
+                        and abs(color.green() - CROP_RGB[1]) <= 40
+                        and abs(color.blue() - CROP_RGB[2]) <= 40
+                    ):
                         total += 1
             return total
 
@@ -2338,40 +2946,54 @@ def run(ctx) -> None:
             ub = max(b[3] for b in boxes)
             px = tuple(
                 int(round(off + u * cv._px_per_unit))
-                for off, u in ((cv._off_x, ul), (cv._off_y, ut),
-                               (cv._off_x, ur), (cv._off_y, ub))
+                for off, u in (
+                    (cv._off_x, ul),
+                    (cv._off_y, ut),
+                    (cv._off_x, ur),
+                    (cv._off_y, ub),
+                )
             )
             return px, (ul, ut, ur, ub)
 
         (l_px, t_px, r_px, b_px), _ubox = _bbox_px(spine_cv)
-        ok("成品截图范围框**恒显**：边线画在两图最外侧点的并集上",
-           _crop_hits_x(spine_img, l_px) > 20
-           and _crop_hits_x(spine_img, r_px) > 20,
-           f"左 {_crop_hits_x(spine_img, l_px)} / "
-           f"右 {_crop_hits_x(spine_img, r_px)} 像素")
+        ok(
+            "成品截图范围框**恒显**：边线画在两图最外侧点的并集上",
+            _crop_hits_x(spine_img, l_px) > 20 and _crop_hits_x(spine_img, r_px) > 20,
+            f"左 {_crop_hits_x(spine_img, l_px)} / "
+            f"右 {_crop_hits_x(spine_img, r_px)} 像素",
+        )
         # 内部查灰要避开上下横边所在的行（矩形边框本来就贯穿全宽）
-        _inner_l = _crop_hits_x(spine_img, l_px + 150, band=4,
-                                y_from=t_px + 10, y_to=b_px - 10)
-        _inner_r = _crop_hits_x(spine_img, r_px - 150, band=4,
-                                y_from=t_px + 10, y_to=b_px - 10)
-        ok("并集内部没有截图框线（虚线只在最外侧）",
-           _inner_l == 0 and _inner_r == 0,
-           f"内测命中 {_inner_l} / {_inner_r}")
+        _inner_l = _crop_hits_x(
+            spine_img, l_px + 150, band=4, y_from=t_px + 10, y_to=b_px - 10
+        )
+        _inner_r = _crop_hits_x(
+            spine_img, r_px - 150, band=4, y_from=t_px + 10, y_to=b_px - 10
+        )
+        ok(
+            "并集内部没有截图框线（虚线只在最外侧）",
+            _inner_l == 0 and _inner_r == 0,
+            f"内测命中 {_inner_l} / {_inner_r}",
+        )
         _w_before = _ubox[2] - _ubox[0]
         spine_cv.rotate_whole(30.0)
         spine_img2 = spine_cv.grab().toImage()
-        ok("整版旋转时对齐线仍在原位（旋转对比基准）",
-           _red_hits(spine_img2, x_px) > 5, f"命中 {_red_hits(spine_img2, x_px)}")
+        ok(
+            "整版旋转时对齐线仍在原位（旋转对比基准）",
+            _red_hits(spine_img2, x_px) > 5,
+            f"命中 {_red_hits(spine_img2, x_px)}",
+        )
         spine_cv.refit()
         crop_img2 = spine_cv.grab().toImage()
         (_l2, _t2, _r2, _b2), _ubox2 = _bbox_px(spine_cv)
-        ok("整版旋转后外接框并集外扩（截图范围跟着最外侧点走）",
-           _ubox2[2] - _ubox2[0] > _w_before
-           and _crop_hits_x(crop_img2, _l2) > 20
-           and _crop_hits_x(crop_img2, _r2) > 20,
-           f"宽 {_w_before:.0f}→{_ubox2[2] - _ubox2[0]:.0f}，"
-           f"边线命中 {_crop_hits_x(crop_img2, _l2)} / "
-           f"{_crop_hits_x(crop_img2, _r2)}")
+        ok(
+            "整版旋转后外接框并集外扩（截图范围跟着最外侧点走）",
+            _ubox2[2] - _ubox2[0] > _w_before
+            and _crop_hits_x(crop_img2, _l2) > 20
+            and _crop_hits_x(crop_img2, _r2) > 20,
+            f"宽 {_w_before:.0f}→{_ubox2[2] - _ubox2[0]:.0f}，"
+            f"边线命中 {_crop_hits_x(crop_img2, _l2)} / "
+            f"{_crop_hits_x(crop_img2, _r2)}",
+        )
         spine_cv.deleteLater()
 
         # ---------------- 7d. 滚轮缩放 + 渲染按帧合并（用户 2026-09-30）----
@@ -2396,77 +3018,98 @@ def run(ctx) -> None:
             ctx.app.sendEvent(
                 zoom_cv,
                 _QWheelEvent(
-                    p, zoom_cv.mapToGlobal(p.toPoint()),
-                    QPoint(0, 0), QPoint(0, dy),
-                    Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier,
-                    Qt.ScrollPhase.ScrollUpdate, False,
+                    p,
+                    zoom_cv.mapToGlobal(p.toPoint()),
+                    QPoint(0, 0),
+                    QPoint(0, dy),
+                    Qt.MouseButton.NoButton,
+                    Qt.KeyboardModifier.NoModifier,
+                    Qt.ScrollPhase.ScrollUpdate,
+                    False,
                 ),
             )
             for _ in range(2):
                 ctx.app.processEvents()
 
-        ok("载页默认倍率 = 适配可视区（不缩放）",
-           abs(zoom_cv._zoom - 1.0) < 1e-9
-           and abs(zoom_cv._px_per_unit - zoom_cv._fit_ppu) < 1e-9)
+        ok(
+            "载页默认倍率 = 适配可视区（不缩放）",
+            abs(zoom_cv._zoom - 1.0) < 1e-9
+            and abs(zoom_cv._px_per_unit - zoom_cv._fit_ppu) < 1e-9,
+        )
 
         anchor = QPointF(zoom_cv.width() * 0.6, zoom_cv.height() * 0.4)
         unit_before = zoom_cv._to_units(anchor)
         items_before = zoom_cv.items()
         _notch(120, anchor)
         unit_after = zoom_cv._to_units(anchor)
-        ok("滚轮放大：锚点下的图坐标不动（以光标为锚）",
-           abs(unit_before[0] - unit_after[0]) < 1e-6
-           and abs(unit_before[1] - unit_after[1]) < 1e-6,
-           f"{unit_before} → {unit_after}")
-        ok("缩放只改几何：items 原样、图缓存不重解码",
-           zoom_cv.items() == items_before
-           and len(zoom_cv._images) == 2
-           and zoom_cv._px_per_unit > zoom_cv._fit_ppu,
-           f"ppu={zoom_cv._px_per_unit:.2f} fit={zoom_cv._fit_ppu:.2f}")
-        ok("一格滚轮 = 1.15 倍",
-           abs(zoom_cv._zoom - _canvas_mod.WHEEL_ZOOM_STEP) < 1e-6,
-           f"zoom={zoom_cv._zoom:.4f}")
+        ok(
+            "滚轮放大：锚点下的图坐标不动（以光标为锚）",
+            abs(unit_before[0] - unit_after[0]) < 1e-6
+            and abs(unit_before[1] - unit_after[1]) < 1e-6,
+            f"{unit_before} → {unit_after}",
+        )
+        ok(
+            "缩放只改几何：items 原样、图缓存不重解码",
+            zoom_cv.items() == items_before
+            and len(zoom_cv._images) == 2
+            and zoom_cv._px_per_unit > zoom_cv._fit_ppu,
+            f"ppu={zoom_cv._px_per_unit:.2f} fit={zoom_cv._fit_ppu:.2f}",
+        )
+        ok(
+            "一格滚轮 = 1.15 倍",
+            abs(zoom_cv._zoom - _canvas_mod.WHEEL_ZOOM_STEP) < 1e-6,
+            f"zoom={zoom_cv._zoom:.4f}",
+        )
 
         # ---- 渲染合并：连发期间只有一个帧窗口，多余的滚动并到下一帧 ----
         wheel_src = (
             Path(__file__).resolve().parents[2]
-            / "desktop" / "components" / "imposition" / "canvas.py"
+            / "desktop"
+            / "components"
+            / "imposition"
+            / "canvas.py"
         ).read_text(encoding="utf-8")
         wheel_src = wheel_src[
-            wheel_src.index("def wheelEvent"):
-            wheel_src.index("def _zoom_at")
+            wheel_src.index("def wheelEvent") : wheel_src.index("def _zoom_at")
         ]
-        ok("滚轮事件不直接要重绘（重绘归帧窗口，减渲染的口子）",
-           "self.update()" not in wheel_src)
-        ok("连发第一滚：启动帧窗口（不立刻重绘）",
-           zoom_cv._wheel_timer.isActive())
+        ok(
+            "滚轮事件不直接要重绘（重绘归帧窗口，减渲染的口子）",
+            "self.update()" not in wheel_src,
+        )
+        ok("连发第一滚：启动帧窗口（不立刻重绘）", zoom_cv._wheel_timer.isActive())
         _notch(120, anchor)
         _notch(120, anchor)
-        ok("窗口内的后续滚动只挂起、不重复开窗（按帧合并）",
-           zoom_cv._wheel_timer.isActive()
-           and zoom_cv._wheel_paint_pending)
+        ok(
+            "窗口内的后续滚动只挂起、不重复开窗（按帧合并）",
+            zoom_cv._wheel_timer.isActive() and zoom_cv._wheel_paint_pending,
+        )
         zoom_cv._wheel_timer.stop()
         zoom_cv._on_wheel_frame()
-        ok("窗口到期：画一帧，还有挂起就滚到下一帧（快速档保持）",
-           zoom_cv._wheel_paint_pending is False
-           and zoom_cv._wheel_timer.isActive()
-           and zoom_cv._wheel_burst)
+        ok(
+            "窗口到期：画一帧，还有挂起就滚到下一帧（快速档保持）",
+            zoom_cv._wheel_paint_pending is False
+            and zoom_cv._wheel_timer.isActive()
+            and zoom_cv._wheel_burst,
+        )
         zoom_cv._wheel_timer.stop()
         zoom_cv._on_wheel_frame()
-        ok("滚动停稳：关快速档、补一帧高质量重绘",
-           zoom_cv._wheel_burst is False)
+        ok("滚动停稳：关快速档、补一帧高质量重绘", zoom_cv._wheel_burst is False)
 
         # ---- 倍率钳制 ----
         for _ in range(40):
             zoom_cv._zoom_at(QPointF(300, 300), 10.0)
-        ok("放大利住在上限（相对适配基准）",
-           abs(zoom_cv._zoom - _canvas_mod.ZOOM_MAX) < 1e-9,
-           f"zoom={zoom_cv._zoom}")
+        ok(
+            "放大利住在上限（相对适配基准）",
+            abs(zoom_cv._zoom - _canvas_mod.ZOOM_MAX) < 1e-9,
+            f"zoom={zoom_cv._zoom}",
+        )
         for _ in range(40):
             zoom_cv._zoom_at(QPointF(300, 300), 0.01)
-        ok("缩不利住在下限",
-           abs(zoom_cv._zoom - _canvas_mod.ZOOM_MIN) < 1e-9,
-           f"zoom={zoom_cv._zoom}")
+        ok(
+            "缩不利住在下限",
+            abs(zoom_cv._zoom - _canvas_mod.ZOOM_MIN) < 1e-9,
+            f"zoom={zoom_cv._zoom}",
+        )
 
         # ---- 尺寸变化保留倍率；载页 / refit 才归一 ----
         zoom_cv.refit()  # 钳制测试把倍率利在了下限：先归一再放大
@@ -2474,21 +3117,23 @@ def run(ctx) -> None:
         ppu_before = zoom_cv._px_per_unit
         zoom_cv.resize(500, 500)
         ctx.app.processEvents()
-        ok("窗口尺寸变化保留滚轮倍率（不打回原形）",
-           abs(zoom_cv._zoom - 1.5) < 1e-9
-           and abs(zoom_cv._px_per_unit - zoom_cv._fit_ppu * 1.5) < 1e-9
-           and not math.isclose(zoom_cv._px_per_unit, ppu_before))
+        ok(
+            "窗口尺寸变化保留滚轮倍率（不打回原形）",
+            abs(zoom_cv._zoom - 1.5) < 1e-9
+            and abs(zoom_cv._px_per_unit - zoom_cv._fit_ppu * 1.5) < 1e-9
+            and not math.isclose(zoom_cv._px_per_unit, ppu_before),
+        )
         zoom_cv.refit()
-        ok("refit 归一倍率（回到打开时的样子）",
-           abs(zoom_cv._zoom - 1.0) < 1e-9
-           and abs(zoom_cv._px_per_unit - zoom_cv._fit_ppu) < 1e-9)
+        ok(
+            "refit 归一倍率（回到打开时的样子）",
+            abs(zoom_cv._zoom - 1.0) < 1e-9
+            and abs(zoom_cv._px_per_unit - zoom_cv._fit_ppu) < 1e-9,
+        )
         zoom_cv.set_page(S.default_items([str(a), str(b)]))
-        ok("载页归一倍率（换页回'打开就能看全'）",
-           abs(zoom_cv._zoom - 1.0) < 1e-9)
+        ok("载页归一倍率（换页回'打开就能看全'）", abs(zoom_cv._zoom - 1.0) < 1e-9)
         zoom_cv.clear_page()
         _notch(120)
-        ok("空画布滚轮不炸、不动倍率",
-           abs(zoom_cv._zoom - 1.0) < 1e-9)
+        ok("空画布滚轮不炸、不动倍率", abs(zoom_cv._zoom - 1.0) < 1e-9)
         zoom_cv.deleteLater()
 
         # ---- 面板旋转组件：增量语义 / ±180° 跨界 / 程序化回填不回抛 ----
@@ -2513,110 +3158,154 @@ def run(ctx) -> None:
         item_angles: list[float] = []
         panel.whole_rotate_delta.connect(deltas.append)
         panel.item_rotation_edited.connect(item_angles.append)
-        ok("面板上没有「上移/下移」与「左转/右转 90°」按钮（2026-09-30 删除）",
-           not any(hasattr(panel, name) for name in
-                   ("up_button", "down_button",
-                    "rotate_left_button", "rotate_right_button")))
-        ok("旋转组件微调口径：滑块 0.01°/格、输入框 2 位小数步进 0.1°",
-           (panel.whole_slider.minimum(), panel.whole_slider.maximum())
-           == (-18000, 18000)
-           and panel.whole_slider.singleStep() == 1
-           and panel.whole_slider.pageStep() == 100
-           and panel.whole_spin.decimals() == 2
-           and panel.whole_spin.singleStep() == 0.1,
-           f"slider={panel.whole_slider.minimum()}.."
-           f"{panel.whole_slider.maximum()} "
-           f"step={panel.whole_slider.singleStep()} "
-           f"spin={panel.whole_spin.decimals()}位/"
-           f"{panel.whole_spin.singleStep()}")
+        ok(
+            "面板上没有「上移/下移」与「左转/右转 90°」按钮（2026-09-30 删除）",
+            not any(
+                hasattr(panel, name)
+                for name in (
+                    "up_button",
+                    "down_button",
+                    "rotate_left_button",
+                    "rotate_right_button",
+                )
+            ),
+        )
+        ok(
+            "旋转组件微调口径：滑块 0.01°/格、输入框 2 位小数步进 0.1°",
+            (panel.whole_slider.minimum(), panel.whole_slider.maximum())
+            == (-18000, 18000)
+            and panel.whole_slider.singleStep() == 1
+            and panel.whole_slider.pageStep() == 100
+            and panel.whole_spin.decimals() == 2
+            and panel.whole_spin.singleStep() == 0.1,
+            f"slider={panel.whole_slider.minimum()}.."
+            f"{panel.whole_slider.maximum()} "
+            f"step={panel.whole_slider.singleStep()} "
+            f"spin={panel.whole_spin.decimals()}位/"
+            f"{panel.whole_spin.singleStep()}",
+        )
         panel.show()
         ctx.app.processEvents()
-        ok("输入框在说明行、滑块通栏独占下一行（不挤一行）",
-           panel.whole_spin.geometry().bottom()
-           <= panel.whole_slider.geometry().top()
-           and panel.whole_slider.width() > panel.whole_spin.width(),
-           f"spin_bottom={panel.whole_spin.geometry().bottom()} "
-           f"slider_top={panel.whole_slider.geometry().top()} "
-           f"slider_w={panel.whole_slider.width()}")
+        ok(
+            "输入框在说明行、滑块通栏独占下一行（不挤一行）",
+            panel.whole_spin.geometry().bottom() <= panel.whole_slider.geometry().top()
+            and panel.whole_slider.width() > panel.whole_spin.width(),
+            f"spin_bottom={panel.whole_spin.geometry().bottom()} "
+            f"slider_top={panel.whole_slider.geometry().top()} "
+            f"slider_w={panel.whole_slider.width()}",
+        )
         panel.whole_spin.setValue(10.0)
         ok("整体旋转组件：输入 10° 吐 +10° 增量", deltas == [10.0], str(deltas))
         panel.set_whole_angle(170.0)
         ok("程序化回填整版角度不吐增量", deltas == [10.0], str(deltas))
         panel.whole_spin.setValue(-170.0)
         ok("跨 ±180° 边界换算成 +20° 增量", deltas == [10.0, 20.0], str(deltas))
-        ok("没有选中图时单图旋转组件禁用",
-           not panel.item_spin.isEnabled() and not panel.item_slider.isEnabled())
+        ok(
+            "没有选中图时单图旋转组件禁用",
+            not panel.item_spin.isEnabled() and not panel.item_slider.isEnabled(),
+        )
         panel.set_item_rotation(45.0)
-        ok("回填选中角后组件启用且值正确",
-           panel.item_spin.isEnabled()
-           and abs(panel.item_spin.value() - 45.0) < 0.01,
-           str(panel.item_spin.value()))
+        ok(
+            "回填选中角后组件启用且值正确",
+            panel.item_spin.isEnabled() and abs(panel.item_spin.value() - 45.0) < 0.01,
+            str(panel.item_spin.value()),
+        )
         ok("单图回填不吐信号", item_angles == [], str(item_angles))
         panel.item_spin.setValue(60.0)
         ok("单图组件改值发**绝对角度**", item_angles == [60.0], str(item_angles))
         panel.set_item_rotation(None)
         ok("清空选中后单图组件重新禁用", not panel.item_spin.isEnabled())
-        ok("面板分区：「操作当前图片页」页级块在前、「当前图片样式」图片级块在后",
-           panel.item_section.title_label.text() == "当前图片样式"
-           and 0 <= _column_index(panel.box, panel.clear_button)
-           < _column_index(panel.box, panel.item_section))
-        ok("面板上没有「选择拼版」按钮（2026-09-30 删除：入口只在左列虚线格）",
-           not hasattr(panel, "add_button"))
-        ok("「复位本页版面」独占一行 block（删除按钮挪走后不再拼行）",
-           _column_index(panel.box, panel.reset_button) >= 0)
+        ok(
+            "面板分区：「操作当前图片页」页级块在前、「当前图片样式」图片级块在后",
+            panel.item_section.title_label.text() == "当前图片样式"
+            and 0
+            <= _column_index(panel.box, panel.clear_button)
+            < _column_index(panel.box, panel.item_section),
+        )
+        ok(
+            "面板上没有「选择拼版」按钮（2026-09-30 删除：入口只在左列虚线格）",
+            not hasattr(panel, "add_button"),
+        )
+        ok(
+            "「复位本页版面」独占一行 block（删除按钮挪走后不再拼行）",
+            _column_index(panel.box, panel.reset_button) >= 0,
+        )
         _actions_row = _row_layout_of(panel.box, panel.add_image_button)
         _section_layout = panel.item_section.layout()
         assert _section_layout is not None
-        ok("「删除选中图片」挪进页级区，与「新增图片」同一行（不在图片样式区块里）",
-           _actions_row is not None
-           and _actions_row.indexOf(panel.delete_item_button) >= 0
-           and _section_layout.indexOf(panel.delete_item_button) < 0)
-        ok("未选中图时删除按钮隐藏、新增按钮隐藏（两图页初始态）",
-           panel.delete_item_button.isHidden()
-           and panel.add_image_button.isHidden())
+        ok(
+            "「删除选中图片」挪进页级区，与「新增图片」同一行（不在图片样式区块里）",
+            _actions_row is not None
+            and _actions_row.indexOf(panel.delete_item_button) >= 0
+            and _section_layout.indexOf(panel.delete_item_button) < 0,
+        )
+        ok(
+            "未选中图时删除按钮隐藏、新增按钮隐藏（两图页初始态）",
+            panel.delete_item_button.isHidden() and panel.add_image_button.isHidden(),
+        )
         panel.set_item_rotation(30.0)
-        ok("选中图后「删除选中图片」露出（页级区里）",
-           not panel.delete_item_button.isHidden())
-        ok("「删除选中图片」用共享危险按钮样式 theme.danger_button_qss"
-           "（2026-09-30 用户定：样式对齐任务列表删除按钮）",
-           "#C93A3A" in panel.delete_item_button.styleSheet()
-           and ":hover" in panel.delete_item_button.styleSheet()
-           and "padding: 6px 12px 7px 12px" in panel.delete_item_button.styleSheet()
-           and "#C0392B" not in panel.delete_item_button.styleSheet())
-        ok("「删除选中图片」不带图标（红底上 fluent 深色图标对比度差）",
-           panel.delete_item_button.icon().isNull())
+        ok(
+            "选中图后「删除选中图片」露出（页级区里）",
+            not panel.delete_item_button.isHidden(),
+        )
+        ok(
+            "「删除选中图片」用共享危险按钮样式 theme.danger_button_qss"
+            "（2026-09-30 用户定：样式对齐任务列表删除按钮）",
+            "#C93A3A" in panel.delete_item_button.styleSheet()
+            and ":hover" in panel.delete_item_button.styleSheet()
+            and "padding: 6px 12px 7px 12px" in panel.delete_item_button.styleSheet()
+            and "#C0392B" not in panel.delete_item_button.styleSheet(),
+        )
+        ok(
+            "「删除选中图片」不带图标（红底上 fluent 深色图标对比度差）",
+            panel.delete_item_button.icon().isNull(),
+        )
         panel.set_single_page(True)
-        ok("「删除选中图片」与「新增图片」等高（内边距补齐 fluent 上下边框）",
-           panel.delete_item_button.sizeHint().height()
-           == panel.add_image_button.sizeHint().height(),
-           str((panel.delete_item_button.sizeHint().height(),
-                panel.add_image_button.sizeHint().height())))
+        ok(
+            "「删除选中图片」与「新增图片」等高（内边距补齐 fluent 上下边框）",
+            panel.delete_item_button.sizeHint().height()
+            == panel.add_image_button.sizeHint().height(),
+            str(
+                (
+                    panel.delete_item_button.sizeHint().height(),
+                    panel.add_image_button.sizeHint().height(),
+                )
+            ),
+        )
         panel.set_single_page(False)
         panel.set_item_rotation(None)
-        ok("清空选中后删除按钮重新隐藏",
-           panel.delete_item_button.isHidden())
-        ok("「在流程中启用图片拼版」开关在面板最底部",
-           0 <= _column_index(panel.box, panel.enabled_checkbox)
-           and _column_index(panel.box, panel.enabled_checkbox)
-           > _column_index(panel.box, panel.item_section))
-        ok("说明挂在问号按钮上（不再平铺）",
-           isinstance(getattr(panel, "help_button", None), HelpButton)
-           and "可选节点" in panel.help_button.toolTip())
-        ok("清空选中后「当前图片样式」区块灰掉",
-           not panel.item_section._active)
+        ok("清空选中后删除按钮重新隐藏", panel.delete_item_button.isHidden())
+        ok(
+            "「在流程中启用图片拼版」开关在面板最底部",
+            0 <= _column_index(panel.box, panel.enabled_checkbox)
+            and _column_index(panel.box, panel.enabled_checkbox)
+            > _column_index(panel.box, panel.item_section),
+        )
+        ok(
+            "说明挂在问号按钮上（不再平铺）",
+            isinstance(getattr(panel, "help_button", None), HelpButton)
+            and "可选节点" in panel.help_button.toolTip(),
+        )
+        ok("清空选中后「当前图片样式」区块灰掉", not panel.item_section._active)
         panel.set_item_rotation(30.0)
-        ok("有选中图时「当前图片样式」区块高亮",
-           panel.item_section._active, str(panel.item_section._active))
+        ok(
+            "有选中图时「当前图片样式」区块高亮",
+            panel.item_section._active,
+            str(panel.item_section._active),
+        )
         panel.deleteLater()
 
         # ---- 公共组件契约：无下游流程的宿主构造时声明收掉启用开关 ----
         bare = ImpositionPanel(enable_switch=False)
-        ok("enable_switch=False 收起「在流程中启用图片拼版」开关（任务流程专属概念不进公共面板）",
-           bare.enabled_checkbox.isHidden()
-           and bare.enabled_checkbox.isChecked())
+        ok(
+            "enable_switch=False 收起「在流程中启用图片拼版」开关（任务流程专属概念不进公共面板）",
+            bare.enabled_checkbox.isHidden() and bare.enabled_checkbox.isChecked(),
+        )
         bare.set_enabled_checked(False)
-        ok("隐藏态下程序化回填 set_enabled_checked 仍可用",
-           not bare.enabled_checkbox.isChecked())
+        ok(
+            "隐藏态下程序化回填 set_enabled_checked 仍可用",
+            not bare.enabled_checkbox.isChecked(),
+        )
         bare.deleteLater()
 
         # ---- 页级接线：面板增量 → 画布即时转 → 停顿提交落盘 + 面板回填 ----
@@ -2628,30 +3317,41 @@ def run(ctx) -> None:
         pump(ctx.app, times=4)
         page._on_imposition_whole_rotate(15.0)
         live = [it["rotation"] for it in page.imposition_view.canvas.items()]
-        ok("整版增量**即时**作用于画布（不等落盘）",
-           all(abs(r - 15.0) < 0.01 for r in live), str(live))
+        ok(
+            "整版增量**即时**作用于画布（不等落盘）",
+            all(abs(r - 15.0) < 0.01 for r in live),
+            str(live),
+        )
         page._commit_imposition_edit()
         page._imposition_timer.stop()
         saved = page._imposition_pages()[0]["items"]
-        ok("停顿提交把整版旋转落盘（两张都 +15°）",
-           all(abs(it["rotation"] - 15.0) < 0.01 for it in saved),
-           str([it["rotation"] for it in saved]))
-        ok("提交后面板回填整版角度",
-           abs(page.imposition_panel.whole_spin.value() - 15.0) < 0.01,
-           str(page.imposition_panel.whole_spin.value()))
+        ok(
+            "停顿提交把整版旋转落盘（两张都 +15°）",
+            all(abs(it["rotation"] - 15.0) < 0.01 for it in saved),
+            str([it["rotation"] for it in saved]),
+        )
+        ok(
+            "提交后面板回填整版角度",
+            abs(page.imposition_panel.whole_spin.value() - 15.0) < 0.01,
+            str(page.imposition_panel.whole_spin.value()),
+        )
         page.imposition_view.canvas.select(1)
         page._on_imposition_item_rotate(25.0)
         page._commit_imposition_edit()
         page._imposition_timer.stop()
         saved = page._imposition_pages()[0]["items"]
-        ok("单图绝对角度落盘（只改选中的左槽）",
-           abs(saved[1]["rotation"] - 25.0) < 0.01
-           and abs(saved[0]["rotation"] - 15.0) < 0.01,
-           str([it["rotation"] for it in saved]))
-        ok("提交后单图组件回填选中角",
-           page.imposition_panel.item_spin.isEnabled()
-           and abs(page.imposition_panel.item_spin.value() - 25.0) < 0.01,
-           str(page.imposition_panel.item_spin.value()))
+        ok(
+            "单图绝对角度落盘（只改选中的左槽）",
+            abs(saved[1]["rotation"] - 25.0) < 0.01
+            and abs(saved[0]["rotation"] - 15.0) < 0.01,
+            str([it["rotation"] for it in saved]),
+        )
+        ok(
+            "提交后单图组件回填选中角",
+            page.imposition_panel.item_spin.isEnabled()
+            and abs(page.imposition_panel.item_spin.value() - 25.0) < 0.01,
+            str(page.imposition_panel.item_spin.value()),
+        )
 
         # ---------------- 8. 双击预览：双击图 → 原图；双击空白 → 虚线框范围组合
         # 用户 2026-09-30：双击某张图预览这张原图；在图片外面双击画布，
@@ -2661,8 +3361,10 @@ def run(ctx) -> None:
 
         def _dbl(cv, x, y):
             return QMouseEvent(
-                QEvent.Type.MouseButtonDblClick, QPointF(float(x), float(y)),
-                Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
+                QEvent.Type.MouseButtonDblClick,
+                QPointF(float(x), float(y)),
+                Qt.MouseButton.LeftButton,
+                Qt.MouseButton.LeftButton,
                 Qt.KeyboardModifier.NoModifier,
             )
 
@@ -2689,25 +3391,33 @@ def run(ctx) -> None:
         canvas3.item_double_clicked.connect(item_hits.append)
         bx, by = _blank_pt(canvas3)
         canvas3.mouseDoubleClickEvent(_dbl(canvas3, bx, by))
-        ok("双击图片之外的空白 → 发 spread_double_clicked（预览组合）",
-           spread_hits == [1] and item_hits == [],
-           f"spread={spread_hits} item={item_hits}")
-        ok("双击空白不把手势带起来（处理了就 accept，无编辑模式残留）",
-           canvas3._mode is None and not canvas3._pressed,
-           f"mode={canvas3._mode} pressed={canvas3._pressed}")
+        ok(
+            "双击图片之外的空白 → 发 spread_double_clicked（预览组合）",
+            spread_hits == [1] and item_hits == [],
+            f"spread={spread_hits} item={item_hits}",
+        )
+        ok(
+            "双击空白不把手势带起来（处理了就 accept，无编辑模式残留）",
+            canvas3._mode is None and not canvas3._pressed,
+            f"mode={canvas3._mode} pressed={canvas3._pressed}",
+        )
         # 右槽图中心（x∈[400,800] 图坐标 → 约 [300,582] 控件像素）
         ix, iy = _item_pt(canvas3, 0)
         canvas3.mouseDoubleClickEvent(_dbl(canvas3, ix, iy))
-        ok("双击某张图 → 发 item_double_clicked 且是命中的槽位",
-           item_hits == [0] and spread_hits == [1],
-           f"item={item_hits} spread={spread_hits}")
+        ok(
+            "双击某张图 → 发 item_double_clicked 且是命中的槽位",
+            item_hits == [0] and spread_hits == [1],
+            f"item={item_hits} spread={spread_hits}",
+        )
         spread_hits.clear()
         item_hits.clear()
         canvas3.clear_page()
         canvas3.mouseDoubleClickEvent(_dbl(canvas3, 300, 40))
-        ok("空画布双击不发预览信号",
-           spread_hits == [] and item_hits == [],
-           f"spread={spread_hits} item={item_hits}")
+        ok(
+            "空画布双击不发预览信号",
+            spread_hits == [] and item_hits == [],
+            f"spread={spread_hits} item={item_hits}",
+        )
         canvas3.deleteLater()
 
         # ---- 视图层：信号 → 信号直连转发 + 提示语带双击说明 ----
@@ -2715,22 +3425,24 @@ def run(ctx) -> None:
         view2.resize(900, 600)
         view2.show()
         ctx.app.processEvents()
-        view2.set_pages([{"items": S.default_items([str(a), str(b)])}],
-                        current=0)
+        view2.set_pages([{"items": S.default_items([str(a), str(b)])}], current=0)
         view_forward: list[str] = []
-        view2.spread_preview_requested.connect(
-            lambda: view_forward.append("spread"))
-        view2.item_preview_requested.connect(
-            lambda i: view_forward.append(f"item:{i}"))
+        view2.spread_preview_requested.connect(lambda: view_forward.append("spread"))
+        view2.item_preview_requested.connect(lambda i: view_forward.append(f"item:{i}"))
         vb = _blank_pt(view2.canvas)
         vi = _item_pt(view2.canvas, 0)
         view2.canvas.mouseDoubleClickEvent(_dbl(view2.canvas, *vb))
         view2.canvas.mouseDoubleClickEvent(_dbl(view2.canvas, *vi))
-        ok("视图把两种双击都转发给控制器（spread / item:槽位）",
-           view_forward == ["spread", "item:0"], str(view_forward))
-        ok("底部提示语写明双击预览的操作方式",
-           "双击" in view2.hint.text() and "成品组合" in view2.hint.text(),
-           view2.hint.text())
+        ok(
+            "视图把两种双击都转发给控制器（spread / item:槽位）",
+            view_forward == ["spread", "item:0"],
+            str(view_forward),
+        )
+        ok(
+            "底部提示语写明双击预览的操作方式",
+            "双击" in view2.hint.text() and "成品组合" in view2.hint.text(),
+            view2.hint.text(),
+        )
         view2.deleteLater()
 
         # ---- worker 层：合成结果 = page_bounds 紧裁（即灰色虚线框那块）----
@@ -2738,26 +3450,31 @@ def run(ctx) -> None:
         # ⚠️ 该方法的返回标注是 ``object | None``（宿主侧没写具体类型），
         #    这里按"就是 ZoomTarget"定死；None 的判据留给下一条 ok。
         target = cast("ZoomTarget", page._imposition_spread_target(0))
-        ok("弹窗来源目标：整页左右组合（count=1，非单张原图）",
-           target is not None and target.count == 1
-           and "左右组合" in target.note, str(target and target.note))
-        assert target is not None   # ⚠️ 上一行已判过
+        ok(
+            "弹窗来源目标：整页左右组合（count=1，非单张原图）",
+            target is not None and target.count == 1 and "左右组合" in target.note,
+            str(target and target.note),
+        )
+        assert target is not None  # ⚠️ 上一行已判过
         bounds = S.page_bounds({"items": [dict(i) for i in page_items]})
         _worker = target.render(1600)
         _got: dict = {}
-        _worker.finished.connect(
-            lambda _i, img, _s: _got.update(img=img))
+        _worker.finished.connect(lambda _i, img, _s: _got.update(img=img))
         _worker.run()
         img = _got.get("img")
-        ok("组合预览 worker 产出非空 QImage",
-           img is not None and not img.isNull(),
-           str(type(img)))
+        ok(
+            "组合预览 worker 产出非空 QImage",
+            img is not None and not img.isNull(),
+            str(type(img)),
+        )
         if img is not None and not img.isNull():
             ratio_got = img.width() / img.height()
             ratio_bounds = (bounds[2] - bounds[0]) / (bounds[3] - bounds[1])
-            ok("预览图宽高比 = 灰色虚线框（page_bounds）的宽高比",
-               abs(ratio_got - ratio_bounds) < 0.01,
-               f"图 {img.width()}x{img.height()} vs 界 {bounds}")
+            ok(
+                "预览图宽高比 = 灰色虚线框（page_bounds）的宽高比",
+                abs(ratio_got - ratio_bounds) < 0.01,
+                f"图 {img.width()}x{img.height()} vs 界 {bounds}",
+            )
 
         # ---- 控制器层：_open_imposition_spread_preview 开弹窗（替身）----
         from desktop.components.viewers import image_zoom_dialog as _izd
@@ -2769,6 +3486,7 @@ def run(ctx) -> None:
                 _seen_zoom["factory"] = k.get("factory")
                 _seen_zoom["shown"] = 0
                 _seen_zoom["show_for"] = []
+
                 # 控制器会把弹窗编辑的 image_saved 接到生效链上（鸭子类型即可）
                 class _Sig:
                     def connect(self, _slot):
@@ -2795,15 +3513,20 @@ def run(ctx) -> None:
         _izd.ImageZoomDialog = _FakeZoom
         try:
             page._open_imposition_spread_preview()
-            ok("双击空白 → 控制器 show + show_for 打开预览弹窗",
-               _seen_zoom.get("shown") == 1
-               and _seen_zoom.get("show_for") == [(True, 0)],
-               str(_seen_zoom))
+            ok(
+                "双击空白 → 控制器 show + show_for 打开预览弹窗",
+                _seen_zoom.get("shown") == 1
+                and _seen_zoom.get("show_for") == [(True, 0)],
+                str(_seen_zoom),
+            )
             zoom_target = (_seen_zoom.get("factory") or (lambda _i: None))(0)
-            ok("弹窗内容来源 = 左右组合目标（不是单张原图）",
-               zoom_target is not None and zoom_target.count == 1
-               and "左右组合" in zoom_target.note,
-               str(zoom_target and zoom_target.note))
+            ok(
+                "弹窗内容来源 = 左右组合目标（不是单张原图）",
+                zoom_target is not None
+                and zoom_target.count == 1
+                and "左右组合" in zoom_target.note,
+                str(zoom_target and zoom_target.note),
+            )
         finally:
             _izd.ImageZoomDialog = _real_zoom_cls
             # ⚠️ 弹窗已关掉，宿主把持有者置回 None（源码侧标注成非 Optional）
@@ -2834,7 +3557,8 @@ def run(ctx) -> None:
 
         def _ctx(cv, x, y):
             return QContextMenuEvent(
-                QContextMenuEvent.Reason.Mouse, QPoint(int(x), int(y)),
+                QContextMenuEvent.Reason.Mouse,
+                QPoint(int(x), int(y)),
                 QPoint(int(x), int(y)),
             )
 
@@ -2850,64 +3574,86 @@ def run(ctx) -> None:
             canvas4.show()
             ctx.app.processEvents()
 
-            hits: dict = {"preview_item": [], "preview_spread": 0,
-                          "edit_item": [], "edit_spread": 0}
+            hits: dict = {
+                "preview_item": [],
+                "preview_spread": 0,
+                "edit_item": [],
+                "edit_spread": 0,
+            }
             canvas4.item_double_clicked.connect(
-                lambda i: hits.__setitem__("preview_item", hits["preview_item"] + [i]))
+                lambda i: hits.__setitem__("preview_item", hits["preview_item"] + [i])
+            )
             canvas4.spread_double_clicked.connect(
-                lambda: hits.__setitem__("preview_spread", hits["preview_spread"] + 1))
+                lambda: hits.__setitem__("preview_spread", hits["preview_spread"] + 1)
+            )
             canvas4.item_edit_requested.connect(
-                lambda i: hits.__setitem__("edit_item", hits["edit_item"] + [i]))
+                lambda i: hits.__setitem__("edit_item", hits["edit_item"] + [i])
+            )
             canvas4.spread_edit_requested.connect(
-                lambda: hits.__setitem__("edit_spread", hits["edit_spread"] + 1))
+                lambda: hits.__setitem__("edit_spread", hits["edit_spread"] + 1)
+            )
             selections: list[int] = []
             canvas4.selection_changed.connect(selections.append)
 
             ix, iy = _item_pt(canvas4, 0)
             canvas4.contextMenuEvent(_ctx(canvas4, ix, iy))
-            ok("右键图上弹出菜单：「预览图片 / 编辑单图 / 定位图片资源」",
-               [act.text() for act in _menu.get("actions", [])]
-               == ["预览图片", "编辑单图", "定位图片资源"],
-               str([act.text() for act in _menu.get("actions", [])]))
-            ok("右键即选中那张图（与左键点击同款语义）",
-               canvas4.selected() == 0 and selections == [0],
-               f"selected={canvas4.selected()} selections={selections}")
+            ok(
+                "右键图上弹出菜单：「预览图片 / 编辑单图 / 定位图片资源」",
+                [act.text() for act in _menu.get("actions", [])]
+                == ["预览图片", "编辑单图", "定位图片资源"],
+                str([act.text() for act in _menu.get("actions", [])]),
+            )
+            ok(
+                "右键即选中那张图（与左键点击同款语义）",
+                canvas4.selected() == 0 and selections == [0],
+                f"selected={canvas4.selected()} selections={selections}",
+            )
             _pick(0)
-            ok("右键图上点「预览图片」→ 与双击同一信号（预览这张原图）",
-               hits["preview_item"] == [0] and hits["preview_spread"] == 0,
-               str(hits))
+            ok(
+                "右键图上点「预览图片」→ 与双击同一信号（预览这张原图）",
+                hits["preview_item"] == [0] and hits["preview_spread"] == 0,
+                str(hits),
+            )
             _pick(1)
-            ok("右键图上点「编辑单图」→ 发 item_edit_requested（同槽位）",
-               hits["edit_item"] == [0] and hits["edit_spread"] == 0,
-               str(hits))
+            ok(
+                "右键图上点「编辑单图」→ 发 item_edit_requested（同槽位）",
+                hits["edit_item"] == [0] and hits["edit_spread"] == 0,
+                str(hits),
+            )
             # 定位图片资源（2026-10-11 用户）：资源管理器定位那张子图的源文件
             import desktop.utils.files as _files_mod
 
             _located: list = []
             _real_reveal = _files_mod.reveal_in_explorer
-            _files_mod.reveal_in_explorer = (
-                lambda p: _located.append(Path(p)) or True
-            )
+            _files_mod.reveal_in_explorer = lambda p: _located.append(Path(p)) or True
             try:
                 _pick(2)
             finally:
                 _files_mod.reveal_in_explorer = _real_reveal
             item_file = Path(str(canvas4._items[0]["file"]))
-            ok("右键图上点「定位图片资源」→ 资源管理器定位该子图源文件",
-               _located == [item_file], f"located={_located}")
+            ok(
+                "右键图上点「定位图片资源」→ 资源管理器定位该子图源文件",
+                _located == [item_file],
+                f"located={_located}",
+            )
 
             bx, by = _blank_pt(canvas4)
             canvas4.contextMenuEvent(_ctx(canvas4, bx, by))
-            ok("右键空白处菜单：编辑项文案是「编辑整图」",
-               [act.text() for act in _menu.get("actions", [])]
-               == ["预览图片", "编辑整图"],
-               str([act.text() for act in _menu.get("actions", [])]))
+            ok(
+                "右键空白处菜单：编辑项文案是「编辑整图」",
+                [act.text() for act in _menu.get("actions", [])]
+                == ["预览图片", "编辑整图"],
+                str([act.text() for act in _menu.get("actions", [])]),
+            )
             _pick(0)
             _pick(1)
-            ok("右键空白处：预览走 spread 信号、编辑走 spread_edit 信号",
-               hits["preview_spread"] == 1 and hits["edit_spread"] == 1
-               and hits["edit_item"] == [0],
-               str(hits))
+            ok(
+                "右键空白处：预览走 spread 信号、编辑走 spread_edit 信号",
+                hits["preview_spread"] == 1
+                and hits["edit_spread"] == 1
+                and hits["edit_item"] == [0],
+                str(hits),
+            )
             canvas4.deleteLater()
 
             _menu.clear()
@@ -2920,20 +3666,24 @@ def run(ctx) -> None:
 
             # ---- 视图层：编辑信号也直连转发 + 提示语提到右键 ----
             view3 = ImpositionViewWidget()
-            view3.set_pages([{"items": S.default_items([str(a), str(b)])}],
-                            current=0)
+            view3.set_pages([{"items": S.default_items([str(a), str(b)])}], current=0)
             edit_forward: list[str] = []
             view3.item_edit_requested.connect(
-                lambda i: edit_forward.append(f"item:{i}"))
-            view3.spread_edit_requested.connect(
-                lambda: edit_forward.append("spread"))
+                lambda i: edit_forward.append(f"item:{i}")
+            )
+            view3.spread_edit_requested.connect(lambda: edit_forward.append("spread"))
             view3.canvas.item_edit_requested.emit(1)
             view3.canvas.spread_edit_requested.emit()
-            ok("视图把两种右键编辑都转发给控制器（item:槽位 / spread）",
-               edit_forward == ["item:1", "spread"], str(edit_forward))
-            ok("底部提示语写明右键可编辑",
-               "右键" in view3.hint.text() and "编辑" in view3.hint.text(),
-               view3.hint.text())
+            ok(
+                "视图把两种右键编辑都转发给控制器（item:槽位 / spread）",
+                edit_forward == ["item:1", "spread"],
+                str(edit_forward),
+            )
+            ok(
+                "底部提示语写明右键可编辑",
+                "右键" in view3.hint.text() and "编辑" in view3.hint.text(),
+                view3.hint.text(),
+            )
             view3.deleteLater()
 
             # ---- 控制器层：右键图上「编辑图片」→ 编辑器（覆盖回写源图）----
@@ -2961,45 +3711,58 @@ def run(ctx) -> None:
             _ied.ImageEditorDialog = _FakeEditorDialog
 
             from desktop.components.viewers.image_zoom_dialog import (
-                ZoomTarget, overwrite_image_file,
+                ZoomTarget,
+                overwrite_image_file,
             )
 
             def _pixel_of(path: Path):
                 return _qimage_pixel(path, 2, 2)
 
             try:
-                item_path = Path(
-                    page._imposition_pages()[0]["items"][0]["file"]
-                )
+                item_path = Path(page._imposition_pages()[0]["items"][0]["file"])
                 ok("准备：拼版源图存在", item_path.exists())
                 # 预热画布解码缓存，等会儿断言「缓存被丢掉」才有意义
                 page.imposition_view.canvas._image(str(item_path))
-                ok("准备：画布缓存里已有这张图",
-                   str(item_path) in page.imposition_view.canvas._images)
+                ok(
+                    "准备：画布缓存里已有这张图",
+                    str(item_path) in page.imposition_view.canvas._images,
+                )
 
                 _edit_seen.clear()
                 page._open_imposition_item_edit(0)
-                ok("编辑器以 save_back 模式打开（完成 = 覆盖原图片）",
-                   _edit_seen.get("save_back") is True
-                   and _edit_seen.get("exec") == "ok", str(_edit_seen))
-                ok("「完成」把编辑结果覆盖回源图原图",
-                   _pixel_of(item_path) == EDIT_ITEM_COLOR,
-                   f"item={item_path.name} 像素={_pixel_of(item_path)}")
-                ok("画布解码缓存已丢（重绘读新图，不显示旧图）",
-                   str(item_path) not in page.imposition_view.canvas._images)
-                ok("源图变了 → 重新防抖合成已挂上",
-                   page._imposition_dirty, f"dirty={page._imposition_dirty}")
+                ok(
+                    "编辑器以 save_back 模式打开（完成 = 覆盖原图片）",
+                    _edit_seen.get("save_back") is True
+                    and _edit_seen.get("exec") == "ok",
+                    str(_edit_seen),
+                )
+                ok(
+                    "「完成」把编辑结果覆盖回源图原图",
+                    _pixel_of(item_path) == EDIT_ITEM_COLOR,
+                    f"item={item_path.name} 像素={_pixel_of(item_path)}",
+                )
+                ok(
+                    "画布解码缓存已丢（重绘读新图，不显示旧图）",
+                    str(item_path) not in page.imposition_view.canvas._images,
+                )
+                ok(
+                    "源图变了 → 重新防抖合成已挂上",
+                    page._imposition_dirty,
+                    f"dirty={page._imposition_dirty}",
+                )
                 page._imposition_timer.stop()
                 page._imposition_dirty = False
 
                 # 预览弹窗里「编辑」也落盘：image_saved → 生效链（2026-10-07）
                 page.imposition_view.canvas._image(str(item_path))
                 page._on_imposition_zoom_image_saved(str(item_path), _edited)
-                ok("弹窗编辑源图：画布缓存被丢 + 重新防抖合成已挂上",
-                   str(item_path) not in page.imposition_view.canvas._images
-                   and page._imposition_dirty,
-                   f"cached={str(item_path) in page.imposition_view.canvas._images} "
-                   f"dirty={page._imposition_dirty}")
+                ok(
+                    "弹窗编辑源图：画布缓存被丢 + 重新防抖合成已挂上",
+                    str(item_path) not in page.imposition_view.canvas._images
+                    and page._imposition_dirty,
+                    f"cached={str(item_path) in page.imposition_view.canvas._images} "
+                    f"dirty={page._imposition_dirty}",
+                )
                 page._imposition_timer.stop()
                 page._imposition_dirty = False
 
@@ -3010,35 +3773,43 @@ def run(ctx) -> None:
                 rep = str(item_path)
                 page._on_imposition_source_edited(rep, _edited)
                 _mgr_ed = getattr(page, "_page_thumb_mgr", None)
-                _hit_pages = set(
-                    _mgr_ed._pending) if _mgr_ed is not None else set()
-                ok("编辑源图后：含它的页排进缩略图重生成批次（实体签名失效）",
-                   bool(_hit_pages), f"pending={_hit_pages}")
+                _hit_pages = set(_mgr_ed._pending) if _mgr_ed is not None else set()
+                ok(
+                    "编辑源图后：含它的页排进缩略图重生成批次（实体签名失效）",
+                    bool(_hit_pages),
+                    f"pending={_hit_pages}",
+                )
                 page._imposition_timer.stop()
                 page._imposition_dirty = False
 
                 # ---- 路径**形态**不同也要命中（分隔符/大小写）----
                 from desktop.services.imposition import same_path
 
-                ok("路径比较：分隔符/大小写不同的同一路径判为同一处",
-                   same_path(rep, rep.replace("\\", "/"))
-                   and same_path(rep, rep.upper())
-                   and not same_path(rep, rep + "x")
-                   and not same_path("", rep),
-                   f"rep={rep}")
+                ok(
+                    "路径比较：分隔符/大小写不同的同一路径判为同一处",
+                    same_path(rep, rep.replace("\\", "/"))
+                    and same_path(rep, rep.upper())
+                    and not same_path(rep, rep + "x")
+                    and not same_path("", rep),
+                    f"rep={rep}",
+                )
 
                 page.imposition_view.canvas._image(rep)
                 page.imposition_view.canvas.invalidate_image(rep.replace("\\", "/"))
-                ok("画布失效：用另一种斜杠形态也能丢中解码缓存",
-                   rep not in page.imposition_view.canvas._images,
-                   str(list(page.imposition_view.canvas._images)))
+                ok(
+                    "画布失效：用另一种斜杠形态也能丢中解码缓存",
+                    rep not in page.imposition_view.canvas._images,
+                    str(list(page.imposition_view.canvas._images)),
+                )
 
                 if _mgr_ed is not None:
                     _mgr_ed._pending.clear()
                 page._drop_imposition_source_thumb(rep.replace("\\", "/"))
-                ok("左列缩略图失效：用另一种斜杠形态也能丢中（排进重生成批次）",
-                   _mgr_ed is not None and bool(_mgr_ed._pending),
-                   str(set(_mgr_ed._pending) if _mgr_ed is not None else set()))
+                ok(
+                    "左列缩略图失效：用另一种斜杠形态也能丢中（排进重生成批次）",
+                    _mgr_ed is not None and bool(_mgr_ed._pending),
+                    str(set(_mgr_ed._pending) if _mgr_ed is not None else set()),
+                )
 
                 # 取消编辑：不覆盖
                 _edit_seen.clear()
@@ -3051,8 +3822,11 @@ def run(ctx) -> None:
                 _ied.ImageEditorDialog = _RejectEditor
                 before = _pixel_of(item_path)
                 page._open_imposition_item_edit(0)
-                ok("取消编辑不覆盖源图", _pixel_of(item_path) == before,
-                   f"before={before} after={_pixel_of(item_path)}")
+                ok(
+                    "取消编辑不覆盖源图",
+                    _pixel_of(item_path) == before,
+                    f"before={before} after={_pixel_of(item_path)}",
+                )
                 _ied.ImageEditorDialog = _FakeEditorDialog
             finally:
                 _ied.ImageEditorDialog = _real_editor_cls
@@ -3060,9 +3834,9 @@ def run(ctx) -> None:
             # ---- 控制器层：右键空白「编辑图片」→ 合成全分辨率 → 写回成品 ----
             from desktop.services.imposition import FILE_FMT
 
-            out_path = page.store.imposition_output_dir(
-                page.task_id
-            ) / FILE_FMT.format(1)
+            out_path = page.store.imposition_output_dir(page.task_id) / FILE_FMT.format(
+                1
+            )
             _spread_seen: dict = {}
             _spread_edited = _solid_qimage(EDIT_SPREAD_COLOR, 30, 20)
 
@@ -3091,38 +3865,49 @@ def run(ctx) -> None:
                     lambda: out_path.exists()
                     and _pixel_of(out_path) == EDIT_SPREAD_COLOR,
                 )
-                ok("整页组合编辑：按产出口径合成 → 编辑器 → 覆盖成品文件",
-                   done and _pixel_of(out_path) == EDIT_SPREAD_COLOR,
-                   f"out={out_path.name} exists={out_path.exists()} "
-                   f"pixel={_pixel_of(out_path) if out_path.exists() else None}")
-                ok("编辑器以 save_back 模式打开（成品有真实文件可回写）",
-                   _spread_seen.get("save_back") is True, str(_spread_seen))
-                ok("给编辑器的是全分辨率组合图（不缩）",
-                   _spread_seen.get("size") == (
-                       _spread_edited.width(), _spread_edited.height())
-                   or (_spread_seen.get("size") or (0, 0))[0]
-                   >= _spread_edited.width(),
-                   str(_spread_seen))
-                ok("挂着的防抖合成被取消（不会用未编辑结果冲掉手工修饰）",
-                   not page._imposition_dirty,
-                   f"dirty={page._imposition_dirty}")
+                ok(
+                    "整页组合编辑：按产出口径合成 → 编辑器 → 覆盖成品文件",
+                    done and _pixel_of(out_path) == EDIT_SPREAD_COLOR,
+                    f"out={out_path.name} exists={out_path.exists()} "
+                    f"pixel={_pixel_of(out_path) if out_path.exists() else None}",
+                )
+                ok(
+                    "编辑器以 save_back 模式打开（成品有真实文件可回写）",
+                    _spread_seen.get("save_back") is True,
+                    str(_spread_seen),
+                )
+                ok(
+                    "给编辑器的是全分辨率组合图（不缩）",
+                    _spread_seen.get("size")
+                    == (_spread_edited.width(), _spread_edited.height())
+                    or (_spread_seen.get("size") or (0, 0))[0]
+                    >= _spread_edited.width(),
+                    str(_spread_seen),
+                )
+                ok(
+                    "挂着的防抖合成被取消（不会用未编辑结果冲掉手工修饰）",
+                    not page._imposition_dirty,
+                    f"dirty={page._imposition_dirty}",
+                )
 
                 # 预览弹窗里「编辑」也落盘：成品已最新时回写目标 = 成品文件
                 spread_target = page._imposition_spread_target(0)
                 # ⚠️ 该方法的返回标注是 ``object | None``（宿主侧没写具体类型），
                 #    这里按"就是 ZoomTarget"定死，None 的判据仍由下一条 ok 负责。
                 spread_target = cast("ZoomTarget", spread_target)
-                ok("整页组合预览弹窗：成品最新时回写目标 = 成品文件",
-                   spread_target is not None
-                   and str(spread_target.edit_path or "") == str(out_path),
-                   f"edit={spread_target.edit_path if spread_target else None}")
-                page._on_imposition_zoom_image_saved(
-                    str(out_path), _spread_edited
+                ok(
+                    "整页组合预览弹窗：成品最新时回写目标 = 成品文件",
+                    spread_target is not None
+                    and str(spread_target.edit_path or "") == str(out_path),
+                    f"edit={spread_target.edit_path if spread_target else None}",
                 )
-                ok("弹窗编辑整页组合：落到成品分支（不触发重合成冲掉手改）",
-                   "已编辑整页组合并覆盖拼版成品" in page.log_view.toPlainText()
-                   and not page._imposition_dirty,
-                   f"dirty={page._imposition_dirty}")
+                page._on_imposition_zoom_image_saved(str(out_path), _spread_edited)
+                ok(
+                    "弹窗编辑整页组合：落到成品分支（不触发重合成冲掉手改）",
+                    "已编辑整页组合并覆盖拼版成品" in page.log_view.toPlainText()
+                    and not page._imposition_dirty,
+                    f"dirty={page._imposition_dirty}",
+                )
             finally:
                 _ied.ImageEditorDialog = _real_editor_cls
         finally:

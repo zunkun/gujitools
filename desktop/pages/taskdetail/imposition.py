@@ -4,7 +4,7 @@
 流程条上的「图片拼版」是**虚线可选节点**（``desktop.components.step_bar``）。
 它牵涉**三个判据，各管一件事、互不替代**（2026-10-05 逐层查证业务流程后定）：
 
-1. **在不在流程里** ← **本任务的流程图**。图上画了「图片拼板」就有这一格
+1. **在不在流程里** ← **本任务的流程图**。图上画了「图片拼版」就有这一格
    （:meth:`ImpositionBaseMixin._imposition_node_visible`）。
 2. **这一步有没有意义** ← **第三步的「区域模式」``area``**。这是**业务前提**
    而不是显示开关：流程里**有检测数据**时（「检测文本框」在去底色上游），
@@ -13,7 +13,7 @@
    输出并集整图、``area=4`` 输出整页，**本来就是一张图**。而流程里**没有
    检测数据**时（去底色不在流程里，或它自己就是入口拿不到框——判据
    ``desktop.steps.ports.detect_feeds_rembg``），拼版吃**整图**照样拼：
-   整幅单独一页、手动任意两张一页——「拼板作为第一个节点，也不需要
+   整幅单独一页、手动任意两张一页——「拼版作为第一个节点，也不需要
    detect 数据」（用户 2026-10-07）。见 :meth:`_imposition_area_ok`。
 3. **要不要真跑** ← **拼版面板底部的开关**（:meth:`imposition_active`
    只看勾没勾，那是"用户意图"）。开关在 ①②不满足时**置灰并写明原因**。
@@ -64,7 +64,10 @@ IMPOSITION_AREA = 1
 
 #: 区域模式各值的中文名（"为什么不能拼版"的提示用，勿另写一份）
 AREA_LABELS: dict[int, str] = {
-    1: "左右分开", 2: "合并单图", 3: "整页合并", 4: "整页/不检测",
+    1: "左右分开",
+    2: "合并单图",
+    3: "整页合并",
+    4: "整页/不检测",
 }
 
 
@@ -123,7 +126,7 @@ class ImpositionBaseMixin:
         ⚠️ 2026-10-05 口径变更（用户要求）：原先看第三步的 ``area``
         （``area == 1`` 就显示）。那是流程图还不存在时的权宜之计，既
         **语义错配**（``area=1`` 是"每个框各自外扩产出多张图"，属裁剪方式），
-        又与用户画的图**打架**（图上把「图片拼板」删了、area 还是 1，那一格
+        又与用户画的图**打架**（图上把「图片拼版」删了、area 还是 1，那一格
         照样冒出来）。现在**流程图是唯一真源**：图上画了就有这一步。
 
         实现上直接复用 :meth:`bar_index_of_step`（它查 :meth:`flow_slots`），
@@ -169,8 +172,7 @@ class ImpositionBaseMixin:
                 return value
             history = self.store.list_stage_runs(self.task_id, "rembg")
             if history:
-                value = _as_area(
-                    (history[0].get("parameters") or {}).get("area"))
+                value = _as_area((history[0].get("parameters") or {}).get("area"))
                 if value:
                     return value
         return 0
@@ -200,7 +202,7 @@ class ImpositionBaseMixin:
           任务没配过区域模式时，先让用户去第三步确认。
         - **没有检测数据**（去底色不在流程里，或它自己就是入口拿不到框，
           此时它的 area 也被锁成 4）→ 拼版吃**整图**照样拼：整幅单独一页、
-          手动任意两张一页——「拼板作为第一个节点，也不需要 detect 数据」，
+          手动任意两张一页——「拼版作为第一个节点，也不需要 detect 数据」，
           area 前提不再适用。
         """
         if not self._flow_has_detect_data():
@@ -212,7 +214,7 @@ class ImpositionBaseMixin:
 
         返回 ``(可用, 原因)``，可用时原因为空串。三条判据见模块头：
 
-        1. **图里没有**「图片拼板」⇒ 勾了也不跑（它压根不在执行链里）；
+        1. **图里没有**「图片拼版」⇒ 勾了也不跑（它压根不在执行链里）；
         2. **区域模式还没确认** ⇒ 先去第三步确认（这是拼版的业务前提）；
         3. **区域模式不是「左右分开」** ⇒ 每页已经是一张整图，拼版没意义。
 
@@ -224,19 +226,25 @@ class ImpositionBaseMixin:
         "``area != 1`` 就不显示"，用户报过"改了 area 节点凭空消失"。
         """
         if not self._imposition_node_visible():
-            return False, ("当前流程里没有「图片拼板」这一步，勾了也不会生效"
-                           "（可在页头「查看 / 编辑流程」里把它加回来）")
+            return False, (
+                "当前流程里没有「图片拼版」这一步，勾了也不会生效"
+                "（可在页头「查看 / 编辑流程」里把它加回来）"
+            )
         if not self._flow_has_detect_data():
             # 没有检测数据（去底色不在流程里 / 它自己就是入口）：拼版吃
             # 整图照样拼，area 前提不适用（见 _imposition_area_ok）
             return True, ""
         area = self._rembg_area_value()
         if area == 0:
-            return False, ("先到第三步「图片去底色」确认区域模式"
-                           "（「左右分开」才需要拼版），再回来启用")
+            return False, (
+                "先到第三步「图片去底色」确认区域模式"
+                "（「左右分开」才需要拼版），再回来启用"
+            )
         if area != IMPOSITION_AREA:
-            return False, (f"当前区域模式是「{AREA_LABELS.get(area, area)}」，"
-                           "每页已经是一张整图，不需要拼版")
+            return False, (
+                f"当前区域模式是「{AREA_LABELS.get(area, area)}」，"
+                "每页已经是一张整图，不需要拼版"
+            )
         return True, ""
 
     def imposition_effective(self) -> bool:
@@ -246,9 +254,11 @@ class ImpositionBaseMixin:
         勾了但流程图里没这一步、或区域模式不支持，都**不会**真跑。取图来源
         认这个，步骤条"生效态"也认这个。
         """
-        return (self._imposition_node_visible()
-                and self._imposition_area_ok()
-                and self.imposition_active())
+        return (
+            self._imposition_node_visible()
+            and self._imposition_area_ok()
+            and self.imposition_active()
+        )
 
     def _sync_imposition_step_bar(self) -> None:
         """把拼版节点三态（可见/已选择/生效）一次性同步到流程条。
@@ -283,7 +293,8 @@ class ImpositionBaseMixin:
         checkbox.setEnabled(usable)
         checkbox.setToolTip(
             "启用后「PDF排版」用拼版合成结果；不启用则从去底色直接出 PDF"
-            if usable else reason
+            if usable
+            else reason
         )
         # ⚠️ **不取消勾选**（只在控件上取消会出现"控件未勾、盘上已勾"的
         # 不一致：blockSignals 挡住了落盘信号，下次刷新又会显示成勾）。
@@ -313,7 +324,10 @@ class ImpositionBaseMixin:
         self._sync_imposition_step_bar()
         # ⚠️ 用格序反查判断"当前是不是停在拼版"（旧代码写死
         #    ``== IMPOSITION_INDEX``）：自定义流程里拼版的格序会变。
-        if not visible and self.step_at_index(self.step_bar._current) == IMPOSITION_STAGE:
+        if (
+            not visible
+            and self.step_at_index(self.step_bar._current) == IMPOSITION_STAGE
+        ):
             self._select_stage(self._rembg_step_index())
 
     # ------------------------------------------------------------- 文档读写
@@ -353,7 +367,9 @@ class ImpositionBaseMixin:
             self._schedule_imposition_compose()
         self._refresh_print_source()
         self._update_imposition_status(
-            getattr(getattr(self, "imposition_view", None), "current_index", lambda: -1)()
+            getattr(
+                getattr(self, "imposition_view", None), "current_index", lambda: -1
+            )()
         )
 
     # ------------------------------------------------------------- 源图与生效
@@ -373,7 +389,9 @@ class ImpositionBaseMixin:
         if not self.task_id:
             return []
         source = self.store.stage_input(
-            self.task_id, "imposition", "pages",
+            self.task_id,
+            "imposition",
+            "pages",
             imposition_active=self.imposition_effective(),
         ) or self.store.rembg_output_dir(self.task_id)
         files = list_stage_images(source)
@@ -383,12 +401,12 @@ class ImpositionBaseMixin:
         """拼版**是否已启用**（用户勾了「在流程中启用图片拼版」就是启用）。
 
         ⚠️ **只看勾没勾，不看有没有拼版页**（用户 2026-10-03 口径："如果启用了
-        拼板，则最后一步生成 pdf 的数据来源就是拼板"）。早先这里额外要求
+        拼版，则最后一步生成 pdf 的数据来源就是拼版"）。早先这里额外要求
         "至少有一页"，于是勾了开关却还没拼页时——取图仍走去底色、流程条仍是
         灰虚线 + 绕行线，用户看到的就是"启用了却不生效"。「有没有拼版页」是
         另一件事（能不能真出东西），走 :meth:`imposition_has_pages`。
 
-        本方法是"**流程走不走拼板**"的唯一判据：第四步取图来源
+        本方法是"**流程走不走拼版**"的唯一判据：第四步取图来源
         (:meth:`print_source_dir`) 与流程条生效态
         (:meth:`_sync_imposition_step_bar`) 都只看它。
 
@@ -422,7 +440,9 @@ class ImpositionBaseMixin:
         task_id = self.task_id
         assert task_id is not None, "取图来源只在任务态被读取"
         source = self.store.stage_input(
-            task_id, "print", "pages",
+            task_id,
+            "print",
+            "pages",
             # ⚠️ 传"能不能真跑"而不是"勾没勾"：区域模式不支持（或图里没这一格）
             #    时不该取拼版产物——历史脏数据（先勾了、后来改了区域模式）会
             #    让第四步去读一个根本不该用的目录。
@@ -483,9 +503,7 @@ class ImpositionBaseMixin:
             checkbox.blockSignals(True)
             checkbox.setChecked(self._load_imposition_enabled())
             checkbox.blockSignals(False)
-        self._update_imposition_status(
-            view.current_index() if view is not None else -1
-        )
+        self._update_imposition_status(view.current_index() if view is not None else -1)
 
     def _reset_imposition_state(self) -> None:
         """切任务：取消在飞合成、清忙标记，并把新任务的拼版文档灌进视图。"""
@@ -516,9 +534,7 @@ class ImpositionBaseMixin:
         view = getattr(self, "imposition_view", None)
         if view is not None:
             view.set_current(0 if view.pages() else -1)
-        self._update_imposition_status(
-            view.current_index() if view is not None else -1
-        )
+        self._update_imposition_status(view.current_index() if view is not None else -1)
 
     def _refresh_print_source(self) -> None:
         """第四步取图来源变了：让待打印列表跟上（拼版 ↔ 去底色 切换时用）。
@@ -567,8 +583,7 @@ class ImpositionBaseMixin:
             return
 
 
-class ImpositionMixin(ImpositionPagesMixin, ImpositionLayoutMixin,
-                      ImpositionBaseMixin):
+class ImpositionMixin(ImpositionPagesMixin, ImpositionLayoutMixin, ImpositionBaseMixin):
     """「图片拼版」节点控制器 = 模块一（页管理） + 模块二（版面/合成） + 基元。
 
     方法查找顺序：模块一 → 模块二 → 共享基元；三个文件互不 import，

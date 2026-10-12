@@ -112,7 +112,7 @@ class FlowMixin:
         if diagram is None or not self.task_id:
             return
         self.store.save_task_diagram(self.task_id, diagram)
-        # ⚠️ 拼版节点（「图片拼板」）的可见性**只看流程图**，所以这里能立刻
+        # ⚠️ 拼版节点（「图片拼版」）的可见性**只看流程图**，所以这里能立刻
         #    同步：用户在弹窗里把这一步删掉/加回来，流程条当场跟着变。若他
         #    正停在拼版详情上而这一步已被删掉，``_refresh_imposition_node``
         #    会把他退回第三步——否则会停在一个"流程条上已不存在"的页面上。

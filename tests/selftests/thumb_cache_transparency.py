@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """缩略图「透明被压黑」修复自测。
 
-用户 2026-10-04 报「拼板左列缩略图全是黑的」：去底色（rembg）产物是
+用户 2026-10-04 报「拼版左列缩略图全是黑的」：去底色（rembg）产物是
 **调色板 PNG、白底被标记为透明**（tRNS），Qt 解码后透明像素 RGB=0；而
 缩略图缓存是无 alpha 通道的 **JPEG**——直接编码把"透明 = 黑"固化成纯黑
 图（实测一张 256px 坏缓存只有 1331 字节、全图 (0,0,0)）。
@@ -55,8 +55,10 @@ def run(ctx) -> None:
         transparent.fill(QColor(255, 255, 255, 0))
         flat = flatten_on_white(transparent)
         ok("全透明图合成后没有 alpha 通道", not flat.hasAlphaChannel())
-        ok("全透明图合成后是白底",
-           cast(Any, flat.pixelColor(5, 5).getRgb())[:3] == (255, 255, 255))
+        ok(
+            "全透明图合成后是白底",
+            cast(Any, flat.pixelColor(5, 5).getRgb())[:3] == (255, 255, 255),
+        )
 
         painted = QImage(20, 10, QImage.Format.Format_ARGB32)
         painted.fill(QColor(255, 255, 255, 0))
@@ -64,14 +66,18 @@ def run(ctx) -> None:
         painter.fillRect(2, 2, 4, 4, QColor(0, 0, 0, 255))
         painter.end()
         flat2 = flatten_on_white(painted)
-        ok("透明底 + 黑块 → 白底黑块",
-           cast(Any, flat2.pixelColor(3, 3).getRgb())[:3] == (0, 0, 0)
-           and cast(Any, flat2.pixelColor(15, 8).getRgb())[:3] == (255, 255, 255))
+        ok(
+            "透明底 + 黑块 → 白底黑块",
+            cast(Any, flat2.pixelColor(3, 3).getRgb())[:3] == (0, 0, 0)
+            and cast(Any, flat2.pixelColor(15, 8).getRgb())[:3] == (255, 255, 255),
+        )
 
         opaque = QImage(20, 10, QImage.Format.Format_RGB32)
         opaque.fill(QColor(30, 30, 30))
-        ok("无 alpha 的图原样返回（同一对象，不复制）",
-           flatten_on_white(opaque) is opaque)
+        ok(
+            "无 alpha 的图原样返回（同一对象，不复制）",
+            flatten_on_white(opaque) is opaque,
+        )
 
         # ---- 2. is_all_black ----
         black = QImage(20, 10, QImage.Format.Format_RGB32)
@@ -94,25 +100,33 @@ def run(ctx) -> None:
         out_dir = tmp / "thumbs"
         first = ImageThumbCacheWorker([src], out_dir, edge=64)
         arrived: list = []
-        first.thumbnail_ready.connect(
-            lambda i, im, c: arrived.append((i, im, c))
-        )
+        first.thumbnail_ready.connect(lambda i, im, c: arrived.append((i, im, c)))
         first.run()
         target = first.cache_path(0)
         ok("缓存已写出", target.exists())
         cached = QImage(str(target))
-        ok("缓存不是全黑（透明被压黑已修复）",
-           not cached.isNull() and not is_all_black(cached),
-           f"size={cached.size()}")
+        ok(
+            "缓存不是全黑（透明被压黑已修复）",
+            not cached.isNull() and not is_all_black(cached),
+            f"size={cached.size()}",
+        )
         # 64px 边长下黑块缩到中心 (32,19) 附近；JPG 有损，容忍 ±6
         center = cached.pixelColor(32, 19)
         corner = cached.pixelColor(3, 3)
-        ok("缓存里黑块保留（中心仍是黑）", max(cast(Any, center.getRgb())[:3]) < 6,
-           f"center={center.getRgb()}")
-        ok("缓存里透明处变白（角落是白）", min(cast(Any, corner.getRgb())[:3]) > 250,
-           f"corner={corner.getRgb()}")
-        ok("信号发出的图同样不是全黑",
-           bool(arrived) and not is_all_black(arrived[0][1]))
+        ok(
+            "缓存里黑块保留（中心仍是黑）",
+            max(cast(Any, center.getRgb())[:3]) < 6,
+            f"center={center.getRgb()}",
+        )
+        ok(
+            "缓存里透明处变白（角落是白）",
+            min(cast(Any, corner.getRgb())[:3]) > 250,
+            f"corner={corner.getRgb()}",
+        )
+        ok(
+            "信号发出的图同样不是全黑",
+            bool(arrived) and not is_all_black(arrived[0][1]),
+        )
 
         # ---- 4. 历史坏缓存自愈 ----
         black_cache = QImage(64, 38, QImage.Format.Format_RGB32)
@@ -124,13 +138,13 @@ def run(ctx) -> None:
         os.utime(src, (old, old))
         retry = ImageThumbCacheWorker([src], out_dir, edge=64)
         again: list = []
-        retry.thumbnail_ready.connect(
-            lambda i, im, c: again.append((i, im, c))
-        )
+        retry.thumbnail_ready.connect(lambda i, im, c: again.append((i, im, c)))
         retry.run()
         healed = QImage(str(target))
         ok("全黑历史缓存被重渲自愈", not is_all_black(healed))
-        ok("自愈后内容与首次渲染一致（角落是白）",
-           min(cast(Any, healed.pixelColor(3, 3).getRgb())[:3]) > 250)
+        ok(
+            "自愈后内容与首次渲染一致（角落是白）",
+            min(cast(Any, healed.pixelColor(3, 3).getRgb())[:3]) > 250,
+        )
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

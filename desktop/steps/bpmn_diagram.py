@@ -104,7 +104,7 @@ NO_PAGE = -1
 #:
 #: ⚠️ 只在**没有** ``guji:stage`` 属性时才查这张表（属性是显式声明，优先）。
 #: 用户用 bpmn.io 画图时不会写扩展属性，只能靠名字接——所以别名要写全
-#: （"图片拼版"/"古籍拼板" 都指 ``imposition``）。匹配时先去掉所有空白，
+#: （"图片拼版"/"古籍拼版" 都指 ``imposition``）。匹配时先去掉所有空白，
 #: 避免"生成 PDF"与"生成PDF"不一致。
 #:
 #: ⚠️「生成pdf」这个别名**留着**（用户 2026-10-07 之前画的老流程图上，那格就叫
@@ -125,8 +125,9 @@ STAGE_ALIASES: dict[str, str] = {
     "pdf排版": "print",
     "排版": "print",
     "图片拼版": "imposition",
+    # ⚠️ 下一行的「拼板」别名**留着**（2026-10-12 统一用字前，模板与导航都
+    #    用那个写法；老任务的 flow.bpmn 还得认，删了它们会"认不出"）。
     "图片拼板": "imposition",
-    "古籍拼板": "imposition",
     "古籍拼版": "imposition",
     "拼版": "imposition",
 }
@@ -166,13 +167,13 @@ def stage_of_name(name: str, guji_stage: str | None = None) -> str | None:
     return None
 
 
-def _overlaps(a: tuple[float, float, float, float],
-              b: tuple[float, float, float, float]) -> bool:
+def _overlaps(
+    a: tuple[float, float, float, float], b: tuple[float, float, float, float]
+) -> bool:
     """两个 ``(x, y, w, h)`` 框是否相交（注释避让用；贴边不算交叠）。"""
     ax, ay, aw, ah = a
     bx, by, bw, bh = b
-    return (ax < bx + bw and bx < ax + aw
-            and ay < by + bh and by < ay + ah)
+    return ax < bx + bw and bx < ax + aw and ay < by + bh and by < ay + ah
 
 
 #: 注释正文里一个字符的平均宽度/行高（px）。注释按 9pt 渲染，中文约 13px宽。
@@ -185,19 +186,24 @@ NOTE_MIN_W, NOTE_MAX_W = 110.0, 200.0
 NOTE_MIN_H = 30.0
 
 
-def _note_size(text: str,
-               old: tuple[float, float, float, float] | None,
-               ) -> tuple[float, float]:
+def _note_size(
+    text: str,
+    old: tuple[float, float, float, float] | None,
+) -> tuple[float, float]:
     """注释框该多大：按**正文长度**算，宁可一行放下也不折行。
 
     ⚠️ 别沿用文件里的旧宽高：那些是bpmn.io 里手画的，102px 宽装不下
     「检测古籍文本框」七个字（渲染时按框宽自动换行，注释被折成两行、
     高度对不齐，一眼看去像"乱"）。宽高只作**下限**——用户手动拉大过就尊重。
     """
-    need_w = min(NOTE_MAX_W,
-                 max(NOTE_MIN_W, len(text or "") * NOTE_CHAR_W + NOTE_CHROME_W))
-    lines = max(1, int((len(text or "") * NOTE_CHAR_W
-                        - (need_w - NOTE_CHROME_W)) // NOTE_LINE_H) + 1)
+    need_w = min(
+        NOTE_MAX_W, max(NOTE_MIN_W, len(text or "") * NOTE_CHAR_W + NOTE_CHROME_W)
+    )
+    lines = max(
+        1,
+        int((len(text or "") * NOTE_CHAR_W - (need_w - NOTE_CHROME_W)) // NOTE_LINE_H)
+        + 1,
+    )
     need_h = max(NOTE_MIN_H, lines * NOTE_LINE_H + 12.0)
     if old is None:
         return need_w, need_h
@@ -223,8 +229,11 @@ def fold_forward(stage: str, port: str) -> str:
     动作）；没有同格伙伴时原样返回。
     """
     step = ports.STAGE_STEPS.get(stage, stage)
-    siblings = [s for s, owner in ports.STAGE_STEPS.items() if owner == step
-                and port in ports.stage_outputs(s)]
+    siblings = [
+        s
+        for s, owner in ports.STAGE_STEPS.items()
+        if owner == step and port in ports.stage_outputs(s)
+    ]
     return siblings[-1] if siblings else stage
 
 
@@ -269,7 +278,7 @@ class DiagramFlow:
 class DiagramNote:
     """节点旁边的一条**文字注释**（BPMN ``textAnnotation`` + ``association``）。
 
-    用户在 bpmn.io 里给节点挂的说明（例如「图片拼板」→「古籍图片拼板」）。
+    用户在 bpmn.io 里给节点挂的说明（例如「图片拼版」→「古籍图片拼版」）。
     它**不参与运行**，但必须**显示出来**——那是作者写在图上的话，丢了等于
     把图的信息删了一半。
 
@@ -299,9 +308,7 @@ class FlowDiagram:
     notes: tuple[DiagramNote, ...] = ()
     #: 注释的挂接关系：注释 id → 它挂在哪个节点上（``association`` 的 sourceRef）
     note_links: dict[str, str] = field(default_factory=dict)
-    boxes: dict[str, tuple[float, float, float, float]] = field(
-        default_factory=dict
-    )
+    boxes: dict[str, tuple[float, float, float, float]] = field(default_factory=dict)
     waypoints: dict[str, list[tuple[float, float]]] = field(default_factory=dict)
     #: 流程 id（文件里的 ``bpmn:process/@id``，往返时原样写回）
     process_id: str = "guji_task"
@@ -348,14 +355,13 @@ class FlowDiagram:
         top = min(self.boxes[k][1] for k in keys)
         right = max(self.boxes[k][0] + self.boxes[k][2] for k in keys)
         bottom = max(self.boxes[k][1] + self.boxes[k][3] for k in keys)
-        return (right - left + AUTO_PADDING * 2,
-                bottom - top + AUTO_PADDING * 2)
+        return (right - left + AUTO_PADDING * 2, bottom - top + AUTO_PADDING * 2)
 
     def stage_order(self) -> tuple[str, ...]:
         """可运行的阶段，按**图上的拓扑顺序**排（状态机的输入）。
 
         ⚠️ **必须是拓扑序而不是遍历序**：图上从网关分叉出「否 → PDF排版」与
-        「→ 古籍拼板 → PDF排版」两条路，广度遍历会先撞到短路的「PDF排版」，
+        「→ 古籍拼版 → PDF排版」两条路，广度遍历会先撞到短路的「PDF排版」，
         把 ``print`` 排到 ``imposition`` 前面——那样状态机会拿"还没拼版的
         图"去打印（实测踩过）。拓扑排序保证**所有前驱都排完才轮到它**，
         所以 ``imposition`` 稳稳排在 ``print`` 前面。
@@ -377,9 +383,7 @@ class FlowDiagram:
         def sort_key(node_id: str) -> int:
             return order_index.get(node_id, len(order_index))
 
-        ready = sorted(
-            (nid for nid, deg in indegree.items() if deg == 0), key=sort_key
-        )
+        ready = sorted((nid for nid, deg in indegree.items() if deg == 0), key=sort_key)
         seen: list[str] = []
         stages: list[str] = []
         while ready:
@@ -445,17 +449,16 @@ class FlowDiagram:
                 seen.add(source)
                 item = self.node(source)
                 if item is None or not item.stage:
-                    queue.append(source)      # 网关/事件：继续往前穿
+                    queue.append(source)  # 网关/事件：继续往前穿
                     continue
                 if item.stage != stage and item.stage not in found:
                     found.append(item.stage)
-                queue.append(source)          # 产出阶段：也继续往前（传递）
+                queue.append(source)  # 产出阶段：也继续往前（传递）
 
         # 把"上游阶段"摊开成"上游**格**里的所有阶段"（rembg → rembg_submit 也在内）
         steps = {ports.STAGE_STEPS.get(s, s) for s in found}
         expanded = [
-            s for s in ports.STAGE_STEPS
-            if ports.STAGE_STEPS.get(s, s) in steps
+            s for s in ports.STAGE_STEPS if ports.STAGE_STEPS.get(s, s) in steps
         ]
         order = self.stage_order()
         return tuple(
@@ -463,8 +466,7 @@ class FlowDiagram:
             + [s for s in expanded if s not in order]
         )
 
-    def nearest_producer(self, stage: str, port: str,
-                         active) -> str | None:
+    def nearest_producer(self, stage: str, port: str, active) -> str | None:
         """沿图**往前**找最近的、产出 ``port`` 的**在流程里**的阶段。
 
         ⚠️ 为什么需要它：运行时要回答"这一步的 ``pages`` 去哪个目录取"，
@@ -504,16 +506,14 @@ class FlowDiagram:
                     # 网关/事件：不产出产物，继续往前穿
                     queue.append(source)
                     continue
-                if item.stage in candidates and port in ports.stage_outputs(
-                        item.stage):
+                if item.stage in candidates and port in ports.stage_outputs(item.stage):
                     # ⚠️ 折叠到**同格里最靠后的动作**：图上是「图片去底色」，
                     #    真正产出 pages 的是同格的「提交去底色结果」。
                     return fold_forward(item.stage, port)
                 queue.append(source)
         return None
 
-    def producers_of(self, stage: str, port: str,
-                     active) -> tuple[str, ...]:
+    def producers_of(self, stage: str, port: str, active) -> tuple[str, ...]:
         """沿图往前能到达的、产出 ``port`` 的**全部**在流程阶段（已折叠）。
 
         与 :meth:`nearest_producer` 的区别是**返回全部**而不是"广度序第一个"
@@ -529,7 +529,7 @@ class FlowDiagram:
         **BPM 化只覆盖了"顺序"，没覆盖"语义"**。
 
         ⚠️ 但**不能无条件改成"图说了算"**：默认流程带一个网关（是否拼版），
-        沿图回溯 ``print`` 会同时找到「图片拼板」与「图片去底色」两个产出方
+        沿图回溯 ``print`` 会同时找到「图片拼版」与「图片去底色」两个产出方
         ——**图说不清**。那种情况必须退回静态声明 + 条件开关（那正是
         ``ports.print_pages_supplier`` 建模的东西）。所以调用方的判据是
         "**恰好一个**产出方 ⇒ 图说了算；0 个或多个 ⇒ 退回静态表"。
@@ -561,10 +561,9 @@ class FlowDiagram:
                 seen.add(source)
                 item = self.node(source)
                 if item is None or not item.stage:
-                    queue.append(source)   # 网关/事件：不产出产物，继续穿
+                    queue.append(source)  # 网关/事件：不产出产物，继续穿
                     continue
-                if item.stage in candidates and port in ports.stage_outputs(
-                        item.stage):
+                if item.stage in candidates and port in ports.stage_outputs(item.stage):
                     # ⚠️ 折叠到同格最靠后的动作，并**停止**这条分支的继续回溯
                     folded = fold_forward(item.stage, port)
                     if folded not in found:
@@ -643,10 +642,16 @@ class FlowDiagram:
             if label in seen:
                 continue
             seen.add(label)
-            slots.append(StageSlot(
-                step=label, stage="", optional=False, mapped=False,
-                name=label, stack_index=NO_PAGE,
-            ))
+            slots.append(
+                StageSlot(
+                    step=label,
+                    stage="",
+                    optional=False,
+                    mapped=False,
+                    name=label,
+                    stack_index=NO_PAGE,
+                )
+            )
         return tuple(
             StageSlot(
                 step=slot.step,
@@ -654,8 +659,9 @@ class FlowDiagram:
                 optional=slot.optional,
                 bar_index=bar_index,
                 # 已接入的查静态表拿页号；未接入的两个栈里没有它的页
-                stack_index=(page_of.get(slot.step, bar_index) if slot.mapped
-                             else NO_PAGE),
+                stack_index=(
+                    page_of.get(slot.step, bar_index) if slot.mapped else NO_PAGE
+                ),
                 mapped=slot.mapped,
                 name=slot.name,
             )
@@ -671,7 +677,7 @@ class FlowDiagram:
         ⚠️ 返回值三态（2026-10-07，任务 #0027 踩坑）：``None`` 只表示**本图
         没有可选节点**；图里有拼版但它排在**最前**（没有任何左邻居）时返回
         ``-1``——早先这种情况也回 ``None``，``StepBar`` 把 ``None`` 当"按默认
-        位插到最后"，于是「拼板→PDF排版」的流程在步骤条上显示成
+        位插到最后"，于是「拼版→PDF排版」的流程在步骤条上显示成
         「生成PDF → 图片拼版」，与图相反。
         """
         slots = self.stage_slots()
@@ -726,9 +732,12 @@ class FlowDiagram:
         from collections import Counter
 
         depth: dict[str, int] = {}
-        queue: list[tuple[str, int]] = [
-            (n.id, 0) for n in diagram.nodes if n.kind == KIND_START
-        ] or [(diagram.nodes[0].id, 0)] if diagram.nodes else []
+        queue: list[tuple[str, int]] = (
+            [(n.id, 0) for n in diagram.nodes if n.kind == KIND_START]
+            or [(diagram.nodes[0].id, 0)]
+            if diagram.nodes
+            else []
+        )
         while queue:
             node_id, level = queue.pop(0)
             if node_id in depth:
@@ -790,8 +799,12 @@ class FlowDiagram:
         seen: set[tuple[str, str]] = set()
         for flow in self.flows:
             pair = (flow.source, flow.target)
-            if (flow.source in id_set and flow.target in id_set
-                    and flow.source != flow.target and pair not in seen):
+            if (
+                flow.source in id_set
+                and flow.target in id_set
+                and flow.source != flow.target
+                and pair not in seen
+            ):
                 seen.add(pair)
                 edges.append((flow.source, flow.target, flow.id))
         successors: dict[str, list[str]] = {nid: [] for nid in ids}
@@ -846,15 +859,15 @@ class FlowDiagram:
             row.sort(key=lambda cell: 0 if cell[0] == "e" else 1)
         pos = {cell: i for row in cells.values() for i, cell in enumerate(row)}
 
-        def barycenter(cell: tuple[str, str],
-                       table: dict[tuple[str, str], list[tuple[str, str]]],
-                       ) -> float:
+        def barycenter(
+            cell: tuple[str, str],
+            table: dict[tuple[str, str], list[tuple[str, str]]],
+        ) -> float:
             values = [pos[n] for n in table.get(cell, ()) if n in pos]
             return sum(values) / len(values) if values else pos[cell]
 
         for sweep in range(4):
-            levels = sorted(cells) if sweep % 2 == 0 \
-                else sorted(cells, reverse=True)
+            levels = sorted(cells) if sweep % 2 == 0 else sorted(cells, reverse=True)
             table = cell_pred if sweep % 2 == 0 else cell_succ
             for lv in levels:
                 cells[lv].sort(key=lambda cell: barycenter(cell, table))
@@ -872,7 +885,11 @@ class FlowDiagram:
                 item = self.node(cell[1])
                 w, h = default_size(item.kind if item else KIND_TASK)
                 self.boxes[cell[1]] = (
-                    x, AUTO_PADDING + index * slot + (slot - h) / 2, w, h)
+                    x,
+                    AUTO_PADDING + index * slot + (slot - h) / 2,
+                    w,
+                    h,
+                )
 
         # ---- ⑤ 注释重挂到宿主正下方（而不是跟着旧坐标平移） -------------
         self._layout_notes()
@@ -888,8 +905,7 @@ class FlowDiagram:
         """
         if not self.notes:
             return
-        node_boxes = {n.id: self.boxes[n.id] for n in self.nodes
-                      if n.id in self.boxes}
+        node_boxes = {n.id: self.boxes[n.id] for n in self.nodes if n.id in self.boxes}
         placed: list[tuple[float, float, float, float]] = []
         for note in self.notes:
             width, height = _note_size(note.text, self.boxes.get(note.id))
@@ -904,9 +920,9 @@ class FlowDiagram:
                 x, y = (old[0], old[1]) if old else (AUTO_PADDING, AUTO_PADDING)
             box = (x, y, width, height)
             for _ in range(len(self.notes) * 2 + 4):
-                if (not any(_overlaps(box, other)
-                            for other in node_boxes.values())
-                        and not any(_overlaps(box, other) for other in placed)):
+                if not any(
+                    _overlaps(box, other) for other in node_boxes.values()
+                ) and not any(_overlaps(box, other) for other in placed):
                     break
                 y += LAYOUT_NOTE_STEP
                 box = (x, y, width, height)
@@ -950,23 +966,33 @@ class FlowDiagram:
                 stage = None
                 if kind == KIND_TASK:
                     stage = stage_of_name(name, element.get(_q(GUJI_NS, "stage")))
-                nodes.append(DiagramNode(
-                    id=element.get("id", ""), kind=kind, name=name, stage=stage,
-                ))
+                nodes.append(
+                    DiagramNode(
+                        id=element.get("id", ""),
+                        kind=kind,
+                        name=name,
+                        stage=stage,
+                    )
+                )
             elif kind == "sequenceFlow":
-                flows.append(DiagramFlow(
-                    id=element.get("id", ""),
-                    source=element.get("sourceRef", ""),
-                    target=element.get("targetRef", ""),
-                    label=element.get("name", "") or "",
-                ))
+                flows.append(
+                    DiagramFlow(
+                        id=element.get("id", ""),
+                        source=element.get("sourceRef", ""),
+                        target=element.get("targetRef", ""),
+                        label=element.get("name", "") or "",
+                    )
+                )
             elif kind == "textAnnotation":
                 # ⚠️ 注释正文在**子元素** ``<bpmn:text>`` 里，不在属性上。
                 body = element.find(_q(BPMN_NS, "text"))
                 text = (body.text or "") if body is not None else ""
-                notes.append(DiagramNote(
-                    id=element.get("id", ""), text=text.strip(),
-                ))
+                notes.append(
+                    DiagramNote(
+                        id=element.get("id", ""),
+                        text=text.strip(),
+                    )
+                )
             elif kind == "association":
                 raw_links.append(
                     (element.get("sourceRef", ""), element.get("targetRef", ""))
@@ -985,7 +1011,9 @@ class FlowDiagram:
                 note_links[source] = target
 
         diagram = cls(
-            nodes=tuple(nodes), flows=tuple(flows), notes=tuple(notes),
+            nodes=tuple(nodes),
+            flows=tuple(flows),
+            notes=tuple(notes),
             note_links=note_links,
             process_id=process.get("id", "guji_task"),
         )
@@ -1007,14 +1035,18 @@ class FlowDiagram:
         ET.register_namespace("di", DI_NS)
         ET.register_namespace("guji", GUJI_NS)
 
-        definitions = ET.Element(_q(BPMN_NS, "definitions"), {
-            "id": "guji-definitions",
-            "targetNamespace": GUJI_NS,
-            "exporter": "guji",
-            "exporterVersion": "2.0",
-        })
+        definitions = ET.Element(
+            _q(BPMN_NS, "definitions"),
+            {
+                "id": "guji-definitions",
+                "targetNamespace": GUJI_NS,
+                "exporter": "guji",
+                "exporterVersion": "2.0",
+            },
+        )
         process = ET.SubElement(
-            definitions, _q(BPMN_NS, "process"),
+            definitions,
+            _q(BPMN_NS, "process"),
             {"id": self.process_id, "isExecutable": "false"},
         )
         for item in self.nodes:
@@ -1037,7 +1069,9 @@ class FlowDiagram:
                     ET.SubElement(element, _q(BPMN_NS, "outgoing")).text = flow.id
         for flow in self.flows:
             attrs = {
-                "id": flow.id, "sourceRef": flow.source, "targetRef": flow.target,
+                "id": flow.id,
+                "sourceRef": flow.source,
+                "targetRef": flow.target,
             }
             if flow.label:
                 attrs["name"] = flow.label
@@ -1046,58 +1080,96 @@ class FlowDiagram:
         # ---- 文字注释 + 挂接（写回，别把用户写在图上的话丢了）----
         for note in self.notes:
             element = ET.SubElement(
-                process, _q(BPMN_NS, "textAnnotation"), {"id": note.id})
+                process, _q(BPMN_NS, "textAnnotation"), {"id": note.id}
+            )
             ET.SubElement(element, _q(BPMN_NS, "text")).text = note.text
         for note in self.notes:
             host = self.note_links.get(note.id)
             if not host:
                 continue
-            ET.SubElement(process, _q(BPMN_NS, "association"), {
-                "id": f"Association_{note.id}",
-                "associationDirection": "None",
-                "sourceRef": host, "targetRef": note.id,
-            })
+            ET.SubElement(
+                process,
+                _q(BPMN_NS, "association"),
+                {
+                    "id": f"Association_{note.id}",
+                    "associationDirection": "None",
+                    "sourceRef": host,
+                    "targetRef": note.id,
+                },
+            )
 
         plane = ET.SubElement(
-            ET.SubElement(definitions, _q(BPMNDI_NS, "BPMNDiagram"),
-                          {"id": "guji-diagram"}),
+            ET.SubElement(
+                definitions, _q(BPMNDI_NS, "BPMNDiagram"), {"id": "guji-diagram"}
+            ),
             _q(BPMNDI_NS, "BPMNPlane"),
             {"id": "guji-plane", "bpmnElement": self.process_id},
         )
         for item in self.nodes:
             x, y, w, h = self.node_box(item.id)
-            shape = ET.SubElement(plane, _q(BPMNDI_NS, "BPMNShape"), {
-                "id": f"{item.id}_di", "bpmnElement": item.id,
-            })
+            shape = ET.SubElement(
+                plane,
+                _q(BPMNDI_NS, "BPMNShape"),
+                {
+                    "id": f"{item.id}_di",
+                    "bpmnElement": item.id,
+                },
+            )
             if item.is_gateway:
                 shape.set("isMarkerVisible", "true")
-            ET.SubElement(shape, _q(DC_NS, "Bounds"), {
-                "x": f"{x:.0f}", "y": f"{y:.0f}",
-                "width": f"{w:.0f}", "height": f"{h:.0f}",
-            })
+            ET.SubElement(
+                shape,
+                _q(DC_NS, "Bounds"),
+                {
+                    "x": f"{x:.0f}",
+                    "y": f"{y:.0f}",
+                    "width": f"{w:.0f}",
+                    "height": f"{h:.0f}",
+                },
+            )
         for note in self.notes:
             x, y, w, h = self.note_box(note.id)
-            shape = ET.SubElement(plane, _q(BPMNDI_NS, "BPMNShape"), {
-                "id": f"{note.id}_di", "bpmnElement": note.id,
-            })
-            ET.SubElement(shape, _q(DC_NS, "Bounds"), {
-                "x": f"{x:.0f}", "y": f"{y:.0f}",
-                "width": f"{w:.0f}", "height": f"{h:.0f}",
-            })
+            shape = ET.SubElement(
+                plane,
+                _q(BPMNDI_NS, "BPMNShape"),
+                {
+                    "id": f"{note.id}_di",
+                    "bpmnElement": note.id,
+                },
+            )
+            ET.SubElement(
+                shape,
+                _q(DC_NS, "Bounds"),
+                {
+                    "x": f"{x:.0f}",
+                    "y": f"{y:.0f}",
+                    "width": f"{w:.0f}",
+                    "height": f"{h:.0f}",
+                },
+            )
         for flow in self.flows:
             points = self.waypoints.get(flow.id) or self.route(flow)
-            edge = ET.SubElement(plane, _q(BPMNDI_NS, "BPMNEdge"), {
-                "id": f"{flow.id}_di", "bpmnElement": flow.id,
-            })
+            edge = ET.SubElement(
+                plane,
+                _q(BPMNDI_NS, "BPMNEdge"),
+                {
+                    "id": f"{flow.id}_di",
+                    "bpmnElement": flow.id,
+                },
+            )
             for px, py in points:
-                ET.SubElement(edge, _q(DI_NS, "waypoint"), {
-                    "x": f"{px:.0f}", "y": f"{py:.0f}",
-                })
+                ET.SubElement(
+                    edge,
+                    _q(DI_NS, "waypoint"),
+                    {
+                        "x": f"{px:.0f}",
+                        "y": f"{py:.0f}",
+                    },
+                )
         return ET.tostring(definitions, encoding="utf-8", xml_declaration=True)
 
     # ---- 连线走线：锚点自动匹配 + 多边摊开 + 遮挡绕行 ----
-    def _side_anchor(self, node_id: str, side: str,
-                     t: float) -> tuple[float, float]:
+    def _side_anchor(self, node_id: str, side: str, t: float) -> tuple[float, float]:
         """某条边上参数 ``t``（0=起点端，1=终点端，0.5=中点）处的锚点。
 
         ⚠️ **网关只认四个顶点**（用户 2026-10-06："判断输入输出都从四个角
@@ -1151,8 +1223,12 @@ class FlowDiagram:
             t_side, t_t = self._corner_pick(flow.target, flow, outgoing=False)
         return (s_side, s_t, t_side, t_t)
 
-    def _end_anchor(self, flow: DiagramFlow, *, outgoing: bool,
-                    ) -> tuple[str, float]:
+    def _end_anchor(
+        self,
+        flow: DiagramFlow,
+        *,
+        outgoing: bool,
+    ) -> tuple[str, float]:
         """非网关一端的 ``(方向, t)``：同侧撞车先改侧，入口/出口**不共点**。
 
         ``outgoing=True`` 算**源端**（对端是 target），否则算**目标端**
@@ -1172,16 +1248,14 @@ class FlowDiagram:
             # 空位——两边各自计算也能算出互补的错位点（不然会一起挪到
             # 同一个四分点上，白让）。
             occupied: set[float] = set()
-            my_index = next(i for i, f in enumerate(self.flows)
-                            if f is flow)
+            my_index = next(i for i, f in enumerate(self.flows) if f is flow)
             rank = 0
             for other_index, other in enumerate(self.flows):
                 if other is flow:
                     continue
                 if (other.target if outgoing else other.source) != node_id:
                     continue
-                o_side, o_t = self._raw_end_anchor(other,
-                                                   outgoing=not outgoing)
+                o_side, o_t = self._raw_end_anchor(other, outgoing=not outgoing)
                 if o_side != side:
                     continue
                 o_t = round(o_t, 6)
@@ -1189,23 +1263,29 @@ class FlowDiagram:
                 if o_t == round(t, 6) and other_index < my_index:
                     rank += 1
             if round(t, 6) in occupied:
-                free_slots = [c for c in (0.25, 0.75, 0.125, 0.375, 0.625,
-                                          0.875)
-                              if round(c, 6) not in occupied]
+                free_slots = [
+                    c
+                    for c in (0.25, 0.75, 0.125, 0.375, 0.625, 0.875)
+                    if round(c, 6) not in occupied
+                ]
                 if rank < len(free_slots):
                     t = free_slots[rank]
         return side, t
 
-    def _raw_end_anchor(self, flow: DiagramFlow, *, outgoing: bool,
-                        ) -> tuple[str, float]:
+    def _raw_end_anchor(
+        self,
+        flow: DiagramFlow,
+        *,
+        outgoing: bool,
+    ) -> tuple[str, float]:
         """不看反向共点的 ``(方向, t)``（纯几何方位 + 同侧摊开）。"""
         node_id = flow.source if outgoing else flow.target
-        others = [f for f in self.flows
-                  if (f.source if outgoing else f.target) == node_id]
+        others = [
+            f for f in self.flows if (f.source if outgoing else f.target) == node_id
+        ]
         nx, ny, nw, nh = self.node_box(node_id)
         ncx, ncy = nx + nw / 2, ny + nh / 2
-        opposite = [self.node_box(f.target if outgoing else f.source)
-                    for f in others]
+        opposite = [self.node_box(f.target if outgoing else f.source) for f in others]
         sides: list[str] = []
         for box in opposite:
             bx, by, bw, bh = box
@@ -1238,12 +1318,13 @@ class FlowDiagram:
         item = self.node(node_id)
         return bool(item is not None and item.is_gateway)
 
-    def _corner_pick(self, gateway_id: str, flow: DiagramFlow, *,
-                     outgoing: bool) -> tuple[str, float]:
+    def _corner_pick(
+        self, gateway_id: str, flow: DiagramFlow, *, outgoing: bool
+    ) -> tuple[str, float]:
         """网关上这条线该占**哪个角**：返回 ``(方向, t)``。
 
         ⚠️ 别用"方位角接近就同侧"来分——自动排版后「PDF排版」在网关**正右**、
-        「图片拼板」在**右下**，方位角只差 0.4 弧度，会被判成"同侧"而挤到
+        「图片拼版」在**右下**，方位角只差 0.4 弧度，会被判成"同侧"而挤到
         同一个点上（实测）。这里按**九宫格分区**：先看对端在网关的左/中/右
         三列，再看上/中/下三行，落到哪个格就用那个格对应方向的角。
 
@@ -1256,14 +1337,21 @@ class FlowDiagram:
             other_id = other.target if outgoing else other.source
             ox, oy, ow, oh = self.node_box(other_id)
             ocx, ocy = ox + ow / 2, oy + oh / 2
-            col = 0 if ocx < gcx - CORNER_CELL_EPS else (
-                2 if ocx > gcx + CORNER_CELL_EPS else 1)
-            row = 0 if ocy < gcy - CORNER_CELL_EPS else (
-                2 if ocy > gcy + CORNER_CELL_EPS else 1)
+            col = (
+                0
+                if ocx < gcx - CORNER_CELL_EPS
+                else (2 if ocx > gcx + CORNER_CELL_EPS else 1)
+            )
+            row = (
+                0
+                if ocy < gcy - CORNER_CELL_EPS
+                else (2 if ocy > gcy + CORNER_CELL_EPS else 1)
+            )
             return row * 3 + col
 
-        others = [f for f in self.flows
-                  if (f.source if outgoing else f.target) == gateway_id]
+        others = [
+            f for f in self.flows if (f.source if outgoing else f.target) == gateway_id
+        ]
         cell = cell_of(flow)
         same = [f for f in others if cell_of(f) == cell]
         if len(same) <= 1:
@@ -1283,11 +1371,11 @@ class FlowDiagram:
         """
         row, col = divmod(cell, 3)
         if row == 1 and col == 1:
-            return "right"          # 正前方：右顶点
+            return "right"  # 正前方：右顶点
         if row == 0 and col >= 1:
-            return "top"             # 上方两格 → 上顶点
+            return "top"  # 上方两格 → 上顶点
         if row == 2 and col >= 1:
-            return "bottom"          # 下方两格 → 下顶点
+            return "bottom"  # 下方两格 → 下顶点
         return "left" if col == 0 else "right"
 
     def route(self, flow: DiagramFlow) -> list[tuple[float, float]]:
@@ -1299,9 +1387,11 @@ class FlowDiagram:
         """
         return self.route_sides(flow, self.route_anchor(flow))
 
-    def route_sides(self, flow: DiagramFlow,
-                    anchor: tuple[str, float, str, float],
-                    ) -> list[tuple[float, float]]:
+    def route_sides(
+        self,
+        flow: DiagramFlow,
+        anchor: tuple[str, float, str, float],
+    ) -> list[tuple[float, float]]:
         """按**指定的连接点**算折点（锚点冻结的走线）。
 
         ⚠️ **近似共线就拉直**（容差 :data:`ROUTE_ALIGN_TOLERANCE`）：同一节点
@@ -1356,9 +1446,12 @@ class FlowDiagram:
             return points
         return self._detour_around(start, end, blockers)
 
-    def _blockers_on(self, start: tuple[float, float],
-                     end: tuple[float, float], flow: DiagramFlow,
-                     ) -> list[tuple[float, float, float, float]]:
+    def _blockers_on(
+        self,
+        start: tuple[float, float],
+        end: tuple[float, float],
+        flow: DiagramFlow,
+    ) -> list[tuple[float, float, float, float]]:
         """直线段穿过的**其他节点**的框（略放大，线不贴着别人的框走）。"""
         margin = 6.0
         skip = {flow.source, flow.target}
@@ -1373,15 +1466,16 @@ class FlowDiagram:
             bh += margin * 2
             lo_x, hi_x = sorted((start[0], end[0]))
             lo_y, hi_y = sorted((start[1], end[1]))
-            if (lo_x <= bx + bw and bx <= hi_x
-                    and lo_y <= by + bh and by <= hi_y):
+            if lo_x <= bx + bw and bx <= hi_x and lo_y <= by + bh and by <= hi_y:
                 blockers.append((bx, by, bw, bh))
         return blockers
 
-    def _detour_around(self, start: tuple[float, float],
-                       end: tuple[float, float],
-                       blockers: list[tuple[float, float, float, float]],
-                       ) -> list[tuple[float, float]]:
+    def _detour_around(
+        self,
+        start: tuple[float, float],
+        end: tuple[float, float],
+        blockers: list[tuple[float, float, float, float]],
+    ) -> list[tuple[float, float]]:
         """从挡路的节点**侧面绕过去**（挑近的一侧，4 个折点）。
 
         直线段的两端必在障碍带外侧（:meth:`_blockers_on` 只收"段中间"的
@@ -1401,8 +1495,7 @@ class FlowDiagram:
             if band_lo < y1 or band_hi > y2:
                 mid = (start[1] + end[1]) / 2
                 return [start, (start[0], mid), (end[0], mid), end]
-            bus = (left if abs(left - start[0]) <= abs(right - start[0])
-                   else right)
+            bus = left if abs(left - start[0]) <= abs(right - start[0]) else right
             return [start, (bus, start[1]), (bus, end[1]), end]
         # 沿 x 的直线：从上下两侧绕（bus = 绕行通道的 y）
         band_lo = min(b[0] for b in blockers) - margin
@@ -1445,8 +1538,10 @@ def _read_di(root: ET.Element, diagram: FlowDiagram) -> None:
             continue
         try:
             diagram.boxes[node_id] = (
-                float(bounds.get("x", 0)), float(bounds.get("y", 0)),
-                float(bounds.get("width", 0)), float(bounds.get("height", 0)),
+                float(bounds.get("x", 0)),
+                float(bounds.get("y", 0)),
+                float(bounds.get("width", 0)),
+                float(bounds.get("height", 0)),
             )
         except (TypeError, ValueError):
             continue
@@ -1463,12 +1558,34 @@ def _read_di(root: ET.Element, diagram: FlowDiagram) -> None:
 
 
 __all__ = [
-    "AUTO_GAP_X", "AUTO_GAP_Y", "AUTO_PADDING",
-    "BPMNDI_NS", "BPMN_NS", "DC_NS", "DI_NS", "GUJI_NS",
-    "DEFAULT_SIZE", "DiagramFlow", "DiagramNode", "DiagramNote", "EVENT_KINDS",
-    "FlowDiagram", "GATEWAY_KINDS", "KIND_END", "KIND_EXCLUSIVE",
-    "KIND_INCLUSIVE", "KIND_INTERMEDIATE", "KIND_PARALLEL", "KIND_START",
-    "KIND_TASK", "KNOWN_KINDS", "LAYOUT_GAP_X", "LAYOUT_GAP_Y",
-    "NO_PAGE", "STAGE_ALIASES", "default_size",
-    "fold_forward", "stage_of_name",
+    "AUTO_GAP_X",
+    "AUTO_GAP_Y",
+    "AUTO_PADDING",
+    "BPMNDI_NS",
+    "BPMN_NS",
+    "DC_NS",
+    "DI_NS",
+    "GUJI_NS",
+    "DEFAULT_SIZE",
+    "DiagramFlow",
+    "DiagramNode",
+    "DiagramNote",
+    "EVENT_KINDS",
+    "FlowDiagram",
+    "GATEWAY_KINDS",
+    "KIND_END",
+    "KIND_EXCLUSIVE",
+    "KIND_INCLUSIVE",
+    "KIND_INTERMEDIATE",
+    "KIND_PARALLEL",
+    "KIND_START",
+    "KIND_TASK",
+    "KNOWN_KINDS",
+    "LAYOUT_GAP_X",
+    "LAYOUT_GAP_Y",
+    "NO_PAGE",
+    "STAGE_ALIASES",
+    "default_size",
+    "fold_forward",
+    "stage_of_name",
 ]

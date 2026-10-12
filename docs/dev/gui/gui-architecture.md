@@ -43,7 +43,7 @@ desktop/
     detect/page.py      #   检测文本框（含导出标注图 / 导出坐标 JSON）
     rembg/page.py       #   图片去底色
     print/page.py       #   PDF排版
-    imposition/page.py  #   图片拼板（有意不继承 StepModulePage，见 2.3）
+    imposition/page.py  #   图片拼版（有意不继承 StepModulePage，见 2.3）
   pages/                # 页面层：一个页面一个子包
     tasklist/page.py    #   任务列表页（首页：表格、导入、详情/删除）
     taskdetail/         #   任务详情页：一个骨架 + 按职责拆分的控制器 Mixin
@@ -166,14 +166,14 @@ mod = importlib.import_module("functions.crop")   # 不用 import_module(".crop"
 
 **`desktop/steps` —— 与流程无关的"一个处理步骤"**（谁都能用）
 
-| 文件 | 职责 | 有没有 Qt |
-| --- | --- | --- |
-| `spec.py` | `StepSpec`：跑哪个命令、用哪个参数面板、输入是什么、默认输出怎么派生；**入口规则**也在这里（认哪些后缀、能不能直接收目录、用户拖进来一堆文件/文件夹到底算哪个源） | ✗ 纯逻辑 |
-| `kernel.py` | `StepKernel`：只认「源 + 输出目录 + 参数」的执行内核，跑在 QThread 里，进度/成功/失败走信号；`job_for(spec)` 是**造 job 的唯一入口** | ✓ |
-| `source_zone.py` | `SourceZone`：**大输入区**——拖文件、拖文件夹、**「选择文件 / 选择文件夹」按钮**、已选态「更换」、一键清空；**独占模式**（页面上再没有别的控件时撑满整幅） | ✓ |
-| `control.py` | `StepControl`：把「选源 → 调参数 → 执行/中断」装成一块控件（模块页右栏就是它） | ✓ |
-| `process.py` | `StageProcess`：子进程传输层（起进程 / 转发原始字节 / 看门狗兜底） | ✓ |
-| `ports.py` | 步骤的**输入 / 输出端口** + 落点 + 连线表（BPM 换顺序只改它） | ✓ |
+| 文件             | 职责                                                                                                                                                              | 有没有 Qt |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| `spec.py`        | `StepSpec`：跑哪个命令、用哪个参数面板、输入是什么、默认输出怎么派生；**入口规则**也在这里（认哪些后缀、能不能直接收目录、用户拖进来一堆文件/文件夹到底算哪个源） | ✗ 纯逻辑  |
+| `kernel.py`      | `StepKernel`：只认「源 + 输出目录 + 参数」的执行内核，跑在 QThread 里，进度/成功/失败走信号；`job_for(spec)` 是**造 job 的唯一入口**                              | ✓         |
+| `source_zone.py` | `SourceZone`：**大输入区**——拖文件、拖文件夹、**「选择文件 / 选择文件夹」按钮**、已选态「更换」、一键清空；**独占模式**（页面上再没有别的控件时撑满整幅）         | ✓         |
+| `control.py`     | `StepControl`：把「选源 → 调参数 → 执行/中断」装成一块控件（模块页右栏就是它）                                                                                    | ✓         |
+| `process.py`     | `StageProcess`：子进程传输层（起进程 / 转发原始字节 / 看门狗兜底）                                                                                                | ✓         |
+| `ports.py`       | 步骤的**输入 / 输出端口** + 落点 + 连线表（BPM 换顺序只改它）                                                                                                     | ✓         |
 
 #### 端口与连线：`desktop/steps/ports.py`（2026-10-03 补完）
 
@@ -185,11 +185,11 @@ mod = importlib.import_module("functions.crop")   # 不用 import_module(".crop"
 现在这一层把"步骤怎么连"收成三张表（**纯逻辑、无 Qt**，可被 CLI/自测/将来的
 编排引擎安全导入）：
 
-| 表 | 回答什么 | 谁在用 |
-| --- | --- | --- |
-| `PORT_ARTIFACTS` | 数据"是什么"（`pdf` / `pages` / `boxes`） | BPM 按类型匹配，不认上游是谁 |
-| `STAGE_LOCATIONS` | 每个端口落在 `tasks/<id>/` 的哪里 | `store.artifact()` 及四个 `*_output_dir` |
-| `SUPPLIERS` | 谁供给哪个端口（**BPM 的边**） | `store.stage_input()` → runner / 拼版取图 |
+| 表                | 回答什么                                  | 谁在用                                    |
+| ----------------- | ----------------------------------------- | ----------------------------------------- |
+| `PORT_ARTIFACTS`  | 数据"是什么"（`pdf` / `pages` / `boxes`） | BPM 按类型匹配，不认上游是谁              |
+| `STAGE_LOCATIONS` | 每个端口落在 `tasks/<id>/` 的哪里         | `store.artifact()` 及四个 `*_output_dir`  |
+| `SUPPLIERS`       | 谁供给哪个端口（**BPM 的边**）            | `store.stage_input()` → runner / 拼版取图 |
 
 ```python
 # 改连线 = 改一张表，别处不动
@@ -243,12 +243,12 @@ N 张候选图 = `ceil(N/6)` 轮零间隔重解码全程占着 GUI 主线程 ⇒
 连线抽完之后，任务详情页里还剩 4 条 `if stage == "..."`。它们全是
 「**这一步在详情页长什么样**」的声明性数据，于是同样搬进 `StepSpec`：
 
-| 原 if 链 | 现在查 spec 的字段 |
-| --- | --- |
-| 按钮文案 / 提交按钮显隐 / 右栏区块显隐 | `run_button_text` / `has_submit` / `panel_extra` |
-| `stage == "print"` 换控制列宽度 | `control_width` |
-| 主预览控件名（原 `_STAGE_PREVIEW_ATTRS`） | `preview_attr` |
-| 历史回填按阶段跳过不同键 | `history_skip` / `auto_fill_skip` |
+| 原 if 链                                  | 现在查 spec 的字段                               |
+| ----------------------------------------- | ------------------------------------------------ |
+| 按钮文案 / 提交按钮显隐 / 右栏区块显隐    | `run_button_text` / `has_submit` / `panel_extra` |
+| `stage == "print"` 换控制列宽度           | `control_width`                                  |
+| 主预览控件名（原 `_STAGE_PREVIEW_ATTRS`） | `preview_attr`                                   |
+| 历史回填按阶段跳过不同键                  | `history_skip` / `auto_fill_skip`                |
 
 统一入口是 :func:`desktop.steps.ports.spec_for_stage`：
 
@@ -264,13 +264,11 @@ self.run_button.setText(spec.run_button_text)
 **加一步现在只改两处**：`SPECS` 加一条 spec（端口 + 界面元数据）+ 一张连线表
 （谁供给谁）。页面、store、runner 里不再有任何"认得哪个 step 是谁"的代码。
 
-
-
 **`desktop/modules` —— 左侧每个条目一个自包含页面**
 
 - 模块清单**不再单独维护**：`modules/__init__.py::MODULES` 由
   `desktop.steps.spec` 里 `nav=True` 的 spec **派生**。加一个模块 = 写一个
-  ``desktop/modules/<key>/`` 包（必须导出 `PAGE` = 页面类）+ 在 `SPECS` 加一条
+  `desktop/modules/<key>/` 包（必须导出 `PAGE` = 页面类）+ 在 `SPECS` 加一条
   `nav=True` 的 spec，**壳层一行都不用动**（壳层只认元数据与工厂，从不 import
   具体页面）；
 - 模块页**惰性构造**：用户第一次点进去才建；模块之间、模块与 `TaskDetailPage`
@@ -332,7 +330,7 @@ singletask 是独立任务，下面有各种子任务」。
 ⚠️ **singletask ≠ taskdetail，数据不相通（硬规则）**：独立任务页与任务流程只
 共用渲染组件、参数面板与步骤元数据；缓存根各归各——独立页缓存在
 `singletask/<key>/`，任务流程缓存在 `tasks/<id>/thumbnails/{source,print,
-imposition,detect}`。**任何一侧都禁止借道另一侧的缓存区**（历史 bug：拼板左列
+imposition,detect}`。**任何一侧都禁止借道另一侧的缓存区**（历史 bug：拼版左列
 缩略图曾误写进 singletask，由 `tests/selftests/imposition.py` 的缓存边界断言
 钉住）。taskdetail 缓存随「删除任务」整体清理；singletask 缓存独立生命周期。
 ```
@@ -381,12 +379,12 @@ imposition,detect}`。**任何一侧都禁止借道另一侧的缓存区**（历
 ⚠️ **四个短路都当作用户同意**（`return True`），不写盘/没东西可丢的事一律
 不弹，假警报只会让用户觉得这框很蠢：
 
-| 条件 | 为什么 |
-| --- | --- |
-| `not save_back` | 虚拟预览（区域合成/打印重排/PDF 页）压根不写盘 |
-| `not target_exists` | 整页组合**首次**编辑写的是缓存区新建文件，没有旧图可丢 |
-| `_image == _original` **且无待定裁剪** | 没改动（QImage 逐像素相等），空跑一趟 |
-| `MessageBox` 抛异常 | 自测换成记录器替身时没有真 `exec()` |
+| 条件                                   | 为什么                                                 |
+| -------------------------------------- | ------------------------------------------------------ |
+| `not save_back`                        | 虚拟预览（区域合成/打印重排/PDF 页）压根不写盘         |
+| `not target_exists`                    | 整页组合**首次**编辑写的是缓存区新建文件，没有旧图可丢 |
+| `_image == _original` **且无待定裁剪** | 没改动（QImage 逐像素相等），空跑一趟                  |
+| `MessageBox` 抛异常                    | 自测换成记录器替身时没有真 `exec()`                    |
 
 ⚠️ `_pending_crop`（待定裁剪，见下节）**必须**算"改过了"：它还没落到像素上
 （`_image` 仍是原图），只比 `_image` 的话，"只裁不改"的编辑会一声不吭地把
@@ -402,11 +400,11 @@ imposition,detect}`。**任何一侧都禁止借道另一侧的缓存区**（历
 
 现在分成两步（都在 `dialog_commit.CommitMixin`）：
 
-| 方法 | 时机 | 做什么 |
-| --- | --- | --- |
-| `_preview_crop()` | 裁剪框松手（`crop_selection_changed` 信号） | **只**写 `_pending_crop` + 刷尺寸提示，像素一个不动 |
-| `_commit_crop()` | **切走裁剪工具** / 点「完成」 | `_push_undo(裁剪)` + 真正的 `QImage.copy` |
-| `_discard_crop()` | Ctrl+Z / Ctrl+Y / 「还原」/ 参数页「重置选区」 | 清 `_pending_crop` + 选区弹回整幅，**不记撤销步** |
+| 方法              | 时机                                           | 做什么                                              |
+| ----------------- | ---------------------------------------------- | --------------------------------------------------- |
+| `_preview_crop()` | 裁剪框松手（`crop_selection_changed` 信号）    | **只**写 `_pending_crop` + 刷尺寸提示，像素一个不动 |
+| `_commit_crop()`  | **切走裁剪工具** / 点「完成」                  | `_push_undo(裁剪)` + 真正的 `QImage.copy`           |
+| `_discard_crop()` | Ctrl+Z / Ctrl+Y / 「还原」/ 参数页「重置选区」 | 清 `_pending_crop` + 选区弹回整幅，**不记撤销步**   |
 
 - 画布画的**始终是原图**，选区外那 4 块半透明遮罩每帧按选区重算
   （`overlay._sync_overlay`）⇒ 向外拖时被变暗的区域立刻重新显露；夹取上界是
@@ -417,7 +415,7 @@ imposition,detect}`。**任何一侧都禁止借道另一侧的缓存区**（历
 - 待定裁剪**不进撤销历史**：Ctrl+Z / Ctrl+Y 遇到它先退它（框弹回整幅），
   再按一次才动历史，否则会出现"图没变、历史却退了一格"。
 - 右下角尺寸提示在待定期间并排写出"裁完是多大"（`裁剪后 140 × 90 px
-  （当前 200 × 120 px）`），因为 `_image` 那会儿还是整幅。
+（当前 200 × 120 px）`），因为 `_image` 那会儿还是整幅。
 
 护栏：`tests/selftests/image_editor.py` 第 1 组（含"向外拖回去 ⇒ 遮罩显著
 缩小、图仍是原幅"这条用户报障的直接回归）。
@@ -470,13 +468,13 @@ PDF 矢量页没有可回写文件，右键菜单干脆不给「编辑图片」�
 
 - 双击图上 / 空白 = 预览这张原图 / 整页左右组合（弹窗**只读**，不给 `edit_path`）；
 - 右键「编辑图片」= 不经弹窗直达编辑器：单张 → 覆盖源图 + `canvas.invalidate_image`
-  + 重渲左列缩略图；整页组合 → 合成全分辨率 → 编辑 → 存
-  `singletask/拼图/edited/<页>.png` 并把 `page["edited_file"]` 记进文档；
-  导出时 `_compose_job` 在 `compose_doc` 之上**按页盖回**这张图
-  （独立页没有任务流程那种 `stages/imposition` 落点，缓存区就是它的等价物）。
-  版面一改（`_on_items_changed` / 复位 / 删图）就作废该页手改记录。
-  ⚠️ `_page_overrides()` 的过滤口径必须与 `compose_doc` 一致（同样过
-  `normalize_page`），否则一页坏数据会让后面所有页的手改**错位到别人身上**。
+  - 重渲左列缩略图；整页组合 → 合成全分辨率 → 编辑 → 存
+    `singletask/拼图/edited/<页>.png` 并把 `page["edited_file"]` 记进文档；
+    导出时 `_compose_job` 在 `compose_doc` 之上**按页盖回**这张图
+    （独立页没有任务流程那种 `stages/imposition` 落点，缓存区就是它的等价物）。
+    版面一改（`_on_items_changed` / 复位 / 删图）就作废该页手改记录。
+    ⚠️ `_page_overrides()` 的过滤口径必须与 `compose_doc` 一致（同样过
+    `normalize_page`），否则一页坏数据会让后面所有页的手改**错位到别人身上**。
 
 **「整幅大输入区」怎么来的**：`ModulePage._build_input()` 返回 `SourceZone` 时，
 它会插在页头与左右分栏之间、横跨整幅宽度；页面同时在 `_build_control()` 里
@@ -491,14 +489,15 @@ PDF 矢量页没有可回写文件，右键菜单干脆不给「编辑图片」�
 
 ⚠️ **独占模式靠 sizePolicy 长高，不靠固定高度**：`SourceZone._sync_height()`
 在独占且空态时给 `setMinimumHeight(SOLO_HEIGHT)` + `setMaximumHeight(HEIGHT_UNLIMITED)`
-+ 纵向 `Expanding`。⚠️ **只改 minimumHeight 是不够的**——曾经先
-`setFixedHeight(320)`（它同时钉死 maximumHeight），后来改成"最小 320 + 可拉伸"
-却忘了放开上限，控件就永远长不大：整页只有一条 320px 的框、上下各留一片空白
-（靠截图发现，断言全绿时根本看不出来）。Qt 的 `QWIDGETSIZE_MAX` 在 PySide6
-里**没有导出**，所以用 `source_zone.HEIGHT_UNLIMITED` 这个哨兵值。
+
+- 纵向 `Expanding`。⚠️ **只改 minimumHeight 是不够的**——曾经先
+  `setFixedHeight(320)`（它同时钉死 maximumHeight），后来改成"最小 320 + 可拉伸"
+  却忘了放开上限，控件就永远长不大：整页只有一条 320px 的框、上下各留一片空白
+  （靠截图发现，断言全绿时根本看不出来）。Qt 的 `QWIDGETSIZE_MAX` 在 PySide6
+  里**没有导出**，所以用 `source_zone.HEIGHT_UNLIMITED` 这个哨兵值。
 
 ⚠️ **`HEIGHT_UNLIMITED` 必须等于 `(1 << 24) - 1`，不能写 `1 << 24`**（用户
-2026-10-03 报「单独拼板界面报错」）：Qt 的硬上限 `QWIDGETSIZE_MAX` 就是
+2026-10-03 报「单独拼版界面报错」）：Qt 的硬上限 `QWIDGETSIZE_MAX` 就是
 `(1 << 24) - 1 == 16777215`，哨兵超了 1 之后 `setMaximumHeight` 会往 stderr 打
 `QWidget::setMaximumSize: The largest allowed size is (16777215,16777215)`
 并把值截断回去。功能上无害（截断后正是我们要的"不设上限"），但拼版独立页
@@ -555,12 +554,12 @@ PDF 矢量页没有可回写文件，右键菜单干脆不给「编辑图片」�
 `_PANEL_ORDER`——加一步要改四处，漏一处没有任何守卫能发现（文案已经漂过一次：
 流程条写「提取图片」、导航写「图片提取」）。现在全部由 `SPECS` 派生：
 
-| 派生物 | 在哪 | 取哪些 |
-| --- | --- | --- |
-| `STAGES` / `STAGE_LABELS` / `STAGE_SHORT` | `desktop/store/tasks.py` | `role == "stage"` 的 key / `stage_name()` / `short_name()` |
-| `IMPOSITION_STAGE` / `_LABEL` / `_INDEX` | 同上 | `role == "optional"` 的第一条；下标 = `len(STAGES)` |
-| `MODULES` | `desktop/modules/__init__.py` | `nav == True` 的 `title` / `nav_tip()` / `nav_icon` |
-| `PANEL_CLASSES` | `desktop/components/panels/__init__.py` | `role == "stage"` 的 `panel` 类名 |
+| 派生物                                    | 在哪                                    | 取哪些                                                     |
+| ----------------------------------------- | --------------------------------------- | ---------------------------------------------------------- |
+| `STAGES` / `STAGE_LABELS` / `STAGE_SHORT` | `desktop/store/tasks.py`                | `role == "stage"` 的 key / `stage_name()` / `short_name()` |
+| `IMPOSITION_STAGE` / `_LABEL` / `_INDEX`  | 同上                                    | `role == "optional"` 的第一条；下标 = `len(STAGES)`        |
+| `MODULES`                                 | `desktop/modules/__init__.py`           | `nav == True` 的 `title` / `nav_tip()` / `nav_icon`        |
+| `PANEL_CLASSES`                           | `desktop/components/panels/__init__.py` | `role == "stage"` 的 `panel` 类名                          |
 
 `StepSpec.role` 区分**主链步骤**（`"stage"`，进 `STAGES`）与**流程条可选节点**
 （`"optional"`，拼版就是）；`StepSpec.nav` 表示**有没有独立模块页**。两者正交——
@@ -570,10 +569,10 @@ PDF 矢量页没有可回写文件，右键菜单干脆不给「编辑图片」�
 （`print` / `detect`）时暴露出两类"产物形态"问题，都留在 spec 上而不是散在各页里：
 
 - **产物是单个文件**（`print`，`artifact_is_file=True`）：见上一节。
-- **产物根本不是文件**（`detect`）：检测默认不落盘，框坐标只经 ``page_boxes``
-  **结构化事件**回来。内核原先只转 ``progress`` / ``log``，这类事件全被丢掉，
+- **产物根本不是文件**（`detect`）：检测默认不落盘，框坐标只经 `page_boxes`
+  **结构化事件**回来。内核原先只转 `progress` / `log`，这类事件全被丢掉，
   于是"检测页永远显示不出框"。补了一条**通用事件通道**
-  （``StepKernel.event`` / ``StepControl.event``，2026-10-02）：内核不认识事件名，
+  （`StepKernel.event` / `StepControl.event`，2026-10-02）：内核不认识事件名，
   只原样透传，认不认识由上层决定——将来自定义流程里任何"步骤自己产生结构化结果"
   的场景都走这条，不必再改内核。
 
@@ -595,8 +594,8 @@ PDF 矢量页没有可回写文件，右键菜单干脆不给「编辑图片」�
 `store.artifact()` / `store.stage_input()` 都走它（见上文「端口与连线」）。
 "换流程顺序只改 `SUPPLIERS` 一张表"。
 
-⚠️ **检测框的「槽位约定」只有一份实现**：半幅恒 2 槽 ``[左, 右]``（缺失侧 null）、
-整幅恒 1 槽 ``[整幅]``，下游（rembg / 布局）靠**槽数**分辨形态——所以它是跨层
+⚠️ **检测框的「槽位约定」只有一份实现**：半幅恒 2 槽 `[左, 右]`（缺失侧 null）、
+整幅恒 1 槽 `[整幅]`，下游（rembg / 布局）靠**槽数**分辨形态——所以它是跨层
 契约，不是某一步的内部细节。规则本体在 `utils/box_geometry.page_box_slots`，
 两个入口都调它：`functions.detect.PageBoxes.slots()`（对象侧）与
 `page_box_slots_from_event(payload)`（**事件侧**，任务流程第二步与独立检测页共用）。
@@ -636,7 +635,7 @@ guji/
       source/0001.jpg…  # 源 PDF 页缩略图（256px，导入即生成，永不清理）
       detect/           # 检测预览缩略图
       print/            # 输出 PDF 预览缩略图（print 成功后重建）
-      imposition/       # 拼板左列缩略图（⚠️ 只在这里，禁止写 singletask/）
+      imposition/       # 拼版左列缩略图（⚠️ 只在这里，禁止写 singletask/）
     stages/
       extract/          # 提取图片（1.jpg…，直接平铺）
       rembg/            # 去底色整页结果（1.png…）
@@ -660,15 +659,15 @@ guji/
 
 ## 4. 关键算法位置
 
-| 算法 | 位置 |
-| --- | --- |
+| 算法                           | 位置                                                                                                                                    |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
 | 内容框检测（GUI/CLI 唯一入口） | `functions.detect.detect_page_content` → 底层 `utils.yolo_utils.detect_content_boxes`（单例，CPU；半幅 harfcontent / 整幅 fullcontent） |
-| area/border → 效果区域合成 | `desktop/workers/preview_worker.compose_region_output` |
-| 几何规则（GUI/CLI 共用） | `utils/box_geometry.py`（parse_border_mm、compute_final_boxes） |
-| 检测框标注绘制（GUI/CLI 共用） | `utils/box_draw.py`（draw_boxes，配色与 GUI 预览一致） |
-| 自然排序（r 在 l 前） | `utils/sort_utils.natural_sort_key` |
-| 页缩略图生成 | `desktop/workers/source_thumbnails_worker.py` |
-| 文件指纹 | `desktop/utils/files.file_hash` |
+| area/border → 效果区域合成     | `desktop/workers/preview_worker.compose_region_output`                                                                                  |
+| 几何规则（GUI/CLI 共用）       | `utils/box_geometry.py`（parse_border_mm、compute_final_boxes）                                                                         |
+| 检测框标注绘制（GUI/CLI 共用） | `utils/box_draw.py`（draw_boxes，配色与 GUI 预览一致）                                                                                  |
+| 自然排序（r 在 l 前）          | `utils/sort_utils.natural_sort_key`                                                                                                     |
+| 页缩略图生成                   | `desktop/workers/source_thumbnails_worker.py`                                                                                           |
+| 文件指纹                       | `desktop/utils/files.file_hash`                                                                                                         |
 
 ## 5. 性能设计
 
@@ -679,7 +678,7 @@ guji/
   槽会跑在 worker 线程；加 `QueuedConnection` 也没用（functor 连接的接收者
   仍记成 sender，事件照样排回 worker 线程）。闭包里一旦碰 widget，Qt 就在
   子线程启动定时器 → 刷屏 `QBasicTimer::start: Timers cannot be started
-  from another thread`。连到宿主 QObject 的**绑定方法**本来就是安全的，
+from another thread`。连到宿主 QObject 的**绑定方法**本来就是安全的，
   闭包一律用 `desktop.workers.connect_queued(owner, signal, slot, thread)`。
 - **缩略图直读**：列表条目图标读取 256px 预生成缩略图（QImageReader 缩放解码），
   不解码原始扫描图；rembg 预览的区域合成也以缩略图/worker 完成为主。

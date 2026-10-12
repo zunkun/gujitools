@@ -63,7 +63,11 @@ def run(ctx) -> None:
     )
     ok("按 key 取到同一条", spec_by_key("extract") is SPECS[0])
     ok("未知 key 返回 None", spec_by_key("nope") is None)
-    ok("每条都声明了参数面板", all(s.panel for s in SPECS), str([s.panel for s in SPECS]))
+    ok(
+        "每条都声明了参数面板",
+        all(s.panel for s in SPECS),
+        str([s.panel for s in SPECS]),
+    )
     ok("面板类都能解析出来", all(s.panel_class() is not None for s in SPECS))
 
     def spec_of(key: str) -> StepSpec:
@@ -78,7 +82,10 @@ def run(ctx) -> None:
 
     ok("执行按钮文案", extract.run_text() == "开始提取", extract.run_text())
 
-    ok("拼图允许对话框里一次多选（拖拽天然支持多选）", imposition.allow_multi and not extract.allow_multi)
+    ok(
+        "拼图允许对话框里一次多选（拖拽天然支持多选）",
+        imposition.allow_multi and not extract.allow_multi,
+    )
     ok(
         "默认输出：文件源 → 父目录/文件名+后缀",
         extract.default_output(Path("/a/b/c.pdf")) == Path("/a/b/c_提取"),
@@ -131,7 +138,11 @@ def run(ctx) -> None:
     other_dir.mkdir(exist_ok=True)
     (other_dir / "d.pdf").write_bytes(b"%PDF-1.4\n")
 
-    ok("文件按后缀判定", extract.accepts_path(drop_dir / "a.pdf") and not extract.accepts_path(drop_dir / "c.png"))
+    ok(
+        "文件按后缀判定",
+        extract.accepts_path(drop_dir / "a.pdf")
+        and not extract.accepts_path(drop_dir / "c.png"),
+    )
     ok(
         "目录按 accepts_dir 判定（提取这一步不收目录）",
         not extract.accepts_path(drop_dir) and rembg.accepts_path(drop_dir),
@@ -154,26 +165,38 @@ def run(ctx) -> None:
         str([p.name for p in rembg.listing(nat_drop)]),
     )
 
-    ok("拖一个文件 → 就是它自己", extract.resolve_source([drop_dir / "a.pdf"])[0] == drop_dir / "a.pdf")
+    ok(
+        "拖一个文件 → 就是它自己",
+        extract.resolve_source([drop_dir / "a.pdf"])[0] == drop_dir / "a.pdf",
+    )
     # ⚠️ 「PDF 只支持文件」（用户 2026-10-03）：拖文件夹**直接拒绝**，不从
     #    里面替用户挑 PDF——挑了哪几个、为什么是这几个，界面上看不见。
     ok(
         "拖一个文件夹 → 拒绝并说明只支持文件",
-        (lambda r: r[0] is None and "只支持" in r[1] and "不支持文件夹" in r[1])(extract.resolve_source([drop_dir])),
+        (lambda r: r[0] is None and "只支持" in r[1] and "不支持文件夹" in r[1])(
+            extract.resolve_source([drop_dir])
+        ),
         str(extract.resolve_source([drop_dir])),
     )
     ok(
         "文件与文件夹混着给 → 同样拒绝（按最严的来）",
-        (lambda r: r[0] is None and "只支持" in r[1])(extract.resolve_source([drop_dir / "a.pdf", drop_dir])),
+        (lambda r: r[0] is None and "只支持" in r[1])(
+            extract.resolve_source([drop_dir / "a.pdf", drop_dir])
+        ),
         str(extract.resolve_source([drop_dir / "a.pdf", drop_dir])),
     )
     ok("收目录的步骤：拖文件夹就是它", rembg.resolve_source([drop_dir])[0] == drop_dir)
     ok(
         "后缀不符 → 拒绝并给理由",
-        (lambda r: r[0] is None and "支持" in r[1])(extract.resolve_source([drop_dir / "c.png"])),
+        (lambda r: r[0] is None and "支持" in r[1])(
+            extract.resolve_source([drop_dir / "c.png"])
+        ),
     )
     ok("空输入 → 拒绝", extract.resolve_source([])[0] is None)
-    ok("路径都不存在 → 拒绝", extract.resolve_source([Path(ctx.tmp) / "ghost.pdf"])[0] is None)
+    ok(
+        "路径都不存在 → 拒绝",
+        extract.resolve_source([Path(ctx.tmp) / "ghost.pdf"])[0] is None,
+    )
 
     # ---- 1c. 出口布局：入口自动下钻 + 单 PDF 平铺 ----
     # 这两条是「提取 → 去底色」这条链能不能接上的关键（2026-10-02 实测断过）：
@@ -208,7 +231,9 @@ def run(ctx) -> None:
     (nested_root / "样书" / "images" / "1.png").write_bytes(b"x")
     ok(
         "目录顶层没有 → 自动下钻到唯一子目录并交代一句",
-        (lambda r: r[0] == nested_root / "样书" / "images" and bool(r[1]))(rembg.resolve_source([nested_root])),
+        (lambda r: r[0] == nested_root / "样书" / "images" and bool(r[1]))(
+            rembg.resolve_source([nested_root])
+        ),
         str(rembg.resolve_source([nested_root])),
     )
 
@@ -220,7 +245,9 @@ def run(ctx) -> None:
         (deep / "1.png").write_bytes(b"x")
     ok(
         "多个子目录各装着 → 拒绝并让用户挑一个",
-        (lambda r: r[0] is None and "请直接把其中一个" in r[1])(rembg.resolve_source([multi_root])),
+        (lambda r: r[0] is None and "请直接把其中一个" in r[1])(
+            rembg.resolve_source([multi_root])
+        ),
         str(rembg.resolve_source([multi_root])),
     )
 
@@ -238,7 +265,7 @@ def run(ctx) -> None:
         _rs is None and "没有可用" in _rs_note,
         str((_rs, _rs_note)),
     )
-    #⚠️ 边界：目录**压根不存在**时也归到"这些路径都不存在"，不是"没有可用文件"
+    # ⚠️ 边界：目录**压根不存在**时也归到"这些路径都不存在"，不是"没有可用文件"
     ok(
         "目录不存在 → 说「路径不存在」而不是「没有可用文件」",
         (lambda r: r[0] is None and "都不存在" in r[1])(
@@ -255,7 +282,8 @@ def run(ctx) -> None:
     (imgs_dir / "note.txt").write_bytes(b"x")
     ok(
         "拼图清单：只要图片、按页序排序、忽略别的文件",
-        [p.name for p in imposition.collect_files([imgs_dir])] == ["a.png", "m.jpg", "z.png"],
+        [p.name for p in imposition.collect_files([imgs_dir])]
+        == ["a.png", "m.jpg", "z.png"],
         str([p.name for p in imposition.collect_files([imgs_dir])]),
     )
     # ⚠️ 页序必须**自然排序**（natural_sort_key），不能用字典序——
@@ -277,8 +305,18 @@ def run(ctx) -> None:
     )
     ok(
         "拼图清单：文件去重",
-        len(imposition.collect_files([imgs_dir / "a.png", imgs_dir / "a.png", imgs_dir])) == 3,
-        str([p.name for p in imposition.collect_files([imgs_dir / "a.png", imgs_dir / "a.png", imgs_dir])]),
+        len(
+            imposition.collect_files([imgs_dir / "a.png", imgs_dir / "a.png", imgs_dir])
+        )
+        == 3,
+        str(
+            [
+                p.name
+                for p in imposition.collect_files(
+                    [imgs_dir / "a.png", imgs_dir / "a.png", imgs_dir]
+                )
+            ]
+        ),
     )
 
     # 单 PDF：把 <输出>/<PDF名>/** 平铺到 <输出>/ 并删空壳
@@ -345,7 +383,10 @@ def run(ctx) -> None:
     (batch_dest / "样书" / "images").mkdir(parents=True, exist_ok=True)
     (batch_dest / "样书" / "images" / "1.jpg").write_bytes(b"x")
     _kernel._flatten_single_pdf_output(StepRequest(source=drop_dir, dest=batch_dest))
-    ok("目录源（批量）保持每个 PDF 一个子目录", (batch_dest / "样书" / "images" / "1.jpg").exists())
+    ok(
+        "目录源（批量）保持每个 PDF 一个子目录",
+        (batch_dest / "样书" / "images" / "1.jpg").exists(),
+    )
 
     # ---- 1d. 清单只有一份：流程/导航/面板都从 SPECS 派生 ----
     # 用户 2026-10-02：后期要做「步骤随意搭配」的自定义流程（类 BPM），前提是
@@ -364,8 +405,16 @@ def run(ctx) -> None:
         STAGES == tuple(s.key for s in SPECS if s.role == "stage") == FLOW_STAGES,
         str(STAGES),
     )
-    ok("流程主链正好是四步、顺序未变", STAGES == ("extract", "detect", "rembg", "print"), str(STAGES))
-    ok("每条 role 取值合法", all(s.role in ("stage", "optional") for s in SPECS), str([(s.key, s.role) for s in SPECS]))
+    ok(
+        "流程主链正好是四步、顺序未变",
+        STAGES == ("extract", "detect", "rembg", "print"),
+        str(STAGES),
+    )
+    ok(
+        "每条 role 取值合法",
+        all(s.role in ("stage", "optional") for s in SPECS),
+        str([(s.key, s.role) for s in SPECS]),
+    )
     ok(
         "每条都声明了 BPM 端口（已由 desktop.steps.ports 接线）",
         all(s.inputs and s.outputs for s in SPECS),
@@ -384,12 +433,14 @@ def run(ctx) -> None:
     )
     ok(
         "步骤条四个名字逐字未变（用户手册配图依赖它）",
-        [STAGE_LABELS[k] for k in STAGES] == ["提取图片", "检测文本框", "图片去底色", "PDF排版"],
+        [STAGE_LABELS[k] for k in STAGES]
+        == ["提取图片", "检测文本框", "图片去底色", "PDF排版"],
         str([STAGE_LABELS[k] for k in STAGES]),
     )
     ok(
         "「提交本次任务」仍挂在第三步的文案表里（它不是独立步骤）",
-        STAGE_LABELS.get("rembg_submit") == "提交去底色结果" and "rembg_submit" not in STAGES,
+        STAGE_LABELS.get("rembg_submit") == "提交去底色结果"
+        and "rembg_submit" not in STAGES,
     )
 
     ok(
@@ -397,18 +448,27 @@ def run(ctx) -> None:
         (IMPOSITION_STAGE, IMPOSITION_LABEL) == ("imposition", "图片拼版"),
         f"{IMPOSITION_STAGE} / {IMPOSITION_LABEL}",
     )
-    ok("可选节点不在主链里", all(s.key not in STAGES for s in SPECS if s.role == "optional"))
+    ok(
+        "可选节点不在主链里",
+        all(s.key not in STAGES for s in SPECS if s.role == "optional"),
+    )
     # ⚠️ 「拼版占第几格」**不能**有常量：`IMPOSITION_INDEX = len(STAGES)` 是
     #    BPM 改造前的固定顺序口径，现在由流程图决定（槽位表的 bar_index）。
     #    留着那个常量就是给下一个人留一个"看起来能用"的默认流程假设。
     import desktop.store.tasks as _tasks_mod
 
-    ok("store 里不再有 IMPOSITION_INDEX（拼版格序问图，不问常量）",
-       not hasattr(_tasks_mod, "IMPOSITION_INDEX"))
+    ok(
+        "store 里不再有 IMPOSITION_INDEX（拼版格序问图，不问常量）",
+        not hasattr(_tasks_mod, "IMPOSITION_INDEX"),
+    )
 
     from desktop.modules import MODULES
 
-    ok("导航清单 = SPECS 里 nav=True 的派生", tuple(m.key for m in MODULES) == NAV_STEPS, str(NAV_STEPS))
+    ok(
+        "导航清单 = SPECS 里 nav=True 的派生",
+        tuple(m.key for m in MODULES) == NAV_STEPS,
+        str(NAV_STEPS),
+    )
     ok(
         "导航文案/悬停提示/图标都由 spec 提供",
         all(
@@ -420,7 +480,8 @@ def run(ctx) -> None:
     )
     ok(
         "没有独立模块页的步骤不进导航（免得壳层去建不存在的页面）",
-        all(spec_of(m.key).nav for m in MODULES) and set(NAV_STEPS) == {m.key for m in MODULES},
+        all(spec_of(m.key).nav for m in MODULES)
+        and set(NAV_STEPS) == {m.key for m in MODULES},
         str(NAV_STEPS),
     )
     # ⚠️ 逐字锁死：导航文案改动**必须**显式改spec.nav_title，而不是碰title
@@ -431,14 +492,16 @@ def run(ctx) -> None:
     #    （nav_order=100 把它挪到末尾），但流程条上它仍是第 4 步——两条线独立。
     ok(
         "导航文案与顺序逐字来自 spec（PDF排版 排最后）",
-        [m.title for m in MODULES] == ["PDF图片提取", "检测文本框", "图片去底色", "图片拼板", "PDF排版"],
+        [m.title for m in MODULES]
+        == ["PDF图片提取", "检测文本框", "图片去底色", "图片拼版", "PDF排版"],
         str([m.title for m in MODULES]),
     )
     # 护栏：调导航顺序**不许**动流程主链。FLOW_STAGES 从 SPECS 派生，若有人为了
     # 挪导航而去对调 SPECS 里两段的书写位置，流程的执行顺序就会被带着变。
     ok(
         "导航挪动不影响流程主链顺序（print 仍是第 4 步）",
-        FLOW_STAGES == ("extract", "detect", "rembg", "print") and FLOW_STAGES.index("print") == 3,
+        FLOW_STAGES == ("extract", "detect", "rembg", "print")
+        and FLOW_STAGES.index("print") == 3,
         str(FLOW_STAGES),
     )
     ok(
@@ -449,7 +512,10 @@ def run(ctx) -> None:
     # 开了 nav 却忘了文案/图标 = 导航上出现一个没提示的空条目，肉眼很难发现。
     ok(
         "每个 nav=True 的 spec 都填了导航三件套（标题/悬停提示/图标）",
-        all(spec_of(k).nav_name() and spec_of(k).nav_tip() and spec_of(k).nav_icon for k in NAV_STEPS),
+        all(
+            spec_of(k).nav_name() and spec_of(k).nav_tip() and spec_of(k).nav_icon
+            for k in NAV_STEPS
+        ),
         str([(k, spec_of(k).nav_tooltip, spec_of(k).nav_icon) for k in NAV_STEPS]),
     )
 
@@ -464,7 +530,10 @@ def run(ctx) -> None:
     )
     ok(
         "磁盘目录名与导航/页头文案完全无关（改文案不会动磁盘路径）",
-        all(spec_of(k).disk_key() not in (spec_of(k).title, spec_of(k).nav_name()) for k in NAV_STEPS),
+        all(
+            spec_of(k).disk_key() not in (spec_of(k).title, spec_of(k).nav_name())
+            for k in NAV_STEPS
+        ),
     )
 
     ok(
@@ -487,7 +556,8 @@ def run(ctx) -> None:
     )
     ok(
         "模块页沿用旧名（面板类名没被这次重构改掉）",
-        [c.__name__ for c in PANEL_CLASSES] == ["ExtractPanel", "DetectPanel", "RembgPanel", "PrintPanel"],
+        [c.__name__ for c in PANEL_CLASSES]
+        == ["ExtractPanel", "DetectPanel", "RembgPanel", "PrintPanel"],
     )
 
     # ---- 2. 执行内核：纯函数 job ----
@@ -495,7 +565,10 @@ def run(ctx) -> None:
         report("progress", {"done": 1, "total": 2})
         report("log", {"message": "干活中"})
         # 步骤**私有**的结构化事件（detect 报框走的就是这条）：
-        report("page_boxes", {"image": "0001", "left": [1, 2, 3, 4], "right": None, "full": None})
+        report(
+            "page_boxes",
+            {"image": "0001", "left": [1, 2, 3, 4], "right": None, "full": None},
+        )
         report("progress", {"done": 2, "total": 2})
         return str(request.dest)
 
@@ -506,7 +579,10 @@ def run(ctx) -> None:
     kernel.event.connect(lambda name, payload: got["events"].append((name, payload)))  # type: ignore[reportAttributeAccessIssue]  # ``event`` 与 QObject.event 同名，运行时是 Signal（pyright 按基类方法解析）
     kernel.finished.connect(lambda out: got.update(out=out))
     kernel.failed.connect(lambda msg: got.update(err=msg))
-    ok("内核受理请求", kernel.run(StepRequest(source=Path("s"), dest=Path("d"))) is True)
+    ok(
+        "内核受理请求",
+        kernel.run(StepRequest(source=Path("s"), dest=Path("d"))) is True,
+    )
     ok(
         "跑完收到完成信号（输出目录原样回传）",
         wait_until(app, lambda: "out" in got, timeout=5) and got["out"] == "d",
@@ -518,7 +594,9 @@ def run(ctx) -> None:
     #    坐标只经 page_boxes 事件回来；内核只认 progress/log 的话它就永远空着。
     ok(
         "步骤私有事件经内核透传（page_boxes 到得了上层）",
-        len(got["events"]) == 1 and got["events"][0][0] == "page_boxes" and got["events"][0][1]["image"] == "0001",
+        len(got["events"]) == 1
+        and got["events"][0][0] == "page_boxes"
+        and got["events"][0][1]["image"] == "0001",
         str(got["events"]),
     )
     ok(
@@ -581,13 +659,22 @@ def run(ctx) -> None:
         cmd_kernel.finished.connect(lambda out: cmd_done.update(out=out))
         cmd_kernel.failed.connect(lambda msg: cmd_done.update(err=msg))
         cmd_kernel.run(StepRequest(source=tmp_in, dest=tmp_out, args={"zoom": 3}))
-        ok("命令 job 跑完", wait_until(app, lambda: bool(cmd_done), timeout=5), str(cmd_done))
+        ok(
+            "命令 job 跑完",
+            wait_until(app, lambda: bool(cmd_done), timeout=5),
+            str(cmd_done),
+        )
         ok(
             "input/output 按 API 注入",
-            str(captured["args"].get("input")) == str(tmp_in) and str(captured["args"].get("output")) == str(tmp_out),
+            str(captured["args"].get("input")) == str(tmp_in)
+            and str(captured["args"].get("output")) == str(tmp_out),
         )
         ok("面板参数一并带上", captured["args"].get("zoom") == 3)
-        ok("输出目录精确生效（不被命令追加子目录）", captured.get("outpath") == tmp_out, str(captured.get("outpath")))
+        ok(
+            "输出目录精确生效（不被命令追加子目录）",
+            captured.get("outpath") == tmp_out,
+            str(captured.get("outpath")),
+        )
     finally:
         functions.get_function = real_get
 
@@ -608,12 +695,16 @@ def run(ctx) -> None:
             self.outpath.write_bytes(b"%PDF-1.4\n")
             return {"output": str(self.outpath)}
 
-    functions.get_function = lambda cmd, ca, reporter=None: _FakeFileFunction(ca, reporter)
+    functions.get_function = lambda cmd, ca, reporter=None: _FakeFileFunction(
+        ca, reporter
+    )
     try:
         pdf_dir = Path(ctx.tmp) / "pdf_out"
         pdf_job = _kernel.job_for(spec_of("print"))
         assert pdf_job is not None  # print 声明了命令，必造得出 job
-        pdf_result = pdf_job(StepRequest(source=tmp_in, dest=pdf_dir, args={}), lambda *a: None)
+        pdf_result = pdf_job(
+            StepRequest(source=tmp_in, dest=pdf_dir, args={}), lambda *a: None
+        )
         ok(
             "产物是文件：--output 传目录、命令自己取名（outpath 不被覆盖）",
             captured.get("outpath") == pdf_dir / "output.pdf",
@@ -633,11 +724,22 @@ def run(ctx) -> None:
     ok("两个控件各持独立内核", control_a.kernel is not control_b.kernel)
     ok("初始都没有源", control_a.source() is None and control_b.source() is None)
     control_a.set_source(Path("/x/a.pdf"))
-    ok("A 选源不影响 B", control_a.source() == Path("/x/a.pdf") and control_b.source() is None)
-    ok("A 的输出按规则自动派生", control_a.output() == Path("/x/a_提取"), str(control_a.output()))
+    ok(
+        "A 选源不影响 B",
+        control_a.source() == Path("/x/a.pdf") and control_b.source() is None,
+    )
+    ok(
+        "A 的输出按规则自动派生",
+        control_a.output() == Path("/x/a_提取"),
+        str(control_a.output()),
+    )
     control_a.set_output(Path("/y"))
     control_a.set_source(Path("/x/b.pdf"))
-    ok("手动选过输出后换源不覆盖", control_a.output() == Path("/y"), str(control_a.output()))
+    ok(
+        "手动选过输出后换源不覆盖",
+        control_a.output() == Path("/y"),
+        str(control_a.output()),
+    )
     ok("参数面板可收集参数", "zoom" in control_a.args(), str(control_a.args()))
 
     # 模块页只跟 StepControl 打交道，所以"步骤私有事件"必须在它身上也能收到
@@ -682,16 +784,20 @@ def run(ctx) -> None:
     try:
         control_a.kernel.finished.emit(str(Path("/x/a_提取")))
         app.processEvents()
-        ok("执行成功后亮出「查看处理文件」",
-           not control_a.view_output_button.isHidden())
+        ok(
+            "执行成功后亮出「查看处理文件」",
+            not control_a.view_output_button.isHidden(),
+        )
         control_a.view_output_button.click()
-        ok("点「查看处理文件」→ 资源管理器打开成功输出目录",
-           _opened == [Path("/x/a_提取")], str(_opened))
+        ok(
+            "点「查看处理文件」→ 资源管理器打开成功输出目录",
+            _opened == [Path("/x/a_提取")],
+            str(_opened),
+        )
     finally:
         _files_mod.reveal_in_explorer = _real_reveal
     control_a.set_source(Path("/x/c.pdf"))
-    ok("换源后入口收起（旧结果对不上新源）",
-       control_a.view_output_button.isHidden())
+    ok("换源后入口收起（旧结果对不上新源）", control_a.view_output_button.isHidden())
 
     control_a.shutdown()
     control_b.shutdown()
@@ -706,7 +812,11 @@ def run(ctx) -> None:
     zone = SourceZone(rembg)
     zone.resize(420, 240)
     ok("大输入区默认收拖拽", zone.acceptDrops() is True)
-    ok("空态是大块（还没选东西）", zone.source() is None and zone.height() == EMPTY_HEIGHT, str(zone.height()))
+    ok(
+        "空态是大块（还没选东西）",
+        zone.source() is None and zone.height() == EMPTY_HEIGHT,
+        str(zone.height()),
+    )
 
     zone_seen: list = []
     zone_rejected: list = []
@@ -743,12 +853,19 @@ def run(ctx) -> None:
         str(zone_seen),
     )
     zone.set_source(drop_dir, "12 个可用文件")
-    ok("已选态收窄成一行", zone.source() == drop_dir and zone.height() == FILLED_HEIGHT, str(zone.height()))
+    ok(
+        "已选态收窄成一行",
+        zone.source() == drop_dir and zone.height() == FILLED_HEIGHT,
+        str(zone.height()),
+    )
 
     cleared: list = []
     zone.cleared.connect(lambda: cleared.append(True))
     zone.clear()
-    ok("清空回到空态并发出 cleared", cleared == [True] and zone.source() is None and zone.height() == EMPTY_HEIGHT)
+    ok(
+        "清空回到空态并发出 cleared",
+        cleared == [True] and zone.source() is None and zone.height() == EMPTY_HEIGHT,
+    )
 
     # 拖动经过时的高亮开关（宿主页面转发整页拖拽时用）
     zone.set_hot(True)
@@ -794,7 +911,11 @@ def run(ctx) -> None:
                 Qt.KeyboardModifier.NoModifier,
             )
         )
-        ok("点击大输入区**不当场**开模态（否则会叠在同一个鼠标事件里）", browse_calls == [], str(browse_calls))
+        ok(
+            "点击大输入区**不当场**开模态（否则会叠在同一个鼠标事件里）",
+            browse_calls == [],
+            str(browse_calls),
+        )
         ok(
             "事件循环跑完直接开选文件对话框（不再先弹两选项小菜单）",
             wait_until(app, lambda: bool(browse_calls), timeout=3)
@@ -802,7 +923,8 @@ def run(ctx) -> None:
             str(browse_calls),
         )
         ok(
-            "对话框起始目录是文档目录，不是空串" "（空串会回退到进程工作目录，打包后就是程序目录）",
+            "对话框起始目录是文档目录，不是空串"
+            "（空串会回退到进程工作目录，打包后就是程序目录）",
             bool(browse_calls) and browse_calls[0][1] == str(default_open_dir()),
             repr(browse_calls[0][1] if browse_calls else None),
         )
@@ -820,15 +942,23 @@ def run(ctx) -> None:
     # ⚠️ 用 `isVisibleTo(zone)` 而不是 `isVisible()`：后者要求**顶层窗口已 show**，
     #    而自测里这个 zone 从不显示，断言会假红（第一版就踩了这个）。
     ok("空态摆出「选择文件」按钮", zone.file_button.isVisibleTo(zone))
-    ok("accepts_dir=True 时摆出「选择文件夹」按钮", zone.dir_button is not None and zone.dir_button.isVisibleTo(zone))
+    ok(
+        "accepts_dir=True 时摆出「选择文件夹」按钮",
+        zone.dir_button is not None and zone.dir_button.isVisibleTo(zone),
+    )
     ok(
         "按钮落在虚框内、不被裁掉",
-        zone.file_button.height() == BUTTON_HEIGHT and zone.file_button.geometry().bottom() <= zone.height(),
+        zone.file_button.height() == BUTTON_HEIGHT
+        and zone.file_button.geometry().bottom() <= zone.height(),
         f"{zone.file_button.geometry()} h={zone.height()}",
     )
     ok(
         "空态按钮行居中",
-        abs((zone.file_button.geometry().left() + zone.file_button.width() / 2) - zone.width() / 2) < zone.width() / 2,
+        abs(
+            (zone.file_button.geometry().left() + zone.file_button.width() / 2)
+            - zone.width() / 2
+        )
+        < zone.width() / 2,
         str(zone.file_button.geometry()),
     )
 
@@ -843,10 +973,15 @@ def run(ctx) -> None:
     QFileDialog.getExistingDirectory = staticmethod(lambda *a, **k: (btn_calls.append(("dir", a[2])), "")[1])  # type: ignore[reportAttributeAccessIssue]  # 测试替身：离屏不许真弹文件对话框，换成记录器
     try:
         zone.file_button.click()
-        ok("点「选择文件」**不当场**弹模态（仍在同一个鼠标事件里）", btn_calls == [], str(btn_calls))
+        ok(
+            "点「选择文件」**不当场**弹模态（仍在同一个鼠标事件里）",
+            btn_calls == [],
+            str(btn_calls),
+        )
         ok(
             "点「选择文件」弹出的是选文件对话框",
-            wait_until(app, lambda: bool(btn_calls), timeout=3) and [c[0] for c in btn_calls] == ["file"],
+            wait_until(app, lambda: bool(btn_calls), timeout=3)
+            and [c[0] for c in btn_calls] == ["file"],
             str(btn_calls),
         )
         ok(
@@ -860,7 +995,8 @@ def run(ctx) -> None:
         zone.dir_button.click()
         ok(
             "点「选择文件夹」弹出的是选目录对话框",
-            wait_until(app, lambda: bool(btn_calls), timeout=3) and [c[0] for c in btn_calls] == ["dir"],
+            wait_until(app, lambda: bool(btn_calls), timeout=3)
+            and [c[0] for c in btn_calls] == ["dir"],
             str(btn_calls),
         )
     finally:
@@ -1016,7 +1152,11 @@ def run(ctx) -> None:
     ok("退出独占：回到常规空态高度", solo.height() == EMPTY_HEIGHT, str(solo.height()))
     solo.set_solo_mode(True)
     solo.set_source(drop_dir / "a.png")
-    ok("独占模式下选中源 → 收窄成一行（纵向空间让给分栏）", solo.height() == FILLED_HEIGHT, str(solo.height()))
+    ok(
+        "独占模式下选中源 → 收窄成一行（纵向空间让给分栏）",
+        solo.height() == FILLED_HEIGHT,
+        str(solo.height()),
+    )
     solo.set_source(None)
     ok("独占模式 + 回到空态 → 又撑满", solo.height() == SOLO_HEIGHT, str(solo.height()))
     # ⚠️ 这条是**真实 bug 的钉子**（靠截图发现的，断言全绿时根本看不出来）：
@@ -1028,10 +1168,10 @@ def run(ctx) -> None:
         solo.maximumHeight() > solo.minimumHeight(),
         f"min={solo.minimumHeight()} max={solo.maximumHeight()}",
     )
-    # ⚠️ 这条钉的是**stderr 警告**（用户 2026-10-03 报「单独拼板界面报错」）：
+    # ⚠️ 这条钉的是**stderr 警告**（用户 2026-10-03 报「单独拼版界面报错」）：
     #    "QWidget::setMaximumSize: The largest allowed size is (16777215,16777215)"。
     #    Qt 的硬上限 QWIDGETSIZE_MAX == (1<<24)-1 == 16777215，哨兵写成 1<<24
-    #    就超了 1，Qt 截断回上限并往 stderr 打警告；拼板独立页初始即独占模式，
+    #    就超了 1，Qt 截断回上限并往 stderr 打警告；拼版独立页初始即独占模式，
     #    于是每次进页面都刷一条，看着像报错。断言取"Qt 自己认的上限"。
     ok(
         "独占模式的最大高度哨兵不超 Qt 硬上限（否则进页面就刷警告）",
@@ -1043,9 +1183,17 @@ def run(ctx) -> None:
     # 独占模式的最小宽度也要比常规宽（独占时没有分栏挤它，不必那么窄）
     narrow = SourceZone(rembg)
     narrow.set_solo_mode(True)
-    ok("独占模式抬高最小宽度", narrow.minimumWidth() == SOLO_MIN_WIDTH, str(narrow.minimumWidth()))
+    ok(
+        "独占模式抬高最小宽度",
+        narrow.minimumWidth() == SOLO_MIN_WIDTH,
+        str(narrow.minimumWidth()),
+    )
     narrow.set_solo_mode(False)
-    ok("退出独占后最小宽度复原", narrow.minimumWidth() == 260, str(narrow.minimumWidth()))
+    ok(
+        "退出独占后最小宽度复原",
+        narrow.minimumWidth() == 260,
+        str(narrow.minimumWidth()),
+    )
 
     # ---- 4b-4. 传 str 的路径不许流到 PreviewWorker（用户 2026-10-03 报）----
     # 根因：模块页把 `str(p)` 列表交给 `set_images`，而 PreviewWorker.run() 里
@@ -1064,14 +1212,22 @@ def run(ctx) -> None:
     )
 
     worker = PreviewWorker(str(drop_dir / "a.png"))
-    ok("PreviewWorker 构造时把 str 收成 Path", isinstance(worker.path, Path), str(type(worker.path).__name__))
+    ok(
+        "PreviewWorker 构造时把 str 收成 Path",
+        isinstance(worker.path, Path),
+        str(type(worker.path).__name__),
+    )
 
     # 真跑一次：不该出现 suffix 相关的 AttributeError
     probe_fail: list = []
     probe_worker = PreviewWorker(str(drop_dir / "a.png"))
     probe_worker.failed.connect(lambda _p, m: probe_fail.append(m))
     probe_worker.run()
-    ok("PreviewWorker(str).run() 不抛 AttributeError", not any("suffix" in m for m in probe_fail), str(probe_fail))
+    ok(
+        "PreviewWorker(str).run() 不抛 AttributeError",
+        not any("suffix" in m for m in probe_fail),
+        str(probe_fail),
+    )
 
     # ⚠️ 同名只保留一份（用户 2026-10-03 报：预览里每页出现两次）
     from desktop.modules.extract.page import collect_result_images
@@ -1084,7 +1240,8 @@ def run(ctx) -> None:
     picked = collect_result_images(dup_dir)
     ok(
         "平铺 + 嵌套两套同名：只收一份，且优先顶层",
-        [p.name for p in picked] == ["1.jpg", "2.jpg", "10.jpg"] and all(p.parent == dup_dir for p in picked),
+        [p.name for p in picked] == ["1.jpg", "2.jpg", "10.jpg"]
+        and all(p.parent == dup_dir for p in picked),
         str([(p.name, p.parent.name) for p in picked]),
     )
     ok(
@@ -1117,7 +1274,10 @@ def run(ctx) -> None:
     zone_c.offer([str(drop_dir / "a.pdf")])
     ok("后缀不符时不动源（只发状态）", control_c.source() == drop_dir / "c.png")
     zone_c.clear()
-    ok("清空大输入区 → 控件的源与输出一起复位", control_c.source() is None and control_c.output() is None)
+    ok(
+        "清空大输入区 → 控件的源与输出一起复位",
+        control_c.source() is None and control_c.output() is None,
+    )
     control_c.shutdown()
 
     # ---- 5. 子进程传输层：启动参数与 UTF-8 环境（不起真进程）----
@@ -1128,7 +1288,10 @@ def run(ctx) -> None:
         str(args_packed),
     )
     env = worker_env()
-    ok("子进程强制 UTF-8", env.value("PYTHONIOENCODING") == "utf-8" and env.value("PYTHONUTF8") == "1")
+    ok(
+        "子进程强制 UTF-8",
+        env.value("PYTHONIOENCODING") == "utf-8" and env.value("PYTHONUTF8") == "1",
+    )
     ok("传输层初始没有进程", StageProcess().process is None)
     ok("传输层初始不忙", StageProcess().running() is False)
 
@@ -1163,14 +1326,19 @@ def run(ctx) -> None:
             moved = F.migrate_legacy_singletask_dirs()
             ok(
                 "老中文名目录被搬到 disk_key 名下",
-                (base / "imposition" / "edited" / "p1.png").exists() and (base / "rembg" / "thumbs" / "a.jpg").exists(),
+                (base / "imposition" / "edited" / "p1.png").exists()
+                and (base / "rembg" / "thumbs" / "a.jpg").exists(),
                 str(moved),
             )
             ok(
                 "搬过去的是原内容（一个字节不差）",
                 (base / "imposition" / "edited" / "p1.png").read_bytes() == b"edited",
             )
-            ok("迁移报出了搬动清单（给日志/排查用）", any("拼图" in m for m in moved), str(moved))
+            ok(
+                "迁移报出了搬动清单（给日志/排查用）",
+                any("拼图" in m for m in moved),
+                str(moved),
+            )
             # 新目录已存在时**不动**旧目录（不覆盖、不合并、绝不删）
             ok(
                 "新目录已存在时旧目录原样保留（绝不覆盖用户数据）",

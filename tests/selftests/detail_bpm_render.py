@@ -53,7 +53,7 @@ _CUSTOM_FLOW = """\
 """
 
 #: 拼版排**最前**的流程（任务 #0027 原样：网关「是否拼版」分叉，
-#: 「是」→ 拼板 → PDF排版，「否」→ PDF排版 直达；节点声明顺序也照抄——
+#: 「是」→ 拼版 → PDF排版，「否」→ PDF排版 直达；节点声明顺序也照抄——
 #: print 在 imposition 之前声明，广度遍历会把它排到拼版前面）。
 _IMPOSITION_FIRST_FLOW = """\
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
@@ -62,7 +62,7 @@ _IMPOSITION_FIRST_FLOW = """\
     <bpmn:exclusiveGateway id="gw" name="是否拼版"/>
     <bpmn:task id="print" name="PDF排版" guji:stage="print"/>
     <bpmn:endEvent id="end" name="生成PDF"/>
-    <bpmn:task id="imposition" name="图片拼板" guji:stage="imposition"/>
+    <bpmn:task id="imposition" name="图片拼版" guji:stage="imposition"/>
     <bpmn:sequenceFlow id="g0" sourceRef="gw" targetRef="print" name="否"/>
     <bpmn:sequenceFlow id="g1" sourceRef="gw" targetRef="imposition" name="是"/>
     <bpmn:sequenceFlow id="g2" sourceRef="imposition" targetRef="print"/>
@@ -99,67 +99,100 @@ def run(ctx) -> None:
     # ---------------------------------------------------------------- 1
     # 默认流程：投影层算出的下标必须与改造前的硬编码逐值相等。
     slots = {s.step: s for s in repo.task_slots(tid)}
-    ok("默认流程槽位数 = 4 真实步骤 + 1 可选节点",
-       len(repo.task_slots(tid)) == len(STAGES) + 1,
-       str([s.step for s in repo.task_slots(tid)]))
+    ok(
+        "默认流程槽位数 = 4 真实步骤 + 1 可选节点",
+        len(repo.task_slots(tid)) == len(STAGES) + 1,
+        str([s.step for s in repo.task_slots(tid)]),
+    )
     # ⚠️ 与旧硬编码逐值相等的是 **stack_index**（栈页号）。bar_index 是
     # 步骤条格子序号，**含可选节点占位**，拼版之后的步骤会顺延一格。
     legacy = {step: index for index, step in enumerate(STAGES)}
-    ok("默认流程：真实步骤的栈页号 = 旧下标 STAGES[index]",
-       all(slots[step].stack_index == index
-           for step, index in legacy.items()),
-       str({s.step: s.stack_index for s in repo.task_slots(tid)}))
-    ok("默认流程：可选节点之前的格序 = 旧下标",
-       all(slots[step].bar_index == index
-           for step, index in legacy.items()
-           if index <= legacy["rembg"]),
-       str({s.step: s.bar_index for s in repo.task_slots(tid)}))
-    ok("默认流程：可选节点之后的格序顺延一格",
-       all(slots[step].bar_index == index + 1
-           for step, index in legacy.items()
-           if index > legacy["rembg"]),
-       str({s.step: s.bar_index for s in repo.task_slots(tid)}))
-    ok("可选节点格序排在第三步之后、第四步之前",
-       slots["imposition"].bar_index == slots["rembg"].bar_index + 1
-       and slots["imposition"].bar_index < slots["print"].bar_index,
-       str({s.step: s.bar_index for s in repo.task_slots(tid)}))
-    ok("可选节点插在第 2 个真实步骤之后（与改造前一致）",
-       repo.task_diagram(tid).optional_after("imposition") == 2,
-       str(repo.task_diagram(tid).optional_after("imposition")))
+    ok(
+        "默认流程：真实步骤的栈页号 = 旧下标 STAGES[index]",
+        all(slots[step].stack_index == index for step, index in legacy.items()),
+        str({s.step: s.stack_index for s in repo.task_slots(tid)}),
+    )
+    ok(
+        "默认流程：可选节点之前的格序 = 旧下标",
+        all(
+            slots[step].bar_index == index
+            for step, index in legacy.items()
+            if index <= legacy["rembg"]
+        ),
+        str({s.step: s.bar_index for s in repo.task_slots(tid)}),
+    )
+    ok(
+        "默认流程：可选节点之后的格序顺延一格",
+        all(
+            slots[step].bar_index == index + 1
+            for step, index in legacy.items()
+            if index > legacy["rembg"]
+        ),
+        str({s.step: s.bar_index for s in repo.task_slots(tid)}),
+    )
+    ok(
+        "可选节点格序排在第三步之后、第四步之前",
+        slots["imposition"].bar_index == slots["rembg"].bar_index + 1
+        and slots["imposition"].bar_index < slots["print"].bar_index,
+        str({s.step: s.bar_index for s in repo.task_slots(tid)}),
+    )
+    ok(
+        "可选节点插在第 2 个真实步骤之后（与改造前一致）",
+        repo.task_diagram(tid).optional_after("imposition") == 2,
+        str(repo.task_diagram(tid).optional_after("imposition")),
+    )
 
     # 步骤条实物：4 步 + 可选节点夹在第三/第四之间（左右都是连接件）
     show_detail(ctx, stage=0)
     pump(app)
-    ok("步骤条仍是 4 个真实步骤", len(d.step_bar.buttons) == 4,
-       str(len(d.step_bar.buttons)))
+    ok(
+        "步骤条仍是 4 个真实步骤",
+        len(d.step_bar.buttons) == 4,
+        str(len(d.step_bar.buttons)),
+    )
     row = d.step_bar._row
     node_pos = row.indexOf(d.step_bar.imposition_slot)
-    ok("拼版节点夹在两条连接线之间",
-       node_pos > 0
-       and isinstance(row.itemAt(node_pos - 1).widget(), _Connector)
-       and isinstance(row.itemAt(node_pos + 1).widget(), _Connector),
-       f"pos={node_pos}")
+    ok(
+        "拼版节点夹在两条连接线之间",
+        node_pos > 0
+        and isinstance(row.itemAt(node_pos - 1).widget(), _Connector)
+        and isinstance(row.itemAt(node_pos + 1).widget(), _Connector),
+        f"pos={node_pos}",
+    )
 
     # 寻址：当前步骤 ⇄ 格序 双向一致（默认流程下等于旧口径）
     ok("格序 0 → 第一步", d.step_at_index(0) == "extract", str(d.step_at_index(0)))
-    ok("格序 3 → 拼版（格序含可选节点占位，不是第四步）",
-       d.step_at_index(3) == "imposition", str(d.step_at_index(3)))
+    ok(
+        "格序 3 → 拼版（格序含可选节点占位，不是第四步）",
+        d.step_at_index(3) == "imposition",
+        str(d.step_at_index(3)),
+    )
     ok("格序 4 → 第四步", d.step_at_index(4) == "print", str(d.step_at_index(4)))
-    ok("第三步 → 格序 2", d.bar_index_of_step("rembg") == 2,
-       str(d.bar_index_of_step("rembg")))
-    ok("拼版 → 格序（第三步之后那一格）",
-       d.bar_index_of_step("imposition") == 3,
-       str(d.bar_index_of_step("imposition")))
+    ok(
+        "第三步 → 格序 2",
+        d.bar_index_of_step("rembg") == 2,
+        str(d.bar_index_of_step("rembg")),
+    )
+    ok(
+        "拼版 → 格序（第三步之后那一格）",
+        d.bar_index_of_step("imposition") == 3,
+        str(d.bar_index_of_step("imposition")),
+    )
     ok("越界格序反查为 None", d.step_at_index(99) is None)
-    ok("两个栈的页号在默认流程下 = 旧下标（格序不等，拼版后顺延）",
-       all(d.stack_index_of(s.bar_index) == index
-           for step, index in legacy.items()
-           for s in [slots[step]]),
-       str({s.step: (s.bar_index, s.stack_index)
-            for s in repo.task_slots(tid)}))
-    ok("可选节点的栈页号顺延到真实步骤之后（不占中间页）",
-       slots["imposition"].stack_index == len(STAGES),
-       str(slots["imposition"].stack_index))
+    ok(
+        "两个栈的页号在默认流程下 = 旧下标（格序不等，拼版后顺延）",
+        all(
+            d.stack_index_of(s.bar_index) == index
+            for step, index in legacy.items()
+            for s in [slots[step]]
+        ),
+        str({s.step: (s.bar_index, s.stack_index) for s in repo.task_slots(tid)}),
+    )
+    ok(
+        "可选节点的栈页号顺延到真实步骤之后（不占中间页）",
+        slots["imposition"].stack_index == len(STAGES),
+        str(slots["imposition"].stack_index),
+    )
 
     # ---------------------------------------------------------------- 2
     # 换流程 → 步骤条重建、顺序与可选节点位置都跟着变。
@@ -173,69 +206,99 @@ def run(ctx) -> None:
 
         slots_new = sorted(repo.task_slots(tid), key=lambda s: s.bar_index)
         order = [s.step for s in slots_new]
-        ok("自定义流程：detect 从步骤条上消失",
-           "detect" not in order, str(order))
-        ok("自定义流程：步骤条按新顺序重建",
-           _bar_labels(d.step_bar) == [s.label for s in slots_new if not s.optional],
-           str(_bar_labels(d.step_bar)))
-        ok("自定义流程：真实步骤降为 3 个（摘掉了 detect）",
-           len(d.step_bar.buttons) == 3, str(len(d.step_bar.buttons)))
-        ok("步骤条标题与流程槽位一致（第一个是提取图片）",
-           _bar_labels(d.step_bar)[0] == "提取图片",
-           str(_bar_labels(d.step_bar)))
+        ok("自定义流程：detect 从步骤条上消失", "detect" not in order, str(order))
+        ok(
+            "自定义流程：步骤条按新顺序重建",
+            _bar_labels(d.step_bar) == [s.label for s in slots_new if not s.optional],
+            str(_bar_labels(d.step_bar)),
+        )
+        ok(
+            "自定义流程：真实步骤降为 3 个（摘掉了 detect）",
+            len(d.step_bar.buttons) == 3,
+            str(len(d.step_bar.buttons)),
+        )
+        ok(
+            "步骤条标题与流程槽位一致（第一个是提取图片）",
+            _bar_labels(d.step_bar)[0] == "提取图片",
+            str(_bar_labels(d.step_bar)),
+        )
 
         # 可选节点异位：现在插在**第一个真实步骤之后**（布局下标 2）
-        ok("自定义流程：拼版插在第 0 个真实步骤之后",
-           repo.task_diagram(tid).optional_after("imposition") == 0,
-           str(repo.task_diagram(tid).optional_after("imposition")))
+        ok(
+            "自定义流程：拼版插在第 0 个真实步骤之后",
+            repo.task_diagram(tid).optional_after("imposition") == 0,
+            str(repo.task_diagram(tid).optional_after("imposition")),
+        )
         node_pos = d.step_bar._row.indexOf(d.step_bar.imposition_slot)
-        ok("自定义流程：可选节点布局位置随流程改变",
-           node_pos == 2, f"pos={node_pos}")
-        ok("自定义流程：可选节点仍在两条连接线之间",
-           isinstance(d.step_bar._row.itemAt(node_pos - 1).widget(), _Connector)
-           and isinstance(d.step_bar._row.itemAt(node_pos + 1).widget(), _Connector),
-           f"pos={node_pos}")
+        ok("自定义流程：可选节点布局位置随流程改变", node_pos == 2, f"pos={node_pos}")
+        ok(
+            "自定义流程：可选节点仍在两条连接线之间",
+            isinstance(d.step_bar._row.itemAt(node_pos - 1).widget(), _Connector)
+            and isinstance(d.step_bar._row.itemAt(node_pos + 1).widget(), _Connector),
+            f"pos={node_pos}",
+        )
 
         # ---------------------------------------------------------------- 3
         # 寻址跟着流程走：流程外的步骤匹配不上，流程内的能互相定位。
-        ok("自定义流程：第三步的格序是 2（extract→拼版→rembg）",
-           d.bar_index_of_step("rembg") == 2, str(d.bar_index_of_step("rembg")))
-        ok("自定义流程：detect 已不在流程里 → 格序反查 None",
-           d.bar_index_of_step("detect") is None)
-        ok("自定义流程：detect 匹配不上下标（回 None）",
-           d._stage_index_of("detect") is None,
-           str(d._stage_index_of("detect")))
-        ok("自定义流程：rembg 能匹配到自己的格序",
-           d._stage_index_of("rembg") == 2, str(d._stage_index_of("rembg")))
-        ok("自定义流程：两个栈页号与格序已不再相等（可选节点顺延）",
-           d.stack_index_of(d.bar_index_of_step("imposition"))
-           != d.bar_index_of_step("imposition"),
-           f"bar={d.bar_index_of_step('imposition')} "
-           f"stack={d.stack_index_of(d.bar_index_of_step('imposition'))}")
+        ok(
+            "自定义流程：第三步的格序是 2（extract→拼版→rembg）",
+            d.bar_index_of_step("rembg") == 2,
+            str(d.bar_index_of_step("rembg")),
+        )
+        ok(
+            "自定义流程：detect 已不在流程里 → 格序反查 None",
+            d.bar_index_of_step("detect") is None,
+        )
+        ok(
+            "自定义流程：detect 匹配不上下标（回 None）",
+            d._stage_index_of("detect") is None,
+            str(d._stage_index_of("detect")),
+        )
+        ok(
+            "自定义流程：rembg 能匹配到自己的格序",
+            d._stage_index_of("rembg") == 2,
+            str(d._stage_index_of("rembg")),
+        )
+        ok(
+            "自定义流程：两个栈页号与格序已不再相等（可选节点顺延）",
+            d.stack_index_of(d.bar_index_of_step("imposition"))
+            != d.bar_index_of_step("imposition"),
+            f"bar={d.bar_index_of_step('imposition')} "
+            f"stack={d.stack_index_of(d.bar_index_of_step('imposition'))}",
+        )
 
         # 切步骤：点/切到第三步，页面认得出来
         d._select_stage(2)
         pump(app)
-        ok("自定义流程：切到格序 2 → 当前阶段是 rembg",
-           d.current_stage() == "rembg", d.current_stage())
-        ok("自定义流程：控制栈切到 rembg 那一页",
-           d.control_stack.currentIndex() == d.stack_index_of(2),
-           f"stack={d.control_stack.currentIndex()}")
+        ok(
+            "自定义流程：切到格序 2 → 当前阶段是 rembg",
+            d.current_stage() == "rembg",
+            d.current_stage(),
+        )
+        ok(
+            "自定义流程：控制栈切到 rembg 那一页",
+            d.control_stack.currentIndex() == d.stack_index_of(2),
+            f"stack={d.control_stack.currentIndex()}",
+        )
 
         # 「上次停留的步骤」按 key 记，换顺序后仍能回到同一步
         d._select_stage(d.bar_index_of_step("print"))
         pump(app)
-        ok("切到第四步后记住的是 print 这个 key",
-           d.store.load_last_stage(tid) == "print",
-           str(d.store.load_last_stage(tid)))
+        ok(
+            "切到第四步后记住的是 print 这个 key",
+            d.store.load_last_stage(tid) == "print",
+            str(d.store.load_last_stage(tid)),
+        )
 
         # ---------------------------------------------------------------- 4
         # 越界不崩：点一个流程里没有的格序。
         d._select_stage(99)
         pump(app)
-        ok("越界格序 → 页面回落到有效步骤而不是崩",
-           d.current_stage() in (s.step for s in repo.task_slots(tid)),
-           d.current_stage())
+        ok(
+            "越界格序 → 页面回落到有效步骤而不是崩",
+            d.current_stage() in (s.step for s in repo.task_slots(tid)),
+            d.current_stage(),
+        )
 
         # ---------------------------------------------------------------- 5
         # ⚠️⚠️ 步骤条下标**只有一种语义 = 格序 bar_index**（用户 2026-10-06
@@ -257,26 +320,36 @@ def run(ctx) -> None:
             (item, _custom_slots.get(step))
             for item, step in zip(
                 d.step_bar.buttons,
-                [s.step for s in sorted(repo.task_slots(tid),
-                                        key=lambda s: s.bar_index)
-                 if not s.optional],
+                [
+                    s.step
+                    for s in sorted(repo.task_slots(tid), key=lambda s: s.bar_index)
+                    if not s.optional
+                ],
             )
         ]
-        ok("自定义流程：每个 StepItem 的 index 就是它的格序（不是序数）",
-           all(item.index == slot.bar_index for item, slot in _expect
-               if slot is not None),
-           str([(i.index, s.bar_index) for i, s in _expect if s is not None]))
+        ok(
+            "自定义流程：每个 StepItem 的 index 就是它的格序（不是序数）",
+            all(
+                item.index == slot.bar_index
+                for item, slot in _expect
+                if slot is not None
+            ),
+            str([(i.index, s.bar_index) for i, s in _expect if s is not None]),
+        )
 
         _bad_click = []
         for item, slot in _expect:
             if slot is None:
                 continue
-            item.clicked.emit(item.index)   # ⚠️ 走真实信号（带参数）
+            item.clicked.emit(item.index)  # ⚠️ 走真实信号（带参数）
             pump(app, times=2)
             if d.current_stage() != slot.step:
                 _bad_click.append((item.index, slot.step, d.current_stage()))
-        ok("自定义流程：点每个按钮都落到**它自己**那一步（不再跳到拼版）",
-           not _bad_click, str(_bad_click))
+        ok(
+            "自定义流程：点每个按钮都落到**它自己**那一步（不再跳到拼版）",
+            not _bad_click,
+            str(_bad_click),
+        )
 
         _bad_status = []
         for slot in repo.task_slots(tid):
@@ -285,14 +358,21 @@ def run(ctx) -> None:
             d.step_bar.reset_statuses()
             d.step_bar.set_step_status(slot.bar_index, "success")
             pump(app, times=2)
-            lit = [i for i, b in enumerate(d.step_bar.buttons)
-                   if b._badge_status == "success"]
-            want = [i for i, b in enumerate(d.step_bar.buttons)
-                    if b.index == slot.bar_index]
+            lit = [
+                i
+                for i, b in enumerate(d.step_bar.buttons)
+                if b._badge_status == "success"
+            ]
+            want = [
+                i for i, b in enumerate(d.step_bar.buttons) if b.index == slot.bar_index
+            ]
             if lit != want:
                 _bad_status.append((slot.step, slot.bar_index, lit, want))
-        ok("自定义流程：按格序设状态，亮的就是那一格（可选节点之后的步骤也上屏）",
-           not _bad_status, str(_bad_status))
+        ok(
+            "自定义流程：按格序设状态，亮的就是那一格（可选节点之后的步骤也上屏）",
+            not _bad_status,
+            str(_bad_status),
+        )
 
         _bad_light = []
         for slot in repo.task_slots(tid):
@@ -301,15 +381,19 @@ def run(ctx) -> None:
             d.step_bar.set_current(slot.bar_index)
             pump(app, times=2)
             lit = [i for i, b in enumerate(d.step_bar.buttons) if b.current]
-            want = [i for i, b in enumerate(d.step_bar.buttons)
-                    if b.index == slot.bar_index]
+            want = [
+                i for i, b in enumerate(d.step_bar.buttons) if b.index == slot.bar_index
+            ]
             if lit != want:
                 _bad_light.append((slot.step, slot.bar_index, lit, want))
-        ok("自定义流程：按格序设当前步，高亮的也是那一格",
-           not _bad_light, str(_bad_light))
+        ok(
+            "自定义流程：按格序设当前步，高亮的也是那一格",
+            not _bad_light,
+            str(_bad_light),
+        )
 
         # ---------------------------------------------------------------- 6
-        # 拼版排在**最前**（任务 #0027 的「拼板→PDF排版→生成PDF」流程，
+        # 拼版排在**最前**（任务 #0027 的「拼版→PDF排版→生成PDF」流程，
         # 连线与节点声明顺序都照抄）。两个坑一起钉：
         # ① 拓扑序不能被"短路的 print"抢跑（广度遍历会排反）；
         # ② ``optional_after`` 对"没有左邻居"要回 **-1**——早先回 ``None``，
@@ -320,37 +404,51 @@ def run(ctx) -> None:
         pump(app)
 
         _first_slots = sorted(repo.task_slots(tid), key=lambda s: s.bar_index)
-        ok("拼版最前：槽位表拼版在前、PDF排版在后",
-           [s.step for s in _first_slots] == ["imposition", "print"],
-           str([s.step for s in _first_slots]))
-        ok("拼版最前：拓扑序 imposition < print",
-           repo.task_diagram(tid).stage_order() == ("imposition", "print"),
-           str(repo.task_diagram(tid).stage_order()))
-        ok("拼版最前：optional_after = -1（不是 None）",
-           repo.task_diagram(tid).optional_after("imposition") == -1,
-           str(repo.task_diagram(tid).optional_after("imposition")))
-        ok("拼版最前：真实步骤只剩 PDF排版",
-           _bar_labels(d.step_bar) == ["PDF排版"], str(_bar_labels(d.step_bar)))
+        ok(
+            "拼版最前：槽位表拼版在前、PDF排版在后",
+            [s.step for s in _first_slots] == ["imposition", "print"],
+            str([s.step for s in _first_slots]),
+        )
+        ok(
+            "拼版最前：拓扑序 imposition < print",
+            repo.task_diagram(tid).stage_order() == ("imposition", "print"),
+            str(repo.task_diagram(tid).stage_order()),
+        )
+        ok(
+            "拼版最前：optional_after = -1（不是 None）",
+            repo.task_diagram(tid).optional_after("imposition") == -1,
+            str(repo.task_diagram(tid).optional_after("imposition")),
+        )
+        ok(
+            "拼版最前：真实步骤只剩 PDF排版",
+            _bar_labels(d.step_bar) == ["PDF排版"],
+            str(_bar_labels(d.step_bar)),
+        )
         _node_pos = d.step_bar._row.indexOf(d.step_bar.imposition_slot)
-        ok("拼版最前：拼版节点排在 PDF排版**前面**（布局第 0 格）",
-           _node_pos == 0
-           and d.step_bar.imposition_index == 0
-           and d.step_bar.imposition_front_connector is None
-           and isinstance(d.step_bar._row.itemAt(_node_pos + 1).widget(),
-                          _Connector),
-           f"pos={_node_pos} imposition_index="
-           f"{d.step_bar.imposition_index}")
+        ok(
+            "拼版最前：拼版节点排在 PDF排版**前面**（布局第 0 格）",
+            _node_pos == 0
+            and d.step_bar.imposition_index == 0
+            and d.step_bar.imposition_front_connector is None
+            and isinstance(d.step_bar._row.itemAt(_node_pos + 1).widget(), _Connector),
+            f"pos={_node_pos} imposition_index=" f"{d.step_bar.imposition_index}",
+        )
         _print_slot = next(s for s in _first_slots if s.step == "print")
         d.step_bar.buttons[0].clicked.emit(d.step_bar.buttons[0].index)
         pump(app, times=2)
-        ok("拼版最前：点「PDF排版」落到 print",
-           d.current_stage() == "print", d.current_stage())
+        ok(
+            "拼版最前：点「PDF排版」落到 print",
+            d.current_stage() == "print",
+            d.current_stage(),
+        )
         d.step_bar.reset_statuses()
         d.step_bar.set_step_status(_print_slot.bar_index, "success")
         pump(app, times=2)
-        ok("拼版最前：PDF排版 的状态能上屏",
-           any(b._badge_status == "success" for b in d.step_bar.buttons),
-           str([b._badge_status for b in d.step_bar.buttons]))
+        ok(
+            "拼版最前：PDF排版 的状态能上屏",
+            any(b._badge_status == "success" for b in d.step_bar.buttons),
+            str([b._badge_status for b in d.step_bar.buttons]),
+        )
     finally:
         # 复原成默认流程，**必须重新 set_task** 才能把步骤条也恢复成 4 步，
         # 否则共享的 ctx.d 会给后续模块留一个 3 步的怪状态。
@@ -361,52 +459,68 @@ def run(ctx) -> None:
         d.set_task(tid)
         show_detail(ctx, stage=0)
         pump(app)
-        ok("复原：步骤条回到 4 个真实步骤", len(d.step_bar.buttons) == 4,
-           str(len(d.step_bar.buttons)))
+        ok(
+            "复原：步骤条回到 4 个真实步骤",
+            len(d.step_bar.buttons) == 4,
+            str(len(d.step_bar.buttons)),
+        )
 
         # ---- 同样的三条，在**默认流程**上再钉一遍 ----
         # ⚠️ 这一段才是那个 bug 的现场（默认流程：print 序数 3 / 格序 4）。
         # 放在"复原"之后断言，才是真的在跑默认流程。
         _d_slots = {s.step: s for s in repo.task_slots(tid)}
-        ok("默认流程：可选节点之后的步骤，格序与序号**不再相等**"
-           "（这正是那条 bug 的成因）",
-           _d_slots["print"].bar_index == len(d.step_bar.buttons)
-           and _d_slots["print"].bar_index != len(d.step_bar.buttons) - 1,
-           f"print.bar_index={_d_slots['print'].bar_index} "
-           f"buttons={len(d.step_bar.buttons)}")
+        ok(
+            "默认流程：可选节点之后的步骤，格序与序号**不再相等**"
+            "（这正是那条 bug 的成因）",
+            _d_slots["print"].bar_index == len(d.step_bar.buttons)
+            and _d_slots["print"].bar_index != len(d.step_bar.buttons) - 1,
+            f"print.bar_index={_d_slots['print'].bar_index} "
+            f"buttons={len(d.step_bar.buttons)}",
+        )
 
         _d_bad = []
         for item in d.step_bar.buttons:
             item.clicked.emit(item.index)
             pump(app, times=2)
-            slot = next((s for s in repo.task_slots(tid)
-                         if s.bar_index == item.index), None)
+            slot = next(
+                (s for s in repo.task_slots(tid) if s.bar_index == item.index), None
+            )
             if slot is None or d.current_stage() != slot.step:
                 _d_bad.append((item.index, d.current_stage()))
-        ok("默认流程：点每个按钮都落到它自己那一步（PDF排版 不再打开拼版）",
-           not _d_bad, str(_d_bad))
+        ok(
+            "默认流程：点每个按钮都落到它自己那一步（PDF排版 不再打开拼版）",
+            not _d_bad,
+            str(_d_bad),
+        )
 
         d.step_bar.reset_statuses()
         d.step_bar.set_step_status(_d_slots["print"].bar_index, "success")
         pump(app, times=2)
-        _lit = [i for i, b in enumerate(d.step_bar.buttons)
-                if b._badge_status == "success"]
-        ok("默认流程：「PDF排版」的状态能上屏（不再被静默 return 吃掉）",
-           len(_lit) == 1 and d.step_bar.buttons[_lit[0]].index
-           == _d_slots["print"].bar_index,
-           f"lit={_lit} bar={_d_slots['print'].bar_index}")
+        _lit = [
+            i for i, b in enumerate(d.step_bar.buttons) if b._badge_status == "success"
+        ]
+        ok(
+            "默认流程：「PDF排版」的状态能上屏（不再被静默 return 吃掉）",
+            len(_lit) == 1
+            and d.step_bar.buttons[_lit[0]].index == _d_slots["print"].bar_index,
+            f"lit={_lit} bar={_d_slots['print'].bar_index}",
+        )
 
         d.step_bar.set_current(_d_slots["print"].bar_index)
         pump(app, times=2)
         _hl = [i for i, b in enumerate(d.step_bar.buttons) if b.current]
-        ok("默认流程：按格序选中「PDF排版」，高亮落在它身上",
-           len(_hl) == 1 and d.step_bar.buttons[_hl[0]].index
-           == _d_slots["print"].bar_index,
-           f"highlight={_hl}")
+        ok(
+            "默认流程：按格序选中「PDF排版」，高亮落在它身上",
+            len(_hl) == 1
+            and d.step_bar.buttons[_hl[0]].index == _d_slots["print"].bar_index,
+            f"highlight={_hl}",
+        )
 
         # 面板取用只有一个入口，且流程外的步骤返回 None（不构造面板）
-        ok("panel_host_of_step 取得到流程内的面板",
-           d.panel_host_of_step("rembg") is not None)
+        ok(
+            "panel_host_of_step 取得到流程内的面板",
+            d.panel_host_of_step("rembg") is not None,
+        )
         show_detail(ctx, stage=0)
         pump(app)
 

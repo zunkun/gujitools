@@ -58,8 +58,8 @@ class MainWindow(QMainWindow):
     （图片提取 / 去底色 / 拼图）。
 
     ⚠️ **对外的属性名一个都没变**：``list_page`` / ``detail_page`` / ``pages``
-    / ``store`` 全部转发给壳层同名成员（见下面几个 property）。``tests/gui_shot.py``
-    与 ``tests/selftests/_context.py`` 都按这些名字取页面操作控件，转发一层
+    / ``store`` 全部转发给壳层同名成员（见下面几个 property）。自测
+    （``tests/selftests/_context.py``）按这些名字取页面操作控件，转发一层
     既升级了布局、又不改测试契约。
     """
 
@@ -101,7 +101,7 @@ class MainWindow(QMainWindow):
 
     # ---------------------------------------------------- 对外契约（转发壳层）
     # ⚠️ 这几个 property 是**测试与截图脚本的公开接口**，改名会连带弄坏它们：
-    # gui_shot.py 用 ``window.pages.setCurrentWidget(window.list_page)``、
+    # 自测用 ``window.pages.setCurrentWidget(window.list_page)``、
     # _context.py 用 ``window.detail_page`` / ``window.list_page.store``。
     @property
     def store(self):

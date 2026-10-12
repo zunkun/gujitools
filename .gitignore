@@ -64,3 +64,6 @@ desktop/static/manual.html
 .workbuddy/**/*.png
 
 _*/
+
+# 构建产物待删区（改名删除的 dist，绝不能进仓库：含 200MB 安装包）
+/dist.deleting/

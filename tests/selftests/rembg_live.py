@@ -33,13 +33,19 @@ def _wait(app, cond, timeout: float = 25.0) -> bool:
 
 
 def run(ctx) -> None:
-    from tests.gui_shot import make_fake_page_image
-    from tests.selftests._context import ok, pump, show_detail
+    from tests.selftests._context import make_fake_page_image, ok, pump, show_detail
 
     app, d, repo = ctx.app, ctx.d, ctx.repo
 
     # ---- 专用任务：2 页，带 extract 产物与检测框（最小侵入，用完即删）----
     tid = repo.create_task(Path("D:/samples/实时预览样例.pdf"), "hash-live", "实时预览样例")
+    # ⚠️ 实时预览暂存目录在 tests/tmp/guji_live_preview/<task_id>/，**跨运行共享**
+    #    而每轮测试的任务号都从 0001 重排——批内前面的模块占掉了几个号之后，
+    #    本模块的任务号可能撞上历史运行的残留目录（'001.png' 混进断言，
+    #    2026-10-12 last_stage→rembg_live 连跑必红的根因）。开场先清自己的。
+    from desktop.services import rembg_live as _live_mod
+
+    _live_mod.reset(tid)
     extract_dir = repo.extract_output_dir(tid)
     extract_dir.mkdir(parents=True, exist_ok=True)
     for page in (1, 2):

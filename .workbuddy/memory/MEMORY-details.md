@@ -18,7 +18,7 @@
 - ⚠"控件能不能点"：❌`parentWidget().childAt()`；⚠`widgetAt` 离屏对按钮返 None；✅权威＝`QTest.mouseClick` 真点看槽有没有被调。⚠`show()` 异步，不跑 `processEvents` 会点空（假红）。⚠`QRect.bottom()` 包含式。
 - ⚠**"改前会红吗"必须双向验证**：注入在**独立子进程**跑、`cp` 备份不用 git、先 `assert count==1`、确认红的是**目标断言**。假绿三例：①只验"详情页在前台"恒真；②`_toast(kind,title,content)` 标题是**第二**参；③在完整 `set_task` 链上验"高亮别跳格"改前也绿（须**直接调 `_rebuild_step_bar()`**）。⚠替身要在 `shell.close()` 前用完；⚠**别 `git stash`**；⚠**未提交在制品禁用 `git checkout HEAD -- <路径>`**。
 - ⚠本仓 CRLF/LF 混杂：脚本"读-替换-写回"须 `read_text()` 后按 `\n` 匹配、写回 `newline="\r\n"`，否则 `str.count` 恒 0。
-- 改 `functions/`|`utils/` 必跑 `reporter_cli_parity.py`|`reporter_worker_e2e.py`|`cli_print_smoke.py`。文档 `gen_api_docs.py --check`+`check_docs.py`（私有方法不进 API 文档）；视觉自查 `gui_shot.py`、BPM 截图 `bpm_shot.py`。
+- 改 `functions/`|`utils/` 必跑 `reporter_cli_parity.py`|`reporter_worker_e2e.py`。文档 `gen_api_docs.py --check`+`check_docs.py`（私有方法不进 API 文档）；视觉自查靠真机+`bpm_shot.py`（`gui_shot.py` 已于 2026-10-12 退役删除，手册截图改人工截取，守卫 `gui_guide`）。⚠已把 `cli_print_smoke` 判据并入 selftest `cli_run`（CLI 入口端到端，六命令）。
 
 ## 事实来源（别另写一份）
 CLI参数`core/command_spec.py`｜桌面默认值`components/panels/params_spec.py`｜色距字号`ui/theme.py`｜JSON`store/json_io.py`。框几何`utils/box_geometry.py`：半幅恒2槽[左,右]/整幅恒1槽，**下游靠槽数辨形态**；绘制`box_draw.draw_slots`；排版`page_layout.py`；页序`sort_utils.natural_sort_key`（2026-10-11 合并两键为唯一排序键）。步骤`steps/spec.py::SPECS`唯一（`STEP_KEYS`/`FLOW_STAGES`/`OPTIONAL_STEPS`/`NAV_STEPS`/`PANEL_CLASSES` 全派生；`role`⊥`nav`）；页面内查`ports.spec_for_stage(stage)`（⚠别用`spec_by_key`：`rembg_submit`→None），中文名走`ports.stage_label()`。

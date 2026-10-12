@@ -35,8 +35,7 @@
 
 | 资源 | 说明 |
 | --- | --- |
-| [../../guide/screenshots/](../../guide/screenshots/) | 界面总览截图（`tests/gui_shot.py` 离屏生成） |
-| [../../guide/screenshots/guide/](../../guide/screenshots/guide/) | 用户操作手册配图（`tests/gui_shot.py --guide` 生成） |
+| [../../guide/screenshots/](../../guide/screenshots/) | 界面总览截图 + 用户操作手册配图（人工截取） |
 
 ## 快速开始
 
@@ -51,12 +50,6 @@ QT_QPA_PLATFORM=offscreen python tests/gui_selftest.py --only <模块名>
 
 # 全量自测：仅动了共享底层或发布打包前才需要（详见 .workbuddy/memory/details-testing.md）
 QT_QPA_PLATFORM=offscreen python tests/gui_selftest.py
-
-# 离屏渲染界面截图（视觉自查，输出到指定目录）
-QT_QPA_PLATFORM=offscreen python tests/gui_shot.py D:/tmp/shots
-
-# 生成用户操作手册配图（写入 <目录>/guide/）
-QT_QPA_PLATFORM=offscreen python tests/gui_shot.py --guide D:/tmp/shots
 ```
 
 ## 当前实现要点（速览）
@@ -69,7 +62,7 @@ QT_QPA_PLATFORM=offscreen python tests/gui_shot.py --guide D:/tmp/shots
   [gui-ui-system.md](gui-ui-system.md)。
 - **左侧导航与独立模块**：主窗口中央是 `desktop/shell.py` 的壳层
   （导航栏默认折叠，点左上角菜单按钮展开）。导航条目 = 「任务管理」+ 独立任务页
-  （**5 个**：PDF图片提取 / 检测文本框 / 图片去底色 / PDF排版 / 图片拼板）。
+  （**5 个**：PDF图片提取 / 检测文本框 / 图片去底色 / PDF排版 / 图片拼版）。
   ⚠️ 独立页注册表 `MODULES` **不是一份独立清单**：它由
   `desktop/steps/spec.py::SPECS` 里 `nav=True` 的条目经 `NAV_STEPS` 派生
   （标题/图标/顺序全部来自 spec）——新增一个模块 = 写一个包 + 加一条 spec，

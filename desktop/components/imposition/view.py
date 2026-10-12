@@ -76,9 +76,7 @@ class ImpositionViewWidget(QWidget):
         self.page_list.add_requested.connect(self.add_requested)
         self.page_list.reorder_requested.connect(self.page_reorder_requested)
         self.page_list.remove_requested.connect(self.page_remove_requested)
-        self.page_list.batch_delete_requested.connect(
-            self.pages_batch_delete_requested
-        )
+        self.page_list.batch_delete_requested.connect(self.pages_batch_delete_requested)
         row.addWidget(self.page_list)
 
         # ---- 模块二：操作画布（底部一行：左侧提示语 + 右侧翻页按钮）----
@@ -90,9 +88,7 @@ class ImpositionViewWidget(QWidget):
         self.canvas.selection_changed.connect(self.slot_selected)
         # 双击预览（信号→信号直连）：弹窗归控制器管，视图只转发
         self.canvas.item_double_clicked.connect(self.item_preview_requested)
-        self.canvas.spread_double_clicked.connect(
-            self.spread_preview_requested
-        )
+        self.canvas.spread_double_clicked.connect(self.spread_preview_requested)
         # 右键「编辑单图 / 编辑整图」同款直连：不经预览弹窗的编辑入口归控制器管
         self.canvas.item_edit_requested.connect(self.item_edit_requested)
         self.canvas.spread_edit_requested.connect(self.spread_edit_requested)
@@ -157,7 +153,7 @@ class ImpositionViewWidget(QWidget):
 
         ⚠️ 别用 :meth:`set_page_thumbs` 做批量回填：它会遍历**全部**条目，
         而每条都要重跑一次缩放——380 张陆续到达就是 7.2 万次（用户
-        2026-10-06 报"拼板阶段程序卡死"）。转发见
+        2026-10-06 报"拼版阶段程序卡死"）。转发见
         :meth:`ImpositionPageList.set_thumb_at`。
         """
         self.page_list.set_thumb_at(index, image)
@@ -264,7 +260,7 @@ class ImpositionViewWidget(QWidget):
         if len(stems) == 1:
             self.hint_main.setText(
                 f"{cn_page_label(self._current)}　·　整幅"
-                f"<b><font color=\"{SPINE_COLOR.name()}\">「{html.escape(stems[0])}」</font></b>"
+                f'<b><font color="{SPINE_COLOR.name()}">「{html.escape(stems[0])}」</font></b>'
             )
             return
         right = html.escape(stems[0])
@@ -275,14 +271,14 @@ class ImpositionViewWidget(QWidget):
         crop = CROP_COLOR.name()
         self.hint_main.setText(
             f"{cn_page_label(self._current)}　·　右侧"
-            f"<b><font color=\"{spine}\">「{right}」</font></b>"
-            f"　·　左侧<b><font color=\"{spine}\">「{left}」</font></b>"
+            f'<b><font color="{spine}">「{right}」</font></b>'
+            f'　·　左侧<b><font color="{spine}">「{left}」</font></b>'
         )
         self.hint.setText(
             "拖动移动　·　四角/四边缩放拉伸　·　框上方圆钮旋转　·　滚轮缩放视图　｜　"
             "双击图片预览原图　·　双击空白处预览成品组合　｜　"
             "右键图片/空白处可预览或编辑（编辑不经预览弹窗）　｜　"
             "点击图片选中后可在右侧「当前图片样式」里调整"
-            f"（<font color=\"{spine}\">红色虚线</font>为两图公共中心线，"
-            f"<font color=\"{crop}\">灰色虚线框</font>为成品截图范围）。"
+            f'（<font color="{spine}">红色虚线</font>为两图公共中心线，'
+            f'<font color="{crop}">灰色虚线框</font>为成品截图范围）。'
         )

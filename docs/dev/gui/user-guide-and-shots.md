@@ -16,7 +16,7 @@
 | 旧版本行为 | 「想回到旧的 72 DPI 才填 72」 | 本文 §4 |
 | 配置文件字段 | `title_position` / `title_orientation` 只能改配置文件 | 本文 §4 |
 | 设计取舍与实现口径 | 「口径是文字轮廓边缘」「这里选了后者」「不是 2mm，而是由页边距推导」 | 本文 §4 |
-| 文档/工具的维护说明 | 「截图由 `tests/gui_shot.py --guide` 生成（见文末「维护」）」 | 本文 §3 |
+| 文档/工具的维护说明 | 「截图由人工截取后覆盖 `docs/guide/screenshots/`（流程见文末「维护」）」 | 本文 §3 |
 
 判断标准很简单：**用户能不能照着一句话去做一件事**。不能，就是技术说明。
 
@@ -38,33 +38,22 @@ CLI 手册是另一份：`docs/guide/cli.md`。两者在应用内以分段开关
 
 ## 3. 截图怎么刷新
 
-```bash
-cd /d/workspace/gujitools
-QT_QPA_PLATFORM=offscreen KMP_DUPLICATE_LIB_OK=TRUE \
-  "C:/Users/liuzu/anaconda3/envs/py310/python.exe" -u tests/gui_shot.py --guide \
-  "C:/Users/liuzu/AppData/Local/Temp/guji_shots_new"
-```
+> **2026-10-12 起**：截图改由**人工截取**——旧的离屏生成脚本
+> `tests/gui_shot.py`（总览 + `--guide` 两套流水线）已退役删除。
+> 手册配图不再由脚本产出，`gui_guide` 护栏也不再校验脚本。
 
-产出 `<输出目录>/guide/` 下 12 张（文件名是脚本里的字面量，**不得改名**）。
+人工截取的流程：
 
-> ⚠️ **待重出（截至 2026-09-30）**：以下界面改动还没进截图，下次重出时一并处理——
-> ① 步骤条上多了「图片拼版」虚线节点（虚线框宽度已改成贴合文字）；
-> ② 第二步面板多了「选中框类型 / 删除选中框」，且"手绘第三个框"的演示已下线；
-> ③ 新增的「图片拼版」页面（左列拼版页 + 右操作画布 + 选择弹窗）**还没有截图**，
-> 手册第 5 节目前是纯文字。加截图时要同步 `gui_shot.py --guide` 的文件名常量
-> 与 `docs/guide/user-guide.md` 的引用（`gui_guide` 护栏要求两边一致、无孤儿图）。
-
-1. **先 md5 比对**：`md5sum guide/*.png | sort`，出现重复说明某一屏的交互态没生效
-   （历史事故：三张检测截图完全相同，根因是 `ImageViewerWidget` 的递归回调导致
-   两个 `PreviewWorker` 抢着 `set_image()`）；
-2. 覆盖 `docs/guide/screenshots/guide/`（用 Python 脚本走 `pathlib`，别在 bash 里写中文路径）；
-3. 跑护栏 `tests/gui_selftest.py --only gui_guide`；
+1. 真机跑到要截的界面（任务流程 / 独立任务页 / 拼版 / 编辑器），截图；
+2. 覆盖 `docs/guide/screenshots/` 下的同名文件（**文件名不要改**，手册按名引用）；
+3. 跑护栏 `tests/gui_selftest.py --only gui_guide`：它核对
+   「手册引用的图都存在（无裂图）」+「截图目录无孤儿图」+「按钮文案与界面一致」；
 4. 让**打包版**生效：`python build.py --manual-only`（约 2.5 分钟，见 gui-ui-system §7）。
 
-演示数据契约（护栏会逐条核对）：优先真实古籍
-（`REAL_PDF_PREFERRED`，本机在 `C:/Users/liuzu/Documents/test` 下的「龍譚精舍叢刻」），
-保留合成占位图回退；演示页由 `DEMO_PAGE`（当前 4）控制，且手册里必须写明
-「第 4 页」与书名——改常量就要同步改手册。
+历史经验仍适用：同一屏要核对交互态真的生效（历史事故：三张检测截图完全相同，
+根因是 `ImageViewerWidget` 的递归回调导致两个 `PreviewWorker` 抢着 `set_image()`）。
+手册正文里的演示古籍与页码（《龍譚精舍叢刻》v.9 / 第 6 页）写在手册开头，
+换书时同步改那句即可（护栏断言书名存在）。
 
 ## 4. 从手册里挪出来的技术注解（存档，别丢）
 
@@ -72,7 +61,7 @@ QT_QPA_PLATFORM=offscreen KMP_DUPLICATE_LIB_OK=TRUE \
 
 1. **渲染 DPI**：`dpi` 是**整页渲染**的分辨率下限（默认 300）。历史上默认值是 72，
    填 `72` 是"回到旧行为"的逃生口；手册只讲「一般保持 300」。
-2. **整页模式与 area 的关系**：勾「整页模式：不调用 YOLO」等价于第三步
+2. **整页模式与 area 的关系**：勾「整页模式：不做检测」等价于第三步
    `area = 4 (整页/不检测)`；取消勾选回到 `area = 1 (左右分开)`。整页模式
    **不写自动框**（`boxes.json` 里不会有自动检测结果），只认手动框。
 3. **检测与 CLI 同源**：GUI 的检测与命令行 `detect` / `crop` / `cropremove` 走同一份

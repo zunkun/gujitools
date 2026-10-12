@@ -347,6 +347,44 @@ def is_reddish(rgb: tuple[int, int, int] | None, margin: int = 40) -> bool:
     return red > green + margin and red > blue + margin
 
 
+#: 离屏渲染可用的中文字体候选（按优先级）：截图/预览类自测要字形稳定。
+FONT_CANDIDATES = (
+    r"C:\Windows\Fonts\msyh.ttc",
+    r"C:\Windows\Fonts\msyhbd.ttc",
+    r"C:\Windows\Fonts\simhei.ttf",
+    r"C:\Windows\Fonts\simsun.ttc",
+)
+
+
+def make_fake_page_image(path, text: str, size=(560, 800), tone="#f3ead6",
+                         frame: bool = True):
+    """造一张"古籍页面"占位图，让预览区有内容可看。
+
+    frame=False 用于去底色结果：不再画红色文本框边线。
+    （原 ``tests/gui_shot.py`` 的回退工具，2026-10-12 截图脚本退役后收编到此。）
+    """
+    from PySide6.QtCore import QRect, Qt
+    from PySide6.QtGui import QColor, QFont, QImage, QPainter
+
+    image = QImage(size[0], size[1], QImage.Format.Format_RGB32)
+    image.fill(QColor(tone))
+    painter = QPainter(image)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(QColor("#2b2b2b"))
+    painter.setFont(QFont("SimSun", 15))
+    painter.drawText(
+        QRect(40, 40, size[0] - 80, size[1] - 80),
+        int(Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap),
+        text,
+    )
+    if frame:
+        painter.setPen(QColor("#c0392b"))
+        painter.drawRect(28, 28, size[0] - 56, size[1] - 56)
+    painter.end()
+    image.save(str(path))
+    return path
+
+
 class Context:
     """跨模块共享的夹具与状态。
 

@@ -106,11 +106,11 @@ SOLO_MIN_WIDTH = 360
 #: ``QtWidgets`` 都 import 不到），所以按它的定义写死：它是 ``(1 << 24) - 1``，
 #: 即 16777215。
 #:
-#: ⚠️⚠️ **必须是 ``- 1``，不能写 ``1 << 24``**（用户 2026-10-03 报「单独拼板
+#: ⚠️⚠️ **必须是 ``- 1``，不能写 ``1 << 24``**（用户 2026-10-03 报「单独拼版
 #: 界面报错」）：``setMaximumHeight(16777216)`` 超过 Qt 的硬上限，Qt 会往
 #: stderr 打 ``QWidget::setMaximumSize: The largest allowed size is
 #: (16777215,16777215)`` 并把值**截断**回 16777215。功能上无害（截断后正是
-#: 我们要的"不设上限"），但拼板独立页初始就是独占模式，每次进页面都刷这条
+#: 我们要的"不设上限"），但拼版独立页初始就是独占模式，每次进页面都刷这条
 #: 警告，看着像报错。控件实际高度由布局决定，永远碰不到这个上限。
 HEIGHT_UNLIMITED = (1 << 24) - 1
 
@@ -146,8 +146,8 @@ class SourceZone(QWidget):
         self.spec = spec
         self._source: Path | None = None
         self._detail = ""
-        self._hot = False        # 有东西正拖在本控件上方
-        self._hover = False      # 鼠标悬停
+        self._hot = False  # 有东西正拖在本控件上方
+        self._hover = False  # 鼠标悬停
         self._close_rect = QRectF()
         #: 独占模式：页面上再没有别的控件（只有这一个输入框），撑满整幅
         self._solo = False
@@ -183,7 +183,7 @@ class SourceZone(QWidget):
 
         # 图标跟着步骤的输入物走：入口是 PDF 就用带 "PDF" 字样的自绘图
         # （``FIF.DOCUMENT`` 是空文档，会被读成"文档"），图片步骤仍旧用它。
-        file_icon = (PDF_FILE if self.spec.input_noun() == "PDF" else FIF.DOCUMENT)
+        file_icon = PDF_FILE if self.spec.input_noun() == "PDF" else FIF.DOCUMENT
         self.file_button = PushButton(file_icon, self.spec.pick_label, self)
         self.file_button.setFixedHeight(BUTTON_HEIGHT)
         self.file_button.setToolTip(f"从磁盘上挑一个{self.spec.input_noun()}文件")
@@ -195,9 +195,7 @@ class SourceZone(QWidget):
             self.dir_button = PushButton(FIF.FOLDER, "选择文件夹", self)
             self.dir_button.setFixedHeight(BUTTON_HEIGHT)
             self.dir_button.setToolTip("选一个文件夹，按里面可用的文件批量处理")
-            self.dir_button.clicked.connect(
-                lambda: self._browse_kind(from_files=False)
-            )
+            self.dir_button.clicked.connect(lambda: self._browse_kind(from_files=False))
             row.addWidget(self.dir_button)
         row.addStretch(1)
 
@@ -373,7 +371,9 @@ class SourceZone(QWidget):
     def keyPressEvent(self, event) -> None:  # noqa: N802 - Qt 命名
         """回车/空格 = 点一下（键盘可达）。"""
         if event.key() in (
-            Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space,
+            Qt.Key.Key_Return,
+            Qt.Key.Key_Enter,
+            Qt.Key.Key_Space,
         ):
             self._browse_soon()
             event.accept()
@@ -515,9 +515,7 @@ class SourceZone(QWidget):
                 self.sizePolicy().horizontalPolicy(),
                 QSizePolicy.Policy.Fixed,
             )
-            self.setFixedHeight(
-                EMPTY_HEIGHT if self._source is None else FILLED_HEIGHT
-            )
+            self.setFixedHeight(EMPTY_HEIGHT if self._source is None else FILLED_HEIGHT)
         self._relayout_buttons()
         self.updateGeometry()
 
@@ -583,15 +581,20 @@ class SourceZone(QWidget):
         rect = self._content_rect(rect)
         top = self._empty_block_top(rect)
         icon_rect = QRectF(
-            rect.center().x() - ICON_BOX / 2, top, ICON_BOX, ICON_BOX,
+            rect.center().x() - ICON_BOX / 2,
+            top,
+            ICON_BOX,
+            ICON_BOX,
         )
         self._icon().render(painter, icon_rect, Theme.LIGHT)
 
         painter.setFont(self._font(T.SIZE_LABEL, bold=True))
         painter.setPen(QColor(T.ACCENT if self._hot else T.INK))
         title_rect = QRectF(
-            rect.left() + PAD, icon_rect.bottom() + T.SPACE_SM,
-            rect.width() - 2 * PAD, 22,
+            rect.left() + PAD,
+            icon_rect.bottom() + T.SPACE_SM,
+            rect.width() - 2 * PAD,
+            22,
         )
         painter.drawText(
             title_rect,
@@ -602,8 +605,10 @@ class SourceZone(QWidget):
         painter.setFont(self._font(T.SIZE_CAPTION))
         painter.setPen(QColor(T.ACCENT if self._hot else T.INK_FAINT))
         hint_rect = QRectF(
-            rect.left() + PAD, title_rect.bottom() + 2,
-            rect.width() - 2 * PAD, 18,
+            rect.left() + PAD,
+            title_rect.bottom() + 2,
+            rect.width() - 2 * PAD,
+            18,
         )
         painter.drawText(
             hint_rect,
@@ -630,7 +635,12 @@ class SourceZone(QWidget):
 
     def _empty_block_bottom(self) -> float:
         """空态**自绘**部分的底边 Y（按钮行顶边 = 它 + ``BUTTON_GAP``）。"""
-        return self._empty_block_top() + self._empty_block_height() - BUTTON_GAP - BUTTON_HEIGHT
+        return (
+            self._empty_block_top()
+            + self._empty_block_height()
+            - BUTTON_GAP
+            - BUTTON_HEIGHT
+        )
 
     def _content_rect(self, rect: QRectF) -> QRectF:
         """自绘内容可用区：空态留出上下各一点余量，已选态就是整块。
@@ -643,7 +653,9 @@ class SourceZone(QWidget):
             return rect
         pad = T.SPACE_MD
         return QRectF(
-            rect.left(), rect.top() + pad, rect.width(),
+            rect.left(),
+            rect.top() + pad,
+            rect.width(),
             max(40.0, rect.height() - 2 * pad),
         )
 
@@ -651,8 +663,10 @@ class SourceZone(QWidget):
         """已选态：图标 + 名字 + 路径 + 右侧「更换」与清空 ✕。"""
         assert self._source is not None
         icon_rect = QRectF(
-            rect.left() + PAD, rect.center().y() - ICON_BOX / 2 * 0.8,
-            ICON_BOX * 0.8, ICON_BOX * 0.8,
+            rect.left() + PAD,
+            rect.center().y() - ICON_BOX / 2 * 0.8,
+            ICON_BOX * 0.8,
+            ICON_BOX * 0.8,
         )
         self._icon().render(painter, icon_rect, Theme.LIGHT)
 
@@ -683,7 +697,8 @@ class SourceZone(QWidget):
         self._close_rect = QRectF(
             rect.right() - CLOSE_BOX - T.SPACE_SM,
             rect.center().y() - CLOSE_BOX / 2,
-            CLOSE_BOX, CLOSE_BOX,
+            CLOSE_BOX,
+            CLOSE_BOX,
         )
         FIF.CLOSE.render(painter, self._close_rect, Theme.LIGHT)
 

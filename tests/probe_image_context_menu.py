@@ -65,7 +65,7 @@ def main() -> int:
     # 离屏环境默认没有中文字体，菜单文字会画成方块（豆腐块）——与真机无关，
     # 但截图就白截了。复用截图脚本的字体候选，把中文字体挂上再画。
     try:
-        from tests.gui_shot import FONT_CANDIDATES
+        from tests.selftests._context import FONT_CANDIDATES
 
         for path in FONT_CANDIDATES:
             if Path(path).exists():

@@ -9,7 +9,8 @@ from typing import TYPE_CHECKING, Any, Callable, cast
 from PySide6.QtWidgets import QFileDialog, QWidget
 
 from desktop.services.print_plan import (
-    drop_foreign_stage_pages, plan_print_entries,
+    drop_foreign_stage_pages,
+    plan_print_entries,
 )
 from desktop.utils.files import default_open_dir, list_stage_images
 from utils.sort_utils import natural_sort_key
@@ -103,7 +104,9 @@ class PrintListMixin:
             self.store.save_print_doc(task_id, doc)
         entries, new_doc = plan_print_entries(rembg_files, doc)
         self._print_doc_snapshot = new_doc
-        if not doc or set(doc.get("rembg_snapshot") or []) != set(new_doc["rembg_snapshot"]):
+        if not doc or set(doc.get("rembg_snapshot") or []) != set(
+            new_doc["rembg_snapshot"]
+        ):
             self.store.save_print_doc(task_id, new_doc)
         return entries, new_doc
 
@@ -117,12 +120,12 @@ class PrintListMixin:
             return
         entries = self.print_preview.entries()
         doc = getattr(self, "_print_doc_snapshot", None) or {
-            "rembg_snapshot": [], "pages": [],
+            "rembg_snapshot": [],
+            "pages": [],
         }
         doc["pages"] = [
             (
-                {"file": e.get("file"), "label": e.get("label"),
-                 "rect": e["rect"]}
+                {"file": e.get("file"), "label": e.get("label"), "rect": e["rect"]}
                 if e.get("rect") is not None
                 else {"file": e.get("file"), "label": e.get("label")}
             )
@@ -208,8 +211,8 @@ class PrintListMixin:
     def _print_source_switched(self) -> bool:
         """磁盘上那份 PDF 是不是**换了取图来源之后**生成的（旧数据）。
 
-        用户 2026-10-03："之前没有启用拼板但生成了 pdf，此时再次启用拼板，
-        则 PDF排版的数据要来源于拼板，**旧的数据不显示**"。所以这份判定是
+        用户 2026-10-03："之前没有启用拼版但生成了 pdf，此时再次启用拼版，
+        则 PDF排版的数据要来源于拼版，**旧的数据不显示**"。所以这份判定是
         "旧数据不显示"的开关——判据与实现见
         :func:`desktop.services.stale_chain.print_source_switched`。
         """
@@ -241,7 +244,8 @@ class PrintListMixin:
         # 别让用户以为是程序坏了。
         if self._print_source_switched():
             self._toast(
-                "warning", "PDF 需要重新生成",
+                "warning",
+                "PDF 需要重新生成",
                 "取图来源已改变（图片拼版开关），请先点「生成PDF」再下载。",
             )
             return
@@ -257,7 +261,10 @@ class PrintListMixin:
         downloads = Path.home() / "Downloads"
         default_dir = downloads if downloads.exists() else Path.home()
         target, _ = QFileDialog.getSaveFileName(
-            _parent(self), "下载 PDF", str(default_dir / source.name), "PDF 文件 (*.pdf)",
+            _parent(self),
+            "下载 PDF",
+            str(default_dir / source.name),
+            "PDF 文件 (*.pdf)",
         )
         if not target:
             return
@@ -273,11 +280,10 @@ class PrintListMixin:
         self.run_worker(
             lambda: worker,
             lambda w, thread: (
+                connect_queued(self, w.finished, self._on_download_done, thread),
                 connect_queued(
-                    self, w.finished, self._on_download_done, thread
-                ),
-                connect_queued(
-                    self, w.failed,
+                    self,
+                    w.failed,
                     lambda msg: self._on_download_done([], [(str(source), msg)]),
                     thread,
                 ),
@@ -311,7 +317,9 @@ class PrintListMixin:
         downloads = Path.home() / "Downloads"
         default_dir = downloads if downloads.exists() else Path.home()
         target, _ = QFileDialog.getSaveFileName(
-            _parent(self), "下载本页图片", str(default_dir / default_name),
+            _parent(self),
+            "下载本页图片",
+            str(default_dir / default_name),
             "PNG 图片 (*.png);;JPEG 图片 (*.jpg)",
         )
         if not target:

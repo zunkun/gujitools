@@ -28,7 +28,7 @@
     <bpmn:endEvent id="Event_1ff35lh" name="生成PDF">
       <bpmn:incoming>Flow_1bkcif6</bpmn:incoming>
     </bpmn:endEvent>
-    <bpmn:task id="Activity_10rwnxz" name="图片拼板">
+    <bpmn:task id="Activity_10rwnxz" name="图片拼版">
       <bpmn:incoming>Flow_06pybul</bpmn:incoming>
       <bpmn:outgoing>Flow_1aw3rfu</bpmn:outgoing>
     </bpmn:task>
@@ -54,7 +54,7 @@
     </bpmn:textAnnotation>
     <bpmn:association id="Association_1i4dluq" associationDirection="None" sourceRef="Event_0uho7pd" targetRef="TextAnnotation_09plygt" />
     <bpmn:textAnnotation id="TextAnnotation_1izyivv">
-      <bpmn:text>古籍图片拼板</bpmn:text>
+      <bpmn:text>古籍图片拼版</bpmn:text>
     </bpmn:textAnnotation>
     <bpmn:association id="Association_0bdqm5i" associationDirection="None" sourceRef="Activity_10rwnxz" targetRef="TextAnnotation_1izyivv" />
     <bpmn:textAnnotation id="TextAnnotation_0lzhein">

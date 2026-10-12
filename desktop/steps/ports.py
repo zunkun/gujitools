@@ -224,9 +224,9 @@ def source_pdf_node_ids(diagram) -> tuple[str, ...]:
     from desktop.steps.bpmn_diagram import KIND_START
 
     return tuple(
-        n.id for n in diagram.nodes
-        if n.kind == KIND_START
-        or (n.name or "").strip() in SOURCE_PDF_NODE_NAMES
+        n.id
+        for n in diagram.nodes
+        if n.kind == KIND_START or (n.name or "").strip() in SOURCE_PDF_NODE_NAMES
     )
 
 
@@ -291,7 +291,7 @@ def orphaned_end_event_ids(diagram, *node_ids: str) -> tuple[str, ...]:
     按钮**的文案（``StepSpec.run_label`` / ``run_button_text``）。
 
     ⚠️ 判据是**图上的性质**（入线是否全部来自将被删的节点），**不按名字
-    认「生成PDF」**——用户改了名、自己画的收尾事件同理；反之「图片拼板」
+    认「生成PDF」**——用户改了名、自己画的收尾事件同理；反之「图片拼版」
     被删时「生成PDF」的入线还剩「PDF排版」那条，不跟着删。
 
     ⚠️ 只收**入线非空**的结束事件：本来就悬空的事件不是这次删除造成的，
@@ -343,12 +343,14 @@ def orphaned_gateway_ids(diagram, *node_ids: str) -> tuple[str, ...]:
     # 图里还剩别的「图片拼版」节点 ⇒ 网关仍有依附对象，不跟着删
     # （理论上只该有一个，但 ``add_node`` / bpmn.io 画的图都可能有两个——
     #  删掉其中一个是"删重复"，不该顺手把网关也带走）
-    if any(node.id not in doomed
-           and getattr(node, "stage", None) == GATEWAY_GUARD_STAGE
-           for node in diagram.nodes):
+    if any(
+        node.id not in doomed and getattr(node, "stage", None) == GATEWAY_GUARD_STAGE
+        for node in diagram.nodes
+    ):
         return ()
     return tuple(
-        node.id for node in diagram.nodes
+        node.id
+        for node in diagram.nodes
         if getattr(node, "is_gateway", False) and node.id not in doomed
     )
 
@@ -393,7 +395,7 @@ def detect_feeds_rembg(diagram) -> bool:
     1. 详情页第三步面板——没有检测数据时 area 锁 4（``RembgPanel`` 的
        ``whole_page_only``）；
     2. 拼版的前提判据——没有检测数据时拼版吃整图照样拼，不再要求
-       ``area=1``（「拼板作为第一个节点，也不需要 detect 数据」）。
+       ``area=1``（「拼版作为第一个节点，也不需要 detect 数据」）。
 
     判据：``rembg`` 在流程里**且**沿图回溯 ``boxes`` 有产出方（「检测文本框」
     在它上游，不要求直接相连——中间隔网关也算）。空图 / ``rembg`` 不在流程里
@@ -478,6 +480,7 @@ def task_input_dir(task_dir: Path | str) -> Path:
     """
     return Path(task_dir) / TASK_INPUT_LOCATION
 
+
 SUPPLIERS: dict[str, dict[str, str]] = {
     # 提取：吃任务自带的 PDF 副本，没有上游。
     "extract": {"pdf": SUPPLY_TASK_SOURCE},
@@ -498,7 +501,7 @@ SUPPLIERS: dict[str, dict[str, str]] = {
     #    （原始扫描页）。
     #    一旦页面改成**按连线**取图（这才是 BPM 化的正确做法），拼版就会拿原图
     #    当源图——而 ``-l/-r`` 半页对只由 area=1 的去底色产出，拼出来必然错。
-    #    判据：``task_default.bpmn`` 里「图片拼板」排在「图片去底色」**之后**。
+    #    判据：``task_default.bpmn`` 里「图片拼版」排在「图片去底色」**之后**。
     "imposition": {"pages": "rembg_submit"},
     # PDF排版：默认吃第三步提交的成品图；拼版生效时改由 imposition 供给
     # （见 :func:`print_pages_supplier`——那是**运行时**的一处覆盖，
@@ -541,8 +544,12 @@ def print_input_overrides(imposition_active: bool) -> dict[tuple[str, str], str]
     return {("print", "pages"): print_pages_supplier(imposition_active)}
 
 
-def resolve_input(task_dir: Path | str, stage: str, port: str,
-                  overrides: dict[tuple[str, str], str] | None = None) -> Path | None:
+def resolve_input(
+    task_dir: Path | str,
+    stage: str,
+    port: str,
+    overrides: dict[tuple[str, str], str] | None = None,
+) -> Path | None:
     """**按连线**解析某阶段某端口的输入绝对路径。
 
     ``overrides`` 是 ``{(阶段, 端口): 供给阶段}`` 的运行时覆盖（拼版开关
@@ -556,8 +563,12 @@ def resolve_input(task_dir: Path | str, stage: str, port: str,
     return artifact_path(task_dir, supplier, port)
 
 
-def input_ready(task_dir: Path | str, stage: str, port: str,
-                overrides: dict[tuple[str, str], str] | None = None) -> bool:
+def input_ready(
+    task_dir: Path | str,
+    stage: str,
+    port: str,
+    overrides: dict[tuple[str, str], str] | None = None,
+) -> bool:
     """这个端口的输入**已经就位**吗（落点存在且非空）。
 
     只看"有没有东西"，不判断内容对不对——那是功能层的事。
@@ -637,7 +648,9 @@ def is_entry_stage(diagram, stage: str, active=None) -> bool:
         return False
     if stage not in ports_stage_order(diagram):
         return False
-    return not diagram.nearest_producer(stage, "pages", set(active or ports_stage_order(diagram)))
+    return not diagram.nearest_producer(
+        stage, "pages", set(active or ports_stage_order(diagram))
+    )
 
 
 def flow_entry_stage(diagram) -> str | None:
@@ -717,10 +730,13 @@ def ports_stage_order(diagram) -> tuple[str, ...]:
     return diagram.stage_order()
 
 
-def resolve_input_with_entry(task_dir: Path | str, stage: str, port: str,
-                             supplier: str | None,
-                             overrides: dict[tuple[str, str], str] | None = None
-                             ) -> Path | None:
+def resolve_input_with_entry(
+    task_dir: Path | str,
+    stage: str,
+    port: str,
+    supplier: str | None,
+    overrides: dict[tuple[str, str], str] | None = None,
+) -> Path | None:
     """按供给方解析输入路径，并把**入口回落**收在这一处。
 
     :func:`resolve_input` 是纯端口查表（给自测与不关心流程的场景用）；这里
