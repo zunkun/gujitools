@@ -17,7 +17,8 @@
 
 **独立**：不依赖任务目录、不依赖 ``TaskDetailPage`` 的拼版控制器。用户选了
 一批图片作为「源清单」，模块自己维护一份 ``doc``（内存 + 可导出），
-点「导出成品」把每页合成为 PNG。
+点「导出成品」把每页合成为**白底** PNG（2026-10-13 用户：singletask 导出的
+就是交付物，不要透明底；任务流程的 ``stages/imposition`` 仍默认透明底）。
 
 ⚠️ 与任务流程的差别（有意为之）：任务流程里拼版的产物供第四步 PDF排版使用，
 且「启用开关」决定取图来源；单文件模式下没有下游，所以这里把面板里的
@@ -26,7 +27,6 @@
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QFileDialog
@@ -41,9 +41,11 @@ from desktop.components.progress_row import ProgressRow
 from desktop.modules.base import ModulePage
 from desktop.services.imposition import (
     FILE_FMT,
+    WHITE_BACKGROUND,
     auto_impose_pages,
     cn_page_label,
     compose_doc,
+    flatten_onto_background,
     make_page,
     make_single_page,
     normalize_doc,
@@ -572,7 +574,9 @@ class ImpositionModulePage(ModulePage):
         edit_path = Path(edited) if edited and Path(edited).is_file() else None
         return ZoomTarget(
             render=lambda edge, page={"items": items}: (
-                ImpositionPagePreviewWorker(page, edge)
+                # ⚠️ 白底（与「导出成品」同口径）：singletask 的整页组合预览
+                #    和编辑基底都要长得跟导出的 PNG 一样（2026-10-13 用户）。
+                ImpositionPagePreviewWorker(page, edge, WHITE_BACKGROUND)
             ),
             note=f"{cn_page_label(page_index)} 左右组合（左「{left}」+ 右「{right}」）",
             stem=f"imposition-{page_index + 1:02d}",
@@ -677,9 +681,12 @@ class ImpositionModulePage(ModulePage):
             return
         from desktop.workers import ImpositionPagePreviewWorker, connect_queued
 
-        # longest_edge=0 = 不缩：编辑器要的是全分辨率（与落盘成品同一分辨率）
+        # longest_edge=0 = 不缩：编辑器要的是全分辨率（与落盘成品同一分辨率）。
+        # ⚠️ 白底（与「导出成品」同口径）：编辑基底与导出 PNG 长得一样。
         self.run_worker(
-            lambda: ImpositionPagePreviewWorker({"items": items}, longest_edge=0),
+            lambda: ImpositionPagePreviewWorker(
+                {"items": items}, longest_edge=0, background=WHITE_BACKGROUND,
+            ),
             lambda worker, thread: (
                 connect_queued(
                     self, worker.finished,
@@ -826,6 +833,9 @@ class ImpositionModulePage(ModulePage):
         # 逐页进度：``compose_doc`` 合成一页报一次（内核转成 progress 信号）。
         # ⚠️ report 为 None 时整条链都不汇报（内核正常运行时一定非None，
         #    但 job 契约允许"只干活"——既有自测就是这么直接调本 job 的）。
+        # ⚠️ **白底导出**（2026-10-13 用户）：singletask 导出的 PNG 就是最终
+        #    交付物，透明底在看图软件里不合理。任务流程的 ``stages/imposition``
+        #    仍走默认透明底（PDF 侧压平白纸、编辑器要透明），互不影响。
         written = compose_doc(
             doc, dest,
             report=None if report is None else (
@@ -833,6 +843,7 @@ class ImpositionModulePage(ModulePage):
                     "progress", {"done": done, "total": total}
                 )
             ),
+            background=WHITE_BACKGROUND,
         )
         overrides = _page_overrides(doc)
         for index, source in enumerate(overrides):
@@ -840,7 +851,10 @@ class ImpositionModulePage(ModulePage):
                 continue
             target = dest / FILE_FMT.format(index + 1)
             try:
-                shutil.copyfile(source, target)
+                # ⚠️ 手改页也压到**白底**（不能原样复制）：手改缓存是编辑器
+                #    写出的 RGBA（透明底），原样盖回去的话同一批成品里就
+                #    "合成页白底、手改页透明"两种底。
+                flatten_onto_background(source, target, WHITE_BACKGROUND)
             except OSError:
                 continue  # 盖不上就当没手改过，至少合成结果还在
             if target not in written:

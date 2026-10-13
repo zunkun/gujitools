@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 """图片拼版的派生与合成规则（纯函数 + PIL，无 Qt 依赖，便于独立测试）。
 
-一句话职责：**把每页的两张源图按版面摆到透明底上，落成 ``stages/imposition``
-里的成品页图**，供第四步「PDF排版」当整页图片直接用。
+一句话职责：**把每页的两张源图按版面摆到指定底色上**（任务流程默认透明底，
+独立拼图页「导出成品」白底，见 :data:`TRANSPARENT_BACKGROUND` /
+:data:`WHITE_BACKGROUND`），落成 ``stages/imposition`` 里的成品页图，供第四步
+「PDF排版」当整页图片直接用。
 
 三件事在这里定死（别在别处再写一份）：
 
@@ -15,7 +17,10 @@
    就行，后续提交的时候根据图片的四个区域合并出一张图片」；⚠️ 2026-10-10 修订：
    背景**不再铺白**，改透明底——白底会烙进成品页图，编辑器里统一变换/裁剪
    全都带着白底走。PDF 侧 ``functions/print._load_image`` 会把 RGBA 压平到
-   白纸，成书效果不变）：版面只有透明底，图可以随意移动/拉伸；
+   白纸，成书效果不变；⚠️ 2026-10-13 再修订：独立拼图页「导出成品」是
+   **白底**（``WHITE_BACKGROUND``）——singletask 导出的 PNG 就是交付物，
+   透明底不合理；透明底仍只是任务流程的默认）：版面只有底，图可以随意
+   移动/拉伸；
    **产出图 = 所有图外接框的紧裁**（``page_bounds`` → ``compose_page``），
    所以加多少留白、挪多远，用户自己说了算。
 """
@@ -36,6 +41,14 @@ ITEMS_PER_PAGE = 2
 
 #: 落盘文件名：``0001.png`` …（列表顺序即页序，与第四步列表一致）
 FILE_FMT = "{:04d}.png"
+
+#: 合成画布的**透明底**（任务流程默认，2026-10-10 用户修订）：白底会烙进成品
+#: 页图，编辑器里统一变换/裁剪全带着白底走；PDF 侧
+#: ``functions/print._load_image`` 会把 RGBA 压平到白纸，成书效果不变。
+TRANSPARENT_BACKGROUND = (0, 0, 0, 0)
+#: 合成画布的**白底**（独立拼图页「导出成品」用，2026-10-13 用户）：singletask
+#: 导出的 PNG 就是最终交付物，透明底在看图软件里不合理——铺白。
+WHITE_BACKGROUND = (255, 255, 255, 255)
 
 #: ``compose_doc`` 的**进程内**互斥锁：按目标目录串行化整轮合成。
 #:
@@ -522,24 +535,31 @@ def page_bounds(page: dict) -> tuple[float, float, float, float]:
     )
 
 
-def compose_page(page: dict):
-    """一页拼版 → PIL **RGBA 透明底**图：所有图外接框的紧裁。
+def compose_page(page: dict, background=TRANSPARENT_BACKGROUND):
+    """一页拼版 → PIL **RGBA** 图：所有图外接框的紧裁。
 
     ⚠️ 旋转方向必须与画布一致：``rotation`` 按 **Qt 顺时针**口径存，
     PIL ``rotate`` 是**逆时针**，所以这里取负。两边口径写反的话，画布上
     转 90°、落盘却反向 90°，用户会看到"生成的 PDF 和图里不一样"。
 
-    ⚠️ **底是透明的，不铺白**（用户 2026-10-10：白底烙进成品页图后，编辑器
+    ⚠️ **底默认是透明的，不铺白**（用户 2026-10-10：白底烙进成品页图后，编辑器
     里统一变换/裁剪全带着白底走，去底图白拼了）。消费方各自处理 alpha：
     PDF 侧 ``functions/print._load_image`` 压平到白纸；编辑器/预览按 RGBA
     显示。⚠️ 返回 **RGBA**，调用方别再 ``convert("RGB")``（透明处会变黑）。
+    要**不透明**成品（独立拼图页「导出成品」，2026-10-13 用户）就显式传
+    :data:`WHITE_BACKGROUND`——任务流程的默认值不变。
+
+    参数:
+        page: 版面页字典（``normalize_page`` 过的口径）。
+        background: 画布底色 RGBA 四元组；透明底 :data:`TRANSPARENT_BACKGROUND`
+            （默认）或白底 :data:`WHITE_BACKGROUND`。
     """
     from PIL import Image
 
     left, top, right, bottom = page_bounds(page)
     width = max(1, int(round(right - left)))
     height = max(1, int(round(bottom - top)))
-    canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    canvas = Image.new("RGBA", (width, height), tuple(background))
     for item in page.get("items") or []:
         x, y, w, h = item["rect"]
         if w <= 0 or h <= 0:
@@ -587,7 +607,33 @@ def _save_page_atomic(image, target: Path) -> None:
     write_bytes_atomic(target, buf.getvalue())
 
 
-def compose_doc(doc: dict, dest_dir, report=None) -> list[Path]:
+def flatten_onto_background(source, target, background=WHITE_BACKGROUND) -> None:
+    """把一张图片（可能带透明）压到指定底色上，原子写出 PNG 到 ``target``。
+
+    用途：独立拼图页「导出成品」时，**手工修饰过的整页组合**（存在
+    ``singletask/拼图/edited/`` 的手改缓存，编辑器写出的是 RGBA）不走
+    ``compose_page`` 重新合成、而是整张盖回成品——那张图也要与导出口径
+    同底色，否则手改页透明、合成页白底，一批成品两种底。
+
+    参数:
+        source: 源图片路径（任意 PIL 可读格式）。
+        target: 输出 PNG 路径（原子写，见 :func:`_save_page_atomic`）。
+        background: 底色 RGBA 四元组，与 :func:`compose_page` 同一口径。
+    """
+    from PIL import Image
+
+    with Image.open(source) as im:
+        im.load()
+        rgba = im.convert("RGBA")
+    canvas = Image.new("RGBA", rgba.size, tuple(background))
+    canvas.alpha_composite(rgba)
+    # 不透明底直接落 RGB：体积更小，消费方（PDF/看图）也少一层 alpha 分支
+    image = canvas if background[3] < 255 else canvas.convert("RGB")
+    _save_page_atomic(image, Path(target))
+
+
+def compose_doc(doc: dict, dest_dir, report=None,
+                background=TRANSPARENT_BACKGROUND) -> list[Path]:
     """把整份拼版文档落成 ``dest_dir/0001.png`` …（列表顺序即页序）。
 
     返回写出的文件列表（顺序与页序一致）。**多余的旧文件会被清掉**——否则
@@ -606,6 +652,11 @@ def compose_doc(doc: dict, dest_dir, report=None) -> list[Path]:
     （任务流程里后台防抖那条路不传，用户不需要看）。
     ⚠️ 回调在 :data:`_COMPOSE_LOCK` **内**调用，所以它只许发信号、不许做
     可能重入本模块的事（例如再调一次 ``compose_doc`` 会死锁）。
+
+    ``background``：成品页画布底色，语义与 :func:`compose_page` 一致——
+    默认透明底（任务流程：PDF 侧压平白纸、编辑器要透明）；独立拼图页
+    「导出成品」显式传 :data:`WHITE_BACKGROUND`（2026-10-13 用户：singletask
+    导出的 PNG 就是交付物，不要透明底）。
     """
     dest = Path(dest_dir)
     pages = [
@@ -622,7 +673,7 @@ def compose_doc(doc: dict, dest_dir, report=None) -> list[Path]:
         total = len(pages)
         for index, page in enumerate(pages):
             try:
-                image = compose_page(page)
+                image = compose_page(page, background)
             except Exception:  # noqa: BLE001 - 单页失败不影响其余页
                 _report_page(report, index + 1, total)
                 continue

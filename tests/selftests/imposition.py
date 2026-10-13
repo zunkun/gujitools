@@ -231,6 +231,17 @@ def run(ctx) -> None:
             f"mode={_diag_shot.mode} corner={_diag_shot.getpixel((2, 2))}",
         )
 
+        # ⚠️ 2026-10-13 用户：**白底导出**——独立拼图页「导出成品」显式传
+        # WHITE_BACKGROUND，任务流程默认仍是透明底（上一条断言钉住）。
+        _diag_white = S.compose_page(_diag_page, S.WHITE_BACKGROUND)
+        ok(
+            "白底导出：留白处铺白（α=255、RGB=255）、内容逐位不变",
+            _diag_white.mode == "RGBA"
+            and _diag_white.getpixel((2, 2)) == (255, 255, 255, 255)
+            and _diag_white.getpixel((400, 360))[:3] == GREEN,
+            f"corner={_diag_white.getpixel((2, 2))} content={_diag_white.getpixel((400, 360))}",
+        )
+
         # 旋转是**顺时针**口径：PIL 侧取负，两边必须一致。
         # ⚠️ 判据必须用**非均匀**图案，否则 ±90° 的中心像素一样，注入翻转方向
         # 也测不出来（第一版就是这么假绿的）。用「左半蓝 / 右半绿」的图：
@@ -434,6 +445,33 @@ def run(ctx) -> None:
         ok("上一轮多出来的 0009.png 被清掉", not (out / "0009.png").exists())
         S.compose_doc({"pages": []}, out)
         ok("清空拼版后产物目录也清空", list(out.glob("*.png")) == [])
+
+        # ---- 2a-2. 白底导出（2026-10-13 用户：singletask 导出不要透明底）----
+        white_out = tmp / "sweep_white"
+        S.compose_doc({"pages": [_diag_page]}, white_out, background=S.WHITE_BACKGROUND)
+        _wpath = white_out / "0001.png"
+        with Image.open(_wpath) as _wim:
+            _wim.load()
+            _wrgba = _wim.convert("RGBA")
+        ok(
+            "compose_doc 白底导出：产物角落不透明白、内容照旧",
+            _wrgba.getpixel((2, 2)) == (255, 255, 255, 255)
+            and _wrgba.getpixel((400, 360))[:3] == GREEN,
+            f"corner={_wrgba.getpixel((2, 2))} content={_wrgba.getpixel((400, 360))}",
+        )
+        # 手改整页盖回（flatten_onto_background）：透明 PNG 压到白底
+        _flat_src = tmp / "flat-src.png"
+        _PILImage.new("RGBA", (40, 30), (0, 0, 0, 0)).save(_flat_src)
+        _flat_dst = tmp / "flat-dst.png"
+        S.flatten_onto_background(_flat_src, _flat_dst, S.WHITE_BACKGROUND)
+        with Image.open(_flat_dst) as _fim:
+            _fim.load()
+            _fmode, _fpx = _fim.mode, _fim.convert("RGBA").getpixel((5, 5))
+        ok(
+            "手改整页压白：透明源 → 不透明白底 PNG",
+            _fmode == "RGB" and _fpx == (255, 255, 255, 255),
+            f"mode={_fmode} pixel={_fpx}",
+        )
 
         # 清理基准是**页数**而不是"写成功的文件数"：中间某页合成失败会留下编号
         # 空洞（0001/0003），按写成功数去清会把 0003 这页好内容误删。

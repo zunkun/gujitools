@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 166 个模块、177 个公开类、1221 个公开函数/方法（生成于 2026-10-13）。
+覆盖 166 个模块、177 个公开类、1222 个公开函数/方法（生成于 2026-10-13）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -119,7 +119,7 @@
 | [`desktop.pages.tasklist.page`](#desktoppagestasklistpage) | 1 | 7 |
 | [`desktop.services.detect_export`](#desktopservicesdetect_export) | 0 | 3 |
 | [`desktop.services.font_catalog`](#desktopservicesfont_catalog) | 1 | 6 |
-| [`desktop.services.imposition`](#desktopservicesimposition) | 0 | 25 |
+| [`desktop.services.imposition`](#desktopservicesimposition) | 0 | 26 |
 | [`desktop.services.print_plan`](#desktopservicesprint_plan) | 0 | 5 |
 | [`desktop.services.rembg_live`](#desktopservicesrembg_live) | 0 | 3 |
 | [`desktop.services.stale_chain`](#desktopservicesstale_chain) | 0 | 4 |
@@ -6064,7 +6064,8 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 
 **独立**：不依赖任务目录、不依赖 ``TaskDetailPage`` 的拼版控制器。用户选了
 一批图片作为「源清单」，模块自己维护一份 ``doc``（内存 + 可导出），
-点「导出成品」把每页合成为 PNG。
+点「导出成品」把每页合成为**白底** PNG（2026-10-13 用户：singletask 导出的
+就是交付物，不要透明底；任务流程的 ``stages/imposition`` 仍默认透明底）。
 
 ⚠️ 与任务流程的差别（有意为之）：任务流程里拼版的产物供第四步 PDF排版使用，
 且「启用开关」决定取图来源；单文件模式下没有下游，所以这里把面板里的
@@ -7583,8 +7584,10 @@ GUI 主进程**绝不能**在这里 import 到 cv2（实测 ``import functions.d
 
 图片拼版的派生与合成规则（纯函数 + PIL，无 Qt 依赖，便于独立测试）。
 
-一句话职责：**把每页的两张源图按版面摆到透明底上，落成 ``stages/imposition``
-里的成品页图**，供第四步「PDF排版」当整页图片直接用。
+一句话职责：**把每页的两张源图按版面摆到指定底色上**（任务流程默认透明底，
+独立拼图页「导出成品」白底，见 :data:`TRANSPARENT_BACKGROUND` /
+:data:`WHITE_BACKGROUND`），落成 ``stages/imposition`` 里的成品页图，供第四步
+「PDF排版」当整页图片直接用。
 
 三件事在这里定死（别在别处再写一份）：
 
@@ -7597,7 +7600,10 @@ GUI 主进程**绝不能**在这里 import 到 cv2（实测 ``import functions.d
    就行，后续提交的时候根据图片的四个区域合并出一张图片」；⚠️ 2026-10-10 修订：
    背景**不再铺白**，改透明底——白底会烙进成品页图，编辑器里统一变换/裁剪
    全都带着白底走。PDF 侧 ``functions/print._load_image`` 会把 RGBA 压平到
-   白纸，成书效果不变）：版面只有透明底，图可以随意移动/拉伸；
+   白纸，成书效果不变；⚠️ 2026-10-13 再修订：独立拼图页「导出成品」是
+   **白底**（``WHITE_BACKGROUND``）——singletask 导出的 PNG 就是交付物，
+   透明底不合理；透明底仍只是任务流程的默认）：版面只有底，图可以随意
+   移动/拉伸；
    **产出图 = 所有图外接框的紧裁**（``page_bounds`` → ``compose_page``），
    所以加多少留白、挪多远，用户自己说了算。
 
@@ -7639,8 +7645,9 @@ GUI 主进程**绝不能**在这里 import 到 cv2（实测 ``import functions.d
 | `source_page_number(path) -> int \| None` | 源图**页号**：文件名开头的连续数字（``3-r`` → 3、``004-l`` → 4）。 |
 | `auto_impose_pages(files: list) -> list[dict]` | 自动拼版（用户 2026-09-30 规则，**唯一实现**）： |
 | `page_bounds(page: dict) -> tuple[float, float, float, float]` | 一页的**内容范围**：所有图外接框的并集（用户说的「图片的四个区域」）。 |
-| `compose_page(page: dict)` | 一页拼版 → PIL **RGBA 透明底**图：所有图外接框的紧裁。 |
-| `compose_doc(doc: dict, dest_dir, report=None) -> list[Path]` | 把整份拼版文档落成 ``dest_dir/0001.png`` …（列表顺序即页序）。 |
+| `compose_page(page: dict, background=TRANSPARENT_BACKGROUND)` | 一页拼版 → PIL **RGBA** 图：所有图外接框的紧裁。 |
+| `flatten_onto_background(source, target, background=WHITE_BACKGROUND) -> None` | 把一张图片（可能带透明）压到指定底色上，原子写出 PNG 到 ``target``。 |
+| `compose_doc(doc: dict, dest_dir, report=None, background=TRANSPARENT_BACKGROUND) -> list[Path]` | 把整份拼版文档落成 ``dest_dir/0001.png`` …（列表顺序即页序）。 |
 
 #### `normalize_page(page) -> dict | None`
 
@@ -7788,20 +7795,41 @@ for_edited_source` 读到的还是旧尺寸。
 没有纸张概念之后，产出图就是这块范围的紧裁——所以用户把图挪远/拉大，
 产出就跟着变大，不会被裁掉。
 
-#### `compose_page(page: dict)`
+#### `compose_page(page: dict, background=TRANSPARENT_BACKGROUND)`
 
-一页拼版 → PIL **RGBA 透明底**图：所有图外接框的紧裁。
+一页拼版 → PIL **RGBA** 图：所有图外接框的紧裁。
 
 ⚠️ 旋转方向必须与画布一致：``rotation`` 按 **Qt 顺时针**口径存，
 PIL ``rotate`` 是**逆时针**，所以这里取负。两边口径写反的话，画布上
 转 90°、落盘却反向 90°，用户会看到"生成的 PDF 和图里不一样"。
 
-⚠️ **底是透明的，不铺白**（用户 2026-10-10：白底烙进成品页图后，编辑器
+⚠️ **底默认是透明的，不铺白**（用户 2026-10-10：白底烙进成品页图后，编辑器
 里统一变换/裁剪全带着白底走，去底图白拼了）。消费方各自处理 alpha：
 PDF 侧 ``functions/print._load_image`` 压平到白纸；编辑器/预览按 RGBA
 显示。⚠️ 返回 **RGBA**，调用方别再 ``convert("RGB")``（透明处会变黑）。
+要**不透明**成品（独立拼图页「导出成品」，2026-10-13 用户）就显式传
+:data:`WHITE_BACKGROUND`——任务流程的默认值不变。
 
-#### `compose_doc(doc: dict, dest_dir, report=None) -> list[Path]`
+参数:
+    page: 版面页字典（``normalize_page`` 过的口径）。
+    background: 画布底色 RGBA 四元组；透明底 :data:`TRANSPARENT_BACKGROUND`
+        （默认）或白底 :data:`WHITE_BACKGROUND`。
+
+#### `flatten_onto_background(source, target, background=WHITE_BACKGROUND) -> None`
+
+把一张图片（可能带透明）压到指定底色上，原子写出 PNG 到 ``target``。
+
+用途：独立拼图页「导出成品」时，**手工修饰过的整页组合**（存在
+``singletask/拼图/edited/`` 的手改缓存，编辑器写出的是 RGBA）不走
+``compose_page`` 重新合成、而是整张盖回成品——那张图也要与导出口径
+同底色，否则手改页透明、合成页白底，一批成品两种底。
+
+参数:
+    source: 源图片路径（任意 PIL 可读格式）。
+    target: 输出 PNG 路径（原子写，见 :func:`_save_page_atomic`）。
+    background: 底色 RGBA 四元组，与 :func:`compose_page` 同一口径。
+
+#### `compose_doc(doc: dict, dest_dir, report=None, background=TRANSPARENT_BACKGROUND) -> list[Path]`
 
 把整份拼版文档落成 ``dest_dir/0001.png`` …（列表顺序即页序）。
 
@@ -7821,6 +7849,11 @@ PDF 侧 ``functions/print._load_image`` 压平到白纸；编辑器/预览按 RG
 （任务流程里后台防抖那条路不传，用户不需要看）。
 ⚠️ 回调在 :data:`_COMPOSE_LOCK` **内**调用，所以它只许发信号、不许做
 可能重入本模块的事（例如再调一次 ``compose_doc`` 会死锁）。
+
+``background``：成品页画布底色，语义与 :func:`compose_page` 一致——
+默认透明底（任务流程：PDF 侧压平白纸、编辑器要透明）；独立拼图页
+「导出成品」显式传 :data:`WHITE_BACKGROUND`（2026-10-13 用户：singletask
+导出的 PNG 就是交付物，不要透明底）。
 
 ---
 
@@ -13079,13 +13112,18 @@ paths 为目标图片；edge 为缩略图最长边（默认 96）。effects/crop
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(page: dict, longest_edge: int=1600)` | ``longest_edge`` 是预览密度上限；**传 0 = 不缩**（全分辨率， |
+| `__init__(page: dict, longest_edge: int=1600, background=None)` | ``longest_edge`` 是预览密度上限；**传 0 = 不缩**（全分辨率， |
 | `run() -> None` | PIL 合成（services.imposition.compose_page）→ QImage → 缩到边长。 |
 
-##### `__init__(page: dict, longest_edge: int=1600)`
+##### `__init__(page: dict, longest_edge: int=1600, background=None)`
 
 ``longest_edge`` 是预览密度上限；**传 0 = 不缩**（全分辨率，
 右键空白处「编辑图片」用：编辑器要的是与落盘成品同一分辨率的图）。
+
+``background``：合成画布底色（RGBA 四元组），语义与
+``services.imposition.compose_page`` 一致；**None = 透明底**（任务
+流程默认）。独立拼图页传白底（``WHITE_BACKGROUND``）——它的成品
+导出是白底 PNG，预览/编辑基底必须与导出口径一致（所见即所得）。
 
 ---
 

@@ -55,31 +55,40 @@ class ImpositionPagePreviewWorker(QObject):
     finished = Signal(int, QImage, str)
     failed = Signal(int, str)
 
-    def __init__(self, page: dict, longest_edge: int = 1600):
+    def __init__(self, page: dict, longest_edge: int = 1600, background=None):
         """``longest_edge`` 是预览密度上限；**传 0 = 不缩**（全分辨率，
         右键空白处「编辑图片」用：编辑器要的是与落盘成品同一分辨率的图）。
+
+        ``background``：合成画布底色（RGBA 四元组），语义与
+        ``services.imposition.compose_page`` 一致；**None = 透明底**（任务
+        流程默认）。独立拼图页传白底（``WHITE_BACKGROUND``）——它的成品
+        导出是白底 PNG，预览/编辑基底必须与导出口径一致（所见即所得）。
         """
         super().__init__()
         self.page = page
         self.longest_edge = int(longest_edge) or 0
+        self.background = background
 
     @Slot()
     def run(self) -> None:
         """PIL 合成（services.imposition.compose_page）→ QImage → 缩到边长。"""
         try:
-            image = _compose_to_qimage(self.page, self.longest_edge)
+            image = _compose_to_qimage(self.page, self.longest_edge, self.background)
             self.finished.emit(0, image, "imposition-preview")
         except Exception as exc:  # noqa: BLE001 - 兜底：别让线程静默死掉
             self.failed.emit(0, str(exc))
 
 
-def _compose_to_qimage(page: dict, longest_edge: int) -> QImage:
-    """一页拼版 → PIL 合成 → 按最长边缩 → QImage（深拷贝脱离源缓冲）。"""
+def _compose_to_qimage(page: dict, longest_edge: int, background=None) -> QImage:
+    """一页拼版 → PIL 合成 → 按最长边缩 → QImage（深拷贝脱离源缓冲）。
+
+    ``background=None`` 走 ``compose_page`` 的默认（透明底，任务流程口径）。
+    """
     from PIL import Image
 
     from desktop.services.imposition import compose_page
 
-    pil_image = compose_page(page).convert("RGBA")
+    pil_image = compose_page(page, background).convert("RGBA")
     if longest_edge:
         pil_image.thumbnail((longest_edge, longest_edge), Image.Resampling.LANCZOS)
     raw = pil_image.tobytes("raw", "RGBA")
