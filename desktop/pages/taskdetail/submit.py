@@ -18,7 +18,7 @@ from desktop.services.submit_state import (
     NEW_VERSION, NO_PREVIEW, PREVIEW_STALE, UP_TO_DATE,
     rembg_submit_version_state,
 )
-from desktop.ui.widgets import bold_button
+from desktop.ui.widgets import bold_button, set_red_frame
 from desktop.utils.files import list_stage_images
 from desktop.pages.taskdetail.runner import STATUS_LABELS
 
@@ -273,6 +273,8 @@ class SubmitMixin:
         预览产生新版本（重跑/参数变更）时按钮高亮提示需要重新提交。"""
         if not self.task_id or self.current_stage() != "rembg":
             self.submit_hint.hide()
+            # 离开第三步（或没任务）时把红框一起收掉，别圈到别的步骤去
+            set_red_frame(self.submit_button, False)
             return
         # ⚠️ 开销按需付（审计 D6）：这个函数在执行期间**每 ≤200ms 被进度节流
         # 器拉一次**（_refresh_stage_views → _update_run_buttons → 这里）。
@@ -316,6 +318,11 @@ class SubmitMixin:
 
         # 按钮文案/高亮
         self.submit_button.setEnabled(version not in (None, NO_PREVIEW))
+        # ⚠️ **红框**（2026-10-13 用户）：「生成预览」已成功但**还没提交本次
+        #    任务**（＝ NEW_VERSION：从未提交过，或预览有新版本落后）时圈住
+        #    提交按钮。PREVIEW_STALE 是"该先重新生成预览"，UP_TO_DATE 是
+        #    "已提交"，都不圈。
+        set_red_frame(self.submit_button, version == NEW_VERSION)
         # ⚠️ 文案**始终**是「提交本次任务」：它与「生成预览」并排一行后，每颗
         #    按钮只剩控制列（340~440px）的一半，实测 166~216px，而
         #    「提交本次任务（有新版本）」需要 218px ⇒ 必被 qfluent 截成省略号

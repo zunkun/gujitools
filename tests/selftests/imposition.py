@@ -541,6 +541,43 @@ def run(ctx) -> None:
            "_prepare_sources" in _impo_page_src
            and "split_marked" in _impo_page_src
            and "RembgTransparentWorker" in _impo_page_src)
+        ok("副本预备有可见进度（progress_row.start + toast 提示等待）",
+           "progress_row.start" in _impo_page_src
+           and "正在准备透明副本" in _impo_page_src
+           and 'toast(\n            "info", "检测到去底色导出目录"' in _impo_page_src)
+        _view_src = (Path(__file__).resolve().parents[2]
+                     / "desktop/components/imposition/view.py").read_text(encoding="utf-8")
+        ok("空态引导层存在且鼠标穿透（红框不能挡住按钮点击）",
+           "_EmptyGuideOverlay" in _view_src
+           and "WA_TransparentForMouseEvents" in _view_src)
+
+        # ---- 2a-4. 空态引导层行为（离屏真控件）--------------------------
+        from desktop.components.imposition.view import ImpositionViewWidget
+
+        _view = ImpositionViewWidget()
+        _view.resize(900, 620)
+        _view.show()
+        pump(ctx.app)
+        ok("没有拼版页 → 引导层显示（置顶）",
+           _view.empty_guide.isVisible()
+           and _view.empty_guide.geometry() == _view.rect())
+        # 强制走一次 paintEvent：红框/箭头/文字的几何映射不能炸
+        _shot = _view.grab()
+        ok("空态引导层可绘制（grab 强制 paint 不抛异常）",
+           not _shot.isNull())
+        ok("有页之后引导层收起",
+           (_view.set_pages([_diag_page], current=0), True)[1]
+           and not _view.empty_guide.isVisible())
+        # ⚠️ 独立页首轮自动拼版传 current=-1（页已存在但还没选中）——
+        #    引导层显隐只看"有没有页"，这一刻也必须收起
+        _view.set_current(-1)
+        ok("页存在但未选中（current=-1）→ 引导层同样收起",
+           not _view.empty_guide.isVisible())
+        _view.set_pages([], current=-1)
+        ok("删光页回到空态 → 引导层再次出现",
+           _view.empty_guide.isVisible())
+        _view.hide()
+        _view.deleteLater()
 
         # 清理基准是**页数**而不是"写成功的文件数"：中间某页合成失败会留下编号
         # 空洞（0001/0003），按写成功数去清会把 0003 这页好内容误删。

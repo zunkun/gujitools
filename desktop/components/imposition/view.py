@@ -15,8 +15,10 @@
 from __future__ import annotations
 
 import html
+import math
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QPoint, QRect, Qt, Signal
+from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 from qfluentwidgets import PushButton
 from qfluentwidgets import FluentIcon as FIF
@@ -30,6 +32,121 @@ from desktop.components.imposition.page_list import ImpositionPageList
 from desktop.services.imposition import cn_page_label, page_source_stems
 from desktop.ui import theme as T
 from desktop.ui.widgets import apply_to
+
+
+class _EmptyGuideOverlay(QWidget):
+    """空态引导层（用户 2026-10-13）：还没有任何拼版页时，画布区一片空白，
+    唯一的入口是**左下角**的虚线「＋ 选择拼版」——太不显眼了。
+
+    本层盖在整个拼版视图上，画三样东西：
+
+    1. 画布区居中的**大字提示**：「从左下角「＋ 选择拼版」开始拼版」；
+    2. 一支**红色箭头**，从提示文字弯向左下角的按钮；
+    3. 按钮**外围的红色线框**（用户点名：选择拼版用红色线框框起来）。
+
+    ⚠️ **全程鼠标穿透**（``WA_TransparentForMouseEvents``）：红框只是"圈"，
+    按钮本体必须照常可点；层里没有任何可交互元素。
+    ⚠️ 按钮几何**每次绘制现取**（``paintEvent`` 里映射）：窗口缩放/左列
+    宽度变化后下一帧自动跟手，不需要维护位置缓存。
+    """
+
+    #: 引导红：与「批量删除」/画布红色对齐线同一族的项目危险色
+    _RED = QColor(T.DANGER)
+    #: 主提示行字号（介于正文 13 与页标题 22 之间的强调档）
+    _MAIN_PX = 18
+
+    def __init__(self, view: "ImpositionViewWidget"):
+        super().__init__(view)
+        self._view = view
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.hide()
+
+    def _button_rect(self) -> QRect:
+        """「＋ 选择拼版」在本层坐标系里的几何（现取，不缓存）。
+
+        ⚠️ 用 ``button.mapTo(view, …)``（按钮→视图是合法祖先链），**不能**
+        ``self.mapFrom(page_list, …)``——page_list 是本层的**兄弟**不是祖先，
+        Qt 会拒绝映射（警告 ``mapFrom(): parent must be in parent hierarchy``）
+        并返回错位坐标（红框悬到清单半腰，2026-10-13 用户截图报的正是它）。
+        本层 geometry == view.rect()，视图坐标即本层坐标。
+        """
+        button = self._view.page_list.add_entry
+        top_left = button.mapTo(self._view, QPoint(0, 0))
+        return QRect(top_left, button.size())
+
+    def paintEvent(self, _event) -> None:  # noqa: N802
+        button_rect = self._button_rect()
+        if button_rect.width() <= 0:
+            return
+        # 引导文字画在**右侧画布区**的中央（左列被红框占了，别叠上去）
+        list_right = self._view.page_list.geometry().right()
+        center_x = list_right + (self.width() - list_right) // 2
+        center_y = self.height() // 2 - 30
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # ---- 1. 大字提示 + 次行说明（居中两行） ----
+        main_font = QFont(self.font())
+        main_font.setPixelSize(self._MAIN_PX)
+        main_font.setBold(True)
+        sub_font = QFont(self.font())
+        sub_font.setPixelSize(T.SIZE_CAPTION)
+        main_text = "从左下角「＋ 选择拼版」开始拼版"
+        sub_text = "点击后从候选图片里勾选（不限张数），每两张图片拼成一页"
+        painter.setFont(main_font)
+        painter.setPen(QPen(QColor(T.INK)))
+        main_width = painter.fontMetrics().horizontalAdvance(main_text)
+        painter.drawText(
+            center_x - main_width // 2, center_y, main_text
+        )
+        painter.setFont(sub_font)
+        painter.setPen(QPen(QColor(T.INK_FAINT)))
+        sub_width = painter.fontMetrics().horizontalAdvance(sub_text)
+        painter.drawText(
+            center_x - sub_width // 2, center_y + T.SIZE_BODY + 10, sub_text
+        )
+
+        # ---- 2. 红色箭头：从提示文字下缘弯向按钮右上角 ----
+        start = QPoint(center_x - main_width // 2 + 20, center_y + 26)
+        end = QPoint(
+            min(button_rect.right() + 30, center_x - 40),
+            button_rect.top() - 14,
+        )
+        path = QPainterPath(start)
+        # 控制点把曲线往左下压：先垂后横的"拐杖"弧，避免直线斜穿清单
+        control = QPoint(start.x() - (start.x() - end.x()) // 3, end.y())
+        path.quadTo(control, end)
+        # ⚠️ **虚线**（2026-10-13 用户：引导线不要实线）；箭头三角仍是实心，
+        #    否则小尺寸下虚线三角根本看不出形状
+        painter.setPen(QPen(self._RED, 2.2, Qt.PenStyle.DashLine,
+                            Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawPath(path)
+        # 箭头三角：按曲线末端切线方向摆
+        tangent = end - control
+        angle = math.atan2(tangent.y(), tangent.x())
+        head, size = end, 11
+        painter.setBrush(self._RED)
+        painter.setPen(Qt.PenStyle.NoPen)
+        arrow = QPainterPath(head)
+        arrow.lineTo(
+            head.x() - size * math.cos(angle - 0.42),
+            head.y() - size * math.sin(angle - 0.42),
+        )
+        arrow.lineTo(
+            head.x() - size * math.cos(angle + 0.42),
+            head.y() - size * math.sin(angle + 0.42),
+        )
+        arrow.closeSubpath()
+        painter.drawPath(arrow)
+
+        # ---- 3. 按钮外围的红色线框（圈大 5px，虚线本体看得清红框） ----
+        frame = button_rect.adjusted(-5, -5, 5, 5)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(self._RED, 2.0, Qt.PenStyle.DashLine))
+        painter.drawRoundedRect(frame, T.RADIUS_MD, T.RADIUS_MD)
+        painter.end()
 
 
 class ImpositionViewWidget(QWidget):
@@ -128,7 +245,18 @@ class ImpositionViewWidget(QWidget):
         right.addLayout(bottom)
         row.addLayout(right, 1)
 
+        # ---- 空态引导层（用户 2026-10-13）：还没有拼版页时，提示去点
+        #      左下角「＋ 选择拼版」（红框圈住按钮 + 箭头指向它）。鼠标
+        #      全程穿透，按钮本体照常可点；显隐只由 _update_hint 驱动。
+        self.empty_guide = _EmptyGuideOverlay(self)
+        self.empty_guide.setGeometry(self.rect())
+
         self._update_hint()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        # 引导层跟着视图拉伸（红框/箭头几何 paintEvent 现取，无需额外处理）
+        self.empty_guide.setGeometry(self.rect())
 
     # ------------------------------------------------------------------ 数据
     def set_pages(self, pages: list[dict], current: int = -1) -> None:
@@ -248,6 +376,12 @@ class ImpositionViewWidget(QWidget):
         # 翻页按钮跟着当前页走：首页没有「上一页」，末页没有「下一页」
         self.prev_button.setEnabled(self._current > 0)
         self.next_button.setEnabled(0 <= self._current < len(self._pages) - 1)
+        # 空态引导层：**只看"有没有页"**（独立页首轮自动拼版传 current=-1，
+        # 页已存在却还没选中——那一刻引导层也必须收起，否则红框悬在满列
+        # 页条目上撒谎）。显隐驱动只有这一处。
+        self.empty_guide.setVisible(not self._pages)
+        if self.empty_guide.isVisible():
+            self.empty_guide.raise_()
         if self._current < 0:
             self.hint_main.setText("还没有拼版页")
             self.hint.setText(

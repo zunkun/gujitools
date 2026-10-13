@@ -369,3 +369,79 @@ def run(ctx) -> None:
        f"{probe.control_stack.count()}/{probe.preview_stack.count()}")
     probe.deleteLater()
     pump(app, times=4)
+
+    # ---- 红色虚线框（RedDashFrame，2026-10-13 用户）----
+    # 两处动态引导：① 第三步「提交本次任务」预览成功未提交（NEW_VERSION）；
+    # ② 拼版面板「在流程中启用图片拼版」可勾未勾且左侧有可拼图。
+    from desktop.ui.widgets import RedDashFrame, set_red_frame
+
+    # 单元：挂框 → 覆盖层挂在**父控件**上、四周外扩 PAD（不贴身，2026-10-13
+    # 用户：「线框高一些，不要紧贴着」）；摘框 → 隐藏（控件复用不重建）；幂等
+    from pathlib import Path as _Path
+
+    from PySide6.QtCore import Qt as _Qt
+    from PySide6.QtWidgets import QWidget as _QW
+    from qfluentwidgets import PushButton
+
+    _submit_src = (_Path(__file__).resolve().parents[2]
+                   / "desktop/pages/taskdetail/submit.py").read_text(encoding="utf-8")
+    _impo_src = (_Path(__file__).resolve().parents[2]
+                 / "desktop/pages/taskdetail/imposition.py").read_text(encoding="utf-8")
+    ok("提交按钮红框走 NEW_VERSION 判据（源码护栏）",
+       "set_red_frame(self.submit_button, version == NEW_VERSION)" in _submit_src)
+    ok("拼版启用开关红框 = 可用+未勾+有可拼图（源码护栏）",
+       "set_red_frame(checkbox, frame_on)" in _impo_src)
+
+    _host = _QW()
+    _host.resize(320, 200)
+    probe_button = PushButton("红框探针", _host)
+    probe_button.move(40, 60)
+    probe_button.resize(160, 36)
+    _host.show()
+    pump(app, times=2)
+    set_red_frame(probe_button, True)
+    frame = probe_button.property("_red_dash_frame")
+    _want = probe_button.geometry().adjusted(-5, -5, 5, 5)
+    ok("挂框：覆盖层存在、可见、鼠标穿透、外扩 5px 不贴身",
+       frame is not None and frame.isVisible()
+       and frame.testAttribute(_Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+       and frame.parentWidget() is _host
+       and frame.geometry() == _want,
+       f"frame={None if frame is None else frame.geometry()} want={_want}")
+    set_red_frame(probe_button, True)
+    ok("重复挂框幂等（不重建第二个覆盖层）",
+       probe_button.property("_red_dash_frame") is frame)
+    probe_button.move(80, 100)
+    probe_button.resize(200, 40)
+    pump(app, times=2)
+    ok("宿主挪动/缩放后框跟随（eventFilter 重适配）",
+       frame.geometry() == probe_button.geometry().adjusted(-5, -5, 5, 5))
+    set_red_frame(probe_button, False)
+    ok("摘框：覆盖层隐藏（留控件复用）", not frame.isVisible())
+    ok("强制画一次框（grab 不抛异常）",
+       not probe_button.grab().isNull())
+    # 紧身行容器（高度==按钮高度）：外扩框直接父控件装不下 → 必须爬到
+    # 装得下的祖先，否则整框被父控件裁剪得一行不剩（提交按钮框"不显示"
+    # 正是这个场景，2026-10-13 用户截图报的）
+    from PySide6.QtCore import QRect as _QRect
+
+    _tight = _QW(_host)
+    _tight.setGeometry(10, 10, 220, 40)
+    _btn2 = PushButton("提交探针", _tight)
+    _btn2.move(10, 2)
+    _btn2.resize(140, 36)
+    pump(app, times=2)
+    set_red_frame(_btn2, True)
+    _frame2 = _btn2.property("_red_dash_frame")
+    _want2 = _QRect(
+        _btn2.mapTo(_host, _btn2.rect().topLeft()),
+        _btn2.mapTo(_host, _btn2.rect().bottomRight()),
+    ).adjusted(-5, -5, 5, 5)
+    ok("紧身行：框爬到装得下的祖先（不被父控件裁剪得看不见）",
+       _frame2 is not None and _frame2.isVisible()
+       and _frame2.parentWidget() is _host
+       and _frame2.geometry() == _want2,
+       f"parent={_frame2.parentWidget()} geo={_frame2.geometry()} want={_want2}")
+    set_red_frame(_btn2, False)
+    _host.deleteLater()
+    pump(app, times=2)

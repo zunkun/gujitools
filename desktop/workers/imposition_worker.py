@@ -82,13 +82,17 @@ class ImpositionPagePreviewWorker(QObject):
 def _compose_to_qimage(page: dict, longest_edge: int, background=None) -> QImage:
     """一页拼版 → PIL 合成 → 按最长边缩 → QImage（深拷贝脱离源缓冲）。
 
-    ``background=None`` 走 ``compose_page`` 的默认（透明底，任务流程口径）。
+    ⚠️ ``background=None`` 必须**在这里解析成透明底**再调 ``compose_page``：
+    显式传 ``None`` 不会触发它的默认参数，``tuple(None)`` 直接 TypeError
+    （2026-10-13 自测抓到：任务流程组合预览 worker 因此产出空 QImage）。
     """
     from PIL import Image
 
-    from desktop.services.imposition import compose_page
+    from desktop.services.imposition import TRANSPARENT_BACKGROUND, compose_page
 
-    pil_image = compose_page(page, background).convert("RGBA")
+    pil_image = compose_page(
+        page, TRANSPARENT_BACKGROUND if background is None else background
+    ).convert("RGBA")
     if longest_edge:
         pil_image.thumbnail((longest_edge, longest_edge), Image.Resampling.LANCZOS)
     raw = pil_image.tobytes("raw", "RGBA")

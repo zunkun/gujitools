@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 168 个模块、178 个公开类、1231 个公开函数/方法（生成于 2026-10-13）。
+覆盖 168 个模块、179 个公开类、1236 个公开函数/方法（生成于 2026-10-13）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -29,7 +29,7 @@
 | [`desktop.components.imposition.page_thumb`](#desktopcomponentsimpositionpage_thumb) | 1 | 14 |
 | [`desktop.components.imposition.panel`](#desktopcomponentsimpositionpanel) | 1 | 7 |
 | [`desktop.components.imposition.picker`](#desktopcomponentsimpositionpicker) | 1 | 9 |
-| [`desktop.components.imposition.view`](#desktopcomponentsimpositionview) | 1 | 12 |
+| [`desktop.components.imposition.view`](#desktopcomponentsimpositionview) | 1 | 13 |
 | [`desktop.components.log_panel`](#desktopcomponentslog_panel) | 1 | 10 |
 | [`desktop.components.missing_source_prompt`](#desktopcomponentsmissing_source_prompt) | 1 | 7 |
 | [`desktop.components.pagination`](#desktopcomponentspagination) | 2 | 11 |
@@ -161,7 +161,7 @@
 | [`desktop.ui.style`](#desktopuistyle) | 0 | 3 |
 | [`desktop.ui.theme`](#desktopuitheme) | 0 | 3 |
 | [`desktop.ui.toast`](#desktopuitoast) | 0 | 1 |
-| [`desktop.ui.widgets`](#desktopuiwidgets) | 9 | 43 |
+| [`desktop.ui.widgets`](#desktopuiwidgets) | 10 | 47 |
 | [`desktop.ui.window_size`](#desktopuiwindow_size) | 0 | 3 |
 | [`desktop.utils.files`](#desktoputilsfiles) | 0 | 19 |
 | [`desktop.utils.icon`](#desktoputilsicon) | 0 | 3 |
@@ -1898,6 +1898,7 @@ worker）→ 连 :attr:`page_ready` 把生成好的那条贴回左列。版面/�
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(parent=None)` | — |
+| `resizeEvent(event) -> None` | Qt 事件覆写：尺寸变化时重算布局 / 重新缩放。 |
 | `set_pages(pages: list[dict], current: int=-1) -> None` | 整批灌入拼版页；``current`` 是当前显示的下标。 |
 | `set_page_thumbs(thumbs: list) -> None` | 把左列每页的缩略图贴上去（``thumbs[i]`` 对应第 i 页，可为 ``None``）。 |
 | `set_thumb_at(index: int, image) -> None` | 只给**第 ``index`` 页**贴缩略图（"一张张到齐"的回填走这里）。 |
@@ -6078,12 +6079,18 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 且「启用开关」决定取图来源；单文件模式下没有下游，所以这里把面板里的
 「启用开关」隐掉，只留版面操作与导出。
 
+**面板能力与任务流程对齐**（2026-10-13 用户）：单图页「新增图片」
+（append 弹窗挑 1 张并进当前页，``append_item_to_page`` 摆放）、
+「删除选中图片」（选中才出现；本页最后一张删除前先确认）、整体旋转/
+选中图旋转（停手 250ms 统一提交）——语义逐条与任务流程的拼版步骤一致。
+
 ### 模块常量
 
 | 名称 | 值 |
 | --- | --- |
 | EDITED_DIRNAME | `"edited"` |
 | THUMB_REFRESH_DEBOUNCE_MS | `2000` |
+| EDIT_COMMIT_DEBOUNCE_MS | `250` |
 
 ### `class ImpositionModulePage(ModulePage)`
 
@@ -12454,6 +12461,27 @@ QSS 里不会生效；它由 `desktop.components.log_panel.apply_log_view_style`
 | HELP_TOOLTIP_WIDTH | `26` |
 | HELP_BUBBLE_WIDTH | `360` |
 
+### `class RedDashFrame(QWidget)`
+
+控件外围的**红色虚线框**（鼠标穿透）：圈出"当前该做而没做的动作"。
+
+谁在用（用户 2026-10-13）：第三步「提交本次任务」**预览成功但未提交**、
+拼版面板「在流程中启用图片拼版」**可勾但没勾且左侧有可拼图**。
+
+⚠️ 是**覆盖层**而不是样式表：qfluent 按钮的 qss 是整串 setStyleSheet
+进去的，再 setStyleSheet 会把它抹掉（见 :func:`bold_button` 的说明）；
+覆盖层只画框，控件本体分毫不动。
+⚠️ 框画在控件自身 rect 内缩 1px（子控件画不出父控件边界）。
+⚠️ ``WA_TransparentForMouseEvents``：框不挡任何点击。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(target: QWidget)` | — |
+| `eventFilter(obj, event)` | Qt 事件过滤器。 |
+| `paintEvent(_event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
+
 ### `class Card(QFrame)`
 
 白底圆角卡片，可选描边与内边距。
@@ -12616,6 +12644,7 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 | `apply_to(widget: QWidget, size: int=T.SIZE_BODY, bold: bool=False, color: str \| None=None) -> QWidget` | 给控件统一设置字体与颜色（返回原控件，便于链式书写）。 |
 | `bold_button(button: QWidget, bold: bool) -> None` | 把按钮文字加粗 / 还原（高亮用）。 |
 | `mark_input_entry(button: QWidget) -> None` | 给「给这一步喂图片」这类**输入入口**按钮加**常驻红框**。 |
+| `set_red_frame(target: QWidget, on: bool) -> None` | 给控件挂上/摘掉 :class:`RedDashFrame`（幂等；重复调用不重建控件）。 |
 | `combo_box(items: Iterable[str \| Sequence[Any]] \| None=None, width: int \| None=None) -> ComboBox` | 创建与输入框同高的下拉框（统一表单的行高节奏）。 |
 | `icon_pixmap(icon, size: int=24, color: str=T.INK_FAINT) -> QPixmap` | 把 FluentIcon 渲染成指定颜色的 pixmap（用于空状态插画）。 |
 | `install_button_pointer_cursor(app: QApplication) -> None` | 给整个应用的按钮启用 hover 手型光标（见 :class:`_ButtonCursorFilter`）。 |
@@ -12664,6 +12693,12 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 
 ⚠️ 用样式表而不是换 ``PrimaryPushButton``：那会让这一排工具按钮的
 **尺寸**变掉（文字按钮比图标按钮宽），把页头撑变形（同 ``bold_button``）。
+
+#### `set_red_frame(target: QWidget, on: bool) -> None`
+
+给控件挂上/摘掉 :class:`RedDashFrame`（幂等；重复调用不重建控件）。
+
+摘掉只是 ``hide()``：控件留着，下次要亮直接 show，省一次构造。
 
 #### `combo_box(items: Iterable[str | Sequence[Any]] | None=None, width: int | None=None) -> ComboBox`
 

@@ -28,6 +28,11 @@
 ⚠️ 与任务流程的差别（有意为之）：任务流程里拼版的产物供第四步 PDF排版使用，
 且「启用开关」决定取图来源；单文件模式下没有下游，所以这里把面板里的
 「启用开关」隐掉，只留版面操作与导出。
+
+**面板能力与任务流程对齐**（2026-10-13 用户）：单图页「新增图片」
+（append 弹窗挑 1 张并进当前页，``append_item_to_page`` 摆放）、
+「删除选中图片」（选中才出现；本页最后一张删除前先确认）、整体旋转/
+选中图旋转（停手 250ms 统一提交）——语义逐条与任务流程的拼版步骤一致。
 """
 
 from __future__ import annotations
@@ -47,9 +52,11 @@ from desktop.modules.base import ModulePage
 from desktop.services.imposition import (
     FILE_FMT,
     WHITE_BACKGROUND,
+    append_item_to_page,
     auto_impose_pages,
     cn_page_label,
     compose_doc,
+    excluded_files,
     flatten_onto_background,
     make_page,
     make_single_page,
@@ -60,6 +67,7 @@ from desktop.services.imposition import (
     refresh_rects_for_edited_source,
     removed_source_files,
     same_path,
+    used_source_files,
 )
 from desktop.steps import (
     SourceZone,
@@ -89,6 +97,11 @@ EDITED_DIRNAME = "edited"
 #: 面板调整/编辑回写之后几秒内，缩略图要跟上页面效果）。拖动中签名每帧
 #: 都在变，等真的停手了再合成一次就够。
 THUMB_REFRESH_DEBOUNCE_MS = 2000
+
+#: 旋转组件（整体/选中图）停手后统一提交的防抖（与任务流程
+#: ``imposition_layout.EDIT_COMMIT_DEBOUNCE_MS`` 同一档）：滑块连续吐增量
+#: 期间只转画布不落盘，停手 250ms 后一次性 flush + 重适配 + 回填面板。
+EDIT_COMMIT_DEBOUNCE_MS = 250
 
 
 def edited_page_dir() -> Path:
@@ -155,6 +168,11 @@ class ImpositionModulePage(ModulePage):
         self._thumb_timer.setSingleShot(True)
         self._thumb_timer.setInterval(THUMB_REFRESH_DEBOUNCE_MS)
         self._thumb_timer.timeout.connect(self._refresh_dirty_page_thumbs)
+        # 旋转组件（整体/选中图）停手提交的防抖（见 EDIT_COMMIT_DEBOUNCE_MS）
+        self._rotate_commit_timer = QTimer(self)
+        self._rotate_commit_timer.setSingleShot(True)
+        self._rotate_commit_timer.setInterval(EDIT_COMMIT_DEBOUNCE_MS)
+        self._rotate_commit_timer.timeout.connect(self._commit_rotation_edit)
         self.status("尚未选择图片")
 
     # ------------------------------------------------------------------ 输入
@@ -180,6 +198,7 @@ class ImpositionModulePage(ModulePage):
         self.view.add_requested.connect(self._on_add_pages)
         self.view.page_remove_requested.connect(self._on_release_page)
         self.view.page_selected.connect(lambda _i: self._refresh_panel())
+        self.view.slot_selected.connect(lambda _slot: self._refresh_panel())
         self.view.items_changed.connect(self._on_items_changed)
         self.view.page_reorder_requested.connect(self._on_reorder)
         self.view.pages_batch_delete_requested.connect(self._on_batch_delete)
@@ -221,10 +240,15 @@ class ImpositionModulePage(ModulePage):
         card.box.addWidget(self.auto_button)
 
         # enable_switch=False：单文件模式没有「第四步取图来源」概念，
-        # 构造时声明收掉启用开关（任务流程专属概念不进独立页）
+        # 构造时声明收掉启用开关（任务流程专属概念不进独立页）。
+        # 其余信号与任务流程的拼版步骤**逐条对齐**（2026-10-13 用户：独立
+        # 拼图页跟任务流程保持一致）：整版旋转、单图页「新增图片」、
+        # 「删除选中图片」、复位、清空。
         self.panel = ImpositionPanel(enable_switch=False)
         self.panel.reset_requested.connect(self._on_reset_layout)
+        self.panel.whole_rotate_delta.connect(self._on_whole_rotate)
         self.panel.item_rotation_edited.connect(self._on_item_rotate)
+        self.panel.add_image_requested.connect(self._on_add_image)
         self.panel.item_delete_requested.connect(self._on_delete_item)
         self.panel.clear_requested.connect(self._on_clear)
         card.box.addWidget(self.panel)
@@ -275,6 +299,10 @@ class ImpositionModulePage(ModulePage):
 
         ⚠️ **代际闸**：预备期间用户又拖了新源/清空了输入 ⇒ ``batch`` 身份
         不等，迟到的完成回调整批丢弃（与缩略图缓存 pass 同一套思路）。
+        ⚠️ 转换（几百张图逐张解码+重编码）**比较耗时**（用户 2026-10-13）：
+        右栏进度条 + toast + 页头状态行三处都提示，让用户知道在等什么；
+        「自动拼版」「导出成品」在预备完成前禁用——旧清单还挂在页面上，
+        不禁用的话新旧两批图会混进一份成品。
         """
         from desktop.services import rembg_export
 
@@ -284,8 +312,18 @@ class ImpositionModulePage(ModulePage):
             return
         batch: object = object()
         self._rembg_prep_batch = batch
+        self.auto_button.setEnabled(False)
+        self.export_button.setEnabled(False)
+        self.progress_row.start(
+            f"正在准备透明副本…（去底色导出目录，共 {len(marked)} 张）"
+        )
         self.status(
             f"检测到去底色导出目录（{len(marked)} 张），正在准备透明副本…", "info"
+        )
+        self.toast(
+            "info", "检测到去底色导出目录",
+            f"正在把 {len(marked)} 张白底图转成透明底副本（原图不动），"
+            "完成后自动开始拼版，请稍候…",
         )
         self.log(
             f"命中去底色导出目录标记：{len(marked)} 张图将生成透明底副本用于拼版"
@@ -317,7 +355,8 @@ class ImpositionModulePage(ModulePage):
         )
 
     def _on_prep_progress(self, done: int, total: int) -> None:
-        """副本转换进度：只写状态行（不占右栏进度条，那是「导出成品」的）。"""
+        """副本转换进度：右栏进度条（定量）+ 页头状态行双处可见。"""
+        self.progress_row.update(done, total)
         self.status(f"正在准备透明副本 {done}/{total}…", "info")
 
     def _on_prep_finished(
@@ -326,6 +365,14 @@ class ImpositionModulePage(ModulePage):
         """副本就绪：命中映射的换成副本路径，失败的回落原图，正式定源。"""
         if batch is not self._rembg_prep_batch:
             return  # 预备期间换过源/清空了输入：整批作废
+        if not mapping:
+            self.progress_row.fail("透明副本生成失败")
+        elif errors:
+            self.progress_row.succeed(
+                f"副本就绪 {len(mapping)} 张（{len(errors)} 张失败用原图）"
+            )
+        else:
+            self.progress_row.succeed(f"透明副本就绪 {len(mapping)} 张")
         if errors:
             self.log(
                 "部分透明副本生成失败（这些图按原图拼版）："
@@ -340,6 +387,7 @@ class ImpositionModulePage(ModulePage):
         """转换线程整体失败：全部回落原图定源（拼版仍可用，只是白底）。"""
         if batch is not self._rembg_prep_batch:
             return
+        self.progress_row.fail("副本准备失败，按原图拼版")
         self.log(f"透明副本准备失败，按原图拼版：{message}")
         self._set_sources(images)
 
@@ -359,6 +407,8 @@ class ImpositionModulePage(ModulePage):
         self._sources = [str(p) for p in images]
         self._doc = normalize_doc({})
         self.close_zoom_dialog()  # 弹窗里那几页是上一批图的快照
+        # 源定了 ⇒ 副本预备期结束（预备期里禁掉的是它），恢复可用
+        self.auto_button.setEnabled(True)
         first = Path(output_hint) if output_hint is not None else Path(self._sources[0])
         self._out_dir = _SPEC.default_output(first)
         # 选到图了 → 显出拼版视图与控制面板（初始只有输入框，见
@@ -393,6 +443,7 @@ class ImpositionModulePage(ModulePage):
         self._page_thumbs = []
         self._page_thumb_manager().reset()
         self._thumb_timer.stop()
+        self._rotate_commit_timer.stop()
         self._thumb_dirty_pages.clear()
         self.close_zoom_dialog()
         self.sync_workspace_visible(None)
@@ -417,12 +468,11 @@ class ImpositionModulePage(ModulePage):
         )
         if not dialog.exec():
             # 取消也要落软删除黑名单（用户在弹窗里删过图）
-            if dialog.removed_changed():
-                self._doc["removed"] = [str(p) for p in dialog.removed_files()]
-                self._refresh_view()
+            self._apply_picker_removed(dialog)
+            self._refresh_view()
             return
         picked = [str(p) for p in dialog.checked_files()]
-        self._doc["removed"] = [str(p) for p in dialog.removed_files()]
+        self._apply_picker_removed(dialog)
         auto_start = dialog.auto_mode_file()
         if auto_start is not None:
             pages = auto_impose_pages(
@@ -433,6 +483,75 @@ class ImpositionModulePage(ModulePage):
             self._append_pages_from(picked)
         self._refresh_view()
         self.status(f"当前共 {len(self._doc['pages'])} 页拼版", "info")
+
+    def _apply_picker_removed(self, dialog) -> None:
+        """把弹窗里「删除图片 / 恢复」的结果落回文档（``removed`` 黑名单）。
+
+        与任务流程的 ``_apply_picker_removed`` 同一语义：删除/恢复是**即时
+        意图**，与用户最终有没有开始拼版/添加无关（取消弹窗也要落盘）。
+        """
+        if not dialog.removed_changed():
+            return
+        self._doc["removed"] = [str(p) for p in dialog.removed_files()]
+
+    def _on_add_image(self) -> None:
+        """单图页点「新增图片」：append 弹窗挑 1 张，并进当前这一页。
+
+        与任务流程的 ``_on_imposition_add_image`` 同一套语义（2026-10-13
+        用户：独立拼图页跟任务流程保持一致）：版面规则唯一实现在
+        ``services.imposition.append_item_to_page``——原图是左半幅 → 新图
+        进右槽贴右边；其余 → 新图进左槽贴左边；原图的位置/大小/旋转
+        **原样保留**。候选池与「选择拼版」同一套（剩余未用，可恢复已删除）。
+        """
+        index = self.view.current_index()
+        pages = self._doc.get("pages") or []
+        if index < 0 or not (0 <= index < len(pages)):
+            return
+        items = pages[index].get("items") or []
+        if len(items) != 1:
+            return  # 按钮只在单图页出现；防御一下
+        sources = list(self._sources)
+        if not sources:
+            self.toast("warning", "没有可添加的图片", "请先把图片拖到上面的输入框。")
+            return
+        used = used_source_files(self._doc)
+        removed = excluded_files(sources, self._doc)
+        removed_keys = {str(f) for f in removed}
+        pool = [f for f in sources if str(f) not in used]
+        remaining = [f for f in pool if str(f) not in removed_keys]
+        if not remaining and not removed:
+            self.toast(
+                "warning", "没有可选的图片",
+                "所有图片都已被拼版使用。可先删掉某些拼版页再来选。",
+            )
+            return
+        dialog = ImpositionPickerDialog(
+            pool, self, removed_files=removed, mode="append",
+        )
+        if not dialog.exec():
+            # 取消也落盘：删除/恢复是即时意图，与是否添加无关
+            self._apply_picker_removed(dialog)
+            return
+        self._apply_picker_removed(dialog)
+        picked = dialog.picked_files()
+        if len(picked) != 1:
+            return  # append 弹窗只放行 1 张；这里兜底
+        merged = append_item_to_page(items, picked[0])
+        if merged is None:
+            self.toast(
+                "error", "添加失败",
+                "读不到所选图片的尺寸（文件可能已被移动或删除），请换一张。",
+            )
+            return
+        pages[index] = {**pages[index], "items": merged}
+        # 版面变了，这一页的整页手改记录作废（与拖动/删除同口径）
+        self._drop_page_override(index, reason="图片已改动")
+        self._refresh_view()
+        self.log(
+            f"已在{cn_page_label(index)}新增图片「{Path(picked[0]).stem}」"
+            f"（原有「{Path(items[0]['file']).stem}」的版面保持不动）。"
+        )
+        self.status(f"当前共 {len(pages)} 页拼版", "info")
 
     def _append_pages_from(self, picked: list[str]) -> None:
         """把勾选的图两两成页追加到文档末尾（奇数落单成单图页）。"""
@@ -480,6 +599,7 @@ class ImpositionModulePage(ModulePage):
             self._drop_page_override(index)
             self._thumb_dirty_pages.add(int(index))
             self._thumb_timer.start()
+        self._refresh_panel()  # 拖动/旋转落定后回填面板角度与按钮显隐
 
     def _refresh_dirty_page_thumbs(self) -> None:
         """防抖到期：把攒下的那几页**单页**重生成缩略图实体并贴回左列。"""
@@ -540,33 +660,82 @@ class ImpositionModulePage(ModulePage):
         pages[index] = page
         self._refresh_view()
 
-    def _on_item_rotate(self, angle: float) -> None:
-        """把选中图设为绝对旋转角（顺时针，度）。"""
-        slot = self.view.selected_slot()
-        if slot < 0:
+    def _on_whole_rotate(self, delta: float) -> None:
+        """「整体旋转」组件吐了增量：绕两图公共中心转（停手后统一提交）。
+
+        与任务流程的 ``_on_imposition_whole_rotate`` 同口径：滑块连续吐增量
+        期间只重绘不上报（``rotate_whole`` 只标脏），由
+        :data:`_rotate_commit_timer` 在停手后 flush + 重适配 + 回填面板。
+        """
+        if self.view.current_index() < 0 or not self.view.canvas.has_items():
             return
-        items = [dict(item) for item in self.view.current_items()]
-        if slot < len(items):
-            items[slot]["rotation"] = float(angle)
-            self.view.update_current_items(items)
-            self._on_items_changed(self.view.current_index(), items)
+        self.view.canvas.rotate_whole(delta)
+        self._rotate_commit_timer.start()
+
+    def _commit_rotation_edit(self) -> None:
+        """旋转组件停手到期：把画布改动补报出去 + 重适配 + 回填面板。"""
+        self.view.canvas.flush_pending()  # → items_changed → 写回文档+缩略图防抖
+        # 整版转过后外接框变了：重新适配可视区（与任务流程同一行为）
+        self.view.canvas.refit()
+        self._refresh_panel()
+
+    def _on_item_rotate(self, angle: float) -> None:
+        """把选中图设为绝对旋转角（顺时针，度；停手后统一提交）。"""
+        if self.view.current_index() < 0 or self.view.selected_slot() < 0:
+            return  # 组件没选中时本来就该禁用；防御一下
+        self.view.canvas.set_item_rotation(angle)
+        self._rotate_commit_timer.start()
 
     def _on_delete_item(self) -> None:
-        """删除选中图片（单图页删至空则整页移除，与详情页口径一致）。"""
+        """删除选中图片（单图页删至空则整页移除，与详情页口径一致）。
+
+        与任务流程的 ``_on_imposition_delete_item`` 对齐（2026-10-13 用户：
+        独立拼图页跟任务流程保持一致）：**本页最后一张图删除前先弹确认框**
+        ——整页拼版会一并移除；删剩一张时面板自动出现「新增图片」可再补。
+        """
         slot = self.view.selected_slot()
         index = self.view.current_index()
         pages = self._doc.get("pages") or []
         if slot < 0 or not (0 <= index < len(pages)):
+            if index >= 0:
+                self.toast("info", "没有选中的图片", "先在画布里点选要删除的图片。")
             return
-        items = [dict(item) for item in self.view.current_items()]
-        if slot < len(items):
-            items.pop(slot)
+        self.view.flush_pending()  # 拖住/转住没松手的改动先落定再删
+        items = [dict(item) for item in pages[index].get("items") or []]
+        if not 0 <= slot < len(items):
+            return
+        removed_item = items.pop(slot)
+        if not items:
+            # 本页最后一张：页会跟着一起删（与详情页同款：要确认）。
+            # 此刻还没动任何状态（items 是副本），取消直接返回即可。
+            from qfluentwidgets import Dialog
+
+            dialog = Dialog(
+                "删除图片",
+                f"「{Path(removed_item['file']).stem}」是本页最后一张图片，"
+                "删除后整页拼版将一并移除。\n是否继续？",
+                self.window(),
+            )
+            dialog.yesButton.setText("删除")
+            dialog.cancelButton.setText("取消")
+            if not dialog.exec():
+                return
         if items:
             pages[index]["items"] = items
             self._drop_page_override(index, reason="图片已改动")
         else:
             pages.pop(index)
         self._refresh_view()
+        if items:
+            self.log(
+                f"已删除{cn_page_label(index)}选中的图片"
+                f"「{Path(removed_item['file']).stem}」，回到未选择列表。"
+            )
+        else:
+            self.log(
+                f"已删除{cn_page_label(index)}最后一张图片"
+                f"「{Path(removed_item['file']).stem}」，本页没有图了，整页移除。"
+            )
 
     def _on_clear(self) -> None:
         """清空全部页（源清单保留，可重新拼）。"""
@@ -972,6 +1141,10 @@ class ImpositionModulePage(ModulePage):
 
     def _export(self) -> None:
         """把整份文档合成为 PNG（后台线程，避免大图阻塞界面）。"""
+        # 面板旋转组件的改动可能还挂在防抖里（转住没停满 250ms 就点导出）：
+        # 先停表补报，导出的 doc 才是最新版面。
+        self._rotate_commit_timer.stop()
+        self.view.flush_pending()
         pages = self._doc.get("pages") or []
         if not pages:
             self.toast("warning", "没有拼版页", "请先把图片拖到上面的输入框，再拼版。")
@@ -1111,14 +1284,33 @@ class ImpositionModulePage(ModulePage):
         manager.flush()
 
     def _refresh_panel(self) -> None:
-        """刷新右侧面板的状态文案与选中图信息（面板自绘，这里只给文案）。"""
-        label = self.panel.status_label
+        """把画布当前状态回填到右侧面板（状态文案 + 旋转组件 + 按钮显隐）。
+
+        与任务流程的 ``_sync_imposition_rotation_ui`` + 单图页判定同口径：
+        整版角度=平均角、选中图角度=选中角（没有选中则「删除选中图片」
+        隐藏、「当前图片样式」灰掉）；单图页才露出「新增图片」。回填走
+        blockSignals 语义（panel 内部挡信号），不会把同步误当成用户输入。
+        """
+        panel = self.panel
+        label = panel.status_label
         pages = self._doc.get("pages") or []
         index = self.view.current_index()
-        if not pages or index < 0:
-            label.setText("还没有拼版页")
+        canvas = self.view.canvas
+        if not pages or index < 0 or not canvas.has_items():
+            panel.set_page_available(False)
+            panel.set_whole_angle(0.0)
+            panel.set_item_rotation(None)
+            panel.set_single_page(False)
+            if not pages or index < 0:
+                label.setText("还没有拼版页")
             return
+        panel.set_page_available(True)
+        panel.set_whole_angle(canvas.spread_rotation() or 0.0)
+        panel.set_item_rotation(
+            canvas.selected_rotation() if canvas.selected() >= 0 else None
+        )
         stems = page_source_stems(pages[index])
+        panel.set_single_page(len(stems) == 1)
         if len(stems) == 1:
             label.setText(f"{cn_page_label(index)}　·　整幅「{stems[0]}」")
         else:
