@@ -884,7 +884,15 @@ class TaskDetailPage(
         self.run_button.setText(
             spec.run_button_text if spec else "执行本子任务"
         )
-        self.submit_button.setVisible(bool(spec and spec.has_submit))
+        submit_visible = bool(spec and spec.has_submit)
+        self.submit_button.setVisible(submit_visible)
+        if not submit_visible:
+            # ⚠️ 提交按钮藏起来时它的红框必须一起摘（2026-10-13 用户截图：
+            #    「图片拼版」伪步骤的红框悬在进度条上——伪步骤分支不跑
+            #    _update_run_buttons，没人替它摘框，隐藏的按钮留着旧框）。
+            from desktop.ui.widgets import set_red_frame
+
+            set_red_frame(self.submit_button, False)
         # 右侧面板的步骤专属区块：``spec.panel_extra`` 非空 → 显示该专属区块
         # （detect 显示「检测结果统计」），否则显示「执行记录」
         # （detect 无表单参数，历史回填没用武之地）。

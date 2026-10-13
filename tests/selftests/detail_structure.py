@@ -389,8 +389,9 @@ def run(ctx) -> None:
                  / "desktop/pages/taskdetail/imposition.py").read_text(encoding="utf-8")
     ok("提交按钮红框走 NEW_VERSION 判据（源码护栏）",
        "set_red_frame(self.submit_button, version == NEW_VERSION)" in _submit_src)
-    ok("拼版启用开关红框 = 可用+未勾+有可拼图（源码护栏）",
-       "set_red_frame(checkbox, frame_on)" in _impo_src)
+    ok("拼版启用开关红框 = 可用+未勾+左侧有拼版页（源码护栏）",
+       "set_red_frame(checkbox, frame_on)" in _impo_src
+       and "imposition_has_pages()" in _impo_src)
 
     _host = _QW()
     _host.resize(320, 200)

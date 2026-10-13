@@ -309,16 +309,16 @@ class ImpositionBaseMixin:
             checkbox.blockSignals(True)
             checkbox.setChecked(bool(want))
             checkbox.blockSignals(False)
-        # ⚠️ **红框引导**（2026-10-13 用户）：开关**可用**但**没勾**、且左侧
-        # 有可拼的图（去底色提交产物已就位）时，红框圈出开关——提醒"该来
-        # 启用拼版了"。左侧空白（上游没产物）时不框：框了也没东西可拼；
-        # 开关不可用（置灰）时同理，圈一个点不动的框纯属噪声（也刻意不在此
-        # 分支去问取图来源——见 imposition_source_files 的 docstring）。
+        # ⚠️ **红框引导**（2026-10-13 用户，两条件**缺一不可**）：
+        # ① 开关**可用**且**没勾**——没勾才需要提醒去勾；
+        # ② **左侧拼版页清单非空**（``imposition_has_pages``）——已经拼了页
+        #    却没勾启用，框提醒"这些页 PDF排版用不上"；清单空白（还没拼任何
+        #    页）时**不框**：此刻勾了也没东西可出，圈一个空提醒是噪声。
         from desktop.ui.widgets import set_red_frame
 
         frame_on = False
         if usable and not checkbox.isChecked():
-            frame_on = bool(self.imposition_source_files())
+            frame_on = self.imposition_has_pages()
         set_red_frame(checkbox, frame_on)
 
     def _refresh_imposition_node(self) -> None:
