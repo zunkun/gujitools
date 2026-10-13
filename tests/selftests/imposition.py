@@ -473,6 +473,75 @@ def run(ctx) -> None:
             f"mode={_fmode} pixel={_fpx}",
         )
 
+        # ---- 2a-3. 去底色导出目录衔接（2026-10-13 用户）--------------------
+        # 独立去底色页导出目录带 guji_singletask_rembg 标记；拼图页对带标记
+        # 目录里的白底图生成**透明底副本**（原图不动），无标记的原样直用。
+        from desktop.services import rembg_export as _RX
+
+        _rembg_out = tmp / "rembg_export_dir"
+        _rembg_out.mkdir()
+        # 白底图上画一块红：转透明后白底 α=0、红块必须逐位不变
+        from PIL import Image as _I2
+
+        _white_page = _rembg_out / "page1.png"
+        _img = _I2.new("RGB", (60, 40), (255, 255, 255))
+        _img.paste((200, 30, 30), (10, 10, 30, 30))
+        _img.save(_white_page)
+        _other_dir = tmp / "plain_dir"
+        _other_dir.mkdir()
+        _plain_page = _mk(_other_dir / "page2.png", (255, 255, 255), (60, 40))
+
+        ok("没写标记的目录 is_marked=False", not _RX.is_marked(_rembg_out))
+        _RX.write_marker(_rembg_out)
+        ok("write_marker 后 is_marked=True（标记文件是 json 非图片）",
+           _RX.is_marked(_rembg_out)
+           and _RX.marker_path(_rembg_out).suffix == ".json")
+        _p, _m = _RX.split_marked([_white_page, _plain_page, _other_dir / "x.png"])
+        ok("split_marked：带标记目录的图进 marked、其余原样 plain",
+           _m == [_white_page] and _p == [_plain_page, _other_dir / "x.png"],
+           f"marked={_m} plain={_p}")
+
+        _copy = _RX.transparent_copy_path(_white_page)
+        ok("副本路径在 singletask 缓存区且带指纹后缀",
+           "rembg_transparent" in str(_copy)
+           and _copy.stem.startswith("page1-") and _copy.suffix == ".png",
+           str(_copy))
+        ok("同一源指纹 → 同一副本路径；源变化 → 新路径",
+           _copy == _RX.transparent_copy_path(_white_page)
+           and _copy != _RX.transparent_copy_path(_plain_page))
+
+        _before = _white_page.read_bytes()
+        # ⚠️ 副本内容验证写到 **tmp**，不碰真实 singletask 缓存区（
+        # transparent_copy_path 只算路径，上一条断言已经覆盖命名规则）
+        _copy_real = _copy
+        _copy = tmp / "copy-probe.png"
+        _RX.make_transparent_copy(_white_page, _copy)
+        with Image.open(_copy) as _cim:
+            _cim.load()
+            _crgba = _cim.convert("RGBA")
+        ok("副本：白底 α=0（RGB 保持 255）、红块逐位不变",
+           _crgba.getpixel((2, 2))[3] == 0
+           and _crgba.getpixel((2, 2))[:3] == (255, 255, 255)
+           and _crgba.getpixel((15, 15))[:3] == (200, 30, 30)
+           and _crgba.getpixel((15, 15))[3] == 255,
+           f"bg={_crgba.getpixel((2, 2))} red={_crgba.getpixel((15, 15))}")
+        ok("**原图绝不被改动**（字节级对比）",
+           _white_page.read_bytes() == _before)
+        ok("worker 用的正是同一个指纹路径口径（真实缓存路径未被测试写入）",
+           not _copy_real.exists())
+
+        # 接线护栏：去底色页导出成功必须落标记；拼图页选源必须走预备流程
+        _rembg_page_src = (Path(__file__).resolve().parents[2]
+                           / "desktop/modules/rembg/page.py").read_text(encoding="utf-8")
+        _impo_page_src = (Path(__file__).resolve().parents[2]
+                          / "desktop/modules/imposition/page.py").read_text(encoding="utf-8")
+        ok("去底色页 on_result 落标记（write_marker）",
+           "write_marker" in _rembg_page_src)
+        ok("拼图页选源走 _prepare_sources（split_marked + RembgTransparentWorker）",
+           "_prepare_sources" in _impo_page_src
+           and "split_marked" in _impo_page_src
+           and "RembgTransparentWorker" in _impo_page_src)
+
         # 清理基准是**页数**而不是"写成功的文件数"：中间某页合成失败会留下编号
         # 空洞（0001/0003），按写成功数去清会把 0003 这页好内容误删。
         gap = tmp / "sweep_gap"

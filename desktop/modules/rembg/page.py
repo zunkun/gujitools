@@ -174,6 +174,16 @@ class RembgModulePage(StepModulePage, ThumbSourceMixin):
         if not sources:
             self.toast("warning", "没有产出", "源里没有找到图片。")
             return
+        # ⚠️ **留标记**（2026-10-13 用户）：singletask 导出目录写一个
+        #    ``guji_singletask_rembg.json``——独立拼图页选源时据此识别"这是
+        #    去底色导出目录"，把里面的白底图转成透明底**副本**再拼版（原图
+        #    不动）。只标记目录、不改任何图片；失败不影响本次结果。
+        from desktop.services import rembg_export
+
+        try:
+            rembg_export.write_marker(out_dir)
+        except Exception as exc:  # noqa: BLE001 - 标记是旁路，别拖垮结果呈现
+            self.log(f"导出目录标记写入失败（不影响本次结果）：{exc}")
         # RembgPreviewWidget.set_images(原图列表, 结果目录, ...)：
         # 传输出目录让它按同名文件找去底结果并做成左右对比。
         # list 不变型：清单是 list[Path]，控件收 list[Path | str]

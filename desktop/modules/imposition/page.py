@@ -20,6 +20,11 @@
 点「导出成品」把每页合成为**白底** PNG（2026-10-13 用户：singletask 导出的
 就是交付物，不要透明底；任务流程的 ``stages/imposition`` 仍默认透明底）。
 
+**与去底色独立页的衔接**（2026-10-13 用户）：源图来自带
+``guji_singletask_rembg`` 标记的导出目录时（``services.rembg_export``），
+先把白底图转成**透明底副本**（singletask 缓存区，原图不动）再拼版；
+没有标记的目录/散图原样直用。
+
 ⚠️ 与任务流程的差别（有意为之）：任务流程里拼版的产物供第四步 PDF排版使用，
 且「启用开关」决定取图来源；单文件模式下没有下游，所以这里把面板里的
 「启用开关」隐掉，只留版面操作与导出。
@@ -134,6 +139,9 @@ class ImpositionModulePage(ModulePage):
         self._sources: list[str] = []
         self._doc: dict = normalize_doc({})
         self._out_dir: Path | None = None
+        #: 去底色导出目录衔接的**代际闸**（见 _prepare_sources）：换源/清空
+        #: 即换新对象，迟到的副本转换回调整批丢弃。
+        self._rembg_prep_batch: object | None = None
         #: 最近一次导出的页数（job 在 worker 线程里写、主线程读，只搬一个整数）
         self._export_result: dict = {}
         #: 左列每页的缩略图（QPixmap 列表，页序；未就绪处是 None）
@@ -252,18 +260,106 @@ class ImpositionModulePage(ModulePage):
                 "请拖入图片文件，或拖一个放着图片的文件夹。",
             )
             return
+        self._prepare_sources(images)
+
+    # -------------------------------------------------- 去底色导出目录衔接
+    #
+    # 用户 2026-10-13：独立去底色页的导出目录带 ``guji_singletask_rembg``
+    # 标记（``services.rembg_export.write_marker``）。拼图页用到**带标记目录**
+    # 里的白底图时，先在 singletask 缓存区生成**透明底副本**（原图绝不动）
+    # 再拼版——白底图互相遮挡、没法自由挪动；没有标记的目录/散图原样直用，
+    # 不复制、不转换。
+
+    def _prepare_sources(self, images: list[Path]) -> None:
+        """选源前置：带标记目录里的图转透明副本（后台），完成后才正式定源。
+
+        ⚠️ **代际闸**：预备期间用户又拖了新源/清空了输入 ⇒ ``batch`` 身份
+        不等，迟到的完成回调整批丢弃（与缩略图缓存 pass 同一套思路）。
+        """
+        from desktop.services import rembg_export
+
+        _plain, marked = rembg_export.split_marked(images)
+        if not marked:
+            self._set_sources(images)
+            return
+        batch: object = object()
+        self._rembg_prep_batch = batch
+        self.status(
+            f"检测到去底色导出目录（{len(marked)} 张），正在准备透明副本…", "info"
+        )
+        self.log(
+            f"命中去底色导出目录标记：{len(marked)} 张图将生成透明底副本用于拼版"
+            "（原图不动，副本在 singletask 缓存区）。"
+        )
+        from desktop.workers import RembgTransparentWorker, connect_queued
+
+        self.run_worker(
+            lambda: RembgTransparentWorker([str(p) for p in marked]),
+            lambda worker, thread: (
+                connect_queued(
+                    self, worker.progress, self._on_prep_progress, thread,
+                ),
+                connect_queued(
+                    self, worker.finished,
+                    lambda mapping, errors, b=batch, imgs=list(images):
+                        self._on_prep_finished(mapping, errors, b, imgs),
+                    thread,
+                ),
+                connect_queued(
+                    self, worker.failed,
+                    lambda message, b=batch, imgs=list(images):
+                        self._on_prep_failed(message, b, imgs),
+                    thread,
+                ),
+                worker.finished.connect(thread.quit),
+                worker.failed.connect(thread.quit),
+            ),
+        )
+
+    def _on_prep_progress(self, done: int, total: int) -> None:
+        """副本转换进度：只写状态行（不占右栏进度条，那是「导出成品」的）。"""
+        self.status(f"正在准备透明副本 {done}/{total}…", "info")
+
+    def _on_prep_finished(
+        self, mapping: dict, errors: list, batch: object, images: list[Path]
+    ) -> None:
+        """副本就绪：命中映射的换成副本路径，失败的回落原图，正式定源。"""
+        if batch is not self._rembg_prep_batch:
+            return  # 预备期间换过源/清空了输入：整批作废
+        if errors:
+            self.log(
+                "部分透明副本生成失败（这些图按原图拼版）："
+                + "；".join(errors)
+            )
+        # ⚠️ 顺序**沿用 collect_files 的清单序**（映射按源路径回填）——自动
+        #    拼版按清单顺序配对，副本文件名带指纹后缀，绝不能按名字重排。
+        sources = [Path(mapping.get(str(p), p)) for p in images]
+        self._set_sources(sources, output_hint=images[0])
+
+    def _on_prep_failed(self, message: str, batch: object, images: list[Path]) -> None:
+        """转换线程整体失败：全部回落原图定源（拼版仍可用，只是白底）。"""
+        if batch is not self._rembg_prep_batch:
+            return
+        self.log(f"透明副本准备失败，按原图拼版：{message}")
         self._set_sources(images)
 
-    def _set_sources(self, images: list[Path]) -> None:
+    def _set_sources(
+        self, images: list[Path], output_hint: Path | None = None
+    ) -> None:
         """把图片清单定为本页的源：复位文档与输出目录，并刷新视图。
 
         文档一律重置——换了源清单还留着上一批图的拼版页，导出时会去合并不存在
         的文件（或者更糟：把两批图混在一份成品里）。
+
+        ``output_hint``：**输出目录与页头展示**的锚点（默认取第一张源图）。
+        ⚠️ 源清单是去底色导出的**透明底副本**时（见 :meth:`_prepare_sources`），
+        必须传**原图**当锚点——否则输出目录会落到 singletask 缓存区里、页头
+        显示缓存路径，用户完全找不到自己的成品。
         """
         self._sources = [str(p) for p in images]
         self._doc = normalize_doc({})
         self.close_zoom_dialog()  # 弹窗里那几页是上一批图的快照
-        first = Path(self._sources[0])
+        first = Path(output_hint) if output_hint is not None else Path(self._sources[0])
         self._out_dir = _SPEC.default_output(first)
         # 选到图了 → 显出拼版视图与控制面板（初始只有输入框，见
         # ModulePage 类 docstring）
@@ -291,6 +387,7 @@ class ImpositionModulePage(ModulePage):
         self._sources = []
         self._doc = normalize_doc({})
         self._out_dir = None
+        self._rembg_prep_batch = None  # 在飞的副本转换回调整批作废
         self._last_output = None
         self.view_output_button.setVisible(False)
         self._page_thumbs = []

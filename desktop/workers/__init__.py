@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     )
     from desktop.workers.preview_worker import PreviewWorker, close_cached_documents
     from desktop.workers.rembg_live_worker import RembgLiveWorker
+    from desktop.workers.rembg_transparent_worker import RembgTransparentWorker
     from desktop.workers.source_thumbnails_worker import SourceThumbnailsWorker
     from desktop.workers.task_rows_worker import TaskRowsWorker
     from desktop.workers.thumb_cache_worker import ImageThumbCacheWorker
@@ -50,6 +51,7 @@ __all__ = [
     "ImpositionPageThumbWorker",
     "PreviewWorker",
     "RembgLiveWorker",
+    "RembgTransparentWorker",
     "SerialJobQueue",
     "SourceThumbnailsWorker",
     "TaskRowsWorker",
@@ -88,6 +90,9 @@ _LAZY = {
     ),
     "PreviewWorker": ("desktop.workers.preview_worker", "PreviewWorker"),
     "RembgLiveWorker": ("desktop.workers.rembg_live_worker", "RembgLiveWorker"),
+    "RembgTransparentWorker": (
+        "desktop.workers.rembg_transparent_worker", "RembgTransparentWorker",
+    ),
     "SourceThumbnailsWorker": (
         "desktop.workers.source_thumbnails_worker",
         "SourceThumbnailsWorker",

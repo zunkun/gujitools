@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 166 个模块、177 个公开类、1222 个公开函数/方法（生成于 2026-10-13）。
+覆盖 168 个模块、178 个公开类、1231 个公开函数/方法（生成于 2026-10-13）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -121,6 +121,7 @@
 | [`desktop.services.font_catalog`](#desktopservicesfont_catalog) | 1 | 6 |
 | [`desktop.services.imposition`](#desktopservicesimposition) | 0 | 26 |
 | [`desktop.services.print_plan`](#desktopservicesprint_plan) | 0 | 5 |
+| [`desktop.services.rembg_export`](#desktopservicesrembg_export) | 0 | 7 |
 | [`desktop.services.rembg_live`](#desktopservicesrembg_live) | 0 | 3 |
 | [`desktop.services.stale_chain`](#desktopservicesstale_chain) | 0 | 4 |
 | [`desktop.services.submit_state`](#desktopservicessubmit_state) | 0 | 1 |
@@ -172,6 +173,7 @@
 | [`desktop.workers.imposition_worker`](#desktopworkersimposition_worker) | 2 | 4 |
 | [`desktop.workers.preview_worker`](#desktopworkerspreview_worker) | 1 | 11 |
 | [`desktop.workers.rembg_live_worker`](#desktopworkersrembg_live_worker) | 1 | 3 |
+| [`desktop.workers.rembg_transparent_worker`](#desktopworkersrembg_transparent_worker) | 1 | 2 |
 | [`desktop.workers.render_lock`](#desktopworkersrender_lock) | 0 | 1 |
 | [`desktop.workers.serial_jobs`](#desktopworkersserial_jobs) | 2 | 12 |
 | [`desktop.workers.source_thumbnails_worker`](#desktopworkerssource_thumbnails_worker) | 1 | 4 |
@@ -6067,6 +6069,11 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 点「导出成品」把每页合成为**白底** PNG（2026-10-13 用户：singletask 导出的
 就是交付物，不要透明底；任务流程的 ``stages/imposition`` 仍默认透明底）。
 
+**与去底色独立页的衔接**（2026-10-13 用户）：源图来自带
+``guji_singletask_rembg`` 标记的导出目录时（``services.rembg_export``），
+先把白底图转成**透明底副本**（singletask 缓存区，原图不动）再拼版；
+没有标记的目录/散图原样直用。
+
 ⚠️ 与任务流程的差别（有意为之）：任务流程里拼版的产物供第四步 PDF排版使用，
 且「启用开关」决定取图来源；单文件模式下没有下游，所以这里把面板里的
 「启用开关」隐掉，只留版面操作与导出。
@@ -7963,6 +7970,70 @@ area=4 保留整页内容、area 1/2/3 统一按合并语义走单框布局（�
 print.json 仅持久化用户的拖动/删除/插入顺序。
 
 返回 (entries, doc)。
+
+---
+
+## `desktop.services.rembg_export`
+
+源码：[`desktop/services/rembg_export.py`](../../desktop/services/rembg_export.py)
+
+singletask「去底色」导出目录的**标记**与白底→透明**副本**（纯函数，无 Qt）。
+
+背景（用户 2026-10-13）：独立去底色页导出的成品是**白底** PNG（singletask
+交付物口径），但独立拼图页拼版时白底图会互相遮挡、也没法自由挪动——任务
+流程里拼版吃的是透明底的提交产物，独立页之间没这层衔接。所以：
+
+1. 去底色独立页（``desktop/modules/rembg``）导出成功后，在输出目录写一个
+   **标记文件**（:func:`write_marker`，出处唯一在本模块）；
+2. 拼图页选源时，凡**父目录带标记**的图，先在 singletask 缓存区生成
+   **透明底副本**（:func:`make_transparent_copy`，**原图绝不改动**），拼版
+   用副本；
+3. 没标记的目录（或散图）原样直用，不复制、不转换。
+
+白底→透明的判据与编码形态**复用** ``utils.transparent_png``（第三步提交
+产物同一套规则），不在这里另写一份。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| MARKER_NAME | `"guji_singletask_rembg.json"` |
+| _COPIES_SUBDIR | `"rembg_transparent"` |
+| _IMPOSITION_DISK_KEY | `"imposition"` |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `marker_path(out_dir) -> Path` | 导出目录里的标记文件路径。 |
+| `write_marker(out_dir) -> None` | 在去底色导出目录落标记（原子写；重复导出直接覆盖，内容幂等）。 |
+| `is_marked(directory) -> bool` | 目录是否带去底色导出标记。 |
+| `split_marked(images: list[Path]) -> tuple[list[Path], list[Path]]` | 把源图清单按**父目录有无标记**分成两堆（各自保持原顺序）。 |
+| `copies_dir() -> Path` | 透明底副本的缓存根：``singletask/imposition/rembg_transparent/``。 |
+| `transparent_copy_path(source) -> Path` | 一张白底图对应的**透明底副本**缓存路径（只算路径，不落盘）。 |
+| `make_transparent_copy(source, target) -> None` | 把一张白底图转成**透明底 PNG** 写到 ``target``（原图绝不动）。 |
+
+#### `split_marked(images: list[Path]) -> tuple[list[Path], list[Path]]`
+
+把源图清单按**父目录有无标记**分成两堆（各自保持原顺序）。
+
+返回 ``(普通原图, 需转透明的图)``。散图（不在任何导出目录里）永远落
+在普通堆——没有标记就不复制副本（2026-10-13 用户口径）。
+
+#### `transparent_copy_path(source) -> Path`
+
+一张白底图对应的**透明底副本**缓存路径（只算路径，不落盘）。
+
+文件名带**源指纹**（名字 + 大小 + mtime）：源图被编辑覆盖过 ⇒ 指纹变
+⇒ 得到新副本路径，旧副本自然弃用（与页面缩略图实体同一套失效思路）。
+
+#### `make_transparent_copy(source, target) -> None`
+
+把一张白底图转成**透明底 PNG** 写到 ``target``（原图绝不动）。
+
+判据与编码复用 ``utils.save_white_as_transparent``：像素全白的点 α=0
+（RGB 保持 255），其余逐位不变。输入若是带 alpha 的 RGBA，先按白底
+压平再判——去底导出恒为白底图，这里只是兜底。
 
 ---
 
@@ -13331,6 +13402,30 @@ token: 本次请求的标识，供宿主判断结果是否已过期。
 ⚠️ 取消路径也必须发终态信号（finished/failed 之一），否则线程事件
 循环永不退出（SourceThumbnailsWorker 同款教训）；空路径结果由宿主
 按 token 丢弃。
+
+---
+
+## `desktop.workers.rembg_transparent_worker`
+
+源码：[`desktop/workers/rembg_transparent_worker.py`](../../desktop/workers/rembg_transparent_worker.py)
+
+后台把一批**白底图**转成透明底副本（singletask 缓存区，原图不动）。
+
+给独立拼图页用：源清单来自带 ``singletask-rembg`` 标记的导出目录时，
+拼版前先把这些白底图转成透明底副本（判据与编码见
+``desktop.services.rembg_export``，复用 ``utils.transparent_png``）。
+几百页的去底导出逐张解码+重编码在主线程做就是卡死，必须放线程。
+
+### `class RembgTransparentWorker(QObject)`
+
+逐张把白底图转成透明底副本；单张失败不拖垮整批。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(sources: list[str])` | ``sources``：需要转透明的源图路径（带标记目录里的那批）。 |
+| `run() -> None` | — |
 
 ---
 
