@@ -15,6 +15,7 @@
 - `color_utils`: 颜色 'r,g,b' 解析（非法值抛错，不静默降级为黑）。
 - `margin_utils`: 边距 CSS 简写标准化（单/两/三/四值 → [上,右,下,左]）。
 - `transparent_png`: 白底 → 透明底的 PNG 编码（第三步提交产物专用，自带最省形态选择）。
+- `compact_png`: 任意 RGBA/RGB/灰度数组 → **最省形态** PNG（逐像素无损，实体图回写用）。
 - `help`: man 风格帮助文本加载与分页显示。
 
 `color_utils` 与 `margin_utils` 位于最低层，供 core 与 functions 共用，
@@ -83,6 +84,9 @@ _LAZY = {
     "slot_names_colors": ("utils.box_draw", "slot_names_colors"),
     # 第三步提交产物的透明底编码（唯一实现，自带编码形态选择）
     "save_white_as_transparent": ("utils.transparent_png", "save_white_as_transparent"),
+    # 实体图回写的最省形态编码（唯一实现；编辑器覆盖底片/另存 PNG 走它）
+    "save_png_compact": ("utils.compact_png", "save_png_compact"),
+    "read_png_dpi": ("utils.compact_png", "read_png_dpi"),
 }
 
 

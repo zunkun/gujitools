@@ -34,7 +34,11 @@ class InteractionMixin(CanvasHost):
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
-        if not self._user_zoomed:
+        # ⚠️ 变换落账期间 sceneRect 会变，变化可能反过来触发 resizeEvent ⇒
+        #    此时自动 fit 会让视图跟着图片跳动。``_xf_fit_suppressed`` 是
+        #    **临时**抑制（``_finish_transform_auto_fit`` 收尾即清），
+        #    与 ``_user_zoomed``（用户长期意图）严格分开。
+        if not self._user_zoomed and not self._xf_fit_suppressed:
             self.fit()  # 用户没动过缩放：窗口怎么变都保持整图可见
 
 

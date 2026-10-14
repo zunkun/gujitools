@@ -431,14 +431,28 @@ class TransformMixin(CanvasHost):
         # sceneRect 变化可能改变滚动条并触发 resizeEvent。变换期间不能让该
         # resize 自动 fit，否则视图会跟着图片跳动；自动适配由选项在操作结束
         # 后统一执行。
-        self._user_zoomed = True
+        # ⚠️⚠️ 这里置的必须是 ``_xf_fit_suppressed``（**临时**，由
+        #    ``_finish_transform_auto_fit`` 收尾清掉），**不能**是
+        #    ``_user_zoomed``（长期意图"用户手动缩放过"）。旧版写成了后者且
+        #    从不还原 ⇒ "做过一次变换"就永久关掉了 resize 自动适配与
+        #    ``set_fit_ratio`` 的即时生效：旋转 45° 把图从 400×300 烘焙成
+        #    494×494 后倍率仍停在旧的 1.92，切到裁剪时图右侧/底部直接被
+        #    视口切掉（2026-10-14 用户报障「切裁剪发现图片被裁剪了一部分」）。
+        self._xf_fit_suppressed = True
         self._sync_float()
         self._sync_overlay()
         if not self._xf_dragging:
             self._finish_transform_auto_fit()
 
     def _finish_transform_auto_fit(self) -> None:
-        """在一次变换结束后按用户选项适配画布，未启用时保持当前视图倍率。"""
+        """在一次变换结束后按用户选项适配画布，未启用时保持当前视图倍率。
+
+        ⚠️ 收尾时**必须**把 ``_xf_fit_suppressed`` 清回 False——它是"本次变换
+        期间临时抑制 resize 自动适配"，不是长期意图。留着会让此后每一次
+        resize / ``set_fit_ratio``（= 切工具时的重新适配）都失效，表现为
+        "变换后切到别的工具，图片有一部分在视口外"。
+        """
+        self._xf_fit_suppressed = False
         if not self._xf_auto_fit_pending:
             return
         self._xf_auto_fit_pending = False
@@ -1064,6 +1078,9 @@ class TransformMixin(CanvasHost):
     def _clear_transform_preview(self) -> None:
         """撤掉预览浮层并把底图恢复成真像素（矩阵不动，见 reset_transform）。"""
         self._xf_auto_fit_pending = False
+        # ⚠️ 临时抑制标志一并清掉：撤预览＝变换结束（取消/重置/换工具/换图
+        # 都走这里）。不清的话用户"转一下又按重置"就会永久失去 resize 适配。
+        self._xf_fit_suppressed = False
         if self._float_item is not None:
             self._scene.removeItem(self._float_item)
             self._float_item = None

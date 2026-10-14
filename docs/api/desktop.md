@@ -3396,6 +3396,15 @@ fit 就等于"每次松手都把图缩小一档"，反复旋转会越转越小�
 也挤在边上不好抓（用户 20:28 定"缩放至选区时留出边距"）。
 视图从此锚定选区（``_user_zoomed``），窗口 resize 不再拉回整图。
 
+⚠️⚠️ **受「是否自动缩放画布」开关约束**（2026-10-14 用户报障
+「选择一张图片，画布自动缩放，导致选择图片位置发生变化；这个开关
+没有生效」）：本方法**直接** ``resetTransform`` + ``scale`` +
+``centerOn``，等价于一次 fit ⇒ 开关为假时它也照做，用户勾没勾完全
+没区别（实测选区 600×800 时 zoom 从 0.3885 直接翻到 0.7810，整整
+一倍，"选择"一下画面就跳）。开关的语义是"**别自动改我的视图**"，
+变换链上的 :meth:`TransformMixin._finish_transform_auto_fit` 早已
+认它，这里补齐 ⇒ 关闭时不动视图（用户自己滚轮缩放）。
+
 ---
 
 ## `desktop.components.viewers.image_editor.canvas.distortion`
@@ -5053,20 +5062,28 @@ qfluentwidgets 没有可用的翻转图标：``SEARCH_MIRROR`` 是"带镜子的�
 
 预览弹窗的**存盘原语**（下载另存 / 原子覆盖原图）。
 
-从 ``image_zoom_dialog.py`` 拆出（2026-10-07）。方法体逐字未改。
+从 ``image_zoom_dialog.py`` 拆出（2026-10-07）：两条写盘路径都收在这里，PNG
+的"最省编码形态"也只在 ``utils.compact_png`` 一处实现——三个宿主（预览弹窗、
+编辑器同步路、编辑器后台应用线程）共用同一份行为。
 
 ### 模块函数
 
 | 函数 | 说明 |
 | --- | --- |
-| `save_image(image: QImage, path: str \| Path, quality: int=JPEG_QUALITY) -> bool` | 把 QImage 写到磁盘：``.jpg``/``.jpeg`` 走有损（quality），其余交给 Qt。 |
+| `save_image(image: QImage, path: str \| Path, quality: int=JPEG_QUALITY) -> bool` | 把 QImage 写到磁盘：``.jpg``/``.jpeg`` 走有损（quality），``.png`` 走 |
 | `overwrite_image_file(image: QImage, target: Path, quality: int=OVERWRITE_JPEG_QUALITY) -> bool` | 把 ``image`` **原子**覆盖到 ``target``（格式按目标后缀）。 |
 
 #### `save_image(image: QImage, path: str | Path, quality: int=JPEG_QUALITY) -> bool`
 
-把 QImage 写到磁盘：``.jpg``/``.jpeg`` 走有损（quality），其余交给 Qt。
+把 QImage 写到磁盘：``.jpg``/``.jpeg`` 走有损（quality），``.png`` 走
+紧凑编码，其余交给 Qt。
 
 单独抽出来是为了可测——保存对话框在离屏环境里弹不出来。
+
+⚠️ PNG 走 :func:`_save_png_compact`（**不是** ``image.save(path)``）：Qt
+只会按 ``image.format()`` 原样落 8 位 RGBA/RGB，而"下载另存"出来的多半是
+去底色那种二值/灰阶页——同样的像素，1 位调色板比 RGBA 小一个数量级
+（实测 275KB → 141KB，见 ``utils.compact_png``）。逐像素无损。
 
 #### `overwrite_image_file(image: QImage, target: Path, quality: int=OVERWRITE_JPEG_QUALITY) -> bool`
 
@@ -5077,6 +5094,23 @@ qfluentwidgets 没有可用的翻转图标：``SEARCH_MIRROR`` 是"带镜子的�
 改掉；且覆盖途中被 200ms 一次的 extract 轮询/预览读到半截也是事故。
 ``os.replace`` 换的是目录项——读者要么看到完整旧图、要么看到完整新图，
 旧 inode 原样留在硬链接另一头。
+
+⚠️⚠️ **``quality`` 只对 JPEG 有意义，PNG 绝不能传**（2026-10-14 用户报障
+「去底色图轻微编辑一下，实体图从 200K 涨到 5M」）：``quality`` 是 JPEG 的
+画质，而 Qt 把 PNG 的 ``quality`` 当**反过来的压缩级别**用——传 95 等于
+「压缩级别 ≈ 0」，PNG 几乎按原始字节存。用户机器上同一页的实测：
+
+=============================  =========  ================================
+写法                            体积       说明
+=============================  =========  ================================
+``save(png, "PNG", 95)``        7.59 MB    改前：与磁盘上那份坏文件逐字节同尺寸
+``save(png, "PNG")``             130 KB    同一张图，只是不传 quality
+:func:`_save_png_compact`         67 KB    1 位调色板（＝源文件的形态）
+=============================  =========  ================================
+
+所以 PNG 走 :func:`_save_png_compact`：既不传 quality，又按像素挑回
+"1 位调色板 + tRNS"这类最省形态（规则与实测见 ``utils.compact_png``）。
+其它格式沿用旧写法（BMP/TIFF 不认 quality，传了也无意义）。
 
 ---
 

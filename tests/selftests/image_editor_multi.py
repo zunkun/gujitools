@@ -19,6 +19,11 @@
    框/矩阵/区域，预览推迟到第一次拖动（与"延迟供像素"路径同款）。
 6. **统一变换自动缩放画布**：默认关闭；关闭时移动/形变不自动 fit 或平移
    视口，开启后每次操作结束自动缩放并居中显示内容。
+7. **自动缩放只发生在"操作结束"，绝不发生在"点图切换"**（2026-10-14 用户
+   口径）：点另一张图切层时视图必须**纹丝不动**（图片原来什么样、切换后还是
+   什么样，保操作连续性）；自动缩放只在一次变换**松手之后**发生，且受开关
+   约束。判据一律按**图片身份**（左图/右图）追踪各图中心的屏幕坐标——用
+   "活动图/非活动图"这种会换人的槽位当不变量，量出来的位移是假的。
 """
 from __future__ import annotations
 
@@ -537,8 +542,175 @@ def run(ctx) -> None:
        f"zoom={zoom_before_auto_fit}->{c4._zoom}, "
        f"content-center-view={content_center_in_view}, "
        f"viewport-center={view_center}")
+
+    # ---- 开关必须管住「适配选区」这条独立路径（2026-10-14 用户报障）----
+    # ``fit_selection()`` 自己就 ``resetTransform``+``scale``+``centerOn``，
+    # 等价于一次 fit，旧版**完全不看开关** ⇒ 用户没勾选也会被缩放
+    # （实测选区 600×800 时 zoom 从 0.3885 直接翻到 0.7810），"选择一下
+    # 图片画面就跳"。变换链上的 ``_finish_transform_auto_fit`` 早已认开关，
+    # 这里补齐 ⇒ 关闭时不动视图。
+    c4._rect = QRectF(60, 30, 80, 40)
+    c4._xf_auto_fit_canvas = False
+    c4.fit()
+    QApplication.processEvents()
+    zoom_before_selection_fit = c4._zoom
+    c4.fit_selection()
+    QApplication.processEvents()
+    ok("「是否自动缩放画布」关闭时：适配选区也不缩放"
+       "（旧版 fit_selection 无视开关，点选一下画面就跳）",
+       abs(c4._zoom - zoom_before_selection_fit) < 1e-6,
+       f"zoom={zoom_before_selection_fit}->{c4._zoom}")
+    c4._xf_auto_fit_canvas = True
+    c4.fit()
+    QApplication.processEvents()
+    zoom_before_selection_fit_on = c4._zoom
+    c4.fit_selection()
+    QApplication.processEvents()
+    ok("开关勾选时：适配选区照旧生效（别把功能改死）",
+       abs(c4._zoom - zoom_before_selection_fit_on) > 1e-6,
+       f"zoom={zoom_before_selection_fit_on}->{c4._zoom}")
     dialog4.close()
     dialog4.release_buffers()
+
+    # ---- 切层绝不缩放；自动缩放只发生在"操作结束"（2026-10-14 用户口径）----
+    # 「点另一张图切换 ⇒ 视图纹丝不动（图片原来什么样、切换后还是什么样，
+    #   保证操作连续性）；自动缩放 ⇒ 只在一次变换松手之后发生、且听开关的」。
+    # ⚠️ 判据按**图片身份**追踪各图中心的屏幕坐标。**不能**用"活动图/
+    #    非活动图"槽位当不变量——切层时身份换人，同一槽位前后指着不同的图，
+    #    量出来的位移是假的（我据此误判过"两图各跳 249px"，A/B 对照后证明
+    #    是探针错觉）。
+    def _screen_positions(dlg):
+        cvs = dlg.canvas
+        out = {}
+        for index, layer in enumerate(dlg._multi_layers):
+            if index == dlg._active_layer:
+                center = cvs.image_rect().center()
+            elif cvs._context_display_rect is not None:
+                center = cvs._context_display_rect.center()
+            else:
+                continue
+            out[layer["label"]] = QPointF(cvs.mapFromScene(center))
+        return out
+
+    dialog_s, left_s, right_s = _spread_dialog()
+    cs = dialog_s.canvas
+    dialog_s.resize(1400, 900)
+    dialog_s.show()
+    QApplication.processEvents()
+    dialog_s._set_tool("transform")
+    QApplication.processEvents()
+    cs.fit()
+    QApplication.processEvents()
+    zoom_before_switch2 = cs._zoom
+    positions_before_switch2 = _screen_positions(dialog_s)
+    dialog_s._switch_context_layer()
+    QApplication.processEvents()
+    positions_after_switch2 = _screen_positions(dialog_s)
+    worst_switch = max(
+        (positions_after_switch2[label] - positions_before_switch2[label]
+         ).manhattanLength()
+        for label in positions_before_switch2
+        if label in positions_after_switch2)
+    ok("点另一张图**切换**：视图不缩放（zoom 恒定）",
+       abs(cs._zoom - zoom_before_switch2) < 1e-6,
+       f"zoom={zoom_before_switch2}->{cs._zoom}")
+    ok("点另一张图**切换**：两张图各自在屏幕上纹丝不动"
+       "（按图片身份追踪；旧版误用活动图槽位当判据，会量出假位移）",
+       worst_switch <= 3,
+       f"最大位移={worst_switch:.0f}px, "
+       f"before={positions_before_switch2}, "
+       f"after={positions_after_switch2}")
+    # 往返切层不累积
+    dialog_s._switch_context_layer()
+    QApplication.processEvents()
+    positions_roundtrip = _screen_positions(dialog_s)
+    worst_roundtrip = max(
+        (positions_roundtrip[label] - positions_before_switch2[label]
+         ).manhattanLength()
+        for label in positions_before_switch2
+        if label in positions_roundtrip)
+    ok("来回切层不累积漂移",
+       worst_roundtrip <= 3, f"最大位移={worst_roundtrip:.0f}px")
+    # 自动缩放：开关开 ⇒ 操作结束松手才缩放；开关关 ⇒ 不缩放
+    cs._xf_auto_fit_canvas = True
+    cs.fit()
+    QApplication.processEvents()
+    zoom_before_op = cs._zoom
+    cs.transform_rotate(20)
+    QApplication.processEvents()
+    cs.finish_transform_drag()
+    QApplication.processEvents()
+    ok("开关开启：变换**松手之后**才自动缩放（正是用户要的时机）",
+       abs(cs._zoom - zoom_before_op) > 1e-6,
+       f"zoom={zoom_before_op}->{cs._zoom}")
+    cs._xf_auto_fit_canvas = False
+    cs.fit()
+    QApplication.processEvents()
+    zoom_before_op_off = cs._zoom
+    cs.transform_rotate(20)
+    QApplication.processEvents()
+    cs.finish_transform_drag()
+    QApplication.processEvents()
+    ok("开关关闭：操作结束也不自动缩放",
+       abs(cs._zoom - zoom_before_op_off) < 1e-6,
+       f"zoom={zoom_before_op_off}->{cs._zoom}")
+    dialog_s.close()
+    dialog_s.release_buffers()
+
+    # ---- 开关关闭＝**画面绝对不动**（不只是不缩放，2026-10-14 用户口径
+    #      「松鼠标也不要自动缩放**和平移**」）----
+    # 裁剪框内移动松手时 ``_sync_scene_rect`` 会换场景矩形，而本视图设了
+    # ``setAlignment(AlignCenter)`` ⇒ ``setSceneRect`` **调用本身**就把视口
+    # 重排（实测额外平移 27px，zoom 不变）。试过四版补救全部无效（临时改
+    # alignment／事后 centerOn／还原滚动条／按矩形位移补偿滚动条）：视口小于
+    # 场景时 centerOn 被对齐钳制、居中对齐下滚动条不代表真实位置。
+    # ⇒ 开关为假时干脆**不调** ``setSceneRect``，画面一个像素都不动。
+    from PySide6.QtCore import QEvent as _QEvent
+    from PySide6.QtGui import QMouseEvent as _QMouseEvent
+
+    dialog_n, left_n, _right_n = _spread_dialog()
+    cn = dialog_n.canvas
+    dialog_n.resize(1400, 900)
+    dialog_n.show()
+    QApplication.processEvents()
+    dialog_n._set_tool("crop")
+    QApplication.processEvents()
+    cn.fit()
+    QApplication.processEvents()
+    cn._xf_auto_fit_canvas = False
+    # 盯住**图元上的一个固定像素**（不是固定场景坐标——裁剪移动会把图元
+    # 整个挪走，用场景点量必然混进"图片跟着框挪"这一段预期位移）
+    item_local = QPointF(100, 50)
+    zoom_before_crop = cn._zoom
+    item_before_crop = QPointF(cn.mapFromScene(
+        cn._item.mapToScene(item_local)))
+    cn._mode = ("crop_move", QPointF(100, 50), QRectF(cn._rect),
+                QPointF(cn._crop_offset))
+    cn._crop_offset = QPointF(-40, 30)
+    cn._item.setPos(cn._crop_offset)
+    cn._rect = QRectF(cn._rect).translated(QPointF(-40, 30))
+    scene_rect_before_crop = QRectF(cn.sceneRect())
+    cn.mouseReleaseEvent(_QMouseEvent(
+        _QEvent.Type.MouseButtonRelease, QPointF(100, 50),
+        Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier))
+    QApplication.processEvents()
+    # 换算：图片挪了 (-40,30)，画面若"纹丝不动"则该像素的屏幕位移
+    # 恰好等于那次图片位移；多出来的部分才是视图被自动调整了。
+    item_after_crop = QPointF(cn.mapFromScene(
+        cn._item.mapToScene(item_local)))
+    expected = QPointF(-40 * zoom_before_crop, 30 * zoom_before_crop)
+    extra = (item_after_crop - item_before_crop - expected).manhattanLength()
+    ok("开关关闭：裁剪框内移动松手**画面不额外平移**"
+       "（_sync_scene_rect 不再重定位视图；扣除图片自身位移后应≈0）",
+       abs(cn._zoom - zoom_before_crop) < 1e-6 and extra <= 3,
+       f"zoom={zoom_before_crop}->{cn._zoom}, "
+       f"实际位移={(item_after_crop - item_before_crop).manhattanLength():.1f}px, "
+       f"图片自身位移={expected.manhattanLength():.1f}px, "
+       f"多出来的={extra:.1f}px, "
+       f"sceneRect {scene_rect_before_crop}->{cn.sceneRect()}")
+    dialog_n.close()
+    dialog_n.release_buffers()
 
     # ---- 大图变换 ghost：先应用浮层变换、再移到 ghost 原点 ----
     # 小图预览倍率为 1，无法暴露坐标系顺序错误；大图降采样后，若先平移

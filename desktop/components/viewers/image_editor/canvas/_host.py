@@ -104,6 +104,7 @@ class CanvasHost(QGraphicsView):
     _xf_constraints: dict[str, bool]
     _xf_direction: str
     _xf_dragging: bool
+    _xf_fit_suppressed: bool
     _xf_pending: bool
     _xf_guide: str
     _xf_interpolation: str

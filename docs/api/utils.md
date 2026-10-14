@@ -4,7 +4,7 @@
 
 通用工具函数：几何、排序、图像 IO、PDF、YOLO
 
-覆盖 22 个模块、11 个公开类、127 个公开函数/方法（生成于 2026-10-14）。
+覆盖 23 个模块、11 个公开类、129 个公开函数/方法（生成于 2026-10-14）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -15,6 +15,7 @@
 | [`utils.box_draw`](#utilsbox_draw) | 0 | 8 |
 | [`utils.box_geometry`](#utilsbox_geometry) | 2 | 15 |
 | [`utils.color_utils`](#utilscolor_utils) | 0 | 2 |
+| [`utils.compact_png`](#utilscompact_png) | 0 | 2 |
 | [`utils.file_utils`](#utilsfile_utils) | 0 | 4 |
 | [`utils.font_scan`](#utilsfont_scan) | 0 | 4 |
 | [`utils.font_setup`](#utilsfont_setup) | 3 | 11 |
@@ -432,6 +433,103 @@ File: utils/color_utils.py
 
 异常:
     ValueError: 分量数不为 3、含非数字、或超出 0~255 范围。
+
+---
+
+## `utils.compact_png`
+
+源码：[`utils/compact_png.py`](../../utils/compact_png.py)
+
+实体图片 PNG 的**无损紧凑编码**：唯一实现。
+
+为什么需要它（2026-10-14 用户报障）
+-----------------------------------
+「去底色 / 提交产物」本来就是最省空间的编码形态，而编辑器的「完成」把结果
+写回底片时走 ``QImage.save(..., "PNG")``：画布上的图是 **ARGB32**（32 位/
+像素），Qt 于是整幅按 8 位 RGBA（PNG color type 6）重编码——**逐像素无损，
+但"最省形态"没了**。同一页在用户机器上的实测：
+
+=========================================  =========  =======================
+文件（2400×2374 左右的书页）                体积       PNG 头
+=========================================  =========  =======================
+``rembgpreview/10.png``（白底灰阶，去底色）   201 KB     bits=8 type=0(gray)
+``rembg/10-l.png``（透明底二值，**没编辑**）   70 KB      bits=1 type=3(P)+tRNS
+``rembg/10-r.png``（**同一页，编辑过**）       7.6 MB     bits=8 type=6(RGBA)
+=========================================  =========  =======================
+
+105 倍。与"质量"无关（PNG 无损），纯粹是**编码形态**：二值透明页只要
+1 位/像素 + 一个 tRNS 表，而 RGBA 是 32 位/像素。
+
+修法
+----
+不降质量、不顺色，而是**按像素重新挑最省的形态**（每条都逐像素无损）：
+
+=================================  ====================  ==========
+像素实况                            输出                   每像素
+=================================  ====================  ==========
+灰阶、不透明                          P（灰阶调色板）        1/2/4/8 位
+灰阶 + 透明，(灰,α) 组合 ≤ 256        P（+tRNS 表）          1/2/4/8 位
+彩色，唯一 (RGB[, A]) ≤ 256           P（+tRNS 表）          1/2/4/8 位
+灰阶 + 透明，但 (灰,α) > 256          LA（灰 + α）           16 位
+其余                                RGBA / RGB             32 / 24 位
+=================================  ====================  ==========
+
+五条硬约定（改动前先读）
+------------------------
+1. **判据只看像素**，不看 ``QImage.format()`` / ``PIL.mode``：画布上的图
+   恒为 ARGB32，格式名说明不了"这一页到底是不是二值稿"。
+2. **逐像素无损**是本模块能被任何调用方拿来替换现存写法的唯一前提。索引形态
+   把每个不同的像素四元组整组映射到一个调色板项，``tRNS`` 表逐项带 α；**透明
+   项自己的灰度也进调色板**，所以透明像素的 RGB（去底色产物按约定是 255、
+   编辑器里可能是 0）**原样保留**，不像"白底转透明"那样带约定。
+3. **不透明图绝不写 tRNS**：α 恒 255 时丢掉整条 alpha 才最省，也让
+   ``imposition.image_content_bounds`` 的"无 alpha ⇒ 内容＝整张图"判据继续
+   成立（写一条全 255 的 tRNS 会让它白算一遍包围盒）。
+4. **采样只用于早退**：真彩分支先均匀抽样，**采样就超 256 色** ⇒ 整体必然
+   超，直接写真彩，省掉一次 22MP 排序；采样没超**不算数**，还要整体精确统计
+   （否则会把"底色均匀但有上千暗部色"的图错当成调色板图）。灰阶分支走
+   ``np.bincount``（256 / 65536 个桶，O(pixels)），既不用抽样也不用排序。
+5. **dpi 由调用方给**，本模块不猜。覆盖原文件时必须沿用原文件的 pHYs：
+   去底色产物是 300 DPI，丢了会让下游 PDF 的物理尺寸判据拿到 72 DPI 默认值。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| PNG_COMPRESS_LEVEL | `6` |
+| MAX_PALETTE_COLORS | `256` |
+| _SAMPLE_TARGET | `100000` |
+| _MAP_CHUNK | `4000000` |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `save_png_compact(rgba, path: str \| Path, *, dpi: Optional[Sequence[float]]=None, compress_level: int=PNG_COMPRESS_LEVEL) -> dict` | 把 ``(H, W, 4)`` RGBA（或 ``(H, W, 3)`` RGB / ``(H, W)`` 灰度）数组写成 |
+| `read_png_dpi(path: str \| Path) -> Optional[tuple[float, float]]` | 读回一个已有图片文件的 pHYs（覆盖原文件时沿用，见硬约定 5）。 |
+
+#### `save_png_compact(rgba, path: str | Path, *, dpi: Optional[Sequence[float]]=None, compress_level: int=PNG_COMPRESS_LEVEL) -> dict`
+
+把 ``(H, W, 4)`` RGBA（或 ``(H, W, 3)`` RGB / ``(H, W)`` 灰度）数组写成
+**尽量省空间**的 PNG，逐像素无损。
+
+参数:
+    rgba: ``uint8`` 数组。四通道按 **RGBA** 顺序（不是 Qt ARGB32 的内存序）。
+    path: 输出路径（调用方负责目录已存在，也负责原子写）。
+    dpi: ``(x, y)``；``None`` = 不写 pHYs（与"原文件本来就没有"一致）。
+    compress_level: PNG 压缩级别（0~9）。
+
+返回:
+    ``{"encoding": "P"|"LA"|"RGBA"|"RGB", "colors": int|None,
+    "bits": int, "bytes": int}``，供调用方打日志/统计。
+
+#### `read_png_dpi(path: str | Path) -> Optional[tuple[float, float]]`
+
+读回一个已有图片文件的 pHYs（覆盖原文件时沿用，见硬约定 5）。
+
+读不到（没有 pHYs / 不是图片 / 文件被占）返回 ``None``——调用方按"不写
+pHYs"处理，与"原本就没有"一致（实测提交产物 ``rembg/*-l.png`` 就没有
+pHYs，而 ``rembgpreview/*.png`` 有）。
 
 ---
 

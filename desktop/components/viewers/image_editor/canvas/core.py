@@ -114,7 +114,19 @@ class EditorCanvas(
         #: ⚠️ ``fit()`` **不许**把它清掉（曾经清过 ⇒ 提交后的 fitInView 把
         #: 闸门打开，之后任何 resize 都自动重 fit，倍率在 0.99/1.11 之间来回
         #: 跳，看着像"图自己忽大忽小"）。
+        #: ⚠️⚠️**只有"用户自己缩放过"才能置位**（``set_zoom``/``fit_selection``）。
+        #:    变换链曾拿它当"变换期间的临时抑制"：``_apply_visual`` 里置位、
+        #:    压制 sceneRect 变化引发的 resize 自动 fit——但**从不还原**，
+        #:    于是"做过一次变换"就永久关掉了 resize 适配与 ``set_fit_ratio``
+        #:    的即时生效（2026-10-14 用户报障「旋转 45° 后切裁剪，图片右侧
+        #:    和底部被切掉」：图已从 400×300 烘焙成 494×494，倍率仍是旧的
+        #:    1.92，494×494 只剩 451×354 落在视口内）。临时抑制改用
+        #:    ``_xf_fit_suppressed``，用完即清。
         self._user_zoomed = False
+        #: 「变换操作进行中」＝临时抑制 resize 自动适配（**不是**用户缩放）。
+        #: 只在一次变换落账期间为真，由 :meth:`_finish_transform_auto_fit`
+        #: 收尾时清掉；语义与 ``_user_zoomed`` 严格分开——后者是长期意图。
+        self._xf_fit_suppressed = False
         #: 「适应窗口」时图片占视口的比例（1.0 = 铺满；见 set_fit_ratio）。
         #: 缺省即留白（EDIT_FIT_RATIO），用户 2026-10-02：「编辑区不要铺满整个
         #: 界面，上下都要预留空白」——所有工具通用，不只是变形/变换笼。
@@ -348,7 +360,9 @@ class EditorCanvas(
         self._context_rotation = float(rotation)
         self._context_display_rect = None
         self._show_context_image()
-        self._sync_scene_rect()
+        # ⚠️ ``keep_view=True``：换层**必须**同步滚动范围（两张图的并集变了，
+        # 不同步就滚不到另一张，2026-10-13 报障），走保画面的老路径。
+        self._sync_scene_rect(keep_view=True)
         self.update()
 
     def _context_pixmap(self) -> QPixmap | None:
@@ -555,7 +569,7 @@ class EditorCanvas(
         self._border.setPos(0.0, 0.0)
         self._border.setTransform(QTransform())
 
-    def _sync_scene_rect(self) -> None:
+    def _sync_scene_rect(self, keep_view: bool = False) -> None:
         """场景矩形＝两图**当前显示范围**的并集（滚动条够得到全部内容）。
 
         2026-10-13 用户报障「右侧图向右移一段后切到左侧，右侧显示不全」：
@@ -572,10 +586,22 @@ class EditorCanvas(
         ⚠️ **拖动中冻结**（2026-10-09 的旧病：矩形一帧帧跟着浮层长大，画面
         跟着漂）：松手后 ``finish_transform_drag`` 会再刷一次，那时才扩。
         ⚠️ 换矩形时用 :meth:`_set_scene_rect_keeping_view` **保持画面不动**。
+
+        参数 ``keep_view``：**换层等"必须同步滚动范围"的场景**传 True
+        （走原来的保画面路径，2026-10-13 的"切层不跳"依赖它）；默认 False 时，
+        「是否自动缩放画布」关闭就**整个不调** ``setSceneRect``——
+        2026-10-14 用户口径「彻底关闭后，松鼠标也不要自动缩放**和平移**」。
+        ⚠️ 为何不能"换个方式调再摆回去"：本视图设了 ``setAlignment``
+        （AlignCenter），``setSceneRect`` **调用本身**就重排视口（实测额外
+        平移 27px），而视口小于场景时 ``centerOn`` 被对齐钳制、居中对齐下
+        滚动条又不代表真实位置 ⇒ 临时改 alignment／事后 centerOn／还原
+        滚动条／按位移补偿四版补救**全部无效**（恒 27px）。不调才是可靠的。
         """
         if self._item is None:
             return
         if getattr(self, "_xf_dragging", False):
+            return
+        if not keep_view and not self._xf_auto_fit_canvas:
             return
         rect = self._content_scene_rect()
         if (self._context_item is not None
@@ -864,7 +890,18 @@ class EditorCanvas(
         ⚠️ 不填满视口：顶满时选区边界贴着视口边缘，看不到上下文、手柄
         也挤在边上不好抓（用户 20:28 定"缩放至选区时留出边距"）。
         视图从此锚定选区（``_user_zoomed``），窗口 resize 不再拉回整图。
+
+        ⚠️⚠️ **受「是否自动缩放画布」开关约束**（2026-10-14 用户报障
+        「选择一张图片，画布自动缩放，导致选择图片位置发生变化；这个开关
+        没有生效」）：本方法**直接** ``resetTransform`` + ``scale`` +
+        ``centerOn``，等价于一次 fit ⇒ 开关为假时它也照做，用户勾没勾完全
+        没区别（实测选区 600×800 时 zoom 从 0.3885 直接翻到 0.7810，整整
+        一倍，"选择"一下画面就跳）。开关的语义是"**别自动改我的视图**"，
+        变换链上的 :meth:`TransformMixin._finish_transform_auto_fit` 早已
+        认它，这里补齐 ⇒ 关闭时不动视图（用户自己滚轮缩放）。
         """
+        if not self._xf_auto_fit_canvas:
+            return
         if self._item is None or self._rect is None:
             return
         rect = self._rect.normalized()
