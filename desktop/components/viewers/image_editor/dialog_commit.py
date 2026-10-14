@@ -372,9 +372,17 @@ class CommitMixin(DialogHost):
             self._image = shifted
         else:
             self._image = cropped
+        # ⚠️⚠️ 原点累加的是**选区在新画布里的位移**，即 ``box + shift``
+        #    （＝裁剪前选区在旧画布中的位置），**不能再减 ``pad``**
+        #    （2026-10-14 用户报障「弹窗里把图下移 200px、应用后拼版页左图
+        #    顶部没跟着走、底部反而长出一截」）：
+        #    纯裁剪 shift=pad=0，两种写法一致（既有断言 origin==(20,10) 不受影响）；
+        #    纯"移动"时 shift_y 与 pad_y **都等于位移**（200），旧式
+        #    ``box.y + shift_y - pad_y`` 正好抵消成 0 ⇒ 位移被吞掉，
+        #    回报给拼版的 rect 原地不动，而像素图已多出 200px 透明留白。
         self._multi_layer_shift(
-            float(box.x() + shift_x - pad_x),
-            float(box.y() + shift_y - pad_y),
+            float(box.x() + shift_x),
+            float(box.y() + shift_y),
         )
         # ⚠️ 双图模式换图**不**重新适应窗口（世界缩放保持，2026-10-13
         #    「不要放大缩小」）；单图维持"裁完 fit 一遍"的旧行为。

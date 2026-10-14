@@ -56,6 +56,8 @@ def run(ctx) -> None:
     from PySide6.QtGui import QMouseEvent, QTransform
 
     from tests.selftests._context import ok
+    from pathlib import Path
+    from tests.tmpdir import temp_dir
 
     from desktop.components.viewers.image_editor.consts import CLIPPING_DEFAULT
 
@@ -275,6 +277,65 @@ def run(ctx) -> None:
        f"display={cc._context_display_rect} border={cb.rect()}")
     dialog_c.close()
     dialog_c.release_buffers()
+
+    # ---- 5b. 裁剪"移动"→应用：回报给拼版的 rect 是**内容**且**整份平移** ----
+    # 2026-10-14 用户报障（这条走的**不是** refresh_rects_for_edited_source，
+    # 而是 ``_save_multiple_images`` → ``multi_layout_saved`` →
+    # ``apply_editor_layout``）：双图编辑里把 Left 向下移 200px 并应用后，
+    # 拼版页左图"变大了"——顶部仍与右图平齐、底部多出一截，左右不等高。
+    # 两个独立成因，都要钉：
+    #   ① 回报的宽高用**整张像素图**（含透明留白）⇒ 框比图大一圈；
+    #   ② ``_multi_layer_shift`` 传 ``box+shift-pad``，而 pad 本身就是位移
+    #      （200），正负抵消成 0 ⇒ 位移被吞掉，顶部不跟着走。
+    updates: list = []
+    dialog_u, left_u, right_u = _spread_dialog()
+    dialog_u._ask_overwrite = lambda: True
+    dialog_u.multi_layout_saved.connect(
+        lambda batch: updates.extend(batch if isinstance(batch, list) else [batch]))
+    dialog_u.multi_image_saved.connect(lambda *args: None)
+    # ⚠️ 本用例会**真调** ``_save_multiple_images``（它内部 overwrite 到
+    #    ``layer["file"]``），而 ``_spread_dialog`` 用的是 "_left.png" 这种
+    #    假路径 ⇒ 会真的往**当前工作目录**写文件、污染仓库根。把两层
+    #    路径改到临时目录再跑（只借它的双图布局，不写回原路径）。
+    tmp_dir = temp_dir(f"guji_multi_save_{NAME}_")
+    left_file = str(Path(tmp_dir) / "left.png")
+    right_file = str(Path(tmp_dir) / "right.png")
+    for layer, path_text in ((dialog_u._multi_layers[0], left_file),
+                             (dialog_u._multi_layers[1], right_file)):
+        layer["file"] = path_text
+    dialog_u._multi_layers[0]["page_item_index"] = 0
+    dialog_u._multi_layers[1]["page_item_index"] = 1
+    cu = dialog_u.canvas
+    dialog_u._set_tool("crop")
+    MOVE = 20.0
+    cu._mode = ("crop_move", QPointF(100, 50), QRectF(cu._rect),
+                QPointF(cu._crop_offset))
+    cu._crop_offset = QPointF(0, MOVE)
+    cu._item.setPos(cu._crop_offset)
+    cu._rect = QRectF(cu._rect).translated(QPointF(0, MOVE))
+    cu._sync_border()
+    dialog_u._preview_crop()
+    dialog_u._commit_crop()
+    dialog_u._save_multiple_images()
+    moved_image = dialog_u._multi_layers[0]["state"]["_image"]
+    ok("裁剪移动：像素图长高（留白编码位移），但可见内容尺寸不变",
+       moved_image.height() == 100 + int(MOVE)
+       and dialog_u._multi_layers[0]["origin"] == (0.0, MOVE),
+       f"image_h={moved_image.height()} "
+       f"origin={dialog_u._multi_layers[0]['origin']}")
+    ok("应用回报：宽高按**可见内容**（不是含留白的整张图），"
+       "否则拼版虚线框比图大一圈",
+       bool(updates)
+       and abs(updates[0]["rect"][3] - 100) <= 1,
+       f"updates={updates}")
+    ok("应用回报：**整份平移**了位移量且大小不变"
+       "（旧版顶部原地不动、底部长出一截 ⇒ 左右不等高）",
+       bool(updates)
+       and abs(updates[0]["rect"][1] - MOVE) <= 1
+       and abs(updates[0]["rect"][3] - 100) <= 1,
+       f"rect={updates[0]['rect'] if updates else None}")
+    dialog_u.close()
+    dialog_u.release_buffers()
 
     # ---- ghost：切层**不**烘焙，旋转效果在另一边也看得见（2026-10-13） ----
     # 先钉"像素改写"这条路（用户 2026-10-13 报障：Left 改了切到 Right，

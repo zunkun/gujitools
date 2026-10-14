@@ -330,6 +330,55 @@ def run(ctx) -> None:
             f"{fixed.getpixel((450, 200))}",
         )
 
+        # ---------------- 1b. 裁剪移动留下的透明边距（用户 2026-10-14）--------
+        # 图片编辑器的**裁剪移动**把位移编码成**透明边距**：像素图变大
+        # （200×100 → 240×130），可见内容缩在其中一个角上。若 rect 按整张图
+        # 尺寸刷，画出来的虚线框会把留白框进去、比图大一圈且位置偏移，正是
+        # 用户报的"编辑保存后拼版页图片与虚线框错位"。
+        pad_probe = tmp / "padded-probe.png"
+        # ⚠️ 内容块必须**完整落在** 240×130 画布内（paste 会被画布边缘裁掉），
+        #    所以挪的是 -20 而不是 +30；这里要验的是"四周留白不占版面"。
+        padded = Image.new("RGBA", (240, 130), (0, 0, 0, 0))
+        padded.paste(RED, (20, 20, 220, 120))        # 内容 200×100，四周留白
+        padded.save(pad_probe)
+        ok(
+            "透明留白图：内容框读到 200×100（不是整张 240×130）",
+            S.image_content_bounds(pad_probe) == (20, 20, 200, 100),
+            str(S.image_content_bounds(pad_probe)),
+        )
+        doc_pad = {"pages": [S.normalize_page({
+            "items": [{"file": str(pad_probe),
+                       "rect": [0.0, 0.0, 200.0, 100.0], "rotation": 0.0}]
+        })]}
+        ok(
+            "裁剪移动后 rect 按**可见内容**刷（不吃透明留白）",
+            S.refresh_rects_for_edited_source(doc_pad, str(pad_probe)) is True,
+        )
+        pad_rect = [
+            round(float(v), 3)
+            for v in doc_pad["pages"][0]["items"][0]["rect"]
+        ]
+        ok(
+            "rect 宽高 = 可见内容 200×100（旧版是 240×130，框比图大一圈）",
+            pad_rect[2] == 200.0 and pad_rect[3] == 100.0,
+            str(pad_rect),
+        )
+        # ⚠️ 合成侧必须同步裁掉留白，否则整张图（含留白）被塞进 200×100 的
+        #    框里 ⇒ 内容压扁（把"框偏大"换成"图变形"，一样是错位）。
+        pad_out = S.compose_page(doc_pad["pages"][0])
+        ok(
+            "合成不压扁（留白先裁掉，内容按 200×100 原比例落位）",
+            pad_out.size == (200, 100)
+            and pad_out.getpixel((100, 50))[:3] == RED,
+            f"size={pad_out.size} px={pad_out.getpixel((100, 50))}",
+        )
+        # 不透明扫描件完全不受影响：内容＝整张，走旧口径
+        ok(
+            "不透明图内容框 = None（整幅不透明，不裁不改）",
+            S.image_content_bounds(probe) is None,
+            str(S.image_content_bounds(probe)),
+        )
+
         ok(
             "坏页被过滤（项为空 / 无文件 / 非字典）",
             all(

@@ -34,7 +34,7 @@ from PySide6.QtWidgets import (
 from desktop.ui import theme as T
 from desktop.ui.window_size import apply_window_size
 from .canvas import EditorCanvas
-from .geometry import _trim_transparent_edges
+from .geometry import _trim_transparent_edges, _transparent_content_bounds
 from .consts import (
     ERASER_DEFAULT, HISTORY_ORIGIN_LABEL, TEXT_COLOR_DEFAULT, TEXT_DEFAULT,
 )
@@ -794,14 +794,26 @@ class ImageEditorDialog(
             x, y, _width, _height = layer["rect"].getRect()
             scale_x, scale_y = self._layer_scale(layer)
             origin_x, origin_y = self._layer_origin(layer)
+            # ⚠️⚠️ 回报给拼版页的 rect 必须是**可见内容**的框，不是整张像素图
+            #    （2026-10-14 用户报障「弹窗里把图下移 200px，应用后拼版页左图
+            #    变大了、左右不等高」）。裁剪"移动"把位移编码成**透明边距**，
+            #    像素图因此变大（实测 1000 → 1200 高），而内容其实没变——直接
+            #    回报 ``image.height()`` 就等于**把留白算进版面**，虚线框比图
+            #    大一圈、底部多出一截。
+            #    这里只报**内容框**（origin 已含位移），拼版侧据此摆框。
+            content = _transparent_content_bounds(image)
+            if content is None:
+                content_w, content_h = image.width(), image.height()
+            else:
+                content_w, content_h = content[2], content[3]
             layout_updates.append({
                 "index": layer["page_item_index"],
                 "file": layer["file"],
                 "rect": [
                     x + origin_x * scale_x,
                     y + origin_y * scale_y,
-                    image.width() * scale_x,
-                    image.height() * scale_y,
+                    content_w * scale_x,
+                    content_h * scale_y,
                 ],
             })
         self._load_layer(active_index)

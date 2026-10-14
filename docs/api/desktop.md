@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 168 个模块、179 个公开类、1245 个公开函数/方法（生成于 2026-10-14）。
+覆盖 168 个模块、179 个公开类、1246 个公开函数/方法（生成于 2026-10-14）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -119,7 +119,7 @@
 | [`desktop.pages.tasklist.page`](#desktoppagestasklistpage) | 1 | 7 |
 | [`desktop.services.detect_export`](#desktopservicesdetect_export) | 0 | 3 |
 | [`desktop.services.font_catalog`](#desktopservicesfont_catalog) | 1 | 6 |
-| [`desktop.services.imposition`](#desktopservicesimposition) | 0 | 27 |
+| [`desktop.services.imposition`](#desktopservicesimposition) | 0 | 28 |
 | [`desktop.services.print_plan`](#desktopservicesprint_plan) | 0 | 5 |
 | [`desktop.services.rembg_export`](#desktopservicesrembg_export) | 0 | 7 |
 | [`desktop.services.rembg_live`](#desktopservicesrembg_live) | 0 | 3 |
@@ -7624,7 +7624,8 @@ GUI 主进程**绝不能**在这里 import 到 cv2（实测 ``import functions.d
 | `cn_page_label(index: int) -> str` | 页序（0 起）→ 中文页码标签：``第一页`` / ``第十二页`` / ``第100页``。 |
 | `image_size(path) -> tuple[int, int]` | 图片像素尺寸（读文件头，不解码整图）；读不到返回 (0, 0)。 |
 | `invalidate_size(path) -> None` | 源图被外部覆盖（图片编辑器写回）后丢掉它的尺寸缓存。 |
-| `refresh_rects_for_edited_source(doc: dict, path_text: str) -> bool` | 源图被编辑覆盖后，把文档里引用它的 ``rect`` 刷成**新图的真实尺寸**。 |
+| `image_content_bounds(path) -> tuple[int, int, int, int] \| None` | 源图**可见内容**框 ``(x, y, w, h)``；没有透明留白时返回 None。 |
+| `refresh_rects_for_edited_source(doc: dict, path_text: str) -> bool` | 源图被编辑覆盖后，把文档里引用它的 ``rect`` 刷成**新图可见内容**的几何。 |
 | `used_source_files(doc: dict) -> set[str]` | 已被任何一页拼版引用的源图（用于算「剩余未被选择拼版的图片」）。 |
 | `remaining_files(files: list, doc: dict) -> list` | 源清单里**还没被任何拼版页用过、也没被删除**的图片（顺序沿用源清单）。 |
 | `removed_source_files(doc: dict) -> set[str]` | 被用户「删除图片」移出选择范围的源图路径集合（软删除黑名单）。 |
@@ -7681,9 +7682,23 @@ GUI 主进程**绝不能**在这里 import 到 cv2（实测 ``import functions.d
 同一文件，不丢缓存的话后续 :func:`default_items` / :func:`refresh_rects_
 for_edited_source` 读到的还是旧尺寸。
 
+#### `image_content_bounds(path) -> tuple[int, int, int, int] | None`
+
+源图**可见内容**框 ``(x, y, w, h)``；没有透明留白时返回 None。
+
+⚠️ 为什么拼版要按"内容"而不是整张图摆框（2026-10-14 用户报障「弹窗
+编辑保存后，拼版页图片与虚线框错位」）：图片编辑器的**裁剪移动**会把
+位移编码成**透明边距**——像素图因此变大（实测 200×100 → 240×130），
+可见内容缩在其中一个角上。若版面 rect 按整张图尺寸刷，画出来的虚线框
+会把透明留白一并框进去（240×130），而图里看得见的只有 200×100 且偏离
+中心 ⇒ 框比图大一圈、位置也偏，正是截图里的现象。
+
+整幅不透明（普通扫描件）或读不出 alpha 时返回 ``None``＝"内容就是整
+张图"，调用方按旧口径走，不改变既有版面。读图失败也返回 None。
+
 #### `refresh_rects_for_edited_source(doc: dict, path_text: str) -> bool`
 
-源图被编辑覆盖后，把文档里引用它的 ``rect`` 刷成**新图的真实尺寸**。
+源图被编辑覆盖后，把文档里引用它的 ``rect`` 刷成**新图可见内容**的几何。
 
 ⚠️⚠️ 版面 ``rect`` 的宽高是**按源图像素**记的（见 :func:`default_items`）。
 编辑器把图旋转 90°（宽高互换）或裁剪后**覆盖回同一文件**，旧 rect 就成了
@@ -7691,9 +7706,26 @@ for_edited_source` 读到的还是旧尺寸。
 宽高——旋转 90° 的图被横向压扁（3500px 的宽压进 2480px），既变形又
 清晰度下降（用户 2026-10-10 报障："旋转后拼版里图片被压宽"）。
 
-规则：宽度高度改成新图的真实尺寸，**绕 rect 中心**保持位置（图还待在
-用户摆的地方，按新形状向四周长开/收拢）；尺寸没变（普通修饰）就一个
-字节都不动。返回是否有 rect 被改过（调用方据此决定要不要落盘/刷视图）。
+规则：宽高取新图**可见内容**的尺寸（见 :func:`image_content_bounds`——
+裁剪移动会把位移编码成透明边距，按整张图刷会让虚线框比图大一圈，
+2026-10-14 报障）。位置＝**旧 rect 中心 + 内容在画布内的偏移**，即
+
+    ``new_rect = [旧中心 - 新内容尺寸/2 + 内容偏移, 新内容尺寸]``
+
+两项各管一件事，互不干扰：
+
+- **尺寸变化绕旧中心**（旋转 90°／纯裁剪）：图还待在用户摆的地方，按新
+  形状向四周长开/收拢（2026-10-10「旋转后被压宽」的既有口径，保持不变）；
+- **内容偏移量平移**（裁剪"移动"把位移编码成透明边距）：用户拖了 200px
+  就整整平移 200px，大小不变。
+
+⚠️⚠️ 偏移项**只能是内容框在画布里的左上角 ``(content_x, content_y)``**，
+不要再减 ``整图尺寸/2``（2026-10-14 用户报障「向下移 200px 后图变大了」：
+减掉半张图高把 200 砍成 100，rect 落在 Top1+100 ⇒ 顶部没跟着走、底部长
+出 200px，看着就是"顶部与右图平齐、底部多出一截、左右不等高"）。
+纯尺寸变化时内容偏移为 0，本式退化成既有的绕中心口径，不影响旧行为。
+尺寸与偏移都没变（普通修饰）就一个字节都不动。返回是否有 rect 被改过
+（调用方据此决定要不要落盘/刷视图）。
 
 #### `remaining_files(files: list, doc: dict) -> list`
 

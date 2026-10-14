@@ -68,6 +68,33 @@ from desktop.ui import theme as T
 PAGE_COLOR = QColor("#ffffff")
 #: 选中框是**虚线**（用户 2026-09-30：默认不显示蓝边，按住操作时才出现虚线）
 FRAME_STYLE = Qt.PenStyle.DashLine
+
+
+def _trim_transparent_border(image: QImage) -> QImage:
+    """裁掉 QImage 四周**纯透明**的边；无透明边（或全透明）时原样返回。
+
+    ⚠️ 与 ``services.imposition._trim_to_content`` 同一口径（那边是 PIL 版），
+    两边必须一致：画布显示与成品合成都按"可见内容"摆版，裁剪移动留在像素图
+    里的透明边距只是位移的编码，不该占版面（用户 2026-10-14 报障）。
+
+    整幅不透明时 ``alpha`` 全非零、包围盒＝整张 ⇒ 直接返回原图对象，
+    零拷贝、不改既有行为；缺 numpy（``_transparent_content_bounds`` 返回
+    None）时同样原样返回——宁可画大一点，也不能把内容裁掉。
+    """
+    try:
+        from desktop.components.viewers.image_editor.geometry import (
+            _transparent_content_bounds,
+        )
+    except Exception:  # noqa: BLE001 - 取不到就按整张处理
+        return image
+    bounds = _transparent_content_bounds(image)
+    if bounds is None:
+        return image
+    x, y, width, height = bounds
+    if x == 0 and y == 0 and width == image.width() \
+            and height == image.height():
+        return image                        # 四边都贴着内容：无需裁
+    return image.copy(x, y, width, height)
 FRAME_COLOR = QColor("#0E7C8B")
 HANDLE_STROKE = QColor("#0E7C8B")
 HANDLE_FILL = QColor("#ffffff")
@@ -917,7 +944,17 @@ class ImpositionCanvas(QWidget):
 
     # ------------------------------------------------------------------ 渲染
     def _image(self, path: str) -> QImage | None:
-        """按路径懒加载 QImage（同一路径只解码一次）。"""
+        """按路径懒加载 QImage（同一路径只解码一次）。
+
+        ⚠️ **裁掉四周纯透明的边**（2026-10-14 用户报障「编辑保存后拼版页
+        图片与虚线框错位」）：图片编辑器的裁剪移动把位移编码成**透明边距**，
+        像素图因此变大而可见内容缩在某个角上。版面 ``rect`` 按可见内容记
+        （见 ``services.imposition.refresh_rects_for_edited_source``），
+        ``_draw_item`` 又把整张图 ``drawImage`` 进 rect ⇒ 不裁的话屏幕上
+        框贴着（含留白的）整张图、内容却偏在一角，看着就是"图与框错位"，
+        导出侧 :func:`compose_page` 也会把内容压扁。两边必须同口径。
+        整幅不透明时 alpha 不透明、裁剪区等于整张 ⇒ 直接返回原图，零行为变化。
+        """
         if not path:
             return None
         cached = self._images.get(path)
@@ -926,6 +963,7 @@ class ImpositionCanvas(QWidget):
         image = QImage(path)
         if image.isNull():
             return None
+        image = _trim_transparent_border(image)
         self._images[path] = image
         return image
 
