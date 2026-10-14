@@ -411,6 +411,93 @@ def run(ctx) -> None:
     dialog5.close()
     dialog5.release_buffers()
 
+    # ---- 完成双图编辑：新画布原点/尺寸要回写为页面版面 rect ----
+    from tests.tmpdir import temp_dir
+
+    output_dir = temp_dir("guji_editor_layout_")
+    left6 = _make_image(200, 100, "#ffffff")
+    right6 = _make_image(150, 80, "#dddddd")
+    left_path = output_dir / "left.png"
+    right_path = output_dir / "right.png"
+    assert left6.save(str(left_path)) and right6.save(str(right_path))
+    dialog6 = ImageEditorDialog(None, left6, save_back=True)
+    dialog6.configure_multiple_images([
+        {"image": left6, "file": str(left_path), "rect": (0, 0, 200, 100)},
+        {"image": right6, "file": str(right_path),
+         "rect": (250, 10, 150, 80)},
+    ])
+    layout_updates = []
+    dialog6.multi_layout_saved.connect(layout_updates.append)
+    dialog6._activate_layer(1)
+    dialog6._pending_crop = QRectF(20, 5, 120, 60)
+    dialog6._commit_crop()
+    ok("双图编辑保存：裁剪后的画布位置和尺寸回传页面",
+       dialog6._save_multiple_images()
+       and layout_updates == [[{
+           "index": 1,
+           "file": str(right_path),
+           "rect": [270.0, 15.0, 120.0, 60.0],
+       }]],
+       f"updates={layout_updates}")
+    from desktop.services.imposition import apply_editor_layout
+
+    page_items = [
+        {"file": str(left_path), "rect": [0, 0, 200, 100]},
+        {"file": str(right_path), "rect": [250, 10, 150, 80]},
+    ]
+    changed_layout_files = apply_editor_layout(page_items, layout_updates[0])
+    ok("拼版页面应用双图编辑布局：左右图间距/重叠按弹窗结果更新",
+       changed_layout_files == {str(right_path)}
+       and page_items[1]["rect"] == [270.0, 15.0, 120.0, 60.0],
+       f"items={page_items}")
+    from types import SimpleNamespace
+
+    from desktop.modules.imposition.page import ImpositionModulePage
+
+    module_items = [
+        {"file": str(left_path), "rect": [0, 0, 200, 100]},
+        {"file": str(right_path), "rect": [250, 10, 150, 80]},
+    ]
+    module_refreshes = []
+    module_invalidations = []
+    module_probe = SimpleNamespace(
+        _doc={"pages": [{"items": module_items}]},
+        _refresh_view=lambda: module_refreshes.append(True),
+        _invalidate_page_thumbs_for=module_invalidations.append,
+    )
+    ImpositionModulePage._after_spread_layout_edited(
+        module_probe, 0, layout_updates[0]
+    )
+    ok("独立拼版页：双图布局更新后重绘画布并失效缩略图",
+       module_items[1]["rect"] == [270.0, 15.0, 120.0, 60.0]
+       and module_refreshes == [True]
+       and module_invalidations == [str(right_path)],
+       f"rect={module_items[1]['rect']}, "
+       f"refreshes={module_refreshes}, invalidations={module_invalidations}")
+
+    from desktop.pages.taskdetail.imposition_layout import ImpositionLayoutMixin
+
+    task_items = [
+        {"file": str(left_path), "rect": [0, 0, 200, 100]},
+        {"file": str(right_path), "rect": [250, 10, 150, 80]},
+    ]
+    persisted_pages = []
+    task_probe = SimpleNamespace(
+        _imposition_pages=lambda: [{"items": task_items}],
+        _save_imposition_pages=persisted_pages.append,
+    )
+    ImpositionLayoutMixin._on_imposition_spread_layout_saved(
+        task_probe, 0, layout_updates[0]
+    )
+    ok("任务详情页：双图布局更新写回并保存拼版文档",
+       task_items[1]["rect"] == [270.0, 15.0, 120.0, 60.0]
+       and len(persisted_pages) == 1
+       and persisted_pages[0][0]["items"][1]["rect"]
+       == [270.0, 15.0, 120.0, 60.0],
+       f"rect={task_items[1]['rect']}, saves={len(persisted_pages)}")
+    dialog6.close()
+    dialog6.release_buffers()
+
     dialog.close()
     dialog.release_buffers()
     ok("释放：双图各层整图缓冲一并放掉",

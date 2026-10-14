@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 168 个模块、179 个公开类、1242 个公开函数/方法（生成于 2026-10-14）。
+覆盖 168 个模块、179 个公开类、1243 个公开函数/方法（生成于 2026-10-14）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -119,7 +119,7 @@
 | [`desktop.pages.tasklist.page`](#desktoppagestasklistpage) | 1 | 7 |
 | [`desktop.services.detect_export`](#desktopservicesdetect_export) | 0 | 3 |
 | [`desktop.services.font_catalog`](#desktopservicesfont_catalog) | 1 | 6 |
-| [`desktop.services.imposition`](#desktopservicesimposition) | 0 | 26 |
+| [`desktop.services.imposition`](#desktopservicesimposition) | 0 | 27 |
 | [`desktop.services.print_plan`](#desktopservicesprint_plan) | 0 | 5 |
 | [`desktop.services.rembg_export`](#desktopservicesrembg_export) | 0 | 7 |
 | [`desktop.services.rembg_live`](#desktopservicesrembg_live) | 0 | 3 |
@@ -7632,6 +7632,7 @@ GUI 主进程**绝不能**在这里 import 到 cv2（实测 ``import functions.d
 | `excluded_files(files: list, doc: dict) -> list` | 源清单里被删除的图（**按源清单顺序**）——给弹窗的「已删除」视图展示。 |
 | `page_source_stems(page: dict) -> list[str]` | 一页拼版两张源图的名字（去扩展名），按槽位顺序（右、左）。 |
 | `same_path(left, right) -> bool` | 两个路径串是否指同一处文件（**形态无关**）。 |
+| `apply_editor_layout(items: list[dict], updates: list[dict]) -> set[str]` | 把双图编辑器回传的画布位置/尺寸写回对应页面项。 |
 | `page_has_file(page: dict, path_text: str) -> bool` | 这一页的某张源图是否就是这个文件（形态无关比较）。 |
 | `pages_having_file(pages: list, path_text: str) -> list[int]` | 哪些页用了这个源文件（页号列表）。 |
 | `default_items(files: list) -> list[dict] \| None` | 两张源图 → **默认并排版面**（各按原始像素，不改动用户的图）。 |
@@ -7712,6 +7713,13 @@ for_edited_source` 读到的还是旧尺寸。
 2026-10-08 报的"预览弹窗里编辑完，拼版页还是老图"就是这个）。
 比较前一律 ``normpath`` + ``normcase``；空串永远不相等（``Path("")``
 会退化成 ``"."``，那是"还没选文件"，不是同一处）。
+
+#### `apply_editor_layout(items: list[dict], updates: list[dict]) -> set[str]`
+
+把双图编辑器回传的画布位置/尺寸写回对应页面项。
+
+编辑器用当前图像素系记录新画布原点，并以入口版面比例换算到页面
+``rect``。更新携带源项序号与路径，避免页面或源清单变化时误改其他项。
 
 #### `default_items(files: list) -> list[dict] | None`
 

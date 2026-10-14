@@ -33,7 +33,7 @@ from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QWidget
 
 from desktop.services.imposition import (
-    FILE_FMT, cn_page_label, default_items, page_source_stems,
+    FILE_FMT, apply_editor_layout, cn_page_label, default_items, page_source_stems,
     refresh_rects_for_edited_source, single_items,
 )
 
@@ -493,8 +493,24 @@ class ImpositionLayoutMixin:
         )
         editor.configure_multiple_images(items)
         editor.multi_image_saved.connect(self._on_imposition_source_edited)
+        page_index = view.current_index()
+        editor.multi_layout_saved.connect(
+            lambda updates, index=page_index:
+                self._on_imposition_spread_layout_saved(index, updates)
+        )
         editor.exec()
         editor.release_buffers()
+
+    def _on_imposition_spread_layout_saved(
+        self, page_index: int, updates: list[dict],
+    ) -> None:
+        """把编辑弹窗中的双图相对位置/尺寸保存回任务版面。"""
+        pages = self._imposition_pages()
+        if not 0 <= page_index < len(pages):
+            return
+        items = pages[page_index].get("items") or []
+        if apply_editor_layout(items, updates):
+            self._save_imposition_pages(pages)
 
     def _on_imposition_zoom_image_saved(self, path_text: str,
                                         image=None) -> None:

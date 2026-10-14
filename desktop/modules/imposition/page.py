@@ -53,6 +53,7 @@ from desktop.services.imposition import (
     FILE_FMT,
     WHITE_BACKGROUND,
     append_item_to_page,
+    apply_editor_layout,
     auto_impose_pages,
     cn_page_label,
     compose_doc,
@@ -954,8 +955,27 @@ class ImpositionModulePage(ModulePage):
         editor = ImageEditorDialog(self, items[0]["image"], save_back=True)
         editor.configure_multiple_images(items)
         editor.multi_image_saved.connect(self._after_source_edited)
+        editor.multi_layout_saved.connect(
+            lambda updates, page_index=index:
+                self._after_spread_layout_edited(page_index, updates)
+        )
         editor.exec()
         editor.release_buffers()
+
+    def _after_spread_layout_edited(
+        self, page_index: int, updates: list[dict],
+    ) -> None:
+        """把弹窗中的双图相对位置/尺寸应用到当前拼版页。"""
+        pages = self._doc.get("pages") or []
+        if not 0 <= page_index < len(pages):
+            return
+        items = pages[page_index].get("items") or []
+        changed = apply_editor_layout(items, updates)
+        if not changed:
+            return
+        self._refresh_view()
+        for path in changed:
+            self._invalidate_page_thumbs_for(path)
 
     def _on_zoom_image_saved(self, path_text: str, image=None) -> None:
         """预览弹窗里「编辑」覆盖了真实文件（``image_saved``）：按落点接链。

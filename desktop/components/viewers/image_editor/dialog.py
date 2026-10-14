@@ -76,6 +76,7 @@ class ImageEditorDialog(
     #: （原子写保证：要么完整旧图、要么完整新图）。宿主据此报错即可。
     apply_failed = Signal(str, str)
     multi_image_saved = Signal(str, QImage)
+    multi_layout_saved = Signal(object)
 
 
     def __init__(self, parent=None, image: QImage | None = None,
@@ -249,7 +250,7 @@ class ImageEditorDialog(
 
         first = self._capture_layer_state()
         layers: list[dict] = []
-        for item in items:
+        for item_index, item in enumerate(items):
             image = item.get("image")
             path = str(item.get("file") or "")
             if not isinstance(image, QImage) or image.isNull() or not path:
@@ -298,6 +299,7 @@ class ImageEditorDialog(
                 "state": state,
                 "canvas_state": None,
                 "file": path,
+                "page_item_index": item_index,
                 "rect": rect,
                 "rotation": float(item.get("rotation", 0.0) or 0.0),
                 "scale": (
@@ -769,6 +771,7 @@ class ImageEditorDialog(
 
         self._multi_layers[self._active_layer]["state"] = self._capture_layer_state()
         active_index = self._active_layer
+        layout_updates = []
         for index, layer in enumerate(self._multi_layers):
             state = layer["state"]
             image = state.get("_image")
@@ -776,6 +779,8 @@ class ImageEditorDialog(
             if image is None or original is None or image == original:
                 continue
             if not overwrite_image_file(image, Path(layer["file"])):
+                if layout_updates:
+                    self.multi_layout_saved.emit(layout_updates)
                 self._load_layer(active_index)
                 QMessageBox.warning(
                     self, "保存失败",
@@ -785,8 +790,23 @@ class ImageEditorDialog(
             self._load_layer(index)
             sync_content_quad(layer["file"], self)
             self.multi_image_saved.emit(layer["file"], QImage(image))
+            x, y, _width, _height = layer["rect"].getRect()
+            scale_x, scale_y = self._layer_scale(layer)
+            origin_x, origin_y = self._layer_origin(layer)
+            layout_updates.append({
+                "index": layer["page_item_index"],
+                "file": layer["file"],
+                "rect": [
+                    x + origin_x * scale_x,
+                    y + origin_y * scale_y,
+                    image.width() * scale_x,
+                    image.height() * scale_y,
+                ],
+            })
         self._load_layer(active_index)
         self._refresh_multi_canvas()
+        if layout_updates:
+            self.multi_layout_saved.emit(layout_updates)
         return True
 
 

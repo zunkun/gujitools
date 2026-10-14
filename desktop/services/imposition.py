@@ -285,6 +285,36 @@ def same_path(left, right) -> bool:
     return _path_key(left) == _path_key(right)
 
 
+def apply_editor_layout(items: list[dict], updates: list[dict]) -> set[str]:
+    """把双图编辑器回传的画布位置/尺寸写回对应页面项。
+
+    编辑器用当前图像素系记录新画布原点，并以入口版面比例换算到页面
+    ``rect``。更新携带源项序号与路径，避免页面或源清单变化时误改其他项。
+    """
+    changed: set[str] = set()
+    for update in updates:
+        index = update.get("index")
+        if not isinstance(index, int) or not 0 <= index < len(items):
+            continue
+        item = items[index]
+        path = str(update.get("file") or "")
+        if not path or not same_path(item.get("file"), path):
+            continue
+        rect = [float(value) for value in update.get("rect", ())]
+        if len(rect) != 4 or not all(math.isfinite(value) for value in rect):
+            raise ValueError("双图编辑回传的拼版区域无效")
+        if rect[2] <= 0 or rect[3] <= 0:
+            raise ValueError("双图编辑回传的拼版区域无效")
+        current = [float(value) for value in item.get("rect", ())]
+        if len(current) == 4 and all(
+            abs(old - new) < 0.01 for old, new in zip(current, rect)
+        ):
+            continue
+        item["rect"] = rect
+        changed.add(path)
+    return changed
+
+
 def _path_key(value) -> str:
     """路径的比较键：展开 ``~`` → 绝对化 → 统一分隔符 → 统一大小写。
 

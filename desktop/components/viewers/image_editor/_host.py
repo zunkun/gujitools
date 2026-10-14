@@ -80,6 +80,7 @@ class DialogHost(QDialog):
     apply_completed: Any
     apply_failed: Any
     multi_image_saved: Any
+    multi_layout_saved: Any
     canvas: EditorCanvas
     done_btn: PrimaryPushButton
     fit_btn: PushButton
