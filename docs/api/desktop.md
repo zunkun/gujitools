@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 168 个模块、179 个公开类、1244 个公开函数/方法（生成于 2026-10-14）。
+覆盖 168 个模块、179 个公开类、1245 个公开函数/方法（生成于 2026-10-14）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -51,7 +51,7 @@
 | [`desktop.components.viewers.edit_sync`](#desktopcomponentsviewersedit_sync) | 0 | 2 |
 | [`desktop.components.viewers.extract_viewer`](#desktopcomponentsviewersextract_viewer) | 1 | 6 |
 | [`desktop.components.viewers.image_editor.bake`](#desktopcomponentsviewersimage_editorbake) | 0 | 2 |
-| [`desktop.components.viewers.image_editor.canvas.core`](#desktopcomponentsviewersimage_editorcanvascore) | 1 | 22 |
+| [`desktop.components.viewers.image_editor.canvas.core`](#desktopcomponentsviewersimage_editorcanvascore) | 1 | 23 |
 | [`desktop.components.viewers.image_editor.canvas.distortion`](#desktopcomponentsviewersimage_editorcanvasdistortion) | 1 | 1 |
 | [`desktop.components.viewers.image_editor.canvas.interaction`](#desktopcomponentsviewersimage_editorcanvasinteraction) | 1 | 7 |
 | [`desktop.components.viewers.image_editor.canvas.overlay`](#desktopcomponentsviewersimage_editorcanvasoverlay) | 1 | 0 |
@@ -3267,7 +3267,7 @@ worker 会变成孤儿线程，而它是被 ``parent``（编辑器对话框）�
 
 场景坐标 = 图片像素（pixmap 刻意不设 devicePixelRatio，与预览弹窗同
 口径）。选区矩形（裁剪）几何全部落在**图片坐标系**，缩放只影响显示。
-裁剪不做"拖拽画框"：**默认全选**，只许收边/框内移动。
+裁剪不做"拖拽画框"：**默认全选**，拖边收边、拖框内平移图片和选区。
 
 ⚠️ 裁剪是**非破坏性**的：这里画的始终是**原图**，收边只是让选区外多一层
 变暗的遮罩（``overlay._sync_overlay`` 每帧按选区重算，所以向外拖时那块
@@ -3288,7 +3288,8 @@ worker 会变成孤儿线程，而它是被 ``parent``（编辑器对话框）�
 | `replace_image(image: QImage) -> None` | 就地换图（尺寸不变的语义，如文字写入）：不动缩放与滚动位置。 |
 | `image() -> QImage \| None` | — |
 | `tool() -> str` | 当前工具键（``crop``/``transform``/``distort``/``erase``/``text``）。 |
-| `image_rect() -> QRectF` | 图片占位（= 场景坐标，1 场景单位 = 1 图片像素）。 |
+| `image_rect() -> QRectF` | 图片占位（场景坐标；裁剪拖动预览会临时平移）。 |
+| `crop_offset() -> QPointF` | 裁剪工具中图片相对原点的待定位移。 |
 | `set_tool(tool: str) -> None` | 切换工具：裁剪/变换默认全选，其余清选区、换光标。 |
 | `provide_restore_pixels(upright: QImage) -> None` | 弹窗把延迟计算的 upright 内容补回来（:meth:`abort_content_restore` |
 | `abort_content_restore() -> None` | 放弃恢复会话（sidecar 缺失/损坏/反变换失败）：退回普通会话。 |

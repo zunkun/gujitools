@@ -318,8 +318,12 @@ class ToolbarMixin(DialogHost):
         if pending is not None:
             box = QRectF(pending).toRect()
             if not box.isEmpty():
+                offset_x, offset_y = getattr(
+                    self, "_pending_crop_offset", (0.0, 0.0))
+                width = box.width() + abs(round(offset_x))
+                height = box.height() + abs(round(offset_y))
                 label.setText(
-                    f"裁剪后 {box.width()} × {box.height()} px"
+                    f"裁剪后 {width} × {height} px"
                     f"（当前 {current}）")
                 return
         label.setText(current)

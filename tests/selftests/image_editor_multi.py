@@ -411,6 +411,113 @@ def run(ctx) -> None:
     dialog5.close()
     dialog5.release_buffers()
 
+    # ---- 裁剪负向平移后切工具，再点击切回该层，边框仍贴合非透明内容 ----
+    from PySide6.QtCore import QPointF, Qt
+    from PySide6.QtGui import QMouseEvent
+    from desktop.components.viewers.image_editor import ImageEditorDialog
+
+    left7 = _make_image(400, 400, "#ffffff")
+    right7 = _make_image(100, 80, "#dddddd")
+    dialog7 = ImageEditorDialog(None, left7, save_back=True)
+    dialog7.configure_multiple_images([
+        {"image": left7, "file": "_l7.png", "rect": (0, 0, 400, 400)},
+        {"image": right7, "file": "_r7.png", "rect": (600, 0, 100, 80)},
+    ])
+    c7 = dialog7.canvas
+    dialog7.show()
+    from PySide6.QtWidgets import QApplication
+    from PySide6.QtTest import QTest
+    QApplication.processEvents()
+
+    def send_crop_drag(start: QPointF, end: QPointF) -> None:
+        press = QMouseEvent(
+            QEvent.Type.MouseButtonPress, start,
+            Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier)
+        move = QMouseEvent(
+            QEvent.Type.MouseMove, end,
+            Qt.MouseButton.NoButton, Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier)
+        release = QMouseEvent(
+            QEvent.Type.MouseButtonRelease, end,
+            Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier)
+        c7.mousePressEvent(press)
+        c7.mouseMoveEvent(move)
+        c7.mouseReleaseEvent(release)
+
+    send_crop_drag(
+        QPointF(c7.mapFromScene(QPointF(200, 200))),
+        QPointF(c7.mapFromScene(QPointF(0, 400))),
+    )
+    crop_shift_x = round(c7.crop_offset().x())
+    crop_shift_y = round(c7.crop_offset().y())
+    ok("复现：裁剪左移 200px 后待应用画布保留完整尺寸",
+       abs(crop_shift_x + 200) <= 2 and abs(crop_shift_y - 200) <= 2,
+       f"offset={c7.crop_offset()}")
+    dialog7._set_tool("transform")
+    QTest.qWait(2000)
+    dialog7._set_tool("crop")
+    expected_width = 400 + abs(crop_shift_x)
+    expected_height = 400 + abs(crop_shift_y)
+    expected_content = QRectF(0, max(0, crop_shift_y), 400, 400)
+    ok("复现：离开并返回裁剪后图片像素画布尺寸包含平移留白",
+       c7.image is not None
+       and c7.image.size().width() == expected_width
+       and c7.image.size().height() == expected_height,
+       f"image={c7.image.size() if c7.image is not None else None}")
+    dialog7._set_tool("transform")
+    dialog7._set_tool("crop")
+    crop_content = c7._content_rect()
+    assert crop_content is not None
+    ok("复现：切回裁剪后选框只包住左下图片，不延伸到右图",
+       c7.selection() == crop_content
+       and crop_content == expected_content,
+       f"selection={c7.selection()} content={crop_content}")
+    ok("复现：扩展画布的透明留白不再被裁剪遮罩涂成灰色",
+       all(not mask.isVisible() or mask.rect().isEmpty()
+           for mask in c7._mask),
+       f"masks={[mask.rect() for mask in c7._mask]}")
+
+    def click_scene(point: QPointF) -> None:
+        view_point = QPointF(c7.mapFromScene(point))
+        press = QMouseEvent(
+            QEvent.Type.MouseButtonPress, view_point,
+            Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier)
+        release = QMouseEvent(
+            QEvent.Type.MouseButtonRelease, view_point,
+            Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier)
+        c7.mousePressEvent(press)
+        c7.mouseReleaseEvent(release)
+
+    context_right = c7._context_display_rect
+    assert context_right is not None
+    click_scene(context_right.center())
+    ok("复现：点击右图实际切换激活层",
+       dialog7._active_layer == 1, f"active={dialog7._active_layer}")
+    context_left = c7._context_display_rect
+    assert context_left is not None
+    click_scene(context_left.center())
+    left_content = c7._content_rect()
+    assert left_content is not None
+    left_border = c7._border.sceneBoundingRect()
+    ok("点击切回裁剪后的左图，虚线框仍只包住左下图片",
+       dialog7._active_layer == 0
+       and left_content == expected_content
+       and c7.selection() == left_content
+       and all(not mask.isVisible() or mask.rect().isEmpty()
+               for mask in c7._mask)
+       and abs(left_border.left() - left_content.left()) < 1
+       and abs(left_border.top() - left_content.top()) < 1
+       and abs(left_border.width() - left_content.width()) <= 1.1
+       and abs(left_border.height() - left_content.height()) <= 1.1,
+       f"selection={c7.selection()} content={left_content} border={left_border} "
+       f"canvas={c7.image.size() if c7.image is not None else None}")
+    dialog7.close()
+    dialog7.release_buffers()
+
     # ---- 完成双图编辑：新画布原点/尺寸要回写为页面版面 rect ----
     from tests.tmpdir import temp_dir
 

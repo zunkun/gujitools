@@ -168,7 +168,7 @@ class InteractionMixin(CanvasHost):
             return
         inside = self.image_rect()
         if self._tool == "crop":
-            # 裁剪不做"拖拽画框"（那是截图的交互）：默认全选，只能拖边/移动。
+            # 裁剪不做"拖拽画框"：默认全选，拖边裁切、拖框内平移图片及选区。
             # 拖边**双向**都行 —— 画布在待定期间一直是原图，往外拖回去就是
             # 把刚才变暗的区域重新放出来（见 dialog_commit._preview_crop）。
             handle = self._hit_handle(event.position())
@@ -178,7 +178,10 @@ class InteractionMixin(CanvasHost):
                 self._mode = ("handle", handle)
             elif self._rect is not None and \
                     self._rect.normalized().contains(pos):
-                self._mode = ("move", pos, QPointF(self._rect.topLeft()))
+                self._mode = (
+                    "crop_move", pos, QRectF(self._rect),
+                    QPointF(self._crop_offset),
+                )
             # 图外/遮罩上按下：不响应（想调框请拖手柄或框内）
             self._sync_overlay()
             event.accept()
@@ -295,6 +298,24 @@ class InteractionMixin(CanvasHost):
             moved = self._rect.normalized().translated(delta)
             moved.moveTopLeft(clamp_rect(moved, inside).topLeft())
             self._rect = moved
+        elif kind == "crop_move":
+            start, rect_origin, offset_origin = self._mode[1:]
+            delta = pos - start
+            image, item = self._image, self._item
+            if image is None or item is None:
+                self._mode = None
+                event.accept()
+                return
+            max_x = float(image.width())
+            max_y = float(image.height())
+            self._crop_offset = QPointF(
+                max(-max_x, min(max_x, offset_origin.x() + delta.x())),
+                max(-max_y, min(max_y, offset_origin.y() + delta.y())),
+            )
+            delta = self._crop_offset - offset_origin
+            item.setPos(self._crop_offset)
+            self._rect = QRectF(rect_origin).translated(delta)
+            self._sync_border()
         elif kind == "handle":
             assert self._rect is not None  # 拖手柄时必有选区
             self._resize_rect(self._mode[1], pos)
@@ -317,7 +338,7 @@ class InteractionMixin(CanvasHost):
             self._sync_cursor()
             event.accept()
             return
-        if self._mode and self._mode[0] in ("move", "handle"):
+        if self._mode and self._mode[0] in ("move", "crop_move", "handle"):
             # move/handle 只在裁剪与变换「调整范围」下出现
             was_reshape = self._tool == "transform" and self._xf_reshape
             was_crop = self._tool == "crop"
@@ -339,6 +360,7 @@ class InteractionMixin(CanvasHost):
                 #    选区没被改动过（点一下/拖回原位）时弹窗侧会自己清掉待定
                 #    裁剪，不产生空撤销步。
                 self._sync_overlay()
+                self._sync_scene_rect()
                 if self.selection() is not None:
                     self.crop_selection_changed.emit()
             else:

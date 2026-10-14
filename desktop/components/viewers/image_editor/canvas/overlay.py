@@ -267,22 +267,31 @@ class OverlayMixin(CanvasHost):
         if self._rect is None or self._image is None:
             return
         rect = self._rect.normalized()
-        full = self.image_rect()
-        # 遮罩 = 选区外的四块（夹一下防越界出负宽）
-        self._mask[0].setRect(QRectF(
-            full.left(), full.top(), full.width(),
-            max(0.0, rect.top() - full.top())))
-        self._mask[1].setRect(QRectF(
-            full.left(), rect.bottom(), full.width(),
-            max(0.0, full.bottom() - rect.bottom())))
-        self._mask[2].setRect(QRectF(
-            full.left(), rect.top(), max(0.0, rect.left() - full.left()),
-            rect.height()))
-        self._mask[3].setRect(QRectF(
-            rect.right(), rect.top(),
-            max(0.0, full.right() - rect.right()), rect.height()))
-        for item in self._mask:
-            item.setVisible(True)
+        image_rect = self.image_rect()
+        content = self._content_rect()
+        full = (content.translated(image_rect.topLeft())
+                if content is not None else QRectF())
+        # 只遮罩图片实际内容。裁剪移动会在扩展画布中留下透明边距；
+        # 把整张像素画布遮暗会让透明区域看起来像残留的图片背景。
+        inside = full.intersected(rect)
+        if inside.isEmpty():
+            mask_rects = [full, QRectF(), QRectF(), QRectF()]
+        else:
+            mask_rects = [
+                QRectF(full.left(), full.top(), full.width(),
+                       max(0.0, inside.top() - full.top())),
+                QRectF(full.left(), inside.bottom(), full.width(),
+                       max(0.0, full.bottom() - inside.bottom())),
+                QRectF(full.left(), inside.top(),
+                       max(0.0, inside.left() - full.left()),
+                       inside.height()),
+                QRectF(inside.right(), inside.top(),
+                       max(0.0, full.right() - inside.right()),
+                       inside.height()),
+            ]
+        for item, mask_rect in zip(self._mask, mask_rects):
+            item.setRect(mask_rect)
+            item.setVisible(not mask_rect.isEmpty())
         self._sel_border.setRect(rect)
         self._sel_border.setVisible(True)
         self._quad.setVisible(False)

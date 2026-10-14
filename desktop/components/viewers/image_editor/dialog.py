@@ -87,6 +87,7 @@ class ImageEditorDialog(
         self._save_back = bool(save_back)
         self._multi_layers: list[dict] = []
         self._active_layer = -1
+        self._pending_crop_offset = (0.0, 0.0)
         #: 双图编辑下与 ``_undo``/``_redo`` **平行**的"内容原点"栈（见
         #: :meth:`_multi_layer_shift`）：每步撤销点带上当时的 origin，撤销/
         #: 重做才能把两张图的相对位置一起退回去。

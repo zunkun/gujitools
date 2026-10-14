@@ -207,6 +207,7 @@ _CROSS_METHOD_DEPS = {
         "_move_text_outline",
         "_sync_float",
         "_sync_overlay",
+        "_sync_border", "_sync_scene_rect",
         "_text_block_at", "crop_selection_changed", "fit",
         "fit_selection", "image_rect", "refresh", "reshape_finished",
         "selection", "set_zoom", "stroke_started", "text_requested",
@@ -221,7 +222,8 @@ _CROSS_METHOD_DEPS = {
     "TextMixin": set(),
     "TransformMixin": {
         "_sync_cursor", "_sync_overlay", "_sync_scene_rect",
-        "image_rect", "refresh", "transform_committed",
+        "_content_rect", "fit", "image_rect", "refresh",
+        "transform_committed",
         # 延迟供像素（2026-10-10「切换卡顿」）：恢复会话第一次建预览时
         # 发基座信号让弹窗补 upright；补不上则整组放弃退回普通会话
         "abort_content_restore", "restore_pixels_requested",

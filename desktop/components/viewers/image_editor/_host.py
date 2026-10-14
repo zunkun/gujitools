@@ -47,6 +47,7 @@ class DialogHost(QDialog):
     _original: Any
     #: **待定裁剪**：裁剪工具里定下、还没落到像素上的选区（见 ``dialog_commit``）
     _pending_crop: QRectF | None
+    _pending_crop_offset: tuple[float, float]
     _redo: list[QImage]
     _reshape_uncheck: Any
     _save_back: bool
@@ -329,6 +330,9 @@ class DialogHost(QDialog):
         ...
 
     def _set_tool(self, tool: str) -> None:
+        ...
+
+    def set_tool_visible(self, tool: str, visible: bool) -> None:
         ...
 
     def _activate_tool(self, tool: str) -> None:

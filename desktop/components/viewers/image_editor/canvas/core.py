@@ -26,6 +26,7 @@ from ..consts import (
     INTERPOLATION_DEFAULT, MAX_ZOOM, MIN_RECT_EDGE, MIN_ZOOM,
     PREVIEW_OPACITY_DEFAULT, SEL_FIT_RATIO,
 )
+from ..geometry import _transparent_content_bounds
 from ..text_item import TextBlockItem
 from .interaction import InteractionMixin
 from .overlay import OverlayMixin
@@ -46,7 +47,7 @@ class EditorCanvas(
 
     场景坐标 = 图片像素（pixmap 刻意不设 devicePixelRatio，与预览弹窗同
     口径）。选区矩形（裁剪）几何全部落在**图片坐标系**，缩放只影响显示。
-    裁剪不做"拖拽画框"：**默认全选**，只许收边/框内移动。
+    裁剪不做"拖拽画框"：**默认全选**，拖边收边、拖框内平移图片和选区。
 
     ⚠️ 裁剪是**非破坏性**的：这里画的始终是**原图**，收边只是让选区外多一层
     变暗的遮罩（``overlay._sync_overlay`` 每帧按选区重算，所以向外拖时那块
@@ -91,11 +92,15 @@ class EditorCanvas(
         #: 存进新的 QImage 包装（捕获即新包装），身份变了缓存自然失效，
         #: 不会拿旧像素骗人。
         self._context_pixmap_cache: dict[int, tuple[QImage, QPixmap]] = {}
+        self._content_bounds_cache_image: QImage | None = None
+        self._content_bounds_cache_key: int | None = None
+        self._content_bounds_cache: tuple[int, int, int, int] | None = None
         self._context_offset = QPointF()
         self._context_scale_x = 1.0
         self._context_scale_y = 1.0
         self._context_rotation = 0.0
         self._image: QImage | None = None
+        self._crop_offset = QPointF()
         self._zoom = 1.0
         self._tool = "crop"
         #: 用户是否手动缩放过。没动过就随窗口 resize 自动"适应窗口"——
@@ -266,6 +271,7 @@ class EditorCanvas(
             self._scene.removeItem(border)
         self._border = None
         self._rect = None
+        self._crop_offset = QPointF()
         # 换图后文字块/变换预览都失效，一并清掉（应用/撤销/还原都走这里）
         self.clear_text_blocks()
         self._clear_transform_preview()
@@ -300,14 +306,18 @@ class EditorCanvas(
             self.fit()
         if self._tool in ("crop", "transform"):
             # 换图（应用/撤销/还原都走这里）后选区重新默认全选：
-            # 裁剪/变换的语义都是"从当前原图出发"，不是沿用旧图上的框
+            # 透明扩展画布只包含定位留白，默认框仍应贴合实际图片内容。
             self._rect = QRectF(self.image_rect())
+            bounds = self._content_rect()
+            if bounds is not None:
+                self._rect = bounds.translated(self.image_rect().topLeft())
             # ⚠️ 轴心**不重置**：它记在 ``_xf_pivot_saved`` 里（用户自己摆的）。
             #    每次提交都重置成"新画布中心"的话，反复旋转就变成"绕不同点转"，
             #    内容越扫越远、画布越撑越大（用户报的"四周空白越来越多"）。
             self._xf_pivot = (QPointF(self._xf_pivot_saved)
                               if self._xf_pivot_saved is not None
                               else self._rect.center())
+        self._sync_border()
         self._sync_overlay()
 
 
@@ -365,6 +375,20 @@ class EditorCanvas(
         pixmap.setDevicePixelRatio(1.0)
         self._context_pixmap_cache[int(image.cacheKey())] = (image, pixmap)
         return pixmap
+
+    def _content_rect(self) -> QRectF | None:
+        """Return nontransparent image bounds, cached until its QImage changes."""
+        image = self._image
+        if image is None:
+            return None
+        key = int(image.cacheKey())
+        if (self._content_bounds_cache_image is not image
+                or self._content_bounds_cache_key != key):
+            self._content_bounds_cache_image = image
+            self._content_bounds_cache_key = key
+            self._content_bounds_cache = _transparent_content_bounds(image)
+        bounds = self._content_bounds_cache
+        return QRectF(*bounds) if bounds is not None else None
 
     def _show_context_image(self) -> None:
         self._context_display_rect = None
@@ -435,12 +459,17 @@ class EditorCanvas(
         用户 2026-10-13 口径：框要**包裹单张图片本身**——单图旋转 45°，
         框就是旋转后内容的外接框（√2 比例），**位置跟着内容移动**，不是
         钉死在原矩形上。所以：有挂起变换预览时＝变换后内容的紧凑外框
-        （整幅选区时底图是一片空白，**不算**进外框；局部选区时选区外的
-        原图残余还在画面上，要并进来）；没有预览时＝图片矩形本身。
+        （整幅内容选区时底图是一片空白，**不算**进外框；局部选区时选区外的
+        原图残余还在画面上，要并进来）；没有预览时＝非透明内容的实际外框，
+        不把裁剪位移产生的透明留白算进图片边界。
         """
         float_item = getattr(self, "_float_item", None)
         if float_item is None or float_item.pixmap().isNull():
-            return QRectF(self.image_rect())
+            image_rect = self.image_rect()
+            bounds = self._content_rect()
+            if bounds is not None:
+                return bounds.translated(image_rect.topLeft())
+            return QRectF(image_rect)
         if self._xf_preview_keyframe is not None:
             float_xf = self._float_placement()
         else:
@@ -456,7 +485,21 @@ class EditorCanvas(
         """边框矩形跟随活动图当前显示范围（见 :meth:`_display_bounds`）。"""
         if self._border is None or self._image is None:
             return
+        if self._tool == "crop" and self._item is not None:
+            # 裁剪移动/变换扩画布可能在像素图周围留下透明边距；虚线框仍应
+            # 包住可见图片，而不是整个透明画布。边框与图元共享本地坐标变换。
+            bounds = self._content_rect()
+            if bounds is None:
+                bounds = self._item.boundingRect()
+            self._border.setRect(bounds)
+            self._border.setPos(self._item.pos())
+            self._border.setTransform(self._item.transform())
+            return
         self._border.setRect(self._display_bounds())
+        # _display_bounds() 已是场景坐标；清除裁剪模式跟随图片图元的本地
+        # 坐标变换，避免工具切换时把旧偏移再次叠加到边框上。
+        self._border.setPos(0.0, 0.0)
+        self._border.setTransform(QTransform())
 
     def _sync_scene_rect(self) -> None:
         """场景矩形＝两图**当前显示范围**的并集（滚动条够得到全部内容）。
@@ -560,10 +603,17 @@ class EditorCanvas(
 
 
     def image_rect(self) -> QRectF:
-        """图片占位（= 场景坐标，1 场景单位 = 1 图片像素）。"""
+        """图片占位（场景坐标；裁剪拖动预览会临时平移）。"""
         if self._image is None:
             return QRectF()
-        return QRectF(0, 0, self._image.width(), self._image.height())
+        return QRectF(
+            self._crop_offset.x(), self._crop_offset.y(),
+            self._image.width(), self._image.height(),
+        )
+
+    def crop_offset(self) -> QPointF:
+        """裁剪工具中图片相对原点的待定位移。"""
+        return QPointF(self._crop_offset)
 
 
     # ------------------------------------------------------------ 工具
@@ -583,7 +633,10 @@ class EditorCanvas(
             self._hide_eraser_ring()
         if tool in ("crop", "transform") \
                 and not self.image_rect().isNull():
-            self._rect = QRectF(self.image_rect())
+            image_rect = self.image_rect()
+            bounds = self._content_rect()
+            self._rect = (bounds.translated(image_rect.topLeft())
+                          if bounds is not None else QRectF(image_rect))
             # 轴心：用户摆过就沿用（换工具不该把它甩回中心）
             self._xf_pivot = (QPointF(self._xf_pivot_saved)
                               if self._xf_pivot_saved is not None
@@ -591,6 +644,7 @@ class EditorCanvas(
         else:
             self._rect = None
         self._apply_border_pen()      # 变换工具下纸边框画成虚线（原图轮廓）
+        self._sync_border()
         self._sync_overlay()
         self._sync_cursor()
         # ⚠️ 内容节点恢复（2026-10-10）：进入变换工具且 sidecar 还没恢复过
@@ -657,7 +711,16 @@ class EditorCanvas(
         拿它撤销"待定裁剪"是安全的（不会把正在预览的变换一起掀掉）。
         """
         if self._tool in ("crop", "transform") and self._image is not None:
-            self._rect = QRectF(self.image_rect())
+            if self._tool == "crop" and self._crop_offset != QPointF():
+                self._crop_offset = QPointF()
+                if self._item is not None:
+                    self._item.setPos(0, 0)
+                self._sync_border()
+                self._sync_scene_rect()
+            image_rect = self.image_rect()
+            bounds = self._content_rect()
+            self._rect = (bounds.translated(image_rect.topLeft())
+                          if bounds is not None else QRectF(image_rect))
             self._xf_pivot = (QPointF(self._xf_pivot_saved)
                               if self._xf_pivot_saved is not None
                               else self._rect.center())

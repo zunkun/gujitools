@@ -144,6 +144,7 @@ class UndoMixin(DialogHost):
         # 待定裁剪是"还没落定"的东西：还原的语义是"回到打开时"，必须连它一起
         # 清掉，否则会出现"图是原图、画布上还挂着半张的裁剪框"。
         self._pending_crop = None
+        self._pending_crop_offset = (0.0, 0.0)
         self.canvas.clear_text_blocks()
         if self._undo and self._image is not None:
             self._push_undo(STEP_RESET)

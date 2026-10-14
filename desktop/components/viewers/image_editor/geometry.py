@@ -370,6 +370,29 @@ def _empty_fill(image: QImage) -> QColor:
     return QColor("#ffffff")
 
 
+def _transparent_content_bounds(
+    base: QImage,
+) -> tuple[int, int, int, int] | None:
+    """返回有 alpha 图像的非透明内容框 ``(x, y, width, height)``。"""
+    try:
+        import numpy as np
+        from .distortion import _pixel_view
+    except Exception:                      # noqa: BLE001（缺 numpy ⇒ 跳过）
+        return None
+    source = (base if base.format() == QImage.Format.Format_ARGB32
+              else base.convertToFormat(QImage.Format.Format_ARGB32))
+    if source.isNull() or source.width() <= 2 or source.height() <= 2:
+        return None
+    alpha = _pixel_view(source, np, False)[..., 3]
+    rows = np.nonzero((alpha > 0).any(axis=1))[0]
+    cols = np.nonzero((alpha > 0).any(axis=0))[0]
+    if rows.size == 0 or cols.size == 0:
+        return None                        # 全透明：没有可对齐的内容
+    x0, x1 = int(cols[0]), int(cols[-1])
+    y0, y1 = int(rows[0]), int(rows[-1])
+    return x0, y0, x1 - x0 + 1, y1 - y0 + 1
+
+
 def _trim_transparent_edges(base: QImage):
     """把 grow 底图四周**纯透明**的边裁掉，返回 ``(裁后图, dx, dy)``。
 
@@ -386,26 +409,16 @@ def _trim_transparent_edges(base: QImage):
     "纸"的内容，按非白裁会切掉真内容。缺 numpy 时返回 ``None`` 跳过
     （宁可不裁，不能错裁）。
     """
-    try:
-        import numpy as np
-        from .distortion import _pixel_view
-    except Exception:                      # noqa: BLE001（缺 numpy ⇒ 不裁）
-        return None
     source = (base if base.format() == QImage.Format.Format_ARGB32
               else base.convertToFormat(QImage.Format.Format_ARGB32))
-    if source.isNull() or source.width() <= 2 or source.height() <= 2:
+    bounds = _transparent_content_bounds(source)
+    if bounds is None:
         return None
-    alpha = _pixel_view(source, np, False)[..., 3]
-    rows = np.nonzero((alpha > 0).any(axis=1))[0]
-    cols = np.nonzero((alpha > 0).any(axis=0))[0]
-    if rows.size == 0 or cols.size == 0:
-        return None                        # 全透明：没有"内容"可对齐，不裁
-    y0, y1 = int(rows[0]), int(rows[-1])
-    x0, x1 = int(cols[0]), int(cols[-1])
-    if x0 == 0 and y0 == 0 and x1 == source.width() - 1 \
-            and y1 == source.height() - 1:
+    x0, y0, width, height = bounds
+    if x0 == 0 and y0 == 0 and width == source.width() \
+            and height == source.height():
         return source, 0, 0                # 四边都贴着内容：无需裁
-    return (source.copy(x0, y0, x1 - x0 + 1, y1 - y0 + 1), x0, y0)
+    return source.copy(x0, y0, width, height), x0, y0
 
 
 def compose_transform(image: QImage, rect: QRectF, xf: QTransform,

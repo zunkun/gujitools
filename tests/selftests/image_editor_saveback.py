@@ -77,8 +77,8 @@ class _StubEditor:
 
 
 def run(ctx) -> None:
-    from PySide6.QtCore import QPointF
-    from PySide6.QtGui import QColor
+    from PySide6.QtCore import QPointF, QRectF
+    from PySide6.QtGui import QColor, QImage
     from PySide6.QtWidgets import QDialog
 
     from tests.selftests._context import ok, pump
@@ -358,6 +358,64 @@ def run(ctx) -> None:
            _out is not None and _out.width() == 60 and _out.height() == 44,
            f"size={_out.width()}x{_out.height()}" if _out else "None")
         ed_crop.deleteLater()
+
+        # 裁剪工具中拖动图片及裁剪框：应用后透明边距与位移落入实体文件。
+        from desktop.components.viewers.image_editor import ImageEditorDialog
+
+        moved_target = tmp / "crop-moved.png"
+        moved_editor = ImageEditorDialog(None, _make_image(), save_back=True)
+        moved_editor._pending_crop = QRectF(8, 6, 64, 48)
+        moved_editor._pending_crop_offset = (8.0, 6.0)
+        moved_editor.canvas._crop_offset = QPointF(8, 6)
+        moved_editor.canvas._item.setPos(8, 6)
+        moved_editor.canvas._rect = QRectF(8, 6, 64, 48)
+        moved_editor._commit_crop()
+        moved_result = moved_editor.result_image()
+        ok("裁剪位移：待定图片位置应用成扩展透明画布",
+           moved_result is not None
+           and (moved_result.width(), moved_result.height()) == (72, 54)
+           and moved_result.pixelColor(0, 0).alpha() == 0
+           and moved_result.pixelColor(8, 6).alpha() == 255,
+           f"size={moved_result.size() if moved_result else None}")
+        ok("裁剪位移：应用结果成功覆盖实体图片",
+           moved_result is not None
+           and overwrite_image_file(moved_result, moved_target)
+           and (QImage(str(moved_target)).size().width(),
+                QImage(str(moved_target)).size().height()) == (72, 54)
+           and QImage(str(moved_target)).pixelColor(0, 0).alpha() == 0
+           and QImage(str(moved_target)).pixelColor(8, 6).alpha() == 255,
+           f"file={moved_target}")
+        moved_editor._undo_now()
+        undone = moved_editor.result_image()
+        ok("裁剪位移：撤销恢复原图尺寸和像素",
+           undone is not None
+           and (undone.width(), undone.height()) == (64, 48)
+           and undone.pixelColor(8, 6).alpha() == 255)
+        moved_editor._redo_now()
+        redone = moved_editor.result_image()
+        ok("裁剪位移：重做恢复透明扩展画布",
+           redone is not None
+           and (redone.width(), redone.height()) == (72, 54)
+           and redone.pixelColor(0, 0).alpha() == 0
+           and redone.pixelColor(8, 6).alpha() == 255)
+        moved_editor.deleteLater()
+
+        negative_editor = ImageEditorDialog(None, _make_image(), save_back=True)
+        negative_editor._pending_crop = QRectF(-8, -6, 64, 48)
+        negative_editor._pending_crop_offset = (-8.0, -6.0)
+        negative_editor.canvas._crop_offset = QPointF(-8, -6)
+        negative_editor.canvas._item.setPos(-8, -6)
+        negative_editor.canvas._rect = QRectF(-8, -6, 64, 48)
+        negative_editor._commit_crop()
+        negative_result = negative_editor.result_image()
+        ok("裁剪位移：负向移动在相反一侧保留透明边距",
+           negative_result is not None
+           and (negative_result.width(), negative_result.height()) == (72, 54)
+           and negative_result.pixelColor(0, 0).alpha() == 255
+           and negative_result.pixelColor(63, 47).alpha() == 255
+           and negative_result.pixelColor(71, 53).alpha() == 0,
+           f"size={negative_result.size() if negative_result else None}")
+        negative_editor.deleteLater()
 
         # ⚠️ 只转不改：挂起的统一变换还没落到像素上（`_image` 仍是原图），
         #    但「完成」马上就要烘焙并覆盖磁盘 —— 照样必须问（2026-10-10）。

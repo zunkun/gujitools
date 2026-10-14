@@ -639,6 +639,7 @@ class TransformMixin(CanvasHost):
             self._sync_float()
         # 视图**不动**：切层不适配、不缩放、不重定位。
         self._sync_scene_rect()
+        self._sync_border()
         self._sync_overlay()
 
     def _realtime_budget(self) -> bool:
@@ -742,17 +743,21 @@ class TransformMixin(CanvasHost):
         return (self._xf_base_scale is not None) != self._backdrop_is_whole()
 
     def _backdrop_is_whole(self) -> bool:
-        """选区是不是整幅（此时没有任何"原图残余"要画，纸就是纯白）？"""
+        """选区是不是覆盖全部可见内容（此时没有原图残余要画）？"""
         if self._image is None or self._xf_rect is None:
             return False
         if self._xf_restore_region is not None:
             # 恢复会话：整个画布的内容（PA1）都被"搬上浮层"了，纸＝纯透明。
             # PB1 的四角本来就是透明的，视觉与打开时完全一致（零跳变）。
             return True
+        content = self._content_rect()
+        if content is None:
+            content = QRectF(0, 0, self._image.width(), self._image.height())
         rect = self._xf_rect.normalized()
-        return (abs(rect.left()) < 0.5 and abs(rect.top()) < 0.5
-                and abs(rect.width() - self._image.width()) < 0.5
-                and abs(rect.height() - self._image.height()) < 0.5)
+        return (abs(rect.left() - content.left()) < 0.5
+                and abs(rect.top() - content.top()) < 0.5
+                and abs(rect.width() - content.width()) < 0.5
+                and abs(rect.height() - content.height()) < 0.5)
 
     def _rebuild_backdrop(self) -> None:
         """重铺底图：内容被搬走的选区那块**擦成透明**，选区之外保留原图。

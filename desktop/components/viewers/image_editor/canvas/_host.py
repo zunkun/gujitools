@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QPointF, QRect, QRectF, Signal, QTimer
-from PySide6.QtGui import QColor, QImage, QTransform
+from PySide6.QtGui import QColor, QImage, QPixmap, QTransform
 from PySide6.QtWidgets import QGraphicsEllipseItem, QGraphicsLineItem, QGraphicsPixmapItem, QGraphicsPolygonItem, QGraphicsRectItem, QGraphicsScene, QGraphicsView
 from desktop.components.viewers.image_editor.text_item import TextBlockItem
 from typing import Any
@@ -41,6 +41,10 @@ class CanvasHost(QGraphicsView):
     _context_rotation: float
     _context_scale_x: float
     _context_scale_y: float
+    _content_bounds_cache: tuple[int, int, int, int] | None
+    _content_bounds_cache_image: QImage | None
+    _content_bounds_cache_key: int | None
+    _crop_offset: QPointF
     _diamonds: dict[str, QGraphicsPolygonItem]
     _edge_lines: dict[str, QGraphicsLineItem]
     _erase_size: Any
@@ -198,10 +202,22 @@ class CanvasHost(QGraphicsView):
     def _context_pixmap(self) -> Any:
         ...
 
+    def _cached_pixmap(self, image: QImage) -> QPixmap:
+        ...
+
+    def _refresh_cached_pixmap(self, image: QImage) -> QPixmap:
+        ...
+
     def context_image_at(self, scene_pos: Any) -> bool:
         ...
 
     def _display_bounds(self) -> Any:
+        ...
+
+    def _content_scene_rect(self) -> QRectF:
+        ...
+
+    def _content_rect(self) -> QRectF | None:
         ...
 
     def _sync_border(self) -> None:
@@ -228,6 +244,9 @@ class CanvasHost(QGraphicsView):
         ...
 
     def _ensure_transform_preview(self) -> None:
+        ...
+
+    def _finish_transform_auto_fit(self) -> None:
         ...
 
     # ---- 内容节点恢复会话（core 基座 + TransformMixin，2026-10-10）----
@@ -447,6 +466,9 @@ class CanvasHost(QGraphicsView):
         ...
 
     def fit_selection(self) -> None:
+        ...
+
+    def crop_offset(self) -> QPointF:
         ...
 
     def focus_text_block(self, block: TextBlockItem | None = None) -> None:

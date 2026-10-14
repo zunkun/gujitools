@@ -486,6 +486,161 @@ def run(ctx) -> None:
                                button, buttons,
                                Qt.KeyboardModifier.NoModifier)
 
+        move_start = QPointF(canvas.mapFromScene(QPointF(100, 60)))
+        move_end = QPointF(canvas.mapFromScene(QPointF(120, 70)))
+        canvas.mousePressEvent(mouse_event("press", move_start))
+        canvas.mouseMoveEvent(mouse_event("move", move_end))
+        canvas.mouseReleaseEvent(mouse_event("release", move_end))
+        moved_selection = canvas.selection()
+        moved_offset = canvas.crop_offset()
+        assert canvas._border is not None and canvas._item is not None
+        moved_item = canvas._item.pos()
+        moved_border = canvas._border.sceneBoundingRect()
+        moved_image = canvas._item.sceneBoundingRect()
+        border_local = canvas._border.rect()
+        image_local = canvas._item.boundingRect()
+        ok("裁剪：拖动框内图片时图片和裁剪框一同移动",
+           abs(moved_offset.x() - 20) < 1
+           and abs(moved_offset.y() - 10) < 1
+           and moved_selection is not None
+           and abs(moved_selection.left() - moved_offset.x()) < 1
+           and abs(moved_selection.top() - moved_offset.y()) < 1
+           and abs(moved_item.x() - moved_offset.x()) < 1
+           and abs(moved_item.y() - moved_offset.y()) < 1,
+           f"offset={moved_offset} selection={moved_selection} item={moved_item}")
+        ok("裁剪：移动后图片虚线外框贴合图片",
+           canvas._border.pos() == canvas._item.pos()
+           and border_local == image_local
+           and abs(moved_border.left() - moved_image.left()) < 1
+           and abs(moved_border.top() - moved_image.top()) < 1
+           and abs(moved_border.width() - moved_image.width()) <= 1.1
+           and abs(moved_border.height() - moved_image.height()) <= 1.1,
+           f"border={moved_border} image={moved_image} "
+           f"local={border_local}/{image_local}")
+        canvas.reset_selection()
+        move_start = QPointF(canvas.mapFromScene(QPointF(100, 60)))
+        move_end = QPointF(canvas.mapFromScene(QPointF(80, 50)))
+        canvas.mousePressEvent(mouse_event("press", move_start))
+        canvas.mouseMoveEvent(mouse_event("move", move_end))
+        canvas.mouseReleaseEvent(mouse_event("release", move_end))
+        moved_offset = canvas.crop_offset()
+        moved_selection = canvas.selection()
+        assert canvas._border is not None and canvas._item is not None
+        moved_border = canvas._border.sceneBoundingRect()
+        moved_image = canvas._item.sceneBoundingRect()
+        ok("裁剪：向左上拖动时图片和裁剪框同步反向移动",
+           abs(moved_offset.x() + 20) < 1
+           and abs(moved_offset.y() + 10) < 1
+           and moved_selection is not None
+           and abs(moved_selection.left() - moved_offset.x()) < 1
+           and abs(moved_selection.top() - moved_offset.y()) < 1
+           and canvas._border.pos() == canvas._item.pos()
+           and canvas._border.rect() == canvas._item.boundingRect()
+           and abs(moved_border.width() - moved_image.width()) <= 1.1
+           and abs(moved_border.height() - moved_image.height()) <= 1.1,
+           f"offset={moved_offset} selection={moved_selection} "
+           f"border={moved_border} image={moved_image}")
+        ok("裁剪：平移整图后的待定结果包含透明边距",
+           dialog._pending_crop is not None
+           and abs(dialog._pending_crop_offset[0] + 20) < 1
+           and abs(dialog._pending_crop_offset[1] + 10) < 1
+           and "裁剪后 220 × 130 px" in dialog.size_label.text(),
+           f"offset={dialog._pending_crop_offset} "
+           f"label={dialog.size_label.text()}")
+        dialog._discard_crop()
+
+        transition_dialog = ImageEditorDialog(None, img)
+        try:
+            transition_dialog.show()
+            app.processEvents()
+            transition_canvas = transition_dialog.canvas
+            move_start = QPointF(
+                transition_canvas.mapFromScene(QPointF(100, 60)))
+            move_end = QPointF(
+                transition_canvas.mapFromScene(QPointF(80, 50)))
+            transition_canvas.mousePressEvent(mouse_event("press", move_start))
+            transition_canvas.mouseMoveEvent(mouse_event("move", move_end))
+            transition_canvas.mouseReleaseEvent(
+                mouse_event("release", move_end))
+            transition_dialog._set_tool("transform")
+            content_rect = QRectF(0, 0, 200, 120)
+            transform_frame = transition_canvas._quad.boundingRect()
+            border_frame = transition_canvas._border.sceneBoundingRect()
+            ok("裁剪负向移动切统一变换后边框紧贴图片（不含右侧/底部透明留白）",
+               transition_canvas._rect == content_rect
+               and abs(transform_frame.left() - content_rect.left()) < 1
+               and abs(transform_frame.top() - content_rect.top()) < 1
+               and abs(transform_frame.width() - content_rect.width()) < 1
+               and abs(transform_frame.height() - content_rect.height()) < 1
+               and abs(border_frame.left() - content_rect.left()) < 1
+               and abs(border_frame.top() - content_rect.top()) < 1
+               and abs(border_frame.width() - content_rect.width()) <= 1.1
+               and abs(border_frame.height() - content_rect.height()) <= 1.1,
+               f"selection={transition_canvas._rect} frame={transform_frame} "
+               f"border={border_frame} canvas={transition_canvas._image.size()}")
+            transition_canvas._ensure_transform_preview()
+            preview_bounds = transition_canvas._display_bounds()
+            ok("统一变换预览边框仍不包含透明留白",
+               transition_canvas._backdrop_is_whole()
+               and abs(preview_bounds.left() - content_rect.left()) < 1
+               and abs(preview_bounds.top() - content_rect.top()) < 1
+               and abs(preview_bounds.width() - content_rect.width()) <= 1.1
+               and abs(preview_bounds.height() - content_rect.height()) <= 1.1,
+               f"preview={preview_bounds} "
+               f"whole={transition_canvas._backdrop_is_whole()}")
+        finally:
+            transition_dialog.deleteLater()
+            app.processEvents()
+
+        padded_image = QImage(220, 130, QImage.Format.Format_ARGB32)
+        padded_image.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(padded_image)
+        painter.drawImage(0, 0, img)
+        painter.end()
+        reverse_dialog = ImageEditorDialog(None, padded_image)
+        try:
+            reverse_dialog.show()
+            app.processEvents()
+            reverse_canvas = reverse_dialog.canvas
+            crop_start = QPointF(
+                reverse_canvas.mapFromScene(QPointF(100, 60)))
+            crop_end = QPointF(
+                reverse_canvas.mapFromScene(QPointF(120, 70)))
+            reverse_canvas.mousePressEvent(mouse_event("press", crop_start))
+            reverse_canvas.mouseMoveEvent(mouse_event("move", crop_end))
+            reverse_canvas.mouseReleaseEvent(
+                mouse_event("release", crop_end))
+            reverse_dialog._set_tool("transform")
+            reverse_canvas.transform_move(20, 0)
+            transform_bounds = reverse_canvas._display_bounds()
+            transform_border = reverse_canvas._border.sceneBoundingRect()
+            ok("裁剪移动后切入统一变换，虚线框不叠加旧图元偏移",
+               abs(transform_border.left() - transform_bounds.left()) <= 0.6
+               and abs(transform_border.top() - transform_bounds.top()) <= 0.6
+               and abs(transform_border.width() - transform_bounds.width()) <= 1.1
+               and abs(transform_border.height() - transform_bounds.height()) <= 1.1,
+               f"display={transform_bounds} border={transform_border}")
+            before_switch = QImage(canvas_img(reverse_canvas))
+            reverse_dialog._set_tool("crop")
+            crop_border = reverse_canvas._border.sceneBoundingRect()
+            content = reverse_canvas._content_rect()
+            assert content is not None and reverse_canvas._item is not None
+            expected_content = content.translated(
+                reverse_canvas._item.pos())
+            ok("统一变换切回裁剪后虚线框仍贴合图片内容（不含右侧/底部透明留白）",
+               reverse_canvas._tool == "crop"
+               and reverse_canvas.selection() is not None
+               and canvas_img(reverse_canvas).size() != before_switch.size()
+               and abs(crop_border.left() - expected_content.left()) < 1
+               and abs(crop_border.top() - expected_content.top()) < 1
+               and abs(crop_border.width() - expected_content.width()) <= 1.1
+               and abs(crop_border.height() - expected_content.height()) <= 1.1,
+               f"selection={reverse_canvas.selection()} border={crop_border} "
+               f"canvas={reverse_canvas._image.size()}")
+        finally:
+            reverse_dialog.deleteLater()
+            app.processEvents()
+
         left_mid = QPointF(canvas.mapFromScene(QPointF(-1.0, 60)))
         ok("裁剪：整条边都是命中带（左边缘中点、远离小方块）",
            canvas._hit_handle(left_mid) == "l",
