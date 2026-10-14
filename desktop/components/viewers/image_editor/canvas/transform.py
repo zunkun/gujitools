@@ -1353,15 +1353,36 @@ class TransformMixin(CanvasHost):
         #    构造的 QMouseEvent 不经过 Qt 的按钮状态机，一律查会把它们误杀。
         waited_for_restore = (self._xf_restore_pending
                               and self._xf_restore_region is None)
-        self._ensure_transform_preview()
+        # ⚠️⚠️ **先置拖动态、再建预览**（2026-10-14「双图统一变换首次点击
+        #    卡顿」实测修）：``_ensure_transform_preview`` 末尾会调
+        #    ``_sync_float()`` 建浮层第一帧，而 :meth:`_sync_float` 是按
+        #    ``_xf_dragging`` 分岔的——为假走 :meth:`_render_float_plane`
+        #    的**逐像素精确重采样**。旧版把 ``_xf_dragging = True`` 放在
+        #    ensure **之后**，于是首次拖动白白先出一帧精确结果（12 MP 实测
+        #    **467 ms**），紧接着第一次 move 就走 :meth:`_apply_float_fast`
+        #    把整帧覆盖掉——那 467 ms 纯浪费且全卡在按下瞬间（用户报障：
+        #    "初次点击图片移动卡顿，几秒后正常"；第二次拖动只要 462 ms，
+        #    且切层后必重来一次，与"每张图初次都卡"完全吻合）。
+        #    现在拖动态先立起来 ⇒ 建预览就走快档（图元承担变换，亚毫秒），
+        #    精确档仍然只在 :meth:`finish_transform_drag`（松手）出一次，
+        #    "预览 == 烘焙"的判据一点没松。
+        self._xf_dragging = True
+        try:
+            self._ensure_transform_preview()
+        except Exception:
+            # 建预览失败不能把画布永久留在"拖动中"（否则之后所有
+            # ``_sync_float`` 都退化成快档、松手也不补精确帧）
+            self._xf_dragging = False
+            raise
         if self._float_item is None or self._xf_rect is None:
+            self._xf_dragging = False
             return None
         if waited_for_restore and not (
                 QApplication.mouseButtons() & Qt.MouseButton.LeftButton):
+            self._xf_dragging = False
             return None
         # 按下的节点立刻成为"激活节点"（高亮跟随），不冒泡到移动/旋转
         self._set_handle_focus(hit if hit in _HANDLE_HITS else None)
-        self._xf_dragging = True
         rect = self._xf_rect.normalized()
         # ⚠️ 拖拽数学全程在**视觉空间**里做（快照 = 视觉矩阵）：鼠标逆映射、
         #    透视四角、旋转中心全按屏幕上看到的框算；落账时经

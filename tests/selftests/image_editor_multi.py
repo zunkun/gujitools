@@ -174,6 +174,70 @@ def run(ctx) -> None:
        canvas._float_item is not None
        and canvas._xf_region.width() == 40, "")
 
+    # ---- 7. 首次拖动**不**白出一帧精确重采样（2026-10-14 卡顿报障）----
+    # 根因：``_begin_transform_drag`` 旧版先建预览、后置 ``_xf_dragging``，
+    # 而 ``_sync_float`` 按这个标志分岔 ⇒ 建预览那一刻走了
+    # ``_render_float_plane`` 的逐像素精确重采样（12 MP 实测 467 ms），
+    # 紧接着第一次 move 就被 ``_apply_float_fast`` 整帧覆盖 ⇒ 纯浪费，
+    # 且全卡在"按下"瞬间（用户报障：初次点击移动卡顿、几秒后正常、
+    # 每换一张图重来一次）。这里钉死"建预览那一刻不得重采样"。
+    dialog7, _l7, _r7 = _spread_dialog()
+    c7 = dialog7.canvas
+    dialog7._set_tool("transform")
+    exact_calls = []
+    original_plane7 = c7._render_float_plane
+
+    def counting_plane7():
+        exact_calls.append(1)
+        return original_plane7()
+
+    c7._render_float_plane = counting_plane7
+    try:
+        mode7 = c7._begin_transform_drag(
+            "inside", QPointF(c7._rect.center()),
+            Qt.KeyboardModifier.NoModifier)
+        ok("统一变换：首次拖动建预览时不做逐像素精确重采样"
+           "（否则那几百 ms 全卡在按下瞬间，且随即被快档覆盖）",
+           mode7 is not None and not exact_calls,
+           f"重采样次数={len(exact_calls)}")
+        ok("统一变换：首次拖动建完预览即处于拖动态"
+           "（松手才补精确帧，预览 == 烘焙的判据不松）",
+           c7._xf_dragging is True, f"_xf_dragging={c7._xf_dragging}")
+        c7._apply_transform_drag(
+            mode7, QPointF(c7._rect.center().x() + 20, c7._rect.center().y()),
+            Qt.KeyboardModifier.NoModifier)
+        c7.finish_transform_drag()
+        ok("统一变换：松手仍补一帧精确结果（拖动中快档没被当成最终画面）",
+           exact_calls == [1], f"重采样次数={len(exact_calls)}")
+    finally:
+        del c7._render_float_plane
+    dialog7.close()
+    dialog7.release_buffers()
+
+    # ---- 8. 建预览失败/放弃拖动不能把画布永久留在"拖动中" ----
+    dialog8, _l8, _r8 = _spread_dialog()
+    c8 = dialog8.canvas
+    dialog8._set_tool("transform")
+
+    def boom8():
+        raise RuntimeError("建预览炸了")
+
+    c8._ensure_transform_preview = boom8
+    raised8 = False
+    try:
+        c8._begin_transform_drag(
+            "inside", QPointF(c8._rect.center()),
+            Qt.KeyboardModifier.NoModifier)
+    except RuntimeError:
+        raised8 = True
+    del c8._ensure_transform_preview
+    ok("统一变换：建预览抛异常时清掉拖动态（否则之后一直退化成快档、"
+       "松手也不补精确帧）",
+       raised8 and c8._xf_dragging is False,
+       f"raised={raised8} _xf_dragging={c8._xf_dragging}")
+    dialog8.close()
+    dialog8.release_buffers()
+
     # ---- ghost：切层**不**烘焙，旋转效果在另一边也看得见（2026-10-13） ----
     # 先钉"像素改写"这条路（用户 2026-10-13 报障：Left 改了切到 Right，
     # Left 显示的还是改前 LeftA）：擦除/文字都是就地改 `_image`，切走时

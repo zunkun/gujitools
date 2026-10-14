@@ -218,6 +218,9 @@ _CROSS_METHOD_DEPS = {
     "OverlayMixin": {
         "_apply_hover_highlight",
         "_sync_transform_overlay", "image_rect",
+        # 遮罩只盖图片实际内容（2026-10-13）：透明扩展画布不能整块遮暗，
+        # 所以要问基座要非透明内容框。
+        "_content_rect",
     },
     "TextMixin": set(),
     "TransformMixin": {
