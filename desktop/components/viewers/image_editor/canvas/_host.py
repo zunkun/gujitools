@@ -37,6 +37,7 @@ class CanvasHost(QGraphicsView):
     _context_image: Any
     _context_display_rect: Any
     _context_pixmap_cache: Any
+    _context_bounds_cache: Any
     _context_offset: Any
     _context_rotation: float
     _context_scale_x: float
@@ -206,6 +207,12 @@ class CanvasHost(QGraphicsView):
         ...
 
     def _refresh_cached_pixmap(self, image: QImage) -> QPixmap:
+        ...
+
+    def _map_content_bounds(self, item: Any) -> QRectF:
+        ...
+
+    def _content_bounds_of(self, image: QImage) -> Any:
         ...
 
     def context_image_at(self, scene_pos: Any) -> bool:

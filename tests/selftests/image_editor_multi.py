@@ -238,6 +238,44 @@ def run(ctx) -> None:
     dialog8.close()
     dialog8.release_buffers()
 
+    # ---- 裁剪"移动"留白 → 非活动图虚线框必须贴内容，不吃透明边距 ----
+    # 2026-10-14 用户报障：裁剪框把 Left 移走后切到 Right，Left 的虚线框
+    # 被放大（上/右撑到 Right 那边去，看着像串到隔壁图上）。根因：非活动图
+    # 的边框取的是**整张 pixmap** 的外接矩形，而 ``_commit_crop`` 的移动
+    # 分支会把像素挪进一张更大的图里（透明边距编码位移）⇒ 外框比看得见的
+    # 内容大一圈。活动图早就是内容口径，这里钉死两侧一致。
+    dialog_c, left_c, right_c = _spread_dialog()
+    cc = dialog_c.canvas
+    dialog_c._set_tool("crop")
+    # 框内拖动 = crop_move：图片图元与选区一起平移
+    cc._mode = ("crop_move", QPointF(100, 50), QRectF(cc._rect),
+                QPointF(cc._crop_offset))
+    cc._crop_offset = QPointF(-40, 30)
+    cc._item.setPos(cc._crop_offset)
+    cc._rect = QRectF(cc._rect).translated(QPointF(-40, 30))
+    cc._sync_border()
+    dialog_c._pending_crop = QRectF(cc._rect)
+    dialog_c._pending_crop_offset = (cc._crop_offset.x(), cc._crop_offset.y())
+    dialog_c._switch_context_layer()          # → 右图，Left 变成非活动图
+    left_image = dialog_c._multi_layers[0]["state"]["_image"]
+    ok("裁剪移动：像素被挪进更大的图（透明边距编码位移）",
+       left_image.width() > 200 and left_image.height() > 100,
+       f"image={left_image.width()}x{left_image.height()}")
+    cb = cc._context_border
+    ok("非活动图虚线框贴内容外框，不吃透明留白（旧版取整张 pixmap 外框，"
+       "留白朝上/右时正好撑到另一张图那边去）",
+       cb is not None
+       and abs(cb.rect().width() - 200) <= 1
+       and abs(cb.rect().height() - 100) <= 1,
+       f"border={cb.rect() if cb else None}")
+    ok("非活动图虚线框与场景矩形并集同口径（都按内容，不白撑留白）",
+       cc._context_display_rect is not None and cb is not None
+       and abs(cc._context_display_rect.width() - cb.rect().width()) <= 1
+       and abs(cc._context_display_rect.height() - cb.rect().height()) <= 1,
+       f"display={cc._context_display_rect} border={cb.rect()}")
+    dialog_c.close()
+    dialog_c.release_buffers()
+
     # ---- ghost：切层**不**烘焙，旋转效果在另一边也看得见（2026-10-13） ----
     # 先钉"像素改写"这条路（用户 2026-10-13 报障：Left 改了切到 Right，
     # Left 显示的还是改前 LeftA）：擦除/文字都是就地改 `_image`，切走时
@@ -463,13 +501,17 @@ def run(ctx) -> None:
         x for x in range(ghost_image.width())
         if ghost_image.pixelColor(x, sample_y).alpha() > 0
     ]
+    # ⚠️ 虚线框取**非透明内容**外框（2026-10-14）：ghost 由浮层像素按外框
+    # 合成，右/下常带几像素透明边（实测 1004×1002 里内容只有 1000×1000），
+    # 框必须贴内容而不是把这点留白也算进去——与活动图、活动图边框同口径。
+    ghost_border = dialog5.canvas._context_border.rect()
     ok("大图右移切层：ghost 内容仍完整贴合虚线框",
        visible_columns
        and visible_columns[0] <= 2
        and visible_columns[-1] >= ghost_image.width() - 6
-       and dialog5.canvas._context_border.rect()
-       == dialog5.canvas._context_item.sceneBoundingRect(),
-       f"image={ghost_image.size()}, "
+       and ghost_border.width() == visible_columns[-1] + 1
+       and ghost_border.height() == ghost_image.height() - 2,
+       f"image={ghost_image.size()}, border={ghost_border}, "
        f"visible=({visible_columns[0] if visible_columns else None}, "
        f"{visible_columns[-1] if visible_columns else None})")
     dialog5.close()

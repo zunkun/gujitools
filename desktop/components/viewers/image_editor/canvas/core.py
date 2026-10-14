@@ -92,6 +92,10 @@ class EditorCanvas(
         #: 存进新的 QImage 包装（捕获即新包装），身份变了缓存自然失效，
         #: 不会拿旧像素骗人。
         self._context_pixmap_cache: dict[int, tuple[QImage, QPixmap]] = {}
+        #: 非活动图的**非透明内容框**缓存（同 :meth:`_content_bounds_of`）：
+        #: 按 ``cacheKey`` 存 ``(QImage, bounds|None)``，换层/换图重建图元时
+        #: 不必每次重扫整图 alpha。
+        self._context_bounds_cache: dict[int, tuple[QImage, Any]] = {}
         self._content_bounds_cache_image: QImage | None = None
         self._content_bounds_cache_key: int | None = None
         self._content_bounds_cache: tuple[int, int, int, int] | None = None
@@ -411,7 +415,16 @@ class EditorCanvas(
         ))
         item.setTransformOriginPoint(item.boundingRect().center())
         item.setRotation(self._context_rotation)
-        self._context_display_rect = item.sceneBoundingRect()
+        # ⚠️⚠️ **外框取"非透明内容"，不是整张 pixmap**（2026-10-14 用户报障
+        #    「裁剪框把 Left 移走后切到 Right，Left 虚线框被放大」）：
+        #    ``_commit_crop`` 的"移动"分支会用透明边距把像素挪进一张**更大**
+        #    的图里（内容不动、四周留白），整张 pixmap 的外框于是比看得见的
+        #    内容大一圈——留白朝上/右时，虚线框正好撑到另一张图那边去，看着
+        #    就是"框串到隔壁图上"。
+        #    活动图早就是内容口径（裁剪下 ``_sync_border`` 走 ``_content_rect``，
+        #    无预览时 ``_display_bounds`` 同款），这里补齐 ⇒ 两侧口径一致，
+        #    ``_content_scene_rect`` 的并集也不再白撑一圈透明留白。
+        self._context_display_rect = self._map_content_bounds(item)
         # ⚠️ 层序（2026-10-13「重叠时操作谁谁在上层」）：非活动图 -1、
         #    活动图 0、活动图边框 1、变换浮层 5——**活动图永远盖住非活动
         #    图**，点击非活动图露出的部分即切换，切完它就到上层。
@@ -419,11 +432,52 @@ class EditorCanvas(
         self._scene.addItem(item)
         self._context_item = item
         # 非活动图也有自己的虚线边框（跟随它的显示外框，含旋转/ghost 外扩）
-        border = QGraphicsRectItem(item.sceneBoundingRect())
+        border = QGraphicsRectItem(self._context_display_rect)
         border.setPen(self._border_pen())
         border.setZValue(-1)
         self._scene.addItem(border)
         self._context_border = border
+
+    def _map_content_bounds(self, item: QGraphicsPixmapItem) -> QRectF:
+        """图元**非透明内容**的外框（场景坐标）。
+
+        用 ``item.mapToScene`` 逐角映射（``QGraphicsItem`` 只有
+        ``mapToScene``/``mapRect``→polygon，没有 ``mapRect``）把图片坐标里的
+        内容框摆到场景坐标——所以带版面旋转的图也能算对（旋转后不再是矩形，
+        取四个角的外接矩形，与 :meth:`sceneBoundingRect` 同一口径）。
+        整幅不透明（普通扫描件）或缺 numpy 时退回图元外接矩形＝旧行为。
+        """
+        whole = item.sceneBoundingRect()
+        image = self._context_image
+        if image is None or image.isNull():
+            return whole
+        bounds = self._content_bounds_of(image)
+        if bounds is None:
+            return whole
+        rect = QRectF(*bounds)
+        corners = (rect.topLeft(), rect.topRight(),
+                   rect.bottomRight(), rect.bottomLeft())
+        mapped = [item.mapToScene(point) for point in corners]
+        xs = [point.x() for point in mapped]
+        ys = [point.y() for point in mapped]
+        return QRectF(min(xs), min(ys),
+                      max(xs) - min(xs), max(ys) - min(ys))
+
+    def _content_bounds_of(self, image: QImage):
+        """非透明内容框，按 ``cacheKey`` 缓存（扫描一次整图 alpha）。
+
+        换层/换图都会重建非活动图元，12 MP 上每次重扫约 10 ms；缓存后
+        同一张图只扫一次。判据用 ``cacheKey``（像素被改写即失效）。
+        """
+        key = int(image.cacheKey())
+        entry = self._context_bounds_cache.get(key)
+        if entry is not None and entry[0] is image:
+            return entry[1]
+        bounds = _transparent_content_bounds(image)
+        self._context_bounds_cache[key] = (image, bounds)
+        while len(self._context_bounds_cache) > 4:
+            self._context_bounds_cache.pop(next(iter(self._context_bounds_cache)))
+        return bounds
 
     def context_image_at(self, scene_pos: QPointF) -> bool:
         """返回场景坐标是否命中非活动图片。"""
