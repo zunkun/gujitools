@@ -7,9 +7,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QPointF, QRectF
+from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QImage, QTransform
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QProgressDialog
 from .bake import _BakeWorker, run_with_progress
 from .content_quad import quad_frame, read_quad, sync_content_quad, upright_image
 from .consts import (
@@ -21,6 +21,7 @@ from .geometry import (
     center_crop_aspect, clamp_rect, compose_transform, draw_text,
 )
 from typing import TYPE_CHECKING
+from desktop.workers.worker_host import connect_queued
 
 
 if TYPE_CHECKING:
@@ -70,6 +71,10 @@ def _transform_job(values: dict, progress=None):
 
     ⚠️ 只用到形参（不碰画布/部件），这样才能安全放进 :class:`_BakeWorker`。
     参数全部在主线程打包好（``QImage`` 跨线程只读传递是安全的）。
+
+    返回 ``(image, (ox, oy))``：``(ox, oy)``＝**新画布左上角在旧坐标系里的
+    位置**（grow 档画布跟着内容长，双图编辑靠它平移内容原点让另一张图不
+    漂走；clip 档画布不动，恒 ``(0, 0)``）。用户取消返回 ``None``。
     """
     rect, xf, region = values["rect"], values["xf"], values["region"]
     original = values["image"]
@@ -81,10 +86,18 @@ def _transform_job(values: dict, progress=None):
         return None
     # ⚠️ ``grow=False``（剪裁=裁剪到原画布）返单张 QImage，**不能**解包：
     #    QImage 是可迭代对象，误按元组解包会在运行期炸出难懂的错误。
-    image = result[0] if grow else result
+    if grow:
+        image, origin = result
+        origin = (float(origin[0]), float(origin[1]))
+    else:
+        image, origin = result, (0.0, 0.0)
     if values["clipping"] == "aspect":
+        pre_w, pre_h = image.width(), image.height()
         image = center_crop_aspect(image, original.width(), original.height())
-    return image
+        # 居中裁回原比例也是一段原点平移（裁掉的是两边对称的边）
+        origin = (origin[0] + (pre_w - image.width()) / 2.0,
+                  origin[1] + (pre_h - image.height()) / 2.0)
+    return image, origin
 
 
 def _unrotate_job(values: dict, progress=None):
@@ -118,15 +131,150 @@ def _apply_job(values: dict, progress=None):
         overwrite_image_file,
     )
 
-    image = _transform_job(values, progress)
-    if image is None:
+    image_and_origin = _transform_job(values, progress)
+    if image_and_origin is None:
         return None, False
+    image, _origin = image_and_origin
     saved = overwrite_image_file(image, Path(values["target"]))
     return image, saved
 
 
 class CommitMixin(DialogHost):
     """把画布上的临时状态烘焙进当前图像（含后台烘焙与失败提示）。"""
+
+    def _start_async_tool_transition(self, tool: str) -> bool:
+        """对大图先后台烘焙；完成后再切工具，避免主线程同步等待。"""
+        pending = self.canvas.transform_pending()
+        if pending is None:
+            return False
+        rect, xf, region = pending
+        if getattr(self.canvas, "_xf_direction", DIRECTION_DEFAULT) == "backward":
+            inverse, ok = xf.inverted()
+            if ok:
+                xf = inverse
+        clipping = getattr(self.canvas, "_xf_clipping", CLIPPING_DEFAULT)
+        grow = clipping != "clip"
+        upright = getattr(self, "_content_upright", None)
+        original = (
+            upright if getattr(self, "_content_restored", False)
+            and upright is not None else self._image
+        )
+        target = _transform_target_pixels(original, rect, xf, grow)
+        if target <= TRANSFORM_SYNC_RENDER_PIXELS:
+            return False
+
+        params = {
+            "image": original,
+            "rect": QRectF(rect),
+            "xf": QTransform(xf),
+            "region": QImage(region),
+            "grow": grow,
+            "clipping": clipping,
+            "interpolation": getattr(
+                self.canvas, "_xf_interpolation", INTERPOLATION_DEFAULT),
+        }
+        worker = _BakeWorker(_transform_job, params, self)
+        progress = QProgressDialog(
+            "正在应用变换；完成后将切换功能…", "取消", 0, 100, self)
+        progress.setWindowTitle("变换处理中")
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setMinimumDuration(300)
+        progress.setAutoClose(False)
+        progress.setAutoReset(False)
+        progress.setValue(0)
+        progress.canceled.connect(worker.cancel)
+        connect_queued(self, worker.ticked,
+                       self._on_async_tool_transition_progress, worker)
+        connect_queued(self, worker.finished,
+                       self._on_async_tool_transition_finished, worker)
+
+        self._tool_transition_worker = worker
+        self._tool_transition_progress = progress
+        self._tool_transition_target = tool
+        self._tool_transition_data = (QRectF(rect), QTransform(xf),
+                                      clipping, original)
+        # grow（画布跟内容长）与否：完成回调里决定要不要平移双图内容原点
+        self._tool_transition_grow = grow
+        self._set_async_tool_transition_busy(True)
+        worker.start()
+        return True
+
+    def _set_async_tool_transition_busy(self, busy: bool) -> None:
+        """冻结会改动当前图像/变换的控件，进度框仍保持响应。"""
+        widgets = [
+            self.canvas, self.undo_btn, self.redo_btn, self.reset_btn,
+            self.zoom_out_btn, self.zoom_in_btn, self.fit_btn, self.done_btn,
+            self._option_page,
+            *getattr(self, "_tool_buttons", {}).values(),
+        ]
+        for widget in widgets:
+            if widget is not None:
+                widget.setEnabled(not busy)
+
+    def _on_async_tool_transition_progress(self, done: int, total: int) -> None:
+        progress = getattr(self, "_tool_transition_progress", None)
+        if progress is not None and total > 0:
+            progress.setValue(min(100, int(done * 100 / total)))
+
+    def _on_async_tool_transition_finished(self) -> None:
+        worker = getattr(self, "_tool_transition_worker", None)
+        if worker is None:
+            return
+        progress = getattr(self, "_tool_transition_progress", None)
+        tool = getattr(self, "_tool_transition_target", "erase")
+        data = getattr(self, "_tool_transition_data", None)
+        assert data is not None
+        rect, xf, clipping, original = data
+        self._tool_transition_worker = None
+        self._tool_transition_progress = None
+        self._tool_transition_target = None
+        self._tool_transition_data = None
+        grow = getattr(self, "_tool_transition_grow", False)
+        self._tool_transition_grow = False
+        if progress is not None:
+            progress.canceled.disconnect(worker.cancel)
+            progress.close()
+            progress.deleteLater()
+
+        try:
+            result = worker.result
+            image = None if result is None else result[0]
+            bake_origin = (0.0, 0.0) if result is None else (
+                float(result[1][0]), float(result[1][1]))
+            if worker.error is not None:
+                from desktop.ui.toast import show_toast
+
+                show_toast(
+                    self, "error", "变换没能应用",
+                    f"变换预览仍保留，可重试或重置："
+                    f"{type(worker.error).__name__}: {worker.error}",
+                )
+            elif image is not None and not image.isNull():
+                self._push_undo(STEP_TRANSFORM)
+                self._image = image
+                # 双图编辑：新画布原点平移要在压撤销点**之后**记账
+                if grow:
+                    self._multi_layer_shift(bake_origin[0], bake_origin[1])
+                self.canvas.set_image(image, refit=False)
+                if getattr(self, "_multi_layers", None):
+                    self._refresh_multi_canvas()
+                self._content_after_bake(rect, xf, clipping, original)
+                self._refresh_size_label()
+                self._activate_tool(tool)
+                self._sync_undo_buttons()
+                self._sync_history()
+            elif not worker.cancelled:
+                from desktop.ui.toast import show_toast
+
+                show_toast(
+                    self, "error", "变换没能应用",
+                    "后台变换未返回结果；变换预览仍保留，可重试或重置。",
+                )
+            # 用户取消时保留未烘焙的变换预览，允许重试或重置。
+        finally:
+            self._set_async_tool_transition_busy(False)
+            self._sync_undo_buttons()
+            worker.deleteLater()
 
     # ------------------------------------------------------------ 应用
     def _selection(self) -> QRectF | None:
@@ -194,7 +342,14 @@ class CommitMixin(DialogHost):
             #    就不恢复」）。选区＝整幅的"裁剪"像素没变，节点保留。
             self._content_clear()
         self._image = self._image.copy(box)
-        self.canvas.set_image(self._image)   # 换图后选区重置为新图的整幅
+        # ⚠️ 双图编辑（2026-10-13）：真裁剪后画布 (0,0) 在"初始图"里挪到了
+        #    裁剪框左上角——内容原点跟着平移，另一张图的相对摆放才不漂。
+        self._multi_layer_shift(float(box.x()), float(box.y()))
+        # ⚠️ 双图模式换图**不**重新适应窗口（世界缩放保持，2026-10-13
+        #    「不要放大缩小」）；单图维持"裁完 fit 一遍"的旧行为。
+        self.canvas.set_image(self._image, refit=not self._multi_layers)
+        if getattr(self, "_multi_layers", None):
+            self._refresh_multi_canvas()
         self._refresh_size_label()
 
 
@@ -499,17 +654,32 @@ class CommitMixin(DialogHost):
         # ⚠️ 撤销点**先压、两条路只压一次**：后台那条是模态进度框，用户能看见
         #    "在做什么"；点了取消就走 _undo_now() 把它退掉（不留空撤销步）。
         self._push_undo(label)
+        # 新画布原点在旧坐标系里的平移（双图编辑的相对摆放靠它不漂；
+        # clip 档画布不动恒 (0,0)，aspect 档在 job/同步分支里补居中裁剪量）
+        bake_origin = (0.0, 0.0)
         if target <= TRANSFORM_SYNC_RENDER_PIXELS:
             result = compose_transform(original, rect, xf, region, grow=grow,
                                        interpolation=interpolation)
-            image = result[0] if grow else result
+            if grow:
+                image, bake_origin = result
+                bake_origin = (float(bake_origin[0]), float(bake_origin[1]))
+            else:
+                image = result
             if clipping == "aspect":
+                pre_w, pre_h = image.width(), image.height()
                 image = center_crop_aspect(
                     image, original.width(), original.height())
+                bake_origin = (
+                    bake_origin[0] + (pre_w - image.width()) / 2.0,
+                    bake_origin[1] + (pre_h - image.height()) / 2.0)
         else:
-            image = self._bake_transform_async(rect, xf, region, grow,
+            baked = self._bake_transform_async(rect, xf, region, grow,
                                                clipping, interpolation,
                                                original)
+            if baked is None:          # 用户在进度框里点了取消：下面统一退回
+                image, bake_origin = None, (0.0, 0.0)
+            else:
+                image, bake_origin = baked
         if image is None:          # 用户在进度框里点了取消：这一步整条作废
             # ⚠️ 这里的 _undo_now 是"退掉本次烘焙的撤销点"，不是用户按了
             #    Ctrl+Z——挡住历史跳转钩子，别把内容节点整组作废掉。
@@ -531,6 +701,11 @@ class CommitMixin(DialogHost):
                 self._content_exit_restore()
             return False
         self._image = image
+        # ⚠️ 双图编辑：新画布的 (0,0) 挪到了 ``bake_origin``——内容原点跟着
+        #    平移，另一张图的相对摆放才不漂。必须在 ``_push_undo`` 之后
+        #    （撤销点带的是平移前的 origin）。
+        if grow:
+            self._multi_layer_shift(bake_origin[0], bake_origin[1])
         # ⚠️ ``refit=False``：画布会长大一点，但**不要**重新适应窗口——否则
         #    每次松手都把图缩小一档，反复旋转就是"越转越小"（用户报障）。
         # ⚠️ ``update_canvas=False``（「完成」收尾传）：弹窗马上就关，页面
@@ -539,6 +714,8 @@ class CommitMixin(DialogHost):
         if update_canvas:
             self.canvas.set_image(self._image, refit=False)
             self._refresh_size_label()
+            if getattr(self, "_multi_layers", None):
+                self._refresh_multi_canvas()
         else:
             # 「完成」收尾不重渲染页面（弹窗马上关），但**变换状态必须清**：
             # 旧版是 set_image 顺手干的（换图清一切），跳过它就得显式清——
@@ -550,7 +727,8 @@ class CommitMixin(DialogHost):
     def _bake_transform_async(self, rect: QRectF, xf, region, grow: bool,
                               clipping: str, interpolation: str,
                               original=None):
-        """把整幅烘焙丢进后台线程 + 进度框；返回新图，用户取消时返回 ``None``。
+        """把整幅烘焙丢进后台线程 + 进度框；返回 ``(新图, 原点平移)``，
+        用户取消时返回 ``None``。
 
         ⚠️ **不压撤销点**：那是 :meth:`_commit_transform` 的职责（两条路只压
         一次）。这里只负责"跑重活 + 失败要说出来"，失败返回 ``None`` 由调用方
@@ -603,7 +781,8 @@ class CommitMixin(DialogHost):
         统一变换的烘焙是秒级重活；裁剪/文字毫秒级，不值得异步（那些走原
         同步路，宿主代码零改动）。返回 False = 条件不满足，调用方退回原路。
         """
-        if not getattr(self, "_save_back", False):
+        if not getattr(self, "_save_back", False) \
+                or getattr(self, "_multi_layers", None):
             return False
         path = str(getattr(self, "source_path", "") or "")
         if not path:

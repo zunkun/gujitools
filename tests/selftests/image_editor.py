@@ -118,7 +118,7 @@ def run(ctx) -> None:
         warp_placement,
     )
     from desktop.components.viewers.image_editor.consts import (
-        CANVAS_OUTSIDE, CHECKER_DARK, CHECKER_LIGHT, CORNER_HIT_VIEW_PX,
+        CANVAS_OUTSIDE, CORNER_HIT_VIEW_PX,
         PERSP_HIT_VIEW_PX, PERSP_VIEW_PX,
     )
 
@@ -437,16 +437,12 @@ def run(ctx) -> None:
            7 <= tl_view.width() <= 20 and 7 <= tl_view.height() <= 20,
            f"tl_view={tl_view.width():.1f}x{tl_view.height():.1f}")
 
-        # 画布配色（用户 2026-10-09 追加：「背景灰色太突兀」）：图外必须是**浅**底，
-        # 同时又得和图内棋盘格拉开明度，才既柔和不抢戏、又分得清"哪块是图的地盘"。
-        # ⚠️ 这条挡住"为了好看把底色改深/改到和格子一样"的回归——两者是矛盾的，
-        #    改动时必须同时满足（底色浅 ⇒ 格子的暗格要跟着压深，见 consts 注释）。
-        ok("画布：图外底色够浅、且与棋盘格仍有明度反差（不突兀也分得清）",
-           CANVAS_OUTSIDE.lightness() >= 220
-           and CHECKER_LIGHT.lightness() - CHECKER_DARK.lightness() >= 12
-           and abs(CANVAS_OUTSIDE.lightness() - CHECKER_DARK.lightness()) >= 12,
-           f"outside={CANVAS_OUTSIDE.lightness()} "
-           f"light={CHECKER_LIGHT.lightness()} dark={CHECKER_DARK.lightness()}")
+        # 画布配色（用户 2026-10-09「背景灰色太突兀」→ 2026-10-13「去除底层
+        # 方块格子」）：棋盘格已整体移除，视口只剩一层素色浅底（图外与图内
+        # 同色，透明区域露的就是它）；这条只守"底色必须够浅、不抢戏"。
+        ok("画布：底层为素色浅底（棋盘格已移除）",
+           CANVAS_OUTSIDE.lightness() >= 220,
+           f"outside={CANVAS_OUTSIDE.lightness()}")
 
         # ---- 「适应窗口」按钮：**真点一次**（clicked 会塞 checked=False 进来）----
         # 回归（2026-10-08 用户报「使用窗口，图片立马变得非常小」）：此前是
@@ -1321,16 +1317,21 @@ def run(ctx) -> None:
             app.processEvents()
             undo_before = len(dialog4._undo)
             canvas4.mousePressEvent(mouse_event("press", vpos(QPointF(160, 60))))
-            _paint = canvas4._paint_image
             _base = canvas4._image
-            assert _paint is not None and _base is not None  # 进入预览态后浮层/底图必有
-            ok("变换：按下即进入实时预览（浮层出现、真像素未动）",
+            assert _base is not None
+            ok("变换：纯按下暂不创建像素预览",
+               canvas4._mode is not None
+               and canvas4._mode[0] == "xf_pending"
+               and canvas4._float_item is None,
+               f"mode={canvas4._mode}")
+            canvas4.mouseMoveEvent(mouse_event("move", vpos(QPointF(130, 60))))
+            _paint = canvas4._paint_image
+            assert _paint is not None and canvas4._float_item is not None
+            ok("变换：实际拖动才创建预览（真像素未动）",
                canvas4._mode is not None and canvas4._mode[0] == "xf_move"
-               and canvas4._float_item is not None
                and _base.pixelColor(160, 60).value() < 128,
                f"mode={canvas4._mode} "
                f"base={_base.pixelColor(160, 60).value()}")
-            canvas4.mouseMoveEvent(mouse_event("move", vpos(QPointF(130, 60))))
             canvas4.mouseReleaseEvent(mouse_event(
                 "release", vpos(QPointF(130, 60))))
             # ⚠️ 2026-10-09 起**松手不烘焙**（用户报"不能实时预览、最后才预览"）：
@@ -1366,6 +1367,44 @@ def run(ctx) -> None:
                == dialog4.history_list.count() - 1,
                f"undo={len(dialog4._undo)} before={undo_before} "
                f"历史={history_labels(dialog4)}")
+
+            # 大图离开统一变换时先启动 worker；工具切换由完成回调收尾，
+            # 不在点击处理器里同步等待像素烘焙。
+            async_dialog = ImageEditorDialog(None, make_image(800, 600))
+            try:
+                async_dialog.canvas.set_tool("transform")
+                async_dialog.canvas.transform_rotate(15)
+                async_dialog.canvas.make_transform_pending()
+                async_dialog._set_tool("erase")
+                async_worker = async_dialog._tool_transition_worker
+                ok("大图切换工具立即返回并启动后台变换",
+                   async_worker is not None
+                   and async_dialog.canvas.tool == "transform",
+                   f"worker={async_worker is not None} "
+                   f"tool={async_dialog.canvas.tool}")
+                from time import monotonic
+
+                deadline = monotonic() + 30
+                while async_dialog._tool_transition_worker is not None \
+                        and monotonic() < deadline:
+                    app.processEvents()
+                    QTest.qWait(10)
+                app.processEvents()
+                ok("后台变换完成后才切换工具并清除挂起状态",
+                   async_dialog._tool_transition_worker is None
+                   and async_dialog.canvas.tool == "erase"
+                   and async_dialog.canvas.transform_pending() is None,
+                   f"worker={async_dialog._tool_transition_worker is not None} "
+                   f"tool={async_dialog.canvas.tool} "
+                   f"pending={async_dialog.canvas.transform_pending() is not None}")
+            finally:
+                running_worker = async_dialog._tool_transition_worker
+                if running_worker is not None:
+                    running_worker.cancel()
+                    running_worker.wait()
+                    app.processEvents()
+                async_dialog.reject()
+                async_dialog.release_buffers()
 
             # ---- 「完成」直接收尾：挂起的变换必须落到实体图（2026-10-10 报障） ----
             # 松手只挂起（上面的用例刚验过），此后**不切工具**、直接点「完成」：
@@ -2070,9 +2109,9 @@ def run(ctx) -> None:
             # 两个虚线框合成一个：固定在原位的纸边框改成**细实线**，
             #   虚线只留给跟着内容转的 _quad（用户截图里指出"两个框的虚线、
             #   颜色还不一样"）。
-            ok("变换：只剩一个虚线框（原位那条已改成细实线）",
+            ok("变换：边框与变换框都是虚线（2026-10-13 边框改虚线跟随四至）",
                canvas4._border is not None
-               and canvas4._border.pen().style() != Qt.PenStyle.DashLine
+               and canvas4._border.pen().style() == Qt.PenStyle.DashLine
                and canvas4._quad.pen().style() == Qt.PenStyle.DashLine,
                f"border={canvas4._border.pen().style() if canvas4._border else None} "
                f"quad={canvas4._quad.pen().style()}")
@@ -2422,12 +2461,16 @@ def run(ctx) -> None:
             pivot_before = QPointF(canvas5._xf_pivot)
             pivot_view = vpos5(canvas5._xf.map(pivot_before))
             canvas5.mousePressEvent(mouse_event("press", pivot_view))
-            ok("变换：第一个动作就是拖轴心也能进拖动（先建预览，不炸断言）",
-               canvas5._mode is not None and canvas5._mode[0] == "xf_pivot"
-               and canvas5._xf_rect is not None, f"mode={canvas5._mode}")
+            ok("变换：按下轴心不提前建预览",
+               canvas5._mode is not None
+               and canvas5._mode[0] == "xf_pending"
+               and canvas5._xf_rect is None, f"mode={canvas5._mode}")
             moved_view = vpos5(canvas5._xf.map(pivot_before)
                                + QPointF(20, 10))
             canvas5.mouseMoveEvent(mouse_event("move", moved_view))
+            ok("变换：首个实际拖动才建轴心预览",
+               canvas5._mode is not None and canvas5._mode[0] == "xf_pivot"
+               and canvas5._xf_rect is not None, f"mode={canvas5._mode}")
             canvas5.mouseReleaseEvent(mouse_event("release", moved_view))
             ok("变换：轴心拖动全程无异常、轴心跟到新位置、松手复位",
                canvas5._mode is None

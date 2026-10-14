@@ -24,9 +24,13 @@ MRO 顺序：功能条/参数页在前（``__init__`` 里就要用），提交�
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QImage, QKeySequence, QShortcut
-from PySide6.QtWidgets import QDialog, QHBoxLayout, QVBoxLayout, QWidget
+from pathlib import Path
+
+from PySide6.QtCore import QPointF, QRectF, QSize, QSizeF, Qt, Signal
+from PySide6.QtGui import QImage, QKeySequence, QShortcut, QTransform
+from PySide6.QtWidgets import (
+    QDialog, QHBoxLayout, QMessageBox, QVBoxLayout, QWidget,
+)
 from desktop.ui import theme as T
 from desktop.ui.window_size import apply_window_size
 from .canvas import EditorCanvas
@@ -71,6 +75,7 @@ class ImageEditorDialog(
     #: 后台应用失败/被取消：参数 ``(底片路径, 原因)``，底片原样未动
     #: （原子写保证：要么完整旧图、要么完整新图）。宿主据此报错即可。
     apply_failed = Signal(str, str)
+    multi_image_saved = Signal(str, QImage)
 
 
     def __init__(self, parent=None, image: QImage | None = None,
@@ -79,6 +84,13 @@ class ImageEditorDialog(
         # 本页有真实文件可回写（宿主预览弹窗传入）：「完成」= 直接覆盖原图
         # 文件，而不是"回画布再自己下载"。只影响文案与覆盖确认，行为在弹窗侧。
         self._save_back = bool(save_back)
+        self._multi_layers: list[dict] = []
+        self._active_layer = -1
+        #: 双图编辑下与 ``_undo``/``_redo`` **平行**的"内容原点"栈（见
+        #: :meth:`_multi_layer_shift`）：每步撤销点带上当时的 origin，撤销/
+        #: 重做才能把两张图的相对位置一起退回去。
+        self._undo_origins: list[tuple[float, float]] = []
+        self._redo_origins: list[tuple[float, float]] = []
         #: 「完成」覆盖确认里显示的**目标文件名**（宿主在构造后回填，见
         #: :meth:`_confirm_overwrite`）。刻意做成**属性而不是构造参数**：
         #: 六个宿主各自算路径的位置不同，而 ``__init__`` 的签名被自测的
@@ -179,6 +191,7 @@ class ImageEditorDialog(
 
         self.canvas = EditorCanvas(self)
         self.canvas.set_image(self._image)
+        self.canvas.context_image_clicked.connect(self._switch_context_layer)
         # 一笔开始（擦除按下 / 扭曲提交前）⇒ 压撤销点，步骤名按当前功能取
         self.canvas.stroke_started.connect(self._on_stroke_started)
         # 进入变换工具 ⇒ 尝试从 sidecar 恢复"内容四角节点"（二次编辑）
@@ -229,6 +242,411 @@ class ImageEditorDialog(
             return
         self.reject()
 
+    def configure_multiple_images(self, items: list[dict]) -> None:
+        """把拼版源图装入同一编辑器画布，并以点击切换活动图片。"""
+        if not 1 <= len(items) <= 2:
+            raise ValueError("拼版编辑支持一张或两张图片")
+
+        first = self._capture_layer_state()
+        layers: list[dict] = []
+        for item in items:
+            image = item.get("image")
+            path = str(item.get("file") or "")
+            if not isinstance(image, QImage) or image.isNull() or not path:
+                raise ValueError("双图编辑的图片或源文件路径无效")
+            raw = image.convertToFormat(QImage.Format.Format_ARGB32)
+            trimmed = _trim_transparent_edges(raw)
+            trim_offset = (0, 0)
+            if trimmed is not None and trimmed[1:] != (0, 0):
+                raw = trimmed[0]
+                trim_offset = (trimmed[1], trimmed[2])
+
+            rect_values = item.get("rect")
+            if isinstance(rect_values, (list, tuple)) and len(rect_values) == 4:
+                rect = QRectF(
+                    float(rect_values[0]), float(rect_values[1]),
+                    float(rect_values[2]), float(rect_values[3]),
+                )
+            elif isinstance(rect_values, QRectF):
+                rect = QRectF(rect_values)
+            else:
+                raise ValueError("双图编辑的拼版区域无效")
+            if rect.isNull() or raw.isNull():
+                raise ValueError("双图编辑的拼版区域无效")
+            state = first.copy()
+            state.update({
+                "_image": raw.copy(),
+                "_original": raw.copy(),
+                "_content_state": None,
+                "_content_read": False,
+                "_content_restored": False,
+                "_content_seed": None,
+                "_content_upright": None,
+                "_content_pixels_dirty": False,
+                "_content_restore_params": None,
+                "_content_restore_target": 0.0,
+                "_content_trim_offset": trim_offset,
+                "_pending_crop": None,
+                "_undo": [],
+                "_redo": [],
+                "_undo_origins": [],
+                "_redo_origins": [],
+                "_labels": [],
+                "_origin_label": HISTORY_ORIGIN_LABEL,
+            })
+            layers.append({
+                "state": state,
+                "canvas_state": None,
+                "file": path,
+                "rect": rect,
+                "rotation": float(item.get("rotation", 0.0) or 0.0),
+                "scale": (
+                    rect.width() / max(1, image.width()),
+                    rect.height() / max(1, image.height()),
+                ),
+                # ---- 内容原点（2026-10-13「两张图片相互远离」）----
+                #: 当前 ``_image`` 左上角在**初始图像素系**里的位置：
+                #: 初值＝入口收紧偏移（透明图裁掉空白边后内容从这儿开始），
+                #: 之后每次真裁剪/变换烘焙按新画布左上角累加（见
+                #: :meth:`_multi_layer_shift`）。双图相对摆放全靠它换算，
+                #: 不追踪的话一边裁剪/旋转，另一边就"漂走"。
+                #: ``origin0``＝「还原」时的初值。
+                "origin": (float(trim_offset[0]), float(trim_offset[1])),
+                "origin0": (float(trim_offset[0]), float(trim_offset[1])),
+                # ---- 挂起效果的**静态显示图**（ghost，2026-10-13）----
+                #: 非活动层也要"看到它转过的样子"（用户口径：A 旋转了，
+                #: 切到 B 操作时 A 的旋转效果要存在）——切走时把画布上
+                #: 未烘焙的变换预览（底图残余+浮层）用 QPainter 拼成一张
+                #: ghost（零重采样），非活动态就显示它；切回本层作废。
+                "ghost": None,
+                "ghost_origin": None,
+                "label": "",
+            })
+
+        layers.sort(key=lambda layer: layer["rect"].center().x())
+        if len(layers) == 2:
+            layers[0]["label"] = "左图"
+            layers[1]["label"] = "右图"
+        else:
+            layers[0]["label"] = "单图"
+        self._multi_layers = layers
+        self._active_layer = 0
+        self._save_back = True
+        self.target_name = "左图与右图"
+        self._build_layer_switcher()
+        self._load_layer(0)
+        self.canvas.set_image(self._image)
+        self._refresh_multi_canvas()
+        self.canvas.fit()
+        self.done_btn.setToolTip(
+            "确认后保存有修改的源图；未修改的图片保持不变"
+        )
+        self._refresh_size_label()
+
+    def _capture_layer_state(self) -> dict:
+        """把当前编辑状态快照进层字典（换层时保存/装回）。
+
+        ⚠️⚠️ **全部浅拷贝**（2026-10-13「切换不丝滑」）：旧版对 ``_image``/
+        ``_original``/upright 和整个撤销栈做 ``.copy()`` **深拷贝**——最多
+        12 份整图快照 × 2 份 × 2 层，12 MP 下一刀就是几百 MB 的 memcpy，
+        换层卡一两秒全耗在这儿。QImage 本身隐式共享（写时分离）：擦除是
+        就地画（QPainter 会先 detach）、裁剪/变换/文字都生成新图——浅拷贝
+        的快照不可能被后续编辑写穿。列表同理只 ``list()`` 浅拷贝（层字典
+        与 ``self`` 不能共享**同一个列表对象**，append/pop 会串）。
+        """
+        names = (
+            "_image", "_original", "_content_state", "_content_read",
+            "_content_restored", "_content_seed", "_content_upright",
+            "_content_pixels_dirty", "_content_restore_params",
+            "_content_restore_target", "_content_trim_offset",
+            "_pending_crop", "_undo", "_redo", "_labels", "_origin_label",
+            "_undo_origins", "_redo_origins",
+        )
+        state = {}
+        for name in names:
+            value = getattr(self, name, None)
+            if name in ("_image", "_original", "_content_upright") \
+                    and isinstance(value, QImage):
+                value = QImage(value)          # 浅拷贝：隐式共享
+            elif name in ("_undo", "_redo", "_undo_origins", "_redo_origins"):
+                assert isinstance(value, list)
+                value = list(value)
+            elif name == "_labels":
+                assert isinstance(value, list)
+                value = list(value)
+            elif name == "_content_restore_params" and value is not None:
+                value = dict(value)
+                if isinstance(value.get("image"), QImage):
+                    value["image"] = QImage(value["image"])
+            state[name] = value
+        return state
+
+    def _load_layer(self, index: int) -> None:
+        self._active_layer = index
+        layer = self._multi_layers[index]
+        for name, value in layer["state"].items():
+            setattr(self, name, value)
+        self.source_path = layer["file"]
+        self.target_name = layer["label"]
+
+    def _refresh_multi_canvas(self) -> None:
+        if not self._multi_layers or self._active_layer < 0:
+            return
+        active = self._multi_layers[self._active_layer]
+        if len(self._multi_layers) == 1:
+            self.canvas.set_context_image(None)
+            self.setWindowTitle("图片编辑 - 单图")
+            return
+        other = self._multi_layers[1 - self._active_layer]
+        active_scale_x, active_scale_y = self._layer_scale(active)
+        other_scale = self._layer_scale(other)
+        delta = other["rect"].topLeft() - active["rect"].topLeft()
+        # ⚠️ 相对摆放按**内容原点**（origin）换算（2026-10-13）：active 的
+        #    画布经过裁剪/变换后，它的 (0,0) 已经不在"初始图"的 (0,0) 上了
+        #    ——不把这段位移算进去，active 一编辑，另一张就"漂走"。other 的
+        #    origin 决定它自己的内容起点，active 的 origin 决定坐标系锚点。
+        #    other 带 ghost 时显示原点再挪 ghost 左上角（挂起变换把内容
+        #    搬出了原画布，ghost 的 (0,0) 不是 `_image` 的 (0,0)）。
+        active_origin = self._layer_display_origin(active)
+        other_origin = self._layer_display_origin(other)
+        offset = QPointF(
+            delta.x() / active_scale_x
+            + other_origin[0] * other_scale[0] / active_scale_x
+            - active_origin[0],
+            delta.y() / active_scale_y
+            + other_origin[1] * other_scale[1] / active_scale_y
+            - active_origin[1],
+        )
+        # 场景矩形的并集由画布按"显示图尺寸的未旋转版"算（见
+        # canvas.set_context_image / _sync_scene_rect）：与它成为活动层时的
+        # `_display_bounds` 同口径 ⇒ 换层画面不跳、内容再远也滚得到。
+        self.canvas.set_context_image(
+            other.get("ghost") or other["state"]["_image"], offset,
+            other_scale[0] / active_scale_x,
+            other_scale[1] / active_scale_y,
+            other["rotation"],
+        )
+        self.setWindowTitle(
+            f"图片编辑 - {active['label']}（点击另一张图片切换）"
+        )
+
+    # ---- 双图内容原点（相对摆放的锚，2026-10-13） ----
+    @staticmethod
+    def _layer_origin(layer: dict) -> tuple[float, float]:
+        origin = layer.get("origin")
+        if not origin:
+            return (0.0, 0.0)
+        return (float(origin[0]), float(origin[1]))
+
+    @staticmethod
+    def _layer_scale(layer: dict) -> tuple[float, float]:
+        sx, sy = layer["scale"]
+        return (max(0.01, float(sx)), max(0.01, float(sy)))
+
+    def _layer_display_origin(self, layer: dict) -> tuple[float, float]:
+        """层的**显示原点**＝内容原点 + ghost 偏移（初始图像素系）。"""
+        o = self._layer_origin(layer)
+        g = layer.get("ghost_origin") or (0.0, 0.0)
+        return (o[0] + float(g[0]), o[1] + float(g[1]))
+
+    def _render_layer_ghost(self):
+        """把活动层**当前显示效果**（含未烘焙的变换浮层）拼成静态 ghost。
+
+        用户 2026-10-13 口径：切层**不**"应用变换"——左侧转了 15°，切到
+        右侧操作时，左侧必须**仍然显示转过的样子**。浮层像素（底图残余
+        ``_paint_image`` + 变换内容浮层）都是画布上现成的图元像素，用
+        QPainter 按各自图元变换拼一张图即得（一次合成，**零重采样**，
+        12 MP 也是几十毫秒）；切回本层时实时预览从快照原样恢复，ghost
+        作废。返回 ``(ghost, ghost 左上角在当前画布坐标系的位置)``；
+        画布上没有未烘焙的变换浮层时返回 ``None``（非活动态直接显示
+        ``_image``）。⚠️ 走到这里前若刚 ``_commit_crop`` 过，浮层已被
+        ``set_image`` 清掉（裁剪+变换同挂时切层丢预览是既有行为）。
+        """
+        canvas = self.canvas
+        float_item = getattr(canvas, "_float_item", None)
+        if float_item is None or self._image is None:
+            return None
+        from PySide6.QtGui import QColor, QPainter
+
+        float_pixmap = float_item.pixmap()
+        if float_pixmap.isNull():
+            return None
+        # 浮层像素口径：精确档（松手后重采样过）⇒ 纯缩放平移；拖动中
+        # （原始区域像素 + 图元承担变换）⇒ 快速矩阵。与屏幕显示一致。
+        if canvas._xf_preview_keyframe is not None:
+            float_xf = canvas._float_placement()
+        else:
+            float_xf = canvas._float_fast_xf()
+        # 外框＝内容紧凑外框（与 `_display_bounds` 同一套数学）：整幅选区
+        # 时底图一片空白不算，只有局部选区才并上底图残余。
+        bounds = None
+        if not canvas._backdrop_is_whole() and canvas._paint_image is not None:
+            bounds = QRectF(canvas._base_current_rect())
+        float_rect = float_xf.mapRect(
+            QRectF(0, 0, float_pixmap.width(), float_pixmap.height()))
+        bounds = float_rect if bounds is None else bounds.united(float_rect)
+        rect = bounds.toAlignedRect()
+        if rect.isEmpty():
+            return None
+        ghost = QImage(rect.width(), rect.height(),
+                       QImage.Format.Format_ARGB32)
+        ghost.fill(QColor(0, 0, 0, 0))
+        painter = QPainter(ghost)
+        world = QTransform().translate(-rect.x(), -rect.y())
+        base = canvas._paint_image
+        base_scale = canvas._xf_base_scale
+        # 先映射到场景坐标，再减 ghost 原点；顺序反过来会让缩放后的
+        # 平移量不匹配外框，大图降采样时内容就会偏移并被截断。
+        base_xf = QTransform()
+        if base_scale is not None:
+            base_xf = QTransform().scale(
+                base_scale.x(), base_scale.y())
+        base_xf = base_xf * QTransform().translate(
+            canvas._xf_base_origin.x(), canvas._xf_base_origin.y())
+        base_xf = base_xf * world
+        # ⚠️ 整幅选区时底图是一片空白（内容全在浮层上）——不画进 ghost，
+        #    ghost 外框＝内容紧凑外框（与活动图边框同一口径，2026-10-13）。
+        if (base is not None and not base.isNull()
+                and not canvas._backdrop_is_whole()):
+            painter.setTransform(base_xf)
+            painter.drawImage(0, 0, base)
+        painter.setTransform(float_xf * world)
+        painter.drawPixmap(0, 0, float_pixmap)
+        painter.end()
+        return ghost, (float(rect.x()), float(rect.y()))
+
+    def _active_layer_origin(self) -> tuple[float, float]:
+        layers = getattr(self, "_multi_layers", None)
+        if layers and 0 <= self._active_layer < len(layers):
+            return self._layer_origin(layers[self._active_layer])
+        return (0.0, 0.0)
+
+    def _set_active_layer_origin(self, origin) -> None:
+        layers = getattr(self, "_multi_layers", None)
+        if layers and 0 <= self._active_layer < len(layers):
+            layers[self._active_layer]["origin"] = (
+                float(origin[0]), float(origin[1]))
+
+    def _reset_active_layer_origin(self) -> None:
+        """「还原」把 origin 退回本层初值（＝入口收紧偏移）。"""
+        layers = getattr(self, "_multi_layers", None)
+        if layers and 0 <= self._active_layer < len(layers):
+            layers[self._active_layer]["origin"] = tuple(
+                layers[self._active_layer].get("origin0") or (0.0, 0.0))
+
+    def _multi_layer_shift(self, dx: float, dy: float) -> None:
+        """活动层的画布原点平移 ``(dx, dy)``（初始图像素系）。
+
+        两个调用点，语义都是"新画布的 (0,0) 在旧画布里挪到了哪儿"：
+
+        - **真裁剪**（``_commit_crop``）：``+= 裁剪框左上角``；
+        - **变换烘焙**（``_commit_transform``，adjust/aspect 档）：
+          ``+= compose_transform`` 返回的新画布原点。
+
+        ⚠️ 必须在 ``_push_undo`` **之后**调（撤销点要带走平移**前**的
+        origin，撤销才能退回去）。
+        """
+        if not getattr(self, "_multi_layers", None):
+            return
+        ox, oy = self._active_layer_origin()
+        self._set_active_layer_origin((ox + float(dx), oy + float(dy)))
+
+    # ---- 激活图层：右侧面板显示 + 切换（2026-10-13 用户口径） ----
+    def _build_layer_switcher(self) -> None:
+        """按当前图层标签在右侧面板顶部铺一排切换按钮（双图才显示）。"""
+        row = getattr(self, "_layer_row", None)
+        if row is None:
+            return
+        layout = row.layout()
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        self._layer_buttons = []
+        if len(self._multi_layers) < 2:
+            row.setVisible(False)
+            return
+        from qfluentwidgets import ToggleButton
+
+        for index, layer in enumerate(self._multi_layers):
+            button = ToggleButton(layer["label"] or f"图层{index + 1}", row)
+            button.clicked.connect(
+                lambda _checked=False, i=index: self._activate_layer(i))
+            layout.addWidget(button)
+            self._layer_buttons.append(button)
+        row.setVisible(True)
+        self._sync_layer_switcher()
+
+    def _sync_layer_switcher(self) -> None:
+        """按钮选中态跟随活动层（程序化刷新，挡住回灌）。"""
+        self._layer_buttons_syncing = True
+        try:
+            for index, button in enumerate(self._layer_buttons):
+                button.setChecked(index == self._active_layer)
+        finally:
+            self._layer_buttons_syncing = False
+
+    def _activate_layer(self, index: int) -> None:
+        """右侧面板/外部请求把第 ``index`` 层设为激活层。"""
+        if not self._multi_layers or index == self._active_layer:
+            # 点的就是当前层：按钮弹回选中态即可，不空跑一次切层
+            self._sync_layer_switcher()
+            return
+        if not 0 <= index < len(self._multi_layers):
+            return
+        self._switch_context_layer()
+        self._sync_layer_switcher()
+
+    def _switch_context_layer(self) -> None:
+        """点击另一张图切换活动层：世界纹丝不动，两边互不影响。
+
+        用户 2026-10-13 定的模型（对齐拼版页的手感）：两张图是两个**一直
+        存在的独立图层**，摆在版面相对位置上；切换只换"哪张可编辑"——
+
+        - **不烘焙**：挂起的变换预览不"应用"，当前显示效果拼成 ghost 留给
+          非活动态展示（A 转了 15°，切到 B 时 A 还是转过的样子）；切回本层
+          实时预览从快照原样恢复（亚毫秒，零重采样）。烘焙只发生在「完成」
+          （:meth:`_bake_inactive_pending`）。
+        - **视图不动**：切层不适配、不缩放、不重定位，只替换活动图片与
+          非活动图片的显示图元。
+        """
+        if len(self._multi_layers) != 2 or self._active_layer < 0:
+            return
+        old_index = self._active_layer
+        new_index = 1 - old_index
+        self._commit_text_blocks()
+        self._commit_crop()
+        # 挂起变换预览：拼 ghost（要在 `_commit_crop` **之后**——裁剪若
+        # 真落了像素，浮层已被 set_image 清掉，ghost 自然为 None）
+        ghost = self._render_layer_ghost()
+        self._multi_layers[old_index]["state"] = self._capture_layer_state()
+        self._multi_layers[old_index]["canvas_state"] = (
+            self.canvas.capture_transform_state()
+        )
+        self._multi_layers[old_index]["ghost"] = ghost[0] if ghost else None
+        self._multi_layers[old_index]["ghost_origin"] = (
+            ghost[1] if ghost else None)
+        self._load_layer(new_index)
+        self._multi_layers[new_index]["ghost"] = None
+        self._multi_layers[new_index]["ghost_origin"] = None
+        self.canvas.clear_text_blocks()
+        # ``refit=False``：切层只换图片，不改视图缩放。
+        self.canvas.set_image(self._image, refit=False)
+        layer_canvas_state = self._multi_layers[new_index].get("canvas_state")
+        if layer_canvas_state is None:
+            self.canvas.rearm_content_restore()
+            if self.canvas.tool == "transform":
+                self.canvas.set_tool("transform")
+        else:
+            self.canvas.restore_transform_state(layer_canvas_state)
+        self._refresh_multi_canvas()
+        self._refresh_tool_page(self.canvas.tool)
+        self._refresh_size_label()
+        self._sync_undo_buttons()
+        self._sync_history()
+        self._sync_layer_switcher()
+
 
     def _confirm_overwrite(self) -> bool:
         """「完成」前问一句"要不要覆盖原图"；用户取消返回 False。
@@ -252,6 +670,10 @@ class ImageEditorDialog(
         ⚠️ 延迟导入 ``MessageBox``（与 ``modules/detect/page.py`` 同款）：
         自测要能把它换成记录器，否则离屏跑会弹真模态把整个用例挂住。
         """
+        if self._multi_layers:
+            if any(self._layer_has_changes(layer) for layer in self._multi_layers):
+                return self._ask_overwrite()
+            return True
         if not self._save_back:
             return True
         if not getattr(self, "target_exists", True):
@@ -276,6 +698,96 @@ class ImageEditorDialog(
         if unchanged:
             return True
         return self._ask_overwrite()
+
+    def _layer_has_changes(self, layer: dict) -> bool:
+        if layer is self._multi_layers[self._active_layer]:
+            if self.canvas.has_pending_transform() \
+                    or getattr(self, "_pending_crop", None) is not None \
+                    or any(block.toPlainText().strip()
+                           for block in self.canvas.text_blocks()):
+                return True
+            state = self._capture_layer_state()
+        else:
+            # ⚠️ 非活动层的**挂起未烘焙变换**也算改过（切层不烘焙，
+            #    2026-10-13）：判据 = 画布快照里"碰过变换且有预览数据"
+            #    （``_xf_touched`` + rect/region）＝``transform_pending``
+            #    的快照版——「完成」时这层会被补烘焙并写盘。
+            canvas_state = layer.get("canvas_state") or {}
+            if (canvas_state.get("_xf_touched")
+                    and canvas_state.get("_xf_rect") is not None
+                    and canvas_state.get("_xf_region") is not None):
+                return True
+            state = layer["state"]
+        image = state.get("_image")
+        original = state.get("_original")
+        return image is not None and original is not None and image != original
+
+    def _bake_inactive_pending(self) -> None:
+        """「完成」前把**非活动层**挂着的未烘焙变换逐层落进像素。
+
+        切层从不烘焙（2026-10-13 口径：切换要快、互不影响），挂起预览随层
+        快照保存；但「完成」要写底片——不补烘的话那笔变换就**无声丢了**。
+        逐层临时激活 → 恢复画布快照 → ``_commit_transform(force=True)``
+        （大图走进度框，可取消）→ 快照写回层。烘焙失败/取消的层保持原样
+        （像素与快照都不动，下次进来继续编辑）。
+        """
+        active_index = self._active_layer
+        active_state = self._capture_layer_state()
+        active_canvas = self.canvas.capture_transform_state()
+        for index, layer in enumerate(self._multi_layers):
+            if index == active_index:
+                continue
+            canvas_state = layer.get("canvas_state") or {}
+            if not (canvas_state.get("_xf_touched")
+                    and canvas_state.get("_xf_rect") is not None
+                    and canvas_state.get("_xf_region") is not None):
+                continue
+            before_state = layer.get("state")
+            self._load_layer(index)
+            self.canvas.set_image(self._image, refit=False)
+            self.canvas.restore_transform_state(canvas_state)
+            if self._commit_transform(force=True, update_canvas=False):
+                layer["state"] = self._capture_layer_state()
+                layer["canvas_state"] = None
+                layer["ghost"] = None
+                layer["ghost_origin"] = None
+            else:
+                layer["state"] = before_state   # 取消/失败：原样保留
+        layer = self._multi_layers[active_index]
+        layer["state"] = active_state
+        layer["canvas_state"] = active_canvas
+        self._load_layer(active_index)
+        self.canvas.set_image(self._image, refit=False)
+        self.canvas.restore_transform_state(active_canvas)
+        self._refresh_multi_canvas()
+
+    def _save_multiple_images(self) -> bool:
+        from desktop.components.viewers.image_zoom_dialog.io import (
+            overwrite_image_file,
+        )
+        from .content_quad import sync_content_quad
+
+        self._multi_layers[self._active_layer]["state"] = self._capture_layer_state()
+        active_index = self._active_layer
+        for index, layer in enumerate(self._multi_layers):
+            state = layer["state"]
+            image = state.get("_image")
+            original = state.get("_original")
+            if image is None or original is None or image == original:
+                continue
+            if not overwrite_image_file(image, Path(layer["file"])):
+                self._load_layer(active_index)
+                QMessageBox.warning(
+                    self, "保存失败",
+                    f"无法保存「{layer['label']}」：{Path(layer['file']).name}",
+                )
+                return False
+            self._load_layer(index)
+            sync_content_quad(layer["file"], self)
+            self.multi_image_saved.emit(layer["file"], QImage(image))
+        self._load_layer(active_index)
+        self._refresh_multi_canvas()
+        return True
 
 
     def _ask_overwrite(self) -> bool:
@@ -340,12 +852,18 @@ class ImageEditorDialog(
         try:
             if not self._confirm_overwrite():
                 return
+            if self._multi_layers:
+                # 非活动层的挂起变换逐层补烘焙（切层不烘焙，见
+                # _bake_inactive_pending）——必须在写盘之前
+                self._bake_inactive_pending()
             self._commit_crop()
             if self._begin_background_apply():
                 return
             if not self._commit_transform(force=True, update_canvas=False):
                 return
             self._commit_text_blocks()
+            if self._multi_layers and not self._save_multiple_images():
+                return
             self.accept()
         finally:
             self._finishing = False
@@ -374,6 +892,24 @@ class ImageEditorDialog(
         self._undo = []
         self._redo = []
         self._labels = []
+        # ⚠️ 双图编辑（拼版「编辑整图」）：每层的整图缓冲（``_image``/
+        #    ``_original``/撤销栈/upright）也驻留在层字典里——两个图层就是
+        #    双倍内存，宿主消费完结果放缓冲时必须一起放。``canvas_state``
+        #    里的底图/浮层像素快照同理（换层捕获的整图拷贝）。
+        for layer in getattr(self, "_multi_layers", None) or []:
+            state = layer.get("state")
+            if isinstance(state, dict):
+                state["_image"] = None
+                state["_original"] = None
+                state["_undo"] = []
+                state["_redo"] = []
+                state["_undo_origins"] = []
+                state["_redo_origins"] = []
+                state["_content_upright"] = None
+                state["_content_restore_params"] = None
+            layer["canvas_state"] = None
+            layer["ghost"] = None
+            layer["ghost_origin"] = None
         # 内容节点 sidecar 的 upright 是另一份全分辨率反变换缓存，一并放掉
         self._content_upright = None
         self._content_restore_params = None

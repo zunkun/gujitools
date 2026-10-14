@@ -256,12 +256,14 @@ def _check_rotation_sync(ctx, ok) -> None:
         ok("独立拼图页：防抖到期后选中角写回 doc（90°）",
            abs(float(items[0].get("rotation") or 0.0) - 90.0) < 1e-6,
            f"rotation={items[0].get('rotation')}")
-        ok("独立拼图页：提交后面板回填选中角",
-           abs(page.panel.item_spin.value() - 90.0) < 1e-6,
-           f"spin={page.panel.item_spin.value()}")
-        # 整版增量：在 90°/0° 基础上整体 +10° → 每张都叠加（相对角不变）：
-        # [100, 10]，面板回填平均角 55（spread_rotation 口径）
-        page.panel.whole_rotate_delta.emit(10.0)
+        ok("独立拼图页：提交后同一旋转控件回填选中图角",
+           page.panel._item_mode
+           and abs(page.panel.whole_spin.value() - 90.0) < 1e-6,
+           f"spin={page.panel.whole_spin.value()}")
+        # 取消选择后共用旋转控件恢复整版模式：在 90°/0° 基础上整体 +10°
+        # → 每张都叠加（相对角不变）：[100, 10]，面板回填平均角 55。
+        page.view.canvas.select(-1)
+        page.panel.whole_spin.setValue(55.0)
         page._rotate_commit_timer.stop()
         page._commit_rotation_edit()
         items = page._doc["pages"][0]["items"]

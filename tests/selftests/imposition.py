@@ -15,8 +15,8 @@
 3. 右侧操作区可拖动 / 缩放拉伸 / 旋转；**序号在前的排在右侧、序号大的在左侧**；
 4. 拼版一旦生效，最后一步「生成 PDF」的取图来源就从第三步去底色换成拼版结果；
 5. **点击选中**某张图后它带一圈**常显细虚线**（选中状态）；**按住鼠标操作
-   期间**升级为带手柄的完整虚线框，松手回到细框；切页/点空白取消选中，
-   右侧「当前图片样式」区只在有选中图时激活高亮。
+   期间**升级为带手柄的完整虚线框，松手回到细框；未选中时旋转编辑整版，
+   选中图片后同一组旋转控件只编辑该图，切页/点空白取消选中后恢复整版编辑。
 
 ⚠️ 本模块**自建任务与独立详情页**（不借 ctx.d）：拼版会往任务目录写产物、
 改 print.json，跟其它模块共用一个页面会互相串状态。独立页在结尾整体销毁。
@@ -3345,26 +3345,35 @@ def run(ctx) -> None:
         panel.whole_spin.setValue(-170.0)
         ok("跨 ±180° 边界换算成 +20° 增量", deltas == [10.0, 20.0], str(deltas))
         ok(
-            "没有选中图时单图旋转组件禁用",
-            not panel.item_spin.isEnabled() and not panel.item_slider.isEnabled(),
+            "未选中图片时旋转目标为整版",
+            not panel._item_mode
+            and panel.whole_caption.text() == "整体旋转（绕两图公共中心）",
         )
         panel.set_item_rotation(45.0)
         ok(
-            "回填选中角后组件启用且值正确",
-            panel.item_spin.isEnabled() and abs(panel.item_spin.value() - 45.0) < 0.01,
-            str(panel.item_spin.value()),
+            "选中图片后同一组旋转控件切换到该图并回填角度",
+            panel._item_mode
+            and panel.whole_spin.isEnabled()
+            and abs(panel.whole_spin.value() - 45.0) < 0.01
+            and panel.whole_caption.text() == "当前图片旋转（绕图片中心）",
+            str(panel.whole_spin.value()),
         )
         ok("单图回填不吐信号", item_angles == [], str(item_angles))
-        panel.item_spin.setValue(60.0)
-        ok("单图组件改值发**绝对角度**", item_angles == [60.0], str(item_angles))
-        panel.set_item_rotation(None)
-        ok("清空选中后单图组件重新禁用", not panel.item_spin.isEnabled())
+        panel.whole_spin.setValue(60.0)
+        ok("选中图改值发**绝对角度**", item_angles == [60.0], str(item_angles))
+        panel.set_item_rotation(25.0)
         ok(
-            "面板分区：「操作当前图片页」页级块在前、「当前图片样式」图片级块在后",
-            panel.item_section.title_label.text() == "当前图片样式"
-            and 0
-            <= _column_index(panel.box, panel.clear_button)
-            < _column_index(panel.box, panel.item_section),
+            "切换到另一张图片后旋转控件立即回填另一张角度",
+            abs(panel.whole_spin.value() - 25.0) < 0.01,
+            str(panel.whole_spin.value()),
+        )
+        panel.set_item_rotation(None)
+        ok(
+            "点空白取消选择后旋转控件恢复整版角度",
+            not panel._item_mode
+            and panel.whole_caption.text() == "整体旋转（绕两图公共中心）"
+            and abs(panel.whole_spin.value() - (-170.0)) < 0.01,
+            str(panel.whole_spin.value()),
         )
         ok(
             "面板上没有「选择拼版」按钮（2026-09-30 删除：入口只在左列虚线格）",
@@ -3375,13 +3384,11 @@ def run(ctx) -> None:
             _column_index(panel.box, panel.reset_button) >= 0,
         )
         _actions_row = _row_layout_of(panel.box, panel.add_image_button)
-        _section_layout = panel.item_section.layout()
-        assert _section_layout is not None
         ok(
-            "「删除选中图片」挪进页级区，与「新增图片」同一行（不在图片样式区块里）",
+            "「删除选中图片」挪进页级区，与「新增图片」同一行",
             _actions_row is not None
             and _actions_row.indexOf(panel.delete_item_button) >= 0
-            and _section_layout.indexOf(panel.delete_item_button) < 0,
+            and not hasattr(panel, "item_section"),
         )
         ok(
             "未选中图时删除按钮隐藏、新增按钮隐藏（两图页初始态）",
@@ -3423,19 +3430,23 @@ def run(ctx) -> None:
             "「在流程中启用图片拼版」开关在面板最底部",
             0 <= _column_index(panel.box, panel.enabled_checkbox)
             and _column_index(panel.box, panel.enabled_checkbox)
-            > _column_index(panel.box, panel.item_section),
+            > _column_index(panel.box, panel.clear_button),
         )
         ok(
             "说明挂在问号按钮上（不再平铺）",
             isinstance(getattr(panel, "help_button", None), HelpButton)
             and "可选节点" in panel.help_button.toolTip(),
         )
-        ok("清空选中后「当前图片样式」区块灰掉", not panel.item_section._active)
+        ok(
+            "清空选中后旋转说明恢复未选中整版样式",
+            not panel._item_mode
+            and panel.whole_caption.text() == "整体旋转（绕两图公共中心）",
+        )
         panel.set_item_rotation(30.0)
         ok(
-            "有选中图时「当前图片样式」区块高亮",
-            panel.item_section._active,
-            str(panel.item_section._active),
+            "选中图后旋转说明切换为当前图片样式",
+            panel._item_mode
+            and panel.whole_caption.text() == "当前图片旋转（绕图片中心）",
         )
         panel.deleteLater()
 
@@ -3480,7 +3491,13 @@ def run(ctx) -> None:
             str(page.imposition_panel.whole_spin.value()),
         )
         page.imposition_view.canvas.select(1)
-        page._on_imposition_item_rotate(25.0)
+        ok(
+            "切换选中图后共用旋转控件回填新目标角",
+            page.imposition_panel._item_mode
+            and abs(page.imposition_panel.whole_spin.value() - 15.0) < 0.01,
+            str(page.imposition_panel.whole_spin.value()),
+        )
+        page.imposition_panel.whole_spin.setValue(25.0)
         page._commit_imposition_edit()
         page._imposition_timer.stop()
         saved = page._imposition_pages()[0]["items"]
@@ -3492,9 +3509,9 @@ def run(ctx) -> None:
         )
         ok(
             "提交后单图组件回填选中角",
-            page.imposition_panel.item_spin.isEnabled()
-            and abs(page.imposition_panel.item_spin.value() - 25.0) < 0.01,
-            str(page.imposition_panel.item_spin.value()),
+            page.imposition_panel._item_mode
+            and abs(page.imposition_panel.whole_spin.value() - 25.0) < 0.01,
+            str(page.imposition_panel.whole_spin.value()),
         )
 
         # ---------------- 8. 双击预览：双击图 → 原图；双击空白 → 虚线框范围组合
@@ -3975,85 +3992,173 @@ def run(ctx) -> None:
             finally:
                 _ied.ImageEditorDialog = _real_editor_cls
 
-            # ---- 控制器层：右键空白「编辑图片」→ 合成全分辨率 → 写回成品 ----
-            from desktop.services.imposition import FILE_FMT
-
-            out_path = page.store.imposition_output_dir(page.task_id) / FILE_FMT.format(
-                1
+            # ---- 空白处「编辑整图」在同一画布显示两张，可切换 active ----
+            source_items = page._imposition_pages()[0]["items"]
+            source_items = sorted(
+                source_items,
+                key=lambda item: item["rect"][0] + item["rect"][2] / 2,
             )
-            _spread_seen: dict = {}
-            _spread_edited = _solid_qimage(EDIT_SPREAD_COLOR, 30, 20)
+            source_paths = [Path(item["file"]) for item in source_items]
+            before_pixels = [_pixel_of(path) for path in source_paths]
+            from PySide6.QtGui import QColor, QImage
+            from PySide6.QtTest import QTest
 
-            class _FakeSpreadEditor:
-                def __init__(self, parent, image, save_back=False):
-                    _spread_seen["save_back"] = save_back
-                    _spread_seen["size"] = (image.width(), image.height())
+            def _make_spread_editor():
+                editor = _real_editor_cls(None, QImage(str(source_paths[0])))
+                editor.configure_multiple_images([
+                    {
+                        **item,
+                        "image": QImage(str(Path(item["file"]))),
+                    }
+                    for item in source_items
+                ])
+                editor._confirm_overwrite = lambda: True
+                return editor
 
-                def exec(self):
-                    return QDialog.DialogCode.Accepted
+            single_editor = _real_editor_cls(None, QImage(str(source_paths[0])))
+            single_editor.configure_multiple_images([{
+                **source_items[0],
+                "image": QImage(str(source_paths[0])),
+            }])
+            ok(
+                "单图拼版仍可通过整图入口打开，且不显示虚假副图",
+                single_editor.canvas._context_item is None,
+            )
+            single_editor.release_buffers()
 
-                def result_image(self):
-                    return _spread_edited
+            editor = _make_spread_editor()
+            editor._image.fill(QColor(*EDIT_ITEM_COLOR))
+            editor.reject()
+            ok(
+                "关闭双图编辑器会放弃修改且不覆盖任何源图",
+                [_pixel_of(path) for path in source_paths] == before_pixels,
+            )
+            editor.release_buffers()
 
-                def apply_in_progress(self) -> bool:
-                    """替身永远走同步路（后台应用只在真编辑器上出现）。"""
-                    return False
+            editor = _make_spread_editor()
+            first_active = editor.source_path
+            editor.show()
+            pump(ctx.app, times=3)
+            inactive_center = editor.canvas._context_item.sceneBoundingRect().center()
+            QTest.mouseClick(
+                editor.canvas.viewport(), Qt.MouseButton.LeftButton,
+                pos=editor.canvas.mapFromScene(inactive_center),
+            )
+            second_active = editor.source_path
+            ok(
+                "整幅编辑同一画布同时显示左右图片，点击另一张切换 active",
+                editor.canvas._context_item is not None
+                and first_active == str(source_paths[0])
+                and second_active == str(source_paths[1]),
+                f"first={first_active} second={second_active}",
+            )
+            editor._image.fill(QColor(*EDIT_ITEM_COLOR))
+            editor.canvas.replace_image(editor._image)
+            editor._finish()
+            after_pixels = [_pixel_of(path) for path in source_paths]
+            ok(
+                "切换后仅保存修改过的图片，未修改图片保持原样",
+                after_pixels[0] == before_pixels[0]
+                and after_pixels[1] == EDIT_ITEM_COLOR,
+                f"before={before_pixels} after={after_pixels}",
+            )
+            editor.release_buffers()
 
-            _ied.ImageEditorDialog = _FakeSpreadEditor
-            try:
-                if out_path.exists():
-                    out_path.unlink()
-                page._open_imposition_spread_edit()
-                done = wait_until(
-                    ctx.app,
-                    lambda: out_path.exists()
-                    and _pixel_of(out_path) == EDIT_SPREAD_COLOR,
-                )
-                ok(
-                    "整页组合编辑：按产出口径合成 → 编辑器 → 覆盖成品文件",
-                    done and _pixel_of(out_path) == EDIT_SPREAD_COLOR,
-                    f"out={out_path.name} exists={out_path.exists()} "
-                    f"pixel={_pixel_of(out_path) if out_path.exists() else None}",
-                )
-                ok(
-                    "编辑器以 save_back 模式打开（成品有真实文件可回写）",
-                    _spread_seen.get("save_back") is True,
-                    str(_spread_seen),
-                )
-                ok(
-                    "给编辑器的是全分辨率组合图（不缩）",
-                    _spread_seen.get("size")
-                    == (_spread_edited.width(), _spread_edited.height())
-                    or (_spread_seen.get("size") or (0, 0))[0]
-                    >= _spread_edited.width(),
-                    str(_spread_seen),
-                )
-                ok(
-                    "挂着的防抖合成被取消（不会用未编辑结果冲掉手工修饰）",
-                    not page._imposition_dirty,
-                    f"dirty={page._imposition_dirty}",
-                )
+            before_pixels = [_pixel_of(path) for path in source_paths]
+            # 切换活动图片时，另一层的挂起变换既不烘焙也不丢失。
+            editor = _make_spread_editor()
+            editor._set_tool("transform")
+            editor.canvas.transform_rotate(12)
+            editor.canvas.make_transform_pending()
+            pending_before = editor.canvas.transform_pending()
+            transform_commits = []
+            preview_renders = []
+            editor._commit_transform = lambda **kwargs: (
+                transform_commits.append(kwargs) or False
+            )
+            editor.canvas._render_float_plane = (
+                lambda: preview_renders.append(True)
+            )
+            editor.show()
+            pump(ctx.app, times=3)
+            inactive_center = editor.canvas._context_item.sceneBoundingRect().center()
+            QTest.mouseClick(
+                editor.canvas.viewport(), Qt.MouseButton.LeftButton,
+                pos=editor.canvas.mapFromScene(inactive_center),
+            )
+            switched_pending = editor.canvas.transform_pending()
+            active_center = editor.canvas._context_item.sceneBoundingRect().center()
+            QTest.mouseClick(
+                editor.canvas.viewport(), Qt.MouseButton.LeftButton,
+                pos=editor.canvas.mapFromScene(active_center),
+            )
+            restored_pending = editor.canvas.transform_pending()
+            ok(
+                "切换双图只切 active，挂起变换不烘焙且切回后仍保留",
+                pending_before is not None
+                and switched_pending is None
+                and restored_pending is not None
+                and restored_pending[1] == pending_before[1]
+                and not transform_commits
+                and not preview_renders,
+                f"before={pending_before is not None} "
+                f"restored={restored_pending is not None} "
+                f"commits={len(transform_commits)} "
+                f"preview_renders={len(preview_renders)}",
+            )
+            editor.reject()
+            editor.release_buffers()
 
-                # 预览弹窗里「编辑」也落盘：成品已最新时回写目标 = 成品文件
-                spread_target = page._imposition_spread_target(0)
-                # ⚠️ 该方法的返回标注是 ``object | None``（宿主侧没写具体类型），
-                #    这里按"就是 ZoomTarget"定死，None 的判据仍由下一条 ok 负责。
-                spread_target = cast("ZoomTarget", spread_target)
-                ok(
-                    "整页组合预览弹窗：成品最新时回写目标 = 成品文件",
-                    spread_target is not None
-                    and str(spread_target.edit_path or "") == str(out_path),
-                    f"edit={spread_target.edit_path if spread_target else None}",
-                )
-                page._on_imposition_zoom_image_saved(str(out_path), _spread_edited)
-                ok(
-                    "弹窗编辑整页组合：落到成品分支（不触发重合成冲掉手改）",
-                    "已编辑整页组合并覆盖拼版成品" in page.log_view.toPlainText()
-                    and not page._imposition_dirty,
-                    f"dirty={page._imposition_dirty}",
-                )
-            finally:
-                _ied.ImageEditorDialog = _real_editor_cls
+            # 右图统一变换后向右移，切回左图时右图的 ghost 必须仍占据
+            # 相同的视口范围，且完整落在可滚动场景内。
+            editor = _make_spread_editor()
+            editor.show()
+            pump(ctx.app, times=3)
+            editor._set_tool("transform")
+            editor._activate_layer(1)
+            editor.canvas.transform_move(200, 0)
+            editor.canvas.make_transform_pending()
+            right_bounds = editor.canvas._display_bounds()
+            editor._activate_layer(0)
+            context_item = editor.canvas._context_item
+            context_bounds = context_item.sceneBoundingRect()
+            scene_bounds = editor.canvas.sceneRect()
+            ok(
+                "右图统一变换右移 200px 后切回左图，右图显示不截断",
+                context_item is not None
+                and scene_bounds.contains(context_bounds)
+                and right_bounds.width() > 0
+                and context_bounds.width() > 0,
+                f"scene={scene_bounds}, right={right_bounds}, context={context_bounds}",
+            )
+            editor.reject()
+            editor.release_buffers()
+
+            editor = _make_spread_editor()
+            editor.show()
+            pump(ctx.app, times=3)
+            editor._image.fill(QColor(230, 80, 40))
+            editor.canvas.replace_image(editor._image)
+            inactive_center = editor.canvas._context_item.sceneBoundingRect().center()
+            QTest.mouseClick(
+                editor.canvas.viewport(), Qt.MouseButton.LeftButton,
+                pos=editor.canvas.mapFromScene(inactive_center),
+            )
+            editor._image.fill(QColor(60, 90, 230))
+            editor.canvas.replace_image(editor._image)
+            editor._finish()
+            after_pixels = [_pixel_of(path) for path in source_paths]
+            ok(
+                "两张图分别编辑后均保存回各自源文件",
+                after_pixels == [(230, 80, 40), (60, 90, 230)],
+                f"before={before_pixels} after={after_pixels}",
+            )
+            editor.release_buffers()
+
+            ok(
+                "编辑整幅不会把合成图写回成品文件",
+                not page._imposition_pages()[0].get("edited_file"),
+            )
         finally:
             RoundMenu.exec = _real_menu_exec
     finally:

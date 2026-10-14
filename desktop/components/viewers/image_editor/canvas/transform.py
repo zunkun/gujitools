@@ -208,7 +208,7 @@ class TransformMixin(CanvasHost):
         可用的键与取值范围见 ``consts.py``：``interpolation`` / ``clipping`` /
         ``direction`` / ``guide`` / ``show_preview`` / ``compose_preview`` /
         ``opacity``（0–100）/ ``constrain``+``value`` / ``pivot_op``+``value`` /
-        ``snap_pivot`` / ``lock_pivot``。
+        ``snap_pivot`` / ``lock_pivot`` / ``auto_fit_canvas``。
         """
         interpolation = options.get("interpolation")
         if interpolation in {value for _label, value in INTERPOLATIONS}:
@@ -233,6 +233,8 @@ class TransformMixin(CanvasHost):
             self._xf_snap_pivot = bool(options["snap_pivot"])
         if "lock_pivot" in options:
             self._xf_lock_pivot = bool(options["lock_pivot"])
+        if "auto_fit_canvas" in options:
+            self._xf_auto_fit_canvas = bool(options["auto_fit_canvas"])
         op = options.get("constrain")
         if op in _CONSTRAIN_KEYS:
             self._xf_constraints[op] = bool(options.get("value", True))
@@ -425,8 +427,23 @@ class TransformMixin(CanvasHost):
         else:
             self._xf = QTransform(visual)
         self._xf_touched = True
+        self._xf_auto_fit_pending = True
+        # sceneRect 变化可能改变滚动条并触发 resizeEvent。变换期间不能让该
+        # resize 自动 fit，否则视图会跟着图片跳动；自动适配由选项在操作结束
+        # 后统一执行。
+        self._user_zoomed = True
         self._sync_float()
         self._sync_overlay()
+        if not self._xf_dragging:
+            self._finish_transform_auto_fit()
+
+    def _finish_transform_auto_fit(self) -> None:
+        """在一次变换结束后按用户选项适配画布，未启用时保持当前视图倍率。"""
+        if not self._xf_auto_fit_pending:
+            return
+        self._xf_auto_fit_pending = False
+        if self._xf_auto_fit_canvas:
+            self.fit()
 
     def _ensure_transform_preview(self) -> None:
         """锁定选区并搭起实时预览：底图（"纸"）+ 选区内容浮层。
@@ -542,6 +559,87 @@ class TransformMixin(CanvasHost):
     def reset_transform_preview_flags(self) -> None:
         """取消"挂起"标记（松手后不烘焙那一支走这里），矩阵与预览都留着。"""
         self._xf_pending = False
+
+    def capture_transform_state(self) -> dict:
+        """保存当前图层的变换预览，以便切换活动图层时不必烘焙像素。"""
+        image_fields = ("_xf_region", "_xf_preview_region",
+                        "_xf_restore_region")
+        state = {
+            "_rect": None if self._rect is None else QRectF(self._rect),
+            "_xf": QTransform(self._xf),
+            "_xf_touched": self._xf_touched,
+            "_xf_pending": self._xf_pending,
+            "_xf_rect": (None if self._xf_rect is None
+                         else QRectF(self._xf_rect)),
+            "_xf_preview_scale": self._xf_preview_scale,
+            "_xf_preview_direction": self._xf_preview_direction,
+            "_xf_preview_keyframe": (
+                None if self._xf_preview_keyframe is None
+                else QTransform(self._xf_preview_keyframe)),
+            "_xf_preview_origin": QPointF(self._xf_preview_origin),
+            "_xf_base_origin": QPointF(self._xf_base_origin),
+            "_xf_base_scale": (
+                None if self._xf_base_scale is None
+                else QPointF(self._xf_base_scale)),
+            "_xf_paint_image": (
+                None if self._paint_image is None else QImage(self._paint_image)),
+            "_xf_base_pixmap": (
+                None if self._item is None else self._item.pixmap()),
+            "_xf_float_pixmap": (
+                None if self._float_item is None
+                else self._float_item.pixmap()),
+            "_xf_restore_pending": self._xf_restore_pending,
+            "_content_restore_done": getattr(
+                self, "_content_restore_done", False),
+            "_xf_pivot": QPointF(self._xf_pivot),
+            "_xf_pivot_saved": (
+                None if self._xf_pivot_saved is None
+                else QPointF(self._xf_pivot_saved)),
+            "_xf_direction": self._xf_direction,
+            "_xf_clipping": self._xf_clipping,
+            "_xf_interpolation": self._xf_interpolation,
+        }
+        for name in image_fields:
+            value = getattr(self, name)
+            state[name] = None if value is None else QImage(value)
+        return state
+
+    def restore_transform_state(self, state: dict | None) -> None:
+        """恢复另一图层的挂起预览；不触发变换提交或像素重采样。"""
+        if not state:
+            return
+        for name, value in state.items():
+            setattr(self, name, value)
+        self._xf_dragging = False
+        if self._xf_rect is not None and self._xf_region is not None:
+            assert self._item is not None
+            self._paint_image = state["_xf_paint_image"]
+            self._xf_base_origin = QPointF(state["_xf_base_origin"])
+            self._xf_base_scale = (
+                None if state["_xf_base_scale"] is None
+                else QPointF(state["_xf_base_scale"]))
+            base_pixmap = state["_xf_base_pixmap"]
+            if base_pixmap is None:
+                self._rebuild_backdrop()
+            else:
+                self._item.setPixmap(base_pixmap)
+                self._item.setPos(self._xf_base_origin)
+                self._item.setTransform(
+                    QTransform() if self._xf_base_scale is None
+                    else QTransform().scale(
+                        self._xf_base_scale.x(), self._xf_base_scale.y()))
+            self._float_item = QGraphicsPixmapItem()
+            self._float_item.setTransformationMode(
+                Qt.TransformationMode.SmoothTransformation)
+            self._float_item.setZValue(5)
+            self._scene.addItem(self._float_item)
+            float_pixmap = state["_xf_float_pixmap"]
+            if float_pixmap is not None:
+                self._float_item.setPixmap(float_pixmap)
+            self._sync_float()
+        # 视图**不动**：切层不适配、不缩放、不重定位。
+        self._sync_scene_rect()
+        self._sync_overlay()
 
     def _realtime_budget(self) -> bool:
         """选区（预览版）够不够小到能实时出画面？够 = 可以挂起不烘焙。
@@ -909,6 +1007,7 @@ class TransformMixin(CanvasHost):
         # 拖动中是"原图 + 图元变换"，松手要重出一帧精确结果 ⇒ 判据清零
         self._xf_preview_keyframe = None
         self._sync_float()
+        self._finish_transform_auto_fit()
 
     def _sync_float(self) -> None:
         """浮层跟随累计矩阵 + 预览开关（不透明度 / 显示预览 / 合成预览）。
@@ -953,9 +1052,13 @@ class TransformMixin(CanvasHost):
             self._item.setVisible(bool(self._xf_compose_preview))
         # 变换把选区送出原边界时，浮层会跑到图片外——扩场景矩形才看得见
         self._sync_scene_rect()
+        # ⚠️ 边框跟随内容四至边界（2026-10-13 用户口径「边框并不是固定不变
+        #    的，应该根据图片四至边界扩大和缩小」）：拖动中每帧跟手。
+        self._sync_border()
 
     def _clear_transform_preview(self) -> None:
         """撤掉预览浮层并把底图恢复成真像素（矩阵不动，见 reset_transform）。"""
+        self._xf_auto_fit_pending = False
         if self._float_item is not None:
             self._scene.removeItem(self._float_item)
             self._float_item = None
@@ -978,6 +1081,7 @@ class TransformMixin(CanvasHost):
         self._xf_preview_origin = QPointF(0.0, 0.0)
         # 浮层没了 → 场景矩形收回图片边界（变换曾把浮层送出图外时扩过）
         self._sync_scene_rect()
+        self._sync_border()   # 边框一并收回图片边界（虚线框跟随四至）
 
     def reset_transform(self) -> None:
         """「重置」：丢弃未应用的变换，选区回到整幅、轴心回到中心。"""
@@ -1060,13 +1164,19 @@ class TransformMixin(CanvasHost):
         if not region.isNull():
             self._xf_restore_region = QImage(region)
         self._xf_restore_pending = False
-        self._ensure_transform_preview()
+        # ⚠️ **不建预览**（2026-10-13「统一变换切换卡顿」）：缓存命中路径
+        #    以前进工具那一刻就 ``_ensure_transform_preview()``——底图重铺
+        #    （整幅 copy + 擦选区）+ 浮层精确渲染（逐像素重采样 150–450ms）
+        #    全在切换里。现在与"延迟供像素"的裸挂路径同款：只挂区域/框/
+        #    矩阵/轴心（零等待），预览推迟到第一次真正需要（首次拖动，
+        #    ``_ensure_transform_preview`` 看到 ``_xf_restore_region`` 非
+        #    None、``_xf_restore_pending`` False，直接用它搭预览）。
+        self._xf_rect = QRectF(0, 0, region.width(), region.height())
         self._xf = QTransform(xf)
         if self._xf_rect is not None:
-            # 轴心跟着换到 rect0（upright 局部坐标）中心：视觉上＝内容四边形
+            # 轴心换到 rect0（upright 局部坐标）中心：视觉上＝内容四边形
             # 中心，旋转/缩放的语义与"保存前那一刻"一致。
             self._xf_pivot = self._xf_rect.center()
-        self._sync_float()
         self._sync_overlay()
 
     # ---- 变换操作（拖拽处理器与自测共用的语义级入口） ----

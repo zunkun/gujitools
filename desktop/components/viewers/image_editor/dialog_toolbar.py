@@ -143,6 +143,17 @@ class ToolbarMixin(DialogHost):
         column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(T.SPACE_SM)
 
+        # ---- 激活图层行（双图编辑专用，2026-10-13 用户口径：右侧既显示
+        #      当前激活的是哪张、也能点它直接切换）----
+        self._layer_row = QWidget(panel)
+        layer_layout = QHBoxLayout(self._layer_row)
+        layer_layout.setContentsMargins(0, 0, 0, 0)
+        layer_layout.setSpacing(T.SPACE_XS)
+        self._layer_buttons: list[ToggleButton] = []
+        self._layer_buttons_syncing = False
+        self._layer_row.setVisible(False)   # 单图模式不占位
+        column.addWidget(self._layer_row)
+
         self.panel_title = StrongBodyLabel(TOOL_LABELS["crop"])
         self.panel_title.setToolTip("当前功能；参数在下面")
         column.addWidget(self.panel_title)
@@ -206,6 +217,8 @@ class ToolbarMixin(DialogHost):
         """切换功能并重建右侧参数页；离开某个功能前把进行中的工作落进图。"""
         if not hasattr(self, "canvas"):
             return  # 构建期先于画布存在，等 __init__ 末尾再真切换
+        if getattr(self, "_tool_transition_worker", None) is not None:
+            return
         if tool != "text":
             self._commit_text_blocks()
         if tool != "crop":
@@ -214,13 +227,24 @@ class ToolbarMixin(DialogHost):
             #    留着的话画布上仍是整幅原图，用户会以为刚才那一下白裁了。
             self._commit_crop()
         if tool != "transform":
+            if self._start_async_tool_transition(tool):
+                return
             # ⚠️ **force=True**：离开变换工具是"必须烘焙"的时机（拖动中不烘，
             #    松手也不烘——内容靠画布浮层实时显示，见 dialog_commit）
-            self._commit_transform(force=True)
+            if not self._commit_transform(force=True):
+                return
+        self._activate_tool(tool)
+
+    def _activate_tool(self, tool: str) -> None:
+        """完成工具切换（同步烘焙或后台烘焙完成后共用）。"""
         self.canvas.set_tool(tool)
         # 图片**永不铺满视口**：四周恒留白（用户 2026-10-02 定：编辑区不要
         # 铺满整个界面，上下预留空白方便操作）。
         self.canvas.set_fit_ratio(EDIT_FIT_RATIO)
+        self._refresh_tool_page(tool)
+
+    def _refresh_tool_page(self, tool: str) -> None:
+        """只刷新工具栏与参数页，不触碰画布上的挂起状态。"""
         for key, button in self._tool_buttons.items():
             button.setChecked(key == tool)
         self.panel_title.setText(TOOL_LABELS.get(tool, tool))

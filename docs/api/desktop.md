@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 168 个模块、179 个公开类、1236 个公开函数/方法（生成于 2026-10-13）。
+覆盖 168 个模块、179 个公开类、1242 个公开函数/方法（生成于 2026-10-14）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -51,15 +51,15 @@
 | [`desktop.components.viewers.edit_sync`](#desktopcomponentsviewersedit_sync) | 0 | 2 |
 | [`desktop.components.viewers.extract_viewer`](#desktopcomponentsviewersextract_viewer) | 1 | 6 |
 | [`desktop.components.viewers.image_editor.bake`](#desktopcomponentsviewersimage_editorbake) | 0 | 2 |
-| [`desktop.components.viewers.image_editor.canvas.core`](#desktopcomponentsviewersimage_editorcanvascore) | 1 | 20 |
+| [`desktop.components.viewers.image_editor.canvas.core`](#desktopcomponentsviewersimage_editorcanvascore) | 1 | 22 |
 | [`desktop.components.viewers.image_editor.canvas.distortion`](#desktopcomponentsviewersimage_editorcanvasdistortion) | 1 | 1 |
 | [`desktop.components.viewers.image_editor.canvas.interaction`](#desktopcomponentsviewersimage_editorcanvasinteraction) | 1 | 7 |
 | [`desktop.components.viewers.image_editor.canvas.overlay`](#desktopcomponentsviewersimage_editorcanvasoverlay) | 1 | 0 |
 | [`desktop.components.viewers.image_editor.canvas.text`](#desktopcomponentsviewersimage_editorcanvastext) | 1 | 6 |
-| [`desktop.components.viewers.image_editor.canvas.transform`](#desktopcomponentsviewersimage_editorcanvastransform) | 1 | 21 |
+| [`desktop.components.viewers.image_editor.canvas.transform`](#desktopcomponentsviewersimage_editorcanvastransform) | 1 | 23 |
 | [`desktop.components.viewers.image_editor.consts`](#desktopcomponentsviewersimage_editorconsts) | 0 | 0 |
 | [`desktop.components.viewers.image_editor.content_quad`](#desktopcomponentsviewersimage_editorcontent_quad) | 0 | 7 |
-| [`desktop.components.viewers.image_editor.dialog`](#desktopcomponentsviewersimage_editordialog) | 1 | 4 |
+| [`desktop.components.viewers.image_editor.dialog`](#desktopcomponentsviewersimage_editordialog) | 1 | 5 |
 | [`desktop.components.viewers.image_editor.dialog_commit`](#desktopcomponentsviewersimage_editordialog_commit) | 1 | 2 |
 | [`desktop.components.viewers.image_editor.dialog_pages`](#desktopcomponentsviewersimage_editordialog_pages) | 1 | 0 |
 | [`desktop.components.viewers.image_editor.dialog_toolbar`](#desktopcomponentsviewersimage_editordialog_toolbar) | 1 | 0 |
@@ -161,7 +161,7 @@
 | [`desktop.ui.style`](#desktopuistyle) | 0 | 3 |
 | [`desktop.ui.theme`](#desktopuitheme) | 0 | 3 |
 | [`desktop.ui.toast`](#desktopuitoast) | 0 | 1 |
-| [`desktop.ui.widgets`](#desktopuiwidgets) | 10 | 47 |
+| [`desktop.ui.widgets`](#desktopuiwidgets) | 10 | 48 |
 | [`desktop.ui.window_size`](#desktopuiwindow_size) | 0 | 3 |
 | [`desktop.utils.files`](#desktoputilsfiles) | 0 | 19 |
 | [`desktop.utils.icon`](#desktoputilsicon) | 0 | 3 |
@@ -1254,7 +1254,7 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 - **点击某张图 → 选中**：选中的图带一圈**常显的细虚线**（选中状态，
   **跟着图一起转**——用户 2026-09-30 报过"旋转后高亮框不跟着转"）；
   **按住鼠标操作期间**才升级为带手柄/旋转钮的完整虚线框，**一松手回到
-  细框**（2026-09-30：选中态要一直看得见，右侧「当前图片样式」区跟着激活）；
+  细框**（2026-09-30：选中态要一直看得见，右侧旋转控件跟着切到这张图）；
 - **选中的图永远画在最上面**（用户 2026-10-10：类似 CSS 里 ``z-index``
   更大）——两图重叠时，被压住的那张一旦选中就得浮上来，否则看不清在
   操作哪张；命中判定（``_item_at``）同样优先命中选中图；
@@ -1404,14 +1404,15 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 右键菜单：**预览图片 / 编辑单图·编辑整图**（2026-10-01 用户定）。
 
 目标规则与双击一致：**图上** → 这张原图；**两图之外的空白** →
-整页左右组合（成品口径）。预览与双击走**同一组信号**（行为完全
+整页左右组合（成品口径）。        预览与双击走**同一组信号**（行为完全
 一样，只是入口多一个）；编辑是新加的直接入口——原本编辑是预览
 弹窗工具条里的按钮，现在不经过弹窗、右键直达，由控制器接管。
 编辑文案按目标区分（2026-10-07 用户定）：图上是「编辑单图」、
 空白是「编辑整图」——拼版页一张成品图由多张子图组成，目标是两
 种东西，同一句「编辑图片」让人不知道要改哪张。其余步骤没有这个
 区分，右键仍是「编辑图片」。
-右键即选中（与左键点击同款语义），右侧「当前图片样式」跟着激活。
+右键即选中（与左键点击同款语义），右侧旋转控件跟着切到这张图。
+空白处「编辑整图」会展示本页各张源图，选择后只编辑对应源文件。
 空画布没有菜单（没有可预览/可编辑的东西）。
 
 ##### `mouseDoubleClickEvent(event) -> None`
@@ -1717,32 +1718,18 @@ worker）→ 连 :attr:`page_ready` 把生成好的那条贴回左列。版面/�
 
 拼版控制面板——**模块二：拼版操作** 的右列（详情页控制区）。
 
-布局（用户 2026-09-30 晚定稿）：标题行（说明挂**问号按钮**，同其他步骤面板）
-+ 状态行 + **两块分区** + 底部启用开关：
+布局：标题行（说明挂**问号按钮**）+ 状态行 + 页管理操作 + 旋转编辑区 + 底部启用开关。
 
-- **「操作当前图片页」**：页级操作——整体旋转（滑块/输入框，任意角度增量）、
-  **复位本页版面**（独占一行 block）、**一行两个**的「新增图片」（只在单图页
-  出现）与「删除选中图片」（只在选中某张图时出现；2026-09-30 用户定：删除
-  按钮从图片样式区挪进来跟新增图片同行）——「删除本页拼版」按钮已删除
-  （删页入口只剩左列的「✕」与批量删除），清空全部拼版保留；
-- **「当前图片样式」**：图片级操作——旋转（绕图片中心）。这一块**只在画布里
-  选中了某张图时激活并高亮**（``_ItemSection``），切页 / 点空白取消选中后
-  整块灰掉；
-- **「在流程中启用图片拼版」**复选框**放面板最底部**（用户 2026-09-30）：
-  决定第四步取图来源（共享基元 ``print_source_dir``）。⚠️ 这是**任务流程
-  专属**的概念——公共面板的契约只有输入/输出；没有下游流程的宿主（独立
-  拼图页、未来的批处理界面）构造时传 ``enable_switch=False`` 收起它。
+- **旋转编辑区自动切换目标**：未选中图片时编辑整版（两张图绕公共中心旋转）；
+  选中图片后，同一组滑块/输入框只编辑该图（绕图片中心旋转），切换选中图时
+  角度随之回填；点空白取消选择后恢复整版编辑。
+- **页管理操作**：复位本页版面、单图页「新增图片」、选中时「删除选中图片」、
+  清空全部拼版。「选择拼版」入口在左侧虚线格。
+- **「在流程中启用图片拼版」**复选框放面板最底部：决定第四步取图来源；独立
+  拼图页等没有下游流程的宿主传 ``enable_switch=False`` 收起它。
 
-「选择拼版」按钮**不在本面板**（2026-09-30 删除）：入口只有左列末尾的
-虚线「＋ 选择拼版」格（``page_list.py``），两处同义留一处。
-
-这里只做控件与信号，所有动作都发信号交给模块二控制器
-（``desktop/pages/taskdetail/imposition_layout.py``）与共享基元
-（``imposition.py``）处理：
-- 删除/清空是**页管理**（模块一控制器）；页序在左列**拖动排序**、翻页在
-  画布下方「上一页/下一页」（``view.py``），都不在本面板；
-- **整体旋转**（增量）与**选中图旋转**（绝对角度）是**版面操作**（模块二
-  控制器）。
+这里只做控件与信号，所有动作都发信号交给模块二控制器处理：未选中时旋转信号
+是整版增量，选中时旋转信号是单图绝对角度。
 
 ### 模块常量
 
@@ -1761,8 +1748,8 @@ worker）→ 连 :attr:`page_ready` 把生成好的那条贴回左列。版面/�
 | --- | --- |
 | `__init__(parent=None, *, enable_switch: bool=True)` | ``enable_switch=False``：收起底部「在流程中启用图片拼版」开关。 |
 | `set_whole_angle(value: float) -> None` | 程序化回填整版角度（blockSignals 语义，绝不回抛增量）。 |
-| `set_item_rotation(value: float \| None) -> None` | 程序化回填选中图角度；``None`` = 没有选中。 |
-| `set_page_available(on: bool) -> None` | 有没有可操作的拼版页：没有时整版旋转组件一并禁用。 |
+| `set_item_rotation(value: float \| None) -> None` | 同步当前编辑目标；有值时单图激活，``None`` 时恢复整版编辑。 |
+| `set_page_available(on: bool) -> None` | 有没有可操作的拼版页：没有时旋转组件一并禁用。 |
 | `set_single_page(on: bool) -> None` | 当前页是不是**单图页**：是才露出「新增图片」（两图页隐藏）。 |
 | `set_enabled_checked(on: bool) -> None` | 程序化回填启用开关（blockSignals 避免回抛覆盖落盘值）。 |
 | `set_status(text: str) -> None` | 状态行：当前页 + 选中槽位 + 生效与否。 |
@@ -1774,14 +1761,6 @@ worker）→ 连 :attr:`page_ready` 把生成好的那条贴回左列。版面/�
 开关决定任务流程第四步的取图来源，是**任务流程专属**概念；没有
 下游流程的宿主（独立拼图页）传 ``False``。控件仍会构造（只是隐藏
 并置为已启用），宿主无需感知属性是否存在。
-
-##### `set_item_rotation(value: float | None) -> None`
-
-程序化回填选中图角度；``None`` = 没有选中。
-
-``None`` 时「当前图片样式」整块灰掉、组件禁用清零，页级区的
-「删除选中图片」一并隐藏；有值则高亮激活、删除按钮露出
-（用户 2026-09-30：只有某张图片选中 active 时图片区才高亮）。
 
 ---
 
@@ -3310,8 +3289,10 @@ worker 会变成孤儿线程，而它是被 ``parent``（编辑器对话框）�
 | --- | --- |
 | `__init__(parent=None)` | — |
 | `set_image(image: QImage \| None, refit: bool=True) -> None` | 装入/替换图片。 |
+| `set_context_image(image: QImage \| None, offset: QPointF=QPointF(), scale_x: float=1.0, scale_y: float=1.0, rotation: float=0.0) -> None` | 在活动图旁显示可点击切换、但不直接编辑的另一张图。 |
+| `context_image_at(scene_pos: QPointF) -> bool` | 返回场景坐标是否命中非活动图片。 |
 | `refresh() -> None` | 像素被就地改过（擦除）后只刷显示，不动缩放与滚动位置。 |
-| `paintEvent(event) -> None` | 铺**「图外素灰 + 图内条纹格」**，再让场景画上去。 |
+| `paintEvent(event) -> None` | 整个视口铺**一层素色浅底**，再让场景画上去。 |
 | `replace_image(image: QImage) -> None` | 就地换图（尺寸不变的语义，如文字写入）：不动缩放与滚动位置。 |
 | `image() -> QImage \| None` | — |
 | `tool() -> str` | 当前工具键（``crop``/``transform``/``distort``/``erase``/``text``）。 |
@@ -3338,21 +3319,23 @@ worker 会变成孤儿线程，而它是被 ``parent``（编辑器对话框）�
 fit 就等于"每次松手都把图缩小一档"，反复旋转会越转越小（用户报的
 "越旋转图形越小"）。所以提交走这条，只换像素、不动视图。
 
+##### `set_context_image(image: QImage | None, offset: QPointF=QPointF(), scale_x: float=1.0, scale_y: float=1.0, rotation: float=0.0) -> None`
+
+在活动图旁显示可点击切换、但不直接编辑的另一张图。
+
+场景矩形的并集按 :attr:`_context_display_rect` 算。它取图元的实际场景
+外接矩形，因此包含版面旋转后的扩展范围；否则旋转图像的角会落在场景
+矩形之外，被视口裁掉。
+
 ##### `paintEvent(event) -> None`
 
-铺**「图外素灰 + 图内条纹格」**，再让场景画上去。
+整个视口铺**一层素色浅底**，再让场景画上去。
 
-⚠️ 用户 2026-10-09 口径：「背景是灰色的，**原本图片大小位置固定是条纹
-格子**，图片旋转不再有白色的区域」。所以条纹格只画在 :meth:`image_rect`
-（= 这张图的原始地盘）**里面**，且**不随变换走**——图被挪走/转歪之后，
-原位露出来的就是"格子的老地方"，一眼看出那块已经空了；图外一圈是
-浅底（``CANVAS_OUTSIDE``，用户同日追加「灰色太突兀」后调浅了）。
-
-旧版把格子铺满整个视口、中间再拿一张**白纸**盖住：纸按旋转外框重铺，
-于是"白底一直在涨、看着像在漂"（用户报障）。现在没有纸，也就没有白底。
-
-格子**相位锚在图片原点**（不是视口原点），滚动/缩放时格子跟着图走，
-不会在图上"滑来滑去"。
+⚠️ 2026-10-13 用户口径：「去除底层方块格子」。旧版（2026-10-09）
+图内铺棋盘格当透明指示、双图模式扩到两图并集当"稳定的底层画布"，
+用户最终不要格子了——现在只剩一个纯色底（``CANVAS_OUTSIDE``），
+透明区域露的就是它；图片边界仍有纸边细框（``_border``，cosmetic
+细线），"哪块是图的地盘"照样分得清，图外与图内同色、不再有格子。
 
 ##### `tool() -> str`
 
@@ -3577,6 +3560,8 @@ fit 就等于"每次松手都把图缩小一档"，反复旋转会越转越小�
 | `make_transform_pending() -> None` | **挂起**这次变换：松手后保留预览，等离开工具再烘焙（GIMP 口径）。 |
 | `has_pending_transform() -> bool` | 有"已预览但还没烘焙"的变换？（弹窗据此在切工具/完成时收尾） |
 | `reset_transform_preview_flags() -> None` | 取消"挂起"标记（松手后不烘焙那一支走这里），矩阵与预览都留着。 |
+| `capture_transform_state() -> dict` | 保存当前图层的变换预览，以便切换活动图层时不必烘焙像素。 |
+| `restore_transform_state(state: dict \| None) -> None` | 恢复另一图层的挂起预览；不触发变换提交或像素重采样。 |
 | `finish_transform_drag() -> None` | 松手：把预览从"拖动快档"升回**精确档**（与烘焙同一套数学）。 |
 | `reset_transform() -> None` | 「重置」：丢弃未应用的变换，选区回到整幅、轴心回到中心。 |
 | `transform_pending() -> tuple[QRectF, QTransform, QImage] \| None` | 未应用的变换 ``(选区, 矩阵, 选区像素快照)``；没有则 None。 |
@@ -3598,7 +3583,7 @@ fit 就等于"每次松手都把图缩小一档"，反复旋转会越转越小�
 可用的键与取值范围见 ``consts.py``：``interpolation`` / ``clipping`` /
 ``direction`` / ``guide`` / ``show_preview`` / ``compose_preview`` /
 ``opacity``（0–100）/ ``constrain``+``value`` / ``pivot_op``+``value`` /
-``snap_pivot`` / ``lock_pivot``。
+``snap_pivot`` / ``lock_pivot`` / ``auto_fit_canvas``。
 
 ##### `set_transform_about_pivot(about: bool) -> None`
 
@@ -3890,6 +3875,7 @@ MRO 顺序：功能条/参数页在前（``__init__`` 里就要用），提交�
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(parent=None, image: QImage \| None=None, save_back: bool=False)` | — |
+| `configure_multiple_images(items: list[dict]) -> None` | 把拼版源图装入同一编辑器画布，并以点击切换活动图片。 |
 | `release_buffers(keep_result: bool=False) -> None` | 释放**整图级**缓冲（原图/当前图/撤销与重做快照/upright 缓存）。 |
 | `closeEvent(event) -> None` | 关闭时清理画布引用。 |
 | `result_image() -> QImage \| None` | 编辑结果（无图时 None；是否采纳由调用方的 exec 结果决定）。 |
@@ -6690,12 +6676,10 @@ bool 反序列化整份是浪费（列表页的 ``store.imposition_enabled`` 当
 - **双击预览**（用户 2026-09-30）：双击某张图 → 弹窗预览这张原图；
   双击两图之外的空白处 → 弹窗预览整页左右组合（按产出口径合成）；
 - **右键菜单「预览图片 / 编辑单图·编辑整图」**（2026-10-01；编辑文案 2026-10-07
-  按目标区分）：目标规则与双击一致（图上 → 这张原图；空白 → 整页组合）；
-  预览与双击同一条路，「编辑单图 / 编辑整图」
-  则**不经预览弹窗**直达编辑器——单张图编辑源图原图并覆盖回写（含刷新链），
-  整页组合按产出口径现场合成全分辨率图、「完成」写回该页拼版成品文件；
+  按目标区分）：双击与预览目标保持不变；单图编辑源图并覆盖回写，整图编辑
+  在同一画布显示本页两张源图，点击切换活动图并分别保存有修改的源图；
 - **弹窗里「编辑」也落盘**（2026-10-07 用户定：预览弹窗不再只读）：单张
-  原图回写源图文件、整页组合回写本页拼版成品（成品陈旧时退回只读），
+  原图回写源图文件；整页组合只预览，不提供合成图回写入口，
   生效链汇聚在 ``_on_imposition_zoom_image_saved``；
 - 面板的**整体旋转**（滑块/输入框增量）、复位本页版面（对当前页或
   选中槽位做版面变换）、**删除选中图片**（2026-09-30 用户定：选中哪张
@@ -12471,7 +12455,12 @@ QSS 里不会生效；它由 `desktop.components.log_panel.apply_log_view_style`
 ⚠️ 是**覆盖层**而不是样式表：qfluent 按钮的 qss 是整串 setStyleSheet
 进去的，再 setStyleSheet 会把它抹掉（见 :func:`bold_button` 的说明）；
 覆盖层只画框，控件本体分毫不动。
-⚠️ 框画在控件自身 rect 内缩 1px（子控件画不出父控件边界）。
+⚠️ 框**不贴身**（用户 2026-10-13：「线框高一些，不要紧贴着」）：四周
+外扩 :data:`PAD` px。宿主**不是**无脑取直接父控件——按钮行那种布局
+容器高度==控件高度，外扩后整个落在父控件边界外会被**裁剪得一行不剩**
+（提交按钮的框"不显示"就是它）。:meth:`refit` 会沿祖先链向上找**第一个
+装得下外扩框**的祖先当宿主；正常都停在滚动内容层里，随内容一起滚动
+不会漂。
 ⚠️ ``WA_TransparentForMouseEvents``：框不挡任何点击。
 
 #### 方法
@@ -12480,6 +12469,7 @@ QSS 里不会生效；它由 `desktop.components.log_panel.apply_log_view_style`
 | --- | --- |
 | `__init__(target: QWidget)` | — |
 | `eventFilter(obj, event)` | Qt 事件过滤器。 |
+| `refit() -> None` | 外扩 :data:`PAD` 重摆自己；宿主沿祖先链找第一个装得下的。 |
 | `paintEvent(_event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
 
 ### `class Card(QFrame)`
@@ -12698,6 +12688,8 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 
 给控件挂上/摘掉 :class:`RedDashFrame`（幂等；重复调用不重建控件）。
 
+⚠️ 覆盖层挂在控件的**父控件**上（外扩画框），所以引用**不能**走
+``target.findChild``（只搜子孙搜不到），钉在控件的动态属性里。
 摘掉只是 ``hide()``：控件留着，下次要亮直接 show，省一次构造。
 
 #### `combo_box(items: Iterable[str | Sequence[Any]] | None=None, width: int | None=None) -> ComboBox`

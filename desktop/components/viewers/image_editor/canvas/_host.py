@@ -32,6 +32,15 @@ class CanvasHost(QGraphicsView):
     # ---- 状态 ----
     _active_text_block: Any
     _border: QGraphicsRectItem | None
+    _context_item: Any
+    _context_border: Any
+    _context_image: Any
+    _context_display_rect: Any
+    _context_pixmap_cache: Any
+    _context_offset: Any
+    _context_rotation: float
+    _context_scale_x: float
+    _context_scale_y: float
     _diamonds: dict[str, QGraphicsPolygonItem]
     _edge_lines: dict[str, QGraphicsLineItem]
     _erase_size: Any
@@ -81,6 +90,8 @@ class CanvasHost(QGraphicsView):
     _user_zoomed: bool
     _xf: Any
     _xf_about_pivot: bool
+    _xf_auto_fit_canvas: bool
+    _xf_auto_fit_pending: bool
     _xf_base_origin: Any
     _xf_base_scale: Any
     _xf_clipping: str
@@ -119,8 +130,16 @@ class CanvasHost(QGraphicsView):
     _xf_restore_region: Any
     content_restore_requested: Signal
     restore_pixels_requested: Signal
+    # ---- 双图编辑（2026-10-13；信号定义在 core.EditorCanvas）----
+    context_image_clicked: Signal
 
     # ---- 方法（主类 + 各 Mixin）----
+    def capture_transform_state(self) -> dict:
+        ...
+
+    def restore_transform_state(self, state: dict | None) -> None:
+        ...
+
     def _apply_hover_highlight(self) -> None:
         ...
 
@@ -162,6 +181,30 @@ class CanvasHost(QGraphicsView):
         ...
 
     def _build_overlay(self) -> None:
+        ...
+
+    # ---- 双图编辑（拼版「编辑整图」，2026-10-13）----
+    def set_context_image(self, image: Any, offset: Any = ...,
+                          scale_x: float = 1.0, scale_y: float = 1.0,
+                          rotation: float = 0.0) -> None:
+        ...
+
+    def _set_scene_rect_keeping_view(self, rect: Any) -> None:
+        ...
+
+    def _show_context_image(self) -> None:
+        ...
+
+    def _context_pixmap(self) -> Any:
+        ...
+
+    def context_image_at(self, scene_pos: Any) -> bool:
+        ...
+
+    def _display_bounds(self) -> Any:
+        ...
+
+    def _sync_border(self) -> None:
         ...
 
     def _clear_distortion_preview(self) -> None:

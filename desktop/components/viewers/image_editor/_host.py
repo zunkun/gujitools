@@ -70,9 +70,16 @@ class DialogHost(QDialog):
     _async_apply: Any
     _async_worker: Any
     _async_quit_hooked: bool
+    # ---- 大图切走「统一变换」的后台过渡（2026-10-10）----
+    _tool_transition_worker: Any
+    _tool_transition_progress: Any
+    _tool_transition_target: Any
+    _tool_transition_data: Any
+    _tool_transition_grow: bool
     #: 信号定义在主类 ImageEditorDialog（PySide6 要求 QObject 宿主）
     apply_completed: Any
     apply_failed: Any
+    multi_image_saved: Any
     canvas: EditorCanvas
     done_btn: PrimaryPushButton
     fit_btn: PushButton
@@ -88,9 +95,76 @@ class DialogHost(QDialog):
     undo_btn: ToolButton
     zoom_in_btn: ToolButton
     zoom_out_btn: ToolButton
+    # ---- 双图编辑（拼版「编辑整图」，2026-10-13）----
+    _multi_layers: list
+    _active_layer: int
+    _undo_origins: list
+    _redo_origins: list
 
     # ---- 方法（主类 + 各 Mixin）----
     def _ask_overwrite(self) -> bool:
+        ...
+
+    def configure_multiple_images(self, items: list) -> None:
+        ...
+
+    def _capture_layer_state(self) -> dict:
+        ...
+
+    def _load_layer(self, index: int) -> None:
+        ...
+
+    def _refresh_multi_canvas(self) -> None:
+        ...
+
+    def _switch_context_layer(self) -> None:
+        ...
+
+    def _layer_origin(layer: dict) -> tuple:
+        ...
+
+    def _active_layer_origin(self) -> tuple:
+        ...
+
+    def _set_active_layer_origin(self, origin) -> None:
+        ...
+
+    def _reset_active_layer_origin(self) -> None:
+        ...
+
+    def _multi_layer_shift(self, dx: float, dy: float) -> None:
+        ...
+
+    # ---- 激活图层：右侧面板显示 + 切换（2026-10-13）----
+    _layer_row: Any
+    _layer_buttons: list
+    _layer_buttons_syncing: bool
+
+    def _build_layer_switcher(self) -> None:
+        ...
+
+    def _sync_layer_switcher(self) -> None:
+        ...
+
+    def _activate_layer(self, index: int) -> None:
+        ...
+
+    def _layer_scale(layer: dict) -> tuple:
+        ...
+
+    def _layer_display_origin(self, layer: dict) -> tuple:
+        ...
+
+    def _render_layer_ghost(self):
+        ...
+
+    def _bake_inactive_pending(self) -> None:
+        ...
+
+    def _layer_has_changes(self, layer: dict) -> bool:
+        ...
+
+    def _save_multiple_images(self) -> bool:
         ...
 
     def _build_side_panel(self) -> QWidget:
@@ -145,6 +219,23 @@ class DialogHost(QDialog):
         ...
 
     def _cancel_async_apply(self) -> None:
+        ...
+
+    # ---- 大图切走「统一变换」的后台过渡（2026-10-10）----
+    def _start_async_tool_transition(self, tool: str) -> bool:
+        ...
+
+    def _set_async_tool_transition_busy(self, busy: bool) -> None:
+        ...
+
+    def _on_async_tool_transition_progress(self, done: int, total: int) -> None:
+        ...
+
+    def _on_async_tool_transition_finished(self) -> None:
+        ...
+
+    # ---- 参数面板（ToolbarMixin）----
+    def _refresh_tool_page(self, tool: str) -> None:
         ...
 
     def _text_payload(self) -> list:
@@ -237,6 +328,9 @@ class DialogHost(QDialog):
         ...
 
     def _set_tool(self, tool: str) -> None:
+        ...
+
+    def _activate_tool(self, tool: str) -> None:
         ...
 
     def _slider_group(self, title: str, key: str, low: int, high: int,

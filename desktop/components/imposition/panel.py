@@ -1,45 +1,24 @@
 # -*- coding: utf-8 -*-
 """拼版控制面板——**模块二：拼版操作** 的右列（详情页控制区）。
 
-布局（用户 2026-09-30 晚定稿）：标题行（说明挂**问号按钮**，同其他步骤面板）
-+ 状态行 + **两块分区** + 底部启用开关：
+布局：标题行（说明挂**问号按钮**）+ 状态行 + 页管理操作 + 旋转编辑区 + 底部启用开关。
 
-- **「操作当前图片页」**：页级操作——整体旋转（滑块/输入框，任意角度增量）、
-  **复位本页版面**（独占一行 block）、**一行两个**的「新增图片」（只在单图页
-  出现）与「删除选中图片」（只在选中某张图时出现；2026-09-30 用户定：删除
-  按钮从图片样式区挪进来跟新增图片同行）——「删除本页拼版」按钮已删除
-  （删页入口只剩左列的「✕」与批量删除），清空全部拼版保留；
-- **「当前图片样式」**：图片级操作——旋转（绕图片中心）。这一块**只在画布里
-  选中了某张图时激活并高亮**（``_ItemSection``），切页 / 点空白取消选中后
-  整块灰掉；
-- **「在流程中启用图片拼版」**复选框**放面板最底部**（用户 2026-09-30）：
-  决定第四步取图来源（共享基元 ``print_source_dir``）。⚠️ 这是**任务流程
-  专属**的概念——公共面板的契约只有输入/输出；没有下游流程的宿主（独立
-  拼图页、未来的批处理界面）构造时传 ``enable_switch=False`` 收起它。
+- **旋转编辑区自动切换目标**：未选中图片时编辑整版（两张图绕公共中心旋转）；
+  选中图片后，同一组滑块/输入框只编辑该图（绕图片中心旋转），切换选中图时
+  角度随之回填；点空白取消选择后恢复整版编辑。
+- **页管理操作**：复位本页版面、单图页「新增图片」、选中时「删除选中图片」、
+  清空全部拼版。「选择拼版」入口在左侧虚线格。
+- **「在流程中启用图片拼版」**复选框放面板最底部：决定第四步取图来源；独立
+  拼图页等没有下游流程的宿主传 ``enable_switch=False`` 收起它。
 
-「选择拼版」按钮**不在本面板**（2026-09-30 删除）：入口只有左列末尾的
-虚线「＋ 选择拼版」格（``page_list.py``），两处同义留一处。
-
-这里只做控件与信号，所有动作都发信号交给模块二控制器
-（``desktop/pages/taskdetail/imposition_layout.py``）与共享基元
-（``imposition.py``）处理：
-- 删除/清空是**页管理**（模块一控制器）；页序在左列**拖动排序**、翻页在
-  画布下方「上一页/下一页」（``view.py``），都不在本面板；
-- **整体旋转**（增量）与**选中图旋转**（绝对角度）是**版面操作**（模块二
-  控制器）。
+这里只做控件与信号，所有动作都发信号交给模块二控制器处理：未选中时旋转信号
+是整版增量，选中时旋转信号是单图绝对角度。
 """
 
 from __future__ import annotations
 
-from PySide6.QtCore import QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QPainter, QPen
-from PySide6.QtWidgets import (
-    QBoxLayout,
-    QFrame,
-    QHBoxLayout,
-    QLabel,
-    QVBoxLayout,
-)
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import QBoxLayout, QHBoxLayout, QVBoxLayout
 from qfluentwidgets import CaptionLabel, CheckBox, DoubleSpinBox, PushButton
 from qfluentwidgets import FluentIcon as FIF
 from qfluentwidgets import Slider
@@ -60,73 +39,6 @@ PANEL_DESCRIPTION = (
     "「图片去底色」与「PDF排版」之间。勾选下方开关后，「PDF排版」将"
     "使用拼版结果；不勾选则用第三步的去底色产物。"
 )
-
-
-class _ItemSection(QFrame):
-    """「当前图片样式」区块：画布里选中了图才**激活并高亮**，否则灰掉。
-
-    ⚠️ 底色/描边**自己画**（``paintEvent``），不用样式表——样式表一旦进入
-    子树，Qt 会把 QFrame 底色填白（步骤条 ``_StepBadge``、页清单
-    ``_PageEntry`` 的同一条教训），还会连带影响子 QLabel 的取色路径。
-
-    「删除选中图片」按钮**不在本区块里**（2026-09-30 用户定：挪到页级区的
-    「新增图片」同一行），本区块只剩旋转样式；选中/取消选中的显隐由面板
-    ``set_item_rotation`` 一并拨动删除按钮。
-    """
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._active = False
-        column = QVBoxLayout(self)
-        column.setContentsMargins(10, 8, 10, 8)
-        column.setSpacing(T.SPACE_SM)
-        self.title_label = QLabel("当前图片样式", self)
-        column.addWidget(self.title_label)
-        self.rotation_caption = CaptionLabel("旋转（绕图片中心）", self)
-        apply_to(self.rotation_caption, T.SIZE_CAPTION, color=T.INK_FAINT)
-        # 说明行：说明(拉伸) + 度数输入框（面板注入）；滑块通栏独占下一行
-        self.cap_row = QHBoxLayout()
-        self.cap_row.setSpacing(T.SPACE_SM)
-        self.cap_row.addWidget(self.rotation_caption, 1)
-        column.addLayout(self.cap_row)
-        self.angle_row = QHBoxLayout()  # 通栏滑块行（面板注入滑块）
-        self.angle_row.setSpacing(T.SPACE_SM)
-        column.addLayout(self.angle_row)
-        self.empty_hint = CaptionLabel("未选中图片——点击画布里的某张图后在这里调整", self)
-        self.empty_hint.setWordWrap(True)
-        apply_to(self.empty_hint, T.SIZE_CAPTION, color=T.INK_FAINT)
-        column.addWidget(self.empty_hint)
-        self._apply_state()
-
-    def set_active(self, on: bool) -> None:
-        """有/没有选中的图：高亮整块 + 收起"未选中"提示。"""
-        on = bool(on)
-        self.empty_hint.setVisible(not on)
-        if on != self._active:
-            self._active = on
-            self._apply_state()
-
-    def _apply_state(self) -> None:
-        apply_to(
-            self.title_label,
-            T.SIZE_CAPTION,
-            bold=True,
-            color=T.ACCENT if self._active else T.INK_FAINT,
-        )
-        self.update()
-
-    def paintEvent(self, _event) -> None:  # noqa: N802
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        rect = QRectF(0.5, 0.5, self.width() - 1, self.height() - 1)
-        if self._active:
-            painter.setPen(QPen(QColor(T.ACCENT), 1.4))
-            painter.setBrush(QColor(T.ACCENT_SOFT))
-        else:
-            painter.setPen(QPen(QColor(T.BORDER), 1.0))
-            painter.setBrush(QColor(T.SURFACE))
-        painter.drawRoundedRect(rect, T.RADIUS_SM, T.RADIUS_SM)
-        painter.end()
 
 
 class ImpositionPanel(Card):
@@ -176,9 +88,11 @@ class ImpositionPanel(Card):
         column.addWidget(SectionTitle("操作当前图片页"))
 
         self._syncing_rotation = False  # 程序化回填滑块/输入框时挡住信号回抛
-        self._whole_angle = 0.0  # 整版旋转组件当前显示的绝对角度
+        self._whole_angle = 0.0  # 整版角度；选中单图时保留以便取消选择后恢复
+        self._item_mode = False  # 有选中图时，同一组旋转控件改为编辑该图
 
-        # ---- 整体旋转（任意角度，绕两图公共中心）----
+        # ---- 旋转目标随画布选择状态切换 ----
+        # 未选中：绕两图公共中心旋转整版（增量）；选中：绕图片中心旋转当前图（绝对角度）。
         # 用户 2026-09-30：滑块与输入框不挤一行——输入框挂说明行右侧，
         # 滑块通栏独占一行按 0.01°/格微调；大角度直接在输入框键入
         whole_head = QHBoxLayout()
@@ -237,18 +151,6 @@ class ImpositionPanel(Card):
         self.clear_button.clicked.connect(self.clear_requested)
         column.addWidget(self.clear_button)
 
-        # ---- 「当前图片样式」：图片级操作，选中图才激活高亮 ----
-        # （删除按钮在上面页级区的「新增图片」同行，不在这里）
-        self.item_section = _ItemSection(self)
-        column.addWidget(self.item_section)
-        self.item_spin = self._build_angle_spin()
-        self.item_section.cap_row.addWidget(self.item_spin)
-        self.item_slider = self._build_angle_slider(self.item_section.angle_row)
-        self.item_slider.setEnabled(False)
-        self.item_spin.setEnabled(False)
-        self.item_slider.valueChanged.connect(self._on_item_slider)
-        self.item_spin.valueChanged.connect(self._on_item_spin)
-
         # 弹性空白收在启用开关之前：其余控件紧凑靠上，开关钉在面板最底部
         column.addStretch(1)
 
@@ -289,10 +191,11 @@ class ImpositionPanel(Card):
     def _on_whole_slider(self, ticks: int) -> None:
         if self._syncing_rotation:
             return
+        value = ticks / ANGLE_SLIDER_SCALE
         self._syncing_rotation = True
-        self.whole_spin.setValue(ticks / ANGLE_SLIDER_SCALE)
+        self.whole_spin.setValue(value)
         self._syncing_rotation = False
-        self._emit_whole_delta(ticks / ANGLE_SLIDER_SCALE)
+        self._emit_rotation(value)
 
     def _on_whole_spin(self, value: float) -> None:
         if self._syncing_rotation:
@@ -300,67 +203,50 @@ class ImpositionPanel(Card):
         self._syncing_rotation = True
         self.whole_slider.setValue(int(round(value * ANGLE_SLIDER_SCALE)))
         self._syncing_rotation = False
-        self._emit_whole_delta(value)
+        self._emit_rotation(value)
 
-    def _emit_whole_delta(self, new_value: float) -> None:
-        """组件值变了 → 换算成**跨 ±180° 边界也正确**的增量发给控制器。"""
+    def _emit_rotation(self, new_value: float) -> None:
+        """按当前目标发增量（整版）或绝对角度（选中图）。"""
+        if self._item_mode:
+            angle = self._wrap_angle(new_value)
+            self.item_rotation_edited.emit(angle)
+            return
+        # 整版模式下滑块/输入框显示绝对角度，但对画布发跨边界正确的增量。
         delta = self._wrap_angle(new_value - self._whole_angle)
         self._whole_angle = self._wrap_angle(new_value)
         if abs(delta) > 1e-9:
             self.whole_rotate_delta.emit(delta)
 
-    def _on_item_slider(self, ticks: int) -> None:
-        if self._syncing_rotation:
-            return
-        self._syncing_rotation = True
-        self.item_spin.setValue(ticks / ANGLE_SLIDER_SCALE)
-        self._syncing_rotation = False
-        self.item_rotation_edited.emit(ticks / ANGLE_SLIDER_SCALE)
-
-    def _on_item_spin(self, value: float) -> None:
-        if self._syncing_rotation:
-            return
-        self._syncing_rotation = True
-        self.item_slider.setValue(int(round(value * ANGLE_SLIDER_SCALE)))
-        self._syncing_rotation = False
-        self.item_rotation_edited.emit(value)
-
     def set_whole_angle(self, value: float) -> None:
         """程序化回填整版角度（blockSignals 语义，绝不回抛增量）。"""
         value = self._wrap_angle(value)
         self._whole_angle = value
+        self._set_rotation_controls(value)
+
+    def _set_rotation_controls(self, value: float) -> None:
+        """回填唯一一组旋转控件，不回抛用户编辑信号。"""
         self._syncing_rotation = True
         self.whole_slider.setValue(int(round(value * ANGLE_SLIDER_SCALE)))
         self.whole_spin.setValue(value)
         self._syncing_rotation = False
 
     def set_item_rotation(self, value: float | None) -> None:
-        """程序化回填选中图角度；``None`` = 没有选中。
-
-        ``None`` 时「当前图片样式」整块灰掉、组件禁用清零，页级区的
-        「删除选中图片」一并隐藏；有值则高亮激活、删除按钮露出
-        （用户 2026-09-30：只有某张图片选中 active 时图片区才高亮）。
-        """
-        self.item_section.set_active(value is not None)
-        self.delete_item_button.setVisible(value is not None)
-        if value is None:
-            self._syncing_rotation = True
-            self.item_slider.setValue(0)
-            self.item_spin.setValue(0.0)
-            self._syncing_rotation = False
-            self.item_slider.setEnabled(False)
-            self.item_spin.setEnabled(False)
+        """同步当前编辑目标；有值时单图激活，``None`` 时恢复整版编辑。"""
+        self._item_mode = value is not None
+        self.delete_item_button.setVisible(self._item_mode)
+        if self._item_mode:
+            angle = self._wrap_angle(value)
+            self.whole_caption.setText("当前图片旋转（绕图片中心）")
+            apply_to(self.whole_caption, T.SIZE_CAPTION, color=T.ACCENT)
+            self._set_rotation_controls(angle)
             return
-        self.item_slider.setEnabled(True)
-        self.item_spin.setEnabled(True)
-        value = self._wrap_angle(value)
-        self._syncing_rotation = True
-        self.item_slider.setValue(int(round(value * ANGLE_SLIDER_SCALE)))
-        self.item_spin.setValue(value)
-        self._syncing_rotation = False
+
+        self.whole_caption.setText("整体旋转（绕两图公共中心）")
+        apply_to(self.whole_caption, T.SIZE_CAPTION, color=T.INK_FAINT)
+        self._set_rotation_controls(self._whole_angle)
 
     def set_page_available(self, on: bool) -> None:
-        """有没有可操作的拼版页：没有时整版旋转组件一并禁用。"""
+        """有没有可操作的拼版页：没有时旋转组件一并禁用。"""
         self.whole_slider.setEnabled(bool(on))
         self.whole_spin.setEnabled(bool(on))
 

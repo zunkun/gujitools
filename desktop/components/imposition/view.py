@@ -172,7 +172,7 @@ class ImpositionViewWidget(QWidget):
     spread_preview_requested = Signal()
     #: 画布右键菜单「编辑单图」（0 右槽 / 1 左槽）：不经预览弹窗直接编辑
     item_edit_requested = Signal(int)
-    #: 画布右键菜单在空白处选了「编辑整图」：直接编辑整页左右组合
+    #: 画布右键菜单在空白处选了「编辑整图」：显示本页源图并编辑选中的图片
     spread_edit_requested = Signal()
 
     def __init__(self, parent=None):

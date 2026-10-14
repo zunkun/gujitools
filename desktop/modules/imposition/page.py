@@ -202,7 +202,7 @@ class ImpositionModulePage(ModulePage):
         self.view.items_changed.connect(self._on_items_changed)
         self.view.page_reorder_requested.connect(self._on_reorder)
         self.view.pages_batch_delete_requested.connect(self._on_batch_delete)
-        # 双击 / 右键：预览（单张原图 · 整页左右组合）与「编辑单图 / 编辑整图」直达编辑器。
+        # 双击 / 右键：预览（单张原图 · 整页左右组合）；编辑整图先选择要编辑的源图。
         # 与任务流程的拼版步骤**同一组信号、同一套语义**——此前这四条没接线，
         # 画布右键菜单弹得出来、双击也有反应信号，但**点了什么都不会发生**
         # （用户 2026-10-03：「独立步骤，图片也可以编辑生效」）。
@@ -680,9 +680,13 @@ class ImpositionModulePage(ModulePage):
         self._refresh_panel()
 
     def _on_item_rotate(self, angle: float) -> None:
-        """把选中图设为绝对旋转角（顺时针，度；停手后统一提交）。"""
+        """把**当前编辑目标**设为绝对旋转角（顺时针，度；停手后统一提交）。
+
+        面板的旋转控件随画布选择状态切换目标：未选中时发整版增量
+        （``_on_whole_rotate``），选中某张图后发该图的绝对角度（本方法）。
+        """
         if self.view.current_index() < 0 or self.view.selected_slot() < 0:
-            return  # 组件没选中时本来就该禁用；防御一下
+            return  # 没有选中图时面板处于整版模式，不会走到这里；防御一下
         self.view.canvas.set_item_rotation(angle)
         self._rotate_commit_timer.start()
 
@@ -748,9 +752,8 @@ class ImpositionModulePage(ModulePage):
     # 用户 2026-10-03：「**独立步骤，图片也可以编辑生效**」。这四条此前在独立
     # 拼图页**整个没接线**——画布的右键菜单弹得出来、双击也会发信号，但点了
     # 什么都不会发生（信号发出去没人接）。语义与任务流程的拼版步骤逐条对齐：
-    # 双击图上/空白 = 预览单张原图 / 整页左右组合（弹窗里「编辑」同样写回
-    # 真实文件并接生效链）；右键「编辑单图 / 编辑整图」= 不经预览弹窗直接进编辑器，
-    # 编辑结果覆盖真实文件并在导出时生效。
+    # 双击图上/空白 = 预览单张原图 / 整页左右组合（整页组合只预览）；
+    # 右键「编辑单图 / 编辑整图」= 编辑槽位源图 / 打开源图选择器，分别保存。
 
     def _open_item_preview(self, slot: int) -> None:
         """画布**双击某张图**：弹窗预览这张原图（可缩放、下载）。"""
@@ -816,7 +819,7 @@ class ImpositionModulePage(ModulePage):
         )
 
     def _spread_target(self, page_index: int):
-        """弹窗「**整页左右组合**」来源：构造时快照版面，合成在 worker 线程。"""
+        """弹窗「整页左右组合」来源：构造时快照版面，合成在 worker 线程。"""
         from desktop.components.viewers.image_zoom_dialog import ZoomTarget
         from desktop.workers import ImpositionPagePreviewWorker
 
@@ -829,13 +832,6 @@ class ImpositionModulePage(ModulePage):
         stems = page_source_stems(pages[page_index])
         right = stems[0] if stems else ""
         left = stems[1] if len(stems) > 1 else ""
-        # 整页组合是虚拟图，回写目标是**手改缓存**（edited/NNNN.png，导出时
-        # 盖回成品）——只在 doc 里这一页的手改记录还挂着且文件在时给：记录
-        # 在就代表版面自手改后没动过（一动手 ``_drop_page_override`` 就清），
-        # 手改文件与当前版面内容一致，拿它当编辑基底不会张冠李戴。没手改过
-        # 时弹窗退回只读（画布右键空白「编辑整图」不受限，它现场合成）。
-        # ``save_path`` 一并给：显示与回写是同一份内容的整页图（非裁剪区域），
-        # 编辑器加载的是全分辨率手改图，「完成」后弹窗直接显示编辑结果。
         edited = pages[page_index].get("edited_file")
         edit_path = Path(edited) if edited and Path(edited).is_file() else None
         return ZoomTarget(
@@ -852,7 +848,9 @@ class ImpositionModulePage(ModulePage):
             edit_label="编辑整图",
         )
 
-    def _open_item_edit(self, slot: int) -> None:
+    def _open_item_edit(
+        self, slot: int, on_saved: Callable[[], None] | None = None,
+    ) -> None:
         """画布**右键某张图 →「编辑单图」**：不经预览弹窗，直接编辑原图。
 
         编辑的是该槽位对应的**源图全分辨率原图**，「完成」= 原子覆盖回该文件
@@ -894,7 +892,7 @@ class ImpositionModulePage(ModulePage):
             #    完成回调里做刷新链（磁盘与 sidecar 已由编辑器落好）。
             editor.apply_completed.connect(
                 lambda _path, edited: self._after_source_edited(
-                    file_text, edited))
+                    file_text, edited, on_saved))
             editor.apply_failed.connect(
                 lambda _path, reason: self.toast(
                     "error", "保存失败",
@@ -907,9 +905,11 @@ class ImpositionModulePage(ModulePage):
             self.toast("error", "保存失败", f"编辑未生效：{path.name}")
             return
         sync_content_quad(file_text, editor)
-        self._after_source_edited(file_text, edited)
+        self._after_source_edited(file_text, edited, on_saved)
 
-    def _after_source_edited(self, file_text: str, edited) -> None:
+    def _after_source_edited(
+        self, file_text: str, edited, on_saved: Callable[[], None] | None = None,
+    ) -> None:
         """拼版源图编辑生效后的**刷新链**（同步/后台应用两条路共用）。"""
         self.view.canvas.invalidate_image(file_text)
         # ⚠️⚠️ 源图尺寸可能变了（编辑器里旋转/裁剪后覆盖回同一文件）：版面
@@ -924,19 +924,11 @@ class ImpositionModulePage(ModulePage):
             f"（{edited.width()}×{edited.height()} px）；"
             "点「导出成品」即用上这次修改。"
         )
+        if on_saved is not None:
+            on_saved()
 
     def _open_spread_edit(self) -> None:
-        """画布**右键空白处 →「编辑整图」**：直接编辑整页左右组合（成品口径）。
-
-        组合图是**虚拟图**（没有源文件），所以这里按导出口径（``compose_page``
-        的紧裁合成，与落盘成品同一套代码）在 worker 线程现场合成**全分辨率**
-        图交给编辑器；「完成」把结果原子覆盖到 ``singletask/拼图/edited/<页>.png``，
-        导出那一刻由 :meth:`_compose_job` 盖到对应成品上。
-
-        ⚠️ 独立页没有任务流程那种"提交进 ``stages/imposition``"的落点，所以
-        手改图先存缓存区；若之后又拖这一页的版面，会重新合成、覆盖这次修饰
-        （:meth:`_on_items_changed` 会清掉手改记录，日志里也写了）。
-        """
+        """画布空白处「编辑整图」：同一画布显示两张源图并切换活动图片。"""
         index = self.view.current_index()
         pages = self._doc.get("pages") or []
         if not (0 <= index < len(pages)):
@@ -945,86 +937,25 @@ class ImpositionModulePage(ModulePage):
         items = [dict(item) for item in self.view.current_items()]
         if not items:
             return
-        from desktop.workers import ImpositionPagePreviewWorker, connect_queued
+        from PySide6.QtGui import QImage
+        from desktop.components.viewers.image_editor import ImageEditorDialog
 
-        # longest_edge=0 = 不缩：编辑器要的是全分辨率（与落盘成品同一分辨率）。
-        # ⚠️ 白底（与「导出成品」同口径）：编辑基底与导出 PNG 长得一样。
-        self.run_worker(
-            lambda: ImpositionPagePreviewWorker(
-                {"items": items}, longest_edge=0, background=WHITE_BACKGROUND,
-            ),
-            lambda worker, thread: (
-                connect_queued(
-                    self, worker.finished,
-                    lambda _i, image, _s, t=index: self._on_spread_edit_ready(
-                        t, image
-                    ),
-                    thread,
-                ),
-                connect_queued(
-                    self, worker.failed,
-                    lambda _i, msg: self.toast("error", "拼版合成失败", msg),
-                    thread,
-                ),
-                worker.finished.connect(thread.quit),
-                worker.failed.connect(thread.quit),
-            ),
-        )
+        for item in items:
+            path = Path(str(item.get("file") or ""))
+            image = QImage(str(path)) if path.is_file() else QImage()
+            if image.isNull():
+                self.toast(
+                    "warning", "无法编辑",
+                    f"读不到拼版源图：{path.name}（文件可能已被移动或删除）。",
+                )
+                return
+            item["image"] = image
 
-    def _on_spread_edit_ready(self, page_index: int, image) -> None:
-        """组合图合成完毕（主线程）：开编辑器，「完成」存进缓存区待导出盖上。"""
-        from PySide6.QtWidgets import QDialog
-
-        if image is None or image.isNull():
-            return
-        pages = self._doc.get("pages") or []
-        if not (0 <= page_index < len(pages)):
-            return
-        from desktop.components.viewers.image_editor import (
-            ImageEditorDialog, sync_content_quad,
-        )
-        from desktop.components.viewers.image_zoom_dialog import overwrite_image_file
-
-        target = edited_page_dir() / FILE_FMT.format(page_index + 1)
-        editor = ImageEditorDialog(self.window(), image, save_back=True)
-        editor.target_name = f"{cn_page_label(page_index)}的整页组合"
-        editor.source_path = str(target)
-        # 第一次编辑这页时 ``edited/NNNN.png`` 还不存在 ⇒ 没有旧图可覆盖，
-        # 不弹确认（第二次起才弹，见 ImageEditorDialog._confirm_overwrite）。
-        editor.target_exists = target.is_file()
-        if editor.exec() != QDialog.DialogCode.Accepted:
-            return
-        if editor.apply_in_progress():
-            # ⚠️ 后台应用中（2026-10-10「应用卡顿」）：完成回调接链
-            editor.apply_completed.connect(
-                lambda _path, edited: self._after_spread_edited(
-                    page_index, target, edited))
-            editor.apply_failed.connect(
-                lambda _path, reason: self.toast(
-                    "error", "保存失败",
-                    f"编辑未生效：{target.name}（{reason}）"))
-            return
-        edited = editor.result_image()
-        if edited is None or edited.isNull():
-            return
-        target.parent.mkdir(parents=True, exist_ok=True)
-        if not overwrite_image_file(edited, target):
-            self.toast("error", "保存失败", f"编辑未生效：{target.name}")
-            return
-        sync_content_quad(str(target), editor)
-        self._after_spread_edited(page_index, target, edited)
-
-    def _after_spread_edited(self, page_index: int, target, edited) -> None:
-        """整页组合编辑生效后的收尾（磁盘与 sidecar 已落好，两条路共用）。"""
-        pages = self._doc.get("pages") or []
-        if 0 <= page_index < len(pages):
-            pages[page_index]["edited_file"] = str(target)
-        self.log(
-            f"已编辑{cn_page_label(page_index)}的整页组合并保存"
-            f"（{edited.width()}×{edited.height()} px）；"
-            "点「导出成品」时这一页用编辑后的图。"
-        )
-        self.toast("success", "整页组合已编辑", "导出成品时这一页用编辑后的图。")
+        editor = ImageEditorDialog(self, items[0]["image"], save_back=True)
+        editor.configure_multiple_images(items)
+        editor.multi_image_saved.connect(self._after_source_edited)
+        editor.exec()
+        editor.release_buffers()
 
     def _on_zoom_image_saved(self, path_text: str, image=None) -> None:
         """预览弹窗里「编辑」覆盖了真实文件（``image_saved``）：按落点接链。
@@ -1287,9 +1218,10 @@ class ImpositionModulePage(ModulePage):
         """把画布当前状态回填到右侧面板（状态文案 + 旋转组件 + 按钮显隐）。
 
         与任务流程的 ``_sync_imposition_rotation_ui`` + 单图页判定同口径：
-        整版角度=平均角、选中图角度=选中角（没有选中则「删除选中图片」
-        隐藏、「当前图片样式」灰掉）；单图页才露出「新增图片」。回填走
-        blockSignals 语义（panel 内部挡信号），不会把同步误当成用户输入。
+        整版角度=平均角；**选中某张图后同一组旋转控件切换到该图**并回填
+        其角度（未选中则恢复整版），「删除选中图片」随选中显隐；单图页才
+        露出「新增图片」。回填走 blockSignals 语义（panel 内部挡信号），
+        不会把同步误当成用户输入。
         """
         panel = self.panel
         label = panel.status_label

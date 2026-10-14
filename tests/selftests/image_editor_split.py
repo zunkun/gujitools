@@ -185,6 +185,10 @@ _CROSS_METHOD_DEPS = {
         "_hide_eraser_ring", "_hide_text_outline",
         "_move_eraser_ring", "_sync_cursor",
         "_sync_overlay", "clear_text_blocks",
+        # 边框跟随内容四至（2026-10-13）：显示范围要吃到变换浮层的数学，
+        # 且整幅选区的空白底不算进外框（紧凑包裹单图内容）
+        "_backdrop_is_whole", "_base_current_rect", "_float_fast_xf",
+        "_float_placement",
     },
     "InteractionMixin": {
         "_apply_shear",
@@ -207,6 +211,8 @@ _CROSS_METHOD_DEPS = {
         "fit_selection", "image_rect", "refresh", "reshape_finished",
         "selection", "set_zoom", "stroke_started", "text_requested",
         "transform_committed", "transform_pending",
+        # 双图编辑（2026-10-13）：按下落在非活动图片上＝切层请求
+        "context_image_at", "context_image_clicked",
     },
     "OverlayMixin": {
         "_apply_hover_highlight",
@@ -219,6 +225,8 @@ _CROSS_METHOD_DEPS = {
         # 延迟供像素（2026-10-10「切换卡顿」）：恢复会话第一次建预览时
         # 发基座信号让弹窗补 upright；补不上则整组放弃退回普通会话
         "abort_content_restore", "restore_pixels_requested",
+        # 边框跟随内容四至（2026-10-13）：浮层每帧变化边框同步跟随
+        "_sync_border",
     },
     "DistortionMixin": {
         "_move_eraser_ring", "image_rect", "refresh", "stroke_started",
@@ -310,6 +318,9 @@ _DIALOG_CROSS_DEPS = {
         # 「完成」的后台应用与延迟恢复（2026-10-10）
         "_begin_background_apply", "_on_content_restore_requested",
         "_on_restore_pixels_requested",
+        # 双图编辑·换层（2026-10-13）：``_switch_context_layer`` 落在主类
+        "_refresh_size_label", "_refresh_tool_page", "_sync_undo_buttons",
+        "_text_payload",
     },
     "ToolbarMixin": {
         "_commit_crop", "_commit_text_blocks", "_commit_transform",
@@ -318,12 +329,20 @@ _DIALOG_CROSS_DEPS = {
         "_page_text", "_page_transform", "_redo_now",
         "_reset_all",
         "_undo_now",
+        # 大图切走「统一变换」先后台烘焙再切（2026-10-10「应用卡顿」）
+        "_start_async_tool_transition",
     },
     "ToolPagesMixin": {"_discard_crop", "_flip_transform", "_hint"},
     "UndoMixin": {"_discard_crop", "_refresh_size_label",
-                  "_content_clear", "_content_on_history_jump"},
+                  "_content_clear", "_content_on_history_jump",
+                  # 双图内容原点的平行栈 + 换层后重摆（2026-10-13）
+                  "_active_layer_origin", "_set_active_layer_origin",
+                  "_reset_active_layer_origin", "_refresh_multi_canvas"},
     "CommitMixin": {"_push_undo", "_refresh_size_label", "_undo_now",
-                    "apply_completed", "apply_failed"},
+                    "apply_completed", "apply_failed",
+                    # 双图内容原点平移 + 换层后重摆（2026-10-13）
+                    "_multi_layer_shift", "_refresh_multi_canvas",
+                    "_activate_tool", "_sync_history", "_sync_undo_buttons"},
 }
 
 #: 子包必须存在的模块（拆分是真的、不是把文件改名了事）。

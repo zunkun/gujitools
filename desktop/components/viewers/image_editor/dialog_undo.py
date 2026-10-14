@@ -58,6 +58,11 @@ class UndoMixin(DialogHost):
         if self._image is None or self._image.isNull():
             return
         self._undo.append(self._image.copy())
+        # 双图编辑（2026-10-13）：撤销点带上**当时**的内容原点，撤销/重做
+        # 才能把"另一张图相对摆哪儿"一起退回去（单图模式跳过，栈恒空）。
+        if getattr(self, "_multi_layers", None):
+            self._undo_origins.append(self._active_layer_origin())
+            self._redo_origins.clear()
         # 重做分支作废：先砍掉比新槽位更靠后的名字，再补上本步的名字
         del self._labels[len(self._undo) - 1:]
         self._labels.append(label or "编辑")
@@ -66,6 +71,8 @@ class UndoMixin(DialogHost):
             self._undo.pop(0)
             # 最老的状态没了 ⇒ 第 0 节点换人：它现在是被丢掉那一步的结果
             self._origin_label = self._labels.pop(0)
+            if getattr(self, "_multi_layers", None):
+                self._undo_origins.pop(0)
         # ---- 内容节点维护（2026-10-10） ----
         # 变换烘焙：upright 缓存与 (rect0, V) 链保持有效（弹窗侧在烘焙成功后
         # 更新 V）；其余像素提交都会让 upright 缓存过期——裁剪/镜像还改变了
@@ -95,8 +102,13 @@ class UndoMixin(DialogHost):
         # 撤销换图会作废画布上的文字块（它们不在撤销历史里）
         self.canvas.clear_text_blocks()
         self._redo.append(self._image.copy())
+        if getattr(self, "_multi_layers", None):
+            self._redo_origins.append(self._active_layer_origin())
+            self._set_active_layer_origin(self._undo_origins.pop())
         self._image = self._undo.pop()
-        self.canvas.set_image(self._image)
+        self.canvas.set_image(self._image, refit=not self._multi_layers)
+        if getattr(self, "_multi_layers", None):
+            self._refresh_multi_canvas()
         self._content_on_history_jump()
         self._sync_undo_buttons()
         self._sync_history()
@@ -113,8 +125,13 @@ class UndoMixin(DialogHost):
             return  # 同 _undo_now：文字编辑中不让 Ctrl+Y 动图
         self.canvas.clear_text_blocks()
         self._undo.append(self._image.copy())
+        if getattr(self, "_multi_layers", None):
+            self._undo_origins.append(self._active_layer_origin())
+            self._set_active_layer_origin(self._redo_origins.pop())
         self._image = self._redo.pop()
-        self.canvas.set_image(self._image)
+        self.canvas.set_image(self._image, refit=not self._multi_layers)
+        if getattr(self, "_multi_layers", None):
+            self._refresh_multi_canvas()
         self._content_on_history_jump()
         self._sync_undo_buttons()
         self._sync_history()
@@ -132,7 +149,11 @@ class UndoMixin(DialogHost):
             self._push_undo(STEP_RESET)
         self._image = self._original.copy()
         self._redo.clear()
-        self.canvas.set_image(self._image)
+        if getattr(self, "_multi_layers", None):
+            # 还原回"打开时的样子"：内容原点也退回本层初值
+            self._reset_active_layer_origin()
+            self._refresh_multi_canvas()
+        self.canvas.set_image(self._image, refit=not self._multi_layers)
         self._content_on_history_jump()
         self._sync_undo_buttons()
         self._sync_history()

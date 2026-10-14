@@ -7,12 +7,10 @@
 - **双击预览**（用户 2026-09-30）：双击某张图 → 弹窗预览这张原图；
   双击两图之外的空白处 → 弹窗预览整页左右组合（按产出口径合成）；
 - **右键菜单「预览图片 / 编辑单图·编辑整图」**（2026-10-01；编辑文案 2026-10-07
-  按目标区分）：目标规则与双击一致（图上 → 这张原图；空白 → 整页组合）；
-  预览与双击同一条路，「编辑单图 / 编辑整图」
-  则**不经预览弹窗**直达编辑器——单张图编辑源图原图并覆盖回写（含刷新链），
-  整页组合按产出口径现场合成全分辨率图、「完成」写回该页拼版成品文件；
+  按目标区分）：双击与预览目标保持不变；单图编辑源图并覆盖回写，整图编辑
+  在同一画布显示本页两张源图，点击切换活动图并分别保存有修改的源图；
 - **弹窗里「编辑」也落盘**（2026-10-07 用户定：预览弹窗不再只读）：单张
-  原图回写源图文件、整页组合回写本页拼版成品（成品陈旧时退回只读），
+  原图回写源图文件；整页组合只预览，不提供合成图回写入口，
   生效链汇聚在 ``_on_imposition_zoom_image_saved``；
 - 面板的**整体旋转**（滑块/输入框增量）、复位本页版面（对当前页或
   选中槽位做版面变换）、**删除选中图片**（2026-09-30 用户定：选中哪张
@@ -326,17 +324,7 @@ class ImpositionLayoutMixin:
         )
 
     def _imposition_spread_target(self, page_index: int) -> "object | None":
-        """弹窗「**整页左右组合**」来源：构造时快照版面，合成在 worker 线程。
-
-        ``edit_path`` = 本页**拼版成品**文件（``stages/imposition/NNNN.png``，
-        PDF排版用的就是它）——但只在它**存在且不陈旧**（没有挂着的防抖
-        合成，即版面改动都已合成完）时给；否则弹窗退回只读（画布右键空白
-        「编辑整图」不受此限，它现场合成全分辨率、永远以最新版面为准）。
-        ``save_path`` 一并指向同一文件：弹窗画布显示的整页组合与成品是同一套
-        合成代码的同一份内容（整页对整页，不是区域合成那种"裁一块"），满足
-        ``ZoomTarget`` 对 1:1 的要求——这样编辑器加载的是成品**全分辨率**
-        原图，「完成」后弹窗直接显示编辑结果、不回退成重合成。
-        """
+        """弹窗「整页左右组合」来源：构造时快照版面，合成在 worker 线程。"""
         from desktop.workers import ImpositionPagePreviewWorker
         from desktop.components.viewers.image_zoom_dialog import ZoomTarget
 
@@ -375,7 +363,9 @@ class ImpositionLayoutMixin:
             dialog.close()
 
     # ------------------------------------------------------------- 右键直接编辑
-    def _open_imposition_item_edit(self, slot: int) -> None:
+    def _open_imposition_item_edit(
+        self, slot: int, on_saved: Callable[[], None] | None = None,
+    ) -> None:
         """画布**右键某张图 →「编辑单图」**：不经预览弹窗，直接编辑原图。
 
         编辑的是 ``slot`` 对应的**源图全分辨率原图**（第三步去底色的成品
@@ -419,7 +409,8 @@ class ImpositionLayoutMixin:
         if editor.apply_in_progress():
             # ⚠️ 后台应用中（2026-10-10「应用卡顿」）：完成回调接链
             editor.apply_completed.connect(
-                lambda _path, edited: self._after_slot_edited(path, edited))
+                lambda _path, edited: self._after_slot_edited(
+                    path, edited, on_saved))
             editor.apply_failed.connect(
                 lambda _path, reason: self._toast(
                     "error", "保存失败",
@@ -434,11 +425,15 @@ class ImpositionLayoutMixin:
             )
             return
         sync_content_quad(str(path), editor)
-        self._after_slot_edited(path, edited)
+        self._after_slot_edited(path, edited, on_saved)
 
-    def _after_slot_edited(self, path, edited) -> None:
+    def _after_slot_edited(
+        self, path, edited, on_saved: Callable[[], None] | None = None,
+    ) -> None:
         """拼版源图编辑生效后的统一刷新链（同步/后台应用两条路共用）。"""
         self._on_imposition_source_edited(str(path), edited)
+        if on_saved is not None:
+            on_saved()
 
     def _on_imposition_source_edited(self, path_text: str, edited) -> None:
         """拼版源图被覆盖（画布右键或预览弹窗）：统一的生效链。
@@ -470,115 +465,36 @@ class ImpositionLayoutMixin:
         )
 
     def _open_imposition_spread_edit(self) -> None:
-        """画布**右键空白处 →「编辑整图」**：直接编辑整页左右组合。
-
-        组合图是**虚拟图**（没有源文件），所以这里按产出口径（``compose_page``
-        的紧裁合成，与落盘成品同一套代码）在 worker 线程现场合成**全分辨率**
-        图给编辑器；「完成」把结果原子覆盖到本页的拼版成品文件
-        ``stages/imposition/0001.png``——PDF排版用的就是它。
-
-        ⚠️ 覆盖前把挂着的防抖合成取消（定时器停 + 清脏标记）：挂着的这一轮
-        若在我们的写回之后再跑，会用未编辑的合成结果把刚覆盖的成品冲掉。
-        版面本身没变，不需要再合成。若之后又去拖版面，重新合成会把这次
-        手工修饰覆盖掉（日志里有说明）。
-        """
+        """画布空白处「编辑整图」：同一画布显示两张源图并切换活动图片。"""
         view = getattr(self, "imposition_view", None)
         if view is None or view.current_index() < 0:
             return
         view.flush_pending()  # 拖住没松手的改动先落定，快照才是最新的
-        page_index = view.current_index()
         items = [dict(item) for item in view.current_items()]
         if not items:
             return
-        timer = getattr(self, "_imposition_timer", None)
-        if timer is not None:
-            timer.stop()
-        self._imposition_dirty = False
-        owner_task = self.task_id
-        from desktop.workers import ImpositionPagePreviewWorker, connect_queued
-
-        # longest_edge=0 = 不缩：编辑器要的是全分辨率（合成到落盘同一分辨率）
-        self.run_worker(
-            lambda: ImpositionPagePreviewWorker(
-                page={"items": items}, longest_edge=0
-            ),
-            lambda worker, thread: (
-                connect_queued(
-                    self, worker.finished,
-                    lambda _i, image, _s, t=page_index, o=owner_task:
-                        self._on_imposition_spread_edit_ready(t, image, o),
-                    thread,
-                ),
-                connect_queued(
-                    self, worker.failed,
-                    lambda _i, msg: self._toast(
-                        "error", "拼版合成失败", msg
-                    ),
-                    thread,
-                ),
-                worker.finished.connect(thread.quit),
-                worker.failed.connect(thread.quit),
-            ),
-        )
-
-    def _on_imposition_spread_edit_ready(self, page_index: int, image,
-                                         owner_task: str | None) -> None:
-        """组合图合成完毕（主线程）：开编辑器，「完成」写回成品文件。"""
+        from PySide6.QtGui import QImage
         from PySide6.QtWidgets import QDialog
+        from desktop.components.viewers.image_editor import ImageEditorDialog
 
-        task_id = self.task_id
-        if (
-            owner_task != task_id
-            or image is None
-            or image.isNull()
-            or task_id is None
-        ):
-            return
-        from desktop.components.viewers.image_editor import (
-            ImageEditorDialog, sync_content_quad,
-        )
-        from desktop.components.viewers.image_zoom_dialog import (
-            overwrite_image_file,
-        )
+        for item in items:
+            path = Path(str(item.get("file") or ""))
+            image = QImage(str(path)) if path.is_file() else QImage()
+            if image.isNull():
+                self._toast(
+                    "warning", "无法编辑",
+                    f"读不到拼版源图：{path.name}（文件可能已被移动或删除）。",
+                )
+                return
+            item["image"] = image
 
-        target = (
-            self.store.imposition_output_dir(task_id)
-            / FILE_FMT.format(page_index + 1)
+        editor = ImageEditorDialog(
+            self.window() or self, items[0]["image"], save_back=True,
         )
-        editor = ImageEditorDialog(self.window(), image, save_back=True)
-        editor.target_name = f"第{page_index + 1}页拼版成品"
-        editor.source_path = str(target)
-        # 这一页还没合成过 ⇒ 目标文件不存在，没有旧成品可覆盖，不弹确认。
-        editor.target_exists = target.is_file()
-        if editor.exec() != QDialog.DialogCode.Accepted:
-            return
-        if editor.apply_in_progress():
-            # ⚠️ 后台应用中（2026-10-10「应用卡顿」）：完成回调接链
-            editor.apply_completed.connect(
-                lambda _path, edited: self._after_spread_saved(
-                    page_index, target, edited))
-            editor.apply_failed.connect(
-                lambda _path, reason: self._toast(
-                    "error", "保存失败",
-                    f"编辑未生效：{target.name}（{reason}）"))
-            return
-        edited = editor.result_image()
-        if edited is None or edited.isNull():
-            return
-        if not overwrite_image_file(edited, target):
-            self._toast("error", "保存失败", f"编辑未生效：{target.name}")
-            return
-        sync_content_quad(str(target), editor)
-        self._after_spread_saved(page_index, target, edited)
-
-    def _after_spread_saved(self, page_index: int, target, edited) -> None:
-        """整页组合编辑生效后的收尾（磁盘与 sidecar 已落好，两条路共用）。"""
-        self._refresh_print_source()
-        self.log_view.append(
-            f"已编辑{cn_page_label(page_index)}的整页组合并覆盖拼版成品"
-            f"「{target.name}」（PDF排版用这张）；"
-            "再次调整该页版面会重新合成、覆盖这次编辑。"
-        )
+        editor.configure_multiple_images(items)
+        editor.multi_image_saved.connect(self._on_imposition_source_edited)
+        editor.exec()
+        editor.release_buffers()
 
     def _on_imposition_zoom_image_saved(self, path_text: str,
                                         image=None) -> None:

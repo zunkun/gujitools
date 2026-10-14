@@ -194,6 +194,16 @@ class ToolPagesMixin(DialogHost):
             lambda checked: canvas.set_transform_options(compose_preview=checked))
         layout.addWidget(compose)
 
+        auto_fit = CheckBox("是否自动缩放画布")
+        auto_fit.setChecked(canvas._xf_auto_fit_canvas)
+        auto_fit.setToolTip(
+            "默认关闭：变换或移动图片后保持当前画布位置和缩放；"
+            "开启后在每次变换完成时自动缩放并居中显示画布内容")
+        auto_fit.toggled.connect(
+            lambda checked: canvas.set_transform_options(
+                auto_fit_canvas=checked))
+        layout.addWidget(auto_fit)
+
         opacity_label = CaptionLabel(f"{canvas._xf_preview_opacity}%")
         opacity_label.setTextColor(QColor(T.INK_SOFT))
         head = QHBoxLayout()

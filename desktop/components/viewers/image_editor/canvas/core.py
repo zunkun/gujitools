@@ -13,14 +13,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide6.QtCore import QPointF, QRect, QRectF, Qt, Signal, QTimer
+from PySide6.QtCore import QPointF, QRectF, QSizeF, Qt, Signal, QTimer
 from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap, QTransform
 from PySide6.QtWidgets import (
     QFrame, QGraphicsPixmapItem, QGraphicsRectItem, QGraphicsScene, QGraphicsView,
 )
 
 from ..consts import (
-    CANVAS_OUTSIDE, CHECKER_DARK, CHECKER_LIGHT, CHECKER_STEP, CLIPPING_DEFAULT,
+    CANVAS_OUTSIDE, CLIPPING_DEFAULT,
     DIRECTION_DEFAULT, DISTORT_HARDNESS, DISTORT_SIZE, DISTORT_SPACING,
     DISTORT_STRENGTH, EDIT_FIT_RATIO, ERASER_DEFAULT, GUIDE_DEFAULT,
     INTERPOLATION_DEFAULT, MAX_ZOOM, MIN_RECT_EDGE, MIN_ZOOM,
@@ -71,12 +71,30 @@ class EditorCanvas(
     #: 秒级重活，弹窗在此刻才算它（带进度框），算完调
     #: :meth:`provide_restore_pixels` 补回来（2026-10-10「切换卡顿」）。
     restore_pixels_requested = Signal()
+    context_image_clicked = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._scene = QGraphicsScene(self)
         self.setScene(self._scene)
         self._item: QGraphicsPixmapItem | None = None
+        self._context_item: QGraphicsPixmapItem | None = None
+        self._context_border: QGraphicsRectItem | None = None
+        self._context_image: QImage | None = None
+        #: 非活动图的**实际显示外接矩形**（场景坐标，含旋转）——场景矩形
+        #: 的并集按它算（见 set_context_image）
+        self._context_display_rect: QRectF | None = None
+        #: 非活动图片的 **QPixmap 缓存**（2026-10-13「切换不丝滑」）：
+        #: ``QPixmap.fromImage`` 对大图是一次全图转换（12 MP 几十毫秒），
+        #: 而换图层/裁剪/撤销都会重摆 context 图元。按 **QImage 包装对象的
+        #: 身份**缓存并持有引用（防止 id 复用假命中）：换图层时弹窗侧会
+        #: 存进新的 QImage 包装（捕获即新包装），身份变了缓存自然失效，
+        #: 不会拿旧像素骗人。
+        self._context_pixmap_cache: dict[int, tuple[QImage, QPixmap]] = {}
+        self._context_offset = QPointF()
+        self._context_scale_x = 1.0
+        self._context_scale_y = 1.0
+        self._context_rotation = 0.0
         self._image: QImage | None = None
         self._zoom = 1.0
         self._tool = "crop"
@@ -137,6 +155,8 @@ class EditorCanvas(
         self._xf_pivot_saved: QPointF | None = None
         #: 发生过任何变换操作（区分"真变换"与"动了手但没动矩阵"）
         self._xf_touched = False
+        self._xf_auto_fit_canvas = False
+        self._xf_auto_fit_pending = False
         #: 从轴心缩放/切变（旋转永远绕轴心）
         self._xf_about_pivot = False
         #: 「调整范围」模式：拖手柄收小变换区域而不是缩放内容
@@ -214,8 +234,8 @@ class EditorCanvas(
         self.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
         self.setFrameShape(QFrame.Shape.NoFrame)
         # ⚠️ **不要**设 ``setBackgroundBrush``：``QGraphicsScene.drawBackground``
-        #    会把视口整个刷成那个颜色，把 ``paintEvent`` 里铺的棋盘格整块盖掉
-        #    （实测：设了就只剩纯色，背景格看不见）。空白处由 paintEvent 的
+        #    会把视口整个刷成那个颜色，把 ``paintEvent`` 里铺的素色底整块盖掉
+        #    （实测：设了就只剩纯色，背景底色看不见）。空白处由 paintEvent 的
         #    棋盘格负责。
         self.setBackgroundBrush(Qt.BrushStyle.NoBrush)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -262,17 +282,20 @@ class EditorCanvas(
         if self._image is None:
             self._sync_overlay()
             return
-        pixmap = QPixmap.fromImage(self._image)
-        pixmap.setDevicePixelRatio(1.0)
+        pixmap = self._cached_pixmap(self._image)
         item = QGraphicsPixmapItem(pixmap)
         item.setTransformationMode(Qt.TransformationMode.SmoothTransformation)
         self._scene.addItem(item)
         # 纸边细框（cosmetic：任何倍率下都是 1 设备像素），白纸与背景才分得开
         self._border = QGraphicsRectItem(item.boundingRect())
         self._border.setPen(self._border_pen())
+        # 层序：边框压在自己图上、又必须在变换浮层（z=5）之下
+        self._border.setZValue(1)
         self._scene.addItem(self._border)
         self._item = item
-        self.setSceneRect(item.boundingRect())
+        self._item.setZValue(0)
+        self._show_context_image()
+        self._sync_scene_rect()
         if refit:
             self.fit()
         if self._tool in ("crop", "transform"):
@@ -288,18 +311,117 @@ class EditorCanvas(
         self._sync_overlay()
 
 
-    def _border_pen(self) -> QPen:
-        """纸边框的画笔：**一律细实线**（cosmetic ⇒ 任何倍率下都是 1.5px）。
+    def set_context_image(
+        self,
+        image: QImage | None,
+        offset: QPointF = QPointF(),
+        scale_x: float = 1.0,
+        scale_y: float = 1.0,
+        rotation: float = 0.0,
+    ) -> None:
+        """在活动图旁显示可点击切换、但不直接编辑的另一张图。
 
-        它就是这张纸的原始边界：变换时内容搬走了/转歪了，这圈边**不动**，好当
-        参照。⚠️ 变换工具下**不再**画成虚线（用户 2026-10-09 第二轮报障
-        「同时存在两个框的虚线，颜色不一样」）——虚线只留给跟着内容转的
-        ``_quad`` 变换框，这条实线专门负责标"原始位置和大小"。
+        场景矩形的并集按 :attr:`_context_display_rect` 算。它取图元的实际场景
+        外接矩形，因此包含版面旋转后的扩展范围；否则旋转图像的角会落在场景
+        矩形之外，被视口裁掉。
+        """
+        self._context_image = (
+            image if image is not None and not image.isNull() else None
+        )
+        self._context_offset = QPointF(offset)
+        self._context_scale_x = max(0.01, float(scale_x))
+        self._context_scale_y = max(0.01, float(scale_y))
+        self._context_rotation = float(rotation)
+        self._context_display_rect = None
+        self._show_context_image()
+        self._sync_scene_rect()
+        self.update()
+
+    def _context_pixmap(self) -> QPixmap | None:
+        """非活动图片的 QPixmap（与活动层共用小型缓存）。"""
+        if self._context_image is None:
+            return None
+        return self._cached_pixmap(self._context_image)
+
+    def _cached_pixmap(self, image: QImage) -> QPixmap:
+        """同一张图在活动/非活动层间切换时复用 QPixmap，避免重复全图转换。"""
+        key = int(image.cacheKey())
+        entry = self._context_pixmap_cache.get(key)
+        if entry is not None:
+            return entry[1]
+        pixmap = QPixmap.fromImage(image)
+        pixmap.setDevicePixelRatio(1.0)
+        self._context_pixmap_cache[key] = (image, pixmap)
+        while len(self._context_pixmap_cache) > 4:
+            self._context_pixmap_cache.pop(next(iter(self._context_pixmap_cache)))
+        return pixmap
+
+    def _refresh_cached_pixmap(self, image: QImage) -> QPixmap:
+        """像素被就地改写后刷新这张图对应的显示缓存。"""
+        for key, entry in list(self._context_pixmap_cache.items()):
+            if entry[0] is image:
+                del self._context_pixmap_cache[key]
+        pixmap = QPixmap.fromImage(image)
+        pixmap.setDevicePixelRatio(1.0)
+        self._context_pixmap_cache[int(image.cacheKey())] = (image, pixmap)
+        return pixmap
+
+    def _show_context_image(self) -> None:
+        self._context_display_rect = None
+        if self._context_item is not None:
+            self._scene.removeItem(self._context_item)
+            self._context_item = None
+        if self._context_border is not None:
+            self._scene.removeItem(self._context_border)
+            self._context_border = None
+        if self._context_image is None or self._item is None:
+            return
+        pixmap = self._context_pixmap()
+        if pixmap is None:
+            return
+        item = QGraphicsPixmapItem(pixmap)
+        item.setTransformationMode(Qt.TransformationMode.SmoothTransformation)
+        item.setPos(self._context_offset)
+        item.setTransform(QTransform.fromScale(
+            self._context_scale_x, self._context_scale_y,
+        ))
+        item.setTransformOriginPoint(item.boundingRect().center())
+        item.setRotation(self._context_rotation)
+        self._context_display_rect = item.sceneBoundingRect()
+        # ⚠️ 层序（2026-10-13「重叠时操作谁谁在上层」）：非活动图 -1、
+        #    活动图 0、活动图边框 1、变换浮层 5——**活动图永远盖住非活动
+        #    图**，点击非活动图露出的部分即切换，切完它就到上层。
+        item.setZValue(-1)
+        self._scene.addItem(item)
+        self._context_item = item
+        # 非活动图也有自己的虚线边框（跟随它的显示外框，含旋转/ghost 外扩）
+        border = QGraphicsRectItem(item.sceneBoundingRect())
+        border.setPen(self._border_pen())
+        border.setZValue(-1)
+        self._scene.addItem(border)
+        self._context_border = border
+
+    def context_image_at(self, scene_pos: QPointF) -> bool:
+        """返回场景坐标是否命中非活动图片。"""
+        if self._context_item is None:
+            return False
+        return self._context_item.boundingRect().contains(
+            self._context_item.mapFromScene(scene_pos)
+        )
+
+    def _border_pen(self) -> QPen:
+        """图片边框画笔：**虚线**（cosmetic ⇒ 任何倍率下都是 1px 虚线）。
+
+        ⚠️ 2026-10-13 用户口径：边框改**虚线**，且"并不是固定不变的，应该
+        根据图片四至边界扩大和缩小"——矩形由 :meth:`_sync_border` 维护：
+        活动图跟随当前显示范围（含挂起变换的外扩），非活动图跟随自己的
+        显示外框。
         """
         pen = QPen(QColor("#5b6472") if self._tool == "transform"
                    else QColor("#8a93a3"))
         pen.setCosmetic(True)
-        pen.setWidthF(1.5 if self._tool == "transform" else 1.0)
+        pen.setWidthF(1.0)
+        pen.setStyle(Qt.PenStyle.DashLine)
         return pen
 
     def _apply_border_pen(self) -> None:
@@ -307,78 +429,112 @@ class EditorCanvas(
         if self._border is not None:
             self._border.setPen(self._border_pen())
 
+    def _display_bounds(self) -> QRectF:
+        """活动图**当前内容**的紧凑外框（图片坐标）——虚线边框的依据。
+
+        用户 2026-10-13 口径：框要**包裹单张图片本身**——单图旋转 45°，
+        框就是旋转后内容的外接框（√2 比例），**位置跟着内容移动**，不是
+        钉死在原矩形上。所以：有挂起变换预览时＝变换后内容的紧凑外框
+        （整幅选区时底图是一片空白，**不算**进外框；局部选区时选区外的
+        原图残余还在画面上，要并进来）；没有预览时＝图片矩形本身。
+        """
+        float_item = getattr(self, "_float_item", None)
+        if float_item is None or float_item.pixmap().isNull():
+            return QRectF(self.image_rect())
+        if self._xf_preview_keyframe is not None:
+            float_xf = self._float_placement()
+        else:
+            float_xf = self._float_fast_xf()
+        pixmap = float_item.pixmap()
+        bounds = float_xf.mapRect(
+            QRectF(0, 0, pixmap.width(), pixmap.height()))
+        if not self._backdrop_is_whole() and self._paint_image is not None:
+            bounds = bounds.united(self._base_current_rect())
+        return bounds
+
+    def _sync_border(self) -> None:
+        """边框矩形跟随活动图当前显示范围（见 :meth:`_display_bounds`）。"""
+        if self._border is None or self._image is None:
+            return
+        self._border.setRect(self._display_bounds())
+
     def _sync_scene_rect(self) -> None:
-        """场景矩形**恒定**＝原图矩形：变换预览期间绝不再改。
+        """场景矩形＝两图**当前显示范围**的并集（滚动条够得到全部内容）。
 
-        ⚠️⚠️ 用户 2026-10-09 口径：「画布画面是不变的」。旧版把场景矩形扩成
-        「底图 ∪ 变换浮层」——变换把内容送出原边界时矩形一帧帧长大，而视图是
-        ``AlignCenter``：场景矩形变 ⇒ 它的中心变 ⇒ **整幅画面跟着平移**
-        （实测视图中心 (498,699)→(674,664)→(639,842)，``mapFromScene(0,0)``
-        从 (244,91) 漂到 (172,18)）。用户看到的"格子跟图片相互远离、画布一直
-        在漂"就是它。
+        2026-10-13 用户报障「右侧图向右移一段后切到左侧，右侧显示不全」：
+        矩形只圈基准矩形时，被变换搬出去的 content 落在矩形外 ⇒ 滚动条
+        够不着，永远看不全。现在并集里放的是**显示范围**：
 
-        "要让浮层跑到画外也看得见"这个初衷**不需要**动场景矩形：场景矩形只管
-        滚动条范围，**不影响绘制**——只要控件覆盖得到，画到矩形外的图元照样
-        画出来（实测：把内容挪到原图矩形右下方 300px 外，控件里像素依然是页面
-        色）。所以这里钉死成原图矩形，画面一动不动。
+        - 活动图：:meth:`_display_bounds`（无预览＝图片矩形；有挂起预览＝
+          变换后内容的紧凑外框）；
+        - 非活动图：:attr:`_context_display_rect`（图元的实际场景外接矩形，
+          含版面旋转）。
+
+        ⚠️ 两侧口径一致 ⇒ 换层前后并集是**同一块版面**，画面不跳（2026-10-13
+        的切换跳动修复保持不变）。
+        ⚠️ **拖动中冻结**（2026-10-09 的旧病：矩形一帧帧跟着浮层长大，画面
+        跟着漂）：松手后 ``finish_transform_drag`` 会再刷一次，那时才扩。
+        ⚠️ 换矩形时用 :meth:`_set_scene_rect_keeping_view` **保持画面不动**。
         """
         if self._item is None:
             return
-        rect = QRectF(self.image_rect())
-        if self.sceneRect() != rect:
-            self.setSceneRect(rect)
+        if getattr(self, "_xf_dragging", False):
+            return
+        rect = self._content_scene_rect()
+        if (self._context_item is not None
+                and self._xf_auto_fit_pending
+                and not self._xf_auto_fit_canvas):
+            # 变换让内容扩出场景时保留旧视口可见范围，确保 QGraphicsView
+            # 有足够滚动余量维持同一视口中心，而不是被滚动范围夹回内容中心。
+            rect = rect.united(
+                self.mapToScene(self.viewport().rect()).boundingRect())
+        self._set_scene_rect_keeping_view(rect)
+
+    def _content_scene_rect(self) -> QRectF:
+        """当前图片内容范围，不含为保持视口位置而保留的空白场景范围。"""
+        if self._context_item is None:
+            # ⚠️ **单图模式维持旧口径**：矩形钉住原图矩形（2026-10-09「转多
+            #    少圈画面都不动」——单图时场景常小于视口，AlignCenter 会跟着
+            #    矩形中心走，矩形一扩画面就漂）。浮层跑出矩形的部分照常画得
+            #    出来，只是滚不到——这是单图模式的既有取舍。
+            return QRectF(self.image_rect())
+        # 双图：并集圈住**两图当前显示范围**（内容再远也滚得到）
+        rect = QRectF(self._display_bounds())
+        context = (QRectF(self._context_display_rect)
+                   if self._context_display_rect is not None
+                   else self._context_item.sceneBoundingRect())
+        return rect.united(context)
+
+    def _set_scene_rect_keeping_view(self, rect: QRectF) -> None:
+        """换场景矩形但**画面不动**（把原视口中心的场景点重新摆回中心）。
+
+        ``setSceneRect`` 只改滚动范围；滚动值锚在矩形原点上，矩形原点一变，
+        同样的滚动值就对应到别的场景位置（画面整体漂移——2026-10-09 报障的
+        "格子跟图片相互远离"就是这个）。所以改完立刻把同一个场景点居中回来。
+        """
+        if self.sceneRect() == rect:
+            return
+        center = self.mapToScene(self.viewport().rect().center())
+        self.setSceneRect(rect)
+        self.centerOn(center)
 
 
     def refresh(self) -> None:
         """像素被就地改过（擦除）后只刷显示，不动缩放与滚动位置。"""
         if self._item is not None and self._image is not None:
-            self._item.setPixmap(QPixmap.fromImage(self._image))
+            self._item.setPixmap(self._refresh_cached_pixmap(self._image))
 
     def paintEvent(self, event) -> None:  # noqa: N802
-        """铺**「图外素灰 + 图内条纹格」**，再让场景画上去。
+        """整个视口铺**一层素色浅底**，再让场景画上去。
 
-        ⚠️ 用户 2026-10-09 口径：「背景是灰色的，**原本图片大小位置固定是条纹
-        格子**，图片旋转不再有白色的区域」。所以条纹格只画在 :meth:`image_rect`
-        （= 这张图的原始地盘）**里面**，且**不随变换走**——图被挪走/转歪之后，
-        原位露出来的就是"格子的老地方"，一眼看出那块已经空了；图外一圈是
-        浅底（``CANVAS_OUTSIDE``，用户同日追加「灰色太突兀」后调浅了）。
-
-        旧版把格子铺满整个视口、中间再拿一张**白纸**盖住：纸按旋转外框重铺，
-        于是"白底一直在涨、看着像在漂"（用户报障）。现在没有纸，也就没有白底。
-
-        格子**相位锚在图片原点**（不是视口原点），滚动/缩放时格子跟着图走，
-        不会在图上"滑来滑去"。
+        ⚠️ 2026-10-13 用户口径：「去除底层方块格子」。旧版（2026-10-09）
+        图内铺棋盘格当透明指示、双图模式扩到两图并集当"稳定的底层画布"，
+        用户最终不要格子了——现在只剩一个纯色底（``CANVAS_OUTSIDE``），
+        透明区域露的就是它；图片边界仍有纸边细框（``_border``，cosmetic
+        细线），"哪块是图的地盘"照样分得清，图外与图内同色、不再有格子。
         """
         painter = QPainter(self.viewport())
-        area = event.rect()
-        painter.fillRect(area, CANVAS_OUTSIDE)   # 图外那圈浅底（见 consts.CANVAS_OUTSIDE）
-        # ⚠️ 循环必须夹在**可见区域**里：格子按"图片矩形"铺，但放大到 8× 时
-        #    那个矩形在视口坐标里能有几万像素宽，照它迭代＝每次重绘几十万次
-        #    drawRect（实测会卡死）。夹完只剩视口那几十格。
-        board = self.mapFromScene(self.image_rect()).boundingRect()
-        vis = board.intersected(area)
-        if self._image is not None and not vis.isEmpty():
-            origin = self.mapFromScene(QPointF(0.0, 0.0))
-            step = CHECKER_STEP
-            painter.save()
-            painter.setClipRect(vis)
-            painter.fillRect(vis, CHECKER_LIGHT)
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(CHECKER_DARK)
-            # 起点按"图片原点往左上取整到格线"，这样第 (0,0) 格永远贴着图角。
-            row = int((vis.top() - origin.y()) // step)
-            y = origin.y() + row * step
-            while y <= vis.bottom():
-                col = int((vis.left() - origin.x()) // step)
-                x = origin.x() + col * step
-                while x <= vis.right():
-                    if (row + col) % 2:
-                        painter.drawRect(QRect(int(x), int(y), step, step))
-                    x += step
-                    col += 1
-                y += step
-                row += 1
-            painter.restore()
+        painter.fillRect(event.rect(), CANVAS_OUTSIDE)
         painter.end()
         super().paintEvent(event)
 
@@ -523,7 +679,9 @@ class EditorCanvas(
         """
         if self._item is None or self.viewport().width() <= 1:
             return  # 控件还没布局：此时 fit 算出来的是脏值，等 resizeEvent 再来
-        rect = self.image_rect()
+        rect = self._content_scene_rect()
+        if self.sceneRect() != rect:
+            self.setSceneRect(rect)
         if ratio is None or isinstance(ratio, bool) \
                 or not isinstance(ratio, (int, float)):
             ratio = self._fit_ratio
@@ -533,6 +691,7 @@ class EditorCanvas(
             grow_y = rect.height() * (1.0 / ratio - 1.0) / 2.0
             rect = rect.adjusted(-grow_x, -grow_y, grow_x, grow_y)
         self.fitInView(rect, Qt.AspectRatioMode.KeepAspectRatio)
+        self.centerOn(rect.center())
         self._zoom = max(MIN_ZOOM, min(MAX_ZOOM, self.transform().m11()))
         # ⚠️ 手柄的几何 = 视图像素 ÷ 当前倍率，倍率变了必须重算覆盖层；
         #    不然 set_image 时用脏 viewport 算的小倍率会留下巨型手柄

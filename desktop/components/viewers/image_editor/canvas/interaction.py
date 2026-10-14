@@ -162,6 +162,10 @@ class InteractionMixin(CanvasHost):
         if button != Qt.MouseButton.LeftButton or self._item is None:
             return super().mousePressEvent(event)
         pos = self.mapToScene(event.position().toPoint())
+        if not self.image_rect().contains(pos) and self.context_image_at(pos):
+            self.context_image_clicked.emit()
+            event.accept()
+            return
         inside = self.image_rect()
         if self._tool == "crop":
             # 裁剪不做"拖拽画框"（那是截图的交互）：默认全选，只能拖边/移动。
@@ -195,10 +199,10 @@ class InteractionMixin(CanvasHost):
                 event.accept()
                 return
             hit = self._hit_transform(event.position())
-            # ⚠️ 拖拽状态机在 TransformMixin（手柄语义与变换应用是同一件事），
-            #    这里只负责"按下了、按在哪儿、按着什么修饰键"。
-            self._mode = self._begin_transform_drag(
-                hit, pos, event.modifiers())
+            # 只点选图片/节点时不需要变换像素；等鼠标真的移动再创建预览，
+            # 避免一次纯选择就复制、降采样并重采样整块图片。
+            self._set_handle_focus(hit if hit in _HANDLE_HITS else None)
+            self._mode = ("xf_pending", hit, pos, event.modifiers())
             event.accept()
             return
         if self._tool == "distort":
@@ -269,6 +273,15 @@ class InteractionMixin(CanvasHost):
             return
         pos = self.mapToScene(event.position().toPoint())
         inside = self.image_rect()
+        if kind == "xf_pending":
+            _, hit, start, modifiers = self._mode
+            mode = self._begin_transform_drag(hit, start, modifiers)
+            if mode is None:
+                self._mode = None
+                event.accept()
+                return
+            self._mode = mode
+            kind = mode[0]
         if kind.startswith("xf_"):
             # 统一变换的七种拖拽（移动/旋转/双轴缩放/单轴缩放/切变/透视/轴心）
             # 全在 TransformMixin 里，这里只转发位置与修饰键
@@ -341,6 +354,10 @@ class InteractionMixin(CanvasHost):
             end = self.mapToScene(event.position().toPoint())
             self._distort_segment(self._mode[1], end)
             self._finish_distortion_stroke()
+            self._mode = None
+            event.accept()
+            return
+        if self._mode and self._mode[0] == "xf_pending":
             self._mode = None
             event.accept()
             return
