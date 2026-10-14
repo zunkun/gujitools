@@ -4,11 +4,9 @@
 对应 UI 模块二（``desktop/components/imposition/canvas.py`` +
 ``panel.py``）：
 - 画布里拖动 / 缩放拉伸 / 旋转 → ``items_changed`` → 落盘 + 防抖合成；
-- **双击预览**（用户 2026-09-30）：双击某张图 → 弹窗预览这张原图；
-  双击两图之外的空白处 → 弹窗预览整页左右组合（按产出口径合成）；
-- **右键菜单「预览图片 / 编辑单图·编辑整图」**（2026-10-01；编辑文案 2026-10-07
-  按目标区分）：双击与预览目标保持不变；单图编辑源图并覆盖回写，整图编辑
-  在同一画布显示本页两张源图，点击切换活动图并分别保存有修改的源图；
+- **双击预览**（用户 2026-09-30）：双击空白处预览整页左右组合；
+- **右键菜单「预览图片 / 编辑图片」**：预览仍可针对单图或整页；编辑统一在
+  同一画布显示本页两张源图，点击切换活动图并分别保存有修改的源图；
 - **弹窗里「编辑」也落盘**（2026-10-07 用户定：预览弹窗不再只读）：单张
   原图回写源图文件；整页组合只预览，不提供合成图回写入口，
   生效链汇聚在 ``_on_imposition_zoom_image_saved``；
@@ -254,7 +252,7 @@ class ImpositionLayoutMixin:
 
     # ------------------------------------------------------------- 双击预览
     def _open_imposition_item_preview(self, slot: int) -> None:
-        """画布**双击某张图**：弹窗预览这张原图（弹窗里 ←/→ 可翻本页另一张）。"""
+        """画布右键「预览图片」：弹窗预览这张原图（可翻本页另一张）。"""
         view = getattr(self, "imposition_view", None)
         if view is None or view.current_index() < 0:
             return
@@ -319,8 +317,6 @@ class ImpositionLayoutMixin:
             note=f"{cn_page_label(page_index)} · {side}「{path.name}」",
             stem=path.stem,
             count=len(items),
-            edit_path=path,
-            edit_label="编辑单图",
         )
 
     def _imposition_spread_target(self, page_index: int) -> "object | None":
@@ -353,7 +349,8 @@ class ImpositionLayoutMixin:
             count=1,
             save_path=edit_path,
             edit_path=edit_path,
-            edit_label="编辑整图",
+            edit_label="编辑图片",
+            show_text_tool=False,
         )
 
     def close_imposition_zoom_popup(self) -> None:
@@ -363,78 +360,6 @@ class ImpositionLayoutMixin:
             dialog.close()
 
     # ------------------------------------------------------------- 右键直接编辑
-    def _open_imposition_item_edit(
-        self, slot: int, on_saved: Callable[[], None] | None = None,
-    ) -> None:
-        """画布**右键某张图 →「编辑单图」**：不经预览弹窗，直接编辑原图。
-
-        编辑的是 ``slot`` 对应的**源图全分辨率原图**（第三步去底色的成品
-        文件），编辑器「完成」后原子覆盖回该文件（与 extract/detect 页面
-        图的「覆盖原图」同一套工具 ``overwrite_image_file``——临时文件 +
-        ``os.replace``，不会写穿硬链接另一头）。落盘后的刷新链：
-
-        ① 画布丢掉这张图的解码缓存并重绘；② 主页面 ``_on_page_image_saved``
-        刷新各查看器（rembg 输出无坐标基准，走其"按文件刷新"分支）；
-        ③ 重新防抖合成——拼版成品里嵌着这张源图，不重合成就白改了。
-        """
-        from PySide6.QtGui import QImage
-        from PySide6.QtWidgets import QDialog
-
-        view = getattr(self, "imposition_view", None)
-        if view is None or view.current_index() < 0:
-            return
-        pages = self._imposition_pages()
-        items = pages[view.current_index()].get("items") or []
-        if not 0 <= slot < len(items):
-            return
-        path = Path(str(items[slot].get("file") or ""))
-        image = QImage(str(path)) if path.exists() else QImage()
-        if image.isNull():
-            self._toast(
-                "warning", "无法编辑",
-                f"读不到原图：{path.name}（文件可能已被移动或删除）。",
-            )
-            return
-        from desktop.components.viewers.image_editor import ImageEditorDialog
-        from desktop.components.viewers.image_zoom_dialog import (
-            overwrite_image_file,
-        )
-        from desktop.components.viewers.image_editor import sync_content_quad
-
-        editor = ImageEditorDialog(self.window(), image, save_back=True)
-        editor.target_name = path.name
-        editor.source_path = str(path)
-        if editor.exec() != QDialog.DialogCode.Accepted:
-            return
-        if editor.apply_in_progress():
-            # ⚠️ 后台应用中（2026-10-10「应用卡顿」）：完成回调接链
-            editor.apply_completed.connect(
-                lambda _path, edited: self._after_slot_edited(
-                    path, edited, on_saved))
-            editor.apply_failed.connect(
-                lambda _path, reason: self._toast(
-                    "error", "保存失败",
-                    f"编辑未生效：{path.name}（{reason}）"))
-            return
-        edited = editor.result_image()
-        if edited is None or edited.isNull():
-            return
-        if not overwrite_image_file(edited, path):
-            self._toast(
-                "error", "保存失败", f"编辑未生效：{path.name}",
-            )
-            return
-        sync_content_quad(str(path), editor)
-        self._after_slot_edited(path, edited, on_saved)
-
-    def _after_slot_edited(
-        self, path, edited, on_saved: Callable[[], None] | None = None,
-    ) -> None:
-        """拼版源图编辑生效后的统一刷新链（同步/后台应用两条路共用）。"""
-        self._on_imposition_source_edited(str(path), edited)
-        if on_saved is not None:
-            on_saved()
-
     def _on_imposition_source_edited(self, path_text: str, edited) -> None:
         """拼版源图被覆盖（画布右键或预览弹窗）：统一的生效链。
 
@@ -465,7 +390,7 @@ class ImpositionLayoutMixin:
         )
 
     def _open_imposition_spread_edit(self) -> None:
-        """画布空白处「编辑整图」：同一画布显示两张源图并切换活动图片。"""
+        """「编辑图片」：同一画布显示整页源图并切换活动图片。"""
         view = getattr(self, "imposition_view", None)
         if view is None or view.current_index() < 0:
             return
@@ -474,7 +399,6 @@ class ImpositionLayoutMixin:
         if not items:
             return
         from PySide6.QtGui import QImage
-        from PySide6.QtWidgets import QDialog
         from desktop.components.viewers.image_editor import ImageEditorDialog
 
         for item in items:
@@ -491,6 +415,9 @@ class ImpositionLayoutMixin:
         editor = ImageEditorDialog(
             self.window() or self, items[0]["image"], save_back=True,
         )
+        set_tool_visible = getattr(editor, "set_tool_visible", None)
+        if callable(set_tool_visible):
+            set_tool_visible("text", False)
         editor.configure_multiple_images(items)
         editor.multi_image_saved.connect(self._on_imposition_source_edited)
         page_index = view.current_index()

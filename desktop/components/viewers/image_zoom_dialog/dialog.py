@@ -392,6 +392,10 @@ class ImageZoomDialog(QDialog, WorkerHost):
             return None
         self._release_editor()
         self._editor = ImageEditorDialog(self, image, save_back=save_back)
+        if self._target is not None and not self._target.show_text_tool:
+            set_tool_visible = getattr(self._editor, "set_tool_visible", None)
+            if callable(set_tool_visible):
+                set_tool_visible("text", False)
         return self._editor
 
     def _release_editor(self) -> None:

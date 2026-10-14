@@ -100,6 +100,7 @@ TRANSFORM_SYNC_RENDER_PIXELS = 250_000
 
 #: 插入文字字号范围（图片像素高）
 TEXT_MIN, TEXT_MAX, TEXT_DEFAULT = 12, 240, 48
+TEXT_COLOR_DEFAULT = "#d32f2f"
 
 #: 文字常用色（古籍批注口径：黑墨/白粉/朱批/藏蓝/赭黄/黛绿）——一击即换的
 #: 色块，**收在颜色选择器面板里**（用户 2026-10-01：色块不要散在选项行上）。

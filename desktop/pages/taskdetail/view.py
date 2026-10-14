@@ -701,7 +701,7 @@ class DetailViewMixin:
             self._open_imposition_spread_preview
         )
         self.imposition_view.item_edit_requested.connect(
-            self._open_imposition_item_edit
+            lambda _slot: self._open_imposition_spread_edit()
         )
         self.imposition_view.spread_edit_requested.connect(
             self._open_imposition_spread_edit

@@ -111,9 +111,8 @@ class ZoomPopupMixin:
     def _zoom_menu_items(self, target) -> list:
         """右键菜单项 ``[(文案, 图标, 槽)]``：有可回写文件才给「编辑…」。
 
-        编辑文案由 ``ZoomTarget.edit_label`` 决定（默认「编辑图片」；拼版
-        传「编辑单图」/「编辑整图」，与拼版画布的右键菜单一致——2026-10-07
-        用户定）。抽成方法是为了可测——``_open_zoom_menu`` 要 ``exec`` 模态，
+        编辑文案由 ``ZoomTarget.edit_label`` 决定（默认「编辑图片」）。
+        抽成方法是为了可测——``_open_zoom_menu`` 要 ``exec`` 模态，
         离屏测不了；这里只算"该有哪些项"，与弹菜单解耦。
         """
         from qfluentwidgets import FluentIcon as FIF

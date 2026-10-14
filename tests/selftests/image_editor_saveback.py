@@ -77,6 +77,8 @@ class _StubEditor:
 
 
 def run(ctx) -> None:
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QColor
     from PySide6.QtWidgets import QDialog
 
     from tests.selftests._context import ok, pump
@@ -390,6 +392,9 @@ def run(ctx) -> None:
         ed_async.canvas.set_tool("transform")
         ed_async.canvas.transform_rotate(90)
         ed_async.canvas.make_transform_pending()
+        text_block = ed_async.canvas.add_text_block(
+            QPointF(5, 5), 20, QColor("#000000"), "Arial")
+        text_block.setPlainText("A")
         done_log: list = []
         ed_async.apply_completed.connect(
             lambda p, img: done_log.append((p, img)))
@@ -431,6 +436,14 @@ def run(ctx) -> None:
         ok("后台应用：底片真的被覆盖（磁盘 48×64 = 旋转结果）",
            not _disk.isNull() and (_disk.width(), _disk.height()) == (48, 64),
            f"size={_disk.width()}x{_disk.height()}")
+        _disk_has_text = any(
+            _disk.pixelColor(x, y).red() < 100
+            and _disk.pixelColor(x, y).green() < 100
+            and _disk.pixelColor(x, y).blue() < 100
+            for y in range(_disk.height()) for x in range(_disk.width())
+        ) if not _disk.isNull() else False
+        ok("后台应用：添加的文字确实写入实体图片",
+           _disk_has_text, "落盘文件中未找到深色文字像素")
         ok("后台应用：result_image() 也是最终图（关窗后仍可取）",
            ed_async.result_image() is not None
            and (ed_async.result_image().width(),

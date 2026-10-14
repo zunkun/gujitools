@@ -20,7 +20,7 @@
   更大）——两图重叠时，被压住的那张一旦选中就得浮上来，否则看不清在
   操作哪张；命中判定（``_item_at``）同样优先命中选中图；
 - **切页 / 点空白处 → 取消选中**（右侧图片操作区随之灰掉）；
-- **双击某张图 → 预览这张原图**；**双击两图之外的空白处 → 预览左右组合**
+- **双击某张图 → 编辑整页组合**；**双击两图之外的空白处 → 预览左右组合**
   （整页按产出口径合成的效果，``emit`` 给控制器开预览弹窗，画布自己不管弹窗）；
 - **滚轮 → 缩放视图**（以光标为锚点，松开即停在当前倍率）：缩放只改
   ``_px_per_unit`` 与偏移两个数，不解码、不重排；重绘**不在滚轮事件里直接
@@ -121,14 +121,13 @@ class ImpositionCanvas(QWidget):
     items_changed = Signal(list)
     #: 当前选中的图（0 右槽 / 1 左槽 / -1 未选中）
     selection_changed = Signal(int)
-    #: **双击某张图**（0 右槽 / 1 左槽）：请求预览这张原图
-    item_double_clicked = Signal(int)
+    #: **右键菜单「预览图片」**（0 右槽 / 1 左槽）：预览这张原图
+    item_preview_requested = Signal(int)
     #: **双击了图片之外的空白处**：请求预览整页左右组合
     spread_double_clicked = Signal()
-    #: **右键菜单「编辑单图」**（0 右槽 / 1 左槽）：不经预览弹窗，直接编辑
-    #: 这张原图（2026-10-01 用户定：编辑原本是预览弹窗里的按钮，现在右键直达）
+    #: **右键菜单在图片上选了「编辑图片」**（0 右槽 / 1 左槽）：编辑整页组合
     item_edit_requested = Signal(int)
-    #: **右键菜单在空白处选了「编辑整图」**：打开双图选择器，编辑目标为所选源图
+    #: **右键菜单在空白处选了「编辑图片」**：编辑整页组合
     spread_edit_requested = Signal()
 
     def __init__(self, parent=None):
@@ -609,18 +608,10 @@ class ImpositionCanvas(QWidget):
         self.update()
 
     def contextMenuEvent(self, event) -> None:  # noqa: N802
-        """右键菜单：**预览图片 / 编辑单图·编辑整图**（2026-10-01 用户定）。
+        """右键菜单：**预览图片 / 编辑图片**。
 
-        目标规则与双击一致：**图上** → 这张原图；**两图之外的空白** →
-        整页左右组合（成品口径）。        预览与双击走**同一组信号**（行为完全
-        一样，只是入口多一个）；编辑是新加的直接入口——原本编辑是预览
-        弹窗工具条里的按钮，现在不经过弹窗、右键直达，由控制器接管。
-        编辑文案按目标区分（2026-10-07 用户定）：图上是「编辑单图」、
-        空白是「编辑整图」——拼版页一张成品图由多张子图组成，目标是两
-        种东西，同一句「编辑图片」让人不知道要改哪张。其余步骤没有这个
-        区分，右键仍是「编辑图片」。
-        右键即选中（与左键点击同款语义），右侧旋转控件跟着切到这张图。
-        空白处「编辑整图」会展示本页各张源图，选择后只编辑对应源文件。
+        「预览图片」仍按命中对象预览单张或整页组合；「编辑图片」统一编辑
+        整页组合，不再提供单张源图编辑。右键图片时仍先选中该图。
         空画布没有菜单（没有可预览/可编辑的东西）。
         """
         if not self._items:
@@ -633,7 +624,7 @@ class ImpositionCanvas(QWidget):
         menu = RoundMenu(parent=self)
         for text, icon, slot in (
             ("预览图片", FIF.PHOTO, lambda: self._emit_context(index, False)),
-            ("编辑单图" if index >= 0 else "编辑整图", FIF.EDIT,
+            ("编辑图片", FIF.EDIT,
              lambda: self._emit_context(index, True)),
         ):
             action = Action(icon, text, menu)
@@ -663,19 +654,18 @@ class ImpositionCanvas(QWidget):
         reveal_in_explorer(file_text)
 
     def _emit_context(self, index: int, edit: bool) -> None:
-        """右键菜单点了某一项：按目标（图上/空白）发出对应的请求信号。
-
-        预览复用双击信号——两者对下游（视图→控制器）是同一个请求。
-        """
+        """右键菜单按命中的图层发出预览或整页编辑请求。"""
         if index >= 0:
-            (self.item_edit_requested if edit
-             else self.item_double_clicked).emit(index)
+            if edit:
+                self.item_edit_requested.emit(index)
+            else:
+                self.item_preview_requested.emit(index)
         else:
             (self.spread_edit_requested if edit
              else self.spread_double_clicked).emit()
 
     def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802
-        """双击：**图上 → 预览这张原图**；**两图之外的空白 → 预览左右组合**。
+        """双击图片编辑整页组合；双击空白预览整页组合。
 
         ⚠️ 处理了就 ``accept``：Qt 对未接受的双击会**再补一个 mousePress**，
         那会走进 ``mousePressEvent`` 把编辑手势带起来（用户双击预览、松手时
@@ -685,7 +675,7 @@ class ImpositionCanvas(QWidget):
             return super().mouseDoubleClickEvent(event)
         index = self._item_at(event.position())
         if index >= 0:
-            self.item_double_clicked.emit(index)
+            self.item_edit_requested.emit(index)
         else:
             self.spread_double_clicked.emit()
         event.accept()

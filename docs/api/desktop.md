@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 168 个模块、179 个公开类、1243 个公开函数/方法（生成于 2026-10-14）。
+覆盖 168 个模块、179 个公开类、1244 个公开函数/方法（生成于 2026-10-14）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -62,7 +62,7 @@
 | [`desktop.components.viewers.image_editor.dialog`](#desktopcomponentsviewersimage_editordialog) | 1 | 5 |
 | [`desktop.components.viewers.image_editor.dialog_commit`](#desktopcomponentsviewersimage_editordialog_commit) | 1 | 2 |
 | [`desktop.components.viewers.image_editor.dialog_pages`](#desktopcomponentsviewersimage_editordialog_pages) | 1 | 0 |
-| [`desktop.components.viewers.image_editor.dialog_toolbar`](#desktopcomponentsviewersimage_editordialog_toolbar) | 1 | 0 |
+| [`desktop.components.viewers.image_editor.dialog_toolbar`](#desktopcomponentsviewersimage_editordialog_toolbar) | 1 | 1 |
 | [`desktop.components.viewers.image_editor.dialog_undo`](#desktopcomponentsviewersimage_editordialog_undo) | 1 | 0 |
 | [`desktop.components.viewers.image_editor.distortion`](#desktopcomponentsviewersimage_editordistortion) | 2 | 14 |
 | [`desktop.components.viewers.image_editor.geometry`](#desktopcomponentsviewersimage_editorgeometry) | 0 | 15 |
@@ -1259,7 +1259,7 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
   更大）——两图重叠时，被压住的那张一旦选中就得浮上来，否则看不清在
   操作哪张；命中判定（``_item_at``）同样优先命中选中图；
 - **切页 / 点空白处 → 取消选中**（右侧图片操作区随之灰掉）；
-- **双击某张图 → 预览这张原图**；**双击两图之外的空白处 → 预览左右组合**
+- **双击某张图 → 编辑整页组合**；**双击两图之外的空白处 → 预览左右组合**
   （整页按产出口径合成的效果，``emit`` 给控制器开预览弹窗，画布自己不管弹窗）；
 - **滚轮 → 缩放视图**（以光标为锚点，松开即停在当前倍率）：缩放只改
   ``_px_per_unit`` 与偏移两个数，不解码、不重排；重绘**不在滚轮事件里直接
@@ -1330,8 +1330,8 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 | `resizeEvent(event) -> None` | Qt 事件覆写：尺寸变化时重算布局 / 重新缩放。 |
 | `showEvent(event) -> None` | Qt 事件覆写：显示时刷新状态。 |
 | `invalidate_image(path: str) -> None` | 某个源图文件被外部覆盖（编辑器「完成」回写）后：丢掉它的解码 |
-| `contextMenuEvent(event) -> None` | 右键菜单：**预览图片 / 编辑单图·编辑整图**（2026-10-01 用户定）。 |
-| `mouseDoubleClickEvent(event) -> None` | 双击：**图上 → 预览这张原图**；**两图之外的空白 → 预览左右组合**。 |
+| `contextMenuEvent(event) -> None` | 右键菜单：**预览图片 / 编辑图片**。 |
+| `mouseDoubleClickEvent(event) -> None` | 双击图片编辑整页组合；双击空白预览整页组合。 |
 | `mousePressEvent(event) -> None` | Qt 事件覆写：按下（选中 / 开始拖拽或绘制）。 |
 | `mouseMoveEvent(event) -> None` | Qt 事件覆写：移动（拖拽 / 缩放中的实时更新）。 |
 | `mouseReleaseEvent(event) -> None` | Qt 事件覆写：松开（提交本次编辑）。 |
@@ -1401,23 +1401,15 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 
 ##### `contextMenuEvent(event) -> None`
 
-右键菜单：**预览图片 / 编辑单图·编辑整图**（2026-10-01 用户定）。
+右键菜单：**预览图片 / 编辑图片**。
 
-目标规则与双击一致：**图上** → 这张原图；**两图之外的空白** →
-整页左右组合（成品口径）。        预览与双击走**同一组信号**（行为完全
-一样，只是入口多一个）；编辑是新加的直接入口——原本编辑是预览
-弹窗工具条里的按钮，现在不经过弹窗、右键直达，由控制器接管。
-编辑文案按目标区分（2026-10-07 用户定）：图上是「编辑单图」、
-空白是「编辑整图」——拼版页一张成品图由多张子图组成，目标是两
-种东西，同一句「编辑图片」让人不知道要改哪张。其余步骤没有这个
-区分，右键仍是「编辑图片」。
-右键即选中（与左键点击同款语义），右侧旋转控件跟着切到这张图。
-空白处「编辑整图」会展示本页各张源图，选择后只编辑对应源文件。
+「预览图片」仍按命中对象预览单张或整页组合；「编辑图片」统一编辑
+整页组合，不再提供单张源图编辑。右键图片时仍先选中该图。
 空画布没有菜单（没有可预览/可编辑的东西）。
 
 ##### `mouseDoubleClickEvent(event) -> None`
 
-双击：**图上 → 预览这张原图**；**两图之外的空白 → 预览左右组合**。
+双击图片编辑整页组合；双击空白预览整页组合。
 
 ⚠️ 处理了就 ``accept``：Qt 对未接受的双击会**再补一个 mousePress**，
 那会走进 ``mousePressEvent`` 把编辑手势带起来（用户双击预览、松手时
@@ -3733,6 +3725,7 @@ fit 就等于"每次松手都把图缩小一档"，反复旋转会越转越小�
 | DISTORT_PREVIEW_RENDER_PIXELS | `60000` |
 | DISTORT_SYNC_RENDER_PIXELS | `4000000` |
 | TRANSFORM_SYNC_RENDER_PIXELS | `250000` |
+| TEXT_COLOR_DEFAULT | `"#d32f2f"` |
 | SHEAR_AT | `0.75` |
 | SIDE_VIEW_PX | `16.0` |
 | SHEAR_VIEW_PX | `16.0` |
@@ -3998,6 +3991,12 @@ True = 编辑器已关、烘焙+写底片在工作线程里跑；宿主不要再
 ### `class ToolbarMixin(DialogHost)`
 
 顶部功能条、右侧参数面板、底部状态提示。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `set_tool_visible(tool: str, visible: bool) -> None` | 设置某个功能按钮是否显示（宿主可按场景隐藏不适用功能）。 |
 
 ---
 
@@ -4829,9 +4828,9 @@ extract 的缓存名是**序号**（``0001.jpg``）而非图键——同一页�
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(render, note: str='', stem: str='', count: int=1, original=None, cap: int \| None=None, save_path=None, edit_path=None, edit_label: str='编辑图片')` | render: ``(edge:int) -> worker``；cap: 渲染密度上限（如原图原生边长）。 |
+| `__init__(render, note: str='', stem: str='', count: int=1, original=None, cap: int \| None=None, save_path=None, edit_path=None, edit_label: str='编辑图片', show_text_tool: bool=True)` | render: ``(edge:int) -> worker``；cap: 渲染密度上限（如原图原生边长）。 |
 
-##### `__init__(render, note: str='', stem: str='', count: int=1, original=None, cap: int | None=None, save_path=None, edit_path=None, edit_label: str='编辑图片')`
+##### `__init__(render, note: str='', stem: str='', count: int=1, original=None, cap: int | None=None, save_path=None, edit_path=None, edit_label: str='编辑图片', show_text_tool: bool=True)`
 
 render: ``(edge:int) -> worker``；cap: 渲染密度上限（如原图原生边长）。
 
@@ -4848,9 +4847,10 @@ render: ``(edge:int) -> worker``；cap: 渲染密度上限（如原图原生边�
 不传时回落 ``save_path``（1:1 显示的情形）。两者都为 None 表示
 没有可回写的文件（PDF 矢量页等），右键菜单不提供「编辑图片」。
 
-``edit_label``：右键菜单「编辑…」的文案，默认「编辑图片」。拼版
-有「单图 vs 整页组合」之分（2026-10-07 用户定），宿主构造目标时
-分别传「编辑单图」/「编辑整图」；其余步骤保持默认。
+``edit_label``：右键菜单「编辑…」的文案，默认「编辑图片」。
+
+``show_text_tool``：编辑器是否显示文字功能；默认显示。拼版页的图片
+编辑可设为 ``False``，其余步骤不受影响。
 
 ### `class ZoomableCanvas(QGraphicsView)`
 
@@ -6673,11 +6673,9 @@ bool 反序列化整份是浪费（列表页的 ``store.imposition_enabled`` 当
 对应 UI 模块二（``desktop/components/imposition/canvas.py`` +
 ``panel.py``）：
 - 画布里拖动 / 缩放拉伸 / 旋转 → ``items_changed`` → 落盘 + 防抖合成；
-- **双击预览**（用户 2026-09-30）：双击某张图 → 弹窗预览这张原图；
-  双击两图之外的空白处 → 弹窗预览整页左右组合（按产出口径合成）；
-- **右键菜单「预览图片 / 编辑单图·编辑整图」**（2026-10-01；编辑文案 2026-10-07
-  按目标区分）：双击与预览目标保持不变；单图编辑源图并覆盖回写，整图编辑
-  在同一画布显示本页两张源图，点击切换活动图并分别保存有修改的源图；
+- **双击预览**（用户 2026-09-30）：双击空白处预览整页左右组合；
+- **右键菜单「预览图片 / 编辑图片」**：预览仍可针对单图或整页；编辑统一在
+  同一画布显示本页两张源图，点击切换活动图并分别保存有修改的源图；
 - **弹窗里「编辑」也落盘**（2026-10-07 用户定：预览弹窗不再只读）：单张
   原图回写源图文件；整页组合只预览，不提供合成图回写入口，
   生效链汇聚在 ``_on_imposition_zoom_image_saved``；

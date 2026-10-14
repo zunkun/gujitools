@@ -166,13 +166,13 @@ class ImpositionViewWidget(QWidget):
     items_changed = Signal(int, list)
     #: 画布内选中了某张图（0 右槽 / 1 左槽 / -1）
     slot_selected = Signal(int)
-    #: 画布内双击了某张图（0 右槽 / 1 左槽）：请求预览这张原图
+    #: 画布内右键预览了某张图（0 右槽 / 1 左槽）
     item_preview_requested = Signal(int)
     #: 画布内双击了图片之外的空白处：请求预览整页左右组合
     spread_preview_requested = Signal()
-    #: 画布右键菜单「编辑单图」（0 右槽 / 1 左槽）：不经预览弹窗直接编辑
+    #: 画布双击图片或右键菜单「编辑图片」（0 右槽 / 1 左槽）：编辑整页组合
     item_edit_requested = Signal(int)
-    #: 画布右键菜单在空白处选了「编辑整图」：显示本页源图并编辑选中的图片
+    #: 画布右键菜单在空白处选了「编辑图片」：编辑整页组合
     spread_edit_requested = Signal()
 
     def __init__(self, parent=None):
@@ -203,10 +203,10 @@ class ImpositionViewWidget(QWidget):
         self.canvas = ImpositionCanvas()
         self.canvas.items_changed.connect(self._on_items_changed)
         self.canvas.selection_changed.connect(self.slot_selected)
-        # 双击预览（信号→信号直连）：弹窗归控制器管，视图只转发
-        self.canvas.item_double_clicked.connect(self.item_preview_requested)
+        self.canvas.item_preview_requested.connect(self.item_preview_requested)
+        # 双击图片和右键图上编辑都进入整页编辑。
         self.canvas.spread_double_clicked.connect(self.spread_preview_requested)
-        # 右键「编辑单图 / 编辑整图」同款直连：不经预览弹窗的编辑入口归控制器管
+        # 右键「编辑图片」不经预览弹窗，编辑入口归控制器管
         self.canvas.item_edit_requested.connect(self.item_edit_requested)
         self.canvas.spread_edit_requested.connect(self.spread_edit_requested)
         right.addWidget(self.canvas, 1)
@@ -410,8 +410,8 @@ class ImpositionViewWidget(QWidget):
         )
         self.hint.setText(
             "拖动移动　·　四角/四边缩放拉伸　·　框上方圆钮旋转　·　滚轮缩放视图　｜　"
-            "双击图片预览原图　·　双击空白处预览成品组合　｜　"
-            "右键图片/空白处可预览或编辑（编辑不经预览弹窗）　｜　"
+            "双击图片编辑整页　·　双击空白处预览成品组合　｜　"
+            "右键图片/空白处可预览或编辑（编辑统一作用于整页）　｜　"
             "点击图片选中后可在右侧「当前图片样式」里调整"
             f'（<font color="{spine}">红色虚线</font>为两图公共中心线，'
             f'<font color="{crop}">灰色虚线框</font>为成品截图范围）。'

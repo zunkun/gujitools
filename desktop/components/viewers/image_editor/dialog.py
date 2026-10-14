@@ -36,7 +36,7 @@ from desktop.ui.window_size import apply_window_size
 from .canvas import EditorCanvas
 from .geometry import _trim_transparent_edges
 from .consts import (
-    ERASER_DEFAULT, HISTORY_ORIGIN_LABEL, TEXT_DEFAULT,
+    ERASER_DEFAULT, HISTORY_ORIGIN_LABEL, TEXT_COLOR_DEFAULT, TEXT_DEFAULT,
 )
 
 
@@ -183,7 +183,7 @@ class ImageEditorDialog(
         self._option_page: QWidget | None = None
         # 文字工具参数的活性引用（插入时现读，见 _commit_text_blocks）
         self._text_size: int = TEXT_DEFAULT
-        self._text_color: str = "#000000"
+        self._text_color: str = TEXT_COLOR_DEFAULT
         self._text_family: str = T.FONT_FAMILY
         self._erase_size: int = ERASER_DEFAULT
         #: 「完成」整体处理中（防**双击重入**：确认框的 ``exec()`` 自带

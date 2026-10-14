@@ -27,11 +27,12 @@ class ZoomTarget:
     """
 
     __slots__ = ("render", "note", "stem", "count", "original", "cap",
-                 "save_path", "edit_path", "edit_label")
+                 "save_path", "edit_path", "edit_label", "show_text_tool")
 
     def __init__(self, render, note: str = "", stem: str = "", count: int = 1,
                  original=None, cap: int | None = None, save_path=None,
-                 edit_path=None, edit_label: str = "编辑图片"):
+                 edit_path=None, edit_label: str = "编辑图片",
+                 show_text_tool: bool = True):
         """render: ``(edge:int) -> worker``；cap: 渲染密度上限（如原图原生边长）。
 
         ``save_path``：本页显示的像素**就是**这个真实文件（Path | None）。
@@ -47,9 +48,10 @@ class ZoomTarget:
         不传时回落 ``save_path``（1:1 显示的情形）。两者都为 None 表示
         没有可回写的文件（PDF 矢量页等），右键菜单不提供「编辑图片」。
 
-        ``edit_label``：右键菜单「编辑…」的文案，默认「编辑图片」。拼版
-        有「单图 vs 整页组合」之分（2026-10-07 用户定），宿主构造目标时
-        分别传「编辑单图」/「编辑整图」；其余步骤保持默认。
+        ``edit_label``：右键菜单「编辑…」的文案，默认「编辑图片」。
+
+        ``show_text_tool``：编辑器是否显示文字功能；默认显示。拼版页的图片
+        编辑可设为 ``False``，其余步骤不受影响。
         """
         self.render = render
         self.note = note or "预览"
@@ -60,6 +62,7 @@ class ZoomTarget:
         self.save_path = Path(save_path) if save_path else None
         self.edit_path = Path(edit_path) if edit_path else self.save_path
         self.edit_label = edit_label
+        self.show_text_tool = bool(show_text_tool)
 
 
 class ZoomableCanvas(QGraphicsView):

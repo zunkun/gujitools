@@ -357,6 +357,15 @@ def run(ctx) -> None:
            f"tools={sorted(dialog._tool_buttons)} "
            f"crop={dialog._tool_buttons['crop'].isChecked()} "
            f"erase={dialog._tool_buttons['erase'].isChecked()}")
+        ok("文字：默认颜色为朱批红",
+           dialog._text_color == "#d32f2f", dialog._text_color)
+        dialog.set_tool_visible("text", False)
+        ok("功能显示：宿主可隐藏文字工具而不影响其他工具",
+           dialog._tool_buttons["text"].isHidden()
+           and not dialog._tool_buttons["crop"].isHidden(), "")
+        dialog.set_tool_visible("text", True)
+        ok("功能显示：默认步骤可继续显示文字工具",
+           not dialog._tool_buttons["text"].isHidden(), "")
 
         dialog._set_tool("distort")
         from qfluentwidgets import CheckBox as FluentCheckBox

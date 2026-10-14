@@ -3514,9 +3514,8 @@ def run(ctx) -> None:
             str(page.imposition_panel.whole_spin.value()),
         )
 
-        # ---------------- 8. 双击预览：双击图 → 原图；双击空白 → 虚线框范围组合
-        # 用户 2026-09-30：双击某张图预览这张原图；在图片外面双击画布，
-        # 预览灰色虚线框（成品截图范围 = page_bounds 紧裁）那块区域的组合图。
+        # ---------------- 8. 双击图片编辑整页；双击空白预览组合
+        # 双击空白预览灰色虚线框（成品截图范围 = page_bounds 紧裁）那块区域。
         from PySide6.QtCore import QEvent
         from PySide6.QtGui import QMouseEvent
 
@@ -3547,15 +3546,15 @@ def run(ctx) -> None:
             return (c.x(), c.y())
 
         spread_hits: list[int] = []
-        item_hits: list[int] = []
+        edit_hits: list[int] = []
         canvas3.spread_double_clicked.connect(lambda: spread_hits.append(1))
-        canvas3.item_double_clicked.connect(item_hits.append)
+        canvas3.item_edit_requested.connect(edit_hits.append)
         bx, by = _blank_pt(canvas3)
         canvas3.mouseDoubleClickEvent(_dbl(canvas3, bx, by))
         ok(
             "双击图片之外的空白 → 发 spread_double_clicked（预览组合）",
-            spread_hits == [1] and item_hits == [],
-            f"spread={spread_hits} item={item_hits}",
+            spread_hits == [1] and edit_hits == [],
+            f"spread={spread_hits} edit={edit_hits}",
         )
         ok(
             "双击空白不把手势带起来（处理了就 accept，无编辑模式残留）",
@@ -3566,18 +3565,18 @@ def run(ctx) -> None:
         ix, iy = _item_pt(canvas3, 0)
         canvas3.mouseDoubleClickEvent(_dbl(canvas3, ix, iy))
         ok(
-            "双击某张图 → 发 item_double_clicked 且是命中的槽位",
-            item_hits == [0] and spread_hits == [1],
-            f"item={item_hits} spread={spread_hits}",
+            "双击某张图 → 发 item_edit_requested 且是命中的槽位",
+            edit_hits == [0] and spread_hits == [1],
+            f"edit={edit_hits} spread={spread_hits}",
         )
         spread_hits.clear()
-        item_hits.clear()
+        edit_hits.clear()
         canvas3.clear_page()
         canvas3.mouseDoubleClickEvent(_dbl(canvas3, 300, 40))
         ok(
-            "空画布双击不发预览信号",
-            spread_hits == [] and item_hits == [],
-            f"spread={spread_hits} item={item_hits}",
+            "空画布双击不发预览或编辑信号",
+            spread_hits == [] and edit_hits == [],
+            f"spread={spread_hits} edit={edit_hits}",
         )
         canvas3.deleteLater()
 
@@ -3590,18 +3589,21 @@ def run(ctx) -> None:
         view_forward: list[str] = []
         view2.spread_preview_requested.connect(lambda: view_forward.append("spread"))
         view2.item_preview_requested.connect(lambda i: view_forward.append(f"item:{i}"))
+        view2.item_edit_requested.connect(lambda i: view_forward.append(f"edit:{i}"))
         vb = _blank_pt(view2.canvas)
         vi = _item_pt(view2.canvas, 0)
         view2.canvas.mouseDoubleClickEvent(_dbl(view2.canvas, *vb))
         view2.canvas.mouseDoubleClickEvent(_dbl(view2.canvas, *vi))
         ok(
-            "视图把两种双击都转发给控制器（spread / item:槽位）",
-            view_forward == ["spread", "item:0"],
+            "双击空白预览整页，双击图片编辑整页",
+            view_forward == ["spread", "edit:0"],
             str(view_forward),
         )
         ok(
-            "底部提示语写明双击预览的操作方式",
-            "双击" in view2.hint.text() and "成品组合" in view2.hint.text(),
+            "底部提示语写明双击编辑与空白预览",
+            "双击" in view2.hint.text()
+            and "编辑整页" in view2.hint.text()
+            and "成品组合" in view2.hint.text(),
             view2.hint.text(),
         )
         view2.deleteLater()
@@ -3617,6 +3619,17 @@ def run(ctx) -> None:
             str(target and target.note),
         )
         assert target is not None  # ⚠️ 上一行已判过
+        ok(
+            "拼版预览编辑目标默认隐藏文字工具",
+            not target.show_text_tool,
+            str(target.show_text_tool),
+        )
+        item_target = page._imposition_item_target(0, 0)
+        ok(
+            "单张原图预览不提供单图编辑入口",
+            item_target is not None and item_target.edit_path is None,
+            str(item_target and item_target.edit_path),
+        )
         bounds = S.page_bounds({"items": [dict(i) for i in page_items]})
         _worker = target.render(1600)
         _got: dict = {}
@@ -3693,13 +3706,7 @@ def run(ctx) -> None:
             # ⚠️ 弹窗已关掉，宿主把持有者置回 None（源码侧标注成非 Optional）
             page._imposition_zoom_dialog = None  # type: ignore[reportAttributeAccessIssue]
 
-        # ---------------- 9. 右键菜单：预览图片 / 编辑单图·编辑整图（不经预览弹窗）
-        # 用户 2026-10-01：右键菜单两个入口，目标规则与双击一致（图上 →
-        # 这张原图；空白 → 整页组合）；「编辑图片」原本是预览弹窗里的按钮，
-        # 现在右键直达——单张图覆盖回写源图原图，整页组合写回拼版成品。
-        # 2026-10-07 用户定：编辑文案按目标区分（图上「编辑单图」/空白
-        # 「编辑整图」），一张成品图由多张子图组成，同一句「编辑图片」
-        # 让人不知道要改哪张。
+        # ---------------- 9. 右键菜单：预览单图或整页，编辑统一打开整页编辑器
         from PySide6.QtCore import QEvent, QPoint
         from PySide6.QtGui import QContextMenuEvent
         from PySide6.QtWidgets import QDialog
@@ -3741,8 +3748,8 @@ def run(ctx) -> None:
                 "edit_item": [],
                 "edit_spread": 0,
             }
-            canvas4.item_double_clicked.connect(
-                lambda i: hits.__setitem__("preview_item", hits["preview_item"] + [i])
+            canvas4.item_preview_requested.connect(
+                lambda i: hits["preview_item"].append(i)
             )
             canvas4.spread_double_clicked.connect(
                 lambda: hits.__setitem__("preview_spread", hits["preview_spread"] + 1)
@@ -3759,9 +3766,9 @@ def run(ctx) -> None:
             ix, iy = _item_pt(canvas4, 0)
             canvas4.contextMenuEvent(_ctx(canvas4, ix, iy))
             ok(
-                "右键图上弹出菜单：「预览图片 / 编辑单图 / 定位图片资源」",
+                "右键图上弹出菜单：「预览图片 / 编辑图片 / 定位图片资源」",
                 [act.text() for act in _menu.get("actions", [])]
-                == ["预览图片", "编辑单图", "定位图片资源"],
+                == ["预览图片", "编辑图片", "定位图片资源"],
                 str([act.text() for act in _menu.get("actions", [])]),
             )
             ok(
@@ -3771,13 +3778,13 @@ def run(ctx) -> None:
             )
             _pick(0)
             ok(
-                "右键图上点「预览图片」→ 与双击同一信号（预览这张原图）",
+                "右键图上点「预览图片」→ 预览这张原图",
                 hits["preview_item"] == [0] and hits["preview_spread"] == 0,
                 str(hits),
             )
             _pick(1)
             ok(
-                "右键图上点「编辑单图」→ 发 item_edit_requested（同槽位）",
+                "右键图上点「编辑图片」→ 发整页编辑请求（携带命中槽位）",
                 hits["edit_item"] == [0] and hits["edit_spread"] == 0,
                 str(hits),
             )
@@ -3801,9 +3808,9 @@ def run(ctx) -> None:
             bx, by = _blank_pt(canvas4)
             canvas4.contextMenuEvent(_ctx(canvas4, bx, by))
             ok(
-                "右键空白处菜单：编辑项文案是「编辑整图」",
+                "右键空白处菜单：编辑项文案同为「编辑图片」",
                 [act.text() for act in _menu.get("actions", [])]
-                == ["预览图片", "编辑整图"],
+                == ["预览图片", "编辑图片"],
                 str([act.text() for act in _menu.get("actions", [])]),
             )
             _pick(0)
@@ -3847,33 +3854,40 @@ def run(ctx) -> None:
             )
             view3.deleteLater()
 
-            # ---- 控制器层：右键图上「编辑图片」→ 编辑器（覆盖回写源图）----
+            # ---- 控制器层：点击单张图编辑时，仍打开包含左右两图的整页编辑器 ----
             import desktop.components.viewers.image_editor as _ied
 
             _edit_seen: dict = {}
             _edited = _solid_qimage(EDIT_ITEM_COLOR, 64, 48)
 
+            class _FakeSignal:
+                def connect(self, _callback):
+                    pass
+
             class _FakeEditorDialog:
                 def __init__(self, parent, image, save_back=False):
                     _edit_seen["save_back"] = save_back
+                    self.multi_image_saved = _FakeSignal()
+                    self.multi_layout_saved = _FakeSignal()
+
+                def set_tool_visible(self, tool, visible):
+                    _edit_seen["tool_visibility"] = (tool, visible)
+
+                def configure_multiple_images(self, items):
+                    _edit_seen["files"] = [item["file"] for item in items]
+
+                def release_buffers(self):
+                    _edit_seen["released"] = True
 
                 def exec(self):
                     _edit_seen["exec"] = _edit_seen.get("mode", "ok")
                     return QDialog.DialogCode.Accepted
-
-                def result_image(self):
-                    return _edited
-
-                def apply_in_progress(self) -> bool:
-                    """替身永远走同步路（后台应用只在真编辑器上出现）。"""
-                    return False
 
             _real_editor_cls = _ied.ImageEditorDialog
             _ied.ImageEditorDialog = _FakeEditorDialog
 
             from desktop.components.viewers.image_zoom_dialog import (
                 ZoomTarget,
-                overwrite_image_file,
             )
 
             def _pixel_of(path: Path):
@@ -3882,7 +3896,9 @@ def run(ctx) -> None:
             try:
                 item_path = Path(page._imposition_pages()[0]["items"][0]["file"])
                 ok("准备：拼版源图存在", item_path.exists())
-                # 预热画布解码缓存，等会儿断言「缓存被丢掉」才有意义
+                page._imposition_timer.stop()
+                page._imposition_dirty = False
+                # 预热画布解码缓存，确认打开编辑器本身不会丢缓存
                 page.imposition_view.canvas._image(str(item_path))
                 ok(
                     "准备：画布缓存里已有这张图",
@@ -3890,29 +3906,29 @@ def run(ctx) -> None:
                 )
 
                 _edit_seen.clear()
-                page._open_imposition_item_edit(0)
+                page.imposition_view.item_edit_requested.emit(0)
                 ok(
-                    "编辑器以 save_back 模式打开（完成 = 覆盖原图片）",
+                    "单张入口打开整页编辑器并配置两张图片",
                     _edit_seen.get("save_back") is True
-                    and _edit_seen.get("exec") == "ok",
+                    and _edit_seen.get("exec") == "ok"
+                    and len(_edit_seen.get("files", [])) == 2
+                    and _edit_seen.get("released") is True,
                     str(_edit_seen),
                 )
                 ok(
-                    "「完成」把编辑结果覆盖回源图原图",
-                    _pixel_of(item_path) == EDIT_ITEM_COLOR,
-                    f"item={item_path.name} 像素={_pixel_of(item_path)}",
+                    "整页编辑入口隐藏文字工具且不改写单张源图",
+                    _edit_seen.get("tool_visibility") == ("text", False)
+                    and _pixel_of(item_path) != EDIT_ITEM_COLOR,
+                    f"tool={_edit_seen.get('tool_visibility')} "
+                    f"item_pixel={_pixel_of(item_path)}",
                 )
                 ok(
-                    "画布解码缓存已丢（重绘读新图，不显示旧图）",
-                    str(item_path) not in page.imposition_view.canvas._images,
-                )
-                ok(
-                    "源图变了 → 重新防抖合成已挂上",
-                    page._imposition_dirty,
+                    "打开编辑器不会丢弃画布缓存或触发拼版重合成",
+                    str(item_path) in page.imposition_view.canvas._images
+                    and not page._imposition_dirty,
+                    f"cached={str(item_path) in page.imposition_view.canvas._images} "
                     f"dirty={page._imposition_dirty}",
                 )
-                page._imposition_timer.stop()
-                page._imposition_dirty = False
 
                 # 预览弹窗里「编辑」也落盘：image_saved → 生效链（2026-10-07）
                 page.imposition_view.canvas._image(str(item_path))
@@ -3982,9 +3998,9 @@ def run(ctx) -> None:
 
                 _ied.ImageEditorDialog = _RejectEditor
                 before = _pixel_of(item_path)
-                page._open_imposition_item_edit(0)
+                page.imposition_view.item_edit_requested.emit(0)
                 ok(
-                    "取消编辑不覆盖源图",
+                    "取消整页编辑不覆盖任何单张源图",
                     _pixel_of(item_path) == before,
                     f"before={before} after={_pixel_of(item_path)}",
                 )
@@ -3992,7 +4008,7 @@ def run(ctx) -> None:
             finally:
                 _ied.ImageEditorDialog = _real_editor_cls
 
-            # ---- 空白处「编辑整图」在同一画布显示两张，可切换 active ----
+            # ---- 空白处「编辑图片」在同一画布显示两张，可切换 active ----
             source_items = page._imposition_pages()[0]["items"]
             source_items = sorted(
                 source_items,

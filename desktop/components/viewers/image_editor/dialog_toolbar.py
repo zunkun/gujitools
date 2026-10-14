@@ -123,6 +123,16 @@ class ToolbarMixin(DialogHost):
         return column
 
 
+    def set_tool_visible(self, tool: str, visible: bool) -> None:
+        """设置某个功能按钮是否显示（宿主可按场景隐藏不适用功能）。"""
+        button = self._tool_buttons.get(tool)
+        if button is None:
+            raise ValueError(f"未知图片编辑功能：{tool}")
+        if not visible and getattr(self.canvas, "_tool", None) == tool:
+            self._set_tool("crop")
+        button.setVisible(bool(visible))
+
+
     def _build_side_panel(self) -> QWidget:
         """右侧参数面板：功能名 + **可滚动**参数区 + 编辑历史。
 

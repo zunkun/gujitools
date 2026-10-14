@@ -135,8 +135,16 @@ def _apply_job(values: dict, progress=None):
     if image_and_origin is None:
         return None, False
     image, _origin = image_and_origin
+    image = _render_text_payload(image, values.get("payload", []))
     saved = overwrite_image_file(image, Path(values["target"]))
     return image, saved
+
+
+def _render_text_payload(image: QImage, payload: list) -> QImage:
+    """把待提交文字画进最终图片，确保返回值与磁盘文件一致。"""
+    for pos, text, px, color, family in payload:
+        image = draw_text(image, pos, text, px, QColor(color), family)
+    return image
 
 
 class CommitMixin(DialogHost):
@@ -804,13 +812,14 @@ class CommitMixin(DialogHost):
         else:
             original = self._image
         grow = clipping != "clip"
-        # 文字块先摘走（画布立刻干净）；烘焙完成后重放到最终图上——与同步
-        # 路径「先变换后写字」的顺序一致（文字不被一起转掉）
+        # 文字块先摘走（画布立刻干净）；后台任务在写盘前将其重放到最终图，
+        # 与同步路径「先变换后写字」的顺序一致（文字不被一起转掉）。
         payload = self._text_payload()
         params = {"image": original, "rect": QRectF(rect),
                   "xf": QTransform(xf), "region": QImage(region),
                   "grow": grow, "clipping": clipping,
-                  "interpolation": interpolation, "target": path}
+                  "interpolation": interpolation, "target": path,
+                  "payload": payload}
         self._async_apply = {
             "path": path, "rect": QRectF(rect), "xf": QTransform(xf),
             "clipping": clipping, "original": original, "payload": payload,
@@ -853,7 +862,6 @@ class CommitMixin(DialogHost):
                 self.apply_failed.emit(path_text,
                                        "写入底片失败（文件可能被占用）")
             else:
-                image = self._apply_text_payload(state["payload"], image)
                 self._image = image
                 self._content_after_bake(state["rect"], state["xf"],
                                          state["clipping"],
@@ -970,6 +978,4 @@ class CommitMixin(DialogHost):
         """
         if image is None or image.isNull():
             return image
-        for pos, text, px, color, family in payload:
-            image = draw_text(image, pos, text, px, QColor(color), family)
-        return image
+        return _render_text_payload(image, payload)
