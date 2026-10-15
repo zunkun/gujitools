@@ -11,10 +11,12 @@ from qfluentwidgets import setTheme, Theme
 from desktop.shell import NAV_COMPACT_WIDTH, ModuleShell
 from desktop.store import TaskStore
 from desktop.ui import theme as T
+from desktop.ui.menu import install_menu_bar
 from desktop.utils.icon import rounded_window_icon
 from desktop.ui.style import apply_app_style
 from desktop.ui.window_size import apply_window_size
 from desktop.utils.files import package_dir
+from desktop.workers import WorkerHost
 
 #: 主窗口标题（仅显示用；单例激活**不**按标题找窗口——开发版与正式版标题
 #: 相同，两个窗口同开时按标题找会激活错构建，见 desktop/single_instance.py）
@@ -50,7 +52,7 @@ WINDOW_MIN_SIZE = QSize(CONTENT_MIN_WIDTH + NAV_COMPACT_WIDTH, 720)
 WINDOW_START_MAXIMIZED = True
 
 
-class MainWindow(QMainWindow):
+class MainWindow(QMainWindow, WorkerHost):
     """主窗口：左侧导航壳层（任务管理 + 独立模块）与详情页跳转。
 
     2026-10-02 起，窗口中央从「列表页/详情页两页对切」升级为
@@ -70,6 +72,9 @@ class MainWindow(QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
+        # 本窗口自己的后台线程登记表（目前只有「检查更新」用；见 ui/menu.py）。
+        # ⚠️ 必须在任何 run_worker / shutdown_workers 之前——它建两张引用表。
+        self._init_worker_host()
         self.setWindowTitle(WINDOW_TITLE)
         # 期望 1440×920 / 最小 1080×720，但**先按屏幕可用区域夹一次**：
         # 1920×1080 @125% 的机器逻辑可用高只有 824，直接上 920 会让窗口底部
@@ -94,6 +99,9 @@ class MainWindow(QMainWindow):
         self.shell = ModuleShell(self._store)
         self.setCentralWidget(self.shell)
         self.setStyleSheet(f"QMainWindow {{ background: {T.CANVAS}; }}")
+        # 顶部菜单栏（文件 / 单任务 / 帮助）：菜单项只做路由，业务全在壳层与
+        # 既有入口里（见 desktop/ui/menu.py 的模块头）。
+        install_menu_bar(self)
         self.shell.list_page.open_detail.connect(self._open_detail)
         # 预热详情页（见 _prewarm_detail_page）：① 刚点完导入；② 启动后空闲。
         # 两处都不占用户的操作响应路径，却把那笔 Qt 构造开销提前付掉。
@@ -183,7 +191,10 @@ class MainWindow(QMainWindow):
 
         壳层会把收尾分发给任务列表页、懒建的详情页与已构造的模块页；
         详情页持有 worker 子进程与后台线程的引用，直接退出会让进程被强杀。
+        ⚠️ 本窗口自己也有后台线程（「检查更新」的网络请求，见 ``ui/menu.py``）：
+        ``self.shutdown_workers()`` 收它，与壳层那份各管各的、互不重叠。
         """
+        self.shutdown_workers()
         self.shell.shutdown_workers()
         if self.shell._detail_page is not None:
             self.shell._detail_page.closeEvent(event)

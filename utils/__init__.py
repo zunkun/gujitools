@@ -53,6 +53,7 @@ if TYPE_CHECKING:
         detect_content_boxes, is_model_loaded, load_seconds_used, load_yolo_model,
         model_path,
     )
+    from utils.version import compare, is_newer, is_prerelease, parse_version
 
 _LAZY = {
     "load_yolo_model": ("utils.yolo_utils", "load_yolo_model"),
@@ -87,6 +88,11 @@ _LAZY = {
     # 实体图回写的最省形态编码（唯一实现；编辑器覆盖底片/另存 PNG 走它）
     "save_png_compact": ("utils.compact_png", "save_png_compact"),
     "read_png_dpi": ("utils.compact_png", "read_png_dpi"),
+    # 版本号解析/比较（纯规则；桌面端「检查更新」用它比 release tag 与本机版本）
+    "parse_version": ("utils.version", "parse_version"),
+    "is_prerelease": ("utils.version", "is_prerelease"),
+    "is_newer": ("utils.version", "is_newer"),
+    "compare": ("utils.version", "compare"),
 }
 
 

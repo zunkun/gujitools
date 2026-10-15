@@ -40,6 +40,7 @@ if TYPE_CHECKING:
     from desktop.workers.source_thumbnails_worker import SourceThumbnailsWorker
     from desktop.workers.task_rows_worker import TaskRowsWorker
     from desktop.workers.thumb_cache_worker import ImageThumbCacheWorker
+    from desktop.workers.update_worker import UpdateCheckWorker
 
 __all__ = [
     "CopyFilesWorker",
@@ -56,6 +57,7 @@ __all__ = [
     "SourceThumbnailsWorker",
     "TaskRowsWorker",
     "ImageThumbCacheWorker",
+    "UpdateCheckWorker",
     "WorkerHost",
     "close_cached_documents",
     "connect_queued",
@@ -75,6 +77,9 @@ _LAZY = {
     "ImageListWorker": ("desktop.workers.image_list_worker", "ImageListWorker"),
     "ImageThumbCacheWorker": (
         "desktop.workers.thumb_cache_worker", "ImageThumbCacheWorker",
+    ),
+    "UpdateCheckWorker": (
+        "desktop.workers.update_worker", "UpdateCheckWorker",
     ),
     "ImpositionComposeWorker": (
         "desktop.workers.imposition_worker",

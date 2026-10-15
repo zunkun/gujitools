@@ -116,9 +116,15 @@ def run(ctx) -> None:
     ok("docs/guide/cli.md 存在",
        (guide_dir / "cli.md").exists(),
        "命令行说明缺失")
-    ok("docs/guide/screenshots/guide/*.png 至少 12 张",
-       sum(1 for _ in (guide_dir / "screenshots" / "guide").glob("*.png")) >= 12,
-       "截图缺失")
+    # ⚠️ 期望数**按源文档推导**，不写死张数、也不假定存在 ``screenshots/guide/``
+    #    子目录（此前两条都写死/写错，截图一增、目录一挪，护栏就假红——构建期那份
+    #    自包含检查早已改成同一个口径，见 build.py::build_manual_html）。
+    guide_md_text = (guide_dir / "user-guide.md").read_text(encoding="utf-8")
+    shot_names = re.findall(r"!\[[^\]]*\]\(([^)]+)\)", guide_md_text)
+    shot_paths = [guide_dir / name for name in shot_names]
+    ok("user-guide.md 引用的截图一个都不缺（期望数按源文档推导）",
+       bool(shot_paths) and all(path.is_file() for path in shot_paths),
+       f"缺失={[n for n, p in zip(shot_names, shot_paths) if not p.is_file()][:3]}")
 
     # ---- 2b. ⚠️ requirements.txt 必须包含手册用到的第三方包 ----
     # 本轮真正的根因：build.py 当时因为怕 pip 重解析把 CPU 版 torch 顶掉，
@@ -255,6 +261,16 @@ def run(ctx) -> None:
     ok("generate_manual_html 产出了文件", html_path.exists(), str(html_path))
     html = html_path.read_text(encoding="utf-8")
 
+    # ---- 4b. 手册里带**程序版本号**（用户 2026-10-15：「帮助文档内容要有版本号」）----
+    # ⚠️ 断言取 ``config.VERSION`` 而不是写死的字面量：版本号是唯一来源，
+    #    md/模板里再抄一份就会漂（"手册说 v2.0.3、程序是 v2.0.4"）。
+    from config import VERSION as _manual_version
+
+    ok("手册 HTML 的标题/页脚带版本号（来自 config.VERSION）",
+       f"v{_manual_version}" in html
+       and f"用户手册 · v{_manual_version}" in html,
+       f"版本 v{_manual_version} 未出现在产物里")
+
     # ---- 5. 两份指南都得**真正**渲染出来 ----
     # ⚠️ 断言「『用户操作手册』这串字在产物里」是不够的：fallback 兜底
     # 把它原样塞进 <pre>{escaped}</pre> 也会通过。必须再断言「# 原文 / ** 加粗
@@ -319,9 +335,11 @@ def run(ctx) -> None:
     ok("表格已渲染（含 <table>）", "<table" in html, "")
     ok("围栏代码块已渲染（含 <pre>）", "<pre" in html, "")
 
-    # ---- 7. 12 张截图必须都被引用（cli.md 没有图，所以总数就是 gui 的 12 张）----
+    # ---- 7. 源文档引用的截图必须都被引用（张数按 md 推导：cli.md 没有图）----
     img_count = len(re.findall(r"<img ", html))
-    ok("12 张截图都被引用", img_count == 12, f"实际={img_count}")
+    ok("源文档引用的截图都被引用（张数按 md 推导，不写死）",
+       img_count == len(shot_paths),
+       f"实际={img_count} 期望={len(shot_paths)}")
 
     # ⚠️ src 必须是**绝对的、已百分号编码的** file:// URL，不能只靠 <base>
     #    让浏览器自己拼：中文文件名（s0-任务列表.png）走 base 拼接时浏览器
@@ -337,7 +355,7 @@ def run(ctx) -> None:
         local = Path(urllib.parse.unquote(s.replace("file:///", "")))
         hits += local.is_file()
     ok("每张图的绝对 URL 都能命中真实文件",
-       hits == len(img_srcs) == 12,
+       hits == len(img_srcs) == len(shot_paths),
        f"命中 {hits}/{len(img_srcs)}")
 
     # ---- 8. ⚠️ 绝对不要 <base>：片段链接会被解析到目录上 ----
@@ -358,8 +376,9 @@ def run(ctx) -> None:
     # ---- 8b. 开发模式的截图必须是绝对 file:// 且真能打开 ----
     # 没有 base 之后，图片路径只能靠绝对 URL——这条是 8 节的配套保证。
     dev_srcs = re.findall(r'<img[^>]*?\ssrc="([^"]+)"', html)
-    ok("开发模式 12 张截图都是绝对 file:// URL",
-       len(dev_srcs) == 12 and all(s.startswith("file:///") for s in dev_srcs),
+    ok("开发模式截图都是绝对 file:// URL（张数按 md 推导）",
+       len(dev_srcs) == len(shot_paths)
+       and all(s.startswith("file:///") for s in dev_srcs),
        "; ".join(s[:36] for s in dev_srcs[:3]))
     ok("这些绝对 URL 都能命中真实文件",
        all(Path(urllib.parse.unquote(s[8:])).is_file() for s in dev_srcs),
@@ -502,7 +521,8 @@ def run(ctx) -> None:
        "构建时预生成" in static_html)
 
     static_srcs = re.findall(r'<img[^>]*?\ssrc="([^"]+)"', static_html)
-    ok("静态手册 12 张截图都在", len(static_srcs) == 12, f"{len(static_srcs)} 张")
+    ok("静态手册截图张数与源文档一致（按 md 推导）",
+       len(static_srcs) == len(shot_paths), f"{len(static_srcs)} 张")
     # ⚠️ 核心不变量：安装包不含 docs/guide，图片必须**内联**，任何外部引用
     # （相对路径 / 构建机绝对路径）到了用户机器上都是碎图。
     ok("静态手册截图全部内联（data: URI）",

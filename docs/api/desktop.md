@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 168 个模块、179 个公开类、1246 个公开函数/方法（生成于 2026-10-14）。
+覆盖 170 个模块、183 个公开类、1262 个公开函数/方法（生成于 2026-10-15）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -51,7 +51,7 @@
 | [`desktop.components.viewers.edit_sync`](#desktopcomponentsviewersedit_sync) | 0 | 2 |
 | [`desktop.components.viewers.extract_viewer`](#desktopcomponentsviewersextract_viewer) | 1 | 6 |
 | [`desktop.components.viewers.image_editor.bake`](#desktopcomponentsviewersimage_editorbake) | 0 | 2 |
-| [`desktop.components.viewers.image_editor.canvas.core`](#desktopcomponentsviewersimage_editorcanvascore) | 1 | 23 |
+| [`desktop.components.viewers.image_editor.canvas.core`](#desktopcomponentsviewersimage_editorcanvascore) | 1 | 25 |
 | [`desktop.components.viewers.image_editor.canvas.distortion`](#desktopcomponentsviewersimage_editorcanvasdistortion) | 1 | 1 |
 | [`desktop.components.viewers.image_editor.canvas.interaction`](#desktopcomponentsviewersimage_editorcanvasinteraction) | 1 | 7 |
 | [`desktop.components.viewers.image_editor.canvas.overlay`](#desktopcomponentsviewersimage_editorcanvasoverlay) | 1 | 0 |
@@ -157,6 +157,7 @@
 | [`desktop.ui.fonts`](#desktopuifonts) | 0 | 2 |
 | [`desktop.ui.help_dialog`](#desktopuihelp_dialog) | 0 | 6 |
 | [`desktop.ui.icons`](#desktopuiicons) | 2 | 5 |
+| [`desktop.ui.menu`](#desktopuimenu) | 2 | 10 |
 | [`desktop.ui.segmented_toggle`](#desktopuisegmented_toggle) | 1 | 11 |
 | [`desktop.ui.style`](#desktopuistyle) | 0 | 3 |
 | [`desktop.ui.theme`](#desktopuitheme) | 0 | 3 |
@@ -179,6 +180,7 @@
 | [`desktop.workers.source_thumbnails_worker`](#desktopworkerssource_thumbnails_worker) | 1 | 4 |
 | [`desktop.workers.task_rows_worker`](#desktopworkerstask_rows_worker) | 1 | 2 |
 | [`desktop.workers.thumb_cache_worker`](#desktopworkersthumb_cache_worker) | 1 | 11 |
+| [`desktop.workers.update_worker`](#desktopworkersupdate_worker) | 2 | 4 |
 | [`desktop.workers.worker_host`](#desktopworkersworker_host) | 1 | 4 |
 
 ---
@@ -197,7 +199,7 @@ gujitools 桌面端主窗口：左侧导航壳层（任务管理 + 独立模块�
 | CONTENT_MIN_WIDTH | `1080` |
 | WINDOW_START_MAXIMIZED | `True` |
 
-### `class MainWindow(QMainWindow)`
+### `class MainWindow(QMainWindow, WorkerHost)`
 
 主窗口：左侧导航壳层（任务管理 + 独立模块）与详情页跳转。
 
@@ -259,6 +261,8 @@ gujitools 桌面端主窗口：左侧导航壳层（任务管理 + 独立模块�
 
 壳层会把收尾分发给任务列表页、懒建的详情页与已构造的模块页；
 详情页持有 worker 子进程与后台线程的引用，直接退出会让进程被强杀。
+⚠️ 本窗口自己也有后台线程（「检查更新」的网络请求，见 ``ui/menu.py``）：
+``self.shutdown_workers()`` 收它，与壳层那份各管各的、互不重叠。
 
 ### 模块函数
 
@@ -3289,6 +3293,8 @@ worker 会变成孤儿线程，而它是被 ``parent``（编辑器对话框）�
 | `image() -> QImage \| None` | — |
 | `tool() -> str` | 当前工具键（``crop``/``transform``/``distort``/``erase``/``text``）。 |
 | `image_rect() -> QRectF` | 图片占位（场景坐标；裁剪拖动预览会临时平移）。 |
+| `set_source_extent(rect: QRectF) -> None` | 登记**原始文件**在场景坐标里占的矩形，作为裁剪/平移的固定上界。 |
+| `source_extent_rect() -> QRectF` | 裁剪框允许达到的最大矩形（**场景坐标**）。 |
 | `crop_offset() -> QPointF` | 裁剪工具中图片相对原点的待定位移。 |
 | `set_tool(tool: str) -> None` | 切换工具：裁剪/变换默认全选，其余清选区、换光标。 |
 | `provide_restore_pixels(upright: QImage) -> None` | 弹窗把延迟计算的 upright 内容补回来（:meth:`abort_content_restore` |
@@ -3338,6 +3344,38 @@ fit 就等于"每次松手都把图缩小一档"，反复旋转会越转越小�
 
 弹窗侧只读用（例如 ``stroke_started`` 到达时判断该记成"擦除"还是
 "扭曲"），刻意不给 setter——换工具一律走 :meth:`set_tool`。
+
+##### `set_source_extent(rect: QRectF) -> None`
+
+登记**原始文件**在场景坐标里占的矩形，作为裁剪/平移的固定上界。
+
+⚠️⚠️ 裁剪框的上界**不能**取 :meth:`image_rect`（用户 2026-10-15
+报障「图片裁剪框不应该超过图片外」「斜对角扩张能扩张无限大」）。
+``image_rect`` 跟着 ``_crop_offset`` 走，而"框内平移 + 落定"会把
+偏移量加进新图尺寸 ⇒ 每循环一次图就大一圈（实测 200×120 →
+400×240 → 600×360 线性发散），角手柄再往外拖就把这条发散边界当成
+合法上界——"扩张无限大"正是这么来的。
+
+这里把**原文件当初占的那块矩形**记成固定值（与平移无关）。入口
+``_trim_transparent_edges`` 收紧过透明边时，收紧后的图被摆在
+``(0,0)``，原文件却占 ``(-dx, -dy, 源宽, 源高)`` ⇒ 矩形**带负
+原点**，用户正好能把裁剪框拖回原始大小（同一报障的后半句）。
+
+##### `source_extent_rect() -> QRectF`
+
+裁剪框允许达到的最大矩形（**场景坐标**）。
+
+= 图片当前左上角 + :attr:`_source_extent`（后者记的是**原文件相对
+收紧后图片**的矩形：入口 ``_trim_transparent_edges`` 裁掉 ``(dx,dy)``
+透明边时就是 ``(-dx,-dy, 源宽, 源高)``，没裁过就是 ``(0,0,w,h)``）。
+
+⚠️ 为什么要"位置跟图片走"：框内平移（``crop_move``）会把图片拖到
+场景别处，若边界锚在原点，平移后框立刻被夹死／夹空，等于把平移功能
+废掉（2026-10-15 用户报障「图片移动被你改没了」）。所以只锁**尺寸**
+（原文件宽高，跨轮不累积），位置跟随图片当前左上角。
+
+于是三条同时成立：①框的宽高**恒不超过原文件**；②入口收紧过透明边
+时原文件比当前图大 ⇒ 能把框拖回**原始大小**；③框内平移照常可用。
 
 ##### `provide_restore_pixels(upright: QImage) -> None`
 
@@ -12289,6 +12327,155 @@ Markdown 里写的是 ``screenshots/guide/xxx.png`` 这样的相对路径，
 
 ---
 
+## `desktop.ui.menu`
+
+源码：[`desktop/ui/menu.py`](../../desktop/ui/menu.py)
+
+窗口顶部菜单栏：**文件 / 单任务 / 帮助**（原生 ``QMenuBar``）。
+
+为什么是原生菜单栏（而不是自绘 Fluent 菜单条）
+--------------------------------------------
+qfluentwidgets 1.11.2 **没有** MenuBar 组件（只有 ``RoundMenu`` 这类弹出菜单），
+而本程序用的就是原生标题栏（见 ``desktop/shell.py`` 的模块头），所以顶部菜单走
+Qt 原生 ``QMenuBar``：与既有窗口装饰同族、自带 ``Alt`` 助记符与键盘导航
+（``文件(F)`` 这类写法就是助记符）。**不改窗口尺寸、不动壳层布局**——菜单栏
+只吃高度、不吃宽度，因此 ``desktop/app.py::WINDOW_MIN_SIZE`` 的宽度下限与
+``tests/selftests/panel_label_fit.py`` 的 200px 断言都不受影响。
+
+菜单项**只做路由与转发**，业务一律复用既有入口：
+
+- 文件 → 新建任务：``shell.open_create()``（含"每次进入复位"，别另建页）；
+- 文件 → 退出：``window.close()`` —— **不是** ``QApplication.quit()``（见
+  :func:`quit_app` 的说明）；
+- 单任务 → ``<key>``：``shell.show_module(key)``，清单**从 ``MODULES`` 派生**
+  （与左侧导航同源同序，本文件不维护第二份清单）；
+- 帮助 → 帮助文档：``desktop/ui/help_dialog.py::open_manual()``。
+
+新增的只有「检查更新」与「关于」两件事：前者在子线程查 GitHub Release
+（``desktop/workers/update_worker.py``），版本比较是纯规则
+（``utils/version.py``）；两者都用项目统一的弹窗外壳
+（``desktop/components/dialog_shell.py::shell_dialog``——AGENTS 明确别用
+qfluentwidgets 的 ``Dialog``，它只支持"字符串 + 两个按钮"）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| PROJECT_URL | `"https://github.com/zunkun/gujitools"` |
+| MENU_FILE | `"文件(&F)"` |
+| MENU_SINGLE_TASK | `"单任务(&S)"` |
+| MENU_HELP | `"帮助(&H)"` |
+| ACTION_CREATE_TASK | `"新建任务(&N)"` |
+| ACTION_QUIT | `"退出(&X)"` |
+| ACTION_MANUAL | `"帮助文档(&D)"` |
+| ACTION_UPDATE | `"检查更新(&U)"` |
+| ACTION_UPDATE_BUSY | `"正在检查更新…"` |
+| ACTION_ABOUT | `"关于(&A)"` |
+| BUTTON_OK | `"好的"` |
+| BUTTON_DOWNLOAD | `"前往下载"` |
+| RESULT_LATEST | `"latest"` |
+| RESULT_NEWER | `"newer"` |
+
+### `class UpdateVerdict`
+
+一次检查更新该呈现什么（纯数据，自测直接断言它，不碰控件）。
+
+``link`` 非空 ⇒ 主按钮是「前往下载」（点了开浏览器）；为空 ⇒ 只有「好的」。
+
+### `class UpdateController(QObject)`
+
+「检查更新」的编排者：一次一个请求，结果用弹窗汇报。
+
+三条硬约束：
+
+1. **重入防护**：连点菜单不叠出第二个请求（``_checking``），期间菜单项
+   **置灰**并改名「正在检查更新…」，用户看得见"正在跑"；
+2. **网络在子线程**（``window.run_worker``，见 ``WorkerHost``）；
+3. **收尾幂等**：``_finish`` 由 worker 信号与线程结束两条路都会调到，
+   重复调用只生效一次。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(window, action: QAction, parent=None)` | — |
+| `check() -> None` | 查一次 GitHub Release 最新版（防重入；网络在子线程）。 |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `update_result(kind: str, *, current: str, latest: dict \| None=None) -> UpdateVerdict` | 把一次检查结果收成 :class:`UpdateVerdict`。 |
+| `about_rows(window=None) -> list[tuple[str, str]]` | 「关于」弹窗的行（``(键, 值)``）。纯数据，自测直接断言。 |
+| `install_menu_bar(window) -> QMenuBar` | 给主窗口装上菜单栏（``MainWindow.__init__`` 调一次）。 |
+| `build_file_menu(bar: QMenuBar, window) -> QMenu` | 「文件」：新建任务 / （分隔线）/ 退出。 |
+| `build_single_task_menu(bar: QMenuBar, window) -> QMenu` | 「单任务」：**从 ``MODULES`` 派生**（顺序/文案/图标与左侧导航同源）。 |
+| `build_help_menu(bar: QMenuBar, window) -> QMenu` | 「帮助」：帮助文档 / 检查更新 / 关于。 |
+| `quit_app(window) -> None` | 「退出」：先收掉非模态子弹窗，再 ``window.close()``。 |
+| `open_about(window) -> None` | 「关于」：程序名 / 版本 / 数据目录 / 项目地址。 |
+
+#### `update_result(kind: str, *, current: str, latest: dict | None=None) -> UpdateVerdict`
+
+把一次检查结果收成 :class:`UpdateVerdict`。
+
+``kind`` 取 ``RESULT_LATEST`` / ``RESULT_NEWER`` / 失败分类串
+（``network`` / ``not_found`` / ``rate_limited`` / ``bad_json`` / ``http:<code>``）。
+
+⚠️ 正文**不用 markdown 粗体**（``**…**``）：内容面板是普通 QLabel，星号会
+原样显示出来（与 ``_ask_overwrite`` 同款教训）。
+
+#### `about_rows(window=None) -> list[tuple[str, str]]`
+
+「关于」弹窗的行（``(键, 值)``）。纯数据，自测直接断言。
+
+版本取 ``config.VERSION``（**唯一来源**）；程序名取窗口标题（不 import
+``desktop.app``——那会与本模块形成循环导入）；数据目录取 ``window.store.root``
+（没有 store 时省略该行）。
+
+#### `install_menu_bar(window) -> QMenuBar`
+
+给主窗口装上菜单栏（``MainWindow.__init__`` 调一次）。
+
+返回 ``QMenuBar`` 本身（自测拿它读菜单结构）；一并留下两样引用：
+
+- ``window.menus``：三个顶级菜单（按文案取），**必须持有**——见下；
+- ``window.update_controller``：更新控制器（自测与将来"启动时检查"共用同一个）。
+
+⚠️⚠️ **三个菜单必须留下活引用，且必须显式指定父对象**（2026-10-15 实测踩到）：
+PySide6 把 ``QMenuBar.addMenu("文案")`` 造出来的 ``QMenu`` **交给 Python 持有**
+——返回的包装对象一旦被回收，C++ 侧的菜单就跟着销毁，而菜单栏上的 action 仍
+指着一个悬空菜单：表现是**菜单条还在、点开却没有内容**，且读它的地方直接抛
+``RuntimeError: Internal C++ object (QMenu) already deleted``（连读都读不到）。
+所以这里一律 ``QMenu(文案, bar)`` 显式给父 + 用 ``window.menus`` 留引用，
+两道保险都在。别退回 ``bar.addMenu("文案")`` 那种一行写法。
+
+#### `build_single_task_menu(bar: QMenuBar, window) -> QMenu`
+
+「单任务」：**从 ``MODULES`` 派生**（顺序/文案/图标与左侧导航同源）。
+
+⚠️ 这里**不**再写一份清单：左侧导航栏遍历的是同一个 ``MODULES``
+（``desktop/modules/__init__.py`` 由 ``NAV_STEPS`` 派生），所以"导航里有的
+菜单里都有"，改模块只改 ``steps/spec.py`` 一处。
+
+#### `build_help_menu(bar: QMenuBar, window) -> QMenu`
+
+「帮助」：帮助文档 / 检查更新 / 关于。
+
+返回的菜单上挂着 ``controller``（更新控制器）——``install_menu_bar`` 从它取
+出来放到 ``window.update_controller``，这样"检查更新"只有**一个**实例
+（忙标记、菜单项文案都在它身上，两个实例会各转各的）。
+
+#### `quit_app(window) -> None`
+
+「退出」：先收掉非模态子弹窗，再 ``window.close()``。
+
+⚠️⚠️ **不能用 ``QApplication.quit()``**：它只退事件循环、**不触发**
+``closeEvent``，而 QProcess 子进程与后台线程的收尾全挂在
+``MainWindow.closeEvent``（→ ``shell.shutdown_workers()``）这条链上；
+绕过去就会出现 ``worker_host`` 里写的「QThread 运行中被析构 → Qt abort」。
+
+---
+
 ## `desktop.ui.segmented_toggle`
 
 源码：[`desktop/ui/segmented_toggle.py`](../../desktop/ui/segmented_toggle.py)
@@ -13927,6 +14114,84 @@ QImage → JPEG 字节。
 必须走 :func:`utils.file_utils.write_bytes_atomic`（非原子写留下的截断
 JPEG，mtime 也是新的，会被上面的 :func:`cache_usable` 永久当成有效缓存
 且没有任何自愈路径）。
+
+---
+
+## `desktop.workers.update_worker`
+
+源码：[`desktop/workers/update_worker.py`](../../desktop/workers/update_worker.py)
+
+「检查更新」的网络请求 worker（后台线程查 GitHub Release 最新版）。
+
+为什么在子线程
+--------------
+点「帮助 → 检查更新」时，请求要打到 ``api.github.com``：DNS/连接/读取加起来
+在网络不佳时能到秒级。放在主线程就是"点了菜单、界面卡住"——与本项目
+「重活/网络全走 worker」的口径一致（见 ``worker_host`` 的说明）。
+
+只取**原始字段**，不做判断
+--------------------------
+worker 只负责"把 release 拉下来 + 归类错误"，**不比较版本**：比较是纯规则
+（``utils.version``），放在主线程做——于是自测能只替换本文件的一个模块级函数
+就覆盖"已是最新 / 有新版本 / 查询失败"三分支。
+
+``kind`` 的词表（与 ``desktop/ui/menu.py`` 的文案表一一对应，别各写一份）：
+
+===============  ==================================================
+``network``      连不上 / 超时（断网、公司网络挡了 api.github.com）
+``not_found``    HTTP 404（仓库没有 release，或仓库名变了）
+``rate_limited`` HTTP 403 / 429（GitHub 匿名调用限流）
+``bad_json``     响应不是合法 JSON / 缺 ``tag_name``
+``http:<code>``  其余 HTTP 错误码，原样带出来
+===============  ==================================================
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| RELEASE_API | `"https://api.github.com/repos/zunkun/gujitools/releases/la…"` |
+| TIMEOUT_SECONDS | `6.0` |
+
+### `class UpdateCheckError(Exception)`
+
+检查更新失败，``kind`` 是上面词表里的分类串（界面据此选文案）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(kind: str)` | — |
+
+### `class UpdateCheckWorker(QObject)`
+
+子线程里跑一次 :func:`fetch_latest_release`（QObject，运行于子线程）。
+
+成功发 ``checked(dict)``（release 原始字段），失败发 ``failed(kind)``。
+⚠️ ``run()`` 整体 try/except：异常逃出子线程会让线程静默死掉、界面永远
+停在"正在检查"（仓库硬规则）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(url: str=RELEASE_API, timeout: float=TIMEOUT_SECONDS)` | — |
+| `run() -> None` | 执行一次检查并通过信号回报结果（异常一律走 ``failed``）。 |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `fetch_latest_release(url: str=RELEASE_API, timeout: float=TIMEOUT_SECONDS) -> dict` | 拉取最新 release 的原始字段；失败抛 :class:`UpdateCheckError`。 |
+
+#### `fetch_latest_release(url: str=RELEASE_API, timeout: float=TIMEOUT_SECONDS) -> dict`
+
+拉取最新 release 的原始字段；失败抛 :class:`UpdateCheckError`。
+
+⚠️ 刻意做成**模块级函数**（而不是 worker 的方法）：自测要能整体替换它，
+从而不碰真网络地覆盖成功/失败路径。
+
+返回 ``{"tag_name", "html_url", "name", "published_at", "prerelease"}``；
+``tag_name`` 缺失视为 ``bad_json``（比大小全靠它，没有就无话可说）。
 
 ---
 

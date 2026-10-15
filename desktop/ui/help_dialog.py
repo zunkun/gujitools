@@ -64,6 +64,7 @@ import webbrowser
 from pathlib import Path
 from string import Template
 
+from config import VERSION
 from desktop.ui import theme as T
 from desktop.utils.files import package_dir
 
@@ -1023,6 +1024,12 @@ def _compose_document(
         )
 
     generated_at = time.strftime("%Y-%m-%d %H:%M")
+    #: 手册里显示的**程序版本**（用户 2026-10-15：帮助文档内容要有版本号）。
+    #: ⚠️ 取 ``config.VERSION``（唯一来源）而不是写死在 md/模板里：开发模式每次点
+    #: 「使用手册」都现渲染，看到的就是当前源码的版本；打包版在构建期烘进静态
+    #: manual.html，与安装包里的程序版本天然一致，不会出现"手册说 v2.0.3、程序是
+    #: v2.0.4"。两个入口共用本函数，所以只在这里注入一处。
+    version_text = f"v{VERSION}"
     return f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -1032,7 +1039,7 @@ def _compose_document(
      一旦它指向手册目录，点标题旁的 # 锚点就变成"打开 docs/guide 目录"，
      浏览器直接把目录列表当页面显示（真实踩过：用户点标题跳出了目录列表）。
      图片不靠它——开发模式写成绝对 file:// URL，生产模式内联成 data URI。 -->
-<title>用户手册 · guji</title>
+<title>用户手册 · guji {version_text}</title>
 <style>
 {_css()}
 </style>
@@ -1040,7 +1047,7 @@ def _compose_document(
 <body>
 <header class="topbar">
 <div class="topbar-inner">
-<div class="brand"><span class="brand-mark">古籍重製</span><span class="brand-sub">用户手册</span></div>
+<div class="brand"><span class="brand-mark">古籍重製</span><span class="brand-sub">用户手册 · {version_text}</span></div>
 <nav class="tab-bar">
 {"".join(tabs)}
 </nav>
@@ -1054,7 +1061,7 @@ def _compose_document(
 </main>
 <aside class="toc"><div class="toc-title">本页目录</div><nav id="toc-nav"></nav></aside>
 </div>
-<footer class="foot">内容来自 <code>docs/guide/*.md</code>，{generated_note} · 生成于 {generated_at}</footer>
+<footer class="foot">内容来自 <code>docs/guide/*.md</code>，{generated_note} · 版本 {version_text} · 生成于 {generated_at}</footer>
 </div>
 <button class="to-top" id="to-top" title="回到顶部">↑</button>
 <div class="lightbox" id="lightbox"></div>
