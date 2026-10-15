@@ -972,10 +972,18 @@ def run(ctx) -> None:
         painter.end()
         assert image.save(path)
 
+    def _write_solid(path: str) -> None:
+        """整张不透明（无留白）——左右两图留白不同是报障现场的关键变量。"""
+        image = QImage(240, 180, QImage.Format.Format_ARGB32)
+        image.fill(QColor("#ffffff"))
+        assert image.save(path)
+
     _write_padded(str(pad_left_path))
-    _write_padded(str(pad_right_path))
+    _write_solid(str(pad_right_path))
     # 入口按真实链路传 ``QImage(路径)``（整张含留白），rect 用页码面的
     # "整尺寸" 版面（``default_items`` 是整图尺寸口径）——两处都是报障现场。
+    # 左右两图页面 rect 一样大（240×180）⇒ 拼版页上两图**看起来一样大**；
+    # 弹窗里也必须一样大（见下面的显示尺寸断言）。
     dialog_pad = ImageEditorDialog(None, QImage(str(pad_left_path)),
                                    save_back=True)
     dialog_pad.configure_multiple_images([
@@ -988,10 +996,24 @@ def run(ctx) -> None:
     pad_layer0 = dialog_pad._multi_layers[0]
     ok("含留白源图：入口比例按**可见内容**算（rect/内容，不是 rect/整图）",
        pad_layer0["scale"] == (1.5, 1.8)
+       and dialog_pad._multi_layers[1]["scale"] == (1.0, 1.0)
        and pad_layer0["origin"] == (0.0, 0.0),
-       f"scale={pad_layer0['scale']} origin={pad_layer0['origin']}")
+       f"scale0={pad_layer0['scale']} "
+       f"scale1={dialog_pad._multi_layers[1]['scale']} "
+       f"origin={pad_layer0['origin']}")
+    # ⚠️ 用户 2026-10-15 报障核心：拼版页上两图一样大，弹窗里左图却明显偏小
+    #    （右/左宽比 ≈ 1.18，而页面 ≈ 1.00）。判据＝**两图在弹窗里的显示尺寸
+    #    之比必须等于页面 rect 之比**：页面两 rect 都是 240×180 ⇒ 弹窗里
+    #    左图（内容 160×100，1:1 显示）与右图（内容 240×180，按 s₁/s₀ 缩）
+    #    必须都是 160×100。旧版按整图算比例（s₀=(1,1)）⇒ 右图显示成 240×180，
+    #    左图偏小——正是截图里的现象。
+    ok("含留白源图：弹窗里两图显示尺寸之比 == 拼版页 rect 之比",
+       abs(pad_canvas._context_scale_x * 240 - 160) < 1e-6
+       and abs(pad_canvas._context_scale_y * 180 - 100) < 1e-6,
+       f"context_scale=({pad_canvas._context_scale_x}, "
+       f"{pad_canvas._context_scale_y})")
     # 页面 delta=240、活动比例 1.5 ⇒ 弹窗里两图间距 240/1.5=160（旧版按整图
-    # 算比例=1 ⇒ 间距被放大到 240，与拼版页对不上——用户报的"位置不一致"）。
+    # 算比例=1、且 origin 重复计留白 ⇒ 间距被放大到 200，与拼版页对不上）。
     ok("含留白源图：弹窗入口两图相对位置与拼版页一致",
        pad_canvas._context_offset == QPointF(160, 0),
        f"offset={pad_canvas._context_offset}")
