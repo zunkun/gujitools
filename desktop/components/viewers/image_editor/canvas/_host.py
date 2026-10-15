@@ -46,6 +46,7 @@ class CanvasHost(QGraphicsView):
     _content_bounds_cache_image: QImage | None
     _content_bounds_cache_key: int | None
     _crop_offset: QPointF
+    _source_extent: QRectF | None
     _diamonds: dict[str, QGraphicsPolygonItem]
     _edge_lines: dict[str, QGraphicsLineItem]
     _erase_size: Any
@@ -494,6 +495,12 @@ class CanvasHost(QGraphicsView):
         ...
 
     def image_rect(self) -> QRectF:
+        ...
+
+    def set_source_extent(self, rect: QRectF) -> None:
+        ...
+
+    def source_extent_rect(self) -> QRectF:
         ...
 
     def keyPressEvent(self, event) -> None:  # noqa: N802

@@ -139,9 +139,15 @@ class ImageEditorDialog(
         #    以未收紧文件为基准，反变换回 upright 时要把偏移补回去。
         _entry_trim = _trim_transparent_edges(base)
         self._content_trim_offset = (0, 0)
+        # ⚠️ **收紧前**的文件尺寸（用户 2026-10-15 报障「如果图片初始被向内
+        #    裁掉一部分，可以向外扩到原始大小」）。它当裁剪框/平移的固定上界
+        #    （``canvas.set_source_extent``）；收紧过就比 ``base`` 大，
+        #    用户能把框拖回原始大小，没收紧就等于当前图大小。
+        source_w, source_h = base.width(), base.height()
         if _entry_trim is not None and _entry_trim[1:] != (0, 0):
             base = _entry_trim[0]
             self._content_trim_offset = (_entry_trim[1], _entry_trim[2])
+        self._source_extent = (source_w, source_h)
         self._original = base
         self._image = self._original.copy()
         # ---- 内容四角节点（统一变换 sidecar，2026-10-10） ----
@@ -193,6 +199,14 @@ class ImageEditorDialog(
 
         self.canvas = EditorCanvas(self)
         self.canvas.set_image(self._image)
+        # 原文件基准（裁剪框的固定上界）。⚠️ 必须**在** set_image **之后**
+        # 登记——set_image 会把基准重置成新图自己（见 core.py）。这里传的是
+        # **相对收紧后图片**的矩形：收紧掉 (dx,dy) 透明边 ⇒ 原文件比图大
+        # 出去左上一块 ⇒ 记 (-dx,-dy, 源宽, 源高)，用户就能把框拖回原始大小。
+        _trim_dx, _trim_dy = self._content_trim_offset
+        self.canvas.set_source_extent(QRectF(
+            -_trim_dx, -_trim_dy,
+            float(self._source_extent[0]), float(self._source_extent[1])))
         self.canvas.context_image_clicked.connect(self._switch_context_layer)
         # 一笔开始（擦除按下 / 扭曲提交前）⇒ 压撤销点，步骤名按当前功能取
         self.canvas.stroke_started.connect(self._on_stroke_started)

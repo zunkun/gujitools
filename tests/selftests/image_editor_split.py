@@ -203,6 +203,9 @@ _CROSS_METHOD_DEPS = {
         "_hide_text_outline", "_hit_transform",
         "make_transform_pending",
         "_set_handle_focus",
+        # 收边夹取上界＝原文件矩形（core.py，2026-10-15「不超过图片外/
+        # 可扩回原始大小」）。它按 crop_offset 平移，收边必须吃同一份。
+        "source_extent_rect",
         "_move_eraser_ring",
         "_move_text_outline",
         "_sync_float",

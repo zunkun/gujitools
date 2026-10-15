@@ -310,6 +310,10 @@ class InteractionMixin(CanvasHost):
                 self._mode = None
                 event.accept()
                 return
+            # ⚠️ 平移**保持原样**（用户 2026-10-15 报障「图片移动被你改没了」）：
+            #    夹取基准就是**当前图尺寸**，允许拖出透明边距。这里**不要**改
+            #    成"按原文件尺寸夹"或"图片须留在原文件矩形内"——那两种都会把
+            #    平移功能废掉（没有透明边的普通图余量为 0 ⇒ 完全拖不动）。
             max_x = float(image.width())
             max_y = float(image.height())
             self._crop_offset = QPointF(
@@ -406,15 +410,24 @@ class InteractionMixin(CanvasHost):
 
 
     def _resize_rect(self, handle: str, pos: QPointF) -> None:
-        """拖手柄改选区（对边/对角锚定不动），夹进画布、保住最小边。
+        """拖手柄改选区（对边/对角锚定不动），夹进原文件范围、保住最小边。
 
-        ⚠️ 夹取上界是 ``image_rect()``＝**当前原图**。因为裁剪是非破坏性的
-        （松手不换图），这块画布在整个裁剪工具会话里一直是原图，所以往外拖
-        能一路拉回原图的边界、被遮住的老区域同步重新显出来。
+        ⚠️ 夹取上界是 :meth:`source_extent_rect`＝**原文件矩形**（尺寸锁
+        原文件、位置跟图片走），不是 ``image_rect()``（用户 2026-10-15 报障
+        「裁剪框不应该超过图片外」「斜对角扩张能扩张无限大」）。旧版夹
+        ``image_rect()``——它是"当前图"，而当前图已被上一轮"平移 + 落定"
+        撑大（实测 200×120 → 400×240 → 600×360 线性发散），角手柄永远能再
+        往外拖一截。
+
+        ⚠️ 两条边都要**各自**对 ``inside`` 取夹（不能只夹被拖的那条）：
+        只夹一条的话，对边可能已经越界，夹完仍停在越界位置（实测先把
+        左上拖到 (-20,-15) 再把右下往外拖，得 220×135 而非 240×160）。
         """
         assert self._rect is not None  # 拖手柄时必有选区
         rect = QRectF(self._rect.normalized())
-        inside = self.image_rect()
+        inside = self.source_extent_rect()
+        if inside.isNull():
+            inside = self.image_rect()
         if "l" in handle:
             rect.setLeft(max(
                 inside.left(), min(pos.x(), rect.right() - MIN_RECT_EDGE)))
@@ -427,6 +440,16 @@ class InteractionMixin(CanvasHost):
         if "b" in handle:
             rect.setBottom(min(
                 inside.bottom(), max(pos.y(), rect.top() + MIN_RECT_EDGE)))
+        # 对边（没被拖的那条）也可能已越界——统一夹回原文件范围内。
+        # ⚠️ 先夹位置再夹尺寸：反过来会让贴边的框宽度被压成 0。
+        if rect.left() < inside.left():
+            rect.moveLeft(inside.left())
+        if rect.top() < inside.top():
+            rect.moveTop(inside.top())
+        if rect.right() > inside.right():
+            rect.moveRight(inside.right())
+        if rect.bottom() > inside.bottom():
+            rect.moveBottom(inside.bottom())
         self._rect = rect
 
 

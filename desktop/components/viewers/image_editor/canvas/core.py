@@ -105,6 +105,9 @@ class EditorCanvas(
         self._context_rotation = 0.0
         self._image: QImage | None = None
         self._crop_offset = QPointF()
+        #: 原文件在场景坐标里占的矩形（裁剪/平移的固定上界，
+        #: 见 :meth:`set_source_extent`）；``None``＝退回当前图大小。
+        self._source_extent: QRectF | None = None
         self._zoom = 1.0
         self._tool = "crop"
         #: 用户是否手动缩放过。没动过就随窗口 resize 自动"适应窗口"——
@@ -288,6 +291,10 @@ class EditorCanvas(
         self._border = None
         self._rect = None
         self._crop_offset = QPointF()
+        # ⚠️ 换图 ⇒ 原文件基准重置为**这张新图自己**（裁剪/撤销/应用都走
+        #    这里）。不清的话上一张图登记的上界会一直留着，裁剪框就能拖到
+        #    新图外面去——正是"不应该超过图片外"要防的。
+        self._source_extent = None
         # 换图后文字块/变换预览都失效，一并清掉（应用/撤销/还原都走这里）
         self.clear_text_blocks()
         self._clear_transform_preview()
@@ -690,6 +697,46 @@ class EditorCanvas(
             self._crop_offset.x(), self._crop_offset.y(),
             self._image.width(), self._image.height(),
         )
+
+    def set_source_extent(self, rect: QRectF) -> None:
+        """登记**原始文件**在场景坐标里占的矩形，作为裁剪/平移的固定上界。
+
+        ⚠️⚠️ 裁剪框的上界**不能**取 :meth:`image_rect`（用户 2026-10-15
+        报障「图片裁剪框不应该超过图片外」「斜对角扩张能扩张无限大」）。
+        ``image_rect`` 跟着 ``_crop_offset`` 走，而"框内平移 + 落定"会把
+        偏移量加进新图尺寸 ⇒ 每循环一次图就大一圈（实测 200×120 →
+        400×240 → 600×360 线性发散），角手柄再往外拖就把这条发散边界当成
+        合法上界——"扩张无限大"正是这么来的。
+
+        这里把**原文件当初占的那块矩形**记成固定值（与平移无关）。入口
+        ``_trim_transparent_edges`` 收紧过透明边时，收紧后的图被摆在
+        ``(0,0)``，原文件却占 ``(-dx, -dy, 源宽, 源高)`` ⇒ 矩形**带负
+        原点**，用户正好能把裁剪框拖回原始大小（同一报障的后半句）。
+        """
+        self._source_extent = QRectF(rect).normalized()
+
+    def source_extent_rect(self) -> QRectF:
+        """裁剪框允许达到的最大矩形（**场景坐标**）。
+
+        = 图片当前左上角 + :attr:`_source_extent`（后者记的是**原文件相对
+        收紧后图片**的矩形：入口 ``_trim_transparent_edges`` 裁掉 ``(dx,dy)``
+        透明边时就是 ``(-dx,-dy, 源宽, 源高)``，没裁过就是 ``(0,0,w,h)``）。
+
+        ⚠️ 为什么要"位置跟图片走"：框内平移（``crop_move``）会把图片拖到
+        场景别处，若边界锚在原点，平移后框立刻被夹死／夹空，等于把平移功能
+        废掉（2026-10-15 用户报障「图片移动被你改没了」）。所以只锁**尺寸**
+        （原文件宽高，跨轮不累积），位置跟随图片当前左上角。
+
+        于是三条同时成立：①框的宽高**恒不超过原文件**；②入口收紧过透明边
+        时原文件比当前图大 ⇒ 能把框拖回**原始大小**；③框内平移照常可用。
+        """
+        if self._image is None:
+            return QRectF()
+        extent = self._source_extent or QRectF(
+            0.0, 0.0, float(self._image.width()), float(self._image.height()))
+        return QRectF(self._crop_offset.x() + extent.left(),
+                      self._crop_offset.y() + extent.top(),
+                      extent.width(), extent.height())
 
     def crop_offset(self) -> QPointF:
         """裁剪工具中图片相对原点的待定位移。"""

@@ -121,16 +121,50 @@ def run(ctx) -> None:
            and abs(moved_item.x() - moved_offset.x()) < 1
            and abs(moved_item.y() - moved_offset.y()) < 1,
            f"offset={moved_offset} selection={moved_selection} item={moved_item}")
-        ok("裁剪：移动后图片虚线外框贴合图片",
-           canvas._border.pos() == canvas._item.pos()
-           and border_local == image_local
-           and abs(moved_border.left() - moved_image.left()) < 1
-           and abs(moved_border.top() - moved_image.top()) < 1
-           and abs(moved_border.width() - moved_image.width()) <= 1.1
-           and abs(moved_border.height() - moved_image.height()) <= 1.1,
-           f"border={moved_border} image={moved_image} "
-           f"local={border_local}/{image_local}")
+        # ---- 裁剪框上界：原文件大小（2026-10-15 用户报障）----
+        # 「裁剪框最大就是图片大小，不要超过图片外；但图片初始被向内裁掉
+        #  一部分时，可以向外扩到**原始大小**」——夹取基准是原文件矩形，
+        #  不是当前图（收紧过的图因此能扩回 200×120）。
         canvas.reset_selection()
+        canvas._resize_rect("br", QPointF(9999, 9999))
+        ok("裁剪：未收紧的图，角手柄外拖不超过图片大小",
+           canvas.selection() == full,
+           f"sel={canvas.selection()} full={full}")
+        canvas._resize_rect("tl", QPointF(-9999, -9999))
+        ok("裁剪：未收紧的图，反向也不越界",
+           canvas.selection() == full,
+           f"sel={canvas.selection()} full={full}")
+        padded = QImage(240, 160, QImage.Format.Format_ARGB32)
+        padded.fill(Qt.GlobalColor.transparent)
+        pad_painter = QPainter(padded)
+        pad_painter.drawImage(20, 15, img)
+        pad_painter.end()
+        slack_dialog = ImageEditorDialog(None, padded)
+        try:
+            slack_dialog.show()
+            app.processEvents()
+            slack_canvas = slack_dialog.canvas
+            ok("裁剪：收紧过的图认得出原文件余量（可扩回原始大小）",
+               slack_canvas.selection() == QRectF(0, 0, 200, 120),
+               f"extent={slack_canvas.source_extent_rect()} "
+               f"sel={slack_canvas.selection()}")
+            slack_canvas._resize_rect("tl", QPointF(-9999, -9999))
+            # ⚠️ 拖 tl **只动左/上两条边**（右/下锚定不动）：从 (0,0,200,120)
+            #    左上各挪 20/15 ⇒ 宽高变成 220×135，不是原文件满幅。
+            ok("裁剪：向外拖到原文件左上角（右边仍锚定）",
+               slack_canvas.selection() == QRectF(-20, -15, 220, 135),
+               f"sel={slack_canvas.selection()}")
+            slack_canvas._resize_rect("br", QPointF(9999, 9999))
+            ok("裁剪：可向外扩到**原始大小** 240×160，且不越界",
+               slack_canvas.selection() == QRectF(-20, -15, 240, 160),
+               f"sel={slack_canvas.selection()}")
+            slack_canvas._resize_rect("br", QPointF(9999, 9999))
+            ok("裁剪：反复外拖也不越界（无「无限扩张」）",
+               slack_canvas.selection() == QRectF(-20, -15, 240, 160),
+               f"sel={slack_canvas.selection()}")
+        finally:
+            slack_dialog.deleteLater()
+            app.processEvents()
         move_start = QPointF(canvas.mapFromScene(QPointF(100, 60)))
         move_end = QPointF(canvas.mapFromScene(QPointF(80, 50)))
         canvas.mousePressEvent(mouse_event("press", move_start))
