@@ -8,10 +8,14 @@ from PySide6.QtCore import QSize, QTimer
 from PySide6.QtWidgets import QApplication, QMainWindow
 from PySide6.QtGui import QIcon
 from qfluentwidgets import setTheme, Theme
+# ⚠️ 无边框**主窗口**基类（背后是 WindowsFramelessMainWindow：frameless 标志 +
+# 原生命中测试的拖拽/缩放/贴边）。直接取自 ``qframelesswindow``——它是
+# qfluentwidgets 的依赖（qfluentwidgets 自己就在 import 它），所以不是新依赖。
+from qframelesswindow import FramelessMainWindow
 from desktop.shell import NAV_COMPACT_WIDTH, ModuleShell
 from desktop.store import TaskStore
 from desktop.ui import theme as T
-from desktop.ui.menu import install_menu_bar
+from desktop.ui.menu import install_title_bar
 from desktop.utils.icon import rounded_window_icon
 from desktop.ui.style import apply_app_style
 from desktop.ui.window_size import apply_window_size
@@ -52,13 +56,22 @@ WINDOW_MIN_SIZE = QSize(CONTENT_MIN_WIDTH + NAV_COMPACT_WIDTH, 720)
 WINDOW_START_MAXIMIZED = True
 
 
-class MainWindow(QMainWindow, WorkerHost):
+class MainWindow(FramelessMainWindow, WorkerHost):
     """主窗口：左侧导航壳层（任务管理 + 独立模块）与详情页跳转。
 
     2026-10-02 起，窗口中央从「列表页/详情页两页对切」升级为
     :class:`desktop.shell.ModuleShell`：左边一条 qfluentwidgets
     导航栏，右边页面栈。任务管理仍是首页，其余是彼此独立的工具模块
     （图片提取 / 去底色 / 拼图）。
+
+    ⚠️ **2026-10-15 起窗口是"无边框 + 自绘标题栏"**（基类
+    ``qframelesswindow.FramelessMainWindow``，标题栏由
+    ``desktop/ui/menu.py::install_title_bar`` 装配）：用户要求"菜单不要另起一行、
+    要跟在标题后面"，而 Windows 原生标题栏塞不进任何 Qt 控件、``QMainWindow``
+    自己的菜单栏又天生独占标题栏下面一整行——只能换标题栏。拖拽 / 四边缩放 /
+    双击最大化 / 贴边吸附仍走系统原生命中测试（库处理 ``WM_NCHITTEST`` 与
+    ``SC_MOVE``），窗口尺寸夹紧（``apply_window_size``）与
+    ``desktop/single_instance.py`` 的 HWND 前台切换都不受影响。
 
     ⚠️ **对外的属性名一个都没变**：``list_page`` / ``detail_page`` / ``pages``
     / ``store`` 全部转发给壳层同名成员（见下面几个 property）。自测
@@ -93,15 +106,16 @@ class MainWindow(QMainWindow, WorkerHost):
             self.setWindowIcon(icon if icon else QIcon(str(icon_path)))
         # ==========================================================
 
+        # 自绘标题栏（图标 / 标题 / 菜单同排）+ 中央壳层。⚠️ 必须在图标之后：
+        # install_title_bar 要把窗口图标同步给标题栏的 iconLabel（见那里说明）。
+        install_title_bar(self)
+
         self._store = TaskStore()
         # 壳层持有「导航栏 + 页面栈 + 各模块页」；详情页仍是惰性创建
         # （构造约 400ms，用户还在列表页时不该付这笔钱）。
         self.shell = ModuleShell(self._store)
         self.setCentralWidget(self.shell)
         self.setStyleSheet(f"QMainWindow {{ background: {T.CANVAS}; }}")
-        # 顶部菜单栏（文件 / 单任务 / 帮助）：菜单项只做路由，业务全在壳层与
-        # 既有入口里（见 desktop/ui/menu.py 的模块头）。
-        install_menu_bar(self)
         self.shell.list_page.open_detail.connect(self._open_detail)
         # 预热详情页（见 _prewarm_detail_page）：① 刚点完导入；② 启动后空闲。
         # 两处都不占用户的操作响应路径，却把那笔 Qt 构造开销提前付掉。

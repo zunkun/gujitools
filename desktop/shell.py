@@ -2,9 +2,15 @@
 """左侧导航壳层：qfluentwidgets 的 ``NavigationInterface`` + 页面栈。
 
 布局照搬 ``FluentWindow`` 的做法（导航栏在左、页面栈在右、拉伸因子给页面栈），
-但不继承 ``FluentWindow``——那个类自带标题栏/亚克力/Mica 一整套窗口装饰，
-而本程序用的是原生标题栏（``desktop/app.py`` 有最大化/还原尺寸与单例逻辑），
-换标题栏会连带影响窗口尺寸夹紧与截图脚本。所以只借它的**布局套路**：
+但不继承 ``FluentWindow``——那个类自带自己的导航栏与页面栈（会与本壳层打架），
+我们只借它的**布局套路**。
+
+⚠️ 窗口装饰的现状（2026-10-15 变更）：主窗口是**无边框 + 自绘标题栏**
+（``desktop/app.py::MainWindow`` 基类 ``qframelesswindow.FramelessMainWindow``，
+标题栏由 ``desktop/ui/menu.py::install_title_bar`` 装配成"图标 / 标题 / 菜单"一排）。
+改这一层的原因是"菜单要跟在标题后面、不许另起一行"；壳层本身**不受影响**——
+它仍只管导航栏 + 页面栈，且是 ``QMainWindow`` 的中央控件（标题栏占的是"菜单位"，
+中央控件自动让开，两者不重叠）。
 
     hBoxLayout { navigationInterface, pageStack( stretch=1 ) }
 

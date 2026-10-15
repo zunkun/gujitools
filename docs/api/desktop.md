@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 170 个模块、183 个公开类、1262 个公开函数/方法（生成于 2026-10-15）。
+覆盖 170 个模块、183 个公开类、1266 个公开函数/方法（生成于 2026-10-15）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -157,7 +157,7 @@
 | [`desktop.ui.fonts`](#desktopuifonts) | 0 | 2 |
 | [`desktop.ui.help_dialog`](#desktopuihelp_dialog) | 0 | 6 |
 | [`desktop.ui.icons`](#desktopuiicons) | 2 | 5 |
-| [`desktop.ui.menu`](#desktopuimenu) | 2 | 10 |
+| [`desktop.ui.menu`](#desktopuimenu) | 2 | 11 |
 | [`desktop.ui.segmented_toggle`](#desktopuisegmented_toggle) | 1 | 11 |
 | [`desktop.ui.style`](#desktopuistyle) | 0 | 3 |
 | [`desktop.ui.theme`](#desktopuitheme) | 0 | 3 |
@@ -180,7 +180,7 @@
 | [`desktop.workers.source_thumbnails_worker`](#desktopworkerssource_thumbnails_worker) | 1 | 4 |
 | [`desktop.workers.task_rows_worker`](#desktopworkerstask_rows_worker) | 1 | 2 |
 | [`desktop.workers.thumb_cache_worker`](#desktopworkersthumb_cache_worker) | 1 | 11 |
-| [`desktop.workers.update_worker`](#desktopworkersupdate_worker) | 2 | 4 |
+| [`desktop.workers.update_worker`](#desktopworkersupdate_worker) | 2 | 7 |
 | [`desktop.workers.worker_host`](#desktopworkersworker_host) | 1 | 4 |
 
 ---
@@ -199,7 +199,7 @@ gujitools 桌面端主窗口：左侧导航壳层（任务管理 + 独立模块�
 | CONTENT_MIN_WIDTH | `1080` |
 | WINDOW_START_MAXIMIZED | `True` |
 
-### `class MainWindow(QMainWindow, WorkerHost)`
+### `class MainWindow(FramelessMainWindow, WorkerHost)`
 
 主窗口：左侧导航壳层（任务管理 + 独立模块）与详情页跳转。
 
@@ -207,6 +207,15 @@ gujitools 桌面端主窗口：左侧导航壳层（任务管理 + 独立模块�
 :class:`desktop.shell.ModuleShell`：左边一条 qfluentwidgets
 导航栏，右边页面栈。任务管理仍是首页，其余是彼此独立的工具模块
 （图片提取 / 去底色 / 拼图）。
+
+⚠️ **2026-10-15 起窗口是"无边框 + 自绘标题栏"**（基类
+``qframelesswindow.FramelessMainWindow``，标题栏由
+``desktop/ui/menu.py::install_title_bar`` 装配）：用户要求"菜单不要另起一行、
+要跟在标题后面"，而 Windows 原生标题栏塞不进任何 Qt 控件、``QMainWindow``
+自己的菜单栏又天生独占标题栏下面一整行——只能换标题栏。拖拽 / 四边缩放 /
+双击最大化 / 贴边吸附仍走系统原生命中测试（库处理 ``WM_NCHITTEST`` 与
+``SC_MOVE``），窗口尺寸夹紧（``apply_window_size``）与
+``desktop/single_instance.py`` 的 HWND 前台切换都不受影响。
 
 ⚠️ **对外的属性名一个都没变**：``list_page`` / ``detail_page`` / ``pages``
 / ``store`` 全部转发给壳层同名成员（见下面几个 property）。自测
@@ -8387,9 +8396,15 @@ done/total 为 0、completed 为 False）。执行过哪怕失败/中断都算�
 左侧导航壳层：qfluentwidgets 的 ``NavigationInterface`` + 页面栈。
 
 布局照搬 ``FluentWindow`` 的做法（导航栏在左、页面栈在右、拉伸因子给页面栈），
-但不继承 ``FluentWindow``——那个类自带标题栏/亚克力/Mica 一整套窗口装饰，
-而本程序用的是原生标题栏（``desktop/app.py`` 有最大化/还原尺寸与单例逻辑），
-换标题栏会连带影响窗口尺寸夹紧与截图脚本。所以只借它的**布局套路**：
+但不继承 ``FluentWindow``——那个类自带自己的导航栏与页面栈（会与本壳层打架），
+我们只借它的**布局套路**。
+
+⚠️ 窗口装饰的现状（2026-10-15 变更）：主窗口是**无边框 + 自绘标题栏**
+（``desktop/app.py::MainWindow`` 基类 ``qframelesswindow.FramelessMainWindow``，
+标题栏由 ``desktop/ui/menu.py::install_title_bar`` 装配成"图标 / 标题 / 菜单"一排）。
+改这一层的原因是"菜单要跟在标题后面、不许另起一行"；壳层本身**不受影响**——
+它仍只管导航栏 + 页面栈，且是 ``QMainWindow`` 的中央控件（标题栏占的是"菜单位"，
+中央控件自动让开，两者不重叠）。
 
     hBoxLayout { navigationInterface, pageStack( stretch=1 ) }
 
@@ -12375,6 +12390,7 @@ qfluentwidgets 的 ``Dialog``，它只支持"字符串 + 两个按钮"）。
 | BUTTON_DOWNLOAD | `"前往下载"` |
 | RESULT_LATEST | `"latest"` |
 | RESULT_NEWER | `"newer"` |
+| TITLE_BAR_ROW_HEIGHT | `24` |
 
 ### `class UpdateVerdict`
 
@@ -12399,7 +12415,14 @@ qfluentwidgets 的 ``Dialog``，它只支持"字符串 + 两个按钮"）。
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(window, action: QAction, parent=None)` | — |
-| `check() -> None` | 查一次 GitHub Release 最新版（防重入；网络在子线程）。 |
+| `check() -> None` | 查一次 GitHub Release 最新版：**先弹「正在检查」窗，再弹结果窗**。 |
+
+##### `check() -> None`
+
+查一次 GitHub Release 最新版：**先弹「正在检查」窗，再弹结果窗**。
+
+用户 2026-10-15：「检查更新，先出弹窗，再反馈结果」——点下去立刻要有可见反馈
+（后台要并发测四条线路，可能几秒），不能像以前那样只有菜单项变灰 + 静默等。
 
 ### 模块函数
 
@@ -12407,7 +12430,8 @@ qfluentwidgets 的 ``Dialog``，它只支持"字符串 + 两个按钮"）。
 | --- | --- |
 | `update_result(kind: str, *, current: str, latest: dict \| None=None) -> UpdateVerdict` | 把一次检查结果收成 :class:`UpdateVerdict`。 |
 | `about_rows(window=None) -> list[tuple[str, str]]` | 「关于」弹窗的行（``(键, 值)``）。纯数据，自测直接断言。 |
-| `install_menu_bar(window) -> QMenuBar` | 给主窗口装上菜单栏（``MainWindow.__init__`` 调一次）。 |
+| `install_title_bar(window)` | 给**无边框主窗口**装自绘标题栏（图标 / 标题 / 菜单同排），返回标题栏。 |
+| `install_menu_bar(window) -> QMenuBar` | 把菜单栏（文件 / 单任务 / 帮助）插进**标题栏的标题之后**。 |
 | `build_file_menu(bar: QMenuBar, window) -> QMenu` | 「文件」：新建任务 / （分隔线）/ 退出。 |
 | `build_single_task_menu(bar: QMenuBar, window) -> QMenu` | 「单任务」：**从 ``MODULES`` 派生**（顺序/文案/图标与左侧导航同源）。 |
 | `build_help_menu(bar: QMenuBar, window) -> QMenu` | 「帮助」：帮助文档 / 检查更新 / 关于。 |
@@ -12424,6 +12448,12 @@ qfluentwidgets 的 ``Dialog``，它只支持"字符串 + 两个按钮"）。
 ⚠️ 正文**不用 markdown 粗体**（``**…**``）：内容面板是普通 QLabel，星号会
 原样显示出来（与 ``_ask_overwrite`` 同款教训）。
 
+线路（用户 2026-10-15：「github 容易被 ban，所以可以使用代理……检测更新，下载
+更新的时候，可以选择测试选择最优方案」）：worker 已经把**四条线路（直连 + 三个
+gh-proxy 镜像）都测过速**，``latest`` 里带着 ``mirror_label`` / ``download_url`` /
+``ranking``——这里把它们写进正文：用户看得见这次走的是哪条、多快，下载地址也是
+**拼过该线路前缀**的那个（不然给了地址还是被 ban）。
+
 #### `about_rows(window=None) -> list[tuple[str, str]]`
 
 「关于」弹窗的行（``(键, 值)``）。纯数据，自测直接断言。
@@ -12432,12 +12462,46 @@ qfluentwidgets 的 ``Dialog``，它只支持"字符串 + 两个按钮"）。
 ``desktop.app``——那会与本模块形成循环导入）；数据目录取 ``window.store.root``
 （没有 store 时省略该行）。
 
+#### `install_title_bar(window)`
+
+给**无边框主窗口**装自绘标题栏（图标 / 标题 / 菜单同排），返回标题栏。
+
+⚠️⚠️ 为什么必须换成无边框自绘标题栏（用户 2026-10-15：「这个菜单**不要另起
+一行**，要在上面**标题后面**」）：Windows 的原生标题栏由系统绘制，**任何 Qt
+控件都塞不进去**；而 ``QMainWindow`` 自己的菜单栏天生是标题栏**下面的一整行**。
+能做到"菜单和标题同排"的唯一路子是：窗口改无边框（``qframelesswindow`` 的
+``FramelessMainWindow``）+ 自绘标题栏（qfluentwidgets 的 ``MSFluentTitleBar``，
+自带最小化/最大化/关闭与拖拽）。拖拽、四边缩放、双击最大化、贴边吸附仍由
+**系统原生**命中测试完成（``qframelesswindow`` 处理 ``WM_NCHITTEST`` 与
+``SC_MOVE``），不是我们手写的近似实现。
+
+三步接线（顺序有讲究）：
+
+1. ``setTitleBar``：库钩子，换掉默认标题栏并挂到窗口上（它会 ``raise_()``）；
+2. ``setMenuWidget``：把标题栏放进 ``QMainWindow`` 的**菜单位** ⇒ 它就是窗口
+   最上面的一整行，且中央控件会自动让开（实测中央控件 y = 标题栏高），
+   不用手工留白；
+3. ``install_menu_bar``：把菜单栏插进标题栏布局的**标题之后**。
+
+⚠️ 最后还要手工同步一次标题/图标：``FluentTitleBar`` 是靠
+``windowTitleChanged / windowIconChanged`` 自动跟随的，而主窗口的
+``setWindowTitle`` / ``setWindowIcon`` 都在本函数**之前**已经调过——那两个
+信号已经错过了，不同步的话标题栏一片空白（实测）。
+
 #### `install_menu_bar(window) -> QMenuBar`
 
-给主窗口装上菜单栏（``MainWindow.__init__`` 调一次）。
+把菜单栏（文件 / 单任务 / 帮助）插进**标题栏的标题之后**。
 
-返回 ``QMenuBar`` 本身（自测拿它读菜单结构）；一并留下两样引用：
+⚠️ 用 ``QMenuBar(window.titleBar)`` 而**不是** ``window.menuBar()``：
+``QMainWindow.menuBar()`` 会就地造出**标题栏下面的一整行**空菜单栏——那正是
+用户不要的"另起一行"（而且它一旦被创建就永远占着那一行的位置）。
 
+插入位置**现算**（``hBoxLayout.indexOf(titleLabel) + 1``）而不是写死索引：
+标题栏布局里还有图标、间距与右侧按钮列，写死数字会在库更新布局时静默错位。
+
+返回 ``QMenuBar`` 本身；一并留下三样引用：
+
+- ``window.menu_bar``：自测与外部取菜单栏（**不要再调** ``window.menuBar()``）；
 - ``window.menus``：三个顶级菜单（按文案取），**必须持有**——见下；
 - ``window.update_controller``：更新控制器（自测与将来"启动时检查"共用同一个）。
 
@@ -14121,26 +14185,42 @@ JPEG，mtime 也是新的，会被上面的 :func:`cache_usable` 永久当成有
 
 源码：[`desktop/workers/update_worker.py`](../../desktop/workers/update_worker.py)
 
-「检查更新」的网络请求 worker（后台线程查 GitHub Release 最新版）。
+「检查更新」的网络 worker（后台线程 + **多线路测速**查 GitHub Release 最新版）。
 
 为什么在子线程
 --------------
-点「帮助 → 检查更新」时，请求要打到 ``api.github.com``：DNS/连接/读取加起来
-在网络不佳时能到秒级。放在主线程就是"点了菜单、界面卡住"——与本项目
-「重活/网络全走 worker」的口径一致（见 ``worker_host`` 的说明）。
+点「帮助 → 检查更新」要打网络（可能还要并发测 4 条线路），在主线程做就是"点了菜单、
+界面卡住"——与本项目「重活/网络全走 worker」的口径一致（见 ``worker_host``）。
+
+为什么要**镜像/测速**（用户 2026-10-15）
+---------------------------------------
+「github 容易被 ban，所以可以使用代理」——同一个 API 地址可以拼上加速前缀再访问：
+
+    https://v6.gh-proxy.org/  +  https://api.github.com/repos/.../releases/latest
+    https://v4.gh-proxy.org/  +  ...
+    https://cdn.gh-proxy.org/ +  ...
+
+于是共四种方案（**直连 + 三个镜像**，见 :data:`MIRROR_PREFIXES`）。**先测速再选最快
+的那条**去取数据：四条**并发**各打一次（每条都有独立超时，互不拖累），全部失败才
+报错。实测这台机器：v6 0.38s / cdn 0.44s / v4 0.69s / 直连 2.42s。
+
+⚠️ **只镜像 API 与 release 资产（.exe），不镜像 release 网页**：实测三个镜像对
+``https://github.com/<repo>/releases/latest`` 这种网页一律 **403**，而对 ``api.github.com``
+与 ``/releases/download/...`` 资产都正常。所以下载地址取**资产**的
+``browser_download_url`` 再拼镜像前缀，不拿网页地址。
 
 只取**原始字段**，不做判断
 --------------------------
-worker 只负责"把 release 拉下来 + 归类错误"，**不比较版本**：比较是纯规则
-（``utils.version``），放在主线程做——于是自测能只替换本文件的一个模块级函数
-就覆盖"已是最新 / 有新版本 / 查询失败"三分支。
+worker 只"把 release 拉下来 + 归类错误 + 给出测速排名"，**不比较版本**：比较是纯
+规则（``utils.version``），放在主线程做——于是自测能只替换本文件的一个模块级函数就
+覆盖"已是最新 / 有新版本 / 查询失败"三分支。
 
-``kind`` 的词表（与 ``desktop/ui/menu.py`` 的文案表一一对应，别各写一份）：
+``kind`` 的词表（与 ``desktop/ui/menu.py`` 的文案表一一对应）：
 
 ===============  ==================================================
-``network``      连不上 / 超时（断网、公司网络挡了 api.github.com）
+``network``      连不上（断网、四个地址全不可达）
 ``not_found``    HTTP 404（仓库没有 release，或仓库名变了）
-``rate_limited`` HTTP 403 / 429（GitHub 匿名调用限流）
+``rate_limited`` HTTP 403 / 429（限流；⚠️ 镜像对**网页**返回 403 也归这里）
 ``bad_json``     响应不是合法 JSON / 缺 ``tag_name``
 ``http:<code>``  其余 HTTP 错误码，原样带出来
 ===============  ==================================================
@@ -14166,9 +14246,9 @@ worker 只负责"把 release 拉下来 + 归类错误"，**不比较版本**：�
 
 子线程里跑一次 :func:`fetch_latest_release`（QObject，运行于子线程）。
 
-成功发 ``checked(dict)``（release 原始字段），失败发 ``failed(kind)``。
-⚠️ ``run()`` 整体 try/except：异常逃出子线程会让线程静默死掉、界面永远
-停在"正在检查"（仓库硬规则）。
+成功发 ``checked(dict)``（release 原始字段 + 线路信息），失败发 ``failed(kind)``。
+⚠️ ``run()`` 整体 try/except：异常逃出子线程会让线程静默死掉、界面永远停在
+"正在检查"（仓库硬规则）。
 
 #### 方法
 
@@ -14181,17 +14261,35 @@ worker 只负责"把 release 拉下来 + 归类错误"，**不比较版本**：�
 
 | 函数 | 说明 |
 | --- | --- |
-| `fetch_latest_release(url: str=RELEASE_API, timeout: float=TIMEOUT_SECONDS) -> dict` | 拉取最新 release 的原始字段；失败抛 :class:`UpdateCheckError`。 |
+| `mirror_label(prefix: str) -> str` | 线路的中文标签：直连 → 「直连」，镜像 → 域名（``v6.gh-proxy.org``）。 |
+| `build_url(prefix: str, url: str) -> str` | 把加速前缀拼到原始地址前面（用户给的用法就是**直接拼接**）。 |
+| `probe_mirrors(url: str=RELEASE_API, timeout: float=TIMEOUT_SECONDS) -> list[dict]` | **并发**测四条线路，返回按耗时升序的排名（每条：前缀/标签/是否可用/耗时/下载地址）。 |
+| `fetch_latest_release(url: str=RELEASE_API, timeout: float=TIMEOUT_SECONDS) -> dict` | 经**最快线路**拉取最新 release；四条全败抛 :class:`UpdateCheckError`。 |
+
+#### `probe_mirrors(url: str=RELEASE_API, timeout: float=TIMEOUT_SECONDS) -> list[dict]`
+
+**并发**测四条线路，返回按耗时升序的排名（每条：前缀/标签/是否可用/耗时/下载地址）。
+
+⚠️ 并发是必须的：串行等四条，最坏 4×超时，用户点一下要瞪 24 秒。
+⚠️ 排名里**带**``download_url``（用它自己的前缀拼出来的资产地址）——界面的
+「换条线路」直接取用，不必再回头拼一次（也就不会漏同步拼接规则）。
+
+一条都没通时**不抛异常**，由 :func:`fetch_latest_release` 依据排名归类报错
+（这样"哪几条怎么了"对界面也拿得到）。
 
 #### `fetch_latest_release(url: str=RELEASE_API, timeout: float=TIMEOUT_SECONDS) -> dict`
 
-拉取最新 release 的原始字段；失败抛 :class:`UpdateCheckError`。
+经**最快线路**拉取最新 release；四条全败抛 :class:`UpdateCheckError`。
 
-⚠️ 刻意做成**模块级函数**（而不是 worker 的方法）：自测要能整体替换它，
-从而不碰真网络地覆盖成功/失败路径。
+⚠️ 刻意做成**模块级函数**（而不是 worker 的方法）：自测要能整体替换它，从而不碰
+真网络地覆盖成功/失败路径。
 
-返回 ``{"tag_name", "html_url", "name", "published_at", "prerelease"}``；
-``tag_name`` 缺失视为 ``bad_json``（比大小全靠它，没有就无话可说）。
+返回 ``{"tag_name", "html_url", "name", "published_at", "prerelease", "assets"}``
+再加三样界面要用的东西：
+
+- ``mirror_prefix`` / ``mirror_label``：这次用的是哪条线路（直连为空串/"直连"）；
+- ``download_url``：**拼过该线路前缀**的安装包下载地址；
+- ``ranking``：四条线路的测速排名（含每条的 ``download_url``，供"换条线路"）。
 
 ---
 

@@ -135,6 +135,11 @@ def run(ctx) -> None:
        WINDOW_START_MAXIMIZED is True, f"{WINDOW_START_MAXIMIZED=}")
 
     maximized = MainWindow()
+    restored_w, restored_h = fit_sizes(WINDOW_SIZE, None, area)[0].toTuple()
+    ok("主窗口「还原尺寸」＝夹紧后的 WINDOW_SIZE（最大化不等于把窗口定死）",
+       (maximized.width(), maximized.height()) == (restored_w, restored_h),
+       f"构造后={maximized.width()}x{maximized.height()} "
+       f"期望={restored_w}x{restored_h}")
     maximized.showMaximized()
     for _ in range(6):
         ctx.app.processEvents()
@@ -148,11 +153,12 @@ def run(ctx) -> None:
     # ⚠️ 最大化**不**断言外框落在可用区域内：Windows 最大化窗口的
     #    frameGeometry 会连 DWM 的不可见缩放边框一起报（实测 y=-7、高 831
     #    对可用高 824），可见区域本身正好等于工作区。
-    maximized.showNormal()
-    for _ in range(6):
-        ctx.app.processEvents()
-    restored_w, restored_h = fit_sizes(WINDOW_SIZE, None, area)[0].toTuple()
-    ok("还原：回到夹紧后的默认尺寸（最大化不等于把窗口定死）",
-       (maximized.width(), maximized.height()) == (restored_w, restored_h),
-       f"还原后={maximized.width()}x{maximized.height()} 期望={restored_w}x{restored_h}")
+    #
+    # ⚠️⚠️ **"点还原回到夹紧尺寸"这半截在离屏环境验不了**（2026-10-15 改用无边框
+    #    窗口后，见 desktop/ui/menu.py 的说明）：无边框窗口的"最大化前尺寸"由
+    #    **平台**记录，离屏 QPA 没有窗口管理器，showNormal() 拿回来的是 Qt 默认
+    #    640×480（实测；同形态的原生标题栏窗口在离屏下正常）——真机实测正常：
+    #    点标题栏「还原」回到 1440×920＝夹紧尺寸（走 qframelesswindow 的原生
+    #    SC_RESTORE，不是 Qt 的 showNormal）。所以这里只断言"构造后就是夹紧尺寸"
+    #    ＋"能最大化"，还原那一下列为**真机验收项**，不在离屏自测里假装通过。
     maximized.close()
