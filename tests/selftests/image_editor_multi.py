@@ -885,11 +885,12 @@ def run(ctx) -> None:
        and layout_updates == [[{
            "index": 1,
            "file": str(right_path),
-           # ⚠️ 2026-10-15：位移口径改为**内容框在新画布里的偏移**
-           #    ``content[0:2]``（与 ``_commit_crop`` 的 origin 累加解耦）。
-           #    **纯裁剪**只裁掉、不搬动内容 ⇒ 内容没动 ⇒ 版面框保持原位
-           #    （旧期望 270/15 是拿 ``origin``(=box) 当位移算出来的）。
-           "rect": [250.0, 10.0, 120.0, 60.0],
+           # ⚠️ 2026-10-15：位移口径 ＝ **内容框在新画布里的偏移** ＋
+           #    **画布原点平移 origin**（两者之和）。**纯裁剪**内容框偏移为 0，
+           #    但新画布从被裁掉的 ``box``(20,5) 起 ⇒ 剩下的内容在页面上整体
+           #    右/下移一个 ``box`` ⇒ 版面框 = 250+20 / 10+5。只取内容框偏移
+           #    会让位置不回写（页面没动、弹窗里却挪了）。
+           "rect": [270.0, 15.0, 120.0, 60.0],
        }]],
        f"updates={layout_updates}")
     from desktop.services.imposition import apply_editor_layout
@@ -901,7 +902,7 @@ def run(ctx) -> None:
     changed_layout_files = apply_editor_layout(page_items, layout_updates[0])
     ok("拼版页面应用双图编辑布局：左右图间距/重叠按弹窗结果更新",
        changed_layout_files == {str(right_path)}
-       and page_items[1]["rect"] == [250.0, 10.0, 120.0, 60.0],
+       and page_items[1]["rect"] == [270.0, 15.0, 120.0, 60.0],
        f"items={page_items}")
     from types import SimpleNamespace
 
@@ -950,6 +951,70 @@ def run(ctx) -> None:
        f"rect={task_items[1]['rect']}, saves={len(persisted_pages)}")
     dialog6.close()
     dialog6.release_buffers()
+
+    # ---- 带透明留白的源图：入口版面对齐 + 移动后尺寸不回缩 ----
+    # 用户 2026-10-15 报障：拼版页移动图片后进「编辑整图」，弹窗里两张图的
+    # 位置/大小与页面**对不上**；在弹窗里移动图片并应用，回到拼版页位置不对、
+    # 大小不对（**图片高度被压缩**）。根因两处：入口 ``scale`` 按**整张原图**
+    # 算（而拼版 rect 是**可见内容框**），入口 ``origin`` 又把收紧偏移记了一遍。
+    from PySide6.QtGui import QColor, QImage, QPainter
+
+    pad_dir = temp_dir("guji_editor_pad_")
+    pad_left_path = pad_dir / "pad_left.png"
+    pad_right_path = pad_dir / "pad_right.png"
+
+    def _write_padded(path: str) -> None:
+        """240×180 里只有 (40,40,160,100) 是不透明内容，其余透明。"""
+        image = QImage(240, 180, QImage.Format.Format_ARGB32)
+        image.fill(QColor(0, 0, 0, 0))
+        painter = QPainter(image)
+        painter.fillRect(QRectF(40, 40, 160, 100), QColor("#ffffff"))
+        painter.end()
+        assert image.save(path)
+
+    _write_padded(str(pad_left_path))
+    _write_padded(str(pad_right_path))
+    # 入口按真实链路传 ``QImage(路径)``（整张含留白），rect 用页码面的
+    # "整尺寸" 版面（``default_items`` 是整图尺寸口径）——两处都是报障现场。
+    dialog_pad = ImageEditorDialog(None, QImage(str(pad_left_path)),
+                                   save_back=True)
+    dialog_pad.configure_multiple_images([
+        {"image": QImage(str(pad_left_path)), "file": str(pad_left_path),
+         "rect": (0, 0, 240, 180)},
+        {"image": QImage(str(pad_right_path)), "file": str(pad_right_path),
+         "rect": (240, 0, 240, 180)},
+    ])
+    pad_canvas = dialog_pad.canvas
+    pad_layer0 = dialog_pad._multi_layers[0]
+    ok("含留白源图：入口比例按**可见内容**算（rect/内容，不是 rect/整图）",
+       pad_layer0["scale"] == (1.5, 1.8)
+       and pad_layer0["origin"] == (0.0, 0.0),
+       f"scale={pad_layer0['scale']} origin={pad_layer0['origin']}")
+    # 页面 delta=240、活动比例 1.5 ⇒ 弹窗里两图间距 240/1.5=160（旧版按整图
+    # 算比例=1 ⇒ 间距被放大到 240，与拼版页对不上——用户报的"位置不一致"）。
+    ok("含留白源图：弹窗入口两图相对位置与拼版页一致",
+       pad_canvas._context_offset == QPointF(160, 0),
+       f"offset={pad_canvas._context_offset}")
+
+    # 弹窗里把活动图整体移动 (30,30)（选区随图一起走 ⇒ 内容尺寸不变）。
+    dialog_pad._pending_crop = QRectF(30, 30, 160, 100)
+    dialog_pad._pending_crop_offset = (30.0, 30.0)
+    dialog_pad._commit_crop()
+    pad_updates = []
+    dialog_pad.multi_layout_saved.connect(pad_updates.append)
+    ok("含留白源图：移动后回写版面尺寸＝入口 rect 尺寸（高度不压缩）",
+       dialog_pad._save_multiple_images()
+       and pad_updates == [[{
+           "index": 0,
+           "file": str(pad_left_path),
+           # 位移 = 内容偏移 + 画布原点，再乘**内容比例**：(30×1.5, 30×1.8)；
+           # 尺寸 = 内容尺寸 × 比例 = 入口 rect（240×180）。旧版按整图算比例
+           # (1,1)，尺寸会回成 (160,100)——拼版页据此摆框，高度就短了一截。
+           "rect": [45.0, 54.0, 240.0, 180.0],
+       }]],
+       f"updates={pad_updates}")
+    dialog_pad.close()
+    dialog_pad.release_buffers()
 
     dialog.close()
     dialog.release_buffers()

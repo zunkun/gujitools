@@ -317,19 +317,35 @@ class ImageEditorDialog(
                 "page_item_index": item_index,
                 "rect": rect,
                 "rotation": float(item.get("rotation", 0.0) or 0.0),
+                # ⚠️⚠️ 比例必须按**裁边后的 raw（可见内容）**算，**不能**按入口
+                #    传进来的整张原图算（2026-10-15 用户报障「拼版页移动图片后
+                #    弹窗编辑，两图位置/大小对不上；弹窗里移动后应用，拼版页大小
+                #    不对、图片高度被压缩」）：拼版侧 ``rect`` 是**可见内容框**
+                #    （画布 ``_trim_transparent_border``、合成 ``_trim_to_content``、
+                #    ``refresh_rects_for_edited_source`` 全是内容口径），而去底色
+                #    产物普遍带透明留白（内容 < 整图）。按整图算会把比例算**小**
+                #    ⇒ ① 弹窗里两图相对距离被放大、各自显示得比页面小一圈；
+                #    ② 回写 ``content_w * scale`` 也偏小 ⇒ 页面 rect 缩水（高度
+                #    被压扁）。此处改按内容尺寸算后，写回值＝入口 rect 尺寸，
+                #    与页面所见一致；旧的"整尺寸 rect"版面也由比例自动桥接。
                 "scale": (
-                    rect.width() / max(1, image.width()),
-                    rect.height() / max(1, image.height()),
+                    rect.width() / max(1, raw.width()),
+                    rect.height() / max(1, raw.height()),
                 ),
                 # ---- 内容原点（2026-10-13「两张图片相互远离」）----
-                #: 当前 ``_image`` 左上角在**初始图像素系**里的位置：
-                #: 初值＝入口收紧偏移（透明图裁掉空白边后内容从这儿开始），
-                #: 之后每次真裁剪/变换烘焙按新画布左上角累加（见
-                #: :meth:`_multi_layer_shift`）。双图相对摆放全靠它换算，
+                #: 当前 ``_image`` 左上角在**入口内容坐标系**里的位置。
+                #: 初值必须是 ``(0, 0)``：入口 ``_image`` 已被
+                #: ``_trim_transparent_edges`` 收成**内容图**，画布 (0,0) 就是内容
+                #: 原点。旧值填入口收紧偏移，等于把这段留白**重复计一次**——
+                #: ``_refresh_multi_canvas`` 的 offset 公式里 origin 项与 ``rect``
+                #: 反映的是同一段几何（两侧原点不同时两图就会挨得比页面近，
+                #: 2026-10-15 报障的"位置对不上"正出在这儿）。
+                #: 之后每次真裁剪/变换烘焙才按新画布左上角累加
+                #: （见 :meth:`_multi_layer_shift`）。双图相对摆放全靠它换算，
                 #: 不追踪的话一边裁剪/旋转，另一边就"漂走"。
                 #: ``origin0``＝「还原」时的初值。
-                "origin": (float(trim_offset[0]), float(trim_offset[1])),
-                "origin0": (float(trim_offset[0]), float(trim_offset[1])),
+                "origin": (0.0, 0.0),
+                "origin0": (0.0, 0.0),
                 # ---- 挂起效果的**静态显示图**（ghost，2026-10-13）----
                 #: 非活动层也要"看到它转过的样子"（用户口径：A 旋转了，
                 #: 切到 B 操作时 A 的旋转效果要存在）——切走时把画布上
@@ -815,15 +831,22 @@ class ImageEditorDialog(
             #    回报 ``image.height()`` 就等于**把留白算进版面**，虚线框比图
             #    大一圈、底部多出一截。
             #    这里只报**内容框**，拼版侧据此摆框。
-            # ⚠️⚠️ **位移取内容框在新画布里的偏移 ``content[0:2]``，不是
-            #    ``layer["origin"]``**（2026-10-15 用户报障「裁剪里把左图往右图
-            #    方向拖，松手后两图重合／挨得比拖动时更近」）：``origin`` 的定义
-            #    是"画布 (0,0) 在初始图像素系里的坐标"＝**画布原点的位置**，
-            #    纯裁剪时它非零（=box）而内容没动、裁剪移动时它为零而内容动了
-            #    （位移已烤进留白）——两个方向都与"内容往哪边挪了"无关或相反。
-            #    位移的权威口径只有一个：**内容框在新画布里的偏移**。
-            #    （与 :meth:`_commit_crop` 的 origin 累加彻底解耦：那条管的是
-            #    **两图相对摆放**的锚点，这条管的是**回报给拼版页的版面框**。）
+            # ⚠️⚠️ **位移 = 内容框在新画布里的偏移 ``content[0:2]`` ＋ 画布原点
+            #    平移 ``layer["origin"]`` 之和**（2026-10-15 用户报障「弹窗里移动
+            #    图片应用后，拼版页位置对不上」）。两项各管一类操作，缺一不可：
+            #
+            #    - ``content[0:2]``（内容框在新画布里的偏移）管**裁剪移动**——
+            #      位移被烤进透明留白，``origin`` 恰好净零（``box.x + shift -
+            #      pad``＝0），只有这一项能反映出"用户把图挪了多远"；
+            #    - ``origin``（画布 (0,0) 相对**入口内容原点**的位移）管**纯裁剪 /
+            #      变换**——新画布从裁掉的 ``box`` 起，剩下的内容在页面上整体
+            #      左移/右移了 ``box``，内容框自身偏移为 0，只有这一项追踪得到。
+            #
+            #    只用 ``origin`` ⇒ 裁剪移动时位移整个丢失（图"弹回原位"，同日
+            #    另一条报障）；只用 ``content[0:2]`` ⇒ 纯裁剪/变换后内容位置
+            #    不回写（弹窗画布把那张图挪了、页面却没动，正是"位置对不上"）。
+            #    页面 rect 锚在**入口内容原点**上（见 ``configure_multiple_images``
+            #    的 origin 说明），两项之和才是内容相对该锚点的完整位移。
             content = _transparent_content_bounds(image)
             if content is None:
                 offset_x, offset_y = 0.0, 0.0
@@ -835,8 +858,8 @@ class ImageEditorDialog(
                 "index": layer["page_item_index"],
                 "file": layer["file"],
                 "rect": [
-                    x + offset_x * scale_x,
-                    y + offset_y * scale_y,
+                    x + (offset_x + origin_x) * scale_x,
+                    y + (offset_y + origin_y) * scale_y,
                     content_w * scale_x,
                     content_h * scale_y,
                 ],
