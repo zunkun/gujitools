@@ -372,17 +372,24 @@ class CommitMixin(DialogHost):
             self._image = shifted
         else:
             self._image = cropped
-        # ⚠️⚠️ 原点累加的是**选区在新画布里的位移**，即 ``box + shift``
-        #    （＝裁剪前选区在旧画布中的位置），**不能再减 ``pad``**
-        #    （2026-10-14 用户报障「弹窗里把图下移 200px、应用后拼版页左图
-        #    顶部没跟着走、底部反而长出一截」）：
-        #    纯裁剪 shift=pad=0，两种写法一致（既有断言 origin==(20,10) 不受影响）；
-        #    纯"移动"时 shift_y 与 pad_y **都等于位移**（200），旧式
-        #    ``box.y + shift_y - pad_y`` 正好抵消成 0 ⇒ 位移被吞掉，
-        #    回报给拼版的 rect 原地不动，而像素图已多出 200px 透明留白。
+        # ⚠️⚠️ 原点累加的量必须让 **sheet 映射**（:meth:`_scene_to_sheet`：
+        #    ``sheet = rect + (画布坐标 + origin) * scale``）在提交裁剪前后
+        #    **完全一致**——活动层自己是绝对基准（不受切层换人影响），这是唯一
+        #    无歧义的判据。提交后可见内容画在画布 ``pad`` 处、对应初始像素
+        #    ``box``；提交前它位于 ``box + shift``。两式相等 ⇒
+        #        **origin 增量 = box + shift - pad**
+        #    正位移（``pad == shift``）⇒ 增量 == ``box``：位移已由透明留白烤进
+        #    像素，origin 不能再动一次；纯裁剪（``shift == pad == 0``）⇒ ``box``，
+        #    既有断言 ``origin==(20,10)`` 不受影响。
+        # ⚠️ 2026-10-15 用户报障「裁剪功能里拖动图片，无论多远都弹回原样」：
+        #    本行一度被改成 ``box - pad``，正位移时等于 ``box - shift``、比正确
+        #    值少 ``2*shift``，位移被**整个抵消**（实测拖 70px 后提交，内容
+        #    sheet_left 由 40.7 弹回 0.0）。旧式 ``box + shift`` 则是正位移
+        #    过冲 ``2*shift``。两个都错在把 ``shift`` 项算错一次。
+        #    判据＝活动层可见内容左边缘的 sheet x 提交前后相等（±取整残差）。
         self._multi_layer_shift(
-            float(box.x() + shift_x),
-            float(box.y() + shift_y),
+            float(box.x() + shift_x - pad_x),
+            float(box.y() + shift_y - pad_y),
         )
         # ⚠️ 双图模式换图**不**重新适应窗口（世界缩放保持，2026-10-13
         #    「不要放大缩小」）；单图维持"裁完 fit 一遍"的旧行为。

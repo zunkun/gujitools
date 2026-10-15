@@ -800,18 +800,29 @@ class ImageEditorDialog(
             #    像素图因此变大（实测 1000 → 1200 高），而内容其实没变——直接
             #    回报 ``image.height()`` 就等于**把留白算进版面**，虚线框比图
             #    大一圈、底部多出一截。
-            #    这里只报**内容框**（origin 已含位移），拼版侧据此摆框。
+            #    这里只报**内容框**，拼版侧据此摆框。
+            # ⚠️⚠️ **位移取内容框在新画布里的偏移 ``content[0:2]``，不是
+            #    ``layer["origin"]``**（2026-10-15 用户报障「裁剪里把左图往右图
+            #    方向拖，松手后两图重合／挨得比拖动时更近」）：``origin`` 的定义
+            #    是"画布 (0,0) 在初始图像素系里的坐标"＝**画布原点的位置**，
+            #    纯裁剪时它非零（=box）而内容没动、裁剪移动时它为零而内容动了
+            #    （位移已烤进留白）——两个方向都与"内容往哪边挪了"无关或相反。
+            #    位移的权威口径只有一个：**内容框在新画布里的偏移**。
+            #    （与 :meth:`_commit_crop` 的 origin 累加彻底解耦：那条管的是
+            #    **两图相对摆放**的锚点，这条管的是**回报给拼版页的版面框**。）
             content = _transparent_content_bounds(image)
             if content is None:
+                offset_x, offset_y = 0.0, 0.0
                 content_w, content_h = image.width(), image.height()
             else:
+                offset_x, offset_y = float(content[0]), float(content[1])
                 content_w, content_h = content[2], content[3]
             layout_updates.append({
                 "index": layer["page_item_index"],
                 "file": layer["file"],
                 "rect": [
-                    x + origin_x * scale_x,
-                    y + origin_y * scale_y,
+                    x + offset_x * scale_x,
+                    y + offset_y * scale_y,
                     content_w * scale_x,
                     content_h * scale_y,
                 ],

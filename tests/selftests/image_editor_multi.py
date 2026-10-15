@@ -325,9 +325,12 @@ def run(ctx) -> None:
     moved_image = dialog_u._multi_layers[0]["state"]["_image"]
     ok("裁剪移动：像素图长高（留白编码位移），但可见内容尺寸不变",
        moved_image.height() == 100 + int(MOVE)
-       and dialog_u._multi_layers[0]["origin"] == (0.0, MOVE),
+       # ⚠️ 2026-10-15 修正：位移已由透明留白烤进像素，``origin`` **不再重复
+       #    计入**（旧期望 ``(0, MOVE)`` 钉的是 ``box + shift``，正位移时等于
+       #    「过冲一个位移」＝用户报障的「拖动后两图重合／挨得比拖动时更近」）。
+       and dialog_u._multi_layers[0]["origin"] == (0.0, 0.0),
        f"image_h={moved_image.height()} "
-       f"origin={dialog_u._multi_layers[0]['origin']}")
+       f"origin={dialog_u._multi_layers[0]['origin']} 期望=(0.0, 0.0)")
     ok("应用回报：宽高按**可见内容**（不是含留白的整张图），"
        "否则拼版虚线框比图大一圈",
        bool(updates)
@@ -882,7 +885,11 @@ def run(ctx) -> None:
        and layout_updates == [[{
            "index": 1,
            "file": str(right_path),
-           "rect": [270.0, 15.0, 120.0, 60.0],
+           # ⚠️ 2026-10-15：位移口径改为**内容框在新画布里的偏移**
+           #    ``content[0:2]``（与 ``_commit_crop`` 的 origin 累加解耦）。
+           #    **纯裁剪**只裁掉、不搬动内容 ⇒ 内容没动 ⇒ 版面框保持原位
+           #    （旧期望 270/15 是拿 ``origin``(=box) 当位移算出来的）。
+           "rect": [250.0, 10.0, 120.0, 60.0],
        }]],
        f"updates={layout_updates}")
     from desktop.services.imposition import apply_editor_layout
@@ -894,7 +901,7 @@ def run(ctx) -> None:
     changed_layout_files = apply_editor_layout(page_items, layout_updates[0])
     ok("拼版页面应用双图编辑布局：左右图间距/重叠按弹窗结果更新",
        changed_layout_files == {str(right_path)}
-       and page_items[1]["rect"] == [270.0, 15.0, 120.0, 60.0],
+       and page_items[1]["rect"] == [250.0, 10.0, 120.0, 60.0],
        f"items={page_items}")
     from types import SimpleNamespace
 
