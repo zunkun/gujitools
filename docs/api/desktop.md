@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 174 个模块、191 个公开类、1309 个公开函数/方法（生成于 2026-10-16）。
+覆盖 174 个模块、191 个公开类、1311 个公开函数/方法（生成于 2026-10-16）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -129,7 +129,7 @@
 | [`desktop.services.yolo_prewarm`](#desktopservicesyolo_prewarm) | 0 | 3 |
 | [`desktop.settings.config`](#desktopsettingsconfig) | 1 | 4 |
 | [`desktop.settings.page`](#desktopsettingspage) | 1 | 2 |
-| [`desktop.shell`](#desktopshell) | 1 | 21 |
+| [`desktop.shell`](#desktopshell) | 1 | 22 |
 | [`desktop.single_instance`](#desktopsingle_instance) | 0 | 5 |
 | [`desktop.stages.detect_stage`](#desktopstagesdetect_stage) | 0 | 2 |
 | [`desktop.stages.events`](#desktopstagesevents) | 2 | 9 |
@@ -160,7 +160,7 @@
 | [`desktop.ui.fonts`](#desktopuifonts) | 0 | 2 |
 | [`desktop.ui.help_dialog`](#desktopuihelp_dialog) | 0 | 6 |
 | [`desktop.ui.icons`](#desktopuiicons) | 2 | 5 |
-| [`desktop.ui.menu`](#desktopuimenu) | 3 | 16 |
+| [`desktop.ui.menu`](#desktopuimenu) | 3 | 17 |
 | [`desktop.ui.segmented_toggle`](#desktopuisegmented_toggle) | 1 | 11 |
 | [`desktop.ui.style`](#desktopuistyle) | 0 | 3 |
 | [`desktop.ui.theme`](#desktopuitheme) | 0 | 3 |
@@ -8749,6 +8749,7 @@ done/total 为 0、completed 为 False）。执行过哪怕失败/中断都算�
 | `detail_page()` | 任务详情页（惰性构造）。 |
 | `create_page()` | 创建任务页（惰性构造；外部截图/自测按这个属性取）。 |
 | `open_create() -> None` | 打开「创建任务」二级页（列表页的「创建任务」按钮走这里）。 |
+| `quick_task(path: str) -> None` | 「快速任务」（菜单 文件 → 快速任务）：拿一个 PDF **直接建任务**。 |
 | `flow_page()` | 任务流程编辑页（惰性构造）。 |
 | `open_flow(task_id: str) -> None` | 打开某个任务的流程编辑页（详情页页头按钮走这里）。 |
 | `prewarm_detail_page() -> None` | 预构造详情页骨架与**流程第一步**面板（同 app.py 原 ``_prewarm_detail_page``）。 |
@@ -8791,6 +8792,25 @@ done/total 为 0、completed 为 False）。执行过哪怕失败/中断都算�
 本页是**惰性单例**（建一次就长期留着），不复位的话上一次填的任务名、
 选的 PDF、勾的「自定义流程」、编过的流程图全都留在界面上——第二次
 建任务等于接着上一次半途而废的表单继续填。
+
+##### `quick_task(path: str) -> None`
+
+「快速任务」（菜单 文件 → 快速任务）：拿一个 PDF **直接建任务**。
+
+用户 2026-10-16：「导入PDF，直接创建任务」——省掉创建页那三步（选 PDF、
+填名称、看/编流程）。
+
+复用列表页那条**既有**链路（``start_create``：指纹 → 查重 → 建任务 →
+进详情页），本方法只喂参数：
+
+- **任务名 = PDF 文件名**（``Path(path).stem``，用户 2026-10-16：
+  「快速任务，任务名称为PDF 文件名称默认」）。与创建页选完 PDF 后
+  ``_autofill_name`` 自动填进去的那一份**完全一致**（那边也是取 stem，
+  不带 ``.pdf``）；想改名去详情页页头的铅笔按钮。
+- ``diagram=None`` / ``uses_custom=False`` ⇒ 用默认流程模板。
+
+⚠️ 唯一"少做"的一步是**不经过创建任务页**；**查重那道闸仍会弹**——同一个
+PDF 已经建过任务时再建第二个，多半是误操作，不该因为"快速"就跳过。
 
 ##### `show_module(key: str) -> None`
 
@@ -12687,6 +12707,8 @@ Qt 原生 ``QMenuBar``：与既有窗口装饰同族、自带 ``Alt`` 助记符�
 菜单项**只做路由与转发**，业务一律复用既有入口：
 
 - 文件 → 新建任务：``shell.open_create()``（含"每次进入复位"，别另建页）；
+- 文件 → 快速任务：原生选 PDF → ``shell.quick_task()``（**不经创建页**直接建，
+  用户 2026-10-16）；
 - 文件 → 退出：``window.close()`` —— **不是** ``QApplication.quit()``（见
   :func:`quit_app` 的说明）；
 - 单任务 → ``<key>``：``shell.show_module(key)``，清单**从 ``MODULES`` 派生**
@@ -12709,6 +12731,8 @@ qfluentwidgets 的 ``Dialog``，它只支持"字符串 + 两个按钮"）。
 | MENU_SINGLE_TASK | `"单任务(&S)"` |
 | MENU_HELP | `"帮助(&H)"` |
 | ACTION_CREATE_TASK | `"新建任务(&N)"` |
+| ACTION_QUICK_TASK | `"快速任务(&Q)"` |
+| QUICK_TASK_PICK_TITLE | `"选择 PDF（快速任务）"` |
 | ACTION_QUIT | `"退出(&X)"` |
 | ACTION_MANUAL | `"帮助文档(&D)"` |
 | ACTION_UPDATE | `"检查更新(&U)"` |
@@ -12811,7 +12835,8 @@ qfluentwidgets 的 ``Dialog``，它只支持"字符串 + 两个按钮"）。
 | `about_rows(window=None) -> list[tuple[str, str]]` | 「关于」弹窗的行（``(键, 值)``）。纯数据，自测直接断言。 |
 | `install_title_bar(window)` | 给**无边框主窗口**装自绘标题栏（图标 / 标题 / 菜单同排），返回标题栏。 |
 | `install_menu_bar(window) -> QMenuBar` | 把菜单栏（文件 / 单任务 / 帮助）插进**标题栏的标题之后**。 |
-| `build_file_menu(bar: QMenuBar, window) -> QMenu` | 「文件」：新建任务 / （分隔线）/ 退出。 |
+| `build_file_menu(bar: QMenuBar, window) -> QMenu` | 「文件」：新建任务 / 快速任务 / （分隔线）/ 退出。 |
+| `open_quick_task(window) -> None` | 「快速任务」：选一个 PDF，**随即建任务**（不再进创建页填名称/流程）。 |
 | `build_single_task_menu(bar: QMenuBar, window) -> QMenu` | 「单任务」：**从 ``MODULES`` 派生**（顺序/文案/图标与左侧导航同源）。 |
 | `build_help_menu(bar: QMenuBar, window) -> QMenu` | 「帮助」：帮助文档 / 检查更新 / 关于。 |
 | `quit_app(window) -> None` | 「退出」：先收掉非模态子弹窗，再 ``window.close()``。 |
@@ -12903,6 +12928,20 @@ PySide6 把 ``QMenuBar.addMenu("文案")`` 造出来的 ``QMenu`` **交给 Pytho
 ``RuntimeError: Internal C++ object (QMenu) already deleted``（连读都读不到）。
 所以这里一律 ``QMenu(文案, bar)`` 显式给父 + 用 ``window.menus`` 留引用，
 两道保险都在。别退回 ``bar.addMenu("文案")`` 那种一行写法。
+
+#### `open_quick_task(window) -> None`
+
+「快速任务」：选一个 PDF，**随即建任务**（不再进创建页填名称/流程）。
+
+用户 2026-10-16：「菜单 文件下新增，快速任务选项，导入PDF，直接创建任务」。
+
+只做两件事——选文件、把路径交给 ``shell.quick_task()``；指纹/查重/建任务/
+进详情全走列表页那条**既有**链路（``start_create``），本模块不碰业务。
+
+⚠️ 用**原生** ``QFileDialog``（不设 ``DontUseNativeDialog``）——项目硬规则：
+「资源管理器」指的是原生选择对话框。与 ``CreateTaskPanel._on_pick_pdf`` 同一款。
+⚠️ 用户在对话框里按取消（返回空串）就**什么都不做**：尤其别当成"建一个
+空壳任务"——那是创建页「PDF 可留空」那条路的语义，与"快速任务"正好相反。
 
 #### `build_single_task_menu(bar: QMenuBar, window) -> QMenu`
 

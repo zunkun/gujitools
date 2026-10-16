@@ -31,6 +31,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt, QProcess
@@ -307,6 +308,27 @@ class ModuleShell(QWidget):
         self.pages.setCurrentWidget(page)
         if self.pages.currentWidget() is page:
             self._sync_nav_to_page(0)
+
+    def quick_task(self, path: str) -> None:
+        """「快速任务」（菜单 文件 → 快速任务）：拿一个 PDF **直接建任务**。
+
+        用户 2026-10-16：「导入PDF，直接创建任务」——省掉创建页那三步（选 PDF、
+        填名称、看/编流程）。
+
+        复用列表页那条**既有**链路（``start_create``：指纹 → 查重 → 建任务 →
+        进详情页），本方法只喂参数：
+
+        - **任务名 = PDF 文件名**（``Path(path).stem``，用户 2026-10-16：
+          「快速任务，任务名称为PDF 文件名称默认」）。与创建页选完 PDF 后
+          ``_autofill_name`` 自动填进去的那一份**完全一致**（那边也是取 stem，
+          不带 ``.pdf``）；想改名去详情页页头的铅笔按钮。
+        - ``diagram=None`` / ``uses_custom=False`` ⇒ 用默认流程模板。
+
+        ⚠️ 唯一"少做"的一步是**不经过创建任务页**；**查重那道闸仍会弹**——同一个
+        PDF 已经建过任务时再建第二个，多半是误操作，不该因为"快速"就跳过。
+        """
+        name = Path(path).stem
+        self.list_page.start_create(str(path), name, None, False)
 
     def flow_page(self):
         """任务流程编辑页（惰性构造）。"""

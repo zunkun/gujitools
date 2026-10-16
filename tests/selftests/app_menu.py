@@ -213,9 +213,9 @@ def run(ctx) -> None:
        f"值={[v.text() for v in values]} 被截={clipped}")
     about_dlg.close()
     file_menu = _menu_of(w, menu.MENU_FILE)
-    ok("文件菜单：新建任务(&N) / 退出(&X)",
+    ok("文件菜单：新建任务(&N) / 快速任务(&Q) / 退出(&X)",
        [a.text() for a in file_menu.actions() if not a.isSeparator()]
-       == [menu.ACTION_CREATE_TASK, menu.ACTION_QUIT],
+       == [menu.ACTION_CREATE_TASK, menu.ACTION_QUICK_TASK, menu.ACTION_QUIT],
        f"{[a.text() for a in file_menu.actions()]}")
     ok("退出项带 &X 助记符（用户点名的写法）",
        menu.ACTION_QUIT.endswith("(&X)"), menu.ACTION_QUIT)
@@ -252,6 +252,61 @@ def run(ctx) -> None:
        w.shell.current_route() == "create", w.shell.current_route())
     w.shell.show_tasks()
     pump(app, times=2)
+
+    # ---- 3b. 文件 → 快速任务：选 PDF 后**直接建任务**（不进创建页）----
+    # 只验接线（不要真建任务：那会起指纹线程 + 缩略图队列，又慢又脏）。
+    class _FakeFileDialog:
+        """替身文件对话框：只记被问过、并按脚本给一个"用户选择"。"""
+
+        path = ""
+
+        @staticmethod
+        def getOpenFileName(*_args, **_kwargs):
+            return (_FakeFileDialog.path, "")
+
+    quick_calls: list = []
+    original_quick = w.shell.quick_task
+    original_dialog = menu.QFileDialog
+    w.shell.quick_task = lambda path: quick_calls.append(path)
+    menu.QFileDialog = _FakeFileDialog  # type: ignore[assignment]
+    try:
+        _FakeFileDialog.path = ""          # 用户按了取消
+        _action_of(file_menu, menu.ACTION_QUICK_TASK).trigger()
+        pump(app, times=2)
+        ok("快速任务：在文件对话框里取消 ⇒ 什么都不做（不建任务、不切页）",
+           quick_calls == [] and w.shell.current_route() == "tasks",
+           f"calls={quick_calls} route={w.shell.current_route()}")
+        _FakeFileDialog.path = r"C:\books\b1.pdf"      # 选好一个 PDF
+        _action_of(file_menu, menu.ACTION_QUICK_TASK).trigger()
+        pump(app, times=2)
+        ok("快速任务：选好 PDF 后把路径交给 shell.quick_task",
+           quick_calls == [r"C:\books\b1.pdf"], str(quick_calls))
+        ok("快速任务：**不**跳到创建任务页（那是「新建任务」的路子）",
+           w.shell.current_route() == "tasks", w.shell.current_route())
+    finally:
+        w.shell.quick_task = original_quick
+        menu.QFileDialog = original_dialog  # type: ignore[assignment]
+
+    # shell.quick_task 喂给既有链路的参数：任务名 = PDF 文件名；diagram=None ⇒ 默认流程
+    seen_create: list = []
+    original_start = w.shell.list_page.start_create
+    w.shell.list_page.start_create = lambda *a: seen_create.append(a)
+    try:
+        w.shell.quick_task("C:/books/b1.pdf")
+    finally:
+        w.shell.list_page.start_create = original_start
+    ok("shell.quick_task：复用 start_create，任务名 = PDF 文件名（b1，不带 .pdf）",
+       seen_create == [("C:/books/b1.pdf", "b1", None, False)], str(seen_create))
+    seen_create.clear()
+    original_start = w.shell.list_page.start_create
+    w.shell.list_page.start_create = lambda *a: seen_create.append(a)
+    try:
+        w.shell.quick_task("C:\\books\\某本古籍.下册.PDF")
+    finally:
+        w.shell.list_page.start_create = original_start
+    ok("shell.quick_task：名字取 stem（去掉最后一级后缀，中文名也照用）",
+       seen_create == [("C:\\books\\某本古籍.下册.PDF", "某本古籍.下册", None, False)],
+       str(seen_create))
 
     # ---- 4. 检查更新的三分支文案（纯函数，先钉死不碰控件）----
     newer = menu.update_result(

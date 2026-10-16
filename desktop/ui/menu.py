@@ -13,6 +13,8 @@ Qt 原生 ``QMenuBar``：与既有窗口装饰同族、自带 ``Alt`` 助记符�
 菜单项**只做路由与转发**，业务一律复用既有入口：
 
 - 文件 → 新建任务：``shell.open_create()``（含"每次进入复位"，别另建页）；
+- 文件 → 快速任务：原生选 PDF → ``shell.quick_task()``（**不经创建页**直接建，
+  用户 2026-10-16）；
 - 文件 → 退出：``window.close()`` —— **不是** ``QApplication.quit()``（见
   :func:`quit_app` 的说明）；
 - 单任务 → ``<key>``：``shell.show_module(key)``，清单**从 ``MODULES`` 派生**
@@ -45,6 +47,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
+    QFileDialog,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -64,7 +67,7 @@ from desktop.ui.help_dialog import open_manual
 from desktop.ui.icons import resolve_nav_icon
 from desktop.ui.toast import show_toast
 from desktop.ui.widgets import ProgressLine, apply_to, ui_font
-from desktop.utils.files import pending_install_file, updates_dir
+from desktop.utils.files import default_open_dir, pending_install_file, updates_dir
 from desktop.workers import connect_queued
 from utils.data_package import has_update, human_size, read_local_version
 from utils.version import is_newer
@@ -84,6 +87,14 @@ MENU_FILE = "文件(&F)"
 MENU_SINGLE_TASK = "单任务(&S)"
 MENU_HELP = "帮助(&H)"
 ACTION_CREATE_TASK = "新建任务(&N)"
+#: 「快速任务」（用户 2026-10-16）：选 PDF **直接建任务**，不经过创建任务页、
+#: 不问名称/流程（**任务名 = PDF 文件名**，流程用默认模板）。
+#: 助记符取 ``Q`` 而不是 ``K``：``K`` 在「文件」里没有别的含义，但 ``Q`` 更贴
+#: 中文"快速"的拼音首字母（quick），也不与其它助记符冲突。
+ACTION_QUICK_TASK = "快速任务(&Q)"
+#: 「快速任务」选文件时的对话框标题（与创建页那个「选择 PDF」区分开，用户
+#: 一眼能看出是从菜单直接走的路）。
+QUICK_TASK_PICK_TITLE = "选择 PDF（快速任务）"
 ACTION_QUIT = "退出(&X)"
 ACTION_MANUAL = "帮助文档(&D)"
 ACTION_UPDATE = "检查更新(&U)"
@@ -611,8 +622,12 @@ def install_menu_bar(window) -> QMenuBar:
     }
     window.update_controller = window.menus[MENU_HELP].controller  # type: ignore[attr-defined]
     #: 「去底色数据包」控制器（自测与"启动时后台静默检查"共用同一个）。
+    #: ⚠️ 用 ``getattr`` 取 ``data_controller``：它是 ``build_help_menu`` 里
+    #:    ``setattr`` 挂上去的"库类没声明过的属性"，直接属性访问会被 Pyright 报
+    #:    ``reportAttributeAccessIssue``（同上一条 ``update_controller`` 的处理；
+    #:    这个文件里"取库类没声明的属性"一律走 ``getattr``）。
     window.data_package_controller = (  # type: ignore[attr-defined]
-        window.menus[MENU_HELP].data_controller
+        getattr(window.menus[MENU_HELP], "data_controller")
     )
     layout = title_bar.hBoxLayout
     title_label = getattr(title_bar, "titleLabel", None)
@@ -635,13 +650,16 @@ def _add_menu(bar: QMenuBar, title: str) -> QMenu:
 
 
 def build_file_menu(bar: QMenuBar, window) -> QMenu:
-    """「文件」：新建任务 / （分隔线）/ 退出。"""
+    """「文件」：新建任务 / 快速任务 / （分隔线）/ 退出。"""
     menu = _add_menu(bar, MENU_FILE)
     create = QAction(ACTION_CREATE_TASK, menu)
     # ⚠️ 吞掉 triggered 的 bool：``QAction.triggered`` 是 ``triggered(bool)``，
     #    直接连无参 lambda 也能用，但显式写出来才不会被下次改成带参槽时咬到。
     create.triggered.connect(lambda _checked=False: window.shell.open_create())
     menu.addAction(create)
+    quick = QAction(ACTION_QUICK_TASK, menu)
+    quick.triggered.connect(lambda _checked=False: open_quick_task(window))
+    menu.addAction(quick)
     menu.addSeparator()
     quit_action = QAction(ACTION_QUIT, menu)
     # ⚠️ macOS 的原生菜单栏由系统接管「退出」，登记角色才不会跑错位置；
@@ -650,6 +668,27 @@ def build_file_menu(bar: QMenuBar, window) -> QMenu:
     quit_action.triggered.connect(lambda _checked=False: quit_app(window))
     menu.addAction(quit_action)
     return menu
+
+
+def open_quick_task(window) -> None:
+    """「快速任务」：选一个 PDF，**随即建任务**（不再进创建页填名称/流程）。
+
+    用户 2026-10-16：「菜单 文件下新增，快速任务选项，导入PDF，直接创建任务」。
+
+    只做两件事——选文件、把路径交给 ``shell.quick_task()``；指纹/查重/建任务/
+    进详情全走列表页那条**既有**链路（``start_create``），本模块不碰业务。
+
+    ⚠️ 用**原生** ``QFileDialog``（不设 ``DontUseNativeDialog``）——项目硬规则：
+    「资源管理器」指的是原生选择对话框。与 ``CreateTaskPanel._on_pick_pdf`` 同一款。
+    ⚠️ 用户在对话框里按取消（返回空串）就**什么都不做**：尤其别当成"建一个
+    空壳任务"——那是创建页「PDF 可留空」那条路的语义，与"快速任务"正好相反。
+    """
+    filename, _ = QFileDialog.getOpenFileName(
+        window, QUICK_TASK_PICK_TITLE, str(default_open_dir()), "PDF (*.pdf)"
+    )
+    if not filename:
+        return
+    window.shell.quick_task(filename)
 
 
 def build_single_task_menu(bar: QMenuBar, window) -> QMenu:
@@ -1559,6 +1598,7 @@ __all__ = [
     "ACTION_CREATE_TASK",
     "ACTION_DATA_PACKAGE",
     "ACTION_MANUAL",
+    "ACTION_QUICK_TASK",
     "ACTION_QUIT",
     "ACTION_UPDATE",
     "BUTTON_BROWSER",
@@ -1571,6 +1611,7 @@ __all__ = [
     "MENU_HELP",
     "MENU_SINGLE_TASK",
     "PROJECT_URL",
+    "QUICK_TASK_PICK_TITLE",
     "RESULT_LATEST",
     "RESULT_NEWER",
     "UpdateController",
@@ -1583,6 +1624,7 @@ __all__ = [
     "install_menu_bar",
     "install_title_bar",
     "open_about",
+    "open_quick_task",
     "quit_app",
     "update_result",
 ]
