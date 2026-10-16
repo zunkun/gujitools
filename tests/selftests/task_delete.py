@@ -38,6 +38,28 @@ def run(ctx) -> None:
     ok("释放后可删除", repo.delete_task(tid_held) is True)
     ok("释放后目录清掉", not repo.task_dir(tid_held).exists())
 
+    # ---- 删除**不回收任务号**（用户 2026-10-16：「任务序号保留占用」）----
+    # 光靠"索引里的最大号 + 磁盘目录"做不到：删除正好把这两个来源同时抹掉，
+    # 最大号会退回去、下一个新建又把那个号捡回来。所以另有一份只增不减的水位。
+    tid_gone = repo.create_task(ctx.pdf, "hash-gone", "回收测试")
+    ok("新建后就把水位抬到了该号（下一个号不回收它）",
+       repo.next_task_no() == f"{int(tid_gone) + 1:04d}",
+       f"新建={tid_gone} 下一个={repo.next_task_no()}")
+    ok("水位文件落在数据根、与 tasks.json 并列",
+       (repo.root / "task_no.json").is_file(), str(repo.root / "task_no.json"))
+    ok("删除任务", repo.delete_task(tid_gone) is True)
+    ok("删掉之后下一个号**不是**被删的那个（不回收）",
+       repo.next_task_no() != tid_gone, repo.next_task_no())
+    tid_after = repo.create_task(ctx.pdf, "hash-after", "删除后新建")
+    ok("删掉 0020 之后新建拿到的是 0021（差 1）",
+       int(tid_after) == int(tid_gone) + 1,
+       f"被删={tid_gone} 新建={tid_after}")
+    ok("删除后新建的任务目录也在", repo.task_dir(tid_after).is_dir())
+    ok("水位 = 已分配过的最大号（只增不减）",
+       int(repo._read_max_allocated()) == int(tid_after),
+       f"水位={repo._read_max_allocated()} 最大号={tid_after}")
+    repo.delete_task(tid_after)
+
     # 清场：删除剩余测试任务（tid 为 None 说明 tasklist 被跳过，无事可做）
     if ctx.tid:
         repo.delete_task(ctx.tid)

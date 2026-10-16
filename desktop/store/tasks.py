@@ -114,9 +114,45 @@ class TaskMixin:
         self._tasks_path().parent.mkdir(parents=True, exist_ok=True)
         write_json(self._tasks_path(), tasks)
 
+    # ---------- 任务号水位（删除不回收号） ----------
+    def _task_no_path(self) -> Path:
+        """「已分配过的最大任务号」的落点：``<数据根>/task_no.json``。
+
+        ⚠️ 与 ``tasks.json`` **并列**放在数据根，而不是塞进 ``tasks/`` 目录里：
+        ``tasks/`` 下全是任务号目录，往里放一个非任务文件容易被将来的"清理孤儿
+        目录"逻辑误删。放根目录与 ``tasks.json`` 同族，语义上就是"索引级元数据"。
+        """
+        return self.root / "task_no.json"
+
+    def _read_max_allocated(self) -> int:
+        """读水位（坏文件/没文件都当 0——不因为它而建不出任务）。"""
+        data = read_json(self._task_no_path(), {})
+        try:
+            return max(0, int((data or {}).get("max_allocated") or 0))
+        except (AttributeError, TypeError, ValueError):
+            return 0
+
+    def _bump_max_allocated(self, number: int) -> None:
+        """把水位抬到至少 ``number``（**只增不减**）。
+
+        用户 2026-10-16：「任务删除，任务序号保留占用」——删掉 0020 之后新建的
+        必须是 0021，00**20 不许再被用**。只靠"索引里的最大号"做不到：删除会把
+        记录从索引里抹掉、目录也删了，最大号就退回到 0019 ⇒ 下一个又是 0020。
+        所以要有这个**只涨不跌**的水位。
+
+        ⚠️ 写失败**不抛**（只让本次"号不回收"的保证失效，不该连建任务/删任务
+        一起拖死）；水位本身也会在下一次创建/删除时再被抬一次。
+        """
+        if number <= self._read_max_allocated():
+            return
+        try:
+            write_json(self._task_no_path(), {"max_allocated": int(number)})
+        except OSError:
+            pass
+
     # ---------- 任务 CRUD ----------
     def next_task_no(self) -> str:
-        """下一个任务号（**预测值**）：当前最大号 + 1，参考索引与磁盘目录。
+        """下一个任务号（**预测值**）：当前最大号 + 1，参考索引、磁盘目录与水位。
 
         给界面做**占位提示**用（如创建页的默认任务名「任务#0007」）。
 
@@ -128,6 +164,9 @@ class TaskMixin:
           分配到的** ``task_id`` 现算（见 :meth:`default_task_name`），
           否则名字里的序号会和任务号对不上（用户会以为"任务#0008"就是
           0008 号任务，结果落在 0009 上）。
+
+        ⚠️ 它**不回收**已删除的号（见 :meth:`_bump_max_allocated`）：删掉 0020
+        之后这里给的是 0021，不是 0020。
         """
         return self._next_task_no()
 
@@ -140,7 +179,15 @@ class TaskMixin:
         return f"任务#{self._next_task_no()}"
 
     def _next_task_no(self) -> str:
-        """下一个任务号：当前最大任务号 + 1（同时参考索引与磁盘目录）。"""
+        """下一个任务号：``max(索引里的号, 磁盘上的目录名, 水位) + 1``。
+
+        三个来源都要看，少一个都会**回收号**：
+
+        - 索引 ``tasks.json``：绝大多数情况；
+        - 磁盘 ``tasks/`` 下的目录名：索引丢了/写坏了但目录还在时兜底；
+        - **水位** ``task_no.json``：任务被**删掉**之后，前两个来源都已经不含
+          那个号了，只有水位记得它被用过（用户 2026-10-16 的要求）。
+        """
         numbers = []
         for task in self._load_tasks_index():
             tid = str(task.get("id", ""))
@@ -151,6 +198,7 @@ class TaskMixin:
             for entry in tasks_root.iterdir():
                 if entry.is_dir() and entry.name.isdigit():
                     numbers.append(int(entry.name))
+        numbers.append(self._read_max_allocated())
         return f"{max(numbers, default=0) + 1:04d}"
 
     def find_tasks(self, source_hash: str) -> list[dict]:
@@ -232,6 +280,9 @@ class TaskMixin:
             break
         if task_dir is None:
             raise RuntimeError("无法分配到空闲的任务号（连续 400 个都被占用）")
+        # 号已占住（目录建成了）⇒ 立刻抬水位：此后**哪怕这个任务马上被删**，
+        # 这个号也不会被回收（用户 2026-10-16，见 _bump_max_allocated）。
+        self._bump_max_allocated(int(task_id))
 
         for sub in ("stages", "runs", "thumbnails/source"):
             (task_dir / sub).mkdir(parents=True, exist_ok=True)
@@ -402,10 +453,19 @@ class TaskMixin:
         ⚠️ Windows 上 PDF 被后台渲染线程打开时 ``rmtree`` 抛 PermissionError，
         原先 ``ignore_errors=True`` 会让它**静默残留**——列表里显示已删除，
         磁盘上目录还在。这里重试若干次再判定失败，失败时保留任务让用户重试。
+
+        ⚠️ 删除**不回收任务号**（用户 2026-10-16：「任务序号保留占用」）：删掉
+        0020 之后下一个新建的是 0021。所以这里在抹掉记录之前先把水位抬到该号
+        （见 :meth:`_bump_max_allocated`）——**光靠索引与目录做不到**，删除正是
+        把这两个来源同时抹掉的那个动作。
         """
         task_dir = self.task_dir(task_id)
         if task_dir.exists() and not self._rmtree_with_retry(task_dir):
             return False
+        # ⚠️ 放在成功判定之后：删不掉时任务还在索引里，号本来就还占着，
+        #    不必（也不该）在失败分支上动水位。
+        if self._TASK_ID_RE.match(str(task_id)):
+            self._bump_max_allocated(int(task_id))
         tasks = [t for t in self._load_tasks_index() if t.get("id") != task_id]
         self._save_tasks_index(tasks)
         return True

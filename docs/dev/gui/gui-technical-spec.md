@@ -49,6 +49,10 @@ GUI 侧用「最近一次 progress」在 `finish_stage` 时补齐最终计数。
 **tasks.json**（数据根目录）：任务数组，字段
 `id(任务号"0001")、name、source_path、source_hash、status、created_at、updated_at、duplicate_confirmed`。
 
+**task_no.json**（数据根目录，与 tasks.json 并列）：任务号**水位**
+`{"max_allocated": 20}` —— 曾分配过的最大任务号。它只为了让"删除不回收任务号"
+成立：任务被删后索引与目录都不再含那个号，只有这份水位记得它被用过。
+
 **runs.json**（任务目录）：`{stage: [record…]}` 最新在前，每阶段 ≤20 条：
 
 ```json
@@ -307,7 +311,9 @@ GUI（QImage 渲染）共同消费同一份 `OutputLayout`，不得各自推导
 ## 8. 任务号
 
 - `tasks.json` 中 `id` 即任务号，四位零填充（0001…），任务目录同名。
-- 新任务号 = 当前最大号（索引 ∪ 磁盘目录）+ 1；删除不复用。
+- 新任务号 = `max(索引里的号 ∪ 磁盘目录名 ∪ 水位) + 1`；**删除不复用**——
+  删掉 0020 之后新建的是 0021（水位见 §2 的 `task_no.json`；创建时与删除时
+  各抬一次，只增不减）。
 - 启动迁移将 uuid 目录按 created_at 重编号。
 
 ## 9. 图片拼版（节点文档、坐标与合成）
