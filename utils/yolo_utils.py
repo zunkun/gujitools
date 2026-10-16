@@ -162,8 +162,12 @@ def model_path() -> Path:
     异常:
         FileNotFoundError: 权重文件不存在（打包遗漏或安装损坏）。
     """
-    project_root = Path(__file__).resolve().parents[1]
-    candidate = project_root / "static" / "weights" / "bookcontent.pt"
+    # ⚠️ 路径口径**不在这里**：权重目录/文件名由 ``utils.data_package`` 统一
+    #    定义（那份 sidecar 的版本记录也放在同一个目录旁，两处各写一份
+    #    ``static/weights`` 迟早漂移）。
+    from utils.data_package import LOCAL_WEIGHTS_NAME, weights_dir
+
+    candidate = weights_dir() / LOCAL_WEIGHTS_NAME
     if not candidate.exists():
         raise FileNotFoundError(
             "未找到 YOLO 模型权重文件 bookcontent.pt。\n"

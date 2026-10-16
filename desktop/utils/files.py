@@ -76,6 +76,29 @@ def singletask_dir(subtask: str) -> Path:
     return guji_data_dir() / SINGLETASK_DIRNAME / safe_dirname(subtask)
 
 
+#: **程序更新**产物目录名（相对 :func:`guji_data_dir`）：应用内下载的安装包落点。
+#:
+#: 为什么落在**用户数据目录**而不是安装目录（用户 2026-10-16 要求"软件内下载、
+#: 别让用户自己下"）：安装目录（``{localappdata}\Programs\guji``）随时会被安装
+#: 器覆盖，安装包放那儿会在升级时被一起删掉；数据目录是用户自己的、可写、跨升级
+#: 保留，于是"点了稍后"下次还能直接用（见 ``pending_install_file``）。
+UPDATES_DIRNAME = "updates"
+
+
+def updates_dir() -> Path:
+    """程序更新目录：``~/Documents/guji/updates``（安装包与"待安装"记录）。"""
+    return guji_data_dir() / UPDATES_DIRNAME
+
+
+def pending_install_file() -> Path:
+    """「下好但还没装」的安装包记录：``updates/pending.json``。
+
+    内容形如 ``{"tag": "v2.0.5", "path": …, "name": …, "sha256": …, "size": …}``。
+    下次点「检查更新」时若 tag 一致且文件还在，就直接给「立即重启安装」，不必重下。
+    """
+    return updates_dir() / "pending.json"
+
+
 #: 子任务目录名改名时的**旧名 → 新名**映射（2026-10-03 换``disk_key``）。
 #:
 #: 目录名以前取的是 spec 的中文标题，于是它跟着文案变；而里面躺着用户攒下的

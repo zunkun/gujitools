@@ -220,9 +220,10 @@ def run(ctx) -> None:
     ok("退出项带 &X 助记符（用户点名的写法）",
        menu.ACTION_QUIT.endswith("(&X)"), menu.ACTION_QUIT)
     help_menu = _menu_of(w, menu.MENU_HELP)
-    ok("帮助菜单：帮助文档(&D) / 检查更新(&U) / 关于(&A)",
+    ok("帮助菜单：帮助文档(&D) / 检查更新(&U) / 检查数据包(&M) / 关于(&A)",
        [a.text() for a in help_menu.actions() if not a.isSeparator()]
-       == [menu.ACTION_MANUAL, menu.ACTION_UPDATE, menu.ACTION_ABOUT],
+       == [menu.ACTION_MANUAL, menu.ACTION_UPDATE, menu.ACTION_DATA_PACKAGE,
+           menu.ACTION_ABOUT],
        f"{[a.text() for a in help_menu.actions()]}")
 
     # ---- 2. 单任务：清单从 MODULES 派生（不写死），逐项都能切过去 ----
@@ -258,13 +259,16 @@ def run(ctx) -> None:
         latest={"tag_name": "v99.0.1", "html_url": "https://example.invalid/dl",
                 "name": "v99.0.1", "prerelease": False},
     )
-    ok("有新版本：标题带 tag、正文给当前/最新与下载地址、主按钮是「前往下载」",
+    ok("有新版本：主按钮是「下载」（应用内），另给「前往下载页」作备用",
        newer.title == "发现新版本 v99.0.1"
        and f"v{VERSION}" in newer.body and "v99.0.1" in newer.body
        and "https://example.invalid/dl" in newer.body
        and newer.ok_text == menu.BUTTON_DOWNLOAD
-       and newer.link == "https://example.invalid/dl",
-       f"title={newer.title} ok={newer.ok_text} link={newer.link}")
+       and newer.link == "https://example.invalid/dl"
+       and newer.browser_url == "https://example.invalid/dl",
+       f"title={newer.title} ok={newer.ok_text} browser={newer.browser_url}")
+    ok("有新版本：正文里**不出现 markdown 星号**（QLabel 会原样显示 `**`）",
+       "**" not in newer.body, f"{newer.body!r}")
     ok("有新版本（预发布）：正文额外提示这是预发布版",
        "预发布" in menu.update_result(
            menu.RESULT_NEWER, current=VERSION,
@@ -309,8 +313,23 @@ def run(ctx) -> None:
     ok("有新版本：正文报出**走哪条线路、多快**，下载地址是拼过该前缀的那个",
        "下载线路：v6.gh-proxy.org（0.38s）" in mirrored.body
        and mirrored.link == ranked_payload["download_url"]
-       and "换条线路" in mirrored.body,
+       and mirrored.browser_url == ranked_payload["html_url"],
        f"body={mirrored.body!r}")
+    # ---- 4c. 下载完「重启安装」/ 下载失败「换线路重试」的纯文案 ----
+    ready = menu._ready_verdict("v99.0.1")
+    ok("安装包就绪：主按钮「立即重启安装」、次按钮「稍后」，正文带版本号",
+       ready.title == "更新已就绪"
+       and ready.ok_text == menu.BUTTON_INSTALL
+       and menu.BUTTON_INSTALL in ready.body and menu.BUTTON_LATER in ready.body
+       and "v99.0.1" in ready.body,
+       f"{ready}")
+    failed_dl = menu._download_failed_verdict("network", "https://example.invalid/dl")
+    ok("下载失败：主按钮「换条线路重试」、次按钮「前往下载页」（备用，带 release 网页）",
+       failed_dl.title == "更新下载失败"
+       and failed_dl.ok_text == menu.BUTTON_RETRY
+       and failed_dl.browser_url == "https://example.invalid/dl"
+       and menu.FAILURE_REASONS["network"][:6] in failed_dl.body,
+       f"{failed_dl}")
     ok("检查失败时也说明「四条线路都试过」，不让人以为只试了直连",
        "直连与三个镜像都试过" in menu.update_result("network", current=VERSION).body,
        "")
@@ -339,6 +358,59 @@ def run(ctx) -> None:
        and any(value == menu.PROJECT_URL for _key, value in menu.about_rows(w)),
        f"{menu.about_rows(w)}")
 
+    # ---- 4d. 安装包下载内核（AppDownloadWorker）：下到 .part → 校验摘要 → 落盘 ----
+    import hashlib as _hashlib
+
+    import utils.download as _ud
+    from tests.tmpdir import temp_dir as _temp_dir
+
+    class _Resp:
+        """内存假响应（够 ``urlopen`` 那条读链路用）。"""
+
+        def __init__(self, data: bytes) -> None:
+            self._data, self._pos = data, 0
+            self.headers = {"Content-Length": str(len(data))}
+
+        def read(self, size: int = -1) -> bytes:
+            chunk = (self._data[self._pos:] if size < 0
+                     else self._data[self._pos:self._pos + size])
+            self._pos += len(chunk)
+            return chunk
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc) -> bool:
+            return False
+
+    blob = b"guji-installer-bytes" * 500
+    digest = _hashlib.sha256(blob).hexdigest()
+    setup = _temp_dir("app_dl_") / "guji_setup_v99.exe"
+    real_urlopen = _ud.urllib.request.urlopen
+    try:
+        _ud.urllib.request.urlopen = (  # type: ignore[assignment]
+            lambda request, timeout=None: _Resp(blob))
+        worker = update_worker.AppDownloadWorker(
+            "https://example.invalid/setup.exe", setup,
+            sha256=digest, size=len(blob))
+        result = worker._download()
+        ok("安装包下载内核：内容落盘、无残留 .part、sha256 与摘要一致",
+           setup.read_bytes() == blob
+           and not setup.with_name(setup.name + ".part").exists()
+           and result["sha256"] == digest and result["size"] == len(blob),
+           f"{result}")
+        bad = update_worker.AppDownloadWorker(
+            "https://example.invalid/setup.exe", setup, sha256="0" * 64)
+        raised = False
+        try:
+            bad._download()
+        except ValueError:
+            raised = True
+        ok("安装包摘要不符：抛错并删掉下好的安装包（不留可被误装的坏包）",
+           raised and not setup.exists(), f"raised={raised} exists={setup.exists()}")
+    finally:
+        _ud.urllib.request.urlopen = real_urlopen  # type: ignore[assignment]
+
     # ---- 5. 检查更新：真发一次后台请求（网络函数被替换），含重入防护 ----
     controller = getattr(w, "update_controller", None)
     ok("窗口上挂着更新控制器（菜单项与它同源）",
@@ -359,6 +431,9 @@ def run(ctx) -> None:
         "tag_name": "v99.0.1", "name": "v99.0.1", "published_at": "",
         "prerelease": False,
         "html_url": "https://github.com/zunkun/gujitools/releases/tag/v99.0.1",
+        "asset": {"name": "guji_setup_v99.exe",
+                  "url": "https://github.com/x/guji_setup_v99.exe",
+                  "size": 9, "sha256": "f" * 64},
         "download_url": "https://v6.gh-proxy.org/https://example.invalid/A.exe",
         "mirror_prefix": "https://v6.gh-proxy.org/",
         "mirror_label": "v6.gh-proxy.org", "seconds": 0.38,
@@ -379,8 +454,82 @@ def run(ctx) -> None:
         time.sleep(0.25)
         return dict(newer_payload)
 
+    # ---- 5 的测试替身：绝不碰真网络 / 真浏览器 / 真安装器 / 真数据目录 ----
+    from pathlib import Path as _Path
+
+    from PySide6.QtCore import QObject as _QObject
+    from PySide6.QtCore import Signal as _Signal
+    from PySide6.QtCore import Slot as _Slot
+
+    from tests.tmpdir import temp_dir
+
+    #: 安装包/待安装记录一律落**临时目录**——``menu.updates_dir`` 指向真实
+    #: ``~/Documents/guji/updates``，不换替身会把 pending.json 写进用户文档目录。
+    tmp_updates = temp_dir("app_update_")
+    browsed: list[str] = []      # QDesktopServices.openUrl 记录
+    launched: list[list] = []    # subprocess.Popen 记录
+    quits: list[int] = []        # quit_app 记录（别真关掉共享的 ctx.w）
+
+    class _FakeDesktop:
+        """替 ``QDesktopServices``：只记一笔，离屏自测**绝不真开浏览器**。"""
+
+        @staticmethod
+        def openUrl(url) -> bool:
+            browsed.append(url.toString())
+            return True
+
+    class _FakeSubprocess:
+        """替 ``menu.subprocess``：记下 Popen 参数，**不真启动安装器**。"""
+
+        DEVNULL = -3
+
+        @staticmethod
+        def Popen(args, **_kwargs):
+            launched.append(list(args))
+            return None
+
+    class _FakeDownloadWorker(_QObject):
+        """替 ``AppDownloadWorker``：写一个占位安装包后立刻回报成功/失败。"""
+
+        progress = _Signal(int)
+        stage = _Signal(str)
+        finished = _Signal(dict)
+        failed = _Signal(str)
+
+        fail_with = ""          # 类属性：非空则改发 failed（测"换线路重试"）
+
+        def __init__(self, url, dest, sha256="", size=0, timeout=None):
+            super().__init__()
+            self.dest = _Path(dest)
+
+        def cancel(self) -> None:
+            return None
+
+        @_Slot()
+        def run(self) -> None:
+            if type(self).fail_with:
+                self.failed.emit(type(self).fail_with)
+                return
+            self.progress.emit(50)
+            self.stage.emit("verify")
+            self.dest.parent.mkdir(parents=True, exist_ok=True)
+            self.dest.write_bytes(b"installer")
+            self.finished.emit({"path": str(self.dest), "name": self.dest.name,
+                                "sha256": "f" * 64, "size": 9})
+
+    real_updates_dir, real_pending_file = menu.updates_dir, menu.pending_install_file
+    real_desktop, real_subprocess, real_quit = (
+        menu.QDesktopServices, menu.subprocess, menu.quit_app)
+    real_download_cls = update_worker.AppDownloadWorker
+
     try:
         menu.shell_dialog = recorder
+        menu.updates_dir = lambda: tmp_updates
+        menu.pending_install_file = lambda: tmp_updates / "pending.json"
+        menu.QDesktopServices = _FakeDesktop
+        menu.subprocess = _FakeSubprocess
+        menu.quit_app = lambda _window=None: quits.append(1)
+        update_worker.AppDownloadWorker = _FakeDownloadWorker
         update_worker.fetch_latest_release = _slow_fetch
         update_action.trigger()
         # ---- 5a. 先出「正在检查」窗（用户 2026-10-15：先弹窗，再反馈结果）----
@@ -414,23 +563,82 @@ def run(ctx) -> None:
            f"text={update_action.text()} enabled={update_action.isEnabled()}")
         ok("重入防护有效：整个检查只有「检查窗 + 结果窗」两块，没有多弹",
            len(recorder.calls) == 2, f"{[c['title'] for c in recorder.calls]}")
-        ok("有新版本时带「换条线路」按钮（排名里不止一条可用线路才会出现）",
-           recorder.calls[-1]["ok_text"] == menu.BUTTON_DOWNLOAD
-           and recorder.calls[-1]["show_cancel"] is True
-           and recorder.calls[-1]["cancel_text"] == "换条线路",
-           f"{recorder.calls[-1]}")
-        # 点「换条线路」：切到下一条可用线路（直连）再弹一次，且**不重新联网**
-        # （此时调过窗的序列是：检查窗 / 结果窗 / 换线路后的结果窗）
-        calls.clear()
-        recorder.calls[-1]["on_cancel"]()
-        pump(app, times=3)
-        ok("点「换条线路」：换到直连那条，下载地址跟着换，且没重新联网",
-           calls == [] and len(recorder.calls) == 3
-           and "下载线路：直连" in recorder.calls[-1]["body"]
-           and "https://example.invalid/direct.exe" in recorder.calls[-1]["body"],
-           f"requests={calls} 第三次正文={recorder.calls[-1]['body'][:60]!r}")
+        # ---- 5b. 主按钮「下载」= 应用内下载；「前往下载页」= 浏览器（备用）----
+        result_dialog = recorder.calls[-1]
+        ok("有新版本时：主按钮「下载」（应用内），次按钮「前往下载页」（备用）",
+           result_dialog["ok_text"] == menu.BUTTON_DOWNLOAD
+           and result_dialog["show_cancel"] is True
+           and result_dialog["cancel_text"] == menu.BUTTON_BROWSER,
+           f"{result_dialog}")
+        result_dialog["on_cancel"]()
+        pump(app, times=2)
+        ok("点「前往下载页」：用浏览器打开 release 网页（备用路径），没再弹窗",
+           browsed == [newer_payload["html_url"]] and len(recorder.calls) == 2,
+           f"browsers={browsed} 弹窗={[c['title'] for c in recorder.calls]}")
 
-        # ---- 5c. 「正在检查」窗可以取消：取消后**不再弹结果窗** ----
+        # ---- 5c. 点「下载」：应用内下载 → 进度窗 → 「更新已就绪」→ 立即重启安装 ----
+        recorder.calls.clear()
+        calls.clear()
+        result_dialog["on_ok"]()          # 相当于点了结果窗的「下载」
+        pump(app, times=3)
+        ok("点「下载」：弹出下载进度窗（替身 worker 秒回，菜单项文案随之复位）",
+           wait_until(app, lambda: any(c["title"].startswith("正在下载")
+                                       for c in recorder.calls), timeout=8.0),
+           f"{[c['title'] for c in recorder.calls]} text={update_action.text()!r}")
+        ok("下载完成：弹出「更新已就绪」（主按钮「立即重启安装」、次按钮「稍后」）",
+           wait_until(app, lambda: any(c["title"] == "更新已就绪"
+                                       for c in recorder.calls), timeout=8.0)
+           and recorder.calls[-1]["ok_text"] == menu.BUTTON_INSTALL
+           and recorder.calls[-1]["cancel_text"] == menu.BUTTON_LATER
+           and recorder.calls[-1]["show_cancel"] is True
+           and update_action.text() == menu.ACTION_UPDATE,
+           f"{[c['title'] for c in recorder.calls]}")
+        ok("安装包与「待安装」记录都落在**用户更新目录**（temp 替身，不污染真实数据目录）",
+           (tmp_updates / "guji_setup_v99.exe").is_file()
+           and (tmp_updates / "pending.json").is_file(),
+           f"{sorted(p.name for p in tmp_updates.iterdir())}")
+        # 点「立即重启安装」：启动安装器（分离进程）+ 退出本程序
+        install_cb = recorder.calls[-1]["on_ok"]
+        recorder.calls.clear()
+        install_cb()
+        pump(app, times=3)
+        ok("点「立即重启安装」：Popen 启动安装器 + 调 quit_app 退出本程序",
+           [args[0] for args in launched] == [str(tmp_updates / "guji_setup_v99.exe")]
+           and quits == [1],
+           f"launched={launched} quits={quits}")
+
+        # ---- 5d. 安装包还在（用户上次点了「稍后」）：再检查直接给「立即重启安装」----
+        recorder.calls.clear()
+        calls.clear()
+        update_action.trigger()
+        ok("安装包已下过且文件还在：再检查**不用重下**，直接给「更新已就绪」",
+           wait_until(app, lambda: len(recorder.calls) > 1, timeout=8.0)
+           and recorder.calls[-1]["title"] == "更新已就绪"
+           and recorder.calls[-1]["ok_text"] == menu.BUTTON_INSTALL,
+           f"{[c['title'] for c in recorder.calls]}")
+
+        # ---- 5e. 下载失败：自动换下一条可用线路，给「换条线路重试」----
+        (tmp_updates / "pending.json").unlink(missing_ok=True)   # 清掉"免重下"缓存
+        recorder.calls.clear()
+        calls.clear()
+        _FakeDownloadWorker.fail_with = "network"
+        update_action.trigger()
+        ok("下载失败前置：重新检查拿到结果窗，线路下标复位为 0",
+           wait_until(app, lambda: len(recorder.calls) > 1, timeout=8.0)
+           and controller._scheme_index == 0,
+           f"{[c['title'] for c in recorder.calls]} idx={controller._scheme_index}")
+        recorder.calls[-1]["on_ok"]()     # 点「下载」→ 替身 worker 发 failed
+        pump(app, times=3)
+        ok("下载失败：弹出「更新下载失败」，主按钮「换条线路重试」，已自动切到下一条线路",
+           wait_until(app, lambda: any(c["title"] == "更新下载失败"
+                                       for c in recorder.calls), timeout=8.0)
+           and recorder.calls[-1]["ok_text"] == menu.BUTTON_RETRY
+           and recorder.calls[-1]["cancel_text"] == menu.BUTTON_BROWSER
+           and controller._scheme_index == 1,
+           f"{[c['title'] for c in recorder.calls]} idx={controller._scheme_index}")
+        _FakeDownloadWorker.fail_with = ""
+
+        # ---- 5f. 「正在检查」窗可以取消：取消后**不再弹结果窗** ----
         recorder.calls.clear()
         calls.clear()
         update_action.trigger()
@@ -539,8 +747,15 @@ def run(ctx) -> None:
            f"delay={getattr(app_module, 'STARTUP_UPDATE_CHECK_MS', None)}")
     finally:
         menu.shell_dialog = real_shell_dialog
+        menu.updates_dir = real_updates_dir
+        menu.pending_install_file = real_pending_file
+        menu.QDesktopServices = real_desktop
+        menu.subprocess = real_subprocess
+        menu.quit_app = real_quit
+        update_worker.AppDownloadWorker = real_download_cls
         update_worker.fetch_latest_release = real_fetch
         controller._finish()          # 别把窗口的菜单项留在忙态
+        controller._finish_download()
 
     # ---- 6. 退出：走 window.close()（收尾链），用第二个窗口，别关掉 ctx.w ----
     probe = MainWindow()

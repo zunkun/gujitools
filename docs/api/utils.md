@@ -4,7 +4,7 @@
 
 通用工具函数：几何、排序、图像 IO、PDF、YOLO
 
-覆盖 24 个模块、11 个公开类、133 个公开函数/方法（生成于 2026-10-16）。
+覆盖 26 个模块、12 个公开类、146 个公开函数/方法（生成于 2026-10-16）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -16,6 +16,8 @@
 | [`utils.box_geometry`](#utilsbox_geometry) | 2 | 15 |
 | [`utils.color_utils`](#utilscolor_utils) | 0 | 2 |
 | [`utils.compact_png`](#utilscompact_png) | 0 | 2 |
+| [`utils.data_package`](#utilsdata_package) | 0 | 12 |
+| [`utils.download`](#utilsdownload) | 1 | 1 |
 | [`utils.file_utils`](#utilsfile_utils) | 0 | 4 |
 | [`utils.font_scan`](#utilsfont_scan) | 0 | 4 |
 | [`utils.font_setup`](#utilsfont_setup) | 3 | 11 |
@@ -531,6 +533,151 @@ File: utils/color_utils.py
 读不到（没有 pHYs / 不是图片 / 文件被占）返回 ``None``——调用方按"不写
 pHYs"处理，与"原本就没有"一致（实测提交产物 ``rembg/*-l.png`` 就没有
 pHYs，而 ``rembgpreview/*.png`` 有）。
+
+---
+
+## `utils.data_package`
+
+源码：[`utils/data_package.py`](../../utils/data_package.py)
+
+去底色数据包（``bookcontent.pt``）的版本规则与本地版本记录。
+
+背景（用户 2026-10-16）
+----------------------
+YOLO 权重 ``bookcontent.pt`` 由**另一个仓库**（``zunkun/gujitrain``）的
+``database`` release 分发。那个 release 里除了权重本体，还有一份 ``data.json``，
+逐文件描述 ``name`` / ``version``（整数）/ ``sha256`` / ``size`` / ``date``：
+
+    {
+      "generated_at": "2026-10-16T09:22:21+08:00",
+      "release": "database",
+      "files": {
+        "bookcontent": {"name": "bookcontent-v100.pt", "version": 100, ...},
+        "gujiline":    {"name": "gujiline-v100.pt",    "version": 100, ...}
+      }
+    }
+
+桌面端据此判断"本机权重是不是旧版"，有新版就提示并可一键下载替换（**不让用户
+自己去 GitHub 下载**）。
+
+为什么单列成模块（而不是塞进 ``yolo_utils``）
+--------------------------------------------
+1. 这里全是**纯规则**（JSON 解析 + 整数比大小 + 读一份 sidecar），没有 cv2 /
+   torch；而桌面**主进程**要用它（``desktop/ui/menu.py`` 的检查/下载），主进程
+   **不许** import 重依赖（见 AGENTS 分层守卫）。``yolo_utils`` 模块级 import
+   numpy，把一个纯规则塞进去等于顺带把 numpy 拽进启动。
+2. 反过来 ``yolo_utils.model_path()`` 复用本模块的 :func:`weights_dir`：
+   权重目录**只此一处**定义，两边各写一份 ``static/weights`` 迟早漂移。
+
+本地版本记在哪
+--------------
+本机 ``bookcontent.pt`` 是**安装包预置**的、文件名不带版本（用户口径：
+"bookcontent-v100.pt 版本是 100 > bookcontent.pt"）。为便于后续比较，这里在
+权重目录旁维护一份 sidecar ``bookcontent.version.json``，记录**最近一次已安装**
+的版本（含 name/sha256/size）。sidecar 不存在 ⇒ 视为版本 ``0``，于是远端任何
+带版本号的分发都算更新（正是用户要的效果）；下载成功后由下载侧
+:func:`record_local_version` 写回。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| RELEASE_DOWNLOAD_BASE | `"https://github.com/zunkun/gujitrain/releases/download/dat…"` |
+| DATA_JSON_NAME | `"data.json"` |
+| BOOKCONTENT_KEY | `"bookcontent"` |
+| LOCAL_WEIGHTS_NAME | `"bookcontent.pt"` |
+| VERSION_FILE_NAME | `"bookcontent.version.json"` |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `data_json_url() -> str` | ``data.json`` 的**直连**地址（镜像前缀由调用方 :func:`build_url` 拼）。 |
+| `asset_url(name: str) -> str` | release 里某个资产的**直连**下载地址（镜像前缀由调用方拼）。 |
+| `weights_dir() -> Path` | 权重目录：``<仓库根>/static/weights``。 |
+| `local_weights_path() -> Path` | 本机权重文件路径（``static/weights/bookcontent.pt``）。 |
+| `version_file() -> Path` | 本地版本 sidecar 路径（``static/weights/bookcontent.version.json``）。 |
+| `parse_data_json(payload) -> dict \| None` | 抽出 ``payload['files']['bookcontent']`` 并规范化；不合法返回 ``None``。 |
+| `read_local_info() -> dict` | 本地版本 sidecar 的完整记录；缺失/损坏给一个版本 0 的空壳。 |
+| `read_local_version() -> int` | 本机已安装权重的版本号；sidecar 缺失/损坏一律 ``0``。 |
+| `record_local_version(info: dict) -> None` | 原子写 sidecar（临时文件 + ``os.replace``），记录刚安装的版本。 |
+| `has_update(remote_version, local_version=None) -> bool` | 远端版本是否比本机**已安装**版本新（整数比大小）。 |
+| `sha256_of(path, chunk_size: int=1 << 20) -> str` | 流式算文件 SHA-256（校验下载到的权重，避免半截/被篡改的包落地）。 |
+| `human_size(size) -> str` | 把字节数收成一句人读的大小（``6.0 MB``）；拿不到就空串。 |
+
+#### `weights_dir() -> Path`
+
+权重目录：``<仓库根>/static/weights``。
+
+仓库根取 ``utils`` 包的上一级（与 ``yolo_utils.model_path`` 原口径一致）；
+打包（onedir）下 ``static`` 数据文件落在 ``_internal/static``，该表达式同样
+成立——所以本函数是**权重目录的唯一来源**，别再各写一份。
+
+#### `parse_data_json(payload) -> dict | None`
+
+抽出 ``payload['files']['bookcontent']`` 并规范化；不合法返回 ``None``。
+
+只做"取字段 + 类型收敛"，**不做比较**：版本判断留给 :func:`has_update`，
+于是纯规则能在自测里逐条钉死，网络返回什么垃圾都只是 ``None``。
+缺 ``version`` 或不是整数 ⇒ ``None``（宁可不说"有新版"也不谎报，与
+``utils/version.py`` 同一口径）。
+
+#### `record_local_version(info: dict) -> None`
+
+原子写 sidecar（临时文件 + ``os.replace``），记录刚安装的版本。
+
+⚠️ 用 :func:`replace_with_retry`：Windows 上目标文件被别的句柄打开时
+``os.replace`` 会直接 ``PermissionError``（YOLO 常驻服务可能正读着权重）。
+
+#### `has_update(remote_version, local_version=None) -> bool`
+
+远端版本是否比本机**已安装**版本新（整数比大小）。
+
+``local_version`` 省略时读 :func:`read_local_version`。任一侧取不到合法
+整数都返回 ``False``——不可比时不说"有新版"。
+
+---
+
+## `utils.download`
+
+源码：[`utils/download.py`](../../utils/download.py)
+
+流式下载：把 URL 内容写到文件，边下边回报进度、可取消（**纯规则**，无 Qt）。
+
+被两处共用——「去底色数据包」（``desktop/workers/data_package_worker.py``）与
+「程序更新」（``desktop/workers/update_worker.py``）——所以收在一处，别各写一份。
+
+两条硬约定：
+
+1. **先写 ``*.part``、成功才改名**：下载途中的半截文件绝不能以最终名出现，否则
+   读者（YOLO 服务、检测进程、安装器）可能读到不完整的内容；
+2. **进度与取消都由调用方给**（``on_progress`` / ``is_cancelled``），这里不碰
+   Qt 信号，保持纯函数、好测。
+
+⚠️ ``urllib`` 的 ``timeout`` 是**每次 socket 操作**的超时，不是"整包总时长"：
+大安装包不会被某个总时限掐死，只有单次读写卡住过久才会抛。
+
+### `class DownloadCancelled(Exception)`
+
+下载被调用方取消（``is_cancelled`` 返回真时抛出）。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `stream_to_file(url, target, *, on_progress=None, is_cancelled=None, timeout: float=120.0, chunk: int=CHUNK, headers: dict \| None=None) -> tuple[str, int]` | 流式下载 ``url`` 到 ``target``，返回 ``(sha256 十六进制, 字节数)``。 |
+
+#### `stream_to_file(url, target, *, on_progress=None, is_cancelled=None, timeout: float=120.0, chunk: int=CHUNK, headers: dict | None=None) -> tuple[str, int]`
+
+流式下载 ``url`` 到 ``target``，返回 ``(sha256 十六进制, 字节数)``。
+
+:param on_progress: ``fn(written, total)``；``total`` 为 0 表示总量未知。
+:param is_cancelled: 无参谓词，返回真即抛 :class:`DownloadCancelled`。
+:param headers: 额外请求头（GitHub 要求 ``User-Agent``）。
+
+⚠️ 失败/取消**一定删掉 ``target``**（半截文件绝不能留下）。
+
+异常：:class:`DownloadCancelled`、``urllib`` 的错误、``OSError``。
 
 ---
 

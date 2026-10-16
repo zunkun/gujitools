@@ -26,6 +26,9 @@ from typing import TYPE_CHECKING
 #: preview_worker 等重模块）。
 if TYPE_CHECKING:
     from desktop.workers.copy_source_worker import CopyFilesWorker, CopySourceWorker
+    from desktop.workers.data_package_worker import (
+        DataCheckWorker, DataDownloadWorker,
+    )
     from desktop.workers.hash_worker import HashWorker
     from desktop.workers.image_list_worker import ImageListWorker
     from desktop.workers.imposition_worker import (
@@ -40,11 +43,14 @@ if TYPE_CHECKING:
     from desktop.workers.source_thumbnails_worker import SourceThumbnailsWorker
     from desktop.workers.task_rows_worker import TaskRowsWorker
     from desktop.workers.thumb_cache_worker import ImageThumbCacheWorker
-    from desktop.workers.update_worker import UpdateCheckWorker
+    from desktop.workers.update_worker import AppDownloadWorker, UpdateCheckWorker
 
 __all__ = [
+    "AppDownloadWorker",
     "CopyFilesWorker",
     "CopySourceWorker",
+    "DataCheckWorker",
+    "DataDownloadWorker",
     "HashWorker",
     "ImageListWorker",
     "ImpositionComposeWorker",
@@ -65,6 +71,9 @@ __all__ = [
 
 #: 惰性导出的名字 → (模块路径, 属性名)
 _LAZY = {
+    "AppDownloadWorker": (
+        "desktop.workers.update_worker", "AppDownloadWorker",
+    ),
     "CopyFilesWorker": (
         "desktop.workers.copy_source_worker",
         "CopyFilesWorker",
@@ -72,6 +81,12 @@ _LAZY = {
     "CopySourceWorker": (
         "desktop.workers.copy_source_worker",
         "CopySourceWorker",
+    ),
+    "DataCheckWorker": (
+        "desktop.workers.data_package_worker", "DataCheckWorker",
+    ),
+    "DataDownloadWorker": (
+        "desktop.workers.data_package_worker", "DataDownloadWorker",
     ),
     "HashWorker": ("desktop.workers.hash_worker", "HashWorker"),
     "ImageListWorker": ("desktop.workers.image_list_worker", "ImageListWorker"),

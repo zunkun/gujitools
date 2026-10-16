@@ -315,6 +315,13 @@ def main() -> int:
         controller = getattr(window, "update_controller", None)
         if controller is not None:
             QTimer.singleShot(STARTUP_UPDATE_CHECK_MS, controller.check_silently)
+        # 顺带后台静默查一次**去底色数据包**（权重仓库的 database release，用户
+        # 2026-10-16）：有新模型只在「帮助 → 检查数据包」菜单项上挂提示，用户
+        # 点进去才下载替换。与上面那次错开同一时刻发起——两次网络互不冲突。
+        data_controller = getattr(window, "data_package_controller", None)
+        if data_controller is not None:
+            QTimer.singleShot(
+                STARTUP_UPDATE_CHECK_MS, data_controller.check_silently)
     # 列表数据推迟到窗口显示之后的**下一拍**：TaskListPage 首次渲染要建每行的
     # 控件、还要读各任务的 runs.json（实测 ~74 ms），放在 show() 之前等于推迟
     # 窗口出现。先给用户一个空壳窗口，再填内容。

@@ -47,8 +47,12 @@ import time
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal, Slot
+
+from utils.download import DownloadCancelled, stream_to_file
+from utils.file_utils import replace_with_retry
 
 #: 查"最新版"的 API 端点（仓库地址与 ``utils/help.py`` 里印的项目地址同源）。
 RELEASE_API = "https://api.github.com/repos/zunkun/gujitools/releases/latest"
@@ -64,6 +68,15 @@ MIRROR_PREFIXES: tuple[str, ...] = (
 
 #: 单条线路的超时（秒）。四条并发 ⇒ 最坏也就等这么久，不会四倍叠加。
 TIMEOUT_SECONDS = 6.0
+
+#: 下载安装包的超时（秒）。⚠️ 这是**每次 socket 操作**的超时（不是整包总时长），
+#: 所以大安装包不会被它掐死；只有某次读写卡住过久才抛。
+DOWNLOAD_TIMEOUT = 300.0
+
+#: 程序更新下载的阶段码 → 界面文案（``AppDownloadWorker.stage`` 发码，控制器渲染）。
+APP_UPDATE_STAGES = {
+    "verify": "正在校验安装包完整性…",
+}
 
 #: ⚠️ GitHub API **要求**带 User-Agent，缺席直接 403（实测）；Accept 头声明用 v3 JSON
 #: 口径，避免将来默认口径变化把字段名改掉。
@@ -96,21 +109,50 @@ def build_url(prefix: str, url: str) -> str:
     return f"{prefix}{url}"
 
 
-def _asset_url(payload: dict) -> str:
-    """release 里**安装包资产**的下载地址；没有资产时退回网页地址。
+def _as_int(value) -> int:
+    """宽松转 int（拿不到就 0）。"""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
 
-    优先 ``.exe``（本项目发行物就是安装包），其次第一个资产。
+
+def pick_asset(payload: dict) -> dict:
+    """release 里**安装包资产**的信息；没有可用资产时返回 ``{}``。
+
+    优先 ``.exe``（本项目发行物就是 Inno 安装包），其次第一个资产。返回::
+
+        {"name": 文件名, "url": 直连下载地址, "size": 字节数, "sha256": 十六进制}
+
+    ``sha256`` 取 GitHub API 资产对象的 ``digest``（形如 ``"sha256:..."``）；
+    **老 release 没有这个字段** ⇒ 空串，此时下载后不做校验（不谎报"校验失败"）。
     """
     assets = payload.get("assets")
-    if isinstance(assets, list) and assets:
-        named = [a for a in assets if isinstance(a, dict)]
-        exe = [a for a in named
-               if str(a.get("name") or "").lower().endswith(".exe")]
-        pick = (exe or named)[0]
-        url = str(pick.get("browser_download_url") or "")
-        if url:
-            return url
-    return str(payload.get("html_url") or "")
+    if not isinstance(assets, list) or not assets:
+        return {}
+    named = [a for a in assets if isinstance(a, dict)]
+    if not named:
+        return {}
+    exe = [a for a in named
+           if str(a.get("name") or "").lower().endswith(".exe")]
+    pick = (exe or named)[0]
+    url = str(pick.get("browser_download_url") or "")
+    if not url:
+        return {}
+    digest = str(pick.get("digest") or "")
+    if digest.lower().startswith("sha256:"):
+        digest = digest.split(":", 1)[1]
+    return {
+        "name": str(pick.get("name") or ""),
+        "url": url,
+        "size": _as_int(pick.get("size")),
+        "sha256": digest.strip().lower(),
+    }
+
+
+def _asset_url(payload: dict) -> str:
+    """安装包资产的下载地址；没有资产时退回网页地址（探测排名用）。"""
+    return pick_asset(payload).get("url") or str(payload.get("html_url") or "")
 
 
 def _fetch_one(prefix: str, url: str, timeout: float) -> dict:
@@ -217,6 +259,7 @@ def fetch_latest_release(url: str = RELEASE_API,
     payload = dict(best["payload"])
     result = {name: payload.get(name) for name in _FIELDS}
     result.update({
+        "asset": pick_asset(payload),
         "mirror_prefix": best["prefix"],
         "mirror_label": best["label"],
         "download_url": best["download_url"],
@@ -259,7 +302,86 @@ class UpdateCheckWorker(QObject):
             self.failed.emit(f"http:{exc}")
 
 
+class AppDownloadWorker(QObject):
+    """子线程里把**安装包**下下来（应用内下载；用户 2026-10-16 要求）。
+
+    与 :class:`~desktop.workers.data_package_worker.DataDownloadWorker` 共用
+    ``utils.download.stream_to_file``；差别是这里**不做替换/重载**——安装包只是
+    下到用户目录，真正的安装交给安装器（见 ``desktop/ui/menu.py`` 的
+    ``_install_and_restart``）。
+
+    信号：``progress(int)`` / ``stage(str)`` / ``finished(dict)`` / ``failed(str)``。
+    """
+
+    progress = Signal(int)
+    stage = Signal(str)
+    finished = Signal(dict)
+    failed = Signal(str)
+
+    def __init__(self, url: str, dest, sha256: str = "", size: int = 0,
+                 timeout: float = DOWNLOAD_TIMEOUT):
+        super().__init__()
+        self.url = url
+        self.dest = Path(dest)
+        self.sha256 = str(sha256 or "").lower()
+        self.size = int(size or 0)
+        self.timeout = timeout
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        """请求取消（``WorkerHost.shutdown_workers`` 也会调它）。"""
+        self._cancelled = True
+
+    @Slot()
+    def run(self) -> None:
+        """下载安装包并通过信号回报结果（异常一律走 ``failed``）。"""
+        try:
+            self.finished.emit(self._download())
+        except DownloadCancelled:
+            self.failed.emit("cancelled")
+        except urllib.error.HTTPError as exc:
+            self.failed.emit(f"http:{exc.code}")
+        except Exception as exc:      # noqa: BLE001 - 兜底：绝不把异常留给子线程
+            self.failed.emit(f"network:{type(exc).__name__}")
+
+    def _download(self) -> dict:
+        """流式下载（``*.part`` 先行）→ 校验摘要（有才验）→ 落盘。"""
+        dest = self.dest
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        temp = dest.with_name(dest.name + ".part")
+        actual, written = stream_to_file(
+            self.url, temp,
+            on_progress=self._emit_progress,
+            is_cancelled=lambda: self._cancelled,
+            timeout=self.timeout,
+            headers=_HEADERS,
+        )
+        replace_with_retry(temp, dest)
+        self.stage.emit("verify")
+        if self.sha256 and actual != self.sha256:
+            # 摘要不符：删掉下好的安装包，别让半截/被篡改的东西留着被"安装"
+            _unlink_quiet(dest)
+            raise ValueError("sha256-mismatch")
+        return {"path": str(dest), "name": dest.name,
+                "sha256": actual, "size": written}
+
+    def _emit_progress(self, written: int, total: int) -> None:
+        """把 ``(已写字节, 总字节)`` 折成 0~100 进度；总量未知发 -1。"""
+        self.progress.emit(int(written * 100 / total) if total else -1)
+
+
+def _unlink_quiet(path: Path) -> None:
+    """删文件、没删掉也不抛（清理尽力而为）。"""
+    try:
+        Path(path).unlink()
+    except OSError:
+        pass
+
+
 __all__ = [
+    "APP_UPDATE_STAGES",
+    "AppDownloadWorker",
+    "DOWNLOAD_TIMEOUT",
     "MIRROR_PREFIXES",
     "RELEASE_API",
     "TIMEOUT_SECONDS",
@@ -268,5 +390,6 @@ __all__ = [
     "build_url",
     "fetch_latest_release",
     "mirror_label",
+    "pick_asset",
     "probe_mirrors",
 ]

@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 170 个模块、183 个公开类、1267 个公开函数/方法（生成于 2026-10-16）。
+覆盖 171 个模块、188 个公开类、1285 个公开函数/方法（生成于 2026-10-16）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -157,17 +157,18 @@
 | [`desktop.ui.fonts`](#desktopuifonts) | 0 | 2 |
 | [`desktop.ui.help_dialog`](#desktopuihelp_dialog) | 0 | 6 |
 | [`desktop.ui.icons`](#desktopuiicons) | 2 | 5 |
-| [`desktop.ui.menu`](#desktopuimenu) | 2 | 12 |
+| [`desktop.ui.menu`](#desktopuimenu) | 3 | 16 |
 | [`desktop.ui.segmented_toggle`](#desktopuisegmented_toggle) | 1 | 11 |
 | [`desktop.ui.style`](#desktopuistyle) | 0 | 3 |
 | [`desktop.ui.theme`](#desktopuitheme) | 0 | 3 |
 | [`desktop.ui.toast`](#desktopuitoast) | 0 | 1 |
 | [`desktop.ui.widgets`](#desktopuiwidgets) | 10 | 48 |
 | [`desktop.ui.window_size`](#desktopuiwindow_size) | 0 | 3 |
-| [`desktop.utils.files`](#desktoputilsfiles) | 0 | 19 |
+| [`desktop.utils.files`](#desktoputilsfiles) | 0 | 21 |
 | [`desktop.utils.icon`](#desktoputilsicon) | 0 | 3 |
 | [`desktop.worker`](#desktopworker) | 0 | 1 |
 | [`desktop.workers.copy_source_worker`](#desktopworkerscopy_source_worker) | 2 | 4 |
+| [`desktop.workers.data_package_worker`](#desktopworkersdata_package_worker) | 3 | 8 |
 | [`desktop.workers.hash_worker`](#desktopworkershash_worker) | 1 | 2 |
 | [`desktop.workers.image_list_worker`](#desktopworkersimage_list_worker) | 1 | 2 |
 | [`desktop.workers.imposition_page_thumb_worker`](#desktopworkersimposition_page_thumb_worker) | 1 | 3 |
@@ -180,7 +181,7 @@
 | [`desktop.workers.source_thumbnails_worker`](#desktopworkerssource_thumbnails_worker) | 1 | 4 |
 | [`desktop.workers.task_rows_worker`](#desktopworkerstask_rows_worker) | 1 | 2 |
 | [`desktop.workers.thumb_cache_worker`](#desktopworkersthumb_cache_worker) | 1 | 11 |
-| [`desktop.workers.update_worker`](#desktopworkersupdate_worker) | 2 | 7 |
+| [`desktop.workers.update_worker`](#desktopworkersupdate_worker) | 3 | 11 |
 | [`desktop.workers.worker_host`](#desktopworkersworker_host) | 1 | 4 |
 
 ---
@@ -12386,6 +12387,7 @@ qfluentwidgets 的 ``Dialog``，它只支持"字符串 + 两个按钮"）。
 | 名称 | 值 |
 | --- | --- |
 | PROJECT_URL | `"https://github.com/zunkun/gujitools"` |
+| DATA_PACKAGE_URL | `"https://github.com/zunkun/gujitrain/releases/tag/database"` |
 | MENU_FILE | `"文件(&F)"` |
 | MENU_SINGLE_TASK | `"单任务(&S)"` |
 | MENU_HELP | `"帮助(&H)"` |
@@ -12396,9 +12398,19 @@ qfluentwidgets 的 ``Dialog``，它只支持"字符串 + 两个按钮"）。
 | NEW_VERSION_SUFFIX | `"　·　有新版本"` |
 | ACTION_UPDATE_TOOLTIP | `"联网检查最新版本（直连 + 三个镜像，自动选最快的那条）"` |
 | ACTION_UPDATE_BUSY | `"正在检查更新…"` |
+| ACTION_UPDATE_DOWNLOADING | `"正在下载更新…"` |
+| ACTION_DATA_PACKAGE | `"更新数据包(&M)"` |
+| ACTION_DATA_PACKAGE_TOOLTIP | `"联网检查去底色模型（bookcontent.pt）是否有新版本，可直接下载替换"` |
+| ACTION_DATA_PACKAGE_BUSY | `"正在检查数据包…"` |
+| ACTION_DATA_PACKAGE_DOWNLOADING | `"正在下载数据包…"` |
 | ACTION_ABOUT | `"关于(&A)"` |
 | BUTTON_OK | `"好的"` |
-| BUTTON_DOWNLOAD | `"前往下载"` |
+| BUTTON_DOWNLOAD | `"下载"` |
+| BUTTON_BROWSER | `"前往下载页"` |
+| BUTTON_CANCEL | `"取消"` |
+| BUTTON_INSTALL | `"立即重启安装"` |
+| BUTTON_LATER | `"稍后"` |
+| BUTTON_RETRY | `"换条线路重试"` |
 | RESULT_LATEST | `"latest"` |
 | RESULT_NEWER | `"newer"` |
 | TITLE_BAR_ROW_HEIGHT | `24` |
@@ -12407,7 +12419,11 @@ qfluentwidgets 的 ``Dialog``，它只支持"字符串 + 两个按钮"）。
 
 一次检查更新该呈现什么（纯数据，自测直接断言它，不碰控件）。
 
-``link`` 非空 ⇒ 主按钮是「前往下载」（点了开浏览器）；为空 ⇒ 只有「好的」。
+- ``ok_text`` 决定**主按钮**的语义：:data:`BUTTON_DOWNLOAD` = 应用内下载、
+  :data:`BUTTON_INSTALL` = 立即重启安装、:data:`BUTTON_RETRY` = 换线路重试；
+  其余（``BUTTON_OK``）只关窗。
+- ``link`` 非空 ⇒ 正文里附一行**可复制的下载地址**；
+- ``browser_url`` 非空 ⇒ 次按钮「前往下载页」开浏览器（**备用**，用户自己下）。
 
 ### `class UpdateController(QObject)`
 
@@ -12451,11 +12467,30 @@ qfluentwidgets 的 ``Dialog``，它只支持"字符串 + 两个按钮"）。
 3. 只有**发现有新版本**时，才在菜单项上挂提示（:data:`NEW_VERSION_SUFFIX`，
    版本号进 tooltip），失败则完全安静（网络不好时别在启动日志里刷错误）。
 
+### `class DataPackageController(QObject)`
+
+「去底色数据包」检查 + 下载的编排者（与 :class:`UpdateController` 各管一摊）。
+
+流程（用户 2026-10-16）：读权重仓库 ``database`` release 的 ``data.json`` →
+与本机**已装版本**比大小（``utils.data_package``）→ 有新版弹「下载」提示 →
+经最快线路**在程序内下载并替换** ``static/weights/bookcontent.pt``——而不是
+让用户自己去 GitHub 下。检查与下载都在子线程（``window.run_worker``），
+重入防护（``_checking`` / ``_downloading``）与收尾幂等沿用 UpdateController。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(window, action: QAction, parent=None)` | — |
+| `check() -> None` | 查一次数据包最新版：**先弹「正在检查」窗，再弹结果窗**。 |
+| `check_silently() -> None` | **后台静默**检查一次（启动时自动跑）：不弹窗，有新版才挂菜单提示。 |
+
 ### 模块函数
 
 | 函数 | 说明 |
 | --- | --- |
 | `update_result(kind: str, *, current: str, latest: dict \| None=None) -> UpdateVerdict` | 把一次检查结果收成 :class:`UpdateVerdict`。 |
+| `data_package_result(kind: str, *, current: int, latest: dict \| None=None) -> UpdateVerdict` | 把一次「去底色数据包检查」结果收成 :class:`UpdateVerdict`（纯数据）。 |
 | `about_rows(window=None) -> list[tuple[str, str]]` | 「关于」弹窗的行（``(键, 值)``）。纯数据，自测直接断言。 |
 | `install_title_bar(window)` | 给**无边框主窗口**装自绘标题栏（图标 / 标题 / 菜单同排），返回标题栏。 |
 | `install_menu_bar(window) -> QMenuBar` | 把菜单栏（文件 / 单任务 / 帮助）插进**标题栏的标题之后**。 |
@@ -12480,6 +12515,18 @@ qfluentwidgets 的 ``Dialog``，它只支持"字符串 + 两个按钮"）。
 gh-proxy 镜像）都测过速**，``latest`` 里带着 ``mirror_label`` / ``download_url`` /
 ``ranking``——这里把它们写进正文：用户看得见这次走的是哪条、多快，下载地址也是
 **拼过该线路前缀**的那个（不然给了地址还是被 ban）。
+
+#### `data_package_result(kind: str, *, current: int, latest: dict | None=None) -> UpdateVerdict`
+
+把一次「去底色数据包检查」结果收成 :class:`UpdateVerdict`（纯数据）。
+
+``kind`` 取 ``RESULT_LATEST`` / ``RESULT_NEWER`` / 失败分类串。与
+:func:`update_result` 的关键区别：**没有外链备用按钮**——有新版时主按钮是
+:data:`BUTTON_DOWNLOAD`（「下载」），点了由控制器**在程序内**下载并替换，
+而不是开浏览器（用户 2026-10-16：「不要让用户自己去下载」）。
+
+``current`` 是**本机已安装版本**（整数）；``latest`` 是检查结果
+（``data_package_worker.fetch_data_json`` 的返回，含 ``info`` 与线路信息）。
 
 #### `about_rows(window=None) -> list[tuple[str, str]]`
 
@@ -13132,6 +13179,7 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 | THUMBNAIL_EDGE | `256` |
 | SINGLETASK_DIRNAME | `"singletask"` |
 | _SAFE_CHARS | `"<>:"/\\\|?*"` |
+| UPDATES_DIRNAME | `"updates"` |
 
 ### 模块函数
 
@@ -13141,6 +13189,8 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 | `guji_data_dir() -> Path` | GUI 数据根目录：用户文档目录下的 guji。 |
 | `safe_dirname(name: str) -> str` | 把任意标题洗成能当目录名的一串（去掉非法字符、收敛空白）。 |
 | `singletask_dir(subtask: str) -> Path` | 独立任务区下某个**子任务**的目录：``~/Documents/guji/singletask/<子任务>``。 |
+| `updates_dir() -> Path` | 程序更新目录：``~/Documents/guji/updates``（安装包与"待安装"记录）。 |
+| `pending_install_file() -> Path` | 「下好但还没装」的安装包记录：``updates/pending.json``。 |
 | `migrate_legacy_singletask_dirs() -> list[str]` | 把按旧标题建的 ``singletask/<中文名>/`` 搬到新名（见 ``_LEGACY_SUBTASK_DIRS``）。 |
 | `singletask_thumbnails_dir(subtask: str, book: str \| Path \| None=None) -> Path` | 子任务的**页缩略图缓存**：``singletask/<子任务>/thumbnails[/<书>]``。 |
 | `book_key(book: str \| Path) -> str` | 一本书在缓存目录里的唯一名字：``<文件名去后缀>-<大小>-<路径指纹前8位>``。 |
@@ -13165,6 +13215,13 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 - ``path`` 是**目录**：直接打开这个目录。
 
 返回是否真的发起了打开——路径不存在时为 ``False``，调用方不必再判存在性。
+
+#### `pending_install_file() -> Path`
+
+「下好但还没装」的安装包记录：``updates/pending.json``。
+
+内容形如 ``{"tag": "v2.0.5", "path": …, "name": …, "sha256": …, "size": …}``。
+下次点「检查更新」时若 tag 一致且文件还在，就直接给「立即重启安装」，不必重下。
 
 #### `migrate_legacy_singletask_dirs() -> list[str]`
 
@@ -13437,6 +13494,144 @@ worker 在后台线程里补一份；补的期间界面照常可用。
 | --- | --- |
 | `__init__(jobs: list[tuple[Path, Path]])` | — |
 | `run() -> None` | — |
+
+---
+
+## `desktop.workers.data_package_worker`
+
+源码：[`desktop/workers/data_package_worker.py`](../../desktop/workers/data_package_worker.py)
+
+去底色数据包（``bookcontent.pt``）的**网络** worker：查版本 + 下载替换。
+
+与「检查更新」（``update_worker``）同族、同样走"直连 + 三个 gh-proxy 镜像并发
+测速"，但**对象不同**：那边查的是程序自身的 GitHub Release，这边查的是**权重
+仓库**（``zunkun/gujitrain``）``database`` release 里的 ``data.json``，并且要
+**把权重文件真的下下来**（用户口径 2026-10-16：不要让用户自己去 GitHub 下载）。
+
+⚠️ 两处**不照抄** ``update_worker``（用户 2026-10-16 报「数据包检查不对，线上是
+101」，本机 v100、远端已发 v101 却报"已是最新"）：
+
+1. **不按"最快"选线路，按"清单里的 version 最大"选**——release 资产地址是固定的，
+   缓存命中的旧清单**一定更快**，按速度选就会系统性地选到旧版本（见
+   :func:`fetch_data_json`）；
+2. **请求一律挂 :func:`_cache_bust` 的唯一参数**，把缓存副本作废、逼各路回源。
+
+⚠️ **不能直接复用** ``update_worker.probe_mirrors``：它的 ``_fetch_one`` 校验
+``tag_name``（release 字段），而 ``data.json`` 根本没有这个字段，会被判成
+``bad_json``。所以这里自带一份"只要求是合法 JSON 对象"的探测（``_fetch_one``）。
+
+``kind`` 词表与 ``desktop/ui/menu.py::FAILURE_REASONS`` 一一对应：
+
+===============  ==================================================
+``network``      连不上（断网、四个地址全不可达）
+``not_found``    HTTP 404
+``rate_limited`` HTTP 403 / 429
+``bad_json``     响应不是合法 JSON / 缺 bookcontent 记录
+``http:<code>``  其余 HTTP 错误码
+``cancelled``    下载被用户取消（只在 :class:`DataDownloadWorker` 出现）
+===============  ==================================================
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| DOWNLOAD_TIMEOUT | `120.0` |
+| RELEASE_WAIT | `8.0` |
+
+### `class DataCheckError(Exception)`
+
+检查数据包失败，``kind`` 是模块头词表里的分类串。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(kind: str)` | — |
+
+### `class DataCheckWorker(QObject)`
+
+子线程里跑一次 :func:`fetch_data_json`。
+
+成功发 ``checked(dict)``，失败发 ``failed(kind)``。⚠️ ``run()`` 整体
+try/except：异常逃出子线程会让线程静默死掉、界面永远停在"正在检查"。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(url: str \| None=None, timeout: float=TIMEOUT)` | — |
+| `run() -> None` | 执行一次检查并通过信号回报结果（异常一律走 ``failed``）。 |
+
+### `class DataDownloadWorker(QObject)`
+
+子线程里把权重下载到本地，**校验通过后**再按三步替换（用户 2026-10-16）。
+
+严格顺序：
+
+1. **下载**权重到 ``<权重目录>/bookcontent-v100.pt``（传输期用 ``*.part``，
+   下完才改成版本名）；中途失败/取消**不留半截文件**；
+2. **校验 sha256**：与 ``data.json`` 不符就删掉、报错——**不替换**；
+3. **释放占用**（``_release_model``：关掉常驻 YOLO 服务，卸载内存里的模型、
+   松开权重的文件句柄）；
+4. **更名**：``bookcontent-v100.pt`` → ``bookcontent.pt``（同目录
+   :func:`replace_with_retry`，Windows 上会短暂重试抢占用）；
+5. **重新加载**（``_reload_model``：把常驻服务重新热起来，内存引用指向新权重）；
+6. 写版本 sidecar（``record_local_version``）。
+
+信号：
+
+* ``progress(int)``：0~100 的百分比；**-1** 表示总量未知（无 Content-Length）；
+* ``stage(str)``：下载之后的阶段码（见 :data:`DATA_PACKAGE_STAGES`）；
+* ``finished(dict)``：``{path, version, sha256, size}``；
+* ``failed(str)``：分类串（``network`` / ``cancelled`` / ``http:<code>`` 等）。
+
+⚠️ 先写 ``*.part`` 再改名：下载途中文件不能以最终名存在（否则 YOLO 服务/
+检测进程可能读到**半截权重**）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(url: str, info: dict \| None=None, dest=None)` | — |
+| `cancel() -> None` | 请求取消（``WorkerHost.shutdown_workers`` 也会调它）。 |
+| `run() -> None` | 执行下载并通过信号回报结果（异常一律走 ``failed``）。 |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `probe_mirrors(url: str \| None=None, timeout: float=TIMEOUT) -> list[dict]` | **并发**测四条线路，返回按耗时升序的排名（每条含 ``reason``/``seconds``）。 |
+| `fetch_data_json(url: str \| None=None, timeout: float=TIMEOUT) -> dict` | 经**最快线路**取 ``data.json`` 并规范化出 bookcontent 记录。 |
+
+#### `probe_mirrors(url: str | None=None, timeout: float=TIMEOUT) -> list[dict]`
+
+**并发**测四条线路，返回按耗时升序的排名（每条含 ``reason``/``seconds``）。
+
+与 ``update_worker.probe_mirrors`` 结构一致，只是校验规则不同（见模块头）。
+一条都没通时不抛异常，由 :func:`fetch_data_json` 依据排名归类报错。
+
+⚠️ 取的是**挂了防缓存参数**的地址（见 :func:`_cache_bust`）：四条线路共用同一个
+本次唯一的 ``t=``，让任何缓存副本都作废、逼各路回源。
+
+#### `fetch_data_json(url: str | None=None, timeout: float=TIMEOUT) -> dict`
+
+经**最快线路**取 ``data.json`` 并规范化出 bookcontent 记录。
+
+四条全败或清单里没有合法的 bookcontent 记录时抛 :class:`DataCheckError`。
+返回::
+
+    {
+      "info": {name, version, sha256, size, date},
+      "asset_name": name,
+      "download_url": 拼过**最优线路**前缀的权重地址,
+      "mirror_prefix" / "mirror_label" / "seconds",
+      "ranking": [{prefix, label, ok, seconds}, ...],
+    }
+
+⚠️ ``download_url`` 与 :func:`probe_mirrors` 用的是**同一次**测速结果里
+**版本号最高**的那条（不再重测一遍），所以下载必然走"给出最新清单"的那条线路。
+⚠️ 不是"最快"而是"最新"：会命中缓存的旧清单**一定更快**，按速度选就会系统性
+地报成"已是最新"（见 :func:`_cache_bust`）。
 
 ---
 
@@ -14258,6 +14453,7 @@ worker 只"把 release 拉下来 + 归类错误 + 给出测速排名"，**不比
 | --- | --- |
 | RELEASE_API | `"https://api.github.com/repos/zunkun/gujitools/releases/la…"` |
 | TIMEOUT_SECONDS | `6.0` |
+| DOWNLOAD_TIMEOUT | `300.0` |
 
 ### `class UpdateCheckError(Exception)`
 
@@ -14284,14 +14480,45 @@ worker 只"把 release 拉下来 + 归类错误 + 给出测速排名"，**不比
 | `__init__(url: str=RELEASE_API, timeout: float=TIMEOUT_SECONDS)` | — |
 | `run() -> None` | 执行一次检查并通过信号回报结果（异常一律走 ``failed``）。 |
 
+### `class AppDownloadWorker(QObject)`
+
+子线程里把**安装包**下下来（应用内下载；用户 2026-10-16 要求）。
+
+与 :class:`~desktop.workers.data_package_worker.DataDownloadWorker` 共用
+``utils.download.stream_to_file``；差别是这里**不做替换/重载**——安装包只是
+下到用户目录，真正的安装交给安装器（见 ``desktop/ui/menu.py`` 的
+``_install_and_restart``）。
+
+信号：``progress(int)`` / ``stage(str)`` / ``finished(dict)`` / ``failed(str)``。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(url: str, dest, sha256: str='', size: int=0, timeout: float=DOWNLOAD_TIMEOUT)` | — |
+| `cancel() -> None` | 请求取消（``WorkerHost.shutdown_workers`` 也会调它）。 |
+| `run() -> None` | 下载安装包并通过信号回报结果（异常一律走 ``failed``）。 |
+
 ### 模块函数
 
 | 函数 | 说明 |
 | --- | --- |
 | `mirror_label(prefix: str) -> str` | 线路的中文标签：直连 → 「直连」，镜像 → 域名（``v6.gh-proxy.org``）。 |
 | `build_url(prefix: str, url: str) -> str` | 把加速前缀拼到原始地址前面（用户给的用法就是**直接拼接**）。 |
+| `pick_asset(payload: dict) -> dict` | release 里**安装包资产**的信息；没有可用资产时返回 ``{}``。 |
 | `probe_mirrors(url: str=RELEASE_API, timeout: float=TIMEOUT_SECONDS) -> list[dict]` | **并发**测四条线路，返回按耗时升序的排名（每条：前缀/标签/是否可用/耗时/下载地址）。 |
 | `fetch_latest_release(url: str=RELEASE_API, timeout: float=TIMEOUT_SECONDS) -> dict` | 经**最快线路**拉取最新 release；四条全败抛 :class:`UpdateCheckError`。 |
+
+#### `pick_asset(payload: dict) -> dict`
+
+release 里**安装包资产**的信息；没有可用资产时返回 ``{}``。
+
+优先 ``.exe``（本项目发行物就是 Inno 安装包），其次第一个资产。返回::
+
+    {"name": 文件名, "url": 直连下载地址, "size": 字节数, "sha256": 十六进制}
+
+``sha256`` 取 GitHub API 资产对象的 ``digest``（形如 ``"sha256:..."``）；
+**老 release 没有这个字段** ⇒ 空串，此时下载后不做校验（不谎报"校验失败"）。
 
 #### `probe_mirrors(url: str=RELEASE_API, timeout: float=TIMEOUT_SECONDS) -> list[dict]`
 
