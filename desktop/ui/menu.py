@@ -66,6 +66,12 @@ ACTION_CREATE_TASK = "新建任务(&N)"
 ACTION_QUIT = "退出(&X)"
 ACTION_MANUAL = "帮助文档(&D)"
 ACTION_UPDATE = "检查更新(&U)"
+#: 「检查更新」菜单项在**发现有新版本**时追加的提示后缀（用户 2026-10-15：启动时
+#: 后台自动查，有新版本就在菜单上提示）。版本号放 tooltip 里——菜单项宽度有限，
+#: 塞一长串会把「帮助」菜单撑得很宽。
+NEW_VERSION_SUFFIX = "　·　有新版本"
+#: 「检查更新」的悬停提示（无新版本时的默认文案）
+ACTION_UPDATE_TOOLTIP = "联网检查最新版本（直连 + 三个镜像，自动选最快的那条）"
 ACTION_UPDATE_BUSY = "正在检查更新…"
 ACTION_ABOUT = "关于(&A)"
 
@@ -554,6 +560,11 @@ class UpdateController(QObject):
         self._check_dialog: QDialog | None = None
         #: 用户点了「取消」：结果回来时静默丢弃，不再弹结果窗
         self._aborted = False
+        #: 当前这次检查是**静默**的（启动时后台自动查）：不弹任何窗，只在菜单项上
+        #: 挂"有新版本"提示；用户中途点了菜单就转成显式（见 :meth:`check`）。
+        self._silent = False
+        #: 已知的新版本 tag（空 = 未知/已是最新）——菜单项文案与 tooltip 看它
+        self._newer_tag = ""
 
     # ---- 触发 ----
     def check(self) -> None:
@@ -561,18 +572,47 @@ class UpdateController(QObject):
 
         用户 2026-10-15：「检查更新，先出弹窗，再反馈结果」——点下去立刻要有可见反馈
         （后台要并发测四条线路，可能几秒），不能像以前那样只有菜单项变灰 + 静默等。
+
+        ⚠️ 若此刻正有一次**静默**检查在飞（启动时自动跑的那次），这里**升级**成显式
+        检查（挂上检查窗、结果照常弹），而不是回一句"正在检查"——用户在启动几秒内
+        就点菜单是完全正常的事，让他白等一次很没道理；同一次请求两种模式共用。
         """
         if self._checking:
+            if self._silent:
+                self._silent = False
+                self._present_checking()
+                return
             show_toast(
                 self.window, "info", "正在检查更新",
                 "上一次检查还没结束，请稍候。",
             )
             return
-        self._checking = True
+        self._silent = False
         self._aborted = False
         self.action.setEnabled(False)
         self.action.setText(ACTION_UPDATE_BUSY)
         self._present_checking()
+        self._start_worker()
+
+    def check_silently(self) -> None:
+        """**后台静默**检查一次（启动时自动跑，用户 2026-10-15）。
+
+        与显式检查的三点不同：
+
+        1. **不弹任何窗**（没有「正在检查」窗，也没有结果窗）——启动时不该打扰用户；
+        2. **不动菜单项文案**（不置灰、不写"正在检查更新…"）——避免启动瞬间闪一下；
+        3. 只有**发现有新版本**时，才在菜单项上挂提示（:data:`NEW_VERSION_SUFFIX`，
+           版本号进 tooltip），失败则完全安静（网络不好时别在启动日志里刷错误）。
+        """
+        if self._checking:
+            return          # 显式检查在跑，或已有一次静默检查在飞
+        self._silent = True
+        self._aborted = False
+        self._start_worker()
+
+    def _start_worker(self) -> None:
+        """起一次后台检查（显式/静默共用）：置忙标记 + 接线信号。"""
+        self._checking = True
         # ⚠️ 惰性 import：启动期不该为一个"用户可能不点"的菜单项拉进网络模块。
         from desktop.workers.update_worker import UpdateCheckWorker
 
@@ -624,10 +664,12 @@ class UpdateController(QObject):
 
     # ---- 结果 ----
     def _on_checked(self, payload) -> None:
-        """拿到 release 原始字段：先关「正在检查」窗，再比版本弹结果。
+        """拿到 release 原始字段：比版本决定"已是最新 / 有新版本"。
 
         ⚠️ 同时记下 payload（含**四条线路的测速排名**）并复位线路下标——「换条线路」
         就在这份排名上换，不再重新联网。
+        ⚠️ **静默模式**（启动时那次自动检查）只把"有新版本"挂到菜单项上、**不弹任何
+        窗**；显式模式才关「正在检查」窗并弹结果（见 :meth:`check` / `check_silently`）。
         """
         self._finish()
         self._close_check_dialog()
@@ -638,6 +680,12 @@ class UpdateController(QObject):
         self._scheme_index = 0
         tag = str(self._last_payload.get("tag_name") or "")
         kind = RESULT_NEWER if is_newer(tag, VERSION) else RESULT_LATEST
+        if self._silent:
+            # 菜单提示：有新版本才挂后缀；已是最新就把提示清掉（比如用户在别的
+            # 机器上升级后重开程序，提示不该留成"鬼影"）。
+            self._newer_tag = tag if kind == RESULT_NEWER else ""
+            self._apply_action_text()
+            return
         if kind == RESULT_NEWER:
             self._present(self._verdict_for_scheme(self._scheme_index))
             return
@@ -645,22 +693,45 @@ class UpdateController(QObject):
                                     latest=self._last_payload))
 
     def _on_failed(self, kind) -> None:
-        """网络/解析失败：先关「正在检查」窗，再按分类给中文原因。"""
+        """网络/解析失败：**静默模式**什么都不做；显式模式关窗后给中文原因。"""
         self._finish()
         self._close_check_dialog()
         if self._aborted:
             self._last_payload = None
             return
         self._last_payload = None
+        if self._silent:
+            # 启动时那次自动检查失败（断网/限流都常见）：安静收场，别弹框打扰。
+            # ⚠️ 也**不**清掉已有的"有新版本"提示：这次没查到 ≠ 已经是最新。
+            return
         self._present(update_result(str(kind), current=VERSION))
 
+    # ---- 菜单项文案（有新版本时的提示）----
+    def _action_text(self) -> str:
+        """菜单项当前该显示的文案：已知有新版本时带 :data:`NEW_VERSION_SUFFIX`。"""
+        if self._newer_tag:
+            return f"{ACTION_UPDATE}{NEW_VERSION_SUFFIX}"
+        return ACTION_UPDATE
+
+    def _apply_action_text(self) -> None:
+        """把文案/悬停提示刷成当前状态（版本号放 tooltip，菜单项别撑太宽）。"""
+        self.action.setText(self._action_text())
+        self.action.setToolTip(
+            f"已发现新版本 {self._newer_tag}，点这里看详情并下载"
+            if self._newer_tag else ACTION_UPDATE_TOOLTIP
+        )
+
     def _finish(self) -> None:
-        """解除忙标记并恢复菜单项（**幂等**，见类 docstring）。"""
+        """解除忙标记并恢复菜单项（**幂等**，见类 docstring）。
+
+        ⚠️ 恢复的是 ``_action_text()`` 而不是写死的 ``ACTION_UPDATE``：静默检查
+        发现过新版本时，菜单项该带着"有新版本"的提示留下来。
+        """
         if not self._checking:
             return
         self._checking = False
         self.action.setEnabled(True)
-        self.action.setText(ACTION_UPDATE)
+        self._apply_action_text()
 
     # ---- 线路切换（用户 2026-10-15：「下载更新的时候，可以选择测试选择最优方案」）----
     def _usable_schemes(self) -> list[dict]:

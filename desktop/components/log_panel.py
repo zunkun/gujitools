@@ -232,7 +232,15 @@ class LogPanel(QWidget):
         self.toggle_button.setIcon(FIF.DOWN if self._expanded else FIF.UP)
 
     def _refresh_bar(self) -> None:
-        """按日志内容刷新状态圆点与摘要行（每条日志都调，必须 O(1)）。"""
+        """按日志内容刷新状态圆点与摘要行（每条日志都调，必须 O(1)）。
+
+        ⚠️ 顺手 ``raise_()``：日志正在刷说明这个阶段在跑，而此时**别的兄弟控件
+        会被抬上来**（预览刷新、懒加载面板构造、hover 时被 raise_ 的工具列……），
+        浮层一旦被压下去就成了"看得见、点不动"（用户 2026-10-16 报的 × 点不动
+        就是这一类）。每次刷新把它摁回最上层，代价 O(1)。
+        """
+        if self._expanded:
+            self._overlay.raise_()
         last = self._last_nonempty_line()
         state = self._state(last)
         if state == "idle":
@@ -271,6 +279,9 @@ class LogPanel(QWidget):
         self._overlay.setGeometry(
             top_left.x(), top_left.y() - height, self.width(), height
         )
+        # 每次重排都把它抬到最上层：页面里任何"后 show / 后 raise_()"的兄弟控件
+        # 都会盖住它（见 _refresh_bar 与 _overlay_hit 的注释）。
+        self._overlay.raise_()
 
     # ------------------------------------------------------------- 事件处理
     def _install_filter(self) -> None:
@@ -292,8 +303,39 @@ class LogPanel(QWidget):
             widget.mapFromGlobal(global_pos)
         )
 
+    @classmethod
+    def _overlay_hit(cls, overlay: QWidget, global_pos: QPoint) -> bool:
+        """浮层是否**真正接住**了这个点——按 z 序判，不只看几何。
+
+        ⚠️ 只看 ``rect().contains`` 会漏掉一类真实故障（用户 2026-10-16 报
+        「执行日志浮层的 × 点不动」）：详情页里总有别的兄弟控件在**叠放上压过
+        浮层**（预览卡刷新、懒面板构造、hover 后被 raise_ 的工具列、透明遮罩……），
+        此时这个点在**几何上属于浮层、事件却落到那个兄弟控件上** —— 于是 × 点不动，
+        连"点浮层外收起"的兜底也不触发（几何判定说"在浮层里"，不该收起）。
+        这里从宿主往下逐层找**该点最上层的控件**，只有它是浮层或其后代才算真命中。
+        """
+        if not cls._hit(overlay, global_pos):
+            return False
+        host = overlay.parentWidget()
+        if host is None:
+            return True
+        top: QWidget = host
+        while True:
+            child = top.childAt(top.mapFromGlobal(global_pos))
+            if child is None:
+                break
+            top = child
+        if top is host:
+            return True     # 该点上没有子控件 ⇒ 就是浮层自己（几何已经判过一遍）
+        return top is overlay or overlay.isAncestorOf(top)
+
     def eventFilter(self, obj, event) -> bool:  # noqa: N802 (Qt 命名)
-        """浮层打开期间：Esc 或点击浮层/状态条之外的任意位置即收起。"""
+        """浮层打开期间：Esc 或点击浮层/状态条之外的任意位置即收起。
+
+        ⚠️ 判"在不在浮层里"用的是 :meth:`_overlay_hit`（**带 z 序**）而不是裸几何：
+        被别的兄弟控件盖住时，点那儿按"点在浮层外"处理 —— 收起浮层，而不是
+        一声不响地把点击吞掉（那正是"× 点不动"给人的观感）。
+        """
         if not self._expanded:
             return False
         etype = event.type()
@@ -304,7 +346,7 @@ class LogPanel(QWidget):
         elif etype == QEvent.Type.MouseButtonPress:
             pos = event.globalPosition().toPoint()
             # 点状态条本身交给它自己的 mouseRelease 处理（切换），避免闪烁
-            if not self._hit(self._overlay, pos) and not self._hit(self, pos):
+            if not self._overlay_hit(self._overlay, pos) and not self._hit(self, pos):
                 self.set_expanded(False)
         return False
 

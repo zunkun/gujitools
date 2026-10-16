@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 170 个模块、183 个公开类、1266 个公开函数/方法（生成于 2026-10-15）。
+覆盖 170 个模块、183 个公开类、1267 个公开函数/方法（生成于 2026-10-16）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -157,7 +157,7 @@
 | [`desktop.ui.fonts`](#desktopuifonts) | 0 | 2 |
 | [`desktop.ui.help_dialog`](#desktopuihelp_dialog) | 0 | 6 |
 | [`desktop.ui.icons`](#desktopuiicons) | 2 | 5 |
-| [`desktop.ui.menu`](#desktopuimenu) | 2 | 11 |
+| [`desktop.ui.menu`](#desktopuimenu) | 2 | 12 |
 | [`desktop.ui.segmented_toggle`](#desktopuisegmented_toggle) | 1 | 11 |
 | [`desktop.ui.style`](#desktopuistyle) | 0 | 3 |
 | [`desktop.ui.theme`](#desktopuitheme) | 0 | 3 |
@@ -198,6 +198,7 @@ gujitools 桌面端主窗口：左侧导航壳层（任务管理 + 独立模块�
 | WINDOW_TITLE | `"古籍重製"` |
 | CONTENT_MIN_WIDTH | `1080` |
 | WINDOW_START_MAXIMIZED | `True` |
+| STARTUP_UPDATE_CHECK_MS | `4000` |
 
 ### `class MainWindow(FramelessMainWindow, WorkerHost)`
 
@@ -1976,6 +1977,14 @@ worker）→ 连 :attr:`page_ready` 把生成好的那条贴回左列。版面/�
 
 展开时把浮层挂到页面、定位到状态条正上方并显示，同时滚到底部；
 收起时仅隐藏浮层（日志内容保留）。
+
+##### `eventFilter(obj, event) -> bool`
+
+浮层打开期间：Esc 或点击浮层/状态条之外的任意位置即收起。
+
+⚠️ 判"在不在浮层里"用的是 :meth:`_overlay_hit`（**带 z 序**）而不是裸几何：
+被别的兄弟控件盖住时，点那儿按"点在浮层外"处理 —— 收起浮层，而不是
+一声不响地把点击吞掉（那正是"× 点不动"给人的观感）。
 
 ### 模块函数
 
@@ -12384,6 +12393,8 @@ qfluentwidgets 的 ``Dialog``，它只支持"字符串 + 两个按钮"）。
 | ACTION_QUIT | `"退出(&X)"` |
 | ACTION_MANUAL | `"帮助文档(&D)"` |
 | ACTION_UPDATE | `"检查更新(&U)"` |
+| NEW_VERSION_SUFFIX | `"　·　有新版本"` |
+| ACTION_UPDATE_TOOLTIP | `"联网检查最新版本（直连 + 三个镜像，自动选最快的那条）"` |
 | ACTION_UPDATE_BUSY | `"正在检查更新…"` |
 | ACTION_ABOUT | `"关于(&A)"` |
 | BUTTON_OK | `"好的"` |
@@ -12416,6 +12427,7 @@ qfluentwidgets 的 ``Dialog``，它只支持"字符串 + 两个按钮"）。
 | --- | --- |
 | `__init__(window, action: QAction, parent=None)` | — |
 | `check() -> None` | 查一次 GitHub Release 最新版：**先弹「正在检查」窗，再弹结果窗**。 |
+| `check_silently() -> None` | **后台静默**检查一次（启动时自动跑，用户 2026-10-15）。 |
 
 ##### `check() -> None`
 
@@ -12423,6 +12435,21 @@ qfluentwidgets 的 ``Dialog``，它只支持"字符串 + 两个按钮"）。
 
 用户 2026-10-15：「检查更新，先出弹窗，再反馈结果」——点下去立刻要有可见反馈
 （后台要并发测四条线路，可能几秒），不能像以前那样只有菜单项变灰 + 静默等。
+
+⚠️ 若此刻正有一次**静默**检查在飞（启动时自动跑的那次），这里**升级**成显式
+检查（挂上检查窗、结果照常弹），而不是回一句"正在检查"——用户在启动几秒内
+就点菜单是完全正常的事，让他白等一次很没道理；同一次请求两种模式共用。
+
+##### `check_silently() -> None`
+
+**后台静默**检查一次（启动时自动跑，用户 2026-10-15）。
+
+与显式检查的三点不同：
+
+1. **不弹任何窗**（没有「正在检查」窗，也没有结果窗）——启动时不该打扰用户；
+2. **不动菜单项文案**（不置灰、不写"正在检查更新…"）——避免启动瞬间闪一下；
+3. 只有**发现有新版本**时，才在菜单项上挂提示（:data:`NEW_VERSION_SUFFIX`，
+   版本号进 tooltip），失败则完全安静（网络不好时别在启动日志里刷错误）。
 
 ### 模块函数
 

@@ -353,33 +353,31 @@ def run(ctx) -> None:
     real_shell_dialog, real_fetch = menu.shell_dialog, update_worker.fetch_latest_release
     calls: list[int] = []
 
-    def _slow_fetch(url=None, timeout=None) -> dict:
-        """替身：慢一点，好让"检查中再点一次"真的落在在途窗口里。
+    #: 替身返回的"有新版本"数据：含四条线路测速排名（两条可用）与拼过最优线路
+    #: 前缀的下载地址——「换条线路」「静默检查挂提示」都用它。
+    newer_payload = {
+        "tag_name": "v99.0.1", "name": "v99.0.1", "published_at": "",
+        "prerelease": False,
+        "html_url": "https://github.com/zunkun/gujitools/releases/tag/v99.0.1",
+        "download_url": "https://v6.gh-proxy.org/https://example.invalid/A.exe",
+        "mirror_prefix": "https://v6.gh-proxy.org/",
+        "mirror_label": "v6.gh-proxy.org", "seconds": 0.38,
+        "ranking": [
+            {"prefix": "https://v6.gh-proxy.org/", "label": "v6.gh-proxy.org",
+             "ok": True, "seconds": 0.38,
+             "download_url": "https://v6.gh-proxy.org/https://example.invalid/A.exe"},
+            {"prefix": "", "label": "直连", "ok": True, "seconds": 2.42,
+             "download_url": "https://example.invalid/direct.exe"},
+            {"prefix": "https://v4.gh-proxy.org/", "label": "v4.gh-proxy.org",
+             "ok": False, "seconds": 1.3, "download_url": ""},
+        ],
+    }
 
-        返回值带上**四条线路的测速排名**（两条可用：v6 镜像 0.38s、直连 2.42s）
-        与拼过最优线路前缀的下载地址——「换条线路」就靠它切到下一条。
-        """
+    def _slow_fetch(url=None, timeout=None) -> dict:
+        """替身：慢一点，好让"检查中再点一次"真的落在在途窗口里。"""
         calls.append(1)
         time.sleep(0.25)
-        return {
-            "tag_name": "v99.0.1", "name": "v99.0.1", "published_at": "",
-            "prerelease": False,
-            "html_url": "https://github.com/zunkun/gujitools/releases/tag/v99.0.1",
-            "download_url":
-                "https://v6.gh-proxy.org/https://example.invalid/A.exe",
-            "mirror_prefix": "https://v6.gh-proxy.org/",
-            "mirror_label": "v6.gh-proxy.org", "seconds": 0.38,
-            "ranking": [
-                {"prefix": "https://v6.gh-proxy.org/",
-                 "label": "v6.gh-proxy.org", "ok": True, "seconds": 0.38,
-                 "download_url":
-                     "https://v6.gh-proxy.org/https://example.invalid/A.exe"},
-                {"prefix": "", "label": "直连", "ok": True, "seconds": 2.42,
-                 "download_url": "https://example.invalid/direct.exe"},
-                {"prefix": "https://v4.gh-proxy.org/", "label": "v4.gh-proxy.org",
-                 "ok": False, "seconds": 1.3, "download_url": ""},
-            ],
-        }
+        return dict(newer_payload)
 
     try:
         menu.shell_dialog = recorder
@@ -464,6 +462,81 @@ def run(ctx) -> None:
            and recorder.calls[-1]["title"] == "检查更新失败"
            and menu.FAILURE_REASONS["network"][:6] in recorder.calls[-1]["body"],
            f"{recorder.calls}")
+
+        # ---- 5e. 启动时的**后台静默**检查（用户 2026-10-15）----
+        # 不弹任何窗；只有发现有新版本时才在菜单项上挂提示。
+        recorder.calls.clear()
+        calls.clear()
+
+        def _silent_newer(url=None, timeout=None) -> dict:
+            calls.append(1)
+            return dict(newer_payload)
+
+        update_worker.fetch_latest_release = _silent_newer
+        controller.check_silently()
+        ok("静默检查：**不弹任何窗**（启动时不该打扰用户）",
+           wait_until(app, lambda: not controller._checking, timeout=8.0)
+           and recorder.calls == [] and len(calls) == 1,
+           f"弹窗={[c['title'] for c in recorder.calls]} requests={len(calls)}")
+        ok("静默检查发现新版本：菜单项挂上「有新版本」提示，版本号进 tooltip",
+           menu.NEW_VERSION_SUFFIX in update_action.text()
+           and "v99.0.1" in update_action.toolTip(),
+           f"text={update_action.text()!r} tip={update_action.toolTip()!r}")
+        ok("菜单项仍可用（提示不影响点击，点它照样能显式检查）",
+           update_action.isEnabled(), f"enabled={update_action.isEnabled()}")
+
+        # 已是最新：提示要清掉（别留成"鬼影"）
+        recorder.calls.clear()
+        update_worker.fetch_latest_release = lambda url=None, timeout=None: {
+            "tag_name": f"v{VERSION}", "html_url": "https://example.invalid/x"}
+        controller.check_silently()
+        ok("静默检查发现已是最新：菜单提示被清掉，且依然没有弹窗",
+           wait_until(app, lambda: not controller._checking, timeout=8.0)
+           and update_action.text() == menu.ACTION_UPDATE
+           and recorder.calls == [],
+           f"text={update_action.text()!r}")
+
+        # 静默检查在飞时点菜单 → **升级**为显式检查（不重复发请求）
+        recorder.calls.clear()
+        calls.clear()
+
+        def _slow_again(url=None, timeout=None) -> dict:
+            calls.append(1)
+            time.sleep(0.25)
+            return dict(newer_payload)
+
+        update_worker.fetch_latest_release = _slow_again
+        controller.check_silently()
+        update_action.trigger()
+        ok("静默检查在飞时点菜单：升级成显式检查（出现检查窗、请求只发一次）",
+           len(calls) == 1 and len(recorder.calls) == 1
+           and "正在检查" in recorder.calls[0]["title"],
+           f"requests={len(calls)} 弹窗={[c['title'] for c in recorder.calls]}")
+        ok("升级后结果照常弹结果窗（走的还是最优线路）",
+           wait_until(app, lambda: len(recorder.calls) > 1, timeout=8.0)
+           and recorder.calls[-1]["title"] == "发现新版本 v99.0.1",
+           f"{[c['title'] for c in recorder.calls]}")
+
+        # 静默检查失败：安静收场（断网/限流都常见），不弹框、也不清掉已有提示
+        recorder.calls.clear()
+        update_worker.fetch_latest_release = _boom
+        controller.check_silently()
+        ok("静默检查失败：不弹任何窗，也不谎报「已是最新」",
+           wait_until(app, lambda: not controller._checking, timeout=8.0)
+           and recorder.calls == [],
+           f"弹窗={[c['title'] for c in recorder.calls]}")
+
+        # ---- 5f. 启动接线：静默检查挂在 main() 上（不是 MainWindow.__init__）----
+        from pathlib import Path
+
+        import desktop.app as app_module
+
+        app_src = Path(app_module.__file__).read_text(encoding="utf-8")
+        ok("启动接线：main() 里调度「后台静默检查更新」（而不是塞在 MainWindow.__init__）",
+           "check_silently" in app_src
+           and "STARTUP_UPDATE_CHECK_MS" in app_src
+           and getattr(app_module, "STARTUP_UPDATE_CHECK_MS", 0) > 0,
+           f"delay={getattr(app_module, 'STARTUP_UPDATE_CHECK_MS', None)}")
     finally:
         menu.shell_dialog = real_shell_dialog
         update_worker.fetch_latest_release = real_fetch

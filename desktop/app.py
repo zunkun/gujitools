@@ -56,6 +56,11 @@ WINDOW_MIN_SIZE = QSize(CONTENT_MIN_WIDTH + NAV_COMPACT_WIDTH, 720)
 WINDOW_START_MAXIMIZED = True
 
 
+#: 启动后多久**后台静默**查一次更新（ms，用户 2026-10-15）。与详情页预热
+#: （``MainWindow.PREWARM_DELAY_MS``）错开一点，别挤在启动那一瞬间抢网络/CPU。
+STARTUP_UPDATE_CHECK_MS = 4000
+
+
 class MainWindow(FramelessMainWindow, WorkerHost):
     """主窗口：左侧导航壳层（任务管理 + 独立模块）与详情页跳转。
 
@@ -301,11 +306,21 @@ def main() -> int:
         window.showMaximized()
     else:
         window.show()
+    # 启动后**后台静默**查一次更新（用户 2026-10-15）：有新版本只在「帮助 → 检查
+    # 更新」菜单项上挂提示，不弹任何窗；用户中途点菜单会把这同一次检查升级成显式。
+    # ⚠️ 放在 ``main()`` 而**不是** ``MainWindow.__init__``：自测是直接构造窗口
+    #    （``ctx.w``）的，放 __init__ 会让每个用例都偷偷发一次真实请求，还会污染那些
+    #    把 ``update_worker.fetch_latest_release`` 换成替身的用例。
+    if not os.environ.get("GUJI_GUI_SELFTEST"):
+        controller = getattr(window, "update_controller", None)
+        if controller is not None:
+            QTimer.singleShot(STARTUP_UPDATE_CHECK_MS, controller.check_silently)
     # 列表数据推迟到窗口显示之后的**下一拍**：TaskListPage 首次渲染要建每行的
     # 控件、还要读各任务的 runs.json（实测 ~74 ms），放在 show() 之前等于推迟
     # 窗口出现。先给用户一个空壳窗口，再填内容。
-    from PySide6.QtCore import QTimer
-
+    # ⚠️ 这里的 ``QTimer`` **不要**再写一行函数内 import：QTimer 在模块顶部已经导入，
+    #    函数内重复导入会让它在**那行之前**的用法被 Pyright 判成"未绑定变量"
+    #    （``reportUnboundVariable``）——启动静默检查那次就踩在这上面。
     QTimer.singleShot(0, window.list_page.refresh)
     # ⚠️ 启动**不再**自动跳回上次任务详情页（用户 2026-10-06 改口径）：一律
     #    停在「任务管理」列表页，由用户自己点哪个任务。任务级「上次停留的
@@ -315,8 +330,6 @@ def main() -> int:
     #    只需在这里加一个显式入口，不必重造记录。
     _install_sigint_handler(app)
     if os.environ.get("GUJI_GUI_SELFTEST"):
-        from PySide6.QtCore import QTimer
-
         # 延迟一拍再退出：让事件循环真正转起来，能抓到构造期之外的错误
         QTimer.singleShot(500, app.quit)
     try:
