@@ -159,6 +159,10 @@ class DetailViewMixin:
         _on_box_selection_changed: Callable[..., None]
         _on_box_edit_rejected: Callable[..., None]
         _sync_whole_page_checkbox: Callable[..., None]
+        # 「导出YOLO标注」（开发者模式，DetectMixin 提供）：本层建卡片/接按钮，
+        # 业务与显隐判据在那边——卡片自己不知道"当前是不是 detect 步骤"。
+        export_yolo_labels: Callable[[], None]
+        _wire_yolo_export_card: Callable[[], None]
         _refresh_reference_boxes: Callable[..., None]
         _update_submit_button: Callable[..., None]
         _refresh_imposition_node: Callable[..., None]
@@ -794,11 +798,41 @@ class DetailViewMixin:
         self._build_history_controls(column)
         column.addWidget(Divider())
         self._build_run_controls(column)
+        # 「导出YOLO标注」（开发者模式专属）：右栏**最底部**的独立入口，
+        # 只在 detect 步骤 + 两个开关都打开时出现（用户 2026-10-16）
+        column.addWidget(self._build_yolo_export_card())
 
         # 控制面板限宽：参数表单需要舒适宽度，第四步 YAML 编辑器尤甚
         self.control_widget = card
         self._apply_control_width()
         return self.control_widget
+
+    def _build_yolo_export_card(self) -> Card:
+        """右栏最底部的「导出YOLO标注」（开发者模式专属）。
+
+        与模块页那一侧同一条业务链（``DetectMixin.export_yolo_labels``），
+        只是**宿主不同**：卡片摆在详情页控制列末端，显隐由
+        ``DetectMixin._sync_yolo_export_card`` 按"当前是不是 detect 步骤 +
+        两个开关"决定。
+        """
+        card = Card(padding=T.SPACE_SM, spacing=T.SPACE_XS, radius=T.RADIUS_SM)
+        card.box.addWidget(SectionTitle("YOLO 标注"))
+        self.yolo_export_button = PushButton(FIF.TAG, "导出YOLO标注")
+        self.yolo_export_button.setFixedHeight(34)
+        self.yolo_export_button.setToolTip(
+            "把本任务的页面导出成 YOLO 训练数据集切片（点它先弹窗填名称、"
+            "选导出目录）：\n"
+            "<导出目录>/<名称>/images/<名称>-1.jpg（按页序复制原图）\n"
+            "<导出目录>/<名称>/labels/<名称>-1.txt（同页的框）\n"
+            "没有框的页面写空标签（负样本）。"
+        )
+        self.yolo_export_button.clicked.connect(self.export_yolo_labels)
+        card.box.addWidget(self.yolo_export_button)
+        self.yolo_export_card = card
+        card.setVisible(False)
+        # 显隐与配置订阅交给 DetectMixin（它才知道"当前是不是 detect 步骤"）
+        self._wire_yolo_export_card()
+        return card
 
     def _rembg_panel_factory(self) -> QWidget:
         """第三步面板的**构造工厂**：按当前流程决定 area 是否锁整页。

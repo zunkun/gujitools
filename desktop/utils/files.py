@@ -39,6 +39,24 @@ def reveal_in_explorer(path) -> bool:
         )
     return True
 
+
+def reveal_dir(path) -> bool:
+    """导出收尾用：把 ``path`` **当目录**打开（不存在/不是目录都不弹）。
+
+    ⚠️ 与 :func:`reveal_in_explorer` 的差别只有一个"不存在就不弹"：
+    那个是"用户在界面上主动点某个已知文件/目录"，找不到就该当场报错；这个跑在
+    **导出完成回调**里，路径由本次导出刚刚算出（可能是 worker 线程回传的
+    统计值），不给用户弹一个"找不到"的失败框——导出明明成功了。
+
+    用户 2026-10-16：「导出成功后，打开相应的目录」。
+    """
+    target = Path(path)
+    if not target.is_dir():
+        return False
+    os.startfile(str(target))  # type: ignore[attr-defined]
+    return True
+
+
 # 页缩略图（thumbnails/source 等）的最长边；256px 保证 area=1 半幅裁剪后仍清晰
 THUMBNAIL_EDGE = 256
 
@@ -74,6 +92,24 @@ def safe_dirname(name: str) -> str:
 def singletask_dir(subtask: str) -> Path:
     """独立任务区下某个**子任务**的目录：``~/Documents/guji/singletask/<子任务>``。"""
     return guji_data_dir() / SINGLETASK_DIRNAME / safe_dirname(subtask)
+
+
+#: 独立任务页「导出YOLO标注」的记忆文件名（记上次填的名称与导出目录）。
+SINGLETASK_YOLO_EXPORT_NAME = "yolo_export.json"
+
+
+def singletask_yolo_export_path(subtask: str) -> Path:
+    """独立任务页「导出YOLO标注」的记忆文件。
+
+    用户 2026-10-16：「导出目录，和前缀都要保存下来，跟任务绑定」——任务流程
+    那一侧记在 ``tasks/<id>/ui.json``（见 ``desktop.store.ui_state``），独立
+    任务这一侧按**子任务**记一份（名称 + 目录两个键），即
+    ``~/Documents/guji/singletask/<子任务>/yolo_export.json``。
+
+    ⚠️ 按子任务记（而不是"每次导出"）：同一批图常要分几次导成不同前缀
+    （b1 / b2…）汇进同一个数据集根，每次都重填纯属折腾。
+    """
+    return singletask_dir(subtask) / SINGLETASK_YOLO_EXPORT_NAME
 
 
 #: **程序更新**产物目录名（相对 :func:`guji_data_dir`）：应用内下载的安装包落点。

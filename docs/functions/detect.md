@@ -149,6 +149,39 @@ python tools/dump_detect.py 可疑页.jpg --save out/ # 另存标注图
 「整幅-半幅-整幅-半幅」四个框），因此不要靠提高推理分辨率来"修"它；
 训练与生产都固定用 640。
 
+### 校验导出的 YOLO 数据集（桌面端「导出YOLO标注」）
+
+桌面端导出的切片（`<导出目录>/<名称>/{images,labels}/`）用
+`tools/check_yolo_dataset.py` 核。⚠️ **别拿界面上的「导出标注图」当校验**：
+那张核对图与 `labels/*.txt` 是**同一份内存坐标**的两个出口，分母算错、左右
+写反、序号错位都会一起错，摆在一起看永远"一致"。本工具只从落地文件反推：
+
+```bash
+# 导出时把**任务号**写进了 <切片>/data.json，所以一条命令就够：
+python tools/check_yolo_dataset.py C:/Users/liuzu/Documents/b8
+
+# 切片是老版本导的（没有 data.json）→ 显式给任务号
+python tools/check_yolo_dataset.py D:/ds/bookcontent/b1 --task 0020
+
+# 独立「检测文本框」导出的切片不属任何任务 → 自己给页序与基准
+python tools/check_yolo_dataset.py D:/ds/bookcontent/b1 \
+    --pages 某批图/ --boxes 输出目录/boxes.json
+```
+
+四层校验：① 图/标签逐编号配对（空标签是**负样本**、缺文件才是漏写）② 每行
+5 字段、类别号 ∈ {0,1}、归一化范围 ③ 反算回像素与基准**逐框**比（`--tol`，
+默认 2px）④ 把标签反画回图写到 `<切片>/_check/`，供人眼翻页看"左右框错边"
+这类只有眼睛能判的错。
+
+`data.json` 还会核对**类别顺序**（与 `utils.box_geometry.YOLO_CLASS_NAMES`
+不一致就报错——按老顺序训练会让两类互换）；任务被删掉时只警告、跳过基准比对，
+不影响其余三层。退出码 `0` 通过 / `1` 有错误（`[FAIL]`）/ `2` 用法问题；
+`--no-overlay` 跳过第 ④ 层。它**只读**输入，只写核对图目录。
+
+导出弹窗里的**名称**默认是 `b<任务号>`（如 `b0020`）；**导出过一次之后按任务
+记住你改过的那个名字**（存在 `tasks/<任务号>/ui.json`），下次进去回填的就是
+`bxxxa` 而不是默认值。
+
 ### 模型加载
 
 - 权重文件路径：`gujitools/static/weights/bookcontent.pt`

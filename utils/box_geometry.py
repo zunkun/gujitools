@@ -102,6 +102,23 @@ PAGE_CLASS_HARFCONTENT = "harfcontent"   # 半幅：左右两栏齐全
 PAGE_CLASS_SINGLE = "single"             # 单独页：半幅只检出一栏（左或右）
 PAGE_CLASS_EMPTY = "empty"               # 无文本框
 
+#: **YOLO 训练数据集**的类别顺序（用户 2026-10-16 给定，与训练侧
+#: ``data.yaml`` 的 ``names: ["harfcontent", "fullcontent"]`` 一字不差）。
+#:
+#: ⚠️ **类别编号 = 列表下标，顺序不可调整**——0 号已经训练过（现有权重按
+#: 「0 = 半幅」产出），改动顺序等于让已有权重与标注整体错位。
+#:
+#: 映射规则（导出 YOLO 标签时用）：
+#:
+#: - **左框、右框都归 0 号 ``harfcontent``**——它是"一栏"这个语义，
+#:   数据集里不分左右（左右是下游 crop 的事，与训练无关）；
+#: - 整幅框归 1 号 ``fullcontent``。
+YOLO_CLASS_NAMES: Tuple[str, str] = (PAGE_CLASS_HARFCONTENT, PAGE_CLASS_FULLCONTENT)
+
+#: 半幅 / 整幅的类别编号——从 :data:`YOLO_CLASS_NAMES` **派生**，不另写数字。
+YOLO_CLASS_ID_HARF: int = YOLO_CLASS_NAMES.index(PAGE_CLASS_HARFCONTENT)
+YOLO_CLASS_ID_FULL: int = YOLO_CLASS_NAMES.index(PAGE_CLASS_FULLCONTENT)
+
 
 def classify_page_slots(slots) -> str:
     """页的**槽位**表示 → 页形态分类键（四类见 `PAGE_CLASS_*` 常量）。

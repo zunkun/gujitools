@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 171 个模块、188 个公开类、1285 个公开函数/方法（生成于 2026-10-16）。
+覆盖 174 个模块、191 个公开类、1309 个公开函数/方法（生成于 2026-10-16）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -92,16 +92,17 @@
 | [`desktop.components.viewers.rembg_viewer.thumbs`](#desktopcomponentsviewersrembg_viewerthumbs) | 1 | 3 |
 | [`desktop.components.viewers.thumb_strip`](#desktopcomponentsviewersthumb_strip) | 1 | 10 |
 | [`desktop.components.viewers.thumbs_loader`](#desktopcomponentsviewersthumbs_loader) | 1 | 1 |
+| [`desktop.components.yolo_export_dialog`](#desktopcomponentsyolo_export_dialog) | 1 | 6 |
 | [`desktop.modules`](#desktopmodules) | 1 | 1 |
 | [`desktop.modules.base`](#desktopmodulesbase) | 2 | 19 |
-| [`desktop.modules.detect.page`](#desktopmodulesdetectpage) | 1 | 16 |
+| [`desktop.modules.detect.page`](#desktopmodulesdetectpage) | 1 | 17 |
 | [`desktop.modules.extract.page`](#desktopmodulesextractpage) | 1 | 5 |
 | [`desktop.modules.imposition.page`](#desktopmodulesimpositionpage) | 1 | 4 |
 | [`desktop.modules.print.page`](#desktopmodulesprintpage) | 1 | 4 |
 | [`desktop.modules.rembg.page`](#desktopmodulesrembgpage) | 1 | 5 |
 | [`desktop.modules.thumb_source`](#desktopmodulesthumb_source) | 1 | 4 |
 | [`desktop.pages.createtask.page`](#desktoppagescreatetaskpage) | 1 | 6 |
-| [`desktop.pages.taskdetail.detect`](#desktoppagestaskdetaildetect) | 1 | 9 |
+| [`desktop.pages.taskdetail.detect`](#desktoppagestaskdetaildetect) | 1 | 10 |
 | [`desktop.pages.taskdetail.flow_mixin`](#desktoppagestaskdetailflow_mixin) | 1 | 0 |
 | [`desktop.pages.taskdetail.history`](#desktoppagestaskdetailhistory) | 1 | 0 |
 | [`desktop.pages.taskdetail.imposition`](#desktoppagestaskdetailimposition) | 2 | 5 |
@@ -117,7 +118,7 @@
 | [`desktop.pages.taskdetail.view`](#desktoppagestaskdetailview) | 2 | 5 |
 | [`desktop.pages.taskflow.page`](#desktoppagestaskflowpage) | 1 | 2 |
 | [`desktop.pages.tasklist.page`](#desktoppagestasklistpage) | 1 | 7 |
-| [`desktop.services.detect_export`](#desktopservicesdetect_export) | 0 | 3 |
+| [`desktop.services.detect_export`](#desktopservicesdetect_export) | 0 | 7 |
 | [`desktop.services.font_catalog`](#desktopservicesfont_catalog) | 1 | 6 |
 | [`desktop.services.imposition`](#desktopservicesimposition) | 0 | 28 |
 | [`desktop.services.print_plan`](#desktopservicesprint_plan) | 0 | 5 |
@@ -126,7 +127,9 @@
 | [`desktop.services.stale_chain`](#desktopservicesstale_chain) | 0 | 4 |
 | [`desktop.services.submit_state`](#desktopservicessubmit_state) | 0 | 1 |
 | [`desktop.services.yolo_prewarm`](#desktopservicesyolo_prewarm) | 0 | 3 |
-| [`desktop.shell`](#desktopshell) | 1 | 19 |
+| [`desktop.settings.config`](#desktopsettingsconfig) | 1 | 4 |
+| [`desktop.settings.page`](#desktopsettingspage) | 1 | 2 |
+| [`desktop.shell`](#desktopshell) | 1 | 21 |
 | [`desktop.single_instance`](#desktopsingle_instance) | 0 | 5 |
 | [`desktop.stages.detect_stage`](#desktopstagesdetect_stage) | 0 | 2 |
 | [`desktop.stages.events`](#desktopstagesevents) | 2 | 9 |
@@ -151,7 +154,7 @@
 | [`desktop.store.runs`](#desktopstoreruns) | 1 | 8 |
 | [`desktop.store.store`](#desktopstorestore) | 1 | 1 |
 | [`desktop.store.tasks`](#desktopstoretasks) | 1 | 40 |
-| [`desktop.store.ui_state`](#desktopstoreui_state) | 1 | 6 |
+| [`desktop.store.ui_state`](#desktopstoreui_state) | 1 | 8 |
 | [`desktop.ui.color_picker`](#desktopuicolor_picker) | 5 | 30 |
 | [`desktop.ui.font_setup`](#desktopuifont_setup) | 2 | 8 |
 | [`desktop.ui.fonts`](#desktopuifonts) | 0 | 2 |
@@ -164,7 +167,7 @@
 | [`desktop.ui.toast`](#desktopuitoast) | 0 | 1 |
 | [`desktop.ui.widgets`](#desktopuiwidgets) | 10 | 48 |
 | [`desktop.ui.window_size`](#desktopuiwindow_size) | 0 | 3 |
-| [`desktop.utils.files`](#desktoputilsfiles) | 0 | 21 |
+| [`desktop.utils.files`](#desktoputilsfiles) | 0 | 23 |
 | [`desktop.utils.icon`](#desktoputilsicon) | 0 | 3 |
 | [`desktop.worker`](#desktopworker) | 0 | 1 |
 | [`desktop.workers.copy_source_worker`](#desktopworkerscopy_source_worker) | 2 | 4 |
@@ -5702,6 +5705,68 @@ Delete/Backspace → ``delete_requested``。
 
 ---
 
+## `desktop.components.yolo_export_dialog`
+
+源码：[`desktop/components/yolo_export_dialog.py`](../../desktop/components/yolo_export_dialog.py)
+
+「导出YOLO标注」的弹窗：选导出目录 + 填名称（父节点名 = 文件名前缀）。
+
+用户 2026-10-16 定的三条：
+
+1. 点按钮**先弹窗**（不是直接开导）；
+2. **名称**一个字段，同时当导出目录下的**父节点名**与**文件名前缀**——
+   填 ``b1`` 就是 ``b1-1.jpg`` / ``b1-1.txt``（``x`` 是**页序序号**，从 1 起）；
+3. 弹窗里有「取消」「确认导出」两个按钮。
+
+外壳用 :func:`desktop.components.dialog_shell.shell_dialog`（仓库里"标题 + 内容
++ 底部按钮"的唯一实现），本模块只提供里面的**内容面板**与一个
+:func:`ask_yolo_export` 入口。
+
+⚠️ 「导出目录」由调用方从**上次记住的值**回填（任务级 / 独立任务级各记一份，
+见 ``desktop/store/ui_state.py`` 与 ``desktop/utils/files.py``）；调用方给空时
+本模块自己兜底成**文档目录**（用户 2026-10-16：「导出目录默认是 ~/Documents」）
+——本模块不认识存储，只认"拿到什么显示什么 + 空值怎么兜"。「名称」的默认值
+（任务号 / 源名）由**宿主**给，因为只有它知道当前是哪本书。
+
+### `class YoloExportPanel(QWidget)`
+
+导出参数面板：导出目录（只读 + 选择…）+ 名称 + 落点预览。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(directory: str \| Path \| None=None, name: str='', parent=None)` | ``directory`` / ``name`` 是回填值（上次记住的那一份）。 |
+| `directory() -> str` | 当前导出目录（空串 = 还没选）。 |
+| `name() -> str` | 当前名称（空串 = 还没填）。 |
+| `values() -> tuple[str, str]` | ``(名称, 导出目录)``。 |
+| `set_warning(text: str) -> None` | 在面板里写一行红色提示（空串则隐藏）。 |
+
+##### `__init__(directory: str | Path | None=None, name: str='', parent=None)`
+
+``directory`` / ``name`` 是回填值（上次记住的那一份）。
+
+⚠️ ``directory`` 为空时默认**文档目录**（``default_open_dir()``，用户
+2026-10-16：「导出目录默认是 ~/Documents」）——留一个空输入框等于让用户
+每次都从零点起；文档目录是所有"我要导出去的东西"的共同起点。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `ask_yolo_export(parent, directory: str \| Path \| None=None, name: str='') -> tuple[str, str] \| None` | 弹「导出YOLO标注」窗。 |
+
+#### `ask_yolo_export(parent, directory: str | Path | None=None, name: str='') -> tuple[str, str] | None`
+
+弹「导出YOLO标注」窗。
+
+返回 ``(名称, 导出目录)``；用户点「取消」（或直接关窗）返回 ``None``。
+
+⚠️ 校验放在 ``on_ok`` 里（而不是"关完再看"）：名称或目录空着时**不关窗**，
+把红色提示写在面板里让用户当场补——关掉再弹一次抱怨"没填名称"很烦人。
+
+---
+
 ## `desktop.modules`
 
 源码：[`desktop/modules/__init__.py`](../../desktop/modules/__init__.py)
@@ -5937,6 +6002,12 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
      ``tasks/<id>/boxes.json`` **逐字段一致**（``{stem: {boxes, origin,
      updated_at}}``），可直接当作下一步（或将来自定义流程里任意一步）的输入。
 
+4. **开发者模式**打开且「启用YOLO标注」勾上时，导出区最底部多一个
+   「**导出YOLO标注**」（用户 2026-10-16）：点它先弹窗填**名称**（父节点名 =
+   文件名前缀）并选**导出目录**（按子任务记住上次选的），确认后把全部页面
+   导出成 YOLO 数据集切片 ``<导出目录>/<名称>/{images,labels}/<名称>-1.…``
+   （类别顺序见 ``utils.box_geometry.YOLO_CLASS_NAMES``；无框页写空标签当负样本）。
+
 ⚠️ **槽位约定**（半幅 2 槽 ``[左, 右]``、整幅 1 槽 ``[整幅]``）的全部规则来自
 ``utils.box_geometry``（``page_box_slots_from_event`` 读事件、``half_slots`` 收
 人工框），人工干预的**交互流**（切类型 / 整幅互斥确认 / 删框）在
@@ -5956,6 +6027,10 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 | 名称 | 值 |
 | --- | --- |
 | EXPORT_NAME | `"boxes.json"` |
+| _EXPORT_ANNOTATED | `"annotated"` |
+| _EXPORT_YOLO | `"yolo"` |
+| _YOLO_EXPORT_DIR_KEY | `"yolo_export_dir"` |
+| _YOLO_EXPORT_NAME_KEY | `"yolo_export_name"` |
 
 ### `class DetectModulePage(StepModulePage, ThumbSourceMixin)`
 
@@ -5980,6 +6055,7 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 | `box_current_path_text() -> str` | — |
 | `export_boxes() -> None` | 把各页框坐标写成 ``<输出目录>/boxes.json``（与任务流程同格式）。 |
 | `export_annotated_images() -> None` | 把框画回原图导出成 PNG：先选目录，**目录已存在就问是否覆盖**。 |
+| `export_yolo_labels() -> None` | 导出 YOLO 数据集切片：先弹窗填**名称**与选**导出目录**（用户 2026-10-16）。 |
 | `shutdown_workers() -> None` | 收尾：查看器自己的后台线程 + 两个执行线程（检测、导出标注图）。 |
 
 ##### `edit_effect_note(path: Path) -> str`
@@ -6025,6 +6101,22 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 ⚠️ 确认框里**不列文件名**：一屏几十页列出来反而看不过来，只说清
 「同名覆盖、其余保留」——本模块只写自己的 ``<stem>.png``，绝不动
 目录里别的文件（``export_annotated`` 没有任何删除逻辑）。
+
+##### `export_yolo_labels() -> None`
+
+导出 YOLO 数据集切片：先弹窗填**名称**与选**导出目录**（用户 2026-10-16）。
+
+弹窗的两个默认值都取**上次记住的那一份**（独立任务页记在
+``singletask/<子任务>/yolo_export.json``，见
+:func:`desktop.utils.files.singletask_yolo_export_path`）：同一批图分几次
+导成不同前缀时要汇进同一个数据集根，重填重选纯属折腾。
+
+**没记过时**：导出目录默认文档目录（``YoloExportPanel`` 自己兜底），
+名称回落当前源的名（独立页没有任务号，源名就是"这一批图叫什么"的唯一
+线索；任务流程那边默认的是任务号，见 ``DetectMixin._yolo_dataset_name``）。
+
+⚠️ 导出的是**全部图片**（不止有框的页）：没有框的页照样复制图片 + 写
+空标签当负样本（用户 2026-10-16：「写空标签当负样本」）。
 
 ---
 
@@ -6563,6 +6655,20 @@ detect_process/detect_cache、current_stage()。
 | `box_confirm(title: str, body: str, yes_text: str, cancel_text: str) -> bool` | — |
 | `box_full_declined(index: int) -> None` | — |
 | `box_current_path_text() -> str` | — |
+| `export_yolo_labels() -> None` | 导出 YOLO 数据集切片：先弹窗，确认后在后台线程复制图片 + 写标签。 |
+
+##### `export_yolo_labels() -> None`
+
+导出 YOLO 数据集切片：先弹窗，确认后在后台线程复制图片 + 写标签。
+
+导出的页面清单就是第二步左栏那份（``_manifest_paths``，只含还存在的
+文件）；**没有框的页也照导**（图片 + 空标签 = 负样本，用户 2026-10-16）。
+弹窗的两个默认值都取**本任务上次记住的那一份**（名称 + 导出目录，存在
+任务目录的 ``ui.json`` 里，见 ``store.ui_state``）——用户 2026-10-16：
+「导出目录，和前缀都要保存下来，跟任务绑定」。
+
+**没记过时**：导出目录默认文档目录（``YoloExportPanel`` 自己兜底）、
+名称默认任务号（``_yolo_dataset_name``）。
 
 ---
 
@@ -7547,19 +7653,108 @@ GUI 主进程**绝不能**在这里 import 到 cv2（实测 ``import functions.d
 适合线框标注）。用 ``.png`` 而不是原图的后缀，是因为标注图是**中间核对
 产物**，不该让人误以为能替换原图。
 
+**YOLO 数据集切片**（:func:`export_yolo`，用户 2026-10-16）是同一批框的另一种
+交付形态：按页序把原图复制成 ``<名称>-1.jpg``、标签写成同名的
+``<名称>-1.txt``，一起放进 ``<导出目录>/<名称>/{images,labels}/``（名称同时
+是父节点目录名与文件名前缀，默认取任务名/源名）。没有框的页写**空文件**
+（负样本）。两类别的映射见 ``utils.box_geometry`` 的 ``YOLO_CLASS_NAMES``
+（左框/右框都算 0 号 harfcontent，整幅是 1 号 fullcontent）——那是唯一一份
+类别顺序，本模块不重抄。
+
 ### 模块常量
 
 | 名称 | 值 |
 | --- | --- |
 | EXPORT_SUFFIX | `".png"` |
+| YOLO_IMAGES_DIRNAME | `"images"` |
+| YOLO_LABELS_DIRNAME | `"labels"` |
+| YOLO_LABEL_SUFFIX | `".txt"` |
+| SLICE_META_NAME | `"data.json"` |
 
 ### 模块函数
 
 | 函数 | 说明 |
 | --- | --- |
+| `yolo_dataset_dir(dest, name: str) -> Path` | ``(导出的父目录, 名称)`` → 这一次导出的数据集切片目录。 |
+| `yolo_entries(images: Sequence, boxes: Mapping[str, Sequence]) -> list` | ``(图片清单, {页名去后缀: 槽位})`` → :func:`export_yolo` 的入参。 |
+| `yolo_label_lines(slots, image_size) -> Optional[list]` | 槽位 + 原图尺寸 → YOLO 标签行；**尺寸未知且有框**时返回 ``None``。 |
+| `export_yolo(entries: Iterable[tuple], dest: Path \| str, name: str, task_id: str='', source: str='', report: Optional[Callable[[str], None]]=None, progress: Optional[Callable[[int, int], None]]=None) -> dict` | 把一批 ``(图片路径, 槽位)`` 导出成 YOLO 数据集的**一整块切片**。 |
 | `annotated_name(source: Path \| str) -> str` | 原图路径 → 标注图**文件名**（``<stem>.png``）。 |
 | `export_annotated(entries: Iterable[tuple], dest: Path \| str, report: Optional[Callable[[str], None]]=None, progress: Optional[Callable[[int, int], None]]=None) -> list` | 把一批 ``(图片路径, 槽位)`` 画框后写到 ``dest``。 |
 | `entries_from_mapping(images: Sequence, boxes: Mapping[str, Sequence]) -> list` | ``(图片清单, {页名去后缀: 槽位})`` → :func:`export_annotated` 的入参。 |
+
+#### `yolo_dataset_dir(dest, name: str) -> Path`
+
+``(导出的父目录, 名称)`` → 这一次导出的数据集切片目录。
+
+用户 2026-10-16 定的形状（「就是要有个父节点名称」）::
+
+    <dest>/<name>/
+        images/<name>-1.jpg     # 原图按页序复制（保留原后缀）
+        labels/<name>-1.txt     # 同名标签；没有框的页是空文件（负样本）
+
+名称同时是**父节点目录名**与**文件名前缀**（一个字段，见设置页与弹窗）。
+按 :func:`desktop.utils.files.safe_dirname` 洗掉非法字符——它要当目录名
+也要当文件名前缀。
+
+#### `yolo_entries(images: Sequence, boxes: Mapping[str, Sequence]) -> list`
+
+``(图片清单, {页名去后缀: 槽位})`` → :func:`export_yolo` 的入参。
+
+⚠️ 与 :func:`entries_from_mapping` 的**唯一区别**：这里**一张不落**。
+没有框的页也要出一份**空标签**当负样本（用户 2026-10-16：「写空标签当
+负样本」）——按"只取有框的页"过滤会把整批的背景页全丢掉，训练出来的模型
+只见过"有内容"的页面。
+
+#### `yolo_label_lines(slots, image_size) -> Optional[list]`
+
+槽位 + 原图尺寸 → YOLO 标签行；**尺寸未知且有框**时返回 ``None``。
+
+行格式（YOLO detection 的标准形）::
+
+    <类别号> <cx> <cy> <w> <h>      # 四个数都按图宽/图高归一化到 0~1
+
+- 无框 → 空表（调用方照样写文件，那就是负样本）；
+- 有框、尺寸读不出来（图被删/损坏）→ ``None``：归一化没有基准，只能跳过
+  这一页（写空标签等于把"有框的页"谎报成负样本，比跳过更糟）；
+- 类别号取自 ``utils.box_geometry`` 的类别顺序（**左框/右框都算半幅**，
+  整幅才是 1 号），本函数不另写数字。
+
+#### `export_yolo(entries: Iterable[tuple], dest: Path | str, name: str, task_id: str='', source: str='', report: Optional[Callable[[str], None]]=None, progress: Optional[Callable[[int, int], None]]=None) -> dict`
+
+把一批 ``(图片路径, 槽位)`` 导出成 YOLO 数据集的**一整块切片**。
+
+参数：
+
+- ``entries``：``[(图片路径, 槽位), …]``，**应含无框的页**（见
+  :func:`yolo_entries`）——列表顺序即导出编号顺序（``<名称>-1``、
+  ``<名称>-2``…），调用方按页序给；
+- ``dest``：用户在弹窗里选的**导出目录**（这批切片放它下面）；
+- ``name``：父节点名 = 文件名前缀（弹窗里的「名称」字段）；
+- ``task_id`` / ``source``：来龙去脉，写进切片的 ``data.json``（见
+  :data:`SLICE_META_NAME`）。任务流程那条链有任务号，独立页那条链只有源名
+  （可以是空串，字段照写）；
+- ``report`` / ``progress``：同 :func:`export_annotated`。
+
+落点（见 :func:`yolo_dataset_dir`）::
+
+    <dest>/<name>/images/<name>-1.jpg     # 原图复制（保留原后缀）
+    <dest>/<name>/labels/<name>-1.txt     # 同名标签；无框 → 空文件（负样本）
+    <dest>/<name>/data.json               # 本次导出的凭据（任务号/类别顺序/统计）
+
+返回统计（供界面写状态行）::
+
+    {"folder": Path, "images": [路径, …], "labels": [路径, …],
+     "labeled": 有框页数, "empty": 空标签页数, "skipped": [页名, …],
+     "boxes": 写进去的框总数}
+
+⚠️ **图片是复制过去的**（用户 2026-10-16 改定，推翻此前"只写标签"）：
+源图随时可能被删/被移走，而训练集必须自包含——图片与标签同名同号地放在
+同一块切片里，直接把它拷进数据集根目录就能训。
+
+⚠️ 单页失败（源图被删、读不出尺寸、磁盘写不动）**只跳过这一页**，不中断
+整批：编号仍按它在清单里的位置算，不重排（重排会让"第 7 页"变成别的页，
+对不上原始来源）。
 
 #### `export_annotated(entries: Iterable[tuple], dest: Path | str, report: Optional[Callable[[str], None]]=None, progress: Optional[Callable[[int, int], None]]=None) -> list`
 
@@ -8399,6 +8594,98 @@ done/total 为 0、completed 为 False）。执行过哪怕失败/中断都算�
 
 ---
 
+## `desktop.settings.config`
+
+源码：[`desktop/settings/config.py`](../../desktop/settings/config.py)
+
+应用级偏好设置：qfluentwidgets 的 ``QConfig`` + 本程序自己的配置项。
+
+用户 2026-10-16 指名的做法（qfluentwidgets 的 Config 文档）：配置项声明成
+``ConfigItem``，读写交给库自带的全局 ``qconfig``，界面侧用 ``SettingCard``
+直接绑配置项（见 :mod:`desktop.settings.page`）。
+
+**与项目约定的接口只有一个**：配置文件的位置。qconfig 默认写
+``config/config.json``——那是**相对当前工作目录**的路径，开发期会把文件写进
+仓库根、打包后可能落到安装目录（只读）。所以这里用 ``qconfig.load(file, cfg)``
+把它指到数据根目录（``~/Documents/guji/config.json``，与 ``tasks/`` 同级），
+与其它状态文件放在一起。
+
+⚠️ **``qconfig.load`` 全程序只调一次**：它把全局 ``qconfig`` 的存取/落盘
+整体转交给传进去的实例，重复调用等于把内存里的改动丢掉重读磁盘。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| CONFIG_FILENAME | `"config.json"` |
+
+### `class AppConfig(QConfig)`
+
+本程序的应用级配置项。
+
+⚠️ **必须是 ``QConfig`` 的子类、且配置项写成类属性**：``qconfig.load``
+与 ``save`` 都靠 ``dir(cls)`` 把 ``ConfigItem`` 找回来落盘。写成实例属性
+的话存得进去、读不回来。
+
+新增一个开关 = 在这里加一个 ``ConfigItem`` + 在设置页摆一张
+``SwitchSettingCard``（绑上它即可，读写/落盘全免）。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `config_path() -> Path` | 配置文件路径：数据根目录下的 ``config.json``。 |
+| `app_config() -> AppConfig` | 取应用配置（首次调用时从磁盘载入；重复调用返回同一个实例）。 |
+| `developer_mode() -> bool` | 开发者模式是否打开。 |
+| `yolo_annotation() -> bool` | 是否启用 YOLO 标注（「导出YOLO标注」按钮的显示条件之一）。 |
+
+#### `app_config() -> AppConfig`
+
+取应用配置（首次调用时从磁盘载入；重复调用返回同一个实例）。
+
+⚠️ 不能写成"模块导入时载入"：本模块会被**未建窗口**的路径碰到（自测、
+将来可能的批处理入口），导入期读写文件是不该有的副作用。
+
+---
+
+## `desktop.settings.page`
+
+源码：[`desktop/settings/page.py`](../../desktop/settings/page.py)
+
+设置页（左侧栏底部「设置」进的那一页）。
+
+用户 2026-10-16：
+
+> 1. 左侧栏开启设置菜单；2. 菜单里面有「启用开发者模式」胶囊；
+>    开发者模式下有各种选项（目前只有 a. 是否启用YOLO标注）。
+
+界面照 qfluentwidgets 的设置页范式（用户给的 SettingCard 参考）：一张
+``SettingCard`` = 一行「图标 + 标题 + 说明 + 右侧控件」，多张归进一个
+``SettingCardGroup``。开关用 ``SwitchSettingCard``，它**直接绑配置项**
+（``configItem=…``）——勾选即落盘，本页不自己存值。
+
+⚠️ **「启用YOLO标注」是开发者模式的下级选项**：开发者模式关着时它整张卡
+藏起来（``SettingCardGroup`` 的 ``ExpandLayout`` 会跳过隐藏项，但**组自己的
+高度**是算好的，所以藏完必须补一次 ``adjustSize()``，否则卡片下方留一块
+空白）。
+
+### `class SettingsPage(QWidget)`
+
+设置页：目前只有「开发者模式」与它下面的开发选项。
+
+⚠️ 页面**没有**自己的导航条目概念——它由壳层（``desktop/shell.py``）
+挂在导航栏底部并切页，与各步骤的独立模块页是两回事（模块页来自
+``MODULES`` 注册表，那一条链不许被本页污染）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(parent=None)` | 建页头 + 设置卡片组（配置项绑在卡片上，本页不另存值）。 |
+| `sync_dev_options(*_args) -> None` | 按「开发者模式」开关显隐下级选项（并重算卡片组高度）。 |
+
+---
+
 ## `desktop.shell`
 
 源码：[`desktop/shell.py`](../../desktop/shell.py)
@@ -8443,6 +8730,7 @@ done/total 为 0、completed 为 False）。执行过哪怕失败/中断都算�
 | ROUTE_DETAIL | `"detail"` |
 | ROUTE_CREATE | `"create"` |
 | ROUTE_FLOW | `"flow"` |
+| ROUTE_SETTINGS | `"settings"` |
 
 ### `class ModuleShell(QWidget)`
 
@@ -8468,6 +8756,8 @@ done/total 为 0、completed 为 False）。执行过哪怕失败/中断都算�
 | `back_to_list() -> None` | 详情页「返回」→ 切回列表并刷新。 |
 | `show_module(key: str) -> None` | 切到某个模块页；首次进入时惰性构造。 |
 | `module_page(key: str) -> QWidget \| None` | 已构造的模块页；**没建过返回 None**（自测用它断言"惰性没被破坏"）。 |
+| `settings_page() -> SettingsPage` | 设置页（惰性构造；外部截图/自测按这个方法取）。 |
+| `show_settings() -> None` | 切到设置页（左侧导航栏底部的「设置」条目走这里）。 |
 | `rebind_store(store: TaskStore) -> None` | 把壳层与**已建页面**上的 store 引用一起换掉（换数据目录用）。 |
 | `current_route() -> str` | 当前**显示中**页面的路由键。 |
 | `selected_route() -> str` | 导航栏**当前高亮**的条目路由键。 |
@@ -11826,7 +12116,9 @@ rembg 最终目录；print 返回 print.pdf 所在目录。
 
 **任务级**——``tasks/<任务号>/ui.json``（删除任务即清掉）：
 
-    {"last_stage": "rembg"}      # 上次在这个任务里停留的步骤 key
+    {"last_stage": "rembg",                     # 上次在这个任务里停留的步骤 key
+     "yolo_export_name": "b1",                  # 「导出YOLO标注」上次填的名称/前缀
+     "yolo_export_dir": "D:/…/bookcontent"}     # 同上，上次选的导出目录
 
 **为什么记 key 而不是下标**：流程里的步骤会增减（「图片拼版」虚线节点就是
 条件出现的可选步骤），下标一旦错位就会把用户送到**另一个**步骤去；key 是按
@@ -11847,6 +12139,13 @@ key 取自 ``desktop.store.tasks``：``STAGES`` 里的一项，或伪步骤
 
 ⚠️ 只做「读—写」，不碰 Qt。
 
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| YOLO_EXPORT_DIR_KEY | `"yolo_export_dir"` |
+| YOLO_EXPORT_NAME_KEY | `"yolo_export_name"` |
+
 ### `class UIStateMixin`
 
 ``ui.json`` 的读写（任务级 + 全局）。
@@ -11861,6 +12160,8 @@ key 取自 ``desktop.store.tasks``：``STAGES`` 里的一项，或伪步骤
 | `ui_state_path(task_id: str) -> Path` | 任务界面状态文件：``tasks/<任务号>/ui.json``。 |
 | `load_last_stage(task_id: str) -> str \| None` | 上次停留的步骤 key；没有记录/格式不对返回 None。 |
 | `save_last_stage(task_id: str, stage: str) -> bool` | 记录上次停留的步骤 key，返回是否真的写了。 |
+| `load_yolo_export_state(task_id: str) -> dict` | 本任务上次导出 YOLO 数据集时填的 ``{"name": …, "directory": …}``。 |
+| `save_yolo_export_state(task_id: str, name: str, directory: str) -> bool` | 记住本任务这次导出的名称与目录，返回是否真的写了。 |
 
 ##### `load_last_task() -> dict | None`
 
@@ -11885,6 +12186,22 @@ key 取自 ``desktop.store.tasks``：``STAGES`` 里的一项，或伪步骤
 任务目录已删除时跳过（与 ``save_pages``/``save_imposition_doc``
 同一条规矩：不把已删任务重新创建出来）。文件里只覆盖 ``last_stage``
 一项，将来加别的界面状态互不影响。
+
+##### `load_yolo_export_state(task_id: str) -> dict`
+
+本任务上次导出 YOLO 数据集时填的 ``{"name": …, "directory": …}``。
+
+用户 2026-10-16：「导出目录，和前缀都要保存下来，跟任务绑定」——同一
+本书导多批（换前缀、汇进同一个数据集根）时不必每次重填。两个键总是
+存在，没记过就是空串（调用方据此回落自己的默认值），省得每处判 None。
+与 ``last_stage`` 同放 ``tasks/<id>/ui.json``：删任务即随之清掉。
+
+##### `save_yolo_export_state(task_id: str, name: str, directory: str) -> bool`
+
+记住本任务这次导出的名称与目录，返回是否真的写了。
+
+与 :meth:`save_last_stage` 同规矩：任务目录没了就不写（不把已删任务
+重新创建出来），且只覆盖自己那两项、不动 ``last_stage``。
 
 ---
 
@@ -13179,6 +13496,7 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 | THUMBNAIL_EDGE | `256` |
 | SINGLETASK_DIRNAME | `"singletask"` |
 | _SAFE_CHARS | `"<>:"/\\\|?*"` |
+| SINGLETASK_YOLO_EXPORT_NAME | `"yolo_export.json"` |
 | UPDATES_DIRNAME | `"updates"` |
 
 ### 模块函数
@@ -13186,9 +13504,11 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 | 函数 | 说明 |
 | --- | --- |
 | `reveal_in_explorer(path) -> bool` | 在 Windows 资源管理器里打开 ``path`` 的位置（2026-10-11 用户需求）。 |
+| `reveal_dir(path) -> bool` | 导出收尾用：把 ``path`` **当目录**打开（不存在/不是目录都不弹）。 |
 | `guji_data_dir() -> Path` | GUI 数据根目录：用户文档目录下的 guji。 |
 | `safe_dirname(name: str) -> str` | 把任意标题洗成能当目录名的一串（去掉非法字符、收敛空白）。 |
 | `singletask_dir(subtask: str) -> Path` | 独立任务区下某个**子任务**的目录：``~/Documents/guji/singletask/<子任务>``。 |
+| `singletask_yolo_export_path(subtask: str) -> Path` | 独立任务页「导出YOLO标注」的记忆文件。 |
 | `updates_dir() -> Path` | 程序更新目录：``~/Documents/guji/updates``（安装包与"待安装"记录）。 |
 | `pending_install_file() -> Path` | 「下好但还没装」的安装包记录：``updates/pending.json``。 |
 | `migrate_legacy_singletask_dirs() -> list[str]` | 把按旧标题建的 ``singletask/<中文名>/`` 搬到新名（见 ``_LEGACY_SUBTASK_DIRS``）。 |
@@ -13215,6 +13535,29 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 - ``path`` 是**目录**：直接打开这个目录。
 
 返回是否真的发起了打开——路径不存在时为 ``False``，调用方不必再判存在性。
+
+#### `reveal_dir(path) -> bool`
+
+导出收尾用：把 ``path`` **当目录**打开（不存在/不是目录都不弹）。
+
+⚠️ 与 :func:`reveal_in_explorer` 的差别只有一个"不存在就不弹"：
+那个是"用户在界面上主动点某个已知文件/目录"，找不到就该当场报错；这个跑在
+**导出完成回调**里，路径由本次导出刚刚算出（可能是 worker 线程回传的
+统计值），不给用户弹一个"找不到"的失败框——导出明明成功了。
+
+用户 2026-10-16：「导出成功后，打开相应的目录」。
+
+#### `singletask_yolo_export_path(subtask: str) -> Path`
+
+独立任务页「导出YOLO标注」的记忆文件。
+
+用户 2026-10-16：「导出目录，和前缀都要保存下来，跟任务绑定」——任务流程
+那一侧记在 ``tasks/<id>/ui.json``（见 ``desktop.store.ui_state``），独立
+任务这一侧按**子任务**记一份（名称 + 目录两个键），即
+``~/Documents/guji/singletask/<子任务>/yolo_export.json``。
+
+⚠️ 按子任务记（而不是"每次导出"）：同一批图常要分几次导成不同前缀
+（b1 / b2…）汇进同一个数据集根，每次都重填纯属折腾。
 
 #### `pending_install_file() -> Path`
 

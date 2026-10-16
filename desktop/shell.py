@@ -55,6 +55,7 @@ if TYPE_CHECKING:
     from desktop.pages.createtask.page import CreateTaskPage
     from desktop.pages.taskdetail.page import TaskDetailPage
     from desktop.pages.taskflow.page import TaskFlowPage
+    from desktop.settings.page import SettingsPage
 
 #: 导航栏**折叠**时的宽度（px）。折叠态只剩一列图标，正文区分到剩下的宽度。
 #:
@@ -89,6 +90,8 @@ ROUTE_DETAIL = "detail"
 ROUTE_CREATE = "create"
 #: 「任务流程编辑」二级页（详情页页头进入）
 ROUTE_FLOW = "flow"
+#: 「设置」页（左侧导航栏**底部**的条目，用户 2026-10-16）
+ROUTE_SETTINGS = "settings"
 
 #: 这两个页面**没有**自己的导航条目（它们是「任务管理」的下级，像详情页一样）
 _SUBROUTES = (ROUTE_DETAIL, ROUTE_CREATE, ROUTE_FLOW)
@@ -170,6 +173,19 @@ class ModuleShell(QWidget):
             )
             self._module_items[module.key] = item
 
+        # ---- 设置：导航栏**底部**的条目（用户 2026-10-16）----
+        # ⚠️ 它**不是** MODULES 里的一员：模块条目清一色是"处理步骤的独立页"
+        #    （由 ``SPECS`` 派生），而设置页与处理流程无关。放在底部也正好与
+        #    那一列步骤区分开（qfluentwidgets 的 BOTTOM 会自动贴到导航栏底端）。
+        self._settings_item = self.nav.addItem(
+            ROUTE_SETTINGS,
+            FIF.SETTING,
+            "设置",
+            onClick=self._settings_click_handler(),
+            position=NavigationItemPosition.BOTTOM,
+            tooltip="开发者模式与训练/标注相关选项",
+        )
+
         # ---- 详情页：惰性（同 app.py 原逻辑，构造约 400ms）----
         # ⚠️ 标注成 TaskDetailPage 而不是 QWidget：下面几十处都在用它的专有
         # 成员（set_task / panel_host_of_step / process …）。详情页本身是惰性
@@ -180,6 +196,8 @@ class ModuleShell(QWidget):
         # 同 _detail_page：标注成各自的真类型（惰性导入只给类型检查看）。
         self._create_page: CreateTaskPage | None = None
         self._flow_page: TaskFlowPage | None = None
+        #: 设置页（惰性，同其它二级页）
+        self._settings_page: SettingsPage | None = None
 
     # ------------------------------------------------------------------ 点击槽
     def _module_click_handler(self, key: str):
@@ -203,6 +221,10 @@ class ModuleShell(QWidget):
     def _tasks_click_handler(self):
         """生成"点任务管理"的槽（同样要吞掉 clicked 的 bool，理由见上）。"""
         return lambda _checked=False: self.show_tasks()
+
+    def _settings_click_handler(self):
+        """生成"点设置"的槽（同样要吞掉 clicked 的 bool，理由见上）。"""
+        return lambda _checked=False: self.show_settings()
 
     # ------------------------------------------------------------------ 主题
     def _apply_nav_theme(self) -> None:
@@ -414,6 +436,23 @@ class ModuleShell(QWidget):
         """已构造的模块页；**没建过返回 None**（自测用它断言"惰性没被破坏"）。"""
         return self._module_pages.get(key)
 
+    # ------------------------------------------------------------------ 设置
+    def settings_page(self) -> SettingsPage:
+        """设置页（惰性构造；外部截图/自测按这个方法取）。"""
+        if self._settings_page is None:
+            from desktop.settings.page import SettingsPage
+
+            self._settings_page = SettingsPage()
+            self.pages.addWidget(self._settings_page)
+        return self._settings_page
+
+    def show_settings(self) -> None:
+        """切到设置页（左侧导航栏底部的「设置」条目走这里）。"""
+        page = self.settings_page()
+        self.pages.setCurrentWidget(page)
+        if self.pages.currentWidget() is page:
+            self._sync_nav_to_page(0)
+
     def rebind_store(self, store: TaskStore) -> None:
         """把壳层与**已建页面**上的 store 引用一起换掉（换数据目录用）。
 
@@ -447,6 +486,8 @@ class ModuleShell(QWidget):
             return ROUTE_CREATE
         if current is self._flow_page:
             return ROUTE_FLOW
+        if self._settings_page is not None and current is self._settings_page:
+            return ROUTE_SETTINGS
         for key, page in self._module_pages.items():
             if page is current:
                 return key
@@ -462,7 +503,8 @@ class ModuleShell(QWidget):
         route = self.current_route()
         if not route:
             return
-        # 详情/创建/流程三个页面都没有自己的导航条目，高亮一律留在「任务管理」
+        # 详情/创建/流程三个页面都没有自己的导航条目，高亮一律留在「任务管理」；
+        # 设置页**有**自己的条目（导航栏底部那个），所以照实高亮。
         target = ROUTE_TASKS if route in _SUBROUTES else route
         self._selected_route = target
         try:
@@ -534,6 +576,9 @@ __all__ = [
     "NAV_COMPACT_WIDTH",
     "NAV_MIN_EXPAND_WINDOW",
     "NAV_WIDTH",
+    "ROUTE_CREATE",
     "ROUTE_DETAIL",
+    "ROUTE_FLOW",
+    "ROUTE_SETTINGS",
     "ROUTE_TASKS",
 ]

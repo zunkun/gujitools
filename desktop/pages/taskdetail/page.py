@@ -899,6 +899,9 @@ class TaskDetailPage(
         self.detect_stats.setVisible(
             bool(spec) and spec.panel_extra == "detect_stats"
         )
+        # 「导出YOLO标注」那张卡片也只在第二步出现，另加"开发者模式 + 开关"
+        # 两个条件（判据全在 DetectMixin._sync_yolo_export_card 里，见那里）
+        self._sync_yolo_export_card()
         self.history_block.setVisible(not spec or not spec.panel_extra)
         self._apply_control_width()
         self._refresh_stage_views()
@@ -1329,6 +1332,10 @@ class TaskDetailPage(
         只停页面的会让其余线程在解释器退出时被强杀（偶发崩溃/卡顿）。
         """
         self.shutdown_workers()
+        # 「导出YOLO标注」那台后台内核（懒建的，没导出过就没有）
+        yolo_kernel = getattr(self, "_yolo_kernel", None)
+        if yolo_kernel is not None:
+            yolo_kernel.shutdown()
         # ``peek`` / ``panel`` 是 LazyPanelHost 上的属性，QWidget 类型里没有；
         # 标成 ``Any`` 即可按鸭子类型直接访问（运行时完全一致）。
         widgets: list[Any] = list(self.findChildren(QWidget))

@@ -21,6 +21,12 @@
      ``tasks/<id>/boxes.json`` **逐字段一致**（``{stem: {boxes, origin,
      updated_at}}``），可直接当作下一步（或将来自定义流程里任意一步）的输入。
 
+4. **开发者模式**打开且「启用YOLO标注」勾上时，导出区最底部多一个
+   「**导出YOLO标注**」（用户 2026-10-16）：点它先弹窗填**名称**（父节点名 =
+   文件名前缀）并选**导出目录**（按子任务记住上次选的），确认后把全部页面
+   导出成 YOLO 数据集切片 ``<导出目录>/<名称>/{images,labels}/<名称>-1.…``
+   （类别顺序见 ``utils.box_geometry.YOLO_CLASS_NAMES``；无框页写空标签当负样本）。
+
 ⚠️ **槽位约定**（半幅 2 槽 ``[左, 右]``、整幅 1 槽 ``[整幅]``）的全部规则来自
 ``utils.box_geometry``（``page_box_slots_from_event`` 读事件、``half_slots`` 收
 人工框），人工干预的**交互流**（切类型 / 整幅互斥确认 / 删框）在
@@ -51,24 +57,33 @@ from desktop.components.box_kinds import BoxKindEditor
 from desktop.components.progress_row import ProgressRow
 from desktop.components.viewers import ImageViewerWidget
 from desktop.components.viewers.image_view import box_names
+from desktop.components.yolo_export_dialog import ask_yolo_export
 from desktop.modules.base import StepModulePage
 from desktop.modules.thumb_source import ThumbSourceMixin
 from desktop.services.detect_export import (
     entries_from_mapping,
     export_annotated,
+    export_yolo,
+    yolo_entries,
 )
+from desktop.settings.config import app_config
 from desktop.steps import (
     StepKernel,
     StepRequest,
     callable_job,
     spec_by_key,
 )
-from desktop.store.json_io import write_json
+from desktop.store.json_io import read_json, write_json
 from desktop.ui import theme as T
 from desktop.ui.widgets import CONTROL_HEIGHT, Card, SectionTitle, apply_to
-from desktop.utils.files import default_open_dir
+from desktop.utils.files import (
+    default_open_dir,
+    reveal_dir,
+    singletask_yolo_export_path,
+)
 from utils.box_draw import BOX_KIND_INDEX, box_kind_name
 from utils.box_geometry import (
+    YOLO_CLASS_NAMES,
     half_slots,
     is_full_content,
     page_box_slots_from_event,
@@ -80,6 +95,16 @@ _SPEC = spec_by_key("detect")
 #: 导出文件名。⚠️ 与任务流程 ``tasks/<id>/boxes.json`` **同名**是刻意的：
 #: 用户拿它跟任务里的那份对照/替换时不必换算名字，格式也是同一套。
 EXPORT_NAME = "boxes.json"
+
+#: 导出执行线的两条**产物形态**：同一个 ``_export_kernel`` 按
+#: ``request.args["kind"]`` 分派（见 :meth:`_export_job`）。
+_EXPORT_ANNOTATED = "annotated"
+_EXPORT_YOLO = "yolo"
+
+#: 本页「导出YOLO标注」记忆文件里的两个键（与 ``store.ui_state`` 那份同名同义，
+#: 但不是同一个文件：那边按任务记在 ``ui.json`` 里，这边按子任务单独一份）。
+_YOLO_EXPORT_DIR_KEY = "yolo_export_dir"
+_YOLO_EXPORT_NAME_KEY = "yolo_export_name"
 
 
 class DetectModulePage(StepModulePage, ThumbSourceMixin):
@@ -97,6 +122,13 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
         self._origins: dict[str, str] = {}
         #: 导出标注图的结果：文件名列表（job 在 worker 线程里写、主线程读）
         self._exported: list[str] = []
+        #: 当前这条导出线的产物形态（``_EXPORT_ANNOTATED`` / ``_EXPORT_YOLO``），
+        #: 由 :meth:`_begin_export` 置位、收尾回调据此写不同的状态文案。
+        self._export_kind = _EXPORT_ANNOTATED
+        #: YOLO 导出 job 的统计（见 ``detect_export.export_yolo`` 的返回值）
+        self._yolo_summary: dict = {}
+        #: 应用配置（开发者模式 / YOLO 标注两个开关，见 desktop.settings.config）
+        self.cfg = app_config()
         super().__init__(parent)
 
     # ------------------------------------------------------------------ 预览
@@ -138,14 +170,18 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
         card.box.addWidget(self._build_box_kind_controls())
         card.box.addWidget(self._build_export_buttons())
 
-        # 导出标注图走**另一条**执行内核：它是纯函数 job（画框+落盘），
-        # 与 detect 的命令 job 互不干扰——用户可以在检测跑完后再导出，
-        # 两次执行不抢同一个槽位，也不会因为 detect 失败而不能导出。
-        self._export_kernel = StepKernel(callable_job(self._annotated_job), self)
+        # 导出（标注图 / YOLO 标签）走**另一条**执行内核：它是纯函数 job
+        # （画框 / 写标签 + 落盘），与 detect 的命令 job 互不干扰——用户可以在
+        # 检测跑完后再导出，两次执行不抢同一个槽位，也不会因为 detect 失败而
+        # 不能导出。
+        # ⚠️ 两种导出**共用**这一条线（job 按 ``request.args["kind"]`` 分派）：
+        #    它们都是"把已有框落盘"的短活，并行没有意义，各占一条进度行反而让
+        #    用户看不出是哪条在跑。
+        self._export_kernel = StepKernel(callable_job(self._export_job), self)
         self._export_kernel.log.connect(self.log)
-        self._export_kernel.progress.connect(self._on_annotated_progress)
-        self._export_kernel.finished.connect(self._on_annotated_exported)
-        self._export_kernel.failed.connect(self._on_annotated_failed)
+        self._export_kernel.progress.connect(self._on_export_progress)
+        self._export_kernel.finished.connect(self._on_export_finished)
+        self._export_kernel.failed.connect(self._on_export_failed)
 
         # ⚠️ 导出标注图是本页的**第二条执行线**（另一条是 detect 本身，走
         #    ``StepControl``），两者能同时跑（用户可以边检测边导出上一批的框）。
@@ -196,7 +232,7 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
         return holder
 
     def _build_export_buttons(self) -> Card:
-        """两个交付出口（用户 2026-10-03 定的两条路）。"""
+        """三个交付出口（前两个是用户 2026-10-03 定的两条路，第三个是 2026-10-16 的 YOLO 标注）。"""
         holder = Card(padding=T.SPACE_SM, spacing=T.SPACE_XS, radius=T.RADIUS_SM)
         holder.box.addWidget(SectionTitle("导出"))
 
@@ -218,7 +254,38 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
         self.export_button.setEnabled(False)
         self.export_button.clicked.connect(self.export_boxes)
         holder.box.addWidget(self.export_button)
+
+        # ---- YOLO 标注（开发者模式专属，摆在导出区**最底部**）----
+        self.yolo_button = PushButton(FIF.TAG, "导出YOLO标注")
+        self.yolo_button.setFixedHeight(34)
+        self.yolo_button.setToolTip(
+            "把各页导出成 YOLO 训练数据集切片（点它先弹窗填名称、选导出目录）：\n"
+            "<导出目录>/<名称>/images/<名称>-1.jpg（按页序复制原图）\n"
+            "<导出目录>/<名称>/labels/<名称>-1.txt（同页的框）\n"
+            f"类别顺序 {YOLO_CLASS_NAMES[0]}=左框/右框、{YOLO_CLASS_NAMES[1]}=整幅；\n"
+            "没有框的页面写空标签（负样本）。"
+        )
+        self.yolo_button.setEnabled(False)
+        self.yolo_button.clicked.connect(self.export_yolo_labels)
+        holder.box.addWidget(self.yolo_button)
+
+        # 两个开关任一变化都要重算按钮显隐（配置项是长期存活的 QObject，
+        # 页面销毁时 Qt 自动断开）
+        self.cfg.developerMode.valueChanged.connect(self._sync_yolo_button)
+        self.cfg.yoloAnnotation.valueChanged.connect(self._sync_yolo_button)
+        self._sync_yolo_button()
         return holder
+
+    def _sync_yolo_button(self, *_args) -> None:
+        """「导出YOLO标注」按钮的显隐：开发者模式**且** YOLO 标注都开着。
+
+        ⚠️ 两个条件缺一不可：YOLO 标注是开发者模式下的选项（见设置页），
+        开发者模式关着时那个开关根本不可见，此时把按钮当"未启用"处理——否则
+        会出现"设置里看不到开关、检测页却多出一个按钮"的错位。
+        """
+        self.yolo_button.setVisible(
+            bool(self.cfg.developerMode.value) and bool(self.cfg.yoloAnnotation.value)
+        )
 
     # ------------------------------------------------------------------ 回调
     def _on_source_changed(self, source) -> None:
@@ -473,11 +540,15 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
         return half_slots(normalized, size)
 
     # ------------------------------------------------------------------ 导出
+    def _export_buttons(self) -> tuple:
+        """导出区那一列按钮（导出期间要整排禁用，所以收在一处取）。"""
+        return (self.export_button, self.annotated_button, self.yolo_button)
+
     def _sync_export_buttons(self) -> None:
         """有框才让导出（没框导出一份空表 / 一批没画的图都没有意义）。"""
         has = any(any(slots) for slots in self._boxes.values())
-        self.export_button.setEnabled(has)
-        self.annotated_button.setEnabled(has)
+        for button in self._export_buttons():
+            button.setEnabled(has)
 
     def export_boxes(self) -> None:
         """把各页框坐标写成 ``<输出目录>/boxes.json``（与任务流程同格式）。
@@ -570,19 +641,12 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
         if self._export_kernel.busy():
             self.toast("warning", "正在导出", "上一次导出还没结束，请稍候。")
             return
-        self.annotated_button.setEnabled(False)
-        self.export_progress.start()
-        self.status("正在导出标注图…", "info")
-        self.log(f"开始导出标注图：{len(entries)} 张 → {out_dir}")
-        self._exported = []
-        request = StepRequest(
+        self._begin_export(
+            _EXPORT_ANNOTATED,
             dest=out_dir,
-            args={"entries": [(str(p), slots) for p, slots in entries]},
+            entries=entries,
+            status=f"正在导出标注图…（{len(entries)} 张）",
         )
-        if not self._export_kernel.run(request):
-            self.annotated_button.setEnabled(True)
-            self.export_progress.reset()
-            self.status("正在导出", "warning")
 
     def _annotated_entries(self) -> list:
         """要导出的 ``(图片路径, 槽位)`` 清单（**只取有框的页**）。
@@ -594,35 +658,167 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
             self.source_images(), self._boxes
         )
 
-    def _annotated_job(self, request: StepRequest, report) -> str | None:
-        """导出 job（跑在 worker 线程）：画框 + 落盘。
+    # ------------------------------------------------------------ 导出 YOLO 标注
+    def export_yolo_labels(self) -> None:
+        """导出 YOLO 数据集切片：先弹窗填**名称**与选**导出目录**（用户 2026-10-16）。
 
-        ⚠️ ``import utils`` 发生在这个线程里——cv2 只在子线程加载，GUI 主
-        进程不会因此付出几百毫秒的启动代价（见
-        :mod:`desktop.services.detect_export` 的模块 docstring）。
+        弹窗的两个默认值都取**上次记住的那一份**（独立任务页记在
+        ``singletask/<子任务>/yolo_export.json``，见
+        :func:`desktop.utils.files.singletask_yolo_export_path`）：同一批图分几次
+        导成不同前缀时要汇进同一个数据集根，重填重选纯属折腾。
+
+        **没记过时**：导出目录默认文档目录（``YoloExportPanel`` 自己兜底），
+        名称回落当前源的名（独立页没有任务号，源名就是"这一批图叫什么"的唯一
+        线索；任务流程那边默认的是任务号，见 ``DetectMixin._yolo_dataset_name``）。
+
+        ⚠️ 导出的是**全部图片**（不止有框的页）：没有框的页照样复制图片 + 写
+        空标签当负样本（用户 2026-10-16：「写空标签当负样本」）。
+        """
+        images = self.source_images()
+        if not images:
+            self.toast("warning", "还没有图片", "先选择图片或图片文件夹，再导出。")
+            return
+        if self._export_kernel.busy():
+            self.toast("warning", "正在导出", "上一次导出还没结束，请稍候。")
+            return
+        saved = self._load_yolo_export_state()
+        chosen = ask_yolo_export(
+            self.window(),
+            directory=saved.get("directory") or None,
+            # 没记过时用当前源的名兜底（"这一批图叫什么"对用户没有别的线索）
+            name=saved.get("name") or self._default_dataset_name(),
+        )
+        if chosen is None:
+            self.toast("info", "已取消", "没有导出任何文件。")
+            return
+        name, directory = chosen
+        self._save_yolo_export_state(name, directory)
+        self._begin_export(
+            _EXPORT_YOLO,
+            dest=Path(directory),
+            entries=yolo_entries(images, self._boxes),
+            name=name,
+            # 独立页**没有任务号**：data.json 里记的是源，校验时只能做自洽检查
+            # （任务流程那条链会把任务号写进去，见 DetectMixin.export_yolo_labels）
+            source=self._default_dataset_name(),
+            status=f"正在导出 YOLO 数据集：{len(images)} 页 → {directory}",
+        )
+
+    def _default_dataset_name(self) -> str:
+        """弹窗里「名称」的默认值：当前源的名（目录取目录名、文件取去后缀名）。"""
+        source = self.control.source()
+        if source is None:
+            return ""
+        path = Path(source)
+        return path.stem if path.is_file() else path.name
+
+    def _yolo_export_state_path(self) -> Path:
+        """本页「导出YOLO标注」的记忆文件（按子任务一份，见 files.py 的说明）。"""
+        spec = self.SPEC
+        assert spec is not None, "步骤模块页必须声明 SPEC"
+        return singletask_yolo_export_path(spec.disk_key())
+
+    def _load_yolo_export_state(self) -> dict:
+        """上次填的名称与导出目录；没记过/写坏了给两个空串。"""
+        data = read_json(self._yolo_export_state_path(), None)
+        doc = data if isinstance(data, dict) else {}
+
+        def text(key: str) -> str:
+            value = doc.get(key)
+            return value if isinstance(value, str) else ""
+
+        return {
+            "name": text(_YOLO_EXPORT_NAME_KEY),
+            "directory": text(_YOLO_EXPORT_DIR_KEY),
+        }
+
+    def _save_yolo_export_state(self, name: str, directory: str) -> None:
+        """记住本次填的名称与导出目录（写不动只记一行日志，不打断导出）。"""
+        try:
+            write_json(
+                self._yolo_export_state_path(),
+                {
+                    _YOLO_EXPORT_NAME_KEY: str(name or ""),
+                    _YOLO_EXPORT_DIR_KEY: str(directory),
+                },
+            )
+        except OSError as exc:
+            self.log(f"记住导出设置失败：{exc}")
+
+    # ------------------------------------------------------------------ 导出内核
+    def _begin_export(self, kind: str, dest: Path, entries: list, *,
+                      name: str = "", task_id: str = "", source: str = "",
+                      status: str = "") -> None:
+        """起一次导出（标注图 / YOLO 切片共用这一条执行线）。
+
+        ⚠️ 两种导出共用 ``_export_kernel`` 与 ``export_progress``：它们都是
+        "把已有框落盘"的短活，并行没有意义；各占一条进度行反而让用户看不出
+        是哪条在跑。
+        """
+        self._export_kind = kind
+        self._exported = []
+        self._yolo_summary = {}
+        for button in self._export_buttons():
+            button.setEnabled(False)
+        self.export_progress.start()
+        self.status(status or "正在导出…", "info")
+        self.log(f"开始导出（{kind}）：{len(entries)} 页 → {dest}")
+        args: dict = {
+            "kind": kind,
+            "entries": [(str(p), slots) for p, slots in entries],
+        }
+        if kind == _EXPORT_YOLO:
+            args["name"] = name
+            args["task_id"] = task_id
+            args["source"] = source
+        if not self._export_kernel.run(StepRequest(dest=dest, args=args)):
+            self._sync_export_buttons()
+            self.export_progress.reset()
+            self.status("正在导出", "warning")
+
+    def _export_job(self, request: StepRequest, report) -> str | None:
+        """导出 job（跑在 worker 线程）：按 ``kind`` 分派到两个纯函数。
+
+        ⚠️ ``import utils``（cv2）发生在这个线程里——GUI 主进程不会因此付出
+        几百毫秒的启动代价（见 :mod:`desktop.services.detect_export` 的模块
+        docstring）。YOLO 那条只用 PIL 读文件头，不加载 cv2。
         """
         dest = request.dest
         # job 契约：导出一定带输出目录（执行内核总会把 dest 设好）
-        assert dest is not None, "标注导出 job 必须带输出目录"
-        written = export_annotated(
-            [(Path(p), slots) for p, slots in request.args["entries"]],
-            dest,
-            report=lambda text: report("log", {"message": text}),
-            progress=lambda done, total: report(
-                "progress", {"done": done, "total": total}
-            ),
-        )
-        self._exported = written
+        assert dest is not None, "导出 job 必须带输出目录"
+        entries = [(Path(p), slots) for p, slots in request.args["entries"]]
+
+        def log(text: str) -> None:
+            report("log", {"message": text})
+
+        def progress(done: int, total: int) -> None:
+            report("progress", {"done": done, "total": total})
+
+        if request.args.get("kind") == _EXPORT_YOLO:
+            summary = export_yolo(
+                entries, dest, str(request.args.get("name", "")),
+                task_id=str(request.args.get("task_id", "")),
+                source=str(request.args.get("source", "")),
+                report=log, progress=progress,
+            )
+            # ⚠️ 统计里带 Path，跨线程回主线程前不改它：主线程只读
+            self._yolo_summary = summary
+            self._exported = list(summary["labels"])
+            return str(dest)
+        self._exported = export_annotated(entries, dest, report=log, progress=progress)
         return str(dest)
 
-    def _on_annotated_progress(self, done: int, total: int) -> None:
+    def _on_export_progress(self, done: int, total: int) -> None:
         """一条导出进度：喂给本页第二条执行线自己的进度行。"""
         self.export_progress.update(done, total)
 
-    def _on_annotated_exported(self, out_dir: str) -> None:
-        """标注图导出完成：恢复按钮、进度条走到头、写状态行与日志。"""
+    def _on_export_finished(self, out_dir: str) -> None:
+        """导出完成：恢复按钮、进度条走到头、按**产物形态**写状态行与日志。"""
+        self._sync_export_buttons()
+        if self._export_kind == _EXPORT_YOLO:
+            self._on_yolo_exported(out_dir)
+            return
         count = len(self._exported)
-        self.annotated_button.setEnabled(True)
         self.export_progress.succeed(
             f"完成 {count} 张" if count else "已完成"
         )
@@ -633,12 +829,35 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
         else:
             self.toast("warning", "没有导出", "这些图片都读不出来，请检查文件是否还在。")
 
-    def _on_annotated_failed(self, message: str) -> None:
-        """标注图导出失败：恢复按钮、进度条停住并提示。"""
-        self.annotated_button.setEnabled(True)
+    def _on_yolo_exported(self, out_dir: str) -> None:
+        """YOLO 切片导出完成：报清"几页有框、几页负样本、落点在哪"，
+        并**打开导出目录**（用户 2026-10-16：「导出成功后，打开相应的目录」）。"""
+        summary = self._yolo_summary or {}
+        count = len(self._exported)
+        skipped = list(summary.get("skipped") or [])
+        folder = summary.get("folder") or out_dir
+        detail = (
+            f"{summary.get('labeled', 0)} 页有框（{summary.get('boxes', 0)} 个框）、"
+            f"{summary.get('empty', 0)} 页负样本"
+        )
+        self.export_progress.succeed(f"完成 {count} 页" if count else "已完成")
+        self.status(f"已导出 {count} 页 → {folder}", "success")
+        self.log(f"YOLO 数据集导出完成：{detail} → {folder}")
+        if skipped:
+            self.log(f"跳过 {len(skipped)} 页（读不到原图）：{'、'.join(skipped[:5])}")
+        if count:
+            self.toast("success", "已导出YOLO标注", f"{count} 页（{detail}）→ {folder}")
+            reveal_dir(folder)
+        else:
+            self.toast("warning", "没有导出", "这些图片都读不出来，请检查文件是否还在。")
+
+    def _on_export_failed(self, message: str) -> None:
+        """导出失败：恢复按钮、进度条停住并提示。"""
+        self._sync_export_buttons()
         self.export_progress.fail()
-        self.status("导出标注图失败", "error")
-        self.log(f"导出标注图失败：{message}")
+        title = "导出YOLO标注失败" if self._export_kind == _EXPORT_YOLO else "导出标注图失败"
+        self.status(title, "error")
+        self.log(f"{title}：{message}")
         self.toast("error", "导出失败", message)
 
     # ------------------------------------------------------------------ 收尾

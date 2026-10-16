@@ -126,6 +126,7 @@ python tools/check_docs.py
   **文件** ⇒ 曾经的 `_pwrun.py`、`_selftests.log` 差点被提交（已实际发生过一次）。
 - ⚠️ **别往 `.gitignore` 补 `_*.py`**：它**同时匹配 `__init__.py`**（`_`+`_init`+`.py`）。
   真要补只能补窄模式（如 `/_pw*.py`、`/_pyright_*.py`）。
+- 所有编写代码最后都要通过 pylance 检查通过，不要提交不通过的代码。
 - 收工自查：`git status --short` 里不该出现 `??` 的临时文件；必要时 `git clean -nd` 看一眼。
 
 ## 其他硬规则（违反过、踩过坑）

@@ -3,7 +3,9 @@
 
 **任务级**——``tasks/<任务号>/ui.json``（删除任务即清掉）：
 
-    {"last_stage": "rembg"}      # 上次在这个任务里停留的步骤 key
+    {"last_stage": "rembg",                     # 上次在这个任务里停留的步骤 key
+     "yolo_export_name": "b1",                  # 「导出YOLO标注」上次填的名称/前缀
+     "yolo_export_dir": "D:/…/bookcontent"}     # 同上，上次选的导出目录
 
 **为什么记 key 而不是下标**：流程里的步骤会增减（「图片拼版」虚线节点就是
 条件出现的可选步骤），下标一旦错位就会把用户送到**另一个**步骤去；key 是按
@@ -32,7 +34,13 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from desktop.store.json_io import read_json, write_json
 
-__all__ = ["UIStateMixin"]
+#: ``ui.json`` 里记「导出YOLO标注」上次填的名称与导出目录的两个键（用户
+#: 2026-10-16：两者都要按任务记住）。独立任务页那一份另有落点，见
+#: ``desktop.utils.files.singletask_yolo_export_path``。
+YOLO_EXPORT_DIR_KEY = "yolo_export_dir"
+YOLO_EXPORT_NAME_KEY = "yolo_export_name"
+
+__all__ = ["UIStateMixin", "YOLO_EXPORT_DIR_KEY", "YOLO_EXPORT_NAME_KEY"]
 
 
 class UIStateMixin:
@@ -119,5 +127,46 @@ class UIStateMixin:
         data = read_json(path, None)
         doc = dict(data) if isinstance(data, dict) else {}
         doc["last_stage"] = str(stage)
+        write_json(path, doc)
+        return True
+
+    # ---------- 任务级：「导出 YOLO 标注」上次填的名称与导出目录 ----------
+    def load_yolo_export_state(self, task_id: str) -> dict:
+        """本任务上次导出 YOLO 数据集时填的 ``{"name": …, "directory": …}``。
+
+        用户 2026-10-16：「导出目录，和前缀都要保存下来，跟任务绑定」——同一
+        本书导多批（换前缀、汇进同一个数据集根）时不必每次重填。两个键总是
+        存在，没记过就是空串（调用方据此回落自己的默认值），省得每处判 None。
+        与 ``last_stage`` 同放 ``tasks/<id>/ui.json``：删任务即随之清掉。
+        """
+        data = read_json(self.ui_state_path(task_id), None)
+        doc = data if isinstance(data, dict) else {}
+
+        def _text(key: str) -> str:
+            value = doc.get(key)
+            return value if isinstance(value, str) else ""
+
+        return {
+            "name": _text(YOLO_EXPORT_NAME_KEY),
+            "directory": _text(YOLO_EXPORT_DIR_KEY),
+        }
+
+    def save_yolo_export_state(
+        self, task_id: str, name: str, directory: str
+    ) -> bool:
+        """记住本任务这次导出的名称与目录，返回是否真的写了。
+
+        与 :meth:`save_last_stage` 同规矩：任务目录没了就不写（不把已删任务
+        重新创建出来），且只覆盖自己那两项、不动 ``last_stage``。
+        """
+        if not task_id or not directory:
+            return False
+        if not self.task_dir(task_id).exists():
+            return False
+        path = self.ui_state_path(task_id)
+        data = read_json(path, None)
+        doc = dict(data) if isinstance(data, dict) else {}
+        doc[YOLO_EXPORT_NAME_KEY] = str(name or "")
+        doc[YOLO_EXPORT_DIR_KEY] = str(directory)
         write_json(path, doc)
         return True
