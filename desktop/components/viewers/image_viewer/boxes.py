@@ -34,6 +34,33 @@ class BoxesMixin(ImageViewerHost):
             self._pending_boxes = (boxes, image_size, info_text, full, selected)
 
 
+    def set_single_column(self, single_column: bool) -> None:
+        """告知画布「整本书是单栏书」：横跨整页的半幅框标「半框」而非左/右框。
+
+        ⚠️ 结论来自整本书的统计（``utils.book_layout.profile_book``），由宿主
+        算好后传入。这里只转发，判据不在本层重写。
+        """
+        self.view.set_single_column(single_column)
+
+    def set_side_override(self, side: str | None, rerender: bool = True) -> None:
+        """告知画布「用户在这个半框页上指定了左/右」（``None``＝清除指定）。
+
+        半框的框横跨整页、中心压在中线上，按位置判左右没有意义，所以由用户
+        指定（用户 2026-10-17）。指定值存在 boxes.json 的 ``side``。
+        ``rerender=False``＝调用方随后还会 ``apply_boxes``，别画两遍。
+        """
+        self.view.set_side_override(side, rerender)
+
+    def side_override(self) -> str | None:
+        """当前页的用户指定左右（无指定为 ``None``）。"""
+        return self.view.side_override()
+
+
+    def single_column(self) -> bool:
+        """当前是否按单栏书显示（宿主算标签文案时与画面保持同一口径）。"""
+        return bool(self.view.single_column())
+
+
     def set_reference_boxes(self, boxes: list) -> None:
         """设置参考框（最终裁剪大框，虚线显示，不参与编辑）。"""
         self.view.set_reference_boxes(boxes)

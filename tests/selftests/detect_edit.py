@@ -38,6 +38,20 @@ class _StoreStub:
 
     def __init__(self):
         self.data: dict = {}
+        #: 人工指定的左右 ``{image_key: "left"|"right"}``（真实 store 存在
+        #: boxes.json 的 ``side`` 字段）。⚠️ 这里**必须真支持**：上屏时
+        #  ``_apply_boxes`` 要读它决定标签与面板高亮，缺了就看不出
+        #  "第一次点击到底有没有生效"（用户 2026-10-17 报的两次点击问题）。
+        self.sides: dict = {}
+
+    def set_box_side_override(self, task_id, image_key, side, **_kw):
+        if side in ("left", "right"):
+            self.sides[image_key] = side
+        else:
+            self.sides.pop(image_key, None)
+
+    def box_side_at(self, path, image_key):
+        return self.sides.get(image_key)
 
     def boxes_path(self, task_id, **_kw):
         return Path(f"/t/{task_id}/boxes.json")
@@ -124,6 +138,17 @@ class _ViewerStub(QObject):
 
     def box_kinds(self):
         return self.view.box_kinds()
+
+    def set_side_override(self, side, rerender=True):
+        """把「用户指定的左/右」转给真实 ImageView（真实控件有这个 API）。
+
+        ⚠️ 缺了它，``_apply_boxes`` 的 ``getattr`` 兜底会静默跳过 ⇒ 面板高亮
+        永远按位置算，看不出"第一次点击到底生效没有"（用户 2026-10-17 报）。
+        """
+        self.view.set_side_override(side, rerender=rerender)
+
+    def single_column(self):
+        return self.view.single_column()
 
     def selected_index(self):
         return self.view.selected_index()
@@ -421,12 +446,14 @@ def run(ctx) -> None:  # noqa: ARG001 - 本模块自带夹具，不用共享 ctx
     ok("规则6：点当前已是的类型 → 无变化、无提示",
        host.entry() == [LEFT, RIGHT] and not host.toasts, f"{host.toasts}")
 
-    # 规则 2/6：半幅里点**另一侧** → 说清"左右由框的位置决定"，不悄悄改坐标
+    # 规则 2/6：半幅里点**另一侧** → 左右由位置决定，因此不写数据；
+    # ⚠️ 也不再弹提示（用户 2026-10-17：指定左/右/半框都不需要提示）——
+    # 面板高亮已经显示真实类型，拖动跨过中线自然会换边。
     host.toasts.clear()
     host._set_selected_box_kind("right")
-    ok("规则6：半幅里点另一侧 → 提示「由框的位置决定」",
-       bool(host.toasts and "位置" in host.toasts[-1][2]), str(host.toasts))
-    ok("规则6：这条提示不修改框坐标", host.entry() == [LEFT, RIGHT], str(host.entry()))
+    ok("规则6：半幅里点另一侧 → 不弹提示（静默忽略）",
+       not host.toasts, str(host.toasts))
+    ok("规则6：点另一侧不修改框坐标", host.entry() == [LEFT, RIGHT], str(host.entry()))
 
     # 规则 6：整幅 → 半幅（切回来）
     host._save_manual_boxes(KEY, [LEFT])
@@ -438,8 +465,25 @@ def run(ctx) -> None:  # noqa: ARG001 - 本模块自带夹具，不用共享 ctx
        host.entry() == [LEFT, None] and host.detect_viewer.box_full_mode() is False,
        str(host.entry()))
 
-    # ---- 整页模式（area=4）里也要按槽数认形态，不能把"手动半幅"当整幅 ----
-    host._save_manual_boxes(KEY, [LEFT])                       # 半幅单侧 → 2 槽
+    # ---- 一次点击就要生效：side 必须**先写**、再上屏 ----
+    # 用户 2026-10-17 报「第一下只把按钮点亮，等一小会点第二下才切换（有时还不成）」。
+    # 旧实现先 `_store_slots`（内部 `_apply_boxes` 要读 side 决定标签/高亮）、
+    # 后 `_write_side_override` ⇒ 第一次上屏读到的是**旧 side**，界面不动；
+    # 第二次点击才读到上一次写进去的值。所以这里直接断言"一次就到位"。
+    # ⚠️ 样本要让**位置判定与用户指定相反**，否则"按位置"恰好给出期望值，
+    #    顺序 bug 会被掩盖（左半边的框指定成 right，按位置是 left）。
+    LEFTISH = [80, 100, 480, 1300]
+    host.detect_cache[KEY] = [LEFTISH]
+    host.box_commit(KEY, [None, LEFTISH], select_box=LEFTISH, side="right")
+    ok("一次 box_commit 就上屏成指定侧（位置与指定相反也算数）",
+       host.detect_viewer.box_kinds() == ["right"],
+       str(host.detect_viewer.box_kinds()))
+    host.box_commit(KEY, [LEFTISH, None], select_box=LEFTISH, side="left")
+    ok("同一页一次切到另一侧也立刻生效（标签与槽位同一次到位）",
+       host.detect_viewer.box_kinds() == ["left"],
+       str(host.detect_viewer.box_kinds()))
+
+    # ---- 整页模式（area=4）里也要按槽数认形态，不能把"手动半幅"当整幅 ----    host._save_manual_boxes(KEY, [LEFT])                       # 半幅单侧 → 2 槽
     shown, origin = host._whole_page_entry(KEY)
     ok("整页模式下沿用**手动框**且保留 2 槽形态",
        origin == "manual" and len(shown) == 2, f"{origin} {shown}")

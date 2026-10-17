@@ -55,6 +55,7 @@ from __future__ import annotations
 
 import math
 import os
+from pathlib import Path
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QImage, QPainter, QPen
@@ -156,6 +157,8 @@ class ImpositionCanvas(QWidget):
     item_edit_requested = Signal(int)
     #: **右键菜单在空白处选了「编辑图片」**：编辑整页组合
     spread_edit_requested = Signal()
+    #: **「定位图片资源」没定位成**（文件已不存在等）：一行人读说明，由宿主提示
+    locate_failed = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -670,7 +673,14 @@ class ImpositionCanvas(QWidget):
         event.accept()
 
     def _locate_item_file(self, index: int) -> None:
-        """右键「定位图片资源」：资源管理器定位第 index 张子图的源文件。"""
+        """右键「定位图片资源」：资源管理器定位第 index 张子图的源文件。
+
+        ⚠️ 定位的**就是被右键的那一张**（``_item_at`` 已按旋转后的矩形命中，
+        且选中项优先），不要另算"左右槽"——两图并排时错一格就是"定位错了"。
+
+        ⚠️ 文件没了不静默：退到所在目录并说明。什么都不发生，用户只会以为
+        定位到了错误的资源（用户 2026-10-17 报障）。
+        """
         if not (0 <= index < len(self._items)):
             return
         file_text = str(self._items[index].get("file") or "")
@@ -678,7 +688,14 @@ class ImpositionCanvas(QWidget):
             return
         from desktop.utils.files import reveal_in_explorer
 
-        reveal_in_explorer(file_text)
+        path = Path(file_text)
+        if reveal_in_explorer(path):
+            return
+        if path.parent.is_dir():
+            reveal_in_explorer(path.parent)
+            self.locate_failed.emit(f"源文件已不存在，已打开所在目录：{path.parent}")
+        else:
+            self.locate_failed.emit(f"找不到文件（所在目录也不存在）：{path}")
 
     def _emit_context(self, index: int, edit: bool) -> None:
         """右键菜单按命中的图层发出预览或整页编辑请求。"""

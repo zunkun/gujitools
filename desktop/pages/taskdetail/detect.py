@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, Callable, cast
 
 from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QSize
 from PySide6.QtGui import QImageReader
+from PIL import Image
 
 from core.command_spec import WHOLE_PAGE_AREA
 from desktop.components.box_kinds import BoxKindEditor
@@ -23,6 +24,9 @@ from desktop.components.yolo_export_dialog import ask_yolo_export
 from desktop.services.detect_export import export_yolo, yolo_entries
 from desktop.settings.config import app_config
 from desktop.steps import StepKernel, StepRequest, callable_job
+from utils.book_layout import (
+    is_single_wide_half, profile_book, single_column_summary, suspicious_summary,
+)
 from utils.box_geometry import (
     classify_page_slots,
     compute_final_boxes,
@@ -126,8 +130,43 @@ class DetectMixin:
     def box_image_size(self, path_text: str):
         return self._image_size_for(path_text)
 
-    def box_commit(self, path_text: str, slots: list, select_box=None) -> None:
+    def box_commit(self, path_text: str, slots: list, select_box=None,
+                   side="keep") -> None:
+        """落库 + 重画；``side`` 按需写入/清除这页的人工左右指定。
+
+        ``side`` 语义（见 ``components.box_kinds.SIDE_KEEP``）：``"left"`` /
+        ``"right"`` 写入、``None`` 清除、``"keep"`` 不动。
+
+        ⚠️ **先写 side、再上屏**：``_store_slots`` → ``_apply_boxes`` 会读这一页
+        的指定值来决定标签/面板高亮（``box_kinds``）。反过来（先上屏后写）第一次
+        点击上屏用的还是**旧 side**，界面看着没切换，必须再点一次才生效——用户
+        2026-10-17 报的「第一下只是把按钮点亮、等一小会点第二下才切」就是这个。
+        """
+        self._write_side_override(path_text, side)
         self._store_slots(path_text, slots, "manual", select_box=select_box)
+
+    def box_page_half_candidate(self, path_text: str) -> bool:
+        """这页是否**够「半框」**（整本书单栏 + 只有一个横跨整页的框）。
+
+        判据本体在 ``utils.book_layout.is_single_wide_half``；这里只取数。
+        """
+        raw = self._raw_boxes_for(path_text)
+        if not self._single_column_display():
+            return False
+        width = self._page_width_of(Path(path_text))
+        return is_single_wide_half(raw, width)
+
+    def _write_side_override(self, path_text: str, side) -> None:
+        """写/清人工左右指定（``"keep"`` = 不动）。"""
+        if side == "keep" or not self.task_id:
+            return
+        writer = getattr(self.store, "set_box_side_override", None)
+        if not callable(writer):
+            return
+        writer(
+            self.task_id, Path(path_text).stem, side,
+            **self._node_scope(self.node_of_stage("detect")),
+        )
 
     def box_confirm(self, title: str, body: str, yes_text: str, cancel_text: str) -> bool:
         # ⚠️ 延迟导入必须留在方法体内：自测靠替换 qfluentwidgets.Dialog 记录确认
@@ -138,8 +177,14 @@ class DetectMixin:
         dialog.cancelButton.setText(cancel_text)
         return bool(dialog.exec())
 
-    def box_full_declined(self, index: int) -> None:
-        self._on_box_selection_changed(index)  # 回填面板高亮，别停在「整幅」
+    def box_resync_kind(self, index: int) -> None:
+        """按现值回填面板的「选中框类型」高亮（类型操作结束后必调）。
+
+        ⚠️ 分段控件在按下那一刻就把滑块移到了被点的段，而有些点击本来就不会
+        改数据（普通半幅页点另一侧、整幅声明被取消）——不回填就会停在"看起来
+        切了、其实没切"的位置（用户 2026-10-17 报「切换有问题」）。
+        """
+        self._on_box_selection_changed(index)
 
     def box_current_path_text(self) -> str:
         path = self.detect_viewer.current_path()
@@ -248,6 +293,11 @@ class DetectMixin:
             return
         paths = self._manifest_paths()
         if not self.task_id or not paths:
+            # 没有页/没有任务＝没有整本书可判 → 明确退回"非单栏"，别让上一本书的
+            # 结论残留到下一本（切任务时 stats 也会走这条）。
+            setter = getattr(self.detect_viewer, "set_single_column", None)
+            if callable(setter):
+                setter(False)
             widget.set_results(len(paths), {})
             return
         boxes_all = self.store.boxes_all_at(
@@ -256,6 +306,22 @@ class DetectMixin:
             )
         )
         classes: dict[str, list[tuple[int, str]]] = {}
+        # ⚠️ 顺手把**每页槽位**攒下来给全书判据用：判据要的是"整本书长什么样"，
+        #    而这次遍历已经把每页都读出来了，第二次再读一遍 boxes.json 纯属白花
+        #    （320 页时那是整本 JSON 的一次重复解析）。
+        sampled: list[tuple[str, list, int]] = []
+        # ⚠️ 尺寸**循环外读一次**：逐页调 image_size 会整份读盘（320 页＝320 次）。
+        sizes: dict = {}
+        if self.task_id:
+            sizes_getter = getattr(self.store, "image_sizes_all", None)
+            if sizes_getter is not None:
+                try:
+                    sizes = sizes_getter(
+                        self.task_id,
+                        **self._node_scope(self.node_of_stage("detect")),
+                    )
+                except Exception:  # noqa: BLE001 - 读不到就全部回落图片头
+                    sizes = {}
         for row, path in enumerate(paths):
             raw = self.detect_cache.get(str(path))
             if raw is None:
@@ -263,7 +329,141 @@ class DetectMixin:
             # ⚠️ 传给分类器的是**槽位**（保留 None）：单独页（双槽缺一侧）
             #    过滤掉 None 会被误判成整幅。
             classes.setdefault(classify_page_slots(raw), []).append((row, self._page_label(path)))
-        widget.set_results(len(paths), classes)
+            sampled.append((path.stem, list(raw or []), self._page_width_of(path, sizes)))
+        # ⚠️ 全书判据**只算一次**：以前这里算一次、_book_note 里又算一次，
+        #    2000 页的书等于白跑一遍（用户报「切类型卡顿」时排查到的重复项之一）。
+        profile = profile_book(sampled)
+        # ⚠️ 把整本书的结论交给预览控件：**半框**标注靠它决定（见 styles.box_styles）。
+        self._apply_book_layout(profile)
+        widget.set_results(
+            len(paths), classes, book_note=self._book_note_from(profile)
+        )
+
+    def _single_column_display(self) -> bool:
+        """预览控件当前是否按「单栏书」显示（决定标签是否用「半框」）。
+
+        ⚠️ 走 ``getattr`` 兜底：自测的 viewer 替身只实现被断言用到的方法，
+        缺 ``single_column`` 时不该把整次上屏打断——取不到就按"不是单栏书"
+        （旧行为：左/右框）处理。
+        """
+        getter = getattr(self.detect_viewer, "single_column", None)
+        if not callable(getter):
+            return False
+        try:
+            return bool(getter())
+        except Exception:  # noqa: BLE001 - 显示口径取不到就退回旧行为
+            return False
+
+    def _side_override_of(self, path_text: str, raw=None) -> str | None:
+        """某页的**用户指定左右**（``"left"``/``"right"``/None）。
+
+        只在「半框」页上有意义：那种框横跨整页、中心压在中线上，按位置判左右
+        没有意义，由用户点左/右指定（存 boxes.json 的 ``side``）。
+
+        ⚠️ **只有「半幅单框」的页才可能带指定**：双框页/整幅页直接返回 None，
+        连 boxes.json 都不读——否则每次切换类型都要整份解析一次文件（2000 页
+        约 4ms，切换是高频动作）。
+
+        ⚠️ 走 ``getattr`` 兜底：替身 store 可能没有 ``box_side_at``，取不到就
+        当"没指定"（退回自动判定的半框），不该让上屏中断。
+        """
+        slots = list(raw if raw is not None else self._raw_boxes_for(path_text))
+        present = [b for b in slots if b]
+        if len(slots) != 2 or len(present) != 1:
+            return None
+        getter = getattr(self.store, "box_side_at", None)
+        if not callable(getter) or not self.task_id:
+            return None
+        try:
+            return getter(self._boxes_write_path(), Path(path_text).stem)
+        except Exception:  # noqa: BLE001 - 取不到就按"没指定"
+            return None
+
+    def _apply_book_layout(self, profile) -> None:
+        """把整本书的形态结论同步给预览控件（标签/面板高亮同一口径）。
+
+        ⚠️ 只同步**单栏书**这一条：它决定「半框」标注。整幅书里的可疑半幅
+        不改标注（用户 2026-10-17 选择「只警告」），那条只进统计面板文案。
+        """
+        setter = getattr(self.detect_viewer, "set_single_column", None)
+        if callable(setter):
+            setter(bool(profile.single_column_book))
+            # 结论可能刚变（刚检测完/刚编辑过框）→ 立刻按新口径回填面板高亮，
+            # 否则画面已标「半框」而面板仍停在「左框」。
+            self._on_box_selection_changed(self.detect_viewer.selected_index())
+
+    def _page_width_of(self, path: Path, sizes: dict | None = None) -> int:
+        """该页原始像素宽度（全书判据用；取不到返回 0＝不参与单宽框判定）。
+
+        优先用 ``sizes.json``（``sizes`` 传入时零读盘，不给就自己读一次）；
+        缺记录才回落到图片头。
+        ⚠️ 判定要的是**框坐标所处的那个坐标系**的页宽，所以必须按节点作用域
+        取尺寸——两个提取节点用了不同 dpi 时共用一份尺寸会算错比例。
+
+        ⚠️ **必须走批量读**（``image_sizes_all``）：逐页调 ``image_size`` 每次都
+        整份读盘，320 页就是 320 次全量解析。``sizes`` 由调用方在循环外读一次。
+
+        ⚠️ ``image_sizes_all`` 走 ``getattr`` 兜底而不是直接调：自测的 store
+        替身只实现被断言用到的那几个方法，缺它会 AttributeError 把整个统计刷新
+        打断。取不到宽度只是让该页不参与单宽框判定（保守回落），不该让整屏统计
+        崩掉。
+        """
+        if sizes is None:
+            sizes = {}
+            if self.task_id:
+                getter = getattr(self.store, "image_sizes_all", None)
+                if getter is not None:
+                    try:
+                        sizes = getter(
+                            self.task_id,
+                            **self._node_scope(self.node_of_stage("detect")),
+                        )
+                    except Exception:  # noqa: BLE001 - 取不到就回落读图片头
+                        sizes = {}
+        size = sizes.get(path.stem) if isinstance(sizes, dict) else None
+        if size and size[0] > 0:
+            return int(size[0])
+        # ⚠️ 没有 sizes 记录时**读图片头**是每页一次文件打开（本机 211 页实测
+        #    57ms、2000 页 ≈ 540ms），而"切类型"每次都重算全书统计 ⇒ 主线程卡顿
+        #    （用户 2026-10-17 报「点类型卡顿」）。页宽在一次会话里不会变，读一次
+        #    就记住；只缓存**成功**结果（读失败可能是文件被占用，下次还要重试）。
+        cache = getattr(self, "_page_width_cache", None)
+        if cache is None:
+            cache = self._page_width_cache = {}
+        key = str(path)
+        width = cache.get(key)
+        if width:
+            return width
+        try:
+            with Image.open(path) as image:
+                width = int(image.width)
+        except Exception:  # noqa: BLE001 - 取不到宽度按"无页宽"，判据自行回落
+            return 0
+        if width > 0:
+            cache[key] = width
+        return width
+
+    @staticmethod
+    def _book_note_from(profile) -> str:
+        """**已算好的**全书判据 → 统计面板顶部的一行人读提示（无需提示时空串）。
+
+        ⚠️ 收的是 ``BookProfile`` 而不是原始页表：调用方已经算过一次 profile，
+        这里再算一遍在 2000 页的书上是纯浪费（用户报「切类型卡顿」的重复项）。
+
+        ⚠️ **警告优先于结论**：整幅书里冒出半幅是"结果可疑"，必须让用户先去
+        核对；单栏书只是"已按单栏命名"，是已经生效的事实。两条同时成立时把
+        可疑那条放前面——前者要人动手，后者只是告知。
+        """
+        return "\n".join(
+            text for text in (
+                suspicious_summary(profile), single_column_summary(profile),
+            ) if text
+        )
+
+    @staticmethod
+    def _book_note(sampled) -> str:
+        """原始页表 → 提示（内部算 profile；批量场景请用 :meth:`_book_note_from`）。"""
+        return DetectMixin._book_note_from(profile_book(sampled))
 
     def _goto_stats_page(self, row: int) -> None:
         """统计明细里点了页码 → 预览跳到那一页（联动框重读）。"""
@@ -317,7 +517,23 @@ class DetectMixin:
         full = is_full_content(raw)
         size = self._image_size_for(path_text)
         qsize = QSize(size[0], size[1]) if size else QImageReader(str(path_text)).size()
-        names = box_names(shown, size, full)
+        # ⚠️ 单栏书里这个横跨整页的框叫「半框」，不叫左框/右框——整本书的结论
+        #    来自 profile_book（见 _refresh_detect_stats 写入 viewer 的那一份），
+        #    这里读 viewer 的现值以保证「标签」与「面板高亮」同一口径。
+        # ⚠️ 若用户在半框页上**指定过**左/右，标签就用指定值（优先级见 box_styles）。
+        side = self._side_override_of(path_text, raw)
+        setter = getattr(self.detect_viewer, "set_side_override", None)
+        if callable(setter):
+            # ⚠️ rerender=False：下面紧接着 apply_boxes 会重绘一次，这里再画一遍
+            #    就是一次切换类型画两遍（用户报的卡顿）。取不到 rerender 形参的
+            #    替身按老签名调（自测替身只实现被断言用到的方法）。
+            try:
+                setter(side, False)
+            except TypeError:
+                setter(side)
+        names = box_names(
+            shown, size, full, self._single_column_display(), side
+        )
         info = self._describe_boxes(shown, names) + ORIGIN_SUFFIX.get(origin or "", "")
         self._show_boxes_info(shown, origin, names=names)
         self.detect_viewer.apply_boxes(
@@ -560,7 +776,13 @@ class DetectMixin:
                 area, _border = self._current_detect_params()
                 self.detect_viewer.set_reference_boxes(compute_final_boxes(boxes, area, None))
         # rembg 预览的区域同步刷新（显示范围跟随检测框 + area/border）
-        self.rembg_viewer.refresh_display()
+        # ⚠️ **只在本步就是「图片去底色」时才刷**（用户 2026-10-17 报「切换
+        #    左/右/半框/整幅卡顿」）：``refresh_display`` 会重建全部条目并重新
+        #    解码 + 合成当前页的大图（12MP 扫描件几十到几百毫秒），而第二步
+        #    根本看不见那个控件。进第三步时 ``_show_stage`` 会 ``set_images``
+        #    重建一次，所以这里跳过不会读到旧框。
+        if self.current_stage() == "rembg":
+            self.rembg_viewer.refresh_display()
 
     def _show_boxes_info(self, boxes, origin: str | None = None, names=None) -> None:
         if boxes is None:

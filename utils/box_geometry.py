@@ -548,6 +548,25 @@ def set_box_half(slots, index: int, image_size) -> List[Optional[list]]:
     return half_slots([boxes[index]], image_size)
 
 
+def set_box_side(slots, index: int, side: str) -> List[Optional[list]]:
+    """把第 ``index`` 个框**强制**放到指定侧 → 2 槽 ``[左, 右]``。
+
+    与 :func:`set_box_half` 的唯一区别：**不按中心位置判**，直接听调用方的。
+    用于「半框」页——那种框横跨整页，中心几乎总在中线上，按位置判出来的
+    左右是**没有意义的**（用户 2026-10-17：「半框的情况，用户可以指定是左框
+    还是右框」）。
+
+    ``side`` 只认 ``"left"`` / ``"right"``；其它值原样返回（不猜）。
+    """
+    if side not in ("left", "right"):
+        return list(slots or [])
+    boxes = present_boxes(slots)
+    if not 0 <= index < len(boxes):
+        return list(slots or [])
+    box = boxes[index]
+    return [box, None] if side == "left" else [None, box]
+
+
 def drop_box(slots, index: int, image_size) -> List[Optional[list]]:
     """删掉第 ``index`` 个框后的**新槽位**。
 

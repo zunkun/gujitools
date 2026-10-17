@@ -10,7 +10,10 @@ from typing import TYPE_CHECKING, Any, Callable, cast
 from PySide6.QtCore import QUrl, QSize
 from PySide6.QtGui import QDesktopServices, QImageReader
 from PySide6.QtWidgets import (
-    QFileDialog, QStackedWidget, QTextEdit, QWidget,
+    QFileDialog,
+    QStackedWidget,
+    QTextEdit,
+    QWidget,
 )
 from qfluentwidgets import MessageBox
 
@@ -18,14 +21,18 @@ from desktop.components.viewers.edit_sync import show_edited_image
 from desktop.ui import theme as T
 from desktop.ui.widgets import mark_input_entry
 from desktop.utils.files import (
-    THUMBNAIL_EDGE, default_open_dir, list_stage_images,
+    THUMBNAIL_EDGE,
+    default_open_dir,
+    list_stage_images,
 )
 from desktop.workers import HashWorker, ImageListWorker, connect_queued
 from utils.file_utils import replace_with_retry
 
 if TYPE_CHECKING:
     from desktop.components.viewers import (
-        ExtractPreviewWidget, ImageViewerWidget, RembgPreviewWidget,
+        ExtractPreviewWidget,
+        ImageViewerWidget,
+        RembgPreviewWidget,
     )
     from desktop.store.store import TaskStore
 
@@ -138,9 +145,7 @@ class PageListMixin:
             if inside:
                 return
             # 旧清单整个属于**另一个**输入源：作废（上游产物已经换了）
-            self.log_view.append(
-                "上游产物已更新，页面清单已按本步骤的输入目录重建。"
-            )
+            self.log_view.append("上游产物已更新，页面清单已按本步骤的输入目录重建。")
             self.pages = []
         # ⚠️ 清单落点按**节点**（B 方案）：副本节点的页集合写它自己的
         #    ``pages~<节点>.json``，不覆盖主节点那份。
@@ -155,10 +160,36 @@ class PageListMixin:
         self._sync_manifest_to_input()
 
     def _manifest_paths(self) -> list[Path]:
-        return [Path(p["file"]) for p in self.pages if Path(p["file"]).exists()]
+        """页面清单路径，**过滤掉已在磁盘上消失的页**。
 
-    def _page_thumb_for(self, path_text: str, box=None, parea: int = 1,
-                        border_mm=None, boxes=None, full: bool = False):
+        ⚠️ 存在性检查按**清单签名**缓存：``Path.exists()`` 是每页一次文件系统
+        stat，本机实测 211 页 = 16ms、2000 页 ≈ 150ms。而「切换选中框类型」
+        这类操作每次刷新都会走这里（还要连带重算整本书统计），主线程上就是
+        肉眼可见的卡顿（用户 2026-10-17 报「点类型卡顿」）。
+
+        失效靠签名比对（``tuple(p["file"])``，2000 页 ≈ 0.2ms）：导入 / 删页 /
+        换任务都会改 `pages`，签名随之变化，缓存自动作废——比手工在各处调
+        invalidate 可靠（`pages` 有七八处赋值点，漏一处就是"删了页还在"）。
+        """
+        signature = tuple(page.get("file") for page in self.pages)
+        cached = getattr(self, "_manifest_paths_cache", None)
+        if cached is not None and cached[0] == signature:
+            return list(cached[1])
+        paths = [
+            Path(text) for text in signature if text and Path(text).exists()
+        ]
+        self._manifest_paths_cache = (signature, paths)
+        return list(paths)
+
+    def _page_thumb_for(
+        self,
+        path_text: str,
+        box=None,
+        parea: int = 1,
+        border_mm=None,
+        boxes=None,
+        full: bool = False,
+    ):
         """extract/rembg 数字页名 → 预生成页缩略图。
 
         box（原始像素坐标）非空时，返回在缩略图上按 area/border 规则
@@ -179,7 +210,7 @@ class PageListMixin:
             self.store.rembg_preview_output_dir(self.task_id),
             self.store.rembg_output_dir(self.task_id),
             # ⚠️ 入口图片目录也要算：自定义流程里第一个节点可能是「检测文本框」
-            #（用户2026-10-06），它的图就在这儿。不加的话这些图走"回退真图"
+            # （用户2026-10-06），它的图就在这儿。不加的话这些图走"回退真图"
             #    ——功能正常，但左侧缩略图条会明显慢一截。
             self.store.task_input_dir(self.task_id),
         }
@@ -221,9 +252,7 @@ class PageListMixin:
         if not ts.isValid() or not meta[0] or not meta[1]:
             return {"path": str(thumb), "effect": None}
         sx, sy = ts.width() / meta[0], ts.height() / meta[1]
-        scaled = [
-            [b[0] * sx, b[1] * sy, b[2] * sx, b[3] * sy] for b in raw
-        ]
+        scaled = [[b[0] * sx, b[1] * sy, b[2] * sx, b[3] * sy] for b in raw]
         return {
             "path": str(thumb),
             "effect": {
@@ -242,7 +271,8 @@ class PageListMixin:
         """页面图片的原始像素尺寸：优先 extract 阶段写入 sizes.json 的记录。"""
         if self.task_id:
             meta = self.store.image_size(
-                self.task_id, Path(path_text).stem,
+                self.task_id,
+                Path(path_text).stem,
                 **self._scope_of(self._size_node_for(path_text)),
             )
             if meta:
@@ -277,7 +307,10 @@ class PageListMixin:
             size = reader.size()
             if size.isValid():
                 self.store.save_image_size(
-                    self.task_id, path.stem, size.width(), size.height(),
+                    self.task_id,
+                    path.stem,
+                    size.width(),
+                    size.height(),
                     **self._scope_of(size_node),
                 )
                 self.log_view.append(
@@ -345,7 +378,10 @@ class PageListMixin:
         size = reader.size()
         if size.isValid():
             self.store.save_image_size(
-                self.task_id, path.stem, size.width(), size.height(),
+                self.task_id,
+                path.stem,
+                size.width(),
+                size.height(),
                 **self._scope_of(size_node),
             )
         self.store.refresh_pages_from_dir(
@@ -366,15 +402,15 @@ class PageListMixin:
                 connect_queued(
                     self,
                     w.thumbnail_ready,
-                    lambda _i, image, _p, t=path_text, o=owner_task:
-                        self._on_saved_thumb_ready(image, t, o),
+                    lambda _i, image, _p, t=path_text, o=owner_task: self._on_saved_thumb_ready(
+                        image, t, o
+                    ),
                     thread,
                 ),
                 connect_queued(
-                    self, w.failed,
-                    lambda msg: self._toast(
-                        "warning", "缩略图刷新失败", msg
-                    ),
+                    self,
+                    w.failed,
+                    lambda msg: self._toast("warning", "缩略图刷新失败", msg),
                     thread,
                 ),
                 w.completed.connect(thread.quit),
@@ -382,8 +418,7 @@ class PageListMixin:
             ),
         )
 
-    def _on_saved_thumb_ready(self, image, path_text: str,
-                              owner_task: str) -> None:
+    def _on_saved_thumb_ready(self, image, path_text: str, owner_task: str) -> None:
         """新缩略图就绪：原子替换缓存文件，条目图标兜底刷新。
 
         大图已在 _on_page_image_saved 里用编辑结果即时上屏，这里只把
@@ -431,8 +466,7 @@ class PageListMixin:
 
         只有当 ``source_step`` 那一格**正被看着**时才刷下游——不是无脑全刷。
         """
-        if self.stage_at_stack_index(self.preview_stack.currentIndex()) \
-                != source_step:
+        if self.stage_at_stack_index(self.preview_stack.currentIndex()) != source_step:
             return
         index = self.stack_index_of_step("detect")
         if index is not None:
@@ -493,7 +527,8 @@ class PageListMixin:
         if not self.task_id:
             return
         directory = QFileDialog.getExistingDirectory(
-            cast("QWidget", self), "选择图片文件夹（把里面的图片批量插入）",
+            cast("QWidget", self),
+            "选择图片文件夹（把里面的图片批量插入）",
             str(default_open_dir()),
         )
         if not directory:
@@ -509,19 +544,22 @@ class PageListMixin:
         from desktop.steps import ports
 
         spec = ports.spec_for_stage(self.current_stage())
-        sources = (spec.collect_files(paths) if spec is not None
-                   else [Path(p) for p in paths])
+        sources = (
+            spec.collect_files(paths) if spec is not None else [Path(p) for p in paths]
+        )
         sources = [p for p in sources if p.is_file()]
         if not sources:
             self._toast(
-                "warning", "没有可用的图片",
+                "warning",
+                "没有可用的图片",
                 f"{title}：选中的位置里没有找到本步骤能处理的图片文件。",
             )
             return
         target_dir = self._current_stage_input_dir()
         if target_dir is None:
             self._toast(
-                "error", "无法插入",
+                "error",
+                "无法插入",
                 "这一步的图片输入尚未接好，请检查流程配置。",
             )
             return
@@ -570,12 +608,12 @@ class PageListMixin:
         self.run_worker(
             lambda: worker,
             lambda w, thread: (
+                connect_queued(self, w.finished, self._on_pages_copied, thread),
                 connect_queued(
-                    self, w.finished, self._on_pages_copied, thread
-                ),
-                connect_queued(
-                    self, w.failed,
-                    lambda msg: self._toast("error", "插入图片失败", msg), thread,
+                    self,
+                    w.failed,
+                    lambda msg: self._toast("error", "插入图片失败", msg),
+                    thread,
                 ),
                 w.finished.connect(thread.quit),
                 w.failed.connect(thread.quit),
@@ -658,9 +696,7 @@ class PageListMixin:
         insert_at = anchor + 1 if anchor >= 0 else len(self.pages)
         for _source, target in done:
             target_path = Path(target)
-            self.pages.insert(
-                insert_at, {"file": target, "label": target_path.stem}
-            )
+            self.pages.insert(insert_at, {"file": target, "label": target_path.stem})
             insert_at += 1
         self.store.save_pages(self.task_id, self.pages, **self._node_scope())
         note = f"已插入 {len(done)} 张图片。"
@@ -795,7 +831,7 @@ class PageListMixin:
         return {
             "title": "这个流程的第一步需要图片",
             "body": (
-                f"当前流程的第一步是「{entry}」，它不吃 PDF，"
+                f"当前流程的第一步是「{entry}」，"
                 "需要你提供图片作为输入。\n\n"
                 "· 选择图片目录 → 选一个文件夹，里面的图片会整批放进"
                 "本任务的输入目录；\n"
@@ -865,13 +901,16 @@ class PageListMixin:
         # ---- 按钮提示语：跟着"缺什么"变（不变会指错方向）----
         if button is not None:
             button.setToolTip(
-                "这个任务还没有 PDF，点此选择源文件" if kind == "pdf"
-                else "更换这个任务的 PDF 源文件")
+                "这个任务还没有 PDF，点此选择源文件"
+                if kind == "pdf"
+                else "更换这个任务的 PDF 源文件"
+            )
         if insert is not None:
             insert.setToolTip(
                 "本流程第一步需要图片，点此选择图片（放进输入目录）"
                 if kind == "images"
-                else "为本任务插入图片（放到入口图片目录）")
+                else "为本任务插入图片（放到入口图片目录）"
+            )
         # ---- 页头红字：缺文件时一直显示，直到补上（toast 会自己消失）----
         warning = getattr(self, "source_warning", None)
         if warning is not None:
@@ -908,7 +947,7 @@ class PageListMixin:
         entry_hints = {
             "extract": "尚未提取，点击右侧「执行本子任务」",
             "detect": "暂无图片，请点下方「＋」插入图片或整个文件夹，"
-                      "或把图片放进本任务的输入目录",
+            "或把图片放进本任务的输入目录",
         }
         entry_kind = self._entry_input_kind()
         task_id = getattr(self, "task_id", None)
@@ -1097,8 +1136,7 @@ class PageListMixin:
         if header is not None:
             from PySide6.QtCore import QPoint
 
-            return max(0, header.mapTo(self, QPoint(0, 0)).y()
-                       + header.height())
+            return max(0, header.mapTo(self, QPoint(0, 0)).y() + header.height())
         return 0
 
     def _on_pick_source(self) -> None:
@@ -1127,15 +1165,18 @@ class PageListMixin:
         # ⚠️ 用**原生** QFileDialog（项目硬规则：「资源管理器」= 原生选择
         #    对话框，不是浏览窗口）。
         filename, _ = QFileDialog.getOpenFileName(
-            cast("QWidget", self), "选择 PDF 源文件",
-            str(default_open_dir()), "PDF (*.pdf)",
+            cast("QWidget", self),
+            "选择 PDF 源文件",
+            str(default_open_dir()),
+            "PDF (*.pdf)",
         )
         if not filename:
             return
         source = Path(filename)
         if not source.is_file():
             self._toast(
-                "warning", "选择失败",
+                "warning",
+                "选择失败",
                 f"「{source.name}」已经不在那个位置了，请重新选择。",
             )
             return
@@ -1147,10 +1188,16 @@ class PageListMixin:
             lambda: HashWorker(source),
             lambda worker, thread: (
                 connect_queued(
-                    self, worker.finished, self._on_source_hash_ready, thread,
+                    self,
+                    worker.finished,
+                    self._on_source_hash_ready,
+                    thread,
                 ),
                 connect_queued(
-                    self, worker.failed, self._on_source_hash_failed, thread,
+                    self,
+                    worker.failed,
+                    self._on_source_hash_failed,
+                    thread,
                 ),
                 worker.finished.connect(thread.quit),
                 worker.failed.connect(thread.quit),
@@ -1168,13 +1215,14 @@ class PageListMixin:
         source = self._pending_source or Path(path_text)
         self._pending_source = None
         if not self.task_id:
-            return          # 算指纹这几秒里用户可能已经切走任务了
+            return  # 算指纹这几秒里用户可能已经切走任务了
 
         current = (self.store.get_task(self.task_id) or {}).get("source_hash")
         if current and str(current) == source_hash:
             # 同一个文件又选了一遍：换过去等于什么都没变，还要清一遍产物
             self._toast(
-                "info", "已经是当前文件",
+                "info",
+                "已经是当前文件",
                 f"「{source.name}」就是这个任务正在用的源文件，无需更换。",
             )
             return
@@ -1187,7 +1235,7 @@ class PageListMixin:
             other = duplicates[0]
             if not self._confirm_duplicate_source(source, other):
                 return
-            #⚠️ **不再问第二次**：清空后果已经写在这一个弹窗里了，连弹两次
+            # ⚠️ **不再问第二次**：清空后果已经写在这一个弹窗里了，连弹两次
             #    只是折磨用户。
             self._apply_source(source, source_hash, duplicate_of=other)
             return
@@ -1248,8 +1296,9 @@ class PageListMixin:
         else:
             self._refresh_source_actions()
 
-    def _apply_source(self, source: Path, source_hash: str,
-                      duplicate_of: dict | None = None) -> None:
+    def _apply_source(
+        self, source: Path, source_hash: str, duplicate_of: dict | None = None
+    ) -> None:
         """确认过了 → 复制进任务目录、改索引、清旧产物、重载页面。
 
         ``duplicate_of`` 非空 = 用户明知"这个 PDF 已在任务X 里"仍选择使用
@@ -1264,14 +1313,14 @@ class PageListMixin:
         # 复制进任务目录 + 改索引（store.set_task_source 内部做拷贝；失败
         # 返回 False 时不碰界面——索引指向一个不存在的文件比什么都不做更糟）
         try:
-            ok = self.store.set_task_source(task_id, source,
-                                            source_hash=source_hash)
+            ok = self.store.set_task_source(task_id, source, source_hash=source_hash)
         except OSError as exc:
             self._toast("error", "选择失败", f"{type(exc).__name__}: {exc}")
             return
         if not ok:
             self._toast(
-                "warning", "选择失败",
+                "warning",
+                "选择失败",
                 f"没能把「{source.name}」收进这个任务（文件可能已被移走）。",
             )
             return
@@ -1281,7 +1330,8 @@ class PageListMixin:
         self._dismiss_source_prompt()
         if duplicate_of:
             self._toast(
-                "info", "已使用相同文件",
+                "info",
+                "已使用相同文件",
                 f"源文件：{source.name}（任务「{duplicate_of.get('name')}」"
                 "用的也是同一本）。",
             )
@@ -1331,8 +1381,12 @@ class PageListMixin:
             # ⚠️ **副本节点的同名副本也要算**（B 方案）：``pages~Node_3.json``
             #    / ``boxes~Node_2.json`` 同样是"跑过留下的东西"，漏了它们会
             #    在"换源文件"时既不提示、也不清理。
-            for pattern in ("pages~*.json", "boxes~*.json", "sizes~*.json",
-                            "print~*.json"):
+            for pattern in (
+                "pages~*.json",
+                "boxes~*.json",
+                "sizes~*.json",
+                "print~*.json",
+            ):
                 if next(root.glob(pattern), None) is not None:
                     return True
             stages = root / "stages"
@@ -1355,8 +1409,13 @@ class PageListMixin:
 
         # ⚠️ 调用方 _apply_source 已保证有任务在身
         task_dir = self.store.task_dir(self.task_id)  # type: ignore[reportArgumentType]
-        for name in ("pages.json", "runs.json", "boxes.json", "sizes.json",
-                     "print.json"):
+        for name in (
+            "pages.json",
+            "runs.json",
+            "boxes.json",
+            "sizes.json",
+            "print.json",
+        ):
             try:
                 (task_dir / name).unlink(missing_ok=True)
             except OSError:
@@ -1365,15 +1424,19 @@ class PageListMixin:
         #    ``boxes~Node_2.json`` / ``print~Node_2.json`` 都在任务**根**下，
         #    下面 rmtree 的 ``stages``/``drafts`` 收不到它们——留着就是"换完源
         #    文件，旧书的页清单与检测框在副本节点上复活"。
-        for pattern in ("pages~*.json", "boxes~*.json", "sizes~*.json",
-                        "print~*.json"):
+        for pattern in ("pages~*.json", "boxes~*.json", "sizes~*.json", "print~*.json"):
             for stale in task_dir.glob(pattern):
                 try:
                     stale.unlink(missing_ok=True)
                 except OSError:
                     pass
-        for sub in ("stages", "thumbnails/detect", "thumbnails/print",
-                     "thumbnails/imposition", "drafts"):
+        for sub in (
+            "stages",
+            "thumbnails/detect",
+            "thumbnails/print",
+            "thumbnails/imposition",
+            "drafts",
+        ):
             try:
                 shutil.rmtree(task_dir / sub, ignore_errors=True)
             except OSError:
@@ -1381,8 +1444,7 @@ class PageListMixin:
         # 页缓存按**页号**命名，跨书共用会串页（见 MEMORY「按页号命名的缓存
         # 不能跨书共用」）——源一换，整本源缩略图缓存作废。
         try:
-            shutil.rmtree(task_dir / "thumbnails/source",
-                          ignore_errors=True)
+            shutil.rmtree(task_dir / "thumbnails/source", ignore_errors=True)
         except OSError:
             pass
         # ⚠️⚠️ **必须把"待写"标记也清掉**：``set_task`` 开头会
@@ -1404,9 +1466,9 @@ class PageListMixin:
 #: "请上传 PDF"是错的引导——他该去放图。
 _MISSING_INPUT_TEXT = {
     "pdf": "尚未选择 PDF：本流程需要 PDF 源文件，请点右侧「选择 PDF」"
-           "上传后才能执行各步骤。",
+    "上传后才能执行各步骤。",
     "images": "本流程第一步需要图片：请点右侧的图片按钮上传，"
-              "或把图片/图片文件夹放进任务目录下的 stages/input。",
+    "或把图片/图片文件夹放进任务目录下的 stages/input。",
 }
 
 

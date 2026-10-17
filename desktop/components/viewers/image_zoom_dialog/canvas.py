@@ -27,11 +27,13 @@ class ZoomTarget:
     """
 
     __slots__ = ("render", "note", "stem", "count", "original", "cap",
-                 "save_path", "edit_path", "edit_label", "show_text_tool")
+                 "save_path", "edit_path", "locate_path", "edit_label",
+                 "show_text_tool")
 
     def __init__(self, render, note: str = "", stem: str = "", count: int = 1,
                  original=None, cap: int | None = None, save_path=None,
-                 edit_path=None, edit_label: str = "编辑图片",
+                 edit_path=None, locate_path=None,
+                 edit_label: str = "编辑图片",
                  show_text_tool: bool = True):
         """render: ``(edge:int) -> worker``；cap: 渲染密度上限（如原图原生边长）。
 
@@ -50,6 +52,12 @@ class ZoomTarget:
 
         ``edit_label``：右键菜单「编辑…」的文案，默认「编辑图片」。
 
+        ``locate_path``：右键「定位图片资源」要定位的**真实文件**。不传时回落
+        ``edit_path``（既有行为）。⚠️ 单独立一个字段是为了把"能定位"与"能编辑"
+        **解耦**：拼版「单张原图」按现行口径不给单图编辑（编辑统一作用于整页），
+        但它背后确实有文件，用户仍应该能定位到它（用户 2026-10-17：「检查每一步
+        图片需要定位」）。
+
         ``show_text_tool``：编辑器是否显示文字功能；默认显示。拼版页的图片
         编辑可设为 ``False``，其余步骤不受影响。
         """
@@ -61,6 +69,10 @@ class ZoomTarget:
         self.cap = cap            # int | None：超过它渲染没有意义（会白放大）
         self.save_path = Path(save_path) if save_path else None
         self.edit_path = Path(edit_path) if edit_path else self.save_path
+        #: 定位目标：**独立于编辑**。给 None 时回落 edit_path（不传的调用方行为不变）
+        self.locate_path = (
+            Path(locate_path) if locate_path else self.edit_path
+        )
         self.edit_label = edit_label
         self.show_text_tool = bool(show_text_tool)
 

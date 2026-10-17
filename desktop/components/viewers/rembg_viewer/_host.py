@@ -43,9 +43,12 @@ class RembgViewerHost(QWidget, ThumbsMixin, ZoomPopupMixin):
     _live_dir: Any
     _load_token: Any
     _mode: Any
+    _page_width_provider: Any
     _paths: Any
     _region_params_provider: Any
     _rembg_dir: Any
+    _single_column_book: Any
+    _side_for: Any
     _thumb_provider: Any
     current_changed: Signal
     image_saved: Signal
@@ -55,6 +58,9 @@ class RembgViewerHost(QWidget, ThumbsMixin, ZoomPopupMixin):
     view: ImageView
 
     # ---- 方法（主类 + 各 Mixin）----
+    def _book_slots(self, path_text: str, boxes: list) -> list:
+        ...
+
     def _build_entries(self) -> list[dict]:
         ...
 

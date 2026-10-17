@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from PySide6.QtGui import QCursor, QImage
@@ -127,21 +128,46 @@ class ZoomPopupMixin:
         ):
             items.append((target.edit_label, FIF.EDIT, self.edit_current_image))
         # 「定位图片资源」（2026-10-11 用户）：资源管理器打开本页显示内容
-        # 背后的**真实文件**位置（``edit_path``：1:1 显示时即文件本身，
-        # 派生显示时是它派生自的那个文件）。只读动作，**不受编辑开关
-        # 限制**——去底色阶段不许编辑，但"这张图的文件在哪儿"仍要能看。
-        if target is not None and target.edit_path is not None:
+        # 背后的**真实文件**位置（``locate_path``：不传时回落 ``edit_path``——
+        # 1:1 显示时即文件本身，派生显示时是它派生自的那个文件）。
+        # ⚠️ 只读动作，**不受编辑开关限制**：去底色阶段不许编辑、拼版单张原图
+        #    不许编辑，但"这张图的文件在哪儿"仍要能看（用户 2026-10-17）。
+        if target is not None and target.locate_path is not None:
             items.append(("定位图片资源", FIF.FOLDER, self._locate_current_image))
         return items
 
     def _locate_current_image(self) -> None:
-        """右键「定位图片资源」：资源管理器定位当前图对应的真实文件。"""
+        """右键「定位图片资源」：资源管理器定位当前图对应的真实文件。
+
+        ⚠️ 文件已不存在时**明说**并退到所在目录：静默什么都不发生，用户只会
+        以为"定位错了"（用户 2026-10-17 报障形态）。
+        """
         target = self._zoom_target(self._zoom_index())
-        if target is None or target.edit_path is None:
+        if target is None or target.locate_path is None:
             return
         from desktop.utils.files import reveal_in_explorer
 
-        reveal_in_explorer(target.edit_path)
+        path = Path(target.locate_path)
+        if reveal_in_explorer(path):
+            return
+        parent = path.parent
+        if parent.is_dir():
+            reveal_in_explorer(parent)
+            self._locate_note(
+                f"源文件已不存在，已打开所在目录：{parent}"
+            )
+        else:
+            self._locate_note(f"找不到文件（所在目录也不存在）：{path}")
+
+    def _locate_note(self, message: str) -> None:
+        """定位失败时的一行人读提示：写到弹窗状态条右侧的临时提示位。
+
+        ⚠️ 用弹窗自己的 ``tip_label``（保存/打印结果也写那里），不再造一套
+        提示通道；拿不到就静默——这是纯旁路，不该因为提示失败影响定位。
+        """
+        label = getattr(self._zoom_dialog, "tip_label", None)
+        if label is not None:
+            label.setText(message)
 
     def edit_current_image(self) -> bool:
         """右键「编辑图片」：直接编辑当前显示图对应的**真实文件**并覆盖回写。

@@ -15,6 +15,7 @@ from utils.box_geometry import half_sides
 
 from .edit import EditMixin
 from .render import RenderMixin
+from .styles import is_half_page
 
 
 class ImageView(
@@ -58,6 +59,15 @@ class ImageView(
         #: 本页是否**整幅**(fullcontent)：整幅页的框是显式类型（恒为「整幅」，
         #: 不按位置判左右），且只允许一个框；否则是半幅页（按中心定左右、最多两个）。
         self._full_mode = False
+        #: 整本书是否已判定为**单栏书**（``utils/book_layout``）。为真时，一个
+        #: 横跨整页的半幅框标「半框」而不是「左框/右框」——单页分不出
+        #: 「一栏横跨整页」与「真双栏漏检一侧」，只能靠整本书的统计。
+        #: 由宿主经 :meth:`set_single_column` 设置。
+        self._single_column = False
+        #: 用户在**半框页**上指定的左右（``"left"``/``"right"``/``None``）。
+        #: 半框的框横跨整页、中心压在中线上，位置判定没意义，所以由用户指定
+        #: （用户 2026-10-17）。存在 boxes.json 的 ``side``（见 store）。
+        self._side_override: str | None = None
         self._reference_boxes: list = []  # 参考框（最终裁剪大框），虚线显示
         self._image_size: QSize | None = None
         self.setMouseTracking(True)
@@ -126,10 +136,11 @@ class ImageView(
 
 
     def box_kinds(self) -> list:
-        """当前每个框的类型：``"left"`` / ``"right"`` / ``"full"``。
+        """当前每个框的类型：``"left"`` / ``"right"`` / ``"full"`` / ``"half"``。
 
-        与 :meth:`_draw_boxes` 用的是**同一份规则**（整幅页恒为 full；半幅页按
-        中心位置判左右），所以面板高亮与实际画出的标签永远一致。
+        与 :meth:`_draw_boxes` 用的是**同一份规则**（整幅页恒为 full；单栏书里
+        一个横跨整页的框是 half；其余半幅页按中心位置判左右），所以面板高亮
+        与实际画出的标签永远一致。
         """
         if self._full_mode:
             return ["full"] * len(self._boxes)
@@ -137,7 +148,53 @@ class ImageView(
             (self._image_size.width(), self._image_size.height())
             if self._image_size else None
         )
+        if self._side_override in ("left", "right"):
+            return [self._side_override] * len(self._boxes)
+        if is_half_page(self._boxes, size, self._full_mode, self._single_column):
+            return ["half"] * len(self._boxes)
         return half_sides(self._boxes, size)
+
+    def set_side_override(self, side: str | None, rerender: bool = True) -> None:
+        """告知「用户在半框页上指定的左右」（``"left"``/``"right"``/``None``）。
+
+        ⚠️ 这是**用户声明**，不是按位置算的左右：半框的框横跨整页、中心压在
+        中线上，位置判定没有意义（用户 2026-10-17）。为真时标签与面板高亮都
+        显示该侧；``None`` 退回按整本书自动判定的「半框」。
+
+        ``rerender=False`` 同 :meth:`set_single_column`：后面紧跟 ``apply_boxes``
+        时别画两遍。
+        """
+        value = side if side in ("left", "right") else None
+        if value == getattr(self, "_side_override", None):
+            return
+        self._side_override = value
+        if rerender:
+            self._rerender()
+
+    def side_override(self) -> str | None:
+        """当前页的用户指定左右（无指定为 ``None``）。"""
+        return getattr(self, "_side_override", None)
+
+    def set_single_column(self, single_column: bool, rerender: bool = True) -> None:
+        """告知「整本书已判定为单栏书」（``utils.book_layout.profile_book``）。
+
+        ⚠️ 这是**整本书**的结论，由宿主统计后传进来——单页分不出「一栏横跨
+        整页」与「真双栏书漏检一侧」。为真时，一个横跨整页的半幅框标「半框」
+        而不是「左框/右框」。
+
+        ``rerender=False``：调用方紧接着还会 ``apply_boxes``（那本身就会重绘），
+        两次重绘是白花——宿主一次切换类型不该画两遍（用户报的卡顿）。
+        """
+        value = bool(single_column)
+        if value == getattr(self, "_single_column", False):
+            return
+        self._single_column = value
+        if rerender:
+            self._rerender()
+
+    def single_column(self) -> bool:
+        """当前是否按**单栏书**显示（宿主据此算标签，见 ``box_names``）。"""
+        return bool(getattr(self, "_single_column", False))
 
 
     def set_boxes_editable(self, editable: bool) -> None:

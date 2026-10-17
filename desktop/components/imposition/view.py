@@ -174,6 +174,8 @@ class ImpositionViewWidget(QWidget):
     item_edit_requested = Signal(int)
     #: 画布右键菜单在空白处选了「编辑图片」：编辑整页组合
     spread_edit_requested = Signal()
+    #: 「定位图片资源」没定位成（文件已不存在等）：一行人读说明
+    locate_failed = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -209,6 +211,7 @@ class ImpositionViewWidget(QWidget):
         # 右键「编辑图片」不经预览弹窗，编辑入口归控制器管
         self.canvas.item_edit_requested.connect(self.item_edit_requested)
         self.canvas.spread_edit_requested.connect(self.spread_edit_requested)
+        self.canvas.locate_failed.connect(self.locate_failed)
         right.addWidget(self.canvas, 1)
         bottom = QHBoxLayout()
         bottom.setSpacing(T.SPACE_SM)

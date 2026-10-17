@@ -4,8 +4,10 @@
 三条约定的落点（用户 2026-09-29 定）：
 
 1. **删除不影响其他框的类型**：类型存在**槽位**里，不是"还剩几个框"推出来的；
-2. **半幅的左/右由框的中心位置决定**（``utils.box_geometry``），拖动跨过中线
-   自动换边——所以半幅页上点「左框/右框」不给切换、只解释规则；
+2. **左右只在"双框页"上由框的中心位置决定**（``utils.box_geometry``），拖动跨过
+   中线自动换边；**单框页**（只检出一侧——含「整幅」页，它同样只有一个框）
+   由**用户指定**（存 ``boxes.json`` 的 ``side``）：单框页的中心压在中线上，
+   位置判定没有意义（用户 2026-10-17）；
 3. **整幅是显式类型**：用户选了就一直是整幅；整幅与半幅互斥、一页只能一个框，
    切整幅时若有其他框，**先问再删，绝不静默删框**。
 
@@ -23,7 +25,12 @@ from __future__ import annotations
 from typing import Any
 
 from utils.box_draw import box_kind_name
-from utils.box_geometry import drop_box, set_box_full, set_box_half
+from utils.box_geometry import drop_box, set_box_full, set_box_half, set_box_side
+
+
+#: ``box_commit(..., side=...)`` 的默认值：**不动**该页已有的左右指定。
+#: 用字符串哨兵而不是 ``None``，因为 ``None`` 本身有含义（＝清除指定、退回半框）。
+SIDE_KEEP = "keep"
 
 
 class BoxKindHost:
@@ -36,12 +43,20 @@ class BoxKindHost:
     - ``box_raw_slots(path_text)``：该页**槽位**表示（保留 null，形态在槽数里）；
     - ``box_page_is_full(path_text)``：当前页是否整幅形态（半幅页上点左/右
       只解释规则不给切换）；
+    - ``box_page_half_candidate(path_text)``：当前页是否**够「半框」**——整本书
+      判定为单栏书 **且** 这页只有一个宽到横跨整页的框（判据
+      :func:`utils.book_layout.is_single_wide_box`）。为真时左右**可指定**
+      （中心压在中线上，位置判定没有意义）；
     - ``box_image_size(path_text)``：原始像素 ``(w, h)``，取不到给 ``None``；
-    - ``box_commit(path_text, slots, select_box=None)``：落库 + 重画——任务
-      流程写 ``boxes.json`` + 内存缓存，独立页写内存表，各自实现；
+    - ``box_commit(path_text, slots, select_box=None, side=SIDE_KEEP)``：落库 +
+      重画——任务流程写 ``boxes.json`` + 内存缓存，独立页写内存表，各自实现。
+      ``side`` 语义：``"left"``/``"right"`` 写入指定、``None`` 清除、
+      ``"keep"``（默认）不动；
     - ``box_confirm(title, body, yes_text, cancel_text) -> bool``：确认框；
-    - ``box_full_declined(index)``：用户拒绝"删除其他框并设为整幅"后的回填
-      钩子（把面板高亮从「整幅」拨回去）；
+    - ``box_resync_kind(index)``：**按现值回填面板高亮**。类型操作结束时必调：
+      有些点击是"无操作"的（普通半幅页点另一侧、整幅声明被取消），而分段控件
+      在按下那一刻就把滑块移过去了——不回填就会停在"看起来切了、其实没切"的
+      位置，用户再点一次才发现（用户 2026-10-17 报"切换有问题"）；
     - ``box_current_path_text()``：当前页路径（没有页时给空串）。
     """
 
@@ -58,10 +73,27 @@ class BoxKindEditor:
 
     # ------------------------------------------------------------ 类型切换
     def set_kind(self, path_text: str, index: int, kind: str) -> None:
-        """面板里点了「左框 / 右框 / 整幅」。
+        """面板里点了「左框 / 右框 / 半框 / 整幅」。
 
         没选中框时按用户要求 6 处理：**点类型即选中该类型的框**；选中了框
         则切换它的类型（整幅要过互斥检查）。
+
+        ⚠️ **点哪段就是哪段**（用户 2026-10-17 第五轮：「四个按钮自由切换，
+        直接改这张图的类型就行」）——不再按"当前是整幅页 / 半幅页"分两条路：
+
+        - 「左框」「右框」：**单框页**（含当前是「整幅」的页）直接摆到该侧并
+          记下 ``side``；**双框页**左右由中心位置决定，点另一侧没有可写的东西
+          （把一侧"改成另一侧"等于交换两栏，不是标注）；
+        - 「半框」：摊成半幅 **2 槽** + 清除 ``side``（旧实现只清 ``side`` 不动
+          槽数——从「整幅」点它就是空操作，用户 2026-10-17 报）；
+        - 「整幅」：单槽 + 互斥确认（见 :meth:`make_full`）。
+
+        ⚠️ 这三类点击都**不弹提示**（用户 2026-10-17）——结果直接体现在框的
+        颜色/名称与面板高亮上。
+
+        ⚠️ 落账后**一律回填面板**（``box_resync_kind``）：分段控件在按下那一
+        刻就把滑块移到被点的段，而"普通半幅页点另一侧"这类点击本来就没有可
+        写的东西——不回填就会停在假位置上（看起来切了，其实没切）。
         """
         if index < 0:
             self.select_box_of_kind(kind)
@@ -69,11 +101,50 @@ class BoxKindEditor:
         kinds = self.host.box_viewer().box_kinds()
         current = kinds[index] if index < len(kinds) else ""
         if kind == current:
-            return  # 已经是这个类型（左/右按位置判定，点了也是这个结果）
-        if kind == "full":
+            return  # 已经是这个类型（普通半幅页按位置判定，点了也是这个结果）
+        if kind == "half":
+            self.clear_side(path_text, index)
+        elif kind == "full":
             self.make_full(path_text, index)
         else:
             self.make_half(path_text, index, kind)
+        self._resync(index)
+
+    def _resync(self, index: int) -> None:
+        """按现值回填面板高亮（宿主没实现该钩子时静默跳过）。"""
+        resync = getattr(self.host, "box_resync_kind", None)
+        if callable(resync):
+            resync(index)
+
+    def clear_side(self, path_text: str, index: int) -> None:
+        """点「半框」：摊成半幅 **2 槽** + 清除「用户指定的左右」。
+
+        ⚠️ **静默**（用户 2026-10-17：指定左/右/半框都不需要提示）：点类型
+        本身就是即时生效的操作，结果直接反映在框的颜色/名称与面板高亮上，
+        再弹一条"已指定"只是噪音。
+
+        ⚠️⚠️ **「整幅」页上点它也必须真的离开整幅**（用户 2026-10-17 报
+        「当前是整幅，直接点半框没有效果」）：整幅页是 **1 槽**，只清 ``side``
+        不动槽数，形态还是整幅 ⇒ 看着什么都没发生。这里先按中心位置把它摊成
+        半幅 2 槽（``set_box_half``）再清指定——「半框」就是"半幅 2 槽且没有
+        人工指定"。
+
+        ⚠️ 只有**单框页**才有可清除的指定：双框页的左右由位置决定，没有
+        ``side`` 可清（点了就当无操作，但必须回填面板）。
+        """
+        raw = self.host.box_raw_slots(path_text)
+        boxes = [b for b in raw if b]
+        if len(boxes) != 1 or not 0 <= index < len(boxes):
+            self._resync(index)  # 没有可清除的指定 → 滑块拨回真实类型
+            return
+        if self.host.box_page_is_full(path_text):
+            size = self.host.box_image_size(path_text) or (0, 0)
+            self.host.box_commit(
+                path_text, set_box_half(raw, index, size),
+                select_box=boxes[index], side=None,
+            )
+            return
+        self.host.box_commit(path_text, raw, select_box=boxes[index], side=None)
 
     def select_box_of_kind(self, kind: str) -> None:
         """没有选中框时，点类型＝选中该类框；该类型不存在则提示。"""
@@ -114,33 +185,43 @@ class BoxKindEditor:
                 "取消",
             )
             if not agreed:
-                self.host.box_full_declined(index)  # 回填面板高亮，别停在「整幅」
+                self._resync(index)  # 回填面板高亮，别停在「整幅」
                 return
         self.host.box_commit(
-            path_text, set_box_full(raw, index), select_box=boxes[index]
+            path_text, set_box_full(raw, index), select_box=boxes[index], side=None
         )
 
     def make_half(self, path_text: str, index: int, kind: str) -> None:
-        """把第 index 个框改成半幅（左/右）。"""
+        """点「左框」/「右框」：把第 index 个框**直接**摆到那一侧。
+
+        ⚠️ 按**框的个数**分两种情况（用户 2026-10-17 第三/四/五轮修正）：
+
+        - **单框页**（古籍最常见：只检出一侧，另一槽为空）→ **用户说了算**：
+          把框摆到指定槽位并记下显式左右（``boxes.json`` 的 ``side``）。
+          ⚠️ 这一条**与当前形态无关**——「整幅」页同样只有一个框，所以从
+          「整幅」点「左框/右框」也必须**一步**到位（旧实现走"整幅→半幅"那条
+          按**中心位置**落槽的分支，而整页框的中心恰好压在中线上 ⇒ 恒落右槽，
+          用户点「左框」却得到「右框/半框」，得再点一次——用户 2026-10-17 报）；
+        - **双框页**（一页真有左右两页）→ 左右由**中心位置**决定，点另一侧
+          没有可写的东西（把一侧"改成另一侧"等于交换两栏，不是标注）。
+
+        ⚠️ 两条路都**静默**（用户 2026-10-17：「指定左框/右框/半框不需要提示」）：
+        框的颜色与名称、面板高亮本身就是结果，弹提示只是噪音。
+        ⚠️ 无论哪条路都要**回填面板**：滑块在按下时已被移过去，不回填就停在
+        假位置（看着切了、其实没切）。
+        """
         raw = self.host.box_raw_slots(path_text)
         boxes = [b for b in raw if b]
         if not 0 <= index < len(boxes):
             return
-        if not self.host.box_page_is_full(path_text):
-            # 半幅页里左/右是**位置**决定的（用户要求 2），点不出另一种来
-            side = box_kind_name(kind)
-            self.host.box_toast(
-                "info",
-                f"「{side}」由框的位置决定",
-                f"左框/右框按框的中心位置自动判定：把这个框拖到页面的另一半，"
-                f"它就会变成{side}。",
+        if len(boxes) == 1:
+            # 单框页（含「整幅」页）：槽位摆到指定侧 + 记下显式左右
+            # （重复点同一侧无副作用）
+            self.host.box_commit(
+                path_text, set_box_side(raw, index, kind),
+                select_box=boxes[index], side=kind,
             )
-            return
-        # 整幅 → 半幅：一个框也能是半幅（漏检一侧的情形），按中心位置定左右
-        size = self.host.box_image_size(path_text) or (0, 0)
-        self.host.box_commit(
-            path_text, set_box_half(raw, index, size), select_box=boxes[index]
-        )
+        self._resync(index)
 
     # ---------------------------------------------------------------- 删框
     def delete_selected(self) -> None:
@@ -157,5 +238,5 @@ class BoxKindEditor:
         if not 0 <= index < len(boxes):
             return
         size = self.host.box_image_size(path_text) or (0, 0)
-        self.host.box_commit(path_text, drop_box(raw, index, size))
+        self.host.box_commit(path_text, drop_box(raw, index, size), side=None)
         self.host.box_viewer().select_box(-1)

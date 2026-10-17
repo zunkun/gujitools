@@ -54,6 +54,8 @@ class ImageViewHost(QLabel):
     _scaled_base: Any
     _scaled_key: Any
     _selected: Any
+    _side_override: str | None
+    _single_column: bool
     boxes_edited: Signal
     context_menu_requested: Signal
     double_clicked: Signal
@@ -163,4 +165,16 @@ class ImageViewHost(QLabel):
         ...
 
     def set_reference_boxes(self, boxes: list) -> None:
+        ...
+
+    def set_single_column(self, single_column: bool) -> None:
+        ...
+
+    def set_side_override(self, side: str | None) -> None:
+        ...
+
+    def side_override(self) -> str | None:
+        ...
+
+    def single_column(self) -> bool:
         ...

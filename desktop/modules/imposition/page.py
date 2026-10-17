@@ -213,6 +213,10 @@ class ImpositionModulePage(ModulePage):
             lambda _slot: self._open_spread_edit()
         )
         self.view.spread_edit_requested.connect(self._open_spread_edit)
+        # 「定位图片资源」没定位成（源文件已不存在）：说清原因，别静默
+        self.view.locate_failed.connect(
+            lambda message: self.toast("warning", "定位图片资源", message)
+        )
         return self.view
 
     # ------------------------------------------------------------------ 控制
@@ -817,6 +821,9 @@ class ImpositionModulePage(ModulePage):
             note=f"{cn_page_label(page_index)} · {side}「{path.name}」",
             stem=path.stem,
             count=len(items),
+            # ⚠️ 只给「定位」，不给 edit_path：拼版不提供单张源图编辑（编辑统一
+            #    作用于整页）。绑在 edit_path 上会让这张原图没有定位菜单。
+            locate_path=path,
         )
 
     def _spread_target(self, page_index: int):
@@ -835,6 +842,13 @@ class ImpositionModulePage(ModulePage):
         left = stems[1] if len(stems) > 1 else ""
         edited = pages[page_index].get("edited_file")
         edit_path = Path(edited) if edited and Path(edited).is_file() else None
+        # ⚠️ 定位独立于编辑：整页组合是虚拟图——有成品定位成品，没有就退到
+        #    源图所在目录（至少能到那一批源图跟前），别因为没有成品就不给菜单。
+        locate_path = edit_path
+        if locate_path is None:
+            first = Path(str(items[0].get("file") or ""))
+            if first.parent.is_dir():
+                locate_path = first.parent
         return ZoomTarget(
             render=lambda edge, page={"items": items}: (
                 # ⚠️ 白底（与「导出成品」同口径）：singletask 的整页组合预览
@@ -846,6 +860,7 @@ class ImpositionModulePage(ModulePage):
             count=1,
             save_path=edit_path,
             edit_path=edit_path,
+            locate_path=locate_path,
             edit_label="编辑图片",
             show_text_tool=False,
         )

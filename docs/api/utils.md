@@ -4,7 +4,7 @@
 
 通用工具函数：几何、排序、图像 IO、PDF、YOLO
 
-覆盖 26 个模块、12 个公开类、146 个公开函数/方法（生成于 2026-10-17）。
+覆盖 27 个模块、13 个公开类、154 个公开函数/方法（生成于 2026-10-17）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -12,8 +12,9 @@
 
 | 模块 | 类 | 函数 |
 | --- | --- | --- |
+| [`utils.book_layout`](#utilsbook_layout) | 1 | 7 |
 | [`utils.box_draw`](#utilsbox_draw) | 0 | 8 |
-| [`utils.box_geometry`](#utilsbox_geometry) | 2 | 15 |
+| [`utils.box_geometry`](#utilsbox_geometry) | 2 | 16 |
 | [`utils.color_utils`](#utilscolor_utils) | 0 | 2 |
 | [`utils.compact_png`](#utilscompact_png) | 0 | 2 |
 | [`utils.data_package`](#utilsdata_package) | 0 | 12 |
@@ -38,6 +39,149 @@
 | [`utils.units`](#utilsunits) | 0 | 2 |
 | [`utils.version`](#utilsversion) | 0 | 4 |
 | [`utils.yolo_utils`](#utilsyolo_utils) | 1 | 6 |
+
+---
+
+## `utils.book_layout`
+
+源码：[`utils/book_layout.py`](../../utils/book_layout.py)
+
+**全书级**页形态判定：单栏书 / 整幅书，以及整幅书里的可疑半幅页。
+
+⚠️ 本模块与 :mod:`utils.box_geometry` 的分工必须分清，否则必然出现两份真相：
+
+- ``box_geometry`` 管的是**单页**槽位形态（半幅恒 2 槽 / 整幅恒 1 槽），
+  以及左右分栏、border、画布几何——它**不看页宽**，也不看别的页；
+- 本模块管的是**跨页**的整体判定：一个「单宽框」的框到底该按左半幅还是
+  按整幅理解，取决于**整本书**长什么样，而不是这一页本身。
+
+**为什么需要它（用户 2026-10-17）**：模型把「一栏横跨整页」的单栏书也判成
+``harfcontent``。这类书从头到尾只有一栏，永远不会出现一页里并排左页+右页，
+于是按单页判据产出的 ``7-l.png`` 是**假身份**——第四步拼版会把它当左半幅去找
+``8-r`` 配对，找不到就整页落单；PDF 侧还会拿 ``-l/-r`` 后缀推算奇偶页。于是
+「一个文本框 = 一个页」这件事在文件名上彻底丢了。
+
+**两个极端是对称的**：
+
+1. **单栏书**：几乎所有有框页都是「单个、且框宽 ≥ 80% 页宽」的半幅框 ⇒
+   整本书按**单栏**理解，这些页不再拆 ``-l``/``-r``，直接按页码命名（``7.png``）；
+2. **整幅书**：几乎所有有框页都是整幅 ⇒ 这时**不该**出现半幅框，真出现就是
+   可疑结果（多半是模型把整幅误判成半幅），必须让用户看见——但**不自动改**
+   （用户 2026-10-17 明确选择「只警告」：悄悄改会把本来对的框改坏）。
+
+纯规则、无 Qt / 无 cv2 / 无模型，供 GUI 主进程与 worker 共用。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| SINGLE_COLUMN_WIDTH_RATIO | `0.8` |
+| SINGLE_COLUMN_BOOK_RATIO | `0.9` |
+| FULL_BOOK_RATIO | `0.9` |
+
+### `class BookProfile(NamedTuple)`
+
+整本书的形态判定结果（一次性统计，各判据共用）。
+
+属性:
+    total_pages: 参与统计的页数（含无框页）。
+    boxed_pages: 检出了框的页数——所有比例的分母都是它，不是总页数。
+    single_wide_pages: 「单宽框」页（见 :func:`is_single_wide_half`）。
+    double_half_pages: 真双栏页（左右两个框都检出）。
+    narrow_single_pages: 单个半幅框但**不够宽**的页——单栏书里的漏网
+        之鱼（如某页正文只占 3/4 页宽），仍按半幅处理，不改写身份。
+    full_pages: 整幅页。
+    empty_pages: 无框页。
+    single_column_book: 是否认定为**单栏书**（这些页不该拆 ``-l``/``-r``）。
+    full_book: 是否认定为**整幅书**。
+    suspicious_half_pages: 整幅书里出现的半幅页（页名）——**可疑结果**，
+        交由界面提示，不自动改。
+    suspicious_half_ratio: 可疑半幅页占整幅书有框页的比例（0~1）。
+
+⚠️ ``single_column_book`` 与 ``full_book`` 可以同时为 ``False``（混合排版
+的书：一部分单栏页、一部分整幅页）。此时不做任何改写，两类页各按原有
+形态处理。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `has_suspicious_half() -> bool` | 是否有"整幅书里冒出半幅"的可疑结果需要提示。 |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `is_single_wide_box(box, page_width) -> bool` | **单个框**是否宽到横跨整页（单栏书那一栏的宽度特征）。 |
+| `is_single_wide_half(slots: Sequence, page_width) -> bool` | 本页是否「单个半幅框、且宽到横跨整页」——单栏书的典型页。 |
+| `single_column_slots(slots: Sequence, single_column_book: bool, page_width) -> list` | 单栏书里把「单个宽框」的半幅槽位**退化成单槽**；其余原样返回。 |
+| `profile_book(pages: Iterable) -> BookProfile` | 整本书的形态判定（**唯一入口**）。 |
+| `single_column_summary(profile: BookProfile) -> str` | :class:`BookProfile` → 单栏书的一行人读结论（无框页不计入比例分母）。 |
+| `suspicious_summary(profile: BookProfile) -> str` | :class:`BookProfile` → 整幅书里冒出半幅的一行人读结论（无需提示时返回空串）。 |
+
+#### `is_single_wide_box(box, page_width) -> bool`
+
+**单个框**是否宽到横跨整页（单栏书那一栏的宽度特征）。
+
+只看几何，不看槽位——供**标注层**用它把「半幅单框」标成「半框」而不是
+「左框/右框」（见 ``desktop.components.viewers.image_view.styles``）。
+槽位级判据见 :func:`is_single_wide_half`，两者共用同一个宽度阈值。
+
+页宽未知（``None``/0/非数）或框畸形时返回 ``False``：没证据不下结论。
+
+#### `is_single_wide_half(slots: Sequence, page_width) -> bool`
+
+本页是否「单个半幅框、且宽到横跨整页」——单栏书的典型页。
+
+三个条件都要满足，缺一不可：
+
+1. **槽位是 2 槽**（半幅形态，见 ``box_geometry`` 槽位约定）：整幅页恒
+   1 槽，本来就按整幅处理，不该被这里改写；``[框]`` 这种 1 槽的半幅退化
+   形态也不认——那已经是整幅语义了，再判一次是重复。
+2. **恰好一个框**（另一侧为 ``None``）：双框是真双栏书，一页里确实有左页
+   和右页，拆 ``-l``/``-r`` 是对的。
+3. **框宽 ≥ 80% 页宽**：这是"其实是一整栏"的唯一硬证据。缺页宽（``None``
+   / 0）时判 ``False``——宁可漏判成普通半幅，也不要在没证据时改写身份。
+
+⚠️ 宽度按 ``x2 - x1`` 算，不看中心位置：单栏书的框可能略偏左/偏右
+（装订线、天头地脚不对称），但它横跨整页。
+
+#### `single_column_slots(slots: Sequence, single_column_book: bool, page_width) -> list`
+
+单栏书里把「单个宽框」的半幅槽位**退化成单槽**；其余原样返回。
+
+⚠️ **这是"单栏书改写身份"的唯一实现**。第三步预览（``rembg_viewer``）与
+提交派生（``print_plan``）都必须调它——两处各写一遍的话，预览会显示
+``0007-l``、成品却是 ``0007.png``，用户改参数重提交时无从判断哪边是对的。
+
+退化后为什么就够了：``box_geometry.is_full_content`` 靠**槽数**判整幅
+（1 槽＝整幅），于是下游三条语义**自动**一起变对——不拆 ``-l``/``-r``、
+不做对称镜像、拼版不会按后缀把它当左半幅去配对。绝不要只改文件名。
+
+参数:
+    slots: 槽位表示（半幅恒 2 槽、整幅 1 槽）。
+    single_column_book: 整本书是否已判定为单栏书（``profile_book``）。
+    page_width: 该页像素宽度；未知时传 ``None``/0（判据保守不改写）。
+
+返回:
+    新列表；未命中时返回原槽位的浅拷贝。
+
+#### `profile_book(pages: Iterable) -> BookProfile`
+
+整本书的形态判定（**唯一入口**）。
+
+参数:
+    pages: 逐页三元组 ``(页名, 槽位, 页宽)``；页宽未知时可给 ``None``/0
+        （该页因此不会计入「单宽框」，见 :func:`is_single_wide_half`）。
+        页宽只用于算比例，**不需要精确到像素**。
+
+返回:
+    :class:`BookProfile`。
+
+⚠️ 「整幅书 + 有半幅」**不改写任何数据**，只把页名记进
+``suspicious_half_pages``——模型判成半幅的那些页仍按半幅走完流程，由用户
+看着提示去核对。这与单栏书那条相反：单栏书是**有充分证据**的形态改写
+（≥90% 有框页都是横跨整页的一栏），整幅书里的半幅则是**证据不足**的异常。
 
 ---
 
@@ -67,6 +211,7 @@ PIL 绘制。字体候选路径来自 `utils.fonts`（Windows/Linux/macOS 三份
 | 名称 | 值 |
 | --- | --- |
 | BOX_NAME_FULL | `"整幅"` |
+| BOX_NAME_HALF | `"半框"` |
 
 ### 模块函数
 
@@ -78,8 +223,8 @@ PIL 绘制。字体候选路径来自 `utils.fonts`（Windows/Linux/macOS 三份
 | `box_color(index: int) -> Tuple[int, int, int]` | 按框序号取 BGR 颜色。 |
 | `box_name(index: int) -> str` | 按框序号取中文名（左框/右框/合并框）。 |
 | `draw_boxes(img_bgr, boxes: Sequence[Optional[Sequence[int]]], thickness: int=4, show_label: bool=True, color=None, names: Optional[Sequence[str]]=None, colors: Optional[Sequence[Tuple[int, int, int]]]=None)` | 在图像上绘制一组框（原地绘制并返回新图，不修改入参）。 |
-| `slot_names_colors(slots)` | **槽位**表示 → 与 ``slots`` 等长的 ``(names, colors)``（BGR）。 |
-| `draw_slots(img_bgr, slots, thickness: int=4, show_label: bool=True)` | 在图像上绘制**槽位**表示的框（标注外观由 :func:`slot_names_colors` 定）。 |
+| `slot_names_colors(slots, page_width=None, single_column: bool=False)` | **槽位**表示 → 与 ``slots`` 等长的 ``(names, colors)``（BGR）。 |
+| `draw_slots(img_bgr, slots, thickness: int=4, show_label: bool=True, single_column: bool=False)` | 在图像上绘制**槽位**表示的框（标注外观由 :func:`slot_names_colors` 定）。 |
 
 #### `draw_boxes(img_bgr, boxes: Sequence[Optional[Sequence[int]]], thickness: int=4, show_label: bool=True, color=None, names: Optional[Sequence[str]]=None, colors: Optional[Sequence[Tuple[int, int, int]]]=None)`
 
@@ -101,24 +246,30 @@ PIL 绘制。字体候选路径来自 `utils.fonts`（Windows/Linux/macOS 三份
 返回:
     绘制后的 BGR 图像（新数组）。
 
-#### `slot_names_colors(slots)`
+#### `slot_names_colors(slots, page_width=None, single_column: bool=False)`
 
 **槽位**表示 → 与 ``slots`` 等长的 ``(names, colors)``（BGR）。
 
-这是"槽位 → 标注外观"的**唯一实现**，两处调用方共用：
+这是"槽位 → 标注外观"的**唯一实现**，三处调用方共用：
 
 - ``functions.detect`` 的 ``--save`` 标注图；
-- 独立「检测文本框」模块页的「导出标注图」。
+- 独立「检测文本框」模块页的「导出标注图」；
+- GUI 预览的标签由 ``image_view.styles`` 按同一套常量给出。
 
 ⚠️ 规则按**槽位**给，不按"过滤掉空项后的第几个框"：槽数就是形态
 （半幅恒 2 槽 ``[左, 右]``、整幅 1 槽 ``[整幅]``，见
 :mod:`utils.box_geometry`）。按序号给会让"只检出一侧"的那一页把左框
 标成"第 1 号框"，也会把整幅标成左框。
 
+``page_width``＋``single_column``：整本书已判定为**单栏书**且这一页只有
+一个横跨整页的框时，标成「半框」而不是「左框/右框」——它没有另一半
+（判据 :func:`utils.book_layout.is_single_wide_box`，阈值只有那一处）。
+缺页宽或缺 ``single_column`` 时退回旧行为，**不猜**。
+
 ``None`` 项原样占位（``draw_boxes`` 会跳过它，GUI 侧则按位置对齐），
 这样"哪一侧缺失"的信息不丢。
 
-#### `draw_slots(img_bgr, slots, thickness: int=4, show_label: bool=True)`
+#### `draw_slots(img_bgr, slots, thickness: int=4, show_label: bool=True, single_column: bool=False)`
 
 在图像上绘制**槽位**表示的框（标注外观由 :func:`slot_names_colors` 定）。
 
@@ -126,6 +277,10 @@ PIL 绘制。字体候选路径来自 `utils.fonts`（Windows/Linux/macOS 三份
 （可能含 ``None``、长度 1 或 2，形态信息就在里面），不该自己拆成
 ``[left, right, full]`` 再逐个传名/配色——那份拆法在
 ``functions/detect`` 与 desktop 之间各写过一次，已经漂移过一次。
+
+``single_column=True``（整本书是单栏书）时，一个横跨整页的半幅框标
+「半框」；页宽直接取**这张图自己的宽度**（标注图画的就是这页，坐标同系）。
+这样导出标注图与界面上看到的标注完全一致。
 
 返回绘制后的 BGR 图像（新数组，不修改入参）。
 
@@ -200,6 +355,7 @@ docs/functions/cropremove.md:57）。布局层统一后该分歧由本模块消�
 | `present_boxes(slots) -> List[list]` | 槽位 → **非空**框列表（保留顺序）。 |
 | `set_box_full(slots, index: int) -> List[Optional[list]]` | 把第 ``index`` 个框设为「整幅」→ **单槽** ``[整幅]``，其余框丢弃。 |
 | `set_box_half(slots, index: int, image_size) -> List[Optional[list]]` | 把第 ``index`` 个框设为「半幅」→ **2 槽** ``[左, 右]``（按中心定左右）。 |
+| `set_box_side(slots, index: int, side: str) -> List[Optional[list]]` | 把第 ``index`` 个框**强制**放到指定侧 → 2 槽 ``[左, 右]``。 |
 | `drop_box(slots, index: int, image_size) -> List[Optional[list]]` | 删掉第 ``index`` 个框后的**新槽位**。 |
 
 #### `is_full_content(boxes) -> bool`
@@ -394,6 +550,17 @@ desktop/workers/preview_worker.compose_region_output 的几何完全等价，
 
 整幅页的框也能是半幅（漏检一侧的情形），所以这个方向**无损**：一个框
 照样按它自己的中心位置落进左槽或右槽，另一侧留 ``None``。
+
+#### `set_box_side(slots, index: int, side: str) -> List[Optional[list]]`
+
+把第 ``index`` 个框**强制**放到指定侧 → 2 槽 ``[左, 右]``。
+
+与 :func:`set_box_half` 的唯一区别：**不按中心位置判**，直接听调用方的。
+用于「半框」页——那种框横跨整页，中心几乎总在中线上，按位置判出来的
+左右是**没有意义的**（用户 2026-10-17：「半框的情况，用户可以指定是左框
+还是右框」）。
+
+``side`` 只认 ``"left"`` / ``"right"``；其它值原样返回（不猜）。
 
 #### `drop_box(slots, index: int, image_size) -> List[Optional[list]]`
 

@@ -21,6 +21,7 @@ from desktop.services.submit_state import (
 from desktop.ui.widgets import bold_button, set_red_frame
 from desktop.utils.files import list_stage_images
 from desktop.pages.taskdetail.runner import STATUS_LABELS
+from utils.book_layout import profile_book
 
 if TYPE_CHECKING:
     from desktop.store.store import TaskStore
@@ -152,14 +153,97 @@ class SubmitMixin:
                 return candidate
         return None
 
+    def _book_page_widths(self) -> dict:
+        """整本书每页的原始像素宽度：``{页名: 宽}``。
+
+        ⚠️ **一次读盘算完整本**（``store.image_sizes_all``）：判定要遍历全部页面，
+        逐页调 ``image_size`` 会整份读 sizes.json，320 页就是 320 次全量解析。
+        缺记录的页回落读图片头（由 ``_page_width_of`` 负责）。
+        """
+        sizes: dict = {}
+        if self.task_id:
+            getter = getattr(self.store, "image_sizes_all", None)
+            if getter is not None:
+                try:
+                    sizes = getter(
+                        self.task_id,
+                        **self._node_scope(self.node_of_stage("detect")),
+                    )
+                except Exception:  # noqa: BLE001 - 读不到就全部回落图片头
+                    sizes = {}
+        widths: dict = {}
+        for path in self._manifest_paths():
+            try:
+                widths[path.stem] = self._page_width_of(path, sizes)
+            except Exception:  # noqa: BLE001 - 取不到宽度按"无页宽"处理
+                widths[path.stem] = 0
+        return widths
+
+    def _book_profile(self, widths: dict | None = None):
+        """整本书的形态判定（``utils.book_layout.BookProfile``）。
+
+        规则本体在 :mod:`utils.book_layout`；这里只负责**取数**：清单 × 每页
+        槽位（与 :meth:`DetectMixin._refresh_detect_stats` 同一口径）＋页宽。
+
+        ⚠️ 走 ``_detect_boxes_for``（内存缓存优先、其次按连线读上游 boxes）
+        而不是只读 boxes.json——用户在预览上刚框过、还没落盘的改动也必须参与
+        判定，否则统计面板已经说"单栏书"、提交却按半幅命名。
+        """
+        if widths is None:
+            widths = self._book_page_widths()
+        pages = [
+            (path.stem, self._detect_boxes_for(str(path)),
+             widths.get(path.stem, 0))
+            for path in self._manifest_paths()
+        ]
+        return profile_book(pages)
+
     def _rembg_submit_entries(self, area: int, border) -> list[dict]:
         """预览结果 + 检测框 + area/border → 最终图片条目（规则见 print_plan）。"""
+        # ⚠️ 全书级判定必须**每次现算**：页面清单、检测框、人工编辑都会变，
+        #    缓存 profile 会让"改完框仍按旧结论命名"。
+        # ⚠️ 页宽只算一次，同时喂给判据与派生回调（回调逐页调用，别再读盘）。
+        widths = self._book_page_widths()
+        profile = self._book_profile(widths)
+        # ⚠️ 指定左右也**一次读盘**（逐页 box_side_at 会整份解析 boxes.json）
+        sides = self._side_overrides_all()
         return plan_rembg_submit_entries(
             manifest_paths=self._manifest_paths(),
             result_path_for=self._rembg_result_path,
             boxes_for=self._detect_boxes_for,
             area=area,
+            single_column_book=profile.single_column_book,
+            page_width_for=lambda text: widths.get(Path(text).stem, 0),
+            side_for=lambda text: sides.get(Path(text).stem),
         )
+
+    def _side_overrides_all(self) -> dict:
+        """整份 boxes.json 里的 ``{页名: 指定左右}``（一次读盘）。
+
+        ⚠️ 别逐页调 ``box_side_at``——那个每次都整份读盘，320 页就是 320 次
+        全量解析（与 ``image_sizes_all`` 同一个理由）。
+        """
+        getter = getattr(self.store, "box_sides_all_at", None)
+        if not callable(getter):
+            return {}
+        try:
+            return getter(self._boxes_read_path())
+        except Exception:  # noqa: BLE001 - 读不到＝没有任何指定
+            return {}
+
+    def _side_override_for(self, path_text: str) -> str | None:
+        """某页的**用户指定左右**（单页查询；批量场景用 :meth:`_side_overrides_all`）。
+
+        ⚠️ 取不到（替身 store 没这个方法 / 老存档没这字段）＝没指定，退回
+        按整本书自动判定——不该让"读不到"变成"猜一个"。
+        """
+        getter = getattr(self.store, "box_side_at", None)
+        if not callable(getter) or not self.task_id:
+            return None
+        try:
+            return getter(self._boxes_read_path(), Path(path_text).stem)
+        except Exception:  # noqa: BLE001 - 读不到按"没指定"
+            return None
 
     def _build_print_effects(self, list_entries: list[dict]) -> list[dict]:
         """第四步的取图规格：**一律透传「提交本次任务」的最终图**。

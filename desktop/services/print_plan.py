@@ -16,6 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from core.command_spec import WHOLE_PAGE_AREA
+from utils.book_layout import single_column_slots
 from utils.box_geometry import is_full_content
 
 
@@ -64,6 +65,9 @@ def plan_rembg_submit_entries(
     result_path_for,
     boxes_for,
     area: int,
+    single_column_book: bool = False,
+    page_width_for=None,
+    side_for=None,
 ) -> list[dict]:
     """预览结果 + 检测框 + area/border → 最终图片条目。
 
@@ -73,8 +77,23 @@ def plan_rembg_submit_entries(
     result_path_for  : (stem) -> Path|None，某页对应的「生成预览」去底结果
     boxes_for        : (path_str) -> list，某页的检测框 [左框, 右框]
     area             : 区域模式（1=左右分页，2/3=并集/对称画布）
+    single_column_book: 整本书是否已判定为**单栏书**（``utils.book_layout``
+        的全书统计结论，见 :func:`~utils.book_layout.profile_book`）。为真时
+        「单个宽框」的半幅页按**整幅**处理。
+    page_width_for   : (path_str) -> 页宽像素，用于算单宽框（``None``/0 时
+        该页不会被判成单宽框）。只在 ``single_column_book`` 为真时才被调用。
+    side_for         : (path_str) -> ``"left"``/``"right"``/None，用户在
+        **半框页**上指定的左右。给了指定就**不做**单栏归一化——那是用户在说
+        「这页其实是某一边」（用户 2026-10-17），命名/拼版都要按左/右走。
 
     派生规则与 rembg 预览条目、print 待打印列表完全一致：
+    - **单栏书**（用户 2026-10-17）：整本书只有一栏，页里不会有左页+右页，
+      于是「单个宽框（≥80% 页宽）的半幅页」被退化成**单槽**，直接继承整幅的
+      全部下游语义——``label`` 就是页名（``7.png``，不拆 ``-l``/``-r``）、
+      ``full=True`` 因而不做对称镜像、拼版也不会把它当左半幅去找右半幅配对。
+      ⚠️ 这是**有证据的形态改写**（整本书 ≥90% 有框页都这样），与
+      :func:`utils.book_layout.suspicious_summary` 报的「整幅书里冒出半幅」
+      相反——那种只警告、不改。
     - area=1 双框：拆 <页>-r / <页>-l 两条（古籍阅读顺序 r 在前）；
     - area=1 半幅漏检一侧：单条也保留左右身份（<页>-l / <页>-r，按缺失侧
       所在槽位判定）——否则产物叫 <页>.png，第四步拼版按文件名后缀判
@@ -102,6 +121,18 @@ def plan_rembg_submit_entries(
         #    整幅页 area=1/2/3 统一按合并语义走单框布局（框原样下传），area=4
         #    才归一整页（见 entry_to_effect_spec 与 preview_worker 的 full 语义）。
         raw_boxes = list(boxes_for(str(path)) or [])
+        # ⚠️ 单栏书：把「单个宽框」的半幅页**退化成单槽**（规则本体在
+        #    ``utils.book_layout.single_column_slots``，第三步预览也调它），
+        #    之后所有分支自动按整幅语义走——绝不能只在某个分支里改 label。
+        # ⚠️ 但**用户指定过左右**的页不归一化：那是在说"这页其实是某一边"
+        #    （半框的中心压在中线上，位置判定没意义，所以由用户声明）。
+        if side_for is not None and side_for(str(path)):
+            pass  # 保持 2 槽 → 走 area=1 的 -l/-r 分支，下游按左右处理
+        else:
+            raw_boxes = single_column_slots(
+                raw_boxes, single_column_book,
+                page_width_for(str(path)) if page_width_for is not None else None,
+            )
         full = is_full_content(raw_boxes)
         boxes = [b for b in raw_boxes if b]
         stem = path.stem

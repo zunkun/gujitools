@@ -10,6 +10,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QImage
 from desktop.components.viewers.thumb_strip import ThumbStrip
 from core.command_spec import WHOLE_PAGE_AREA
+from utils.book_layout import single_column_slots
 from utils.box_geometry import is_full_content
 from utils.sort_utils import natural_sort_key
 from typing import TYPE_CHECKING
@@ -32,6 +33,35 @@ else:
 class EntriesMixin(RembgViewerHost):
     """把「原图 + 结果 + 实时合成」拼成条目（含尺寸键、联合框）。"""
 
+    def _book_slots(self, path_text: str, boxes: list) -> list:
+        """按**整本书**的结论归一化本页槽位（单栏书里「单个宽框」按整幅走）。
+
+        ⚠️ 规则本体在 ``utils.book_layout.single_column_slots``——**预览与提交
+        派生必须用同一个函数**，否则第三步显示 ``0007-l``、成品却叫
+        ``0007.png``，用户改参数重提交时完全无从判断哪边对。
+
+        整本书结论（``_single_column_book``）由宿主一次性算好传进来；页宽走
+        ``_page_width_provider``（同样是预算好的字典），**不在这里现算**。
+
+        ⚠️ **用户指定过左右**的页不归一化：那是在说"这页其实是某一边"
+        （半框中心压在中线上，位置判定没意义），命名要按 ``-l``/``-r`` 走。
+        """
+        if not boxes:
+            return boxes
+        if self._side_for is not None:
+            try:
+                if self._side_for(path_text):
+                    return boxes
+            except Exception:  # noqa: BLE001 - 读不到指定就按常规归一化
+                pass
+        width = None
+        if self._page_width_provider is not None:
+            try:
+                width = self._page_width_provider(path_text)
+            except Exception:  # noqa: BLE001 - 取不到页宽＝保守不改写
+                width = None
+        return single_column_slots(boxes, self._single_column_book, width)
+
     # ------------------------------------------------------------------ 条目
     def _build_entries(self) -> list[dict]:
         """manifest 路径 → 输出条目。
@@ -51,7 +81,7 @@ class EntriesMixin(RembgViewerHost):
             page_entries = None
             if self._boxes_provider and self._region_params_provider:
                 try:
-                    boxes = self._boxes_provider(path_text) or []
+                    boxes = self._book_slots(path_text, self._boxes_provider(path_text) or [])
                     area, _border = self._region_params_provider()
                     valid = [b for b in boxes if b]
                     full = is_full_content(boxes)
@@ -210,7 +240,7 @@ class EntriesMixin(RembgViewerHost):
                               "border": border,
                               "full": bool(entry.get("full"))}
                 else:
-                    raw = self._boxes_provider(path_text) or []
+                    raw = self._book_slots(path_text, self._boxes_provider(path_text) or [])
                     effect = {
                         "boxes": raw,
                         "area": area,

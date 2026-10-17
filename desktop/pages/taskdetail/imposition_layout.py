@@ -320,6 +320,11 @@ class ImpositionLayoutMixin:
             note=f"{cn_page_label(page_index)} · {side}「{path.name}」",
             stem=path.stem,
             count=len(items),
+            # ⚠️ 只给「定位」，**不给** edit_path：拼版按现行口径不提供单张源图
+            #    编辑（编辑统一作用于整页组合）。把定位绑在 edit_path 上会让
+            #    这张原图**根本没有**「定位图片资源」菜单（用户 2026-10-17：
+            #    「检查每一步图片需要定位」）。
+            locate_path=path,
         )
 
     def _imposition_spread_target(self, page_index: int) -> "object | None":
@@ -338,12 +343,20 @@ class ImpositionLayoutMixin:
         left = stems[1] if len(stems) > 1 else ""
         edit_path = None
         task_id = getattr(self, "task_id", None)
-        if task_id and not getattr(self, "_imposition_dirty", False):
-            output = self._imposition_output_dir() / (
-                FILE_FMT.format(page_index + 1)
-            )
-            if output.is_file():
-                edit_path = output
+        output = self._imposition_output_dir() / (FILE_FMT.format(page_index + 1))
+        if task_id and not getattr(self, "_imposition_dirty", False) and output.is_file():
+            edit_path = output
+        # ⚠️ 定位**独立于编辑**：整页组合是虚拟图（合成物），
+        #    - 成品已落盘 → 定位成品页（这就是这一页产出的那个文件）；
+        #    - 还没合成/有未落盘改动 → 退到**源图所在目录**，让用户至少能到
+        #      那一批源图跟前；都没有就不给菜单（不弹死按钮）。
+        locate_path = None
+        if output.is_file():
+            locate_path = output
+        else:
+            first = Path(str(items[0].get("file") or ""))
+            if first.parent.is_dir():
+                locate_path = first.parent
         return ZoomTarget(
             render=lambda edge,
             page={"items": items}: ImpositionPagePreviewWorker(page, edge),
@@ -352,6 +365,7 @@ class ImpositionLayoutMixin:
             count=1,
             save_path=edit_path,
             edit_path=edit_path,
+            locate_path=locate_path,
             edit_label="编辑图片",
             show_text_tool=False,
         )

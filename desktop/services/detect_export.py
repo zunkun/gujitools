@@ -317,6 +317,7 @@ def export_annotated(
     dest: Path | str,
     report: Optional[Callable[[str], None]] = None,
     progress: Optional[Callable[[int, int], None]] = None,
+    single_column: bool = False,
 ) -> list:
     """把一批 ``(图片路径, 槽位)`` 画框后写到 ``dest``。
 
@@ -333,6 +334,9 @@ def export_annotated(
       每处理完一页调一次（**含读不出来/画框失败的那页**——它也被走过了）。
       与 ``report`` 分开是因为两者用途不同、频率与内容也不同（一个给人看、
       一个驱动进度条）；``progress`` 是可选的，CLI 那条路不传。
+    - ``single_column``：整本书已判定为**单栏书**（``utils.book_layout``）时
+      为真——横跨整页的半幅框标「半框」而不是「左框/右框」，与界面上看到的
+      标注一致。CLI 那条路拿不到全书统计，保持默认 False（旧行为）。
 
     返回：写出的文件路径列表（成功的那几张）。
 
@@ -361,7 +365,7 @@ def export_annotated(
             _report_page(progress, index + 1, total)
             continue
         try:
-            annotated = draw_slots(image, slots)
+            annotated = draw_slots(image, slots, single_column=single_column)
         except Exception:  # noqa: BLE001 - 单页画框失败同样不该拖垮整批
             _report_page(progress, index + 1, total)
             continue

@@ -59,9 +59,12 @@ def run(ctx) -> None:  # noqa: ARG001 - 用自己的夹具，不共享 ctx 的�
 def _check_controls(page, ok) -> None:
     """① 框类型控件摆出来了、且导出按钮存在。"""
     ok("摆出「选中框类型」分段控件", hasattr(page, "box_kind"))
-    ok("分段控件三项就是左框/右框/整幅",
-       [label for _key, label in page.box_kind._items] == ["左框", "右框", "整幅"],
+    ok("分段控件四项：左框/右框/半框/整幅（半框挨着左右、排在整幅前）",
+       [label for _key, label in page.box_kind._items]
+       == ["左框", "右框", "半框", "整幅"],
        str(page.box_kind._items))
+    ok("「半框」是第三项（用户 2026-10-17：半框要在整幅前面）",
+       page.box_kind._items[2] == ("half", "半框"), str(page.box_kind._items))
     ok("摆出「删除选中框」按钮", hasattr(page, "delete_box"))
     ok("没选中框时删除按钮禁用（点不动）",
        page.delete_box.isEnabled() is False)

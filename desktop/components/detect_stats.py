@@ -73,6 +73,15 @@ class DetectStatsWidget(QWidget):
         header.addWidget(self.back_button)
         root.addLayout(header)
 
+        #: 全书级结论（单栏书 / 整幅书里的可疑半幅）。默认隐藏，有内容才出现。
+        #: ⚠️ 用 ``CaptionLabel`` 而不是 Toast：这类判读结论必须在**看统计的
+        #:    那一刻**就在眼前，弹一下就消失等于没提示（用户 2026-10-17）。
+        self.book_note = CaptionLabel("")
+        self.book_note.setWordWrap(True)
+        apply_to(self.book_note, T.SIZE_CAPTION, color=T.INK_SOFT)
+        self.book_note.setVisible(False)
+        root.addWidget(self.book_note)
+
         self.stack = QStackedWidget()
         root.addWidget(self.stack)
         self.stack.addWidget(self._build_overview())
@@ -135,9 +144,15 @@ class DetectStatsWidget(QWidget):
 
     # ------------------------------------------------------------------ 数据
     def set_results(
-        self, total: int, classes: dict[str, list[tuple[int, str]]]
+        self, total: int, classes: dict[str, list[tuple[int, str]]],
+        book_note: str = "",
     ) -> None:
-        """灌入统计结果：``total`` 总页数；``classes`` 分类键 → [(行号, 页码)]。"""
+        """灌入统计结果：``total`` 总页数；``classes`` 分类键 → [(行号, 页码)]。
+
+        ``book_note`` 是**全书级**结论（``utils.book_layout`` 判出来的单栏书
+        提示，或整幅书里冒出半幅的可疑提示）——它不属于任何单一分类，却决定
+        了这些页接下来**怎么被命名**，必须在这一屏显眼处说清，不能只进日志。
+        """
         self._classes = {key: list(values) for key, values in (classes or {}).items()}
         detected = sum(
             len(values)
@@ -149,6 +164,12 @@ class DetectStatsWidget(QWidget):
             if total
             else "尚未提取页面，或尚未执行检测"
         )
+        # ⚠️ 有全书级结论时把总览标题换成结论本身（用户 2026-10-17 要"看得见"）。
+        #    没结论时**保持原措辞不变**：这两条文案都是判断依据，悄悄换掉会让
+        #    "以前没提示、现在提示了"看起来像 bug。
+        self.title.setText("检测结果统计" if not book_note else "检测结果统计 · 全书判读")
+        self.book_note.setText(book_note)
+        self.book_note.setVisible(bool(book_note))
         for key, label in CLASS_LABELS:
             count = len(self._classes.get(key, []))
             button = self.class_buttons[key]

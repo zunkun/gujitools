@@ -765,6 +765,10 @@ class DetailViewMixin:
         self.imposition_view.spread_edit_requested.connect(
             self._open_imposition_spread_edit
         )
+        # 「定位图片资源」没定位成（源文件已不存在）：说清原因，别静默
+        self.imposition_view.locate_failed.connect(
+            lambda message: self._toast("warning", "定位图片资源", message)
+        )
         card.box.addWidget(self.imposition_view)
         return card
 

@@ -20,6 +20,8 @@ PIL 绘制。字体候选路径来自 `utils.fonts`（Windows/Linux/macOS 三份
 from pathlib import Path
 from typing import Optional, Sequence, Tuple
 
+from utils.book_layout import is_single_wide_box
+
 # ⚠️ 配色/命名的**唯一事实来源就是本文件**：CLI 的 `detect --save` 标注图与
 # GUI 预览必须是同一套视觉，否则「命令行看到的」和「界面看到的」是两个东西。
 # `desktop/components/viewers/image_view.py` 直接 import 下面的常量，**不再抄
@@ -32,22 +34,34 @@ BOX_COLORS_RGB: Tuple[Tuple[int, int, int], ...] = (
     (0x3B, 0x82, 0xF6),  # 右框（蓝）
     (0xF5, 0x9E, 0x0B),  # 合并框（琥珀）
     (0x4F, 0x46, 0xE5),  # 整幅（靛蓝；fullcontent 单框整页）
+    (0x0D, 0x94, 0x88),  # 半框（青；单栏书里横跨整页的那一栏）
 )
 BOX_COLORS_BGR: Tuple[Tuple[int, int, int], ...] = tuple(
     (b, g, r) for r, g, b in BOX_COLORS_RGB
 )
-BOX_NAMES: Tuple[str, ...] = ("左框", "右框", "合并框", "整幅")
+BOX_NAMES: Tuple[str, ...] = ("左框", "右框", "合并框", "整幅", "半框")
 # 无中文字体时的 ASCII 兜底标签（与 BOX_NAMES 一一对应，长度必须一致）
-BOX_NAMES_ASCII: Tuple[str, ...] = ("L", "R", "U", "F")
+BOX_NAMES_ASCII: Tuple[str, ...] = ("L", "R", "U", "F", "H")
 
 #: **框类型键 → 在 BOX_NAMES / BOX_COLORS 里的下标**。
 #:
-#: 类型键（``"left"`` / ``"right"`` / ``"full"``）是**跨层协议**：第二步面板的
-#: 类型按钮、宿主的人工干预逻辑、GUI 预览的标签/配色都按它取值——各层各自
-#: 记下标迟早会错位，所以映射只在这里写一份。
+#: 类型键（``"left"`` / ``"right"`` / ``"half"`` / ``"full"``）是**跨层协议**：
+#: 第二步面板的类型按钮、宿主的人工干预逻辑、GUI 预览的标签/配色都按它取值
+#: ——各层各自记下标迟早会错位，所以映射只在这里写一份。
+#:
+#: ⚠️ **本字典的顺序就是面板上按钮的顺序**（``detect_panel.BOX_KIND_ITEMS``
+#: 直接按它生成）：左框 → 右框 → **半框** → 整幅。半框挨着左右、排在整幅
+#: 前面，是因为它俩都是"半幅形态"（用户 2026-10-17：「半框要在整幅前面」）。
+#:
+#: ⚠️ ``"half"``（半框）**不是**第四种存储形态，而是**派生标注**：它是
+#: 「整本书判定为单栏书」+「单个框宽≥80%页宽」时的叫法（见
+#: :func:`utils.book_layout.is_single_wide_box`）。存储上它仍是半幅 2 槽，
+#: 与 YOLO 的 ``harfcontent``（0 号类）一致——所以**不要**为它在 boxes.json
+#: 里加字段，那会与"整幅 1 槽"的槽位约定打架。
 BOX_KIND_INDEX = {
     "left": BOX_NAMES.index("左框"),
     "right": BOX_NAMES.index("右框"),
+    "half": BOX_NAMES.index("半框"),
     "full": BOX_NAMES.index("整幅"),
 }
 
@@ -62,6 +76,16 @@ def box_kind_name(kind: str) -> str:
 #: 单独一个颜色，免得标注图上把整页内容误读成某一栏。
 BOX_COLOR_FULL_BGR: Tuple[int, int, int] = BOX_COLORS_BGR[3]  # 整幅（靛蓝 #4F46E5）
 BOX_NAME_FULL = "整幅"
+
+#: 半框（harfcontent 但**横跨整页**，即单栏书的那一栏）的专用色/名。
+#:
+#: ⚠️ 它是**派生标注**，不是第四种存储形态：存储上仍是半幅 2 槽、YOLO 里仍算
+#: 0 号 ``harfcontent``。判据见 :func:`utils.book_layout.is_single_wide_box`。
+#: 标成「半框」而不是「左框/右框」是为了不让用户误以为这页还有另一半。
+BOX_COLOR_HALF_BGR: Tuple[int, int, int] = BOX_COLORS_BGR[
+    BOX_KIND_INDEX["half"]
+]
+BOX_NAME_HALF = "半框"
 
 #: 半幅两槽的固定名/色（``[左, 右]`` 槽位顺序，缺失侧为 ``None``）。
 #:
@@ -169,18 +193,24 @@ def draw_boxes(
     return out
 
 
-def slot_names_colors(slots):
+def slot_names_colors(slots, page_width=None, single_column: bool = False):
     """**槽位**表示 → 与 ``slots`` 等长的 ``(names, colors)``（BGR）。
 
-    这是"槽位 → 标注外观"的**唯一实现**，两处调用方共用：
+    这是"槽位 → 标注外观"的**唯一实现**，三处调用方共用：
 
     - ``functions.detect`` 的 ``--save`` 标注图；
-    - 独立「检测文本框」模块页的「导出标注图」。
+    - 独立「检测文本框」模块页的「导出标注图」；
+    - GUI 预览的标签由 ``image_view.styles`` 按同一套常量给出。
 
     ⚠️ 规则按**槽位**给，不按"过滤掉空项后的第几个框"：槽数就是形态
     （半幅恒 2 槽 ``[左, 右]``、整幅 1 槽 ``[整幅]``，见
     :mod:`utils.box_geometry`）。按序号给会让"只检出一侧"的那一页把左框
     标成"第 1 号框"，也会把整幅标成左框。
+
+    ``page_width``＋``single_column``：整本书已判定为**单栏书**且这一页只有
+    一个横跨整页的框时，标成「半框」而不是「左框/右框」——它没有另一半
+    （判据 :func:`utils.book_layout.is_single_wide_box`，阈值只有那一处）。
+    缺页宽或缺 ``single_column`` 时退回旧行为，**不猜**。
 
     ``None`` 项原样占位（``draw_boxes`` 会跳过它，GUI 侧则按位置对齐），
     这样"哪一侧缺失"的信息不丢。
@@ -189,6 +219,10 @@ def slot_names_colors(slots):
     if len(slots) == 1:
         return [BOX_NAME_FULL] * len(slots), [BOX_COLOR_FULL_BGR] * len(slots)
     if len(slots) == 2:
+        if single_column:
+            present = [b for b in slots if b]
+            if len(present) == 1 and is_single_wide_box(present[0], page_width):
+                return [BOX_NAME_HALF] * 2, [BOX_COLOR_HALF_BGR] * 2
         return list(SLOT_NAMES_HALF), list(SLOT_COLORS_HALF)
     # 防御畸形存档（>2 槽）：退回按序号给，别让调用方炸掉
     return [box_name(i) for i in range(len(slots))], [
@@ -196,7 +230,8 @@ def slot_names_colors(slots):
     ]
 
 
-def draw_slots(img_bgr, slots, thickness: int = 4, show_label: bool = True):
+def draw_slots(img_bgr, slots, thickness: int = 4, show_label: bool = True,
+               single_column: bool = False):
     """在图像上绘制**槽位**表示的框（标注外观由 :func:`slot_names_colors` 定）。
 
     与 :func:`draw_boxes` 的区别只有一处，但很关键：调用方手上是**槽位**
@@ -204,9 +239,18 @@ def draw_slots(img_bgr, slots, thickness: int = 4, show_label: bool = True):
     ``[left, right, full]`` 再逐个传名/配色——那份拆法在
     ``functions/detect`` 与 desktop 之间各写过一次，已经漂移过一次。
 
+    ``single_column=True``（整本书是单栏书）时，一个横跨整页的半幅框标
+    「半框」；页宽直接取**这张图自己的宽度**（标注图画的就是这页，坐标同系）。
+    这样导出标注图与界面上看到的标注完全一致。
+
     返回绘制后的 BGR 图像（新数组，不修改入参）。
     """
-    names, colors = slot_names_colors(slots)
+    page_width = None
+    try:
+        page_width = int(img_bgr.shape[1])
+    except (AttributeError, IndexError, TypeError):
+        page_width = None
+    names, colors = slot_names_colors(slots, page_width, single_column)
     return draw_boxes(
         img_bgr,
         list(slots or []),

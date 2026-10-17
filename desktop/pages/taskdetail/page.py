@@ -1568,12 +1568,21 @@ class TaskDetailPage(
             # 清单可能变了（增删页/切任务/批量检测跑完）→ 统计跟着重算
             self._refresh_detect_stats()
         elif stage == "rembg":
+            # ⚠️ 单栏书判据要**整本书**的结论，且页宽必须一次读盘（``_book_page_widths``）：
+            #    在查看器里逐页现算 profile/尺寸就是 O(n²)。这里算好后传进去，
+            #    预览与「提交本次任务」因此用同一条判据（见 utils/book_layout）。
+            _widths = self._book_page_widths()
+            _profile = self._book_profile(_widths)
+            _sides = self._side_overrides_all()
             self.rembg_viewer.set_images(
                 self._manifest_paths(),
                 self._node_dir("rembg"),
                 boxes_provider=self._detect_boxes_for,
                 region_params_provider=self._current_detect_params,
                 thumb_provider=self._page_thumb_for,
+                single_column_book=_profile.single_column_book,
+                page_width_provider=lambda text: _widths.get(Path(text).stem, 0),
+                side_for=lambda text: _sides.get(Path(text).stem),
             )
         elif stage == "print":
             entries, _doc = self._print_entries()

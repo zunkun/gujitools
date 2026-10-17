@@ -81,6 +81,7 @@ from desktop.utils.files import (
     reveal_dir,
     singletask_yolo_export_path,
 )
+from utils.book_layout import is_single_wide_half, profile_book
 from utils.box_draw import BOX_KIND_INDEX, box_kind_name
 from utils.box_geometry import (
     YOLO_CLASS_NAMES,
@@ -117,6 +118,13 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
         #: 文件名去后缀 → **槽位表示**（半幅 2 槽 / 整幅 1 槽）。
         #: 与任务流程同构：不在内存里存"用户画了几个框"，只存槽位。
         self._boxes: dict[str, list] = {}
+        #: 用户在半框页上**指定**的左右：``{stem: "left"|"right"}``。
+        #: 半框的框横跨整页、中心压在中线上，位置判定没意义，所以由用户指定
+        #: （用户 2026-10-17）。本页不落盘这些框，故只存内存。
+        self._sides: dict[str, str] = {}
+        #: 页宽缓存 ``{stem: 宽}``：整本书判据要逐页宽度，而 ``_image_size`` 走
+        #: ``QImageReader`` 读文件头——每次重建判定都重读一遍是白花开销。
+        self._widths: dict[str, int] = {}
         #: 同上，键 → "auto"（检测来的）/ "manual"（用户改过）。
         #: 与任务流程一样，人工框不被后续自动检测覆盖。
         self._origins: dict[str, str] = {}
@@ -296,6 +304,9 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
         """
         self._boxes.clear()
         self._origins.clear()
+        self._sides.clear()           # 人工指定左右跟着换源作废
+        self._widths.clear()          # 页宽缓存跟着换源作废
+        self._refresh_book_layout()   # 新的一批 = 新的整本书判定，别留上一批结论
         self._sync_export_buttons()
         self.viewer.select_box(-1)
         self._sync_box_kind()
@@ -342,6 +353,9 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
             return  # 人工框优先：重跑检测不许把用户改过的框冲掉
         self._boxes[key] = slots
         self._origins[key] = "auto"
+        # 增量检测（逐张返回）也立刻重算：整本书判定随页数累积而变化，
+        # 等全部跑完再算的话，中途看到的标注会一直是左/右框。
+        self._refresh_book_layout()
 
     def _on_boxes_edited(self, path_text: str, boxes) -> None:
         """用户在图上改完框：换算成槽位存下（origin=manual），并重画归一化后的形态。"""
@@ -352,6 +366,9 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
         self._boxes[key] = slots
         self._origins[key] = "manual"
         self._sync_export_buttons()
+        # 人工改动可能改变整本书的判定（如把一页的宽框缩窄）→ 先重算再重画，
+        # 否则这一帧仍按旧结论标「半框」。
+        self._refresh_book_layout()
         self._apply_boxes(path_text, selected=self.viewer.selected_index())
         self._sync_box_kind()
 
@@ -361,6 +378,8 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
         ``out_dir`` 是输出目录（``detect`` 默认不落盘，这里只是共用控件回传的
         那个路径），导出按钮会用到它。
         """
+        # 整本书的框都齐了 → 重算形态判定（决定「半框」标注）再重画当前页
+        self._refresh_book_layout()
         self._apply_boxes(
             str(self.viewer.current_path() or ""), selected=self.viewer.selected_index()
         )
@@ -431,8 +450,29 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
     def box_image_size(self, path_text: str):
         return self._image_size(path_text) or None
 
-    def box_commit(self, path_text: str, slots: list, select_box=None) -> None:
+    def box_commit(self, path_text: str, slots: list, select_box=None,
+                   side="keep") -> None:
+        """落库 + 重画；``side`` 按需写入/清除这页的人工左右指定。
+
+        ⚠️ **先写 side、再上屏**（同任务流程那份）：``_store_slots`` →
+        ``_apply_boxes`` 要读 ``_sides`` 决定标签与面板高亮。先上屏后写的话
+        第一次点击读到的还是旧值 ⇒ 界面不动、得点第二次（用户 2026-10-17 报）。
+        """
+        if side != "keep":
+            key = Path(path_text).stem
+            if side in ("left", "right"):
+                self._sides[key] = side
+            else:
+                self._sides.pop(key, None)
         self._store_slots(path_text, slots, select=select_box)
+
+    def box_page_half_candidate(self, path_text: str) -> bool:
+        """这页是否**够「半框」**（整本书单栏 + 只有一个横跨整页的框）——为真时
+        左/右可由用户指定（中心压在中线上，位置判定没意义）。"""
+        if not self.viewer.single_column():
+            return False
+        slots = self._boxes.get(Path(path_text).stem, [])
+        return is_single_wide_half(slots, self._page_width(path_text))
 
     def box_confirm(self, title: str, body: str, yes_text: str, cancel_text: str) -> bool:
         # ⚠️ 延迟导入必须留在方法体内：自测靠替换 qfluentwidgets.MessageBox
@@ -444,8 +484,9 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
         box.cancelButton.setText(cancel_text)
         return bool(box.exec())
 
-    def box_full_declined(self, _index: int) -> None:
-        self._sync_box_kind()  # 回填高亮，别停在「整幅」
+    def box_resync_kind(self, _index: int) -> None:
+        """按现值回填类型控件高亮（类型操作结束后必调，别停在假位置）。"""
+        self._sync_box_kind()
 
     def box_current_path_text(self) -> str:
         return str(self.viewer.current_path() or "")
@@ -499,6 +540,39 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
             return size.width(), size.height()
         return 0, 0
 
+    def _page_width(self, path_text: str) -> int:
+        """该页原始像素宽度（整本书判据用）；取不到给 0＝不参与单宽框判定。
+
+        结果按 stem 缓存：``_image_size`` 每次都要 ``QImageReader`` 读文件头，
+        而整本书判定要遍历全部页面，反复读纯属浪费。
+        """
+        key = Path(path_text).stem
+        if key in self._widths:
+            return self._widths[key]
+        try:
+            width = int(self._image_size(path_text)[0])
+        except Exception:  # noqa: BLE001 - 取不到宽度按"无页宽"保守处理
+            width = 0
+        self._widths[key] = width
+        return width
+
+    def _refresh_book_layout(self) -> None:
+        """重算**整本书**的形态判定，并同步给预览控件（决定「半框」标注）。
+
+        ⚠️ 判据本体在 ``utils/book_layout.profile_book``：它要的是"整本书长什么
+        样"——单页分不出「一栏横跨整页」与「真双栏书漏检一侧」。本方法只负责
+        取数（每页槽位 + 页宽）与转发。
+        """
+        paths = {Path(p).stem: str(p) for p in self.source_images()}
+        pages = [
+            (stem, slots, self._page_width(paths.get(stem, stem)))
+            for stem, slots in self._boxes.items()
+        ]
+        profile = profile_book(pages)
+        setter = getattr(self.viewer, "set_single_column", None)
+        if callable(setter):
+            setter(bool(profile.single_column_book))
+
     def _apply_boxes(self, path_text: str, selected: int = -1) -> None:
         """把某一页的槽位结果画到查看器上（命名/配色由控件按位置现算）。"""
         if not path_text:
@@ -507,7 +581,16 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
         slots = self._boxes.get(Path(path_text).stem, [])
         shown = [b for b in slots if b]
         full = is_full_content(slots)
-        names = box_names(shown, size, full)
+        # ⚠️ 单栏书里横跨整页的那个框叫「半框」，不是左框/右框——整本书的结论
+        #    来自 _refresh_book_layout（见 profile_book）。用户在半框页上指定过
+        #    左右时用指定值（优先级见 box_styles）。
+        side = self._sides.get(Path(path_text).stem)
+        setter = getattr(self.viewer, "set_side_override", None)
+        if callable(setter):
+            setter(side)
+        names = box_names(
+            shown, size, full, self.viewer.single_column(), side
+        )
         if not shown:
             info = "未检测到文本框"
         else:
@@ -805,7 +888,12 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
             self._yolo_summary = summary
             self._exported = list(summary["labels"])
             return str(dest)
-        self._exported = export_annotated(entries, dest, report=log, progress=progress)
+        # ⚠️ 带上整本书结论：单栏书里那个横跨整页的框在导出图上也要标「半框」，
+        #    否则导出图与界面看到的标注不一致（同一批框、两种叫法）。
+        self._exported = export_annotated(
+            entries, dest, report=log, progress=progress,
+            single_column=self.viewer.single_column(),
+        )
         return str(dest)
 
     def _on_export_progress(self, done: int, total: int) -> None:

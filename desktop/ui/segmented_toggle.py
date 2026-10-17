@@ -12,12 +12,51 @@ from __future__ import annotations
 
 from typing import Sequence
 
-from PySide6.QtCore import QRectF, QSize, Qt, Signal
+from PySide6.QtCore import QEvent, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
 from desktop.ui import theme as T
 from desktop.ui.fonts import ui_font
+
+
+class _SegmentHit(QWidget):
+    """一段的**命中层**：铺在自绘外观之上，只负责收鼠标，一个像素都不画。
+
+    为什么不用 ``QPushButton``：
+
+    - 旧回归守卫明令"切换行里不能再出现按钮"（``rembg`` 用例扫
+      ``findChildren(QPushButton)``）；
+    - 按钮的 ``clicked`` 要求 press/release 落在同一个控件内，且**双击不发
+      ``clicked``**——快速连点两下时第二下会被吞，观感就是"点了两次才切过去"。
+
+    这里**按下即生效**（不等 release），双击也按一次选中处理，命中区由父控件
+    按段矩形铺满，因此不存在"只有戳到文字才算"。
+    """
+
+    def __init__(self, key: str, owner: "SegmentedToggle") -> None:
+        super().__init__(owner)
+        self._key = key
+        self._owner = owner
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setMouseTracking(True)
+        # 不画背景：外观一律由父控件的 paintEvent 负责（否则会盖住胶囊）
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        self._owner._activate(self._key)
+        event.accept()
+
+    def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802
+        """双击＝"快速点两下"的第二下：Qt 不把它当 press 派发，这里补上。"""
+        self._owner._activate(self._key)
+        event.accept()
+
+    def enterEvent(self, event) -> None:  # noqa: N802
+        self._owner._set_hover(self._key)
+
+    def leaveEvent(self, event) -> None:  # noqa: N802
+        self._owner._set_hover(None)
 
 class SegmentedToggle(QWidget):
     """分段开关：一行内互斥选择几个视图形态。
@@ -52,10 +91,19 @@ class SegmentedToggle(QWidget):
         self._enabled = {key: True for key, _ in self._items}
         self._current = self._items[0][0] if self._items else ""
         self._hover: str | None = None
+        # ⚠️ 必须先于 setFont：字体变更会触发 changeEvent → _sync_hit_geometry，
+        #    那时列表还不存在就会在构造期炸掉。
+        self._hits: list[_SegmentHit] = []
         self.setFixedHeight(self.HEIGHT)
         self.setMouseTracking(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFont(ui_font(T.SIZE_BODY))
+        # 每段盖一个**命中层**：它不画任何东西，只负责接收鼠标。
+        # ⚠️ 只靠自绘控件自己算坐标时，出现"必须戳到文字才算、而且第一下点了
+        #    没反应"（用户 2026-10-17 连报两次）。把命中交给一个铺满整段的
+        #    子控件后，点段内任何像素都算，且**按下即生效**（不等 release）。
+        for key, _text in self._items:
+            self._hits.append(_SegmentHit(key, self))
 
     # ------------------------------------------------------------------ API
     def current(self) -> str:
@@ -104,14 +152,49 @@ class SegmentedToggle(QWidget):
     def minimumSizeHint(self) -> QSize:  # noqa: N802
         return QSize(sum(self._segment_widths()) + 4, self.HEIGHT)
 
+    def _spans(self) -> list[tuple[float, float]]:
+        """各段在**当前控件宽度**里的横向区间 ``[(左, 右), ...]``。
+
+        段宽（``_segment_widths``）只决定**比例**，真正绘制与命中都用这里
+        的结果，并且**永远铺满整个控件**：控件比段宽之和窄（面板被拖窄、
+        高 DPI 下字号变大）就等比压缩，宽就等比拉伸。
+
+        ⚠️ 这是"点框即切换"的地基。以前绘制与命中都直接用 ``_segment_widths``
+        的绝对像素：控件一旦被布局压缩，右侧那几段就被画到控件外面（看得见
+        一截、却点不到），用户只能戳在文字附近才生效（用户 2026-10-17 报）。
+        现在"画出来的框"和"能点的框"是同一个矩形，任何尺寸下都不会错位。
+        """
+        widths = self._segment_widths()
+        left_edge, right_edge = 2.0, float(self.width()) - 2.0
+        if not widths or right_edge <= left_edge:
+            return []
+        total = float(sum(widths)) or 1.0
+        scale = (right_edge - left_edge) / total
+        spans: list[tuple[float, float]] = []
+        cursor = left_edge
+        for width in widths:
+            spans.append((cursor, cursor + width * scale))
+            cursor += width * scale
+        # 收边：抹掉浮点累计误差，最后一段右边界严格贴住轨道内缘
+        spans[-1] = (spans[-1][0], right_edge)
+        return spans
+
     def _index_at(self, x: float) -> int | None:
-        """控件横坐标 → 段下标；落在轨道两端留白时返回 None。"""
-        left = 2
-        for index, width in enumerate(self._segment_widths()):
-            if left <= x < left + width:
+        """控件横坐标 → 段下标。
+
+        ⚠️ 落在控件内**任何**位置都归到最近的一段（含两端 2px 描边留白与段
+        之间的浮点缝隙）：用户点的是"框"，不是"框里的字"，点在框边缘上不该
+        没反应（用户 2026-10-17）。
+        """
+        spans = self._spans()
+        if not spans:
+            return None
+        if x < spans[0][0]:
+            return 0
+        for index, (start, end) in enumerate(spans):
+            if start <= x < end:
                 return index
-            left += width
-        return None
+        return len(spans) - 1
 
     # ------------------------------------------------------------------ 交互
     def mouseMoveEvent(self, event) -> None:  # noqa: N802
@@ -134,30 +217,80 @@ class SegmentedToggle(QWidget):
         index = self._index_at(event.position().x())
         if index is None:
             return
-        key = self._items[index][0]
-        if not self._enabled[key] or key == self._current:
+        self._activate(self._items[index][0])
+
+    def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802
+        """双击＝"快速点两下"的第二下：Qt 不把它当 press 派发，这里补上。"""
+        self.mousePressEvent(event)
+
+    def _activate(self, key: str) -> None:
+        """选中某一段：更新选中态并发 ``current_changed``。
+
+        ⚠️ **不因为"已经是当前项"提前返回**：滑块可能因为宿主回填/上屏延迟
+        停在旧值，此时用户点的正是它——静默忽略会让人以为"点了没反应，得点
+        两次"（用户 2026-10-17）。重复发一次信号是幂等的：宿主的
+        ``set_kind`` 按现值判等后自然返回。
+        """
+        if not self._enabled.get(key, False):
             return
         self._current = key
         self._hover = key
         self.update()
         self.current_changed.emit(key)
 
+    def _set_hover(self, key: str | None) -> None:
+        """命中层回报的悬停段；禁用段当没悬停（否则会亮一块点不动的地方）。"""
+        if key is not None and not self._enabled.get(key, False):
+            key = None
+        if key != self._hover:
+            self._hover = key
+            self.update()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._sync_hit_geometry()
+
+    def changeEvent(self, event) -> None:  # noqa: N802
+        """字体变了段宽就变了 ⇒ 命中层跟着重铺。"""
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.FontChange:
+            self._sync_hit_geometry()
+
+    def _sync_hit_geometry(self) -> None:
+        """把命中层铺到各段矩形上——几何与 :meth:`paintEvent` 同源。
+
+        ⚠️ 首段左缘取 0、末段右缘取控件右边、纵向铺满整个高度：轨道圆角
+        与 2px 描边留白也算可点区。用户点的是"框"，框的最外一像素同样算。
+        """
+        spans = self._spans()
+        if not spans:
+            return
+        last = len(spans) - 1
+        for i, (hit, (start, end)) in enumerate(zip(self._hits, spans)):
+            left = 0 if i == 0 else int(start)
+            right = self.width() if i == last else int(round(end))
+            hit.setGeometry(left, 0, max(1, right - left), self.HEIGHT)
+
     # ------------------------------------------------------------------ 绘制
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        widths = self._segment_widths()
+        spans = self._spans()
         radius = self.HEIGHT / 2
-        # 轨道：内凹灰底胶囊。必须比卡片白底重一档，否则白滑块压上去没边界
+        # 轨道：内凹灰底胶囊。必须比卡片白底重一档，否则白滑块压上去没边界。
+        # ⚠️ 宽度取**控件自身宽度**（不是段宽之和）：被布局压缩/拉伸时轨道跟着
+        #    段一起伸缩，才不会出现"轨道画到控件外面"或"右侧露白无法点"。
         painter.setPen(QPen(QColor(T.BORDER), 1))
         painter.setBrush(QColor(T.SURFACE_SUNKEN))
         painter.drawRoundedRect(
-            QRectF(0.5, 0.5, sum(widths) + 3, self.HEIGHT - 1), radius, radius
+            QRectF(0.5, 0.5, max(1.0, self.width() - 1.0), self.HEIGHT - 1),
+            radius, radius,
         )
-        left = 2
         for index, (key, text) in enumerate(self._items):
-            width = widths[index]
-            slot = QRectF(left, 2, width, self.HEIGHT - 4)
+            if index >= len(spans):
+                break
+            start, end = spans[index]
+            slot = QRectF(start, 2, end - start, self.HEIGHT - 4)
             if key == self._current:
                 self._draw_thumb(painter, slot)
                 color, bold = T.ACCENT, True
@@ -172,7 +305,6 @@ class SegmentedToggle(QWidget):
             painter.setFont(self._text_font(bold))
             painter.setPen(QColor(color))
             painter.drawText(slot, int(Qt.AlignmentFlag.AlignCenter), text)
-            left += width
 
     @staticmethod
     def _draw_thumb(painter: QPainter, slot: QRectF) -> None:

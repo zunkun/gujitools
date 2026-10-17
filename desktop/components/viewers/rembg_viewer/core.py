@@ -58,6 +58,9 @@ class RembgPreviewWidget(
         self._live_dir: Path | None = None
         self._boxes_provider = None  # (path_text) -> list[检测框]
         self._region_params_provider = None  # () -> (area, border)
+        self._single_column_book = False  # 整本书是否单栏书（见 set_images）
+        self._page_width_provider = None  # (path_text) -> 页宽像素
+        self._side_for = None  # (path_text) -> 用户指定左右
         self._thumb_provider = None  # (path_text) -> Path | None
         #: 宿主渲好的**整页缓存小图**：真实图路径 → 缓存路径。优先级高于
         #: ``_thumb_provider``（见 :meth:`set_cached_thumbs`）。
@@ -101,17 +104,32 @@ class RembgPreviewWidget(
         boxes_provider=None,
         region_params_provider=None,
         thumb_provider=None,
+        single_column_book: bool = False,
+        page_width_provider=None,
+        side_for=None,
     ) -> None:
         """设置图片清单与去底色目录，重建输出条目并加载显示。
 
         ``paths`` 为源图，元素允许是 ``str``（统一转 ``Path``，同
         :meth:`desktop.components.viewers.ImageViewerWidget.set_images`）；
         ``rembg_dir`` 为去底色结果目录（存在才显示结果）；
-        各 provider 给出检测框 / 区域参数 / 缩略图来源。清单变化时重建
-        缩略图条，否则按最新区域重加载当前显示。
+        各 provider 给出检测框 / 区域参数 / 缩略图来源。
+
+        ``single_column_book``＋``page_width_provider``：整本书是否已判定为
+        **单栏书**（``utils.book_layout``）。为真时「单个宽框」的半幅页要按
+        整幅走（不拆 ``-l``/``-r``、不镜像）——**必须与提交派生用同一个判据**，
+        否则预览显示 ``0007-l``、成品却是 ``0007.png``。
+
+        ``side_for``：``(path) -> "left"|"right"|None``，用户在**半框页**上指定
+        的左右。给了指定就不做单栏归一化（那是在说"这页其实是某一边"）。
         """
         self._boxes_provider = boxes_provider  # (path_text) -> list[检测框]
         self._region_params_provider = region_params_provider  # () -> (area, border)
+        # ⚠️ 按整本判定的入参：由宿主**一次性**算好后传进来（不要在逐页
+        #    循环里现算 profile/读尺寸，那是 O(n²)）。
+        self._single_column_book = bool(single_column_book)
+        self._page_width_provider = page_width_provider  # (path_text) -> 页宽
+        self._side_for = side_for  # (path_text) -> "left"/"right"/None
         self._border_mm = None
         self._thumb_provider = thumb_provider
         self._rembg_dir = rembg_dir
