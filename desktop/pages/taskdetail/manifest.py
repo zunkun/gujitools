@@ -56,6 +56,10 @@ class PageListMixin:
         current_stage: Callable[[], str]
         imposition_effective: Callable[[], bool]
         stage_at_stack_index: Callable[[int], str | None]
+        node_of_stage: Callable[[str], str | None]
+        _node_scope: Callable[..., dict]
+        _scope_of: Callable[[str | None], dict]
+        _size_node_for: Callable[[str], str | None]
         stack_index_of_step: Callable[[str], int | None]
         _refresh_preview: Callable[..., None]
         _update_submit_button: Callable[..., None]
@@ -80,35 +84,74 @@ class PageListMixin:
         if not self.task_id:
             return None
         stage = self.current_stage()
-        if stage is None:
+        if not stage:
             return None
+        # ⚠️ 按**节点**取输入（B 方案）：同一步骤的多个节点各有输入来源
+        #    （各自的连线回溯），单节点时就是主节点、与旧口径逐字节一致。
+        node = self.node_of_stage(stage)
+        if node:
+            return self.store.node_input(
+                self.task_id, node, "pages", self.imposition_effective()
+            )
         return self.store.stage_input(
             self.task_id, stage, "pages", self.imposition_effective()
         )
 
     def _sync_manifest_to_input(self) -> None:
-        """按**当前步骤的输入目录**重建页面清单（清单为空时）。
+        """按**当前步骤的输入目录**重建页面清单。
 
         ⚠️ 以前只有 extract 跑成功才刷新清单（``runner`` 里那个
         ``if stage == "extract"``），于是"流程里没有 extract"的任务清单永远
         是空的——即便用户已经往 ``stages/input/`` 放了图、或者从界面插了图，
         预览仍显示"暂无图片，请先完成提取"（用户 2026-10-06 报障）。
 
-        这里**只在清单为空时**重建，是刻意的：清单非空说明用户已经表达过
-        "参与处理的是哪几页"（插过图、删过页、重排过），拿目录内容覆盖它
-        等于把用户的增删悄悄撤销。非空时只保证它与输入目录一致地读出来。
+        ⚠️ 两个"不覆盖用户意图"的红线（2026-10-17 补充）：
+
+        - 清单里的页**就在当前输入目录** ⇒ 一字不动（插过图/删过页/重排过都是
+          用户的明确选择）；
+        - 清单**整个属于别的目录**（上游换了：拼版刚产出成品、换了节点、上游
+          重跑换了产物）⇒ 作废重建。此前只在"清单为空"时重建，于是上游的产物
+          换了以后清单还停在旧图上——用户看到的就是"第二步没有拿上一步的
+          输出当输入"（B 方案：输入输出一律由图上的连线决定）。
         """
-        if not self.task_id or self.pages:
+        if not self.task_id:
+            return
+        # ⚠️ 「PDF排版」与「图片拼版」各有自己的文档（``print.json`` / 拼版版面），
+        #    页条上的清单不服务它们。这两步的输入目录是**成品**目录，拿它重建
+        #    会把提取/检测那几步的页集合整体换掉——在步骤之间来回切就会反复
+        #    覆盖，用户的删页/插页随之丢失。
+        from desktop.steps import ports as _ports
+
+        if _ports.STAGE_STEPS.get(self.current_stage(), "") in (
+            "print",
+            "imposition",
+        ):
             return
         directory = self._current_stage_input_dir()
         if directory is None or not directory.is_dir():
             return
-        self.pages = self.store.refresh_pages_from_dir(self.task_id, directory)
+        if self.pages:
+            inside = any(
+                Path(str(page.get("file") or "")).parent == directory
+                for page in self.pages
+            )
+            if inside:
+                return
+            # 旧清单整个属于**另一个**输入源：作废（上游产物已经换了）
+            self.log_view.append(
+                "上游产物已更新，页面清单已按本步骤的输入目录重建。"
+            )
+            self.pages = []
+        # ⚠️ 清单落点按**节点**（B 方案）：副本节点的页集合写它自己的
+        #    ``pages~<节点>.json``，不覆盖主节点那份。
+        self.pages = self.store.refresh_pages_from_dir(
+            self.task_id, directory, **self._node_scope()
+        )
 
     def _refresh_manifest(self) -> None:
         if not self.task_id:
             return
-        self.pages = self.store.load_pages(self.task_id)
+        self.pages = self.store.load_pages(self.task_id, **self._node_scope())
         self._sync_manifest_to_input()
 
     def _manifest_paths(self) -> list[Path]:
@@ -140,6 +183,10 @@ class PageListMixin:
             #    ——功能正常，但左侧缩略图条会明显慢一截。
             self.store.task_input_dir(self.task_id),
         }
+        # ⚠️ B 方案：副本节点（同一步骤的第二个及之后的节点）的产物目录
+        #    （``stages/<阶段>~<节点>``）也要在白名单里。集合在切步骤/重建
+        #    步骤条时算好（见 ``_rebuild_node_dirs``），这里只读不查流程图。
+        allowed |= self.__dict__.get("_node_dirs") or set()
         if p.parent not in allowed:
             return None
         total = self.pdf_page_count or 0
@@ -152,7 +199,9 @@ class PageListMixin:
         raw = [b for b in (boxes or []) if b] or ([box] if box else [])
         if not raw:
             return {"path": str(thumb), "effect": None}
-        meta = self.store.image_size(self.task_id, p.stem)
+        meta = self.store.image_size(
+            self.task_id, p.stem, **self._scope_of(self._size_node_for(path_text))
+        )
         if not meta:
             return {"path": str(thumb), "effect": None}
         try:
@@ -192,7 +241,10 @@ class PageListMixin:
     def _original_image_size(self, path_text: str) -> QSize | None:
         """页面图片的原始像素尺寸：优先 extract 阶段写入 sizes.json 的记录。"""
         if self.task_id:
-            meta = self.store.image_size(self.task_id, Path(path_text).stem)
+            meta = self.store.image_size(
+                self.task_id, Path(path_text).stem,
+                **self._scope_of(self._size_node_for(path_text)),
+            )
             if meta:
                 return QSize(meta[0], meta[1])
         size = QImageReader(path_text).size()
@@ -216,13 +268,17 @@ class PageListMixin:
         if not self.task_id:
             return
         path = Path(path_text)
-        if path.parent == self.store.extract_output_dir(self.task_id) \
-                and path.stem.isdigit():
+        size_node = self._size_node_for(path_text)
+        extract_dir = self.store.node_or_stage_output(
+            self.task_id, size_node, "extract"
+        )
+        if path.parent == extract_dir and path.stem.isdigit():
             reader = QImageReader(path_text)
             size = reader.size()
             if size.isValid():
                 self.store.save_image_size(
-                    self.task_id, path.stem, size.width(), size.height()
+                    self.task_id, path.stem, size.width(), size.height(),
+                    **self._scope_of(size_node),
                 )
                 self.log_view.append(
                     f"页面图片已更新：{path.name}"
@@ -279,17 +335,21 @@ class PageListMixin:
         if not self.task_id:
             return
         path = Path(path_text)
-        if path.parent != self.store.extract_output_dir(self.task_id) \
-                or not path.stem.isdigit():
+        size_node = self._size_node_for(path_text)
+        extract_dir = self.store.node_or_stage_output(
+            self.task_id, size_node, "extract"
+        )
+        if path.parent != extract_dir or not path.stem.isdigit():
             return
         reader = QImageReader(path_text)
         size = reader.size()
         if size.isValid():
             self.store.save_image_size(
-                self.task_id, path.stem, size.width(), size.height()
+                self.task_id, path.stem, size.width(), size.height(),
+                **self._scope_of(size_node),
             )
         self.store.refresh_pages_from_dir(
-            self.task_id, self.store.extract_output_dir(self.task_id)
+            self.task_id, extract_dir, **self._scope_of(size_node)
         )
         self._refresh_manifest()
         self.log_view.append(f"第 {int(path.stem)} 页已提取（单页）。")
@@ -413,7 +473,7 @@ class PageListMixin:
             self._toast("warning", "提示", "该页面已不在清单中，请刷新后重试。")
             return
         removed = self.pages.pop(index)
-        self.store.save_pages(self.task_id, self.pages)
+        self.store.save_pages(self.task_id, self.pages, **self._node_scope())
         self.log_view.append(f"已删除页面：{removed.get('label')}")
         self._refresh_preview()
         self._refresh_downstream_preview("extract")
@@ -579,7 +639,7 @@ class PageListMixin:
             added += 1
         if not added:
             return 0
-        self.store.save_pages(task_id, self.pages)
+        self.store.save_pages(task_id, self.pages, **self._node_scope())
         return added
 
     def _on_pages_copied(self, done: list, errors: list) -> None:
@@ -602,7 +662,7 @@ class PageListMixin:
                 insert_at, {"file": target, "label": target_path.stem}
             )
             insert_at += 1
-        self.store.save_pages(self.task_id, self.pages)
+        self.store.save_pages(self.task_id, self.pages, **self._node_scope())
         note = f"已插入 {len(done)} 张图片。"
         if errors:
             note += f"（{len(errors)} 张失败：{errors[0][1]}）"
@@ -1263,10 +1323,19 @@ class PageListMixin:
         task_id = self.task_id
         assert task_id is not None, "产物检查只会在任务态出现"
         try:
-            for name in ("pages.json", "runs.json", "boxes.json", "sizes.json"):
-                if (self.store.task_dir(task_id) / name).exists():
+            names = ("pages.json", "runs.json", "boxes.json", "sizes.json")
+            root = self.store.task_dir(task_id)
+            for name in names:
+                if (root / name).exists():
                     return True
-            stages = self.store.task_dir(task_id) / "stages"
+            # ⚠️ **副本节点的同名副本也要算**（B 方案）：``pages~Node_3.json``
+            #    / ``boxes~Node_2.json`` 同样是"跑过留下的东西"，漏了它们会
+            #    在"换源文件"时既不提示、也不清理。
+            for pattern in ("pages~*.json", "boxes~*.json", "sizes~*.json",
+                            "print~*.json"):
+                if next(root.glob(pattern), None) is not None:
+                    return True
+            stages = root / "stages"
             if stages.is_dir() and any(stages.iterdir()):
                 return True
         except OSError:
@@ -1292,6 +1361,17 @@ class PageListMixin:
                 (task_dir / name).unlink(missing_ok=True)
             except OSError:
                 pass
+        # ⚠️ **副本节点的同名副本一起删**（B 方案）：``pages~Node_3.json`` /
+        #    ``boxes~Node_2.json`` / ``print~Node_2.json`` 都在任务**根**下，
+        #    下面 rmtree 的 ``stages``/``drafts`` 收不到它们——留着就是"换完源
+        #    文件，旧书的页清单与检测框在副本节点上复活"。
+        for pattern in ("pages~*.json", "boxes~*.json", "sizes~*.json",
+                        "print~*.json"):
+            for stale in task_dir.glob(pattern):
+                try:
+                    stale.unlink(missing_ok=True)
+                except OSError:
+                    pass
         for sub in ("stages", "thumbnails/detect", "thumbnails/print",
                      "thumbnails/imposition", "drafts"):
             try:
@@ -1310,7 +1390,7 @@ class PageListMixin:
         #    用户最后 400ms 的输入、攒批的框与尺寸落盘）。那些暂存是**旧书**
         #    的，目录刚被删掉，这一 flush 又把它们写回来——等于"换完文件，
         #    旧书的参数与检测框复活了"。只删文件不清标记是半个修复。
-        self._draft_dirty = set()
+        self._draft_dirty = {}
         self._pending_sizes = {}
         self._pending_boxes = {}
         # 预览器的内存态也要清，否则还指着旧书的第一页

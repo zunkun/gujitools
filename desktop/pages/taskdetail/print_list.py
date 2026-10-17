@@ -44,6 +44,8 @@ class PrintListMixin:
         run_worker: Callable[..., Any]
         print_source_dir: Callable[[], Any]
         imposition_effective: Callable[[], bool]
+        node_of_stage: Callable[[str], str | None]
+        _node_scope: Callable[..., dict]
         # 本 Mixin 内部在多个方法间传递的快照（_print_entries 写、落盘读）
         _print_doc_snapshot: dict[str, Any]
 
@@ -59,7 +61,13 @@ class PrintListMixin:
             return None
         try:
             page = Path(file_text)
-            if page.parent != self.store.rembg_output_dir(self.task_id):
+            # ⚠️ 按**当前节点**的提交产物目录判（B 方案）：副本节点的成品图
+            #    不会命中主节点的缩略图（stem 同名但目录不同），走错目录就会
+            #    拿另一张图的缩略图当这一页——看着像"缩略图串页"。
+            submitted = self.store.node_or_stage_output(
+                self.task_id, self.node_of_stage("rembg_submit"), "rembg_submit"
+            )
+            if page.parent != submitted:
                 return None
             thumb = self.store.rembg_thumbnails_dir(self.task_id) / f"{page.stem}.jpg"
             if (
@@ -90,7 +98,7 @@ class PrintListMixin:
         task_id = self.task_id
         if not task_id:
             return [], {"rembg_snapshot": [], "pages": []}
-        doc = self.store.load_print_doc(task_id)
+        doc = self.store.load_print_doc(task_id, **self._node_scope())
         # ⚠️ 来源切换（拼版 ↔ 去底色）后，旧来源那一批还留在 print.json 里；
         # 不剔掉就会被当成"用户插入的外部图片"追加进 PDF（见 print_plan 的
         # drop_foreign_stage_pages）。
@@ -101,13 +109,13 @@ class PrintListMixin:
         )
         if doc and len(cleaned) != len(doc.get("pages") or []):
             doc = {**doc, "pages": cleaned}
-            self.store.save_print_doc(task_id, doc)
+            self.store.save_print_doc(task_id, doc, **self._node_scope())
         entries, new_doc = plan_print_entries(rembg_files, doc)
         self._print_doc_snapshot = new_doc
         if not doc or set(doc.get("rembg_snapshot") or []) != set(
             new_doc["rembg_snapshot"]
         ):
-            self.store.save_print_doc(task_id, new_doc)
+            self.store.save_print_doc(task_id, new_doc, **self._node_scope())
         return entries, new_doc
 
     def _save_print_order(self, silent: bool = False) -> None:
@@ -132,7 +140,7 @@ class PrintListMixin:
             for e in entries
         ]
         try:
-            self.store.save_print_doc(self.task_id, doc)
+            self.store.save_print_doc(self.task_id, doc, **self._node_scope())
         except OSError as exc:
             # ⚠️ 落盘失败必须让用户看见（2026-09-26 审计）：任务目录被外部删除 /
             #    磁盘满时，原先这个异常会**直接从 Qt 槽里抛出去**（排序、拖动版面
@@ -163,7 +171,9 @@ class PrintListMixin:
             source = Path(filename)
             entries.append({"file": str(source), "label": source.stem})
         try:
-            self.store.save_print_pages(self.task_id, entries)
+            self.store.save_print_pages(
+                self.task_id, entries, **self._node_scope()
+            )
         except OSError as exc:
             # 同 _save_print_order：落盘失败必须可见，不能从 Qt 槽直接炸出去
             message = f"待打印列表保存失败：{type(exc).__name__}: {exc}"
@@ -175,16 +185,26 @@ class PrintListMixin:
         self.log_view.append(f"已插入 {len(filenames)} 张图片到待打印列表。")
 
     def _latest_print_pdf_path(self) -> Path | None:
-        """最近一次 print 执行产出的 PDF 路径（按 YAML pdf_name 解析）。"""
+        """最近一次 print 执行产出的 PDF 路径（按 YAML pdf_name 解析）。
+
+        ⚠️ 目录与历史都按**当前 PDF排版节点**取（B 方案）：两个「PDF排版」节点
+        各有自己的输出目录（``stages/print[~<节点>]``），按阶段取会把 A 节点的
+        PDF 当成 B 节点的产物——用户点下载拿到的是另一个节点的文件。
+        """
         if not self.task_id:
             return None
+        node = self.node_of_stage("print")
         pdf_name = "print.pdf"
-        history = self.store.list_stage_runs(self.task_id, "print")
+        history = (
+            self.store.list_node_runs(self.task_id, node, "print")
+            if node
+            else self.store.list_stage_runs(self.task_id, "print")
+        )
         if history:
             params = history[0].get("parameters", {})
             if params.get("pdf_name"):
                 pdf_name = str(params["pdf_name"])
-        out_dir = self.store.stage_dir(self.task_id, "print")
+        out_dir = self.store.scoped_stage_dir(self.task_id, node, "print")
         candidate = out_dir / pdf_name
         if candidate.exists():
             return candidate

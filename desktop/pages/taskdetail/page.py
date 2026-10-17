@@ -157,6 +157,10 @@ class TaskDetailPage(
         self.process: QProcess | None = None
         self.run_id: str | None = None
         self.running_stage: str | None = None
+        #: 正在跑的**节点实例** id（B 方案，2026-10-17）。收尾时按它决定产物
+        #: 落点/页清单归属——用户可能跑到一半就切到同一步骤的另一个节点去了，
+        #: 那时 ``current_node()`` 已经不是"跑的那个节点"了。
+        self.running_node: str | None = None
         self.cancel_requested = False
         self.detect_process: QProcess | None = None
         #: 「执行权」占用标记。**必须**独立于 self.process：run_stage 收到点击后
@@ -179,6 +183,25 @@ class TaskDetailPage(
         #: 惰性的，set_task 只记下源名，等面板真被建出来再应用（见 view.py
         #: 的 _apply_pending_source_defaults）
         self._pending_source_stem: str | None = None
+        #: 当前格对应的**节点实例 id**（B 方案，2026-10-17）：同一步骤可以有多个
+        #: 节点（图片拼版 / 检测文本框 / 图片去底色 / PDF排版…），它们共用同一
+        #: 页面板，靠这个字段把数据（产物目录 / 参数暂存 / 状态）**按节点**重定向。
+        #: ``None`` = 当前格没有对应节点（构造期 / 未接入的灰节点）。
+        self._current_node_id: str | None = None
+        #: 本任务**全部节点**的产物目录（缩略图白名单，B 方案）。只在切步骤/
+        #: 重建步骤条时算一次——``flow_slots`` 每次都读盘解析 flow.bpmn，不能
+        #: 放进逐页热路径（``_page_thumb_for`` 每页都要判白名单）。
+        self._node_dirs: set[Path] = set()
+        #: 产物目录 → 节点 id 的反查表（同一次重算填，见 :meth:`_rebuild_node_index`）。
+        #: 用来回答"这张页面图是哪个节点产的"（尺寸基准按节点存时要问它）。
+        self._node_of_dir: dict[Path, str] = {}
+        #: 节点 id → 运行阶段；界面步骤 key → 该步骤的**主节点** id（B 方案，
+        #: 同一次重算填）。`node_of_stage` 这类热路径只查这两张表，不解析流程图。
+        self._node_stage: dict[str, str] = {}
+        self._stage_primary: dict[str, str | None] = {}
+        #: 运行阶段 → 该阶段全部节点 id，**按流程条先后**（bar 序）。
+        #: 「（1）/（2）」这类给人看的序号取它——与用户看到的顺序一致。
+        self._stage_nodes: dict[str, list[str]] = {}
         #: 最近一次的阶段状态：执行权变化时要重刷按钮，但不值得为此再读一次盘
         self._last_stage_state: dict = {"status": "pending"}
         self.detect_cache: dict[str, list[tuple] | None] = {}
@@ -282,6 +305,9 @@ class TaskDetailPage(
         # %TEMP%/guji_live_preview/<id>/ ——放在覆盖之后清的就是新任务的
         # 空目录，旧任务那份（每张几 MB 的整页 PNG）永远没人清（审计 M4）
         self._reset_rembg_live()
+        # 当前节点（B 方案）随任务一起清：新流程的节点 id 与旧任务无关，
+        # 留着会让"按节点寻址"在新任务上指错节点（末尾 _select_stage 会重设）。
+        self._current_node_id = None
         self.task_id = task_id
         # ⚠️ 一律用任务目录里的**备份** PDF，不用索引里的 source_path：
         # 源文件在用户磁盘上会被移动/改名/删除，一走就「渲染失败」；
@@ -364,10 +390,15 @@ class TaskDetailPage(
         # （实时预览临时目录已在覆盖 task_id 之前按旧任务清过，见上方）
         self.pdf_page_count = 0
         self._history_prefilled: set[str] = set()
+        #: ``control_stack`` 页号 → 上次为它复位的**节点标记**（B 方案）。
+        #: 同一步骤的多个节点共用一页，切节点时要先把表单复位再回填，
+        #: 否则上一个节点手改的值会留在表单里、被当成这个节点的参数跑掉。
+        self._restored_node_of_page: dict[int, str] = {}
         self._history_params: list[dict] = []
         # 运行态引用清零：避免上一个任务的 run_id/running_stage 影响新任务
         self.run_id = None
         self.running_stage = None
+        self.running_node = None
         self.cancel_requested = False
         # 执行权也要清：切任务时上一个任务若卡在"已受理未启动"，标记不清会
         # 让新任务的执行按钮一直是灰的（且没有任何进程能来释放它）
@@ -646,6 +677,222 @@ class TaskDetailPage(
                 return slot.stage
         return None
 
+    # ------------------------------------------------------------------ 节点寻址（B 方案）
+    def bar_index_of_node(self, node_id: str | None) -> int | None:
+        """**节点实例 id** → 它在步骤条上占的那一格（``None`` = 本流程里没有它）。
+
+        与 :meth:`bar_index_of_step` 的区别（B 方案，2026-10-17）：同一步骤有
+        多个节点时，那个方法只能给"第一个"，而调用方要的多半是**具体哪个节点**
+        的格子（恢复高亮、定位产物、把进度画到对的那一格）。
+        """
+        slot = self._slot_of_node(node_id)
+        return None if slot is None else slot.bar_index
+
+    def node_at_index(self, index: int) -> str | None:
+        """步骤条**格序** → 该格对应的**节点实例 id**（没有节点返回 ``None``）。
+
+        B 方案（2026-10-17）：同一步骤可以有多个节点，每个节点各占一格。界面
+        把这一格对应的节点记成 :attr:`_current_node_id`，随后所有产物/参数
+        寻址都按它走。
+        """
+        slot = self._slot_at_index(index)
+        return (slot.node_id or None) if slot is not None else None
+
+    def current_node(self) -> str | None:
+        """当前格对应的**节点实例 id**（没有则为 ``None``）。"""
+        return self._current_node_id
+
+    def node_of_stage(self, stage: str) -> str | None:
+        """该运行阶段在**当前上下文**对应的**节点 id**。
+
+        判据：当前选中的节点（:attr:`_current_node_id`）属于这个阶段（或其所属
+        界面格，如 ``rembg_submit`` 与 ``rembg`` 同格）⇒ 用它；否则退回该阶段的
+        **主节点**（:meth:`~desktop.steps.bpmn_diagram.FlowDiagram.primary_of`）。
+
+        单节点流程下恒等于主节点 ⇒ 产物落点与改造前逐字节一致（零迁移）。
+        同一步骤有多个节点时，"用户正看着的那个"才是要寻址的那个。
+
+        ⚠️ 两张映射表来自 :meth:`_rebuild_node_index`（切格时算一次），**不在这里
+        解析流程图**：本方法被 ``_node_dir`` / ``_node_scope`` / 状态刷新这类
+        ≤200ms 一次的热路径调用，逐次读盘解析 ``flow.bpmn`` 会明显拖慢界面。
+        """
+        if not stage or not self.task_id:
+            return None
+        from desktop.steps import ports as _ports
+
+        step = _ports.STAGE_STEPS.get(stage, stage)
+        current = self._current_node_id
+        if current:
+            current_step = _ports.STAGE_STEPS.get(
+                self._node_stage.get(current, ""), ""
+            )
+            if current_step == step:
+                return current
+        return self._stage_primary.get(step)
+
+    def _node_dir(self, stage: str) -> Path:
+        """该运行阶段**当前上下文节点**的产物目录（B 方案；单节点时 = 旧目录）。
+
+        按节点取落点，主节点沿用旧路径（``stages/<阶段>``），副本落到
+        ``stages/<阶段>~<节点>``——界面按格显示某节点时就读它自己的产物。
+        """
+        if not self.task_id:
+            return Path()
+        return self.store.node_or_stage_output(
+            self.task_id, self.node_of_stage(stage), stage, "pages"
+        )
+
+    def _node_scope(self, node_id: str | None = None) -> dict:
+        """给按节点隔离的**读写**（页清单 / 参数暂存 / 检测框 / 尺寸）用的作用域。
+
+        ``node_id`` 缺省 = 当前格对应的节点（:meth:`current_node`）。返回值直接
+        展开进 ``store.load_pages(**scope)`` 这类调用，调用方不必自己查主节点。
+        """
+        if not self.task_id:
+            return {"node_id": None, "primary_id": None}
+        target = self.current_node() if node_id is None else node_id
+        return self.store.scoped_file_scope(self.task_id, target)
+
+    def node_display_suffix(self, node_id: str | None) -> str:
+        """节点在界面上的**区分后缀**：同一步骤有多个节点时给「（2）」，否则空串。
+
+        用在步骤条标题、日志行、"开始执行"提示这类**人对人**的地方：同一步骤
+        两个节点都叫「图片去底色」时，用户没法判断刚才跑的是哪个、现在看的是
+        哪个（这是 B 方案最直接的可用性代价）。
+
+        序号口径 = **流程条上的先后**（``_stage_nodes``，bar 序），不是文件声明
+        顺序：用户看到的顺序才该是 1、2、3——按声明顺序编号会出现"流程图里
+        第一个节点叫（2）"（用户 2026-10-17 截图里就是这个错位）。
+
+        ⚠️ **单节点恒为空串**：默认流程与所有现存任务的标题、日志必须与改造前
+        **逐字一致**（用户习惯与自测都钉着这一点）。
+        """
+        if not node_id or not self.task_id:
+            return ""
+        stage = self.store.node_stage_of(self.task_id, node_id)
+        if not stage:
+            return ""
+        ids = self._stage_nodes.get(stage)
+        if not ids:
+            # 索引还没建（探针/替身宿主）：退回图模型的声明顺序
+            try:
+                ids = list(self.store.task_diagram(self.task_id).node_ids_of(stage))
+            except Exception:  # noqa: BLE001 - 图坏了不该让标题刷不出来
+                return ""
+        if len(ids) <= 1 or node_id not in ids:
+            return ""
+        return f"（{ids.index(node_id) + 1}）"
+
+    def _scope_of(self, node_id: str | None) -> dict:
+        """**某个具体文件**所属节点的作用域；``node_id`` 为 None ⇒ 不分节点（旧路径）。
+
+        与 :meth:`_node_scope` 的分工（别混）：
+
+        - :meth:`_node_scope` 把"没给节点"理解成"**界面当前**这一步的节点"，
+          给"当前步骤的清单/暂存/待打印列表"这类读写用；
+        - 本方法用于"**这个文件**属于哪个节点"的场合（如按目录反查出来的
+          ``_size_node_for``）：查不到所属节点时就是"没有节点"，**不许借用
+          当前节点**——否则「图片提取」产出的页会被记成「检测文本框」这一步的
+          清单/尺寸（用户 2026-10-17 实测：流程里没有提取节点，第二步的页清单
+          却被预览时的单页提取写进去了）。
+        """
+        if not self.task_id or not node_id:
+            return {"node_id": None, "primary_id": None}
+        return self.store.scoped_file_scope(self.task_id, node_id)
+
+    def _size_node_for(self, path_text: str) -> str | None:
+        """这张页面图的尺寸记在**哪个节点**名下（按它所在的产物目录反查）。
+
+        走 :attr:`_node_of_dir`（``_rebuild_node_dirs`` 时算好的目录→节点表，
+        O(1)）而不是遍历槽位表：本方法在 ``_page_thumb_for`` 里**逐页**调用，
+        逐页解析 ``flow.bpmn`` 会把重建缩略图拖慢一个量级。
+        """
+        try:
+            return self._node_of_dir.get(Path(path_text).parent)
+        except TypeError:  # 路径非法（空串等）：当作没有节点
+            return None
+
+    def _node_stage_state(self, stage: str) -> dict:
+        """某阶段在**当前上下文（当前节点）**下的状态（B 方案）。
+
+        同一步骤的多个节点各有自己的运行记录；"这一步能不能提交/是不是失败过"
+        一律问它，别问阶段——阶段状态是"这个阶段最近一次运行"，可能是**另一个
+        节点**跑的。
+        """
+        if not self.task_id:
+            return dict(self._PENDING_STATE)
+        node = self.node_of_stage(stage)
+        if node:
+            state = self.store.node_states(self.task_id).get(node)
+            if state is not None:
+                return state
+            return dict(self._PENDING_STATE)
+        return self.store.stage_states(self.task_id).get(
+            stage
+        ) or dict(self._PENDING_STATE)
+
+    def _rebuild_node_index(self) -> None:
+        """重算本任务的**节点索引**（B 方案）——切步骤/重建步骤条时算一次。
+
+        一次算清四件事，全部供热路径 O(1) 查询：
+
+        - ``_node_dirs``：全部节点的产物目录（缩略图白名单）；
+        - ``_node_of_dir``：产物目录 → 节点 id（"这张页面图是哪个节点产的"，
+          尺寸基准按节点存时要问它）；
+        - ``_node_stage``：节点 id → 运行阶段；
+        - ``_stage_primary``：界面步骤 key → 该步骤的**主节点** id。
+
+        ⚠️ 只在切步骤/切任务时算，**不要**放进逐页/逐 tick 热路径：``flow_slots``
+        与 ``task_diagram`` 都要读盘解析 ``flow.bpmn``（单步切换读两次没问题，
+        逐页读就是几十~几百次文件解析）。
+        """
+        from desktop.steps import ports as _ports
+
+        self._node_dirs = set()
+        self._node_of_dir = {}
+        self._node_stage = {}
+        self._stage_primary = {}
+        self._stage_nodes = {}
+        task_id = self.task_id
+        if not task_id:
+            return
+        for slot in self.flow_slots():
+            if not slot.mapped or not slot.node_id:
+                continue
+            self._node_stage[slot.node_id] = slot.stage
+            # 同阶段节点按**流程条顺序**记录（编号给人看，必须跟着用户看到的顺序）
+            self._stage_nodes.setdefault(slot.stage, []).append(slot.node_id)
+            # 页面图产物目录（extract/rembg/rembg_submit/imposition）
+            try:
+                pages_dir = self.store.node_output(task_id, slot.node_id, "pages")
+            except KeyError:
+                pages_dir = None
+            if pages_dir is not None:
+                self._node_dirs.add(pages_dir)
+                self._node_of_dir[pages_dir] = slot.node_id
+            # 「PDF排版」的产物是 PDF 不是页面图：白名单里带上它的输出目录
+            # （缩略图判据按目录比，旧行为要保住；但**不**进 _node_of_dir——
+            # 那目录里没有"页面图"，别让它答"这页是哪个节点产的"）。
+            if slot.stage == "print":
+                self._node_dirs.add(
+                    self.store.scoped_stage_dir(task_id, slot.node_id, "print")
+                )
+        # 保底：主节点的 PDF 目录（流程里没有 print 节点时也认）
+        self._node_dirs.add(self.store.print_output_pdf(task_id).parent)
+        # 主节点表：走**图模型**（声明顺序里第一个 = 沿用旧路径的那个）
+        try:
+            diagram = self.store.task_diagram(task_id)
+        except Exception:  # noqa: BLE001 - 图坏了不该让整个页面刷不出来
+            return
+        for stage in _ports.STAGE_LOCATIONS:
+            step = _ports.STAGE_STEPS.get(stage, stage)
+            if step in self._stage_primary:
+                continue
+            try:
+                self._stage_primary[step] = diagram.primary_of(step)
+            except Exception:  # noqa: BLE001
+                self._stage_primary[step] = None
+
     def _rembg_step_index(self) -> int:
         """"图片去底色"这一步的**格序**（拼版节点消失时退回的那一步）。
 
@@ -777,18 +1024,28 @@ class TaskDetailPage(
         return self.bar_index_of_step(IMPOSITION_STAGE)
 
     def _initial_stage_index(self) -> int:
-        """进详情页默认落到第几步：**上次停留的步骤**，匹配不上则第一步。
+        """进详情页默认落到第几步：**上次停留的那一格**，匹配不上则第一步。
 
         这是「打开任务详情默认打开记录的那一步，找不到匹配就从第一步开始」
         的唯一实现处（``set_task`` 末尾调它）。
+
+        ⚠️ **优先按节点恢复**（B 方案，2026-10-17）：同一步骤有多个节点时，
+        "上次停在图片去底色"这句话不足以定位——两个节点共用一个 step key，
+        只按 step 恢复会稳定回到主节点（用户在副本节点上调完参数、关掉再打开，
+        看到的是另一个节点的面板与产物）。
         """
         if not self.task_id:
             return 0
+        node = self.store.load_last_node(self.task_id)
+        if node:
+            slot = self._slot_of_node(node)
+            if slot is not None:
+                return slot.bar_index
         index = self._stage_index_of(self.store.load_last_stage(self.task_id))
         return 0 if index is None else index
 
     def _remember_stage(self, index: int) -> None:
-        """记下"用户最后停留的步骤"，下次打开这个任务直接回到这里。
+        """记下"用户最后停留的步骤（含节点）"，下次打开这个任务直接回到这里。
 
         写在 ``_select_stage`` 里（切步骤的唯一入口）而不是"返回列表/关窗口"
         时：进程被强杀、断电都不会把记录丢掉。⚠️ 记的是 key 不是下标，理由
@@ -800,10 +1057,15 @@ class TaskDetailPage(
         # ⚠️ 记key 不记下标（理由见 :meth:`_stage_index_of`）。下标要**反查**
         #    槽位表，不能用 ``STAGES[index]``——自定义流程里那一格可能是
         #    拼版（可选节点）或换个顺序的别的步骤。
+        # ⚠️ 连**节点**一起记（B 方案）：同一步骤的多个节点共用一个 step key，
+        #    只记 key 就等于"永远回到第一个节点"。
         stage = self.step_at_index(index)
         if stage is None:
             return
-        self.store.save_last_stage(self.task_id, stage)
+        slot = self._slot_at_index(index)
+        self.store.save_last_stage(
+            self.task_id, stage, (slot.node_id or None) if slot else None
+        )
 
     def _select_stage(self, index: int) -> None:
         """切到步骤条的**第``index`` 格**（格序，含可选节点占位）。
@@ -826,6 +1088,22 @@ class TaskDetailPage(
         if slot is not None and not slot.mapped:
             self._explain_unmapped_step(slot)
             return
+        # ⚠️ **先**把当前格对应的节点记下来再刷一切（B 方案）：随后的预览刷新、
+        #    参数回填、历史选项、就绪判据都按 `_current_node_id` 寻址。同一步骤
+        #    的多个节点共用同一页面板，靠这个字段把数据按节点重定向。
+        previous_node = self._current_node_id
+        self._current_node_id = (slot.node_id or None) if slot is not None else None
+        # 缩略图白名单与节点索引跟着切（B 方案：新节点的副本产物目录要进白名单）
+        self._rebuild_node_index()
+        # ⚠️ 换了节点 ⇒ **页清单也要换**（B 方案）：清单回答的是"**这个节点**
+        #    要处理哪几页"（插过图/删过页/重排过）。不换的后果是"看的是 B、
+        #    列的是 A 的图"——预览、右键编辑回写、右键「定位图片资源」全指着
+        #    另一个节点的文件（这正是"副本节点定位到主节点图片"的根因）。
+        #    清单的每次改写都已落盘（见 manifest 各插入/删除处），所以丢弃内存
+        #    副本重新按节点读是安全的。
+        if previous_node != self._current_node_id:
+            self.pages = []
+            self._refresh_manifest()
         self.step_bar.set_current(index)
         # 记住这一步：下次打开任务默认回到这里
         self._remember_stage(index)
@@ -941,20 +1219,42 @@ class TaskDetailPage(
             "（如「图片去底色」）；不需要就把它删掉。",
         )
 
+    #: 状态缺失时的兜底（"这一步还没跑过"）——**不借别的节点/阶段的状态**：
+    #: 同一步骤两个节点各跑各的，借来就是"B 看着已完成、其实从没跑过"。
+    _PENDING_STATE = {
+        "status": "pending", "done": 0, "total": 0, "completed": False,
+        "in_flow": True,
+    }
+
+    def _slot_state(self, slot, node_states: dict, stage_states: dict) -> dict:
+        """某个**界面格**当前该显示的状态（B 方案：按节点取，单节点时 = 旧口径）。
+
+        - 这一格有节点 ⇒ 取 :meth:`~desktop.store.runs.RunMixin.node_states`
+          里**该节点**的状态；该节点没有记录就是"还没跑过"（pending），
+          **绝不回落**该阶段的状态——那会把同一步骤里另一个节点跑出的"成功"
+          显示到这个从没跑过的节点上；
+        - 这一格没有节点（老模型投影 / 未接入节点）⇒ 退回阶段状态。
+        """
+        if slot.node_id:
+            return node_states.get(slot.node_id) or dict(self._PENDING_STATE)
+        return stage_states.get(slot.stage) or dict(self._PENDING_STATE)
+
     def _refresh_stage_views(self) -> None:
         if not self.task_id:
             return
-        states = self.store.stage_states(self.task_id)
+        stage_states = self.store.stage_states(self.task_id)
+        # ⚠️ 一次读全（runs.json）：逐槽位问 store 会把整份文件读 N 遍。
+        node_states = self.store.node_states(self.task_id)
         self.step_bar.reset_statuses()
         # ⚠️ 按**槽位表**刷而不是 ``enumerate(STAGES)``：步骤条上的格序来自
         #    本任务流程（BPM 驱动），自定义流程换了顺序，状态要刷到对应那一格；
         #    可选节点（拼版）没有 runs 状态，跳过（它在下方单独给状态行文案）。
+        # ⚠️ 同一步骤的多个节点**各刷各的**（B 方案）：一格一个节点，状态/进度/
+        #    打勾都按该节点自己的运行记录来（:meth:`_slot_state`）。
         for slot in self.flow_slots():
-            if slot.optional:
+            if slot.optional or not slot.mapped:
                 continue
-            state = states.get(slot.stage)
-            if state is None:
-                continue
+            state = self._slot_state(slot, node_states, stage_states)
             progress = (state["done"], state["total"]) if state["total"] else None
             # 步骤条只表达"第几步 / 执行到哪"：completed 决定徽标是否打勾，
             # status 决定副标题文案与颜色（重试失败不会让已完成步骤退回未完成）
@@ -962,7 +1262,7 @@ class TaskDetailPage(
                 slot.bar_index, state["status"], progress,
                 completed=state["completed"],
             )
-        self._show_running_submit_on_steps(states)
+        self._show_running_submit_on_steps(node_states, stage_states)
         stage = self.current_stage()
         if stage == IMPOSITION_STAGE:
             # 「图片拼版」伪步骤在 runs.json 里没有状态可读；执行按钮组也
@@ -972,33 +1272,60 @@ class TaskDetailPage(
                 "PDF排版使用拼版结果）"
             )
             return
-        self._apply_stage_state(stage, states[stage])
-        self._update_run_buttons(states[stage])
+        slot = self._slot_at_index(self.step_bar._current)
+        state = (
+            self._slot_state(slot, node_states, stage_states)
+            if slot is not None and slot.mapped
+            else stage_states[stage]
+        )
+        self._apply_stage_state(stage, state)
+        self._update_run_buttons(state)
 
-    def _show_running_submit_on_steps(self, states: dict) -> None:
-        """「提交本次任务」（rembg_submit）在跑时，把**第三步**的步骤条显示成
-        「执行中 · 42/91」。
+    def _show_running_submit_on_steps(self, node_states: dict,
+                                      stage_states: dict | None = None) -> None:
+        """「提交本次任务」（rembg_submit）在跑时，把**它所在那一格**的步骤条
+        显示成「执行中 · 42/91」。
 
         ⚠️ 提交不是独立步骤（STAGES 里没有它），但它归属第三步（见
         ``desktop.store.tasks.STAGE_STEP``）。进度条与状态文案只服务当前显示的
         步骤（见 ``StageRunnerMixin._progress_belongs_here``），所以用户一旦切到
         别的步骤，就只剩步骤条这一处还能看出"还有活儿在跑"——不补这一句，
         切走之后界面上就完全看不出提交还在执行了。
+
+        ⚠️ 格子要按**正在跑的那个节点**找（B 方案）：两个「图片去底色」节点
+        各有自己的格，把提交的进度画到主节点那格上就是"进度上错了节点"。
         """
         if self.running_stage != "rembg_submit":
             return
         done, total = self._last_progress
-        # ⚠️ **查表，别写死 2**：提交折叠在「图片去底色」那一格，而那一格的
-        #    格序随流程走（自定义流程里它可能是第 1 格）。写死 2 在那条流程下
-        #    会把进度显示到别的节点上（同 ``runner`` 里那两处已改用
-        #    ``stack_index_of_step``）。
-        index = self.bar_index_of_step("rembg")
-        if index is None:
+        node = self.running_node
+        slot = self._slot_of_node(node) if node else None
+        if slot is None:
+            # 没有节点信息（旧路径/程序化调用）：退回"该步骤的第一格"
+            index = self.bar_index_of_step("rembg")
+            if index is None:
+                return
+            slot = self._slot_at_index(index)
+        if slot is None:
             return
+        completed = False
+        if node and node in node_states:
+            completed = bool(node_states[node]["completed"])
+        elif stage_states:
+            completed = bool(stage_states.get("rembg", {}).get("completed"))
         self.step_bar.set_step_status(
-            index, "running", (done, total) if total else None,
-            completed=states["rembg"]["completed"],
+            slot.bar_index, "running", (done, total) if total else None,
+            completed=completed,
         )
+
+    def _slot_of_node(self, node_id: str | None):
+        """节点 id → 它在步骤条上占的那一格（没有对应格返回 ``None``）。"""
+        if not node_id:
+            return None
+        for slot in self.flow_slots():
+            if slot.mapped and slot.node_id == node_id:
+                return slot
+        return None
 
     def _apply_stage_state(self, stage: str, state: dict) -> None:
         if self._own_step_running():
@@ -1234,9 +1561,8 @@ class TaskDetailPage(
             # ⚠️ 不再 set_images(manifest)（用户 2026-10-09 合并双标签）：
             #    左栏恒是 PDF 页缩略图；这里只把产物目录交给查看器——
             #    当前页已有产物就立即显示产物，没有等切页时现场提取。
-            self.extract_result_viewer.set_extract_dir(
-                self.store.extract_output_dir(self.task_id)
-            )
+            # ⚠️ 目录按**节点**取（B 方案）：同一步骤的多个节点各有产物目录。
+            self.extract_result_viewer.set_extract_dir(self._node_dir("extract"))
         elif stage == "detect":
             self.detect_viewer.set_images(self._manifest_paths())
             # 清单可能变了（增删页/切任务/批量检测跑完）→ 统计跟着重算
@@ -1244,7 +1570,7 @@ class TaskDetailPage(
         elif stage == "rembg":
             self.rembg_viewer.set_images(
                 self._manifest_paths(),
-                self.store.rembg_preview_output_dir(self.task_id),
+                self._node_dir("rembg"),
                 boxes_provider=self._detect_boxes_for,
                 region_params_provider=self._current_detect_params,
                 thumb_provider=self._page_thumb_for,

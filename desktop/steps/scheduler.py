@@ -108,44 +108,74 @@ class Scheduler:
     用法::
 
         sched = Scheduler.from_diagram(diagram, flags={"imposition": True})
-        sched.stages                 # 本流程要跑的阶段（有序）
+        sched.nodes                  # 本流程要跑的节点（拓扑序，(node_id, stage)）
+        sched.stages                 # 折叠同阶段后的阶段（旧调用方的兼容面）
         sched.next_stage("detect")   # -> "imposition"
         sched.mark("extract", DONE)
 
     ``flags`` 是条件开关表（如 ``{"imposition": True}``）；没给的条件按
     **False** 处理——条件分支默认不走（拼版是可选步骤，默认不做）。
+
+    ⚠️ **B 方案（2026-10-17）：状态单元是「节点实例」而非「阶段」**（用户
+    "图片拼版/检测文本框/图片去底色/PDF排版这些节点可以有多个"）。同类型
+    步骤可以放多个节点，它们彼此独立。所以 :attr:`nodes` 才是真源，:attr:`stages`
+    只是它的**去重投影**（保留给还没改到节点粒度的旧调用方）。
     """
 
-    stages: tuple[str, ...] = ()
-    #: 阶段 → 状态
+    #: 本流程要跑的**节点实例**（拓扑序 ``(node_id, stage)``）——B 方案真源。
+    nodes: tuple[tuple[str, str], ...] = ()
+    #: 阶段 → 状态（:meth:`mark` / :meth:`state_of` 的兼容面；
+    #: 单节点阶段与节点状态一一对应）
     states: dict[str, str] = field(default_factory=dict)
     #: 条件开关
     flags: dict[str, bool] = field(default_factory=dict)
     #: 本流程**排除**掉的阶段（图里没有，但程序认识的）——界面据此隐藏
     excluded: tuple[str, ...] = ()
 
+    @property
+    def stages(self) -> tuple[str, ...]:
+        """折叠同阶段后的阶段序列（**兼容面**：旧调用方按 stage 寻址）。
+
+        取自 :attr:`nodes` 的**去重投影**（保留首次出现的位置）。B 方案里
+        运行时按 ``node_id`` 寻址，本属性只服务还没改到节点粒度的调用方——
+        同阶段多个节点时它们会折叠成一个阶段（旧行为）。
+        """
+        return tuple(dict.fromkeys(stage for _, stage in self.nodes))
+
     # ------------------------------------------------------------ 构造
     @classmethod
     def from_diagram(cls, diagram: FlowDiagram,
                      flags: dict[str, bool] | None = None) -> "Scheduler":
-        """从流程图建状态机：顺序取拓扑序，条件不满足的阶段直接剔除。"""
+        """从流程图建状态机：顺序取**节点**拓扑序，条件不满足的阶段直接剔除。
+
+        ⚠️ 顺序来自 :meth:`FlowDiagram.node_order`（``(node_id, stage)``，
+        **不折叠同阶段**）——同类型多个节点各占一个状态单元，它们彼此独立。
+        """
         flags = dict(flags or {})
-        order = diagram.stage_order()
-        active: list[str] = []
+        order = diagram.node_order()
+        active: list[tuple[str, str]] = []
         skipped: list[str] = []
-        for stage in order:
+        for node_id, stage in order:
             condition = CONDITIONS.get(stage)
             if condition and not flags.get(condition, False):
-                skipped.append(stage)
-                continue
-            active.append(stage)
+                # ⚠️ **入口节点不受条件影响**（B 方案，2026-10-17 用户报障：
+                #    "图片拼版"做第一个节点时，第二步拿不到它的输出）：
+                #    入边都没有的节点，没有任何分支决定它跑不跑——用户把它放在
+                #    流程最前面，它就是这一步的真实产物，必须照常活着。
+                #    只有**挂在分支后面**的节点（有入边）才可能是"条件不满足就
+                #    跳过"的那一个。默认流程的「图片拼版」挂在「是否拼版」后面，
+                #    照旧按开关跳过，既有行为一字不变。
+                if diagram.incoming(node_id):
+                    if stage not in skipped:
+                        skipped.append(stage)
+                    continue
+            active.append((node_id, stage))
+        order_stages = tuple(dict.fromkeys(stage for _, stage in order))
         known = set(ports.STAGE_STEPS)
-        excluded = tuple(
-            s for s in known if s not in order and s not in active
-        )
+        excluded = tuple(s for s in known if s not in order_stages)
         scheduler = cls(
-            stages=tuple(active),
-            states={s: PENDING for s in active},
+            nodes=tuple(active),
+            states={stage: PENDING for _, stage in active},
             flags=flags,
             excluded=excluded,
         )
@@ -170,6 +200,14 @@ class Scheduler:
     # ------------------------------------------------------------ 查询
     def __contains__(self, stage: str) -> bool:
         return stage in self.stages
+
+    def node_ids(self) -> tuple[str, ...]:
+        """本流程要跑的**节点实例** id（拓扑序）——界面按它给每节点建一页。"""
+        return tuple(node_id for node_id, _stage in self.nodes)
+
+    def nodes_of(self, stage: str) -> tuple[str, ...]:
+        """本流程里属于该阶段的**全部**节点 id（保序）——同类型多节点各独立。"""
+        return tuple(node_id for node_id, s in self.nodes if s == stage)
 
     def state_of(self, stage: str) -> str:
         """阶段状态；不在本流程里返回 :data:`SKIPPED`。"""
@@ -247,6 +285,7 @@ class Scheduler:
     def to_dict(self) -> dict:
         """给界面用的快照（JSON 友好）。"""
         return {
+            "nodes": [list(item) for item in self.nodes],
             "stages": list(self.stages),
             "states": dict(self.states),
             "flags": dict(self.flags),

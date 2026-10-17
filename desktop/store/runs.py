@@ -39,6 +39,9 @@ class RunMixin:
         root: Path
         task_dir: Callable[[str], Path]
         task_slots: Callable[[str], Any]
+        #: 本任务流程图（``FlowDiagram``）——节点状态查询要按它把老记录
+        #: 归属到主节点（见 :meth:`RunMixin._node_primary`）。
+        task_diagram: Callable[[str], Any]
 
     def runs_path(self, task_id: str) -> Path:
         """运行历史文件：任务目录下的 runs.json。"""
@@ -68,13 +71,18 @@ class RunMixin:
         return []
 
     def create_stage_run(
-        self, task_id: str, stage: str, parameters: dict, resume: bool = False
+        self, task_id: str, stage: str, parameters: dict, resume: bool = False,
+        node_id: str | None = None,
     ) -> str:
         """
         登记一次新的阶段执行并返回 run_id。
 
         新记录插在该阶段历史最前，初始状态 running、进度 0/0；每阶段只保留
         最近 MAX_RUN_HISTORY 条。resume 标记本次是否为续跑。
+
+        ``node_id`` 记下这次执行是**哪个节点实例**跑的（B 方案，2026-10-17）：
+        同一步骤可以有多个节点，它们各有自己的状态与进度。``None`` 表示"没有
+        节点信息"的旧记录/非节点调用方——读侧按该阶段的主节点归属。
         """
         run_id = uuid.uuid4().hex
         runs = self._load_runs(task_id)
@@ -89,6 +97,7 @@ class RunMixin:
             {
                 "run_id": run_id,
                 "status": "running",
+                "node": node_id or None,
                 "parameters": {"resume": resume, **stored_parameters},
                 "done": 0,
                 "total": 0,
@@ -152,6 +161,76 @@ class RunMixin:
     def list_stage_runs(self, task_id: str, stage: str) -> list[dict]:
         """某阶段的历史执行记录，最新在前。"""
         return self._as_history(self._load_runs(task_id).get(stage))
+
+    def list_node_runs(self, task_id: str, node_id: str,
+                       stage: str | None = None) -> list[dict]:
+        """某**节点实例**的历史执行记录（最新在前）。
+
+        B 方案（2026-10-17）：同一步骤的多个节点各跑各的，历史下拉框只该列
+        本节点跑过的次数。老记录没有 ``node`` 字段 ⇒ 归它的**主节点**
+        （:meth:`_node_primary`），这样改造前的历史仍能在第一个节点上看到。
+        """
+        if not node_id:
+            return []
+        records = (
+            self.list_stage_runs(task_id, stage)
+            if stage
+            else [r for history in self._load_runs(task_id).values()
+                  for r in self._as_history(history)]
+        )
+        primary = self._node_primary(task_id, stage)
+        return [
+            record for record in records
+            if (record.get("node") or primary) == node_id
+        ]
+
+    def _node_primary(self, task_id: str, stage: str | None) -> str | None:
+        """某个运行阶段在本任务流程图里的**主节点** id（读不到图返回 ``None``）。"""
+        if not stage:
+            return None
+        from desktop.steps import ports
+
+        try:
+            diagram = self.task_diagram(task_id)
+            return diagram.primary_of(ports.STAGE_STEPS.get(stage, stage))
+        except Exception:  # noqa: BLE001 - 图读不到不该拖垮状态查询
+            return None
+
+    def node_states(self, task_id: str) -> dict[str, dict]:
+        """每个**节点实例**最近一次运行的状态与进度（B 方案，步骤条渲染用）。
+
+        键是节点 id（``Node_7`` 这种）。语义与 :meth:`stage_states` 逐条对齐：
+
+        - ``status/done/total`` 取自**该节点**最近一次运行；
+        - ``completed`` = 该节点历史上**成功过**（重试失败不该让已出结果的
+          节点退回未完成）；
+        - 额外给 ``stage``，调用方不必再查图。
+
+        ⚠️ 记录里没有 ``node`` 的（改造前的老记录、以及非节点调用方写进去的）
+        归属该阶段的**主节点**——所以同阶段只有一个节点的任务里，
+        ``node_states()[主节点]`` 与 ``stage_states()[阶段]`` 逐值相等。
+        """
+        states: dict[str, dict] = {}
+        success: dict[str, bool] = {}
+        for stage, records in self._load_runs(task_id).items():
+            primary = self._node_primary(task_id, stage)
+            for record in self._as_history(records):
+                node = record.get("node") or primary
+                if not node:
+                    continue  # 图上没有这个阶段（老任务被改过流程）：无从归属
+                if node not in states:
+                    states[node] = {
+                        "stage": stage,
+                        "status": record.get("status", "pending"),
+                        "done": record.get("done", 0),
+                        "total": record.get("total", 0),
+                        "completed": False,
+                    }
+                if record.get("status") == "success":
+                    success[node] = True
+        for node, state in states.items():
+            state["completed"] = bool(success.get(node))
+        return states
 
     def all_stage_runs(self, task_id: str) -> dict[str, list[dict]]:
         """整份运行历史（**一次读盘**），键为阶段名、值为最新在前的记录列表。

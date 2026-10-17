@@ -65,6 +65,8 @@ core（命令定义、reporter）   →   utils（纯算法：box_geometry、ima
 | CLI 参数                                                       | `core/command_spec.py`                                                                                                                                   |
 | 桌面参数面板默认值                                             | `desktop/components/panels/params_spec.py`                                                                                                               |
 | 步骤元数据（文案/过滤串/输出规则/导航/流程角色）               | `desktop/steps/spec.py::SPECS`（`STAGES`/`MODULES`/`PANEL_CLASSES` 全部派生）                                                                            |
+| 同类型多节点的落点（`stages/<阶段>~<节点>`、`boxes~<节点>.json`…） | `desktop/steps/ports.py::scoped_name`（**主节点沿用旧路径 ⇒ 零迁移**）；读写统一走 `store.node_or_stage_output` / `store.scoped_file_scope`，别在各处自己拼 `~<节点>` |
+| 某节点某端口的输入（按图回溯供给方）                           | `desktop/store/tasks.py::node_input`（= `FlowDiagram.nearest_producer_node`）；「同格多动作前折」= `ports.fold_forward`                                    |
 | 任务流程连线（BPM 边表）                                       | `desktop/steps/ports.py::SUPPLIERS`；落点表 `STAGE_LOCATIONS`                                                                                            |
 | 「这一步能不能跑」的就绪判据                                   | `desktop/steps/ports.py::stage_blocking_inputs`（**不是** `stage_inputs` 那份静态声明）                                                                  |
 | 流程图模型（**唯一真源**，含任意节点类型/DI 坐标/折点/边标签） | `desktop/steps/bpmn_diagram.py::FlowDiagram`（读/写 `tasks/<id>/flow.bpmn`）                                                                             |

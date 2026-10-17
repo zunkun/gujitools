@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 174 个模块、191 个公开类、1311 个公开函数/方法（生成于 2026-10-16）。
+覆盖 174 个模块、191 个公开类、1348 个公开函数/方法（生成于 2026-10-17）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -109,7 +109,7 @@
 | [`desktop.pages.taskdetail.imposition_layout`](#desktoppagestaskdetailimposition_layout) | 1 | 1 |
 | [`desktop.pages.taskdetail.imposition_pages`](#desktoppagestaskdetailimposition_pages) | 1 | 0 |
 | [`desktop.pages.taskdetail.manifest`](#desktoppagestaskdetailmanifest) | 1 | 5 |
-| [`desktop.pages.taskdetail.page`](#desktoppagestaskdetailpage) | 1 | 17 |
+| [`desktop.pages.taskdetail.page`](#desktoppagestaskdetailpage) | 1 | 22 |
 | [`desktop.pages.taskdetail.params_draft`](#desktoppagestaskdetailparams_draft) | 1 | 1 |
 | [`desktop.pages.taskdetail.print_list`](#desktoppagestaskdetailprint_list) | 1 | 1 |
 | [`desktop.pages.taskdetail.rembg_live`](#desktoppagestaskdetailrembg_live) | 1 | 0 |
@@ -136,25 +136,25 @@
 | [`desktop.stages.generic_stage`](#desktopstagesgeneric_stage) | 0 | 2 |
 | [`desktop.stages.print_stage`](#desktopstagesprint_stage) | 0 | 3 |
 | [`desktop.stages.rembg_stage`](#desktopstagesrembg_stage) | 0 | 1 |
-| [`desktop.steps.bpmn_diagram`](#desktopstepsbpmn_diagram) | 4 | 30 |
+| [`desktop.steps.bpmn_diagram`](#desktopstepsbpmn_diagram) | 4 | 35 |
 | [`desktop.steps.control`](#desktopstepscontrol) | 1 | 11 |
 | [`desktop.steps.flow`](#desktopstepsflow) | 4 | 31 |
 | [`desktop.steps.kernel`](#desktopstepskernel) | 5 | 11 |
-| [`desktop.steps.ports`](#desktopstepsports) | 0 | 30 |
+| [`desktop.steps.ports`](#desktopstepsports) | 0 | 38 |
 | [`desktop.steps.process`](#desktopstepsprocess) | 1 | 7 |
-| [`desktop.steps.scheduler`](#desktopstepsscheduler) | 2 | 13 |
+| [`desktop.steps.scheduler`](#desktopstepsscheduler) | 2 | 16 |
 | [`desktop.steps.source_zone`](#desktopstepssource_zone) | 1 | 20 |
 | [`desktop.steps.spec`](#desktopstepsspec) | 1 | 22 |
 | [`desktop.steps.validate`](#desktopstepsvalidate) | 1 | 2 |
-| [`desktop.store.annotations`](#desktopstoreannotations) | 1 | 9 |
+| [`desktop.store.annotations`](#desktopstoreannotations) | 1 | 11 |
 | [`desktop.store.drafts`](#desktopstoredrafts) | 1 | 5 |
 | [`desktop.store.imposition`](#desktopstoreimposition) | 1 | 4 |
 | [`desktop.store.json_io`](#desktopstorejson_io) | 0 | 2 |
 | [`desktop.store.pages`](#desktopstorepages) | 1 | 9 |
-| [`desktop.store.runs`](#desktopstoreruns) | 1 | 8 |
+| [`desktop.store.runs`](#desktopstoreruns) | 1 | 10 |
 | [`desktop.store.store`](#desktopstorestore) | 1 | 1 |
-| [`desktop.store.tasks`](#desktopstoretasks) | 1 | 40 |
-| [`desktop.store.ui_state`](#desktopstoreui_state) | 1 | 8 |
+| [`desktop.store.tasks`](#desktopstoretasks) | 1 | 51 |
+| [`desktop.store.ui_state`](#desktopstoreui_state) | 1 | 9 |
 | [`desktop.ui.color_picker`](#desktopuicolor_picker) | 5 | 30 |
 | [`desktop.ui.font_setup`](#desktopuifont_setup) | 2 | 8 |
 | [`desktop.ui.fonts`](#desktopuifonts) | 0 | 2 |
@@ -2935,18 +2935,18 @@ status 决定副标题/标题色，badge_status 决定徽标（缺省同 status�
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(steps, parent=None, optional_after=None, unmapped=None, bar_indices=None, optional_bar_index=None)` | 按给定步骤标题逐项构建；steps 允许传生成器。 |
+| `__init__(steps, parent=None, optional_after=None, unmapped=None, bar_indices=None, optional_bar_index=None, optionals=None)` | 按给定步骤标题逐项构建；steps 允许传生成器。 |
 | `paintEvent(_event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
 | `set_current(index: int) -> None` | 设置当前步骤的**格序**并同步各步骤高亮与徽标。 |
 | `mark_completed(index: int) -> None` | 标记某步骤已完成（徽标改为对勾，连接线着色）。 |
 | `set_steps(texts) -> None` | 兼容旧调用：只更新标题文本。 |
-| `set_imposition_visible(visible: bool) -> None` | 显示/隐藏「图片拼版」虚线节点（随第三步区域模式是否为 1）。 |
+| `set_imposition_visible(visible: bool) -> None` | 显示/隐藏**全部**可选（虚线）节点（随第三步区域模式是否为 1）。 |
 | `set_imposition_selected(selected: bool) -> None` | 「图片拼版」是否被选择（副标题/徽标口径，不动连接线/绕行线）。 |
 | `set_imposition_active(active: bool) -> None` | 拼版支路是否**生效**（已启用且至少有一页拼版，宿主判定）。 |
 | `set_step_status(index: int, status: str, progress: tuple \| None=None, completed: bool \| None=None) -> None` | 设置某步骤状态；progress 为 (已完成, 总数) 时拼出 "成功 · 84/84"。 |
 | `reset_statuses() -> None` | 全部步骤恢复为未执行，并清空已完成标记。 |
 
-##### `__init__(steps, parent=None, optional_after=None, unmapped=None, bar_indices=None, optional_bar_index=None)`
+##### `__init__(steps, parent=None, optional_after=None, unmapped=None, bar_indices=None, optional_bar_index=None, optionals=None)`
 
 按给定步骤标题逐项构建；steps 允许传生成器。
 
@@ -2958,6 +2958,14 @@ status 决定副标题/标题色，badge_status 决定徽标（缺省同 status�
 ``len(steps) - 1``（拼版在「图片去底色」与「PDF排版」之间，与旧
 硬编码一致）；自定义流程把拼版排到别处时，宿主按槽位表的
 ``bar_index`` 算出来传进来，**连线/绕行线也跟着挪**。
+
+⚠️ **``optionals``：可选节点的完整清单**（B 方案，2026-10-17）：
+``[(插在第几个真实步骤之后, 格序, 标题), …]``。同一步骤可以画多个
+可选节点（两个「图片拼版」），只传一个的话第二个在流程条上**凭空
+消失**——用户看到的就是"任务详情没有完整显示自定义流程"。
+不给 ``optionals`` 时按 ``optional_after`` / ``optional_bar_index``
+推导出**一个**（既有调用方与全部现存流程一字不改）；清单为空也照样
+建一个隐藏占位（``imposition_node`` 等属性必须始终存在）。
 
 ⚠️⚠️ **下标只有一种语义 = 步骤条格序 ``bar_index``**（``docs/tasks/bpm.md``
 「三套下标」里的第①种，**含可选节点自己占的格子**）。``bar_indices``
@@ -2981,13 +2989,20 @@ status 决定副标题/标题色，badge_status 决定徽标（缺省同 status�
 
 ##### `set_imposition_visible(visible: bool) -> None`
 
-显示/隐藏「图片拼版」虚线节点（随第三步区域模式是否为 1）。
+显示/隐藏**全部**可选（虚线）节点（随第三步区域模式是否为 1）。
 
 ⚠️ 槽位要一起隐藏：只藏节点的话，那格等宽槽位还占着位置，流程条上会
 留出一段空白（第四步/PDF 看起来被推远）。
 另外节点显示时行顶边距 6→18：给绕行线留一条**走线带**——拼版未生效
 时「去底色 → PDF排版」的线要贴着节点上方绕过去（见
 ``_draw_imposition_bypass``），不预留高度弧线会顶到卡片边框。
+
+##### `set_imposition_selected(selected: bool) -> None`
+
+「图片拼版」是否被选择（副标题/徽标口径，不动连接线/绕行线）。
+
+⚠️ 选择态是**流程级开关**（"在流程中启用图片拼版"，只有一个），所以
+全部可选节点一起显示同一个选择态。
 
 ##### `set_imposition_active(active: bool) -> None`
 
@@ -7087,6 +7102,11 @@ resize 子控件再 show），在这里重铺一次就对了。⚠️ 别改成"
 | `bar_index_of_step(step: str) -> int \| None` | 界面步骤 key → 步骤条格序；这一步不在本流程里返回 ``None``。 |
 | `flow_entry_step() -> str \| None` | 本流程**第一个真实步骤**的 step key（跳过可选节点）。 |
 | `stage_at_stack_index(page: int) -> str \| None` | ``control_stack`` / ``preview_stack`` **页号** → 运行阶段。 |
+| `bar_index_of_node(node_id: str \| None) -> int \| None` | **节点实例 id** → 它在步骤条上占的那一格（``None`` = 本流程里没有它）。 |
+| `node_at_index(index: int) -> str \| None` | 步骤条**格序** → 该格对应的**节点实例 id**（没有节点返回 ``None``）。 |
+| `current_node() -> str \| None` | 当前格对应的**节点实例 id**（没有则为 ``None``）。 |
+| `node_of_stage(stage: str) -> str \| None` | 该运行阶段在**当前上下文**对应的**节点 id**。 |
+| `node_display_suffix(node_id: str \| None) -> str` | 节点在界面上的**区分后缀**：同一步骤有多个节点时给「（2）」，否则空串。 |
 | `panel_host_of_step(step: str) -> Any` | 界面步骤 key → ``control_stack`` 里那一页的宿主控件。 |
 | `stack_index_of_step(step: str) -> int \| None` | 界面步骤 key → 两个栈的页号；这一步不在本流程里返回 ``None``。 |
 | `current_stage() -> str` | 返回当前所处阶段的key（extract/detect/rembg/print/imposition）。 |
@@ -7158,6 +7178,52 @@ detect 缓存/运行态引用并刷新清单与预览；防止参数或 run_id �
 
 与 :meth:`stage_at_index` 是一对（那边是步骤条格序→ 阶段）。
 默认流程下两种下标逐值相等，自定义流程下必须分开查。
+
+##### `bar_index_of_node(node_id: str | None) -> int | None`
+
+**节点实例 id** → 它在步骤条上占的那一格（``None`` = 本流程里没有它）。
+
+与 :meth:`bar_index_of_step` 的区别（B 方案，2026-10-17）：同一步骤有
+多个节点时，那个方法只能给"第一个"，而调用方要的多半是**具体哪个节点**
+的格子（恢复高亮、定位产物、把进度画到对的那一格）。
+
+##### `node_at_index(index: int) -> str | None`
+
+步骤条**格序** → 该格对应的**节点实例 id**（没有节点返回 ``None``）。
+
+B 方案（2026-10-17）：同一步骤可以有多个节点，每个节点各占一格。界面
+把这一格对应的节点记成 :attr:`_current_node_id`，随后所有产物/参数
+寻址都按它走。
+
+##### `node_of_stage(stage: str) -> str | None`
+
+该运行阶段在**当前上下文**对应的**节点 id**。
+
+判据：当前选中的节点（:attr:`_current_node_id`）属于这个阶段（或其所属
+界面格，如 ``rembg_submit`` 与 ``rembg`` 同格）⇒ 用它；否则退回该阶段的
+**主节点**（:meth:`~desktop.steps.bpmn_diagram.FlowDiagram.primary_of`）。
+
+单节点流程下恒等于主节点 ⇒ 产物落点与改造前逐字节一致（零迁移）。
+同一步骤有多个节点时，"用户正看着的那个"才是要寻址的那个。
+
+⚠️ 两张映射表来自 :meth:`_rebuild_node_index`（切格时算一次），**不在这里
+解析流程图**：本方法被 ``_node_dir`` / ``_node_scope`` / 状态刷新这类
+≤200ms 一次的热路径调用，逐次读盘解析 ``flow.bpmn`` 会明显拖慢界面。
+
+##### `node_display_suffix(node_id: str | None) -> str`
+
+节点在界面上的**区分后缀**：同一步骤有多个节点时给「（2）」，否则空串。
+
+用在步骤条标题、日志行、"开始执行"提示这类**人对人**的地方：同一步骤
+两个节点都叫「图片去底色」时，用户没法判断刚才跑的是哪个、现在看的是
+哪个（这是 B 方案最直接的可用性代价）。
+
+序号口径 = **流程条上的先后**（``_stage_nodes``，bar 序），不是文件声明
+顺序：用户看到的顺序才该是 1、2、3——按声明顺序编号会出现"流程图里
+第一个节点叫（2）"（用户 2026-10-17 截图里就是这个错位）。
+
+⚠️ **单节点恒为空串**：默认流程与所有现存任务的标题、日志必须与改造前
+**逐字一致**（用户习惯与自测都钉着这一点）。
 
 ##### `panel_host_of_step(step: str) -> Any`
 
@@ -7262,15 +7328,18 @@ detect 缓存/运行态引用并刷新清单与预览；防止参数或 run_id �
 
 | 方法 | 说明 |
 | --- | --- |
-| `save_stage_draft(index: int) -> bool` | 暂存某阶段当前表单值；参数非法/没有任务时返回 False（不覆盖旧暂存）。 |
+| `save_stage_draft(index: int, node_id: str \| None=None) -> bool` | 暂存某阶段当前表单值；参数非法/没有任务时返回 False（不覆盖旧暂存）。 |
 
-##### `save_stage_draft(index: int) -> bool`
+##### `save_stage_draft(index: int, node_id: str | None=None) -> bool`
 
 暂存某阶段当前表单值；参数非法/没有任务时返回 False（不覆盖旧暂存）。
 
 ⚠️ ``index`` 是 **control_stack 的页号**（不是步骤条格序）。暂存按
-**运行阶段 key** 落盘，所以页号→阶段要走槽位表的反查；自定义流程
-换了顺序后，页号 N 不再固定等于 ``STAGES[N]``。
+**运行阶段 key + 节点**落盘，所以页号→阶段要走槽位表的反查；自定义
+流程换了顺序后，页号 N 不再固定等于 ``STAGES[N]``。
+
+``node_id`` 缺省 = 当前节点（:meth:`current_node`）：同一页上的多个
+节点各有自己的暂存文件（``drafts/<阶段>~<节点>.json``）。
 
 ---
 
@@ -9312,11 +9381,17 @@ startEvent / …）、带文件里 DI 段的真实坐标，连线带折点。页
 | `note_box(note_id: str) -> tuple[float, float, float, float]` | 注释框（和 :meth:`node_box` 同一套坐标；没有就按默认尺寸摆 0,0）。 |
 | `notes_of(node_id: str) -> list[DiagramNote]` | 挂在某个节点上的注释（显示用；顺序即文件声明顺序）。 |
 | `content_size() -> tuple[float, float]` | 内容包围盒（宽, 高），含留白。空图返回留白尺寸。 |
-| `stage_order() -> tuple[str, ...]` | 可运行的阶段，按**图上的拓扑顺序**排（状态机的输入）。 |
+| `stage_order() -> tuple[str, ...]` | 可运行的阶段，按**图上的拓扑顺序**排（旧模型：状态机按 stage 寻址）。 |
+| `node_order() -> tuple[tuple[str, str], ...]` | 图上**可运行节点**按拓扑序排：``(node_id, stage)``，**不折叠同阶段**。 |
+| `primary_of(stage: str) -> str \| None` | 该阶段在本图里的**主节点** id（没有该阶段返回 ``None``）。 |
+| `node_ids_of(stage: str) -> tuple[str, ...]` | 该阶段在本图里的**全部节点** id（文件声明顺序；没有则空元组）。 |
+| `next_node_id() -> str` | 分配一个**全新且永不复用**的节点 id（``Node_<n>``），并抬水位。 |
 | `incoming(node_id: str) -> list[DiagramFlow]` | 以该节点为**终点**的连线。 |
 | `upstream_stages(stage: str) -> tuple[str, ...]` | 沿图往前找，哪些阶段是 ``stage`` 的**上游**（传递闭包）。 |
 | `nearest_producer(stage: str, port: str, active) -> str \| None` | 沿图**往前**找最近的、产出 ``port`` 的**在流程里**的阶段。 |
 | `producers_of(stage: str, port: str, active) -> tuple[str, ...]` | 沿图往前能到达的、产出 ``port`` 的**全部**在流程阶段（已折叠）。 |
+| `nearest_producer_node(node_id: str, port: str, active) -> str \| None` | **节点粒度**：从 ``node_id`` 沿图往前，最近的产出 ``port`` 的节点 id。 |
+| `producer_nodes_of(node_id: str, port: str, active) -> tuple[str, ...]` | **节点粒度**：``node_id`` 沿图可达的全部产出 ``port`` 的节点 id。 |
 | `stage_slots() -> tuple` | 把本图投影成**界面步骤条上的格子序列**（与 ``FlowDefinition`` |
 | `optional_after(step: str \| None=None) -> int \| None` | 可选节点插在**真实步骤数组的第几位之后**（喂 ``StepBar``）。 |
 | `slot_of(step: str)` | 按**界面步骤 key** 找槽位；不在流程里返回 ``None``。 |
@@ -9342,7 +9417,11 @@ startEvent / …）、带文件里 DI 段的真实坐标，连线带折点。页
 
 ##### `stage_order() -> tuple[str, ...]`
 
-可运行的阶段，按**图上的拓扑顺序**排（状态机的输入）。
+可运行的阶段，按**图上的拓扑顺序**排（旧模型：状态机按 stage 寻址）。
+
+⚠️ **同阶段的多个节点折叠成一个阶段**——这是 :meth:`node_order` 去掉
+阶段维度后的投影。B 方案（2026-10-17）后运行时按 ``node_id`` 寻址
+（:meth:`node_order`），本方法保留给仍按 stage 说话的旧调用方。
 
 ⚠️ **必须是拓扑序而不是遍历序**：图上从网关分叉出「否 → PDF排版」与
 「→ 古籍拼版 → PDF排版」两条路，广度遍历会先撞到短路的「PDF排版」，
@@ -9355,6 +9434,47 @@ startEvent / …）、带文件里 DI 段的真实坐标，连线带折点。页
 
 实现用 Kahn 算法，**同层按文件声明顺序**出队（结果稳定、可预期）。
 有环（BPMN 允许回环）时剩下的按声明顺序兜底，不丢阶段。
+
+##### `node_order() -> tuple[tuple[str, str], ...]`
+
+图上**可运行节点**按拓扑序排：``(node_id, stage)``，**不折叠同阶段**。
+
+B 方案（2026-10-17）的运行时真源：任务流程按**节点实例** ``node_id``
+寻址——同类型步骤（图片拼版 / 检测文本框 / 图片去底色 / PDF排版）可以
+放多个节点，它们彼此独立（各自参数、各自产物落点）。
+
+与 :meth:`stage_order` 是同一趟拓扑排序的两份投影：那个把同阶段的多个
+节点**折叠成一个阶段**（旧调用方按 stage 寻址，保持兼容），本方法
+**保留每个节点实例**。认不出阶段的节点（网关/事件/未知 task 不接功能）
+不进结果——它们不占运行位。
+
+##### `primary_of(stage: str) -> str | None`
+
+该阶段在本图里的**主节点** id（没有该阶段返回 ``None``）。
+
+「主节点」是 B 方案里"沿用旧路径"的那个节点：同阶段**恰好一个节点**
+时它就是主节点，产物仍落在 ``stages/<阶段>``（现存任务与默认流程**零
+迁移**）；同阶段**多个节点**时其余节点是副本，产物落在
+``stages/<阶段>~<node_id>``。
+
+⚠️ 取法是该阶段在**文件声明顺序**里第一个节点，**不是**拓扑序第一个
+——声明顺序比拓扑序稳定（拖拽、改连线都不改声明顺序，只有增删节点才
+变），所以"谁是主节点"不会因为用户改了连线而漂移。
+
+##### `node_ids_of(stage: str) -> tuple[str, ...]`
+
+该阶段在本图里的**全部节点** id（文件声明顺序；没有则空元组）。
+
+``node_ids_of(stage)[0]`` 恒等于 :meth:`primary_of`（同一取法），其余
+是副本。界面按它给每个节点实例各建一页。
+
+##### `next_node_id() -> str`
+
+分配一个**全新且永不复用**的节点 id（``Node_<n>``），并抬水位。
+
+水位 = ``max(自身记录的 node_seq, 现有 ``Node_<n>`` id 里的最大 n) + 1``
+（见 :attr:`node_seq`）。调用方（编辑器 ``_add_node``）必须走这里，
+**别再用"当前节点数 + 1"**——那会在删节点后复用旧 id。
 
 ##### `upstream_stages(stage: str) -> tuple[str, ...]`
 
@@ -9427,6 +9547,20 @@ PDF 已过期"这句提示永远不出现。所以收下阶段后要按
 真正需要"歧义"的是**网关分支**（两条**实线**都进同一个节点），那种
 情况在网关处就会同时看到两个产出方，判据照样成立。
 
+##### `nearest_producer_node(node_id: str, port: str, active) -> str | None`
+
+**节点粒度**：从 ``node_id`` 沿图往前，最近的产出 ``port`` 的节点 id。
+
+``active`` 是本流程实际要跑的**阶段**集合（Scheduler 给）；候选按节点
+的 ``stage`` 判在不在流程里。
+
+##### `producer_nodes_of(node_id: str, port: str, active) -> tuple[str, ...]`
+
+**节点粒度**：``node_id`` 沿图可达的全部产出 ``port`` 的节点 id。
+
+用来判"**图能不能给出唯一答案**"（与阶段版 :meth:`producers_of` 同一
+判据，只是按节点实例）。
+
 ##### `stage_slots() -> tuple`
 
 把本图投影成**界面步骤条上的格子序列**（与 ``FlowDefinition``
@@ -9441,13 +9575,17 @@ bpmn.io 生成的 id，解析失败就**静默回落到默认流程** ⇒ 用户
 折叠规则（与 ``FlowDefinition.stage_slots`` 保持一致）：
 
 1. ``rembg_submit`` 折叠进 ``rembg`` 那一格（它是第三步的第二个动作）；
-2. 同一格重复出现保留**首次**位置；
+2. **同一步骤的其他节点各占一格**（B 方案，2026-10-17：图片拼版 /
+   检测文本框 / 图片去底色 / PDF排版都可以有多个节点，它们彼此独立）；
 3. ``bar_index`` 只数**本图里有**的格子（步骤条上就这么多格）；
 4. **图上画了、但本程序还没有对应功能的 task 节点**（例如随手加的
    「OCR 识别」）也**占一格**，排在真实步骤之后，标 ``mapped=False``
    且 ``stack_index = NO_PAGE``——界面据此画灰节点并在点它时解释
    （改成已有步骤名即可接上）。这类节点不会进 ``stage_order()``
    （那里只收认得出阶段的），所以是单独扫节点表挑出来的。
+
+每个真实步骤格都带 ``node_id``（:attr:`~desktop.steps.flow.StageSlot.node_id`）
+——界面据此**按节点**寻址产物与参数（单节点时它就是主节点）。
 
 ⚠️⚠️ **``stack_index`` 不是"数出来的"，而是"查出来的"**——这是最容易
 写错的一处（2026-10-05 实测踩中）：
@@ -9462,6 +9600,11 @@ bpmn.io 生成的 id，解析失败就**静默回落到默认流程** ⇒ 用户
   没跟着变"就是这个）。
 - 文件里**多了/调换了顺序**也一样：页号只认静态位置，步骤条上哪一格
   对应哪一页由 :meth:`slot_of` / ``_select_stage`` 查出来。
+
+⚠️ 同一步骤的**多个节点共用同一页**（静态表里同一步骤只有一个位置）：
+页面在切到某一格时把该格对应的**节点**记下来（``node_id``），按节点
+重定向数据（产物目录 / 参数暂存 / 状态）。这样两个栈的建页数仍与静态
+表一致，不必为每个节点各建一页昂贵的预览控件。
 
 ##### `optional_after(step: str | None=None) -> int | None`
 
@@ -9569,7 +9712,6 @@ bpmn.io 生成的 id，解析失败就**静默回落到默认流程** ⇒ 用户
 | --- | --- |
 | `stage_of_name(name: str, guji_stage: str \| None=None) -> str \| None` | 节点名（或扩展属性）→ 运行阶段 key；认不出返回 ``None``。 |
 | `default_size(kind: str) -> tuple[float, float]` | 某类元素的默认宽高（文件缺 DI 段时用）。 |
-| `fold_forward(stage: str, port: str) -> str` | 把图上认出的阶段**升级到同一界面格里最靠后的、也产出该端口的动作**。 |
 
 #### `stage_of_name(name: str, guji_stage: str | None=None) -> str | None`
 
@@ -9577,20 +9719,6 @@ bpmn.io 生成的 id，解析失败就**静默回落到默认流程** ⇒ 用户
 
 ⚠️ **认不出不报错**：用户可能在图上画了本工具没有的节点（备注、其他
 系统步骤）。那些节点该照常显示，只是不参与运行——报错会让整张图打不开。
-
-#### `fold_forward(stage: str, port: str) -> str`
-
-把图上认出的阶段**升级到同一界面格里最靠后的、也产出该端口的动作**。
-
-⚠️ 为什么必须有这一步：用户画流程图时，第三步只会画一个「图片去底色」
-节点；但他真正**提交**的产物由 ``rembg_submit``（提交去底色结果）产出
-——两者在界面上**折成同一格**（折叠关系见 ``ports.STAGE_STEPS``）。
-若按图回退时直接取 ``rembg``，拿到的是**实时预览目录**
-（``stages/rembgpreview``），而用户提交过的成品在 ``stages/rembg``
-——**打印出来会是"没提交的图"**（比报错更难发现）。
-
-同格里多个阶段都产出该端口时，取声明顺序里**最靠后**的那个（最下游的
-动作）；没有同格伙伴时原样返回。
 
 ---
 
@@ -10216,6 +10344,7 @@ BPM 编排引擎安全导入（与 :mod:`desktop.steps.spec` 同一约束）。
 | `artifact_of(port: str) -> str` | 端口名 → 产物类型；未知端口按"页面图片"兜底（别让界面崩）。 |
 | `stage_inputs(stage: str) -> tuple[str, ...]` | 这一步**消费**哪些端口（来自 ``StepSpec.inputs``，不另写一份）。 |
 | `stage_outputs(stage: str) -> tuple[str, ...]` | 这一步**产出**哪些端口（来自 ``StepSpec.outputs``，不另写一份）。 |
+| `fold_forward(stage: str, port: str) -> str` | 把阶段折到**同格里最靠后的、也产出该端口的动作**。 |
 | `stage_label(stage: str) -> str` | 运行阶段 → 流程图节点名（默认走 spec，只有 ``rembg_submit`` 单独一句）。 |
 | `spec_for_stage(stage: str) -> StepSpec \| None` | 运行阶段 → 它对应的 :class:`StepSpec`（界面查表统一走这里）。 |
 | `stage_artifacts(stage: str) -> tuple[str, ...]` | 这一步消费哪些**产物类型**（端口名翻译过来）。 |
@@ -10227,7 +10356,12 @@ BPM 编排引擎安全导入（与 :mod:`desktop.steps.spec` 同一约束）。
 | `flow_needs_source_pdf(diagram) -> bool` | **这条流程**里有没有直接吃源 PDF 的阶段吗（要问图，别写死）。 |
 | `detect_feeds_rembg(diagram) -> bool` | 这张流程图上「图片去底色」**能不能拿到检测框**。 |
 | `location_of(stage: str, port: str) -> str \| None` | 运行阶段某端口的相对落点；没有登记返回 ``None``。 |
-| `artifact_path(task_dir: Path \| str, stage: str, port: str) -> Path \| None` | 产物在任务目录下的**绝对路径**；该阶段没登记这个端口则 ``None``。 |
+| `sanitize_node_id(node_id: str) -> str` | 把节点 id 收成**可安全拼进路径**的名字（只留字母数字与 ``._-``）。 |
+| `suffix_last_segment(name: str, suffix: str) -> str` | 在路径**最后一段**插入后缀：目录名加在结尾、文件名加在扩展名前。 |
+| `scoped_name(name: str, node_id: str \| None, primary_id: str \| None) -> str` | 按**节点作用域**给一个名字加后缀：主节点/无节点 ⇒ 原名，副本 ⇒ ``~<节点>``。 |
+| `copy_location(stage: str, port: str, node_id: str) -> str \| None` | **副本节点**（同阶段第二个及之后的节点）的相对落点；没登记返回 ``None``。 |
+| `node_location(stage: str, port: str, node_id: str \| None=None, primary_id: str \| None=None) -> str \| None` | **某节点实例**某端口的相对落点。 |
+| `artifact_path(task_dir: Path \| str, stage: str, port: str, node_id: str \| None=None, primary_id: str \| None=None) -> Path \| None` | 产物在任务目录下的**绝对路径**；该阶段没登记这个端口则 ``None``。 |
 | `task_input_dir(task_dir: Path \| str) -> Path` | 入口图片目录的绝对路径（``tasks/<任务号>/stages/input/``）。 |
 | `supplier_of(stage: str, port: str) -> str \| None` | 某阶段某端口由谁供给；没有连线返回 ``None``。 |
 | `print_pages_supplier(imposition_active: bool) -> str` | PDF排版（``print``）取图的上游：拼版生效时是 ``imposition``，否则是第三步提交。 |
@@ -10235,7 +10369,9 @@ BPM 编排引擎安全导入（与 :mod:`desktop.steps.spec` 同一约束）。
 | `resolve_input(task_dir: Path \| str, stage: str, port: str, overrides: dict[tuple[str, str], str] \| None=None) -> Path \| None` | **按连线**解析某阶段某端口的输入绝对路径。 |
 | `input_ready(task_dir: Path \| str, stage: str, port: str, overrides: dict[tuple[str, str], str] \| None=None) -> bool` | 这个端口的输入**已经就位**吗（落点存在且非空）。 |
 | `stage_blocking_inputs(diagram, stage: str, active=None) -> tuple[str, ...]` | 这一步在**这张流程图上**真正要等就位的输入端口（就绪判据的唯一来源）。 |
+| `node_blocking_inputs(diagram, node_id: str, active=None) -> tuple[str, ...]` | :func:`stage_blocking_inputs` 的**节点粒度**版本（B 方案）。 |
 | `is_entry_stage(diagram, stage: str, active=None) -> bool` | 这一步在流程里是不是**入口**（沿图往前没有任何在流程里的阶段）。 |
+| `flow_entry_node(diagram) -> str \| None` | **流程的入口节点 id**（沿图往前没有任何产出方），没有则 ``None``。 |
 | `flow_entry_stage(diagram) -> str \| None` | **流程的入口阶段**（沿图往前没有任何在流程里的阶段），没有则 ``None``。 |
 | `flow_needs_entry_images(diagram) -> bool` | **这条流程**是不是要用户自己提供入口图片（而不是从 PDF 提取）。 |
 | `flow_entry_input_kind(diagram) -> str` | 流程**入口这一步**要用户提供什么输入：``"pdf"`` / ``"images"`` / ``""``。 |
@@ -10250,6 +10386,14 @@ BPM 编排引擎安全导入（与 :mod:`desktop.steps.spec` 同一约束）。
 
 ``rembg_submit`` 是"把预览图定稿"的提交动作，不重新检测，所以它**不吃**
 ``boxes``（框在预览那一步已经用过了）；这里显式覆盖，其余阶段直接取 spec。
+
+#### `fold_forward(stage: str, port: str) -> str`
+
+把阶段折到**同格里最靠后的、也产出该端口的动作**。
+
+判定完全从 :data:`STAGE_STEPS`（同格关系）与 :func:`stage_outputs`
+（谁产什么）派生，**不另写一张表**：同格里多个阶段都产出该端口时取声明
+顺序里最靠后的那个；没有同格伙伴时原样返回。语义与用途见上面那段说明。
 
 #### `stage_label(stage: str) -> str`
 
@@ -10386,11 +10530,64 @@ area 必须固定 4（整页）且不可改。这个判据要在**两处**用，
 ⇒ ``False``：这是保守答案——面板锁整页不会错（那种流程里面板根本不该
 出现 1/2/3），拼版放行也合理（吃入口图片/整图）。
 
-#### `artifact_path(task_dir: Path | str, stage: str, port: str) -> Path | None`
+#### `sanitize_node_id(node_id: str) -> str`
+
+把节点 id 收成**可安全拼进路径**的名字（只留字母数字与 ``._-``）。
+
+BPMN 节点 id 一般是 ``Node_7`` / ``Activity_1a2b`` 这种安全形状，但用户在
+bpmn.io 里能把它改成任意字符串——拼进路径前必须洗一道，否则 ``/`` 或 ``\``
+会把落点引到别的目录（副本产物跑到任务目录之外）。
+
+#### `suffix_last_segment(name: str, suffix: str) -> str`
+
+在路径**最后一段**插入后缀：目录名加在结尾、文件名加在扩展名前。
+
+- ``stages/extract`` → ``stages/extract~X``
+- ``boxes.json`` → ``boxes~X.json``
+- ``stages/print/print.pdf`` → ``stages/print/print~X.pdf``
+- 裸文件名 ``pages.json`` → ``pages~X.json``（没有 ``/`` 时 ``head`` 为空）
+
+这是"副本产物怎么命名"的**唯一一处**实现：任务目录里的每一种按节点隔离的
+文件（阶段产物目录 / ``boxes.json`` / ``pages.json`` / ``drafts/<阶段>.json``）
+都走它，规则不会各写一份。
+
+#### `scoped_name(name: str, node_id: str | None, primary_id: str | None) -> str`
+
+按**节点作用域**给一个名字加后缀：主节点/无节点 ⇒ 原名，副本 ⇒ ``~<节点>``。
+
+⚠️ **主节点零迁移**：同阶段恰好一个节点时（=所有现存任务与默认流程）
+名字与改造前**逐字节相同**，没有任何文件需要搬家。
+
+#### `copy_location(stage: str, port: str, node_id: str) -> str | None`
+
+**副本节点**（同阶段第二个及之后的节点）的相对落点；没登记返回 ``None``。
+
+规则：在主落点的**最后一段**插入 ``~<node_id>``——目录名结尾加后缀、文件名
+在扩展名前加后缀：
+
+- ``stages/extract`` → ``stages/extract~Node_3``
+- ``boxes.json`` → ``boxes~Node_3.json``
+- ``stages/print/print.pdf`` → ``stages/print/print~Node_3.pdf``
+
+⚠️ **主节点沿用旧落点**（:func:`node_location`），所以"同阶段恰好一个节点"
+的现存任务与默认流程**零迁移**——只有第二个及之后的节点才落到副本落点。
+
+#### `node_location(stage: str, port: str, node_id: str | None=None, primary_id: str | None=None) -> str | None`
+
+**某节点实例**某端口的相对落点。
+
+``node_id`` 空、或等于该阶段的 ``primary_id``（主节点）⇒ 旧落点（零迁移）；
+否则 ⇒ 副本落点（:func:`copy_location`）。没登记该端口返回 ``None``。
+
+#### `artifact_path(task_dir: Path | str, stage: str, port: str, node_id: str | None=None, primary_id: str | None=None) -> Path | None`
 
 产物在任务目录下的**绝对路径**；该阶段没登记这个端口则 ``None``。
 
 ``task_dir`` 传 ``tasks/<任务号>/``（不是数据根）。
+
+``node_id`` / ``primary_id`` 给定时按 :func:`node_location` 支持**多节点**
+（同阶段副本落到带 ``~<node_id>`` 后缀的副本落点）；不给则恒取旧落点
+（单节点场景与改造前逐字节一致）。
 
 #### `task_input_dir(task_dir: Path | str) -> Path`
 
@@ -10459,6 +10656,15 @@ BPM 编排时这正是"条件连线"的落点。
 ⚠️ 这一步压根不在图上时**照声明返回**：那种情况该由"这一步不在流程里"
 那条守卫（``runner`` 里的状态机守卫）来说，端口判据不该抢着给答案。
 
+#### `node_blocking_inputs(diagram, node_id: str, active=None) -> tuple[str, ...]`
+
+:func:`stage_blocking_inputs` 的**节点粒度**版本（B 方案）。
+
+规则与阶段版逐条一致，只是把"本流程里有没有产出方"落到**节点实例**上：
+``boxes`` 的产出方从"整阶段有检测节点"细化为"喂给 ``node_id`` 的那个
+具体节点"（:meth:`FlowDiagram.nearest_producer_node`）。同阶段只有一个
+节点的流程下与阶段版结果相同。
+
 #### `is_entry_stage(diagram, stage: str, active=None) -> bool`
 
 这一步在流程里是不是**入口**（沿图往前没有任何在流程里的阶段）。
@@ -10473,6 +10679,22 @@ BPM 编排时这正是"条件连线"的落点。
 
 :param diagram: :class:`~desktop.steps.bpmn_diagram.FlowDiagram`；
 :param active: 本流程实际要跑的阶段集合（缺省按图求拓扑序）。
+
+#### `flow_entry_node(diagram) -> str | None`
+
+**流程的入口节点 id**（沿图往前没有任何产出方），没有则 ``None``。
+
+⚠️ **入口是"节点"的性质，不是"阶段"的性质**（B 方案，2026-10-17 用户报障）：
+用户画的是"图片拼版 → 检测文本框 → 图片去底色 → 是否拼版 →(是) 图片拼版 →
+PDF排版"，图上有**两个** ``imposition`` 节点。按阶段判"谁没有上游"会被
+第二个拼版节点带偏（它有上游 = 图片去底色），于是**任何阶段都不是入口**
+⇒ 界面三颗输入按钮全藏、第一步没有任何输入入口（用户原话："图片拼版节点
+作为第一个节点，没有输入入口"）。
+
+判据：按**节点拓扑序**取第一个"沿图回溯不到 ``pages`` 产出方"的节点。
+
+⚠️ 认不出阶段的节点（网关/事件/未接入的 task）**不占入口位**——它们不是
+可运行的步骤，让它们当"入口"会把输入控件挂到一个没有功能的节点上。
 
 #### `flow_entry_stage(diagram) -> str | None`
 
@@ -10490,6 +10712,10 @@ BPM 编排时这正是"条件连线"的落点。
 
 ⚠️ 有多个入口时取**拓扑序里的第一个**（入口节点通常不止一个时，用户面对
 的是流程的第一格）。全都不是入口（空图/只有孤立终点）⇒ ``None``。
+
+⚠️ **优先按节点判**（:func:`flow_entry_node`）：同一步骤有多个节点时，
+按阶段判会被"第二个同类节点有上游"带偏（见那里的说明）。只有节点级判据
+给不出答案（例如图坏了）才退回阶段级。
 
 #### `flow_needs_entry_images(diagram) -> bool`
 
@@ -10699,19 +10925,28 @@ pages，问它"pages 输入"会拿到入口目录，而它要的其实是那个�
 用法::
 
     sched = Scheduler.from_diagram(diagram, flags={"imposition": True})
-    sched.stages                 # 本流程要跑的阶段（有序）
+    sched.nodes                  # 本流程要跑的节点（拓扑序，(node_id, stage)）
+    sched.stages                 # 折叠同阶段后的阶段（旧调用方的兼容面）
     sched.next_stage("detect")   # -> "imposition"
     sched.mark("extract", DONE)
 
 ``flags`` 是条件开关表（如 ``{"imposition": True}``）；没给的条件按
 **False** 处理——条件分支默认不走（拼版是可选步骤，默认不做）。
 
+⚠️ **B 方案（2026-10-17）：状态单元是「节点实例」而非「阶段」**（用户
+"图片拼版/检测文本框/图片去底色/PDF排版这些节点可以有多个"）。同类型
+步骤可以放多个节点，它们彼此独立。所以 :attr:`nodes` 才是真源，:attr:`stages`
+只是它的**去重投影**（保留给还没改到节点粒度的旧调用方）。
+
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
-| `from_diagram(diagram: FlowDiagram, flags: dict[str, bool] \| None=None) -> 'Scheduler'` | 从流程图建状态机：顺序取拓扑序，条件不满足的阶段直接剔除。 |
+| `stages() -> tuple[str, ...]` | 折叠同阶段后的阶段序列（**兼容面**：旧调用方按 stage 寻址）。 |
+| `from_diagram(diagram: FlowDiagram, flags: dict[str, bool] \| None=None) -> 'Scheduler'` | 从流程图建状态机：顺序取**节点**拓扑序，条件不满足的阶段直接剔除。 |
 | `default(flags: dict[str, bool] \| None=None) -> 'Scheduler'` | 默认流程的状态机（没有任务 / 读不到文件时的兜底）。 |
+| `node_ids() -> tuple[str, ...]` | 本流程要跑的**节点实例** id（拓扑序）——界面按它给每节点建一页。 |
+| `nodes_of(stage: str) -> tuple[str, ...]` | 本流程里属于该阶段的**全部**节点 id（保序）——同类型多节点各独立。 |
 | `state_of(stage: str) -> str` | 阶段状态；不在本流程里返回 :data:`SKIPPED`。 |
 | `mark(stage: str, state: str) -> None` | 置状态（未知阶段不写：它本来就不在流程里）。 |
 | `is_runnable(stage: str) -> bool` | 这一步**当前**能不能跑（在流程里、且没跑完/没跳）。 |
@@ -10720,6 +10955,25 @@ pages，问它"pages 输入"会拿到入口目录，而它要的其实是那个�
 | `progress() -> tuple[int, int]` | ``(已完成数, 总数)``——含跳过（跳过的算已完成，进度条才会满）。 |
 | `missing_inputs(task_dir, stage: str, port_names: dict[str, str] \| None=None) -> list[str]` | 这一步的哪些输入还没就位（**只用于提示**，不拦执行）。 |
 | `to_dict() -> dict` | 给界面用的快照（JSON 友好）。 |
+
+##### `stages() -> tuple[str, ...]`
+
+装饰器：`property`
+
+折叠同阶段后的阶段序列（**兼容面**：旧调用方按 stage 寻址）。
+
+取自 :attr:`nodes` 的**去重投影**（保留首次出现的位置）。B 方案里
+运行时按 ``node_id`` 寻址，本属性只服务还没改到节点粒度的调用方——
+同阶段多个节点时它们会折叠成一个阶段（旧行为）。
+
+##### `from_diagram(diagram: FlowDiagram, flags: dict[str, bool] | None=None) -> 'Scheduler'`
+
+装饰器：`classmethod`
+
+从流程图建状态机：顺序取**节点**拓扑序，条件不满足的阶段直接剔除。
+
+⚠️ 顺序来自 :meth:`FlowDiagram.node_order`（``(node_id, stage)``，
+**不折叠同阶段**）——同类型多个节点各占一个状态单元，它们彼此独立。
 
 ##### `default(flags: dict[str, bool] | None=None) -> 'Scheduler'`
 
@@ -11287,9 +11541,14 @@ _apply_control_width`` 按 stage 换宽度、``history._history_fill_keys``
 
 - **errors**（拒绝保存）：上面两条硬规则；
 - **warnings**（提示但不拦）：``extract`` 不在第一位、有 ``extract`` 却没有
-  「源PDF」入口节点、同一阶段画了多个节点、图上有未接入运行的节点。这些
-  **跑得通**，只是与习惯不符——拦下来会把合法操作堵死（与状态机"缺上游只
-  提示不硬拦"同一条纪律）。
+  「源PDF」入口节点、图上有未接入运行的节点。这些**跑得通**，只是与习惯
+  不符——拦下来会把合法操作堵死（与状态机"缺上游只提示不硬拦"同一条纪律）。
+
+  ⚠️ **"同一阶段画了多个节点"这条警告已于 2026-10-17 删除**：B 方案后同类型
+  步骤（图片拼版 / 检测文本框 / 图片去底色 / PDF排版）可以放**多个节点**，
+  它们彼此独立（各自参数、各自产物落点，见 ``docs/tasks/bpm.md``）——运行时
+  按 ``node_id`` 寻址、**不再折叠成一遍**。留着这条警告等于把用户明确要的
+  能力说成"有问题"。
 
   ⚠️ **"有「拼版」却没有判断节点"这条警告已于 2026-10-08 删除**：网关依附
   「图片拼版」（用户："其实根本就没有判断这个组件，只有「是否拼版」这个特殊
@@ -11343,33 +11602,55 @@ boxes.json / sizes.json 读写。
 
 | 方法 | 说明 |
 | --- | --- |
-| `boxes_path(task_id: str) -> Path` | 检测框存储文件（任务目录下的 ``boxes.json``）。 |
-| `detect_boxes_entry(task_id: str, image_key: str) -> tuple[list, str] \| None` | 返回 (boxes, origin)；无记录时返回 None。origin: 'auto' \| 'manual'。 |
-| `detect_boxes_all(task_id: str) -> dict[str, tuple[list, str]]` | 整份 boxes.json：``image_key → (boxes, origin)``，**一次读盘**。 |
-| `save_detect_boxes(task_id: str, image_key: str, boxes: list, origin: str='auto') -> None` | 写入某页的检测框及其来源标记（auto=自动检测，manual=人工编辑）。 |
-| `save_detect_boxes_batch(task_id: str, entries: dict[str, list]) -> None` | 批量写入某阶段的检测框（origin=auto）：**一次读改写**。 |
-| `save_image_sizes_batch(task_id: str, entries: dict[str, tuple[int, int]]) -> None` | 批量写入页面原始尺寸：一次读改写（理由同 save_detect_boxes_batch）。 |
-| `sizes_path(task_id: str) -> Path` | 页面原始尺寸文件：任务目录下的 sizes.json。 |
-| `save_image_size(task_id: str, image_key: str, width: int, height: int) -> None` | 记录某页图片的原始像素尺寸，作为框坐标与预览映射的坐标系基准。 |
-| `image_size(task_id: str, image_key: str) -> tuple[int, int] \| None` | 返回某页原始像素尺寸 (width, height)；无记录时返回 None。 |
+| `boxes_path(task_id: str, node_id: str \| None=None, primary_id: str \| None=None) -> Path` | 检测框存储文件（主节点：任务目录下的 ``boxes.json``）。 |
+| `detect_boxes_entry(task_id: str, image_key: str, node_id: str \| None=None, primary_id: str \| None=None) -> tuple[list, str] \| None` | 返回 (boxes, origin)；无记录时返回 None。origin: 'auto' \| 'manual'。 |
+| `boxes_entry_at(path: Path \| None, image_key: str) -> tuple[list, str] \| None` | 读**指定文件**里某页的 ``(boxes, origin)``；文件为空/无该页返回 None。 |
+| `detect_boxes_all(task_id: str, node_id: str \| None=None, primary_id: str \| None=None) -> dict[str, tuple[list, str]]` | 整份 boxes.json：``image_key → (boxes, origin)``，**一次读盘**。 |
+| `boxes_all_at(path: Path \| None) -> dict[str, tuple[list, str]]` | 读**指定文件**的全部 ``image_key → (boxes, origin)``（一次读盘）。 |
+| `save_detect_boxes(task_id: str, image_key: str, boxes: list, origin: str='auto', node_id: str \| None=None, primary_id: str \| None=None) -> None` | 写入某页的检测框及其来源标记（auto=自动检测，manual=人工编辑）。 |
+| `save_detect_boxes_batch(task_id: str, entries: dict[str, list], node_id: str \| None=None, primary_id: str \| None=None) -> None` | 批量写入某阶段的检测框（origin=auto）：**一次读改写**。 |
+| `save_image_sizes_batch(task_id: str, entries: dict[str, tuple[int, int]], node_id: str \| None=None, primary_id: str \| None=None) -> None` | 批量写入页面原始尺寸：一次读改写（理由同 save_detect_boxes_batch）。 |
+| `sizes_path(task_id: str, node_id: str \| None=None, primary_id: str \| None=None) -> Path` | 页面原始尺寸文件：主节点是 ``sizes.json``，副本是 ``sizes~<节点>.json``。 |
+| `save_image_size(task_id: str, image_key: str, width: int, height: int, node_id: str \| None=None, primary_id: str \| None=None) -> None` | 记录某页图片的原始像素尺寸，作为框坐标与预览映射的坐标系基准。 |
+| `image_size(task_id: str, image_key: str, node_id: str \| None=None, primary_id: str \| None=None) -> tuple[int, int] \| None` | 返回某页原始像素尺寸 (width, height)；无记录时返回 None。 |
 
-##### `boxes_path(task_id: str) -> Path`
+##### `boxes_path(task_id: str, node_id: str | None=None, primary_id: str | None=None) -> Path`
 
-检测框存储文件（任务目录下的 ``boxes.json``）。
+检测框存储文件（主节点：任务目录下的 ``boxes.json``）。
 
 ⚠️ 走 ``artifact("detect", "boxes")``，不写死文件名：落点的唯一真源是
 :data:`desktop.steps.ports.STAGE_LOCATIONS`。此前这里是**第二份真源**
 （``task_dir / "boxes.json"``），两处碰巧一致，改表不会同步、也永远
 不会报错——这类"双真源"是下一次数据事故的标准配方。
 
-##### `detect_boxes_all(task_id: str) -> dict[str, tuple[list, str]]`
+⚠️ **按节点隔离**（B 方案，2026-10-17）：同一步骤可以有多个节点，
+副本节点的检测框落在 ``boxes~<节点>.json``。不隔离两个后果都很硬：
+①第二个「检测文本框」节点的框会**覆盖**第一个的（同页名直接串味）；
+②消费者（「图片去底色」）永远只读得到主节点那份，副本节点等于白跑。
+
+##### `boxes_entry_at(path: Path | None, image_key: str) -> tuple[list, str] | None`
+
+读**指定文件**里某页的 ``(boxes, origin)``；文件为空/无该页返回 None。
+
+⚠️ 为什么需要"按路径读"这一版（B 方案）：消费方的框来自**图上喂它的
+那个节点**（``store.node_input(node, "boxes")`` 解析出的路径），而不是
+"本阶段的 boxes"——同一步骤多个节点时这两者不是同一个文件。
+
+##### `detect_boxes_all(task_id: str, node_id: str | None=None, primary_id: str | None=None) -> dict[str, tuple[list, str]]`
 
 整份 boxes.json：``image_key → (boxes, origin)``，**一次读盘**。
 
 逐页统计（第二步右侧的检测结果统计）要遍历全部页面，若逐页调
 `detect_boxes_entry` 就是「读整个文件」× 页数；这里一次读完。
 
-##### `save_detect_boxes_batch(task_id: str, entries: dict[str, list]) -> None`
+##### `boxes_all_at(path: Path | None) -> dict[str, tuple[list, str]]`
+
+读**指定文件**的全部 ``image_key → (boxes, origin)``（一次读盘）。
+
+与 :meth:`boxes_entry_at` 同一理由：消费方要读的是"上游那个节点"的
+框文件，路径由连线解析而来。
+
+##### `save_detect_boxes_batch(task_id: str, entries: dict[str, list], node_id: str | None=None, primary_id: str | None=None) -> None`
 
 批量写入某阶段的检测框（origin=auto）：**一次读改写**。
 
@@ -11379,6 +11660,23 @@ boxes.json / sizes.json 读写。
 ``.workbuddy/perf/2026-09-23-sqlite-vs-json.md``）；攒批后一次落盘
 ~0.02s。人工框（origin=manual）在这里跳过，不被自动结果覆盖——
 与单条版同一条规矩，但只读一次文件。
+
+##### `sizes_path(task_id: str, node_id: str | None=None, primary_id: str | None=None) -> Path`
+
+页面原始尺寸文件：主节点是 ``sizes.json``，副本是 ``sizes~<节点>.json``。
+
+⚠️ 尺寸是**框坐标与预览映射的坐标系基准**（``boxes.json`` 里的像素
+坐标按它缩放）。同一步骤多个节点若产出的页图尺寸不同（例如两个
+「图片提取」节点用了不同 zoom/dpi），共用一份基准就会把副本节点的框
+按主节点的比例缩放——框画错位。所以副本节点另存一份。
+
+##### `image_size(task_id: str, image_key: str, node_id: str | None=None, primary_id: str | None=None) -> tuple[int, int] | None`
+
+返回某页原始像素尺寸 (width, height)；无记录时返回 None。
+
+⚠️ 副本节点的记录**缺失时回落共享那份** ``sizes.json``：老任务、以及
+"两个提取节点其实是同一份 PDF 同一套参数"这种常见情形，那边本来就有
+正确记录，回落比"读不到尺寸 ⇒ 框不缩放"更接近用户预期。
 
 ---
 
@@ -11410,12 +11708,24 @@ boxes.json / sizes.json 读写。
 | 方法 | 说明 |
 | --- | --- |
 | `drafts_dir(task_id: str) -> Path` | 暂存目录：``tasks/<任务号>/drafts``。 |
-| `draft_path(task_id: str, stage: str) -> Path` | 某阶段的暂存文件：``drafts/<阶段>.json``。 |
-| `load_draft(task_id: str, stage: str) -> dict \| None` | 读取暂存参数；没有/格式不对返回 None。 |
-| `save_draft(task_id: str, stage: str, params: dict) -> bool` | 写入暂存参数，返回是否真的写了。 |
-| `clear_draft(task_id: str, stage: str) -> None` | 删除某阶段的暂存（用户点「恢复默认配置」并执行后想彻底归零时用）。 |
+| `draft_path(task_id: str, stage: str, node_id: str \| None=None, primary_id: str \| None=None) -> Path` | 某阶段（某节点）的暂存文件。 |
+| `load_draft(task_id: str, stage: str, node_id: str \| None=None, primary_id: str \| None=None) -> dict \| None` | 读取暂存参数；没有/格式不对返回 None。 |
+| `save_draft(task_id: str, stage: str, params: dict, node_id: str \| None=None, primary_id: str \| None=None) -> bool` | 写入暂存参数，返回是否真的写了。 |
+| `clear_draft(task_id: str, stage: str, node_id: str \| None=None, primary_id: str \| None=None) -> None` | 删除某阶段（某节点）的暂存（用户点「恢复默认配置」并执行后想彻底归零时用）。 |
 
-##### `save_draft(task_id: str, stage: str, params: dict) -> bool`
+##### `draft_path(task_id: str, stage: str, node_id: str | None=None, primary_id: str | None=None) -> Path`
+
+某阶段（某节点）的暂存文件。
+
+- **主节点 / 不给节点** ⇒ ``drafts/<阶段>.json``（与改造前逐字节相同）；
+- **副本节点** ⇒ ``drafts/<阶段>~<节点>.json``。
+
+为什么要按节点分文件（B 方案，2026-10-17）：同一步骤可以有多个节点
+（图片拼版 / 检测文本框 / 图片去底色 / PDF排版），它们**各自独立**——
+共用一份暂存的话，切到第二个节点就会看到第一个节点改了一半的参数，
+在 B 上点执行却按 A 的参数跑。
+
+##### `save_draft(task_id: str, stage: str, params: dict, node_id: str | None=None, primary_id: str | None=None) -> bool`
 
 写入暂存参数，返回是否真的写了。
 
@@ -11468,10 +11778,23 @@ boxes.json / sizes.json 读写。
 
 | 方法 | 说明 |
 | --- | --- |
-| `imposition_doc_path(task_id: str) -> Path` | 拼版文档：``tasks/<任务号>/drafts/imposition.json``。 |
-| `load_imposition_doc(task_id: str) -> dict` | 读拼版文档（缺失/损坏一律回落成空文档，调用点不用判空）。 |
+| `imposition_doc_path(task_id: str, node_id: str \| None=None, primary_id: str \| None=None) -> Path` | 拼版文档：主节点是 ``drafts/imposition.json``，副本是 |
+| `load_imposition_doc(task_id: str, node_id: str \| None=None, primary_id: str \| None=None) -> dict` | 读拼版文档（缺失/损坏一律回落成空文档，调用点不用判空）。 |
 | `imposition_enabled(task_id: str) -> bool` | 这个任务**是否启用了拼版**（只有 ``enabled``，不看有没有拼版页）。 |
-| `save_imposition_doc(task_id: str, doc: dict) -> bool` | 写拼版文档，返回是否真的写了。 |
+| `save_imposition_doc(task_id: str, doc: dict, node_id: str \| None=None, primary_id: str \| None=None) -> bool` | 写拼版文档，返回是否真的写了。 |
+
+##### `imposition_doc_path(task_id: str, node_id: str | None=None, primary_id: str | None=None) -> Path`
+
+拼版文档：主节点是 ``drafts/imposition.json``，副本是
+``drafts/imposition~<节点>.json``（B 方案，2026-10-17）。
+
+⚠️ **版面按节点分**：文档里存的是"哪两张图拼成一页、各自什么位置"，
+是**这一步的用户意图**。两个「图片拼版」节点共用一份，改一个的版面
+另一个跟着变——而且会拿 A 的版面去合成 B 的成品页。
+
+⚠️ ``enabled``（"在流程中启用图片拼版"）**仍读共享那份**
+（见 :meth:`step_enabled`）：它是**流程级**条件（状态机的 ``imposition``
+标志没有节点上下文），不是某个节点自己的开关。
 
 ##### `imposition_enabled(task_id: str) -> bool`
 
@@ -11488,7 +11811,7 @@ boxes.json / sizes.json 读写。
 ⚠️ 实现走通用的 :meth:`step_enabled`（同一文件、同一键）——拼版开关
 只是"可选步骤开关"的第一个实例，别再为第二个起一份读法。
 
-##### `save_imposition_doc(task_id: str, doc: dict) -> bool`
+##### `save_imposition_doc(task_id: str, doc: dict, node_id: str | None=None, primary_id: str | None=None) -> bool`
 
 写拼版文档，返回是否真的写了。
 
@@ -11557,15 +11880,42 @@ pages.json 的读写与按阶段输出目录重建。
 
 | 方法 | 说明 |
 | --- | --- |
-| `pages_path(task_id: str) -> Path` | 当前任务的页面清单文件：任务目录下的 pages.json。 |
-| `load_pages(task_id: str) -> list[dict]` | 读取页面清单；文件缺失或格式异常时返回空列表。 |
-| `save_pages(task_id: str, pages: list[dict]) -> None` | 写回页面清单；任务目录已删除时跳过（不重建目录）。 |
-| `refresh_pages_from_dir(task_id: str, directory: Path) -> list[dict]` | 用某阶段输出目录重建页面清单（大任务当前的页集合）。 |
-| `print_pages_path(task_id: str) -> Path` | 待打印列表文件：任务目录下的 print.json。 |
-| `load_print_doc(task_id: str) -> dict \| None` | 读取 print.json 全文（含 area/border/pages）；缺失或非字典时返回 None。 |
-| `save_print_doc(task_id: str, doc: dict) -> None` | 写回 print.json；任务目录已被删除时静默跳过（不重建目录）。 |
-| `load_print_pages(task_id: str) -> list[dict]` | 只取 print.json 的 pages 列表；无文档时返回空列表。 |
-| `save_print_pages(task_id: str, entries: list[dict]) -> None` | 只替换 print.json 的 pages 字段，保留 area/border 等其它配置。 |
+| `pages_path(task_id: str, node_id: str \| None=None, primary_id: str \| None=None) -> Path` | 页面清单文件：主节点是任务目录下的 ``pages.json``，副本是 |
+| `load_pages(task_id: str, node_id: str \| None=None, primary_id: str \| None=None) -> list[dict]` | 读取页面清单；文件缺失或格式异常时返回空列表。 |
+| `save_pages(task_id: str, pages: list[dict], node_id: str \| None=None, primary_id: str \| None=None) -> None` | 写回页面清单；任务目录已删除时跳过（不重建目录）。 |
+| `refresh_pages_from_dir(task_id: str, directory: Path, node_id: str \| None=None, primary_id: str \| None=None) -> list[dict]` | 用某阶段输出目录重建页面清单（大任务当前的页集合）。 |
+| `print_pages_path(task_id: str, node_id: str \| None=None, primary_id: str \| None=None) -> Path` | 待打印列表文件：主节点是 ``print.json``，副本是 ``print~<节点>.json``。 |
+| `load_print_doc(task_id: str, node_id: str \| None=None, primary_id: str \| None=None) -> dict \| None` | 读取 print.json 全文（含 area/border/pages）；缺失或非字典时返回 None。 |
+| `save_print_doc(task_id: str, doc: dict, node_id: str \| None=None, primary_id: str \| None=None) -> None` | 写回 print.json；任务目录已被删除时静默跳过（不重建目录）。 |
+| `load_print_pages(task_id: str, node_id: str \| None=None, primary_id: str \| None=None) -> list[dict]` | 只取 print.json 的 pages 列表；无文档时返回空列表。 |
+| `save_print_pages(task_id: str, entries: list[dict], node_id: str \| None=None, primary_id: str \| None=None) -> None` | 只替换 print.json 的 pages 字段，保留 area/border 等其它配置。 |
+
+##### `pages_path(task_id: str, node_id: str | None=None, primary_id: str | None=None) -> Path`
+
+页面清单文件：主节点是任务目录下的 ``pages.json``，副本是
+``pages~<节点>.json``（B 方案，2026-10-17）。
+
+⚠️ **仍是"每任务一份"**（不是每步一份），理由：
+- 清单是"**这个任务参与处理哪几页**"的用户意图（删页/插页/重排）；
+  按步骤分文件会让"在第二步删掉的页"在第三/四步**复活**——那些步骤
+  会把目录里的文件重新列出来（用户会以为删除没生效）；
+- 第四步的 ``print.json``、拼版的版面文档本来就各自独立，清单只服务
+  「提取 / 检测 / 去底色」这几步的页条。
+
+步骤之间"清单跟着输入走"由 ``manifest._sync_manifest_to_input`` 负责：
+上游产物换了（拼版刚出成品、换节点）就按**本步的输入目录**重建。
+
+副本节点（同一步骤的第二个及之后节点）仍然各存一份——那是**同一屏**
+的两个节点，共用一份会互相覆盖。
+
+##### `print_pages_path(task_id: str, node_id: str | None=None, primary_id: str | None=None) -> Path`
+
+待打印列表文件：主节点是 ``print.json``，副本是 ``print~<节点>.json``。
+
+⚠️ **清单按节点分**（B 方案）：``print.json`` 存的是"待打印图 + 页序 +
+逐页版面 rect"，是**这一步的用户意图**。两个「PDF排版」节点共用一份，
+切到第二个节点会看到第一个节点的页序与版面——而且在 B 上"生成 PDF"
+会用 A 的排版出图。
 
 ---
 
@@ -11597,20 +11947,26 @@ runs.json 读写。
 | 方法 | 说明 |
 | --- | --- |
 | `runs_path(task_id: str) -> Path` | 运行历史文件：任务目录下的 runs.json。 |
-| `create_stage_run(task_id: str, stage: str, parameters: dict, resume: bool=False) -> str` | 登记一次新的阶段执行并返回 run_id。 |
+| `create_stage_run(task_id: str, stage: str, parameters: dict, resume: bool=False, node_id: str \| None=None) -> str` | 登记一次新的阶段执行并返回 run_id。 |
 | `set_progress(task_id: str, run_id: str, done: int, total: int) -> None` | 按 run_id 更新 done/total；run_id 不在任何阶段时静默忽略。 |
 | `finish_stage(task_id: str, run_id: str, status: str, output_path: str \| None=None, progress: tuple[int, int] \| None=None, error: str \| None=None) -> None` | 结束某次运行：写入 status/finished_at/output_path（可选 error）。 |
 | `list_stage_runs(task_id: str, stage: str) -> list[dict]` | 某阶段的历史执行记录，最新在前。 |
+| `list_node_runs(task_id: str, node_id: str, stage: str \| None=None) -> list[dict]` | 某**节点实例**的历史执行记录（最新在前）。 |
+| `node_states(task_id: str) -> dict[str, dict]` | 每个**节点实例**最近一次运行的状态与进度（B 方案，步骤条渲染用）。 |
 | `all_stage_runs(task_id: str) -> dict[str, list[dict]]` | 整份运行历史（**一次读盘**），键为阶段名、值为最新在前的记录列表。 |
 | `flow_stages(task_id: str) -> set[str]` | 本任务流程里**真实存在**的运行阶段集合（按界面格摊开）。 |
 | `stage_states(task_id: str) -> dict[str, dict]` | 每个阶段最近一次运行的状态与进度（页面步骤条渲染用）。 |
 
-##### `create_stage_run(task_id: str, stage: str, parameters: dict, resume: bool=False) -> str`
+##### `create_stage_run(task_id: str, stage: str, parameters: dict, resume: bool=False, node_id: str | None=None) -> str`
 
 登记一次新的阶段执行并返回 run_id。
 
 新记录插在该阶段历史最前，初始状态 running、进度 0/0；每阶段只保留
 最近 MAX_RUN_HISTORY 条。resume 标记本次是否为续跑。
+
+``node_id`` 记下这次执行是**哪个节点实例**跑的（B 方案，2026-10-17）：
+同一步骤可以有多个节点，它们各有自己的状态与进度。``None`` 表示"没有
+节点信息"的旧记录/非节点调用方——读侧按该阶段的主节点归属。
 
 ##### `finish_stage(task_id: str, run_id: str, status: str, output_path: str | None=None, progress: tuple[int, int] | None=None, error: str | None=None) -> None`
 
@@ -11628,6 +11984,29 @@ error 为失败原因（退出码 / worker 的最后一行错误 / "子进程启
 ⚠️ 必须落盘：worker 起不来的那类失败**没有任何输出**，界面上只有一条
 转瞬即逝的 toast，记录里若也只有 ``done=0 total=0``，事后就彻底查不出
 原因（用户报「提交失败但没说为什么」，只能靠猜）。
+
+##### `list_node_runs(task_id: str, node_id: str, stage: str | None=None) -> list[dict]`
+
+某**节点实例**的历史执行记录（最新在前）。
+
+B 方案（2026-10-17）：同一步骤的多个节点各跑各的，历史下拉框只该列
+本节点跑过的次数。老记录没有 ``node`` 字段 ⇒ 归它的**主节点**
+（:meth:`_node_primary`），这样改造前的历史仍能在第一个节点上看到。
+
+##### `node_states(task_id: str) -> dict[str, dict]`
+
+每个**节点实例**最近一次运行的状态与进度（B 方案，步骤条渲染用）。
+
+键是节点 id（``Node_7`` 这种）。语义与 :meth:`stage_states` 逐条对齐：
+
+- ``status/done/total`` 取自**该节点**最近一次运行；
+- ``completed`` = 该节点历史上**成功过**（重试失败不该让已出结果的
+  节点退回未完成）；
+- 额外给 ``stage``，调用方不必再查图。
+
+⚠️ 记录里没有 ``node`` 的（改造前的老记录、以及非节点调用方写进去的）
+归属该阶段的**主节点**——所以同阶段只有一个节点的任务里，
+``node_states()[主节点]`` 与 ``stage_states()[阶段]`` 逐值相等。
 
 ##### `all_stage_runs(task_id: str) -> dict[str, list[dict]]`
 
@@ -11723,7 +12102,7 @@ JSON 文件，没有旧数据（SQLite）需要迁移。
 
 | 方法 | 说明 |
 | --- | --- |
-| `next_task_no() -> str` | 下一个任务号（**预测值**）：当前最大号 + 1，参考索引与磁盘目录。 |
+| `next_task_no() -> str` | 下一个任务号（**预测值**）：当前最大号 + 1，参考索引、磁盘目录与水位。 |
 | `default_task_name() -> str` | 默认任务名「任务#XXXX」（XXXX = 预测的下一个任务号）。 |
 | `find_tasks(source_hash: str) -> list[dict]` | 按源文件指纹查重，返回全部命中的任务记录（可能多条）。 |
 | `list_tasks() -> list[dict]` | 全部任务，按 updated_at 倒序（最近改动的排在前面）。 |
@@ -11750,6 +12129,17 @@ JSON 文件，没有旧数据（SQLite）需要迁移。
 | `task_input_dir(task_id: str) -> Path` | **流程入口图片**目录（``stages/input/``）。 |
 | `required_stage_inputs(task_id: str, stage: str, imposition_active: bool=False) -> tuple[str, ...]` | 本流程里这一步**真正要等就位**的输入端口。 |
 | `stage_supplier(task_id: str, stage: str, port: str, imposition_active: bool=False) -> str \| None` | 本任务里 ``(stage, port)`` 的**实际供给方**（运行时按图求解）。 |
+| `node_supplier(task_id: str, node_id: str, port: str, imposition_active: bool=False) -> str \| None` | 本任务里某**节点实例**某端口的实际供给方（返回**节点 id** 或哨兵）。 |
+| `node_supplier_stage(task_id: str, node_id: str, port: str, imposition_active: bool=False) -> str \| None` | 节点粒度的供给方，但结果折成**阶段 key**（不是节点 id）。 |
+| `node_input(task_id: str, node_id: str, port: str='pages', imposition_active: bool=False) -> Path \| None` | 某**节点实例**某端口输入的绝对路径（带**入口回落**）。 |
+| `node_output(task_id: str, node_id: str, port: str='pages', stage: str \| None=None) -> Path` | 某**节点实例**某端口产物的绝对路径（**落点的唯一入口**）。 |
+| `required_node_inputs(task_id: str, node_id: str, imposition_active: bool=False) -> tuple[str, ...]` | 某**节点实例**真正要等就位的输入端口（节点粒度的就绪判据）。 |
+| `node_ids(task_id: str) -> tuple[str, ...]` | 本任务流程图里**全部可运行节点**的 id（拓扑序）——界面按它建页。 |
+| `node_or_stage_output(task_id: str, node_id: str \| None, stage: str, port: str='pages') -> Path` | **落点的统一入口**：有节点按节点取，没节点/没登记回落该阶段的旧落点。 |
+| `scoped_stage_dir(task_id: str, node_id: str \| None, name: str) -> Path` | ``stages/<name>`` 的**节点作用域**版本。 |
+| `node_stage_of(task_id: str, node_id: str) -> str \| None` | 节点实例 → 它的**运行阶段**（不是界面步骤 key）；认不出返回 ``None``。 |
+| `node_primary_of(task_id: str, node_id: str) -> str \| None` | 节点实例 → 它所属阶段的**主节点** id（"沿用旧路径"的那一个）。 |
+| `scoped_file_scope(task_id: str, node_id: str \| None) -> dict[str, str \| None]` | 给 ``load_pages``/``save_draft``/``boxes_path`` 这类按节点隔离的读写 |
 | `step_enabled(task_id: str, step: str) -> bool` | 某个**可选步骤**的用户开关（``drafts/<步骤>.json`` 的 ``enabled``）。 |
 | `scheduler_flags(task_id: str, imposition_active: bool=False) -> dict[str, bool]` | 本任务传给状态机的条件开关表（key = 可选步骤 key）。 |
 | `task_scheduler(task_id: str, imposition_active: bool=False)` | 本任务的**状态机**（``Scheduler``）——"下一步跑谁 / 能不能跑 / 跳谁" |
@@ -11766,7 +12156,7 @@ JSON 文件，没有旧数据（SQLite）需要迁移。
 
 ##### `next_task_no() -> str`
 
-下一个任务号（**预测值**）：当前最大号 + 1，参考索引与磁盘目录。
+下一个任务号（**预测值**）：当前最大号 + 1，参考索引、磁盘目录与水位。
 
 给界面做**占位提示**用（如创建页的默认任务名「任务#0007」）。
 
@@ -11778,6 +12168,9 @@ exist_ok=False``，被抢就顺延），所以并发/历史残留时**实际拿�
   分配到的** ``task_id`` 现算（见 :meth:`default_task_name`），
   否则名字里的序号会和任务号对不上（用户会以为"任务#0008"就是
   0008 号任务，结果落在 0009 上）。
+
+⚠️ 它**不回收**已删除的号（见 :meth:`_bump_max_allocated`）：删掉 0020
+之后这里给的是 0021，不是 0020。
 
 ##### `default_task_name() -> str`
 
@@ -11862,6 +12255,11 @@ exist_ok=False``，被抢就顺延），所以并发/历史残留时**实际拿�
 ⚠️ Windows 上 PDF 被后台渲染线程打开时 ``rmtree`` 抛 PermissionError，
 原先 ``ignore_errors=True`` 会让它**静默残留**——列表里显示已删除，
 磁盘上目录还在。这里重试若干次再判定失败，失败时保留任务让用户重试。
+
+⚠️ 删除**不回收任务号**（用户 2026-10-16：「任务序号保留占用」）：删掉
+0020 之后下一个新建的是 0021。所以这里在抹掉记录之前先把水位抬到该号
+（见 :meth:`_bump_max_allocated`）——**光靠索引与目录做不到**，删除正是
+把这两个来源同时抹掉的那个动作。
 
 ##### `task_dir(task_id: str) -> Path`
 
@@ -12024,10 +12422,71 @@ exist_ok=False``，被抢就顺延），所以并发/历史残留时**实际拿�
 ⚠️ 第2 条是**确定性**的要求，不是将就：网关分支要用"拼版开关"这个
 运行态来选，两条边在图上都是实线，靠遍历顺序选是随机的。
 
+##### `node_supplier(task_id: str, node_id: str, port: str, imposition_active: bool=False) -> str | None`
+
+本任务里某**节点实例**某端口的实际供给方（返回**节点 id** 或哨兵）。
+
+与 :meth:`stage_supplier` 同一套规则（图优先、静态兜底），区别是把
+"图说的产出方"落到**节点粒度**：同阶段有多个节点时，喂给 ``node_id``
+的是图上那个**具体节点**，而不是"整阶段的主节点"。
+
+##### `node_supplier_stage(task_id: str, node_id: str, port: str, imposition_active: bool=False) -> str | None`
+
+节点粒度的供给方，但结果折成**阶段 key**（不是节点 id）。
+
+:meth:`node_supplier` 回答的是"喂你的是哪个**节点**"（B 方案寻址要用
+节点 id）；而"记进 runs 历史、供旧数据判定比对"的那个字段
+（``args["source_stage"]`` ← :func:`desktop.services.stale_chain.print_source_switched`）
+历来是**阶段 key**（``rembg_submit`` / ``imposition``）。两者不是一回事，
+所以这里折一道：节点 → 它的运行阶段 →（同格多动作再折）该端口成品的
+产出阶段。哨兵值原样透传。
+
+##### `node_input(task_id: str, node_id: str, port: str='pages', imposition_active: bool=False) -> Path | None`
+
+某**节点实例**某端口输入的绝对路径（带**入口回落**）。
+
+与 :meth:`stage_input` 同构，只是把消费方定位到**节点**：没有上游而该
+节点确实吃 ``pages`` 时，回落到入口图片目录（``stages/input/``）。
+
+##### `node_output(task_id: str, node_id: str, port: str='pages', stage: str | None=None) -> Path`
+
+某**节点实例**某端口产物的绝对路径（**落点的唯一入口**）。
+
+``stage`` 缺省取节点自身的阶段；显式给时表示"同一步骤的第二个动作"
+（如 ``rembg`` 节点的 ``rembg_submit`` 提交落点）。主节点沿用旧落点，
+副本落到 ``~<node_id>`` 后缀的副本落点。
+
+##### `node_or_stage_output(task_id: str, node_id: str | None, stage: str, port: str='pages') -> Path`
+
+**落点的统一入口**：有节点按节点取，没节点/没登记回落该阶段的旧落点。
+
+主节点与"没有节点信息"（程序化调用、旧测试探针）都拿到 ``stages/<阶段>``
+——与改造前逐字节相同。副本节点拿到 ``stages/<阶段>~<节点>``。
+
+调用方（执行端、取图、缩略图）一律走它，别自己 ``if node:`` 分叉：
+分叉处漏一处，就是"副本节点跑完产物写到主节点去了"。
+
+##### `scoped_stage_dir(task_id: str, node_id: str | None, name: str) -> Path`
+
+``stages/<name>`` 的**节点作用域**版本。
+
+主节点/无节点 ⇒ ``stages/<name>``（零迁移）；副本 ⇒
+``stages/<name>~<节点>``。用于**没有登记在 STAGE_LOCATIONS 里**的
+辅助目录（如 detect 的标注图目录）。
+
+##### `scoped_file_scope(task_id: str, node_id: str | None) -> dict[str, str | None]`
+
+给 ``load_pages``/``save_draft``/``boxes_path`` 这类按节点隔离的读写
+用的**作用域参数**：``{"node_id": …, "primary_id": …}``。
+
+统一在这里算，调用方不必各自去查"谁是主节点"——那是**只有图知道**的
+事实（见 :meth:`~desktop.steps.bpmn_diagram.FlowDiagram.primary_of`），
+散在各处迟早漂移。``node_id`` 为空时给 ``{"node_id": None,
+"primary_id": None}``，所有读写都落回**旧路径**（零迁移）。
+
 ##### `step_enabled(task_id: str, step: str) -> bool`
 
 某个**可选步骤**的用户开关（``drafts/<步骤>.json`` 的 ``enabled``）。
-
 ⚠️ 这是"条件开关"的**通用读法**：以前只有拼版有开关（读
 ``drafts/imposition.json`` 的 ``enabled``），`store.imposition_enabled`
 与详情页的 ``imposition_active()`` 各读各的。再加一个可选步骤就要
@@ -12058,8 +12517,9 @@ exist_ok=False``，被抢就顺延），所以并发/历史残留时**实际拿�
 
 ⚠️ 这是"后端按图驱动"的查询面：调用方不该再自己拼
 ``STAGES`` / ``SUPPLIERS`` 的静态知识去推断顺序或可运行性，一律问它。
-顺序来自本任务流程图（拓扑序），跳过看 :meth:`scheduler_flags`
-（可选步骤的开关表，键从 spec 派生）。
+顺序来自本任务流程图（**节点**拓扑序，B 方案后同阶段可有多个节点各占
+一个状态单元，见 :meth:`~desktop.steps.scheduler.Scheduler.nodes`），跳过看
+:meth:`scheduler_flags`（可选步骤的开关表，键从 spec 派生）。
 
 与 :meth:`stage_input` 的分工：那个回答**"去哪个目录取产物"**，
 这个回答**"什么时候该跑、还差什么"**。
@@ -12179,7 +12639,8 @@ key 取自 ``desktop.store.tasks``：``STAGES`` 里的一项，或伪步骤
 | `save_last_task(task_id: str) -> bool` | 记录「上次停留的任务」（供将来的显式"回到上次任务"入口用）。 |
 | `ui_state_path(task_id: str) -> Path` | 任务界面状态文件：``tasks/<任务号>/ui.json``。 |
 | `load_last_stage(task_id: str) -> str \| None` | 上次停留的步骤 key；没有记录/格式不对返回 None。 |
-| `save_last_stage(task_id: str, stage: str) -> bool` | 记录上次停留的步骤 key，返回是否真的写了。 |
+| `load_last_node(task_id: str) -> str \| None` | 上次停留的**节点实例** id（B 方案，2026-10-17）；没记录返回 None。 |
+| `save_last_stage(task_id: str, stage: str, node_id: str \| None=None) -> bool` | 记录上次停留的步骤 key（可带节点实例 id），返回是否真的写了。 |
 | `load_yolo_export_state(task_id: str) -> dict` | 本任务上次导出 YOLO 数据集时填的 ``{"name": …, "directory": …}``。 |
 | `save_yolo_export_state(task_id: str, name: str, directory: str) -> bool` | 记住本任务这次导出的名称与目录，返回是否真的写了。 |
 
@@ -12199,13 +12660,20 @@ key 取自 ``desktop.store.tasks``：``STAGES`` 里的一项，或伪步骤
 只在任务真实存在时写（不给不存在的任务留指针）；指纹一并入库，
 见 :meth:`load_last_task`。
 
-##### `save_last_stage(task_id: str, stage: str) -> bool`
+##### `load_last_node(task_id: str) -> str | None`
 
-记录上次停留的步骤 key，返回是否真的写了。
+上次停留的**节点实例** id（B 方案，2026-10-17）；没记录返回 None。
+
+同一步骤有多个节点时，"上次停在哪一步"不足以回到原位——两个「图片
+去底色」节点共用一个步骤 key，只按 step 恢复会稳定回到主节点。
+
+##### `save_last_stage(task_id: str, stage: str, node_id: str | None=None) -> bool`
+
+记录上次停留的步骤 key（可带节点实例 id），返回是否真的写了。
 
 任务目录已删除时跳过（与 ``save_pages``/``save_imposition_doc``
 同一条规矩：不把已删任务重新创建出来）。文件里只覆盖 ``last_stage``
-一项，将来加别的界面状态互不影响。
+/ ``last_node`` 两项，将来加别的界面状态互不影响。
 
 ##### `load_yolo_export_state(task_id: str) -> dict`
 

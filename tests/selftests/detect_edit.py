@@ -28,25 +28,40 @@ TITLE = "第二步人工干预（框类型）"
 
 
 class _StoreStub:
-    """最小 boxes.json：只保留宿主用到的几个方法。"""
+    """最小 boxes.json：只保留宿主用到的几个方法。
+
+    ⚠️ 按节点隔离的参数（``node_id`` / ``primary_id``）在这里被**吞掉**：本模块
+    只服务"框类型规则"，不模拟多节点——那条契约由 ``multi_node`` 模块守
+    （它跑真实 store，逐条验落点与读写互不串味）。替身一旦假装支持节点，
+    它就变成了第二份实现，反而更容易漂移。
+    """
 
     def __init__(self):
         self.data: dict = {}
 
-    def save_detect_boxes(self, task_id, image_key, boxes, origin="auto"):
+    def boxes_path(self, task_id, **_kw):
+        return Path(f"/t/{task_id}/boxes.json")
+
+    def save_detect_boxes(self, task_id, image_key, boxes, origin="auto", **_kw):
         self.data[image_key] = {
             "boxes": [list(b) if b else None for b in boxes], "origin": origin,
         }
 
-    def detect_boxes_entry(self, task_id, image_key):
+    def boxes_entry_at(self, path, image_key):
         entry = self.data.get(image_key)
         return (entry["boxes"], entry["origin"]) if entry else None
 
-    def detect_boxes_all(self, task_id):
+    def boxes_all_at(self, path):
         return {
             key: (entry["boxes"], entry["origin"])
             for key, entry in self.data.items()
         }
+
+    def detect_boxes_entry(self, task_id, image_key):
+        return self.boxes_entry_at(None, image_key)
+
+    def detect_boxes_all(self, task_id):
+        return self.boxes_all_at(None)
 
 
 class _LabelStub:
@@ -167,6 +182,21 @@ class _Host(DetectMixin):
 
     def _current_area(self):
         return 1
+
+    # ---- 节点寻址（B 方案，真实页面在 page.py 提供）----
+    # 替身恒"没有节点"，于是所有按节点隔离的读写都落回**主节点那份旧路径**
+    # （boxes.json），与改造前逐字节一致——本模块测的是框类型规则，不是多节点。
+    def current_node(self):
+        return None
+
+    def node_of_stage(self, _stage):
+        return None
+
+    def _node_scope(self, _node_id=None):
+        return {"node_id": None, "primary_id": None}
+
+    def _size_node_for(self, _path_text):
+        return None
 
     def _image_size_for(self, _path_text):
         return self._size

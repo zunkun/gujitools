@@ -128,6 +128,8 @@ class DetailViewMixin:
         flow_slots: Callable[[], tuple]
         _select_stage: Callable[[int], None]
         bar_index_of_step: Callable[[str], int | None]
+        node_display_suffix: Callable[[str | None], str]
+        _rebuild_node_index: Callable[[], None]
         current_stage: Callable[[], str]
         # ⚠️ 返回值是 LazyPanelHost 或真面板（属性转发、鸭子类型），用 Any 承接
         panel_host_of_step: Callable[[str], Any]
@@ -425,10 +427,17 @@ class DetailViewMixin:
             #    PDF」打开的是「图片拼版」、它的状态也永远上不了屏。
             bar_indices=self._bar_step_indices(),
             optional_bar_index=self._optional_bar_index(),
+            # ⚠️ **全部**可选节点（B 方案）：同一步骤可以画多个「图片拼版」，
+            #    只给一个会让第二个在流程条上凭空消失（用户 2026-10-17 报障：
+            #    "任务详情没有完整显示自定义的流程"）。
+            optionals=self._optional_bar_specs(),
         )
         self.step_bar.current_changed.connect(self._select_stage)
-        # 「图片拼版」虚线节点：点击切到可选节点的占位详情（ImpositionMixin）
-        self.step_bar.imposition_clicked.connect(self._select_optional_node)
+        # ⚠️ 只接 ``optional_clicked``（带格序）：它覆盖"点的是哪一个可选节点"，
+        #    多节点下才寻址正确；``imposition_clicked``（无参、只认第一个）留着
+        #    给外部调用方，这里**不再**接——两个都接会让同一次点击切两遍步骤
+        #    （``_select_stage`` 每次都要读盘解析流程 + 重载页清单，不是免费的）。
+        self.step_bar.optional_clicked.connect(self._select_stage)
         return self.step_bar
 
     def _bar_step_titles(self) -> list[str]:
@@ -438,12 +447,17 @@ class DetailViewMixin:
         ``optional_after`` 插进去；这里只给真实步骤，顺序取槽位表的
         ``bar_index``。构造期还没有任务（``flow_slots`` 回落默认流程），
         此时就是默认流程的步骤序列。
+
+        ⚠️ **同一步骤的多个节点各占一格，标题要能区分**（B 方案）：两个
+        「图片去底色」节点都写「图片去底色」的话，用户根本看不出点了哪个、
+        哪个跑过、哪个有产物。这里按节点在**同类型节点里的序号**加「（2）」，
+        单节点时**恒不加**（默认流程与所有现存任务逐字不变）。
         """
         slots = sorted(
             (s for s in self.flow_slots() if not s.optional),
             key=lambda s: s.bar_index,
         )
-        return [s.label for s in slots]
+        return [f"{s.label}{self.node_display_suffix(s.node_id)}" for s in slots]
 
     def _bar_step_indices(self) -> list[int]:
         """真实步骤序列里每一格的**格序 ``bar_index``**（喂 :class:`StepBar`）。
@@ -464,6 +478,31 @@ class DetailViewMixin:
             if slot.optional and slot.step == IMPOSITION_STAGE:
                 return slot.bar_index
         return None
+
+    def _optional_bar_specs(self) -> list[tuple[int, int, str]]:
+        """步骤条上**全部可选节点**：``[(插在第几个真实步骤之后, 格序, 标题), …]``。
+
+        ⚠️ 同一步骤可以有**多个**可选节点（用户 2026-10-17 的流程图：开头一个
+        「图片拼版」、网关「是」分支里又一个）。只传一个的话第二个在流程条上
+        凭空消失——用户看到的就是"任务详情没有完整显示自定义流程"。
+
+        ``after`` 的口径与 :meth:`FlowDiagram.optional_after` 一致：**最后一个
+        左邻居真实步骤的序数**，没有左邻居时 ``-1``（插在最前）。标题带节点序号
+        （``图片拼版（2）``），与真实步骤同一套区分规则。
+        """
+        slots = self.flow_slots()
+        real = [s for s in slots if not s.optional]
+        specs: list[tuple[int, int, str]] = []
+        for slot in sorted(
+            (s for s in slots if s.optional), key=lambda s: s.bar_index
+        ):
+            after = -1
+            for position, item in enumerate(real):
+                if item.bar_index < slot.bar_index:
+                    after = position
+            label = f"{slot.label}{self.node_display_suffix(slot.node_id)}"
+            specs.append((after, slot.bar_index, label))
+        return specs
 
     def _unmapped_step_indices(self) -> set[int]:
         """步骤条上"图上有、但还没有功能"的下标集合（2026-10-05）。
@@ -533,6 +572,10 @@ class DetailViewMixin:
         old_bar = getattr(self, "step_bar", None)
         if old_bar is None:
             return
+        # ⚠️ 先把**节点索引**（阶段→节点、按流程条顺序）建好再造步骤条：
+        #    标题里的「（2）」这类序号由它算（``node_display_suffix``），晚一步
+        #    就会退回"文件声明顺序"，用户看到第一个节点叫（2）（2026-10-17 实测）。
+        self._rebuild_node_index()
         # ⚠️⚠️ **用旧步骤条自己记的那份槽位解析旧下标**（2026-10-06 用户报障
         #    "顶部流程图编辑后不立即更新"）。这里**不能**调 ``flow_slots()``：
         #    它读的是**磁盘上那张新流程图**，而 ``old_bar._current`` 是**旧
@@ -567,7 +610,19 @@ class DetailViewMixin:
                 continue
             self.step_bar.mark_completed(slot.bar_index)
         if current_step is not None:
-            index = self.bar_index_of_step(current_step)
+            # ⚠️ 优先按**上次停留的节点**恢复高亮（B 方案）：同一步骤有多个
+            #    节点时，按 step key 恢复恒定回到第一个节点——用户看着的是
+            #    副本节点，重建后高亮跳回主节点（"改了流程图位置就跳走了"）。
+            index = None
+            tid = self.task_id
+            last_node = self.store.load_last_node(tid) if tid else None
+            if last_node:
+                for slot in self.flow_slots():
+                    if slot.mapped and slot.node_id == last_node:
+                        index = slot.bar_index
+                        break
+            if index is None:
+                index = self.bar_index_of_step(current_step)
             self.step_bar.set_current(0 if index is None else index)
 
     def _select_optional_node(self) -> None:

@@ -214,23 +214,18 @@ class BpmnEditor(BpmnView):
         一律返回 ``None``，不凭空造节点。
         """
         from desktop.components.bpmn_palette import palette_name, step_stage
-        from desktop.steps import ports
-
-        def step_stage_of(stage_key: str) -> str:
-            """运行阶段 → 它归属的**界面格**（`rembg_submit` 归 `rembg`）。"""
-            return ports.STAGE_STEPS.get(stage_key, stage_key)
 
         if not token:
             return None
         stage = step_stage(token)
         if stage is None:
             return None
-        # ⚠️ **同一格只允许一个节点**：运行阶段是**按名字接回**的，两个同阶段
-        #    节点只会让 `stage_order()` 去重、界面更乱，纯属给自己找麻烦。
-        #    面板那头已经把已有的置灰了；这里再挡一道（拖放/程序调用都可能绕过）。
-        for node in self.diagram().nodes:
-            if node.stage and step_stage_of(node.stage) == token:
-                return None
+        # ⚠️ **同一步骤可以加多个节点**（B 方案，2026-10-17）：同类型步骤
+        #    （图片拼版 / 检测文本框 / 图片去底色 / PDF排版）允许多个实例，
+        #    它们彼此独立（各自参数、各自产物落点 ``stages/<阶段>~<node_id>``，
+        #    见 ``docs/tasks/bpm.md``）。所以这里**不再拦**第二、第三个同格
+        #    节点——节点 id 由水位分配器保证永不重复，运行时按 ``node_id``
+        #    寻址，各跑各的。
         name = palette_name(token, self.diagram(), self._name_source)
         return self._add_node(KIND_TASK, name, stage, at, connect_from)
 
@@ -249,12 +244,10 @@ class BpmnEditor(BpmnView):
         if stage is None and kind == KIND_TASK:
             stage = stage_of_name(name)
         diagram = self.diagram()
-        used = {n.id for n in diagram.nodes}
-        index = len(used) + 1
-        node_id = f"Node_{index}"
-        while node_id in used:
-            index += 1
-            node_id = f"Node_{index}"
+        # ⚠️ 节点 id **永不复用**：走图模型的水位分配器（``Node_<n>`` 只增不减），
+        #    别再用"当前节点数 + 1"——删掉最后一个节点再加一个会**复用同一 id**，
+        #    而副本产物目录 / 参数草稿按 id 命名，会读到已删节点的残留（串味）。
+        node_id = diagram.next_node_id()
         if at is None:
             x, y, w, h = self._free_slot(kind)
         else:

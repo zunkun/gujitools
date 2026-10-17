@@ -47,6 +47,8 @@ class ImpositionPagesMixin:
         _toast: Callable[..., None]
         _imposition_pages: Callable[[], list]
         _imposition_doc: Callable[[], dict[str, Any]]
+        _imposition_scope: Callable[[], dict]
+        _imposition_flag_scope: Callable[[], dict]
         _refresh_print_source: Callable[..., None]
         _save_imposition_pages: Callable[..., None]
         _schedule_imposition_compose: Callable[..., None]
@@ -57,18 +59,28 @@ class ImpositionPagesMixin:
 
     # ------------------------------------------------------------- 选择状态
     def _load_imposition_enabled(self) -> bool:
-        """当前任务是否选择了拼版（默认不选择）。"""
+        """当前任务是否选择了拼版（默认不选择）。
+
+        ⚠️ 开关是**流程级**的（决定第四步取图来源），所以读写都走**主节点**
+        那一份文件（见 ``ImpositionBaseMixin._imposition_flag_scope``）；
+        版面（pages）才按节点分。
+        """
         if not self.task_id:
             return False
-        return bool(self.store.load_imposition_doc(self.task_id).get("enabled"))
+        return bool(
+            self.store.load_imposition_doc(
+                self.task_id, **self._imposition_flag_scope()
+            ).get("enabled")
+        )
 
     def _save_imposition_enabled(self, enabled: bool) -> None:
-        """把选择状态随任务落盘（drafts/imposition.json）。"""
+        """把选择状态随任务落盘（drafts/imposition.json ← 主节点那一份）。"""
         if not self.task_id:
             return
-        doc = self.store.load_imposition_doc(self.task_id)
+        scope = self._imposition_flag_scope()
+        doc = self.store.load_imposition_doc(self.task_id, **scope)
         doc["enabled"] = bool(enabled)
-        self.store.save_imposition_doc(self.task_id, doc)
+        self.store.save_imposition_doc(self.task_id, doc, **scope)
 
     def _on_imposition_enabled_toggled(self, on: bool) -> None:
         """拼版详情里的启用开关：更新节点选择态并落盘。
@@ -203,10 +215,12 @@ class ImpositionPagesMixin:
         if self.task_id is None or not dialog.removed_changed():
             return
         removed = [str(p) for p in dialog.removed_files()]
-        doc = self.store.load_imposition_doc(self.task_id)
+        # ⚠️ 候选黑名单属于**本节点**的版面文档（B 方案）
+        scope = self._imposition_scope()
+        doc = self.store.load_imposition_doc(self.task_id, **scope)
         old = {str(f) for f in doc.get("removed") or []}
         doc["removed"] = removed
-        self.store.save_imposition_doc(self.task_id, doc)
+        self.store.save_imposition_doc(self.task_id, doc, **scope)
         added = [f for f in removed if f not in old]
         restored = [f for f in old if f not in set(removed)]
         if added:

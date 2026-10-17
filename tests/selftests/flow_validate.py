@@ -11,10 +11,12 @@
    PDF排版）；
 2. **反例全部拒绝**——``print → rembg``（用户给的原例）、拼版排在
    PDF排版 之后、只摆起止事件没有可执行步骤的空流程；
-3. **警告只提示不拦**——extract 不在第一位、同一阶段多个节点、未接入
-   运行的节点，``ok`` 仍为真。⚠️ 「有拼版没判断节点」这条警告已于
-   2026-10-08 删除（网关依附「图片拼版」，界面上没有"添加判断"入口，
-   提示用户去做一件做不到的事就是死胡同）。
+3. **警告只提示不拦**——extract 不在第一位、未接入运行的节点，``ok`` 仍为真。
+   ⚠️ 「有拼版没判断节点」这条警告已于 2026-10-08 删除（网关依附「图片拼版」，
+   界面上没有"添加判断"入口，提示用户去做一件做不到的事就是死胡同）。
+   ⚠️ 「同一阶段多个节点」这条警告已于 2026-10-17 删除（B 方案：图片拼版 /
+   检测文本框 / 图片去底色 / PDF排版 都可以有多个节点，它们彼此独立、各有
+   产物落点）——本模块改为钉**零警告放行**。
 4. **保存入口真的拦**——``FlowPanel.accept``（弹窗/创建页内嵌编辑器）
    与 ``TaskFlowPage._on_done``（流程编辑二级页）对不合法的图都
    **不落盘、不切页**。
@@ -205,7 +207,10 @@ def _check_warnings(ok) -> None:
        result.ok and any("源PDF" in w for w in result.warnings),
        f"warnings={result.warnings}")
 
-    # 同一阶段两个节点（两个「PDF排版」）
+    # 同一阶段两个节点（两个「PDF排版」）——**B 方案后这是合法且零警告的**：
+    # 图片拼版/检测文本框/图片去底色/PDF排版都可以有多个节点，它们彼此独立
+    # （各自参数、各自产物落点 ``stages/<阶段>~<节点>``），所以不能把用户明确
+    # 要的能力说成"有问题"（旧警告已于 2026-10-17 删除）。
     from desktop.steps.bpmn_diagram import (
         KIND_TASK, DiagramFlow, DiagramNode, FlowDiagram, stage_of_name,
     )
@@ -218,9 +223,9 @@ def _check_warnings(ok) -> None:
         flows=(DiagramFlow("f1", "a", "b"),),
     )
     result = validate_flow(diagram)
-    ok("同一阶段两个节点 ⇒ 警告且不拦",
-       result.ok and any("2 个节点" in w for w in result.warnings),
-       f"warnings={result.warnings}")
+    ok("同一阶段两个节点 ⇒ 合法且**不**警告（支持多节点）",
+       result.ok and not result.warnings,
+       f"ok={result.ok} warnings={result.warnings}")
 
     # 未接入运行的节点（随手画的「OCR 识别」）
     diagram = FlowDiagram(

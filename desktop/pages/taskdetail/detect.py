@@ -77,6 +77,12 @@ class DetectMixin:
         _worker_env: Callable[[], QProcessEnvironment]
         _manifest_paths: Callable[[], list]
         current_stage: Callable[[], str]
+        current_node: Callable[[], str | None]
+        node_of_stage: Callable[[str], str | None]
+        _node_scope: Callable[..., dict]
+        _size_node_for: Callable[[str], str | None]
+        _scope_of: Callable[[str | None], dict]
+        imposition_effective: Callable[[], bool]
         window: Callable[[], QWidget]
         # QObject.sender() 在宿主（QWidget）上返回发出信号的对象
         sender: Callable[[], QObject | None]
@@ -201,6 +207,40 @@ class DetectMixin:
         stem = path.stem
         return str(int(stem)) if stem.isdigit() else stem
 
+    # ------------------------------------------------- 检测框的节点作用域（B 方案）
+    def _boxes_write_path(self) -> Path | None:
+        """**本步要写**的检测框文件：当前「检测文本框」节点那一份。
+
+        主节点 ⇒ ``boxes.json``（零迁移），副本 ⇒ ``boxes~<节点>.json``。
+        """
+        if not self.task_id:
+            return None
+        return self.store.boxes_path(
+            self.task_id, **self._node_scope(self.node_of_stage("detect"))
+        )
+
+    def _boxes_read_path(self) -> Path | None:
+        """**消费方要读**的检测框文件：由连线喂给**当前节点**的那个产出方。
+
+        「图片去底色」/「提交」读的框不该是"本阶段的 boxes"，而是**图上喂它的
+        那个检测节点**的 boxes（B 方案：同一步骤可以有多个「检测文本框」，
+        第二个节点喂第二条去底色链）。解析不到上游时回落到主节点的
+        ``boxes.json``——流程里没有检测节点时行为与改造前一致。
+        """
+        if not self.task_id:
+            return None
+        node = self.current_node()
+        if node:
+            path = self.store.node_input(
+                self.task_id, node, "boxes", self.imposition_effective()
+            )
+            if path is not None:
+                return path
+        step = "detect"
+        return self.store.boxes_path(
+            self.task_id, **self._node_scope(self.node_of_stage(step))
+        )
+
     def _refresh_detect_stats(self) -> None:
         """重算右侧统计：清单 × 每页槽位（内存缓存优先，boxes.json 一次读盘）。"""
         widget = getattr(self, "detect_stats", None)
@@ -210,7 +250,11 @@ class DetectMixin:
         if not self.task_id or not paths:
             widget.set_results(len(paths), {})
             return
-        boxes_all = self.store.detect_boxes_all(self.task_id)
+        boxes_all = self.store.boxes_all_at(
+            self.store.boxes_path(
+                self.task_id, **self._node_scope(self.node_of_stage("detect"))
+            )
+        )
         classes: dict[str, list[tuple[int, str]]] = {}
         for row, path in enumerate(paths):
             raw = self.detect_cache.get(str(path))
@@ -231,7 +275,9 @@ class DetectMixin:
         """某页**槽位**表示（保留 null，形态信息就在槽数里）。"""
         raw = self.detect_cache.get(str(path_text))
         if raw is None and self.task_id:
-            entry = self.store.detect_boxes_entry(self.task_id, Path(path_text).stem)
+            entry = self.store.boxes_entry_at(
+                self._boxes_write_path(), Path(path_text).stem
+            )
             raw = entry[0] if entry else []
         return list(raw or [])
 
@@ -244,7 +290,10 @@ class DetectMixin:
         image_key = Path(path_text).stem
         self.detect_cache[str(path_text)] = list(raw)
         if self.task_id:
-            self.store.save_detect_boxes(self.task_id, image_key, list(raw), origin=origin)
+            self.store.save_detect_boxes(
+                self.task_id, image_key, list(raw), origin=origin,
+                **self._node_scope(self.node_of_stage("detect")),
+            )
         shown = self._valid_boxes(raw)
         index = -1
         if select_box is not None:
@@ -285,9 +334,16 @@ class DetectMixin:
         return int(self._current_detect_params()[0])
 
     def _image_size_for(self, path_text: str):
-        """页面图片原始尺寸 (w, h)：优先 sizes.json，回退读图头。"""
+        """页面图片原始尺寸 (w, h)：优先 sizes.json，回退读图头。
+
+        ⚠️ 尺寸基准按**产出这张图的节点**取（B 方案）：两个「图片提取」节点
+        用不同 zoom/dpi 时页面尺寸不同，按主节点那份缩放会让副本节点的框错位。
+        """
         if self.task_id:
-            size = self.store.image_size(self.task_id, Path(path_text).stem)
+            size = self.store.image_size(
+                self.task_id, Path(path_text).stem,
+                **self._scope_of(self._size_node_for(path_text)),
+            )
             if size and size[0] > 0 and size[1] > 0:
                 return int(size[0]), int(size[1])
         head = QImageReader(str(path_text)).size()
@@ -313,7 +369,10 @@ class DetectMixin:
         形态（半幅 2 槽 / 整幅 1 槽），过滤掉 None 后「手动半幅只剩一侧」会
         退化成 1 槽，被当成整幅。
         """
-        entry = self.store.detect_boxes_entry(self.task_id, Path(path_text).stem) if self.task_id else None
+        entry = (
+            self.store.boxes_entry_at(self._boxes_write_path(), Path(path_text).stem)
+            if self.task_id else None
+        )
         if entry and entry[1] == "manual" and self._valid_boxes(entry[0]):
             return list(entry[0]), "manual"
         return self._whole_page_boxes(path_text), "fullpage"
@@ -357,7 +416,7 @@ class DetectMixin:
             return
         # 优先使用库里的框（含手动调整过的）
         entry = (
-            self.store.detect_boxes_entry(self.task_id, path.stem)
+            self.store.boxes_entry_at(self._boxes_write_path(), path.stem)
             if self.task_id else None
         )
         if entry is not None:
@@ -393,7 +452,7 @@ class DetectMixin:
                 "未做检测：整页作为一个文本框，可拖动四角调整或重画。",
             )
             return
-        entry = self.store.detect_boxes_entry(self.task_id, Path(path).stem)
+        entry = self.store.boxes_entry_at(self._boxes_write_path(), Path(path).stem)
         if entry is not None and any(entry[0] or []):
             self.detect_cache[key] = entry[0]
             self._apply_boxes(key, entry[0], entry[1])
@@ -415,13 +474,19 @@ class DetectMixin:
 
         整页模式（area=4）没有存档框时兜底为整页边界，使 rembg 预览/提交
         与第四步打印都按整页走，无需真的检测。
+
+        ⚠️ 消费方读取（B 方案）：存档框取**连线上喂给当前节点**的那个检测
+        节点的文件（``_boxes_read_path``）——两个「检测文本框」节点各有各的框，
+        按阶段读会让去底色用错节点的框裁图。
         """
         if self._current_area() == WHOLE_PAGE_AREA:
             return self._whole_page_entry(path_text)[0]
         boxes = self.detect_cache.get(str(path_text))
         if boxes is None:
             entry = (
-                self.store.detect_boxes_entry(self.task_id, Path(path_text).stem)
+                self.store.boxes_entry_at(
+                    self._boxes_read_path(), Path(path_text).stem
+                )
                 if self.task_id else []
             )
             boxes = entry[0] if entry else []
@@ -664,10 +729,13 @@ class DetectMixin:
                     continue
                 self.detect_cache[event["image"]] = boxes
                 # 检测结果写回 boxes.json；无框不存，避免下次选中无法重新检测
+                # ⚠️ 写**本节点**那一份（B 方案）：单页检测也属于"这个检测节点
+                #    的产物"，写进主节点的文件就是覆盖别人的框。
                 if any(boxes) and self.task_id:
                     self.store.save_detect_boxes(
                         self.task_id, Path(event["image"]).stem, boxes,
                         origin="auto",
+                        **self._node_scope(self.node_of_stage("detect")),
                     )
                 self._apply_detect_result(Path(event["image"]), boxes)
             elif event.get("type") == "log":
@@ -831,7 +899,8 @@ class DetectMixin:
         """
         boxes: dict[str, list] = {}
         if self.task_id:
-            for stem, entry in self.store.detect_boxes_all(self.task_id).items():
+            boxes_all = self.store.boxes_all_at(self._boxes_write_path())
+            for stem, entry in boxes_all.items():
                 boxes[stem] = list(entry[0] or [])
         for path_text, raw in self.detect_cache.items():
             boxes[Path(path_text).stem] = list(raw or [])

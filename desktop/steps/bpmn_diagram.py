@@ -29,6 +29,7 @@ startEvent / …）、带文件里 DI 段的真实坐标，连线带折点。页
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -146,6 +147,27 @@ def _local(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
 
 
+def _read_node_seq(process: ET.Element, nodes: list) -> int:
+    """读节点号水位：``guji:node_seq`` 属性优先，缺则从 ``Node_<n>`` id 反推。
+
+    ⚠️ 老图（默认模板 ``task_default.bpmn`` / bpmn.io 画的图）没有该属性，节点
+    id 也不是 ``Node_<n>`` 形状 ⇒ 水位为 0，新加的节点从 ``Node_1`` 起——与
+    改造前行为一致（见 :attr:`FlowDiagram.node_seq`）。
+    """
+    raw = process.get(_q(GUJI_NS, "node_seq"))
+    seq = 0
+    if raw:
+        try:
+            seq = max(0, int(raw))
+        except (TypeError, ValueError):
+            seq = 0
+    for item in nodes:
+        match = re.match(r"Node_(\d+)$", item.id)
+        if match:
+            seq = max(seq, int(match.group(1)))
+    return seq
+
+
 def stage_of_name(name: str, guji_stage: str | None = None) -> str | None:
     """节点名（或扩展属性）→ 运行阶段 key；认不出返回 ``None``。
 
@@ -215,26 +237,11 @@ def default_size(kind: str) -> tuple[float, float]:
     return DEFAULT_SIZE.get(kind, FALLBACK_SIZE)
 
 
-def fold_forward(stage: str, port: str) -> str:
-    """把图上认出的阶段**升级到同一界面格里最靠后的、也产出该端口的动作**。
-
-    ⚠️ 为什么必须有这一步：用户画流程图时，第三步只会画一个「图片去底色」
-    节点；但他真正**提交**的产物由 ``rembg_submit``（提交去底色结果）产出
-    ——两者在界面上**折成同一格**（折叠关系见 ``ports.STAGE_STEPS``）。
-    若按图回退时直接取 ``rembg``，拿到的是**实时预览目录**
-    （``stages/rembgpreview``），而用户提交过的成品在 ``stages/rembg``
-    ——**打印出来会是"没提交的图"**（比报错更难发现）。
-
-    同格里多个阶段都产出该端口时，取声明顺序里**最靠后**的那个（最下游的
-    动作）；没有同格伙伴时原样返回。
-    """
-    step = ports.STAGE_STEPS.get(stage, stage)
-    siblings = [
-        s
-        for s, owner in ports.STAGE_STEPS.items()
-        if owner == step and port in ports.stage_outputs(s)
-    ]
-    return siblings[-1] if siblings else stage
+#: 「同格多动作前折」在本模块的**别名**：实现在
+#: :func:`desktop.steps.ports.fold_forward`（唯一一处，判定从 ``STAGE_STEPS``
+#: 与 ``stage_outputs`` 派生）。本模块与 ``store`` 都得用它，所以下移一层到
+#: ``ports``——两边各写一份必然漂移（真发生过：一份被删、另一份还在调用）。
+fold_forward = ports.fold_forward
 
 
 # ---------------------------------------------------------------- 图元素
@@ -312,6 +319,15 @@ class FlowDiagram:
     waypoints: dict[str, list[tuple[float, float]]] = field(default_factory=dict)
     #: 流程 id（文件里的 ``bpmn:process/@id``，往返时原样写回）
     process_id: str = "guji_task"
+    #: **节点号水位**（``Node_<n>`` 里已分配到的最大 ``n``，只增不减）。
+    #:
+    #: ⚠️ 为什么需要它：节点 id 若按"当前节点数 + 1"生成，**删掉最后一个节点
+    #: 再加一个就会复用同一个 id** ⇒ 副本产物目录 / 参数草稿按 id 命名时，
+    #: 新节点会读到已删节点的残留（串味）。水位保证 id **永不复用**（与任务号
+    #: 水位同一思路，见 ``desktop.store.tasks`` 的 ``_bump_max_allocated``）。
+    #: 落盘在 ``bpmn:process`` 的 ``guji:node_seq`` 属性；老图（默认模板/bpmn.io
+    #: 画的图）没有该属性时，从现有 ``Node_<n>`` id 反推最大值兜底。
+    node_seq: int = 0
 
     # ------------------------------------------------------------ 查询
     def node(self, node_id: str) -> DiagramNode | None:
@@ -358,7 +374,11 @@ class FlowDiagram:
         return (right - left + AUTO_PADDING * 2, bottom - top + AUTO_PADDING * 2)
 
     def stage_order(self) -> tuple[str, ...]:
-        """可运行的阶段，按**图上的拓扑顺序**排（状态机的输入）。
+        """可运行的阶段，按**图上的拓扑顺序**排（旧模型：状态机按 stage 寻址）。
+
+        ⚠️ **同阶段的多个节点折叠成一个阶段**——这是 :meth:`node_order` 去掉
+        阶段维度后的投影。B 方案（2026-10-17）后运行时按 ``node_id`` 寻址
+        （:meth:`node_order`），本方法保留给仍按 stage 说话的旧调用方。
 
         ⚠️ **必须是拓扑序而不是遍历序**：图上从网关分叉出「否 → PDF排版」与
         「→ 古籍拼版 → PDF排版」两条路，广度遍历会先撞到短路的「PDF排版」，
@@ -372,8 +392,17 @@ class FlowDiagram:
         实现用 Kahn 算法，**同层按文件声明顺序**出队（结果稳定、可预期）。
         有环（BPMN 允许回环）时剩下的按声明顺序兜底，不丢阶段。
         """
+        return tuple(dict.fromkeys(stage for _, stage in self.node_order()))
+
+    def _topo_node_ids(self) -> list[str]:
+        """**全部**节点 id 的拓扑序（Kahn，同层按文件声明顺序；有环时剩下的
+        按声明顺序接在后面，不丢节点）。
+
+        :meth:`node_order` 与 :meth:`stage_order` 共用这一趟排序，只是投影维度
+        不同（一个保留节点、一个折叠阶段）。
+        """
         if not self.nodes:
-            return ()
+            return []
         order_index = {item.id: index for index, item in enumerate(self.nodes)}
         indegree: dict[str, int] = {item.id: 0 for item in self.nodes}
         for flow in self.flows:
@@ -385,13 +414,9 @@ class FlowDiagram:
 
         ready = sorted((nid for nid, deg in indegree.items() if deg == 0), key=sort_key)
         seen: list[str] = []
-        stages: list[str] = []
         while ready:
             node_id = ready.pop(0)
             seen.append(node_id)
-            item = self.node(node_id)
-            if item is not None and item.stage and item.stage not in stages:
-                stages.append(item.stage)
             newly: list[str] = []
             for flow in self.flows_of(node_id):
                 if flow.target not in indegree:
@@ -402,11 +427,71 @@ class FlowDiagram:
             # 新就绪的插回队首但**按文件顺序排**，保证确定性
             ready = sorted(ready + newly, key=sort_key)
 
-        # 兜底：有环导致没排完的，按文件声明顺序接在后面（不丢阶段）
+        # 兜底：有环导致没排完的，按文件声明顺序接在后面（不丢节点）
         for item in self.nodes:
-            if item.stage and item.stage not in stages:
-                stages.append(item.stage)
-        return tuple(stages)
+            if item.id not in seen:
+                seen.append(item.id)
+        return seen
+
+    def node_order(self) -> tuple[tuple[str, str], ...]:
+        """图上**可运行节点**按拓扑序排：``(node_id, stage)``，**不折叠同阶段**。
+
+        B 方案（2026-10-17）的运行时真源：任务流程按**节点实例** ``node_id``
+        寻址——同类型步骤（图片拼版 / 检测文本框 / 图片去底色 / PDF排版）可以
+        放多个节点，它们彼此独立（各自参数、各自产物落点）。
+
+        与 :meth:`stage_order` 是同一趟拓扑排序的两份投影：那个把同阶段的多个
+        节点**折叠成一个阶段**（旧调用方按 stage 寻址，保持兼容），本方法
+        **保留每个节点实例**。认不出阶段的节点（网关/事件/未知 task 不接功能）
+        不进结果——它们不占运行位。
+        """
+        result: list[tuple[str, str]] = []
+        for node_id in self._topo_node_ids():
+            item = self.node(node_id)
+            if item is not None and item.stage:
+                result.append((node_id, item.stage))
+        return tuple(result)
+
+    def primary_of(self, stage: str) -> str | None:
+        """该阶段在本图里的**主节点** id（没有该阶段返回 ``None``）。
+
+        「主节点」是 B 方案里"沿用旧路径"的那个节点：同阶段**恰好一个节点**
+        时它就是主节点，产物仍落在 ``stages/<阶段>``（现存任务与默认流程**零
+        迁移**）；同阶段**多个节点**时其余节点是副本，产物落在
+        ``stages/<阶段>~<node_id>``。
+
+        ⚠️ 取法是该阶段在**文件声明顺序**里第一个节点，**不是**拓扑序第一个
+        ——声明顺序比拓扑序稳定（拖拽、改连线都不改声明顺序，只有增删节点才
+        变），所以"谁是主节点"不会因为用户改了连线而漂移。
+        """
+        for item in self.nodes:
+            if item.stage == stage:
+                return item.id
+        return None
+
+    def node_ids_of(self, stage: str) -> tuple[str, ...]:
+        """该阶段在本图里的**全部节点** id（文件声明顺序；没有则空元组）。
+
+        ``node_ids_of(stage)[0]`` 恒等于 :meth:`primary_of`（同一取法），其余
+        是副本。界面按它给每个节点实例各建一页。
+        """
+        return tuple(item.id for item in self.nodes if item.stage == stage)
+
+    def next_node_id(self) -> str:
+        """分配一个**全新且永不复用**的节点 id（``Node_<n>``），并抬水位。
+
+        水位 = ``max(自身记录的 node_seq, 现有 ``Node_<n>`` id 里的最大 n) + 1``
+        （见 :attr:`node_seq`）。调用方（编辑器 ``_add_node``）必须走这里，
+        **别再用"当前节点数 + 1"**——那会在删节点后复用旧 id。
+        """
+        seq = self.node_seq
+        for item in self.nodes:
+            match = re.match(r"Node_(\d+)$", item.id)
+            if match:
+                seq = max(seq, int(match.group(1)))
+        seq += 1
+        self.node_seq = seq
+        return f"Node_{seq}"
 
     def incoming(self, node_id: str) -> list[DiagramFlow]:
         """以该节点为**终点**的连线。"""
@@ -489,28 +574,15 @@ class FlowDiagram:
         #    （bpmn.io 生成）——**必须先从阶段 key 找到节点 id 再遍历**，
         #    直接拿 key 当 id 去查入边会一条都查不到（返回 None，表现为
         #    "生成 PDF 找不到输入"）。
-        starts = [n.id for n in self.nodes if n.stage == stage]
-        if not starts:
-            return None
-        queue = list(starts)
-        seen = set(starts)
-        while queue:
-            node_id = queue.pop(0)
-            for flow in self.incoming(node_id):
-                source = flow.source
-                if source in seen:
-                    continue
-                seen.add(source)
-                item = self.node(source)
-                if item is None or not item.stage:
-                    # 网关/事件：不产出产物，继续往前穿
-                    queue.append(source)
-                    continue
-                if item.stage in candidates and port in ports.stage_outputs(item.stage):
-                    # ⚠️ 折叠到**同格里最靠后的动作**：图上是「图片去底色」，
-                    #    真正产出 pages 的是同格的「提交去底色结果」。
-                    return fold_forward(item.stage, port)
-                queue.append(source)
+        # 节点版 BFS 由 :meth:`nearest_producer_node` 提供；这里对同阶段的
+        # **每个**节点实例各问一次（单节点流程结果与改造前逐值一致）。
+        for node_id in self.node_ids_of(stage):
+            hit = self.nearest_producer_node(node_id, port, active)
+            if hit is not None:
+                # ⚠️ 折叠到**同格里最靠后的动作**：图上是「图片去底色」，
+                #    真正产出 pages 的是同格的「提交去底色结果」。
+                item = self.node(hit)
+                return fold_forward(item.stage, port) if item and item.stage else None
         return None
 
     def producers_of(self, stage: str, port: str, active) -> tuple[str, ...]:
@@ -546,31 +618,73 @@ class FlowDiagram:
         candidates = set(active)
         if stage not in candidates:
             return ()
-        starts = [n.id for n in self.nodes if n.stage == stage]
-        if not starts:
-            return ()
-        queue = list(starts)
-        seen = set(starts)
+        # 节点版 BFS 见 :meth:`producer_nodes_of`；对同阶段的**每个**节点实例
+        # 各问一次，再把节点 id 折回阶段（单节点流程结果与改造前逐值一致）。
+        found: list[str] = []
+        for node_id in self.node_ids_of(stage):
+            for hit in self.producer_nodes_of(node_id, port, active):
+                item = self.node(hit)
+                folded = fold_forward(item.stage, port) if item and item.stage else None
+                if folded and folded not in found:
+                    found.append(folded)
+        return tuple(found)
+
+    # ------------------------------------------------------ 节点粒度的产出方
+    # B 方案（2026-10-17）：同阶段可以有**多个节点**，它们彼此独立（各自产物
+    # 落点）。所以"谁喂我"必须在**节点**粒度上回答，不能只在阶段粒度上。
+    # 下面两个方法就是 :meth:`nearest_producer` / :meth:`producers_of` 的节点版；
+    # 阶段版委托它们实现，以免两份 BFS 逻辑各写一遍（漂移风险）。
+    def _node_producers(self, node_id: str, port: str, active
+                        ) -> list[str]:
+        """从 ``node_id`` 反向 BFS，产出 ``port`` 的**在流程节点** id（广度序）。
+
+        ``stop_at_first`` 语义由调用方取首个决定：本方法返回**全部**，最近的
+        在列表最前（广度序），调用方取 ``[0]`` 即"最近"。
+        """
+        candidates = set(active)
+        start = self.node(node_id)
+        if start is None or not start.stage or start.stage not in candidates:
+            return []
+        queue = [node_id]
+        seen = {node_id}
         found: list[str] = []
         while queue:
-            node_id = queue.pop(0)
-            for flow in self.incoming(node_id):
+            current = queue.pop(0)
+            for flow in self.incoming(current):
                 source = flow.source
                 if source in seen:
                     continue
                 seen.add(source)
                 item = self.node(source)
                 if item is None or not item.stage:
-                    queue.append(source)  # 网关/事件：不产出产物，继续穿
+                    queue.append(source)  # 网关/事件：不产出产物，继续往前穿
                     continue
                 if item.stage in candidates and port in ports.stage_outputs(item.stage):
-                    # ⚠️ 折叠到同格最靠后的动作，并**停止**这条分支的继续回溯
-                    folded = fold_forward(item.stage, port)
-                    if folded not in found:
-                        found.append(folded)
+                    # 产出方：收下并**停止**这条分支（"谁喂我"而非"可达"）
+                    if source not in found:
+                        found.append(source)
                 else:
                     queue.append(source)
-        return tuple(found)
+        return found
+
+    def nearest_producer_node(self, node_id: str, port: str, active
+                              ) -> str | None:
+        """**节点粒度**：从 ``node_id`` 沿图往前，最近的产出 ``port`` 的节点 id。
+
+        ``active`` 是本流程实际要跑的**阶段**集合（Scheduler 给）；候选按节点
+        的 ``stage`` 判在不在流程里。
+        """
+        producible = self._node_producers(node_id, port, active)
+        return producible[0] if producible else None
+
+    def producer_nodes_of(self, node_id: str, port: str, active
+                          ) -> tuple[str, ...]:
+        """**节点粒度**：``node_id`` 沿图可达的全部产出 ``port`` 的节点 id。
+
+        用来判"**图能不能给出唯一答案**"（与阶段版 :meth:`producers_of` 同一
+        判据，只是按节点实例）。
+        """
+        return tuple(self._node_producers(node_id, port, active))
 
     # ------------------------------------------------------------ 界面投影
     def stage_slots(self) -> tuple:
@@ -586,13 +700,17 @@ class FlowDiagram:
         折叠规则（与 ``FlowDefinition.stage_slots`` 保持一致）：
 
         1. ``rembg_submit`` 折叠进 ``rembg`` 那一格（它是第三步的第二个动作）；
-        2. 同一格重复出现保留**首次**位置；
+        2. **同一步骤的其他节点各占一格**（B 方案，2026-10-17：图片拼版 /
+           检测文本框 / 图片去底色 / PDF排版都可以有多个节点，它们彼此独立）；
         3. ``bar_index`` 只数**本图里有**的格子（步骤条上就这么多格）；
         4. **图上画了、但本程序还没有对应功能的 task 节点**（例如随手加的
            「OCR 识别」）也**占一格**，排在真实步骤之后，标 ``mapped=False``
            且 ``stack_index = NO_PAGE``——界面据此画灰节点并在点它时解释
            （改成已有步骤名即可接上）。这类节点不会进 ``stage_order()``
            （那里只收认得出阶段的），所以是单独扫节点表挑出来的。
+
+        每个真实步骤格都带 ``node_id``（:attr:`~desktop.steps.flow.StageSlot.node_id`）
+        ——界面据此**按节点**寻址产物与参数（单节点时它就是主节点）。
 
         ⚠️⚠️ **``stack_index`` 不是"数出来的"，而是"查出来的"**——这是最容易
         写错的一处（2026-10-05 实测踩中）：
@@ -607,6 +725,11 @@ class FlowDiagram:
           没跟着变"就是这个）。
         - 文件里**多了/调换了顺序**也一样：页号只认静态位置，步骤条上哪一格
           对应哪一页由 :meth:`slot_of` / ``_select_stage`` 查出来。
+
+        ⚠️ 同一步骤的**多个节点共用同一页**（静态表里同一步骤只有一个位置）：
+        页面在切到某一格时把该格对应的**节点**记下来（``node_id``），按节点
+        重定向数据（产物目录 / 参数暂存 / 状态）。这样两个栈的建页数仍与静态
+        表一致，不必为每个节点各建一页昂贵的预览控件。
         """
         from desktop.steps.flow import StageSlot
         from desktop.steps.spec import FLOW_STAGES, OPTIONAL_STEPS
@@ -618,17 +741,23 @@ class FlowDiagram:
         }
 
         slots: list[StageSlot] = []
-        seen: set[str] = set()
-        for stage in self.stage_order():
+        seen_steps: set[str] = set()
+        # ⚠️ 按**节点**拓扑序（``node_order``，不折叠同阶段）走：同一步骤的每个
+        #    节点各占一格（B 方案）。只有 ``rembg_submit`` 例外——它是第三步内的
+        #    第二个动作，折叠进已经出现的那一格（图上通常压根没有它的节点）。
+        for node_id, stage in self.node_order():
             spec = ports.spec_for_stage(stage)
             if spec is None:
                 continue
             step = ports.STAGE_STEPS.get(stage, stage)
-            if step in seen:
-                continue
-            seen.add(step)
+            if stage == "rembg_submit" and step in seen_steps:
+                continue  # 折叠进已有的 rembg 那一格
+            seen_steps.add(step)
             slots.append(
-                StageSlot(step=step, stage=stage, optional=spec.role == "optional")
+                StageSlot(
+                    step=step, stage=stage, optional=spec.role == "optional",
+                    node_id=node_id,
+                )
             )
         # ⚠️ 图上"画了但本程序没有对应功能"的 task 节点：**不静默丢掉**
         #    （2026-10-05）。它们**不会**出现在 ``stage_order()`` 里——那里只收
@@ -639,9 +768,9 @@ class FlowDiagram:
             if node.kind != KIND_TASK or node.stage is not None:
                 continue
             label = (node.name or "").strip() or node.id
-            if label in seen:
+            if label in seen_steps:
                 continue
-            seen.add(label)
+            seen_steps.add(label)
             slots.append(
                 StageSlot(
                     step=label,
@@ -658,12 +787,14 @@ class FlowDiagram:
                 stage=slot.stage,
                 optional=slot.optional,
                 bar_index=bar_index,
-                # 已接入的查静态表拿页号；未接入的两个栈里没有它的页
+                # 已接入的查静态表拿页号（同一步骤的多个节点共用一页）；未接入的
+                # 两个栈里没有它的页
                 stack_index=(
                     page_of.get(slot.step, bar_index) if slot.mapped else NO_PAGE
                 ),
                 mapped=slot.mapped,
                 name=slot.name,
+                node_id=slot.node_id,
             )
             for bar_index, slot in enumerate(slots)
         )
@@ -1016,6 +1147,7 @@ class FlowDiagram:
             notes=tuple(notes),
             note_links=note_links,
             process_id=process.get("id", "guji_task"),
+            node_seq=_read_node_seq(process, nodes),
         )
         _read_di(root, diagram)
         has_node_box = any(n.id in diagram.boxes for n in diagram.nodes)
@@ -1049,6 +1181,10 @@ class FlowDiagram:
             _q(BPMN_NS, "process"),
             {"id": self.process_id, "isExecutable": "false"},
         )
+        # 节点号水位落盘（见 :attr:`node_seq`）：编辑端读回它才能保证新节点 id
+        # **永不复用**。存量老图没这个属性时读端会从 ``Node_<n>`` 反推兜底。
+        if self.node_seq > 0:
+            process.set(_q(GUJI_NS, "node_seq"), str(int(self.node_seq)))
         for item in self.nodes:
             attrs = {"id": item.id, "name": item.name}
             # ⚠️ **阶段身份必须落盘**（``guji:stage``），不能只活在名字里。

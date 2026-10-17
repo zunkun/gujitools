@@ -91,7 +91,10 @@ def run(ctx) -> None:
     _page = next(iter(d._manifest_paths()), None)
     ok("清单非空（整页框兜底断言前提）", _page is not None)
     if _page is not None:
-        _w, _h = repo.image_size(tid, _page.stem)
+        # ⚠️ 走页面的尺寸接口：它优先读 sizes.json、读不到回落图头。清单里的页
+        #    不一定都有尺寸记录（用户插入的图没走提取），直接查仓库会拿到
+        #    None、解包就炸。
+        _w, _h = d._image_size_for(str(_page))
         ok("整页模式无手动框时兜底为整页边界",
            d._detect_boxes_for(str(_page)) == [[0, 0, _w, _h]],
            str(d._detect_boxes_for(str(_page))))
@@ -130,9 +133,13 @@ def run(ctx) -> None:
     # spec["crop"]（永远为 None），于是 -r/-l 两条缩略图都退化成整页。
     # 自测页面是空白页（pymupdf 默认字体渲染不出中文），像素比对分不出左右半页，
     # 所以这里校验数据契约：provider 必须给 effect，查看器必须把 effect 交给合成器。
-    _last_page = d._manifest_paths()[-1]
+    # ⚠️ 取**最后一张数字页名**的页：清单里可能混着用户插入的图（"inserted"），
+    #    而本段按页号取页缩略图（``int(stem)``）——非数字页名会直接炸。
+    #    清单现在跟着**本步骤的输入目录**走（B 方案），插入的图确实会出现在里面。
+    _numbered = [p for p in d._manifest_paths() if p.stem.isdigit()]
+    _last_page = _numbered[-1] if _numbered else d._manifest_paths()[-1]
     _orig_entry = repo.detect_boxes_entry(tid, _last_page.stem)
-    _lw, _lh = repo.image_size(tid, _last_page.stem)
+    _lw, _lh = d._image_size_for(str(_last_page))
     _lbox = [0, 0, _lw // 2, _lh]
     _rbox = [_lw // 2, 0, _lw, _lh]
     repo.save_detect_boxes(tid, _last_page.stem, [_lbox, _rbox], origin="manual")
@@ -367,7 +374,8 @@ def run(ctx) -> None:
     _comp0 = d._rembg_submit_entries(1, None)
     _anchor = next((c for c in _comp0 if c.get("box") is None), _comp0[0])
     _anchor_stem = Path(_anchor["file"]).stem
-    _aw, _ah = repo.image_size(tid, _anchor_stem)
+    _anchor_page = Path(_anchor["file"])
+    _aw, _ah = d._image_size_for(str(_anchor_page))
     _injected = [round(_aw * 0.10), round(_ah * 0.10),
                  round(_aw * 0.55), round(_ah * 0.90)]
     ctx.injected_boxes = _injected

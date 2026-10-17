@@ -61,6 +61,9 @@ class StageRunnerMixin:
         print_preview: PrintPreviewWidget
         detect_stats: DetectStatsWidget
         current_stage: Callable[[], str]
+        current_node: Callable[[], str | None]
+        node_display_suffix: Callable[[str | None], str]
+        _node_scope: Callable[..., dict]
         _acquire_run: Callable[..., bool]
         _release_run: Callable[[], None]
         _mark_run_launched: Callable[[], None]
@@ -187,7 +190,7 @@ class StageRunnerMixin:
                 self._release_run()
 
     def _stage_inputs_ready(self) -> bool:
-        """**当前这一步**的输入齐不齐，可以开跑吗。
+        """**当前这一步（当前节点）**的输入齐不齐，可以开跑吗。
 
         ⚠️ 别拿"有没有源 PDF"当判据（用户 2026-10-06）：自定义流程把
         「检测文本框」之类**不吃 PDF** 的步骤放第一位时，它的输入是入口图片
@@ -204,16 +207,40 @@ class StageRunnerMixin:
           ``boxes`` **本流程里没人产出** ⇒ 弹"这一步的输入还没就位"的假提示，
           而那一步其实完全能跑（它按 area 处理整张图）。
 
-        所以判据走 :meth:`~desktop.store.tasks.TaskRepo.required_stage_inputs`
-        （= :func:`desktop.steps.ports.stage_blocking_inputs`）：只查**这张图上
-        确实阻塞**的端口，逐个解析出路径并确认存在。
+        所以判据走节点粒度的 :meth:`~desktop.store.tasks.TaskRepo.required_node_inputs`
+        （= :func:`desktop.steps.ports.node_blocking_inputs`）：只查**这张图上
+        这个节点**确实阻塞的端口，逐个按**该节点的连线**解析出路径并确认存在。
+        同一步骤的多个节点各有上游（B 方案），按阶段查会让副本节点拿主节点的
+        输入判就绪——"看着有输入，跑起来报找不到图"。
         """
         stage = self.current_stage()
         if not self.task_id or stage is None:
             return False
+        # ⚠️ ``boxes`` 这类端口**缺文件不阻塞**（见 ports.OPTIONAL_INPUT_PORTS）：
+        #    检测可能一框未检（空白页），那时 boxes.json 本来就不存在，而这一步
+        #    按 area 处理整张图照样能跑。判据本身（"本流程里吃哪些端口"）仍走
+        #    required_*_inputs，只是不再拿"文件在不在"当硬门槛。
+        from desktop.steps import ports as _ports
+
+        optional = _ports.OPTIONAL_INPUT_PORTS
+        node = self.current_node()
+        if node:
+            for port in self.store.required_node_inputs(
+                self.task_id, node, self.imposition_effective()
+            ):
+                if port in optional:
+                    continue
+                path = self.store.node_input(
+                    self.task_id, node, port, self.imposition_effective()
+                )
+                if path is None or not path.exists():
+                    return False
+            return True
         for port in self.store.required_stage_inputs(
             self.task_id, stage, self.imposition_effective()
         ):
+            if port in optional:
+                continue
             path = self.store.stage_input(
                 self.task_id, stage, port, self.imposition_effective()
             )
@@ -314,10 +341,16 @@ class StageRunnerMixin:
             return
         if stage == "extract":
             args["input"] = str(self.source_path)
-            args["output"] = str(self.store.stage_dir(self.task_id, "extract"))
+            args["output"] = str(
+                self.store.node_or_stage_output(
+                    self.task_id, self.current_node(), "extract"
+                )
+            )
             if resume:
                 missing = missing_extract_pages_spec(
-                    self.store.extract_output_dir(self.task_id),
+                    self.store.node_or_stage_output(
+                        self.task_id, self.current_node(), "extract"
+                    ),
                     self.pdf_page_count or 0,
                 )
                 if not missing:
@@ -389,7 +422,7 @@ class StageRunnerMixin:
                 )
                 for e in entries
             ]
-            self.store.save_print_doc(self.task_id, doc)
+            self.store.save_print_doc(self.task_id, doc, **self._node_scope())
             args["_effects"] = effects
             # 记下**本次取图来源**（rembg_submit / imposition）。这是"旧数据"
             # 判定的依据：用户随后改了拼版开关，磁盘上这份 PDF 就属于上一轮
@@ -400,10 +433,19 @@ class StageRunnerMixin:
             # ⚠️ 前缀不带下划线是为了**留在 runs.json 历史里**（入史只剥
             # _effects/files/page_rects 这几个大块派生字段）；它不是 CLI 参数，
             # 只由 GUI 侧读取。
-            # ⚠️ 走 store.stage_supplier（**按图求解**）：直接查端口级边表会
+            # ⚠️ 走 store.node_supplier（**按图求解**）：直接查端口级边表会
             #    在"流程里没有去底色"这类自定义流程下指向不存在的产物目录。
-            args["source_stage"] = self.store.stage_supplier(
-                self.task_id, "print", "pages", self.imposition_effective()
+            #    ⚠️ **按节点求解**（B 方案）：同一步骤的多个节点各有自己的上游，
+            #    按阶段查会把副本节点的来源记成主节点的（"旧数据"判定跟着错）。
+            _print_node = self.current_node()
+            args["source_stage"] = (
+                self.store.node_supplier_stage(
+                    self.task_id, _print_node, "pages", self.imposition_effective()
+                )
+                if _print_node
+                else self.store.stage_supplier(
+                    self.task_id, "print", "pages", self.imposition_effective()
+                )
             )
             # 有序清单即页序：拖拽重排只改 print.json，不再物化任何文件。
             # input 仅供 CLI 作默认目录兜底，实际顺序由 files 决定。
@@ -418,7 +460,12 @@ class StageRunnerMixin:
             if page_rects:
                 args["page_rects"] = page_rects
             args["input"] = str(self.store.task_dir(self.task_id))
-            args["output"] = str(self.store.stage_dir(self.task_id, "print"))
+            # ⚠️ 输出目录按**节点**取（B 方案）：两个「PDF排版」节点各自出 PDF，
+            #    共用 stages/print 就会互相覆盖（默认 PDF 名都从源 PDF 名派生）。
+            #    主节点仍是 stages/print（零迁移），副本是 stages/print~<节点>。
+            args["output"] = str(
+                self.store.scoped_stage_dir(self.task_id, _print_node, "print")
+            )
             # 开始重新生成即清除「版面已修改」标脏
             self._print_dirty = False
             try:
@@ -456,7 +503,16 @@ class StageRunnerMixin:
             #    （:mod:`desktop.steps.ports` 按连线解析）：将来 BPM 把 extract
             #    换到别的环节、或让 rembg 直接吃拼版的图，都只改 ports 的连线表，
             #    这一行不用动。
-            pages_input = self.store.stage_input(self.task_id, stage, "pages")
+            # ⚠️ **按节点问**（B 方案）：同一步骤的多个节点各有自己的上游，
+            #    按阶段问会让副本节点吃到主节点的输入图（"跑的是 B、图是 A 的"）。
+            node = self.current_node()
+            pages_input = (
+                self.store.node_input(
+                    self.task_id, node, "pages", self.imposition_effective()
+                )
+                if node
+                else self.store.stage_input(self.task_id, stage, "pages")
+            )
             if pages_input is None:
                 self._toast(
                     "error",
@@ -477,10 +533,13 @@ class StageRunnerMixin:
                     rembg_host.get_args().get("area", 1) if rembg_host else 1
                 )
             if stage == "rembg":
-                # 「生成预览」整页去底图固定写入 stages/rembgpreview；
-                # rembg CLI 会自行追加 "rembg" 子目录，故用 _outpath 精确覆盖
+                # 「生成预览」整页去底图固定写入 ``stages/rembgpreview``（副本节点
+                # 写到它自己的 ``stages/rembgpreview~<节点>``）；
+                # rembg CLI 会自行追加 "rembg" 子目录，故用 _outpath 精确覆盖。
                 args["_outpath"] = str(
-                    self.store.rembg_preview_output_dir(self.task_id)
+                    self.store.node_or_stage_output(
+                        self.task_id, node, "rembg"
+                    )
                 )
             else:
                 # detect 的输出目录解析会在 output 后追加默认子目录名（detect）
@@ -503,7 +562,13 @@ class StageRunnerMixin:
         # ⚠️ 调用前 _run_stage_unchecked 的输入守卫已保证有任务在身
         task_id = self.task_id
         assert task_id is not None, "启动子任务时没有任务在身"
-        self.run_id = self.store.create_stage_run(task_id, stage, args, resume)
+        # ⚠️ 记下是**哪个节点**在跑（B 方案）：收尾时用户可能已经切到同一步骤的
+        #    另一个节点，那时 ``current_node()`` 不再是"跑的那个"。
+        node = self.current_node()
+        self.running_node = node
+        self.run_id = self.store.create_stage_run(
+            task_id, stage, args, resume, node_id=node
+        )
         runs_dir = self.store.runs_config_dir(task_id)
         runs_dir.mkdir(parents=True, exist_ok=True)
         config_path = runs_dir / f"run-{self.run_id}.json"
@@ -539,7 +604,9 @@ class StageRunnerMixin:
             self._set_stage_status(f"{STAGE_LABELS[stage]}：{STATUS_LABELS['running']}")
         if stage == "extract":
             self._extract_seen = len(
-                list_stage_images(self.store.extract_output_dir(task_id))
+                list_stage_images(
+                    self.store.node_or_stage_output(task_id, node, "extract")
+                )
             )
         # ---- 传输层：起进程 + 读字节流 + 看门狗（实现见 desktop.steps.process）----
         # ⚠️ 这里只接"业务"需要的信号；半行重组 / JSON 解析 / 落盘仍在本页——
@@ -573,8 +640,40 @@ class StageRunnerMixin:
         # 开始执行时自动展开日志：用户此刻最需要看到实时输出
         self.log_panel.set_expanded(True)
         self.log_view.append(
-            f"=== 开始执行 {STAGE_LABELS[stage]}{'（续跑）' if resume else ''} ==="
+            f"=== 开始执行 {self._stage_log_label(stage)}"
+            f"{'（续跑）' if resume else ''} ==="
         )
+
+    def _stage_log_label(self, stage: str | None) -> str:
+        """日志/提示里的这一步叫什么：同一步骤有多个节点时带上节点序号。
+
+        ⚠️ 不带序号的话，日志里两条「=== 开始执行 图片去底色 ===」完全一样，
+        用户没法判断刚才跑的是哪个节点（B 方案最直接的可用性代价就在这儿）。
+        """
+        label = STAGE_LABELS.get(stage or "", stage or "")
+        node = self.running_node or self.current_node()
+        suffix = self.node_display_suffix(node) if node else ""
+        return f"{label}{suffix}"
+
+    def _output_path_for(self, stage: str | None, node: str | None) -> str | None:
+        """某阶段在某**节点**下的主产物路径（写进运行记录的 ``output_path``）。
+
+        - ``print``：产物是 PDF，落点在 ``stages/print[~<节点>]`` 目录里；
+        - ``detect``：GUI 只回坐标（不落盘），沿用旧的"参考缩略图目录"；
+        - 其余：按节点取端口 ``pages`` 的落点（主节点 = 旧路径）。
+        """
+        if not stage or not self.task_id:
+            return None
+        if stage == "print":
+            return str(self.store.scoped_stage_dir(self.task_id, node, "print"))
+        if stage == "detect":
+            return str(self.store.stage_output_dir(self.task_id, stage))
+        try:
+            return str(
+                self.store.node_or_stage_output(self.task_id, node, stage)
+            )
+        except KeyError:
+            return str(self.store.stage_output_dir(self.task_id, stage))
 
     def cancel_stage(self) -> None:
         """中断正在执行的阶段：先落 cancelled 再 kill 子进程。
@@ -770,6 +869,10 @@ class StageRunnerMixin:
 
         ⚠️ 必须在 `_worker_finished` 里调：阶段结束后下游要用 sizes.json/
         boxes.json 做坐标基准，攒着不写会让下一阶段读到旧数据。
+
+        ⚠️ 落点按**正在跑的那个节点**（B 方案）：同一步骤的第二个「检测文本框」
+        节点必须写自己的 ``boxes~<节点>.json``，写进主节点那份就是**覆盖别人的
+        结果**（而且它的下游永远读不到自己那批框）。
         """
         if self._annot_timer.isActive():
             self._annot_timer.stop()
@@ -777,11 +880,12 @@ class StageRunnerMixin:
         boxes, self._pending_boxes = self._pending_boxes, {}
         if not self.task_id:
             return
+        scope = self._node_scope(self.running_node)
         try:
             if sizes:
-                self.store.save_image_sizes_batch(self.task_id, sizes)
+                self.store.save_image_sizes_batch(self.task_id, sizes, **scope)
             if boxes:
-                self.store.save_detect_boxes_batch(self.task_id, boxes)
+                self.store.save_detect_boxes_batch(self.task_id, boxes, **scope)
                 # detect 批量检测中：落了一批框 → 右侧统计跟着实时重算
                 # （boxes.json 一次读盘 ~1ms，400ms 一次可忽略）
                 if self.current_stage() == "detect" and self.detect_stats.isVisible():
@@ -866,15 +970,18 @@ class StageRunnerMixin:
 
         ⚠️ 2026-10-09 合并双标签后左栏恒是 PDF 页缩略图，不再 ``set_images``
         重建清单；把产物目录交给查看器，当前页的产物一出现大图就切过去。
+        ⚠️ 目录按**正在跑的那个节点**取（B 方案）：用户跑到一半切到同一步骤的
+        另一个节点时，轮询不能跟着切——那样会把新节点的空目录当"提取结果"。
         """
         if not self.task_id:
             return
-        paths = list_stage_images(self.store.extract_output_dir(self.task_id))
+        directory = self.store.node_or_stage_output(
+            self.task_id, self.running_node or self.current_node(), "extract"
+        )
+        paths = list_stage_images(directory)
         if len(paths) != self._extract_seen:
             self._extract_seen = len(paths)
-            self.extract_result_viewer.set_extract_dir(
-                self.store.extract_output_dir(self.task_id)
-            )
+            self.extract_result_viewer.set_extract_dir(directory)
 
     def _worker_finished(self, exit_code: int, _status) -> None:
         """顶层兜底：收尾链里任何一环（store 写盘 / 读盘 / 刷新）抛异常，
@@ -897,6 +1004,7 @@ class StageRunnerMixin:
             self.process = None
             self.run_id = None
             self.running_stage = None
+            self.running_node = None
             try:
                 self._release_run()
                 self._refresh_stage_views()
@@ -905,6 +1013,9 @@ class StageRunnerMixin:
 
     def _worker_finished_impl(self, exit_code: int, _status) -> None:
         stage = self.running_stage
+        # ⚠️ 收尾全程用**局部** ``node``：下面清引用时 ``self.running_node``
+        #    会一起清空，而"页清单归谁"这类判断发生在清空之后（B 方案）。
+        node = self.running_node
         # ⚠️ 收尾第一件事：把管道里剩下的输出读完。
         # Qt 的 finished / 看门狗可能比最后一批 progress/log 事件先到（大任务时
         # GUI 本来就落在 worker 后面），而下面马上要清 self.process 与 self.run_id ——
@@ -945,15 +1056,13 @@ class StageRunnerMixin:
         if self.run_id and self.task_id:
             # worker 的 finished 事件不带 done/total（进度由结构化事件实时汇报），
             # 用最近一次进度补齐，否则历史记录会停在中间的 done 值上。
+            # ⚠️ 产物落点按**正在跑的那个节点**取（B 方案），不按当前格：
+            #    用户可能在收尾前就切到同一步骤的另一个节点去了。
             self.store.finish_stage(
                 self.task_id,
                 self.run_id,
                 status,
-                (
-                    str(self.store.stage_output_dir(self.task_id, stage))
-                    if stage
-                    else None
-                ),
+                self._output_path_for(stage, node),
                 progress=self._last_progress,
                 error=failure,
             )
@@ -971,6 +1080,7 @@ class StageRunnerMixin:
         self.process = None
         self.run_id = None
         self.running_stage = None
+        self.running_node = None
         # 进程收尾 = 释放执行权（按钮恢复可用、下一次点击可受理）。
         # 放在这里是唯一出口：正常结束、被杀、看门狗兜底都汇到本方法。
         self._release_run()
@@ -978,9 +1088,17 @@ class StageRunnerMixin:
             if stage == "extract":
                 # 页面清单只由 extract 输出决定；detect/rembg 结果留在各自目录，
                 # 不回写清单，避免污染 extract 预览和后续子任务的输入。
-                output_dir = self.store.stage_output_dir(self.task_id, stage)
+                # ⚠️ 清单与目录都按**跑的那个节点**（B 方案）：副本节点的页清单
+                #    落 ``pages~<节点>.json``，读的时候也按节点读——写 A 读 B
+                #    就是"跑完了还是空的"。
+                output_dir = self.store.node_or_stage_output(
+                    self.task_id, node, stage
+                )
                 page_count = len(
-                    self.store.refresh_pages_from_dir(self.task_id, output_dir)
+                    self.store.refresh_pages_from_dir(
+                        self.task_id, output_dir,
+                        **self._node_scope(node),
+                    )
                 )
                 self.log_view.append(f"页面清单已刷新（{page_count} 页）。")
                 self._refresh_manifest()

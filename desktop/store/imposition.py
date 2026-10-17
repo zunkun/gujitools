@@ -54,13 +54,30 @@ class ImpositionMixin:
         drafts_dir: Callable[[str], Path]
         step_enabled: Callable[..., bool]
 
-    def imposition_doc_path(self, task_id: str) -> Path:
-        """拼版文档：``tasks/<任务号>/drafts/imposition.json``。"""
-        return self.drafts_dir(task_id) / "imposition.json"
+    def imposition_doc_path(self, task_id: str, node_id: str | None = None,
+                            primary_id: str | None = None) -> Path:
+        """拼版文档：主节点是 ``drafts/imposition.json``，副本是
+        ``drafts/imposition~<节点>.json``（B 方案，2026-10-17）。
 
-    def load_imposition_doc(self, task_id: str) -> dict:
+        ⚠️ **版面按节点分**：文档里存的是"哪两张图拼成一页、各自什么位置"，
+        是**这一步的用户意图**。两个「图片拼版」节点共用一份，改一个的版面
+        另一个跟着变——而且会拿 A 的版面去合成 B 的成品页。
+
+        ⚠️ ``enabled``（"在流程中启用图片拼版"）**仍读共享那份**
+        （见 :meth:`step_enabled`）：它是**流程级**条件（状态机的 ``imposition``
+        标志没有节点上下文），不是某个节点自己的开关。
+        """
+        from desktop.steps import ports
+
+        name = ports.scoped_name("imposition.json", node_id, primary_id)
+        return self.drafts_dir(task_id) / name
+
+    def load_imposition_doc(self, task_id: str, node_id: str | None = None,
+                            primary_id: str | None = None) -> dict:
         """读拼版文档（缺失/损坏一律回落成空文档，调用点不用判空）。"""
-        return normalize_doc(read_json(self.imposition_doc_path(task_id), None))
+        return normalize_doc(
+            read_json(self.imposition_doc_path(task_id, node_id, primary_id), None)
+        )
 
     def imposition_enabled(self, task_id: str) -> bool:
         """这个任务**是否启用了拼版**（只有 ``enabled``，不看有没有拼版页）。
@@ -78,7 +95,9 @@ class ImpositionMixin:
         """
         return self.step_enabled(task_id, "imposition")
 
-    def save_imposition_doc(self, task_id: str, doc: dict) -> bool:
+    def save_imposition_doc(self, task_id: str, doc: dict,
+                            node_id: str | None = None,
+                            primary_id: str | None = None) -> bool:
         """写拼版文档，返回是否真的写了。
 
         任务目录已删除时跳过（与 ``save_pages`` 同规矩：不把已删任务重新
@@ -89,5 +108,8 @@ class ImpositionMixin:
         if not self.task_dir(task_id).exists():
             return False
         self.drafts_dir(task_id).mkdir(parents=True, exist_ok=True)
-        write_json(self.imposition_doc_path(task_id), normalize_doc(doc))
+        write_json(
+            self.imposition_doc_path(task_id, node_id, primary_id),
+            normalize_doc(doc),
+        )
         return True

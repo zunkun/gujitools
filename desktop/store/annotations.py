@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from desktop.store.json_io import read_json, write_json
 
@@ -22,6 +22,7 @@ class AnnotationMixin:
         # 宿主 TaskStore（或同级 Mixin）提供：只做类型声明，运行时零副作用。
         artifact: Callable[..., Path]
         task_dir: Callable[[str], Path]
+        task_diagram: Callable[[str], Any]
 
     def _load_json(self, path: Path) -> dict:
         data = read_json(path, {})
@@ -33,41 +34,86 @@ class AnnotationMixin:
         write_json(path, data)
 
     # ---------- 检测框 boxes.json ----------
-    def boxes_path(self, task_id: str) -> Path:
-        """检测框存储文件（任务目录下的 ``boxes.json``）。
+    def boxes_path(self, task_id: str, node_id: str | None = None,
+                   primary_id: str | None = None) -> Path:
+        """检测框存储文件（主节点：任务目录下的 ``boxes.json``）。
 
         ⚠️ 走 ``artifact("detect", "boxes")``，不写死文件名：落点的唯一真源是
         :data:`desktop.steps.ports.STAGE_LOCATIONS`。此前这里是**第二份真源**
         （``task_dir / "boxes.json"``），两处碰巧一致，改表不会同步、也永远
         不会报错——这类"双真源"是下一次数据事故的标准配方。
-        """
-        return self.artifact(task_id, "detect", "boxes")
 
-    def detect_boxes_entry(self, task_id: str, image_key: str) -> tuple[list, str] | None:
+        ⚠️ **按节点隔离**（B 方案，2026-10-17）：同一步骤可以有多个节点，
+        副本节点的检测框落在 ``boxes~<节点>.json``。不隔离两个后果都很硬：
+        ①第二个「检测文本框」节点的框会**覆盖**第一个的（同页名直接串味）；
+        ②消费者（「图片去底色」）永远只读得到主节点那份，副本节点等于白跑。
+        """
+        from desktop.steps import ports
+
+        if node_id:
+            items = self.task_diagram(task_id).node_ids_of("detect")
+            primary_id = primary_id or (items[0] if items else None)
+        path = ports.artifact_path(
+            self.task_dir(task_id), "detect", "boxes", node_id, primary_id
+        )
+        if path is None:
+            raise KeyError("detect 阶段没有登记 boxes 落点")
+        return path
+
+    def detect_boxes_entry(self, task_id: str, image_key: str,
+                           node_id: str | None = None,
+                           primary_id: str | None = None
+                           ) -> tuple[list, str] | None:
         """返回 (boxes, origin)；无记录时返回 None。origin: 'auto' | 'manual'。"""
-        data = self._load_json(self.boxes_path(task_id))
-        entry = data.get(image_key)
+        return self.boxes_entry_at(
+            self.boxes_path(task_id, node_id, primary_id), image_key
+        )
+
+    def boxes_entry_at(self, path: Path | None, image_key: str
+                       ) -> tuple[list, str] | None:
+        """读**指定文件**里某页的 ``(boxes, origin)``；文件为空/无该页返回 None。
+
+        ⚠️ 为什么需要"按路径读"这一版（B 方案）：消费方的框来自**图上喂它的
+        那个节点**（``store.node_input(node, "boxes")`` 解析出的路径），而不是
+        "本阶段的 boxes"——同一步骤多个节点时这两者不是同一个文件。
+        """
+        if path is None:
+            return None
+        entry = self._load_json(path).get(image_key)
         if not entry:
             return None
         return entry.get("boxes", []), entry.get("origin", "auto")
 
-    def detect_boxes_all(self, task_id: str) -> dict[str, tuple[list, str]]:
+    def detect_boxes_all(self, task_id: str, node_id: str | None = None,
+                         primary_id: str | None = None
+                         ) -> dict[str, tuple[list, str]]:
         """整份 boxes.json：``image_key → (boxes, origin)``，**一次读盘**。
 
         逐页统计（第二步右侧的检测结果统计）要遍历全部页面，若逐页调
         `detect_boxes_entry` 就是「读整个文件」× 页数；这里一次读完。
         """
-        data = self._load_json(self.boxes_path(task_id))
+        return self.boxes_all_at(self.boxes_path(task_id, node_id, primary_id))
+
+    def boxes_all_at(self, path: Path | None) -> dict[str, tuple[list, str]]:
+        """读**指定文件**的全部 ``image_key → (boxes, origin)``（一次读盘）。
+
+        与 :meth:`boxes_entry_at` 同一理由：消费方要读的是"上游那个节点"的
+        框文件，路径由连线解析而来。
+        """
+        if path is None:
+            return {}
+        data = self._load_json(path)
         return {
             key: (entry.get("boxes", []), entry.get("origin", "auto"))
             for key, entry in data.items() if isinstance(entry, dict)
         }
 
     def save_detect_boxes(
-        self, task_id: str, image_key: str, boxes: list, origin: str = "auto"
+        self, task_id: str, image_key: str, boxes: list, origin: str = "auto",
+        node_id: str | None = None, primary_id: str | None = None,
     ) -> None:
         """写入某页的检测框及其来源标记（auto=自动检测，manual=人工编辑）。"""
-        path = self.boxes_path(task_id)
+        path = self.boxes_path(task_id, node_id, primary_id)
         data = self._load_json(path)
         data[image_key] = {
             "boxes": boxes,
@@ -76,7 +122,9 @@ class AnnotationMixin:
         }
         self._save_json(path, data)
 
-    def save_detect_boxes_batch(self, task_id: str, entries: dict[str, list]) -> None:
+    def save_detect_boxes_batch(self, task_id: str, entries: dict[str, list],
+                                node_id: str | None = None,
+                                primary_id: str | None = None) -> None:
         """批量写入某阶段的检测框（origin=auto）：**一次读改写**。
 
         ⚠️ 为什么必须攒批：detect 跑 320 页时逐页 `save_detect_boxes` 是
@@ -88,7 +136,7 @@ class AnnotationMixin:
         """
         if not entries:
             return
-        path = self.boxes_path(task_id)
+        path = self.boxes_path(task_id, node_id, primary_id)
         data = self._load_json(path)
         updated = time.time()
         for image_key, boxes in entries.items():
@@ -104,33 +152,57 @@ class AnnotationMixin:
         self._save_json(path, data)
 
     def save_image_sizes_batch(
-        self, task_id: str, entries: dict[str, tuple[int, int]]
+        self, task_id: str, entries: dict[str, tuple[int, int]],
+        node_id: str | None = None, primary_id: str | None = None,
     ) -> None:
         """批量写入页面原始尺寸：一次读改写（理由同 save_detect_boxes_batch）。"""
         if not entries:
             return
-        path = self.sizes_path(task_id)
+        path = self.sizes_path(task_id, node_id, primary_id)
         data = self._load_json(path)
         for image_key, size in entries.items():
             data[image_key] = [int(size[0]), int(size[1])]
         self._save_json(path, data)
 
     # ---------- 页面尺寸 sizes.json ----------
-    def sizes_path(self, task_id: str) -> Path:
-        """页面原始尺寸文件：任务目录下的 sizes.json。"""
-        return self.task_dir(task_id) / "sizes.json"
+    def sizes_path(self, task_id: str, node_id: str | None = None,
+                   primary_id: str | None = None) -> Path:
+        """页面原始尺寸文件：主节点是 ``sizes.json``，副本是 ``sizes~<节点>.json``。
 
-    def save_image_size(self, task_id: str, image_key: str, width: int, height: int) -> None:
+        ⚠️ 尺寸是**框坐标与预览映射的坐标系基准**（``boxes.json`` 里的像素
+        坐标按它缩放）。同一步骤多个节点若产出的页图尺寸不同（例如两个
+        「图片提取」节点用了不同 zoom/dpi），共用一份基准就会把副本节点的框
+        按主节点的比例缩放——框画错位。所以副本节点另存一份。
+        """
+        from desktop.steps import ports
+
+        name = ports.scoped_name("sizes.json", node_id, primary_id)
+        return self.task_dir(task_id) / name
+
+    def save_image_size(self, task_id: str, image_key: str, width: int, height: int,
+                        node_id: str | None = None,
+                        primary_id: str | None = None) -> None:
         """记录某页图片的原始像素尺寸，作为框坐标与预览映射的坐标系基准。"""
-        path = self.sizes_path(task_id)
+        path = self.sizes_path(task_id, node_id, primary_id)
         data = self._load_json(path)
         data[image_key] = [int(width), int(height)]
         self._save_json(path, data)
 
-    def image_size(self, task_id: str, image_key: str) -> tuple[int, int] | None:
-        """返回某页原始像素尺寸 (width, height)；无记录时返回 None。"""
-        data = self._load_json(self.sizes_path(task_id))
+    def image_size(self, task_id: str, image_key: str,
+                   node_id: str | None = None,
+                   primary_id: str | None = None) -> tuple[int, int] | None:
+        """返回某页原始像素尺寸 (width, height)；无记录时返回 None。
+
+        ⚠️ 副本节点的记录**缺失时回落共享那份** ``sizes.json``：老任务、以及
+        "两个提取节点其实是同一份 PDF 同一套参数"这种常见情形，那边本来就有
+        正确记录，回落比"读不到尺寸 ⇒ 框不缩放"更接近用户预期。
+        """
+        scoped = self.sizes_path(task_id, node_id, primary_id)
+        data = self._load_json(scoped)
         entry = data.get(image_key)
+        if not entry and node_id and primary_id and node_id != primary_id:
+            data = self._load_json(self.sizes_path(task_id))
+            entry = data.get(image_key)
         if not entry:
             return None
         return int(entry[0]), int(entry[1])

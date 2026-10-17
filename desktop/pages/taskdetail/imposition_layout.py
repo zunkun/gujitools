@@ -66,6 +66,8 @@ class ImpositionLayoutMixin:
         _toast: Callable[..., None]
         _imposition_pages: Callable[[], list]
         _imposition_doc: Callable[[], dict[str, Any]]
+        _imposition_scope: Callable[[], dict]
+        _imposition_output_dir: Callable[[], Any]
         _imposition_switch_state: Any  # 拼版启用开关控件
         _refresh_print_source: Callable[..., None]
         _save_imposition_pages: Callable[..., None]
@@ -175,9 +177,10 @@ class ImpositionLayoutMixin:
         pages[index] = {**pages[index], "items": reset}
         if not self.task_id:
             return
-        doc = self.store.load_imposition_doc(self.task_id)
+        scope = self._imposition_scope()
+        doc = self.store.load_imposition_doc(self.task_id, **scope)
         doc["pages"] = pages
-        self.store.save_imposition_doc(self.task_id, doc)
+        self.store.save_imposition_doc(self.task_id, doc, **scope)
         view.update_current_items(reset)
         self._schedule_imposition_compose()
         self._schedule_imposition_page_thumb(index)
@@ -336,7 +339,7 @@ class ImpositionLayoutMixin:
         edit_path = None
         task_id = getattr(self, "task_id", None)
         if task_id and not getattr(self, "_imposition_dirty", False):
-            output = self.store.imposition_output_dir(task_id) / (
+            output = self._imposition_output_dir() / (
                 FILE_FMT.format(page_index + 1)
             )
             if output.is_file():
@@ -456,7 +459,7 @@ class ImpositionLayoutMixin:
             return
         path = Path(path_text)
         task_id = getattr(self, "task_id", None)
-        if task_id and path.parent == self.store.imposition_output_dir(task_id):
+        if task_id and path.parent == self._imposition_output_dir():
             timer = getattr(self, "_imposition_timer", None)
             if timer is not None:
                 timer.stop()
@@ -485,9 +488,10 @@ class ImpositionLayoutMixin:
         pages[index] = {**pages[index], "items": [dict(item) for item in items]}
         if not self.task_id:
             return
-        doc = self.store.load_imposition_doc(self.task_id)
+        scope = self._imposition_scope()
+        doc = self.store.load_imposition_doc(self.task_id, **scope)
         doc["pages"] = pages
-        self.store.save_imposition_doc(self.task_id, doc)
+        self.store.save_imposition_doc(self.task_id, doc, **scope)
         self._schedule_imposition_compose()
         self._schedule_imposition_page_thumb(index)
         self._update_imposition_status(index)
@@ -609,7 +613,7 @@ class ImpositionLayoutMixin:
         if self._imposition_composing:
             return  # 上一批还在跑；跑完会看 _imposition_dirty 再补一次
         doc = self._imposition_doc()
-        out_dir = self.store.imposition_output_dir(self.task_id)
+        out_dir = self._imposition_output_dir()
         self._imposition_dirty = False
         self._imposition_composing = True
         from desktop.workers import ImpositionComposeWorker, connect_queued
@@ -663,7 +667,7 @@ class ImpositionLayoutMixin:
         pages = self._imposition_pages()
         if not pages:
             return True
-        out_dir = self.store.imposition_output_dir(self.task_id)
+        out_dir = self._imposition_output_dir()
         if not out_dir.is_dir():
             return False
         products = [
@@ -677,8 +681,10 @@ class ImpositionLayoutMixin:
         if len(products) != len(pages):
             return False
         try:
+            # ⚠️ 比对的是**本节点**的版面文档（B 方案）：比错了文件会让"成品
+            #    是否最新"永远说不准（一个节点改版面、另一个节点误判新鲜）。
             doc_mtime = self.store.imposition_doc_path(
-                self.task_id
+                self.task_id, **self._imposition_scope()
             ).stat().st_mtime
             oldest = min(entry.stat().st_mtime for entry in products)
         except OSError:

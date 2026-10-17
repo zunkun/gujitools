@@ -112,12 +112,25 @@ class UIStateMixin:
         value = data.get("last_stage")
         return value if isinstance(value, str) and value else None
 
-    def save_last_stage(self, task_id: str, stage: str) -> bool:
-        """记录上次停留的步骤 key，返回是否真的写了。
+    def load_last_node(self, task_id: str) -> str | None:
+        """上次停留的**节点实例** id（B 方案，2026-10-17）；没记录返回 None。
+
+        同一步骤有多个节点时，"上次停在哪一步"不足以回到原位——两个「图片
+        去底色」节点共用一个步骤 key，只按 step 恢复会稳定回到主节点。
+        """
+        data = read_json(self.ui_state_path(task_id), None)
+        if not isinstance(data, dict):
+            return None
+        value = data.get("last_node")
+        return value if isinstance(value, str) and value else None
+
+    def save_last_stage(self, task_id: str, stage: str,
+                        node_id: str | None = None) -> bool:
+        """记录上次停留的步骤 key（可带节点实例 id），返回是否真的写了。
 
         任务目录已删除时跳过（与 ``save_pages``/``save_imposition_doc``
         同一条规矩：不把已删任务重新创建出来）。文件里只覆盖 ``last_stage``
-        一项，将来加别的界面状态互不影响。
+        / ``last_node`` 两项，将来加别的界面状态互不影响。
         """
         if not task_id or not stage:
             return False
@@ -127,6 +140,7 @@ class UIStateMixin:
         data = read_json(path, None)
         doc = dict(data) if isinstance(data, dict) else {}
         doc["last_stage"] = str(stage)
+        doc["last_node"] = str(node_id) if node_id else ""
         write_json(path, doc)
         return True
 

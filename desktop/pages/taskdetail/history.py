@@ -32,8 +32,15 @@ class HistoryMixin:
         flow_slots: Callable[[], tuple]
         stage_at_index: Callable[[int], str | None]
         stack_index_of: Callable[[int], int]
+        current_node: Callable[[], str | None]
+        node_of_stage: Callable[[str], str | None]
+        _node_scope: Callable[..., dict]
+        node_display_suffix: Callable[[str | None], str]
         # 历史参数预填已完成的任务号集合（宿主 init 时建，见 page.py）
         _history_prefilled: set[str]
+        #: ``control_stack`` 页号 → 上次为它复位的**节点标记**（B 方案）。
+        #: 用来判"这一页是不是换了节点"：换了就得先复位表单再回填。
+        _restored_node_of_page: dict[int, str]
 
     # 各阶段历史回填时要跳过的字段（临时/派生/运行时覆盖）
     _HISTORY_SKIP = frozenset(
@@ -104,6 +111,17 @@ class HistoryMixin:
         意图"（还没执行就切走了），比"上一次跑过的参数"更新；两者都没有时
         表单保持 `set_task` 复位后的内置默认（print 的 PDF 名/古籍名另由
         `set_source_defaults` 从源 PDF 名派生）。
+
+        ⚠️ **按节点回填**（B 方案，2026-10-17）：同一步骤的多个节点各有自己的
+        暂存与历史（``drafts/<阶段>~<节点>.json``）。回填标记 ``_history_prefilled``
+        也必须按**节点**记——原先按阶段记，切到第二个节点时会被"这个阶段回填
+        过了"直接挡掉，用户看到的是第一个节点的参数。
+
+        ⚠️⚠️ 而且**换了节点必须先把表单复位**：同一步骤的多个节点共用同一个
+        面板控件，B 节点上没有暂存也没有历史时，"什么都不做"等于把 A 节点刚才
+        手改的值留在表单里——接着点执行就是"在 B 上跑 A 的参数"。复位走面板
+        自己的 ``reset_to_default``（对第四步它还会从源 PDF 名重新派生
+        pdf_name/书名），并且它内部带 ``_applying`` 守卫，不会反过来写一份暂存。
         """
         if not self.task_id:
             return
@@ -116,14 +134,35 @@ class HistoryMixin:
         # ⚠️ page 是 control_stack 的页号（int，非负）——流程槽位表保证它在
         #    栈范围内；面板可能是 LazyPanelHost，按鸭子类型取 apply_args。
         panel: Any = self.control_stack.widget(page)
-        if stage in self._history_prefilled:
+        # ⚠️ 用 ``node_of_stage(stage)`` 而不是 ``current_node()``：前者在
+        #    "当前节点不属于这个阶段"（程序化调用/探针）时会退回**该阶段自己**
+        #    的节点——暂存文件名才不会被别的阶段的节点后缀带偏。
+        node = self.node_of_stage(stage)
+        marker = node or stage
+        if self._restored_node_of_page.get(page, "\0") != marker:
+            # 换节点（或首次进入这一页）：先复位再回填，别把上一个节点的
+            # 手改值留给这一个节点。
+            self._restored_node_of_page[page] = marker
+            reset = getattr(panel, "reset_to_default", None)
+            if callable(reset):
+                try:
+                    reset()
+                except Exception:  # noqa: BLE001 - 复位失败不该拦住回填
+                    pass
+            self._history_prefilled.discard(marker)
+        if marker in self._history_prefilled:
             return
-        self._history_prefilled.add(stage)
-        draft = self.store.load_draft(self.task_id, stage)
+        self._history_prefilled.add(marker)
+        scope = self._node_scope(node)
+        draft = self.store.load_draft(self.task_id, stage, **scope)
         if draft:
             panel.apply_args(draft)
             return
-        history = self.store.list_stage_runs(self.task_id, stage)
+        history = (
+            self.store.list_node_runs(self.task_id, node, stage)
+            if node
+            else self.store.list_stage_runs(self.task_id, stage)
+        )
         if history:
             params = {
                 k: v for k, v in history[0].get("parameters", {}).items()
@@ -132,14 +171,24 @@ class HistoryMixin:
             panel.apply_args(params)
 
     def _refresh_history_options(self) -> None:
-        """把当前阶段的历史执行记录填入下拉框（最新在前）。"""
+        """把**当前节点**的历史执行记录填入下拉框（最新在前）。
+
+        ⚠️ 按节点列（B 方案）：同一步骤的多个节点各跑各的，把 A 的历史混进
+        B 的下拉框里，用户"照那次参数再跑一遍"就会把 A 的参数填进 B。
+        """
         combo = self.history_combo
         combo.blockSignals(True)
         combo.clear()
         self._history_params: list[dict] = []
         if self.task_id:
             stage = self._current_history_stage()
-            for record in self.store.list_stage_runs(self.task_id, stage):
+            node = self.current_node()
+            records = (
+                self.store.list_node_runs(self.task_id, node, stage)
+                if node
+                else self.store.list_stage_runs(self.task_id, stage)
+            )
+            for record in records:
                 started = time.strftime(
                     "%m-%d %H:%M", time.localtime(record.get("started_at", 0))
                 )
@@ -169,4 +218,7 @@ class HistoryMixin:
         }
         panel: Any = self.control_stack.widget(self.stack_index_of(current))
         panel.apply_args(params)
-        self._toast("info", "已回填历史配置", STAGE_LABELS[stage])
+        # 提示里带上节点序号（B 方案）：同一步骤两个节点时，用户要能看出
+        # "这份历史配置填到了哪个节点上"。
+        suffix = self.node_display_suffix(self.current_node())
+        self._toast("info", "已回填历史配置", f"{STAGE_LABELS[stage]}{suffix}")

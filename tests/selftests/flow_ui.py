@@ -2843,7 +2843,9 @@ def _check_shell_task(store, pdf, app) -> None:
                                                              encoding="utf-8")
         # ⚠️ 造两个"待写"标记：set_task 开头的 flush 会把它们落盘。若换源
         #    只删文件不清标记，旧书的参数暂存/检测框就复活了。
-        probe._draft_dirty = {0}
+        #    ``_draft_dirty`` 是 **页号 → 改动那一刻的节点 id** 的字典（B 方案：
+        #    同一步骤的多个节点共用一页，落盘时要按节点归属），所以清空后是 {}。
+        probe._draft_dirty = {0: None}
         probe._pending_sizes = {"0001.jpg": (10, 20)}
         probe._pending_boxes = {"0001.jpg": [[0, 0, 5, 5]]}
         probe._reset_artifacts_for_new_source()
@@ -2851,7 +2853,7 @@ def _check_shell_task(store, pdf, app) -> None:
            not (store.task_dir(empty_tid) / "runs.json").exists()
            and probe.pages == [] and probe.pdf_page_count == 0)
         ok("换源文件连**待写标记**一起清（否则 set_task 的 flush 把旧书数据写回来）",
-           probe._draft_dirty == set() and probe._pending_sizes == {}
+           probe._draft_dirty == {} and probe._pending_sizes == {}
            and probe._pending_boxes == {})
         ok("换源文件**不碰**流程图（流程是用户配的，与源文件无关）",
            default_flow_path(store.task_dir(empty_tid)).exists())

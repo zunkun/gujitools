@@ -580,7 +580,12 @@ class StepBar(QWidget):
 
     current_changed = Signal(int)
     #: 流程条上点了「图片拼版」虚线节点（宿主据此切到占位详情）。
+    #: ⚠️ 同一步骤可以有**多个**可选节点（两个「图片拼版」），所以新增
+    #: :attr:`optional_clicked`（带格序）；本信号只为兼容老接线保留，
+    #: 只在**第一个**可选节点被点时发出。
     imposition_clicked = Signal()
+    #: 点了某个可选节点（携带它的**格序**）——多可选节点下的唯一正确寻址。
+    optional_clicked = Signal(int)
 
     def __init__(
         self,
@@ -590,6 +595,7 @@ class StepBar(QWidget):
         unmapped=None,
         bar_indices=None,
         optional_bar_index=None,
+        optionals=None,
     ):
         """按给定步骤标题逐项构建；steps 允许传生成器。
 
@@ -601,6 +607,14 @@ class StepBar(QWidget):
         ``len(steps) - 1``（拼版在「图片去底色」与「PDF排版」之间，与旧
         硬编码一致）；自定义流程把拼版排到别处时，宿主按槽位表的
         ``bar_index`` 算出来传进来，**连线/绕行线也跟着挪**。
+
+        ⚠️ **``optionals``：可选节点的完整清单**（B 方案，2026-10-17）：
+        ``[(插在第几个真实步骤之后, 格序, 标题), …]``。同一步骤可以画多个
+        可选节点（两个「图片拼版」），只传一个的话第二个在流程条上**凭空
+        消失**——用户看到的就是"任务详情没有完整显示自定义流程"。
+        不给 ``optionals`` 时按 ``optional_after`` / ``optional_bar_index``
+        推导出**一个**（既有调用方与全部现存流程一字不改）；清单为空也照样
+        建一个隐藏占位（``imposition_node`` 等属性必须始终存在）。
 
         ⚠️⚠️ **下标只有一种语义 = 步骤条格序 ``bar_index``**（``docs/tasks/bpm.md``
         「三套下标」里的第①种，**含可选节点自己占的格子**）。``bar_indices``
@@ -660,24 +674,36 @@ class StepBar(QWidget):
             if optional_bar_index is not None
             else self._optional_after + 1
         )
-        self.imposition_node = _ImpositionNode("图片拼版", self)
-        self.imposition_node.clicked.connect(self._on_imposition_click)
-        self._imposition_connector = _Connector(self)
-        # 节点**槽位**：与真实步骤等宽（stretch 1 → 间距均分），虚线框在槽位里
-        # 靠左、宽度仍贴合文字。这两件事必须分开——合成一个控件就只能二选一：
-        # 槽位等宽 = 虚线框被拉宽（用户 2026-09-30 报过），框贴合文字 = 最后一段
-        # 挤在一起（用户同日报「不均分步骤」，实测间距 406 vs 147px）。与
-        # StepItem「外框等宽拉伸 + 内层 pill 贴合内容」是同一套写法。
-        self.imposition_slot = QWidget(self)
-        slot_row = QHBoxLayout(self.imposition_slot)
-        slot_row.setContentsMargins(0, 0, 8, 0)  # 与 StepItem 外边距一致
-        slot_row.setSpacing(0)
-        slot_row.addWidget(
-            self.imposition_node,
-            0,
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-        )
-        slot_row.addStretch(0)
+        #: **全部可选节点**的规格（B 方案）：``[(after, bar_index, title), …]``。
+        #: 宿主（``view._optional_bar_specs``）按槽位表给全清单；不给时按旧参数
+        #: 推导出**一个**——这样"同一步骤只有一个可选节点"的现存流程与默认流程
+        #: 在流程条上与改造前逐像素一致。
+        if optionals is None:
+            specs = [(self._optional_after, self.imposition_index, "图片拼版")]
+        else:
+            specs = [
+                (
+                    max(-1, min(int(after), max(len(steps) - 1, 0))),
+                    int(bar_index),
+                    str(title),
+                )
+                for after, bar_index, title in optionals
+            ]
+        if not specs:
+            specs = [(self._optional_after, self.imposition_index, "图片拼版")]
+        #: 兼容面用的"那一个"格序 = **第一个**可选节点的格序（宿主给的清单是
+        #: 真源；``imposition_index`` 在下面按规格重设一次，避免两处不一致）。
+        self.imposition_index = int(specs[0][1])
+        #: 每个可选节点的控件与几何邻居——**按规格顺序**（自左向右）排列：
+        #: ``optional_nodes[0]`` 恒是"第一个"可选节点（``imposition_node`` 兼容
+        #: 面指向它）。所以下面虽然**从右往左插**（插入点才不会被推位），却按
+        #: 原下标写回。
+        self.optional_nodes: list[_ImpositionNode] = [None] * len(specs)  # type: ignore[list-item]
+        self.optional_slots: list[QWidget] = [None] * len(specs)  # type: ignore[list-item]
+        self.optional_connectors: list[_Connector] = [None] * len(specs)  # type: ignore[list-item]
+        self.optional_afters: list[int] = [spec[0] for spec in specs]
+        self.optional_bar_indices: list[int] = [spec[1] for spec in specs]
+        self.optional_front_connectors: list[_Connector | None] = [None] * len(specs)
 
         row = QHBoxLayout(self)
         row.setContentsMargins(10, 6, 10, 6)
@@ -700,38 +726,69 @@ class StepBar(QWidget):
                 connector = _Connector(self)
                 self.connectors.append(connector)
                 row.addWidget(connector, 0, Qt.AlignmentFlag.AlignVCenter)
-        # 把「拼版节点 + 它后面的连接线」插到**第 ``_optional_after`` 个真实
-        # 步骤之后**：布局此时为 [item0, conn0, item1, conn1, ...]，第 k 个
-        # 真实步骤占下标 ``2k``，它**后面**那条连接件占 ``2k+1``。所以要
-        # "插在第 k 个之后"= 插到下标 ``2k+2``（即下一个步骤的原位置）。
+        # 把「可选节点 + 它后面的连接线」逐个插到**它自己那个真实步骤之后**：
+        # 布局此时为 [item0, conn0, item1, conn1, ...]，第 k 个真实步骤占下标
+        # ``2k``，它**后面**那条连接件占 ``2k+1``。所以要"插在第 k 个之后"
+        # = 插到下标 ``2k+2``（即下一个步骤的原位置）。
         # 默认流程 ``_optional_after = len(steps)-1`` 时正好等于旧口径的
         # ``row.count()-1``（两者都是"最后一项"的位置，完全等价）。
         # ⚠️ 必须是 2k+2：算成 2k+1 会插到 conn[k] 前面，箭头全跑到
         #    虚线框后面（用户截图报过：虚线前面没有箭头、后面挤两个）。
-        insert_at = 2 * self._optional_after + 2
-        row.insertWidget(
-            insert_at, self._imposition_connector, 0, Qt.AlignmentFlag.AlignVCenter
-        )
-        # 槽位 stretch **1**：与真实步骤平分多余空间（间距才均匀）；虚线框自身
-        # 靠 Maximum 策略贴在槽位左侧，不会被拉宽。
-        row.insertWidget(insert_at, self.imposition_slot, 1)
-        #: 节点**前面**那条连接线——布局上就是紧挨着槽位左边的那条，也就是原本的
-        #  「去底色→PDF」。绕行线的起终点现取左右胶囊几何（见 _bypass_points），
-        #  本属性只用于标认「前端那格」；线本身的点亮/虚线由
-        #  ``_connector_segments`` 按 ``_optional_after`` 判定。
-        # ⚠️ 可选节点插在**最前**（after = -1）时它左边没有任何连接件；
-        #    插在**最后一步之后**时同理（左侧直接是 item[n-1]），取最后一条
-        #    常规连接件，没有则 None。
-        if self._optional_after < 0:
-            self.imposition_front_connector = None
-        elif self._optional_after < len(self.connectors):
-            self.imposition_front_connector = self.connectors[self._optional_after]
-        else:
-            self.imposition_front_connector = (
-                self.connectors[-1] if self.connectors else None
+        # ⚠️ 多个可选节点时**按下标从大到小插**：先插靠右的，靠左的插入点
+        #    才不会被前面的插入推位（插在同一个 after 之后的多个按原顺序插）。
+        for order in sorted(range(len(specs)), key=lambda i: -specs[i][0]):
+            after, bar_index, title = specs[order]
+            node = _ImpositionNode(title, self)
+            node.clicked.connect(
+                lambda _checked=False, index=bar_index: self._on_optional_click(index)
             )
-        self.imposition_node.setVisible(False)
-        self._imposition_connector.setVisible(False)
+            connector = _Connector(self)
+            # 节点**槽位**：与真实步骤等宽（stretch 1 → 间距均分），虚线框在槽位里
+            # 靠左、宽度仍贴合文字。这两件事必须分开——合成一个控件就只能二选一：
+            # 槽位等宽 = 虚线框被拉宽（用户 2026-09-30 报过），框贴合文字 = 最后一段
+            # 挤在一起（用户同日报「不均分步骤」，实测间距 406 vs 147px）。与
+            # StepItem「外框等宽拉伸 + 内层 pill 贴合内容」是同一套写法。
+            slot = QWidget(self)
+            slot_row = QHBoxLayout(slot)
+            slot_row.setContentsMargins(0, 0, 8, 0)  # 与 StepItem 外边距一致
+            slot_row.setSpacing(0)
+            slot_row.addWidget(
+                node, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+            )
+            slot_row.addStretch(0)
+            insert_at = 2 * after + 2
+            row.insertWidget(
+                insert_at, connector, 0, Qt.AlignmentFlag.AlignVCenter
+            )
+            # 槽位 stretch **1**：与真实步骤平分多余空间（间距才均匀）；虚线框自身
+            # 靠 Maximum 策略贴在槽位左侧，不会被拉宽。
+            row.insertWidget(insert_at, slot, 1)
+            #: 节点**前面**那条连接线——布局上就是紧挨着槽位左边的那条，也就是原本的
+            #  「去底色→PDF」。绕行线的起终点现取左右胶囊几何（见 _bypass_points），
+            #  本属性只用于标认「前端那格」。
+            # ⚠️ 可选节点插在**最前**（after = -1）时它左边没有任何连接件；
+            #    插在**最后一步之后**时同理（左侧直接是 item[n-1]），取最后一条
+            #    常规连接件，没有则 None。
+            if after < 0:
+                front = None
+            elif after < len(self.connectors):
+                front = self.connectors[after]
+            else:
+                front = self.connectors[-1] if self.connectors else None
+            node.setVisible(False)
+            connector.setVisible(False)
+            self.optional_nodes[order] = node
+            self.optional_slots[order] = slot
+            self.optional_connectors[order] = connector
+            self.optional_front_connectors[order] = front
+        # 兼容面：老代码/自测只认"那一个拼版节点"，一律指向**第一个**可选节点。
+        # ⚠️ 别删这几个属性：``detail_structure`` / ``last_stage`` / ``flow_ui``
+        #    都直接读 ``step_bar.imposition_node`` / ``imposition_slot`` /
+        #    ``_imposition_connector`` / ``imposition_front_connector``。
+        self.imposition_node = self.optional_nodes[0]
+        self.imposition_slot = self.optional_slots[0]
+        self._imposition_connector = self.optional_connectors[0]
+        self.imposition_front_connector = self.optional_front_connectors[0]
         row.addStretch(0)
         self._sync()
 
@@ -759,45 +816,58 @@ class StepBar(QWidget):
         - 节点隐藏（area≠1）时前端那格回归普通的「去底色 → PDF」常规段。
         """
         n = len(self.buttons)
-        shown = self._imposition_shown()
-        flow = shown and self._imposition_flow
-        # ⚠️ 可选节点两侧的真实步骤（默认流程 = [-2] 与 [-1]）。插在最后一步
-        #    之后时没有右邻居，左侧那格就是最后一步。
-        after = self._optional_after
-        segments = []
-        # ⚠️ 上界取 ``n`` 而不是 ``n-1``：可选节点可以排在**最后一个真实
-        #    步骤之后**（``after == n-1``），那时它的左邻居那一段恰好在
-        #    ``index == n-1`` 处，用 ``range(n-1)`` 会漏掉这段（连接线断掉）。
+        flow = self._imposition_flow
+        # ⚠️ 把整条流程条摊成**自左向右的序列**（真实步骤 + 各自后面挂着的可选
+        #    节点），再逐对相邻元素出段：这样"多个可选节点、甚至同一位置挂多个"
+        #    都自然成立，不必为每种排布写一遍 if。
+        seq: list[tuple[str, int]] = []   # ("real", 位置) / ("opt", 可选节点序号)
+        for order, after in enumerate(self.optional_afters):
+            if after < 0 and not self.optional_nodes[order].isHidden():
+                seq.append(("opt", order))
         for index in range(n):
-            # ⚠️ ``_completed`` 存的是**格序**，这里 ``index`` 是位置——
-            #    可选节点之前两者相等，之后差一段，必须查表（用户 2026-10-06
-            #    报"最后一段连接线永远是灰的"）。
-            done = self._bar_of_pos[index] in self._completed
-            if shown and index == after:
-                segments.append(
-                    (
-                        self.buttons[index].pill,
-                        self.imposition_node,
-                        flow and done,
-                        not flow,
+            seq.append(("real", index))
+            for order, after in enumerate(self.optional_afters):
+                if after == index and not self.optional_nodes[order].isHidden():
+                    seq.append(("opt", order))
+        segments = []
+        for k in range(len(seq) - 1):
+            left_kind, left_ref = seq[k]
+            right_kind, right_ref = seq[k + 1]
+            if left_kind == "real":
+                # ⚠️ ``_completed`` 存的是**格序**，这里 index 是位置——
+                #    可选节点之前两者相等，之后差一段，必须查表（用户 2026-10-06
+                #    报"最后一段连接线永远是灰的"）。
+                done = self._bar_of_pos[left_ref] in self._completed
+                if right_kind == "opt":
+                    # 进可选节点那一段：支路生效才点亮，否则灰虚线（真实流向
+                    # 走节点上方的绕行线）。
+                    segments.append(
+                        (
+                            self.buttons[left_ref].pill,
+                            self.optional_nodes[right_ref],
+                            flow and done,
+                            not flow,
+                        )
                     )
-                )
-            elif index < n - 1:
-                segments.append(
-                    (
-                        self.buttons[index].pill,
-                        self.buttons[index + 1].pill,
-                        done,
-                        False,
+                else:
+                    segments.append(
+                        (
+                            self.buttons[left_ref].pill,
+                            self.buttons[right_ref].pill,
+                            done,
+                            False,
+                        )
                     )
+            else:
+                # 从左/上一个可选节点出发：一律跟"支路生效"走。
+                target = (
+                    self.optional_nodes[right_ref]
+                    if right_kind == "opt"
+                    else self.buttons[right_ref].pill
                 )
-        if shown:
-            if after < n - 1:
                 segments.append(
-                    (self.imposition_node, self.buttons[after + 1].pill, flow, not flow)
+                    (self.optional_nodes[left_ref], target, flow, not flow)
                 )
-            # after == n-1（可选节点排在最后一步之后）：它右侧没有真实
-            # 步骤可连，不补段（补了会画出指向虚空的线）。
         return segments
 
     def _draw_connectors(self, painter) -> None:
@@ -838,32 +908,39 @@ class StepBar(QWidget):
             painter.drawPath(arrow)
 
     def _draw_imposition_bypass(self, painter) -> None:
-        """「去底色 → PDF排版」绕行线：拼版节点在流程里但**未生效**时画。
+        """「去底色 → PDF排版」绕行线：可选节点在流程里但**未生效**时画。
 
         此刻第四步实际取的是第三步产物（``print_source_dir``），主线必须在
         节点上方绕过去，否则流程条上「去底色」和「PDF排版」之间没有真实
         连接。颜色规则与普通连接线一致：左侧步骤（去底色）完成即绿。
         拼版支路自己的两条线此时是灰色虚线（见 ``_sync``）。
-        """
-        if self._imposition_shown() is False or self._imposition_flow:
-            return
-        points = self._bypass_points()
-        if points is None:
-            return
-        done = self._optional_after in self._completed
-        painter.setPen(
-            QPen(
-                QColor(GREEN if done else "#d6d6d6"),
-                2,
-                Qt.PenStyle.SolidLine,
-                Qt.PenCapStyle.RoundCap,
-                Qt.PenJoinStyle.RoundJoin,
-            )
-        )
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawPath(_rounded_polyline(points))
 
-    def _bypass_points(self) -> list[tuple[float, float]] | None:
+        ⚠️ **每个可选节点各画一条**（B 方案）：两个「图片拼版」节点各自绕开
+        自己那一段，不是只画第一个的。
+        """
+        if self._imposition_flow:
+            return
+        for order in range(len(self.optional_nodes)):
+            if self.optional_nodes[order].isHidden():
+                continue
+            points = self._bypass_points(order)
+            if points is None:
+                continue
+            done = self.optional_afters[order] in self._completed
+            painter.setPen(
+                QPen(
+                    QColor(GREEN if done else "#d6d6d6"),
+                    2,
+                    Qt.PenStyle.SolidLine,
+                    Qt.PenCapStyle.RoundCap,
+                    Qt.PenJoinStyle.RoundJoin,
+                )
+            )
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawPath(_rounded_polyline(points))
+
+    def _bypass_points(self, order: int = 0
+                       ) -> list[tuple[float, float]] | None:
         """绕行线折点（**纯 float 元组**，见 ``_rounded_polyline`` 的警示）：
         **从「去底色」胶囊中心出发** → 向右 → **直角上折** → 向右越过节点
         上方 → **直角下折** → 向右接到「PDF排版」胶囊左缘——**全部横平
@@ -878,16 +955,18 @@ class StepBar(QWidget):
         上下竖线离节点左右缘各 ``_BYPASS_CLEAR`` px（用户同日报「不要贴着
         按钮边缘拐弯」），且不越进左右胶囊（至少留 6px）；空间不够时往里
         收，竖线贴上仍放不下就不画（返回 None）。
+
+        ``order`` 是第几个可选节点（默认第一个——老调用方只认那一个）。
         """
-        node = self.imposition_node
+        node = self.optional_nodes[order]
         if node.width() < 5:
             return None
-        # ⚠️ 左右邻居按 ``_optional_after`` 查（默认流程 = buttons[-2] /
+        # ⚠️ 左右邻居按该节点自己的 ``after`` 查（默认流程 = buttons[-2] /
         #    buttons[-1]）。可选节点排在**最前**（after = -1）时没有左邻居
         #    ——没有"绕过它接到下一步"的起点（不该用 buttons[-1] 兜底，
         #    Python 负下标会静默取到最后一步）；排在最后一步之后时没有右
         #    邻居。两种情况都返回 None 不画。
-        after = self._optional_after
+        after = self.optional_afters[order]
         if after < 0 or after >= len(self.buttons) - 1:
             return None
         left_pill = self.buttons[after].pill
@@ -926,9 +1005,20 @@ class StepBar(QWidget):
         self.current_changed.emit(index)
 
     def _on_imposition_click(self) -> None:
-        self._current = self.imposition_index
+        self._on_optional_click(self.imposition_index)
+
+    def _on_optional_click(self, bar_index: int) -> None:
+        """某个可选节点被点击：高亮切到**它自己的格序**并发信号。
+
+        ⚠️ 同一步骤有多个可选节点时，"点的是哪一个"只有格序能回答——宿主
+        据此切到对应节点详情（``view`` 接 :attr:`optional_clicked`）。
+        ``imposition_clicked`` 只为老接线保留，且只在第一个节点上发。
+        """
+        self._current = int(bar_index)
         self._sync()
-        self.imposition_clicked.emit()
+        self.optional_clicked.emit(int(bar_index))
+        if int(bar_index) == self.imposition_index:
+            self.imposition_clicked.emit()
 
     def set_current(self, index: int) -> None:
         """设置当前步骤的**格序**并同步各步骤高亮与徽标。"""
@@ -951,7 +1041,7 @@ class StepBar(QWidget):
             item.set_title(text)
 
     def set_imposition_visible(self, visible: bool) -> None:
-        """显示/隐藏「图片拼版」虚线节点（随第三步区域模式是否为 1）。
+        """显示/隐藏**全部**可选（虚线）节点（随第三步区域模式是否为 1）。
 
         ⚠️ 槽位要一起隐藏：只藏节点的话，那格等宽槽位还占着位置，流程条上会
         留出一段空白（第四步/PDF 看起来被推远）。
@@ -959,9 +1049,12 @@ class StepBar(QWidget):
         时「去底色 → PDF排版」的线要贴着节点上方绕过去（见
         ``_draw_imposition_bypass``），不预留高度弧线会顶到卡片边框。
         """
-        self.imposition_node.setVisible(visible)
-        self.imposition_slot.setVisible(visible)
-        self._imposition_connector.setVisible(visible)
+        for node in self.optional_nodes:
+            node.setVisible(visible)
+        for slot in self.optional_slots:
+            slot.setVisible(visible)
+        for connector in self.optional_connectors:
+            connector.setVisible(visible)
         margins = self._row.contentsMargins()
         self._row.setContentsMargins(
             margins.left(), 18 if visible else 6, margins.right(), margins.bottom()
@@ -969,8 +1062,13 @@ class StepBar(QWidget):
         self._sync()
 
     def set_imposition_selected(self, selected: bool) -> None:
-        """「图片拼版」是否被选择（副标题/徽标口径，不动连接线/绕行线）。"""
-        self.imposition_node.set_selected(selected)
+        """「图片拼版」是否被选择（副标题/徽标口径，不动连接线/绕行线）。
+
+        ⚠️ 选择态是**流程级开关**（"在流程中启用图片拼版"，只有一个），所以
+        全部可选节点一起显示同一个选择态。
+        """
+        for node in self.optional_nodes:
+            node.set_selected(selected)
         self._sync()
 
     def set_imposition_active(self, active: bool) -> None:
@@ -985,7 +1083,8 @@ class StepBar(QWidget):
         active = bool(active)
         if active != self._imposition_flow:
             self._imposition_flow = active
-            self.imposition_node.set_flow_active(active)
+            for node in self.optional_nodes:
+                node.set_flow_active(active)
             self._sync()
 
     def set_step_status(
@@ -1030,16 +1129,15 @@ class StepBar(QWidget):
         self._sync()
 
     def _imposition_shown(self) -> bool:
-        """拼版节点是否被**配置**为显示。
+        """**有任意一个**可选节点被配置为显示。
 
         ⚠️ 用 ``isHidden()``（只反映显式 ``setVisible(False)``）而不是
         ``isVisible()``（还要求整条窗口已经 show）：构建期/未显示时算出来的
         "未显示"会把两侧连接线压灰，而之后不一定再有 ``_sync`` 把它们点亮。
         """
-        return not self.imposition_node.isHidden()
+        return any(not node.isHidden() for node in self.optional_nodes)
 
     def _sync(self) -> None:
-        imposition_current = self._current == self.imposition_index
         for pos, item in enumerate(self.buttons):
             # ⚠️ 徽标数字按**真实步骤序**（``pos + 1``，不含可选节点），
             #    高亮判定按**格序**（``item.index``）。两者是不同的东西：
@@ -1047,7 +1145,8 @@ class StepBar(QWidget):
             #    徽标是 4 而格序是 4——拼版占了第 3 格）。
             item.badge.set_state(pos + 1, item._badge_status)
             item.set_current(item.index == self._current)
-        self.imposition_node.set_current(imposition_current)
+        for bar_index, node in zip(self.optional_bar_indices, self.optional_nodes):
+            node.set_current(bar_index == self._current)
         # 连接线（含拼版两侧）的点亮/虚线状态由 ``_connector_segments`` 在
         # 绘制时从 ``_completed`` / ``_imposition_flow`` 现算——控件不再存状态。
         self.update()

@@ -41,6 +41,8 @@ class ParamDraftMixin:
         task_id: str | None
         control_stack: QStackedWidget
         stage_at_stack_index: Callable[[int], str | None]
+        current_node: Callable[[], str | None]
+        _node_scope: Callable[..., dict]
 
     # 编辑防抖：边距/颜色/跳过页都是逐字符输入，每敲一下就写盘没必要
     _DRAFT_DEBOUNCE_MS = 400
@@ -55,7 +57,10 @@ class ParamDraftMixin:
         store 的别名，今天同值，但那是巧合不是约定（自测 ``steps_components``
         才钉住两者相等）。
         """
-        self._draft_dirty: set[int] = set()
+        # ⚠️ 键是 **control_stack 页号 → 改动那一刻的节点 id**（B 方案）：
+        #    同一步骤的多个节点共用一页，只按页号记的话，切到同一步骤的另一个
+        #    节点时"待写的改动"会被写到新节点名下（A 的参数存进 B 的暂存）。
+        self._draft_dirty: dict[int, str | None] = {}
         # ⚠️ Mixin 本体是普通类，类型检查器看不到宿主是 QObject，故收窄后当
         #    QTimer 的 parent 用（运行时是恒等）。
         self._draft_timer = QTimer(cast(QObject, self))
@@ -77,22 +82,29 @@ class ParamDraftMixin:
         panel.param_edited.connect(partial(self._on_param_edited, index))
 
     def _on_param_edited(self, index: int) -> None:
-        """某阶段有改动：记下待写并重启防抖计时。"""
-        self._draft_dirty.add(index)
+        """某阶段有改动：记下待写（连同**当前节点**）并重启防抖计时。
+
+        ⚠️ 节点在这一刻就定下来（B 方案）：400ms 内用户可能切到同一步骤的
+        另一个节点，落盘时 ``current_node()`` 已经不是改参数的那个了。
+        """
+        self._draft_dirty[index] = self.current_node()
         self._draft_timer.start()
 
     def _flush_param_drafts(self) -> None:
         """把待写的暂存落盘（切阶段/切任务/退出前也要调，别丢最后 400ms 的输入）。"""
-        dirty, self._draft_dirty = self._draft_dirty, set()
-        for index in sorted(dirty):
-            self.save_stage_draft(index)
+        dirty, self._draft_dirty = self._draft_dirty, {}
+        for index, node in sorted(dirty.items()):
+            self.save_stage_draft(index, node)
 
-    def save_stage_draft(self, index: int) -> bool:
+    def save_stage_draft(self, index: int, node_id: str | None = None) -> bool:
         """暂存某阶段当前表单值；参数非法/没有任务时返回 False（不覆盖旧暂存）。
 
         ⚠️ ``index`` 是 **control_stack 的页号**（不是步骤条格序）。暂存按
-        **运行阶段 key** 落盘，所以页号→阶段要走槽位表的反查；自定义流程
-        换了顺序后，页号 N 不再固定等于 ``STAGES[N]``。
+        **运行阶段 key + 节点**落盘，所以页号→阶段要走槽位表的反查；自定义
+        流程换了顺序后，页号 N 不再固定等于 ``STAGES[N]``。
+
+        ``node_id`` 缺省 = 当前节点（:meth:`current_node`）：同一页上的多个
+        节点各有自己的暂存文件（``drafts/<阶段>~<节点>.json``）。
         """
         if not self.task_id:
             return False
@@ -106,4 +118,7 @@ class ParamDraftMixin:
         stage = self.stage_at_stack_index(index)
         if stage is None:
             return False
-        return self.store.save_draft(self.task_id, stage, params)
+        target = self.current_node() if node_id is None else node_id
+        return self.store.save_draft(
+            self.task_id, stage, params, **self._node_scope(target)
+        )

@@ -786,9 +786,241 @@ class TaskMixin:
             stage, port, active
         )
 
+    # ---------- 节点实例（B 方案：同阶段可以有多个节点）----------
+    @staticmethod
+    def _stage_live(stage: str, active: set[str]) -> bool:
+        """某运行阶段（或它所属的**界面格**）在不在本流程里（`rembg_submit`
+        跟着 `rembg` 那一格一起活着，见 ``ports.STAGE_STEPS``）。"""
+        if stage in active:
+            return True
+        return ports.STAGE_STEPS.get(stage, stage) in {
+            ports.STAGE_STEPS.get(s, s) for s in active
+        }
+
+    @staticmethod
+    def _primary_of_stage(diagram, stage: str) -> str | None:
+        """运行阶段 → 它的**主节点** id（`rembg_submit` 映射到 `rembg` 节点）。"""
+        step_key = ports.STAGE_STEPS.get(stage, stage)
+        return diagram.primary_of(step_key)
+
+    def _node_ref_path(self, task_id: str, ref: str | None, port: str,
+                       diagram) -> Path | None:
+        """把"产出方引用"解析成产物绝对路径。
+
+        ``ref`` 可以是**节点 id**、**阶段名**（静态声明兜底/旧调用方）或任务
+        哨兵（:data:`ports.SUPPLY_TASK_SOURCE` / :data:`ports.SUPPLY_TASK_INPUT`）。
+        """
+        if ref is None:
+            return None
+        task_dir = self.task_dir(task_id)
+        if ref == ports.SUPPLY_TASK_SOURCE:
+            return None
+        if ref == ports.SUPPLY_TASK_INPUT:
+            return ports.task_input_dir(task_dir)
+        item = diagram.node(ref)
+        if item is not None and item.stage:
+            effective = ports.fold_forward(item.stage, port)
+            return ports.artifact_path(
+                task_dir, effective, port, ref, diagram.primary_of(item.stage)
+            )
+        # 阶段名兜底：映射到该阶段的主节点（没有主节点则用旧落点）
+        step_key = ports.STAGE_STEPS.get(ref, ref)
+        primary = diagram.primary_of(step_key)
+        effective = ports.fold_forward(step_key, port)
+        return ports.artifact_path(task_dir, effective, port, primary, primary)
+
+    def node_supplier(self, task_id: str, node_id: str, port: str,
+                      imposition_active: bool = False) -> str | None:
+        """本任务里某**节点实例**某端口的实际供给方（返回**节点 id** 或哨兵）。
+
+        与 :meth:`stage_supplier` 同一套规则（图优先、静态兜底），区别是把
+        "图说的产出方"落到**节点粒度**：同阶段有多个节点时，喂给 ``node_id``
+        的是图上那个**具体节点**，而不是"整阶段的主节点"。
+        """
+        from desktop.steps.scheduler import Scheduler
+
+        diagram = self.task_diagram(task_id)
+        item = diagram.node(node_id)
+        if item is None or not item.stage:
+            return None
+        stage = item.stage
+        flags = self.scheduler_flags(task_id, imposition_active)
+        active = set(Scheduler.from_diagram(diagram, flags).stages)
+        # ⚠️ **不在这里判"消费方在不在流程里"**（与 :meth:`stage_supplier` 保持
+        #    一致）：那一步该由 runner 的状态机守卫去说，而这里要能回答
+        #    "**如果**要跑这一步，它的输入在哪"。
+        #    反例（2026-10-17 自测抓到"弹窗里删除的图片没落盘"）：拼版开关没勾时
+        #    ``imposition`` 不在 ``active`` 里，早退会让 ``node_input`` 拿不到
+        #    上游、回落成入口图片目录（``stages/input``，空的）——拼版详情页于是
+        #    "一张候选都没有"，连「删除图片」都无从落盘。``stage_supplier`` 靠
+        #    **静态声明兜底**（下面第 2 步）照样给出 ``stages/rembg``，这里也一样。
+
+        declared = ports.supplier_of(stage, port)
+        if stage == "print" and port == "pages":
+            declared = ports.print_pages_supplier(bool(imposition_active))
+        if declared == ports.SUPPLY_TASK_SOURCE:
+            return declared
+        if port not in ports.stage_inputs(stage):
+            return declared
+        # ⚠️ **图上的入口节点（一条入边都没有）就是不接上游**，别退回静态声明
+        #    （B 方案，2026-10-17 用户报障）：用户画的"图片拼版 → 检测文本框 →…"
+        #    里第一个「图片拼版」没有任何上游，本该回落到入口图片目录
+        #    （``stages/input/``）；按静态声明兜底会给出 ``stages/rembg``
+        #    ——那是**下游**才有的目录，结果第一步"看着有输入、跑起来找不到图"。
+        if not diagram.incoming(node_id):
+            return None
+
+        # 1. 图说了算（图上恰好一个产出方）
+        producers = diagram.producer_nodes_of(node_id, port, active)
+        if len(producers) == 1:
+            return producers[0]
+        # 2. 图说不清 ⇒ 退回静态声明 + 条件（把声明的阶段映射成它的主节点）
+        if declared is not None and self._stage_live(declared, active):
+            return declared
+        if producers:
+            return producers[0]
+        return diagram.nearest_producer_node(node_id, port, active)
+
+    def node_supplier_stage(self, task_id: str, node_id: str, port: str,
+                            imposition_active: bool = False) -> str | None:
+        """节点粒度的供给方，但结果折成**阶段 key**（不是节点 id）。
+
+        :meth:`node_supplier` 回答的是"喂你的是哪个**节点**"（B 方案寻址要用
+        节点 id）；而"记进 runs 历史、供旧数据判定比对"的那个字段
+        （``args["source_stage"]`` ← :func:`desktop.services.stale_chain.print_source_switched`）
+        历来是**阶段 key**（``rembg_submit`` / ``imposition``）。两者不是一回事，
+        所以这里折一道：节点 → 它的运行阶段 →（同格多动作再折）该端口成品的
+        产出阶段。哨兵值原样透传。
+        """
+        ref = self.node_supplier(task_id, node_id, port, imposition_active)
+        if ref is None or ref.startswith("<"):
+            return ref
+        stage = self.node_stage_of(task_id, ref)
+        if stage is None:
+            return ref if ref in ports.STAGE_STEPS else None
+        return ports.fold_forward(stage, port)
+
+    def node_input(self, task_id: str, node_id: str, port: str = "pages",
+                   imposition_active: bool = False) -> Path | None:
+        """某**节点实例**某端口输入的绝对路径（带**入口回落**）。
+
+        与 :meth:`stage_input` 同构，只是把消费方定位到**节点**：没有上游而该
+        节点确实吃 ``pages`` 时，回落到入口图片目录（``stages/input/``）。
+        """
+        diagram = self.task_diagram(task_id)
+        ref = self.node_supplier(task_id, node_id, port, imposition_active)
+        if ref is None and port == "pages":
+            item = diagram.node(node_id)
+            if item is not None and item.stage and "pages" in ports.stage_inputs(
+                item.stage
+            ):
+                return self.task_input_dir(task_id)
+        return self._node_ref_path(task_id, ref, port, diagram)
+
+    def node_output(self, task_id: str, node_id: str, port: str = "pages",
+                    stage: str | None = None) -> Path:
+        """某**节点实例**某端口产物的绝对路径（**落点的唯一入口**）。
+
+        ``stage`` 缺省取节点自身的阶段；显式给时表示"同一步骤的第二个动作"
+        （如 ``rembg`` 节点的 ``rembg_submit`` 提交落点）。主节点沿用旧落点，
+        副本落到 ``~<node_id>`` 后缀的副本落点。
+        """
+        diagram = self.task_diagram(task_id)
+        item = diagram.node(node_id)
+        if item is None or not item.stage:
+            raise KeyError(f"节点 {node_id!r} 没有对应的运行阶段")
+        effective = stage or item.stage
+        path = ports.artifact_path(
+            self.task_dir(task_id), effective, port, node_id,
+            diagram.primary_of(item.stage),
+        )
+        if path is None:
+            raise KeyError(f"阶段 {effective!r} 没有登记端口 {port!r} 的落点")
+        return path
+
+    def required_node_inputs(self, task_id: str, node_id: str,
+                             imposition_active: bool = False) -> tuple[str, ...]:
+        """某**节点实例**真正要等就位的输入端口（节点粒度的就绪判据）。"""
+        from desktop.steps.scheduler import Scheduler
+
+        diagram = self.task_diagram(task_id)
+        flags = self.scheduler_flags(task_id, imposition_active)
+        active = Scheduler.from_diagram(diagram, flags).stages
+        return ports.node_blocking_inputs(diagram, node_id, set(active))
+
+    def node_ids(self, task_id: str) -> tuple[str, ...]:
+        """本任务流程图里**全部可运行节点**的 id（拓扑序）——界面按它建页。"""
+        return tuple(nid for nid, _stage in self.task_diagram(task_id).node_order())
+
+    def node_or_stage_output(self, task_id: str, node_id: str | None,
+                             stage: str, port: str = "pages") -> Path:
+        """**落点的统一入口**：有节点按节点取，没节点/没登记回落该阶段的旧落点。
+
+        主节点与"没有节点信息"（程序化调用、旧测试探针）都拿到 ``stages/<阶段>``
+        ——与改造前逐字节相同。副本节点拿到 ``stages/<阶段>~<节点>``。
+
+        调用方（执行端、取图、缩略图）一律走它，别自己 ``if node:`` 分叉：
+        分叉处漏一处，就是"副本节点跑完产物写到主节点去了"。
+        """
+        if node_id:
+            try:
+                return self.node_output(task_id, node_id, port, stage)
+            except KeyError:
+                pass
+        return self.artifact(task_id, stage, port)
+
+    def scoped_stage_dir(self, task_id: str, node_id: str | None,
+                         name: str) -> Path:
+        """``stages/<name>`` 的**节点作用域**版本。
+
+        主节点/无节点 ⇒ ``stages/<name>``（零迁移）；副本 ⇒
+        ``stages/<name>~<节点>``。用于**没有登记在 STAGE_LOCATIONS 里**的
+        辅助目录（如 detect 的标注图目录）。
+        """
+        scope = self.scoped_file_scope(task_id, node_id)
+        return (
+            self.task_dir(task_id)
+            / "stages"
+            / ports.scoped_name(name, scope["node_id"], scope["primary_id"])
+        )
+
+    def node_stage_of(self, task_id: str, node_id: str) -> str | None:
+        """节点实例 → 它的**运行阶段**（不是界面步骤 key）；认不出返回 ``None``。"""
+        try:
+            item = self.task_diagram(task_id).node(node_id)
+        except Exception:  # noqa: BLE001 - 图坏了不该拖垮寻址
+            return None
+        return item.stage if item is not None else None
+
+    def node_primary_of(self, task_id: str, node_id: str) -> str | None:
+        """节点实例 → 它所属阶段的**主节点** id（"沿用旧路径"的那一个）。"""
+        stage = self.node_stage_of(task_id, node_id)
+        if not stage:
+            return None
+        try:
+            return self.task_diagram(task_id).primary_of(stage)
+        except Exception:  # noqa: BLE001
+            return None
+
+    def scoped_file_scope(self, task_id: str, node_id: str | None
+                          ) -> dict[str, str | None]:
+        """给 ``load_pages``/``save_draft``/``boxes_path`` 这类按节点隔离的读写
+        用的**作用域参数**：``{"node_id": …, "primary_id": …}``。
+
+        统一在这里算，调用方不必各自去查"谁是主节点"——那是**只有图知道**的
+        事实（见 :meth:`~desktop.steps.bpmn_diagram.FlowDiagram.primary_of`），
+        散在各处迟早漂移。``node_id`` 为空时给 ``{"node_id": None,
+        "primary_id": None}``，所有读写都落回**旧路径**（零迁移）。
+        """
+        if not node_id:
+            return {"node_id": None, "primary_id": None}
+        return {
+            "node_id": node_id,
+            "primary_id": self.node_primary_of(task_id, node_id),
+        }
+
     def step_enabled(self, task_id: str, step: str) -> bool:
         """某个**可选步骤**的用户开关（``drafts/<步骤>.json`` 的 ``enabled``）。
-
         ⚠️ 这是"条件开关"的**通用读法**：以前只有拼版有开关（读
         ``drafts/imposition.json`` 的 ``enabled``），`store.imposition_enabled`
         与详情页的 ``imposition_active()`` 各读各的。再加一个可选步骤就要
@@ -832,8 +1064,9 @@ class TaskMixin:
 
         ⚠️ 这是"后端按图驱动"的查询面：调用方不该再自己拼
         ``STAGES`` / ``SUPPLIERS`` 的静态知识去推断顺序或可运行性，一律问它。
-        顺序来自本任务流程图（拓扑序），跳过看 :meth:`scheduler_flags`
-        （可选步骤的开关表，键从 spec 派生）。
+        顺序来自本任务流程图（**节点**拓扑序，B 方案后同阶段可有多个节点各占
+        一个状态单元，见 :meth:`~desktop.steps.scheduler.Scheduler.nodes`），跳过看
+        :meth:`scheduler_flags`（可选步骤的开关表，键从 spec 派生）。
 
         与 :meth:`stage_input` 的分工：那个回答**"去哪个目录取产物"**，
         这个回答**"什么时候该跑、还差什么"**。

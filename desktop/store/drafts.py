@@ -42,16 +42,38 @@ class DraftMixin:
         """暂存目录：``tasks/<任务号>/drafts``。"""
         return self.task_dir(task_id) / "drafts"
 
-    def draft_path(self, task_id: str, stage: str) -> Path:
-        """某阶段的暂存文件：``drafts/<阶段>.json``。"""
-        return self.drafts_dir(task_id) / f"{stage}.json"
+    def draft_path(self, task_id: str, stage: str,
+                   node_id: str | None = None,
+                   primary_id: str | None = None) -> Path:
+        """某阶段（某节点）的暂存文件。
 
-    def load_draft(self, task_id: str, stage: str) -> dict | None:
+        - **主节点 / 不给节点** ⇒ ``drafts/<阶段>.json``（与改造前逐字节相同）；
+        - **副本节点** ⇒ ``drafts/<阶段>~<节点>.json``。
+
+        为什么要按节点分文件（B 方案，2026-10-17）：同一步骤可以有多个节点
+        （图片拼版 / 检测文本框 / 图片去底色 / PDF排版），它们**各自独立**——
+        共用一份暂存的话，切到第二个节点就会看到第一个节点改了一半的参数，
+        在 B 上点执行却按 A 的参数跑。
+        """
+        from desktop.steps import ports
+
+        name = ports.scoped_name(
+            f"{stage}.json", node_id, primary_id
+        )
+        return self.drafts_dir(task_id) / name
+
+    def load_draft(self, task_id: str, stage: str,
+                   node_id: str | None = None,
+                   primary_id: str | None = None) -> dict | None:
         """读取暂存参数；没有/格式不对返回 None。"""
-        data = read_json(self.draft_path(task_id, stage), None)
+        data = read_json(
+            self.draft_path(task_id, stage, node_id, primary_id), None
+        )
         return data if isinstance(data, dict) and data else None
 
-    def save_draft(self, task_id: str, stage: str, params: dict) -> bool:
+    def save_draft(self, task_id: str, stage: str, params: dict,
+                   node_id: str | None = None,
+                   primary_id: str | None = None) -> bool:
         """写入暂存参数，返回是否真的写了。
 
         任务目录已删除时跳过（与 ``save_pages`` 同规矩：不把已删任务重新
@@ -65,13 +87,17 @@ class DraftMixin:
         if not cleaned:
             return False
         self.drafts_dir(task_id).mkdir(parents=True, exist_ok=True)
-        write_json(self.draft_path(task_id, stage), cleaned)
+        write_json(
+            self.draft_path(task_id, stage, node_id, primary_id), cleaned
+        )
         return True
 
-    def clear_draft(self, task_id: str, stage: str) -> None:
-        """删除某阶段的暂存（用户点「恢复默认配置」并执行后想彻底归零时用）。"""
+    def clear_draft(self, task_id: str, stage: str,
+                    node_id: str | None = None,
+                    primary_id: str | None = None) -> None:
+        """删除某阶段（某节点）的暂存（用户点「恢复默认配置」并执行后想彻底归零时用）。"""
         try:
-            self.draft_path(task_id, stage).unlink()
+            self.draft_path(task_id, stage, node_id, primary_id).unlink()
         except FileNotFoundError:
             pass
         except OSError:

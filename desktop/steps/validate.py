@@ -25,9 +25,14 @@
 
 - **errors**（拒绝保存）：上面两条硬规则；
 - **warnings**（提示但不拦）：``extract`` 不在第一位、有 ``extract`` 却没有
-  「源PDF」入口节点、同一阶段画了多个节点、图上有未接入运行的节点。这些
-  **跑得通**，只是与习惯不符——拦下来会把合法操作堵死（与状态机"缺上游只
-  提示不硬拦"同一条纪律）。
+  「源PDF」入口节点、图上有未接入运行的节点。这些**跑得通**，只是与习惯
+  不符——拦下来会把合法操作堵死（与状态机"缺上游只提示不硬拦"同一条纪律）。
+
+  ⚠️ **"同一阶段画了多个节点"这条警告已于 2026-10-17 删除**：B 方案后同类型
+  步骤（图片拼版 / 检测文本框 / 图片去底色 / PDF排版）可以放**多个节点**，
+  它们彼此独立（各自参数、各自产物落点，见 ``docs/tasks/bpm.md``）——运行时
+  按 ``node_id`` 寻址、**不再折叠成一遍**。留着这条警告等于把用户明确要的
+  能力说成"有问题"。
 
   ⚠️ **"有「拼版」却没有判断节点"这条警告已于 2026-10-08 删除**：网关依附
   「图片拼版」（用户："其实根本就没有判断这个组件，只有「是否拼版」这个特殊
@@ -128,17 +133,10 @@ def _habit_warnings(diagram: FlowDiagram,
     #    "拼版没有网关"本来就是**合法且常见**的状态：那一步无条件执行，
     #    启用与否由「图片拼版」面板的开关决定。
 
-    # 同一**运行阶段**画了多个节点：运行时按 stage_order 去重只跑一遍，
-    # 多出来的那个是死节点（「去底色」+「提交去底色结果」不算，那是两个阶段）
-    counts: dict[str, int] = {}
-    for node in diagram.nodes:
-        if node.kind == KIND_TASK and node.stage:
-            counts[node.stage] = counts.get(node.stage, 0) + 1
-    duplicated = [stage for stage, count in counts.items() if count > 1]
-    for stage in duplicated:
-        warnings.append(
-            f"「{ports.stage_label(stage)}」在图上有 "
-            f"{counts[stage]} 个节点，运行时只会跑一遍。")
+    # ⚠️ 这里**曾经**有一条 "同一阶段画了多个节点只会跑一遍" 的警告，
+    #    2026-10-17 删掉了：B 方案（按 ``node_id`` 寻址）后同类型步骤可以放
+    #    多个节点**彼此独立**，多出来的不是死节点而是另一份实例。见模块
+    #    docstring 的说明。
 
     unmapped = [node for node in diagram.nodes
                 if node.kind == KIND_TASK and not node.stage]

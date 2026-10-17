@@ -99,6 +99,9 @@ class ImpositionBaseMixin:
         detect_stats: DetectStatsWidget
         history_block: QWidget
         bar_index_of_step: Callable[[str], int | None]
+        node_of_stage: Callable[[str], str | None]
+        _node_scope: Callable[..., dict]
+        _stage_primary: dict[str, str | None]
         step_at_index: Callable[[int], str | None]
         _rembg_step_index: Callable[[], int]
         _select_stage: Callable[[int], None]
@@ -140,6 +143,37 @@ class ImpositionBaseMixin:
         return self.bar_index_of_step(IMPOSITION_STAGE) is not None
 
     # ------------------------------------------------------------- 区域模式
+    def _imposition_rembg_node(self) -> str | None:
+        """喂给**当前拼版节点**的「图片去底色」节点 id（按连线回溯）。
+
+        ⚠️ area/border 这类"上游参数"必须按**喂我的那个节点**读（B 方案）：
+        同一步骤可以有多个「图片去底色」，第二个拼版节点连的是第二个去底色
+        节点——读主节点的参数等于"用户没填过的那份表单"。
+
+        ``node_supplier`` 在"图说不清"时会退回**阶段名**（``rembg_submit``，
+        同格多动作折过），那种情况退回该阶段的主节点。
+
+        ⚠️ 这里**绝不能**传 ``self.imposition_effective()``：那条判据自己就要问
+        ``_rembg_area_value()``（本函数的调用者），传进去就是
+        ``_rembg_area_value → _imposition_rembg_node → imposition_effective →
+        _imposition_area_ok → _rembg_area_value`` 无限递归（2026-10-17 实测
+        RecursionError：任务列表点开详情直接炸）。"谁喂我"本来就与拼版开关无关，
+        传 ``False`` 即可。
+        """
+        if not self.task_id:
+            return None
+        node = self.node_of_stage("imposition")
+        if not node:
+            return None
+        ref = self.store.node_supplier(
+            self.task_id, node, "pages", imposition_active=False
+        )
+        if not ref:
+            return None
+        if self.store.node_stage_of(self.task_id, ref) == "rembg":
+            return ref
+        return self._stage_primary.get("rembg")
+
     def _rembg_area_value(self) -> int:
         """当前**已知**的「区域模式」``area``；没有任何依据时返回 0。
 
@@ -166,11 +200,18 @@ class ImpositionBaseMixin:
             if value:
                 return value
         if self.task_id:
-            draft = self.store.load_draft(self.task_id, "rembg") or {}
+            # ⚠️ 暂存/历史按**喂我的那个去底色节点**读（B 方案）
+            node = self._imposition_rembg_node()
+            scope = self._node_scope(node)
+            draft = self.store.load_draft(self.task_id, "rembg", **scope) or {}
             value = _as_area(draft.get("area"))
             if value:
                 return value
-            history = self.store.list_stage_runs(self.task_id, "rembg")
+            history = (
+                self.store.list_node_runs(self.task_id, node, "rembg")
+                if node
+                else self.store.list_stage_runs(self.task_id, "rembg")
+            )
             if history:
                 value = _as_area((history[0].get("parameters") or {}).get("area"))
                 if value:
@@ -343,10 +384,19 @@ class ImpositionBaseMixin:
 
     # ------------------------------------------------------------- 文档读写
     def _imposition_doc(self) -> dict:
-        """当前任务的拼版文档（含选择态与逐页版面）。"""
+        """**当前拼版节点**的拼版文档（含选择态与逐页版面）。
+
+        ⚠️ 读写必须走**同一个**作用域（B 方案）：版面按节点存
+        （``drafts/imposition~<节点>.json``），而 ``enabled`` 那份是流程级的
+        （``_imposition_flag_scope``）。此前这个读法漏了作用域——写进副本节点的
+        122 页，读的却是主节点那份空文档 ⇒ 选完页「拼版窗口」里一张也不显示、
+        左侧还停在「还没有拼版页」（用户 2026-10-17 实测报障）。
+        """
         if not self.task_id:
             return {"enabled": False, "pages": []}
-        return self.store.load_imposition_doc(self.task_id)
+        return self.store.load_imposition_doc(
+            self.task_id, **self._imposition_scope()
+        )
 
     def _imposition_pages(self, doc: dict | None = None) -> list[dict]:
         return list((doc or self._imposition_doc()).get("pages") or [])
@@ -358,9 +408,11 @@ class ImpositionBaseMixin:
         """
         if not self.task_id:
             return
-        doc = self.store.load_imposition_doc(self.task_id)
+        # ⚠️ 版面按**节点**存（B 方案）：`enabled` 保持流程级那一份不动。
+        scope = self._imposition_scope()
+        doc = self.store.load_imposition_doc(self.task_id, **scope)
         doc["pages"] = [dict(page) for page in pages]
-        self.store.save_imposition_doc(self.task_id, doc)
+        self.store.save_imposition_doc(self.task_id, doc, **scope)
         self._sync_imposition_step_bar()
         self._refresh_imposition_view()
         self._schedule_imposition_compose()
@@ -384,6 +436,34 @@ class ImpositionBaseMixin:
         )
 
     # ------------------------------------------------------------- 源图与生效
+    def _imposition_scope(self) -> dict:
+        """拼版**版面文档**的节点作用域（B 方案）：两个「图片拼版」节点各有
+        自己的 ``drafts/imposition[~<节点>].json``（页面清单与逐页版面）。"""
+        return self._node_scope(self.node_of_stage("imposition"))
+
+    def _imposition_output_dir(self) -> Path:
+        """**本节点**拼版成品的输出目录（``stages/imposition[~<节点>]``）。
+
+        合成 worker 写这里、缩略图/编辑回写/新鲜度判定也读这里——按阶段取会让
+        两个「图片拼版」节点互相覆盖成品页。
+        """
+        task_id = self.task_id
+        if not task_id:
+            return Path()
+        return self.store.node_or_stage_output(
+            task_id, self.node_of_stage("imposition"), "imposition"
+        )
+
+    def _imposition_flag_scope(self) -> dict:
+        """「在流程中启用图片拼版」这个**开关**的作用域：恒取拼版的主节点。
+
+        ⚠️ 开关是**流程级条件**（状态机的 ``imposition`` 标志没有节点上下文，
+        见 ``store.scheduler_flags``），所以它只有一份、读写都走主节点的文件；
+        版面（pages）才是按节点分的。在副本节点上勾选，改的仍是这一份——
+        与"这个开关决定第四步取图来源"的既有语义一致。
+        """
+        return self._node_scope(self._stage_primary.get("imposition"))
+
     def imposition_source_files(self) -> list[Path]:
         """可挑选的源图：**拼版这一步的 pages 端口**指向的目录。
 
@@ -399,11 +479,21 @@ class ImpositionBaseMixin:
         """
         if not self.task_id:
             return []
-        source = self.store.stage_input(
-            self.task_id,
-            "imposition",
-            "pages",
-            imposition_active=self.imposition_effective(),
+        # ⚠️ **按节点取图**（B 方案）：拼版这一步的源图跟着**当前拼版节点**的
+        #    连线走——同一步骤多个节点时，按阶段取会读到主节点的上游（用户给
+        #    第二个拼版节点连了另一批图，界面却列第一批）。
+        node = self.node_of_stage("imposition")
+        source = (
+            self.store.node_input(
+                self.task_id, node, "pages", imposition_active=self.imposition_effective()
+            )
+            if node
+            else self.store.stage_input(
+                self.task_id,
+                "imposition",
+                "pages",
+                imposition_active=self.imposition_effective(),
+            )
         ) or self.store.rembg_output_dir(self.task_id)
         files = list_stage_images(source)
         return sorted(files, key=lambda p: natural_sort_key(p.name))
@@ -450,14 +540,24 @@ class ImpositionBaseMixin:
         """
         task_id = self.task_id
         assert task_id is not None, "取图来源只在任务态被读取"
-        source = self.store.stage_input(
-            task_id,
-            "print",
-            "pages",
-            # ⚠️ 传"能不能真跑"而不是"勾没勾"：区域模式不支持（或图里没这一格）
-            #    时不该取拼版产物——历史脏数据（先勾了、后来改了区域模式）会
-            #    让第四步去读一个根本不该用的目录。
-            imposition_active=self.imposition_effective(),
+        # ⚠️ **按节点取图**（B 方案）：两个「PDF排版」节点各有自己的上游
+        #    （可以一个吃去底色成品、另一个吃拼版成品），按阶段取会让两个节点
+        #    都读同一个来源——面板说 A、执行做 B。
+        node = self.node_of_stage("print")
+        source = (
+            self.store.node_input(
+                task_id, node, "pages", imposition_active=self.imposition_effective()
+            )
+            if node
+            else self.store.stage_input(
+                task_id,
+                "print",
+                "pages",
+                # ⚠️ 传"能不能真跑"而不是"勾没勾"：区域模式不支持（或图里没这一格）
+                #    时不该取拼版产物——历史脏数据（先勾了、后来改了区域模式）会
+                #    让第四步去读一个根本不该用的目录。
+                imposition_active=self.imposition_effective(),
+            )
         )
         # 连线表永远给得出路径（rembg_submit 是 print 的静态上游），
         # 但仍留一道兜底：将来若有人把静态上游摘掉，这里不该抛 AttributeError。

@@ -47,6 +47,7 @@ BPM 编排引擎安全导入（与 :mod:`desktop.steps.spec` 同一约束）。
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from desktop.steps.spec import StepSpec, spec_by_key
@@ -69,6 +70,20 @@ ARTIFACT_BOXES = "boxes"
 #: 那不是"用户没跑前一步"，而是**这条流程本来就不需要前一步**——它需要的是
 #: 一个属于自己的入口。
 ARTIFACT_INPUT = "input"
+
+#: **缺了也不阻塞就绪**的输入端口：这些端口是"锦上添花"，没有它这一步照样跑得出结果。
+#:
+#: - ``boxes``（检测框）：``detect`` **可能一框未检**（空白页 / 无文字页 / 整页模式），
+#:   那时 ``boxes.json`` 本来就不会存在——它不是失败，是**正常结果**。而
+#:   「图片去底色」按 ``area`` 处理整张图，没有框也能出图（``functions.rembg``
+#:   的整页分支）。拿"文件在不在"当硬门槛，用户看到的是"这一步的输入还没就位"
+#:   的假提示、按钮永远点不动（2026-10-17 自测复现：6 页空白样例跑完 detect
+#:   之后第三步再也起不来）。
+#:
+#: ⚠️ 这张表只影响**就绪守卫对文件存在性的要求**，不影响
+#: :func:`stage_blocking_inputs` 的判据本身（那里照旧回答"本流程里这一步吃哪些
+#: 端口"——自测 ``step_ports`` 钉着默认流程 rembg 是 ``("pages", "boxes")``）。
+OPTIONAL_INPUT_PORTS = frozenset({ARTIFACT_BOXES})
 
 #: 全部产物类型 → 中文名（提示语与界面文案用，别处不另写一份）。
 ARTIFACT_LABELS: dict[str, str] = {
@@ -126,6 +141,36 @@ def stage_outputs(stage: str) -> tuple[str, ...]:
     """这一步**产出**哪些端口（来自 ``StepSpec.outputs``，不另写一份）。"""
     spec = spec_by_key(STAGE_STEPS.get(stage, stage))
     return tuple(spec.outputs) if spec else ()
+
+
+#: **同格多动作的前折**：把图上认出的阶段升级到**同一界面格里最靠后的、
+#: 也产出该端口的动作**。定义就是下面这个函数，这里只留一段说明：
+#:
+#: 唯一的实际用处是「图片去底色」这一步：图上只有一个「图片去底色」节点，
+#: 但同一格里有 ``rembg``（生成预览 → ``stages/rembgpreview``）与
+#: ``rembg_submit``（提交定稿 → ``stages/rembg``）两个动作，而**消费方要的是
+#: 成品**。按图回退时若直接取 ``rembg``，拿到的是实时预览目录——"打印出来是
+#: 没提交的图"，比报错更难发现。
+#:
+#: ⚠️ 折叠**只在按图解析产出方**时做（``store._node_ref_path`` /
+#: ``FlowDiagram.nearest_producer*``），别拿它去算节点自己的产物目录——那会把
+#: 预览写进成品目录。
+
+
+def fold_forward(stage: str, port: str) -> str:
+    """把阶段折到**同格里最靠后的、也产出该端口的动作**。
+
+    判定完全从 :data:`STAGE_STEPS`（同格关系）与 :func:`stage_outputs`
+    （谁产什么）派生，**不另写一张表**：同格里多个阶段都产出该端口时取声明
+    顺序里最靠后的那个；没有同格伙伴时原样返回。语义与用途见上面那段说明。
+    """
+    step = STAGE_STEPS.get(stage, stage)
+    siblings = [
+        sibling
+        for sibling, owner in STAGE_STEPS.items()
+        if owner == step and port in stage_outputs(sibling)
+    ]
+    return siblings[-1] if siblings else stage
 
 
 #: 运行阶段 → 流程图上显示的**中文节点名**。
@@ -440,12 +485,92 @@ def location_of(stage: str, port: str) -> str | None:
     return STAGE_LOCATIONS.get(stage, {}).get(port)
 
 
-def artifact_path(task_dir: Path | str, stage: str, port: str) -> Path | None:
+def sanitize_node_id(node_id: str) -> str:
+    """把节点 id 收成**可安全拼进路径**的名字（只留字母数字与 ``._-``）。
+
+    BPMN 节点 id 一般是 ``Node_7`` / ``Activity_1a2b`` 这种安全形状，但用户在
+    bpmn.io 里能把它改成任意字符串——拼进路径前必须洗一道，否则 ``/`` 或 ``\\``
+    会把落点引到别的目录（副本产物跑到任务目录之外）。
+    """
+    return re.sub(r"[^0-9A-Za-z._-]", "_", str(node_id))
+
+
+def suffix_last_segment(name: str, suffix: str) -> str:
+    """在路径**最后一段**插入后缀：目录名加在结尾、文件名加在扩展名前。
+
+    - ``stages/extract`` → ``stages/extract~X``
+    - ``boxes.json`` → ``boxes~X.json``
+    - ``stages/print/print.pdf`` → ``stages/print/print~X.pdf``
+    - 裸文件名 ``pages.json`` → ``pages~X.json``（没有 ``/`` 时 ``head`` 为空）
+
+    这是"副本产物怎么命名"的**唯一一处**实现：任务目录里的每一种按节点隔离的
+    文件（阶段产物目录 / ``boxes.json`` / ``pages.json`` / ``drafts/<阶段>.json``）
+    都走它，规则不会各写一份。
+    """
+    head, sep, tail = str(name).rpartition("/")
+    if "." in tail:
+        stem, dot, ext = tail.rpartition(".")
+        tail = f"{stem}~{suffix}{dot}{ext}"
+    else:
+        tail = f"{tail}~{suffix}"
+    return f"{head}{sep}{tail}"
+
+
+def scoped_name(name: str, node_id: str | None,
+                primary_id: str | None) -> str:
+    """按**节点作用域**给一个名字加后缀：主节点/无节点 ⇒ 原名，副本 ⇒ ``~<节点>``。
+
+    ⚠️ **主节点零迁移**：同阶段恰好一个节点时（=所有现存任务与默认流程）
+    名字与改造前**逐字节相同**，没有任何文件需要搬家。
+    """
+    if not node_id or not primary_id or node_id == primary_id:
+        return str(name)
+    return suffix_last_segment(name, sanitize_node_id(node_id))
+
+
+def copy_location(stage: str, port: str, node_id: str) -> str | None:
+    """**副本节点**（同阶段第二个及之后的节点）的相对落点；没登记返回 ``None``。
+
+    规则：在主落点的**最后一段**插入 ``~<node_id>``——目录名结尾加后缀、文件名
+    在扩展名前加后缀：
+
+    - ``stages/extract`` → ``stages/extract~Node_3``
+    - ``boxes.json`` → ``boxes~Node_3.json``
+    - ``stages/print/print.pdf`` → ``stages/print/print~Node_3.pdf``
+
+    ⚠️ **主节点沿用旧落点**（:func:`node_location`），所以"同阶段恰好一个节点"
+    的现存任务与默认流程**零迁移**——只有第二个及之后的节点才落到副本落点。
+    """
+    base = location_of(stage, port)
+    if base is None:
+        return None
+    return suffix_last_segment(base, sanitize_node_id(node_id))
+
+
+def node_location(stage: str, port: str, node_id: str | None = None,
+                  primary_id: str | None = None) -> str | None:
+    """**某节点实例**某端口的相对落点。
+
+    ``node_id`` 空、或等于该阶段的 ``primary_id``（主节点）⇒ 旧落点（零迁移）；
+    否则 ⇒ 副本落点（:func:`copy_location`）。没登记该端口返回 ``None``。
+    """
+    if node_id is None or primary_id is None or node_id == primary_id:
+        return location_of(stage, port)
+    return copy_location(stage, port, node_id)
+
+
+def artifact_path(task_dir: Path | str, stage: str, port: str,
+                  node_id: str | None = None,
+                  primary_id: str | None = None) -> Path | None:
     """产物在任务目录下的**绝对路径**；该阶段没登记这个端口则 ``None``。
 
     ``task_dir`` 传 ``tasks/<任务号>/``（不是数据根）。
+
+    ``node_id`` / ``primary_id`` 给定时按 :func:`node_location` 支持**多节点**
+    （同阶段副本落到带 ``~<node_id>`` 后缀的副本落点）；不给则恒取旧落点
+    （单节点场景与改造前逐字节一致）。
     """
-    location = location_of(stage, port)
+    location = node_location(stage, port, node_id, primary_id)
     if location is None:
         return None
     return Path(task_dir) / location
@@ -630,6 +755,38 @@ def stage_blocking_inputs(diagram, stage: str, active=None) -> tuple[str, ...]:
     return tuple(required)
 
 
+def node_blocking_inputs(diagram, node_id: str, active=None) -> tuple[str, ...]:
+    """:func:`stage_blocking_inputs` 的**节点粒度**版本（B 方案）。
+
+    规则与阶段版逐条一致，只是把"本流程里有没有产出方"落到**节点实例**上：
+    ``boxes`` 的产出方从"整阶段有检测节点"细化为"喂给 ``node_id`` 的那个
+    具体节点"（:meth:`FlowDiagram.nearest_producer_node`）。同阶段只有一个
+    节点的流程下与阶段版结果相同。
+    """
+    if diagram is None or not getattr(diagram, "nodes", ()):
+        return ()
+    item = diagram.node(node_id)
+    if item is None or not item.stage:
+        return ()
+    stage = item.stage
+    declared = stage_inputs(stage)
+    if not declared:
+        return ()
+    order = ports_stage_order(diagram)
+    if stage not in order:
+        return declared
+    active_set = set(active) if active is not None else set(order)
+    required: list[str] = []
+    for port in declared:
+        if supplier_of(stage, port) in (SUPPLY_TASK_SOURCE, SUPPLY_TASK_INPUT):
+            continue
+        if port == ARTIFACT_PAGES or diagram.nearest_producer_node(
+            node_id, port, active_set
+        ):
+            required.append(port)
+    return tuple(required)
+
+
 def is_entry_stage(diagram, stage: str, active=None) -> bool:
     """这一步在流程里是不是**入口**（沿图往前没有任何在流程里的阶段）。
 
@@ -653,6 +810,32 @@ def is_entry_stage(diagram, stage: str, active=None) -> bool:
     )
 
 
+def flow_entry_node(diagram) -> str | None:
+    """**流程的入口节点 id**（沿图往前没有任何产出方），没有则 ``None``。
+
+    ⚠️ **入口是"节点"的性质，不是"阶段"的性质**（B 方案，2026-10-17 用户报障）：
+    用户画的是"图片拼版 → 检测文本框 → 图片去底色 → 是否拼版 →(是) 图片拼版 →
+    PDF排版"，图上有**两个** ``imposition`` 节点。按阶段判"谁没有上游"会被
+    第二个拼版节点带偏（它有上游 = 图片去底色），于是**任何阶段都不是入口**
+    ⇒ 界面三颗输入按钮全藏、第一步没有任何输入入口（用户原话："图片拼版节点
+    作为第一个节点，没有输入入口"）。
+
+    判据：按**节点拓扑序**取第一个"沿图回溯不到 ``pages`` 产出方"的节点。
+
+    ⚠️ 认不出阶段的节点（网关/事件/未接入的 task）**不占入口位**——它们不是
+    可运行的步骤，让它们当"入口"会把输入控件挂到一个没有功能的节点上。
+    """
+    if diagram is None or not getattr(diagram, "nodes", ()):
+        return None
+    order = ports_stage_order(diagram)
+    for node_id, stage in diagram.node_order():
+        if stage not in order:
+            continue
+        if diagram.nearest_producer_node(node_id, "pages", set(order)) is None:
+            return node_id
+    return None
+
+
 def flow_entry_stage(diagram) -> str | None:
     """**流程的入口阶段**（沿图往前没有任何在流程里的阶段），没有则 ``None``。
 
@@ -668,9 +851,18 @@ def flow_entry_stage(diagram) -> str | None:
 
     ⚠️ 有多个入口时取**拓扑序里的第一个**（入口节点通常不止一个时，用户面对
     的是流程的第一格）。全都不是入口（空图/只有孤立终点）⇒ ``None``。
+
+    ⚠️ **优先按节点判**（:func:`flow_entry_node`）：同一步骤有多个节点时，
+    按阶段判会被"第二个同类节点有上游"带偏（见那里的说明）。只有节点级判据
+    给不出答案（例如图坏了）才退回阶段级。
     """
     if diagram is None or not getattr(diagram, "nodes", ()):
         return None
+    node = flow_entry_node(diagram)
+    if node is not None:
+        item = diagram.node(node)
+        if item is not None and item.stage:
+            return item.stage
     order = ports_stage_order(diagram)
     for stage in order:
         if is_entry_stage(diagram, stage, set(order)):
@@ -813,9 +1005,12 @@ __all__ = [
     "TASK_INPUT_LOCATION",
     "artifact_of",
     "artifact_path",
+    "copy_location",
     "describe",
     "detect_feeds_rembg",
     "flow_entry_input_kind",
+    "fold_forward",
+    "flow_entry_node",
     "flow_entry_stage",
     "flow_needs_entry_images",
     "flow_needs_source_pdf",
@@ -826,12 +1021,18 @@ __all__ = [
     "is_entry_stage",
     "location_of",
     "missing_stages",
+    "node_blocking_inputs",
+    "node_location",
+    "OPTIONAL_INPUT_PORTS",
     "orphaned_end_event_ids",
     "orphaned_gateway_ids",
     "print_input_overrides",
     "print_pages_supplier",
     "resolve_input",
     "resolve_input_with_entry",
+    "sanitize_node_id",
+    "scoped_name",
+    "suffix_last_segment",
     "spec_for_stage",
     "stage_artifacts",
     "stage_blocking_inputs",

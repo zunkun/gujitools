@@ -254,9 +254,83 @@ python cli.py rembg -i /path/to/images/ -o D:\output
 
 ---
 
-## 八、历史变更与版本记录
+## 八、任务目录布局与「同类型多节点」（桌面端任务流程）
 
-- **v2.2**（当前）：`print` 新增可选入参 `files`（图片路径有序清单），页序由数据层
+CLI 的路径规则（上文）只回答"命令把产物放哪"；任务流程另有一层**任务目录内**的
+布局，唯一真源是 `desktop/steps/ports.py::STAGE_LOCATIONS`（加一步 = 加一行表）。
+
+```
+tasks/<任务号>/
+├── flow.bpmn                 流程图（节点 + 连线，含坐标）
+├── pages.json                当前参与处理的页清单
+├── boxes.json                检测框坐标（端口 boxes）
+├── sizes.json                页面图片原始尺寸（框坐标的缩放基准）
+├── print.json                待打印列表 + 页序 + 逐页版面
+├── runs.json                 每个阶段的执行历史（最新在前）
+├── ui.json                   界面状态（上次停留的步骤/节点、YOLO 导出记忆）
+├── drafts/<阶段>.json         用户改过但还没执行的参数暂存
+├── drafts/imposition.json    拼版版面（选择态 enabled + 逐页 items）
+└── stages/
+    ├── input/                入口图片（用户直接放进来的图）
+    ├── extract/              提取出的页面图
+    ├── rembgpreview/         「生成预览」的整页去底图（中间产物）
+    ├── rembg/                「提交本次任务」的定稿成品（print 的取图来源）
+    ├── imposition/           拼版合成出的成品整页图
+    └── print/                生成的 PDF
+```
+
+### 1. 同类型多节点：主节点沿用旧路径（零迁移）
+
+「图片拼版 / 检测文本框 / 图片去底色 / PDF排版」这几个步骤在流程图里**可以有多个
+节点**，它们彼此独立（各自输入、各自产物、各自参数）。为不惊动任何现存任务，
+落点规则是**主节点沿用旧路径、副本节点加后缀**：
+
+| 文件/目录        | 主节点（同阶段第一个节点） | 副本节点（第二个及之后）        |
+| ---------------- | -------------------------- | ------------------------------- |
+| 阶段产物目录     | `stages/extract`           | `stages/extract~Node_3`         |
+| 检测框           | `boxes.json`               | `boxes~Node_2.json`             |
+| 页面尺寸         | `sizes.json`               | `sizes~Node_2.json`             |
+| 页清单           | `pages.json`               | `pages~Node_2.json`             |
+| 待打印列表       | `print.json`               | `print~Node_2.json`             |
+| 参数暂存         | `drafts/rembg.json`        | `drafts/rembg~Node_2.json`      |
+| 拼版版面         | `drafts/imposition.json`   | `drafts/imposition~Node_3.json` |
+| PDF 排版输出目录 | `stages/print`             | `stages/print~Node_2`           |
+
+- **后缀规则只有一份实现**：`ports.scoped_name`（目录名加在结尾、文件名加在扩展名
+  前）；节点 id 先过 `ports.sanitize_node_id`（只留字母数字与 `._-`），防止用户在
+  bpmn.io 里把 id 改成带 `/` 的串把产物引到任务目录之外。
+- **"谁是主节点"由图决定**：`FlowDiagram.primary_of(stage)` = 该阶段在**文件声明
+  顺序**里第一个节点（声明顺序比拓扑序稳定——改连线不会让主节点漂移）。
+- **一切读写走 store 的入口**，别自己拼 `~<节点>`：
+  `store.node_or_stage_output(task, node, stage, port)`（产物落点）、
+  `store.node_input(task, node, port)`（按图回溯供给方，含入口图片回落）、
+  `store.scoped_file_scope(task, node)` → 直接展开进
+  `load_pages / save_draft / boxes_path / load_imposition_doc / save_print_doc`
+  这类读写。
+- **运行状态也按节点记**：`runs.json` 的每条记录带 `node` 字段，
+  `store.node_states(task)` 给界面用（`stage_states` 保持旧口径兼容）；
+  没有 `node` 的老记录归属该阶段的主节点。
+
+### 2. 「图片去底色」有两个动作（同格），别混
+
+`rembg`（生成预览）产 `stages/rembgpreview`，`rembg_submit`（提交本次任务）产
+`stages/rembg`。**消费方要成品**，所以按图解析产出方时统一走
+`ports.fold_forward(stage, port)` 折到同格里最靠后的那个动作；而"节点自己往哪写"
+仍取它本阶段的落点。
+
+### 3. runs.json 记录结构
+
+`{阶段: [record, …]}`，`record` 含 `run_id / status / node / parameters / done /
+total / started_at / finished_at / output_path / error`。`output_path` 记的是本次
+执行的产物落点（按**跑的那个节点**算）。
+
+---
+
+## 九、历史变更与版本记录
+
+- **v2.3**（当前）：补「任务目录布局与同类型多节点」一节——主节点沿用旧路径、
+  副本节点加 `~<节点>` 后缀（B 方案，2026-10-17）。
+- **v2.2**：`print` 新增可选入参 `files`（图片路径有序清单），页序由数据层
   决定，彻底移除 GUI 侧为「顺序物化」而建的 `workset` 目录；不传 `files` 时保持
   原有文件名排序行为。
 - **v2.1**：把原 `docs/outputpath说明.md` 的内容并入本文（该文件与本文重复，

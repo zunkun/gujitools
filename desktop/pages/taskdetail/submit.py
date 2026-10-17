@@ -46,6 +46,9 @@ class SubmitMixin:
         submit_hint: Any  # 提交区文案标签
         _toast: Callable[..., None]
         current_stage: Callable[[], str]
+        current_node: Callable[[], str | None]
+        _node_stage_state: Callable[[str], dict]
+        _node_scope: Callable[..., dict]
         # ⚠️ 返回值是 LazyPanelHost 或真面板（属性转发、鸭子类型），用 Any 承接
         panel_host_of_step: Callable[[str], Any]
         _acquire_run: Callable[..., bool]
@@ -64,9 +67,21 @@ class SubmitMixin:
 
     # ---------------------------------------------------------- 状态判定
     def _latest_success_run(self, stage: str) -> dict | None:
+        """**当前节点**最近一次成功的该阶段运行（B 方案：按节点取）。
+
+        同一步骤的多个节点各跑各的：「提交本次任务」的版本判定（预览 vs 提交）
+        必须拿**同一个节点**的两次运行比，否则 A 节点的预览会去和 B 节点的提交
+        比时间戳（结果是"版本永远是新/永远是旧"这类看不懂的状态）。
+        """
         if not self.task_id:
             return None
-        for record in self.store.list_stage_runs(self.task_id, stage):
+        node = self.current_node()
+        records = (
+            self.store.list_node_runs(self.task_id, node, stage)
+            if node
+            else self.store.list_stage_runs(self.task_id, stage)
+        )
+        for record in records:
             if record.get("status") == "success":
                 return record
         return None
@@ -106,7 +121,9 @@ class SubmitMixin:
         if submit_at <= 0:
             return False
         for image in list_stage_images(
-            self.store.rembg_preview_output_dir(self.task_id)
+            self.store.node_or_stage_output(
+                self.task_id, self.current_node(), "rembg"
+            )
         ):
             try:
                 if image.stat().st_mtime > submit_at:
@@ -117,12 +134,18 @@ class SubmitMixin:
 
     # ---------------------------------------------------------- 派生条目
     def _rembg_result_path(self, stem: str) -> Path | None:
-        """某页面对应的「生成预览」去底色结果（stages/rembgpreview）。"""
+        """某页面对应的「生成预览」去底色结果（``stages/rembgpreview[~节点]``）。
+
+        ⚠️ 结果目录按**当前节点**取（B 方案）：两个「图片去底色」节点各有自己
+        的预览目录，走主节点目录会把副本节点的页面显示成"还没生成预览"。
+        """
         # 结果目录按任务归属；没有任务就没有结果可指（调用方都在任务态进这里）
         task_id = self.task_id
         if not task_id:
             return None
-        rembg_dir = self.store.rembg_preview_output_dir(task_id)
+        rembg_dir = self.store.node_or_stage_output(
+            task_id, self.current_node(), "rembg"
+        )
         for ext in ("png", "jpg", "jpeg"):
             candidate = rembg_dir / f"{stem}.{ext}"
             if candidate.exists():
@@ -213,7 +236,9 @@ class SubmitMixin:
                 )
             return
         # 必须以最近一次「生成预览」成功为前提（旧图残留/失败/中断均拒绝提交）
-        preview_state = self.store.stage_states(self.task_id)["rembg"]["status"]
+        # ⚠️ 状态按**当前节点**取（B 方案）：两个「图片去底色」节点各有自己的
+        #    预览运行，按阶段取会把 A 节点的成功当成 B 节点也能提交。
+        preview_state = self._node_stage_state("rembg")["status"]
         if preview_state != "success":
             self._toast(
                 "warning", "请先生成预览",
@@ -252,12 +277,22 @@ class SubmitMixin:
         args["_effects"] = [
             entry_to_effect_spec(e, args.get("border")) for e in entries
         ]
-        args["output"] = str(self.store.rembg_output_dir(self.task_id))
+        args["output"] = str(
+            self.store.node_or_stage_output(
+                self.task_id, self.current_node(), "rembg_submit"
+            )
+        )
         args["clean"] = True
         # 记录本次提交所基于的「生成预览」成功版本，用于判断预览是否又有新版本
+        # ⚠️ 取**同一节点**的预览运行（B 方案）：拿 A 节点的预览版本号去比
+        #    B 节点的提交，版本判定会永远错。
+        node = self.current_node()
         preview_run = next(
-            (r for r in self.store.list_stage_runs(self.task_id, "rembg")
-             if r.get("status") == "success"),
+            (r for r in (
+                self.store.list_node_runs(self.task_id, node, "rembg")
+                if node
+                else self.store.list_stage_runs(self.task_id, "rembg")
+            ) if r.get("status") == "success"),
             None,
         )
         if preview_run:
@@ -287,9 +322,15 @@ class SubmitMixin:
             version = None
             tip = "当前有任务正在执行，请等待完成后再提交"
         else:
-            preview_state = self.store.stage_states(self.task_id)["rembg"]["status"]
+            # ⚠️ 状态与预览目录都按**当前节点**（B 方案）：同一步骤两个节点
+            #    各有自己的预览运行与预览图，按阶段取会张冠李戴。
+            preview_state = self._node_stage_state("rembg")["status"]
             has_preview = bool(
-                list_stage_images(self.store.rembg_preview_output_dir(self.task_id))
+                list_stage_images(
+                    self.store.node_or_stage_output(
+                        self.task_id, self.current_node(), "rembg"
+                    )
+                )
             )
             if preview_state != "success":
                 version = NO_PREVIEW

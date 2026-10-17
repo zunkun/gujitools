@@ -19,14 +19,21 @@ def run(ctx) -> None:
     tid = ctx.tid
 
     d.set_task(tid)
-    d._refresh_manifest()
-    before = len(repo.load_pages(tid))
-    d.detect_viewer.strip.setCurrentRow(2)
+    # ⚠️ 增删在**当前步骤**的清单上做（B 方案：清单按步骤 + 节点分文件）。
+    #    先切到第二步（检测文本框），后面读写的也是它那一份
+    #    ``pages.detect.json``——用无作用域的 ``load_pages(tid)`` 读到的是
+    #    「图片提取」那份 ``pages.json``，断言会假红。
     d._select_stage(1)
+    app.processEvents()
+    d._refresh_manifest()
+    scope = d._node_scope()
+    before = len(repo.load_pages(tid, **scope))
+    d.detect_viewer.strip.setCurrentRow(2)
     app.processEvents()
     d.detect_viewer.strip.setCurrentRow(2)
     d.delete_selected_page()
-    ok("删除页面", len(repo.load_pages(tid)) == before - 1)
+    ok("删除页面", len(repo.load_pages(tid, **scope)) == before - 1,
+       f"{before} -> {len(repo.load_pages(tid, **scope))}")
 
     # 插入（不弹对话框：直接模拟 insert_pages 的真实行为）
     imported = repo.extract_output_dir(tid)
@@ -34,16 +41,18 @@ def run(ctx) -> None:
     extra = make_pdf(tmp / "extra.png", 1)  # 占位：用图片替代
     _doc = pymupdf.open(); _p = _doc.new_page(); _p.insert_text((72, 72), "插")
     _pix = _p.get_pixmap(); _pix.save(str(tmp / "inserted_src.png")); _doc.close()
-    # insert_pages 会把选中的图片**复制进 stages/extract**（与提取结果同目录），
-    # 这样后续 detect/rembg 直接读 extract 就能覆盖到它。测试必须走同一条路径，
-    # 否则会造出「清单里有、但不在 extract」的不真实状态。
+    # insert_pages 会把选中的图片**复制进本步骤的输入目录**（第二步的输入就是
+    # ``stages/extract``，与提取结果同目录），这样后续 detect/rembg 直接读
+    # extract 就能覆盖到它。测试必须走同一条路径，否则会造出「清单里有、但不在
+    # extract」的不真实状态。
     img = imported / "inserted.png"
     shutil.copy2(tmp / "inserted_src.png", img)
     ctx.inserted_img = img
-    pages = repo.load_pages(tid)
+    pages = repo.load_pages(tid, **scope)
     pages.insert(1, {"file": str(img), "label": "inserted"})
-    repo.save_pages(tid, pages)
-    ok("插入页面", len(repo.load_pages(tid)) == before)
+    repo.save_pages(tid, pages, **scope)
+    ok("插入页面", len(repo.load_pages(tid, **scope)) == before,
+       str(len(repo.load_pages(tid, **scope))))
     d._refresh_manifest()  # 与 run_stage 实际流程一致：执行前刷新清单缓存
     # 执行输入直指 extract 目录（不再物化 workset 副本）
     args = {"input": str(repo.extract_output_dir(tid))}
