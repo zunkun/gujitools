@@ -56,6 +56,7 @@ from __future__ import annotations
 import math
 import os
 from pathlib import Path
+from typing import Callable
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QImage, QPainter, QPen
@@ -166,6 +167,11 @@ class ImpositionCanvas(QWidget):
         self._items: list[dict] = []
         self._images: dict[str, QImage] = {}
         self._selected = -1
+        #: 右键「定位图片资源」的目标解析（宿主给出）：``(index) -> list[Path]``，
+        #: 按优先级。⚠️ 拼版这一步的"图片资源"是**拼版成品**（``stages/imposition``
+        #: ——实时重合成产出新图），不是输入源图（用户 2026-10-18）。不设时定位的
+        #: 就是画布上那张源图（旧口径）。
+        self._locate_resolver: Callable[[int], list] | None = None
         self._pad = 18
         self._px_per_unit = 1.0
         self._off_x = float(self._pad)
@@ -672,30 +678,59 @@ class ImpositionCanvas(QWidget):
         menu.exec(event.globalPos())
         event.accept()
 
+    def set_locate_resolver(self, resolver: Callable[[int], list] | None) -> None:
+        """宿主给出「定位图片资源」要定位的目标（``(index) -> list[Path]``，按优先级）。
+
+        ⚠️ **拼版这一步必须给**（用户 2026-10-18）：画布上那张图是**输入源图**
+        （如 ``stages/input``），而拼版的"图片资源"是**实时重合成出来的成品**
+        （``stages/imposition[~<节点>]``）。不设时退回旧口径——定位画布上那张
+        源图文件（其余步骤/独立页没有"实时产物"的说法，行为不变）。
+        """
+        self._locate_resolver = resolver
+
     def _locate_item_file(self, index: int) -> None:
-        """右键「定位图片资源」：资源管理器定位第 index 张子图的源文件。
+        """右键「定位图片资源」：资源管理器定位第 ``index`` 张子图**对应的资源**。
+
+        ⚠️ 目标由 :meth:`set_locate_resolver` 给出（拼版 → 成品页/成品目录；
+        不设 → 这张源图文件）。**按优先级逐个试**：拼版成品可能还没合成出来，
+        那时退到成品目录，至少让用户到"这一批产物的跟前"。
 
         ⚠️ 定位的**就是被右键的那一张**（``_item_at`` 已按旋转后的矩形命中，
         且选中项优先），不要另算"左右槽"——两图并排时错一格就是"定位错了"。
 
-        ⚠️ 文件没了不静默：退到所在目录并说明。什么都不发生，用户只会以为
-        定位到了错误的资源（用户 2026-10-17 报障）。
+        ⚠️ 全都定位不成不静默：说清原因（静默什么都不发生，用户只会以为
+        定位到了错误的资源——用户 2026-10-17 报障）。
         """
         if not (0 <= index < len(self._items)):
             return
-        file_text = str(self._items[index].get("file") or "")
-        if not file_text:
-            return
         from desktop.utils.files import reveal_in_explorer
 
-        path = Path(file_text)
-        if reveal_in_explorer(path):
+        file_text = str(self._items[index].get("file") or "")
+        candidates: list[Path] = []
+        if self._locate_resolver is not None:
+            try:
+                candidates = [
+                    Path(p) for p in (self._locate_resolver(index) or []) if p
+                ]
+            except Exception:  # noqa: BLE001 - 解析坏了也不该把右键卡住
+                candidates = []
+        # ⚠️ 没给解析器（或它返回空）时才回落到"画布上这张源图"——拼版这一步
+        #    给了解析器就不该再退到输入图（用户明确说那不是它的图片资源）。
+        if not candidates and file_text:
+            candidates.append(Path(file_text))
+        for candidate in candidates:
+            if reveal_in_explorer(candidate):
+                return
+        if not candidates:
+            self.locate_failed.emit("这张图没有可定位的文件。")
             return
-        if path.parent.is_dir():
-            reveal_in_explorer(path.parent)
-            self.locate_failed.emit(f"源文件已不存在，已打开所在目录：{path.parent}")
+        first = candidates[0]
+        parent = first.parent
+        if parent.is_dir():
+            reveal_in_explorer(parent)
+            self.locate_failed.emit(f"资源已不存在，已打开所在目录：{parent}")
         else:
-            self.locate_failed.emit(f"找不到文件（所在目录也不存在）：{path}")
+            self.locate_failed.emit(f"找不到文件（所在目录也不存在）：{first}")
 
     def _emit_context(self, index: int, edit: bool) -> None:
         """右键菜单按命中的图层发出预览或整页编辑请求。"""

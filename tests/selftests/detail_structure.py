@@ -77,10 +77,14 @@ def run(ctx) -> None:
     ok("占位详情隐藏执行按钮组",
        not d.run_button.isVisible() and not d.submit_button.isVisible()
        and not d.resume_button.isVisible() and not d.cancel_button.isVisible())
+    # ---- 流程条上这一格 = "这一步处理到哪了"（2026-10-18 用户口径）----
+    # ⚠️ 判据是**本节点有没有拼版页**，**不是**"在流程中启用图片拼版"这个开关
+    #    ——那是**流程级**条件（流程图上「是否拼版」网关问的就是它）。勾了开关但
+    #    一页都没拼时这一格仍是"未选择"：没运行过的东西不该亮成"已处理"。
     d.imposition_enabled_checkbox.setChecked(True)
     pump(app)
-    ok("勾选启用 → 节点变为已选择",
-       d.step_bar.imposition_node.is_selected())
+    ok("勾选启用但还没拼页 → 节点仍「未选择」（没运行过不该亮）",
+       not d.step_bar.imposition_node.is_selected())
     from desktop.store import IMPOSITION_STAGE
     # ⚠️ 查表拿格序，别用 ``IMPOSITION_INDEX``（= len(STAGES) = 4）：BPM 驱动后
     # 步骤条格序含可选节点占位，拼版在第 3 格，写死会切到 print 那一格。
@@ -89,9 +93,29 @@ def run(ctx) -> None:
     d._select_stage(imposition_bar)
     pump(app)
     ok("重新进入拼版详情回填勾选状态", d.imposition_enabled_checkbox.isChecked())
-    d.imposition_enabled_checkbox.setChecked(False)
+    # 拼了一页 ⇒ 这一格变「已选择」（= 这一步"运行过"）
+    # ⚠️ 直接写文档 + 刷流程条（不走 ``_save_imposition_pages``）：那条路会顺带
+    #    起后台合成 worker，自测里没必要、还容易在收尾时抓到半跑的线程。
+    _scope = d._imposition_scope()
+    _doc = d.store.load_imposition_doc(d.task_id, **_scope)
+    _doc["pages"] = [{
+        "items": [{
+            "file": "not-exist-0001.png",
+            "rect": [0.0, 0.0, 10.0, 10.0],
+            "rotation": 0.0,
+        }],
+    }]
+    d.store.save_imposition_doc(d.task_id, _doc, **_scope)
+    d._sync_imposition_step_bar()
     pump(app)
-    ok("取消勾选 → 节点恢复未选择", not d.step_bar.imposition_node.is_selected())
+    ok("拼了一页 → 这一格变「已选择」（= 这一格运行过）",
+       d.step_bar.imposition_node.is_selected())
+    _doc["pages"] = []
+    d.store.save_imposition_doc(d.task_id, _doc, **_scope)
+    d._sync_imposition_step_bar()
+    pump(app)
+    ok("把页删光 → 这一格回到「未选择」",
+       not d.step_bar.imposition_node.is_selected())
 
     # ---- 所有节点统一默认宽度（用户 2026-09-30：生效/不生效样式统一）----
     # 旧断言「节点贴着文字、比胶囊窄」已按新口径替代：所有节点（真实步骤

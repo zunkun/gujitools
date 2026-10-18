@@ -31,7 +31,8 @@ from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QWidget
 
 from desktop.services.imposition import (
-    FILE_FMT, apply_editor_layout, cn_page_label, default_items, page_source_stems,
+    apply_editor_layout, cn_page_label, default_items, is_product_file,
+    page_product_suffix, page_source_stems, product_path,
     refresh_rects_for_edited_source, single_items,
 )
 
@@ -254,18 +255,17 @@ class ImpositionLayoutMixin:
             )
 
     # ------------------------------------------------------------- 双击预览
-    def _open_imposition_item_preview(self, slot: int) -> None:
-        """画布右键「预览图片」：弹窗预览这张原图（可翻本页另一张）。"""
-        view = getattr(self, "imposition_view", None)
-        if view is None or view.current_index() < 0:
-            return
-        current = view.current_index()
-        self._open_imposition_zoom(
-            lambda index: self._imposition_item_target(current, index), slot
-        )
+    def _open_imposition_item_preview(self, _slot: int) -> None:
+        """画布右键「预览图片」：预览**本页拼版后的图片**（整页成品组合）。
+
+        用户 2026-10-18：拼版这一步的"图片"是**拼版后的图片**（会实时重合成
+        产出新图），不是画布上那张输入源图；「编辑图片」才是作用于两张源图
+        （编辑后重新合成，保持不变）。
+        """
+        self._open_imposition_spread_preview()
 
     def _open_imposition_spread_preview(self) -> None:
-        """画布**双击空白处**：弹窗预览整页左右组合（按产出口径合成的效果）。"""
+        """画布**双击空白处/右键图片「预览图片」**：预览整页左右组合（按产出口径）。"""
         view = getattr(self, "imposition_view", None)
         if view is None or view.current_index() < 0:
             return
@@ -294,38 +294,34 @@ class ImpositionLayoutMixin:
         dialog.activateWindow()
         dialog.show_for(factory=factory, index=index)
 
-    def _imposition_item_target(self, page_index: int,
-                                slot: int) -> "object | None":
-        """弹窗「**单张原图**」来源：``slot`` 即弹窗页码（0 右槽 / 1 左槽）。
+    def _imposition_locate_targets(self, _slot: int) -> list[Path]:
+        """画布右键「定位图片资源」的落点：**本页拼版成品** → **本节点成品目录**。
 
-        ``edit_path`` = 这张源图文件：弹窗里「编辑」「完成」后原子覆盖回源图，
-        由 :meth:`_on_imposition_zoom_image_saved` 接生效链（2026-10-07 用户定：
-        预览弹窗里的编辑也要生效，不再只读）。
+        用户 2026-10-18：拼版这一步的"图片资源"是**拼版后的图片**——它由合成
+        worker 实时重合成，产出的是 ``stages/imposition[~<节点>]/NNNN.png``；
+        画布上那张是**输入源图**（如 ``stages/input``），不是这一步的产物，不能
+        拿它当「定位图片资源」的目标（其他步骤定位到自己的输入图是合理的，拼版
+        不是）。
+
+        成品页还没合成出来时退到**成品目录**，让用户至少到"这一批产物跟前"；
+        两者都不在时由画布按"定位失败"说明原因（不静默）。
+
+        ⚠️ ``_slot`` 只是画布解析器契约的形参（``(index) -> list[Path]``）：
+        目标是**整页成品**，与右键的是哪一张子图无关。
         """
-        from desktop.workers import PreviewWorker
-        from desktop.components.viewers.image_zoom_dialog import ZoomTarget
-
+        view = getattr(self, "imposition_view", None)
+        if view is None or not getattr(self, "task_id", None):
+            return []
+        output = self._imposition_output_dir()
+        if not output.parts:
+            return []
+        index = view.current_index()
+        targets: list[Path] = []
         pages = self._imposition_pages()
-        if not 0 <= page_index < len(pages):
-            return None
-        items = pages[page_index].get("items") or []
-        if not 0 <= slot < len(items):
-            return None
-        path = Path(str(items[slot].get("file") or ""))
-        if not path.exists():
-            return None
-        side = "右侧" if slot == 0 else "左侧"
-        return ZoomTarget(
-            render=lambda edge, p=path: PreviewWorker(p, longest_edge=edge),
-            note=f"{cn_page_label(page_index)} · {side}「{path.name}」",
-            stem=path.stem,
-            count=len(items),
-            # ⚠️ 只给「定位」，**不给** edit_path：拼版按现行口径不提供单张源图
-            #    编辑（编辑统一作用于整页组合）。把定位绑在 edit_path 上会让
-            #    这张原图**根本没有**「定位图片资源」菜单（用户 2026-10-17：
-            #    「检查每一步图片需要定位」）。
-            locate_path=path,
-        )
+        if 0 <= index < len(pages):
+            targets.append(product_path(output, index, pages[index]))
+        targets.append(output)
+        return targets
 
     def _imposition_spread_target(self, page_index: int) -> "object | None":
         """弹窗「整页左右组合」来源：构造时快照版面，合成在 worker 线程。"""
@@ -343,7 +339,9 @@ class ImpositionLayoutMixin:
         left = stems[1] if len(stems) > 1 else ""
         edit_path = None
         task_id = getattr(self, "task_id", None)
-        output = self._imposition_output_dir() / (FILE_FMT.format(page_index + 1))
+        output = product_path(
+            self._imposition_output_dir(), page_index, pages[page_index]
+        )
         if task_id and not getattr(self, "_imposition_dirty", False) and output.is_file():
             edit_path = output
         # ⚠️ 定位**独立于编辑**：整页组合是虚拟图（合成物），
@@ -633,7 +631,11 @@ class ImpositionLayoutMixin:
         from desktop.workers import ImpositionComposeWorker, connect_queued
 
         self.run_worker(
-            lambda: ImpositionComposeWorker(doc, out_dir),
+            # 成品后缀随**该页源图**走（用户 2026-10-17）：输入 png 出 png、
+            # 输入 jpg 出 jpg（同一目录里两种后缀可以并存）
+            lambda: ImpositionComposeWorker(
+                doc, out_dir, suffix_for=page_product_suffix
+            ),
             lambda worker, thread: (
                 connect_queued(
                     self, worker.finished, self._on_imposition_composed, thread
@@ -685,12 +687,7 @@ class ImpositionLayoutMixin:
         if not out_dir.is_dir():
             return False
         products = [
-            entry
-            for entry in out_dir.iterdir()
-            if entry.is_file()
-            and entry.suffix == ".png"
-            and entry.stem.isdigit()
-            and len(entry.stem) == 4
+            entry for entry in out_dir.iterdir() if is_product_file(entry)
         ]
         if len(products) != len(pages):
             return False

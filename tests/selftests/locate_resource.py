@@ -1,14 +1,18 @@
 # -*- coding: utf-8 -*-
-"""「定位图片资源」在各步骤的正确性（用户 2026-10-17）。
+"""「定位图片资源」在各步骤的正确性（用户 2026-10-17，2026-10-18 修订）。
 
-报障：任务 0016 第二个「图片拼版」节点里右键图片，「定位到图片资源」不对。
-顺手按「检查每一步图片需要定位」把**所有**定位入口对了一遍，钉住三件事：
+报障：任务 0016 第二个「图片拼版」节点里右键图片，「定位到图片资源」不对；
+2026-10-18 用户进一步明确：拼版这一步的"图片资源"是**拼版后的图片**
+（``stages/imposition[~<节点>]`` —— 实时重合成产出新图），不是画布上那张
+输入源图（如 ``stages/input``）。顺带按「检查每一步图片需要定位」把所有定位
+入口对了一遍，钉住三件事：
 
 1. **定位＝右键的那一张**：拼版画布命中按旋转后的矩形算、选中项优先，
    两图并排时不能错一格（错一格就是"定位错了"）；
-2. **定位与编辑解耦**：拼版的单张原图按现行口径不给编辑，但它背后有真实
-   文件，仍必须能定位（``ZoomTarget.locate_path`` 独立于 ``edit_path``）；
-3. **定位失败不许静默**：源文件被删/目录不在时要说明（静默什么都不发生，
+2. **定位与编辑解耦**：拼版的图按现行口径不给单图编辑（编辑统一作用于整页），
+   但它背后有真实文件（成品），仍必须能定位（``ZoomTarget.locate_path``
+   独立于 ``edit_path``；拼版画布另有 ``set_locate_resolver``）；
+3. **定位失败不许静默**：文件被删/目录不在时要说明（静默什么都不发生，
    用户只会以为定位到了错误的资源）。
 
 各步骤的定位来源（本用例覆盖前两处，后三处由既有用例覆盖）：
@@ -18,7 +22,7 @@
 | 图片提取 | 页面图文件本身（``edit_path``） |
 | 检测文本框 | 页面图文件本身 |
 | 图片去底色 | 显示的是原图→原图；显示正式结果→结果图（临时合成→不给） |
-| 图片拼版 | 画布上右键的那张**源图**；预览弹窗：整页组合→成品页，无成品→源图目录 |
+| 图片拼版 | **本页拼版成品页**（``stages/imposition[~<节点>]``）；没合成→成品目录 |
 | PDF 排版 | 待打印的那张图（第三步提交产物／拼版成品） |
 """
 
@@ -102,7 +106,11 @@ def run(ctx) -> None:
     # ---- 3. 拼版画布：右键哪一张就定位哪一张 ----
     picked: list[str] = []
     original_reveal = files_mod.reveal_in_explorer
-    files_mod.reveal_in_explorer = lambda p: picked.append(str(p)) or True
+    # 让替身按"文件真在不在"回答：不存在就继续试下一个候选（与真
+    # reveal_in_explorer 一致——它不存在就返回 False，调用方才有退路）
+    files_mod.reveal_in_explorer = (
+        lambda p: picked.append(str(p)) or Path(p).exists()
+    )
     try:
         a = Path(temp_dir("locate_a_")) / "0001-r.png"
         b = Path(temp_dir("locate_b_")) / "0001-l.png"
@@ -120,7 +128,7 @@ def run(ctx) -> None:
             hit = canvas._item_at(QPointF(rect.center()))
             canvas._selected = -1  # 别让"选中项优先"顶掉命中结果
             canvas._locate_item_file(hit)
-        ok("画布右键定位的就是被右键的那一张（两图并排不错格）",
+        ok("没给解析器时：定位的就是被右键的那一张（两图并排不错格）",
            [Path(p).name for p in picked] == ["0001-r.png", "0001-l.png"],
            str(picked))
 
@@ -134,6 +142,41 @@ def run(ctx) -> None:
         ok("重叠区命中选中的那张（定位与画面分层一致）",
            canvas._item_at(overlap) == 1, str(canvas._item_at(overlap)))
         canvas.deleteLater()
+
+        # ⚠️ 拼版这一步：宿主给**成品**解析器后，定位的是**拼版后的图片**
+        #    （用户 2026-10-18），不再是画布上那张输入源图。
+        prod_dir = temp_dir("locate_prod_")
+        prod = prod_dir / "0001.png"
+        prod.write_bytes(b"y")
+        canvas_prod = ImpositionCanvas()
+        canvas_prod.resize(900, 700)
+        canvas_prod.set_page([
+            {"file": str(a), "rect": [0, 0, 400, 600], "rotation": 0.0},
+        ])
+        canvas_prod.set_locate_resolver(
+            lambda _i, d=prod_dir, f=prod: [f, d]
+        )
+        picked.clear()
+        canvas_prod._locate_item_file(0)
+        ok("拼版给了解析器 → 定位的是成品页，而不是输入源图",
+           picked[-1] == str(prod) and str(a) not in picked, str(picked))
+        canvas_prod.deleteLater()
+
+        # 成品页还没合成出来 → 退到**成品目录**（至少到这一批产物跟前），
+        # 且**不回退**到输入源图（用户明确说那不是拼版的图片资源）
+        canvas_pending = ImpositionCanvas()
+        canvas_pending.resize(900, 700)
+        canvas_pending.set_page([
+            {"file": str(a), "rect": [0, 0, 400, 600], "rotation": 0.0},
+        ])
+        canvas_pending.set_locate_resolver(
+            lambda _i, d=prod_dir: [d / "0009.png", d]
+        )
+        picked.clear()
+        canvas_pending._locate_item_file(0)
+        ok("成品页还没合成 → 退到成品目录（不回退到输入源图）",
+           picked[-1] == str(prod_dir) and str(a) not in picked, str(picked))
+        canvas_pending.deleteLater()
     finally:
         files_mod.reveal_in_explorer = original_reveal
 
@@ -174,13 +217,16 @@ def run(ctx) -> None:
 
     from desktop.pages.taskdetail import imposition_layout
 
-    single_src = inspect.getsource(
-        imposition_layout.ImpositionLayoutMixin._imposition_item_target
+    # ⚠️ 拼版这一步的"图片资源"是**拼版成品**（`stages/imposition[~<节点>]`，
+    #    会实时重合成产出新图），不是画布上那张输入源图（用户 2026-10-18）。
+    locate_src = inspect.getsource(
+        imposition_layout.ImpositionLayoutMixin._imposition_locate_targets
     )
-    ok("任务流程·拼版单张原图：给 locate_path（能定位）",
-       "locate_path=path" in single_src, "拼版单张原图没有定位入口")
-    ok("任务流程·拼版单张原图：不给 edit_path（不放开单图编辑）",
-       "edit_path=" not in single_src, "又给单图开了编辑")
+    ok("任务流程·拼版定位：落点走**成品**（成品页 → 成品目录）",
+       "product_path(" in locate_src
+       and "_imposition_output_dir()" in locate_src
+       and "targets.append(output)" in locate_src,
+       "拼版没把定位指向成品")
 
     spread_src = inspect.getsource(
         imposition_layout.ImpositionLayoutMixin._imposition_spread_target
@@ -198,6 +244,15 @@ def run(ctx) -> None:
        module_text.count("locate_path=path") >= 1
        and "locate_path=locate_path" in module_text,
        "独立页的定位入口不全")
+
+    # ⚠️ 任务流程的拼版画布必须**挂上成品解析器**（不挂就退到源图，用户报过）
+    view_src = (
+        Path(imposition_layout.__file__).parent / "view.py"
+    ).read_text(encoding="utf-8")
+    ok("任务流程·拼版画布挂了「定位成品」解析器",
+       "set_locate_resolver" in view_src
+       and "_imposition_locate_targets" in view_src,
+       "画布没挂成品解析器")
 
     # ---- 6. 失败信号贯通到宿主（页面上真能看见）----
     from desktop.components.imposition.view import ImpositionViewWidget

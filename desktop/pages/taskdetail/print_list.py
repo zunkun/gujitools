@@ -52,24 +52,49 @@ class PrintListMixin:
     def _print_thumb_provider(self, file_text: str):
         """第四步缩略条的小图来源：提交阶段预生成的缩略图（无则回落原图解码）。
 
-        只服务 stages/rembg 的**提交产物**（缩略图按最终图 stem 存放，
+        只服务 ``stages/rembg[~<节点>]`` 的**提交产物**（缩略图按最终图 stem 存放，
         mtime 不旧于最终图才算有效——外部改动了最终图就自动失效回落）；
-        拼版产物（stages/imposition）与用户手动「插入图片」的外部图没有预生成
+        拼版产物（``stages/imposition``）与用户手动「插入图片」的外部图没有预生成
         缩略图，照旧现解码。
+
+        ⚠️ **缩略图目录按节点取**（B 方案）：两个「图片去底色」节点各有各的提交
+        产物目录，缩略图缓存也跟着分（``thumbnails/print[~<节点>]``）。这里从
+        **产物自己的目录名**反推节点后缀（与写入端 ``rembg_stage.py`` 同一份
+        规则，见 :func:`desktop.steps.ports.node_scope_from_output_dir`）——比按
+        界面当前节点取更准：第四步消费的是**上游那个**节点交的图，未必是当前选中
+        的节点。
+
+        入口图片（流程第一步就是「PDF排版」时，输入回落到 ``stages/input/``）：
+        走导入时生成的 :meth:`store.entry_thumb_path`，不现解码原图（用户
+        2026-10-17）。
         """
         if not self.task_id:
             return None
         try:
             page = Path(file_text)
-            # ⚠️ 按**当前节点**的提交产物目录判（B 方案）：副本节点的成品图
-            #    不会命中主节点的缩略图（stem 同名但目录不同），走错目录就会
-            #    拿另一张图的缩略图当这一页——看着像"缩略图串页"。
-            submitted = self.store.node_or_stage_output(
-                self.task_id, self.node_of_stage("rembg_submit"), "rembg_submit"
-            )
-            if page.parent != submitted:
-                return None
-            thumb = self.store.rembg_thumbnails_dir(self.task_id) / f"{page.stem}.jpg"
+            # 入口图片的预生成小图优先（按图键缓存，命中即用）
+            entry = self.store.entry_thumb_path(self.task_id, page)
+            if entry is not None:
+                return entry
+        except (OSError, ValueError):
+            return None
+        from desktop.steps.ports import node_scope_from_output_dir
+
+        parent = page.parent
+        # 提交产物目录恒为 ``stages/rembg`` 或 ``stages/rembg~<节点>``
+        # （``rembgpreview`` 是第三步的实时预览目录，**不是**这里要认的成品，
+        #  所以按精确前缀判，别用 ``startswith("rembg")``）。
+        if parent.parent != self.store.task_dir(self.task_id) / "stages" or not (
+            parent.name == "rembg" or parent.name.startswith("rembg~")
+        ):
+            return None
+        thumb_dir = (
+            self.store.task_dir(self.task_id)
+            / "thumbnails"
+            / f"print{node_scope_from_output_dir(parent.name)}"
+        )
+        thumb = thumb_dir / f"{page.stem}.jpg"
+        try:
             if (
                 thumb.is_file()
                 and thumb.stat().st_mtime >= page.stat().st_mtime

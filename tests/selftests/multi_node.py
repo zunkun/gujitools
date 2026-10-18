@@ -12,6 +12,7 @@
 2. **按节点隔离**：同一阶段出现第二个节点时，它的产物落到
    ``stages/<阶段>~<节点>``、暂存落到 ``drafts/<阶段>~<节点>.json``、
    检测框落到 ``boxes~<节点>.json``、页清单落到 ``pages~<节点>.json``、
+   缩略图缓存目录落到 ``thumbnails/<名>~<节点>``、
    运行状态各记各的（``node_states``）；
 3. **界面如实体现在流程里**：步骤条上同一步骤**各占一格**、标题带序号可区分，
    "上次停留"精确到节点，执行端（``_output_path_for``）按节点落点。
@@ -19,6 +20,8 @@
 ⚠️ 本模块自建任务（自定义流程图 + 任务目录），结束时清掉，避免把
 ``stages/extract~*`` 之类的副本目录与暂存留给后面的模块。
 """
+
+from pathlib import Path
 
 NAME = "multi_node"
 DEPENDS: list[str] = ["tasklist"]
@@ -162,6 +165,48 @@ def run(ctx) -> None:
            f"{page._output_path_for('extract', 'ex2')} / "
            f"{page._output_path_for('print', 'pr2')}")
 
+        # ---- 缩略图缓存目录也按节点分（用户 2026-10-17 第 2 条）----
+        from desktop.steps import ports as _ports
+
+        ok("缩略图缓存目录按节点分（主节点沿用旧裸名、副本带 ~<节点>）",
+           repo.thumbnails_dir(tid, "print", "rb1")
+           == task_dir / "thumbnails" / "print"
+           and repo.rembg_thumbnails_dir(tid, "rb2")
+           == task_dir / "thumbnails" / "print~rb2"
+           and repo.imposition_page_thumbs_dir(tid, "pr1")
+           == task_dir / "thumbnails" / "imposition_pages"
+           and repo.imposition_page_thumbs_dir(tid, "pr2")
+           == task_dir / "thumbnails" / "imposition_pages~pr2"
+           and repo.stage_output_dir(tid, "detect", "de1")
+           == task_dir / "thumbnails" / "detect"
+           and repo.stage_output_dir(tid, "detect", "de2")
+           == task_dir / "thumbnails" / "detect~de2",
+           f"{repo.rembg_thumbnails_dir(tid, 'rb2')} / "
+           f"{repo.stage_output_dir(tid, 'detect', 'de2')}")
+        ok("worker 从产物目录名反推的作用域与 store 一致（写法只有一份）",
+           _ports.node_scope_from_output_dir("rembg~rb2") == "~rb2"
+           and _ports.node_scope_from_output_dir("rembg") == ""
+           and _ports.node_scope_from_output_dir("extract") == "",
+           _ports.node_scope_from_output_dir("rembg~rb2"))
+
+        # ---- 「选择拼版」弹窗的候选小图：按产物目录反推该用哪一份缩略图缓存 ----
+        # 用户 2026-10-17：弹窗要显示缩略图（上游「去底色」提交成品的小图），
+        # 不再对每张候选整幅解码原图。判据只看路径（provider 只 stat 不解码），
+        # 所以这里用假文件即可验证"配到哪一份缓存"。
+        for product_dir, thumb_dir in (
+            (task_dir / "stages" / "rembg", task_dir / "thumbnails" / "print"),
+            (task_dir / "stages" / "rembg~rb2",
+             task_dir / "thumbnails" / "print~rb2"),
+        ):
+            product_dir.mkdir(parents=True, exist_ok=True)
+            (product_dir / "0001.png").write_bytes(b"x" * 1024)
+            thumb_dir.mkdir(parents=True, exist_ok=True)
+            (thumb_dir / "0001.jpg").write_bytes(b"x" * 1024)  # 后写 ⇒ mtime 不比成品旧
+            got = page._imposition_picker_thumb(str(product_dir / "0001.png"))
+            ok(f"弹窗候选（{product_dir.name}）配到上游那一个节点的成品小图",
+               got is not None and Path(got) == thumb_dir / "0001.jpg",
+               str(got))
+
         # ---- 暂存 / 页清单 / 检测框按节点 ----
         ok("暂存文件按节点分",
            repo.draft_path(tid, "print", "pr2", "pr1")
@@ -273,7 +318,7 @@ def run(ctx) -> None:
 
 def _check_entry_optional_flow(ctx, repo) -> None:
     """③ 用户的流程图：两个「图片拼版」+ 拼版做入口。"""
-    from tests.selftests._context import ok, pump
+    from tests.selftests._context import ok, pump, wait_until
 
     from desktop.pages.taskdetail.page import TaskDetailPage
     from desktop.steps import ports
@@ -378,6 +423,61 @@ def _check_entry_optional_flow(ctx, repo) -> None:
            or not page._missing_entry_images(),
            page.source_warning.text())
 
+        # ---- 入口图片缩略图：**引入即生成**（用户 2026-10-17 第 1 条）----
+        # 「图片拼版」做第一个节点时，它的输入就是 stages/input 里的图；左栏
+        # 此前只能现解码原图。现在引入即生成到 thumbnails/input/（按图键命名），
+        # 缩略图条走缓存小图。
+        entry_img = entry / "0001.png"
+        ok("入口图片尚无缩略图缓存时，查询返回 None（而不是误取源 PDF 页缩略图）",
+           repo.entry_thumb_path(uid, entry_img) is None,
+           str(repo.input_thumbnails_dir(uid)))
+        page._warm_entry_thumbs([entry_img])
+        ok("引入入口图片即后台生成缩略图缓存",
+           wait_until(
+               app, lambda: repo.entry_thumb_path(uid, entry_img) is not None
+           ),
+           str(repo.input_thumbnails_dir(uid)))
+        spec = page._page_thumb_for(str(entry_img))
+        ok("入口图片的缩略图条走**缓存小图**（回落到真图就说明没接上）",
+           isinstance(spec, dict) and Path(spec["path"]).is_file(),
+           str(spec))
+        # 拼版是**第一个节点**时，「选择拼版」弹窗的候选也走这份入口小图
+        # （用户 2026-10-17：弹窗现在是原图，应该用 input 的缩略图）
+        picker_thumb = page._imposition_picker_thumb(str(entry_img))
+        ok("拼版做入口时，弹窗候选走 thumbnails/input 里的入口小图",
+           picker_thumb is not None
+           and Path(picker_thumb) == repo.entry_thumb_path(uid, entry_img),
+           str(picker_thumb))
+        # 弹窗**真的读**那份缓存：把缓存小图改成红色（源图是白底），
+        # 卡片显示成红色 ⇒ 证明走的不是"现解码原图"那条回落路。
+        from PySide6.QtGui import QColor, QImage as _QImage
+
+        from desktop.components.imposition.picker import ImpositionPickerDialog
+        from desktop.workers.thumb_cache_worker import thumb_cache_file
+
+        cache_file = thumb_cache_file(repo.input_thumbnails_dir(uid), entry_img)
+        marker = _QImage(160, 200, _QImage.Format.Format_RGB32)
+        marker.fill(QColor(200, 30, 30))
+        # ⚠️ 不显式传 format：PySide6 的类型注解把 ``format`` 写成字节串，
+        #    传 "JPEG" 会被 pyright 判错；后缀 ``.jpg`` 足以让 Qt 自己选编码。
+        marker.save(str(cache_file), quality=90)
+        dialog = ImpositionPickerDialog(
+            [entry_img], page.window(),
+            thumb_provider=page._imposition_picker_thumb,
+        )
+        dialog.resize(1000, 680)
+        dialog.show()
+        ok("弹窗候选确实用了缓存小图（源图白底、缓存红底 ⇒ 应显示红底）",
+           wait_until(
+               app,
+               lambda: bool(dialog.cards)
+               and not dialog.cards[0]._pixmap.isNull(),
+           )
+           and _center_is_red(dialog.cards[0]._pixmap.toImage()),
+           str(dialog.cards[0]._pixmap.size()) if dialog.cards else "无卡片")
+        dialog.deleteLater()
+        pump(app, times=4)
+
         # ---- 拼版版面：**写读必须同一个文件**（否则选完页窗口里一张也不显示）----
         # 用户 2026-10-17 实测：拼版做第一个节点时，选 122 页 + 开始拼版后
         # 左侧还是"还没有拼版页"——写进了 `drafts/imposition~<节点>.json`，
@@ -385,8 +485,8 @@ def _check_entry_optional_flow(ctx, repo) -> None:
         ok("当前拼版节点是**副本**（主节点是文件声明里的第一个）",
            page._imposition_scope()["node_id"] == page.current_node()
            and page._imposition_scope()["node_id"]
-           != page._imposition_flag_scope()["node_id"],
-           f"{page._imposition_scope()} vs {page._imposition_flag_scope()}")
+           != page._imposition_scope()["primary_id"],
+           f"{page._imposition_scope()}")
         seed = dict(page._imposition_doc())
         # ⚠️ 页里必须有**真实条目**：``normalize_doc`` 会丢掉没有 items 的空页
         #    （那是"半截数据"，不是一页版面），拿空页测这条会假红。
@@ -413,6 +513,18 @@ def _check_entry_optional_flow(ctx, repo) -> None:
            len(page.imposition_view.pages()) == 1,
            str(len(page.imposition_view.pages())))
 
+        # ⚠️ 流程条上这一格 = "这一步有没有拼过版"（2026-10-18 用户口径：
+        #    「第一个拼版已经运行过 → 高亮；第二个还没到那一步 → 不高亮」）。
+        #    判据是**该节点自己有没有拼版页**——两个节点各算各的，不互相点亮。
+        page._sync_imposition_step_bar()
+        pump(app, times=2)
+        _node1, _node2 = bar.optional_nodes[0], bar.optional_nodes[1]
+        ok("拼过页的拼版节点亮「已选择/绿勾」，没拼过的保持灰（各算各的）",
+           _node1.is_selected() and _node1.badge._status == "success"
+           and not _node2.is_selected() and _node2.badge._status == "pending",
+           f"imp1={_node1.is_selected()}/{_node1.badge._status} "
+           f"imp2={_node2.is_selected()}/{_node2.badge._status}")
+
         # ---- 「上一个节点的输出 = 下一个节点的输入」（用户 2026-10-17 第 3 条）----
         # 检测文本框的上游是拼版 ⇒ 它的输入目录必须是**拼版成品目录**；页清单
         # 也必须跟着这份产物走（不是入口图片、也不是提取的 pages.json）。
@@ -438,6 +550,50 @@ def _check_entry_optional_flow(ctx, repo) -> None:
            all("input" not in str(p).replace("\\", "/").split("/")[-2:]
                for p in page._manifest_paths()),
            str([str(p) for p in page._manifest_paths()]))
+
+        # ---- 拼版成品后缀跟输入源图走（用户 2026-10-17）----
+        # 「图片拼版，输入图片是 png 就输出 png，输入是 jpg 就输出 jpg」。
+        from desktop.services.imposition import (
+            compose_doc, is_product_file, page_product_suffix, product_path,
+        )
+
+        ok("成品后缀判据：全 jpg 族 ⇒ .jpg，混了 png ⇒ .png",
+           page_product_suffix(
+               {"items": [{"file": "a.jpg"}, {"file": "b.jpeg"}]}) == ".jpg"
+           and page_product_suffix(
+               {"items": [{"file": "a.jpg"}, {"file": "b.png"}]}) == ".png"
+           and product_path(task_dir, 0, {"items": [{"file": "a.jpg"}]})
+           == task_dir / "0001.jpg"
+           and is_product_file(task_dir / "0007.jpg")
+           and is_product_file(task_dir / "0007.png")
+           and not is_product_file(task_dir / "cover.jpg"),
+           page_product_suffix({"items": [{"file": "a.png"}]}))
+
+        # 端到端：真跑一轮合成，jpg 源图出 .jpg、png 源图出 .png
+        from PySide6.QtGui import QImage as _Img
+
+        scratch = task_dir / "format_probe"
+        scratch.mkdir(parents=True, exist_ok=True)
+        jpg_src = scratch / "s.jpg"
+        _Img(40, 60, _Img.Format.Format_RGB32).save(str(jpg_src), quality=90)
+        png_src = scratch / "s.png"
+        _Img(40, 60, _Img.Format.Format_RGB32).save(str(png_src))
+        out_dir = scratch / "out"
+        other = {"0001.jpg": "0001.png", "0001.png": "0001.jpg"}
+        for src, want in ((jpg_src, "0001.jpg"), (png_src, "0001.png")):
+            doc = {"pages": [{"items": [
+                {"file": str(src), "rect": [0.0, 0.0, 40.0, 60.0],
+                 "rotation": 0.0},
+            ]}]}
+            written = compose_doc(doc, out_dir, suffix_for=page_product_suffix)
+            ok(f"拼版源图 {src.suffix} ⇒ 成品落 {want}",
+               [p.name for p in written] == [want]
+               and (out_dir / want).is_file(),
+               str([p.name for p in written]))
+            # 同页换了格式：旧后缀必须被清掉，否则第四步把同一页当两页
+            ok(f"换格式后旧的 {other[want]} 被清掉（同页不会重复进 PDF）",
+               not (out_dir / other[want]).exists(),
+               str(sorted(p.name for p in out_dir.iterdir())))
     finally:
         try:
             page.shutdown_all_workers()
@@ -446,6 +602,14 @@ def _check_entry_optional_flow(ctx, repo) -> None:
         page.deleteLater()
         repo.delete_task(uid)
         ok("用户流程图样本任务已清理", repo.get_task(uid) is None)
+
+
+def _center_is_red(image) -> bool:
+    """弹窗卡片缩略图的中心像素是不是红的（白底合成图上取中心最稳）。"""
+    if image.isNull() or image.width() < 4 or image.height() < 4:
+        return False
+    color = image.pixelColor(image.width() // 2, image.height() // 2)
+    return color.red() > 150 and color.green() < 100 and color.blue() < 100
 
 
 def _step_bar_index(page, step: str) -> int:

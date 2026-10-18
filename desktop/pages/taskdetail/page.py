@@ -1565,6 +1565,9 @@ class TaskDetailPage(
             self.extract_result_viewer.set_extract_dir(self._node_dir("extract"))
         elif stage == "detect":
             self.detect_viewer.set_images(self._manifest_paths())
+            # 入口图片（这一步是流程第一步时）缩略图预热：没有就后台生成，
+            # 别让左栏一直现解码原图（用户 2026-10-17）
+            self._warm_entry_thumbs(self._manifest_paths())
             # 清单可能变了（增删页/切任务/批量检测跑完）→ 统计跟着重算
             self._refresh_detect_stats()
         elif stage == "rembg":
@@ -1584,9 +1587,14 @@ class TaskDetailPage(
                 page_width_provider=lambda text: _widths.get(Path(text).stem, 0),
                 side_for=lambda text: _sides.get(Path(text).stem),
             )
+            # 入口图片缩略图预热（同上：这一步是流程第一步时才有效）
+            self._warm_entry_thumbs(self._manifest_paths())
         elif stage == "print":
             entries, _doc = self._print_entries()
             self.print_preview.set_entries(entries)
+            # 入口图片缩略图预热：流程第一步就是「PDF排版」时，待打印清单直接
+            # 来自入口目录（见 print_source_dir 的入口回落）
+            self._warm_entry_thumbs([e.get("file") for e in entries])
             # 记下本次列表的来源：进入路径在 _refresh_print_source 里是"只作废
             # 缓存不重建"，不在这里补记的话，进第四步后每次后台合成回调都会
             # 把整批列表白重建一遍（同步解码首图，UI 冻结）

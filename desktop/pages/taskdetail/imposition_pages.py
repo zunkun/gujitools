@@ -56,14 +56,25 @@ class ImpositionPagesMixin:
         _sync_imposition_step_bar: Callable[..., None]
         _update_imposition_status: Callable[..., None]
         imposition_source_files: Callable[[], list]
+        # 当前格的节点实例 id（页面宿主提供）：缩略图实体目录按它分节点
+        node_of_stage: Callable[[str], str | None]
+        # 候选图的预生成小图来源（同级 Mixin 提供）：入口图片/去底色成品小图与
+        # 源 PDF 页缩略图，见 :meth:`_imposition_picker_thumb`。
+        _print_thumb_provider: Callable[[str], Any]
+        _page_thumb_for: Callable[..., Any]
 
     # ------------------------------------------------------------- 选择状态
     def _load_imposition_enabled(self) -> bool:
         """当前任务是否选择了拼版（默认不选择）。
 
-        ⚠️ 开关是**流程级**的（决定第四步取图来源），所以读写都走**主节点**
-        那一份文件（见 ``ImpositionBaseMixin._imposition_flag_scope``）；
-        版面（pages）才按节点分。
+        ⚠️ 开关是**流程级**的（流程图上「是否拼版」网关问的就是它，决定第四步
+        取图来源），所以读写都走**主节点**那一份文件
+        （见 ``ImpositionBaseMixin._imposition_flag_scope``）；版面（pages）才
+        按节点分。
+
+        ⚠️ **流程条上那一格的"已选择/绿勾"不看它**（2026-10-18）：那一格表达的是
+        "这一步处理到哪了"（判据是本节点有没有拼版页，见
+        ``_sync_imposition_step_bar``）。这个开关只决定"第四步取不取拼版结果"。
         """
         if not self.task_id:
             return False
@@ -101,6 +112,32 @@ class ImpositionPagesMixin:
         self._refresh_print_source()
 
     # ------------------------------------------------------------- 加页
+    def _imposition_picker_thumb(self, path_text: str):
+        """「选择拼版」弹窗候选图的**预生成小图路径**（没有则 ``None``）。
+
+        用户 2026-10-17：弹窗里应该显示**缩略图**，而不是每次都现解码原图：
+
+        - 「图片拼版」**不是**流程第一个节点时，候选是**上一个节点**的产物
+          （正常是「图片去底色」提交后的成品 ``stages/rembg[~<节点>]``）——那些图
+          在提交时就已生成 256px 小图（``thumbnails/print[~<节点>]``）；
+        - 它是**流程第一个节点**时，候选是用户导入的入口图片
+          （``stages/input/``）——导入时已生成 ``thumbnails/input/<图键>.jpg``；
+        - 其余（``extract`` 上游的页图 / 手动插入的外部图）⇒ 回落源 PDF 页
+          缩略图（``thumbnails/source``），仍没有就回 ``None``，由弹窗整幅解码。
+
+        ⚠️ 判据**复用既有的两份 provider**，不在这里另写一套「哪个目录配哪份
+        缓存」：:meth:`_print_thumb_provider`（入口图片 + 去底色提交成品）优先，
+        :meth:`_page_thumb_for`（源 PDF 页）兜底——次序不能反：去底色成品与源
+        PDF 页可能同名同页号，反了会把"去底色结果"显示成"PDF 原页"。
+        """
+        product = self._print_thumb_provider(path_text)
+        if product is not None:
+            return product
+        page_spec = self._page_thumb_for(path_text)
+        if isinstance(page_spec, dict):
+            return Path(page_spec["path"])
+        return None if page_spec is None else Path(page_spec)
+
     def _on_imposition_add_requested(self) -> None:
         """点「＋ 选择拼版」：弹窗自由多选，点「开始拼版」按每两张一页配对。"""
         if not self.task_id:
@@ -129,7 +166,12 @@ class ImpositionPagesMixin:
                 "所有图片都已被拼版使用。可先删掉某些拼版页再来选。",
             )
             return
-        dialog = ImpositionPickerDialog(pool, self.window(), removed_files=removed)
+        dialog = ImpositionPickerDialog(
+            pool, self.window(), removed_files=removed,
+            # 候选图走**预生成小图**（上一节点成品小图 / 入口图片小图），
+            # 不再每张整幅解码源图（用户 2026-10-17）
+            thumb_provider=self._imposition_picker_thumb,
+        )
         if not dialog.exec():
             # 取消也落盘：删除/恢复是即时意图，与是否开始拼版无关
             self._apply_picker_removed(dialog)
@@ -276,6 +318,7 @@ class ImpositionPagesMixin:
             return
         dialog = ImpositionPickerDialog(
             pool, self.window(), removed_files=removed, mode="append",
+            thumb_provider=self._imposition_picker_thumb,
         )
         if not dialog.exec():
             # 取消也落盘：删除/恢复是即时意图，与是否添加无关
@@ -433,18 +476,22 @@ class ImpositionPagesMixin:
 
         if not self.task_id:
             return None
+        # ⚠️ 目录按**当前拼版节点**取（B 方案）：两个「图片拼版」节点各有各的
+        #    版面文档与合成产物，页面效果缩略图实体也跟着分
+        #    （``thumbnails/imposition_pages[~<节点>]``），否则副本节点会读到主
+        #    节点的实体（用户在另一节点改动版面，这一节点左列却显示旧图）。
+        target = self.store.imposition_page_thumbs_dir(
+            self.task_id, self.node_of_stage("imposition")
+        )
         manager = getattr(self, "_page_thumb_mgr", None)
         if manager is None:
             manager = PageThumbManager(
-                self.store.imposition_page_thumbs_dir(self.task_id),
-                THUMBNAIL_EDGE, self.run_worker, parent=self,
+                target, THUMBNAIL_EDGE, self.run_worker, parent=self,
             )
             manager.page_ready.connect(self._on_imposition_page_thumb_ready)
             self._page_thumb_mgr = manager
-        else:
-            target = self.store.imposition_page_thumbs_dir(self.task_id)
-            if manager.directory != target:
-                manager.bind(target)
+        elif manager.directory != target:
+            manager.bind(target)
         return manager
 
     def _on_imposition_page_thumb_ready(self, index: int, pixmap) -> None:

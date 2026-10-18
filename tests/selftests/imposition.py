@@ -1845,8 +1845,14 @@ def run(ctx) -> None:
         class _FakeDialog:
             """替身弹窗：直接认下前两张候选（真实弹窗是模态的，测试里不能 exec）。"""
 
-            def __init__(self, files, parent=None, removed_files=None):
+            def __init__(self, files, parent=None, removed_files=None,
+                         mode="pick", thumb_provider=None):
+                # ⚠️ 必须跟真实弹窗的签名对齐（``mode`` / ``thumb_provider``）：
+                #    控制器现在会传 ``thumb_provider``（弹窗候选走预生成小图，
+                #    用户 2026-10-17），少一个参数就是"点了没反应"。
                 self.files = list(files)
+                self.mode = mode
+                self.thumb_provider = thumb_provider
                 self.initial_removed = list(removed_files or [])
 
             def exec(self) -> int:
@@ -2574,9 +2580,12 @@ def run(ctx) -> None:
         page._imposition_timer.stop()
         pump(ctx.app, times=6)
         ok("勾了启用（还没拼页）→ 判定为已启用", page.imposition_active())
+        # ⚠️ 2026-10-18 口径：流程条上那一格表达的是"这一步处理到哪了"——判据是
+        #    **本节点有没有拼版页**，不是这个开关（开关是**流程级**的，图上
+        #    「是否拼版」网关问的就是它）。所以"勾了但还没拼页"时节点不该亮。
         ok(
-            "勾了启用（还没拼页）→ 流程条点亮为生效态（徽标转对勾）",
-            page.step_bar.imposition_node.badge._status == "success",
+            "勾了启用但还没拼页 → 流程条节点**不亮**（开关≠这一格的进度）",
+            page.step_bar.imposition_node.badge._status != "success",
             f"badge={page.step_bar.imposition_node.badge._status}",
         )
         ok(
@@ -3673,11 +3682,16 @@ def run(ctx) -> None:
             not target.show_text_tool,
             str(target.show_text_tool),
         )
-        item_target = page._imposition_item_target(0, 0)
+        # 用户 2026-10-18：「预览图片」/「定位图片资源」要作用于**拼版后的图片**
+        # （成品组合/成品页），不是画布上那张输入源图。这里钉住定位落点。
+        locate_targets = page._imposition_locate_targets(0)
+        _out_dir = page._imposition_output_dir()
         ok(
-            "单张原图预览不提供单图编辑入口",
-            item_target is not None and item_target.edit_path is None,
-            str(item_target and item_target.edit_path),
+            "右键「定位图片资源」落点 = 本页拼版成品页 → 本节点成品目录",
+            locate_targets
+            and locate_targets[0].parent == _out_dir
+            and locate_targets[-1] == _out_dir,
+            str(locate_targets),
         )
         bounds = S.page_bounds({"items": [dict(i) for i in page_items]})
         _worker = target.render(1600)

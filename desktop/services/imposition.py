@@ -41,6 +41,56 @@ ITEMS_PER_PAGE = 2
 
 #: 落盘文件名：``0001.png`` …（列表顺序即页序，与第四步列表一致）
 FILE_FMT = "{:04d}.png"
+#: 成品页的两种后缀。用户 2026-10-17 口径：**「图片拼版」跟输入源图走**——
+#: 输入是 png 就出 png、输入是 jpg 就出 jpg（见 :func:`page_product_suffix`）。
+PNG_SUFFIX = ".png"
+JPG_SUFFIX = ".jpg"
+#: JPEG 成品的编码质量。95 实测与源图同量级观感，体积约为 RGBA PNG 的 40%
+#: （6000×4409 的一页：PNG 13.4MB → JPEG 5.4MB）。
+JPEG_QUALITY = 95
+#: 「算 jpg 族」的源图后缀；**除它以外一律按 png 出**（保住 alpha）。
+_JPG_SUFFIXES = frozenset({".jpg", ".jpeg"})
+#: 成品页可能的后缀（含 jpeg 别名）：清扫/新鲜度判据都按它认。
+_PRODUCT_SUFFIXES = frozenset({".png", ".jpg", ".jpeg"})
+
+
+def page_product_suffix(page: dict) -> str:
+    """一页成品的**输出后缀**：源图全是 jpg/jpeg ⇒ ``.jpg``，否则 ``.png``。
+
+    用户 2026-10-17：「图片拼版，输入图片是 png，就输出 png，输入是 jpg，
+    输出也是 jpg」。
+
+    ⚠️ 一页可能混着两种源图 ⇒ **任一张不是 jpg/jpeg 就出 png**：只有 png 带
+    alpha，而 jpg 成品必须白底压平（见 :func:`_save_page_atomic`），会把上游
+    「去底色」产物的透明底**抹掉**。宁可体积大一点，也不悄悄丢透明。
+    """
+    for item in page.get("items") or []:
+        if not isinstance(item, dict):
+            continue
+        if Path(str(item.get("file") or "")).suffix.lower() not in _JPG_SUFFIXES:
+            return PNG_SUFFIX
+    return JPG_SUFFIX
+
+
+def product_path(dest_dir: Path | str, index: int, page: dict) -> Path:
+    """第 ``index``（0 基）页成品的落盘路径：``dest/0001.png`` / ``dest/0001.jpg``。"""
+    return Path(dest_dir) / f"{index + 1:04d}{page_product_suffix(page)}"
+
+
+def is_product_file(candidate: Path | str) -> bool:
+    """这个文件是不是**拼版成品页**（``NNNN.png`` / ``NNNN.jpg``，4 位数字名）。
+
+    ⚠️ 后缀认**两种**（用户 2026-10-17 起成品后缀随源图走）：只认 ``.png``
+    的话，"格式切换后上一轮多出来的页"会留在盘上，被第四步当成一页打进 PDF。
+    清扫（:func:`_sweep_stale`）与新鲜度判据都走这一个函数，别各写一套。
+    """
+    path = Path(candidate)
+    return (
+        path.suffix.lower() in _PRODUCT_SUFFIXES
+        and len(path.stem) == 4
+        and path.stem.isdigit()
+    )
+
 
 #: 合成画布的**透明底**（任务流程默认，2026-10-10 用户修订）：白底会烙进成品
 #: 页图，编辑器里统一变换/裁剪全带着白底走；PDF 侧
@@ -717,10 +767,33 @@ def _save_page_atomic(image, target: Path) -> None:
 
     做法与项目既有的 JSON / 缩略图缓存一致：同目录临时文件 + ``os.replace``
     （Windows 上还要短暂重试，目标正被 PDF 渲染器打开时会 ``PermissionError``）。
+
+    ⚠️ **编码按目标后缀选**（用户 2026-10-17）：``.png`` 存 RGBA（保住透明底）；
+    ``.jpg`` 必须**先白底压平**（JPEG 没有 alpha 通道，透明处不压白会被固化成
+    黑色——与 ``thumb_cache_worker.flatten_on_white`` 同一个坑）。
     """
     buf = io.BytesIO()
-    image.save(buf, format="PNG")
+    if Path(target).suffix.lower() in _JPG_SUFFIXES:
+        _flatten_white(image).save(buf, format="JPEG", quality=JPEG_QUALITY)
+    else:
+        image.save(buf, format="PNG")
     write_bytes_atomic(target, buf.getvalue())
+
+
+def _flatten_white(image):
+    """把带 alpha 的成品页压到**白底**（返回 RGB）；无 alpha 的图原样返回。
+
+    透明处的语义就是**纸色（白）**——与 PDF 侧 ``functions/print._load_image``
+    的压平口径一致，所以 jpg 成品与 png 成品的打印效果相同，只是丢了透明底。
+    """
+    from PIL import Image
+
+    if image.mode == "RGB":
+        return image
+    canvas = image if image.mode == "RGBA" else image.convert("RGBA")
+    white = Image.new("RGBA", canvas.size, (255, 255, 255, 255))
+    white.alpha_composite(canvas)
+    return white.convert("RGB")
 
 
 def flatten_onto_background(source, target, background=WHITE_BACKGROUND) -> None:
@@ -749,12 +822,18 @@ def flatten_onto_background(source, target, background=WHITE_BACKGROUND) -> None
 
 
 def compose_doc(doc: dict, dest_dir, report=None,
-                background=TRANSPARENT_BACKGROUND) -> list[Path]:
+                background=TRANSPARENT_BACKGROUND, suffix_for=None) -> list[Path]:
     """把整份拼版文档落成 ``dest_dir/0001.png`` …（列表顺序即页序）。
+
+    ``suffix_for``：可选 ``(page) -> ".png" | ".jpg"``——**成品后缀随该页源图走**
+    （用户 2026-10-17：「输入是 png 就输出 png，输入是 jpg 就输出 jpg」），任务
+    流程传 :func:`page_product_suffix`；**不传则一律 ``.png``**（独立拼图页
+    「导出成品」的既有口径：白底 PNG 就是交付物）。
 
     返回写出的文件列表（顺序与页序一致）。**多余的旧文件会被清掉**——否则
     用户删掉一页后，上一轮多出来的 ``0007.png`` 还会被第四步当成一页打进 PDF。
-    只清理本函数自己命名形态的文件（``\\d{4}.png``），不碰目录里的别的东西。
+    只清理本函数自己命名形态的文件（``\\d{4}.png`` / ``\\d{4}.jpg``），
+    不碰目录里的别的东西。
 
     单页合成失败时跳过该页（不写文件），其余页照常。任务目录不存在时
     （任务被删）直接返回空列表。
@@ -793,7 +872,14 @@ def compose_doc(doc: dict, dest_dir, report=None,
             except Exception:  # noqa: BLE001 - 单页失败不影响其余页
                 _report_page(report, index + 1, total)
                 continue
-            target = dest / FILE_FMT.format(index + 1)
+            target = (
+                dest / FILE_FMT.format(index + 1)
+                if suffix_for is None
+                else product_path(dest, index, page)
+            )
+            # 同一页号、**别的后缀**的旧成品要先删：格式随源图一变（png↔jpg）
+            # 旧文件会留下，第四步把它当成同一页的**第二页**打进 PDF。
+            _drop_other_format(dest, index + 1, target.suffix.lower())
             try:
                 _save_page_atomic(image, target)
             except OSError as exc:
@@ -825,15 +911,36 @@ def _report_page(report, done: int, total: int) -> None:
 
 
 def _sweep_stale(dest: Path, keep: int) -> None:
-    """删掉 ``dest`` 里序号大于 ``keep`` 的 ``数字.png``（上一轮多出来的页）。"""
+    """删掉 ``dest`` 里序号大于 ``keep`` 的成品页（``数字.png`` / ``数字.jpg``）。
+
+    ⚠️ 后缀认**两种**（见 :func:`is_product_file`）：格式从 png 切到 jpg（或反之）
+    时上一轮多出来的页会**留在盘上**，第四步会把它们当成页打进 PDF。
+    """
     if not dest.exists():
         return
     for candidate in dest.iterdir():
-        stem = candidate.stem
-        if candidate.suffix.lower() != ".png" or not stem.isdigit():
+        if not is_product_file(candidate):
             continue
-        if int(stem) > keep:
+        if int(candidate.stem) > keep:
             try:
                 candidate.unlink()
+            except OSError:
+                pass
+
+
+def _drop_other_format(dest: Path, page_number: int, keep_suffix: str) -> None:
+    """删掉**同一页号、别的后缀**的旧成品（``0001.jpg`` 对 ``0001.png``）。
+
+    ⚠️ 这一条与 :func:`_sweep_stale` 分工不同、缺一不可：那个按**页数**清"多出来
+    的页"，只管页号 > keep；而"同一页换了格式"（源图从 png 换成 jpg，或反之）
+    留下的是**同页号、不同后缀**的文件——第四步会把同一页当成两页打进 PDF。
+    """
+    for suffix in _PRODUCT_SUFFIXES:
+        if suffix == keep_suffix:
+            continue
+        stale = dest / f"{page_number:04d}{suffix}"
+        if stale.is_file():
+            try:
+                stale.unlink()
             except OSError:
                 pass

@@ -285,9 +285,13 @@ class ImpositionPickerDialog(FramelessDialog):
         scroll: QScrollArea
 
     def __init__(self, files: list, parent=None, removed_files=None,
-                 mode: str = "pick"):
+                 mode: str = "pick", thumb_provider=None):
         super().__init__(parent)
         self._mode = "append" if mode == "append" else "pick"
+        #: 候选图的**预生成缩略图**来源：``(path_text) -> Path | None``。
+        #: 由宿主给出（任务流程里是「上一节点的成品小图 / 入口图片小图」）；
+        #: 拿不到就回落整幅解码原图（见 :meth:`_thumb_pixmap_for`）。
+        self._thumb_provider = thumb_provider
         # ``files`` 是**候选池**：剩余未用 + 已删除（宿主按源清单顺序合并传入），
         # 实际候选 = 池子减去黑名单——这样"恢复"后的图才有地方回去。
         self._files = [Path(f) for f in files]
@@ -574,6 +578,35 @@ class ImpositionPickerDialog(FramelessDialog):
         # 缩略图分批解码：一次全解上百张大图会把弹窗卡住几秒
         QTimer.singleShot(0, self._fill_thumbs)
 
+    def _thumb_pixmap_for(self, path: Path) -> QPixmap:
+        """一张候选图的缩略图：**优先用宿主给的预生成小图**，拿不到才整幅解码。
+
+        用户 2026-10-17：弹窗此前对每张候选图**整幅解码**源图再缩——几千像素的
+        扫描件一张就要几十 MB 内存、几十毫秒。而这两种候选图**本来就有**
+        预生成的 256px 小图：
+
+        - 上游是「图片去底色」的**提交成品** ⇒ ``thumbnails/print[~<节点>]``；
+        - 这一步是**流程第一个节点**（候选=入口图片）⇒ ``thumbnails/input/``。
+
+        宿主把这些小图经 ``thumb_provider`` 给出（返回路径；没有返回 ``None``）。
+        小图本身是普通 JPEG，**整幅解码它也很便宜**，所以直接复用
+        :func:`_source_thumb_pixmap`（它固定尺寸、白底居中，口径与原来一致）。
+
+        ⚠️ **回落路径必须保留**：去底色成品是「1bit 调色板 + tRNS」的透明 PNG，
+        缩放读取会给出异常尺寸，只能整幅解码——这条坑见 :func:`_source_thumb_pixmap`。
+        """
+        provided = None
+        if self._thumb_provider is not None:
+            try:
+                provided = self._thumb_provider(str(path))
+            except Exception:  # noqa: BLE001 - provider 坏掉不该让弹窗整片空白
+                provided = None
+        if provided:
+            pixmap = _source_thumb_pixmap(provided)
+            if not pixmap.isNull():
+                return pixmap
+        return _source_thumb_pixmap(path)
+
     def _fill_thumbs(self) -> None:
         """给还没有缩略图的卡片分批解码（已删除视图访问过才解它的图）。
 
@@ -591,7 +624,7 @@ class ImpositionPickerDialog(FramelessDialog):
         todo = [card for card in pools
                 if str(card.path) not in self._pixmaps]
         for card in todo[:THUMB_BATCH]:
-            pixmap = _source_thumb_pixmap(card.path)
+            pixmap = self._thumb_pixmap_for(card.path)
             self._pixmaps[str(card.path)] = pixmap
             card.set_pixmap(pixmap)
         if len(todo) > THUMB_BATCH:

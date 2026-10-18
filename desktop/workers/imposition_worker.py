@@ -25,11 +25,17 @@ class ImpositionComposeWorker(QObject):
     finished = Signal(str, int)
     failed = Signal(str)
 
-    def __init__(self, doc: dict, out_dir):
-        """doc 为拼版文档；out_dir 为目标目录（stages/imposition）。"""
+    def __init__(self, doc: dict, out_dir, suffix_for=None):
+        """doc 为拼版文档；out_dir 为目标目录（stages/imposition）。
+
+        ``suffix_for``：可选 ``(page) -> ".png" | ".jpg"``——**成品后缀随该页源图
+        走**（用户 2026-10-17：输入 png 出 png、输入 jpg 出 jpg）。任务流程传
+        ``services.imposition.page_product_suffix``；不传 ⇒ 一律 PNG。
+        """
         super().__init__()
         self.doc = doc
         self.out_dir = out_dir
+        self.suffix_for = suffix_for
 
     @Slot()
     def run(self) -> None:
@@ -37,7 +43,9 @@ class ImpositionComposeWorker(QObject):
         try:
             from desktop.services.imposition import compose_doc
 
-            written = compose_doc(self.doc, self.out_dir)
+            written = compose_doc(
+                self.doc, self.out_dir, suffix_for=self.suffix_for
+            )
             self.finished.emit(str(self.out_dir), len(written))
         except Exception as exc:  # noqa: BLE001 - 兜底：别让线程静默死掉
             self.failed.emit(str(exc))

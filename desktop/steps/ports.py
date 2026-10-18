@@ -528,6 +528,21 @@ def scoped_name(name: str, node_id: str | None,
     return suffix_last_segment(name, sanitize_node_id(node_id))
 
 
+def node_scope_from_output_dir(dir_name: str) -> str:
+    """从**产物目录名**里取出节点作用域后缀（``extract~Node_3`` → ``~Node_3``）。
+
+    场景：worker 子进程（如 ``stages/rembg_stage.py``）拿不到 store，也读不到
+    流程图，只能从它写入的产物落点 ``out_dir.name`` 反推节点作用域，好把**缩略
+    图缓存目录**（``thumbnails/<名>[~<节点>]``）算成与产物同一份作用域。
+
+    无后缀（主节点/单节点流程）⇒ 返回 ``""``。⚠️ 节点 id 经
+    :func:`sanitize_node_id` 洗过 ⇒ **不含 ``~``**，所以按最后一个 ``~`` 切分是
+    安全的：``~`` 只会出现在"主名~节点"这一处。
+    """
+    _head, sep, tail = str(dir_name).rpartition("~")
+    return f"{sep}{tail}" if sep else ""
+
+
 def copy_location(stage: str, port: str, node_id: str) -> str | None:
     """**副本节点**（同阶段第二个及之后的节点）的相对落点；没登记返回 ``None``。
 
@@ -1023,6 +1038,7 @@ __all__ = [
     "missing_stages",
     "node_blocking_inputs",
     "node_location",
+    "node_scope_from_output_dir",
     "OPTIONAL_INPUT_PORTS",
     "orphaned_end_event_ids",
     "orphaned_gateway_ids",

@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 174 个模块、191 个公开类、1367 个公开函数/方法（生成于 2026-10-17）。
+覆盖 174 个模块、191 个公开类、1376 个公开函数/方法（生成于 2026-10-18）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -23,7 +23,7 @@
 | [`desktop.components.detect_stats`](#desktopcomponentsdetect_stats) | 1 | 4 |
 | [`desktop.components.dialog_shell`](#desktopcomponentsdialog_shell) | 0 | 1 |
 | [`desktop.components.flow_dialog`](#desktopcomponentsflow_dialog) | 2 | 10 |
-| [`desktop.components.imposition.canvas`](#desktopcomponentsimpositioncanvas) | 1 | 26 |
+| [`desktop.components.imposition.canvas`](#desktopcomponentsimpositioncanvas) | 1 | 27 |
 | [`desktop.components.imposition.confirm_delete`](#desktopcomponentsimpositionconfirm_delete) | 1 | 1 |
 | [`desktop.components.imposition.page_list`](#desktopcomponentsimpositionpage_list) | 1 | 10 |
 | [`desktop.components.imposition.page_thumb`](#desktopcomponentsimpositionpage_thumb) | 1 | 14 |
@@ -46,7 +46,7 @@
 | [`desktop.components.panels.print_text_layout`](#desktopcomponentspanelsprint_text_layout) | 1 | 0 |
 | [`desktop.components.panels.rembg_panel`](#desktopcomponentspanelsrembg_panel) | 1 | 3 |
 | [`desktop.components.progress_row`](#desktopcomponentsprogress_row) | 1 | 8 |
-| [`desktop.components.step_bar`](#desktopcomponentsstep_bar) | 2 | 19 |
+| [`desktop.components.step_bar`](#desktopcomponentsstep_bar) | 2 | 20 |
 | [`desktop.components.task_table`](#desktopcomponentstask_table) | 3 | 10 |
 | [`desktop.components.viewers.edit_sync`](#desktopcomponentsviewersedit_sync) | 0 | 2 |
 | [`desktop.components.viewers.extract_viewer`](#desktopcomponentsviewersextract_viewer) | 1 | 6 |
@@ -120,7 +120,7 @@
 | [`desktop.pages.tasklist.page`](#desktoppagestasklistpage) | 1 | 7 |
 | [`desktop.services.detect_export`](#desktopservicesdetect_export) | 0 | 7 |
 | [`desktop.services.font_catalog`](#desktopservicesfont_catalog) | 1 | 6 |
-| [`desktop.services.imposition`](#desktopservicesimposition) | 0 | 28 |
+| [`desktop.services.imposition`](#desktopservicesimposition) | 0 | 31 |
 | [`desktop.services.print_plan`](#desktopservicesprint_plan) | 0 | 5 |
 | [`desktop.services.rembg_export`](#desktopservicesrembg_export) | 0 | 7 |
 | [`desktop.services.rembg_live`](#desktopservicesrembg_live) | 0 | 3 |
@@ -140,7 +140,7 @@
 | [`desktop.steps.control`](#desktopstepscontrol) | 1 | 11 |
 | [`desktop.steps.flow`](#desktopstepsflow) | 4 | 31 |
 | [`desktop.steps.kernel`](#desktopstepskernel) | 5 | 11 |
-| [`desktop.steps.ports`](#desktopstepsports) | 0 | 38 |
+| [`desktop.steps.ports`](#desktopstepsports) | 0 | 39 |
 | [`desktop.steps.process`](#desktopstepsprocess) | 1 | 7 |
 | [`desktop.steps.scheduler`](#desktopstepsscheduler) | 2 | 16 |
 | [`desktop.steps.source_zone`](#desktopstepssource_zone) | 1 | 20 |
@@ -153,7 +153,7 @@
 | [`desktop.store.pages`](#desktopstorepages) | 1 | 9 |
 | [`desktop.store.runs`](#desktopstoreruns) | 1 | 10 |
 | [`desktop.store.store`](#desktopstorestore) | 1 | 1 |
-| [`desktop.store.tasks`](#desktopstoretasks) | 1 | 51 |
+| [`desktop.store.tasks`](#desktopstoretasks) | 1 | 54 |
 | [`desktop.store.ui_state`](#desktopstoreui_state) | 1 | 9 |
 | [`desktop.ui.color_picker`](#desktopuicolor_picker) | 5 | 30 |
 | [`desktop.ui.font_setup`](#desktopuifont_setup) | 2 | 8 |
@@ -1428,6 +1428,7 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 | `showEvent(event) -> None` | Qt 事件覆写：显示时刷新状态。 |
 | `invalidate_image(path: str) -> None` | 某个源图文件被外部覆盖（编辑器「完成」回写）后：丢掉它的解码 |
 | `contextMenuEvent(event) -> None` | 右键菜单：**预览图片 / 编辑图片**。 |
+| `set_locate_resolver(resolver: Callable[[int], list] \| None) -> None` | 宿主给出「定位图片资源」要定位的目标（``(index) -> list[Path]``，按优先级）。 |
 | `mouseDoubleClickEvent(event) -> None` | 双击图片编辑整页组合；双击空白预览整页组合。 |
 | `mousePressEvent(event) -> None` | Qt 事件覆写：按下（选中 / 开始拖拽或绘制）。 |
 | `mouseMoveEvent(event) -> None` | Qt 事件覆写：移动（拖拽 / 缩放中的实时更新）。 |
@@ -1503,6 +1504,15 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 「预览图片」仍按命中对象预览单张或整页组合；「编辑图片」统一编辑
 整页组合，不再提供单张源图编辑。右键图片时仍先选中该图。
 空画布没有菜单（没有可预览/可编辑的东西）。
+
+##### `set_locate_resolver(resolver: Callable[[int], list] | None) -> None`
+
+宿主给出「定位图片资源」要定位的目标（``(index) -> list[Path]``，按优先级）。
+
+⚠️ **拼版这一步必须给**（用户 2026-10-18）：画布上那张图是**输入源图**
+（如 ``stages/input``），而拼版的"图片资源"是**实时重合成出来的成品**
+（``stages/imposition[~<节点>]``）。不设时退回旧口径——定位画布上那张
+源图文件（其余步骤/独立页没有"实时产物"的说法，行为不变）。
 
 ##### `mouseDoubleClickEvent(event) -> None`
 
@@ -1909,7 +1919,7 @@ worker）→ 连 :attr:`page_ready` 把生成好的那条贴回左列。版面/�
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(files: list, parent=None, removed_files=None, mode: str='pick')` | — |
+| `__init__(files: list, parent=None, removed_files=None, mode: str='pick', thumb_provider=None)` | — |
 | `count() -> int` | 候选视图的卡片数（已删除的不算）。 |
 | `checked_files() -> list[Path]` | 用户勾选的源图（**按源清单顺序**，不是勾选先后）。 |
 | `picked_files() -> list[Path]` | — |
@@ -3020,8 +3030,9 @@ status 决定副标题/标题色，badge_status 决定徽标（缺省同 status�
 | `mark_completed(index: int) -> None` | 标记某步骤已完成（徽标改为对勾，连接线着色）。 |
 | `set_steps(texts) -> None` | 兼容旧调用：只更新标题文本。 |
 | `set_imposition_visible(visible: bool) -> None` | 显示/隐藏**全部**可选（虚线）节点（随第三步区域模式是否为 1）。 |
-| `set_imposition_selected(selected: bool) -> None` | 「图片拼版」是否被选择（副标题/徽标口径，不动连接线/绕行线）。 |
-| `set_imposition_active(active: bool) -> None` | 拼版支路是否**生效**（已启用且至少有一页拼版，宿主判定）。 |
+| `set_imposition_selected(selected: bool) -> None` | 把**全部**可选节点设成同一个选择态（兼容面：单节点流程/自测用）。 |
+| `set_imposition_node_state(bar_index: int, *, selected: bool \| None=None, active: bool \| None=None) -> None` | 按**格序**设**某一个**可选节点自己的选择态/生效态（B 方案）。 |
+| `set_imposition_active(active: bool) -> None` | 把**全部**可选节点设成同一个生效态（兼容面：单节点流程/自测用）。 |
 | `set_step_status(index: int, status: str, progress: tuple \| None=None, completed: bool \| None=None) -> None` | 设置某步骤状态；progress 为 (已完成, 总数) 时拼出 "成功 · 84/84"。 |
 | `reset_statuses() -> None` | 全部步骤恢复为未执行，并清空已完成标记。 |
 
@@ -3078,20 +3089,33 @@ status 决定副标题/标题色，badge_status 决定徽标（缺省同 status�
 
 ##### `set_imposition_selected(selected: bool) -> None`
 
-「图片拼版」是否被选择（副标题/徽标口径，不动连接线/绕行线）。
+把**全部**可选节点设成同一个选择态（兼容面：单节点流程/自测用）。
 
-⚠️ 选择态是**流程级开关**（"在流程中启用图片拼版"，只有一个），所以
-全部可选节点一起显示同一个选择态。
+⚠️ 选择态其实是**按节点**的（B 方案：同一步骤多个「图片拼版」各选各的，
+见 :meth:`set_imposition_node_state`）。这个方法只负责"一刀切"——
+现在只有"单节点流程"与自测会走到它，宿主的多节点刷新走按节点那一个。
+
+##### `set_imposition_node_state(bar_index: int, *, selected: bool | None=None, active: bool | None=None) -> None`
+
+按**格序**设**某一个**可选节点自己的选择态/生效态（B 方案）。
+
+⚠️ 同一步骤可以有多个「图片拼版」节点（用户 2026-10-17 的流程图：开头
+一个、网关「是」分支里又一个）：操作了(1) 不该让(2) 也变成「已选择」/
+绿勾（用户 2026-10-18 报障）。所以宿主要**逐节点**算、逐节点刷；
+``set_imposition_selected`` / ``set_imposition_active`` 那种"一刀切"
+只在单节点流程里等价。
 
 ##### `set_imposition_active(active: bool) -> None`
 
-拼版支路是否**生效**（已启用且至少有一页拼版，宿主判定）。
+把**全部**可选节点设成同一个生效态（兼容面：单节点流程/自测用）。
 
 生效 → 两侧连接线常规点亮、节点徽标转绿色对勾（与真实步骤同款）；
 未生效 → 两侧连接线灰色虚线、徽标灰色「＋」，主流程改走节点上方
 的绕行线。与 ``set_imposition_selected``
 （节点自己的选择外观）互不取代：选了但还没有拼版页时，节点
 显示「已选择」，但线仍然是灰色虚线 + 绕行。
+
+⚠️ **一刀切**：多节点流程里宿主走 :meth:`set_imposition_node_state`。
 
 ##### `set_step_status(index: int, status: str, progress: tuple | None=None, completed: bool | None=None) -> None`
 
@@ -7044,14 +7068,11 @@ _select_stage()、_set_stage_status()、_toast()、log_view。
 灰虚线 + 绕行线，用户看到的就是"启用了却不生效"。「有没有拼版页」是
 另一件事（能不能真出东西），走 :meth:`imposition_has_pages`。
 
-本方法是"**流程走不走拼版**"的唯一判据：第四步取图来源
-(:meth:`print_source_dir`) 与流程条生效态
-(:meth:`_sync_imposition_step_bar`) 都只看它。
-
-⚠️ 实现走通用的 ``store.step_enabled``（同一文件、同一键），不再自己
-读整份文档——那份文档逐页带版面，200 页的书几百 KB，每次只为一个
-bool 反序列化整份是浪费（列表页的 ``store.imposition_enabled`` 当年
-就是为此才另起一份读法；现在两份合成一份）。
+⚠️ 这是**流程级**的判据（决定第四步取图来源），开关只有一份、存在主节点
+那份 ``drafts/imposition.json`` 里（见 :meth:`_imposition_flag_scope`）。
+⚠️ **流程条上每个拼版节点的"已选择/绿勾"不看它**（2026-10-18）：那一格
+表达"这一步处理到哪了"，判据是该节点自己有没有拼版页
+（见 :meth:`_sync_imposition_nodes`）。
 
 ##### `imposition_has_pages() -> bool`
 
@@ -8168,6 +8189,9 @@ GUI 主进程**绝不能**在这里 import 到 cv2（实测 ``import functions.d
 | --- | --- |
 | ITEMS_PER_PAGE | `2` |
 | FILE_FMT | `"{:04d}.png"` |
+| PNG_SUFFIX | `".png"` |
+| JPG_SUFFIX | `".jpg"` |
+| JPEG_QUALITY | `95` |
 | _CN_DIGITS | `"零一二三四五六七八九"` |
 | SOURCE_LEFT | `"left"` |
 | SOURCE_RIGHT | `"right"` |
@@ -8177,6 +8201,9 @@ GUI 主进程**绝不能**在这里 import 到 cv2（实测 ``import functions.d
 
 | 函数 | 说明 |
 | --- | --- |
+| `page_product_suffix(page: dict) -> str` | 一页成品的**输出后缀**：源图全是 jpg/jpeg ⇒ ``.jpg``，否则 ``.png``。 |
+| `product_path(dest_dir: Path \| str, index: int, page: dict) -> Path` | 第 ``index``（0 基）页成品的落盘路径：``dest/0001.png`` / ``dest/0001.jpg``。 |
+| `is_product_file(candidate: Path \| str) -> bool` | 这个文件是不是**拼版成品页**（``NNNN.png`` / ``NNNN.jpg``，4 位数字名）。 |
 | `normalize_page(page) -> dict \| None` | 把任意来源的一页拼版收敛成合法形状；不可修复时返回 None。 |
 | `normalize_doc(doc) -> dict` | 整份文档收敛：``{"enabled", "pages", "removed"}``（永不为 None）。 |
 | `cn_page_label(index: int) -> str` | 页序（0 起）→ 中文页码标签：``第一页`` / ``第十二页`` / ``第100页``。 |
@@ -8204,7 +8231,26 @@ GUI 主进程**绝不能**在这里 import 到 cv2（实测 ``import functions.d
 | `page_bounds(page: dict) -> tuple[float, float, float, float]` | 一页的**内容范围**：所有图外接框的并集（用户说的「图片的四个区域」）。 |
 | `compose_page(page: dict, background=TRANSPARENT_BACKGROUND)` | 一页拼版 → PIL **RGBA** 图：所有图外接框的紧裁。 |
 | `flatten_onto_background(source, target, background=WHITE_BACKGROUND) -> None` | 把一张图片（可能带透明）压到指定底色上，原子写出 PNG 到 ``target``。 |
-| `compose_doc(doc: dict, dest_dir, report=None, background=TRANSPARENT_BACKGROUND) -> list[Path]` | 把整份拼版文档落成 ``dest_dir/0001.png`` …（列表顺序即页序）。 |
+| `compose_doc(doc: dict, dest_dir, report=None, background=TRANSPARENT_BACKGROUND, suffix_for=None) -> list[Path]` | 把整份拼版文档落成 ``dest_dir/0001.png`` …（列表顺序即页序）。 |
+
+#### `page_product_suffix(page: dict) -> str`
+
+一页成品的**输出后缀**：源图全是 jpg/jpeg ⇒ ``.jpg``，否则 ``.png``。
+
+用户 2026-10-17：「图片拼版，输入图片是 png，就输出 png，输入是 jpg，
+输出也是 jpg」。
+
+⚠️ 一页可能混着两种源图 ⇒ **任一张不是 jpg/jpeg 就出 png**：只有 png 带
+alpha，而 jpg 成品必须白底压平（见 :func:`_save_page_atomic`），会把上游
+「去底色」产物的透明底**抹掉**。宁可体积大一点，也不悄悄丢透明。
+
+#### `is_product_file(candidate: Path | str) -> bool`
+
+这个文件是不是**拼版成品页**（``NNNN.png`` / ``NNNN.jpg``，4 位数字名）。
+
+⚠️ 后缀认**两种**（用户 2026-10-17 起成品后缀随源图走）：只认 ``.png``
+的话，"格式切换后上一轮多出来的页"会留在盘上，被第四步当成一页打进 PDF。
+清扫（:func:`_sweep_stale`）与新鲜度判据都走这一个函数，别各写一套。
 
 #### `normalize_page(page) -> dict | None`
 
@@ -8424,13 +8470,19 @@ PDF 侧 ``functions/print._load_image`` 压平到白纸；编辑器/预览按 RG
     target: 输出 PNG 路径（原子写，见 :func:`_save_page_atomic`）。
     background: 底色 RGBA 四元组，与 :func:`compose_page` 同一口径。
 
-#### `compose_doc(doc: dict, dest_dir, report=None, background=TRANSPARENT_BACKGROUND) -> list[Path]`
+#### `compose_doc(doc: dict, dest_dir, report=None, background=TRANSPARENT_BACKGROUND, suffix_for=None) -> list[Path]`
 
 把整份拼版文档落成 ``dest_dir/0001.png`` …（列表顺序即页序）。
 
+``suffix_for``：可选 ``(page) -> ".png" | ".jpg"``——**成品后缀随该页源图走**
+（用户 2026-10-17：「输入是 png 就输出 png，输入是 jpg 就输出 jpg」），任务
+流程传 :func:`page_product_suffix`；**不传则一律 ``.png``**（独立拼图页
+「导出成品」的既有口径：白底 PNG 就是交付物）。
+
 返回写出的文件列表（顺序与页序一致）。**多余的旧文件会被清掉**——否则
 用户删掉一页后，上一轮多出来的 ``0007.png`` 还会被第四步当成一页打进 PDF。
-只清理本函数自己命名形态的文件（``\d{4}.png``），不碰目录里的别的东西。
+只清理本函数自己命名形态的文件（``\d{4}.png`` / ``\d{4}.jpg``），
+不碰目录里的别的东西。
 
 单页合成失败时跳过该页（不写文件），其余页照常。任务目录不存在时
 （任务被删）直接返回空列表。
@@ -10577,6 +10629,7 @@ BPM 编排引擎安全导入（与 :mod:`desktop.steps.spec` 同一约束）。
 | `sanitize_node_id(node_id: str) -> str` | 把节点 id 收成**可安全拼进路径**的名字（只留字母数字与 ``._-``）。 |
 | `suffix_last_segment(name: str, suffix: str) -> str` | 在路径**最后一段**插入后缀：目录名加在结尾、文件名加在扩展名前。 |
 | `scoped_name(name: str, node_id: str \| None, primary_id: str \| None) -> str` | 按**节点作用域**给一个名字加后缀：主节点/无节点 ⇒ 原名，副本 ⇒ ``~<节点>``。 |
+| `node_scope_from_output_dir(dir_name: str) -> str` | 从**产物目录名**里取出节点作用域后缀（``extract~Node_3`` → ``~Node_3``）。 |
 | `copy_location(stage: str, port: str, node_id: str) -> str \| None` | **副本节点**（同阶段第二个及之后的节点）的相对落点；没登记返回 ``None``。 |
 | `node_location(stage: str, port: str, node_id: str \| None=None, primary_id: str \| None=None) -> str \| None` | **某节点实例**某端口的相对落点。 |
 | `artifact_path(task_dir: Path \| str, stage: str, port: str, node_id: str \| None=None, primary_id: str \| None=None) -> Path \| None` | 产物在任务目录下的**绝对路径**；该阶段没登记这个端口则 ``None``。 |
@@ -10775,6 +10828,18 @@ bpmn.io 里能把它改成任意字符串——拼进路径前必须洗一道，
 
 ⚠️ **主节点零迁移**：同阶段恰好一个节点时（=所有现存任务与默认流程）
 名字与改造前**逐字节相同**，没有任何文件需要搬家。
+
+#### `node_scope_from_output_dir(dir_name: str) -> str`
+
+从**产物目录名**里取出节点作用域后缀（``extract~Node_3`` → ``~Node_3``）。
+
+场景：worker 子进程（如 ``stages/rembg_stage.py``）拿不到 store，也读不到
+流程图，只能从它写入的产物落点 ``out_dir.name`` 反推节点作用域，好把**缩略
+图缓存目录**（``thumbnails/<名>[~<节点>]``）算成与产物同一份作用域。
+
+无后缀（主节点/单节点流程）⇒ 返回 ``""``。⚠️ 节点 id 经
+:func:`sanitize_node_id` 洗过 ⇒ **不含 ``~``**，所以按最后一个 ``~`` 切分是
+安全的：``~`` 只会出现在"主名~节点"这一处。
 
 #### `copy_location(stage: str, port: str, node_id: str) -> str | None`
 
@@ -12404,13 +12469,16 @@ JSON 文件，没有旧数据（SQLite）需要迁移。
 | `step_enabled(task_id: str, step: str) -> bool` | 某个**可选步骤**的用户开关（``drafts/<步骤>.json`` 的 ``enabled``）。 |
 | `scheduler_flags(task_id: str, imposition_active: bool=False) -> dict[str, bool]` | 本任务传给状态机的条件开关表（key = 可选步骤 key）。 |
 | `task_scheduler(task_id: str, imposition_active: bool=False)` | 本任务的**状态机**（``Scheduler``）——"下一步跑谁 / 能不能跑 / 跳谁" |
-| `stage_output_dir(task_id: str, stage: str) -> Path` | 返回某阶段（GUI）应写入的输出目录。 |
+| `stage_output_dir(task_id: str, stage: str, node_id: str \| None=None) -> Path` | 返回某阶段（GUI）应写入的输出目录。 |
 | `workset_dir(task_id: str) -> Path` | 已废弃：检测/去底直接读 extract 输出目录，不再物化输入副本。 |
 | `runs_config_dir(task_id: str) -> Path` | 子进程执行配置（run-*.json / detect-config.json）。 |
+| `thumbnails_dir(task_id: str, name: str, node_id: str \| None=None) -> Path` | 按**节点作用域**取一个缩略图缓存目录：``thumbnails/<名>[~<节点>]``。 |
+| `input_thumbnails_dir(task_id: str) -> Path` | **入口图片**的缩略图缓存：``thumbnails/input/``。 |
+| `entry_thumb_path(task_id: str, image: Path \| str) -> Path \| None` | 一张入口图片在 :meth:`input_thumbnails_dir` 里的缓存缩略图路径。 |
 | `source_thumbnails_dir(task_id: str) -> Path` | 源 PDF 页缩略图：导入即生成，PDF 预览直接复用，永不清理。 |
-| `rembg_thumbnails_dir(task_id: str) -> Path` | 第四步缩略图缓存：提交阶段（rembg_submit）随最终图片一并生成， |
-| `imposition_thumbnails_dir(task_id: str) -> Path` | 拼版页左列缩略图缓存（每页取第一张源图，``book_key`` 命名）。 |
-| `imposition_page_thumbs_dir(task_id: str) -> Path` | 拼版**页面效果缩略图实体**目录：``tasks/<id>/thumbnails/imposition_pages/``。 |
+| `rembg_thumbnails_dir(task_id: str, node_id: str \| None=None) -> Path` | 第四步缩略图缓存：提交阶段（rembg_submit）随最终图片一并生成， |
+| `imposition_thumbnails_dir(task_id: str, node_id: str \| None=None) -> Path` | 拼版页左列缩略图缓存（每页取第一张源图，``book_key`` 命名）。 |
+| `imposition_page_thumbs_dir(task_id: str, node_id: str \| None=None) -> Path` | 拼版**页面效果缩略图实体**目录：``tasks/<id>/thumbnails/imposition_pages/``。 |
 | `copy_source_to_task(task_id: str, source_path: Path) -> Path` | 导入时在任务目录下保留一份源文件副本（原子落地）。 |
 | `source_copy_path(task_id: str) -> Path \| None` | 任务目录里的 PDF 备份路径；没有备份返回 None。 |
 | `ensure_source_copy(task_id: str) -> Path \| None` | 保证任务目录里有 PDF 备份；缺了就按索引里的 source_path 补一份。 |
@@ -12785,7 +12853,7 @@ exist_ok=False``，被抢就顺延），所以并发/历史残留时**实际拿�
 与 :meth:`stage_input` 的分工：那个回答**"去哪个目录取产物"**，
 这个回答**"什么时候该跑、还差什么"**。
 
-##### `stage_output_dir(task_id: str, stage: str) -> Path`
+##### `stage_output_dir(task_id: str, stage: str, node_id: str | None=None) -> Path`
 
 返回某阶段（GUI）应写入的输出目录。
 
@@ -12798,12 +12866,53 @@ rembg 最终目录；print 返回 print.pdf 所在目录。
 
 仅为清理历史遗留目录保留（老版本任务目录下可能仍有 workset/）。
 
-##### `rembg_thumbnails_dir(task_id: str) -> Path`
+##### `thumbnails_dir(task_id: str, name: str, node_id: str | None=None) -> Path`
+
+按**节点作用域**取一个缩略图缓存目录：``thumbnails/<名>[~<节点>]``。
+
+主节点/无节点 ⇒ ``thumbnails/<名>``（旧路径，**零迁移**）；副本节点 ⇒
+``thumbnails/<名>~<节点>``。规则由 :func:`desktop.steps.ports.scoped_name`
+唯一给出，与产物落点（``stages/<阶段>~<节点>``）同一套——同一步骤有多个
+节点时各自的缩略图缓存互不覆盖（用户 2026-10-17：「缩略图目录也要
+按节点这样处理」）。
+
+##### `input_thumbnails_dir(task_id: str) -> Path`
+
+**入口图片**的缩略图缓存：``thumbnails/input/``。
+
+用户 2026-10-17：流程第一个节点是「检测文本框 / 图片去底色 / 图片拼版 /
+PDF排版」时，它的输入是用户直接放进 ``stages/input/`` 的那批图——此前
+左栏只能现解码原图（几千像素的扫描图）。现在**导入即按图键生成**到这份
+缓存里，左栏直接读小图。
+
+⚠️ **不按节点分**：入口图片目录（``stages/input/``）是**整个任务共用**
+的（所有无上游的节点都回落到它），所以缓存也与它同作用域（任务级）。
+
+##### `entry_thumb_path(task_id: str, image: Path | str) -> Path | None`
+
+一张入口图片在 :meth:`input_thumbnails_dir` 里的缓存缩略图路径。
+
+没有缓存、或缓存比源图旧/体积像截断，一律返回 ``None``（调用方回落到
+真图解码）。按**图键**命名（``book_key``：文件名+大小+路径指纹）——入口
+图片名字五花八门，按序号会张冠李戴（与 ``thumb_cache_worker`` 同一规则）。
+
+##### `source_thumbnails_dir(task_id: str) -> Path`
+
+源 PDF 页缩略图：导入即生成，PDF 预览直接复用，永不清理。
+
+⚠️ **不按节点分**：它来自**源 PDF**（一本书一份），同一步骤的多个提取
+节点产出的页图同名同页号，共用这份按页号命名的缓存是正确且省事的。
+
+##### `rembg_thumbnails_dir(task_id: str, node_id: str | None=None) -> Path`
 
 第四步缩略图缓存：提交阶段（rembg_submit）随最终图片一并生成，
 缩略条直接复用，不必每次现解码 6000px 的原图。
 
-##### `imposition_thumbnails_dir(task_id: str) -> Path`
+⚠️ 按**节点**取（B 方案）：两个「图片去底色」节点各有各的提交产物
+（``stages/rembg[~<节点>]``），缩略图缓存也跟着分（裸名 ``print`` /
+``print~<节点>``），否则副本节点会命中主节点的缩略图（张冠李戴）。
+
+##### `imposition_thumbnails_dir(task_id: str, node_id: str | None=None) -> Path`
 
 拼版页左列缩略图缓存（每页取第一张源图，``book_key`` 命名）。
 
@@ -12812,7 +12921,7 @@ rembg 最终目录；print 返回 print.pdf 所在目录。
 随任务目录走，``delete_task`` 整体清理时一并清掉；两边只共用组件与
 ``ImageThumbCacheWorker``，**不共用缓存根**。
 
-##### `imposition_page_thumbs_dir(task_id: str) -> Path`
+##### `imposition_page_thumbs_dir(task_id: str, node_id: str | None=None) -> Path`
 
 拼版**页面效果缩略图实体**目录：``tasks/<id>/thumbnails/imposition_pages/``。
 
@@ -12822,6 +12931,9 @@ rembg 最终目录；print 返回 print.pdf 所在目录。
 （用户 2026-10-09：「缩略图实体其实没有生成落地……组合成拼版图片
 应该另外放在一个目录中，直接按照 page1 page2 命名，注意做好映射
 数据」）。随任务目录走，``delete_task`` 一并清掉。
+
+⚠️ 按**节点**取（B 方案）：两个「图片拼版」节点各有各的版面文档与
+合成产物，缩略图实体也跟着分（``imposition_pages[~<节点>]``）。
 
 ##### `copy_source_to_task(task_id: str, source_path: Path) -> Path`
 
@@ -14854,8 +14966,16 @@ paths 为目标图片；edge 为缩略图最长边（默认 96）。effects/crop
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(doc: dict, out_dir)` | doc 为拼版文档；out_dir 为目标目录（stages/imposition）。 |
+| `__init__(doc: dict, out_dir, suffix_for=None)` | doc 为拼版文档；out_dir 为目标目录（stages/imposition）。 |
 | `run() -> None` | 合成全部拼版页；失败只报 failed，由宿主提示并落日志。 |
+
+##### `__init__(doc: dict, out_dir, suffix_for=None)`
+
+doc 为拼版文档；out_dir 为目标目录（stages/imposition）。
+
+``suffix_for``：可选 ``(page) -> ".png" | ".jpg"``——**成品后缀随该页源图
+走**（用户 2026-10-17：输入 png 出 png、输入 jpg 出 jpg）。任务流程传
+``services.imposition.page_product_suffix``；不传 ⇒ 一律 PNG。
 
 ### `class ImpositionPagePreviewWorker(QObject)`
 

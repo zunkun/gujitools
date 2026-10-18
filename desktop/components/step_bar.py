@@ -379,7 +379,11 @@ class _ImpositionNode(QFrame):
       白底，与其他节点一致），生效/不生效、选择/未选择**样式统一**，
       状态只表达在徽标与副标题上；
     - 徽标跟真实步骤同款圆形：未生效画灰色「＋」（可选、未进流程），
-      **选中且生效**后跟前面节点一样是绿色对勾（``set_flow_active``）；
+      **选中且生效**后跟前面节点一样是绿色对勾（``set_flow_active``）。
+      ⚠️ 「生效」由**宿主**按**该节点有没有拼版页**判定（2026-10-18 用户口径：
+      流程条上这一格表达的是"这一步处理到哪了"——没拼过版的节点不该亮成
+      "已处理"，见 ``desktop.pages.taskdetail.imposition._sync_imposition_nodes``）；
+      「在流程中启用图片拼版」开关是**流程级**条件，不点亮这一格；
     - 未选择时副标题「未选择」，选择后「已选择」；
     - 当前正在查看它的详情时叠加当前步的高亮底色（与真实步骤一致）；
     - 框内**始终有 SURFACE 实底**：连接线从框后面穿过时靠它遮住（真实
@@ -647,8 +651,6 @@ class StepBar(QWidget):
             # 映射表与步骤数对不上 = 宿主算错了；宁可退回序数也不能错位寻址
             self._bar_of_pos = list(range(len(steps)))
         self._pos_of_bar = {b: i for i, b in enumerate(self._bar_of_pos)}
-        #: 拼版支路是否**生效**（承载真实流程）；与节点的选择态分开
-        self._imposition_flow = False
         #: 可选节点插在第几个真实步骤之后（构造期算出，见 ``optional_after``）。
         #: 下游找"拼版左右邻居"一律走它，不再写死 ``buttons[-2]``。
         #: ⚠️ **-1 = 插在最前**（拼版排在所有真实步骤之前，任务 #0027 的
@@ -704,6 +706,11 @@ class StepBar(QWidget):
         self.optional_afters: list[int] = [spec[0] for spec in specs]
         self.optional_bar_indices: list[int] = [spec[1] for spec in specs]
         self.optional_front_connectors: list[_Connector | None] = [None] * len(specs)
+        #: 每个可选节点**各自**的支路生效态（B 方案）：同一步骤可以有多个
+        #: 「图片拼版」节点，各连各的、互不替代——一个生效不代表另一个生效
+        #: （用户 2026-10-18：操作了(1)，(2)却也显示成已处理）。下标与
+        #: :attr:`optional_nodes` 同序。
+        self._optional_flow: list[bool] = [False] * len(specs)
 
         row = QHBoxLayout(self)
         row.setContentsMargins(10, 6, 10, 6)
@@ -811,12 +818,15 @@ class StepBar(QWidget):
 
         点亮/虚线规则与旧 _Connector 时代一致：
         - 常规段：左侧步骤完成即点亮，永不变虚；
-        - 「去底色 → 拼版」与「拼版 → PDF」：支路生效（``_imposition_flow``）
-          才按常规点亮，未生效一律灰虚线——真实流向走节点上方的绕行线；
+        - 「去底色 → 拼版」与「拼版 → PDF」：**那个拼版节点自己**生效
+          （``_optional_flow``）才按常规点亮，未生效一律灰虚线——真实流向走
+          节点上方的绕行线；
         - 节点隐藏（area≠1）时前端那格回归普通的「去底色 → PDF」常规段。
+
+        ⚠️ 生效态**按节点**取（B 方案）：两个拼版节点各连各的，一个生效
+        不代表另一个生效（用户 2026-10-18）。
         """
         n = len(self.buttons)
-        flow = self._imposition_flow
         # ⚠️ 把整条流程条摊成**自左向右的序列**（真实步骤 + 各自后面挂着的可选
         #    节点），再逐对相邻元素出段：这样"多个可选节点、甚至同一位置挂多个"
         #    都自然成立，不必为每种排布写一遍 if。
@@ -839,14 +849,15 @@ class StepBar(QWidget):
                 #    报"最后一段连接线永远是灰的"）。
                 done = self._bar_of_pos[left_ref] in self._completed
                 if right_kind == "opt":
-                    # 进可选节点那一段：支路生效才点亮，否则灰虚线（真实流向
-                    # 走节点上方的绕行线）。
+                    # 进可选节点那一段：**该节点自己**生效才点亮，否则灰虚线
+                    # （真实流向走节点上方的绕行线）。
+                    opt_flow = self._optional_flow[right_ref]
                     segments.append(
                         (
                             self.buttons[left_ref].pill,
                             self.optional_nodes[right_ref],
-                            flow and done,
-                            not flow,
+                            opt_flow and done,
+                            not opt_flow,
                         )
                     )
                 else:
@@ -859,14 +870,15 @@ class StepBar(QWidget):
                         )
                     )
             else:
-                # 从左/上一个可选节点出发：一律跟"支路生效"走。
+                # 从左/上一个可选节点出发：跟**这个**节点的生效态走。
                 target = (
                     self.optional_nodes[right_ref]
                     if right_kind == "opt"
                     else self.buttons[right_ref].pill
                 )
+                opt_flow = self._optional_flow[left_ref]
                 segments.append(
-                    (self.optional_nodes[left_ref], target, flow, not flow)
+                    (self.optional_nodes[left_ref], target, opt_flow, not opt_flow)
                 )
         return segments
 
@@ -916,11 +928,11 @@ class StepBar(QWidget):
         拼版支路自己的两条线此时是灰色虚线（见 ``_sync``）。
 
         ⚠️ **每个可选节点各画一条**（B 方案）：两个「图片拼版」节点各自绕开
-        自己那一段，不是只画第一个的。
+        自己那一段，不是只画第一个的；**已生效的那个不画**（它走真实连线）。
         """
-        if self._imposition_flow:
-            return
         for order in range(len(self.optional_nodes)):
+            if self._optional_flow[order]:
+                continue
             if self.optional_nodes[order].isHidden():
                 continue
             points = self._bypass_points(order)
@@ -1062,29 +1074,59 @@ class StepBar(QWidget):
         self._sync()
 
     def set_imposition_selected(self, selected: bool) -> None:
-        """「图片拼版」是否被选择（副标题/徽标口径，不动连接线/绕行线）。
+        """把**全部**可选节点设成同一个选择态（兼容面：单节点流程/自测用）。
 
-        ⚠️ 选择态是**流程级开关**（"在流程中启用图片拼版"，只有一个），所以
-        全部可选节点一起显示同一个选择态。
+        ⚠️ 选择态其实是**按节点**的（B 方案：同一步骤多个「图片拼版」各选各的，
+        见 :meth:`set_imposition_node_state`）。这个方法只负责"一刀切"——
+        现在只有"单节点流程"与自测会走到它，宿主的多节点刷新走按节点那一个。
         """
         for node in self.optional_nodes:
             node.set_selected(selected)
         self._sync()
 
+    def set_imposition_node_state(self, bar_index: int, *,
+                                  selected: bool | None = None,
+                                  active: bool | None = None) -> None:
+        """按**格序**设**某一个**可选节点自己的选择态/生效态（B 方案）。
+
+        ⚠️ 同一步骤可以有多个「图片拼版」节点（用户 2026-10-17 的流程图：开头
+        一个、网关「是」分支里又一个）：操作了(1) 不该让(2) 也变成「已选择」/
+        绿勾（用户 2026-10-18 报障）。所以宿主要**逐节点**算、逐节点刷；
+        ``set_imposition_selected`` / ``set_imposition_active`` 那种"一刀切"
+        只在单节点流程里等价。
+        """
+        for order, index in enumerate(self.optional_bar_indices):
+            if int(index) != int(bar_index):
+                continue
+            node = self.optional_nodes[order]
+            if selected is not None:
+                node.set_selected(bool(selected))
+            if active is not None:
+                flow = bool(active)
+                self._optional_flow[order] = flow
+                node.set_flow_active(flow)
+            self._sync()
+            return
+
     def set_imposition_active(self, active: bool) -> None:
-        """拼版支路是否**生效**（已启用且至少有一页拼版，宿主判定）。
+        """把**全部**可选节点设成同一个生效态（兼容面：单节点流程/自测用）。
 
         生效 → 两侧连接线常规点亮、节点徽标转绿色对勾（与真实步骤同款）；
         未生效 → 两侧连接线灰色虚线、徽标灰色「＋」，主流程改走节点上方
         的绕行线。与 ``set_imposition_selected``
         （节点自己的选择外观）互不取代：选了但还没有拼版页时，节点
         显示「已选择」，但线仍然是灰色虚线 + 绕行。
+
+        ⚠️ **一刀切**：多节点流程里宿主走 :meth:`set_imposition_node_state`。
         """
         active = bool(active)
-        if active != self._imposition_flow:
-            self._imposition_flow = active
-            for node in self.optional_nodes:
-                node.set_flow_active(active)
+        changed = False
+        for order, node in enumerate(self.optional_nodes):
+            if self._optional_flow[order] != active:
+                self._optional_flow[order] = active
+                changed = True
+            node.set_flow_active(active)
+        if changed:
             self._sync()
 
     def set_step_status(
@@ -1148,5 +1190,5 @@ class StepBar(QWidget):
         for bar_index, node in zip(self.optional_bar_indices, self.optional_nodes):
             node.set_current(bar_index == self._current)
         # 连接线（含拼版两侧）的点亮/虚线状态由 ``_connector_segments`` 在
-        # 绘制时从 ``_completed`` / ``_imposition_flow`` 现算——控件不再存状态。
+        # 绘制时从 ``_completed`` / ``_optional_flow`` 现算——控件不再存状态。
         self.update()

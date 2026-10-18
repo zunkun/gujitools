@@ -133,10 +133,18 @@ def run_rembg_submit_stage(config: dict) -> int:
                     child.unlink()
         out_dir.mkdir(parents=True, exist_ok=True)
         # 第四步缩略图缓存（与 store.rembg_thumbnails_dir 同一份目录布局：
-        # <task>/thumbnails/print；worker 侧拿不到 store，按任务目录布局推导）。
+        # <task>/thumbnails/print[~<节点>]；worker 侧拿不到 store，按任务目录
+        # 布局 + **产物目录名里的节点后缀**推导——同一步骤多个「图片去底色」
+        # 节点时各自的缩略图不许互相覆盖，用户 2026-10-17）。
         # 提交时**整目录重建**：最终图变了/页数变了，旧缩略图全部作废，
         # 不留孤儿文件。
-        thumb_dir = out_dir.parent.parent / "thumbnails" / "print"
+        from desktop.steps.ports import node_scope_from_output_dir
+
+        thumb_dir = (
+            out_dir.parent.parent
+            / "thumbnails"
+            / f"print{node_scope_from_output_dir(out_dir.name)}"
+        )
         shutil.rmtree(thumb_dir, ignore_errors=True)
         thumb_dir.mkdir(parents=True, exist_ok=True)
 

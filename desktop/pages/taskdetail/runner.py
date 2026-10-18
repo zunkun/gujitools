@@ -667,7 +667,9 @@ class StageRunnerMixin:
         if stage == "print":
             return str(self.store.scoped_stage_dir(self.task_id, node, "print"))
         if stage == "detect":
-            return str(self.store.stage_output_dir(self.task_id, stage))
+            # ⚠️ 标注图目录按**节点**取（B 方案）：同一步骤的多个「检测文本框」
+            #    节点各自一份 thumbnails/detect[~<节点>]。
+            return str(self.store.stage_output_dir(self.task_id, stage, node))
         try:
             return str(
                 self.store.node_or_stage_output(self.task_id, node, stage)

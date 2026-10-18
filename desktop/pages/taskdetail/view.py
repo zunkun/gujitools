@@ -135,6 +135,8 @@ class DetailViewMixin:
         panel_host_of_step: Callable[[str], Any]
         _pdf_page_count_ready: Callable[..., None]
         _page_thumb_for: Callable[..., Any]
+        # 入口图片缩略图缓存的后台预热（PageListMixin 提供，2026-10-17）
+        _warm_entry_thumbs: Callable[..., None]
         _image_selected: Callable[..., None]
         delete_selected_page: Callable[..., None]
         _original_image_size: Callable[..., Any]
@@ -183,6 +185,7 @@ class DetailViewMixin:
         _on_imposition_slot_selected: Callable[..., None]
         _open_imposition_item_preview: Callable[..., None]
         _open_imposition_spread_preview: Callable[..., None]
+        _imposition_locate_targets: Callable[..., list]
         _open_imposition_item_edit: Callable[..., None]
         _open_imposition_spread_edit: Callable[..., None]
         _on_imposition_enabled_toggled: Callable[..., None]
@@ -732,6 +735,11 @@ class DetailViewMixin:
         """
         card = Card(padding=T.SPACE_SM, spacing=0, radius=T.RADIUS_MD)
         self.imposition_view = ImpositionViewWidget()
+        # 右键「定位图片资源」的目标 = **拼版成品**（不是画布上那张输入源图）：
+        # 拼版会实时重合成产出新图，用户要定位的是这一步的产物（用户 2026-10-18）
+        self.imposition_view.canvas.set_locate_resolver(
+            self._imposition_locate_targets
+        )
         self.imposition_view.page_selected.connect(
             self._on_imposition_page_selected
         )

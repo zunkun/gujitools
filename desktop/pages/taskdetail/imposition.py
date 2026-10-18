@@ -100,6 +100,8 @@ class ImpositionBaseMixin:
         history_block: QWidget
         bar_index_of_step: Callable[[str], int | None]
         node_of_stage: Callable[[str], str | None]
+        #: 步骤条**格序** → 该格对应的**节点实例 id**（B 方案：逐节点刷状态用）
+        node_at_index: Callable[[int], str | None]
         _node_scope: Callable[..., dict]
         _stage_primary: dict[str, str | None]
         step_at_index: Callable[[int], str | None]
@@ -302,20 +304,55 @@ class ImpositionBaseMixin:
         )
 
     def _sync_imposition_step_bar(self) -> None:
-        """把拼版节点三态（可见/已选择/生效）一次性同步到流程条。
+        """把拼版节点三态（可见/已选择/生效）**按节点**同步到流程条。
 
-        「生效」= ``imposition_active()``（**已启用**即可，不要求已拼页）：
-        生效时拼版两侧的连接线常规点亮、徽标转绿色对勾；未生效时是灰色虚线、
-        「去底色 → PDF排版」走节点上方的绕行线——与第四步真实取图来源
-        （``print_source_dir``）保持一致，两处看同一个判据。
+        ⚠️ **流程条上这一格表达的是"这一步处理到哪了"**（2026-10-18 用户口径：
+        「第一个拼版已经运行过 → 高亮；第二个还没到那一步 → 不高亮」）：判据是
+        **这个节点自己有没有拼版页**（``drafts/imposition[~<节点>].json`` 的
+        ``pages``）——它才等于"运行过"。**不能**拿「在流程中启用图片拼版」开关
+        当判据：那是**流程级**条件（流程图上那个「是否拼版」网关问的就是它，
+        状态机的 ``imposition`` 标志也只有一份），勾了它对同一步骤的每个节点
+        都成立，用它会让没拼过版的节点也亮起来（用户 2026-10-18 前一条报障：
+        "操作了其中一个，另一个也仿佛已经被处理过了，其实没有"）。
+
+        有页 ⇒ 节点显示「已选择」+ 绿色对勾、两侧连接线点亮；
+        没页 ⇒ 「未选择」+ 灰色「＋」、连接线灰虚线、「去底色 → PDF排版」走
+        节点上方绕行线（等于"这一支还没产出东西"）。
         """
         visible = self._imposition_node_visible()
         self.step_bar.set_imposition_visible(visible)
-        self.step_bar.set_imposition_selected(self._load_imposition_enabled())
-        # ⚠️ 认"能不能真跑"而不是"勾没勾"：勾了但区域模式不支持时，节点要
-        # 显示成灰虚线+绕行线（表示这一步会跳过），而不是亮起"已生效"。
-        self.step_bar.set_imposition_active(self.imposition_effective())
+        self._sync_imposition_nodes()
         self._sync_imposition_switch(visible)
+
+    def _sync_imposition_nodes(self) -> None:
+        """逐节点刷流程条上每个可选拼版节点自己的状态（B 方案，2026-10-18）。
+
+        ``selected``/``active`` 同取**该节点有没有拼版页**：同一步骤有两个
+        「图片拼版」时各算各的，互不替代。
+        """
+        if not self.task_id:
+            # 无任务（构造期静态展示）：全部按未选择、未生效。
+            self.step_bar.set_imposition_selected(False)
+            self.step_bar.set_imposition_active(False)
+            return
+        for bar_index in self.step_bar.optional_bar_indices:
+            done = self._imposition_has_pages_of(self.node_at_index(bar_index))
+            self.step_bar.set_imposition_node_state(
+                bar_index, selected=done, active=done,
+            )
+
+    def _imposition_has_pages_of(self, node_id: str | None) -> bool:
+        """**指定拼版节点自己**有没有拼版页（= 这一步"运行过"没有）。
+
+        单节点流程（默认流程与所有现存任务）下 ``node_id`` 就是主节点，读的
+        仍是 ``drafts/imposition.json``——与改造前一致。
+        """
+        if not self.task_id:
+            return False
+        scope = self.store.scoped_file_scope(self.task_id, node_id)
+        return bool(
+            self.store.load_imposition_doc(self.task_id, **scope).get("pages")
+        )
 
     def _sync_imposition_switch(self, _visible=None) -> None:
         """把三态判据的结果刷到拼版面板的启用开关上（可用性 + 原因）。
@@ -386,11 +423,11 @@ class ImpositionBaseMixin:
     def _imposition_doc(self) -> dict:
         """**当前拼版节点**的拼版文档（含选择态与逐页版面）。
 
-        ⚠️ 读写必须走**同一个**作用域（B 方案）：版面按节点存
-        （``drafts/imposition~<节点>.json``），而 ``enabled`` 那份是流程级的
-        （``_imposition_flag_scope``）。此前这个读法漏了作用域——写进副本节点的
-        122 页，读的却是主节点那份空文档 ⇒ 选完页「拼版窗口」里一张也不显示、
-        左侧还停在「还没有拼版页」（用户 2026-10-17 实测报障）。
+        ⚠️ 读写必须走**同一个**作用域（B 方案）：开关（``enabled``）与逐页版面
+        （``pages``）都按节点存（``drafts/imposition[~<节点>].json``）。此前这个读法
+        漏了作用域——写进副本节点的 122 页，读的却是主节点那份空文档 ⇒ 选完页
+        「拼版窗口」里一张也不显示、左侧还停在「还没有拼版页」（用户 2026-10-17
+        实测报障）。
         """
         if not self.task_id:
             return {"enabled": False, "pages": []}
@@ -441,6 +478,21 @@ class ImpositionBaseMixin:
         自己的 ``drafts/imposition[~<节点>].json``（页面清单与逐页版面）。"""
         return self._node_scope(self.node_of_stage("imposition"))
 
+    def _imposition_flag_scope(self) -> dict:
+        """「在流程中启用图片拼版」这个**开关**的作用域：恒取拼版的主节点。
+
+        ⚠️ 开关是**流程级条件**（流程图上那个「是否拼版」网关问的就是它；
+        状态机的 ``imposition`` 标志没有节点上下文，见 ``store.scheduler_flags``），
+        所以它只有一份、读写都走主节点的文件；**版面（pages）才是按节点分的**。
+        在副本节点上勾选，改的仍是这一份——与"这个开关决定第四步取图来源"的
+        既有语义一致。
+
+        ⚠️ **流程条上那一格的"已选择/绿勾"不看这个开关**（2026-10-18）：那一格
+        表达的是"这一步处理到哪了"，判据是**本节点有没有拼版页**
+        （见 :meth:`_sync_imposition_nodes`）。开关只决定"第四步取不取拼版结果"。
+        """
+        return self._node_scope(self._stage_primary.get("imposition"))
+
     def _imposition_output_dir(self) -> Path:
         """**本节点**拼版成品的输出目录（``stages/imposition[~<节点>]``）。
 
@@ -453,16 +505,6 @@ class ImpositionBaseMixin:
         return self.store.node_or_stage_output(
             task_id, self.node_of_stage("imposition"), "imposition"
         )
-
-    def _imposition_flag_scope(self) -> dict:
-        """「在流程中启用图片拼版」这个**开关**的作用域：恒取拼版的主节点。
-
-        ⚠️ 开关是**流程级条件**（状态机的 ``imposition`` 标志没有节点上下文，
-        见 ``store.scheduler_flags``），所以它只有一份、读写都走主节点的文件；
-        版面（pages）才是按节点分的。在副本节点上勾选，改的仍是这一份——
-        与"这个开关决定第四步取图来源"的既有语义一致。
-        """
-        return self._node_scope(self._stage_primary.get("imposition"))
 
     def imposition_source_files(self) -> list[Path]:
         """可挑选的源图：**拼版这一步的 pages 端口**指向的目录。
@@ -507,14 +549,11 @@ class ImpositionBaseMixin:
         灰虚线 + 绕行线，用户看到的就是"启用了却不生效"。「有没有拼版页」是
         另一件事（能不能真出东西），走 :meth:`imposition_has_pages`。
 
-        本方法是"**流程走不走拼版**"的唯一判据：第四步取图来源
-        (:meth:`print_source_dir`) 与流程条生效态
-        (:meth:`_sync_imposition_step_bar`) 都只看它。
-
-        ⚠️ 实现走通用的 ``store.step_enabled``（同一文件、同一键），不再自己
-        读整份文档——那份文档逐页带版面，200 页的书几百 KB，每次只为一个
-        bool 反序列化整份是浪费（列表页的 ``store.imposition_enabled`` 当年
-        就是为此才另起一份读法；现在两份合成一份）。
+        ⚠️ 这是**流程级**的判据（决定第四步取图来源），开关只有一份、存在主节点
+        那份 ``drafts/imposition.json`` 里（见 :meth:`_imposition_flag_scope`）。
+        ⚠️ **流程条上每个拼版节点的"已选择/绿勾"不看它**（2026-10-18）：那一格
+        表达"这一步处理到哪了"，判据是该节点自己有没有拼版页
+        （见 :meth:`_sync_imposition_nodes`）。
         """
         task_id = getattr(self, "task_id", None)
         if not task_id:

@@ -203,7 +203,23 @@ class PageListMixin:
         ``full`` 由调用方按**原始槽位**判定后传入（整幅单框不镜像）。
         """
         p = Path(path_text)
-        if not p.stem.isdigit() or not self.task_id:
+        if not self.task_id:
+            return None
+        # ⚠️ **入口图片优先按图键查缓存**（用户 2026-10-17）：流程第一个节点是
+        #    检测/去底色/排版时，输入是用户放进 ``stages/input/`` 的那批图——它们
+        #    既不来自源 PDF（没有按页号的 source 缩略图），名字又未必是数字。
+        #    导入时已生成了缩略图到 ``thumbnails/input/``，命中就用它，别回落到
+        #    现解码原图（几千像素的扫描图，一页几百毫秒）。
+        #    ⚠️ 必须在"数字页名"判据**之前**：入口图若也叫 ``1.jpg``，走数字
+        #    分支会误取到**源 PDF** 第 1 页的缩略图（另一张图）。
+        try:
+            in_entry = p.parent == self.store.task_input_dir(self.task_id)
+        except ValueError:
+            in_entry = False
+        if in_entry:
+            cached = self.store.entry_thumb_path(self.task_id, p)
+            return {"path": str(cached), "effect": None} if cached else None
+        if not p.stem.isdigit():
             return None
         allowed = {
             self.store.extract_output_dir(self.task_id),
@@ -443,6 +459,91 @@ class PageListMixin:
         self.detect_viewer.refresh_page(path_text)
         self.rembg_viewer.refresh_page(path_text)
 
+    # --------------------------------------------------- 入口图片缩略图（导入即生成）
+    def _warm_entry_thumbs(self, files) -> None:
+        """给落在入口输入目录的图**后台生成缩略图缓存**（用户 2026-10-17）。
+
+        用户口径：「检测文本框 / 图片去底色 / 图片拼版 / PDF排版」作为流程第一个
+        节点时，它的输入是用户**引入的文件图片或文件夹**；此时左栏此前只能现解码
+        原图（几千像素的扫描件）。所以**从引入那一刻起**就把缩略图生成到
+        ``thumbnails/input/``，左栏直接读小图（:meth:`_page_thumb_for` /
+        :meth:`_print_thumb_provider` 已在查它）。
+
+        只处理祖先目录 == ``stages/input/`` 的图（入口图）；已有且不旧的缓存跳过
+        （按 ``cache_usable``：不比源图旧、体积不像截断）。生成完成后刷一次预览
+        把左栏的占位换成小图。
+
+        ⚠️ **必须记住"已请求过预热的 (路径, mtime)"**（``_entry_thumb_warmed``）：
+        读不出来的坏图永远写不出缓存，而 :meth:`_on_entry_thumbs_warmed` 完成
+        后会再调本方法——没这道记忆就会"预热→刷预览→再预热"无限循环。记的是
+        mtime，源图被编辑（mtime 变）后仍会重新预热。
+        """
+        if not self.task_id:
+            return
+        try:
+            entry_dir = self.store.task_input_dir(self.task_id)
+            cache_dir = self.store.input_thumbnails_dir(self.task_id)
+        except ValueError:
+            return
+        candidates = []
+        for item in files:
+            if not item:
+                continue
+            try:
+                path = Path(item)
+            except TypeError:  # 非法路径（None/奇怪对象）：跳过
+                continue
+            if path.parent == entry_dir:
+                candidates.append(path)
+        if not candidates:
+            return
+        from desktop.workers.thumb_cache_worker import (
+            ImageThumbCacheWorker,
+            cache_usable,
+            stat_mtime,
+            thumb_cache_file,
+        )
+
+        warmed = self.__dict__.setdefault("_entry_thumb_warmed", {})
+        todo = []
+        for path in candidates:
+            mtime = stat_mtime(path)
+            if cache_usable(thumb_cache_file(cache_dir, path), mtime):
+                continue
+            key = str(path)
+            if warmed.get(key) == mtime:
+                continue  # 这张已经请求过预热且源没变（多为读不出来的坏图）
+            todo.append(path)
+            warmed[key] = mtime
+        if not todo:
+            return
+        worker = ImageThumbCacheWorker(todo, cache_dir, edge=THUMBNAIL_EDGE)
+        owner_task = self.task_id
+        self.run_worker(
+            lambda: worker,
+            lambda w, thread: (
+                connect_queued(
+                    self,
+                    w.completed,
+                    lambda o=owner_task: self._on_entry_thumbs_warmed(o),
+                    thread,
+                ),
+                w.completed.connect(thread.quit),
+                w.failed.connect(thread.quit),
+            ),
+        )
+
+    def _on_entry_thumbs_warmed(self, owner_task: str) -> None:
+        """入口图片缩略图生成完：重刷当前预览，把占位图标换成缓存小图。
+
+        ⚠️ 防串任务：后台生成期间用户可能已切走，旧任务的缓存不能刷进新任务。
+        重刷会**再次**调 :meth:`_warm_entry_thumbs`，但那时缓存已齐（``todo`` 空）
+        ⇒ 不会再起 worker，不会循环。
+        """
+        if owner_task != self.task_id:
+            return
+        self._refresh_preview()
+
     # ------------------------------------------------------------------ 增删
     def _active_page_viewer(self):
         """当前预览阶段对应的可编辑查看器（detect 或 extract）。
@@ -678,6 +779,9 @@ class PageListMixin:
         if not added:
             return 0
         self.store.save_pages(task_id, self.pages, **self._node_scope())
+        # 入口图片**引入即生成缩略图**（用户 2026-10-17）：已在输入目录里的图也要
+        # 有缓存，左栏才不至于现解码原图。
+        self._warm_entry_thumbs([Path(f) for f in files])
         return added
 
     def _on_pages_copied(self, done: list, errors: list) -> None:
@@ -704,6 +808,8 @@ class PageListMixin:
             note += f"（{len(errors)} 张失败：{errors[0][1]}）"
             self._toast("warning", "部分图片插入失败", errors[0][1])
         self.log_view.append(note)
+        # 这批新图落在入口目录时，**复制完即生成缩略图**（用户 2026-10-17）
+        self._warm_entry_thumbs([Path(target) for _source, target in done])
         self._refresh_preview()
         self._refresh_downstream_preview("extract")
         # ⚠️ 插完图"缺入口图片"可能就解除了：红字/高亮/提示层要当场收掉，
@@ -1432,19 +1538,21 @@ class PageListMixin:
                     pass
         for sub in (
             "stages",
-            "thumbnails/detect",
-            "thumbnails/print",
-            "thumbnails/imposition",
             "drafts",
         ):
             try:
                 shutil.rmtree(task_dir / sub, ignore_errors=True)
             except OSError:
                 pass
-        # 页缓存按**页号**命名，跨书共用会串页（见 MEMORY「按页号命名的缓存
-        # 不能跨书共用」）——源一换，整本源缩略图缓存作废。
+        # 缩略图缓存**整体作废**：它们全是由旧源派生的（源 PDF 页渲染
+        # ``thumbnails/source``、入口图片 ``thumbnails/input``、去底色成品
+        # ``thumbnails/print``、拼版合成 ``thumbnails/imposition_pages`` …），
+        # 源一换就都不对了。页缓存按**页号**命名，跨书共用会串页（见 MEMORY
+        # 「按页号命名的缓存不能跨书共用」）。
+        # ⚠️ 目录名按**节点**分（``thumbnails/<名>[~<节点>]``，用户 2026-10-17），
+        #    逐个点名删会漏掉副本节点的别名——整棵 ``thumbnails/`` 一起删才干净。
         try:
-            shutil.rmtree(task_dir / "thumbnails/source", ignore_errors=True)
+            shutil.rmtree(task_dir / "thumbnails", ignore_errors=True)
         except OSError:
             pass
         # ⚠️⚠️ **必须把"待写"标记也清掉**：``set_task`` 开头会

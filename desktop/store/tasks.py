@@ -1078,7 +1078,8 @@ class TaskMixin:
             self.scheduler_flags(task_id, imposition_active),
         )
 
-    def stage_output_dir(self, task_id: str, stage: str) -> Path:
+    def stage_output_dir(self, task_id: str, stage: str,
+                         node_id: str | None = None) -> Path:
         """返回某阶段（GUI）应写入的输出目录。
 
         注意 rembg 阶段返回 rembgpreview 预览目录，rembg_submit 才指向
@@ -1086,8 +1087,10 @@ class TaskMixin:
         """
         # detect 只检测不落盘，它的产物是坐标文件；若有参考缩略图放
         # thumbnails/detect（那是界面缓存，不是端口产物，故不在 ports 表里）。
+        # ⚠️ 按**节点**取（B 方案）：同一步骤的多个「检测文本框」节点各自一份
+        #    标注图目录，互不覆盖（用户 2026-10-17：缩略图目录也按节点隔离）。
         if stage == "detect":
-            return self.task_dir(task_id) / "thumbnails" / "detect"
+            return self.thumbnails_dir(task_id, "detect", node_id)
         return self.stage_dir(task_id, stage)
 
     def workset_dir(self, task_id: str) -> Path:
@@ -1101,16 +1104,72 @@ class TaskMixin:
         """子进程执行配置（run-*.json / detect-config.json）。"""
         return self.task_dir(task_id) / "runs"
 
+    def thumbnails_dir(self, task_id: str, name: str,
+                       node_id: str | None = None) -> Path:
+        """按**节点作用域**取一个缩略图缓存目录：``thumbnails/<名>[~<节点>]``。
+
+        主节点/无节点 ⇒ ``thumbnails/<名>``（旧路径，**零迁移**）；副本节点 ⇒
+        ``thumbnails/<名>~<节点>``。规则由 :func:`desktop.steps.ports.scoped_name`
+        唯一给出，与产物落点（``stages/<阶段>~<节点>``）同一套——同一步骤有多个
+        节点时各自的缩略图缓存互不覆盖（用户 2026-10-17：「缩略图目录也要
+        按节点这样处理」）。
+        """
+        scope = self.scoped_file_scope(task_id, node_id)
+        return (
+            self.task_dir(task_id)
+            / "thumbnails"
+            / ports.scoped_name(name, scope["node_id"], scope["primary_id"])
+        )
+
+    def input_thumbnails_dir(self, task_id: str) -> Path:
+        """**入口图片**的缩略图缓存：``thumbnails/input/``。
+
+        用户 2026-10-17：流程第一个节点是「检测文本框 / 图片去底色 / 图片拼版 /
+        PDF排版」时，它的输入是用户直接放进 ``stages/input/`` 的那批图——此前
+        左栏只能现解码原图（几千像素的扫描图）。现在**导入即按图键生成**到这份
+        缓存里，左栏直接读小图。
+
+        ⚠️ **不按节点分**：入口图片目录（``stages/input/``）是**整个任务共用**
+        的（所有无上游的节点都回落到它），所以缓存也与它同作用域（任务级）。
+        """
+        return self.task_dir(task_id) / "thumbnails" / "input"
+
+    def entry_thumb_path(self, task_id: str, image: Path | str) -> Path | None:
+        """一张入口图片在 :meth:`input_thumbnails_dir` 里的缓存缩略图路径。
+
+        没有缓存、或缓存比源图旧/体积像截断，一律返回 ``None``（调用方回落到
+        真图解码）。按**图键**命名（``book_key``：文件名+大小+路径指纹）——入口
+        图片名字五花八门，按序号会张冠李戴（与 ``thumb_cache_worker`` 同一规则）。
+        """
+        from desktop.utils.files import book_key
+        from desktop.workers.thumb_cache_worker import cache_usable, stat_mtime
+
+        target = self.input_thumbnails_dir(task_id) / f"{book_key(image)}.jpg"
+        if not cache_usable(target, stat_mtime(image)):
+            return None
+        return target
+
     def source_thumbnails_dir(self, task_id: str) -> Path:
-        """源 PDF 页缩略图：导入即生成，PDF 预览直接复用，永不清理。"""
+        """源 PDF 页缩略图：导入即生成，PDF 预览直接复用，永不清理。
+
+        ⚠️ **不按节点分**：它来自**源 PDF**（一本书一份），同一步骤的多个提取
+        节点产出的页图同名同页号，共用这份按页号命名的缓存是正确且省事的。
+        """
         return self.task_dir(task_id) / "thumbnails" / "source"
 
-    def rembg_thumbnails_dir(self, task_id: str) -> Path:
+    def rembg_thumbnails_dir(self, task_id: str,
+                             node_id: str | None = None) -> Path:
         """第四步缩略图缓存：提交阶段（rembg_submit）随最终图片一并生成，
-        缩略条直接复用，不必每次现解码 6000px 的原图。"""
-        return self.task_dir(task_id) / "thumbnails" / "print"
+        缩略条直接复用，不必每次现解码 6000px 的原图。
 
-    def imposition_thumbnails_dir(self, task_id: str) -> Path:
+        ⚠️ 按**节点**取（B 方案）：两个「图片去底色」节点各有各的提交产物
+        （``stages/rembg[~<节点>]``），缩略图缓存也跟着分（裸名 ``print`` /
+        ``print~<节点>``），否则副本节点会命中主节点的缩略图（张冠李戴）。
+        """
+        return self.thumbnails_dir(task_id, "print", node_id)
+
+    def imposition_thumbnails_dir(self, task_id: str,
+                                  node_id: str | None = None) -> Path:
         """拼版页左列缩略图缓存（每页取第一张源图，``book_key`` 命名）。
 
         ⚠️ 与独立拼图页的 ``singletask/imposition/`` **各归各**（用户
@@ -1118,9 +1177,10 @@ class TaskMixin:
         随任务目录走，``delete_task`` 整体清理时一并清掉；两边只共用组件与
         ``ImageThumbCacheWorker``，**不共用缓存根**。
         """
-        return self.task_dir(task_id) / "thumbnails" / "imposition"
+        return self.thumbnails_dir(task_id, "imposition", node_id)
 
-    def imposition_page_thumbs_dir(self, task_id: str) -> Path:
+    def imposition_page_thumbs_dir(self, task_id: str,
+                                   node_id: str | None = None) -> Path:
         """拼版**页面效果缩略图实体**目录：``tasks/<id>/thumbnails/imposition_pages/``。
 
         与 :meth:`imposition_thumbnails_dir`（页内**单张源图**的缩略图）
@@ -1129,8 +1189,11 @@ class TaskMixin:
         （用户 2026-10-09：「缩略图实体其实没有生成落地……组合成拼版图片
         应该另外放在一个目录中，直接按照 page1 page2 命名，注意做好映射
         数据」）。随任务目录走，``delete_task`` 一并清掉。
+
+        ⚠️ 按**节点**取（B 方案）：两个「图片拼版」节点各有各的版面文档与
+        合成产物，缩略图实体也跟着分（``imposition_pages[~<节点>]``）。
         """
-        return self.task_dir(task_id) / "thumbnails" / "imposition_pages"
+        return self.thumbnails_dir(task_id, "imposition_pages", node_id)
 
     def copy_source_to_task(self, task_id: str, source_path: Path) -> Path:
         """导入时在任务目录下保留一份源文件副本（原子落地）。
