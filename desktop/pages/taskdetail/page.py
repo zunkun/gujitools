@@ -49,6 +49,7 @@ from desktop.store import (
 from desktop.ui import theme as T
 from desktop.ui.toast import show_toast
 from desktop.ui.widgets import apply_to, bold_button
+from desktop.utils.files import changed_images, image_files_fingerprint
 from desktop.workers import CopySourceWorker, WorkerHost, connect_queued
 from desktop.pages.taskdetail.detect import DetectMixin
 from desktop.pages.taskdetail.flow_mixin import FlowMixin
@@ -195,6 +196,13 @@ class TaskDetailPage(
         #: 产物目录 → 节点 id 的反查表（同一次重算填，见 :meth:`_rebuild_node_index`）。
         #: 用来回答"这张页面图是哪个节点产的"（尺寸基准按节点存时要问它）。
         self._node_of_dir: dict[Path, str] = {}
+        #: **产物目录 → 上次看过时的逐文件指纹**（``{路径: (大小, mtime_ns)}``）。
+        #: 切步骤时拿它回答两个问题：①这一步的输入产物**内容**变了没有（上游产物
+        #: 常被**同名覆盖**——拼版成品重合成、单页重提取、编辑器回写，路径一个字
+        #: 都没变）；②**哪几张**变了——按页失效旧版面（``print.json`` 的逐图 rect）
+        #: 与旧缩略图缓存要靠它（用户 2026-10-18：「上一步更新了哪些图片要有记录，
+        #: 图片页面缓存现在还是有」）。
+        self._dir_files: dict[str, dict[str, tuple[int, int]]] = {}
         #: 节点 id → 运行阶段；界面步骤 key → 该步骤的**主节点** id（B 方案，
         #: 同一次重算填）。`node_of_stage` 这类热路径只查这两张表，不解析流程图。
         self._node_stage: dict[str, str] = {}
@@ -387,6 +395,10 @@ class TaskDetailPage(
         self.detect_cache.clear()
         # 图头尺寸缓存按 (路径, mtime) 键控、只增不减：换任务清掉，别攒一整场会话
         self._thumb_size_cache = None
+        # 「上游产物逐文件指纹」的记忆同理按任务清：同一个任务**重进**（换源 PDF
+        # 后又 set_task、或从列表再打开）时目录是老的、内容可能已被换过一遍，
+        # 留着旧指纹会把"内容变了"漏判成"没变"。
+        self._dir_files = {}
         # （实时预览临时目录已在覆盖 task_id 之前按旧任务清过，见上方）
         self.pdf_page_count = 0
         self._history_prefilled: set[str] = set()
@@ -1183,9 +1195,28 @@ class TaskDetailPage(
         self.history_block.setVisible(not spec or not spec.panel_extra)
         self._apply_control_width()
         self._refresh_stage_views()
+        # ⚠️ **按内容判一次"这一步的输入产物换了没有"**（用户 2026-10-18）：
+        #    上游产物会被同名覆盖（拼版成品重合成、单页重提取、编辑器回写），
+        #    路径没变、内容变了。这种情况下列表/图标是**解码一次就缓存**的，
+        #    不强制重装就会一直停在旧图上——"上一步图片发生变化，切到这一步要自动
+        #    加载最新的图片"讲的就是它。
+        # ⚠️ 必须在 ``step_bar.set_current`` **之后**算：判据要问"当前这一步的
+        #    输入目录"（``current_stage`` 读的是步骤条的高亮格）。
+        updated = self._step_input_updated_files()
+        if updated:
+            # 「上一步更新了哪些图片」的记录（用户 2026-10-18）：日志里说清是哪几张
+            # ——旧版面/旧缩略图就是按这份清单**按页**失效的。
+            names = "、".join(path.name for path in updated[:6])
+            if len(updated) > 6:
+                names += f" 等 {len(updated)} 张"
+            self.log_view.append(
+                f"上游产物已更新 {len(updated)} 张图片（{names}）："
+                "本步骤按最新图片重新载入。"
+            )
+        self._invalidate_page_caches_for(updated)
         # ⚠️ 传的是**栈页号**（``_refresh_preview`` 按 ``preview_stack`` 这一层
         #    理解入参），不是格序——自定义流程里两者不等。
-        self._refresh_preview(self.stack_index_of(index))
+        self._refresh_preview(self.stack_index_of(index), force=bool(updated))
         self._restore_stage_params(index)
         self._refresh_history_options()
         if step == "detect":
@@ -1538,7 +1569,72 @@ class TaskDetailPage(
         bold_button(self.run_button, pending)
 
     # ------------------------------------------------------------------ 预览刷新
-    def _refresh_preview(self, index: int | None = None) -> None:
+    def _step_input_updated_files(self) -> list[Path]:
+        """**当前这一步**的输入产物里，这次**更新了哪些图片**（逐文件比对指纹）。
+
+        上游产物被**同名覆盖**时（拼版成品重合成、单页重提取、编辑器回写源图）
+        路径毫无变化，只看路径/目录级指纹只能问出"这个目录有没有变过"，问不出
+        **是哪几张**——而"按页失效旧版面、旧缩略图"必须精确到文件（用户
+        2026-10-18：「上一步更新了哪些图片要有记录」）。
+
+        返回的是本次新发现变化的绝对路径（升序）；没有基线（第一次见到这个目录）
+        或目录读不到时返回空表——**第一次见面不能算"上一步更新了它"**。
+
+        ⚠️ 记录是**无条件**写回的（基线永远更新到最新），否则判据会变成"和很早
+        以前比"。
+        ⚠️ 指纹要 **readdir + stat**（第四步取图目录可能几百页），所以只在
+        **切步骤**这一次算（``_select_stage`` 调它），不进 ≤200ms 的热路径。
+        """
+        directory = self._current_stage_input_dir()
+        if directory is None:
+            return []
+        key = str(directory)
+        after = image_files_fingerprint(directory)
+        updated = changed_images(self._dir_files.get(key), after)
+        if after is not None:
+            self._dir_files[key] = after
+        return [Path(text) for text in updated]
+
+    def _invalidate_page_caches_for(self, updated: list[Path]) -> None:
+        """把**上游刚更新过的那几张图片**的页面缓存失效（用户 2026-10-18）。
+
+        逐文件记录（:meth:`_step_input_updated_files`）的另一半用途：知道是哪几张
+        变了，就能**只清那几张**的缓存，而不是整批重来——
+
+        - **拼版页缩略图实体**（``thumbnails/imposition_pages[~<节点>]/pageN.jpg``，
+          按"含这张源图的页"失效，见 ``_drop_imposition_source_thumb``）；
+        - **预览区查看器的缩略图记忆**（detect / rembg 两个查看器按路径缓存了
+          "缩略图路径 → 已解码图标"，文件被覆盖后不丢就会一直贴旧的）。
+
+        ⚠️ 一次切步骤最多算一次；每张图只做 O(1) 计数的指针操作，不重新解码任何
+        图片（真正的重解码由随后的 ``_refresh_preview(force=True)`` 分批做）。
+        """
+        if not updated:
+            return
+        for path in updated:
+            text = str(path)
+            try:
+                self._drop_imposition_source_thumb(text)
+            except Exception:  # noqa: BLE001 - 缓存失效失败不该拦住切步骤
+                pass
+            for viewer in getattr(self, "detect_viewer", None), \
+                    getattr(self, "rembg_viewer", None):
+                reload_thumb = getattr(viewer, "reload_thumb", None)
+                if callable(reload_thumb):
+                    try:
+                        reload_thumb(text)
+                    except Exception:  # noqa: BLE001
+                        pass
+
+    def _refresh_preview(self, index: int | None = None,
+                         force: bool = False) -> None:
+        """刷新某一步的预览；``force`` = 清单没变也按磁盘最新内容重装一遍。
+
+        ``force`` 由 :meth:`_step_input_updated_files` 给出（上游产物被同名
+        覆盖时本步的图标/条目会停在旧图上）。只有"图标/条目会被缓存下来"的
+        那两步需要它（detect / rembg）——extract 的产物是**每次切页现读**、
+        print 的列表本来每次都重建（见各自分支）。
+        """
         if not self.task_id:
             return
         # ⚠️ **两套下标，这里必须显式分开**（用户 2026-10-06 报障的根因之一）：
@@ -1564,7 +1660,7 @@ class TaskDetailPage(
             # ⚠️ 目录按**节点**取（B 方案）：同一步骤的多个节点各有产物目录。
             self.extract_result_viewer.set_extract_dir(self._node_dir("extract"))
         elif stage == "detect":
-            self.detect_viewer.set_images(self._manifest_paths())
+            self.detect_viewer.set_images(self._manifest_paths(), force=force)
             # 入口图片（这一步是流程第一步时）缩略图预热：没有就后台生成，
             # 别让左栏一直现解码原图（用户 2026-10-17）
             self._warm_entry_thumbs(self._manifest_paths())
@@ -1586,6 +1682,7 @@ class TaskDetailPage(
                 single_column_book=_profile.single_column_book,
                 page_width_provider=lambda text: _widths.get(Path(text).stem, 0),
                 side_for=lambda text: _sides.get(Path(text).stem),
+                force=force,
             )
             # 入口图片缩略图预热（同上：这一步是流程第一步时才有效）
             self._warm_entry_thumbs(self._manifest_paths())
@@ -1598,7 +1695,11 @@ class TaskDetailPage(
             # 记下本次列表的来源：进入路径在 _refresh_print_source 里是"只作废
             # 缓存不重建"，不在这里补记的话，进第四步后每次后台合成回调都会
             # 把整批列表白重建一遍（同步解码首图，UI 冻结）
-            self._print_source_cache = str(self.print_source_dir())
+            # ⚠️ 记的是**内容标记**（目录 + 指纹）而不是目录字符串：拼版成品
+            #    重合成后目录没变、内容换了，只记路径会让后台合成的收尾回调
+            #    （``_on_imposition_composed`` → ``_refresh_print_source``）
+            #    误判成"来源没换"而跳过重建（用户 2026-10-18 报障）。
+            self._print_source_cache = self._print_source_mark()
             # 若此前已生成过 PDF，恢复下载按钮状态。
             # ⚠️ 走 _current_print_pdf_path（不是 _latest_print_pdf_path）：
             # 拼版开关一改，磁盘上那份 PDF 就是旧来源的产物，得让下载按钮

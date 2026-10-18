@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 174 个模块、191 个公开类、1376 个公开函数/方法（生成于 2026-10-18）。
+覆盖 174 个模块、191 个公开类、1383 个公开函数/方法（生成于 2026-10-18）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -85,7 +85,7 @@
 | [`desktop.components.viewers.print_layout_canvas`](#desktopcomponentsviewersprint_layout_canvas) | 1 | 12 |
 | [`desktop.components.viewers.print_preview.export`](#desktopcomponentsviewersprint_previewexport) | 1 | 1 |
 | [`desktop.components.viewers.print_preview.layout`](#desktopcomponentsviewersprint_previewlayout) | 1 | 1 |
-| [`desktop.components.viewers.print_preview.thumbs`](#desktopcomponentsviewersprint_previewthumbs) | 1 | 0 |
+| [`desktop.components.viewers.print_preview.thumbs`](#desktopcomponentsviewersprint_previewthumbs) | 1 | 1 |
 | [`desktop.components.viewers.print_preview.widget`](#desktopcomponentsviewersprint_previewwidget) | 1 | 9 |
 | [`desktop.components.viewers.rembg_viewer.core`](#desktopcomponentsviewersrembg_viewercore) | 1 | 9 |
 | [`desktop.components.viewers.rembg_viewer.entries`](#desktopcomponentsviewersrembg_viewerentries) | 1 | 0 |
@@ -121,7 +121,7 @@
 | [`desktop.services.detect_export`](#desktopservicesdetect_export) | 0 | 7 |
 | [`desktop.services.font_catalog`](#desktopservicesfont_catalog) | 1 | 6 |
 | [`desktop.services.imposition`](#desktopservicesimposition) | 0 | 31 |
-| [`desktop.services.print_plan`](#desktopservicesprint_plan) | 0 | 5 |
+| [`desktop.services.print_plan`](#desktopservicesprint_plan) | 0 | 8 |
 | [`desktop.services.rembg_export`](#desktopservicesrembg_export) | 0 | 7 |
 | [`desktop.services.rembg_live`](#desktopservicesrembg_live) | 0 | 3 |
 | [`desktop.services.stale_chain`](#desktopservicesstale_chain) | 0 | 4 |
@@ -167,7 +167,7 @@
 | [`desktop.ui.toast`](#desktopuitoast) | 0 | 1 |
 | [`desktop.ui.widgets`](#desktopuiwidgets) | 10 | 48 |
 | [`desktop.ui.window_size`](#desktopuiwindow_size) | 0 | 3 |
-| [`desktop.utils.files`](#desktoputilsfiles) | 0 | 23 |
+| [`desktop.utils.files`](#desktoputilsfiles) | 0 | 26 |
 | [`desktop.utils.icon`](#desktoputilsicon) | 0 | 3 |
 | [`desktop.worker`](#desktopworker) | 0 | 1 |
 | [`desktop.workers.copy_source_worker`](#desktopworkerscopy_source_worker) | 2 | 4 |
@@ -4885,7 +4885,7 @@ Qt 在窗口 dpr 变化时发 ``DevicePixelRatioChange``，**不保证**同时�
 | `navigate(forward: bool) -> None` | 方向键翻页（详情页 ←/→ 调用；联动预览刷新，见 ThumbStrip.navigate）。 |
 | `set_insert_visible(visible: bool) -> None` | 「＋/📁」两个**图片输入入口**的显隐（宿主按流程入口决定）。 |
 | `set_empty_hint(hint: str) -> None` | 换空态文案（输入入口藏起来后，"请点下方「＋」"就指错方向了）。 |
-| `set_images(paths: list[Path \| str], boxes_map: dict \| None=None) -> None` | 设置页面清单并重建缩略图条；清单未变则仅通知宿主重读。 |
+| `set_images(paths: list[Path \| str], boxes_map: dict \| None=None, force: bool=False) -> None` | 设置页面清单并重建缩略图条；清单未变则仅通知宿主重读。 |
 | `apply_edited_image(path_text: str, image) -> None` | 编辑结果**立即上屏**（不等文件重解码/缩略图重生成）。 |
 | `refresh_page(path_text: str) -> None` | 某页缩略图缓存重生成后刷新条目图标（大图由 apply_edited_image |
 | `reload_thumb(path_text: str) -> None` | 某张图的**文件内容**被覆盖后：忘掉旧缓存记忆并按新文件重取缩略图。 |
@@ -4934,7 +4934,7 @@ image_size_provider 供大图降采样时还原原始像素尺寸；thumb_provid
 只存着，等下次清空自然用新文案。⚠️ 占位要**清了重加**：
 ``add_placeholder`` 是追加语义，直接再调会叠出两条占位条目。
 
-##### `set_images(paths: list[Path | str], boxes_map: dict | None=None) -> None`
+##### `set_images(paths: list[Path | str], boxes_map: dict | None=None, force: bool=False) -> None`
 
 设置页面清单并重建缩略图条；清单未变则仅通知宿主重读。
 
@@ -4946,8 +4946,13 @@ run() 内部**，只经 ``failed`` 信号回到预览区显示成
 「加载失败：'str' object has no attribute 'suffix'」（用户 2026-10-03 报）。
 在边界一次收干净，比让每个调用点各自记得 ``str(p)``→``p`` 可靠。
 
-``boxes_map`` 预留（当前未用）。清单不变时跳过重建，但仍 emit
-current_changed 让宿主重新读取该页检测框/参数。
+``boxes_map`` 预留（当前未用）。
+
+``force``：清单**一模一样**时也把图标重新解码一遍（保留当前行与选中）。
+⚠️ 为什么需要：这些页面图会被**同名覆盖**（单页重提取、编辑器回写），
+路径清单看不出变化，而条目图标是**解码一次就存进 QIcon**的——不强制
+重装就永远停在覆盖前那张。判据由宿主按"上游产物内容变了没有"给出
+（``desktop.utils.files.dir_content_signature``），不是每次刷新都强制。
 
 ##### `apply_edited_image(path_text: str, image) -> None`
 
@@ -5601,6 +5606,24 @@ print 预览 Mixin：**缩略图与排序**。
 
 缩略图路径/批量加载/条目排序缓存同步。
 
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `refresh_paths(paths) -> None` | **只重解这几张**待打印图的缩略图 + 当前页显示（不整列重建）。 |
+
+##### `refresh_paths(paths) -> None`
+
+**只重解这几张**待打印图的缩略图 + 当前页显示（不整列重建）。
+
+上游（图片拼版）重存了某几页成品后会点名告诉这里"哪几张变了"（用户
+2026-10-18：「那张图片变更……同时通知下一步要变更的图片」）。整列
+``set_entries`` 会把列表清空重建、把当前页翻回第一页，而这里只动那几条
+（按**条目身份令牌**回填，行号变了也不会写错行，见 ``_apply_page_thumb``）。
+
+当前显示的就是其中一张时，顺带按新文件重载右侧（版面/效果/原图三种
+模式都走 ``_load_display``）。
+
 ---
 
 ## `desktop.components.viewers.print_preview.widget`
@@ -5664,7 +5687,7 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(empty_hint: str='暂无图片', image_editable: bool=True, parent=None)` | 构建缩略图条与「去底色结果 / 原图」切换行，默认显示去底色结果。 |
-| `set_images(paths: list[Path \| str], rembg_dir: Path \| None, boxes_provider=None, region_params_provider=None, thumb_provider=None, single_column_book: bool=False, page_width_provider=None, side_for=None) -> None` | 设置图片清单与去底色目录，重建输出条目并加载显示。 |
+| `set_images(paths: list[Path \| str], rembg_dir: Path \| None, boxes_provider=None, region_params_provider=None, thumb_provider=None, single_column_book: bool=False, page_width_provider=None, side_for=None, force: bool=False) -> None` | 设置图片清单与去底色目录，重建输出条目并加载显示。 |
 | `refresh_display() -> None` | detect 框/area/border 变化后，重建输出条目并按新区域重新加载。 |
 | `navigate(forward: bool) -> None` | 方向键翻页（详情页 ←/→ 调用；联动预览刷新，见 ThumbStrip.navigate）。 |
 | `set_live_dir(path: Path \| None) -> None` | 设置（或传 None 清除）「实时预览」暂存目录。 |
@@ -5681,7 +5704,7 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 用户）。False 时本控件只许预览——预览区右键不给「编辑图片」、放大
 弹窗不给「编辑」按钮（图片去底色阶段两处入口都传 False）。
 
-##### `set_images(paths: list[Path | str], rembg_dir: Path | None, boxes_provider=None, region_params_provider=None, thumb_provider=None, single_column_book: bool=False, page_width_provider=None, side_for=None) -> None`
+##### `set_images(paths: list[Path | str], rembg_dir: Path | None, boxes_provider=None, region_params_provider=None, thumb_provider=None, single_column_book: bool=False, page_width_provider=None, side_for=None, force: bool=False) -> None`
 
 设置图片清单与去底色目录，重建输出条目并加载显示。
 
@@ -5697,6 +5720,11 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 
 ``side_for``：``(path) -> "left"|"right"|None``，用户在**半框页**上指定
 的左右。给了指定就不做单栏归一化（那是在说"这页其实是某一边"）。
+
+``force``：清单与参数都没变时也把条目**整条重装**（重解缩略图、按最新
+参数重合成）——上游产物被同名覆盖后条目图标会一直停在旧图上，由宿主按
+"内容指纹变了没有"（``desktop.utils.files.dir_content_signature``）
+决定要不要传（不是每次刷新都强制）。
 
 ##### `set_live_dir(path: Path | None) -> None`
 
@@ -7128,7 +7156,8 @@ _select_stage()、_set_stage_status()、_toast()、log_view。
 
 | 名称 | 值 |
 | --- | --- |
-| COMPOSE_DEBOUNCE_MS | `500` |
+| COMPOSED_SIGS_SUFFIX | `".composed.json"` |
+| COMPOSE_DEBOUNCE_MS | `0` |
 | EDIT_COMMIT_DEBOUNCE_MS | `250` |
 | THUMB_REFRESH_DEBOUNCE_MS | `2000` |
 | PRINT_WAIT_POLL_MS | `100` |
@@ -8231,7 +8260,7 @@ GUI 主进程**绝不能**在这里 import 到 cv2（实测 ``import functions.d
 | `page_bounds(page: dict) -> tuple[float, float, float, float]` | 一页的**内容范围**：所有图外接框的并集（用户说的「图片的四个区域」）。 |
 | `compose_page(page: dict, background=TRANSPARENT_BACKGROUND)` | 一页拼版 → PIL **RGBA** 图：所有图外接框的紧裁。 |
 | `flatten_onto_background(source, target, background=WHITE_BACKGROUND) -> None` | 把一张图片（可能带透明）压到指定底色上，原子写出 PNG 到 ``target``。 |
-| `compose_doc(doc: dict, dest_dir, report=None, background=TRANSPARENT_BACKGROUND, suffix_for=None) -> list[Path]` | 把整份拼版文档落成 ``dest_dir/0001.png`` …（列表顺序即页序）。 |
+| `compose_doc(doc: dict, dest_dir, report=None, background=TRANSPARENT_BACKGROUND, suffix_for=None, only=None) -> list[Path]` | 把拼版文档落成 ``dest_dir/0001.png`` …（列表顺序即页序）。 |
 
 #### `page_product_suffix(page: dict) -> str`
 
@@ -8470,14 +8499,24 @@ PDF 侧 ``functions/print._load_image`` 压平到白纸；编辑器/预览按 RG
     target: 输出 PNG 路径（原子写，见 :func:`_save_page_atomic`）。
     background: 底色 RGBA 四元组，与 :func:`compose_page` 同一口径。
 
-#### `compose_doc(doc: dict, dest_dir, report=None, background=TRANSPARENT_BACKGROUND, suffix_for=None) -> list[Path]`
+#### `compose_doc(doc: dict, dest_dir, report=None, background=TRANSPARENT_BACKGROUND, suffix_for=None, only=None) -> list[Path]`
 
-把整份拼版文档落成 ``dest_dir/0001.png`` …（列表顺序即页序）。
+把拼版文档落成 ``dest_dir/0001.png`` …（列表顺序即页序）。
 
 ``suffix_for``：可选 ``(page) -> ".png" | ".jpg"``——**成品后缀随该页源图走**
 （用户 2026-10-17：「输入是 png 就输出 png，输入是 jpg 就输出 jpg」），任务
 流程传 :func:`page_product_suffix`；**不传则一律 ``.png``**（独立拼图页
 「导出成品」的既有口径：白底 PNG 就是交付物）。
+
+``only``（可选）：**只重合成这几页**（0 基页序下标集合，**迭代顺序即写入顺序**）。
+用户 2026-10-18：「不是所有图片都重新存储一份，只存储当前拼版的图片页」——一页
+合成要开两张原图 + 缩放 + 旋转 + alpha + 编码，整本 85 页叠起来就是好几秒，而
+用户刚拖的往往只是其中一页。给 ``None``（默认）= 按文档顺序全量，语义与改造前
+**逐字节一致**。
+⚠️ 只写给定的页，**清扫照做**（多出来的页号/别的后缀仍要删）——删页/换格式
+这类操作若只写一页却不清理，第四步会把残留的旧页也打进 PDF。
+⚠️ 顺序有意义：调用方把"用户正看着的那一页"排在前面，全量那一轮也能**先**把
+他改的那页写出来（不必等整本跑完）。
 
 返回写出的文件列表（顺序与页序一致）。**多余的旧文件会被清掉**——否则
 用户删掉一页后，上一轮多出来的 ``0007.png`` 还会被第四步当成一页打进 PDF。
@@ -8519,6 +8558,12 @@ PDF 侧 ``functions/print._load_image`` 压平到白纸；编辑器/预览按 RG
 去底色那一步必须提交才能传给下一步）：print 只排版「提交本次任务」落盘的
 成品图，见 ``taskdetail.submit.SubmitMixin._build_print_effects``。
 
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| RECT_ASPECT_TOLERANCE | `0.02` |
+
 ### 模块函数
 
 | 函数 | 说明 |
@@ -8527,7 +8572,10 @@ PDF 侧 ``functions/print._load_image`` 压平到白纸；编辑器/预览按 RG
 | `plan_rembg_submit_entries(manifest_paths: list[Path], result_path_for, boxes_for, area: int, single_column_book: bool=False, page_width_for=None, side_for=None) -> list[dict]` | 预览结果 + 检测框 + area/border → 最终图片条目。 |
 | `entry_to_effect_spec(entry: dict, border) -> dict` | 提交条目 → worker 效果合成规格（run_print_stage/run_rembg_submit_stage 用）。 |
 | `drop_foreign_stage_pages(pages: list[dict] \| None, source_dir: Path, stages_root: Path) -> list[dict]` | 从待打印清单里剔除「属于本任务**别的阶段**产物」的条目。 |
-| `plan_print_entries(rembg_files: list[Path], doc: dict \| None) -> tuple[list[dict], dict]` | 第四步待打印图片列表的规划。 |
+| `rect_fits_image(rect, image_size_px, rect_size_px=None) -> bool` | 这条逐页 rect 是否**还适用于当前这张图**（判据唯一处）。 |
+| `stale_rect_pages(pages, size_for) -> list[dict]` | ``pages`` 里**图像已换、旧 rect 不再适用**的那几条（``[]`` = 全都还适用）。 |
+| `ordered_page_record(entry: dict) -> dict` | 待打印条目 → ``print.json`` 的 ``pages[]`` 记录（顺序/标签 + 有则带逐页版面）。 |
+| `plan_print_entries(rembg_files: list[Path], doc: dict \| None, size_for=None) -> tuple[list[dict], dict]` | 第四步待打印图片列表的规划。 |
 
 #### `missing_extract_pages_spec(output_dir: Path, total: int) -> str | None`
 
@@ -8613,7 +8661,56 @@ area=4 保留整页内容、area 1/2/3 统一按合并语义走单框布局（�
 永远是**上一轮来源**的残留，绝不可能是用户从磁盘上手动挑来的外部图片。
 真正的外部图片（桌面/下载目录…）一律保留。
 
-#### `plan_print_entries(rembg_files: list[Path], doc: dict | None) -> tuple[list[dict], dict]`
+#### `rect_fits_image(rect, image_size_px, rect_size_px=None) -> bool`
+
+这条逐页 rect 是否**还适用于当前这张图**（判据唯一处）。
+
+背景（用户 2026-10-18）：「上一步的输出归上一步，当前步 PDF排版，页面效果都
+要按相关参数来调整」。逐页 rect 是**用户在 A4 纸上摆出来的坐标**，它是按
+**画它时那张图的几何**量出来的：图像一换（拼版成品重合成、去底色重提交、
+编辑器回写），像素尺寸/宽高比就变了，再把旧框套上去 = 把新图**拉伸**进旧框
+——A4 上的宽度与比例都是错的，本步参数（纸张/方向/边距/原比例）没起作用。
+
+判据分两档（新数据优先）：
+
+- ``rect_size_px``（画框时图像的像素尺寸，存在 ``pages[].rect_size`` 里）：
+  **必须完全相等**。像素尺寸变了 ⇒ 页面 mm 与像素的换算比例已不同，旧框
+  不再表达用户的意图（宽高比即使凑巧相同也不行）；
+- 没有记录（老数据）：退到**宽高比**容差（:data:`RECT_ASPECT_TOLERANCE`）。
+  宽高比一致 = 还是"同一张尺寸的图"；不一致 = 这张图已经换了（半页 →
+  对开页之类），旧框不再有效。
+
+读不到图像尺寸（文件刚被删/坏）时返回 ``True``（无从判断，保留用户排版）。
+
+#### `stale_rect_pages(pages, size_for) -> list[dict]`
+
+``pages`` 里**图像已换、旧 rect 不再适用**的那几条（``[]`` = 全都还适用）。
+
+``size_for``：``(路径文本) -> (宽, 高) | None``；为 ``None``（调用方拿不到
+尺寸，如 CLI）时一律返回空表——绝不能"读不到尺寸就当过期"，那会把用户
+精心调过的版面全部误清。
+
+返回项形如 ``{"file": …, "image": (宽, 高), "rect": [...]}``：调用方据此
+写**"上一步更新了哪些图片"的记录**（日志/界面提示），并据此失效这些页的
+缓存（旧版面、缩略图）。
+
+#### `ordered_page_record(entry: dict) -> dict`
+
+待打印条目 → ``print.json`` 的 ``pages[]`` 记录（顺序/标签 + 有则带逐页版面）。
+
+字段：
+
+- ``file`` / ``label``：条目身份（顺序就是列表顺序，拖动即改这里）；
+- ``rect``：用户在 A4 纸上摆出来的坐标（mm），**有才写**（没有就走自动排版）；
+- ``rect_size``：**画这个框时那张图的像素尺寸**。它是"这张图的版面是按哪张图
+  量的"的唯一凭据：图像后来被上游换掉（拼版成品重合成、去底色重提交）时，
+  靠它判定旧框失效、改按当前 PDF排版参数重排（见 :func:`rect_fits_image`）。
+
+⚠️ 落盘口径必须**唯一**：`print_list._save_print_order`（拖拽/删除后）与
+`runner`（生成 PDF 前）都写这份记录，两处各拼一份字段迟早漂移——改了这里
+两处跟着改。
+
+#### `plan_print_entries(rembg_files: list[Path], doc: dict | None, size_for=None) -> tuple[list[dict], dict]`
 
 第四步待打印图片列表的规划。
 
@@ -8623,6 +8720,13 @@ area=4 保留整页内容、area 1/2/3 统一按合并语义走单框布局（�
 
 列表不再使用源 PDF 缩略图，直接显示 rembg 最终图片本身；
 print.json 仅持久化用户的拖动/删除/插入顺序。
+
+``size_for``（可选）：``(路径文本) -> (宽, 高) | None``，读**当前**图片的
+像素尺寸。给了它，逐页 rect 会先过一遍 :func:`rect_fits_image`——**这张图
+已经不是画那个框时的那张**（被重合成/重提交换掉了）就不再套用旧框，让
+``plan_print_page`` 按**当前参数**重新自动排版（用户 2026-10-18：
+「上一步的输出归上一步，当前步 PDF排版要按相关参数来调整」）。
+不给（默认）= 原样透传 rect，CLI/老调用方与既有往返语义一字不变。
 
 返回 (entries, doc)。
 
@@ -14409,6 +14513,9 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 | `file_hash(path: Path, chunk_size: int=1024 * 1024) -> str` | 流式计算文件 SHA-256（分块读取，避免大 PDF 撑爆内存）。 |
 | `copy_file_atomic(source: Path, target: Path) -> Path` | 把 source 复制到 target，**要么没有、要么完整**。 |
 | `list_stage_images(directory: Path) -> list[Path]` | 某阶段输出目录中的图片（按页序自然排序，唯一排序键 |
+| `image_files_fingerprint(directory: Path) -> dict[str, tuple[int, int]] \| None` | 目录里**每张图片**的 ``{绝对路径: (字节数, mtime_ns)}``；读不到目录返回 ``None``。 |
+| `changed_images(before: dict[str, tuple[int, int]] \| None, after: dict[str, tuple[int, int]] \| None) -> list[str]` | 两次逐文件指纹之间**内容变了 / 新增**的图片路径（升序）。 |
+| `dir_content_signature(directory: Path) -> tuple[int, int, int] \| None` | 目录里**图片文件**的目录级**内容指纹**：``(文件数, mtime 纳秒之和, 总字节)``。 |
 
 #### `reveal_in_explorer(path) -> bool`
 
@@ -14597,6 +14704,51 @@ PDF——渲染失败、甚至静默出一张残缺页。
 某阶段输出目录中的图片（按页序自然排序，唯一排序键
 ``utils.sort_utils.natural_sort_key``；原这里的 ``natural_key`` 是
 重复实现，2026-10-11 收口）。
+
+#### `image_files_fingerprint(directory: Path) -> dict[str, tuple[int, int]] | None`
+
+目录里**每张图片**的 ``{绝对路径: (字节数, mtime_ns)}``；读不到目录返回 ``None``。
+
+回答的是"**哪几张**图片被更新了"。目录级聚合（:func:`dir_content_signature`）
+只能说"这个目录里有没有东西变了"，说不清是哪几张——而要**按页**失效旧版面
+（``print.json`` 的逐图 rect）与旧缩略图缓存，就必须精确到文件（用户
+2026-10-18：「上一步更新了哪些图片要有记录」）。
+
+⚠️ 只 ``scandir`` + ``stat``，**不解码**任何图片（第四步取图目录可能几百页）。
+⚠️ 只看**图片后缀**：拼版合成落盘时会先写 ``.part`` 临时文件再原子改名，
+把它算进来会让指纹在合成过程中抖动。
+
+#### `changed_images(before: dict[str, tuple[int, int]] | None, after: dict[str, tuple[int, int]] | None) -> list[str]`
+
+两次逐文件指纹之间**内容变了 / 新增**的图片路径（升序）。
+
+- ``after`` 读不到（目录被删/权限）→ 空表：无从判断，宁可不动；
+- ``before`` 为 ``None``（**第一次见到这个目录**，没有基线）→ 空表：没有
+  可比的对象，第一次见面不能算"上一步更新了它"（否则一进任务就会把整目录
+  报成"刚更新"，日志与缓存失效都会误伤）。
+
+⚠️ **不看 mtime 单值、看 (大小, mtime) 整对**：重合成会把整批成品重写一遍
+（mtime 全变），只有内容真的换了的那些页才是用户要清缓存的对象——大小变了
+必然在列；大小没变而 mtime 变了（同尺寸重编码）也算更新（保守，清缓存无害）。
+
+#### `dir_content_signature(directory: Path) -> tuple[int, int, int] | None`
+
+目录里**图片文件**的目录级**内容指纹**：``(文件数, mtime 纳秒之和, 总字节)``。
+
+回答的是"这批产物的**内容**变了没有"，**不是**"目录换没换"（那是路径字符串
+的活儿）。下游步骤要刷新的判据里，两者都要：上游产物经常被**同名覆盖**——
+拼版成品重合成（``stages/imposition/NNNN.png`` 重新写一遍）、单页重提取、
+编辑器回写源图——路径一个字都没变，只有内容换了。只比路径，第四步的待打印
+列表就会一直停在旧图上（用户 2026-10-18：「图片拼版图片发生变化，PDF排版不能
+实时更新」）。
+
+取 mtime **之和**而不是最大值：任何一个文件被重写都会改变和（最大值会被
+"本来就是最新的那个"吃掉）。冲突概率极低（要两个文件同时改写且大小也在
+和里抵消）。
+
+⚠️ **"哪几张变了"要问 :func:`image_files_fingerprint`**，这个聚合指纹只够
+判断"要不要重刷"。目录不存在 / 读不了返回 ``None``（调用方按"没有内容"处理，
+与空目录互相区分：后者是 ``(0, 0, 0)``）。
 
 ---
 
@@ -14966,16 +15118,21 @@ paths 为目标图片；edge 为缩略图最长边（默认 96）。effects/crop
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(doc: dict, out_dir, suffix_for=None)` | doc 为拼版文档；out_dir 为目标目录（stages/imposition）。 |
-| `run() -> None` | 合成全部拼版页；失败只报 failed，由宿主提示并落日志。 |
+| `__init__(doc: dict, out_dir, suffix_for=None, only=None)` | doc 为拼版文档；out_dir 为目标目录（stages/imposition）。 |
+| `run() -> None` | 合成给定的拼版页；失败只报 failed，由宿主提示并落日志。 |
 
-##### `__init__(doc: dict, out_dir, suffix_for=None)`
+##### `__init__(doc: dict, out_dir, suffix_for=None, only=None)`
 
 doc 为拼版文档；out_dir 为目标目录（stages/imposition）。
 
 ``suffix_for``：可选 ``(page) -> ".png" | ".jpg"``——**成品后缀随该页源图
 走**（用户 2026-10-17：输入 png 出 png、输入 jpg 出 jpg）。任务流程传
 ``services.imposition.page_product_suffix``；不传 ⇒ 一律 PNG。
+
+``only``：只重合成这几页（0 基页序下标）；``None`` = 全量。用户
+2026-10-18：「只存储当前拼版的图片页」——版面只动了一页时不该把整本
+重写一遍（一页要开两张原图 + 缩放 + 旋转 + alpha + 编码，几十页就是
+好几秒，而用户盯着的是刚改的那一页）。
 
 ### `class ImpositionPagePreviewWorker(QObject)`
 

@@ -10,7 +10,9 @@ from PySide6.QtWidgets import QFileDialog, QWidget
 
 from desktop.services.print_plan import (
     drop_foreign_stage_pages,
+    ordered_page_record,
     plan_print_entries,
+    stale_rect_pages,
 )
 from desktop.utils.files import default_open_dir, list_stage_images
 from utils.sort_utils import natural_sort_key
@@ -105,6 +107,74 @@ class PrintListMixin:
             return None
         return None
 
+    def _print_image_size(self, path_text: str) -> tuple[int, int] | None:
+        """某张待打印图片的**当前**像素尺寸（只读文件头，不解码整图）。
+
+        给 ``plan_print_entries`` 当 ``size_for``：逐页 rect 是**用户按当时那张图**
+        摆出来的坐标，图像一换（拼版成品重合成、去底色重提交、编辑器回写）旧框
+        就不该再套（用户 2026-10-18：「上一步的输出归上一步，当前步 PDF排版，页面
+        效果都要按相关参数来调整」）。
+        """
+        from PySide6.QtGui import QImageReader
+
+        try:
+            size = QImageReader(path_text).size()
+        except Exception:  # noqa: BLE001 - 坏图/占用：当作读不到（旧框保留）
+            return None
+        if not size.isValid() or size.width() <= 0 or size.height() <= 0:
+            return None
+        return (size.width(), size.height())
+
+    def _report_updated_print_images(self, stale: list[dict]) -> None:
+        """把"哪几张图被上游更新了、旧版面已按本步参数重排"记进日志（去重）。
+
+        ⚠️ ``_print_entries`` 在切步骤/后台合成收尾/开关变化时都会被调到，
+        无条件打日志会刷屏——同一批（路径 + 当前尺寸）只报一次。
+        """
+        if not stale:
+            return
+        signature = tuple(
+            (str(page["file"]), tuple(page["image"])) for page in stale
+        )
+        if getattr(self, "_logged_stale_rects", None) == signature:
+            return
+        self._logged_stale_rects = signature
+        names = "、".join(Path(page["file"]).name for page in stale[:6])
+        if len(stale) > 6:
+            names += f" 等 {len(stale)} 张"
+        self.log_view.append(
+            f"图片已更新（{names}）：原版面是按旧图尺寸摆的，"
+            "已改按当前 PDF排版参数重新排版。"
+        )
+
+    def _drop_updated_print_thumbs(self, stale: list[dict]) -> None:
+        """更新过的图片：把它在**待打印缩略图缓存**里的那条删掉，下次现解新图。
+
+        ``thumbnails/print[~<节点>]/<图名>.jpg`` 是第三步「提交本次任务」时预生成的
+        小图；它自带 ``mtime 不旧于源图`` 的有效性判据（改过的图本来就会回落真图），
+        这里再**主动删掉**是因为用户要求"更新过的图片不要留旧缓存"（2026-10-18）：
+        留着那份文件，翻目录/排查时看到的仍是旧像素。
+        """
+        if not self.task_id:
+            return
+        stems = {
+            Path(page["file"]).stem for page in stale if page.get("file")
+        }
+        if not stems:
+            return
+        thumbs_root = self.store.task_dir(self.task_id) / "thumbnails"
+        if not thumbs_root.is_dir():
+            return
+        for directory in thumbs_root.glob("print*"):
+            # 目录名形态 ``print`` / ``print~<节点>``（与 _print_thumb_provider 同源）
+            if not directory.is_dir() or not directory.name.startswith("print"):
+                continue
+            for stem in stems:
+                try:
+                    (directory / f"{stem}.jpg").unlink(missing_ok=True)
+                except OSError:
+                    pass
+
     def _print_entries(self) -> tuple[list[dict], dict]:
         """第四步待打印图片列表（规则见 services/print_plan.plan_print_entries）。
 
@@ -112,6 +182,10 @@ class PrintListMixin:
         拼版启用且有拼版页 → ``stages/imposition``（拼版已是成品整页），
         否则 → ``stages/rembg``（第三步「提交本次任务」的产物）。
         ``plan_print_entries`` 只认"一批成品图 + 顺序文档"，对来源无感。
+
+        ``size_for``（= :meth:`_print_image_size`）：逐页 rect 只对**画它时那张图**
+        有效——图片已被上游换掉的那些页不再套旧框，改由 ``plan_print_page`` 按
+        **当前 PDF排版参数**（纸张/方向/边距/原比例）重新排版。
         """
         source_dir = self.print_source_dir()
         rembg_files = sorted(
@@ -135,7 +209,16 @@ class PrintListMixin:
         if doc and len(cleaned) != len(doc.get("pages") or []):
             doc = {**doc, "pages": cleaned}
             self.store.save_print_doc(task_id, doc, **self._node_scope())
-        entries, new_doc = plan_print_entries(rembg_files, doc)
+        # 「上一步更新了哪些图片」的记录 + 那些页的旧缩略图缓存失效：
+        # 都在建表之前按**逐图判据**做掉（判据本体见 print_plan.rect_fits_image）。
+        stale = stale_rect_pages(
+            doc.get("pages") if doc else None, self._print_image_size
+        )
+        self._report_updated_print_images(stale)
+        self._drop_updated_print_thumbs(stale)
+        entries, new_doc = plan_print_entries(
+            rembg_files, doc, size_for=self._print_image_size
+        )
         self._print_doc_snapshot = new_doc
         if not doc or set(doc.get("rembg_snapshot") or []) != set(
             new_doc["rembg_snapshot"]
@@ -148,6 +231,10 @@ class PrintListMixin:
 
         ``silent=True`` 供版面编辑器复用：拖拽会频繁落盘，若每次都打一条
         「列表已更新」日志会淹没「第 N 页版面已更新」这条真正有用的信息。
+
+        ⚠️ 连 ``rect_size``（**画这个框时那张图的像素尺寸**）一起落盘：它是
+        "这张图的版面是按哪张图量的"的唯一凭据——下次这张图被上游换掉时，
+        靠它判定旧框失效、改按当前参数重排（见 ``print_plan.rect_fits_image``）。
         """
         if not self.task_id:
             return
@@ -157,12 +244,7 @@ class PrintListMixin:
             "pages": [],
         }
         doc["pages"] = [
-            (
-                {"file": e.get("file"), "label": e.get("label"), "rect": e["rect"]}
-                if e.get("rect") is not None
-                else {"file": e.get("file"), "label": e.get("label")}
-            )
-            for e in entries
+            ordered_page_record(e) for e in entries
         ]
         try:
             self.store.save_print_doc(self.task_id, doc, **self._node_scope())

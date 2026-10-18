@@ -216,7 +216,10 @@ class ImageViewerWidget(
         self.view.clear_image(hint)
 
 
-    def set_images(self, paths: list[Path | str], boxes_map: dict | None = None) -> None:
+    def set_images(
+        self, paths: list[Path | str], boxes_map: dict | None = None,
+        force: bool = False,
+    ) -> None:
         """设置页面清单并重建缩略图条；清单未变则仅通知宿主重读。
 
         ``paths`` 元素可以是 ``Path`` **或** ``str``——统一在这里转成 ``Path``
@@ -227,8 +230,13 @@ class ImageViewerWidget(
         「加载失败：'str' object has no attribute 'suffix'」（用户 2026-10-03 报）。
         在边界一次收干净，比让每个调用点各自记得 ``str(p)``→``p`` 可靠。
 
-        ``boxes_map`` 预留（当前未用）。清单不变时跳过重建，但仍 emit
-        current_changed 让宿主重新读取该页检测框/参数。
+        ``boxes_map`` 预留（当前未用）。
+
+        ``force``：清单**一模一样**时也把图标重新解码一遍（保留当前行与选中）。
+        ⚠️ 为什么需要：这些页面图会被**同名覆盖**（单页重提取、编辑器回写），
+        路径清单看不出变化，而条目图标是**解码一次就存进 QIcon**的——不强制
+        重装就永远停在覆盖前那张。判据由宿主按"上游产物内容变了没有"给出
+        （``desktop.utils.files.dir_content_signature``），不是每次刷新都强制。
         """
         # ⚠️ 进图片模式先退出 PDF 页模式：``set_pdf_source`` 把清单留空、
         #    条目标签是「第 N 页」，若不退出，:meth:`_select_image` 会把
@@ -240,8 +248,12 @@ class ImageViewerWidget(
             paths == self._paths
             and self.strip.count() == len(paths)
         ):
-            # 页面清单未变化，跳过重建；但仍需通知宿主重新读取
-            # 该页的检测框/参数（可能在其他阶段被更新过）
+            # 页面清单未变化：默认跳过重建，但仍需通知宿主重新读取
+            # 该页的检测框/参数（可能在其他阶段被更新过）。
+            # ⚠️ ``force`` 时**重解一遍图标**（不 clear 列表：当前行/选中要保持，
+            #    条目高度与标签也不该因刷新而抖）。
+            if force and self._paths:
+                self._load_thumbs(self.strip, list(self._paths))
             index = max(self.strip.currentRow(), 0)
             if self._paths:
                 self.current_changed.emit(index, str(self._paths[index]))

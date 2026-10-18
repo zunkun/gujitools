@@ -420,3 +420,85 @@ def list_stage_images(directory: Path) -> list[Path]:
         (f for f in directory.iterdir() if f.suffix.lower() in IMAGE_SUFFIXES),
         key=lambda f: natural_sort_key(f.name),
     )
+
+
+def image_files_fingerprint(directory: Path) -> dict[str, tuple[int, int]] | None:
+    """目录里**每张图片**的 ``{绝对路径: (字节数, mtime_ns)}``；读不到目录返回 ``None``。
+
+    回答的是"**哪几张**图片被更新了"。目录级聚合（:func:`dir_content_signature`）
+    只能说"这个目录里有没有东西变了"，说不清是哪几张——而要**按页**失效旧版面
+    （``print.json`` 的逐图 rect）与旧缩略图缓存，就必须精确到文件（用户
+    2026-10-18：「上一步更新了哪些图片要有记录」）。
+
+    ⚠️ 只 ``scandir`` + ``stat``，**不解码**任何图片（第四步取图目录可能几百页）。
+    ⚠️ 只看**图片后缀**：拼版合成落盘时会先写 ``.part`` 临时文件再原子改名，
+    把它算进来会让指纹在合成过程中抖动。
+    """
+    try:
+        with os.scandir(directory) as scan:
+            names = [
+                entry.name for entry in scan
+                if Path(entry.name).suffix.lower() in IMAGE_SUFFIXES
+            ]
+    except OSError:
+        return None
+    out: dict[str, tuple[int, int]] = {}
+    for name in names:
+        path = directory / name
+        try:
+            info = os.stat(path)
+        except OSError:
+            continue  # 竞态（正在被覆盖/删除）：跳过这一条，别让整次判定失败
+        out[str(path)] = (info.st_size, info.st_mtime_ns)
+    return out
+
+
+def changed_images(
+    before: dict[str, tuple[int, int]] | None,
+    after: dict[str, tuple[int, int]] | None,
+) -> list[str]:
+    """两次逐文件指纹之间**内容变了 / 新增**的图片路径（升序）。
+
+    - ``after`` 读不到（目录被删/权限）→ 空表：无从判断，宁可不动；
+    - ``before`` 为 ``None``（**第一次见到这个目录**，没有基线）→ 空表：没有
+      可比的对象，第一次见面不能算"上一步更新了它"（否则一进任务就会把整目录
+      报成"刚更新"，日志与缓存失效都会误伤）。
+
+    ⚠️ **不看 mtime 单值、看 (大小, mtime) 整对**：重合成会把整批成品重写一遍
+    （mtime 全变），只有内容真的换了的那些页才是用户要清缓存的对象——大小变了
+    必然在列；大小没变而 mtime 变了（同尺寸重编码）也算更新（保守，清缓存无害）。
+    """
+    if after is None or before is None:
+        return []
+    return sorted(
+        path for path, fingerprint in after.items()
+        if before.get(path) != fingerprint
+    )
+
+
+def dir_content_signature(directory: Path) -> tuple[int, int, int] | None:
+    """目录里**图片文件**的目录级**内容指纹**：``(文件数, mtime 纳秒之和, 总字节)``。
+
+    回答的是"这批产物的**内容**变了没有"，**不是**"目录换没换"（那是路径字符串
+    的活儿）。下游步骤要刷新的判据里，两者都要：上游产物经常被**同名覆盖**——
+    拼版成品重合成（``stages/imposition/NNNN.png`` 重新写一遍）、单页重提取、
+    编辑器回写源图——路径一个字都没变，只有内容换了。只比路径，第四步的待打印
+    列表就会一直停在旧图上（用户 2026-10-18：「图片拼版图片发生变化，PDF排版不能
+    实时更新」）。
+
+    取 mtime **之和**而不是最大值：任何一个文件被重写都会改变和（最大值会被
+    "本来就是最新的那个"吃掉）。冲突概率极低（要两个文件同时改写且大小也在
+    和里抵消）。
+
+    ⚠️ **"哪几张变了"要问 :func:`image_files_fingerprint`**，这个聚合指纹只够
+    判断"要不要重刷"。目录不存在 / 读不了返回 ``None``（调用方按"没有内容"处理，
+    与空目录互相区分：后者是 ``(0, 0, 0)``）。
+    """
+    files = image_files_fingerprint(directory)
+    if files is None:
+        return None
+    return (
+        len(files),
+        sum(fingerprint[1] for fingerprint in files.values()),
+        sum(fingerprint[0] for fingerprint in files.values()),
+    )

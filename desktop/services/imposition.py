@@ -822,13 +822,24 @@ def flatten_onto_background(source, target, background=WHITE_BACKGROUND) -> None
 
 
 def compose_doc(doc: dict, dest_dir, report=None,
-                background=TRANSPARENT_BACKGROUND, suffix_for=None) -> list[Path]:
-    """把整份拼版文档落成 ``dest_dir/0001.png`` …（列表顺序即页序）。
+                background=TRANSPARENT_BACKGROUND, suffix_for=None,
+                only=None) -> list[Path]:
+    """把拼版文档落成 ``dest_dir/0001.png`` …（列表顺序即页序）。
 
     ``suffix_for``：可选 ``(page) -> ".png" | ".jpg"``——**成品后缀随该页源图走**
     （用户 2026-10-17：「输入是 png 就输出 png，输入是 jpg 就输出 jpg」），任务
     流程传 :func:`page_product_suffix`；**不传则一律 ``.png``**（独立拼图页
     「导出成品」的既有口径：白底 PNG 就是交付物）。
+
+    ``only``（可选）：**只重合成这几页**（0 基页序下标集合，**迭代顺序即写入顺序**）。
+    用户 2026-10-18：「不是所有图片都重新存储一份，只存储当前拼版的图片页」——一页
+    合成要开两张原图 + 缩放 + 旋转 + alpha + 编码，整本 85 页叠起来就是好几秒，而
+    用户刚拖的往往只是其中一页。给 ``None``（默认）= 按文档顺序全量，语义与改造前
+    **逐字节一致**。
+    ⚠️ 只写给定的页，**清扫照做**（多出来的页号/别的后缀仍要删）——删页/换格式
+    这类操作若只写一页却不清理，第四步会把残留的旧页也打进 PDF。
+    ⚠️ 顺序有意义：调用方把"用户正看着的那一页"排在前面，全量那一轮也能**先**把
+    他改的那页写出来（不必等整本跑完）。
 
     返回写出的文件列表（顺序与页序一致）。**多余的旧文件会被清掉**——否则
     用户删掉一页后，上一轮多出来的 ``0007.png`` 还会被第四步当成一页打进 PDF。
@@ -859,6 +870,7 @@ def compose_doc(doc: dict, dest_dir, report=None,
             normalize_page(raw) for raw in (doc or {}).get("pages") or []
         ) if page is not None
     ]
+    wanted = None if only is None else [int(index) for index in only]
     written: list[Path] = []
     with _COMPOSE_LOCK:
         if not pages:
@@ -866,7 +878,14 @@ def compose_doc(doc: dict, dest_dir, report=None,
             return written
         dest.mkdir(parents=True, exist_ok=True)
         total = len(pages)
-        for index, page in enumerate(pages):
+        # ⚠️ 迭代顺序 = ``only`` 给的顺序（全量时是文档顺序）：调用方把"用户正看着
+        #    的那一页"排前面，先写它。
+        order = (
+            range(total) if wanted is None
+            else [index for index in wanted if 0 <= index < total]
+        )
+        for index in order:
+            page = pages[index]
             try:
                 image = compose_page(page, background)
             except Exception:  # noqa: BLE001 - 单页失败不影响其余页
@@ -893,6 +912,7 @@ def compose_doc(doc: dict, dest_dir, report=None,
         # ⚠️ 清理基准是**页数**而不是"写成功的文件数"：文件名按页序下标取，
         # 中间某一页合成失败会留下编号空洞（0001 / 0003），按写成功数（2）去清
         # 会**误删 0003**——把一页好内容清掉比留个空洞严重得多。
+        # ⚠️ 增量合成（``only``）也要清：删页/换格式留下的残留同样得扫掉。
         _sweep_stale(dest, len(pages))
     return written
 

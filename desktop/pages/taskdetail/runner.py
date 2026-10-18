@@ -15,7 +15,9 @@ from typing import TYPE_CHECKING, Any, Callable, cast
 
 from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer
 
-from desktop.services.print_plan import missing_extract_pages_spec
+from desktop.services.print_plan import (
+    missing_extract_pages_spec, ordered_page_record,
+)
 from desktop.steps.process import StageProcess, worker_arguments
 from desktop.store.json_io import write_json
 from desktop.utils.files import list_stage_images, project_root
@@ -415,12 +417,7 @@ class StageRunnerMixin:
                 )
                 return
             doc["pages"] = [
-                (
-                    {"file": e.get("file"), "label": e.get("label"), "rect": e["rect"]}
-                    if e.get("rect") is not None
-                    else {"file": e.get("file"), "label": e.get("label")}
-                )
-                for e in entries
+                ordered_page_record(e) for e in entries
             ]
             self.store.save_print_doc(self.task_id, doc, **self._node_scope())
             args["_effects"] = effects

@@ -107,6 +107,7 @@ class RembgPreviewWidget(
         single_column_book: bool = False,
         page_width_provider=None,
         side_for=None,
+        force: bool = False,
     ) -> None:
         """设置图片清单与去底色目录，重建输出条目并加载显示。
 
@@ -122,6 +123,11 @@ class RembgPreviewWidget(
 
         ``side_for``：``(path) -> "left"|"right"|None``，用户在**半框页**上指定
         的左右。给了指定就不做单栏归一化（那是在说"这页其实是某一边"）。
+
+        ``force``：清单与参数都没变时也把条目**整条重装**（重解缩略图、按最新
+        参数重合成）——上游产物被同名覆盖后条目图标会一直停在旧图上，由宿主按
+        "内容指纹变了没有"（``desktop.utils.files.dir_content_signature``）
+        决定要不要传（不是每次刷新都强制）。
         """
         self._boxes_provider = boxes_provider  # (path_text) -> list[检测框]
         self._region_params_provider = region_params_provider  # () -> (area, border)
@@ -136,7 +142,7 @@ class RembgPreviewWidget(
         resolved = [Path(p) for p in paths]
         paths_changed = resolved != self._paths
         self._paths = resolved
-        self._rebuild_entries(force_strip=paths_changed)
+        self._rebuild_entries(force_strip=paths_changed or force)
         if not self._entries:
             self.view.clear_image("暂无图片")
             self.toggle_caption.setText("")

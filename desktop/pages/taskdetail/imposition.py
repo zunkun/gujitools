@@ -45,7 +45,7 @@ from typing import TYPE_CHECKING, Any, Callable
 from desktop.pages.taskdetail.imposition_layout import ImpositionLayoutMixin
 from desktop.pages.taskdetail.imposition_pages import ImpositionPagesMixin
 from desktop.store import IMPOSITION_LABEL, IMPOSITION_STAGE
-from desktop.utils.files import list_stage_images
+from desktop.utils.files import dir_content_signature, list_stage_images
 from utils.sort_utils import natural_sort_key
 
 if TYPE_CHECKING:
@@ -77,6 +77,21 @@ def _as_area(value) -> int:
         return int(value)
     except (TypeError, ValueError):
         return 0
+
+
+def _rect_of(entry: dict) -> list[float] | None:
+    """条目的**逐页坐标**（mm）；没有就 ``None``。
+
+    只服务"清单结构变了没有"的比对（见 ``_refresh_print_source``）：文件顺序一样
+    但某页的坐标被换掉/失效时，也得走整列重建把新坐标灌进去。
+    """
+    rect = (entry or {}).get("rect")
+    if rect is None:
+        return None
+    try:
+        return [float(value) for value in rect[:4]]
+    except (TypeError, ValueError):
+        return None
 
 
 class ImpositionBaseMixin:
@@ -672,6 +687,18 @@ class ImpositionBaseMixin:
         self.close_imposition_zoom_popup()
         self._imposition_dirty = False
         self._imposition_composing = False
+        # 「上次落盘时的逐页签名」随任务清：新任务的版面与本任务无关，留着会让
+        # "只重存变了的那几页"算错页（也会把本任务的成品误判成已最新）。
+        # ⚠️ 真正的基线在**侧车文件**里（``drafts/imposition[~节点].composed.json``，
+        #    跨会话有效）；这里清的是**内存缓存**，下次用到时按新任务重读。
+        self._imposition_page_sigs = {}
+        self._composed_sigs_cache = {}
+        self._imposition_compose_doc = None
+        self._imposition_compose_out_dir = None
+        self._imposition_compose_sigs_path = None
+        self._imposition_compose_doc_path = None
+        self._imposition_compose_doc_mtime = None
+        self._imposition_composed_pages = []
         # 页面缩略图实体的管理者：清空内存态（旧任务的位图/排队页不能带进
         # 新任务）；目录切换交给下次刷新时的访问器判等（实体按内容签名寻址，
         # 目录不换就不会拿旧任务的实体）
@@ -686,8 +713,27 @@ class ImpositionBaseMixin:
             view.set_current(0 if view.pages() else -1)
         self._update_imposition_status(view.current_index() if view is not None else -1)
 
-    def _refresh_print_source(self) -> None:
-        """第四步取图来源变了：让待打印列表跟上（拼版 ↔ 去底色 切换时用）。
+    def _print_source_mark(self) -> tuple:
+        """第四步取图目录的**内容标记**：``(目录, 目录内容指纹)``。
+
+        ``_print_source_cache`` 存的就是它。⚠️ 判据必须带上**内容指纹**而不是
+        只比目录字符串：拼版成品重合成后目录一个字没变、内容全换了，只比路径
+        会让后台合成的收尾回调（``_on_imposition_composed``）把这次变化当成
+        "来源没换"直接跳过，第四步的待打印列表就永远停在旧图上——用户
+        2026-10-18 报的「拼版图片发生变化，PDF排版不能实时更新」正是这一条。
+        """
+        directory = self.print_source_dir()
+        return (str(directory), dir_content_signature(directory))
+
+    def _refresh_print_source(self, only_paths=None) -> None:
+        """第四步取图来源变了：让待打印列表跟上（拼版 ↔ 去底色 切换、成品重存）。
+
+        ``only_paths``：**这次刚被重存的那几张成品图**（拼版合成收尾时给出）。
+        给了它、而且第四步的条目清单没变（同样的图、同样的顺序与逐页坐标）时，
+        只就地刷新那几条（缩略图 + 当前页显示），**不整列重建**——否则每改一次
+        拼版都会把整张待打印列表清掉重来、把用户正看的那一页翻回第一页
+        （用户 2026-10-18：「那张图片变更……同时通知下一步要变更的图片」）。
+        清单结构变了（页数/顺序/逐页坐标）时仍走整列重建（``set_entries``）。
 
         ⚠️ **只作废缓存，不在原地重建**（2026-09-30 用户报「开关拼版后顶部
         空白/卡住 2s 才恢复」）：重建 = 缩略条清空 + 几十条重建 +
@@ -716,17 +762,30 @@ class ImpositionBaseMixin:
             preview.set_pdf_path(self._current_print_pdf_path())
         except Exception:  # noqa: BLE001 - 第四步尚未就绪时不该拖垮拼版页
             pass
-        source = str(self.print_source_dir())
-        if getattr(self, "_print_source_cache", None) == source:
+        # ⚠️ 比对的是**内容标记**（路径 + 指纹，见 ``_print_source_mark``）：
+        #    用目录字符串的话，"同一个目录、内容刚被重合成换掉"会被判成"没变"
+        #    而跳过重建——用户 2026-10-18 报的就是这个（拼版成品变了，PDF排版
+        #    的图还是旧的）。
+        mark = self._print_source_mark()
+        if getattr(self, "_print_source_cache", None) == mark:
             return
         if self.preview_stack.currentIndex() != self.stack_index_of_step("print"):
             self._print_source_cache = None
             # 第四步不可见：状态行/主按钮高亮留给进第四步时的那次刷新
             return
-        self._print_source_cache = source
+        self._print_source_cache = mark
         try:
             entries, _doc = self._print_entries()
-            preview.set_entries(entries)
+            # 条目清单没变（同样的图、同样的顺序与逐页坐标）→ 只刷那几张：
+            # 不整列重建、不动当前页、不重解整条缩略图条。
+            current = [
+                (str(e.get("file")), _rect_of(e)) for e in preview.entries()
+            ]
+            fresh = [(str(e.get("file")), _rect_of(e)) for e in entries]
+            if only_paths and fresh == current:
+                preview.refresh_paths(only_paths)
+            else:
+                preview.set_entries(entries)
             self._refresh_stage_views()
         except Exception:  # noqa: BLE001 - 第四步尚未就绪时不该拖垮拼版页
             self._print_source_cache = None

@@ -39,8 +39,58 @@ from desktop.services.imposition import (
 if TYPE_CHECKING:
     from desktop.store.store import TaskStore
 
-#: 版面改动 → 后台重新合成落盘的防抖（拖动会连续改版面）
-COMPOSE_DEBOUNCE_MS = 500
+#: 逐页「已落盘签名」的侧车文件后缀（与版面草稿**同目录、同作用域**）。
+#:
+#: 为什么必须落盘（用户 2026-10-18：「不应该是只改变一张图片吗……过了好久才更新」）：
+#: 签名若只放内存，**一进新会话就没有基线**，判不出"哪些页已经是最新的"，只能把
+#: 整本 85 页全量重合成——用户看到的就是"过了好久 + 风扇加快"。落盘后，重启再改
+#: 一页 → 只重写那一页。
+#:
+#: ⚠️ 与版面草稿（``drafts/imposition[~节点].json``）同一个生命周期：任务删除、
+#: 换源 PDF 时 ``drafts/`` 整体清掉，记录跟着没——那正是对的（产物也一起没了）。
+COMPOSED_SIGS_SUFFIX = ".composed.json"
+
+
+def _read_composed_sigs(path: Path) -> dict[int, str]:
+    """读侧车文件 → ``{页号: 签名}``；缺失/损坏一律当空表（判据退回全量合成）。"""
+    from desktop.store.json_io import read_json
+
+    raw = read_json(path, {})
+    pages = raw.get("pages") if isinstance(raw, dict) else None
+    out: dict[int, str] = {}
+    for key, value in (pages or {}).items():
+        try:
+            index = int(key)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(value, str):
+            out[index] = value
+    return out
+
+
+def _write_composed_sigs(path: Path, sigs: dict[int, str]) -> None:
+    """原子写侧车文件；目录已不存在（任务被删）时静默跳过，绝不重建目录。"""
+    from desktop.store.json_io import write_json
+
+    try:
+        write_json(path, {"pages": {str(k): sigs[k] for k in sorted(sigs)}})
+    except OSError:
+        pass
+
+
+#: 版面改动 → 后台重新合成落盘的**合并窗口**（同一轮事件循环里的多次排期只跑一次）。
+#:
+#: ⚠️ 用户 2026-10-18 的硬指标：「移动图片松鼠标，**1s 内**将当前图片更新到相应的
+#: 实体图片上面」。这条是从"松鼠标"起算的第一段延迟，所以压到 **0**（= 下一个事件
+#: 循环回合就跑）：
+#:
+#: - 拖动**只在松手时**发一次 ``items_changed``、旋转滑块也只在停顿后补发一次，
+#:   没有"连续吐事件"要合并；
+#: - 真正的合并由**单飞 + 补轮**机制保证（``_imposition_composing`` /
+#:   ``_imposition_dirty``：正在跑的那轮结束再补一轮），不靠这个窗口；
+#: - 一页合成实测 ~0.7s（源图 2480×3447 两张），加上 worker 启动 ≈0.8s；
+#:   这条窗口只要还留着 250ms 就会顶到 1s 以上，所以它设 0。
+COMPOSE_DEBOUNCE_MS = 0
 #: 旋转组件（滑块/输入框）连续吐增量 → 停顿多久算"改完了"再统一落盘
 EDIT_COMMIT_DEBOUNCE_MS = 250
 #: 版面改动 → 左列**单页缩略图**重合成的防抖（用户 2026-10-09：拖动松手/
@@ -70,11 +120,13 @@ class ImpositionLayoutMixin:
         _imposition_scope: Callable[[], dict]
         _imposition_output_dir: Callable[[], Any]
         _imposition_switch_state: Any  # 拼版启用开关控件
+        _set_stage_status: Callable[..., None]
         _refresh_print_source: Callable[..., None]
         _save_imposition_pages: Callable[..., None]
         _on_page_image_saved: Callable[..., None]
         #: 同级 Mixin（imposition_pages）提供的页面缩略图实体管理者
         _imposition_page_thumb_manager: Callable[..., Any]
+        _drop_imposition_source_thumb: Callable[[str], None]
         imposition_active: Callable[[], bool]
         imposition_effective: Callable[[], bool]
         imposition_has_pages: Callable[[], bool]
@@ -598,6 +650,23 @@ class ImpositionLayoutMixin:
         """建防抖定时器（页面构造期一次）。"""
         self._imposition_dirty = False
         self._imposition_composing = False
+        #: **页号 → 上次落盘时的内容签名**（``page_thumb.page_signature``）。
+        #: 版面只动一页时靠它算出"只有这一页要重合成"（用户 2026-10-18：
+        #: 「不是所有图片都重新存储一份，只存储当前拼版的图片页」）。真正的基线
+        #: 存在**侧车文件**里（见 ``_composed_sigs``，跨会话有效）；这个属性只是
+        #: "当前节点那一份"的引用，供自测/排查观察。
+        self._imposition_page_sigs: dict[int, str] = {}
+        #: 侧车签名表的**按路径缓存**（``{侧车文件路径: {页号: 签名}}``）：切节点/
+        #: 切任务只换 key，不重读盘。
+        self._composed_sigs_cache: dict[str, dict[int, str]] = {}
+        #: 本轮合成用的是**哪份文档快照 / 哪张目录 / 哪份记录 / 正在写哪几页**
+        #: （收尾时据此记签名、算"这次重存了哪几张图片"并通知第四步）
+        self._imposition_compose_doc: dict | None = None
+        self._imposition_compose_out_dir: Path | None = None
+        self._imposition_compose_sigs_path: Path | None = None
+        self._imposition_compose_doc_path: Path | None = None
+        self._imposition_compose_doc_mtime: float | None = None
+        self._imposition_composed_pages: list[int] = []
         # ⚠️ Mixin 本体是普通类，类型检查器看不到宿主（TaskDetailPage）是 QWidget，
         #    故把 self 收窄成 QWidget 再当 QTimer 的 parent 用；运行时是恒等。
         self._imposition_timer = QTimer(cast(QWidget, self))
@@ -618,23 +687,119 @@ class ImpositionLayoutMixin:
             self._refresh_imposition_dirty_page_thumbs
         )
 
-    def _compose_imposition_async(self) -> None:
-        """后台合成（不阻塞界面）：拖动版面时会被反复触发。"""
+    def _composed_sigs_path(self) -> Path | None:
+        """当前拼版节点的「已落盘签名」侧车文件路径（与版面草稿同目录同作用域）。"""
+        if not self.task_id:
+            return None
+        doc = self.store.imposition_doc_path(self.task_id, **self._imposition_scope())
+        return doc.with_name(doc.stem + COMPOSED_SIGS_SUFFIX)
+
+    def _composed_sigs(self, path: Path | None = None) -> dict[int, str]:
+        """**某个**侧车文件的签名表（缺省 = 当前节点）；按路径缓存，切节点自动换一份。
+
+        ⚠️ 缓存是必须的：本方法在"每次版面改动判过期"路上被调，每调一次读盘
+        （几十 KB JSON）就白搭了；而**按路径**缓存又让同一步骤的多个拼版节点
+        各拿各的记录（互不串味）。
+        """
+        target = self._composed_sigs_path() if path is None else path
+        if target is None:
+            return {}
+        cache = getattr(self, "_composed_sigs_cache", None)
+        if cache is None:
+            cache = self._composed_sigs_cache = {}
+        key = str(target)
+        mapping = cache.get(key)
+        if mapping is None:
+            mapping = _read_composed_sigs(Path(target))
+            cache[key] = mapping
+        # 顺手暴露给自测/排查（"当前节点记了哪些页"）
+        self._imposition_page_sigs = mapping
+        return mapping
+
+    def _stale_imposition_pages(self) -> list[int]:
+        """本次**要重合成的页号**（0 基）：与上次落盘时的内容签名逐页比对。
+
+        签名规则复用缩略图实体那一套（``components.imposition.page_thumb
+        .page_signature``：版面 rect/rotation + 每张源图的 (大小, mtime)），所以
+        "源图被覆盖"同样会被算成一页要重合成。
+
+        基线来自**侧车文件**（:meth:`_composed_sigs`），因此跨会话也有效——
+        这是用户 2026-10-18「不应该是只改变一张图片吗」的关键：内存基线一重启
+        就没了，只能整本全量重合成。没有记录的页仍算过期（首次/换任务/记录被清）。
+        """
+        from desktop.components.imposition.page_thumb import page_signature
+
+        pages = self._imposition_pages()
+        recorded = self._composed_sigs()
+        return [
+            index for index, page in enumerate(pages)
+            # ⚠️ ``page_signature`` 对**空页**返回 None：统一折成空串再比，
+            #    免得"没签名"与"签名是 None"两种都算过期、反复重合成同一页。
+            if (page_signature(page) or "") != recorded.get(index, "")
+        ]
+
+    def _compose_imposition_async(self, force_full: bool = False) -> None:
+        """后台合成（不阻塞界面）：拖动版面时会被反复触发。
+
+        ``force_full=True``：无视签名记录整本重合成（点「生成PDF」前的兜底用
+        ——那边要的是"磁盘一定与落盘版面一致"，不必省这几秒）。
+        默认走**增量**：只重写"内容签名变了"的那几页（用户 2026-10-18：
+        「不是所有图片都重新存储一份，只存储当前拼版的图片页」）。
+        """
         if not self.task_id:
             return
         if self._imposition_composing:
             return  # 上一批还在跑；跑完会看 _imposition_dirty 再补一次
         doc = self._imposition_doc()
         out_dir = self._imposition_output_dir()
+        only = None if force_full else self._stale_imposition_pages()
+        # ⚠️ **``only=[]``（一页都没变）也要真跑一轮**：它一页都不重合成，但
+        #    ``compose_doc`` 收尾的**清扫**（删掉多出来的页号 / 别的后缀）必须执行
+        #    ——"用户清空拼版页、删掉后面几页"时，若因为"没有页要重写"就整个跳过，
+        #    上一轮的成品会留在盘上，第四步照旧把旧图打进 PDF。这一轮的代价只是
+        #    一次目录清扫，零次图片合成。
+        page_count = len(doc.get("pages") or [])
+        if force_full or only is None:
+            order = list(range(page_count))
+        else:
+            order = sorted(only)
+        # ⚠️ 把**用户正看着的那一页排在最前**（用户 2026-10-18：「移动图片松鼠标，
+        #    1s 内将当前图片更新到实体图片上」）：全量那一轮（首次还没有"已落盘
+        #    记录"时）也是先写他改的那页，不必等整本跑完。
+        view = getattr(self, "imposition_view", None)
+        current = view.current_index() if view is not None else -1
+        if 0 <= current < page_count and current in order and order[0] != current:
+            order.remove(current)
+            order.insert(0, current)
         self._imposition_dirty = False
         self._imposition_composing = True
+        self._imposition_compose_doc = doc
+        # ⚠️ **连"这次是哪张目录/哪份记录/哪份快照"一起记下**：合成在后台跑，期间
+        #    用户可能切到同一步骤的另一个拼版节点去了——收尾时若现查当前节点，会把
+        #    记录与确认写进**别人**的目录/侧车文件（成品落点也就跟着错了）。
+        self._imposition_compose_out_dir = out_dir
+        self._imposition_compose_sigs_path = self._composed_sigs_path()
+        self._imposition_compose_doc_path = self.store.imposition_doc_path(
+            self.task_id, **self._imposition_scope()
+        )
+        # ⚠️ 记的是**这次合成所用快照**对应的文档 mtime，而不是收尾那一刻的实时
+        #    mtime：合成跑着用户又改一版时，文档 mtime 会往前跳，拿它当基准会把
+        #    已经写好的前几页误判成"没写成功"→ 再排一轮重写（用户 2026-10-18 实测：
+        #    先重存了 77 页、紧接着又重存 8 页，那一轮白跑还让他等更久）。
+        try:
+            self._imposition_compose_doc_mtime = (
+                self._imposition_compose_doc_path.stat().st_mtime
+            )
+        except OSError:
+            self._imposition_compose_doc_mtime = None
+        self._imposition_composed_pages = list(order)
         from desktop.workers import ImpositionComposeWorker, connect_queued
 
         self.run_worker(
             # 成品后缀随**该页源图**走（用户 2026-10-17）：输入 png 出 png、
             # 输入 jpg 出 jpg（同一目录里两种后缀可以并存）
             lambda: ImpositionComposeWorker(
-                doc, out_dir, suffix_for=page_product_suffix
+                doc, out_dir, suffix_for=page_product_suffix, only=only,
             ),
             lambda worker, thread: (
                 connect_queued(
@@ -648,9 +813,63 @@ class ImpositionLayoutMixin:
             ),
         )
 
+    def _record_composed_pages(self) -> None:
+        """合成收尾：记下"这次重存了哪几页"、更新签名、通知第四步。
+
+        - **签名**（``_imposition_page_sigs``）：下次只重合成又变了的那几页；
+        - **记录**：日志写明重存了哪几页（用户 2026-10-18："那张图片变更，就重新
+          存储哪个图片，同时通知下一步要变更的图片"）；
+        - **通知下游**：只刷那几页在第四步的条目（见 ``_refresh_print_source``）。
+
+        ⚠️ 每页再核一次"成品确实比版面文档新"才记签名：写盘失败/进程被杀的那页
+        不记 —— 下次它还会被算成过期而重试（自愈），不会悄悄留着旧图。
+        """
+        sigs_path = getattr(self, "_imposition_compose_sigs_path", None)
+        out_dir = getattr(self, "_imposition_compose_out_dir", None)
+        pages = (self._imposition_compose_doc or {}).get("pages") or []
+        indexes = list(getattr(self, "_imposition_composed_pages", None) or [])
+        self._imposition_composed_pages = []
+        if not indexes or sigs_path is None or out_dir is None:
+            return
+        try:
+            doc_mtime = getattr(self, "_imposition_compose_doc_mtime", None)
+        except AttributeError:
+            doc_mtime = None
+        from desktop.components.imposition.page_thumb import page_signature
+        from desktop.services.imposition import product_path
+
+        sigs = self._composed_sigs(sigs_path)
+        changed: list[int] = []
+        for index in indexes:
+            if not 0 <= index < len(pages):
+                continue
+            page = pages[index]
+            if doc_mtime is not None:
+                try:
+                    if product_path(out_dir, index, page).stat().st_mtime < doc_mtime:
+                        continue  # 这一页这次没写成功 → 不记签名，下轮重试
+                except OSError:
+                    continue
+            sigs[index] = page_signature(page) or ""
+            changed.append(index)
+        if not changed:
+            return
+        _write_composed_sigs(Path(sigs_path), sigs)
+        labels = "、".join(f"第 {i + 1} 页" for i in changed[:6])
+        if len(changed) > 6:
+            labels += f" 等 {len(changed)} 页"
+        self.log_view.append(
+            f"拼版成品已重存 {len(changed)} 页（{labels}），"
+            "这几张图在第四步会按当前排版参数重新排版。"
+        )
+        self._refresh_print_source([
+            str(product_path(out_dir, index, pages[index])) for index in changed
+        ])
+
     def _on_imposition_composed(self, _out_dir: str, _count: int) -> None:
-        """后台合成完成（主线程）：解除忙标记，必要时补一轮。"""
+        """后台合成完成（主线程）：解除忙标记，记签名/通知下游，必要时补一轮。"""
         self._imposition_composing = False
+        self._record_composed_pages()
         if self._imposition_dirty:
             self._imposition_timer.start()
             return
@@ -763,7 +982,10 @@ class ImpositionLayoutMixin:
         poll.timeout.connect(_settled)
         poll.start()
         try:
-            self._compose_imposition_async()
+            # ⚠️ 这一条**整本重合成**（``force_full``）：它要的是"磁盘一定与落盘
+            #    版面一致"，而签名记录是内存态的、可能不准（跨会话/写盘失败），
+            #    宁可多花几秒也不能把一页旧图打进 PDF。拖版面的后台那条走增量。
+            self._compose_imposition_async(force_full=True)
             # ⚠️ 事件循环里界面照常收事件（这正是"不冻结"的实现方式）；
             #    期间用户改版面 → 补轮机制再排合成 → 下一轮收敛才放行。
             loop.exec()

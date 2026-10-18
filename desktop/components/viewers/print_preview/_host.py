@@ -40,6 +40,7 @@ class PrintPreviewHost(QWidget, ThumbsMixin, ZoomPopupMixin):
     THUMB_EDGE: Any
     _PAPER_TO_QPAGE: dict[Any, Any]
     _canvas_index: Any
+    _canvas_image_size: Any
     _empty_hint: Any
     _entries_cache: Any
     _entry_keys: Any
@@ -191,6 +192,9 @@ class PrintPreviewHost(QWidget, ThumbsMixin, ZoomPopupMixin):
         ...
 
     def refresh_layout(self) -> None:
+        ...
+
+    def refresh_paths(self, paths) -> None:
         ...
 
     def remove_selected(self) -> None:

@@ -152,6 +152,12 @@ class PrintLayoutMixin(PrintPreviewHost):
             return
         if rect is None:
             rect = list(plan.image)
+        # 记下**画这个框时那张图的像素尺寸**：`rect_changed` 回来时随框一起存
+        # （``pages[].rect_size``）。图像被上游换掉后，"旧框是否还适用"就靠它判
+        # ——图像尺寸变了说明这张图已经重新生成，旧框会把新图拉成错的宽高
+        # （见 desktop.services.print_plan.rect_fits_image）。
+        if image is not None:
+            self._canvas_image_size = [image.width(), image.height()]
         self.canvas.set_page(pw, ph, image, rect, plan, keep_ratio=keep_ratio)
         handle_hint = (
             "拖四角等比缩放，拖四边拉伸宽/高"
@@ -165,10 +171,18 @@ class PrintLayoutMixin(PrintPreviewHost):
 
 
     def _on_canvas_rect(self, rect: list) -> None:
-        """画布拖拽/缩放结束：写回条目并通知宿主（落盘 + 标脏）。"""
+        """画布拖拽/缩放结束：写回条目并通知宿主（落盘 + 标脏）。
+
+        连 ``rect_size``（本页图像的像素尺寸）一起写：它是"这个框是按哪张图摆的"
+        的凭据，落盘后供 :func:`desktop.services.print_plan.rect_fits_image` 判定
+        旧框在图像被换掉后是否还适用（用户 2026-10-18）。
+        """
         index = self._canvas_index
         if 0 <= index < len(self._entries_cache):
             self._entries_cache[index]["rect"] = list(rect)
+            size = getattr(self, "_canvas_image_size", None)
+            if size:
+                self._entries_cache[index]["rect_size"] = list(size)
         self.layout_changed.emit(index, list(rect))
 
 

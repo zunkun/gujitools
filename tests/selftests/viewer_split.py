@@ -327,7 +327,10 @@ _SPECS: list[dict] = [
                 "_on_strip_order_changed", "_print_current", "_print_spec",
                 "_show_layout", "_sync_cache_order", "refresh_layout",
             ],
-            "PrintThumbsMixin": ["THUMB_EDGE", "order_changed"],
+            "PrintThumbsMixin": [
+                "THUMB_EDGE", "order_changed", "_current_index",
+                "_load_display",
+            ],
             "PrintLayoutMixin": ["_current_index", "layout_changed"],
             "PrintExportMixin": [
                 "EXPORT_IMAGE_DPI", "_PAPER_TO_QPAGE", "_current_index",

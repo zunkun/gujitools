@@ -264,7 +264,109 @@ def drop_foreign_stage_pages(
     return kept
 
 
-def plan_print_entries(rembg_files: list[Path], doc: dict | None) -> tuple[list[dict], dict]:
+# ---------------------------------------------------------------- 待打印列表
+#: 逐图 rect 与当前图像**宽高比**的最大相对偏差（老数据没记像素尺寸时的兜底判据）
+RECT_ASPECT_TOLERANCE = 0.02
+
+
+def rect_fits_image(rect, image_size_px, rect_size_px=None) -> bool:
+    """这条逐页 rect 是否**还适用于当前这张图**（判据唯一处）。
+
+    背景（用户 2026-10-18）：「上一步的输出归上一步，当前步 PDF排版，页面效果都
+    要按相关参数来调整」。逐页 rect 是**用户在 A4 纸上摆出来的坐标**，它是按
+    **画它时那张图的几何**量出来的：图像一换（拼版成品重合成、去底色重提交、
+    编辑器回写），像素尺寸/宽高比就变了，再把旧框套上去 = 把新图**拉伸**进旧框
+    ——A4 上的宽度与比例都是错的，本步参数（纸张/方向/边距/原比例）没起作用。
+
+    判据分两档（新数据优先）：
+
+    - ``rect_size_px``（画框时图像的像素尺寸，存在 ``pages[].rect_size`` 里）：
+      **必须完全相等**。像素尺寸变了 ⇒ 页面 mm 与像素的换算比例已不同，旧框
+      不再表达用户的意图（宽高比即使凑巧相同也不行）；
+    - 没有记录（老数据）：退到**宽高比**容差（:data:`RECT_ASPECT_TOLERANCE`）。
+      宽高比一致 = 还是"同一张尺寸的图"；不一致 = 这张图已经换了（半页 →
+      对开页之类），旧框不再有效。
+
+    读不到图像尺寸（文件刚被删/坏）时返回 ``True``（无从判断，保留用户排版）。
+    """
+    try:
+        rect_w, rect_h = float(rect[2]), float(rect[3])
+        img_w, img_h = float(image_size_px[0]), float(image_size_px[1])
+    except (TypeError, ValueError, IndexError):
+        return True
+    if rect_w <= 0 or rect_h <= 0 or img_w <= 0 or img_h <= 0:
+        return True
+    if rect_size_px is not None:
+        try:
+            px_w, px_h = int(rect_size_px[0]), int(rect_size_px[1])
+        except (TypeError, ValueError, IndexError):
+            px_w = px_h = 0
+        if px_w > 0 and px_h > 0:
+            return (px_w, px_h) == (int(img_w), int(img_h))
+    img_ratio = img_w / img_h
+    return abs(rect_w / rect_h - img_ratio) <= RECT_ASPECT_TOLERANCE * img_ratio
+
+
+def stale_rect_pages(pages, size_for) -> list[dict]:
+    """``pages`` 里**图像已换、旧 rect 不再适用**的那几条（``[]`` = 全都还适用）。
+
+    ``size_for``：``(路径文本) -> (宽, 高) | None``；为 ``None``（调用方拿不到
+    尺寸，如 CLI）时一律返回空表——绝不能"读不到尺寸就当过期"，那会把用户
+    精心调过的版面全部误清。
+
+    返回项形如 ``{"file": …, "image": (宽, 高), "rect": [...]}``：调用方据此
+    写**"上一步更新了哪些图片"的记录**（日志/界面提示），并据此失效这些页的
+    缓存（旧版面、缩略图）。
+    """
+    if size_for is None or not pages:
+        return []
+    stale: list[dict] = []
+    for page in pages:
+        rect = page.get("rect")
+        file_text = page.get("file")
+        if rect is None or not file_text:
+            continue
+        try:
+            size = size_for(str(file_text))
+        except Exception:  # noqa: BLE001 - 读尺寸失败不该拦住建表
+            size = None
+        if size is None or not size[0] or not size[1]:
+            continue
+        if not rect_fits_image(rect, size, page.get("rect_size")):
+            stale.append({
+                "file": str(file_text),
+                "image": (int(size[0]), int(size[1])),
+                "rect": list(rect),
+            })
+    return stale
+
+
+def ordered_page_record(entry: dict) -> dict:
+    """待打印条目 → ``print.json`` 的 ``pages[]`` 记录（顺序/标签 + 有则带逐页版面）。
+
+    字段：
+
+    - ``file`` / ``label``：条目身份（顺序就是列表顺序，拖动即改这里）；
+    - ``rect``：用户在 A4 纸上摆出来的坐标（mm），**有才写**（没有就走自动排版）；
+    - ``rect_size``：**画这个框时那张图的像素尺寸**。它是"这张图的版面是按哪张图
+      量的"的唯一凭据：图像后来被上游换掉（拼版成品重合成、去底色重提交）时，
+      靠它判定旧框失效、改按当前 PDF排版参数重排（见 :func:`rect_fits_image`）。
+
+    ⚠️ 落盘口径必须**唯一**：`print_list._save_print_order`（拖拽/删除后）与
+    `runner`（生成 PDF 前）都写这份记录，两处各拼一份字段迟早漂移——改了这里
+    两处跟着改。
+    """
+    page: dict = {"file": entry.get("file"), "label": entry.get("label")}
+    if entry.get("rect") is not None:
+        page["rect"] = list(entry["rect"])
+        if entry.get("rect_size") is not None:
+            page["rect_size"] = [int(v) for v in entry["rect_size"][:2]]
+    return page
+
+
+def plan_print_entries(
+    rembg_files: list[Path], doc: dict | None, size_for=None,
+) -> tuple[list[dict], dict]:
     """第四步待打印图片列表的规划。
 
     直接使用第三步「提交本次任务」产出的 stages/rembg 最终图片
@@ -274,11 +376,22 @@ def plan_print_entries(rembg_files: list[Path], doc: dict | None) -> tuple[list[
     列表不再使用源 PDF 缩略图，直接显示 rembg 最终图片本身；
     print.json 仅持久化用户的拖动/删除/插入顺序。
 
+    ``size_for``（可选）：``(路径文本) -> (宽, 高) | None``，读**当前**图片的
+    像素尺寸。给了它，逐页 rect 会先过一遍 :func:`rect_fits_image`——**这张图
+    已经不是画那个框时的那张**（被重合成/重提交换掉了）就不再套用旧框，让
+    ``plan_print_page`` 按**当前参数**重新自动排版（用户 2026-10-18：
+    「上一步的输出归上一步，当前步 PDF排版要按相关参数来调整」）。
+    不给（默认）= 原样透传 rect，CLI/老调用方与既有往返语义一字不变。
+
     返回 (entries, doc)。
     """
     rembg_names = [str(p) for p in rembg_files]
     current_set = set(rembg_names)
     snapshot = set(doc.get("rembg_snapshot") or []) if doc else set()
+    stale = {
+        str(page["file"])
+        for page in stale_rect_pages(doc.get("pages") if doc else None, size_for)
+    }
 
     def _existing(pages) -> list[dict]:
         out, seen = [], set()
@@ -288,10 +401,14 @@ def plan_print_entries(rembg_files: list[Path], doc: dict | None) -> tuple[list[
                 continue
             entry = {"file": file_text,
                      "label": p.get("label") or Path(file_text).stem}
-            # 第四步「版面编辑器」逐图坐标：存在则随条目保留（与 file/label 同级）
+            # 第四步「版面编辑器」逐图坐标：存在则随条目保留（与 file/label 同级）。
+            # ⚠️ 图像已经换了的那几页**不带 rect**：旧框是按旧图的像素尺寸/宽高比
+            #    量出来的，套到新图上就是把图拉成错的宽高（见 :func:`rect_fits_image`）。
             rect = p.get("rect")
-            if rect is not None:
+            if rect is not None and str(file_text) not in stale:
                 entry["rect"] = list(rect)
+                if p.get("rect_size") is not None:
+                    entry["rect_size"] = list(p["rect_size"])
             out.append(entry)
             seen.add(file_text)
         return out

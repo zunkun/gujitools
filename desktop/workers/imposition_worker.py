@@ -25,26 +25,33 @@ class ImpositionComposeWorker(QObject):
     finished = Signal(str, int)
     failed = Signal(str)
 
-    def __init__(self, doc: dict, out_dir, suffix_for=None):
+    def __init__(self, doc: dict, out_dir, suffix_for=None, only=None):
         """doc 为拼版文档；out_dir 为目标目录（stages/imposition）。
 
         ``suffix_for``：可选 ``(page) -> ".png" | ".jpg"``——**成品后缀随该页源图
         走**（用户 2026-10-17：输入 png 出 png、输入 jpg 出 jpg）。任务流程传
         ``services.imposition.page_product_suffix``；不传 ⇒ 一律 PNG。
+
+        ``only``：只重合成这几页（0 基页序下标）；``None`` = 全量。用户
+        2026-10-18：「只存储当前拼版的图片页」——版面只动了一页时不该把整本
+        重写一遍（一页要开两张原图 + 缩放 + 旋转 + alpha + 编码，几十页就是
+        好几秒，而用户盯着的是刚改的那一页）。
         """
         super().__init__()
         self.doc = doc
         self.out_dir = out_dir
         self.suffix_for = suffix_for
+        self.only = None if only is None else list(only)
 
     @Slot()
     def run(self) -> None:
-        """合成全部拼版页；失败只报 failed，由宿主提示并落日志。"""
+        """合成给定的拼版页；失败只报 failed，由宿主提示并落日志。"""
         try:
             from desktop.services.imposition import compose_doc
 
             written = compose_doc(
-                self.doc, self.out_dir, suffix_for=self.suffix_for
+                self.doc, self.out_dir, suffix_for=self.suffix_for,
+                only=self.only,
             )
             self.finished.emit(str(self.out_dir), len(written))
         except Exception as exc:  # noqa: BLE001 - 兜底：别让线程静默死掉

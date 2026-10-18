@@ -74,6 +74,44 @@ class PrintThumbsMixin(PrintPreviewHost):
             ),
         )
 
+    def refresh_paths(self, paths) -> None:
+        """**只重解这几张**待打印图的缩略图 + 当前页显示（不整列重建）。
+
+        上游（图片拼版）重存了某几页成品后会点名告诉这里"哪几张变了"（用户
+        2026-10-18：「那张图片变更……同时通知下一步要变更的图片」）。整列
+        ``set_entries`` 会把列表清空重建、把当前页翻回第一页，而这里只动那几条
+        （按**条目身份令牌**回填，行号变了也不会写错行，见 ``_apply_page_thumb``）。
+
+        当前显示的就是其中一张时，顺带按新文件重载右侧（版面/效果/原图三种
+        模式都走 ``_load_display``）。
+        """
+        wanted = {str(path) for path in paths or ()}
+        if not wanted or not self._entries_cache:
+            return
+        pending = [
+            (key, self._thumb_path_for(entry))
+            for key, entry in zip(self._entry_keys, self._entries_cache)
+            if str(entry.get("file")) in wanted
+        ]
+        if pending:
+            keys = [key for key, _ in pending]
+            edge = self._decode_edge(self.THUMB_EDGE)
+            self._load_thumbs_chunked(
+                len(pending),
+                make_worker=lambda start, end: ImageListWorker(
+                    [path for _, path in pending[start:end]], edge=edge
+                ),
+                sink=lambda index, image, _path, keys=keys: (
+                    self._apply_page_thumb(keys[index], image)
+                    if 0 <= index < len(keys) else None
+                ),
+            )
+        index = self._current_index()
+        if 0 <= index < len(self._entries_cache) and str(
+            self._entries_cache[index].get("file")
+        ) in wanted:
+            self._load_display()  # 正看着的那张被换掉了：按新文件重画
+
 
     def _apply_page_thumb(self, key, image) -> None:
         """某条目的缩略图就绪：**按身份**找回它当前所在的行再落值。
