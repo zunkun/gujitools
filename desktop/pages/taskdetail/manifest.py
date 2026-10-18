@@ -821,10 +821,64 @@ class PageListMixin:
         pass  # 预览组件内部已渲染大图，此处留作扩展
 
     def _open_task_dir(self) -> None:
+        """打开**当前流程节点**的产物目录（右下角「打开任务目录」）。
+
+        用户 2026-10-18："打开的是当前任务节点的目录"，且"如果任务节点打不开，
+        打开任务目录；如果能打开节点目录，打开节点目录，其次是任务目录"。
+        此前恒开任务根目录（``tasks/<任务号>/``），看某一步产物时还得自己翻
+        ``stages/<阶段>``；现在优先落到**正看着的那一步（当前格对应的节点）**
+        的产物落点，同一步骤有多个节点时也各归各（B 方案：副本落 ``~<节点>``）。
+        """
         if self.task_id:
             QDesktopServices.openUrl(
-                QUrl.fromLocalFile(str(self.store.task_dir(self.task_id)))
+                QUrl.fromLocalFile(str(self._current_node_dir()))
             )
+
+    def _current_node_dir(self) -> Path:
+        """「打开任务目录」的目标：**节点产物目录优先，其次任务根目录**。
+
+        用户 2026-10-18：
+
+        > 如果任务节点打不开，打开任务目录；如果能打开节点目录，打开节点目录，
+        > 其次是任务目录。
+
+        ⚠️ **必须判"打得开吗"（目录存在）再选**：节点产物目录是**跑过那一步才
+        有**的（``stages/extract[~<节点>]`` / ``stages/rembgpreview[~<节点>]`` /
+        ``stages/imposition[~<节点>]`` / ``stages/print[~<节点>]``）；没产出时
+        ``openUrl`` 指过去＝**点了没反应**（这正是用户"并非所有任务节点都能打开"
+        的现场）。任务根目录建任务时就建好了、恒在，所以它是可靠的兜底。
+
+        节点目录的按阶段口径（与执行端的 :meth:`_output_path_for` 同源）：
+
+        - 「PDF排版」产物是 PDF（``stages/print[~<节点>]/print.pdf``）⇒ 取它
+          所在目录；
+        - 「检测文本框」不落页面图目录——产物是任务根下的 ``boxes[~<节点>].json``
+          （参考缩略图 ``thumbnails/detect[~<节点>]`` 只是界面缓存、不是产物）
+          ⇒ 没有节点目录，直接回落任务根，正好能看到那个坐标文件；
+        - 其余（提取 / 去底色 / 拼版）⇒ 按节点取端口 ``pages`` 的落点。
+
+        节点目录不存在 / 阶段认不出 / 节点没登记对应端口（自定义流程、图坏了）
+        一律回落到任务根目录（与改造前逐字节一致）。
+        """
+        task_id = self.task_id
+        if task_id is None:
+            return Path()
+        stage = self.current_stage()
+        node = self.node_of_stage(stage) if stage else None
+        node_dir: Path | None = None
+        if stage and stage != "detect":
+            try:
+                node_dir = (
+                    self.store.scoped_stage_dir(task_id, node, "print")
+                    if stage == "print"
+                    else self.store.node_or_stage_output(
+                        task_id, node, stage, "pages")
+                )
+            except KeyError:
+                node_dir = None
+        if node_dir is not None and node_dir.is_dir():
+            return node_dir
+        return self.store.task_dir(task_id)
 
     # ------------------------------------------------------- 补选源 PDF
     def _entry_input_kind(self) -> str:

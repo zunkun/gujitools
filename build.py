@@ -56,6 +56,11 @@ IS_WINDOWS = sys.platform == "win32"
 CLI_EXE = "guji.exe" if IS_WINDOWS else "guji"
 GUI_EXE = "guji-desktop.exe" if IS_WINDOWS else "guji-desktop"
 
+#: 安装向导右上角小图在各级 DPI 下的**显示尺寸**（Inno 官方表：100%~250% 依次
+#: 为 58/77/97/116/124/143/159）。逐尺寸各给一张原尺寸图，Inno 按当前 DPI 挑
+#: 最接近的一张；只给单张的话它只会拉伸/缩小，缩放着用会发虚。
+WIZARD_SMALL_IMAGE_SIZES = (58, 77, 97, 116, 124, 143, 159)
+
 
 def run_conda(conda_exe, args, check=True, capture_output=False):
     return subprocess.run(
@@ -408,6 +413,51 @@ def prepare_icon(project_root):
         return None
 
 
+def prepare_wizard_small_images(project_root):
+    """由 desktop/static/icon.png 生成安装向导右上角的小图（现代样式头部）。
+
+    向导头部那枚图默认是 Inno 内置的；换成项目图标（红底篆书「古籍重製」），
+    安装包才和程序外观一致。源图是直角方形，这里复用 make_icon.rounded_frame，
+    **与程序图标共用同一套圆角**，输出带透明的 PNG 以贴合向导头部的底色。
+
+    为什么给「一组」而不是一张：头部的图区随 DPI 是 58~159px 见方，Inno 对单张
+    图只会拉伸/缩小——缩放会发虚。按 ``WIZARD_SMALL_IMAGE_SIZES`` 逐尺寸生成
+    原尺寸图，Inno 自会挑最接近的（见 ``WizardSmallImageFile`` 帮助）。
+
+    返回逗号分隔的图片路径串（供 ``/DWIZARD_SMALL_IMAGE`` 传给 ISCC）；
+    失败返回 None（不致命，安装包退回 Inno 的默认图）。
+    """
+    if not IS_WINDOWS:
+        return None
+    png = project_root / "desktop" / "static" / "icon.png"
+    if not png.is_file():
+        print("⚠️ 未找到 desktop/static/icon.png，跳过安装向导小图生成")
+        return None
+    # ⚠️ 落在 dist/ 而不是 desktop/static/：后者整个目录会被 guji.spec 收进
+    # GUI 的安装载荷（gui_datas），把只有安装器才用的图打进去纯属浪费。
+    out_dir = project_root / "dist" / "installer_assets"
+    try:
+        from PIL import Image
+
+        from tools.make_icon import DEFAULT_RADIUS_PCT, rounded_frame
+
+        src = Image.open(png)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        files = []
+        for size in WIZARD_SMALL_IMAGE_SIZES:
+            path = out_dir / f"wizard_small_{size}.png"
+            rounded_frame(src, size, DEFAULT_RADIUS_PCT).save(path, format="PNG")
+            files.append(path)
+        print(
+            f"✅ 生成安装向导小图: {out_dir.relative_to(project_root)}"
+            f"（{len(files)} 个尺寸，圆角 {DEFAULT_RADIUS_PCT}%）"
+        )
+        return ",".join(str(p) for p in files)
+    except Exception as exc:  # noqa: BLE001
+        print(f"⚠️ 安装向导小图生成失败（不影响打包）: {exc}")
+        return None
+
+
 def elapsed(start: float, label: str) -> None:
     """打印某阶段耗时——构建全程 15~20 分钟，没有计时容易误判成卡死。"""
     secs = time.monotonic() - start
@@ -431,12 +481,14 @@ def refresh_manual_only(project_root) -> int:
 
     steps: list[tuple[str, Callable[[], object]]] = [("预生成手册", lambda: build_manual_html(dist_dir))]
     if IS_WINDOWS:
+        icon = project_root / "desktop" / "static" / "icon.ico"
+        wizard_images = prepare_wizard_small_images(project_root)
         # ⚠️ 这里曾经还有一步「复制到 C:\Software」把产物部署一份出去。
         # 已删除：构建只产出安装包，部署由安装包负责（否则本机同时存在
         # dist/、C:\Software\guji、安装目录三份，跑的是哪一份都说不清）。
         steps += [
             ("生成安装包",
-             lambda: build_installer(project_root, project_root / "desktop" / "static" / "icon.ico")),
+             lambda: build_installer(project_root, icon, wizard_images)),
         ]
     for label, fn in steps:
         mark = time.monotonic()
@@ -461,6 +513,7 @@ def main():
         remove_tree(target)
 
     icon = prepare_icon(project_root)
+    wizard_images = prepare_wizard_small_images(project_root)
 
     spec = project_root / "guji.spec"
     if not spec.is_file():
@@ -517,7 +570,7 @@ def main():
             # ⚠️ 构建只出安装包，不再往 C:\Software\guji 复制一份部署副本
             # （见模块 docstring）。dist/guji/ 本身可直接分发/就地运行。
             steps += [
-                ("生成安装包", lambda: build_installer(project_root, icon)),
+                ("生成安装包", lambda: build_installer(project_root, icon, wizard_images)),
             ]
         else:
             steps += [
@@ -687,10 +740,12 @@ def verify_outputs(dist_dir):
         print("   CLI 与 GUI 可执行文件均已生成")
 
 
-def build_installer(project_root, icon=None):
+def build_installer(project_root, icon=None, wizard_images=None):
     """用 Inno Setup 生成带版本号和时间戳的安装包。
 
     icon 为 .ico 路径时通过 /DICON_FILE 传给脚本（SetupIconFile）。
+    wizard_images 为逗号分隔的 PNG 路径串时通过 /DWIZARD_SMALL_IMAGE 传给
+    脚本（WizardSmallImageFile，即安装向导右上角的小图）。
     """
     if sys.platform != "win32":
         print("\n⚠️ 非 Windows 环境，跳过安装包生成")
@@ -737,6 +792,8 @@ def build_installer(project_root, icon=None):
     ]
     if icon and Path(icon).is_file():
         cmd.append(f"/DICON_FILE={icon}")
+    if wizard_images:
+        cmd.append(f"/DWIZARD_SMALL_IMAGE={wizard_images}")
     cmd.append(str(project_root / "guji_setup.iss"))
     print(f"\n📦 生成安装包: guji_setup_{VERSION}_{timestamp}.exe")
     result = subprocess.run(cmd, cwd=str(project_root))

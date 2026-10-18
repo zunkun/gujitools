@@ -148,10 +148,11 @@ class LogPanel(QWidget):
         self.toggle_button.clicked.connect(self.toggle)
         row.addWidget(self.toggle_button)
 
-        #: 「打开任务数据目录」（用户 2026-10-06：从页头**移到右下角**）。
-        #: ⚠️ **宿主挂进来**而不是本类自己建：本面板是通用组件，**不知道**任务
-        #:    是什么、也没有 store——"打开哪个目录"是详情页的事。让宿主
-        #:    :meth:`set_task_dir_action` 交来一个已接好线的按钮，本面板只管摆位。
+        #: 「打开任务目录」（用户 2026-10-06：从页头**移到右下角**；2026-10-18
+        #: 改成图标 + 文字）。⚠️ **宿主挂进来**而不是本类自己建：本面板是通用
+        #: 组件，**不知道**任务是什么、也没有 store——"打开哪个目录"是详情页的
+        #: 事。让宿主 :meth:`set_task_dir_action` 交来一个已接好线的按钮，本
+        #: 面板只管摆位。
         self.task_dir_slot = QWidget()
         self._task_dir_layout = QHBoxLayout(self.task_dir_slot)
         self._task_dir_layout.setContentsMargins(0, 0, 0, 0)
@@ -165,7 +166,7 @@ class LogPanel(QWidget):
 
     # ------------------------------------------------------------------ 状态
     def set_task_dir_action(self, button) -> None:
-        """把宿主做好的「打开任务数据目录」按钮摆到状态条**最右端**（右下角）。
+        """把宿主做好的「打开任务目录」按钮摆到状态条**最右端**（右下角）。
 
         ⚠️ **在尺寸计算前设进去**：状态条是 ``setFixedHeight(BAR_HEIGHT)`` 的
         固定高控件，布局在 ``show`` 时才算；按钮晚一步挂进来虽然也显示得下，

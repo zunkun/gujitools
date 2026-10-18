@@ -2046,7 +2046,7 @@ worker）→ 连 :attr:`page_ready` 把生成好的那条贴回左列。版面/�
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(parent=None)` | 构建状态条外观与（尚未挂到页面上的）日志浮层。 |
-| `set_task_dir_action(button) -> None` | 把宿主做好的「打开任务数据目录」按钮摆到状态条**最右端**（右下角）。 |
+| `set_task_dir_action(button) -> None` | 把宿主做好的「打开任务目录」按钮摆到状态条**最右端**（右下角）。 |
 | `toggle() -> None` | 在展开 / 收起之间切换（取反当前状态）。 |
 | `set_expanded(expanded: bool) -> None` | 展开或收起日志浮层，并同步箭头方向与状态条摘要。 |
 | `eventFilter(obj, event) -> bool` | 浮层打开期间：Esc 或点击浮层/状态条之外的任意位置即收起。 |
@@ -2057,7 +2057,7 @@ worker）→ 连 :attr:`page_ready` 把生成好的那条贴回左列。版面/�
 
 ##### `set_task_dir_action(button) -> None`
 
-把宿主做好的「打开任务数据目录」按钮摆到状态条**最右端**（右下角）。
+把宿主做好的「打开任务目录」按钮摆到状态条**最右端**（右下角）。
 
 ⚠️ **在尺寸计算前设进去**：状态条是 ``setFixedHeight(BAR_HEIGHT)`` 的
 固定高控件，布局在 ``show`` 时才算；按钮晚一步挂进来虽然也显示得下，

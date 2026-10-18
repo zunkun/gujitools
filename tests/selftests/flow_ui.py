@@ -1750,11 +1750,24 @@ def _check_input_entry_marks() -> None:
                "把一个文件夹里的图片批量插入")) is not None
            and _btn_dir.isHidden())
 
-        # ---- ③「打开任务数据目录」在右下角（底部状态条最右端）----
-        ok("「打开任务数据目录」已挂进底部状态条",
+        # ---- ③「打开任务目录」在右下角（底部状态条最右端）----
+        ok("「打开任务目录」已挂进底部状态条",
            shell and page.log_panel.isAncestorOf(page.task_dir_button))
         ok("它不在页头那一排里了（页头只留输入/流程类按钮）",
            not page.detail_title.isAncestorOf(page.task_dir_button))
+        # 用户 2026-10-18：改成图标 + 文字；打开目标＝**节点目录优先，其次任务根**
+        ok("「打开任务目录」是图标 + 文字按钮",
+           page.task_dir_button.text() == "打开任务目录")
+        # 默认流程第一步是「图片提取」。节点目录是"跑过那一步才有"的，还没产出
+        # 时打开它会点了没反应 ⇒ 必须回落任务根（否则"并非所有节点都能打开"）
+        ok("节点目录还没有 ⇒ 回落任务根（否则点了没反应）",
+           page._current_node_dir() == store.task_dir(tid))
+        # 产出该节点目录后 ⇒ 优先打开它（stages/extract，而不再是任务根）
+        node_dir = store.extract_output_dir(tid)
+        node_dir.mkdir(parents=True, exist_ok=True)
+        ok("节点目录存在 ⇒ 优先打开节点目录",
+           page._current_node_dir() == node_dir
+           and page._current_node_dir() != store.task_dir(tid))
 
         shell.close()
     finally:

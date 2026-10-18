@@ -232,9 +232,10 @@ class DetailViewMixin:
         #    和页头那排输入按钮混在一起会让人以为也是一种输入方式。
         #    ⚠️ 必须**在 addWidget 之后立刻**交给 log_panel：状态条是固定高
         #    控件，晚一步挂进来布局要等下一次 show 才生效。
-        self.task_dir_button = ToolButton(FIF.FOLDER)
-        self.task_dir_button.setToolTip("打开任务数据目录")
-        self.task_dir_button.setFixedSize(26, 26)
+        #    用户 2026-10-18：从"纯图标"改成**图标 + 文字**（打开任务目录），
+        #    且打开目标从**任务根目录**改成**当前流程节点**的产物目录。
+        self.task_dir_button = PushButton(FIF.FOLDER, "打开任务目录")
+        self.task_dir_button.setToolTip("打开当前任务节点的数据目录")
         self.task_dir_button.clicked.connect(self._open_task_dir)
         self.log_panel.set_task_dir_action(self.task_dir_button)
         root.addWidget(self.log_panel)
@@ -340,7 +341,7 @@ class DetailViewMixin:
         self.insert_dir_button.clicked.connect(self.insert_pages_from_folder)
         mark_input_entry(self.insert_dir_button)
         row.addWidget(self.insert_dir_button)
-        # ⚠️「打开任务数据目录」**从页头移走**（用户 2026-10-06"统一放到右下
+        # ⚠️「打开任务目录」**从页头移走**（用户 2026-10-06"统一放到右下
         #    角"）——它不是输入入口，是"去磁盘上看产物"的辅助动作，混在输入
         #    按钮里会让人以为也是一种输入方式。摆在底部状态条最右端。
         return card

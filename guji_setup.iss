@@ -33,6 +33,14 @@ SolidCompression=yes
 #ifdef ICON_FILE
 SetupIconFile={#ICON_FILE}
 #endif
+; 安装向导右上角的小图（现代样式头部）：换成项目图标（红底篆书「古籍重製」），
+; 不再用 Inno 内置的默认图。图由 build.py 在打包时从 desktop/static/icon.png
+; 生成（见 prepare_wizard_small_images）：透明 PNG + 与程序图标同一套圆角。
+; ⚠️ 这里是「逐 DPI 一组图」（逗号分隔），Inno 会按当前 DPI 挑最接近的一张，
+; 单张大图被缩放着用会发虚。PNG 与多图语法均为 Inno 6+ 特性。
+#ifdef WIZARD_SMALL_IMAGE
+WizardSmallImageFile={#WIZARD_SMALL_IMAGE}
+#endif
 UninstallDisplayName=古籍重製 {#VERSION}
 UninstallDisplayIcon={app}\guji-desktop.exe
 
