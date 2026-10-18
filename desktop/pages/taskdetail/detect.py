@@ -52,6 +52,32 @@ ORIGIN_SUFFIX = {
 }
 
 
+class VersionedBoxCache(dict):
+    """``detect_cache`` 的带版本号版：任何写入都自增 ``version``。
+
+    给"整书判据"（单栏书结论 / 逐页检测框）做缓存失效用——那些判据要遍历
+    全部页并读 ``boxes.json``，第三步实时预览按防抖反复要它，不能每次重算
+    （见 ``rembg_live.RembgLiveMixin._live_book_context``）。用户在第二步改框
+    会写这份缓存 ⇒ 版本号自增 ⇒ 判据缓存失效，不会拿旧框去命名产物。
+    """
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.version = 0
+
+    def __setitem__(self, key, value) -> None:  # noqa: ANN001
+        super().__setitem__(key, value)
+        self.version += 1
+
+    def __delitem__(self, key) -> None:  # noqa: ANN001
+        super().__delitem__(key)
+        self.version += 1
+
+    def clear(self) -> None:
+        super().clear()
+        self.version += 1
+
+
 class DetectMixin:
     """依赖宿主页面提供的属性：store/task_id、detect_viewer、log_view、
     detect_process/detect_cache、current_stage()。"""
@@ -707,6 +733,39 @@ class DetectMixin:
             )
             boxes = entry[0] if entry else []
         return boxes or []
+
+    def _boxes_map_all(self) -> dict:
+        """整本：``{页名: 原始槽位}``，**一次读盘**（语义与 ``_detect_boxes_for`` 对齐）。
+
+        ⚠️ 逐页调 ``_detect_boxes_for`` 会对每页重读整份 ``boxes.json``（O(n²)）；
+        第三步「实时预览增量落盘」按防抖反复要整书判据（单栏书结论），必须一次
+        读齐（见 ``rembg_live.RembgLiveMixin._live_book_context``）。
+
+        口径与 :meth:`_detect_boxes_for` 逐条一致：整页模式（area=4）返回该页的
+        整页边界（派生、不入库）；否则内存缓存（用户刚改过的）优先，其次连线上
+        游那个节点的 ``boxes`` 文件。
+        """
+        paths = self._manifest_paths()
+        if not paths:
+            return {}
+        if self._current_area() == WHOLE_PAGE_AREA:
+            return {
+                Path(p).stem: self._whole_page_entry(str(p))[0] or []
+                for p in paths
+            }
+        stored = (
+            self.store.boxes_all_at(self._boxes_read_path())
+            if self.task_id else {}
+        )
+        boxes: dict = {}
+        for p in paths:
+            cached = self.detect_cache.get(str(p))
+            if cached is not None:
+                boxes[Path(p).stem] = list(cached)
+                continue
+            entry = stored.get(Path(p).stem)
+            boxes[Path(p).stem] = list(entry[0]) if entry else []
+        return boxes
 
     def _current_detect_params(self) -> tuple[int, str | None]:
         """区域参数（area/border）现在位于 rembg 面板（步骤三）。

@@ -1,12 +1,16 @@
 # -*- coding: utf-8 -*-
 """第三步「改参数实时预览当前页」自测。
 
-覆盖三条边界（都是设计里刻意划的）：
+覆盖四条边界（都是设计里刻意划的）：
 
 1. 参数与「生成预览」不同时，才算当前页；一致时不白算。
 2. **一次只算一页**，全量留给「生成预览」按钮。
-3. 实时结果只落系统临时目录，**绝不写** stages/rembgpreview
-   （否则各页参数不一致，「提交本次任务」会把新旧混在一起）。
+3. **增量落盘**（用户 2026-10-18 起）：该页去底色结果写
+   ``stages/rembgpreview``，按 area/border 规则的应用图写 ``stages/rembg``；
+   两个目录允许不完整（用户预览了哪一页，那一页才有产物）。
+4. ``stages/rembg`` 里有零星应用图**不代表**本步已提交——写图前先落 ``.draft``
+   哨兵，第四步只有哨兵不存在时才认这批图（用户 2026-10-18 原话：有零星图片
+   ≠ 已提交，必须提交下一步才能用）。提交的整目录重建会顺带删掉哨兵。
 
 另含 offset 滑块化本身的断言（范围/默认值/回填同步）。
 
@@ -78,7 +82,8 @@ def run(ctx) -> None:
     pump(app)
 
     preview_dir = Path(repo.rembg_preview_output_dir(tid))
-    before = sorted(p.name for p in preview_dir.glob("*")) if preview_dir.exists() else []
+    ok("开场：正式预览目录里还没有任何产物（后面要看增量落盘补进来）",
+       not preview_dir.exists() or not any(preview_dir.iterdir()))
 
     # ---- offset 滑块 ----
     ok("offset 是滑块而非数字框", panel.offset.inherits("QSlider"))
@@ -172,6 +177,12 @@ def run(ctx) -> None:
     ok("一次只算一页（不是全量）", len(d._live_done) == 1, f"{len(d._live_done)} 页")
     ok("预览区已切到实时暂存目录", d.rembg_viewer.live_dir is not None)
 
+    # ⚠️ 「显示优先、落盘异步」（用户 2026-10-18）：大图在去底色一算完就上屏，
+    #    写正式产物目录是**之后**的事 ⇒ 断言文件前必须等落盘那一单收敛。
+    _wait(app, lambda: d._live_persist_done.get("001") is not None, timeout=25)
+    ok("落盘任务也已收敛（显示不被落盘阻塞）",
+       d._live_persist_done.get("001") is not None)
+
     from desktop.services import rembg_live as live_mod
 
     live_dir = d.rembg_viewer.live_dir
@@ -182,9 +193,29 @@ def run(ctx) -> None:
     files = sorted(p.name for p in Path(live_dir).glob("*.png")) if live_dir else []
     ok("实时结果已落盘到暂存目录", len(files) == 1, f"{files}")
 
-    after = sorted(p.name for p in preview_dir.glob("*")) if preview_dir.exists() else []
-    ok("stages/rembgpreview 未被实时预览改动", before == after,
-       f"前 {before} / 后 {after}")
+    # ---- 增量落盘（新契约，用户 2026-10-18）----
+    preview_files = (
+        sorted(p.name for p in preview_dir.glob("*")) if preview_dir.exists() else []
+    )
+    ok("该页去底色结果已增量写进 stages/rembgpreview",
+       preview_files == ["001.png"], f"{preview_files}")
+    ok("正式预览那份与实时结果逐字节一致（同一份去底色产物）",
+       (preview_dir / "001.png").exists()
+       and live_dir is not None
+       and (preview_dir / "001.png").read_bytes()
+       == (Path(live_dir) / "001.png").read_bytes())
+    ok("未预览的页没有被写进正式预览目录",
+       not (preview_dir / "002.png").exists())
+
+    apply_dir = Path(repo.rembg_output_dir(tid))
+    applied = (
+        sorted(p.name for p in apply_dir.glob("*.png")) if apply_dir.exists() else []
+    )
+    ok("按 area/border 规则的应用图已增量写进 stages/rembg（area=1 双框 → 左右两张）",
+       applied == ["001-l.png", "001-r.png"], f"{applied}")
+    ok("增量落盘留下未定稿哨兵（有零星应用图 ≠ 本步已提交）",
+       (apply_dir / repo.REMBG_DRAFT_NAME).exists())
+    ok("因此第四步不许用这批零星应用图", not d.print_source_committed())
 
     # ---- 参数回到「生成预览」时的取值 → 丢弃实时结果，回到正式产物 ----
     d._live_done.clear()
@@ -195,6 +226,16 @@ def run(ctx) -> None:
     pump(app, times=4)
     ok("参数与正式预览一致时不再重算（live 目录已撤下）",
        d.rembg_viewer.live_dir is None, f"{d.rembg_viewer.live_dir}")
+
+    # ---- 「提交本次任务」清掉哨兵后，第四步才恢复可用 ----
+    # 这里直接模拟提交的整目录重建（clean=True 会删掉 .draft），不必真跑子进程。
+    ok("提交前：第四步仍拒绝这批零星应用图", not d.print_source_committed())
+    (apply_dir / repo.REMBG_DRAFT_NAME).unlink(missing_ok=True)
+    ok("提交后（哨兵已清）：第四步取图来源恢复为可用", d.print_source_committed())
+    entries, _doc = d._print_entries()
+    ok("第四步待打印列表能看到这批提交后的应用图",
+       {"001-l.png", "001-r.png"} <= {Path(e["file"]).name for e in entries},
+       f"{[Path(e['file']).name for e in entries]}")
 
     # 收尾：删掉专用任务，别给后续用例留下多余条目
     try:

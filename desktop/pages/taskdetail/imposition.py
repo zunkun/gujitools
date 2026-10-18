@@ -115,6 +115,8 @@ class ImpositionBaseMixin:
         history_block: QWidget
         bar_index_of_step: Callable[[str], int | None]
         node_of_stage: Callable[[str], str | None]
+        #: 「去底色成品目录是否已提交」闸门（PrintListMixin 提供，见 print_list）
+        rembg_source_committed: Callable[..., bool]
         #: 步骤条**格序** → 该格对应的**节点实例 id**（B 方案：逐节点刷状态用）
         node_at_index: Callable[[int], str | None]
         _node_scope: Callable[..., dict]
@@ -552,6 +554,10 @@ class ImpositionBaseMixin:
                 imposition_active=self.imposition_effective(),
             )
         ) or self.store.rembg_output_dir(self.task_id)
+        if not self.rembg_source_committed(source):
+            # 源头（去底色成品）尚未提交：磁盘上只有实时预览按单页落下的零星
+            # 应用图，不许拿它拼版（用户 2026-10-18：有零星图片 ≠ 本步已提交）。
+            return []
         files = list_stage_images(source)
         return sorted(files, key=lambda p: natural_sort_key(p.name))
 

@@ -179,7 +179,7 @@ class SubmitMixin:
                 widths[path.stem] = 0
         return widths
 
-    def _book_profile(self, widths: dict | None = None):
+    def _book_profile(self, widths: dict | None = None, boxes_for=None):
         """整本书的形态判定（``utils.book_layout.BookProfile``）。
 
         规则本体在 :mod:`utils.book_layout`；这里只负责**取数**：清单 × 每页
@@ -188,12 +188,16 @@ class SubmitMixin:
         ⚠️ 走 ``_detect_boxes_for``（内存缓存优先、其次按连线读上游 boxes）
         而不是只读 boxes.json——用户在预览上刚框过、还没落盘的改动也必须参与
         判定，否则统计面板已经说"单栏书"、提交却按半幅命名。
+
+        ``boxes_for``：可选的取框入口（默认 :meth:`_detect_boxes_for`）。第三步
+        实时预览传 :meth:`DetectMixin._boxes_map_all` 的查表版（一次读盘，避免
+        逐页重读 boxes.json 的 O(n²)，见 ``rembg_live.RembgLiveMixin``）。
         """
         if widths is None:
             widths = self._book_page_widths()
+        provider = boxes_for or self._detect_boxes_for
         pages = [
-            (path.stem, self._detect_boxes_for(str(path)),
-             widths.get(path.stem, 0))
+            (path.stem, provider(str(path)), widths.get(path.stem, 0))
             for path in self._manifest_paths()
         ]
         return profile_book(pages)

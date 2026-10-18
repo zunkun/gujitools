@@ -66,11 +66,14 @@ def _qimage_rgb_array(image):
     return np.ascontiguousarray(pixels[:, :, 2::-1])
 
 
-def _save_transparent_png(image, dst: Path) -> None:
+def save_transparent_png(image, dst: Path) -> None:
     """把合成结果落盘为**白底透明** PNG（编码规则见 ``utils.transparent_png``）。
 
     ⚠️ 不许绕过这个函数直接 ``image.save(dst, "PNG")``：那样写出的白底图会和
     透明底产物混在一批里（护栏 tests/selftests/rembg_transparent.py 会盯着）。
+
+    ⚠️ 2026-10-18 起对外公开（原 ``_save_transparent_png``）：第三步「实时预览
+    增量落盘」也走它——两份产物（提交 / 预览）必须逐像素同一套编码。
     """
     utils.save_white_as_transparent(_qimage_rgb_array(image), dst)
 
@@ -150,50 +153,20 @@ def run_rembg_submit_stage(config: dict) -> int:
 
         from PySide6.QtGui import QImage, QImageReader
 
-        from desktop.workers.preview_worker import (
-            compose_region_output, region_canvas_specs,
-        )
+        from desktop.workers.preview_worker import compose_region_output
 
         # ---- 阶段一（主线程）：预计算每页的输出文件名 --------------------
-        # 只用 QImageReader 读文件头拿尺寸（不解码位图），几何张数由
-        # region_canvas_specs 给出（与合成共用同一份规则，零漂移）。
-        # area=1 时每页产左右两张，总张数 = 2×页数，进度按**张**计。
+        # 只用 QImageReader 读文件头拿尺寸（不解码位图），几何张数/命名由
+        # ``plan_submit_job`` 给出（与第三步实时预览增量落盘共用同一份规则，
+        # 零漂移）。area=1 时每页产左右两张，总张数 = 2×页数，进度按**张**计。
+        from desktop.services.print_plan import plan_submit_job
+
         jobs: list[dict] = []
         for spec in effects:
             reader = QImageReader(str(spec["file"]))
             size = reader.size()
-            effect = spec.get("effect")
-            has_boxes = bool(effect and any(effect.get("boxes") or []))
-            label = str(spec.get("label") or Path(spec["file"]).stem)
-            if size.isEmpty():
-                jobs.append({
-                    "file": str(spec["file"]), "compose": False,
-                    "boxes": [], "area": 1, "border": None,
-                    "names": [], "label": label,
-                })
-                continue
-            if has_boxes:
-                boxes = list(effect.get("boxes") or [])
-                area = int(effect.get("area", 1))
-                border = effect.get("border")
-                full = bool(effect.get("full"))
-                canvas_specs = region_canvas_specs(
-                    (size.width(), size.height()), boxes, area, border, full=full,
-                )
-            else:
-                # 无检测框/无区域参数：整页预览图原样交付
-                boxes, area, border, full = [], 1, None, False
-                canvas_specs = [((size.width(), size.height()), [])]
-            names = (
-                [f"{label}.png"]
-                if len(canvas_specs) == 1
-                else [f"{label}-{i + 1}.png" for i in range(len(canvas_specs))]
-            )
-            jobs.append({
-                "file": str(spec["file"]), "compose": has_boxes,
-                "boxes": boxes, "area": area, "border": border, "full": full,
-                "names": names, "label": label,
-            })
+            px = None if size.isEmpty() else (size.width(), size.height())
+            jobs.append(plan_submit_job(spec, px))
 
         total = sum(len(j["names"]) for j in jobs)  # 输出**张数**
 
@@ -227,7 +200,7 @@ def run_rembg_submit_stage(config: dict) -> int:
             for out, name in zip(outputs, names):
                 dst = out_dir / name
                 try:
-                    _save_transparent_png(out, dst)
+                    save_transparent_png(out, dst)
                 except Exception as exc:  # noqa: BLE001 - 单张失败不许拖垮整批
                     errors.append(f"写入失败: {dst}（{exc}）")
                     continue

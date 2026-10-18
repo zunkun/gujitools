@@ -124,8 +124,8 @@ GUI（QImage 渲染）共同消费同一份 `OutputLayout`，不得各自推导
   无论 `type` 是什么，提交结果的白底都转透明）。⚠️ 透明只能在**合成之后**加：
   合成画布是**不透明白**填充（`Format_RGB32` + `fill(Qt.white)`），在去底计算处
   （`utils.rembg_page`）加会被它重新压平。落盘的唯一实现是
-  `utils.save_white_as_transparent`（`desktop/stages/rembg_stage._save_transparent_png`
-  调用）：判据只看像素不看 `type`（面板参数与预览可能不同步），灰阶页走调色板 +
+  `utils.save_white_as_transparent`（`desktop/stages/rembg_stage.save_transparent_png`
+  调用，第三步「实时预览增量落盘」也走它）：判据只看像素不看 `type`（面板参数与预览可能不同步），灰阶页走调色板 +
   tRNS（纯黑白页 1bit、灰度页 2/4/8bit；透明区 RGB 保留 255，第四步 JPEG 缩略图
   才不会变黑底），彩色印章页走 RGBA 保原色。回归防护：
   `tests/selftests/rembg_transparent.py`。

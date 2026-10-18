@@ -531,6 +531,38 @@ class TaskMixin:
         """「生成预览」产出的整页去底预览图目录（中间产物，不参与 print）。"""
         return self.artifact(task_id, "rembg", "pages")
 
+    #: 「应用图」目录的**未定稿哨兵**名。第三步实时预览会往 ``stages/rembg``
+    #: 增量写零星应用图，写前先落这个点文件；「提交本次任务」的整目录重建
+    #: （``clean=True``）会顺带删掉它。第四步据此区分"已提交的成品"与"预览拼
+    #: 出来的零星产物"（用户 2026-10-18：有零星图片 ≠ 本步已提交）。
+    REMBG_DRAFT_NAME = ".draft"
+
+    def rembg_draft_marker(self, task_id: str, node_id: str | None = None) -> Path:
+        """未定稿哨兵路径：``stages/rembg[~节点]/.draft``。"""
+        try:
+            return (
+                self.node_or_stage_output(
+                    task_id, node_id, "rembg_submit", "pages"
+                )
+                / self.REMBG_DRAFT_NAME
+            )
+        except (ValueError, KeyError):
+            # 任务号非法/图坏了按"没有应用图目录"处理：调用方只要个布尔
+            return self.task_dir(task_id) / "stages" / self.REMBG_DRAFT_NAME
+
+    def rembg_submit_committed(self, task_id: str, node_id: str | None = None
+                               ) -> bool:
+        """``stages/rembg[~节点]`` 是不是**已提交**的成品（＝没有未定稿哨兵）。
+
+        ⚠️ 用户 2026-10-18 口径：实时预览往这个目录写的零星应用图**不代表**本步
+        已提交——"必须执行提交，下一步才能使用当前步骤的图片"。第四步
+        （与拼版取图）只有在这里返回 True 时才认这批图。
+        """
+        try:
+            return not self.rembg_draft_marker(task_id, node_id).exists()
+        except ValueError:
+            return False
+
     def imposition_output_dir(self, task_id: str) -> Path:
         """「图片拼版」产出的成品拼版页图目录（列表顺序即页序）。
 

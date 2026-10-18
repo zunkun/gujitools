@@ -843,7 +843,7 @@ class PageListMixin:
         > 其次是任务目录。
 
         ⚠️ **必须判"打得开吗"（目录存在）再选**：节点产物目录是**跑过那一步才
-        有**的（``stages/extract[~<节点>]`` / ``stages/rembgpreview[~<节点>]`` /
+        有**的（``stages/extract[~<节点>]`` / ``stages/rembg[~<节点>]`` /
         ``stages/imposition[~<节点>]`` / ``stages/print[~<节点>]``）；没产出时
         ``openUrl`` 指过去＝**点了没反应**（这正是用户"并非所有任务节点都能打开"
         的现场）。任务根目录建任务时就建好了、恒在，所以它是可靠的兜底。
@@ -852,10 +852,13 @@ class PageListMixin:
 
         - 「PDF排版」产物是 PDF（``stages/print[~<节点>]/print.pdf``）⇒ 取它
           所在目录；
+        - 「图片去底色」优先**应用图**目录 ``stages/rembg[~<节点>]``（提交产物 /
+          实时预览增量落的成品，用户 2026-10-18 点名要进这里），它还没产出时
+          回落预览目录 ``stages/rembgpreview[~<节点>]``；
         - 「检测文本框」不落页面图目录——产物是任务根下的 ``boxes[~<节点>].json``
           （参考缩略图 ``thumbnails/detect[~<节点>]`` 只是界面缓存、不是产物）
           ⇒ 没有节点目录，直接回落任务根，正好能看到那个坐标文件；
-        - 其余（提取 / 去底色 / 拼版）⇒ 按节点取端口 ``pages`` 的落点。
+        - 其余（提取 / 拼版）⇒ 按节点取端口 ``pages`` 的落点。
 
         节点目录不存在 / 阶段认不出 / 节点没登记对应端口（自定义流程、图坏了）
         一律回落到任务根目录（与改造前逐字节一致）。
@@ -865,19 +868,28 @@ class PageListMixin:
             return Path()
         stage = self.current_stage()
         node = self.node_of_stage(stage) if stage else None
-        node_dir: Path | None = None
-        if stage and stage != "detect":
+        candidates: list[Path] = []
+        if stage == "print":
+            candidates.append(self.store.scoped_stage_dir(task_id, node, "print"))
+        elif stage == "rembg":
+            # 去底色节点：应用图目录优先，其次预览目录（都可能还没产出）
+            for port_stage in ("rembg_submit", "rembg"):
+                try:
+                    candidates.append(
+                        self.store.node_or_stage_output(task_id, node, port_stage)
+                    )
+                except KeyError:
+                    pass
+        elif stage and stage != "detect":
             try:
-                node_dir = (
-                    self.store.scoped_stage_dir(task_id, node, "print")
-                    if stage == "print"
-                    else self.store.node_or_stage_output(
-                        task_id, node, stage, "pages")
+                candidates.append(
+                    self.store.node_or_stage_output(task_id, node, stage, "pages")
                 )
             except KeyError:
-                node_dir = None
-        if node_dir is not None and node_dir.is_dir():
-            return node_dir
+                pass
+        for candidate in candidates:
+            if candidate.is_dir():
+                return candidate
         return self.store.task_dir(task_id)
 
     # ------------------------------------------------------- 补选源 PDF

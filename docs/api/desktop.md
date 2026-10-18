@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 174 个模块、191 个公开类、1383 个公开函数/方法（生成于 2026-10-18）。
+覆盖 174 个模块、192 个公开类、1392 个公开函数/方法（生成于 2026-10-18）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -102,7 +102,7 @@
 | [`desktop.modules.rembg.page`](#desktopmodulesrembgpage) | 1 | 5 |
 | [`desktop.modules.thumb_source`](#desktopmodulesthumb_source) | 1 | 4 |
 | [`desktop.pages.createtask.page`](#desktoppagescreatetaskpage) | 1 | 6 |
-| [`desktop.pages.taskdetail.detect`](#desktoppagestaskdetaildetect) | 1 | 11 |
+| [`desktop.pages.taskdetail.detect`](#desktoppagestaskdetaildetect) | 2 | 13 |
 | [`desktop.pages.taskdetail.flow_mixin`](#desktoppagestaskdetailflow_mixin) | 1 | 0 |
 | [`desktop.pages.taskdetail.history`](#desktoppagestaskdetailhistory) | 1 | 0 |
 | [`desktop.pages.taskdetail.imposition`](#desktoppagestaskdetailimposition) | 2 | 5 |
@@ -111,7 +111,7 @@
 | [`desktop.pages.taskdetail.manifest`](#desktoppagestaskdetailmanifest) | 1 | 5 |
 | [`desktop.pages.taskdetail.page`](#desktoppagestaskdetailpage) | 1 | 22 |
 | [`desktop.pages.taskdetail.params_draft`](#desktoppagestaskdetailparams_draft) | 1 | 1 |
-| [`desktop.pages.taskdetail.print_list`](#desktoppagestaskdetailprint_list) | 1 | 1 |
+| [`desktop.pages.taskdetail.print_list`](#desktoppagestaskdetailprint_list) | 1 | 3 |
 | [`desktop.pages.taskdetail.rembg_live`](#desktoppagestaskdetailrembg_live) | 1 | 0 |
 | [`desktop.pages.taskdetail.runner`](#desktoppagestaskdetailrunner) | 1 | 2 |
 | [`desktop.pages.taskdetail.submit`](#desktoppagestaskdetailsubmit) | 1 | 1 |
@@ -121,9 +121,9 @@
 | [`desktop.services.detect_export`](#desktopservicesdetect_export) | 0 | 7 |
 | [`desktop.services.font_catalog`](#desktopservicesfont_catalog) | 1 | 6 |
 | [`desktop.services.imposition`](#desktopservicesimposition) | 0 | 31 |
-| [`desktop.services.print_plan`](#desktopservicesprint_plan) | 0 | 8 |
+| [`desktop.services.print_plan`](#desktopservicesprint_plan) | 0 | 9 |
 | [`desktop.services.rembg_export`](#desktopservicesrembg_export) | 0 | 7 |
-| [`desktop.services.rembg_live`](#desktopservicesrembg_live) | 0 | 3 |
+| [`desktop.services.rembg_live`](#desktopservicesrembg_live) | 0 | 4 |
 | [`desktop.services.stale_chain`](#desktopservicesstale_chain) | 0 | 4 |
 | [`desktop.services.submit_state`](#desktopservicessubmit_state) | 0 | 1 |
 | [`desktop.services.yolo_prewarm`](#desktopservicesyolo_prewarm) | 0 | 3 |
@@ -135,7 +135,7 @@
 | [`desktop.stages.events`](#desktopstagesevents) | 2 | 9 |
 | [`desktop.stages.generic_stage`](#desktopstagesgeneric_stage) | 0 | 2 |
 | [`desktop.stages.print_stage`](#desktopstagesprint_stage) | 0 | 3 |
-| [`desktop.stages.rembg_stage`](#desktopstagesrembg_stage) | 0 | 1 |
+| [`desktop.stages.rembg_stage`](#desktopstagesrembg_stage) | 0 | 2 |
 | [`desktop.steps.bpmn_diagram`](#desktopstepsbpmn_diagram) | 4 | 35 |
 | [`desktop.steps.control`](#desktopstepscontrol) | 1 | 11 |
 | [`desktop.steps.flow`](#desktopstepsflow) | 4 | 31 |
@@ -153,7 +153,7 @@
 | [`desktop.store.pages`](#desktopstorepages) | 1 | 9 |
 | [`desktop.store.runs`](#desktopstoreruns) | 1 | 10 |
 | [`desktop.store.store`](#desktopstorestore) | 1 | 1 |
-| [`desktop.store.tasks`](#desktopstoretasks) | 1 | 54 |
+| [`desktop.store.tasks`](#desktopstoretasks) | 1 | 56 |
 | [`desktop.store.ui_state`](#desktopstoreui_state) | 1 | 9 |
 | [`desktop.ui.color_picker`](#desktopuicolor_picker) | 5 | 30 |
 | [`desktop.ui.font_setup`](#desktopuifont_setup) | 2 | 8 |
@@ -5693,7 +5693,7 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 | `set_live_dir(path: Path \| None) -> None` | 设置（或传 None 清除）「实时预览」暂存目录。 |
 | `live_dir() -> Path \| None` | 当前生效的实时预览暂存目录（未启用为 None）。 |
 | `current_entry_path() -> str \| None` | 当前选中条目的源图路径（无条目时为 None）。 |
-| `show_live_pending() -> None` | 实时预览正在计算：先给个即时反馈，别让界面看起来没反应。 |
+| `show_live_pending() -> None` | 实时预览正在计算：只在**下方说明行**给个反馈，**不动大图**。 |
 | `refresh_page(path_text: str) -> None` | 某文件被覆盖后刷新本查看器：受影响条目图标 + 当前大图。 |
 
 ##### `__init__(empty_hint: str='暂无图片', image_editable: bool=True, parent=None)`
@@ -5733,6 +5733,18 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 非 None 时结果图优先从这里取：它是按**此刻**面板参数现算的当前页；
 而 ``_rembg_dir``（stages/rembgpreview）是上一次「生成预览」的全量产物，
 参数可能已经改过。
+
+##### `show_live_pending() -> None`
+
+实时预览正在计算：只在**下方说明行**给个反馈，**不动大图**。
+
+⚠️ 用户 2026-10-18：
+
+> 提示"按新参数去底色…"，页面要优先显示……
+
+即：**页面（当前这张图）先照常显示**，别被"正在去底色"占住大图——
+去底色要几百毫秒，把大图清成提示文字会让人以为界面卡死了。结果一回来
+``refresh_display()`` 就把大图换成新结果（说明行也随之复位）。
 
 ##### `refresh_page(path_text: str) -> None`
 
@@ -6877,6 +6889,22 @@ placeholder 还写着旧的「任务#0007」就是错的（用户会以为下一
 - 子进程检测到的框写回（origin=auto）；
 - 预览区拖动线框后写回（origin=manual），全程不生成新文件。
 
+### `class VersionedBoxCache(dict)`
+
+``detect_cache`` 的带版本号版：任何写入都自增 ``version``。
+
+给"整书判据"（单栏书结论 / 逐页检测框）做缓存失效用——那些判据要遍历
+全部页并读 ``boxes.json``，第三步实时预览按防抖反复要它，不能每次重算
+（见 ``rembg_live.RembgLiveMixin._live_book_context``）。用户在第二步改框
+会写这份缓存 ⇒ 版本号自增 ⇒ 判据缓存失效，不会拿旧框去命名产物。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(*args, **kwargs) -> None` | — |
+| `clear() -> None` | — |
+
 ### `class DetectMixin`
 
 依赖宿主页面提供的属性：store/task_id、detect_viewer、log_view、
@@ -7608,7 +7636,30 @@ _toast()。
 
 | 方法 | 说明 |
 | --- | --- |
+| `rembg_source_committed(source) -> bool` | 某个「去底色成品」目录是否**已提交**（＝没有 ``.draft`` 哨兵）。 |
+| `print_source_committed() -> bool` | 第四步取图来源是不是**已提交**的成品（去底色来源专有闸门）。 |
 | `print_source_stage() -> str` | 第四步**当前**的取图来源阶段 key（``rembg_submit`` 或 ``imposition``）。 |
+
+##### `rembg_source_committed(source) -> bool`
+
+某个「去底色成品」目录是否**已提交**（＝没有 ``.draft`` 哨兵）。
+
+用户 2026-10-18：
+
+> 虽然可能 rembg 会有零星图片，但是并不表明，当前步骤已经提交，
+> 必须执行提交，下一步才能使用当前步骤的图片。
+
+实时预览会往 ``stages/rembg[~节点]`` 增量写零星应用图，并留下哨兵；
+提交（``clean=True`` 整目录重建）顺带删掉它（见
+``store.rembg_draft_marker`` / ``desktop.services.rembg_live``）。
+非「去底色成品」目录（拼版成品、入口图片）一律不受约束 → True。
+
+##### `print_source_committed() -> bool`
+
+第四步取图来源是不是**已提交**的成品（去底色来源专有闸门）。
+
+拼版生效时来源换成 ``stages/imposition``——拼版成品是从**去底色成品**
+合成的，源头没提交一样不许用，故这里顺着拼版的上游再查一次。
 
 ##### `print_source_stage() -> str`
 
@@ -7624,20 +7675,35 @@ _toast()。
 
 源码：[`desktop/pages/taskdetail/rembg_live.py`](../../desktop/pages/taskdetail/rembg_live.py)
 
-第三步「图片去底色」的实时预览控制器。
+第三步「图片去底色」的实时预览控制器（计算 + **增量落盘**）。
 
-用户改 offset / type / 印章等参数时，**只重算当前页**并立刻显示，不必等
-「生成预览」的全量任务；预览区翻页时，若那一页还没按当前参数算过，也算它。
+用户改 offset / type / 印章等参数、翻页、改 area/border 时，**只重算（或重新
+合成）当前页**并立刻显示，不必等「生成预览」的全量任务。
 
-三条边界（都是刻意的）：
+三条边界：
 
-1. **只在参数与「原本去底色参数」不同时才重算**。原本参数 = 最近一次成功
-   「生成预览」所用的参数；一致就说明正式产物就是当前参数的结果，直接用它，
-   不做无谓计算。
-2. **一次只算一页**。全量是「生成预览」按钮的职责。
-3. **只影响显示，不落正式产物**。结果写系统临时目录（``services.rembg_live``），
-   绝不碰 ``stages/rembgpreview`` —— 那里一旦被单页结果覆盖，「提交本次任务」
-   就会把不同参数下算出来的图混在一起。
+1. **只看当前页**。全量是「生成预览」按钮的职责。
+2. **参数与「原本去底色参数」一致且已落盘**时不再重复去底色（原本参数 = 最近
+   一次成功「生成预览」所用参数，或本页上一次实时预览的）。
+3. **增量落盘**（2026-10-18 起，用户明确要求）：该页去底色结果写
+   ``stages/rembgpreview[~节点]``，按 area/border 合成的「应用图」写
+   ``stages/rembg[~节点]``。两个目录允许**不完整**。
+
+⚠️ **显示优先、落盘异步**（用户 2026-10-18：「页面要优先显示」「落地实体文件
+后端执行，不要影响前端渲染/主线程，页面先渲染出效果」）：去底色一算完就
+``emit finished`` 上屏，写正式产物目录（拷预览 + 合成应用图 + 透明 PNG 编码）
+在 worker 线程继续跑，**不阻塞大图**；「正在按新参数去底色…」只写在说明行，
+**不清大图**。已经按当前参数去过底色的页**不二次去底色**（见下面第 2 条）。
+
+⚠️ 由此产生的两条硬约定（护栏见 ``tests/selftests/``）：
+
+- ``stages/rembg`` 有零星文件**不等于本步已提交**。写应用图前先落 ``.draft``
+  哨兵，第四步只有在该哨兵不存在时才认这个目录（用户 2026-10-18：
+  > 虽然可能 rembg 会有零星图片，但是并不表明当前步骤已经提交，
+  > 必须执行提交，下一步才能使用当前步骤的图片。
+  ）。
+- 各页可能在不同参数下算出来：那是**临时可观**的中间态，权威产物仍由全量的
+  「生成预览 + 提交」重建（二者都会 clean 整目录，增量产物随之被覆盖）。
 
 滑块拖动时 ``valueChanged`` 会连发，所以统一走 ``LIVE_DEBOUNCE_MS`` 防抖；
 每次请求带 token，迟到的旧结果直接丢弃（否则慢的旧结果会盖掉新的）。
@@ -7645,8 +7711,10 @@ _toast()。
 ### `class RembgLiveMixin`
 
 依赖宿主页面提供：store / task_id / process / control_stack /
-rembg_viewer / log_view / current_stage() / run_worker /
-_latest_success_run() / PREVIEW_PARAM_KEYS。
+rembg_viewer / log_view / current_stage() / current_node() / run_worker /
+_latest_success_run() / PREVIEW_PARAM_KEYS / _manifest_paths() /
+_book_page_widths() / _book_profile() / _side_overrides_all() /
+_boxes_map_all() / _update_submit_button()。
 
 ---
 
@@ -8571,6 +8639,7 @@ PDF 侧 ``functions/print._load_image`` 压平到白纸；编辑器/预览按 RG
 | `missing_extract_pages_spec(output_dir: Path, total: int) -> str \| None` | 提取输出目录中缺失的页码，压缩为 CLI pages 参数（如 "3,7-9"）。 |
 | `plan_rembg_submit_entries(manifest_paths: list[Path], result_path_for, boxes_for, area: int, single_column_book: bool=False, page_width_for=None, side_for=None) -> list[dict]` | 预览结果 + 检测框 + area/border → 最终图片条目。 |
 | `entry_to_effect_spec(entry: dict, border) -> dict` | 提交条目 → worker 效果合成规格（run_print_stage/run_rembg_submit_stage 用）。 |
+| `plan_submit_job(spec: dict, size: tuple[int, int] \| None) -> dict` | 一条效果规格 → 单条合成作业（输出文件名 + 合成参数）。 |
 | `drop_foreign_stage_pages(pages: list[dict] \| None, source_dir: Path, stages_root: Path) -> list[dict]` | 从待打印清单里剔除「属于本任务**别的阶段**产物」的条目。 |
 | `rect_fits_image(rect, image_size_px, rect_size_px=None) -> bool` | 这条逐页 rect 是否**还适用于当前这张图**（判据唯一处）。 |
 | `stale_rect_pages(pages, size_for) -> list[dict]` | ``pages`` 里**图像已换、旧 rect 不再适用**的那几条（``[]`` = 全都还适用）。 |
@@ -8645,6 +8714,20 @@ area=1 与「双框 + area=2/3」在 border 为空时**不等价**，曾导致�
 ``full`` 原样透传给合成层：整幅(fullcontent)页的框**原样下传**——
 area=4 保留整页内容、area 1/2/3 统一按合并语义走单框布局（不拆
 ``-l``/``-r``、不镜像）——见 ``desktop.workers.preview_worker.region_canvas_specs``。
+
+#### `plan_submit_job(spec: dict, size: tuple[int, int] | None) -> dict`
+
+一条效果规格 → 单条合成作业（输出文件名 + 合成参数）。
+
+``size`` 是该条目图片的像素尺寸；``None`` 表示读不到文件头（坏图/被占用），
+该作业记 ``names=[]``——执行端据此报「无法读取图片」，不静默丢页。
+
+⚠️ 输出文件名规则（``{label}.png``；多画布 ``{label}-N.png``）**只在这里
+一份**：执行端（``desktop.stages.rembg_stage``）与第三步「实时预览增量落盘」
+（``desktop.services.rembg_live``）共用它，命名不会两处各写一套而漂移。
+
+⚠️ ``region_canvas_specs`` 走**函数内延迟导入**：本模块整体是不依赖 Qt 的
+纯逻辑（见模块 docstring），只有真要算输出张数时才拉进那份 Qt 几何实现。
 
 #### `drop_foreign_stage_pages(pages: list[dict] | None, source_dir: Path, stages_root: Path) -> list[dict]`
 
@@ -8800,18 +8883,33 @@ singletask「去底色」导出目录的**标记**与白底→透明**副本**�
 
 源码：[`desktop/services/rembg_live.py`](../../desktop/services/rembg_live.py)
 
-第三步「改参数实时预览当前页」的计算与落盘。
+第三步「图片去底色」的实时预览：计算 + **增量落盘**。
 
-与「生成预览」的分工
---------------------
+分工（2026-10-18 调整）
+------------------------
 - **「生成预览」**：全量正式产物，写 ``stages/rembgpreview``，会被「提交本次
   任务」读取。参数一变它就过期（见 ``services/submit_state`` 的 PREVIEW_STALE）。
-- **本模块**：只算用户当前看着的**那一页**，落到系统临时目录，仅供预览区显示。
-  **绝不碰 rembgpreview** —— 否则各页是不同参数下算出来的，提交时新旧混用，
-  成品会不自洽。
+- **「提交本次任务」**：读 ``stages/rembgpreview``，按 area/border 合成为最终
+  交付图写 ``stages/rembg``；它是第四步唯一认可的成品来源。
+- **本模块（实时预览）**：只算用户当前看着的**那一页**，并**增量落盘**——
+  ①该页去底色结果写 ``stages/rembgpreview[~节点]/{stem}.png``；
+  ②按 area/border 合成的「应用图」写 ``stages/rembg[~节点]/…``。
+
+⚠️ **新不变量（旧的"绝不碰 rembgpreview/rembg"已被用户 2026-10-18 明确推翻）**：
+两个正式目录允许**不完整**（用户预览了哪一页，那一页才有产物）。由此两条铁律：
+
+1. ``stages/rembg`` 里出现零星文件**不等于本步已提交**。增量落盘前会先往该目录
+   写 ``.draft`` 哨兵，第四步只有在该哨兵不存在（＝最近一次是**提交**产物）时
+   才认这个目录（见 ``desktop.store.tasks.rembg_submit_committed``）。用户原话：
+   > 虽然可能 rembg 会有零星图片，但是并不表明，当前步骤已经提交，
+   > 必须执行提交，下一步才能使用当前步骤的图片。
+2. 各页可能在不同参数下算出来（用户中途改了参数）：这只是**临时可观**的中间态，
+   权威产物仍由全量的「生成预览 + 提交」重建（二者都会 clean 整目录）。
 
 计算入口统一走 ``utils.rembg_page``，与 CLI 产物逐像素同源（``functions.rembg``
-用的是同一个函数）。
+用的是同一个函数）；「应用图」的几何/编码/命名与提交**完全复用同一批函数**
+（``print_plan.plan_submit_job`` + ``preview_worker.compose_region_output``
++ ``rembg_stage.save_transparent_png``），零漂移。
 
 ### 模块函数
 
@@ -8820,6 +8918,7 @@ singletask「去底色」导出目录的**标记**与白底→透明**副本**�
 | `live_dir(task_id: str) -> Path` | 该任务的实时预览暂存目录（系统临时目录下，按 task_id 隔离）。 |
 | `reset(task_id: str) -> None` | 清空该任务的实时暂存（参数回到「生成预览」状态时调用）。 |
 | `render_page(image_path: str, args: dict, out_dir: str \| Path) -> str` | 对单页执行去底色并写入 ``out_dir``，返回结果文件路径。 |
+| `apply_effects(preview_path: str \| Path, jobs: list[dict], out_dir: str \| Path) -> tuple[list[str], list[str]]` | 把某页的去底色结果按**提交规则**合成「应用图」，写 ``out_dir``。 |
 
 #### `render_page(image_path: str, args: dict, out_dir: str | Path) -> str`
 
@@ -8831,6 +8930,17 @@ singletask「去底色」导出目录的**标记**与白底→透明**副本**�
 
 PNG 用 ``compress_level=1``：这是**临时预览**，编码速度比压缩率重要
 （正式产物走 ``functions.rembg``，那里仍是 level=9）。
+
+#### `apply_effects(preview_path: str | Path, jobs: list[dict], out_dir: str | Path) -> tuple[list[str], list[str]]`
+
+把某页的去底色结果按**提交规则**合成「应用图」，写 ``out_dir``。
+
+``jobs`` 由 ``desktop.services.print_plan.plan_submit_job`` 给出（含 boxes /
+area / border / full 与输出文件名）。与「提交本次任务」逐像素同源：几何走
+``compose_region_output``、编码走 ``rembg_stage.save_transparent_png``。
+
+返回 ``(写出的文件名, 错误信息)``；**单条失败不拖垮整批**（与提交阶段同款
+容错）。⚠️ 重依赖同样延迟导入（QtGui / numpy / PIL 不进启动路径）。
 
 ---
 
@@ -9625,7 +9735,18 @@ rembg_submit 阶段执行器：把「生成预览」产出的整页去底图合�
 
 | 函数 | 说明 |
 | --- | --- |
+| `save_transparent_png(image, dst: Path) -> None` | 把合成结果落盘为**白底透明** PNG（编码规则见 ``utils.transparent_png``）。 |
 | `run_rembg_submit_stage(config: dict) -> int` | rembg 提交：把「生成预览」产出的整页去底图，按 area/border + 检测框 |
+
+#### `save_transparent_png(image, dst: Path) -> None`
+
+把合成结果落盘为**白底透明** PNG（编码规则见 ``utils.transparent_png``）。
+
+⚠️ 不许绕过这个函数直接 ``image.save(dst, "PNG")``：那样写出的白底图会和
+透明底产物混在一批里（护栏 tests/selftests/rembg_transparent.py 会盯着）。
+
+⚠️ 2026-10-18 起对外公开（原 ``_save_transparent_png``）：第三步「实时预览
+增量落盘」也走它——两份产物（提交 / 预览）必须逐像素同一套编码。
 
 #### `run_rembg_submit_stage(config: dict) -> int`
 
@@ -12548,6 +12669,8 @@ JSON 文件，没有旧数据（SQLite）需要迁移。
 | `extract_output_dir(task_id: str) -> Path` | 提取图片直接位于 stages/extract（无 PDF 名/嵌套子目录）。 |
 | `rembg_output_dir(task_id: str) -> Path` | 步骤三最终图片目录（「提交本次任务」产出，print 阶段从此取图）。 |
 | `rembg_preview_output_dir(task_id: str) -> Path` | 「生成预览」产出的整页去底预览图目录（中间产物，不参与 print）。 |
+| `rembg_draft_marker(task_id: str, node_id: str \| None=None) -> Path` | 未定稿哨兵路径：``stages/rembg[~节点]/.draft``。 |
+| `rembg_submit_committed(task_id: str, node_id: str \| None=None) -> bool` | ``stages/rembg[~节点]`` 是不是**已提交**的成品（＝没有未定稿哨兵）。 |
 | `imposition_output_dir(task_id: str) -> Path` | 「图片拼版」产出的成品拼版页图目录（列表顺序即页序）。 |
 | `print_output_pdf(task_id: str) -> Path` | print 阶段产物 print.pdf 的完整路径。 |
 | `task_diagram(task_id: str)` | 本任务的**流程图**（``FlowDiagram``：节点类型 + 坐标 + 折点）。 |
@@ -12711,6 +12834,14 @@ exist_ok=False``，被抢就顺延），所以并发/历史残留时**实际拿�
 的根源；现在它们都转调到这里，而落点表
 （:data:`desktop.steps.ports.STAGE_LOCATIONS`）是唯一事实来源。
 加一步 = 加一行表，不用动 store。
+
+##### `rembg_submit_committed(task_id: str, node_id: str | None=None) -> bool`
+
+``stages/rembg[~节点]`` 是不是**已提交**的成品（＝没有未定稿哨兵）。
+
+⚠️ 用户 2026-10-18 口径：实时预览往这个目录写的零星应用图**不代表**本步
+已提交——"必须执行提交，下一步才能使用当前步骤的图片"。第四步
+（与拼版取图）只有在这里返回 True 时才认这批图。
 
 ##### `imposition_output_dir(task_id: str) -> Path`
 
@@ -15323,35 +15454,49 @@ PDF 仍要走「生成PDF」按钮（functions/print.py）。
 
 源码：[`desktop/workers/rembg_live_worker.py`](../../desktop/workers/rembg_live_worker.py)
 
-单页实时去底色的后台 worker（第三步「改参数实时预览」专用）。
+单页实时去底色的后台 worker（第三步「改参数 / 翻页实时预览」专用）。
 
 与 ``PreviewWorker`` 的分工：那个只负责**显示**（读图 / 按区域裁剪 / 缩放），
-本 worker 负责**计算**（真正的去底色）。二者接力：本 worker 先把结果落到
-临时目录，预览区再按 ``live_dir`` 找到它并走原有的显示管线。
+本 worker 负责**计算 + 增量落盘**：算完当前页后
+①把结果落实时暂存目录（``services.rembg_live.live_dir``）供预览区显示；
+②把该页去底色结果**增量**复制进正式预览目录 ``stages/rembgpreview[~节点]``；
+③按 area/border 规则合成的「应用图」落 ``stages/rembg[~节点]``（可多张）。
 
 去底色对整页图（数千像素）要百毫秒级 CPU，放主线程会卡住界面，因此一律
 丢到 QThread 里跑。结果通过 token 回传，宿主据此丢弃"已经过期的"结果
 （用户连拖两次滑块时，慢的那次回来得晚，不能覆盖新的）。
 
+⚠️ 增量落盘的两条硬约定（用户 2026-10-18）：写「应用图」**之前**先落
+``.draft`` 哨兵——``stages/rembg`` 里有零星文件**不代表本步已提交**，第四步
+只有在该哨兵不存在时才认这个目录（见 ``store.rembg_submit_committed``）。
+
 ### `class RembgLiveWorker(QObject)`
 
-一次性 worker：单页去底色 → 写临时文件。
+一次性 worker：单页去底色 + 增量落盘（预览目录 / 应用图目录）。
 
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(image_path: str, args: dict, out_dir: str, token: object) -> None` | 参数: |
+| `__init__(image_path: str, args: dict, out_dir: str, token: object, *, render: bool=True, preview_out: str \| None=None, apply_out: str \| None=None, jobs: list[dict] \| None=None, draft_marker: str \| None=None, base_path: str \| None=None) -> None` | 参数: |
 | `cancel() -> None` | 请求放弃计算。token 守卫只丢**结果**不省**算力**：连拖滑块时 |
-| `run() -> None` | 线程入口：算完发 finished，异常发 failed（不抛到线程外）。 |
+| `run() -> None` | 线程入口：算完发 finished / applied，异常发 failed（不抛到线程外）。 |
 
-##### `__init__(image_path: str, args: dict, out_dir: str, token: object) -> None`
+##### `__init__(image_path: str, args: dict, out_dir: str, token: object, *, render: bool=True, preview_out: str | None=None, apply_out: str | None=None, jobs: list[dict] | None=None, draft_marker: str | None=None, base_path: str | None=None) -> None`
 
 参数:
 image_path: 待去底色的源图（extract 产物）。
 args: rembg 面板收集的参数（offset/type/seal/…）。
 out_dir: 实时暂存目录（``services.rembg_live.live_dir``）。
 token: 本次请求的标识，供宿主判断结果是否已过期。
+render: 是否重算去底色。``False`` 时（只改了 area/border）直接用
+    ``base_path`` 那份已完成的结果重合成「应用图」，不重复去底色。
+preview_out: 正式预览目录（``stages/rembgpreview[~节点]``）；渲染那单
+    会把结果增量复制进去。
+apply_out: 「应用图」目录（``stages/rembg[~节点]``）。
+jobs: 提交作业（``print_plan.plan_submit_job`` 产出），逐条合成落盘。
+draft_marker: 写应用图前先落的哨兵文件（``stages/rembg[~节点]/.draft``）。
+base_path: ``render=False`` 时的源图（该页已落盘的去底色结果）。
 
 ##### `cancel() -> None`
 
@@ -15361,11 +15506,12 @@ token: 本次请求的标识，供宿主判断结果是否已过期。
 
 ##### `run() -> None`
 
-线程入口：算完发 finished，异常发 failed（不抛到线程外）。
+线程入口：算完发 finished / applied，异常发 failed（不抛到线程外）。
 
 ⚠️ 取消路径也必须发终态信号（finished/failed 之一），否则线程事件
 循环永不退出（SourceThumbnailsWorker 同款教训）；空路径结果由宿主
 按 token 丢弃。
+⚠️ ``QThread.run()`` 必须 try/except：异常逃出线程＝"点了没反应"。
 
 ---
 

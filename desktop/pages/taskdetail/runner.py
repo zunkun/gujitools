@@ -80,6 +80,8 @@ class StageRunnerMixin:
         _refresh_stale_notices: Callable[[], None]
         _compose_imposition_now: Callable[[], None]
         _print_entries: Callable[[], tuple]
+        #: 「第四步取图来源是否已提交」闸门（PrintListMixin 提供，见 print_list）
+        print_source_committed: Callable[[], bool]
         _build_print_effects: Callable[..., Any]
         _imposition_switch_state: Callable[[], tuple]
         _latest_print_pdf_path: Callable[[], Path | None]
@@ -372,6 +374,18 @@ class StageRunnerMixin:
             #    跳过（旧版每次点击都在 GUI 主线程全量重合成，点「生成PDF」
             #    界面立刻冻结）；真要合成时也转后台线程 + 事件循环等待，
             #    界面保持响应（详见 _compose_imposition_now 的说明）。
+            #
+            # ⚠️ 「去底色成品未提交」先挡一道（用户 2026-10-18）：实时预览会往
+            #    ``stages/rembg`` 增量写零星应用图，但那**不代表**本步已提交——
+            #    必须提交，下一步才能用。判据见 ``print_source_committed``（哨兵）。
+            if not self.print_source_committed():
+                self._toast(
+                    "warning",
+                    "去底色成品尚未提交",
+                    "磁盘上只有「实时预览」按单页落下的零星应用图；请回到第三步"
+                    "点「提交本次任务」生成完整成品，下一步才能使用。",
+                )
+                return
             self._compose_imposition_now()
             entries, doc = self._print_entries()
             entries = [e for e in entries if Path(e["file"]).exists()]

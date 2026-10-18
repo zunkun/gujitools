@@ -51,7 +51,7 @@ from desktop.ui.toast import show_toast
 from desktop.ui.widgets import apply_to, bold_button
 from desktop.utils.files import changed_images, image_files_fingerprint
 from desktop.workers import CopySourceWorker, WorkerHost, connect_queued
-from desktop.pages.taskdetail.detect import DetectMixin
+from desktop.pages.taskdetail.detect import DetectMixin, VersionedBoxCache
 from desktop.pages.taskdetail.flow_mixin import FlowMixin
 from desktop.pages.taskdetail.history import HistoryMixin
 from desktop.pages.taskdetail.imposition import ImpositionMixin
@@ -212,7 +212,7 @@ class TaskDetailPage(
         self._stage_nodes: dict[str, list[str]] = {}
         #: 最近一次的阶段状态：执行权变化时要重刷按钮，但不值得为此再读一次盘
         self._last_stage_state: dict = {"status": "pending"}
-        self.detect_cache: dict[str, list[tuple] | None] = {}
+        self.detect_cache: dict[str, list[tuple] | None] = VersionedBoxCache()
         self._last_error_line: str | None = None
         self._extract_seen = 0  # 提取过程中已展示的结果页数
         #: 最近一次 progress 事件 (done, total)。⚠️ 这里必须给**实例级默认值**：

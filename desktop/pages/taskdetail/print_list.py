@@ -175,6 +175,58 @@ class PrintListMixin:
                 except OSError:
                     pass
 
+    def rembg_source_committed(self, source) -> bool:
+        """某个「去底色成品」目录是否**已提交**（＝没有 ``.draft`` 哨兵）。
+
+        用户 2026-10-18：
+
+        > 虽然可能 rembg 会有零星图片，但是并不表明，当前步骤已经提交，
+        > 必须执行提交，下一步才能使用当前步骤的图片。
+
+        实时预览会往 ``stages/rembg[~节点]`` 增量写零星应用图，并留下哨兵；
+        提交（``clean=True`` 整目录重建）顺带删掉它（见
+        ``store.rembg_draft_marker`` / ``desktop.services.rembg_live``）。
+        非「去底色成品」目录（拼版成品、入口图片）一律不受约束 → True。
+        """
+        if source is None:
+            return False
+        path = Path(source)
+        # 目录名形态 ``rembg`` / ``rembg~<节点>``（与 _print_thumb_provider 同源）
+        if not (path.name == "rembg" or path.name.startswith("rembg~")):
+            return True
+        return not (path / self.store.REMBG_DRAFT_NAME).exists()
+
+    def _imposition_upstream_dir(self):
+        """拼版这一步的 ``pages`` 输入端目录（＝拼版成品的**源头**）。"""
+        task_id = self.task_id
+        if not task_id:
+            return None
+        try:
+            node = self.node_of_stage("imposition")
+            if node:
+                return self.store.node_input(
+                    task_id, node, "pages", self.imposition_effective()
+                )
+            return self.store.stage_input(
+                task_id, "imposition", "pages",
+                imposition_active=self.imposition_effective(),
+            )
+        except Exception:  # noqa: BLE001 - 图坏了不该拖垮闸门
+            return None
+
+    def print_source_committed(self) -> bool:
+        """第四步取图来源是不是**已提交**的成品（去底色来源专有闸门）。
+
+        拼版生效时来源换成 ``stages/imposition``——拼版成品是从**去底色成品**
+        合成的，源头没提交一样不许用，故这里顺着拼版的上游再查一次。
+        """
+        if not getattr(self, "task_id", None):
+            return False
+        source = Path(self.print_source_dir())
+        if source.name == "rembg" or source.name.startswith("rembg~"):
+            return self.rembg_source_committed(source)
+        return self.rembg_source_committed(self._imposition_upstream_dir())
+
     def _print_entries(self) -> tuple[list[dict], dict]:
         """第四步待打印图片列表（规则见 services/print_plan.plan_print_entries）。
 
@@ -188,6 +240,11 @@ class PrintListMixin:
         **当前 PDF排版参数**（纸张/方向/边距/原比例）重新排版。
         """
         source_dir = self.print_source_dir()
+        if not self.print_source_committed():
+            # 去底色成品尚未提交（磁盘上只有「实时预览」按单页落下的零星应用图）
+            # ⇒ 不建表、**不落 print.json**（保住用户已排好的顺序），等提交后自然
+            # 重建。用户 2026-10-18：有零星图片 ≠ 本步已提交，下一步不许用。
+            return [], {"rembg_snapshot": [], "pages": []}
         rembg_files = sorted(
             list_stage_images(source_dir),
             key=lambda p: natural_sort_key(p.name),

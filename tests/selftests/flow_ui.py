@@ -1768,6 +1768,23 @@ def _check_input_entry_marks() -> None:
         ok("节点目录存在 ⇒ 优先打开节点目录",
            page._current_node_dir() == node_dir
            and page._current_node_dir() != store.task_dir(tid))
+        # 用户 2026-10-18：「图片去底色」节点优先打开**应用图**目录
+        # （stages/rembg，提交产物 / 实时预览增量落的成品），它还没产出时
+        # 回落预览目录（stages/rembgpreview），都没有才回落任务根。
+        rembg_bar = page.bar_index_of_step("rembg")
+        if rembg_bar is not None:
+            page._select_stage(rembg_bar)
+            app.processEvents()
+            ok("去底色节点：应用图目录还没产出 ⇒ 回落任务根",
+               page._current_node_dir() == store.task_dir(tid))
+            preview_dir = store.rembg_preview_output_dir(tid)
+            preview_dir.mkdir(parents=True, exist_ok=True)
+            ok("去底色节点：只有预览目录时 ⇒ 打开预览目录",
+               page._current_node_dir() == preview_dir)
+            apply_dir = store.rembg_output_dir(tid)
+            apply_dir.mkdir(parents=True, exist_ok=True)
+            ok("去底色节点：有应用图目录时 ⇒ 优先打开 stages/rembg",
+               page._current_node_dir() == apply_dir)
 
         shell.close()
     finally:

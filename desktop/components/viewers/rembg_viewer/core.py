@@ -187,8 +187,17 @@ class RembgPreviewWidget(
 
 
     def show_live_pending(self) -> None:
-        """实时预览正在计算：先给个即时反馈，别让界面看起来没反应。"""
-        self.view.clear_image("正在按新参数去底色…")
+        """实时预览正在计算：只在**下方说明行**给个反馈，**不动大图**。
+
+        ⚠️ 用户 2026-10-18：
+
+        > 提示"按新参数去底色…"，页面要优先显示……
+
+        即：**页面（当前这张图）先照常显示**，别被"正在去底色"占住大图——
+        去底色要几百毫秒，把大图清成提示文字会让人以为界面卡死了。结果一回来
+        ``refresh_display()`` 就把大图换成新结果（说明行也随之复位）。
+        """
+        self.toggle_caption.setText("正在按新参数去底色…")
 
 
     def _current_entry(self) -> dict | None:

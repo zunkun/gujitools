@@ -223,6 +223,51 @@ def entry_to_effect_spec(entry: dict, border) -> dict:
     }
 
 
+def plan_submit_job(spec: dict, size: tuple[int, int] | None) -> dict:
+    """一条效果规格 → 单条合成作业（输出文件名 + 合成参数）。
+
+    ``size`` 是该条目图片的像素尺寸；``None`` 表示读不到文件头（坏图/被占用），
+    该作业记 ``names=[]``——执行端据此报「无法读取图片」，不静默丢页。
+
+    ⚠️ 输出文件名规则（``{label}.png``；多画布 ``{label}-N.png``）**只在这里
+    一份**：执行端（``desktop.stages.rembg_stage``）与第三步「实时预览增量落盘」
+    （``desktop.services.rembg_live``）共用它，命名不会两处各写一套而漂移。
+
+    ⚠️ ``region_canvas_specs`` 走**函数内延迟导入**：本模块整体是不依赖 Qt 的
+    纯逻辑（见模块 docstring），只有真要算输出张数时才拉进那份 Qt 几何实现。
+    """
+    from desktop.workers.preview_worker import region_canvas_specs
+
+    label = str(spec.get("label") or Path(spec["file"]).stem)
+    if size is None:
+        return {
+            "file": str(spec["file"]), "compose": False, "boxes": [],
+            "area": 1, "border": None, "full": False, "names": [], "label": label,
+        }
+    effect = spec.get("effect")
+    if effect and any(effect.get("boxes") or []):
+        boxes = list(effect.get("boxes") or [])
+        area = int(effect.get("area", 1))
+        border = effect.get("border")
+        full = bool(effect.get("full"))
+        canvases = len(region_canvas_specs(size, boxes, area, border, full=full))
+        has_boxes = True
+    else:
+        # 无检测框/无区域参数：整页预览图原样交付
+        boxes, area, border, full = [], 1, None, False
+        canvases = 1
+        has_boxes = False
+    names = (
+        [f"{label}.png"] if canvases == 1
+        else [f"{label}-{i + 1}.png" for i in range(canvases)]
+    )
+    return {
+        "file": str(spec["file"]), "compose": has_boxes,
+        "boxes": boxes, "area": area, "border": border, "full": full,
+        "names": names, "label": label,
+    }
+
+
 # ---------------------------------------------------------------- print 效果规格
 # ---------------------------------------------------------------- 待打印列表
 def drop_foreign_stage_pages(
