@@ -263,6 +263,14 @@ def load_yolo_model() -> object:
 
         imported_at = time.perf_counter()
         _YOLO_MODEL = YOLO(str(resolved))
+        # ⚠️ 权重若是 end2end（NMS-free）模型，部分 ultralytics 版本加载后会启用它，
+        #    而它们的 end2end 后处理对这类权重是错的：会让一侧 harfcontent 的置信度
+        #    塌到 0.15~0.22（低于阈值被丢弃），表现为「同一页左右两个半幅只剩一个」。
+        #    实测 8.4.64 有、8.4.146 起已修；打包内置的是 8.4.145，刚好在临界点上，
+        #    不能指望。这里统一强制关掉，任何版本都走标准 NMS 后处理。
+        if getattr(_YOLO_MODEL.model, "end2end", False):
+            _YOLO_MODEL.model.end2end = False
+            print("检测到 end2end=True，已强制关闭（改用标准 NMS 后处理）")
         # 设备选择：有 CUDA 就吃 GPU（用户要求"GPU 好就吃 GPU"），
         # GUJI_YOLO_DEVICE 可显式指定；挂了回落 CPU——GPU 只是加速件，
         # 绝不能让设备初始化失败把"加载模型"整个搞挂。

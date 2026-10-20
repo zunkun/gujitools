@@ -22,7 +22,7 @@ opencv-python-headless>=4.5.0  # cv2（无 GUI 依赖，适合服务器和打包
 numpy>=1.21.0            # 数组运算
 
 # ---- YOLO 检测文本框 (crop / cropremove) ----
-ultralytics>=8.0.0       # YOLO 模型推理（依赖 torch，pip 会自动安装）
+ultralytics>=8.4.146     # YOLO 模型推理（依赖 torch，pip 会自动安装）
 
 # ---- 打包 (build.py) ----
 pyinstaller>=6.0.0
