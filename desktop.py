@@ -72,6 +72,12 @@ def main() -> int:
 
         return worker_main()
 
+    # GUI 主进程**禁止**加载 YOLO 模型（torch/ultralytics 约 350MB，不许进界面
+    # 进程，见 AGENTS.md 分层守卫）：服务没走成时宁可报错，也不回落到本进程内。
+    # ⚠️ 只放在 GUI 分支：worker 子进程允许回落（它本来就是一次性的重活进程），
+    # 常驻服务进程自己更不需要这个开关。
+    os.environ.setdefault("GUJI_YOLO_REQUIRE_SERVICE", "1")
+
     _prepare_gui_startup()
 
     from desktop.app import main as app_main

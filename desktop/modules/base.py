@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 )
 from desktop.components.log_panel import LogPanel
 from desktop.ui import theme as T
+from desktop.ui.log_throttle import LogCoalescer
 from desktop.ui.toast import show_toast
 from desktop.ui.widgets import Card, apply_to
 from desktop.workers import WorkerHost
@@ -145,6 +146,14 @@ class ModulePage(QWidget, WorkerHost):
         self.log_panel = LogPanel()
         # 页面各处沿用的 self.log_view 直接指向面板内的文本域（调用点不变）
         self.log_view = self.log_panel.log_view
+        #: 执行日志的合并器（见 :mod:`desktop.ui.log_throttle`）。逐页打印的阶段
+        #: 一秒能来几十上百行，逐行 ``append`` 会把主线程拖在文档布局与状态条
+        #: 刷新上——用户报的「检测文本框执行过程中页面卡顿」有一半来自这里。
+        self._logs = LogCoalescer(self.log_view)
+        # ⚠️ 补接管「清空日志」：``LogPanel`` 自己接的是 ``log_view.clear``，而
+        #    合并器里可能还压着尚未落笔的行 —— 不处理的话清空后它们会在定时器
+        #    到期时重新冒出来（看着像"清空没生效"）。
+        self.log_panel.clear_button.clicked.connect(self._clear_log)
         root.addWidget(self.log_panel)
 
         # ---- 初始只留大输入区（用户 2026-10-03，见类 docstring）----
@@ -276,17 +285,33 @@ class ModulePage(QWidget, WorkerHost):
         show_toast(self, kind, title, content)
 
     def log(self, text: str) -> None:
-        """往底部日志区追加一行。
+        """往底部日志区追加一行（**攒批**：见 :mod:`desktop.ui.log_throttle`）。
 
         ⚠️ 用 ``append`` 而不是 ``appendPlainText``：日志区换成了
         :class:`desktop.components.log_panel.LogPanel`，它的文本域是
         qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
+
+        ⚠️ 走 ``self._logs`` 而不是直接 ``log_view.append``：逐页打印的阶段
+        一秒能来几十上百行，合并成一次 append 才不会把主线程拖在文档布局上。
+        收尾/关页要 :meth:`flush_logs` 把压着的行落笔。
         """
-        self.log_view.append(text)
+        self._logs.append(text)
+
+    def flush_logs(self) -> None:
+        """把日志合并器里压着的行立刻落笔（收尾 / 关页时调，别让日志少一截）。"""
+        self._logs.flush()
+
+    def _clear_log(self) -> None:
+        """清空日志（连同合并器里压着、尚未落笔的行）。"""
+        self._logs.flush()
+        self.log_view.clear()
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt 命名
         """关闭时收尾后台线程，避免解释器退出时被强杀（同详情页规矩）。"""
         self.shutdown_workers()
+        # ⚠️ 关页前把日志合并器里压着的行落笔：窗口一关定时器就不会再触发，
+        #    不冲的话用户翻日志时会发现少一截。
+        self.flush_logs()
         event.accept()
 
 
@@ -347,6 +372,15 @@ class StepModulePage(ModulePage):
         title = f"{self.SPEC.title}失败" if self.SPEC else "处理失败"
         self.toast("error", title, message)
 
+    def step_job(self):
+        """本页执行内核要跑的 job；默认 ``None`` ⇒ 让 ``StepControl`` 按 spec 造命令 job。
+
+        需要**自定义执行逻辑**的页面覆盖它（如「检测文本框」要注入复用、把逐页
+        检测换个入口）：返回值直接喂给 ``StepControl`` 的 ``job`` 参数。返回
+        ``None`` 时行为与"没有这个钩子"**完全一致**，其它模块页零影响。
+        """
+        return None
+
     # ------------------------------------------------------------------ 骨架
     def __init__(self, parent=None):
         """先把页头文案从 spec 落成实例属性，再建骨架。
@@ -403,7 +437,7 @@ class StepModulePage(ModulePage):
         # 子类必须声明 SPEC（本类只做基类，不直接实例化）
         assert spec is not None, "步骤模块页必须声明 SPEC"
         card = Card()
-        self.control = StepControl(spec, zone=self.zone)
+        self.control = StepControl(spec, job=self.step_job(), zone=self.zone)
         # StepControl 只发信号、不弹提示；页头状态行与日志区由本页呈现
         self.control.status.connect(self.status)
         self.control.log.connect(self.log)
@@ -454,9 +488,12 @@ class StepModulePage(ModulePage):
 
     def _on_finished(self, output: str) -> None:
         """成功：把产物交给 :meth:`on_result`（状态行/日志已由控制区写过）。"""
+        # 先把合并器里压着的执行日志落笔（这一批是"这一步干了什么"，用户马上要看）
+        self.flush_logs()
         self.on_result(Path(output), self._job_result)
 
     def _on_failed(self, message: str) -> None:
+        self.flush_logs()
         self.on_failed(message)
 
     # ------------------------------------------------------------------ 收尾

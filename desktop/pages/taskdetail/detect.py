@@ -106,6 +106,9 @@ class DetectMixin:
         _read_worker_error: Callable[[], None]
         _worker_env: Callable[[], QProcessEnvironment]
         _manifest_paths: Callable[[], list]
+        #: 立即重算检测统计（不走节流）——由 StageRunnerMixin 提供，
+        #: 用户手工改框这类"错一拍就是错的"时机必须用它（见 runner.py）。
+        _refresh_stats_now: Callable[[], None]
         current_stage: Callable[[], str]
         current_node: Callable[[], str | None]
         node_of_stage: Callable[[str], str | None]
@@ -527,8 +530,9 @@ class DetectMixin:
             index = next((i for i, b in enumerate(shown) if list(b) == target), -1)
         self._apply_boxes(path_text, raw, origin, select_index=index)
         self._refresh_reference_boxes()
-        # 拖动/删框/切类型都会改这一页的形态 → 右侧统计同步重算
-        self._refresh_detect_stats()
+        # 拖动/删框/切类型都会改这一页的形态 → 右侧统计**立即**重算
+        # （不走节流：用户正盯着这页改，错一拍就是错的）
+        self._refresh_stats_now()
 
     def _apply_boxes(self, path_text: str, raw, origin: str | None = None, select_index: int = -1) -> None:
         """把某页的槽位结果画到大图上。
@@ -1037,8 +1041,8 @@ class DetectMixin:
         self._detect_out_buffer = ""
         self.detect_process = None
         self._release_run()
-        # 单页检测完成 → 该页形态可能变了，重算右侧统计
-        self._refresh_detect_stats()
+        # 单页检测完成 → 该页形态可能变了，**立即**重算右侧统计
+        self._refresh_stats_now()
 
     def _apply_detect_result(self, path: Path, boxes) -> None:
         """自动检测结果到达 → 上屏（只在本页仍是预览页、且还停在第二步时应用）。"""

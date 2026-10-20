@@ -110,14 +110,69 @@ def run(ctx) -> None:
         ok("分类清空后退回总览", d.detect_stats.stack.currentIndex() == 0
            and d.detect_stats.back_button.isHidden())
 
-        # ---- 4. 人工编辑框 → 统计实时重算 ----
-        # 第 4 页刚被写成单独页；删掉它的框（人工）后应回到「无文本框」。
-        # 注意 _save_manual_boxes 存半幅恒 2 槽：空框列表 → []（无文本框）。
-        d._save_manual_boxes(str(pages[3]), [])
-        texts = {k: b.text() for k, b in d.detect_stats.class_buttons.items()}
-        ok("人工删框后无框计数复原",
-           texts[PAGE_CLASS_EMPTY].endswith(f"{len(pages) - 3} 页"),
-           texts[PAGE_CLASS_EMPTY])
+        # 统计重算带**可见性守卫**（``_refresh_stats_now`` 只在第二步可见时才
+        # 算，见 runner.py）：本用例离屏跑、页面从未 ``show()``，``isVisible()``
+        # 恒为假。这里显式放行，测的是"改框/落盘是否按预期重算"这条**生产语义**，
+        # 不是离屏可见性本身——可见性另有第 2 节用 ``isVisibleTo`` 钉住。
+        # ⚠️ 不能拿 ``isVisibleTo(d)`` 代替：那是给**断言**用的口径，生产守卫就是
+        #    ``isVisible()``，只有 patch 它才等价于"用户正开着这一步"。
+        real_visible = d.detect_stats.isVisible
+        d.detect_stats.isVisible = lambda: True    # type: ignore[method-assign]
+        try:
+            # ---- 4. 人工编辑框 → 统计实时重算 ----
+            # 第 4 页刚被写成单独页；删掉它的框（人工）后应回到「无文本框」。
+            # 注意 _save_manual_boxes 存半幅恒 2 槽：空框列表 → []（无文本框）。
+            d._save_manual_boxes(str(pages[3]), [])
+            texts = {k: b.text() for k, b in d.detect_stats.class_buttons.items()}
+            ok("人工删框后无框计数复原",
+               texts[PAGE_CLASS_EMPTY].endswith(f"{len(pages) - 3} 页"),
+               texts[PAGE_CLASS_EMPTY])
+
+            # ---- 5. 执行期间批量落盘：不同步重算统计（用户 2026-10-20）----
+            from tests.selftests._context import pump
+
+            calls: list[int] = []
+            real_refresh = d._refresh_detect_stats
+
+            def _count() -> None:
+                calls.append(1)
+                real_refresh()
+
+            d._refresh_detect_stats = _count        # type: ignore[method-assign]
+            try:
+                for i in range(50):
+                    d._store_stage_boxes(
+                        {"image": f"thr{i:03d}", "left": [0, 0, 10, 10], "right": None}
+                    )
+                ok("50 页批量事件期间一次都不重算统计", not calls, str(len(calls)))
+                d._flush_annotations()
+                ok("落盘后只置脏排节流，不同步重算",
+                   not calls and d._stats_dirty and d._stats_timer.isActive(),
+                   f"calls={len(calls)}")
+                pump(app, times=30, interval=0.05)
+                ok("节流到期只重算一次（不跟着落盘频率跑）",
+                   len(calls) == 1 and not d._stats_dirty, str(len(calls)))
+
+                # 复用页：不重写条目（磁盘上早已有），但统计要跟着动
+                d._pending_boxes.clear()
+                d._store_stage_boxes({
+                    "image": pages[0].stem, "reused": True,
+                    "left": [0, 0, 100, 100], "right": None,
+                })
+                ok("复用页不进攒批（不白写磁盘）但会置脏统计",
+                   not d._pending_boxes and d._stats_dirty, str(d._pending_boxes))
+
+                # 收尾必须立即重算（不等节流）
+                calls.clear()
+                d._refresh_stats_now()
+                ok("收尾/切阶段走立即重算一次",
+                   len(calls) == 1 and not d._stats_timer.isActive(), str(len(calls)))
+            finally:
+                d._refresh_detect_stats = real_refresh  # type: ignore[method-assign]
+                d._stats_timer.stop()
+                d._stats_dirty = False
+        finally:
+            d.detect_stats.isVisible = real_visible  # type: ignore[method-assign]
     finally:
         if backup is None:
             boxes_path.unlink(missing_ok=True)

@@ -4,7 +4,7 @@
 
 图像处理功能模块：GUI 与 CLI 共用同一套算法
 
-覆盖 11 个模块、12 个公开类、46 个公开函数/方法（生成于 2026-10-18）。
+覆盖 11 个模块、12 个公开类、48 个公开函数/方法（生成于 2026-10-20）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -22,7 +22,7 @@
 | [`functions.print`](#functionsprint) | 1 | 2 |
 | [`functions.rembg`](#functionsrembg) | 1 | 2 |
 | [`functions.text_region`](#functionstext_region) | 1 | 2 |
-| [`functions.yolo_service`](#functionsyolo_service) | 1 | 12 |
+| [`functions.yolo_service`](#functionsyolo_service) | 1 | 14 |
 
 ---
 
@@ -412,6 +412,9 @@ GUI detect 阶段当中间步骤），开启时把标注图（框 + 坐标文字
   日志里「加载 YOLO 模型完成」只出现一次（在服务进程里）；
 - 服务不可用 → 回落到 ``detect_page_content(imread(path), model)``，行为与
   引入服务之前**完全一致**（最坏就是慢那几秒）。
+
+⚠️ ``GUJI_YOLO_REQUIRE_SERVICE=1`` 时**不回落**：服务没走成就抛
+``RuntimeError``。那是 GUI 主进程的保护（torch 不许进界面进程）。
 
 ⚠️ 与 `detect_page_content` 的分工：那个是**算法入口**（吃 ndarray，
 crop/GUI 都靠它保证框一致，不要绕过）；本函数是**取图方式的选择**，
@@ -804,8 +807,10 @@ frozen 打包下 `import torch` + 首次 `YOLO(weights)` 要 **约 5.4 秒**，d
 
 | 函数 | 说明 |
 | --- | --- |
+| `require_service() -> bool` | 是否**禁止**回落到本进程内加载模型（默认否 ⇒ CLI 行为不变）。 |
 | `service_file(fp: str) -> Path` | 发现文件的完整路径（**按指纹区分**，开发版与正式版各用各的）。 |
 | `log_file() -> Path` | 服务日志路径（服务是分离进程、没有控制台，日志必须落文件才可诊断）。 |
+| `model_fingerprint() -> str` | 服务身份指纹（公开版；供日志/诊断读取，不参与内部决策）。 |
 | `sweep_stale_service_files() -> int` | 删掉「属主进程已死」的发现文件，返回删除个数。 |
 | `serve() -> int` | 服务主循环：绑定回环端口、写发现文件、**默认常驻**（TTL 仅在显式 |
 | `service_in_use() -> bool` | 本线程是否已经在用常驻服务（日志里说明"模型住在哪"用）。 |
@@ -816,6 +821,22 @@ frozen 打包下 `import torch` + 首次 `YOLO(weights)` 要 **约 5.4 秒**，d
 | `client_log(message: str) -> None` | 客户端侧诊断写服务日志（公开入口；GUI 侧预加载调度也用它）。 |
 | `service_status(timeout: float=CONNECT_TIMEOUT)` | 查询当前服务的状态（测试与排障用）；没有服务返回 None。 |
 | `shutdown_service(timeout: float=CONNECT_TIMEOUT) -> bool` | 让**本构建**的服务退出（desktop 关闭时调用；测试收尾也用它）。 |
+
+#### `require_service() -> bool`
+
+是否**禁止**回落到本进程内加载模型（默认否 ⇒ CLI 行为不变）。
+
+置 ``GUJI_YOLO_REQUIRE_SERVICE=1`` 的进程里，一旦"这次没走成服务"就报错，
+而不是自己 `import torch` 载模型。给 GUI 主进程用——它不许进重依赖
+（torch/ultralytics 约 350MB，见 AGENTS.md 分层守卫）。
+
+与 :func:`_service_enabled` 同款真假解析（``0/false/no/off`` 为假）。
+
+#### `model_fingerprint() -> str`
+
+服务身份指纹（公开版；供日志/诊断读取，不参与内部决策）。
+
+内容与 :func:`_fingerprint` 完全一致——版本 + 权重路径 + 权重大小/修改时间。
 
 #### `sweep_stale_service_files() -> int`
 

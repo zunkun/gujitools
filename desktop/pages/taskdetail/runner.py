@@ -15,11 +15,14 @@ from typing import TYPE_CHECKING, Any, Callable, cast
 
 from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer
 
+from core.command_spec import WHOLE_PAGE_AREA
+from desktop.services import detect_reuse
 from desktop.services.print_plan import (
     missing_extract_pages_spec, ordered_page_record,
 )
 from desktop.steps.process import StageProcess, worker_arguments
 from desktop.store.json_io import write_json
+from desktop.ui.log_throttle import LogCoalescer
 from desktop.utils.files import list_stage_images, project_root
 from desktop.store import IMPOSITION_STAGE, STAGE_LABELS, STAGE_STEP
 
@@ -109,7 +112,18 @@ class StageRunnerMixin:
     #: 画到日志与状态行上（见 :meth:`_on_stage_stalled`）。
     #: 页面尺寸/检测框的攒批落盘间隔（ms）。逐条落盘在 320 页上累计 3.1 秒
     #: 主线程阻塞（见 _store_page_size / _store_stage_boxes 的说明）。
-    _ANNOT_FLUSH_MS = 400
+    #: ⚠️ 2026-10-20 从 400ms 放宽到 1200ms：配合 ``_DocCache`` 单写者内存文档
+    #: （见 annotations.py），每次落盘已不再"整份读 + 整份写"；收尾仍在
+    #: ``_worker_finished_impl`` 强制 flush，不丢数据。
+    _ANNOT_FLUSH_MS = 1200
+
+    #: 「右侧检测统计」重算的节流窗口（ms）。
+    #:
+    #: ⚠️ ``_refresh_detect_stats`` 每次要**整份读 boxes.json + 整份读 sizes.json
+    #: + ``profile_book`` 全量重算** —— 1000+ 页时它是单次最贵的主线程动作，
+    #: 而它原本被落盘定时器以同样频率拖着跑。改成"置脏 + 1s 节流"后，执行期间
+    #: 统计按秒刷新，收尾/切阶段/手工改框仍**立即**重算（见 ``_refresh_stats_now``）。
+    _STATS_UI_MS = 1000
 
     def _init_progress_ui(self) -> None:
         """建进度刷新节流器（宿主页面 __init__ 里调一次，须在 _init_ui 之后）。"""
@@ -118,6 +132,30 @@ class StageRunnerMixin:
         self._progress_ui_timer.setInterval(self._PROGRESS_UI_MS)
         self._progress_ui_timer.timeout.connect(self._flush_progress_ui)
         self._progress_dirty = False
+
+    def _init_log_coalescer(self) -> None:
+        """建日志合并器（宿主页面 __init__ 里调一次，须在 ``self.log_view`` 之后）。
+
+        ⚠️ 为什么要合并：执行阶段每来一行日志就 ``log_view.append`` 一次 =
+        一次文档布局 + 一次状态条刷新；逐页打印的阶段一秒能来几十上百行，
+        主线程就在这两件事上被拖住，界面看着就是"卡"（用户报的
+        「检测文本框执行过程中页面卡顿」）。合并成一次
+        ``append("\\n".join(lines))`` 后，这批行只付一次布局与一次刷新。
+
+        见 :class:`desktop.ui.log_throttle.LogCoalescer`，
+        与进度合并（``_progress_ui_timer``）**是两条独立节流线**。
+        """
+        self._logs = LogCoalescer(self.log_view)
+        # ⚠️ 补接管「清空日志」：``LogPanel`` 自己接的是 ``log_view.clear``，
+        #    而合并器里可能还压着尚未落笔的行 —— 不处理的话清空后它们会在定时器
+        #    到期时**重新冒出来**（看着像"清空没生效"）。这里在面板那次 clear
+        #    之后再补一枪（先落笔再清，反正都要清）。
+        self.log_panel.clear_button.clicked.connect(self._clear_log)
+
+    def _clear_log(self) -> None:
+        """清空执行日志（连同合并器里压着、尚未落笔的行）。"""
+        self._logs.flush()
+        self.log_view.clear()
 
     def _flush_progress_ui(self) -> None:
         """把合并掉的进度落盘并刷新步骤条 / 提取结果（收尾时也必须调一次）。"""
@@ -486,7 +524,7 @@ class StageRunnerMixin:
                 self._set_stage_status("未执行")
             except Exception:
                 pass
-            self.log_view.append(
+            self._logs.append_now(
                 (
                     f"图片拼版：{len(effects)} 页（PDF排版用拼版结果）"
                     if self.imposition_effective()
@@ -533,6 +571,9 @@ class StageRunnerMixin:
                 )
                 return
             args["input"] = str(pages_input)
+            # 复用/指纹上下文只有 detect 需要：先清掉上一轮的，别让别的阶段
+            # 拿着旧指纹去写 boxes.json。
+            self._detect_ctx = None
             if stage == "detect":
                 # 整页模式（area=4）：区域参数归第三步面板所有，detect 只是
                 # 借来判定「要不要加载 YOLO」，worker 侧据此整页跳过检测。
@@ -540,9 +581,32 @@ class StageRunnerMixin:
                 #    「图片去底色」可能压根不在图上，此时给默认 1（照常检测），
                 #    别把一个用户没填过的表单当参数传进 worker。
                 rembg_host = self.panel_host_of_step("rembg")
-                args["area"] = int(
+                area = int(
                     rembg_host.get_args().get("area", 1) if rembg_host else 1
                 )
+                args["area"] = area
+                # ---- 复用上次结果：源文件没换、检测参数没变的页不再推理 ----
+                # 判据与分拣只此一份（见 desktop.services.detect_reuse）；读的是
+                # **本节点**那份 boxes.json（副本节点的框落在 boxes~<节点>.json）。
+                # ⚠️ 整页模式不复用：那条路整页即唯一文本框，走 worker 既有分支。
+                det = detect_reuse.det_fingerprint(area)
+                files = list_stage_images(pages_input)
+                doc = self.store.boxes_raw_at(
+                    self.store.boxes_path(self.task_id, **self._node_scope(node))
+                )
+                if area != WHOLE_PAGE_AREA:
+                    reuse, todo = detect_reuse.split(files, doc, det)
+                    if reuse:
+                        args["reuse"] = reuse
+                        self._logs.append_now(
+                            f"复用上次结果 {len(reuse)} 页，需检测 {len(todo)} 页"
+                        )
+                # 落盘时要写的两份指纹（见 _flush_annotations）：src 取每页源文件
+                # 戳，det 就是上面这个指纹。别的阶段不该带上一轮的上下文。
+                self._detect_ctx = {
+                    "det": det,
+                    "stems": {path.stem: path for path in files},
+                }
             if stage == "rembg":
                 # 「生成预览」整页去底图固定写入 ``stages/rembgpreview``（副本节点
                 # 写到它自己的 ``stages/rembgpreview~<节点>``）；
@@ -650,7 +714,9 @@ class StageRunnerMixin:
         self._refresh_stage_views()
         # 开始执行时自动展开日志：用户此刻最需要看到实时输出
         self.log_panel.set_expanded(True)
-        self.log_view.append(
+        # ⚠️ 走 ``append_now``：先冲刷攒批再立刻写——这行是"用户此刻最想立刻
+        #    看到"的（阶段起止），不许跟攒批行一起等窗口。见计划 A1。
+        self._logs.append_now(
             f"=== 开始执行 {self._stage_log_label(stage)}"
             f"{'（续跑）' if resume else ''} ==="
         )
@@ -697,7 +763,7 @@ class StageRunnerMixin:
         if self.process and self.process.state() != QProcess.ProcessState.NotRunning:
             self.cancel_requested = True
             self._set_stage_status("正在中断子任务...")
-            self.log_view.append("已请求中断，正在终止子任务进程...")
+            self._logs.append_now("已请求中断，正在终止子任务进程...")
             # 立即把运行记录置为已中断：进程被强杀来不及回调时，
             # 状态不会永远停留在 "running"（否则重启后按钮状态是错的）
             # ⚠️ 有进程在跑必有任务在身（见 run_stage 的守卫）
@@ -734,7 +800,7 @@ class StageRunnerMixin:
         用户跑了几分钟的正常任务误杀，代价远大于收益。所以这里只把
         "已经 N 分钟没有任何进展"摆到用户面前，让**他**决定要不要点中断。
         """
-        self.log_view.append(
+        self._logs.append(
             f"[看门狗] 已 {minutes:.0f} 分钟没有任何进度输出，"
             "若确认卡住可点「中断」或关闭窗口。"
         )
@@ -742,7 +808,7 @@ class StageRunnerMixin:
 
     def _on_stage_unclean_exit(self) -> None:
         """传输层报"进程已退出但 Qt 没能正常收尾"：记成失败原因（看门狗兜底）。"""
-        self.log_view.append("[看门狗] 子任务进程已退出但未正常收尾，按失败处理")
+        self._logs.append("[看门狗] 子任务进程已退出但未正常收尾，按失败处理")
         self._last_error_line = "子任务进程未正常收尾（看门狗兜底）"
 
     def _on_stage_finished(self, exit_code: int, status) -> None:
@@ -772,7 +838,7 @@ class StageRunnerMixin:
             # 所以非 JSON 的余量立刻当人读日志收掉。
             if tail and not tail.lstrip().startswith("{"):
                 if tail.strip():
-                    self.log_view.append(tail)
+                    self._logs.append(tail)
                 tail = ""
             self._stdout_tail = tail
         for line in lines:
@@ -783,19 +849,19 @@ class StageRunnerMixin:
                 # 这里是最后的兜底（协议外的裸 print / 半行撕裂）。当日志收下，
                 # 总比静默丢掉让用户「日志里什么都没有」要好。
                 if line.strip():
-                    self.log_view.append(line)
+                    self._logs.append(line)
                 continue
             etype = event.get("type")
             if etype == "progress":
                 self._on_worker_progress(event)
             elif etype == "log":
-                self.log_view.append(event.get("message", ""))
+                self._logs.append(event.get("message", ""))
             elif etype == "page_boxes":
                 self._store_stage_boxes(event)
             elif etype == "page_size":
                 self._store_page_size(event)
             elif etype == "started":
-                self.log_view.append(
+                self._logs.append(
                     f"子任务进程已启动：{STAGE_LABELS.get(event.get('stage'), event.get('stage'))}"
                 )
             elif etype == "error":
@@ -805,11 +871,11 @@ class StageRunnerMixin:
                 # （比如"没有生成任何图片，请先执行「生成预览」"）被淹在日志里，
                 # 用户事后完全查不到（2026-09-26 审计发现）。
                 message = event.get("message") or ""
-                self.log_view.append(f"错误：{message}")
+                self._logs.append_now(f"错误：{message}")
                 if message.strip():
                     self._last_error_line = message.strip()
             elif etype == "cancelled":
-                self.log_view.append("子任务进程已被中断。")
+                self._logs.append_now("子任务进程已被中断。")
 
     def _on_worker_progress(self, event: dict) -> None:
         """一条 progress 事件：轻量部分即时上屏，重活按窗口合并。
@@ -841,6 +907,10 @@ class StageRunnerMixin:
             self._consume_worker_stderr(bytes(proc.readAllStandardError()))
         except RuntimeError:
             pass  # 底层对象已析构（进程被强行收掉）
+        # ⚠️ 排空后立刻冲刷日志攒批：管道里最后一批事件刚写进合并器，剩下的
+        #    收尾日志（"页面清单已刷新"等）若直接走 log_view 就会**插到它们前面**，
+        #    日志顺序看着是乱的。所以这里先把攒批落笔再继续收尾（见计划 A1）。
+        self._logs.flush()
 
     def _store_page_size(self, event: dict) -> None:
         """extract 阶段上报的页面图片原始尺寸 → 攒批（sizes.json 是框坐标基准）。
@@ -868,13 +938,25 @@ class StageRunnerMixin:
         ⚠️ 逐条落盘是「读 boxes.json + 写回」× 页数，320 页实测累计 **1.8 秒**
         主线程阻塞；改攒批 + 一次性写。人工框的优先级判定挪到批量写里
         （见 store.save_detect_boxes_batch），顺带省掉每条一次的文件读。
+
+        ⚠️ **空结果也攒**（2026-10-20）：以前 ``not any(boxes)`` 直接丢，于是
+        "检测过、但没检出内容框"的页在 boxes.json 里**没有条目**，复用判据便
+        每轮都为它重跑一次推理。现在空框也留痕（写空 ``boxes`` + 源文件戳 +
+        检测指纹，见 _flush_annotations），下次直接跳过。
+        ``classify_page_slots([])`` 与"条目缺失"分类结果相同，统计口径不变。
+
+        ⚠️ 复用页（``event["reused"]``）**不进攒批**：它的条目早就在磁盘上、
+        指纹也没变，重新写一遍纯属白写（本进程只把它当"统计用"）。
         """
         if not self.task_id:
             return
-        boxes = page_box_slots_from_event(event)
-        if not any(boxes):
+        if event.get("reused"):
+            # 复用页：框早在磁盘上、指纹也没变，不必重写（见方法 docstring）。
+            # 但统计要跟着动——它读的是内存文档（``_DocCache``），所以这里
+            # 只置脏排一次节流，"全部页都复用"时界面也能立刻看到结果。
+            self._mark_stats_dirty()
             return
-        self._pending_boxes[event.get("image", "")] = boxes
+        self._pending_boxes[event.get("image", "")] = page_box_slots_from_event(event)
         self._annot_timer.start(self._ANNOT_FLUSH_MS)
 
     def _flush_annotations(self) -> None:
@@ -898,32 +980,102 @@ class StageRunnerMixin:
             if sizes:
                 self.store.save_image_sizes_batch(self.task_id, sizes, **scope)
             if boxes:
-                self.store.save_detect_boxes_batch(self.task_id, boxes, **scope)
-                # detect 批量检测中：落了一批框 → 右侧统计跟着实时重算
-                # （boxes.json 一次读盘 ~1ms，400ms 一次可忽略）
-                if self.current_stage() == "detect" and self.detect_stats.isVisible():
-                    self._refresh_detect_stats()
+                self.store.save_detect_boxes_batch(
+                    self.task_id, boxes, **scope,
+                    extra=self._boxes_extra(boxes),
+                )
+                # detect 批量检测中：落了一批框 → 右侧统计跟着刷新。
+                # ⚠️ **置脏 + 节流**（不是立即重算）：统计每次要整份读
+                #    boxes.json + sizes.json + profile_book，1000+ 页时是单次
+                #    最贵的主线程动作，不能跟着落盘定时器以同样频率跑。
+                #    收尾/切阶段/手工改框仍走 ``_refresh_stats_now`` 立即算。
+                self._mark_stats_dirty()
         except Exception as exc:  # noqa: BLE001 - 落盘失败不该打断阶段收尾
             # ⚠️ 但不能**静默**吞掉（2026-09-26 审计）：磁盘满 / 任务目录被删 /
             # 权限异常时，下游（去底色、打印）会按**缺失的坐标基准**算错布局，
             # 而界面上一点提示都没有。这里做三件事：告警、记成失败原因、把数据
             # 放回去等下次 flush 再试一次（否则这批攒好的框就永久丢了）。
             message = f"页框/尺寸落盘失败：{type(exc).__name__}: {exc}"
-            self.log_view.append(message)
+            self._logs.append_now(message)
             self._last_error_line = message
             for key, value in sizes.items():
                 self._pending_sizes.setdefault(key, value)
             for key, value in boxes.items():
                 self._pending_boxes.setdefault(key, value)
 
+    def _boxes_extra(self, boxes: dict[str, list]) -> dict[str, dict] | None:
+        """给这批框算"复用指纹"（``src`` 文件戳 + ``det`` 检测指纹）。
+
+        写进条目的意义：下次点「检测文本框」时，只要源文件没换、参数没变，
+        ``desktop.services.detect_reuse`` 就能判定"这一页的结果还算数"、直接
+        跳过推理（1000+ 页时省掉绝大部分时间）。
+
+        ``src`` 由主进程对该页图片 ``os.stat`` 得到（廉价；不解码、不读内容）。
+        没有 detect 上下文（别的阶段在落盘）时给 ``None`` ⇒ 行为与改造前一致。
+        """
+        ctx = self._detect_ctx
+        if not ctx:
+            return None
+        det = str(ctx.get("det") or "")
+        stems: dict[str, Path] = ctx.get("stems") or {}
+        extra: dict[str, dict] = {}
+        for stem in boxes:
+            path = stems.get(stem)
+            if path is None:
+                continue
+            stamp = detect_reuse.file_stamp(path)
+            if stamp is not None:
+                extra[stem] = {
+                    detect_reuse.FIELD_SRC: stamp,
+                    detect_reuse.FIELD_DET: det,
+                }
+        return extra or None
+
     def _init_annotation_batch(self) -> None:
-        """建标注攒批器（宿主页面 __init__ 里调一次）。"""
+        """建标注攒批器与检测统计节流器（宿主页面 __init__ 里调一次）。"""
         self._pending_sizes: dict[str, tuple[int, int]] = {}
         self._pending_boxes: dict[str, list] = {}
+        #: detect 阶段的复用上下文（``det`` 指纹 + ``stem → 源文件路径``），
+        #: 由 ``_run_stage_unchecked`` 的 detect 分支置位、其它阶段置 ``None``；
+        #: ``_flush_annotations`` 据此给条目补 ``src``/``det``（见 _boxes_extra）。
+        self._detect_ctx: dict | None = None
         self._annot_timer = QTimer(cast("QObject", self))
         self._annot_timer.setSingleShot(True)
         self._annot_timer.setInterval(self._ANNOT_FLUSH_MS)
         self._annot_timer.timeout.connect(self._flush_annotations)
+        # 统计重算的节流（见 _STATS_UI_MS / _refresh_stats_now / _flush_stats_ui）
+        self._stats_dirty = False
+        self._stats_timer = QTimer(cast("QObject", self))
+        self._stats_timer.setSingleShot(True)
+        self._stats_timer.setInterval(self._STATS_UI_MS)
+        self._stats_timer.timeout.connect(self._flush_stats_ui)
+
+    def _mark_stats_dirty(self) -> None:
+        """把检测统计标脏并起一次节流（到期重算）。
+
+        ⚠️ 只用于**执行期间**的批量落盘：统计要跟着 boxes.json 走，但没必要时时
+        重算（单次最贵的动作，见 ``_STATS_UI_MS``）。
+        """
+        self._stats_dirty = True
+        self._stats_timer.start(self._STATS_UI_MS)
+
+    def _refresh_stats_now(self) -> None:
+        """**立即**重算检测统计（不走节流）。
+
+        必须立即重算的时机：阶段收尾、切阶段、以及用户手工改框——这几处
+        "错一拍就是错的"，节流那一次可能还没到点。
+        """
+        if self._stats_timer.isActive():
+            self._stats_timer.stop()
+        self._stats_dirty = False
+        if self.current_stage() == "detect" and self.detect_stats.isVisible():
+            self._refresh_detect_stats()
+
+    def _flush_stats_ui(self) -> None:
+        """节流到期：标脏过就重算（见 ``_mark_stats_dirty``）。"""
+        if not self._stats_dirty:
+            return
+        self._refresh_stats_now()
 
     def _read_worker_error(self) -> None:
         """worker 的 stderr：崩溃堆栈/告警原样进日志，避免失败时无从排查。"""
@@ -965,7 +1117,7 @@ class StageRunnerMixin:
         for line in data.decode("utf-8", errors="replace").splitlines():
             line = line.strip()
             if line:
-                self.log_view.append(f"[stderr] {line}")
+                self._logs.append(f"[stderr] {line}")
                 lowered = line.lower()
                 if any(marker in lowered for marker in _MARKERS):
                     self._last_error_line = line
@@ -973,7 +1125,7 @@ class StageRunnerMixin:
     def _worker_error_occurred(self, error) -> None:
         if self.cancel_requested:
             return
-        self.log_view.append(f"[进程错误] {error}")
+        self._logs.append_now(f"[进程错误] {error}")
         if error == QProcess.ProcessError.FailedToStart:
             program = self.process.program() if self.process else "worker"
             self._last_error_line = f"子进程启动失败：{program}"
@@ -1011,7 +1163,7 @@ class StageRunnerMixin:
             tail = traceback.format_exc(limit=3).strip().splitlines()[-1]
             print(f"[worker-finished-exception] {tail}", file=_sys.stderr, flush=True)
             try:
-                self.log_view.append(f"收尾阶段出错（已强制复位执行状态）：{tail}")
+                self._logs.append_now(f"收尾阶段出错（已强制复位执行状态）：{tail}")
             except Exception:  # noqa: BLE001
                 pass
             self.process = None
@@ -1113,7 +1265,7 @@ class StageRunnerMixin:
                         **self._node_scope(node),
                     )
                 )
-                self.log_view.append(f"页面清单已刷新（{page_count} 页）。")
+                self._logs.append(f"页面清单已刷新（{page_count} 页）。")
                 self._refresh_manifest()
                 if page_count == 0:
                     self._toast(
@@ -1124,7 +1276,7 @@ class StageRunnerMixin:
             if stage == "print":
                 pdf_path = self._latest_print_pdf_path()
                 if pdf_path and pdf_path.exists():
-                    self.log_view.append(f"PDF 已生成：{pdf_path}")
+                    self._logs.append(f"PDF 已生成：{pdf_path}")
                     self.print_preview.set_pdf_path(pdf_path)
                 else:
                     self.print_preview.set_pdf_path(None)
@@ -1181,7 +1333,7 @@ class StageRunnerMixin:
         if status == "failed":
             reason = failure or "退出码 " + str(exit_code)
             # 先落一行日志再弹 toast：toast 会自己消失，日志留在面板里
-            self.log_view.append(f"失败原因：{reason}")
+            self._logs.append_now(f"失败原因：{reason}")
             self._toast("error", f"{STAGE_LABELS.get(stage or '', '')}失败", reason)
         elif override_toast is not None:
             self._toast(*override_toast)
@@ -1193,11 +1345,26 @@ class StageRunnerMixin:
                 STAGE_LABELS.get(stage or "", ""),
                 STATUS_LABELS.get(status, status),
             )
+        # ⚠️ 收尾最后再冲刷一次日志攒批：本方法里还有几行收尾日志（页面清单/
+        #    PDF/失败原因），不冲就会压在窗口里等下一次定时器——阶段已经结束了，
+        #    用户此刻看到的是"日志少了一截"。见计划 A1。
+        self._logs.flush()
+        # ⚠️ 收尾时**立即**重算一次检测统计：上面 ``_flush_annotations`` 只标脏
+        #    起节流（1s 后才会到点），而这一步已经结束——统计必须立刻是准的。
+        self._refresh_stats_now()
 
     @staticmethod
     def _worker_env() -> QProcessEnvironment:
-        """子进程强制 UTF-8：GUI 按 UTF-8 解析 JSON Lines，CLI 输出含 emoji。"""
+        """子进程强制 UTF-8：GUI 按 UTF-8 解析 JSON Lines，CLI 输出含 emoji。
+
+        ⚠️ 同时把 ``GUJI_YOLO_REQUIRE_SERVICE`` 显式压成 ``"0"``：GUI 主进程自己
+        是"强制走常驻服务"的（见 ``desktop.py`` 的 GUI 分支），但 detect **子进程**
+        内回落加载 torch 是**可接受**的（独立进程，不冻 GUI，也不会污染主进程），
+        硬失败反而更糟。这里的覆盖会赢过继承来的值（``systemEnvironment`` 在
+        ``insert`` 之前取值，之后 insert 即改掉它）。
+        """
         env = QProcessEnvironment.systemEnvironment()
         env.insert("PYTHONIOENCODING", "utf-8")
         env.insert("PYTHONUTF8", "1")
+        env.insert("GUJI_YOLO_REQUIRE_SERVICE", "0")
         return env

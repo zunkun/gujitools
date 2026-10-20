@@ -212,13 +212,18 @@ class LogPanel(QWidget):
         `splitlines()` 一次，整体 O(n²)，日志越长界面越卡（detect/extract 跑起来
         尤其明显）。QTextDocument 的 `lastBlock()` 直接给最后一段，代价与长度无关；
         末端连续空行才往回走几步。
+
+        ⚠️ **块内可能含 ``\\n``**（`desktop.ui.log_throttle.LogCoalescer` 一次
+        ``append`` 多行的结果），所以取"最后一段"之后还要按 ``\\n`` 拆行取最后一个
+        非空片段 —— 否则状态条摘要会显示一整块多行文本。
         """
         doc = self.log_view.document()
         block = doc.lastBlock()
         while block.isValid():
             text = block.text()
-            if text.strip():
-                return text
+            for piece in reversed(text.splitlines()):
+                if piece.strip():
+                    return piece
             block = block.previous()
         return ""
 

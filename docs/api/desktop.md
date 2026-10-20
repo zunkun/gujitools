@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 174 个模块、192 个公开类、1392 个公开函数/方法（生成于 2026-10-18）。
+覆盖 176 个模块、193 个公开类、1408 个公开函数/方法（生成于 2026-10-20）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -94,8 +94,8 @@
 | [`desktop.components.viewers.thumbs_loader`](#desktopcomponentsviewersthumbs_loader) | 1 | 1 |
 | [`desktop.components.yolo_export_dialog`](#desktopcomponentsyolo_export_dialog) | 1 | 6 |
 | [`desktop.modules`](#desktopmodules) | 1 | 1 |
-| [`desktop.modules.base`](#desktopmodulesbase) | 2 | 19 |
-| [`desktop.modules.detect.page`](#desktopmodulesdetectpage) | 1 | 18 |
+| [`desktop.modules.base`](#desktopmodulesbase) | 2 | 21 |
+| [`desktop.modules.detect.page`](#desktopmodulesdetectpage) | 1 | 19 |
 | [`desktop.modules.extract.page`](#desktopmodulesextractpage) | 1 | 5 |
 | [`desktop.modules.imposition.page`](#desktopmodulesimpositionpage) | 1 | 4 |
 | [`desktop.modules.print.page`](#desktopmodulesprintpage) | 1 | 4 |
@@ -119,6 +119,7 @@
 | [`desktop.pages.taskflow.page`](#desktoppagestaskflowpage) | 1 | 2 |
 | [`desktop.pages.tasklist.page`](#desktoppagestasklistpage) | 1 | 7 |
 | [`desktop.services.detect_export`](#desktopservicesdetect_export) | 0 | 7 |
+| [`desktop.services.detect_reuse`](#desktopservicesdetect_reuse) | 0 | 6 |
 | [`desktop.services.font_catalog`](#desktopservicesfont_catalog) | 1 | 6 |
 | [`desktop.services.imposition`](#desktopservicesimposition) | 0 | 31 |
 | [`desktop.services.print_plan`](#desktopservicesprint_plan) | 0 | 9 |
@@ -131,7 +132,7 @@
 | [`desktop.settings.page`](#desktopsettingspage) | 1 | 2 |
 | [`desktop.shell`](#desktopshell) | 1 | 22 |
 | [`desktop.single_instance`](#desktopsingle_instance) | 0 | 5 |
-| [`desktop.stages.detect_stage`](#desktopstagesdetect_stage) | 0 | 2 |
+| [`desktop.stages.detect_stage`](#desktopstagesdetect_stage) | 0 | 3 |
 | [`desktop.stages.events`](#desktopstagesevents) | 2 | 9 |
 | [`desktop.stages.generic_stage`](#desktopstagesgeneric_stage) | 0 | 2 |
 | [`desktop.stages.print_stage`](#desktopstagesprint_stage) | 0 | 3 |
@@ -146,7 +147,7 @@
 | [`desktop.steps.source_zone`](#desktopstepssource_zone) | 1 | 20 |
 | [`desktop.steps.spec`](#desktopstepsspec) | 1 | 22 |
 | [`desktop.steps.validate`](#desktopstepsvalidate) | 1 | 2 |
-| [`desktop.store.annotations`](#desktopstoreannotations) | 1 | 15 |
+| [`desktop.store.annotations`](#desktopstoreannotations) | 1 | 16 |
 | [`desktop.store.drafts`](#desktopstoredrafts) | 1 | 5 |
 | [`desktop.store.imposition`](#desktopstoreimposition) | 1 | 4 |
 | [`desktop.store.json_io`](#desktopstorejson_io) | 0 | 2 |
@@ -160,6 +161,7 @@
 | [`desktop.ui.fonts`](#desktopuifonts) | 0 | 2 |
 | [`desktop.ui.help_dialog`](#desktopuihelp_dialog) | 0 | 6 |
 | [`desktop.ui.icons`](#desktopuiicons) | 2 | 5 |
+| [`desktop.ui.log_throttle`](#desktopuilog_throttle) | 1 | 5 |
 | [`desktop.ui.menu`](#desktopuimenu) | 3 | 17 |
 | [`desktop.ui.segmented_toggle`](#desktopuisegmented_toggle) | 1 | 14 |
 | [`desktop.ui.style`](#desktopuistyle) | 0 | 3 |
@@ -6113,7 +6115,8 @@ InfoBar —— 这两个是各模块反馈执行结果的标准出口，别自�
 | `dropEvent(event) -> None` | 松手：把路径交给输入区，由它按步骤规则归一成源。 |
 | `status(text: str, kind: str='info') -> None` | 写页头状态行；``kind`` 取 info/success/warning/error 决定颜色。 |
 | `toast(kind: str, title: str, content: str) -> None` | 弹 InfoBar；实现收在 :mod:`desktop.ui.toast`（与详情页 ``_toast`` 共用）。 |
-| `log(text: str) -> None` | 往底部日志区追加一行。 |
+| `log(text: str) -> None` | 往底部日志区追加一行（**攒批**：见 :mod:`desktop.ui.log_throttle`）。 |
+| `flush_logs() -> None` | 把日志合并器里压着的行立刻落笔（收尾 / 关页时调，别让日志少一截）。 |
 | `closeEvent(event) -> None` | 关闭时收尾后台线程，避免解释器退出时被强杀（同详情页规矩）。 |
 
 ##### `show_workspace(shown: bool) -> None`
@@ -6136,11 +6139,15 @@ InfoBar —— 这两个是各模块反馈执行结果的标准出口，别自�
 
 ##### `log(text: str) -> None`
 
-往底部日志区追加一行。
+往底部日志区追加一行（**攒批**：见 :mod:`desktop.ui.log_throttle`）。
 
 ⚠️ 用 ``append`` 而不是 ``appendPlainText``：日志区换成了
 :class:`desktop.components.log_panel.LogPanel`，它的文本域是
 qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
+
+⚠️ 走 ``self._logs`` 而不是直接 ``log_view.append``：逐页打印的阶段
+一秒能来几十上百行，合并成一次 append 才不会把主线程拖在文档布局上。
+收尾/关页要 :meth:`flush_logs` 把压着的行落笔。
 
 ### `class StepModulePage(ModulePage)`
 
@@ -6183,6 +6190,7 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 | `idle_text() -> str` | — |
 | `on_result(output: Path, result: dict) -> None` | 执行成功：把产物交给左栏（子类实现）。 |
 | `on_failed(message: str) -> None` | 执行失败：给一句人话（状态行与日志已由控制区写过）。 |
+| `step_job()` | 本页执行内核要跑的 job；默认 ``None`` ⇒ 让 ``StepControl`` 按 spec 造命令 job。 |
 | `__init__(parent=None)` | 先把页头文案从 spec 落成实例属性，再建骨架。 |
 | `source_summary(source) -> str` | 副标题里那一行 ``<源> → <输出>``；子类可加图片张数等信息。 |
 | `source_images() -> list[Path]` | 源里的图片清单：源是文件就是它自己，是目录就取顶层（认本步后缀）。 |
@@ -6195,6 +6203,14 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 ``output`` 是内核回传的产物路径——**目录还是文件取决于这一步**
 （``StepSpec.artifact_is_file``：``print`` 回传 PDF 文件，其余回传目录）。
 ``result`` 是 job 在 worker 线程里攒下的少量数据（如导出张数）。
+
+##### `step_job()`
+
+本页执行内核要跑的 job；默认 ``None`` ⇒ 让 ``StepControl`` 按 spec 造命令 job。
+
+需要**自定义执行逻辑**的页面覆盖它（如「检测文本框」要注入复用、把逐页
+检测换个入口）：返回值直接喂给 ``StepControl`` 的 ``job`` 参数。返回
+``None`` 时行为与"没有这个钩子"**完全一致**，其它模块页零影响。
 
 ##### `__init__(parent=None)`
 
@@ -6264,6 +6280,8 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 
 | 名称 | 值 |
 | --- | --- |
+| _DETECT_AREA | `1` |
+| _BOXES_CACHE_DIRNAME | `"boxes_cache"` |
 | EXPORT_NAME | `"boxes.json"` |
 | _EXPORT_ANNOTATED | `"annotated"` |
 | _EXPORT_YOLO | `"yolo"` |
@@ -6279,6 +6297,7 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(parent=None)` | 建骨架、共用步骤控件与内存中的框表。 |
+| `step_job()` | 本页执行内核要跑的 job：走**共用逐页循环**（见 :func:`run_detect_pages`）。 |
 | `source_summary(source) -> str` | 在共用的 ``<源> → <输出>`` 之外，**补上待检测张数**。 |
 | `edit_effect_note(path: Path) -> str` | 编辑器改了待检测的图片：框坐标以**图片原始像素**为基准。 |
 | `on_result(out_dir: Path, _result: dict) -> None` | 检测跑完：重画当前页，并把「检出几页 / 几页无框」写到状态行。 |
@@ -6296,6 +6315,16 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 | `export_annotated_images() -> None` | 把框画回原图导出成 PNG：先选目录，**目录已存在就问是否覆盖**。 |
 | `export_yolo_labels() -> None` | 导出 YOLO 数据集切片：先弹窗填**名称**与选**导出目录**（用户 2026-10-16）。 |
 | `shutdown_workers() -> None` | 收尾：查看器自己的后台线程 + 两个执行线程（检测、导出标注图）。 |
+
+##### `step_job()`
+
+本页执行内核要跑的 job：走**共用逐页循环**（见 :func:`run_detect_pages`）。
+
+为什么不沿用 ``StepControl`` 默认的命令 job（``CommandJob → CommandArgs
+→ DetectFunction``）：``CommandArgs`` 会**丢掉**没在 ``CommandSpec.defaults``
+登记的键，而"复用上次结果"要额外传一份 ``reuse``；给 CLI 的 detect 命令加
+参数又会污染 CLI 契约（``core/command_spec.py`` 是 CLI 参数的唯一来源）。
+注入纯函数 job 后，本页与任务流程第二步跑的是**同一份**批量检测实现。
 
 ##### `edit_effect_note(path: Path) -> str`
 
@@ -8181,6 +8210,107 @@ GUI 主进程**绝不能**在这里 import 到 cv2（实测 ``import functions.d
 
 ---
 
+## `desktop.services.detect_reuse`
+
+源码：[`desktop/services/detect_reuse.py`](../../desktop/services/detect_reuse.py)
+
+检测结果复用：一条「这份坐标还算不算数」的判据 + 按它分拣待检测页。
+
+## 为什么
+
+1000+ 页的书，第二次点「检测文本框」时绝大多数页的框和上次一模一样——只要
+源文件没换、检测参数（``area``）没变，重跑一遍纯属白花几十秒推理。所以把
+"这份结果还对得上吗"写进 `boxes.json` 条目本身（``src`` 文件戳 + ``det`` 检测
+指纹），下次直接读回来复用。
+
+## 判据（两个字段，都写在条目里）
+
+- ``src``：``[字节数, mtime_ns]``——**这一页的源文件**有没有被换过；
+- ``det``：检测侧的身份指纹 = ``config.VERSION | DET_VERSION | area``。
+
+两者同时匹配才算可复用；任何一项变了就重跑。⚠️ **无框页也留痕**（写空 ``boxes``
+但带指纹）：不记的话"检测过、但没检出框"的页每次都重跑。
+
+⚠️ **``det`` 不读权重文件**：``utils.model_path()`` 会把 cv2/ultralytics 拉进
+GUI 主进程（违反 AGENTS.md「GUI 主进程禁重依赖」）。代价是开发期"换了权重但没
+升 ``config.VERSION``"不会让旧结果失效——升版本即失效，记为已知限制。
+
+⚠️ 本模块只放**纯逻辑**：不 import Qt、不 import 任何重依赖，主进程可直连，
+也可脱离页面单测。
+
+## 归属
+
+判据与分拣只有这一份，taskdetail（写进任务目录的 ``boxes.json``）与 singletask
+（写进 ``singletask/<子任务>/boxes_cache/<源键>.json``）共用——两者只是**落点**
+不同，字段与判据完全一致。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| DET_VERSION | `"v1"` |
+| FIELD_SRC | `"src"` |
+| FIELD_DET | `"det"` |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `det_fingerprint(area: int) -> str` | 一次检测的**廉价**身份指纹：程序版本 + 复用格式版本 + ``area``。 |
+| `file_stamp(path: Path) -> list \| None` | 文件的 ``[字节数, mtime_ns]``；读不到（不存在 / 无权限）给 ``None``。 |
+| `entry_usable(entry, path: Path, det: str) -> bool` | 该条目能否复用：``det`` 指纹一致**且** ``src`` 与当前文件戳一致。 |
+| `payload_of(entry: dict) -> dict` | 把条目的**槽位**表示还原成 ``page_boxes`` 事件的负载形状。 |
+| `split(files: Iterable[Path], doc: dict, det: str) -> tuple[dict[str, dict], list[Path]]` | 把 ``files`` 分成（**可复用**的 ``{stem: 事件负载}``, **待检测**的文件表）。 |
+| `source_key(source) -> str` | 独立任务结果缓存的文件名：源的可读前缀 + 归一化路径的短哈希。 |
+
+#### `det_fingerprint(area: int) -> str`
+
+一次检测的**廉价**身份指纹：程序版本 + 复用格式版本 + ``area``。
+
+``area`` 是检测参数里**唯一**会改变结果的那一个（整页模式压根不走检测），
+所以指纹只需要它。见模块 docstring 里"不读权重"的取舍。
+
+#### `entry_usable(entry, path: Path, det: str) -> bool`
+
+该条目能否复用：``det`` 指纹一致**且** ``src`` 与当前文件戳一致。
+
+⚠️ **不要求条目里有框**：空框页（检测过但没检出内容框）同样可复用——它的
+价值正是"别再为它重跑一次推理"。
+
+#### `payload_of(entry: dict) -> dict`
+
+把条目的**槽位**表示还原成 ``page_boxes`` 事件的负载形状。
+
+槽位约定见 ``utils.box_geometry``（半幅恒 2 槽、整幅 1 槽）：
+- 1 槽 → 整幅（``full``）；
+- 2 槽 → 半幅（``left`` / ``right``，缺失侧为 ``None``）；
+- 0 槽 → 无框。
+
+#### `split(files: Iterable[Path], doc: dict, det: str) -> tuple[dict[str, dict], list[Path]]`
+
+把 ``files`` 分成（**可复用**的 ``{stem: 事件负载}``, **待检测**的文件表）。
+
+``doc`` 是结果文件的原始条目表（``{stem: entry}``，见
+``desktop.store.annotations.AnnotationMixin.boxes_raw_at``）。只有 ``src``
+与 ``det`` 双匹配的页才复用；负载形状与 ``page_boxes`` 事件一致
+（``image`` / ``left`` / ``right`` / ``full``），调用方原样补发即可。
+
+⚠️ 键用 ``stem``（不是路径字符串）：结果文件与两边的检测流程都按 stem 索引
+（见 ``utils.box_geometry.page_box_slots_from_event``）。
+
+#### `source_key(source) -> str`
+
+独立任务结果缓存的文件名：源的可读前缀 + 归一化路径的短哈希。
+
+⚠️ 哈希用 ``resolve()`` 后的绝对路径：同一个目录"相对路径打开 vs 绝对路径
+打开"必须落到同一个键，否则会各存一份、互相看不见。前缀（源名）纯粹为了
+让人一眼看出"这是哪一批图的结果"。
+
+⚠️ 只是**文件名**，不建目录（由调用方决定往哪个缓存根里放，见
+``desktop.utils.files.singletask_dir``）。
+
+---
+
 ## `desktop.services.font_catalog`
 
 源码：[`desktop/services/font_catalog.py`](../../desktop/services/font_catalog.py)
@@ -9525,7 +9655,29 @@ worker 起来只需几百毫秒，模型全局只加载一次、多次检测共�
 | 函数 | 说明 |
 | --- | --- |
 | `run_detect(config: dict) -> int` | 检测单张图片的内容框（半幅左右 / 整幅），返回像素坐标（重依赖由常驻服务承担）。 |
+| `run_detect_pages(files: list[Path], *, workers: int, area: int, reuse: dict \| None, report) -> dict` | 逐页检测（**全仓唯一实现**）：子进程阶段与 singletask 执行器都调这里。 |
 | `run_detect_stage(config: dict) -> int` | detect 阶段：逐图检测内容框（半幅左右 / 整幅）并上报坐标，不切割、不生成任何文件。 |
+
+#### `run_detect_pages(files: list[Path], *, workers: int, area: int, reuse: dict | None, report) -> dict`
+
+逐页检测（**全仓唯一实现**）：子进程阶段与 singletask 执行器都调这里。
+
+参数:
+    files: 全部待处理的图片（按页序）。
+    workers: 并发线程数；<=0 时按 ``core.args.default_workers`` 自动取。
+    area: 区域参数；``WHOLE_PAGE_AREA`` 时整页跳过检测（不加载模型）。
+    reuse: ``{stem: page_boxes 负载}``（见 ``desktop.services.detect_reuse``）；
+        命中的页**不重跑推理**，只原样补发一次带 ``reused`` 的事件。
+    report: ``(事件名, 负载)`` 回调，名字取 ``log`` / ``progress`` /
+        ``page_boxes``（与 ``desktop.steps.kernel.Report`` 同形）。
+
+返回:
+    统计字典：``done/left/right/full/failed/reused/cost/elapsed/
+    load_seconds/workers``。
+
+⚠️ 为什么抽出来（用户 2026-10-20 的第二个问题）：singletask 与任务流程
+必须跑**完全相同**的检测循环（并发、逐页日志、槽位事件、复用跳过），
+各写一份必然漂移；这里只负责"怎么跑"，不关心产物落到哪个文件。
 
 #### `run_detect_stage(config: dict) -> int`
 
@@ -9534,6 +9686,9 @@ detect 阶段：逐图检测内容框（半幅左右 / 整幅）并上报坐标�
 检测算法复用 `functions.detect.detect_page_boxes_by_path`（内部即 CLI crop /
 cropremove 用的同一入口），最终裁剪框由 GUI 按同一套规则
 （`utils.box_geometry.compute_final_boxes`）从检测框实时推导，用于预览标注。
+
+⚠️ 逐页循环本体在 :func:`run_detect_pages`（与 singletask 共用一份）；本函数
+只负责 stdout 拦截、任务上下文与事件协议（``{"type": name, **context, **payload}``）。
 
 ---
 
@@ -12102,6 +12257,18 @@ _apply_control_width`` 按 stage 换宽度、``history._history_fill_keys``
 image_key 取页面文件名去后缀（stem）——检测/去底直接以 extract 目录为
 输入，不再物化副本，故同一 stem 恒指向同一页。
 
+## 唯一写者：``_DocCache``
+
+本模块所有 boxes/sizes 的读**与写**都必须经过 :func:`_doc_for` 取到的那个
+:class:`_DocCache`（进程内按路径共享一份）。理由有两条：
+
+1. **写更少**：以前每次攒批落盘都是"整份读 + 解析 + 序列化 + 写"；1000+ 页时
+   单次就是几十毫秒的主线程阻塞。改成内存持有后，落盘只剩"序列化 + 写"。
+2. **不互相覆盖**：单页写（拖框/缩放，``save_detect_boxes``）与批量写
+   （``save_detect_boxes_batch``）以前各读各的一份快照，交错时后写的那次会把
+   前一次的结果悄悄抹掉。同一条路径只有一个内存文档、一个写者，这个问题就不
+   存在了。
+
 ### `class AnnotationMixin`
 
 boxes.json / sizes.json 读写。
@@ -12115,11 +12282,12 @@ boxes.json / sizes.json 读写。
 | `boxes_entry_at(path: Path \| None, image_key: str) -> tuple[list, str] \| None` | 读**指定文件**里某页的 ``(boxes, origin)``；文件为空/无该页返回 None。 |
 | `detect_boxes_all(task_id: str, node_id: str \| None=None, primary_id: str \| None=None) -> dict[str, tuple[list, str]]` | 整份 boxes.json：``image_key → (boxes, origin)``，**一次读盘**。 |
 | `boxes_all_at(path: Path \| None) -> dict[str, tuple[list, str]]` | 读**指定文件**的全部 ``image_key → (boxes, origin)``（一次读盘）。 |
+| `boxes_raw_at(path: Path \| None) -> dict` | 读**指定文件**的**原始条目表** ``{image_key: entry}``（不裁剪字段）。 |
 | `save_detect_boxes(task_id: str, image_key: str, boxes: list, origin: str='auto', node_id: str \| None=None, primary_id: str \| None=None) -> None` | 写入某页的检测框及其来源标记（auto=自动检测，manual=人工编辑）。 |
 | `box_side_at(path: Path \| None, image_key: str) -> str \| None` | 读**指定文件**里某页的人工左右指定（``"left"``/``"right"``/None）。 |
 | `box_sides_all_at(path: Path \| None) -> dict[str, str]` | 整份文件的 ``image_key → side``（一次读盘，只含有显式指定的页）。 |
 | `set_box_side_override(task_id: str, image_key: str, side: str \| None, node_id: str \| None=None, primary_id: str \| None=None) -> None` | 写入/清除某页的人工左右指定（``None``＝清除，退回"半框"）。 |
-| `save_detect_boxes_batch(task_id: str, entries: dict[str, list], node_id: str \| None=None, primary_id: str \| None=None) -> None` | 批量写入某阶段的检测框（origin=auto）：**一次读改写**。 |
+| `save_detect_boxes_batch(task_id: str, entries: dict[str, list], node_id: str \| None=None, primary_id: str \| None=None, extra: dict[str, dict] \| None=None) -> None` | 批量写入某阶段的检测框（origin=auto）：**一次读改写**。 |
 | `save_image_sizes_batch(task_id: str, entries: dict[str, tuple[int, int]], node_id: str \| None=None, primary_id: str \| None=None) -> None` | 批量写入页面原始尺寸：一次读改写（理由同 save_detect_boxes_batch）。 |
 | `sizes_path(task_id: str, node_id: str \| None=None, primary_id: str \| None=None) -> Path` | 页面原始尺寸文件：主节点是 ``sizes.json``，副本是 ``sizes~<节点>.json``。 |
 | `save_image_size(task_id: str, image_key: str, width: int, height: int, node_id: str \| None=None, primary_id: str \| None=None) -> None` | 记录某页图片的原始像素尺寸，作为框坐标与预览映射的坐标系基准。 |
@@ -12162,6 +12330,17 @@ boxes.json / sizes.json 读写。
 与 :meth:`boxes_entry_at` 同一理由：消费方要读的是"上游那个节点"的
 框文件，路径由连线解析而来。
 
+##### `boxes_raw_at(path: Path | None) -> dict`
+
+读**指定文件**的**原始条目表** ``{image_key: entry}``（不裁剪字段）。
+
+⚠️ 与 :meth:`boxes_all_at` 的分工：那个只出 ``(boxes, origin)`` 两字段，
+供界面消费；复用判据要读条目里的 ``src`` / ``det`` 指纹（见
+``desktop.services.detect_reuse``），那两个字段在这里必须原样带出。
+
+返回值**就是内存里那份 dict**：调用方只读，别原地改（要写走
+:meth:`save_detect_boxes_batch` 等）。
+
 ##### `save_detect_boxes(task_id: str, image_key: str, boxes: list, origin: str='auto', node_id: str | None=None, primary_id: str | None=None) -> None`
 
 写入某页的检测框及其来源标记（auto=自动检测，manual=人工编辑）。
@@ -12186,7 +12365,7 @@ boxes.json / sizes.json 读写。
 "拖框/缩放"的高频路径，**不该**顺带改这个语义位。只有用户明确点了
 「左框/右框」才动它。
 
-##### `save_detect_boxes_batch(task_id: str, entries: dict[str, list], node_id: str | None=None, primary_id: str | None=None) -> None`
+##### `save_detect_boxes_batch(task_id: str, entries: dict[str, list], node_id: str | None=None, primary_id: str | None=None, extra: dict[str, dict] | None=None) -> None`
 
 批量写入某阶段的检测框（origin=auto）：**一次读改写**。
 
@@ -12196,6 +12375,12 @@ boxes.json / sizes.json 读写。
 ``.workbuddy/perf/2026-09-23-sqlite-vs-json.md``）；攒批后一次落盘
 ~0.02s。人工框（origin=manual）在这里跳过，不被自动结果覆盖——
 与单条版同一条规矩，但只读一次文件。
+
+``extra``（可选）：``{image_key: {额外字段}}``，合并进对应条目——用于
+记录"这份结果来自哪个源文件、按什么检测指纹算的"（见
+``desktop.services.detect_reuse``）。⚠️ 默认 ``None`` 时行为与改造前
+逐字一致；带了 extra 的**空框条目也会写**——复用判据要求"无框页也留痕"，
+否则空结果页下次只能重跑。
 
 ##### `sizes_path(task_id: str, node_id: str | None=None, primary_id: str | None=None) -> Path`
 
@@ -13762,6 +13947,75 @@ Markdown 里写的是 ``screenshots/guide/xxx.png`` 这样的相对路径，
 
 名字不存在时**抛 AttributeError**——图标名是代码里写死的常量，写错了
 应该在启动第一时间炸出来，而不是渲染出一列空导航。
+
+---
+
+## `desktop.ui.log_throttle`
+
+源码：[`desktop/ui/log_throttle.py`](../../desktop/ui/log_throttle.py)
+
+日志合并器：把高频日志攒成**低频的一次 append**。
+
+## 为什么需要它
+
+执行阶段（detect/extract 逐页打印）会把几百上千行日志送到 ``log_view``。
+每来一行就 ``append`` 一次 = 一次 QTextDocument 布局 + 一次
+``LogPanel._refresh_bar``，而这些行往往在**同一轮事件循环**里到达 —— 主线程
+就在这两件事上被拖住，界面看着就是"卡"（用户报的「检测文本框执行过程中页面
+卡顿」）。
+
+把 N 行合并成**一次** ``append("\n".join(lines))`` 后，这 N 行只付一次文档
+布局与一次状态条刷新；行数越多收益越大。
+
+## 与进度合并的关系
+
+⚠️ **不复用** ``runner._progress_ui_timer``：进度合并与日志合并是两条独立的
+节流线，语义不同（进度要的是"最新值"，日志要的是"每一行都不丢"）。两条各
+管各的，互不干扰。
+
+## 契约
+
+``target`` 只需满足"有 ``append(str)``"这一条 —— 本类**不认识** ``LogPanel``，
+也不 import 任何页面层对象（守住 ``desktop/ui`` 的底座定位）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| DEFAULT_INTERVAL_MS | `200` |
+| DEFAULT_MAX_PENDING | `500` |
+
+### `class LogCoalescer(QObject)`
+
+把高频日志攒成低频的一次 append。
+
+用法::
+
+    logs = LogCoalescer(self.log_view)
+    logs.append(line)       # 攒批（高频路径）
+    logs.append_now(line)   # 先冲刷已有再立刻写（阶段起止那几行）
+    logs.flush()            # 收尾强制落笔
+
+⚠️ ``flush()`` 必须**收尾时调**（阶段结束 / 页面关闭）：攒批窗口里可能还压
+着最后几行，不冲刷就会"日志少了一截"。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(target, interval_ms: int=DEFAULT_INTERVAL_MS, max_pending: int=DEFAULT_MAX_PENDING, parent: QObject \| None=None) -> None` | 绑定一个"有 ``append(str)``"的目标控件（通常是 ``QTextEdit``）。 |
+| `append(line: str) -> None` | 攒批一行（高频路径：以攒批窗口为粒度落笔）。 |
+| `append_now(line: str) -> None` | 立刻写一行：先把压着的攒批冲刷掉，再写这一行。 |
+| `flush() -> None` | 把压着的行**一次**写完（幂等：没有待写行就什么也不做）。 |
+| `pending() -> int` | 待写行数（自测用）。 |
+
+##### `append_now(line: str) -> None`
+
+立刻写一行：先把压着的攒批冲刷掉，再写这一行。
+
+用于"用户此刻最想立刻看到"的几行（阶段起止、"=== 开始执行 … ==="）。
+⚠️ 冲刷与这一行**分两次 append**：``append_now`` 的语义就是"这一行不许
+等窗口"，与攒批行挤在一起反而会让它跟着一起等。
 
 ---
 

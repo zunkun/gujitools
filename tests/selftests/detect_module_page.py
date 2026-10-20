@@ -49,6 +49,7 @@ def run(ctx) -> None:  # noqa: ARG001 - 用自己的夹具，不共享 ctx 的�
     try:
         _check_controls(page, ok)
         _check_drawing(page, tmp, ok)
+        _check_step_job_and_throttle(page, ok, ctx)
         _check_export_annotated(page, tmp, QFileDialog, ok, ctx)
         _check_export_json(page, tmp, ok)
     finally:
@@ -164,6 +165,83 @@ def _check_drawing(page, tmp: Path, ok) -> None:
     page._on_box_kind_changed("right")
     ok("没选中时点「右框」→ 选中右侧那个框",
        page.viewer.selected_index() == 1, str(page.viewer.selected_index()))
+
+
+def _check_step_job_and_throttle(page, ok, ctx) -> None:
+    """⑤ 执行内核复用共用循环 + 逐页事件不再每页全表重算（用户 2026-10-20）。
+
+    两件事在**同一段**里钉，因为它们的交汇点就是 ``_on_step_event``：
+    内核必须走 ``run_detect_pages``（与任务流程第二步同一份实现），
+    而事件回填要能接住逐页结果、又**不能**每页触发一次 O(N²) 的整本书重算。
+    """
+    from desktop.steps.kernel import CallableJob
+    from tests.selftests._context import pump
+
+    app = ctx.app
+
+    # ---- 5a. 注入的 job 是"共用逐页循环"那份 ----
+    job = page.step_job()
+    ok("step_job() 返回可调用 job（覆盖 StepControl 默认命令 job）",
+       callable(job), str(job))
+    ok("步进控件用的是注入的 CallableJob（不是 job_for 的命令 job）",
+       isinstance(page.control.kernel._job, CallableJob),
+       str(type(page.control.kernel._job)))
+
+    # ---- 5b. 逐页事件不每页全表重算（用户 2026-10-20：1000 页时 O(N²)）----
+    seen: list[tuple[str, str]] = []
+    real_event = page._on_step_event
+
+    def _spy(name: str, payload) -> None:
+        seen.append((name, str((payload or {}).get("image", ""))))
+        real_event(name, payload)
+
+    page._on_step_event = _spy                       # type: ignore[method-assign]
+
+    layout_calls: list[int] = []
+    real_layout = page._refresh_book_layout
+
+    def _count_layout() -> None:
+        layout_calls.append(1)
+        real_layout()
+
+    page._refresh_book_layout = _count_layout      # type: ignore[method-assign]
+    try:
+        # 直接喂 100 个事件（模拟逐页结果回来）：每次只标脏 + 起 300ms 节流
+        for i in range(100):
+            page._on_step_event(
+                "page_boxes", {"image": f"loop{i:03d}", "left": [0, 0, 10, 10],
+                               "right": None, "full": None}
+            )
+        ok("100 页结果全部被接住（逐页事件不丢）",
+           len([1 for n, _i in seen if n == "page_boxes"]) == 100, str(len(seen)))
+        ok("100 次逐页事件期间一次都没重算（全部攒着等节流到期）",
+           not layout_calls, str(len(layout_calls)))
+        ok("期间脏标记已置起、定时器在跑",
+           page._layout_dirty and page._layout_timer.isActive(), "")
+
+        pump(app, times=8, interval=0.05)
+        ok("节流到期后**一次**重算整本书形态（O(N²) 被压成 O(N)）",
+           len(layout_calls) == 1 and not page._layout_dirty,
+           f"重算 {len(layout_calls)} 次")
+    finally:
+        page._on_step_event = real_event             # type: ignore[method-assign]
+        page._refresh_book_layout = real_layout      # type: ignore[method-assign]
+        for i in range(100):
+            page._boxes.pop(f"loop{i:03d}", None)
+            page._origins.pop(f"loop{i:03d}", None)
+
+    # ---- 5c. 收尾：立即重算这条路仍在（换源/检测收尾用它）----
+    page._mark_layout_dirty()
+    page._refresh_layout_now()
+    ok("_refresh_layout_now 停掉节流并立即算（错一拍就是错的时刻用）",
+       not page._layout_dirty and not page._layout_timer.isActive(), "")
+
+    # ---- 5d. 内核确实挂在共用逐页循环上（源码级守卫，防再次各写一份）----
+    import inspect
+
+    src = inspect.getsource(type(page)._run_detect_job)
+    ok("执行内核调用 run_detect_pages（与任务流程第二步同一份实现）",
+       "run_detect_pages(" in src, src[:0] or "没找到调用")
 
 
 def _check_export_annotated(page, tmp: Path, QFileDialog, ok, ctx) -> None:

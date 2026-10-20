@@ -110,12 +110,170 @@ def run_detect(config: dict) -> int:
             interceptor._consume(interceptor.buffer.strip())
 
 
+def run_detect_pages(
+    files: list[Path], *, workers: int, area: int, reuse: dict | None, report
+) -> dict:
+    """逐页检测（**全仓唯一实现**）：子进程阶段与 singletask 执行器都调这里。
+
+    参数:
+        files: 全部待处理的图片（按页序）。
+        workers: 并发线程数；<=0 时按 ``core.args.default_workers`` 自动取。
+        area: 区域参数；``WHOLE_PAGE_AREA`` 时整页跳过检测（不加载模型）。
+        reuse: ``{stem: page_boxes 负载}``（见 ``desktop.services.detect_reuse``）；
+            命中的页**不重跑推理**，只原样补发一次带 ``reused`` 的事件。
+        report: ``(事件名, 负载)`` 回调，名字取 ``log`` / ``progress`` /
+            ``page_boxes``（与 ``desktop.steps.kernel.Report`` 同形）。
+
+    返回:
+        统计字典：``done/left/right/full/failed/reused/cost/elapsed/
+        load_seconds/workers``。
+
+    ⚠️ 为什么抽出来（用户 2026-10-20 的第二个问题）：singletask 与任务流程
+    必须跑**完全相同**的检测循环（并发、逐页日志、槽位事件、复用跳过），
+    各写一份必然漂移；这里只负责"怎么跑"，不关心产物落到哪个文件。
+    """
+    total = len(files)
+    reuse = dict(reuse or {})
+    #: 复用页不参与推理；但进度分母仍是**全部**页（界面计数才不会跳）
+    todo = [path for path in files if Path(path).stem not in reuse]
+    stat: dict = {
+        "done": 0, "left": 0, "right": 0, "full": 0, "failed": 0,
+        "reused": 0, "cost": 0.0, "elapsed": 0.0, "load_seconds": 0.0,
+        "workers": 0,
+    }
+    if not total:
+        return stat
+
+    # 复用页先补发：界面立刻拿到这批框，进度也一口气推到"已复用"那一段
+    for payload in reuse.values():
+        stat["done"] += 1
+        stat["reused"] += 1
+        report("page_boxes", dict(payload))
+        report("progress", {"done": stat["done"], "total": total})
+    if reuse:
+        report("log", {
+            "message": f"复用上次结果 {len(reuse)} 页，需检测 {len(todo)} 页"
+        })
+
+    if int(area) == WHOLE_PAGE_AREA:
+        # 整页模式：不加载 YOLO、不写 boxes.json（框由主进程按整页合成）。
+        # 仍逐页报进度，界面上「本子任务」能正常走完，日志说明为何没有框。
+        report("log", {"message": "整页模式：跳过检测，整页作为一个文本框"})
+        for path in todo:
+            stat["done"] += 1
+            report("log", {"message": f"检测 {path.name}  整页（未做检测）"})
+            report("progress", {"done": stat["done"], "total": total})
+        return stat
+    if not todo:
+        return stat
+
+    # 同上：跨层复用检测入口是登记在案的有意依赖。
+    from functions.detect import (  # noqa: PLC0415 - 延迟导入，避免主进程加载重依赖
+        detect_page_content_by_path,
+        format_box,
+        resolution_note,
+        warm_up_detect_model,
+    )
+
+    # ⚠️ 模型准备**放在计时之外**：先把它备好并单独报一次耗时，之后每一张的
+    # 耗时才是纯检测耗时；否则第一张会背上 5 秒，看起来像那张图有问题。
+    load_line, load_seconds = warm_up_detect_model()
+    stat["load_seconds"] = load_seconds
+    report("log", {"message": load_line})
+
+    # 逐张并发跑：单线程一张一两百毫秒，81 页就要十几秒；并发后总时长
+    # 主要取决于最慢的那张。上限与函数层共用一份（core.args.default_workers
+    # 传入 command="detect" → min(8, CPU 核数, 张数)）：检测每张只在服务端
+    # imread 一次，比去底/裁剪的 ~350MB/张轻得多，所以上限单独放宽到 8。
+    # 具体数值只在 core/args.py 的 _COMMAND_WORKER_CAP 里写一次。
+    workers = max(1, int(workers or 0) or default_workers(len(todo), command="detect"))
+    stat["workers"] = workers
+    if workers > 1:
+        report("log", {
+            "message": f"并发处理：{workers} 个线程（共 {total} 张）"
+        })
+
+    started_all = time.perf_counter()
+    lock = threading.Lock()
+
+    def _detect_one(path: Path) -> None:
+        """检测一张并立刻上报。**计数与上报都放在锁内**，保证
+        「本张的 page_boxes → 本张的 progress」成对出现、计数不互相覆盖。"""
+        started = time.perf_counter()
+        failure = None
+        page = None
+        try:
+            page = detect_page_content_by_path(path)
+        except Exception as exc:  # noqa: BLE001 - 单张失败不该中断整批
+            failure = str(exc)
+        elapsed = time.perf_counter() - started
+        with lock:
+            stat["done"] += 1
+            stat["cost"] += elapsed
+            if failure or page is None:
+                # ⚠️ ``page is None`` 与 failure 同一分支：检测没抛异常时
+                # 一定给了结果对象，走到这儿拿不到就按失败记，别让它掉进
+                # 下面的成功分支去读 page.left。
+                stat["failed"] += 1
+                report("log", {
+                    "message": f"detect {path.name} 失败: {failure or '无检测结果'}"
+                })
+            else:
+                if page.left:
+                    stat["left"] += 1
+                if page.right:
+                    stat["right"] += 1
+                if page.full:
+                    stat["full"] += 1
+                report("log", {
+                    "message": (
+                        f"detect {path.name}  "
+                        f"左={format_box(page.left)} 右={format_box(page.right)} "
+                        f"整幅={format_box(page.full)}  "
+                        f"({elapsed * 1000:.0f} ms)"
+                    )
+                })
+                note = resolution_note(page)  # 互斥消解剔了框 → 日志里看得见
+                if note:
+                    report("log", {"message": note})
+                report("page_boxes", {
+                    "image": path.stem,
+                    "left": list(page.left) if page.left else None,
+                    "right": list(page.right) if page.right else None,
+                    "full": list(page.full) if page.full else None,
+                })
+            report("progress", {"done": stat["done"], "total": total})
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(_detect_one, path) for path in todo]
+        for future in as_completed(futures):
+            # 单张的异常已在 _detect_one 内兜住；这里只是等全部跑完
+            future.result()
+
+    stat["elapsed"] = time.perf_counter() - started_all
+    counted = max(stat["done"], 1)  # 防零除（total 已保证 > 0）
+    summary = (
+        f"总计用时 {stat['elapsed']:.1f} s（共 {total} 张："
+        f"半幅 左{stat['left']}/右{stat['right']}、整幅 {stat['full']}、"
+        f"失败 {stat['failed']}、复用 {stat['reused']}；"
+        f"{workers} 线程，单张累计 {stat['cost']:.1f} s、"
+        f"平均 {stat['cost'] / counted * 1000:.0f} ms/张）"
+    )
+    if load_seconds > 0:
+        summary += f"，模型加载另计 {load_seconds:.1f} s"
+    report("log", {"message": summary})
+    return stat
+
+
 def run_detect_stage(config: dict) -> int:
     """detect 阶段：逐图检测内容框（半幅左右 / 整幅）并上报坐标，不切割、不生成任何文件。
 
     检测算法复用 `functions.detect.detect_page_boxes_by_path`（内部即 CLI crop /
     cropremove 用的同一入口），最终裁剪框由 GUI 按同一套规则
     （`utils.box_geometry.compute_final_boxes`）从检测框实时推导，用于预览标注。
+
+    ⚠️ 逐页循环本体在 :func:`run_detect_pages`（与 singletask 共用一份）；本函数
+    只负责 stdout 拦截、任务上下文与事件协议（``{"type": name, **context, **payload}``）。
     """
     task_id = config["task_id"]
     stage = config["stage"]
@@ -131,148 +289,32 @@ def run_detect_stage(config: dict) -> int:
     try:
         # 同上：跨层复用检测入口是登记在案的有意依赖。
         import utils
-        from functions.detect import (  # noqa: PLC0415
-            resolution_note,
-            detect_page_content_by_path,
-            format_box,
-            warm_up_detect_model,
-        )
 
         files = utils.collect_image_files(Path(args.get("input", ".")), is_file=False)
         total = len(files)
         if not total:
             emit({"type": "error", **context, "message": "输入目录中没有图片"})
             return 1
-        done = 0
-        if int(args.get("area") or 1) == WHOLE_PAGE_AREA:
-            # 整页模式：不加载 YOLO、不写 boxes.json（框由主进程按整页合成）。
-            # 仍逐页报进度，界面上「本子任务」能正常走完，日志说明为何没有框。
-            _emit_log("整页模式：跳过检测，整页作为一个文本框", context)
-            for path in files:
-                done += 1
-                _emit_log(f"检测 {path.name}  整页（未做检测）", context)
-                emit({"type": "progress", **context, "done": done, "total": total})
-            emit(
-                {
-                    "type": "finished",
-                    **context,
-                    "done": done,
-                    "total": total,
-                    "result": None,
-                    "output": None,
-                }
-            )
-            return 0
 
-        # ⚠️ 模型准备**放在计时之外**：先把它备好并单独报一次耗时，之后每一张的
-        # 耗时才是纯检测耗时；否则第一张会背上 5 秒，看起来像那张图有问题。
-        load_line, load_seconds = warm_up_detect_model()
-        _emit_log(load_line, context)
+        def report(name: str, payload: dict) -> None:
+            """把共用循环的事件翻成 stdout 协议行（带任务/阶段上下文）。"""
+            emit({"type": name, **context, **payload})
 
-        # 逐张并发跑：单线程一张一两百毫秒，81 页就要十几秒；并发后总时长
-        # 主要取决于最慢的那张。上限与函数层共用一份（core.args.default_workers
-        # 传入 command="detect" → min(8, CPU 核数, 张数)）：检测每张只在服务端
-        # imread 一次，比去底/裁剪的 ~350MB/张轻得多，所以上限单独放宽到 8。
-        # 具体数值只在 core/args.py 的 _COMMAND_DEFAULT_WORKER_CAP 里写一次。
-        workers = max(
-            1,
-            int(args.get("workers") or 0) or default_workers(total, command="detect"),
+        stat = run_detect_pages(
+            files,
+            workers=int(args.get("workers") or 0),
+            area=int(args.get("area") or 1),
+            reuse=args.get("reuse") or None,
+            report=report,
         )
-        if workers > 1:
-            _emit_log(f"并发处理：{workers} 个线程（共 {total} 张）", context)
-
-        started_all = time.perf_counter()
-        lock = threading.Lock()
-        stat = {"done": 0, "left": 0, "right": 0, "full": 0, "failed": 0, "cost": 0.0}
-
-        def _detect_one(path: Path) -> None:
-            """检测一张并立刻上报。**计数与上报都放在锁内**，保证
-            「本张的 page_boxes → 本张的 progress」成对出现、计数不互相覆盖。"""
-            started = time.perf_counter()
-            failure = None
-            page = None
-            try:
-                page = detect_page_content_by_path(path)
-            except Exception as exc:  # noqa: BLE001 - 单张失败不该中断整批
-                failure = str(exc)
-            elapsed = time.perf_counter() - started
-            with lock:
-                stat["done"] += 1
-                stat["cost"] += elapsed
-                if failure or page is None:
-                    # ⚠️ ``page is None`` 与 failure 同一分支：检测没抛异常时
-                    # 一定给了结果对象，走到这儿拿不到就按失败记，别让它掉进
-                    # 下面的成功分支去读 page.left。
-                    stat["failed"] += 1
-                    _emit_log(
-                        f"detect {path.name} 失败: {failure or '无检测结果'}",
-                        context,
-                    )
-                else:
-                    if page.left:
-                        stat["left"] += 1
-                    if page.right:
-                        stat["right"] += 1
-                    if page.full:
-                        stat["full"] += 1
-                    _emit_log(
-                        f"detect {path.name}  "
-                        f"左={format_box(page.left)} 右={format_box(page.right)} "
-                        f"整幅={format_box(page.full)}  "
-                        f"({elapsed * 1000:.0f} ms)",
-                        context,
-                    )
-                    note = resolution_note(page)  # 互斥消解剔了框 → 日志里看得见
-                    if note:
-                        _emit_log(note, context)
-                    emit(
-                        {
-                            "type": "page_boxes",
-                            **context,
-                            "image": path.stem,
-                            "left": list(page.left) if page.left else None,
-                            "right": list(page.right) if page.right else None,
-                            "full": list(page.full) if page.full else None,
-                        }
-                    )
-                emit(
-                    {
-                        "type": "progress",
-                        **context,
-                        "done": stat["done"],
-                        "total": total,
-                    }
-                )
-
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = [pool.submit(_detect_one, path) for path in files]
-            for future in as_completed(futures):
-                # 单张的异常已在 _detect_one 内兜住；这里只是等全部跑完
-                future.result()
-
-        # ---- 最后汇总：一次性给出总数、成败与耗时（含模型加载另计）----
-        total_elapsed = time.perf_counter() - started_all
-        counted = max(stat["done"], 1)  # 防零除（total 已保证 > 0）
-        # ⚠️ 并发分支的真实进度在 `stat["done"]`，局部变量 `done` 从没自增过
-        #    （2026-09-26 审计）→ 以前 finished 事件里的 done 恒为 0。GUI 现在
-        #    靠 _last_progress 兜着看不出问题，但任何直接消费 finished 的旁路
-        #    （e2e、将来的 UI）会拿到错误的完成数。
-        done = stat["done"]
-        summary = (
-            f"总计用时 {total_elapsed:.1f} s（共 {total} 张："
-            f"半幅 左{stat['left']}/右{stat['right']}、整幅 {stat['full']}、"
-            f"失败 {stat['failed']}；"
-            f"{workers} 线程，单张累计 {stat['cost']:.1f} s、"
-            f"平均 {stat['cost'] / counted * 1000:.0f} ms/张）"
-        )
-        if load_seconds > 0:
-            summary += f"，模型加载另计 {load_seconds:.1f} s"
-        _emit_log(summary, context)
+        # ⚠️ 并发分支的真实进度在 `stat["done"]`（2026-09-26 审计：以前 finished
+        #    里的 done 恒为 0）。GUI 现在靠 _last_progress 兜着看不出问题，但任何
+        #    直接消费 finished 的旁路（e2e、将来的 UI）会拿到错误的完成数。
         emit(
             {
                 "type": "finished",
                 **context,
-                "done": done,
+                "done": stat["done"],
                 "total": total,
                 "result": None,
                 "output": None,

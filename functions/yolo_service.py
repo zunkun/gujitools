@@ -105,6 +105,21 @@ def _service_enabled() -> bool:
     return raw.strip().lower() not in ("0", "false", "no", "off")
 
 
+def require_service() -> bool:
+    """是否**禁止**回落到本进程内加载模型（默认否 ⇒ CLI 行为不变）。
+
+    置 ``GUJI_YOLO_REQUIRE_SERVICE=1`` 的进程里，一旦"这次没走成服务"就报错，
+    而不是自己 `import torch` 载模型。给 GUI 主进程用——它不许进重依赖
+    （torch/ultralytics 约 350MB，见 AGENTS.md 分层守卫）。
+
+    与 :func:`_service_enabled` 同款真假解析（``0/false/no/off`` 为假）。
+    """
+    raw = os.environ.get("GUJI_YOLO_REQUIRE_SERVICE")
+    if raw is None:
+        return False
+    return raw.strip().lower() not in ("0", "false", "no", "off")
+
+
 def _ttl_seconds() -> float | None:
     """空闲 TTL（秒）；**None＝常驻**（默认）。环境变量 `GUJI_YOLO_TTL`
     可显式覆盖成有限值，下限 5 秒——仅测试/排障用。"""
@@ -157,6 +172,14 @@ def _fingerprint() -> str:
     except OSError:
         stamp = "?"
     return f"{VERSION}|{weights}|{stamp}"
+
+
+def model_fingerprint() -> str:
+    """服务身份指纹（公开版；供日志/诊断读取，不参与内部决策）。
+
+    内容与 :func:`_fingerprint` 完全一致——版本 + 权重路径 + 权重大小/修改时间。
+    """
+    return _fingerprint()
 
 
 def _log(message: str) -> None:

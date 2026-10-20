@@ -234,6 +234,8 @@ class TaskDetailPage(
         self._init_ui()
         # 进度事件的界面刷新节流器（见 StageRunnerMixin._PROGRESS_UI_MS）
         self._init_progress_ui()
+        # 执行日志的合并器（见 desktop/ui/log_throttle，StageRunnerMixin._init_log_coalescer）
+        self._init_log_coalescer()
         # 页面尺寸/检测框的攒批落盘（见 StageRunnerMixin._ANNOT_FLUSH_MS）
         self._init_annotation_batch()
         # 参数暂存：面板报到"用户改了参数"就防抖写 drafts/<阶段>.json
@@ -391,6 +393,10 @@ class TaskDetailPage(
             else str(task.get("name") or task_id)
         )
         self._apply_pending_source_defaults()
+        # ⚠️ 先冲刷攒批再清空：``_logs`` 里可能还压着上一个任务的日志行，
+        #    只 ``log_view.clear()`` 的话它们会在下一次定时器到期时**重新冒出来**
+        #    （换任务后日志里混进上一个任务的内容）。
+        self._logs.flush()
         self.log_view.clear()
         self.detect_cache.clear()
         # 图头尺寸缓存按 (路径, mtime) 键控、只增不减：换任务清掉，别攒一整场会话

@@ -66,7 +66,10 @@ def run(ctx) -> None:
     # 否则下一条真正的事件会被拼到它后面、一起解析失败（"丢半条"变"丢一条"）
     d._stdout_tail = ""
     d._consume_worker_stdout(b"warning: bare print without newline")
-    ok("裸 print 余量立刻入日志", "bare print without newline" in d.log_view.toPlainText()
+    # ⚠️ 日志走 ``LogCoalescer`` 攒批（2026-10-20 起）：落笔有窗口延迟，
+    #    这里显式 flush 再断言（验的是"余量被收成日志"，不是"立刻上屏"）。
+    d._logs.flush()
+    ok("裸 print 余量立刻收进日志", "bare print without newline" in d.log_view.toPlainText()
        and d._stdout_tail == "", repr(d._stdout_tail))
     d._consume_worker_stdout(b'{"type":"progress","done":5,"total":6}\n')
     ok("裸 print 余量不吃掉下一条事件", d._last_progress == (5, 6), str(d._last_progress))

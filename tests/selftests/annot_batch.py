@@ -56,6 +56,40 @@ def run(ctx) -> None:
        and auto[0] == [[0, 0, 20, 20], [30, 0, 60, 60]],
        str(auto))
 
+    # ---- 2b. 唯一写者：连续批量写不重读整份文件；extra 并入条目 ----
+    cache = repo._doc(boxes_path)
+    doc_obj = cache.doc()
+    loads: list[int] = []
+    real_load = cache._load
+
+    def _counted_load() -> None:
+        loads.append(1)
+        real_load()
+
+    cache._load = _counted_load            # type: ignore[method-assign]
+    try:
+        repo.save_detect_boxes_batch(tid, {"0003": [[0, 0, 5, 5]]})
+        repo.save_detect_boxes_batch(
+            tid, {"0003": []}, extra={"0003": {"src": [10, 20], "det": "abc"}}
+        )
+        ok("连续两次批量写不重新整份读盘（内存文档是唯一写者）",
+           not loads and cache.doc() is doc_obj, f"重读 {len(loads)} 次")
+    finally:
+        cache._load = real_load            # type: ignore[method-assign]
+    entry = repo.detect_boxes_entry(tid, "0003")
+    ok("extra 字段被并入条目（空框页也留痕，供下次复用）",
+       entry is not None and entry[0] == []
+       and repo.boxes_raw_at(boxes_path)["0003"].get("src") == [10, 20]
+       and repo.boxes_raw_at(boxes_path)["0003"].get("det") == "abc",
+       str(entry))
+
+    repo.save_detect_boxes(tid, "0004", [[1, 1, 9, 9]], origin="manual")
+    repo.save_detect_boxes_batch(tid, {"0004": [[2, 2, 8, 8]]})
+    entry = repo.detect_boxes_entry(tid, "0004")
+    ok("单页写与批量写共用一份文档、互不覆盖（人工框仍优先）",
+       entry is not None and entry[1] == "manual"
+       and entry[0] == [[1, 1, 9, 9]], str(entry))
+
     # ---- 3. 切任务前必须先落盘（否则上一任务的攒批会写进新任务）----
     other = repo.create_task(ctx.pdf, "hash-annot-batch", "另一本", True)
     d._store_page_size({"image": "0999", "width": 111, "height": 222})

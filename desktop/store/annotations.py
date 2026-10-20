@@ -4,15 +4,106 @@
 坐标均为原始图片像素坐标 [x1, y1, x2, y2]，按阅读顺序存 [左框, 右框]。
 image_key 取页面文件名去后缀（stem）——检测/去底直接以 extract 目录为
 输入，不再物化副本，故同一 stem 恒指向同一页。
+
+## 唯一写者：``_DocCache``
+
+本模块所有 boxes/sizes 的读**与写**都必须经过 :func:`_doc_for` 取到的那个
+:class:`_DocCache`（进程内按路径共享一份）。理由有两条：
+
+1. **写更少**：以前每次攒批落盘都是"整份读 + 解析 + 序列化 + 写"；1000+ 页时
+   单次就是几十毫秒的主线程阻塞。改成内存持有后，落盘只剩"序列化 + 写"。
+2. **不互相覆盖**：单页写（拖框/缩放，``save_detect_boxes``）与批量写
+   （``save_detect_boxes_batch``）以前各读各的一份快照，交错时后写的那次会把
+   前一次的结果悄悄抹掉。同一条路径只有一个内存文档、一个写者，这个问题就不
+   存在了。
 """
 
 from __future__ import annotations
 
+import threading
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 from desktop.store.json_io import read_json, write_json
+
+
+class _DocCache:
+    """一份 JSON 文档在**本进程内**的内存持有者与唯一写者。
+
+    ``_reload_if_stale`` 用 ``stat`` 比对上次读/写时的 ``(mtime_ns, size)``：
+    我们自己写入后戳会同步更新，所以只有"外部改过文件"才会重读（例如用户手工
+    编辑过 boxes.json，或另一个进程写过）——保证不会拿内存里的旧快照覆盖别人的
+    改动。
+    """
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self._doc: dict | None = None
+        self._stamp: tuple[int, int] | None = None
+        self._lock = threading.RLock()
+
+    # ------------------------------------------------------------------ 读
+    def doc(self) -> dict:
+        """取内存里的文档（首次访问惰性读盘；文件被外部改过则重读）。
+
+        ⚠️ 返回值**就是**内存里那份 dict，调用方直接原地改，再调 :meth:`flush`。
+        """
+        with self._lock:
+            if self._doc is None:
+                self._load()
+            else:
+                self._reload_if_stale()
+            assert self._doc is not None
+            return self._doc
+
+    def _load(self) -> None:
+        data = read_json(self.path, {})
+        self._doc = data if isinstance(data, dict) else {}
+        self._stamp = self._stat_stamp()
+
+    def _reload_if_stale(self) -> None:
+        """外部改过文件就重读（保持 ``_stamp`` 自洽）。"""
+        if self._stat_stamp() != self._stamp:
+            self._load()
+
+    def _stat_stamp(self) -> tuple[int, int] | None:
+        """``(mtime_ns, size)``；文件不存在/读不到给 None。"""
+        try:
+            st = self.path.stat()
+        except OSError:
+            return None
+        return (st.st_mtime_ns, st.st_size)
+
+    # ------------------------------------------------------------------ 写
+    def flush(self) -> None:
+        """把内存文档**原子写**回磁盘并更新 ``_stamp``（幂等）。
+
+        ⚠️ 保留原 ``_save_json`` 的守卫：任务目录不存在就不写（空壳任务）。
+        """
+        with self._lock:
+            if self._doc is None:
+                return
+            if not self.path.parent.exists():
+                return
+            write_json(self.path, self._doc)
+            self._stamp = self._stat_stamp()
+
+
+#: 进程内按路径共享的文档表（**唯一写者**的落点）。键是 ``Path``：同一路径
+#: 每次拼出来的 Path 对象不同，但相等/哈希按字符串，故恒指向同一个缓存。
+_DOCS: dict[Path, _DocCache] = {}
+_DOCS_LOCK = threading.Lock()
+
+
+def _doc_for(path: Path) -> _DocCache:
+    """取某个路径的共享文档缓存（没有就建一个）。"""
+    with _DOCS_LOCK:
+        cache = _DOCS.get(path)
+        if cache is None:
+            cache = _DocCache(path)
+            _DOCS[path] = cache
+        return cache
 
 
 class AnnotationMixin:
@@ -24,14 +115,9 @@ class AnnotationMixin:
         task_dir: Callable[[str], Path]
         task_diagram: Callable[[str], Any]
 
-    def _load_json(self, path: Path) -> dict:
-        data = read_json(path, {})
-        return data if isinstance(data, dict) else {}
-
-    def _save_json(self, path: Path, data: dict) -> None:
-        if not path.parent.exists():
-            return
-        write_json(path, data)
+    def _doc(self, path: Path) -> _DocCache:
+        """取某路径在本进程内的**唯一**文档（读写都走它，见模块 docstring）。"""
+        return _doc_for(path)
 
     # ---------- 检测框 boxes.json ----------
     def boxes_path(self, task_id: str, node_id: str | None = None,
@@ -79,7 +165,7 @@ class AnnotationMixin:
         """
         if path is None:
             return None
-        entry = self._load_json(path).get(image_key)
+        entry = self._doc(path).doc().get(image_key)
         if not entry:
             return None
         return entry.get("boxes", []), entry.get("origin", "auto")
@@ -102,11 +188,25 @@ class AnnotationMixin:
         """
         if path is None:
             return {}
-        data = self._load_json(path)
+        data = self._doc(path).doc()
         return {
             key: (entry.get("boxes", []), entry.get("origin", "auto"))
             for key, entry in data.items() if isinstance(entry, dict)
         }
+
+    def boxes_raw_at(self, path: Path | None) -> dict:
+        """读**指定文件**的**原始条目表** ``{image_key: entry}``（不裁剪字段）。
+
+        ⚠️ 与 :meth:`boxes_all_at` 的分工：那个只出 ``(boxes, origin)`` 两字段，
+        供界面消费；复用判据要读条目里的 ``src`` / ``det`` 指纹（见
+        ``desktop.services.detect_reuse``），那两个字段在这里必须原样带出。
+
+        返回值**就是内存里那份 dict**：调用方只读，别原地改（要写走
+        :meth:`save_detect_boxes_batch` 等）。
+        """
+        if path is None:
+            return {}
+        return self._doc(path).doc()
 
     def save_detect_boxes(
         self, task_id: str, image_key: str, boxes: list, origin: str = "auto",
@@ -119,7 +219,8 @@ class AnnotationMixin:
         顺手把用户刚指定的左右清掉，等于"一拖就丢设定"。
         """
         path = self.boxes_path(task_id, node_id, primary_id)
-        data = self._load_json(path)
+        doc = self._doc(path)
+        data = doc.doc()
         previous = data.get(image_key) or {}
         entry = {
             "boxes": boxes,
@@ -129,7 +230,7 @@ class AnnotationMixin:
         if previous.get("side"):
             entry["side"] = previous["side"]
         data[image_key] = entry
-        self._save_json(path, data)
+        doc.flush()
 
     # ---------- 半框页的人工左右指定 ----------
     def box_side_at(self, path: Path | None, image_key: str) -> str | None:
@@ -141,7 +242,7 @@ class AnnotationMixin:
         """
         if path is None:
             return None
-        entry = self._load_json(path).get(image_key)
+        entry = self._doc(path).doc().get(image_key)
         if not isinstance(entry, dict):
             return None
         side = entry.get("side")
@@ -152,7 +253,7 @@ class AnnotationMixin:
         if path is None:
             return {}
         out: dict[str, str] = {}
-        for key, entry in self._load_json(path).items():
+        for key, entry in self._doc(path).doc().items():
             if not isinstance(entry, dict):
                 continue
             side = entry.get("side")
@@ -171,7 +272,8 @@ class AnnotationMixin:
         「左框/右框」才动它。
         """
         path = self.boxes_path(task_id, node_id, primary_id)
-        data = self._load_json(path)
+        doc = self._doc(path)
+        data = doc.doc()
         entry = data.get(image_key)
         if not isinstance(entry, dict):
             return  # 没有框就没有"这页是什么侧"可言
@@ -181,11 +283,12 @@ class AnnotationMixin:
             entry.pop("side", None)
         entry["updated_at"] = time.time()
         data[image_key] = entry
-        self._save_json(path, data)
+        doc.flush()
 
     def save_detect_boxes_batch(self, task_id: str, entries: dict[str, list],
                                 node_id: str | None = None,
-                                primary_id: str | None = None) -> None:
+                                primary_id: str | None = None,
+                                extra: dict[str, dict] | None = None) -> None:
         """批量写入某阶段的检测框（origin=auto）：**一次读改写**。
 
         ⚠️ 为什么必须攒批：detect 跑 320 页时逐页 `save_detect_boxes` 是
@@ -194,23 +297,33 @@ class AnnotationMixin:
         ``.workbuddy/perf/2026-09-23-sqlite-vs-json.md``）；攒批后一次落盘
         ~0.02s。人工框（origin=manual）在这里跳过，不被自动结果覆盖——
         与单条版同一条规矩，但只读一次文件。
+
+        ``extra``（可选）：``{image_key: {额外字段}}``，合并进对应条目——用于
+        记录"这份结果来自哪个源文件、按什么检测指纹算的"（见
+        ``desktop.services.detect_reuse``）。⚠️ 默认 ``None`` 时行为与改造前
+        逐字一致；带了 extra 的**空框条目也会写**——复用判据要求"无框页也留痕"，
+        否则空结果页下次只能重跑。
         """
         if not entries:
             return
         path = self.boxes_path(task_id, node_id, primary_id)
-        data = self._load_json(path)
+        doc = self._doc(path)
+        data = doc.doc()
         updated = time.time()
         for image_key, boxes in entries.items():
-            if not boxes or not any(boxes):
+            fields = (extra or {}).get(image_key) or {}
+            if (not boxes or not any(boxes)) and not fields:
                 continue
             if (data.get(image_key) or {}).get("origin") == "manual":
                 continue  # 人工框优先
-            data[image_key] = {
+            entry: dict = {
                 "boxes": boxes,
                 "origin": "auto",
                 "updated_at": updated,
             }
-        self._save_json(path, data)
+            entry.update(fields)
+            data[image_key] = entry
+        doc.flush()
 
     def save_image_sizes_batch(
         self, task_id: str, entries: dict[str, tuple[int, int]],
@@ -220,10 +333,11 @@ class AnnotationMixin:
         if not entries:
             return
         path = self.sizes_path(task_id, node_id, primary_id)
-        data = self._load_json(path)
+        doc = self._doc(path)
+        data = doc.doc()
         for image_key, size in entries.items():
             data[image_key] = [int(size[0]), int(size[1])]
-        self._save_json(path, data)
+        doc.flush()
 
     # ---------- 页面尺寸 sizes.json ----------
     def sizes_path(self, task_id: str, node_id: str | None = None,
@@ -245,9 +359,10 @@ class AnnotationMixin:
                         primary_id: str | None = None) -> None:
         """记录某页图片的原始像素尺寸，作为框坐标与预览映射的坐标系基准。"""
         path = self.sizes_path(task_id, node_id, primary_id)
-        data = self._load_json(path)
+        doc = self._doc(path)
+        data = doc.doc()
         data[image_key] = [int(width), int(height)]
-        self._save_json(path, data)
+        doc.flush()
 
     def image_size(self, task_id: str, image_key: str,
                    node_id: str | None = None,
@@ -262,10 +377,10 @@ class AnnotationMixin:
         :meth:`image_sizes_all`（一次读盘），否则 320 页就是 320 次全量解析。
         """
         scoped = self.sizes_path(task_id, node_id, primary_id)
-        data = self._load_json(scoped)
+        data = self._doc(scoped).doc()
         entry = data.get(image_key)
         if not entry and node_id and primary_id and node_id != primary_id:
-            data = self._load_json(self.sizes_path(task_id))
+            data = self._doc(self.sizes_path(task_id)).doc()
             entry = data.get(image_key)
         if not entry:
             return None
@@ -284,7 +399,7 @@ class AnnotationMixin:
         单页语义的兜底，批量场景下由调用方自己按需合并，免得把两套坐标系
         悄悄混在一起。
         """
-        data = self._load_json(self.sizes_path(task_id, node_id, primary_id))
+        data = self._doc(self.sizes_path(task_id, node_id, primary_id)).doc()
         out: dict[str, tuple[int, int]] = {}
         for key, entry in data.items():
             try:

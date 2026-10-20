@@ -186,8 +186,20 @@ def warm_up_detect_model() -> Tuple[str, float]:
     不能落到"第一张图"的耗时里——用户明确提过那样看起来不合理（第一张 5 秒、
     其余 200 毫秒，像是某张图有问题，其实是模型在加载）。
     """
-    from functions.yolo_service import warm_up  # noqa: PLC0415 - 延迟导入避免成环
+    from functions.yolo_service import (
+        require_service,  # noqa: PLC0415 - 延迟导入避免成环
+        warm_up,
+        warm_up_service_only,
+    )
 
+    if require_service():
+        backend, seconds = warm_up_service_only()
+        if backend != "service":
+            raise RuntimeError(
+                f"常驻 YOLO 服务不可用（{backend}），本进程已禁止加载模型"
+                "（GUJI_YOLO_REQUIRE_SERVICE=1）"
+            )
+        return backend_log_line(backend, seconds), seconds
     backend, seconds = warm_up()
     return backend_log_line(backend, seconds), seconds
 
@@ -202,6 +214,9 @@ def detect_page_content_by_path(image_path, model=None) -> PageBoxes:
       日志里「加载 YOLO 模型完成」只出现一次（在服务进程里）；
     - 服务不可用 → 回落到 ``detect_page_content(imread(path), model)``，行为与
       引入服务之前**完全一致**（最坏就是慢那几秒）。
+
+    ⚠️ ``GUJI_YOLO_REQUIRE_SERVICE=1`` 时**不回落**：服务没走成就抛
+    ``RuntimeError``。那是 GUI 主进程的保护（torch 不许进界面进程）。
 
     ⚠️ 与 `detect_page_content` 的分工：那个是**算法入口**（吃 ndarray，
     crop/GUI 都靠它保证框一致，不要绕过）；本函数是**取图方式的选择**，
@@ -221,7 +236,10 @@ def detect_page_content_by_path(image_path, model=None) -> PageBoxes:
     if model is None:
         # 函数内延迟导入：yolo_service 的检测处理器要反过来 import 本模块，
         # 模块级互相 import 会成环。
-        from functions.yolo_service import detect_boxes_via_service  # noqa: PLC0415
+        from functions.yolo_service import (  # noqa: PLC0415
+            detect_boxes_via_service,
+            require_service,
+        )
 
         outcome = detect_boxes_via_service(image_path)
         if outcome is not None:
@@ -229,6 +247,12 @@ def detect_page_content_by_path(image_path, model=None) -> PageBoxes:
             _set_detect_report("service", outcome.model_load_seconds)
             return PageBoxes(left=outcome.left, right=outcome.right,
                              full=outcome.full, notes=tuple(outcome.notes))
+        if require_service():
+            # GUI 主进程禁重依赖：宁可报错，也不把 torch 拽进界面进程
+            raise RuntimeError(
+                "常驻 YOLO 服务不可用，本进程已禁止加载模型"
+                "（GUJI_YOLO_REQUIRE_SERVICE=1）"
+            )
     img_bgr = utils.imread(image_path)
     if img_bgr is None:
         raise ValueError(f"无法读取图片: {image_path}")

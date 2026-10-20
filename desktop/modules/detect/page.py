@@ -47,7 +47,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QSize
+from PySide6.QtCore import QSize, QTimer
 from PySide6.QtGui import QImageReader
 from PySide6.QtWidgets import QFileDialog
 from qfluentwidgets import CaptionLabel, FluentIcon as FIF
@@ -60,13 +60,16 @@ from desktop.components.viewers.image_view import box_names
 from desktop.components.yolo_export_dialog import ask_yolo_export
 from desktop.modules.base import StepModulePage
 from desktop.modules.thumb_source import ThumbSourceMixin
+from desktop.services import detect_reuse
 from desktop.services.detect_export import (
     entries_from_mapping,
     export_annotated,
     export_yolo,
     yolo_entries,
 )
+from desktop.services.yolo_prewarm import request_prewarm
 from desktop.settings.config import app_config
+from desktop.stages.detect_stage import run_detect_pages
 from desktop.steps import (
     StepKernel,
     StepRequest,
@@ -79,6 +82,7 @@ from desktop.ui.widgets import CONTROL_HEIGHT, Card, SectionTitle, apply_to
 from desktop.utils.files import (
     default_open_dir,
     reveal_dir,
+    singletask_dir,
     singletask_yolo_export_path,
 )
 from utils.book_layout import is_single_wide_half, profile_book
@@ -92,6 +96,13 @@ from utils.box_geometry import (
 
 #: 本页的步骤元数据（标题/副标题/面板/过滤串/默认输出后缀的唯一来源）
 _SPEC = spec_by_key("detect")
+
+#: 本页检测固定用的区域参数。本页不摆「整页模式」（见模块 docstring），所以
+#: ``area`` 恒为 1；结果复用的指纹（``detect_reuse.det_fingerprint``）也按它算。
+_DETECT_AREA = 1
+
+#: 本页检测结果缓存的子目录名（相对 ``singletask/<子任务>/``）。
+_BOXES_CACHE_DIRNAME = "boxes_cache"
 
 #: 导出文件名。⚠️ 与任务流程 ``tasks/<id>/boxes.json`` **同名**是刻意的：
 #: 用户拿它跟任务里的那份对照/替换时不必换算名字，格式也是同一套。
@@ -112,6 +123,15 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
     """检测文本框模块页：拖入图片 → 检测内容框 → 图上修正 → 导出坐标 JSON。"""
 
     SPEC = _SPEC
+
+    #: 「整本书形态判定」重算的节流窗口（ms）。
+    #:
+    #: ⚠️ 为什么要节流：``_refresh_book_layout`` → ``profile_book`` 要遍历**全部**
+    #: 已收框的页，而增量检测是"每来一页就发一条 page_boxes 事件"——直接在里面
+    #: 重算就是 O(N²)：1000 张图时主线程被这一件事拖住（用户报的「页面卡顿」）。
+    #: 改成"置脏 + 300ms 节流"后，执行期间按窗口重算；用户动作（改框、跑完、
+    #: 换源）仍走 ``_refresh_layout_now`` **立即**算。
+    _LAYOUT_UI_MS = 300
 
     def __init__(self, parent=None):
         """建骨架、共用步骤控件与内存中的框表。"""
@@ -135,9 +155,22 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
         self._export_kind = _EXPORT_ANNOTATED
         #: YOLO 导出 job 的统计（见 ``detect_export.export_yolo`` 的返回值）
         self._yolo_summary: dict = {}
+        #: 源对应的**上次检测结果**原始条目表（``boxes_cache/<源键>.json``）。
+        #: 换源时读一次；检测 job 在 worker 线程里只读它算复用（不重读盘）。
+        self._boxes_doc: dict = {}
+        #: 本次执行**上报过结果**的页（stem，含复用页与"检测过但没框"的页）：
+        #: job 在 worker 线程里写、主线程收尾时读（见 :meth:`_save_boxes_cache`）。
+        self._detect_reported: set[str] = set()
         #: 应用配置（开发者模式 / YOLO 标注两个开关，见 desktop.settings.config）
         self.cfg = app_config()
         super().__init__(parent)
+        # 整本书形态判定的重算节流（见 _LAYOUT_UI_MS / _flush_layout_ui）。
+        # ⚠️ 只能建在 super() **之后**：QTimer 要一个已初始化的 QObject 当父。
+        self._layout_dirty = False
+        self._layout_timer = QTimer(self)
+        self._layout_timer.setSingleShot(True)
+        self._layout_timer.setInterval(self._LAYOUT_UI_MS)
+        self._layout_timer.timeout.connect(self._flush_layout_ui)
 
     # ------------------------------------------------------------------ 预览
     def _build_preview(self) -> ImageViewerWidget:
@@ -198,6 +231,45 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
         self.export_progress = ProgressRow(noun="张")
         card.box.addWidget(self.export_progress)
         return card
+
+    # ------------------------------------------------------------------ 执行内核
+    def step_job(self):
+        """本页执行内核要跑的 job：走**共用逐页循环**（见 :func:`run_detect_pages`）。
+
+        为什么不沿用 ``StepControl`` 默认的命令 job（``CommandJob → CommandArgs
+        → DetectFunction``）：``CommandArgs`` 会**丢掉**没在 ``CommandSpec.defaults``
+        登记的键，而"复用上次结果"要额外传一份 ``reuse``；给 CLI 的 detect 命令加
+        参数又会污染 CLI 契约（``core/command_spec.py`` 是 CLI 参数的唯一来源）。
+        注入纯函数 job 后，本页与任务流程第二步跑的是**同一份**批量检测实现。
+        """
+        return callable_job(self._run_detect_job)
+
+    def _run_detect_job(self, request: StepRequest, report) -> str | None:
+        """批量检测 job（跑在 worker 线程）：分拣可复用页 → 跑逐页循环。
+
+        ⚠️ 事件名形状与 ``desktop.steps.kernel.Report`` 一致（``log`` /
+        ``progress`` / ``page_boxes``），经 ``_JobWorker._report`` → 内核
+        ``event`` → 本页 :meth:`_on_step_event` 原样接住——界面这条链一个字都不改。
+        """
+        files = self.source_images()
+        det = detect_reuse.det_fingerprint(_DETECT_AREA)
+        reuse, _todo = detect_reuse.split(files, self._boxes_doc, det)
+        reported: set[str] = set()
+
+        def relay(name: str, payload: dict) -> None:
+            # 记下"这一页本次报过结果"（含复用页与无框页）：收尾写缓存靠它，
+            # 否则会把"没跑成的页"也当成"检测过、无框"缓存起来，下次不再重跑。
+            if name == "page_boxes":
+                stem = str(payload.get("image") or "")
+                if stem:
+                    reported.add(stem)
+            report(name, payload)
+
+        run_detect_pages(
+            files, workers=0, area=_DETECT_AREA, reuse=reuse, report=relay
+        )
+        self._detect_reported = reported
+        return str(request.dest) if request.dest is not None else None
 
     def _build_box_kind_controls(self) -> Card:
         """「选中框类型（左框/右框/整幅）」+「删除选中框」。
@@ -306,7 +378,9 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
         self._origins.clear()
         self._sides.clear()           # 人工指定左右跟着换源作废
         self._widths.clear()          # 页宽缓存跟着换源作废
-        self._refresh_book_layout()   # 新的一批 = 新的整本书判定，别留上一批结论
+        self._boxes_doc = {}          # 上一批的结果缓存条目作废
+        self._detect_reported = set()
+        self._refresh_layout_now()    # 新的一批 = 新的整本书判定，别留上一批结论
         self._sync_export_buttons()
         self.viewer.select_box(-1)
         self._sync_box_kind()
@@ -314,6 +388,111 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
         # 缩略图走 singletask 缓存（清单仍是真实图片——画框按 stem 取键）。
         self.show_images(self.source_images())
         super()._on_source_changed(source)
+        if source is None:
+            return
+        # 上次检过这一批就直接把结果读回来（命中才覆盖状态行，见方法内说明）
+        self._load_cached_result()
+        # 让常驻 YOLO 服务趁用户逗留时把模型先备好（重活都在服务子进程里，
+        # 主线程只排个程——见 desktop.services.yolo_prewarm 的设计口径）。
+        request_prewarm()
+
+    def _load_cached_result(self) -> None:
+        """把上次的检测结果读回内存（只读本页自己的结果缓存）。
+
+        命中后界面直接显示上次的框、状态行改成"可只补未检测的页"——用户不必
+        等一次完整重跑。判据（``src`` 文件戳 + ``det`` 指纹）全村一份，见
+        ``desktop.services.detect_reuse``。
+
+        ⚠️ 读的是 ``singletask/<子任务>/boxes_cache/<源键>.json``，与任务流程的
+        ``tasks/<id>/boxes.json`` **不相通**（AGENTS.md 的 singletask 契约）。
+        """
+        doc = self._load_boxes_cache()
+        self._boxes_doc = doc
+        if not doc:
+            return
+        det = detect_reuse.det_fingerprint(_DETECT_AREA)
+        reuse, _todo = detect_reuse.split(self.source_images(), doc, det)
+        if not reuse:
+            return
+        for stem, payload in reuse.items():
+            self._boxes[stem] = page_box_slots_from_event(payload)
+            self._origins[stem] = "auto"
+        self._refresh_layout_now()
+        self._apply_boxes(str(self.viewer.current_path() or ""))
+        self._sync_export_buttons()
+        self._sync_box_kind()
+        spec = self.SPEC
+        run_text = spec.run_text() if spec else "执行"
+        self.status(
+            f"已载入上次检测结果（{len(reuse)} 页），点「{run_text}」只补未检测的页",
+            "info",
+        )
+
+    def _boxes_cache_path(self, source=None) -> Path | None:
+        """本页检测结果缓存的落点：``singletask/<子任务>/boxes_cache/<源键>.json``。
+
+        ⚠️ 落在 **singletask 自己的缓存根**（:func:`desktop.utils.files.singletask_dir`）：
+        与任务流程的 ``tasks/<id>/boxes.json`` 是两个世界，不许借道。没选源时给
+        ``None``（调用方据此跳过读写）。
+        """
+        spec = self.SPEC
+        if source is None:
+            source = self.control.source()
+        if spec is None or source is None:
+            return None
+        return (
+            singletask_dir(spec.disk_key()) / _BOXES_CACHE_DIRNAME
+            / f"{detect_reuse.source_key(source)}.json"
+        )
+
+    def _load_boxes_cache(self) -> dict:
+        """读上次的结果缓存（**原始条目表**，键 = stem）；没有 / 读坏了给空表。"""
+        path = self._boxes_cache_path()
+        if path is None:
+            return {}
+        data = read_json(path, None)
+        return data if isinstance(data, dict) else {}
+
+    def _save_boxes_cache(self) -> None:
+        """成功收尾：把本次结果连同指纹写回缓存，供下次直接复用。
+
+        ⚠️ **只在成功时写**（``on_result`` 只被成功回调触发）：缓存里永远是"跑完
+        了的"结果，中途中断不会留下半截数据被当成可复用。
+
+        ⚠️ 只写**本次真的报过结果的页**：没跑成的页不写条目，下次仍会重跑。
+        """
+        path = self._boxes_cache_path()
+        files = self.source_images()
+        if path is None or not files:
+            return
+        det = detect_reuse.det_fingerprint(_DETECT_AREA)
+        now = time.time()
+        doc: dict = {}
+        for image in files:
+            stem = image.stem
+            if stem in self._boxes:
+                boxes = self._boxes[stem]
+                origin = self._origins.get(stem, "auto")
+            elif stem in self._detect_reported:
+                boxes, origin = [], "auto"  # 检测过、没检出框：也留痕，下次别再跑
+            else:
+                continue
+            stamp = detect_reuse.file_stamp(image)
+            if stamp is None:
+                continue
+            doc[stem] = {
+                "boxes": boxes,
+                "origin": origin,
+                "updated_at": now,
+                detect_reuse.FIELD_SRC: stamp,
+                detect_reuse.FIELD_DET: det,
+            }
+        self._boxes_doc = doc   # 本次结果就是下次的复用来源
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            write_json(path, doc)
+        except OSError as exc:
+            self.log(f"记住检测结果失败：{exc}")
 
     def source_summary(self, source) -> str:
         """在共用的 ``<源> → <输出>`` 之外，**补上待检测张数**。"""
@@ -342,6 +521,10 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
 
         ⚠️ 事件名与任务流程第二步完全相同（``functions.detect`` 只发这一个），
         所以这里不需要认得别的名字；别的步骤将来报自己的事件也走同一条通道。
+
+        ⚠️ **复用页**的事件（``payload["reused"] == True``）走的是同一条分支：
+        本页的框本来只存内存（不落盘），复用结果**不需要**任何磁盘 IO，填进来
+        就上屏了——所以这里没有额外的 ``reused`` 判断。
         """
         if name != "page_boxes":
             return
@@ -353,9 +536,11 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
             return  # 人工框优先：重跑检测不许把用户改过的框冲掉
         self._boxes[key] = slots
         self._origins[key] = "auto"
-        # 增量检测（逐张返回）也立刻重算：整本书判定随页数累积而变化，
+        # 增量检测（逐张返回）也要重算整本书判定：它随页数累积而变化，
         # 等全部跑完再算的话，中途看到的标注会一直是左/右框。
-        self._refresh_book_layout()
+        # ⚠️ 但**不能**每页都全表重算（O(N²)，1000 张就是主线程被拖死）——
+        #    置脏 + 300ms 节流，到期重算并回填当前页（见 _flush_layout_ui）。
+        self._mark_layout_dirty()
 
     def _on_boxes_edited(self, path_text: str, boxes) -> None:
         """用户在图上改完框：换算成槽位存下（origin=manual），并重画归一化后的形态。"""
@@ -368,7 +553,8 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
         self._sync_export_buttons()
         # 人工改动可能改变整本书的判定（如把一页的宽框缩窄）→ 先重算再重画，
         # 否则这一帧仍按旧结论标「半框」。
-        self._refresh_book_layout()
+        # ⚠️ 用户动作必须**立即**算（不走节流）：他正盯着这一页看结果。
+        self._refresh_layout_now()
         self._apply_boxes(path_text, selected=self.viewer.selected_index())
         self._sync_box_kind()
 
@@ -379,12 +565,15 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
         那个路径），导出按钮会用到它。
         """
         # 整本书的框都齐了 → 重算形态判定（决定「半框」标注）再重画当前页
-        self._refresh_book_layout()
+        # ⚠️ 收尾必须**立即**算：节流那次可能还没到点，而检测已经结束。
+        self._refresh_layout_now()
         self._apply_boxes(
             str(self.viewer.current_path() or ""), selected=self.viewer.selected_index()
         )
         self._sync_export_buttons()
         self._sync_box_kind()
+        # 成功才写结果缓存（复用来源；中途中断不写，见 _save_boxes_cache）
+        self._save_boxes_cache()
         total = len(self.source_images())
         hit = sum(1 for slots in self._boxes.values() if any(slots))
         if not hit:
@@ -572,6 +761,41 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
         setter = getattr(self.viewer, "set_single_column", None)
         if callable(setter):
             setter(bool(profile.single_column_book))
+
+    def _mark_layout_dirty(self) -> None:
+        """把"整本书判定"标脏并起一次节流（到期重算 + 回填当前页）。
+
+        ⚠️ 只用于**增量检测期间**的逐页事件：整本书判定随页数累积而变，但每来
+        一页就全表重算一次是 O(N²)（见 ``_LAYOUT_UI_MS``）。
+        """
+        self._layout_dirty = True
+        self._layout_timer.start(self._LAYOUT_UI_MS)
+
+    def _refresh_layout_now(self) -> None:
+        """**立即**重算整本书判定（不走节流）。
+
+        "错一拍就是错的"的时刻用它：用户改框（要当场看到标注变成左/右/整幅）、
+        检测收尾、换源。
+        """
+        if self._layout_timer.isActive():
+            self._layout_timer.stop()
+        self._layout_dirty = False
+        self._refresh_book_layout()
+
+    def _flush_layout_ui(self) -> None:
+        """节流到期：重算整本书判定，并把当前页重画一遍。
+
+        ⚠️ 必须重画当前页：判定结论（``single_column``）变了，同一页的框标注
+        会跟着从「左框/右框」变成「半框」（或反过来），不重画屏幕就停在旧标签上
+        （见 ``_apply_boxes`` 里的 ``box_names``）。
+        """
+        if not self._layout_dirty:
+            return
+        self._refresh_layout_now()
+        self._apply_boxes(
+            str(self.viewer.current_path() or ""),
+            selected=self.viewer.selected_index(),
+        )
 
     def _apply_boxes(self, path_text: str, selected: int = -1) -> None:
         """把某一页的槽位结果画到查看器上（命名/配色由控件按位置现算）。"""
