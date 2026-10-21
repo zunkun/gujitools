@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 176 个模块、193 个公开类、1408 个公开函数/方法（生成于 2026-10-20）。
+覆盖 176 个模块、193 个公开类、1413 个公开函数/方法（生成于 2026-10-21）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -87,10 +87,10 @@
 | [`desktop.components.viewers.print_preview.layout`](#desktopcomponentsviewersprint_previewlayout) | 1 | 1 |
 | [`desktop.components.viewers.print_preview.thumbs`](#desktopcomponentsviewersprint_previewthumbs) | 1 | 1 |
 | [`desktop.components.viewers.print_preview.widget`](#desktopcomponentsviewersprint_previewwidget) | 1 | 9 |
-| [`desktop.components.viewers.rembg_viewer.core`](#desktopcomponentsviewersrembg_viewercore) | 1 | 9 |
+| [`desktop.components.viewers.rembg_viewer.core`](#desktopcomponentsviewersrembg_viewercore) | 1 | 12 |
 | [`desktop.components.viewers.rembg_viewer.entries`](#desktopcomponentsviewersrembg_viewerentries) | 1 | 0 |
 | [`desktop.components.viewers.rembg_viewer.thumbs`](#desktopcomponentsviewersrembg_viewerthumbs) | 1 | 3 |
-| [`desktop.components.viewers.thumb_strip`](#desktopcomponentsviewersthumb_strip) | 1 | 10 |
+| [`desktop.components.viewers.thumb_strip`](#desktopcomponentsviewersthumb_strip) | 1 | 12 |
 | [`desktop.components.viewers.thumbs_loader`](#desktopcomponentsviewersthumbs_loader) | 1 | 1 |
 | [`desktop.components.yolo_export_dialog`](#desktopcomponentsyolo_export_dialog) | 1 | 6 |
 | [`desktop.modules`](#desktopmodules) | 1 | 1 |
@@ -5697,6 +5697,9 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 | `current_entry_path() -> str \| None` | 当前选中条目的源图路径（无条目时为 None）。 |
 | `show_live_pending() -> None` | 实时预览正在计算：只在**下方说明行**给个反馈，**不动大图**。 |
 | `refresh_page(path_text: str) -> None` | 某文件被覆盖后刷新本查看器：受影响条目图标 + 当前大图。 |
+| `result_dir() -> Path \| None` | 当前生效的去底色结果目录（未设置为 None）。 |
+| `set_result_dir(path: Path \| None) -> None` | 执行**开始前**先把结果目录告诉查看器（边跑边出结果）。 |
+| `refresh_running_results(changed: set[str]) -> None` | 执行期间：某几页结果刚落盘 → 只刷**看得见**的那几条 + 当前大图。 |
 
 ##### `__init__(empty_hint: str='暂无图片', image_editable: bool=True, parent=None)`
 
@@ -5753,6 +5756,26 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 某文件被覆盖后刷新本查看器：受影响条目图标 + 当前大图。
 
 由宿主在缩略图重生成完毕后调用；路径与本查看器无关时是空操作。
+
+##### `set_result_dir(path: Path | None) -> None`
+
+执行**开始前**先把结果目录告诉查看器（边跑边出结果）。
+
+与 :meth:`set_images` 的差别：不重建条目/不重装缩略图条，只换结果来源
+并重载当前大图。去底色每页产物一落盘，宿主就能调
+:meth:`refresh_running_results` 把该页刷成"去底色结果"。
+
+##### `refresh_running_results(changed: set[str]) -> None`
+
+执行期间：某几页结果刚落盘 → 只刷**看得见**的那几条 + 当前大图。
+
+用户 2026-10-21：「去底色步骤分批处理，能阶段反馈效果，不卡顿」。
+
+⚠️ **不做 ``set_images`` 整条重建**：那样每次刷新都会重建整条缩略图条、
+把当前页翻回第一条，千页时还会重解一遍窗口——比刷新本身还贵。
+这里只点名叫停那几张（宿主按 ``page_done`` 事件攒批后传路径集合），
+看不见的行等用户滚过去时由窗口装载器按最新结果现合成（收尾时宿主
+还会整条重装一次，兜住一切漏刷）。
 
 ---
 
@@ -5857,6 +5880,8 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 | `add_placeholder(text: str) -> None` | 追加一个纯文字占位条目（无图标，如"缩略图加载中…"）。 |
 | `add_page_item(label: str, path: str='') -> None` | 新增一个带占位图的条目，缩略图就绪后由 set_item_icon 替换。 |
 | `set_item_icon(index: int, image, path: str, label: str) -> None` | 替换某条目的图标/文字/路径（缩略图异步就绪后回调）。 |
+| `visible_row_range() -> tuple[int, int]` | 当前**看得见**的首/末行号（闭区间；空列表返回 ``(0, -1)``）。 |
+| `is_row_visible(row: int) -> bool` | 第 ``row`` 条此刻是否在可见窗口内（含边界）。 |
 
 ##### `decode_edge(dpr: float=1.0, base: int | None=None) -> int`
 
@@ -5912,26 +5937,42 @@ Delete/Backspace → ``delete_requested``。
 占位图按满框（ICON_SIZE）给 sizeHint——此时还不知道这张图的宽高比；
 真实缩略图一到就由 set_item_icon 按实际比例改小。
 
+##### `visible_row_range() -> tuple[int, int]`
+
+当前**看得见**的首/末行号（闭区间；空列表返回 ``(0, -1)``）。
+
+缩略图按可见窗口懒加载（见 ``ThumbsMixin``）：只有这个区间（外加上下
+预取边距）里的条目才值得解码。千页书一次性把缩略图全解出来，即使分批
+也会长时间占着一个核——用户实际只看得见首屏那几行。
+
+⚠️ 视口高为 0（控件还没 show / 离屏自测）时退化成"返回首行"：调用方
+自己会加预取边距，不会变成一张都不加载。
+
 ---
 
 ## `desktop.components.viewers.thumbs_loader`
 
 源码：[`desktop/components/viewers/thumbs_loader.py`](../../desktop/components/viewers/thumbs_loader.py)
 
-缩略图异步装载混入：为 ThumbStrip **分批**加载图片缩略图。
+缩略图异步装载混入：为 ThumbStrip **按可见窗口**懒加载图片缩略图。
 
-⚠️ 为什么必须分批
+⚠️ 为什么必须按窗口、不能全量
     一次性把全部页面丢给一个 worker，worker 会在紧循环里连续做
     「QImageReader 缩放解码 + SmoothTransformation」，一个核直接打满——
-    用户感知是「刚点进详情页，风扇突然转快」。而首屏真正看得见的只有
-    最上面几行缩略图，其余几十张晚一两秒补齐完全不影响使用。
+    用户感知是「刚点进详情页，风扇突然转快」。
 
-    分批后 CPU 从「连续满负载几秒」变成「一小段脉冲 + 间隙 + 若干小脉冲」，
-    风扇不会明显起转；界面反而更早可交互（首批只做十几张的分量）。
+    早先的折中是「分批补齐」（首批 10、之后每批 12、间隙 150ms）：单批小了，
+    但**仍然会把 1000+ 页全部解完**——一本千页书要持续解码十几秒，用户实际
+    只看得见首屏那几行。2026-10-21 用户口径：
+
+    > 所有步骤缩略图不用全部一次加载
+
+    所以现在只在**可见窗口**（视口首末行）上下各留一点预取边距内解码；
+    用户滚动到哪里，才补哪一段。不滚就永远不会为看不见的页付 CPU。
 
 ### `class ThumbsMixin(WorkerHost)`
 
-为持有 ThumbStrip 的查看器提供分批缩略图加载。
+为持有 ThumbStrip 的查看器提供**可见窗口**缩略图加载。
 
 子类可以直接用基类的 :meth:`_load_thumbs`，也可以走
 :meth:`_load_thumbs_chunked` 自带 worker 工厂与回调（print/rembg 需要
@@ -5941,7 +5982,7 @@ Delete/Backspace → ``delete_requested``。
 
 | 方法 | 说明 |
 | --- | --- |
-| `shutdown_workers() -> None` | 停掉分批定时器与未完成的批次，再走基类的线程收尾。 |
+| `shutdown_workers() -> None` | 停掉窗口定时器、断开图条滚动信号，再走基类的线程收尾。 |
 
 ---
 
@@ -6658,6 +6699,12 @@ PDF排版模块页：拖入成品图（一批或一个文件夹）→ 调版面 
 单文件模式下没有框可用，所以这里**只暴露「整图/去底参数」这一层**，area 固定
 按「图像本身」处理，不参与框裁剪。
 
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| _WARM_THUMB_LIMIT | `60` |
+
 ### `class RembgModulePage(StepModulePage, ThumbSourceMixin)`
 
 去底色模块页：拖入图片（单张或文件夹）→ 调参数 → 批量去底 → 对比看结果。
@@ -7264,6 +7311,12 @@ _select_stage()、_set_stage_status()、_toast()、log_view。
 源码：[`desktop/pages/taskdetail/manifest.py`](../../desktop/pages/taskdetail/manifest.py)
 
 任务详情页的页面清单控制器：manifest 维护、缩略图/尺寸提供、页面增删。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| _ENTRY_THUMB_WARM_LIMIT | `60` |
 
 ### `class PageListMixin`
 
@@ -8258,7 +8311,7 @@ GUI 主进程（违反 AGENTS.md「GUI 主进程禁重依赖」）。代价是�
 | --- | --- |
 | `det_fingerprint(area: int) -> str` | 一次检测的**廉价**身份指纹：程序版本 + 复用格式版本 + ``area``。 |
 | `file_stamp(path: Path) -> list \| None` | 文件的 ``[字节数, mtime_ns]``；读不到（不存在 / 无权限）给 ``None``。 |
-| `entry_usable(entry, path: Path, det: str) -> bool` | 该条目能否复用：``det`` 指纹一致**且** ``src`` 与当前文件戳一致。 |
+| `entry_usable(entry: object, path: Path, det: str) -> TypeGuard[dict]` | 该条目能否复用：``det`` 指纹一致**且** ``src`` 与当前文件戳一致。 |
 | `payload_of(entry: dict) -> dict` | 把条目的**槽位**表示还原成 ``page_boxes`` 事件的负载形状。 |
 | `split(files: Iterable[Path], doc: dict, det: str) -> tuple[dict[str, dict], list[Path]]` | 把 ``files`` 分成（**可复用**的 ``{stem: 事件负载}``, **待检测**的文件表）。 |
 | `source_key(source) -> str` | 独立任务结果缓存的文件名：源的可读前缀 + 归一化路径的短哈希。 |
@@ -8270,7 +8323,7 @@ GUI 主进程（违反 AGENTS.md「GUI 主进程禁重依赖」）。代价是�
 ``area`` 是检测参数里**唯一**会改变结果的那一个（整页模式压根不走检测），
 所以指纹只需要它。见模块 docstring 里"不读权重"的取舍。
 
-#### `entry_usable(entry, path: Path, det: str) -> bool`
+#### `entry_usable(entry: object, path: Path, det: str) -> TypeGuard[dict]`
 
 该条目能否复用：``det`` 指纹一致**且** ``src`` 与当前文件戳一致。
 
@@ -13073,7 +13126,12 @@ exist_ok=False``，被抢就顺延），所以并发/历史残留时**实际拿�
 ⚠️ 只改**流程定义**，不碰任何产物。改完流程后已有产物是否还有效，是
 **界面该提示的事**，由调用方判断——store 只管存。
 
-（``task_diagram`` **无缓存**，每次读盘——"改了没反应"别往缓存上查。）
+⚠️ 落盘后**只作废**解析缓存，不能拿传进来的这张图回填：调用方给的往往是
+编辑器手里的**在制品**（节点 ``stage`` 等派生字段可能是 None），而
+``FlowDiagram.load`` 会按节点名把 ``stage`` 补出来——``stage_slots()``
+正是吃这个字段。回填未归一化的对象会让步骤条退化成"每格都是空步骤"
+（自测 last_stage 6b 当场红）。代价只是保存后多解析一次文件，保存本来
+就是低频操作。
 
 ##### `task_slots(task_id: str) -> tuple[StageSlot, ...]`
 
@@ -13244,6 +13302,11 @@ exist_ok=False``，被抢就顺延），所以并发/历史残留时**实际拿�
 
 ⚠️ 开关查询**永不抛错**：任务号非法/目录没了/文件坏了，一律当"没开"。
 调用方（列表后台线程、状态机）不能因为一个开关读不出来就崩。
+
+⚠️ 命中缓存的条件是**文件指纹没变**（mtime_ns + size）：这个方法在
+第三步刷新时会被**每页**问一次（``imposition_effective`` 在里面），
+每次都完整读 JSON 纯属白花；拨开关会重写该文件，指纹一变立刻失效。
+文件不存在时**不缓存**（否则它后来被建出来会被旧结论挡住）。
 
 ##### `scheduler_flags(task_id: str, imposition_active: bool=False) -> dict[str, bool]`
 

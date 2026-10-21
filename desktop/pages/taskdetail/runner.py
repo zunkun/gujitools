@@ -125,6 +125,15 @@ class StageRunnerMixin:
     #: 统计按秒刷新，收尾/切阶段/手工改框仍**立即**重算（见 ``_refresh_stats_now``）。
     _STATS_UI_MS = 1000
 
+    #: 去底色执行期间「某几页结果刚落盘」的界面刷新窗口（ms）。
+    #:
+    #: ⚠️ worker 每页完成就发一条 ``page_done``（一本 1000 页的书 = 1000 条）。
+    #: 每条都去刷缩略图/大图会把主线程拖住（且同一批并发完成时更是连着来），
+    #: 所以攒 400ms 一次、每次只刷**当前可见**的那几行（见
+    #: ``RembgPreviewWidget.refresh_running_results``）——用户看到的是"一页页
+    #: 陆续变成去底色结果"，主线程不做看不见的活。
+    _REMBG_UI_MS = 400
+
     def _init_progress_ui(self) -> None:
         """建进度刷新节流器（宿主页面 __init__ 里调一次，须在 _init_ui 之后）。"""
         self._progress_ui_timer = QTimer(cast("QObject", self))
@@ -667,6 +676,9 @@ class StageRunnerMixin:
         self._stdout_tail = ""
         self._progress_dirty = False
         self._progress_ui_timer.stop()
+        # 上一轮攒着的 page_done 不能带进这一轮（会刷到同名但不同内容的页上）
+        self._rembg_dirty.clear()
+        self._rembg_ui_timer.stop()
         # 本步**自己**的活儿：立刻显示"执行中"并把进度归零 —— 第一个 progress
         # 事件到达之前（torch 冷启动可达数秒）不该继续挂着上一次的「成功 91/91」。
         # 跨步骤启动（在别的步骤点了按钮）则一个像素都不动：那一步的进度条与
@@ -860,6 +872,8 @@ class StageRunnerMixin:
                 self._store_stage_boxes(event)
             elif etype == "page_size":
                 self._store_page_size(event)
+            elif etype == "page_done":
+                self._on_worker_page_done(event)
             elif etype == "started":
                 self._logs.append(
                     f"子任务进程已启动：{STAGE_LABELS.get(event.get('stage'), event.get('stage'))}"
@@ -876,6 +890,59 @@ class StageRunnerMixin:
                     self._last_error_line = message.strip()
             elif etype == "cancelled":
                 self._logs.append_now("子任务进程已被中断。")
+
+    def _on_worker_page_done(self, event: dict) -> None:
+        """一条 ``page_done``：该页产物已落盘 → 攒进脏集合，节流刷界面。
+
+        ⚠️ 只对**去底色**有用：其它步骤的每页产物要么不直接上屏（extract 由
+        ``_poll_extract_results`` 轮询），要么根本没有逐页预览（detect 走
+        ``page_boxes``）。这里按 ``running_stage`` 过滤，不猜事件来源。
+        """
+        if self.running_stage != "rembg":
+            return
+        source = str(event.get("source") or "")
+        if not source:
+            return
+        self._rembg_dirty.add(source)
+        if not self._rembg_ui_timer.isActive():
+            self._rembg_ui_timer.start()
+
+    def _init_rembg_feedback(self) -> None:
+        """建去底色阶段反馈的攒批器（宿主页面 __init__ 里调一次）。"""
+        #: 本轮执行里**结果刚落盘**的源路径（攒批后一次刷可见行）
+        self._rembg_dirty: set[str] = set()
+        self._rembg_ui_timer = QTimer(cast("QObject", self))
+        self._rembg_ui_timer.setSingleShot(True)
+        self._rembg_ui_timer.setInterval(self._REMBG_UI_MS)
+        self._rembg_ui_timer.timeout.connect(self._flush_rembg_feedback)
+
+    def _flush_rembg_feedback(self) -> None:
+        """攒批到期：把刚落盘的几页刷到界面（只刷看得见的行）。
+
+        只在**当前看的就是去底色**时刷：在别的步骤上刷新一个隐藏控件纯属
+        白花 CPU；切回去时 ``_refresh_preview`` 会整条重装，漏不掉。
+        """
+        changed = self._rembg_dirty
+        self._rembg_dirty = set()
+        if not changed or not self.task_id:
+            return
+        if self.current_stage() != "rembg":
+            return
+        viewer = getattr(self, "rembg_viewer", None)
+        if viewer is None:
+            return
+        if viewer.result_dir is None:
+            # 结果目录与 run_stage 的 rembg 分支同一份规则（取**正在跑**的节点）
+            try:
+                viewer.set_result_dir(
+                    self.store.node_or_stage_output(
+                        self.task_id, self.running_node or self.current_node(),
+                        "rembg",
+                    )
+                )
+            except Exception:  # noqa: BLE001 - 反馈是旁路，不能拖垮执行
+                return
+        viewer.refresh_running_results(changed)
 
     def _on_worker_progress(self, event: dict) -> None:
         """一条 progress 事件：轻量部分即时上屏，重活按窗口合并。

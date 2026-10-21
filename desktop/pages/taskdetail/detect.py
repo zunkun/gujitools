@@ -724,19 +724,71 @@ class DetectMixin:
         ⚠️ 消费方读取（B 方案）：存档框取**连线上喂给当前节点**的那个检测
         节点的文件（``_boxes_read_path``）——两个「检测文本框」节点各有各的框，
         按阶段读会让去底色用错节点的框裁图。
+
+        ⚠️ 非整页模式走 :meth:`_boxes_map_cached`（整本一次读齐 + 失效缓存）：
+        查看器构建条目会**逐页**回调本方法，逐页解析流程图 + 读整份
+        ``boxes.json`` 就是 O(n²)。
         """
-        if self._current_area() == WHOLE_PAGE_AREA:
+        area = self._current_area()
+        if area == WHOLE_PAGE_AREA:
             return self._whole_page_entry(path_text)[0]
         boxes = self.detect_cache.get(str(path_text))
-        if boxes is None:
-            entry = (
-                self.store.boxes_entry_at(
-                    self._boxes_read_path(), Path(path_text).stem
-                )
-                if self.task_id else []
-            )
-            boxes = entry[0] if entry else []
-        return boxes or []
+        if boxes is not None:
+            return boxes or []
+        return self._boxes_map_cached(area).get(Path(path_text).stem, []) or []
+
+    def _boxes_map_cached(self, area: int | None = None) -> dict:
+        """整本 ``{页名: 原始槽位}``，带缓存（``_detect_boxes_for`` 的整本版）。
+
+        ⚠️ 为什么要有缓存：查看器重建条目时会**逐页**回调 ``boxes_provider``
+        （110 页 = 110 次），每次走一遍"解析流程图 → 找上游连接线 → 读
+        boxes.json"就是 O(n²)——真实 GUI 实测这一步占 0.27~0.58s，是进详情/
+        首帧卡顿的主要残留。这里把整本读成一张表，只在下列任一项变化时重算：
+
+        - ``detect_cache.version``（用户改框，``VersionedBoxCache`` 自增）；
+        - 框文件指纹（mtime_ns + size，外部落盘如批量检测写回）；
+        - 页清单（``_manifest_paths``，内建签名缓存，命中很便宜）；
+        - 当前步骤格序（换了节点 ⇒ 上游框可能来自另一份文件）；
+        - 区域模式（area=4 的整页边界是派生值，不能拿去当半幅框用）。
+
+        ⚠️ 不能改成"调用方传一张一次性快照"：查看器的 provider 是长期持有的，
+        之后改 area / 实时预览落盘都会再次重建条目，快照会把用户刚改的框吃掉
+        （自测 rembg「area=1 该页拆成 -r/-l 两条目」当场红）。
+        """
+        if area is None:
+            area = self._current_area()
+        paths = self._manifest_paths()
+        version = getattr(self.detect_cache, "version", 0)
+        bar = getattr(getattr(self, "step_bar", None), "_current", -1)
+        file_key = tuple(str(path) for path in paths)
+        cache = self.__dict__.get("_boxes_map_cache")
+        read_path = cache.get("path") if cache else None
+        key = (self.task_id, bar, area, version, file_key, str(read_path),
+               self._file_fingerprint(read_path))
+        if cache is not None and cache.get("key") == key:
+            return cache["map"]
+        # 未命中才现算（含整页模式的整页边界兜底，见 _boxes_map_all）
+        mapping = self._boxes_map_all()
+        read_path = self._boxes_read_path() if self.task_id else None
+        self._boxes_map_cache = {
+            "key": (self.task_id, bar, area, version, file_key,
+                    str(read_path) if read_path else None,
+                    self._file_fingerprint(read_path)),
+            "map": mapping,
+            "path": read_path,
+        }
+        return mapping
+
+    @staticmethod
+    def _file_fingerprint(path) -> tuple[int, int] | None:
+        """文件指纹（``mtime_ns`` + ``size``）；文件不存在返回 None。"""
+        if path is None:
+            return None
+        try:
+            stat = Path(path).stat()
+        except OSError:
+            return None
+        return (stat.st_mtime_ns, stat.st_size)
 
     def _boxes_map_all(self) -> dict:
         """整本：``{页名: 原始槽位}``，**一次读盘**（语义与 ``_detect_boxes_for`` 对齐）。

@@ -51,6 +51,10 @@ EVENT_PROGRESS = "progress"
 PROGRESS_TOTAL_EVENT = "progress_total"
 EVENT_PAGE_BOXES = "page_boxes"
 EVENT_PAGE_SIZE = "page_size"
+#: 单页处理完成。GUI 据此**边跑边刷**该页（去底色每页产物一落地就能看），
+#: 不必等整批结束。payload：``source``（源路径）、``file``（文件名）、
+#: ``status``（success/skipped/error）、``output``（产物路径，失败时为空）。
+EVENT_PAGE_DONE = "page_done"
 
 
 @runtime_checkable
@@ -135,6 +139,7 @@ def normalize_reporter(reporter: Optional[Reporter]) -> Reporter:
 
 __all__ = [
     "EVENT_PAGE_BOXES",
+    "EVENT_PAGE_DONE",
     "EVENT_PAGE_SIZE",
     "EVENT_PROGRESS",
     "PROGRESS_TOTAL_EVENT",

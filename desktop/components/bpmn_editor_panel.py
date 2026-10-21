@@ -35,6 +35,8 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QScrollArea, QVBoxLayout, QWidget
 
@@ -72,7 +74,13 @@ class BpmnEditorPanel(QWidget):
         """
         super().__init__(parent)
         self._editable = editable
-        self._diagram = diagram
+        # ⚠️ **必须复制一份再用**：画布的编辑动作是**原地改**这张图的（节点/连线
+        # 直接替换与增删）。而 ``TaskStore.task_diagram()`` 现在带解析缓存、返回
+        # 的是**同一个对象**——直接交给编辑器会把缓存里的图改脏：用户改了又点
+        # 「关闭」，磁盘还是旧流程，详情页却永远显示编辑到一半的样子（缓存按
+        # 文件指纹命中，文件没变就永远不会自愈）。编辑器只该动草稿，保存时才
+        # 经 ``save_task_diagram`` 写回。
+        self._diagram = deepcopy(diagram)
         self._reset_factory = reset_factory
         #: 给新节点取名字时参考的图（惰性读默认模板，见 _name_source）
         self._template: FlowDiagram | None = None

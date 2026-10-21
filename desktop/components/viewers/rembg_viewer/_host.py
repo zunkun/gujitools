@@ -122,6 +122,16 @@ class RembgViewerHost(QWidget, ThumbsMixin, ZoomPopupMixin):
     def live_dir(self) -> Path | None:
         ...
 
+    @property
+    def result_dir(self) -> Path | None:
+        ...
+
+    def refresh_running_results(self, changed: set[str]) -> None:
+        ...
+
+    def set_result_dir(self, path: Path | None) -> None:
+        ...
+
     def navigate(self, forward: bool) -> None:
         ...
 

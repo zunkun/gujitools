@@ -21,19 +21,32 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
+from PySide6.QtCore import QTimer
+
+from core.reporter import EVENT_PAGE_DONE
 from desktop.components.viewers import RembgPreviewWidget
 from desktop.modules.base import StepModulePage
 from desktop.modules.thumb_source import ThumbSourceMixin
 from desktop.steps import spec_by_key
+from desktop.ui.widgets import Card
 
 #: 本页的步骤元数据（标题/副标题/面板/过滤串/默认输出后缀的唯一来源）
 _SPEC = spec_by_key("rembg")
+
+#: 换源时**预热**缩略图缓存的上限（张）。用户 2026-10-21：所有步骤的缩略图
+#: 不必全部一次加载——只把首屏几屏渲进 singletask 缓存，更靠后的页等用户滚到
+#: 可见窗口时由查看器现解码（``ThumbsMixin`` 按可见窗口懒加载）。
+_WARM_THUMB_LIMIT = 60
 
 
 class RembgModulePage(StepModulePage, ThumbSourceMixin):
     """去底色模块页：拖入图片（单张或文件夹）→ 调参数 → 批量去底 → 对比看结果。"""
 
     SPEC = _SPEC
+
+    #: 「某几页结果刚落盘」的界面刷新窗口（ms）。与任务流程同一个口径：
+    #: 逐页完成事件攒 400ms、每次只刷看得见的行（见 ``refresh_running_results``）。
+    _REMBG_UI_MS = 400
 
     if TYPE_CHECKING:
         # ⚠️ 本页左栏是「原图 / 去底结果对比」控件 ``RembgPreviewWidget``，它
@@ -49,7 +62,14 @@ class RembgModulePage(StepModulePage, ThumbSourceMixin):
         #: 结束时它被整体交给查看器（``RembgPreviewWidget.set_cached_thumbs``
         #: 的整体替换语义）。
         self._thumb_cache_batch: dict[str, str] = {}
+        #: 本轮执行里**结果刚落盘**的源路径（见 :meth:`_on_step_event`）
+        self._rembg_dirty: set[str] = set()
         super().__init__(parent)
+        #: 阶段反馈的攒批定时器（见 ``_REMBG_UI_MS``）
+        self._rembg_ui_timer = QTimer(self)
+        self._rembg_ui_timer.setSingleShot(True)
+        self._rembg_ui_timer.setInterval(self._REMBG_UI_MS)
+        self._rembg_ui_timer.timeout.connect(self._flush_rembg_feedback)
 
     # ------------------------------------------------------------------ 预览
     def _build_preview(self) -> RembgPreviewWidget:
@@ -62,6 +82,49 @@ class RembgModulePage(StepModulePage, ThumbSourceMixin):
         return self.viewer
 
     # ------------------------------------------------------------------ 源
+    def _build_control(self) -> Card:
+        """共用步骤控件 + 接「单页完成」事件（阶段反馈的来源）。
+
+        ⚠️ ``StepKernel`` 把非 progress/log 事件原样透传上来（见
+        ``desktop.steps.kernel``），去底色的每页产物一落盘就有
+        ``page_done``——本页据此边跑边刷新（与「检测文本框」页同一个通道）。
+        """
+        card = super()._build_control()
+        self.control.event.connect(  # type: ignore[reportAttributeAccessIssue]  # ``event`` 与 QObject.event 同名，运行时是 Signal
+            self._on_step_event
+        )
+        return card
+
+    def _on_step_event(self, name: str, payload) -> None:
+        """一条步骤私有事件：只关心 ``page_done``（其它步骤事件本页用不上）。"""
+        if name != EVENT_PAGE_DONE or not isinstance(payload, dict):
+            return
+        source = str(payload.get("source") or "")
+        if not source:
+            return
+        self._rembg_dirty.add(source)
+        if not self._rembg_ui_timer.isActive():
+            self._rembg_ui_timer.start()
+
+    def _flush_rembg_feedback(self) -> None:
+        """攒批到期：把刚落盘的几页刷到左栏（只刷**看得见**的行 + 当前大图）。
+
+        结果目录取 ``control.output()``——独立页的执行内核把 ``dest``
+        **精确**当作产物目录（见 ``CommandJob.__call__``），与收尾时
+        ``on_result`` 拿到的是同一个。
+        """
+        changed = self._rembg_dirty
+        self._rembg_dirty = set()
+        if not changed:
+            return
+        viewer = self.viewer
+        if viewer.result_dir is None:
+            dest = self.control.output()
+            if dest is None:
+                return
+            viewer.set_result_dir(dest)
+        viewer.refresh_running_results(changed)
+
     def _on_source_changed(self, source) -> None:
         """换源：左栏**立刻**显示这批源图，再走基类那套显隐/副标题。
 
@@ -72,6 +135,9 @@ class RembgModulePage(StepModulePage, ThumbSourceMixin):
         建好、显示原图，结果生成后 :meth:`on_result` 再传真目录。
         """
         self._thumb_cache_batch = {}
+        # 换源：上一轮攒着的 page_done 属于旧清单，别刷到新条目上
+        self._rembg_dirty.clear()
+        self._rembg_ui_timer.stop()
         images = self.source_images() if source is not None else []
         # list 不变型：清单是 list[Path]，控件收 list[Path | str]
         self.viewer.set_images(cast("list[Path | str]", images), None)
@@ -92,7 +158,8 @@ class RembgModulePage(StepModulePage, ThumbSourceMixin):
             return
         from desktop.workers import ImageThumbCacheWorker, connect_queued
 
-        images = [Path(p) for p in images]
+        # 只预热首屏那几屏（见 _WARM_THUMB_LIMIT）
+        images = [Path(p) for p in images][:_WARM_THUMB_LIMIT]
         mapping: dict[str, str] = {}
         self._thumb_cache_batch = mapping
         cache_dir = self._thumb_cache_dir()
@@ -198,6 +265,8 @@ class RembgModulePage(StepModulePage, ThumbSourceMixin):
         与 extract / detect / print 三页一致：查看器是独立于页面外壳的
         ``WorkerHost``，不给它收尾，退出时那些线程还在跑。
         """
+        self._rembg_ui_timer.stop()
+        self._rembg_dirty.clear()
         self.viewer.shutdown_workers()
         super().shutdown_workers()
 

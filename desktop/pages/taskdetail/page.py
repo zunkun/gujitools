@@ -238,6 +238,8 @@ class TaskDetailPage(
         self._init_log_coalescer()
         # 页面尺寸/检测框的攒批落盘（见 StageRunnerMixin._ANNOT_FLUSH_MS）
         self._init_annotation_batch()
+        # 去底色执行期的阶段反馈（见 StageRunnerMixin._REMBG_UI_MS）
+        self._init_rembg_feedback()
         # 参数暂存：面板报到"用户改了参数"就防抖写 drafts/<阶段>.json
         self._install_draft_hooks()
         # 图片拼版的合成防抖定时器（后台落 stages/imposition）
@@ -1682,6 +1684,10 @@ class TaskDetailPage(
             self.rembg_viewer.set_images(
                 self._manifest_paths(),
                 self._node_dir("rembg"),
+                # ⚠️ 逐页回调必须走``_detect_boxes_for``（不能塞一张一次性快照）：
+                #    查看器之后还会按防抖重建条目（改 area / 实时预览落盘），
+                #    那时用户刚改的框（``detect_cache``）必须立刻生效。它内部已按
+                #    整本缓存（``_boxes_map_cached``），110 次调用不再是 O(n²)。
                 boxes_provider=self._detect_boxes_for,
                 region_params_provider=self._current_detect_params,
                 thumb_provider=self._page_thumb_for,

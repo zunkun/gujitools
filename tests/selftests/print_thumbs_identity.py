@@ -79,12 +79,12 @@ def _near(a, b, tol: int = 24) -> bool:
 
 
 def _wait_all_thumbs(widget, app, expect_calls: int, timeout: float = 30.0) -> None:
-    """等所有批次跑完并静置，确保在飞回调都已落到主线程。"""
+    """等窗口内的批次跑完并静置，确保在飞回调都已落到主线程。"""
     deadline = time.time() + timeout
     while time.time() < deadline:
         app.processEvents()
-        if (widget._thumb_next >= widget._thumb_total
-                and widget._thumb_next > 0
+        if (widget._thumb_total > 0
+                and len(widget._thumb_loaded) >= widget._thumb_total
                 and getattr(widget, "_thumb_probe_calls", 0) >= expect_calls):
             break
         time.sleep(0.02)
@@ -126,16 +126,15 @@ def run(ctx) -> None:
     from tests.selftests._context import ok
 
     from desktop.components.viewers import print_preview as pp
-    from desktop.components.viewers import thumbs_loader
     from desktop.components.viewers.thumb_strip import ThumbStrip
 
     app = ctx.app
-    mixin = thumbs_loader.ThumbsMixin
-    saved_cfg = (
-        mixin.FIRST_BATCH, mixin.SUCCESSIVE_BATCH,
-        mixin.BATCH_DELAY_MS, mixin.BATCH_GAP_MS,
-    )
     real_apply = pp.PrintPreviewWidget._apply_page_thumb
+    # ⚠️ 缩略图现在是按**可见窗口**懒加载的，而本用例的离屏控件视口高为 0
+    #    （只会装首屏十几行）。本用例要断言"每一行都不错位"，所以把可见窗口
+    #    打桩成整条清单——测的是身份映射，不是窗口调度（后者由
+    #    selftests/thumbs_chunked.py 覆盖）。
+    real_visible_range = ThumbStrip.visible_row_range
     tmp = Path(tempfile.mkdtemp(prefix="guji_thumb_identity_"))
     widgets: list = []
 
@@ -156,11 +155,10 @@ def run(ctx) -> None:
         return widget
 
     try:
-        # 缩短分批节奏（策略不变，只是别让用例等好几秒）
-        setattr(mixin, "FIRST_BATCH", 4)
-        setattr(mixin, "SUCCESSIVE_BATCH", 5)
-        setattr(mixin, "BATCH_DELAY_MS", 500)
-        setattr(mixin, "BATCH_GAP_MS", 30)
+        # 可见窗口 = 整条清单（见上面的说明），这样 26 行都会走到
+        ThumbStrip.visible_row_range = lambda self: (  # type: ignore[method-assign]
+            0, max(0, self.count() - 1)
+        )
 
         pages = _make_pages(tmp, 26)
         expect = {str(p): rgb for p, rgb in pages}
@@ -286,10 +284,7 @@ def run(ctx) -> None:
         plain.deleteLater()
     finally:
         pp.PrintPreviewWidget._apply_page_thumb = real_apply
-        (
-            mixin.FIRST_BATCH, mixin.SUCCESSIVE_BATCH,
-            mixin.BATCH_DELAY_MS, mixin.BATCH_GAP_MS,
-        ) = saved_cfg
+        ThumbStrip.visible_row_range = real_visible_range  # type: ignore[method-assign]
         for widget in widgets:
             try:
                 widget.shutdown_workers()

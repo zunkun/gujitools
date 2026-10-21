@@ -34,17 +34,24 @@ class ThumbsCacheMixin(RembgViewerHost):
         ``rows``：``entries`` 是整条清单的**子集**时给出对应条目在缩略图条
         里的行号（单页文件被覆盖后只刷那几行，不重建整个条）；None = 全量，
         行号即切片下标。
+
+        ⚠️ **规格按派发窗口现算**（不在循环里预先把全部条目都算一遍）：
+        ``_thumb_provider``（= ``_page_thumb_for``）每条要 stat 缩略图、查
+        sizes.json、读图片头，真实任务 216 条实测 **~255ms**——而首屏只看得见
+        十来条。``make_worker`` 是在**主线程**被 ``run_worker`` 调用的（只有
+        ``worker.run`` 进子线程），所以在这里现算仍是主线程，和原来的语义一致。
         """
-        thumb_paths = []
-        effects = []
-        labels = []
+        labels = [entry["title"] for entry in entries]
         border_mm = None
         if self._region_params_provider:
             try:
                 _, border_mm = self._region_params_provider()
             except Exception:
                 border_mm = None
-        for entry in entries:
+
+        def spec_at(index: int) -> tuple[Path, dict | None]:
+            """第 index 条要喂给 worker 的 (图路径, 合成参数)。"""
+            entry = entries[index]
             real = entry["path"]
             spec = None
             # ⚠️ 缓存整页小图优先：它已经是缩放解码过的 256px 图，直接喂
@@ -58,27 +65,37 @@ class ThumbsCacheMixin(RembgViewerHost):
                     boxes=entry.get("boxes"), full=entry.get("full", False),
                 )
             if isinstance(spec, dict):
-                thumb_paths.append(Path(spec["path"]))
-                effects.append(spec.get("effect"))
-            elif spec:
-                thumb_paths.append(Path(spec))
-                effects.append(None)
-            else:
-                thumb_paths.append(Path(real))
-                effects.append(None)
-            labels.append(entry["title"])
+                return Path(spec["path"]), spec.get("effect")
+            if spec:
+                return Path(spec), None
+            return Path(real), None
+
         edge = self._decode_edge()
-        self._load_thumbs_chunked(
-            len(thumb_paths),
-            make_worker=lambda start, end: ImageListWorker(
-                thumb_paths[start:end],
+        if rows is None:
+            loader = self._load_thumbs_chunked
+        else:
+            # ⚠️ 子集刷新（某几页结果刚落盘）走 ``_load_thumbs_subset``：它只补
+            #    当前可见的那几条，**不动整条清单的窗口装载**——否则用户滚动时
+            #    新露出来的行会永远不加载（千页去底色的常态）。
+            loader = self._load_thumbs_subset
+
+        def make_worker(start: int, end: int):
+            specs = [spec_at(i) for i in range(start, end)]
+            return ImageListWorker(
+                [spec[0] for spec in specs],
                 edge=edge,
-                effects=effects[start:end],
-            ),
+                effects=[spec[1] for spec in specs],
+            )
+
+        loader(
+            len(entries),
+            make_worker=make_worker,
             sink=lambda index, image, _path: self.strip.set_item_icon(
                 rows[index] if rows else index,
                 self._fill_icon(image), "", labels[index]
             ),
+            strip=self.strip,
+            row_map=rows,
         )
 
 

@@ -28,6 +28,11 @@ from desktop.utils.files import (
 from desktop.workers import HashWorker, ImageListWorker, connect_queued
 from utils.file_utils import replace_with_retry
 
+#: 入口图片**预热**缩略图的上限（张）。用户 2026-10-21：所有步骤的缩略图都不
+#: 必全部一次加载——只把首屏几屏生成到 ``thumbnails/input/``，更靠后的页等
+#: 用户滚到可见窗口时由查看器现解码。
+_ENTRY_THUMB_WARM_LIMIT = 60
+
 if TYPE_CHECKING:
     from desktop.components.viewers import (
         ExtractPreviewWidget,
@@ -514,9 +519,15 @@ class PageListMixin:
             if warmed.get(key) == mtime:
                 continue  # 这张已经请求过预热且源没变（多为读不出来的坏图）
             todo.append(path)
+            # ⚠️ 先记下**全部**待预热图（含下面被限额跳过的）：完成回调会经
+            #    _refresh_preview 再调本方法，只记账不跳过就会一轮接一轮地把
+            #    整本书都预热完——那正是"缩略图全部一次加载"的老毛病。
             warmed[key] = mtime
         if not todo:
             return
+        # 只预热首屏那几屏（用户 2026-10-21「所有步骤缩略图不用全部一次加载」）：
+        # 其余页面滚动到时由查看器按可见窗口现解码，不在这里提前付 CPU。
+        todo = todo[:_ENTRY_THUMB_WARM_LIMIT]
         worker = ImageThumbCacheWorker(todo, cache_dir, edge=THUMBNAIL_EDGE)
         owner_task = self.task_id
         self.run_worker(

@@ -22,7 +22,7 @@ import utils
 # 这样 functions 不再反向依赖 cli，命令行与桌面端都可直接复用。
 from core.args import ArgsProvider, default_workers
 from utils.path_utils import assert_output_not_input
-from core.reporter import Reporter, normalize_reporter
+from core.reporter import EVENT_PAGE_DONE, Reporter, normalize_reporter
 
 # 图片处理默认路径 Map
 DEFAULT_TEMP_NAME_MAP = {
@@ -228,9 +228,13 @@ class FunctionBase:
                 nonlocal finished
                 for future in as_completed(future_map):
                     p = future_map[future]
+                    page_status = "error"
+                    page_output = ""
                     try:
                         result = future.result()
                         round_results.append(result)
+                        page_status = str(result.get("status") or "")
+                        page_output = str(result.get("output") or "")
                         print(f"处理完成: {p.name} -> {result['status']}")
                         self._write_log(f"[完成] {p.name} -> {result['status']}")
                     except Exception as exc:
@@ -241,6 +245,15 @@ class FunctionBase:
                         )
                         self._write_log(f"[失败] {p.name} -> {exc}")
                         self._write_fail_log(f"{p.name}: {exc}")
+                    # 结构化：**单页一落地就上报**（产物已落盘）——GUI 据此边跑
+                    # 边刷该页的缩略图/大图，不必等整批结束（去底色的阶段反馈）。
+                    self.reporter.event(
+                        EVENT_PAGE_DONE,
+                        source=str(p),
+                        file=p.name,
+                        status=page_status,
+                        output=page_output,
+                    )
                     # 结构化进度：完成数可能因重试超过总数，上限截断到 total
                     finished += 1
                     self.reporter.progress(min(finished, total), total)

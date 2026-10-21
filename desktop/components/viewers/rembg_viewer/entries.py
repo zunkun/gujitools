@@ -75,14 +75,24 @@ class EntriesMixin(RembgViewerHost):
         utils.box_geometry.whole_page_box 与 preview_worker 的 full 语义）。
         """
         entries: list[dict] = []
+        # ⚠️ area 是**面板表单**的取值，与页面无关：逐页调用会在千页任务上
+        #    重复读表单 2000+ 次（每次还要反查流程图），是"条目重建 2 秒"的
+        #    主要来源之一。整个循环只取一次。
+        area = 0
+        area_ready = False
+        if self._boxes_provider and self._region_params_provider:
+            try:
+                area, _border = self._region_params_provider()
+                area_ready = True
+            except Exception:  # noqa: BLE001 - 表单填一半：按"没有框"处理
+                area_ready = False
         for path in self._paths:
             path_text = str(path)
             stem = path.stem
             page_entries = None
-            if self._boxes_provider and self._region_params_provider:
+            if area_ready:
                 try:
                     boxes = self._book_slots(path_text, self._boxes_provider(path_text) or [])
-                    area, _border = self._region_params_provider()
                     valid = [b for b in boxes if b]
                     full = is_full_content(boxes)
                     if area == 1 and len(valid) == 2:

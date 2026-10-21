@@ -46,6 +46,7 @@ def run(ctx) -> None:
     from tests.selftests._context import ok
 
     from core.reporter import (
+        EVENT_PAGE_DONE,
         NULL_REPORTER,
         CallbackReporter,
         CoreReporter,
@@ -140,6 +141,22 @@ def run(ctx) -> None:
        any("[boxes]" in l["message"] for l in logs)
        and any("图片总数" in l["message"] for l in logs), str(logs))
 
+    # ---- 4b. page_done：单页落盘事件经 JSON Lines 原样透传 ----
+    buf3 = io.StringIO()
+    bridge3 = JsonLinesReporter(
+        {"task_id": "t3", "stage": "rembg", "run_id": "r3"}, stream=buf3
+    )
+    bridge3.event(
+        EVENT_PAGE_DONE,
+        source="/src/0001.png", file="0001.png",
+        status="success", output="/out/0001.png",
+    )
+    line = json.loads(buf3.getvalue().strip())
+    ok("page_done 事件类型原样透传", line["type"] == "page_done", str(line))
+    ok("page_done 携带源/状态/产物",
+       line["source"].endswith("0001.png") and line["status"] == "success"
+       and line["output"].endswith("0001.png"), str(line))
+
     # ---- 5. 接线检查：functions/utils 真的在关键节点汇报了 ----
     import inspect
 
@@ -159,6 +176,8 @@ def run(ctx) -> None:
     src_base = inspect.getsource(FunctionBase)
     ok("base 引擎发出 progress",
        ".progress(" in src_base, "未在 FunctionBase 中找到 reporter.progress 调用")
+    ok("base 引擎逐页上报 page_done",
+       "EVENT_PAGE_DONE" in src_base, "未找到 page_done 事件上报")
     src_tr = inspect.getsource(TextRegionProcessor)
     ok("text_region 发出 page_boxes",
        '"page_boxes"' in src_tr, "未找到 page_boxes 事件上报")
@@ -196,3 +215,38 @@ def run(ctx) -> None:
     ok("不传 reporter 时落到空实现",
        getattr(fn2, "reporter", None) is NULL_REPORTER,
        str(getattr(fn2, "reporter", None)))
+
+    # ---- 7. page_done 端到端：真实跑一遍引擎，每页落盘即上报 ----
+    done_rec = _Recorder()
+
+    class _PageJob(FunctionBase):
+        def _process_single_image(self, image_path: Path) -> dict:
+            assert self.outpath is not None
+            return {
+                "status": "success",
+                "file": image_path.name,
+                "output": str(self.outpath / image_path.name),
+            }
+
+    page_src = tmp / "pages"
+    page_src.mkdir()
+    for name in ("0001.png", "0002.png"):
+        Image.new("RGB", (40, 60), (250, 250, 250)).save(page_src / name)
+    job = _PageJob(
+        CommandArgs(
+            command="crop",
+            input=str(page_src),
+            output=str(tmp / "pages_out"),
+            workers=1,
+        ),
+        done_rec,
+    )
+    job.outpath = tmp / "pages_out"
+    job.execute()
+    page_events = [p for name, p in done_rec.events if name == EVENT_PAGE_DONE]
+    ok("每页处理完都上报 page_done（不是只报总数）",
+       len(page_events) == 2, str(page_events))
+    ok("page_done 带源路径/文件名/状态/产物",
+       all(p.get("status") == "success" and p.get("output")
+           and str(p.get("source", "")).endswith(p.get("file", ""))
+           for p in page_events), str(page_events))

@@ -713,11 +713,17 @@ class ImpositionBaseMixin:
             mgr.reset()
         # 新任务的取图来源未必和上个任务一样：让 _refresh_print_source 重新判定
         self._print_source_cache = None
-        self._refresh_imposition_view()
+        # ⚠️ **不在这里灌拼版页清单**：``_refresh_imposition_view`` 会建 107 个页条
+        #    控件 + 逐页缩略图实体（真实 GUI 实测 ~220ms），而落地步骤绝大多数
+        #    是「图片去底色」——拼版页根本不可见，这笔钱纯属白付（用户 2026-10-21
+        #    报"进详情要等 2~3 秒"）。这里只把视图清空（旧任务的页不能带进来），
+        #    真进「图片拼版」时 ``_select_imposition_detail`` / ``_save_imposition_pages``
+        #    会照常刷新。
         view = getattr(self, "imposition_view", None)
         if view is not None:
-            view.set_current(0 if view.pages() else -1)
-        self._update_imposition_status(view.current_index() if view is not None else -1)
+            view.set_pages([], current=-1)
+            self._refresh_imposition_page_thumbs([])
+        self._update_imposition_status(-1)
 
     def _print_source_mark(self) -> tuple:
         """第四步取图目录的**内容标记**：``(目录, 目录内容指纹)``。

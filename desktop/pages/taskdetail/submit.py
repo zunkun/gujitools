@@ -195,7 +195,13 @@ class SubmitMixin:
         """
         if widths is None:
             widths = self._book_page_widths()
-        provider = boxes_for or self._detect_boxes_for
+        provider = boxes_for
+        if provider is None:
+            # ⚠️ 一次读齐整本（与 ``_refresh_detect_stats`` 同一口径）。逐页走
+            #    ``_detect_boxes_for`` 会为每页重解析一遍流程图 + 重解析连接线
+            #    ——110 页就是 110 次，是"进详情要等几秒"的次因。
+            mapping = self._boxes_map_all()
+            provider = lambda text: mapping.get(Path(text).stem, []) or []  # noqa: E731
         pages = [
             (path.stem, provider(str(path)), widths.get(path.stem, 0))
             for path in self._manifest_paths()
@@ -211,10 +217,14 @@ class SubmitMixin:
         profile = self._book_profile(widths)
         # ⚠️ 指定左右也**一次读盘**（逐页 box_side_at 会整份解析 boxes.json）
         sides = self._side_overrides_all()
+        # ⚠️ 检测框同样一次读齐：``plan_rembg_submit_entries`` 会遍历**整本**
+        #    manifest 逐页回调 ``boxes_for``，逐页走 ``_detect_boxes_for`` 就是
+        #    O(n²)（实时预览每次防抖到期都要算一遍，是首帧卡顿来源之一）。
+        boxes_map = self._boxes_map_all()
         return plan_rembg_submit_entries(
             manifest_paths=self._manifest_paths(),
             result_path_for=self._rembg_result_path,
-            boxes_for=self._detect_boxes_for,
+            boxes_for=lambda text: boxes_map.get(Path(text).stem, []) or [],
             area=area,
             single_column_book=profile.single_column_book,
             page_width_for=lambda text: widths.get(Path(text).stem, 0),

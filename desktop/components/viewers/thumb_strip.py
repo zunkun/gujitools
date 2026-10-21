@@ -308,3 +308,36 @@ class ThumbStrip(QListWidget):
         # 找第一条「下边界 > value」的条目：_prefix[row+1] > value
         row = bisect.bisect_right(prefix, value) - 1
         return max(0, min(row, self.count() - 1))
+
+    def visible_row_range(self) -> tuple[int, int]:
+        """当前**看得见**的首/末行号（闭区间；空列表返回 ``(0, -1)``）。
+
+        缩略图按可见窗口懒加载（见 ``ThumbsMixin``）：只有这个区间（外加上下
+        预取边距）里的条目才值得解码。千页书一次性把缩略图全解出来，即使分批
+        也会长时间占着一个核——用户实际只看得见首屏那几行。
+
+        ⚠️ 视口高为 0（控件还没 show / 离屏自测）时退化成"返回首行"：调用方
+        自己会加预取边距，不会变成一张都不加载。
+        """
+        import bisect
+
+        count = self.count()
+        if count <= 0:
+            return (0, -1)
+        bar = self.verticalScrollBar()
+        prefix = self._ensure_prefix()
+        top = max(0, bar.value())
+        viewport_h = max(0, self.viewport().height())
+        first = bisect.bisect_right(prefix, top) - 1
+        first = max(0, min(first, count - 1))
+        if viewport_h <= 0:
+            return (first, first)
+        # 末行 = 顶端仍落在视口下边界之内的最后一条
+        last = bisect.bisect_left(prefix, top + viewport_h) - 1
+        last = max(first, min(last, count - 1))
+        return (first, last)
+
+    def is_row_visible(self, row: int) -> bool:
+        """第 ``row`` 条此刻是否在可见窗口内（含边界）。"""
+        first, last = self.visible_row_range()
+        return first <= int(row) <= last

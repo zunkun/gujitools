@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     import fitz
 
 from PySide6.QtCore import QObject, QPointF, Qt, Signal, Slot
-from PySide6.QtGui import QColor, QFont, QImage, QFontMetrics, QPainter
+from PySide6.QtGui import QColor, QFont, QImage, QImageReader, QFontMetrics, QPainter
 
 from utils.box_geometry import (
     build_output_layout,
@@ -668,10 +668,46 @@ class PreviewWorker(QObject):
             document.close()
         self.completed.emit()
 
-    def _load_image(self) -> QImage:
-        image = QImage(str(self.path))
+    def _read_source_image(self) -> tuple[QImage, bool]:
+        """读源图；纯展示（无 effect/print_spec）时**按目标边长直接解码**。
+
+        返回 ``(图, 是否已缩到位)``：后者只表示"纯展示路径已经按
+        ``longest_edge`` 解码过"，调用方据此跳过最后的 ``scaled()``——合成
+        路径（effect / print_spec）的产物尺寸由几何决定，**仍然要**按
+        ``longest_edge`` 缩放（打印预览在放大弹窗里就靠这一次放大）。
+
+        ⚠️ ``QImage(str(path))`` 会先整张解码（实测 23MP 扫描件 ~240~250ms），
+        再 ``scaled()`` 缩到预览尺寸；而目标边长最多 3000px，解码出来的像素
+        九成以上立刻被扔掉——用户点缩略图后的等待主要就在这里。
+        ``QImageReader.setScaledSize`` 让 JPEG 按 1/2、1/4、1/8 的尺度解码，
+        实测快 2~3 倍。
+
+        ⚠️ 有 ``effect``（检测框是**原始像素坐标**）或 ``print_spec``（几何按
+        原图尺寸排版）时**不能缩**：合成必须按原分辨率做。
+        """
+        if not self.longest_edge or self.effect or self.print_spec:
+            image = QImage(str(self.path))
+            if image.isNull():
+                raise ValueError("无法读取图片")
+            return image, False
+        reader = QImageReader(str(self.path))
+        size = reader.size()
+        pre_scaled = False
+        if size.isValid() and max(size.width(), size.height()) > self.longest_edge:
+            target = size.scaled(
+                self.longest_edge,
+                self.longest_edge,
+                Qt.AspectRatioMode.KeepAspectRatio,
+            )
+            reader.setScaledSize(target)
+            pre_scaled = True
+        image = reader.read()
         if image.isNull():
             raise ValueError("无法读取图片")
+        return image, pre_scaled
+
+    def _load_image(self) -> QImage:
+        image, pre_scaled = self._read_source_image()
         if self.effect:
             outputs = compose_region_output(
                 image,
@@ -710,6 +746,8 @@ class PreviewWorker(QObject):
             image = compose_print_page(image, plan, density)
         if not self.longest_edge:
             return image  # 不缩放：调用方需要原始分辨率
+        if pre_scaled:
+            return image  # 上面已按目标边长解码到位，再缩一次纯属白算
         return image.scaled(
             self.longest_edge,
             self.longest_edge,

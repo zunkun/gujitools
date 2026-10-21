@@ -319,6 +319,49 @@ class RembgPreviewWidget(
             )
 
 
+    @property
+    def result_dir(self) -> Path | None:
+        """当前生效的去底色结果目录（未设置为 None）。"""
+        return self._rembg_dir
+
+
+    def set_result_dir(self, path: Path | None) -> None:
+        """执行**开始前**先把结果目录告诉查看器（边跑边出结果）。
+
+        与 :meth:`set_images` 的差别：不重建条目/不重装缩略图条，只换结果来源
+        并重载当前大图。去底色每页产物一落盘，宿主就能调
+        :meth:`refresh_running_results` 把该页刷成"去底色结果"。
+        """
+        self._rembg_dir = Path(path) if path else None
+        self._load_display()
+
+
+    def refresh_running_results(self, changed: set[str]) -> None:
+        """执行期间：某几页结果刚落盘 → 只刷**看得见**的那几条 + 当前大图。
+
+        用户 2026-10-21：「去底色步骤分批处理，能阶段反馈效果，不卡顿」。
+
+        ⚠️ **不做 ``set_images`` 整条重建**：那样每次刷新都会重建整条缩略图条、
+        把当前页翻回第一条，千页时还会重解一遍窗口——比刷新本身还贵。
+        这里只点名叫停那几张（宿主按 ``page_done`` 事件攒批后传路径集合），
+        看不见的行等用户滚过去时由窗口装载器按最新结果现合成（收尾时宿主
+        还会整条重装一次，兜住一切漏刷）。
+        """
+        if not changed or not self._entries:
+            return
+        wanted = {str(path) for path in changed}
+        entry = self._current_entry()
+        if entry is not None and str(entry["path"]) in wanted:
+            self._load_display()  # 正看着的那页出结果了：换成去底色结果
+        rows = [
+            row for row, item in enumerate(self._entries)
+            if str(item["path"]) in wanted and self.strip.is_row_visible(row)
+        ]
+        if rows:
+            self._load_page_thumbs(
+                [self._entries[row] for row in rows], rows=rows
+            )
+
     # -------------------------------------------------------------- 图片预览
     def _zoom_index(self) -> int:
         """放大弹窗当前条目 = 缩略图条的当前行（条目与行号 1:1）。"""

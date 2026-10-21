@@ -88,6 +88,8 @@ class TaskMixin:
     if TYPE_CHECKING:
         # 宿主 TaskStore（或同级 Mixin）提供：只做类型声明，运行时零副作用。
         drafts_dir: Callable[[str], Path]
+        # 仅类型检查期导入：流程图模块在热路径上是惰性导入的（见 task_diagram）
+        from desktop.steps.bpmn_diagram import FlowDiagram
 
     #: ``任务号 → 流程降级原因``（见 :meth:`task_diagram` / :meth:`flow_degraded_reason`）。
     #:
@@ -96,11 +98,40 @@ class TaskMixin:
     #: 原因"传染"给 B 任务。惰性建在实例上（见 :meth:`_degraded_map`）。
     _flow_degraded: dict[str, str] | None = None
 
+    #: ``任务号 → ((mtime_ns, size), FlowDiagram)``：``flow.bpmn`` 的解析缓存。
+    #:
+    #: ⚠️ **必须有**：详情页一次刷新会调 :meth:`task_diagram` 上千次（阶段
+    #: 槽位、按节点寻址、端口供给、逐页取框都会来问），每次都完整解析 XML
+    #: 就是用户实测的「进详情要等 3~5 秒」。键带 **mtime_ns + size**，任何
+    #: 落盘（:meth:`save_task_diagram` 会显式作废）都会让旧条目自然失效。
+    #: 同样必须**每实例一份**（理由同上一条：自测里同名任务号会串味）。
+    _diagram_cache: dict[str, "tuple[tuple[int, int], FlowDiagram]"] | None = None
+
+    #: ``(任务号, 步骤) → ((mtime_ns, size), 开关值)``：``step_enabled`` 的读盘缓存。
+    #:
+    #: ⚠️ 为什么值得缓存：``imposition_effective()`` 会经 ``_boxes_read_path``
+    #: 被**每页**问一次（第三步刷新条目 110 页 = 110 次），而它最终落到
+    #: ``step_enabled`` 的一次 JSON 读盘。开关文件只在用户拨开关时才变，
+    #: 键带文件指纹即可保证"拨了立刻生效"；同样是**每实例一份**。
+    _step_flags_cache: dict[tuple[str, str], tuple[tuple[int, int], bool]] | None = None
+
     def _degraded_map(self) -> dict[str, str]:
         """本实例的降级原因表（惰性建，避免覆盖类属性默认值）。"""
         if self._flow_degraded is None:
             self._flow_degraded = {}
         return self._flow_degraded
+
+    def _step_flags_map(self) -> dict[tuple[str, str], tuple[tuple[int, int], bool]]:
+        """本实例的可选步骤开关读盘缓存（惰性建）。"""
+        if self._step_flags_cache is None:
+            self._step_flags_cache = {}
+        return self._step_flags_cache
+
+    def _diagram_map(self) -> dict[str, "tuple[tuple[int, int], FlowDiagram]"]:
+        """本实例的流程图解析缓存（惰性建，避免覆盖类属性默认值）。"""
+        if self._diagram_cache is None:
+            self._diagram_cache = {}
+        return self._diagram_cache
 
     # ---------- tasks.json ----------
     def _tasks_path(self) -> Path:
@@ -601,12 +632,30 @@ class TaskMixin:
         from desktop.steps.scheduler import load_default_diagram
 
         path = default_flow_path(self.task_dir(task_id))
+        # ⚠️ 缓存键必须带 **mtime_ns + size**：这个方法是详情页最热的调用
+        #    （一次进页面 2000+ 次），但流程文件随时可能被编辑器重写。只按
+        #    任务号缓存会让"改了流程没反应"；带上文件指纹则任何落盘都自然
+        #    失效，不必依赖每个写入点记得来作废。
+        key: tuple[int, int] | None
+        try:
+            stat = path.stat()
+            key = (stat.st_mtime_ns, stat.st_size)
+        except OSError:
+            key = None
+        cache = self._diagram_map()
+        if key is not None:
+            cached = cache.get(task_id)
+            if cached is not None and cached[0] == key:
+                self._degraded_map().pop(task_id, None)
+                return cached[1]
         reason = ""
         if path.is_file():
             try:
                 diagram = FlowDiagram.load(path)
                 if diagram.stage_order():
                     self._degraded_map().pop(task_id, None)
+                    if key is not None:
+                        cache[task_id] = (key, diagram)
                     return diagram
                 reason = (
                     f"{path.name} 里的步骤一个都认不出来"
@@ -618,6 +667,9 @@ class TaskMixin:
                 reason = f"{path.name} 解析失败：{exc}"
         else:
             reason = f"本任务目录下没有 {path.name}"
+        # 降级路径**不进缓存**：坏文件被修好后 mtime 会变，但这里没有可信的
+        # 键；默认模板本身很小，且只在真的降级时才解析。
+        cache.pop(task_id, None)
         self._degraded_map()[task_id] = reason
         fallback = load_default_diagram()
         if fallback.nodes:
@@ -654,9 +706,16 @@ class TaskMixin:
         ⚠️ 只改**流程定义**，不碰任何产物。改完流程后已有产物是否还有效，是
         **界面该提示的事**，由调用方判断——store 只管存。
 
-        （``task_diagram`` **无缓存**，每次读盘——"改了没反应"别往缓存上查。）
+        ⚠️ 落盘后**只作废**解析缓存，不能拿传进来的这张图回填：调用方给的往往是
+        编辑器手里的**在制品**（节点 ``stage`` 等派生字段可能是 None），而
+        ``FlowDiagram.load`` 会按节点名把 ``stage`` 补出来——``stage_slots()``
+        正是吃这个字段。回填未归一化的对象会让步骤条退化成"每格都是空步骤"
+        （自测 last_stage 6b 当场红）。代价只是保存后多解析一次文件，保存本来
+        就是低频操作。
         """
-        diagram.save(default_flow_path(self.task_dir(task_id)))
+        path = default_flow_path(self.task_dir(task_id))
+        diagram.save(path)
+        self._diagram_map().pop(task_id, None)
 
     def task_slots(self, task_id: str) -> tuple[StageSlot, ...]:
         """本任务流程投影出的**界面槽位**（步骤条格子 + 两个栈的页号）。
@@ -1061,12 +1120,34 @@ class TaskMixin:
 
         ⚠️ 开关查询**永不抛错**：任务号非法/目录没了/文件坏了，一律当"没开"。
         调用方（列表后台线程、状态机）不能因为一个开关读不出来就崩。
+
+        ⚠️ 命中缓存的条件是**文件指纹没变**（mtime_ns + size）：这个方法在
+        第三步刷新时会被**每页**问一次（``imposition_effective`` 在里面），
+        每次都完整读 JSON 纯属白花；拨开关会重写该文件，指纹一变立刻失效。
+        文件不存在时**不缓存**（否则它后来被建出来会被旧结论挡住）。
         """
+        cache = self._step_flags_map()
+        cache_key = (task_id, step)
         try:
-            data = read_json(self.drafts_dir(task_id) / f"{step}.json", None)
+            path = self.drafts_dir(task_id) / f"{step}.json"
+            stat = path.stat()
+            fingerprint = (stat.st_mtime_ns, stat.st_size)
         except (OSError, ValueError):
+            # ⚠️ 任务号非法时 ``drafts_dir`` 抛 ValueError：也归到"没开"这一档，
+            #    与本方法"永不抛错"的契约一致（调用方有列表后台线程）。
+            cache.pop(cache_key, None)
             return False
-        return bool(data.get("enabled")) if isinstance(data, dict) else False
+        cached = cache.get(cache_key)
+        if cached is not None and cached[0] == fingerprint:
+            return cached[1]
+        try:
+            data = read_json(path, None)
+        except (OSError, ValueError):
+            cache.pop(cache_key, None)
+            return False
+        enabled = bool(data.get("enabled")) if isinstance(data, dict) else False
+        cache[cache_key] = (fingerprint, enabled)
+        return enabled
 
     def scheduler_flags(self, task_id: str,
                         imposition_active: bool = False) -> dict[str, bool]:

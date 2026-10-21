@@ -72,6 +72,7 @@ class PrintThumbsMixin(PrintPreviewHost):
                 self._apply_page_thumb(keys[index], image)
                 if 0 <= index < len(keys) else None
             ),
+            strip=self.strip,
         )
 
     def refresh_paths(self, paths) -> None:
@@ -89,22 +90,31 @@ class PrintThumbsMixin(PrintPreviewHost):
         if not wanted or not self._entries_cache:
             return
         pending = [
-            (key, self._thumb_path_for(entry))
-            for key, entry in zip(self._entry_keys, self._entries_cache)
+            (row, key, self._thumb_path_for(entry))
+            for row, (key, entry) in enumerate(
+                zip(self._entry_keys, self._entries_cache)
+            )
             if str(entry.get("file")) in wanted
         ]
         if pending:
-            keys = [key for key, _ in pending]
+            keys = [key for _, key, _ in pending]
+            # 子集加载：可见性要按**真实行号**判（否则会把看不见的行也解掉）
+            rows = [row for row, _, _ in pending]
             edge = self._decode_edge(self.THUMB_EDGE)
-            self._load_thumbs_chunked(
+            # ⚠️ 子集刷新用 ``_load_thumbs_subset``（不动整条清单的窗口装载）：
+            #    上游每次只改几张，拿子集去走"重新装载"会把其余行后续的滚动
+            #    加载一并作废。
+            self._load_thumbs_subset(
                 len(pending),
                 make_worker=lambda start, end: ImageListWorker(
-                    [path for _, path in pending[start:end]], edge=edge
+                    [path for _, _, path in pending[start:end]], edge=edge
                 ),
                 sink=lambda index, image, _path, keys=keys: (
                     self._apply_page_thumb(keys[index], image)
                     if 0 <= index < len(keys) else None
                 ),
+                strip=self.strip,
+                row_map=rows,
             )
         index = self._current_index()
         if 0 <= index < len(self._entries_cache) and str(

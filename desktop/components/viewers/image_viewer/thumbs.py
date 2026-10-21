@@ -121,6 +121,7 @@ class ThumbsCacheMixin(ImageViewerHost):
             sink=lambda index, image, cached: self._on_thumb_cached(
                 index, image, cached
             ),
+            strip=self.strip,
         )
         # 供宿主/自测查询某张图的缓存路径（显式名优先，与 worker 同一份规则）
         self._thumb_cache_lookup = lambda path: self._lookup_thumb_path(path)

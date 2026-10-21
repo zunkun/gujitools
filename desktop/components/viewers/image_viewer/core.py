@@ -309,7 +309,8 @@ class ImageViewerWidget(
         return Path(path_text)
 
 
-    def _load_thumbs(self, strip, paths: list[Path | str], start: int = 0) -> None:
+    def _load_thumbs(self, strip: ThumbStrip, paths: list[Path | str],
+                     start: int = 0) -> None:
         """带提供者时加载映射后的缩略图，标签仍使用真实页面名。
 
         ⚠️ 分批调度走基类的 ``_load_thumbs_chunked``（首批立即、其余延后），
@@ -332,6 +333,7 @@ class ImageViewerWidget(
                 index, image, str(real_paths[index]), labels[index]
             ),
             start=start,
+            strip=strip,
         )
 
 
