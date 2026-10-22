@@ -1,19 +1,23 @@
 # -*- coding: utf-8 -*-
-"""第三步「改参数 / 翻页实时预览当前页」自测。
+"""第三步「改参数 / 翻页实时调整当前页」自测。
 
-单步化之后正式产物只由「执行去底色」写 ``stages/rembg``；实时预览只算当前页、
-只写系统临时目录，**绝不碰正式产物**。本模块钉住：
+实时调整**直接覆盖正式成品**（``stages/rembg[~节点]/<页名>.png`` + 第四步缩略图），
+不再写系统临时目录——用户 2026-10-22（任务 0014）报障：改 offset 后页面看着变了，
+下一步「图片拼版 / PDF排版」拿到的还是旧图，因为结果只落在
+``%TEMP%/guji_live_preview/<任务>/``。
 
-1. 改参数会触发防抖（不是每拖一格就全量重跑）；
-2. 防抖到期只算**当前页**，结果落在临时目录；
-3. 查看器优先显示临时结果；
-4. 正式产物文件不被实时预览改写；
-5. 参数回到最近一次成功执行的取值时，收起临时结果、回到正式成品。
+本模块钉住：
+
+1. 改参数触发防抖（不是每拖一格就重算）；
+2. 防抖到期只算**当前页**，结果**覆盖任务目录里的正式成品**并刷新第四步缩略图；
+3. 盘上成品已是这份参数时不再重算；
+4. 逐张 offset 记录（黑名单法）与「切图不重算」；
+5. 改过之后再改回去：成品会被重新算一遍并覆盖回落（覆盖是可逆的）。
 """
 
 NAME = "rembg_live"
 DEPENDS: list[str] = ["rembg"]
-TITLE = "去底色实时预览"
+TITLE = "去底色实时调整"
 
 import time
 from pathlib import Path
@@ -31,7 +35,7 @@ def _wait(app, cond, timeout: float = 25.0) -> bool:
 
 
 def run(ctx) -> None:
-    from desktop.services import rembg_live as live_mod
+    from desktop.utils.files import list_stage_images
     from tests.selftests._context import ok, pump
 
     app, d, repo = ctx.app, ctx.d, ctx.repo
@@ -43,58 +47,116 @@ def run(ctx) -> None:
 
     panel = d.control_stack.widget(2)
     entry_path = d.rembg_viewer.current_entry_path()
-    ok("（前置）第三步有可预览的当前页", entry_path is not None, str(entry_path))
+    ok("（前置）第三步有可调整的当前页", entry_path is not None, str(entry_path))
     if not entry_path:
         return
     stem = Path(entry_path).stem
-    formal = Path(repo.rembg_output_dir(tid)) / f"{stem}.png"
+    out_dir = Path(repo.rembg_output_dir(tid))
+    formal = out_dir / f"{stem}.png"
     ok("（前置）正式成品存在", formal.is_file(), str(formal))
     if not formal.is_file():
         return
-    before = formal.read_bytes()
+    thumb = repo.rembg_thumbnails_dir(tid, d.node_of_stage("rembg")) / f"{stem}.jpg"
+    pages_before = sorted(p.name for p in list_stage_images(out_dir))
+    # 清掉可能残留的逐张偏移，保证起点是 0（黑名单法：0 = 无记录）。
+    scope = d._node_scope(d.current_node())
+    repo.save_rembg_offset(tid, stem, 0, **scope)
+    d._apply_current_image_offset()
+    d._live_done.clear()
+    pump(app, times=2)
+    mtime_before = formal.stat().st_mtime_ns
 
     # ---- 1. 改参数 → 防抖 ----
     d._live_timer.stop()
-    d._live_done.clear()
     old_offset = panel.offset.value()
     panel.offset.setValue(old_offset + 17)
     pump(app, times=1, interval=0.0)
     ok("改 offset 触发防抖计时（不是每拖一格都重算）",
        d._live_timer.isActive())
 
-    # ---- 2/3. 防抖到期只算当前页、写临时目录 ----
+    # ---- 2. 防抖到期只算当前页、覆盖正式成品 ----
     d._live_timer.stop()
     d._maybe_run_live_preview()
     _wait(app, lambda: bool(d._live_done), timeout=25)
-    ok("实时预览只算当前页", len(d._live_done) == 1, str(d._live_done))
-    live = d.rembg_viewer.live_dir
-    ok("预览结果落在系统临时目录",
-       live is not None and Path(live) == live_mod.live_dir(tid), str(live))
-    ok("临时结果文件存在",
-       live is not None and (Path(live) / f"{stem}.png").is_file(),
-       str(sorted(p.name for p in Path(live).glob("*.png"))) if live else "None")
-    ok("查看器优先显示临时结果",
-       live is not None
-       and d.rembg_viewer._result_full_image() == Path(live) / f"{stem}.png",
+    ok("实时调整只算当前页", len(d._live_done) == 1, str(d._live_done))
+    ok("任务目录里的那份成品被实时重写（mtime 前进）",
+       formal.is_file() and formal.stat().st_mtime_ns > mtime_before, str(formal))
+    # 与「按当前面板参数跑一遍」的产物**逐字节相等** ⇒ 面板参数（含这张图自己的
+    # offset）确实落进了任务目录的成品里。⚠️ 不能只比"字节变了没有"：纯黑白页
+    # 换个阈值可能输出完全一样，那样会把"已经写对了"误判成失败。
+    from desktop.services import rembg_live as live_mod
+    from desktop.services.rembg_live import render_page
+
+    ref = Path(render_page(
+        str(entry_path), panel.get_args(), ctx.tmp / "rembg_live_ref"
+    ))
+    ok("成品内容 == 当前面板参数的结果（offset 已落实到任务目录）",
+       ref.read_bytes() == formal.read_bytes(), f"{ref} vs {formal}")
+    ok("服务不再提供「临时预览目录」（结果只落任务目录）",
+       not hasattr(live_mod, "live_dir"))
+    ok("查看器显示的仍是这份正式成品",
+       d.rembg_viewer._result_full_image() == formal,
        str(d.rembg_viewer._result_full_image()))
+    ok("成品目录没有多出/少掉页面（.part 临时文件已原子改名）",
+       sorted(p.name for p in list_stage_images(out_dir)) == pages_before
+       and not list(out_dir.glob("*.part")),
+       str(sorted(p.name for p in out_dir.iterdir())))
+    ok("第四步缩略图已刷新（mtime 不旧于成品图）",
+       thumb.is_file() and thumb.stat().st_mtime >= formal.stat().st_mtime
+       and thumb.stat().st_size >= 512, str(thumb))
 
-    # ---- 4. 正式产物不被实时预览改写 ----
-    ok("实时预览不改写正式成品",
-       formal.read_bytes() == before, str(formal))
+    # ---- 3. 盘上成品已是这份参数 → 不再重算 ----
+    token_before = d._live_token
+    d._live_timer.stop()
+    d._maybe_run_live_preview()
+    pump(app, times=2)
+    ok("盘上成品已是这份参数 ⇒ 不再重算", d._live_token is token_before)
 
-    # ---- 5. 参数回到成功执行的取值 → 收起临时结果 ----
-    snapshot = d._preview_run_snapshot()
-    ok("（前置）能取到上次成功执行的参数快照", snapshot is not None, str(snapshot))
-    if snapshot is not None:
-        panel.apply_args(snapshot)
-        d._live_timer.stop()
-        d._maybe_run_live_preview()
-        pump(app, times=4)
-        ok("参数与正式执行一致时收起实时结果",
-           d.rembg_viewer.live_dir is None, str(d.rembg_viewer.live_dir))
-        ok("收起后显示的是正式成品",
+    # ---- 4. 逐张 offset 记录（黑名单法）----
+    d._flush_pending_offset()
+    ok("这张图的 offset 已记录",
+       repo.rembg_offset(tid, stem, **scope) == old_offset + 17,
+       str(repo.load_rembg_offsets(tid, **scope)))
+    entries = d.rembg_viewer._entries
+    ok("（前置）至少两张图片可切换", len(entries) >= 2, str(len(entries)))
+    if len(entries) >= 2:
+        other_path = entries[1]["path"]
+        other_stem = Path(other_path).stem
+        d.rembg_viewer._select_image(1, other_path)
+        pump(app, times=6)
+        ok("切到别的图片：offset 回到它自己的值（默认 0）",
+           panel.offset.value() == 0, str(panel.offset.value()))
+        ok("切图不触发二次去底色", other_stem not in d._live_done,
+           str(sorted(d._live_done)))
+        d.rembg_viewer._select_image(0, entry_path)
+        pump(app, times=6)
+        ok("切回原图：恢复它记录的 offset",
+           panel.offset.value() == old_offset + 17, str(panel.offset.value()))
+        ok("切回原图：显示的仍是它自己的成品",
            d.rembg_viewer._result_full_image() == formal,
            str(d.rembg_viewer._result_full_image()))
 
-    # 收尾：别把临时目录留给后续模块
+    # ---- 5. 改回去 → 成品被重新算一遍并覆盖（覆盖可逆）----
+    mid_mtime = formal.stat().st_mtime_ns
+    snapshot = d._formal_snapshot_for(stem)
+    ok("（前置）能取到该图上次全量执行的参数快照", snapshot is not None, str(snapshot))
+    if snapshot is not None:
+        # 模拟用户把 offset 拖回原值（走用户信号，才能验证 offset 0 的删除）
+        panel.offset.setValue(int(snapshot.get("offset") or 0))
+        pump(app, times=1, interval=0.0)
+        d._live_timer.stop()
+        d._maybe_run_live_preview()
+        _wait(app, lambda: formal.stat().st_mtime_ns > mid_mtime, timeout=25)
+        d._flush_pending_offset()
+        pump(app, times=4)
+        ok("改回去：成品按原参数重算并覆盖（覆盖可逆）",
+           formal.stat().st_mtime_ns > mid_mtime, str(formal))
+        ok("盘上台账已跟到新参数",
+           d._live_done.get(stem) == d._live_snapshot(panel.get_args()),
+           str(d._live_done.get(stem)))
+        ok("offset 回到 0 后从黑名单里删除",
+           repo.rembg_offset(tid, stem, **scope) == 0,
+           str(repo.load_rembg_offsets(tid, **scope)))
+
+    # 收尾：台账别留给后续模块
     d._reset_rembg_live()

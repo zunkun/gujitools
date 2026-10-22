@@ -20,7 +20,7 @@
 - print_list.PrintListMixin  第四步待打印列表
 - runner.StageRunnerMixin    阶段执行（worker 子进程编排）
 - detect.DetectMixin         detect 检测控制
-- rembg_live.RembgLiveMixin  第三步改参数/翻页时只重算当前页（临时显示）
+- rembg_live.RembgLiveMixin  第三步改参数/翻页时只重算当前页（覆盖正式成品）
 - imposition.ImpositionMixin 流程条「图片拼版」可选节点
   （共享基元 imposition.py + 模块一 imposition_pages.py「选择拼版」
   + 模块二 imposition_layout.py「拼版操作」）
@@ -312,8 +312,8 @@ class TaskDetailPage(
         self._flush_param_drafts()
         # 标注攒批同理：攒着的尺寸/框属于**上一个任务**，切换后写就串任务了
         self._flush_annotations()
-        # 实时预览临时目录同理：reset(self.task_id) 清的是"上一个任务"的
-        # %TEMP%/guji_live_preview/<id>/ ——放在覆盖之后清的就是新任务的空目录。
+        # 实时去底色的台账同理：它记的是"哪张图盘上成品是按哪份参数算的"，
+        # 属于**上一个任务**——放在覆盖 task_id 之后清，清的就是新任务（空表）。
         self._reset_rembg_live()
         # 当前节点（B 方案）随任务一起清：新流程的节点 id 与旧任务无关，
         # 留着会让"按节点寻址"在新任务上指错节点（末尾 _select_stage 会重设）。
@@ -1368,6 +1368,9 @@ class TaskDetailPage(
         每 ≤200ms 就跑一次。
         """
         self._print_source_stale = False
+        #: 取图目录的**内容**变了（拼版成品重存 / 去底色成品被实时改写）：
+        #: 磁盘上那份 PDF 同样是旧数据，见 ``_regenerate_notice`` 第 3 条。
+        self._print_data_stale = False
         if not self.task_id:
             self._stale_notices = {}
             return
@@ -1383,13 +1386,22 @@ class TaskDetailPage(
         )
         # 取图来源是否已换（拼版开关）——同一份 runs.json 顺手算掉，不额外读盘
         try:
-            from desktop.services.stale_chain import print_source_switched
+            from desktop.services.stale_chain import (
+                print_input_changed,
+                print_source_switched,
+            )
 
             self._print_source_stale = print_source_switched(
                 runs, self.print_source_stage()
             )
+            # 来源阶段没换、但取图目录内容变了（拼版删页 ⇒ 成品页重新编号重存）：
+            # 磁盘上那份 PDF 同样是旧数据，判据见 services.stale_chain。
+            self._print_data_stale = print_input_changed(
+                runs, self._print_source_mark_text()
+            )
         except Exception:  # noqa: BLE001 - 判定失败不该拦住界面刷新
             self._print_source_stale = False
+            self._print_data_stale = False
 
     def _regenerate_notice(self, stage: str) -> str | None:
         """本步产物"需要重新生成"的提示文案（没有则 None）。
@@ -1400,13 +1412,17 @@ class TaskDetailPage(
            改动，最该被看见；
         2. **取图来源换了**（``_print_source_stale``）——勾上/取消「图片拼版」
            之后，磁盘上那份 PDF 是上一轮来源的产物，旧数据不该再被当成结果；
-        3. **上游重新执行过**（``services/stale_chain`` 的时间戳链）——本步产物是
+        3. **取图目录的内容变了**（``_print_data_stale``）——拼版里删/排一页会让
+           成品页重新编号重存，来源阶段没换但图片全变了，那份 PDF 同样是旧数据
+           （用户 2026-10-22：「拼版里删了一张图片，然后 PDF排版那里那一页还在」）；
+        4. **上游重新执行过**（``services/stale_chain`` 的时间戳链）——本步产物是
            那之前生成的，可能已经不是最新参数下的结果。
 
-        ⚠️ 第 2 条读**缓存**（``_print_source_stale``）而不是现算：本方法经
-        ``_refresh_stage_views`` 在执行期间每 ≤200ms 被拉一次，而现算要读
-        runs.json + 拼版文档。缓存由 :meth:`_refresh_stale_notices` 在切任务/
-        运行收尾、以及拼版开关变化时重算（见 ``imposition._refresh_print_source``）。
+        ⚠️ 第 2/3 条读**缓存**（``_print_source_stale`` / ``_print_data_stale``）
+        而不是现算：本方法经 ``_refresh_stage_views`` 在执行期间每 ≤200ms 被拉
+        一次，而现算要读 runs.json + 拼版文档 + 目录指纹。缓存由
+        :meth:`_refresh_stale_notices` 在切任务/运行收尾、以及拼版开关变化时
+        重算（见 ``imposition._refresh_print_source``）。
         """
         if stage == "print":
             if getattr(self, "_print_dirty", False):
@@ -1419,6 +1435,8 @@ class TaskDetailPage(
                     else "去底色"
                 )
                 return f"● 取图来源已改为{where}，请重新「生成PDF」"
+            if getattr(self, "_print_data_stale", False):
+                return "● 取图里的图片已更新，请重新「生成PDF」"
         info = (self._stale_notices or {}).get(stage)
         if not info:
             return None
@@ -1641,6 +1659,9 @@ class TaskDetailPage(
                 thumb_provider=self._page_thumb_for,
                 force=force,
             )
+            # 每张图片有自己的阈值偏移（黑名单法）：进入这一步/刷新清单后，
+            # 把当前这张图的 offset 回填到面板（程序化回填，不算用户改动）。
+            self._apply_current_image_offset()
             # 入口图片缩略图预热（同上：这一步是流程第一步时才有效）
             self._warm_entry_thumbs(self._manifest_paths())
         elif stage == "print":

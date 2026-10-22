@@ -559,6 +559,71 @@ class TaskMixin:
         """步骤三成品图片目录（「执行去底色」产出，print 阶段从此取图）。"""
         return self.artifact(task_id, "rembg", "pages")
 
+    def rembg_offsets_path(self, task_id: str, node_id: str | None = None,
+                           primary_id: str | None = None) -> Path:
+        """**逐张图片**阈值偏移的存储文件（黑名单法，只记非 0 的图片）。
+
+        主节点沿用 ``rembg_offsets.json``；同一步骤的副本节点落
+        ``rembg_offsets~<节点>.json``（与 ``boxes`` / ``pages`` 同一套命名）。
+        """
+        from desktop.steps import ports
+
+        if node_id:
+            items = self.task_diagram(task_id).node_ids_of("rembg")
+            primary_id = primary_id or (items[0] if items else None)
+        name = ports.scoped_name("rembg_offsets.json", node_id, primary_id)
+        return self.task_dir(task_id) / name
+
+    def load_rembg_offsets(self, task_id: str, node_id: str | None = None,
+                           primary_id: str | None = None) -> dict[str, int]:
+        """读逐张偏移表 ``{页名: offset}``（只含非 0 项；坏文件当空表）。"""
+        path = self.rembg_offsets_path(task_id, node_id, primary_id)
+        data = read_json(path, {})
+        if not isinstance(data, dict):
+            return {}
+        out: dict[str, int] = {}
+        for key, value in data.items():
+            try:
+                offset = int(value)
+            except (TypeError, ValueError):
+                continue
+            if offset:
+                out[str(key)] = offset
+        return out
+
+    def rembg_offset(self, task_id: str, image_key: str,
+                     node_id: str | None = None,
+                     primary_id: str | None = None) -> int:
+        """某张图片的阈值偏移（没记录过 = 0）。"""
+        return int(self.load_rembg_offsets(
+            task_id, node_id, primary_id
+        ).get(str(image_key), 0))
+
+    def save_rembg_offset(self, task_id: str, image_key: str, offset: int,
+                          node_id: str | None = None,
+                          primary_id: str | None = None) -> None:
+        """记录某张图片的阈值偏移；**offset=0 就删掉这一项**（黑名单法）。
+
+        ⚠️ 只在用户**确实改过**这张图时调用；整表很小，读改写即可，不要为它
+        再造缓存。
+        """
+        path = self.rembg_offsets_path(task_id, node_id, primary_id)
+        data = self.load_rembg_offsets(task_id, node_id, primary_id)
+        image_key = str(image_key)
+        value = int(offset)
+        if value:
+            data[image_key] = value
+        else:
+            data.pop(image_key, None)
+        if not data:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            return
+        if self.task_dir(task_id).exists():
+            write_json(path, data)
+
     def imposition_output_dir(self, task_id: str) -> Path:
         """「图片拼版」产出的成品拼版页图目录（列表顺序即页序）。
 

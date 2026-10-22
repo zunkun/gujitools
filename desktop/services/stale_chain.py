@@ -15,6 +15,10 @@
 （勾上「图片拼版」后从去底色产物改成拼版产物）。换来源之后磁盘上那份 PDF
 就属于旧数据了——由 :func:`print_source_switched` 判定（比对运行记录里
 记下的来源，而不是时间）。
+
+还有一类是**同一个来源目录内部的内容变化**（拼版里删掉/重排一页 ⇒ 成品页
+重新编号重存），来源阶段一个字都没变，:func:`print_source_switched` 看不见——
+由 :func:`print_input_changed` 判定（比对取图目录的**内容指纹**）。
 """
 
 from __future__ import annotations
@@ -143,3 +147,33 @@ def print_source_switched(runs: dict, current_source: str) -> bool:
     if not recorded:
         return False  # 老记录没有这个字段 → 无从判断，别误报
     return str(recorded) != str(current_source)
+
+
+def print_input_changed(runs: dict, current_mark) -> bool:
+    """已生成的 PDF 是不是在**取图目录内容变化之前**生成的（旧数据）。
+
+    用户 2026-10-22（任务 0014 报障）：
+
+    > 「拼版里删了一张图片，然后在 PDF排版那里，那一页图片还在」
+
+    拼版成品重存（删页会把它后面所有页重新编号重写，并清扫多余的页号）之后，
+    磁盘上那份 PDF 读的还是旧图——与"换了取图来源"是同一类"旧数据"，只是变化
+    发生在**同一个来源目录内部**，:func:`print_source_switched` 比的是阶段 key，
+    一个字都没变因而看不出来。
+
+    判据：最近一次**成功**的 print 运行记录里存了当时的取图目录内容标记
+    （``parameters["source_mark"]``，见 runner 注入的
+    ``print_source_dir + dir_content_signature``），与当前标记不同即过期。
+
+    - 下游从未成功过 → 不判过期（界面本来就说"未执行"）；
+    - 老任务的记录里没有 ``source_mark``（本字段引入前生成的）→ **不判过期**，
+      宁可少提示也不凭空说用户的 PDF 有问题；
+    - 当前标记取不到（目录不存在）→ 同样不判（无从比较）。
+    """
+    latest = latest_success(runs.get("print"))
+    if latest is None:
+        return False
+    recorded = (latest.get("parameters") or {}).get("source_mark")
+    if not recorded or not current_mark:
+        return False
+    return str(recorded) != str(current_mark)

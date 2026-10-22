@@ -53,9 +53,6 @@ class RembgPreviewWidget(
         self._paths: list[Path] = []
         self._entries: list[dict] = []  # [{label, path, box}]; box=None 表示整页规则
         self._rembg_dir: Path | None = None
-        #: 实时预览暂存目录（改参数后按当前页现算的结果）。查找时优先于
-        #: ``_rembg_dir``：它才是"此刻参数下"的样子，而正式成品可能已经过期。
-        self._live_dir: Path | None = None
         self._boxes_provider = None  # (path_text) -> list[检测框]
         self._border_provider = None  # () -> border
         self._single_column_book = False  # 整本书是否单栏书（见 set_images）
@@ -170,23 +167,12 @@ class RembgPreviewWidget(
         return entry["path"] if entry else None
 
 
-    def set_live_dir(self, path: Path | None) -> None:
-        """设置（或传 None 清除）「实时预览」暂存目录。
-
-        非 None 时结果图优先从这里取：它是按**此刻**面板参数现算的当前页；
-        正式成品目录（``stages/rembg``）则可能还是上一次「执行去底色」的结果。
-        """
-        self._live_dir = Path(path) if path else None
-
-
-    @property
-    def live_dir(self) -> Path | None:
-        """当前生效的实时预览暂存目录（未启用为 None）。"""
-        return self._live_dir
-
-
     def show_live_pending(self) -> None:
-        """实时预览正在计算：只在**下方说明行**给个反馈，**不动大图**。"""
+        """实时去底色正在计算：只在**下方说明行**给个反馈，**不动大图**。
+
+        ⚠️ 结果直接覆盖正式成品（``stages/rembg``），所以这里没有"临时目录"
+        可指——算完宿主调 :meth:`refresh_display` 大图自然就是新图。
+        """
         self.toggle_caption.setText("正在按新参数去底色…")
 
 

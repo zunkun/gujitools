@@ -166,6 +166,14 @@ def run_rembg_stage(config: dict) -> int:
         thumb_dir.mkdir(parents=True, exist_ok=True)
 
         params = _rembg_params(args)
+        #: 逐张图片的 offset 覆盖（黑名单法：只有用户单独调过的图才有条目）。
+        #: ⚠️ 只要调用方传了这张表（GUI 总会传，哪怕是空表），**没记录的图
+        #:    就按 0 处理**——offset 是逐张参数，不能把当前页的值扩散给全批。
+        raw_offsets = args.get("offsets")
+        offsets = {
+            str(key): int(value)
+            for key, value in (raw_offsets or {}).items()
+        }
         total = len(files)
         # 读图口径与 CLI 共用一份（函数内导入：本模块在 worker 子进程里跑，
         # 启动路径不需要 numpy/PIL）。
@@ -175,7 +183,13 @@ def run_rembg_stage(config: dict) -> int:
             """一张：全局 Otsu → 透明 PNG（+ 第四步缩略图）。"""
             name = f"{image_path.stem}.png"
             img_arr, gray_arr = load_rgb_and_gray(image_path)
-            final_arr = utils.rembg_page(img_arr, gray_arr, **params)
+            page_params = dict(params)
+            if raw_offsets is None:
+                # 没有逐张表（旧调用方/纯 CLI 语义）：沿用统一 offset
+                page_params["offset"] = params["offset"]
+            else:
+                page_params["offset"] = offsets.get(image_path.stem, 0)
+            final_arr = utils.rembg_page(img_arr, gray_arr, **page_params)
             rgb = _rgb_of(final_arr)
             dst = out_dir / name
             try:

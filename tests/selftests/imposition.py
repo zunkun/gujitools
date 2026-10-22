@@ -2518,6 +2518,89 @@ def run(ctx) -> None:
             and page._current_print_pdf_path() is not None,
         )
 
+        # ---- 6b-2. 取图目录**内容**变了也要判旧（2026-10-22 用户报障）----
+        # 用户原话：「拼版里删了一张图片，然后在 PDF排版那里，那一页图片还在」。
+        # 拼版删页会让它后面所有成品页**重新编号重存**，来源阶段一个字没变——
+        # ``print_source_switched`` 看不见，得靠取图目录的内容指纹（source_mark）。
+        from desktop.services.stale_chain import print_input_changed
+
+        ok("内容判旧：从未成功生成过 → 不判旧", not print_input_changed({}, "d|x"))
+        ok(
+            "内容判旧：老记录没有 source_mark → 不误判（宁可少提示）",
+            not print_input_changed(
+                {"print": [{"status": "success", "finished_at": 1.0,
+                            "parameters": {"pdf_name": "print.pdf"}}]},
+                "d|x",
+            ),
+        )
+        ok(
+            "内容判旧：取图目录内容标记不同 → 判旧",
+            print_input_changed(
+                {"print": [{"status": "success", "finished_at": 1.0,
+                            "parameters": {"source_mark": "d|old"}}]},
+                "d|new",
+            ),
+        )
+        ok(
+            "内容判旧：标记一致 → 不判旧",
+            not print_input_changed(
+                {"print": [{"status": "success", "finished_at": 1.0,
+                            "parameters": {"source_mark": "d|same"}}]},
+                "d|same",
+            ),
+        )
+
+        # 页面上：上一轮 PDF 的 source_mark 与此刻不同 ⇒ 判旧、不再提供下载
+        stale_run = repo.create_stage_run(
+            tid,
+            "print",
+            {
+                "pdf_name": "print.pdf",
+                "source_stage": page.print_source_stage(),
+                "source_mark": "C:\\gone\\rembg|(1, 1, 1)",
+            },
+        )
+        repo.finish_stage(tid, stale_run, "success", str(print_dir))
+        page._refresh_print_source()
+        pump(ctx.app, times=4)
+        ok(
+            "取图内容变了（来源阶段没换）→ 判为旧数据",
+            page._print_data_stale,
+            f"data_stale={page._print_data_stale}",
+        )
+        ok(
+            "内容判旧后当前可用 PDF 为空、下载按钮禁用",
+            page._current_print_pdf_path() is None
+            and not page.print_preview.download_button.isEnabled(),
+            str(page._current_print_pdf_path()),
+        )
+        notice = page._regenerate_notice("print")
+        ok(
+            "状态行提示「取图里的图片已更新」",
+            bool(notice) and "取图里的图片已更新" in notice,
+            str(notice),
+        )
+        # 按**此刻**的取图内容重新生成过 ⇒ 恢复可用（清标脏）
+        fresh_run = repo.create_stage_run(
+            tid,
+            "print",
+            {
+                "pdf_name": "print.pdf",
+                "source_stage": page.print_source_stage(),
+                "source_mark": page._print_source_mark_text(),
+            },
+        )
+        repo.finish_stage(tid, fresh_run, "success", str(print_dir))
+        page._refresh_print_source()
+        pump(ctx.app, times=4)
+        ok(
+            "按当前取图内容生成过 → 不再判旧、PDF 恢复可用",
+            not page._print_data_stale
+            and page._current_print_pdf_path() is not None,
+            f"data_stale={page._print_data_stale} "
+            f"pdf={page._current_print_pdf_path()}",
+        )
+
         # ---- 6c. 「勾了就算启用」：不要求已经有拼版页（用户 2026-10-03 报障）----
         # 早先 ``imposition_active()`` 额外要求"至少拼了一页"，于是用户勾了
         # 「在流程中启用图片拼版」却还没拼页时——第四步仍取去底色图、流程条仍是
@@ -2559,6 +2642,73 @@ def run(ctx) -> None:
             page.step_bar.imposition_node.badge._status != "success",
             f"badge={page.step_bar.imposition_node.badge._status}",
         )
+        # ---- 6c-2. 关掉启用开关 → 流程图**不再经过**拼版（用户 2026-10-23）----
+        # 用户原话：「如果关闭在流程图中启用拼版，则 PDF排版使用的是拼版上一步
+        # 的数据，现在数据对了，但是顶部这个流程图……现在这个流程图节点经过了
+        # 拼版，此时没有启用就不需要经过」。
+        # 判据：流向（active）只看启用开关；徽标（selected）只看本节点有没有页，
+        # 两者互不取代——所以"有页但没启用"要画绕行线，但绿勾照旧。
+        _imp_node = page.step_bar.imposition_node
+
+        def _imp_segments():
+            front = back = None
+            for seg in page.step_bar._connector_segments():
+                if seg[1] is _imp_node:
+                    front = seg
+                elif seg[0] is _imp_node:
+                    back = seg
+            return front, back
+
+        ok(
+            "启用但还没拼页 → 主线经过拼版（流向 = 启用，不画绕行）",
+            page.step_bar._optional_flow[0] is True,
+            f"flow={page.step_bar._optional_flow}",
+        )
+        page._save_imposition_pages(
+            [{"items": S.single_items(str(a))}]  # 一页单图，制造"处理过"
+        )
+        page._imposition_timer.stop()
+        pump(ctx.app, times=4)
+        ok(
+            "（前置）有了拼版页：徽标转绿勾、主线仍经过拼版",
+            _imp_node.badge._status == "success"
+            and page.step_bar._optional_flow[0] is True,
+            f"badge={_imp_node.badge._status} "
+            f"flow={page.step_bar._optional_flow}",
+        )
+        page._set_imposition_checked(False)
+        page._imposition_timer.stop()
+        pump(ctx.app, times=6)
+        front, back = _imp_segments()
+        ok(
+            "关掉启用开关 → 流程图走绕行线（不再经过拼版）",
+            page.step_bar._optional_flow[0] is False
+            and page.step_bar._bypass_points() is not None
+            and front is not None and not front[2] and front[3]
+            and back is not None and not back[2] and back[3],
+            f"flow={page.step_bar._optional_flow} "
+            f"bypass={page.step_bar._bypass_points()} front={front} back={back}",
+        )
+        ok(
+            "关掉启用开关 → 徽标仍是绿勾（这一格确实处理过，与流向分开）",
+            _imp_node.badge._status == "success" and _imp_node.is_selected(),
+            f"badge={_imp_node.badge._status} selected={_imp_node.is_selected()}",
+        )
+        ok(
+            "关掉启用开关 → 第四步取图回到上一步（去底色）",
+            page.print_source_dir() == rembg_dir,
+            str(page.print_source_dir()),
+        )
+        # 收尾：把这一页清掉，后面「启用但没拼页」的断言依赖空清单
+        page._save_imposition_pages([])
+        page._compose_imposition_async()
+        for _ in range(60):
+            pump(ctx.app, times=2)
+            if not page._imposition_composing and not page._imposition_dirty:
+                break
+        page._set_imposition_checked(True)
+        page._imposition_timer.stop()
+        pump(ctx.app, times=6)
         ok(
             "勾了启用（还没拼页）→ 第四步取图已切到 stages/imposition",
             page.print_source_dir() == repo.imposition_output_dir(tid),

@@ -350,13 +350,13 @@ class PrintListMixin:
         )
 
     def _current_print_pdf_path(self) -> Path | None:
-        """**当前取图来源下**可用的 PDF；来源已切换则返回 ``None``。
+        """**当前取图来源下**可用的 PDF；来源或取图内容已变则返回 ``None``。
 
         所有"给用户看/下载这份 PDF"的地方都走这里（第四步预览的下载按钮、
         下载动作本身），别再直接用 :meth:`_latest_print_pdf_path`——那个只
         回答"磁盘上有没有"，不回答"还是不是当前的"。
         """
-        if self._print_source_switched():
+        if self._print_source_switched() or getattr(self, "_print_data_stale", False):
             return None
         return self._latest_print_pdf_path()
 
@@ -364,14 +364,19 @@ class PrintListMixin:
         """将已生成的 PDF 另存到用户选择的位置（默认下载目录、同名文件）。"""
         if not self.task_id:
             return
-        # ⚠️ 换了取图来源之后，磁盘上那份 PDF 属于**旧数据**，不再提供下载
-        # （用户 2026-10-03："旧的数据不显示"）。先说清楚为什么不能下，
-        # 别让用户以为是程序坏了。
-        if self._print_source_switched():
+        # ⚠️ 换了取图来源、或取图目录里的图片变了（拼版成品重存）之后，磁盘上那份
+        #    PDF 属于**旧数据**，不再提供下载（用户 2026-10-03："旧的数据不显示"）。
+        #    先说清楚为什么不能下，别让用户以为是程序坏了。
+        source_switched = self._print_source_switched()
+        if source_switched or getattr(self, "_print_data_stale", False):
+            reason = (
+                "取图来源已改变（图片拼版开关）" if source_switched
+                else "取图里的图片已更新（拼版成品 / 去底色成品变了）"
+            )
             self._toast(
                 "warning",
                 "PDF 需要重新生成",
-                "取图来源已改变（图片拼版开关），请先点「生成PDF」再下载。",
+                f"{reason}，请先点「生成PDF」再下载。",
             )
             return
         # 优先用下载按钮当前绑定的 PDF；否则按最近一次 print 参数解析

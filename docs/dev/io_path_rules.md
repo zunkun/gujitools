@@ -264,6 +264,7 @@ tasks/<任务号>/
 ├── flow.bpmn                 流程图（节点 + 连线，含坐标）
 ├── pages.json                当前参与处理的页清单
 ├── boxes.json                检测框坐标（端口 boxes）
+├── rembg_offsets.json        逐张图片的阈值偏移（黑名单法，只记非 0）
 ├── sizes.json                页面图片原始尺寸（框坐标的缩放基准）
 ├── print.json                待打印列表 + 页序 + 逐页版面
 ├── runs.json                 每个阶段的执行历史（最新在前）
@@ -274,7 +275,8 @@ tasks/<任务号>/
     ├── input/                入口图片（用户直接放进来的图）
     ├── extract/              提取出的页面图
     ├── detect/               「提交本次任务」逐框裁好的成品图
-    ├── rembg/                「执行去底色」的成品图（print 的取图来源）
+    ├── rembg/                「执行去底色」的成品图（print 的取图来源；调参数时
+    │                         当前页由实时调整**直接覆盖**此目录里的同名文件）
     ├── imposition/           拼版合成出的成品整页图
     └── print/                生成的 PDF
 ```
@@ -289,6 +291,7 @@ tasks/<任务号>/
 | ---------------- | -------------------------- | ------------------------------- |
 | 阶段产物目录     | `stages/extract`           | `stages/extract~Node_3`         |
 | 检测框           | `boxes.json`               | `boxes~Node_2.json`             |
+| 逐张阈值偏移     | `rembg_offsets.json`       | `rembg_offsets~Node_2.json`     |
 | 页面尺寸         | `sizes.json`               | `sizes~Node_2.json`             |
 | 页清单           | `pages.json`               | `pages~Node_2.json`             |
 | 待打印列表       | `print.json`               | `print~Node_2.json`             |

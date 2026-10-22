@@ -694,6 +694,10 @@ class DetailViewMixin:
         #: 由 ``_refresh_stale_notices`` 重算（见 page.py）——状态行经
         #: ``_regenerate_notice`` 在执行期间每 ≤200ms 读它，不能现算。
         self._print_source_stale = False
+        #: 已生成的 PDF 是否已因**取图目录内容变化**（拼版成品重存 / 去底色成品
+        #: 被实时改写）而作废。缓存，同 `_print_source_stale` 一起由
+        #: ``_refresh_stale_notices`` 重算（见 page.py）。
+        self._print_data_stale = False
         self.print_preview = PrintPreviewWidget(
             empty_hint="暂无图片，请先在第三步「执行去底色」生成成品图",
             params_provider=self._print_params,

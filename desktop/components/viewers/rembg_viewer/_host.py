@@ -40,7 +40,6 @@ class RembgViewerHost(QWidget, ThumbsMixin, ZoomPopupMixin):
     _boxes_provider: Any
     _cached_thumbs: Any
     _entries: Any
-    _live_dir: Any
     _load_token: Any
     _mode: Any
     _page_width_provider: Any
@@ -118,10 +117,6 @@ class RembgViewerHost(QWidget, ThumbsMixin, ZoomPopupMixin):
         ...
 
     @property
-    def live_dir(self) -> Path | None:
-        ...
-
-    @property
     def result_dir(self) -> Path | None:
         ...
 
@@ -157,9 +152,6 @@ class RembgViewerHost(QWidget, ThumbsMixin, ZoomPopupMixin):
         border_provider=None,
         thumb_provider=None,
     ) -> None:
-        ...
-
-    def set_live_dir(self, path: Path | None) -> None:
         ...
 
     def show_live_pending(self) -> None:

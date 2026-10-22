@@ -81,11 +81,16 @@ class StageRunnerMixin:
         _refresh_preview: Callable[..., None]
         _refresh_stale_notices: Callable[[], None]
         _drop_live_results: Callable[[], None]
+        _flush_pending_offset: Callable[[], None]
         _compose_imposition_now: Callable[[], None]
         _print_entries: Callable[[], tuple]
         _build_print_effects: Callable[..., Any]
         _imposition_switch_state: Callable[[], tuple]
         _latest_print_pdf_path: Callable[[], Path | None]
+        #: 取图目录的内容标记（目录 + 内容指纹，可落进 runs.json）：生成 PDF 时
+        #: 随 source_stage 一起记进执行记录，供第四步判"这份 PDF 是不是旧数据"
+        #: （见 ``desktop.services.stale_chain.print_input_changed``）。
+        _print_source_mark_text: Callable[[], str]
         _submit_version_state: Callable[[str], str]
         imposition_effective: Callable[[], bool]
         imposition_active: Callable[[], bool]
@@ -375,7 +380,7 @@ class StageRunnerMixin:
                 )
                 return
         if stage == "rembg":
-            # 正式执行开始：收起按旧参数算的实时预览，显示本步正式产物。
+            # 正式执行开始：实时台账作废（本步会按逐张偏移表重写**全部**页）。
             self._drop_live_results()
         if stage == "extract" and (
             self.source_path is None or not Path(self.source_path).exists()
@@ -484,6 +489,11 @@ class StageRunnerMixin:
                     self.task_id, "print", "pages", self.imposition_effective()
                 )
             )
+            # 取图目录的**内容标记**（目录 + 内容指纹），与 source_stage 一并落进
+            # 执行记录：来源阶段没换、但目录内容变了（图片拼版删页 ⇒ 成品页
+            # 重新编号重存）时，第四步那份旧 PDF 同样不该再被当成结果。
+            # 判据见 services/stale_chain.print_input_changed。
+            args["source_mark"] = self._print_source_mark_text()
             # 有序清单即页序：拖拽重排只改 print.json，不再物化任何文件。
             # input 仅供 CLI 作默认目录兜底，实际顺序由 files 决定。
             args["files"] = [str(Path(e["file"])) for e in entries]
@@ -586,10 +596,16 @@ class StageRunnerMixin:
                 # 去底色只有一步：成品图固定写入 ``stages/rembg``（副本节点
                 # 写到它自己的 ``stages/rembg~<节点>``）。
                 # rembg CLI 会自行追加 "rembg" 子目录，故用 _outpath 精确覆盖。
+                self._flush_pending_offset()
                 args["_outpath"] = str(
                     self.store.node_or_stage_output(
                         self.task_id, node, "rembg"
                     )
+                )
+                # 逐张图片的 offset（黑名单法）：用户单独调过的图片按自己的值
+                # 去底色，没调过的沿用面板当前值（默认 0）。
+                args["offsets"] = self.store.load_rembg_offsets(
+                    self.task_id, **self._node_scope(node)
                 )
             else:
                 # detect 的输出目录解析会在 output 后追加默认子目录名（detect）
@@ -1320,6 +1336,9 @@ class StageRunnerMixin:
                 # "请重新生成"，主按钮也一直加粗。放在 set_pdf_path 之后，
                 # 让下载按钮先恢复再撤提示。
                 self._print_source_stale = False
+                # ⚠️ 同一条道理清「取图内容已变」：source_mark 随 args 落进历史，
+                #    这份 PDF 就是按**此刻**的取图目录内容生成的。
+                self._print_data_stale = False
                 try:
                     # 同上：颜色要一起回到常规色
                     self._set_stage_status("成功")

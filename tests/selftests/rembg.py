@@ -67,6 +67,10 @@ def run(ctx) -> None:
     _p3.apply_args({})
     ok("复位后 offset 回到 0", _p3.offset.value() == 0,
        str(_p3.offset.value()))
+    # 逐张 offset 会随用户改动落盘（黑名单法）：这里显式落一次 0，避免把
+    # 测试过程中的临时偏移留给后续模块。
+    d._note_offset_pending()
+    d._flush_pending_offset()
 
     # --- 第二步面板没有 area（2026-10-22 起 area 已从整个项目移除）---
     _p2 = d.control_stack.widget(1)

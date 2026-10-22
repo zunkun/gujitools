@@ -199,7 +199,7 @@ _SPECS: list[dict] = [
         "public_api": ["RembgPreviewWidget"],
         "module_funcs": [],
         "home": {
-            # core.py -> RembgPreviewWidget（22 个）
+            # core.py -> RembgPreviewWidget（20 个）
             "__init__": "RembgPreviewWidget",
             "_current_entry": "RembgPreviewWidget",
             "_display": "RembgPreviewWidget",
@@ -215,12 +215,10 @@ _SPECS: list[dict] = [
             "current_changed": "RembgPreviewWidget",
             "current_entry_path": "RembgPreviewWidget",
             "image_saved": "RembgPreviewWidget",
-            "live_dir": "RembgPreviewWidget",
             "navigate": "RembgPreviewWidget",
             "refresh_display": "RembgPreviewWidget",
             "refresh_page": "RembgPreviewWidget",
             "set_images": "RembgPreviewWidget",
-            "set_live_dir": "RembgPreviewWidget",
             "show_live_pending": "RembgPreviewWidget",
             # entries.py -> EntriesMixin（5 个）
             "_build_entries": "EntriesMixin",

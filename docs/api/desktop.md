@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 177 个模块、193 个公开类、1419 个公开函数/方法（生成于 2026-10-22）。
+覆盖 177 个模块、193 个公开类、1420 个公开函数/方法（生成于 2026-10-23）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -87,7 +87,7 @@
 | [`desktop.components.viewers.print_preview.layout`](#desktopcomponentsviewersprint_previewlayout) | 1 | 1 |
 | [`desktop.components.viewers.print_preview.thumbs`](#desktopcomponentsviewersprint_previewthumbs) | 1 | 1 |
 | [`desktop.components.viewers.print_preview.widget`](#desktopcomponentsviewersprint_previewwidget) | 1 | 9 |
-| [`desktop.components.viewers.rembg_viewer.core`](#desktopcomponentsviewersrembg_viewercore) | 1 | 12 |
+| [`desktop.components.viewers.rembg_viewer.core`](#desktopcomponentsviewersrembg_viewercore) | 1 | 10 |
 | [`desktop.components.viewers.rembg_viewer.entries`](#desktopcomponentsviewersrembg_viewerentries) | 1 | 0 |
 | [`desktop.components.viewers.rembg_viewer.thumbs`](#desktopcomponentsviewersrembg_viewerthumbs) | 1 | 3 |
 | [`desktop.components.viewers.thumb_strip`](#desktopcomponentsviewersthumb_strip) | 1 | 12 |
@@ -124,8 +124,8 @@
 | [`desktop.services.imposition`](#desktopservicesimposition) | 0 | 31 |
 | [`desktop.services.print_plan`](#desktopservicesprint_plan) | 0 | 10 |
 | [`desktop.services.rembg_export`](#desktopservicesrembg_export) | 0 | 7 |
-| [`desktop.services.rembg_live`](#desktopservicesrembg_live) | 0 | 3 |
-| [`desktop.services.stale_chain`](#desktopservicesstale_chain) | 0 | 4 |
+| [`desktop.services.rembg_live`](#desktopservicesrembg_live) | 0 | 1 |
+| [`desktop.services.stale_chain`](#desktopservicesstale_chain) | 0 | 5 |
 | [`desktop.services.submit_state`](#desktopservicessubmit_state) | 0 | 1 |
 | [`desktop.services.yolo_prewarm`](#desktopservicesyolo_prewarm) | 0 | 3 |
 | [`desktop.settings.config`](#desktopsettingsconfig) | 1 | 4 |
@@ -154,7 +154,7 @@
 | [`desktop.store.pages`](#desktopstorepages) | 1 | 9 |
 | [`desktop.store.runs`](#desktopstoreruns) | 1 | 10 |
 | [`desktop.store.store`](#desktopstorestore) | 1 | 1 |
-| [`desktop.store.tasks`](#desktopstoretasks) | 1 | 53 |
+| [`desktop.store.tasks`](#desktopstoretasks) | 1 | 57 |
 | [`desktop.store.ui_state`](#desktopstoreui_state) | 1 | 9 |
 | [`desktop.ui.color_picker`](#desktopuicolor_picker) | 5 | 30 |
 | [`desktop.ui.font_setup`](#desktopuifont_setup) | 2 | 8 |
@@ -3001,16 +3001,18 @@ status 决定副标题/标题色，badge_status 决定徽标（缺省同 status�
 ``TaskDetailPage._bar_step_titles`` / ``_optional_after_index`` 传入），
 换流程只换参数——本组件不认 ``STAGES``、也不数下标猜位置。
 
-节点有两条互相独立的状态线（别合并）：
-- **选择态**（``set_imposition_selected``）：只管节点自己的外观
-  （「已选择/未选择」副标题；节点没有边框差异、也不压高亮底色，
-  与真实步骤同一套外观）；
-- **生效态**（``set_imposition_active``）：这条支路是否真的承载流程
-  （已启用且至少有一页拼版）。生效 → 两侧连接线常规点亮、节点徽标
-  转绿色对勾；未生效 → 两侧连接线灰色虚线、徽标灰色「＋」，同时
-  「去底色 → PDF排版」画一条从节点上方绕过的绕行线
-  （``_draw_imposition_bypass``）——选了拼版但还没有拼版页时，
-  第四步实际取的仍是第三步产物，线不能说谎。
+节点有两组互相独立的状态线（别合并）：
+- **选择态**（``set_imposition_selected``）：节点自己的外观——副标题
+  「已选择/未选择」**加上徽标**（处理过 → 绿勾；没处理过 → 灰色「＋」）。
+  判据是"这一格自己有没有拼版页"，按节点算（同一步骤可有多个拼版节点）。
+- **流向**（``set_imposition_active``）：这条支路是否真的承载流程，判据
+  是「在流程中启用图片拼版」开关（＝第四步从哪取图）。生效 → 两侧连接线
+  常规点亮；未生效 → 两侧连接线灰色虚线，同时「去底色 → PDF排版」画一条
+  从节点上方绕过的绕行线（``_draw_imposition_bypass``）——关掉开关时
+  第四步取的是上一步产物，线不能说谎。
+⚠️ 2026-10-23 用户报障前这两条是拧在一起的（徽标跟流向走、流向跟"有没有
+拼版页"走），于是"有拼版页但没启用"时流程仍然经过拼版。分成两条后：
+有页+未启用 = 绿勾 + 绕行线。
 
 节点的宽度与间距分成两件事（都踩过坑，别再合并）：
 - **槽位**与真实步骤等宽（``imposition_slot`` + stretch 1）→ 步骤间距均分；
@@ -3028,7 +3030,7 @@ status 决定副标题/标题色，badge_status 决定徽标（缺省同 status�
 | `set_steps(texts) -> None` | 兼容旧调用：只更新标题文本。 |
 | `set_imposition_visible(visible: bool) -> None` | 显示/隐藏**全部**可选（虚线）节点（随流程图里有没有这一格）。 |
 | `set_imposition_selected(selected: bool) -> None` | 把**全部**可选节点设成同一个选择态（兼容面：单节点流程/自测用）。 |
-| `set_imposition_node_state(bar_index: int, *, selected: bool \| None=None, active: bool \| None=None) -> None` | 按**格序**设**某一个**可选节点自己的选择态/生效态（B 方案）。 |
+| `set_imposition_node_state(bar_index: int, *, selected: bool \| None=None, active: bool \| None=None) -> None` | 按**格序**设**某一个**可选节点的选择态/流向（B 方案）。 |
 | `set_imposition_active(active: bool) -> None` | 把**全部**可选节点设成同一个生效态（兼容面：单节点流程/自测用）。 |
 | `set_step_status(index: int, status: str, progress: tuple \| None=None, completed: bool \| None=None) -> None` | 设置某步骤状态；progress 为 (已完成, 总数) 时拼出 "成功 · 84/84"。 |
 | `reset_statuses() -> None` | 全部步骤恢复为未执行，并清空已完成标记。 |
@@ -3094,7 +3096,11 @@ status 决定副标题/标题色，badge_status 决定徽标（缺省同 status�
 
 ##### `set_imposition_node_state(bar_index: int, *, selected: bool | None=None, active: bool | None=None) -> None`
 
-按**格序**设**某一个**可选节点自己的选择态/生效态（B 方案）。
+按**格序**设**某一个**可选节点的选择态/流向（B 方案）。
+
+- ``selected``：这一格**自己**处理过没有（副标题 + 徽标），按节点算；
+- ``active``：这条支路**在不在流程里**（连接线点亮 or 绕行），按流程级
+  的启用开关算，所以同一步骤的多个节点通常一样。
 
 ⚠️ 同一步骤可以有多个「图片拼版」节点（用户 2026-10-17 的流程图：开头
 一个、网关「是」分支里又一个）：操作了(1) 不该让(2) 也变成「已选择」/
@@ -3106,11 +3112,10 @@ status 决定副标题/标题色，badge_status 决定徽标（缺省同 status�
 
 把**全部**可选节点设成同一个生效态（兼容面：单节点流程/自测用）。
 
-生效 → 两侧连接线常规点亮、节点徽标转绿色对勾（与真实步骤同款）；
-未生效 → 两侧连接线灰色虚线、徽标灰色「＋」，主流程改走节点上方
-的绕行线。与 ``set_imposition_selected``
-（节点自己的选择外观）互不取代：选了但还没有拼版页时，节点
-显示「已选择」，但线仍然是灰色虚线 + 绕行。
+生效 → 两侧连接线常规点亮；未生效 → 两侧连接线灰色虚线、主流程改走
+节点上方的绕行线。与 ``set_imposition_selected``（节点自己的选择外观
++ 徽标）互不取代：选了但还没启用时，节点显示「已选择」+ 绿勾，但线
+仍然是灰色虚线 + 绕行。
 
 ⚠️ **一刀切**：多节点流程里宿主走 :meth:`set_imposition_node_state`。
 
@@ -5688,9 +5693,7 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 | `refresh_display() -> None` | 检测框/边距变化后，重建输出条目并按新区域重新加载。 |
 | `navigate(forward: bool) -> None` | 方向键翻页（详情页 ←/→ 调用；联动预览刷新，见 ThumbStrip.navigate）。 |
 | `current_entry_path() -> str \| None` | 当前选中条目的源图路径（无条目时为 None）。 |
-| `set_live_dir(path: Path \| None) -> None` | 设置（或传 None 清除）「实时预览」暂存目录。 |
-| `live_dir() -> Path \| None` | 当前生效的实时预览暂存目录（未启用为 None）。 |
-| `show_live_pending() -> None` | 实时预览正在计算：只在**下方说明行**给个反馈，**不动大图**。 |
+| `show_live_pending() -> None` | 实时去底色正在计算：只在**下方说明行**给个反馈，**不动大图**。 |
 | `refresh_page(path_text: str) -> None` | 某文件被覆盖后刷新本查看器：受影响条目图标 + 当前大图。 |
 | `result_dir() -> Path \| None` | 当前生效的去底色结果目录（未设置为 None）。 |
 | `set_result_dir(path: Path \| None) -> None` | 执行**开始前**先把结果目录告诉查看器（边跑边出结果）。 |
@@ -5726,12 +5729,12 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 "内容指纹变了没有"（``desktop.utils.files.dir_content_signature``）
 决定要不要传（不是每次刷新都强制）。
 
-##### `set_live_dir(path: Path | None) -> None`
+##### `show_live_pending() -> None`
 
-设置（或传 None 清除）「实时预览」暂存目录。
+实时去底色正在计算：只在**下方说明行**给个反馈，**不动大图**。
 
-非 None 时结果图优先从这里取：它是按**此刻**面板参数现算的当前页；
-正式成品目录（``stages/rembg``）则可能还是上一次「执行去底色」的结果。
+⚠️ 结果直接覆盖正式成品（``stages/rembg``），所以这里没有"临时目录"
+可指——算完宿主调 :meth:`refresh_display` 大图自然就是新图。
 
 ##### `refresh_page(path_text: str) -> None`
 
@@ -7405,7 +7408,7 @@ resize 子控件再 show），在这里重铺一次就对了。⚠️ 别改成"
 - print_list.PrintListMixin  第四步待打印列表
 - runner.StageRunnerMixin    阶段执行（worker 子进程编排）
 - detect.DetectMixin         detect 检测控制
-- rembg_live.RembgLiveMixin  第三步改参数/翻页时只重算当前页（临时显示）
+- rembg_live.RembgLiveMixin  第三步改参数/翻页时只重算当前页（覆盖正式成品）
 - imposition.ImpositionMixin 流程条「图片拼版」可选节点
   （共享基元 imposition.py + 模块一 imposition_pages.py「选择拼版」
   + 模块二 imposition_layout.py「拼版操作」）
@@ -7702,23 +7705,25 @@ _toast()。
 
 源码：[`desktop/pages/taskdetail/rembg_live.py`](../../desktop/pages/taskdetail/rembg_live.py)
 
-第三步「图片去底色」的实时预览控制器（单页、只显示）。
+第三步「图片去底色」的**实时调整**控制器（单页、直接覆盖正式成品）。
 
-用户改 offset / type / 印章等参数或翻页时，**只重算当前页**并立刻上屏，
-不必等「执行去底色」全量任务。
+用户改 offset / type / 印章等参数或翻页时，**只重算当前页**并立刻上屏，不必等
+「执行去底色」全量任务。
 
-与正式执行的分工：
+⚠️ 2026-10-22（任务 0014 报障后）语义变更：算出来的**就是正式成品**——直接覆盖
+``stages/rembg[~<节点>]/<页名>.png``（透明底）并刷新第四步缩略图。此前结果只落
+系统临时目录，于是"页面看着变了，下一步 PDF排版 / 图片拼版拿到的还是旧图"。
 
-- **「执行去底色」**：全量写 ``stages/rembg``（正式成品）；
-- **本模块**：只算当前页、只写系统临时目录，供查看器临时显示。
-
-参数与最近一次成功执行一致时，直接回到正式成品显示，不重复计算。
+与「执行去底色」的分工：那个是全量；这里只算**当前这一页**（改哪张就落哪张），
+并通知下游（拼版重合成 / 第四步待打印列表）。参数与该页**盘上成品**当前所用的
+取值一致时不再重算。
 
 ### `class RembgLiveMixin`
 
 依赖宿主页面提供：store / task_id / process / rembg_viewer /
-current_stage() / current_node() / run_worker / _latest_success_run() /
-panel_host_of_step()。
+current_stage() / current_node() / node_of_stage() / run_worker /
+_latest_success_run() / panel_host_of_step() / _refresh_print_source() /
+_schedule_imposition_compose() / imposition_effective()。
 
 ---
 
@@ -8986,32 +8991,33 @@ singletask「去底色」导出目录的**标记**与白底→透明**副本**�
 
 源码：[`desktop/services/rembg_live.py`](../../desktop/services/rembg_live.py)
 
-去底色参数调整时的**单页实时预览**（只显示，不写正式产物）。
+去底色参数实时调整的**单页重算**：直接覆盖正式成品。
 
-用户口径：改 offset/type/印章、翻页时当前页要立刻看到效果，而不是必须点
-「执行去底色」全量跑一遍。
+用户口径（2026-10-22，任务 0014 报障）：
 
-边界（2026-10-22 单步化之后）：
+> 「在去底色步骤设置了 offset，没有能够传给下一步……图片任务目录下面要替换掉
+>  rembg 下的图片」
 
-- **只看当前页**、只写系统临时目录 ``guji_live_preview/<task_id>/``；
-  ``stages/rembg`` 是「执行去底色」的正式成品，实时预览**绝不**碰它。
-- 参数与最近一次成功执行一致时，直接显示正式成品，不重复计算。
-- 计算入口与 CLI / 正式阶段同源：``utils.rembg_page``。
+所以这里**没有**"临时预览目录"：改 offset/type/印章或翻页时，当前页立刻按键入
+参数重算，结果**覆盖** ``stages/rembg[~节点]/<页名>.png``（透明底 PNG，与
+「执行去底色」的产物同规格），并顺带刷新第四步缩略图——不落进任务目录的话，
+下一步「图片拼版 / PDF排版」拿到的还是旧图。
+
+计算口径与正式阶段同源（``utils.rembg_page`` + ``utils.save_white_as_transparent``）。
 
 ### 模块函数
 
 | 函数 | 说明 |
 | --- | --- |
-| `live_dir(task_id: str) -> Path` | 该任务的实时预览暂存目录（系统临时目录下，按 task_id 隔离）。 |
-| `reset(task_id: str) -> None` | 清空该任务的实时暂存（参数回到正式成果、或切换任务时调用）。 |
-| `render_page(image_path: str, args: dict, out_dir: str \| Path) -> str` | 对单页执行整图去底色并写入 ``out_dir``，返回结果文件路径。 |
+| `render_page(image_path: str, args: dict, out_dir: str \| Path, thumb_dir: str \| Path \| None=None) -> str` | 单页整图去底色 → **覆盖**正式成品（并刷新第四步缩略图），返回成品路径。 |
 
-#### `render_page(image_path: str, args: dict, out_dir: str | Path) -> str`
+#### `render_page(image_path: str, args: dict, out_dir: str | Path, thumb_dir: str | Path | None=None) -> str`
 
-对单页执行整图去底色并写入 ``out_dir``，返回结果文件路径。
+单页整图去底色 → **覆盖**正式成品（并刷新第四步缩略图），返回成品路径。
 
-PNG 用 ``compress_level=1``：这是临时预览，编码速度比压缩率重要；
-正式产物走 ``desktop.stages.rembg_stage``（透明底 + level=6）。
+⚠️ 覆盖走「同目录 ``.part`` + ``os.replace``」：这份成品随时会被第四步查看器
+或拼版合成读到，直接 ``Image.save`` 会让人读到半截 PNG。``.part`` 后缀不在
+``IMAGE_SUFFIXES`` 里，也不会被当成一页。
 
 ---
 
@@ -9036,6 +9042,10 @@ PNG 用 ``compress_level=1``：这是临时预览，编码速度比压缩率重�
 就属于旧数据了——由 :func:`print_source_switched` 判定（比对运行记录里
 记下的来源，而不是时间）。
 
+还有一类是**同一个来源目录内部的内容变化**（拼版里删掉/重排一页 ⇒ 成品页
+重新编号重存），来源阶段一个字都没变，:func:`print_source_switched` 看不见——
+由 :func:`print_input_changed` 判定（比对取图目录的**内容指纹**）。
+
 ### 模块常量
 
 | 名称 | 值 |
@@ -9050,6 +9060,7 @@ PNG 用 ``compress_level=1``：这是临时预览，编码速度比压缩率重�
 | `upstream_from_diagram(diagram) -> dict[str, tuple[str, ...]]` | 按**流程图**算"下游阶段 → 它的上游阶段"（替代写死的 :data:`UPSTREAM`）。 |
 | `stale_upstream(runs: dict, upstream: dict \| None=None) -> dict[str, dict]` | runs（``{阶段: [记录, ...]}``）→ 过期判定 ``{下游阶段: 详情}``。 |
 | `print_source_switched(runs: dict, current_source: str) -> bool` | 已生成的 PDF 是不是在**换了取图来源之后**生成的（旧数据）。 |
+| `print_input_changed(runs: dict, current_mark) -> bool` | 已生成的 PDF 是不是在**取图目录内容变化之前**生成的（旧数据）。 |
 
 #### `latest_success(records) -> dict | None`
 
@@ -9099,6 +9110,28 @@ runs（``{阶段: [记录, ...]}``）→ 过期判定 ``{下游阶段: 详情}``
 - 下游从未成功过 → 不判过期（界面本来就说"未执行"）；
 - 老任务的记录里没有 ``source_stage``（本字段引入前生成的）→ **不判过期**，
   宁可少提示也不凭空说用户的 PDF 有问题。
+
+#### `print_input_changed(runs: dict, current_mark) -> bool`
+
+已生成的 PDF 是不是在**取图目录内容变化之前**生成的（旧数据）。
+
+用户 2026-10-22（任务 0014 报障）：
+
+> 「拼版里删了一张图片，然后在 PDF排版那里，那一页图片还在」
+
+拼版成品重存（删页会把它后面所有页重新编号重写，并清扫多余的页号）之后，
+磁盘上那份 PDF 读的还是旧图——与"换了取图来源"是同一类"旧数据"，只是变化
+发生在**同一个来源目录内部**，:func:`print_source_switched` 比的是阶段 key，
+一个字都没变因而看不出来。
+
+判据：最近一次**成功**的 print 运行记录里存了当时的取图目录内容标记
+（``parameters["source_mark"]``，见 runner 注入的
+``print_source_dir + dir_content_signature``），与当前标记不同即过期。
+
+- 下游从未成功过 → 不判过期（界面本来就说"未执行"）；
+- 老任务的记录里没有 ``source_mark``（本字段引入前生成的）→ **不判过期**，
+  宁可少提示也不凭空说用户的 PDF 有问题；
+- 当前标记取不到（目录不存在）→ 同样不判（无从比较）。
 
 ---
 
@@ -12839,6 +12872,10 @@ JSON 文件，没有旧数据（SQLite）需要迁移。
 | `artifact(task_id: str, stage: str, port: str='pages') -> Path` | 某阶段某端口的产物绝对路径（**落点的唯一入口**）。 |
 | `extract_output_dir(task_id: str) -> Path` | 提取图片直接位于 stages/extract（无 PDF 名/嵌套子目录）。 |
 | `rembg_output_dir(task_id: str) -> Path` | 步骤三成品图片目录（「执行去底色」产出，print 阶段从此取图）。 |
+| `rembg_offsets_path(task_id: str, node_id: str \| None=None, primary_id: str \| None=None) -> Path` | **逐张图片**阈值偏移的存储文件（黑名单法，只记非 0 的图片）。 |
+| `load_rembg_offsets(task_id: str, node_id: str \| None=None, primary_id: str \| None=None) -> dict[str, int]` | 读逐张偏移表 ``{页名: offset}``（只含非 0 项；坏文件当空表）。 |
+| `rembg_offset(task_id: str, image_key: str, node_id: str \| None=None, primary_id: str \| None=None) -> int` | 某张图片的阈值偏移（没记录过 = 0）。 |
+| `save_rembg_offset(task_id: str, image_key: str, offset: int, node_id: str \| None=None, primary_id: str \| None=None) -> None` | 记录某张图片的阈值偏移；**offset=0 就删掉这一项**（黑名单法）。 |
 | `imposition_output_dir(task_id: str) -> Path` | 「图片拼版」产出的成品拼版页图目录（列表顺序即页序）。 |
 | `print_output_pdf(task_id: str) -> Path` | print 阶段产物 print.pdf 的完整路径。 |
 | `task_diagram(task_id: str)` | 本任务的**流程图**（``FlowDiagram``：节点类型 + 坐标 + 折点）。 |
@@ -13002,6 +13039,20 @@ exist_ok=False``，被抢就顺延），所以并发/历史残留时**实际拿�
 的根源；现在它们都转调到这里，而落点表
 （:data:`desktop.steps.ports.STAGE_LOCATIONS`）是唯一事实来源。
 加一步 = 加一行表，不用动 store。
+
+##### `rembg_offsets_path(task_id: str, node_id: str | None=None, primary_id: str | None=None) -> Path`
+
+**逐张图片**阈值偏移的存储文件（黑名单法，只记非 0 的图片）。
+
+主节点沿用 ``rembg_offsets.json``；同一步骤的副本节点落
+``rembg_offsets~<节点>.json``（与 ``boxes`` / ``pages`` 同一套命名）。
+
+##### `save_rembg_offset(task_id: str, image_key: str, offset: int, node_id: str | None=None, primary_id: str | None=None) -> None`
+
+记录某张图片的阈值偏移；**offset=0 就删掉这一项**（黑名单法）。
+
+⚠️ 只在用户**确实改过**这张图时调用；整表很小，读改写即可，不要为它
+再造缓存。
 
 ##### `imposition_output_dir(task_id: str) -> Path`
 
@@ -15842,23 +15893,23 @@ PDF 仍要走「生成PDF」按钮（functions/print.py）。
 
 源码：[`desktop/workers/rembg_live_worker.py`](../../desktop/workers/rembg_live_worker.py)
 
-单页实时去底色的后台 worker（任务详情第三步「改参数/翻页」专用）。
+单页实时去底色的后台 worker（任务详情第三步「改参数 / 翻页」专用）。
 
-只负责**计算 + 落临时目录**供查看器显示；正式产物（``stages/rembg``）仍由
-「执行去底色」的 worker 子进程独占写入，实时预览不碰它。
+只负责**计算 + 覆盖正式成品**（``stages/rembg[~节点]/<页名>.png`` 加第四步
+缩略图），与「执行去底色」的产物同规格——算出来就是下一步能看到的那张图。
 
 结果通过 token 回传，宿主据此丢弃"已经过期的"结果（用户连拖两次滑块时，
 慢的那次回来得晚，不能覆盖新的）。
 
 ### `class RembgLiveWorker(QObject)`
 
-一次性 worker：单页去底色 → 临时预览目录。
+一次性 worker：单页去底色 → 覆盖正式成品。
 
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(image_path: str, args: dict, out_dir: str, token: object) -> None` | — |
+| `__init__(image_path: str, args: dict, out_dir: str, thumb_dir: str \| None, token: object) -> None` | — |
 | `cancel() -> None` | 请求放弃计算。token 守卫只丢结果，这里额外让线程尽早返回，省算力。 |
 | `run() -> None` | 线程入口：算完发 finished，异常发 failed（不抛到线程外）。 |
 

@@ -1,15 +1,16 @@
 # -*- coding: utf-8 -*-
-"""第三步「图片去底色」的实时预览控制器（单页、只显示）。
+"""第三步「图片去底色」的**实时调整**控制器（单页、直接覆盖正式成品）。
 
-用户改 offset / type / 印章等参数或翻页时，**只重算当前页**并立刻上屏，
-不必等「执行去底色」全量任务。
+用户改 offset / type / 印章等参数或翻页时，**只重算当前页**并立刻上屏，不必等
+「执行去底色」全量任务。
 
-与正式执行的分工：
+⚠️ 2026-10-22（任务 0014 报障后）语义变更：算出来的**就是正式成品**——直接覆盖
+``stages/rembg[~<节点>]/<页名>.png``（透明底）并刷新第四步缩略图。此前结果只落
+系统临时目录，于是"页面看着变了，下一步 PDF排版 / 图片拼版拿到的还是旧图"。
 
-- **「执行去底色」**：全量写 ``stages/rembg``（正式成品）；
-- **本模块**：只算当前页、只写系统临时目录，供查看器临时显示。
-
-参数与最近一次成功执行一致时，直接回到正式成品显示，不重复计算。
+与「执行去底色」的分工：那个是全量；这里只算**当前这一页**（改哪张就落哪张），
+并通知下游（拼版重合成 / 第四步待打印列表）。参数与该页**盘上成品**当前所用的
+取值一致时不再重算。
 """
 
 from __future__ import annotations
@@ -19,7 +20,6 @@ from typing import TYPE_CHECKING, Any, Callable, cast
 
 from PySide6.QtCore import QObject, QProcess, QTimer
 
-from desktop.services import rembg_live
 from desktop.workers import RembgLiveWorker, connect_queued
 
 if TYPE_CHECKING:
@@ -29,8 +29,9 @@ if TYPE_CHECKING:
 
 class RembgLiveMixin:
     """依赖宿主页面提供：store / task_id / process / rembg_viewer /
-    current_stage() / current_node() / run_worker / _latest_success_run() /
-    panel_host_of_step()。"""
+    current_stage() / current_node() / node_of_stage() / run_worker /
+    _latest_success_run() / panel_host_of_step() / _refresh_print_source() /
+    _schedule_imposition_compose() / imposition_effective()。"""
 
     if TYPE_CHECKING:
         store: TaskStore
@@ -41,8 +42,13 @@ class RembgLiveMixin:
         run_worker: Callable[..., Any]
         current_stage: Callable[[], str]
         current_node: Callable[[], str | None]
+        node_of_stage: Callable[[str], str | None]
         _latest_success_run: Callable[..., Any]
         panel_host_of_step: Callable[[str], Any]
+        _node_scope: Callable[..., dict]
+        _refresh_print_source: Callable[..., None]
+        _schedule_imposition_compose: Callable[[], None]
+        imposition_effective: Callable[[], bool]
 
     #: 参数连发时的防抖窗口（拖一次滑块会发几十次 valueChanged）
     LIVE_DEBOUNCE_MS = 350
@@ -54,11 +60,14 @@ class RembgLiveMixin:
 
     # ---------------------------------------------------------------- 初始化
     def _init_rembg_live(self) -> None:
-        """装好实时预览状态与触发点（在 _init_ui 之后调用）。"""
-        self._live_done: dict[str, dict] = {}  # stem -> 已按哪份参数算过
+        """装好实时调整状态与触发点（在 _init_ui 之后调用）。"""
+        #: stem → 该页**盘上成品**当前是按哪份参数算出来的。
+        #: 没有条目的页 ⇒ 盘上还是「执行去底色」全量那一轮的产物。
+        self._live_done: dict[str, dict] = {}
         self._live_token: object | None = None
         self._live_pending: dict | None = None
-        self.rembg_viewer.set_live_dir(None)
+        #: 待落盘的逐张 offset：(task_id, stem, value, node_id, primary_id)
+        self._offset_pending: tuple | None = None
 
         # ⚠️ Mixin 本体是普通类，类型检查器看不到宿主是 QObject，故收窄后当
         #    QTimer 的 parent 用（运行时是恒等）。
@@ -67,7 +76,13 @@ class RembgLiveMixin:
         self._live_timer.setInterval(self.LIVE_DEBOUNCE_MS)
         self._live_timer.timeout.connect(self._maybe_run_live_preview)
 
-        # 两个触发点：面板参数被改、预览区翻页。
+        self._offset_save_timer = QTimer(cast(QObject, self))
+        self._offset_save_timer.setSingleShot(True)
+        self._offset_save_timer.setInterval(self.LIVE_DEBOUNCE_MS)
+        self._offset_save_timer.timeout.connect(self._flush_pending_offset)
+
+        # 两个触发点：面板参数被改 → 实时算当前页并记录该图 offset；
+        # 翻页 → 只加载该图自己的 offset 并显示已有结果，**不重算**。
         # ⚠️ 面板是惰性的：挂 created 回调，等它真被建好再接。
         rembg_host = self.panel_host_of_step("rembg")
         if rembg_host is not None:
@@ -78,30 +93,105 @@ class RembgLiveMixin:
                 )
             else:
                 rembg_host.param_edited.connect(self._on_live_trigger)
-        self.rembg_viewer.current_changed.connect(self._on_live_trigger)
+        self.rembg_viewer.current_changed.connect(self._on_image_changed)
 
     # ---------------------------------------------------------------- 触发
     def _on_live_trigger(self, *_args) -> None:
-        """参数被改 / 翻页 → 起防抖计时（不立刻跑）。"""
+        """用户改了面板参数 → 记录该图 offset 并起实时计算防抖。"""
         if self.current_stage() != "rembg":
             return
+        self._note_offset_pending()
         self._live_timer.start()
+
+    def _note_offset_pending(self) -> None:
+        """记下"当前这张图 + 面板 offset"，防抖后落进逐张偏移表。"""
+        task_id = self.task_id
+        entry_path = self.rembg_viewer.current_entry_path()
+        if not task_id or not entry_path:
+            return
+        panel = self.panel_host_of_step("rembg")
+        if panel is None:
+            return
+        try:
+            args = panel.get_args()
+        except ValueError:
+            return
+        scope = self._node_scope(self.current_node())
+        self._offset_pending = (
+            task_id, Path(entry_path).stem, int(args.get("offset") or 0),
+            scope.get("node_id"), scope.get("primary_id"),
+        )
+        self._offset_save_timer.start()
+
+    def _flush_pending_offset(self) -> None:
+        """把待写的逐张 offset 落盘（切图/切任务/执行前都要调）。"""
+        if self._offset_save_timer.isActive():
+            self._offset_save_timer.stop()
+        pending, self._offset_pending = self._offset_pending, None
+        if not pending:
+            return
+        task_id, stem, value, node_id, primary_id = pending
+        try:
+            self.store.save_rembg_offset(
+                task_id, stem, value, node_id=node_id, primary_id=primary_id
+            )
+        except Exception:  # noqa: BLE001 - offset 记录失败不该拖垮实时调整
+            pass
+
+    def _on_image_changed(self, *_args) -> None:
+        """翻页：只把该图自己的 offset 回填到面板并刷新显示，**不重算**。"""
+        if self.current_stage() != "rembg":
+            return
+        self._flush_pending_offset()
+        self._apply_current_image_offset()
+        self.rembg_viewer.refresh_display()
+
+    def _apply_current_image_offset(self) -> None:
+        """把当前图片记录的 offset 回填到面板（程序化，不算用户改动）。"""
+        task_id = self.task_id
+        entry_path = self.rembg_viewer.current_entry_path()
+        if not task_id or not entry_path:
+            return
+        panel = self.panel_host_of_step("rembg")
+        if panel is None:
+            return
+        stem = Path(entry_path).stem
+        try:
+            offset = self.store.rembg_offset(
+                task_id, stem, **self._node_scope(self.current_node())
+            )
+            args = panel.get_args()
+        except Exception:  # noqa: BLE001 - 读不到/面板未填好：保持原值
+            return
+        if int(args.get("offset") or 0) == int(offset):
+            return
+        args["offset"] = int(offset)
+        panel.apply_args(args)
 
     def _live_snapshot(self, args: dict) -> dict:
         """只取「影响去底色结果」的那几个键做快照。"""
         return {key: args.get(key) for key in self.PREVIEW_PARAM_KEYS}
 
-    def _preview_run_snapshot(self) -> dict | None:
-        """最近一次成功「执行去底色」所用的参数；没有成功记录时返回 None。"""
+    def _formal_snapshot_for(self, stem: str) -> dict | None:
+        """某张图片最近一次**全量执行**所用的参数（含它自己的 offset）。"""
         record = self._latest_success_run("rembg")
         if not record:
             return None
         params = record.get("parameters") or {}
-        return {key: params.get(key) for key in self.PREVIEW_PARAM_KEYS}
+        snapshot = {key: params.get(key) for key in self.PREVIEW_PARAM_KEYS}
+        try:
+            if "offsets" in params:
+                # GUI 执行：逐张表是唯一口径，没记录的图就是 0
+                snapshot["offset"] = int((params.get("offsets") or {}).get(stem, 0))
+            else:
+                snapshot["offset"] = int(params.get("offset", 0))
+        except (TypeError, ValueError):
+            snapshot["offset"] = params.get("offset", 0)
+        return snapshot
 
     # ---------------------------------------------------------------- 执行
     def _maybe_run_live_preview(self) -> None:
-        """防抖到期：判断当前页要不要重算，需要才做。"""
+        """防抖到期：当前页盘上成品与面板参数不一致才重算。"""
         if self.current_stage() != "rembg" or not self.task_id:
             return
         # 全量任务正在跑时不要插队（worker 槽位是同一个 QProcess）
@@ -114,28 +204,28 @@ class RembgLiveMixin:
             args = panel.get_args()
         except ValueError:
             return
-        snapshot = self._live_snapshot(args)
         entry_path = self.rembg_viewer.current_entry_path()
         if not entry_path:
             return
         stem = Path(entry_path).stem
-        base_snapshot = self._preview_run_snapshot()
-        if base_snapshot is not None and snapshot == base_snapshot:
-            # 参数与正式执行一致 → 显示正式成品，收起临时结果
-            self._drop_live_results()
-            return
-        if self._live_done.get(stem) == snapshot:
-            # 这一页已按当前参数算过：直接刷回它
-            self.rembg_viewer.refresh_display()
-            return
+        snapshot = self._live_snapshot(args)
+        applied = self._live_done.get(stem)
+        if applied is None:
+            # 盘上是全量执行的产物：与它所用的取值一致 ⇒ 无需重算
+            if snapshot == self._formal_snapshot_for(stem):
+                return
+        elif applied == snapshot:
+            return  # 盘上已经是这份参数算出来的
         self._start_live_job(entry_path, args, stem)
 
     def _start_live_job(self, image_path: str, args: dict, stem: str) -> None:
-        """派发单页任务到后台线程：去底色 → 临时目录。"""
+        """派发单页任务到后台线程：去底色 → 覆盖正式成品（+ 第四步缩略图）。"""
         task_id = self.task_id
         if not task_id:
             return
-        live = rembg_live.live_dir(task_id)
+        node = self.node_of_stage("rembg")
+        out_dir = self.store.node_or_stage_output(task_id, node, "rembg")
+        thumb_dir = self.store.rembg_thumbnails_dir(task_id, node)
         token = object()
         # 上一单还在飞就先取消（token 守卫只丢结果，省算力）
         previous = getattr(self, "_live_worker", None)
@@ -146,10 +236,11 @@ class RembgLiveMixin:
                 pass
         self._live_token = token
         self._live_pending = self._live_snapshot(args)
-        self.rembg_viewer.set_live_dir(live)
         # ⚠️ 只在**说明行**提示，**不动大图**：页面要优先显示。
         self.rembg_viewer.show_live_pending()
-        worker = RembgLiveWorker(str(image_path), args, str(live), token)
+        worker = RembgLiveWorker(
+            str(image_path), args, str(out_dir), str(thumb_dir), token
+        )
         self._live_worker = worker
         self.run_worker(
             lambda: worker,
@@ -163,41 +254,43 @@ class RembgLiveMixin:
 
     # ------------------------------------------------------------ 结果回调
     def _on_live_done(self, token, out_path: str) -> None:
-        """单页结果回来：过期则丢弃，否则记住"这页已按该参数算过"并刷新显示。"""
+        """单页结果回来：过期则丢弃，否则记账、刷新显示并通知下游。"""
         if token is not self._live_token:
             return
         if not out_path:
             return  # 被取消的那单（空路径，见 RembgLiveWorker.run）
-        if self._live_pending is not None:
-            self._live_done[Path(out_path).stem] = self._live_pending
-        self._live_pending = None
+        snapshot, self._live_pending = self._live_pending, None
+        stem = Path(out_path).stem
+        if snapshot is not None:
+            self._live_done[stem] = snapshot
         self.rembg_viewer.refresh_display()
+        # 盘上成品已换：让"吃去底色成品 / 拼版成品"的下游立刻跟上
+        if self.imposition_effective():
+            self._schedule_imposition_compose()
+        self._refresh_print_source([out_path])
 
     def _on_live_failed(self, token, message: str) -> None:
         if token is not self._live_token:
             return
         self._live_pending = None
-        self.log_view.append(f"实时预览失败：{message}")
+        self.log_view.append(f"实时去底色失败：{message}")
 
     # ---------------------------------------------------------------- 清理
     def _drop_live_results(self) -> None:
-        """丢弃临时结果，让预览区回到「执行去底色」的正式成品。"""
-        if not self._live_done and self.rembg_viewer.live_dir is None:
-            return
-        self._live_done.clear()
+        """丢弃实时台账（全量「执行去底色」开始前调用）。
+
+        ⚠️ **不删文件**：正式执行会按逐张偏移表重写全部页，台账跟着作废即可。
+        """
+        self._flush_pending_offset()
         self._live_token = None
         self._live_pending = None
-        self.rembg_viewer.set_live_dir(None)
-        if self.task_id:
-            rembg_live.reset(self.task_id)
-        self.rembg_viewer.refresh_display()
+        self._live_done.clear()
 
     def _reset_rembg_live(self) -> None:
-        """切换任务时复位实时预览（临时目录与记账一并清掉）。"""
+        """切换任务时复位实时调整状态（台账与在飞令牌一并清掉）。"""
+        self._flush_pending_offset()
         self._live_timer.stop()
+        self._offset_save_timer.stop()
         self._live_done.clear()
         self._live_token = None
         self._live_pending = None
-        if self.task_id:
-            rembg_live.reset(self.task_id)
-        self.rembg_viewer.set_live_dir(None)

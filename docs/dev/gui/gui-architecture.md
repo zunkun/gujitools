@@ -56,7 +56,7 @@ desktop/
       print_list.py     #     第四步待打印列表
       runner.py         #     阶段执行（worker 子进程编排）
       detect.py         #     detect 检测控制
-      rembg_live.py     #     第三步改参数/翻页时只重算当前页（临时显示）
+      rembg_live.py     #     第三步改参数/翻页时只重算当前页（覆盖正式成品）
       imposition.py     #     流程条「图片拼版」共享基元（文档读写/取图来源/详情进出）
       imposition_pages.py #   模块一「选择拼版」控制器：启用开关、弹窗加页、删页/页序/清空
       imposition_layout.py #  模块二「拼版操作」控制器：旋转/复位、版面落盘、防抖合成、状态行

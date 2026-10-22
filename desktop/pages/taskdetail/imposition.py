@@ -157,20 +157,28 @@ class ImpositionBaseMixin:
         )
 
     def _sync_imposition_step_bar(self) -> None:
-        """把拼版节点三态（可见/已选择/生效）**按节点**同步到流程条。
+        """把拼版节点三态（可见/已选择/流向）**按节点**同步到流程条。
 
-        ⚠️ **流程条上这一格表达的是"这一步处理到哪了"**（2026-10-18 用户口径：
-        「第一个拼版已经运行过 → 高亮；第二个还没到那一步 → 不高亮」）：判据是
-        **这个节点自己有没有拼版页**（``drafts/imposition[~<节点>].json`` 的
-        ``pages``）——它才等于"运行过"。**不能**拿「在流程中启用图片拼版」开关
-        当判据：那是**流程级**条件（流程图上那个「是否拼版」网关问的就是它，
-        状态机的 ``imposition`` 标志也只有一份），勾了它对同一步骤的每个节点
-        都成立，用它会让没拼过版的节点也亮起来（用户 2026-10-18 前一条报障：
-        "操作了其中一个，另一个也仿佛已经被处理过了，其实没有"）。
+        「这一格处理到哪了」看**这个节点自己有没有拼版页**
+        （``drafts/imposition[~<节点>].json`` 的 ``pages``；2026-10-18 用户口径：
+        「第一个拼版已经运行过 → 高亮；第二个还没到那一步 → 不高亮」）。
+        ⚠️ 这一条**不能**拿「在流程中启用图片拼版」开关当判据：那是**流程级**
+        条件，勾了它对同一步骤的每个节点都成立，会让没拼过版的节点也亮起来
+        （用户 2026-10-18：「操作了其中一个，另一个也仿佛已经被处理过了」）。
 
-        有页 ⇒ 节点显示「已选择」+ 绿色对勾、两侧连接线点亮；
-        没页 ⇒ 「未选择」+ 灰色「＋」、连接线灰虚线、「去底色 → PDF排版」走
-        节点上方绕行线（等于"这一支还没产出东西"）。
+        「流程图走不走这一支」则**只看启用开关**（= 第四步从哪取图）。
+
+        有页 ⇒ 节点显示「已选择」+ 绿色对勾（这一格处理过了）；
+        **能真跑**（图里有这一格 + 启用开关勾着）⇒ 两侧连接线常规点亮、主线
+        经过这一格；**不能真跑** ⇒ 连接线灰虚线、「去底色 → PDF排版」走节点
+        上方绕行线——第四步取的是上一步的数据，图上就不该再经过拼版
+        （用户 2026-10-23：「关闭在流程图中启用拼版……流程图节点经过了拼版，
+        此时没有启用就不需要经过」）。
+
+        ⚠️ 这两个判据**刻意分开**（``selected`` 按节点、``active`` 按"能不能真跑"）：
+        「处理过没有」与「流程走不走这一支」是两件事——只用一个判据会把
+        "有拼版页但没启用"画成经过拼版（2026-10-23 报障），或者把
+        "启用了但还没拼页"画成已处理（2026-10-18 报障）。
         """
         visible = self._imposition_node_visible()
         self.step_bar.set_imposition_visible(visible)
@@ -178,20 +186,24 @@ class ImpositionBaseMixin:
         self._sync_imposition_switch(visible)
 
     def _sync_imposition_nodes(self) -> None:
-        """逐节点刷流程条上每个可选拼版节点自己的状态（B 方案，2026-10-18）。
+        """逐节点刷流程条上每个可选拼版节点的状态（B 方案，2026-10-18）。
 
-        ``selected``/``active`` 同取**该节点有没有拼版页**：同一步骤有两个
-        「图片拼版」时各算各的，互不替代。
+        - ``selected``（节点徽标/副标题"已选择"）= **该节点自己有没有拼版页**：
+          同一步骤有两个「图片拼版」时各算各的，互不替代；
+        - ``active``（流向：连接线点亮 or 绕行）= **能不能真跑**
+          （:meth:`imposition_effective`：图里有这一格 + 启用开关勾着）。它对应的
+          正是"第四步从哪取图"，流程图必须跟着它走。
         """
         if not self.task_id:
             # 无任务（构造期静态展示）：全部按未选择、未生效。
             self.step_bar.set_imposition_selected(False)
             self.step_bar.set_imposition_active(False)
             return
+        enabled = self.imposition_effective()
         for bar_index in self.step_bar.optional_bar_indices:
             done = self._imposition_has_pages_of(self.node_at_index(bar_index))
             self.step_bar.set_imposition_node_state(
-                bar_index, selected=done, active=done,
+                bar_index, selected=done, active=enabled,
             )
 
     def _imposition_has_pages_of(self, node_id: str | None) -> bool:
@@ -568,6 +580,16 @@ class ImpositionBaseMixin:
         """
         directory = self.print_source_dir()
         return (str(directory), dir_content_signature(directory))
+
+    def _print_source_mark_text(self) -> str:
+        """第四步取图目录的**内容标记**（可落进 ``runs.json`` 的文本形态）。
+
+        与 :meth:`_print_source_mark` **同一份判据**（目录 + 内容指纹），只是换成
+        字符串好进执行记录：第四步据此回答"磁盘上那份 PDF 还是不是当前取图目录
+        的产物"（``services.stale_chain.print_input_changed``）。
+        """
+        directory, signature = self._print_source_mark()
+        return f"{directory}|{signature}"
 
     def _refresh_print_source(self, only_paths=None) -> None:
         """第四步取图来源变了：让待打印列表跟上（拼版 ↔ 去底色 切换、成品重存）。

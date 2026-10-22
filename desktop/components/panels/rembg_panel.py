@@ -20,7 +20,7 @@ from qfluentwidgets import CheckBox, LineEdit, Slider
 from desktop.components.common.safecomponents import SafeSpinBox
 from desktop.components.panels.base import StagePanel, default_for
 from desktop.components.panels.params_spec import DEFAULTS, REMBG_TYPES
-from desktop.ui.widgets import combo_box
+from desktop.ui.widgets import Divider, combo_box
 
 
 class RembgPanel(StagePanel):
@@ -51,7 +51,9 @@ class RembgPanel(StagePanel):
         self.offset = Slider(Qt.Orientation.Horizontal)
         self.offset.setRange(-100, 100)
         self.offset.setValue(int(d["offset"]))
-        self.offset.setToolTip("正数文字更粗更深，负数更细更淡；默认 0（自动阈值）")
+        self.offset.setToolTip(
+            "只影响当前这张图片；正数文字更粗更深，负数更细更淡，默认 0"
+        )
         # 用**文本框**而不是 SpinBox：控制卡片只有 340~580px 宽，表单 field 列
         # 被挤窄后，qfluent SpinBox 的输入区会被它自带的上下按钮压成 0 宽——
         # 只剩 ^ v 两个按钮、数值根本看不见（实测截图）。文本框没有这层内部
@@ -85,11 +87,14 @@ class RembgPanel(StagePanel):
         self.offset_input.textChanged.connect(self._on_offset_input_changed)
         # 标签格式（用户 2026-09-23 口径）：中文在前、键名放括号里。
         self._add_row(form, "输出类型（type）", self.type)
-        self._add_row(form, "阈值偏移（offset）", offset_row)
         self._add_row(form, "印章面积阈值（sealarea）", self.sealarea)
         self._add_row(form, "印章最小饱和度（sealmin_sat）", self.sealmin_sat)
         self._add_row(form, "", self.seal)
         self._add_row(form, "", self.sealcolor)
+        # ⚠️ 2026-10-22 用户口径：阈值偏移是**逐张图片**的参数，与上面那些
+        #    全局参数分开，单独放最后一行（前面用分隔线隔开）。
+        form.addRow(Divider())
+        self._add_row(form, "阈值偏移（offset）", offset_row)
 
     @staticmethod
     def _index_of(combo, value) -> int:

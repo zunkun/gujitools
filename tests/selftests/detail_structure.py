@@ -137,8 +137,13 @@ def run(ctx) -> None:
 
     # ---- 未生效的拼版支路：两侧灰色虚线 + 主线绕行（用户 2026-09-30）----
     # 「拼版不生效 → 画一条线从 rembg 到 print，绕开拼版节点；拼版节点的线
-    # 都是灰色的虚线」。连线是否点亮由生效态（set_imposition_active）驱动，
-    # 与节点的「已选择」外观（set_imposition_selected）互相独立。
+    # 都是灰色的虚线」。连线是否点亮由**启用开关**驱动（2026-10-23 口径：
+    # 流向只看开关，第四步从哪取图就是哪条线），与节点的「已选择」外观
+    # （set_imposition_selected）互相独立。
+    # ⚠️ 上面第 84 行为了验"勾了但没拼页也不亮"把开关勾上了，这里必须先取消
+    #    ——否则按新口径流向就是"经过拼版"，绕行线不会出现。
+    d.imposition_enabled_checkbox.setChecked(False)
+    pump(app)
     # 连接线由 StepBar 底层统一画、从节点框后面穿过（2026-09-30 节点框改
     # 实线 border），状态在 ``_connector_segments()`` 里现算——按
     # (左框 is 节点框, 右框 is 节点框) 认出前端/后端两段。
@@ -219,11 +224,24 @@ def run(ctx) -> None:
     ok("生效后节点徽标转对勾（与真实步骤同款）",
        bar.imposition_node.badge._status == "success",
        f"status={bar.imposition_node.badge._status}")
+    # ⚠️ 2026-10-23 口径：徽标跟「这一格处理过没有」（已选择）走，**不跟流向**
+    #    走——关掉启用开关后流程图要绕行，但处理过的绿勾照旧（用户在详情页
+    #    关掉「在流程图中启用图片拼版」时，PDF排版取上一步的数据，流程图上
+    #    这一支不该再经过，但也不该把"处理过"抹掉）。
     bar.set_imposition_active(False)
-    ok("退回未生效 → 徽标恢复灰色「＋」",
+    ok("退回未生效 → 连接线灰虚线、绕行线回来（流向跟开关走）",
+       bar._bypass_points() is not None)
+    ok("退回未生效 → 徽标仍是绿勾（徽标跟「已选择/处理过」走）",
+       bar.imposition_node.badge._status == "success"
+       and bar.imposition_node.is_selected(),
+       f"status={bar.imposition_node.badge._status} "
+       f"symbol={bar.imposition_node.badge._symbol}")
+    bar.set_imposition_selected(False)
+    ok("取消「已选择」→ 徽标恢复灰色「＋」",
        bar.imposition_node.badge._status == "pending"
        and bar.imposition_node.badge._symbol == "＋",
-       f"status={bar.imposition_node.badge._status} symbol={bar.imposition_node.badge._symbol}")
+       f"status={bar.imposition_node.badge._status} "
+       f"symbol={bar.imposition_node.badge._symbol}")
     bar.set_current(bar.imposition_index)      # 当前就停在拼版详情（未生效）
     pump(app)
     ok("当前步是拼版 → 才有高亮底色（与其他节点当前步一致）",

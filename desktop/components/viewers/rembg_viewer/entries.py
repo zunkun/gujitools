@@ -156,19 +156,21 @@ class EntriesMixin(RembgViewerHost):
         return scaled.copy(max(x, 0), max(y, 0), target.width(), target.height())
 
     def _result_full_image(self, entry: dict | None = None) -> Path | None:
-        """某条目的去底色结果图：**实时暂存优先**，其次正式成品目录。"""
+        """某条目的去底色结果图（正式成品目录 ``stages/rembg[~节点]``）。
+
+        ⚠️ 改参数时的实时去底色**直接覆盖这份成品**（见
+        ``desktop.pages.taskdetail.rembg_live``），所以这里只有一个来源，
+        不存在"临时结果比成品新"的分叉。
+        """
         entry = entry if entry is not None else self._current_entry()
-        if not entry:
+        base = self._rembg_dir
+        if not entry or not base:
             return None
         stem = Path(entry["path"]).stem
-        bases = (self._live_dir, self._rembg_dir)
-        for base in bases:
-            if not base:
-                continue
-            for ext in ("png", "jpg", "jpeg"):
-                candidate = base / f"{stem}.{ext}"
-                if candidate.exists():
-                    return candidate
+        for ext in ("png", "jpg", "jpeg"):
+            candidate = base / f"{stem}.{ext}"
+            if candidate.exists():
+                return candidate
         return None
 
     def _resolve_source(self, entry: dict) -> tuple:
