@@ -301,7 +301,7 @@ def run(ctx) -> None:
             rembg.set_images(
                 [src], result_dir,
                 boxes_provider=lambda _p: [[10, 20, 300, 700]],
-                region_params_provider=lambda: (1, None),
+                border_provider=lambda: None,
             )
             pump(app, times=6)
             tgt = rembg._zoom_target(0)
@@ -336,7 +336,7 @@ def run(ctx) -> None:
             rembg_ro.set_images(
                 [src], result_dir,
                 boxes_provider=lambda _p: [[10, 20, 300, 700]],
-                region_params_provider=lambda: (1, None),
+                border_provider=lambda: None,
             )
             pump(app, times=6)
             ok("image_editable=False：开关确实关上",

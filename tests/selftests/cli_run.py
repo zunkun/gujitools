@@ -11,12 +11,11 @@
 1. 退出码/帮助约定：--help rc=0、guji help <cmd> rc=0、未知命令 rc!=0、
    拼错参数 rc!=0（2026-09-26 审计：拼错参数曾警告后照跑还 rc=0）；
 2. extract 端到端：真 PDF → 页图落盘；
-3. crop --area 4（整页模式，不加载 YOLO）：页图 → 裁剪产物；
-4. rembg：去底色产物为二值图；
-5. cropremove --area 4：复合命令产物存在且为二值图；
-6. print：yaml 配置 → 真生成 PDF（魔数/大小/文件名）；
-7. detect / crop --area 1（需要 YOLO）：模型可用时真跑，不可用时**显式
-   打印 SKIP**（跳过必须可见，不许静默）。
+3. rembg：去底色产物为二值图；
+4. cropremove：复合命令产物存在且为二值图；
+5. print：yaml 配置 → 真生成 PDF（魔数/大小/文件名）；
+6. detect / crop（需要 YOLO）：模型可用时真跑，不可用时**显式打印 SKIP**
+   （跳过必须可见，不许静默）。
 
 ⚠️ 全部走 ``subprocess.run``——沙箱里 Qt QProcess 起不来是环境问题，但
    subprocess 不受影响，所以本模块在沙箱/本机都能跑。临时文件统一落
@@ -77,9 +76,7 @@ def run(ctx) -> None:
 
     _check_conventions(ok)
     extract_dir = _check_extract(ok, tmp, make_pdf)
-    crop_dir = _check_crop_area4(ok, tmp, extract_dir)
-    _check_rembg(ok, tmp, crop_dir)
-    _check_cropremove_area4(ok, tmp, extract_dir)
+    _check_rembg(ok, tmp, extract_dir)
     _check_print(ok, tmp)
     _check_yolo_commands(ok, tmp, extract_dir)
 
@@ -128,26 +125,11 @@ def _check_extract(ok, tmp: Path, make_pdf) -> Path:
     return imgs[0].parent if imgs else out_root
 
 
-def _check_crop_area4(ok, tmp: Path, extract_dir: Path) -> Path:
-    """crop --area 4（整页模式，不加载 YOLO）：页图 → 裁剪产物。"""
-    out_root = tmp / "e2e_crop"
-    rc, out, err = _run([
-        "crop", "-i", str(extract_dir), "-o", str(out_root),
-        "--area", "4",
-    ])
-    ok("guji crop --area 4 退出码 0", rc == 0,
-       f"rc={rc}\nSTDOUT 尾部:\n{out[-600:]}\nSTDERR 尾部:\n{err[-600:]}")
-    imgs = _images(out_root)
-    ok("crop 产物与输入页数一致", len(imgs) == 2,
-       f"找到 {[p.name for p in imgs]}")
-    return imgs[0].parent if imgs else out_root
-
-
-def _check_rembg(ok, tmp: Path, crop_dir: Path) -> None:
+def _check_rembg(ok, tmp: Path, extract_dir: Path) -> None:
     """rembg：产物为二值图（type=1 = 8 位二值）。"""
     out_root = tmp / "e2e_rembg"
     rc, out, err = _run([
-        "rembg", "-i", str(crop_dir), "-o", str(out_root), "--type", "1",
+        "rembg", "-i", str(extract_dir), "-o", str(out_root), "--type", "1",
     ])
     ok("guji rembg 退出码 0", rc == 0,
        f"rc={rc}\nSTDOUT 尾部:\n{out[-600:]}\nSTDERR 尾部:\n{err[-600:]}")
@@ -163,28 +145,8 @@ def _check_rembg(ok, tmp: Path, crop_dir: Path) -> None:
            f"去重后 {len(vals)} 个灰度值，样例 {sorted(vals)[:8]}")
 
     # 输入完好性：rembg 不许碰输入目录（output_dir_safety 的正向补集）
-    src_after = _images(crop_dir)
+    src_after = _images(extract_dir)
     ok("rembg 跑完输入目录完好", len(src_after) == 2, str(src_after))
-
-
-def _check_cropremove_area4(ok, tmp: Path, extract_dir: Path) -> None:
-    """cropremove --area 4：复合命令（crop+rembg）端到端。"""
-    out_root = tmp / "e2e_cropremove"
-    rc, out, err = _run([
-        "cropremove", "-i", str(extract_dir), "-o", str(out_root),
-        "--area", "4", "--type", "1",
-    ])
-    ok("guji cropremove --area 4 退出码 0", rc == 0,
-       f"rc={rc}\nSTDOUT 尾部:\n{out[-600:]}\nSTDERR 尾部:\n{err[-600:]}")
-    imgs = _images(out_root)
-    ok("cropremove 产物与输入页数一致", len(imgs) == 2,
-       f"找到 {[p.name for p in imgs]}")
-    if imgs:
-        from PIL import Image
-        with Image.open(imgs[0]) as im:
-            vals = set(im.convert("L").getdata())
-        ok("cropremove type=1 产物是二值图", vals.issubset({0, 255}),
-           f"去重后 {len(vals)} 个灰度值")
 
 
 def _check_print(ok, tmp: Path) -> None:
@@ -216,7 +178,7 @@ def _check_print(ok, tmp: Path) -> None:
 
 
 def _check_yolo_commands(ok, tmp: Path, extract_dir: Path) -> None:
-    """detect / crop --area 1：需要 YOLO。模型不可用时显式 SKIP（不许静默）。
+    """detect / crop / cropremove：需要 YOLO。模型不可用时显式 SKIP（不许静默）。
 
     ⚠️ torch 探测必须走**子进程**：在自测主进程（已加载 Qt）里 import torch
     会撞 OpenMP 双运行时直接把进程干崩（退出码 3，OMP: Error #15）。
@@ -227,13 +189,13 @@ def _check_yolo_commands(ok, tmp: Path, extract_dir: Path) -> None:
         env={**os.environ, "KMP_DUPLICATE_LIB_OK": "TRUE"},
     )
     if probe.returncode != 0:
-        print(f"  [SKIP] detect / crop --area 1：本机 torch 不可用"
+        print(f"  [SKIP] detect / crop / cropremove：本机 torch 不可用"
               f"（{probe.stderr.strip().splitlines()[-1] if probe.stderr.strip() else probe.returncode}），"
               "YOLO 类 CLI 端到端留待有模型的环境跑")
         return
     weights = sorted((Path(__file__).resolve().parents[2] / "static").rglob("*.pt"))
     if not weights:
-        print("  [SKIP] detect / crop --area 1：static/ 下（含 weights/）无权重文件")
+        print("  [SKIP] detect / crop / cropremove：static/ 下（含 weights/）无权重文件")
         return
 
     out_root = tmp / "e2e_detect"
@@ -247,9 +209,25 @@ def _check_yolo_commands(ok, tmp: Path, extract_dir: Path) -> None:
        f"找到 {[p.name for p in annot]}")
 
     crop1 = tmp / "e2e_crop1"
-    rc, out, err = _run(["crop", "-i", str(extract_dir), "-o", str(crop1), "--area", "1"])
-    ok("guji crop --area 1（真 YOLO 检测）退出码 0", rc == 0,
+    rc, out, err = _run(["crop", "-i", str(extract_dir), "-o", str(crop1)])
+    ok("guji crop（真 YOLO 检测）退出码 0", rc == 0,
        f"rc={rc}\nSTDOUT 尾部:\n{out[-600:]}\nSTDERR 尾部:\n{err[-600:]}")
     imgs = _images(crop1)
-    ok("crop --area 1 有产物（无框页也输出原图）", len(imgs) >= 2,
+    ok("crop 有产物（无框页也输出原图；有框页逐框输出）", len(imgs) >= 2,
        f"找到 {[p.name for p in imgs]}")
+
+    croprm = tmp / "e2e_cropremove"
+    rc, out, err = _run([
+        "cropremove", "-i", str(extract_dir), "-o", str(croprm), "--type", "1",
+    ])
+    ok("guji cropremove（真 YOLO 检测）退出码 0", rc == 0,
+       f"rc={rc}\nSTDOUT 尾部:\n{out[-600:]}\nSTDERR 尾部:\n{err[-600:]}")
+    rm_imgs = _images(croprm)
+    ok("cropremove 有产物", len(rm_imgs) >= 2,
+       f"找到 {[p.name for p in rm_imgs]}")
+    if rm_imgs:
+        from PIL import Image
+        with Image.open(rm_imgs[0]) as im:
+            vals = set(im.convert("L").getdata())
+        ok("cropremove type=1 产物是二值图", vals.issubset({0, 255}),
+           f"去重后 {len(vals)} 个灰度值")

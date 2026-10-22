@@ -2,7 +2,7 @@
 """print 阶段自测：第四步表单、真实生成 PDF、页数/print.json/取图规格。
 
 2026-10-01 起第四步只排版「提交本次任务」的成品图（不再拿去底图按当前
-area/border 现算），所以这里断言的是「取图 = 提交产物」。依赖 rembg 模块
+参数现算），所以这里断言的是「取图 = 提交产物」。依赖 rembg 模块
 先跑过（DEPENDS）：要有提交产物。
 """
 
@@ -17,7 +17,6 @@ def run(ctx) -> None:
     from pathlib import Path
 
     import pymupdf
-    from PySide6.QtTest import QTest
 
     from tests.selftests._context import ok, wait_worker
 
@@ -27,12 +26,6 @@ def run(ctx) -> None:
 
     d.set_task(tid)
     d._select_stage(d.bar_index_of_step("print"))
-    # border=10 是本模块自己的前置条件，必须自己设好：下面的「border→边距
-    # 级联」用例要它非 0。set_task 会让 rembg 面板按历史记录回填，历史里没有
-    # border 就会被清空（拆分前 rembg 段设置的 "10" 会残留，掩盖这条依赖；
-    # 模块化后不能再靠上游残留）。
-    _rembg_panel = d.control_stack.widget(2)
-    _rembg_panel.border.setText("10")
     ok("print 列表直接使用 stages/rembg 最终图",
        d.print_preview.count() == 6, str(d.print_preview.count()))
     _entries, _pdoc = d._print_entries()
@@ -72,8 +65,8 @@ def run(ctx) -> None:
     panel.title_printing.setChecked(True)
     panel.title_text.setText("测试古籍")
     panel.pdf_name.setText("print.pdf")
-    # 第三步 border 已在上面设为 "10"（非 0）→ 第四步通用边距默认级联为 0，
-    # 避免「图片内留白 + 页面边距」双重留白（feature: border→边距级联）
+    # 第三步没有 border 了（2026-10-22 起 area/border 移除）→ 第四步通用边距
+    # 走内置默认 20，不再有 border→边距级联。
     _pargs = panel.get_args()
     ok("print 表单参数收集正确",
        _pargs["paper_size"] == "A4"
@@ -81,23 +74,10 @@ def run(ctx) -> None:
        and _pargs["title_printing"] is True
        and _pargs["title_text"] == "测试古籍"
        and _pargs["pdf_name"] == "print.pdf"
-       and _pargs["page_margins"] == [0, 0, 0, 0]
+       and _pargs["page_margins"] == [20, 20, 20, 20]
        and "input" not in _pargs and "output" not in _pargs,
        str(_pargs))
 
-    # 显式验证 border→边距级联（GUI 接线，而非只靠纯函数守卫）：
-    # 清掉 border（视为 0）→ 默认回落 20；再设回 10 → 级联为 0
-    # ⚠️ 级联走第三步联动的 200ms 防抖，qWait 冲过去再断言
-    _rembg_panel.border.setText("")
-    QTest.qWait(260)
-    ok("第三步 border 清掉 → 第四步默认边距回落 20",
-       panel.get_args()["page_margins"] == [20, 20, 20, 20],
-       str(panel.get_args()["page_margins"]))
-    _rembg_panel.border.setText("10")
-    QTest.qWait(260)
-    ok("第三步 border=10 → 第四步默认边距级联为 0",
-       panel.get_args()["page_margins"] == [0, 0, 0, 0],
-       str(panel.get_args()["page_margins"]))
     d.run_stage(resume=False)
     wait_worker(d, app, timeout=300)
     state = repo.stage_states(tid)["print"]
@@ -112,7 +92,7 @@ def run(ctx) -> None:
     ok("print.json 已保存", len(repo.load_print_pages(tid)) == 6)
     # worker 实际消费的运行配置（run-<run_id>.json）：取图必须是第三步
     # 「提交本次任务」的成品图，且不带任何区域合成规格（2026-10-01 起第四步
-    # 不再拿去底图现算；第三步那边改 area/border 必须先重新提交）。
+    # 不再拿去底图现算；第三步提交时就已逐框裁好）。
     # ⚠️ 不查 runs.json 历史：2026-09-26 起入史前剥掉大块运行时派生字段
     # （_effects/files/page_rects）——2400 页的书单条历史 0.5MB，而历史只用于
     # 面板回填，留着它们是纯写放大。

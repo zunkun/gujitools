@@ -9,8 +9,8 @@
 2. ``border`` 无上界：``border 2000``（mm）→ ~23622px 四周留白 → 数 GB 画布
    ×并发线程直接 OOM。与 page_margins 的 100mm 上界同一口径。
 3. ``page_number_format`` 拼错的值被 ``format_page_number`` 静默回落中文数字。
-4. CLI ``--area`` choices 写死 [1,2,3]：文档/GUI/spec 都支持的「4 = 整页模式」
-   被直接拒绝（实测复现）。choices 必须从 ``CROP_AREAS`` 派生。
+4. CLI ``--area`` 曾写死 [1,2,3]；2026-10-22 已把 area 参数整体移除，
+   本模块改为守卫「不再注册 --area」。
 5. ``write_bytes_atomic`` 临时名固定（无 pid/tid）：两个生产者并发写同一
    缩略图时 B 截断 A 正在写的内容、A 提交半截 JPEG 进缓存且不自愈。
 6. runs.json 历史存整份 ``_effects``/``files``/``page_rects``：2400 页的书
@@ -80,15 +80,14 @@ def run(ctx) -> None:
         pass
     ok("print 校验器拒绝未知页码样式", True)
 
-    # ------------------------------------------------ 4. CLI --area 含 4
+    # ------------------------------------------------ 4. CLI 不再有 --area
     source = (repo / "cli" / "cli_args.py").read_text(encoding="utf-8")
-    # ⚠️ 只数 area 的 choices（crop + cropremove 两处）；--type 的 [1,2,3]
-    #    是输出图型枚举，合法保留，不能用全文文本匹配误伤
-    ok("CLI --area choices 从 CROP_AREAS 派生（不再写死 [1,2,3]）",
-       source.count("choices=list(CROP_AREAS)") == 2)
-    from core.command_spec import CROP_AREAS
+    ok("CLI 不再注册 --area", '"--area"' not in source)
+    ok("CLI 不再 import CROP_AREAS", "CROP_AREAS" not in source)
+    import core.command_spec as command_spec
 
-    ok("CROP_AREAS 包含整页模式 4", 4 in CROP_AREAS, str(CROP_AREAS))
+    ok("core.command_spec 不再有 CROP_AREAS",
+       not hasattr(command_spec, "CROP_AREAS"))
 
     # ------------------------------------------------ 5. 原子写临时名唯一
     import sys

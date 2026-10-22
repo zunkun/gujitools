@@ -83,7 +83,7 @@ def run(ctx) -> None:
     for clean in (False, True):
         args = CommandArgs(
             command="rembg", input=str(src_dir),
-            type=1, offset=0, area=4, border="0", clean=clean,
+            type=1, offset=0, clean=clean,
         )
         try:
             _fn = get_function("rembg", args, None)

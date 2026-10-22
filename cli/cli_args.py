@@ -23,10 +23,6 @@ from pathlib import Path
 
 from cli.config_io import ConfigError
 from utils.help import process_help_command, _DOC_MAP as _HELP_DOC_MAP
-# ⚠️ area 的 choices 必须从 spec 的枚举派生（2026-09-26 审计）：写死 [1,2,3]
-#    时，spec/文档/GUI 都支持的「4 = 整页模式」在 CLI 上被 argparse 直接拒绝
-#    （照文档操作反而失败，实测复现）。
-from core.command_spec import CROP_AREAS
 
 
 def _closest_flag(name: str, known: set[str]) -> str | None:
@@ -155,19 +151,8 @@ class CliArgsParser:
             "--ext", choices=["jpg", "png", "tiff"], help="输出格式"
         )
         crop_parser.add_argument(
-            "--area",
-            type=int,
-            choices=list(CROP_AREAS),
-            help="裁剪区域类型，默认1\n"
-            "1 = 逐框独立裁剪：半幅输出 -l/-r 两张图，整幅页按整页输出一张（不拆），无框时输出原图\n"
-            "2 = 逐框独立裁剪，单图输出，border=None 保持原尺寸\n"
-            "3 = 合并左右框为整体外边界裁剪，单图输出，border=None 保持原尺寸\n"
-            "4 = 整页模式（不加载 YOLO，整页即唯一文本框，不检测）",
-        )
-        crop_parser.add_argument(
             "--border",
-            help="文本框边界控制（mm），对 --area 均生效，默认None\n"
-            "None = 按 area 取默认：area 1/2/3 → 0（紧裁到文本框外边界）；area 4 → 不设\n"
+            help="文本框边界控制（mm），默认0（紧裁到文本框外边界）\n"
             "0 = 裁剪到文本框外边界，丢弃外侧区域\n"
             "有值 = 裁剪到外边界并按该值外扩空白边距（mm->px @300dpi）\n"
             "支持4种写法（数字用英文逗号分隔）：\n"
@@ -246,20 +231,9 @@ class CliArgsParser:
             help="输出图片类型，默认1\n1 = 8位二值图\n2 = 1bit单色位图\n3 = 8位灰度图",
         )
         cropremove_parser.add_argument(
-            "--area",
-            type=int,
-            choices=list(CROP_AREAS),
-            help="去底色文本区域识别类型，默认1\n"
-            "1 = 逐框独立 Otsu（阈值取 left+right 合并）：半幅输出 -l/-r 两张，整幅页按整页输出一张（不拆），无框时输出原图\n"
-            "2 = 逐框独立 Otsu（同1），单图输出，border=None 保持原尺寸\n"
-            "3 = 合并左右框为整体外边界统一 Otsu，单图输出，border=None 保持原尺寸\n"
-            "4 = 整页模式（不加载 YOLO，整页即唯一文本框，不检测）",
-        )
-        cropremove_parser.add_argument(
             "--border",
-            help="文本框边界控制（mm），对 --area 均生效，默认None\n"
-            "None = 按 area 取默认：area 1/2/3 → 0（紧裁到文本框外边界）；area 4 → 不设\n"
-            "0 = 裁剪到文本框外边界，丢弃外侧区域（area=1 各框，area=2/3 联合）\n"
+            help="文本框边界控制（mm），默认0（紧裁到文本框外边界）\n"
+            "0 = 裁剪到文本框外边界，丢弃外侧区域\n"
             "有值 = 裁剪到外边界并按该值外扩空白边距（mm->px @300dpi），类比CSS margin\n"
             "支持4种写法（数字用英文逗号分隔）：\n"
             "1. 单值30 → 四边统一 [30,30,30,30]\n"

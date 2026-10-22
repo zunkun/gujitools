@@ -49,7 +49,6 @@ from typing import NamedTuple, Optional, Tuple
 
 import utils
 from core.args import default_workers
-from core.command_spec import WHOLE_PAGE_AREA
 from functions.base import FunctionBase
 from utils.box_geometry import page_box_slots
 from utils.path_utils import assert_output_not_input, resolve_final_output_dir
@@ -70,8 +69,8 @@ class PageBoxes(NamedTuple):
     ⚠️ **存储槽位约定**（GUI boxes.json / 检测事件 / 下游布局共用）：
     ``slots()`` 给出的槽位数编码形态——半幅固定 2 槽 ``[左, 右]``（保留左右
     身份，缺失侧为 None），整幅只占 1 槽 ``[整幅]``。下游据此判断整幅页：
-    整幅框原样下传（区域随框走），area=4 才归一整页保留框外内容
-    （用户 2026-09-29 改定，见 `utils.box_geometry.whole_page_box`）。
+    整幅框原样下传（区域随框走），检测出几个框就裁几张图
+    （用户 2026-09-29 改定）。
     """
 
     left: Optional[Box] = None
@@ -373,10 +372,6 @@ class DetectFunction(FunctionBase):
         """
         super().__init__(command_args, reporter)
         self.save = bool(command_args.get("save", False))
-        #: 区域模式（1/2/3 = 按检测框裁图；4 = 整页/不检测）。
-        #: 本类只用它判断"要不要跳过 YOLO"——真正按框裁图发生在桌面端的
-        #: detect_submit 阶段（见 ``desktop/stages/detect_stage.py``）。
-        self.area = int(command_args.get("area") or 1)
         # 标注图后缀，与 crop 的 ext 语义一致（png 无损，适合线框标注）
         self.output_suffix = "." + str(command_args.get("ext") or "png").lower().lstrip(".")
         # 落地时才计算输出目录：关闭时不产生目录、也不打印「输出目录」。
@@ -408,29 +403,7 @@ class DetectFunction(FunctionBase):
         ⚠️ 走**按路径**的检测入口：常驻服务可用时由服务自己读图，本进程连
         解码都省了（比服务化之前还少一次 `imread`）。只有 `--save` 要把框画
         到图上时，才在本进程里再读一次。
-
-        ``area=4``（整页 / 不检测）：**不跑 YOLO**，整页即一个框（与桌面端
-        ``stages/detect_stage.run_detect`` 的整页分支同一口径）。这个参数
-        2026-10-22 从 rembg 搬来——按框裁图不再是去底色的事。
         """
-        if int(self.area) == WHOLE_PAGE_AREA:
-            img_bgr = utils.imread(image_path)
-            if img_bgr is None:
-                raise ValueError(f"无法读取图片: {image_path}")
-            height, width = img_bgr.shape[:2]
-            page = PageBoxes(full=(0, 0, int(width), int(height)))
-            self._report_boxes(image_path, page)
-            result = {
-                "status": "success",
-                "file": image_path.name,
-                "left": page.left,
-                "right": page.right,
-                "full": page.full,
-                "outputs": [],
-            }
-            if self.save:
-                result["outputs"] = self._save_annotated(image_path, img_bgr, page)
-            return result
         started = time.perf_counter()
         page = detect_page_content_by_path(image_path)
         elapsed = time.perf_counter() - started

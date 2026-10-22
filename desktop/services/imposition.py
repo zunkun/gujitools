@@ -549,7 +549,7 @@ def append_item_to_page(items: list[dict], file) -> list[dict] | None:
 #: 源图形态（``classify_source`` 的返回值）。
 SOURCE_LEFT = "left"    # 左半幅：文件名以 ``-l`` / ``_l`` 结尾
 SOURCE_RIGHT = "right"  # 右半幅：文件名以 ``-r`` / ``_r`` 结尾
-SOURCE_FULL = "full"    # 整幅：无 -l/-r 后缀（fullcontent 页在 area=1 下
+SOURCE_FULL = "full"    # 整幅：无 -l/-r 后缀（fullcontent 页的裁剪产物
 #                          不拆半幅，第三步提交产物就是无后缀单文件）
 
 
@@ -558,7 +558,7 @@ def classify_source(path) -> str:
 
     自动拼版只能靠文件名认图——拼版侧读不到检测框，而第三步的落盘口径是
     半幅页 ``<页号>-l`` / ``<页号>-r``、整幅页 ``<页号>``（见
-    ``functions/text_region._area1_outputs`` 与单图输出）。
+    ``desktop.services.print_plan.plan_detect_submit_entries``）。
     """
     match = re.search(r"[_-]([lr])$", Path(str(path)).stem.lower())
     if match:

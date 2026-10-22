@@ -2,10 +2,10 @@
 File: functions/crop_remove.py
 复合流程：裁剪（基于检测）+ 去底色（Otsu / 红色印章保留）。
 
-与 crop 共享 area/border 规则（继承 TextRegionProcessor），
+与 crop 共享「检测文本框 → 逐框裁剪」规则（继承 TextRegionProcessor），
 区别是 ROI 做 Otsu 二值化去底色，并支持印章保留。
 
-- `area` 控制裁剪区域与输出方式（详见 TextRegionProcessor）；
+- 检测出几个文本框就裁几张图（半幅 -l/-r，整幅用页名）；
 - `border` 控制空白边界（详见 TextRegionProcessor）；
 - 额外参数：offset / type / seal / sealcolor / sealarea / sealmin_sat。
 
@@ -119,21 +119,9 @@ class CropRemoveFunction(TextRegionProcessor):
             self._img_type,
         )
 
-    def _handle_no_boxes(self, img_bgr, image_path, area_mode):
-        """无检测框：area=1 输出原图；area=2/3 整图 Otsu。"""
+    def _handle_no_boxes(self, img_bgr, image_path):
+        """无检测框：整图 Otsu 去底色（没有框可裁，但去底色仍然有意义）。"""
         assert self.outpath is not None
-        if area_mode == 1:
-            # 修复：img_bgr 是 BGR，_save_output 假定 RGB，需先转换
-            img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-            out_path = self.outpath / f"{image_path.stem}{self.output_suffix}"
-            self._save_output(img_rgb, out_path)
-            return {
-                "status": "no_detect",
-                "file": image_path.name,
-                "outputs": [str(out_path)],
-            }
-
-        # area=2/3：整图 Otsu（状态局部计算，不写 self）
         img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
         gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
         red_mask = None

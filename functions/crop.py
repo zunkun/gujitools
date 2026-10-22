@@ -2,7 +2,7 @@
 File: functions/crop.py
 裁剪功能：基于 YOLO 检测定位文本框并裁剪原图像素。
 
-与 cropremove 共享 area/border 规则（继承 TextRegionProcessor），
+与 cropremove 共享「检测文本框 → 逐框裁剪」规则（继承 TextRegionProcessor），
 但不做 Otsu 去底色，仅裁剪原始图像像素。
 """
 
@@ -47,7 +47,7 @@ class CropFunction(TextRegionProcessor):
         x1, y1, x2, y2 = box
         return img_bgr[y1:y2, x1:x2]
 
-    def _handle_no_boxes(self, img_bgr, image_path, area_mode):
+    def _handle_no_boxes(self, img_bgr, image_path):
         """无检测框：输出原图，使用配置的输出后缀"""
         assert self.outpath is not None
         out_path = self.outpath / f"{image_path.stem}{self.output_suffix}"

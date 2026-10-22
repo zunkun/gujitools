@@ -72,9 +72,10 @@ class PageManifestMixin:
         return pages
 
     # ---------- print 页面列表 print.json ----------
-    # 文档格式：{"area": int, "border": str|null, "pages": [{file,label,box,parea}]}
-    # box 为该条目的效果区域（原始像素坐标），parea 为合成用 area 语义
-    # （1=普通框+border 裁剪，2=对称画布）；None 表示整页透传。
+    # 文档格式：{"pages": [{file,label,box}]}
+    # box 为该条目的效果区域（原始像素坐标）；None 表示整页透传。
+    # ⚠️ 2026-10-22 起没有 area/border：旧版写下的这两个键读进内存后不再被
+    #    任何逻辑消费，保存时也不再补回。
 
     def print_pages_path(self, task_id: str, node_id: str | None = None,
                          primary_id: str | None = None) -> Path:
@@ -92,7 +93,7 @@ class PageManifestMixin:
 
     def load_print_doc(self, task_id: str, node_id: str | None = None,
                        primary_id: str | None = None) -> dict | None:
-        """读取 print.json 全文（含 area/border/pages）；缺失或非字典时返回 None。"""
+        """读取 print.json 全文（含 pages）；缺失或非字典时返回 None。"""
         data = read_json(self.print_pages_path(task_id, node_id, primary_id), None)
         return data if isinstance(data, dict) and "pages" in data else None
 
@@ -113,9 +114,9 @@ class PageManifestMixin:
     def save_print_pages(self, task_id: str, entries: list[dict],
                          node_id: str | None = None,
                          primary_id: str | None = None) -> None:
-        """只替换 print.json 的 pages 字段，保留 area/border 等其它配置。"""
+        """只替换 print.json 的 pages 字段，保留其它配置。"""
         doc = self.load_print_doc(task_id, node_id, primary_id) or {
-            "area": 1, "border": None, "pages": []
+            "pages": []
         }
         doc["pages"] = entries
         self.save_print_doc(task_id, doc, node_id, primary_id)

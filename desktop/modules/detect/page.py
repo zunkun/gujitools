@@ -37,9 +37,9 @@
 ⚠️ **框类型控件摆在这里、检测按钮不搬过来**（用户 2026-10-03）：
 - 「选中框类型 / 删除选中框」**摆出来**并接线——它们只依赖查看器，本页完全
   驱动得了，而用户要的"手绘之后能标成左框/右框/整幅"正需要它们；
-- ``DetectPanel`` 里的「整页模式」与「检测本页」**不摆**：前者切的是**第三步**
-  的 area（单文件模式没有下游），后者由任务流程宿主用子进程驱动单页检测，
-  本页的执行入口是整批的 :class:`StepControl`。留着就是两个点不动的死控件。
+- ``DetectPanel`` 里的「检测本页」**不摆**：它由任务流程宿主用子进程驱动
+  单页检测，本页的执行入口是整批的 :class:`StepControl`。留着就是个点不动的
+  死控件。
 """
 
 from __future__ import annotations
@@ -96,10 +96,6 @@ from utils.box_geometry import (
 
 #: 本页的步骤元数据（标题/副标题/面板/过滤串/默认输出后缀的唯一来源）
 _SPEC = spec_by_key("detect")
-
-#: 本页检测固定用的区域参数。本页不摆「整页模式」（见模块 docstring），所以
-#: ``area`` 恒为 1；结果复用的指纹（``detect_reuse.det_fingerprint``）也按它算。
-_DETECT_AREA = 1
 
 #: 本页检测结果缓存的子目录名（相对 ``singletask/<子任务>/``）。
 _BOXES_CACHE_DIRNAME = "boxes_cache"
@@ -204,9 +200,9 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
         )
         if self.control.panel is not None:
             # 面板的控件全由任务流程宿主驱动，本页接管不了（见模块 docstring）：
-            # 「整页模式」切的是第三步 area，「检测本页」要子进程单页检测。
-            # 里面**唯一**该搬出来的是「选中框类型 / 删除选中框」，本方法
-            # 单独重建这两个（下面的 _build_box_kind_controls），不搬整个面板。
+            # 「检测本页」要子进程单页检测。里面**唯一**该搬出来的是
+            # 「选中框类型 / 删除选中框」，本方法单独重建这两个
+            # （下面的 _build_box_kind_controls），不搬整个面板。
             self.control.panel.setVisible(False)
         card.box.addWidget(self._build_box_kind_controls())
         card.box.addWidget(self._build_export_buttons())
@@ -252,7 +248,7 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
         ``event`` → 本页 :meth:`_on_step_event` 原样接住——界面这条链一个字都不改。
         """
         files = self.source_images()
-        det = detect_reuse.det_fingerprint(_DETECT_AREA)
+        det = detect_reuse.det_fingerprint()
         reuse, _todo = detect_reuse.split(files, self._boxes_doc, det)
         reported: set[str] = set()
 
@@ -266,7 +262,7 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
             report(name, payload)
 
         run_detect_pages(
-            files, workers=0, area=_DETECT_AREA, reuse=reuse, report=relay
+            files, workers=0, reuse=reuse, report=relay
         )
         self._detect_reported = reported
         return str(request.dest) if request.dest is not None else None
@@ -274,10 +270,10 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
     def _build_box_kind_controls(self) -> Card:
         """「选中框类型（左框/右框/整幅）」+「删除选中框」。
 
-        ⚠️ 为什么不复用 ``DetectPanel``：那个面板还带「整页模式」（切第三步
-        area）与「检测本页」（任务流程的子进程单页检测），单文件模式下都没有
-        对应宿主；只把这两个控件的**声明**搬过来（``BOX_KIND_ITEMS`` 仍取自
-        ``utils.box_draw``，文案不另写一份），接线由本页负责。
+        ⚠️ 为什么不复用 ``DetectPanel``：那个面板还带「检测本页」（任务流程的
+        子进程单页检测），单文件模式下没有对应宿主；只把这两个控件的**声明**
+        搬过来（``BOX_KIND_ITEMS`` 仍取自 ``utils.box_draw``，文案不另写一份），
+        接线由本页负责。
         """
         from desktop.ui.widgets import SegmentedToggle
 
@@ -410,7 +406,7 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
         self._boxes_doc = doc
         if not doc:
             return
-        det = detect_reuse.det_fingerprint(_DETECT_AREA)
+        det = detect_reuse.det_fingerprint()
         reuse, _todo = detect_reuse.split(self.source_images(), doc, det)
         if not reuse:
             return
@@ -465,7 +461,7 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
         files = self.source_images()
         if path is None or not files:
             return
-        det = detect_reuse.det_fingerprint(_DETECT_AREA)
+        det = detect_reuse.det_fingerprint()
         now = time.time()
         doc: dict = {}
         for image in files:

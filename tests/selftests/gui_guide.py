@@ -82,9 +82,9 @@ def run(ctx) -> None:
     absent = [c for c in button_claims if c not in desktop_src]
     ok("指南点名的按钮文案都存在于界面代码", not absent, f"界面里找不到={absent}")
 
-    # 指南点名的**勾选框文案**必须与界面一字不差（2026-10-12 审计：
-    # 手册曾写「整页模式：不调用 YOLO」，界面上实际是「整页模式：不做检测」）
-    checkbox_claims = ["整页模式：不做检测"]
+    # 指南点名的**勾选框文案**必须与界面一字不差（2026-10-12 审计）。
+    # ⚠️ 2026-10-22：整页模式（area=4）已随 area 一起移除，这里不再点名它。
+    checkbox_claims: list[str] = []
     bad_checkbox = [c for c in checkbox_claims if c not in desktop_src]
     ok("指南点名的勾选框文案与界面一致", not bad_checkbox, f"界面里找不到={bad_checkbox}")
 
@@ -204,7 +204,7 @@ def run(ctx) -> None:
     # 手册参数表与界面用同一套格式：新写法必须在、旧的裸键名写法不许残留
     expected = ["缩放因子（zoom）", "目标清晰度（dpi）", "输出格式（ext）",
                 "快速模式（quick）", "页码范围（pages）",
-                "区域模式（area）", "边距(mm)（border）", "输出类型（type）",
+                "边距(mm)（border）", "输出类型（type）",
                 "阈值偏移（offset）", "保留印章（seal）", "印章彩色（sealcolor）"]
     missing_doc = [t for t in expected if t not in guide]
     ok("手册参数表用的是「中文（键名）」格式", not missing_doc,

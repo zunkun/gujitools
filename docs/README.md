@@ -68,9 +68,9 @@ docs/
 | [functions/overview.md](functions/overview.md)     | 功能模块概览与命令关系                                     |
 | [functions/extract.md](functions/extract.md)       | PDF 提取：页码解析、缩放计算、渲染模式                     |
 | [functions/detect.md](functions/detect.md)         | 检测文本框：YOLO 推理、左右分割、坐标上报、`--save` 标注图 |
-| [functions/crop.md](functions/crop.md)             | 文本框裁剪：area/border 规则、左右分割算法                 |
+| [functions/crop.md](functions/crop.md)             | 文本框裁剪：逐框裁剪、border 边框控制                      |
 | [functions/rembg.md](functions/rembg.md)           | 去底色：Otsu 阈值、HSV 印章提取、形态学去噪                |
-| [functions/cropremove.md](functions/cropremove.md) | 复合流程：area 区域模式、border 边框控制                   |
+| [functions/cropremove.md](functions/cropremove.md) | 复合流程：逐框裁剪 + 去底色                                |
 | [functions/print.md](functions/print.md)           | 图片生成 PDF：纸张、排序、标题和页码                       |
 
 ## API 参考（自动生成）
@@ -126,7 +126,7 @@ guji run print
 | ------------ | ----- | ---------------------------------------------- |
 | `extract`    | `-e`  | 从 PDF 提取页面为图片                          |
 | `detect`     | —     | 检测左右文本框坐标（**非必要**，默认不落盘）   |
-| `crop`       | —     | 基于 YOLO 裁剪文本框（支持 area/border）       |
+| `crop`       | —     | 基于 YOLO 逐框裁剪文本框（border 控制留白）   |
 | `rembg`      | `-r`  | 整图去底色 / 二值化 / 印章保留（输出固定 PNG） |
 | `cropremove` | `-cr` | 复合流程：裁剪 + 去底色                        |
 | `print`      | —     | 将图片目录生成为 PDF                           |

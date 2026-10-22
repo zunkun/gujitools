@@ -37,18 +37,13 @@ def run(ctx) -> None:
     _border_px = _pbm("10")
     assert _border_px is not None
     _d = _border_px[0]
-    ok("area=1 逐框外扩 border",
-       compute_final_boxes([_left, _right], 1, "10")
+    ok("逐框外扩 border（每个框各自一个裁剪框）",
+       compute_final_boxes([_left, _right], "10")
        == [[100 - _d, 100 - _d, 200 + _d, 200 + _d],
            [300 - _d, 100 - _d, 500 + _d, 300 + _d]])
-    ok("area=2 合并大框",
-       compute_final_boxes([_left, _right], 2, "10")
-       == [[100 - _d, 100 - _d, 500 + _d, 300 + _d]])
-    ok("area=3 与 area=2 同规则",
-       compute_final_boxes([_left, _right], 3, "10")
-       == compute_final_boxes([_left, _right], 2, "10"))
-    ok("单框对称取内容框",
-       compute_final_boxes([_left], 2, "10") == [[100 - _d, 100 - _d, 200 + _d, 200 + _d]])
+    ok("单框外扩 border",
+       compute_final_boxes([_left], "10") == [[100 - _d, 100 - _d, 200 + _d, 200 + _d]])
+    ok("无框 → 空表（调用方透传原图）", compute_final_boxes([], "10") == [])
 
     # 检测框坐标实时入库（YOLO 检出时 origin=auto；合成页面可能检不出）
     first_stem = Path(repo.load_pages(tid)[0]["file"]).stem

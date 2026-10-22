@@ -54,12 +54,8 @@ def _base(stage: str, **overrides) -> dict:
 # extract
 EXTRACT_EXTS = list(OUTPUT_IMAGE_EXTS)  # 输出格式枚举（core 的唯一定义处）
 
-# ⚠️ 2026-10-22 第二轮：**删掉了 area 下拉候选表**（原 ``AREA_MODES`` /
-# ``REMBG_AREAS``）——界面上已经没有这个控件（用户：desktop 页面去除 area 参数，
-# 默认 area=1，只在提交时生效）。提示语里要写区域模式中文名的地方用
-# ``desktop/pages/taskdetail/imposition.py::AREA_LABELS``；真正的默认值在
-# ``core.command_spec.DETECT_DEFAULT_AREA``。留着这张表只会变成第二份"看起来
-# 还能用"的界面数据。
+# ⚠️ 2026-10-22：area 下拉候选表已随 area 参数整体删除——界面上没有这个控件，
+# 后端也不再有任何 area 分支。留着这张表只会变成第二份"看起来还能用"的界面数据。
 REMBG_TYPES = [(f"{v} ({name})", v) for v, name in zip(_REMBG_TYPES, ("二值", "1bit", "灰度"))]
 
 # print
@@ -84,11 +80,7 @@ SIDES = [("双面", "both"), ("左页", "left"), ("右页", "right")]
 # extract：zoom/dpi/quick/ext 全与 CLI 一致；表单把 pages 的 None 显示成空串
 EXTRACT_DEFAULTS: dict = _base("extract", pages="")
 
-# detect：**表单上没有参数**（2026-10-22 第二轮）。
-# 区域模式 area 已从界面移除——用户口径「去除 area 参数，默认 area = 1，提交的
-# 时候 area 参数只在提交的时候生效，desktop 页面去除这个参数，但是在后端代码
-# 保留 area 相关逻辑」。桌面侧取默认值的唯一出口是
-# ``core.command_spec.DETECT_DEFAULT_AREA``（runner 与提交控制器读它）。
+# detect：**表单上没有参数**（2026-10-22 起 area 已从整个项目移除）。
 # ⚠️ 也不从 ``_base("detect")`` 整份取：那里的 ``save`` / ``ext`` 是**命令行**
 #    产物格式开关（标注图要不要落盘、落什么格式），桌面端没有这两件事。
 DETECT_DEFAULTS: dict = {}

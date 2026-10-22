@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 177 个模块、193 个公开类、1431 个公开函数/方法（生成于 2026-10-22）。
+覆盖 177 个模块、193 个公开类、1427 个公开函数/方法（生成于 2026-10-22）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -34,7 +34,7 @@
 | [`desktop.components.missing_source_prompt`](#desktopcomponentsmissing_source_prompt) | 1 | 7 |
 | [`desktop.components.pagination`](#desktopcomponentspagination) | 2 | 11 |
 | [`desktop.components.panels.base`](#desktopcomponentspanelsbase) | 1 | 7 |
-| [`desktop.components.panels.detect_panel`](#desktopcomponentspanelsdetect_panel) | 1 | 6 |
+| [`desktop.components.panels.detect_panel`](#desktopcomponentspanelsdetect_panel) | 1 | 2 |
 | [`desktop.components.panels.extract_panel`](#desktopcomponentspanelsextract_panel) | 1 | 1 |
 | [`desktop.components.panels.params_spec`](#desktopcomponentspanelsparams_spec) | 0 | 2 |
 | [`desktop.components.panels.print_form`](#desktopcomponentspanelsprint_form) | 1 | 1 |
@@ -1838,7 +1838,7 @@ worker）→ 连 :attr:`page_ready` 把生成好的那条贴回左列。版面/�
 | 名称 | 值 |
 | --- | --- |
 | ANGLE_SLIDER_SCALE | `100` |
-| PANEL_DESCRIPTION | `"可选节点：第三步「区域模式」为 1（左右分开）时出现在流程中，位于「图片去底色」与「PDF排版」之间。勾选下方开关…"` |
+| PANEL_DESCRIPTION | `"可选节点：流程图上画了「图片拼版」时出现在流程中，位于「图片去底色」与「PDF排版」之间。勾选下方开关后，「PDF…"` |
 
 ### `class ImpositionPanel(Card)`
 
@@ -2378,26 +2378,22 @@ build_form 生成子类表单并占满剩余垂直空间，最后统一把表单
 
 源码：[`desktop/components/panels/detect_panel.py`](../../desktop/components/panels/detect_panel.py)
 
-检测文本框（detect）阶段面板：区域模式 + 人工干预。
+检测文本框（detect）阶段面板：只有检测与人工干预，**没有 area 参数**。
 
-⚠️ 2026-10-22 大改造（用户口径）：
+2026-10-22 口径（用户）：
 
-> 检测文本框，增加 area 参数，「执行本子任务」改成「检测文本框」，
-> 增加「提交本次任务」，图片按照 area 切割处理。提交任务，本步骤才算是
-> 执行完毕，才能转入下一阶段。
+> 移除所有 area 相关代码，不再有 area；识别出文本框后，把文本框裁剪出来。
 
-所以这一步现在是**两个动作**：
+所以这一步现在是**两个动作**，但 area 已从整个项目移除：
 
 - 「检测文本框」（详情页主按钮）：只跑检测，出框到 ``boxes.json``；
-- 「提交本次任务」（详情页次按钮）：按 ``area`` 把页面图裁成下一步要的图，
-  落到 ``stages/detect``。**没提交就不算这一步完成**——下一步的输入目录是空的。
-
-``area`` 从第三步 rembg 搬到这里（那边不再有 area/border：去底色就是整图
-去底色）。"整页模式"不再是一个独立开关：它就是这个下拉里的 ``4``。
+- 「提交本次任务」（详情页次按钮）：把每个检测框各自裁成一张图
+  （半幅页 ``-l``/``-r``，整幅页用页名），落到 ``stages/detect``。
+  **没提交就不算这一步完成**——下一步的输入目录是空的。
 
 ### `class DetectPanel(StagePanel)`
 
-检测文本框阶段面板：区域模式（area）+ 人工修正框。
+检测文本框阶段面板：检测 + 人工修正框（无表单参数）。
 
 YOLO 检测每张图的内容框坐标（半幅：左右两栏；整幅：整页单一内容区），
 供预览标注与「提交本次任务」的裁图使用。
@@ -2413,12 +2409,15 @@ YOLO 检测每张图的内容框坐标（半幅：左右两栏；整幅：整页
 
 | 方法 | 说明 |
 | --- | --- |
-| `area_value() -> int` | 当前区域模式（int）。宿主读它决定"整页模式"与拼版前提。 |
-| `whole_page_mode() -> bool` | 是不是整页模式（= area 4，整页即唯一文本框、不检测）。 |
-| `set_area(value: int) -> None` | 程序化设置区域模式（**不发** ``param_edited``，也不算用户改动）。 |
-| `set_whole_page(on: bool) -> None` | 回填「整页模式」（= area 4 / 1 的旧入口，保留给老调用方）。 |
-| `get_args() -> dict` | 返回本步骤参数：只有 ``area``。 |
+| `get_args() -> dict` | 本步骤**没有表单参数**（检测结果只取决于图片与模型）。 |
 | `set_box_selection(index: int, kind: str) -> None` | 回填「选中框类型」控件：``index < 0``（无选中）时三段都不高亮。 |
+
+##### `get_args() -> dict`
+
+本步骤**没有表单参数**（检测结果只取决于图片与模型）。
+
+⚠️ 不要在这里补 ``{"area": 1}`` 之类的"友好默认"：area 已从整个项目
+移除，补回去会让运行历史与提交版本判定多出一个不存在的参数。
 
 ##### `set_box_selection(index: int, kind: str) -> None`
 
@@ -2813,13 +2812,13 @@ print 面板「位置」「文字方向」的固定取值（由 PrintFormMixin �
 
 图片去底色（rembg）阶段面板：只有去底色自己的参数。
 
-⚠️ 2026-10-22 用户口径：**去底色直接整个图片去底色**——这里不再有
-``area`` / ``border``。按检测框裁图挪到了第二步「检测文本框」的
+⚠️ 2026-10-22 用户口径：**去底色直接整个图片去底色**——这里没有 ``border``，
+项目里也已没有 ``area``。按检测框裁图挪到了第二步「检测文本框」的
 「提交本次任务」（参数与落地都在那边，见 ``detect_panel`` 与
 ``stages/detect_stage.run_detect_submit_stage``）。
 
-由此一并删掉的还有 ``whole_page_only``（"流程里没有检测框 ⇒ area 锁 4"）：
-那套锁是给"去底色需要 area 却没框"的旧模型用的，现在去底色压根不看框。
+由此一并删掉的还有 ``whole_page_only``：那套锁是给旧模型用的，
+现在去底色压根不看框。
 
 ### `class RembgPanel(StagePanel)`
 
@@ -3027,7 +3026,7 @@ status 决定副标题/标题色，badge_status 决定徽标（缺省同 status�
 | `set_current(index: int) -> None` | 设置当前步骤的**格序**并同步各步骤高亮与徽标。 |
 | `mark_completed(index: int) -> None` | 标记某步骤已完成（徽标改为对勾，连接线着色）。 |
 | `set_steps(texts) -> None` | 兼容旧调用：只更新标题文本。 |
-| `set_imposition_visible(visible: bool) -> None` | 显示/隐藏**全部**可选（虚线）节点（随第三步区域模式是否为 1）。 |
+| `set_imposition_visible(visible: bool) -> None` | 显示/隐藏**全部**可选（虚线）节点（随流程图里有没有这一格）。 |
 | `set_imposition_selected(selected: bool) -> None` | 把**全部**可选节点设成同一个选择态（兼容面：单节点流程/自测用）。 |
 | `set_imposition_node_state(bar_index: int, *, selected: bool \| None=None, active: bool \| None=None) -> None` | 按**格序**设**某一个**可选节点自己的选择态/生效态（B 方案）。 |
 | `set_imposition_active(active: bool) -> None` | 把**全部**可选节点设成同一个生效态（兼容面：单节点流程/自测用）。 |
@@ -3077,7 +3076,7 @@ status 决定副标题/标题色，badge_status 决定徽标（缺省同 status�
 
 ##### `set_imposition_visible(visible: bool) -> None`
 
-显示/隐藏**全部**可选（虚线）节点（随第三步区域模式是否为 1）。
+显示/隐藏**全部**可选（虚线）节点（随流程图里有没有这一格）。
 
 ⚠️ 槽位要一起隐藏：只藏节点的话，那格等宽槽位还占着位置，流程条上会
 留出一段空白（第四步/PDF 看起来被推远）。
@@ -5685,8 +5684,8 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(empty_hint: str='暂无图片', image_editable: bool=True, parent=None)` | 构建缩略图条与「去底色结果 / 原图」切换行，默认显示去底色结果。 |
-| `set_images(paths: list[Path \| str], rembg_dir: Path \| None, boxes_provider=None, region_params_provider=None, thumb_provider=None, single_column_book: bool=False, page_width_provider=None, side_for=None, force: bool=False) -> None` | 设置图片清单与去底色目录，重建输出条目并加载显示。 |
-| `refresh_display() -> None` | detect 框/area/border 变化后，重建输出条目并按新区域重新加载。 |
+| `set_images(paths: list[Path \| str], rembg_dir: Path \| None, boxes_provider=None, border_provider=None, thumb_provider=None, single_column_book: bool=False, page_width_provider=None, side_for=None, force: bool=False) -> None` | 设置图片清单与去底色目录，重建输出条目并加载显示。 |
+| `refresh_display() -> None` | 检测框/边距变化后，重建输出条目并按新区域重新加载。 |
 | `navigate(forward: bool) -> None` | 方向键翻页（详情页 ←/→ 调用；联动预览刷新，见 ThumbStrip.navigate）。 |
 | `set_live_dir(path: Path \| None) -> None` | 设置（或传 None 清除）「实时预览」暂存目录。 |
 | `live_dir() -> Path \| None` | 当前生效的实时预览暂存目录（未启用为 None）。 |
@@ -5705,18 +5704,18 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 用户）。False 时本控件只许预览——预览区右键不给「编辑图片」、放大
 弹窗不给「编辑」按钮（图片去底色阶段两处入口都传 False）。
 
-##### `set_images(paths: list[Path | str], rembg_dir: Path | None, boxes_provider=None, region_params_provider=None, thumb_provider=None, single_column_book: bool=False, page_width_provider=None, side_for=None, force: bool=False) -> None`
+##### `set_images(paths: list[Path | str], rembg_dir: Path | None, boxes_provider=None, border_provider=None, thumb_provider=None, single_column_book: bool=False, page_width_provider=None, side_for=None, force: bool=False) -> None`
 
 设置图片清单与去底色目录，重建输出条目并加载显示。
 
 ``paths`` 为源图，元素允许是 ``str``（统一转 ``Path``，同
 :meth:`desktop.components.viewers.ImageViewerWidget.set_images`）；
 ``rembg_dir`` 为去底色结果目录（存在才显示结果）；
-各 provider 给出检测框 / 区域参数 / 缩略图来源。
+各 provider 给出检测框 / 边距 / 缩略图来源。
 
 ``single_column_book``＋``page_width_provider``：整本书是否已判定为
 **单栏书**（``utils.book_layout``）。为真时「单个宽框」的半幅页要按
-整幅走（不拆 ``-l``/``-r``、不镜像）——**必须与提交派生用同一个判据**，
+整幅走（不拆 ``-l``/``-r``）——**必须与提交派生用同一个判据**，
 否则预览显示 ``0007-l``、成品却是 ``0007.png``。
 
 ``side_for``：``(path) -> "left"|"right"|None``，用户在**半框页**上指定
@@ -5781,11 +5780,12 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 
 ``RembgPreviewWidget`` Mixin：**条目构建**。
 
-把「原图 + 结果 + 实时合成」拼成条目（含尺寸键、联合框）。（从 ``rembg_viewer.py`` 拆出，2026-10-07；方法体逐字未改）。
+把「原图 + 结果」拼成条目（从 ``rembg_viewer.py`` 拆出，2026-10-07）。
+2026-10-22 起没有 area：检测出几个框就是几条条目，每条对应一张裁好的图。
 
 ### `class EntriesMixin(RembgViewerHost)`
 
-把「原图 + 结果 + 实时合成」拼成条目（含尺寸键、联合框）。
+把「原图 + 结果」拼成条目（含尺寸键、检测框）。
 
 ---
 
@@ -6309,15 +6309,14 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 ⚠️ **框类型控件摆在这里、检测按钮不搬过来**（用户 2026-10-03）：
 - 「选中框类型 / 删除选中框」**摆出来**并接线——它们只依赖查看器，本页完全
   驱动得了，而用户要的"手绘之后能标成左框/右框/整幅"正需要它们；
-- ``DetectPanel`` 里的「整页模式」与「检测本页」**不摆**：前者切的是**第三步**
-  的 area（单文件模式没有下游），后者由任务流程宿主用子进程驱动单页检测，
-  本页的执行入口是整批的 :class:`StepControl`。留着就是两个点不动的死控件。
+- ``DetectPanel`` 里的「检测本页」**不摆**：它由任务流程宿主用子进程驱动
+  单页检测，本页的执行入口是整批的 :class:`StepControl`。留着就是个点不动的
+  死控件。
 
 ### 模块常量
 
 | 名称 | 值 |
 | --- | --- |
-| _DETECT_AREA | `1` |
 | _BOXES_CACHE_DIRNAME | `"boxes_cache"` |
 | EXPORT_NAME | `"boxes.json"` |
 | _EXPORT_ANNOTATED | `"annotated"` |
@@ -7107,29 +7106,22 @@ history_combo、_toast()。
 任务详情页的「图片拼版」共享基元与 Mixin 装配。
 
 流程条上的「图片拼版」是**虚线可选节点**（``desktop.components.step_bar``）。
-它牵涉**三个判据，各管一件事、互不替代**（2026-10-05 逐层查证业务流程后定）：
+它牵涉**两个判据，各管一件事、互不替代**（2026-10-05 逐层查证业务流程后定，
+2026-10-22 移除 area 后简化为两条）：
 
 1. **在不在流程里** ← **本任务的流程图**。图上画了「图片拼版」就有这一格
    （:meth:`ImpositionBaseMixin._imposition_node_visible`）。
-2. **这一步有没有意义** ← **「检测文本框」的「区域模式」``area``**
-   （2026-10-22 起 area 归第二步；它决定提交时怎么裁图）。这是**业务前提**
-   而不是显示开关：流程里**有检测步骤**时（判据
-   ``desktop.steps.ports.flow_crops_pages``），``area=1``「左右分开」让每个
-   文本框产出**成对的两张**半页图（``-l`` / ``-r``），两张并排才拼得出古籍的
-   正刊对开版面；``area=2/3`` 输出并集整图、``area=4`` 输出整页，**本来就是
-   一张图**。而流程里**没有检测步骤**时，图是整页的，拼版吃**整图**照样拼：
-   整幅单独一页、手动任意两张一页——「拼版作为第一个节点，也不需要
-   detect 数据」（用户 2026-10-07）。见 :meth:`_imposition_area_ok`。
-3. **要不要真跑** ← **拼版面板底部的开关**（:meth:`imposition_active`
-   只看勾没勾，那是"用户意图"）。开关在 ①②不满足时**置灰并写明原因**。
+2. **要不要真跑** ← **拼版面板底部的开关**（:meth:`imposition_active`
+   只看勾没勾，那是"用户意图"）。开关在 ① 不满足时**置灰并写明原因**。
 
-⚠️ **别把 ② 当成"显示开关"扔掉**（本轮曾误判过一次）：它决定"拼版这一步
-在当前参数下有没有意义"。``area`` 的其余取值与它无关，只管第二步提交怎么裁。
+⚠️ 2026-10-22 起 **area 概念彻底移除**：检测文本框后永远逐框裁图，
+半幅页天然产出成对的 ``-l`` / ``-r``，拼版不再需要"区域模式 = 左右分开"
+这个业务前提；没有检测步骤时拼整图照样能拼。
 
 按操作逻辑拆成三个文件（后续可由不同 agent 分头维护，互不影响）：
 
 - **本文件** ``ImpositionBaseMixin``：两个模块都要用的**共享基元**——
-  节点可见性（查流程图）、区域模式读取（拼版的适用前提）、
+  节点可见性（查流程图）、
   拼版文档读写（``drafts/imposition.json``）、
   源图清单与「拼版生效」判定、第四步取图切换（``print_source_dir``）、
   视图灌装、详情进出与切任务复位；
@@ -7140,12 +7132,6 @@ history_combo、_toast()。
 
 ⚠️ 拼版本身**不是** STAGES 里的一步：runs.json / 阶段面板机制一概不感知它，
 执行按钮组在拼版详情里整组隐藏。
-
-### 模块常量
-
-| 名称 | 值 |
-| --- | --- |
-| IMPOSITION_AREA | `1` |
 
 ### `class ImpositionBaseMixin`
 
@@ -7158,7 +7144,7 @@ _select_stage()、_set_stage_status()、_toast()、log_view。
 
 | 方法 | 说明 |
 | --- | --- |
-| `imposition_effective() -> bool` | 拼版这一步**当前能不能真跑**（三个判据全过）。 |
+| `imposition_effective() -> bool` | 拼版这一步**当前能不能真跑**（节点在流程里 + 用户勾了）。 |
 | `imposition_source_files() -> list[Path]` | 可挑选的源图：**拼版这一步的 pages 端口**指向的目录。 |
 | `imposition_active() -> bool` | 拼版**是否已启用**（用户勾了「在流程中启用图片拼版」就是启用）。 |
 | `imposition_has_pages() -> bool` | 拼版文档里**至少有一页**版面（能不能真的合成出图）。 |
@@ -7166,11 +7152,11 @@ _select_stage()、_set_stage_status()、_toast()、log_view。
 
 ##### `imposition_effective() -> bool`
 
-拼版这一步**当前能不能真跑**（三个判据全过）。
+拼版这一步**当前能不能真跑**（节点在流程里 + 用户勾了）。
 
 与 :meth:`imposition_active`（"用户意图：勾没勾"）**刻意分开**：
-勾了但流程图里没这一步、或区域模式不支持，都**不会**真跑。取图来源
-认这个，步骤条"生效态"也认这个。
+勾了但流程图里没这一步，**不会**真跑。取图来源认这个，步骤条
+"生效态"也认这个。
 
 ##### `imposition_source_files() -> list[Path]`
 
@@ -7182,8 +7168,8 @@ _select_stage()、_set_stage_status()、_toast()、log_view。
 "没有可拼版的图片，请先提交本次任务"——而那一步压根不在流程里。
 现在与 :meth:`print_source_dir` 同构，走 ``store.stage_input``。
 
-⚠️ ``imposition_effective`` 传的是**图里有没有这一格 + area 前提**，
-不是"用户勾没勾"：这一格不存在时下方控件整体是置灰的，不该因为
+⚠️ ``imposition_effective`` 传的是**图里有没有这一格 + 用户勾没勾**，
+不是单独的"用户勾没勾"：这一格不存在时下方控件整体是置灰的，不该因为
 "还没勾" 就换一个别的取图来源。
 
 ##### `imposition_active() -> bool`
@@ -7859,14 +7845,14 @@ control_stack、stage_* 控件、log_view、process/run_id 等。
 ======================  ==========================  ==========================
 步骤                     第一个动作（主按钮）          第二个动作（提交）
 ======================  ==========================  ==========================
-检测文本框                「检测文本框」：只出框        按 area 裁图 → stages/detect
+检测文本框                「检测文本框」：只出框        「提交本次任务」：逐框裁图 → stages/detect
 图片去底色                「生成预览」：整图去底色      白底转透明 → stages/rembg
 ======================  ==========================  ==========================
 
 两边的按钮状态机是同一套（``services/submit_state``），只有"比哪些参数"
 不同。本模块负责：
 - ``run_submit``              ：按当前步骤分发到下面两个提交动作；
-- ``run_detect_submit``       ：第二步提交（检测框 + area → 裁图）；
+- ``run_detect_submit``       ：第二步提交（检测框 → 逐框裁图）；
 - ``run_rembg_submit``        ：第三步提交（预览图 → 透明底成品）；
 - ``_update_submit_button``   ：按钮状态/提示（也按步骤分发）。
 
@@ -8291,14 +8277,15 @@ GUI 主进程**绝不能**在这里 import 到 cv2（实测 ``import functions.d
 ## 为什么
 
 1000+ 页的书，第二次点「检测文本框」时绝大多数页的框和上次一模一样——只要
-源文件没换、检测参数（``area``）没变，重跑一遍纯属白花几十秒推理。所以把
+源文件没换、程序没升级，重跑一遍纯属白花几十秒推理。所以把
 "这份结果还对得上吗"写进 `boxes.json` 条目本身（``src`` 文件戳 + ``det`` 检测
 指纹），下次直接读回来复用。
 
 ## 判据（两个字段，都写在条目里）
 
 - ``src``：``[字节数, mtime_ns]``——**这一页的源文件**有没有被换过；
-- ``det``：检测侧的身份指纹 = ``config.VERSION | DET_VERSION | area``。
+- ``det``：检测侧的身份指纹 = ``config.VERSION | DET_VERSION``
+  （2026-10-22 起没有 area 参数，检测结果只取决于程序版本与源文件）。
 
 两者同时匹配才算可复用；任何一项变了就重跑。⚠️ **无框页也留痕**（写空 ``boxes``
 但带指纹）：不记的话"检测过、但没检出框"的页每次都重跑。
@@ -8320,7 +8307,7 @@ GUI 主进程（违反 AGENTS.md「GUI 主进程禁重依赖」）。代价是�
 
 | 名称 | 值 |
 | --- | --- |
-| DET_VERSION | `"v1"` |
+| DET_VERSION | `"v2"` |
 | FIELD_SRC | `"src"` |
 | FIELD_DET | `"det"` |
 
@@ -8328,19 +8315,19 @@ GUI 主进程（违反 AGENTS.md「GUI 主进程禁重依赖」）。代价是�
 
 | 函数 | 说明 |
 | --- | --- |
-| `det_fingerprint(area: int) -> str` | 一次检测的**廉价**身份指纹：程序版本 + 复用格式版本 + ``area``。 |
+| `det_fingerprint() -> str` | 一次检测的**廉价**身份指纹：程序版本 + 复用格式版本。 |
 | `file_stamp(path: Path) -> list \| None` | 文件的 ``[字节数, mtime_ns]``；读不到（不存在 / 无权限）给 ``None``。 |
 | `entry_usable(entry: object, path: Path, det: str) -> TypeGuard[dict]` | 该条目能否复用：``det`` 指纹一致**且** ``src`` 与当前文件戳一致。 |
 | `payload_of(entry: dict) -> dict` | 把条目的**槽位**表示还原成 ``page_boxes`` 事件的负载形状。 |
 | `split(files: Iterable[Path], doc: dict, det: str) -> tuple[dict[str, dict], list[Path]]` | 把 ``files`` 分成（**可复用**的 ``{stem: 事件负载}``, **待检测**的文件表）。 |
 | `source_key(source) -> str` | 独立任务结果缓存的文件名：源的可读前缀 + 归一化路径的短哈希。 |
 
-#### `det_fingerprint(area: int) -> str`
+#### `det_fingerprint() -> str`
 
-一次检测的**廉价**身份指纹：程序版本 + 复用格式版本 + ``area``。
+一次检测的**廉价**身份指纹：程序版本 + 复用格式版本。
 
-``area`` 是检测参数里**唯一**会改变结果的那一个（整页模式压根不走检测），
-所以指纹只需要它。见模块 docstring 里"不读权重"的取舍。
+没有 area 等可调检测参数——检测结果只取决于程序版本与源文件本身
+（源文件的判断另由 ``src`` 文件戳负责）。见模块 docstring 里"不读权重"的取舍。
 
 #### `entry_usable(entry: object, path: Path, det: str) -> TypeGuard[dict]`
 
@@ -8700,7 +8687,7 @@ for_edited_source` 读到的还是旧尺寸。
 
 自动拼版只能靠文件名认图——拼版侧读不到检测框，而第三步的落盘口径是
 半幅页 ``<页号>-l`` / ``<页号>-r``、整幅页 ``<页号>``（见
-``functions/text_region._area1_outputs`` 与单图输出）。
+``desktop.services.print_plan.plan_detect_submit_entries``）。
 
 #### `source_page_number(path) -> int | None`
 
@@ -8839,10 +8826,10 @@ PDF 侧 ``functions/print._load_image`` 压平到白纸；编辑器/预览按 RG
 | 函数 | 说明 |
 | --- | --- |
 | `missing_extract_pages_spec(output_dir: Path, total: int) -> str \| None` | 提取输出目录中缺失的页码，压缩为 CLI pages 参数（如 "3,7-9"）。 |
-| `plan_rembg_submit_entries(manifest_paths: list[Path], result_path_for, boxes_for, area: int, single_column_book: bool=False, page_width_for=None, side_for=None) -> list[dict]` | 预览结果 + 检测框 + area/border → 最终图片条目。 |
-| `entry_to_effect_spec(entry: dict, border) -> dict` | 提交条目 → worker 效果合成规格（run_print_stage/run_rembg_submit_stage 用）。 |
+| `plan_rembg_submit_entries(manifest_paths: list[Path], result_path_for, boxes_for, single_column_book: bool=False, page_width_for=None, side_for=None) -> list[dict]` | 预览结果 + 检测框 + border → 最终图片条目（**逐框一张**）。 |
+| `entry_to_effect_spec(entry: dict, border) -> dict` | 提交条目 → worker 效果合成规格（run_print_stage/run_detect_submit_stage 用）。 |
 | `plan_submit_job(spec: dict, size: tuple[int, int] \| None) -> dict` | 一条效果规格 → 单条合成作业（输出文件名 + 合成参数）。 |
-| `plan_detect_submit_entries(manifest_paths: list[Path], boxes_for, area: int, single_column_book: bool=False, page_width_for=None, side_for=None) -> list[dict]` | 「检测文本框 → 提交本次任务」的裁图条目（2026-10-22 新增）。 |
+| `plan_detect_submit_entries(manifest_paths: list[Path], boxes_for, single_column_book: bool=False, page_width_for=None, side_for=None) -> list[dict]` | 「检测文本框 → 提交本次任务」的裁图条目。 |
 | `drop_foreign_stage_pages(pages: list[dict] \| None, source_dir: Path, stages_root: Path) -> list[dict]` | 从待打印清单里剔除「属于本任务**别的阶段**产物」的条目。 |
 | `rect_fits_image(rect, image_size_px, rect_size_px=None) -> bool` | 这条逐页 rect 是否**还适用于当前这张图**（判据唯一处）。 |
 | `stale_rect_pages(pages, size_for) -> list[dict]` | ``pages`` 里**图像已换、旧 rect 不再适用**的那几条（``[]`` = 全都还适用）。 |
@@ -8856,16 +8843,15 @@ PDF 侧 ``functions/print._load_image`` 压平到白纸；编辑器/预览按 RG
 页文件名以数字开头（0001.jpg / 0002.jpg …）。无缺失或 total 为 0
 时返回 None（无需续跑）。
 
-#### `plan_rembg_submit_entries(manifest_paths: list[Path], result_path_for, boxes_for, area: int, single_column_book: bool=False, page_width_for=None, side_for=None) -> list[dict]`
+#### `plan_rembg_submit_entries(manifest_paths: list[Path], result_path_for, boxes_for, single_column_book: bool=False, page_width_for=None, side_for=None) -> list[dict]`
 
-预览结果 + 检测框 + area/border → 最终图片条目。
+预览结果 + 检测框 + border → 最终图片条目（**逐框一张**）。
 
 参数
 ----
 manifest_paths   : 页面清单路径（stages/extract 内的页图片）
 result_path_for  : (stem) -> Path|None，某页对应的「生成预览」去底结果
 boxes_for        : (path_str) -> list，某页的检测框 [左框, 右框]
-area             : 区域模式（1=左右分页，2/3=并集/对称画布）
 single_column_book: 整本书是否已判定为**单栏书**（``utils.book_layout``
     的全书统计结论，见 :func:`~utils.book_layout.profile_book`）。为真时
     「单个宽框」的半幅页按**整幅**处理。
@@ -8875,48 +8861,23 @@ side_for         : (path_str) -> ``"left"``/``"right"``/None，用户在
     **半框页**上指定的左右。给了指定就**不做**单栏归一化——那是用户在说
     「这页其实是某一边」（用户 2026-10-17），命名/拼版都要按左/右走。
 
-派生规则与 rembg 预览条目、print 待打印列表完全一致：
-- **单栏书**（用户 2026-10-17）：整本书只有一栏，页里不会有左页+右页，
-  于是「单个宽框（≥80% 页宽）的半幅页」被退化成**单槽**，直接继承整幅的
-  全部下游语义——``label`` 就是页名（``7.png``，不拆 ``-l``/``-r``）、
-  ``full=True`` 因而不做对称镜像、拼版也不会把它当左半幅去找右半幅配对。
-  ⚠️ 这是**有证据的形态改写**（整本书 ≥90% 有框页都这样），与
-  :func:`utils.book_layout.suspicious_summary` 报的「整幅书里冒出半幅」
-  相反——那种只警告、不改。
-- area=1 双框：拆 <页>-r / <页>-l 两条（古籍阅读顺序 r 在前）；
-- area=1 半幅漏检一侧：单条也保留左右身份（<页>-l / <页>-r，按缺失侧
+派生规则（2026-10-22 起没有 area：**检测出几个框就裁几张图**）：
+- 双框：拆 <页>-r / <页>-l 两条（古籍阅读顺序 r 在前）；
+- 半幅漏检一侧：单条也保留左右身份（<页>-l / <页>-r，按缺失侧
   所在槽位判定）——否则产物叫 <页>.png，第四步拼版按文件名后缀判
   左右半幅时会把这页误当整幅（用户 2026-10-01 报）；
-- area=2/3 双框：合成一条（不再分栏）；
-- 单框：area=2/3 走对称画布（整页形态，不带后缀），其余按普通框；
-- 无框：整页预览图透传。
+- 整幅内容(fullcontent)：单槽单框，label 就是页名（不拆），框原样裁剪；
+- 单栏书：整本书只有一栏，页里不会有左页+右页，于是「单个宽框（≥80%
+  页宽）的半幅页」被退化成**单槽**，直接继承整幅的语义；
+- 无框：整页原图透传（条目不带 effect）。
 最终按 CLI natural sort 排序（同页 r 在 l 前）。
-
-⚠️ ``parea`` 是**原始 area**（不是"降级"后的合成 area），``boxes`` 是
-**原始检测框**（不是并集后的单框）——两者必须原样交给
-``compose_region_output``。原因见 ``entry_to_effect_spec``：并集框 +
-area=1 与「双框 + area=2/3」在 border 为空时**不等价**，曾导致第三步
-预览是整页、而提交产物与 PDF 被紧裁（用户报的「PDF 成了 area=1 效果」）。
 
 #### `entry_to_effect_spec(entry: dict, border) -> dict`
 
-提交条目 → worker 效果合成规格（run_print_stage/run_rembg_submit_stage 用）。
+提交条目 → worker 效果合成规格（run_print_stage/run_detect_submit_stage 用）。
 
-⚠️ 必须把**原始检测框 + 原始 area** 交给 ``compose_region_output``，
-不能擅自"化简"成并集框 + area=1。``utils.box_geometry.build_output_layout``
-在 border 为空（padding=None）时两条分支并不等价：
-
-- area=2/3（含多框）→ ``full_page=True``：整页画布，各框**写回原位置**；
-- area=1            → 紧裁成「框 + border」的小画布。
-
-此前双框 area=2/3 被记成"并集框 + parea=1"，于是第三步预览（用原始框
-+ 原始 area）显示整页、提交产物与 PDF 却是紧裁——用户报的「第三步 area=2、
-预览也是 area=2，生成的 PDF 却是 area=1 的效果」就是这么来的（紧裁观感
-与 area=1 的半页裁剪一致）。
-
-``full`` 原样透传给合成层：整幅(fullcontent)页的框**原样下传**——
-area=4 保留整页内容、area 1/2/3 统一按合并语义走单框布局（不拆
-``-l``/``-r``、不镜像）——见 ``desktop.workers.preview_worker.region_canvas_specs``。
+``effect`` 里只有 ``boxes`` 与 ``border``——2026-10-22 起没有 area，几何
+恒为「每个检测框各自剪一张图」（见 ``utils.box_geometry.build_output_layout``）。
 
 #### `plan_submit_job(spec: dict, size: tuple[int, int] | None) -> dict`
 
@@ -8932,15 +8893,13 @@ area=4 保留整页内容、area 1/2/3 统一按合并语义走单框布局（�
 ⚠️ ``region_canvas_specs`` 走**函数内延迟导入**：本模块整体是不依赖 Qt 的
 纯逻辑（见模块 docstring），只有真要算输出张数时才拉进那份 Qt 几何实现。
 
-#### `plan_detect_submit_entries(manifest_paths: list[Path], boxes_for, area: int, single_column_book: bool=False, page_width_for=None, side_for=None) -> list[dict]`
+#### `plan_detect_submit_entries(manifest_paths: list[Path], boxes_for, single_column_book: bool=False, page_width_for=None, side_for=None) -> list[dict]`
 
-「检测文本框 → 提交本次任务」的裁图条目（2026-10-22 新增）。
+「检测文本框 → 提交本次任务」的裁图条目。
 
 与 :func:`plan_rembg_submit_entries` **同一条规则**，只有一个区别：
 合成源就是**源页图自己**（这一步不产生中间结果图），所以 ``file`` 直接是
-那一页的路径。以前这条规则挂在第三步（去底色提交）上，现在裁剪前移到了
-第二步，规则本身一字未改——``-l``/``-r`` 命名、单栏书归一化、用户指定
-左右、对称画布全都照旧。
+那一页的路径。**每个检测框各自裁成一张图**——没有 area。
 
 #### `drop_foreign_stage_pages(pages: list[dict] | None, source_dir: Path, stages_root: Path) -> list[dict]`
 
@@ -9102,11 +9061,11 @@ singletask「去底色」导出目录的**标记**与白底→透明**副本**�
 ------------------------
 - **「生成预览」**：全量正式产物，写 ``stages/rembgpreview``，会被「提交本次
   任务」读取。参数一变它就过期（见 ``services/submit_state`` 的 PREVIEW_STALE）。
-- **「提交本次任务」**：读 ``stages/rembgpreview``，按 area/border 合成为最终
+- **「提交本次任务」**：读 ``stages/rembgpreview``，按 border 合成为最终
   交付图写 ``stages/rembg``；它是第四步唯一认可的成品来源。
 - **本模块（实时预览）**：只算用户当前看着的**那一页**，并**增量落盘**——
   ①该页去底色结果写 ``stages/rembgpreview[~节点]/{stem}.png``；
-  ②按 area/border 合成的「应用图」写 ``stages/rembg[~节点]/…``。
+  ②按 border 合成的「应用图」写 ``stages/rembg[~节点]/…``。
 
 ⚠️ **新不变量（旧的"绝不碰 rembgpreview/rembg"已被用户 2026-10-18 明确推翻）**：
 两个正式目录允许**不完整**（用户预览了哪一页，那一页才有产物）。由此两条铁律：
@@ -9149,7 +9108,7 @@ PNG 用 ``compress_level=1``：这是**临时预览**，编码速度比压缩率
 把某页的去底色结果按**提交规则**合成「应用图」，写 ``out_dir``。
 
 ``jobs`` 由 ``desktop.services.print_plan.plan_submit_job`` 给出（含 boxes /
-area / border / full 与输出文件名）。与「提交本次任务」逐像素同源：几何走
+border / 文件名）。与「提交本次任务」逐像素同源：几何走
 ``compose_region_output``、编码走 ``rembg_stage.save_transparent_png``。
 
 返回 ``(写出的文件名, 错误信息)``；**单条失败不拖垮整批**（与提交阶段同款
@@ -9262,6 +9221,7 @@ runs（``{阶段: [记录, ...]}``）→ 过期判定 ``{下游阶段: 详情}``
 | NEW_VERSION | `"new_version"` |
 | UP_TO_DATE | `"up_to_date"` |
 | NO_PREVIEW | `"no_preview"` |
+| DEFAULT_SUBMIT_PARAM_KEYS | `()` |
 
 ### 模块函数
 
@@ -9750,18 +9710,17 @@ worker 起来只需几百毫秒，模型全局只加载一次、多次检测共�
 | 函数 | 说明 |
 | --- | --- |
 | `run_detect(config: dict) -> int` | 检测单张图片的内容框（半幅左右 / 整幅），返回像素坐标（重依赖由常驻服务承担）。 |
-| `run_detect_pages(files: list[Path], *, workers: int, area: int, reuse: dict \| None, report) -> dict` | 逐页检测（**全仓唯一实现**）：子进程阶段与 singletask 执行器都调这里。 |
+| `run_detect_pages(files: list[Path], *, workers: int, reuse: dict \| None, report) -> dict` | 逐页检测（**全仓唯一实现**）：子进程阶段与 singletask 执行器都调这里。 |
 | `run_detect_stage(config: dict) -> int` | detect 阶段：逐图检测内容框（半幅左右 / 整幅）并上报坐标，不切割、不生成任何文件。 |
-| `run_detect_submit_stage(config: dict) -> int` | detect 提交：按 ``area`` 把页面图裁成下一步要的图，写入 ``stages/detect``。 |
+| `run_detect_submit_stage(config: dict) -> int` | detect 提交：把**每个检测框**裁成一张图，写入 ``stages/detect``。 |
 
-#### `run_detect_pages(files: list[Path], *, workers: int, area: int, reuse: dict | None, report) -> dict`
+#### `run_detect_pages(files: list[Path], *, workers: int, reuse: dict | None, report) -> dict`
 
 逐页检测（**全仓唯一实现**）：子进程阶段与 singletask 执行器都调这里。
 
 参数:
     files: 全部待处理的图片（按页序）。
     workers: 并发线程数；<=0 时按 ``core.args.default_workers`` 自动取。
-    area: 区域参数；``WHOLE_PAGE_AREA`` 时整页跳过检测（不加载模型）。
     reuse: ``{stem: page_boxes 负载}``（见 ``desktop.services.detect_reuse``）；
         命中的页**不重跑推理**，只原样补发一次带 ``reused`` 的事件。
     report: ``(事件名, 负载)`` 回调，名字取 ``log`` / ``progress`` /
@@ -9783,7 +9742,7 @@ detect 阶段：逐图检测内容框（半幅左右 / 整幅）并上报坐标�
 cropremove 用的同一入口），最终裁剪框由 GUI 按同一套规则
 （`utils.box_geometry.compute_final_boxes`）从检测框实时推导，用于预览标注。
 
-⚠️ 2026-10-22：本函数**只出框**。按 ``area`` 裁图是
+⚠️ 2026-10-22：本函数**只出框**。检测出几个框就裁几张图是
 :func:`run_detect_submit_stage`（「提交本次任务」）的事——与第三步
 「生成预览 / 提交」同一套两步语义。
 
@@ -9792,26 +9751,24 @@ cropremove 用的同一入口），最终裁剪框由 GUI 按同一套规则
 
 #### `run_detect_submit_stage(config: dict) -> int`
 
-detect 提交：按 ``area`` 把页面图裁成下一步要的图，写入 ``stages/detect``。
+detect 提交：把**每个检测框**裁成一张图，写入 ``stages/detect``。
 
 用户 2026-10-22 口径：
 
-> 检测文本框……增加「提交本次任务」，图片按照 area 切割处理。提交任务，
-> 本步骤才算是执行完毕，才能转入下一阶段。
+> 检测文本框流程，提交时把检测到的文本框里面的内容裁剪出来。
+> 提交任务，本步骤才算是执行完毕，才能转入下一阶段。
 
-也就是说这一步现在是"CLI crop 的两步版"：检测出一组框（人工可改）→
-提交时才按 area 真正裁图。**没提交 = 没产物**，下一步（去底色）的输入
+也就是说这一步是"CLI crop 的两步版"：检测出一组框（人工可改）→
+提交时真正按框裁图。**没提交 = 没产物**，下一步（去底色）的输入
 目录是空的，自然转不过去。
 
-几何/命名/张数与第三步的旧提交**完全同一套**（``plan_detect_submit_entries``
-→ ``entry_to_effect_spec`` → ``plan_submit_job`` → ``compose_region_output``），
-所以 ``-l`` / ``-r`` 命名、单栏书归一化、用户指定左右、对称画布这些
-既有约定一个都没变。
+几何/命名/张数（``plan_detect_submit_entries`` → ``entry_to_effect_spec``
+→ ``plan_submit_job`` → ``compose_region_output``）：检测出几个框就裁几张
+图，``-l`` / ``-r`` 命名、单栏书归一化、用户指定左右这些既有约定不变。
 
 args["_effects"] = [
     {"file": 源页图, "label": 输出文件名(无扩展名),
-     "effect": {"boxes": [[x1,y1,x2,y2]], "area": int, "border": "0",
-                "full": bool}},
+     "effect": {"boxes": [[x1,y1,x2,y2]], "border": "0"}},
     …
 ]
 
@@ -9985,7 +9942,7 @@ QProcess 从回调链启动时 Windows 下通知丢失的问题。
 
 args["_effects"] = [
     {"file": 源图路径, "label": 输出条目名,
-     "effect": {"boxes": [[x1,y1,x2,y2]], "area": int, "border": str|None}},
+     "effect": {"boxes": [[x1,y1,x2,y2]], "border": str|None}},
     …
 ]
 
@@ -11083,7 +11040,7 @@ BPMN 子集（只取表达本仓库流程所需的最小面，不做完整 BPMN 
   ``detect`` / ``rembg`` / ``print`` / ``imposition``，描述"这是什么功能"；
 - **运行阶段**多两个（2026-10-22 起）：
   ``detect_submit``——第二步「检测文本框」右上「提交本次任务」按钮触发的
-  **同一步骤的第二个动作**（先检测出框到 ``boxes.json``，提交时才按 ``area``
+  **同一步骤的第二个动作**（先检测出框到 ``boxes.json``，提交时才逐框裁图
   把页面图裁到 ``stages/detect``）；
   ``rembg_submit``——第三步「提交本次任务」触发的第二个动作（先把整图去底色
   到 ``stages/rembgpreview``，提交后把白底转透明落到 ``stages/rembg``）。
@@ -11094,7 +11051,7 @@ BPMN 子集（只取表达本仓库流程所需的最小面，不做完整 BPMN 
     ====================  ==========================================
     ``extract``            ``extract``：in=pdf / out=pages
     ``detect``              ``detect``：in=pages / out=boxes（只检测，出框）
-    ``detect_submit``       ``detect``：in=pages / out=pages（按 area 裁图）
+    ``detect_submit``       ``detect``：in=pages / out=pages（逐框裁图）
     ``rembg``               ``rembg``：in=pages / out=pages（整图去底色预览）
     ``rembg_submit``        ``rembg``：in=pages / out=pages（白底转透明成品）
     ``print``              ``print``：in=pages / out=pdf
@@ -11136,7 +11093,7 @@ BPM 编排引擎安全导入（与 :mod:`desktop.steps.spec` 同一约束）。
 | `orphaned_end_event_ids(diagram, *node_ids: str) -> tuple[str, ...]` | 删掉 ``node_ids`` 后会**悬空**的结束事件 id；没有则空元组。 |
 | `orphaned_gateway_ids(diagram, *node_ids: str) -> tuple[str, ...]` | 删掉 ``node_ids`` 后会**失去依附对象**的「是否拼版」网关 id；没有则空元组。 |
 | `flow_needs_source_pdf(diagram) -> bool` | **这条流程**里有没有直接吃源 PDF 的阶段吗（要问图，别写死）。 |
-| `flow_crops_pages(diagram) -> bool` | 这条流程里页面会不会被「检测文本框」的提交按 ``area`` 裁过。 |
+| `flow_crops_pages(diagram) -> bool` | 这条流程里页面会不会被「检测文本框」的提交**逐框裁开**。 |
 | `location_of(stage: str, port: str) -> str \| None` | 运行阶段某端口的相对落点；没有登记返回 ``None``。 |
 | `sanitize_node_id(node_id: str) -> str` | 把节点 id 收成**可安全拼进路径**的名字（只留字母数字与 ``._-``）。 |
 | `suffix_last_segment(name: str, suffix: str) -> str` | 在路径**最后一段**插入后缀：目录名加在结尾、文件名加在扩展名前。 |
@@ -11318,15 +11275,14 @@ BPM 编排引擎安全导入（与 :mod:`desktop.steps.spec` 同一约束）。
 
 #### `flow_crops_pages(diagram) -> bool`
 
-这条流程里页面会不会被「检测文本框」的提交按 ``area`` 裁过。
+这条流程里页面会不会被「检测文本框」的提交**逐框裁开**。
 
-2026-10-22 起 area 归第二步（检测），它的作用也从"去底色怎么裁"变成
-"第二步提交时怎么裁"。凡是要问"这一步拿到的图是整页还是半页"的地方
-（拼版要不要成对 ``-l``/``-r``、区域模式提示）都用本函数，别各写一份
+2026-10-22 起没有 area：有检测节点就一定会逐框裁图（半幅 ``-l``/``-r``）。
+凡是要问"这一步拿到的图是整页还是裁好的框"的地方都用本函数，别各写一份
 "流程里有没有 detect 节点"。
 
 ``imposition`` 那一格传 False（条件不满足时被剔除，与答案无关）。
-空图 / 没有 detect ⇒ False（＝图是整页的，拼版吃整图照样拼）。
+空图 / 没有 detect ⇒ False（＝图是整页的）。
 
 #### `sanitize_node_id(node_id: str) -> str`
 
@@ -11450,12 +11406,11 @@ BPM 编排时这正是"条件连线"的落点。
   这个意思：那里没有目录可解析）。
 · **本流程里没人产出**的端口不在列。典型：自定义流程把「图片去底色」放
   第一个节点、没有「检测文本框」，``boxes`` 就没有供给方——那种流程里
-  这一步压根不吃检测数据（去底色按 area 处理整张图，见
-  :data:`core.command_spec.WHOLE_PAGE_AREA` 与
+  这一步压根不吃检测数据（去底色固定整图处理，见
   ``functions/text_region.py``），用一个解析不出东西的端口挡它，用户只
   会看到"输入还没就位"的假提示（用户 2026-10-06 报障）。反过来，默认
   流程里 ``boxes`` 的供给方（``detect``）**在**，它照旧是阻塞端口——
-  「去底色」仍然要等「检测文本框」跑完。
+  「检测文本框」与它的提交仍然要等 extract 跑完。
 
 在列的端口：
 
@@ -12768,10 +12723,10 @@ pages.json 的读写与按阶段输出目录重建。
 | `save_pages(task_id: str, pages: list[dict], node_id: str \| None=None, primary_id: str \| None=None) -> None` | 写回页面清单；任务目录已删除时跳过（不重建目录）。 |
 | `refresh_pages_from_dir(task_id: str, directory: Path, node_id: str \| None=None, primary_id: str \| None=None) -> list[dict]` | 用某阶段输出目录重建页面清单（大任务当前的页集合）。 |
 | `print_pages_path(task_id: str, node_id: str \| None=None, primary_id: str \| None=None) -> Path` | 待打印列表文件：主节点是 ``print.json``，副本是 ``print~<节点>.json``。 |
-| `load_print_doc(task_id: str, node_id: str \| None=None, primary_id: str \| None=None) -> dict \| None` | 读取 print.json 全文（含 area/border/pages）；缺失或非字典时返回 None。 |
+| `load_print_doc(task_id: str, node_id: str \| None=None, primary_id: str \| None=None) -> dict \| None` | 读取 print.json 全文（含 pages）；缺失或非字典时返回 None。 |
 | `save_print_doc(task_id: str, doc: dict, node_id: str \| None=None, primary_id: str \| None=None) -> None` | 写回 print.json；任务目录已被删除时静默跳过（不重建目录）。 |
 | `load_print_pages(task_id: str, node_id: str \| None=None, primary_id: str \| None=None) -> list[dict]` | 只取 print.json 的 pages 列表；无文档时返回空列表。 |
-| `save_print_pages(task_id: str, entries: list[dict], node_id: str \| None=None, primary_id: str \| None=None) -> None` | 只替换 print.json 的 pages 字段，保留 area/border 等其它配置。 |
+| `save_print_pages(task_id: str, entries: list[dict], node_id: str \| None=None, primary_id: str \| None=None) -> None` | 只替换 print.json 的 pages 字段，保留其它配置。 |
 
 ##### `pages_path(task_id: str, node_id: str | None=None, primary_id: str | None=None) -> Path`
 
@@ -13412,9 +13367,9 @@ exist_ok=False``，被抢就顺延），所以并发/历史残留时**实际拿�
 
 ⚠️ ``imposition`` 这一键**用调用方传进来的值覆盖**，不用
 :meth:`step_enabled` 的读数——调用方传的是 ``imposition_effective()``
-（= 在流程里 ＋ ``area == 1`` ＋ 开关三道闸），而 ``step_enabled`` 只读
-开关。区域模式不支持时（``area != 1``），拼版产物根本不存在，必须让
-状态机跳过它、下游退回走去底色——只传开关会把流程指去一个空目录。
+（= 在流程里 ＋ 开关两道闸），而 ``step_enabled`` 只读开关。
+图里没有这一格时，拼版产物根本不存在，必须让状态机跳过它、
+下游退回走去底色——只传开关会把流程指去一个空目录。
 
 ##### `task_scheduler(task_id: str, imposition_active: bool=False)`
 
@@ -15907,7 +15862,7 @@ PDF/图片渲染：整页大图、页缩略图（带磁盘缓存）与去底色�
 
 PDF 渲染第 page 页（最长边 longest_edge，0 表示不缩放）；
 thumbnails=True 时渲染全部页缩略图到 cache_dir（命中则复用缓存）。
-effect 为去底色合成参数 {boxes, area, border}，仅对单图生效。
+effect 为去底色合成参数 {boxes, border}，仅对单图生效。
 print_spec 为第四步「打印效果」参数
 {"args": print 参数, "index": 0-based 页序, "total": 总页数, "name": 文件名}，
 非空时把图片按 utils.page_layout 的几何排进一张纸（仅内存，不落盘）；
@@ -15938,8 +15893,8 @@ GIL，界面直接冻住（2026-09-25 实测）。
 
 | 函数 | 说明 |
 | --- | --- |
-| `region_canvas_specs(image_size: tuple[int, int], boxes: list, area: int, border_mm, dpi: int=300, full: bool=False) -> list` | compose_region_output 的**纯几何**部分：返回 ``[(画布尺寸, sources)]``。 |
-| `compose_region_output(image: QImage, boxes: list, area: int, border_mm, dpi: int=300, full: bool=False) -> list` | 按 crop/cropremove 的 area/border 规则，合成"效果预览图"列表。 |
+| `region_canvas_specs(image_size: tuple[int, int], boxes: list, border_mm, dpi: int=300) -> list` | compose_region_output 的**纯几何**部分：返回 ``[(画布尺寸, sources)]``。 |
+| `compose_region_output(image: QImage, boxes: list, border_mm, dpi: int=300) -> list` | 按 border 规则，把**每个检测框**裁成一张"效果预览图"。 |
 | `close_cached_documents() -> None` | 关掉共享文档缓存里的全部文档，释放 Windows 文件句柄。 |
 | `preview_px_per_mm(page_w_mm: float, page_h_mm: float, target_edge: int=PRINT_PREVIEW_TARGET_EDGE) -> float` | 按纸张尺寸给出效果预览的像素密度（px/mm）。 |
 | `qt_family_for_file(path: str) -> str \| None` | 按**字体文件**加载并取回 Qt 族名；失败返回 None。 |
@@ -15947,7 +15902,7 @@ GIL，界面直接冻住（2026-09-25 实测）。
 | `compose_print_page(image: QImage, plan, px_per_mm: float \| None=None) -> QImage` | 按 ``utils.page_layout.PrintPagePlan`` 合成"打印效果"位图。 |
 | `compose_outputs_horizontal(outputs: list, gap: int=12) -> QImage` | 多张输出横向拼接为一张展示图（灰底间隔，便于区分各框输出）。 |
 
-#### `region_canvas_specs(image_size: tuple[int, int], boxes: list, area: int, border_mm, dpi: int=300, full: bool=False) -> list`
+#### `region_canvas_specs(image_size: tuple[int, int], boxes: list, border_mm, dpi: int=300) -> list`
 
 compose_region_output 的**纯几何**部分：返回 ``[(画布尺寸, sources)]``。
 
@@ -15955,31 +15910,15 @@ compose_region_output 的**纯几何**部分：返回 ``[(画布尺寸, sources)
 算出每张输出画布的大小与贴图来源。第三步提交据此**预先算好输出
 文件名**（张数 × 名称），再并行处理各页；规则仍然只有这一份。
 
-``full=True`` 表示这一页是整幅内容(fullcontent)。整幅框本质是"大一点的
-单独内容框"，**框原样参与布局**（用户 2026-09-29 改定，推翻旧的"整幅＝整页"）：
+**每个检测框各自一张输出画布**（框 + border）；无框时整页原图一张。
 
-- area=4：保留框外内容 → 框归一成整页（`utils.box_geometry.whole_page_box`）；
-- area=1/2/3：统一按 **area=3 的合并语义**走单框布局（不拆 ``-l``/``-r``、
-  不做对称镜像），几何由 border 决定：给了 border（面板默认 ``"0"``）→
-  紧裁「框 + border」；border 留空（None）→ 整页画布、框写回原位置（框外白）。
-  三种 area 因此效果一致。
+#### `compose_region_output(image: QImage, boxes: list, border_mm, dpi: int=300) -> list`
 
-调用方通常直接传 ``is_full_content(原始槽位列表)`` 的结果。
-
-#### `compose_region_output(image: QImage, boxes: list, area: int, border_mm, dpi: int=300, full: bool=False) -> list`
-
-按 crop/cropremove 的 area/border 规则，合成"效果预览图"列表。
+按 border 规则，把**每个检测框**裁成一张"效果预览图"。
 
 **几何规则来自 utils.box_geometry**（与 functions/text_region.py 的 CLI
 输出共用同一份实现），本函数只负责用 QImage 把布局画出来——这样规则
 不会因数像素后端不同而被复制成两份。几何部分见 `region_canvas_specs`。
-
-与原实现的一处行为修正：area=3 + 双框 + border=None 时，并集区域现在
-**写回原位置**（此前被搬到画布左上角）。规格见
-docs/functions/cropremove.md:57「area=3 → 单图，ROI 写回原位置」。
-
-``full`` 语义见 `region_canvas_specs`（整幅框原样下传：area=4 保留整页、
-area 1/2/3 统一按合并语义）。
 
 #### `close_cached_documents() -> None`
 

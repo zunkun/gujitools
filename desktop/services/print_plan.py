@@ -15,7 +15,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from core.command_spec import WHOLE_PAGE_AREA
 from utils.book_layout import single_column_slots
 from utils.box_geometry import is_full_content
 
@@ -64,19 +63,17 @@ def plan_rembg_submit_entries(
     manifest_paths: list[Path],
     result_path_for,
     boxes_for,
-    area: int,
     single_column_book: bool = False,
     page_width_for=None,
     side_for=None,
 ) -> list[dict]:
-    """预览结果 + 检测框 + area/border → 最终图片条目。
+    """预览结果 + 检测框 + border → 最终图片条目（**逐框一张**）。
 
     参数
     ----
     manifest_paths   : 页面清单路径（stages/extract 内的页图片）
     result_path_for  : (stem) -> Path|None，某页对应的「生成预览」去底结果
     boxes_for        : (path_str) -> list，某页的检测框 [左框, 右框]
-    area             : 区域模式（1=左右分页，2/3=并集/对称画布）
     single_column_book: 整本书是否已判定为**单栏书**（``utils.book_layout``
         的全书统计结论，见 :func:`~utils.book_layout.profile_book`）。为真时
         「单个宽框」的半幅页按**整幅**处理。
@@ -86,28 +83,16 @@ def plan_rembg_submit_entries(
         **半框页**上指定的左右。给了指定就**不做**单栏归一化——那是用户在说
         「这页其实是某一边」（用户 2026-10-17），命名/拼版都要按左/右走。
 
-    派生规则与 rembg 预览条目、print 待打印列表完全一致：
-    - **单栏书**（用户 2026-10-17）：整本书只有一栏，页里不会有左页+右页，
-      于是「单个宽框（≥80% 页宽）的半幅页」被退化成**单槽**，直接继承整幅的
-      全部下游语义——``label`` 就是页名（``7.png``，不拆 ``-l``/``-r``）、
-      ``full=True`` 因而不做对称镜像、拼版也不会把它当左半幅去找右半幅配对。
-      ⚠️ 这是**有证据的形态改写**（整本书 ≥90% 有框页都这样），与
-      :func:`utils.book_layout.suspicious_summary` 报的「整幅书里冒出半幅」
-      相反——那种只警告、不改。
-    - area=1 双框：拆 <页>-r / <页>-l 两条（古籍阅读顺序 r 在前）；
-    - area=1 半幅漏检一侧：单条也保留左右身份（<页>-l / <页>-r，按缺失侧
+    派生规则（2026-10-22 起没有 area：**检测出几个框就裁几张图**）：
+    - 双框：拆 <页>-r / <页>-l 两条（古籍阅读顺序 r 在前）；
+    - 半幅漏检一侧：单条也保留左右身份（<页>-l / <页>-r，按缺失侧
       所在槽位判定）——否则产物叫 <页>.png，第四步拼版按文件名后缀判
       左右半幅时会把这页误当整幅（用户 2026-10-01 报）；
-    - area=2/3 双框：合成一条（不再分栏）；
-    - 单框：area=2/3 走对称画布（整页形态，不带后缀），其余按普通框；
-    - 无框：整页预览图透传。
+    - 整幅内容(fullcontent)：单槽单框，label 就是页名（不拆），框原样裁剪；
+    - 单栏书：整本书只有一栏，页里不会有左页+右页，于是「单个宽框（≥80%
+      页宽）的半幅页」被退化成**单槽**，直接继承整幅的语义；
+    - 无框：整页原图透传（条目不带 effect）。
     最终按 CLI natural sort 排序（同页 r 在 l 前）。
-
-    ⚠️ ``parea`` 是**原始 area**（不是"降级"后的合成 area），``boxes`` 是
-    **原始检测框**（不是并集后的单框）——两者必须原样交给
-    ``compose_region_output``。原因见 ``entry_to_effect_spec``：并集框 +
-    area=1 与「双框 + area=2/3」在 border 为空时**不等价**，曾导致第三步
-    预览是整页、而提交产物与 PDF 被紧裁（用户报的「PDF 成了 area=1 效果」）。
     """
     from utils.sort_utils import natural_sort_key
 
@@ -118,8 +103,7 @@ def plan_rembg_submit_entries(
             continue  # 该页尚未生成预览
         # ⚠️ 用**原始槽位**判断是否整幅内容：半幅固定 2 槽 [左,右]（可能含 null），
         #    整幅只占 1 槽。过滤 null 后两者都可能只剩 1 个框，届时无法区分——
-        #    整幅页 area=1/2/3 统一按合并语义走单框布局（框原样下传），area=4
-        #    才归一整页（见 entry_to_effect_spec 与 preview_worker 的 full 语义）。
+        #    整幅页与「半幅漏检一侧」只能靠槽数区分。
         raw_boxes = list(boxes_for(str(path)) or [])
         # ⚠️ 单栏书：把「单个宽框」的半幅页**退化成单槽**（规则本体在
         #    ``utils.book_layout.single_column_slots``，第三步预览也调它），
@@ -127,7 +111,7 @@ def plan_rembg_submit_entries(
         # ⚠️ 但**用户指定过左右**的页不归一化：那是在说"这页其实是某一边"
         #    （半框的中心压在中线上，位置判定没意义，所以由用户声明）。
         if side_for is not None and side_for(str(path)):
-            pass  # 保持 2 槽 → 走 area=1 的 -l/-r 分支，下游按左右处理
+            pass  # 保持 2 槽 → 走 -l/-r 分支，下游按左右处理
         else:
             raw_boxes = single_column_slots(
                 raw_boxes, single_column_book,
@@ -136,73 +120,40 @@ def plan_rembg_submit_entries(
         full = is_full_content(raw_boxes)
         boxes = [b for b in raw_boxes if b]
         stem = path.stem
-        if area == 1 and len(boxes) == 2:
+        if len(boxes) == 2:
             entries.append(
                 {"file": str(result), "label": f"{stem}-r",
-                 "box": boxes[1], "boxes": [boxes[1]], "parea": 1, "full": False}
+                 "box": boxes[1], "boxes": [boxes[1]], "full": False}
             )
             entries.append(
                 {"file": str(result), "label": f"{stem}-l",
-                 "box": boxes[0], "boxes": [boxes[0]], "parea": 1, "full": False}
-            )
-        elif area in (2, 3) and len(boxes) == 2:
-            union = [
-                min(b[0] for b in boxes), min(b[1] for b in boxes),
-                max(b[2] for b in boxes), max(b[3] for b in boxes),
-            ]
-            entries.append(
-                {"file": str(result), "label": stem,
-                 "box": union, "boxes": list(boxes), "parea": area, "full": False}
-            )
-        elif area == WHOLE_PAGE_AREA and len(boxes) >= 2:
-            # 整页模式：整页（或用户手画的多个框）合成一个整体，不拆左右页
-            union = [
-                min(b[0] for b in boxes), min(b[1] for b in boxes),
-                max(b[2] for b in boxes), max(b[3] for b in boxes),
-            ]
-            entries.append(
-                {"file": str(result), "label": stem, "box": union,
-                 "boxes": list(boxes), "parea": area, "full": False}
+                 "box": boxes[0], "boxes": [boxes[0]], "full": False}
             )
         elif len(boxes) == 1:
             label = stem
-            if area == 1 and not full and len(raw_boxes) == 2:
+            if not full and len(raw_boxes) == 2:
                 # 半幅(harfcontent)漏检一侧：单条也要保住 -l/-r 身份。
                 # ⚠️ 判左右只能看**槽位**（半幅恒 2 槽 [左, 右]，见 half_slots），
-                # 不能看框的中心——这里拿到的就是原始槽位。area=2/3 的单框是
-                # 对称整页输出（与 CLI 一致），不带后缀。
+                # 不能看框的中心——这里拿到的就是原始槽位。
                 label = f"{stem}-l" if raw_boxes[0] else f"{stem}-r"
             entries.append(
                 {"file": str(result), "label": label, "box": boxes[0],
-                 "boxes": [boxes[0]], "parea": area, "full": full}
+                 "boxes": [boxes[0]], "full": full}
             )
         else:
             entries.append(
                 {"file": str(result), "label": stem,
-                 "box": None, "boxes": [], "parea": area, "full": False}
+                 "box": None, "boxes": [], "full": False}
             )
     entries.sort(key=lambda e: natural_sort_key(e["label"]))
     return entries
 
 
 def entry_to_effect_spec(entry: dict, border) -> dict:
-    """提交条目 → worker 效果合成规格（run_print_stage/run_rembg_submit_stage 用）。
+    """提交条目 → worker 效果合成规格（run_print_stage/run_detect_submit_stage 用）。
 
-    ⚠️ 必须把**原始检测框 + 原始 area** 交给 ``compose_region_output``，
-    不能擅自"化简"成并集框 + area=1。``utils.box_geometry.build_output_layout``
-    在 border 为空（padding=None）时两条分支并不等价：
-
-    - area=2/3（含多框）→ ``full_page=True``：整页画布，各框**写回原位置**；
-    - area=1            → 紧裁成「框 + border」的小画布。
-
-    此前双框 area=2/3 被记成"并集框 + parea=1"，于是第三步预览（用原始框
-    + 原始 area）显示整页、提交产物与 PDF 却是紧裁——用户报的「第三步 area=2、
-    预览也是 area=2，生成的 PDF 却是 area=1 的效果」就是这么来的（紧裁观感
-    与 area=1 的半页裁剪一致）。
-
-    ``full`` 原样透传给合成层：整幅(fullcontent)页的框**原样下传**——
-    area=4 保留整页内容、area 1/2/3 统一按合并语义走单框布局（不拆
-    ``-l``/``-r``、不镜像）——见 ``desktop.workers.preview_worker.region_canvas_specs``。
+    ``effect`` 里只有 ``boxes`` 与 ``border``——2026-10-22 起没有 area，几何
+    恒为「每个检测框各自剪一张图」（见 ``utils.box_geometry.build_output_layout``）。
     """
     raw = [b for b in (entry.get("boxes") or []) if b]
     if not raw and entry.get("box"):
@@ -211,12 +162,7 @@ def entry_to_effect_spec(entry: dict, border) -> dict:
         "file": entry["file"],
         "label": entry.get("label"),
         "effect": (
-            {
-                "boxes": raw,
-                "area": int(entry.get("parea", 1) or 1),
-                "border": border,
-                "full": bool(entry.get("full")),
-            }
+            {"boxes": raw, "border": border}
             if raw
             else None
         ),
@@ -242,19 +188,17 @@ def plan_submit_job(spec: dict, size: tuple[int, int] | None) -> dict:
     if size is None:
         return {
             "file": str(spec["file"]), "compose": False, "boxes": [],
-            "area": 1, "border": None, "full": False, "names": [], "label": label,
+            "border": None, "names": [], "label": label,
         }
     effect = spec.get("effect")
     if effect and any(effect.get("boxes") or []):
         boxes = list(effect.get("boxes") or [])
-        area = int(effect.get("area", 1))
         border = effect.get("border")
-        full = bool(effect.get("full"))
-        canvases = len(region_canvas_specs(size, boxes, area, border, full=full))
+        canvases = len(region_canvas_specs(size, boxes, border))
         has_boxes = True
     else:
         # 无检测框/无区域参数：整页预览图原样交付
-        boxes, area, border, full = [], 1, None, False
+        boxes, border = [], None
         canvases = 1
         has_boxes = False
     names = (
@@ -263,7 +207,7 @@ def plan_submit_job(spec: dict, size: tuple[int, int] | None) -> dict:
     )
     return {
         "file": str(spec["file"]), "compose": has_boxes,
-        "boxes": boxes, "area": area, "border": border, "full": full,
+        "boxes": boxes, "border": border,
         "names": names, "label": label,
     }
 
@@ -271,25 +215,21 @@ def plan_submit_job(spec: dict, size: tuple[int, int] | None) -> dict:
 def plan_detect_submit_entries(
     manifest_paths: list[Path],
     boxes_for,
-    area: int,
     single_column_book: bool = False,
     page_width_for=None,
     side_for=None,
 ) -> list[dict]:
-    """「检测文本框 → 提交本次任务」的裁图条目（2026-10-22 新增）。
+    """「检测文本框 → 提交本次任务」的裁图条目。
 
     与 :func:`plan_rembg_submit_entries` **同一条规则**，只有一个区别：
     合成源就是**源页图自己**（这一步不产生中间结果图），所以 ``file`` 直接是
-    那一页的路径。以前这条规则挂在第三步（去底色提交）上，现在裁剪前移到了
-    第二步，规则本身一字未改——``-l``/``-r`` 命名、单栏书归一化、用户指定
-    左右、对称画布全都照旧。
+    那一页的路径。**每个检测框各自裁成一张图**——没有 area。
     """
     by_stem = {path.stem: path for path in manifest_paths}
     return plan_rembg_submit_entries(
         manifest_paths=manifest_paths,
         result_path_for=lambda stem: by_stem.get(stem),
         boxes_for=boxes_for,
-        area=area,
         single_column_book=single_column_book,
         page_width_for=page_width_for,
         side_for=side_for,

@@ -18,7 +18,6 @@ from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QSize
 from PySide6.QtGui import QImageReader
 from PIL import Image
 
-from core.command_spec import DETECT_DEFAULT_AREA, WHOLE_PAGE_AREA
 from desktop.components.box_kinds import BoxKindEditor
 from desktop.components.yolo_export_dialog import ask_yolo_export
 from desktop.services.detect_export import export_yolo, yolo_entries
@@ -239,16 +238,9 @@ class DetectMixin:
         self._toast("warning", "框数已达上限", message)
 
     def _set_selected_box_kind(self, kind: str) -> None:
-        """面板里点了「左框 / 右框 / 整幅」（整页模式拦截是本页特有）。"""
+        """面板里点了「左框 / 右框 / 整幅」。"""
         path = self.detect_viewer.current_path()
         if path is None or not self.task_id:
-            return
-        if self._current_area() == WHOLE_PAGE_AREA:
-            self._toast(
-                "warning",
-                "整页模式",
-                "当前是整页模式（整页即唯一文本框）。要按左右/整幅标注，" "请先取消第二步的「整页模式」。",
-            )
             return
         self._box_editor().set_kind(str(path), self.detect_viewer.selected_index(), kind)
 
@@ -574,11 +566,7 @@ class DetectMixin:
             selected=select_index,
         )
 
-    # ------------------------------------------------------------ 区域模式
-    def _current_area(self) -> int:
-        """当前区域模式（area）——2026-10-22 起归**第二步自己的面板**。"""
-        return int(self._current_detect_params()[0])
-
+    # ------------------------------------------------------------ 页面几何
     def _image_size_for(self, path_text: str):
         """页面图片原始尺寸 (w, h)：优先 sizes.json，回退读图头。
 
@@ -597,36 +585,8 @@ class DetectMixin:
             return head.width(), head.height()
         return None
 
-    def _whole_page_boxes(self, path_text: str) -> list:
-        """整页模式的默认框：整页边界 [0, 0, W, H]（与图片一样大）。"""
-        size = self._image_size_for(path_text)
-        if not size:
-            return []
-        return [[0, 0, size[0], size[1]]]
-
-    def _whole_page_entry(self, path_text: str) -> tuple[list, str]:
-        """整页模式下应展示的 (框, 来源)。
-
-        只认人工框（origin=manual）：自动检测结果在整页模式下不生效——
-        语义上整页模式就是「不检测」，旧 YOLO 结果留着只会让切换后画面困惑。
-        用户手动画过框则沿用，其余一律整页。
-
-        ⚠️ 返回的是**原始槽位**（保留 None），不是过滤后的框列表：槽数编码
-        形态（半幅 2 槽 / 整幅 1 槽），过滤掉 None 后「手动半幅只剩一侧」会
-        退化成 1 槽，被当成整幅。
-        """
-        entry = (
-            self.store.boxes_entry_at(self._boxes_write_path(), Path(path_text).stem)
-            if self.task_id else None
-        )
-        if entry and entry[1] == "manual" and self._valid_boxes(entry[0]):
-            return list(entry[0]), "manual"
-        return self._whole_page_boxes(path_text), "fullpage"
-
     def _current_boxes_for(self, path_text: str) -> list:
-        """当前应展示的框（整页模式忽略自动检测结果）。"""
-        if self._current_area() == WHOLE_PAGE_AREA:
-            return self._whole_page_entry(path_text)[0]
+        """当前应展示的框（内存缓存优先）。"""
         return self._valid_boxes(self.detect_cache.get(str(path_text)) or [])
 
     def _detect_image_selected(self, index: int, path_text: str) -> None:
@@ -634,16 +594,6 @@ class DetectMixin:
         path = Path(path_text)
         key = str(path)
         self.detect_viewer.set_reference_boxes([])
-        if self._current_area() == WHOLE_PAGE_AREA:
-            boxes, origin = self._whole_page_entry(key)
-            if not boxes:
-                self.detect_viewer.info_label.setText("整页模式：读取不到页面尺寸，请先完成第一步提取。")
-                return
-            # 整页框是**派生**出来的：既不入库也不进缓存，避免切回 area=1
-            # 时把整页框当成真实检测结果去拆左右页。
-            self._apply_boxes(key, boxes, origin)
-            self._refresh_reference_boxes()
-            return
         if key in self.detect_cache:
             raw = self.detect_cache[key] or []
             if self._valid_boxes(raw):
@@ -684,20 +634,6 @@ class DetectMixin:
             self._toast("warning", "提示", "请先完成提取，再执行检测。")
             return
         key = str(path)
-        if self._current_area() == WHOLE_PAGE_AREA:
-            # 整页模式：不启 YOLO 子进程，直接用整页框（可继续拖动/重画）
-            boxes, origin = self._whole_page_entry(key)
-            if not boxes:
-                self._toast("warning", "提示", "读取不到页面尺寸，请先完成第一步提取。")
-                return
-            self._apply_boxes(key, boxes, origin)
-            self._refresh_reference_boxes()
-            self._toast(
-                "info",
-                "整页模式",
-                "未做检测：整页作为一个文本框，可拖动四角调整或重画。",
-            )
-            return
         entry = self.store.boxes_entry_at(self._boxes_write_path(), Path(path).stem)
         if entry is not None and any(entry[0] or []):
             self.detect_cache[key] = entry[0]
@@ -718,26 +654,20 @@ class DetectMixin:
     def _detect_boxes_for(self, path_text: str) -> list:
         """某页的检测框（内存缓存优先，其次 boxes.json）。
 
-        整页模式（area=4）没有存档框时兜底为整页边界，使 rembg 预览/提交
-        与第四步打印都按整页走，无需真的检测。
-
         ⚠️ 消费方读取（B 方案）：存档框取**连线上喂给当前节点**的那个检测
         节点的文件（``_boxes_read_path``）——两个「检测文本框」节点各有各的框，
         按阶段读会让去底色用错节点的框裁图。
 
-        ⚠️ 非整页模式走 :meth:`_boxes_map_cached`（整本一次读齐 + 失效缓存）：
+        ⚠️ 走 :meth:`_boxes_map_cached`（整本一次读齐 + 失效缓存）：
         查看器构建条目会**逐页**回调本方法，逐页解析流程图 + 读整份
         ``boxes.json`` 就是 O(n²)。
         """
-        area = self._current_area()
-        if area == WHOLE_PAGE_AREA:
-            return self._whole_page_entry(path_text)[0]
         boxes = self.detect_cache.get(str(path_text))
         if boxes is not None:
             return boxes or []
-        return self._boxes_map_cached(area).get(Path(path_text).stem, []) or []
+        return self._boxes_map_cached().get(Path(path_text).stem, []) or []
 
-    def _boxes_map_cached(self, area: int | None = None) -> dict:
+    def _boxes_map_cached(self) -> dict:
         """整本 ``{页名: 原始槽位}``，带缓存（``_detect_boxes_for`` 的整本版）。
 
         ⚠️ 为什么要有缓存：查看器重建条目时会**逐页**回调 ``boxes_provider``
@@ -748,30 +678,26 @@ class DetectMixin:
         - ``detect_cache.version``（用户改框，``VersionedBoxCache`` 自增）；
         - 框文件指纹（mtime_ns + size，外部落盘如批量检测写回）；
         - 页清单（``_manifest_paths``，内建签名缓存，命中很便宜）；
-        - 当前步骤格序（换了节点 ⇒ 上游框可能来自另一份文件）；
-        - 区域模式（area=4 的整页边界是派生值，不能拿去当半幅框用）。
+        - 当前步骤格序（换了节点 ⇒ 上游框可能来自另一份文件）。
 
         ⚠️ 不能改成"调用方传一张一次性快照"：查看器的 provider 是长期持有的，
-        之后改 area / 实时预览落盘都会再次重建条目，快照会把用户刚改的框吃掉
-        （自测 rembg「area=1 该页拆成 -r/-l 两条目」当场红）。
+        之后改框 / 实时预览落盘都会再次重建条目，快照会把用户刚改的框吃掉。
         """
-        if area is None:
-            area = self._current_area()
         paths = self._manifest_paths()
         version = getattr(self.detect_cache, "version", 0)
         bar = getattr(getattr(self, "step_bar", None), "_current", -1)
         file_key = tuple(str(path) for path in paths)
         cache = self.__dict__.get("_boxes_map_cache")
         read_path = cache.get("path") if cache else None
-        key = (self.task_id, bar, area, version, file_key, str(read_path),
+        key = (self.task_id, bar, version, file_key, str(read_path),
                self._file_fingerprint(read_path))
         if cache is not None and cache.get("key") == key:
             return cache["map"]
-        # 未命中才现算（含整页模式的整页边界兜底，见 _boxes_map_all）
+        # 未命中才现算（见 _boxes_map_all）
         mapping = self._boxes_map_all()
         read_path = self._boxes_read_path() if self.task_id else None
         self._boxes_map_cache = {
-            "key": (self.task_id, bar, area, version, file_key,
+            "key": (self.task_id, bar, version, file_key,
                     str(read_path) if read_path else None,
                     self._file_fingerprint(read_path)),
             "map": mapping,
@@ -797,18 +723,12 @@ class DetectMixin:
         第三步「实时预览增量落盘」按防抖反复要整书判据（单栏书结论），必须一次
         读齐（见 ``rembg_live.RembgLiveMixin._live_book_context``）。
 
-        口径与 :meth:`_detect_boxes_for` 逐条一致：整页模式（area=4）返回该页的
-        整页边界（派生、不入库）；否则内存缓存（用户刚改过的）优先，其次连线上
-        游那个节点的 ``boxes`` 文件。
+        口径与 :meth:`_detect_boxes_for` 逐条一致：内存缓存（用户刚改过的）优先，
+        其次连线上游那个节点的 ``boxes`` 文件。
         """
         paths = self._manifest_paths()
         if not paths:
             return {}
-        if self._current_area() == WHOLE_PAGE_AREA:
-            return {
-                Path(p).stem: self._whole_page_entry(str(p))[0] or []
-                for p in paths
-            }
         stored = (
             self.store.boxes_all_at(self._boxes_read_path())
             if self.task_id else {}
@@ -823,25 +743,11 @@ class DetectMixin:
             boxes[Path(p).stem] = list(entry[0]) if entry else []
         return boxes
 
-    def _current_detect_params(self) -> tuple[int, str | None]:
-        """区域参数：**固定 area = DETECT_DEFAULT_AREA**，border 恒 None。
-
-        ⚠️ 2026-10-22 第二轮：界面上没有 area 控件了（用户：「去除 area 参数，
-        默认 area = 1……desktop 页面去除这个参数，但是在后端代码保留 area 相关
-        逻辑」）。所以这里不再读面板，直接给后端默认值——参考框的推导、
-        「整页模式」那条兜底分支（area=4 才走）都还在，只是桌面这一侧永远
-        传 1。
-
-        第二个返回值保留 ``None``：``compute_final_boxes`` 的 border 形参还在
-        （CLI crop 仍支持），界面侧恒为「不加留白」。
-        """
-        return DETECT_DEFAULT_AREA, None
-
     def _refresh_reference_boxes(self) -> None:
-        """按当前 area 参数重算参考框（虚线标注）。
+        """重算参考框（虚线标注）。
 
-        border 属于第三步（rembg/裁剪），detect 预览的参考框
-        只体现检测框本身（area=1）或并集轮廓（area=2/3），不叠加 border。
+        border 属于裁剪步骤，detect 预览的参考框只体现检测框本身
+        （默认不加边距），检测出几个框就画几个参考框。
         """
         path = self.detect_viewer.current_path()
         if path:
@@ -849,9 +755,8 @@ class DetectMixin:
             if not boxes:
                 self.detect_viewer.set_reference_boxes([])
             else:
-                area, _border = self._current_detect_params()
-                self.detect_viewer.set_reference_boxes(compute_final_boxes(boxes, area, None))
-        # rembg 预览的区域同步刷新（显示范围跟随检测框 + area/border）
+                self.detect_viewer.set_reference_boxes(compute_final_boxes(boxes, None))
+        # rembg 预览的区域同步刷新（显示范围跟随检测框）
         # ⚠️ **只在本步就是「图片去底色」时才刷**（用户 2026-10-17 报「切换
         #    左/右/半框/整幅卡顿」）：``refresh_display`` 会重建全部条目并重新
         #    解码 + 合成当前页的大图（12MP 扫描件几十到几百毫秒），而第二步
@@ -959,7 +864,7 @@ class DetectMixin:
         config_path = runs_dir / "detect-config.json"
         write_json(
             config_path,
-            {"mode": "detect", "image": str(path), "area": self._current_area()},
+            {"mode": "detect", "image": str(path)},
         )
         self.detect_process = QProcess(cast("QObject", self))
         self._detect_out_buffer = ""  # stdout 半行重组缓冲（见 _read_detect_output）

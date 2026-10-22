@@ -88,7 +88,7 @@ def run_print_stage(config: dict) -> int:
 
     args["_effects"] = [
         {"file": 源图路径, "label": 输出条目名,
-         "effect": {"boxes": [[x1,y1,x2,y2]], "area": int, "border": str|None}},
+         "effect": {"boxes": [[x1,y1,x2,y2]], "border": str|None}},
         …
     ]
 
@@ -164,12 +164,11 @@ def run_print_stage(config: dict) -> int:
                       "message": f"无法读取图片: {spec['file']}"})
                 continue
             effect = spec.get("effect")
+            assert staging is not None  # _needs_compose ⇒ 上面已懒创建
             outputs = compose_region_output(
                 image,
                 effect.get("boxes", []),
-                int(effect.get("area", 1)),
                 effect.get("border"),
-                full=bool(effect.get("full")),
             )
             for out in outputs:
                 dst = staging / f"{counter:04d}.png"

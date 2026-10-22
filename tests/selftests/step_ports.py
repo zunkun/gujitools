@@ -220,7 +220,7 @@ def _check_blocking_inputs(ctx, ok) -> None:
     # ⚠️ 此前这条连线写的是 ``"extract"``，而页面侧又写死读 ``stages/rembg``，
     #    **一处错、一处掩盖**：默认流程下用户看到的候选池一直是对的，直到页面
     #    按连线取图（正确的做法）才暴露出连线是错的。
-    # 判据（业务事实）：``-l``/``-r`` 成对半页图**只有 area=1 的去底色产出**，
+    # 判据（业务事实）：``-l``/``-r`` 成对半页图由「检测文本框」的提交产出，
     #    且 ``task_default.bpmn`` 里「图片拼版」排在「图片去底色」**之后**。
     ok("拼版的 pages 由去底色提交供给（不是提取原图）",
        ports.supplier_of("imposition", "pages") == "rembg_submit",

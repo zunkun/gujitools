@@ -1,8 +1,12 @@
 # cropremove 功能说明
 
-复合流程：基于 YOLO 检测定位左右文本框 → 区域 Otsu 去底色。等同于 `crop` + `rembg` 的一步完成。
+复合流程：基于 YOLO 检测定位文本框 → **每个框各自裁剪并做 Otsu 去底色**。
+等同于 `crop` + `rembg` 的一步完成。
 
 与 `crop` 共享相同的检测与裁剪规则（共同继承 `TextRegionProcessor` 基类），区别是 cropremove 的 ROI 做 **Otsu 二值化去底色**，并支持印章保留。
+
+> ⚠️ 2026-10-22 起**没有 `--area` 参数**：检测出几个文本框就裁几张图。
+> 半幅页（左右两栏）输出 `-l`/`-r`，整幅页用页名输出一张，无框页整图去底色。
 
 ## 命令
 
@@ -15,7 +19,7 @@ guji cropremove --config ./book.yaml
 ```
 
 指定 `--config` 时读取配置文件中的 `cropremove:` 配置块；命令行显式提供的
-参数会覆盖配置值，例如 `guji cropremove --config ./book.yaml --area 3`。
+参数会覆盖配置值，例如 `guji cropremove --config ./book.yaml --border 20`。
 
 ## 核心算法
 
@@ -38,7 +42,7 @@ threshold = Otsu(left_pixels + right_pixels) + offset
 
 ### 3. Otsu 去底
 
-对灰度图按阈值生成文本掩码（gray < threshold = 文字），经形态学开闭运算去噪后，生成白底黑字输出。可选排除红色印章像素。
+对每个文本框区域按阈值生成文本掩码（gray < threshold = 文字），经形态学开闭运算去噪后，生成白底黑字输出。可选排除红色印章像素。
 
 ### 4. 输出类型
 
@@ -50,55 +54,15 @@ threshold = Otsu(left_pixels + right_pixels) + offset
 
 ## 参数说明
 
-### --area（区域模式）
-
-控制 Otsu 作用区域与输出方式，默认 1。
-
-| area | Otsu 作用区域        | 输出方式                              | border=None 时 |
-| ---- | -------------------- | ------------------------------------- | -------------- |
-| 1    | 逐框独立（共享阈值） | 分别裁剪左右框，输出 `-l`/`-r` 两张图 | 裁剪到各框边界 |
-| 2    | 逐框独立（共享阈值） | 单图，ROI 写回原位置                  | 输出原尺寸     |
-| 3    | 合并左右框为整体     | 单图，ROI 写回原位置                  | 输出原尺寸     |
-| 4    | 整页（不调用 YOLO）  | 单图，整页即唯一文本框                | 输出原尺寸     |
-
-**area=4「整页」**：不加载也不调用 YOLO，整页 `[0,0,W,H]` 作为唯一文本框——
-普通文档（非双栏古籍）或古籍检测失败时的兜底路径。它不走对称输出
-（对称只属于 area=2/3），因此「整页去底色 + border 留白」得到的是整页 + 四周留白。
-
 ### --border（边框控制，单位 mm）
 
-控制输出图像的裁剪与外扩边距，对 area=1/2/3 均生效。默认**随 area 变**
-（规则见 `core.command_spec.effective_border_default`）：`area=1/2/3` → **0**
-（不加留白，第四步会在 A4 上重新排版）；`area=4`（整页不检测）→ **None**
-（整页输出 border 无意义）。
+控制每张裁剪图在框外再外扩多少留白。**默认 0**（紧裁到文本框边界）：
+第四步会在 A4 上重新排版，前面再外扩留白等于双重留白。
 
-> ⚠️ 留空会被解析成上面的默认值：area=2/3 实际取到 0 = **紧裁到文本框联合
-> 外边界**，不是整页原尺寸（下表「None」一行只作语义对照）。
-
-| border 值     | area=1              | area=2/3               |
-| ------------- | ------------------- | ---------------------- |
-| None          | 裁剪到各框边界      | 输出原尺寸             |
-| 0             | 裁剪到各框边界      | 裁剪到文本框联合外边界 |
-| 有值（如 30） | 各框边界 + 外扩空白 | 联合外边界 + 外扩空白  |
-
-**对称输出规则**：area=2/3 + border 有值 + **仅检测到一个文本框**时，输出对称布局——实际框 + border 在检测侧，另一侧为等宽空白镜像，中间间隔 10mm。使单张图也呈现完整的双栏版面。
-
-布局示意（检测到右框，is_left=False）：
-
-```
-+------------ top ------------+
-|                            |
-|  left | blank | gap | box | right |
-|                            |
-+---------- bottom ----------+
-```
-
-- 实际框（box）经 `_process_roi` 做 Otsu 去底后粘贴到检测侧
-- 另一侧为空白（白色），宽度与实际框相同
-- gap = 10mm（按 300 DPI 换算约 118px）
-- 输出尺寸：高 = top + box_h + bottom，宽 = left + box_w + gap + box_w + right
-
-`single_box_detected` 在 area=3 合并前判断，因此"一个框"指的是检测到左框或右框中的一个，而非合并后的结果。
+| border 值     | 输出                              |
+| ------------- | --------------------------------- |
+| None / 0      | 裁剪到每个框的边界（紧裁）        |
+| 有值（如 30） | 每个框边界 + 外扩空白             |
 
 **CSS 风格写法**（mm→px 按 300 DPI 换算）：
 
@@ -123,8 +87,6 @@ threshold = Otsu(left_pixels + right_pixels) + offset
 
 ## 输出命名规则
 
-### area=1（默认，分框裁剪输出）
-
 ```
 输入: page3.jpg（检测到左右两个框）
 输出: page3-l.png（左框去底色）
@@ -133,32 +95,16 @@ threshold = Otsu(left_pixels + right_pixels) + offset
 输入: page5.jpg（仅检测到左框）
 输出: page5-l.png
 
+输入: page6.jpg（整幅页，一个框）
+输出: page6.png
+
 输入: page7.jpg（未检测到框）
-输出: page7.png（原图拷贝）
+输出: page7.png（整图去底色）
 ```
 
-### area=2/3（单图输出）
-
-```
-输入: page3.jpg
-输出: page3.png
-```
-
-## 完整行为矩阵
-
-| area | border      | 输出尺寸                         | Otsu | 输出文件       |
-| ---- | ----------- | -------------------------------- | ---- | -------------- |
-| 1    | None        | 裁剪到各框边界                   | 逐框 | -l.png, -r.png |
-| 1    | 0           | 裁剪到各框边界                   | 逐框 | -l.png, -r.png |
-| 1    | 值          | 各框 + 外扩边距                  | 逐框 | -l.png, -r.png |
-| 2    | None        | 原尺寸                           | 逐框 | .png           |
-| 2    | 0           | 裁剪到联合外边界                 | 逐框 | .png           |
-| 2    | 值          | 联合 + 外扩边距                  | 逐框 | .png           |
-| 2    | 值 + 仅单框 | 对称布局（框+空白镜像+10mm间隔） | 逐框 | .png           |
-| 3    | None        | 原尺寸                           | 合并 | .png           |
-| 3    | 0           | 裁剪到合并边界                   | 合并 | .png           |
-| 3    | 值          | 合并 + 外扩边距                  | 合并 | .png           |
-| 3    | 值 + 仅单框 | 对称布局（框+空白镜像+10mm间隔） | 逐框 | .png           |
+- 输出格式由 `--ext` 决定（默认 **PNG**，300 DPI）
+- 左框加 `-l` 后缀，右框加 `-r` 后缀；整幅页不带后缀
+- 无检测框时不做裁剪，**整图 Otsu 去底色**后输出
 
 ## 处理流程
 
@@ -171,41 +117,31 @@ threshold = Otsu(left_pixels + right_pixels) + offset
   │
   ├─ YOLO 检测 → 左右文本框分割
   │
-  ├─ 无文本框？
-  │   ├─ area=1 → 输出原图（BGR→RGB 转换后保存）
-  │   └─ area=2/3 → 整图 Otsu 去底
+  ├─ 无文本框？ → 整图 Otsu 去底色
   │
   ├─ 子类预处理：RGB/灰度/印章掩码/共享阈值 → 返回 ctx
   │
-  ├─ 记录原始框数量（single_box_detected，合并前判断）
-  │
-  ├─ area=3 且左右框均存在 → 合并为整体外边界
-  │
   ├─ border 参数解析 (mm→px)
   │
-  ├─ 单框 + area=2/3 + border有值 → 对称输出（实际框+空白镜像+10mm间隔）
+  ├─ 逐框循环：每个框 → 一张图（框 + border）
   │
-  ├─ area=1 → 逐框 Otsu，分别输出 -l/-r
-  │   area=2 → 逐框 Otsu，单图输出
-  │   area=3 → 合并 Otsu，单图输出
-  │
-  └─ 保存为 PNG (300 DPI)
+  └─ 保存（PNG / jpg / tiff，300 DPI）
 ```
 
 ## 示例
 
 ```bash
-# 默认模式：分框裁剪输出
+# 每个检测框各裁一张并去底色（半幅页输出 -l/-r）
 guji cropremove -i ./images -o output
 
-# 合并模式 + 外扩 30mm 边距
-guji cropremove -i ./images -o output --area 3 --border 30
+# 外扩 30mm 边距
+guji cropremove -i ./images -o output --border 30
 
-# 分框模式 + 印章保留
-guji cropremove -i ./images -o output --area 1 --seal --sealcolor
+# 印章保留
+guji cropremove -i ./images -o output --seal --sealcolor
 
-# 单图模式 + 自定义边距
-guji cropremove -i ./images -o output --area 2 --border 20,30,20,25
+# 自定义边距
+guji cropremove -i ./images -o output --border 20,30,20,25
 
 # 灰度输出 + 阈值偏移
 guji cropremove -i ./images -o output --type 3 --offset -5
@@ -213,10 +149,10 @@ guji cropremove -i ./images -o output --type 3 --offset -5
 
 ## 实现要点
 
-- **继承 TextRegionProcessor**：与 `crop` 共享 YOLO 检测 + area/border 规则 + 输出构建流程。子类仅实现差异方法：`_on_boxes_detected`（计算阈值并返回 ctx）、`_process_roi`（对 ROI 做 Otsu）、`_handle_no_boxes`（无框时整图 Otsu 或输出原图）、`_save_output`（按 type 保存）。
+- **继承 TextRegionProcessor**：与 `crop` 共享 YOLO 检测 + 逐框裁剪 + 输出构建流程。子类仅实现差异方法：`_on_boxes_detected`（计算阈值并返回 ctx）、`_process_roi`（对 ROI 做 Otsu）、`_handle_no_boxes`（无框时整图 Otsu）、`_save_output`（按 type 保存）。
 - **线程安全（ctx 模式）**：每张图的 `img_rgb`/`gray`/`threshold`/`red_mask` 通过 `_on_boxes_detected` 返回的 ctx 字典传递，**绝不写入 self 实例变量**。这是因为 `FunctionBase.execute()` 使用 `ThreadPoolExecutor` 并发处理多张图，若状态存于 self 会被并发覆盖（曾导致输出尺寸错乱）。
-- **阈值共享**：无论 area 模式如何，阈值始终从 left+right 合并像素计算，保证一致性。
+- **阈值共享**：每个框共用同一阈值（从 left+right 合并像素计算），保证同一页输出一致。
 - **印章排除**：启用 `--seal` 时，红色像素从文本掩码中排除，防止印章被误判为文字。
 - **border 换算**：mm→px 按 300 DPI（古籍扫描常用值），`px = mm × 300 / 25.4`。
-- **无框 fallback**：area=1 输出原图（BGR→RGB 转换后保存），area=2/3 退化为整图 Otsu。
+- **无框 fallback**：整图 Otsu 去底色后输出。
 - **并发处理**：基于 ThreadPoolExecutor，默认使用全部 CPU 核心。

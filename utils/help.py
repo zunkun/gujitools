@@ -142,7 +142,7 @@ def print_quick_help():
   guji detect -i ./images --save
   guji crop -i ./images -o ./cropped
   guji rembg -i ./images -o ./output --seal --sealcolor
-  guji cropremove -i ./images -o ./output --area 1
+  guji cropremove -i ./images -o ./output
 
 更多信息: https://github.com/zunkun/gujitools
 """.format(VERSION=VERSION)

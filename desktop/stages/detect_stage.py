@@ -21,7 +21,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from core.args import default_workers, machine_worker_budget
-from core.command_spec import WHOLE_PAGE_AREA
 from desktop.stages.events import ProgressStream, emit, _real_stdout
 
 
@@ -56,24 +55,6 @@ def run_detect(config: dict) -> int:
             format_box,
             warm_up_detect_model,
         )
-
-        if int(config.get("area") or 1) == WHOLE_PAGE_AREA:
-            # 整页模式：不加载 YOLO，整页即唯一文本框
-            img = utils.imread(image_path)
-            if img is None:
-                raise ValueError(f"无法读取图片: {image_path}")
-            h, w = img.shape[:2]
-            _emit_log(f"整页模式：{Path(image_path).name} 整页作为一个文本框，未做检测")
-            emit(
-                {
-                    "type": "boxes",
-                    "image": image_path,
-                    "left": [0, 0, int(w), int(h)],
-                    "right": None,
-                    "full": None,
-                }
-            )
-            return 0
 
         # 模型准备单独一步并单独计时：不这么做的话，加载那几秒会算进第一张图，
         # 看起来像"某张图特别慢"（用户提过这点）。
@@ -113,14 +94,13 @@ def run_detect(config: dict) -> int:
 
 
 def run_detect_pages(
-    files: list[Path], *, workers: int, area: int, reuse: dict | None, report
+    files: list[Path], *, workers: int, reuse: dict | None, report
 ) -> dict:
     """逐页检测（**全仓唯一实现**）：子进程阶段与 singletask 执行器都调这里。
 
     参数:
         files: 全部待处理的图片（按页序）。
         workers: 并发线程数；<=0 时按 ``core.args.default_workers`` 自动取。
-        area: 区域参数；``WHOLE_PAGE_AREA`` 时整页跳过检测（不加载模型）。
         reuse: ``{stem: page_boxes 负载}``（见 ``desktop.services.detect_reuse``）；
             命中的页**不重跑推理**，只原样补发一次带 ``reused`` 的事件。
         report: ``(事件名, 负载)`` 回调，名字取 ``log`` / ``progress`` /
@@ -157,15 +137,6 @@ def run_detect_pages(
             "message": f"复用上次结果 {len(reuse)} 页，需检测 {len(todo)} 页"
         })
 
-    if int(area) == WHOLE_PAGE_AREA:
-        # 整页模式：不加载 YOLO、不写 boxes.json（框由主进程按整页合成）。
-        # 仍逐页报进度，界面上「本子任务」能正常走完，日志说明为何没有框。
-        report("log", {"message": "整页模式：跳过检测，整页作为一个文本框"})
-        for path in todo:
-            stat["done"] += 1
-            report("log", {"message": f"检测 {path.name}  整页（未做检测）"})
-            report("progress", {"done": stat["done"], "total": total})
-        return stat
     if not todo:
         return stat
 
@@ -274,7 +245,7 @@ def run_detect_stage(config: dict) -> int:
     cropremove 用的同一入口），最终裁剪框由 GUI 按同一套规则
     （`utils.box_geometry.compute_final_boxes`）从检测框实时推导，用于预览标注。
 
-    ⚠️ 2026-10-22：本函数**只出框**。按 ``area`` 裁图是
+    ⚠️ 2026-10-22：本函数**只出框**。检测出几个框就裁几张图是
     :func:`run_detect_submit_stage`（「提交本次任务」）的事——与第三步
     「生成预览 / 提交」同一套两步语义。
 
@@ -309,7 +280,6 @@ def run_detect_stage(config: dict) -> int:
         stat = run_detect_pages(
             files,
             workers=int(args.get("workers") or 0),
-            area=int(args.get("area") or 1),
             reuse=args.get("reuse") or None,
             report=report,
         )
@@ -357,26 +327,24 @@ SUBMIT_WORKERS = max(
 
 
 def run_detect_submit_stage(config: dict) -> int:
-    """detect 提交：按 ``area`` 把页面图裁成下一步要的图，写入 ``stages/detect``。
+    """detect 提交：把**每个检测框**裁成一张图，写入 ``stages/detect``。
 
     用户 2026-10-22 口径：
 
-    > 检测文本框……增加「提交本次任务」，图片按照 area 切割处理。提交任务，
-    > 本步骤才算是执行完毕，才能转入下一阶段。
+    > 检测文本框流程，提交时把检测到的文本框里面的内容裁剪出来。
+    > 提交任务，本步骤才算是执行完毕，才能转入下一阶段。
 
-    也就是说这一步现在是"CLI crop 的两步版"：检测出一组框（人工可改）→
-    提交时才按 area 真正裁图。**没提交 = 没产物**，下一步（去底色）的输入
+    也就是说这一步是"CLI crop 的两步版"：检测出一组框（人工可改）→
+    提交时真正按框裁图。**没提交 = 没产物**，下一步（去底色）的输入
     目录是空的，自然转不过去。
 
-    几何/命名/张数与第三步的旧提交**完全同一套**（``plan_detect_submit_entries``
-    → ``entry_to_effect_spec`` → ``plan_submit_job`` → ``compose_region_output``），
-    所以 ``-l`` / ``-r`` 命名、单栏书归一化、用户指定左右、对称画布这些
-    既有约定一个都没变。
+    几何/命名/张数（``plan_detect_submit_entries`` → ``entry_to_effect_spec``
+    → ``plan_submit_job`` → ``compose_region_output``）：检测出几个框就裁几张
+    图，``-l`` / ``-r`` 命名、单栏书归一化、用户指定左右这些既有约定不变。
 
     args["_effects"] = [
         {"file": 源页图, "label": 输出文件名(无扩展名),
-         "effect": {"boxes": [[x1,y1,x2,y2]], "area": int, "border": "0",
-                    "full": bool}},
+         "effect": {"boxes": [[x1,y1,x2,y2]], "border": "0"}},
         …
     ]
     """
@@ -420,7 +388,7 @@ def run_detect_submit_stage(config: dict) -> int:
             save_png_compact(_qimage_rgb_array(image), tmp, dpi=(300, 300))
             replace_with_retry(tmp, dst)
 
-        # ---- 阶段二（线程池）：并行 读图 → 按 area 合成 → 写 PNG ----------
+        # ---- 阶段二（线程池）：并行 读图 → 逐框裁剪合成 → 写 PNG ----------
         # ⚠️ emit 只在主线程调（worker 线程往 stdout 写 JSON 行会交错）。
         def _process(job: dict):
             saved_names: list[str] = []
@@ -432,8 +400,7 @@ def run_detect_submit_stage(config: dict) -> int:
                 return saved_names, [f"无法读取图片: {job['file']}"]
             if job["compose"]:
                 outputs = compose_region_output(
-                    image, job["boxes"], job["area"], job["border"],
-                    full=bool(job.get("full")),
+                    image, job["boxes"], job["border"],
                 )
             else:
                 outputs = [image]
@@ -482,7 +449,7 @@ def run_detect_submit_stage(config: dict) -> int:
         emit({"type": "progress", **context, "done": total, "total": total})
         emit(
             {"type": "log", **context,
-             "message": f"检测结果已提交（按区域模式裁图 {saved} 张）：{out_dir}"}
+             "message": f"检测结果已提交（按文本框裁图 {saved} 张）：{out_dir}"}
         )
         if not saved:
             emit(

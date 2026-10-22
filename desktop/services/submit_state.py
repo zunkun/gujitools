@@ -14,7 +14,9 @@ UP_TO_DATE = "up_to_date"
 NO_PREVIEW = "no_preview"
 
 #: 提交时还要再比一遍的参数（"预览之后又改了参数 ⇒ 成品要重新做"）。
-DEFAULT_SUBMIT_PARAM_KEYS = ("area", "border")
+#: 2026-10-22 起两个步骤都没有 area/border 了：默认不额外比参数，
+#: 调用方按需显式传 ``submit_param_keys``。
+DEFAULT_SUBMIT_PARAM_KEYS: tuple = ()
 
 
 def submit_version_state(

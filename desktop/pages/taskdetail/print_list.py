@@ -387,8 +387,8 @@ class PrintListMixin:
         """
         from desktop.steps.ports import print_pages_supplier
 
-        # ⚠️ 用 **effective**（能不能真跑）而不是 active（勾没勾）：区域模式
-        #    不支持拼版时，来源必须回到去底色，否则与 ``print_source_dir``
+        # ⚠️ 用 **effective**（能不能真跑）而不是 active（勾没勾）：图里没有
+        #    拼版节点时，来源必须回到去底色，否则与 ``print_source_dir``
         #    给用户的预览不一致（界面说 A、执行做 B）。
         return print_pages_supplier(self.imposition_effective())
 

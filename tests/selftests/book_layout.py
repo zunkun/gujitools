@@ -128,12 +128,11 @@ def run(ctx) -> None:
     # ---- 4. 命名落地：单栏书按页码命名，不拆 -l/-r ----
     from desktop.services.print_plan import plan_rembg_submit_entries
 
-    def _entries(pages_boxes, area: int, single: bool, width=W):
+    def _entries(pages_boxes, single: bool, width=W):
         return plan_rembg_submit_entries(
             manifest_paths=[Path(f"{i:04d}.png") for i in range(1, len(pages_boxes) + 1)],
             result_path_for=lambda stem: Path(f"{stem}.png"),
             boxes_for=lambda _p: pages_boxes[_p],
-            area=area,
             single_column_book=single,
             page_width_for=lambda _p: width,
         )
@@ -141,27 +140,27 @@ def run(ctx) -> None:
     nine = {f"000{i}.png": WIDE for i in range(1, 10)}
     nine["0010.png"] = DOUBLE
 
-    # area=1：单栏书的单宽框页 → label 就是页名（7.png），不是 0007-l
-    got = {e["label"]: e for e in _entries(nine, 1, True)}
-    ok("单栏书 area=1：单宽框页 label 是页名（按页码命名，不带 -l/-r）",
+    # 单栏书的单宽框页 → label 就是页名（7.png），不是 0007-l
+    got = {e["label"]: e for e in _entries(nine, True)}
+    ok("单栏书：单宽框页 label 是页名（按页码命名，不带 -l/-r）",
        "0007" in got and "0007-l" not in got and "0007-r" not in got,
        str(sorted(got)))
-    ok("单栏书 area=1：单宽框页按整幅语义（full=True，不做镜像）",
+    ok("单栏书：单宽框页按整幅语义（full=True）",
        got["0007"]["full"] is True, str(got["0007"]))
-    ok("单栏书 area=1：真双栏页仍照常拆 -r/-l（不误伤双栏书里的那一页）",
-       {e["label"] for e in _entries(nine, 1, True) if e["label"].startswith("0010")}
+    ok("单栏书：真双栏页仍照常拆 -r/-l（不误伤双栏书里的那一页）",
+       {e["label"] for e in _entries(nine, True) if e["label"].startswith("0010")}
        == {"0010-r", "0010-l"},
-       str([e["label"] for e in _entries(nine, 1, True) if e["label"].startswith("0010")]))
+       str([e["label"] for e in _entries(nine, True) if e["label"].startswith("0010")]))
     ok("单栏书产出的标签无后缀 → 拼版按后缀判左右时不会错配成对",
        all(not e["label"].endswith(("-l", "-r"))
-           for e in _entries(nine, 1, True) if e["label"] != "0010"
+           for e in _entries(nine, True) if e["label"] != "0010"
            and e["label"] not in ("0010-l", "0010-r")))
 
     # 关掉开关 → 行为与改造前**逐字段一致**（这是向后兼容的底线）
-    off = {e["label"]: e for e in _entries(nine, 1, False)}
+    off = {e["label"]: e for e in _entries(nine, False)}
     ok("未认定单栏书时：单宽框页仍带 -l/-r（旧行为不变）",
        "0007-l" in off or "0007-r" in off, str(sorted(off)))
-    ok("未认定单栏书时：单宽框页 full=False（仍走对称镜像）",
+    ok("未认定单栏书时：单宽框页 full=False",
        (off.get("0007-l") or off.get("0007-r"))["full"] is False,
        str(off.get("0007-l") or off.get("0007-r")))
 
@@ -169,24 +168,16 @@ def run(ctx) -> None:
     fullmix = {f"{i:04d}.png": FULL for i in range(1, 20)}
     fullmix["0020.png"] = DOUBLE
     fullmix["0021.png"] = NARROW
-    kept = {e["label"]: e for e in _entries(fullmix, 1, False)}
+    kept = {e["label"]: e for e in _entries(fullmix, False)}
     ok("整幅书里的可疑半幅页：仍拆 -l/-r、full=False（只警告不改数据）",
        kept["0021-l"]["full"] is False
        and {"0020-l", "0020-r"} <= set(kept),
        str(sorted(k for k in kept if k.startswith("002"))))
     ok("可疑半幅页不会被单栏判据顺手接管（不因单框就当整幅）",
-       kept["0021-l"]["parea"] == 1, str(kept["0021-l"]))
-
-    # area=2/3：单栏书的单宽框页不做对称镜像（按整幅同等处理）
-    got2 = {e["label"]: e for e in _entries(nine, 2, True)}
-    ok("单栏书 area=2：单宽框页 full=True → 合成层不镜像",
-       got2["0007"]["full"] is True, str(got2["0007"]))
-    off2 = {e["label"]: e for e in _entries(nine, 2, False)}
-    ok("未认定单栏书时 area=2 仍 full=False（镜像补白保持原样）",
-       off2["0007"]["full"] is False, str(off2["0007"]))
+       kept["0021-l"]["full"] is False, str(kept["0021-l"]))
 
     # 页宽不可得时不得改写（保守回落，与判据一致）
-    no_w = {e["label"]: e for e in _entries(nine, 1, True, width=0)}
+    no_w = {e["label"]: e for e in _entries(nine, True, width=0)}
     ok("页宽取不到 → 不改写身份（保守回落成半幅）",
        "0007-l" in no_w or "0007-r" in no_w, str(sorted(no_w)))
     ok("page_width_for 缺省（None）时同样不改写",
@@ -196,7 +187,6 @@ def run(ctx) -> None:
                manifest_paths=[Path("0007.png")],
                result_path_for=lambda s: Path(f"{s}.png"),
                boxes_for=lambda _p: WIDE,
-               area=1,
                single_column_book=True,
            )
        ))
@@ -689,8 +679,9 @@ def run(ctx) -> None:
     resolve_src = _inspect.getsource(EntriesMixin._resolve_source)
     ok("预览条目取框走归一化入口（主条目）",
        "_book_slots(" in entries_src, "主条目绕开了归一化")
-    ok("预览的实时合成/放大取框也走同一入口（否则弹窗与预览不同块）",
-       "_book_slots(" in resolve_src, "实时合成绕开了归一化")
+    ok("实时合成/放大直接用条目已归一化的框（不再二次推导）",
+       'entry.get("box")' in resolve_src and "_book_slots(" not in resolve_src,
+       "实时合成绕开了条目")
 
     # 行为上验证：同一个单栏书页，预览与派生给出**同名**（都不带 -l/-r）
     from PySide6.QtWidgets import QApplication
@@ -704,7 +695,7 @@ def run(ctx) -> None:
         viewer.set_images(
             [page], None,
             boxes_provider=lambda _t: list(WIDE),
-            region_params_provider=lambda: (1, "0"),
+            border_provider=lambda: "0",
             single_column_book=True,
             page_width_provider=lambda _t: W,
         )
@@ -715,7 +706,7 @@ def run(ctx) -> None:
         viewer.set_images(
             [page], None,
             boxes_provider=lambda _t: list(WIDE),
-            region_params_provider=lambda: (1, "0"),
+            border_provider=lambda: "0",
             single_column_book=False,
             page_width_provider=lambda _t: W,
         )
@@ -733,7 +724,6 @@ def run(ctx) -> None:
             manifest_paths=[Path("0007.png")],
             result_path_for=lambda s: Path(f"{s}.png"),
             boxes_for=lambda _p: [[60, 100, 900, 1300], None],
-            area=1,
             single_column_book=True,
             page_width_for=lambda _t: W,
             side_for=lambda _t: side,
@@ -755,7 +745,7 @@ def run(ctx) -> None:
         viewer2.set_images(
             [Path("0007.png")], None,
             boxes_provider=lambda _t: [[60, 100, 900, 1300], None],
-            region_params_provider=lambda: (1, "0"),
+            border_provider=lambda: "0",
             single_column_book=True,
             page_width_provider=lambda _t: W,
             side_for=lambda _t: "left",

@@ -21,9 +21,9 @@ class ThumbsCacheMixin(RembgViewerHost):
 
     def _load_page_thumbs(self, entries: list[dict],
                           rows: list[int] | None = None) -> None:
-        """加载各条目缩略图：按检测框 + area/border 合成，只显示所属部分。
+        """加载各条目缩略图：按检测框 + border 合成，只显示所属部分。
 
-        条目缩略图不是整页缩略图——area=1 时要显示"该条目那半页"，
+        条目缩略图不是整页缩略图——一条目对应一张裁好的半页/整页，
         所以这里必须把 ``_page_thumb_for`` 返回的 ``effect`` 交给
         ``ImageListWorker`` 走 ``compose_region_output`` 合成，而不是
         传像素裁剪框 ``crops``（那会整页原样显示）。
@@ -43,9 +43,9 @@ class ThumbsCacheMixin(RembgViewerHost):
         """
         labels = [entry["title"] for entry in entries]
         border_mm = None
-        if self._region_params_provider:
+        if self._border_provider:
             try:
-                _, border_mm = self._region_params_provider()
+                border_mm = self._border_provider()
             except Exception:
                 border_mm = None
 
@@ -61,8 +61,7 @@ class ThumbsCacheMixin(RembgViewerHost):
                 spec = cached
             elif self._thumb_provider:
                 spec = self._thumb_provider(
-                    real, entry.get("box"), entry.get("parea", 1), border_mm,
-                    boxes=entry.get("boxes"), full=entry.get("full", False),
+                    real, entry.get("box"), border_mm,
                 )
             if isinstance(spec, dict):
                 return Path(spec["path"]), spec.get("effect")

@@ -283,9 +283,7 @@ class RembgLiveMixin:
             "label": stem,
             "compose": False,
             "boxes": [],
-            "area": 1,
             "border": None,
-            "full": False,
             "names": [f"{stem}.png"],
         }]
 

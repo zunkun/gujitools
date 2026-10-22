@@ -50,7 +50,7 @@ guji run print --config ./book.yaml
 guji extract -i book.pdf -o ./images
 guji crop -i ./images -o ./cropped
 guji rembg -i ./images -o ./output
-guji cropremove -i ./images -o ./output --area 1
+guji cropremove -i ./images -o ./output
 ```
 
 `print` 的业务参数来自 YAML 配置，必须使用 `guji run print`，不能直接使用
@@ -60,9 +60,9 @@ guji cropremove -i ./images -o ./output --area 1
 
 ```bash
 guji crop --config ./book.yaml
-guji crop --config ./book.yaml --area 2
+guji crop --config ./book.yaml --border 20
 guji rembg --config ./book.yaml --type 3
-guji cropremove --config ./book.yaml --area 3 --border 30
+guji cropremove --config ./book.yaml --border 30
 guji extract --config ./book.yaml --pages "1,3-5"
 ```
 
@@ -70,7 +70,7 @@ guji extract --config ./book.yaml --pages "1,3-5"
 参数优先覆盖配置值。`print` 仍只能使用 `guji run print`。
 
 未定义的参数会输出警告并忽略；已定义参数仍会校验类型和取值。例如，`-b c`
-不会阻止命令执行，但 `--area x` 或 `--area` 缺少值仍会报错。
+不会阻止命令执行，但 `--border x` 或 `--border` 缺少值仍会报错。
 
 ## 帮助
 
@@ -194,36 +194,21 @@ guji detect -i ./images --save -o ./detect-out --ext png
 
 ### crop — 文本框裁剪
 
-基于 YOLO 检测内容框并裁剪输出原图像素，支持 area/border 控制（与 cropremove 共享规则，但不做 Otsu 去底色）。
+基于 YOLO 检测内容框并**把每个框各自裁剪**输出原图像素（与 cropremove 共享规则，但不做 Otsu 去底色）。
 
 | 参数       | 默认值 | 说明                                |
 | ---------- | ------ | ----------------------------------- |
-| `--area`   | 1      | 区域模式（详见下表）                |
 | `--border` | None   | 边框控制（mm），CSS 风格 1~4 值写法 |
 
-**--area 区域模式**：
-
-| area | 裁剪方式               | 输出方式                  | border=None 时 |
-| ---- | ---------------------- | ------------------------- | -------------- |
-| 1    | 逐框独立裁剪           | 半幅输出 `-l`/`-r` 两张图 | 裁剪到各框边界 |
-| 2    | 逐框独立裁剪           | 单图，ROI 写回原位置      | 输出原尺寸     |
-| 3    | 合并左右框为整体外边界 | 单图，ROI 写回原位置      | 输出原尺寸     |
-| 4    | 整页模式（不检测）     | 单图，整页即唯一文本框    | 输出原尺寸     |
-
-> **整幅页**（模型判为 `fullcontent` 的页面）：整幅框本质是"大一点的单独内容框"，
-> **框原样下传、区域随框走**——area=1/2/3 结果一致（都按合并语义：单图输出、
-> 不拆 `-l`/`-r`、不做对称镜像；border 空 → 整页画布写回原位置、框外白，
-> 给 border → 紧裁「框 + border」）。只有 **area=4 保留框外内容**（整页原图）。
+> **没有 `--area` 参数**：检测出几个文本框就裁几张图。半幅页输出 `-l`/`-r`
+> 两张，整幅页用页名输出一张，无框页原样输出。
 
 **--border 边框控制**（mm→px 按 300 DPI 换算）：
 
-| border 值     | area=1          | area=2/3         |
-| ------------- | --------------- | ---------------- |
-| None          | 裁剪到各框边界  | 输出原尺寸       |
-| 0             | 裁剪到各框边界  | 裁剪到联合外边界 |
-| 有值（如 30） | 各框 + 外扩空白 | 联合 + 外扩空白  |
-
-> 特殊：area=2/3 + border有值 + 仅单框 → 对称输出（实际框+空白镜像+10mm间隔，构成完整双栏版面）。
+| border 值     | 输出                       |
+| ------------- | -------------------------- |
+| None / 0      | 裁剪到每个框的边界（紧裁） |
+| 有值（如 30） | 每个框边界 + 外扩空白      |
 
 ### rembg — 去底色
 
@@ -270,28 +255,16 @@ YAML 示例见 [print.md](../functions/print.md)。
 
 | 参数       | 默认值 | 说明                                |
 | ---------- | ------ | ----------------------------------- |
-| `--area`   | 1      | 区域模式（详见下表）                |
 | `--border` | None   | 边框控制（mm），CSS 风格 1~4 值写法 |
 
-**--area 区域模式**：
-
-| area | Otsu 作用区域        | 输出方式                  | border=None 时 |
-| ---- | -------------------- | ------------------------- | -------------- |
-| 1    | 逐框独立（共享阈值） | 半幅输出 `-l`/`-r` 两张图 | 裁剪到各框边界 |
-| 2    | 逐框独立（共享阈值） | 单图，ROI 写回原位置      | 输出原尺寸     |
-| 3    | 合并左右框为整体     | 单图，ROI 写回原位置      | 输出原尺寸     |
-| 4    | 整页模式（不检测）   | 单图，整页即唯一文本框    | 输出原尺寸     |
-
-> **整幅页**（`fullcontent`：整页只有一个内容区）整幅框原样下传，area=1/2/3
-> 结果一致（合并语义）；`area=4` 保留框外内容（整页原图）。
+> **没有 `--area` 参数**：检测出几个文本框就裁几张图并各自去底色。
 
 **--border 边框控制**（mm→px 按 300 DPI 换算）：
 
-| border 值     | area=1          | area=2/3         |
-| ------------- | --------------- | ---------------- |
-| None          | 裁剪到各框边界  | 输出原尺寸       |
-| 0             | 裁剪到各框边界  | 裁剪到联合外边界 |
-| 有值（如 30） | 各框 + 外扩空白 | 联合 + 外扩空白  |
+| border 值     | 输出                       |
+| ------------- | -------------------------- |
+| None / 0      | 裁剪到每个框的边界（紧裁） |
+| 有值（如 30） | 每个框边界 + 外扩空白      |
 
 CSS 风格写法：
 
@@ -335,17 +308,17 @@ guji extract -i book.pdf -o ./images --workers 8 --batch-size 8
 ### crop
 
 ```bash
-# 基本裁剪（默认 area=1，分框输出 -l/-r）
+# 基本裁剪（每个检测框各一张；半幅页输出 -l/-r）
 guji crop -i ./images -o ./cropped
 
 # 单文件
 guji crop -i page3.jpg -o ./output
 
-# 合并模式 + 外扩 30mm 边距
-guji crop -i ./images -o ./output --area 3 --border 30
+# 外扩 30mm 边距
+guji crop -i ./images -o ./output --border 30
 
-# 单图模式 + 自定义边距（上20 右30 下20 左25）
-guji crop -i ./images -o ./output --area 2 --border 20,30,20,25
+# 自定义边距（上20 右30 下20 左25）
+guji crop -i ./images -o ./output --border 20,30,20,25
 
 # 清空输出目录重新处理
 guji crop -i ./images -o ./output --clean

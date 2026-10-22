@@ -8,7 +8,7 @@
 本模块是纯逻辑，不起 GUI、不加载模型，钉住：
 1. ``file_stamp`` 随文件内容变化；
 2. ``split`` 只挑 ``src``+``det`` 全匹配的页；
-3. ``area`` 变化 ⇒ ``det`` 变化 ⇒ 全部重新检测；
+3. ``det`` 不匹配（换了版本/口径）⇒ 全部重新检测；
 4. ``det`` 不匹配（换了版本/口径）⇒ 不复用；
 5. 无框页同样可复用（否则"检测过但没框"的页每次都重跑）；
 6. 负载形状符合槽位约定（1 槽=整幅、2 槽=左右）。
@@ -45,7 +45,7 @@ def run(ctx) -> None:
         ok("文件改过 → 文件戳变化", stamp2 != stamp1, f"{stamp1} → {stamp2}")
         ok("文件不存在 → None", dr.file_stamp(tmp / "nope.png") is None)
 
-        det = dr.det_fingerprint(1)
+        det = dr.det_fingerprint()
         doc = {
             "0001": {"boxes": [[1, 2, 3, 4], [5, 6, 7, 8]], "origin": "auto",
                      dr.FIELD_SRC: stamp2, dr.FIELD_DET: det},
@@ -74,10 +74,10 @@ def run(ctx) -> None:
            str(dr.payload_of({"boxes": [[0, 0, 9, 9]]})))
 
         # ---- 4. det 不匹配 → 不复用 ----
-        other = dr.det_fingerprint(4)
-        ok("area 不同 ⇒ det 不同", other != det, f"{det} vs {other}")
+        other = "deadbeefcafe"
+        ok("det 指纹不同（版本/口径变了）", other != det, f"{det} vs {other}")
         reuse2, todo2 = dr.split([a, b], doc, other)
-        ok("area 变了 ⇒ 全部重新检测", reuse2 == {} and len(todo2) == 2,
+        ok("det 变了 ⇒ 全部重新检测", reuse2 == {} and len(todo2) == 2,
            f"reuse={reuse2} todo={todo2}")
 
         # ---- 5. src 不匹配 → 不复用（只挑该页）----

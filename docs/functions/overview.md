@@ -32,12 +32,12 @@ guji detect -i ./images --save     # 落地标注图（命令行必须带 --save
 | 模块             | 类名                  | 命令         | 别名  | 职责                                                                                        |
 | ---------------- | --------------------- | ------------ | ----- | ------------------------------------------------------------------------------------------- |
 | `base.py`        | `FunctionBase`        | —            | —     | 基类：输入/输出路径解析、并发执行引擎、日志与重试                                           |
-| `text_region.py` | `TextRegionProcessor` | —            | —     | 中间基类：YOLO 检测 + area/border 规则 + 输出构建（crop/cropremove 共享）                   |
+| `text_region.py` | `TextRegionProcessor` | —            | —     | 中间基类：YOLO 检测 + 逐框裁剪 + 输出构建（crop/cropremove 共享）                             |
 | `extract.py`     | `ExtractFunction`     | `extract`    | `-e`  | 从 PDF 批量提取页面为图片                                                                   |
 | `detect.py`      | `DetectFunction`      | `detect`     | —     | 检测左右文本框坐标（默认不落盘，`--save` 输出标注图；crop/cropremove/GUI 的检测均复用此处） |
-| `crop.py`        | `CropFunction`        | `crop`       | —     | 基于 YOLO 检测裁剪文本框，支持 area/border，输出原图像素                                    |
+| `crop.py`        | `CropFunction`        | `crop`       | —     | 基于 YOLO 检测裁剪文本框，逐框输出原图像素                                                  |
 | `rembg.py`       | `RembgFunction`       | `rembg`      | `-r`  | 整图 Otsu 去底色/二值化/印章保留                                                            |
-| `crop_remove.py` | `CropRemoveFunction`  | `cropremove` | `-cr` | 复合流程：YOLO 裁剪 + 区域 Otsu 去底色，支持 area/border                                    |
+| `crop_remove.py` | `CropRemoveFunction`  | `cropremove` | `-cr` | 复合流程：YOLO 逐框裁剪 + 区域 Otsu 去底色                                                  |
 | `print.py`       | `PrintFunction`       | `print`      | —     | 将图片目录按规则生成为 PDF                                                                  |
 
 ## 命令关系
@@ -48,9 +48,9 @@ extract   ── PDF → 图片（前置步骤）
    ▼
 detect    ── 检测左右文本框坐标（唯一实现；默认不落盘，--save 输出标注图）
    │
-   ├──────────► crop      ── detect + 裁剪文本框原图像素（支持 area/border，不去底色）
+   ├──────────► crop      ── detect + 逐框裁剪文本框原图像素（border 控制留白，不去底色）
    │
-   └──────────► cropremove ── detect + 裁剪 + 去底色（一步完成，支持 area/border）
+   └──────────► cropremove ── detect + 逐框裁剪 + 去底色（一步完成）
 
 rembg     ── 整图去底色（无检测文本框）
    │
@@ -61,9 +61,9 @@ print     ── 图片目录 → PDF（支持 A3/A4/A5/B5、标题和页码）
 - `detect` 是检测的**唯一实现**：`crop` / `cropremove` 内部通过
   `functions.detect.detect_page_content` 取框，GUI 的 detect 阶段复用同一函数。
   把「检测」与「裁剪」拆开后，`crop = detect + 裁剪` 这一关系在代码里是字面成立的；
-- `crop` 与 `cropremove` 共享相同的 area/border 规则（继承 `TextRegionProcessor`），区别仅是 crop 不做 Otsu 去底色；
+- `crop` 与 `cropremove` 共享相同的逐框裁剪规则（继承 `TextRegionProcessor`），区别仅是 crop 不做 Otsu 去底色；
 - `rembg` 对整图去底，不依赖检测文本框；
-- `cropremove` 结合 crop 与 rembg，通过 `--area` 控制 Otsu 作用区域与输出方式，`--border` 控制裁剪与外扩边距。
+- `cropremove` 结合 crop 与 rembg：**检测出几个框就裁几张图**，`--border` 控制裁剪与外扩边距。
 - `print` 从 YAML 配置读取参数生成 PDF，支持标题节点和页码左右交替标注；页序优先取 `files:` 清单（桌面端列表顺序），清单为空时才按文件名排序。
 
 ## FunctionBase 执行引擎
@@ -79,22 +79,22 @@ print     ── 图片目录 → PDF（支持 A3/A4/A5/B5、标题和页码）
 
 ## TextRegionProcessor 文本区域处理基类
 
-`crop` 和 `cropremove` 共同继承 `TextRegionProcessor`（继承自 `FunctionBase`），封装了 YOLO 检测 → area/border 规则 → 输出构建的完整流程。两者唯一区别是 ROI 处理：
+`crop` 和 `cropremove` 共同继承 `TextRegionProcessor`（继承自 `FunctionBase`），封装了 YOLO 检测 → 逐框裁剪 → 输出构建的完整流程。两者唯一区别是 ROI 处理：
 
 | 方法                 | crop 实现                            | cropremove 实现                               |
 | -------------------- | ------------------------------------ | --------------------------------------------- |
 | `_on_boxes_detected` | 返回 None（无需预处理）              | 计算 img_rgb/gray/印章掩码/共享阈值，返回 ctx |
 | `_process_roi`       | 裁剪原图像素 `img_bgr[y1:y2, x1:x2]` | 对 ROI 做 Otsu 去底色                         |
-| `_handle_no_boxes`   | 输出原图（无视 area_mode）           | area=1 输出原图；area=2/3 整图 Otsu           |
+| `_handle_no_boxes`   | 输出原图                             | 整图 Otsu                                     |
 | `_save_output`       | 保存为 RGB PNG                       | 按 type 保存（二值/1bit/灰度）                |
 
 **线程安全（ctx 模式）**：每张图的 img_rgb/gray/threshold/red_mask 通过 `_on_boxes_detected` 返回的 ctx 字典传递，绝不写入 self 实例变量。`FunctionBase.execute()` 使用 `ThreadPoolExecutor` 并发处理多张图，若状态存于 self 会被并发覆盖。
 
-area/border 规则由基类统一处理，详见各命令文档：
+逐框裁剪规则由基类统一处理，详见各命令文档：
 
-- area=1：逐框 `-l`/`-r` 输出；area=2：逐框单图；area=3：合并框单图
+- 每个检测框各自一张图（半幅页 `-l`/`-r`，整幅页用页名）
 - border=None/0/值 控制裁剪边界与外扩边距
-- 特殊：area=2/3 + border有值 + 仅单框 → 对称输出（实际框+空白镜像+10mm间隔，构成完整双栏版面）
+- 无检测框时：crop 输出原图，cropremove 整图去底色
 
 ## 输出路径规则
 
@@ -115,5 +115,5 @@ rembg=`rembg`、cropremove=`rembg`、print=`pdf`。
 - [detect.md](detect.md) — 检测文本框：YOLO 推理、左右分割、坐标上报
 - [crop.md](crop.md) — 文本框裁剪：YOLO 检测、左右分割算法
 - [rembg.md](rembg.md) — 去底色：Otsu 阈值、HSV 印章提取、形态学去噪
-- [cropremove.md](cropremove.md) — 复合流程：area 区域模式、border 边框控制
+- [cropremove.md](cropremove.md) — 复合流程：逐框裁剪 + 去底色
 - [print.md](print.md) — 图片生成 PDF：纸张、排序、标题和页码

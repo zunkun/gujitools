@@ -18,21 +18,14 @@ if TYPE_CHECKING:
 from PySide6.QtCore import QObject, QPointF, Qt, Signal, Slot
 from PySide6.QtGui import QColor, QFont, QImage, QImageReader, QFontMetrics, QPainter
 
-from utils.box_geometry import (
-    build_output_layout,
-    build_symmetric_layout,
-    is_full_content,
-    parse_border_mm,
-    whole_page_box,
-)
+from utils.box_geometry import build_output_layout, parse_border_mm
 from desktop.utils.files import THUMBNAIL_EDGE, task_extract_pages_dir
 from utils.file_utils import write_bytes_atomic
-from core.command_spec import WHOLE_PAGE_AREA
 
 
 def region_canvas_specs(
-    image_size: tuple[int, int], boxes: list, area: int, border_mm,
-    dpi: int = 300, full: bool = False,
+    image_size: tuple[int, int], boxes: list, border_mm,
+    dpi: int = 300,
 ) -> list:
     """compose_region_output 的**纯几何**部分：返回 ``[(画布尺寸, sources)]``。
 
@@ -40,63 +33,31 @@ def region_canvas_specs(
     算出每张输出画布的大小与贴图来源。第三步提交据此**预先算好输出
     文件名**（张数 × 名称），再并行处理各页；规则仍然只有这一份。
 
-    ``full=True`` 表示这一页是整幅内容(fullcontent)。整幅框本质是"大一点的
-    单独内容框"，**框原样参与布局**（用户 2026-09-29 改定，推翻旧的"整幅＝整页"）：
-
-    - area=4：保留框外内容 → 框归一成整页（`utils.box_geometry.whole_page_box`）；
-    - area=1/2/3：统一按 **area=3 的合并语义**走单框布局（不拆 ``-l``/``-r``、
-      不做对称镜像），几何由 border 决定：给了 border（面板默认 ``"0"``）→
-      紧裁「框 + border」；border 留空（None）→ 整页画布、框写回原位置（框外白）。
-      三种 area 因此效果一致。
-
-    调用方通常直接传 ``is_full_content(原始槽位列表)`` 的结果。
+    **每个检测框各自一张输出画布**（框 + border）；无框时整页原图一张。
     """
     W, H = image_size
     present = [list(b) for b in boxes if b]
     if not present:  # 无检测框：整页原图
         return [((W, H), [])]
-    if full:
-        if area == WHOLE_PAGE_AREA:
-            present = [whole_page_box((W, H))]
-        else:
-            area = 3
     padding = parse_border_mm(border_mm, dpi)
-    if len(present) == 1 and padding is not None and area in (2, 3) and not full:
-        layout = build_symmetric_layout(
-            box=present[0],
-            border_padding=padding,
-            image_size=(W, H),
-            is_left=True,  # 内容置于左半，右半为空白镜像
-            dpi=dpi,
-        )
-    else:
-        layout = build_output_layout(
-            boxes=present,
-            area=area,
-            border_padding=padding,
-            image_size=(W, H),
-            dpi=dpi,
-        )
+    layout = build_output_layout(
+        boxes=present,
+        border_padding=padding,
+        image_size=(W, H),
+    )
     return [(canvas_spec.size, canvas_spec.sources) for canvas_spec in layout.canvases]
 
 
-def compose_region_output(image: QImage, boxes: list, area: int, border_mm,
-                          dpi: int = 300, full: bool = False) -> list:
-    """按 crop/cropremove 的 area/border 规则，合成"效果预览图"列表。
+def compose_region_output(image: QImage, boxes: list, border_mm,
+                          dpi: int = 300) -> list:
+    """按 border 规则，把**每个检测框**裁成一张"效果预览图"。
 
     **几何规则来自 utils.box_geometry**（与 functions/text_region.py 的 CLI
     输出共用同一份实现），本函数只负责用 QImage 把布局画出来——这样规则
     不会因数像素后端不同而被复制成两份。几何部分见 `region_canvas_specs`。
-
-    与原实现的一处行为修正：area=3 + 双框 + border=None 时，并集区域现在
-    **写回原位置**（此前被搬到画布左上角）。规格见
-    docs/functions/cropremove.md:57「area=3 → 单图，ROI 写回原位置」。
-
-    ``full`` 语义见 `region_canvas_specs`（整幅框原样下传：area=4 保留整页、
-    area 1/2/3 统一按合并语义）。
     """
     W, H = image.width(), image.height()
-    specs = region_canvas_specs((W, H), boxes, area, border_mm, dpi, full=full)
+    specs = region_canvas_specs((W, H), boxes, border_mm, dpi)
     result = []
     for size, sources in specs:
         canvas = QImage(max(size[0], 1), max(size[1], 1), QImage.Format.Format_RGB32)
@@ -480,7 +441,7 @@ class PreviewWorker(QObject):
 
         PDF 渲染第 page 页（最长边 longest_edge，0 表示不缩放）；
         thumbnails=True 时渲染全部页缩略图到 cache_dir（命中则复用缓存）。
-        effect 为去底色合成参数 {boxes, area, border}，仅对单图生效。
+        effect 为去底色合成参数 {boxes, border}，仅对单图生效。
         print_spec 为第四步「打印效果」参数
         {"args": print 参数, "index": 0-based 页序, "total": 总页数, "name": 文件名}，
         非空时把图片按 utils.page_layout 的几何排进一张纸（仅内存，不落盘）；
@@ -510,7 +471,7 @@ class PreviewWorker(QObject):
         self.thumbnail_edge = THUMBNAIL_EDGE
         self.thumbnails = thumbnails
         self.cache_dir = Path(cache_dir) if cache_dir else None
-        # 去底色效果合成参数：{"boxes": [[x1,y1,x2,y2],...], "area": int, "border": str|None}
+        # 去底色效果合成参数：{"boxes": [[x1,y1,x2,y2],...], "border": str|None}
         self.effect = effect
         self.print_spec = print_spec
         self.render_missing = render_missing
@@ -708,9 +669,8 @@ class PreviewWorker(QObject):
             outputs = compose_region_output(
                 image,
                 self.effect.get("boxes", []),
-                int(self.effect.get("area", 1)),
                 self.effect.get("border"),
-                full=bool(self.effect.get("full")),
+                dpi=int(self.effect.get("dpi", 300)),
             )
             image = compose_outputs_horizontal(outputs)
         if self.print_spec:

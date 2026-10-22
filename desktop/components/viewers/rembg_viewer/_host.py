@@ -45,7 +45,7 @@ class RembgViewerHost(QWidget, ThumbsMixin, ZoomPopupMixin):
     _mode: Any
     _page_width_provider: Any
     _paths: Any
-    _region_params_provider: Any
+    _border_provider: Any
     _rembg_dir: Any
     _single_column_book: Any
     _side_for: Any
@@ -155,7 +155,7 @@ class RembgViewerHost(QWidget, ThumbsMixin, ZoomPopupMixin):
         paths: list[Path | str],
         rembg_dir: Path | None,
         boxes_provider=None,
-        region_params_provider=None,
+        border_provider=None,
         thumb_provider=None,
     ) -> None:
         ...

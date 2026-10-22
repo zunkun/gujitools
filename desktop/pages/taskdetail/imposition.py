@@ -2,29 +2,22 @@
 """任务详情页的「图片拼版」共享基元与 Mixin 装配。
 
 流程条上的「图片拼版」是**虚线可选节点**（``desktop.components.step_bar``）。
-它牵涉**三个判据，各管一件事、互不替代**（2026-10-05 逐层查证业务流程后定）：
+它牵涉**两个判据，各管一件事、互不替代**（2026-10-05 逐层查证业务流程后定，
+2026-10-22 移除 area 后简化为两条）：
 
 1. **在不在流程里** ← **本任务的流程图**。图上画了「图片拼版」就有这一格
    （:meth:`ImpositionBaseMixin._imposition_node_visible`）。
-2. **这一步有没有意义** ← **「检测文本框」的「区域模式」``area``**
-   （2026-10-22 起 area 归第二步；它决定提交时怎么裁图）。这是**业务前提**
-   而不是显示开关：流程里**有检测步骤**时（判据
-   ``desktop.steps.ports.flow_crops_pages``），``area=1``「左右分开」让每个
-   文本框产出**成对的两张**半页图（``-l`` / ``-r``），两张并排才拼得出古籍的
-   正刊对开版面；``area=2/3`` 输出并集整图、``area=4`` 输出整页，**本来就是
-   一张图**。而流程里**没有检测步骤**时，图是整页的，拼版吃**整图**照样拼：
-   整幅单独一页、手动任意两张一页——「拼版作为第一个节点，也不需要
-   detect 数据」（用户 2026-10-07）。见 :meth:`_imposition_area_ok`。
-3. **要不要真跑** ← **拼版面板底部的开关**（:meth:`imposition_active`
-   只看勾没勾，那是"用户意图"）。开关在 ①②不满足时**置灰并写明原因**。
+2. **要不要真跑** ← **拼版面板底部的开关**（:meth:`imposition_active`
+   只看勾没勾，那是"用户意图"）。开关在 ① 不满足时**置灰并写明原因**。
 
-⚠️ **别把 ② 当成"显示开关"扔掉**（本轮曾误判过一次）：它决定"拼版这一步
-在当前参数下有没有意义"。``area`` 的其余取值与它无关，只管第二步提交怎么裁。
+⚠️ 2026-10-22 起 **area 概念彻底移除**：检测文本框后永远逐框裁图，
+半幅页天然产出成对的 ``-l`` / ``-r``，拼版不再需要"区域模式 = 左右分开"
+这个业务前提；没有检测步骤时拼整图照样能拼。
 
 按操作逻辑拆成三个文件（后续可由不同 agent 分头维护，互不影响）：
 
 - **本文件** ``ImpositionBaseMixin``：两个模块都要用的**共享基元**——
-  节点可见性（查流程图）、区域模式读取（拼版的适用前提）、
+  节点可见性（查流程图）、
   拼版文档读写（``drafts/imposition.json``）、
   源图清单与「拼版生效」判定、第四步取图切换（``print_source_dir``）、
   视图灌装、详情进出与切任务复位；
@@ -42,7 +35,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
-from core.command_spec import DETECT_DEFAULT_AREA
 from desktop.pages.taskdetail.imposition_layout import ImpositionLayoutMixin
 from desktop.pages.taskdetail.imposition_pages import ImpositionPagesMixin
 from desktop.store import IMPOSITION_LABEL, IMPOSITION_STAGE
@@ -54,30 +46,6 @@ if TYPE_CHECKING:
     from desktop.components.detect_stats import DetectStatsWidget
     from desktop.components.step_bar import StepBar
     from desktop.store.store import TaskStore
-
-#: 拼版的**业务前提**：只有「左右分开」才产出成对的半页图（``-l``/``-r``），
-#:: 两张并排才拼得出正刊对开版面。
-#:
-#: ⚠️ 这**不是**"要不要显示拼版节点"的开关（那由流程图决定），而是"这一步在
-#: 当前参数下**有没有意义**"。``area=2/3`` 输出并集整图、``area=4`` 输出整页，
-#: 本来就是一张图，拼版没意义——旧代码拿它当显示条件，2026-10-05 一度被误删。
-IMPOSITION_AREA = 1
-
-#: 区域模式各值的中文名（"为什么不能拼版"的提示用，勿另写一份）
-AREA_LABELS: dict[int, str] = {
-    1: "左右分开",
-    2: "合并单图",
-    3: "整页合并",
-    4: "整页/不检测",
-}
-
-
-def _as_area(value) -> int:
-    """任意来源的 area 值 → 合法整数（非法/缺失返回 0 = "还不知道"）。"""
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return 0
 
 
 def _rect_of(entry: dict) -> list[float] | None:
@@ -146,118 +114,45 @@ class ImpositionBaseMixin:
     def _imposition_node_visible(self) -> bool:
         """拼版节点是否**在本任务的流程里**（判据唯一处：**流程图**）。
 
-        ⚠️ 2026-10-05 口径变更（用户要求）：原先看第三步的 ``area``
-        （``area == 1`` 就显示）。那是流程图还不存在时的权宜之计，既
-        **语义错配**（``area=1`` 是"每个框各自外扩产出多张图"，属裁剪方式），
-        又与用户画的图**打架**（图上把「图片拼版」删了、area 还是 1，那一格
-        照样冒出来）。现在**流程图是唯一真源**：图上画了就有这一步。
+        ⚠️ 2026-10-05 口径变更（用户要求）：原本按「区域模式」显示，那是
+        流程图还不存在时的权宜之计，与用户画的图**打架**（图上把「图片拼版」
+        删了，那一格照样冒出来）。现在**流程图是唯一真源**：图上画了就有这一步。
 
         实现上直接复用 :meth:`bar_index_of_step`（它查 :meth:`flow_slots`），
         因而与步骤条、与 ``store.task_slots()`` **必然同源**——不可能出现
-        "流程条上没有、详情却能切进去"这类不同步（那正是旧的
-        区域模式判据与流程槽位各算一套时的隐患）。
+        "流程条上没有、详情却能切进去"这类不同步。
 
         宿主判"记录的步骤 key 还能不能匹配"（``page.py::_stage_index_of``）
         也走这里，两处同源。
         """
         return self.bar_index_of_step(IMPOSITION_STAGE) is not None
 
-    # ------------------------------------------------------------- 区域模式
-    def _detect_area_value(self) -> int:
-        """当前区域模式 ``area`` —— **固定为后端默认值**（2026-10-22 第二轮）。
-
-        用户口径：「检测文本框流程，去除 area 参数，默认 area = 1，提交的时候
-        area 参数只在提交的时候生效，desktop 页面去除这个参数，但是在后端代码
-        保留 area 相关逻辑」。
-
-        所以这里不再读面板、也不再读暂存/历史（那一层已经没有界面入口，旧存档
-        里的 area=4 也不该再把拼版判成"用不上"）。判定链
-        （:meth:`_imposition_area_ok` / :meth:`_imposition_switch_state`）原样
-        保留在下面——后端仍然按 ``area == 1`` 判断"每页是否产出成对的 -l/-r"，
-        只是眼下这个值恒为 1；将来若把 area 放回界面，只需改本方法。
-        """
-        return DETECT_DEFAULT_AREA
-
-    def _flow_has_detect_data(self) -> bool:
-        """这批图**会不会被第二步按 area 裁过**（判据唯一处：
-        :func:`desktop.steps.ports.flow_crops_pages`）。
-
-        没有检测步骤 ⇒ 图是整页的 ⇒ 拼版吃整图照样拼，area 前提不适用。
-        没任务（静态展示）按**默认流程**算——默认流程里有「检测文本框」。
-        """
-        task_id = getattr(self, "task_id", None)
-        if not task_id:
-            return True
-        from desktop.steps.ports import flow_crops_pages
-
-        return flow_crops_pages(self.store.task_diagram(task_id))
-
-    def _imposition_area_ok(self) -> bool:
-        """当前区域模式**支持拼版**（``area == 1``「左右分开」）。
-
-        ⚠️ 分两种情形（用户 2026-10-07）：
-
-        - 流程里**有检测数据**（「检测文本框」在去底色上游）→ 仍要求
-          ``area == 1``：只有左右分开才产出成对的 ``-l``/``-r`` 半页图，
-          两张并排才拼得出正刊对开版面。**0（还不知道）不算支持**：全新
-          任务没配过区域模式时，先让用户去第三步确认。
-        - **没有检测数据**（去底色不在流程里，或它自己就是入口拿不到框，
-          此时它的 area 也被锁成 4）→ 拼版吃**整图**照样拼：整幅单独一页、
-          手动任意两张一页——「拼版作为第一个节点，也不需要 detect 数据」，
-          area 前提不再适用。
-        """
-        if not self._flow_has_detect_data():
-            return True
-        return self._detect_area_value() == IMPOSITION_AREA
-
+    # ------------------------------------------------------------- 拼版前提
     def _imposition_switch_state(self) -> tuple[bool, str]:
-        """「在流程中启用图片拼版」开关的**可用性与原因**（三个判据合成）。
+        """「在流程中启用图片拼版」开关的**可用性与原因**。
 
-        返回 ``(可用, 原因)``，可用时原因为空串。三条判据见模块头：
-
-        1. **图里没有**「图片拼版」⇒ 勾了也不跑（它压根不在执行链里）；
-        2. **区域模式还没确认** ⇒ 先去第三步确认（这是拼版的业务前提）；
-        3. **区域模式不是「左右分开」** ⇒ 每页已经是一张整图，拼版没意义。
-
-        ⚠️ 2/3 只在流程里**有检测数据**时适用：没有检测数据（去底色不在
-        流程里 / 它自己就是入口）时拼版吃整图照样拼，直接放行。
+        2026-10-22 起只有一条判据：**图里有没有「图片拼版」**。检测文本框
+        永远逐框裁图，半幅页天然成对（``-l``/``-r``），不再依赖 area。
 
         ⚠️ 处置是**置灰 + 说明**，不是隐藏：用户要看得见"流程里有这一步，
-        但当前参数下用不上"，才知道该去改参数还是改流程图。旧实现是
-        "``area != 1`` 就不显示"，用户报过"改了 area 节点凭空消失"。
+        但当前用不上"，才知道去改流程图。
         """
         if not self._imposition_node_visible():
             return False, (
                 "当前流程里没有「图片拼版」这一步，勾了也不会生效"
                 "（可在页头「查看 / 编辑流程」里把它加回来）"
             )
-        if not self._flow_has_detect_data():
-            # 没有检测数据（去底色不在流程里 / 它自己就是入口）：拼版吃
-            # 整图照样拼，area 前提不适用（见 _imposition_area_ok）
-            return True, ""
-        area = self._detect_area_value()
-        if area == 0:
-            return False, (
-                "先到第二步「检测文本框」确认区域模式"
-                "（「左右分开」才需要拼版），再回来启用"
-            )
-        if area != IMPOSITION_AREA:
-            return False, (
-                f"当前区域模式是「{AREA_LABELS.get(area, area)}」，"
-                "每页已经是一张整图，不需要拼版"
-            )
         return True, ""
 
     def imposition_effective(self) -> bool:
-        """拼版这一步**当前能不能真跑**（三个判据全过）。
+        """拼版这一步**当前能不能真跑**（节点在流程里 + 用户勾了）。
 
         与 :meth:`imposition_active`（"用户意图：勾没勾"）**刻意分开**：
-        勾了但流程图里没这一步、或区域模式不支持，都**不会**真跑。取图来源
-        认这个，步骤条"生效态"也认这个。
+        勾了但流程图里没这一步，**不会**真跑。取图来源认这个，步骤条
+        "生效态"也认这个。
         """
         return (
             self._imposition_node_visible()
-            and self._imposition_area_ok()
             and self.imposition_active()
         )
 
@@ -334,7 +229,7 @@ class ImpositionBaseMixin:
         )
         # ⚠️ **不取消勾选**（只在控件上取消会出现"控件未勾、盘上已勾"的
         # 不一致：blockSignals 挡住了落盘信号，下次刷新又会显示成勾）。
-        # 保持"勾着但灰着"——用户改回支持拼版的区域模式就自动恢复生效，
+        # 保持"勾着但灰着"——把「图片拼版」加回流程图就自动恢复生效，
         # 这正是"条件决定是否生效"；tooltip 与步骤条的灰虚线+绕行线已经
         # 说明它现在不会跑。
         #
@@ -473,8 +368,8 @@ class ImpositionBaseMixin:
         "没有可拼版的图片，请先提交本次任务"——而那一步压根不在流程里。
         现在与 :meth:`print_source_dir` 同构，走 ``store.stage_input``。
 
-        ⚠️ ``imposition_effective`` 传的是**图里有没有这一格 + area 前提**，
-        不是"用户勾没勾"：这一格不存在时下方控件整体是置灰的，不该因为
+        ⚠️ ``imposition_effective`` 传的是**图里有没有这一格 + 用户勾没勾**，
+        不是单独的"用户勾没勾"：这一格不存在时下方控件整体是置灰的，不该因为
         "还没勾" 就换一个别的取图来源。
         """
         if not self.task_id:
@@ -554,9 +449,9 @@ class ImpositionBaseMixin:
                 task_id,
                 "print",
                 "pages",
-                # ⚠️ 传"能不能真跑"而不是"勾没勾"：区域模式不支持（或图里没这一格）
-                #    时不该取拼版产物——历史脏数据（先勾了、后来改了区域模式）会
-                #    让第四步去读一个根本不该用的目录。
+                # ⚠️ 传"能不能真跑"而不是"勾没勾"：图里没这一格时不该取拼版
+                #    产物——历史脏数据（先勾了、后来把节点删了）会让第四步去读
+                #    一个根本不该用的目录。
                 imposition_active=self.imposition_effective(),
             )
         )

@@ -587,7 +587,7 @@ class ImpositionLayoutMixin:
         # 死：流程确实已经改走拼版了，只是还没有可拼的图。
         _usable, _reason = self._imposition_switch_state()
         if self.imposition_active() and not self.imposition_effective():
-            # ⚠️ 中间档：用户**勾了**但这一步现在用不上（区域模式不支持等）。
+            # ⚠️ 中间档：用户**勾了**但这一步现在用不上（流程图里没有这一格等）。
             #    只说"已启用"会与实际取图矛盾，只说"未启用"又会让用户怀疑
             #    "我明明勾了"——所以把原因原样说出来。
             text += f"　·　已勾选但当前用不上：{_reason}"

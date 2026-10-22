@@ -5,11 +5,11 @@
 ------------------------
 - **「生成预览」**：全量正式产物，写 ``stages/rembgpreview``，会被「提交本次
   任务」读取。参数一变它就过期（见 ``services/submit_state`` 的 PREVIEW_STALE）。
-- **「提交本次任务」**：读 ``stages/rembgpreview``，按 area/border 合成为最终
+- **「提交本次任务」**：读 ``stages/rembgpreview``，按 border 合成为最终
   交付图写 ``stages/rembg``；它是第四步唯一认可的成品来源。
 - **本模块（实时预览）**：只算用户当前看着的**那一页**，并**增量落盘**——
   ①该页去底色结果写 ``stages/rembgpreview[~节点]/{stem}.png``；
-  ②按 area/border 合成的「应用图」写 ``stages/rembg[~节点]/…``。
+  ②按 border 合成的「应用图」写 ``stages/rembg[~节点]/…``。
 
 ⚠️ **新不变量（旧的"绝不碰 rembgpreview/rembg"已被用户 2026-10-18 明确推翻）**：
 两个正式目录允许**不完整**（用户预览了哪一页，那一页才有产物）。由此两条铁律：
@@ -114,7 +114,7 @@ def apply_effects(
     """把某页的去底色结果按**提交规则**合成「应用图」，写 ``out_dir``。
 
     ``jobs`` 由 ``desktop.services.print_plan.plan_submit_job`` 给出（含 boxes /
-    area / border / full 与输出文件名）。与「提交本次任务」逐像素同源：几何走
+    border / 文件名）。与「提交本次任务」逐像素同源：几何走
     ``compose_region_output``、编码走 ``rembg_stage.save_transparent_png``。
 
     返回 ``(写出的文件名, 错误信息)``；**单条失败不拖垮整批**（与提交阶段同款
@@ -142,8 +142,7 @@ def apply_effects(
         label = str(job.get("label") or Path(str(job.get("file"))).stem)
         if job.get("compose"):
             outputs = compose_region_output(
-                image, list(job.get("boxes") or []), int(job.get("area", 1)),
-                job.get("border"), full=bool(job.get("full")),
+                image, list(job.get("boxes") or []), job.get("border"),
             )
         else:
             outputs = [image]

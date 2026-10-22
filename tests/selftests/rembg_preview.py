@@ -15,8 +15,8 @@ provider 一律赋成入参（默认 None），先在控件上设、再调 set_i
 1. 无去底色结果 + 「去底色结果」形态 → 回落原图，说明文案点明"尚未生成"；
 2. 有去底色结果 → 取结果图；
 3. 切到「原图」形态 → 即使有结果也显示原图；
-4. area=1 单框 → 区域参数是「该框 + border」；
-5. area=2 双框 → 区域参数带**全部**框（不是并集单框）；
+4. 单框条目 → 区域参数是「该框 + border」；
+5. 双框页 → 两条条目（每框一条），各自带自己的框；
 6. 区域参数抛异常 → 提示「区域计算失败」，且**不抛**出去；
 7. 图片不存在 → 提示「暂无图片」，且**不抛**出去；
 8. 放大弹窗与主预览**同源**：源不存在时 `_zoom_target` 也返回 None；
@@ -59,16 +59,16 @@ def run(ctx) -> None:
     result_image.save(str(result))
     no_result_dir = tmp / "no_such_dir"    # 目录不存在 = 还没有结果
 
-    def providers(area=1, border=None, boxes=(BOX_L, BOX_R)):
+    def providers(border=None, boxes=(BOX_L, BOX_R)):
         """provider 与控件一起给（set_images 会把它们原样装到控件上）。"""
-        return (lambda _p: list(boxes), lambda: (area, border))
+        return (lambda _p: list(boxes), lambda: border)
 
     def load(rembg_dir, pair=(None, None), paths=(src,)):
         """装清单 + 驱动一次显示；异常必须冒出来，才能被本模块抓住。"""
         widget = RembgPreviewWidget()
         widget.set_images(
             list(paths), rembg_dir,
-            boxes_provider=pair[0], region_params_provider=pair[1],
+            boxes_provider=pair[0], border_provider=pair[1],
         )
         widget._load_display()  # 显式再来一次：这是出过 NameError 的那个入口
         pump(app, times=4)
@@ -102,22 +102,23 @@ def run(ctx) -> None:
        widget.toggle_caption.text())
     widget.deleteLater()
 
-    # ---- 4/5. 区域参数：area=1 单框 vs area=2 双框 ----
-    widget = load(result_dir, providers(area=1, border="5"))
+    # ---- 4/5. 区域参数：单框条目各自带自己的框 ----
+    widget = load(result_dir, providers(border="5"))
     entry = widget._entries[0]
     source, effect, has_result, _error = widget._resolve_source(entry)
-    ok("area=1 单框条目：区域参数=该框 + border",
-       effect == {"boxes": [entry["box"]], "area": 1, "border": "5",
-                  "full": False},
+    ok("单框条目：区域参数=该框 + border",
+       effect == {"boxes": [entry["box"]], "border": "5"},
        f"{effect} / entry.box={entry['box']}")
-    ok("area=1 能取到结果图（结果优先）", has_result and source == result,
+    ok("能取到结果图（结果优先）", has_result and source == result,
        str(source))
     widget.deleteLater()
 
-    widget = load(result_dir, providers(area=2, border=None))
+    widget = load(result_dir, providers(border=None))
+    ok("双框页 → 两条条目（每框一条）", len(widget._entries) == 2,
+       str([e["label"] for e in widget._entries]))
     _source, effect, _has, _err = widget._resolve_source(widget._entries[0])
-    ok("area=2 双框：区域参数带全部框（不是并集单框）",
-       effect["area"] == 2 and len(effect["boxes"]) == 2, str(effect))
+    ok("每条条目的区域参数只带自己的框",
+       len(effect["boxes"]) == 1 and effect["border"] is None, str(effect))
     widget.deleteLater()
 
     # ---- 6. 区域参数抛异常：提示而非崩溃 ----

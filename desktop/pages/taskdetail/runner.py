@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING, Any, Callable, cast
 
 from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer
 
-from core.command_spec import DETECT_DEFAULT_AREA, WHOLE_PAGE_AREA
 from desktop.services import detect_reuse
 from desktop.services.print_plan import (
     missing_extract_pages_spec, ordered_page_record,
@@ -363,7 +362,7 @@ class StageRunnerMixin:
         #    第三步内的第二个动作，图上通常没有它的节点，但它跟着 `rembg`
         #    那一格一起活着——按节点判会把「提交」挡死。
         if stage:
-            # ⚠️ effective：区域模式不支持拼版时，拼版这一步本来就跳过
+            # ⚠️ effective：图里没有拼版节点时，拼版这一步本来就跳过
             scheduler = self.store.task_scheduler(
                 self.task_id, self.imposition_effective()
             )
@@ -446,7 +445,7 @@ class StageRunnerMixin:
                 # 「还没拼版」，而不是「第三步没提交」——照旧文案会把人引去
                 # 第三步反复重跑，解决不了问题（用户 2026-10-03）。
                 if self.imposition_active() and not self.imposition_effective():
-                    # 勾了但**当前用不上**（流程图里没这一步 / 区域模式不支持）：
+                    # 勾了但**当前用不上**（流程图里没这一步）：
                     # ⚠️ 别说成"第三步没提交"——那会把人引去第三步反复重跑，
                     #    解决不了问题（正是用户 2026-10-03 报过的那类误导）
                     _usable, reason = self._imposition_switch_state()
@@ -575,28 +574,19 @@ class StageRunnerMixin:
             # 拿着旧指纹去写 boxes.json。
             self._detect_ctx = None
             if stage == "detect":
-                # 区域模式（area）**界面上没有**（2026-10-22 第二轮）：
-                # 它只在「提交本次任务」时生效，桌面恒用后端默认值。
-                # worker 侧仍按 area 判断「整页模式要不要跳过检测」——
-                # 那条逻辑保留，只是眼下永远收到 1（照常检测）。
-                area = DETECT_DEFAULT_AREA
-                args["area"] = area
-                # ---- 复用上次结果：源文件没换、检测参数没变的页不再推理 ----
-                # 判据与分拣只此一份（见 desktop.services.detect_reuse）；读的是
-                # **本节点**那份 boxes.json（副本节点的框落在 boxes~<节点>.json）。
-                # ⚠️ 整页模式不复用：那条路整页即唯一文本框，走 worker 既有分支。
-                det = detect_reuse.det_fingerprint(area)
+                # 没有可调的检测参数（2026-10-22 起 area 已彻底移除）：
+                # 检测结果只取决于程序版本与源文件。
+                det = detect_reuse.det_fingerprint()
                 files = list_stage_images(pages_input)
                 doc = self.store.boxes_raw_at(
                     self.store.boxes_path(self.task_id, **self._node_scope(node))
                 )
-                if area != WHOLE_PAGE_AREA:
-                    reuse, todo = detect_reuse.split(files, doc, det)
-                    if reuse:
-                        args["reuse"] = reuse
-                        self._logs.append_now(
-                            f"复用上次结果 {len(reuse)} 页，需检测 {len(todo)} 页"
-                        )
+                reuse, todo = detect_reuse.split(files, doc, det)
+                if reuse:
+                    args["reuse"] = reuse
+                    self._logs.append_now(
+                        f"复用上次结果 {len(reuse)} 页，需检测 {len(todo)} 页"
+                    )
                 # 落盘时要写的两份指纹（见 _flush_annotations）：src 取每页源文件
                 # 戳，det 就是上面这个指纹。别的阶段不该带上一轮的上下文。
                 self._detect_ctx = {
@@ -1365,7 +1355,7 @@ class StageRunnerMixin:
                     override_toast = (
                         "info",
                         "检测完成",
-                        "请核对检测框；确认后点「提交本次任务」按区域模式裁好图，"
+                        "请核对检测框；确认后点「提交本次任务」把文本框内容裁出来，"
                         "下一步才能用",
                     )
             else:  # detect_submit
@@ -1375,7 +1365,7 @@ class StageRunnerMixin:
                     override_toast = (
                         "success",
                         "提交完成",
-                        "图片已按区域模式裁好，可前往下一步「图片去底色」",
+                        "图片已按文本框裁好，可前往下一步「图片去底色」",
                     )
         elif status == "success" and stage in ("rembg", "rembg_submit"):
             version = self._submit_version_state("rembg")

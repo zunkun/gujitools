@@ -759,15 +759,12 @@ def service_in_use() -> bool:
     return getattr(_local, "client", None) is not None
 
 
-def detect_boxes_via_service(image_path, area: int = 1) -> ServiceDetect | None:
+def detect_boxes_via_service(image_path) -> ServiceDetect | None:
     """把一张图交给常驻服务检测，返回 :class:`ServiceDetect`。
 
     **`None` 表示"这次没走成服务"**（服务关着、拉不起来、连不上、协议错、
     服务端报错都算），调用方应当回落到本进程内加载模型。注意它与"服务算完
     但没检到框"不同——后者返回 ``ServiceDetect(None, None, 0.0)``。
-
-    `area` 只为兼容调用方签名保留：整页模式（area=4）在上层就已分流、根本不会
-    走到这里，因此服务协议里不带它。
     """
     if not _service_enabled():
         return None

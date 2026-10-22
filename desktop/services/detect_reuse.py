@@ -4,14 +4,15 @@
 ## 为什么
 
 1000+ 页的书，第二次点「检测文本框」时绝大多数页的框和上次一模一样——只要
-源文件没换、检测参数（``area``）没变，重跑一遍纯属白花几十秒推理。所以把
+源文件没换、程序没升级，重跑一遍纯属白花几十秒推理。所以把
 "这份结果还对得上吗"写进 `boxes.json` 条目本身（``src`` 文件戳 + ``det`` 检测
 指纹），下次直接读回来复用。
 
 ## 判据（两个字段，都写在条目里）
 
 - ``src``：``[字节数, mtime_ns]``——**这一页的源文件**有没有被换过；
-- ``det``：检测侧的身份指纹 = ``config.VERSION | DET_VERSION | area``。
+- ``det``：检测侧的身份指纹 = ``config.VERSION | DET_VERSION``
+  （2026-10-22 起没有 area 参数，检测结果只取决于程序版本与源文件）。
 
 两者同时匹配才算可复用；任何一项变了就重跑。⚠️ **无框页也留痕**（写空 ``boxes``
 但带指纹）：不记的话"检测过、但没检出框"的页每次都重跑。
@@ -40,20 +41,21 @@ from config import VERSION
 
 #: 复用格式版本。判据口径（字段含义、事件负载形状）改动时 +1——让所有旧结果
 #: 立即失效、下次重跑重写，而不是拿两套口径的数据互相污染。
-DET_VERSION = "v1"
+#: v2（2026-10-22）：移除 area 参数，指纹不再含 area。
+DET_VERSION = "v2"
 
 #: 结果文件里除 boxes/origin/updated_at 之外，本模块关心的两个字段名。
 FIELD_SRC = "src"
 FIELD_DET = "det"
 
 
-def det_fingerprint(area: int) -> str:
-    """一次检测的**廉价**身份指纹：程序版本 + 复用格式版本 + ``area``。
+def det_fingerprint() -> str:
+    """一次检测的**廉价**身份指纹：程序版本 + 复用格式版本。
 
-    ``area`` 是检测参数里**唯一**会改变结果的那一个（整页模式压根不走检测），
-    所以指纹只需要它。见模块 docstring 里"不读权重"的取舍。
+    没有 area 等可调检测参数——检测结果只取决于程序版本与源文件本身
+    （源文件的判断另由 ``src`` 文件戳负责）。见模块 docstring 里"不读权重"的取舍。
     """
-    raw = f"{VERSION}|{DET_VERSION}|area={int(area)}"
+    raw = f"{VERSION}|{DET_VERSION}"
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
 
 

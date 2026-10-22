@@ -411,7 +411,7 @@ class _ImpositionNode(QFrame):
         self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
         self.setMinimumWidth(_NODE_MIN_W)
         self.setToolTip(
-            "可选节点：第三步「区域模式」为 1（左右分开）时出现，"
+            "可选节点：流程图上画了「图片拼版」时出现，"
             "位于「图片去底色」与「PDF排版」之间。点击查看/选择。"
         )
 
@@ -1053,7 +1053,7 @@ class StepBar(QWidget):
             item.set_title(text)
 
     def set_imposition_visible(self, visible: bool) -> None:
-        """显示/隐藏**全部**可选（虚线）节点（随第三步区域模式是否为 1）。
+        """显示/隐藏**全部**可选（虚线）节点（随流程图里有没有这一格）。
 
         ⚠️ 槽位要一起隐藏：只藏节点的话，那格等宽槽位还占着位置，流程条上会
         留出一段空白（第四步/PDF 看起来被推远）。

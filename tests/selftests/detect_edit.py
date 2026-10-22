@@ -205,9 +205,6 @@ class _Host(DetectMixin):
         """
         return getattr(self, "_panel", None)
 
-    def _current_area(self):
-        return 1
-
     # ---- 节点寻址（B 方案，真实页面在 page.py 提供）----
     # 替身恒"没有节点"，于是所有按节点隔离的读写都落回**主节点那份旧路径**
     # （boxes.json），与改造前逐字节一致——本模块测的是框类型规则，不是多节点。
@@ -486,10 +483,4 @@ def run(ctx) -> None:  # noqa: ARG001 - 本模块自带夹具，不用共享 ctx
        host.detect_viewer.box_kinds() == ["left"],
        str(host.detect_viewer.box_kinds()))
 
-    # ---- 整页模式（area=4）里也要按槽数认形态，不能把"手动半幅"当整幅 ----    host._save_manual_boxes(KEY, [LEFT])                       # 半幅单侧 → 2 槽
-    shown, origin = host._whole_page_entry(KEY)
-    ok("整页模式下沿用**手动框**且保留 2 槽形态",
-       origin == "manual" and len(shown) == 2, f"{origin} {shown}")
-    host._apply_boxes(KEY, shown, origin)
-    ok("整页模式下列不会把手动半幅误判成整幅",
-       host.detect_viewer.box_full_mode() is False, str(shown))
+    # ---- 整页模式已随 area 一起移除（2026-10-22）：不再有整页兜底框 ----

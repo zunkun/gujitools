@@ -23,8 +23,7 @@ EditMixin 就与 RenderMixin 同名、被 MRO 静默遮蔽）。这里对**每�
 4. **跨 Mixin 依赖在白名单内**：Mixin 调别的 Mixin 是允许的（正是 Mixin 的
    用法），但得是登记过的——新增没登记的隐式契约说明边界被捅穿；
 5. **对外 API 不变**：外部（生产代码 + 测试）从包名导入的名字照旧可导入；
-6. **运行时装配完整**：类真能看到全部成员（MRO 装配没漏），且模块级函数
-   （如 ``rembg_viewer._union_box``）仍在包命名空间里。
+6. **运行时装配完整**：类真能看到全部成员（MRO 装配没漏）。
 """
 
 import ast
@@ -197,9 +196,8 @@ _SPECS: list[dict] = [
             ("entries.py", "EntriesMixin"),
             ("thumbs.py", "ThumbsCacheMixin"),
         ],
-        "public_api": ["RembgPreviewWidget", "_union_box"],
-        #: 模块级函数必须仍在**包**命名空间里（``rembg_viewer._union_box``）。
-        "module_funcs": ["_union_box"],
+        "public_api": ["RembgPreviewWidget"],
+        "module_funcs": [],
         "home": {
             # core.py -> RembgPreviewWidget（22 个）
             "__init__": "RembgPreviewWidget",

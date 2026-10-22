@@ -1227,8 +1227,7 @@ class TaskDetailPage(
         self._refresh_preview(self.stack_index_of(index), force=bool(updated))
         self._restore_stage_params(index)
         self._refresh_history_options()
-        # 流程条上的「图片拼版」节点跟随当前区域模式（回填可能改了 area，
-        # 走 blockSignals 时不会触发面板信号，这里统一补一次）
+        # 流程条上的「图片拼版」节点跟随流程图（切步骤后统一补一次）
         self._refresh_imposition_node()
 
     def _slot_at_index(self, index: int):
@@ -1454,7 +1453,7 @@ class TaskDetailPage(
             if getattr(self, "_print_dirty", False):
                 return "● 版面已修改，点击「生成PDF」生效"
             if getattr(self, "_print_source_stale", False):
-                # ⚠️ 认 effective：区域模式不支持时来源确实已回到去底色，
+                # ⚠️ 认 effective：图里没这一格时来源确实已回到去底色，
                 #    这里必须跟着说"去底色"而不是说"拼版"（否则界面与执行打架）
                 where = (
                     IMPOSITION_LABEL if self.imposition_effective()
@@ -1673,7 +1672,7 @@ class TaskDetailPage(
             self._refresh_detect_stats()
         elif stage == "rembg":
             # ⚠️ 2026-10-22：去底色**不再按区域裁图**（area/border 已移除），
-            #    所以这里不再喂 boxes_provider / region_params_provider——
+            #    所以这里不再喂 boxes_provider / border_provider——
             #    查看器于是按"一张输入图 = 一个条目"显示整图，与产物一致。
             #    裁好的半页图（-l/-r）是上一步「提交本次任务」的产物，本来就是
             #    独立文件，不需要再合成。

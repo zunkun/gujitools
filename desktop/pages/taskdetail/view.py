@@ -897,10 +897,8 @@ class DetailViewMixin:
         """第二步面板**首次构造后**的接线（LazyPanelHost 的 created 回调）。"""
         # detect 面板「检测本页」：手动触发当前页的 YOLO 检测（不自动执行）
         detect_panel.detect_page_requested.connect(self._detect_current_page)
-        # ⚠️ 2026-10-22 第二轮：**本面板没有 area 下拉了**（用户：desktop 页面
-        #    去除 area 参数，默认 area=1，只在提交时生效），所以这里不再有
-        #    「改 area → 重算参考框/提交按钮」这条联动。裁图的 area 固定由
-        #    ``core.command_spec.DETECT_DEFAULT_AREA`` 提供。
+        # ⚠️ 2026-10-22：**area 参数已从整个项目移除**，所以这里没有
+        #    「改 area → 重算参考框/提交按钮」这条联动。
         # 人工干预：选中框类型（左框/右框/整幅）与删除选中框
         detect_panel.box_kind_changed.connect(self._set_selected_box_kind)
         detect_panel.delete_box_requested.connect(self._delete_selected_box)
@@ -1110,7 +1108,7 @@ class DetailViewMixin:
         self.submit_button.setFixedHeight(36)
         self.submit_button.setToolTip(
             "把本步骤的预览结果定稿成下一步能用的产物"
-            "（检测：按区域模式裁图；去底色：白底转透明）"
+            "（检测：把每个文本框裁出来；去底色：白底转透明）"
         )
         self.submit_button.clicked.connect(self.run_submit)
         self.submit_button.setVisible(False)

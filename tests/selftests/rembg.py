@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""rembg 阶段自测：生成预览/提交、分段开关、area=1 拆分契约、实时合成规格。
+"""rembg 阶段自测：生成预览/提交、分段开关、实时合成规格。
 
 产出跨模块状态：``ctx.injected_boxes``（注入的确定性检测框）与
 ``ctx.preview_dir``（预览目录），print 模块的合成断言依赖二者。
@@ -81,17 +81,11 @@ def run(ctx) -> None:
     ok("复位后 offset 回到 0", _p3.offset.value() == 0,
        str(_p3.offset.value()))
 
-    # --- 第二步不再暴露 area（2026-10-22 第二轮）---
-    # 用户：「检测文本框流程，去除 area 参数，默认 area = 1，提交的时候 area 参数
-    # 只在提交的时候生效，desktop 页面去除这个参数，但是在后端代码保留 area 相关
-    # 逻辑」。后端（整页模式 area=4）的覆盖在 `whole_page` 模块，这里只钉界面。
+    # --- 第二步面板没有 area（2026-10-22 起 area 已从整个项目移除）---
     _p2 = d.control_stack.widget(1)
     ok("第二步面板没有 area 控件", not hasattr(_p2, "area"))
-    from core.command_spec import DETECT_DEFAULT_AREA
-
     ok("第二步 get_args 为空（默认值不在表单里）",
        _p2.get_args() == {}, str(_p2.get_args()))
-    ok("提交用的默认区域模式为 1（左右分开）", DETECT_DEFAULT_AREA == 1)
 
     ok("未生成预览前提交按钮禁用", not d.submit_button.isEnabled())
     d.run_rembg_submit()  # 直接调用也必须被拦截，不启动子进程
@@ -294,7 +288,7 @@ def run(ctx) -> None:
        d._submit_version_state("rembg") == "new_version"
        and d.submit_button.font().bold()
        and "#c0392b" in d.submit_hint.styleSheet(),
-       f"{d._submit_version_state("rembg")} / {d.submit_button.text()}")
+       "{} / {}".format(d._submit_version_state("rembg"), d.submit_button.text()))
     os.utime(_pv_edit, (_pv_mtime, _pv_mtime))  # 还原 mtime，别影响后续模块
     # 提交记录了所基于的预览版本号（不加载 YOLO，纯框坐标合成）
     _sub = next(r for r in repo.list_stage_runs(tid, "rembg_submit")
@@ -315,7 +309,7 @@ def run(ctx) -> None:
     # 用户 2026-10-01 口径：「去底色那一步，必须提交才能传给下一步」。所以
     # 第四步**不再**拿去底图（stages/rembgpreview）按当前 area/border 现算。
     # 给一页注入确定性检测框（单框），模拟 YOLO 检出
-    _comp0 = d._submit_entries(1)
+    _comp0 = d._submit_entries()
     _anchor = next((c for c in _comp0 if c.get("box") is None), _comp0[0])
     _anchor_stem = Path(_anchor["file"]).stem
     _anchor_page = Path(_anchor["file"])

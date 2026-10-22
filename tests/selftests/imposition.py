@@ -1682,37 +1682,14 @@ def run(ctx) -> None:
         # 生效由流程图决定**——图里没有「图片拼版」那一格时，勾了也不生效
         # （第四步取图按图回退到去底色产物），所以开关该**置灰并说明原因**，
         # 而不是让用户勾一个永远不会生效的框。
-        # ⚠️ 开关可用要**三个判据全过**（2026-10-05 逐层查证业务流程后定）：
-        #    图里有 + 区域模式是「左右分开」+ 用户勾了。第一条这里已满足，
-        #    第二条要显式确认区域模式（业务前提：只有左右分开才产出成对的
-        #    -l/-r 半页图，拼起来才是正刊对开版面）。
+        # ⚠️ 2026-10-22 起 area 已移除：**只有一条判据**——图里有没有
+        #    「图片拼版」。默认模板里有，所以开关直接可用；不再需要先确认
+        #    区域模式（检测文本框永远逐框裁图，半幅页天然成对）。
         ok(
-            "区域模式还没确认时开关置灰（并说明要先确认）",
-            not page.imposition_enabled_checkbox.isEnabled()
-            and "确认区域模式" in page.imposition_enabled_checkbox.toolTip(),
-            page.imposition_enabled_checkbox.toolTip(),
-        )
-        repo.save_draft(tid, "rembg", {"area": 1})
-        page._refresh_imposition_node()
-        pump(ctx.app, times=4)
-        ok(
-            "图里有「图片拼版」且区域模式=左右分开 → 启用开关可用",
+            "图里有「图片拼版」→ 启用开关可用（不再依赖区域模式）",
             page.imposition_enabled_checkbox.isEnabled(),
             page.imposition_enabled_checkbox.toolTip(),
         )
-        # 区域模式改成"合并单图"→ 每页已是一张整图，拼版没意义 ⇒ 置灰
-        repo.save_draft(tid, "rembg", {"area": 2})
-        page._refresh_imposition_node()
-        pump(ctx.app, times=4)
-        ok(
-            "区域模式不是左右分开 → 开关置灰（拼版这一步没意义）",
-            not page.imposition_enabled_checkbox.isEnabled()
-            and "整图" in page.imposition_enabled_checkbox.toolTip(),
-            page.imposition_enabled_checkbox.toolTip(),
-        )
-        repo.save_draft(tid, "rembg", {"area": 1})
-        page._refresh_imposition_node()
-        pump(ctx.app, times=4)
         # 用**独立页面实例 + 独立任务**验"图里没有"这一侧：直接换掉上面那个
         # page 的流程图会连累后面所有断言（它们都按默认模板的图算）。
         from desktop.steps.bpmn_diagram import (
@@ -1772,21 +1749,17 @@ def run(ctx) -> None:
         #    （曾因此让"启用拼版：列表多一个子任务"假红）。
         repo.delete_task(fog_task)
 
-        # ⚠️ **判据只看流程图**：改第三步的区域模式不再影响拼版节点可见性
-        # （旧口径 area==1 才显示，既语义错配又与用户的图打架）
+        # ⚠️ **判据只看流程图**：面板参数不再影响拼版节点可见性
         before_visible = page._imposition_node_visible()
-        repo.save_draft(tid, "rembg", {"area": 2})
+        repo.save_draft(tid, "rembg", {"type": 2})
         page._refresh_imposition_node()
         pump(ctx.app, times=4)
         ok(
-            "改第三步区域模式不影响拼版节点**显不显示**（那由流程图决定）",
+            "改第三步面板参数不影响拼版节点**显不显示**（那由流程图决定）",
             page._imposition_node_visible() == before_visible,
             f"{before_visible} -> {page._imposition_node_visible()}",
         )
-        # ⚠️ 这里**恢复成 area=1** 而不是 clear_draft：区域模式是拼版的业务
-        #    前提，清掉会让后面所有"启用拼版→取图走拼版产物"的断言失效
-        #    （那正是本轮 `imposition_effective` 引入的正确依赖）。
-        repo.save_draft(tid, "rembg", {"area": 1})
+        repo.clear_draft(tid, "rembg")
         page._refresh_imposition_node()
         pump(ctx.app, times=4)
 
@@ -4205,7 +4178,8 @@ def run(ctx) -> None:
             ok(
                 "右图统一变换右移 200px 后切回左图，右图显示不截断",
                 context_item is not None
-                and scene_bounds.contains(context_bounds)
+                # 允许 2px 浮点/像素取整误差（Qt 场景坐标是 float）
+                and scene_bounds.adjusted(-2, -2, 2, 2).contains(context_bounds)
                 and right_bounds.width() > 0
                 and context_bounds.width() > 0,
                 f"scene={scene_bounds}, right={right_bounds}, context={context_bounds}",

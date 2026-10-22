@@ -12,14 +12,14 @@
 ======================  ==========================  ==========================
 步骤                     第一个动作（主按钮）          第二个动作（提交）
 ======================  ==========================  ==========================
-检测文本框                「检测文本框」：只出框        按 area 裁图 → stages/detect
+检测文本框                「检测文本框」：只出框        「提交本次任务」：逐框裁图 → stages/detect
 图片去底色                「生成预览」：整图去底色      白底转透明 → stages/rembg
 ======================  ==========================  ==========================
 
 两边的按钮状态机是同一套（``services/submit_state``），只有"比哪些参数"
 不同。本模块负责：
 - ``run_submit``              ：按当前步骤分发到下面两个提交动作；
-- ``run_detect_submit``       ：第二步提交（检测框 + area → 裁图）；
+- ``run_detect_submit``       ：第二步提交（检测框 → 逐框裁图）；
 - ``run_rembg_submit``        ：第三步提交（预览图 → 透明底成品）；
 - ``_update_submit_button``   ：按钮状态/提示（也按步骤分发）。
 """
@@ -29,7 +29,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
-from core.command_spec import DETECT_DEFAULT_AREA
 from desktop.pages.taskdetail.runner import STATUS_LABELS
 from desktop.services.print_plan import (
     entry_to_effect_spec,
@@ -100,8 +99,9 @@ class SubmitMixin:
     PREVIEW_PARAM_KEYS = (
         "type", "offset", "seal", "sealcolor", "sealarea", "sealmin_sat",
     )
-    #: 第二步「检测文本框」：只有 area 会改变框的解读与裁图结果。
-    DETECT_PREVIEW_PARAM_KEYS = ("area",)
+    #: 第二步「检测文本框」：没有可调参数（area 已彻底移除，2026-10-22），
+    #: 产物只取决于检测框本身。
+    DETECT_PREVIEW_PARAM_KEYS = ()
 
     # ---------------------------------------------------------- 状态判定
     def _latest_success_run(self, stage: str) -> dict | None:
@@ -132,13 +132,12 @@ class SubmitMixin:
         #    （别借别的面板，那是一份用户没填过的值）。
         panel_args = host.get_args() if host else {}
         if stage == "detect":
-            # ⚠️ 界面上没有 area 了（2026-10-22 第二轮），"面板参数"这一格用
-            #    **后端默认值**填——否则运行记录里是 area=1、面板给 None，
-            #    版本判定会永远停在 preview_stale（提交按钮一直黄着）。
+            # ⚠️ 第二步没有表单参数（area 已彻底移除）：只比运行版本 + 检测框
+            #    是否在提交后被改过。
             state = submit_version_state(
                 preview_run=self._latest_success_run("detect"),
                 submit_run=self._latest_success_run("detect_submit"),
-                panel_args={"area": DETECT_DEFAULT_AREA},
+                panel_args={},
                 preview_param_keys=self.DETECT_PREVIEW_PARAM_KEYS,
                 submit_param_keys=self.DETECT_PREVIEW_PARAM_KEYS,
             )
@@ -279,8 +278,8 @@ class SubmitMixin:
         ]
         return profile_book(pages)
 
-    def _submit_entries(self, area: int) -> list[dict]:
-        """当前步骤的提交条目（第二步=源页裁图；第三步=去底图→成品）。
+    def _submit_entries(self) -> list[dict]:
+        """当前步骤的提交条目（第二步=源页逐框裁图；第三步=去底图→成品）。
 
         全书级判定（单栏书 / 页宽 / 指定左右）与检测框都**一次读盘**：
         ``plan_*`` 会遍历整本 manifest 逐页回调，逐页走 ``_detect_boxes_for``
@@ -294,7 +293,6 @@ class SubmitMixin:
         common = dict(
             manifest_paths=self._manifest_paths(),
             boxes_for=boxes_for,
-            area=area,
             single_column_book=profile.single_column_book,
             page_width_for=lambda text: widths.get(Path(text).stem, 0),
             side_for=lambda text: sides.get(Path(text).stem),
@@ -416,11 +414,9 @@ class SubmitMixin:
                 "页面清单为空，请先完成上一步子任务，或在预览区插入图片。",
             )
             return
-        # 区域模式不在界面上（2026-10-22 第二轮），提交时按后端默认值生效。
-        area = DETECT_DEFAULT_AREA
-        # 检测框与面积参数一起决定几何；border 已从界面移除，沿用历史默认
-        # "0"（不加留白：第四步会在纸上重新排版，见 effective_border_default）。
-        entries = self._submit_entries(area)
+        # 检测框决定几何：每个框各裁一张图（2026-10-22 起没有 area）。
+        # border 沿用历史默认 "0"（不加留白：第四步会在纸上重新排版）。
+        entries = self._submit_entries()
         if not entries:
             self._toast(
                 "warning", "没有可提交的页面",
@@ -428,7 +424,6 @@ class SubmitMixin:
             )
             return
         out_args = {
-            "area": area,
             "_effects": [entry_to_effect_spec(e, "0") for e in entries],
             "output": str(
                 self.store.node_or_stage_output(
@@ -441,7 +436,7 @@ class SubmitMixin:
         if detect_run:
             out_args["_preview_run_id"] = detect_run.get("run_id")
         self.log_view.append(
-            f"提交本次任务：按区域模式 {area} 裁图 {len(entries)} 张 → {out_args['output']}"
+            f"提交本次任务：按检测框裁图 {len(entries)} 张 → {out_args['output']}"
         )
         self._launch_stage_process("detect_submit", out_args, resume=False)
 
@@ -615,18 +610,18 @@ class SubmitMixin:
         if version is None and not tip:
             version = self._submit_version_state("detect")
             tip = {
-                NEW_VERSION: "检测框或区域模式有改动（或还没提交过），"
-                             "请点击「提交本次任务」把图片按 area 裁好交给下一步",
-                PREVIEW_STALE: "区域模式已修改，请先重新「检测文本框」再提交",
+                NEW_VERSION: "检测框有改动（或还没提交过），"
+                             "请点击「提交本次任务」把文本框内容裁出来交给下一步",
+                PREVIEW_STALE: "检测结果已过期，请先重新「检测文本框」再提交",
                 UP_TO_DATE: "已提交：下一步（图片去底色）拿到的是这次裁好的图；"
-                            "改框或改区域模式后需再次提交",
+                            "改框后需再次提交",
                 NO_PREVIEW: "请先点击「检测文本框」，执行成功后才能提交本次任务",
             }[version]
         elif version is None:
             version = NO_PREVIEW
         self._apply_submit_state(version, tip, {
-            NEW_VERSION: "● 有新版本待提交（检测框/区域模式有改动，或还没提交）",
-            PREVIEW_STALE: "● 区域模式已修改，请重新「检测文本框」后再提交",
+            NEW_VERSION: "● 有新版本待提交（检测框有改动，或还没提交）",
+            PREVIEW_STALE: "● 检测结果已过期，请重新「检测文本框」后再提交",
             UP_TO_DATE: "已提交：下一步已能用这次裁好的图",
         })
 

@@ -57,7 +57,7 @@ class RembgPreviewWidget(
         # _rembg_dir：它才是"此刻参数下"的样子，而正式产物可能已经过期。
         self._live_dir: Path | None = None
         self._boxes_provider = None  # (path_text) -> list[检测框]
-        self._region_params_provider = None  # () -> (area, border)
+        self._border_provider = None  # () -> border
         self._single_column_book = False  # 整本书是否单栏书（见 set_images）
         self._page_width_provider = None  # (path_text) -> 页宽像素
         self._side_for = None  # (path_text) -> 用户指定左右
@@ -102,7 +102,7 @@ class RembgPreviewWidget(
         paths: list[Path | str],
         rembg_dir: Path | None,
         boxes_provider=None,
-        region_params_provider=None,
+        border_provider=None,
         thumb_provider=None,
         single_column_book: bool = False,
         page_width_provider=None,
@@ -114,11 +114,11 @@ class RembgPreviewWidget(
         ``paths`` 为源图，元素允许是 ``str``（统一转 ``Path``，同
         :meth:`desktop.components.viewers.ImageViewerWidget.set_images`）；
         ``rembg_dir`` 为去底色结果目录（存在才显示结果）；
-        各 provider 给出检测框 / 区域参数 / 缩略图来源。
+        各 provider 给出检测框 / 边距 / 缩略图来源。
 
         ``single_column_book``＋``page_width_provider``：整本书是否已判定为
         **单栏书**（``utils.book_layout``）。为真时「单个宽框」的半幅页要按
-        整幅走（不拆 ``-l``/``-r``、不镜像）——**必须与提交派生用同一个判据**，
+        整幅走（不拆 ``-l``/``-r``）——**必须与提交派生用同一个判据**，
         否则预览显示 ``0007-l``、成品却是 ``0007.png``。
 
         ``side_for``：``(path) -> "left"|"right"|None``，用户在**半框页**上指定
@@ -130,7 +130,7 @@ class RembgPreviewWidget(
         决定要不要传（不是每次刷新都强制）。
         """
         self._boxes_provider = boxes_provider  # (path_text) -> list[检测框]
-        self._region_params_provider = region_params_provider  # () -> (area, border)
+        self._border_provider = border_provider  # () -> border
         # ⚠️ 按整本判定的入参：由宿主**一次性**算好后传进来（不要在逐页
         #    循环里现算 profile/读尺寸，那是 O(n²)）。
         self._single_column_book = bool(single_column_book)
@@ -154,7 +154,7 @@ class RembgPreviewWidget(
 
 
     def refresh_display(self) -> None:
-        """detect 框/area/border 变化后，重建输出条目并按新区域重新加载。"""
+        """检测框/边距变化后，重建输出条目并按新区域重新加载。"""
         self._rebuild_entries()
         self._load_display()
 
@@ -243,7 +243,7 @@ class RembgPreviewWidget(
         show_result = self._mode == "result" and has_result
         self.view.clear_image("正在加载...")
         self.toggle_caption.setText(
-            "去底色结果 · 显示范围为步骤二的检测框与「区域模式 / 边距」"
+            "去底色结果 · 显示范围为步骤二的检测框与「边距」"
             if show_result
             else ("原图（尚未生成去底色结果）" if not has_result else "原图")
         )

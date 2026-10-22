@@ -28,7 +28,7 @@
   ``detect`` / ``rembg`` / ``print`` / ``imposition``，描述"这是什么功能"；
 - **运行阶段**多两个（2026-10-22 起）：
   ``detect_submit``——第二步「检测文本框」右上「提交本次任务」按钮触发的
-  **同一步骤的第二个动作**（先检测出框到 ``boxes.json``，提交时才按 ``area``
+  **同一步骤的第二个动作**（先检测出框到 ``boxes.json``，提交时才逐框裁图
   把页面图裁到 ``stages/detect``）；
   ``rembg_submit``——第三步「提交本次任务」触发的第二个动作（先把整图去底色
   到 ``stages/rembgpreview``，提交后把白底转透明落到 ``stages/rembg``）。
@@ -39,7 +39,7 @@
     ====================  ==========================================
     ``extract``            ``extract``：in=pdf / out=pages
     ``detect``              ``detect``：in=pages / out=boxes（只检测，出框）
-    ``detect_submit``       ``detect``：in=pages / out=pages（按 area 裁图）
+    ``detect_submit``       ``detect``：in=pages / out=pages（逐框裁图）
     ``rembg``               ``rembg``：in=pages / out=pages（整图去底色预览）
     ``rembg_submit``        ``rembg``：in=pages / out=pages（白底转透明成品）
     ``print``              ``print``：in=pages / out=pdf
@@ -459,15 +459,14 @@ def flow_needs_source_pdf(diagram) -> bool:
 
 
 def flow_crops_pages(diagram) -> bool:
-    """这条流程里页面会不会被「检测文本框」的提交按 ``area`` 裁过。
+    """这条流程里页面会不会被「检测文本框」的提交**逐框裁开**。
 
-    2026-10-22 起 area 归第二步（检测），它的作用也从"去底色怎么裁"变成
-    "第二步提交时怎么裁"。凡是要问"这一步拿到的图是整页还是半页"的地方
-    （拼版要不要成对 ``-l``/``-r``、区域模式提示）都用本函数，别各写一份
+    2026-10-22 起没有 area：有检测节点就一定会逐框裁图（半幅 ``-l``/``-r``）。
+    凡是要问"这一步拿到的图是整页还是裁好的框"的地方都用本函数，别各写一份
     "流程里有没有 detect 节点"。
 
     ``imposition`` 那一格传 False（条件不满足时被剔除，与答案无关）。
-    空图 / 没有 detect ⇒ False（＝图是整页的，拼版吃整图照样拼）。
+    空图 / 没有 detect ⇒ False（＝图是整页的）。
     """
     if diagram is None or not getattr(diagram, "nodes", ()):
         return False
@@ -496,7 +495,7 @@ STAGE_LOCATIONS: dict[str, dict[str, str]] = {
     # detect 两个产物分两处（2026-10-22）：
     #   · ``boxes`` 落在**任务根**（``boxes.json``）——它不是一堆图片、是一个
     #     坐标文件，第二步预览与 YOLO 导出都按这个固定名读；
-    #   · ``pages`` 是「提交本次任务」按 area 裁出来的成品图，落 ``stages/detect``，
+    #   · ``pages`` 是「提交本次任务」逐框裁出来的成品图，落 ``stages/detect``，
     #     给第三步「图片去底色」当输入（未提交 ⇒ 这个目录是空的/不存在，
     #     第三步自然转不过去，正是"提交才算本步完成"的落地方式）。
     "detect": {"boxes": "boxes.json"},
@@ -654,12 +653,12 @@ SUPPLIERS: dict[str, dict[str, str]] = {
     "extract": {"pdf": SUPPLY_TASK_SOURCE},
     # 检测：吃提取出的页面图（或流程入口图片）。
     "detect": {"pages": "extract"},
-    # 提交检测结果：按 area 裁图，同样吃上游页面图（检测框是同一步的产物，
+    # 提交检测结果：逐框裁图，同样吃上游页面图（检测框是同一步的产物，
     # 由提交动作自己按任务目录读，不占输入端口）。
     "detect_submit": {"pages": "extract"},
     # 去底色：吃**「检测文本框」提交后的裁图**（2026-10-22）。
     # ⚠️ 这是本次大改造的关键一条：以前去底色吃原始页 + 检测框、自己在提交时
-    #    按 area/border 裁；现在裁剪发生在第二步的提交里，去底色只做整图去底色。
+    #    按 border 裁；现在裁剪发生在第二步的提交里，去底色只做整图去底色。
     "rembg": {"pages": "detect_submit"},
     # 提交：把整图去底色的结果定稿（白底转透明），仍吃裁好的图。
     "rembg_submit": {"pages": "detect_submit"},
@@ -758,12 +757,11 @@ def stage_blocking_inputs(diagram, stage: str, active=None) -> tuple[str, ...]:
       这个意思：那里没有目录可解析）。
     · **本流程里没人产出**的端口不在列。典型：自定义流程把「图片去底色」放
       第一个节点、没有「检测文本框」，``boxes`` 就没有供给方——那种流程里
-      这一步压根不吃检测数据（去底色按 area 处理整张图，见
-      :data:`core.command_spec.WHOLE_PAGE_AREA` 与
+      这一步压根不吃检测数据（去底色固定整图处理，见
       ``functions/text_region.py``），用一个解析不出东西的端口挡它，用户只
       会看到"输入还没就位"的假提示（用户 2026-10-06 报障）。反过来，默认
       流程里 ``boxes`` 的供给方（``detect``）**在**，它照旧是阻塞端口——
-      「去底色」仍然要等「检测文本框」跑完。
+      「检测文本框」与它的提交仍然要等 extract 跑完。
 
     在列的端口：
 

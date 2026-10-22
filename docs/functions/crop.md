@@ -1,8 +1,11 @@
 # crop 功能说明
 
-基于 YOLO 目标检测定位图片中的左右文本框，按 `--area`/`--border` 规则裁剪并导出原图像素。
+基于 YOLO 目标检测定位图片中的文本框，**把每个检测框各自裁剪出来**并导出原图像素。
 
 与 `cropremove` 共享相同的检测与裁剪规则（共同继承 `TextRegionProcessor` 基类），区别是 crop **不做 Otsu 去底色**，仅裁剪原始彩色像素。
+
+> ⚠️ 2026-10-22 起**没有 `--area` 参数**：检测出几个文本框就裁几张图。
+> 半幅页（左右两栏）输出 `-l`/`-r`，整幅页用页名输出一张，无框页原样输出。
 
 ## 命令
 
@@ -12,7 +15,7 @@ guji crop --config ./book.yaml
 ```
 
 指定 `--config` 时读取配置文件中的 `crop:` 配置块；命令行显式提供的参数会
-覆盖配置值，例如 `guji crop --config ./book.yaml --area 2`。
+覆盖配置值，例如 `guji crop --config ./book.yaml --border 20`。
 
 ## 核心算法
 
@@ -26,8 +29,7 @@ guji crop --config ./book.yaml
 >
 > 内容框有两类（模型 `static/weights/bookcontent.pt`，对一页互斥）：`harfcontent`
 > 半幅（左右两栏）→ 分 left / right 两组；`fullcontent` 整幅（整页单一
-> 内容区）→ 只有一个框，**不拆左右**（area=1 只输出一张、无 `-l/-r` 后缀；
-> area=2/3 单框**不**做对称镜像）。
+> 内容区）→ 只有一个框，**不拆左右**（用页名输出一张）。
 
 1. 使用 YOLO 模型对图片推理，获取所有内容框；
 2. `fullcontent` 直接作为整幅框；其余（`harfcontent`）按水平中心分左右：
@@ -50,61 +52,19 @@ guji crop --config ./book.yaml
 | ----------- | -------- | ----------------------------------- |
 | -i/--input  | .        | 输入图片文件或目录                  |
 | -o/--output | None     | 输出目录名称                        |
-| --area      | 1        | 区域模式（详见下表）                |
 | --border    | None     | 边框控制（mm），CSS 风格 1~4 值写法 |
 | --clean     | False    | 清空输出目录                        |
 | --workers   | CPU 核数 | 并行线程数                          |
 
-### --area（区域模式）
-
-控制裁剪区域与输出方式，默认 1。
-
-| area | 裁剪方式               | 输出方式                              | border=None 时 |
-| ---- | ---------------------- | ------------------------------------- | -------------- |
-| 1    | 逐框独立裁剪           | 分别裁剪左右框，输出 `-l`/`-r` 两张图 | 裁剪到各框边界 |
-| 2    | 逐框独立裁剪           | 单图，ROI 写回原位置                  | 输出原尺寸     |
-| 3    | 合并左右框为整体外边界 | 单图，ROI 写回原位置                  | 输出原尺寸     |
-| 4    | 整页（不调用 YOLO）    | 单图，整页即唯一文本框                | 输出原尺寸     |
-
-**area=4「整页」**：不加载也不调用 YOLO，整页 `[0,0,W,H]` 作为唯一文本框，
-适合普通文档（非双栏古籍）或检测失败时直接整页处理。
-
 ### --border（边框控制，单位 mm）
 
-控制输出图像的裁剪与外扩边距，对 area=1/2/3 均生效。默认**随 area 变**
-（规则见 `core.command_spec.effective_border_default`）：
+控制每张裁剪图在框外再外扩多少留白。**默认 0**（紧裁到文本框边界）：
+第四步会把图重新排进 A4，前面再外扩留白等于「图片内留白 + 页面边距」双重留白。
 
-- `area=1/2/3` → **0**（不加留白）：第四步会把图重新排进 A4，第三步再外扩
-  留白等于「图片内留白 + 页面边距」双重留白；
-- `area=4`（整页不检测）→ **None**：整页输出既不裁剪也无留白可言，border
-  对它没有意义。
-
-> ⚠️ 因为留空会被解析成上面的默认值，下表「None」一行只作语义对照——
-> area=1/2/3 实际取到的是 0（area=2/3 因此是**紧裁到文本框联合外边界**，
-> 不是整页原尺寸），area=4 才是 None。
-
-| border 值     | area=1              | area=2/3               |
-| ------------- | ------------------- | ---------------------- |
-| None          | 裁剪到各框边界      | 输出原尺寸             |
-| 0             | 裁剪到各框边界      | 裁剪到文本框联合外边界 |
-| 有值（如 30） | 各框边界 + 外扩空白 | 联合外边界 + 外扩空白  |
-
-**对称输出规则**：area=2/3 + border 有值 + **仅检测到一个文本框**时，输出对称布局——实际框 + border 在检测侧，另一侧为等宽空白镜像，中间间隔 10mm。使单张图也呈现完整的双栏版面。
-
-布局示意（检测到右框，is_left=False）：
-
-```
-+------------ top ------------+
-|                            |
-|  left | blank | gap | box | right |
-|                            |
-+---------- bottom ----------+
-```
-
-- 实际框（box）经 `_process_roi` 裁剪后粘贴到检测侧
-- 另一侧为空白（白色），宽度与实际框相同
-- gap = 10mm（按 300 DPI 换算约 118px）
-- 输出尺寸：高 = top + box_h + bottom，宽 = left + box_w + gap + box_w + right
+| border 值     | 输出                              |
+| ------------- | --------------------------------- |
+| None / 0      | 裁剪到每个框的边界（紧裁）        |
+| 有值（如 30） | 每个框边界 + 外扩空白             |
 
 **CSS 风格写法**（mm→px 按 300 DPI 换算）：
 
@@ -117,8 +77,6 @@ guji crop --config ./book.yaml
 
 ## 输出命名规则
 
-### area=1（默认，分框裁剪输出）
-
 ```
 输入: page3.jpg（检测到左右两个框）
 输出: page3-l.png（左框裁剪）
@@ -127,36 +85,16 @@ guji crop --config ./book.yaml
 输入: page5.jpg（仅检测到右框）
 输出: page5-r.png
 
+输入: page6.jpg（整幅页，一个框）
+输出: page6.png
+
 输入: page7.jpg（未检测到任何框）
 输出: page7.png（原图拷贝，状态为 no_detect）
 ```
 
-### area=2/3（单图输出）
-
-```
-输入: page3.jpg
-输出: page3.png
-```
-
-- 输出格式统一为 **PNG**（300 DPI）
-- area=1 左框加 `-l` 后缀，右框加 `-r` 后缀
-- 无检测时输出原图（无视 area_mode），返回 `no_detect` 状态
-
-## 完整行为矩阵
-
-| area | border      | 输出尺寸                         | 输出文件       |
-| ---- | ----------- | -------------------------------- | -------------- |
-| 1    | None        | 裁剪到各框边界                   | -l.png, -r.png |
-| 1    | 0           | 裁剪到各框边界                   | -l.png, -r.png |
-| 1    | 值          | 各框 + 外扩边距                  | -l.png, -r.png |
-| 2    | None        | 原尺寸                           | .png           |
-| 2    | 0           | 裁剪到联合外边界                 | .png           |
-| 2    | 值          | 联合 + 外扩边距                  | .png           |
-| 2    | 值 + 仅单框 | 对称布局（框+空白镜像+10mm间隔） | .png           |
-| 3    | None        | 原尺寸                           | .png           |
-| 3    | 0           | 裁剪到合并边界                   | .png           |
-| 3    | 值          | 合并 + 外扩边距                  | .png           |
-| 3    | 值 + 仅单框 | 对称布局（框+空白镜像+10mm间隔） | .png           |
+- 输出格式由 `--ext` 决定（默认 **PNG**，300 DPI）
+- 左框加 `-l` 后缀，右框加 `-r` 后缀；整幅页不带后缀
+- 无检测框时原样输出整页（返回 `no_detect` 状态）
 
 ## 处理流程
 
@@ -171,35 +109,27 @@ guji crop --config ./book.yaml
   │
   ├─ 无文本框？→ 输出原图，返回 no_detect
   │
-  ├─ 记录原始框数量（single_box_detected）
-  │
-  ├─ area=3 且左右框均存在 → 合并为整体外边界
-  │
   ├─ border 参数解析 (mm→px @300dpi)
   │
-  ├─ 单框 + area=2/3 + border有值 → 对称输出（实际框+空白镜像+10mm间隔）
+  ├─ 逐框循环：每个框 → 一张图（框 + border）
   │
-  ├─ area=1 → 逐框裁剪原图像素，分别输出 -l/-r
-  │   area=2 → 逐框裁剪，单图输出
-  │   area=3 → 合并裁剪，单图输出
-  │
-  └─ 保存为 PNG (300 DPI)
+  └─ 保存（PNG / jpg / tiff，300 DPI）
 ```
 
 ## 示例
 
 ```bash
-# 默认模式：分框裁剪输出 -l/-r
+# 每个检测框各裁一张（半幅页输出 -l/-r）
 guji crop -i ./images -o ./cropped
 
 # 单文件
 guji crop -i page3.jpg -o ./output
 
-# 合并模式 + 外扩 30mm 边距
-guji crop -i ./images -o ./output --area 3 --border 30
+# 外扩 30mm 边距
+guji crop -i ./images -o ./output --border 30
 
-# 单图模式 + 自定义边距（上20 右30 下20 左25）
-guji crop -i ./images -o ./output --area 2 --border 20,30,20,25
+# 自定义边距（上20 右30 下20 左25）
+guji crop -i ./images -o ./output --border 20,30,20,25
 
 # 清空输出目录重新处理
 guji crop -i ./images -o ./output --clean
@@ -207,8 +137,8 @@ guji crop -i ./images -o ./output --clean
 
 ## 实现要点
 
-- **继承 TextRegionProcessor**：与 `cropremove` 共享 YOLO 检测 + area/border 规则 + 输出构建流程，仅 `_process_roi` 不同（crop 裁剪原图像素，cropremove 做 Otsu）。
+- **继承 TextRegionProcessor**：与 `cropremove` 共享 YOLO 检测 + 逐框裁剪 + 输出构建流程，仅 `_process_roi` 不同（crop 裁剪原图像素，cropremove 做 Otsu）。
 - **不做去底色处理**：仅裁剪，保留原始图像质量，后续可配合 `rembg` 命令处理。
 - **并发处理**：基于 FunctionBase 的 ThreadPoolExecutor 并发引擎。
 - **无检测 fallback**：直接输出原图到输出目录，返回 `no_detect` 状态，便于后续人工排查。
-- **与 cropremove 的关系**：`cropremove --area 1` 等同于 `crop --area 1` + 对每个裁剪结果执行 Otsu 去底色。两者的 area/border 规则完全一致。
+- **与 cropremove 的关系**：`cropremove` 等同于 `crop` + 对每个裁剪结果执行 Otsu 去底色。

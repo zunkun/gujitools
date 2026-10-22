@@ -4,7 +4,7 @@
 
 通用工具函数：几何、排序、图像 IO、PDF、YOLO
 
-覆盖 27 个模块、14 个公开类、166 个公开函数/方法（生成于 2026-10-22）。
+覆盖 27 个模块、14 个公开类、164 个公开函数/方法（生成于 2026-10-22）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -14,7 +14,7 @@
 | --- | --- | --- |
 | [`utils.book_layout`](#utilsbook_layout) | 1 | 7 |
 | [`utils.box_draw`](#utilsbox_draw) | 0 | 8 |
-| [`utils.box_geometry`](#utilsbox_geometry) | 2 | 16 |
+| [`utils.box_geometry`](#utilsbox_geometry) | 2 | 14 |
 | [`utils.color_utils`](#utilscolor_utils) | 0 | 2 |
 | [`utils.compact_png`](#utilscompact_png) | 0 | 2 |
 | [`utils.data_package`](#utilsdata_package) | 1 | 24 |
@@ -298,20 +298,16 @@ GUI 主进程共用，保证 detect 预览画出的"最终大框"与 crop 实际
 
 坐标系均为原始图片像素坐标 [x1, y1, x2, y2]。
 
-**布局层（build_output_layout / build_symmetric_layout）** 是 area/border
-规则的唯一实现：它只做纯整数算术（画布多大、每块内容贴在哪），把结果表达为
-`OutputLayout`。渲染后端由调用方决定——CLI 侧用 numpy 画，GUI 侧用 QImage 画。
-这样同一套规则不会因数像素后端不同而被复制成两份。
-
-⚠️ 曾有一处真实分歧：GUI 侧在 area=3 + 双框 + border=None 时把并集区域
-搬到了画布左上角，而规格要求"ROI 写回原位置"（见
-docs/functions/cropremove.md:57）。布局层统一后该分歧由本模块消除。
+**布局层（build_output_layout）** 是 border 规则的唯一实现：**每个检测框各自
+独立裁剪成一张输出图**（框 + border），后缀由侧别（``-l``/``-r``）决定。
+2026-10-22 起 area 概念彻底移除——不再有「整页 / 并集 / 对称画布」那些模式，
+检测出几个框就裁几张图。渲染后端由调用方决定——CLI 侧用 numpy 画，GUI 侧用
+QImage 画。这样同一套规则不会因数像素后端不同而被复制成两份。
 
 ### 模块常量
 
 | 名称 | 值 |
 | --- | --- |
-| SYMMETRIC_GAP_MM | `10` |
 | PAGE_CLASS_FULLCONTENT | `"fullcontent"` |
 | PAGE_CLASS_HARFCONTENT | `"harfcontent"` |
 | PAGE_CLASS_SINGLE | `"single"` |
@@ -326,7 +322,7 @@ docs/functions/cropremove.md:57）。布局层统一后该分歧由本模块消�
     sources: [(源框, 目标x, 目标y), …]。源框用原始图片坐标
         (x1, y1, x2, y2)；目标坐标是它在画布中的左上角落点。
         源框与目标框尺寸相同（1:1 粘贴，不缩放）。
-    suffix: 文件名后缀（area=1 逐框输出时为 "-l"/"-r"，否则空串）。
+    suffix: 文件名后缀（半幅页的框为 "-l"/"-r"，整幅/无侧别为空串）。
 
 ### `class OutputLayout`
 
@@ -334,8 +330,7 @@ docs/functions/cropremove.md:57）。布局层统一后该分歧由本模块消�
 
 属性:
     canvases: 按输出顺序排列的画布列表。
-    full_page: 是否使用整页尺寸画布（无 border 时）。调用方据此决定
-        画布底色以外的处理方式。
+    full_page: 是否使用整页尺寸画布（无检测框、原图透传时）。
 
 ### 模块函数
 
@@ -347,11 +342,9 @@ docs/functions/cropremove.md:57）。布局层统一后该分歧由本模块消�
 | `classify_page_slots(slots) -> str` | 页的**槽位**表示 → 页形态分类键（四类见 `PAGE_CLASS_*` 常量）。 |
 | `half_sides(boxes, image_size) -> List[str]` | 半幅(harfcontent)页的框 → 每个框的侧别 ``"left"`` / ``"right"``。 |
 | `half_slots(boxes, image_size) -> List[Optional[list]]` | 半幅页的框 → **2 槽** ``[左, 右]``（缺失侧 ``None``）。 |
-| `whole_page_box(image_size) -> List[int]` | 整页框 ``[0, 0, W, H]``——「整页只有一个内容区」时的唯一内容区表示。 |
 | `parse_border_mm(border_value, dpi: int=300) -> Optional[List[int]]` | 解析 border 参数（毫米单位），按 DPI 转换为像素。 |
-| `compute_final_boxes(boxes, area: int, border_mm, dpi: int=300) -> List[List[int]]` | 按 crop 命令的 area/border 规则计算最终切割框（原始图片坐标）。 |
-| `build_output_layout(boxes: Sequence[Sequence[int]], area: int, border_padding, image_size: Tuple[int, int], dpi: int=300, sides: Optional[Sequence[Optional[str]]]=None, symmetric: bool=False) -> OutputLayout` | 按 area/border 规则计算输出画布布局（area=1 / 2 / 3）。 |
-| `build_symmetric_layout(box: Sequence[int], border_padding, image_size: Tuple[int, int], is_left: bool=True, dpi: int=300) -> OutputLayout` | 单框对称输出布局：实际框 + 空白镜像 + 中间间隔。 |
+| `compute_final_boxes(boxes, border_mm, dpi: int=300) -> List[List[int]]` | 按 border 规则计算最终切割框（原始图片坐标）。 |
+| `build_output_layout(boxes: Sequence[Sequence[int]], border_padding, image_size: Tuple[int, int], sides: Optional[Sequence[Optional[str]]]=None) -> OutputLayout` | 按 border 规则计算输出画布布局：**每个检测框各自一张图**。 |
 | `present_boxes(slots) -> List[list]` | 槽位 → **非空**框列表（保留顺序）。 |
 | `set_box_full(slots, index: int) -> List[Optional[list]]` | 把第 ``index`` 个框设为「整幅」→ **单槽** ``[整幅]``，其余框丢弃。 |
 | `set_box_half(slots, index: int, image_size) -> List[Optional[list]]` | 把第 ``index`` 个框设为「半幅」→ **2 槽** ``[左, 右]``（按中心定左右）。 |
@@ -366,9 +359,9 @@ docs/functions/cropremove.md:57）。布局层统一后该分歧由本模块消�
 - 半幅（harfcontent）固定 2 槽 ``[左, 右]``，缺失一侧为 None；
 - 整幅（fullcontent）只占 **1 槽** ``[整幅]``。
 
-据此判断 area=2/3 的单框要不要做对称镜像——整幅框已近页宽，
-镜像会凭空多出一半空白，**不做**镜像（这是整幅在合成层唯一的特殊行为，
-区域本身随框走）；半幅漏检一侧才需要镜像补白。
+据此判断单槽页是「整幅内容」（不带 ``-l``/``-r`` 后缀）还是
+「半幅漏检一侧」（仍按原始槽位带 ``-l``/``-r`` 后缀）——两者都只剩一个框，
+只能靠槽数区分。
 
 ⚠️ 槽数**不是**"有几个框"，而是**形态**：半幅恒 2 槽（`half_slots` 保证），
 整幅恒 1 槽。半幅删剩一侧后仍然写回 2 槽（另一侧 None），否则会被误判成整幅。
@@ -432,7 +425,7 @@ docs/functions/cropremove.md:57）。布局层统一后该分歧由本模块消�
 
 ⚠️ **半幅的左右是位置决定的**（移动/缩放后会重新判定）；与位置无关的显式
 类型只有整幅(fullcontent)，由用户在第二步「选中框类型」里选择——那条路
-**不经过本函数**（见 :func:`whole_page_box` 与 ``is_full_content``）。
+**不经过本函数**（见 :func:`is_full_content`）。
 
 参数:
     boxes: 框列表（原始图片坐标）；空项自动跳过。
@@ -449,22 +442,6 @@ docs/functions/cropremove.md:57）。布局层统一后该分歧由本模块消�
 半幅只要漏检/删剩一侧就退化成 1 槽，那个框就会被当成「整幅」——这正是
 "删掉整幅框后，右边的框自动变成了整幅" 的根因（用户 2026-09-29 报）。
 
-#### `whole_page_box(image_size) -> List[int]`
-
-整页框 ``[0, 0, W, H]``——「整页只有一个内容区」时的唯一内容区表示。
-
-两处用它，语义相同——都表示"保留整页内容"：
-
-- ``area=4``（整页模式：不检测，整页即唯一文本框）；
-- **整幅内容(fullcontent)页 + area=4**：保留框外内容 → 框归一成整页。
-
-整幅页在 area=1/2/3 下**不再**用整页框（用户 2026-09-29 改定）：整幅框
-本质是"大一点的单独内容框"，框原样下传，area 1/2/3 统一按 area=3 的
-合并语义走单框布局（见 ``preview_worker.region_canvas_specs``）。
-
-CLI（`functions/text_region`）与 GUI（`preview_worker.region_canvas_specs`）
-共用本函数，避免各自造 [0,0,W,H]。
-
 #### `parse_border_mm(border_value, dpi: int=300) -> Optional[List[int]]`
 
 解析 border 参数（毫米单位），按 DPI 转换为像素。
@@ -474,57 +451,31 @@ CLI（`functions/text_region`）与 GUI（`preview_worker.region_canvas_specs`�
 
 返回 [top, right, bottom, left] 像素列表，或 None。
 
-#### `compute_final_boxes(boxes, area: int, border_mm, dpi: int=300) -> List[List[int]]`
+#### `compute_final_boxes(boxes, border_mm, dpi: int=300) -> List[List[int]]`
 
-按 crop 命令的 area/border 规则计算最终切割框（原始图片坐标）。
+按 border 规则计算最终切割框（原始图片坐标）。
 
-与 functions/text_region.py 的切割逻辑一致：
-- area=1：每个框各自外扩 border，输出多张图（-l/-r）；
-- area=2/3：两框取并集后外扩 border，输出一张大图；
-  单框时为对称输出，实际内容区域即该框外扩 border。
+**每个检测框各自外扩 border → 各自输出一张图**。2026-10-22 起不再有
+area 参数：检测出几个文本框就裁几张图（无框时不裁剪，由调用方透传原图）。
 
 参数 boxes 为检测框列表（[左框, 右框]，缺失的已剔除）。
 
-#### `build_output_layout(boxes: Sequence[Sequence[int]], area: int, border_padding, image_size: Tuple[int, int], dpi: int=300, sides: Optional[Sequence[Optional[str]]]=None, symmetric: bool=False) -> OutputLayout`
+#### `build_output_layout(boxes: Sequence[Sequence[int]], border_padding, image_size: Tuple[int, int], sides: Optional[Sequence[Optional[str]]]=None) -> OutputLayout`
 
-按 area/border 规则计算输出画布布局（area=1 / 2 / 3）。
+按 border 规则计算输出画布布局：**每个检测框各自一张图**。
 
 与 functions/text_region.py 的 `_build_output` 及
-desktop/workers/preview_worker.compose_region_output 的几何完全等价，
-差异已在本模块内统一（area=3 + border=None 一律"写回原位置"）。
+desktop/workers/preview_worker.compose_region_output 的几何完全等价。
 
 参数:
-    boxes: 检测框列表（原始图片坐标）。area=3 且两框齐全时内部自动取并集。
-    area: 区域模式 1/2/3。
-    border_padding: [top, right, bottom, left] 像素，或 None。
-    image_size: 原图 (宽, 高)，无 border 时画布取其尺寸。
-    dpi: 边框换算 DPI（仅用于对称输出的 gap）。
-    sides: area=1 时每个框的来源侧（"left"/"right"/None），用于生成
+    boxes: 检测框列表（原始图片坐标）。空框自动跳过。
+    border_padding: [top, right, bottom, left] 像素，或 None（按无处不在处理）。
+    image_size: 原图 (宽, 高)，**仅在没有任何框时**作为整页透传画布。
+    sides: 与 boxes 对齐的来源侧（"left"/"right"/None），用于生成
         "-l"/"-r" 后缀与保持输出顺序。
-    symmetric: 单框 + border 时是否走**对称输出**（实际框 + 空白镜像）。
-        True 对应 `_build_symmetric_output`（area=2/3 且检测到单框）；
-        False 表示普通单框布局（含 area=3 合并后的单框）——此时画布
-        就是「框 + border」，不做镜像。
 
 返回:
     OutputLayout。调用方按 canvases 顺序渲染并保存。
-
-#### `build_symmetric_layout(box: Sequence[int], border_padding, image_size: Tuple[int, int], is_left: bool=True, dpi: int=300) -> OutputLayout`
-
-单框对称输出布局：实际框 + 空白镜像 + 中间间隔。
-
-与 `build_output_layout` 的单框分支同规则，区别是显式给出实际框在左
-还是在右（`is_left=False` 时内容置于右半）。
-
-参数:
-    box: 实际检测框（原始图片坐标）。
-    border_padding: [top, right, bottom, left] 像素（不可为 None）。
-    image_size: 原图 (宽, 高)，仅用于无 padding 时的兜底。
-    is_left: 实际框位于左半（True）还是右半（False）。
-    dpi: gap 换算 DPI。
-
-返回:
-    OutputLayout（单一画布）。
 
 #### `present_boxes(slots) -> List[list]`
 

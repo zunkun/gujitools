@@ -145,7 +145,7 @@ def run(ctx) -> None:
 
     # ---- G7：crop / cropremove 的后缀跟着 ext 走 ----
     for command in ("crop", "cropremove"):
-        args = CommandArgs(command=command, input=str(src), ext="jpg", area=1)
+        args = CommandArgs(command=command, input=str(src), ext="jpg")
         from functions import get_function
 
         fn = get_function(command, args, None)
@@ -155,8 +155,8 @@ def run(ctx) -> None:
     crop_code = code_of("functions/crop.py")
     ok("crop 的后缀取自 command_args 的 ext", 'self.command_args.get("ext")' in crop_code)
     remove_code = code_of("functions/crop_remove.py")
-    ok("cropremove 两条路径共用 output_suffix",
-       remove_code.count("self.output_suffix}") >= 2
+    ok("cropremove 的无框路径也用 output_suffix（不硬编码 .png）",
+       remove_code.count("self.output_suffix}") >= 1
        and 'f"{image_path.stem}.png"' not in remove_code)
     ok("cropremove 显式要 jpg 时才写 JPEG（默认仍是 PNG）",
        'format="JPEG"' in remove_code and 'format="PNG"' in remove_code)

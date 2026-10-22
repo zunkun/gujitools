@@ -150,26 +150,18 @@ def run(ctx) -> None:
                if k in got and got[k] != v}
         ok(f"{stage}：恢复默认后表单值与默认表一致", not bad, f"偏离：{bad}")
 
-    # ------------------------------------- 4. detect 面板**没有** area（后端固定默认）
-    # ⚠️ 2026-10-22 第二轮：用户要求「去除 area 参数，默认 area = 1，提交的时候
-    #    area 参数只在提交的时候生效，desktop 页面去除这个参数，但是在后端代码
-    #    保留 area 相关逻辑」。所以这组断言从"下拉取值走 itemData"改成"面板根本
-    #    没有这个控件、默认值只在后端一处"。
-    from core.command_spec import DETECT_DEFAULT_AREA
-
+    # ------------------------------------- 4. detect 面板**没有** area（参数已彻底移除）
     detect = panels["detect"]
     detect.reset_to_default()
-    ok("detect 面板没有 area 控件（参数已从界面移除）",
+    ok("detect 面板没有 area 控件（参数已从整个项目移除）",
        not hasattr(detect, "area"))
     ok("detect 的 get_args 不含 area（不在表单里伪造默认值）",
        detect.get_args() == {}, str(detect.get_args()))
     ok("detect 的默认表为空（默认值不写两处）",
        DEFAULTS["detect"] == {}, str(DEFAULTS["detect"]))
-    ok("后端有唯一默认值 DETECT_DEFAULT_AREA = 1",
-       DETECT_DEFAULT_AREA == 1, str(DETECT_DEFAULT_AREA))
-    ok("detect 命令规格的 area 默认与常量同源",
-       COMMAND_SPECS["detect"].defaults.get("area") == DETECT_DEFAULT_AREA,
-       str(COMMAND_SPECS["detect"].defaults.get("area")))
+    ok("detect 命令规格里没有 area",
+       "area" not in COMMAND_SPECS["detect"].defaults,
+       str(sorted(COMMAND_SPECS["detect"].defaults)))
     # 历史回填不会凭空塞进一个 area（面板没有这个键）
     detect._apply_args_guarded({"area": 4})
     ok("detect 回填 area=4 不会在表单里留下痕迹",

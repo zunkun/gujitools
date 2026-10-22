@@ -190,22 +190,17 @@ class PageListMixin:
         self,
         path_text: str,
         box=None,
-        parea: int = 1,
         border_mm=None,
-        boxes=None,
-        full: bool = False,
     ):
         """extract/rembg 数字页名 → 预生成页缩略图。
 
-        box（原始像素坐标）非空时，返回在缩略图上按 area/border 规则
-        合成的效果图参数（坐标/边距按缩略图比例缩放）。返回：
-        - {"path": 缩略图路径, "effect": {boxes, area, border, dpi, full} | None}
+        box（原始像素坐标）非空时，返回在缩略图上按 border 规则
+        **裁出该框**的效果图参数（坐标/边距按缩略图比例缩放）。返回：
+        - {"path": 缩略图路径, "effect": {boxes, border, dpi} | None}
         - None：无可用缩略图，调用方回退真图
 
-        ⚠️ ``boxes`` 优先：合成必须拿**原始检测框列表**而不是并集单框——
-        双框 + area=2/3 若只给并集框，``compose_region_output`` 会误判为
-        「单框 → 对称画布」（凭空多出一半空白镜像），与真实产出不符。
-        ``full`` 由调用方按**原始槽位**判定后传入（整幅单框不镜像）。
+        2026-10-22 起没有 area：一条目就是一个框（或整页），
+        不再需要并集/对称/整页模式这些分支。
         """
         p = Path(path_text)
         if not self.task_id:
@@ -248,7 +243,7 @@ class PageListMixin:
         thumb = self.store.source_thumbnails_dir(self.task_id) / f"{n:04d}.jpg"
         if not thumb.exists():
             return None
-        raw = [b for b in (boxes or []) if b] or ([box] if box else [])
+        raw = [b for b in ([box] if box else []) if b]
         if not raw:
             return {"path": str(thumb), "effect": None}
         meta = self.store.image_size(
@@ -278,10 +273,8 @@ class PageListMixin:
             "path": str(thumb),
             "effect": {
                 "boxes": scaled,
-                "area": parea,
                 "border": border_mm,
                 "dpi": 300 * sx,  # border 像素随缩略图比例缩放
-                "full": bool(full),
             },
         }
 

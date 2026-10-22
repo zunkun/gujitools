@@ -115,30 +115,12 @@ FlowValidation`（纯逻辑，不 import Qt）。`errors` 拒绝保存；
 imposition → print` 逐跳核对（rembg 吃入口目录 → 提交成品传 imposition →
 拼版产物传 print，不开拼版时 print 回退提交成品不断链）。
 
-## 无检测数据的流程：area 锁整页、拼版放行（2026-10-07）
+## 无检测数据的流程（2026-10-07，2026-10-22 简化）
 
-用户口径：
-
-> 图片去底色作为第一个节点，则 area 默认 = 4，并且不可修改——area 其他
-> 选项没有提前执行 detect 步骤，页面都是空白。
-> 后续拼版也使用了 detect 数据；同理拼版作为第一个节点，也是不需要使用
-> detect 数据。
-
-判据唯一处：`desktop/steps/ports.py::detect_feeds_rembg`（流程里
-「图片去底色」沿图回溯 `boxes` 有产出方，即「检测文本框」在它上游）。
-两处消费，别另写一份：
-
-1. **去底色面板**（`RembgPanel(whole_page_only=…)`）：没有检测数据时
-   area 固定 4（整页/不检测）、下拉禁用；暂存/历史里残留的旧 area 一律
-   不回填、不导出。第二步「整页模式」开关同步锁定——整页模式关不掉
-   （取消勾选会被回填并提示）。
-2. **拼版前提**（`imposition.py::_imposition_area_ok`）：流程里**有**
-   检测数据时仍要求 `area=1`（左右分开才产出成对半页图）；**没有**检测
-   数据时拼版吃整图照样拼（整幅单独一页、手动任意两张一页），area 前提
-   不再适用——「拼版作为第一个节点，也不需要 detect 数据」。
-
-自测：`step_ports`（`detect_feeds_rembg` 三态）与 `params_spec`（锁定
-面板的 get_args/禁用/回填防回归）。
+历史口径曾是「没有检测数据 ⇒ area 锁整页 4」。**2026-10-22 起 area 参数已从
+整个项目移除**：检测文本框永远逐框裁图，去底色固定整图处理；拼版只看「图里
+有没有拼版节点」，不再依赖 area。相关代码与测试见
+`tests/selftests/area_border_default.py` 与 `imposition.py::_imposition_switch_state`。
 
 ## 节点可重复执行
 

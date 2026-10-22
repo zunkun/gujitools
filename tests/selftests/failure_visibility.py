@@ -70,6 +70,7 @@ def run(ctx) -> None:
 
         def __init__(self):
             self.log_view = []
+            self._logs = []
             self._last_error_line = None
 
     setattr(_Stub, "_consume_worker_stderr", StageRunnerMixin._consume_worker_stderr)
@@ -100,7 +101,7 @@ def run(ctx) -> None:
         _fn_rembg = get_function(
             "rembg",
             CommandArgs(command="rembg", input=str(tiny), output=str(tiny / "out"),
-                        type=1, offset=0, area=1, border="0"),
+                        type=1, offset=0),
             None,
         )
         assert _fn_rembg is not None
@@ -119,7 +120,7 @@ def run(ctx) -> None:
     _fn_good = get_function(
         "rembg",
         CommandArgs(command="rembg", input=str(good), output=str(good / "out"),
-                    type=1, offset=0, area=1, border="0"),
+                        type=1, offset=0),
         None,
     )
     assert _fn_good is not None

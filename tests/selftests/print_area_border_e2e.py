@@ -1,21 +1,19 @@
 # -*- coding: utf-8 -*-
-"""第四步 PDF 兑现第三步的 area/border —— 经由「提交本次任务」（端到端）。
+"""第四步 PDF 兑现第二步「提交本次任务」的逐框裁剪产物（端到端）。
 
-背景：用户报「第三步 area=2、第四步预览也是 area=2，生成出来的 PDF 却是
-area=1 的效果」。这条链路上任何一环丢参数，现象都长得一样，所以必须端到端
-钉住，而不是各自测纯函数：
+2026-10-22 起没有 area：检测出几个文本框，提交阶段就裁几张图
+（半幅 ``-r`` / ``-l``，整幅页用页名）。这条链路上任何一环丢框，现象都
+长得一样，所以必须端到端钉住，而不是各自测纯函数：
 
-    rembg 面板 area/border → plan_rembg_submit_entries → entry_to_effect_spec
-    → run_rembg_submit_stage 合成 → stages/rembg 成品图
-    → _build_print_effects（整图透传）→ run_print_stage → PDF
+    detect 框 → plan_detect_submit_entries → entry_to_effect_spec
+    → run_detect_submit_stage 逐框合成 → stages/detect 成品图
+    → 后续去底色提交 → _build_print_effects（整图透传）→ run_print_stage → PDF
 
 ⚠️ 2026-10-01 用户口径「去底色那一步，必须提交才能传给下一步」：第四步
-**不再**拿去底图（``stages/rembgpreview``）按**当前** area/border 现场合成，
 只排版「提交本次任务」的成品图。本模块守三件事：
 
-1. **area/border 在提交这一跳兑现**：用真实提交阶段函数按 area=2 + border=30
-   合成，成品图尺寸必须等于 ``compose_region_output(去底图, 原双框, 2, "30")``
-   （area 被写成 1 会紧裁，尺寸不同 → 断言红）；
+1. **每个框在提交这一跳各自兑现**：双框页必须产出 ``-r`` / ``-l`` 两张，
+   尺寸等于 ``compose_region_output(源页, [该框], "0")``；
 2. **第四步只透传成品图**：取图规格的 file 全在 ``stages/rembg``、**绝不**指向
    ``stages/rembgpreview``（这就是"编辑去底图不提交不会漏进 PDF"的结构保证），
    worker 实际消费的运行配置同样如此；
@@ -26,7 +24,7 @@ area=1 的效果」。这条链路上任何一环丢参数，现象都长得一�
 
 NAME = "print_area_border_e2e"
 DEPENDS: list[str] = ["rembg"]
-TITLE = "第四步 PDF 兑现提交产物的 area/border"
+TITLE = "第四步 PDF 兑现逐框裁剪产物"
 
 import time
 
@@ -57,8 +55,6 @@ def run(ctx) -> None:
     _anchor_stem = _anchor_src.stem
     _size = repo.image_size(tid, _anchor_stem) or (1000, 1400)
     _aw, _ah = int(_size[0]), int(_size[1])
-    # 双框（半幅页两栏）：用户报的正是「双框 + area=2」这条——单框走的是
-    # 对称画布那条分支，只测单框会完全漏掉现象。
     _bl = [round(_aw * 0.10), round(_ah * 0.10),
            round(_aw * 0.46), round(_ah * 0.90)]
     _br = [round(_aw * 0.54), round(_ah * 0.10),
@@ -75,50 +71,49 @@ def run(ctx) -> None:
     if _src.isNull():
         return
 
-    # ---- 1. area 在第二步「提交本次任务」这一跳兑现 ----
-    # ⚠️ 2026-10-22：裁剪从第三步搬到了第二步（去底色改成整图去底色）。
-    #    所以这里改跑 **detect_submit** 的真实阶段函数，并拿
-    #    ``compose_region_output(源页, 原双框, 2, "0")`` 当基准（border 已移除，
-    #    固定 "0" = 不加留白）。
+    # ---- 1. 每个框在第二步「提交本次任务」这一跳各自裁剪 ----
     from desktop.services.print_plan import (
         entry_to_effect_spec, plan_detect_submit_entries,
     )
     from desktop.stages import detect_stage
 
-    _entries_a2 = plan_detect_submit_entries(
+    _entries = plan_detect_submit_entries(
         manifest_paths=[_anchor_src],
         boxes_for=lambda _text: [_bl, _br],
-        area=2,
     )
-    _anchor_entry = next(
-        (e for e in _entries_a2 if Path(e["file"]).stem == _anchor_stem), None)
-    ok("（前置）area=2 的派生条目带原始双框（不是并集降级）",
-       _anchor_entry is not None and len(_anchor_entry["boxes"]) == 2
-       and _anchor_entry["parea"] == 2, str(_anchor_entry))
-    if _anchor_entry is None:
+    _mine = [e for e in _entries if Path(e["file"]).stem == _anchor_stem]
+    ok("双框页派生两条（-r / -l），各自带一个框",
+       len(_mine) == 2
+       and {e["label"] for e in _mine} == {f"{_anchor_stem}-r", f"{_anchor_stem}-l"}
+       and all(len(e["boxes"]) == 1 for e in _mine),
+       str(_mine))
+    if len(_mine) != 2:
         return
     _out = Path(ctx.tmp) / "area_e2e" / "detect_final"
     _rc = detect_stage.run_detect_submit_stage({
-        "task_id": tid, "stage": "detect_submit", "run_id": "e2e_area2",
+        "task_id": tid, "stage": "detect_submit", "run_id": "e2e_boxes",
         "args": {
-            "_effects": [entry_to_effect_spec(e, "0") for e in _entries_a2],
+            "_effects": [entry_to_effect_spec(e, "0") for e in _entries],
             "output": str(_out), "clean": True,
         },
     })
     ok("真实提交阶段 exit=0", _rc == 0, f"rc={_rc}")
-    _submitted = _out / f"{_anchor_stem}.png"  # area=2 双框并成一条，无后缀
-    ok("双框 + area=2 → 成品图并成一条（不带 -l/-r 后缀）",
-       _submitted.exists(), str(sorted(p.name for p in _out.glob("*.png"))))
-    if not _submitted.exists():
-        return
-    # 基准：原始框 + 原始 area（与 entry_to_effect_spec 同源）
-    _ref = compose_region_output(_src, [_bl, _br], 2, "0")
-    _got = QImage(str(_submitted))
-    ok("成品图尺寸 == 按 area=2 合成的尺寸（area 没被降级成 1）",
-       len(_ref) == 1
-       and (_got.width(), _got.height()) == (_ref[0].width(), _ref[0].height()),
-       f"got={(_got.width(), _got.height())} "
-       f"ref={(_ref[0].width(), _ref[0].height())}")
+    for _entry, _box in zip(
+        sorted(_mine, key=lambda e: e["label"]),
+        sorted([_bl, _br], key=lambda b: b[0], reverse=True),
+    ):
+        _submitted = _out / f"{_entry['label']}.png"
+        ok(f"提交产物存在：{_submitted.name}", _submitted.exists(),
+           str(sorted(p.name for p in _out.glob("*.png"))))
+        if not _submitted.exists():
+            continue
+        _ref = compose_region_output(_src, [_box], "0")
+        _got = QImage(str(_submitted))
+        ok(f"{_entry['label']} 的尺寸 == 该框的紧裁尺寸",
+           len(_ref) == 1
+           and (_got.width(), _got.height()) == (_ref[0].width(), _ref[0].height()),
+           f"got={(_got.width(), _got.height())} "
+           f"ref={(_ref[0].width(), _ref[0].height())}")
 
     # ---- 2. 第四步只透传成品图（「必须提交才传给下一步」的结构保证）----
     _entries, _doc = d._print_entries()

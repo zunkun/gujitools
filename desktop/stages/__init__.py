@@ -3,7 +3,7 @@
 
 按职责分文件：
 - events        ：JSON Lines 事件输出 + print 拦截/进度解析
-- detect_stage  ：detect 阶段（YOLO 检测文本框）+ detect_submit（按 area 裁图）
+- detect_stage  ：detect 阶段（YOLO 检测文本框）+ detect_submit（逐框裁图）
 - generic_stage ：通用 CLI 阶段 + extract 渲染阶段
 - print_stage   ：print 阶段（效果图合成 + 生成 PDF）
 - rembg_stage   ：rembg_submit 阶段（白底转透明，整图不裁）

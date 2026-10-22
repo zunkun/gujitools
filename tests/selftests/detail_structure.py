@@ -48,11 +48,11 @@ def run(ctx) -> None:
        d.step_bar.imposition_node.isVisible() and d._imposition_node_visible())
     ok("拼版节点默认未选择（图上有这一格 ≠ 一定要跑）",
        not d.step_bar.imposition_node.is_selected())
-    # 反向钉子：改第三步区域模式**不再**影响可见性（判据只看流程图）
-    d.store.save_draft(d.task_id, "rembg", {"area": 2})
+    # 反向钉子：改第三步面板参数**不再**影响可见性（判据只看流程图）
+    d.store.save_draft(d.task_id, "rembg", {"type": 2})
     d._refresh_imposition_node()
     pump(app)
-    ok("改第三步区域模式**不影响**拼版节点（判据只看流程图）",
+    ok("改第三步面板参数**不影响**拼版节点（判据只看流程图）",
        d._imposition_node_visible())
     d.store.clear_draft(d.task_id, "rembg")
     d._refresh_imposition_node()

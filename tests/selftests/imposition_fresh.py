@@ -70,8 +70,7 @@ def run(ctx) -> None:
         b = _mk(src / "1-l.png", (30, 160, 60))
         made = S.make_page([a, b])
         assert made is not None
-        # 拼版生效三判据：图里有节点（默认模板自带）+ 区域模式=左右分开 + 勾选
-        repo.save_draft(tid, "rembg", {"area": 1})
+        # 拼版生效判据：图里有节点（默认模板自带）+ 勾选（area 已移除）
         repo.save_imposition_doc(tid, {"enabled": True, "pages": [made]})
 
         page = TaskDetailPage(repo)
@@ -83,9 +82,9 @@ def run(ctx) -> None:
         assert page.task_id is not None
         ok("拼版当前是生效态", page.imposition_effective())
 
-        def counting_compose(doc, dest, report=None):
+        def counting_compose(doc, dest, *args, **kwargs):
             calls["compose"] += 1
-            return original_compose(doc, dest, report)
+            return original_compose(doc, dest, *args, **kwargs)
 
         out_dir = repo.imposition_output_dir(tid)
         doc_path = repo.imposition_doc_path(tid)

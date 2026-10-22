@@ -35,7 +35,7 @@ File: functions/__init__.py
 
 模块职责:
 - `base.py`: FunctionBase 基类，提供输入路径解析、输出路径计算、并发执行引擎。
-- `text_region.py`: TextRegionProcessor 基类，封装 YOLO 检测 + area/border 规则 + 输出构建。
+- `text_region.py`: TextRegionProcessor 基类，封装 YOLO 检测 + 逐框裁剪 + 输出构建。
 - `extract.py`: 从 PDF 提取页面图片（ExtractFunction）。
 - `detect.py`: 检测整页图片的内容框（半幅左右 / 整幅），只上报坐标不写盘（DetectFunction）。
 - `crop.py`: 裁剪原图像素（CropFunction），继承 TextRegionProcessor。
@@ -152,7 +152,7 @@ _calc_outpath / parse_user_output 负责，不在本方法内。
 File: functions/crop.py
 裁剪功能：基于 YOLO 检测定位文本框并裁剪原图像素。
 
-与 cropremove 共享 area/border 规则（继承 TextRegionProcessor），
+与 cropremove 共享「检测文本框 → 逐框裁剪」规则（继承 TextRegionProcessor），
 但不做 Otsu 去底色，仅裁剪原始图像像素。
 
 ### `class CropFunction(TextRegionProcessor)`
@@ -181,10 +181,10 @@ output_suffix 为全局输出文件后缀（默认 ".png"，自动转小写）�
 File: functions/crop_remove.py
 复合流程：裁剪（基于检测）+ 去底色（Otsu / 红色印章保留）。
 
-与 crop 共享 area/border 规则（继承 TextRegionProcessor），
+与 crop 共享「检测文本框 → 逐框裁剪」规则（继承 TextRegionProcessor），
 区别是 ROI 做 Otsu 二值化去底色，并支持印章保留。
 
-- `area` 控制裁剪区域与输出方式（详见 TextRegionProcessor）；
+- 检测出几个文本框就裁几张图（半幅 -l/-r，整幅用页名）；
 - `border` 控制空白边界（详见 TextRegionProcessor）；
 - 额外参数：offset / type / seal / sealcolor / sealarea / sealmin_sat。
 
@@ -268,8 +268,8 @@ detect + 裁剪 + 去底色`，两者都通过本模块拿框，而不是各自�
 ⚠️ **存储槽位约定**（GUI boxes.json / 检测事件 / 下游布局共用）：
 ``slots()`` 给出的槽位数编码形态——半幅固定 2 槽 ``[左, 右]``（保留左右
 身份，缺失侧为 None），整幅只占 1 槽 ``[整幅]``。下游据此判断整幅页：
-整幅框原样下传（区域随框走），area=4 才归一整页保留框外内容
-（用户 2026-09-29 改定，见 `utils.box_geometry.whole_page_box`）。
+整幅框原样下传（区域随框走），检测出几个框就裁几张图
+（用户 2026-09-29 改定）。
 
 #### 方法
 
@@ -676,28 +676,30 @@ File: functions/rembg.py
 源码：[`functions/text_region.py`](../../functions/text_region.py)
 
 File: functions/text_region.py
-文本区域处理基类：YOLO 检测 → area/border 规则 → 输出构建。
+文本区域处理基类：YOLO 检测 → 按框裁剪 → 输出构建。
 
 crop 和 cropremove 共享相同的检测与裁剪规则，唯一区别是 ROI 处理：
 - crop：裁剪原图像素
 - cropremove：Otsu 去底色
 
+2026-10-22 起**不再有 area 参数**：检测出几个文本框就各自裁成一张图
+（半幅页带 ``-l``/``-r`` 后缀，整幅页用页名）；无框的页原样透传。
+
 本基类将公共流程模板化，子类只需实现差异方法：
 - `_on_boxes_detected(img_bgr, boxes)`：检测到框后预处理，返回上下文 ctx
 - `_process_roi(img_bgr, box, ctx)`：处理单个文本框区域
-- `_handle_no_boxes(img_bgr, image_path, area_mode)`：无检测框时的处理
+- `_handle_no_boxes(img_bgr, image_path)`：无检测框时的处理
 - `_save_output(arr, out_path)`：保存输出图片
 
 ctx 通过参数传递（而非 self 实例变量），保证 ThreadPoolExecutor 并发安全。
 
-**几何规则来源**：area/border 的画布尺寸与粘贴落点由
-`utils.box_geometry.build_output_layout` / `build_symmetric_layout` 统一计算
-（与 desktop 侧预览共用同一份规则）。本模块只负责用 numpy 把布局"画"出来，
-不再自行推导几何。
+**几何规则来源**：border 的画布尺寸与粘贴落点由
+`utils.box_geometry.build_output_layout` 统一计算（与 desktop 侧预览共用同一份
+规则）。本模块只负责用 numpy 把布局"画"出来，不再自行推导几何。
 
 ### `class TextRegionProcessor(FunctionBase)`
 
-文本区域处理基类：封装 YOLO 检测 + area/border 规则 + 输出构建。
+文本区域处理基类：封装 YOLO 检测 + 按框裁剪 + 输出构建。
 
 #### 方法
 
@@ -710,9 +712,6 @@ ctx 通过参数传递（而非 self 实例变量），保证 ThreadPoolExecutor
 
 计算输出目录；YOLO 模型**延迟**到真正需要检测时才加载。
 
-area=4「整页」模式下完全不检测，模型也就不会被加载——这既省掉了
-非古籍文档白白等模型初始化，也让「没有 YOLO 权重」的环境仍能跑整页流程。
-
 检测本身走 `detect_page_content_by_path`：优先交给**常驻 YOLO 服务**
 （模型全局只加载一次、多进程共用），服务不可用时它自己在本进程内
 加载单例。因此本对象不持有模型。
@@ -722,10 +721,9 @@ area=4「整页」模式下完全不检测，模型也就不会被加载——�
 执行文本区域处理：委托基类并发引擎逐图处理。
 
 复用 FunctionBase.execute() 的线程池、重试与日志；单图完整流程
-（读取→YOLO 检测→area/border 规则→输出）在 _process_single_image 中。
+（读取→YOLO 检测→逐框裁剪→输出）在 _process_single_image 中。
 
 ⚠️ 在进入并发引擎**之前**先把模型备好（`warm_up_detect_model`）：
-area=4 整页模式完全不用 YOLO，故先判断再预热，避免白加载；非整页时
 这笔开销被单独计时、单独报出，不会压在"第一张图"的耗时上。
 
 ---
@@ -814,7 +812,7 @@ frozen 打包下 `import torch` + 首次 `YOLO(weights)` 要 **约 5.4 秒**，d
 | `sweep_stale_service_files() -> int` | 删掉「属主进程已死」的发现文件，返回删除个数。 |
 | `serve() -> int` | 服务主循环：绑定回环端口、写发现文件、**默认常驻**（TTL 仅在显式 |
 | `service_in_use() -> bool` | 本线程是否已经在用常驻服务（日志里说明"模型住在哪"用）。 |
-| `detect_boxes_via_service(image_path, area: int=1) -> ServiceDetect \| None` | 把一张图交给常驻服务检测，返回 :class:`ServiceDetect`。 |
+| `detect_boxes_via_service(image_path) -> ServiceDetect \| None` | 把一张图交给常驻服务检测，返回 :class:`ServiceDetect`。 |
 | `warm_up() -> tuple[str, float]` | 确保模型就绪，返回 ``(backend, 本次加载耗时秒)``。 |
 | `warm_up_service_only() -> tuple[str, float]` | 预加载专用：**只走常驻服务**，绝不回落本进程内加载。 |
 | `service_model_loaded(timeout: float=CONNECT_TIMEOUT) -> bool \| None` | 轻量探测：常驻服务里模型是否**已经**就绪（不拉起、不加载）。 |
@@ -852,16 +850,13 @@ frozen 打包下 `import torch` + 首次 `YOLO(weights)` 要 **约 5.4 秒**，d
 服务主循环：绑定回环端口、写发现文件、**默认常驻**（TTL 仅在显式
 设了 `GUJI_YOLO_TTL` 时生效）。返回进程退出码。
 
-#### `detect_boxes_via_service(image_path, area: int=1) -> ServiceDetect | None`
+#### `detect_boxes_via_service(image_path) -> ServiceDetect | None`
 
 把一张图交给常驻服务检测，返回 :class:`ServiceDetect`。
 
 **`None` 表示"这次没走成服务"**（服务关着、拉不起来、连不上、协议错、
 服务端报错都算），调用方应当回落到本进程内加载模型。注意它与"服务算完
 但没检到框"不同——后者返回 ``ServiceDetect(None, None, 0.0)``。
-
-`area` 只为兼容调用方签名保留：整页模式（area=4）在上层就已分流、根本不会
-走到这里，因此服务协议里不带它。
 
 #### `warm_up() -> tuple[str, float]`
 
