@@ -317,7 +317,9 @@ def main() -> int:
             QTimer.singleShot(STARTUP_UPDATE_CHECK_MS, controller.check_silently)
         # 顺带后台静默查一次**去底色数据包**（权重仓库的 database release，用户
         # 2026-10-16）：有新模型只在「帮助 → 检查数据包」菜单项上挂提示，用户
-        # 点进去才下载替换。与上面那次错开同一时刻发起——两次网络互不冲突。
+        # 点进去才下载启用。⚠️ 唯一的例外是本机**一份权重都没有**（被删/安装
+        # 损坏）：那时检测根本跑不起来，控制器会直接下载最新那份并启用
+        # （用户 2026-10-22）。与上面那次错开同一时刻发起——两次网络互不冲突。
         data_controller = getattr(window, "data_package_controller", None)
         if data_controller is not None:
             QTimer.singleShot(

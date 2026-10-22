@@ -83,8 +83,8 @@ def run(ctx) -> None:
 
     from tests.selftests._context import pump
 
-    control = d.control_stack.widget(2)  # area 属第三步面板，此处只借来定档
-    control.area.setCurrentIndex(control._index_of(control.area, 1))
+    # ⚠️ 2026-10-22 第二轮：界面上没有 area 了（后端固定默认 1），
+    #    这里不用再拨面板；只等界面稳定一下。
     pump(app, 4)
 
     view = d.detect_viewer

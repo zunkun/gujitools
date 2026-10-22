@@ -26,18 +26,22 @@
 
 - 步骤 key 是 :data:`~desktop.steps.spec.STEP_KEYS` 里的 ``extract`` /
   ``detect`` / ``rembg`` / ``print`` / ``imposition``，描述"这是什么功能"；
-- **运行阶段**多一个 ``rembg_submit``——它是第三步「去底色」面板上的
-  「提交本次任务」按钮触发的**同一步骤的第二个动作**（先生成整页预览图到
-  ``stages/rembgpreview``，用户确认后才把最终图落到 ``stages/rembg``）。
-  端口系统必须认得它，否则第三步的产物没有落点、第四步也没有输入。
+- **运行阶段**多两个（2026-10-22 起）：
+  ``detect_submit``——第二步「检测文本框」右上「提交本次任务」按钮触发的
+  **同一步骤的第二个动作**（先检测出框到 ``boxes.json``，提交时才按 ``area``
+  把页面图裁到 ``stages/detect``）；
+  ``rembg_submit``——第三步「提交本次任务」触发的第二个动作（先把整图去底色
+  到 ``stages/rembgpreview``，提交后把白底转透明落到 ``stages/rembg``）。
+  端口系统必须认得它们，否则这两步的产物没有落点、下一步也没有输入。
 
     ====================  ==========================================
     运行阶段               步骤 key / 端口
     ====================  ==========================================
     ``extract``            ``extract``：in=pdf / out=pages
-    ``detect``             ``detect``：in=pages / out=boxes
-    ``rembg``              ``rembg``：in=pages,boxes / out=pages（预览）
-    ``rembg_submit``       ``rembg``：in=pages / out=pages（最终图）
+    ``detect``              ``detect``：in=pages / out=boxes（只检测，出框）
+    ``detect_submit``       ``detect``：in=pages / out=pages（按 area 裁图）
+    ``rembg``               ``rembg``：in=pages / out=pages（整图去底色预览）
+    ``rembg_submit``        ``rembg``：in=pages / out=pages（白底转透明成品）
     ``print``              ``print``：in=pages / out=pdf
     ====================  ==========================================
 
@@ -74,15 +78,11 @@ ARTIFACT_INPUT = "input"
 #: **缺了也不阻塞就绪**的输入端口：这些端口是"锦上添花"，没有它这一步照样跑得出结果。
 #:
 #: - ``boxes``（检测框）：``detect`` **可能一框未检**（空白页 / 无文字页 / 整页模式），
-#:   那时 ``boxes.json`` 本来就不会存在——它不是失败，是**正常结果**。而
-#:   「图片去底色」按 ``area`` 处理整张图，没有框也能出图（``functions.rembg``
-#:   的整页分支）。拿"文件在不在"当硬门槛，用户看到的是"这一步的输入还没就位"
-#:   的假提示、按钮永远点不动（2026-10-17 自测复现：6 页空白样例跑完 detect
-#:   之后第三步再也起不来）。
+#:   那时 ``boxes.json`` 本来就不会存在——它不是失败，是**正常结果**。
 #:
-#: ⚠️ 这张表只影响**就绪守卫对文件存在性的要求**，不影响
-#: :func:`stage_blocking_inputs` 的判据本身（那里照旧回答"本流程里这一步吃哪些
-#: 端口"——自测 ``step_ports`` 钉着默认流程 rembg 是 ``("pages", "boxes")``）。
+#: ⚠️ 2026-10-22 起默认流程里**没有任何一步把 boxes 声明为输入**（去底色不再
+#:    按框裁图），这张表因此暂时不起作用；保留它是给"将来某一步要吃检测框"
+#:    留的唯一开关，别在别处另写一份"这个端口缺了也行"的判断。
 OPTIONAL_INPUT_PORTS = frozenset({ARTIFACT_BOXES})
 
 #: 全部产物类型 → 中文名（提示语与界面文案用，别处不另写一份）。
@@ -118,6 +118,7 @@ def artifact_of(port: str) -> str:
 STAGE_STEPS: dict[str, str] = {
     "extract": "extract",
     "detect": "detect",
+    "detect_submit": "detect",
     "rembg": "rembg",
     "rembg_submit": "rembg",
     "print": "print",
@@ -128,19 +129,45 @@ STAGE_STEPS: dict[str, str] = {
 def stage_inputs(stage: str) -> tuple[str, ...]:
     """这一步**消费**哪些端口（来自 ``StepSpec.inputs``，不另写一份）。
 
-    ``rembg_submit`` 是"把预览图定稿"的提交动作，不重新检测，所以它**不吃**
-    ``boxes``（框在预览那一步已经用过了）；这里显式覆盖，其余阶段直接取 spec。
+    两个「提交」动作的覆盖（都不另写一份声明）：
+    ``detect_submit`` / ``rembg_submit`` 是"把预览定稿"的动作，不重新检测、
+    也不看检测框，只吃上游的 ``pages``；这里显式覆盖，其余阶段直接取 spec。
     """
-    if stage == "rembg_submit":
+    if stage in ("detect_submit", "rembg_submit"):
         return ("pages",)
     spec = spec_by_key(STAGE_STEPS.get(stage, stage))
     return tuple(spec.inputs) if spec else ()
 
 
 def stage_outputs(stage: str) -> tuple[str, ...]:
-    """这一步**产出**哪些端口（来自 ``StepSpec.outputs``，不另写一份）。"""
+    """这一步**产出**哪些端口（来自 ``StepSpec.outputs``，不另写一份）。
+
+    ⚠️ 这是**步骤级**声明：``detect`` 声明 ``("boxes", "pages")``——这一步整体
+    两样都给（框在"检测"、图在"提交"）。凡是要问"图上这个节点能不能供给某个
+    端口"（:meth:`FlowDiagram.nearest_producer`）都用它，否则第二步之后的下游
+    会沿图跳过检测节点、直接去拿提取的原图。
+
+    动作级（"这一下具体写了什么文件"）见 :func:`action_outputs`。
+    """
     spec = spec_by_key(STAGE_STEPS.get(stage, stage))
     return tuple(spec.outputs) if spec else ()
+
+
+def action_outputs(stage: str) -> tuple[str, ...]:
+    """**动作级**产出端口：同格的每个动作各自只产一样（:func:`fold_forward` 用）。
+
+    ``detect`` 那一下只写 ``boxes.json``、``detect_submit`` 才裁图，
+    ``rembg`` 出的是预览图、``rembg_submit`` 才定稿。折返时必须按这个粒度
+    挑"最靠后的、也产出该端口的动作"，否则 `rembg.pages` 会折到 ``detect``
+    自己（它声明了 pages，却没有那个落点）。
+    """
+    if stage == "detect":
+        return ("boxes",)
+    if stage == "detect_submit":
+        return ("pages",)
+    if stage == "rembg":
+        return ("pages",)  # 预览也产 pages（只是落在 rembgpreview）
+    return stage_outputs(stage)
 
 
 #: **同格多动作的前折**：把图上认出的阶段升级到**同一界面格里最靠后的、
@@ -160,30 +187,31 @@ def stage_outputs(stage: str) -> tuple[str, ...]:
 def fold_forward(stage: str, port: str) -> str:
     """把阶段折到**同格里最靠后的、也产出该端口的动作**。
 
-    判定完全从 :data:`STAGE_STEPS`（同格关系）与 :func:`stage_outputs`
-    （谁产什么）派生，**不另写一张表**：同格里多个阶段都产出该端口时取声明
+    判定完全从 :data:`STAGE_STEPS`（同格关系）与 :func:`action_outputs`
+    （**每个动作**产什么）派生，**不另写一张表**：同格里多个阶段都产出该端口时取声明
     顺序里最靠后的那个；没有同格伙伴时原样返回。语义与用途见上面那段说明。
     """
     step = STAGE_STEPS.get(stage, stage)
     siblings = [
         sibling
         for sibling, owner in STAGE_STEPS.items()
-        if owner == step and port in stage_outputs(sibling)
+        if owner == step and port in action_outputs(sibling)
     ]
     return siblings[-1] if siblings else stage
 
 
 #: 运行阶段 → 流程图上显示的**中文节点名**。
 #:
-#: ⚠️ 只有 ``rembg_submit`` 需要单独一句：它和 ``rembg`` 共用 ``rembg`` 的
-#: :class:`StepSpec`，直接取 ``stage_name()`` 会让流程图上出现**两个同名节点**
-#: （都叫「图片去底色」），用户在图上根本分不清哪个是"生成预览"、哪个是
-#: "提交定稿"。这里给它独立文案，与 :data:`desktop.store.tasks.STAGE_LABELS`
+#: ⚠️ 两个「提交」动作要单独一句：它们与各自的第一步共用同一份
+#: :class:`StepSpec`，直接取 ``stage_name()`` 会让流程图上出现**同名节点**
+#: （两个「图片去底色」/ 两个「检测文本框」），用户在图上根本分不清哪个是
+#: 预览、哪个是定稿。这里给独立文案，与 :data:`desktop.store.tasks.STAGE_LABELS`
 #: 的口径一致——但**真源在这里**：store 那张表改为从本函数派生。
 #:
-#: ⚠️ 别把它当"步骤名"用：步骤条上不显示 ``rembg_submit``（它折叠进第三步格，
+#: ⚠️ 别把它当"步骤名"用：步骤条上不显示 ``*_submit``（它们折叠进各自那一格，
 #: 见 :func:`desktop.steps.flow.FlowDefinition` 的槽位折叠）。
 STAGE_LABELS: dict[str, str] = {
+    "detect_submit": "提交检测结果",
     "rembg_submit": "提交去底色结果",
 }
 
@@ -430,36 +458,29 @@ def flow_needs_source_pdf(diagram) -> bool:
     return False
 
 
-def detect_feeds_rembg(diagram) -> bool:
-    """这张流程图上「图片去底色」**能不能拿到检测框**。
+def flow_crops_pages(diagram) -> bool:
+    """这条流程里页面会不会被「检测文本框」的提交按 ``area`` 裁过。
 
-    用户 2026-10-07：去底色作为流程第一个节点（前面没有「检测文本框」）时，
-    area 的 1/2/3 都要吃检测框、没有框的页裁出来就是一片空白——那种流程里
-    area 必须固定 4（整页）且不可改。这个判据要在**两处**用，都别另写一份：
+    2026-10-22 起 area 归第二步（检测），它的作用也从"去底色怎么裁"变成
+    "第二步提交时怎么裁"。凡是要问"这一步拿到的图是整页还是半页"的地方
+    （拼版要不要成对 ``-l``/``-r``、区域模式提示）都用本函数，别各写一份
+    "流程里有没有 detect 节点"。
 
-    1. 详情页第三步面板——没有检测数据时 area 锁 4（``RembgPanel`` 的
-       ``whole_page_only``）；
-    2. 拼版的前提判据——没有检测数据时拼版吃整图照样拼，不再要求
-       ``area=1``（「拼版作为第一个节点，也不需要 detect 数据」）。
-
-    判据：``rembg`` 在流程里**且**沿图回溯 ``boxes`` 有产出方（「检测文本框」
-    在它上游，不要求直接相连——中间隔网关也算）。空图 / ``rembg`` 不在流程里
-    ⇒ ``False``：这是保守答案——面板锁整页不会错（那种流程里面板根本不该
-    出现 1/2/3），拼版放行也合理（吃入口图片/整图）。
+    ``imposition`` 那一格传 False（条件不满足时被剔除，与答案无关）。
+    空图 / 没有 detect ⇒ False（＝图是整页的，拼版吃整图照样拼）。
     """
     if diagram is None or not getattr(diagram, "nodes", ()):
         return False
     from desktop.steps.scheduler import Scheduler
 
-    active = set(Scheduler.from_diagram(diagram, {"imposition": False}).stages)
-    if "rembg" not in active:
-        return False
-    return diagram.nearest_producer("rembg", "boxes", active) is not None
+    return "detect" in set(
+        Scheduler.from_diagram(diagram, {"imposition": False}).stages
+    )
 
 
 # ---------------------------------------------------------------- 产物落点
-#: 运行阶段 → ``{端口名: 相对 tasks/<任务号>/ 的落点}``。
 #:
+#: 运行阶段 → ``{端口名: 相对 tasks/<任务号>/ 的落点}``。
 #: ⚠️ **这张表就是"任务目录布局"的唯一事实来源**：以前它散在
 #: ``desktop.store.tasks`` 的 ``extract_output_dir`` / ``rembg_output_dir`` /
 #: ``rembg_preview_output_dir`` / ``print_output_pdf`` 四个方法里，加一步要
@@ -472,7 +493,14 @@ def detect_feeds_rembg(diagram) -> bool:
 #:   （只是给界面看的缓存），所以不进这张表。
 STAGE_LOCATIONS: dict[str, dict[str, str]] = {
     "extract": {"pages": "stages/extract"},
+    # detect 两个产物分两处（2026-10-22）：
+    #   · ``boxes`` 落在**任务根**（``boxes.json``）——它不是一堆图片、是一个
+    #     坐标文件，第二步预览与 YOLO 导出都按这个固定名读；
+    #   · ``pages`` 是「提交本次任务」按 area 裁出来的成品图，落 ``stages/detect``，
+    #     给第三步「图片去底色」当输入（未提交 ⇒ 这个目录是空的/不存在，
+    #     第三步自然转不过去，正是"提交才算本步完成"的落地方式）。
     "detect": {"boxes": "boxes.json"},
+    "detect_submit": {"pages": "stages/detect"},
     "rembg": {"pages": "stages/rembgpreview"},
     "rembg_submit": {"pages": "stages/rembg"},
     "imposition": {"pages": "stages/imposition"},
@@ -624,24 +652,18 @@ def task_input_dir(task_dir: Path | str) -> Path:
 SUPPLIERS: dict[str, dict[str, str]] = {
     # 提取：吃任务自带的 PDF 副本，没有上游。
     "extract": {"pdf": SUPPLY_TASK_SOURCE},
-    # 检测：吃提取出的页面图。
+    # 检测：吃提取出的页面图（或流程入口图片）。
     "detect": {"pages": "extract"},
-    # 去底色预览：吃提取的页面图 **和** 检测的框。
-    "rembg": {"pages": "extract", "boxes": "detect"},
-    # 提交：把预览图定稿到最终目录，仍以提取的页面图为输入。
-    "rembg_submit": {"pages": "extract"},
-    # 拼版：吃**去底色提交后的成品图**（``rembg_submit`` → ``stages/rembg``），
-    # 不是吃提取出的原图。
-    # ⚠️⚠️ 此前这里写的是 ``"extract"``（注释说"与去底色并行，不是它的下游"）
-    #    ——**连线是错的**，而且被一处硬编码**掩盖**了：页面侧
-    #    ``imposition_source_files()`` 写死读 ``stages/rembg``，所以默认流程下
-    #    用户看到的候选池一直是对的（``1-r/1-l/2-r/2-l`` 那种成对半页图，
-    #    **只有 area=1 的去底色提交之后才存在**）；而
-    #    ``store.stage_input(imposition, pages)`` 给出的却是 ``stages/extract``
-    #    （原始扫描页）。
-    #    一旦页面改成**按连线**取图（这才是 BPM 化的正确做法），拼版就会拿原图
-    #    当源图——而 ``-l/-r`` 半页对只由 area=1 的去底色产出，拼出来必然错。
-    #    判据：``task_default.bpmn`` 里「图片拼版」排在「图片去底色」**之后**。
+    # 提交检测结果：按 area 裁图，同样吃上游页面图（检测框是同一步的产物，
+    # 由提交动作自己按任务目录读，不占输入端口）。
+    "detect_submit": {"pages": "extract"},
+    # 去底色：吃**「检测文本框」提交后的裁图**（2026-10-22）。
+    # ⚠️ 这是本次大改造的关键一条：以前去底色吃原始页 + 检测框、自己在提交时
+    #    按 area/border 裁；现在裁剪发生在第二步的提交里，去底色只做整图去底色。
+    "rembg": {"pages": "detect_submit"},
+    # 提交：把整图去底色的结果定稿（白底转透明），仍吃裁好的图。
+    "rembg_submit": {"pages": "detect_submit"},
+    # 拼版：吃**去底色提交后的成品图**（``rembg_submit`` → ``stages/rembg``）。
     "imposition": {"pages": "rembg_submit"},
     # PDF排版：默认吃第三步提交的成品图；拼版生效时改由 imposition 供给
     # （见 :func:`print_pages_supplier`——那是**运行时**的一处覆盖，
@@ -979,6 +1001,19 @@ def missing_stages(order: list[str], *, start: str | None = None) -> list[str]:
     的就绪判断走 :func:`input_ready`。
     """
     done = {start} if start else set()
+
+    def _satisfied(supplier: str | None) -> bool:
+        """这个供给方算不算"已经跑过"。
+
+        ⚠️ 同格多动作（``detect_submit`` / ``rembg_submit``）不是独立的流程格，
+        ``order`` 里只有步骤 key——按原名比对会把"缺上游"误报在它们身上
+        （顺序正确也报 ``rembg`` 未就绪）。所以再看一眼它所属的**界面格**。
+        """
+        if supplier in done:
+            return True
+        step = STAGE_STEPS.get(supplier or "")
+        return bool(step and step != supplier and step in done)
+
     waiting: list[str] = []
     for stage in order:
         if stage in done:
@@ -988,7 +1023,7 @@ def missing_stages(order: list[str], *, start: str | None = None) -> list[str]:
             # ⚠️ **必须放过任务源哨兵**（``<task>``）：它不是阶段、永远不会出现在
             #    ``done`` 里，当成"上游缺失"会把流程入口（extract）永远判成不能跑。
             #    入口阶段本来就该直接放行——它的输入由任务自己供给，不靠谁先跑。
-            if supplier in (None, SUPPLY_TASK_SOURCE) or supplier in done:
+            if supplier in (None, SUPPLY_TASK_SOURCE) or _satisfied(supplier):
                 continue
             waiting.append(stage)
             break
@@ -1018,11 +1053,12 @@ __all__ = [
     "SUPPLY_TASK_INPUT",
     "SUPPLY_TASK_SOURCE",
     "TASK_INPUT_LOCATION",
+    "action_outputs",
     "artifact_of",
     "artifact_path",
     "copy_location",
     "describe",
-    "detect_feeds_rembg",
+    "flow_crops_pages",
     "flow_entry_input_kind",
     "fold_forward",
     "flow_entry_node",

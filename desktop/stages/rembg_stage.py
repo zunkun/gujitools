@@ -106,17 +106,19 @@ def _save_step4_thumb(image, name: str, thumb_dir: Path) -> None:
 
 
 def run_rembg_submit_stage(config: dict) -> int:
-    """rembg 提交：把「生成预览」产出的整页去底图，按 area/border + 检测框
-    合成为真正想要的最终图片，写入任务 output 目录。
+    """rembg 提交：把整页去底图的白底转成透明，写入任务 output 目录。
 
-    与 run_print_stage 的效果合成复用同一套几何规则
-    （desktop/workers/preview_worker.compose_region_output），
-    但结果是持久化的交付图片而非一次性暂存，且不再生成 PDF。
+    用户 2026-10-22：
+
+    > 去底色步骤的 area 和 border 参数去除，去底色直接输入图片是怎样的，
+    > 直接整个图片去底色
+
+    所以这里**不做任何几何合成**：一条输入（「生成预览」的结果）对应一条输出
+    （同名的透明底 PNG）。按框裁图在第二步「提交本次任务」已经做完，进来的
+    图本来就是该交出去的形状。
 
     args["_effects"] = [
-        {"file": 预览结果路径, "label": 输出文件名(无扩展名),
-         "effect": {"boxes": [[x1,y1,x2,y2]], "area": int, "border": str|None} | None},
-        …
+        {"file": 预览结果路径, "label": 输出文件名(无扩展名)}, …
     ]
     """
     task_id = config["task_id"]
@@ -127,6 +129,12 @@ def run_rembg_submit_stage(config: dict) -> int:
     emit({"type": "started", **context})
     try:
         effects = args.pop("_effects", None) or []
+        # 兼容旧调用方（{"file":…, "effect": {…}} 的形态）：只取文件与文件名。
+        entries = [
+            {"file": str(spec.get("file")), "label": str(spec.get("label") or "")}
+            for spec in effects
+            if spec.get("file")
+        ]
         out_dir = Path(args["output"])
         if args.get("clean") and out_dir.exists():
             for child in out_dir.iterdir():
@@ -151,91 +159,53 @@ def run_rembg_submit_stage(config: dict) -> int:
         shutil.rmtree(thumb_dir, ignore_errors=True)
         thumb_dir.mkdir(parents=True, exist_ok=True)
 
-        from PySide6.QtGui import QImage, QImageReader
+        from PySide6.QtGui import QImage
 
-        from desktop.workers.preview_worker import compose_region_output
+        total = len(entries)
 
-        # ---- 阶段一（主线程）：预计算每页的输出文件名 --------------------
-        # 只用 QImageReader 读文件头拿尺寸（不解码位图），几何张数/命名由
-        # ``plan_submit_job`` 给出（与第三步实时预览增量落盘共用同一份规则，
-        # 零漂移）。area=1 时每页产左右两张，总张数 = 2×页数，进度按**张**计。
-        from desktop.services.print_plan import plan_submit_job
-
-        jobs: list[dict] = []
-        for spec in effects:
-            reader = QImageReader(str(spec["file"]))
-            size = reader.size()
-            px = None if size.isEmpty() else (size.width(), size.height())
-            jobs.append(plan_submit_job(spec, px))
-
-        total = sum(len(j["names"]) for j in jobs)  # 输出**张数**
-
-        # ---- 阶段二（线程池）：并行 读图 → 合成 → 写 PNG ------------------
-        # ⚠️ emit 只在主线程调（worker 线程往 stdout 写 JSON 行会交错）。
-        def _process(job: dict):
-            saved_names: list[str] = []
-            errors: list[str] = []
-            if not job["names"]:
-                return saved_names, [f"无法读取图片: {job['file']}"]
-            image = QImage(job["file"])
+        def _process(entry: dict):
+            """一条：读预览图 → 白底转透明 → 写 PNG（+ 第四步缩略图）。"""
+            name = f"{entry['label'] or Path(entry['file']).stem}.png"
+            image = QImage(entry["file"])
             if image.isNull():
-                return saved_names, [f"无法读取图片: {job['file']}"]
-            if job["compose"]:
-                outputs = compose_region_output(
-                    image, job["boxes"], job["area"], job["border"],
-                    full=bool(job.get("full")),
-                )
-            else:
-                outputs = [image]
-            names = job["names"]
-            if len(outputs) != len(names):
-                # 几何结果与预计算不一致（理论上不可能）：按张数现算，
-                # 命名规则不变，避免静默丢页
-                names = (
-                    [f"{job['label']}.png"]
-                    if len(outputs) == 1
-                    else [f"{job['label']}-{i + 1}.png"
-                          for i in range(len(outputs))]
-                )
-            for out, name in zip(outputs, names):
-                dst = out_dir / name
-                try:
-                    save_transparent_png(out, dst)
-                except Exception as exc:  # noqa: BLE001 - 单张失败不许拖垮整批
-                    errors.append(f"写入失败: {dst}（{exc}）")
-                    continue
-                saved_names.append(name)
-                # 缩略图仍从**合成位图**生成（白底）：它是第四步缩略条的 JPEG
-                # 加速件，而 JPEG 根本没有 α 通道——从合成图直接缩放落盘，
-                # 结果与改动前逐字节一致，省得再绕一圈解码。
-                _save_step4_thumb(out, name, thumb_dir)
-            return saved_names, errors
+                return "", f"无法读取图片: {entry['file']}"
+            dst = out_dir / name
+            try:
+                save_transparent_png(image, dst)
+            except Exception as exc:  # noqa: BLE001 - 单张失败不许拖垮整批
+                return "", f"写入失败: {dst}（{exc}）"
+            # 缩略图从**合成位图**（白底）生成：JPEG 没有 α 通道，从白底图
+            # 直接缩放的结果与"先转透明再合成"逐字节一致，省一轮解码。
+            _save_step4_thumb(image, name, thumb_dir)
+            return name, ""
 
         done = 0
         saved = 0
+        errors: list[str] = []
         executor = ThreadPoolExecutor(max_workers=SUBMIT_WORKERS)
         try:
             future_jobs = {
-                executor.submit(_process, job): job for job in jobs
+                executor.submit(_process, entry): entry for entry in entries
             }
             for future in as_completed(future_jobs):
-                job = future_jobs[future]
-                saved_names, errors = future.result()
-                saved += len(saved_names)
-                done += len(saved_names) + len(errors)
+                entry = future_jobs[future]
+                name, error = future.result()
+                done += 1
+                if name:
+                    saved += 1
+                elif error:
+                    errors.append(error)
                 emit({"type": "progress", **context, "done": done, "total": total})
-                # 每页一条处理记录：与 extract 等阶段的逐页日志同密度。
-                # ⚠️ progress 事件只动进度条不进日志（runner 只收 log 事件），
-                # 缺了这行整个提交过程在执行日志里就是空白。
+                label = entry.get("label") or Path(entry["file"]).stem
                 emit({
                     "type": "log", **context,
-                    "message": f"提交处理 {done}/{total}：{job['label']} → "
-                               + ("、".join(saved_names) if saved_names else "无输出"),
+                    "message": f"提交处理 {done}/{total}：{label} → "
+                               + (name or "无输出"),
                 })
-                for message in errors:
-                    emit({"type": "log", **context, "message": message})
         finally:
             executor.shutdown(wait=True, cancel_futures=True)
+        for message in errors:
+            emit({"type": "log", **context, "message": message})
         emit({"type": "progress", **context, "done": total, "total": total})
         emit(
             {"type": "log", **context,

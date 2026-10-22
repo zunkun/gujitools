@@ -184,7 +184,8 @@ python tools/check_yolo_dataset.py D:/ds/bookcontent/b1 \
 
 ### 模型加载
 
-- 权重文件路径：`gujitools/static/weights/bookcontent.pt`
+- 权重文件：`static/weights/` 下**当前生效**的那份（`utils.data_package.resolve_weights`
+  按 `bookcontent.version.json` 判定；目录里可留多份 `bookcontent-v<版本>.pt`）
 - 进程内单例加载（双重检查锁定），多线程复用同一实例。
 
 ## 输出
@@ -228,7 +229,8 @@ python tools/check_yolo_dataset.py D:/ds/bookcontent/b1 \
 | 产出文件     | 总是（标注图，命令行强制 `--save`） | 总是（裁剪图）      |
 | 默认输出目录 | `<输入父目录>/detect`               | `<输入父目录>/crop` |
 | `--output`   | 总是生效                            | 总是生效            |
-| area/border  | 不涉及                              | ✅                  |
+| area         | ✅（后端保留：整页/不检测的分流）      | ✅                  |
+| border       | ❌                                  | ✅                  |
 
 两者是**同级步骤**，输出路径规则同源（都调
 `utils.path_utils.resolve_final_output_dir`），因此默认目录只差最后的

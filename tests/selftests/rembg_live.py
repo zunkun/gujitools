@@ -6,7 +6,7 @@
 1. 参数与「生成预览」不同时，才算当前页；一致时不白算。
 2. **一次只算一页**，全量留给「生成预览」按钮。
 3. **增量落盘**（用户 2026-10-18 起）：该页去底色结果写
-   ``stages/rembgpreview``，按 area/border 规则的应用图写 ``stages/rembg``；
+   ``stages/rembgpreview``，白底转透明的成品图写 ``stages/rembg``（整图，不裁）；
    两个目录允许不完整（用户预览了哪一页，那一页才有产物）。
 4. ``stages/rembg`` 里有零星应用图**不代表**本步已提交——写图前先落 ``.draft``
    哨兵，第四步只有哨兵不存在时才认这批图（用户 2026-10-18 原话：有零星图片
@@ -211,8 +211,10 @@ def run(ctx) -> None:
     applied = (
         sorted(p.name for p in apply_dir.glob("*.png")) if apply_dir.exists() else []
     )
-    ok("按 area/border 规则的应用图已增量写进 stages/rembg（area=1 双框 → 左右两张）",
-       applied == ["001-l.png", "001-r.png"], f"{applied}")
+    # ⚠️ 2026-10-22：去底色不再按 area/border 合成——一条输入、一条成品，
+    #    文件名原样沿用（裁剪已在第二步提交时做完）。
+    ok("整图去底色的应用图已增量写进 stages/rembg（一进一出，同名）",
+       applied == ["001.png"], f"{applied}")
     ok("增量落盘留下未定稿哨兵（有零星应用图 ≠ 本步已提交）",
        (apply_dir / repo.REMBG_DRAFT_NAME).exists())
     ok("因此第四步不许用这批零星应用图", not d.print_source_committed())
@@ -234,7 +236,7 @@ def run(ctx) -> None:
     ok("提交后（哨兵已清）：第四步取图来源恢复为可用", d.print_source_committed())
     entries, _doc = d._print_entries()
     ok("第四步待打印列表能看到这批提交后的应用图",
-       {"001-l.png", "001-r.png"} <= {Path(e["file"]).name for e in entries},
+       {"001.png"} <= {Path(e["file"]).name for e in entries},
        f"{[Path(e['file']).name for e in entries]}")
 
     # 收尾：删掉专用任务，别给后续用例留下多余条目

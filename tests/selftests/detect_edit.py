@@ -235,6 +235,9 @@ class _Host(DetectMixin):
     def _refresh_reference_boxes(self):
         pass
 
+    def _refresh_stats_now(self):
+        """真实页面由 runner 提供（立即重算右侧统计）；替身什么都不用做。"""
+
     def window(self):
         return None
 

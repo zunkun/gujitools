@@ -62,12 +62,24 @@ def run(ctx) -> None:
         ),
     )
     thumbs_dir = repo.source_thumbnails_dir(newest["id"])
+    # ⚠️ 2026-10-21 起**不再整本预渲染**：导入只备首屏（``PREFETCH_PAGES``），
+    #    其余页滚到可见窗口时按需补（用户：「我就是想提取图片」）。
+    from desktop.workers.source_thumbnails_worker import PREFETCH_PAGES
+
+    expect = min(80, PREFETCH_PAGES)
     for _ in range(100):
-        if thumbs_dir.exists() and len(list(thumbs_dir.glob("*.jpg"))) == 80:
+        if thumbs_dir.exists() and len(list(thumbs_dir.glob("*.jpg"))) >= expect:
             break
         app.processEvents(); time.sleep(0.1)
-    ok("导入后生成逐页缩略图", len(list(thumbs_dir.glob("*.jpg"))) == 80,
-       f"实际 {len(list(thumbs_dir.glob('*.jpg'))) if thumbs_dir.exists() else 0} 张")
+    got = len(list(thumbs_dir.glob("*.jpg"))) if thumbs_dir.exists() else 0
+    ok("导入后只生成**首屏**缩略图（不再整本预渲染）", got == expect,
+       f"实际 {got} 张（应 {expect}）")
+    # 再等一小会儿，确认它**没有**偷偷继续渲后面的页
+    for _ in range(20):
+        app.processEvents(); time.sleep(0.05)
+    ok("导入后台不会继续渲染整本（懒加载）",
+       len(list(thumbs_dir.glob("*.jpg"))) == expect,
+       f"{len(list(thumbs_dir.glob('*.jpg')))} 张")
     repo.delete_task(newest["id"])
 
     # 行内按钮存在 + 防回归守卫：表头垂直居中、任务名称列占主体、删除按钮危险色

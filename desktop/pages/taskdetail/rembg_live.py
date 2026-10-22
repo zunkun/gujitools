@@ -168,13 +168,13 @@ class RembgLiveMixin:
         except ValueError:
             return
         snapshot = self._live_snapshot(args)
-        area = int(args.get("area", 1))
-        border = args.get("border")
         entry_path = self.rembg_viewer.current_entry_path()
         if not entry_path:
             return
         stem = Path(entry_path).stem
-        persist_key = (self._snapshot_key(snapshot), area, border)
+        # ⚠️ 落盘键里**不再有 area/border**（2026-10-22：去底色就是整图去底色）：
+        #    参数一样 ⇒ 结果一样，不需要按几何再合成一次。
+        persist_key = self._snapshot_key(snapshot)
         persisted = self._live_persist_done.get(stem) == persist_key
 
         base_snapshot = self._preview_run_snapshot()
@@ -225,8 +225,7 @@ class RembgLiveMixin:
             # ⚠️ 只在**说明行**提示，**不动大图**：页面要优先显示（用户 2026-10-18）。
             self.rembg_viewer.show_live_pending()
         else:
-            # 不重算去底色（只改了 area/border）⇒ **立刻**按当前几何重排上屏，
-            # 不必等线程往返；落盘仍在 worker 里异步做。
+            # 不重算去底色（本页已按当前参数算过）⇒ 立刻按现有结果显示。
             self.rembg_viewer.refresh_display()
         # 上一单还在飞就先取消（token 守卫只丢结果不省算力，审计 L2）
         previous = getattr(self, "_live_worker", None)
@@ -263,40 +262,32 @@ class RembgLiveMixin:
 
     # ------------------------------------------------------------ 当前页作业
     def _current_page_submit_jobs(self, stem: str, args: dict) -> list[dict]:
-        """当前页的提交作业（GUI 线程算；与「提交本次任务」同一套派生规则）。
+        """当前页的「提交」作业（GUI 线程算）：**一条进、一条出**。
 
-        单页 manifest + ``plan_rembg_submit_entries`` + ``entry_to_effect_spec``
-        + ``plan_submit_job`` —— 命名/几何/编码零漂移（护栏逐像素比对提交产物）。
+        ⚠️ 2026-10-22：去底色不再按 area/border 合成，因此这里不再需要
+        ``plan_rembg_submit_entries``/``compose_region_output``——输入是哪张图，
+        成品就是那张图（白底转透明），文件名沿用页名。规则与「提交本次任务」
+        完全一致（见 ``submit.SubmitMixin._run_rembg_submit_unchecked``）。
+
+        保留 jobs 形状（而不是删掉参数）是为了让 worker 侧的落盘路径不变：
+        ``services.rembg_live.apply_effects`` 对 ``compose=False`` 的作业就是
+        "整图转透明写盘"。
         """
-        from PySide6.QtGui import QImageReader
-
-        from desktop.services.print_plan import (
-            entry_to_effect_spec, plan_rembg_submit_entries, plan_submit_job,
-        )
-
         page = next(
             (p for p in self._manifest_paths() if Path(p).stem == stem), None
         )
         if page is None:
             return []
-        single_column, widths, sides, boxes_map = self._live_book_context()
-        entries = plan_rembg_submit_entries(
-            manifest_paths=[page],
-            # 单页只借它的 ``file`` 字段（合成源是刚渲染的去底色图，不是源页图）
-            result_path_for=lambda _stem: page,
-            boxes_for=lambda text: boxes_map.get(Path(text).stem, []),
-            area=int(args.get("area", 1)),
-            single_column_book=single_column,
-            page_width_for=lambda text: widths.get(Path(text).stem, 0),
-            side_for=lambda text: sides.get(Path(text).stem),
-        )
-        reader = QImageReader(str(page))
-        size = reader.size()
-        px = None if size.isEmpty() else (size.width(), size.height())
-        return [
-            plan_submit_job(entry_to_effect_spec(entry, args.get("border")), px)
-            for entry in entries
-        ]
+        return [{
+            "file": str(page),
+            "label": stem,
+            "compose": False,
+            "boxes": [],
+            "area": 1,
+            "border": None,
+            "full": False,
+            "names": [f"{stem}.png"],
+        }]
 
     def _live_book_context(self) -> tuple:
         """整书判据（单栏书结论 + 页宽 + 指定左右 + 逐页槽位），带缓存。

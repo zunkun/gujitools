@@ -113,6 +113,8 @@ class ModuleShell(QWidget):
         self.setObjectName("moduleShell")
         #: 导航栏当前高亮的条目（见 selected_route 的说明）
         self._selected_route = ROUTE_TASKS
+        #: PDF 渲染子进程池是否已预热（见 :meth:`_prewarm_pdf_renderer`）
+        self._render_prewarmed = False
 
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -399,7 +401,13 @@ class ModuleShell(QWidget):
             first.panel  # noqa: B018 - 触发构造，返回值不用
 
     def open_detail(self, task_id: str) -> None:
-        """打开某个任务的详情页（行为与 ``app.py::_open_detail`` 一致）。"""
+        """打开某个任务的详情页（行为与 ``app.py::_open_detail`` 一致）。
+
+        ⚠️ 顺带把「PDF 渲染子进程池」**预热**一次（见
+        ``pdf_render_service.prewarm``）：那套池首次建起来要 ~1.5s，不预热就
+        会砸在"用户看到的第一张缩略图"上。预热在后台线程做、幂等、不阻塞。
+        """
+        self._prewarm_pdf_renderer()
         page = self._ensure_detail_page()
         if page.set_task(task_id):
             self.pages.setCurrentWidget(page)
@@ -426,11 +434,25 @@ class ModuleShell(QWidget):
                 )
             self.list_page.refresh()
 
+    def _prewarm_pdf_renderer(self) -> None:
+        """把 PDF 渲染子进程池预热一次（幂等；失败无害）。
+
+        ⚠️ 延迟导入：``pdf_render_service`` 在**首次真要渲染**时才 import
+        pymupdf 相关的东西，这里只碰它的池（不影响启动路径的导入量）。
+        """
+        if self._render_prewarmed:
+            return
+        self._render_prewarmed = True
+        try:
+            from desktop.workers import pdf_render_service
+
+            pdf_render_service.prewarm()
+        except Exception:  # noqa: BLE001 - 预热是加速，失败就按需建池
+            pass
+
     def back_to_list(self) -> None:
         """详情页「返回」→ 切回列表并刷新。"""
-        self.show_tasks()
-
-    # ------------------------------------------------------------------ 模块
+        self.show_tasks()    # ------------------------------------------------------------------ 模块
     def show_module(self, key: str) -> None:
         """切到某个模块页；首次进入时惰性构造。
 

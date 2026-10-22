@@ -60,6 +60,56 @@ def reveal_dir(path) -> bool:
 # 页缩略图（thumbnails/source 等）的最长边；256px 保证 area=1 半幅裁剪后仍清晰
 THUMBNAIL_EDGE = 256
 
+#: 「这个缩略图目录**正有人在填**」的在场标记文件名。
+#:
+#: 生产方：导入后台任务（``source_thumbnails_worker``）渲染期间写、结束即删；
+#: 消费方：PDF 查看器（``pdf_viewer._cache_is_being_filled``）见到它就不自己
+#: 补渲，只读 + 每秒回扫。**没有它两边会各渲一遍整本**——一本 28 页的 JPX
+#: 扫描件就是 56 次 ~850ms 的解码（用户 2026-10-21 报"缩略图老半天不齐"）。
+PRODUCING_MARKER = ".producing"
+
+
+def set_producing_marker(directory, on: bool) -> None:
+    """写/删「这个目录正有人在填」的在场标记（**永不抛**）。
+
+    调用方：导入任务在**提交后台活之前**先立标记（主线程里几微秒，抢在
+    查看器 ``set_pdf`` 之前），后台 worker 收尾时撤掉；worker 自己渲染期间
+    也会重复立一次（幂等，防"提交了但 worker 还没跑到"的窗口）。
+    """
+    target = Path(directory)
+    marker = target / PRODUCING_MARKER
+    try:
+        if on:
+            target.mkdir(parents=True, exist_ok=True)
+            marker.write_bytes(b"1")
+        elif marker.exists():
+            marker.unlink()
+    except OSError:
+        pass  # 标记只是协作信号，读写失败不影响正事
+
+
+#: 「提取图片」产物在任务目录里的相对位置（与 ``ports.STAGE_LOCATIONS`` 的
+#: ``stages/extract`` 一致；这里不 import ports 是为了保持本模块零依赖）。
+EXTRACT_PAGES_REL = ("stages", "extract")
+
+
+def task_extract_pages_dir(pdf_path) -> Path | None:
+    """任务目录里**已提取的整页图**目录；不是任务目录里的 PDF 就返回 None。
+
+    ⚠️ 为什么需要（2026-10-21）：生成 256px 缩略图最贵的不是"输出小"，而是
+    **解一页内嵌的 JPX**（4285×5736 实测 ~850ms）；而"提取图片"的产物是一张
+    2067×2767 的 **JPEG**，从它缩 256px 只要 **21ms**（JPEG 能在 DCT 域降采样）。
+    所以**已提取的页**再也不用回 PDF 渲——省掉 40 倍。
+
+    判据只认"PDF 就在任务目录里"（导入后任务目录存的是源文件副本）：
+    拿用户原始下载文件时同级没有 ``stages/``，自然返回 None，行为不变。
+    """
+    path = Path(str(pdf_path or ""))
+    if path.suffix.lower() != ".pdf":
+        return None
+    candidate = path.parent.joinpath(*EXTRACT_PAGES_REL)
+    return candidate if candidate.is_dir() else None
+
 
 def guji_data_dir() -> Path:
     """GUI 数据根目录：用户文档目录下的 guji。"""

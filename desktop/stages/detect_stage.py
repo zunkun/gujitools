@@ -12,13 +12,15 @@ worker 起来只需几百毫秒，模型全局只加载一次、多次检测共�
 
 from __future__ import annotations
 
+import os
+import shutil
 import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from core.args import default_workers
+from core.args import default_workers, machine_worker_budget
 from core.command_spec import WHOLE_PAGE_AREA
 from desktop.stages.events import ProgressStream, emit, _real_stdout
 
@@ -272,6 +274,10 @@ def run_detect_stage(config: dict) -> int:
     cropremove 用的同一入口），最终裁剪框由 GUI 按同一套规则
     （`utils.box_geometry.compute_final_boxes`）从检测框实时推导，用于预览标注。
 
+    ⚠️ 2026-10-22：本函数**只出框**。按 ``area`` 裁图是
+    :func:`run_detect_submit_stage`（「提交本次任务」）的事——与第三步
+    「生成预览 / 提交」同一套两步语义。
+
     ⚠️ 逐页循环本体在 :func:`run_detect_pages`（与 singletask 共用一份）；本函数
     只负责 stdout 拦截、任务上下文与事件协议（``{"type": name, **context, **payload}``）。
     """
@@ -332,3 +338,169 @@ def run_detect_stage(config: dict) -> int:
         # 冲刷残留的库输出，避免最后一行被吞
         if interceptor.buffer.strip():
             interceptor._consume(interceptor.buffer.strip())
+
+
+# ---------------------------------------------------------------- 提交（裁图）
+#: 提交裁图的并行 worker 数。瓶颈在 PNG 编码（与第三步提交同一个判据），
+#: 单个 worker 同时持有一整页位图 + 输出画布，峰值内存随线程数线性涨。
+#: ⚠️ 预算只走 ``core.args.machine_worker_budget()``（与函数层同一份），
+#: 这里**不自己调 ``os.cpu_count()``**——那等于第二份并发策略（护栏
+#: ``defaults_single_source`` 会盯着）。
+SUBMIT_WORKERS = max(
+    1,
+    min(
+        8,
+        int(os.environ.get("GUJI_SUBMIT_WORKERS") or 0)
+        or machine_worker_budget(),
+    ),
+)
+
+
+def run_detect_submit_stage(config: dict) -> int:
+    """detect 提交：按 ``area`` 把页面图裁成下一步要的图，写入 ``stages/detect``。
+
+    用户 2026-10-22 口径：
+
+    > 检测文本框……增加「提交本次任务」，图片按照 area 切割处理。提交任务，
+    > 本步骤才算是执行完毕，才能转入下一阶段。
+
+    也就是说这一步现在是"CLI crop 的两步版"：检测出一组框（人工可改）→
+    提交时才按 area 真正裁图。**没提交 = 没产物**，下一步（去底色）的输入
+    目录是空的，自然转不过去。
+
+    几何/命名/张数与第三步的旧提交**完全同一套**（``plan_detect_submit_entries``
+    → ``entry_to_effect_spec`` → ``plan_submit_job`` → ``compose_region_output``），
+    所以 ``-l`` / ``-r`` 命名、单栏书归一化、用户指定左右、对称画布这些
+    既有约定一个都没变。
+
+    args["_effects"] = [
+        {"file": 源页图, "label": 输出文件名(无扩展名),
+         "effect": {"boxes": [[x1,y1,x2,y2]], "area": int, "border": "0",
+                    "full": bool}},
+        …
+    ]
+    """
+    task_id = config["task_id"]
+    stage = config["stage"]
+    run_id = config["run_id"]
+    args = dict(config["args"])
+    context = {"task_id": task_id, "stage": stage, "run_id": run_id}
+    emit({"type": "started", **context})
+    try:
+        effects = args.pop("_effects", None) or []
+        out_dir = Path(args["output"])
+        if args.get("clean") and out_dir.exists():
+            for child in out_dir.iterdir():
+                if child.is_dir():
+                    shutil.rmtree(child, ignore_errors=True)
+                else:
+                    child.unlink()
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        from PySide6.QtGui import QImage, QImageReader
+
+        from desktop.services.print_plan import plan_submit_job
+        from desktop.stages.rembg_stage import _qimage_rgb_array
+        from desktop.workers.preview_worker import compose_region_output
+        from utils.compact_png import save_png_compact
+        from utils.file_utils import replace_with_retry
+
+        # ---- 阶段一（主线程）：预计算每页的输出文件名 --------------------
+        jobs: list[dict] = []
+        for spec in effects:
+            reader = QImageReader(str(spec["file"]))
+            size = reader.size()
+            px = None if size.isEmpty() else (size.width(), size.height())
+            jobs.append(plan_submit_job(spec, px))
+        total = sum(len(j["names"]) for j in jobs)  # 输出**张数**
+
+        def _save(image, dst: Path) -> None:
+            """无损紧凑 PNG 落盘（**绝不传 quality**，见 utils.compact_png）。"""
+            tmp = dst.with_name(dst.name + ".tmp")
+            save_png_compact(_qimage_rgb_array(image), tmp, dpi=(300, 300))
+            replace_with_retry(tmp, dst)
+
+        # ---- 阶段二（线程池）：并行 读图 → 按 area 合成 → 写 PNG ----------
+        # ⚠️ emit 只在主线程调（worker 线程往 stdout 写 JSON 行会交错）。
+        def _process(job: dict):
+            saved_names: list[str] = []
+            errors: list[str] = []
+            if not job["names"]:
+                return saved_names, [f"无法读取图片: {job['file']}"]
+            image = QImage(job["file"])
+            if image.isNull():
+                return saved_names, [f"无法读取图片: {job['file']}"]
+            if job["compose"]:
+                outputs = compose_region_output(
+                    image, job["boxes"], job["area"], job["border"],
+                    full=bool(job.get("full")),
+                )
+            else:
+                outputs = [image]
+            names = job["names"]
+            if len(outputs) != len(names):
+                # 几何结果与预计算不一致（理论上不可能）：按张数现算，
+                # 命名规则不变，避免静默丢页
+                names = (
+                    [f"{job['label']}.png"]
+                    if len(outputs) == 1
+                    else [f"{job['label']}-{i + 1}.png"
+                          for i in range(len(outputs))]
+                )
+            for out, name in zip(outputs, names):
+                dst = out_dir / name
+                try:
+                    _save(out, dst)
+                except Exception as exc:  # noqa: BLE001 - 单张失败不许拖垮整批
+                    errors.append(f"写入失败: {dst}（{exc}）")
+                    continue
+                saved_names.append(name)
+            return saved_names, errors
+
+        done = 0
+        saved = 0
+        executor = ThreadPoolExecutor(max_workers=SUBMIT_WORKERS)
+        try:
+            future_jobs = {
+                executor.submit(_process, job): job for job in jobs
+            }
+            for future in as_completed(future_jobs):
+                job = future_jobs[future]
+                saved_names, errors = future.result()
+                saved += len(saved_names)
+                done += len(saved_names) + len(errors)
+                emit({"type": "progress", **context, "done": done, "total": total})
+                emit({
+                    "type": "log", **context,
+                    "message": f"提交处理 {done}/{total}：{job['label']} → "
+                               + ("、".join(saved_names) if saved_names else "无输出"),
+                })
+                for message in errors:
+                    emit({"type": "log", **context, "message": message})
+        finally:
+            executor.shutdown(wait=True, cancel_futures=True)
+        emit({"type": "progress", **context, "done": total, "total": total})
+        emit(
+            {"type": "log", **context,
+             "message": f"检测结果已提交（按区域模式裁图 {saved} 张）：{out_dir}"}
+        )
+        if not saved:
+            emit(
+                {"type": "error", **context,
+                 "message": "没有生成任何图片，请先执行「检测文本框」。"}
+            )
+            return 1
+        emit(
+            {
+                "type": "finished", **context,
+                "done": saved, "total": total,
+                "result": None, "output": str(out_dir),
+            }
+        )
+        return 0
+    except KeyboardInterrupt:
+        emit({"type": "cancelled", **context})
+        return 130
+    except Exception as exc:
+        emit({"type": "error", **context, "message": str(exc)})
+        return 1

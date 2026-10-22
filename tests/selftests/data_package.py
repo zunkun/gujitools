@@ -1,16 +1,17 @@
 # -*- coding: utf-8 -*-
-"""去底色数据包（``bookcontent.pt``）的检查/下载自测。
+"""去底色数据包（``bookcontent*.pt``）的检查/下载自测。
 
 覆盖三层，都不碰真网络、不落真文件：
 
-1. **纯规则**（``utils.data_package``）：data.json 解析、本地版本 sidecar 读写
-   （用 **临时目录**替换权重目录，绝不在仓库里落 sidecar）、整数比大小；
+1. **纯规则**（``utils.data_package``）：data.json 解析、**生效文件解析链**
+   （sidecar → 本地最大版本 → bookcontent.pt → None）、版本 sidecar 读写（用
+   **临时目录**替换权重目录，绝不在仓库里落 sidecar）、整数比大小；
 2. **下载内核**（``DataDownloadWorker._download``）：把 ``urlopen`` 换成内存假
-   响应，验证"写 .part → 校验 sha256 → 原子改名 → 写版本记录"，以及 sha 不符 /
-   取消两条异常路径；
+   响应，验证"写 .part → 落发布名（不改名）→ 校验 sha256 → 切换 sidecar"，以及
+   sha 不符 / 取消两条异常路径；
 3. **控制器**（``menu.DataPackageController``）：有新版 → 弹「下载」提示 → 点了
    在程序内下载（``DataDownloadWorker`` 换成假 worker）→ 成功弹窗；已是最新 /
-   检查失败 / 静默三分支，以及菜单项提示。
+   检查失败 / 静默三分支、菜单项提示，以及「本机没有权重时静默检查直接下载」。
 
 ⚠️ 全部走 ``ctx.w`` 的真菜单与真控制器，但把 ``menu.shell_dialog`` /
 ``data_package_worker.fetch_data_json`` / ``DataDownloadWorker`` 整体换成替身，
@@ -209,15 +210,19 @@ def run(ctx) -> None:
         dp.data_json_url(),
     )
 
-    # ---- 2. 本地版本 sidecar（权重目录换临时目录，不落仓库） ----
+    # ---- 2. sidecar + **生效文件解析**（权重目录换临时目录，不落仓库） ----
+    # 用户口径（2026-10-22）：weights 目录可放多个 pt，只有一个生效——
+    #   sidecar 指的 name → 本地最大版本 → bookcontent.pt → 线上下载。
     tmp = temp_dir("data_package_")
     real_weights_dir = dp.weights_dir
     dp.weights_dir = lambda: tmp  # type: ignore[assignment]
     try:
         ok(
-            "sidecar 缺失 → 本机版本 0（于是远端 v100 必然算更新）",
-            dp.read_local_version() == 0,
-            f"{dp.read_local_version()}",
+            "空目录：没有生效权重、版本 0（于是远端 v100 必然算更新）",
+            dp.resolve_weights() is None
+            and dp.read_local_version() == 0
+            and dp.effective_info()["source"] == "none",
+            f"{dp.effective_info()}",
         )
         ok(
             "版本比较：100 > 0（有新版）、100 == 100（已最新）、0 > 100（更旧）",
@@ -226,25 +231,113 @@ def run(ctx) -> None:
             and not dp.has_update(0, 100),
             "",
         )
+        ok(
+            "文件名解析：bookcontent-v105.pt → 105；其它形态一律 None",
+            dp.parse_versioned_name("bookcontent-v105.pt") == 105
+            and dp.parse_versioned_name("bookcontent.pt") is None
+            and dp.parse_versioned_name("bookcontent-v105.pt.part") is None
+            and dp.parse_versioned_name("detect.pt") is None,
+            "",
+        )
+
+        def _touch(name: str) -> None:
+            (tmp / name).write_bytes(b"x")
+
+        _touch(dp.LOCAL_WEIGHTS_NAME)
+        ok(
+            "① 只有 bookcontent.pt → 选它（source=default，版本按 0）",
+            dp.resolve_weights() == tmp / dp.LOCAL_WEIGHTS_NAME
+            and dp.effective_info()["source"] == "default"
+            and dp.read_local_version() == 0,
+            f"{dp.effective_info()}",
+        )
+        _touch("bookcontent-v103.pt")
+        ok(
+            "② sidecar 不存在 → 仍读 bookcontent.pt（不是版本更大的 v103）",
+            dp.resolve_weights() == tmp / dp.LOCAL_WEIGHTS_NAME,
+            f"{dp.resolve_weights()}",
+        )
         dp.record_local_version(
             {
-                "version": 100,
-                "name": "bookcontent-v100.pt",
+                "version": 105,
+                "name": "bookcontent-v105.pt",
                 "sha256": "AB" * 32,
                 "size": 6245475,
             }
         )
         ok(
-            "写入 sidecar 后再读 = 100，且 sha256 统一转小写",
-            dp.read_local_version() == 100
+            "③ sidecar 指的文件不在本地 → 退到**本地版本最大**的 v103（不是 bookcontent.pt）",
+            dp.resolve_weights() == tmp / "bookcontent-v103.pt"
+            and dp.effective_info()["source"] == "latest"
+            and dp.read_local_version() == 103,
+            f"{dp.effective_info()}",
+        )
+        _touch("bookcontent-v105.pt")
+        ok(
+            "④ sidecar 指的文件在本地 → 就是它（source=config、版本 105、sha 转小写）",
+            dp.resolve_weights() == tmp / "bookcontent-v105.pt"
+            and dp.effective_info()["source"] == "config"
+            and dp.read_local_version() == 105
             and dp.read_local_info()["sha256"] == ("ab" * 32),
-            f"{dp.read_local_info()}",
+            f"{dp.effective_info()}",
         )
         ok(
             "sidecar 落点就在权重目录旁（bookcontent.version.json）",
             (tmp / dp.VERSION_FILE_NAME).is_file(),
             f"{dp.version_file()}",
         )
+        ok(
+            "目录里可同时有多份权重，versioned_weights 按版本降序",
+            [v for v, _ in dp.versioned_weights()] == [105, 103],
+            f"{[p.name for _, p in dp.versioned_weights()]}",
+        )
+        # 删掉生效的 v105：sidecar 还在，但要能退到 v103（而不是报"没有权重"）
+        (tmp / "bookcontent-v105.pt").unlink()
+        ok(
+            "⑤ 生效文件被删 → 退到 v103（旧版留着就是为了这种情况）",
+            dp.resolve_weights() == tmp / "bookcontent-v103.pt"
+            and dp.read_local_version() == 103,
+            f"{dp.effective_info()}",
+        )
+        (tmp / "bookcontent-v103.pt").unlink()
+        ok(
+            "⑥ 带版本的全没了 → 退回 bookcontent.pt（兜底）",
+            dp.resolve_weights() == tmp / dp.LOCAL_WEIGHTS_NAME,
+            f"{dp.resolve_weights()}",
+        )
+        (tmp / dp.LOCAL_WEIGHTS_NAME).unlink()
+        ok(
+            "⑦ 一份都没有 → None（调用方据此联网下载最新）",
+            dp.resolve_weights() is None and dp.read_local_version() == 0,
+            f"{dp.resolve_weights()}",
+        )
+        ok(
+            "sidecar 还记着 v105、但文件全没了 → 版本报 0（不谎报「已是最新」）",
+            dp.read_local_version() == 0,
+            f"{dp.read_local_version()}",
+        )
+        # 迁移兼容（真实形态：旧版下载流程把 v105 改名成了 bookcontent.pt）
+        (tmp / dp.LOCAL_WEIGHTS_NAME).write_bytes(b"x" * 40)
+        dp.record_local_version(
+            {"version": 105, "name": "bookcontent-v105.pt", "size": 40}
+        )
+        ok(
+            "迁移：sidecar 记 v105、只剩同大小的 bookcontent.pt → 认定它就是 v105"
+            "（不重复下载、版本不退回 0）",
+            dp.resolve_weights() == tmp / dp.LOCAL_WEIGHTS_NAME
+            and dp.effective_info()["source"] == "legacy"
+            and dp.read_local_version() == 105,
+            f"{dp.effective_info()}",
+        )
+        (tmp / dp.LOCAL_WEIGHTS_NAME).write_bytes(b"x" * 39)
+        ok(
+            "迁移判据只认**大小一致**：大小对不上就当没装过（版本 0）",
+            dp.read_local_version() == 0,
+            f"{dp.effective_info()}",
+        )
+        # 清空目录：第 3 节要从"什么权重都没有"开始，才能断言下载后**没有**
+        # bookcontent.pt（不改名）。
+        (tmp / dp.LOCAL_WEIGHTS_NAME).unlink()
     finally:
         dp.weights_dir = real_weights_dir  # type: ignore[assignment]
 
@@ -307,16 +400,19 @@ def run(ctx) -> None:
         f"{fetched['info']} / {fetched['download_url']}",
     )
 
-    # ---- 3. 下载内核：下到版本名 → 校验 sha256 → 释放占用 → 更名 → 重新加载 ----
+    # ---- 3. 下载内核：落**发布名** → 校验 sha256 → 释放占用 → 切换 sidecar → 重新加载 ----
     data = b"0123456789" * 7000
     digest = hashlib.sha256(data).hexdigest()
-    dest = tmp / "bookcontent.pt"
+    #: 目标**权重目录**（用户口径：下完仍叫 bookcontent-v100.pt，只有一份生效）
+    dest = tmp
     recorded: list[dict] = []
     phases: list[str] = []
     real_record = dw.record_local_version
     real_urlopen = ud.urllib.request.urlopen
     real_release, real_reload = dw._release_model, dw._reload_model
-    dw.record_local_version = lambda i: recorded.append(i)  # type: ignore[assignment]
+    dw.record_local_version = (  # type: ignore[assignment]
+        lambda i, d=None: recorded.append(i)
+    )
     dw._release_model = lambda: phases.append("release") or True  # type: ignore[assignment]
     dw._reload_model = lambda: phases.append("reload") or True  # type: ignore[assignment]
     try:
@@ -341,22 +437,24 @@ def run(ctx) -> None:
         worker.stage.connect(stages.append)
         result = worker._download()
         ok(
-            "下载内核：先落到**版本名**再校验、无残留 .part，最终才是 bookcontent.pt",
-            dest.read_bytes() == data
-            and not (tmp / "bookcontent-v100.pt").exists()  # 更名后版本名文件不在了
-            and not (tmp / "bookcontent-v100.pt.part").exists(),
-            f"size={dest.stat().st_size if dest.exists() else 0}",
+            "下载落地**保留发布名**（bookcontent-v100.pt），不再改名成 bookcontent.pt",
+            (dest / "bookcontent-v100.pt").read_bytes() == data
+            and not (dest / "bookcontent.pt").exists()
+            and not (dest / "bookcontent-v100.pt.part").exists()
+            and result["path"].endswith("bookcontent-v100.pt"),
+            f"{result}",
         )
         ok(
-            "下载内核：sha256 校验通过后回带版本号 + 写好版本记录",
+            "下载内核：sha256 校验通过后回带版本号 + 版本记录写的是**发布名**",
             result["version"] == 100
             and result["sha256"] == digest
             and bool(recorded)
-            and recorded[-1]["version"] == 100,
+            and recorded[-1]["version"] == 100
+            and recorded[-1]["name"] == "bookcontent-v100.pt",
             f"{result} / {recorded}",
         )
         ok(
-            "替换三步的顺序：校验 → 释放占用 → 更名 → 重新加载",
+            "切换顺序：校验 → 释放占用 → 切换生效文件 → 重新加载",
             stages == ["verify", "release", "replace", "reload"]
             and phases == ["release", "reload"],
             f"stages={stages} phases={phases}",
@@ -367,7 +465,31 @@ def run(ctx) -> None:
             f"{urls[-1] if urls else None}",
         )
 
-        # sha 不符：删掉下好的版本名文件、**不替换**目标
+        # 重下同一版本：本地已有同名同 sha 的文件 ⇒ 不下载、不覆盖，直接切换生效
+        before_urls = len(urls)
+        again = dw.DataDownloadWorker(
+            "https://example.invalid/x.pt",
+            {
+                "version": 100,
+                "name": "bookcontent-v100.pt",
+                "sha256": digest,
+                "size": len(data),
+            },
+            dest=dest,
+        )
+        again_stages: list[str] = []
+        again.stage.connect(again_stages.append)
+        again._download()
+        ok(
+            "本地已有同名同 sha 的权重：**不重复下载**（也不往被占用的文件上覆盖），"
+            "照样走一遍切换",
+            len(urls) == before_urls
+            and again_stages == ["verify", "release", "replace", "reload"],
+            f"urls={len(urls)-before_urls} stages={again_stages}",
+        )
+
+        # sha 不符：删掉下好的文件、**不启用**（不写版本记录）
+        before = len(recorded)
         ud.urllib.request.urlopen = (  # type: ignore[assignment]
             lambda request, timeout=None: _FakeResponse(b"tampered"))
         bad = dw.DataDownloadWorker(
@@ -386,11 +508,12 @@ def run(ctx) -> None:
         except ValueError:
             raised = True
         ok(
-            "校验不符：抛错、目标**不被替换**、下好的版本名文件删掉",
+            "校验不符：抛错、旧的 v100 **不受影响**、下坏的 v101 删掉、不写版本记录",
             raised
-            and dest.read_bytes() == data
-            and not (tmp / "bookcontent-v101.pt").exists(),
-            f"raised={raised}",
+            and (dest / "bookcontent-v100.pt").read_bytes() == data
+            and not (dest / "bookcontent-v101.pt").exists()
+            and len(recorded) == before,
+            f"raised={raised} recorded={recorded}",
         )
 
         # 取消：写出临时文件后中断（不落任何最终文件）
@@ -413,11 +536,11 @@ def run(ctx) -> None:
         except dw._Cancelled:
             stopped = True
         ok(
-            "取消下载：抛 _Cancelled 且不留任何文件（目标保持原样）",
+            "取消下载：抛 _Cancelled 且不留任何文件（已生效的 v100 保持原样）",
             stopped
-            and dest.read_bytes() == data
-            and not (tmp / "bookcontent-v102.pt").exists()
-            and not (tmp / "bookcontent-v102.pt.part").exists(),
+            and (dest / "bookcontent-v100.pt").read_bytes() == data
+            and not (dest / "bookcontent-v102.pt").exists()
+            and not (dest / "bookcontent-v102.pt.part").exists(),
             f"stopped={stopped}",
         )
     finally:
@@ -425,6 +548,50 @@ def run(ctx) -> None:
         ud.urllib.request.urlopen = real_urlopen  # type: ignore[assignment]
         dw._release_model = real_release  # type: ignore[assignment]
         dw._reload_model = real_reload  # type: ignore[assignment]
+
+    # ---- 3b. 在线兜底：**一份都没有**时才联网下载最新（用户 2026-10-22 第 ⑤ 条） ----
+    online = temp_dir("data_package_online_")
+    real_dir = dp.weights_dir
+    real_fetch_latest = dp.fetch_latest_info
+    dp.weights_dir = lambda: online  # type: ignore[assignment]
+    try:
+        picked: list[int] = []
+
+        def _fake_latest(*_a, **_k):
+            picked.append(1)
+            return {
+                "info": {"version": 105, "name": "bookcontent-v105.pt",
+                         "sha256": digest, "size": len(data), "date": ""},
+                "asset_name": "bookcontent-v105.pt",
+                "mirror_prefix": "https://v6.gh-proxy.org/",
+                "mirror_label": "v6.gh-proxy.org",
+            }
+
+        dp.fetch_latest_info = _fake_latest  # type: ignore[assignment]
+        ud.urllib.request.urlopen = (  # type: ignore[assignment]
+            lambda request, timeout=None: _FakeResponse(data))
+        (online / dp.LOCAL_WEIGHTS_NAME).write_bytes(b"x")
+        ok(
+            "本地还有权重时 ensure_weights_online **不联网**（直接返回本地那份）",
+            dp.ensure_weights_online() == online / dp.LOCAL_WEIGHTS_NAME
+            and picked == [],
+            f"{picked}",
+        )
+        (online / dp.LOCAL_WEIGHTS_NAME).unlink()
+        path = dp.ensure_weights_online()
+        ok(
+            "一份都没有时：联网取最新 → 下到**发布名** → 写 sidecar（版本 105）",
+            path == online / "bookcontent-v105.pt"
+            and path.read_bytes() == data
+            and dp.read_local_version() == 105
+            and dp.effective_info()["source"] == "config"
+            and bool(picked),
+            f"{dp.effective_info()}",
+        )
+    finally:
+        dp.weights_dir = real_dir  # type: ignore[assignment]
+        dp.fetch_latest_info = real_fetch_latest  # type: ignore[assignment]
+        ud.urllib.request.urlopen = real_urlopen  # type: ignore[assignment]
 
     # ---- 4. 控制器：真菜单 + 真控制器（弹窗/网络/下载 worker 换替身） ----
     controller = getattr(w, "data_package_controller", None)
@@ -470,7 +637,7 @@ def run(ctx) -> None:
             self.stage.emit("reload")
             self.finished.emit(
                 {
-                    "path": "X:/tmp/bookcontent.pt",
+                    "path": "X:/tmp/bookcontent-v100.pt",
                     "version": 100,
                     "sha256": "f" * 64,
                     "size": 6245475,
@@ -594,9 +761,36 @@ def run(ctx) -> None:
             and "v100" in action.toolTip(),
             f"弹窗={[c['title'] for c in recorder.calls]} text={action.text()!r}",
         )
-        # 复位（别把提示留给后面的模块）
-        controller._newer_version = 0
-        controller._apply_action_text()
+        # ---- 4f. 本机一份权重都没有：静默检查**直接下载**（用户 2026-10-22） ----
+        recorder.calls.clear()
+        real_resolve = menu.resolve_weights
+        menu.resolve_weights = lambda: None  # type: ignore[assignment]
+        try:
+            menu.read_local_version = lambda: 0  # type: ignore[assignment]
+            dw.fetch_data_json = (  # type: ignore[assignment]
+                lambda *a, **k: _payload(version=100)
+            )
+            controller._newer_version = 0
+            controller._apply_action_text()
+            controller.check_silently()
+            ok(
+                "没有任何权重时：静默检查**直接下载**（不弹「发现新版本」提示）",
+                wait_until(
+                    app,
+                    lambda: any(
+                        c["title"] == "数据包下载完成" for c in recorder.calls
+                    ),
+                    timeout=8.0,
+                )
+                and not any(
+                    c["title"] == "发现新版本数据包" for c in recorder.calls
+                ),
+                f"{[c['title'] for c in recorder.calls]}",
+            )
+        finally:
+            menu.resolve_weights = real_resolve  # type: ignore[assignment]
+            controller._newer_version = 0
+            controller._apply_action_text()
     finally:
         menu.shell_dialog = real_shell  # type: ignore[assignment]
         dw.fetch_data_json = real_fetch  # type: ignore[assignment]

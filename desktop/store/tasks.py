@@ -30,10 +30,12 @@ STAGES = FLOW_STAGES
 # ⚠️ 这些是**界面文案**（步骤条/面板标题/toast/日志共用一份）：有中文就不再附
 # 英文键名 —— 用户口径「四个步骤有中文，英文就不要出现」。
 #: ⚠️ **真源是 :func:`desktop.steps.ports.stage_label`**，本表只是它的派生
-#: （多带一个 ``rembg_submit``：它不是独立步骤，却是真实的运行阶段，worker
-#: 会跑它、进度与日志都要有名字）。别在这里另写一句中文——BPMN 流程图上的
-#: 节点名走的是同一个函数，两边不一致就会出现"图上两个『图片去底色』"。
+#: （多带 ``detect_submit`` / ``rembg_submit``：它们不是独立步骤，却是真实的
+#: 运行阶段，worker 会跑它们、进度与日志都要有名字）。别在这里另写一句中文
+#: ——BPMN 流程图上的节点名走的是同一个函数，两边不一致就会出现"图上两个
+#: 『图片去底色』"。
 STAGE_LABELS = {key: ports.stage_label(key) for key in STAGES}
+STAGE_LABELS["detect_submit"] = ports.stage_label("detect_submit")
 STAGE_LABELS["rembg_submit"] = ports.stage_label("rembg_submit")
 
 # 列表里的阶段短名（步骤条/表格空间有限，用 2~3 字表达）

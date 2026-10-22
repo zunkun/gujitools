@@ -31,6 +31,21 @@ def run(ctx) -> None:
     img = ctx.inserted_img
 
     d.set_task(tid)
+    # ⚠️ 2026-10-22：去底色的输入是「检测文本框」**提交后**的裁图
+    #    （stages/detect）。所以进第三步之前，先替用户点一次第二步的
+    #    「提交本次任务」——否则第三步的输入根本没就位。
+    d._select_stage(1)
+    d.run_detect_submit()
+    wait_worker(d, app, timeout=300)
+    # ⚠️ ``stage_states`` 只按 STAGES（四个主链步骤）出表，提交动作不在里面
+    #    ——直接问运行记录。
+    _det_runs = repo.list_stage_runs(tid, "detect_submit")
+    ok("（前置）检测提交成功，去底色的输入就位",
+       bool(_det_runs) and _det_runs[0].get("status") == "success",
+       str(_det_runs[:1]))
+    _crop_dir = repo.task_dir(tid) / "stages" / "detect"
+    ok("（前置）裁好的图落在 stages/detect",
+       _crop_dir.is_dir() and any(_crop_dir.iterdir()), str(_crop_dir))
     d._select_stage(2)
     ok("步骤三主按钮为生成预览", d.run_button.text() == "生成预览")
 
@@ -66,41 +81,17 @@ def run(ctx) -> None:
     ok("复位后 offset 回到 0", _p3.offset.value() == 0,
        str(_p3.offset.value()))
 
-    # --- area=4「整页/不检测」：普通 PDF / 检测失败时跳过 YOLO，整页即唯一框 ---
-    _items = [_p3.area.itemText(i) for i in range(_p3.area.count())]
-    ok("area 下拉提供「4 (整页/不检测)」",
-       "4 (整页/不检测)" in _items, str(_items))
-    _p3.area.setCurrentText("4 (整页/不检测)")
-    ok("选 area=4 后 get_args 为 4",
-       _p3.get_args()["area"] == 4, str(_p3.get_args().get("area")))
-    _p3.apply_args({"area": 4})
-    ok("历史参数回填 area=4",
-       _p3.area.currentText() == "4 (整页/不检测)", _p3.area.currentText())
-    # 第二步「整页模式」开关与 area=4 双向联动（开关只是 area 的入口）
+    # --- 第二步不再暴露 area（2026-10-22 第二轮）---
+    # 用户：「检测文本框流程，去除 area 参数，默认 area = 1，提交的时候 area 参数
+    # 只在提交的时候生效，desktop 页面去除这个参数，但是在后端代码保留 area 相关
+    # 逻辑」。后端（整页模式 area=4）的覆盖在 `whole_page` 模块，这里只钉界面。
     _p2 = d.control_stack.widget(1)
-    ok("第二步提供整页模式开关", hasattr(_p2, "whole_page"))
-    d._sync_whole_page_checkbox()
-    ok("area=4 时第二步整页开关自动勾上", _p2.whole_page.isChecked())
-    _p2.whole_page.setChecked(False)
-    ok("取消整页开关 → area 回到 1",
-       _p3.get_args()["area"] == 1, str(_p3.get_args().get("area")))
-    _p2.whole_page.setChecked(True)
-    ok("重新勾上整页开关 → area 切到 4",
-       _p3.get_args()["area"] == 4, str(_p3.get_args().get("area")))
-    # 整页框兜底：整页模式只认手动框，自动检测结果一律不生效
-    _page = next(iter(d._manifest_paths()), None)
-    ok("清单非空（整页框兜底断言前提）", _page is not None)
-    if _page is not None:
-        # ⚠️ 走页面的尺寸接口：它优先读 sizes.json、读不到回落图头。清单里的页
-        #    不一定都有尺寸记录（用户插入的图没走提取），直接查仓库会拿到
-        #    None、解包就炸。
-        _w, _h = d._image_size_for(str(_page))
-        ok("整页模式无手动框时兜底为整页边界",
-           d._detect_boxes_for(str(_page)) == [[0, 0, _w, _h]],
-           str(d._detect_boxes_for(str(_page))))
-    _p2.whole_page.setChecked(False)
-    ok("收尾复位 area=1（后续断言按 area=1 契约）",
-       _p3.get_args()["area"] == 1, str(_p3.get_args().get("area")))
+    ok("第二步面板没有 area 控件", not hasattr(_p2, "area"))
+    from core.command_spec import DETECT_DEFAULT_AREA
+
+    ok("第二步 get_args 为空（默认值不在表单里）",
+       _p2.get_args() == {}, str(_p2.get_args()))
+    ok("提交用的默认区域模式为 1（左右分开）", DETECT_DEFAULT_AREA == 1)
 
     ok("未生成预览前提交按钮禁用", not d.submit_button.isEnabled())
     d.run_rembg_submit()  # 直接调用也必须被拦截，不启动子进程
@@ -111,11 +102,11 @@ def run(ctx) -> None:
     ok("rembg 预览成功", state["status"] == "success", str(state))
     preview_dir = repo.rembg_preview_output_dir(tid)
     ctx.preview_dir = preview_dir
-    # rembg 直接处理 extract 目录里的**全部**图片：6 张原页 + pages 模块
-    # 插入的 1 张（已被复制进 extract）。注意 pages 模块删掉的那一页只是
-    # 从清单移除，物理文件仍在目录里，因此这里数是 7 而非清单的 6。
-    ok("预览图落在 stages/rembgpreview",
-       preview_dir.exists() and len(list(preview_dir.glob("*.png"))) == 7,
+    # rembg 直接处理**输入目录里的全部图片**（＝第二步提交裁好的那批）。
+    _input_count = len(list(_crop_dir.iterdir()))
+    ok("预览图落在 stages/rembgpreview（张数 == 输入张数）",
+       preview_dir.exists()
+       and len(list(preview_dir.glob("*.png"))) == _input_count,
        str(sorted(p.name for p in preview_dir.glob("*.png")))
        if preview_dir.exists() else str(preview_dir))
     final_dir = repo.rembg_output_dir(tid)
@@ -123,64 +114,27 @@ def run(ctx) -> None:
        not final_dir.exists() or not any(final_dir.glob("*.png")))
     ok("预览成功后提交按钮可用", d.submit_button.isEnabled())
     ok("预览成功即提示有新版本待提交（文案收敛为按钮加粗 + 下方红字提示）",
-       d._rembg_submit_version_state() == "new_version"
+       d._submit_version_state("rembg") == "new_version"
        and d.submit_button.text() == SUBMIT_TEXT
        and d.submit_button.font().bold()
        and not d.submit_hint.isHidden() and "#c0392b" in d.submit_hint.styleSheet())
 
-    # --- 第三步条目缩略图必须按 area=1 拆分，只显示所属半页 ---
-    # 曾出错：_page_thumb_for 返回 {"path","effect"}，而 RembgPreviewWidget 读的是
-    # spec["crop"]（永远为 None），于是 -r/-l 两条缩略图都退化成整页。
-    # 自测页面是空白页（pymupdf 默认字体渲染不出中文），像素比对分不出左右半页，
-    # 所以这里校验数据契约：provider 必须给 effect，查看器必须把 effect 交给合成器。
-    # ⚠️ 取**最后一张数字页名**的页：清单里可能混着用户插入的图（"inserted"），
-    #    而本段按页号取页缩略图（``int(stem)``）——非数字页名会直接炸。
-    #    清单现在跟着**本步骤的输入目录**走（B 方案），插入的图确实会出现在里面。
-    _numbered = [p for p in d._manifest_paths() if p.stem.isdigit()]
-    _last_page = _numbered[-1] if _numbered else d._manifest_paths()[-1]
-    _orig_entry = repo.detect_boxes_entry(tid, _last_page.stem)
-    _lw, _lh = d._image_size_for(str(_last_page))
-    _lbox = [0, 0, _lw // 2, _lh]
-    _rbox = [_lw // 2, 0, _lw, _lh]
-    repo.save_detect_boxes(tid, _last_page.stem, [_lbox, _rbox], origin="manual")
-    d.detect_cache[str(_last_page)] = [_lbox, _rbox]
-    # 走真实的「改 area → 面板联动 → refresh_display」链路（label 随之变化才重建）
-    # ⚠️ 2026-09-26 起联动刷新有 200ms 防抖（逐字符输入的全量重建太贵），
-    #    这里用 qWait 把防抖冲过去再断言，别用裸 processEvents（不等定时器）。
-    _rembg_panel = d.control_stack.widget(2)
-    _rembg_panel.area.setCurrentIndex(1)  # area=2 → 该页合成单条
-    QTest.qWait(260)
-    _rembg_panel.area.setCurrentIndex(0)  # area=1 → 拆成 -r / -l 两条
-    QTest.qWait(260)
-
+    # --- 去底色查看器：**一张输入图 = 一个条目**（2026-10-22） ---
+    # 以前按 area 拆 -l/-r 并叠加区域合成；现在裁剪在第二步提交时已经完成，
+    # 这一步只做整图去底色，所以条目必须与产物一一对应、不再有左右后缀。
     _rv = d.rembg_viewer
-    _pair = [(i, e) for i, e in enumerate(_rv._entries)
-             if e["path"] == str(_last_page)]
-    ok("area=1 该页拆成 -r/-l 两条目",
-       [e["label"] for _, e in _pair] == [f"{_last_page.stem}-r", f"{_last_page.stem}-l"],
-       str([e["label"] for _, e in _pair]))
+    _inputs = d._manifest_paths()
+    ok("去底色条目数 == 输入图张数（不再按 area 拆左右）",
+       len(_rv._entries) == len(_inputs),
+       f"entries={len(_rv._entries)} inputs={len(_inputs)}")
+    ok("条目名就是输入页名（没有 -l/-r 后缀）",
+       {e["label"] for e in _rv._entries} == {p.stem for p in _inputs},
+       str(sorted(e["label"] for e in _rv._entries))[:120])
+    ok("条目不再带区域合成参数（整图显示）",
+       all(e.get("box") is None for e in _rv._entries),
+       str([e.get("box") for e in _rv._entries][:3]))
 
-    # provider 给出的 effect 必须只覆盖该条目自己那一半（而非整页/并集）
-    # ⚠️ 缩略图由后台批量渲染落盘：整跑时这里可能恰好轮到首页之后的那批，
-    #    末页的 0007.jpg 还没写出来 → _page_thumb_for 返回 None（实测踩过，
-    #    纯时序竞态）。等它就绪再断言。
-    import time as _time
-
-    _thumb_file = repo.source_thumbnails_dir(tid) / f"{int(_last_page.stem):04d}.jpg"
-    for _ in range(150):  # 最多 15s：批量渲染含让出 GIL 的间隔，别掐太紧
-        if _thumb_file.exists():
-            break
-        app.processEvents()
-        _time.sleep(0.1)
-    _spec_r = d._page_thumb_for(str(_last_page), _rbox, 1, None)
-    _thumb_size = QImage(_spec_r["path"]).size()
-    _box_r = _spec_r["effect"]["boxes"][0]
-    ok("area=1 缩略图 effect 只覆盖所属半页",
-       abs(_box_r[0] - _thumb_size.width() / 2) <= 2
-       and abs(_box_r[2] - _thumb_size.width()) <= 2,
-       f"框 {_box_r} / 缩略图 {_thumb_size.width()}x{_thumb_size.height()}")
-
-    # 查看器必须把 effect 交给 ImageListWorker 走区域合成，而不是传像素裁剪 crops
+    # 缩略图也不该再走区域合成（crops 恒 None、effects 恒 None/空）
     _seen: list[dict] = []
     _real_init = ImageListWorker.__init__
 
@@ -194,13 +148,10 @@ def run(ctx) -> None:
     finally:
         ImageListWorker.__init__ = _real_init
     _last_call = _seen[-1]
-    ok("area=1 缩略图交给合成器的是 effect（不是 crops）",
+    ok("去底色缩略图不再走区域合成（crops=None、effects 全空）",
        _last_call["crops"] is None
-       and _last_call["effects"] is not None
-       and len(_last_call["effects"]) == len(_rv._entries)
-       and all(e and e.get("boxes") for e in
-               (_last_call["effects"][i] for i, _e in _pair)),
-       f"crops={_last_call['crops']} effects={_last_call['effects']}")
+       and not any(_last_call["effects"] or []),
+       f"crops={_last_call['crops']} effects={(_last_call['effects'] or [])[:2]}")
 
     # --- 第三步「去底色结果 / 原图」改用分段开关，不再用两个硬编码蓝按钮 ---
     # 原先是一对 PushButton + 一段写死 #0078d4 的样式表，和主题色（深青）打架，
@@ -272,16 +223,8 @@ def run(ctx) -> None:
        not _rv.findChildren(QPushButton) and not _stray,
        f"别处残留 {len(_stray)} 个硬编码样式")
 
-    # 还原该页检测框，避免影响后续 print 合成用例
-    repo.save_detect_boxes(
-        tid, _last_page.stem,
-        _orig_entry[0] if _orig_entry else [],
-        origin=_orig_entry[1] if _orig_entry else "manual",
-    )
-    d.detect_cache[str(_last_page)] = _orig_entry[0] if _orig_entry else []
-
     # 最近一次预览失败/中断：即使目录里残留图片也不允许提交
-    bad_run = repo.create_stage_run(tid, "rembg", {"area": 1})
+    bad_run = repo.create_stage_run(tid, "rembg", {"type": 1})
     repo.finish_stage(tid, bad_run, "failed")
     d._refresh_stage_views()
     ok("预览失败后提交按钮禁用（有旧图也不行）", not d.submit_button.isEnabled())
@@ -295,7 +238,7 @@ def run(ctx) -> None:
     d._refresh_stage_views()
     ok("重新生成预览成功后提交恢复可用并提示新版本",
        d.submit_button.isEnabled()
-       and d._rembg_submit_version_state() == "new_version")
+       and d._submit_version_state("rembg") == "new_version")
 
     # 面板去底参数改了但没重新生成 → preview_stale（提示先重新生成预览）
     panel3 = d.control_stack.widget(2)
@@ -303,7 +246,7 @@ def run(ctx) -> None:
     panel3.offset.setValue(_old_offset + 1)
     d._update_submit_button(False)
     ok("改去底参数未重跑预览 → preview_stale",
-       d._rembg_submit_version_state() == "preview_stale"
+       d._submit_version_state("rembg") == "preview_stale"
        and "#b8860b" in d.submit_hint.styleSheet())
     panel3.offset.setValue(_old_offset)
 
@@ -312,8 +255,9 @@ def run(ctx) -> None:
     wait_worker(d, app, timeout=300)
     state = repo.list_stage_runs(tid, "rembg_submit")[0]
     ok("提交成功", state["status"] == "success", str(state))
-    ok("最终图落在 stages/rembg",
-       final_dir.exists() and len(list(final_dir.glob("*.png"))) == 6,
+    ok("最终图落在 stages/rembg（张数 == 输入张数）",
+       final_dir.exists()
+       and len(list(final_dir.glob("*.png"))) == _input_count,
        str(final_dir))
     # ⚠️ 提交必须顺手生成第四步缩略图（2026-09-27：缩略条不再现解码原图）
     _s4_thumbs = sorted(repo.rembg_thumbnails_dir(tid).glob("*.jpg"))
@@ -334,7 +278,7 @@ def run(ctx) -> None:
        ),
        str([d._print_thumb_provider(str(p)) for p in _s4_finals[:2]]))
     ok("提交成功后版本状态为最新、按钮徽标消失",
-       d._rembg_submit_version_state() == "up_to_date"
+       d._submit_version_state("rembg") == "up_to_date"
        and d.submit_button.text() == "提交本次任务"
        and "#3a8a3e" in d.submit_hint.styleSheet())
     # 去底色结果被编辑（参数没变、也没重新生成预览）也必须改口提示重新提交：
@@ -347,10 +291,10 @@ def run(ctx) -> None:
     os.utime(_pv_edit, (_stamp, _stamp))  # 模拟"提交之后又被编辑过"
     d._update_submit_button(False)
     ok("编辑去底色结果后按钮改口：待重新提交（不再是绿色『已是最新版本』）",
-       d._rembg_submit_version_state() == "new_version"
+       d._submit_version_state("rembg") == "new_version"
        and d.submit_button.font().bold()
        and "#c0392b" in d.submit_hint.styleSheet(),
-       f"{d._rembg_submit_version_state()} / {d.submit_button.text()}")
+       f"{d._submit_version_state("rembg")} / {d.submit_button.text()}")
     os.utime(_pv_edit, (_pv_mtime, _pv_mtime))  # 还原 mtime，别影响后续模块
     # 提交记录了所基于的预览版本号（不加载 YOLO，纯框坐标合成）
     _sub = next(r for r in repo.list_stage_runs(tid, "rembg_submit")
@@ -364,14 +308,14 @@ def run(ctx) -> None:
     repo.finish_stage(tid, newer, "success")
     d._refresh_stage_views()
     ok("再次生成预览后重新提示新版本",
-       d._rembg_submit_version_state() == "new_version"
+       d._submit_version_state("rembg") == "new_version"
        and d.submit_button.font().bold())
 
     # --- 第四步只排版「提交本次任务」的成品图 ---
     # 用户 2026-10-01 口径：「去底色那一步，必须提交才能传给下一步」。所以
     # 第四步**不再**拿去底图（stages/rembgpreview）按当前 area/border 现算。
     # 给一页注入确定性检测框（单框），模拟 YOLO 检出
-    _comp0 = d._rembg_submit_entries(1, None)
+    _comp0 = d._submit_entries(1)
     _anchor = next((c for c in _comp0 if c.get("box") is None), _comp0[0])
     _anchor_stem = Path(_anchor["file"]).stem
     _anchor_page = Path(_anchor["file"])
@@ -383,7 +327,6 @@ def run(ctx) -> None:
     _anchor_src = next(p for p in d._manifest_paths() if p.stem == _anchor_stem)
     d.detect_cache[str(_anchor_src)] = [_injected, None]
 
-    panel3.border.setText("10")
     _entries_b, _ = d._print_entries()
     _fx10 = d._build_print_effects(_entries_b)
     ok("第四步取图 = 提交产物整图透传（与列表一一对应、effect 全 None）",
@@ -391,10 +334,11 @@ def run(ctx) -> None:
        and all(e["effect"] is None for e in _fx10)
        and all(Path(e["file"]).parent == final_dir for e in _fx10),
        str([Path(e["file"]).name for e in _fx10]))
-    # 仅改 border / area **不再**「即时生效」——必须重新提交（按钮会提示）
-    panel3.border.setText("25")
+    # 仅改去底参数 **不再**「即时生效」——必须重新提交（按钮会提示）
+    _panel3b = d.control_stack.widget(2)
+    _panel3b.type.setCurrentIndex(0)
     _fx25 = d._build_print_effects(d._print_entries()[0])
-    ok("改 border 不重新提交 → 取图规格不变（仍指向同一批成品图）",
+    ok("改去底参数不重新提交 → 取图规格不变（仍指向同一批成品图）",
        [e["file"] for e in _fx25] == [e["file"] for e in _fx10]
        and all(e["effect"] is None for e in _fx25),
        str([Path(e["file"]).name for e in _fx25]))
@@ -406,4 +350,3 @@ def run(ctx) -> None:
     ok("外部插入图透传、丢失的条目被过滤",
        any(e["file"] == str(img) and e["effect"] is None for e in _fx_mix)
        and not any(Path(e["file"]).name == "999-r.png" for e in _fx_mix))
-    panel3.border.setText("10")  # 正式 print 使用 10mm

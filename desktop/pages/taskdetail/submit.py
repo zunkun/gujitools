@@ -1,11 +1,27 @@
 # -*- coding: utf-8 -*-
-"""任务详情页的 rembg「提交本次任务」控制器。
+"""任务详情页的「提交本次任务」控制器（第二步、第三步共用）。
 
-- run_rembg_submit          ：提交动作（派生条目 → worker 子进程）；
-- _update_submit_button 等  ：提交按钮的版本状态与提示。
+2026-10-22 口径（用户）：
 
-纯版本判定规则见 services/submit_state.py，
-条目/效果派生规则见 services/print_plan.py。
+> 检测文本框……增加「提交本次任务」，图片按照 area 切割处理。提交任务，本步骤
+> 才算是执行完毕，才能转入下一阶段。
+> 去底色步骤的 area 和 border 参数去除，去底色直接整个图片去底色。
+
+于是「两个动作」的步骤变成了**两个**：
+
+======================  ==========================  ==========================
+步骤                     第一个动作（主按钮）          第二个动作（提交）
+======================  ==========================  ==========================
+检测文本框                「检测文本框」：只出框        按 area 裁图 → stages/detect
+图片去底色                「生成预览」：整图去底色      白底转透明 → stages/rembg
+======================  ==========================  ==========================
+
+两边的按钮状态机是同一套（``services/submit_state``），只有"比哪些参数"
+不同。本模块负责：
+- ``run_submit``              ：按当前步骤分发到下面两个提交动作；
+- ``run_detect_submit``       ：第二步提交（检测框 + area → 裁图）；
+- ``run_rembg_submit``        ：第三步提交（预览图 → 透明底成品）；
+- ``_update_submit_button``   ：按钮状态/提示（也按步骤分发）。
 """
 
 from __future__ import annotations
@@ -13,23 +29,34 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
-from desktop.services.print_plan import entry_to_effect_spec, plan_rembg_submit_entries
+from core.command_spec import DETECT_DEFAULT_AREA
+from desktop.pages.taskdetail.runner import STATUS_LABELS
+from desktop.services.print_plan import (
+    entry_to_effect_spec,
+    plan_detect_submit_entries,
+    plan_rembg_submit_entries,
+)
 from desktop.services.submit_state import (
     NEW_VERSION, NO_PREVIEW, PREVIEW_STALE, UP_TO_DATE,
-    rembg_submit_version_state,
+    submit_version_state,
 )
 from desktop.ui.widgets import bold_button, set_red_frame
 from desktop.utils.files import list_stage_images
-from desktop.pages.taskdetail.runner import STATUS_LABELS
 from utils.book_layout import profile_book
 
 if TYPE_CHECKING:
     from desktop.store.store import TaskStore
 
 #: 提交按钮的**唯一**文案（构造处与状态刷新处共用一份，避免两处各写一遍）。
-#: ⚠️ 别再加「（有新版本）」后缀：它与「生成预览」并排后放不下（见
+#: ⚠️ 别再加「（有新版本）」后缀：它与主按钮并排后放不下（见
 #:    ``_update_submit_button`` 的实测说明），"待提交"由加粗 + 红字提示表达。
 SUBMIT_TEXT = "提交本次任务"
+
+#: 有「提交本次任务」这一类次动作的步骤 → 它的"预览动作"叫什么（提示语用）。
+PREVIEW_ACTION_LABEL = {
+    "detect": "检测文本框",
+    "rembg": "生成预览",
+}
 
 
 class SubmitMixin:
@@ -43,11 +70,12 @@ class SubmitMixin:
         task_id: str | None
         running_stage: str | None
         log_view: Any  # 宿主 log_panel 里的 QTextEdit（.append 取用）
-        submit_button: Any  # 第三步「提交本次任务」按钮
+        submit_button: Any  # 「提交本次任务」按钮（第二步/第三步共用）
         submit_hint: Any  # 提交区文案标签
         _toast: Callable[..., None]
         current_stage: Callable[[], str]
         current_node: Callable[[], str | None]
+        node_of_stage: Callable[[str], str | None]
         _node_stage_state: Callable[[str], dict]
         _node_scope: Callable[..., dict]
         # ⚠️ 返回值是 LazyPanelHost 或真面板（属性转发、鸭子类型），用 Any 承接
@@ -60,11 +88,20 @@ class SubmitMixin:
         _manifest_paths: Callable[[], list]
         _refresh_manifest: Callable[..., None]
         _detect_boxes_for: Callable[..., Any]
+        _detect_boxes_map: Callable[[], dict]
+        _boxes_map_all: Callable[[], dict]
+        _boxes_write_path: Callable[[], Any]
+        _side_overrides_all: Callable[[], dict]
+        _book_page_widths: Callable[..., dict]
+        _book_profile: Callable[..., Any]
+        _page_width_of: Callable[..., int]
 
     # 影响「生成预览」产物（去底预览图）的参数；变化后预览图即过期
     PREVIEW_PARAM_KEYS = (
         "type", "offset", "seal", "sealcolor", "sealarea", "sealmin_sat",
     )
+    #: 第二步「检测文本框」：只有 area 会改变框的解读与裁图结果。
+    DETECT_PREVIEW_PARAM_KEYS = ("area",)
 
     # ---------------------------------------------------------- 状态判定
     def _latest_success_run(self, stage: str) -> dict | None:
@@ -87,14 +124,32 @@ class SubmitMixin:
                 return record
         return None
 
-    def _rembg_submit_version_state(self) -> str:
-        rembg_host = self.panel_host_of_step("rembg")
-        state = rembg_submit_version_state(
+    def _submit_version_state(self, stage: str) -> str:
+        """某步骤「提交」按钮的版本状态（第二/三步共用一套状态机）。"""
+        step = "detect" if stage == "detect" else "rembg"
+        host = self.panel_host_of_step(step)
+        # ⚠️ 流程里没有这一格 ⇒ 没有可比对的表单参数，传空字典
+        #    （别借别的面板，那是一份用户没填过的值）。
+        panel_args = host.get_args() if host else {}
+        if stage == "detect":
+            # ⚠️ 界面上没有 area 了（2026-10-22 第二轮），"面板参数"这一格用
+            #    **后端默认值**填——否则运行记录里是 area=1、面板给 None，
+            #    版本判定会永远停在 preview_stale（提交按钮一直黄着）。
+            state = submit_version_state(
+                preview_run=self._latest_success_run("detect"),
+                submit_run=self._latest_success_run("detect_submit"),
+                panel_args={"area": DETECT_DEFAULT_AREA},
+                preview_param_keys=self.DETECT_PREVIEW_PARAM_KEYS,
+                submit_param_keys=self.DETECT_PREVIEW_PARAM_KEYS,
+            )
+            if state == UP_TO_DATE and self._boxes_edited_after_submit():
+                # 检测框被改过：提交产物仍是改框前那份，必须重新提交。
+                return NEW_VERSION
+            return state
+        state = submit_version_state(
             preview_run=self._latest_success_run("rembg"),
             submit_run=self._latest_success_run("rembg_submit"),
-            # ⚠️ 流程里没有「图片去底色」这一格 ⇒ 没有可比对的表单参数，
-            #    传空字典（别借别的面板，那是一份用户没填过的值）。
-            panel_args=rembg_host.get_args() if rembg_host else {},
+            panel_args=panel_args,
             preview_param_keys=self.PREVIEW_PARAM_KEYS,
         )
         if state == UP_TO_DATE and self._preview_edited_after_submit():
@@ -104,10 +159,35 @@ class SubmitMixin:
             return NEW_VERSION
         return state
 
+    def _boxes_edited_after_submit(self) -> bool:
+        """``boxes.json`` 是否比最近一次成功提交还新（＝提交后改过框）。
+
+        改框（拖动/切类型/删除/单页重检）都会写这个文件，所以拿它的 mtime 和
+        提交完成时刻比就够了——不需要另记一份"改过没"的状态。
+        """
+        if not self.task_id:
+            return False
+        submit_run = self._latest_success_run("detect_submit")
+        if not submit_run:
+            return False
+        try:
+            submit_at = float(submit_run.get("finished_at") or 0.0)
+        except (TypeError, ValueError):
+            return False
+        if submit_at <= 0:
+            return False
+        path = self._boxes_write_path()
+        if path is None:
+            return False
+        try:
+            return Path(path).stat().st_mtime > submit_at
+        except OSError:  # 文件还没落盘/被删：不算编辑
+            return False
+
     def _preview_edited_after_submit(self) -> bool:
         """``stages/rembgpreview`` 里是否有文件比最近一次成功提交还新。
 
-        提交产物是「提交那一刻」的去底图合成结果，之后单独编辑去底图**不会**
+        提交产物是「提交那一刻」的去底图结果，之后单独编辑去底图**不会**
         自动生效——按钮/提示必须把"请重新提交"说出来，不能让用户以为白编辑了。
         """
         if not self.task_id:
@@ -140,7 +220,6 @@ class SubmitMixin:
         ⚠️ 结果目录按**当前节点**取（B 方案）：两个「图片去底色」节点各有自己
         的预览目录，走主节点目录会把副本节点的页面显示成"还没生成预览"。
         """
-        # 结果目录按任务归属；没有任务就没有结果可指（调用方都在任务态进这里）
         task_id = self.task_id
         if not task_id:
             return None
@@ -185,21 +264,13 @@ class SubmitMixin:
         规则本体在 :mod:`utils.book_layout`；这里只负责**取数**：清单 × 每页
         槽位（与 :meth:`DetectMixin._refresh_detect_stats` 同一口径）＋页宽。
 
-        ⚠️ 走 ``_detect_boxes_for``（内存缓存优先、其次按连线读上游 boxes）
-        而不是只读 boxes.json——用户在预览上刚框过、还没落盘的改动也必须参与
-        判定，否则统计面板已经说"单栏书"、提交却按半幅命名。
-
-        ``boxes_for``：可选的取框入口（默认 :meth:`_detect_boxes_for`）。第三步
-        实时预览传 :meth:`DetectMixin._boxes_map_all` 的查表版（一次读盘，避免
-        逐页重读 boxes.json 的 O(n²)，见 ``rembg_live.RembgLiveMixin``）。
+        ``boxes_for``：可选的取框入口（默认整本一次读齐）。第三步实时预览传
+        查表版，避免逐页重读 boxes.json 的 O(n²)。
         """
         if widths is None:
             widths = self._book_page_widths()
         provider = boxes_for
         if provider is None:
-            # ⚠️ 一次读齐整本（与 ``_refresh_detect_stats`` 同一口径）。逐页走
-            #    ``_detect_boxes_for`` 会为每页重解析一遍流程图 + 重解析连接线
-            #    ——110 页就是 110 次，是"进详情要等几秒"的次因。
             mapping = self._boxes_map_all()
             provider = lambda text: mapping.get(Path(text).stem, []) or []  # noqa: E731
         pages = [
@@ -208,27 +279,30 @@ class SubmitMixin:
         ]
         return profile_book(pages)
 
-    def _rembg_submit_entries(self, area: int, border) -> list[dict]:
-        """预览结果 + 检测框 + area/border → 最终图片条目（规则见 print_plan）。"""
-        # ⚠️ 全书级判定必须**每次现算**：页面清单、检测框、人工编辑都会变，
-        #    缓存 profile 会让"改完框仍按旧结论命名"。
-        # ⚠️ 页宽只算一次，同时喂给判据与派生回调（回调逐页调用，别再读盘）。
+    def _submit_entries(self, area: int) -> list[dict]:
+        """当前步骤的提交条目（第二步=源页裁图；第三步=去底图→成品）。
+
+        全书级判定（单栏书 / 页宽 / 指定左右）与检测框都**一次读盘**：
+        ``plan_*`` 会遍历整本 manifest 逐页回调，逐页走 ``_detect_boxes_for``
+        就是 O(n²)。
+        """
         widths = self._book_page_widths()
         profile = self._book_profile(widths)
-        # ⚠️ 指定左右也**一次读盘**（逐页 box_side_at 会整份解析 boxes.json）
         sides = self._side_overrides_all()
-        # ⚠️ 检测框同样一次读齐：``plan_rembg_submit_entries`` 会遍历**整本**
-        #    manifest 逐页回调 ``boxes_for``，逐页走 ``_detect_boxes_for`` 就是
-        #    O(n²)（实时预览每次防抖到期都要算一遍，是首帧卡顿来源之一）。
         boxes_map = self._boxes_map_all()
-        return plan_rembg_submit_entries(
+        boxes_for = lambda text: boxes_map.get(Path(text).stem, []) or []  # noqa: E731
+        common = dict(
             manifest_paths=self._manifest_paths(),
-            result_path_for=self._rembg_result_path,
-            boxes_for=lambda text: boxes_map.get(Path(text).stem, []) or [],
+            boxes_for=boxes_for,
             area=area,
             single_column_book=profile.single_column_book,
             page_width_for=lambda text: widths.get(Path(text).stem, 0),
             side_for=lambda text: sides.get(Path(text).stem),
+        )
+        if self.current_stage() == "detect":
+            return plan_detect_submit_entries(**common)
+        return plan_rembg_submit_entries(
+            result_path_for=self._rembg_result_path, **common
         )
 
     def _side_overrides_all(self) -> dict:
@@ -241,42 +315,26 @@ class SubmitMixin:
         if not callable(getter):
             return {}
         try:
-            return getter(self._boxes_read_path())
+            return getter(self._boxes_write_path())
         except Exception:  # noqa: BLE001 - 读不到＝没有任何指定
             return {}
 
     def _side_override_for(self, path_text: str) -> str | None:
-        """某页的**用户指定左右**（单页查询；批量场景用 :meth:`_side_overrides_all`）。
-
-        ⚠️ 取不到（替身 store 没这个方法 / 老存档没这字段）＝没指定，退回
-        按整本书自动判定——不该让"读不到"变成"猜一个"。
-        """
+        """某页的**用户指定左右**（单页查询；批量场景用 :meth:`_side_overrides_all`）。"""
         getter = getattr(self.store, "box_side_at", None)
         if not callable(getter) or not self.task_id:
             return None
         try:
-            return getter(self._boxes_read_path(), Path(path_text).stem)
+            return getter(self._boxes_write_path(), Path(path_text).stem)
         except Exception:  # noqa: BLE001 - 读不到按"没指定"
             return None
 
     def _build_print_effects(self, list_entries: list[dict]) -> list[dict]:
-        """第四步的取图规格：**一律透传「提交本次任务」的最终图**。
+        """第四步的取图规格：**一律透传第三步「提交本次任务」的最终图**。
 
         用户 2026-10-01 口径：「去底色那一步，必须提交才能传给下一步」。
-        所以第四步**不再**拿去底图（``stages/rembgpreview``）+ 当前
-        area/border 现算，只用第三步落盘的成品图（``stages/rembg``，拼版
-        生效时是 ``stages/imposition``）——它们是同一套几何规则在**提交
-        那一刻**合成出来的。由此：
-
-        - 编辑去底色结果、改 area/border 之后，都要重新「提交本次任务」
-          才会进 PDF（提交按钮本来就会高亮「有新版本」提示）；
-        - 编辑第四步的「待打印图」则是点「生成PDF」即生效（它就是要交付的
-          那张图本身）；
-        - 拼版页同样是"已经合成好的整页成品"，本来就走这条透传——再走一遍
-          区域合成会把整页当半幅紧裁，拼出来的版面全毁。
-
         ``effect=None`` 表示"这份文件的全部像素就是要排版的内容"，worker
-        直接原样送进 PDF。
+        直接原样送进 PDF——裁图/透明底都已在前面两步提交时兑现。
         """
         return [
             {"file": str(Path(e["file"])), "effect": None}
@@ -285,13 +343,113 @@ class SubmitMixin:
         ]
 
     # ---------------------------------------------------------- 提交动作
-    def run_rembg_submit(self) -> None:
-        """提交本次任务：把「生成预览」的去底色图片按 area/border 等
-        合成为真正想要的最终图片，输出到 stages/rembg 目录。
+    def run_submit(self) -> None:
+        """「提交本次任务」按钮的统一入口：按当前步骤分发。"""
+        stage = self.current_stage()
+        if stage == "detect":
+            self.run_detect_submit()
+        else:
+            self.run_rembg_submit()
 
-        ⚠️ 与「执行本子任务」共用同一份执行权（``_acquire_run``）：提交与
-        生成预览抢的是同一个 worker 槽位与同一批输出目录，同时在跑只会互相
-        覆盖；连点两下同样由防抖窗口吞掉。
+    def run_detect_submit(self) -> None:
+        """第二步提交：按 area 把页面图裁成下一步要的图 → ``stages/detect``。
+
+        前提是最近一次「检测文本框」成功（与第三步"先生成预览再提交"同一套
+        语义）；提交后这一步才算执行完毕，去底色才能拿到输入。
+        """
+        if not self._acquire_run("子任务"):
+            return
+        try:
+            self._run_detect_submit_unchecked()
+        finally:
+            if self.running_stage is None:
+                self._release_run()
+
+    def _run_detect_submit_unchecked(self) -> None:
+        """第二步提交的实现体（不含执行权守卫，勿直接调用）。"""
+        if not self.task_id or not self._stage_inputs_ready():
+            kind = self._missing_input_kind()
+            if kind == "images":
+                self._toast(
+                    "warning", "这一步需要图片",
+                    "本流程第一步不吃 PDF，请点页头的图片按钮选择图片，"
+                    "或把图片放进任务目录下的 stages/input。",
+                )
+            elif kind == "pdf":
+                self._toast(
+                    "warning", "尚未选择 PDF",
+                    "点页头的「选择 PDF」按钮为本任务补上源文件，之后才能执行。",
+                )
+            else:
+                self._toast(
+                    "warning", "这一步的输入还没就位",
+                    "这一步的输入由流程上游提供：先把它的上游步骤执行完，"
+                    "或到「查看 / 编辑流程」里检查连线。",
+                )
+            return
+        detect_state = self._node_stage_state("detect")["status"]
+        if detect_state != "success":
+            self._toast(
+                "warning", "请先检测文本框",
+                "「检测文本框」执行成功后才能提交本次任务"
+                + ("" if detect_state == "pending" else
+                   f"（当前状态：{STATUS_LABELS.get(detect_state, detect_state)}）"),
+            )
+            return
+        panel = self.panel_host_of_step("detect")
+        if panel is None:
+            self._toast(
+                "warning", "这一步不在流程里",
+                "当前任务的流程图里没有「检测文本框」，请先在「查看 / 编辑流程」"
+                "里把它加回来。",
+            )
+            return
+        try:
+            panel.get_args()  # 本步没有表单参数；留着只为走同一条校验路径
+        except ValueError as exc:
+            self._toast("error", "参数错误", str(exc))
+            return
+        self._refresh_manifest()
+        if not self._manifest_paths():
+            self._toast(
+                "warning", "无输入页面",
+                "页面清单为空，请先完成上一步子任务，或在预览区插入图片。",
+            )
+            return
+        # 区域模式不在界面上（2026-10-22 第二轮），提交时按后端默认值生效。
+        area = DETECT_DEFAULT_AREA
+        # 检测框与面积参数一起决定几何；border 已从界面移除，沿用历史默认
+        # "0"（不加留白：第四步会在纸上重新排版，见 effective_border_default）。
+        entries = self._submit_entries(area)
+        if not entries:
+            self._toast(
+                "warning", "没有可提交的页面",
+                "页面清单里没有能读取的图片，请检查上一步的产物。",
+            )
+            return
+        out_args = {
+            "area": area,
+            "_effects": [entry_to_effect_spec(e, "0") for e in entries],
+            "output": str(
+                self.store.node_or_stage_output(
+                    self.task_id, self.current_node(), "detect_submit"
+                )
+            ),
+            "clean": True,
+        }
+        detect_run = self._latest_success_run("detect")
+        if detect_run:
+            out_args["_preview_run_id"] = detect_run.get("run_id")
+        self.log_view.append(
+            f"提交本次任务：按区域模式 {area} 裁图 {len(entries)} 张 → {out_args['output']}"
+        )
+        self._launch_stage_process("detect_submit", out_args, resume=False)
+
+    def run_rembg_submit(self) -> None:
+        """第三步提交：把「生成预览」的整图去底结果转透明底，输出到 stages/rembg。
+
+        ⚠️ 与主按钮共用同一份执行权（``_acquire_run``）：提交与生成预览抢的是
+        同一个 worker 槽位与同一批输出目录，同时在跑只会互相覆盖。
         """
         if not self._acquire_run("子任务"):
             return
@@ -302,13 +460,8 @@ class SubmitMixin:
                 self._release_run()
 
     def _run_rembg_submit_unchecked(self) -> None:
-        """提交本次任务的实现体（不含执行权守卫，勿直接调用）。"""
+        """第三步提交的实现体（不含执行权守卫，勿直接调用）。"""
         if not self.task_id or not self._stage_inputs_ready():
-            # ⚠️ 空壳任务（创建时没选 PDF，用户 2026-10-06）说清去哪儿补，
-            #    而不是"请先导入 PDF"——那听着像要去列表页重新导入。
-            # ⚠️ 判据是"**这一步需要的输入**齐不齐"而不是"有没有 PDF"，
-            #    与 ``runner._run_stage_unchecked`` 同一个（用户 2026-10-06）：
-            #    流程第一步不吃 PDF 时，那种任务压根不需要源文件。
             kind = self._missing_input_kind()
             if kind == "images":
                 self._toast(
@@ -317,16 +470,11 @@ class SubmitMixin:
                     "或把图片放进任务目录下的 stages/input。",
                 )
             elif kind == "pdf":
-                # ⚠️ 指页头按钮前先确认它**在**（用户 2026-10-06 规则③：
-                #    输入控件只属于第一个流程节点；「图片提取」打头才显示）。
                 self._toast(
                     "warning", "尚未选择 PDF",
                     "点页头的「选择 PDF」按钮为本任务补上源文件，之后才能执行。",
                 )
             else:
-                # 与 runner._run_stage_unchecked 同一个口径（用户 2026-10-06
-                # 规则③）：入口不吃 PDF 也不缺图时别再指"选择 PDF"——那种
-                # 流程里按钮是藏着的，指过去就是"点了没反应"。
                 self._toast(
                     "warning", "这一步的输入还没就位",
                     "这一步的输入由流程上游提供：先把它的上游步骤执行完，"
@@ -334,8 +482,6 @@ class SubmitMixin:
                 )
             return
         # 必须以最近一次「生成预览」成功为前提（旧图残留/失败/中断均拒绝提交）
-        # ⚠️ 状态按**当前节点**取（B 方案）：两个「图片去底色」节点各有自己的
-        #    预览运行，按阶段取会把 A 节点的成功当成 B 节点也能提交。
         preview_state = self._node_stage_state("rembg")["status"]
         if preview_state != "success":
             self._toast(
@@ -365,7 +511,12 @@ class SubmitMixin:
                 "页面清单为空，请先完成上一步子任务，或在预览区插入图片。",
             )
             return
-        entries = self._rembg_submit_entries(args["area"], args.get("border"))
+        # ⚠️ 去底色**不裁图**（2026-10-22）：预览目录里每一张原样变成一张成品。
+        entries = [
+            {"file": str(path), "label": Path(path).stem}
+            for path in self._manifest_paths()
+            if self._rembg_result_path(Path(path).stem) is not None
+        ]
         if not entries:
             self._toast(
                 "warning", "尚未生成预览",
@@ -373,7 +524,11 @@ class SubmitMixin:
             )
             return
         args["_effects"] = [
-            entry_to_effect_spec(e, args.get("border")) for e in entries
+            {
+                "file": str(self._rembg_result_path(Path(e["file"]).stem)),
+                "label": e["label"],
+            }
+            for e in entries
         ]
         args["output"] = str(
             self.store.node_or_stage_output(
@@ -381,18 +536,7 @@ class SubmitMixin:
             )
         )
         args["clean"] = True
-        # 记录本次提交所基于的「生成预览」成功版本，用于判断预览是否又有新版本
-        # ⚠️ 取**同一节点**的预览运行（B 方案）：拿 A 节点的预览版本号去比
-        #    B 节点的提交，版本判定会永远错。
-        node = self.current_node()
-        preview_run = next(
-            (r for r in (
-                self.store.list_node_runs(self.task_id, node, "rembg")
-                if node
-                else self.store.list_stage_runs(self.task_id, "rembg")
-            ) if r.get("status") == "success"),
-            None,
-        )
+        preview_run = self._latest_success_run("rembg")
         if preview_run:
             args["_preview_run_id"] = preview_run.get("run_id")
         self.log_view.append(
@@ -402,91 +546,129 @@ class SubmitMixin:
 
     # ---------------------------------------------------------- 按钮状态
     def _update_submit_button(self, running: bool) -> None:
-        """步骤三「提交本次任务」：最近一次「生成预览」成功后才可用；
-        预览产生新版本（重跑/参数变更）时按钮高亮提示需要重新提交。"""
-        if not self.task_id or self.current_stage() != "rembg":
+        """「提交本次任务」按钮：按当前步骤分发到对应的状态刷新。"""
+        stage = self.current_stage()
+        if not self.task_id or stage not in PREVIEW_ACTION_LABEL:
             self.submit_hint.hide()
-            # 离开第三步（或没任务）时把红框一起收掉，别圈到别的步骤去
+            # 离开这两步（或没任务）时把红框一起收掉，别圈到别的步骤去
             set_red_frame(self.submit_button, False)
             return
-        # ⚠️ 开销按需付（审计 D6）：这个函数在执行期间**每 ≤200ms 被进度节流
-        # 器拉一次**（_refresh_stage_views → _update_run_buttons → 这里）。
-        # `stage_states`（读 JSON）+ `list_stage_images`（扫目录）+
-        # `_rembg_submit_version_state`（再读两遍 runs.json）加起来每 tick
-        # 几十毫秒都在主线程上。而 `running=True` 时下面两个判据的结果根本
-        # 不进任何分支（直接落"执行中"提示）——纯浪费。先判 running，
-        # 只有空闲（低频状态变化）时才做这些读盘。
-        if running:
-            version = None
-            tip = "当前有任务正在执行，请等待完成后再提交"
+        if stage == "detect":
+            self._update_detect_submit_button(running)
         else:
-            # ⚠️ 状态与预览目录都按**当前节点**（B 方案）：同一步骤两个节点
-            #    各有自己的预览运行与预览图，按阶段取会张冠李戴。
-            preview_state = self._node_stage_state("rembg")["status"]
-            has_preview = bool(
+            self._update_rembg_submit_button(running)
+
+    def _submit_button_common(self, running: bool, preview_state: str,
+                              has_preview: bool, action: str) -> tuple:
+        """两个步骤共用的"什么时候能提交"判据 → ``(状态, 提示语)``。
+
+        返回 ``(None, 提示)`` 表示"执行中/不可提交但不必细判"。
+        """
+        if running:
+            return None, "当前有任务正在执行，请等待完成后再提交"
+        if preview_state != "success":
+            if preview_state in ("failed", "cancelled"):
+                return NO_PREVIEW, (
+                    f"上次「{action}」{STATUS_LABELS.get(preview_state, preview_state)}，"
+                    "请重新执行并成功后再提交本次任务"
+                )
+            return NO_PREVIEW, f"请先点击「{action}」，执行成功后才能提交本次任务"
+        if not has_preview:
+            return NO_PREVIEW, f"预览结果缺失，请重新点击「{action}」"
+        return None, ""
+
+    def _apply_submit_state(self, version, tip: str, hints: dict) -> None:
+        """把版本状态落到按钮（文案/禁用/红框/加粗/提示行）。
+
+        ⚠️ 文案**始终**是「提交本次任务」：它与主按钮并排一行后，每颗按钮
+        只剩控制列（340~440px）的一半，实测 166~216px，而更长的写法必被
+        qfluent 截成省略号（见 tests/probe_row_button_width.py 的实测）。
+        "有新版本待提交"这层含义由**加粗** + 下方常驻的红字提示承担。
+        """
+        self.submit_button.setToolTip(tip)
+        self.submit_button.setEnabled(version not in (None, NO_PREVIEW))
+        set_red_frame(self.submit_button, version == NEW_VERSION)
+        self.submit_button.setText(SUBMIT_TEXT)
+        if version == NEW_VERSION:
+            # 加粗走 setFont：setStyleSheet 会把 qfluent 按钮的整套 qss
+            # （含 hasIcon=true 的 36px 左边距）整串抹掉（见 widgets.bold_button）
+            bold_button(self.submit_button, True)
+            self._show_submit_hint(hints[NEW_VERSION], "#c0392b")
+        elif version == PREVIEW_STALE:
+            bold_button(self.submit_button, False)
+            self._show_submit_hint(hints[PREVIEW_STALE], "#b8860b")
+        elif version == UP_TO_DATE:
+            bold_button(self.submit_button, False)
+            self._show_submit_hint(hints[UP_TO_DATE], "#3a8a3e")
+        else:  # no_preview / 执行中
+            bold_button(self.submit_button, False)
+            self.submit_hint.hide()
+
+    def _update_detect_submit_button(self, running: bool) -> None:
+        """第二步「提交本次任务」：最近一次「检测文本框」成功后才可用。"""
+        version, tip = self._submit_button_common(
+            running,
+            self._node_stage_state("detect")["status"],
+            bool(self._manifest_paths()),
+            "检测文本框",
+        )
+        if version is None and not tip:
+            version = self._submit_version_state("detect")
+            tip = {
+                NEW_VERSION: "检测框或区域模式有改动（或还没提交过），"
+                             "请点击「提交本次任务」把图片按 area 裁好交给下一步",
+                PREVIEW_STALE: "区域模式已修改，请先重新「检测文本框」再提交",
+                UP_TO_DATE: "已提交：下一步（图片去底色）拿到的是这次裁好的图；"
+                            "改框或改区域模式后需再次提交",
+                NO_PREVIEW: "请先点击「检测文本框」，执行成功后才能提交本次任务",
+            }[version]
+        elif version is None:
+            version = NO_PREVIEW
+        self._apply_submit_state(version, tip, {
+            NEW_VERSION: "● 有新版本待提交（检测框/区域模式有改动，或还没提交）",
+            PREVIEW_STALE: "● 区域模式已修改，请重新「检测文本框」后再提交",
+            UP_TO_DATE: "已提交：下一步已能用这次裁好的图",
+        })
+
+    def _update_rembg_submit_button(self, running: bool) -> None:
+        """第三步「提交本次任务」：最近一次「生成预览」成功后才可用。
+
+        ⚠️ 开销按需付（审计 D6）：这个函数在执行期间**每 ≤200ms 被进度节流
+        器拉一次**（_refresh_stage_views → _update_run_buttons → 这里）。
+        ``stage_states``（读 JSON）+ ``list_stage_images``（扫目录）+
+        ``_submit_version_state``（再读两遍 runs.json）加起来每 tick 几十毫秒
+        都在主线程上。所以先判 running，只有空闲时才做这些读盘。
+        """
+        version, tip = self._submit_button_common(
+            running,
+            self._node_stage_state("rembg")["status"],
+            bool(
                 list_stage_images(
                     self.store.node_or_stage_output(
                         self.task_id, self.current_node(), "rembg"
                     )
                 )
-            )
-            if preview_state != "success":
-                version = NO_PREVIEW
-                if preview_state in ("failed", "cancelled"):
-                    tip = (
-                        f"上次「生成预览」{STATUS_LABELS.get(preview_state, preview_state)}，"
-                        "请重新执行并成功后再提交本次任务"
-                    )
-                else:
-                    tip = "请先点击「生成预览」，执行成功后才能提交本次任务"
-            elif not has_preview:
-                version = NO_PREVIEW
-                tip = "预览结果缺失，请重新点击「生成预览」"
-            else:
-                version = self._rembg_submit_version_state()
-                tip = {
-                    NEW_VERSION: "预览已产生新版本（重新生成预览、参数变更，"
-                                 "或去底色结果被编辑过），"
-                                 "请点击「提交本次任务」更新最终图片",
-                    PREVIEW_STALE: "面板去底参数已修改，当前预览图不是最新；"
-                                   "建议先重新「生成预览」，再提交本次任务",
-                    UP_TO_DATE: "最终图片已是最新预览版本；参数变更或重新生成预览后需再次提交",
-                    NO_PREVIEW: "请先点击「生成预览」，执行成功后才能提交本次任务",
-                }[version]
-        self.submit_button.setToolTip(tip)
-
-        # 按钮文案/高亮
-        self.submit_button.setEnabled(version not in (None, NO_PREVIEW))
-        # ⚠️ **红框**（2026-10-13 用户）：「生成预览」已成功但**还没提交本次
-        #    任务**（＝ NEW_VERSION：从未提交过，或预览有新版本落后）时圈住
-        #    提交按钮。PREVIEW_STALE 是"该先重新生成预览"，UP_TO_DATE 是
-        #    "已提交"，都不圈。
-        set_red_frame(self.submit_button, version == NEW_VERSION)
-        # ⚠️ 文案**始终**是「提交本次任务」：它与「生成预览」并排一行后，每颗
-        #    按钮只剩控制列（340~440px）的一半，实测 166~216px，而
-        #    「提交本次任务（有新版本）」需要 218px ⇒ 必被 qfluent 截成省略号
-        #    （见 tests/probe_row_button_width.py 的实测）。这层"有新版本待提交"
-        #    的含义由**加粗** + 下方常驻的红字提示承担，信息不丢。
-        #    （与「继续执行 / 中断执行」并排时收敛文案是同一处理原则。）
-        self.submit_button.setText(SUBMIT_TEXT)
-        if version == NEW_VERSION:
-            # ⚠️ 加粗走 setFont：setStyleSheet 会把 qfluent 按钮的整套 qss
-            # （含 hasIcon=true 的 36px 左边距）整串抹掉（见 widgets.bold_button）
-            bold_button(self.submit_button, True)
-            self._show_submit_hint(
-                "● 有新版本待提交（预览/参数/去底色结果有改动）", "#c0392b"
-            )
-        elif version == PREVIEW_STALE:
-            bold_button(self.submit_button, False)
-            self._show_submit_hint(
-                "● 去底参数已修改，请重新「生成预览」后再提交", "#b8860b"
-            )
-        elif version == UP_TO_DATE:
-            bold_button(self.submit_button, False)
-            self._show_submit_hint("最终图片已是最新版本", "#3a8a3e")
-        else:  # no_preview / 执行中
-            bold_button(self.submit_button, False)
-            self.submit_hint.hide()
+            ),
+            "生成预览",
+        )
+        if version is None and not tip:
+            version = self._submit_version_state("rembg")
+            tip = {
+                NEW_VERSION: "预览已产生新版本（重新生成预览、参数变更，"
+                             "或去底色结果被编辑过），"
+                             "请点击「提交本次任务」更新最终图片",
+                PREVIEW_STALE: "面板去底参数已修改，当前预览图不是最新；"
+                               "建议先重新「生成预览」，再提交本次任务",
+                UP_TO_DATE: "最终图片已是最新预览版本；参数变更或重新生成预览后需再次提交",
+                NO_PREVIEW: "请先点击「生成预览」，执行成功后才能提交本次任务",
+            }[version]
+        elif version is None:
+            version = NO_PREVIEW
+        self._apply_submit_state(version, tip, {
+            NEW_VERSION: "● 有新版本待提交（预览/参数/去底色结果有改动）",
+            PREVIEW_STALE: "● 去底参数已修改，请重新「生成预览」后再提交",
+            UP_TO_DATE: "最终图片已是最新版本",
+        })
 
     def _show_submit_hint(self, text: str, color: str) -> None:
         self.submit_hint.setText(text)

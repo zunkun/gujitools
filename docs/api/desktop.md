@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 176 个模块、193 个公开类、1413 个公开函数/方法（生成于 2026-10-21）。
+覆盖 177 个模块、193 个公开类、1431 个公开函数/方法（生成于 2026-10-22）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -34,7 +34,7 @@
 | [`desktop.components.missing_source_prompt`](#desktopcomponentsmissing_source_prompt) | 1 | 7 |
 | [`desktop.components.pagination`](#desktopcomponentspagination) | 2 | 11 |
 | [`desktop.components.panels.base`](#desktopcomponentspanelsbase) | 1 | 7 |
-| [`desktop.components.panels.detect_panel`](#desktopcomponentspanelsdetect_panel) | 1 | 3 |
+| [`desktop.components.panels.detect_panel`](#desktopcomponentspanelsdetect_panel) | 1 | 6 |
 | [`desktop.components.panels.extract_panel`](#desktopcomponentspanelsextract_panel) | 1 | 1 |
 | [`desktop.components.panels.params_spec`](#desktopcomponentspanelsparams_spec) | 0 | 2 |
 | [`desktop.components.panels.print_form`](#desktopcomponentspanelsprint_form) | 1 | 1 |
@@ -44,7 +44,7 @@
 | [`desktop.components.panels.print_params`](#desktopcomponentspanelsprint_params) | 0 | 5 |
 | [`desktop.components.panels.print_sections`](#desktopcomponentspanelsprint_sections) | 1 | 0 |
 | [`desktop.components.panels.print_text_layout`](#desktopcomponentspanelsprint_text_layout) | 1 | 0 |
-| [`desktop.components.panels.rembg_panel`](#desktopcomponentspanelsrembg_panel) | 1 | 3 |
+| [`desktop.components.panels.rembg_panel`](#desktopcomponentspanelsrembg_panel) | 1 | 1 |
 | [`desktop.components.progress_row`](#desktopcomponentsprogress_row) | 1 | 8 |
 | [`desktop.components.step_bar`](#desktopcomponentsstep_bar) | 2 | 20 |
 | [`desktop.components.task_table`](#desktopcomponentstask_table) | 3 | 10 |
@@ -114,7 +114,7 @@
 | [`desktop.pages.taskdetail.print_list`](#desktoppagestaskdetailprint_list) | 1 | 3 |
 | [`desktop.pages.taskdetail.rembg_live`](#desktoppagestaskdetailrembg_live) | 1 | 0 |
 | [`desktop.pages.taskdetail.runner`](#desktoppagestaskdetailrunner) | 1 | 2 |
-| [`desktop.pages.taskdetail.submit`](#desktoppagestaskdetailsubmit) | 1 | 1 |
+| [`desktop.pages.taskdetail.submit`](#desktoppagestaskdetailsubmit) | 1 | 3 |
 | [`desktop.pages.taskdetail.view`](#desktoppagestaskdetailview) | 2 | 5 |
 | [`desktop.pages.taskflow.page`](#desktoppagestaskflowpage) | 1 | 2 |
 | [`desktop.pages.tasklist.page`](#desktoppagestasklistpage) | 1 | 7 |
@@ -122,7 +122,7 @@
 | [`desktop.services.detect_reuse`](#desktopservicesdetect_reuse) | 0 | 6 |
 | [`desktop.services.font_catalog`](#desktopservicesfont_catalog) | 1 | 6 |
 | [`desktop.services.imposition`](#desktopservicesimposition) | 0 | 31 |
-| [`desktop.services.print_plan`](#desktopservicesprint_plan) | 0 | 9 |
+| [`desktop.services.print_plan`](#desktopservicesprint_plan) | 0 | 10 |
 | [`desktop.services.rembg_export`](#desktopservicesrembg_export) | 0 | 7 |
 | [`desktop.services.rembg_live`](#desktopservicesrembg_live) | 0 | 4 |
 | [`desktop.services.stale_chain`](#desktopservicesstale_chain) | 0 | 4 |
@@ -132,7 +132,7 @@
 | [`desktop.settings.page`](#desktopsettingspage) | 1 | 2 |
 | [`desktop.shell`](#desktopshell) | 1 | 22 |
 | [`desktop.single_instance`](#desktopsingle_instance) | 0 | 5 |
-| [`desktop.stages.detect_stage`](#desktopstagesdetect_stage) | 0 | 3 |
+| [`desktop.stages.detect_stage`](#desktopstagesdetect_stage) | 0 | 4 |
 | [`desktop.stages.events`](#desktopstagesevents) | 2 | 9 |
 | [`desktop.stages.generic_stage`](#desktopstagesgeneric_stage) | 0 | 2 |
 | [`desktop.stages.print_stage`](#desktopstagesprint_stage) | 0 | 3 |
@@ -141,7 +141,7 @@
 | [`desktop.steps.control`](#desktopstepscontrol) | 1 | 11 |
 | [`desktop.steps.flow`](#desktopstepsflow) | 4 | 31 |
 | [`desktop.steps.kernel`](#desktopstepskernel) | 5 | 11 |
-| [`desktop.steps.ports`](#desktopstepsports) | 0 | 39 |
+| [`desktop.steps.ports`](#desktopstepsports) | 0 | 40 |
 | [`desktop.steps.process`](#desktopstepsprocess) | 1 | 7 |
 | [`desktop.steps.scheduler`](#desktopstepsscheduler) | 2 | 16 |
 | [`desktop.steps.source_zone`](#desktopstepssource_zone) | 1 | 20 |
@@ -169,7 +169,7 @@
 | [`desktop.ui.toast`](#desktopuitoast) | 0 | 1 |
 | [`desktop.ui.widgets`](#desktopuiwidgets) | 10 | 48 |
 | [`desktop.ui.window_size`](#desktopuiwindow_size) | 0 | 3 |
-| [`desktop.utils.files`](#desktoputilsfiles) | 0 | 26 |
+| [`desktop.utils.files`](#desktoputilsfiles) | 0 | 28 |
 | [`desktop.utils.icon`](#desktoputilsicon) | 0 | 3 |
 | [`desktop.worker`](#desktopworker) | 0 | 1 |
 | [`desktop.workers.copy_source_worker`](#desktopworkerscopy_source_worker) | 2 | 4 |
@@ -178,6 +178,7 @@
 | [`desktop.workers.image_list_worker`](#desktopworkersimage_list_worker) | 1 | 2 |
 | [`desktop.workers.imposition_page_thumb_worker`](#desktopworkersimposition_page_thumb_worker) | 1 | 3 |
 | [`desktop.workers.imposition_worker`](#desktopworkersimposition_worker) | 2 | 4 |
+| [`desktop.workers.pdf_render_service`](#desktopworkerspdf_render_service) | 0 | 12 |
 | [`desktop.workers.preview_worker`](#desktopworkerspreview_worker) | 1 | 11 |
 | [`desktop.workers.rembg_live_worker`](#desktopworkersrembg_live_worker) | 1 | 3 |
 | [`desktop.workers.rembg_transparent_worker`](#desktopworkersrembg_transparent_worker) | 1 | 2 |
@@ -186,7 +187,7 @@
 | [`desktop.workers.source_thumbnails_worker`](#desktopworkerssource_thumbnails_worker) | 1 | 4 |
 | [`desktop.workers.task_rows_worker`](#desktopworkerstask_rows_worker) | 1 | 2 |
 | [`desktop.workers.thumb_cache_worker`](#desktopworkersthumb_cache_worker) | 1 | 11 |
-| [`desktop.workers.update_worker`](#desktopworkersupdate_worker) | 3 | 11 |
+| [`desktop.workers.update_worker`](#desktopworkersupdate_worker) | 3 | 9 |
 | [`desktop.workers.worker_host`](#desktopworkersworker_host) | 1 | 4 |
 
 ---
@@ -2377,18 +2378,29 @@ build_form 生成子类表单并占满剩余垂直空间，最后统一把表单
 
 源码：[`desktop/components/panels/detect_panel.py`](../../desktop/components/panels/detect_panel.py)
 
-检测文本框（detect）阶段面板：本阶段只识别坐标，不生成文件。
+检测文本框（detect）阶段面板：区域模式 + 人工干预。
+
+⚠️ 2026-10-22 大改造（用户口径）：
+
+> 检测文本框，增加 area 参数，「执行本子任务」改成「检测文本框」，
+> 增加「提交本次任务」，图片按照 area 切割处理。提交任务，本步骤才算是
+> 执行完毕，才能转入下一阶段。
+
+所以这一步现在是**两个动作**：
+
+- 「检测文本框」（详情页主按钮）：只跑检测，出框到 ``boxes.json``；
+- 「提交本次任务」（详情页次按钮）：按 ``area`` 把页面图裁成下一步要的图，
+  落到 ``stages/detect``。**没提交就不算这一步完成**——下一步的输入目录是空的。
+
+``area`` 从第三步 rembg 搬到这里（那边不再有 area/border：去底色就是整图
+去底色）。"整页模式"不再是一个独立开关：它就是这个下拉里的 ``4``。
 
 ### `class DetectPanel(StagePanel)`
 
-检测文本框阶段面板：仅识别坐标，不生成文件。
+检测文本框阶段面板：区域模式（area）+ 人工修正框。
 
 YOLO 检测每张图的内容框坐标（半幅：左右两栏；整幅：整页单一内容区），
-供预览标注与去底色/裁剪使用；
-本阶段无表单参数，get_args 返回空字典，手动检测经信号触发。
-
-「整页模式」是第三步 area=4 的入口开关：勾选后整页即唯一文本框，
-**不加载也不调用 YOLO**，预览里框画在页面边界，仍可手动拖动/重画。
+供预览标注与「提交本次任务」的裁图使用。
 
 **人工干预**（用户 2026-09-29 定）：框的类型是**框自己的属性**，不随
 "还剩几个框"变化——
@@ -2401,16 +2413,12 @@ YOLO 检测每张图的内容框坐标（半幅：左右两栏；整幅：整页
 
 | 方法 | 说明 |
 | --- | --- |
-| `get_args() -> dict` | 返回空参数字典（detect 阶段无表单参数）。 |
-| `set_whole_page(on: bool) -> None` | 外部（第三步 area）回填勾选状态；blockSignals 避免回抛造成循环。 |
+| `area_value() -> int` | 当前区域模式（int）。宿主读它决定"整页模式"与拼版前提。 |
+| `whole_page_mode() -> bool` | 是不是整页模式（= area 4，整页即唯一文本框、不检测）。 |
+| `set_area(value: int) -> None` | 程序化设置区域模式（**不发** ``param_edited``，也不算用户改动）。 |
+| `set_whole_page(on: bool) -> None` | 回填「整页模式」（= area 4 / 1 的旧入口，保留给老调用方）。 |
+| `get_args() -> dict` | 返回本步骤参数：只有 ``area``。 |
 | `set_box_selection(index: int, kind: str) -> None` | 回填「选中框类型」控件：``index < 0``（无选中）时三段都不高亮。 |
-
-##### `get_args() -> dict`
-
-返回空参数字典（detect 阶段无表单参数）。
-
-整页模式不在这里上报：area 归第三步 rembg 面板所有，本开关只负责
-把 area 切到 4 / 切回 1（见宿主的 _set_whole_page_mode）。
 
 ##### `set_box_selection(index: int, kind: str) -> None`
 
@@ -2803,40 +2811,28 @@ print 面板「位置」「文字方向」的固定取值（由 PrintFormMixin �
 
 源码：[`desktop/components/panels/rembg_panel.py`](../../desktop/components/panels/rembg_panel.py)
 
-图片去底色（rembg）阶段面板：area 决定裁剪方式，border 决定四周留白。
+图片去底色（rembg）阶段面板：只有去底色自己的参数。
+
+⚠️ 2026-10-22 用户口径：**去底色直接整个图片去底色**——这里不再有
+``area`` / ``border``。按检测框裁图挪到了第二步「检测文本框」的
+「提交本次任务」（参数与落地都在那边，见 ``detect_panel`` 与
+``stages/detect_stage.run_detect_submit_stage``）。
+
+由此一并删掉的还有 ``whole_page_only``（"流程里没有检测框 ⇒ area 锁 4"）：
+那套锁是给"去底色需要 area 却没框"的旧模型用的，现在去底色压根不看框。
 
 ### `class RembgPanel(StagePanel)`
 
-图片去底色阶段面板：area/border/印章等参数。
+图片去底色阶段面板：type / offset / 印章参数。
 
-整图 Otsu 二值化/灰度化去底（可保留印章）；area 决定裁剪方式、
-border 决定四周留白，参数经 get_args 收集后传给子进程。默认值统一取
-``params_spec.DEFAULTS["rembg"]``。
+整图 Otsu 二值化/灰度化去底（可保留印章）；参数经 get_args 收集后传给
+子进程。默认值统一取 ``params_spec.DEFAULTS["rembg"]``。
 
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(parent=None, *, whole_page_only: bool=False)` | ``whole_page_only=True``：area 锁定 4（整页/不检测）且不可改。 |
-| `whole_page_only() -> bool` | area 是否被锁定为 4（宿主读它来联动第二步「整页模式」开关）。 |
-| `get_args() -> dict` | 收集去底色参数：area/type/offset/seal/border 等。 |
-
-##### `__init__(parent=None, *, whole_page_only: bool=False)`
-
-``whole_page_only=True``：area 锁定 4（整页/不检测）且不可改。
-
-流程里本步**拿不到检测框**（「检测文本框」不在它上游）时，area 的
-1/2/3 都没框可裁、页面只会一片空白——area 必须固定 4（用户
-2026-10-07：「图片去底色作为第一个节点，则 area 默认 = 4，并且不可
-修改」）。判据唯一处 :func:`desktop.steps.ports.detect_feeds_rembg`，
-由宿主按当前流程决定传值；独立任务页/默认流程不传（可自由选）。
-
-##### `get_args() -> dict`
-
-收集去底色参数：area/type/offset/seal/border 等。
-
-border 留空时按 area 取默认（area=1/2/3 → 0、area=4 → 不设），
-由 runner 在续跑时与 detect 框坐标实时合成裁剪区域。
+| `get_args() -> dict` | 收集去底色参数：type/offset/seal/sealcolor/sealarea/sealmin_sat。 |
 
 ---
 
@@ -6695,9 +6691,9 @@ PDF排版模块页：拖入成品图（一批或一个文件夹）→ 调版面 
 **独立**：不需要任务、不需要检测框——用户拖入**一整个图片文件夹**（批量）或
 **单张图片**，结果用原图/结果对比控件（``RembgPreviewWidget``）看。
 
-⚠️ 与任务流程的差别（有意为之）：第三步的 area/border 依赖第二步的检测框，
-单文件模式下没有框可用，所以这里**只暴露「整图/去底参数」这一层**，area 固定
-按「图像本身」处理，不参与框裁剪。
+⚠️ 2026-10-22 起，**任务流程里的去底色也是整图去底色了**（area/border 已从
+这一步移除，按框裁图归「检测文本框」的提交）。所以本独立页与任务流程第三步
+现在是**同一件事**：拖图 → 调去底参数 → 出整图去底结果，没有任何裁剪分支。
 
 ### 模块常量
 
@@ -7115,20 +7111,20 @@ history_combo、_toast()。
 
 1. **在不在流程里** ← **本任务的流程图**。图上画了「图片拼版」就有这一格
    （:meth:`ImpositionBaseMixin._imposition_node_visible`）。
-2. **这一步有没有意义** ← **第三步的「区域模式」``area``**。这是**业务前提**
-   而不是显示开关：流程里**有检测数据**时（「检测文本框」在去底色上游），
-   ``area=1``「左右分开」让每个文本框产出**成对的两张**半页图
-   （``-l`` / ``-r``），两张并排才拼得出古籍的正刊对开版面；``area=2/3``
-   输出并集整图、``area=4`` 输出整页，**本来就是一张图**。而流程里**没有
-   检测数据**时（去底色不在流程里，或它自己就是入口拿不到框——判据
-   ``desktop.steps.ports.detect_feeds_rembg``），拼版吃**整图**照样拼：
+2. **这一步有没有意义** ← **「检测文本框」的「区域模式」``area``**
+   （2026-10-22 起 area 归第二步；它决定提交时怎么裁图）。这是**业务前提**
+   而不是显示开关：流程里**有检测步骤**时（判据
+   ``desktop.steps.ports.flow_crops_pages``），``area=1``「左右分开」让每个
+   文本框产出**成对的两张**半页图（``-l`` / ``-r``），两张并排才拼得出古籍的
+   正刊对开版面；``area=2/3`` 输出并集整图、``area=4`` 输出整页，**本来就是
+   一张图**。而流程里**没有检测步骤**时，图是整页的，拼版吃**整图**照样拼：
    整幅单独一页、手动任意两张一页——「拼版作为第一个节点，也不需要
    detect 数据」（用户 2026-10-07）。见 :meth:`_imposition_area_ok`。
 3. **要不要真跑** ← **拼版面板底部的开关**（:meth:`imposition_active`
    只看勾没勾，那是"用户意图"）。开关在 ①②不满足时**置灰并写明原因**。
 
 ⚠️ **别把 ② 当成"显示开关"扔掉**（本轮曾误判过一次）：它决定"拼版这一步
-在当前参数下有没有意义"。``area`` 的其余取值与它无关，只管去底色怎么裁。
+在当前参数下有没有意义"。``area`` 的其余取值与它无关，只管第二步提交怎么裁。
 
 按操作逻辑拆成三个文件（后续可由不同 agent 分头维护，互不影响）：
 
@@ -7850,13 +7846,29 @@ control_stack、stage_* 控件、log_view、process/run_id 等。
 
 源码：[`desktop/pages/taskdetail/submit.py`](../../desktop/pages/taskdetail/submit.py)
 
-任务详情页的 rembg「提交本次任务」控制器。
+任务详情页的「提交本次任务」控制器（第二步、第三步共用）。
 
-- run_rembg_submit          ：提交动作（派生条目 → worker 子进程）；
-- _update_submit_button 等  ：提交按钮的版本状态与提示。
+2026-10-22 口径（用户）：
 
-纯版本判定规则见 services/submit_state.py，
-条目/效果派生规则见 services/print_plan.py。
+> 检测文本框……增加「提交本次任务」，图片按照 area 切割处理。提交任务，本步骤
+> 才算是执行完毕，才能转入下一阶段。
+> 去底色步骤的 area 和 border 参数去除，去底色直接整个图片去底色。
+
+于是「两个动作」的步骤变成了**两个**：
+
+======================  ==========================  ==========================
+步骤                     第一个动作（主按钮）          第二个动作（提交）
+======================  ==========================  ==========================
+检测文本框                「检测文本框」：只出框        按 area 裁图 → stages/detect
+图片去底色                「生成预览」：整图去底色      白底转透明 → stages/rembg
+======================  ==========================  ==========================
+
+两边的按钮状态机是同一套（``services/submit_state``），只有"比哪些参数"
+不同。本模块负责：
+- ``run_submit``              ：按当前步骤分发到下面两个提交动作；
+- ``run_detect_submit``       ：第二步提交（检测框 + area → 裁图）；
+- ``run_rembg_submit``        ：第三步提交（预览图 → 透明底成品）；
+- ``_update_submit_button``   ：按钮状态/提示（也按步骤分发）。
 
 ### 模块常量
 
@@ -7873,16 +7885,23 @@ control_stack、submit_button/submit_hint、log_view、_toast()。
 
 | 方法 | 说明 |
 | --- | --- |
-| `run_rembg_submit() -> None` | 提交本次任务：把「生成预览」的去底色图片按 area/border 等 |
+| `run_submit() -> None` | 「提交本次任务」按钮的统一入口：按当前步骤分发。 |
+| `run_detect_submit() -> None` | 第二步提交：按 area 把页面图裁成下一步要的图 → ``stages/detect``。 |
+| `run_rembg_submit() -> None` | 第三步提交：把「生成预览」的整图去底结果转透明底，输出到 stages/rembg。 |
+
+##### `run_detect_submit() -> None`
+
+第二步提交：按 area 把页面图裁成下一步要的图 → ``stages/detect``。
+
+前提是最近一次「检测文本框」成功（与第三步"先生成预览再提交"同一套
+语义）；提交后这一步才算执行完毕，去底色才能拿到输入。
 
 ##### `run_rembg_submit() -> None`
 
-提交本次任务：把「生成预览」的去底色图片按 area/border 等
-合成为真正想要的最终图片，输出到 stages/rembg 目录。
+第三步提交：把「生成预览」的整图去底结果转透明底，输出到 stages/rembg。
 
-⚠️ 与「执行本子任务」共用同一份执行权（``_acquire_run``）：提交与
-生成预览抢的是同一个 worker 槽位与同一批输出目录，同时在跑只会互相
-覆盖；连点两下同样由防抖窗口吞掉。
+⚠️ 与主按钮共用同一份执行权（``_acquire_run``）：提交与生成预览抢的是
+同一个 worker 槽位与同一批输出目录，同时在跑只会互相覆盖。
 
 ---
 
@@ -8823,6 +8842,7 @@ PDF 侧 ``functions/print._load_image`` 压平到白纸；编辑器/预览按 RG
 | `plan_rembg_submit_entries(manifest_paths: list[Path], result_path_for, boxes_for, area: int, single_column_book: bool=False, page_width_for=None, side_for=None) -> list[dict]` | 预览结果 + 检测框 + area/border → 最终图片条目。 |
 | `entry_to_effect_spec(entry: dict, border) -> dict` | 提交条目 → worker 效果合成规格（run_print_stage/run_rembg_submit_stage 用）。 |
 | `plan_submit_job(spec: dict, size: tuple[int, int] \| None) -> dict` | 一条效果规格 → 单条合成作业（输出文件名 + 合成参数）。 |
+| `plan_detect_submit_entries(manifest_paths: list[Path], boxes_for, area: int, single_column_book: bool=False, page_width_for=None, side_for=None) -> list[dict]` | 「检测文本框 → 提交本次任务」的裁图条目（2026-10-22 新增）。 |
 | `drop_foreign_stage_pages(pages: list[dict] \| None, source_dir: Path, stages_root: Path) -> list[dict]` | 从待打印清单里剔除「属于本任务**别的阶段**产物」的条目。 |
 | `rect_fits_image(rect, image_size_px, rect_size_px=None) -> bool` | 这条逐页 rect 是否**还适用于当前这张图**（判据唯一处）。 |
 | `stale_rect_pages(pages, size_for) -> list[dict]` | ``pages`` 里**图像已换、旧 rect 不再适用**的那几条（``[]`` = 全都还适用）。 |
@@ -8911,6 +8931,16 @@ area=4 保留整页内容、area 1/2/3 统一按合并语义走单框布局（�
 
 ⚠️ ``region_canvas_specs`` 走**函数内延迟导入**：本模块整体是不依赖 Qt 的
 纯逻辑（见模块 docstring），只有真要算输出张数时才拉进那份 Qt 几何实现。
+
+#### `plan_detect_submit_entries(manifest_paths: list[Path], boxes_for, area: int, single_column_book: bool=False, page_width_for=None, side_for=None) -> list[dict]`
+
+「检测文本框 → 提交本次任务」的裁图条目（2026-10-22 新增）。
+
+与 :func:`plan_rembg_submit_entries` **同一条规则**，只有一个区别：
+合成源就是**源页图自己**（这一步不产生中间结果图），所以 ``file`` 直接是
+那一页的路径。以前这条规则挂在第三步（去底色提交）上，现在裁剪前移到了
+第二步，规则本身一字未改——``-l``/``-r`` 命名、单栏书归一化、用户指定
+左右、对称画布全都照旧。
 
 #### `drop_foreign_stage_pages(pages: list[dict] | None, source_dir: Path, stages_root: Path) -> list[dict]`
 
@@ -9218,7 +9248,11 @@ runs（``{阶段: [记录, ...]}``）→ 过期判定 ``{下游阶段: 详情}``
 
 源码：[`desktop/services/submit_state.py`](../../desktop/services/submit_state.py)
 
-rembg「提交本次任务」按钮的版本状态机（纯函数）。
+「提交本次任务」按钮的版本状态机（纯函数）。
+
+2026-10-22 起**两个步骤**都用它：第二步「检测文本框」（检测 → 提交裁图）
+与第三步「去底色」（生成预览 → 提交透明底成品）。两边只有"比哪些参数"
+不同（``preview_param_keys`` / ``submit_param_keys``），状态语义完全一致。
 
 ### 模块常量
 
@@ -9233,16 +9267,16 @@ rembg「提交本次任务」按钮的版本状态机（纯函数）。
 
 | 函数 | 说明 |
 | --- | --- |
-| `rembg_submit_version_state(preview_run: dict \| None, submit_run: dict \| None, panel_args: dict, preview_param_keys) -> str` | 提交按钮版本状态： |
+| `submit_version_state(preview_run: dict \| None, submit_run: dict \| None, panel_args: dict, preview_param_keys, submit_param_keys=DEFAULT_SUBMIT_PARAM_KEYS) -> str` | 提交按钮版本状态： |
 
-#### `rembg_submit_version_state(preview_run: dict | None, submit_run: dict | None, panel_args: dict, preview_param_keys) -> str`
+#### `submit_version_state(preview_run: dict | None, submit_run: dict | None, panel_args: dict, preview_param_keys, submit_param_keys=DEFAULT_SUBMIT_PARAM_KEYS) -> str`
 
 提交按钮版本状态：
 
 - no_preview   ：从未成功生成预览（或最近一次失败/中断）→ 禁止提交；
-- preview_stale：面板去底参数相对最近一次成功预览已修改，
-                 磁盘上的预览图不是最新 → 建议重新生成预览；
-- new_version  ：预览有新版本（重新生成过、或 area/border 已改），
+- preview_stale：面板参数相对最近一次成功预览已修改，
+                 磁盘上的预览结果不是最新 → 建议重新生成预览；
+- new_version  ：预览有新版本（重新生成过、或参数已改），
                  最终图片落后于预览 → 提示需要提交；
 - up_to_date   ：最终图片已是最新预览版本。
 
@@ -9548,6 +9582,14 @@ done/total 为 0、completed 为 False）。执行过哪怕失败/中断都算�
 ⚠️ 唯一"少做"的一步是**不经过创建任务页**；**查重那道闸仍会弹**——同一个
 PDF 已经建过任务时再建第二个，多半是误操作，不该因为"快速"就跳过。
 
+##### `open_detail(task_id: str) -> None`
+
+打开某个任务的详情页（行为与 ``app.py::_open_detail`` 一致）。
+
+⚠️ 顺带把「PDF 渲染子进程池」**预热**一次（见
+``pdf_render_service.prewarm``）：那套池首次建起来要 ~1.5s，不预热就
+会砸在"用户看到的第一张缩略图"上。预热在后台线程做、幂等、不阻塞。
+
 ##### `show_module(key: str) -> None`
 
 切到某个模块页；首次进入时惰性构造。
@@ -9710,6 +9752,7 @@ worker 起来只需几百毫秒，模型全局只加载一次、多次检测共�
 | `run_detect(config: dict) -> int` | 检测单张图片的内容框（半幅左右 / 整幅），返回像素坐标（重依赖由常驻服务承担）。 |
 | `run_detect_pages(files: list[Path], *, workers: int, area: int, reuse: dict \| None, report) -> dict` | 逐页检测（**全仓唯一实现**）：子进程阶段与 singletask 执行器都调这里。 |
 | `run_detect_stage(config: dict) -> int` | detect 阶段：逐图检测内容框（半幅左右 / 整幅）并上报坐标，不切割、不生成任何文件。 |
+| `run_detect_submit_stage(config: dict) -> int` | detect 提交：按 ``area`` 把页面图裁成下一步要的图，写入 ``stages/detect``。 |
 
 #### `run_detect_pages(files: list[Path], *, workers: int, area: int, reuse: dict | None, report) -> dict`
 
@@ -9740,8 +9783,37 @@ detect 阶段：逐图检测内容框（半幅左右 / 整幅）并上报坐标�
 cropremove 用的同一入口），最终裁剪框由 GUI 按同一套规则
 （`utils.box_geometry.compute_final_boxes`）从检测框实时推导，用于预览标注。
 
+⚠️ 2026-10-22：本函数**只出框**。按 ``area`` 裁图是
+:func:`run_detect_submit_stage`（「提交本次任务」）的事——与第三步
+「生成预览 / 提交」同一套两步语义。
+
 ⚠️ 逐页循环本体在 :func:`run_detect_pages`（与 singletask 共用一份）；本函数
 只负责 stdout 拦截、任务上下文与事件协议（``{"type": name, **context, **payload}``）。
+
+#### `run_detect_submit_stage(config: dict) -> int`
+
+detect 提交：按 ``area`` 把页面图裁成下一步要的图，写入 ``stages/detect``。
+
+用户 2026-10-22 口径：
+
+> 检测文本框……增加「提交本次任务」，图片按照 area 切割处理。提交任务，
+> 本步骤才算是执行完毕，才能转入下一阶段。
+
+也就是说这一步现在是"CLI crop 的两步版"：检测出一组框（人工可改）→
+提交时才按 area 真正裁图。**没提交 = 没产物**，下一步（去底色）的输入
+目录是空的，自然转不过去。
+
+几何/命名/张数与第三步的旧提交**完全同一套**（``plan_detect_submit_entries``
+→ ``entry_to_effect_spec`` → ``plan_submit_job`` → ``compose_region_output``），
+所以 ``-l`` / ``-r`` 命名、单栏书归一化、用户指定左右、对称画布这些
+既有约定一个都没变。
+
+args["_effects"] = [
+    {"file": 源页图, "label": 输出文件名(无扩展名),
+     "effect": {"boxes": [[x1,y1,x2,y2]], "area": int, "border": "0",
+                "full": bool}},
+    …
+]
 
 ---
 
@@ -9944,7 +10016,7 @@ rembg_submit 阶段执行器：把「生成预览」产出的整页去底图合�
 | 函数 | 说明 |
 | --- | --- |
 | `save_transparent_png(image, dst: Path) -> None` | 把合成结果落盘为**白底透明** PNG（编码规则见 ``utils.transparent_png``）。 |
-| `run_rembg_submit_stage(config: dict) -> int` | rembg 提交：把「生成预览」产出的整页去底图，按 area/border + 检测框 |
+| `run_rembg_submit_stage(config: dict) -> int` | rembg 提交：把整页去底图的白底转成透明，写入任务 output 目录。 |
 
 #### `save_transparent_png(image, dst: Path) -> None`
 
@@ -9958,17 +10030,19 @@ rembg_submit 阶段执行器：把「生成预览」产出的整页去底图合�
 
 #### `run_rembg_submit_stage(config: dict) -> int`
 
-rembg 提交：把「生成预览」产出的整页去底图，按 area/border + 检测框
-合成为真正想要的最终图片，写入任务 output 目录。
+rembg 提交：把整页去底图的白底转成透明，写入任务 output 目录。
 
-与 run_print_stage 的效果合成复用同一套几何规则
-（desktop/workers/preview_worker.compose_region_output），
-但结果是持久化的交付图片而非一次性暂存，且不再生成 PDF。
+用户 2026-10-22：
+
+> 去底色步骤的 area 和 border 参数去除，去底色直接输入图片是怎样的，
+> 直接整个图片去底色
+
+所以这里**不做任何几何合成**：一条输入（「生成预览」的结果）对应一条输出
+（同名的透明底 PNG）。按框裁图在第二步「提交本次任务」已经做完，进来的
+图本来就是该交出去的形状。
 
 args["_effects"] = [
-    {"file": 预览结果路径, "label": 输出文件名(无扩展名),
-     "effect": {"boxes": [[x1,y1,x2,y2]], "area": int, "border": str|None} | None},
-    …
+    {"file": 预览结果路径, "label": 输出文件名(无扩展名)}, …
 ]
 
 ---
@@ -11007,18 +11081,22 @@ BPMN 子集（只取表达本仓库流程所需的最小面，不做完整 BPMN 
 
 - 步骤 key 是 :data:`~desktop.steps.spec.STEP_KEYS` 里的 ``extract`` /
   ``detect`` / ``rembg`` / ``print`` / ``imposition``，描述"这是什么功能"；
-- **运行阶段**多一个 ``rembg_submit``——它是第三步「去底色」面板上的
-  「提交本次任务」按钮触发的**同一步骤的第二个动作**（先生成整页预览图到
-  ``stages/rembgpreview``，用户确认后才把最终图落到 ``stages/rembg``）。
-  端口系统必须认得它，否则第三步的产物没有落点、第四步也没有输入。
+- **运行阶段**多两个（2026-10-22 起）：
+  ``detect_submit``——第二步「检测文本框」右上「提交本次任务」按钮触发的
+  **同一步骤的第二个动作**（先检测出框到 ``boxes.json``，提交时才按 ``area``
+  把页面图裁到 ``stages/detect``）；
+  ``rembg_submit``——第三步「提交本次任务」触发的第二个动作（先把整图去底色
+  到 ``stages/rembgpreview``，提交后把白底转透明落到 ``stages/rembg``）。
+  端口系统必须认得它们，否则这两步的产物没有落点、下一步也没有输入。
 
     ====================  ==========================================
     运行阶段               步骤 key / 端口
     ====================  ==========================================
     ``extract``            ``extract``：in=pdf / out=pages
-    ``detect``             ``detect``：in=pages / out=boxes
-    ``rembg``              ``rembg``：in=pages,boxes / out=pages（预览）
-    ``rembg_submit``       ``rembg``：in=pages / out=pages（最终图）
+    ``detect``              ``detect``：in=pages / out=boxes（只检测，出框）
+    ``detect_submit``       ``detect``：in=pages / out=pages（按 area 裁图）
+    ``rembg``               ``rembg``：in=pages / out=pages（整图去底色预览）
+    ``rembg_submit``        ``rembg``：in=pages / out=pages（白底转透明成品）
     ``print``              ``print``：in=pages / out=pdf
     ====================  ==========================================
 
@@ -11047,6 +11125,7 @@ BPM 编排引擎安全导入（与 :mod:`desktop.steps.spec` 同一约束）。
 | `artifact_of(port: str) -> str` | 端口名 → 产物类型；未知端口按"页面图片"兜底（别让界面崩）。 |
 | `stage_inputs(stage: str) -> tuple[str, ...]` | 这一步**消费**哪些端口（来自 ``StepSpec.inputs``，不另写一份）。 |
 | `stage_outputs(stage: str) -> tuple[str, ...]` | 这一步**产出**哪些端口（来自 ``StepSpec.outputs``，不另写一份）。 |
+| `action_outputs(stage: str) -> tuple[str, ...]` | **动作级**产出端口：同格的每个动作各自只产一样（:func:`fold_forward` 用）。 |
 | `fold_forward(stage: str, port: str) -> str` | 把阶段折到**同格里最靠后的、也产出该端口的动作**。 |
 | `stage_label(stage: str) -> str` | 运行阶段 → 流程图节点名（默认走 spec，只有 ``rembg_submit`` 单独一句）。 |
 | `spec_for_stage(stage: str) -> StepSpec \| None` | 运行阶段 → 它对应的 :class:`StepSpec`（界面查表统一走这里）。 |
@@ -11057,7 +11136,7 @@ BPM 编排引擎安全导入（与 :mod:`desktop.steps.spec` 同一约束）。
 | `orphaned_end_event_ids(diagram, *node_ids: str) -> tuple[str, ...]` | 删掉 ``node_ids`` 后会**悬空**的结束事件 id；没有则空元组。 |
 | `orphaned_gateway_ids(diagram, *node_ids: str) -> tuple[str, ...]` | 删掉 ``node_ids`` 后会**失去依附对象**的「是否拼版」网关 id；没有则空元组。 |
 | `flow_needs_source_pdf(diagram) -> bool` | **这条流程**里有没有直接吃源 PDF 的阶段吗（要问图，别写死）。 |
-| `detect_feeds_rembg(diagram) -> bool` | 这张流程图上「图片去底色」**能不能拿到检测框**。 |
+| `flow_crops_pages(diagram) -> bool` | 这条流程里页面会不会被「检测文本框」的提交按 ``area`` 裁过。 |
 | `location_of(stage: str, port: str) -> str \| None` | 运行阶段某端口的相对落点；没有登记返回 ``None``。 |
 | `sanitize_node_id(node_id: str) -> str` | 把节点 id 收成**可安全拼进路径**的名字（只留字母数字与 ``._-``）。 |
 | `suffix_last_segment(name: str, suffix: str) -> str` | 在路径**最后一段**插入后缀：目录名加在结尾、文件名加在扩展名前。 |
@@ -11088,15 +11167,36 @@ BPM 编排引擎安全导入（与 :mod:`desktop.steps.spec` 同一约束）。
 
 这一步**消费**哪些端口（来自 ``StepSpec.inputs``，不另写一份）。
 
-``rembg_submit`` 是"把预览图定稿"的提交动作，不重新检测，所以它**不吃**
-``boxes``（框在预览那一步已经用过了）；这里显式覆盖，其余阶段直接取 spec。
+两个「提交」动作的覆盖（都不另写一份声明）：
+``detect_submit`` / ``rembg_submit`` 是"把预览定稿"的动作，不重新检测、
+也不看检测框，只吃上游的 ``pages``；这里显式覆盖，其余阶段直接取 spec。
+
+#### `stage_outputs(stage: str) -> tuple[str, ...]`
+
+这一步**产出**哪些端口（来自 ``StepSpec.outputs``，不另写一份）。
+
+⚠️ 这是**步骤级**声明：``detect`` 声明 ``("boxes", "pages")``——这一步整体
+两样都给（框在"检测"、图在"提交"）。凡是要问"图上这个节点能不能供给某个
+端口"（:meth:`FlowDiagram.nearest_producer`）都用它，否则第二步之后的下游
+会沿图跳过检测节点、直接去拿提取的原图。
+
+动作级（"这一下具体写了什么文件"）见 :func:`action_outputs`。
+
+#### `action_outputs(stage: str) -> tuple[str, ...]`
+
+**动作级**产出端口：同格的每个动作各自只产一样（:func:`fold_forward` 用）。
+
+``detect`` 那一下只写 ``boxes.json``、``detect_submit`` 才裁图，
+``rembg`` 出的是预览图、``rembg_submit`` 才定稿。折返时必须按这个粒度
+挑"最靠后的、也产出该端口的动作"，否则 `rembg.pages` 会折到 ``detect``
+自己（它声明了 pages，却没有那个落点）。
 
 #### `fold_forward(stage: str, port: str) -> str`
 
 把阶段折到**同格里最靠后的、也产出该端口的动作**。
 
-判定完全从 :data:`STAGE_STEPS`（同格关系）与 :func:`stage_outputs`
-（谁产什么）派生，**不另写一张表**：同格里多个阶段都产出该端口时取声明
+判定完全从 :data:`STAGE_STEPS`（同格关系）与 :func:`action_outputs`
+（**每个动作**产什么）派生，**不另写一张表**：同格里多个阶段都产出该端口时取声明
 顺序里最靠后的那个；没有同格伙伴时原样返回。语义与用途见上面那段说明。
 
 #### `stage_label(stage: str) -> str`
@@ -11216,23 +11316,17 @@ BPM 编排引擎安全导入（与 :mod:`desktop.steps.spec` 同一约束）。
 :param diagram: :class:`~desktop.steps.bpmn_diagram.FlowDiagram`；
     空图/``None`` 一律 False（没有流程就没有"要不要"可言）。
 
-#### `detect_feeds_rembg(diagram) -> bool`
+#### `flow_crops_pages(diagram) -> bool`
 
-这张流程图上「图片去底色」**能不能拿到检测框**。
+这条流程里页面会不会被「检测文本框」的提交按 ``area`` 裁过。
 
-用户 2026-10-07：去底色作为流程第一个节点（前面没有「检测文本框」）时，
-area 的 1/2/3 都要吃检测框、没有框的页裁出来就是一片空白——那种流程里
-area 必须固定 4（整页）且不可改。这个判据要在**两处**用，都别另写一份：
+2026-10-22 起 area 归第二步（检测），它的作用也从"去底色怎么裁"变成
+"第二步提交时怎么裁"。凡是要问"这一步拿到的图是整页还是半页"的地方
+（拼版要不要成对 ``-l``/``-r``、区域模式提示）都用本函数，别各写一份
+"流程里有没有 detect 节点"。
 
-1. 详情页第三步面板——没有检测数据时 area 锁 4（``RembgPanel`` 的
-   ``whole_page_only``）；
-2. 拼版的前提判据——没有检测数据时拼版吃整图照样拼，不再要求
-   ``area=1``（「拼版作为第一个节点，也不需要 detect 数据」）。
-
-判据：``rembg`` 在流程里**且**沿图回溯 ``boxes`` 有产出方（「检测文本框」
-在它上游，不要求直接相连——中间隔网关也算）。空图 / ``rembg`` 不在流程里
-⇒ ``False``：这是保守答案——面板锁整页不会错（那种流程里面板根本不该
-出现 1/2/3），拼版放行也合理（吃入口图片/整图）。
+``imposition`` 那一格传 False（条件不满足时被剔除，与答案无关）。
+空图 / 没有 detect ⇒ False（＝图是整页的，拼版吃整图照样拼）。
 
 #### `sanitize_node_id(node_id: str) -> str`
 
@@ -14134,7 +14228,7 @@ qfluentwidgets 的 ``Dialog``，它只支持"字符串 + 两个按钮"）。
 | ACTION_UPDATE_BUSY | `"正在检查更新…"` |
 | ACTION_UPDATE_DOWNLOADING | `"正在下载更新…"` |
 | ACTION_DATA_PACKAGE | `"更新数据包(&M)"` |
-| ACTION_DATA_PACKAGE_TOOLTIP | `"联网检查去底色模型（bookcontent.pt）是否有新版本，可直接下载替换"` |
+| ACTION_DATA_PACKAGE_TOOLTIP | `"联网检查去底色模型（bookcontent）是否有新版本，可直接下载并在本机启用"` |
 | ACTION_DATA_PACKAGE_BUSY | `"正在检查数据包…"` |
 | ACTION_DATA_PACKAGE_DOWNLOADING | `"正在下载数据包…"` |
 | ACTION_ABOUT | `"关于(&A)"` |
@@ -14207,9 +14301,13 @@ qfluentwidgets 的 ``Dialog``，它只支持"字符串 + 两个按钮"）。
 
 流程（用户 2026-10-16）：读权重仓库 ``database`` release 的 ``data.json`` →
 与本机**已装版本**比大小（``utils.data_package``）→ 有新版弹「下载」提示 →
-经最快线路**在程序内下载并替换** ``static/weights/bookcontent.pt``——而不是
-让用户自己去 GitHub 下。检查与下载都在子线程（``window.run_worker``），
-重入防护（``_checking`` / ``_downloading``）与收尾幂等沿用 UpdateController。
+经最快线路**在程序内下载并启用**（文件保留发布名 ``bookcontent-v105.pt``，
+由 ``bookcontent.version.json`` 决定哪一份生效）——而不是让用户自己去 GitHub
+下。检查与下载都在子线程（``window.run_worker``），重入防护
+（``_checking`` / ``_downloading``）与收尾幂等沿用 UpdateController。
+
+⚠️ 例外（用户 2026-10-22）：本机**一份权重都没有**时，启动期那次静默检查
+会**直接下载**（不再只挂个"有新版本"提示）——没有权重检测根本跑不起来。
 
 #### 方法
 
@@ -14929,6 +15027,7 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 | 名称 | 值 |
 | --- | --- |
 | THUMBNAIL_EDGE | `256` |
+| PRODUCING_MARKER | `".producing"` |
 | SINGLETASK_DIRNAME | `"singletask"` |
 | _SAFE_CHARS | `"<>:"/\\\|?*"` |
 | SINGLETASK_YOLO_EXPORT_NAME | `"yolo_export.json"` |
@@ -14940,6 +15039,8 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 | --- | --- |
 | `reveal_in_explorer(path) -> bool` | 在 Windows 资源管理器里打开 ``path`` 的位置（2026-10-11 用户需求）。 |
 | `reveal_dir(path) -> bool` | 导出收尾用：把 ``path`` **当目录**打开（不存在/不是目录都不弹）。 |
+| `set_producing_marker(directory, on: bool) -> None` | 写/删「这个目录正有人在填」的在场标记（**永不抛**）。 |
+| `task_extract_pages_dir(pdf_path) -> Path \| None` | 任务目录里**已提取的整页图**目录；不是任务目录里的 PDF 就返回 None。 |
 | `guji_data_dir() -> Path` | GUI 数据根目录：用户文档目录下的 guji。 |
 | `safe_dirname(name: str) -> str` | 把任意标题洗成能当目录名的一串（去掉非法字符、收敛空白）。 |
 | `singletask_dir(subtask: str) -> Path` | 独立任务区下某个**子任务**的目录：``~/Documents/guji/singletask/<子任务>``。 |
@@ -14984,6 +15085,26 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 统计值），不给用户弹一个"找不到"的失败框——导出明明成功了。
 
 用户 2026-10-16：「导出成功后，打开相应的目录」。
+
+#### `set_producing_marker(directory, on: bool) -> None`
+
+写/删「这个目录正有人在填」的在场标记（**永不抛**）。
+
+调用方：导入任务在**提交后台活之前**先立标记（主线程里几微秒，抢在
+查看器 ``set_pdf`` 之前），后台 worker 收尾时撤掉；worker 自己渲染期间
+也会重复立一次（幂等，防"提交了但 worker 还没跑到"的窗口）。
+
+#### `task_extract_pages_dir(pdf_path) -> Path | None`
+
+任务目录里**已提取的整页图**目录；不是任务目录里的 PDF 就返回 None。
+
+⚠️ 为什么需要（2026-10-21）：生成 256px 缩略图最贵的不是"输出小"，而是
+**解一页内嵌的 JPX**（4285×5736 实测 ~850ms）；而"提取图片"的产物是一张
+2067×2767 的 **JPEG**，从它缩 256px 只要 **21ms**（JPEG 能在 DCT 域降采样）。
+所以**已提取的页**再也不用回 PDF 渲——省掉 40 倍。
+
+判据只认"PDF 就在任务目录里"（导入后任务目录存的是源文件副本）：
+拿用户原始下载文件时同级没有 ``stages/``，自然返回 None，行为不变。
 
 #### `singletask_yolo_export_path(subtask: str) -> Path`
 
@@ -15250,10 +15371,10 @@ The worker emits JSON Lines on stdout so the GUI remains independent from
 heavy libraries. 阶段执行器按职责拆分在 desktop/stages/ 包：
 
 - desktop.stages.events        事件输出 + print 拦截/进度解析
-- desktop.stages.detect_stage  detect（YOLO 检测文本框）
+- desktop.stages.detect_stage  detect（YOLO 检测文本框）+ detect_submit（裁图）
 - desktop.stages.generic_stage 通用 CLI 阶段 + extract 渲染
 - desktop.stages.print_stage   print（效果图合成 + 生成 PDF）
-- desktop.stages.rembg_stage   rembg_submit（最终图片合成）
+- desktop.stages.rembg_stage   rembg_submit（白底转透明，整图不裁）
 
 本文件只负责进程初始化与阶段路由。
 
@@ -15327,19 +15448,24 @@ worker 在后台线程里补一份；补的期间界面照常可用。
 
 源码：[`desktop/workers/data_package_worker.py`](../../desktop/workers/data_package_worker.py)
 
-去底色数据包（``bookcontent.pt``）的**网络** worker：查版本 + 下载替换。
+去底色数据包（``bookcontent*.pt``）的**网络** worker：查版本 + 下载并切换生效。
 
 与「检查更新」（``update_worker``）同族、同样走"直连 + 三个 gh-proxy 镜像并发
 测速"，但**对象不同**：那边查的是程序自身的 GitHub Release，这边查的是**权重
 仓库**（``zunkun/gujitrain``）``database`` release 里的 ``data.json``，并且要
 **把权重文件真的下下来**（用户口径 2026-10-16：不要让用户自己去 GitHub 下载）。
 
+⚠️ 落地口径（用户 2026-10-22）：下载下来的文件**保留发布名**
+（``bookcontent-v105.pt``），**不改名**成 ``bookcontent.pt``；"哪一份生效"由
+``bookcontent.version.json`` 的 ``name`` 决定（见 ``utils/data_package.py``）。
+目录里因此会同时存在多份权重，只用一份。
+
 ⚠️ 两处**不照抄** ``update_worker``（用户 2026-10-16 报「数据包检查不对，线上是
 101」，本机 v100、远端已发 v101 却报"已是最新"）：
 
 1. **不按"最快"选线路，按"清单里的 version 最大"选**——release 资产地址是固定的，
-   缓存命中的旧清单**一定更快**，按速度选就会系统性地选到旧版本（见
-   :func:`fetch_data_json`）；
+   缓存命中的旧清单**一定更快**，按速度选就会系统性地选到旧版本（选择规则 =
+   ``utils.data_package.pick_latest``，与在线兜底共用）；
 2. **请求一律挂 :func:`_cache_bust` 的唯一参数**，把缓存副本作废、逼各路回源。
 
 ⚠️ **不能直接复用** ``update_worker.probe_mirrors``：它的 ``_fetch_one`` 校验
@@ -15390,25 +15516,28 @@ try/except：异常逃出子线程会让线程静默死掉、界面永远停在"
 
 ### `class DataDownloadWorker(QObject)`
 
-子线程里把权重下载到本地，**校验通过后**再按三步替换（用户 2026-10-16）。
+子线程里把权重下载到本地，**校验通过后**才切换生效文件（用户 2026-10-16 / 10-22）。
 
 严格顺序：
 
-1. **下载**权重到 ``<权重目录>/bookcontent-v100.pt``（传输期用 ``*.part``，
-   下完才改成版本名）；中途失败/取消**不留半截文件**；
-2. **校验 sha256**：与 ``data.json`` 不符就删掉、报错——**不替换**；
+1. **下载**权重到 ``<权重目录>/bookcontent-v105.pt``（传输期用 ``*.part``，
+   下完才改成发布名）；中途失败/取消**不留半截文件**。⚠️ 本地已有同名同 sha
+   的文件就**不重复下载**（见 :func:`_existing_file`）；
+2. **校验 sha256**：与 ``data.json`` 不符就删掉、报错——**不切换**；
 3. **释放占用**（``_release_model``：关掉常驻 YOLO 服务，卸载内存里的模型、
    松开权重的文件句柄）；
-4. **更名**：``bookcontent-v100.pt`` → ``bookcontent.pt``（同目录
-   :func:`replace_with_retry`，Windows 上会短暂重试抢占用）；
-5. **重新加载**（``_reload_model``：把常驻服务重新热起来，内存引用指向新权重）；
-6. 写版本 sidecar（``record_local_version``）。
+4. **切换生效文件**：只改写 sidecar ``bookcontent.version.json``
+   （``record_local_version``）指向新文件——**不再把新文件改名成
+   ``bookcontent.pt``**（用户 2026-10-22：目录里可以留多个 pt，只有一个生效，
+   旧版原地留着可回退）；
+5. **重新加载**（``_reload_model``：把常驻服务重新热起来，内存引用指向新权重）。
 
 信号：
 
 * ``progress(int)``：0~100 的百分比；**-1** 表示总量未知（无 Content-Length）；
 * ``stage(str)``：下载之后的阶段码（见 :data:`DATA_PACKAGE_STAGES`）；
-* ``finished(dict)``：``{path, version, sha256, size}``；
+* ``finished(dict)``：``{path, version, sha256, size}``（``path`` 是**发布名**
+  文件的绝对路径，不是 ``bookcontent.pt``）；
 * ``failed(str)``：分类串（``network`` / ``cancelled`` / ``http:<code>`` 等）。
 
 ⚠️ 先写 ``*.part`` 再改名：下载途中文件不能以最终名存在（否则 YOLO 服务/
@@ -15607,6 +15736,138 @@ doc 为拼版文档；out_dir 为目标目录（stages/imposition）。
 ``services.imposition.compose_page`` 一致；**None = 透明底**（任务
 流程默认）。独立拼图页传白底（``WHITE_BACKGROUND``）——它的成品
 导出是白底 PNG，预览/编辑基底必须与导出口径一致（所见即所得）。
+
+---
+
+## `desktop.workers.pdf_render_service`
+
+源码：[`desktop/workers/pdf_render_service.py`](../../desktop/workers/pdf_render_service.py)
+
+PDF 页渲染**出进程**（GUI 进程里只发请求，不碰 PyMuPDF 的像素）。
+
+## 为什么必须搬到子进程
+
+PyMuPDF 的 ``page.get_pixmap()`` 在**整段解码期间持有 GIL**，而且扫描古籍常见
+的内嵌格式是 **JPX（JPEG2000）**：
+
+=====  =========================  ===================  ============
+内嵌格式  内嵌图尺寸                 渲一张 256px 缩略图     备注
+=====  =========================  ===================  ============
+JPX    4285×5736（本仓样例书）      **~850 ms**          解码按像素线性增长
+JPX    1280×2688                  ~190 ms
+Flate  702×1360                   ~11 ms
+=====  =========================  ===================  ============
+
+这 850ms 里 GUI 线程**拿不到一次时间片**（实测：另一线程 1ms 心跳被拖成
+800~970ms 一整块）。于是"导入后生成整本缩略图"＝一本 28 页的书把界面冻成
+28 个 0.85 秒的卡顿块，用户感知就是「创建任务卡、进详情卡、切缩略图卡」。
+
+单飞锁（``render_lock``）只能把**并发**压平，压不掉**单次**的 850ms——线程
+方案对 PyMuPDF 渲染没有任何加速（见 ``utils.pdf_extract.render_pages_parallel``
+的实测：6 线程仅 1.15×）。唯一出路是**换进程**：GIL 不共享，GUI 一次都不冻，
+而且多个子进程可以真并行（本模块默认按 CPU 数开 2~3 个）。
+
+## 用法
+
+调用方**必须是后台线程**（``PreviewWorker.run`` / ``SourceThumbnailsWorker.run``
+之类），这些函数是**阻塞**的：
+
+- :func:`render_jpeg`：渲一页，返回 JPEG 字节（缩略图 / 大图预览）；
+- :func:`page_count`：页数；
+- :func:`extract_page`：单页"提取图片"落盘（与批量提取逐位一致）；
+- :func:`shutdown`：退出前收子进程。
+
+## 降级
+
+子进程起不来（打包漏模块 / 权限 / OOM）时**自动退回进程内渲染**（并持
+``single_flight`` 单飞锁），行为与改动前一致——宁可慢一点，也不能让缩略图
+整片不出来。降级只发生一次，之后一直走进程内（避免每个请求都白试一遍）。
+
+``GUJI_PDF_RENDER=inproc`` 可强制关闭出进程（排障 / 单测用）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| ENV_MODE | `"GUJI_PDF_RENDER"` |
+| MAX_WORKERS | `3` |
+| CALL_TIMEOUT_S | `60.0` |
+| JPX_FAST_MAX_EDGE | `512` |
+| JPX_FAST_MIN_REDUCE | `2` |
+| _OPJ_PATH | `False` |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `jpx_fast_available() -> bool` | 本机有没有可用的 OpenJPEG 解码器（自测/排障用）。 |
+| `offloaded() -> bool` | 渲染是否**真的**在子进程里做（宿主据此决定要不要"让出 GIL"的 sleep）。 |
+| `workers() -> int` | 池大小（批量路径按它决定一批渲几页）。 |
+| `render_jpeg(pdf_path, page_index: int, edge: int, quality: int=70, fmt: str='jpg') -> bytes` | 渲一页并返回编码后的字节（**阻塞调用，只许在后台线程里用**）。 |
+| `render_jpegs(pdf_path, pages, edge: int, quality: int=70, fmt: str='jpg', pages_dir=None) -> list[bytes]` | **并行**渲多页，按入参顺序返回（每页一条；失败的那页是空字节）。 |
+| `render_stream(pdf_path, pages, edge: int, quality: int=70, fmt: str='jpg', on_page=None, pages_dir=None) -> None` | **并行渲多页，每渲好一页就回调**（``on_page(page, bytes)``）。 |
+| `page_count(pdf_path) -> int` | PDF 页数（阻塞调用）。 |
+| `extract_page(pdf_path, page_index: int, out_dir, zoom: float=1, ext: str='jpg', quick: bool=True, dpi: float=300) -> dict` | 单页「提取图片」落盘（阻塞调用）；返回 ``{ok, path, w, h, err}``。 |
+| `stats() -> dict` | 运行计数（自测断言用）：``renders`` / ``extracts`` / ``page_counts`` / |
+| `reset_stats() -> None` | 清零计数（自测用；不动池）。 |
+| `prewarm() -> None` | **后台**把子进程池拉起来并预热（进任务详情页时调一次，幂等）。 |
+| `shutdown() -> None` | 收掉子进程池（关程序/单测收尾）。 |
+
+#### `render_jpeg(pdf_path, page_index: int, edge: int, quality: int=70, fmt: str='jpg') -> bytes`
+
+渲一页并返回编码后的字节（**阻塞调用，只许在后台线程里用**）。
+
+缩略图用 ``edge=256, quality=70``；大图预览用 ``edge=视口边长, quality=80``。
+
+#### `render_jpegs(pdf_path, pages, edge: int, quality: int=70, fmt: str='jpg', pages_dir=None) -> list[bytes]`
+
+**并行**渲多页，按入参顺序返回（每页一条；失败的那页是空字节）。
+
+为什么要"并行"这层：``render_jpeg`` 一次一页，池里的另外两个进程闲着，
+整本缩略图就还是串行的 0.7s/页。批量路径（导入缩略图、查看器补页）走
+这里，池内真正并发——3 个进程约 2.5~3 倍吞吐，且 GUI 依然一次都不冻。
+
+⚠️ 只在**批量**时用：交互式单页（用户点一下要一页）用 ``render_jpeg``，
+否则多出来的调度与 pickle 纯属浪费。
+
+``pages_dir``：**已提取的整页图目录**（见 :func:`_child_render_jpeg`）。
+给了它，已提取的页就从那张 JPEG 缩（21ms），不再解 JPX（850ms）。
+
+#### `render_stream(pdf_path, pages, edge: int, quality: int=70, fmt: str='jpg', on_page=None, pages_dir=None) -> None`
+
+**并行渲多页，每渲好一页就回调**（``on_page(page, bytes)``）。
+
+⚠️ 与 :func:`render_jpegs` 的分工（2026-10-21 实测教训）：
+
+- ``render_jpegs`` 是"整批一起交"，调用方只能**等整批回来**才写盘；
+  一批 16 页 × ~1s ÷ 3 进程 = **5 秒多一张缩略图都不出现**——用户看到的
+  就是"缩略图半天不出来"（比改之前还差，改之前的旧实现是逐页写的）。
+- 本函数用 ``as_completed`` 把结果**积压即交付**：第一批 3 张 ~1s 就落地，
+  之后滚动交付；总量与并行度完全不变。
+
+回调在**调用线程**里执行（不是子进程），可以安全地写盘、emit Qt 信号。
+
+#### `stats() -> dict`
+
+运行计数（自测断言用）：``renders`` / ``extracts`` / ``page_counts`` /
+``fallbacks`` / ``mode`` / ``workers``。
+
+#### `prewarm() -> None`
+
+**后台**把子进程池拉起来并预热（进任务详情页时调一次，幂等）。
+
+为什么需要：首次建池 + 每个子进程 import pymupdf 约 1.5s。不预热的话，
+这笔钱会落在"用户看到的第一张缩略图"上（进详情页先愣 1.5 秒）；预热之后
+它和页面构建并行，用户感知不到。
+
+⚠️ 绝不阻塞调用线程（它在 GUI 线程被调用），也绝不因为起不来而报错。
+
+#### `shutdown() -> None`
+
+收掉子进程池（关程序/单测收尾）。
+
+⚠️ 置 ``_closing`` 之后**不再建池**：关程序时还可能有后台线程在渲，
+它会安静地退回进程内（≤1s 一页）而不是刷一条"子进程渲染失败"的日志。
 
 ---
 
@@ -15862,19 +16123,21 @@ base_path: ``render=False`` 时的源图（该页已落盘的去底色结果）�
 
 PDF 页渲染的**单飞锁**：全进程同一时刻只允许一个 PyMuPDF 页渲染。
 
-⚠️ 为什么单独成模块（不放在 ``preview_worker`` 里）
+⚠️ 现状（2026-10-21 起）：渲染已经**搬到子进程**（``pdf_render_service``），
+这把锁现在只保护"**进程内兜底**"那条路——子进程池起不来、或
+``GUJI_PDF_RENDER=inproc`` 时，渲染仍在 GUI 进程里做，就必须持这把锁
+（见 ``pdf_render_service._inproc_render_jpeg``）。出进程时锁是空转的。
+
+⚠️ 为什么当时单独成模块（不放在 ``preview_worker`` 里）
     导入后台任务（``source_thumbnails_worker``）也要用这把锁，而
     ``preview_worker`` 是 500+ 行的重模块（还带着第四步效果合成的整套依赖）。
     从它 import 会把这些依赖拖进**启动路径**——`desktop/workers/__init__.py`
     的惰性导出正是为了避免这件事。所以锁放在这个零依赖的小模块里，谁都能引。
 
-⚠️ 谁必须走它
-    **任何**从 PDF 页渲位图的代码：单页预览（``PreviewWorker._render_pdf_page``）、
-    批量缩略图（``PreviewWorker._render_all_thumbnails``）、导入后台任务
-    （``SourceThumbnailsWorker._render_page``）。渲染全程攥 GIL ~105–180ms
-    （实测），两个渲染并行 = GIL 互相抢，界面停顿叠加成 N×180ms——用户看到的
-    就是「切缩略图卡、多点几下直接卡死」。串行化之后停顿上限收敛到**单次渲染**，
-    且不随点击次数/页数增长。
+⚠️ 历史：它当初存在的理由是"渲染全程攥 GIL 105~180ms，两个渲染并行就互相抢"。
+    那把锁只能压**并发**、压不掉**单次**——一页 JPX 扫描件（4000×6000）实测
+    ~850ms，GUI 在这 850ms 里一次都拿不到时间片。真正的解法是换进程，见
+    ``desktop/workers/pdf_render_service.py`` 的模块说明。
 
 ### 模块函数
 
@@ -16024,6 +16287,7 @@ False 表示超时仍未收手（调用方应告知用户稍后重试，别硬�
 | 名称 | 值 |
 | --- | --- |
 | FIRST_SCREEN_PAGES | `16` |
+| PREFETCH_PAGES | `24` |
 | BATCH_PAGES | `8` |
 | BATCH_GAP_MS | `120` |
 | GIL_YIELD_RATIO | `0.5` |
@@ -16357,8 +16621,6 @@ worker 只"把 release 拉下来 + 归类错误 + 给出测速排名"，**不比
 
 | 函数 | 说明 |
 | --- | --- |
-| `mirror_label(prefix: str) -> str` | 线路的中文标签：直连 → 「直连」，镜像 → 域名（``v6.gh-proxy.org``）。 |
-| `build_url(prefix: str, url: str) -> str` | 把加速前缀拼到原始地址前面（用户给的用法就是**直接拼接**）。 |
 | `pick_asset(payload: dict) -> dict` | release 里**安装包资产**的信息；没有可用资产时返回 ``{}``。 |
 | `probe_mirrors(url: str=RELEASE_API, timeout: float=TIMEOUT_SECONDS) -> list[dict]` | **并发**测四条线路，返回按耗时升序的排名（每条：前缀/标签/是否可用/耗时/下载地址）。 |
 | `fetch_latest_release(url: str=RELEASE_API, timeout: float=TIMEOUT_SECONDS) -> dict` | 经**最快线路**拉取最新 release；四条全败抛 :class:`UpdateCheckError`。 |

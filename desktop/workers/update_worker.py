@@ -51,20 +51,21 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal, Slot
 
+from utils.data_package import (  # 镜像前缀/拼接规则的**唯一来源**
+    MIRROR_PREFIXES,
+    build_url,
+    mirror_label,
+)
 from utils.download import DownloadCancelled, stream_to_file
 from utils.file_utils import replace_with_retry
 
 #: 查"最新版"的 API 端点（仓库地址与 ``utils/help.py`` 里印的项目地址同源）。
 RELEASE_API = "https://api.github.com/repos/zunkun/gujitools/releases/latest"
 
-#: 反屏蔽/加速前缀，**空串 = 直连**。四种方案按此顺序就是测速后的候选集合；
-#: ⚠️ 顺序不参与"选谁"（选**最快**的那条），只是并发发起时的书写顺序。
-MIRROR_PREFIXES: tuple[str, ...] = (
-    "",
-    "https://v6.gh-proxy.org/",
-    "https://v4.gh-proxy.org/",
-    "https://cdn.gh-proxy.org/",
-)
+#: 反屏蔽/加速前缀，**空串 = 直连**。四种方案按此顺序就是测速后的候选集合。
+#: ⚠️ 定义在 ``utils.data_package``（与数据包下载共用一份），这里只是 re-export：
+#: 自测与其它模块仍按 ``update_worker.MIRROR_PREFIXES`` 取。
+#: 顺序不参与"选谁"（选**最快**的那条），只是并发发起时的书写顺序。
 
 #: 单条线路的超时（秒）。四条并发 ⇒ 最坏也就等这么久，不会四倍叠加。
 TIMEOUT_SECONDS = 6.0
@@ -95,18 +96,6 @@ class UpdateCheckError(Exception):
     def __init__(self, kind: str):
         super().__init__(kind)
         self.kind = kind
-
-
-def mirror_label(prefix: str) -> str:
-    """线路的中文标签：直连 → 「直连」，镜像 → 域名（``v6.gh-proxy.org``）。"""
-    if not prefix:
-        return "直连"
-    return prefix.split("//", 1)[-1].strip("/") or prefix
-
-
-def build_url(prefix: str, url: str) -> str:
-    """把加速前缀拼到原始地址前面（用户给的用法就是**直接拼接**）。"""
-    return f"{prefix}{url}"
 
 
 def _as_int(value) -> int:

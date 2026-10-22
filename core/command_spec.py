@@ -56,6 +56,15 @@ REMBG_TYPES: Tuple[int, ...] = (1, 2, 3)
 # area=4「整页」：不调用 YOLO，整页作为一个文本框（普通文档/检测失败时的兜底）
 CROP_AREAS: Tuple[int, ...] = (1, 2, 3, 4)
 WHOLE_PAGE_AREA: int = 4
+#: 桌面端「检测文本框 → 提交本次任务」固定使用的区域模式。
+#:
+#: 用户 2026-10-22（第二轮）：「检测文本框流程，去除 area 参数，默认 area = 1，
+#: 提交的时候 area 参数只在提交的时候生效，desktop 页面去除这个参数，但是在
+#: 后端代码保留 area 相关逻辑，只是页面默认 area = 1」。
+#: 所以：**界面不再有 area 控件**；后端（detect 阶段、detect_submit 裁图、
+#: box_geometry、CLI crop/cropremove）的 area 逻辑一律保留，桌面这一侧只把
+#: 这个常量当默认值传下去。
+DETECT_DEFAULT_AREA: int = 1
 
 # 边距默认值（print）
 DEFAULT_PAGE_MARGINS: List[int] = [int(v) for v in _DEFAULT_PAGE_MARGINS]
@@ -216,6 +225,8 @@ def _validate_crop(args) -> None:
 
 
 def _validate_rembg(args) -> None:
+    # ⚠️ 2026-10-22 起 rembg **不再有 area / border**：去底色就是整张图去底色，
+    #    按检测框裁图挪到了「检测文本框」的「提交本次任务」（见 detect/submit）。
     _check_choice(args.get("type"), REMBG_TYPES, "type")
     if args.get("sealarea") < 1:
         raise ValueError(f"sealarea 印章面积阈值必须 >=1，当前={args.get('sealarea')}")
@@ -253,6 +264,9 @@ def _validate_detect(args) -> None:
         str(args.get("ext") or "png").lower().lstrip("."),
         OUTPUT_IMAGE_EXTS, "ext"
     )
+    # ``area`` 2026-10-22 从 rembg 搬到这里：按框裁图（提交）是这一步的事。
+    # area=4 = 整页/不检测，所以它不只影响裁剪，也决定要不要跑 YOLO。
+    _check_choice(args.get("area"), CROP_AREAS, "area")
 
 
 def _validate_print(args) -> None:
@@ -412,13 +426,17 @@ AREA_WHOLE_PAGE = 4
 
 
 def effective_border_default(area=None):
-    """第三步（crop / rembg / cropremove）``border`` 的默认值——**随 area 变**。
+    """``border`` 的默认值——**随 area 变**（只有 crop/cropremove 还留着 border）。
 
     - ``area ∈ {1,2,3}`` → ``"0"``：第四步会把图重新排进 A4，第三步再外扩
       留白（如 30mm）等于「图片内留白 + 页面边距」双重留白，还会让第四步
       拿到的图尺寸失真，因此默认**不加留白**；
     - ``area = 4``（整页不检测）→ ``None``：整页输出既不裁剪也无留白可言，
       border 对它没有意义，保持原默认。
+
+    ⚠️ 2026-10-22：rembg 的第 3 步已**没有 border**（去底色=整图去底色），
+    桌面端「检测文本框 → 提交本次任务」按 area 裁图时固定用 ``"0"``；这个
+    函数剩下的消费方只有 CLI 的 crop / cropremove。
 
     ⚠️ 只在用户**没给** border（None / 空串）时生效；显式给值一律以用户为准。
     ⚠️ ``area=2/3`` 下 ``"0"`` 与 ``None`` **不等价**：``"0"`` 输出「文本框
@@ -562,9 +580,11 @@ COMMAND_SPECS: Dict[str, CommandSpec] = {
             "sealcolor": REMBG_DEFAULT_SEAL_COLOR,
             "sealarea": REMBG_DEFAULT_SEAL_AREA,
             "sealmin_sat": REMBG_DEFAULT_SEAL_MIN_SAT,
-            "area": 1,
-            "border": None,
         },
+        # ⚠️ 2026-10-22 用户口径：**去掉 area / border**——「去底色直接输入图片
+        #    是怎样的，直接整个图片去底色」。按框裁图不再是这一步的事，而是
+        #    「检测文本框」的「提交本次任务」（area 参数随之搬到 detect）。
+        #    留在这里等于留两个"界面能填、函数不读"的假参数。
         # 注意：这里**没有** ext。rembg 的输出格式固定为 PNG
         # （type=2 的 1bit 单色位图只有 PNG 能无损承载），
         # functions/rembg.py 里不读 ext，模板也不要提供该键。
@@ -598,9 +618,13 @@ COMMAND_SPECS: Dict[str, CommandSpec] = {
     # 不带 save 时是**无产出的中间步骤**（仅代码调用有意义）；
     # 命令行下无 save 的空跑会被 CLI 入口直接拒绝（见 cli.__main__._reject_dry_run）。
     # 命令行用 --save 时不产出文件，故必须显式 --save 落地标注图，目录规则同 crop。
+    #
+    # ``area``：2026-10-22 从 rembg 搬来（去底色不再按框裁图，裁剪归这一步的
+    # 「提交本次任务」）。命令行 detect 只用它判断「整页模式要不要跳过检测」；
+    # 真正按 area 裁图的是桌面端的 detect_submit 阶段。
     "detect": CommandSpec(
         name="detect",
-        defaults={"save": False, "ext": "png"},
+        defaults={"save": False, "ext": "png", "area": 1},
         validators=(_validate_detect,),
     ),
 }

@@ -4,7 +4,7 @@
 
 中立共享层：CLI 与 desktop 都依赖且语义必须一致的契约
 
-覆盖 4 个模块、9 个公开类、41 个公开函数/方法（生成于 2026-10-21）。
+覆盖 4 个模块、9 个公开类、41 个公开函数/方法（生成于 2026-10-22）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -227,7 +227,7 @@ File: core/command_spec.py
 | `parse_color(value: Any) -> Tuple[int, int, int]` | 解析颜色为 (r, g, b) 整数元组，取值域 [0,255]。 |
 | `validate_color_fields(args) -> None` | 校验 print 命令中的颜色参数（title_color / page_number_color）。 |
 | `border_has_padding(border) -> bool` | 上游 crop/rembg 的 border 是否真正加过留白（非 None/空/全 0）。 |
-| `effective_border_default(area=None)` | 第三步（crop / rembg / cropremove）``border`` 的默认值——**随 area 变**。 |
+| `effective_border_default(area=None)` | ``border`` 的默认值——**随 area 变**（只有 crop/cropremove 还留着 border）。 |
 | `effective_page_margin_default(upstream_border=None) -> List[float]` | print 第四步的通用边距默认值（受上游 border 级联）。 |
 | `get_spec(command: Optional[str]) -> Optional[CommandSpec]` | 按命令名取规格；未登记的命令返回 None。 |
 | `supported_commands() -> Tuple[str, ...]` | 返回所有已登记的命令名。 |
@@ -257,13 +257,17 @@ GUI 表单与 PDF 生成三方共用同一份规则，不再各自实现。
 
 #### `effective_border_default(area=None)`
 
-第三步（crop / rembg / cropremove）``border`` 的默认值——**随 area 变**。
+``border`` 的默认值——**随 area 变**（只有 crop/cropremove 还留着 border）。
 
 - ``area ∈ {1,2,3}`` → ``"0"``：第四步会把图重新排进 A4，第三步再外扩
   留白（如 30mm）等于「图片内留白 + 页面边距」双重留白，还会让第四步
   拿到的图尺寸失真，因此默认**不加留白**；
 - ``area = 4``（整页不检测）→ ``None``：整页输出既不裁剪也无留白可言，
   border 对它没有意义，保持原默认。
+
+⚠️ 2026-10-22：rembg 的第 3 步已**没有 border**（去底色=整图去底色），
+桌面端「检测文本框 → 提交本次任务」按 area 裁图时固定用 ``"0"``；这个
+函数剩下的消费方只有 CLI 的 crop / cropremove。
 
 ⚠️ 只在用户**没给** border（None / 空串）时生效；显式给值一律以用户为准。
 ⚠️ ``area=2/3`` 下 ``"0"`` 与 ``None`` **不等价**：``"0"`` 输出「文本框

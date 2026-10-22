@@ -34,7 +34,7 @@ from PySide6.QtGui import QImageReader
 from desktop.components.viewers.pdf_viewer import PdfViewerWidget
 from desktop.components.viewers.image_zoom_dialog import ZoomTarget
 from desktop.workers import PreviewWorker, connect_queued
-from utils.pdf_extract import DEFAULT_RENDER_DPI, extract_single_page
+from utils.pdf_extract import DEFAULT_RENDER_DPI
 
 
 class _SingleExtractWorker(QObject):
@@ -52,10 +52,19 @@ class _SingleExtractWorker(QObject):
         self._params = dict(params or {})
 
     def run(self) -> None:
-        """调 :func:`utils.pdf_extract.extract_single_page`（单页不可中断）。"""
+        """调渲染服务做单页提取（**在子进程里渲**，GUI 线程一秒都不冻）。
+
+        ⚠️ 为什么不能在本线程里直接调 ``extract_single_page``（2026-10-21）：
+        那一路要 ``page.get_pixmap()``，PyMuPDF 在**整段解码期间持 GIL**；扫描
+        古籍常见内嵌格式是 JPX（JPEG2000），一页 4000×6000 要 ~1.3s——用户
+        点一下缩略图，整个界面就定住 1.3 秒（这就是"切缩略图卡"的真因）。
+        ``pdf_render_service`` 把这一步放子进程，本线程只是在等 IPC。
+        """
+        from desktop.workers import pdf_render_service as svc
+
         try:
-            result = extract_single_page(
-                str(self._pdf), self.page_idx, str(self._out_dir),
+            result = svc.extract_page(
+                self._pdf, self.page_idx, self._out_dir,
                 zoom=self._params.get("zoom", 1),
                 ext=self._params.get("ext", "jpg"),
                 quick=self._params.get("quick", True),

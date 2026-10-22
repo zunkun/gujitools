@@ -104,8 +104,10 @@ def _check_entry_stage_input(ctx, ok) -> None:
        entry.as_posix().endswith("t/stages/input"), str(entry))
 
     # ---- 2. boxes / pdf 不许回落 ----
-    ok("rembg 的 boxes 无上游时不回落（仍报接口没接好）",
-       ports.resolve_input_with_entry(task_dir, "rembg", "boxes", None) is None)
+    # ⚠️ 2026-10-22：去底色不再吃检测框（整图去底色），所以这里改成问
+    #    "仍然不吃 boxes 的阶段也绝不回落"——判据本身（只放行 pages）没变。
+    ok("boxes 无上游时不回落（仍报接口没接好）",
+       ports.resolve_input_with_entry(task_dir, "detect", "boxes", None) is None)
     ok("extract 的 pdf 走任务源哨兵 → None（由调用方另判）",
        ports.resolve_input_with_entry(task_dir, "extract", "pdf",
                                       ports.SUPPLY_TASK_SOURCE) is None)
@@ -133,11 +135,20 @@ def _check_entry_stage_input(ctx, ok) -> None:
     ok("detect 的输入回落到该任务的入口目录",
        repo.stage_input(tid, "detect", "pages") == repo.task_input_dir(tid),
        f"{repo.stage_input(tid, 'detect', 'pages')}")
-    ok("rembg 的图片输入同样回落到入口目录",
-       repo.stage_input(tid, "rembg", "pages") == repo.task_input_dir(tid))
-    ok("rembg 的检测框仍由 detect 供给（没被回落吃掉）",
-       repo.stage_input(tid, "rembg", "boxes")
-       == repo.task_dir(tid) / "boxes.json")
+    ok("rembg 的图片输入由上游检测（提交后）供给，不再回落到入口目录",
+       repo.stage_input(tid, "rembg", "pages")
+       == repo.task_dir(tid) / "stages" / "detect",
+       f"{repo.stage_input(tid, 'rembg', 'pages')}")
+    # ⚠️ 2026-10-22：去底色的输入由「检测文本框**提交**」供给（裁好的图），
+    #    不再是"原始页 + boxes"。这条流程里有 detect 节点 ⇒ rembg 吃它的 pages
+    #    产物（``stages/detect``），没提交就是空的——正是"提交才算本步完成"。
+    ok("rembg 的图片输入来自检测提交的裁图目录",
+       repo.stage_input(tid, "rembg", "pages")
+       == repo.task_dir(tid) / "stages" / "detect",
+       f"{repo.stage_input(tid, 'rembg', 'pages')}")
+    ok("rembg 不再消费检测框",
+       "boxes" not in ports.stage_inputs("rembg"),
+       str(ports.stage_inputs("rembg")))
     ok("print 仍走去底色提交产物（有上游就不该回落）",
        repo.stage_input(tid, "print", "pages") == repo.rembg_output_dir(tid))
     # ⚠️ 钉死下标：这条自定义流程里 detect 是**格序 0 / 栈页号 1**——两者不等
@@ -173,8 +184,8 @@ def _check_blocking_inputs(ctx, ok) -> None:
     ok("默认流程里 extract 没有阻塞端口（pdf 由任务自己供给）",
        ports.stage_blocking_inputs(default, "extract", active) == (),
        str(ports.stage_blocking_inputs(default, "extract", active)))
-    ok("默认流程里 rembg 仍然要等 detect（boxes 是阻塞端口）",
-       ports.stage_blocking_inputs(default, "rembg", active) == ("pages", "boxes"),
+    ok("默认流程里 rembg 只等图片（不再等检测框）",
+       ports.stage_blocking_inputs(default, "rembg", active) == ("pages",),
        str(ports.stage_blocking_inputs(default, "rembg", active)))
     ok("默认流程里 detect 要等 extract 的图片",
        ports.stage_blocking_inputs(default, "detect", active) == ("pages",),
@@ -187,7 +198,7 @@ def _check_blocking_inputs(ctx, ok) -> None:
         _FLOW_REMBG_FIRST, encoding="utf-8")
     diagram = repo.task_diagram(tid)
     got = repo.required_stage_inputs(tid, "rembg")
-    ok("去底色打头、没有检测节点 ⇒ 只等图片，不等检测框",
+    ok("去底色打头、没有检测节点 ⇒ 只等图片",
        got == ("pages",), str(got))
     ok("rembg 的图片输入就是入口图片目录",
        repo.stage_input(tid, "rembg", "pages") == repo.task_input_dir(tid))
@@ -196,7 +207,7 @@ def _check_blocking_inputs(ctx, ok) -> None:
        == ("pages",),
        str(ports.stage_blocking_inputs(diagram, "detect", {"rembg", "print"})))
     ok("空图/None 不炸（照声明返回）",
-       ports.stage_blocking_inputs(None, "rembg") == ("pages", "boxes"))
+       ports.stage_blocking_inputs(None, "rembg") == ("pages",))
 
     # ---- store 门面与 ports 判据必须一致（别处别再判一遍）----
     ok("required_stage_inputs 与 ports 判据同源",
@@ -229,18 +240,18 @@ def _check_blocking_inputs(ctx, ok) -> None:
        ports.STAGE_STEPS.get("imposition") == "imposition",
        str(ports.STAGE_STEPS))
 
-    # ---- 9c'. detect_feeds_rembg：去底色拿得到检测框吗（area 锁 4 的判据）----
-    # 用户 2026-10-07：去底色作为第一个节点（前面没有检测）时 area 必须
-    # 固定 4 且不可改——1/2/3 都要吃检测框，没框的页裁出来一片空白。
-    # 同一份判据还放行"没有检测数据"流程里的拼版（吃整图照样拼）。
-    ok("默认流程里 detect 在 rembg 上游 ⇒ 有检测数据",
-       ports.detect_feeds_rembg(default) is True,
-       str(ports.detect_feeds_rembg(default)))
-    ok("去底色打头、没有检测节点 ⇒ 没有检测数据（area 该锁 4）",
-       ports.detect_feeds_rembg(diagram) is False,
-       str(ports.detect_feeds_rembg(diagram)))
-    ok("空图/None ⇒ 没有检测数据（保守答案）",
-       ports.detect_feeds_rembg(None) is False)
+    # ---- 9c'. flow_crops_pages：这批图会不会被第二步按 area 裁过 ----
+    # ⚠️ 2026-10-22：area 从去底色搬到「检测文本框」，它决定"提交时怎么裁图"。
+    # 拼版要不要成对 ``-l``/``-r`` 全靠这条判据（没有检测步骤 ⇒ 图是整页的 ⇒
+    # 拼版吃整图照样拼，area 前提不适用）。
+    ok("默认流程里有检测步骤 ⇒ 图会被按 area 裁",
+       ports.flow_crops_pages(default) is True,
+       str(ports.flow_crops_pages(default)))
+    ok("去底色打头、没有检测节点 ⇒ 不裁图（拼版吃整图）",
+       ports.flow_crops_pages(diagram) is False,
+       str(ports.flow_crops_pages(diagram)))
+    ok("空图/None ⇒ 不裁图（保守答案）",
+       ports.flow_crops_pages(None) is False)
 
     # ---- 9d. ⚠️⚠️ **图必须压过静态表**（"这个问题再次提出"的病根）----
     # 用户 2026-10-06 第二次提同一个问题："自定义流程中，总是会有默认流程以及
@@ -567,9 +578,28 @@ def _check_ports(ok) -> None:
         ok(f"{stage} 的输入端口 = spec.inputs",
            ports.stage_inputs(stage) == tuple(spec.inputs),
            f"{ports.stage_inputs(stage)} vs {spec.inputs}")
+        # ⚠️ ``stage_outputs`` 是**步骤级**声明（detect 声明两样都产出）。
         ok(f"{stage} 的输出端口 = spec.outputs",
            ports.stage_outputs(stage) == tuple(spec.outputs),
            f"{ports.stage_outputs(stage)} vs {spec.outputs}")
+
+    # ⚠️ 动作级：同格两个动作各自只产一样——这是 fold_forward 能正确折到
+    #   detect_submit（而不是折回 detect 自己）的前提。
+    ok("detect 这个动作只产 boxes",
+       ports.action_outputs("detect") == ("boxes",),
+       str(ports.action_outputs("detect")))
+    ok("detect_submit 这个动作只产 pages（裁好的图）",
+       ports.action_outputs("detect_submit") == ("pages",),
+       str(ports.action_outputs("detect_submit")))
+    ok("detect_submit 复用 detect 的步骤定义",
+       ports.STAGE_STEPS["detect_submit"] == "detect")
+    # fold_forward：要 pages 折到提交、要 boxes 留在检测
+    ok("要 pages ⇒ 折到 detect_submit",
+       ports.fold_forward("detect", "pages") == "detect_submit",
+       ports.fold_forward("detect", "pages"))
+    ok("要 boxes ⇒ 留在 detect",
+       ports.fold_forward("detect", "boxes") == "detect",
+       ports.fold_forward("detect", "boxes"))
 
     # rembg_submit 是「提交本次任务」：同一步骤的第二个动作，不重新吃框。
     ok("rembg_submit 复用 rembg 的步骤定义",
@@ -578,9 +608,10 @@ def _check_ports(ok) -> None:
        ports.stage_inputs("rembg_submit") == ("pages",),
        str(ports.stage_inputs("rembg_submit")))
 
-    # 声明了输出的阶段必须登记落点，否则产物没有去处。
+    # 声明了输出的**动作**必须登记落点，否则产物没有去处。
+    # ⚠️ 按动作级判（detect 声明了 pages，但那个落点属于 detect_submit）。
     for stage in ports.STAGE_LOCATIONS:
-        for port in ports.stage_outputs(stage):
+        for port in ports.action_outputs(stage):
             ok(f"{stage}.{port} 有落点登记",
                ports.location_of(stage, port) is not None, stage)
 
@@ -596,10 +627,11 @@ def _check_wiring(ok) -> None:
 
     ok("extract 没有上游阶段（源 PDF 由任务供给）",
        ports.supplier_of("extract", "pdf") == ports.SUPPLY_TASK_SOURCE)
-    ok("rembg 的页面图来自 extract",
-       ports.supplier_of("rembg", "pages") == "extract")
-    ok("rembg 的检测框来自 detect",
-       ports.supplier_of("rembg", "boxes") == "detect")
+    ok("rembg 的页面图来自「检测文本框」的提交（裁好的图）",
+       ports.supplier_of("rembg", "pages") == "detect_submit",
+       str(ports.supplier_of("rembg", "pages")))
+    ok("rembg 不再有 boxes 连线（去底色=整图去底色）",
+       ports.supplier_of("rembg", "boxes") is None)
     ok("print 默认吃第三步提交的成品图",
        ports.supplier_of("print", "pages") == "rembg_submit")
 
@@ -613,11 +645,12 @@ def _check_wiring(ok) -> None:
        ports.print_input_overrides(True) == {("print", "pages"): "imposition"})
 
     base = "T"
-    ok("rembg 的 pages 输入落在 extract 的产物目录",
+    ok("rembg 的 pages 输入落在检测提交的裁图目录",
        ports.resolve_input(base, "rembg", "pages")
-       == Path(base) / "stages" / "extract")
-    ok("rembg 的 boxes 输入落在任务根的 boxes.json",
-       ports.resolve_input(base, "rembg", "boxes") == Path(base) / "boxes.json")
+       == Path(base) / "stages" / "detect",
+       str(ports.resolve_input(base, "rembg", "pages")))
+    ok("检测提交的产物落点是 stages/detect",
+       ports.location_of("detect_submit", "pages") == "stages/detect")
     ok("print 默认取图落在 rembg",
        ports.resolve_input(base, "print", "pages")
        == Path(base) / "stages" / "rembg")
@@ -683,8 +716,11 @@ def _check_store_derivation(ctx, ok) -> None:
     ok("拼版生效时 stage_input 换上游",
        repo.stage_input(tid, "print", "pages", imposition_active=True)
        == repo.imposition_output_dir(tid))
+    # ⚠️ 2026-10-22：去底色不再吃 boxes（整图去底色）。坐标文件仍落在任务根，
+    #    但那是**检测步骤自己的产物**，按 artifact 取（不再经 rembg 的输入端口）。
     ok("detect 的坐标文件落在任务根",
-       repo.stage_input(tid, "rembg", "boxes") == task_dir / "boxes.json")
+       repo.artifact(tid, "detect", "boxes") == task_dir / "boxes.json",
+       str(repo.artifact(tid, "detect", "boxes")))
     # 未登记的端口要给一个能看懂的错，而不是 NoneType 崩溃。
     try:
         repo.artifact(tid, "extract", "boxes")
@@ -757,8 +793,15 @@ def _check_detail_metadata(ctx, ok) -> None:
     ok("print 按钮是「生成PDF」且无提交按钮",
        _spec_for("print").run_button_text == "生成PDF"
        and _spec_for("print").has_submit is False)
-    ok("只有 rembg 声明了提交按钮",
-       [s for s in STAGES if _spec_for(s).has_submit] == ["rembg"])
+    # ⚠️ 2026-10-22：第二步「检测文本框」也变成两步式（检测 → 提交裁图），
+    #    所以声明 has_submit 的步骤是 detect + rembg 两个。
+    ok("detect 按钮是「检测文本框」且有提交按钮",
+       _spec_for("detect").run_button_text == "检测文本框"
+       and _spec_for("detect").has_submit is True,
+       f"{_spec_for('detect').run_button_text} / {_spec_for('detect').has_submit}")
+    ok("detect / rembg 声明了提交按钮",
+       [s for s in STAGES if _spec_for(s).has_submit] == ["detect", "rembg"],
+       str([s for s in STAGES if _spec_for(s).has_submit]))
     ok("print 控制列更宽（400~580），其余 340~440",
        _spec_for("print").control_width == (400, 580)
        and all(_spec_for(s).control_width == (340, 440)

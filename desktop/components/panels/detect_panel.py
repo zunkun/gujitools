@@ -1,11 +1,29 @@
 # -*- coding: utf-8 -*-
-"""检测文本框（detect）阶段面板：本阶段只识别坐标，不生成文件。"""
+"""检测文本框（detect）阶段面板：只有检测与人工干预，**没有 area 参数**。
+
+⚠️ 2026-10-22 第二轮（用户口径）：
+
+> 检测文本框流程，去除 area 参数，默认 area = 1，提交的时候 area 参数只在
+> 提交的时候生效，desktop 页面去除这个参数，但是在后端代码保留 area 相关逻辑，
+> 只是页面默认 area = 1。
+
+所以这一步现在还是**两个动作**，但 area 不再出现在界面上：
+
+- 「检测文本框」（详情页主按钮）：只跑检测，出框到 ``boxes.json``；
+- 「提交本次任务」（详情页次按钮）：按 ``DETECT_DEFAULT_AREA``（=1，左右分开）
+  把页面图裁成下一步要的图，落到 ``stages/detect``。**没提交就不算这一步完成**
+  ——下一步的输入目录是空的。
+
+裁图的 area 逻辑原样留在后端（``stages/detect_stage``、``services/print_plan``、
+``utils.box_geometry``、CLI ``crop/cropremove``），桌面只把常量当默认值传下去。
+"""
 
 from __future__ import annotations
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QFormLayout, QHBoxLayout
-from qfluentwidgets import CheckBox, PrimaryPushButton, PushButton
+
+from qfluentwidgets import PrimaryPushButton, PushButton
 
 from desktop.components.panels.base import StagePanel
 from desktop.ui.widgets import CONTROL_HEIGHT, SegmentedToggle
@@ -17,14 +35,10 @@ BOX_KIND_ITEMS = tuple((kind, box_kind_name(kind)) for kind in BOX_KIND_INDEX)
 
 
 class DetectPanel(StagePanel):
-    """检测文本框阶段面板：仅识别坐标，不生成文件。
+    """检测文本框阶段面板：检测 + 人工修正框（无表单参数）。
 
     YOLO 检测每张图的内容框坐标（半幅：左右两栏；整幅：整页单一内容区），
-    供预览标注与去底色/裁剪使用；
-    本阶段无表单参数，get_args 返回空字典，手动检测经信号触发。
-
-    「整页模式」是第三步 area=4 的入口开关：勾选后整页即唯一文本框，
-    **不加载也不调用 YOLO**，预览里框画在页面边界，仍可手动拖动/重画。
+    供预览标注与「提交本次任务」的裁图使用。
 
     **人工干预**（用户 2026-09-29 定）：框的类型是**框自己的属性**，不随
     "还剩几个框"变化——
@@ -37,31 +51,20 @@ class DetectPanel(StagePanel):
     stage = "detect"
     title = "检测文本框"
     description = (
-        "自动检测每张图的内容框坐标（半幅左右两栏 / 整幅整页），"
-        "用于预览标注与去底色/裁剪区域。本阶段只识别坐标，不生成文件。"
-        "普通文档/检测失败可勾选「整页模式」，整页作为一个文本框，跳过检测。"
-        "选中某个框后可在「选中框类型」里把它改成左框/右框/整幅。"
+        "自动检测每张图的内容框坐标（半幅左右两栏 / 整幅整页）。"
+        "「检测文本框」只出框、可在图上手绘修正；"
+        "确认后点「提交本次任务」按左右分开把图裁好交给下一步——"
+        "**提交了这一步才算完成**。"
     )
 
     # 手动触发当前页检测（重负载：检测子进程，不自动执行）
     detect_page_requested = Signal()
-    # 整页模式开关（等价于第三步的「整页」区域）
-    whole_page_toggled = Signal(bool)
     #: 用户点了某个框类型（键见 BOX_KIND_ITEMS）：切换选中框的类型 / 选中该类框
     box_kind_changed = Signal(str)
     #: 用户点了「删除选中框」
     delete_box_requested = Signal()
 
     def _build_form(self, form: QFormLayout) -> None:
-        self.whole_page = CheckBox("整页模式：不做检测")
-        self.whole_page.setToolTip(
-            "整页作为一个文本框（与第三步「区域模式」里的整页是同一件事）："
-            "跳过检测，预览里的框画在页面边界，可继续拖动/重画。"
-            "适合普通文档或古籍检测失败时"
-        )
-        self.whole_page.toggled.connect(self.whole_page_toggled.emit)
-        form.addRow(self.whole_page)
-
         button = PrimaryPushButton("检测本页")
         # 与其它阶段面板的表单控件同高（qfluent 按钮默认只有 27px）
         button.setFixedHeight(CONTROL_HEIGHT)
@@ -81,7 +84,7 @@ class DetectPanel(StagePanel):
             "它不是左页也不是右页——所以不标左框/右框；\n"
             "· 整幅是整页唯一内容区，选过之后不随位置/大小改变；\n"
             "· 整幅与左右半框互斥，且整幅一页只能有一个框。\n"
-            "下游区域随整幅框走（area=1/2/3 效果一致）；只有 area=4 保留整页。\n"
+            "「提交本次任务」按左右分开裁图。\n"
             "没有选中框时，点这几项＝选中该类型的框。"
         )
         self.box_kind.current_changed.connect(self.box_kind_changed.emit)
@@ -99,23 +102,17 @@ class DetectPanel(StagePanel):
         self.set_box_selection(-1, "")
 
     def get_args(self) -> dict:
-        """返回空参数字典（detect 阶段无表单参数）。
+        """本步骤**没有表单参数**（area 归后端固定默认，界面上不暴露）。
 
-        整页模式不在这里上报：area 归第三步 rembg 面板所有，本开关只负责
-        把 area 切到 4 / 切回 1（见宿主的 _set_whole_page_mode）。
+        ⚠️ 不要在这里补 ``{"area": 1}`` 之类的"友好默认"：那会写进运行历史、
+        变成一份用户"填过"的参数（历史回填与提交版本判定都会跟着变），而用户
+        明确要求这个参数不出现在页面上。取默认值的地方只有一个：
+        ``core.command_spec.DETECT_DEFAULT_AREA``（runner 与提交控制器读它）。
         """
         return {}
 
     def _apply_args(self, parameters: dict) -> None:
         pass
-
-    def set_whole_page(self, on: bool) -> None:
-        """外部（第三步 area）回填勾选状态；blockSignals 避免回抛造成循环。"""
-        if self.whole_page.isChecked() == bool(on):
-            return
-        self.whole_page.blockSignals(True)
-        self.whole_page.setChecked(bool(on))
-        self.whole_page.blockSignals(False)
 
     def set_box_selection(self, index: int, kind: str) -> None:
         """回填「选中框类型」控件：``index < 0``（无选中）时三段都不高亮。

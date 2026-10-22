@@ -69,7 +69,13 @@ from desktop.ui.toast import show_toast
 from desktop.ui.widgets import ProgressLine, apply_to, ui_font
 from desktop.utils.files import default_open_dir, pending_install_file, updates_dir
 from desktop.workers import connect_queued
-from utils.data_package import has_update, human_size, read_local_version
+from utils.data_package import (
+    effective_info,
+    has_update,
+    human_size,
+    read_local_version,
+    resolve_weights,
+)
 from utils.version import is_newer
 
 #: 项目主页（「关于」显示 / 「检查更新」失败时的兜底指引）。
@@ -113,7 +119,7 @@ ACTION_UPDATE_DOWNLOADING = "正在下载更新…"
 ACTION_DATA_PACKAGE = "更新数据包(&M)"
 #: 数据包菜单项的悬停提示（无新版时的默认文案）
 ACTION_DATA_PACKAGE_TOOLTIP = (
-    "联网检查去底色模型（bookcontent.pt）是否有新版本，可直接下载替换"
+    "联网检查去底色模型（bookcontent）是否有新版本，可直接下载并在本机启用"
 )
 #: 检查/下载期间菜单项的临时文案
 ACTION_DATA_PACKAGE_BUSY = "正在检查数据包…"
@@ -250,20 +256,28 @@ def data_package_result(
         timing = (
             f"（{float(seconds):.2f}s）" if isinstance(seconds, (int, float)) else ""
         )
-        body = f"当前数据包版本：v{current}\n最新数据包版本：v{remote}"
+        # current = 0 表示本机**一份权重都没有**（没装过 / 被删了 / 安装损坏），
+        # 说成"当前版本 v0"会让人以为有个 0 版模型。
+        body = "本机尚未安装数据包（权重文件缺失）" if current <= 0 else (
+            f"当前数据包版本：v{current}"
+        )
+        body += f"\n最新数据包版本：v{remote}"
         if name:
             body += f"（{name}）"
         if size:
             body += f"\n文件大小：{size}"
         body += (
             f"\n\n点「{BUTTON_DOWNLOAD}」将经最快线路（{label}{timing}）"
-            "自动下载并替换本机模型。\n下载完成后，下次检测会自动用上新模型。"
+            "自动下载并在本机启用。\n"
+            "下载后文件名保留版本号（如 bookcontent-v105.pt），旧模型不会删除；"
+            "\n由 bookcontent.version.json 指定当前生效的那一份，下次检测即用新版。"
         )
         return UpdateVerdict("发现新版本数据包", body, BUTTON_DOWNLOAD)
     if kind == RESULT_LATEST:
         body = f"当前数据包版本 v{current} 已是最新。"
-        if info.get("name"):
-            body += f"\n\n本机模型：{info['name']}"
+        local = effective_info().get("name")
+        if local:
+            body += f"\n\n本机生效文件：{local}"
         return UpdateVerdict("数据包已是最新", body)
     reason = FAILURE_REASONS.get(kind)
     if reason is None:
@@ -1306,9 +1320,13 @@ class DataPackageController(QObject):
 
     流程（用户 2026-10-16）：读权重仓库 ``database`` release 的 ``data.json`` →
     与本机**已装版本**比大小（``utils.data_package``）→ 有新版弹「下载」提示 →
-    经最快线路**在程序内下载并替换** ``static/weights/bookcontent.pt``——而不是
-    让用户自己去 GitHub 下。检查与下载都在子线程（``window.run_worker``），
-    重入防护（``_checking`` / ``_downloading``）与收尾幂等沿用 UpdateController。
+    经最快线路**在程序内下载并启用**（文件保留发布名 ``bookcontent-v105.pt``，
+    由 ``bookcontent.version.json`` 决定哪一份生效）——而不是让用户自己去 GitHub
+    下。检查与下载都在子线程（``window.run_worker``），重入防护
+    （``_checking`` / ``_downloading``）与收尾幂等沿用 UpdateController。
+
+    ⚠️ 例外（用户 2026-10-22）：本机**一份权重都没有**时，启动期那次静默检查
+    会**直接下载**（不再只挂个"有新版本"提示）——没有权重检测根本跑不起来。
     """
 
     def __init__(self, window, action: QAction, parent=None):
@@ -1325,6 +1343,8 @@ class DataPackageController(QObject):
         self._aborted = False
         #: 上一次成功的检查结果（含 info 与 download_url；「下载」用它）
         self._last: dict | None = None
+        #: 本次检查开始时"本机一份权重都没有"（决定静默检查是否直接下载）
+        self._missing_weights = False
         #: 已知的新版数据包版本号（0 = 未知/已是最新）——菜单项文案与 tooltip 看它
         self._newer_version = 0
         self._check_dialog: QDialog | None = None
@@ -1366,6 +1386,10 @@ class DataPackageController(QObject):
     def _start_check(self) -> None:
         """起一次后台检查（显式/静默共用）。"""
         self._checking = True
+        # 本机**一份权重都没有**（没装过 / 被删了 / 安装损坏）时，光告诉用户
+        # "有新版本"没有意义——检测根本跑不起来，得直接把权重下下来
+        # （用户 2026-10-22：bookcontent.pt 也不存在则线上下载最新）。
+        self._missing_weights = resolve_weights() is None
         # ⚠️ 惰性 import：启动期不该为一个"用户可能不点"的菜单项拉进网络模块。
         from desktop.workers.data_package_worker import DataCheckWorker
 
@@ -1424,6 +1448,11 @@ class DataPackageController(QObject):
         local = read_local_version()
         kind = RESULT_NEWER if has_update(remote, local) else RESULT_LATEST
         if self._silent:
+            if kind == RESULT_NEWER and self._missing_weights:
+                # 本机一份权重都没有 ⇒ 检测根本跑不起来，别只挂个"有新版本"提示
+                # 让用户自己点：直接下（有进度窗，失败会弹原因）。
+                self._start_download()
+                return
             # 菜单提示：有新版才挂后缀；已是最新就清掉（别留成"鬼影"）。
             self._newer_version = remote if kind == RESULT_NEWER else 0
             self._apply_action_text()
@@ -1453,7 +1482,7 @@ class DataPackageController(QObject):
     def _apply_action_text(self) -> None:
         self.action.setText(self._action_text())
         self.action.setToolTip(
-            f"已发现新版本数据包 v{self._newer_version}，点这里下载替换"
+            f"已发现新版本数据包 v{self._newer_version}，点这里下载并启用"
             if self._newer_version
             else ACTION_DATA_PACKAGE_TOOLTIP
         )
@@ -1504,7 +1533,7 @@ class DataPackageController(QObject):
         self.action.setEnabled(False)
         self.action.setText(ACTION_DATA_PACKAGE_DOWNLOADING)
         self._progress = _DownloadProgress(
-            self.window, "正在下载并替换去底色数据包", self._cancel_download)
+            self.window, "正在下载并启用去底色数据包", self._cancel_download)
 
         from desktop.workers.data_package_worker import DataDownloadWorker
 
@@ -1546,12 +1575,14 @@ class DataPackageController(QObject):
         self._newer_version = 0
         self._finish_download()
         result = result or {}
-        body = (
-            f"已下载并替换本机模型（版本 v{int(result.get('version') or 0)}），"
-            "并已重新加载到内存。\n\n下次检测会直接用上新模型。"
-        )
+        version = int(result.get("version") or 0)
+        body = f"已下载并启用新模型（版本 v{version}），并已重新加载到内存。\n\n下次检测会直接用上新模型。"
         if result.get("path"):
             body += f"\n\n保存位置：{result['path']}"
+            body += (
+                "\n（文件名保留版本号；旧版模型仍留在同一目录里，"
+                "bookcontent.version.json 决定当前生效的那一份。）"
+            )
         self._present(UpdateVerdict("数据包下载完成", body))
 
     def _on_download_failed(self, kind) -> None:

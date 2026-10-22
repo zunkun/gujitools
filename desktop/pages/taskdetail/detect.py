@@ -18,7 +18,7 @@ from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QSize
 from PySide6.QtGui import QImageReader
 from PIL import Image
 
-from core.command_spec import WHOLE_PAGE_AREA
+from core.command_spec import DETECT_DEFAULT_AREA, WHOLE_PAGE_AREA
 from desktop.components.box_kinds import BoxKindEditor
 from desktop.components.yolo_export_dialog import ask_yolo_export
 from desktop.services.detect_export import export_yolo, yolo_entries
@@ -574,9 +574,9 @@ class DetectMixin:
             selected=select_index,
         )
 
-    # ------------------------------------------------------------ 整页模式
+    # ------------------------------------------------------------ 区域模式
     def _current_area(self) -> int:
-        """当前 area（区域模式参数位于第三步 rembg 面板）。"""
+        """当前区域模式（area）——2026-10-22 起归**第二步自己的面板**。"""
         return int(self._current_detect_params()[0])
 
     def _image_size_for(self, path_text: str):
@@ -671,9 +671,9 @@ class DetectMixin:
             self._apply_boxes(key, boxes, origin)
             self._refresh_reference_boxes()
             return
-        self.detect_viewer.info_label.setText("尚未检测：执行「本子任务」批量检测，或点击面板中的「检测本页」")
+        self.detect_viewer.info_label.setText("尚未检测：点右上「检测文本框」批量检测，或点面板里的「检测本页」")
 
-        self.detect_viewer.info_label.setText("尚未检测：执行「本子任务」批量检测，或点击面板中的「检测本页」")
+        self.detect_viewer.info_label.setText("尚未检测：点右上「检测文本框」批量检测，或点面板里的「检测本页」")
 
     def _detect_current_page(self) -> None:
         """手动触发当前页的检测文本框（YOLO 子进程，重负载）。"""
@@ -824,57 +824,18 @@ class DetectMixin:
         return boxes
 
     def _current_detect_params(self) -> tuple[int, str | None]:
-        """区域参数（area/border）现在位于 rembg 面板（步骤三）。
+        """区域参数：**固定 area = DETECT_DEFAULT_AREA**，border 恒 None。
 
-        ⚠️ 流程里**没有去底色这一步**时给 ``(1, None)``（左右分栏 + 无边距）
-        ——那是 detect 的默认口径，**不是**去兜一个别的面板：自定义流程里把
-        「图片去底色」删掉后，用户从来没填过 area，借别的面板读出来的是
-        一份没人填过的表单。
+        ⚠️ 2026-10-22 第二轮：界面上没有 area 控件了（用户：「去除 area 参数，
+        默认 area = 1……desktop 页面去除这个参数，但是在后端代码保留 area 相关
+        逻辑」）。所以这里不再读面板，直接给后端默认值——参考框的推导、
+        「整页模式」那条兜底分支（area=4 才走）都还在，只是桌面这一侧永远
+        传 1。
+
+        第二个返回值保留 ``None``：``compute_final_boxes`` 的 border 形参还在
+        （CLI crop 仍支持），界面侧恒为「不加留白」。
         """
-        host = self.panel_host_of_step("rembg")
-        if host is None:
-            return 1, None
-        args = host.get_args()
-        return args.get("area", 1), args.get("border")
-
-    # ------------------------------------------------------ 整页模式开关联动
-    def _set_whole_page_mode(self, on: bool) -> None:
-        """第二步「整页模式」开关 → 第三步 area（4 ↔ 1）。
-
-        area 的唯一事实来源是第三步面板，本开关只是它的入口：勾选即把 area
-        切到 4，取消则回到 1，随后刷新检测预览（整页框立即画在边界上）。
-        """
-        panel = self.panel_host_of_step("rembg")
-        if panel is None:
-            return   # 流程里没有去底色这一步：没有 area 可切
-        if getattr(panel, "whole_page_only", False):
-            # area 锁 4（本流程里去底色拿不到检测框，1/2/3 没框可裁——
-            # 见 ports.detect_feeds_rembg）：整页模式**关不掉**，取消勾选
-            # 直接回填、area 保持 4，并说明原因（用户 2026-10-07）
-            if not on:
-                host = self.panel_host_of_step("detect")
-                if host is not None:
-                    host.set_whole_page(True)
-                self._toast(
-                    "info", "整页模式",
-                    "本流程里「图片去底色」前面没有「检测文本框」，"
-                    "区域模式 1/2/3 没有检测框可用，只能整页模式。",
-                )
-            return
-        target = WHOLE_PAGE_AREA if on else 1
-        if int(str(panel.area.currentText())[0]) != target:
-            panel.area.setCurrentIndex(target - 1)  # 触发 _refresh_reference_boxes
-            return
-        path = self.detect_viewer.current_path()
-        if path:
-            self._detect_image_selected(0, str(path))
-
-    def _sync_whole_page_checkbox(self) -> None:
-        """第二步勾选状态回填自第三步 area（切阶段/改 area 时保持一致）。"""
-        panel = self.panel_host_of_step("detect")
-        setter = getattr(panel, "set_whole_page", None)
-        if callable(setter):
-            setter(self._current_area() == WHOLE_PAGE_AREA)
+        return DETECT_DEFAULT_AREA, None
 
     def _refresh_reference_boxes(self) -> None:
         """按当前 area 参数重算参考框（虚线标注）。

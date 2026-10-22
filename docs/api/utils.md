@@ -4,7 +4,7 @@
 
 通用工具函数：几何、排序、图像 IO、PDF、YOLO
 
-覆盖 27 个模块、13 个公开类、154 个公开函数/方法（生成于 2026-10-21）。
+覆盖 27 个模块、14 个公开类、166 个公开函数/方法（生成于 2026-10-22）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -17,7 +17,7 @@
 | [`utils.box_geometry`](#utilsbox_geometry) | 2 | 16 |
 | [`utils.color_utils`](#utilscolor_utils) | 0 | 2 |
 | [`utils.compact_png`](#utilscompact_png) | 0 | 2 |
-| [`utils.data_package`](#utilsdata_package) | 0 | 12 |
+| [`utils.data_package`](#utilsdata_package) | 1 | 24 |
 | [`utils.download`](#utilsdownload) | 1 | 1 |
 | [`utils.file_utils`](#utilsfile_utils) | 0 | 4 |
 | [`utils.font_scan`](#utilsfont_scan) | 0 | 4 |
@@ -707,43 +707,65 @@ pHYs，而 ``rembgpreview/*.png`` 有）。
 
 源码：[`utils/data_package.py`](../../utils/data_package.py)
 
-去底色数据包（``bookcontent.pt``）的版本规则与本地版本记录。
+去底色数据包（权重 ``bookcontent*.pt``）的命名规则、**生效判定**与本地版本记录。
 
-背景（用户 2026-10-16）
-----------------------
-YOLO 权重 ``bookcontent.pt`` 由**另一个仓库**（``zunkun/gujitrain``）的
-``database`` release 分发。那个 release 里除了权重本体，还有一份 ``data.json``，
-逐文件描述 ``name`` / ``version``（整数）/ ``sha256`` / ``size`` / ``date``：
+背景（用户 2026-10-16 / 2026-10-22）
+-----------------------------------
+YOLO 权重由**另一个仓库**（``zunkun/gujitrain``）的 ``database`` release 分发。
+那个 release 里除了权重本体，还有一份 ``data.json``，逐文件描述 ``name`` /
+``version``（整数）/ ``sha256`` / ``size`` / ``date``::
 
     {
       "generated_at": "2026-10-16T09:22:21+08:00",
       "release": "database",
       "files": {
-        "bookcontent": {"name": "bookcontent-v100.pt", "version": 100, ...},
-        "gujiline":    {"name": "gujiline-v100.pt",    "version": 100, ...}
+        "bookcontent": {"name": "bookcontent-v105.pt", "version": 105, ...},
+        "gujiline":    {"name": "gujiline-v105.pt",    "version": 105, ...}
       }
     }
 
 桌面端据此判断"本机权重是不是旧版"，有新版就提示并可一键下载替换（**不让用户
 自己去 GitHub 下载**）。
 
+权重目录的存放口径（用户 2026-10-22 定稿）
+------------------------------------------
+``static/weights`` 下**可以同时存在多个** ``.pt``，但**只有一个生效**：
+
+* 下载下来的文件**保留发布名**（``bookcontent-v105.pt``），**不再改名**成
+  ``bookcontent.pt``——旧版文件留在原地，出问题随时能退回；
+* "哪一份生效"由 sidecar ``bookcontent.version.json`` 的 ``name`` 字段说了算
+  （下载成功后由 :func:`record_local_version` 改写这一份，等于"切换生效文件"）；
+* 安装包预置的 ``bookcontent.pt``（不带版本号，版本按 0 计）是最后的兜底。
+
+生效文件的解析顺序（:func:`resolve_weights`，逐条对应用户口径）::
+
+    ① sidecar 存在、且它指的 name 在本地         → 用它
+    ② sidecar 不存在（或没有 name）               → 用 bookcontent.pt
+    ③ sidecar 在、它指的文件却不在本地            → 本地**版本号最大**的
+                                                   bookcontent-vNNN.pt
+    ④ 再退回 bookcontent.pt
+    ⑤ 一个都没有                                   → ``None``（调用方联网下载最新）
+
+⚠️ ③ 之后才轮到 ④：用户明确要求"配置文件在、但对不上文件时先挑版本最大的那个"。
+⚠️ 只在 ⑤ 才联网：本地只要还有**任何**一份权重就先跑着，不为了"可能更新"白下
+   6MB（下载是最后手段，不是第一手段）。
+⚠️ 迁移兼容：旧版下载流程是"下完 ``bookcontent-vNNN.pt`` 再改名成
+   ``bookcontent.pt``"，所以升级上来的机器会出现"sidecar 写 v105、目录里只有
+   ``bookcontent.pt``"。若两者**字节数一致**，就按 sidecar 的版本算
+   （:func:`effective_info` 的 ``source="legacy"``），不重复下载。
+
 为什么单列成模块（而不是塞进 ``yolo_utils``）
 --------------------------------------------
-1. 这里全是**纯规则**（JSON 解析 + 整数比大小 + 读一份 sidecar），没有 cv2 /
-   torch；而桌面**主进程**要用它（``desktop/ui/menu.py`` 的检查/下载），主进程
-   **不许** import 重依赖（见 AGENTS 分层守卫）。``yolo_utils`` 模块级 import
-   numpy，把一个纯规则塞进去等于顺带把 numpy 拽进启动。
-2. 反过来 ``yolo_utils.model_path()`` 复用本模块的 :func:`weights_dir`：
-   权重目录**只此一处**定义，两边各写一份 ``static/weights`` 迟早漂移。
+1. 解析/判定/记录全是**纯规则**（JSON 解析 + 整数比大小 + 读一份 sidecar），没有
+   cv2 / torch；而桌面**主进程**要用它（``desktop/ui/menu.py`` 的检查/下载），主
+   进程**不许** import 重依赖（见 AGENTS 分层守卫）。``yolo_utils`` 模块级 import
+   numpy，把纯规则塞进去等于顺带把 numpy 拽进启动。
+2. 反过来 ``yolo_utils.model_path()`` 复用本模块的 :func:`resolve_weights` /
+   :func:`weights_dir`：权重目录与命名规则**只此一处**，两边各写一份迟早漂移。
 
-本地版本记在哪
---------------
-本机 ``bookcontent.pt`` 是**安装包预置**的、文件名不带版本（用户口径：
-"bookcontent-v100.pt 版本是 100 > bookcontent.pt"）。为便于后续比较，这里在
-权重目录旁维护一份 sidecar ``bookcontent.version.json``，记录**最近一次已安装**
-的版本（含 name/sha256/size）。sidecar 不存在 ⇒ 视为版本 ``0``，于是远端任何
-带版本号的分发都算更新（正是用户要的效果）；下载成功后由下载侧
-:func:`record_local_version` 写回。
+本模块里**唯一会打网络**的是 :func:`ensure_weights_online`（本机一份权重都没有
+时兜底下载），只被 CLI / 常驻服务的加载路径调用；桌面端有完整的检查/下载流程
+（``desktop/services`` + ``desktop/workers/data_package_worker.py``），不走它。
 
 ### 模块常量
 
@@ -753,7 +775,21 @@ YOLO 权重 ``bookcontent.pt`` 由**另一个仓库**（``zunkun/gujitrain``）�
 | DATA_JSON_NAME | `"data.json"` |
 | BOOKCONTENT_KEY | `"bookcontent"` |
 | LOCAL_WEIGHTS_NAME | `"bookcontent.pt"` |
+| VERSIONED_PREFIX | `"bookcontent-v"` |
+| WEIGHTS_SUFFIX | `".pt"` |
 | VERSION_FILE_NAME | `"bookcontent.version.json"` |
+| MANIFEST_TIMEOUT | `6.0` |
+| WEIGHTS_TIMEOUT | `120.0` |
+
+### `class WeightsDownloadError(RuntimeError)`
+
+联网取权重失败；``kind`` 是分类串（与 worker 的词表同口径）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(kind: str)` | — |
 
 ### 模块函数
 
@@ -761,16 +797,41 @@ YOLO 权重 ``bookcontent.pt`` 由**另一个仓库**（``zunkun/gujitrain``）�
 | --- | --- |
 | `data_json_url() -> str` | ``data.json`` 的**直连**地址（镜像前缀由调用方 :func:`build_url` 拼）。 |
 | `asset_url(name: str) -> str` | release 里某个资产的**直连**下载地址（镜像前缀由调用方拼）。 |
+| `mirror_label(prefix: str) -> str` | 线路的中文标签：直连 → 「直连」，镜像 → 域名（``v6.gh-proxy.org``）。 |
+| `build_url(prefix: str, url: str) -> str` | 把加速前缀拼到原始地址前面（用户给的用法就是**直接拼接**）。 |
+| `cache_bust(url: str) -> str` | 给 URL 挂一个**本次调用唯一**的查询串，绕开 CDN/镜像对固定 URL 的缓存。 |
 | `weights_dir() -> Path` | 权重目录：``<仓库根>/static/weights``。 |
-| `local_weights_path() -> Path` | 本机权重文件路径（``static/weights/bookcontent.pt``）。 |
-| `version_file() -> Path` | 本地版本 sidecar 路径（``static/weights/bookcontent.version.json``）。 |
+| `local_weights_path(directory=None) -> Path` | **兜底**权重路径（``static/weights/bookcontent.pt``，不等于"生效的文件"）。 |
+| `version_file(directory=None) -> Path` | 本地版本 sidecar 路径（``static/weights/bookcontent.version.json``）。 |
+| `parse_versioned_name(name) -> int \| None` | 从文件名解析版本号（``bookcontent-v105.pt`` → ``105``）；认不出返回 ``None``。 |
+| `versioned_weights(directory=None) -> list[tuple[int, Path]]` | 目录里全部带版本号的权重，**版本号降序**（同版本按文件名）。 |
+| `resolve_weights(directory=None) -> Path \| None` | 按"只有一个生效"的口径解析出**当前要加载**的权重文件；一份都没有返回 ``None``。 |
+| `effective_info(directory=None) -> dict` | 当前生效权重的摘要：``{path, name, version, source}``。 |
 | `parse_data_json(payload) -> dict \| None` | 抽出 ``payload['files']['bookcontent']`` 并规范化；不合法返回 ``None``。 |
-| `read_local_info() -> dict` | 本地版本 sidecar 的完整记录；缺失/损坏给一个版本 0 的空壳。 |
-| `read_local_version() -> int` | 本机已安装权重的版本号；sidecar 缺失/损坏一律 ``0``。 |
-| `record_local_version(info: dict) -> None` | 原子写 sidecar（临时文件 + ``os.replace``），记录刚安装的版本。 |
-| `has_update(remote_version, local_version=None) -> bool` | 远端版本是否比本机**已安装**版本新（整数比大小）。 |
+| `pick_latest(entries) -> tuple[str, dict] \| None` | 从 ``[(线路前缀, data.json 内容), …]`` 里挑出**版本最高**的那份清单。 |
+| `read_local_info(directory=None) -> dict` | 本地版本 sidecar 的完整记录；缺失/损坏给一个版本 0 的空壳。 |
+| `read_local_version(directory=None) -> int` | 本机**当前生效**权重的版本号；无权重/无法确定一律 ``0``。 |
+| `record_local_version(info: dict, directory=None) -> None` | 原子写 sidecar（临时文件 + ``os.replace``），记录**刚安装并生效**的版本。 |
+| `has_update(remote_version, local_version=None) -> bool` | 远端版本是否比本机**已生效**版本新（整数比大小）。 |
 | `sha256_of(path, chunk_size: int=1 << 20) -> str` | 流式算文件 SHA-256（校验下载到的权重，避免半截/被篡改的包落地）。 |
 | `human_size(size) -> str` | 把字节数收成一句人读的大小（``6.0 MB``）；拿不到就空串。 |
+| `fetch_latest_info(timeout: float=MANIFEST_TIMEOUT) -> dict` | 顺序试探四条线路取 ``data.json``，返回**版本最高**的那份清单:: |
+| `download_weights(info: dict, mirror_prefix: str='', directory=None, on_progress=None, timeout: float=WEIGHTS_TIMEOUT) -> Path` | 把 release 里的权重下到权重目录，**保留发布名**，校验通过才写 sidecar。 |
+| `ensure_weights_online(directory=None, on_progress=None) -> Path` | 确保本地有可用权重：有就返回它，**一份都没有**才联网下载最新。 |
+
+#### `cache_bust(url: str) -> str`
+
+给 URL 挂一个**本次调用唯一**的查询串，绕开 CDN/镜像对固定 URL 的缓存。
+
+``data.json`` 与权重资产都是 GitHub Release 的**固定下载地址**，而 release
+资产会被"同名覆盖"（``data.json`` 每次发布都重写、文件名却不变）。这类地址
+实测确实被缓存：三个 gh-proxy 是 ``Cache-Control: public, max-age=60``，直连
+回包的 ``Age`` 有 300s+。
+
+⚠️ 危害不止"看到旧内容"：**缓存命中的那条线路一定更快**，而程序更新是"选最快
+那条"，于是系统性地选中**旧清单**——用户 2026-10-16 报的「数据包检查不对，
+线上是 101」（本机 v100、远端已发 v101，检查却报"已是最新"）正是这个成因。
+每次换一个新缓存键即可让各线路回源。
 
 #### `weights_dir() -> Path`
 
@@ -779,6 +840,49 @@ YOLO 权重 ``bookcontent.pt`` 由**另一个仓库**（``zunkun/gujitrain``）�
 仓库根取 ``utils`` 包的上一级（与 ``yolo_utils.model_path`` 原口径一致）；
 打包（onedir）下 ``static`` 数据文件落在 ``_internal/static``，该表达式同样
 成立——所以本函数是**权重目录的唯一来源**，别再各写一份。
+
+#### `local_weights_path(directory=None) -> Path`
+
+**兜底**权重路径（``static/weights/bookcontent.pt``，不等于"生效的文件"）。
+
+⚠️ 要知道"当前真正生效的是哪一份"请用 :func:`resolve_weights`——本目录可能
+同时躺着 ``bookcontent-v103.pt`` / ``bookcontent-v105.pt``，生效的那份由
+sidecar 决定。
+
+#### `versioned_weights(directory=None) -> list[tuple[int, Path]]`
+
+目录里全部带版本号的权重，**版本号降序**（同版本按文件名）。
+
+只认 ``bookcontent-v<整数>.pt`` 这个形态（发布资产名）；兜底的
+``bookcontent.pt`` **不在**结果里——它的版本按 0 计、由调用方单独判断。
+目录不存在 / 不可读时返回空列表（绝不抛：缺失是常态，不是错误）。
+
+#### `resolve_weights(directory=None) -> Path | None`
+
+按"只有一个生效"的口径解析出**当前要加载**的权重文件；一份都没有返回 ``None``。
+
+顺序见模块头（① sidecar 指的文件 → ② 兜底名 → ③ 本地最大版本 → ④ 兜底名 →
+⑤ ``None``）。⚠️ 千万别把它简化成"有 bookcontent.pt 就用它"：下载下来的文件
+叫 ``bookcontent-v105.pt``，兜底名可能根本不存在；反过来 sidecar 指的版本被
+用户手动删了，也得能退到本地次新的那一份，而不是直接报"没有权重"。
+
+#### `effective_info(directory=None) -> dict`
+
+当前生效权重的摘要：``{path, name, version, source}``。
+
+``source`` 说明这份文件是怎么被选中的（排障/界面提示用）：
+
+==========  ==================================================
+``config``  sidecar 明确指定（正常情况：下载/切换之后）
+``default`` 落到兜底的 ``bookcontent.pt``（安装包预置）
+``latest``  sidecar 对不上文件，退到本地版本最大的那份
+``legacy``  落到兜底的 ``bookcontent.pt``，但**大小与 sidecar 记录一致**
+            （旧版安装流程把下载物改名成了它，等同 ``config`` 的版本）
+``none``    一份都没有（``path`` 为 ``None``、版本 0）
+==========  ==================================================
+
+版本号取法：sidecar 指的就是这份文件 ⇒ 用 sidecar 的 ``version``（下载时
+记下的权威值）；否则从文件名解析；兜底的 ``bookcontent.pt`` 解析不出 ⇒ 0。
 
 #### `parse_data_json(payload) -> dict | None`
 
@@ -789,19 +893,76 @@ YOLO 权重 ``bookcontent.pt`` 由**另一个仓库**（``zunkun/gujitrain``）�
 缺 ``version`` 或不是整数 ⇒ ``None``（宁可不说"有新版"也不谎报，与
 ``utils/version.py`` 同一口径）。
 
-#### `record_local_version(info: dict) -> None`
+#### `pick_latest(entries) -> tuple[str, dict] | None`
 
-原子写 sidecar（临时文件 + ``os.replace``），记录刚安装的版本。
+从 ``[(线路前缀, data.json 内容), …]`` 里挑出**版本最高**的那份清单。
+
+返回 ``(prefix, info)``；没有一个可用清单时返回 ``None``。并列时保留**先出现**
+的那条（调用方按耗时排过序，于是并列取更快的线路）。
+
+⚠️ 判据是"版本最高"而**不是**"哪条最快"：release 资产地址固定、会被缓存，
+缓存命中的旧清单一定更快——按速度选就会系统性地选到旧版本（用户 2026-10-16
+报的「线上是 101 却报已是最新」）。桌面端（测速排名）与本模块的在线兜底
+（顺序试探）都走这一个选择规则，别各写一份。
+
+#### `read_local_version(directory=None) -> int`
+
+本机**当前生效**权重的版本号；无权重/无法确定一律 ``0``。
+
+⚠️ 不是"sidecar 里写的数字"：sidecar 指的 ``bookcontent-v105.pt`` 被用户删了
+之后，真正在跑的是本地次新的 v103（或兜底 ``bookcontent.pt``），对外仍报 105
+就会让"检查更新"误判成"已是最新"。所以取 :func:`effective_info` 的口径。
+
+#### `record_local_version(info: dict, directory=None) -> None`
+
+原子写 sidecar（临时文件 + ``os.replace``），记录**刚安装并生效**的版本。
+
+这是"切换生效文件"的唯一动作：下载完新权重只要改写这一份，程序下次解析
+``resolve_weights`` 就会指向新文件（旧文件留在目录里，可回退）。
 
 ⚠️ 用 :func:`replace_with_retry`：Windows 上目标文件被别的句柄打开时
 ``os.replace`` 会直接 ``PermissionError``（YOLO 常驻服务可能正读着权重）。
 
 #### `has_update(remote_version, local_version=None) -> bool`
 
-远端版本是否比本机**已安装**版本新（整数比大小）。
+远端版本是否比本机**已生效**版本新（整数比大小）。
 
 ``local_version`` 省略时读 :func:`read_local_version`。任一侧取不到合法
 整数都返回 ``False``——不可比时不说"有新版"。
+
+#### `fetch_latest_info(timeout: float=MANIFEST_TIMEOUT) -> dict`
+
+顺序试探四条线路取 ``data.json``，返回**版本最高**的那份清单::
+
+    {"info": {name, version, sha256, size, date},
+     "asset_name": name, "download_url": …, "mirror_prefix": …,
+     "mirror_label": …}
+
+四条全败 / 清单里没有合法 bookcontent 记录 ⇒ :class:`WeightsDownloadError`
+（``kind`` = ``network`` / ``bad_json``）。
+
+⚠️ 与桌面端 ``data_package_worker.fetch_data_json`` 的区别只是**transport**：
+那边并发测速挑线路（要给用户看"走的哪条多快"），这边顺序试探、够用就走
+（只在本机一份权重都没有时兜底）；"选版本最高的清单"两边共用
+:func:`pick_latest`。
+
+#### `download_weights(info: dict, mirror_prefix: str='', directory=None, on_progress=None, timeout: float=WEIGHTS_TIMEOUT) -> Path`
+
+把 release 里的权重下到权重目录，**保留发布名**，校验通过才写 sidecar。
+
+流程：下到 ``<name>.part`` → 改名成发布名（``bookcontent-v105.pt``）→ 校验
+sha256（不符就删掉、报错、**不切换**）→ 写 sidecar（= 启用这一份）。
+
+⚠️ 传输期一律用 ``*.part``：半截权重绝不能以最终名出现（YOLO 服务/检测进程
+可能读到），这也是 :mod:`utils.download` 的硬约定。
+
+#### `ensure_weights_online(directory=None, on_progress=None) -> Path`
+
+确保本地有可用权重：有就返回它，**一份都没有**才联网下载最新。
+
+给 CLI / 常驻服务的加载路径当兜底（桌面端有自己的检查/下载流程）。失败抛
+:class:`WeightsDownloadError`（断网、清单坏、sha 不符），调用方应包成
+"本机缺权重且下载失败"的人话再抛给用户。
 
 ---
 
@@ -2578,10 +2739,12 @@ YOLO 检测封装：模型加载与页面内容框检测。
 
 1. **模型加载** (`load_yolo_model`)
    延迟加载 + 模块级单例 + 双重检查锁，确保多线程下模型只加载一次。
-   权重文件查找路径: `gujitools/static/weights/bookcontent.pt`。
+   权重文件：`static/weights/` 下由 `utils.data_package.resolve_weights` 选出的
+   **生效那一份**（目录里可同时存在 `bookcontent.pt` 与多个
+   `bookcontent-v<版本>.pt`，只有一份生效；一份都没有时自动联网下载最新）。
 
 2. **页面内容框检测** (`detect_content_boxes`)
-   权重 `static/weights/bookcontent.pt` 是**两类**模型，两类对一页而言互斥：
+   生效权重是**两类**模型，两类对一页而言互斥：
 
    - ``harfcontent``（半幅，即原 `bookcontent` 改名）——双栏排版中的**一栏**。
      双页扫描时一页出左右两栏，故按检测框水平中心与图像中线的关系分为
@@ -2633,7 +2796,7 @@ YOLO 检测封装：模型加载与页面内容框检测。
 
 | 函数 | 说明 |
 | --- | --- |
-| `model_path() -> Path` | YOLO 权重文件路径（候选表只保留这一份）。 |
+| `model_path() -> Path` | **当前生效**的 YOLO 权重路径（解析规则只此一处）。 |
 | `is_model_loaded() -> bool` | 本进程是否已加载过 YOLO（常驻服务用它对外汇报，便于确认复用）。 |
 | `load_seconds_used() -> float` | 本进程**实际执行**加载模型时花掉的秒数；没加载过则为 0.0。 |
 | `load_yolo_model() -> object` | 延迟加载 YOLO 模型并返回单例实例。 |
@@ -2642,17 +2805,22 @@ YOLO 检测封装：模型加载与页面内容框检测。
 
 #### `model_path() -> Path`
 
-YOLO 权重文件路径（候选表只保留这一份）。
+**当前生效**的 YOLO 权重路径（解析规则只此一处）。
 
 权重路径同时被三处用到——真正加载模型、给用户打印、以及常驻 YOLO 服务的
 身份指纹（见 `functions/yolo_service.py`）。三处各写一遍候选列表迟早会
 漂移，所以统一收在这里。
 
+⚠️ 权重目录里可能同时躺着 ``bookcontent.pt`` 与 ``bookcontent-v105.pt``：
+到底是哪一份由 ``utils/data_package.resolve_weights`` 按 sidecar 判定
+（用户 2026-10-22：多个 pt 只有一个生效），这里**不写死文件名**。
+
 返回:
-    `gujitools/static/weights/bookcontent.pt` 的绝对路径。
+    生效权重文件的绝对路径（绝对路径形态见 ``utils.data_package``）。
 
 异常:
-    FileNotFoundError: 权重文件不存在（打包遗漏或安装损坏）。
+    FileNotFoundError: 权重目录里一份可用权重都没有（安装损坏 / 用户清空了
+        目录）。此时调用方（:func:`load_yolo_model`）会尝试联网补齐。
 
 #### `load_seconds_used() -> float`
 
@@ -2676,7 +2844,8 @@ YOLO 权重文件路径（候选表只保留这一份）。
     ultralytics.YOLO 实例（CPU 模式）。
 
 异常:
-    FileNotFoundError: 未找到 static/weights/bookcontent.pt。
+    FileNotFoundError: 权重目录里一份权重都没有，**且**联网补齐也失败
+        （见 :func:`_resolve_or_fetch_weights`）。
 
 #### `resolve_content_boxes(raw_boxes, img_w: float, harf_id: int, full_id: int) -> Tuple[List[tuple], List[tuple], List[tuple], Tuple[str, ...]]`
 

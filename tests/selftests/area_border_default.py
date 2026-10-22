@@ -52,55 +52,39 @@ def run(ctx) -> None:
        effective_page_margin_default("30") == [0.0, 0.0, 0.0, 0.0],
        str(effective_page_margin_default("30")))
 
-    # ---- 4. 面板：切 area 会刷新 border 默认值 ----
+    # ---- 4. 参数归属（2026-10-22 大改造）-------------------------------
+    # 用户口径：
+    #   · 「去底色步骤的 area 和 border 参数去除，直接整个图片去底色」；
+    #   · 「检测文本框，增加 area 参数……图片按照 area 切割处理」。
+    # 所以：rembg 的命令规格里不许再有 area/border，detect 必须有 area。
+    from core.command_spec import COMMAND_SPECS, CROP_AREAS
+
+    rembg_defaults = COMMAND_SPECS["rembg"].defaults
+    ok("rembg 命令规格里没有 area/border",
+       not ({"area", "border"} & set(rembg_defaults)),
+       str(sorted(rembg_defaults)))
+    ok("detect 命令规格里保留 area（默认 1，后端逻辑不删）",
+       COMMAND_SPECS["detect"].defaults.get("area") == 1,
+       str(sorted(COMMAND_SPECS["detect"].defaults)))
+    ok("detect 的 area 取值受 CROP_AREAS 约束（1~4）",
+       CROP_AREAS == (1, 2, 3, 4), str(CROP_AREAS))
+
+    # 桌面端：第二步面板有 area、第三步面板没有 area/border
+    from desktop.components.panels.detect_panel import DetectPanel
     from desktop.components.panels.rembg_panel import RembgPanel
 
-    panel = RembgPanel()
+    detect_panel = DetectPanel()
+    rembg_panel = RembgPanel()
     try:
-        ok("默认（area=1）表单里 border 显示 0",
-           panel.border.text().strip() == "0",
-           f"{panel.border.text()!r}")
-        ok("默认参数导出带 border=0",
-           panel.get_args().get("border") == "0",
-           str(panel.get_args().get("border")))
-
-        def _set_area(value: int) -> None:
-            idx = panel.area.findData(value)
-            panel.area.setCurrentIndex(idx)
-
-        # 切到 area=4（整页）→ border 清空（= None）
-        _set_area(4)
-        ok("切到 area=4 后 border 清空（不设 border）",
-           panel.border.text().strip() == "",
-           f"{panel.border.text()!r}")
-        ok("area=4 导出不带 border 键",
-           "border" not in panel.get_args(), str(panel.get_args()))
-        # 切回 area=2 → 恢复 0
-        _set_area(2)
-        ok("切到 area=2 后 border 回到 0",
-           panel.border.text().strip() == "0", f"{panel.border.text()!r}")
-        ok("area=2 导出 border=0",
-           panel.get_args().get("border") == "0")
-
-        # 用户手填过 → area 变化不再覆盖
-        panel.border.setText("30")
-        panel.border.textEdited.emit("30")
-        _set_area(3)
-        ok("用户手填 border 后，切 area 不覆盖其输入",
-           panel.border.text().strip() == "30", f"{panel.border.text()!r}")
-        ok("手填值照样导出",
-           panel.get_args().get("border") == "30")
-
-        # 回填空 border → 按 area 补默认；回填非默认值 → 视为用户手填
-        panel.apply_args({"area": 2, "border": None})
-        ok("回填空 border 时按 area 补默认 0",
-           panel.border.text().strip() == "0", f"{panel.border.text()!r}")
-        panel.apply_args({"area": 2, "border": "30"})
-        ok("回填的显式 border 原样保留",
-           panel.border.text().strip() == "30", f"{panel.border.text()!r}")
-        # 恢复默认 → 回到 area=1 的 0
-        panel.reset_to_default()
-        ok("恢复默认后 border 回到 area=1 的默认 0",
-           panel.border.text().strip() == "0", f"{panel.border.text()!r}")
+        # ⚠️ 2026-10-22 第二轮：界面上不再有 area 控件（默认值在后端常量）。
+        ok("detect 面板没有 area 控件、get_args 为空",
+           not hasattr(detect_panel, "area") and detect_panel.get_args() == {},
+           str(detect_panel.get_args()))
+        ok("rembg 面板不再有 area / border",
+           not hasattr(rembg_panel, "area") and not hasattr(rembg_panel, "border"))
+        ok("rembg 的 get_args 不含 area/border",
+           not ({"area", "border"} & set(rembg_panel.get_args())),
+           str(sorted(rembg_panel.get_args())))
     finally:
-        panel.deleteLater()
+        detect_panel.deleteLater()
+        rembg_panel.deleteLater()

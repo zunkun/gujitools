@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, Callable, cast
 
 from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer
 
-from core.command_spec import WHOLE_PAGE_AREA
+from core.command_spec import DETECT_DEFAULT_AREA, WHOLE_PAGE_AREA
 from desktop.services import detect_reuse
 from desktop.services.print_plan import (
     missing_extract_pages_spec, ordered_page_record,
@@ -88,7 +88,7 @@ class StageRunnerMixin:
         _build_print_effects: Callable[..., Any]
         _imposition_switch_state: Callable[[], tuple]
         _latest_print_pdf_path: Callable[[], Path | None]
-        _rembg_submit_version_state: Callable[[], str]
+        _submit_version_state: Callable[[str], str]
         imposition_effective: Callable[[], bool]
         imposition_active: Callable[[], bool]
         # ⚠️ 返回值是 LazyPanelHost 或真面板（属性转发、鸭子类型），用 Any 承接
@@ -436,20 +436,11 @@ class StageRunnerMixin:
             self._compose_imposition_now()
             entries, doc = self._print_entries()
             entries = [e for e in entries if Path(e["file"]).exists()]
-            rembg_panel = self.panel_host_of_step("rembg")
-            try:
-                # ⚠️ 流程里没有「图片去底色」这一格时没有面板可读——那就不做
-                #    border 级联（``upstream_border`` 留 None），而不是去借
-                #    任意一个面板的 border 填进来（界面说 A、执行做 B）。
-                rargs = rembg_panel.get_args() if rembg_panel else {}
-            except ValueError as exc:
-                self._toast("error", "去底色参数错误", str(exc))
-                return
-            border = rargs.get("border")
             effects = self._build_print_effects(entries)
-            # 第三步 border 级联第四步默认边距：把上游 border 透传给 print，
-            # 让其「通用边距默认」在 border 非 0 时回落为 0（避免双重留白）。
-            args["upstream_border"] = border
+            # ⚠️ 2026-10-22：去底色不再有 border，「上游 border 级联第四步默认
+            #    边距」这件事随之结束——第四步保持自己的默认边距（20mm）。
+            #    参数名保留（CLI 契约），恒为 None。
+            args["upstream_border"] = None
             if not effects:
                 # ⚠️ 提示要按**当前取图来源**给：启用拼版后列表为空，原因是
                 # 「还没拼版」，而不是「第三步没提交」——照旧文案会把人引去
@@ -584,15 +575,11 @@ class StageRunnerMixin:
             # 拿着旧指纹去写 boxes.json。
             self._detect_ctx = None
             if stage == "detect":
-                # 整页模式（area=4）：区域参数归第三步面板所有，detect 只是
-                # 借来判定「要不要加载 YOLO」，worker 侧据此整页跳过检测。
-                # ⚠️ 借的面板按**流程**找，不是 ``widget(2)``：自定义流程里
-                #    「图片去底色」可能压根不在图上，此时给默认 1（照常检测），
-                #    别把一个用户没填过的表单当参数传进 worker。
-                rembg_host = self.panel_host_of_step("rembg")
-                area = int(
-                    rembg_host.get_args().get("area", 1) if rembg_host else 1
-                )
+                # 区域模式（area）**界面上没有**（2026-10-22 第二轮）：
+                # 它只在「提交本次任务」时生效，桌面恒用后端默认值。
+                # worker 侧仍按 area 判断「整页模式要不要跳过检测」——
+                # 那条逻辑保留，只是眼下永远收到 1（照常检测）。
+                area = DETECT_DEFAULT_AREA
                 args["area"] = area
                 # ---- 复用上次结果：源文件没换、检测参数没变的页不再推理 ----
                 # 判据与分拣只此一份（见 desktop.services.detect_reuse）；读的是
@@ -1369,8 +1356,29 @@ class StageRunnerMixin:
             if detect_page is not None:
                 self._refresh_preview(detect_page)
         override_toast = None
-        if status == "success" and stage in ("rembg", "rembg_submit"):
-            version = self._rembg_submit_version_state()
+        if status == "success" and stage in ("detect", "detect_submit"):
+            version = self._submit_version_state("detect")
+            if stage == "detect":
+                # 只检测完 = **这一步还没完成**（2026-10-22：提交才算完成），
+                # 提示用户去提交，别让人以为可以直接进下一步。
+                if version == "new_version":
+                    override_toast = (
+                        "info",
+                        "检测完成",
+                        "请核对检测框；确认后点「提交本次任务」按区域模式裁好图，"
+                        "下一步才能用",
+                    )
+            else:  # detect_submit
+                # 裁好的图刚落地 → 下一步（去底色）的输入变了，刷一次第四步无关，
+                # 但要把「已提交」说清楚（这是这一步的完成标志）。
+                if version == "up_to_date":
+                    override_toast = (
+                        "success",
+                        "提交完成",
+                        "图片已按区域模式裁好，可前往下一步「图片去底色」",
+                    )
+        elif status == "success" and stage in ("rembg", "rembg_submit"):
+            version = self._submit_version_state("rembg")
             if stage == "rembg":
                 # 新预览图已落盘：若与最近一次提交不一致，提示有新版本待提交
                 if version == "new_version":

@@ -1,17 +1,22 @@
 # -*- coding: utf-8 -*-
-"""去底色数据包（``bookcontent.pt``）的**网络** worker：查版本 + 下载替换。
+"""去底色数据包（``bookcontent*.pt``）的**网络** worker：查版本 + 下载并切换生效。
 
 与「检查更新」（``update_worker``）同族、同样走"直连 + 三个 gh-proxy 镜像并发
 测速"，但**对象不同**：那边查的是程序自身的 GitHub Release，这边查的是**权重
 仓库**（``zunkun/gujitrain``）``database`` release 里的 ``data.json``，并且要
 **把权重文件真的下下来**（用户口径 2026-10-16：不要让用户自己去 GitHub 下载）。
 
+⚠️ 落地口径（用户 2026-10-22）：下载下来的文件**保留发布名**
+（``bookcontent-v105.pt``），**不改名**成 ``bookcontent.pt``；"哪一份生效"由
+``bookcontent.version.json`` 的 ``name`` 决定（见 ``utils/data_package.py``）。
+目录里因此会同时存在多份权重，只用一份。
+
 ⚠️ 两处**不照抄** ``update_worker``（用户 2026-10-16 报「数据包检查不对，线上是
 101」，本机 v100、远端已发 v101 却报"已是最新"）：
 
 1. **不按"最快"选线路，按"清单里的 version 最大"选**——release 资产地址是固定的，
-   缓存命中的旧清单**一定更快**，按速度选就会系统性地选到旧版本（见
-   :func:`fetch_data_json`）；
+   缓存命中的旧清单**一定更快**，按速度选就会系统性地选到旧版本（选择规则 =
+   ``utils.data_package.pick_latest``，与在线兜底共用）；
 2. **请求一律挂 :func:`_cache_bust` 的唯一参数**，把缓存副本作废、逼各路回源。
 
 ⚠️ **不能直接复用** ``update_worker.probe_mirrors``：它的 ``_fetch_one`` 校验
@@ -32,7 +37,6 @@
 
 from __future__ import annotations
 
-import itertools
 import json
 import time
 import urllib.error
@@ -42,18 +46,18 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal, Slot
 
-from desktop.workers.update_worker import (
-    MIRROR_PREFIXES,
-    TIMEOUT_SECONDS,
-    build_url,
-    mirror_label,
-)
+from desktop.workers.update_worker import TIMEOUT_SECONDS
 from utils.data_package import (
+    MIRROR_PREFIXES,
     asset_url,
+    build_url,
+    cache_bust as _cache_bust,
     data_json_url,
-    local_weights_path,
-    parse_data_json,
+    mirror_label,
+    pick_latest,
     record_local_version,
+    sha256_of,
+    weights_dir,
 )
 from utils.download import DownloadCancelled, stream_to_file
 from utils.file_utils import replace_with_retry
@@ -82,27 +86,8 @@ _HEADERS = {
     "Accept": "application/json",
 }
 
-#: 防缓存参数里的**进程内自增序号**（见 :func:`_cache_bust`）。
-_CACHE_BUST_SEQ = itertools.count(1)
-
-
-def _cache_bust(url: str) -> str:
-    """给 URL 挂一个**本次调用唯一**的查询串，绕开 CDN/镜像对固定 URL 的缓存。
-
-    ``data.json`` 与权重资产都是 GitHub Release 的**固定下载地址**，而 release
-    资产会被"同名覆盖"（``data.json`` 每次发布都重写、文件名却不变）。这类地址
-    实测确实被缓存：三个 gh-proxy 是 ``Cache-Control: public, max-age=60``，直连
-    回包的 ``Age`` 有 300s+。
-
-    ⚠️ 危害不止"看到旧内容"：**缓存命中的那条线路一定更快**，而
-    :func:`probe_mirrors` 是"选最快那条"，于是系统性地选中**旧清单**——用户
-    2026-10-16 报的「数据包检查不对，线上是 101」（本机 v100、远端已发 v101，
-    检查却报"已是最新"）正是这个成因。每次换一个新缓存键即可让各线路回源。
-    """
-    sep = "&" if "?" in url else "?"
-    # ⚠️ 只靠 ``time.time_ns()`` 在 Windows 上**不保证唯一**（``time.time`` 的时钟
-    # 粒度约 15.6ms，紧挨着的两次调用会撞出同一个值）⇒ 再叠一个进程内的自增序号。
-    return f"{url}{sep}t={time.time_ns()}-{next(_CACHE_BUST_SEQ)}"
+#: 防缓存参数：实现与理由在 ``utils.data_package.cache_bust``（与在线兜底共用一份），
+#: 这里以 ``_cache_bust`` 的名字沿用（自测直接调 ``dw._cache_bust``）。
 
 
 class DataCheckError(Exception):
@@ -217,21 +202,17 @@ def fetch_data_json(url: str | None = None,
     if not usable:
         raise DataCheckError(_failure_kind(ranking))
     # 逐条解析，**取 version 最大的那条**；并列时保留排名在前（更快）的那条。
-    best: dict | None = None
-    info: dict | None = None
-    for item in usable:
-        parsed = parse_data_json(item["payload"])
-        if parsed is None or not parsed["name"]:
-            continue
-        if info is None or parsed["version"] > info["version"]:
-            best, info = item, parsed
-    if best is None or info is None:
+    # 选择规则与在线兜底共用 ``utils.data_package.pick_latest``（唯一实现）。
+    picked = pick_latest([(item["prefix"], item["payload"]) for item in usable])
+    if picked is None:
         raise DataCheckError("bad_json")
+    prefix, info = picked
+    best = next((item for item in usable if item["prefix"] == prefix), usable[0])
     return {
         "info": info,
         "asset_name": info["name"],
-        "download_url": build_url(best["prefix"], asset_url(info["name"])),
-        "mirror_prefix": best["prefix"],
+        "download_url": build_url(prefix, asset_url(info["name"])),
+        "mirror_prefix": prefix,
         "mirror_label": best["label"],
         "seconds": best.get("seconds"),
         "ranking": [
@@ -272,31 +253,34 @@ class DataCheckWorker(QObject):
 DATA_PACKAGE_STAGES = {
     "verify": "正在校验文件完整性…",
     "release": "正在释放模型占用…",
-    "replace": "正在替换模型文件…",
+    "replace": "正在启用新模型文件…",
     "reload": "正在重新加载模型…",
 }
 
 
 class DataDownloadWorker(QObject):
-    """子线程里把权重下载到本地，**校验通过后**再按三步替换（用户 2026-10-16）。
+    """子线程里把权重下载到本地，**校验通过后**才切换生效文件（用户 2026-10-16 / 10-22）。
 
     严格顺序：
 
-    1. **下载**权重到 ``<权重目录>/bookcontent-v100.pt``（传输期用 ``*.part``，
-       下完才改成版本名）；中途失败/取消**不留半截文件**；
-    2. **校验 sha256**：与 ``data.json`` 不符就删掉、报错——**不替换**；
+    1. **下载**权重到 ``<权重目录>/bookcontent-v105.pt``（传输期用 ``*.part``，
+       下完才改成发布名）；中途失败/取消**不留半截文件**。⚠️ 本地已有同名同 sha
+       的文件就**不重复下载**（见 :func:`_existing_file`）；
+    2. **校验 sha256**：与 ``data.json`` 不符就删掉、报错——**不切换**；
     3. **释放占用**（``_release_model``：关掉常驻 YOLO 服务，卸载内存里的模型、
        松开权重的文件句柄）；
-    4. **更名**：``bookcontent-v100.pt`` → ``bookcontent.pt``（同目录
-       :func:`replace_with_retry`，Windows 上会短暂重试抢占用）；
-    5. **重新加载**（``_reload_model``：把常驻服务重新热起来，内存引用指向新权重）；
-    6. 写版本 sidecar（``record_local_version``）。
+    4. **切换生效文件**：只改写 sidecar ``bookcontent.version.json``
+       （``record_local_version``）指向新文件——**不再把新文件改名成
+       ``bookcontent.pt``**（用户 2026-10-22：目录里可以留多个 pt，只有一个生效，
+       旧版原地留着可回退）；
+    5. **重新加载**（``_reload_model``：把常驻服务重新热起来，内存引用指向新权重）。
 
     信号：
 
     * ``progress(int)``：0~100 的百分比；**-1** 表示总量未知（无 Content-Length）；
     * ``stage(str)``：下载之后的阶段码（见 :data:`DATA_PACKAGE_STAGES`）；
-    * ``finished(dict)``：``{path, version, sha256, size}``；
+    * ``finished(dict)``：``{path, version, sha256, size}``（``path`` 是**发布名**
+      文件的绝对路径，不是 ``bookcontent.pt``）；
     * ``failed(str)``：分类串（``network`` / ``cancelled`` / ``http:<code>`` 等）。
 
     ⚠️ 先写 ``*.part`` 再改名：下载途中文件不能以最终名存在（否则 YOLO 服务/
@@ -313,7 +297,8 @@ class DataDownloadWorker(QObject):
         super().__init__()
         self.url = url
         self.info = dict(info or {})
-        self.dest = Path(dest) if dest is not None else local_weights_path()
+        #: 目标**权重目录**（不是目标文件）：具体文件名取 ``info["name"]``。
+        self.dest = Path(dest) if dest is not None else weights_dir()
         self._cancelled = False
 
     def cancel(self) -> None:
@@ -355,44 +340,52 @@ class DataDownloadWorker(QObject):
 
     def _download(self) -> dict:
         """真正干活（顺序见类 docstring）。"""
-        target = self.dest
-        weights = target.parent
+        weights = self.dest
         weights.mkdir(parents=True, exist_ok=True)
-        # 下到**版本名**（用户口径：bookcontent-v100.pt 下好、校验通过再更名）。
-        asset_name = str(self.info.get("name") or "").strip() or target.name
-        downloaded = weights / asset_name
-        temp = downloaded.with_name(downloaded.name + ".part")
-
-        actual, written = self._transfer(temp)
-        replace_with_retry(temp, downloaded)     # .part → 版本名文件
-
-        # ---- 校验：不符就删掉，绝不替换 ----
-        self.stage.emit("verify")
+        # 落地用**发布名**（``bookcontent-v105.pt``）：用户口径是"下到本地还是叫
+        # 这个名字"，由 sidecar 决定哪一份生效，不再改名成 bookcontent.pt。
+        asset_name = Path(str(self.info.get("name") or "").strip()).name
+        if not asset_name:
+            version = int(self.info.get("version") or 0)
+            asset_name = f"bookcontent-v{version}.pt" if version else "bookcontent.pt"
+        target = weights / asset_name
+        temp = target.with_name(target.name + ".part")
         expected = str(self.info.get("sha256") or "").lower()
+
+        # 本地已有**同一份**（同名同 sha）：不重复下载，直接走"切换生效"。
+        # ⚠️ 这不只是省流量：目标文件可能正被常驻服务打开，Windows 上往它身上
+        # ``os.replace`` 会 PermissionError（而这一步在"释放占用"之前）。
+        actual, written = _existing_file(target, expected)
+        if not actual:
+            actual, written = self._transfer(temp)
+            replace_with_retry(temp, target)     # .part → 发布名文件
+
+        # ---- 校验：不符就删掉，绝不启用 ----
+        self.stage.emit("verify")
         if expected and actual != expected:
-            _unlink_quiet(downloaded)
+            _unlink_quiet(target)
             raise ValueError("sha256-mismatch")
 
-        # ---- 1) 释放内存/句柄占用 → 2) 更名 → 3) 重新加载 ----
+        # ---- 1) 释放内存/句柄占用 → 2) 切换生效文件 → 3) 重新加载 ----
         self.stage.emit("release")
         _release_model()
         self.stage.emit("replace")
-        # ⚠️ 更名失败（仍被占用）时**保留**下好的版本名文件，别把新权重删了。
-        replace_with_retry(downloaded, target)
+        # 切换 = 改写 sidecar 的 name（旧文件留在目录里，可回退）。
+        record_local_version({**self.info, "name": asset_name}, weights)
         self.stage.emit("reload")
         _reload_model()
 
-        record_local_version(self.info)
         return {"path": str(target), "version": int(self.info.get("version") or 0),
-                "sha256": actual, "size": written}
+                "sha256": actual, "size": written, "asset_name": asset_name}
 
 
 def _release_model() -> bool:
-    """替换权重前**释放内存/文件句柄占用**：关掉常驻 YOLO 服务。
+    """切换生效权重前**释放内存/文件句柄占用**：关掉常驻 YOLO 服务。
 
-    常驻服务把模型（约 350MB）与权重文件句柄都握在手里——不先关掉，``os.replace``
-    大概率 ``PermissionError``（Windows 上目标被别的句柄打开就拒绝替换）。这里
-    关服务并**等它真的退出**（轮询发现文件消失），再让调用方去更名。
+    常驻服务把模型（约 350MB）与权重文件句柄都握在手里——不先关掉，重新加载时
+    服务会按**旧指纹**（旧权重路径 + 大小/mtime）继续用旧模型，用户看到的就是
+    "下载了新版本、检测还是老结果"。这里关服务并**等它真的退出**（轮询发现
+    发现文件消失），再让调用方去切换 sidecar。
 
     返回是否真的关掉了一个在跑的服务（没有服务时 ``False``，属正常）。
 
@@ -434,6 +427,24 @@ def _reload_model() -> bool:
         return backend == "service"
     except Exception:  # noqa: BLE001 - 重载失败只影响"下次检测要现载"，不算错误
         return False
+
+
+def _existing_file(path: Path, expected: str) -> tuple[str, int]:
+    """``path`` 已存在且 sha256 与 ``expected`` 一致 ⇒ 返回 ``(sha, 字节数)``，否则 ``("", 0)``。
+
+    用于"重下同一版本"（比如 sidecar 回退后又换回来）：本地已有**完全一样**的
+    文件就不再下一遍。⚠️ 这不只是省流量：目标文件可能正被常驻服务打开，Windows
+    上往它身上 ``os.replace`` 会 ``PermissionError``，而下载落地发生在"释放占用"
+    之前（见 :meth:`DataDownloadWorker._download`）。
+    """
+    if not expected:
+        return "", 0
+    try:
+        if not path.is_file() or sha256_of(path) != expected:
+            return "", 0
+        return expected, path.stat().st_size
+    except OSError:
+        return "", 0
 
 
 def _unlink_quiet(path: Path) -> None:

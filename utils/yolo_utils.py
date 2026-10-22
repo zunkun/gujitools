@@ -4,10 +4,12 @@
 
 1. **模型加载** (`load_yolo_model`)
    延迟加载 + 模块级单例 + 双重检查锁，确保多线程下模型只加载一次。
-   权重文件查找路径: `gujitools/static/weights/bookcontent.pt`。
+   权重文件：`static/weights/` 下由 `utils.data_package.resolve_weights` 选出的
+   **生效那一份**（目录里可同时存在 `bookcontent.pt` 与多个
+   `bookcontent-v<版本>.pt`，只有一份生效；一份都没有时自动联网下载最新）。
 
 2. **页面内容框检测** (`detect_content_boxes`)
-   权重 `static/weights/bookcontent.pt` 是**两类**模型，两类对一页而言互斥：
+   生效权重是**两类**模型，两类对一页而言互斥：
 
    - ``harfcontent``（半幅，即原 `bookcontent` 改名）——双栏排版中的**一栏**。
      双页扫描时一页出左右两栏，故按检测框水平中心与图像中线的关系分为
@@ -150,37 +152,94 @@ _YOLO_DEVICE = "cpu"
 
 
 def model_path() -> Path:
-    """YOLO 权重文件路径（候选表只保留这一份）。
+    """**当前生效**的 YOLO 权重路径（解析规则只此一处）。
 
     权重路径同时被三处用到——真正加载模型、给用户打印、以及常驻 YOLO 服务的
     身份指纹（见 `functions/yolo_service.py`）。三处各写一遍候选列表迟早会
     漂移，所以统一收在这里。
 
+    ⚠️ 权重目录里可能同时躺着 ``bookcontent.pt`` 与 ``bookcontent-v105.pt``：
+    到底是哪一份由 ``utils/data_package.resolve_weights`` 按 sidecar 判定
+    （用户 2026-10-22：多个 pt 只有一个生效），这里**不写死文件名**。
+
     返回:
-        `gujitools/static/weights/bookcontent.pt` 的绝对路径。
+        生效权重文件的绝对路径（绝对路径形态见 ``utils.data_package``）。
 
     异常:
-        FileNotFoundError: 权重文件不存在（打包遗漏或安装损坏）。
+        FileNotFoundError: 权重目录里一份可用权重都没有（安装损坏 / 用户清空了
+            目录）。此时调用方（:func:`load_yolo_model`）会尝试联网补齐。
     """
-    # ⚠️ 路径口径**不在这里**：权重目录/文件名由 ``utils.data_package`` 统一
-    #    定义（那份 sidecar 的版本记录也放在同一个目录旁，两处各写一份
+    # ⚠️ 路径口径**不在这里**：权重目录/文件名/生效判定由 ``utils.data_package``
+    #    统一负责（那份 sidecar 的版本记录也放在同一个目录旁，两处各写一份
     #    ``static/weights`` 迟早漂移）。
-    from utils.data_package import LOCAL_WEIGHTS_NAME, weights_dir
+    from utils.data_package import LOCAL_WEIGHTS_NAME, resolve_weights, weights_dir
 
-    candidate = weights_dir() / LOCAL_WEIGHTS_NAME
-    if not candidate.exists():
+    resolved = resolve_weights()
+    if resolved is None:
         raise FileNotFoundError(
-            "未找到 YOLO 模型权重文件 bookcontent.pt。\n"
-            "请将 bookcontent.pt 放置在以下位置：\n"
-            f"  - {candidate}"
+            "未找到可用的 YOLO 模型权重：权重目录里既没有 bookcontent.pt，\n"
+            "也没有任何 bookcontent-v<版本>.pt。\n"
+            f"  权重目录：{weights_dir()}\n"
+            f"（生效文件由 {weights_dir() / 'bookcontent.version.json'} 的 name 指定；"
+            f"该文件缺失时回退 {LOCAL_WEIGHTS_NAME}。）"
         )
-    return candidate
+    return resolved
+
+
+#: 上次打印的下载进度档位（25% 一档）；只用于命令行刷进度，避免每 64KB 刷一行。
+_LAST_DOWNLOAD_BUCKET = -1
+
+
+def _print_download_progress(written: int, total: int) -> None:
+    """把权重下载进度按 25% 一档打到 stdout。
+
+    ⚠️ 只在串行路径（CLI / 常驻服务加载）用：这段输出落到终端或服务日志里，
+    让用户看到"在下，不是卡死"。桌面端有自己的进度窗，不走这里。
+    """
+    global _LAST_DOWNLOAD_BUCKET
+    if not total:
+        return
+    bucket = min(4, int(written * 4 / total))
+    if bucket != _LAST_DOWNLOAD_BUCKET:
+        _LAST_DOWNLOAD_BUCKET = bucket
+        print(f"  权重下载进度 {bucket * 25}%")
+
+
+def _resolve_or_fetch_weights() -> Path:
+    """解析生效权重；**一份都没有**时联网下载最新（用户 2026-10-22 的最后一级退路）。
+
+    ⚠️ 只在本机缺权重时才打网络：正常情况下 :func:`model_path` 是纯本地判断，
+    绝不会因为"也许有新版本"去连网。
+    ⚠️ ``GUJI_NO_WEIGHTS_DOWNLOAD=1`` 可关掉这条退路（离线环境/自测），此时保持
+    原来的 FileNotFoundError 语义。
+    """
+    try:
+        return model_path()
+    except FileNotFoundError:
+        if os.environ.get("GUJI_NO_WEIGHTS_DOWNLOAD"):
+            raise
+
+    from utils.data_package import WeightsDownloadError, ensure_weights_online
+
+    global _LAST_DOWNLOAD_BUCKET
+    _LAST_DOWNLOAD_BUCKET = -1
+    print("未找到本地模型权重，正在从数据包仓库下载最新权重…")
+    try:
+        path = ensure_weights_online(on_progress=_print_download_progress)
+    except (WeightsDownloadError, OSError) as exc:
+        raise FileNotFoundError(
+            "未找到本地 YOLO 模型权重，且联网下载失败"
+            f"（{exc}）。\n"
+            "请检查网络后重试；桌面端也可从菜单「帮助 → 检查数据包」手动更新，"
+            "或直接把 bookcontent.pt 放进权重目录。"
+        ) from exc
+    print(f"权重已就绪: {path}")
+    return path
 
 
 def is_model_loaded() -> bool:
     """本进程是否已加载过 YOLO（常驻服务用它对外汇报，便于确认复用）。"""
     return _YOLO_MODEL is not None
-
 
 def load_seconds_used() -> float:
     """本进程**实际执行**加载模型时花掉的秒数；没加载过则为 0.0。
@@ -229,7 +288,8 @@ def load_yolo_model() -> object:
         ultralytics.YOLO 实例（CPU 模式）。
 
     异常:
-        FileNotFoundError: 未找到 static/weights/bookcontent.pt。
+        FileNotFoundError: 权重目录里一份权重都没有，**且**联网补齐也失败
+            （见 :func:`_resolve_or_fetch_weights`）。
     """
     global _YOLO_MODEL
     if _YOLO_MODEL is not None:
@@ -239,9 +299,9 @@ def load_yolo_model() -> object:
         if _YOLO_MODEL is not None:
             return _YOLO_MODEL
 
-        # 权重路径先解析（很快，不碰 torch），这样"正在加载"能**先**打出来——
-        # 用户在接下来那几秒里至少知道程序在干什么。
-        resolved = model_path()
+        # 权重路径先解析（很快，不碰 torch；本机缺权重时会联网补齐），这样"正在
+        # 加载"能**先**打出来——用户在接下来那几秒里至少知道程序在干什么。
+        resolved = _resolve_or_fetch_weights()
         print(f"正在加载 YOLO 模型: {resolved}")
 
         # ⚠️ 计时必须从 import 之前开始：真正花时间的是 `import torch`
@@ -306,7 +366,7 @@ def load_yolo_model() -> object:
         return _YOLO_MODEL
 
 
-#: 内容类别名。模型 `static/weights/bookcontent.pt` 的 `names` 就是这两个，
+#: 内容类别名。生效权重的 `names` 就是这两个，
 #: 但这里只用于**按名解析类别号**（见 :func:`_content_class_ids`），
 #: 不假设它们在 `names` 里的下标顺序。
 CONTENT_CLASS_HARF = "harfcontent"

@@ -28,13 +28,24 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal, Slot
 
-from desktop.utils.files import THUMBNAIL_EDGE, copy_file_atomic
+from desktop.utils.files import (
+    THUMBNAIL_EDGE, copy_file_atomic, set_producing_marker,
+    task_extract_pages_dir,
+)
 from utils.file_utils import write_bytes_atomic
-from desktop.workers.render_lock import single_flight
 
 #: 首批渲染的页数（约一屏可见量）：进详情页后马上要看的就是这几张，
 #: 必须"立刻"出来，不能排在整本 320 页后面。
 FIRST_SCREEN_PAGES = 16
+
+#: 导入时**最多**预渲染多少页缩略图（= 首屏 + 一屏余量）。
+#:
+#: ⚠️ 为什么不再整本预渲染（2026-10-21，用户：「我就是想提取图片」）：
+#: 一本 2000 页的书，整本预渲染即使有 JPX 快速通道也要几分钟后台 CPU，
+#: 而用户多半只看开头几十页、然后直接点「执行提取」。现在只把首屏备好，
+#: 剩下的**滚到可见窗口时按需补**（`PdfViewerWidget._fill_window`，单页
+#: ~170ms），导入立刻结束、CPU 不再和提取抢核。
+PREFETCH_PAGES = 24
 
 #: 首批之后每批页数 + 批间空隙（让 GUI 把这一批的图标画完、把点击处理掉）
 BATCH_PAGES = 8
@@ -50,6 +61,8 @@ GIL_YIELD_MAX_MS = 60
 #: 正常一页 256px JPEG 有几千字节到几十 KB，几百字节的必然是写坏/截断的。
 #: 加这条下界让历史遗留的坏缓存能自愈（新写入已改为原子写，不会再产生）。
 MIN_THUMB_BYTES = 512
+
+
 
 #: **全部页渲完之后**才短暂等一等副本：让常见的快盘场景（0.7s 复制完）
 #: 在"导入完成"提示之前真正落地。等不到也不阻塞——复制线程是 daemon，
@@ -105,6 +118,10 @@ class SourceThumbnailsWorker(QObject):
         #: 排障与复现脚本靠它证明"缩略图先跑、副本落地后接管"。
         self.document_kind = "source"
         self._document = None
+        #: **渲染用的路径**：起初是源文件，副本落地后换成副本（见
+        #: :meth:`_maybe_switch_to_copy`）。渲染在子进程里做，所以这里给的是
+        #: **路径**而不是文档对象。
+        self._render_path = self.pdf_path
         self._copy_thread: threading.Thread | None = None
 
     def cancel(self) -> None:
@@ -173,40 +190,45 @@ class SourceThumbnailsWorker(QObject):
                 #    mtime 更新 → 会被永久当成有效缓存且不自愈（见
                 #    utils/file_utils.write_bytes_atomic 的说明）。
                 write_bytes_atomic(self.out_dir / ".meta", str(self.edge).encode("utf-8"))
+                # 在场标记：告诉查看器"这个目录有人在填，别自己再渲一遍"
+                # （见 PRODUCING_MARKER 的说明）。失败不影响渲染。
+                self._mark_producing(True)
                 total = self._document.page_count
-                self.progress.emit(0, total)  # 开始渲染
+                # 只备首屏（见 PREFETCH_PAGES）：其余页滚到可见窗口时按需补
+                planned = min(total, PREFETCH_PAGES)
+                self.progress.emit(0, planned)  # 开始渲染
 
                 done = 0
                 cancelled = False
-                for index, batch in enumerate(self._batches(total)):
+
+                def on_page(page_number: int, _data=None) -> None:
+                    """单页**一落地**就报进度（不等整批）——查看器靠回扫捡新文件。"""
+                    nonlocal done, cancelled
+                    done += 1
+                    self.progress.emit(done, planned)
+                    if self._cancelled:
+                        cancelled = True
+
+                for index, batch in enumerate(self._batches(planned)):
                     if index:
                         # 批间空隙：让 GUI 把上一批的图标画完、把点击处理掉
                         time.sleep(BATCH_GAP_MS / 1000)
-                    for page_number in batch:
-                        if self._cancelled:
-                            cancelled = True
-                            break
-                        # 任务可能中途被删除，此时停止写盘，避免残留目录
-                        if not self.out_dir.parent.parent.is_dir():
-                            raise FileNotFoundError("任务目录已不存在，中止缩略图生成")
-                        spent = self._render_page(self._document, page_number)
-                        # 顺路换副本（非阻塞）：每页检查一次，副本一落地就用它
-                        self._maybe_switch_to_copy()
-                        if spent:
-                            # 让出量与刚花掉的耗时成比例（见模块文档）
-                            yield_ms = min(
-                                GIL_YIELD_MAX_MS,
-                                max(GIL_YIELD_MIN_MS, spent * GIL_YIELD_RATIO),
-                            )
-                            time.sleep(yield_ms / 1000)
-                        done += 1
-                        self.progress.emit(done, total)
+                    self._render_batch(batch, on_page)
                     if cancelled:
                         break
+                if planned < total and not cancelled:
+                    self.progress.emit(planned, planned)
+                    print(
+                        f"[缩略图] 已备好前 {planned} 页；其余 {total - planned} 页"
+                        "在浏览到可见窗口时按需生成（不再整本预渲染）"
+                    )
             finally:
                 if self._document is not None:
                     self._document.close()
                     self._document = None
+                # 无论正常结束/取消/异常，都要撤掉在场标记：留着会让查看器
+                # 一直以为"有人在填"（虽然回扫 6 轮后会自己接手，但那是兜底）
+                self._mark_producing(False)
             # ⚠️ 取消也是终态：必须发信号让串行队列的 thread.quit 真正执行。
             #    裸 return 时线程事件循环永不退出 → cancel_tag 的 wait 超时 →
             #    任务永远删不掉、队列 busy() 恒 True、后续导入全部堵死
@@ -234,12 +256,16 @@ class SourceThumbnailsWorker(QObject):
             return
         thread.join()  # 已结束，瞬间返回；收割线程并拿到结果
         self._copy_thread = None
-        new_document = self._open_copy()
-        if new_document is None:
+        # ⚠️ 真正决定后续页从哪渲的是 ``_render_path``（子进程按路径开文档）；
+        #    下面那个文档对象只用于"副本能不能打开"的探测，打不开就继续用源文件。
+        if self._copied and self.copy_to is not None:
+            probe = self._open_copy()
+            if probe is None:
+                return
+            probe.close()
+            self._render_path = Path(self.copy_to)
+        else:
             return
-        if self._document is not None:
-            self._document.close()
-        self._document = new_document
         self.document_kind = "copy"
 
     @staticmethod
@@ -271,35 +297,96 @@ class SourceThumbnailsWorker(QObject):
         except Exception:  # noqa: BLE001 - 换副本失败不影响已渲的页
             return None
 
+    def _render_batch(self, pages: list[int], on_page) -> None:
+        """渲**一批**页：子进程并行，**每页一落地就写盘并回调** ``on_page(page)``。
+
+        ⚠️ 为什么"一落地就写"而不是"整批回来再写"（2026-10-21 实测）：
+        首批 16 页 × ~1s ÷ 3 个进程 = **5 秒多一张缩略图都不出现**，而查看器
+        正是靠"目录里冒出新文件"来逐张上屏的——用户看到的是"缩略图半天不出来"。
+        改成流式交付后，头 3 张约 1s 就落地，之后一张一张往外冒。
+
+        ⚠️ 为什么成批而不是一页一 submit：单个子进程渲一页 JPX 要 ~700ms~1s，
+        逐页提交时池里另外两个进程全程闲着。成批提交 + 流式回调两者兼得。
+
+        ⚠️ 任务目录被删时**立刻**抛 FileNotFoundError 中止，别往残留目录里写。
+        """
+        import time
+
+        from desktop.workers import pdf_render_service as svc
+
+        # 副本落地了就换成从副本渲（非阻塞检查，见 _maybe_switch_to_copy）
+        self._maybe_switch_to_copy()
+        task_root = self.out_dir.parent.parent
+        pending: list[tuple[int, Path]] = []
+        for page_number in pages:
+            if not task_root.is_dir():
+                raise FileNotFoundError("任务目录已不存在，中止缩略图生成")
+            target = self.out_dir / f"{page_number + 1:04d}.jpg"
+            if self._cache_usable(target):
+                on_page(page_number)  # 命中缓存：不付渲染钱，但照常报进度
+                continue
+            pending.append((page_number, target))
+        if not pending:
+            return
+        targets = dict(pending)
+        started = time.perf_counter()
+
+        def deliver(page_number: int, data: bytes) -> None:
+            if data:
+                write_bytes_atomic(targets[page_number], data)
+            on_page(page_number)
+
+        svc.render_stream(
+            self._render_path, [page for page, _target in pending], self.edge, 80,
+            on_page=deliver,
+            # 已提取的页直接从产物 jpg 缩（21ms），不回 PDF 解 JPX（850ms）
+            pages_dir=task_extract_pages_dir(self._render_path),
+        )
+        if not svc.offloaded():
+            # 进程内兜底：按耗时成比例让出 GIL（出进程时**一秒都别睡**，
+            # 那时卡的是子进程，睡只会让整本缩略图白慢一倍）
+            spent_ms = (time.perf_counter() - started) * 1000 / len(pending)
+            yield_ms = min(GIL_YIELD_MAX_MS, max(GIL_YIELD_MIN_MS,
+                                               spent_ms * GIL_YIELD_RATIO))
+            time.sleep(yield_ms / 1000)
+
     def _render_page(self, document, page_number: int) -> float:
         """渲染一页缩略图并落盘，返回耗时（秒）；缓存可用时返回 0 且不渲染。
 
-        ⚠️ 渲染段走**单飞锁**（与单页预览、查看器补页同一把）：PyMuPDF 渲染
-        5000×4400 的页要 ~160ms 且全程攥 GIL，两个渲染并行只会互相抢——用户
-        这时点缩略图就会卡。逐页进出锁，用户最多等一页。
-        """
-        import fitz
+        ⚠️ **真正的渲染在子进程里做**（``pdf_render_service``）：PyMuPDF 的
+        ``get_pixmap`` 整段持 GIL，扫描古籍常见的内嵌格式是 JPX（JPEG2000），
+        渲一张 4285×5736 的页要 **~850ms 且这 850ms GUI 线程拿不到时间片**——
+        这就是"导入一本 28 页的书，界面卡成 28 个 0.85 秒的块"的真因。
+        ``document`` 参数只为兼容旧调用（命令行测试直接传文档进来），
+        渲染走的是 **PDF 路径**，子进程自己开文档。
 
+        渲染段仍走**单飞锁**——但只对**进程内兜底**那条路有效（服务内部自己
+        拿锁）；出进程时锁是空转，多个子进程可以真并行。
+        """
         target = self.out_dir / f"{page_number + 1:04d}.jpg"
-        if target.exists():
-            try:
-                stat = target.stat()
-                # ⚠️ 除了 mtime，还要看体积：**历史遗留**的截断文件（改造前非原子写
-                #    留下的）mtime 是新的、但只有几十字节，光看 mtime 会永久命中它。
-                #    加一个下界让这类坏缓存自愈（见 utils/file_utils.write_bytes_atomic）。
-                if stat.st_mtime >= self._pdf_mtime and stat.st_size >= MIN_THUMB_BYTES:
-                    return 0.0  # 缓存可用（不比源 PDF 旧且不像截断），跳过
-            except OSError:
-                pass
+        if self._cache_usable(target):
+            return 0.0  # 缓存可用（不比源 PDF 旧且不像截断），跳过
+        from desktop.workers import pdf_render_service as svc
+
         started = time.perf_counter()
-        with single_flight():
-            page = document.load_page(page_number)
-            rect = page.rect
-            scale = self.edge / max(rect.width, rect.height)
-            pixmap = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
-            data = pixmap.tobytes("jpg", jpg_quality=80)
-        write_bytes_atomic(target, data)  # 写盘在锁外（I/O 不需要占着渲染锁）
+        data = svc.render_jpeg(self._render_path, page_number, self.edge, 80)
+        if data:
+            write_bytes_atomic(target, data)  # 写盘在锁外（I/O 不需要占着渲染锁）
         return time.perf_counter() - started
+
+    def _mark_producing(self, on: bool) -> None:
+        """设置/清除「本目录正有人在填」的在场标记（语义见 ``set_producing_marker``）。"""
+        set_producing_marker(self.out_dir, on)
+
+    def _cache_usable(self, target: Path) -> bool:
+        """这张缩略图缓存能不能直接用（mtime 不旧 + 体积不像截断）。"""
+        if not target.exists():
+            return False
+        try:
+            stat = target.stat()
+        except OSError:
+            return False
+        return stat.st_mtime >= self._pdf_mtime and stat.st_size >= MIN_THUMB_BYTES
 
 
 def _stat_mtime(path) -> float:

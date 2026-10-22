@@ -205,9 +205,13 @@ GUI 的预览控件也要画同样的框。配色与命名必须一致，否则�
 
 **延迟加载 YOLO 模型单例**：双重检查锁定（double-checked locking）确保多线程下只加载一次。
 
-- 权重文件路径：`gujitools/static/weights/bookcontent.pt`
-- 强制 CPU 模式（兼容无 GPU 环境）
-- 找不到权重文件时抛出 `FileNotFoundError`
+- 权重文件：`static/weights/` 下由 `utils.data_package.resolve_weights()` 选出的
+  **生效那一份**——目录里可同时存在 `bookcontent.pt` 与多个
+  `bookcontent-v<版本>.pt`，由 `bookcontent.version.json` 的 `name` 决定用哪个；
+  sidecar 缺失回退 `bookcontent.pt`，对不上文件则退本地版本最大的那份
+- 一份权重都没有时自动联网下载最新（`GUJI_NO_WEIGHTS_DOWNLOAD=1` 可关掉这条路）
+- 强制 CPU 模式（兼容无 GPU 环境；有可用 CUDA 时自动吃 GPU）
+- 找不到权重且下载失败时抛出 `FileNotFoundError`
 
 ### `detect_content_boxes(image_bgr, model) -> ContentBoxes`
 

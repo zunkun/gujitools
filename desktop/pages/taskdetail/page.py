@@ -1227,10 +1227,7 @@ class TaskDetailPage(
         self._refresh_preview(self.stack_index_of(index), force=bool(updated))
         self._restore_stage_params(index)
         self._refresh_history_options()
-        if step == "detect":
-            # 整页开关是 area=4 的入口，切回第二步时按当前 area 回填
-            self._sync_whole_page_checkbox()
-        # 流程条上的「图片拼版」节点跟随当前 area（回填可能改了 area，
+        # 流程条上的「图片拼版」节点跟随当前区域模式（回填可能改了 area，
         # 走 blockSignals 时不会触发面板信号，这里统一补一次）
         self._refresh_imposition_node()
 
@@ -1675,25 +1672,15 @@ class TaskDetailPage(
             # 清单可能变了（增删页/切任务/批量检测跑完）→ 统计跟着重算
             self._refresh_detect_stats()
         elif stage == "rembg":
-            # ⚠️ 单栏书判据要**整本书**的结论，且页宽必须一次读盘（``_book_page_widths``）：
-            #    在查看器里逐页现算 profile/尺寸就是 O(n²)。这里算好后传进去，
-            #    预览与「提交本次任务」因此用同一条判据（见 utils/book_layout）。
-            _widths = self._book_page_widths()
-            _profile = self._book_profile(_widths)
-            _sides = self._side_overrides_all()
+            # ⚠️ 2026-10-22：去底色**不再按区域裁图**（area/border 已移除），
+            #    所以这里不再喂 boxes_provider / region_params_provider——
+            #    查看器于是按"一张输入图 = 一个条目"显示整图，与产物一致。
+            #    裁好的半页图（-l/-r）是上一步「提交本次任务」的产物，本来就是
+            #    独立文件，不需要再合成。
             self.rembg_viewer.set_images(
                 self._manifest_paths(),
                 self._node_dir("rembg"),
-                # ⚠️ 逐页回调必须走``_detect_boxes_for``（不能塞一张一次性快照）：
-                #    查看器之后还会按防抖重建条目（改 area / 实时预览落盘），
-                #    那时用户刚改的框（``detect_cache``）必须立刻生效。它内部已按
-                #    整本缓存（``_boxes_map_cached``），110 次调用不再是 O(n²)。
-                boxes_provider=self._detect_boxes_for,
-                region_params_provider=self._current_detect_params,
                 thumb_provider=self._page_thumb_for,
-                single_column_book=_profile.single_column_book,
-                page_width_provider=lambda text: _widths.get(Path(text).stem, 0),
-                side_for=lambda text: _sides.get(Path(text).stem),
                 force=force,
             )
             # 入口图片缩略图预热（同上：这一步是流程第一步时才有效）

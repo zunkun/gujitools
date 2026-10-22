@@ -255,16 +255,24 @@ def run(ctx) -> None:
     ok("CLI 侧不再硬编码 SYMMETRIC_GAP_MM",
        "SYMMETRIC_GAP_MM = " not in cli_src, "CLI 仍自带间隔常数")
 
-    # ---- 7. 第三步提交：名称预计算 + 并行合成（2026-09-24 提速改造）----
-    # 预计算输出名称必须走 region_canvas_specs（与合成同一份几何规则）；
-    # 若有人绕开它手写张数规则，area=1 时预计算的 total 会与实际产出脱节。
-    from desktop.stages import rembg_stage
+    # ---- 7. 提交阶段：名称预计算 + 并行合成 ----
+    # ⚠️ 2026-10-22：按 area 裁图的提交从**第三步**搬到了**第二步**
+    #    （去底色的提交只把白底转透明，不碰几何）。所以这组源码守卫跟着搬——
+    #    "名称预计算必须走 region_canvas_specs（规则只有一份）"这条不能丢。
+    from desktop.stages import detect_stage, rembg_stage
 
-    stage_src = inspect.getsource(rembg_stage)
-    ok("提交阶段用线程池并行合成（PNG 编码占 85%，实测 4 线程 3.1×）",
+    stage_src = inspect.getsource(detect_stage)
+    ok("检测提交阶段用线程池并行合成（PNG 编码是瓶颈）",
        "ThreadPoolExecutor" in stage_src, "提交合成退回了串行")
-    ok("输出名称预计算走 region_canvas_specs（规则只有一份）",
-       "region_canvas_specs" in stage_src, "提交阶段自行推导几何张数")
+    # 名称预计算必须走 ``plan_submit_job``（它内部用 region_canvas_specs 算画布
+    # 张数），不许在阶段里自己数张数——那会和合成结果脱节。
+    ok("输出名称预计算走 plan_submit_job（内部即 region_canvas_specs）",
+       "plan_submit_job" in stage_src, "提交阶段自行推导几何张数")
+    rembg_src = inspect.getsource(rembg_stage)
+    ok("去底色提交不再做几何合成（整图去底色）",
+       "region_canvas_specs" not in rembg_src
+       and "compose_region_output" not in rembg_src,
+       "第三步提交又在裁图了")
     ok("并行 worker 数有上限（内存约束：每 worker ~200MB 位图；2026-09-27 起上限与函数层一致为 8）",
        rembg_stage.SUBMIT_WORKERS <= 8, str(rembg_stage.SUBMIT_WORKERS))
 

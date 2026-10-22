@@ -31,7 +31,9 @@ python cli.py --help
   ```
 
 - Python 版本要求 3.10。
-- YOLO 模型权重文件需放置于 `static/weights/bookcontent.pt`。
+- YOLO 模型权重需放在 `static/weights/`（打包内置 `bookcontent.pt`）。运行期下载的
+  `bookcontent-v<版本>.pt` **保留发布名**留在同一目录，由 `bookcontent.version.json`
+  指定哪一份生效——目录里可以有多份，只用一份。
 
 主要依赖（详见仓库根 [requirements.txt](../../requirements.txt)）：
 

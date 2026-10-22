@@ -49,11 +49,12 @@ def run(ctx) -> None:
     # ⚠️ 检测框必须**本模块自己注入**：ctx.injected_boxes 是 rembg 模块留下的
     # 跨模块状态，全量跑时会被其它模块（detect 注入的确定性框）覆盖，
     # 依赖它就会出现「单独跑绿、全量跑红」这种最难查的假绿。
-    _comp0 = d._rembg_submit_entries(1, None)
-    ok("（前置）有待提交条目", len(_comp0) > 0, str(len(_comp0)))
-    if not _comp0:
+    _pages = d._manifest_paths()
+    ok("（前置）有页面可测", len(_pages) > 0, str(len(_pages)))
+    if not _pages:
         return
-    _anchor_stem = Path(_comp0[0]["file"]).stem
+    _anchor_src = _pages[0]
+    _anchor_stem = _anchor_src.stem
     _size = repo.image_size(tid, _anchor_stem) or (1000, 1400)
     _aw, _ah = int(_size[0]), int(_size[1])
     # 双框（半幅页两栏）：用户报的正是「双框 + area=2」这条——单框走的是
@@ -63,27 +64,32 @@ def run(ctx) -> None:
     _br = [round(_aw * 0.54), round(_ah * 0.10),
            round(_aw * 0.90), round(_ah * 0.90)]
     repo.save_detect_boxes(tid, _anchor_stem, [_bl, _br], origin="manual")
-    _anchor_src = next(p for p in d._manifest_paths()
-                       if p.stem == _anchor_stem)
     d.detect_cache[str(_anchor_src)] = [_bl, _br]
 
     from PySide6.QtGui import QImage
 
     from desktop.workers.preview_worker import compose_region_output
 
-    _src = QImage(str(preview_dir / f"{_anchor_stem}.png"))
-    ok("（前置）去底图可读", not _src.isNull(),
-       str(preview_dir / f"{_anchor_stem}.png"))
+    _src = QImage(str(_anchor_src))
+    ok("（前置）源页图可读", not _src.isNull(), str(_anchor_src))
     if _src.isNull():
         return
 
-    # ---- 1. area/border 在「提交本次任务」这一跳兑现 ----
-    # ⚠️ 用**临时输出目录**跑真实提交阶段函数：本模块与其它模块共用 ctx.tid，
-    # 真去提交会把共享的 stages/rembg 换掉，影响后面模块的页数断言。
-    from desktop.services.print_plan import entry_to_effect_spec
-    from desktop.stages import rembg_stage
+    # ---- 1. area 在第二步「提交本次任务」这一跳兑现 ----
+    # ⚠️ 2026-10-22：裁剪从第三步搬到了第二步（去底色改成整图去底色）。
+    #    所以这里改跑 **detect_submit** 的真实阶段函数，并拿
+    #    ``compose_region_output(源页, 原双框, 2, "0")`` 当基准（border 已移除，
+    #    固定 "0" = 不加留白）。
+    from desktop.services.print_plan import (
+        entry_to_effect_spec, plan_detect_submit_entries,
+    )
+    from desktop.stages import detect_stage
 
-    _entries_a2 = d._rembg_submit_entries(2, "30")
+    _entries_a2 = plan_detect_submit_entries(
+        manifest_paths=[_anchor_src],
+        boxes_for=lambda _text: [_bl, _br],
+        area=2,
+    )
     _anchor_entry = next(
         (e for e in _entries_a2 if Path(e["file"]).stem == _anchor_stem), None)
     ok("（前置）area=2 的派生条目带原始双框（不是并集降级）",
@@ -91,11 +97,11 @@ def run(ctx) -> None:
        and _anchor_entry["parea"] == 2, str(_anchor_entry))
     if _anchor_entry is None:
         return
-    _out = Path(ctx.tmp) / "area_border_e2e" / "rembg_final"
-    _rc = rembg_stage.run_rembg_submit_stage({
-        "task_id": tid, "stage": "rembg_submit", "run_id": "e2e_area2",
+    _out = Path(ctx.tmp) / "area_e2e" / "detect_final"
+    _rc = detect_stage.run_detect_submit_stage({
+        "task_id": tid, "stage": "detect_submit", "run_id": "e2e_area2",
         "args": {
-            "_effects": [entry_to_effect_spec(e, "30") for e in _entries_a2],
+            "_effects": [entry_to_effect_spec(e, "0") for e in _entries_a2],
             "output": str(_out), "clean": True,
         },
     })
@@ -105,10 +111,10 @@ def run(ctx) -> None:
        _submitted.exists(), str(sorted(p.name for p in _out.glob("*.png"))))
     if not _submitted.exists():
         return
-    # 第三步预览语义：原始框 + 原始 area（与 entry_to_effect_spec 同源）
-    _ref = compose_region_output(_src, [_bl, _br], 2, "30")
+    # 基准：原始框 + 原始 area（与 entry_to_effect_spec 同源）
+    _ref = compose_region_output(_src, [_bl, _br], 2, "0")
     _got = QImage(str(_submitted))
-    ok("成品图尺寸 == 按 area=2/border=30 合成的尺寸（area 没被降级成 1）",
+    ok("成品图尺寸 == 按 area=2 合成的尺寸（area 没被降级成 1）",
        len(_ref) == 1
        and (_got.width(), _got.height()) == (_ref[0].width(), _ref[0].height()),
        f"got={(_got.width(), _got.height())} "
@@ -128,10 +134,6 @@ def run(ctx) -> None:
        str(sorted({str(Path(e["file"]).parent) for e in _fx})))
 
     # ---- 3. 真跑一次 print：PDF 的图就是提交产物 ----
-    _panel3 = d.control_stack.widget(2)
-    _panel3.area.setCurrentIndex(1)   # area=2（若旧实现按当前参数现算，比例会变）
-    _panel3.border.setText("30")
-    app.processEvents()
     _panel4 = d.control_stack.widget(3)
     _panel4.title_printing.setChecked(False)
     _panel4.pdf_name.setText("area2.pdf")
@@ -139,10 +141,6 @@ def run(ctx) -> None:
     d._refresh_preview(3)
     d.set_task(tid)
     d._select_stage(d.bar_index_of_step("print"))
-    _panel3 = d.control_stack.widget(2)
-    _panel3.area.setCurrentIndex(1)
-    _panel3.border.setText("30")
-    app.processEvents()
     _entries_now, _ = d._print_entries()
     ok("（前置）待打印列表非空", len(_entries_now) > 0, str(len(_entries_now)))
 

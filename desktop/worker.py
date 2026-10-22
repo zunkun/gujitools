@@ -4,10 +4,10 @@ The worker emits JSON Lines on stdout so the GUI remains independent from
 heavy libraries. 阶段执行器按职责拆分在 desktop/stages/ 包：
 
 - desktop.stages.events        事件输出 + print 拦截/进度解析
-- desktop.stages.detect_stage  detect（YOLO 检测文本框）
+- desktop.stages.detect_stage  detect（YOLO 检测文本框）+ detect_submit（裁图）
 - desktop.stages.generic_stage 通用 CLI 阶段 + extract 渲染
 - desktop.stages.print_stage   print（效果图合成 + 生成 PDF）
-- desktop.stages.rembg_stage   rembg_submit（最终图片合成）
+- desktop.stages.rembg_stage   rembg_submit（白底转透明，整图不裁）
 
 本文件只负责进程初始化与阶段路由。
 """
@@ -30,6 +30,7 @@ try:
     from desktop.stages import (  # noqa: F401
         run_detect,
         run_detect_stage,
+        run_detect_submit_stage,
         run_extract_stage,
         run_print_stage,
         run_rembg_submit_stage,
@@ -110,6 +111,8 @@ def _run() -> int:
         return run_detect(config)
     if config.get("stage") == "detect":
         return run_detect_stage(config)
+    if config.get("stage") == "detect_submit":
+        return run_detect_submit_stage(config)
     if config.get("stage") == "extract":
         return run_extract_stage(config)
     if config.get("stage") == "print":

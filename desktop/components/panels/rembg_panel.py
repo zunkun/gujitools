@@ -1,5 +1,14 @@
 # -*- coding: utf-8 -*-
-"""图片去底色（rembg）阶段面板：area 决定裁剪方式，border 决定四周留白。"""
+"""图片去底色（rembg）阶段面板：只有去底色自己的参数。
+
+⚠️ 2026-10-22 用户口径：**去底色直接整个图片去底色**——这里不再有
+``area`` / ``border``。按检测框裁图挪到了第二步「检测文本框」的
+「提交本次任务」（参数与落地都在那边，见 ``detect_panel`` 与
+``stages/detect_stage.run_detect_submit_stage``）。
+
+由此一并删掉的还有 ``whole_page_only``（"流程里没有检测框 ⇒ area 锁 4"）：
+那套锁是给"去底色需要 area 却没框"的旧模型用的，现在去底色压根不看框。
+"""
 
 from __future__ import annotations
 
@@ -8,64 +17,31 @@ from PySide6.QtGui import QIntValidator
 from PySide6.QtWidgets import QFormLayout, QHBoxLayout, QWidget
 from qfluentwidgets import CheckBox, LineEdit, Slider
 
-from core.command_spec import WHOLE_PAGE_AREA, effective_border_default
 from desktop.components.common.safecomponents import SafeSpinBox
 from desktop.components.panels.base import StagePanel, default_for
-from desktop.components.panels.params_spec import DEFAULTS, REMBG_AREAS, REMBG_TYPES
+from desktop.components.panels.params_spec import DEFAULTS, REMBG_TYPES
 from desktop.ui.widgets import combo_box
 
 
 class RembgPanel(StagePanel):
-    """图片去底色阶段面板：area/border/印章等参数。
+    """图片去底色阶段面板：type / offset / 印章参数。
 
-    整图 Otsu 二值化/灰度化去底（可保留印章）；area 决定裁剪方式、
-    border 决定四周留白，参数经 get_args 收集后传给子进程。默认值统一取
-    ``params_spec.DEFAULTS["rembg"]``。
+    整图 Otsu 二值化/灰度化去底（可保留印章）；参数经 get_args 收集后传给
+    子进程。默认值统一取 ``params_spec.DEFAULTS["rembg"]``。
     """
 
     stage = "rembg"
     title = "图片去底色"
     description = (
-        "整图自动二值化/灰度化去底，可保留印章。" "「区域模式」与「边距」决定显示与裁剪区域（配合步骤二的检测框）。"
+        "整图自动二值化/灰度化去底，可保留印章。"
+        "去底色直接处理输入图片（整张图），不再按检测框裁剪——"
+        "按框裁图是第二步「检测文本框」的「提交本次任务」做的事。"
     )
-
-    def __init__(self, parent=None, *, whole_page_only: bool = False):
-        """``whole_page_only=True``：area 锁定 4（整页/不检测）且不可改。
-
-        流程里本步**拿不到检测框**（「检测文本框」不在它上游）时，area 的
-        1/2/3 都没框可裁、页面只会一片空白——area 必须固定 4（用户
-        2026-10-07：「图片去底色作为第一个节点，则 area 默认 = 4，并且不可
-        修改」）。判据唯一处 :func:`desktop.steps.ports.detect_feeds_rembg`，
-        由宿主按当前流程决定传值；独立任务页/默认流程不传（可自由选）。
-        """
-        self._whole_page_only = bool(whole_page_only)
-        super().__init__(parent)
-
-    @property
-    def whole_page_only(self) -> bool:
-        """area 是否被锁定为 4（宿主读它来联动第二步「整页模式」开关）。"""
-        return self._whole_page_only
 
     def _build_form(self, form: QFormLayout) -> None:
         d = DEFAULTS[self.stage]
-        # 用户是否手填过 border：手填过就不再被 area 的默认值覆盖
-        # （与 print 面板「用户改过边距就不级联」同一套路）
-        self._border_edited = False
-        # ⚠️ area/type 的下拉**必须**把参数值存进 itemData，取值走 `_combo_value()`。
-        # 旧实现是 `int(self.area.currentText()[0])`——解析显示文本的首字符，
-        # 改一个字（如「1 (左右分开)」→「一、左右分开」）就把取值弄挂。
-        self.area = combo_box(REMBG_AREAS)
-        self.area.setCurrentIndex(self._index_of(self.area, d["area"]))
-        self.area.setToolTip(
-            "4 = 整页：把整页当作唯一文本框（不做检测），边框画在页面边界，"
-            "仍可在第二步拖动/重画；适合普通文档或古籍检测失败时整页去底色"
-        )
-        if self._whole_page_only:
-            self._lock_area_whole_page()
-        self.border = LineEdit()
-        self.border.setPlaceholderText("留空 或 30 / 20,30 / 20,30,25,35")
-        # 初值 = 当前 area 的 border 默认（area=1/2/3 → 0、area=4 → 空）
-        self.border.setText(self._border_default_for(d["area"]))
+        # ⚠️ type 的下拉**必须**把参数值存进 itemData，取值走 `_combo_value()`。
+        # 旧实现是解析显示文本的首字符，改一个字就把取值弄挂。
         self.type = combo_box(REMBG_TYPES)
         self.type.setCurrentIndex(self._index_of(self.type, d["type"]))
         # offset 用「**滑块 + 可输入数字框**」：范围 -100~100、默认 0。
@@ -102,22 +78,12 @@ class RembgPanel(StagePanel):
         self.sealmin_sat = SafeSpinBox()
         self.sealmin_sat.setRange(0, 255)
         self.sealmin_sat.setValue(int(d["sealmin_sat"]))
-        # area 一变就按新 area 刷 border 默认值（用户手填过则保留其输入）
-        self.area.currentIndexChanged.connect(self._on_area_changed)
-        self.border.textEdited.connect(self._on_border_edited)
         # 滑块 ↔ 输入框双向同步；「用户改了参数」的通知统一走基类的 param_edited
         # —— 滑块不在基类自动识别的控件类型里，由 _extra_param_signals() 补登记
-        # （输入框是 SpinBox，基类会自动连上）。
+        # （输入框是 QSpinBox 子类，基类会自动连上）。
         self.offset.valueChanged.connect(self._on_offset_changed)
         self.offset_input.textChanged.connect(self._on_offset_input_changed)
-        self.border.setToolTip(
-            "留空时按「区域模式」取默认：左右分开 / 合并单图 / 整页合并 → 0"
-            "（不加留白，第四步会在 A4 上重新排版）；整页（不检测）→ 不设边距"
-        )
-        # 标签格式（用户 2026-09-23 口径）：中文在前、键名放括号里；
-        # **带单位的**写成「中文(单位)（键名）」（单位跟着中文，别被塞进括号里挤成一团）
-        self._add_row(form, "区域模式（area）", self.area)
-        self._add_row(form, "边距(mm)（border）", self.border)
+        # 标签格式（用户 2026-09-23 口径）：中文在前、键名放括号里。
         self._add_row(form, "输出类型（type）", self.type)
         self._add_row(form, "阈值偏移（offset）", offset_row)
         self._add_row(form, "印章面积阈值（sealarea）", self.sealarea)
@@ -131,39 +97,10 @@ class RembgPanel(StagePanel):
         idx = combo.findData(value)
         return idx if idx >= 0 else 0
 
-    def _lock_area_whole_page(self) -> None:
-        """area 锁 4 并禁用下拉（``whole_page_only`` 构造参数的唯一落点）。
-
-        ⚠️ 置灰而不是隐藏：用户要看得见「区域模式」这一行并知道**为什么**
-        改不了（tooltip 写明），而不是凭空少一个参数。
-        """
-        self.area.setCurrentIndex(self._index_of(self.area, WHOLE_PAGE_AREA))
-        self.area.setEnabled(False)
-        self.area.setToolTip(
-            "本流程里「图片去底色」前面没有「检测文本框」，区域模式 1/2/3 "
-            "需要检测框才能裁剪（没框的页只会一片空白），因此固定整页（4）"
-        )
-
     def _combo_value(self, combo):
         """读下拉的参数值（itemData），缺失时退回显示文本。"""
         data = combo.currentData()
         return data if data is not None else combo.currentText()
-
-    @staticmethod
-    def _border_default_for(area) -> str:
-        """area 对应的 border 默认显示值（area=4 无 border → 空串）。"""
-        value = effective_border_default(area)
-        return "" if value is None else str(value)
-
-    def _on_area_changed(self, _index: int = 0) -> None:
-        """area 切换：把 border 刷成该 area 的默认值（用户手填过则不动）。"""
-        if getattr(self, "_applying", False) or self._border_edited:
-            return
-        self.border.setText(self._border_default_for(self._combo_value(self.area)))
-
-    def _on_border_edited(self, _text: str = "") -> None:
-        """用户手改 border：记下来，之后 area 变化不再覆盖它。"""
-        self._border_edited = True
 
     def _on_offset_changed(self, value: int) -> None:
         """滑块拖动：把值同步到右侧文本框。
@@ -176,7 +113,6 @@ class RembgPanel(StagePanel):
            再防抖一次）。
         2. **不做节流**：真正的重活（去底色）在宿主页用 350ms 防抖兜着，
            面板只管如实上报；数值框同步是纯文本更新，成本可忽略。
-
         """
         blocked = self.offset_input.blockSignals(True)
         self.offset_input.setText(str(int(value)))
@@ -203,23 +139,14 @@ class RembgPanel(StagePanel):
         ⚠️ **必须补**：基类 ``_connect_param_edit_signals`` 只识别
         QLineEdit / QSpinBox / QDoubleSpinBox / QComboBox, qfluent.ComboBox /
         QCheckBox，而 ``qfluentwidgets.Slider`` 继承的是 ``QSlider``，一种都
-        不沾。offset 从 ``SafeSpinBox``（= qfluent.SpinBox，**是** QSpinBox
-        子类，原先靠自动识别就能连上）换成滑块后若不登记，**「参数暂存」会
-        静默失效**——改 offset 不再被当成用户改动。
+        不沾。offset 若不登记，**「参数暂存」会静默失效**——改 offset 不再被
+        当成用户改动。
         """
         return [self.offset.valueChanged]
 
     def get_args(self) -> dict:
-        """收集去底色参数：area/type/offset/seal/border 等。
-
-        border 留空时按 area 取默认（area=1/2/3 → 0、area=4 → 不设），
-        由 runner 在续跑时与 detect 框坐标实时合成裁剪区域。
-        """
-        # 锁整页时下拉已禁用、值恒为 4，这里再兜一道：流程换过、暂存/历史
-        # 里残留 area=1/2/3 的旧值也不能漏出去（子进程按它找 boxes.json）
-        area = WHOLE_PAGE_AREA if self._whole_page_only else int(self._combo_value(self.area))
-        args = {
-            "area": area,
+        """收集去底色参数：type/offset/seal/sealcolor/sealarea/sealmin_sat。"""
+        return {
             "type": int(self._combo_value(self.type)),
             "offset": self.offset.value(),
             "seal": self.seal.isChecked(),
@@ -227,26 +154,9 @@ class RembgPanel(StagePanel):
             "sealarea": self.sealarea.value(),
             "sealmin_sat": self.sealmin_sat.value(),
         }
-        border_text = self.border.text().strip() or self._border_default_for(area)
-        if border_text:
-            args["border"] = border_text
-        return args
 
     def _apply_args(self, parameters: dict) -> None:
         d = DEFAULTS[self.stage]
-        area_value = default_for(parameters, d, "area")
-        if self._whole_page_only:
-            # 锁整页：暂存/历史里残留的 area 一律不回填（下拉也已禁用）
-            area_value = WHOLE_PAGE_AREA
-        self.area.setCurrentIndex(self._index_of(self.area, area_value))
-        # border 留空（含"没这个键"）→ 按 area 取默认；显式给的值原样回填，
-        # 且与默认值不同就视为"用户手填过"，后续 area 切换不覆盖
-        border_text = str(parameters.get("border") or "").strip()
-        default_text = self._border_default_for(area_value)
-        if not border_text:
-            border_text = default_text
-        self.border.setText(border_text)
-        self._border_edited = bool(border_text) and border_text != default_text
         self.type.setCurrentIndex(self._index_of(self.type, default_for(parameters, d, "type")))
         self.offset.setValue(int(default_for(parameters, d, "offset")))
         # 显式同步文本框：值相同时 setValue 不发信号，靠同步链路兜底更稳

@@ -268,6 +268,34 @@ def plan_submit_job(spec: dict, size: tuple[int, int] | None) -> dict:
     }
 
 
+def plan_detect_submit_entries(
+    manifest_paths: list[Path],
+    boxes_for,
+    area: int,
+    single_column_book: bool = False,
+    page_width_for=None,
+    side_for=None,
+) -> list[dict]:
+    """「检测文本框 → 提交本次任务」的裁图条目（2026-10-22 新增）。
+
+    与 :func:`plan_rembg_submit_entries` **同一条规则**，只有一个区别：
+    合成源就是**源页图自己**（这一步不产生中间结果图），所以 ``file`` 直接是
+    那一页的路径。以前这条规则挂在第三步（去底色提交）上，现在裁剪前移到了
+    第二步，规则本身一字未改——``-l``/``-r`` 命名、单栏书归一化、用户指定
+    左右、对称画布全都照旧。
+    """
+    by_stem = {path.stem: path for path in manifest_paths}
+    return plan_rembg_submit_entries(
+        manifest_paths=manifest_paths,
+        result_path_for=lambda stem: by_stem.get(stem),
+        boxes_for=boxes_for,
+        area=area,
+        single_column_book=single_column_book,
+        page_width_for=page_width_for,
+        side_for=side_for,
+    )
+
+
 # ---------------------------------------------------------------- print 效果规格
 # ---------------------------------------------------------------- 待打印列表
 def drop_foreign_stage_pages(

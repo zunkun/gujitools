@@ -43,6 +43,10 @@ WizardSmallImageFile={#WIZARD_SMALL_IMAGE}
 #endif
 UninstallDisplayName=古籍重製 {#VERSION}
 UninstallDisplayIcon={app}\guji-desktop.exe
+; 覆盖安装时若 guji-desktop.exe 正在运行（GUI 主进程 + yolo-service + worker 子进程，
+; 进程名都叫 guji-desktop.exe），自动关掉它们再覆盖，别再弹「文件被占用」的拦截框。
+CloseApplications=yes
+RestartApplications=no
 
 [Languages]
 Name: "chinesesimplified"; MessagesFile: "compiler:Default.isl"

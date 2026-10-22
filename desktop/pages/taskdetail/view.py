@@ -157,12 +157,10 @@ class DetailViewMixin:
         _on_print_failed: Callable[..., None]
         _goto_stats_page: Callable[..., None]
         _detect_current_page: Callable[..., None]
-        _set_whole_page_mode: Callable[..., None]
         _set_selected_box_kind: Callable[..., None]
         _delete_selected_box: Callable[..., None]
         _on_box_selection_changed: Callable[..., None]
         _on_box_edit_rejected: Callable[..., None]
-        _sync_whole_page_checkbox: Callable[..., None]
         # 「导出YOLO标注」（开发者模式，DetectMixin 提供）：本层建卡片/接按钮，
         # 业务与显隐判据在那边——卡片自己不知道"当前是不是 detect 步骤"。
         export_yolo_labels: Callable[[], None]
@@ -172,7 +170,7 @@ class DetailViewMixin:
         _refresh_imposition_node: Callable[..., None]
         _on_history_selected: Callable[..., None]
         run_stage: Callable[..., None]
-        run_rembg_submit: Callable[[], None]
+        run_submit: Callable[[], None]
         cancel_stage: Callable[[], None]
         _set_stage_status: Callable[..., None]
         # 「图片拼版」占位详情页与拼版画布的动作槽（ImpositionMixin 提供）
@@ -828,15 +826,8 @@ class DetailViewMixin:
             key = FLOW_STAGES[index] if index < len(FLOW_STAGES) else None
             # ⚠️ dict.get(None) 运行时合法（返回 None）；这里显式判空语义相同
             hook = _HOOKS.get(key) if key is not None else None
-            # ⚠️ rembg 的面板要**按当前流程**决定 area 是否锁整页
-            #    （「检测文本框」不在它上游 ⇒ 拿不到检测框 ⇒ area 锁 4，
-            #    用户 2026-10-07）：不能直接把类当工厂，要走
-            #    _rembg_panel_factory 在**面板真正构造时**（任务已就位）
-            #    查一次流程图。
-            factory = (self._rembg_panel_factory if key == "rembg"
-                       else panel_class)
             self.control_stack.addWidget(
-                LazyPanelHost(factory, hooks=[hook] if hook else [])
+                LazyPanelHost(panel_class, hooks=[hook] if hook else [])
             )
         # 拼版伪步骤（追加在主链之后）：占位详情面板——只在流程条点了虚线节点时
         # 显示，不属于任何真实阶段（STAGES/runs 机制不感知它）
@@ -902,31 +893,14 @@ class DetailViewMixin:
         self._wire_yolo_export_card()
         return card
 
-    def _rembg_panel_factory(self) -> QWidget:
-        """第三步面板的**构造工厂**：按当前流程决定 area 是否锁整页。
-
-        判据唯一处 :func:`desktop.steps.ports.detect_feeds_rembg`：流程里
-        「图片去底色」吃不到检测框（它前面没有「检测文本框」）⇒ area 锁 4
-        且不可改（用户 2026-10-07）。⚠️ 判断必须在**面板构造时**做而不是
-        ``_init_ui`` 期：那时还没任务、查不了流程图。
-
-        没任务（理论上面板不会在无任务时构造，兜一手）按默认流程算——
-        默认流程里有「检测文本框」，不锁。
-        """
-        from desktop.components.panels.rembg_panel import RembgPanel
-        from desktop.steps.ports import detect_feeds_rembg
-
-        if not self.task_id:
-            return RembgPanel()
-        diagram = self.store.task_diagram(self.task_id)
-        return RembgPanel(whole_page_only=not detect_feeds_rembg(diagram))
-
     def _wire_detect_panel(self, detect_panel) -> None:
         """第二步面板**首次构造后**的接线（LazyPanelHost 的 created 回调）。"""
         # detect 面板「检测本页」：手动触发当前页的 YOLO 检测（不自动执行）
         detect_panel.detect_page_requested.connect(self._detect_current_page)
-        # 整页模式：等价于把第三步 area 切到 4（跳过 YOLO，整页作为一个框）
-        detect_panel.whole_page_toggled.connect(self._set_whole_page_mode)
+        # ⚠️ 2026-10-22 第二轮：**本面板没有 area 下拉了**（用户：desktop 页面
+        #    去除 area 参数，默认 area=1，只在提交时生效），所以这里不再有
+        #    「改 area → 重算参考框/提交按钮」这条联动。裁图的 area 固定由
+        #    ``core.command_spec.DETECT_DEFAULT_AREA`` 提供。
         # 人工干预：选中框类型（左框/右框/整幅）与删除选中框
         detect_panel.box_kind_changed.connect(self._set_selected_box_kind)
         detect_panel.delete_box_requested.connect(self._delete_selected_box)
@@ -950,9 +924,6 @@ class DetailViewMixin:
         def _on_rembg_panel_changed(*_):
             self._rembg_panel_timer.start()
 
-        # rembg 面板的参数变化决定检测框标注与去底色预览区域，联动刷新
-        rembg_panel.area.currentTextChanged.connect(_on_rembg_panel_changed)
-        rembg_panel.border.textChanged.connect(_on_rembg_panel_changed)
         # 去底参数变化会改变预览图 → 「提交」按钮的新版本提示需实时刷新
         rembg_panel.type.currentTextChanged.connect(_on_rembg_panel_changed)
         rembg_panel.offset.valueChanged.connect(_on_rembg_panel_changed)
@@ -964,19 +935,15 @@ class DetailViewMixin:
         self._on_rembg_panel_refresh()
 
     def _on_rembg_panel_refresh(self) -> None:
-        """第三步参数联动刷新（已去抖）：checkbox 回填 / 框标注 / 提交按钮 / 级联。"""
-        # area 可能被第二步的整页开关改动，勾选状态需回填
-        self._sync_whole_page_checkbox()
+        """第三步参数联动刷新（已去抖）：框标注 / 提交按钮。
+
+        ⚠️ 去底色不再有 area/border（2026-10-22），所以这里不再回填整页勾选、
+        也不再级联第四步边距——去底色改参数只影响"预览图是不是最新"。
+        """
         self._refresh_reference_boxes()
         self._update_submit_button(
             bool(self.process and self.process.state() != QProcess.ProcessState.NotRunning)
         )
-        # 第三步 border 级联第四步默认边距：border 变化时把上游 border
-        # 同步给 print 面板（用户未手动改边距时，默认值随级联变 0/20）
-        self._sync_print_margin_default()
-        # ⚠️ 拼版节点的**可见性不看这里的参数**（2026-10-05 起只看流程图）；
-        #    但这一步仍会牵动「选择/生效态」的显示，顺手同步一次（幂等）。
-        self._refresh_imposition_node()
 
     def _wire_print_panel(self, panel) -> None:
         """第四步面板**首次构造后**的接线（LazyPanelHost 的 created 回调）。"""
@@ -1059,30 +1026,17 @@ class DetailViewMixin:
         self._pending_print_reset = False
 
     def _sync_print_margin_default(self) -> None:
-        """把第三步 rembg 面板的当前 border 同步给第四步面板做默认级联。
+        """把「上游有没有留白」告诉第四步面板（决定它默认边距是 0 还是 20）。
 
-        读取 rembg 面板的 border 原始文本（不触发其 get_args 校验，避免
-        填写中途的非法值抛错），交给 print 面板自行决定是否覆盖默认边距。
+        ⚠️ 2026-10-22：上游（去底色）**已经没有 border 了**——按框裁图归第二步
+        的「提交本次任务」，那里固定不加留白（第四步会在纸上重新排版）。
+        所以这里恒传 ``None``：第四步保持自己的默认边距（20mm），不再有
+        "上游留白 + 页面边距"双重留白的级联分支。
+
+        保留这个方法（而不是删掉调用点）是因为它同时负责**挂起值**：
+        第四步面板还没构造时先把值记住，建好后由 ``_wire_print_panel`` 补同步。
         """
-        try:
-            rembg_host = self.panel_host_of_step("rembg")
-            # ⚠️ 必须用 peek()（不触发构造）：第三步面板没建时它的 border 就是
-            # 默认空值，等它建好会由 _wire_rembg_panel 补一次同步。
-            # ⚠️ 流程里没有去底色这一格 ⇒ 没有 border 可级联，按"无上游"处理。
-            rembg_peek: Any = getattr(rembg_host, "peek", None)
-            if callable(rembg_peek):
-                rembg_panel: Any = rembg_peek()
-                border = (
-                    (rembg_panel.border.text() or "").strip() or None
-                    if rembg_panel is not None
-                    else None
-                )
-            elif rembg_host is None:
-                border = None
-            else:
-                border = (rembg_host.border.text() or "").strip() or None
-        except Exception:
-            border = None
+        border = None
         host = self.panel_host_of_step("print")
         if host is None:
             return
@@ -1090,8 +1044,6 @@ class DetailViewMixin:
         panel: Any = peek() if callable(peek) else host
         if panel is None:
             # 第四步面板还没构造：先记住，等它建好时由 _wire_print_panel 补同步。
-            # ⚠️ 这里绝不能走属性转发——rembg 参数一变就会把它建出来，
-            #    惰性就白做了。
             self._pending_print_border = border
             return
         try:
@@ -1150,15 +1102,17 @@ class DetailViewMixin:
         self.run_button = PrimaryPushButton(FIF.PLAY, "执行本子任务")
         self.run_button.setFixedHeight(36)
         self.run_button.clicked.connect(lambda: self.run_stage(resume=False))
-        # 步骤三（rembg）专用：把预览结果按 area/border 合成为最终图片
+        # 「提交本次任务」：第二步（检测→按 area 裁图）与第三步（预览→透明底成品）
+        # 共用同一颗**次动作**按钮，点击时按当前步骤分发（见 submit.run_submit）。
         # ⚠️ 文案取 SUBMIT_TEXT（submit.py 的唯一来源）：并排一行后放不下
         #    更长的写法，"有新版本"由加粗 + 下方红字提示表达。
         self.submit_button = PrimaryPushButton(FIF.ACCEPT, SUBMIT_TEXT)
         self.submit_button.setFixedHeight(36)
         self.submit_button.setToolTip(
-            "将「生成预览」的去底色图片按「区域模式 / 边距」合成为真正想要的最终图片"
+            "把本步骤的预览结果定稿成下一步能用的产物"
+            "（检测：按区域模式裁图；去底色：白底转透明）"
         )
-        self.submit_button.clicked.connect(self.run_rembg_submit)
+        self.submit_button.clicked.connect(self.run_submit)
         self.submit_button.setVisible(False)
         # 「生成预览 / 提交本次任务」并排一行：第三步的这两件事是**同一段动作的
         # 前后两跳**（先看效果、再落地成最终图），竖着堆叠会让人误以为是两个

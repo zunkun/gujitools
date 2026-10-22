@@ -674,7 +674,7 @@ def run(ctx) -> None:
        "image_sizes_all" in width_src, "提交侧还在逐页读")
     ok("派生回调只查预读好的字典，不回调里读盘",
        "widths.get(Path(text).stem, 0)" in _inspect.getsource(
-           SubmitMixin._rembg_submit_entries),
+           SubmitMixin._submit_entries),
        "回调里还在读盘")
 
     # ---- 8. 第三步预览与提交派生必须同源（否则预览 0007-l、成品 0007.png） ----

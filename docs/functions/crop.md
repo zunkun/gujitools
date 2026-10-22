@@ -39,7 +39,8 @@ guji crop --config ./book.yaml
 
 ### 模型加载
 
-- 权重文件路径：`gujitools/static/weights/bookcontent.pt`
+- 权重文件：`static/weights/` 下**当前生效**的那份（`utils.data_package.resolve_weights`
+  按 `bookcontent.version.json` 判定；目录里可留多份 `bookcontent-v<版本>.pt`）
 - 延迟加载 + 模块级单例 + 双重检查锁，确保多线程下只加载一次
 - 强制 CPU 模式运行
 

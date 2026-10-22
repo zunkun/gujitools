@@ -17,6 +17,7 @@ from desktop.components.viewers.image_zoom_dialog import (
     ZoomPopupMixin, ZoomTarget,
 )
 from desktop.components.viewers.thumb_strip import ThumbStrip
+from desktop.utils.files import PRODUCING_MARKER
 
 
 class PdfViewerWidget(QWidget, WorkerHost, ZoomPopupMixin):
@@ -36,6 +37,12 @@ class PdfViewerWidget(QWidget, WorkerHost, ZoomPopupMixin):
     PAGE_CACHE_MAX = 24
     #: 预取延迟：用户停手这么久之后才发预取渲染请求（见 _prefetch_neighbors）
     PREFETCH_IDLE_MS = 250
+    #: **按可见窗口补缩略图**：视口上下各多补几行（用户来回滚一点不用等）
+    FILL_WINDOW_MARGIN = 12
+    #: 滚动停下多久之后才补（连续滚轮时不派活）
+    FILL_DEBOUNCE_MS = 180
+    #: 视口还没算出来（离屏/未 show）时的兜底行数
+    FALLBACK_VISIBLE = 16
 
     def __init__(self, placeholder: str = "暂无 PDF", parent=None):
         """初始化 PDF 查看器：左侧页缩略图条 + 右侧大图。
@@ -77,11 +84,17 @@ class PdfViewerWidget(QWidget, WorkerHost, ZoomPopupMixin):
         self._rescan_timer = QTimer(self)
         self._rescan_timer.setInterval(self.RESCAN_INTERVAL_MS)
         self._rescan_timer.timeout.connect(self._on_rescan)
+        # 按可见窗口补缩略图：滚动停下后补当前窗口（见 _fill_window）
+        self._fill_timer = QTimer(self)
+        self._fill_timer.setSingleShot(True)
+        self._fill_timer.timeout.connect(self._fill_window)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
         self.strip = ThumbStrip()
         self.strip.current_path_changed.connect(self._select_page)
+        # 滚动 → 停手后补**当前可见窗口**的缩略图（不再整本预渲染）
+        self.strip.verticalScrollBar().valueChanged.connect(self._on_thumb_scroll)
         layout.addWidget(self.strip)
         self.view = ImageView(placeholder)
         layout.addWidget(self.view, 1)
@@ -136,7 +149,43 @@ class PdfViewerWidget(QWidget, WorkerHost, ZoomPopupMixin):
             return
         self.view.clear_image("正在加载 PDF...")
         self.strip.add_placeholder("缩略图加载中...")
-        self._start_thumb_pass(render_missing=not self._watching)
+        # ⚠️ 第一轮**只读**：只为拿到页数（metadata）与已经存在的缓存文件。
+        #    缺页改为"滚到可见窗口时再补"（``_fill_window``）——一本 2000 页的
+        #    书，用户只看前几十页，没必要把整本渲完（用户 2026-10-21：
+        #    "我就是想提取图片"）。
+        self._start_thumb_pass(render_missing=False)
+
+    def _fill_window(self) -> None:
+        """**只补当前可见窗口**（首末行 ± ``FILL_WINDOW_MARGIN``）的缺图。
+
+        ⚠️ 为什么不再整本补（2026-10-21）：缩略图以前是"整本一次性渲完"，
+        2000 页的书要渲 2000 次（即使有 JPX 快速通道也要几分钟后台 CPU），
+        而用户通常只看开头几十页就想直接提取。现在按窗口补：滚到哪补到哪，
+        补一页只要 ~170ms（JPX 快速通道），滚动手感上是"顿一下就有图"。
+
+        ⚠️ ``_watching``（有别的生产者在填同一份缓存）时**一页都不渲**：
+        重复渲染等于工作量翻倍，交给回扫捡现成的（见 ``_on_rescan``）。
+        """
+        if not self._pdf_path or self._watching:
+            return
+        total = self._thumb_total or self.strip.count()
+        if total <= 0:
+            return
+        first, last = self.strip.visible_row_range()
+        if last < first:
+            # 视口还没算出来（离屏/未 show）：按兜底行数从头补
+            first, last = 0, min(total - 1, self.FALLBACK_VISIBLE - 1)
+        lo = max(0, first - self.FILL_WINDOW_MARGIN)
+        hi = min(total - 1, last + self.FILL_WINDOW_MARGIN)
+        missing = [i for i in range(lo, hi + 1) if i not in self._thumb_received]
+        if missing:
+            self._start_thumb_pass(pages=missing, render_missing=True)
+
+    def _on_thumb_scroll(self, *_args) -> None:
+        """滚动条动了：停手一小会儿再补窗口（连续滚动时不派活）。"""
+        if self._watching or not self._pdf_path:
+            return
+        self._fill_timer.start(self.FILL_DEBOUNCE_MS)
 
     def _start_thumb_pass(self, pages: list[int] | None = None,
                          render_missing: bool = True) -> None:
@@ -180,12 +229,20 @@ class PdfViewerWidget(QWidget, WorkerHost, ZoomPopupMixin):
         return len(names), newest
 
     def _cache_is_being_filled(self) -> bool:
-        """缓存目录里最近有缩略图落盘 → 导入后台任务正在填它。
+        """缓存目录里最近有缩略图落盘、**或**有生产者在场 → 导入后台任务在填它。
 
-        判据只看 **mtime**，不看数量：导入任务是「先复制、再逐页写缩略图」，
-        文件会持续变新；一旦它结束/失败/被取消，8 秒内不再有新文件，我们就
-        接手补缺页（老任务、导入失败的场景都靠这条兜住）。
+        ⚠️ 两道判据缺一不可（2026-10-21）：
+
+        - **在场标记**（``.producing``）：刚导入完的那一刻目录还是空的，光看
+          mtime 判据看不到生产者，于是查看器自己又渲一遍整本 —— 与导入任务
+          **各渲一遍**（28 页 JPX = 56 次 ~850ms 解码，用户看到的正是"缩略图
+          老半天不齐"）。标记在生产者一开始渲染就写、结束即删。
+        - **mtime**：生产者被杀/崩溃时标记会残留，也可能有**别的**东西在写
+          这个目录（老任务、外部脚本）；一旦 8 秒没有新文件也算"没人干了"，
+          由 ``_on_rescan`` 的回扫兜底接手。
         """
+        if self._cache_dir and (self._cache_dir / PRODUCING_MARKER).exists():
+            return True
         _count, newest = self._cache_scan()
         return bool(newest) and (time.time() - newest) < self.CACHE_ACTIVE_WINDOW_S
 
@@ -263,31 +320,38 @@ class PdfViewerWidget(QWidget, WorkerHost, ZoomPopupMixin):
         if self._stall_rounds >= self.RESCAN_STALL_ROUNDS:
             self._rescan_timer.stop()
             self._watching = False
-            self._start_thumb_pass(pages=missing, render_missing=True)
+            # 生产者不干了：**只补当前可见窗口**，别把整本渲一遍
+            self._fill_window()
 
     def _cached_thumbnail_count(self) -> int:
         """缓存目录里已有的缩略图数量（走 _cache_scan：一次 readdir，不解码）。"""
         return self._cache_scan()[0]
 
     def _thumbs_completed(self) -> None:
-        """一轮跑完：看是「只读」还是「自己补」，分别决定下一步。"""
+        """一轮跑完：只读 → 交给回扫；自己补 → 再核对一次窗口（防漏）。"""
         if self._thumb_worker_is_stale() or not self._pdf_path:
             return
         if self._pass_kind == "read":
-            # 只读通道跑完：交给回扫定时器（新文件会陆续出现）
-            if self._watching and not self._rescan_timer.isActive():
-                self._rescan_timer.start()
+            # 只读通道跑完：有人在填就回扫等新文件；没人填就自己补当前窗口
+            if self._watching:
+                if not self._rescan_timer.isActive():
+                    self._rescan_timer.start()
+            else:
+                self._fill_window()
             return
-        # 自己渲染缺页的那一轮：核对有没有漏（缓存被并发写入/事件丢失）
+        # 自己补完一轮：窗口里若还有漏（并发写/事件丢失），只重试一次
         if self._thumb_retried:
             return
-        missing = [
-            i for i in range(self.strip.count()) if i not in self._thumb_received
-        ]
-        if not missing:
+        first, last = self.strip.visible_row_range()
+        if last < first:
+            first, last = 0, min(self._thumb_total - 1, self.FALLBACK_VISIBLE - 1)
+        lo = max(0, first - self.FILL_WINDOW_MARGIN)
+        hi = min(self._thumb_total - 1, last + self.FILL_WINDOW_MARGIN)
+        if all(i in self._thumb_received for i in range(lo, hi + 1)):
+            self._thumb_retried = False
             return
         self._thumb_retried = True
-        self._start_thumb_pass(pages=self._missing_pages(), render_missing=True)
+        self._fill_window()
 
     def _select_page(self, page: int, _path: str) -> None:
         if not self._pdf_path:

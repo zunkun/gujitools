@@ -64,7 +64,9 @@ def run(ctx) -> None:
         ])
         assert made is not None
         # 拼版生效三判据：图里有节点（默认模板自带）+ 区域模式=左右分开 + 勾选
-        repo.save_draft(tid, "rembg", {"area": 1})
+        # ⚠️ 2026-10-22：area 归「检测文本框」（它决定第二步提交怎么裁图），
+        #    所以暂存要写 detect 那一格。
+        repo.save_draft(tid, "detect", {"area": 1})
         repo.save_imposition_doc(tid, {"enabled": True, "pages": [made]})
 
         page = TaskDetailPage(repo)

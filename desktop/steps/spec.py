@@ -593,11 +593,22 @@ SPECS: tuple[StepSpec, ...] = (
         progress_noun="张",
         file_filter=IMAGE_FILTER,
         output_suffix="_检测",
+        # ⚠️ **两个动作**（用户 2026-10-22）：
+        #    · 「检测文本框」= 只检测、只出框（``boxes.json``），供预览标注与人工修正；
+        #    · 「提交本次任务」= 按 ``area`` 把页面图裁成下一步要的图，落
+        #      ``stages/detect``（``pages`` 端口）。
+        #    所以这一格既是 ``boxes`` 的产出方，也是 ``pages`` 的产出方——
+        #    去底色吃的是**提交后的裁图**，不再是原始页 + 检测框。
+        #    没提交就不算这一步完成：下一步的输入目录里没有东西，自然转不过去
+        #    （与第三步「生成预览 → 提交本次任务」同一套语义）。
         inputs=("pages",),
-        outputs=("boxes",),
+        outputs=("boxes", "pages"),
         preview_attr="detect_viewer",
         # detect 无表单参数、历史回填没用武之地，右栏改显「检测结果统计」。
         panel_extra="detect_stats",
+        # 按钮文案：用户 2026-10-22 定（原来叫「执行本子任务」，说不清这一步干什么）
+        run_button_text="检测文本框",
+        has_submit=True,
         drop_icon="PHOTO",
     ),
     # ---- 流程主链 · 第 3 步 ----
@@ -621,14 +632,12 @@ SPECS: tuple[StepSpec, ...] = (
         run_label="开始去底色",
         file_filter=IMAGE_FILTER,
         output_suffix="_去底",
-        # ⚠️ **两个输入端口**：页面图来自 extract，检测框来自 detect。
-        #    此前这里只写了 ("pages",) —— 因为 ports 那层还没接线，写全也没有
-        #    任何地方读它，于是"去底色依赖检测框"这件事在声明上是缺失的
-        #    （2026-10-03 由 tests/selftests/step_ports.py 的 BPM 依赖检查发现：
-        #    把 rembg 提到 detect 前面跑，依赖检查没能拦住它）。
-        #    事实依据：任务流程第三步的预览用 ``boxes_provider=self._detect_boxes_for``
-        #    叠框，且 area/border 依框而变（``docs/functions/rembg.md``）。
-        inputs=("pages", "boxes"),
+        # ⚠️ 2026-10-22 用户口径：**去底色直接整个图片去底色**。
+        #    area/border 已从这一步移除，按检测框裁图改由「检测文本框」的
+        #    「提交本次任务」完成（见 detect 那条的说明）。因此这里只吃
+        #    上游的图片——默认流程里就是 detect 提交后的裁图。
+        #    事实依据：``functions/rembg.py`` 从来只按整张图算阈值。
+        inputs=("pages",),
         outputs=("pages",),
         preview_attr="rembg_viewer",
         # ⚠️ 这一步有**两个动作**：先「生成预览」（跑一步看效果），再

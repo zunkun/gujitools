@@ -173,13 +173,15 @@ def run(ctx) -> None:
     ok("用户显式给的 workers 不被改写", explicit == 9, f"{explicit}")
     # 默认值来源追踪（自适应并发的开关，2026-09-27）：默认注入的键
     # is_defaulted=True，用户显式给的=False——执行层据此决定要不要爬山。
+    # ⚠️ 用 ``type``（rembg spec 里的键）而不是 ``area``：2026-10-22 起
+    #    rembg 不再有 area（搬到 detect），拿它当"spec 默认键"的样本会失效。
     _ca_def = CommandArgs(command="rembg", input=".")
-    _ca_exp = CommandArgs(command="rembg", input=".", workers=2, area=1)
+    _ca_exp = CommandArgs(command="rembg", input=".", workers=2, type=2)
     ok("CommandArgs.is_defaulted 区分「默认注入」与「用户显式」",
        _ca_def.is_defaulted("workers")
-       and _ca_def.is_defaulted("area")  # spec 默认键没显式给 → 也算默认
+       and _ca_def.is_defaulted("type")  # spec 默认键没显式给 → 也算默认
        and not _ca_exp.is_defaulted("workers")
-       and not _ca_exp.is_defaulted("area"),
+       and not _ca_exp.is_defaulted("type"),
        f"默认 workers={_ca_def.is_defaulted('workers')} "
        f"显式 workers={_ca_exp.is_defaulted('workers')}")
 

@@ -59,6 +59,7 @@ def _panel_source(stage: str) -> str:
 
 
 def run(ctx) -> None:
+    from core.command_spec import COMMAND_SPECS
     from desktop.components.panels import PANEL_CLASSES
     from desktop.components.panels.params_spec import DEFAULTS
     from tests.selftests._context import ok
@@ -146,61 +147,47 @@ def run(ctx) -> None:
         panel.reset_to_default()
         got = panel.get_args()
         bad = {k: (got.get(k), v) for k, v in d.items()
-               if k in got and got[k] != v and k != "border"}
+               if k in got and got[k] != v}
         ok(f"{stage}：恢复默认后表单值与默认表一致", not bad, f"偏离：{bad}")
 
-    # ------------------------------------------------------- 4. rembg 下拉取值
-    # 旧实现是 int(area.currentText()[0])——解析显示文本首字符：只要有人把
-    # 文案从「1 (左右分开)」改成「一、左右分开」，取值直接 ValueError。
-    # 现在值存在 itemData 里。
-    #
-    # ⚠️ 断言必须走 ``get_args()``（真实契约），不能只读 ``currentData()``：
-    # 只读 currentData 的话，把 get_args 改回旧写法**这条也不会红**——因为旧
-    # 写法在**当前**文案下恰好也解析得出正确数字。只有改掉文案、再看
-    # ``get_args()`` 会不会炸，才真正区分两种实现（双向验证时实测踩到）。
+    # ------------------------------------- 4. detect 面板**没有** area（后端固定默认）
+    # ⚠️ 2026-10-22 第二轮：用户要求「去除 area 参数，默认 area = 1，提交的时候
+    #    area 参数只在提交的时候生效，desktop 页面去除这个参数，但是在后端代码
+    #    保留 area 相关逻辑」。所以这组断言从"下拉取值走 itemData"改成"面板根本
+    #    没有这个控件、默认值只在后端一处"。
+    from core.command_spec import DETECT_DEFAULT_AREA
+
+    detect = panels["detect"]
+    detect.reset_to_default()
+    ok("detect 面板没有 area 控件（参数已从界面移除）",
+       not hasattr(detect, "area"))
+    ok("detect 的 get_args 不含 area（不在表单里伪造默认值）",
+       detect.get_args() == {}, str(detect.get_args()))
+    ok("detect 的默认表为空（默认值不写两处）",
+       DEFAULTS["detect"] == {}, str(DEFAULTS["detect"]))
+    ok("后端有唯一默认值 DETECT_DEFAULT_AREA = 1",
+       DETECT_DEFAULT_AREA == 1, str(DETECT_DEFAULT_AREA))
+    ok("detect 命令规格的 area 默认与常量同源",
+       COMMAND_SPECS["detect"].defaults.get("area") == DETECT_DEFAULT_AREA,
+       str(COMMAND_SPECS["detect"].defaults.get("area")))
+    # 历史回填不会凭空塞进一个 area（面板没有这个键）
+    detect._apply_args_guarded({"area": 4})
+    ok("detect 回填 area=4 不会在表单里留下痕迹",
+       detect.get_args() == {} and not hasattr(detect, "area"),
+       str(detect.get_args()))
+
+    # ---------------------------------------------- 4b. rembg 面板不再有 area/border
+    # 用户 2026-10-22：「去底色步骤的 area 和 border 参数去除」。这两个键若悄悄
+    # 留在表单里，就会出现"界面能填、函数不读"的假参数。
     rembg = panels["rembg"]
-    rembg.reset_to_default()
-    ok("rembg 的 area 下拉取值走 itemData（不是解析显示文本首字符）",
-       rembg.get_args()["area"] == DEFAULTS["rembg"]["area"],
-       f"get_args={rembg.get_args()['area']!r}")
-    ok("rembg 的 type 下拉取值走 itemData",
-       rembg.get_args()["type"] == DEFAULTS["rembg"]["type"],
-       f"get_args={rembg.get_args()['type']!r}")
-    # 改掉中文文案 → 取值不变（旧实现这里会 ValueError）
-    _text = rembg.area.currentText()
-    rembg.area.setItemText(rembg.area.currentIndex(), "一、左右分开")
-    try:
-        _got = rembg.get_args()["area"]
-    except Exception as exc:  # noqa: BLE001 —— 旧实现在这里必炸
-        _got = f"{type(exc).__name__}: {exc}"
-    ok("改掉下拉的中文文案不影响取值（旧的首字符解析会炸）",
-       _got == DEFAULTS["rembg"]["area"], f"改文案后取值={_got!r}")
-    rembg.area.setItemText(rembg.area.currentIndex(), _text)
-
-    # 回填历史值（含缺键）都走默认表
-    rembg._apply_args_guarded({"area": 4, "type": 3})
-    ok("rembg 回填 area=4 / type=3",
-       rembg.get_args()["area"] == 4 and rembg.get_args()["type"] == 3,
-       f"{rembg.get_args()['area']}/{rembg.get_args()['type']}")
-    rembg._apply_args_guarded({})
-    ok("rembg 空回填回到默认 area=1 / type=1",
-       rembg.get_args()["area"] == 1 and rembg.get_args()["type"] == 1,
-       f"{rembg.get_args()['area']}/{rembg.get_args()['type']}")
-
-    # ------------------------------------------------- 4b. whole_page_only 锁定
-    # 用户 2026-10-07：流程里「图片去底色」前面没有「检测文本框」时（判据
-    # ports.detect_feeds_rembg），area 必须固定 4 且不可改——1/2/3 没框可裁。
-    locked = type(rembg)(whole_page_only=True)
-    ok("锁整页面板：area 恒为 4",
-       locked.get_args()["area"] == 4, f"get_args={locked.get_args()['area']!r}")
-    ok("锁整页面板：area 下拉被禁用（不可改）",
-       not locked.area.isEnabled())
-    # 暂存/历史里残留 area=1 的旧值也不能把它改回去
-    locked._apply_args_guarded({"area": 1})
-    ok("锁整页面板：回填旧 area=1 仍保持 4",
-       locked.get_args()["area"] == 4, f"get_args={locked.get_args()['area']!r}")
-    ok("非锁面板不受影响（默认可改）",
-       rembg.area.isEnabled() and rembg.whole_page_only is False)
+    ok("rembg 面板没有 area 控件", not hasattr(rembg, "area"))
+    ok("rembg 面板没有 border 控件", not hasattr(rembg, "border"))
+    ok("rembg 的 get_args 不含 area/border",
+       not ({"area", "border"} & set(rembg.get_args())),
+       str(sorted(rembg.get_args())))
+    ok("rembg 默认表不含 area/border",
+       not ({"area", "border"} & set(DEFAULTS["rembg"])),
+       str(sorted(DEFAULTS["rembg"])))
 
     # ------------------------------------------------- 5. default_for 的语义
     # ⚠️ None 默认值陷阱：p.get(key, default) 在值是 None 时兜底永不生效；

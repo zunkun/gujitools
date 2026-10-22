@@ -6,20 +6,20 @@
 
 1. **在不在流程里** ← **本任务的流程图**。图上画了「图片拼版」就有这一格
    （:meth:`ImpositionBaseMixin._imposition_node_visible`）。
-2. **这一步有没有意义** ← **第三步的「区域模式」``area``**。这是**业务前提**
-   而不是显示开关：流程里**有检测数据**时（「检测文本框」在去底色上游），
-   ``area=1``「左右分开」让每个文本框产出**成对的两张**半页图
-   （``-l`` / ``-r``），两张并排才拼得出古籍的正刊对开版面；``area=2/3``
-   输出并集整图、``area=4`` 输出整页，**本来就是一张图**。而流程里**没有
-   检测数据**时（去底色不在流程里，或它自己就是入口拿不到框——判据
-   ``desktop.steps.ports.detect_feeds_rembg``），拼版吃**整图**照样拼：
+2. **这一步有没有意义** ← **「检测文本框」的「区域模式」``area``**
+   （2026-10-22 起 area 归第二步；它决定提交时怎么裁图）。这是**业务前提**
+   而不是显示开关：流程里**有检测步骤**时（判据
+   ``desktop.steps.ports.flow_crops_pages``），``area=1``「左右分开」让每个
+   文本框产出**成对的两张**半页图（``-l`` / ``-r``），两张并排才拼得出古籍的
+   正刊对开版面；``area=2/3`` 输出并集整图、``area=4`` 输出整页，**本来就是
+   一张图**。而流程里**没有检测步骤**时，图是整页的，拼版吃**整图**照样拼：
    整幅单独一页、手动任意两张一页——「拼版作为第一个节点，也不需要
    detect 数据」（用户 2026-10-07）。见 :meth:`_imposition_area_ok`。
 3. **要不要真跑** ← **拼版面板底部的开关**（:meth:`imposition_active`
    只看勾没勾，那是"用户意图"）。开关在 ①②不满足时**置灰并写明原因**。
 
 ⚠️ **别把 ② 当成"显示开关"扔掉**（本轮曾误判过一次）：它决定"拼版这一步
-在当前参数下有没有意义"。``area`` 的其余取值与它无关，只管去底色怎么裁。
+在当前参数下有没有意义"。``area`` 的其余取值与它无关，只管第二步提交怎么裁。
 
 按操作逻辑拆成三个文件（后续可由不同 agent 分头维护，互不影响）：
 
@@ -42,6 +42,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
+from core.command_spec import DETECT_DEFAULT_AREA
 from desktop.pages.taskdetail.imposition_layout import ImpositionLayoutMixin
 from desktop.pages.taskdetail.imposition_pages import ImpositionPagesMixin
 from desktop.store import IMPOSITION_LABEL, IMPOSITION_STAGE
@@ -162,94 +163,34 @@ class ImpositionBaseMixin:
         return self.bar_index_of_step(IMPOSITION_STAGE) is not None
 
     # ------------------------------------------------------------- 区域模式
-    def _imposition_rembg_node(self) -> str | None:
-        """喂给**当前拼版节点**的「图片去底色」节点 id（按连线回溯）。
+    def _detect_area_value(self) -> int:
+        """当前区域模式 ``area`` —— **固定为后端默认值**（2026-10-22 第二轮）。
 
-        ⚠️ area/border 这类"上游参数"必须按**喂我的那个节点**读（B 方案）：
-        同一步骤可以有多个「图片去底色」，第二个拼版节点连的是第二个去底色
-        节点——读主节点的参数等于"用户没填过的那份表单"。
+        用户口径：「检测文本框流程，去除 area 参数，默认 area = 1，提交的时候
+        area 参数只在提交的时候生效，desktop 页面去除这个参数，但是在后端代码
+        保留 area 相关逻辑」。
 
-        ``node_supplier`` 在"图说不清"时会退回**阶段名**（``rembg_submit``，
-        同格多动作折过），那种情况退回该阶段的主节点。
-
-        ⚠️ 这里**绝不能**传 ``self.imposition_effective()``：那条判据自己就要问
-        ``_rembg_area_value()``（本函数的调用者），传进去就是
-        ``_rembg_area_value → _imposition_rembg_node → imposition_effective →
-        _imposition_area_ok → _rembg_area_value`` 无限递归（2026-10-17 实测
-        RecursionError：任务列表点开详情直接炸）。"谁喂我"本来就与拼版开关无关，
-        传 ``False`` 即可。
+        所以这里不再读面板、也不再读暂存/历史（那一层已经没有界面入口，旧存档
+        里的 area=4 也不该再把拼版判成"用不上"）。判定链
+        （:meth:`_imposition_area_ok` / :meth:`_imposition_switch_state`）原样
+        保留在下面——后端仍然按 ``area == 1`` 判断"每页是否产出成对的 -l/-r"，
+        只是眼下这个值恒为 1；将来若把 area 放回界面，只需改本方法。
         """
-        if not self.task_id:
-            return None
-        node = self.node_of_stage("imposition")
-        if not node:
-            return None
-        ref = self.store.node_supplier(
-            self.task_id, node, "pages", imposition_active=False
-        )
-        if not ref:
-            return None
-        if self.store.node_stage_of(self.task_id, ref) == "rembg":
-            return ref
-        return self._stage_primary.get("rembg")
-
-    def _rembg_area_value(self) -> int:
-        """当前**已知**的「区域模式」``area``；没有任何依据时返回 0。
-
-        优先级：第三步面板当前值 > 暂存（``drafts/rembg.json``）> 最近一次
-        执行参数——与 ``HistoryMixin._restore_stage_params`` 同源。
-
-        ⚠️ 面板未构造时**只读盘上数据**，绝不能走 ``LazyPanelHost`` 的属性
-        转发——那会把面板整个建出来，"谁进去谁才建"就白做了。
-
-        ⚠️ 返回 0 = **还不知道**（全新任务没配过 / 没跑过），**不等于
-        "不支持拼版"**：三态判据里它走"请先确认区域模式"那条提示。
-        """
-        host = self.panel_host_of_step("rembg")
-        # ⚠️ 流程里没有「图片去底色」这一格时 ``host`` 是 ``None``：没有任何
-        #    area 依据，直接往下走暂存/历史（自定义流程把去底色删掉是合法的）。
-        #    绝不能兜一个别的面板——那是"用户没填过的表单"。
-        peek: Any = getattr(host, "peek", None)
-        panel: Any = peek() if callable(peek) else None
-        if panel is not None:
-            try:
-                value = _as_area(panel.area.currentData())
-            except Exception:  # noqa: BLE001 - 面板半构造时不该拖垮流程条
-                value = 0
-            if value:
-                return value
-        if self.task_id:
-            # ⚠️ 暂存/历史按**喂我的那个去底色节点**读（B 方案）
-            node = self._imposition_rembg_node()
-            scope = self._node_scope(node)
-            draft = self.store.load_draft(self.task_id, "rembg", **scope) or {}
-            value = _as_area(draft.get("area"))
-            if value:
-                return value
-            history = (
-                self.store.list_node_runs(self.task_id, node, "rembg")
-                if node
-                else self.store.list_stage_runs(self.task_id, "rembg")
-            )
-            if history:
-                value = _as_area((history[0].get("parameters") or {}).get("area"))
-                if value:
-                    return value
-        return 0
+        return DETECT_DEFAULT_AREA
 
     def _flow_has_detect_data(self) -> bool:
-        """本流程里「图片去底色」**能不能拿到检测框**（判据唯一处：
-        :func:`desktop.steps.ports.detect_feeds_rembg`）。
+        """这批图**会不会被第二步按 area 裁过**（判据唯一处：
+        :func:`desktop.steps.ports.flow_crops_pages`）。
 
-        没任务（静态展示，理论上不会走到拼版开关）按**默认流程**算——
-        默认流程里有「检测文本框」。
+        没有检测步骤 ⇒ 图是整页的 ⇒ 拼版吃整图照样拼，area 前提不适用。
+        没任务（静态展示）按**默认流程**算——默认流程里有「检测文本框」。
         """
         task_id = getattr(self, "task_id", None)
         if not task_id:
             return True
-        from desktop.steps.ports import detect_feeds_rembg
+        from desktop.steps.ports import flow_crops_pages
 
-        return detect_feeds_rembg(self.store.task_diagram(task_id))
+        return flow_crops_pages(self.store.task_diagram(task_id))
 
     def _imposition_area_ok(self) -> bool:
         """当前区域模式**支持拼版**（``area == 1``「左右分开」）。
@@ -267,7 +208,7 @@ class ImpositionBaseMixin:
         """
         if not self._flow_has_detect_data():
             return True
-        return self._rembg_area_value() == IMPOSITION_AREA
+        return self._detect_area_value() == IMPOSITION_AREA
 
     def _imposition_switch_state(self) -> tuple[bool, str]:
         """「在流程中启用图片拼版」开关的**可用性与原因**（三个判据合成）。
@@ -294,10 +235,10 @@ class ImpositionBaseMixin:
             # 没有检测数据（去底色不在流程里 / 它自己就是入口）：拼版吃
             # 整图照样拼，area 前提不适用（见 _imposition_area_ok）
             return True, ""
-        area = self._rembg_area_value()
+        area = self._detect_area_value()
         if area == 0:
             return False, (
-                "先到第三步「图片去底色」确认区域模式"
+                "先到第二步「检测文本框」确认区域模式"
                 "（「左右分开」才需要拼版），再回来启用"
             )
         if area != IMPOSITION_AREA:

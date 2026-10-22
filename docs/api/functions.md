@@ -4,7 +4,7 @@
 
 图像处理功能模块：GUI 与 CLI 共用同一套算法
 
-覆盖 11 个模块、12 个公开类、48 个公开函数/方法（生成于 2026-10-21）。
+覆盖 11 个模块、12 个公开类、48 个公开函数/方法（生成于 2026-10-22）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -224,7 +224,7 @@ detect + 裁剪 + 去底色`，两者都通过本模块拿框，而不是各自�
 `utils.detect_content_boxes`。GUI 的 detect 阶段同样复用这里，因此
 「CLI 与 desktop 用同一套算法、只是参数不同」在检测这一步也成立。
 
-**两类内容框**（模型 `static/weights/bookcontent.pt`，两类对一页互斥）：
+**两类内容框**（模型 `static/weights/` 下当前生效的 `bookcontent*.pt`，两类对一页互斥）：
 - `harfcontent`（半幅，原 `bookcontent` 改名）：双栏排版中的一栏，一页最多
   左右两个框 → 检测结果落在 `PageBoxes.left` / `PageBoxes.right`；
 - `fullcontent`（整幅）：整页只有一个内容区 → 落在 `PageBoxes.full`，

@@ -43,7 +43,7 @@ from desktop.workers import (
 from desktop.store import TaskStore
 from desktop.components.pagination import DEFAULT_PAGE_SIZE, Pager, Pagination
 from desktop.components.task_table import TaskTable
-from desktop.utils.files import default_open_dir
+from desktop.utils.files import default_open_dir, set_producing_marker
 
 # 状态文案统一取自 ui.theme，避免各处各自维护一份
 STATUS_LABELS = T.STATUS_LABELS
@@ -481,6 +481,15 @@ class TaskListPage(QWidget, WorkerHost):
         # 流程是一次性的：只对**这一次**建的任务生效，别漏到下一个去
         self._pending_diagram = None
         self.refresh()
+        # ⚠️ **先立"这个目录正有人在填"的标记，再放后台活、再进详情**
+        #    （2026-10-21）：详情页的 PDF 查看器一进来就问"缩略图有人在填吗"，
+        #    没有标记时它看不到生产者（此刻目录还是空的），于是自己又渲一遍
+        #    整本——与导入任务各渲一遍，28 页 JPX 就是 56 次 ~850ms 的解码，
+        #    用户看到的是"缩略图老半天不齐"。标记由 worker 收尾时撤掉。
+        if str(path or "").strip():
+            # 空壳任务（没选 PDF）不会有缩略图生产者，别立标记（否则查看器
+            # 白等一轮回扫）
+            set_producing_marker(self.store.source_thumbnails_dir(task_id), True)
         # 用户下一步必是点进这一行：趁"刚点完导入"的等待期把详情页建出来
         self.import_queued.emit()
         # ⚠️ 直接进详情（用户 2026-10-06 第 4 条）：建完还停在列表页等于让
