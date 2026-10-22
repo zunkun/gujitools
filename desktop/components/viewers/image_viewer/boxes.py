@@ -35,7 +35,7 @@ class BoxesMixin(ImageViewerHost):
 
 
     def set_single_column(self, single_column: bool) -> None:
-        """告知画布「整本书是单栏书」：横跨整页的半幅框标「半框」而非左/右框。
+        """告知画布「整本书是单栏书」：横跨整页的半幅框标「半幅」而非左/右框。
 
         ⚠️ 结论来自整本书的统计（``utils.book_layout.profile_book``），由宿主
         算好后传入。这里只转发，判据不在本层重写。
@@ -43,9 +43,9 @@ class BoxesMixin(ImageViewerHost):
         self.view.set_single_column(single_column)
 
     def set_side_override(self, side: str | None, rerender: bool = True) -> None:
-        """告知画布「用户在这个半框页上指定了左/右」（``None``＝清除指定）。
+        """告知画布「用户在这个半幅页上指定了左/右」（``None``＝清除指定）。
 
-        半框的框横跨整页、中心压在中线上，按位置判左右没有意义，所以由用户
+        半幅的框横跨整页、中心压在中线上，按位置判左右没有意义，所以由用户
         指定（用户 2026-10-17）。指定值存在 boxes.json 的 ``side``。
         ``rerender=False``＝调用方随后还会 ``apply_boxes``，别画两遍。
         """

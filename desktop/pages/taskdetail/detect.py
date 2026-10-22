@@ -173,7 +173,7 @@ class DetectMixin:
         self._store_slots(path_text, slots, "manual", select_box=select_box)
 
     def box_page_half_candidate(self, path_text: str) -> bool:
-        """这页是否**够「半框」**（整本书单栏 + 只有一个横跨整页的框）。
+        """这页是否**够「半幅」**（整本书单栏 + 只有一个横跨整页的框）。
 
         判据本体在 ``utils.book_layout.is_single_wide_half``；这里只取数。
         """
@@ -353,14 +353,14 @@ class DetectMixin:
         # ⚠️ 全书判据**只算一次**：以前这里算一次、_book_note 里又算一次，
         #    2000 页的书等于白跑一遍（用户报「切类型卡顿」时排查到的重复项之一）。
         profile = profile_book(sampled)
-        # ⚠️ 把整本书的结论交给预览控件：**半框**标注靠它决定（见 styles.box_styles）。
+        # ⚠️ 把整本书的结论交给预览控件：**半幅**标注靠它决定（见 styles.box_styles）。
         self._apply_book_layout(profile)
         widget.set_results(
             len(paths), classes, book_note=self._book_note_from(profile)
         )
 
     def _single_column_display(self) -> bool:
-        """预览控件当前是否按「单栏书」显示（决定标签是否用「半框」）。
+        """预览控件当前是否按「单栏书」显示（决定标签是否用「半幅」）。
 
         ⚠️ 走 ``getattr`` 兜底：自测的 viewer 替身只实现被断言用到的方法，
         缺 ``single_column`` 时不该把整次上屏打断——取不到就按"不是单栏书"
@@ -377,7 +377,7 @@ class DetectMixin:
     def _side_override_of(self, path_text: str, raw=None) -> str | None:
         """某页的**用户指定左右**（``"left"``/``"right"``/None）。
 
-        只在「半框」页上有意义：那种框横跨整页、中心压在中线上，按位置判左右
+        只在「半幅」页上有意义：那种框横跨整页、中心压在中线上，按位置判左右
         没有意义，由用户点左/右指定（存 boxes.json 的 ``side``）。
 
         ⚠️ **只有「半幅单框」的页才可能带指定**：双框页/整幅页直接返回 None，
@@ -385,7 +385,7 @@ class DetectMixin:
         约 4ms，切换是高频动作）。
 
         ⚠️ 走 ``getattr`` 兜底：替身 store 可能没有 ``box_side_at``，取不到就
-        当"没指定"（退回自动判定的半框），不该让上屏中断。
+        当"没指定"（退回自动判定的半幅），不该让上屏中断。
         """
         slots = list(raw if raw is not None else self._raw_boxes_for(path_text))
         present = [b for b in slots if b]
@@ -402,14 +402,14 @@ class DetectMixin:
     def _apply_book_layout(self, profile) -> None:
         """把整本书的形态结论同步给预览控件（标签/面板高亮同一口径）。
 
-        ⚠️ 只同步**单栏书**这一条：它决定「半框」标注。整幅书里的可疑半幅
+        ⚠️ 只同步**单栏书**这一条：它决定「半幅」标注。整幅书里的可疑半幅
         不改标注（用户 2026-10-17 选择「只警告」），那条只进统计面板文案。
         """
         setter = getattr(self.detect_viewer, "set_single_column", None)
         if callable(setter):
             setter(bool(profile.single_column_book))
             # 结论可能刚变（刚检测完/刚编辑过框）→ 立刻按新口径回填面板高亮，
-            # 否则画面已标「半框」而面板仍停在「左框」。
+            # 否则画面已标「半幅」而面板仍停在「左框」。
             self._on_box_selection_changed(self.detect_viewer.selected_index())
 
     def _page_width_of(self, path: Path, sizes: dict | None = None) -> int:
@@ -538,10 +538,10 @@ class DetectMixin:
         full = is_full_content(raw)
         size = self._image_size_for(path_text)
         qsize = QSize(size[0], size[1]) if size else QImageReader(str(path_text)).size()
-        # ⚠️ 单栏书里这个横跨整页的框叫「半框」，不叫左框/右框——整本书的结论
+        # ⚠️ 单栏书里这个横跨整页的框叫「半幅」，不叫左框/右框——整本书的结论
         #    来自 profile_book（见 _refresh_detect_stats 写入 viewer 的那一份），
         #    这里读 viewer 的现值以保证「标签」与「面板高亮」同一口径。
-        # ⚠️ 若用户在半框页上**指定过**左/右，标签就用指定值（优先级见 box_styles）。
+        # ⚠️ 若用户在半幅页上**指定过**左/右，标签就用指定值（优先级见 box_styles）。
         side = self._side_override_of(path_text, raw)
         setter = getattr(self.detect_viewer, "set_side_override", None)
         if callable(setter):
@@ -756,7 +756,7 @@ class DetectMixin:
                 self.detect_viewer.set_reference_boxes(compute_final_boxes(boxes, None))
         # rembg 预览的区域同步刷新（显示范围跟随检测框）
         # ⚠️ **只在本步就是「图片去底色」时才刷**（用户 2026-10-17 报「切换
-        #    左/右/半框/整幅卡顿」）：``refresh_display`` 会重建全部条目并重新
+        #    左/右/半幅/整幅卡顿」）：``refresh_display`` 会重建全部条目并重新
         #    解码 + 合成当前页的大图（12MP 扫描件几十到几百毫秒），而第二步
         #    根本看不见那个控件。进第三步时 ``_show_stage`` 会 ``set_images``
         #    重建一次，所以这里跳过不会读到旧框。

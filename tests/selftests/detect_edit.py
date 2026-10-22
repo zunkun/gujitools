@@ -447,7 +447,7 @@ def run(ctx) -> None:  # noqa: ARG001 - 本模块自带夹具，不用共享 ctx
        host.entry() == [LEFT, RIGHT] and not host.toasts, f"{host.toasts}")
 
     # 规则 2/6：半幅里点**另一侧** → 左右由位置决定，因此不写数据；
-    # ⚠️ 也不再弹提示（用户 2026-10-17：指定左/右/半框都不需要提示）——
+    # ⚠️ 也不再弹提示（用户 2026-10-17：指定左/右/半幅都不需要提示）——
     # 面板高亮已经显示真实类型，拖动跨过中线自然会换边。
     host.toasts.clear()
     host._set_selected_box_kind("right")

@@ -134,8 +134,8 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
         #: 文件名去后缀 → **槽位表示**（半幅 2 槽 / 整幅 1 槽）。
         #: 与任务流程同构：不在内存里存"用户画了几个框"，只存槽位。
         self._boxes: dict[str, list] = {}
-        #: 用户在半框页上**指定**的左右：``{stem: "left"|"right"}``。
-        #: 半框的框横跨整页、中心压在中线上，位置判定没意义，所以由用户指定
+        #: 用户在半幅页上**指定**的左右：``{stem: "left"|"right"}``。
+        #: 半幅的框横跨整页、中心压在中线上，位置判定没意义，所以由用户指定
         #: （用户 2026-10-17）。本页不落盘这些框，故只存内存。
         self._sides: dict[str, str] = {}
         #: 页宽缓存 ``{stem: 宽}``：整本书判据要逐页宽度，而 ``_image_size`` 走
@@ -548,7 +548,7 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
         self._origins[key] = "manual"
         self._sync_export_buttons()
         # 人工改动可能改变整本书的判定（如把一页的宽框缩窄）→ 先重算再重画，
-        # 否则这一帧仍按旧结论标「半框」。
+        # 否则这一帧仍按旧结论标「半幅」。
         # ⚠️ 用户动作必须**立即**算（不走节流）：他正盯着这一页看结果。
         self._refresh_layout_now()
         self._apply_boxes(path_text, selected=self.viewer.selected_index())
@@ -560,7 +560,7 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
         ``out_dir`` 是输出目录（``detect`` 默认不落盘，这里只是共用控件回传的
         那个路径），导出按钮会用到它。
         """
-        # 整本书的框都齐了 → 重算形态判定（决定「半框」标注）再重画当前页
+        # 整本书的框都齐了 → 重算形态判定（决定「半幅」标注）再重画当前页
         # ⚠️ 收尾必须**立即**算：节流那次可能还没到点，而检测已经结束。
         self._refresh_layout_now()
         self._apply_boxes(
@@ -652,7 +652,7 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
         self._store_slots(path_text, slots, select=select_box)
 
     def box_page_half_candidate(self, path_text: str) -> bool:
-        """这页是否**够「半框」**（整本书单栏 + 只有一个横跨整页的框）——为真时
+        """这页是否**够「半幅」**（整本书单栏 + 只有一个横跨整页的框）——为真时
         左/右可由用户指定（中心压在中线上，位置判定没意义）。"""
         if not self.viewer.single_column():
             return False
@@ -742,7 +742,7 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
         return width
 
     def _refresh_book_layout(self) -> None:
-        """重算**整本书**的形态判定，并同步给预览控件（决定「半框」标注）。
+        """重算**整本书**的形态判定，并同步给预览控件（决定「半幅」标注）。
 
         ⚠️ 判据本体在 ``utils/book_layout.profile_book``：它要的是"整本书长什么
         样"——单页分不出「一栏横跨整页」与「真双栏书漏检一侧」。本方法只负责
@@ -782,7 +782,7 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
         """节流到期：重算整本书判定，并把当前页重画一遍。
 
         ⚠️ 必须重画当前页：判定结论（``single_column``）变了，同一页的框标注
-        会跟着从「左框/右框」变成「半框」（或反过来），不重画屏幕就停在旧标签上
+        会跟着从「左框/右框」变成「半幅」（或反过来），不重画屏幕就停在旧标签上
         （见 ``_apply_boxes`` 里的 ``box_names``）。
         """
         if not self._layout_dirty:
@@ -801,8 +801,8 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
         slots = self._boxes.get(Path(path_text).stem, [])
         shown = [b for b in slots if b]
         full = is_full_content(slots)
-        # ⚠️ 单栏书里横跨整页的那个框叫「半框」，不是左框/右框——整本书的结论
-        #    来自 _refresh_book_layout（见 profile_book）。用户在半框页上指定过
+        # ⚠️ 单栏书里横跨整页的那个框叫「半幅」，不是左框/右框——整本书的结论
+        #    来自 _refresh_book_layout（见 profile_book）。用户在半幅页上指定过
         #    左右时用指定值（优先级见 box_styles）。
         side = self._sides.get(Path(path_text).stem)
         setter = getattr(self.viewer, "set_side_override", None)
@@ -1108,7 +1108,7 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
             self._yolo_summary = summary
             self._exported = list(summary["labels"])
             return str(dest)
-        # ⚠️ 带上整本书结论：单栏书里那个横跨整页的框在导出图上也要标「半框」，
+        # ⚠️ 带上整本书结论：单栏书里那个横跨整页的框在导出图上也要标「半幅」，
         #    否则导出图与界面看到的标注不一致（同一批框、两种叫法）。
         self._exported = export_annotated(
             entries, dest, report=log, progress=progress,

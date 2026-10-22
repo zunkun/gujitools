@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 177 个模块、193 个公开类、1420 个公开函数/方法（生成于 2026-10-23）。
+覆盖 177 个模块、193 个公开类、1421 个公开函数/方法（生成于 2026-10-23）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -167,7 +167,7 @@
 | [`desktop.ui.style`](#desktopuistyle) | 0 | 3 |
 | [`desktop.ui.theme`](#desktopuitheme) | 0 | 3 |
 | [`desktop.ui.toast`](#desktopuitoast) | 0 | 1 |
-| [`desktop.ui.widgets`](#desktopuiwidgets) | 10 | 48 |
+| [`desktop.ui.widgets`](#desktopuiwidgets) | 10 | 49 |
 | [`desktop.ui.window_size`](#desktopuiwindow_size) | 0 | 3 |
 | [`desktop.utils.files`](#desktoputilsfiles) | 0 | 28 |
 | [`desktop.utils.icon`](#desktoputilsicon) | 0 | 3 |
@@ -339,7 +339,7 @@ gujitools 桌面端主窗口：左侧导航壳层（任务管理 + 独立模块�
 - ``box_raw_slots(path_text)``：该页**槽位**表示（保留 null，形态在槽数里）；
 - ``box_page_is_full(path_text)``：当前页是否整幅形态（半幅页上点左/右
   只解释规则不给切换）；
-- ``box_page_half_candidate(path_text)``：当前页是否**够「半框」**——整本书
+- ``box_page_half_candidate(path_text)``：当前页是否**够「半幅」**——整本书
   判定为单栏书 **且** 这页只有一个宽到横跨整页的框（判据
   :func:`utils.book_layout.is_single_wide_box`）。为真时左右**可指定**
   （中心压在中线上，位置判定没有意义）；
@@ -367,8 +367,8 @@ gujitools 桌面端主窗口：左侧导航壳层（任务管理 + 独立模块�
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(host: Any) -> None` | — |
-| `set_kind(path_text: str, index: int, kind: str) -> None` | 面板里点了「左框 / 右框 / 半框 / 整幅」。 |
-| `clear_side(path_text: str, index: int) -> None` | 点「半框」：摊成半幅 **2 槽** + 清除「用户指定的左右」。 |
+| `set_kind(path_text: str, index: int, kind: str) -> None` | 面板里点了「左框 / 右框 / 半幅 / 整幅」。 |
+| `clear_side(path_text: str, index: int) -> None` | 点「半幅」：摊成半幅 **2 槽** + 清除「用户指定的左右」。 |
 | `select_box_of_kind(kind: str) -> None` | 没有选中框时，点类型＝选中该类框；该类型不存在则提示。 |
 | `make_full(path_text: str, index: int) -> None` | 把第 index 个框设为「整幅」（整幅与半幅互斥、一页只能一个框）。 |
 | `make_half(path_text: str, index: int, kind: str) -> None` | 点「左框」/「右框」：把第 index 个框**直接**摆到那一侧。 |
@@ -376,7 +376,7 @@ gujitools 桌面端主窗口：左侧导航壳层（任务管理 + 独立模块�
 
 ##### `set_kind(path_text: str, index: int, kind: str) -> None`
 
-面板里点了「左框 / 右框 / 半框 / 整幅」。
+面板里点了「左框 / 右框 / 半幅 / 整幅」。
 
 没选中框时按用户要求 6 处理：**点类型即选中该类型的框**；选中了框
 则切换它的类型（整幅要过互斥检查）。
@@ -387,7 +387,7 @@ gujitools 桌面端主窗口：左侧导航壳层（任务管理 + 独立模块�
 - 「左框」「右框」：**单框页**（含当前是「整幅」的页）直接摆到该侧并
   记下 ``side``；**双框页**左右由中心位置决定，点另一侧没有可写的东西
   （把一侧"改成另一侧"等于交换两栏，不是标注）；
-- 「半框」：摊成半幅 **2 槽** + 清除 ``side``（旧实现只清 ``side`` 不动
+- 「半幅」：摊成半幅 **2 槽** + 清除 ``side``（旧实现只清 ``side`` 不动
   槽数——从「整幅」点它就是空操作，用户 2026-10-17 报）；
 - 「整幅」：单槽 + 互斥确认（见 :meth:`make_full`）。
 
@@ -400,16 +400,16 @@ gujitools 桌面端主窗口：左侧导航壳层（任务管理 + 独立模块�
 
 ##### `clear_side(path_text: str, index: int) -> None`
 
-点「半框」：摊成半幅 **2 槽** + 清除「用户指定的左右」。
+点「半幅」：摊成半幅 **2 槽** + 清除「用户指定的左右」。
 
-⚠️ **静默**（用户 2026-10-17：指定左/右/半框都不需要提示）：点类型
+⚠️ **静默**（用户 2026-10-17：指定左/右/半幅都不需要提示）：点类型
 本身就是即时生效的操作，结果直接反映在框的颜色/名称与面板高亮上，
 再弹一条"已指定"只是噪音。
 
 ⚠️⚠️ **「整幅」页上点它也必须真的离开整幅**（用户 2026-10-17 报
-「当前是整幅，直接点半框没有效果」）：整幅页是 **1 槽**，只清 ``side``
+「当前是整幅，直接点半幅没有效果」）：整幅页是 **1 槽**，只清 ``side``
 不动槽数，形态还是整幅 ⇒ 看着什么都没发生。这里先按中心位置把它摊成
-半幅 2 槽（``set_box_half``）再清指定——「半框」就是"半幅 2 槽且没有
+半幅 2 槽（``set_box_half``）再清指定——「半幅」就是"半幅 2 槽且没有
 人工指定"。
 
 ⚠️ 只有**单框页**才有可清除的指定：双框页的左右由位置决定，没有
@@ -426,11 +426,11 @@ gujitools 桌面端主窗口：左侧导航壳层（任务管理 + 独立模块�
   ⚠️ 这一条**与当前形态无关**——「整幅」页同样只有一个框，所以从
   「整幅」点「左框/右框」也必须**一步**到位（旧实现走"整幅→半幅"那条
   按**中心位置**落槽的分支，而整页框的中心恰好压在中线上 ⇒ 恒落右槽，
-  用户点「左框」却得到「右框/半框」，得再点一次——用户 2026-10-17 报）；
+  用户点「左框」却得到「右框/半幅」，得再点一次——用户 2026-10-17 报）；
 - **双框页**（一页真有左右两页）→ 左右由**中心位置**决定，点另一侧
   没有可写的东西（把一侧"改成另一侧"等于交换两栏，不是标注）。
 
-⚠️ 两条路都**静默**（用户 2026-10-17：「指定左框/右框/半框不需要提示」）：
+⚠️ 两条路都**静默**（用户 2026-10-17：「指定左框/右框/半幅不需要提示」）：
 框的颜色与名称、面板高亮本身就是结果，弹提示只是噪音。
 ⚠️ 无论哪条路都要**回填面板**：滑块在按下时已被移过去，不回填就停在
 假位置（看着切了、其实没切）。
@@ -4608,7 +4608,7 @@ family，保证"所见即所得"。
 | `selected_index() -> int` | 当前选中的框下标；无选中为 -1。 |
 | `select_box(index: int) -> None` | 程序化选中第 index 个框（-1 = 取消选中）并重绘。 |
 | `box_kinds() -> list` | 当前每个框的类型：``"left"`` / ``"right"`` / ``"full"`` / ``"half"``。 |
-| `set_side_override(side: str \| None, rerender: bool=True) -> None` | 告知「用户在半框页上指定的左右」（``"left"``/``"right"``/``None``）。 |
+| `set_side_override(side: str \| None, rerender: bool=True) -> None` | 告知「用户在半幅页上指定的左右」（``"left"``/``"right"``/``None``）。 |
 | `side_override() -> str \| None` | 当前页的用户指定左右（无指定为 ``None``）。 |
 | `set_single_column(single_column: bool, rerender: bool=True) -> None` | 告知「整本书已判定为单栏书」（``utils.book_layout.profile_book``）。 |
 | `single_column() -> bool` | 当前是否按**单栏书**显示（宿主据此算标签，见 ``box_names``）。 |
@@ -4629,11 +4629,11 @@ family，保证"所见即所得"。
 
 ##### `set_side_override(side: str | None, rerender: bool=True) -> None`
 
-告知「用户在半框页上指定的左右」（``"left"``/``"right"``/``None``）。
+告知「用户在半幅页上指定的左右」（``"left"``/``"right"``/``None``）。
 
-⚠️ 这是**用户声明**，不是按位置算的左右：半框的框横跨整页、中心压在
+⚠️ 这是**用户声明**，不是按位置算的左右：半幅的框横跨整页、中心压在
 中线上，位置判定没有意义（用户 2026-10-17）。为真时标签与面板高亮都
-显示该侧；``None`` 退回按整本书自动判定的「半框」。
+显示该侧；``None`` 退回按整本书自动判定的「半幅」。
 
 ``rerender=False`` 同 :meth:`set_single_column`：后面紧跟 ``apply_boxes``
 时别画两遍。
@@ -4643,7 +4643,7 @@ family，保证"所见即所得"。
 告知「整本书已判定为单栏书」（``utils.book_layout.profile_book``）。
 
 ⚠️ 这是**整本书**的结论，由宿主统计后传进来——单页分不出「一栏横跨
-整页」与「真双栏书漏检一侧」。为真时，一个横跨整页的半幅框标「半框」
+整页」与「真双栏书漏检一侧」。为真时，一个横跨整页的半幅框标「半幅」
 而不是「左框/右框」。
 
 ``rerender=False``：调用方紧接着还会 ``apply_boxes``（那本身就会重绘），
@@ -4770,15 +4770,15 @@ Qt 在窗口 dpr 变化时发 ``DevicePixelRatioChange``，**不保证**同时�
 
 | 函数 | 说明 |
 | --- | --- |
-| `is_half_page(boxes, image_size, full: bool=False, single_column: bool=False) -> bool` | 本页是否该标成「半框」（一个横跨整页的框，且整本书是单栏书）。 |
+| `is_half_page(boxes, image_size, full: bool=False, single_column: bool=False) -> bool` | 本页是否该标成「半幅」（一个横跨整页的框，且整本书是单栏书）。 |
 | `box_styles(boxes, image_size=None, full: bool=False, single_column: bool=False, side_override: str \| None=None)` | 框列表 → ``(names, colors)``，与 ``boxes``（去掉空项后）等长。 |
 | `box_names(boxes, image_size=None, full: bool=False, single_column: bool=False, side_override: str \| None=None) -> list` | 框名称列表（大图信息条文案用）——与 :func:`box_styles` 同一份规则。 |
 
 #### `is_half_page(boxes, image_size, full: bool=False, single_column: bool=False) -> bool`
 
-本页是否该标成「半框」（一个横跨整页的框，且整本书是单栏书）。
+本页是否该标成「半幅」（一个横跨整页的框，且整本书是单栏书）。
 
-三条同时成立：非整幅页、**恰好一个框**、该框宽 ≥80% 页宽
+三条同时成立：非整幅页、**恰好一个框**、该框宽 ≥60% 页宽
 （:func:`utils.book_layout.is_single_wide_box`——阈值只有那一处）。
 
 ⚠️ ``single_column``（整本书判定）必须由宿主传进来：单页**分不出**
@@ -4791,17 +4791,17 @@ Qt 在窗口 dpr 变化时发 ``DevicePixelRatioChange``，**不保证**同时�
 框列表 → ``(names, colors)``，与 ``boxes``（去掉空项后）等长。
 
 - ``full=True``（整幅页 / fullcontent）：每个框都是「整幅」+ 靛蓝；
-- ``side_override``（``"left"``/``"right"``）：**用户在「半框」页上指定的
+- ``side_override``（``"left"``/``"right"``）：**用户在「半幅」页上指定的
   左右**（存 ``boxes.json`` 的 ``side``）——优先于一切自动判定，直接标
   左框/右框。这种页的框横跨整页、中心压在中线上，按位置算出来的左右
   没有意义（用户 2026-10-17）；
-- ``single_column=True`` 且本页只有一个横跨整页的框：标「半框」+ 青
+- ``single_column=True`` 且本页只有一个横跨整页的框：标「半幅」+ 青
   （见 :func:`is_half_page`）——单栏书里它就是一整栏；
 - 否则是半幅页：按**中心位置**判左右（`utils.box_geometry.half_sides`）。
 
-⚠️ 优先级：``full`` > ``side_override`` > ``半框``。整幅是 1 槽形态，
-与半幅互斥；用户指定的左右则是对「半框」的**明确否定**（他说这页其实
-是某一边），所以要先于半框判定。
+⚠️ 优先级：``full`` > ``side_override`` > ``半幅``。整幅是 1 槽形态，
+与半幅互斥；用户指定的左右则是对「半幅」的**明确否定**（他说这页其实
+是某一边），所以要先于半幅判定。
 
 ⚠️ 这里以前按"框的序号/个数"命名（1 个框→「整幅」、2 个→「左/右」），于是
 删掉一个框会让剩下的框"变身"（用户 2026-09-29 报）。现在类型只由上述
@@ -4826,8 +4826,8 @@ Qt 在窗口 dpr 变化时发 ``DevicePixelRatioChange``，**不保证**同时�
 | 方法 | 说明 |
 | --- | --- |
 | `apply_boxes(boxes: list[tuple], image_size: QSize, info_text: str='', full: bool=False, selected: int=-1) -> None` | 在当前大图上叠加切割框（图片像素坐标）；大图未就绪时挂起等待。 |
-| `set_single_column(single_column: bool) -> None` | 告知画布「整本书是单栏书」：横跨整页的半幅框标「半框」而非左/右框。 |
-| `set_side_override(side: str \| None, rerender: bool=True) -> None` | 告知画布「用户在这个半框页上指定了左/右」（``None``＝清除指定）。 |
+| `set_single_column(single_column: bool) -> None` | 告知画布「整本书是单栏书」：横跨整页的半幅框标「半幅」而非左/右框。 |
+| `set_side_override(side: str \| None, rerender: bool=True) -> None` | 告知画布「用户在这个半幅页上指定了左/右」（``None``＝清除指定）。 |
 | `side_override() -> str \| None` | 当前页的用户指定左右（无指定为 ``None``）。 |
 | `single_column() -> bool` | 当前是否按单栏书显示（宿主算标签文案时与画面保持同一口径）。 |
 | `set_reference_boxes(boxes: list) -> None` | 设置参考框（最终裁剪大框，虚线显示，不参与编辑）。 |
@@ -4846,16 +4846,16 @@ Qt 在窗口 dpr 变化时发 ``DevicePixelRatioChange``，**不保证**同时�
 
 ##### `set_single_column(single_column: bool) -> None`
 
-告知画布「整本书是单栏书」：横跨整页的半幅框标「半框」而非左/右框。
+告知画布「整本书是单栏书」：横跨整页的半幅框标「半幅」而非左/右框。
 
 ⚠️ 结论来自整本书的统计（``utils.book_layout.profile_book``），由宿主
 算好后传入。这里只转发，判据不在本层重写。
 
 ##### `set_side_override(side: str | None, rerender: bool=True) -> None`
 
-告知画布「用户在这个半框页上指定了左/右」（``None``＝清除指定）。
+告知画布「用户在这个半幅页上指定了左/右」（``None``＝清除指定）。
 
-半框的框横跨整页、中心压在中线上，按位置判左右没有意义，所以由用户
+半幅的框横跨整页、中心压在中线上，按位置判左右没有意义，所以由用户
 指定（用户 2026-10-17）。指定值存在 boxes.json 的 ``side``。
 ``rerender=False``＝调用方随后还会 ``apply_boxes``，别画两遍。
 
@@ -5721,7 +5721,7 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 整幅走（不拆 ``-l``/``-r``）——**必须与提交派生用同一个判据**，
 否则预览显示 ``0007-l``、成品却是 ``0007.png``。
 
-``side_for``：``(path) -> "left"|"right"|None``，用户在**半框页**上指定
+``side_for``：``(path) -> "left"|"right"|None``，用户在**半幅页**上指定
 的左右。给了指定就不做单栏归一化（那是在说"这页其实是某一边"）。
 
 ``force``：清单与参数都没变时也把条目**整条重装**（重解缩略图、按最新
@@ -6333,7 +6333,7 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 | `box_page_is_full(path_text: str) -> bool` | — |
 | `box_image_size(path_text: str)` | — |
 | `box_commit(path_text: str, slots: list, select_box=None, side='keep') -> None` | 落库 + 重画；``side`` 按需写入/清除这页的人工左右指定。 |
-| `box_page_half_candidate(path_text: str) -> bool` | 这页是否**够「半框」**（整本书单栏 + 只有一个横跨整页的框）——为真时 |
+| `box_page_half_candidate(path_text: str) -> bool` | 这页是否**够「半幅」**（整本书单栏 + 只有一个横跨整页的框）——为真时 |
 | `box_confirm(title: str, body: str, yes_text: str, cancel_text: str) -> bool` | — |
 | `box_resync_kind(_index: int) -> None` | 按现值回填类型控件高亮（类型操作结束后必调，别停在假位置）。 |
 | `box_current_path_text() -> str` | — |
@@ -6377,7 +6377,7 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 
 ##### `box_page_half_candidate(path_text: str) -> bool`
 
-这页是否**够「半框」**（整本书单栏 + 只有一个横跨整页的框）——为真时
+这页是否**够「半幅」**（整本书单栏 + 只有一个横跨整页的框）——为真时
 左/右可由用户指定（中心压在中线上，位置判定没意义）。
 
 ##### `export_boxes() -> None`
@@ -6980,7 +6980,7 @@ detect_process/detect_cache、current_stage()。
 | `box_page_is_full(_path_text: str) -> bool` | — |
 | `box_image_size(path_text: str)` | — |
 | `box_commit(path_text: str, slots: list, select_box=None, side='keep') -> None` | 落库 + 重画；``side`` 按需写入/清除这页的人工左右指定。 |
-| `box_page_half_candidate(path_text: str) -> bool` | 这页是否**够「半框」**（整本书单栏 + 只有一个横跨整页的框）。 |
+| `box_page_half_candidate(path_text: str) -> bool` | 这页是否**够「半幅」**（整本书单栏 + 只有一个横跨整页的框）。 |
 | `box_confirm(title: str, body: str, yes_text: str, cancel_text: str) -> bool` | — |
 | `box_resync_kind(index: int) -> None` | 按现值回填面板的「选中框类型」高亮（类型操作结束后必调）。 |
 | `box_current_path_text() -> str` | — |
@@ -7000,7 +7000,7 @@ detect_process/detect_cache、current_stage()。
 
 ##### `box_page_half_candidate(path_text: str) -> bool`
 
-这页是否**够「半框」**（整本书单栏 + 只有一个横跨整页的框）。
+这页是否**够「半幅」**（整本书单栏 + 只有一个横跨整页的框）。
 
 判据本体在 ``utils.book_layout.is_single_wide_half``；这里只取数。
 
@@ -8184,7 +8184,7 @@ GUI 主进程**绝不能**在这里 import 到 cv2（实测 ``import functions.d
   与 ``report`` 分开是因为两者用途不同、频率与内容也不同（一个给人看、
   一个驱动进度条）；``progress`` 是可选的，CLI 那条路不传。
 - ``single_column``：整本书已判定为**单栏书**（``utils.book_layout``）时
-  为真——横跨整页的半幅框标「半框」而不是「左框/右框」，与界面上看到的
+  为真——横跨整页的半幅框标「半幅」而不是「左框/右框」，与界面上看到的
   标注一致。CLI 那条路拿不到全书统计，保持默认 False（旧行为）。
 
 返回：写出的文件路径列表（成功的那几张）。
@@ -8794,7 +8794,7 @@ single_column_book: 整本书是否已判定为**单栏书**（``utils.book_layo
 page_width_for   : (path_str) -> 页宽像素，用于算单宽框（``None``/0 时
     该页不会被判成单宽框）。只在 ``single_column_book`` 为真时才被调用。
 side_for         : (path_str) -> ``"left"``/``"right"``/None，用户在
-    **半框页**上指定的左右。给了指定就**不做**单栏归一化——那是用户在说
+    **半幅页**上指定的左右。给了指定就**不做**单栏归一化——那是用户在说
     「这页其实是某一边」（用户 2026-10-17），命名/拼版都要按左/右走。
 
 派生规则（2026-10-22 起没有 area：**检测出几个框就裁几张图**）：
@@ -8803,7 +8803,7 @@ side_for         : (path_str) -> ``"left"``/``"right"``/None，用户在
   所在槽位判定）——否则产物叫 <页>.png，第四步拼版按文件名后缀判
   左右半幅时会把这页误当整幅（用户 2026-10-01 报）；
 - 整幅内容(fullcontent)：单槽单框，label 就是页名（不拆），框原样裁剪；
-- 单栏书：整本书只有一栏，页里不会有左页+右页，于是「单个宽框（≥80%
+- 单栏书：整本书只有一栏，页里不会有左页+右页，于是「单个宽框（≥60%
   页宽）的半幅页」被退化成**单槽**，直接继承整幅的语义；
 - 无框：整页原图透传（条目不带 effect）。
 最终按 CLI natural sort 排序（同页 r 在 l 前）。
@@ -12305,7 +12305,7 @@ boxes.json / sizes.json 读写。
 | `save_detect_boxes(task_id: str, image_key: str, boxes: list, origin: str='auto', node_id: str \| None=None, primary_id: str \| None=None) -> None` | 写入某页的检测框及其来源标记（auto=自动检测，manual=人工编辑）。 |
 | `box_side_at(path: Path \| None, image_key: str) -> str \| None` | 读**指定文件**里某页的人工左右指定（``"left"``/``"right"``/None）。 |
 | `box_sides_all_at(path: Path \| None) -> dict[str, str]` | 整份文件的 ``image_key → side``（一次读盘，只含有显式指定的页）。 |
-| `set_box_side_override(task_id: str, image_key: str, side: str \| None, node_id: str \| None=None, primary_id: str \| None=None) -> None` | 写入/清除某页的人工左右指定（``None``＝清除，退回"半框"）。 |
+| `set_box_side_override(task_id: str, image_key: str, side: str \| None, node_id: str \| None=None, primary_id: str \| None=None) -> None` | 写入/清除某页的人工左右指定（``None``＝清除，退回"半幅"）。 |
 | `save_detect_boxes_batch(task_id: str, entries: dict[str, list], node_id: str \| None=None, primary_id: str \| None=None, extra: dict[str, dict] \| None=None) -> None` | 批量写入某阶段的检测框（origin=auto）：**一次读改写**。 |
 | `save_image_sizes_batch(task_id: str, entries: dict[str, tuple[int, int]], node_id: str \| None=None, primary_id: str \| None=None) -> None` | 批量写入页面原始尺寸：一次读改写（理由同 save_detect_boxes_batch）。 |
 | `sizes_path(task_id: str, node_id: str \| None=None, primary_id: str \| None=None) -> Path` | 页面原始尺寸文件：主节点是 ``sizes.json``，副本是 ``sizes~<节点>.json``。 |
@@ -12364,7 +12364,7 @@ boxes.json / sizes.json 读写。
 
 写入某页的检测框及其来源标记（auto=自动检测，manual=人工编辑）。
 
-⚠️ **保留**该页已有的 ``side``（用户在半框页上指定的左右，见
+⚠️ **保留**该页已有的 ``side``（用户在半幅页上指定的左右，见
 :meth:`set_box_side_override`）：拖框/缩放走的是这条路径，
 顺手把用户刚指定的左右清掉，等于"一拖就丢设定"。
 
@@ -12373,12 +12373,12 @@ boxes.json / sizes.json 读写。
 读**指定文件**里某页的人工左右指定（``"left"``/``"right"``/None）。
 
 ⚠️ 这是**用户显式声明**，不是按位置算出来的左右（那由
-``box_geometry.half_sides`` 现算）。只有「半框」页需要它：那种框横跨
+``box_geometry.half_sides`` 现算）。只有「半幅」页需要它：那种框横跨
 整页、中心压在中线上，位置判定没有意义。
 
 ##### `set_box_side_override(task_id: str, image_key: str, side: str | None, node_id: str | None=None, primary_id: str | None=None) -> None`
 
-写入/清除某页的人工左右指定（``None``＝清除，退回"半框"）。
+写入/清除某页的人工左右指定（``None``＝清除，退回"半幅"）。
 
 ⚠️ 独立成一个方法而不是给 ``save_detect_boxes`` 加参数：那条路是
 "拖框/缩放"的高频路径，**不该**顺带改这个语义位。只有用户明确点了
@@ -14588,13 +14588,23 @@ QSS 里不会生效；它由 `desktop.components.log_panel.apply_log_view_style`
 不会漂。
 ⚠️ ``WA_TransparentForMouseEvents``：框不挡任何点击。
 
+⚠️ **要盯着整条祖先链，不能只盯目标**（用户 2026-10-23 报「切步骤节点
+返回后，提交按钮的红框定位不准确」）：提交按钮在「检测文本框 + 提交本次
+任务」那一行里，**行本身**被父布局整体搬走后，按钮相对行没变 ⇒ 它收不到
+Move，而框的宿主是行之上的祖先（紧身行装不下外扩框）⇒ 框停在旧位置。
+提示行显隐（实测差 24px）、切步骤重排都会触发这条。所以这里在目标**和
+它到窗口的整条祖先链**上装过滤器，任何一环挪动/缩放/显隐/布局失效都重适配。
+同理，祖先被隐藏时框也必须跟着隐藏，否则会浮在别的步骤面板上（拼版伪
+步骤整组藏掉执行按钮行，就是这种残留）。
+
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(target: QWidget)` | — |
 | `eventFilter(obj, event)` | Qt 事件过滤器。 |
-| `refit() -> None` | 外扩 :data:`PAD` 重摆自己；宿主沿祖先链找第一个装得下的。 |
+| `set_wanted(on: bool) -> None` | 业务侧要求"亮/灭"：亮时按目标当前可见性决定是否真的显示。 |
+| `refit() -> None` | 外扩 :data:`PAD` 重摆自己；沿祖先链找第一个装得下的宿主。 |
 | `paintEvent(_event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
 
 ### `class Card(QFrame)`
@@ -14816,6 +14826,10 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 ⚠️ 覆盖层挂在控件的**父控件**上（外扩画框），所以引用**不能**走
 ``target.findChild``（只搜子孙搜不到），钉在控件的动态属性里。
 摘掉只是 ``hide()``：控件留着，下次要亮直接 show，省一次构造。
+
+⚠️ **另存一份 Python 强引用**（``_red_dash_frame_ref``）：动态属性里只
+留 C++ 指针，Python 包装器一旦被回收，再 ``property()`` 取回的就成了
+基类 ``QObject``（没有 ``set_wanted``/``isVisible``，自测当场炸过）。
 
 #### `combo_box(items: Iterable[str | Sequence[Any]] | None=None, width: int | None=None) -> ComboBox`
 

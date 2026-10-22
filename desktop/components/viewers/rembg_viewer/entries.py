@@ -36,7 +36,7 @@ class EntriesMixin(RembgViewerHost):
         ``_page_width_provider``（同样是预算好的字典），**不在这里现算**。
 
         ⚠️ **用户指定过左右**的页不归一化：那是在说"这页其实是某一边"
-        （半框中心压在中线上，位置判定没意义），命名要按 ``-l``/``-r`` 走。
+        （半幅中心压在中线上，位置判定没意义），命名要按 ``-l``/``-r`` 走。
         """
         if not boxes:
             return boxes

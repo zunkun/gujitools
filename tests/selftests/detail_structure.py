@@ -10,6 +10,8 @@
 的「有没有滚动条」全是假的（详见 _context.show_detail 的说明）。
 """
 
+from typing import Any
+
 NAME = "detail_structure"
 DEPENDS: list[str] = ["tasklist"]
 TITLE = "详情页结构"
@@ -417,6 +419,14 @@ def run(ctx) -> None:
     # ② 拼版面板「在流程中启用图片拼版」可勾未勾且左侧有可拼图。
     from desktop.ui.widgets import RedDashFrame, set_red_frame
 
+    def _frame_of(widget: Any) -> Any:
+        """取红框的 Python 强引用（见 ``set_red_frame`` 的 ``_red_dash_frame_ref``）。
+
+        ⚠️ 不用 ``widget.property("_red_dash_frame")``：类型存根把返回值判成
+        ``Any | None``，后面每次访问都会被 pyright 报空引用。
+        """
+        return getattr(widget, "_red_dash_frame_ref")
+
     # 单元：挂框 → 覆盖层挂在**父控件**上、四周外扩 PAD（不贴身，2026-10-13
     # 用户：「线框高一些，不要紧贴着」）；摘框 → 隐藏（控件复用不重建）；幂等
     from pathlib import Path as _Path
@@ -443,17 +453,19 @@ def run(ctx) -> None:
     _host.show()
     pump(app, times=2)
     set_red_frame(probe_button, True)
-    frame = probe_button.property("_red_dash_frame")
+    # ⚠️ 用 ``_red_dash_frame_ref``（Python 强引用）而不是动态属性：
+    #    ``property()`` 在类型存根里是 ``None``，pyright 会把后续访问判成空引用。
+    frame = _frame_of(probe_button)
     _want = probe_button.geometry().adjusted(-5, -5, 5, 5)
     ok("挂框：覆盖层存在、可见、鼠标穿透、外扩 5px 不贴身",
-       frame is not None and frame.isVisible()
+       frame.isVisible()
        and frame.testAttribute(_Qt.WidgetAttribute.WA_TransparentForMouseEvents)
        and frame.parentWidget() is _host
        and frame.geometry() == _want,
-       f"frame={None if frame is None else frame.geometry()} want={_want}")
+       f"frame={frame.geometry()} want={_want}")
     set_red_frame(probe_button, True)
     ok("重复挂框幂等（不重建第二个覆盖层）",
-       probe_button.property("_red_dash_frame") is frame)
+       _frame_of(probe_button) is frame)
     probe_button.move(80, 100)
     probe_button.resize(200, 40)
     pump(app, times=2)
@@ -470,21 +482,64 @@ def run(ctx) -> None:
 
     _tight = _QW(_host)
     _tight.setGeometry(10, 10, 220, 40)
+    _tight.show()
     _btn2 = PushButton("提交探针", _tight)
     _btn2.move(10, 2)
     _btn2.resize(140, 36)
+    _btn2.show()
     pump(app, times=2)
     set_red_frame(_btn2, True)
-    _frame2 = _btn2.property("_red_dash_frame")
+    _frame2 = _frame_of(_btn2)
     _want2 = _QRect(
         _btn2.mapTo(_host, _btn2.rect().topLeft()),
         _btn2.mapTo(_host, _btn2.rect().bottomRight()),
     ).adjusted(-5, -5, 5, 5)
     ok("紧身行：框爬到装得下的祖先（不被父控件裁剪得看不见）",
-       _frame2 is not None and _frame2.isVisible()
+       _frame2.isVisible()
        and _frame2.parentWidget() is _host
        and _frame2.geometry() == _want2,
        f"parent={_frame2.parentWidget()} geo={_frame2.geometry()} want={_want2}")
     set_red_frame(_btn2, False)
+
+    # 祖先挪动 / 显隐（用户 2026-10-23 报「切步骤节点返回后，提交按钮外的
+    # 红框定位不准确」）：目标被父布局整体搬走时**它自己收不到 Move**，
+    # 只有祖先收到；框必须盯着整条祖先链，否则停在旧位置（实测差 24px）。
+    # 祖先被整组隐藏时（拼版伪步骤）框也必须一起藏，不能浮在别的面板上。
+    _row3 = _QW(_host)
+    _row3.setGeometry(10, 20, 260, 40)   # 紧身行：外扩框装不下 → 宿主爬到 _host
+    _row3.show()
+    _btn3 = PushButton("祖先挪动探针", _row3)
+    _btn3.setGeometry(10, 2, 160, 36)
+    _btn3.show()
+    pump(app, times=2)
+
+    def _want3() -> "_QRect":
+        return _QRect(
+            _btn3.mapTo(_host, _btn3.rect().topLeft()),
+            _btn3.mapTo(_host, _btn3.rect().bottomRight()),
+        ).adjusted(-5, -5, 5, 5)
+
+    set_red_frame(_btn3, True)
+    _frame3 = _frame_of(_btn3)
+    ok("祖先挪动前：框位置正确",
+       _frame3.geometry() == _want3(),
+       f"geo={_frame3.geometry()} want={_want3()}")
+    _row3.move(10, 120)
+    pump(app, times=2)
+    ok("祖先整体挪动后框跟随（目标自身收不到 Move）",
+       _frame3.geometry() == _want3(),
+       f"geo={_frame3.geometry()} want={_want3()}")
+    _row3.hide()
+    pump(app, times=2)
+    ok("祖先隐藏时框一起隐藏（不浮在别的步骤面板上）",
+       not _frame3.isVisible())
+    _row3.show()
+    pump(app, times=2)
+    ok("祖先重新显示后框回到原位并恢复显示",
+       _frame3.isVisible() and _frame3.geometry() == _want3(),
+       f"visible={_frame3.isVisible()} geo={_frame3.geometry()} want={_want3()}")
+    set_red_frame(_btn3, False)
+    ok("摘框后即使在显示中也保持隐藏（业务状态与可见性分开）",
+       not _frame3.isVisible())
     _host.deleteLater()
     pump(app, times=2)

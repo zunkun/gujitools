@@ -118,7 +118,7 @@ class RenderMixin(ImageViewHost):
         font.setPixelSize(13)
         painter.setFont(font)
         # 名称/颜色**每帧现算**：整幅页恒为「整幅」；单栏书里一个横跨整页的框
-        # 是「半框」；其余半幅页按中心位置定左右，因此拖动跨过中线的那一刻
+        # 是「半幅」；其余半幅页按中心位置定左右，因此拖动跨过中线的那一刻
         # 标签就换过来（不必等宿主回写）。
         size = (self._image_size.width(), self._image_size.height()) if self._image_size else None
         names, colors = box_styles(

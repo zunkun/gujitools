@@ -164,9 +164,9 @@ def run(ctx) -> None:
     ok("BGR 由 RGB 推导，不会手写漂移",
        _BGR == tuple((b, g, r) for r, g, b in _RGB), str(_BGR))
     ok("GUI 框名称与 utils 同源", _GUI_N == list(_UTIL_N), f"{_GUI_N}")
-    # 5 种：左框/右框/合并框/整幅/半框——半框是单栏书里横跨整页的那一栏
+    # 5 种：左框/右框/合并框/整幅/半幅——半幅是单栏书里横跨整页的那一栏
     # （派生标注，见 utils/book_layout），必须与其它四种颜色互不相同。
-    ok("每个框色互不相同（整幅、半框都不会与左/右/合并框混淆）",
+    ok("每个框色互不相同（整幅、半幅都不会与左/右/合并框混淆）",
        len(set(_RGB)) == len(_RGB) == 5, str(_RGB))
 
     # ---- 6. --save：默认不落地、开启才落地 ----
@@ -335,4 +335,3 @@ def run(ctx) -> None:
 
     ok("GUI detect 阶段不经过 CLI 拦截",
        "_reject_dry_run" not in inspect.getsource(_ds), "GUI 被 CLI 规则污染")
-

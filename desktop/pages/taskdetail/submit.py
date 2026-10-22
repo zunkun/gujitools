@@ -405,7 +405,6 @@ class SubmitMixin:
         """
         self.submit_button.setToolTip(tip)
         self.submit_button.setEnabled(version not in (None, NO_PREVIEW))
-        set_red_frame(self.submit_button, version == NEW_VERSION)
         self.submit_button.setText(SUBMIT_TEXT)
         if version == NEW_VERSION:
             # 加粗走 setFont：setStyleSheet 会把 qfluent 按钮的整套 qss
@@ -421,6 +420,10 @@ class SubmitMixin:
         else:  # no_preview / 执行中
             bold_button(self.submit_button, False)
             self.submit_hint.hide()
+        # ⚠️ 红框**最后**挂：提示行的显隐会改变执行按钮行的位置，先让上面这些
+        #    状态落定再算框（否则第一帧会框在旧位置，用户 2026-10-23 报
+        #    「切步骤节点返回后，提交按钮外的红框定位不准确」）。
+        set_red_frame(self.submit_button, version == NEW_VERSION)
 
     def _show_submit_hint(self, text: str, color: str) -> None:
         self.submit_hint.setText(text)

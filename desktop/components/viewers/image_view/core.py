@@ -60,12 +60,12 @@ class ImageView(
         #: 不按位置判左右），且只允许一个框；否则是半幅页（按中心定左右、最多两个）。
         self._full_mode = False
         #: 整本书是否已判定为**单栏书**（``utils/book_layout``）。为真时，一个
-        #: 横跨整页的半幅框标「半框」而不是「左框/右框」——单页分不出
+        #: 横跨整页的半幅框标「半幅」而不是「左框/右框」——单页分不出
         #: 「一栏横跨整页」与「真双栏漏检一侧」，只能靠整本书的统计。
         #: 由宿主经 :meth:`set_single_column` 设置。
         self._single_column = False
-        #: 用户在**半框页**上指定的左右（``"left"``/``"right"``/``None``）。
-        #: 半框的框横跨整页、中心压在中线上，位置判定没意义，所以由用户指定
+        #: 用户在**半幅页**上指定的左右（``"left"``/``"right"``/``None``）。
+        #: 半幅的框横跨整页、中心压在中线上，位置判定没意义，所以由用户指定
         #: （用户 2026-10-17）。存在 boxes.json 的 ``side``（见 store）。
         self._side_override: str | None = None
         self._reference_boxes: list = []  # 参考框（最终裁剪大框），虚线显示
@@ -155,11 +155,11 @@ class ImageView(
         return half_sides(self._boxes, size)
 
     def set_side_override(self, side: str | None, rerender: bool = True) -> None:
-        """告知「用户在半框页上指定的左右」（``"left"``/``"right"``/``None``）。
+        """告知「用户在半幅页上指定的左右」（``"left"``/``"right"``/``None``）。
 
-        ⚠️ 这是**用户声明**，不是按位置算的左右：半框的框横跨整页、中心压在
+        ⚠️ 这是**用户声明**，不是按位置算的左右：半幅的框横跨整页、中心压在
         中线上，位置判定没有意义（用户 2026-10-17）。为真时标签与面板高亮都
-        显示该侧；``None`` 退回按整本书自动判定的「半框」。
+        显示该侧；``None`` 退回按整本书自动判定的「半幅」。
 
         ``rerender=False`` 同 :meth:`set_single_column`：后面紧跟 ``apply_boxes``
         时别画两遍。
@@ -179,7 +179,7 @@ class ImageView(
         """告知「整本书已判定为单栏书」（``utils.book_layout.profile_book``）。
 
         ⚠️ 这是**整本书**的结论，由宿主统计后传进来——单页分不出「一栏横跨
-        整页」与「真双栏书漏检一侧」。为真时，一个横跨整页的半幅框标「半框」
+        整页」与「真双栏书漏检一侧」。为真时，一个横跨整页的半幅框标「半幅」
         而不是「左框/右框」。
 
         ``rerender=False``：调用方紧接着还会 ``apply_boxes``（那本身就会重绘），

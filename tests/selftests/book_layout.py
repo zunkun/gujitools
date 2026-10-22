@@ -4,13 +4,13 @@
 用户 2026-10-17 定的两个极端，判据都是**跨页**的，因此不能落在只看单页的
 ``utils.box_geometry`` 里（它分不出「一个横跨整页的半幅框」和「真双栏」）：
 
-1. **单栏书**：整本书基本只有一栏（每个框都是单个、且 ≥80% 页宽），页里永远不会
+1. **单栏书**：整本书基本只有一栏（每个框都是单个、且 ≥60% 页宽），页里永远不会
    并排左页+右页 ⇒ 这时 ``7-l.png`` 是**假身份**，必须直接按页码命名 ``7.png``；
 2. **整幅书**：基本全是整幅却冒出半幅 ⇒ 结果可疑，**只警告、不自动改**。
 
 本模块钉住三件事：
 
-- 判据本体（``utils.book_layout``）的边界：80% 阈值、2 槽要求、无页宽时保守回落；
+- 判据本体（``utils.book_layout``）的边界：60% 阈值、2 槽要求、无页宽时保守回落；
 - 落地（``print_plan``）：单栏书的单宽框页退化成单槽后，命名/镜像/拼版三条
   下游语义**一起**变对——这是本改动最容易只改一半、留下拼版仍错配的地方；
 - 警告方向：整幅书里的半幅**必须仍按半幅处理**（不许顺手"纠正"）。
@@ -45,15 +45,20 @@ def run(ctx) -> None:
     )
 
     # ---- 1. 单宽框判据的三条边界 ----
-    ok("80% 是单宽框的宽度下限（阈值唯一且可查）",
-       abs(SINGLE_COLUMN_WIDTH_RATIO - 0.80) < 1e-9, str(SINGLE_COLUMN_WIDTH_RATIO))
+    ok("60% 是单宽框的宽度下限（阈值唯一且可查）",
+       abs(SINGLE_COLUMN_WIDTH_RATIO - 0.60) < 1e-9, str(SINGLE_COLUMN_WIDTH_RATIO))
     ok("宽 85% 的单框 → 单宽框", is_single_wide_half(WIDE, W))
-    ok("恰好 80% 也算（判据是 ≥ 而非 >）",
-       is_single_wide_half([[100, 0, 900, 500], None], W))
-    ok("宽 79% 不算单宽框（阈值之下不放行）",
-       not is_single_wide_half([[105, 0, 895, 500], None], W))
+    ok("恰好 60% 也算（判据是 ≥ 而非 >）",
+       is_single_wide_half([[200, 0, 800, 500], None], W))
+    ok("宽 59% 不算单宽框（阈值之下不放行）",
+       not is_single_wide_half([[205, 0, 795, 500], None], W))
     ok("宽 45% 的单框不算（那是真半栏）",
        not is_single_wide_half(NARROW, W))
+    # 用户 2026-10-23：任务 0012（单页扫描，文本块占 70~78% 页宽）必须认成半幅。
+    # 旧阈值 80% 时它整本判不出单栏书，每页都被按中心拆错左右。
+    SINGLE_SCAN = [[126, 1047, 1588, 3124], None]  # 0012 第 7 页实框，宽 74%
+    ok("宽 74% 的单页扫描框 → 半幅（0012 这类书的回归）",
+       is_single_wide_half(SINGLE_SCAN, 1973))
     ok("双框不算（真双栏书本来就该拆 -l/-r）",
        not is_single_wide_half(DOUBLE, W))
     ok("1 槽不算（已是整幅语义，不该被这里改写）",
@@ -232,7 +237,7 @@ def run(ctx) -> None:
     finally:
         widget.deleteLater()
 
-    # ---- 9. 第二步标注：单栏书里的整宽框标「半框」，不是左/右框 ----
+    # ---- 9. 第二步标注：单栏书里的整宽框标「半幅」，不是左/右框 ----
     import inspect as _inspect
 
     from desktop.components.box_kinds import BoxKindEditor
@@ -244,39 +249,39 @@ def run(ctx) -> None:
     wide = [list(WIDE[0])]
     narrow_box = [list(NARROW[0])]
     names_half, _c = box_styles(wide, (W, 1400), full=False, single_column=True)
-    ok("单栏书 + 整宽单框 → 标注「半框」（不是左框/右框）",
-       names_half == [HALF_BOX_NAME] == ["半框"], str(names_half))
+    ok("单栏书 + 整宽单框 → 标注「半幅」（不是左框/右框）",
+       names_half == [HALF_BOX_NAME] == ["半幅"], str(names_half))
     # 关掉整本书判定 → 回到左/右框（旧行为，没证据不改形态）。
     # ⚠️ WIDE 的中心恰在中线上（cx==500），按 half_sides 规则归「右框」，
-    #    所以这里只断言"是某一侧、且不是半框"——不把具体的左右钉死，
+    #    所以这里只断言"是某一侧、且不是半幅"——不把具体的左右钉死，
     #    免得测试反而去管位置规则的细节。
     names_off, _c = box_styles(wide, (W, 1400), full=False, single_column=False)
-    ok("非单栏书时同一个框仍标左/右框（不是半框，旧行为不变）",
+    ok("非单栏书时同一个框仍标左/右框（不是半幅，旧行为不变）",
        names_off in (["左框"], ["右框"]), str(names_off))
     # 真双栏页：两个框，不因单栏书判定被改写
     names_two, _c = box_styles(
         [list(DOUBLE[0]), list(DOUBLE[1])], (W, 1400), full=False,
         single_column=True)
-    ok("单栏书判定不会把真双栏页的两个框改成半框",
+    ok("单栏书判定不会把真双栏页的两个框改成半幅",
        sorted(names_two) == ["右框", "左框"], str(names_two))
-    # 窄单框（不足 80%）仍按位置标左框——它确实是半栏
+    # 窄单框（不足 60%）仍按位置标左框——它确实是半栏
     names_narrow, _c = box_styles(
         narrow_box, (W, 1400), full=False, single_column=True)
-    ok("不足 80% 页宽的单个框仍标「左框」（那是真半栏）",
+    ok("不足 60% 页宽的单个框仍标「左框」（那是真半栏）",
        names_narrow == ["左框"], str(names_narrow))
-    # 整幅优先于半框（整幅是显式类型）
+    # 整幅优先于半幅（整幅是显式类型）
     names_full, _c = box_styles(
         [list(FULL[0])], (W, 1400), full=True, single_column=True)
-    ok("整幅页不会被标成半框（整幅是显式类型，优先级更高）",
+    ok("整幅页不会被标成半幅（整幅是显式类型，优先级更高）",
        names_full == ["整幅"], str(names_full))
-    ok("半框判据与 book_layout 同源（不自己算 80%）",
+    ok("半幅判据与 book_layout 同源（不自己算 60%）",
        is_half_page(wide, (W, 1400), False, True)
        and is_single_wide_box(wide[0], W),
-       "标注层的半框判据与 utils 不一致")
-    ok("页宽未知时不当半框（保守回落成左/右）",
+       "标注层的半幅判据与 utils 不一致")
+    ok("页宽未知时不当半幅（保守回落成左/右）",
        not is_half_page(wide, None, False, True))
 
-    # 面板高亮用的 box_kinds 必须与标签同一口径（否则画面标半框、面板亮左框）
+    # 面板高亮用的 box_kinds 必须与标签同一口径（否则画面标半幅、面板亮左框）
     from PySide6.QtCore import QSize
     from PySide6.QtWidgets import QApplication, QPushButton
 
@@ -292,7 +297,7 @@ def run(ctx) -> None:
         ok("非单栏书：整宽单框 box_kinds 报 left（按位置）",
            iv.box_kinds() == ["left"], str(iv.box_kinds()))
         iv.set_single_column(True)
-        ok("单栏书：box_kinds 报 half（面板高亮与画面同为「半框」）",
+        ok("单栏书：box_kinds 报 half（面板高亮与画面同为「半幅」）",
            iv.box_kinds() == ["half"], str(iv.box_kinds()))
         iv.set_single_column(False)
         ok("退回非单栏：box_kinds 立刻恢复 left（不留上一本书的结论）",
@@ -300,11 +305,11 @@ def run(ctx) -> None:
     finally:
         iv.deleteLater()
 
-    # 面板按钮里必须有「半框」这一段（否则用户无从「指定/查看」当前框类型）
+    # 面板按钮里必须有「半幅」这一段（否则用户无从「指定/查看」当前框类型）
     from desktop.components.panels.detect_panel import BOX_KIND_ITEMS
 
-    ok("右侧「选中框类型」含「半框」一段",
-       ("half", "半框") in BOX_KIND_ITEMS, str(BOX_KIND_ITEMS))
+    ok("右侧「选中框类型」含「半幅」一段",
+       ("half", "半幅") in BOX_KIND_ITEMS, str(BOX_KIND_ITEMS))
 
     # ---- 「点框就切换」：画出来的段边界必须就是可点的段边界 ----
     # 用户 2026-10-17 报「要点到文字才能切换」。旧实现绘制与命中都直接用段宽
@@ -370,7 +375,7 @@ def run(ctx) -> None:
     seg.close()
     seg.deleteLater()
 
-    ok("点「半框」只清指定、不弹提示（规则见 clear_side）",
+    ok("点「半幅」只清指定、不弹提示（规则见 clear_side）",
        "box_toast" not in _inspect.getsource(BoxKindEditor.clear_side),
        "clear_side 仍在弹提示")
     # ⚠️ 用户 2026-10-17：左右**按框的个数**分两种情况 + **指定都不弹提示**——
@@ -452,34 +457,34 @@ def run(ctx) -> None:
        bool(host_plain.resyncs) and set(host_plain.resyncs) == {0},
        str(host_plain.resyncs))
 
-    # ② 半框页：指定左 → 写 side=left、摆到左槽、**静默**
+    # ② 半幅页：指定左 → 写 side=left、摆到左槽、**静默**
     host_half = _FakeHost([[60, 100, 900, 1300], None], "half", True)
     BoxKindEditor(host_half).set_kind("0007.png", 0, "left")
-    ok("半框页指定左 → 落库 side=left（真生效）",
+    ok("半幅页指定左 → 落库 side=left（真生效）",
        host_half.commits and host_half.commits[-1]["side"] == "left",
        str(host_half.commits))
-    ok("半框页指定左 → 槽位摆到左槽",
+    ok("半幅页指定左 → 槽位摆到左槽",
        host_half.commits[-1]["slots"] == [[60, 100, 900, 1300], None],
        str(host_half.commits[-1]["slots"]))
-    ok("半框页指定左 → **不弹提示**（指定是即时操作）",
+    ok("半幅页指定左 → **不弹提示**（指定是即时操作）",
        host_half.toasts == [], str(host_half.toasts))
 
-    # ③ 半框页：点「半框」→ 清掉指定（side=None）、**静默**
+    # ③ 半幅页：点「半幅」→ 清掉指定（side=None）、**静默**
     host_clear = _FakeHost([[60, 100, 900, 1300], None], "left", True)
     BoxKindEditor(host_clear).set_kind("0007.png", 0, "half")
-    ok("半框页点「半框」→ 清除指定（side=None）",
+    ok("半幅页点「半幅」→ 清除指定（side=None）",
        host_clear.commits and host_clear.commits[-1]["side"] is None,
        str(host_clear.commits))
-    ok("半框页点「半框」→ **不弹提示**",
+    ok("半幅页点「半幅」→ **不弹提示**",
        host_clear.toasts == [], str(host_clear.toasts))
 
-    # ④ 普通半幅页：点「半框」没有可清除的东西 → 静默无操作
+    # ④ 普通半幅页：点「半幅」没有可清除的东西 → 静默无操作
     host_noop = _FakeHost([list(DOUBLE[0]), list(DOUBLE[1])], "left", False)
     BoxKindEditor(host_noop).set_kind("0007.png", 0, "half")
-    ok("普通页点「半框」→ 静默无操作（没有可清除的指定）",
+    ok("普通页点「半幅」→ 静默无操作（没有可清除的指定）",
        host_noop.commits == [] and host_noop.toasts == [],
        f"{host_noop.commits} {host_noop.toasts}")
-    ok("普通页点「半框」→ 也回填（滑块拨回真实类型，不停在「半框」）",
+    ok("普通页点「半幅」→ 也回填（滑块拨回真实类型，不停在「半幅」）",
        bool(host_noop.resyncs) and set(host_noop.resyncs) == {0},
        str(host_noop.resyncs))
 
@@ -504,28 +509,28 @@ def run(ctx) -> None:
        and host_single_left.commits[-1]["slots"] == [[540, 100, 940, 1300], None],
        str(host_single_left.commits))
 
-    # ⑥ **整幅页点「半框」不能是空操作**（用户 2026-10-17 报：「当前是整幅，
-    #    直接点半框没有效果」）。整幅是 **1 槽**，旧实现只清 ``side`` 不动槽数
+    # ⑥ **整幅页点「半幅」不能是空操作**（用户 2026-10-17 报：「当前是整幅，
+    #    直接点半幅没有效果」）。整幅是 **1 槽**，旧实现只清 ``side`` 不动槽数
     #    ⇒ 形态仍是整幅，面板回填后又跳回「整幅」。必须摊成半幅 **2 槽**。
     #    ⚠️ 样本用**中心恰在中线上**的整页框：按位置落槽恒为右槽，正好证明
-    #    "半框"这一下真的动了槽数（不是把同一个 1 槽原样写回）。
+    #    "半幅"这一下真的动了槽数（不是把同一个 1 槽原样写回）。
     host_full_half = _FakeHost([list(FULL[0])], "full", False)
     BoxKindEditor(host_full_half).set_kind("0007.png", 0, "half")
-    ok("整幅页点「半框」→ 真的摊成 2 槽（不再停在整幅）",
+    ok("整幅页点「半幅」→ 真的摊成 2 槽（不再停在整幅）",
        bool(host_full_half.commits)
        and host_full_half.commits[-1]["slots"] == [None, [100, 100, 900, 1300]],
        str(host_full_half.commits))
-    ok("整幅页点「半框」→ 同时清除人工指定（side=None）",
+    ok("整幅页点「半幅」→ 同时清除人工指定（side=None）",
        bool(host_full_half.commits)
        and host_full_half.commits[-1]["side"] is None,
        str(host_full_half.commits))
 
     # ⑦ **整幅页点「左框/右框」必须一步到位**（用户 2026-10-17 报：「整幅」点
-    #    「左框」，会先切到「半框」，再点一次才是左框）。旧实现走 make_half 的
+    #    「左框」，会先切到「半幅」，再点一次才是左框）。旧实现走 make_half 的
     #    "整幅→半幅"分支、按**中心位置**落槽，而整页框中心恰在中线上 ⇒ 恒落右槽。
     host_full_left = _FakeHost([list(FULL[0])], "full", False)
     BoxKindEditor(host_full_left).set_kind("0007.png", 0, "left")
-    ok("整幅页点「左框」→ 直接摆到左槽 + side=left（一步到位，不先变半框）",
+    ok("整幅页点「左框」→ 直接摆到左槽 + side=left（一步到位，不先变半幅）",
        bool(host_full_left.commits)
        and host_full_left.commits[-1]["slots"] == [[100, 100, 900, 1300], None]
        and host_full_left.commits[-1]["side"] == "left",
@@ -537,7 +542,7 @@ def run(ctx) -> None:
        and host_full_right.commits[-1]["slots"] == [None, [100, 100, 900, 1300]]
        and host_full_right.commits[-1]["side"] == "right",
        str(host_full_right.commits))
-    ok("整幅页点「左框」→ 也回填面板（滑块不会停在半框）",
+    ok("整幅页点「左框」→ 也回填面板（滑块不会停在半幅）",
        bool(host_full_left.resyncs) and set(host_full_left.resyncs) == {0},
        str(host_full_left.resyncs))
 
@@ -555,10 +560,10 @@ def run(ctx) -> None:
        set_box_side(centered, 0, "middle") == centered,
        str(set_box_side(centered, 0, "middle")))
 
-    # 指定左右优先于「半框」判定：画面/面板都要显示成指定的那一侧
+    # 指定左右优先于「半幅」判定：画面/面板都要显示成指定的那一侧
     side_names, _c = box_styles(
         wide, (W, 1400), full=False, single_column=True, side_override="left")
-    ok("指定左后标「左框」，不再标「半框」（用户声明优先）",
+    ok("指定左后标「左框」，不再标「半幅」（用户声明优先）",
        side_names == ["左框"], str(side_names))
     iv2 = ImageView()
     try:
@@ -576,22 +581,22 @@ def run(ctx) -> None:
         iv2.deleteLater()
 
     # 导出标注图（与界面同一批框）：draw_slots 走的是 slot_names_colors，
-    # 它同样要认出「半框」，否则导出图上写着左框、屏幕上是半框。
+    # 它同样要认出「半幅」，否则导出图上写着左框、屏幕上是半幅。
     from utils.box_draw import BOX_NAME_HALF, slot_names_colors
 
     names_export, _c = slot_names_colors(
         [[60, 100, 900, 1300], None], W, single_column=True)
-    ok("导出标注图也认「半框」（与界面同一批框、同一叫法）",
-       set(names_export) == {BOX_NAME_HALF} == {"半框"}, str(names_export))
+    ok("导出标注图也认「半幅」（与界面同一批框、同一叫法）",
+       set(names_export) == {BOX_NAME_HALF} == {"半幅"}, str(names_export))
     names_export_off, _c = slot_names_colors(
         [[60, 100, 900, 1300], None], W, single_column=False)
     ok("不给单栏结论时导出仍按槽位给左/右（旧行为不变）",
        names_export_off == ["左框", "右框"], str(names_export_off))
-    ok("导出侧页宽缺失时不当半框（不猜）",
+    ok("导出侧页宽缺失时不当半幅（不猜）",
        set(slot_names_colors([[60, 100, 900, 1300], None], None,
                              single_column=True)[0]) == {"左框", "右框"})
 
-    # ---- 10. 切换类型的开销守卫（用户 2026-10-17 报「切换左/右/半框/整幅卡顿」）----
+    # ---- 10. 切换类型的开销守卫（用户 2026-10-17 报「切换左/右/半幅/整幅卡顿」）----
     stats_src = _inspect.getsource(DetectMixin._refresh_detect_stats)
     ok("全书判据每次刷新只算一次（以前算了两次）",
        stats_src.count("profile_book(") == 1, str(stats_src.count("profile_book(")))
@@ -606,11 +611,11 @@ def run(ctx) -> None:
        "len(slots) != 2" in side_src and "len(present) != 1" in side_src,
        "每个页都在整份读 boxes.json")
 
-    # 面板顺序：左 → 右 → **半框** → 整幅（用户 2026-10-17：「半框要在整幅前面」）
+    # 面板顺序：左 → 右 → **半幅** → 整幅（用户 2026-10-17：「半幅要在整幅前面」）
     from utils.box_draw import BOX_KIND_INDEX as _KIND_INDEX
 
     kind_keys = list(_KIND_INDEX)
-    ok("面板顺序＝左/右/半框/整幅（半框挨着左右、排在整幅前）",
+    ok("面板顺序＝左/右/半幅/整幅（半幅挨着左右、排在整幅前）",
        kind_keys == ["left", "right", "half", "full"], str(kind_keys))
 
     # ---- 11. 判据只有一处 ----
@@ -717,7 +722,7 @@ def run(ctx) -> None:
         viewer.deleteLater()
 
     # ---- 11. 指定左右要真的改产物命名（不是只改标注）----
-    # 用户 2026-10-17：半框页指定左/右后，这一页就不再按单栏归一化，
+    # 用户 2026-10-17：半幅页指定左/右后，这一页就不再按单栏归一化，
     # 命名/拼版都按 -l/-r 走——否则"指定"等于一句空话。
     def _with_side(side):
         return plan_rembg_submit_entries(
@@ -729,10 +734,10 @@ def run(ctx) -> None:
             side_for=lambda _t: side,
         )
 
-    ok("半框页未指定 → 按页码命名 0007（单栏书默认）",
+    ok("半幅页未指定 → 按页码命名 0007（单栏书默认）",
        [e["label"] for e in _with_side(None)] == ["0007"],
        str([e["label"] for e in _with_side(None)]))
-    ok("半框页指定左 → 产物叫 0007-l（指定真的生效）",
+    ok("半幅页指定左 → 产物叫 0007-l（指定真的生效）",
        [e["label"] for e in _with_side("left")] == ["0007-l"],
        str([e["label"] for e in _with_side("left")]))
     ok("指定后 full=False（不再当整幅，不会漏掉镜像/命名语义）",

@@ -214,7 +214,7 @@ class AnnotationMixin:
     ) -> None:
         """写入某页的检测框及其来源标记（auto=自动检测，manual=人工编辑）。
 
-        ⚠️ **保留**该页已有的 ``side``（用户在半框页上指定的左右，见
+        ⚠️ **保留**该页已有的 ``side``（用户在半幅页上指定的左右，见
         :meth:`set_box_side_override`）：拖框/缩放走的是这条路径，
         顺手把用户刚指定的左右清掉，等于"一拖就丢设定"。
         """
@@ -232,12 +232,12 @@ class AnnotationMixin:
         data[image_key] = entry
         doc.flush()
 
-    # ---------- 半框页的人工左右指定 ----------
+    # ---------- 半幅页的人工左右指定 ----------
     def box_side_at(self, path: Path | None, image_key: str) -> str | None:
         """读**指定文件**里某页的人工左右指定（``"left"``/``"right"``/None）。
 
         ⚠️ 这是**用户显式声明**，不是按位置算出来的左右（那由
-        ``box_geometry.half_sides`` 现算）。只有「半框」页需要它：那种框横跨
+        ``box_geometry.half_sides`` 现算）。只有「半幅」页需要它：那种框横跨
         整页、中心压在中线上，位置判定没有意义。
         """
         if path is None:
@@ -265,7 +265,7 @@ class AnnotationMixin:
         self, task_id: str, image_key: str, side: str | None,
         node_id: str | None = None, primary_id: str | None = None,
     ) -> None:
-        """写入/清除某页的人工左右指定（``None``＝清除，退回"半框"）。
+        """写入/清除某页的人工左右指定（``None``＝清除，退回"半幅"）。
 
         ⚠️ 独立成一个方法而不是给 ``save_detect_boxes`` 加参数：那条路是
         "拖框/缩放"的高频路径，**不该**顺带改这个语义位。只有用户明确点了

@@ -164,28 +164,90 @@ class RedDashFrame(QWidget):
     装得下外扩框**的祖先当宿主；正常都停在滚动内容层里，随内容一起滚动
     不会漂。
     ⚠️ ``WA_TransparentForMouseEvents``：框不挡任何点击。
+
+    ⚠️ **要盯着整条祖先链，不能只盯目标**（用户 2026-10-23 报「切步骤节点
+    返回后，提交按钮的红框定位不准确」）：提交按钮在「检测文本框 + 提交本次
+    任务」那一行里，**行本身**被父布局整体搬走后，按钮相对行没变 ⇒ 它收不到
+    Move，而框的宿主是行之上的祖先（紧身行装不下外扩框）⇒ 框停在旧位置。
+    提示行显隐（实测差 24px）、切步骤重排都会触发这条。所以这里在目标**和
+    它到窗口的整条祖先链**上装过滤器，任何一环挪动/缩放/显隐/布局失效都重适配。
+    同理，祖先被隐藏时框也必须跟着隐藏，否则会浮在别的步骤面板上（拼版伪
+    步骤整组藏掉执行按钮行，就是这种残留）。
     """
 
     #: 框沿到控件边缘的呼吸间距（px）
     PAD = 5
 
+    #: 需要重适配的事件：祖先链上任何一环发生这些变化，目标相对宿主的坐标
+    #: 都可能变（目标自己常常收不到 Move——它是被父布局整体搬走的）。
+    _REFIT_EVENTS = frozenset((
+        QEvent.Type.Move,
+        QEvent.Type.Resize,
+        QEvent.Type.Show,
+        QEvent.Type.Hide,
+        QEvent.Type.LayoutRequest,
+        QEvent.Type.ParentChange,
+    ))
+
     def __init__(self, target: QWidget):
         super().__init__(None)  # 顶层裸控件，宿主由 :meth:`refit` 现场挑
         self._target = target
-        # 宿主挪动/缩放（布局重排会改 geometry）框都要跟着重适配
-        target.installEventFilter(self)
+        #: 业务上"该亮"（与真实可见性分开：祖先隐藏时先藏起来，回来后恢复）
+        self._wanted = False
+        #: 已装过滤器的对象（目标 + 祖先链，含窗口）
+        self._watched: list[QWidget] = []
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.hide()
+        self._watch_chain()
+
+    # ---------------------------------------------------------- 事件监视
+    def _watch_chain(self) -> None:
+        """在**目标 + 它到窗口的整条祖先链**上装事件过滤器（幂等）。"""
+        chain: list[QWidget] = []
+        widget: QWidget | None = self._target
+        while widget is not None:
+            chain.append(widget)
+            if widget.isWindow():
+                break
+            widget = widget.parentWidget()
+        for old in self._watched:
+            if old not in chain:
+                try:
+                    old.removeEventFilter(self)
+                except RuntimeError:  # 已销毁的控件（C++ 对象已释放）
+                    pass
+        for item in chain:
+            if item not in self._watched:
+                item.installEventFilter(self)
+        self._watched = chain
 
     def eventFilter(self, obj, event):  # noqa: N802 - Qt 命名
-        if obj is self._target and event.type() in (
-            QEvent.Type.Resize, QEvent.Type.Move,
+        if event.type() in self._REFIT_EVENTS and any(
+            obj is item for item in self._watched
         ):
-            self.refit()
+            if obj is self._target and event.type() == QEvent.Type.ParentChange:
+                self._watch_chain()
+            self._sync()
         return super().eventFilter(obj, event)
 
+    # ---------------------------------------------------------- 显隐/定位
+    def set_wanted(self, on: bool) -> None:
+        """业务侧要求"亮/灭"：亮时按目标当前可见性决定是否真的显示。"""
+        self._wanted = bool(on)
+        self._sync()
+
+    def _sync(self) -> None:
+        """把"该亮 + 目标真的可见"落实成显示/隐藏并重算位置。"""
+        if not self._wanted or not self._target.isVisible():
+            self.hide()
+            return
+        self.refit()
+        self.raise_()
+        if not self.isVisible():
+            self.show()
+
     def refit(self) -> None:
-        """外扩 :data:`PAD` 重摆自己；宿主沿祖先链找第一个装得下的。"""
+        """外扩 :data:`PAD` 重摆自己；沿祖先链找第一个装得下的宿主。"""
         target = self._target
         pad = self.PAD
         parent = target.parentWidget()
@@ -241,16 +303,26 @@ def set_red_frame(target: QWidget, on: bool) -> None:
     ⚠️ 覆盖层挂在控件的**父控件**上（外扩画框），所以引用**不能**走
     ``target.findChild``（只搜子孙搜不到），钉在控件的动态属性里。
     摘掉只是 ``hide()``：控件留着，下次要亮直接 show，省一次构造。
+
+    ⚠️ **另存一份 Python 强引用**（``_red_dash_frame_ref``）：动态属性里只
+    留 C++ 指针，Python 包装器一旦被回收，再 ``property()`` 取回的就成了
+    基类 ``QObject``（没有 ``set_wanted``/``isVisible``，自测当场炸过）。
     """
-    frame = target.property("_red_dash_frame")
+    frame = getattr(target, "_red_dash_frame_ref", None)
+    if not isinstance(frame, RedDashFrame):
+        frame = None
+        stored = target.property("_red_dash_frame")
+        if isinstance(stored, RedDashFrame):
+            frame = stored
     if on:
         if frame is None:
             frame = RedDashFrame(target)
             target.setProperty("_red_dash_frame", frame)
-        frame.refit()
-        frame.show()
+            # 强引用保活；走 setattr 是为了不把动态属性写进 QWidget 的类型面
+            setattr(target, "_red_dash_frame_ref", frame)
+        frame.set_wanted(True)
     elif frame is not None:
-        frame.hide()
+        frame.set_wanted(False)
 
 
 def combo_box(
