@@ -85,7 +85,7 @@ class EntriesMixin(RembgViewerHost):
                         ]
                     elif len(valid) == 1:
                         # 半幅漏检一侧：label 同样带 -l/-r（看原始槽位，与提交
-                        # 产物命名一致，见 print_plan.plan_rembg_submit_entries）；
+                        # 产物命名一致，见 print_plan.plan_detect_submit_entries）；
                         # 整幅(full)单槽不带后缀。
                         single_label = stem
                         if not full and len(boxes) == 2:
@@ -155,23 +155,13 @@ class EntriesMixin(RembgViewerHost):
         y = (scaled.height() - target.height()) // 2
         return scaled.copy(max(x, 0), max(y, 0), target.width(), target.height())
 
-    def _result_full_image(self, entry: dict | None = None,
-                           include_live: bool = True) -> Path | None:
-        """某条目的去底色结果图。
-
-        ``include_live=True``（默认，**显示口径**）：**实时暂存优先**，其次
-        「生成预览」的正式产物——实时暂存才是"此刻参数下"的样子。
-        ``include_live=False``（**编辑回写口径**）：只认正式产物
-        （``stages/rembgpreview``）——实时暂存是系统临时文件，改了会被下一次
-        实时预览覆盖，也不进「提交本次任务」，写回它等于"改了不生效"。
-        """
+    def _result_full_image(self, entry: dict | None = None) -> Path | None:
+        """某条目的去底色结果图：**实时暂存优先**，其次正式成品目录。"""
         entry = entry if entry is not None else self._current_entry()
         if not entry:
             return None
         stem = Path(entry["path"]).stem
-        bases = (self._live_dir, self._rembg_dir) if include_live else (
-            self._rembg_dir,
-        )
+        bases = (self._live_dir, self._rembg_dir)
         for base in bases:
             if not base:
                 continue
@@ -185,8 +175,8 @@ class EntriesMixin(RembgViewerHost):
         """条目 → (显示源, 区域合成参数, 是否有去底色结果, 错误文案)。
 
         ⚠️ 主预览（:meth:`_load_display`）与放大弹窗（:meth:`_zoom_target`）**共用
-        这一份**：区域规则（单框 + border + 实时暂存优先）只写一次，
-        两处各写一份必然漂移，用户就会看到"弹窗里和预览里不是同一块"。
+        这一份**：区域规则只写一次，两处各写一份必然漂移，用户就会看到
+        "弹窗里和预览里不是同一块"。
         """
         path_text = entry["path"]
         effect = None

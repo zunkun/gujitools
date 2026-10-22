@@ -4,7 +4,7 @@
 
 图像处理功能模块：GUI 与 CLI 共用同一套算法
 
-覆盖 11 个模块、12 个公开类、48 个公开函数/方法（生成于 2026-10-22）。
+覆盖 11 个模块、12 个公开类、49 个公开函数/方法（生成于 2026-10-22）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -20,7 +20,7 @@
 | [`functions.extract`](#functionsextract) | 1 | 2 |
 | [`functions.init`](#functionsinit) | 1 | 3 |
 | [`functions.print`](#functionsprint) | 1 | 2 |
-| [`functions.rembg`](#functionsrembg) | 1 | 2 |
+| [`functions.rembg`](#functionsrembg) | 1 | 3 |
 | [`functions.text_region`](#functionstext_region) | 1 | 2 |
 | [`functions.yolo_service`](#functionsyolo_service) | 1 | 14 |
 
@@ -668,6 +668,20 @@ File: functions/rembg.py
 
 先调用基类解析输入/输出路径，再经 _calc_outpath 计算 self.outpath
 （规则见 _calc_outpath：未指定 --output 时与输入并列，否则按用户输出解析）。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `load_rgb_and_gray(image_path: Path) -> tuple[np.ndarray, np.ndarray]` | 读取一张图片 → ``(RGB 数组, 灰度数组)``，供整图去底色使用。 |
+
+#### `load_rgb_and_gray(image_path: Path) -> tuple[np.ndarray, np.ndarray]`
+
+读取一张图片 → ``(RGB 数组, 灰度数组)``，供整图去底色使用。
+
+与 ``_process_single_image`` / 桌面端去底色阶段**共用这一份读图口径**：
+EXIF 方向转正、RGBA 合到白底、统一 RGB，任何一处漏掉都会让预览与成品
+方向/颜色对不上。
 
 ---
 

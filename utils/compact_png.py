@@ -11,7 +11,7 @@
 =========================================  =========  =======================
 文件（2400×2374 左右的书页）                体积       PNG 头
 =========================================  =========  =======================
-``rembgpreview/10.png``（白底灰阶，去底色）   201 KB     bits=8 type=0(gray)
+``rembg/10.png``（白底灰阶，去底色中间态）   201 KB     bits=8 type=0(gray)
 ``rembg/10-l.png``（透明底二值，**没编辑**）   70 KB      bits=1 type=3(P)+tRNS
 ``rembg/10-r.png``（**同一页，编辑过**）       7.6 MB     bits=8 type=6(RGBA)
 =========================================  =========  =======================
@@ -133,7 +133,7 @@ def read_png_dpi(path: str | Path) -> Optional[tuple[float, float]]:
 
     读不到（没有 pHYs / 不是图片 / 文件被占）返回 ``None``——调用方按"不写
     pHYs"处理，与"原本就没有"一致（实测提交产物 ``rembg/*-l.png`` 就没有
-    pHYs，而 ``rembgpreview/*.png`` 有）。
+    pHYs，而 ``rembg/*.png`` 有）。
     """
     try:
         with Image.open(str(path)) as img:

@@ -8,7 +8,7 @@
 提示（第四步状态行 + 主按钮高亮），要不要重跑由用户决定。
 
 ⚠️ 不比对参数。参数级的"待更新"另有专门机制（见 `submit_state.py`：
-生成预览 → 提交本次任务的 new_version / preview_stale），本模块只回答
+检测 → 提交本次任务的 new_version / preview_stale），本模块只回答
 "上游又跑过一次、而下游还是那之前的产物吗"。
 
 另有一类**不是**时间戳的过期：第四步「PDF排版」的取图来源可以整体换掉
@@ -19,21 +19,17 @@
 
 from __future__ import annotations
 
-#: 参与比对的阶段链，顺序即依赖方向（与 desktop.store.tasks.STAGES 一致，
-#: 另加不是独立步骤的 rembg_submit）。此处刻意写字面量：本模块是纯函数，
-#: 不 import 任何 desktop 包，便于独立自测。
-CHAIN = ("extract", "detect", "rembg", "rembg_submit", "print")
+#: 参与比对的阶段链，顺序即依赖方向（与 desktop.store.tasks.STAGES 一致）。
+#: 此处刻意写字面量：本模块是纯函数，不 import 任何 desktop 包，便于独立自测。
+CHAIN = ("extract", "detect", "rembg", "print")
 
 #: 下游阶段 → 它的前置阶段（上游跑过之后，下游产物就可能过期）
 UPSTREAM = {
-    # 生成预览：读提取出的页图 + 检测框
+    # 去底色：读检测提交后的裁图
     "rembg": ("extract", "detect"),
-    # 提交：合成最终图，源是「生成预览」的去底图
-    "rembg_submit": ("rembg",),
-    # 生成 PDF：只排版「提交本次任务」的成品图（2026-10-01 起不再拿去底图现算），
-    # 列表与图片都来自提交产物；但 extract/detect/rembg 跑过就意味着这份提交
-    # 产物已经落后于上游（用户多半要重新「生成预览」再提交），照旧算它的上游
-    "print": ("extract", "detect", "rembg", "rembg_submit"),
+    # 生成 PDF：只排版去底色的成品图；extract/detect/rembg 跑过就意味着这份
+    # 成品已经落后于上游，照旧算它的上游
+    "print": ("extract", "detect", "rembg"),
 }
 
 #: 时间戳容差（秒）：同一次连续操作里几个阶段前后脚完成，不该判成过期。

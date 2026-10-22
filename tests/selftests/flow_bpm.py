@@ -27,7 +27,7 @@
    存在、解析得动、有可执行步骤；连线**不带
    ``guji:port``**（带了就是端口依赖表冒充流程图）；
 9. **流程图上没有重名节点**——节点名一律走 ``ports.stage_label()``，
-   ``rembg_submit`` 与 ``rembg`` 不同名（曾两个都叫「图片去底色」），
+   ``detect_submit`` 与 ``detect`` 不同名（曾两个都叫「检测文本框」），
    步骤条文案与流程图节点名同源。
 
 不跑 YOLO、不起子进程、不建页面，全是纯逻辑断言。
@@ -45,10 +45,9 @@ TITLE = "BPM 流程定义与默认流程"
 #: （``start → extract → detect → print → end``）。
 #:
 #: ⚠️ 为什么专门做这么一张：要验"**声明的上游不在流程里时按图回退**"。
-#: 去底色一旦不在流程里，`print.pages` 声明的上游 `rembg_submit`（它折在
-#: 「图片去底色」那一格）就跟着不在了，必须沿图往前找到 `extract`。
-#: 若换成"图里有 rembg"的版本，`rembg_submit` 是**活的**，走的是声明表，
-#: 验不到回退那条路。
+#: 去底色一旦不在流程里，`print.pages` 声明的上游 `rembg` 就跟着不在了，
+#: 必须沿图往前找到 `extract`。若换成"图里有 rembg"的版本，`rembg` 是**活的**，
+#: 走的是声明表，验不到回退那条路。
 #:
 #: 同时它印证**新契约**：流程连线表达"先做哪一步"，**不表达"去谁那儿取文件"**
 #: （两者混在一起正是默认模板曾经长成一团乱线的原因，见 ``docs/tasks/bpm.md``）。
@@ -115,7 +114,7 @@ def _check_default_matches_ports(ok) -> None:
        str(flow.supplier_of("print", "pages", {"imposition": True})))
     ok("条件不命中走无条件边",
        flow.supplier_of("print", "pages", {"imposition": False})
-       == "rembg_submit")
+       == "rembg")
     conditional = [e for e in flow.suppliers() if e.condition]
     ok("条件边只有一条、名为 imposition",
        len(conditional) == 1
@@ -210,11 +209,9 @@ def _check_task_flow(ctx, ok) -> None:
         #    产出者，**绝不能指向流程外的阶段**（那会去取一个永远不会产生的
         #    目录，现象是"生成 PDF 报找不到输入"而不是流程报错）。
         in_flow = set(template.stage_order())
-        # ⚠️ "在流程里"要按**界面格**判，不能按节点判：`rembg_submit`（提交去
-        #    底色结果）是第三步内的第二个动作，图上通常不给它单独开节点——
-        #    它跟着 `rembg` 那一格一起活着。按节点判会误判成"不在流程里"，
-        #    于是 `print.pages` 回退到 `rembg`（去底色的**实时预览**目录），
-        #    打印出来是没提交的图。折叠关系在 `ports.STAGE_STEPS`。
+        # ⚠️ "在流程里"要按**界面格**判，不能按节点判：`detect_submit`（提交
+        #    检测结果）是第二步内的第二个动作，图上通常不给它单独开节点——
+        #    它跟着 `detect` 那一格一起活着。折叠关系在 `ports.STAGE_STEPS`。
         live_steps = {ports.STAGE_STEPS.get(s, s) for s in in_flow}
 
         def is_live(name: str) -> bool:
@@ -299,44 +296,39 @@ def _check_custom_flow(ctx, ok) -> None:
            [s.step for s in repo.task_slots(tid)] == ["extract", "detect", "print"],
            str([s.step for s in repo.task_slots(tid)]))
 
-        # 关键：声明的上游 `rembg_submit`（折在「图片去底色」那一格）**不在本
-        # 流程里** ⇒ 沿图往前找，落到 extract（本流程里真正产出 pages 的最近一步）。
-        # ⚠️ 若这里错误地回退到 `rembg`，拿到的是 `stages/rembgpreview`
-        #    ——**去底色的实时预览目录**，不是用户提交过的成品。
+        # 关键：声明的上游 `rembg` **不在本流程里** ⇒ 沿图往前找，落到
+        # detect（本流程里真正产出 pages 的最近一步；它的 pages 由同格
+        # 的 detect_submit 兑现成 stages/detect）。
         ok("声明的上游不在流程里时，按图回退到最近的产出者",
            repo.stage_input(tid, "print", "pages")
-           == ports.artifact_path(task_dir, "extract", "pages"),
+           == ports.artifact_path(task_dir, "detect_submit", "pages"),
            str(repo.stage_input(tid, "print", "pages")))
         ok("开拼版也回退（imposition 同样不在流程里）",
            repo.stage_input(tid, "print", "pages", imposition_active=True)
-           == ports.artifact_path(task_dir, "extract", "pages"))
+           == ports.artifact_path(task_dir, "detect_submit", "pages"))
         # 声明的上游**在**流程里时，仍按声明表走（不受文件连线影响）。
-        ok("声明上游在流程里时仍按声明表取（rembg.pages ← extract）",
+        ok("声明上游在流程里时仍按声明表取（rembg.pages ← detect_submit）",
            repo.stage_input(tid, "rembg", "pages")
-           == ports.artifact_path(task_dir, "extract", "pages"))
+           == ports.artifact_path(task_dir, "detect_submit", "pages"))
         ok("未声明的端口解析为 None（print 不吃 boxes）",
            repo.stage_input(tid, "print", "boxes") is None,
            str(repo.stage_input(tid, "print", "boxes")))
 
-        # ⚠️ 反向的坑（默认模板就是这个形状）：图里**有**「图片去底色」、但没
-        #    单独画「提交去底色结果」节点时，`rembg_submit` 必须算**活的**
-        #    （两者同属一格）。否则 `print.pages` 会退到 `rembg`，而
-        #    ``stages/rembgpreview`` 是**实时预览**目录、``stages/rembg`` 才是
-        #    用户「提交」过的成品——打印出来会是没提交的图。
+        # 图里**有**「图片去底色」时，print.pages 必须取去底色的成品目录
+        # （``stages/rembg``），而不是沿图回退到提取原图。
         from desktop.steps.scheduler import load_default_diagram
 
         tid2 = repo.create_task(ctx.pdf, "hash-flow-2", "默认流程样本",
                                 diagram=load_default_diagram())
         try:
-            _box, _preview = (
-                ports.artifact_path(repo.task_dir(tid2), "rembg_submit", "pages"),
-                ports.artifact_path(repo.task_dir(tid2), "rembg", "pages"),
-            )
-            ok("前提：提交成品目录 ≠ 去底色预览目录（两者不是同一个）",
-               _box != _preview, f"{_box} vs {_preview}")
-            ok("图里有去底色、没单独的「提交」节点 ⇒ print 取的是**提交成品**",
-               repo.stage_input(tid2, "print", "pages") == _box,
+            _rembg_dir = ports.artifact_path(
+                repo.task_dir(tid2), "rembg", "pages")
+            ok("图里有去底色 ⇒ print 取的是去底色成品目录",
+               repo.stage_input(tid2, "print", "pages") == _rembg_dir,
                str(repo.stage_input(tid2, "print", "pages")))
+            ok("去底色成品路径就是 stages/rembg",
+               _rembg_dir == repo.task_dir(tid2) / "stages" / "rembg",
+               str(_rembg_dir))
         finally:
             repo.delete_task(tid2)
 
@@ -391,12 +383,6 @@ def _check_broken_flow(ctx, ok) -> None:
         ok("回落后的解析结果与 ports 一致",
            repo.stage_input(tid, "detect", "pages")
            == ports.resolve_input(repo.task_dir(tid), "detect", "pages"))
-        # ⚠️ 注意：**消费方**不在流程里时，端口仍可能解析得出——只要声明的
-        #    上游在流程里（`rembg.boxes ← detect` 就是这种情况）。这里不钉
-        #    "必须 None"：那不是契约，乱钉会把正常行为判成 bug。
-        ok("消费方不在流程里、但声明上游在 ⇒ 仍按声明表解析",
-           repo.stage_input(tid, "rembg", "boxes")
-           == ports.artifact_path(repo.task_dir(tid), "detect", "boxes"))
     finally:
         repo.delete_task(tid)
 
@@ -412,20 +398,19 @@ _CUSTOM_ORDER_WIRING = """\
     <bpmn:task id="extract" name="提取PDF图片" guji:stage="extract"/>
     <bpmn:task id="imposition" name="图片拼版" guji:stage="imposition"/>
     <bpmn:task id="rembg" name="图片去底色" guji:stage="rembg"/>
-    <bpmn:task id="rembg_submit" name="提交" guji:stage="rembg_submit"/>
     <bpmn:task id="print" name="PDF排版" guji:stage="print"/>
     <bpmn:endEvent id="end" name="完成"/>
     <bpmn:sequenceFlow id="f0" sourceRef="start" targetRef="extract" guji:port="pdf"/>
     <bpmn:sequenceFlow id="f1" sourceRef="extract" targetRef="imposition" guji:port="pages"/>
     <bpmn:sequenceFlow id="f2" sourceRef="imposition" targetRef="rembg" guji:port="pages"/>
-    <bpmn:sequenceFlow id="f3" sourceRef="remposition" targetRef="print" guji:port="pages"/>
+    <bpmn:sequenceFlow id="f3" sourceRef="rembg" targetRef="print" guji:port="pages"/>
   </bpmn:process>
 </bpmn:definitions>
 """
 
 
 def _check_stage_slots(ok) -> None:
-    """⑥ 投影层：6 个运行阶段 → 界面格子（折叠 rembg_submit + 标可选节点）。"""
+    """⑥ 投影层：6 个运行阶段 → 界面格子（折叠 detect_submit + 标可选节点）。"""
     from desktop.steps import ports
     from desktop.steps.flow import FlowDefinition
     from desktop.steps.spec import FLOW_STAGES
@@ -433,16 +418,16 @@ def _check_stage_slots(ok) -> None:
     flow = FlowDefinition.default()
     slots = flow.stage_slots()
 
-    # rembg_submit 是第三步的第二个动作 ⇒ 折叠掉，不单独占格
-    ok("rembg_submit 不单独占格（折叠进第三步）",
-       "rembg_submit" not in [s.step for s in slots],
+    # detect_submit 是第二步的第二个动作 ⇒ 折叠掉，不单独占格
+    ok("detect_submit 不单独占格（折叠进第二步）",
+       "detect_submit" not in [s.step for s in slots],
        str([s.step for s in slots]))
     ok("格数 = 真实步骤 4 + 可选节点 1",
        len(slots) == len(FLOW_STAGES) + 1, str(len(slots)))
 
     by_step = {s.step: s for s in slots}
-    ok("第三步的 stage 是 rembg（不是 rembg_submit）",
-       by_step["rembg"].stage == "rembg", by_step["rembg"].stage)
+    ok("第二步的 stage 是 detect（不是 detect_submit）",
+       by_step["detect"].stage == "detect", by_step["detect"].stage)
     ok("拼版被标成可选节点",
        by_step["imposition"].optional is True)
     ok("真实步骤都不是可选节点",
@@ -502,9 +487,7 @@ def _check_slots_drive_ui(ctx, ok) -> None:
         # 一份"摘掉 detect、拼版排最前"的流程（源Ref 写错也不影响：
         # 投影只看节点序列，坏连线会在解析层报，不在这里）。
         path = Path(repo.task_dir(tid)) / "flow.bpmn"
-        path.write_text(_CUSTOM_ORDER_WIRING.replace(
-            'sourceRef="remposition"', 'sourceRef="rembg_submit"'
-        ), encoding="utf-8")
+        path.write_text(_CUSTOM_ORDER_WIRING, encoding="utf-8")
         getattr(repo, "_flow_cache", {}).clear()
 
         flow = repo.task_diagram(tid)
@@ -518,8 +501,8 @@ def _check_slots_drive_ui(ctx, ok) -> None:
         #    拼版从"第三步之后"挪到了"第一步之后"（默认流程它在 rembg 之后）。
         ok("自定义流程：拼版从第三步之后挪到第一步之后（异位生效）",
            order[:2] == ["extract", "imposition"], str(order))
-        ok("自定义流程：rembg_submit 仍折叠（不单独占格）",
-           "rembg_submit" not in order, str(order))
+        ok("自定义流程：同一步骤的第二个动作不单独占格",
+           "detect_submit" not in order and "rembg" in order, str(order))
 
         # 拼版左侧只有 extract ⇒ optional_after = 0（不是 None，
         # None 只在拼版排第一格、连左邻居都没有时出现）。
@@ -566,7 +549,7 @@ def _check_slots_drive_ui(ctx, ok) -> None:
         # 取输入仍按连线（与顺序无关）
         ok("自定义顺序下取输入照旧按连线",
            repo.stage_input(tid, "print", "pages")
-           == ports.artifact_path(repo.task_dir(tid), "rembg_submit", "pages"))
+           == ports.artifact_path(repo.task_dir(tid), "rembg", "pages"))
     finally:
         repo.delete_task(tid)
 
@@ -751,7 +734,7 @@ def _check_default_template(ok) -> None:
 
     # 默认流程**必须是流程图，不是端口依赖表**。端口依赖表的指纹很明确：
     # 每条 `sequenceFlow` 上都带 `guji:port`（那是"取哪个产物端口"，
-    # 与"先做哪一步"无关）。`extract --pages--> rembg/imposition/rembg_submit`
+    # 与"先做哪一步"无关）。`extract --pages--> rembg/imposition/detect_submit`
     # 就是这么来的——画出来是从「提取图片」炸出去的一团。
     default_path_ = template_path()
     if default_path_.is_file():
@@ -767,10 +750,10 @@ def _check_default_template(ok) -> None:
 def _check_node_names_unique(ok) -> None:
     """流程图上**不许出现两个同名节点**。
 
-    背景（2026-10-05 实际踩到）：``rembg_submit`` 与 ``rembg`` 共用同一份
+    背景（2026-10-05 实际踩到）：``detect_submit`` 与 ``detect`` 共用同一份
     :class:`StepSpec`，节点名直接取 ``spec.stage_name()`` 时两者都叫
-    「图片去底色」——用户在图上根本分不清哪个是"生成预览"、哪个是"提交定稿"。
-    修法是节点名一律走 ``ports.stage_label()``（那里对 ``rembg_submit`` 有
+    「检测文本框」——用户在图上根本分不清哪个是"检测"、哪个是"提交定稿"。
+    修法是节点名一律走 ``ports.stage_label()``（那里对 ``detect_submit`` 有
     独立文案）。这条断言就是钉死那个修法，别让将来有人"简化"回spec 取名。
     """
     from desktop.steps import ports
@@ -779,17 +762,17 @@ def _check_node_names_unique(ok) -> None:
     flow = FlowDefinition.default()
     names = [ports.stage_label(stage) for stage in flow.stages]
     ok("流程图上没有重名节点", len(set(names)) == len(names), str(names))
-    ok("rembg_submit 走独立文案（不与 rembg 同名）",
-       ports.stage_label("rembg_submit") != ports.stage_label("rembg"),
-       f'{ports.stage_label("rembg_submit")} vs {ports.stage_label("rembg")}')
+    ok("detect_submit 走独立文案（不与 detect 同名）",
+       ports.stage_label("detect_submit") != ports.stage_label("detect"),
+       f'{ports.stage_label("detect_submit")} vs {ports.stage_label("detect")}')
     # store 那张文案表也必须跟着同一口径，否则步骤条与流程图对不上
     from desktop.store.tasks import STAGE_LABELS
 
     ok("步骤条文案与流程图节点名同源",
        all(STAGE_LABELS.get(s) == ports.stage_label(s)
-           for s in ("extract", "detect", "rembg", "rembg_submit", "print")),
+           for s in ("extract", "detect", "detect_submit", "rembg", "print")),
        str({s: STAGE_LABELS.get(s) for s in
-            ("extract", "detect", "rembg", "rembg_submit", "print")}))
+            ("extract", "detect", "detect_submit", "rembg", "print")}))
 
 
 # ------------------------------------------------- 10. 栈页号必须查静态表
@@ -841,7 +824,7 @@ def _check_stack_pages_use_static_table(ok) -> None:
 
     # ② 全都有（含可选拼版）——页号必须与旧的硬编码口径一致
     full = chain("提取图片", "检测文本框", "图片去底色",
-                 "提交去底色结果", "图片拼版", "PDF排版").stage_slots()
+                 "图片拼版", "PDF排版").stage_slots()
     pages = {slot.step: slot.stack_index for slot in full}
     ok("全流程下页号与旧口径逐值相等"
        "（提取0/检测1/去底色2/生成PDF3/拼版4）",
@@ -988,13 +971,13 @@ def _check_list_chips_follow_diagram(ctx, ok) -> None:
        states_short["rembg"]["in_flow"] is False
        and states_short["extract"]["in_flow"] is True,
        str({k: v["in_flow"] for k, v in states_short.items()}))
-    # ⚠️ ``stage_states`` 的键是**界面步骤**（四个），不含 rembg_submit 那种
+    # ⚠️ ``stage_states`` 的键是**界面步骤**（四个），不含 detect_submit 那种
     #    "同格内的第二个动作"——它要问 flow_stages（按格摊开后的运行阶段）。
-    ok("flow_stages 按**界面格**摊开：同格的「提交去底色」跟着去底色一起去掉",
-       repo.flow_stages(flag_task) == {"extract", "detect", "print"},
+    ok("flow_stages 按**界面格**摊开：同格的提交动作跟着检测一起去掉",
+       repo.flow_stages(flag_task) == {"extract", "detect", "detect_submit", "print"},
        str(repo.flow_stages(flag_task)))
-    ok("默认流程里 flow_stages 含同格的 rembg_submit（共存亡）",
-       "rembg_submit" in repo.flow_stages(full),
+    ok("默认流程里 flow_stages 含同格的 detect_submit（共存亡）",
+       "detect_submit" in repo.flow_stages(full),
        str(repo.flow_stages(full)))
 
     # ⑤ 读不到流程 ⇒ 诚实地给空，不伪造默认胶囊

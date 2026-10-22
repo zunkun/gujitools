@@ -55,9 +55,8 @@ class VersionedBoxCache(dict):
     """``detect_cache`` 的带版本号版：任何写入都自增 ``version``。
 
     给"整书判据"（单栏书结论 / 逐页检测框）做缓存失效用——那些判据要遍历
-    全部页并读 ``boxes.json``，第三步实时预览按防抖反复要它，不能每次重算
-    （见 ``rembg_live.RembgLiveMixin._live_book_context``）。用户在第二步改框
-    会写这份缓存 ⇒ 版本号自增 ⇒ 判据缓存失效，不会拿旧框去命名产物。
+    全部页并读 ``boxes.json``，不能每次重算。用户在第二步改框会写这份缓存
+    ⇒ 版本号自增 ⇒ 判据缓存失效，不会拿旧框去命名产物。
     """
 
     def __init__(self, *args, **kwargs) -> None:
@@ -681,7 +680,7 @@ class DetectMixin:
         - 当前步骤格序（换了节点 ⇒ 上游框可能来自另一份文件）。
 
         ⚠️ 不能改成"调用方传一张一次性快照"：查看器的 provider 是长期持有的，
-        之后改框 / 实时预览落盘都会再次重建条目，快照会把用户刚改的框吃掉。
+        之后改框 / 单页检测落盘都会再次重建条目，快照会把用户刚改的框吃掉。
         """
         paths = self._manifest_paths()
         version = getattr(self.detect_cache, "version", 0)
@@ -720,8 +719,7 @@ class DetectMixin:
         """整本：``{页名: 原始槽位}``，**一次读盘**（语义与 ``_detect_boxes_for`` 对齐）。
 
         ⚠️ 逐页调 ``_detect_boxes_for`` 会对每页重读整份 ``boxes.json``（O(n²)）；
-        第三步「实时预览增量落盘」按防抖反复要整书判据（单栏书结论），必须一次
-        读齐（见 ``rembg_live.RembgLiveMixin._live_book_context``）。
+        提交裁图前要整书判据（单栏书结论），必须一次读齐。
 
         口径与 :meth:`_detect_boxes_for` 逐条一致：内存缓存（用户刚改过的）优先，
         其次连线上游那个节点的 ``boxes`` 文件。

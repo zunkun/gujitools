@@ -1645,15 +1645,13 @@ def run(ctx) -> None:
             ("2-l", YELLOW),
         ):
             _mk(rembg_dir / f"{name}.png", color)
-        # 顺带铺好上游夹具（提取清单 / 去底预览 / 检测框）：它们已不参与第四步
-        # 合成（2026-10-01 起只透传提交产物），但保留成"真实任务该有的样子"，
+        # 顺带铺好上游夹具（提取清单 / 检测框）：它们已不参与第四步合成
+        # （只透传去底色成品），但保留成"真实任务该有的样子"，
         # 免得测试跑在空目录上。
         extract = repo.extract_output_dir(tid)
-        preview = repo.rembg_preview_output_dir(tid)
         boxes = []
         for stem, color in (("1", RED), ("2", BLUE)):
             item = _mk(extract / f"{stem}.png", color)
-            _mk(preview / f"{stem}.png", color)
             boxes.append({"file": str(item), "label": stem})
         repo.save_pages(tid, boxes)
         repo.save_detect_boxes(tid, "1", [[20, 40, 390, 560], [410, 40, 780, 560]])
@@ -2429,7 +2427,7 @@ def run(ctx) -> None:
             "print",
             {
                 "pdf_name": "print.pdf",
-                "source_stage": "rembg_submit",
+                "source_stage": "rembg",
             },
         )
         repo.finish_stage(tid, old_run, "success", str(print_dir))

@@ -74,7 +74,6 @@ class PageListMixin:
         _size_node_for: Callable[[str], str | None]
         stack_index_of_step: Callable[[str], int | None]
         _refresh_preview: Callable[..., None]
-        _update_submit_button: Callable[..., None]
         _toast: Callable[..., None]
         run_worker: Callable[..., None]
         set_task: Callable[[str], bool]
@@ -223,7 +222,6 @@ class PageListMixin:
             return None
         allowed = {
             self.store.extract_output_dir(self.task_id),
-            self.store.rembg_preview_output_dir(self.task_id),
             self.store.rembg_output_dir(self.task_id),
             # ⚠️ 入口图片目录也要算：自定义流程里第一个节点可能是「检测文本框」
             # （用户2026-10-06），它的图就在这儿。不加的话这些图走"回退真图"
@@ -343,26 +341,19 @@ class PageListMixin:
     def _log_edit_downstream(self, path: Path) -> None:
         """按被编辑文件所处阶段，提示"下一步怎么让这次编辑生效"。
 
-        第三步「去底色结果」要重新「提交本次任务」才会合成到 stages/rembg
-        被第四步取用；第四步待打印图与拼版成品改了点「生成PDF」即生效。
+        去底色的成品图与拼版成品、第四步待打印图：点「生成PDF」即生效。
         不属于这两类的路径（外部插入图等）不打日志。
         """
         task_id = self.task_id
         if task_id is None:
             return  # 已切走任务：既没有阶段目录可比，也没有按钮可改
         try:
-            if path.parent == self.store.rembg_preview_output_dir(task_id):
+            if path.parent == self.store.rembg_output_dir(task_id):
                 self.log_view.append(
                     f"已编辑去底色结果「{path.name}」；"
-                    "点「提交本次任务」后，第四步（PDF排版）才会用上这次修改。"
+                    "点「生成 PDF」即用上这次修改。"
                 )
-                # 按钮立刻改口（绿色「已是最新版本」在这里是假话）：编辑后必须
-                # 重新提交才传给第四步，见 submit._preview_edited_after_submit
-                self._update_submit_button(self.running_stage is not None)
-            elif path.parent in (
-                self.store.rembg_output_dir(task_id),
-                self.store.imposition_output_dir(task_id),
-            ):
+            elif path.parent == self.store.imposition_output_dir(task_id):
                 self.log_view.append(
                     f"已编辑待打印图片「{path.name}」；"
                     "点「生成 PDF」即用上这次修改。"
@@ -856,9 +847,7 @@ class PageListMixin:
 
         - 「PDF排版」产物是 PDF（``stages/print[~<节点>]/print.pdf``）⇒ 取它
           所在目录；
-        - 「图片去底色」优先**应用图**目录 ``stages/rembg[~<节点>]``（提交产物 /
-          实时预览增量落的成品，用户 2026-10-18 点名要进这里），它还没产出时
-          回落预览目录 ``stages/rembgpreview[~<节点>]``；
+        - 「图片去底色」⇒ 成品图目录 ``stages/rembg[~<节点>]``（执行后才有）；
         - 「检测文本框」不落页面图目录——产物是任务根下的 ``boxes[~<节点>].json``
           （参考缩略图 ``thumbnails/detect[~<节点>]`` 只是界面缓存、不是产物）
           ⇒ 没有节点目录，直接回落任务根，正好能看到那个坐标文件；
@@ -876,14 +865,13 @@ class PageListMixin:
         if stage == "print":
             candidates.append(self.store.scoped_stage_dir(task_id, node, "print"))
         elif stage == "rembg":
-            # 去底色节点：应用图目录优先，其次预览目录（都可能还没产出）
-            for port_stage in ("rembg_submit", "rembg"):
-                try:
-                    candidates.append(
-                        self.store.node_or_stage_output(task_id, node, port_stage)
-                    )
-                except KeyError:
-                    pass
+            # 去底色：成品图目录（可能还没产出）
+            try:
+                candidates.append(
+                    self.store.node_or_stage_output(task_id, node, "rembg")
+                )
+            except KeyError:
+                pass
         elif stage and stage != "detect":
             try:
                 candidates.append(

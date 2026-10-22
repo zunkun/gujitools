@@ -3,12 +3,12 @@
 
 这里的规则是 GUI 各阶段共享的「单一事实来源」：
 - 提取缺页     → 续跑 extract 时的 pages 参数；
-- 提交条目     → rembg「提交本次任务」的最终图片派生；
+- 提交条目     → 「提交本次任务」的裁图条目派生；
 - 待打印列表   → 第四步左侧列表的默认排序与持久化合并。
 
-⚠️ 第四步**没有**「按当前参数临时合成」的规则（2026-10-01 用户口径：
-去底色那一步必须提交才能传给下一步）：print 只排版「提交本次任务」落盘的
-成品图，见 ``taskdetail.submit.SubmitMixin._build_print_effects``。
+⚠️ 第四步**没有**"按当前参数临时合成"的规则：print 只排版前面步骤落盘的
+成品图（检测提交裁好的图 + 去底色成品），见
+``taskdetail.submit.SubmitMixin._build_print_effects``。
 """
 
 from __future__ import annotations
@@ -72,7 +72,7 @@ def plan_rembg_submit_entries(
     参数
     ----
     manifest_paths   : 页面清单路径（stages/extract 内的页图片）
-    result_path_for  : (stem) -> Path|None，某页对应的「生成预览」去底结果
+    result_path_for  : (stem) -> Path|None，某页对应的源图
     boxes_for        : (path_str) -> list，某页的检测框 [左框, 右框]
     single_column_book: 整本书是否已判定为**单栏书**（``utils.book_layout``
         的全书统计结论，见 :func:`~utils.book_layout.profile_book`）。为真时
@@ -100,7 +100,7 @@ def plan_rembg_submit_entries(
     for path in manifest_paths:
         result = result_path_for(path.stem)
         if result is None:
-            continue  # 该页尚未生成预览
+            continue  # 该页没有可用源图
         # ⚠️ 用**原始槽位**判断是否整幅内容：半幅固定 2 槽 [左,右]（可能含 null），
         #    整幅只占 1 槽。过滤 null 后两者都可能只剩 1 个框，届时无法区分——
         #    整幅页与「半幅漏检一侧」只能靠槽数区分。
@@ -176,8 +176,8 @@ def plan_submit_job(spec: dict, size: tuple[int, int] | None) -> dict:
     该作业记 ``names=[]``——执行端据此报「无法读取图片」，不静默丢页。
 
     ⚠️ 输出文件名规则（``{label}.png``；多画布 ``{label}-N.png``）**只在这里
-    一份**：执行端（``desktop.stages.rembg_stage``）与第三步「实时预览增量落盘」
-    （``desktop.services.rembg_live``）共用它，命名不会两处各写一套而漂移。
+    一份**：检测提交裁图端（``desktop.stages.detect_stage``）与 worker 合成端
+    （``desktop.workers.preview_worker``）共用它，命名不会两处各写一套而漂移。
 
     ⚠️ ``region_canvas_specs`` 走**函数内延迟导入**：本模块整体是不依赖 Qt 的
     纯逻辑（见模块 docstring），只有真要算输出张数时才拉进那份 Qt 几何实现。

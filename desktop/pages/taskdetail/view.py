@@ -695,7 +695,7 @@ class DetailViewMixin:
         #: ``_regenerate_notice`` 在执行期间每 ≤200ms 读它，不能现算。
         self._print_source_stale = False
         self.print_preview = PrintPreviewWidget(
-            empty_hint="暂无图片，请先在第三步「生成预览」并「提交本次任务」",
+            empty_hint="暂无图片，请先在第三步「执行去底色」生成成品图",
             params_provider=self._print_params,
             # 提交阶段预生成的缩略图（thumbnails/print）：不再对每条目现解码
             # 6000px 原图（2026-09-27 用户反馈第四步缩略图渲染慢）
@@ -815,13 +815,12 @@ class DetailViewMixin:
         # 直接 `widget(i)` 取面板**——属性转发会立刻把它建出来，惰性就白做了。
         _HOOKS = {
             "detect": self._wire_detect_panel,
-            "rembg": self._wire_rembg_panel,
             "print": self._wire_print_panel,
         }
         # ⚠️ 接线**按步骤 key**，不按 ``PANEL_CLASSES`` 的下标：那张元组与
         # ``FLOW_STAGES`` 同序（都由 ``SPECS`` 的 ``role=="stage"`` 派生），
-        # 下标在这里只是巧合——``SPECS`` 前面插一个 stage，三个钩子会**集体
-        # 错位一格**（rembg 的联动刷新接到 print 上），且没有任何报错。
+        # 下标在这里只是巧合——``SPECS`` 前面插一个 stage，钩子会**集体
+        # 错位一格**（detect 的联动刷新接到 rembg 上），且没有任何报错。
         for index, panel_class in enumerate(PANEL_CLASSES):
             key = FLOW_STAGES[index] if index < len(FLOW_STAGES) else None
             # ⚠️ dict.get(None) 运行时合法（返回 None）；这里显式判空语义相同
@@ -906,42 +905,6 @@ class DetailViewMixin:
         self.detect_viewer.selection_changed.connect(self._on_box_selection_changed)
         # 超框数上限（整幅 1 个 / 半幅 2 个）时给出可操作的提示
         self.detect_viewer.box_edit_rejected.connect(self._on_box_edit_rejected)
-
-    def _wire_rembg_panel(self, rembg_panel) -> None:
-        """第三步面板**首次构造后**的接线（LazyPanelHost 的 created 回调）。"""
-        # ⚠️ 联动刷新必须**去抖**（2026-09-26 第二轮审计 GUI-H1）：textChanged/
-        #    valueChanged 是逐字符/逐格触发，而一次联动 = 全量 boxes.json × N 页
-        #    重读（_refresh_reference_boxes → _build_entries 逐页查 detect_cache）
-        #    + runs.json × 3 次读 + 目录扫描（_update_submit_button）。大任务上
-        #    逐字符输入明显卡顿。200ms 防抖与第四步 _print_preview_timer 同法。
-        self._rembg_panel_timer = QTimer(cast("QObject", self))
-        self._rembg_panel_timer.setSingleShot(True)
-        self._rembg_panel_timer.setInterval(200)
-        self._rembg_panel_timer.timeout.connect(self._on_rembg_panel_refresh)
-
-        def _on_rembg_panel_changed(*_):
-            self._rembg_panel_timer.start()
-
-        # 去底参数变化会改变预览图 → 「提交」按钮的新版本提示需实时刷新
-        rembg_panel.type.currentTextChanged.connect(_on_rembg_panel_changed)
-        rembg_panel.offset.valueChanged.connect(_on_rembg_panel_changed)
-        rembg_panel.seal.toggled.connect(_on_rembg_panel_changed)
-        rembg_panel.sealcolor.toggled.connect(_on_rembg_panel_changed)
-        rembg_panel.sealarea.valueChanged.connect(_on_rembg_panel_changed)
-        rembg_panel.sealmin_sat.valueChanged.connect(_on_rembg_panel_changed)
-        # 面板建好时补一次当前 border（构造前它拿不到级联值）
-        self._on_rembg_panel_refresh()
-
-    def _on_rembg_panel_refresh(self) -> None:
-        """第三步参数联动刷新（已去抖）：框标注 / 提交按钮。
-
-        ⚠️ 去底色不再有 area/border（2026-10-22），所以这里不再回填整页勾选、
-        也不再级联第四步边距——去底色改参数只影响"预览图是不是最新"。
-        """
-        self._refresh_reference_boxes()
-        self._update_submit_button(
-            bool(self.process and self.process.state() != QProcess.ProcessState.NotRunning)
-        )
 
     def _wire_print_panel(self, panel) -> None:
         """第四步面板**首次构造后**的接线（LazyPanelHost 的 created 回调）。"""
@@ -1100,22 +1063,19 @@ class DetailViewMixin:
         self.run_button = PrimaryPushButton(FIF.PLAY, "执行本子任务")
         self.run_button.setFixedHeight(36)
         self.run_button.clicked.connect(lambda: self.run_stage(resume=False))
-        # 「提交本次任务」：第二步（检测→按 area 裁图）与第三步（预览→透明底成品）
-        # 共用同一颗**次动作**按钮，点击时按当前步骤分发（见 submit.run_submit）。
+        # 「提交本次任务」：第二步（检测 → 逐框裁图）的**次动作**按钮。
         # ⚠️ 文案取 SUBMIT_TEXT（submit.py 的唯一来源）：并排一行后放不下
         #    更长的写法，"有新版本"由加粗 + 下方红字提示表达。
         self.submit_button = PrimaryPushButton(FIF.ACCEPT, SUBMIT_TEXT)
         self.submit_button.setFixedHeight(36)
         self.submit_button.setToolTip(
-            "把本步骤的预览结果定稿成下一步能用的产物"
-            "（检测：把每个文本框裁出来；去底色：白底转透明）"
+            "把检测出的每个文本框裁成一张图，交给下一步去底色"
         )
         self.submit_button.clicked.connect(self.run_submit)
         self.submit_button.setVisible(False)
-        # 「生成预览 / 提交本次任务」并排一行：第三步的这两件事是**同一段动作的
-        # 前后两跳**（先看效果、再落地成最终图），竖着堆叠会让人误以为是两个
-        # 步骤。与「继续执行 / 中断执行」同一理由。
-        # ⚠️ 没有提交按钮的步骤（1/2/4）只有 run_button 可见，stretch=1 让它
+        # 「检测文本框 / 提交本次任务」并排一行：它们是同一步骤的前后两跳
+        # （先出框、再裁图），竖着堆叠会让人误以为是两个步骤。
+        # ⚠️ 没有提交按钮的步骤（1/3/4）只有 run_button 可见，stretch=1 让它
         #    自动占满整行，视觉与并排前一致。
         # ⚠️ 整行包进独立 QWidget（与 followup_row 同理）：拼版详情页要整组隐藏
         #    执行按钮（`_select_imposition_detail`），用 addLayout 的话行高仍在，
@@ -1126,7 +1086,7 @@ class DetailViewMixin:
         action.setSpacing(T.SPACE_SM)
         action.addWidget(self.run_button, 1)
         action.addWidget(self.submit_button, 1)
-        # 新版本提示：生成预览参数/结果变化后、提交前常驻提醒（位于提交按钮下方）
+        # 新版本提示：检测框/结果变化后、提交前常驻提醒（位于提交按钮下方）
         self.submit_hint = CaptionLabel("")
         self.submit_hint.setWordWrap(True)
         apply_to(self.submit_hint, T.SIZE_CAPTION)

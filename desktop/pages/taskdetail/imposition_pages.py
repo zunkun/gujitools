@@ -149,7 +149,7 @@ class ImpositionPagesMixin:
         if not sources:
             self._toast(
                 "warning", "没有可拼版的图片",
-                "请先在第三步「生成预览」并「提交本次任务」，"
+                "请先在第三步「执行去底色」生成成品图，"
                 "再从拼版里选择成品图片。",
             )
             return
@@ -302,7 +302,7 @@ class ImpositionPagesMixin:
         if not sources:
             self._toast(
                 "warning", "没有可添加的图片",
-                "请先在第三步「生成预览」并「提交本次任务」。",
+                "请先在第三步「执行去底色」生成成品图。",
             )
             return
         used = used_source_files(doc)

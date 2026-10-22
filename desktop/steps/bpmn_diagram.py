@@ -120,7 +120,6 @@ STAGE_ALIASES: dict[str, str] = {
     "检测文本": "detect",
     "图片去底色": "rembg",
     "去底色": "rembg",
-    "提交去底色结果": "rembg_submit",
     "生成pdf": "print",
     "输出pdf": "print",
     "pdf排版": "print",
@@ -510,10 +509,10 @@ class FlowDiagram:
         **继续往前**（传递性）。
 
         ⚠️⚠️ **要按"界面格"摊开，而不是只认图上出现的阶段**：
-        ``rembg_submit``（提交去底色结果）是第三步内的第二个动作，用户画图时
-        不会给它单独开节点——但它**确实**是「PDF排版」的输入（``print.pages
-        ← rembg_submit``）。只按图上的阶段算，链里就少了它，于是"提交过之后
-        PDF 已过期"这句提示永远不出现。所以收下阶段后要按
+        ``detect_submit``（提交检测结果）是第二步内的第二个动作，用户画图时
+        不会给它单独开节点——但它**确实**是下游的输入（``rembg.pages
+        ← detect_submit``）。只按图上的阶段算，链里就少了它，于是"提交过之后
+        去底色已过期"这句提示永远不出现。所以收下阶段后要按
         ``ports.STAGE_STEPS`` 反查它那一格里的**所有**阶段。
 
         结果按 :meth:`stage_order` 排（顺序稳定、可断言），图上没有节点的阶段
@@ -540,7 +539,7 @@ class FlowDiagram:
                     found.append(item.stage)
                 queue.append(source)  # 产出阶段：也继续往前（传递）
 
-        # 把"上游阶段"摊开成"上游**格**里的所有阶段"（rembg → rembg_submit 也在内）
+        # 把"上游阶段"摊开成"上游**格**里的所有阶段"（detect → detect_submit 也在内）
         steps = {ports.STAGE_STEPS.get(s, s) for s in found}
         expanded = [
             s for s in ports.STAGE_STEPS if ports.STAGE_STEPS.get(s, s) in steps
@@ -699,11 +698,10 @@ class FlowDiagram:
 
         折叠规则（与 ``FlowDefinition.stage_slots`` 保持一致）：
 
-        1. ``rembg_submit`` 折叠进 ``rembg`` 那一格（它是第三步的第二个动作）；
-        2. **同一步骤的其他节点各占一格**（B 方案，2026-10-17：图片拼版 /
+        1. **同一步骤的其他节点各占一格**（B 方案，2026-10-17：图片拼版 /
            检测文本框 / 图片去底色 / PDF排版都可以有多个节点，它们彼此独立）；
-        3. ``bar_index`` 只数**本图里有**的格子（步骤条上就这么多格）；
-        4. **图上画了、但本程序还没有对应功能的 task 节点**（例如随手加的
+        2. ``bar_index`` 只数**本图里有**的格子（步骤条上就这么多格）；
+        3. **图上画了、但本程序还没有对应功能的 task 节点**（例如随手加的
            「OCR 识别」）也**占一格**，排在真实步骤之后，标 ``mapped=False``
            且 ``stack_index = NO_PAGE``——界面据此画灰节点并在点它时解释
            （改成已有步骤名即可接上）。这类节点不会进 ``stage_order()``
@@ -741,17 +739,15 @@ class FlowDiagram:
         }
 
         slots: list[StageSlot] = []
+        #: 已出现的界面步骤/节点名：只用于给"图上有、程序没有"的节点去重。
         seen_steps: set[str] = set()
         # ⚠️ 按**节点**拓扑序（``node_order``，不折叠同阶段）走：同一步骤的每个
-        #    节点各占一格（B 方案）。只有 ``rembg_submit`` 例外——它是第三步内的
-        #    第二个动作，折叠进已经出现的那一格（图上通常压根没有它的节点）。
+        #    节点各占一格（B 方案）。
         for node_id, stage in self.node_order():
             spec = ports.spec_for_stage(stage)
             if spec is None:
                 continue
             step = ports.STAGE_STEPS.get(stage, stage)
-            if stage == "rembg_submit" and step in seen_steps:
-                continue  # 折叠进已有的 rembg 那一格
             seen_steps.add(step)
             slots.append(
                 StageSlot(

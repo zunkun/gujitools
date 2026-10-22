@@ -438,9 +438,9 @@ def run(ctx) -> None:
         str([STAGE_LABELS[k] for k in STAGES]),
     )
     ok(
-        "「提交本次任务」仍挂在第三步的文案表里（它不是独立步骤）",
-        STAGE_LABELS.get("rembg_submit") == "提交去底色结果"
-        and "rembg_submit" not in STAGES,
+        "「提交本次任务」仍挂在第二步的文案表里（它不是独立步骤）",
+        STAGE_LABELS.get("detect_submit") == "提交检测结果"
+        and "detect_submit" not in STAGES,
     )
 
     ok(

@@ -55,8 +55,8 @@ def palette_steps() -> list[str]:
 def step_stage(step: str) -> str | None:
     """步骤 key → 拿它当节点名时要写的**运行阶段**。
 
-    ``rembg`` 那一格下挂着两个阶段（``rembg`` 与 ``rembg_submit``），这里取
-    **同名那个**（``rembg``）——它就是这一格的代表。
+    ``detect`` 那一格下挂着两个阶段（``detect`` 与 ``detect_submit``），这里取
+    **同名那个**（``detect``）——它就是这一格的代表。
     """
     if step in ports.STAGE_STEPS:
         return step

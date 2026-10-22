@@ -46,7 +46,7 @@ class RembgPanel(StagePanel):
         self.type.setCurrentIndex(self._index_of(self.type, d["type"]))
         # offset 用「**滑块 + 可输入数字框**」：范围 -100~100、默认 0。
         # 允许为负，是因为最终阈值 = Otsu 自动阈值 + offset（再夹到 30~240）：
-        # 负数让文字变细变淡，正数变粗变深。拖动或输入即触发当前页实时预览。
+        # 负数让文字变细变淡，正数变粗变深。改完点「执行去底色」即按新参数出图。
         # 两者双向同步——setValue 在值相同时不发信号，所以不会来回循环。
         self.offset = Slider(Qt.Orientation.Horizontal)
         self.offset.setRange(-100, 100)
@@ -109,10 +109,8 @@ class RembgPanel(StagePanel):
 
         1. **用 blockSignals 包住 setText**：否则 setText 会再走一圈
            ``textChanged`` → 本面板的输入处理 **＋** 基类的 ``param_edited``，
-           一次拖动就把"用户改了参数"上报两遍（参数暂存、实时预览都得各自
-           再防抖一次）。
-        2. **不做节流**：真正的重活（去底色）在宿主页用 350ms 防抖兜着，
-           面板只管如实上报；数值框同步是纯文本更新，成本可忽略。
+           一次拖动就把"用户改了参数"上报两遍（参数暂存会各自再防抖一次）。
+        2. **不做节流**：面板只管如实上报；数值框同步是纯文本更新，成本可忽略。
         """
         blocked = self.offset_input.blockSignals(True)
         self.offset_input.setText(str(int(value)))

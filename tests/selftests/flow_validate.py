@@ -124,22 +124,22 @@ def _check_legal_combos(ok) -> None:
         ok(f"合法组合 {' → '.join(stages)} 放行",
            result.ok, f"errors={result.errors}")
 
-    # 带「提交去底色结果」显式节点的图同样合法（它与 rembg 同格折叠）
+    # 带「提交检测结果」显式节点的图同样合法（它与 detect 同格折叠）
     from desktop.steps.bpmn_diagram import (
         KIND_TASK, DiagramFlow, DiagramNode, FlowDiagram, stage_of_name,
     )
 
     diagram = FlowDiagram(
-        nodes=(DiagramNode("a", KIND_TASK, "图片去底色",
-                           stage=stage_of_name("图片去底色")),
-               DiagramNode("b", KIND_TASK, "提交去底色结果",
-                           stage=stage_of_name("提交去底色结果")),
+        nodes=(DiagramNode("a", KIND_TASK, "检测文本框",
+                           stage=stage_of_name("检测文本框")),
+               DiagramNode("b", KIND_TASK, "提交检测结果",
+                           stage="detect_submit"),
                DiagramNode("c", KIND_TASK, "PDF排版",
                            stage=stage_of_name("PDF排版"))),
         flows=(DiagramFlow("f1", "a", "b"), DiagramFlow("f2", "b", "c")),
     )
     result = validate_flow(diagram)
-    ok("「去底色+提交」同格两个动作的图合法（不误判重复）",
+    ok("「检测+提交」同格两个动作的图合法（不误判重复）",
        result.ok and not result.warnings,
        f"errors={result.errors} warnings={result.warnings}")
 
@@ -311,17 +311,17 @@ def _check_data_chain(ctx, ok) -> None:
         ok("rembg 是入口 ⇒ 吃入口图片目录",
            repo.stage_input(tid, "rembg", "pages") == repo.task_input_dir(tid),
            str(repo.stage_input(tid, "rembg", "pages")))
-        ok("rembg 提交的成品传给 imposition",
+        ok("rembg 的成品传给 imposition",
            repo.stage_input(tid, "imposition", "pages")
-           == ports.artifact_path(task_dir, "rembg_submit", "pages"),
+           == ports.artifact_path(task_dir, "rembg", "pages"),
            str(repo.stage_input(tid, "imposition", "pages")))
         ok("imposition 的产物传给 print（开拼版）",
            repo.stage_input(tid, "print", "pages", True)
            == ports.artifact_path(task_dir, "imposition", "pages"),
            str(repo.stage_input(tid, "print", "pages", True)))
-        ok("不开拼版时 print 回退吃提交成品（不断链）",
+        ok("不开拼版时 print 回退吃去底色成品（不断链）",
            repo.stage_input(tid, "print", "pages", False)
-           == ports.artifact_path(task_dir, "rembg_submit", "pages"),
+           == ports.artifact_path(task_dir, "rembg", "pages"),
            str(repo.stage_input(tid, "print", "pages", False)))
 
     # ---- 无上游时入口回落、有上游时不许吃入口（两方向都钉） ----
@@ -333,17 +333,17 @@ def _check_data_chain(ctx, ok) -> None:
                repo.stage_input(tid2, "detect", "pages")
                == repo.task_input_dir(tid2),
                str(repo.stage_input(tid2, "detect", "pages")))
-            ok("rembg 跟在 detect 后但 detect 不产 pages ⇒ 仍回落入口目录",
+            ok("rembg 跟在 detect 后 ⇒ 吃检测提交的裁图（detect 那格的 pages）",
                repo.stage_input(tid2, "rembg", "pages")
-               == repo.task_input_dir(tid2),
+               == ports.artifact_path(repo.task_dir(tid2), "detect_submit",
+                                      "pages"),
                str(repo.stage_input(tid2, "rembg", "pages")))
-            ok("rembg 的检测框来自本流程的 detect（不回落）",
-               repo.stage_input(tid2, "rembg", "boxes")
-               == ports.artifact_path(repo.task_dir(tid2), "detect", "boxes"),
+            ok("rembg 不再吃检测框（整图去底色）",
+               repo.stage_input(tid2, "rembg", "boxes") is None,
                str(repo.stage_input(tid2, "rembg", "boxes")))
-            ok("print 吃 rembg 提交的成品",
+            ok("print 吃 rembg 的成品",
                repo.stage_input(tid2, "print", "pages")
-               == ports.artifact_path(repo.task_dir(tid2), "rembg_submit",
+               == ports.artifact_path(repo.task_dir(tid2), "rembg",
                                       "pages"),
                str(repo.stage_input(tid2, "print", "pages")))
         finally:

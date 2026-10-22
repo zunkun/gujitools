@@ -14,7 +14,7 @@
 5. 「提交本次任务」与「执行本子任务」共用同一份执行权；
 6. 单页检测换页重检**允许顶替**（旧进程先断信号再杀，始终只有一个在跑）；
 7. **没跑起来的受理不占用防抖预算**（防抖量"距上次真正启动进程"，不是"距上次
-   受理"——否则「提交被拒 → 马上点生成预览」会被静默吞掉）；
+   受理"——否则「提交被拒 → 马上点执行」会被静默吞掉）；
 8. 进程收尾自动释放执行权。
 
 ⚠️ 全程不真起 worker 子进程（一次 torch 冷启动 5 秒以上），执行体被替换成
@@ -102,7 +102,7 @@ def run(ctx) -> None:
     toasts: list = []
     saved = (
         d._run_stage_unchecked,
-        d._run_rembg_submit_unchecked,
+        d._run_detect_submit_unchecked,
         d._toast,
         d.process,
         d.detect_process,
@@ -119,7 +119,7 @@ def run(ctx) -> None:
         d._mark_run_launched()
 
     d._run_stage_unchecked = _fake_stage
-    d._run_rembg_submit_unchecked = _fake_submit
+    d._run_detect_submit_unchecked = _fake_submit
     d._toast = lambda level, title, content="", *_a, **_kw: toasts.append(
         (level, title, content)
     )
@@ -181,14 +181,14 @@ def run(ctx) -> None:
         # ---- 5. 提交按钮共用同一份执行权 ----
         _reset(running_proc=_FakeProc())
         toasts.clear()
-        d.run_rembg_submit()
+        d.run_detect_submit()
         ok("子任务在跑时「提交本次任务」也被拦住",
            ("submit", None) not in calls, str(calls))
 
         _reset()
         d._run_claim = None
         d._run_launched_at = 0.0
-        d.run_rembg_submit()   # 交给被替换的实现体，只验证放行
+        d.run_detect_submit()   # 交给被替换的实现体，只验证放行
         ok("空闲时「提交本次任务」正常受理",
            calls[-1] == ("submit", None), str(calls))
 
@@ -204,7 +204,7 @@ def run(ctx) -> None:
            not d._acquire_run("单页检测", replace=("单页检测",)))
 
         # ---- 7. 没跑起来的受理不占用防抖预算 ----
-        # 真实回归：rembg 用例里「提交被前置条件拒绝」紧接着调 run_stage，
+        # 真实回归：提交被前置条件拒绝后紧接着调 run_stage，
         # 若防抖量的是"距上次受理"，那次点击会被静默吞掉、worker 根本不起。
         _reset()
         d._run_stage_unchecked = lambda resume=False: calls.append(("aborted", resume))
@@ -234,13 +234,13 @@ def run(ctx) -> None:
         # 界面上只有一条会自己消失的 toast，所以原因必须写进 runs.json。
         _reset()
         d.cancel_requested = False
-        run_id = repo.create_stage_run(tid, "rembg_submit", {"area": 1})
+        run_id = repo.create_stage_run(tid, "detect_submit", {})
         d.run_id = run_id
-        d.running_stage = "rembg_submit"
+        d.running_stage = "detect_submit"
         d._last_error_line = None
         toasts.clear()
         d._worker_finished(1, QProcess.ExitStatus.CrashExit)
-        rec = next(r for r in repo.list_stage_runs(tid, "rembg_submit")
+        rec = next(r for r in repo.list_stage_runs(tid, "detect_submit")
                    if r["run_id"] == run_id)
         ok("失败原因（退出码）落进运行记录，不再只有 done=0/total=0",
            rec["status"] == "failed" and rec.get("error") == "退出码 1",
@@ -253,12 +253,12 @@ def run(ctx) -> None:
            d.log_view.toPlainText()[-120:].replace("\n", " / "))
 
         # 有具体错误行（stderr / 子进程启动失败）时，记具体原因而不是退出码
-        run_id2 = repo.create_stage_run(tid, "rembg_submit", {"area": 1})
+        run_id2 = repo.create_stage_run(tid, "detect_submit", {})
         d.run_id = run_id2
-        d.running_stage = "rembg_submit"
+        d.running_stage = "detect_submit"
         d._last_error_line = "子进程启动失败：C:\\x\\python.exe"
         d._worker_finished(1, QProcess.ExitStatus.CrashExit)
-        rec2 = next(r for r in repo.list_stage_runs(tid, "rembg_submit")
+        rec2 = next(r for r in repo.list_stage_runs(tid, "detect_submit")
                     if r["run_id"] == run_id2)
         ok("有具体错误行时记具体原因（优先于退出码）",
            rec2.get("error") == "子进程启动失败：C:\\x\\python.exe",
@@ -267,9 +267,9 @@ def run(ctx) -> None:
         d.running_stage = None
 
         # 成功的那次不留 error（别把上一条失败的原因串过来）
-        ok_run = repo.create_stage_run(tid, "rembg_submit", {"area": 1})
+        ok_run = repo.create_stage_run(tid, "detect_submit", {})
         repo.finish_stage(tid, ok_run, "success", progress=(6, 6))
-        rec_ok = next(r for r in repo.list_stage_runs(tid, "rembg_submit")
+        rec_ok = next(r for r in repo.list_stage_runs(tid, "detect_submit")
                       if r["run_id"] == ok_run)
         ok("成功的记录不带失败原因",
            rec_ok["status"] == "success" and not rec_ok.get("error"),
@@ -277,7 +277,7 @@ def run(ctx) -> None:
     finally:
         (
             d._run_stage_unchecked,
-            d._run_rembg_submit_unchecked,
+            d._run_detect_submit_unchecked,
             d._toast,
             d.process,
             d.detect_process,

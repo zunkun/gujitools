@@ -2,7 +2,7 @@
 """任务详情页的阶段执行控制器：构建参数、启动 worker 子进程、解析进度日志。
 
 纯业务派生规则见 desktop/services/print_plan.py，
-rembg 提交控制器见 desktop/pages/taskdetail/submit.py，
+检测提交控制器见 desktop/pages/taskdetail/submit.py，
 历史配置回填见 desktop/pages/taskdetail/history.py。
 """
 
@@ -80,10 +80,9 @@ class StageRunnerMixin:
         _refresh_detect_stats: Callable[[], None]
         _refresh_preview: Callable[..., None]
         _refresh_stale_notices: Callable[[], None]
+        _drop_live_results: Callable[[], None]
         _compose_imposition_now: Callable[[], None]
         _print_entries: Callable[[], tuple]
-        #: 「第四步取图来源是否已提交」闸门（PrintListMixin 提供，见 print_list）
-        print_source_committed: Callable[[], bool]
         _build_print_effects: Callable[..., Any]
         _imposition_switch_state: Callable[[], tuple]
         _latest_print_pdf_path: Callable[[], Path | None]
@@ -182,7 +181,7 @@ class StageRunnerMixin:
 
     # ---------------------------------------------------- 进度该显示在哪一步
     def _step_of_stage(self, stage: str | None) -> str | None:
-        """运行阶段 → 它归属的界面步骤（``rembg_submit`` 归第三步，见 STAGE_STEP）。"""
+        """运行阶段 → 它归属的界面步骤（``detect_submit`` 归第二步，见 STAGE_STEP）。"""
         if not stage:
             return None
         return STAGE_STEP.get(stage, stage)
@@ -358,8 +357,8 @@ class StageRunnerMixin:
         #    一个"图上已删掉"的阶段递进来——那时它的输入目录没人产出，
         #    跑起来只会报"找不到输入"，不如当场说清原因（用户改了流程图之后
         #    这一条真的会中）。
-        #    ⚠️ 判据是**界面格**不是节点：`rembg_submit`（提交去底色结果）是
-        #    第三步内的第二个动作，图上通常没有它的节点，但它跟着 `rembg`
+        #    ⚠️ 判据是**界面格**不是节点：`detect_submit`（提交检测结果）是
+        #    第二步内的第二个动作，图上通常没有它的节点，但它跟着 `detect`
         #    那一格一起活着——按节点判会把「提交」挡死。
         if stage:
             # ⚠️ effective：图里没有拼版节点时，拼版这一步本来就跳过
@@ -375,6 +374,9 @@ class StageRunnerMixin:
                     "请先在「查看/编辑流程」里把它加回来。",
                 )
                 return
+        if stage == "rembg":
+            # 正式执行开始：收起按旧参数算的实时预览，显示本步正式产物。
+            self._drop_live_results()
         if stage == "extract" and (
             self.source_path is None or not Path(self.source_path).exists()
         ):
@@ -409,10 +411,9 @@ class StageRunnerMixin:
                 args["pages"] = missing
                 args["clean"] = False
         elif stage == "print":
-            # print：左侧列表顺序即 PDF 页序。图片就是第三步「提交本次任务」
+            # print：左侧列表顺序即 PDF 页序。图片就是第三步「执行去底色」
             # 落盘的成品图（非拼版 stages/rembg、拼版 stages/imposition），
-            # 不在这一步重新合成——area/border 已在提交时兑现（用户
-            # 2026-10-01：「去底色那一步，必须提交才能传给下一步」）。
+            # 不在这一步重新合成（裁图/透明底已在前面的步骤兑现）。
             #
             # ⚠️ 拼版生效时**取图来源换到 stages/imposition**（见
             #    ImpositionMixin.print_source_dir）：这里先保证拼版成品是
@@ -420,18 +421,6 @@ class StageRunnerMixin:
             #    跳过（旧版每次点击都在 GUI 主线程全量重合成，点「生成PDF」
             #    界面立刻冻结）；真要合成时也转后台线程 + 事件循环等待，
             #    界面保持响应（详见 _compose_imposition_now 的说明）。
-            #
-            # ⚠️ 「去底色成品未提交」先挡一道（用户 2026-10-18）：实时预览会往
-            #    ``stages/rembg`` 增量写零星应用图，但那**不代表**本步已提交——
-            #    必须提交，下一步才能用。判据见 ``print_source_committed``（哨兵）。
-            if not self.print_source_committed():
-                self._toast(
-                    "warning",
-                    "去底色成品尚未提交",
-                    "磁盘上只有「实时预览」按单页落下的零星应用图；请回到第三步"
-                    "点「提交本次任务」生成完整成品，下一步才能使用。",
-                )
-                return
             self._compose_imposition_now()
             entries, doc = self._print_entries()
             entries = [e for e in entries if Path(e["file"]).exists()]
@@ -463,8 +452,8 @@ class StageRunnerMixin:
                 self._toast(
                     "warning",
                     "无输入页面",
-                    "待打印列表为空，请先在第三步「生成预览」（必要时「提交"
-                    "本次任务」选页），或在左侧列表插入图片。",
+                    "待打印列表为空，请先在第三步「执行去底色」生成成品图，"
+                    "或在左侧列表插入图片。",
                 )
                 return
             doc["pages"] = [
@@ -472,7 +461,7 @@ class StageRunnerMixin:
             ]
             self.store.save_print_doc(self.task_id, doc, **self._node_scope())
             args["_effects"] = effects
-            # 记下**本次取图来源**（rembg_submit / imposition）。这是"旧数据"
+            # 记下**本次取图来源**（rembg / imposition）。这是"旧数据"
             # 判定的依据：用户随后改了拼版开关，磁盘上这份 PDF 就属于上一轮
             # 来源的产物，界面据此停止提供下载/预览并提示重新生成
             # （见 services/stale_chain.print_source_switched）。
@@ -594,8 +583,8 @@ class StageRunnerMixin:
                     "stems": {path.stem: path for path in files},
                 }
             if stage == "rembg":
-                # 「生成预览」整页去底图固定写入 ``stages/rembgpreview``（副本节点
-                # 写到它自己的 ``stages/rembgpreview~<节点>``）；
+                # 去底色只有一步：成品图固定写入 ``stages/rembg``（副本节点
+                # 写到它自己的 ``stages/rembg~<节点>``）。
                 # rembg CLI 会自行追加 "rembg" 子目录，故用 _outpath 精确覆盖。
                 args["_outpath"] = str(
                     self.store.node_or_stage_output(
@@ -859,7 +848,7 @@ class StageRunnerMixin:
                 # ⚠️ 结构化 error 事件是 worker 侧**最准确的失败原因**（stage 自己发的，
                 # 比 stderr 里那行启发式匹配可靠）。必须同时记进 _last_error_line：
                 # 只写日志的话，历史记录与失败弹窗只会显示「退出码 1」，真因
-                # （比如"没有生成任何图片，请先执行「生成预览」"）被淹在日志里，
+                # （比如"没有生成任何图片"）被淹在日志里，
                 # 用户事后完全查不到（2026-09-26 审计发现）。
                 message = event.get("message") or ""
                 self._logs.append_now(f"错误：{message}")
@@ -1366,34 +1355,6 @@ class StageRunnerMixin:
                         "success",
                         "提交完成",
                         "图片已按文本框裁好，可前往下一步「图片去底色」",
-                    )
-        elif status == "success" and stage in ("rembg", "rembg_submit"):
-            version = self._submit_version_state("rembg")
-            if stage == "rembg":
-                # 新预览图已落盘：若与最近一次提交不一致，提示有新版本待提交
-                if version == "new_version":
-                    override_toast = (
-                        "info",
-                        "已生成新的预览版本",
-                        "去底预览图片已更新，请点击「提交本次任务」生成最终图片",
-                    )
-                elif version == "preview_stale":
-                    override_toast = (
-                        "info",
-                        "预览已生成",
-                        "提示：面板参数又有修改，请确认后重新「生成预览」",
-                    )
-            else:  # rembg_submit
-                # 最终图变化，同步刷新第四步（print）列表。⚠️ 查表拿栈页号，
-                # 写死3 在自定义流程下会刷错步骤（MEMORY「三套下标」那条）。
-                print_page = self.stack_index_of_step("print")
-                if print_page is not None:
-                    self._refresh_preview(print_page)
-                if version == "up_to_date":
-                    override_toast = (
-                        "success",
-                        "提交完成",
-                        "最终图片已是最新预览版本，可前往第四步生成 PDF",
                     )
         if status == "failed":
             reason = failure or "退出码 " + str(exit_code)

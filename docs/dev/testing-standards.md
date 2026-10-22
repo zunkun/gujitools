@@ -82,7 +82,7 @@
 | 任务流程编辑(BPM) | L1 模型 + L2 渲染/编辑 + 校验 | `flow_bpm`、`flow_ui`、`flow_validate`、`detail_bpm_render` |
 | 图片提取 | L3 worker + L2 交互 | `extract`、`extract_preview`、`history`、`resume` |
 | 检测文本框 | L3 YOLO + L2 手绘/框类型/统计 | `detect`、`detect_boxes`、`detect_stats`、`detect_edit` |
-| 图片去底色 | L3 + L2 实时预览/透明产物 | `rembg`、`rembg_live`、`rembg_transparent` |
+| 图片去底色 | L3 单步执行 + L2 实时预览 + 透明产物 | `rembg`、`rembg_live`、`rembg_transparent` |
 | 拼版 | L1 版面 + L2 弹窗/画布 | `imposition`、`print_doc_rect_roundtrip` |
 | PDF 排版生成 | L3 PDF + L2 编辑器 | `print_stage`、`print_rect_pdf_e2e`、`print_layout_editor` 等 16 个 |
 | image 预览 | L2 右键/缩放 + DPR | `preview_zoom`、`image_context_menu`、`preview_dpr` |

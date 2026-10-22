@@ -42,6 +42,47 @@ from utils import resolve_final_output_dir  # 新增导入
 PNG_SAVE_KWARGS = dict(optimize=False, compress_level=6, dpi=(300, 300))
 
 
+def load_rgb_and_gray(image_path: Path) -> tuple[np.ndarray, np.ndarray]:
+    """读取一张图片 → ``(RGB 数组, 灰度数组)``，供整图去底色使用。
+
+    与 ``_process_single_image`` / 桌面端去底色阶段**共用这一份读图口径**：
+    EXIF 方向转正、RGBA 合到白底、统一 RGB，任何一处漏掉都会让预览与成品
+    方向/颜色对不上。
+    """
+    with Image.open(image_path) as source:
+        source.load()
+        # ⚠️ EXIF 方向转正（2026-09-26 第二轮审计）：cv2 链（detect 的框
+        #    坐标）与 Qt 预览都按 EXIF 转正，PIL 不转的话去底产物会横躺
+        #    90°、与框坐标系错位。先查方向标签再调：无标签时
+        #    exif_transpose 也会**整图复制一份**（68MB/页），白背内存。
+        if source.getexif().get(274, 1) != 1:
+            source = ImageOps.exif_transpose(source)
+
+        # 统一为 RGB：RGBA 与白底合并，其他模式直接转换
+        if source.mode == "RGBA":
+            img = Image.new("RGB", source.size, (255, 255, 255))
+            img.paste(source, mask=source.split()[3])  # alpha 通道作为 mask 合成到白底
+        elif source.mode != "RGB":
+            img = source.convert("RGB")
+        else:
+            img = source
+
+        img_arr = np.array(img)
+        # 灰度必须走 PIL 的 convert("L")（ITU-R 601-2 系数 + PIL 的舍入）。
+        # 换成 cv2.cvtColor 省事，但系数舍入差一点就可能让 Otsu 阈值挪一格，
+        # 而「界面所见与最终产物逐像素一致」是硬契约。
+        gray_img = img.convert("L")
+        gray_arr = np.array(gray_img)
+        # 两张 PIL 位图到此已无用（下面只用 numpy 数组）：**立刻关掉**。
+        # 一页 5000×4400 是 RGB 68MB + L 23MB，乘以并发数就是白背的峰值内存
+        # ——「处理完一张要还回去」说的正是这里。
+        gray_img.close()
+        img.close()
+        if img is not source:
+            source.close()
+    return img_arr, gray_arr
+
+
 class RembgFunction(FunctionBase):
     """去底色功能实现类。
 
@@ -93,85 +134,53 @@ class RembgFunction(FunctionBase):
                 "reason": "file too small",
             }
 
-        # ⚠️ with 的目标取名 source、工作图取名 img：非 RGB 输入时
-        # `img = source.convert("RGB")` 会换成新对象，而 with 的上下文管理器
-        # **仍然持有原图**——不显式关掉，整张原图（68MB）就会活到块结束。
-        with Image.open(image_path) as source:
-            source.load()
-            # ⚠️ EXIF 方向转正（2026-09-26 第二轮审计）：cv2 链（detect 的框
-            #    坐标）与 Qt 预览都按 EXIF 转正，PIL 不转的话去底产物会横躺
-            #    90°、与框坐标系错位。先查方向标签再调：无标签时
-            #    exif_transpose 也会**整图复制一份**（68MB/页），白背内存。
-            if source.getexif().get(274, 1) != 1:
-                source = ImageOps.exif_transpose(source)
+        # ⚠️ 读图口径（EXIF 转正 / RGBA 合白底 / 统一 RGB）与桌面端共用一份：
+        #    ``load_rgb_and_gray``（任何一处漏掉都会让界面与成品对不上）。
+        img_arr, gray_arr = load_rgb_and_gray(image_path)
 
-            # 统一为 RGB：RGBA 与白底合并，其他模式直接转换
-            if source.mode == "RGBA":
-                img = Image.new("RGB", source.size, (255, 255, 255))
-                img.paste(source, mask=source.split()[3])  # alpha 通道作为 mask 合成到白底
-            elif source.mode != "RGB":
-                img = source.convert("RGB")
-            else:
-                img = source
+        # 获取命令行参数
+        enable_seal = self.command_args.get("seal", False)
+        seal_area = self.command_args.get("sealarea", 80)
+        seal_min_sat = self.command_args.get("sealmin_sat", 50)
+        seal_color = self.command_args.get("sealcolor", False)
+        offset = self.command_args.get("offset", 0)
+        img_type = self.command_args.get("type", 1)
 
-            img_arr = np.array(img)
-            # 灰度必须走 PIL 的 convert("L")（ITU-R 601-2 系数 + PIL 的舍入）。
-            # 换成 cv2.cvtColor 省事，但系数舍入差一点就可能让 Otsu 阈值挪一格，
-            # 而「界面预览与最终产物逐像素一致」是硬契约。
-            gray_img = img.convert("L")
-            gray_arr = np.array(gray_img)
-            # 两张 PIL 位图到此已无用（下面只用 numpy 数组）：**立刻关掉**。
-            # 一页 5000×4400 是 RGB 68MB + L 23MB，乘以并发数就是白背的峰值内存
-            # ——「处理完一张要还回去」说的正是这里。
-            gray_img.close()
-            img.close()
-            if img is not source:
-                source.close()
+        # 整图去底：阈值计算 + offset + 印章处理全部收在 utils.rembg_page。
+        # ⚠️ 必须走这个函数而不是自己拼 utils 的底层调用——桌面端的去底色
+        #    阶段调的是同一个入口，两处组装逻辑分开写必然漂移。
+        final_arr = utils.rembg_page(
+            img_arr,
+            gray_arr,
+            offset=int(offset),
+            img_type=int(img_type),
+            enable_seal=bool(enable_seal),
+            seal_color=bool(seal_color),
+            seal_area=int(seal_area),
+            seal_min_sat=int(seal_min_sat),
+        )
 
-            # 获取命令行参数
-            enable_seal = self.command_args.get("seal", False)
-            seal_area = self.command_args.get("sealarea", 80)
-            seal_min_sat = self.command_args.get("sealmin_sat", 50)
-            seal_color = self.command_args.get("sealcolor", False)
-            offset = self.command_args.get("offset", 0)
-            img_type = self.command_args.get("type", 1)
+        # 保存为 PNG（300 DPI）
+        # 注意：rembg 的输出格式**固定为 PNG**，不读 ext 参数。
+        # type=2 是 1bit 单色位图，只有 PNG 能无损承载；JPEG 是 8bit
+        # 有损格式，会把二值图重新糊成灰阶，二值化的意义就没了。
+        # （历史模板里曾有一个 rembg.ext 键，那是无效配置，已删除。）
+        out_path = self.outpath / f"{image_path.stem}.png"
+        if final_arr.ndim == 3:
+            # 彩色输出（印章原色保留）
+            Image.fromarray(final_arr, "RGB").save(out_path, format="PNG", **PNG_SAVE_KWARGS)
+        else:
+            # 单通道输出（灰度或二值）
+            img_out = Image.fromarray(final_arr, "L")
+            if img_type == 2:
+                img_out = img_out.convert("1")  # 8bit → 1bit 单色位图
+            img_out.save(out_path, format="PNG", **PNG_SAVE_KWARGS)
 
-            # 整图去底：阈值计算 + offset + 印章处理全部收在 utils.rembg_page。
-            # ⚠️ 必须走这个函数而不是自己拼 utils 的底层调用——桌面端第三步的
-            # 实时预览调的是同一个入口，两处组装逻辑分开写必然漂移，
-            # 界面就会和最终产物对不上。
-            final_arr = utils.rembg_page(
-                img_arr,
-                gray_arr,
-                offset=int(offset),
-                img_type=int(img_type),
-                enable_seal=bool(enable_seal),
-                seal_color=bool(seal_color),
-                seal_area=int(seal_area),
-                seal_min_sat=int(seal_min_sat),
-            )
-
-            # 保存为 PNG（300 DPI）
-            # 注意：rembg 的输出格式**固定为 PNG**，不读 ext 参数。
-            # type=2 是 1bit 单色位图，只有 PNG 能无损承载；JPEG 是 8bit
-            # 有损格式，会把二值图重新糊成灰阶，二值化的意义就没了。
-            # （历史模板里曾有一个 rembg.ext 键，那是无效配置，已删除。）
-            out_path = self.outpath / f"{image_path.stem}.png"
-            if final_arr.ndim == 3:
-                # 彩色输出（印章原色保留）
-                Image.fromarray(final_arr, "RGB").save(out_path, format="PNG", **PNG_SAVE_KWARGS)
-            else:
-                # 单通道输出（灰度或二值）
-                img_out = Image.fromarray(final_arr, "L")
-                if img_type == 2:
-                    img_out = img_out.convert("1")  # 8bit → 1bit 单色位图
-                img_out.save(out_path, format="PNG", **PNG_SAVE_KWARGS)
-
-            return {
-                "status": "success",
-                "file": image_path.name,
-                "output": str(out_path),
-            }
+        return {
+            "status": "success",
+            "file": image_path.name,
+            "output": str(out_path),
+        }
 
     def execute(self):
         """执行整图去底色：直接复用基类的并发图片处理引擎。"""

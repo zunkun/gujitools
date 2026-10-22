@@ -88,6 +88,9 @@ def _stub_editor(edited, accepted: bool = True):
             """替身永远走同步路（后台应用只在真编辑器上出现）。"""
             return False
 
+        def deleteLater(self) -> None:  # noqa: N802 - Qt 命名
+            """真编辑器是 QObject；替身补一个空实现供收尾链调用。"""
+
     return _Stub
 
 
@@ -311,17 +314,6 @@ def run(ctx) -> None:
             ok("结果形态是区域合成（派生显示）→ 不给 save_path",
                tgt is not None and tgt.save_path is None,
                str(getattr(tgt, "save_path", None)))
-
-            # 实时暂存（参数已改、尚未「生成预览」）：显示的是临时文件，
-            # 编辑它会被下次实时预览覆盖、也不进提交产物 → 不给编辑
-            live_dir = tmp / "live"
-            live_dir.mkdir()
-            _make_image(color="#dddddd").save(str(live_dir / "1.png"), "PNG")  # type: ignore[reportCallIssue]  # PySide6 存根把 format 标成 bytes，运行时只收 str
-            rembg.set_live_dir(live_dir)
-            tgt_live = rembg._zoom_target(0)
-            ok("第三步实时暂存结果 → 不给编辑（改了不生效，宁可不给）",
-               tgt_live is not None and tgt_live.edit_path is None,
-               str(getattr(tgt_live, "edit_path", None)))
         finally:
             rembg.shutdown_workers()
             rembg.deleteLater()

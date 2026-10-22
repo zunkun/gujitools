@@ -390,10 +390,6 @@ class ImpositionBaseMixin:
                 imposition_active=self.imposition_effective(),
             )
         ) or self.store.rembg_output_dir(self.task_id)
-        if not self.rembg_source_committed(source):
-            # 源头（去底色成品）尚未提交：磁盘上只有实时预览按单页落下的零星
-            # 应用图，不许拿它拼版（用户 2026-10-18：有零星图片 ≠ 本步已提交）。
-            return []
         files = list_stage_images(source)
         return sorted(files, key=lambda p: natural_sort_key(p.name))
 
@@ -455,7 +451,7 @@ class ImpositionBaseMixin:
                 imposition_active=self.imposition_effective(),
             )
         )
-        # 连线表永远给得出路径（rembg_submit 是 print 的静态上游），
+        # 连线表永远给得出路径（rembg 是 print 的静态上游），
         # 但仍留一道兜底：将来若有人把静态上游摘掉，这里不该抛 AttributeError。
         return source or self.store.rembg_output_dir(task_id)
 
@@ -496,7 +492,7 @@ class ImpositionBaseMixin:
         if page is not None:
             self.control_stack.setCurrentIndex(page)
             self.preview_stack.setCurrentIndex(page)
-        # ⚠️ 藏**整行**（action_row =「生成预览 + 提交本次任务」并排），不是
+        # ⚠️ 藏**整行**（action_row =「检测文本框 + 提交本次任务」并排），不是
         #    单个按钮：只藏按钮的话行高仍在，控制区底部会留一条空白。
         self.action_row.setVisible(False)
         self.followup_row.setVisible(False)

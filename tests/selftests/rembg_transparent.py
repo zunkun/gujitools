@@ -113,11 +113,11 @@ def run(ctx) -> None:
        and int(view_px[0, 0][3]) == 255,
        str(tuple(int(v) for v in view_px[0, 0])))
 
-    # ---- 4. 单一定义处：提交阶段不许绕过 utils.transparent_png 直接 save ----
+    # ---- 4. 单一定义处：去底色阶段不许绕过 utils.transparent_png 直接 save ----
     stage_src = _source("desktop/stages/rembg_stage.py")
-    ok("rembg_submit 阶段不再直接 out.save(...PNG)",
+    ok("rembg 阶段不直接 out.save(...PNG)（缩略图 JPEG 除外）",
        ".save(str(dst)" not in stage_src and 'out.save(' not in stage_src)
-    ok("rembg_submit 阶段走 utils.save_white_as_transparent",
+    ok("rembg 阶段走 utils.save_white_as_transparent",
        "save_white_as_transparent" in stage_src)
     ok("透明底判据只有一个出处（阶段侧不自己写白值比较）",
        "WHITE_LEVEL" not in stage_src and "== 255" not in stage_src

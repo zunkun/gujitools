@@ -41,13 +41,12 @@ _CUSTOM_FLOW = """\
     <bpmn:task id="extract" name="提取PDF图片" guji:stage="extract"/>
     <bpmn:task id="imposition" name="图片拼版" guji:stage="imposition"/>
     <bpmn:task id="rembg" name="图片去底色" guji:stage="rembg"/>
-    <bpmn:task id="rembg_submit" name="提交" guji:stage="rembg_submit"/>
     <bpmn:task id="print" name="PDF排版" guji:stage="print"/>
     <bpmn:endEvent id="end" name="完成"/>
     <bpmn:sequenceFlow id="f0" sourceRef="start" targetRef="extract" guji:port="pdf"/>
     <bpmn:sequenceFlow id="f1" sourceRef="extract" targetRef="imposition" guji:port="pages"/>
     <bpmn:sequenceFlow id="f2" sourceRef="imposition" targetRef="rembg" guji:port="pages"/>
-    <bpmn:sequenceFlow id="f3" sourceRef="rembg_submit" targetRef="print" guji:port="pages"/>
+    <bpmn:sequenceFlow id="f3" sourceRef="rembg" targetRef="print" guji:port="pages"/>
   </bpmn:process>
 </bpmn:definitions>
 """

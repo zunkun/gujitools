@@ -53,8 +53,8 @@ class RembgPreviewWidget(
         self._paths: list[Path] = []
         self._entries: list[dict] = []  # [{label, path, box}]; box=None 表示整页规则
         self._rembg_dir: Path | None = None
-        # 实时预览暂存目录（第三步改参数后按**当前页**现算的结果）。查找时优先于
-        # _rembg_dir：它才是"此刻参数下"的样子，而正式产物可能已经过期。
+        #: 实时预览暂存目录（改参数后按当前页现算的结果）。查找时优先于
+        #: ``_rembg_dir``：它才是"此刻参数下"的样子，而正式成品可能已经过期。
         self._live_dir: Path | None = None
         self._boxes_provider = None  # (path_text) -> list[检测框]
         self._border_provider = None  # () -> border
@@ -164,12 +164,17 @@ class RembgPreviewWidget(
         self.strip.navigate(forward)
 
 
+    def current_entry_path(self) -> str | None:
+        """当前选中条目的源图路径（无条目时为 None）。"""
+        entry = self._current_entry()
+        return entry["path"] if entry else None
+
+
     def set_live_dir(self, path: Path | None) -> None:
         """设置（或传 None 清除）「实时预览」暂存目录。
 
         非 None 时结果图优先从这里取：它是按**此刻**面板参数现算的当前页；
-        而 ``_rembg_dir``（stages/rembgpreview）是上一次「生成预览」的全量产物，
-        参数可能已经改过。
+        正式成品目录（``stages/rembg``）则可能还是上一次「执行去底色」的结果。
         """
         self._live_dir = Path(path) if path else None
 
@@ -180,23 +185,8 @@ class RembgPreviewWidget(
         return self._live_dir
 
 
-    def current_entry_path(self) -> str | None:
-        """当前选中条目的源图路径（无条目时为 None）。"""
-        entry = self._current_entry()
-        return entry["path"] if entry else None
-
-
     def show_live_pending(self) -> None:
-        """实时预览正在计算：只在**下方说明行**给个反馈，**不动大图**。
-
-        ⚠️ 用户 2026-10-18：
-
-        > 提示"按新参数去底色…"，页面要优先显示……
-
-        即：**页面（当前这张图）先照常显示**，别被"正在去底色"占住大图——
-        去底色要几百毫秒，把大图清成提示文字会让人以为界面卡死了。结果一回来
-        ``refresh_display()`` 就把大图换成新结果（说明行也随之复位）。
-        """
+        """实时预览正在计算：只在**下方说明行**给个反馈，**不动大图**。"""
         self.toggle_caption.setText("正在按新参数去底色…")
 
 
@@ -243,9 +233,7 @@ class RembgPreviewWidget(
         show_result = self._mode == "result" and has_result
         self.view.clear_image("正在加载...")
         self.toggle_caption.setText(
-            "去底色结果 · 显示范围为步骤二的检测框与「边距」"
-            if show_result
-            else ("原图（尚未生成去底色结果）" if not has_result else "原图")
+            "去底色结果" if show_result else ("原图（尚未执行去底色）" if not has_result else "原图")
         )
         self._sync_toggle(has_result)
         token = self._load_token = object()
@@ -372,16 +360,13 @@ class RembgPreviewWidget(
         """第 index 条的图片预览来源；与主预览共用 :meth:`_resolve_source`。
 
         ``save_path`` 只在 ``effect is None``（显示内容就是这个文件的全部
-        像素）时给：区域合成（area/border 裁一块、拼画布）是虚拟图，把它
-        写回会把整张文件覆盖成一小块。
+        像素）时给：区域合成（裁一块、拼画布）是虚拟图，把它写回会把整张文件
+        覆盖成一小块。
 
         ``edit_path`` 是**编辑要回写的真实文件**（用户 2026-10-01：编辑要串起
         各步、最终落到 PDF）：
-        - 「原图」形态 → 源图文件（第一步产出）；
-        - 「去底色结果」形态 → **正式**结果文件（``stages/rembgpreview``，
-          提交后即喂给第四步）；
-        - 显示的是**实时暂存**结果（参数已改、尚未「生成预览」）→ 不给编辑：
-          写回临时文件会被下次实时预览覆盖、也不进提交产物。
+        - 「原图」形态 → 源图文件（上游产出）；
+        - 「去底色结果」形态 → 结果文件（``stages/rembg``，第四步读的就是它）。
         """
         if not (0 <= index < len(self._entries)):
             return None
@@ -394,7 +379,7 @@ class RembgPreviewWidget(
         if Path(source) == source_path:
             edit_path = source_path
         else:
-            formal = self._result_full_image(entry, include_live=False)
+            formal = self._result_full_image(entry)
             if formal is not None and Path(source) == formal:
                 edit_path = formal
         return ZoomTarget(

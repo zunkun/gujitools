@@ -93,8 +93,7 @@ class RembgViewerHost(QWidget, ThumbsMixin, ZoomPopupMixin):
     def _resolve_source(self, entry: dict) -> tuple:
         ...
 
-    def _result_full_image(self, entry: dict | None = None,
-                           include_live: bool = True) -> Path | None:
+    def _result_full_image(self, entry: dict | None = None) -> Path | None:
         ...
 
     def _select_entry(self, index: int) -> None:

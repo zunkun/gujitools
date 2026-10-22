@@ -7,7 +7,7 @@ heavy libraries. 阶段执行器按职责拆分在 desktop/stages/ 包：
 - desktop.stages.detect_stage  detect（YOLO 检测文本框）+ detect_submit（裁图）
 - desktop.stages.generic_stage 通用 CLI 阶段 + extract 渲染
 - desktop.stages.print_stage   print（效果图合成 + 生成 PDF）
-- desktop.stages.rembg_stage   rembg_submit（白底转透明，整图不裁）
+- desktop.stages.rembg_stage   rembg（整图去底色，直接落透明底成品）
 
 本文件只负责进程初始化与阶段路由。
 """
@@ -33,7 +33,7 @@ try:
         run_detect_submit_stage,
         run_extract_stage,
         run_print_stage,
-        run_rembg_submit_stage,
+        run_rembg_stage,
         run_stage,
     )
 except BaseException as _exc:  # noqa: BLE001 - 连 import 失败都要能被看见
@@ -117,8 +117,8 @@ def _run() -> int:
         return run_extract_stage(config)
     if config.get("stage") == "print":
         return run_print_stage(config)
-    if config.get("stage") == "rembg_submit":
-        return run_rembg_submit_stage(config)
+    if config.get("stage") == "rembg":
+        return run_rembg_stage(config)
     return run_stage(config)
 
 
@@ -126,7 +126,7 @@ def main() -> int:
     """GUI worker 子进程入口：读取 --config 并按阶段路由执行。
 
     --config 为必填，指向一个 JSON 文件路径，解析后按 mode/stage 字段分派到
-    对应阶段执行器（detect/extract/print/rembg_submit 等，未匹配则走通用
+    对应阶段执行器（detect/extract/print/rembg 等，未匹配则走通用
     run_stage）。进程启动即启用 faulthandler 并统一 stdout/stderr 为 UTF-8，
     以输出 JSON Lines 进度供 GUI 解析。返回阶段执行器的退出码。
 

@@ -147,11 +147,11 @@ def run(ctx) -> None:
            == task_dir / "stages" / "extract~ex2",
            f"{repo.node_output(tid, 'ex1', 'pages')} / "
            f"{repo.node_output(tid, 'ex2', 'pages')}")
-        ok("rembg 预览目录按节点分",
+        ok("rembg 成品目录按节点分",
            repo.node_output(tid, "rb1", "pages")
-           == task_dir / "stages" / "rembgpreview"
+           == task_dir / "stages" / "rembg"
            and repo.node_output(tid, "rb2", "pages")
-           == task_dir / "stages" / "rembgpreview~rb2")
+           == task_dir / "stages" / "rembg~rb2")
         ok("PDF排版的输出目录按节点分",
            repo.scoped_stage_dir(tid, "pr1", "print")
            == task_dir / "stages" / "print"
@@ -228,13 +228,17 @@ def run(ctx) -> None:
            and repo.detect_boxes_entry(tid, "0001") is None,
            str(repo.boxes_path(tid, "de2", "de1")))
 
-        # ---- 消费方按连线读**上游那个节点**的框 ----
-        page._select_stage(_bar("rb2"))
+        # ---- 消费方按连线读**上游那个节点**的产物 ----
+        page._select_stage(_bar("de2"))
         pump(app, times=6)
         read_path = page._boxes_read_path()
-        ok("rb2 读的是连线上喂它的 de2 的框文件",
+        ok("de2 读的是自己的检测框文件（主节点那份不受影响）",
            read_path == repo.boxes_path(tid, "de2", "de1"),
            str(read_path))
+        ok("rb2 的输入图来自 de2 那格的提交裁图（detect_submit 落点）",
+           repo.node_input(tid, "rb2", "pages")
+           == repo.node_or_stage_output(tid, "de2", "detect_submit"),
+           str(repo.node_input(tid, "rb2", "pages")))
 
         # ---- 运行状态按节点 ----
         repo.create_stage_run(tid, "extract", {}, node_id="ex2")

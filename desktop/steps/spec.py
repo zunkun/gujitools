@@ -172,8 +172,8 @@ class StepSpec:
     #: 详情页**主动作按钮**文案。与 ``run_label``（独立模块页的按钮）**有意不同**：
     #: 流程里点它跑的是"本子任务"这一环节，模块页点它跑的是整个功能。
     run_button_text: str = "执行本子任务"
-    #: 有没有「提交本次任务」这类**次动作按钮**（目前只有去底色有：
-    #: 先生成预览、用户确认后才提交最终图）。
+    #: 有没有「提交本次任务」这类**次动作按钮**（目前只有检测文本框有：
+    #: 先检测出框、用户核对后再提交裁图）。
     has_submit: bool = False
     #: 右栏控制列的宽度区间（px）。第四步参数多，要更宽的编辑区。
     control_width: tuple[int, int] = (340, 440)
@@ -599,8 +599,7 @@ SPECS: tuple[StepSpec, ...] = (
         #      ``stages/detect``（``pages`` 端口）。
         #    所以这一格既是 ``boxes`` 的产出方，也是 ``pages`` 的产出方——
         #    去底色吃的是**提交后的裁图**，不再是原始页 + 检测框。
-        #    没提交就不算这一步完成：下一步的输入目录里没有东西，自然转不过去
-        #    （与第三步「生成预览 → 提交本次任务」同一套语义）。
+        #    没提交就不算这一步完成：下一步的输入目录里没有东西，自然转不过去。
         inputs=("pages",),
         outputs=("boxes", "pages"),
         preview_attr="detect_viewer",
@@ -640,11 +639,10 @@ SPECS: tuple[StepSpec, ...] = (
         inputs=("pages",),
         outputs=("pages",),
         preview_attr="rembg_viewer",
-        # ⚠️ 这一步有**两个动作**：先「生成预览」（跑一步看效果），再
-        #    「提交本次任务」（用户确认后才把最终图落到 stages/rembg 供下一步）。
-        #    所以按钮文案不是通用的「执行本子任务」，且多一个提交按钮。
-        run_button_text="生成预览",
-        has_submit=True,
+        # ⚠️ 2026-10-22 用户口径：去底色**只有一步**——点「执行去底色」直接把
+        #    整图去底色结果落到 ``stages/rembg``，不再有「生成预览 → 提交」。
+        run_button_text="执行去底色",
+        has_submit=False,
         drop_icon="PHOTO",
         drop_title="把图片拖到这里",
         drop_hint="也可以点这里选图片或整个文件夹（一张、一批都行）",

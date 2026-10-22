@@ -228,11 +228,10 @@ GUI（QImage 渲染）共同消费同一份 `OutputLayout`，不得各自推导
   - 跨层登记：`PRINT_DEFAULTS` → `PRINT_FORM_DEFAULTS`（展开）→
     `params_spec.PRINT_DEFAULTS`（引用）→ `print_params._FORM_KEYS`（表单可见键）
     → `static/guji.yaml`。护栏 `config_template` 逐值校验 CLI ↔ yaml。
-- **第四步取图：只排版「提交本次任务」的成品图**（`SubmitMixin._build_print_effects`
-  / `submit.py`；2026-10-01 用户口径「去底色那一步，必须提交才能传给下一步」）。
-  第四步**不再**拿去底图（`stages/rembgpreview`）+ 当前 area/border 现场合成：
-  area/border 在提交那一刻就兑现进 `stages/rembg`（拼版生效时是
-  `stages/imposition`），第四步只把列表**整图透传**（`effect=None`）——列表顺序
+- **第四步取图：只排版前面步骤落盘的成品图**（`SubmitMixin._build_print_effects`
+  / `submit.py`）。检测提交把每个框裁成一张图（`stages/detect`）、去底色
+  一步把整图去底成透明 PNG（`stages/rembg`；拼版生效时是 `stages/imposition`），
+  第四步只把列表**整图透传**（`effect=None`）——列表顺序
   即页序、删掉即消失；编辑第四步的「待打印图」则点「生成PDF」即生效。
   ⚠️ 之前的 `plan_print_effects` 要按 label 把列表与"当前 area 派生集合"对齐
   （形态不同时还得按基础页名重映射），一旦对齐出错，用户在第四步**删掉的页会被

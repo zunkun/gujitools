@@ -77,8 +77,8 @@ def run(ctx) -> None:
     # ---- 1. 没有去底色结果：回落原图 + 明确文案 ----
     widget = load(no_result_dir, providers())
     ok("没有结果时回落到原图并加载成功", widget.view.has_image, widget.view.text())
-    ok("没有结果时说明文案点明「尚未生成」",
-       "尚未生成去底色结果" in widget.toggle_caption.text(),
+    ok("没有结果时说明文案点明「尚未执行去底色」",
+       "尚未执行去底色" in widget.toggle_caption.text(),
        widget.toggle_caption.text())
     ok("没有结果时放大弹窗仍可取源（显示原图）",
        widget._zoom_target(0) is not None, "")

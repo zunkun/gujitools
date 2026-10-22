@@ -7,19 +7,18 @@
 
     detect 框 → plan_detect_submit_entries → entry_to_effect_spec
     → run_detect_submit_stage 逐框合成 → stages/detect 成品图
-    → 后续去底色提交 → _build_print_effects（整图透传）→ run_print_stage → PDF
+    → 去底色（整图）→ _build_print_effects（整图透传）→ run_print_stage → PDF
 
-⚠️ 2026-10-01 用户口径「去底色那一步，必须提交才能传给下一步」：第四步
-只排版「提交本次任务」的成品图。本模块守三件事：
+⚠️ 2026-10-22 用户口径：去底色只有一步（「执行去底色」直接落 stages/rembg），
+第四步只排版那批成品图。本模块守三件事：
 
 1. **每个框在提交这一跳各自兑现**：双框页必须产出 ``-r`` / ``-l`` 两张，
    尺寸等于 ``compose_region_output(源页, [该框], "0")``；
-2. **第四步只透传成品图**：取图规格的 file 全在 ``stages/rembg``、**绝不**指向
-   ``stages/rembgpreview``（这就是"编辑去底图不提交不会漏进 PDF"的结构保证），
+2. **第四步只透传成品图**：取图规格的 file 全在 ``stages/rembg``，
    worker 实际消费的运行配置同样如此；
 3. **PDF 兑现这份成品图**：页数 == 列表条数，该页图片宽高比 == 成品图比例。
 
-依赖 rembg 模块先跑过（DEPENDS）：第三步要有「生成预览」与提交产物。
+依赖 rembg 模块先跑过（DEPENDS）：第三步要有去底色成品。
 """
 
 NAME = "print_area_border_e2e"
@@ -38,7 +37,6 @@ def run(ctx) -> None:
 
     app, d, repo = ctx.app, ctx.d, ctx.repo
     tid = ctx.tid
-    preview_dir = repo.rembg_preview_output_dir(tid)
     final_dir = repo.rembg_output_dir(tid)
 
     d.set_task(tid)
@@ -122,10 +120,8 @@ def run(ctx) -> None:
        len(_fx) == len(_entries) > 0
        and all(e["effect"] is None for e in _fx),
        str([e["effect"] for e in _fx][:2]))
-    ok("取图全在提交产物目录、绝不指向去底图"
-       "（编辑去底色结果不提交就不会漏进 PDF）",
-       {str(Path(e["file"]).parent) for e in _fx} == {str(final_dir)}
-       and all(str(Path(e["file"]).parent) != str(preview_dir) for e in _fx),
+    ok("取图全在去底色成品目录（编辑成品图才可能改变 PDF）",
+       {str(Path(e["file"]).parent) for e in _fx} == {str(final_dir)},
        str(sorted({str(Path(e["file"]).parent) for e in _fx})))
 
     # ---- 3. 真跑一次 print：PDF 的图就是提交产物 ----
@@ -163,8 +159,10 @@ def run(ctx) -> None:
        f"effects={[s.get('effect') for s in _saved_fx][:2]} "
        f"dirs={sorted({str(Path(s['file']).parent) for s in _saved_fx})}")
     _spec = next(
-        (s for s in _saved_fx if Path(s["file"]).stem == _anchor_stem), None)
-    ok("PDF 取图里仍有注入框那一页", _spec is not None,
+        (s for s in _saved_fx
+         if Path(s["file"]).stem == _anchor_stem
+         or Path(s["file"]).stem.startswith(f"{_anchor_stem}-")), None)
+    ok("PDF 取图里仍有注入框那一页（或它的 -l/-r 裁图）", _spec is not None,
        str([Path(s["file"]).stem for s in _saved_fx][:5]))
     if _spec is None:
         return

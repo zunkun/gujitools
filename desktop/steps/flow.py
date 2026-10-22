@@ -32,7 +32,7 @@ BPMN 子集（只取表达本仓库流程所需的最小面，不做完整 BPMN 
       </bpmn:process>
     </bpmn:definitions>
 
-- **task 节点 = 运行阶段**（``STAGE_STEPS`` 的键，含 ``rembg_submit`` 这个
+- **task 节点 = 运行阶段**（``STAGE_STEPS`` 的键，含 ``detect_submit`` 这个
   二段动作；不是步骤 key——BPM 驱动的是"跑什么动作"）。节点 ``id`` 即阶段名，
   ``guji:stage`` 冗余存一份做显式标记；界面文案用 ``name``，仅作展示、
   不作解析依据（解析只认 ``guji:stage``）。
@@ -116,8 +116,8 @@ class StageSlot:
     ⚠️ 为什么要这层折叠——BPMN 的节点是**运行阶段**，界面步骤条上的格子是
     **界面步骤**，两者不是一一对应：
 
-    - ``rembg_submit`` 是第三步「图片去底色」面板上的第二个动作（提交），
-      进度也显示在第三步 ⇒ 折叠进 ``rembg`` 那一格，不单独占格；
+    - ``detect_submit`` 是第二步「检测文本框」面板上的第二个动作（提交裁图），
+      进度也显示在第二步 ⇒ 折叠进 ``detect`` 那一格，不单独占格；
     - ``imposition`` 是**条件伪步骤**（``StepSpec.role == "optional"``），
       流程里有它，但界面上是否出现由运行态决定（第三步区域模式为 1 才出现）。
 
@@ -515,10 +515,9 @@ class FlowDefinition:
 
         折叠规则（**唯一一处**，界面别再自己判断）：
 
-        1. ``rembg_submit`` 折叠进 ``rembg`` 格（它是第三步的第二个动作，
-           进度也归第三步）⇒ 运行阶段 6 个、界面格子 4 个 + 拼版 1 个；
-        2. 同一格重复出现时**保留第一次**的位置（``rembg_submit`` 紧跟
-           ``rembg`` 时不会把它顶到后面去）；
+        1. ``detect_submit`` 折叠进 ``detect`` 格（它是第二步的第二个动作，
+           进度也归第二步）；
+        2. 同一格重复出现时**保留第一次**的位置；
         3. 可选节点（``StepSpec.role == "optional"``，当前只有
            ``imposition``）**不占** ``stack_index`` 的真实步骤区，统一排在
            真实步骤之后，延续既有「伪步骤占最后一位」的约定。
@@ -535,7 +534,7 @@ class FlowDefinition:
                 continue
             step = ports.STAGE_STEPS.get(stage, stage)
             if step in seen:
-                continue  # 折叠：rembg_submit 并进 rembg，保持首次出现的位置
+                continue  # 折叠：detect_submit 并进 detect，保持首次出现的位置
             seen.add(step)
             slots.append(
                 StageSlot(step=step, stage=stage, optional=spec.role == "optional")
@@ -753,8 +752,8 @@ class FlowDefinition:
         nodes: list[tuple[str, str]] = [("start", "源 PDF")]
         for stage in self.stages:
             # ⚠️ 走 ports.stage_label 而不是 spec.stage_name()：后者对
-            #    ``rembg_submit`` 会回落到 ``rembg`` 的名字，流程图上就出现
-            #    **两个「图片去底色」**节点，用户分不清哪个是提交定稿。
+            #    ``detect_submit`` 会回落到 ``detect`` 的名字，流程图上就出现
+            #    **两个「检测文本框」**节点，用户分不清哪个是提交定稿。
             name = ports.stage_label(stage)
             task = ET.SubElement(
                 process, _q(BPMN_NS, "task"),

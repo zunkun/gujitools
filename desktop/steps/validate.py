@@ -100,7 +100,7 @@ def validate_flow(diagram: FlowDiagram | None) -> FlowValidation:
 def _step_sequence(order: tuple[str, ...]) -> list[str]:
     """拓扑序里的阶段折叠成**界面步骤**序列（同格去重、保首现位置）。
 
-    ``rembg_submit``（提交去底色结果）与 ``rembg`` 是同一格的两个动作——
+    ``detect_submit``（提交检测结果）与 ``detect`` 是同一格的两个动作——
     单独画的「提交」节点不改变步骤序列。
     """
     steps: list[str] = []

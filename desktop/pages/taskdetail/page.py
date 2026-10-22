@@ -16,11 +16,11 @@
 - manifest.PageListMixin     页面清单、缩略图、页面增删
 - history.HistoryMixin       历史执行配置回填（暂存优先）
 - params_draft.ParamDraftMixin 参数暂存（改过没执行也不丢）
-- submit.SubmitMixin         rembg 提交控制器与按钮状态
+- submit.SubmitMixin         检测提交控制器与按钮状态
 - print_list.PrintListMixin  第四步待打印列表
 - runner.StageRunnerMixin    阶段执行（worker 子进程编排）
 - detect.DetectMixin         detect 检测控制
-- rembg_live.RembgLiveMixin  第三步改参数/翻页时只重算当前页的实时预览
+- rembg_live.RembgLiveMixin  第三步改参数/翻页时只重算当前页（临时显示）
 - imposition.ImpositionMixin 流程条「图片拼版」可选节点
   （共享基元 imposition.py + 模块一 imposition_pages.py「选择拼版」
   + 模块二 imposition_layout.py「拼版操作」）
@@ -172,8 +172,7 @@ class TaskDetailPage(
         self._run_claim: str | None = None
         #: 上次**真正启动进程**的时刻（monotonic）。⚠️ 防抖量的是"距上次启动"，
         #: 而**不是**"距上次受理"：一次没跑起来的尝试（参数错、无输出、无需续跑、
-        #: 提交被前置条件拒绝）不该罚掉用户紧接着的下一次点击——"提交被拒 →
-        #: 马上点生成预览"就会踩到（rembg 自测真的红了）。
+        #: 提交被前置条件拒绝）不该罚掉用户紧接着的下一次点击。
         self._run_launched_at = 0.0
         #: 源文件副本缺失时的「延时后台补一份」定时器（见 _schedule_source_backup）
         self._backup_timer = QTimer(self)
@@ -240,12 +239,12 @@ class TaskDetailPage(
         self._init_annotation_batch()
         # 去底色执行期的阶段反馈（见 StageRunnerMixin._REMBG_UI_MS）
         self._init_rembg_feedback()
+        # 第三步实时预览：改参数/翻页时只重算当前页（只显示，不写正式产物）
+        self._init_rembg_live()
         # 参数暂存：面板报到"用户改了参数"就防抖写 drafts/<阶段>.json
         self._install_draft_hooks()
         # 图片拼版的合成防抖定时器（后台落 stages/imposition）
         self._init_imposition_compose()
-        # 第三步实时预览：改参数/翻页时只重算当前页（见 rembg_live.RembgLiveMixin）
-        self._init_rembg_live()
         # 字体列表后台预热：一进任务（还在第一/二/三步）就起后台线程扫系统
         # 字体，等用户翻到第四步时列表已就绪。扫描全局只跑一次、结果写磁盘
         # 缓存，且**不阻塞**任何界面操作（详见 desktop.services.font_catalog）。
@@ -314,8 +313,7 @@ class TaskDetailPage(
         # 标注攒批同理：攒着的尺寸/框属于**上一个任务**，切换后写就串任务了
         self._flush_annotations()
         # 实时预览临时目录同理：reset(self.task_id) 清的是"上一个任务"的
-        # %TEMP%/guji_live_preview/<id>/ ——放在覆盖之后清的就是新任务的
-        # 空目录，旧任务那份（每张几 MB 的整页 PNG）永远没人清（审计 M4）
+        # %TEMP%/guji_live_preview/<id>/ ——放在覆盖之后清的就是新任务的空目录。
         self._reset_rembg_live()
         # 当前节点（B 方案）随任务一起清：新流程的节点 id 与旧任务无关，
         # 留着会让"按节点寻址"在新任务上指错节点（末尾 _select_stage 会重设）。
@@ -407,7 +405,6 @@ class TaskDetailPage(
         # 后又 set_task、或从列表再打开）时目录是老的、内容可能已被换过一遍，
         # 留着旧指纹会把"内容变了"漏判成"没变"。
         self._dir_files = {}
-        # （实时预览临时目录已在覆盖 task_id 之前按旧任务清过，见上方）
         self.pdf_page_count = 0
         self._history_prefilled: set[str] = set()
         #: ``control_stack`` 页号 → 上次为它复位的**节点标记**（B 方案）。
@@ -572,7 +569,7 @@ class TaskDetailPage(
         # 离开前把待写暂存落盘：task_id 马上被清掉，之后再写就找不到任务了
         self._flush_param_drafts()
         self._flush_annotations()
-        # 实时预览暂存同样要按"当前任务"清（覆盖 task_id 之前，见 set_task）
+        # 实时预览暂存同样要按"当前任务"清（覆盖 task_id 之前）
         self._reset_rembg_live()
         # ⚠️ 「缺源 PDF」提示层也要收：它是这一页的子控件，不收的话回到列表
         #    之后它还浮在那儿（页面只是被切走、并没有销毁），下次进来会看到
@@ -726,7 +723,7 @@ class TaskDetailPage(
         """该运行阶段在**当前上下文**对应的**节点 id**。
 
         判据：当前选中的节点（:attr:`_current_node_id`）属于这个阶段（或其所属
-        界面格，如 ``rembg_submit`` 与 ``rembg`` 同格）⇒ 用它；否则退回该阶段的
+        界面格，如 ``detect_submit`` 与 ``detect`` 同格）⇒ 用它；否则退回该阶段的
         **主节点**（:meth:`~desktop.steps.bpmn_diagram.FlowDiagram.primary_of`）。
 
         单节点流程下恒等于主节点 ⇒ 产物落点与改造前逐字节一致（零迁移）。
@@ -882,7 +879,7 @@ class TaskDetailPage(
             self._node_stage[slot.node_id] = slot.stage
             # 同阶段节点按**流程条顺序**记录（编号给人看，必须跟着用户看到的顺序）
             self._stage_nodes.setdefault(slot.stage, []).append(slot.node_id)
-            # 页面图产物目录（extract/rembg/rembg_submit/imposition）
+            # 页面图产物目录（extract/detect_submit/rembg/imposition）
             try:
                 pages_dir = self.store.node_output(task_id, slot.node_id, "pages")
             except KeyError:
@@ -941,7 +938,7 @@ class TaskDetailPage(
         "随便哪一步"——那正是界面说 A、执行做 B 的来源）。
 
         ``step`` 是**界面步骤 key**（``extract``/``detect``/``rembg``/``print``），
-        不是运行阶段 key（``rembg_submit`` 请传 ``"rembg"``）。
+        不是运行阶段 key（``detect_submit`` 请传 ``"detect"``）。
         """
         index = self.stack_index_of_step(step)
         if index is None or index < 0:   # NO_PAGE = -1
@@ -1169,14 +1166,14 @@ class TaskDetailPage(
         self.preview_stack.setCurrentIndex(page)
         # 真实步骤：执行按钮组恢复可见（拼版详情页整组藏掉，见
         # _select_imposition_detail；两种状态互斥、切换时都要还原）
-        # ⚠️ 恢复的是**整行** action_row（「生成预览 + 提交本次任务」并排），
+        # ⚠️ 恢复的是**整行** action_row（「检测文本框 + 提交本次任务」并排），
         #    只恢复 run_button 的话行本身仍带着上一步的隐藏标记。
         self.action_row.setVisible(True)
         self.followup_row.setVisible(True)
         # 按钮文案与区块显隐**全查 spec**（不再 `if stage == ...`）：
-        # 第三步是「生成预览」+「提交本次任务」两个动作，第四步是「生成PDF」，
-        # 其余是「执行本子任务」——文案与"跑完会发生什么"绑定，所以放 spec 而
-        # 不是散在页面里（加一步 / BPM 换顺序都不必改这里）。
+        # 第二步是「检测文本框」+「提交本次任务」，第三步是「执行去底色」，
+        # 第四步是「生成PDF」，其余是「执行本子任务」——文案与"跑完会发生什么"
+        # 绑定，所以放 spec 而不是散在页面里（加一步 / BPM 换顺序都不必改这里）。
         # ⚠️ 走 ``ports.spec_for_stage``：伪步骤（拼版）取不到 spec 时用默认值。
         spec = ports.spec_for_stage(step)
         self.run_button.setText(
@@ -1297,7 +1294,6 @@ class TaskDetailPage(
                 slot.bar_index, state["status"], progress,
                 completed=state["completed"],
             )
-        self._show_running_submit_on_steps(node_states, stage_states)
         stage = self.current_stage()
         if stage == IMPOSITION_STAGE:
             # 「图片拼版」伪步骤在 runs.json 里没有状态可读；执行按钮组也
@@ -1315,43 +1311,6 @@ class TaskDetailPage(
         )
         self._apply_stage_state(stage, state)
         self._update_run_buttons(state)
-
-    def _show_running_submit_on_steps(self, node_states: dict,
-                                      stage_states: dict | None = None) -> None:
-        """「提交本次任务」（rembg_submit）在跑时，把**它所在那一格**的步骤条
-        显示成「执行中 · 42/91」。
-
-        ⚠️ 提交不是独立步骤（STAGES 里没有它），但它归属第三步（见
-        ``desktop.store.tasks.STAGE_STEP``）。进度条与状态文案只服务当前显示的
-        步骤（见 ``StageRunnerMixin._progress_belongs_here``），所以用户一旦切到
-        别的步骤，就只剩步骤条这一处还能看出"还有活儿在跑"——不补这一句，
-        切走之后界面上就完全看不出提交还在执行了。
-
-        ⚠️ 格子要按**正在跑的那个节点**找（B 方案）：两个「图片去底色」节点
-        各有自己的格，把提交的进度画到主节点那格上就是"进度上错了节点"。
-        """
-        if self.running_stage != "rembg_submit":
-            return
-        done, total = self._last_progress
-        node = self.running_node
-        slot = self._slot_of_node(node) if node else None
-        if slot is None:
-            # 没有节点信息（旧路径/程序化调用）：退回"该步骤的第一格"
-            index = self.bar_index_of_step("rembg")
-            if index is None:
-                return
-            slot = self._slot_at_index(index)
-        if slot is None:
-            return
-        completed = False
-        if node and node in node_states:
-            completed = bool(node_states[node]["completed"])
-        elif stage_states:
-            completed = bool(stage_states.get("rembg", {}).get("completed"))
-        self.step_bar.set_step_status(
-            slot.bar_index, "running", (done, total) if total else None,
-            completed=completed,
-        )
 
     def _slot_of_node(self, node_id: str | None):
         """节点 id → 它在步骤条上占的那一格（没有对应格返回 ``None``）。"""

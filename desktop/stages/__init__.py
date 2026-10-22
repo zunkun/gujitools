@@ -6,7 +6,7 @@
 - detect_stage  ：detect 阶段（YOLO 检测文本框）+ detect_submit（逐框裁图）
 - generic_stage ：通用 CLI 阶段 + extract 渲染阶段
 - print_stage   ：print 阶段（效果图合成 + 生成 PDF）
-- rembg_stage   ：rembg_submit 阶段（白底转透明，整图不裁）
+- rembg_stage   ：rembg 阶段（整图去底色，直接落透明底成品）
 """
 
 from desktop.stages.events import ProgressStream, emit
@@ -15,7 +15,7 @@ from desktop.stages.detect_stage import (
 )
 from desktop.stages.generic_stage import run_extract_stage, run_stage
 from desktop.stages.print_stage import run_print_stage, sweep_orphan_staging
-from desktop.stages.rembg_stage import run_rembg_submit_stage
+from desktop.stages.rembg_stage import run_rembg_stage
 
 __all__ = [
     "ProgressStream",
@@ -25,6 +25,6 @@ __all__ = [
     "run_extract_stage",
     "run_stage",
     "run_print_stage",
-    "run_rembg_submit_stage",
+    "run_rembg_stage",
     "sweep_orphan_staging",
 ]

@@ -52,11 +52,11 @@ desktop/
       manifest.py       #     页面清单、缩略图、页面增删
       history.py        #     历史执行配置回填（暂存优先）
       params_draft.py   #     参数暂存：改过没执行也不丢
-      submit.py         #     rembg 提交控制器与按钮状态
+      submit.py         #     检测提交控制器与按钮状态
       print_list.py     #     第四步待打印列表
       runner.py         #     阶段执行（worker 子进程编排）
       detect.py         #     detect 检测控制
-      rembg_live.py     #     第三步改参数/翻页时只重算当前页
+      rembg_live.py     #     第三步改参数/翻页时只重算当前页（临时显示）
       imposition.py     #     流程条「图片拼版」共享基元（文档读写/取图来源/详情进出）
       imposition_pages.py #   模块一「选择拼版」控制器：启用开关、弹窗加页、删页/页序/清空
       imposition_layout.py #  模块二「拼版操作」控制器：旋转/复位、版面落盘、防抖合成、状态行
@@ -199,13 +199,12 @@ repo.stage_input(tid, "print", "pages")                  # 自动解析成 stage
 
 三处要点：
 
-- **BPM 化的前提是端口按类型匹配**：`rembg` 声明吃 `("pages", "boxes")`，
-  它不关心 `pages` 来自 `extract` 还是将来的别的步骤——这才是"解耦"。
-  ⚠️ 声明必须与事实一致：漏写一个就等于给 BPM 一条**假的边**（`rembg` 漏写
-  `boxes` 曾让依赖检查放行"先去底色后检测"的非法顺序，由
-  `tests/selftests/step_ports.py` 逮到并修掉）；
-- **运行阶段 ≠ 步骤 key**：多一个 `rembg_submit`（「提交本次任务」是 `rembg`
-  的第二个动作）。`STAGE_STEPS` 负责映射，否则第三步产物没有落点；
+- **BPM 化的前提是端口按类型匹配**：`rembg` 声明吃 `("pages",)`，
+  它不关心 `pages` 来自 `detect_submit` 还是将来的别的步骤——这才是"解耦"。
+  ⚠️ 声明必须与事实一致：漏写/多写一个就等于给 BPM 一条**假的边**（由
+  `tests/selftests/step_ports.py` 盯着）；
+- **运行阶段 ≠ 步骤 key**：多一个 `detect_submit`（「提交本次任务」是 `detect`
+  的第二个动作）。`STAGE_STEPS` 负责映射，否则裁好的图没有落点；
 - **条件连线单列**：`print` 的上游随"拼版是否生效"变化，用
   `print_input_overrides()` 作为**运行时覆盖**传进 `resolve_input`，而不是
   写进静态表——把运行态开关混进结构表，将来就没法枚举可能的流程了。
@@ -253,11 +252,11 @@ N 张候选图 = `ceil(N/6)` 轮零间隔重解码全程占着 GUI 主线程 ⇒
 统一入口是 :func:`desktop.steps.ports.spec_for_stage`：
 
 ```python
-spec = ports.spec_for_stage(self.current_stage())   # 处理 rembg_submit → rembg
+spec = ports.spec_for_stage(self.current_stage())   # 处理 detect_submit → detect
 self.run_button.setText(spec.run_button_text)
 ```
 
-⚠️ **不要用 `spec_by_key(stage)`**：`rembg_submit` 是同一步骤的第二个动作，
+⚠️ **不要用 `spec_by_key(stage)`**：`detect_submit` 是同一步骤的第二个动作，
 直接按 key 查会拿到 `None`。护栏在 `tests/selftests/step_ports.py` 第 6 节
 （既验 spec 的值，也验页面真的读它）。
 

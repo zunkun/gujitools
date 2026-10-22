@@ -54,46 +54,49 @@ def run(ctx) -> None:
     ok("下游比上游新 → 不算过期", stale_upstream(fresh) == {},
        str(stale_upstream(fresh)))
 
-    # 「提交本次任务」比 PDF 新 → PDF 过期，且指出是哪个上游
-    late_submit = dict(fresh)
-    late_submit["rembg_submit"] = [_rec("s1", "success", NOW)]
-    verdict = stale_upstream(late_submit)
-    ok("提交重跑 → PDF 判过期，并指出上游是「提交去底色结果」",
-       verdict.get("print", {}).get("stage") == "rembg_submit"
+    # 「执行去底色」比 PDF 新 → PDF 过期，且指出是哪个上游
+    late_rembg = dict(fresh)
+    late_rembg["rembg"] = [_rec("r2", "success", NOW)]
+    verdict = stale_upstream(late_rembg)
+    ok("去底色重跑 → PDF 判过期，并指出上游是「图片去底色」",
+       verdict.get("print", {}).get("stage") == "rembg"
        and verdict["print"]["upstream_at"] == NOW,
        str(verdict))
 
     # 容差内的前后脚完成不算过期
     tight = dict(fresh)
-    tight["rembg_submit"] = [
-        _rec("s1", "success", NOW - 10 + TIMESTAMP_TOLERANCE_S / 2)
+    tight["rembg"] = [
+        _rec("r2", "success", NOW - 10 + TIMESTAMP_TOLERANCE_S / 2)
     ]
     ok("容差内（同一次连续操作）不算过期",
        "print" not in stale_upstream(tight), str(stale_upstream(tight)))
 
     # 失败/中断的上游不算数
     failed = dict(fresh)
-    failed["rembg_submit"] = [_rec("s1", "failed", NOW), _rec("s2", "cancelled", NOW)]
+    failed["rembg"] = [_rec("r2", "failed", NOW), _rec("r3", "cancelled", NOW)]
     ok("失败/中断的上游不算数（它们没产出可比对的产物）",
        stale_upstream(failed) == {}, str(stale_upstream(failed)))
 
     # 下游从未成功过 → 不判过期（界面本来就在说"未执行"）
     never = dict(fresh)
     never.pop("print")
-    never["rembg_submit"] = [_rec("s1", "success", NOW)]
+    never["rembg"] = [_rec("r2", "success", NOW)]
     ok("下游从未成功过时不判过期",
        "print" not in stale_upstream(never), str(stale_upstream(never)))
 
     # 多个上游都更新 → 取最新的那个（提示里说清"谁"最新）
     both = dict(fresh)
     both["extract"] = [_rec("e1", "success", NOW - 5)]
-    both["rembg_submit"] = [_rec("s1", "success", NOW)]
+    both["rembg"] = [_rec("r2", "success", NOW)]
     ok("多个上游都更新时取最新的那个",
-       stale_upstream(both)["print"]["stage"] == "rembg_submit",
+       stale_upstream(both)["print"]["stage"] == "rembg",
        str(stale_upstream(both)["print"]))
-    ok("第一步重跑也能判定第三步过期（提取页图变了）",
-       stale_upstream(both).get("rembg", {}).get("stage") == "extract",
-       str(stale_upstream(both)))
+    # 只重跑第一步 → 去底色过期（提取页图变了）
+    extract_newer = dict(fresh)
+    extract_newer["extract"] = [_rec("e1", "success", NOW - 5)]
+    ok("第一步重跑也能判定去底色过期（提取页图变了）",
+       stale_upstream(extract_newer).get("rembg", {}).get("stage") == "extract",
+       str(stale_upstream(extract_newer)))
 
     # ---------------- 2. 界面提示 ----------------
     tid = repo.create_task(ctx.pdf, "hash-stale", "过期提示样例")
@@ -101,11 +104,11 @@ def run(ctx) -> None:
     saved_notices = dict(getattr(d, "_stale_notices", {}))
     try:
         d.set_task(tid)
-        # 自造历史：PDF 先成，提交后跑（差 60 秒 > 容差）
+        # 自造历史：PDF 先成，去底色后跑（差 60 秒 > 容差）
         repo._save_runs(tid, {
-            "rembg": [_rec("r1", "success", NOW - 200)],
+            "rembg": [_rec("r1", "success", NOW - 200),
+                      _rec("r2", "success", NOW)],
             "print": [_rec("p1", "success", NOW - 60)],
-            "rembg_submit": [_rec("s1", "success", NOW)],
         })
         d._refresh_stale_notices()
         d._select_stage(d.bar_index_of_step("print"))
@@ -123,9 +126,9 @@ def run(ctx) -> None:
             rgb = painted_color(d.stage_status)
             return "#000000" if rgb is None else "#%02x%02x%02x" % rgb
 
-        ok("第四步状态行提示上游已重新执行（并点出是「提交去底色结果」）",
+        ok("第四步状态行提示上游已重新执行（并点出是「图片去底色」）",
            text.startswith("● 上游已重新执行")
-           and STAGE_LABELS["rembg_submit"] in text,
+           and STAGE_LABELS["rembg"] in text,
            text)
         ok("提示里带上上游执行的时间（时:分）", ":" in text, text)
         ok("过期提示**真的画成红字**（不是只在调色板里红）",
@@ -151,9 +154,9 @@ def run(ctx) -> None:
 
         # 重新生成 PDF（写入更新的成功记录）→ 提示与高亮一起消失、颜色复位
         repo._save_runs(tid, {
-            "rembg": [_rec("r1", "success", NOW - 200)],
+            "rembg": [_rec("r1", "success", NOW - 200),
+                      _rec("r2", "success", NOW)],
             "print": [_rec("p2", "success", NOW + 60)],
-            "rembg_submit": [_rec("s1", "success", NOW)],
         })
         d._refresh_stale_notices()
         d._refresh_stage_views()

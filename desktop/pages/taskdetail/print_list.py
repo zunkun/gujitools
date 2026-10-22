@@ -52,14 +52,14 @@ class PrintListMixin:
         _print_doc_snapshot: dict[str, Any]
 
     def _print_thumb_provider(self, file_text: str):
-        """第四步缩略条的小图来源：提交阶段预生成的缩略图（无则回落原图解码）。
+        """第四步缩略条的小图来源：去底色阶段预生成的缩略图（无则回落原图解码）。
 
-        只服务 ``stages/rembg[~<节点>]`` 的**提交产物**（缩略图按最终图 stem 存放，
-        mtime 不旧于最终图才算有效——外部改动了最终图就自动失效回落）；
+        只服务 ``stages/rembg[~<节点>]`` 的**去底色成品**（缩略图按成品图 stem
+        存放，mtime 不旧于成品图才算有效——外部改动了成品图就自动失效回落）；
         拼版产物（``stages/imposition``）与用户手动「插入图片」的外部图没有预生成
         缩略图，照旧现解码。
 
-        ⚠️ **缩略图目录按节点取**（B 方案）：两个「图片去底色」节点各有各的提交
+        ⚠️ **缩略图目录按节点取**（B 方案）：两个「图片去底色」节点各有各的成品
         产物目录，缩略图缓存也跟着分（``thumbnails/print[~<节点>]``）。这里从
         **产物自己的目录名**反推节点后缀（与写入端 ``rembg_stage.py`` 同一份
         规则，见 :func:`desktop.steps.ports.node_scope_from_output_dir`）——比按
@@ -83,9 +83,7 @@ class PrintListMixin:
         from desktop.steps.ports import node_scope_from_output_dir
 
         parent = page.parent
-        # 提交产物目录恒为 ``stages/rembg`` 或 ``stages/rembg~<节点>``
-        # （``rembgpreview`` 是第三步的实时预览目录，**不是**这里要认的成品，
-        #  所以按精确前缀判，别用 ``startswith("rembg")``）。
+        # 去底色成品目录恒为 ``stages/rembg`` 或 ``stages/rembg~<节点>``。
         if parent.parent != self.store.task_dir(self.task_id) / "stages" or not (
             parent.name == "rembg" or parent.name.startswith("rembg~")
         ):
@@ -150,7 +148,7 @@ class PrintListMixin:
     def _drop_updated_print_thumbs(self, stale: list[dict]) -> None:
         """更新过的图片：把它在**待打印缩略图缓存**里的那条删掉，下次现解新图。
 
-        ``thumbnails/print[~<节点>]/<图名>.jpg`` 是第三步「提交本次任务」时预生成的
+        ``thumbnails/print[~<节点>]/<图名>.jpg`` 是第三步「执行去底色」时预生成的
         小图；它自带 ``mtime 不旧于源图`` 的有效性判据（改过的图本来就会回落真图），
         这里再**主动删掉**是因为用户要求"更新过的图片不要留旧缓存"（2026-10-18）：
         留着那份文件，翻目录/排查时看到的仍是旧像素。
@@ -175,64 +173,12 @@ class PrintListMixin:
                 except OSError:
                     pass
 
-    def rembg_source_committed(self, source) -> bool:
-        """某个「去底色成品」目录是否**已提交**（＝没有 ``.draft`` 哨兵）。
-
-        用户 2026-10-18：
-
-        > 虽然可能 rembg 会有零星图片，但是并不表明，当前步骤已经提交，
-        > 必须执行提交，下一步才能使用当前步骤的图片。
-
-        实时预览会往 ``stages/rembg[~节点]`` 增量写零星应用图，并留下哨兵；
-        提交（``clean=True`` 整目录重建）顺带删掉它（见
-        ``store.rembg_draft_marker`` / ``desktop.services.rembg_live``）。
-        非「去底色成品」目录（拼版成品、入口图片）一律不受约束 → True。
-        """
-        if source is None:
-            return False
-        path = Path(source)
-        # 目录名形态 ``rembg`` / ``rembg~<节点>``（与 _print_thumb_provider 同源）
-        if not (path.name == "rembg" or path.name.startswith("rembg~")):
-            return True
-        return not (path / self.store.REMBG_DRAFT_NAME).exists()
-
-    def _imposition_upstream_dir(self):
-        """拼版这一步的 ``pages`` 输入端目录（＝拼版成品的**源头**）。"""
-        task_id = self.task_id
-        if not task_id:
-            return None
-        try:
-            node = self.node_of_stage("imposition")
-            if node:
-                return self.store.node_input(
-                    task_id, node, "pages", self.imposition_effective()
-                )
-            return self.store.stage_input(
-                task_id, "imposition", "pages",
-                imposition_active=self.imposition_effective(),
-            )
-        except Exception:  # noqa: BLE001 - 图坏了不该拖垮闸门
-            return None
-
-    def print_source_committed(self) -> bool:
-        """第四步取图来源是不是**已提交**的成品（去底色来源专有闸门）。
-
-        拼版生效时来源换成 ``stages/imposition``——拼版成品是从**去底色成品**
-        合成的，源头没提交一样不许用，故这里顺着拼版的上游再查一次。
-        """
-        if not getattr(self, "task_id", None):
-            return False
-        source = Path(self.print_source_dir())
-        if source.name == "rembg" or source.name.startswith("rembg~"):
-            return self.rembg_source_committed(source)
-        return self.rembg_source_committed(self._imposition_upstream_dir())
-
     def _print_entries(self) -> tuple[list[dict], dict]:
         """第四步待打印图片列表（规则见 services/print_plan.plan_print_entries）。
 
         ⚠️ **取图目录由拼版是否生效决定**（``ImpositionMixin.print_source_dir``）：
         拼版启用且有拼版页 → ``stages/imposition``（拼版已是成品整页），
-        否则 → ``stages/rembg``（第三步「提交本次任务」的产物）。
+        否则 → ``stages/rembg``（第三步「执行去底色」的成品）。
         ``plan_print_entries`` 只认"一批成品图 + 顺序文档"，对来源无感。
 
         ``size_for``（= :meth:`_print_image_size`）：逐页 rect 只对**画它时那张图**
@@ -240,11 +186,6 @@ class PrintListMixin:
         **当前 PDF排版参数**（纸张/方向/边距/原比例）重新排版。
         """
         source_dir = self.print_source_dir()
-        if not self.print_source_committed():
-            # 去底色成品尚未提交（磁盘上只有「实时预览」按单页落下的零星应用图）
-            # ⇒ 不建表、**不落 print.json**（保住用户已排好的顺序），等提交后自然
-            # 重建。用户 2026-10-18：有零星图片 ≠ 本步已提交，下一步不许用。
-            return [], {"rembg_snapshot": [], "pages": []}
         rembg_files = sorted(
             list_stage_images(source_dir),
             key=lambda p: natural_sort_key(p.name),
@@ -379,7 +320,7 @@ class PrintListMixin:
 
     # ------------------------------------------------------- 取图来源 / 旧数据
     def print_source_stage(self) -> str:
-        """第四步**当前**的取图来源阶段 key（``rembg_submit`` 或 ``imposition``）。
+        """第四步**当前**的取图来源阶段 key（``rembg`` 或 ``imposition``）。
 
         ⚠️ 与 :meth:`print_source_dir` 同源：那边取路径、这边取 key，都走
         ``ports.print_pages_supplier(imposition_active())`` 这一次判定——

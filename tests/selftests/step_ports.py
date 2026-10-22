@@ -130,7 +130,7 @@ def _check_entry_stage_input(ctx, ok) -> None:
        str(diagram.stage_order()))
     ok("detect 是入口（沿图没有活着的上游）",
        ports.is_entry_stage(diagram, "detect"))
-    ok("print 不是入口（上游有 rembg_submit）",
+    ok("print 不是入口（上游有 rembg）",
        not ports.is_entry_stage(diagram, "print"))
     ok("detect 的输入回落到该任务的入口目录",
        repo.stage_input(tid, "detect", "pages") == repo.task_input_dir(tid),
@@ -222,8 +222,8 @@ def _check_blocking_inputs(ctx, ok) -> None:
     #    按连线取图（正确的做法）才暴露出连线是错的。
     # 判据（业务事实）：``-l``/``-r`` 成对半页图由「检测文本框」的提交产出，
     #    且 ``task_default.bpmn`` 里「图片拼版」排在「图片去底色」**之后**。
-    ok("拼版的 pages 由去底色提交供给（不是提取原图）",
-       ports.supplier_of("imposition", "pages") == "rembg_submit",
+    ok("拼版的 pages 由去底色供给（不是提取原图）",
+       ports.supplier_of("imposition", "pages") == "rembg",
        str(ports.supplier_of("imposition", "pages")))
     ok("默认流程里拼版取图落在 stages/rembg（去底色成品目录）",
        repo.stage_input(tid, "imposition", "pages")
@@ -291,7 +291,7 @@ def _check_blocking_inputs(ctx, ok) -> None:
     for _label, _wiring in (
         ("A", [("extract", "detect"), ("detect", "rembg"),
                ("rembg", "print")]),
-        # ⚠️ rembg 仍在流程里（挂在 detect 后面），静态表的 rembg_submit 因此
+        # ⚠️ rembg 仍在流程里（挂在 detect 后面），静态表的 rembg 因此
         #    "在流程里"——这正是旧规则会把它当赢家的条件。
         ("B", [("extract", "detect"), ("detect", "rembg"),
                ("extract", "print")]),
@@ -304,9 +304,9 @@ def _check_blocking_inputs(ctx, ok) -> None:
             repo.stage_supplier(_t, "print", "pages"),
             repo.stage_input(_t, "print", "pages"),
         )
-    ok("默认连线：print 吃去底色提交（与改造前一致）",
+    ok("默认连线：print 吃去底色成品（与改造前一致）",
        _got["A"] == (
-           "rembg_submit", repo.rembg_output_dir(_tid_of["A"])),
+           "rembg", repo.rembg_output_dir(_tid_of["A"])),
        str(_got["A"]))
     ok("⚠️ 改过连线：print 吃图上**真正喂它**的那个（用户的线不被丢弃）",
        _got["B"] == ("extract", repo.extract_output_dir(_tid_of["B"])),
@@ -323,7 +323,7 @@ def _check_blocking_inputs(ctx, ok) -> None:
         ("extract", "imposition"), ("imposition", "print"),
     ], stages={**_STAGE_NODES, "imposition": "图片拼版"}), encoding="utf-8")
     ok("图说不清（有两条产出方）⇒ 退回静态声明 + 条件，不随机挑一个",
-       repo.stage_supplier(_amb, "print", "pages", False) == "rembg_submit"
+       repo.stage_supplier(_amb, "print", "pages", False) == "rembg"
        and repo.stage_supplier(_amb, "print", "pages", True) == "imposition",
        f"off={repo.stage_supplier(_amb, 'print', 'pages', False)} "
        f"on={repo.stage_supplier(_amb, 'print', 'pages', True)}")
@@ -601,12 +601,13 @@ def _check_ports(ok) -> None:
        ports.fold_forward("detect", "boxes") == "detect",
        ports.fold_forward("detect", "boxes"))
 
-    # rembg_submit 是「提交本次任务」：同一步骤的第二个动作，不重新吃框。
-    ok("rembg_submit 复用 rembg 的步骤定义",
-       ports.STAGE_STEPS["rembg_submit"] == "rembg")
-    ok("rembg_submit 不重复消费检测框",
-       ports.stage_inputs("rembg_submit") == ("pages",),
-       str(ports.stage_inputs("rembg_submit")))
+    # ⚠️ rembg 是**单一步动作**（2026-10-22 起没有预览/提交两段）。
+    ok("rembg 这个动作直接产出 pages（整图去底色成品）",
+       ports.action_outputs("rembg") == ("pages",),
+       str(ports.action_outputs("rembg")))
+    ok("rembg 不再有第二个提交动作",
+       "rembg_submit" not in ports.STAGE_STEPS,
+       str(ports.STAGE_STEPS))
 
     # 声明了输出的**动作**必须登记落点，否则产物没有去处。
     # ⚠️ 按动作级判（detect 声明了 pages，但那个落点属于 detect_submit）。
@@ -632,13 +633,13 @@ def _check_wiring(ok) -> None:
        str(ports.supplier_of("rembg", "pages")))
     ok("rembg 不再有 boxes 连线（去底色=整图去底色）",
        ports.supplier_of("rembg", "boxes") is None)
-    ok("print 默认吃第三步提交的成品图",
-       ports.supplier_of("print", "pages") == "rembg_submit")
+    ok("print 默认吃第三步去底色的成品图",
+       ports.supplier_of("print", "pages") == "rembg")
 
     # ⚠️ **条件连线**：拼版生效时 print 的上游换成 imposition。BPM 编排要支持
     #    "按运行态换上游"，所以它必须落在覆盖表里而不是静态表里。
-    ok("拼版开关关 → print 吃 rembg_submit",
-       ports.print_pages_supplier(False) == "rembg_submit")
+    ok("拼版开关关 → print 吃 rembg",
+       ports.print_pages_supplier(False) == "rembg")
     ok("拼版开关开 → print 吃 imposition",
        ports.print_pages_supplier(True) == "imposition")
     ok("覆盖表只改 print 的 pages 端口",
@@ -672,11 +673,11 @@ def _check_bpm_readiness(ok) -> None:
     """③ 与顺序无关的依赖检查——BPM 编排的前置能力。"""
     from desktop.steps import ports
 
-    order = ["extract", "detect", "rembg", "rembg_submit", "print"]
+    order = ["extract", "detect", "rembg", "print"]
     ok("按正确顺序没有等待项",
        ports.missing_stages(order) == [], str(ports.missing_stages(order)))
     # 把 rembg 提到 detect 前面 → 它依赖的上游还没跑，必须被点出来。
-    scrambled = ["extract", "rembg", "detect", "rembg_submit", "print"]
+    scrambled = ["extract", "rembg", "detect", "print"]
     ok("rembg 抢在 detect 前会被点名为缺上游",
        "rembg" in ports.missing_stages(scrambled),
        str(ports.missing_stages(scrambled)))
@@ -702,8 +703,7 @@ def _check_store_derivation(ctx, ok) -> None:
     # ⚠️ 逐个对照：这些路径躺在用户磁盘的老任务上，改错一个就是数据事故。
     for name, stage, port in (
         ("extract_output_dir", "extract", "pages"),
-        ("rembg_output_dir", "rembg_submit", "pages"),
-        ("rembg_preview_output_dir", "rembg", "pages"),
+        ("rembg_output_dir", "rembg", "pages"),
         ("imposition_output_dir", "imposition", "pages"),
         ("print_output_pdf", "print", "pdf"),
     ):
@@ -787,20 +787,20 @@ def _check_detail_metadata(ctx, ok) -> None:
     # --- spec 层面的值（与改动前的 if-else 逐条对照）---
     ok("extract 按钮是「执行本子任务」",
        _spec_for("extract").run_button_text == "执行本子任务")
-    ok("rembg 按钮是「生成预览」且有提交按钮",
-       _spec_for("rembg").run_button_text == "生成预览"
-       and _spec_for("rembg").has_submit is True)
+    ok("rembg 按钮是「执行去底色」且无提交按钮",
+       _spec_for("rembg").run_button_text == "执行去底色"
+       and _spec_for("rembg").has_submit is False)
     ok("print 按钮是「生成PDF」且无提交按钮",
        _spec_for("print").run_button_text == "生成PDF"
        and _spec_for("print").has_submit is False)
-    # ⚠️ 2026-10-22：第二步「检测文本框」也变成两步式（检测 → 提交裁图），
-    #    所以声明 has_submit 的步骤是 detect + rembg 两个。
+    # ⚠️ 2026-10-22：第二步「检测文本框」是两步式（检测 → 提交裁图），
+    #    第三步去底色只有一步。所以声明 has_submit 的步骤只有 detect。
     ok("detect 按钮是「检测文本框」且有提交按钮",
        _spec_for("detect").run_button_text == "检测文本框"
        and _spec_for("detect").has_submit is True,
        f"{_spec_for('detect').run_button_text} / {_spec_for('detect').has_submit}")
-    ok("detect / rembg 声明了提交按钮",
-       [s for s in STAGES if _spec_for(s).has_submit] == ["detect", "rembg"],
+    ok("只有 detect 声明了提交按钮",
+       [s for s in STAGES if _spec_for(s).has_submit] == ["detect"],
        str([s for s in STAGES if _spec_for(s).has_submit]))
     ok("print 控制列更宽（400~580），其余 340~440",
        _spec_for("print").control_width == (400, 580)
@@ -833,9 +833,9 @@ def _check_detail_metadata(ctx, ok) -> None:
         pump(app, times=6)
 
         page._select_stage(2)
-        ok("第三步：按钮=生成预览、提交按钮出现",
-           page.run_button.text() == "生成预览"
-           and page.submit_button.isVisibleTo(page), page.run_button.text())
+        ok("第三步：按钮=执行去底色、提交按钮隐藏",
+           page.run_button.text() == "执行去底色"
+           and not page.submit_button.isVisibleTo(page), page.run_button.text())
         print_bar = page.bar_index_of_step("print")
         assert print_bar is not None      # ⚠️ 默认流程里有「生成PDF」这一格
         page._select_stage(print_bar)

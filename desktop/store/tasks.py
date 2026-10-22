@@ -30,13 +30,12 @@ STAGES = FLOW_STAGES
 # ⚠️ 这些是**界面文案**（步骤条/面板标题/toast/日志共用一份）：有中文就不再附
 # 英文键名 —— 用户口径「四个步骤有中文，英文就不要出现」。
 #: ⚠️ **真源是 :func:`desktop.steps.ports.stage_label`**，本表只是它的派生
-#: （多带 ``detect_submit`` / ``rembg_submit``：它们不是独立步骤，却是真实的
-#: 运行阶段，worker 会跑它们、进度与日志都要有名字）。别在这里另写一句中文
+#: （多带 ``detect_submit``：它不是独立步骤，却是真实的运行阶段，worker 会跑
+#: 它、进度与日志都要有名字）。别在这里另写一句中文
 #: ——BPMN 流程图上的节点名走的是同一个函数，两边不一致就会出现"图上两个
-#: 『图片去底色』"。
+#: 『检测文本框』"。
 STAGE_LABELS = {key: ports.stage_label(key) for key in STAGES}
 STAGE_LABELS["detect_submit"] = ports.stage_label("detect_submit")
-STAGE_LABELS["rembg_submit"] = ports.stage_label("rembg_submit")
 
 # 列表里的阶段短名（步骤条/表格空间有限，用 2~3 字表达）
 STAGE_SHORT = {key: cast(StepSpec, spec_by_key(key)).short_name() for key in STAGES}
@@ -68,8 +67,8 @@ STAGE_SHORT[IMPOSITION_STAGE] = cast(StepSpec, spec_by_key(IMPOSITION_STAGE)).sh
 
 #: 运行阶段 → 它归属的**界面步骤**（值取 STAGES 里的一项）。
 #:
-#: ⚠️ 「提交本次任务」（rembg_submit）不是独立步骤，而是第三步 rembg 面板上的
-#: 动作：它的进度必须显示在第三步。有了这张表，界面才谈得上"只有当前这一步的
+#: ⚠️ 「提交本次任务」（detect_submit）不是独立步骤，而是第二步 detect 面板上的
+#: 动作：它的进度必须显示在第二步。有了这张表，界面才谈得上"只有当前这一步的
 #: 进度才上屏"（详见 desktop/pages/taskdetail/runner.py::_progress_belongs_here）。
 STAGE_STEP = ports.STAGE_STEPS
 """运行阶段 → 界面步骤（**别名** ``ports.STAGE_STEPS``，不是第二份）。
@@ -557,44 +556,8 @@ class TaskMixin:
         return self.artifact(task_id, "extract", "pages")
 
     def rembg_output_dir(self, task_id: str) -> Path:
-        """步骤三最终图片目录（「提交本次任务」产出，print 阶段从此取图）。"""
-        return self.artifact(task_id, "rembg_submit", "pages")
-
-    def rembg_preview_output_dir(self, task_id: str) -> Path:
-        """「生成预览」产出的整页去底预览图目录（中间产物，不参与 print）。"""
+        """步骤三成品图片目录（「执行去底色」产出，print 阶段从此取图）。"""
         return self.artifact(task_id, "rembg", "pages")
-
-    #: 「应用图」目录的**未定稿哨兵**名。第三步实时预览会往 ``stages/rembg``
-    #: 增量写零星应用图，写前先落这个点文件；「提交本次任务」的整目录重建
-    #: （``clean=True``）会顺带删掉它。第四步据此区分"已提交的成品"与"预览拼
-    #: 出来的零星产物"（用户 2026-10-18：有零星图片 ≠ 本步已提交）。
-    REMBG_DRAFT_NAME = ".draft"
-
-    def rembg_draft_marker(self, task_id: str, node_id: str | None = None) -> Path:
-        """未定稿哨兵路径：``stages/rembg[~节点]/.draft``。"""
-        try:
-            return (
-                self.node_or_stage_output(
-                    task_id, node_id, "rembg_submit", "pages"
-                )
-                / self.REMBG_DRAFT_NAME
-            )
-        except (ValueError, KeyError):
-            # 任务号非法/图坏了按"没有应用图目录"处理：调用方只要个布尔
-            return self.task_dir(task_id) / "stages" / self.REMBG_DRAFT_NAME
-
-    def rembg_submit_committed(self, task_id: str, node_id: str | None = None
-                               ) -> bool:
-        """``stages/rembg[~节点]`` 是不是**已提交**的成品（＝没有未定稿哨兵）。
-
-        ⚠️ 用户 2026-10-18 口径：实时预览往这个目录写的零星应用图**不代表**本步
-        已提交——"必须执行提交，下一步才能使用当前步骤的图片"。第四步
-        （与拼版取图）只有在这里返回 True 时才认这批图。
-        """
-        try:
-            return not self.rembg_draft_marker(task_id, node_id).exists()
-        except ValueError:
-            return False
 
     def imposition_output_dir(self, task_id: str) -> Path:
         """「图片拼版」产出的成品拼版页图目录（列表顺序即页序）。
@@ -810,11 +773,10 @@ class TaskMixin:
            （:meth:`FlowDiagram.nearest_producer`）。
 
         ⚠️ **"在流程里"要按"界面格子"判，不能按节点判**：
-        ``rembg_submit``（提交去底色结果）是第三步内的**第二个动作**，用户画图
-        时通常不会给它单独开一个节点（界面槽位也把它折回「图片去底色」那一格）。
-        若按"图里有没有这个节点"判，就会认为它不在流程里，于是 ``print.pages``
-        回退到 ``rembg`` ——而 ``rembg`` 指向的是**去底色的实时预览目录**，
-        不是用户「提交」过的成品目录，**打印出来的是没提交的图**。
+        ``detect_submit``（提交检测结果）是第二步内的**第二个动作**，用户画图
+        时通常不会给它单独开一个节点（界面槽位也把它折回「检测文本框」那一格）。
+        若按"图里有没有这个节点"判，就会认为它不在流程里，于是 ``rembg.pages``
+        回退到 ``detect`` ——而 ``detect`` 只出坐标、没有裁好的图。
         所以判据是"它所属的**界面格**在不在流程里"（:data:`ports.STAGE_STEPS`
         给出 stage→step 的折叠关系）。
         ⚠️⚠️ **图优先，静态表兜底**（2026-10-06 掉头）。原先的规则是**反的**
@@ -843,7 +805,7 @@ class TaskMixin:
         diagram = self.task_diagram(task_id)
         flags = self.scheduler_flags(task_id, imposition_active)
         active = set(Scheduler.from_diagram(diagram, flags).stages)
-        # 本流程里"活着"的**界面格**（例如 rembg_submit 与 rembg 同属一格）
+        # 本流程里"活着"的**界面格**（例如 detect_submit 与 detect 同属一格）
         live_steps = {ports.STAGE_STEPS.get(s, s) for s in active}
 
         def in_flow(name: str) -> bool:
@@ -882,8 +844,8 @@ class TaskMixin:
     # ---------- 节点实例（B 方案：同阶段可以有多个节点）----------
     @staticmethod
     def _stage_live(stage: str, active: set[str]) -> bool:
-        """某运行阶段（或它所属的**界面格**）在不在本流程里（`rembg_submit`
-        跟着 `rembg` 那一格一起活着，见 ``ports.STAGE_STEPS``）。"""
+        """某运行阶段（或它所属的**界面格**）在不在本流程里（`detect_submit`
+        跟着 `detect` 那一格一起活着，见 ``ports.STAGE_STEPS``）。"""
         if stage in active:
             return True
         return ports.STAGE_STEPS.get(stage, stage) in {
@@ -892,7 +854,7 @@ class TaskMixin:
 
     @staticmethod
     def _primary_of_stage(diagram, stage: str) -> str | None:
-        """运行阶段 → 它的**主节点** id（`rembg_submit` 映射到 `rembg` 节点）。"""
+        """运行阶段 → 它的**主节点** id（`detect_submit` 映射到 `detect` 节点）。"""
         step_key = ports.STAGE_STEPS.get(stage, stage)
         return diagram.primary_of(step_key)
 
@@ -981,7 +943,7 @@ class TaskMixin:
         :meth:`node_supplier` 回答的是"喂你的是哪个**节点**"（B 方案寻址要用
         节点 id）；而"记进 runs 历史、供旧数据判定比对"的那个字段
         （``args["source_stage"]`` ← :func:`desktop.services.stale_chain.print_source_switched`）
-        历来是**阶段 key**（``rembg_submit`` / ``imposition``）。两者不是一回事，
+        历来是**阶段 key**（``detect_submit`` / ``imposition``）。两者不是一回事，
         所以这里折一道：节点 → 它的运行阶段 →（同格多动作再折）该端口成品的
         产出阶段。哨兵值原样透传。
         """
@@ -1015,7 +977,7 @@ class TaskMixin:
         """某**节点实例**某端口产物的绝对路径（**落点的唯一入口**）。
 
         ``stage`` 缺省取节点自身的阶段；显式给时表示"同一步骤的第二个动作"
-        （如 ``rembg`` 节点的 ``rembg_submit`` 提交落点）。主节点沿用旧落点，
+        （如 ``detect`` 节点的 ``detect_submit`` 裁图落点）。主节点沿用旧落点，
         副本落到 ``~<node_id>`` 后缀的副本落点。
         """
         diagram = self.task_diagram(task_id)
@@ -1197,8 +1159,7 @@ class TaskMixin:
                          node_id: str | None = None) -> Path:
         """返回某阶段（GUI）应写入的输出目录。
 
-        注意 rembg 阶段返回 rembgpreview 预览目录，rembg_submit 才指向
-        rembg 最终目录；print 返回 print.pdf 所在目录。
+        rembg 返回成品图目录、print 返回 print.pdf 所在目录。
         """
         # detect 只检测不落盘，它的产物是坐标文件；若有参考缩略图放
         # thumbnails/detect（那是界面缓存，不是端口产物，故不在 ports 表里）。
@@ -1274,10 +1235,10 @@ class TaskMixin:
 
     def rembg_thumbnails_dir(self, task_id: str,
                              node_id: str | None = None) -> Path:
-        """第四步缩略图缓存：提交阶段（rembg_submit）随最终图片一并生成，
+        """第四步缩略图缓存：去底色阶段随成品图一并生成，
         缩略条直接复用，不必每次现解码 6000px 的原图。
 
-        ⚠️ 按**节点**取（B 方案）：两个「图片去底色」节点各有各的提交产物
+        ⚠️ 按**节点**取（B 方案）：两个「图片去底色」节点各有各的成品产物
         （``stages/rembg[~<节点>]``），缩略图缓存也跟着分（裸名 ``print`` /
         ``print~<节点>``），否则副本节点会命中主节点的缩略图（张冠李戴）。
         """

@@ -273,8 +273,8 @@ tasks/<任务号>/
 └── stages/
     ├── input/                入口图片（用户直接放进来的图）
     ├── extract/              提取出的页面图
-    ├── rembgpreview/         「生成预览」的整页去底图（中间产物）
-    ├── rembg/                「提交本次任务」的定稿成品（print 的取图来源）
+    ├── detect/               「提交本次任务」逐框裁好的成品图
+    ├── rembg/                「执行去底色」的成品图（print 的取图来源）
     ├── imposition/           拼版合成出的成品整页图
     └── print/                生成的 PDF
 ```
@@ -311,12 +311,15 @@ tasks/<任务号>/
   `store.node_states(task)` 给界面用（`stage_states` 保持旧口径兼容）；
   没有 `node` 的老记录归属该阶段的主节点。
 
-### 2. 「图片去底色」有两个动作（同格），别混
+### 2. 「检测文本框」有两个动作（同格），别混
 
-`rembg`（生成预览）产 `stages/rembgpreview`，`rembg_submit`（提交本次任务）产
-`stages/rembg`。**消费方要成品**，所以按图解析产出方时统一走
-`ports.fold_forward(stage, port)` 折到同格里最靠后的那个动作；而"节点自己往哪写"
-仍取它本阶段的落点。
+`detect`（检测）只产 `boxes.json`（任务根），`detect_submit`（提交本次任务）
+把每个检测框裁成一张图、产 `stages/detect`。**消费方要裁好的图**，所以按图
+解析产出方时统一走 `ports.fold_forward(stage, port)` 折到同格里最靠后的那个
+动作；而"节点自己往哪写"仍取它本阶段的落点。
+
+去底色（`rembg`）只有**一个**动作：整图全局 Otsu 后直接写 `stages/rembg`，
+没有预览目录，也没有第二个提交动作。
 
 ### 3. runs.json 记录结构
 

@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 """「提交本次任务」按钮的版本状态机（纯函数）。
 
-2026-10-22 起**两个步骤**都用它：第二步「检测文本框」（检测 → 提交裁图）
-与第三步「去底色」（生成预览 → 提交透明底成品）。两边只有"比哪些参数"
-不同（``preview_param_keys`` / ``submit_param_keys``），状态语义完全一致。
+2026-10-22 起只服务第二步「检测文本框」（检测 → 提交裁图）：去底色已收成
+单一步动作，不再有提交/预览。状态语义见 :func:`submit_version_state`。
 """
 
 from __future__ import annotations
@@ -28,12 +27,11 @@ def submit_version_state(
 ) -> str:
     """提交按钮版本状态：
 
-    - no_preview   ：从未成功生成预览（或最近一次失败/中断）→ 禁止提交；
-    - preview_stale：面板参数相对最近一次成功预览已修改，
-                     磁盘上的预览结果不是最新 → 建议重新生成预览；
-    - new_version  ：预览有新版本（重新生成过、或参数已改），
-                     最终图片落后于预览 → 提示需要提交；
-    - up_to_date   ：最终图片已是最新预览版本。
+    - no_preview   ：从未成功检测（或最近一次失败/中断）→ 禁止提交；
+    - preview_stale：面板参数相对最近一次成功检测已修改（当前无参数，恒不触发）；
+    - new_version  ：检测有新版本（重新检测过、或参数已改），
+                     裁图产物落后于检测 → 提示需要提交；
+    - up_to_date   ：裁图产物已是最新检测结果。
     """
     if preview_run is None:
         return NO_PREVIEW
@@ -44,11 +42,7 @@ def submit_version_state(
         return NEW_VERSION
     sub_params = submit_run.get("parameters", {})
     if sub_params.get("_preview_run_id") != preview_run.get("run_id"):
-        return NEW_VERSION  # 预览已用新参数重新生成
+        return NEW_VERSION  # 检测已重新跑过
     if any(sub_params.get(k) != panel_args.get(k) for k in submit_param_keys):
         return NEW_VERSION  # 影响产物的参数变了，成品需要重做
     return UP_TO_DATE
-
-
-#: 旧名保留（第三步的老调用方/自测按这个名字取）。
-rembg_submit_version_state = submit_version_state

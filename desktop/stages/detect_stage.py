@@ -246,8 +246,8 @@ def run_detect_stage(config: dict) -> int:
     （`utils.box_geometry.compute_final_boxes`）从检测框实时推导，用于预览标注。
 
     ⚠️ 2026-10-22：本函数**只出框**。检测出几个框就裁几张图是
-    :func:`run_detect_submit_stage`（「提交本次任务」）的事——与第三步
-    「生成预览 / 提交」同一套两步语义。
+    :func:`run_detect_submit_stage`（「提交本次任务」）的事——第二步界面上
+    就是「检测 → 提交」两步语义。
 
     ⚠️ 逐页循环本体在 :func:`run_detect_pages`（与 singletask 共用一份）；本函数
     只负责 stdout 拦截、任务上下文与事件协议（``{"type": name, **context, **payload}``）。

@@ -1,9 +1,17 @@
 # -*- coding: utf-8 -*-
-"""rembg_submit 阶段执行器：把「生成预览」产出的整页去底图合成为最终交付图片。
+"""rembg 阶段执行器：**一步**完成整图去底色并直接落成品图。
+
+用户 2026-10-22 口径：
+
+> 「生成预览」改成「执行去底色」，直接去底色到 rembg，不再需要预览了，
+> 图片直接全局 otsu……输入什么图片尺寸，输出就什么图片尺寸。
+
+所以这里**只有一个动作**：读输入图 → ``utils.rembg_page``（全局 Otsu）→
+白底转透明的 PNG 写进 ``stages/rembg[~节点]``。没有预览目录、没有提交动作，
+也不按检测框裁剪（裁剪已在第二步「提交本次任务」完成）。
 
 产物一律是**白底透明**的 PNG（规则与编码形态的唯一实现在
-``utils/transparent_png.py``）：用户 2026-09-30 定的「无论 type 是什么，
-提交产物都把黑字白底里的白底改成透明」。
+``utils/transparent_png.py``）：第四步 PDF 排版依赖透明底叠在纸上。
 """
 
 from __future__ import annotations
@@ -11,26 +19,25 @@ from __future__ import annotations
 import os
 import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from io import BytesIO
 from pathlib import Path
 
 import utils
+from core.args import machine_worker_budget
 from desktop.stages.events import emit
-from core.args import machine_worker_budget  # noqa: E402  (预算与函数层同一份)
-from desktop.utils.files import THUMBNAIL_EDGE  # noqa: E402
-from utils.file_utils import write_bytes_atomic  # noqa: E402
+from desktop.utils.files import THUMBNAIL_EDGE
+from utils.file_utils import write_bytes_atomic
 
-#: 提交合成的并行 worker 数。瓶颈在 **PNG 编码**（实测单张 6000×5475 约
-#: 0.65s，占整页 85%；Qt 的读写/绘制在 PySide6 里释放 GIL，线程并行实测
-#: 4 线程 3.47×）。每个 worker 同时持有整页位图（~130MB）+ 输出画布，
-#: 峰值内存随线程数线性涨。
-#: ⚠️ 上限与 `core.args.machine_worker_budget()`（函数层动态预算）保持一致
-#: （同一个内存预算下的两个入口，改一处要想另一处）；环境变量是用户的
+#: 并行 worker 数。瓶颈在 **PNG 编码**（与旧提交阶段同一份实测：单张
+#: 6000×5475 约 0.65s，占整页 85%；4 线程实测 3.47×）。每个 worker 同时持有
+#: 整页位图 + 输出数组，峰值内存随线程数线性涨。
+#: ⚠️ 上限与 ``core.args.machine_worker_budget()`` 保持一致；环境变量是用户的
 #: 显式选择，可越过预算但受绝对封顶 8 约束。
-SUBMIT_WORKERS = max(
+REMBG_WORKERS = max(
     1,
     min(
         8,
-        int(os.environ.get("GUJI_SUBMIT_WORKERS") or 0)
+        int(os.environ.get("GUJI_REMBG_WORKERS") or 0)
         or min(8, machine_worker_budget(), os.cpu_count() or 1),
     ),
 )
@@ -44,12 +51,11 @@ def _qimage_rgb_array(image):
        会让整页偏色——必须反序取通道。
     2. **必须复制一份出来**（``np.ascontiguousarray``）。numpy 的 ``frombuffer``
        只是**引用** Qt 的缓冲区，而内存归 QImage 对象所有：一旦那个 QImage 被
-       回收，数组就变成悬垂指针。非 RGB32 的输入（预览图模式 "1"/"L" 且该页
-       无检测框、走整图透传那条分支）恰恰要先 ``convertToFormat`` 出一个
-       **临时对象**，它在下面几行之后就被回收——实测症状是产物里混进随机彩色
-       像素（``[156,233,32]`` 之类，那些是别人的内存），重则直接段错误。
-       一整份 RGB 拷贝是 3 字节/像素（22MP 页 66MB），换掉这类静默错误值得。
+       回收，数组就变成悬垂指针（产物里混进随机彩色像素，重则段错误）。
     3. ``convertToFormat`` 在格式已一致时会返回浅拷贝；这里只在格式不同时调用。
+
+    除去底色的透明 PNG 编码外，检测提交阶段的紧凑 PNG（``save_png_compact``）
+    也用它——两处都需要「Qt 位图 → RGB 数组」这同一个安全转换。
     """
     import numpy as np
     from PySide6.QtGui import QImage
@@ -66,60 +72,58 @@ def _qimage_rgb_array(image):
     return np.ascontiguousarray(pixels[:, :, 2::-1])
 
 
-def save_transparent_png(image, dst: Path) -> None:
-    """把合成结果落盘为**白底透明** PNG（编码规则见 ``utils.transparent_png``）。
+def _rembg_params(args: dict) -> dict:
+    """面板/CLI 参数 → ``utils.rembg_page`` 的关键字参数。"""
+    return {
+        "offset": int(args.get("offset", 0)),
+        "img_type": int(args.get("type", 1)),
+        "enable_seal": bool(args.get("seal", False)),
+        "seal_color": bool(args.get("sealcolor", False)),
+        "seal_area": int(args.get("sealarea", 80)),
+        "seal_min_sat": int(args.get("sealmin_sat", 50)),
+    }
 
-    ⚠️ 不许绕过这个函数直接 ``image.save(dst, "PNG")``：那样写出的白底图会和
-    透明底产物混在一批里（护栏 tests/selftests/rembg_transparent.py 会盯着）。
 
-    ⚠️ 2026-10-18 起对外公开（原 ``_save_transparent_png``）：第三步「实时预览
-    增量落盘」也走它——两份产物（提交 / 预览）必须逐像素同一套编码。
+def _rgb_of(final_arr):
+    """去底结果 → ``(H, W, 3)`` RGB 数组（透明 PNG 编码的输入形状）。"""
+    import numpy as np
+
+    if final_arr.ndim == 3:
+        return final_arr[:, :, :3]
+    return np.repeat(final_arr[:, :, None], 3, axis=2)
+
+
+def _save_thumb(rgb, name: str, thumb_dir: Path) -> None:
+    """顺手生成第四步缩略条用的小图（256px JPEG，白底）。
+
+    失败**静默跳过**：缩略图是纯加速件，查看器对缺失的页回落原图解码，
+    绝不能因为缩略图写失败把成功的页报成失败。原子写避免截断的缩略图被
+    mtime 新鲜度判据永久当成有效缓存。
     """
-    utils.save_white_as_transparent(_qimage_rgb_array(image), dst)
-
-
-def _save_step4_thumb(image, name: str, thumb_dir: Path) -> None:
-    """提交落盘最终图后**顺手**生成第四步缩略条用的小图。
-
-    第四步左侧缩略条原先对每条目现解码 6000px 的原图（QImageReader 缩放
-    解码也要数百 ms/张），换成预生成 256px JPEG 后查看器零解码直接上屏
-    （2026-09-27 用户反馈「第四步缩略图渲染慢」）。
-
-    - 失败**静默跳过**：缩略图是纯加速件，查看器对缺失的页回落原图解码，
-      绝不能因为缩略图写失败把成功的提交报成失败；
-    - **原子写**：截断的缩略图 mtime 必然比最终图新，会被查看器的
-      mtime 新鲜度判据永久当成有效缓存（与源缩略图同一套道理）。
-    """
-    from PySide6.QtCore import QBuffer, QIODevice, Qt
+    from PIL import Image
 
     try:
-        small = image.scaled(
-            THUMBNAIL_EDGE, THUMBNAIL_EDGE,
-            Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation,
-        )
-        buf = QBuffer()
-        buf.open(QIODevice.OpenModeFlag.WriteOnly)
-        small.save(buf, "JPG", quality=80)
-        write_bytes_atomic(thumb_dir / f"{Path(name).stem}.jpg", bytes(buf.data().data()))
+        small = Image.fromarray(rgb, "RGB")
+        small.thumbnail((THUMBNAIL_EDGE, THUMBNAIL_EDGE))
+        buf = BytesIO()
+        small.save(buf, format="JPEG", quality=80)
+        write_bytes_atomic(thumb_dir / f"{name}.jpg", buf.getvalue())
     except Exception:  # noqa: BLE001 - 加速件不许拖垮主流程
         pass
 
 
-def run_rembg_submit_stage(config: dict) -> int:
-    """rembg 提交：把整页去底图的白底转成透明，写入任务 output 目录。
+def run_rembg_stage(config: dict) -> int:
+    """整图去底色：输入目录里的每张图 → ``stages/rembg[~节点]/<同页名>.png``。
 
-    用户 2026-10-22：
+    args 约定：
 
-    > 去底色步骤的 area 和 border 参数去除，去底色直接输入图片是怎样的，
-    > 直接整个图片去底色
+    - ``input``：输入图片目录（或单张图片）；
+    - ``_outpath``：精确输出目录（调用方给节点作用域后的 ``stages/rembg``）；
+    - ``clean``：开始前清空输出目录；
+    - ``offset/type/seal/sealcolor/sealarea/sealmin_sat``：去底色参数。
 
-    所以这里**不做任何几何合成**：一条输入（「生成预览」的结果）对应一条输出
-    （同名的透明底 PNG）。按框裁图在第二步「提交本次任务」已经做完，进来的
-    图本来就是该交出去的形状。
-
-    args["_effects"] = [
-        {"file": 预览结果路径, "label": 输出文件名(无扩展名)}, …
-    ]
+    ``page_done`` 事件带 ``source``（输入图）与 ``output``（成品图），GUI 据此
+    边跑边把该页刷成去底色结果。
     """
     task_id = config["task_id"]
     stage = config["stage"]
@@ -128,27 +132,29 @@ def run_rembg_submit_stage(config: dict) -> int:
     context = {"task_id": task_id, "stage": stage, "run_id": run_id}
     emit({"type": "started", **context})
     try:
-        effects = args.pop("_effects", None) or []
-        # 兼容旧调用方（{"file":…, "effect": {…}} 的形态）：只取文件与文件名。
-        entries = [
-            {"file": str(spec.get("file")), "label": str(spec.get("label") or "")}
-            for spec in effects
-            if spec.get("file")
-        ]
-        out_dir = Path(args["output"])
+        input_path = Path(args["input"])
+        out_text = args.get("_outpath") or args.get("output")
+        if not out_text:
+            raise ValueError("去底色没有指定输出目录")
+        out_dir = Path(out_text)
+        files = utils.collect_image_files(input_path, input_path.is_file())
+        if not files:
+            raise FileNotFoundError(
+                f"未在 {input_path} 找到任何图片"
+                "（若图片在子目录里，请指向该子目录）"
+            )
+        out_dir.mkdir(parents=True, exist_ok=True)
         if args.get("clean") and out_dir.exists():
             for child in out_dir.iterdir():
                 if child.is_dir():
                     shutil.rmtree(child, ignore_errors=True)
                 else:
                     child.unlink()
-        out_dir.mkdir(parents=True, exist_ok=True)
-        # 第四步缩略图缓存（与 store.rembg_thumbnails_dir 同一份目录布局：
-        # <task>/thumbnails/print[~<节点>]；worker 侧拿不到 store，按任务目录
-        # 布局 + **产物目录名里的节点后缀**推导——同一步骤多个「图片去底色」
-        # 节点时各自的缩略图不许互相覆盖，用户 2026-10-17）。
-        # 提交时**整目录重建**：最终图变了/页数变了，旧缩略图全部作废，
-        # 不留孤儿文件。
+
+        # 第四步缩略图缓存（与 ``store.rembg_thumbnails_dir`` 同一布局：
+        # ``<task>/thumbnails/print[~<节点>]``）。worker 拿不到 store，按任务
+        # 目录布局 + **产物目录名里的节点后缀**推导——同一步骤多个节点时各自的
+        # 缩略图不许互相覆盖。本次是整目录重建，旧缩略图一并作废。
         from desktop.steps.ports import node_scope_from_output_dir
 
         thumb_dir = (
@@ -159,63 +165,75 @@ def run_rembg_submit_stage(config: dict) -> int:
         shutil.rmtree(thumb_dir, ignore_errors=True)
         thumb_dir.mkdir(parents=True, exist_ok=True)
 
-        from PySide6.QtGui import QImage
+        params = _rembg_params(args)
+        total = len(files)
+        # 读图口径与 CLI 共用一份（函数内导入：本模块在 worker 子进程里跑，
+        # 启动路径不需要 numpy/PIL）。
+        from functions.rembg import load_rgb_and_gray
 
-        total = len(entries)
-
-        def _process(entry: dict):
-            """一条：读预览图 → 白底转透明 → 写 PNG（+ 第四步缩略图）。"""
-            name = f"{entry['label'] or Path(entry['file']).stem}.png"
-            image = QImage(entry["file"])
-            if image.isNull():
-                return "", f"无法读取图片: {entry['file']}"
+        def _process(image_path: Path) -> tuple[str, str]:
+            """一张：全局 Otsu → 透明 PNG（+ 第四步缩略图）。"""
+            name = f"{image_path.stem}.png"
+            img_arr, gray_arr = load_rgb_and_gray(image_path)
+            final_arr = utils.rembg_page(img_arr, gray_arr, **params)
+            rgb = _rgb_of(final_arr)
             dst = out_dir / name
             try:
-                save_transparent_png(image, dst)
+                utils.save_white_as_transparent(rgb, dst)
             except Exception as exc:  # noqa: BLE001 - 单张失败不许拖垮整批
                 return "", f"写入失败: {dst}（{exc}）"
-            # 缩略图从**合成位图**（白底）生成：JPEG 没有 α 通道，从白底图
-            # 直接缩放的结果与"先转透明再合成"逐字节一致，省一轮解码。
-            _save_step4_thumb(image, name, thumb_dir)
+            _save_thumb(rgb, image_path.stem, thumb_dir)
             return name, ""
 
         done = 0
         saved = 0
         errors: list[str] = []
-        executor = ThreadPoolExecutor(max_workers=SUBMIT_WORKERS)
+        # ⚠️ 并发时把 cv2 内部线程压成 1（与 functions/base 同一理由）：外层
+        #    已经 N 路并行，再叠 cv2 的满核并行只会超订阅、互相抢缓存。
+        import cv2
+
+        prev_threads = cv2.getNumThreads()
+        if REMBG_WORKERS > 1:
+            cv2.setNumThreads(1)
+        executor = ThreadPoolExecutor(max_workers=REMBG_WORKERS)
         try:
-            future_jobs = {
-                executor.submit(_process, entry): entry for entry in entries
-            }
-            for future in as_completed(future_jobs):
-                entry = future_jobs[future]
-                name, error = future.result()
+            jobs = {executor.submit(_process, path): path for path in files}
+            for future in as_completed(jobs):
+                source = jobs[future]
+                try:
+                    name, error = future.result()
+                except Exception as exc:  # noqa: BLE001 - 单张异常不许拖垮整批
+                    name, error = "", f"{source.name} 处理失败：{exc}"
                 done += 1
+                status = "success" if name else "error"
                 if name:
                     saved += 1
                 elif error:
                     errors.append(error)
+                emit({
+                    "type": "page_done", **context,
+                    "source": str(source), "file": source.name,
+                    "status": status,
+                    "output": str(out_dir / name) if name else "",
+                })
                 emit({"type": "progress", **context, "done": done, "total": total})
-                label = entry.get("label") or Path(entry["file"]).stem
                 emit({
                     "type": "log", **context,
-                    "message": f"提交处理 {done}/{total}：{label} → "
+                    "message": f"去底色 {done}/{total}：{source.name} → "
                                + (name or "无输出"),
                 })
         finally:
             executor.shutdown(wait=True, cancel_futures=True)
+            cv2.setNumThreads(prev_threads)
         for message in errors:
             emit({"type": "log", **context, "message": message})
         emit({"type": "progress", **context, "done": total, "total": total})
         emit(
             {"type": "log", **context,
-             "message": f"最终图片已生成（{saved} 张，白底已转透明）：{out_dir}"}
+             "message": f"去底色完成（{saved} 张，白底已转透明）：{out_dir}"}
         )
         if not saved:
-            emit(
-                {"type": "error", **context,
-                 "message": "没有生成任何图片，请先执行「生成预览」。"}
-            )
+            emit({"type": "error", **context, "message": "没有生成任何图片。"})
             return 1
         emit(
             {

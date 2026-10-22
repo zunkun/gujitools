@@ -69,9 +69,8 @@ def run_stage(config: dict) -> int:
             function = get_function(command, command_args, reporter)
             if function is None:
                 raise ValueError(f"未知阶段: {stage}")
-            # GUI 精确输出目录：rembg CLI 默认会在 output 后再追加 "rembg"
-            # 子目录，步骤三的「生成预览」需要直接写入 stages/rembgpreview，
-            # 故由调用方通过 _outpath 覆盖功能模块计算出的 outpath。
+            # GUI 精确输出目录：CLI 的 rembg 会在 output 后再追加 "rembg"
+            # 子目录；桌面端由调用方通过 _outpath 覆盖成节点作用域落点。
             out_override = args.get("_outpath")
             if out_override:
                 function.outpath = Path(out_override)
