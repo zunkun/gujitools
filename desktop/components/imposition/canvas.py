@@ -13,8 +13,9 @@
 
 交互（用户定的观感）：
 - **点击某张图 → 选中**：选中的图带一圈**常显的细虚线**（选中状态，
-  **跟着图一起转**——用户 2026-09-30 报过"旋转后高亮框不跟着转"）；
-  **按住鼠标操作期间**才升级为带手柄/旋转钮的完整虚线框，**一松手回到
+  **跟着图一起转**——用户 2026-09-30 报过"旋转后高亮框不跟着转"），
+  框外上方同时挂一个**常显的旋转圆钮**（用户 2026-10-23）；
+  **按住鼠标操作期间**才在细框上补出手柄的完整虚线框，**一松手回到
   细框**（2026-09-30：选中态要一直看得见，右侧旋转控件跟着切到这张图）；
 - **选中的图永远画在最上面**（用户 2026-10-10：类似 CSS 里 ``z-index``
   更大）——两图重叠时，被压住的那张一旦选中就得浮上来，否则看不清在
@@ -28,10 +29,11 @@
   事件率。渲染合并策略见 ``wheelEvent`` / ``_on_wheel_frame``：滚动期间每
   帧最多重绘一次、走**快速档**（不做平滑采样），停稳后补一帧高质量重绘；
 - 未按下时靠**光标**提示可抓的位置：图内 `OpenHand`、四角/四边缩放光标、
-  框上方圆钮处 `Cross`（命中判定是几何的，不依赖框线可见）；
+  框外上方圆钮处 `Cross`；
 - 点某张图 → 选中；框内拖动 → 整体移动；**四角**手柄 → 缩放（按住 Shift
-  等比）；**四条边整条都是命中带** → 只改一个维度；框**上方的小圆钮** → 旋转
-  （按住 Shift 吸附到 15°）；松手 emit ``items_changed``（拖动过程中只重绘）；
+  等比）；**四条边整条都是命中带** → 只改一个维度；**框外上方的小圆钮** →
+  旋转（选中后常显，**在图片外面**用左键拖动；按住 Shift 吸附到 15°）；
+  松手 emit ``items_changed``（拖动过程中只重绘）；
 - **红色对齐线**恒显（**两图页**）：两图 rect 中心中点所在的竖线
   （``SPINE_COLOR``）——整版/单图旋转时拿它当"转没转歪"的对比基准；
   **单图页只认横图（源图宽>高）**（2026-09-30 用户定：单独一张半页图片
@@ -103,6 +105,9 @@ HANDLE_FILL = QColor("#ffffff")
 HANDLE_RADIUS = 5
 ROTATE_KNOB_RADIUS = 6
 ROTATE_KNOB_GAP = 26  # 旋转钮距框上边的距离（控件像素）
+#: 旋转钮的命中半宽（比画出来的圆大一圈）：它是图片**外面**唯一的旋转抓手
+#: （用户 2026-10-23：「可以在图片外面……鼠标左键旋转操作」），点太小不好抓
+ROTATE_KNOB_HIT = ROTATE_KNOB_RADIUS + 6
 
 _CORNER_CURSORS = [
     Qt.CursorShape.SizeFDiagCursor, Qt.CursorShape.SizeBDiagCursor,
@@ -173,9 +178,13 @@ class ImpositionCanvas(QWidget):
         #: 就是画布上那张源图（旧口径）。
         self._locate_resolver: Callable[[int], list] | None = None
         self._pad = 18
+        #: 顶部额外留白：选中图的旋转钮挂在**框外上方**（``ROTATE_KNOB_GAP`` +
+        #: 半径），适配可视区时必须把这块让出来——否则打开一页就看全时，
+        #: 钮被顶到控件外面，用户根本抓不到（用户 2026-10-23 的「图片外面旋转」）
+        self._pad_top = ROTATE_KNOB_GAP + ROTATE_KNOB_RADIUS + 10
         self._px_per_unit = 1.0
         self._off_x = float(self._pad)
-        self._off_y = float(self._pad)
+        self._off_y = float(self._pad_top)
         self._mode: str | None = None  # move / resize / rotate
         self._handle = 0
         self._grab_x = 0.0
@@ -297,7 +306,8 @@ class ImpositionCanvas(QWidget):
     def frame_visible(self) -> bool:
         """当前是否画**带手柄的完整操作框**（= 鼠标按住期间）。
 
-        平时选中的图另有常显细框（``_draw_selected_border``），不算在内。
+        平时选中的图另有常显细框（``_draw_selected_border``，含框外那个
+        常显的旋转钮），不算在内。
         """
         return self._pressed and 0 <= self._selected < len(self._items)
 
@@ -455,12 +465,13 @@ class ImpositionCanvas(QWidget):
         ``set_page`` / ``refit`` 两处。
         """
         avail_w = self.width() - 2 * self._pad
-        avail_h = self.height() - 2 * self._pad
+        # 上边用 ``_pad_top``：把选中图框外的旋转钮也留在可视区（见 __init__）
+        avail_h = self.height() - self._pad - self._pad_top
         scene = self._scene_rect()
         if avail_w <= 0 or avail_h <= 0 or scene.width() <= 0 or scene.height() <= 0:
             self._fit_ppu = 1.0
             self._fit_off_x = float(self._pad)
-            self._fit_off_y = float(self._pad)
+            self._fit_off_y = float(self._pad_top)
         else:
             self._fit_ppu = min(
                 avail_w / scene.width(), avail_h / scene.height()
@@ -470,7 +481,7 @@ class ImpositionCanvas(QWidget):
                 - scene.x() * self._fit_ppu
             )
             self._fit_off_y = (
-                (self.height() - scene.height() * self._fit_ppu) / 2.0
+                self._pad_top + (avail_h - scene.height() * self._fit_ppu) / 2.0
                 - scene.y() * self._fit_ppu
             )
         self._px_per_unit = self._fit_ppu * self._zoom
@@ -572,11 +583,13 @@ class ImpositionCanvas(QWidget):
 
         ``pos`` 是控件坐标，先 ``_to_local_px`` 反转旋转角再与**局部**手柄
         位置比——框转了，命中带也跟着转（用户 2026-09-30）。
+        ⚠️ 旋转钮**在图片外面**（框上方），选中后常显；命中区比画出来的圆
+        大一圈（``ROTATE_KNOB_HIT``），左键拖它即可旋转选中的那张图。
         """
         local = self._to_local_px(index, pos)
         knob = self._rotate_knob_local(index)
-        if (abs(local.x() - knob.x()) <= ROTATE_KNOB_RADIUS + 3
-                and abs(local.y() - knob.y()) <= ROTATE_KNOB_RADIUS + 3):
+        if (abs(local.x() - knob.x()) <= ROTATE_KNOB_HIT
+                and abs(local.y() - knob.y()) <= ROTATE_KNOB_HIT):
             return 8  # 旋转
         for i, (cx, cy) in enumerate(self._handle_positions_local(index)[:4]):
             if abs(local.x() - cx) <= HANDLE_RADIUS + 2 and \
@@ -1145,18 +1158,54 @@ class ImpositionCanvas(QWidget):
                 QRectF(cx - HANDLE_RADIUS, cy - HANDLE_RADIUS,
                        2 * HANDLE_RADIUS, 2 * HANDLE_RADIUS)
             )
-        # 旋转钮：一条引线 + 一个圆钮
-        knob = self._rotate_knob_local(index)
+        # 旋转钮：一条引线 + 一个圆钮（**画在框外、图片上方**）
+        self._draw_rotate_knob(painter, r.height())
+        painter.restore()
+
+    def _draw_rotate_knob(self, painter: QPainter, height_px: float) -> None:
+        """画框外上方的旋转钮（**选中后常显**，用户 2026-10-23）。
+
+        用户口径：「可以在图片外面……哪个图片是选中的，就旋转哪个图片，
+        鼠标左键旋转操作」——旋转抓手不能藏在图上，也不能只在按住时才出现：
+        选中的那张图，框外上方一直挂着一个圆钮，左键拖它即绕图心旋转。
+
+        ⚠️ 调用方的 painter 必须已**平移到 rect 中心并旋转该项角度**——钮与
+        框同一套局部坐标（``_rotate_knob_local``），跟着图一起转。
+        """
+        knob = QPointF(0.0, -height_px / 2.0 - ROTATE_KNOB_GAP)
         painter.setPen(QPen(HANDLE_STROKE, 1.5))
-        painter.drawLine(QPointF(0.0, -r.height() / 2.0), knob)
+        painter.drawLine(QPointF(0.0, -height_px / 2.0), knob)
         painter.setBrush(HANDLE_FILL)
         painter.drawEllipse(knob, ROTATE_KNOB_RADIUS, ROTATE_KNOB_RADIUS)
-        painter.restore()
+        # 圆钮里的小圆弧箭头：一眼看出这是"旋转"抓手（不是缩放柄）
+        radius = ROTATE_KNOB_RADIUS - 2.5
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(HANDLE_STROKE, 1.0))
+        painter.drawArc(
+            QRectF(knob.x() - radius, knob.y() - radius, radius * 2, radius * 2),
+            60 * 16, 265 * 16,
+        )
+        # 箭头：弧末端沿切线方向的反向收两道短线
+        end = math.radians(60 + 265)
+        tip = QPointF(
+            knob.x() + radius * math.cos(end),
+            knob.y() - radius * math.sin(end),
+        )
+        dx, dy = -math.sin(end), -math.cos(end)
+        for turn in (-0.8, 0.8):
+            barb_x = dx * math.cos(turn) - dy * math.sin(turn)
+            barb_y = dx * math.sin(turn) + dy * math.cos(turn)
+            painter.drawLine(
+                tip, QPointF(tip.x() - 3.0 * barb_x, tip.y() - 3.0 * barb_y)
+            )
 
     def _draw_selected_border(self, painter: QPainter, index: int) -> None:
         """选中态**常显**的细虚线框（用户 2026-09-30：点击某张图后它要有
-        "选中状态"）：只描边、无手柄——手柄全框只在按住操作期间出现。
+        "选中状态"）：细边框 + **框外上方的旋转钮**；四角/四边手柄仍只在
+        按住操作期间出现。
 
+        ⚠️ 旋转钮必须**跟着常显**（用户 2026-10-23）：只在按住时画的钮等于
+        没有——用户根本看不到抓手，也没法「在图片外面」按住左键拖它。
         ⚠️ 跟着图一起转（用户 2026-09-30：旋转后高亮框要贴着图像的边）。
         """
         r = self._rect_px(index)
@@ -1170,4 +1219,5 @@ class ImpositionCanvas(QWidget):
         painter.drawRect(QRectF(
             -r.width() / 2.0, -r.height() / 2.0, r.width(), r.height()
         ))
+        self._draw_rotate_knob(painter, r.height())
         painter.restore()

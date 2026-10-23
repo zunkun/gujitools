@@ -1079,6 +1079,25 @@ def run(ctx) -> None:
             selected_px > 20 and not canvas.frame_visible(),
             f"选中框像素={selected_px}",
         )
+        # 旋转钮必须**选中后常显、且在图片外面**（用户 2026-10-23：
+        # 「可以在图片外面……哪个图片是选中的，就旋转哪个图片，鼠标左键」）：
+        # 只在按住时画等于没有抓手，点不到也看不到。
+        knob_shot = canvas.grab().toImage()
+        knob_pos = canvas._rotate_knob(1)
+        knob_px = sum(
+            1
+            for dy in range(-8, 9)
+            for dx in range(-8, 9)
+            if _px_near(knob_shot, int(knob_pos.x()) + dx,
+                        int(knob_pos.y()) + dy, FRAME_RGB)
+        )
+        ok(
+            "选中后旋转钮**常显在图片外面**（框外上方，不按住也能看到）",
+            knob_px >= 3
+            and not canvas._item_contains_px(1, knob_pos)
+            and not canvas.frame_visible(),
+            f"钮像素={knob_px} 钮=({knob_pos.x():.0f},{knob_pos.y():.0f})",
+        )
         center = canvas._rect_px(1).center()
         canvas.mousePressEvent(
             _mouse(QEvent.Type.MouseButtonPress, (center.x(), center.y()))
@@ -1098,6 +1117,38 @@ def run(ctx) -> None:
             "松手 → 手柄全框消失、回到常显选中细框",
             not canvas.frame_visible() and 0 < released_px < pressed_px,
             f"选中={selected_px} 按住={pressed_px} 松手={released_px}",
+        )
+
+        # ---- 左键拖动**框外**圆钮 → 旋转选中的那张图（用户 2026-10-23）----
+        before_angle = float(canvas.selected_rotation() or 0.0)
+        knob_events: list[list] = []
+        canvas.items_changed.connect(knob_events.append)
+        knob_now = canvas._rotate_knob(1)
+        knob_center = canvas._rect_px(1).center()
+        canvas.mousePressEvent(
+            _mouse(QEvent.Type.MouseButtonPress,
+                   (knob_now.x(), knob_now.y()))
+        )
+        ok("左键按在框外圆钮上 → 进入旋转手势", canvas._mode == "rotate",
+           str(canvas._mode))
+        # 把指针绕图心转到"下一个直角"位置（钮离图心距离不变）
+        arm = knob_center.y() - knob_now.y()  # 该项 rotation=90°，钮在正右方
+        arm = max(abs(arm), abs(knob_now.x() - knob_center.x()), 1.0)
+        canvas.mouseMoveEvent(
+            _mouse(QEvent.Type.MouseMove,
+                   (knob_center.x(), knob_center.y() + arm))
+        )
+        canvas.mouseReleaseEvent(
+            _mouse(QEvent.Type.MouseButtonRelease,
+                   (knob_center.x(), knob_center.y() + arm))
+        )
+        after_angle = float(canvas.selected_rotation() or 0.0)
+        turned = (after_angle - before_angle) % 360.0
+        ok(
+            "拖动框外圆钮旋转的是**选中的那张图**（左键 +90°）",
+            abs(turned - 90.0) < 2.0 and bool(knob_events),
+            f"{before_angle:.1f} → {after_angle:.1f}（转 {turned:.1f}°），"
+            f"上报 {len(knob_events)} 次",
         )
         # 虚线是**样式常量**层面的要求（像素级"是不是虚线"太脆，改查定义处）
         canvas_src = (
