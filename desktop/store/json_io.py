@@ -22,6 +22,65 @@ from utils.file_utils import replace_with_retry
 
 _SUFFIX = ".tmp"
 
+#: 按节点隔离的数据文件旁的**归属标记**后缀（``boxes.json.owner``）。
+#:
+#: 用户 2026-10-23：文件名本身只有「主节点用原名、副本带 ``~<节点>``」这条
+#: **隐式**规则——主节点是谁由 ``flow.bpmn`` 的节点声明顺序推导。删掉主节点后，
+#: 接替的节点会被当成新主节点、接管旧主名的文件（旧节点的数据被误认为它的）。
+#: 标记文件把归属写成显式的：读取时不一致就退回本节点自己的 ``~<节点>`` 文件。
+OWNER_SUFFIX = ".owner"
+
+
+def owner_path(path: Path) -> Path:
+    """某数据文件的归属标记路径（``boxes.json`` → ``boxes.json.owner``）。"""
+    return path.with_name(f"{path.name}{OWNER_SUFFIX}")
+
+
+def read_owner(path: Path) -> str | None:
+    """读归属节点 id；没有标记（旧任务 / 任务级文件）返回 ``None``。"""
+    data = read_json(owner_path(path), None)
+    if isinstance(data, dict):
+        node = data.get("node_id")
+        return str(node) if node else None
+    return None
+
+
+def write_owner(path: Path, node_id: str | None) -> None:
+    """记录该文件属于哪个节点；``node_id`` 为空则不动（旧调用方零行为）。
+
+    ⚠️ 标记是**元数据**，写失败不该拖垮数据本身（磁盘满/权限异常时数据已
+    原子落盘，标记缺了只会退回旧的"信任主名"行为）。
+    """
+    if not node_id or not path.parent.exists():
+        return
+    try:
+        write_json(owner_path(path), {"node_id": str(node_id)})
+    except OSError:
+        pass
+
+
+def owns(path: Path, node_id: str | None) -> bool:
+    """该文件是否属于 ``node_id``：无标记（旧数据）或标记一致 ⇒ True。"""
+    if not node_id:
+        return True
+    owner = read_owner(path)
+    return owner is None or owner == str(node_id)
+
+
+def resolve_scoped_path(path: Path, node_id: str | None) -> Path:
+    """主名文件已被**别的节点**占用时，退回本节点自己的 ``~<节点>`` 文件。
+
+    ⚠️ 只对**主名**（文件名不含 ``~``）判断：副本文件天然属于它自己。
+    ⚠️ 无标记 = 旧任务 ⇒ 原样使用（零迁移）；标记一致 ⇒ 原样使用。
+    """
+    if not node_id or "~" in path.name or owns(path, node_id):
+        return path
+    from desktop.steps import ports
+
+    return path.with_name(
+        ports.suffix_last_segment(path.name, ports.sanitize_node_id(str(node_id)))
+    )
+
 
 def _tmp_path(path: Path) -> Path:
     """临时文件名必须**带上 pid 与线程号**，不能是固定的 `x.json.tmp`。

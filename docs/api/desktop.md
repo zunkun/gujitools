@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 177 个模块、193 个公开类、1427 个公开函数/方法（生成于 2026-10-23）。
+覆盖 177 个模块、193 个公开类、1432 个公开函数/方法（生成于 2026-10-23）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -150,7 +150,7 @@
 | [`desktop.store.annotations`](#desktopstoreannotations) | 1 | 18 |
 | [`desktop.store.drafts`](#desktopstoredrafts) | 1 | 5 |
 | [`desktop.store.imposition`](#desktopstoreimposition) | 1 | 4 |
-| [`desktop.store.json_io`](#desktopstorejson_io) | 0 | 2 |
+| [`desktop.store.json_io`](#desktopstorejson_io) | 0 | 7 |
 | [`desktop.store.pages`](#desktopstorepages) | 1 | 9 |
 | [`desktop.store.runs`](#desktopstoreruns) | 1 | 10 |
 | [`desktop.store.store`](#desktopstorestore) | 1 | 1 |
@@ -12747,13 +12747,33 @@ JSON 持久化的原子读写工具。
 | 名称 | 值 |
 | --- | --- |
 | _SUFFIX | `".tmp"` |
+| OWNER_SUFFIX | `".owner"` |
 
 ### 模块函数
 
 | 函数 | 说明 |
 | --- | --- |
+| `owner_path(path: Path) -> Path` | 某数据文件的归属标记路径（``boxes.json`` → ``boxes.json.owner``）。 |
+| `read_owner(path: Path) -> str \| None` | 读归属节点 id；没有标记（旧任务 / 任务级文件）返回 ``None``。 |
+| `write_owner(path: Path, node_id: str \| None) -> None` | 记录该文件属于哪个节点；``node_id`` 为空则不动（旧调用方零行为）。 |
+| `owns(path: Path, node_id: str \| None) -> bool` | 该文件是否属于 ``node_id``：无标记（旧数据）或标记一致 ⇒ True。 |
+| `resolve_scoped_path(path: Path, node_id: str \| None) -> Path` | 主名文件已被**别的节点**占用时，退回本节点自己的 ``~<节点>`` 文件。 |
 | `read_json(path: Path, default)` | 读取 JSON；文件不存在返回 default，损坏则备份后返回 default。 |
 | `write_json(path: Path, data, indent: int=1) -> None` | 原子写 JSON（临时文件 + fsync + os.replace）。 |
+
+#### `write_owner(path: Path, node_id: str | None) -> None`
+
+记录该文件属于哪个节点；``node_id`` 为空则不动（旧调用方零行为）。
+
+⚠️ 标记是**元数据**，写失败不该拖垮数据本身（磁盘满/权限异常时数据已
+原子落盘，标记缺了只会退回旧的"信任主名"行为）。
+
+#### `resolve_scoped_path(path: Path, node_id: str | None) -> Path`
+
+主名文件已被**别的节点**占用时，退回本节点自己的 ``~<节点>`` 文件。
+
+⚠️ 只对**主名**（文件名不含 ``~``）判断：副本文件天然属于它自己。
+⚠️ 无标记 = 旧任务 ⇒ 原样使用（零迁移）；标记一致 ⇒ 原样使用。
 
 #### `read_json(path: Path, default)`
 

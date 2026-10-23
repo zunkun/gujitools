@@ -20,7 +20,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
-from desktop.store.json_io import read_json, write_json
+from desktop.store.json_io import (
+    owner_path, read_json, resolve_scoped_path, write_json, write_owner,
+)
 
 # 不入暂存的键：系统管理 / 运行时覆盖，与 HistoryMixin._HISTORY_SKIP 同源
 DRAFT_SKIP = frozenset(
@@ -60,7 +62,7 @@ class DraftMixin:
         name = ports.scoped_name(
             f"{stage}.json", node_id, primary_id
         )
-        return self.drafts_dir(task_id) / name
+        return resolve_scoped_path(self.drafts_dir(task_id) / name, node_id)
 
     def load_draft(self, task_id: str, stage: str,
                    node_id: str | None = None,
@@ -87,18 +89,23 @@ class DraftMixin:
         if not cleaned:
             return False
         self.drafts_dir(task_id).mkdir(parents=True, exist_ok=True)
-        write_json(
-            self.draft_path(task_id, stage, node_id, primary_id), cleaned
-        )
+        path = self.draft_path(task_id, stage, node_id, primary_id)
+        write_json(path, cleaned)
+        write_owner(path, node_id or primary_id)
         return True
 
     def clear_draft(self, task_id: str, stage: str,
                     node_id: str | None = None,
                     primary_id: str | None = None) -> None:
         """删除某阶段（某节点）的暂存（用户点「恢复默认配置」并执行后想彻底归零时用）。"""
+        path = self.draft_path(task_id, stage, node_id, primary_id)
         try:
-            self.draft_path(task_id, stage, node_id, primary_id).unlink()
+            path.unlink()
         except FileNotFoundError:
             pass
+        except OSError:
+            pass
+        try:
+            owner_path(path).unlink()
         except OSError:
             pass

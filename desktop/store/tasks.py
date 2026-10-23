@@ -17,7 +17,9 @@ from desktop.steps.flow import (
     default_flow_path,
 )
 from desktop.steps.spec import FLOW_STAGES, OPTIONAL_STEPS, StepSpec, spec_by_key
-from desktop.store.json_io import read_json, write_json
+from desktop.store.json_io import (
+    owner_path, read_json, resolve_scoped_path, write_json, write_owner,
+)
 from desktop.utils.files import copy_file_atomic
 
 #: 默认流程的四个步骤（顺序即执行顺序）。
@@ -572,7 +574,7 @@ class TaskMixin:
             items = self.task_diagram(task_id).node_ids_of("rembg")
             primary_id = primary_id or (items[0] if items else None)
         name = ports.scoped_name("rembg_offsets.json", node_id, primary_id)
-        return self.task_dir(task_id) / name
+        return resolve_scoped_path(self.task_dir(task_id) / name, node_id)
 
     def load_rembg_offsets(self, task_id: str, node_id: str | None = None,
                            primary_id: str | None = None) -> dict[str, int]:
@@ -618,11 +620,13 @@ class TaskMixin:
         if not data:
             try:
                 path.unlink(missing_ok=True)
+                owner_path(path).unlink(missing_ok=True)
             except OSError:
                 pass
             return
         if self.task_dir(task_id).exists():
             write_json(path, data)
+            write_owner(path, node_id or primary_id)
 
     def imposition_output_dir(self, task_id: str) -> Path:
         """「图片拼版」产出的成品拼版页图目录（列表顺序即页序）。

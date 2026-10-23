@@ -25,7 +25,9 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
-from desktop.store.json_io import read_json, write_json
+from desktop.store.json_io import (
+    read_json, resolve_scoped_path, write_json, write_owner,
+)
 from utils.box_geometry import box_iou
 
 #: 人工「整幅」记录被自动检测**刷新槽形**所需的同框阈值（IoU）。
@@ -78,6 +80,9 @@ class _DocCache:
         self._doc: dict | None = None
         self._stamp: tuple[int, int] | None = None
         self._lock = threading.RLock()
+        #: 本文件的**归属节点**（写入方声明）。落盘时同步写 ``.owner`` 标记，
+        #: 读取方据此判断"主名文件是不是被别的节点占着"（见 json_io）。
+        self.owner: str | None = None
 
     # ------------------------------------------------------------------ 读
     def doc(self) -> dict:
@@ -123,6 +128,7 @@ class _DocCache:
             if not self.path.parent.exists():
                 return
             write_json(self.path, self._doc)
+            write_owner(self.path, self.owner)
             self._stamp = self._stat_stamp()
 
 
@@ -132,13 +138,19 @@ _DOCS: dict[Path, _DocCache] = {}
 _DOCS_LOCK = threading.Lock()
 
 
-def _doc_for(path: Path) -> _DocCache:
-    """取某个路径的共享文档缓存（没有就建一个）。"""
+def _doc_for(path: Path, owner: str | None = None) -> _DocCache:
+    """取某个路径的共享文档缓存（没有就建一个）。
+
+    ``owner``：写入方声明的归属节点；只在真有写入方时传入（读取传 ``None``，
+    别把"谁先读"当成归属）。
+    """
     with _DOCS_LOCK:
         cache = _DOCS.get(path)
         if cache is None:
             cache = _DocCache(path)
             _DOCS[path] = cache
+        if owner:
+            cache.owner = str(owner)
         return cache
 
 
@@ -151,9 +163,9 @@ class AnnotationMixin:
         task_dir: Callable[[str], Path]
         task_diagram: Callable[[str], Any]
 
-    def _doc(self, path: Path) -> _DocCache:
+    def _doc(self, path: Path, owner: str | None = None) -> _DocCache:
         """取某路径在本进程内的**唯一**文档（读写都走它，见模块 docstring）。"""
-        return _doc_for(path)
+        return _doc_for(path, owner)
 
     # ---------- 检测框 boxes.json ----------
     def boxes_path(self, task_id: str, node_id: str | None = None,
@@ -180,7 +192,9 @@ class AnnotationMixin:
         )
         if path is None:
             raise KeyError("detect 阶段没有登记 boxes 落点")
-        return path
+        # ⚠️ 主名文件可能属于**已被删掉**的旧主节点（owner 标记不一致）：
+        #    这时退回本节点自己的 ``boxes~<节点>.json``，绝不继承别人的框。
+        return resolve_scoped_path(path, node_id)
 
     def detect_boxes_entry(self, task_id: str, image_key: str,
                            node_id: str | None = None,
@@ -255,7 +269,7 @@ class AnnotationMixin:
         顺手把用户刚指定的左右清掉，等于"一拖就丢设定"。
         """
         path = self.boxes_path(task_id, node_id, primary_id)
-        doc = self._doc(path)
+        doc = self._doc(path, node_id or primary_id)
         data = doc.doc()
         previous = data.get(image_key) or {}
         entry = {
@@ -313,7 +327,7 @@ class AnnotationMixin:
         「左框/右框」才动它。
         """
         path = self.boxes_path(task_id, node_id, primary_id)
-        doc = self._doc(path)
+        doc = self._doc(path, node_id or primary_id)
         data = doc.doc()
         entry = data.get(image_key)
         if not isinstance(entry, dict):
@@ -363,7 +377,7 @@ class AnnotationMixin:
         if not plans:
             return
         path = self.boxes_path(task_id, node_id, primary_id)
-        doc = self._doc(path)
+        doc = self._doc(path, node_id or primary_id)
         data = doc.doc()
         for image_key, plan in plans.items():
             entry = data.get(image_key)
@@ -394,7 +408,7 @@ class AnnotationMixin:
         if not entries:
             return
         path = self.boxes_path(task_id, node_id, primary_id)
-        doc = self._doc(path)
+        doc = self._doc(path, node_id or primary_id)
         data = doc.doc()
         updated = time.time()
         for image_key, boxes in entries.items():
@@ -430,7 +444,7 @@ class AnnotationMixin:
         if not entries:
             return
         path = self.sizes_path(task_id, node_id, primary_id)
-        doc = self._doc(path)
+        doc = self._doc(path, node_id or primary_id)
         data = doc.doc()
         for image_key, size in entries.items():
             data[image_key] = [int(size[0]), int(size[1])]
@@ -449,14 +463,14 @@ class AnnotationMixin:
         from desktop.steps import ports
 
         name = ports.scoped_name("sizes.json", node_id, primary_id)
-        return self.task_dir(task_id) / name
+        return resolve_scoped_path(self.task_dir(task_id) / name, node_id)
 
     def save_image_size(self, task_id: str, image_key: str, width: int, height: int,
                         node_id: str | None = None,
                         primary_id: str | None = None) -> None:
         """记录某页图片的原始像素尺寸，作为框坐标与预览映射的坐标系基准。"""
         path = self.sizes_path(task_id, node_id, primary_id)
-        doc = self._doc(path)
+        doc = self._doc(path, node_id or primary_id)
         data = doc.doc()
         data[image_key] = [int(width), int(height)]
         doc.flush()

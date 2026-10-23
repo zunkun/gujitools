@@ -7,7 +7,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
 from desktop.utils.files import IMAGE_SUFFIXES
-from desktop.store.json_io import read_json, write_json
+from desktop.store.json_io import (
+    read_json, resolve_scoped_path, write_json, write_owner,
+)
 from utils.sort_utils import natural_sort_key
 
 
@@ -41,7 +43,7 @@ class PageManifestMixin:
         from desktop.steps import ports
 
         name = ports.scoped_name("pages.json", node_id, primary_id)
-        return self.task_dir(task_id) / name
+        return resolve_scoped_path(self.task_dir(task_id) / name, node_id)
 
     def load_pages(self, task_id: str, node_id: str | None = None,
                    primary_id: str | None = None) -> list[dict]:
@@ -55,7 +57,9 @@ class PageManifestMixin:
         """写回页面清单；任务目录已删除时跳过（不重建目录）。"""
         if not self.task_dir(task_id).exists():
             return
-        write_json(self.pages_path(task_id, node_id, primary_id), pages)
+        path = self.pages_path(task_id, node_id, primary_id)
+        write_json(path, pages)
+        write_owner(path, node_id or primary_id)
 
     def refresh_pages_from_dir(self, task_id: str, directory: Path,
                                node_id: str | None = None,
@@ -89,7 +93,7 @@ class PageManifestMixin:
         from desktop.steps import ports
 
         name = ports.scoped_name("print.json", node_id, primary_id)
-        return self.task_dir(task_id) / name
+        return resolve_scoped_path(self.task_dir(task_id) / name, node_id)
 
     def load_print_doc(self, task_id: str, node_id: str | None = None,
                        primary_id: str | None = None) -> dict | None:
@@ -103,7 +107,9 @@ class PageManifestMixin:
         """写回 print.json；任务目录已被删除时静默跳过（不重建目录）。"""
         if not self.task_dir(task_id).exists():
             return
-        write_json(self.print_pages_path(task_id, node_id, primary_id), doc)
+        path = self.print_pages_path(task_id, node_id, primary_id)
+        write_json(path, doc)
+        write_owner(path, node_id or primary_id)
 
     def load_print_pages(self, task_id: str, node_id: str | None = None,
                          primary_id: str | None = None) -> list[dict]:

@@ -38,7 +38,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
 from desktop.services.imposition import ITEMS_PER_PAGE, normalize_doc
-from desktop.store.json_io import read_json, write_json
+from desktop.store.json_io import (
+    read_json, resolve_scoped_path, write_json, write_owner,
+)
 
 __all__ = ["ITEMS_PER_PAGE", "ImpositionMixin", "normalize_doc"]
 
@@ -70,7 +72,7 @@ class ImpositionMixin:
         from desktop.steps import ports
 
         name = ports.scoped_name("imposition.json", node_id, primary_id)
-        return self.drafts_dir(task_id) / name
+        return resolve_scoped_path(self.drafts_dir(task_id) / name, node_id)
 
     def load_imposition_doc(self, task_id: str, node_id: str | None = None,
                             primary_id: str | None = None) -> dict:
@@ -108,8 +110,7 @@ class ImpositionMixin:
         if not self.task_dir(task_id).exists():
             return False
         self.drafts_dir(task_id).mkdir(parents=True, exist_ok=True)
-        write_json(
-            self.imposition_doc_path(task_id, node_id, primary_id),
-            normalize_doc(doc),
-        )
+        path = self.imposition_doc_path(task_id, node_id, primary_id)
+        write_json(path, normalize_doc(doc))
+        write_owner(path, node_id or primary_id)
         return True
