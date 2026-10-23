@@ -407,12 +407,17 @@ class ImpositionBaseMixin:
 
     # ------------------------------------------------- 提交计划（产物角色）
     def _upstream_detect_node(self) -> str | None:
-        """沿流程往前找喂给拼版的「检测文本框」节点。
+        """沿流程**往前**找喂给拼版的「检测文本框」节点。
 
         拼版的输入链是 ``imposition ← rembg ← detect_submit（同一节点的第二个
         动作）``；``node_supplier`` 把 ``detect_submit`` 折回 ``detect`` 节点。
         ⚠️ 不能按"阶段主节点"取：同一步骤可能有多个检测节点，读错一份就是
         "另一批图的名字套到我们这批图上"。
+
+        ⚠️ **拼版在检测之前时永远返回 None**：这里只走 ``pages`` 的**供给方**
+        （严格向前回溯），下游的检测节点不在链上。这是刻意的——那种流程里
+        拼版吃的是入口/提取的**整页原图**，``boxes.json`` 描述的是另一批产物，
+        拿它按页号套身份会把整页图错当半幅配对（用户 2026-10-23）。
         """
         node = self.node_of_stage("imposition")
         seen: set[str] = set()

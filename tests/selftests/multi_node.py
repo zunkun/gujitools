@@ -410,6 +410,27 @@ def _check_entry_optional_flow(ctx, repo) -> None:
            == task_dir / "stages" / "rembg",
            str(repo.node_input(uid, "imp2", "pages")))
 
+        # ---- 拼版在 detect **之前**：哪怕 boxes.json 已有计划，也不能拿来判 ----
+        # 入口拼版吃的是入口图片（整页原图），下游 detect 的提交计划描述的是
+        # **另一批**产物；按页号同名去套会把整页原图错当半幅配对。
+        repo.save_detect_boxes(
+            uid, "0001", [[10, 10, 60, 50], None], origin="manual", node_id="det",
+        )
+        repo.save_detect_plans(uid, {"0001": {
+            "page_class": "harfcontent",
+            "outputs": [{"label": "0001", "role": "half-unsided",
+                         "placeholder": False}],
+        }}, node_id="det")
+        ok("拼版在 detect 之前：boxes.json 有计划也不采用（只依赖上游连线）",
+           page.imposition_role_map() == {}, str(page.imposition_role_map()))
+        _click_optional(bar, page, app, 1)
+        ok("拼版在 detect 之后：同一份 boxes.json 才按上游计划认身份",
+           page.imposition_role_map().get("0001") == "half-unsided",
+           str(page.imposition_role_map()))
+        _click_optional(bar, page, app, 0)
+        ok("切回入口拼版后角色表重新为空（不残留另一个节点的上下文）",
+           page.imposition_role_map() == {}, str(page.imposition_role_map()))
+
         from PySide6.QtGui import QImage
 
         entry = repo.task_input_dir(uid)
