@@ -26,6 +26,42 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 from desktop.store.json_io import read_json, write_json
+from utils.box_geometry import box_iou
+
+#: 人工「整幅」记录被自动检测**刷新槽形**所需的同框阈值（IoU）。
+#:
+#: 用户 2026-10-23（任务 0004）：旧模型把半幅页存成 1 槽（整幅）人工记录，
+#: 人工框优先让新检测结果永远写不进去，那 37 页就永远显示成「整幅」。这里
+#: 只在**人工框与本次自动框几乎完全重合**（IoU ≥ 0.90）时才动手，且**只改
+#: 槽形、保留人工坐标**——坐标仍是用户拍板的那份，改的只是它的形态归类。
+MANUAL_FORM_REFRESH_IOU = 0.90
+
+
+def _manual_half_refresh(previous: dict, boxes: list) -> dict | None:
+    """人工「整幅」（1 槽）遇上同框的自动「半幅」（2 槽单框）→ 只刷新槽形。
+
+    返回刷新后的条目（未命中返回 ``None``）；``boxes`` 仍是人工坐标，按自动
+    结果里的槽位摆放（左槽/右槽），形态因此变成半幅 2 槽。
+
+    ⚠️ 顺手丢掉旧的 ``plan``：提交计划描述的是**已落盘**的产物，形态从整幅
+    改成半幅后那份计划已经过期（下次「提交本次任务」会整份重写）。
+    """
+    prev_boxes = list(previous.get("boxes") or [])
+    new_boxes = list(boxes or [])
+    if len(prev_boxes) != 1 or len(new_boxes) != 2:
+        return None
+    prev_box = prev_boxes[0]
+    present = [b for b in new_boxes if b]
+    if not prev_box or len(present) != 1:
+        return None
+    if box_iou(prev_box, present[0]) < MANUAL_FORM_REFRESH_IOU:
+        return None
+    slot = 0 if new_boxes[0] else 1
+    merged: list = [None, None]
+    merged[slot] = list(prev_box)
+    entry = {k: v for k, v in previous.items() if k != "plan"}
+    entry["boxes"] = merged
+    return entry
 
 
 class _DocCache:
@@ -229,6 +265,11 @@ class AnnotationMixin:
         }
         if previous.get("side"):
             entry["side"] = previous["side"]
+        # ⚠️ 提交计划描述的是**已经落盘的提交产物**（逐框裁图后的身份），
+        #    拖框/缩放不改变那些文件。顺手清掉会让拼版失去"无后缀半幅"的
+        #    身份，所以与 `side` 一样原样保留；下次提交会整份重写。
+        if isinstance(previous.get("plan"), dict):
+            entry["plan"] = previous["plan"]
         data[image_key] = entry
         doc.flush()
 
@@ -285,6 +326,52 @@ class AnnotationMixin:
         data[image_key] = entry
         doc.flush()
 
+    # ---------- 提交计划（产物角色，供拼版读取） ----------
+    def detect_plans_all_at(self, path: Path | None) -> dict[str, dict]:
+        """整份文件的 ``image_key → plan``（一次读盘，只含有提交计划的页）。
+
+        ``plan`` 由「提交本次任务」写入，描述**归一化之后每张产物**的身份::
+
+            {"page_class": "harfcontent-left",   # 归一化**前**的检测形态
+             "outputs": [{"label": "0007",       # 产物名（无扩展名）
+                          "role": "half-unsided",
+                          "placeholder": false}]}
+
+        ⚠️ 拼版按 ``outputs[].role`` 认图：``half-unsided`` 的产物名没有
+        ``-l``/``-r``，只看文件名会把它误当整幅。没有计划的页（旧任务 /
+        「检测文本框」还没提交过）不出现，调用方自然回落到文件名规则。
+        """
+        if path is None:
+            return {}
+        out: dict[str, dict] = {}
+        for key, entry in self._doc(path).doc().items():
+            if not isinstance(entry, dict):
+                continue
+            plan = entry.get("plan")
+            if isinstance(plan, dict):
+                out[key] = plan
+        return out
+
+    def save_detect_plans(self, task_id: str, plans: dict[str, dict],
+                          node_id: str | None = None,
+                          primary_id: str | None = None) -> None:
+        """批量写入提交计划（**一次读改写**，与检测框同一位写者）。
+
+        只挂在**已有条目**上：没有框记录、也没被检测过的页不凭空造一条
+        ``boxes=[]``（那会让统计把"没检测过"当成"检测为空页"）。
+        """
+        if not plans:
+            return
+        path = self.boxes_path(task_id, node_id, primary_id)
+        doc = self._doc(path)
+        data = doc.doc()
+        for image_key, plan in plans.items():
+            entry = data.get(image_key)
+            if not isinstance(entry, dict):
+                continue
+            entry["plan"] = plan
+        doc.flush()
+
     def save_detect_boxes_batch(self, task_id: str, entries: dict[str, list],
                                 node_id: str | None = None,
                                 primary_id: str | None = None,
@@ -314,13 +401,23 @@ class AnnotationMixin:
             fields = (extra or {}).get(image_key) or {}
             if (not boxes or not any(boxes)) and not fields:
                 continue
-            if (data.get(image_key) or {}).get("origin") == "manual":
-                continue  # 人工框优先
+            previous = data.get(image_key) or {}
+            if previous.get("origin") == "manual":
+                refreshed = _manual_half_refresh(previous, boxes)
+                if refreshed is None:
+                    continue  # 人工框优先
+                refreshed["updated_at"] = updated
+                refreshed.update(fields)
+                data[image_key] = refreshed
+                continue
             entry: dict = {
                 "boxes": boxes,
                 "origin": "auto",
                 "updated_at": updated,
             }
+            # 提交计划描述已落盘的产物，重跑检测不改变那批文件（下次提交才重写）。
+            if "plan" not in fields and isinstance(previous.get("plan"), dict):
+                entry["plan"] = previous["plan"]
             entry.update(fields)
             data[image_key] = entry
         doc.flush()

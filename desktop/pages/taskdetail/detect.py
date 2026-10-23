@@ -173,13 +173,12 @@ class DetectMixin:
         self._store_slots(path_text, slots, "manual", select_box=select_box)
 
     def box_page_half_candidate(self, path_text: str) -> bool:
-        """这页是否**够「半幅」**（整本书单栏 + 只有一个横跨整页的框）。
+        """这页是否**够「半幅」**（只有一个横跨整页的框）。
 
         判据本体在 ``utils.book_layout.is_single_wide_half``；这里只取数。
+        ⚠️ 页级判据（用户 2026-10-23，任务 0004）：不要求整本书是单栏书。
         """
         raw = self._raw_boxes_for(path_text)
-        if not self._single_column_display():
-            return False
         width = self._page_width_of(Path(path_text))
         return is_single_wide_half(raw, width)
 
@@ -360,7 +359,7 @@ class DetectMixin:
         )
 
     def _single_column_display(self) -> bool:
-        """预览控件当前是否按「单栏书」显示（决定标签是否用「半幅」）。
+        """预览控件的全书结论（仅展示用；「半幅」标注已是页级判据）。
 
         ⚠️ 走 ``getattr`` 兜底：自测的 viewer 替身只实现被断言用到的方法，
         缺 ``single_column`` 时不该把整次上屏打断——取不到就按"不是单栏书"
@@ -395,15 +394,18 @@ class DetectMixin:
         if not callable(getter) or not self.task_id:
             return None
         try:
-            return getter(self._boxes_write_path(), Path(path_text).stem)
+            return cast(Callable[[Any, str], str | None], getter)(
+                self._boxes_write_path(), Path(path_text).stem
+            )
         except Exception:  # noqa: BLE001 - 取不到就按"没指定"
             return None
 
     def _apply_book_layout(self, profile) -> None:
-        """把整本书的形态结论同步给预览控件（标签/面板高亮同一口径）。
+        """把整本书的形态结论同步给预览控件（供统计/文案）。
 
-        ⚠️ 只同步**单栏书**这一条：它决定「半幅」标注。整幅书里的可疑半幅
-        不改标注（用户 2026-10-17 选择「只警告」），那条只进统计面板文案。
+        ⚠️ 本页「半幅」标注已是**页级判据**（用户 2026-10-23，任务 0004），
+        不再依赖这条结论；同步它只是保留全书结论的唯一入口。整幅书里的可疑
+        半幅不改标注（用户 2026-10-17 选择「只警告」），那条只进统计面板文案。
         """
         setter = getattr(self.detect_viewer, "set_single_column", None)
         if callable(setter):

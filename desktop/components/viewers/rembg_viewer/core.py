@@ -86,6 +86,9 @@ class RembgPreviewWidget(
         self.toggle_caption = CaptionLabel("")
         right.addWidget(self.toggle_caption)
         self.view = ImageView(empty_hint)
+        # 去底色成品是**透明底**，与浅色画布几乎同色：给大图勾一圈虚线，
+        # 用户才看得出页面边界（用户 2026-10-23）。
+        self.view.set_edge_dashed(True)
         right.addWidget(self.view, 1)
         layout.addLayout(right, 1)
         # 双击大图 → 图片预览弹窗（与主预览同一份区域规则，见 _resolve_source）

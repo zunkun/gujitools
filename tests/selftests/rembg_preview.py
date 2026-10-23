@@ -155,3 +155,54 @@ def run(ctx) -> None:
     ok("反复切换形态/重载/刷新都不抛异常（NameError 形态的回归）",
        crashed is None, crashed or "")
     widget.deleteLater()
+
+    # ---- 10. 图片边缘的虚线（用户 2026-10-23）----
+    # 去底色成品是透明底，与浅色画布几乎同色 → 必须在图片边缘勾一圈虚线，
+    # 否则用户看不出页面边界。这里做**像素级**验证：沿四条边扫一条窄带，
+    # 数「接近虚线灰」的像素；关掉开关后必须一个都没有。
+    from desktop.components.viewers.image_view import ImageView
+
+    plain = ImageView()
+    ok("普通大图默认不画边缘虚线（检测/提取页不受影响）",
+       plain._edge_dashed is False, str(plain._edge_dashed))
+    plain.deleteLater()
+
+    def _dash_pixels(widget) -> int:
+        """四条边各扫 3 像素宽的一条窄带，数虚线灰的像素。"""
+        pix = widget.view.pixmap()
+        if pix is None or pix.isNull():
+            return -1
+        img = pix.toImage()
+        w, h = img.width(), img.height()
+        target = QColor("#8b949e")
+
+        def is_dash(x: int, y: int) -> bool:
+            color = img.pixelColor(x, y)
+            return (abs(color.red() - target.red()) < 40
+                    and abs(color.green() - target.green()) < 40
+                    and abs(color.blue() - target.blue()) < 40)
+
+        count = 0
+        for y in range(min(3, h)):
+            count += sum(1 for x in range(w) if is_dash(x, y))
+        for y in range(max(0, h - 3), h):
+            count += sum(1 for x in range(w) if is_dash(x, y))
+        for x in range(min(3, w)):
+            count += sum(1 for y in range(h) if is_dash(x, y))
+        for x in range(max(0, w - 3), w):
+            count += sum(1 for y in range(h) if is_dash(x, y))
+        return count
+
+    widget = load(result_dir, providers())
+    ok("去底色预览默认开启图片边缘虚线", widget.view._edge_dashed is True)
+    widget.resize(640, 900)
+    pump(app, times=2)
+    widget.view._rerender()   # 隐藏控件不一定收 resizeEvent，显式重绘一次
+    pump(app, times=2)
+    dashed = _dash_pixels(widget)
+    ok("边缘确实画了虚线（有灰色虚线像素）", dashed > 10, str(dashed))
+    widget.view.set_edge_dashed(False)
+    pump(app, times=3)
+    solid = _dash_pixels(widget)
+    ok("关掉开关后边缘不再有虚线像素", solid == 0, str(solid))
+    widget.deleteLater()

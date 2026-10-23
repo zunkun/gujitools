@@ -176,7 +176,7 @@ def run(ctx) -> None:
        and "compose_region_output" not in rembg_src,
        "第三步提交又在裁图了")
     ok("并行 worker 数有上限（内存约束：每 worker ~200MB 位图；2026-09-27 起上限与函数层一致为 8）",
-       rembg_stage.SUBMIT_WORKERS <= 8, str(rembg_stage.SUBMIT_WORKERS))
+       detect_stage.SUBMIT_WORKERS <= 8, str(detect_stage.SUBMIT_WORKERS))
 
     # ---- 8. 人工干预的槽位运算（用户 2026-10-03：模块页也要手绘 + 标类型）----
     # 独立「检测文本框」模块页新增了手绘/改类型/删框，规则必须与任务流程

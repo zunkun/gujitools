@@ -36,6 +36,7 @@ class ImageViewHost(QLabel):
     _dirty: bool
     _dpr: Any
     _drag_index: Any
+    _edge_dashed: bool
     _full_mode: bool
     _ghost_box: Any
     _grab_dx: Any
@@ -67,6 +68,9 @@ class ImageViewHost(QLabel):
         ...
 
     def _draw_boxes(self, painter: QPainter) -> None:
+        ...
+
+    def _draw_edge(self, painter: QPainter, scaled) -> None:
         ...
 
     def _draw_reference_boxes(self, painter: QPainter) -> None:
@@ -159,6 +163,9 @@ class ImageViewHost(QLabel):
         ...
 
     def set_boxes_editable(self, editable: bool) -> None:
+        ...
+
+    def set_edge_dashed(self, enabled: bool) -> None:
         ...
 
     def set_image(self, image, boxes=None, image_size: QSize | None = None) -> None:

@@ -20,6 +20,49 @@ from typing import List, Optional, Sequence, Tuple
 from utils.units import MM_PER_INCH, mm_to_px
 
 
+def box_has_area(box) -> bool:
+    """框是否有**面积**（宽、高都 > 0）；空项 / 畸形项一律 ``False``。
+
+    零宽或零高的框是误操作残渣（手绘点了一下、拖拽还没拖开就松手…），
+    它不是"一个框"。下游若把它当框看，会凭空多裁一张 1px 宽的空白图、
+    并把单栏页误判成「双栏页」——任务 0009 的页码整体错位就是这么来的
+    （``1-l.png`` 只有 1×37 像素）。判据只在本函数实现一处。
+    """
+    if not box:
+        return False
+    try:
+        return (
+            int(box[2]) - int(box[0]) > 0
+            and int(box[3]) - int(box[1]) > 0
+        )
+    except (TypeError, ValueError, IndexError):
+        return False
+
+
+def box_iou(a, b) -> float:
+    """两个框的交并比（0~1）；任一方畸形/零面积时返回 ``0.0``。
+
+    用途（用户 2026-10-23，任务 0004）：重跑检测时判断「人工框」和「新检测框」
+    是不是**同一个框**——位置几乎重合时，过期的只是**类型**（旧模型判整幅、
+    新模型判半幅），应当刷新槽形而不是整条人工框都作废（见
+    ``desktop.store.annotations.save_detect_boxes_batch``）。
+    """
+    try:
+        ax1, ay1, ax2, ay2 = (float(v) for v in a)
+        bx1, by1, bx2, by2 = (float(v) for v in b)
+    except (TypeError, ValueError):
+        return 0.0
+    iw = min(ax2, bx2) - max(ax1, bx1)
+    ih = min(ay2, by2) - max(ay1, by1)
+    if iw <= 0 or ih <= 0:
+        return 0.0
+    inter = iw * ih
+    area_a = max(0.0, ax2 - ax1) * max(0.0, ay2 - ay1)
+    area_b = max(0.0, bx2 - bx1) * max(0.0, by2 - by1)
+    union = area_a + area_b - inter
+    return inter / union if union > 0 else 0.0
+
+
 def is_full_content(boxes) -> bool:
     """``boxes`` 是否为「整幅内容」(fullcontent) 的**槽位表示**。
 
@@ -93,6 +136,8 @@ def page_box_slots_from_event(payload) -> List[Optional[list]]:
 #: （fullcontent / harfcontent）同名的两个键是跨层文案，GUI 统计直接展示。
 PAGE_CLASS_FULLCONTENT = "fullcontent"   # 整幅：单槽（整页唯一内容区）
 PAGE_CLASS_HARFCONTENT = "harfcontent"   # 半幅：左右两栏齐全
+PAGE_CLASS_HARFCONTENT_LEFT = "harfcontent-left"    # 半幅：只检出左栏
+PAGE_CLASS_HARFCONTENT_RIGHT = "harfcontent-right"  # 半幅：只检出右栏
 PAGE_CLASS_SINGLE = "single"             # 单独页：半幅只检出一栏（左或右）
 PAGE_CLASS_EMPTY = "empty"               # 无文本框
 
@@ -134,6 +179,36 @@ def classify_page_slots(slots) -> str:
     if len(raw) == 2:
         return PAGE_CLASS_HARFCONTENT if len(present) == 2 else PAGE_CLASS_SINGLE
     # 防御畸形存档（>2 槽）：只要有框就按半幅计，不丢页
+    return PAGE_CLASS_HARFCONTENT
+
+
+def describe_page_slots(slots) -> str:
+    """页的**检测层**形态（比 :func:`classify_page_slots` 多带左右侧别）。
+
+    返回值：``fullcontent`` / ``harfcontent`` / ``harfcontent-left`` /
+    ``harfcontent-right`` / ``empty``。
+
+    与 :func:`classify_page_slots` 的分工：那个回答"页面统计归哪一类"
+    （半幅单侧一律 ``single``）；本函数回答"**提交时这页会产出什么形态**"
+    ——半幅单侧必须保留是左还是右，提交命名与拼版配对的快照靠它。
+
+    ⚠️ 参数必须与 :func:`classify_page_slots` 一样是**槽位表示**
+    （半幅恒 2 槽、整幅 1 槽）；``_valid_slots`` 之后的零面积框视作 None。
+    """
+    raw = list(slots or [])
+    present = [b for b in raw if b]
+    if not present:
+        return PAGE_CLASS_EMPTY
+    if len(raw) == 1:
+        return PAGE_CLASS_FULLCONTENT
+    if len(raw) == 2:
+        if len(present) == 2:
+            return PAGE_CLASS_HARFCONTENT
+        return (
+            PAGE_CLASS_HARFCONTENT_LEFT if present[0]
+            else PAGE_CLASS_HARFCONTENT_RIGHT
+        )
+    # 畸形存档（>2 槽）：只要有一栏就按半幅（与 classify_page_slots 一致）
     return PAGE_CLASS_HARFCONTENT
 
 

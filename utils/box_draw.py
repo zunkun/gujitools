@@ -207,10 +207,14 @@ def slot_names_colors(slots, page_width=None, single_column: bool = False):
     :mod:`utils.box_geometry`）。按序号给会让"只检出一侧"的那一页把左框
     标成"第 1 号框"，也会把整幅标成左框。
 
-    ``page_width``＋``single_column``：整本书已判定为**单栏书**且这一页只有
-    一个横跨整页的框时，标成「半幅」而不是「左框/右框」——它没有另一半
-    （判据 :func:`utils.book_layout.is_single_wide_box`，阈值只有那一处）。
-    缺页宽或缺 ``single_column`` 时退回旧行为，**不猜**。
+    ``page_width``：这一页只有**一个横跨整页的框**（宽 ≥60% 页宽）时，标成
+    「半幅」而不是「左框/右框」——它没有另一半（判据
+    :func:`utils.book_layout.is_single_wide_box`，阈值只有那一处）。
+
+    ⚠️ 用户 2026-10-23（任务 0004）：这是**页级**判据，不要求整本书是单栏书。
+    一页只检出一个 ``harfcontent``、框宽 >60% 时中心位置没有鉴别力，必然
+    是半幅。``single_column`` 形参仅保留以兼容旧调用方，**不再参与判定**；
+    缺页宽时退回旧行为（按槽位给左/右），**不猜**。
 
     ``None`` 项原样占位（``draw_boxes`` 会跳过它，GUI 侧则按位置对齐），
     这样"哪一侧缺失"的信息不丢。
@@ -219,10 +223,9 @@ def slot_names_colors(slots, page_width=None, single_column: bool = False):
     if len(slots) == 1:
         return [BOX_NAME_FULL] * len(slots), [BOX_COLOR_FULL_BGR] * len(slots)
     if len(slots) == 2:
-        if single_column:
-            present = [b for b in slots if b]
-            if len(present) == 1 and is_single_wide_box(present[0], page_width):
-                return [BOX_NAME_HALF] * 2, [BOX_COLOR_HALF_BGR] * 2
+        present = [b for b in slots if b]
+        if len(present) == 1 and is_single_wide_box(present[0], page_width):
+            return [BOX_NAME_HALF] * 2, [BOX_COLOR_HALF_BGR] * 2
         return list(SLOT_NAMES_HALF), list(SLOT_COLORS_HALF)
     # 防御畸形存档（>2 槽）：退回按序号给，别让调用方炸掉
     return [box_name(i) for i in range(len(slots))], [
@@ -239,8 +242,10 @@ def draw_slots(img_bgr, slots, thickness: int = 4, show_label: bool = True,
     ``[left, right, full]`` 再逐个传名/配色——那份拆法在
     ``functions/detect`` 与 desktop 之间各写过一次，已经漂移过一次。
 
-    ``single_column=True``（整本书是单栏书）时，一个横跨整页的半幅框标
-    「半幅」；页宽直接取**这张图自己的宽度**（标注图画的就是这页，坐标同系）。
+    ``single_column``：仅为兼容旧调用方保留（**不再参与判定**）。半幅判据
+    已改为**页级**（用户 2026-10-23，任务 0004）：一页只有一个宽框就不存在
+    并排的另一栏，无论整本书是不是单栏书都标「半幅」。页宽直接取**这张图
+    自己的宽度**（标注图画的就是这页，坐标同系）。
     这样导出标注图与界面上看到的标注完全一致。
 
     返回绘制后的 BGR 图像（新数组，不修改入参）。

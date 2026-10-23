@@ -51,6 +51,11 @@ HALF_BOX_COLOR = BOX_COLORS[HALF_INDEX]
 REFERENCE_COLOR = QColor("#f97316")
 
 
+#: 图片边缘的虚线颜色（去底色页用）：去底色成品是**透明底**，在白底画布上
+#: 看不出边界，用中性灰虚线勾一圈（用户 2026-10-23）。
+EDGE_DASH_COLOR = QColor("#8b949e")
+
+
 HANDLE_RADIUS = 5  # 缩放手柄半径（控件像素）
 
 
@@ -63,17 +68,20 @@ _HANDLE_CURSORS = [
 
 def is_half_page(boxes, image_size, full: bool = False,
                  single_column: bool = False) -> bool:
-    """本页是否该标成「半幅」（一个横跨整页的框，且整本书是单栏书）。
+    """本页是否该标成「半幅」（一个横跨整页的框）。
 
-    三条同时成立：非整幅页、**恰好一个框**、该框宽 ≥60% 页宽
+    两条同时成立：非整幅页、**恰好一个框**、该框宽 ≥60% 页宽
     （:func:`utils.book_layout.is_single_wide_box`——阈值只有那一处）。
 
-    ⚠️ ``single_column``（整本书判定）必须由宿主传进来：单页**分不出**
-    「一栏横跨整页」和「真双栏书里漏检了一侧」，只有整本书的统计能分。
-    缺它时返回 ``False``——宁可标成左/右框（旧行为），也不要在没证据时
-    把一页的形态改了。
+    ⚠️ 用户 2026-10-23（任务 0004）：一页只检出一个 ``harfcontent``、框宽
+    >60% 时，中心位置**没有鉴别力**——它不可能与另一栏并排，必然是「半幅」。
+    所以这里是**页级判据**，不再像 2026-10-17 那样依赖 ``single_column``
+    （整本书是否单栏书）了：混合书里单个宽框页同样得认成半幅，不能按中心
+    硬拆左框/右框。``single_column`` 形参仅保留以兼容旧调用方，**不再参与判定**。
+
+    页宽未知（``None``/0）时返回 ``False``：没证据不下结论，宁可标成左/右框。
     """
-    if full or not single_column:
+    if full:
         return False
     present = [b for b in (boxes or []) if b]
     if len(present) != 1:
@@ -91,8 +99,9 @@ def box_styles(boxes, image_size=None, full: bool = False,
       左右**（存 ``boxes.json`` 的 ``side``）——优先于一切自动判定，直接标
       左框/右框。这种页的框横跨整页、中心压在中线上，按位置算出来的左右
       没有意义（用户 2026-10-17）；
-    - ``single_column=True`` 且本页只有一个横跨整页的框：标「半幅」+ 青
-      （见 :func:`is_half_page`）——单栏书里它就是一整栏；
+    - 本页只有一个横跨整页的框：标「半幅」+ 青（见 :func:`is_half_page`）
+      ——它不可能有并排的另一栏，**不要求整本书是单栏书**（用户 2026-10-23，
+      任务 0004）；
     - 否则是半幅页：按**中心位置**判左右（`utils.box_geometry.half_sides`）。
 
     ⚠️ 优先级：``full`` > ``side_override`` > ``半幅``。整幅是 1 槽形态，

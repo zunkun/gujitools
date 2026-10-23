@@ -861,6 +861,121 @@ def run(ctx) -> None:
         )
         ok("空清单自动拼版 = 空页清单", S.auto_impose_pages([]) == [])
 
+        # ------- 3b-2. 无侧半幅（提交计划 role，用户 2026-10-23）--------
+        # 单栏书 / 窄页把半幅的侧别归一化掉：产物名与整幅一样无后缀。
+        # 拼版从 boxes.json 的提交计划拿到 role=half-unsided，才敢两两配对。
+        p21 = _mk(src / "21.png", RED)
+        p22 = _mk(src / "22.png", GREEN)
+        p23 = _mk(src / "23.png", RED)
+        p24 = _mk(src / "24.png", GREEN)
+        full30 = _mk(src / "30.png", (128, 128, 128))
+        unsided_roles = {f"{n}": "half-unsided" for n in (21, 22, 23, 24, 30)}
+
+        def _role_for(text):
+            return unsided_roles.get(Path(str(text)).stem)
+
+        ok(
+            "source_kind：没有计划时无后缀图仍是整幅（旧行为）",
+            S.source_kind(p21) == S.SOURCE_FULL,
+        )
+        ok(
+            "source_kind：计划说 half-unsided 时按半幅认",
+            S.source_kind(p21, _role_for) == S.SOURCE_HALF_UNSIDED,
+            S.source_kind(p21, _role_for),
+        )
+        ok(
+            "无侧半幅：两张连续 → 拼成一页（序号在前进右槽）",
+            _page_shapes(S.auto_impose_pages([p21, p22], _role_for))
+            == [("21.png", "22.png")],
+            str(_page_shapes(S.auto_impose_pages([p21, p22], _role_for))),
+        )
+        ok(
+            "无侧半幅：页号不连续 → 各自单独一页",
+            _page_shapes(S.auto_impose_pages([p21, p23], _role_for))
+            == [("21.png",), ("23.png",)],
+            str(_page_shapes(S.auto_impose_pages([p21, p23], _role_for))),
+        )
+        ok(
+            "整幅（role=full）打断无侧半幅的配对",
+            _page_shapes(S.auto_impose_pages([p21, full30, p22], _role_for))
+            == [("21.png",), ("30.png",), ("22.png",)],
+            str(_page_shapes(
+                S.auto_impose_pages([p21, full30, p22], _role_for))),
+        )
+        ok(
+            "无侧半幅不与带侧别的半幅混拼",
+            _page_shapes(S.auto_impose_pages(
+                [b, p21], lambda text: "half-unsided"
+                if Path(str(text)).stem == "21" else None,
+            )) == [("1-l.png",), ("21.png",)],
+            str(_page_shapes(S.auto_impose_pages(
+                [b, p21], lambda text: "half-unsided"
+                if Path(str(text)).stem == "21" else None,
+            ))),
+        )
+        ok(
+            "没有 role_for 时无后缀图维持旧行为（不配对）",
+            _page_shapes(S.auto_impose_pages([p21, p22]))
+            == [("21.png",), ("22.png",)],
+            str(_page_shapes(S.auto_impose_pages([p21, p22]))),
+        )
+
+        # ------- 3b-3. 计划与下游文件名写法不一致（0004）--------
+        # 计划按产物 label 记身份，下游文件名可能跨版本不同：计划无后缀而
+        # 旧产物带 -l/-r，或用户改过侧别后计划带 -l 而旧产物无后缀。
+        stale_l = _mk(src / "21-l.png", RED)
+        stale_r = _mk(src / "22-r.png", GREEN)
+        legacy = S.expand_role_aliases(
+            {"21": "half-unsided", "22": "half-unsided"}
+        )
+        ok(
+            "别名：计划无后缀 → 也认旧名 21-l / 22-r",
+            legacy.get("21-l") == "half-unsided"
+            and legacy.get("22-r") == "half-unsided",
+            str(legacy),
+        )
+        reverse = S.expand_role_aliases({"21-l": "half-left"})
+        ok(
+            "别名：计划带 -l → 也认旧名 21（用户改过侧别）",
+            reverse.get("21") == "half-left", str(reverse),
+        )
+        ok(
+            "别名不覆盖显式 label",
+            S.expand_role_aliases({"21": "half-unsided", "21-l": "half-left"})
+            .get("21-l") == "half-left",
+            str(S.expand_role_aliases(
+                {"21": "half-unsided", "21-l": "half-left"})),
+        )
+        sided = S.expand_role_aliases(
+            {"21-l": "half-left", "21-r": "half-right"}
+        )
+        ok(
+            "真双栏页（同页两个 role）不造别名，避免左右被认成同一边",
+            "21" not in sided
+            and sided.get("21-l") == "half-left"
+            and sided.get("21-r") == "half-right",
+            str(sided),
+        )
+        legacy_role_for = lambda text: legacy.get(Path(str(text)).stem)
+        ok(
+            "旧名 -l + 新名无后缀 的两张连续页能拼成一页（0004 现场）",
+            _page_shapes(S.auto_impose_pages(
+                [stale_l, _mk(src / "22.png", GREEN)], legacy_role_for,
+            )) == [("21-l.png", "22.png")],
+            str(_page_shapes(S.auto_impose_pages(
+                [stale_l, _mk(src / "22.png", GREEN)], legacy_role_for,
+            ))),
+        )
+        ok(
+            "旧名 -l + -r（同一批旧产物）同样按无侧半幅配对",
+            _page_shapes(S.auto_impose_pages(
+                [stale_l, stale_r], legacy_role_for,
+            )) == [("21-l.png", "22-r.png")],
+            str(_page_shapes(S.auto_impose_pages(
+                [stale_l, stale_r], legacy_role_for,
+            ))),
+        )
+
         # ---------------- 4. 操作画布（拖动 / 缩放 / 旋转 / 复位）----------------
         from PySide6.QtGui import QImage
 

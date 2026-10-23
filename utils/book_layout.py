@@ -70,6 +70,19 @@ SINGLE_COLUMN_BOOK_RATIO = 0.90
 #: 认定为「整幅书」所需的比例：≥ 该比例的**有框页**都是整幅。
 FULL_BOOK_RATIO = 0.90
 
+#: 认定为「左右双栏书」所需的比例：≥ 该比例的**有框页**都是半幅双框。
+#:
+#: 用户 2026-10-23 定的「一、整本书整体是 left/right 双栏结构」就是这一类
+#: （每页左右两栏并排）。空白页要按「补左右两张占位」处理，见
+#: ``desktop.services.print_plan.plan_detect_submit_entries``。
+DOUBLE_COLUMN_BOOK_RATIO = 0.90
+
+#: 全书形态键（:func:`book_form` 的返回值）：决定空白页补几张占位。
+BOOK_FORM_DOUBLE = "double"   # 左右双栏书：每页两框（缺一侧要补另一侧）
+BOOK_FORM_SINGLE = "single"   # 单栏书（半幅单宽框）：每页一框
+BOOK_FORM_FULL = "full"       # 整幅书：每页一框
+BOOK_FORM_MIXED = "mixed"     # 混排：空白页跟随前一页的形态
+
 
 def is_single_wide_box(box, page_width) -> bool:
     """**单个框**是否宽到不可能与另一栏并排（单栏书那一栏的宽度特征）。
@@ -148,6 +161,84 @@ def single_column_slots(slots: Sequence, single_column_book: bool, page_width) -
     return raw
 
 
+def page_single_wide_slots(slots: Sequence, page_width) -> list:
+    """**页级**判据：单个宽框（≥60% 页宽）的半幅页退化成单槽。
+
+    用户 2026-10-23（任务 0004）：一页只检出一个 ``harfcontent``、框宽 >60%
+    时，中心位置**没有鉴别力**——它必然是「半幅」，不能因为整本书不是单栏书
+    就按中心硬拆 ``-l``/``-r``。所以这一步**不看** ``single_column_book``。
+
+    与 :func:`single_column_slots` 的差别只有"不要求全书结论"；退化后的下游
+    语义完全一致（不拆后缀、不镜像、可配对）。
+    """
+    return single_column_slots(slots, True, page_width)
+
+
+#: 「窄页」判据：某页页宽 < **全书典型页宽** × 该比例 ⇒ 这页是**单页扫描**。
+#:
+#: 用户 2026-10-23：整本基本都是左右双栏（每张图并排两页），但封面/扉页/
+#: 封底常是**单页扫描**——图片尺寸明显小于其它页。这类页理论上**放不下第二
+#: 栏**，所以：
+#:
+#: - 整页无框时只补**一张**占位（不是左右两张）；
+#: - 只检出一个框时**不补**缺失侧（另一栏不可能存在），命名也不带 ``-l``/``-r``。
+#:
+#: 0.70 与「整幅框最小宽度比例」同值但**不是同一件事**：那个比的是框宽/页宽，
+#: 这个比的是**页宽/全书页宽**。真双栏书的页宽彼此相差不到 5%（任务 0001
+#: 实测 2322~2400），单页扫描只有 ~58%（1390/2400），中间空档很大。
+NARROW_PAGE_WIDTH_RATIO = 0.70
+
+
+def typical_page_width(widths: Iterable) -> int:
+    """全书**典型页宽**：全部已知页宽的**中位数**（无有效宽度返回 0）。
+
+    用中位数而不是最大值：个别超宽折页不该把"正常页"全判成窄页。
+    """
+    values: list[int] = []
+    for width in widths or []:
+        try:
+            value = int(width)
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            values.append(value)
+    if not values:
+        return 0
+    values.sort()
+    return values[len(values) // 2]
+
+
+def is_narrow_page(page_width, typical_width) -> bool:
+    """该页是否**明显窄于全书**（= 单页扫描，放不下第二栏）。"""
+    try:
+        width = int(page_width)
+        typical = int(typical_width)
+    except (TypeError, ValueError):
+        return False
+    if width <= 0 or typical <= 0:
+        return False
+    return width < typical * NARROW_PAGE_WIDTH_RATIO
+
+
+def narrow_page_slots(slots: Sequence, narrow: bool) -> list:
+    """窄页（单页扫描）里把「唯一的框」退化成**单槽**；其余原样返回。
+
+    与 :func:`single_column_slots` 同一目的（让下游按整幅语义走、不拆
+    ``-l``/``-r``、不补另一栏），区别只在判据来源：这里是**页宽明显小于
+    全书**，与「框宽 ≥60% 页宽」无关（任务 0001 第 1 页的框只占 49% 页宽，
+    但那一页本身就是单页扫描）。
+
+    ⚠️ 只有「2 槽且恰好 1 个框」才退化；真双栏页（两个框）原样不动。
+    """
+    raw = list(slots or [])
+    if not narrow or len(raw) != 2:
+        return raw
+    present = [b for b in raw if b]
+    if len(present) != 1:
+        return raw
+    return present
+
+
 class BookProfile(NamedTuple):
     """整本书的形态判定结果（一次性统计，各判据共用）。
 
@@ -162,13 +253,14 @@ class BookProfile(NamedTuple):
         empty_pages: 无框页。
         single_column_book: 是否认定为**单栏书**（这些页不该拆 ``-l``/``-r``）。
         full_book: 是否认定为**整幅书**。
+        double_column_book: 是否认定为**左右双栏书**（每页左右两框并排）。
         suspicious_half_pages: 整幅书里出现的半幅页（页名）——**可疑结果**，
             交由界面提示，不自动改。
         suspicious_half_ratio: 可疑半幅页占整幅书有框页的比例（0~1）。
 
-    ⚠️ ``single_column_book`` 与 ``full_book`` 可以同时为 ``False``（混合排版
-    的书：一部分单栏页、一部分整幅页）。此时不做任何改写，两类页各按原有
-    形态处理。
+    ⚠️ ``single_column_book`` / ``full_book`` / ``double_column_book`` 三者
+    互斥（比例都 ≥90%，不可能同时成立）；三者都为 ``False`` 即**混排书**
+    （一部分单栏页、一部分整幅页/双栏页）。
     """
 
     total_pages: int
@@ -180,6 +272,7 @@ class BookProfile(NamedTuple):
     empty_pages: tuple
     single_column_book: bool
     full_book: bool
+    double_column_book: bool
     suspicious_half_pages: tuple
     suspicious_half_ratio: float
 
@@ -243,6 +336,9 @@ def profile_book(pages: Iterable) -> BookProfile:
         boxed > 0 and len(single_wide) / boxed >= SINGLE_COLUMN_BOOK_RATIO
     )
     full_book = boxed > 0 and len(full) / boxed >= FULL_BOOK_RATIO
+    double_column_book = (
+        boxed > 0 and len(double_half) / boxed >= DOUBLE_COLUMN_BOOK_RATIO
+    )
 
     # ⚠️ 单栏书里**不能**同时报"可疑半幅"：那些单宽框页本来就该是半幅形态
     #   （模型没错），它们已被 single_column_book 解释掉了。这里只把**真双栏**
@@ -263,9 +359,28 @@ def profile_book(pages: Iterable) -> BookProfile:
         empty_pages=tuple(empty),
         single_column_book=single_column_book,
         full_book=full_book,
+        double_column_book=double_column_book,
         suspicious_half_pages=suspicious,
         suspicious_half_ratio=ratio,
     )
+
+
+def book_form(profile: BookProfile) -> str:
+    """整本书的形态键（``BOOK_FORM_*``），决定空白页补几张占位。
+
+    三个极端互斥（各自要求 ≥90%），都不成立即**混排**——混排时空白页跟随
+    前一张有框页的形态（用户 2026-10-23 的规则四）。
+
+    优先级：单栏 → 整幅 → 双栏。单栏书里「单个宽框」已被判成单栏形态，
+    不该再被双栏判据接管（两者比例互斥，这里只是写死一个确定的次序）。
+    """
+    if profile.single_column_book:
+        return BOOK_FORM_SINGLE
+    if profile.full_book:
+        return BOOK_FORM_FULL
+    if profile.double_column_book:
+        return BOOK_FORM_DOUBLE
+    return BOOK_FORM_MIXED
 
 
 def single_column_summary(profile: BookProfile) -> str:
@@ -297,14 +412,24 @@ def suspicious_summary(profile: BookProfile) -> str:
 
 
 __all__ = [
+    "BOOK_FORM_DOUBLE",
+    "BOOK_FORM_FULL",
+    "BOOK_FORM_MIXED",
+    "BOOK_FORM_SINGLE",
     "BookProfile",
+    "DOUBLE_COLUMN_BOOK_RATIO",
     "FULL_BOOK_RATIO",
+    "NARROW_PAGE_WIDTH_RATIO",
     "SINGLE_COLUMN_BOOK_RATIO",
     "SINGLE_COLUMN_WIDTH_RATIO",
+    "book_form",
+    "is_narrow_page",
     "is_single_wide_box",
     "is_single_wide_half",
+    "narrow_page_slots",
     "profile_book",
     "single_column_slots",
     "single_column_summary",
     "suspicious_summary",
+    "typical_page_width",
 ]

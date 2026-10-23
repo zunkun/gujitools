@@ -153,12 +153,13 @@ class SubmitMixin:
             return False
 
     # ---------------------------------------------------------- 派生条目
-    def _book_page_widths(self) -> dict:
-        """整本书每页的原始像素宽度：``{页名: 宽}``。
+    def _book_page_sizes(self) -> dict:
+        """整本书每页的原始像素尺寸：``{页名: (宽, 高)}``。
 
-        ⚠️ **一次读盘算完整本**（``store.image_sizes_all``）：判定要遍历全部页面，
-        逐页调 ``image_size`` 会整份读 sizes.json，320 页就是 320 次全量解析。
-        缺记录的页回落读图片头（由 ``_page_width_of`` 负责）。
+        占位图要「从页面中间截取」（用户 2026-10-23），落点需要**页高**，
+        所以这里保留完整尺寸而不是只取宽。同样**一次读盘**（``image_sizes_all``）；
+        缺记录的页回落读图片头（由 ``_page_width_of`` 负责，只能拿到宽——
+        高记 0，占位框退化为从页顶开始）。
         """
         sizes: dict = {}
         if self.task_id:
@@ -171,13 +172,29 @@ class SubmitMixin:
                     )
                 except Exception:  # noqa: BLE001 - 读不到就全部回落图片头
                     sizes = {}
-        widths: dict = {}
+        result: dict = {}
         for path in self._manifest_paths():
+            size = sizes.get(path.stem)
+            if size and len(size) >= 2 and size[0] > 0 and size[1] > 0:
+                result[path.stem] = (int(size[0]), int(size[1]))
+                continue
             try:
-                widths[path.stem] = self._page_width_of(path, sizes)
+                width = self._page_width_of(path, sizes)
             except Exception:  # noqa: BLE001 - 取不到宽度按"无页宽"处理
-                widths[path.stem] = 0
-        return widths
+                width = 0
+            result[path.stem] = (int(width), 0)
+        return result
+
+    def _book_page_widths(self) -> dict:
+        """整本书每页的原始像素宽度：``{页名: 宽}``。
+
+        ⚠️ **一次读盘算完整本**（``store.image_sizes_all``）：判定要遍历全部页面，
+        逐页调 ``image_size`` 会整份读 sizes.json，320 页就是 320 次全量解析。
+        缺记录的页回落读图片头（由 ``_page_width_of`` 负责）。
+        """
+        return {
+            stem: int(size[0]) for stem, size in self._book_page_sizes().items()
+        }
 
     def _book_profile(self, widths: dict | None = None, boxes_for=None):
         """整本书的形态判定（``utils.book_layout.BookProfile``）。
@@ -204,7 +221,8 @@ class SubmitMixin:
         ``plan_detect_submit_entries`` 会遍历整本 manifest 逐页回调，逐页走
         ``_detect_boxes_for`` 就是 O(n²)。
         """
-        widths = self._book_page_widths()
+        sizes = self._book_page_sizes()
+        widths = {stem: int(size[0]) for stem, size in sizes.items()}
         profile = self._book_profile(widths)
         sides = self._side_overrides_all()
         boxes_map = self._boxes_map_all()
@@ -215,7 +233,42 @@ class SubmitMixin:
             single_column_book=profile.single_column_book,
             page_width_for=lambda text: widths.get(Path(text).stem, 0),
             side_for=lambda text: sides.get(Path(text).stem),
+            book_profile=profile,
+            page_size_for=lambda text: sizes.get(Path(text).stem),
         )
+
+    def _save_submit_plan(self, entries: list[dict]) -> None:
+        """把本次提交的**产物角色**写进 boxes.json（拼版配对用，2026-10-23）。
+
+        条目是**按产物**的（一页可能拆成 ``-r``/``-l`` 两张，也可能只是一张
+        无后缀图），这里按源页聚合成 ``plan.outputs``；``page_class`` 记的是
+        归一化**之前**的检测形态。拼版读它来认"_无后缀但其实是半幅_"的图。
+
+        ⚠️ 计划只是拼版配对的**参考快照**：写不进去（老任务/磁盘异常）不该
+        阻断提交，拼版会回落到文件名后缀规则（旧行为）。
+        """
+        saver = getattr(self.store, "save_detect_plans", None)
+        if not callable(saver) or not self.task_id:
+            return
+        plans: dict[str, dict] = {}
+        for entry in entries or []:
+            stem = Path(str(entry.get("file") or "")).stem
+            if not stem:
+                continue
+            plan = plans.setdefault(
+                stem,
+                {"page_class": entry.get("page_class") or "empty",
+                 "outputs": []},
+            )
+            plan["outputs"].append({
+                "label": entry.get("label") or stem,
+                "role": entry.get("role") or "full",
+                "placeholder": bool(entry.get("placeholder")),
+            })
+        try:
+            saver(self.task_id, plans, self.current_node())
+        except Exception:  # noqa: BLE001 - 计划写失败不阻断提交（见 docstring）
+            pass
 
     def _side_overrides_all(self) -> dict:
         """整份 boxes.json 里的 ``{页名: 指定左右}``（一次读盘）。
@@ -346,11 +399,16 @@ class SubmitMixin:
             ),
             "clean": True,
         }
+        # 产物角色落进 boxes.json：拼版据此把"无后缀但其实是半幅"的图配对。
+        self._save_submit_plan(entries)
         detect_run = self._latest_success_run("detect")
         if detect_run:
             out_args["_preview_run_id"] = detect_run.get("run_id")
+        blanks = sum(1 for e in entries if e.get("placeholder"))
         self.log_view.append(
-            f"提交本次任务：按检测框裁图 {len(entries)} 张 → {out_args['output']}"
+            f"提交本次任务：按检测框裁图 {len(entries) - blanks} 张"
+            + (f"，原图占位 {blanks} 张" if blanks else "")
+            + f" → {out_args['output']}"
         )
         self._launch_stage_process("detect_submit", out_args, resume=False)
 

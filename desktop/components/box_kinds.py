@@ -43,10 +43,10 @@ class BoxKindHost:
     - ``box_raw_slots(path_text)``：该页**槽位**表示（保留 null，形态在槽数里）；
     - ``box_page_is_full(path_text)``：当前页是否整幅形态（半幅页上点左/右
       只解释规则不给切换）；
-    - ``box_page_half_candidate(path_text)``：当前页是否**够「半幅」**——整本书
-      判定为单栏书 **且** 这页只有一个宽到横跨整页的框（判据
-      :func:`utils.book_layout.is_single_wide_box`）。为真时左右**可指定**
-      （中心压在中线上，位置判定没有意义）；
+    - ``box_page_half_candidate(path_text)``：当前页是否**够「半幅」**——这页只有
+      一个宽到横跨整页的框（判据 :func:`utils.book_layout.is_single_wide_box`，
+      **页级**，不要求整本书是单栏书）。为真时左右**可指定**（中心压在中线上，
+      位置判定没有意义）；
     - ``box_image_size(path_text)``：原始像素 ``(w, h)``，取不到给 ``None``；
     - ``box_commit(path_text, slots, select_box=None, side=SIDE_KEEP)``：落库 +
       重画——任务流程写 ``boxes.json`` + 内存缓存，独立页写内存表，各自实现。

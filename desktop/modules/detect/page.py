@@ -652,10 +652,11 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
         self._store_slots(path_text, slots, select=select_box)
 
     def box_page_half_candidate(self, path_text: str) -> bool:
-        """这页是否**够「半幅」**（整本书单栏 + 只有一个横跨整页的框）——为真时
-        左/右可由用户指定（中心压在中线上，位置判定没意义）。"""
-        if not self.viewer.single_column():
-            return False
+        """这页是否**够「半幅」**（只有一个横跨整页的框）——为真时
+        左/右可由用户指定（中心压在中线上，位置判定没意义）。
+
+        ⚠️ 页级判据（用户 2026-10-23，任务 0004）：不要求整本书是单栏书。
+        """
         slots = self._boxes.get(Path(path_text).stem, [])
         return is_single_wide_half(slots, self._page_width(path_text))
 

@@ -90,6 +90,58 @@ def run(ctx) -> None:
        entry is not None and entry[1] == "manual"
        and entry[0] == [[1, 1, 9, 9]], str(entry))
 
+    # ---- 2c. 提交计划（产物角色）：随框落盘、拖框/重检测不抹掉 ----
+    plans = {
+        "0002": {
+            "page_class": "harfcontent",
+            "outputs": [
+                {"label": "0002-r", "role": "half-right", "placeholder": False},
+                {"label": "0002-l", "role": "half-left", "placeholder": False},
+            ],
+        },
+        # 没有框记录的页不凭空造条目（否则会被统计当成"检测过的空页"）
+        "不存在的页": {"page_class": "empty", "outputs": []},
+    }
+    repo.save_detect_plans(tid, plans)
+    got_plans = repo.detect_plans_all_at(boxes_path)
+    ok("提交计划按页读回（含产物角色与占位标记）",
+       got_plans.get("0002", {}).get("outputs") == plans["0002"]["outputs"],
+       str(got_plans.get("0002")))
+    ok("没有框记录的页不会被计划凭空造出来",
+       "不存在的页" not in repo.boxes_raw_at(boxes_path))
+
+    repo.save_detect_boxes(tid, "0002", [[0, 0, 20, 20], [30, 0, 60, 60]])
+    ok("拖框重写条目时保留提交计划（它描述的是已落盘的产物）",
+       isinstance(repo.boxes_raw_at(boxes_path)["0002"].get("plan"), dict),
+       str(repo.boxes_raw_at(boxes_path)["0002"]))
+    repo.save_detect_boxes_batch(tid, {"0002": [[0, 0, 21, 21], [30, 0, 61, 61]]})
+    ok("重跑检测批量写同样保留提交计划",
+       isinstance(repo.boxes_raw_at(boxes_path)["0002"].get("plan"), dict),
+       str(repo.boxes_raw_at(boxes_path)["0002"]))
+
+    # ---- 2d. 人工「整幅」遇同框的自动「半幅」→ 只刷新槽形 ----
+    # 用户 2026-10-23（任务 0004）：旧模型把半幅页存成 1 槽人工记录，人工框
+    # 优先让新检测结果永远写不进去。同框（IoU≥0.9）时只改形态、保留人工坐标。
+    repo.save_detect_boxes(tid, "0005", [[100, 100, 900, 1300]], origin="manual")
+    repo.save_detect_plans(tid, {"0005": {"page_class": "fullcontent", "outputs": []}})
+    repo.save_detect_boxes_batch(tid, {"0005": [None, [102, 101, 898, 1302]]})
+    raw5 = repo.boxes_raw_at(boxes_path)["0005"]
+    ok("同框的自动半幅把人工整幅刷新成 2 槽（0004 的 37 页场景）",
+       len(raw5["boxes"]) == 2 and raw5["boxes"][0] is None
+       and raw5["boxes"][1] == [100, 100, 900, 1300], str(raw5))
+    ok("刷新只改槽形：origin 仍是 manual、坐标仍取人工那份",
+       raw5.get("origin") == "manual"
+       and raw5["boxes"][1] == [100, 100, 900, 1300], str(raw5))
+    ok("形态变了，旧提交计划作废（下次提交会重写）",
+       "plan" not in raw5, str(raw5))
+
+    repo.save_detect_boxes(tid, "0006", [[100, 100, 900, 1300]], origin="manual")
+    repo.save_detect_boxes_batch(tid, {"0006": [None, [0, 0, 300, 400]]})
+    raw6 = repo.boxes_raw_at(boxes_path)["0006"]
+    ok("不同框（IoU 低）→ 人工记录原样保留，不被改写",
+       raw6["boxes"] == [[100, 100, 900, 1300]]
+       and raw6.get("origin") == "manual", str(raw6))
+
     # ---- 3. 切任务前必须先落盘（否则上一任务的攒批会写进新任务）----
     other = repo.create_task(ctx.pdf, "hash-annot-batch", "另一本", True)
     d._store_page_size({"image": "0999", "width": 111, "height": 222})

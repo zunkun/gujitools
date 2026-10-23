@@ -77,10 +77,12 @@ _SPECS: list[dict] = [
             "selection_changed": "ImageView",
             "set_boxes": "ImageView",
             "set_boxes_editable": "ImageView",
+            "set_edge_dashed": "ImageView",
             "set_image": "ImageView",
             "set_reference_boxes": "ImageView",
-            # render.py -> RenderMixin（6 个）
+            # render.py -> RenderMixin（7 个）
             "_draw_boxes": "RenderMixin",
+            "_draw_edge": "RenderMixin",
             "_draw_reference_boxes": "RenderMixin",
             "_pen_width": "RenderMixin",
             "_rerender": "RenderMixin",

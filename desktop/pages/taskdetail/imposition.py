@@ -405,6 +405,71 @@ class ImpositionBaseMixin:
         files = list_stage_images(source)
         return sorted(files, key=lambda p: natural_sort_key(p.name))
 
+    # ------------------------------------------------- 提交计划（产物角色）
+    def _upstream_detect_node(self) -> str | None:
+        """沿流程往前找喂给拼版的「检测文本框」节点。
+
+        拼版的输入链是 ``imposition ← rembg ← detect_submit（同一节点的第二个
+        动作）``；``node_supplier`` 把 ``detect_submit`` 折回 ``detect`` 节点。
+        ⚠️ 不能按"阶段主节点"取：同一步骤可能有多个检测节点，读错一份就是
+        "另一批图的名字套到我们这批图上"。
+        """
+        node = self.node_of_stage("imposition")
+        seen: set[str] = set()
+        while node and node not in seen:
+            seen.add(node)
+            diagram = self.store.task_diagram(self.task_id) if self.task_id else None
+            item = diagram.node(node) if diagram is not None else None
+            if item is not None and getattr(item, "stage", None) == "detect":
+                return node
+            # ⚠️ 传 ``True`` 而不是 ``imposition_effective()``：这里问的是
+            #    "**如果**拼版要跑，它的输入来自谁"——用户还没勾「启用拼版」时
+            #    状态机把 imposition 排除在外，供给方会退化成**阶段 key**
+            #    （如 ``"rembg"``），往下就再也走不到检测节点，角色表整份为空
+            #    （任务 0004 实测：开关没勾时无后缀图全按整幅拆开）。
+            ref = self.store.node_supplier(
+                self.task_id, node, "pages", True
+            ) if self.task_id else None
+            if not ref or str(ref).startswith("<"):
+                return None
+            node = str(ref)
+            if diagram is not None and diagram.node(node) is None:
+                # 静态声明给的就可能是阶段 key：折成该阶段的主节点继续往前
+                node = self._stage_primary.get(node) or ""
+        return None
+
+    def imposition_role_map(self) -> dict[str, str]:
+        """``{产物 label: role}``（来自上游检测节点的提交计划，拼版配对用）。
+
+        读不到（旧任务没有计划 / 没有检测节点）就返回空字典——调用方据此保持
+        纯文件名行为，不会因为缺计划把整幅图错配对。
+
+        ⚠️ 返回值**额外带同一页的文件名别名**（见
+        :func:`desktop.services.imposition.expand_role_aliases`）：计划按产物
+        label 记身份，而下游文件名可能跨版本不一致（计划无后缀、旧产物还带
+        ``-l``/``-r``，或反之）——不补别名就查不到角色，只能回落成整幅、两张
+        拆开（任务 0004）。
+        """
+        from desktop.services.imposition import expand_role_aliases
+
+        task_id = self.task_id
+        detect_node = self._upstream_detect_node() if task_id else None
+        if not task_id or not detect_node:
+            return {}
+        try:
+            path = self.store.boxes_path(task_id, detect_node)
+            plans = self.store.detect_plans_all_at(path)
+        except Exception:  # noqa: BLE001 - 计划是可选参考，读不到就回落文件名
+            return {}
+        roles: dict[str, str] = {}
+        for plan in plans.values():
+            for output in (plan or {}).get("outputs") or []:
+                label = output.get("label")
+                role = output.get("role")
+                if label and role:
+                    roles[str(label)] = str(role)
+        return expand_role_aliases(roles)
+
     def imposition_active(self) -> bool:
         """拼版**是否已启用**（用户勾了「在流程中启用图片拼版」就是启用）。
 

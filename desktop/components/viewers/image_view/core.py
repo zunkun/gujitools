@@ -59,10 +59,9 @@ class ImageView(
         #: 本页是否**整幅**(fullcontent)：整幅页的框是显式类型（恒为「整幅」，
         #: 不按位置判左右），且只允许一个框；否则是半幅页（按中心定左右、最多两个）。
         self._full_mode = False
-        #: 整本书是否已判定为**单栏书**（``utils/book_layout``）。为真时，一个
-        #: 横跨整页的半幅框标「半幅」而不是「左框/右框」——单页分不出
-        #: 「一栏横跨整页」与「真双栏漏检一侧」，只能靠整本书的统计。
-        #: 由宿主经 :meth:`set_single_column` 设置。
+        #: 整本书是否已判定为**单栏书**（``utils/book_layout``）。⚠️ 仅作全书结论
+        #: 展示用：本页「半幅」标注已改为**页级判据**（用户 2026-10-23，任务 0004），
+        #: 不再依赖它。由宿主经 :meth:`set_single_column` 设置。
         self._single_column = False
         #: 用户在**半幅页**上指定的左右（``"left"``/``"right"``/``None``）。
         #: 半幅的框横跨整页、中心压在中线上，位置判定没意义，所以由用户指定
@@ -96,6 +95,9 @@ class ImageView(
         #: （37MB/帧，实测拖框明显掉帧——见审计 D3）。
         self._scaled_base: QPixmap | None = None
         self._scaled_key: tuple | None = None
+        #: 是否在图片边缘画一圈虚线。去底色成品是透明底，在白底画布上边界
+        #: 完全看不出来（用户 2026-10-23）——去底色页把它打开。
+        self._edge_dashed = False
 
 
     @property
@@ -178,9 +180,9 @@ class ImageView(
     def set_single_column(self, single_column: bool, rerender: bool = True) -> None:
         """告知「整本书已判定为单栏书」（``utils.book_layout.profile_book``）。
 
-        ⚠️ 这是**整本书**的结论，由宿主统计后传进来——单页分不出「一栏横跨
-        整页」与「真双栏书漏检一侧」。为真时，一个横跨整页的半幅框标「半幅」
-        而不是「左框/右框」。
+        ⚠️ 仅记录全书结论：本页「半幅」标注已是**页级判据**（用户 2026-10-23，
+        任务 0004），单个宽框在任何书里都标「半幅」。保留本方法是为了让宿主
+        不必区分新旧行为。
 
         ``rerender=False``：调用方紧接着还会 ``apply_boxes``（那本身就会重绘），
         两次重绘是白花——宿主一次切换类型不该画两遍（用户报的卡顿）。
@@ -201,6 +203,19 @@ class ImageView(
         """开关框编辑；开启时接受点击焦点以响应键盘删除。"""
         self._boxes_editable = editable
         self.setFocusPolicy(Qt.FocusPolicy.ClickFocus if editable else Qt.FocusPolicy.NoFocus)
+
+
+    def set_edge_dashed(self, enabled: bool) -> None:
+        """图片边缘是否画一圈虚线（去底色页用：透明底成品要能看出边界）。
+
+        用户 2026-10-23：「去底色页面，图片边缘要画虚线」——白底转透明后，
+        页面与画布底色接近，不勾边就像图片消失了一截。
+        """
+        value = bool(enabled)
+        if value == self._edge_dashed:
+            return
+        self._edge_dashed = value
+        self._rerender()
 
 
     def set_reference_boxes(self, boxes: list) -> None:

@@ -82,7 +82,8 @@ class RembgLiveMixin:
         self._offset_save_timer.timeout.connect(self._flush_pending_offset)
 
         # 两个触发点：面板参数被改 → 实时算当前页并记录该图 offset；
-        # 翻页 → 只加载该图自己的 offset 并显示已有结果，**不重算**。
+        # 翻页 → 加载该图自己的 offset，并按当前参数**补算**（已是最新则跳过，
+        # 没有成品时必算——用户 2026-10-23 报「切图中间没有去底色效果」）。
         # ⚠️ 面板是惰性的：挂 created 回调，等它真被建好再接。
         rembg_host = self.panel_host_of_step("rembg")
         if rembg_host is not None:
@@ -139,12 +140,20 @@ class RembgLiveMixin:
             pass
 
     def _on_image_changed(self, *_args) -> None:
-        """翻页：只把该图自己的 offset 回填到面板并刷新显示，**不重算**。"""
+        """翻页：回填该图自己的 offset、刷新显示，并**按当前参数实时补算**。
+
+        用户 2026-10-23：「切换左侧缩略图，中间图片没有实时去底色效果」——
+        切到的那张可能还没成品（新提交的占位图、上游重跑换了页名），
+        也可能成品是按旧参数算的。这里起一次防抖：与盘上成品一致时
+        :meth:`_maybe_run_live_preview` 会**直接返回**（不白算），不一致
+        或成品缺失才重算当前页。
+        """
         if self.current_stage() != "rembg":
             return
         self._flush_pending_offset()
         self._apply_current_image_offset()
         self.rembg_viewer.refresh_display()
+        self._live_timer.start()
 
     def _apply_current_image_offset(self) -> None:
         """把当前图片记录的 offset 回填到面板（程序化，不算用户改动）。"""
@@ -210,12 +219,19 @@ class RembgLiveMixin:
         stem = Path(entry_path).stem
         snapshot = self._live_snapshot(args)
         applied = self._live_done.get(stem)
-        if applied is None:
-            # 盘上是全量执行的产物：与它所用的取值一致 ⇒ 无需重算
-            if snapshot == self._formal_snapshot_for(stem):
-                return
-        elif applied == snapshot:
-            return  # 盘上已经是这份参数算出来的
+        # 盘上有没有这张成品：占位图/上游换了页名时，旧的全量产物里没有它，
+        # 此时参数即使"一致"也必须补算，否则中间大图永远停在原图（用户 2026-10-23）。
+        out_dir = self.store.node_or_stage_output(
+            self.task_id, self.node_of_stage("rembg"), "rembg"
+        )
+        has_result = (Path(out_dir) / f"{stem}.png").exists()
+        if has_result:
+            if applied is None:
+                # 盘上是全量执行的产物：与它所用的取值一致 ⇒ 无需重算
+                if snapshot == self._formal_snapshot_for(stem):
+                    return
+            elif applied == snapshot:
+                return  # 盘上已经是这份参数算出来的
         self._start_live_job(entry_path, args, stem)
 
     def _start_live_job(self, image_path: str, args: dict, stem: str) -> None:

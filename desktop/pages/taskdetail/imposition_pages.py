@@ -56,6 +56,8 @@ class ImpositionPagesMixin:
         _sync_imposition_step_bar: Callable[..., None]
         _update_imposition_status: Callable[..., None]
         imposition_source_files: Callable[[], list]
+        # 上游检测节点的提交计划（``{产物 label: role}``，同级 Mixin 提供）
+        imposition_role_map: Callable[[], dict[str, str]]
         # 当前格的节点实例 id（页面宿主提供）：缩略图实体目录按它分节点
         node_of_stage: Callable[[str], str | None]
         # 候选图的预生成小图来源（同级 Mixin 提供）：入口图片/去底色成品小图与
@@ -183,12 +185,18 @@ class ImpositionPagesMixin:
         auto_file = dialog.auto_mode_file()
         auto_log: str | None = None
         if auto_file is not None:
-            new_pages = auto_impose_pages(dialog.auto_sequence())
+            # 提交计划里的产物角色（``boxes.json``）：单栏书 / 窄页产出的
+            # 无后缀半幅靠它才能与相邻页配对（用户 2026-10-23）。
+            roles = self.imposition_role_map()
+            new_pages = auto_impose_pages(
+                dialog.auto_sequence(),
+                role_for=lambda text: roles.get(Path(str(text)).stem),
+            )
             if new_pages:
                 auto_log = (
                     f"已从「{auto_file.stem}」起自动拼版：新增 {len(new_pages)} 页"
                     "（半幅按「前一左＋后一右」且页号连续配对；"
-                    "整幅与落单图各自单独一页）。"
+                    "无后缀半幅按两张连续页配对；整幅与落单图各自单独一页）。"
                 )
         else:
             # 手动勾选（用户 2026-09-30 定的三种形态）：**1 张 → 单独一页**；

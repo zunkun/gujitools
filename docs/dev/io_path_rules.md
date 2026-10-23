@@ -321,6 +321,11 @@ tasks/<任务号>/
 解析产出方时统一走 `ports.fold_forward(stage, port)` 折到同格里最靠后的那个
 动作；而"节点自己往哪写"仍取它本阶段的落点。
 
+`boxes.json` 每条页面记录除 `boxes / origin / updated_at` 外，提交后还会带
+`plan`：`{page_class, outputs: [{label, role, placeholder}]}`——它是**产物角色
+快照**（`half-unsided` 让拼版认出"无后缀但其实是半幅"的图）。它描述的是
+**已经落盘的那批产物**，拖框 / 重跑检测不会清除；下次提交整份重写。
+
 去底色（`rembg`）只有**一个**动作：整图全局 Otsu 后直接写 `stages/rembg`，
 没有预览目录，也没有第二个提交动作。
 

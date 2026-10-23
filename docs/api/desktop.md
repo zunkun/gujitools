@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 177 个模块、193 个公开类、1421 个公开函数/方法（生成于 2026-10-23）。
+覆盖 177 个模块、193 个公开类、1427 个公开函数/方法（生成于 2026-10-23）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -67,7 +67,7 @@
 | [`desktop.components.viewers.image_editor.distortion`](#desktopcomponentsviewersimage_editordistortion) | 2 | 14 |
 | [`desktop.components.viewers.image_editor.geometry`](#desktopcomponentsviewersimage_editorgeometry) | 0 | 15 |
 | [`desktop.components.viewers.image_editor.text_item`](#desktopcomponentsviewersimage_editortext_item) | 1 | 8 |
-| [`desktop.components.viewers.image_view.core`](#desktopcomponentsviewersimage_viewcore) | 1 | 17 |
+| [`desktop.components.viewers.image_view.core`](#desktopcomponentsviewersimage_viewcore) | 1 | 18 |
 | [`desktop.components.viewers.image_view.edit`](#desktopcomponentsviewersimage_viewedit) | 1 | 6 |
 | [`desktop.components.viewers.image_view.render`](#desktopcomponentsviewersimage_viewrender) | 1 | 2 |
 | [`desktop.components.viewers.image_view.styles`](#desktopcomponentsviewersimage_viewstyles) | 0 | 3 |
@@ -105,7 +105,7 @@
 | [`desktop.pages.taskdetail.detect`](#desktoppagestaskdetaildetect) | 2 | 13 |
 | [`desktop.pages.taskdetail.flow_mixin`](#desktoppagestaskdetailflow_mixin) | 1 | 0 |
 | [`desktop.pages.taskdetail.history`](#desktoppagestaskdetailhistory) | 1 | 0 |
-| [`desktop.pages.taskdetail.imposition`](#desktoppagestaskdetailimposition) | 2 | 5 |
+| [`desktop.pages.taskdetail.imposition`](#desktoppagestaskdetailimposition) | 2 | 6 |
 | [`desktop.pages.taskdetail.imposition_layout`](#desktoppagestaskdetailimposition_layout) | 1 | 1 |
 | [`desktop.pages.taskdetail.imposition_pages`](#desktoppagestaskdetailimposition_pages) | 1 | 0 |
 | [`desktop.pages.taskdetail.manifest`](#desktoppagestaskdetailmanifest) | 1 | 5 |
@@ -121,7 +121,7 @@
 | [`desktop.services.detect_export`](#desktopservicesdetect_export) | 0 | 7 |
 | [`desktop.services.detect_reuse`](#desktopservicesdetect_reuse) | 0 | 6 |
 | [`desktop.services.font_catalog`](#desktopservicesfont_catalog) | 1 | 6 |
-| [`desktop.services.imposition`](#desktopservicesimposition) | 0 | 31 |
+| [`desktop.services.imposition`](#desktopservicesimposition) | 0 | 33 |
 | [`desktop.services.print_plan`](#desktopservicesprint_plan) | 0 | 10 |
 | [`desktop.services.rembg_export`](#desktopservicesrembg_export) | 0 | 7 |
 | [`desktop.services.rembg_live`](#desktopservicesrembg_live) | 0 | 1 |
@@ -147,7 +147,7 @@
 | [`desktop.steps.source_zone`](#desktopstepssource_zone) | 1 | 20 |
 | [`desktop.steps.spec`](#desktopstepsspec) | 1 | 22 |
 | [`desktop.steps.validate`](#desktopstepsvalidate) | 1 | 2 |
-| [`desktop.store.annotations`](#desktopstoreannotations) | 1 | 16 |
+| [`desktop.store.annotations`](#desktopstoreannotations) | 1 | 18 |
 | [`desktop.store.drafts`](#desktopstoredrafts) | 1 | 5 |
 | [`desktop.store.imposition`](#desktopstoreimposition) | 1 | 4 |
 | [`desktop.store.json_io`](#desktopstorejson_io) | 0 | 2 |
@@ -339,10 +339,10 @@ gujitools 桌面端主窗口：左侧导航壳层（任务管理 + 独立模块�
 - ``box_raw_slots(path_text)``：该页**槽位**表示（保留 null，形态在槽数里）；
 - ``box_page_is_full(path_text)``：当前页是否整幅形态（半幅页上点左/右
   只解释规则不给切换）；
-- ``box_page_half_candidate(path_text)``：当前页是否**够「半幅」**——整本书
-  判定为单栏书 **且** 这页只有一个宽到横跨整页的框（判据
-  :func:`utils.book_layout.is_single_wide_box`）。为真时左右**可指定**
-  （中心压在中线上，位置判定没有意义）；
+- ``box_page_half_candidate(path_text)``：当前页是否**够「半幅」**——这页只有
+  一个宽到横跨整页的框（判据 :func:`utils.book_layout.is_single_wide_box`，
+  **页级**，不要求整本书是单栏书）。为真时左右**可指定**（中心压在中线上，
+  位置判定没有意义）；
 - ``box_image_size(path_text)``：原始像素 ``(w, h)``，取不到给 ``None``；
 - ``box_commit(path_text, slots, select_box=None, side=SIDE_KEEP)``：落库 +
   重画——任务流程写 ``boxes.json`` + 内存缓存，独立页写内存表，各自实现。
@@ -4613,6 +4613,7 @@ family，保证"所见即所得"。
 | `set_single_column(single_column: bool, rerender: bool=True) -> None` | 告知「整本书已判定为单栏书」（``utils.book_layout.profile_book``）。 |
 | `single_column() -> bool` | 当前是否按**单栏书**显示（宿主据此算标签，见 ``box_names``）。 |
 | `set_boxes_editable(editable: bool) -> None` | 开关框编辑；开启时接受点击焦点以响应键盘删除。 |
+| `set_edge_dashed(enabled: bool) -> None` | 图片边缘是否画一圈虚线（去底色页用：透明底成品要能看出边界）。 |
 | `set_reference_boxes(boxes: list) -> None` | 设置参考框（橙色虚线，不参与编辑）并重绘。 |
 | `set_image(image, boxes=None, image_size: QSize \| None=None) -> None` | 装入图片并重置编辑状态。 |
 | `set_boxes(boxes: list, image_size: QSize, full: bool=False, selected: int \| None=None) -> None` | 仅更新切割框、形态与图片原始尺寸并重绘（不换图）。 |
@@ -4642,12 +4643,19 @@ family，保证"所见即所得"。
 
 告知「整本书已判定为单栏书」（``utils.book_layout.profile_book``）。
 
-⚠️ 这是**整本书**的结论，由宿主统计后传进来——单页分不出「一栏横跨
-整页」与「真双栏书漏检一侧」。为真时，一个横跨整页的半幅框标「半幅」
-而不是「左框/右框」。
+⚠️ 仅记录全书结论：本页「半幅」标注已是**页级判据**（用户 2026-10-23，
+任务 0004），单个宽框在任何书里都标「半幅」。保留本方法是为了让宿主
+不必区分新旧行为。
 
 ``rerender=False``：调用方紧接着还会 ``apply_boxes``（那本身就会重绘），
 两次重绘是白花——宿主一次切换类型不该画两遍（用户报的卡顿）。
+
+##### `set_edge_dashed(enabled: bool) -> None`
+
+图片边缘是否画一圈虚线（去底色页用：透明底成品要能看出边界）。
+
+用户 2026-10-23：「去底色页面，图片边缘要画虚线」——白底转透明后，
+页面与画布底色接近，不勾边就像图片消失了一截。
 
 ##### `set_image(image, boxes=None, image_size: QSize | None=None) -> None`
 
@@ -4770,21 +4778,24 @@ Qt 在窗口 dpr 变化时发 ``DevicePixelRatioChange``，**不保证**同时�
 
 | 函数 | 说明 |
 | --- | --- |
-| `is_half_page(boxes, image_size, full: bool=False, single_column: bool=False) -> bool` | 本页是否该标成「半幅」（一个横跨整页的框，且整本书是单栏书）。 |
+| `is_half_page(boxes, image_size, full: bool=False, single_column: bool=False) -> bool` | 本页是否该标成「半幅」（一个横跨整页的框）。 |
 | `box_styles(boxes, image_size=None, full: bool=False, single_column: bool=False, side_override: str \| None=None)` | 框列表 → ``(names, colors)``，与 ``boxes``（去掉空项后）等长。 |
 | `box_names(boxes, image_size=None, full: bool=False, single_column: bool=False, side_override: str \| None=None) -> list` | 框名称列表（大图信息条文案用）——与 :func:`box_styles` 同一份规则。 |
 
 #### `is_half_page(boxes, image_size, full: bool=False, single_column: bool=False) -> bool`
 
-本页是否该标成「半幅」（一个横跨整页的框，且整本书是单栏书）。
+本页是否该标成「半幅」（一个横跨整页的框）。
 
-三条同时成立：非整幅页、**恰好一个框**、该框宽 ≥60% 页宽
+两条同时成立：非整幅页、**恰好一个框**、该框宽 ≥60% 页宽
 （:func:`utils.book_layout.is_single_wide_box`——阈值只有那一处）。
 
-⚠️ ``single_column``（整本书判定）必须由宿主传进来：单页**分不出**
-「一栏横跨整页」和「真双栏书里漏检了一侧」，只有整本书的统计能分。
-缺它时返回 ``False``——宁可标成左/右框（旧行为），也不要在没证据时
-把一页的形态改了。
+⚠️ 用户 2026-10-23（任务 0004）：一页只检出一个 ``harfcontent``、框宽
+>60% 时，中心位置**没有鉴别力**——它不可能与另一栏并排，必然是「半幅」。
+所以这里是**页级判据**，不再像 2026-10-17 那样依赖 ``single_column``
+（整本书是否单栏书）了：混合书里单个宽框页同样得认成半幅，不能按中心
+硬拆左框/右框。``single_column`` 形参仅保留以兼容旧调用方，**不再参与判定**。
+
+页宽未知（``None``/0）时返回 ``False``：没证据不下结论，宁可标成左/右框。
 
 #### `box_styles(boxes, image_size=None, full: bool=False, single_column: bool=False, side_override: str | None=None)`
 
@@ -4795,8 +4806,9 @@ Qt 在窗口 dpr 变化时发 ``DevicePixelRatioChange``，**不保证**同时�
   左右**（存 ``boxes.json`` 的 ``side``）——优先于一切自动判定，直接标
   左框/右框。这种页的框横跨整页、中心压在中线上，按位置算出来的左右
   没有意义（用户 2026-10-17）；
-- ``single_column=True`` 且本页只有一个横跨整页的框：标「半幅」+ 青
-  （见 :func:`is_half_page`）——单栏书里它就是一整栏；
+- 本页只有一个横跨整页的框：标「半幅」+ 青（见 :func:`is_half_page`）
+  ——它不可能有并排的另一栏，**不要求整本书是单栏书**（用户 2026-10-23，
+  任务 0004）；
 - 否则是半幅页：按**中心位置**判左右（`utils.box_geometry.half_sides`）。
 
 ⚠️ 优先级：``full`` > ``side_override`` > ``半幅``。整幅是 1 槽形态，
@@ -6333,7 +6345,7 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 | `box_page_is_full(path_text: str) -> bool` | — |
 | `box_image_size(path_text: str)` | — |
 | `box_commit(path_text: str, slots: list, select_box=None, side='keep') -> None` | 落库 + 重画；``side`` 按需写入/清除这页的人工左右指定。 |
-| `box_page_half_candidate(path_text: str) -> bool` | 这页是否**够「半幅」**（整本书单栏 + 只有一个横跨整页的框）——为真时 |
+| `box_page_half_candidate(path_text: str) -> bool` | 这页是否**够「半幅」**（只有一个横跨整页的框）——为真时 |
 | `box_confirm(title: str, body: str, yes_text: str, cancel_text: str) -> bool` | — |
 | `box_resync_kind(_index: int) -> None` | 按现值回填类型控件高亮（类型操作结束后必调，别停在假位置）。 |
 | `box_current_path_text() -> str` | — |
@@ -6377,8 +6389,10 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 
 ##### `box_page_half_candidate(path_text: str) -> bool`
 
-这页是否**够「半幅」**（整本书单栏 + 只有一个横跨整页的框）——为真时
+这页是否**够「半幅」**（只有一个横跨整页的框）——为真时
 左/右可由用户指定（中心压在中线上，位置判定没意义）。
+
+⚠️ 页级判据（用户 2026-10-23，任务 0004）：不要求整本书是单栏书。
 
 ##### `export_boxes() -> None`
 
@@ -6980,7 +6994,7 @@ detect_process/detect_cache、current_stage()。
 | `box_page_is_full(_path_text: str) -> bool` | — |
 | `box_image_size(path_text: str)` | — |
 | `box_commit(path_text: str, slots: list, select_box=None, side='keep') -> None` | 落库 + 重画；``side`` 按需写入/清除这页的人工左右指定。 |
-| `box_page_half_candidate(path_text: str) -> bool` | 这页是否**够「半幅」**（整本书单栏 + 只有一个横跨整页的框）。 |
+| `box_page_half_candidate(path_text: str) -> bool` | 这页是否**够「半幅」**（只有一个横跨整页的框）。 |
 | `box_confirm(title: str, body: str, yes_text: str, cancel_text: str) -> bool` | — |
 | `box_resync_kind(index: int) -> None` | 按现值回填面板的「选中框类型」高亮（类型操作结束后必调）。 |
 | `box_current_path_text() -> str` | — |
@@ -7000,9 +7014,10 @@ detect_process/detect_cache、current_stage()。
 
 ##### `box_page_half_candidate(path_text: str) -> bool`
 
-这页是否**够「半幅」**（整本书单栏 + 只有一个横跨整页的框）。
+这页是否**够「半幅」**（只有一个横跨整页的框）。
 
 判据本体在 ``utils.book_layout.is_single_wide_half``；这里只取数。
+⚠️ 页级判据（用户 2026-10-23，任务 0004）：不要求整本书是单栏书。
 
 ##### `box_resync_kind(index: int) -> None`
 
@@ -7135,6 +7150,7 @@ _select_stage()、_set_stage_status()、_toast()、log_view。
 | --- | --- |
 | `imposition_effective() -> bool` | 拼版这一步**当前能不能真跑**（节点在流程里 + 用户勾了）。 |
 | `imposition_source_files() -> list[Path]` | 可挑选的源图：**拼版这一步的 pages 端口**指向的目录。 |
+| `imposition_role_map() -> dict[str, str]` | ``{产物 label: role}``（来自上游检测节点的提交计划，拼版配对用）。 |
 | `imposition_active() -> bool` | 拼版**是否已启用**（用户勾了「在流程中启用图片拼版」就是启用）。 |
 | `imposition_has_pages() -> bool` | 拼版文档里**至少有一页**版面（能不能真的合成出图）。 |
 | `print_source_dir() -> Path` | 第四步的取图目录：拼版生效 → stages/imposition，否则 stages/rembg。 |
@@ -7160,6 +7176,19 @@ _select_stage()、_set_stage_status()、_toast()、log_view。
 ⚠️ ``imposition_effective`` 传的是**图里有没有这一格 + 用户勾没勾**，
 不是单独的"用户勾没勾"：这一格不存在时下方控件整体是置灰的，不该因为
 "还没勾" 就换一个别的取图来源。
+
+##### `imposition_role_map() -> dict[str, str]`
+
+``{产物 label: role}``（来自上游检测节点的提交计划，拼版配对用）。
+
+读不到（旧任务没有计划 / 没有检测节点）就返回空字典——调用方据此保持
+纯文件名行为，不会因为缺计划把整幅图错配对。
+
+⚠️ 返回值**额外带同一页的文件名别名**（见
+:func:`desktop.services.imposition.expand_role_aliases`）：计划按产物
+label 记身份，而下游文件名可能跨版本不一致（计划无后缀、旧产物还带
+``-l``/``-r``，或反之）——不补别名就查不到角色，只能回落成整幅、两张
+拆开（任务 0004）。
 
 ##### `imposition_active() -> bool`
 
@@ -8418,6 +8447,7 @@ GUI 主进程（违反 AGENTS.md「GUI 主进程禁重依赖」）。代价是�
 | SOURCE_LEFT | `"left"` |
 | SOURCE_RIGHT | `"right"` |
 | SOURCE_FULL | `"full"` |
+| SOURCE_HALF_UNSIDED | `"half-unsided"` |
 
 ### 模块函数
 
@@ -8448,8 +8478,10 @@ GUI 主进程（违反 AGENTS.md「GUI 主进程禁重依赖」）。代价是�
 | `make_single_page(file) -> dict \| None` | 一张源图**自成一页**（整幅不拼、落单）：版面里只有一项。 |
 | `append_item_to_page(items: list[dict], file) -> list[dict] \| None` | 单图页「新增图片」：把 ``file`` 并进当前页，返回**新的 items**。 |
 | `classify_source(path) -> str` | 源图形态：左半幅 / 右半幅 / 整幅（**判据唯一处：文件名后缀**）。 |
+| `expand_role_aliases(roles: dict[str, str]) -> dict[str, str]` | 角色表补上**同一页的各种文件名写法**（按页号归并）。 |
+| `source_kind(path, role_for=None) -> str` | 源图形态：优先用提交计划的 ``role``，缺失时回落到文件名后缀。 |
 | `source_page_number(path) -> int \| None` | 源图**页号**：文件名开头的连续数字（``3-r`` → 3、``004-l`` → 4）。 |
-| `auto_impose_pages(files: list) -> list[dict]` | 自动拼版（用户 2026-09-30 规则，**唯一实现**）： |
+| `auto_impose_pages(files: list, role_for=None) -> list[dict]` | 自动拼版（用户 2026-09-30 规则，**唯一实现**）： |
 | `page_bounds(page: dict) -> tuple[float, float, float, float]` | 一页的**内容范围**：所有图外接框的并集（用户说的「图片的四个区域」）。 |
 | `compose_page(page: dict, background=TRANSPARENT_BACKGROUND)` | 一页拼版 → PIL **RGBA** 图：所有图外接框的紧裁。 |
 | `flatten_onto_background(source, target, background=WHITE_BACKGROUND) -> None` | 把一张图片（可能带透明）压到指定底色上，原子写出 PNG 到 ``target``。 |
@@ -8625,6 +8657,47 @@ for_edited_source` 读到的还是旧尺寸。
 半幅页 ``<页号>-l`` / ``<页号>-r``、整幅页 ``<页号>``（见
 ``desktop.services.print_plan.plan_detect_submit_entries``）。
 
+⚠️ 单栏书 / 窄页会把半幅的侧别归一化掉（产物仍叫 ``<页号>``），此时
+文件名与整幅**无法区分**。那种页的形态必须由任务提交计划给出，见
+:func:`source_kind`。
+
+#### `expand_role_aliases(roles: dict[str, str]) -> dict[str, str]`
+
+角色表补上**同一页的各种文件名写法**（按页号归并）。
+
+背景（用户 2026-10-23，任务 0004）：提交计划按**产物 label** 记录身份，
+而拼版拿到的是下游产物文件名。正常链路名字一路不变（detect 提交 →
+去底色到拼版都沿用 stem），但跨版本/人工改侧别会让两边的写法不一致：
+
+- 计划已归一化成无后缀 ``1100``，旧产物还叫 ``1100-l.png``；
+- 用户把某页指定成左半幅后计划叫 ``1100-l``，旧产物还叫 ``1100.png``。
+
+⚠️ 归并规则：**该页只有一个 role** 时，``<页号>`` / ``-l`` / ``-r`` /
+``_l`` / ``_r`` 全部认这个 role；该页有**多个** role（真双栏页的左右两张）
+时**不造别名**，只认精确 label——否则会把左右两张都认成同一边。
+
+⚠️ 已存在的精确 label 永远优先，不会被别名覆盖。
+
+#### `source_kind(path, role_for=None) -> str`
+
+源图形态：优先用提交计划的 ``role``，缺失时回落到文件名后缀。
+
+判定顺序（**唯一口径**，用户 2026-10-23 确认）：
+
+1. **提交计划**（``boxes.json`` 的 ``plan.outputs``，按产物 label 一一对应）
+   ——``role`` 直接给出 ``full / half-left / half-right / half-unsided``；
+   旧产物名 ``<页号>-l/-r`` 也能通过别名认到该页的无后缀角色；
+2. **文件名后缀** ``-l`` / ``-r``（该图在计划里查不到时才用）；
+3. 都没有 → **整幅**（单独一页，不与任何图配对）。
+
+⚠️ 第 1 层的前提是**流程里能沿连线找到喂给拼版的检测节点**（不是随便找
+一份 ``boxes.json``）；找不到（无检测步骤 / 旧任务没有计划 / 独立拼图页
+没有任务存储）就整体降级到 2~3——即"整批输入都按文件名判"，**不做**
+整本书形态推断：没有逐页证据时，猜出来的单栏/双栏只会把图错配。
+
+``role_for`` 是 ``(路径文本) -> role | None``：任务详情页从
+``boxes.json`` 的提交计划建映射（见 ``expand_role_aliases``）。
+
 #### `source_page_number(path) -> int | None`
 
 源图**页号**：文件名开头的连续数字（``3-r`` → 3、``004-l`` → 4）。
@@ -8632,7 +8705,7 @@ for_edited_source` 读到的还是旧尺寸。
 「不连续的图片不可以合并在一页」的判据。文件名不带数字前缀的图
 （如 ``cover``）返回 None——永不参与配对，只能单独成页。
 
-#### `auto_impose_pages(files: list) -> list[dict]`
+#### `auto_impose_pages(files: list, role_for=None) -> list[dict]`
 
 自动拼版（用户 2026-09-30 规则，**唯一实现**）：
 
@@ -8647,6 +8720,13 @@ for_edited_source` 读到的还是旧尺寸。
 3. **整幅(fullcontent)标注的图单独一页**，不与任何图配对；等配对的
    上一张因此落单、也单独一页；整幅之后拼版重新开始；末尾落单的
    左半幅同样单独一页。
+4. **无侧半幅（``half-unsided``）同样可以两两配对**（用户 2026-10-23）：
+   单栏书 / 窄页的产物名没有 ``-l``/``-r``，但提交计划把它记成半幅。
+   两张连续的 ``half-unsided`` 拼一页，序号在前的同样进右槽；它**不与**
+   带侧别的半幅混拼（``role_for`` 缺失时按文件名，即退回旧行为）。
+
+``role_for``：``(路径文本) -> role | None``，任务详情页用它把
+``boxes.json`` 提交计划里的角色喂进来；``None`` = 只看文件名后缀。
 
 遍历按源清单顺序（``natural_sort_key``：同页号 r 在前），产出的
 页清单顺序即 PDF 页序。尺寸读不到的图跳过（不产出残页）。
@@ -8755,6 +8835,10 @@ PDF 侧 ``functions/print._load_image`` 压平到白纸；编辑器/预览按 RG
 
 | 名称 | 值 |
 | --- | --- |
+| ROLE_FULL | `"full"` |
+| ROLE_HALF_LEFT | `"half-left"` |
+| ROLE_HALF_RIGHT | `"half-right"` |
+| ROLE_HALF_UNSIDED | `"half-unsided"` |
 | RECT_ASPECT_TOLERANCE | `0.02` |
 
 ### 模块函数
@@ -8762,10 +8846,10 @@ PDF 侧 ``functions/print._load_image`` 压平到白纸；编辑器/预览按 RG
 | 函数 | 说明 |
 | --- | --- |
 | `missing_extract_pages_spec(output_dir: Path, total: int) -> str \| None` | 提取输出目录中缺失的页码，压缩为 CLI pages 参数（如 "3,7-9"）。 |
-| `plan_rembg_submit_entries(manifest_paths: list[Path], result_path_for, boxes_for, single_column_book: bool=False, page_width_for=None, side_for=None) -> list[dict]` | 预览结果 + 检测框 + border → 最终图片条目（**逐框一张**）。 |
+| `plan_rembg_submit_entries(manifest_paths: list[Path], result_path_for, boxes_for, page_width_for=None, side_for=None, placeholder_for=None, narrow_for=None) -> list[dict]` | 预览结果 + 检测框 + border → 最终图片条目（**逐框一张**）。 |
 | `entry_to_effect_spec(entry: dict, border) -> dict` | 提交条目 → worker 效果合成规格（run_print_stage/run_detect_submit_stage 用）。 |
 | `plan_submit_job(spec: dict, size: tuple[int, int] \| None) -> dict` | 一条效果规格 → 单条合成作业（输出文件名 + 合成参数）。 |
-| `plan_detect_submit_entries(manifest_paths: list[Path], boxes_for, single_column_book: bool=False, page_width_for=None, side_for=None) -> list[dict]` | 「检测文本框 → 提交本次任务」的裁图条目。 |
+| `plan_detect_submit_entries(manifest_paths: list[Path], boxes_for, single_column_book: bool=False, page_width_for=None, side_for=None, book_profile=None, page_size_for=None) -> list[dict]` | 「检测文本框 → 提交本次任务」的裁图条目（含**回溯占位**）。 |
 | `drop_foreign_stage_pages(pages: list[dict] \| None, source_dir: Path, stages_root: Path) -> list[dict]` | 从待打印清单里剔除「属于本任务**别的阶段**产物」的条目。 |
 | `rect_fits_image(rect, image_size_px, rect_size_px=None) -> bool` | 这条逐页 rect 是否**还适用于当前这张图**（判据唯一处）。 |
 | `stale_rect_pages(pages, size_for) -> list[dict]` | ``pages`` 里**图像已换、旧 rect 不再适用**的那几条（``[]`` = 全都还适用）。 |
@@ -8779,7 +8863,7 @@ PDF 侧 ``functions/print._load_image`` 压平到白纸；编辑器/预览按 RG
 页文件名以数字开头（0001.jpg / 0002.jpg …）。无缺失或 total 为 0
 时返回 None（无需续跑）。
 
-#### `plan_rembg_submit_entries(manifest_paths: list[Path], result_path_for, boxes_for, single_column_book: bool=False, page_width_for=None, side_for=None) -> list[dict]`
+#### `plan_rembg_submit_entries(manifest_paths: list[Path], result_path_for, boxes_for, page_width_for=None, side_for=None, placeholder_for=None, narrow_for=None) -> list[dict]`
 
 预览结果 + 检测框 + border → 最终图片条目（**逐框一张**）。
 
@@ -8788,14 +8872,18 @@ PDF 侧 ``functions/print._load_image`` 压平到白纸；编辑器/预览按 RG
 manifest_paths   : 页面清单路径（stages/extract 内的页图片）
 result_path_for  : (stem) -> Path|None，某页对应的源图
 boxes_for        : (path_str) -> list，某页的检测框 [左框, 右框]
-single_column_book: 整本书是否已判定为**单栏书**（``utils.book_layout``
-    的全书统计结论，见 :func:`~utils.book_layout.profile_book`）。为真时
-    「单个宽框」的半幅页按**整幅**处理。
 page_width_for   : (path_str) -> 页宽像素，用于算单宽框（``None``/0 时
-    该页不会被判成单宽框）。只在 ``single_column_book`` 为真时才被调用。
+    该页不会被判成单宽框）。
 side_for         : (path_str) -> ``"left"``/``"right"``/None，用户在
     **半幅页**上指定的左右。给了指定就**不做**单栏归一化——那是用户在说
     「这页其实是某一边」（用户 2026-10-17），命名/拼版都要按左/右走。
+placeholder_for  : (path_str) -> list[dict]，该页缺图的**原图占位**描述
+    ``[{"side": "left"|"right"|None, "box": [x1,y1,x2,y2]}]``（框是该页源图
+    上的裁切区域）。只有「检测文本框 → 提交」会传它（用户 2026-10-23 的
+    占位规则）；预览侧默认 ``None``，行为与改造前一字不变。
+narrow_for       : (path_str) -> bool，该页是否**窄于全书**（单页扫描）。
+    为真且只检出一个框时退化成**单槽**（不拆 ``-l``/``-r``、不补另一栏），
+    见 :func:`utils.book_layout.narrow_page_slots`。默认 ``None``＝不判断。
 
 派生规则（2026-10-22 起没有 area：**检测出几个框就裁几张图**）：
 - 双框：拆 <页>-r / <页>-l 两条（古籍阅读顺序 r 在前）；
@@ -8805,8 +8893,14 @@ side_for         : (path_str) -> ``"left"``/``"right"``/None，用户在
 - 整幅内容(fullcontent)：单槽单框，label 就是页名（不拆），框原样裁剪；
 - 单栏书：整本书只有一栏，页里不会有左页+右页，于是「单个宽框（≥60%
   页宽）的半幅页」被退化成**单槽**，直接继承整幅的语义；
-- 无框：整页原图透传（条目不带 effect）。
+- 无框：整页原图透传（条目不带 effect）；**若有占位描述则改为占位条目**
+  （空白页不再透传原图，见用户 2026-10-23 规则一~四）。
 最终按 CLI natural sort 排序（同页 r 在 l 前）。
+
+每条条目额外带 ``role`` / ``page_class``（**提交计划**，用户 2026-10-23）：
+``role`` 是产物在拼版里的身份，``page_class`` 是**归一化前**的检测形态。
+⚠️ 单栏书/窄页把半幅退化成单槽后，产物名不带 ``-l``/``-r``，但
+``role`` 仍记 ``half-unsided``——拼版据此识别"无后缀但可配对"的图。
 
 #### `entry_to_effect_spec(entry: dict, border) -> dict`
 
@@ -8814,6 +8908,10 @@ side_for         : (path_str) -> ``"left"``/``"right"``/None，用户在
 
 ``effect`` 里只有 ``boxes`` 与 ``border``——2026-10-22 起没有 area，几何
 恒为「每个检测框各自剪一张图」（见 ``utils.box_geometry.build_output_layout``）。
+
+**占位条目**（``placeholder``，用户 2026-10-23）就是"该页原图上按占位框
+裁一张"——走**同一条** effect 路径，只多带一个 ``placeholder=True`` 标记
+供日志/统计区分（不再画纯白图）。
 
 #### `plan_submit_job(spec: dict, size: tuple[int, int] | None) -> dict`
 
@@ -8829,13 +8927,38 @@ side_for         : (path_str) -> ``"left"``/``"right"``/None，用户在
 ⚠️ ``region_canvas_specs`` 走**函数内延迟导入**：本模块整体是不依赖 Qt 的
 纯逻辑（见模块 docstring），只有真要算输出张数时才拉进那份 Qt 几何实现。
 
-#### `plan_detect_submit_entries(manifest_paths: list[Path], boxes_for, single_column_book: bool=False, page_width_for=None, side_for=None) -> list[dict]`
+#### `plan_detect_submit_entries(manifest_paths: list[Path], boxes_for, single_column_book: bool=False, page_width_for=None, side_for=None, book_profile=None, page_size_for=None) -> list[dict]`
 
-「检测文本框 → 提交本次任务」的裁图条目。
+「检测文本框 → 提交本次任务」的裁图条目（含**回溯占位**）。
 
-与 :func:`plan_rembg_submit_entries` **同一条规则**，只有一个区别：
-合成源就是**源页图自己**（这一步不产生中间结果图），所以 ``file`` 直接是
-那一页的路径。**每个检测框各自裁成一张图**——没有 area。
+与 :func:`plan_rembg_submit_entries` **同一条规则**，只有两个区别：
+
+1. 合成源就是**源页图自己**（这一步不产生中间结果图），所以 ``file``
+   直接是那一页的路径。**每个检测框各自裁成一张图**——没有 area；
+2. 它额外算「回溯占位」：漏检/空白页按**全书形态**补图，避免下游丢页
+   或拼版错配（用户 2026-10-23 的四条规则）。
+
+**占位图不是纯白，而是从该页原图截对应区域**（用户 2026-10-23 追加），
+空白页的落点**以页面中心为准**（「占位图原则从中间截取」）：
+
+- **左右双栏书**：一页只有一侧框 → 缺失侧按**页中线镜像**已有那一侧，
+  截同样大小的区域（规则一.1）；整页无框 → 截 **左、右两张**，各自以
+  **本半页的中心**截取，尺寸取全书左右框各自的平均（规则一.2）；
+- **单栏书（半幅单宽框）**：整页无框 → 以**页面中心**截 **一张**，
+  尺寸取全书半幅框平均（规则二）；
+- **整幅书**：整页无框 → 以**页面中心**截 **一张**，尺寸取全书整幅框
+  平均（规则三）；
+- **混排书**（三种极端都不成立）：整页无框 → **完全跟随前一页**的产物
+  形态（前页双框 → 补左右两张；前页单侧 → 补同侧一张；前页整幅/单栏 →
+  补一张）；只有一侧框的页，前页是双框时才补缺失侧（规则四）。
+  首页就空白（没有前一页）→ 向前找最近的有框页；全书都空白则不补。
+- **窄页**（页宽明显小于全书典型页宽＝单页扫描）**优先于以上全部**：
+  这张图放不下第二栏，所以整页无框只补**一张**、只检出一个框也**不补**
+  另一侧，命名也不带 ``-l``/``-r``（用户 2026-10-23，任务 0001 第 1 页）。
+
+⚠️ 占位条目 ``file`` 仍是源页、``boxes`` 只有一个"占位框"，
+``placeholder=True`` 只作日志/统计标记——执行端走与真框完全相同的裁剪
+路径（不画白图）。预览侧不会传 ``placeholder_for``，命名/条数保持原样。
 
 #### `drop_foreign_stage_pages(pages: list[dict] | None, source_dir: Path, stages_root: Path) -> list[dict]`
 
@@ -12288,6 +12411,12 @@ image_key 取页面文件名去后缀（stem）——检测/去底直接以 extr
    前一次的结果悄悄抹掉。同一条路径只有一个内存文档、一个写者，这个问题就不
    存在了。
 
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| MANUAL_FORM_REFRESH_IOU | `0.9` |
+
 ### `class AnnotationMixin`
 
 boxes.json / sizes.json 读写。
@@ -12306,6 +12435,8 @@ boxes.json / sizes.json 读写。
 | `box_side_at(path: Path \| None, image_key: str) -> str \| None` | 读**指定文件**里某页的人工左右指定（``"left"``/``"right"``/None）。 |
 | `box_sides_all_at(path: Path \| None) -> dict[str, str]` | 整份文件的 ``image_key → side``（一次读盘，只含有显式指定的页）。 |
 | `set_box_side_override(task_id: str, image_key: str, side: str \| None, node_id: str \| None=None, primary_id: str \| None=None) -> None` | 写入/清除某页的人工左右指定（``None``＝清除，退回"半幅"）。 |
+| `detect_plans_all_at(path: Path \| None) -> dict[str, dict]` | 整份文件的 ``image_key → plan``（一次读盘，只含有提交计划的页）。 |
+| `save_detect_plans(task_id: str, plans: dict[str, dict], node_id: str \| None=None, primary_id: str \| None=None) -> None` | 批量写入提交计划（**一次读改写**，与检测框同一位写者）。 |
 | `save_detect_boxes_batch(task_id: str, entries: dict[str, list], node_id: str \| None=None, primary_id: str \| None=None, extra: dict[str, dict] \| None=None) -> None` | 批量写入某阶段的检测框（origin=auto）：**一次读改写**。 |
 | `save_image_sizes_batch(task_id: str, entries: dict[str, tuple[int, int]], node_id: str \| None=None, primary_id: str \| None=None) -> None` | 批量写入页面原始尺寸：一次读改写（理由同 save_detect_boxes_batch）。 |
 | `sizes_path(task_id: str, node_id: str \| None=None, primary_id: str \| None=None) -> Path` | 页面原始尺寸文件：主节点是 ``sizes.json``，副本是 ``sizes~<节点>.json``。 |
@@ -12383,6 +12514,28 @@ boxes.json / sizes.json 读写。
 ⚠️ 独立成一个方法而不是给 ``save_detect_boxes`` 加参数：那条路是
 "拖框/缩放"的高频路径，**不该**顺带改这个语义位。只有用户明确点了
 「左框/右框」才动它。
+
+##### `detect_plans_all_at(path: Path | None) -> dict[str, dict]`
+
+整份文件的 ``image_key → plan``（一次读盘，只含有提交计划的页）。
+
+``plan`` 由「提交本次任务」写入，描述**归一化之后每张产物**的身份::
+
+    {"page_class": "harfcontent-left",   # 归一化**前**的检测形态
+     "outputs": [{"label": "0007",       # 产物名（无扩展名）
+                  "role": "half-unsided",
+                  "placeholder": false}]}
+
+⚠️ 拼版按 ``outputs[].role`` 认图：``half-unsided`` 的产物名没有
+``-l``/``-r``，只看文件名会把它误当整幅。没有计划的页（旧任务 /
+「检测文本框」还没提交过）不出现，调用方自然回落到文件名规则。
+
+##### `save_detect_plans(task_id: str, plans: dict[str, dict], node_id: str | None=None, primary_id: str | None=None) -> None`
+
+批量写入提交计划（**一次读改写**，与检测框同一位写者）。
+
+只挂在**已有条目**上：没有框记录、也没被检测过的页不凭空造一条
+``boxes=[]``（那会让统计把"没检测过"当成"检测为空页"）。
 
 ##### `save_detect_boxes_batch(task_id: str, entries: dict[str, list], node_id: str | None=None, primary_id: str | None=None, extra: dict[str, dict] | None=None) -> None`
 

@@ -10,7 +10,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QImage
 from desktop.components.viewers.thumb_strip import ThumbStrip
-from utils.book_layout import single_column_slots
+from utils.book_layout import page_single_wide_slots
 from utils.box_geometry import is_full_content
 from utils.sort_utils import natural_sort_key
 from typing import TYPE_CHECKING
@@ -26,14 +26,15 @@ class EntriesMixin(RembgViewerHost):
     """把「原图 + 结果」拼成条目（含尺寸键、检测框）。"""
 
     def _book_slots(self, path_text: str, boxes: list) -> list:
-        """按**整本书**的结论归一化本页槽位（单栏书里「单个宽框」按整幅走）。
+        """**页级**归一化本页槽位（单个宽框＝半幅，按整幅语义命名）。
 
-        ⚠️ 规则本体在 ``utils.book_layout.single_column_slots``——**预览与提交
-        派生必须用同一个函数**，否则第三步显示 ``0007-l``、成品却叫
+        ⚠️ 规则本体在 ``utils.book_layout.page_single_wide_slots``——**预览与
+        提交派生必须用同一个函数**，否则第三步显示 ``0007-l``、成品却叫
         ``0007.png``，用户改参数重提交时完全无从判断哪边对。
 
-        整本书结论（``_single_column_book``）由宿主一次性算好传进来；页宽走
-        ``_page_width_provider``（同样是预算好的字典），**不在这里现算**。
+        ⚠️ 用户 2026-10-23（任务 0004）：判据是**页级**的，不再依赖整本书是不是
+        单栏书——一页只有一个 ``harfcontent``、框宽 >60% 时中心位置没有鉴别力，
+        必然是半幅，按位置拆 ``-l``/``-r`` 基本是随机的。
 
         ⚠️ **用户指定过左右**的页不归一化：那是在说"这页其实是某一边"
         （半幅中心压在中线上，位置判定没意义），命名要按 ``-l``/``-r`` 走。
@@ -52,7 +53,7 @@ class EntriesMixin(RembgViewerHost):
                 width = self._page_width_provider(path_text)
             except Exception:  # noqa: BLE001 - 取不到页宽＝保守不改写
                 width = None
-        return single_column_slots(boxes, self._single_column_book, width)
+        return page_single_wide_slots(boxes, width)
 
     # ------------------------------------------------------------------ 条目
     def _build_entries(self) -> list[dict]:

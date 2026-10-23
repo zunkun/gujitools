@@ -133,47 +133,62 @@ def run(ctx) -> None:
     # ---- 4. 命名落地：单栏书按页码命名，不拆 -l/-r ----
     from desktop.services.print_plan import plan_rembg_submit_entries
 
-    def _entries(pages_boxes, single: bool, width=W):
+    def _entries(pages_boxes, width=W):
         return plan_rembg_submit_entries(
             manifest_paths=[Path(f"{i:04d}.png") for i in range(1, len(pages_boxes) + 1)],
             result_path_for=lambda stem: Path(f"{stem}.png"),
             boxes_for=lambda _p: pages_boxes[_p],
-            single_column_book=single,
             page_width_for=lambda _p: width,
         )
 
     nine = {f"000{i}.png": WIDE for i in range(1, 10)}
     nine["0010.png"] = DOUBLE
 
-    # 单栏书的单宽框页 → label 就是页名（7.png），不是 0007-l
-    got = {e["label"]: e for e in _entries(nine, True)}
-    ok("单栏书：单宽框页 label 是页名（按页码命名，不带 -l/-r）",
+    # 单宽框页 → label 就是页名（7.png），不是 0007-l
+    got = {e["label"]: e for e in _entries(nine)}
+    ok("单宽框页 label 是页名（按页码命名，不带 -l/-r）",
        "0007" in got and "0007-l" not in got and "0007-r" not in got,
        str(sorted(got)))
-    ok("单栏书：单宽框页按整幅语义（full=True）",
+    ok("单宽框页按整幅语义（full=True）",
        got["0007"]["full"] is True, str(got["0007"]))
-    ok("单栏书：真双栏页仍照常拆 -r/-l（不误伤双栏书里的那一页）",
-       {e["label"] for e in _entries(nine, True) if e["label"].startswith("0010")}
+    ok("提交计划记下归一化前的 harfcontent 形态",
+       got["0007"].get("page_class") == "harfcontent-left",
+       str(got["0007"].get("page_class")))
+    ok("无后缀产物仍记成可配对半幅（role=half-unsided）",
+       got["0007"].get("role") == "half-unsided",
+       str(got["0007"]))
+    ok("真双栏页仍照常拆 -r/-l（不误伤双栏书里的那一页）",
+       {e["label"] for e in _entries(nine) if e["label"].startswith("0010")}
        == {"0010-r", "0010-l"},
-       str([e["label"] for e in _entries(nine, True) if e["label"].startswith("0010")]))
-    ok("单栏书产出的标签无后缀 → 拼版按后缀判左右时不会错配成对",
+       str([e["label"] for e in _entries(nine) if e["label"].startswith("0010")]))
+    ok("单宽框页产出的标签仍无后缀（拼版改看提交计划认身份）",
        all(not e["label"].endswith(("-l", "-r"))
-           for e in _entries(nine, True) if e["label"] != "0010"
+           for e in _entries(nine) if e["label"] != "0010"
            and e["label"] not in ("0010-l", "0010-r")))
 
-    # 关掉开关 → 行为与改造前**逐字段一致**（这是向后兼容的底线）
-    off = {e["label"]: e for e in _entries(nine, False)}
-    ok("未认定单栏书时：单宽框页仍带 -l/-r（旧行为不变）",
-       "0007-l" in off or "0007-r" in off, str(sorted(off)))
-    ok("未认定单栏书时：单宽框页 full=False",
-       (off.get("0007-l") or off.get("0007-r"))["full"] is False,
-       str(off.get("0007-l") or off.get("0007-r")))
+    # 用户 2026-10-23（任务 0004）：判据是**页级**的——混合书（不是单栏书）里
+    # 单个宽框页同样按半幅归一化，不能按中心硬拆 -l/-r。
+    mixed_pages = {f"000{i}.png": WIDE for i in range(1, 6)}
+    mixed_pages["0006.png"] = FULL
+    mixed_pages["0007.png"] = DOUBLE
+    mixed_got = {e["label"]: e for e in _entries(mixed_pages)}
+    ok("混合书里的单宽框页也按半幅归一化（页级判据，不要求全书单栏）",
+       "0001" in mixed_got and "0001-l" not in mixed_got
+       and "0001-r" not in mixed_got, str(sorted(mixed_got)))
+    ok("混合书里的单宽框页 full=True + role=half-unsided",
+       mixed_got["0001"]["full"] is True
+       and mixed_got["0001"]["role"] == "half-unsided", str(mixed_got["0001"]))
+    ok("混合书里的整幅页不受影响（仍叫页名、role=full）",
+       mixed_got["0006"]["full"] is True
+       and mixed_got["0006"]["role"] == "full", str(mixed_got["0006"]))
+    ok("混合书里的真双栏页仍拆 -l/-r",
+       {"0007-r", "0007-l"} <= set(mixed_got), str(sorted(mixed_got)))
 
     # 整幅书里的可疑半幅：**不得**被悄悄改写成整幅
     fullmix = {f"{i:04d}.png": FULL for i in range(1, 20)}
     fullmix["0020.png"] = DOUBLE
     fullmix["0021.png"] = NARROW
-    kept = {e["label"]: e for e in _entries(fullmix, False)}
+    kept = {e["label"]: e for e in _entries(fullmix)}
     ok("整幅书里的可疑半幅页：仍拆 -l/-r、full=False（只警告不改数据）",
        kept["0021-l"]["full"] is False
        and {"0020-l", "0020-r"} <= set(kept),
@@ -182,7 +197,7 @@ def run(ctx) -> None:
        kept["0021-l"]["full"] is False, str(kept["0021-l"]))
 
     # 页宽不可得时不得改写（保守回落，与判据一致）
-    no_w = {e["label"]: e for e in _entries(nine, True, width=0)}
+    no_w = {e["label"]: e for e in _entries(nine, width=0)}
     ok("页宽取不到 → 不改写身份（保守回落成半幅）",
        "0007-l" in no_w or "0007-r" in no_w, str(sorted(no_w)))
     ok("page_width_for 缺省（None）时同样不改写",
@@ -192,7 +207,6 @@ def run(ctx) -> None:
                manifest_paths=[Path("0007.png")],
                result_path_for=lambda s: Path(f"{s}.png"),
                boxes_for=lambda _p: WIDE,
-               single_column_book=True,
            )
        ))
 
@@ -237,7 +251,7 @@ def run(ctx) -> None:
     finally:
         widget.deleteLater()
 
-    # ---- 9. 第二步标注：单栏书里的整宽框标「半幅」，不是左/右框 ----
+    # ---- 9. 第二步标注：整宽单框标「半幅」，不是左/右框 ----
     import inspect as _inspect
 
     from desktop.components.box_kinds import BoxKindEditor
@@ -248,21 +262,20 @@ def run(ctx) -> None:
 
     wide = [list(WIDE[0])]
     narrow_box = [list(NARROW[0])]
-    names_half, _c = box_styles(wide, (W, 1400), full=False, single_column=True)
-    ok("单栏书 + 整宽单框 → 标注「半幅」（不是左框/右框）",
+    names_half, _c = box_styles(wide, (W, 1400), full=False)
+    ok("整宽单框 → 标注「半幅」（不是左框/右框）",
        names_half == [HALF_BOX_NAME] == ["半幅"], str(names_half))
-    # 关掉整本书判定 → 回到左/右框（旧行为，没证据不改形态）。
-    # ⚠️ WIDE 的中心恰在中线上（cx==500），按 half_sides 规则归「右框」，
-    #    所以这里只断言"是某一侧、且不是半幅"——不把具体的左右钉死，
-    #    免得测试反而去管位置规则的细节。
-    names_off, _c = box_styles(wide, (W, 1400), full=False, single_column=False)
-    ok("非单栏书时同一个框仍标左/右框（不是半幅，旧行为不变）",
-       names_off in (["左框"], ["右框"]), str(names_off))
-    # 真双栏页：两个框，不因单栏书判定被改写
+    # ⚠️ 用户 2026-10-23（任务 0004）：判据是**页级**的，不再看整本书是不是
+    #    单栏书。混合书里的单个宽框页同样得标半幅，否则按中心硬拆左右。
+    names_mixed, _c = box_styles(
+        wide, (W, 1400), full=False, single_column=False)
+    ok("不传单栏书结论时同一个框也标半幅（页级判据）",
+       names_mixed == ["半幅"], str(names_mixed))
+    # 真双栏页：两个框，不因单宽判据被改写
     names_two, _c = box_styles(
         [list(DOUBLE[0]), list(DOUBLE[1])], (W, 1400), full=False,
         single_column=True)
-    ok("单栏书判定不会把真双栏页的两个框改成半幅",
+    ok("真双栏页的两个框不会被改成半幅",
        sorted(names_two) == ["右框", "左框"], str(names_two))
     # 窄单框（不足 60%）仍按位置标左框——它确实是半栏
     names_narrow, _c = box_styles(
@@ -278,8 +291,10 @@ def run(ctx) -> None:
        is_half_page(wide, (W, 1400), False, True)
        and is_single_wide_box(wide[0], W),
        "标注层的半幅判据与 utils 不一致")
+    ok("半幅判据是页级的：不传单栏书结论也认",
+       is_half_page(wide, (W, 1400), False, False))
     ok("页宽未知时不当半幅（保守回落成左/右）",
-       not is_half_page(wide, None, False, True))
+       not is_half_page(wide, None, False, False))
 
     # 面板高亮用的 box_kinds 必须与标签同一口径（否则画面标半幅、面板亮左框）
     from PySide6.QtCore import QSize
@@ -290,17 +305,20 @@ def run(ctx) -> None:
 
     iv = ImageView()
     try:
-        # 用中心明确偏左的整宽框，让"左/右"的期望值有确定含义
-        # （WIDE 的中心恰在中线上，按规则归右，不适合当 left 的样本）
+        # 整宽单框（84% 页宽）：页级判据，不看书级结论就是「半幅」
         wide_left = [[60, 100, 900, 1300]]
         iv.set_boxes(wide_left, QSize(W, 1400), full=False)
-        ok("非单栏书：整宽单框 box_kinds 报 left（按位置）",
-           iv.box_kinds() == ["left"], str(iv.box_kinds()))
+        ok("整宽单框 box_kinds 报 half（不依赖书级单栏结论）",
+           iv.box_kinds() == ["half"], str(iv.box_kinds()))
         iv.set_single_column(True)
-        ok("单栏书：box_kinds 报 half（面板高亮与画面同为「半幅」）",
+        ok("再传单栏书结论仍报 half（面板与画面同一「半幅」）",
            iv.box_kinds() == ["half"], str(iv.box_kinds()))
         iv.set_single_column(False)
-        ok("退回非单栏：box_kinds 立刻恢复 left（不留上一本书的结论）",
+        ok("退回非单栏结论：box_kinds 仍是 half（页级判据不随书变）",
+           iv.box_kinds() == ["half"], str(iv.box_kinds()))
+        # 窄单框（39% 页宽）：没有半幅证据，按位置给 left
+        iv.set_boxes([[60, 100, 450, 1300]], QSize(W, 1400), full=False)
+        ok("窄单框仍按位置报 left（不足 60% 不给半幅）",
            iv.box_kinds() == ["left"], str(iv.box_kinds()))
     finally:
         iv.deleteLater()
@@ -590,8 +608,8 @@ def run(ctx) -> None:
        set(names_export) == {BOX_NAME_HALF} == {"半幅"}, str(names_export))
     names_export_off, _c = slot_names_colors(
         [[60, 100, 900, 1300], None], W, single_column=False)
-    ok("不给单栏结论时导出仍按槽位给左/右（旧行为不变）",
-       names_export_off == ["左框", "右框"], str(names_export_off))
+    ok("导出侧同样是页级判据：不传单栏结论也认半幅",
+       set(names_export_off) == {"半幅"}, str(names_export_off))
     ok("导出侧页宽缺失时不当半幅（不猜）",
        set(slot_names_colors([[60, 100, 900, 1300], None], None,
                              single_column=True)[0]) == {"左框", "右框"})
@@ -623,11 +641,11 @@ def run(ctx) -> None:
 
     src = _inspect.getsource(_pp.plan_rembg_submit_entries)
     ok("print_plan 只调判据函数，不自己算 0.80（阈值唯一）",
-       "single_column_slots(" in src
+       "page_single_wide_slots(" in src
        and "0.8" not in src and "SINGLE_COLUMN_WIDTH_RATIO" not in src,
        "print_plan 里抄了宽度阈值")
-    ok("单栏书归一化发生在**分支之前**（一处生效，命名/镜像/拼版全跟着变）",
-       src.index("single_column_slots(") < src.index("full = is_full_content("),
+    ok("页级归一化发生在**分支之前**（一处生效，命名/镜像/拼版全跟着变）",
+       src.index("page_single_wide_slots(") < src.index("full = is_full_content("),
        "归一化写在了分支之后")
 
     root = Path(__file__).resolve().parents[2]
@@ -677,7 +695,7 @@ def run(ctx) -> None:
 
     viewer_src = _inspect.getsource(EntriesMixin._book_slots)
     ok("预览侧的归一化同样调 utils.book_layout（不自己算）",
-       "single_column_slots(" in viewer_src
+       "page_single_wide_slots(" in viewer_src
        and "0.8" not in viewer_src and "is_single_wide_half" not in viewer_src,
        "预览侧自写了一套判据")
     entries_src = _inspect.getsource(EntriesMixin._build_entries)
@@ -688,7 +706,7 @@ def run(ctx) -> None:
        'entry.get("box")' in resolve_src and "_book_slots(" not in resolve_src,
        "实时合成绕开了条目")
 
-    # 行为上验证：同一个单栏书页，预览与派生给出**同名**（都不带 -l/-r）
+    # 行为上验证：同一个整宽单框页，预览与派生给出**同名**（都不带 -l/-r）
     from PySide6.QtWidgets import QApplication
 
     _app = QApplication.instance() or QApplication([])
@@ -705,9 +723,9 @@ def run(ctx) -> None:
             page_width_provider=lambda _t: W,
         )
         labels = [e["label"] for e in viewer._entries]
-        ok("单栏书第三步预览的标签＝页名（与成品同名，不带后缀）",
+        ok("第三步预览的标签＝页名（与成品同名，不带后缀）",
            labels == ["0007"], str(labels))
-        # 关掉判据（非单栏书）→ 预览恢复 -l/-r，与旧行为一致
+        # 不传书级结论（混合书/0004 那种）：页级判据照样给出同样的名字
         viewer.set_images(
             [page], None,
             boxes_provider=lambda _t: list(WIDE),
@@ -716,25 +734,35 @@ def run(ctx) -> None:
             page_width_provider=lambda _t: W,
         )
         labels_off = [e["label"] for e in viewer._entries]
-        ok("非单栏书时预览仍带 -l（旧行为不变）",
-           labels_off == ["0007-l"], str(labels_off))
+        ok("不传单栏书结论时预览同样是 0007（页级判据）",
+           labels_off == ["0007"], str(labels_off))
+        # 窄单框（不足 60%）仍带 -l：没有半幅证据，旧行为不变
+        viewer.set_images(
+            [page], None,
+            boxes_provider=lambda _t: list(NARROW),
+            border_provider=lambda: "0",
+            single_column_book=True,
+            page_width_provider=lambda _t: W,
+        )
+        labels_narrow = [e["label"] for e in viewer._entries]
+        ok("窄单框预览仍带 -l（不足 60% 不改写身份）",
+           labels_narrow == ["0007-l"], str(labels_narrow))
     finally:
         viewer.deleteLater()
 
     # ---- 11. 指定左右要真的改产物命名（不是只改标注）----
-    # 用户 2026-10-17：半幅页指定左/右后，这一页就不再按单栏归一化，
+    # 用户 2026-10-17：半幅页指定左/右后，这一页就不再按半幅归一化，
     # 命名/拼版都按 -l/-r 走——否则"指定"等于一句空话。
     def _with_side(side):
         return plan_rembg_submit_entries(
             manifest_paths=[Path("0007.png")],
             result_path_for=lambda s: Path(f"{s}.png"),
             boxes_for=lambda _p: [[60, 100, 900, 1300], None],
-            single_column_book=True,
             page_width_for=lambda _t: W,
             side_for=lambda _t: side,
         )
 
-    ok("半幅页未指定 → 按页码命名 0007（单栏书默认）",
+    ok("半幅页未指定 → 按页码命名 0007（页级归一化默认）",
        [e["label"] for e in _with_side(None)] == ["0007"],
        str([e["label"] for e in _with_side(None)]))
     ok("半幅页指定左 → 产物叫 0007-l（指定真的生效）",

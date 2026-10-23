@@ -5,9 +5,11 @@
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QSize, Qt
+from PySide6.QtCore import QEvent, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QPainter, QPen
-from .styles import BOX_COLORS, BOX_NAMES, REFERENCE_COLOR, box_styles
+from .styles import (
+    BOX_COLORS, BOX_NAMES, EDGE_DASH_COLOR, REFERENCE_COLOR, box_styles,
+)
 from typing import TYPE_CHECKING
 
 
@@ -78,8 +80,37 @@ class RenderMixin(ImageViewHost):
                 round((ghost[2] - ghost[0]) * self._scale_x),
                 round((ghost[3] - ghost[1]) * self._scale_y),
             )
+        if self._edge_dashed:
+            self._draw_edge(painter, scaled)
         painter.end()
         self.setPixmap(scaled)
+
+
+    def _draw_edge(self, painter: QPainter, scaled) -> None:
+        """图片边缘勾一圈**虚线**（去底色页：透明底成品要能看出边界）。
+
+        用户 2026-10-23：「去底色页面，图片边缘要画虚线」——白底转透明后，
+        页面与画布底色几乎一样，不勾边就像图片缺了一块。
+
+        ⚠️ 画在缩放 pixmap 的**内缘**：painter 坐标是逻辑像素（pixmap 带
+        dpr，见 :meth:`_rerender`），所以显示尺寸要 ``width / dpr``；线宽走
+        :meth:`_pen_width` 取整到设备像素，并留出半条线宽，否则上下/左右
+        各有一半被裁到 pixmap 外（高 DPI 下看起来像「只画了两条边」）。
+        """
+        pen = QPen(
+            EDGE_DASH_COLOR, self._pen_width(1), Qt.PenStyle.DashLine
+        )
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        dpr = scaled.devicePixelRatio() or 1.0
+        stroke = max(1.0, self._pen_width(1))
+        disp_w = scaled.width() / dpr
+        disp_h = scaled.height() / dpr
+        inset = stroke / 2.0
+        painter.drawRect(QRectF(
+            inset, inset,
+            max(1.0, disp_w - stroke), max(1.0, disp_h - stroke),
+        ))
 
 
     def _pen_width(self, logical: int | float) -> float:

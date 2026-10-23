@@ -11,7 +11,8 @@
 1. 改参数触发防抖（不是每拖一格就重算）；
 2. 防抖到期只算**当前页**，结果**覆盖任务目录里的正式成品**并刷新第四步缩略图；
 3. 盘上成品已是这份参数时不再重算；
-4. 逐张 offset 记录（黑名单法）与「切图不重算」；
+4. 逐张 offset 记录（黑名单法）；切图按当前参数补算（已是最新则跳过，
+   没有成品时必算——否则中间大图停在原图）；
 5. 改过之后再改回去：成品会被重新算一遍并覆盖回落（覆盖是可逆的）。
 """
 
@@ -135,6 +136,53 @@ def run(ctx) -> None:
         ok("切回原图：显示的仍是它自己的成品",
            d.rembg_viewer._result_full_image() == formal,
            str(d.rembg_viewer._result_full_image()))
+
+        # 用户 2026-10-23：切到**没有成品**的页（新占位图 / 上游换了页名）
+        # 必须按当前参数自动补算，否则中间大图停在原图、看不到去底色效果。
+        if len(entries) >= 3:
+            page3 = entries[2]["path"]
+            page3_stem = Path(page3).stem
+            page3_formal = out_dir / f"{page3_stem}.png"
+            ok("（前置）第三张有成品", page3_formal.is_file(), str(page3_formal))
+            if page3_formal.is_file():
+                page3_formal.unlink()
+                d.rembg_viewer._select_image(1, other_path)
+                pump(app, times=4)
+                d.rembg_viewer._select_image(2, page3)
+                _wait(app, lambda: page3_formal.is_file(), timeout=40)
+                ok("切到没有成品的页：自动按当前参数补算并落盘",
+                   page3_formal.is_file(), str(page3_formal))
+                ok("补算后该条目解析到去底色结果（中间大图用成品）",
+                   d.rembg_viewer._resolve_source(entries[2])[2] is True,
+                   str(d.rembg_viewer._resolve_source(entries[2])))
+                d.rembg_viewer._select_image(0, entry_path)
+                pump(app, times=6)
+
+                # 改全局参数（type）后切图：目标页也必须按新参数重算，
+                # 否则中间大图停在"上次全量执行"的旧成品上（实时效果不跟着走）。
+                target_path = entries[1]["path"]
+                target_stem = Path(target_path).stem
+                target_formal = out_dir / f"{target_stem}.png"
+                before_mtime = target_formal.stat().st_mtime_ns
+                old_type_index = panel.type.currentIndex()
+                panel.type.setCurrentIndex(0 if old_type_index != 0 else 1)
+                new_type = int(panel._combo_value(panel.type))
+                pump(app, times=2)
+                d.rembg_viewer._select_image(1, target_path)
+                # ⚠️ 等**台账**落地而不是只等文件：文件由 worker 线程写，
+                #    记账/刷新要等排队回主线程，只等文件会读到"还没记账"。
+                _wait(app, lambda: target_stem in d._live_done, timeout=40)
+                ok("改参数后切图：目标页按新参数重算（不是旧成品）",
+                   target_stem in d._live_done
+                   and target_formal.stat().st_mtime_ns > before_mtime,
+                   f"{target_stem} in {sorted(d._live_done)}")
+                ok("重算用的确实是新 type",
+                   (d._live_done.get(target_stem) or {}).get("type") == new_type,
+                   str(d._live_done.get(target_stem)))
+                panel.type.setCurrentIndex(old_type_index)
+                d._live_timer.stop()
+                d.rembg_viewer._select_image(0, entry_path)
+                pump(app, times=6)
 
     # ---- 5. 改回去 → 成品被重新算一遍并覆盖（覆盖可逆）----
     mid_mtime = formal.stat().st_mtime_ns
