@@ -28,12 +28,13 @@ def _make_pdf(path, stream, pages=3, per_page=1):
     for _ in range(pages):
         page = doc.new_page(width=595, height=842)
         if per_page == 1:
-            page.insert_image(fitz.Rect(0, 0, 595, 842), stream=stream)
+            page.insert_image(fitz.Rect(0, 0, 595, 842), stream=stream,
+                              keep_proportion=False)
         else:
             half = 595 / per_page
             for i in range(per_page):
                 page.insert_image(fitz.Rect(i * half, 0, (i + 1) * half, 842),
-                                  stream=stream)
+                                  stream=stream, keep_proportion=False)
     doc.save(str(path))
     doc.close()
     return str(path)
@@ -131,6 +132,113 @@ def run(ctx) -> None:
     produced = sorted(out.glob("*.jpg"))[0].read_bytes()
     ok("jpg 直拷未重编码", produced == jpg,
        f"产出 {len(produced)}B vs 源 {len(jpg)}B")
+
+    # ---- 3b. JPX 快通道：整页一张 JPX 时直接解码流，但尺寸必须跟 zoom/dpi 走 ----
+    import threading
+
+    from PIL import Image
+
+    def _run(pdf_path, pages, out, **kwargs):
+        progress = {"lock": threading.Lock(), "done": 0, "total": len(pages)}
+        render_pages_parallel(pdf_path, pages, str(out), 1, "jpg",
+                              quick=True, workers=1, batch_size=len(pages),
+                              progress=progress, **kwargs)
+        return progress
+
+    out = tmp / "out_jpx_fast"
+    out.mkdir()
+    # ⚠️ 用 dpi=72 让目标(595×842)明显小于原生(1600×2400)：快通道只在
+    #    "能降档"时启用（降不下档交给 MuPDF 更快、更省内存）。
+    progress = _run(jp2pdf, [0, 1, 2], out, dpi=72)
+    ok("JPX 快通道：全部页直接解码流（跳过整页渲染）",
+       progress.get("jpx_fast") == 3, str(progress))
+    with Image.open(out / "1.jpg") as image:
+        fast_size = image.size
+
+    # 自适应解析结果必须与整页渲染**逐尺寸一致**（zoom/dpi 语义不能丢）
+    out_ref = tmp / "out_jpx_ref"
+    out_ref.mkdir()
+    render_pages_parallel(jp2pdf, [0], str(out_ref), 1, "jpg", quick=False,
+                          workers=1, batch_size=1, dpi=72)
+    with Image.open(out_ref / "1.jpg") as image:
+        ref_size = image.size
+    ok("JPX 快通道：输出尺寸与整页渲染一致", fast_size == ref_size,
+       f"{fast_size} vs {ref_size}")
+
+    # zoom 必须生效：dpi=72 时 zoom 说了算（595×842 → 1190×1684）
+    out_zoom = tmp / "out_jpx_zoom"
+    out_zoom.mkdir()
+    render_pages_parallel(jp2pdf, [0], str(out_zoom), 2, "jpg", quick=True,
+                          workers=1, batch_size=1, dpi=72)
+    with Image.open(out_zoom / "1.jpg") as image:
+        zoom_size = image.size
+    ok("JPX 快通道：zoom 生效", abs(zoom_size[0] - 1190) <= 2
+       and abs(zoom_size[1] - 1684) <= 2, str(zoom_size))
+
+    # 旋转页 / 一页多图：不许走快通道（会丢旋转、丢其它内容）
+    rotated = tmp / "rotated.pdf"
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    page.insert_image(fitz.Rect(0, 0, 595, 842), stream=jp2,
+                      keep_proportion=False)
+    page.set_rotation(90)
+    doc.save(str(rotated))
+    doc.close()
+    out_rot = tmp / "out_jpx_rot"
+    out_rot.mkdir()
+    ok("JPX 快通道：旋转页自动回退整页渲染",
+       _run(rotated, [0], out_rot, dpi=300).get("jpx_fast") == 0)
+
+    multi_jp2 = _make_pdf(tmp / "multi_jp2.pdf", jp2, per_page=2)
+    out_multi = tmp / "out_jpx_multi"
+    out_multi.mkdir()
+    ok("JPX 快通道：一页多图自动回退整页渲染",
+       _run(multi_jp2, [0, 1, 2], out_multi, dpi=300).get("jpx_fast") == 0)
+
+    # ---- 3c. 纯扫描页守卫：有可见内容就必须回退整页渲染 ----
+    def _scan_page(name, *, text=False, invisible=False, highlight=False,
+                   link=False, rotation=0):
+        doc = fitz.open()
+        page = doc.new_page(width=595, height=842)
+        page.insert_image(fitz.Rect(0, 0, 595, 842), stream=jpg,
+                          keep_proportion=False)
+        if text:
+            page.insert_text((50, 100), "Visible text", fontsize=20)
+        if invisible:
+            page.insert_text((50, 100), "OCR layer", fontsize=20, render_mode=3)
+        if highlight:
+            page.add_highlight_annot(fitz.Rect(50, 90, 300, 120))
+        if link:
+            page.insert_link({"kind": fitz.LINK_URI,
+                              "from": fitz.Rect(10, 10, 100, 40),
+                              "uri": "https://example.com"})
+        if rotation:
+            page.set_rotation(rotation)
+        path = tmp / f"guard_{name}.pdf"
+        doc.save(str(path))
+        doc.close()
+        return path
+
+    def _copy_is_raw(pdf_path, name, zoom=1, dpi=300):
+        out = tmp / f"out_guard_{name}"
+        out.mkdir()
+        render_pages_parallel(pdf_path, [0], str(out), zoom, "jpg", quick=True,
+                              workers=1, batch_size=1, dpi=dpi)
+        return sorted(out.glob("*.jpg"))[0].read_bytes() == jpg
+
+    ok("守卫：纯扫描页仍直拷原图", _copy_is_raw(_scan_page("plain"), "plain"))
+    ok("守卫：不可见 OCR 文字层不阻止直拷",
+       _copy_is_raw(_scan_page("invisible", invisible=True), "invisible"))
+    ok("守卫：/Link 链接注释不阻止直拷",
+       _copy_is_raw(_scan_page("link", link=True), "link"))
+    ok("守卫：可见文字回退整页渲染",
+       not _copy_is_raw(_scan_page("text", text=True), "text"))
+    ok("守卫：高亮注释回退整页渲染",
+       not _copy_is_raw(_scan_page("highlight", highlight=True), "highlight"))
+    ok("守卫：旋转页回退整页渲染",
+       not _copy_is_raw(_scan_page("rot", rotation=90), "rot"))
+    ok("守卫：zoom≠1 一律整页渲染",
+       not _copy_is_raw(_scan_page("zoom2"), "zoom2", zoom=2))
 
     # ---- 4. 降级统计：多图时全部降级且原因被记录 ----
     out = tmp / "out_stat"

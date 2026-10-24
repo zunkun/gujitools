@@ -12,6 +12,7 @@
 | [build.md](build.md) | **构建与打包**：开发环境、CPU 打包环境、Linux 打包、双 EXE 一体打包、体积瘦身 |
 | [gui/readme.md](gui/readme.md) | **桌面端技术文档索引**：术语、开发约定、快速开始 |
 | [io_path_rules.md](io_path_rules.md) | 输入 / 输出路径规则（输出目录解析的唯一权威） |
+| [pdf-render-benchmark.md](pdf-render-benchmark.md) | **PDF 整页渲染引擎与 JPX 提取优化**：多引擎实测、内存回收、JPX 快通道与剩余取舍 |
 | [utils.md](utils.md) | 工具模块算法：Otsu 阈值、印章提取、border 解析、YOLO、PDF 渲染 |
 | [refactor-modularity.md](refactor-modularity.md) | 模块化设计：独立任务页（singletask）的由来、已落地项与后续解耦路线图 |
 

@@ -99,8 +99,15 @@ class ExtractPreviewWidget(PdfViewerWidget):
         self._extract_seq = 0
         #: 文档代际号：set_pdf 递增，worker 回调按它丢弃跨任务的迟到结果
         self._doc_gen = 0
-        #: 正在后台提取的页号（0-based）：同一页不重复发起
+        #: 正在提取或**排队中**的页号（0-based）：同一页不重复发起
         self._extracting: set[int] = set()
+        #: 正在后台提取的页号（0-based）；**同一时刻只跑一个**。
+        #: ⚠️ 连点几页时若每页都往子进程池塞一个 JPX 提取（~1s/页），后面
+        #:    点的页要排在它们后面才能开始——用户看到的就是"点了不动、一直
+        #:    转圈"。这里只保留最新一页，前一个跑完再提它（见 _extract_inflight）。
+        self._extract_inflight: int | None = None
+        #: 用户在提取期间又点了别的页：只记**最后一页**，别排队
+        self._extract_pending: int | None = None
         #: 当前大图显示的是第几页的**提取结果**（None = 显示的是 PDF 渲染页）
         self._shown_extract_page: int | None = None
 
@@ -147,6 +154,8 @@ class ExtractPreviewWidget(PdfViewerWidget):
         self._doc_gen += 1
         self._extract_seq += 1
         self._extracting.clear()
+        self._extract_inflight = None
+        self._extract_pending = None
         self._shown_extract_page = None
         super().set_pdf(path, placeholder=placeholder, cache_dir=cache_dir)
 
@@ -216,8 +225,20 @@ class ExtractPreviewWidget(PdfViewerWidget):
     def _extract_and_display(self, page: int, target: Path) -> None:
         """这一页还没有产物：后台提取落盘，完成后上屏。"""
         if page in self._extracting:
-            # 已经在提了：保持"正在提取"提示，完成后 _on_extract_done 上屏。
+            # 已经在提（或已排队）：保持"正在提取"提示，完成后 _on_extract_done 上屏。
             # ⚠️ 作废在飞的渲染/旧加载，别让它们的结果盖掉提示。
+            self._shown_extract_page = None
+            self._page_req_seq += 1
+            self._extract_seq += 1
+            self.view.clear_image(f"正在提取第 {page + 1} 页...")
+            return
+        if self._extract_inflight is not None:
+            # 已有**别的页**在提：只记住用户最后点的那一页，不再往子进程池里塞。
+            # ⚠️ JPX 一页提取 ~1s；连点 5 页就排 5 个，第 5 页要等前 4 个跑完
+            #    才能开始——用户看到的就是"一直在转圈"。串行 + 最新优先，
+            #    最坏只多等当前这一页。
+            self._extract_pending = page
+            self._extracting.add(page)
             self._shown_extract_page = None
             self._page_req_seq += 1
             self._extract_seq += 1
@@ -231,6 +252,7 @@ class ExtractPreviewWidget(PdfViewerWidget):
         params = self._extract_params()
         gen = self._doc_gen
         self._extracting.add(page)
+        self._extract_inflight = page
         self._shown_extract_page = None
         self._page_req_seq += 1
         self._extract_seq += 1
@@ -257,20 +279,47 @@ class ExtractPreviewWidget(PdfViewerWidget):
     def _on_extract_done(self, page: int, result: dict, target: Path,
                          gen: int, pdf: Path) -> None:
         """提取完成：通知宿主登记尺寸/清单；用户还停在这页才上屏。"""
-        self._extracting.discard(page)
+        # ⚠️ 换过文档的结果一律不许动当前状态：``set_pdf`` 已经把 inflight /
+        #    extracting 清空，旧回调若还按页号清理，会把**新文档同页号**的
+        #    请求误清掉（表现为新页一直不提取）。
         if gen != self._doc_gen:
-            return  # 换了文档：文件已落盘，但界面是另一本书的
+            return
+        self._extracting.discard(page)
+        if self._extract_inflight == page:
+            self._extract_inflight = None
         self.extract_saved.emit(str(target))
-        if max(self.strip.currentRow(), 0) != page:
-            return  # 用户已翻走：产物在盘上，切回来时走"有产物"分支
-        self._display_extract_file(page, target)
+        if max(self.strip.currentRow(), 0) == page:
+            self._display_extract_file(page, target)
+        self._start_pending_extract()
 
     def _on_extract_failed(self, page: int, msg: str, gen: int) -> None:
         self._extracting.discard(page)
         if gen != self._doc_gen:
             return
+        if self._extract_inflight == page:
+            self._extract_inflight = None
         if max(self.strip.currentRow(), 0) == page:
             self.view.clear_image(f"第 {page + 1} 页提取失败：{msg}")
+        self._start_pending_extract()
+
+    def _start_pending_extract(self) -> None:
+        """上一个提取收尾：把用户等待期间**最后点的那一页**提上（只保留一页）。"""
+        page = self._extract_pending
+        if page is None or self._extract_inflight is not None:
+            return
+        self._extract_pending = None
+        self._extracting.discard(page)
+        if not self._pdf_path:
+            return
+        target = self.extract_path_for(page)
+        if target is None:
+            return
+        if target.exists():
+            # 等待期间产物已被别的途径落盘：直接显示，不再重复提取
+            if max(self.strip.currentRow(), 0) == page:
+                self._display_extract_file(page, target)
+            return
+        self._extract_and_display(page, target)
 
     def _refresh_current_extract(self) -> None:
         """宿主刷新：当前页的产物**新出现**时切换显示（不发起提取）。"""

@@ -85,6 +85,11 @@ def run(ctx) -> None:
     tmp = ctx.tmp / "pdf_render_service"
     tmp.mkdir(parents=True, exist_ok=True)
     pdf = make_pdf(tmp / "书.pdf", 4)
+    # ⚠️ 「按窗口补图」需要一个**页数明显多于窗口**的书：窗口按
+    #    ``FALLBACK_VISIBLE(16) + FILL_WINDOW_MARGIN(12)`` 兜底，4 页的书
+    #    一旦首屏跑得够快就会全量到位，那条断言会变成时序赛跑（跑在别的
+    #    模块之后、池已预热时必挂）。
+    thick = make_pdf(tmp / "大部头.pdf", 30)
 
     # ---- 1. 页数 + 单页渲染 ----
     ok("渲染服务：页数正确", svc.page_count(pdf) == 4, str(svc.page_count(pdf)))
@@ -116,7 +121,7 @@ def run(ctx) -> None:
     # ---- 5. 池不可用 → 进程内兜底仍然出图 ----
     before = svc.stats()["fallbacks"]
     real_pool = svc._pool_or_none
-    svc._pool_or_none = lambda: None       # 打桩：假装子进程起不来
+    svc._pool_or_none = lambda kind="render": None  # 打桩：假装子进程起不来
     try:
         fallback = svc.render_jpeg(pdf, 1, 256, 70)
         fell = svc.stats()["fallbacks"]
@@ -132,6 +137,18 @@ def run(ctx) -> None:
         ok("inproc 模式：offloaded() 为假", svc.offloaded() is False)
         inproc = svc.render_jpeg(pdf, 1, 256, 70)
         ok("inproc 模式：结果与子进程一致", inproc == old, f"{len(inproc)}B")
+        # ⚠️ 批量/流式通道的 spec 是 6 元组；兜底函数少收 pages_dir 时整批 TypeError
+        #    （见 ``_inproc_render_jpeg``）——降级那一刻缩略图会整片不出来。
+        batch_inproc = svc.render_jpegs(pdf, [1, 2], 256, 70)
+        ok("inproc 批量兜底：两页都出图（spec 参数齐全）",
+           len(batch_inproc) == 2 and all(batch_inproc),
+           str([len(b) for b in batch_inproc]))
+        streamed: list[tuple[int, bytes]] = []
+        svc.render_stream(pdf, [1, 2], 256, 70,
+                          on_page=lambda p, b: streamed.append((p, b)))
+        ok("inproc 流式兜底：两页都交付",
+           len(streamed) == 2 and all(bool(b) for _p, b in streamed),
+           str([len(b) for _p, b in streamed]))
     finally:
         if saved is None:
             os.environ.pop(svc.ENV_MODE, None)
@@ -150,6 +167,11 @@ def run(ctx) -> None:
        (not QImage(str(target)).isNull())
        and QImage(str(target)).width() == int(result.get("w") or -1),
        f"{result.get('w')}x{result.get('h')}")
+    # ⚠️ 提取池必须独立：共用池时连点几页会排在缩略图批次后面 = "一直转圈"
+    ok("单页提取：走独立的提取池（不与缩略图共用）",
+       svc.EXTRACT_WORKERS >= 1
+       and svc._pool_or_none("extract") is not svc._pool_or_none("render"),
+       str(svc.stats()))
 
     # ---- 8. 源码护栏：GUI 侧不许自己渲染 ----
     hosts = {
@@ -280,7 +302,7 @@ def run(ctx) -> None:
     cache2.mkdir(parents=True, exist_ok=True)
     app = ctx.app
     viewer2 = PdfViewerWidget()
-    viewer2.set_pdf(pdf, cache_dir=cache2)
+    viewer2.set_pdf(thick, cache_dir=cache2)
     ok("没有标记且目录是旧的：不进入「等别人填」状态", viewer2._watching is False)
     # ⚠️ 2026-10-21 起不再"整本补渲"：第一轮只读（拿页数），随后
     #    ``_fill_window`` 只补**可见窗口**。所以这里断言"窗口内真的被补上"，
@@ -289,7 +311,7 @@ def run(ctx) -> None:
        wait_until(app, lambda: bool(viewer2._thumb_received), timeout=20.0),
        str(sorted(viewer2._thumb_received)))
     ok("补图是**按窗口**的：总量远小于总页数",
-       len(viewer2._thumb_received) < 4, str(sorted(viewer2._thumb_received)))
+       len(viewer2._thumb_received) <= 13, str(sorted(viewer2._thumb_received)))
     viewer2.shutdown_workers()
 
     from desktop.workers.source_thumbnails_worker import SourceThumbnailsWorker
@@ -302,6 +324,16 @@ def run(ctx) -> None:
     worker._mark_producing(False)
     ok("生产者：渲染结束撤掉在场标记",
        not (marker_dir / PRODUCING_MARKER).exists())
+
+    # ---- 10. 池失败可恢复：一次失败不许把整机永久退回进程内 ----
+    # ⚠️ 旧实现任何一次超时/池崩溃就 ``_disabled=True`` 永久降级；此后每页
+    #    渲染都在 GUI 线程里 get_pixmap（持 GIL ~1s）= 用户报的"每点一页都卡死"。
+    svc._drop_pool("render", RuntimeError("模拟子进程崩溃"))
+    recovered = svc.render_jpeg(pdf, 1, 256, 70)
+    after = svc.stats()
+    ok("单次池失败后仍走子进程（会自动重建池）",
+       after["mode"] == "proc" and bool(recovered) and after["pool_failures"] == 0,
+       str(after))
 
     svc.shutdown()
     # ⚠️ 本用例是**唯一**会显式收池的地方：收完必须把"正在关闭"复位，否则

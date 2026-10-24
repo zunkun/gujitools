@@ -51,6 +51,18 @@ from utils.units import DEFAULT_RENDER_DPI as DEFAULT_UNITS_DPI
 # 解码器时会整页失败 —— 一律降级为整页渲染。
 QUICK_SOURCE_EXTS = {"jpeg", "jpg", "png"}
 
+#: 可以「绕过 MuPDF 整页渲染、直接解码内嵌码流」的格式（JPEG2000 家族）。
+#:
+#: ⚠️ JPX 解码本身是慢的，但**只解到目标分辨率所需的层数**可以快 2~4 倍
+#:    （JPEG2000 的小波分级）；而 MuPDF 的 ``get_pixmap`` 无论目标多大都整帧
+#:    解码。只在"整页就是这一张图、页面上没有别的内容"时才成立（见
+#:    ``_jpx_page_source`` 的守卫）。
+JPX_SOURCE_EXTS = {"jpx", "jp2", "j2k"}
+
+#: JPX 降档解码允许的最低线性覆盖率（解码边长 / 目标边长）。
+#: 低于它就别降了——再降会明显变糊；宁可全分辨率解码后缩放。
+JPX_REDUCE_MIN_COVERAGE = 0.90
+
 # 内嵌图尺寸低于整页渲染尺寸的这个比例，就认为它是低清缩略图，改用整页渲染
 # （渲染不会凭空增加细节，但至少不会比内嵌图更糊）。
 QUICK_MIN_COVERAGE = 0.9
@@ -259,6 +271,60 @@ def _render_page(page, out_dir: str, page_idx: int, ext: str, actual_zoom: float
     return img_path, pix.width, pix.height
 
 
+#: 允许"直接取内嵌图"的注释子类型：链接不产生像素，不影响产物。
+#: 其余注释（高亮/便签/墨迹/图章/表单域）会被整页渲染画进去，必须回退。
+IGNORABLE_ANNOT_TYPES = {"Link"}
+
+
+def _page_scan_block_reason(page):
+    """本页除了那张内嵌图，还有没有别的东西会**产生像素**。
+
+    返回 None 表示"纯扫描页"（只有一张图，没有别的可见内容），可以直接取图；
+    否则返回一句人读原因，调用方回退整页渲染。
+
+    判据（先便宜后昂贵；实测纯扫描页约 0.5ms，复杂矢量页约 100ms——后者本来
+    就要回退渲染，这点开销可以忽略）：
+
+    - 页面旋转 / 裁切框（整页渲染会转正、裁边，直拷不会）；
+    - 注释：``/Link`` 没有外观，可忽略；其余一律算有内容；
+    - 可见文字：``get_texttrace()`` 的 ``type == 3`` 是不可见 OCR 层，不产生像素，
+      可忽略；其余类型（0/1/…）算可见文字；
+    - 矢量绘制：``get_drawings()`` 非空即算（水印/线框/印章轮廓）。
+    """
+    import pymupdf as fitz
+
+    if int(page.rotation) % 360:
+        return "页面有旋转"
+    crop, media = page.cropbox, page.mediabox
+    if (
+        abs(crop.x0 - media.x0) > 0.5
+        or abs(crop.y0 - media.y0) > 0.5
+        or abs(crop.x1 - media.x1) > 0.5
+        or abs(crop.y1 - media.y1) > 0.5
+    ):
+        return "页面有裁切框"
+    try:
+        for annot in page.annots() or ():
+            kind = annot.type
+            name = str(kind[1] if isinstance(kind, tuple) and len(kind) > 1 else kind)
+            if name not in IGNORABLE_ANNOT_TYPES:
+                return f"页面有注释（{name or '未知'}）"
+    except Exception:  # noqa: BLE001 - 读不出注释就从严回退
+        return "页面注释检查失败"
+    try:
+        for span in page.get_texttrace():
+            if int(span.get("type", 0)) != 3:
+                return "页面有可见文字"
+    except Exception:  # noqa: BLE001 - 这一项读不出来就从严回退
+        return "页面文字检查失败"
+    try:
+        if page.get_drawings():
+            return "页面有矢量绘制"
+    except Exception:  # noqa: BLE001
+        return "页面绘制检查失败"
+    return None
+
+
 def _embedded_page_image(doc, page, page_rect, ext: str, actual_zoom: float):
     """判断本页能否走 quick（直接取内嵌图）。
 
@@ -267,13 +333,18 @@ def _embedded_page_image(doc, page, page_rect, ext: str, actual_zoom: float):
     1. **内嵌图必须只有一张**。一页多图时老实现会产出 ``1_1.jpg``/``1_2.jpg``
        多个文件，而 detect/rembg/print 全部按「一页一图」工作，多出来的文件会
        被打成孤儿页。
-    2. **格式必须是 jpg/png**。jp2/jbig2/CCITT 之类要解码再重编码，很可能比
+    2. **页面上不能有别的可见内容**（见 ``_page_scan_block_reason``）：文字、
+       矢量绘制、注释、旋转、裁切框都会被整页渲染画进结果，直拷会丢。
+    3. **格式必须是 jpg/png**。jp2/jbig2/CCITT 之类要解码再重编码，很可能比
        整页渲染还慢（"quick" 名不副实），而且 PIL 缺解码器时整页直接失败。
-    3. **像素不得低于整页渲染尺寸**。否则是低清缩略图/装饰图，取它只会更糊。
+    4. **像素不得低于整页渲染尺寸**。否则是低清缩略图/装饰图，取它只会更糊。
     """
     images = page.get_images(full=True)
     if len(images) != 1:
         return None, f"内嵌 {len(images)} 张图（多图不取，避免破坏一页一图）"
+    why = _page_scan_block_reason(page)
+    if why is not None:
+        return None, why
     try:
         info = doc.extract_image(images[0][0])
     except Exception as exc:  # noqa: BLE001
@@ -373,6 +444,13 @@ def _report_batch(result: dict, progress: Optional[dict], reporter) -> None:
                 reasons[k] = reasons.get(k, 0) + v
             if batch_fallback:
                 progress["fallback"] = progress.get("fallback", 0) + batch_fallback
+            progress["jpx_fast"] = (
+                progress.get("jpx_fast", 0) + int(result.get("jpx_fast") or 0)
+            )
+            progress["quick_direct"] = (
+                progress.get("quick_direct", 0)
+                + int(result.get("quick_direct") or 0)
+            )
     for p in pages:
         idx = int(p.get("idx", 0))
         if not p.get("ok"):
@@ -393,6 +471,159 @@ def _report_batch(result: dict, progress: Optional[dict], reporter) -> None:
                 f"进度: {done}/{total} 页 - 第 {idx+1} 页 "
                 f"用时: {p.get('elapsed', 0.0):.2f}s"
             )
+
+
+def _shrink_mupdf_store(fitz) -> None:
+    """把 MuPDF 的解码图像缓存还回去（**内存**优化的关键一步）。
+
+    实测（JPX 4278×6931 连渲 4 页）：RSS 40MB → 81 → 159 → 231 → 307MB，
+    因为解出来的整页原图留在 MuPDF 的 store 里；``store_shrink(100)`` 之后
+    307MB → 63MB，只花 0.018s。批量提取是多进程 × 每批多页，不回收的话
+    峰值内存会是"每页 ~70~90MB × 页数 × 进程数"。
+    """
+    try:
+        fitz.TOOLS.store_shrink(100)
+    except Exception:  # noqa: BLE001 - 老版本/异常环境没有就算了
+        pass
+
+
+def _jpx_page_source(doc, page):
+    """本页能否「绕过 MuPDF 整页渲染、直接解内嵌 JPX 码流」。
+
+    返回 ``(info, None)`` 可取；``(None, 原因)`` 需回落整页渲染。
+
+    判据（与 jpg/png 直拷共用同一套"纯扫描页"检查）：
+    唯一内嵌图、无 SMask、铺满整页、无旋转/裁切/注释/可见文字/矢量绘制、
+    格式是 jpx/jp2/j2k。任一不满足就回退——宁慢勿错。
+
+    ⚠️ "铺满整页"必须用 ``get_image_info()``（只扫内容流，~0ms）；``get_image_rects()``
+    要建整页显示列表（实测 ~1090ms），比省下来的解码还贵。
+    """
+    import pymupdf as fitz
+
+    images = page.get_images(full=True)
+    if len(images) != 1:
+        return None, f"内嵌 {len(images)} 张图（多图不取，避免破坏一页一图）"
+    xref = int(images[0][0])
+    if int(images[0][1] or 0):  # SMask
+        return None, "内嵌图带透明遮罩（SMask）"
+    why = _page_scan_block_reason(page)
+    if why is not None:
+        return None, why
+    infos = page.get_image_info()
+    if len(infos) != 1:
+        return None, "同一张图画了多次（拼贴/水印）"
+    bbox = fitz.Rect(infos[0]["bbox"])
+    rect = page.rect
+    if (
+        abs(bbox.x0 - rect.x0) > 1.5
+        or abs(bbox.y0 - rect.y0) > 1.5
+        or abs(bbox.x1 - rect.x1) > 1.5
+        or abs(bbox.y1 - rect.y1) > 1.5
+    ):
+        return None, "内嵌图未铺满整页（页面上还有别的内容）"
+    try:
+        info = doc.extract_image(xref)
+    except Exception:  # noqa: BLE001 - 抽不出码流就回落
+        return None, "抽取内嵌码流失败"
+    if (info.get("ext") or "").lower() not in JPX_SOURCE_EXTS:
+        return None, f"内嵌格式 .{(info.get('ext') or '').lower()}（非 jpx/jp2/j2k）"
+    if not info.get("width") or not info.get("height"):
+        return None, "取不到内嵌图尺寸"
+    return info, None
+
+
+def _decode_jpx_stream(stream: bytes, target_wh: tuple[int, int]):
+    """把 JPX 码流解成 PIL 图；能降档就先降档。失败返回 None。
+
+    JPEG2000 的码流自带分辨率分级：``_reduce=1`` 只解一半边长（实测
+    0.23s vs 全解 0.82s）。不同码流支持的层数不一样，超出就报
+    "broken data stream"——所以降档失败必须能无痛回落到全解。
+    """
+    from PIL import Image
+
+    # 1) 能降档才走 PIL（只解目标需要的层数）
+    try:
+        with Image.open(io.BytesIO(stream)) as src:
+            w, h = src.size
+            reduce = 0
+            while (
+                reduce < 6
+                and (max(w, h) >> (reduce + 1))
+                >= max(target_wh) * JPX_REDUCE_MIN_COVERAGE
+            ):
+                reduce += 1
+            if reduce:
+                src._reduce = reduce  # type: ignore[attr-defined]
+                src.load()
+                return src.convert("RGB")
+    except Exception:  # noqa: BLE001 - 该层数不支持/码流坏 → 回落全解
+        pass
+
+    # 2) 全分辨率解码：cv2(OpenJPEG) 通常比 PIL 快约 40%
+    try:
+        import cv2
+        import numpy as np
+
+        arr = cv2.imdecode(np.frombuffer(stream, dtype=np.uint8), cv2.IMREAD_COLOR)
+        if arr is not None:
+            return Image.fromarray(cv2.cvtColor(arr, cv2.COLOR_BGR2RGB))
+    except Exception:  # noqa: BLE001 - 没装 cv2 / 解不出来 → 用 PIL
+        pass
+    try:
+        with Image.open(io.BytesIO(stream)) as src:
+            src.load()
+            return src.convert("RGB")
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _jpx_reduce_level(native_wh: tuple[int, int], target_wh: tuple[int, int],
+                      max_level: int = 6) -> int:
+    """这个码流最多能降几档还不低于目标分辨率（0 = 不建议降档）。
+
+    只有 ``>= 1`` 才值得走 JPX 快通道：降不下档时 cv2/PIL 的全解既不比
+    MuPDF 快多少，还要多一份解码缓冲（实测多进程下反而更慢、更吃内存）。
+    """
+    native_edge = max(native_wh)
+    target_edge = max(target_wh)
+    level = 0
+    while (
+        level < max_level
+        and (native_edge >> (level + 1)) >= target_edge * JPX_REDUCE_MIN_COVERAGE
+    ):
+        level += 1
+    return level
+
+
+def _render_jpx_page(info, out_dir: str, page_idx: int, ext: str,
+                     target_wh: tuple[int, int]):
+    """JPX 快通道：直接解内嵌码流，落到**与整页渲染完全相同的目标尺寸**。
+
+    返回 ``(路径, 宽, 高)``；不能降档或解码失败返回 None（调用方回落整页渲染）。
+
+    ⚠️ ``target_wh`` 必须由 ``render_zoom``（含 DPI 下限与 6000px 封顶）算出来，
+    **不能用内嵌图原生尺寸**——否则用户设的 ``zoom`` / ``dpi`` 在这一页上会被
+    悄悄忽略，同一本书里还会出现"有的页按 zoom、有的页按原生"的尺寸不一致。
+
+    ⚠️ 只有**能降档**（``_jpx_reduce_level >= 1``）才走快通道：不能降档时
+    整帧解码的耗时与 MuPDF 相当，但内存更高、多进程吞吐反而更差（实测
+    168 页 43.7s → 48.2s），交给 MuPDF 更划算。
+    """
+    native_wh = (int(info["width"]), int(info["height"]))
+    if _jpx_reduce_level(native_wh, target_wh) < 1:
+        return None
+    img = _decode_jpx_stream(info["image"], target_wh)
+    if img is None:
+        return None
+    from PIL import Image
+
+    if img.size != target_wh:
+        # 缩小/放大都做：整页渲染在这两种情况下也是同一个目标尺寸
+        img = img.resize(target_wh, Image.LANCZOS)  # type: ignore[attr-defined]
+    img_path = os.path.join(out_dir, f"{page_idx + 1}.{ext}")
+    _save_pil(img, img_path, ext)
+    return img_path, img.width, img.height
 
 
 def _render_batch_in_worker(payload: tuple) -> dict:
@@ -426,6 +657,8 @@ def _render_batch_in_worker(payload: tuple) -> dict:
             ],
             "reasons": {},
             "fallback": 0,
+            "jpx_fast": 0,
+            "quick_direct": 0,
         }
 
     try:
@@ -443,9 +676,12 @@ def _render_batch_in_worker(payload: tuple) -> dict:
         return _fail_all(f"打开 PDF 失败: {e}")
 
     pages: List[dict] = []
+    jpx_fast = 0
+    quick_direct = 0
     try:
         for page_idx in page_indices:
             page_start = time.time()
+            used_mupdf = False
             try:
                 page = doc.load_page(page_idx)
                 page_rect = page.rect
@@ -458,27 +694,64 @@ def _render_batch_in_worker(payload: tuple) -> dict:
                 quick_zoom = calculate_zoom(original_width, zoom)
                 actual_zoom = render_zoom(original_width, zoom, dpi)
 
-                if quick:
-                    # 自适应 quick：不满足条件时 _embedded_page_image 给出原因，
-                    # 直接降级整页渲染，不再"为了快而变慢/变糊"。
+                # 自动模式只在 zoom=1 时考虑直取：zoom≠1 需要重采样，直拷
+                # 既拿不到零解码的好处，又容易和整页渲染的尺寸口径不一致。
+                auto_quick = bool(quick) and math.isclose(
+                    float(zoom), 1.0, rel_tol=0.0, abs_tol=1e-9
+                )
+
+                if auto_quick:
+                    # 自适应 quick：只有"纯扫描页"才直取；有文字/矢量/注释/
+                    # 旋转/裁切等任何可见内容，一律回退整页渲染（原因见
+                    # _page_scan_block_reason）。
                     info, why = _embedded_page_image(
                         doc, page, page_rect, ext, quick_zoom
                     )
                     if info is None:
-                        img_path, iw, ih = _render_page(
-                            page, out_dir, page_idx, ext, actual_zoom
+                        # JPX 快通道：整页就是一张 JPX 时按**目标分辨率**解码，
+                        # 跳过 MuPDF 的整帧解码。目标尺寸必须与整页渲染完全一致
+                        # （zoom / DPI 下限 / 6000px 封顶都要生效）。
+                        target_wh = (
+                            max(1, int(math.ceil(page_rect.width * actual_zoom))),
+                            max(1, int(math.ceil(page_rect.height * actual_zoom))),
                         )
-                        reasons[why] = reasons.get(why, 0) + 1
-                        fallback += 1
+                        jpx_info, jpx_why = _jpx_page_source(doc, page)
+                        fast = (
+                            _render_jpx_page(
+                                jpx_info, out_dir, page_idx, ext, target_wh
+                            )
+                            if jpx_info is not None
+                            else None
+                        )
+                        if fast is not None:
+                            img_path, iw, ih = fast
+                            jpx_fast += 1
+                        else:
+                            # 用更具体的那个原因做日志（例如"页面有可见文字"
+                            # 比"内嵌格式 .jpx"更能说明为什么没走快通道）
+                            why = jpx_why or why or "JPX 解码失败"
+                            img_path, iw, ih = _render_page(
+                                page, out_dir, page_idx, ext, actual_zoom
+                            )
+                            used_mupdf = True
+                            reasons[why] = reasons.get(why, 0) + 1
+                            fallback += 1
                     else:
                         img_path, iw, ih = _save_embedded_image(
                             info, out_dir, page_idx, ext, quick_zoom
                         )
+                        quick_direct += 1
                 else:
-                    # 标准模式：渲染整页为高质量图片
+                    # 标准模式（quick=False，或 zoom≠1）：渲染整页为高质量图片
                     img_path, iw, ih = _render_page(
                         page, out_dir, page_idx, ext, actual_zoom
                     )
+                    used_mupdf = True
+
+                if used_mupdf:
+                    # MuPDF 会把解出来的整页原图留在 store 里；及时回收，
+                    # 否则一个进程按 ~70~90MB/页涨（见 _shrink_mupdf_store）
+                    _shrink_mupdf_store(fitz)
 
                 pages.append({
                     "idx": int(page_idx), "ok": True, "path": img_path,
@@ -497,7 +770,13 @@ def _render_batch_in_worker(payload: tuple) -> dict:
             doc.close()
         except Exception:  # noqa: BLE001
             pass
-    return {"pages": pages, "reasons": reasons, "fallback": fallback}
+    return {
+        "pages": pages,
+        "reasons": reasons,
+        "fallback": fallback,
+        "jpx_fast": jpx_fast,
+        "quick_direct": quick_direct,
+    }
 
 
 def extract_single_page(
@@ -635,6 +914,8 @@ def render_pages_parallel(
         progress = {"lock": threading.Lock(), "done": 0, "total": len(page_indices)}
     progress.setdefault("reasons", {})
     progress.setdefault("fallback", 0)
+    progress.setdefault("jpx_fast", 0)
+    progress.setdefault("quick_direct", 0)
 
     page_indices = [int(i) for i in page_indices]
     batches = [
@@ -681,6 +962,13 @@ def render_pages_parallel(
         _consume(_render_batch_in_worker(_payload(batch)))
 
     if quick:
+        jpx_fast = int(progress.get("jpx_fast") or 0)
+        quick_direct = int(progress.get("quick_direct") or 0)
+        if jpx_fast:
+            print(
+                f"ℹ️  quick：{jpx_fast}/{len(page_indices)} 页直接解 JPX 码流"
+                "（跳过整页渲染）"
+            )
         reasons: dict = progress.get("reasons") or {}
         fallback = progress.get("fallback", 0)
         if fallback:
@@ -688,8 +976,11 @@ def render_pages_parallel(
                 f"{k} ×{v}" for k, v in sorted(reasons.items(), key=lambda kv: -kv[1])
             )
             print(f"ℹ️  quick：{fallback}/{len(page_indices)} 页降级整页渲染（{detail}）")
-        else:
+        elif quick_direct + jpx_fast == len(page_indices):
             print(f"ℹ️  quick：全部 {len(page_indices)} 页直接取内嵌图")
+        elif not quick_direct and not jpx_fast:
+            # 一页都没直取、也没有降级原因：说明 zoom≠1，自动模式没参与判断
+            print(f"ℹ️  quick：zoom={zoom}≠1，全部页按整页渲染")
     return [results_by_idx.get(i, False) for i in page_indices]
 
 

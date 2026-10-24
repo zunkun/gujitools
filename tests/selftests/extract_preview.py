@@ -76,6 +76,38 @@ def run(ctx) -> None:
     ok("宿主刷新后仍显示当前页产物", viewer._shown_extract_page == 2
        and viewer.view.has_image)
 
+    # ---- 连点两页：一次只跑一个提取，后面的只排队（不把子进程池塞满） ----
+    # ⚠️ 用户 2026-10-24 报「JPX 提取时点其他页一直转圈」：连点 N 页时若每页
+    #    都往子进程池塞一个提取（JPX 一页 ~1s），后面点的页要等前面全跑完。
+    #    这里守住"同一时刻只有一个提取在跑，其余只保留最新一页"。
+    out2 = ctx.tmp / "extract_preview_out2"
+    thumb2 = ctx.tmp / "extract_preview_thumbs2"
+    viewer2 = ExtractPreviewWidget()
+    viewer2.set_params_provider(lambda: {"ext": "jpg", "zoom": 1,
+                                         "quick": True, "dpi": 200})
+    viewer2.set_extract_dir(out2)
+    viewer2.set_pdf(pdf, cache_dir=thumb2)
+    ok("连点：等首屏缩略图与自动提取收尾",
+       wait_until(app, lambda: viewer2.strip.count() == 3
+                  and viewer2._extract_inflight is None, timeout=20),
+       f"count={viewer2.strip.count()} inflight={viewer2._extract_inflight}")
+    viewer2.strip.setCurrentRow(1)
+    viewer2.strip.setCurrentRow(2)
+    # 两次切页都在同一个事件循环片里完成：第 2 页刚提交，第 3 页只能排队
+    ok("连点：只有一页在跑，最新那页排队",
+       viewer2._extract_inflight == 1 and viewer2._extract_pending == 2,
+       f"inflight={viewer2._extract_inflight} pending={viewer2._extract_pending}")
+    ok("连点：排队页随后也会提取",
+       wait_until(app, lambda: (out2 / "2.jpg").is_file()
+                  and (out2 / "3.jpg").is_file(), timeout=20),
+       str(sorted(p.name for p in out2.glob("*.jpg"))))
+    ok("连点：队列跑空后状态复位",
+       wait_until(app, lambda: viewer2._extract_inflight is None
+                  and viewer2._extract_pending is None, timeout=10),
+       f"inflight={viewer2._extract_inflight} pending={viewer2._extract_pending}")
+    viewer2.shutdown_workers()
+    viewer2.deleteLater()
+
     # ---- 换文档：提取态作废（代际号守卫） ----
     viewer.set_pdf(None)
     pump(app, times=4)
