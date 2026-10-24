@@ -4,7 +4,8 @@
 只做控件创建与信号连接，业务动作全部委托给宿主页面的其他 Mixin。
 
 视觉结构（自上而下）：
-1. 页头卡片：返回 + 任务名 + 源文件标签 + 流程编辑 + 选 PDF + 插入图片/文件夹；
+1. 页头卡片：返回 + 任务名（含任务编号）+ 源文件标签 + 流程编辑 + 选 PDF +
+   插入图片/文件夹；
 2. 步骤条卡片：四步流程与状态；
 3. 主体：左侧预览卡片（自适应）+ 右侧参数卡片（固定宽度区间）；
 4. 底部：执行日志状态条（常驻一行，点击唤出不挤压布局的日志浮层），
@@ -255,17 +256,30 @@ class DetailViewMixin:
         text_column = QVBoxLayout()
         text_column.setContentsMargins(0, 0, 0, 0)
         text_column.setSpacing(1)
+        # 任务名 + 任务编号同一行：编号是任务的**主键**（任务目录名，创建后
+        # 不变），与可随时改名的任务名不是一回事。用淡色小字紧跟标题，既能
+        # 核对任务、又不会和名字混读（用户 2026-10-24）。
+        title_row = QHBoxLayout()
+        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setSpacing(T.SPACE_SM)
         self.detail_title = QLabel("任务详情")
         apply_to(self.detail_title, T.SIZE_SUBTITLE, bold=True, color=T.INK)
-        text_column.addWidget(self.detail_title)
+        title_row.addWidget(self.detail_title)
         # 任务名**行内编辑**（2026-10-06「非必需，可随时修改」）。
         # ⚠️ 不用 QInputDialog：那也是模态窗，离屏自测不能真弹（项目硬规则），
         #    而且页头本来就有标题的位置，行内改最省一次点击。
         self.rename_edit = QLineEdit()
         self.rename_edit.setVisible(False)
+        self.rename_edit.setMinimumWidth(280)
         self.rename_edit.editingFinished.connect(self._commit_rename)
         self.rename_edit.installEventFilter(cast("QObject", self))   # Esc 取消
-        text_column.addWidget(self.rename_edit)
+        title_row.addWidget(self.rename_edit)
+        self.task_no_label = QLabel("")
+        apply_to(self.task_no_label, T.SIZE_CAPTION, color=T.INK_FAINT)
+        self.task_no_label.setToolTip("任务编号（任务目录名，创建后不变）")
+        title_row.addWidget(self.task_no_label)
+        title_row.addStretch()
+        text_column.addLayout(title_row)
         self.source_label = QLabel("")
         apply_to(self.source_label, T.SIZE_CAPTION, color=T.INK_FAINT)
         text_column.addWidget(self.source_label)
@@ -354,6 +368,8 @@ class DetailViewMixin:
         self.rename_edit.setText(str(record.get("name") or ""))
         self.rename_edit.setVisible(True)
         self.detail_title.setVisible(False)
+        # 编号让位给输入框：两者同处一行，留着会把输入框挤到标题后面
+        self.task_no_label.setVisible(False)
         self.rename_edit.setFocus()
         self.rename_edit.selectAll()
 
@@ -372,6 +388,7 @@ class DetailViewMixin:
         typed = self.rename_edit.text().strip()
         self.rename_edit.setVisible(False)
         self.detail_title.setVisible(True)
+        self.task_no_label.setVisible(True)
         if not typed:
             return                      # 留空 = 不改（rename_task 的空回落只在
                                         # 明确"清空后保存"时用）

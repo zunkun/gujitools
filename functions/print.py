@@ -12,9 +12,10 @@ from typing import List, Optional, Tuple
 from concurrent.futures import Future, ThreadPoolExecutor
 
 from fpdf.syntax import DestinationXYZ
-from PIL import Image, ImageOps
+from PIL import Image, ImageChops, ImageOps
 
 from core.command_spec import PRINT_DEFAULTS
+from core.reporter import PROGRESS_TOTAL_EVENT
 from functions.base import FunctionBase
 from utils.color_utils import parse_color
 from utils.margin_utils import DEFAULT_PAGE_MARGINS, normalize_margin
@@ -39,6 +40,49 @@ from utils.sort_utils import natural_sort_key
 # 嵌入 PDF 前把超大扫描图缩放到的打印分辨率（仅缩小、不放大）。
 # 300DPI 对古籍扫描足够清晰，同时避免 fpdf 对数千像素原图逐页 zlib 压缩。
 PRINT_IMAGE_DPI = 300
+
+#: fpdf 图片 FlateDecode 用的 zlib 级别（fpdf 默认 -1，等价 6）。
+#
+#: ⚠️ 这是 print 阶段**最大的单项耗时**：fpdf 逐页串行压缩嵌入数据，
+#: 级别 6 比级别 3 慢 2.4 倍，换来的只是 PDF 小 8%（任务 0017 实测 50 页：
+#: 3 → 10.1s / 76MB，6 → 14.5s / 70MB）。图片本身是无损 Flate，级别只影响
+#: 压缩率、不影响任何像素，所以取 3 这个折中点。
+PRINT_IMAGE_ZLIB_LEVEL = 3
+
+
+def _flatten_alpha(img: Image.Image) -> Image.Image:
+    """把带 alpha 的图收敛成可嵌入 PDF 的 ``RGB``（透明区铺白底）。
+
+    ⚠️ 只动**带 alpha** 的图：CMYK / 调色板 / 1 位等其余模式维持原样交给
+    fpdf（它有自己的色彩空间处理，擅自转 RGB 会改变颜色）。
+
+    ⚠️ 全不透明时走 ``convert("RGB")`` 快路径：``paste(..., mask=alpha)``
+    是逐像素合成，5.5MP 的页要多花约 200ms/页（2026-10-24 实测）；而 alpha
+    全为 255 时两者结果**逐像素相同**，没有理由付这份钱。
+    """
+    if img.mode not in ("RGBA", "LA"):
+        return img
+    alpha = img.getchannel("A")
+    if alpha.getextrema() == (255, 255):
+        return img.convert("RGB")
+    rgba = img if img.mode == "RGBA" else img.convert("RGBA")
+    bg = Image.new("RGB", rgba.size, (255, 255, 255))
+    bg.paste(rgba, mask=rgba.getchannel("A"))
+    return bg
+
+
+def _is_grayscale(img: Image.Image) -> bool:
+    """``RGB`` 图是否逐像素满足 R=G=B（纯灰）。
+
+    纯灰图转 ``L`` 与留 ``RGB`` 在画面上完全等价，但嵌入数据只有 1/3。
+    用 ``ImageChops.difference`` 的 ``getbbox()`` 判断（C 实现，5.5MP 约
+    20ms），不引 numpy。
+    """
+    r, g, b = img.split()
+    return (
+        ImageChops.difference(r, g).getbbox() is None
+        and ImageChops.difference(g, b).getbbox() is None
+    )
 
 
 def _normalize_page_rects(raw) -> dict:
@@ -550,6 +594,11 @@ class PrintFunction(FunctionBase):
         # 规则在 utils.page_layout.sides_for_pages（预览与 PDF 同一份）
         sides = sides_for_pages(total, sorted_nodes, page_number_start_page)
 
+        # 先报一次**总数**（还没有完成量）：界面立刻能把进度条上限设成
+        # total_written，而不是停在启动时那个 0/1 的空条上干等（用户
+        # 2026-10-24：「页面反馈少」）。协议细节见 core.reporter。
+        self.reporter.event(PROGRESS_TOTAL_EVENT, total=total_written)
+
         # ⚠️ **加载要按序、限窗、写完即释放**（2026-09-26 极限测试实测）
         #    老实现把所有页 `executor.submit(...)` 一次性提上去、再等全部
         #    `page_data` 收齐才开始写 PDF：等于**整本书的图同时驻留内存**。
@@ -559,6 +608,12 @@ class PrintFunction(FunctionBase):
         executor = ThreadPoolExecutor(max_workers=workers)
         pending: dict[int, Future[dict | None]] = {}
         submit_cursor = 0
+        # fpdf 的图片压缩级别是**模块级**设置（见 PRINT_IMAGE_ZLIB_LEVEL）：
+        # 只在本轮的贴图循环里调低，结束时还原，别把副作用留给同进程的其它活儿。
+        from fpdf.image_parsing import SETTINGS as _fpdf_image_settings
+
+        _previous_zlib_level = _fpdf_image_settings.compression_level
+        _fpdf_image_settings.compression_level = PRINT_IMAGE_ZLIB_LEVEL
 
         def _submit_until_window_full() -> None:
             """把待加载的页补到窗口上限（跳过 skip_pages 的页）。"""
@@ -637,17 +692,20 @@ class PrintFunction(FunctionBase):
                 data["img"] = None
                 del img, data
                 processed_count += 1
+                # 结构化进度：**整个 print 阶段进度条的唯一来源**（total = 实际写入
+                # PDF 的页数，页面清单增删后自然跟着变）。合成阶段刻意不发进度，
+                # 否则两条独立进度会交替驱动同一条进度条（见 print_stage 的说明）。
+                #
+                # ⚠️ **每页都发**（2026-10-24）：GUI 侧对进度事件有 200ms 合并窗口
+                #    （见 runner._PROGRESS_UI_MS），逐页事件的代价可忽略；而原先
+                #    每 10 页才发一次，50 页的书半分钟里进度条只跳 5 下，用户看到
+                #    的就是「卡在那里、没什么反馈」（用户报障）。
+                self.reporter.progress(processed_count, total_written)
                 if processed_count % 10 == 0 or processed_count == total_written:
                     print(f"\r写入进度: {processed_count}/{total_written}", end="")
-                    # 结构化进度：**整个 print 阶段进度条的唯一来源**（total = 实际写入
-                    # PDF 的页数，页面清单增删后自然跟着变）。合成阶段刻意不发进度，
-                    # 否则两条独立进度会交替驱动同一条进度条（见 print_stage 的说明）。
-                    self.reporter.progress(processed_count, total_written)
         finally:
             executor.shutdown(wait=False, cancel_futures=True)
-        # 收尾补发一次：最后一页若恰好落在 %10 的间隙里，上面也到不了终点
-        if processed_count:
-            self.reporter.progress(processed_count, total_written)
+            _fpdf_image_settings.compression_level = _previous_zlib_level
 
         if processed_count == 0:
             # 有图片但一页都没写出来（全被 skip_pages 跳过、或图片全部解码失败）
@@ -677,10 +735,16 @@ class PrintFunction(FunctionBase):
             #    先查方向标签：无标签时 exif_transpose 也会整图复制一份。
             if img.getexif().get(274, 1) != 1:
                 img = ImageOps.exif_transpose(img)
-            if img.mode == "RGBA":
-                bg = Image.new("RGB", img.size, (255, 255, 255))
-                bg.paste(img, mask=img.split()[3])
-                img = bg
+            img = _flatten_alpha(img)
+            # ⚠️ 灰度转 L（2026-10-24，用户报「生成 PDF 慢」实测）：
+            #    fpdf 对每页做 FlateDecode 时是**串行** zlib 压缩，耗时与像素
+            #    字节数成正比。古籍扫描页绝大多数 R=G=B（纯灰），此时转 `L`
+            #    在**逐像素等价**（无损、不影响观感）的前提下把数据量降到
+            #    1/3，单页压缩耗时同步降到 1/3（任务 0017 实测 50 页
+            #    27s → 14.5s，PDF 116MB → 70MB）。彩色页（R≠G≠B）照旧走
+            #    RGB，不丢任何颜色。
+            if img.mode == "RGB" and _is_grayscale(img):
+                img = img.convert("L")
             # 超过打印所需像素时等比缩小（只缩不放），宽高比不变，
             # 后续排版几何完全一致，但压缩速度与 PDF 体积大幅改善。
             w, h = img.size

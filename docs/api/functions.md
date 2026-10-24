@@ -4,7 +4,7 @@
 
 图像处理功能模块：GUI 与 CLI 共用同一套算法
 
-覆盖 11 个模块、12 个公开类、49 个公开函数/方法（生成于 2026-10-23）。
+覆盖 11 个模块、12 个公开类、49 个公开函数/方法（生成于 2026-10-24）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -594,6 +594,7 @@ static/guji.yaml 模板派生的配置，保留原模板的注释与键顺序。
 | 名称 | 值 |
 | --- | --- |
 | PRINT_IMAGE_DPI | `300` |
+| PRINT_IMAGE_ZLIB_LEVEL | `3` |
 
 ### `class PrintFunction(FunctionBase)`
 

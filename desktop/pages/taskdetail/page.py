@@ -360,6 +360,9 @@ class TaskDetailPage(
                 "请重新导入该 PDF（或把原文件放回原处后重开任务）。",
             )
         self.detail_title.setText(task["name"])
+        # 任务编号与任务名并排显示：编号是任务目录名/索引主键，创建后不变，
+        # 任务名却可随时改，两者必须能分开看（用户 2026-10-24）。
+        self.task_no_label.setText(f"任务#{task_id}")
         self.source_label.setText(
             self.source_path.name if self.source_path else "尚未选择 PDF")
         self._warn_if_flow_degraded(task_id)
