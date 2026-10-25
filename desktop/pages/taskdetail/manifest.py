@@ -21,6 +21,7 @@ from desktop.components.viewers.edit_sync import show_edited_image
 from desktop.ui import theme as T
 from desktop.ui.widgets import mark_input_entry
 from desktop.utils.files import (
+    IMAGE_SUFFIXES,
     THUMBNAIL_EDGE,
     default_open_dir,
     list_stage_images,
@@ -32,6 +33,65 @@ from utils.file_utils import replace_with_retry
 #: 必全部一次加载——只把首屏几屏生成到 ``thumbnails/input/``，更靠后的页等
 #: 用户滚到可见窗口时由查看器现解码。
 _ENTRY_THUMB_WARM_LIMIT = 60
+
+
+def reconcile_page_files(
+    pages: list[dict], directory: Path
+) -> tuple[list[dict], int]:
+    """把页面清单按 **stem** 对齐到目录里的实际文件（jpg/png 等格式都支持）。
+
+    - 清单里的路径还在 → 原样保留；
+    - 路径不在、但有同 stem 的其它格式（png ↔ jpg）→ 换成实际存在的那个；
+    - 同 stem 同时有多个格式 → 优先保留原后缀，否则取目录里排序后的第一个；
+    - 完全找不到同 stem → 原样保留（由 ``_manifest_paths`` 过滤），不清空清单。
+
+    返回 ``(新清单, 对上的页数)``。对上的页数为 0 表示上游整批换了产物，
+    调用方应整表重建；目录读不了时返回 ``-1``，调用方保持原样（不误清空）。
+    """
+    if not pages:
+        return list(pages), 0
+    by_stem: dict[str, list[Path]] = {}
+    try:
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                if not entry.is_file():
+                    continue
+                suffix = Path(entry.name).suffix.lower()
+                if suffix not in IMAGE_SUFFIXES:
+                    continue
+                path = Path(entry.path)
+                by_stem.setdefault(path.stem, []).append(path)
+    except OSError:
+        return list(pages), -1
+    for options in by_stem.values():
+        options.sort(key=lambda path: path.name)
+
+    kept: list[dict] = []
+    resolved = 0
+    for page in pages:
+        text = str(page.get("file") or "")
+        if not text:
+            kept.append(page)
+            continue
+        current = Path(text)
+        options = by_stem.get(current.stem) or []
+        if not options:
+            kept.append(page)
+            continue
+        resolved += 1
+        if current in options:
+            kept.append(page)
+            continue
+        chosen = next(
+            (path for path in options
+             if path.suffix.lower() == current.suffix.lower()),
+            options[0],
+        )
+        updated = dict(page)
+        updated["file"] = str(chosen)
+        kept.append(updated)
+    return kept, resolved
+
 
 if TYPE_CHECKING:
     from desktop.components.viewers import (
@@ -147,10 +207,35 @@ class PageListMixin:
                 for page in self.pages
             )
             if inside:
-                return
-            # 旧清单整个属于**另一个**输入源：作废（上游产物已经换了）
-            self.log_view.append("上游产物已更新，页面清单已按本步骤的输入目录重建。")
-            self.pages = []
+                # ⚠️ 目录没变 ≠ 清单还有效（2026-10-25 用户报障：检测提交从
+                #    PNG 改成 JPEG 后，旧 pages.json 仍指向同目录的 .png；文件
+                #    已被替换成 .jpg，预览却显示「暂无图片」）。
+                #    按 **stem** 对齐实际文件：同 stem 换格式就更新路径，jpg/png
+                #    都支持；只有一条都对不上才整表重建。
+                kept, resolved = reconcile_page_files(self.pages, directory)
+                if resolved < 0:  # 目录读不了：保持原清单，不误清空
+                    return
+                if resolved > 0:
+                    if kept != self.pages:
+                        self.pages = kept
+                        self.store.save_pages(
+                            self.task_id, self.pages, **self._node_scope()
+                        )
+                        self.log_view.append(
+                            "页面清单里有文件换了格式，已按同名文件更新"
+                            "（jpg/png 都支持）。"
+                        )
+                    return
+                self.log_view.append(
+                    "页面清单里的文件已全部找不到，已按当前输入目录重建。"
+                )
+                self.pages = []
+            else:
+                # 旧清单整个属于**另一个**输入源：作废（上游产物已经换了）
+                self.log_view.append(
+                    "上游产物已更新，页面清单已按本步骤的输入目录重建。"
+                )
+                self.pages = []
         # ⚠️ 清单落点按**节点**（B 方案）：副本节点的页集合写它自己的
         #    ``pages~<节点>.json``，不覆盖主节点那份。
         self.pages = self.store.refresh_pages_from_dir(

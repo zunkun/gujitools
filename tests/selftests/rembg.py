@@ -53,6 +53,48 @@ def run(ctx) -> None:
     ok("第三步没有『提交本次任务』按钮（去底色只有一步）",
        d.submit_button.isHidden())
 
+    # 回归（2026-10-25）：检测提交从 PNG 改成 JPEG 后，旧 pages.json 仍指向
+    # **同目录**的 .png（文件已被替换成 .jpg）。此时不能因为“目录没变”就认为
+    # 清单有效，否则预览显示「暂无图片」——必须按输入目录重建。
+    _stems = sorted({p.stem for p in _crop_dir.iterdir() if p.is_file()})
+    d.pages = [
+        {"file": str(_crop_dir / f"{stem}.png"), "label": stem}
+        for stem in _stems
+    ]
+    d._sync_manifest_to_input()
+    _rebuilt = d._manifest_paths()
+    ok("格式切换后旧 .png 清单自动按目录重建（不显示暂无图片）",
+       len(_rebuilt) == len(_stems)
+       and all(p.suffix.lower() == ".jpg" for p in _rebuilt),
+       f"{len(_rebuilt)} vs {len(_stems)}: {[p.name for p in _rebuilt[:3]]}")
+    d._refresh_preview()
+
+    # jpg/png **混用**也必须认：按 stem 对齐，不把格式写死。
+    from PIL import Image as _PILImage
+
+    from desktop.pages.taskdetail.manifest import reconcile_page_files
+
+    _mixed = Path(ctx.tmp) / "mixed_formats"
+    _mixed.mkdir(parents=True, exist_ok=True)
+    _PILImage.new("RGB", (8, 8), "white").save(_mixed / "a.jpg")
+    _PILImage.new("RGB", (8, 8), "white").save(_mixed / "b.png")
+    _aligned, _resolved = reconcile_page_files(
+        [
+            {"file": str(_mixed / "a.png"), "label": "a"},
+            {"file": str(_mixed / "b.jpg"), "label": "b"},
+            {"file": str(_mixed / "c.jpg"), "label": "c"},
+        ],
+        _mixed,
+    )
+    ok("jpg/png 混用时按 stem 对齐（不固定格式）",
+       _resolved == 2
+       and [Path(p["file"]).suffix for p in _aligned] == [".jpg", ".png", ".jpg"]
+       and Path(_aligned[0]["file"]).name == "a.jpg"
+       and Path(_aligned[1]["file"]).name == "b.png",
+       str([p["file"] for p in _aligned]))
+    ok("对齐后找不到的页原样保留（不清空用户清单）",
+       Path(_aligned[2]["file"]).name == "c.jpg", str(_aligned[2]))
+
     # --- offset 必须能设成负值（阈值 = Otsu + offset）---
     _p3 = d.control_stack.widget(2)
     ok("offset 可设为负值（下限 < 0）", _p3.offset.minimum() < 0,
