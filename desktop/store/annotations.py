@@ -248,8 +248,7 @@ class AnnotationMixin:
         """读**指定文件**的**原始条目表** ``{image_key: entry}``（不裁剪字段）。
 
         ⚠️ 与 :meth:`boxes_all_at` 的分工：那个只出 ``(boxes, origin)`` 两字段，
-        供界面消费；复用判据要读条目里的 ``src`` / ``det`` 指纹（见
-        ``desktop.services.detect_reuse``），那两个字段在这里必须原样带出。
+        供界面消费；这里的原始条目表必须把调用方额外写入的字段原样带出。
 
         返回值**就是内存里那份 dict**：调用方只读，别原地改（要写走
         :meth:`save_detect_boxes_batch` 等）。
@@ -399,11 +398,11 @@ class AnnotationMixin:
         ~0.02s。人工框（origin=manual）在这里跳过，不被自动结果覆盖——
         与单条版同一条规矩，但只读一次文件。
 
-        ``extra``（可选）：``{image_key: {额外字段}}``，合并进对应条目——用于
-        记录"这份结果来自哪个源文件、按什么检测指纹算的"（见
-        ``desktop.services.detect_reuse``）。⚠️ 默认 ``None`` 时行为与改造前
-        逐字一致；带了 extra 的**空框条目也会写**——复用判据要求"无框页也留痕"，
-        否则空结果页下次只能重跑。
+        ``extra``（可选）：``{image_key: {额外字段}}``，合并进对应条目。
+
+        ⚠️ **空结果也写**：重跑检测把某一页从"有框"变成"无框"时，必须用空
+        ``boxes`` 覆盖旧条目，否则磁盘上留着上一次的框，界面和下游都会以为
+        那页还有内容。人工框仍然优先（见上面的跳过规则）。
         """
         if not entries:
             return
@@ -413,8 +412,6 @@ class AnnotationMixin:
         updated = time.time()
         for image_key, boxes in entries.items():
             fields = (extra or {}).get(image_key) or {}
-            if (not boxes or not any(boxes)) and not fields:
-                continue
             previous = data.get(image_key) or {}
             if previous.get("origin") == "manual":
                 refreshed = _manual_half_refresh(previous, boxes)

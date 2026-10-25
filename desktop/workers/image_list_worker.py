@@ -9,6 +9,7 @@ from PySide6.QtCore import QObject, QSize, Qt, Signal, Slot
 from PySide6.QtGui import QImage, QImageReader
 
 from desktop.workers.preview_worker import compose_outputs_horizontal, compose_region_output
+from desktop.utils.image_scaling import smooth_downscale
 
 
 class ImageListWorker(QObject):
@@ -87,12 +88,9 @@ class ImageListWorker(QObject):
                     if image.isNull():
                         continue
                 if image.width() > self.edge or image.height() > self.edge:
-                    image = image.scaled(
-                        self.edge,
-                        self.edge,
-                        aspectMode=Qt.AspectRatioMode.KeepAspectRatio,
-                        mode=Qt.TransformationMode.SmoothTransformation,
-                    )
+                    # 分档折半再平滑收尾：区域合成/裁剪出来的图仍是原始像素，
+                    # 一次缩到 116~156px 会跳采样（细笔画发虚）。
+                    image = smooth_downscale(image, self.edge)
                 self.thumbnail_ready.emit(index, image, str(path))
             self.completed.emit()
         except Exception as exc:

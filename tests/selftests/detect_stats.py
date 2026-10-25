@@ -153,15 +153,6 @@ def run(ctx) -> None:
                 ok("节流到期只重算一次（不跟着落盘频率跑）",
                    len(calls) == 1 and not d._stats_dirty, str(len(calls)))
 
-                # 复用页：不重写条目（磁盘上早已有），但统计要跟着动
-                d._pending_boxes.clear()
-                d._store_stage_boxes({
-                    "image": pages[0].stem, "reused": True,
-                    "left": [0, 0, 100, 100], "right": None,
-                })
-                ok("复用页不进攒批（不白写磁盘）但会置脏统计",
-                   not d._pending_boxes and d._stats_dirty, str(d._pending_boxes))
-
                 # 收尾必须立即重算（不等节流）
                 calls.clear()
                 d._refresh_stats_now()

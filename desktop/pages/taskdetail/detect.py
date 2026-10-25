@@ -24,7 +24,12 @@ from desktop.services.detect_export import export_yolo, yolo_entries
 from desktop.settings.config import app_config
 from desktop.steps import StepKernel, StepRequest, callable_job
 from utils.book_layout import (
-    is_single_wide_half, profile_book, single_column_summary, suspicious_summary,
+    demoted_full_summary,
+    full_to_half_slots,
+    is_single_wide_half,
+    profile_book,
+    single_column_summary,
+    suspicious_summary,
 )
 from utils.box_geometry import (
     classify_page_slots,
@@ -317,6 +322,8 @@ class DetectMixin:
             setter = getattr(self.detect_viewer, "set_single_column", None)
             if callable(setter):
                 setter(False)
+            self._half_width_median = None
+            self._manual_stems = set()
             widget.set_results(len(paths), {})
             return
         boxes_all = self.store.boxes_all_at(
@@ -324,11 +331,12 @@ class DetectMixin:
                 self.task_id, **self._node_scope(self.node_of_stage("detect"))
             )
         )
-        classes: dict[str, list[tuple[int, str]]] = {}
         # ⚠️ 顺手把**每页槽位**攒下来给全书判据用：判据要的是"整本书长什么样"，
         #    而这次遍历已经把每页都读出来了，第二次再读一遍 boxes.json 纯属白花
         #    （320 页时那是整本 JSON 的一次重复解析）。
         sampled: list[tuple[str, list, int]] = []
+        #: 每页的框来源（auto / manual）：人工整幅页不参与「整幅→半幅」修正。
+        origins: dict[str, str] = {}
         # ⚠️ 尺寸**循环外读一次**：逐页调 image_size 会整份读盘（320 页＝320 次）。
         sizes: dict = {}
         if self.task_id:
@@ -342,16 +350,43 @@ class DetectMixin:
                 except Exception:  # noqa: BLE001 - 读不到就全部回落图片头
                     sizes = {}
         for row, path in enumerate(paths):
-            raw = self.detect_cache.get(str(path))
-            if raw is None:
-                raw = boxes_all.get(path.stem, ([], "auto"))[0]
-            # ⚠️ 传给分类器的是**槽位**（保留 None）：单独页（双槽缺一侧）
-            #    过滤掉 None 会被误判成整幅。
-            classes.setdefault(classify_page_slots(raw), []).append((row, self._page_label(path)))
+            cached = self.detect_cache.get(str(path))
+            disk_boxes, disk_origin = boxes_all.get(path.stem, ([], "auto"))
+            raw = cached if cached is not None else disk_boxes
+            origins[path.stem] = str(disk_origin or "auto")
             sampled.append((path.stem, list(raw or []), self._page_width_of(path, sizes)))
         # ⚠️ 全书判据**只算一次**：以前这里算一次、_book_note 里又算一次，
         #    2000 页的书等于白跑一遍（用户报「切类型卡顿」时排查到的重复项之一）。
         profile = profile_book(sampled)
+        # 「整幅其实像半幅」的页（用户 2026-10-26，任务 0023）：统计与标注都要
+        # 按**半幅**呈现，否则界面仍显示一堆「整幅」，和提交/拼版对不上。
+        # 判据本体在 utils.book_layout，这里只负责按来源过滤（人工整幅不动）。
+        half_width = profile.half_width_median
+        self._half_width_median = half_width
+        #: 人工框的页（磁盘 origin=manual）：显示层也不做「整幅→半幅」修正，
+        #: 否则用户刚把某页改成整幅，下一次上屏又被自动翻回半幅。
+        self._manual_stems = {
+            stem for stem, source in origins.items() if source == "manual"
+        }
+        by_stem = {stem: (raw, width) for stem, raw, width in sampled}
+        demoted: dict[str, list] = {}
+        if half_width is not None:
+            for stem in profile.demoted_full_pages:
+                if origins.get(stem) == "manual":
+                    continue
+                raw, width = by_stem.get(stem, ([], None))
+                corrected = full_to_half_slots(raw, width, half_width)
+                if corrected != raw:
+                    demoted[stem] = corrected
+        classes: dict[str, list[tuple[int, str]]] = {}
+        for row, path in enumerate(paths):
+            raw, _width = by_stem[path.stem]
+            slots = demoted.get(path.stem, raw)
+            # ⚠️ 传给分类器的是**槽位**（保留 None）：单独页（双槽缺一侧）
+            #    过滤掉 None 会被误判成整幅。
+            classes.setdefault(classify_page_slots(slots), []).append(
+                (row, self._page_label(path))
+            )
         # ⚠️ 把整本书的结论交给预览控件：**半幅**标注靠它决定（见 styles.box_styles）。
         self._apply_book_layout(profile)
         widget.set_results(
@@ -478,7 +513,9 @@ class DetectMixin:
         """
         return "\n".join(
             text for text in (
-                suspicious_summary(profile), single_column_summary(profile),
+                suspicious_summary(profile),
+                demoted_full_summary(profile),
+                single_column_summary(profile),
             ) if text
         )
 
@@ -536,9 +573,23 @@ class DetectMixin:
         """
         from desktop.components.viewers.image_view import box_names  # noqa: PLC0415
 
+        size = self._image_size_for(path_text)
+        # 全书统计判定「这页的整幅其实像半幅」→ 上屏按半幅显示（用户 2026-10-26，
+        # 任务 0023）。人工框不参与，避免用户显式改的类型被自动翻回去。
+        half_width = getattr(self, "_half_width_median", None)
+        manual = getattr(self, "_manual_stems", set()) or set()
+        stem = Path(path_text).stem
+        if (
+            half_width is not None
+            and size
+            and origin != "manual"
+            and stem not in manual
+        ):
+            corrected = full_to_half_slots(raw, size[0], half_width)
+            if corrected != raw:
+                raw = corrected
         shown = self._valid_boxes(raw)
         full = is_full_content(raw)
-        size = self._image_size_for(path_text)
         qsize = QSize(size[0], size[1]) if size else QImageReader(str(path_text)).size()
         # ⚠️ 单栏书里这个横跨整页的框叫「半幅」，不叫左框/右框——整本书的结论
         #    来自 profile_book（见 _refresh_detect_stats 写入 viewer 的那一份），

@@ -77,6 +77,22 @@ def run(ctx) -> None:
     ok("GUI 不再重复写 [0][:4] 取值",
        not re.search(r"\[0\]\[:4\]", ds_src), "GUI 仍自带取框逻辑")
 
+    # ---- 3b. 每次检测都重新跑全部页（用户 2026-10-26：不再复用上次结果）----
+    from desktop.stages.detect_stage import run_detect_pages
+
+    ok("检测循环没有 reuse 参数（全部页都重新推理）",
+       "reuse" not in inspect.signature(run_detect_pages).parameters,
+       str(inspect.signature(run_detect_pages)))
+    for rel in (
+        "desktop/pages/taskdetail/runner.py",
+        "desktop/modules/detect/page.py",
+        "desktop/stages/detect_stage.py",
+    ):
+        src = (root / rel).read_text(encoding="utf-8", errors="ignore")
+        ok(f"{rel} 不再接复用结果", "detect_reuse" not in src and '"reuse"' not in src)
+    ok("复用判据模块已删除",
+       not (root / "desktop/services/detect_reuse.py").exists())
+
     # ---- 4. detect 是真实命令 ----
     from functions import _COMMAND_MAP, get_function
     from core.args import CommandArgs

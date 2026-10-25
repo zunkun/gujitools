@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING, Any, Callable, cast
 
 from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer
 
-from desktop.services import detect_reuse
 from desktop.services.print_plan import (
     missing_extract_pages_spec, ordered_page_record,
 )
@@ -569,29 +568,6 @@ class StageRunnerMixin:
                 )
                 return
             args["input"] = str(pages_input)
-            # 复用/指纹上下文只有 detect 需要：先清掉上一轮的，别让别的阶段
-            # 拿着旧指纹去写 boxes.json。
-            self._detect_ctx = None
-            if stage == "detect":
-                # 没有可调的检测参数（2026-10-22 起 area 已彻底移除）：
-                # 检测结果只取决于程序版本与源文件。
-                det = detect_reuse.det_fingerprint()
-                files = list_stage_images(pages_input)
-                doc = self.store.boxes_raw_at(
-                    self.store.boxes_path(self.task_id, **self._node_scope(node))
-                )
-                reuse, todo = detect_reuse.split(files, doc, det)
-                if reuse:
-                    args["reuse"] = reuse
-                    self._logs.append_now(
-                        f"复用上次结果 {len(reuse)} 页，需检测 {len(todo)} 页"
-                    )
-                # 落盘时要写的两份指纹（见 _flush_annotations）：src 取每页源文件
-                # 戳，det 就是上面这个指纹。别的阶段不该带上一轮的上下文。
-                self._detect_ctx = {
-                    "det": det,
-                    "stems": {path.stem: path for path in files},
-                }
             if stage == "rembg":
                 # 去底色只有一步：成品图固定写入 ``stages/rembg``（副本节点
                 # 写到它自己的 ``stages/rembg~<节点>``）。
@@ -1002,21 +978,11 @@ class StageRunnerMixin:
         （见 store.save_detect_boxes_batch），顺带省掉每条一次的文件读。
 
         ⚠️ **空结果也攒**（2026-10-20）：以前 ``not any(boxes)`` 直接丢，于是
-        "检测过、但没检出内容框"的页在 boxes.json 里**没有条目**，复用判据便
-        每轮都为它重跑一次推理。现在空框也留痕（写空 ``boxes`` + 源文件戳 +
-        检测指纹，见 _flush_annotations），下次直接跳过。
+        "检测过、但没检出内容框"的页在 boxes.json 里**没有条目**，统计便无法
+        区分"检测过、无框"与"还没检测"。现在空框也留痕（写空 ``boxes``）；
         ``classify_page_slots([])`` 与"条目缺失"分类结果相同，统计口径不变。
-
-        ⚠️ 复用页（``event["reused"]``）**不进攒批**：它的条目早就在磁盘上、
-        指纹也没变，重新写一遍纯属白写（本进程只把它当"统计用"）。
         """
         if not self.task_id:
-            return
-        if event.get("reused"):
-            # 复用页：框早在磁盘上、指纹也没变，不必重写（见方法 docstring）。
-            # 但统计要跟着动——它读的是内存文档（``_DocCache``），所以这里
-            # 只置脏排一次节流，"全部页都复用"时界面也能立刻看到结果。
-            self._mark_stats_dirty()
             return
         self._pending_boxes[event.get("image", "")] = page_box_slots_from_event(event)
         self._annot_timer.start(self._ANNOT_FLUSH_MS)
@@ -1042,10 +1008,7 @@ class StageRunnerMixin:
             if sizes:
                 self.store.save_image_sizes_batch(self.task_id, sizes, **scope)
             if boxes:
-                self.store.save_detect_boxes_batch(
-                    self.task_id, boxes, **scope,
-                    extra=self._boxes_extra(boxes),
-                )
+                self.store.save_detect_boxes_batch(self.task_id, boxes, **scope)
                 # detect 批量检测中：落了一批框 → 右侧统计跟着刷新。
                 # ⚠️ **置脏 + 节流**（不是立即重算）：统计每次要整份读
                 #    boxes.json + sizes.json + profile_book，1000+ 页时是单次
@@ -1065,42 +1028,10 @@ class StageRunnerMixin:
             for key, value in boxes.items():
                 self._pending_boxes.setdefault(key, value)
 
-    def _boxes_extra(self, boxes: dict[str, list]) -> dict[str, dict] | None:
-        """给这批框算"复用指纹"（``src`` 文件戳 + ``det`` 检测指纹）。
-
-        写进条目的意义：下次点「检测文本框」时，只要源文件没换、参数没变，
-        ``desktop.services.detect_reuse`` 就能判定"这一页的结果还算数"、直接
-        跳过推理（1000+ 页时省掉绝大部分时间）。
-
-        ``src`` 由主进程对该页图片 ``os.stat`` 得到（廉价；不解码、不读内容）。
-        没有 detect 上下文（别的阶段在落盘）时给 ``None`` ⇒ 行为与改造前一致。
-        """
-        ctx = self._detect_ctx
-        if not ctx:
-            return None
-        det = str(ctx.get("det") or "")
-        stems: dict[str, Path] = ctx.get("stems") or {}
-        extra: dict[str, dict] = {}
-        for stem in boxes:
-            path = stems.get(stem)
-            if path is None:
-                continue
-            stamp = detect_reuse.file_stamp(path)
-            if stamp is not None:
-                extra[stem] = {
-                    detect_reuse.FIELD_SRC: stamp,
-                    detect_reuse.FIELD_DET: det,
-                }
-        return extra or None
-
     def _init_annotation_batch(self) -> None:
         """建标注攒批器与检测统计节流器（宿主页面 __init__ 里调一次）。"""
         self._pending_sizes: dict[str, tuple[int, int]] = {}
         self._pending_boxes: dict[str, list] = {}
-        #: detect 阶段的复用上下文（``det`` 指纹 + ``stem → 源文件路径``），
-        #: 由 ``_run_stage_unchecked`` 的 detect 分支置位、其它阶段置 ``None``；
-        #: ``_flush_annotations`` 据此给条目补 ``src``/``det``（见 _boxes_extra）。
-        self._detect_ctx: dict | None = None
         self._annot_timer = QTimer(cast("QObject", self))
         self._annot_timer.setSingleShot(True)
         self._annot_timer.setInterval(self._ANNOT_FLUSH_MS)

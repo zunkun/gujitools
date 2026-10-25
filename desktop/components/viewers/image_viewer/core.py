@@ -15,6 +15,7 @@ from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 from qfluentwidgets import CaptionLabel, FluentIcon as FIF, ToolButton
 from desktop.ui.widgets import mark_input_entry
+from desktop.utils.image_scaling import smooth_downscale
 from desktop.workers import ImageListWorker, PreviewWorker, connect_queued
 from desktop.components.viewers.image_view import ImageView
 from desktop.components.viewers.image_zoom_dialog import ZoomPopupMixin, ZoomTarget
@@ -459,10 +460,8 @@ class ImageViewerWidget(
             # 让宿主按新尺寸重读检测框（sizes.json 已先行更新）
             self.current_changed.emit(row, path_text)
         edge = self._decode_edge()
-        icon = image.scaled(
-            edge, edge, Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
-        )
+        # 编辑结果可能是全分辨率大图：走分档降采样，缩略图才不糊（见 image_scaling）
+        icon = smooth_downscale(image, edge)
         self.strip.set_item_icon(row, icon, path_text, Path(path_text).stem)
 
 

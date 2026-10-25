@@ -1714,6 +1714,9 @@ class PageListMixin:
         self.pages = []
         self.pdf_page_count = 0
         self.detect_cache.clear()
+        # 换书/换清单后全书半幅基线作废（见 DetectMixin._refresh_detect_stats）
+        self._half_width_median = None
+        self._manual_stems = set()
 
 
 #: 页头红字：缺哪种输入就说哪件事（键与 ``_missing_input_kind`` 的返回值对应）。

@@ -4,7 +4,7 @@
 
 通用工具函数：几何、排序、图像 IO、PDF、YOLO
 
-覆盖 28 个模块、24 个公开类、191 个公开函数/方法（生成于 2026-10-25）。
+覆盖 28 个模块、24 个公开类、197 个公开函数/方法（生成于 2026-10-26）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -12,7 +12,7 @@
 
 | 模块 | 类 | 函数 |
 | --- | --- | --- |
-| [`utils.book_layout`](#utilsbook_layout) | 1 | 12 |
+| [`utils.book_layout`](#utilsbook_layout) | 1 | 18 |
 | [`utils.box_draw`](#utilsbox_draw) | 0 | 8 |
 | [`utils.box_geometry`](#utilsbox_geometry) | 2 | 17 |
 | [`utils.color_utils`](#utilscolor_utils) | 0 | 2 |
@@ -85,6 +85,8 @@
 | BOOK_FORM_FULL | `"full"` |
 | BOOK_FORM_MIXED | `"mixed"` |
 | NARROW_PAGE_WIDTH_RATIO | `0.7` |
+| FULL_HALF_WIDTH_TOLERANCE | `0.1` |
+| MIN_HALF_BOXES_FOR_BASELINE | `3` |
 
 ### `class BookProfile(NamedTuple)`
 
@@ -105,10 +107,17 @@
     suspicious_half_pages: 整幅书里出现的半幅页（页名）——**可疑结果**，
         交由界面提示，不自动改。
     suspicious_half_ratio: 可疑半幅页占整幅书有框页的比例（0~1）。
+    half_width_median: 全书半幅框的典型归一化宽度（中位数，0~1）；
+        样本不足时为 ``None``（此时不做任何整幅→半幅改写）。
+    demoted_full_pages: 几何上与半幅一致的整幅页（页名）——**提交派生**
+        时按半幅处理（用户 2026-10-25）。原始槽位不改，见
+        :func:`full_to_half_slots`。
 
 ⚠️ ``single_column_book`` / ``full_book`` / ``double_column_book`` 三者
 互斥（比例都 ≥90%，不可能同时成立）；三者都为 ``False`` 即**混排书**
 （一部分单栏页、一部分整幅页/双栏页）。
+⚠️ ``demoted_full_pages`` **不参与**上面的比例统计：它只是"这一页该怎么
+落地"的派生结论，原始检测快照仍是整幅（用户可在第二步看到原样）。
 
 #### 方法
 
@@ -127,10 +136,16 @@
 | `typical_page_width(widths: Iterable) -> int` | 全书**典型页宽**：全部已知页宽的**中位数**（无有效宽度返回 0）。 |
 | `is_narrow_page(page_width, typical_width) -> bool` | 该页是否**明显窄于全书**（= 单页扫描，放不下第二栏）。 |
 | `narrow_page_slots(slots: Sequence, narrow: bool) -> list` | 窄页（单页扫描）里把「唯一的框」退化成**单槽**；其余原样返回。 |
+| `normalized_box_width(box, page_width) -> float \| None` | 框宽 / 页宽（0~1）；框畸形或页宽未知时返回 ``None``。 |
+| `half_width_median(pages: Iterable) -> float \| None` | 全书**半幅框**的典型归一化宽度（中位数）；样本不足时返回 ``None``。 |
+| `looks_like_half_box(box, page_width, half_width: float \| None) -> bool` | 单个**整幅框**是否在几何上像一栏（半幅）。 |
+| `full_to_half_slots(slots: Sequence, page_width, half_width: float \| None) -> list` | **整幅槽位**（1 槽）在几何像半幅时改写成半幅槽位（2 槽）。 |
+| `demoted_full_slots(pages: Iterable, half_width: float \| None=None) -> dict` | 逐页找出「整幅框几何像半幅」的页 → 改写后的半幅槽位。 |
 | `profile_book(pages: Iterable) -> BookProfile` | 整本书的形态判定（**唯一入口**）。 |
 | `book_form(profile: BookProfile) -> str` | 整本书的形态键（``BOOK_FORM_*``），决定空白页补几张占位。 |
 | `single_column_summary(profile: BookProfile) -> str` | :class:`BookProfile` → 单栏书的一行人读结论（无框页不计入比例分母）。 |
 | `suspicious_summary(profile: BookProfile) -> str` | :class:`BookProfile` → 整幅书里冒出半幅的一行人读结论（无需提示时返回空串）。 |
+| `demoted_full_summary(profile: BookProfile) -> str` | :class:`BookProfile` → 「整幅按半幅处理」的一行人读结论（无则空串）。 |
 
 #### `is_single_wide_box(box, page_width) -> bool`
 
@@ -208,6 +223,53 @@
 
 ⚠️ 只有「2 槽且恰好 1 个框」才退化；真双栏页（两个框）原样不动。
 
+#### `half_width_median(pages: Iterable) -> float | None`
+
+全书**半幅框**的典型归一化宽度（中位数）；样本不足时返回 ``None``。
+
+参数:
+    pages: 逐页三元组 ``(页名, 槽位, 页宽)``（与 :func:`profile_book` 同形）。
+
+只统计**2 槽页**（半幅形态）上的框：整幅页的框不能当基线，否则
+「整幅页自己证明自己是半幅」会自我循环。缺页宽/畸形框不计入。
+
+#### `looks_like_half_box(box, page_width, half_width: float | None) -> bool`
+
+单个**整幅框**是否在几何上像一栏（半幅）。
+
+两条同时满足才算，缺一不可：
+
+1. **框宽 < 框高**：用户 2026-10-25 的形态特征——整幅通常横向展开，
+   竖向的单栏内容框更符合半幅；
+2. **框宽/页宽 ≈ 全书半幅中位**（``FULL_HALF_WIDTH_TOLERANCE`` 以内）：
+   单看宽高比不够——一本真正的整幅书里，整幅框也可能恰好竖着；把它和
+   全书半幅框的实际宽度比，才能区分「一栏」和「一整页」。
+
+页宽未知、基线缺失、框畸形时一律返回 ``False``（没证据不改身份）。
+
+#### `full_to_half_slots(slots: Sequence, page_width, half_width: float | None) -> list`
+
+**整幅槽位**（1 槽）在几何像半幅时改写成半幅槽位（2 槽）。
+
+改写后仍保留「缺失一侧为 None」的槽位约定：框中心在页中线左侧就放左槽，
+否则放右槽。下游 ``page_single_wide_slots`` / ``narrow_page_slots`` 会照常
+把单宽框退化成单槽，于是**命名、拼版角色与普通半幅完全一致**——这条修正
+不需要下游再写一遍。
+
+仅在 ``looks_like_half_box`` 为真时改写；否则原样返回（浅拷贝）。
+
+#### `demoted_full_slots(pages: Iterable, half_width: float | None=None) -> dict`
+
+逐页找出「整幅框几何像半幅」的页 → 改写后的半幅槽位。
+
+参数:
+    pages: ``(页名, 槽位, 页宽)`` 逐页表。
+    half_width: 全书半幅宽度中位；不传时内部用 :func:`half_width_median`
+        现算（传进来可避免重复遍历）。
+
+返回:
+    ``{页名: 2 槽槽位}``，只含真的命中改写的页；其余页不在字典里。
+
 #### `profile_book(pages: Iterable) -> BookProfile`
 
 整本书的形态判定（**唯一入口**）。
@@ -224,6 +286,10 @@
 ``suspicious_half_pages``——模型判成半幅的那些页仍按半幅走完流程，由用户
 看着提示去核对。这与单栏书那条相反：单栏书是**有充分证据**的形态改写
 （≥90% 有框页都是横跨整页的一栏），整幅书里的半幅则是**证据不足**的异常。
+
+另一条与上面正交的派生结论是 ``demoted_full_pages``（用户 2026-10-25）：
+**半幅书里**个别被判成整幅的页，只要框宽<高、且归一化宽度与全书半幅中位
+一致，就按半幅落地。它**不改原始槽位**，只影响提交命名/拼版角色。
 
 #### `book_form(profile: BookProfile) -> str`
 

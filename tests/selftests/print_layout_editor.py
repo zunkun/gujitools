@@ -303,5 +303,25 @@ def run(ctx) -> None:
         ok("框内仍命中移动（不会被边带误判成缩放）",
            ratio_canvas._hit_handle(rpx.center()) is None
            and ratio_canvas._hit_rect(rpx.center()), "")
+
+        # ---- 8. 贴图底图：源图先平滑降到上限，拖框期间复用缓存 ----
+        # 用户报「rembg 图放大看还行，PDF 排版页发虚」：画布是 8~10 倍缩小 +
+        # 最近邻采样。现在源图一次性平滑降到 DISPLAY_IMAGE_EDGE，贴图再平滑缩。
+        from PySide6.QtGui import QColor, QImage
+
+        from desktop.components.viewers.print_layout_canvas import (
+            DISPLAY_IMAGE_EDGE,
+        )
+
+        big = QImage(4000, 2600, QImage.Format.Format_RGB32)
+        big.fill(QColor("#ffffff"))
+        ratio_canvas.set_page(297, 210, big, [20, 20, 250, 170])
+        cached = ratio_canvas._display_image_for()
+        ok("贴图底图按上限平滑降采样（4000px 源图 → 2000px）",
+           cached is not None
+           and max(cached.width(), cached.height()) == DISPLAY_IMAGE_EDGE,
+           "" if cached is None else f"{cached.width()}x{cached.height()}")
+        ok("同一张图重复取底图复用缓存（拖框不重采样）",
+           ratio_canvas._display_image_for() is cached, "")
     finally:
         ratio_canvas.deleteLater()

@@ -189,6 +189,23 @@ def run(ctx) -> None:
            and abs(canvas.transform().m11() - expected) <= expected * 0.05,
            f"m11={canvas.transform().m11():.3f} expected={expected:.3f}")
 
+        # ---- 采样方式随倍率切换（2026-10-25 用户：「编辑放大后要高清」）----
+        # 100% 以上没有更多像素可看，继续平滑只会把像素糊成一团；按像素格
+        # 显示（最近邻）才是编辑器该有的"放大也清晰"。
+        from PySide6.QtCore import Qt as _Qt
+
+        canvas.set_zoom(0.5)
+        ok("编辑画布：缩小显示走平滑采样（大图缩小不出锯齿）",
+           canvas._item is not None
+           and canvas._item.transformationMode()
+           == _Qt.TransformationMode.SmoothTransformation, "")
+        canvas.set_zoom(2.0)
+        ok("编辑画布：≥100% 走像素级采样（像素不发虚）",
+           canvas._item is not None
+           and canvas._item.transformationMode()
+           == _Qt.TransformationMode.FastTransformation, "")
+        canvas.fit()
+
         # ---- 布局（2026-10-08 重排）：顶部功能选择 + 右侧参数面板 ----
         from PySide6.QtCore import QPoint
         from PySide6.QtWidgets import QAbstractButton

@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 178 个模块、194 个公开类、1443 个公开函数/方法（生成于 2026-10-25）。
+覆盖 178 个模块、194 个公开类、1438 个公开函数/方法（生成于 2026-10-26）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -119,7 +119,6 @@
 | [`desktop.pages.taskflow.page`](#desktoppagestaskflowpage) | 1 | 2 |
 | [`desktop.pages.tasklist.page`](#desktoppagestasklistpage) | 1 | 7 |
 | [`desktop.services.detect_export`](#desktopservicesdetect_export) | 0 | 7 |
-| [`desktop.services.detect_reuse`](#desktopservicesdetect_reuse) | 0 | 6 |
 | [`desktop.services.font_catalog`](#desktopservicesfont_catalog) | 1 | 6 |
 | [`desktop.services.imposition`](#desktopservicesimposition) | 0 | 33 |
 | [`desktop.services.print_plan`](#desktopservicesprint_plan) | 0 | 10 |
@@ -172,6 +171,7 @@
 | [`desktop.ui.window_size`](#desktopuiwindow_size) | 0 | 3 |
 | [`desktop.utils.files`](#desktoputilsfiles) | 0 | 28 |
 | [`desktop.utils.icon`](#desktoputilsicon) | 0 | 3 |
+| [`desktop.utils.image_scaling`](#desktoputilsimage_scaling) | 0 | 1 |
 | [`desktop.worker`](#desktopworker) | 0 | 1 |
 | [`desktop.workers.copy_source_worker`](#desktopworkerscopy_source_worker) | 2 | 4 |
 | [`desktop.workers.data_package_worker`](#desktopworkersdata_package_worker) | 3 | 8 |
@@ -5218,7 +5218,7 @@ render: ``(edge:int) -> worker``；cap: 渲染密度上限（如原图原生边�
 | 名称 | 值 |
 | --- | --- |
 | WHEEL_STEP | `1.15` |
-| RENDER_HEADROOM | `1.5` |
+| RENDER_HEADROOM | `2.5` |
 | MIN_RENDER_EDGE | `1600` |
 | MAX_RENDER_EDGE | `4000` |
 | JPEG_QUALITY | `95` |
@@ -5508,6 +5508,7 @@ cache_dir：页缩略图缓存目录（如 thumbnails/source、thumbnails/print�
 | --- | --- |
 | HANDLE_RADIUS | `6` |
 | MIN_RECT_MM | `2.0` |
+| DISPLAY_IMAGE_EDGE | `2000` |
 | EDGE_HIT_PX | `6` |
 
 ### `class PrintLayoutCanvas(QWidget)`
@@ -6327,7 +6328,6 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 
 | 名称 | 值 |
 | --- | --- |
-| _BOXES_CACHE_DIRNAME | `"boxes_cache"` |
 | EXPORT_NAME | `"boxes.json"` |
 | _EXPORT_ANNOTATED | `"annotated"` |
 | _EXPORT_YOLO | `"yolo"` |
@@ -6367,10 +6367,9 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 本页执行内核要跑的 job：走**共用逐页循环**（见 :func:`run_detect_pages`）。
 
 为什么不沿用 ``StepControl`` 默认的命令 job（``CommandJob → CommandArgs
-→ DetectFunction``）：``CommandArgs`` 会**丢掉**没在 ``CommandSpec.defaults``
-登记的键，而"复用上次结果"要额外传一份 ``reuse``；给 CLI 的 detect 命令加
-参数又会污染 CLI 契约（``core/command_spec.py`` 是 CLI 参数的唯一来源）。
-注入纯函数 job 后，本页与任务流程第二步跑的是**同一份**批量检测实现。
+→ DetectFunction``）：本页要的是**逐页事件**（``page_boxes`` 把坐标
+送回界面），默认命令 job 只转进度/日志；注入纯函数 job 后，本页与任务
+流程第二步跑的是**同一份**批量检测实现。
 
 ##### `edit_effect_note(path: Path) -> str`
 
@@ -8261,108 +8260,6 @@ GUI 主进程**绝不能**在这里 import 到 cv2（实测 ``import functions.d
 
 ---
 
-## `desktop.services.detect_reuse`
-
-源码：[`desktop/services/detect_reuse.py`](../../desktop/services/detect_reuse.py)
-
-检测结果复用：一条「这份坐标还算不算数」的判据 + 按它分拣待检测页。
-
-## 为什么
-
-1000+ 页的书，第二次点「检测文本框」时绝大多数页的框和上次一模一样——只要
-源文件没换、程序没升级，重跑一遍纯属白花几十秒推理。所以把
-"这份结果还对得上吗"写进 `boxes.json` 条目本身（``src`` 文件戳 + ``det`` 检测
-指纹），下次直接读回来复用。
-
-## 判据（两个字段，都写在条目里）
-
-- ``src``：``[字节数, mtime_ns]``——**这一页的源文件**有没有被换过；
-- ``det``：检测侧的身份指纹 = ``config.VERSION | DET_VERSION``
-  （2026-10-22 起没有 area 参数，检测结果只取决于程序版本与源文件）。
-
-两者同时匹配才算可复用；任何一项变了就重跑。⚠️ **无框页也留痕**（写空 ``boxes``
-但带指纹）：不记的话"检测过、但没检出框"的页每次都重跑。
-
-⚠️ **``det`` 不读权重文件**：``utils.model_path()`` 会把 cv2/ultralytics 拉进
-GUI 主进程（违反 AGENTS.md「GUI 主进程禁重依赖」）。代价是开发期"换了权重但没
-升 ``config.VERSION``"不会让旧结果失效——升版本即失效，记为已知限制。
-
-⚠️ 本模块只放**纯逻辑**：不 import Qt、不 import 任何重依赖，主进程可直连，
-也可脱离页面单测。
-
-## 归属
-
-判据与分拣只有这一份，taskdetail（写进任务目录的 ``boxes.json``）与 singletask
-（写进 ``singletask/<子任务>/boxes_cache/<源键>.json``）共用——两者只是**落点**
-不同，字段与判据完全一致。
-
-### 模块常量
-
-| 名称 | 值 |
-| --- | --- |
-| DET_VERSION | `"v2"` |
-| FIELD_SRC | `"src"` |
-| FIELD_DET | `"det"` |
-
-### 模块函数
-
-| 函数 | 说明 |
-| --- | --- |
-| `det_fingerprint() -> str` | 一次检测的**廉价**身份指纹：程序版本 + 复用格式版本。 |
-| `file_stamp(path: Path) -> list \| None` | 文件的 ``[字节数, mtime_ns]``；读不到（不存在 / 无权限）给 ``None``。 |
-| `entry_usable(entry: object, path: Path, det: str) -> TypeGuard[dict]` | 该条目能否复用：``det`` 指纹一致**且** ``src`` 与当前文件戳一致。 |
-| `payload_of(entry: dict) -> dict` | 把条目的**槽位**表示还原成 ``page_boxes`` 事件的负载形状。 |
-| `split(files: Iterable[Path], doc: dict, det: str) -> tuple[dict[str, dict], list[Path]]` | 把 ``files`` 分成（**可复用**的 ``{stem: 事件负载}``, **待检测**的文件表）。 |
-| `source_key(source) -> str` | 独立任务结果缓存的文件名：源的可读前缀 + 归一化路径的短哈希。 |
-
-#### `det_fingerprint() -> str`
-
-一次检测的**廉价**身份指纹：程序版本 + 复用格式版本。
-
-没有 area 等可调检测参数——检测结果只取决于程序版本与源文件本身
-（源文件的判断另由 ``src`` 文件戳负责）。见模块 docstring 里"不读权重"的取舍。
-
-#### `entry_usable(entry: object, path: Path, det: str) -> TypeGuard[dict]`
-
-该条目能否复用：``det`` 指纹一致**且** ``src`` 与当前文件戳一致。
-
-⚠️ **不要求条目里有框**：空框页（检测过但没检出内容框）同样可复用——它的
-价值正是"别再为它重跑一次推理"。
-
-#### `payload_of(entry: dict) -> dict`
-
-把条目的**槽位**表示还原成 ``page_boxes`` 事件的负载形状。
-
-槽位约定见 ``utils.box_geometry``（半幅恒 2 槽、整幅 1 槽）：
-- 1 槽 → 整幅（``full``）；
-- 2 槽 → 半幅（``left`` / ``right``，缺失侧为 ``None``）；
-- 0 槽 → 无框。
-
-#### `split(files: Iterable[Path], doc: dict, det: str) -> tuple[dict[str, dict], list[Path]]`
-
-把 ``files`` 分成（**可复用**的 ``{stem: 事件负载}``, **待检测**的文件表）。
-
-``doc`` 是结果文件的原始条目表（``{stem: entry}``，见
-``desktop.store.annotations.AnnotationMixin.boxes_raw_at``）。只有 ``src``
-与 ``det`` 双匹配的页才复用；负载形状与 ``page_boxes`` 事件一致
-（``image`` / ``left`` / ``right`` / ``full``），调用方原样补发即可。
-
-⚠️ 键用 ``stem``（不是路径字符串）：结果文件与两边的检测流程都按 stem 索引
-（见 ``utils.box_geometry.page_box_slots_from_event``）。
-
-#### `source_key(source) -> str`
-
-独立任务结果缓存的文件名：源的可读前缀 + 归一化路径的短哈希。
-
-⚠️ 哈希用 ``resolve()`` 后的绝对路径：同一个目录"相对路径打开 vs 绝对路径
-打开"必须落到同一个键，否则会各存一份、互相看不见。前缀（源名）纯粹为了
-让人一眼看出"这是哪一批图的结果"。
-
-⚠️ 只是**文件名**，不建目录（由调用方决定往哪个缓存根里放，见
-``desktop.utils.files.singletask_dir``）。
-
----
-
 ## `desktop.services.font_catalog`
 
 源码：[`desktop/services/font_catalog.py`](../../desktop/services/font_catalog.py)
@@ -8874,7 +8771,7 @@ PDF 侧 ``functions/print._load_image`` 压平到白纸；编辑器/预览按 RG
 | 函数 | 说明 |
 | --- | --- |
 | `missing_extract_pages_spec(output_dir: Path, total: int) -> str \| None` | 提取输出目录中缺失的页码，压缩为 CLI pages 参数（如 "3,7-9"）。 |
-| `plan_rembg_submit_entries(manifest_paths: list[Path], result_path_for, boxes_for, page_width_for=None, side_for=None, placeholder_for=None, narrow_for=None) -> list[dict]` | 预览结果 + 检测框 + border → 最终图片条目（**逐框一张**）。 |
+| `plan_rembg_submit_entries(manifest_paths: list[Path], result_path_for, boxes_for, page_width_for=None, side_for=None, placeholder_for=None, narrow_for=None, demote_for=None) -> list[dict]` | 预览结果 + 检测框 + border → 最终图片条目（**逐框一张**）。 |
 | `entry_to_effect_spec(entry: dict, border) -> dict` | 提交条目 → worker 效果合成规格（run_print_stage/run_detect_submit_stage 用）。 |
 | `plan_submit_job(spec: dict, size: tuple[int, int] \| None) -> dict` | 一条效果规格 → 单条合成作业（输出文件名 + 合成参数）。 |
 | `plan_detect_submit_entries(manifest_paths: list[Path], boxes_for, single_column_book: bool=False, page_width_for=None, side_for=None, book_profile=None, page_size_for=None) -> list[dict]` | 「检测文本框 → 提交本次任务」的裁图条目（含**回溯占位**）。 |
@@ -8891,7 +8788,7 @@ PDF 侧 ``functions/print._load_image`` 压平到白纸；编辑器/预览按 RG
 页文件名以数字开头（0001.jpg / 0002.jpg …）。无缺失或 total 为 0
 时返回 None（无需续跑）。
 
-#### `plan_rembg_submit_entries(manifest_paths: list[Path], result_path_for, boxes_for, page_width_for=None, side_for=None, placeholder_for=None, narrow_for=None) -> list[dict]`
+#### `plan_rembg_submit_entries(manifest_paths: list[Path], result_path_for, boxes_for, page_width_for=None, side_for=None, placeholder_for=None, narrow_for=None, demote_for=None) -> list[dict]`
 
 预览结果 + 检测框 + border → 最终图片条目（**逐框一张**）。
 
@@ -8912,6 +8809,10 @@ placeholder_for  : (path_str) -> list[dict]，该页缺图的**原图占位**描
 narrow_for       : (path_str) -> bool，该页是否**窄于全书**（单页扫描）。
     为真且只检出一个框时退化成**单槽**（不拆 ``-l``/``-r``、不补另一栏），
     见 :func:`utils.book_layout.narrow_page_slots`。默认 ``None``＝不判断。
+demote_for       : (path_str) -> list|None，全书统计得出的「整幅其实像半幅」
+    改写结果（见 :func:`utils.book_layout.full_to_half_slots`）。返回非
+    ``None`` 时用它替换 ``boxes_for`` 的原始槽位；``None``＝该页不命中，
+    按原槽位走。默认 ``None`` = 不做这条修正（旧行为）。
 
 派生规则（2026-10-22 起没有 area：**检测出几个框就裁几张图**）：
 - 双框：拆 <页>-r / <页>-l 两条（古籍阅读顺序 r 在前）；
@@ -9852,29 +9753,29 @@ worker 起来只需几百毫秒，模型全局只加载一次、多次检测共�
 | 函数 | 说明 |
 | --- | --- |
 | `run_detect(config: dict) -> int` | 检测单张图片的内容框（半幅左右 / 整幅），返回像素坐标（重依赖由常驻服务承担）。 |
-| `run_detect_pages(files: list[Path], *, workers: int, reuse: dict \| None, report) -> dict` | 逐页检测（**全仓唯一实现**）：子进程阶段与 singletask 执行器都调这里。 |
+| `run_detect_pages(files: list[Path], *, workers: int, report) -> dict` | 逐页检测（**全仓唯一实现**）：子进程阶段与 singletask 执行器都调这里。 |
 | `run_detect_stage(config: dict) -> int` | detect 阶段：逐图检测内容框（半幅左右 / 整幅）并上报坐标，不切割、不生成任何文件。 |
 | `run_detect_submit_stage(config: dict) -> int` | detect 提交：把**每个检测框**裁成一张图，写入 ``stages/detect``（JPG q95）。 |
 
-#### `run_detect_pages(files: list[Path], *, workers: int, reuse: dict | None, report) -> dict`
+#### `run_detect_pages(files: list[Path], *, workers: int, report) -> dict`
 
 逐页检测（**全仓唯一实现**）：子进程阶段与 singletask 执行器都调这里。
+
+**每次执行都重新跑全部页**（用户 2026-10-26：不再复用上次结果）。
 
 参数:
     files: 全部待处理的图片（按页序）。
     workers: 并发线程数；<=0 时按 ``core.args.default_workers`` 自动取。
-    reuse: ``{stem: page_boxes 负载}``（见 ``desktop.services.detect_reuse``）；
-        命中的页**不重跑推理**，只原样补发一次带 ``reused`` 的事件。
     report: ``(事件名, 负载)`` 回调，名字取 ``log`` / ``progress`` /
         ``page_boxes``（与 ``desktop.steps.kernel.Report`` 同形）。
 
 返回:
-    统计字典：``done/left/right/full/failed/reused/cost/elapsed/
+    统计字典：``done/left/right/full/failed/cost/elapsed/
     load_seconds/workers``。
 
 ⚠️ 为什么抽出来（用户 2026-10-20 的第二个问题）：singletask 与任务流程
-必须跑**完全相同**的检测循环（并发、逐页日志、槽位事件、复用跳过），
-各写一份必然漂移；这里只负责"怎么跑"，不关心产物落到哪个文件。
+必须跑**完全相同**的检测循环（并发、逐页日志、槽位事件），各写一份必然
+漂移；这里只负责"怎么跑"，不关心产物落到哪个文件。
 
 #### `run_detect_stage(config: dict) -> int`
 
@@ -12596,8 +12497,7 @@ boxes.json / sizes.json 读写。
 读**指定文件**的**原始条目表** ``{image_key: entry}``（不裁剪字段）。
 
 ⚠️ 与 :meth:`boxes_all_at` 的分工：那个只出 ``(boxes, origin)`` 两字段，
-供界面消费；复用判据要读条目里的 ``src`` / ``det`` 指纹（见
-``desktop.services.detect_reuse``），那两个字段在这里必须原样带出。
+供界面消费；这里的原始条目表必须把调用方额外写入的字段原样带出。
 
 返回值**就是内存里那份 dict**：调用方只读，别原地改（要写走
 :meth:`save_detect_boxes_batch` 等）。
@@ -12659,11 +12559,11 @@ boxes.json / sizes.json 读写。
 ~0.02s。人工框（origin=manual）在这里跳过，不被自动结果覆盖——
 与单条版同一条规矩，但只读一次文件。
 
-``extra``（可选）：``{image_key: {额外字段}}``，合并进对应条目——用于
-记录"这份结果来自哪个源文件、按什么检测指纹算的"（见
-``desktop.services.detect_reuse``）。⚠️ 默认 ``None`` 时行为与改造前
-逐字一致；带了 extra 的**空框条目也会写**——复用判据要求"无框页也留痕"，
-否则空结果页下次只能重跑。
+``extra``（可选）：``{image_key: {额外字段}}``，合并进对应条目。
+
+⚠️ **空结果也写**：重跑检测把某一页从"有框"变成"无框"时，必须用空
+``boxes`` 覆盖旧条目，否则磁盘上留着上一次的框，界面和下游都会以为
+那页还有内容。人工框仍然优先（见上面的跳过规则）。
 
 ##### `sizes_path(task_id: str, node_id: str | None=None, primary_id: str | None=None) -> Path`
 
@@ -15565,6 +15465,37 @@ Qt 给的位图去画，Qt 管不了圆不圆角。所以要在交给 ``setWindo
 读取图片并生成圆角窗口图标；读取失败返回 None。
 
 返回的 QIcon 内含 16~256 多帧，小帧已做 alpha 二值化。
+
+---
+
+## `desktop.utils.image_scaling`
+
+源码：[`desktop/utils/image_scaling.py`](../../desktop/utils/image_scaling.py)
+
+预览降采样：**分档折半 + 末档平滑**（界面里所有"大图缩成小图显示"共用）。
+
+⚠️ 为什么不能一次缩到底：``QImage`` 的 ``SmoothTransformation`` 是双线性
+采样，一次 8~10 倍缩小只取到目标像素附近的几个源像素，绝大多数源像素被
+跳过——古籍扫描的细笔画、淡墨、飞白因此发虚/断笔，用户看到的就是
+「原图放大看还行，预览页却糊」（2026-10-24 报障，PDF 排版页直接命中）。
+
+分档做法：先每档只缩 2 倍（等效核接近箱式滤波，把细节"平均"下来而不是
+跳采样），剩到目标 2 倍以内再做一次平滑收尾。代价是几十毫秒/张，只在
+**换图/换档**时付一次（各调用方都各自带缓存）。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `smooth_downscale(image: QImage, longest_edge: int) -> QImage` | 把 ``image`` 等比降到**最长边 ≤ longest_edge**（只缩不放）。 |
+
+#### `smooth_downscale(image: QImage, longest_edge: int) -> QImage`
+
+把 ``image`` 等比降到**最长边 ≤ longest_edge**（只缩不放）。
+
+- ``longest_edge <= 0`` 或空图：原样返回（调用方语义：不缩放）；
+- 本来就比目标小：原样返回（绝不放大——放大只会更糊）；
+- 否则分档折半到 2 倍以内，最后一次平滑缩到目标边长。
 
 ---
 

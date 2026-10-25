@@ -402,6 +402,9 @@ class TaskDetailPage(
         self._logs.flush()
         self.log_view.clear()
         self.detect_cache.clear()
+        # 整本书统计的「整幅→半幅」显示修正也按任务作废，别拿上一本的基线。
+        self._half_width_median = None
+        self._manual_stems = set()
         # 图头尺寸缓存按 (路径, mtime) 键控、只增不减：换任务清掉，别攒一整场会话
         self._thumb_size_cache = None
         # 「上游产物逐文件指纹」的记忆同理按任务清：同一个任务**重进**（换源 PDF

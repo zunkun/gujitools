@@ -32,6 +32,7 @@ from PySide6.QtGui import QColor, QImage, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
 from desktop.ui import theme as T
+from desktop.utils.image_scaling import smooth_downscale
 # 标题/页码的绘制必须与成品 PDF 同源：直接复用效果预览那套（mm → px 换算
 # 与竖排分段完全一致），避免编辑器和 PDF 各画各的、看起来对不上。
 from desktop.workers.preview_worker import (
@@ -67,6 +68,15 @@ _EDGE_BY_HANDLE = {4: "top", 5: "right", 6: "bottom", 7: "left"}
 #: 框的最小边长（mm）：拖到两边重合会让命中判定与后续缩放都失效
 MIN_RECT_MM = 2.0
 
+#: 画布贴图底图的降采样上限（最长边）。
+#:
+#: 源图常见 3000~6000px，而画布把整页塞进可视区后每毫米只剩 ~2px：直接
+#: `drawImage` 是一次 8~10 倍缩小的**最近邻**采样，古籍的细笔画/淡墨会被
+#: 跳采样（用户报「rembg 图放大看还行，PDF 排版页却发虚」）。先把源图平滑
+#: 缩到这个上限（一次性、换图才重算），贴图时再平滑缩一档——两档温和缩放
+#: 质量接近理论最优；而且每帧只对 ≤2000px 的小图采样，拖框不会掉帧。
+DISPLAY_IMAGE_EDGE = 2000
+
 #: 边命中带（控件像素）：距边线这么近就算"拖这条边"，**不限边中点**。
 #: 角仍是小圆点邻域（角落优先按对角缩放处理）。
 EDGE_HIT_PX = 6
@@ -89,6 +99,10 @@ class PrintLayoutCanvas(QWidget):
         self._page_w_mm = 210.0
         self._page_h_mm = 297.0
         self._image: QImage | None = None
+        #: 贴图用的已降采样底图 + 它的来源对象（见 DISPLAY_IMAGE_EDGE）。
+        #: 键用对象本身做 `is` 比较而不是 id：旧图被回收后新对象可能拿到同一 id。
+        self._display_source: QImage | None = None
+        self._display_image: QImage | None = None
         self._plan = None          # PrintPagePlan：标题/页码/跳过态的来源
         self._rect_mm = [0.0, 0.0, 0.0, 0.0]
         self._pad = 18
@@ -145,6 +159,22 @@ class PrintLayoutCanvas(QWidget):
     def current_rect(self) -> list[float]:
         """当前图片框（页面 mm），供宿主落盘前读取。"""
         return list(self._rect_mm)
+
+    def _display_image_for(self) -> QImage | None:
+        """贴图用的底图：源图平滑缩到 ``DISPLAY_IMAGE_EDGE`` 以内（换图才重算）。
+
+        拖拽/缩放期间 ``_rect_mm`` 每帧在变，但**不参与**缓存的键——底图按
+        整页可能的最大显示尺寸准备（图片框被夹在页面内，不会比整页更大），
+        所以拖框时零重采样，只对这张 ≤2000px 的图做一次廉价平滑贴图。
+        """
+        source = self._image
+        if source is None or source.isNull():
+            return None
+        if source is self._display_source:
+            return self._display_image
+        self._display_source = source
+        self._display_image = smooth_downscale(source, DISPLAY_IMAGE_EDGE)
+        return self._display_image
 
     # ------------------------------------------------------------------ 坐标
     def _recompute(self) -> None:
@@ -430,10 +460,18 @@ class PrintLayoutCanvas(QWidget):
         painter.setPen(QPen(PAGE_BORDER, 1))
         painter.drawRect(page_rect)
         # 图片（按目标矩形拉伸，与成品 pdf.image 一致）
-        if self._image is not None and not self._image.isNull():
+        image = self._display_image_for()
+        if image is not None and not image.isNull():
             r = self._rect_px()
             if r.width() > 0 and r.height() > 0:
-                painter.drawImage(r, self._image)
+                # ⚠️ 必须开平滑：Qt 默认关闭 SmoothPixmapTransform 时走最近邻，
+                # 一次大比例缩小会把细笔画/淡墨直接跳采样（版面页看着发虚的
+                # 原因）。底图已先降到 ≤2000px（见 DISPLAY_IMAGE_EDGE），这里
+                # 再平滑缩一档，代价只有毫秒级，拖框不掉帧。
+                painter.setRenderHint(
+                    QPainter.RenderHint.SmoothPixmapTransform, True
+                )
+                painter.drawImage(r, image)
             painter.setPen(QPen(IMAGE_STROKE, 2))
             painter.drawRect(r)
         # 标题 / 页码：与成品 PDF 同一份 PrintTextSpec 与同一套绘制函数，

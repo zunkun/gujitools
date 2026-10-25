@@ -77,7 +77,7 @@ def run(ctx) -> None:
     finally:
         cache._load = real_load            # type: ignore[method-assign]
     entry = repo.detect_boxes_entry(tid, "0003")
-    ok("extra 字段被并入条目（空框页也留痕，供下次复用）",
+    ok("extra 字段被并入条目（空框页也能留下额外字段）",
        entry is not None and entry[0] == []
        and repo.boxes_raw_at(boxes_path)["0003"].get("src") == [10, 20]
        and repo.boxes_raw_at(boxes_path)["0003"].get("det") == "abc",
@@ -118,6 +118,14 @@ def run(ctx) -> None:
     ok("重跑检测批量写同样保留提交计划",
        isinstance(repo.boxes_raw_at(boxes_path)["0002"].get("plan"), dict),
        str(repo.boxes_raw_at(boxes_path)["0002"]))
+
+    # 用户 2026-10-26：每次检测都重新执行 → 这次没检出框的页必须覆盖旧框，
+    # 否则界面/下游仍拿着上一次的框。
+    repo.save_detect_boxes(tid, "0007", [[0, 0, 10, 10]])
+    repo.save_detect_boxes_batch(tid, {"0007": []})
+    ok("重跑检测得到空框 → 覆盖旧框（不残留上次结果）",
+       repo.boxes_entry_at(boxes_path, "0007")[0] == [],
+       str(repo.boxes_entry_at(boxes_path, "0007")))
 
     # ---- 2d. 人工「整幅」遇同框的自动「半幅」→ 只刷新槽形 ----
     # 用户 2026-10-23（任务 0004）：旧模型把半幅页存成 1 槽人工记录，人工框

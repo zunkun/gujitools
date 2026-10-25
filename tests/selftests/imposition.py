@@ -997,6 +997,20 @@ def run(ctx) -> None:
         canvas.set_page(made["items"])
         ok("换页丢掉上一页的图缓存（内存有界）", canvas._images == {})
 
+        # 贴图底图：源图先按档位降采样（一次缩到几百像素会跳采样、看着发虚）
+        big_path = tmp / "big.png"
+        big = QImage(4000, 3000, QImage.Format.Format_RGB32)
+        big.fill(0xFFFFFFFF)
+        big.save(str(big_path))
+        shown = canvas._display_image(str(big_path), 500)
+        ok("贴图底图按档位预缩（4000px 源图 → 600 档）",
+           shown is not None and max(shown.width(), shown.height()) == 600,
+           "" if shown is None else f"{shown.width()}x{shown.height()}")
+        ok("同一档位重复取底图命中缓存（拖动/旋转不重复重采样）",
+           canvas._display_image(str(big_path), 500) is shown, "")
+        canvas.set_page(made["items"])
+        ok("换页连贴图底图缓存一起丢掉", canvas._display_cache == {})
+
         canvas.select(1)
         knob = canvas._rotate_knob(1)
         ok(

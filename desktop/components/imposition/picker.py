@@ -33,6 +33,7 @@ from desktop.services.imposition import SOURCE_FULL, classify_source
 from desktop.ui import theme as T
 from desktop.ui.widgets import apply_to
 from desktop.ui.window_size import apply_window_size
+from desktop.utils.image_scaling import smooth_downscale
 
 #: 弹窗缩略图的**固定框**（源图按比例缩进这个框，白底居中）
 THUMB_W, THUMB_H = 156, 196
@@ -74,7 +75,8 @@ def _source_thumb_pixmap(path) -> QPixmap:
         return QPixmap()
     canvas = QPixmap(THUMB_W, THUMB_H)
     canvas.fill(QColor(T.SURFACE))
-    scaled = image.scaled(
+    # 分档折半 + 平滑收尾：源图动辄几千像素，一次缩到 96px 会跳采样。
+    scaled = smooth_downscale(image, max(THUMB_W, THUMB_H)).scaled(
         THUMB_W, THUMB_H, Qt.AspectRatioMode.KeepAspectRatio,
         Qt.TransformationMode.SmoothTransformation,
     )

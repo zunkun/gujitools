@@ -36,6 +36,7 @@ from PySide6.QtCore import QBuffer, QByteArray, QObject, QSize, Qt, Signal, Slot
 from PySide6.QtGui import QColor, QImage, QImageReader, QPainter
 
 from desktop.utils.files import THUMBNAIL_EDGE, book_key
+from desktop.utils.image_scaling import smooth_downscale
 from utils.file_utils import write_bytes_atomic
 
 #: 缓存缩略图的**最小合理体积**（字节）。低于它必然是写坏/截断的历史遗留：
@@ -114,12 +115,9 @@ def decode_sized(path: Path, edge: int) -> QImage:
     if image.isNull():
         image = QImage(str(path))
     if not image.isNull() and (image.width() > edge or image.height() > edge):
-        image = image.scaled(
-            edge,
-            edge,
-            aspectMode=Qt.AspectRatioMode.KeepAspectRatio,
-            mode=Qt.TransformationMode.SmoothTransformation,
-        )
+        # 解码器没按缩放尺寸出图（透明调色板 PNG 等）：自己缩，同样走
+        # 「分档折半 + 平滑收尾」——缩略图也要能看清笔画（见 image_scaling）。
+        image = smooth_downscale(image, edge)
     return image
 
 

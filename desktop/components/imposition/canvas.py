@@ -67,6 +67,7 @@ from qfluentwidgets import Action, RoundMenu
 from qfluentwidgets import FluentIcon as FIF
 
 from desktop.ui import theme as T
+from desktop.utils.image_scaling import smooth_downscale
 
 #: 背景恒白（用户口径：拼版不需要纸张，白底就行）
 PAGE_COLOR = QColor("#ffffff")
@@ -144,6 +145,13 @@ WHEEL_ZOOM_STEP = 1.15
 #: 太大缩放期间像素化的图没有参考价值
 ZOOM_MIN = 0.2
 ZOOM_MAX = 8.0
+
+#: 画布贴图底图的**采样档位**（最长边像素）。源图常见几千像素，而画布把整页
+#: 塞进可视区后每张图只剩几百像素：直接 drawImage 是一次大比例双线性缩小，
+#: 细节被跳采样（用户 2026-10-24 报「预览页发虚」）。按这几档预缩（每档折半，
+#: 见 ``utils...smooth_downscale``），缩放倍率跨档时才重算一次，同档内拖动/
+#: 旋转零重采样。超过最大档就直接用原生（再缩不如让 Qt 自己缩）。
+DISPLAY_EDGE_STEPS = (600, 1200, 2400)
 #: 滚轮连发期间的重绘合并窗口：窗口内最多重绘一帧（约 33fps）
 WHEEL_REPAINT_MS = 30
 
@@ -171,6 +179,9 @@ class ImpositionCanvas(QWidget):
         self.setMinimumSize(320, 320)
         self._items: list[dict] = []
         self._images: dict[str, QImage] = {}
+        #: 贴图底图缓存：``(路径, 档位边长) -> 已降采样的 QImage``。与
+        #: ``_images`` 同生命周期（换页/清空/失效时一并丢弃）。
+        self._display_cache: dict[tuple[str, int], QImage] = {}
         self._selected = -1
         #: 右键「定位图片资源」的目标解析（宿主给出）：``(index) -> list[Path]``，
         #: 按优先级。⚠️ 拼版这一步的"图片资源"是**拼版成品**（``stages/imposition``
@@ -245,6 +256,7 @@ class ImpositionCanvas(QWidget):
         # 各几十 MB），一路翻几十页就能把内存吃到 GB 级。当前页只有两张，
         # 缓存只需覆盖这一页。
         self._images = {}
+        self._display_cache = {}
         self._recompute()
         self.selection_changed.emit(self._selected)
         self.update()
@@ -257,6 +269,7 @@ class ImpositionCanvas(QWidget):
         self._pressed = False
         self._zoom = 1.0
         self._images = {}
+        self._display_cache = {}
         self.selection_changed.emit(-1)
         self.update()
 
@@ -654,6 +667,12 @@ class ImpositionCanvas(QWidget):
         ]
         for key in stale:
             self._images.pop(key, None)
+        # 贴图底图缓存同源作废（键是 (路径, 档位)，按同一套路径归一判据清）
+        for key in [
+            cache_key for cache_key in self._display_cache
+            if os.path.normcase(os.path.normpath(cache_key[0])) == want
+        ]:
+            self._display_cache.pop(key, None)
         self.update()
 
     def contextMenuEvent(self, event) -> None:  # noqa: N802
@@ -1038,6 +1057,35 @@ class ImpositionCanvas(QWidget):
             return None
         return image.width(), image.height()
 
+    def _display_image(self, path: str, need_edge: float) -> QImage | None:
+        """贴图底图：按**屏幕实际需要的边长**从 ``DISPLAY_EDGE_STEPS`` 取档预缩。
+
+        键含档位：拖动/旋转期间屏幕尺寸不变 ⇒ 只做一次廉价平滑贴图；滚轮
+        缩放跨档（600/1200/2400）才重算一次。连发滚动期间**不重建**——大图
+        重采样会把这一帧拖长，先用已有的最近档凑合（下一帧高质量重绘兜底）。
+        """
+        image = self._image(path)
+        if image is None or image.isNull():
+            return None
+        longest = max(image.width(), image.height())
+        step = next((s for s in DISPLAY_EDGE_STEPS if s >= need_edge), 0)
+        if step == 0 or step >= longest:
+            return image  # 需要的已超过最大档 / 原生都不够缩：直接用原生
+        key = (path, step)
+        cached = self._display_cache.get(key)
+        if cached is not None:
+            return cached
+        if self._wheel_burst:
+            fallback = [
+                value for (cached_path, _s), value in self._display_cache.items()
+                if cached_path == path
+            ]
+            if fallback:
+                return fallback[-1]
+        display = smooth_downscale(image, step)
+        self._display_cache[key] = display
+        return display
+
     def paintEvent(self, event) -> None:  # noqa: N802
         super().paintEvent(event)
         painter = QPainter(self)
@@ -1125,7 +1173,15 @@ class ImpositionCanvas(QWidget):
         painter.rotate(float(item.get("rotation") or 0.0))
         image = self._image(item["file"])
         box = QRectF(-r.width() / 2, -r.height() / 2, r.width(), r.height())
-        if image is not None and not image.isNull():
+        # 贴图用**已按屏幕需要的档位预缩**的底图（见 _display_image）：原图
+        # 几千像素一次缩到几百像素是跳采样，古籍细笔画会发虚。
+        dpr = self.devicePixelRatioF() or 1.0
+        display = self._display_image(
+            item["file"], max(r.width(), r.height()) * dpr
+        )
+        if display is not None and not display.isNull():
+            painter.drawImage(box, display)
+        elif image is not None and not image.isNull():
             painter.drawImage(box, image)
         else:
             painter.fillRect(box, QColor("#f0f2f5"))

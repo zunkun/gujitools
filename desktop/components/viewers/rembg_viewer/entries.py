@@ -10,7 +10,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QImage
 from desktop.components.viewers.thumb_strip import ThumbStrip
-from utils.book_layout import page_single_wide_slots
+from utils.book_layout import full_to_half_slots, half_width_median, page_single_wide_slots
 from utils.box_geometry import is_full_content
 from utils.sort_utils import natural_sort_key
 from typing import TYPE_CHECKING
@@ -55,6 +55,37 @@ class EntriesMixin(RembgViewerHost):
                 width = None
         return page_single_wide_slots(boxes, width)
 
+    def _demoted_slots(self) -> dict:
+        """全书统计修正：整幅框几何像半幅的页 → 改写后的 2 槽槽位。
+
+        与提交派生用**同一个函数**（``full_to_half_slots``），否则预览会显示
+        ``0007``、成品却是半幅身份，两边对不上。没有 boxes/页宽提供者时
+        直接返回空（如第三步：查看器按"一张输入图 = 一个条目"显示整图）。
+        """
+        if not self._paths or not self._boxes_provider or not self._page_width_provider:
+            return {}
+        pages = []
+        for path in self._paths:
+            text = str(path)
+            try:
+                width = self._page_width_provider(text)
+            except Exception:  # noqa: BLE001 - 取不到页宽＝该页不参与基线
+                width = None
+            try:
+                boxes = list(self._boxes_provider(text) or [])
+            except Exception:  # noqa: BLE001 - 取不到框＝该页不参与
+                boxes = []
+            pages.append((Path(text).stem, boxes, width))
+        baseline = half_width_median(pages)
+        if baseline is None:
+            return {}
+        demoted: dict = {}
+        for stem, boxes, width in pages:
+            corrected = full_to_half_slots(boxes, width, baseline)
+            if corrected != boxes:
+                demoted[stem] = corrected
+        return demoted
+
     # ------------------------------------------------------------------ 条目
     def _build_entries(self) -> list[dict]:
         """manifest 路径 → 输出条目：**每个检测框一条**。
@@ -67,13 +98,17 @@ class EntriesMixin(RembgViewerHost):
         不带 ``-l``/``-r`` 后缀。
         """
         entries: list[dict] = []
+        demoted = self._demoted_slots()
         for path in self._paths:
             path_text = str(path)
             stem = path.stem
             page_entries = None
             if self._boxes_provider:
                 try:
-                    boxes = self._book_slots(path_text, self._boxes_provider(path_text) or [])
+                    raw_boxes = self._boxes_provider(path_text) or []
+                    if stem in demoted:
+                        raw_boxes = demoted[stem]
+                    boxes = self._book_slots(path_text, raw_boxes)
                     valid = [b for b in boxes if b]
                     full = is_full_content(boxes)
                     if len(valid) == 2:

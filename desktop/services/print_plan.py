@@ -16,6 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from utils.book_layout import (
+    full_to_half_slots,
     is_narrow_page,
     narrow_page_slots,
     page_single_wide_slots,
@@ -242,6 +243,7 @@ def plan_rembg_submit_entries(
     side_for=None,
     placeholder_for=None,
     narrow_for=None,
+    demote_for=None,
 ) -> list[dict]:
     """预览结果 + 检测框 + border → 最终图片条目（**逐框一张**）。
 
@@ -262,6 +264,10 @@ def plan_rembg_submit_entries(
     narrow_for       : (path_str) -> bool，该页是否**窄于全书**（单页扫描）。
         为真且只检出一个框时退化成**单槽**（不拆 ``-l``/``-r``、不补另一栏），
         见 :func:`utils.book_layout.narrow_page_slots`。默认 ``None``＝不判断。
+    demote_for       : (path_str) -> list|None，全书统计得出的「整幅其实像半幅」
+        改写结果（见 :func:`utils.book_layout.full_to_half_slots`）。返回非
+        ``None`` 时用它替换 ``boxes_for`` 的原始槽位；``None``＝该页不命中，
+        按原槽位走。默认 ``None`` = 不做这条修正（旧行为）。
 
     派生规则（2026-10-22 起没有 area：**检测出几个框就裁几张图**）：
     - 双框：拆 <页>-r / <页>-l 两条（古籍阅读顺序 r 在前）；
@@ -293,7 +299,14 @@ def plan_rembg_submit_entries(
         # ⚠️ 零面积框（1px 宽/高）**必须先剔掉再判形态**：它既不该多裁一张
         #    空白图，也不该让这页被当成「双栏页」而躲过单栏归一化
         #    （任务 0009 页码错位的根因，见 box_has_area）。
-        pre_slots = _valid_slots(list(boxes_for(str(path)) or []))
+        raw_page = list(boxes_for(str(path)) or [])
+        # ⚠️ 全书统计的「整幅其实像半幅」修正**先于**一切页级归一化：
+        #    改写成 2 槽后，下面的单宽/窄页规则会像普通半幅一样把它落到
+        #    单槽 + ``role=half-unsided``，命名与拼版自动跟着变。
+        demoted = demote_for(str(path)) if demote_for is not None else None
+        if demoted is not None:
+            raw_page = list(demoted)
+        pre_slots = _valid_slots(raw_page)
         page_class = describe_page_slots(pre_slots)
         raw_boxes = list(pre_slots)
         # ⚠️ 单栏书：把「单个宽框」的半幅页**退化成单槽**（规则本体在
@@ -517,6 +530,20 @@ def plan_detect_submit_entries(
     profile = book_profile or profile_book(
         [(stem, raw_slots[stem], widths[stem]) for stem in by_stem]
     )
+    # ⚠️ 全书统计的「整幅其实像半幅」修正（用户 2026-10-25）：改在**派生层**，
+    #    原始 boxes.json 快照不动。先替换 raw_slots，后面的形态统计、占位
+    #    描述、单宽/窄页归一化才会全部按半幅口径走。
+    demoted: dict[str, list] = {}
+    if profile.half_width_median is not None:
+        for stem in profile.demoted_full_pages:
+            if stem not in raw_slots:
+                continue
+            corrected = full_to_half_slots(
+                raw_slots[stem], widths.get(stem), profile.half_width_median
+            )
+            if corrected != raw_slots[stem]:
+                raw_slots[stem] = corrected
+                demoted[stem] = corrected
     single = bool(single_column_book) or profile.single_column_book
     form = BOOK_FORM_SINGLE if single else book_form(profile)
 
@@ -664,6 +691,7 @@ def plan_detect_submit_entries(
         side_for=side_for,
         placeholder_for=placeholder_for,
         narrow_for=lambda text: narrow_pages.get(Path(text).stem, False),
+        demote_for=lambda text: demoted.get(Path(text).stem),
     )
 
 

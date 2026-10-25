@@ -60,6 +60,9 @@ class RembgViewerHost(QWidget, ThumbsMixin, ZoomPopupMixin):
     def _book_slots(self, path_text: str, boxes: list) -> list:
         ...
 
+    def _demoted_slots(self) -> dict:
+        ...
+
     def _build_entries(self) -> list[dict]:
         ...
 

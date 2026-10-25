@@ -34,6 +34,7 @@ from utils.box_geometry import (
     PAGE_CLASS_FULLCONTENT,
     PAGE_CLASS_HARFCONTENT,
     PAGE_CLASS_SINGLE,
+    box_has_area,
     classify_page_slots,
 )
 
@@ -239,6 +240,156 @@ def narrow_page_slots(slots: Sequence, narrow: bool) -> list:
     return present
 
 
+# ---------------------------------------------------------------- 整幅误判回半幅
+#: 判定「这一页的整幅框其实是一栏」时，框宽与全书半幅宽度的最大允许偏差
+#: （都按**页宽归一化**后比较，所以不同 dpi/不同页宽的扫描也能比）。
+#:
+#: 实测（本机任务）：
+#: - 0007：半幅框宽/页中位 0.811，11 个整幅框 0.786~0.819，最大偏差 0.023；
+#: - 0005：半幅中位 0.907，整幅框 0.893~0.938，最大偏差 0.031；
+#: - 真整幅书（0014/0016/0020）的整幅框宽/页 ≥0.91 且**框宽 > 框高**，
+#:   宽高比这一条就先过不了；0015 唯一的整幅框是横向书根（宽高比 4.58）。
+#:
+#: 0.10 给上面两类都留了余量：真正该改的偏差都 ≤0.031，不该改的要么差 0.15+
+#: 要么宽高比直接是横向。
+FULL_HALF_WIDTH_TOLERANCE = 0.10
+
+#: 半幅宽度基线至少要这么多个框才可信；样本太少（如整本只有一个半幅框）
+#: 宁可不改——基线本身可能就是异常值。
+MIN_HALF_BOXES_FOR_BASELINE = 3
+
+
+def _box_size(box) -> tuple[float, float] | None:
+    """框的 (宽, 高)；畸形/零面积/缺项返回 ``None``。"""
+    if not box_has_area(box):
+        return None
+    try:
+        return float(box[2]) - float(box[0]), float(box[3]) - float(box[1])
+    except (TypeError, ValueError, IndexError):
+        return None
+
+
+def normalized_box_width(box, page_width) -> float | None:
+    """框宽 / 页宽（0~1）；框畸形或页宽未知时返回 ``None``。"""
+    try:
+        width = float(page_width)
+    except (TypeError, ValueError):
+        return None
+    if width <= 0:
+        return None
+    size = _box_size(box)
+    if size is None:
+        return None
+    box_width = size[0]
+    if box_width <= 0:
+        return None
+    return box_width / width
+
+
+def half_width_median(pages: Iterable) -> float | None:
+    """全书**半幅框**的典型归一化宽度（中位数）；样本不足时返回 ``None``。
+
+    参数:
+        pages: 逐页三元组 ``(页名, 槽位, 页宽)``（与 :func:`profile_book` 同形）。
+
+    只统计**2 槽页**（半幅形态）上的框：整幅页的框不能当基线，否则
+    「整幅页自己证明自己是半幅」会自我循环。缺页宽/畸形框不计入。
+    """
+    values: list[float] = []
+    for item in pages or []:
+        slots = list(item[1] or [])
+        if len(slots) != 2:
+            continue
+        width = item[2] if len(item) > 2 else None
+        for box in slots:
+            normalized = normalized_box_width(box, width)
+            if normalized is not None:
+                values.append(normalized)
+    if len(values) < MIN_HALF_BOXES_FOR_BASELINE:
+        return None
+    values.sort()
+    return values[len(values) // 2]
+
+
+def looks_like_half_box(box, page_width, half_width: float | None) -> bool:
+    """单个**整幅框**是否在几何上像一栏（半幅）。
+
+    两条同时满足才算，缺一不可：
+
+    1. **框宽 < 框高**：用户 2026-10-25 的形态特征——整幅通常横向展开，
+       竖向的单栏内容框更符合半幅；
+    2. **框宽/页宽 ≈ 全书半幅中位**（``FULL_HALF_WIDTH_TOLERANCE`` 以内）：
+       单看宽高比不够——一本真正的整幅书里，整幅框也可能恰好竖着；把它和
+       全书半幅框的实际宽度比，才能区分「一栏」和「一整页」。
+
+    页宽未知、基线缺失、框畸形时一律返回 ``False``（没证据不改身份）。
+    """
+    if half_width is None:
+        return False
+    size = _box_size(box)
+    if size is None:
+        return False
+    box_width, box_height = size
+    if box_width <= 0 or box_height <= 0 or box_width >= box_height:
+        return False
+    normalized = normalized_box_width(box, page_width)
+    if normalized is None:
+        return False
+    return abs(normalized - float(half_width)) <= FULL_HALF_WIDTH_TOLERANCE
+
+
+def full_to_half_slots(
+    slots: Sequence, page_width, half_width: float | None
+) -> list:
+    """**整幅槽位**（1 槽）在几何像半幅时改写成半幅槽位（2 槽）。
+
+    改写后仍保留「缺失一侧为 None」的槽位约定：框中心在页中线左侧就放左槽，
+    否则放右槽。下游 ``page_single_wide_slots`` / ``narrow_page_slots`` 会照常
+    把单宽框退化成单槽，于是**命名、拼版角色与普通半幅完全一致**——这条修正
+    不需要下游再写一遍。
+
+    仅在 ``looks_like_half_box`` 为真时改写；否则原样返回（浅拷贝）。
+    """
+    raw = list(slots or [])
+    if len(raw) != 1:
+        return raw
+    box = raw[0]
+    if not looks_like_half_box(box, page_width, half_width):
+        return raw
+    try:
+        width = float(page_width)
+        center = (float(box[0]) + float(box[2])) / 2.0
+    except (TypeError, ValueError, IndexError):
+        return raw
+    return [box, None] if center < width / 2.0 else [None, box]
+
+
+def demoted_full_slots(pages: Iterable, half_width: float | None = None) -> dict:
+    """逐页找出「整幅框几何像半幅」的页 → 改写后的半幅槽位。
+
+    参数:
+        pages: ``(页名, 槽位, 页宽)`` 逐页表。
+        half_width: 全书半幅宽度中位；不传时内部用 :func:`half_width_median`
+            现算（传进来可避免重复遍历）。
+
+    返回:
+        ``{页名: 2 槽槽位}``，只含真的命中改写的页；其余页不在字典里。
+    """
+    if half_width is None:
+        half_width = half_width_median(pages)
+    if half_width is None:
+        return {}
+    demoted: dict = {}
+    for item in pages or []:
+        name = str(item[0])
+        slots = list(item[1] or [])
+        width = item[2] if len(item) > 2 else None
+        corrected = full_to_half_slots(slots, width, half_width)
+        if corrected != slots:
+            demoted[name] = corrected
+    return demoted
+
+
 class BookProfile(NamedTuple):
     """整本书的形态判定结果（一次性统计，各判据共用）。
 
@@ -257,10 +408,17 @@ class BookProfile(NamedTuple):
         suspicious_half_pages: 整幅书里出现的半幅页（页名）——**可疑结果**，
             交由界面提示，不自动改。
         suspicious_half_ratio: 可疑半幅页占整幅书有框页的比例（0~1）。
+        half_width_median: 全书半幅框的典型归一化宽度（中位数，0~1）；
+            样本不足时为 ``None``（此时不做任何整幅→半幅改写）。
+        demoted_full_pages: 几何上与半幅一致的整幅页（页名）——**提交派生**
+            时按半幅处理（用户 2026-10-25）。原始槽位不改，见
+            :func:`full_to_half_slots`。
 
     ⚠️ ``single_column_book`` / ``full_book`` / ``double_column_book`` 三者
     互斥（比例都 ≥90%，不可能同时成立）；三者都为 ``False`` 即**混排书**
     （一部分单栏页、一部分整幅页/双栏页）。
+    ⚠️ ``demoted_full_pages`` **不参与**上面的比例统计：它只是"这一页该怎么
+    落地"的派生结论，原始检测快照仍是整幅（用户可在第二步看到原样）。
     """
 
     total_pages: int
@@ -275,6 +433,8 @@ class BookProfile(NamedTuple):
     double_column_book: bool
     suspicious_half_pages: tuple
     suspicious_half_ratio: float
+    half_width_median: float | None = None
+    demoted_full_pages: tuple = ()
 
     @property
     def has_suspicious_half(self) -> bool:
@@ -302,6 +462,10 @@ def profile_book(pages: Iterable) -> BookProfile:
     ``suspicious_half_pages``——模型判成半幅的那些页仍按半幅走完流程，由用户
     看着提示去核对。这与单栏书那条相反：单栏书是**有充分证据**的形态改写
     （≥90% 有框页都是横跨整页的一栏），整幅书里的半幅则是**证据不足**的异常。
+
+    另一条与上面正交的派生结论是 ``demoted_full_pages``（用户 2026-10-25）：
+    **半幅书里**个别被判成整幅的页，只要框宽<高、且归一化宽度与全书半幅中位
+    一致，就按半幅落地。它**不改原始槽位**，只影响提交命名/拼版角色。
     """
     single_wide: list[str] = []
     double_half: list[str] = []
@@ -309,6 +473,8 @@ def profile_book(pages: Iterable) -> BookProfile:
     full: list[str] = []
     empty: list[str] = []
     half_pages: list[str] = []
+    half_widths: list[float] = []
+    full_entries: list[tuple[str, object, object]] = []
     total = 0
 
     for item in pages or []:
@@ -321,15 +487,32 @@ def profile_book(pages: Iterable) -> BookProfile:
             continue
         if kind == PAGE_CLASS_FULLCONTENT:
             full.append(name)
+            full_entries.append((name, slots[0] if slots else None, width))
             continue
         # 半幅与单独页都属"半幅形态"：整本书的判定只看它是不是单宽框。
         half_pages.append(name)
+        if len(slots) == 2:
+            # 半幅宽度基线只从**2 槽页**取：整幅页自己的框不能当基线。
+            for box in slots:
+                normalized = normalized_box_width(box, width)
+                if normalized is not None:
+                    half_widths.append(normalized)
         if kind == PAGE_CLASS_HARFCONTENT:
             double_half.append(name)
         elif is_single_wide_half(slots, width):
             single_wide.append(name)
         else:
             narrow_single.append(name)
+
+    half_width: float | None = None
+    if len(half_widths) >= MIN_HALF_BOXES_FOR_BASELINE:
+        half_widths.sort()
+        half_width = half_widths[len(half_widths) // 2]
+    demoted = tuple(
+        name
+        for name, box, width in full_entries
+        if looks_like_half_box(box, width, half_width)
+    )
 
     boxed = len(single_wide) + len(double_half) + len(narrow_single) + len(full)
     single_column_book = (
@@ -362,6 +545,8 @@ def profile_book(pages: Iterable) -> BookProfile:
         double_column_book=double_column_book,
         suspicious_half_pages=suspicious,
         suspicious_half_ratio=ratio,
+        half_width_median=half_width,
+        demoted_full_pages=demoted,
     )
 
 
@@ -411,6 +596,23 @@ def suspicious_summary(profile: BookProfile) -> str:
     )
 
 
+def demoted_full_summary(profile: BookProfile) -> str:
+    """:class:`BookProfile` → 「整幅按半幅处理」的一行人读结论（无则空串）。"""
+    if not profile.demoted_full_pages:
+        return ""
+    names = "、".join(profile.demoted_full_pages[:5])
+    more = len(profile.demoted_full_pages) - 5
+    tail = f" 等 {len(profile.demoted_full_pages)} 页" if more > 0 else ""
+    width = profile.half_width_median
+    width_text = f"{width:.0%}" if width is not None else "?"
+    return (
+        f"已把 {len(profile.demoted_full_pages)} 页「整幅」按半幅处理"
+        f"（{names}{tail}）：这些页的框宽<高，且框宽（占页宽）与全书半幅中位 "
+        f"{width_text} 相差不超过 {FULL_HALF_WIDTH_TOLERANCE:.0%}——"
+        f"更符合一栏，而不是整页；提交命名与拼版会按半幅走。"
+    )
+
+
 __all__ = [
     "BOOK_FORM_DOUBLE",
     "BOOK_FORM_FULL",
@@ -419,14 +621,22 @@ __all__ = [
     "BookProfile",
     "DOUBLE_COLUMN_BOOK_RATIO",
     "FULL_BOOK_RATIO",
+    "FULL_HALF_WIDTH_TOLERANCE",
+    "MIN_HALF_BOXES_FOR_BASELINE",
     "NARROW_PAGE_WIDTH_RATIO",
     "SINGLE_COLUMN_BOOK_RATIO",
     "SINGLE_COLUMN_WIDTH_RATIO",
     "book_form",
+    "demoted_full_slots",
+    "demoted_full_summary",
+    "full_to_half_slots",
+    "half_width_median",
     "is_narrow_page",
     "is_single_wide_box",
     "is_single_wide_half",
+    "looks_like_half_box",
     "narrow_page_slots",
+    "normalized_box_width",
     "profile_book",
     "single_column_slots",
     "single_column_summary",

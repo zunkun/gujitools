@@ -19,6 +19,7 @@ from PySide6.QtCore import QObject, QPointF, Qt, Signal, Slot
 from PySide6.QtGui import QColor, QFont, QImage, QImageReader, QFontMetrics, QPainter
 
 from utils.box_geometry import build_output_layout, parse_border_mm
+from desktop.utils.image_scaling import smooth_downscale
 from desktop.utils.files import THUMBNAIL_EDGE, task_extract_pages_dir
 from utils.file_utils import is_source_document, write_bytes_atomic
 
@@ -383,6 +384,11 @@ def compose_print_page(
     target_w = max(1, round(w_mm * density))
     target_h = max(1, round(h_mm * density))
     if target_w > 0 and target_h > 0 and not image.isNull():
+        # 源图像素可能远多于纸面所需（一张 2900px 的半页图排进 130mm 只要
+        # ~1500px）：先分档降到 2 倍以内，再按纸面框精确拉伸。一步缩到底会
+        # 跳采样，细笔画/淡墨发虚（用户 2026-10-24 报「排版页不清晰」）。
+        if image.width() > target_w * 2 or image.height() > target_h * 2:
+            image = smooth_downscale(image, 2 * max(target_w, target_h))
         scaled = image.scaled(
             target_w, target_h, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation
         )
@@ -707,6 +713,11 @@ class PreviewWorker(QObject):
             return image  # 不缩放：调用方需要原始分辨率
         if pre_scaled:
             return image  # 上面已按目标边长解码到位，再缩一次纯属白算
+        if max(image.width(), image.height()) > self.longest_edge:
+            # 合成路径（effect/print_spec）的产物是原始像素：分档降采样，
+            # 一次缩到显示尺寸会跳采样（细笔画发虚）。
+            return smooth_downscale(image, self.longest_edge)
+        # 比请求边长还小：沿用原语义（放大到请求边长），只有一次平滑放大
         return image.scaled(
             self.longest_edge,
             self.longest_edge,

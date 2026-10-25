@@ -327,6 +327,7 @@ class EditorCanvas(
         self._sync_scene_rect()
         if refit:
             self.fit()
+        self._sync_item_render_mode()
         if self._tool in ("crop", "transform"):
             # 换图（应用/撤销/还原都走这里）后选区重新默认全选：
             # 透明扩展画布只包含定位留白，默认框仍应贴合实际图片内容。
@@ -698,6 +699,23 @@ class EditorCanvas(
             self._image.width(), self._image.height(),
         )
 
+    def _sync_item_render_mode(self) -> None:
+        """按当前倍率切换图元采样方式：≥100% 用**最近邻**，<100% 用平滑。
+
+        ⚠️ 100% 以下是大图缩小，平滑采样才不出锯齿/摩尔纹；100% 以上已经没有
+        更多像素可看，继续平滑只会把像素糊成一团（用户 2026-10-25：「编辑里
+        放大后发虚」）。像素级放大按像素格显示，是编辑器的通行做法。
+        """
+        if self._item is None:
+            return
+        mode = (
+            Qt.TransformationMode.FastTransformation
+            if self._zoom >= 1.0
+            else Qt.TransformationMode.SmoothTransformation
+        )
+        if self._item.transformationMode() != mode:
+            self._item.setTransformationMode(mode)
+
     def set_source_extent(self, rect: QRectF) -> None:
         """登记**原始文件**在场景坐标里占的矩形，作为裁剪/平移的固定上界。
 
@@ -883,9 +901,10 @@ class EditorCanvas(
         self.fitInView(rect, Qt.AspectRatioMode.KeepAspectRatio)
         self.centerOn(rect.center())
         self._zoom = max(MIN_ZOOM, min(MAX_ZOOM, self.transform().m11()))
-        # ⚠️ 手柄的几何 = 视图像素 ÷ 当前倍率，倍率变了必须重算覆盖层；
+        # 手柄的几何 = 视图像素 ÷ 当前倍率，倍率变了必须重算覆盖层；
         #    不然 set_image 时用脏 viewport 算的小倍率会留下巨型手柄
         #    （离屏渲染抓出来的：手柄有 ~150 视图像素，应为 12）。
+        self._sync_item_render_mode()
         self._sync_overlay()
 
 
@@ -927,6 +946,7 @@ class EditorCanvas(
                        moved.y() - anchor_scene.y())
         self._zoom = zoom
         self._user_zoomed = True
+        self._sync_item_render_mode()  # ≥100% 按像素格显示（放大不发虚）
         self._sync_overlay()  # 手柄视觉尺寸不随缩放变，几何要重算
 
 
@@ -964,4 +984,5 @@ class EditorCanvas(
         self.centerOn(rect.center())
         self._zoom = zoom
         self._user_zoomed = True
+        self._sync_item_render_mode()
         self._sync_overlay()

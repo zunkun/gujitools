@@ -196,6 +196,55 @@ def run(ctx) -> None:
     ok("可疑半幅页不会被单栏判据顺手接管（不因单框就当整幅）",
        kept["0021-l"]["full"] is False, str(kept["0021-l"]))
 
+    # ---- 4b. 方向2：整幅框几何像半幅 → 按半幅落地（用户 2026-10-25）----
+    from desktop.services.print_plan import plan_detect_submit_entries
+    from utils.book_layout import demoted_full_summary
+
+    # 5 页单宽半幅（框宽 85%、宽<高）作基线；3 页同几何的「整幅」应改回半幅
+    HALF_LIKE_FULL = [list(WIDE[0])]          # 1 槽，框与半幅完全同几何
+    LANDSCAPE_FULL = [[25, 100, 975, 500]]    # 1 槽，宽>高（真整幅形态）
+    demo_boxes = {f"{i:04d}.png": WIDE for i in range(1, 6)}
+    demo_boxes.update({f"{i:04d}.png": HALF_LIKE_FULL for i in range(6, 9)})
+    demo_boxes["0009.png"] = LANDSCAPE_FULL
+    demo_sampled = [
+        (Path(name).stem, boxes, W) for name, boxes in demo_boxes.items()
+    ]
+    demo_profile = profile_book(demo_sampled)
+    ok("几何像半幅的整幅页被识别（3 页）",
+       set(demo_profile.demoted_full_pages) == {"0006", "0007", "0008"},
+       str(demo_profile.demoted_full_pages))
+    ok("横向整幅页不被改写", "0009" not in demo_profile.demoted_full_pages)
+    ok("半幅宽度基线取 2 槽页中位",
+       demo_profile.half_width_median is not None
+       and abs(demo_profile.half_width_median - 0.85) < 1e-9,
+       str(demo_profile.half_width_median))
+    ok("提示文案说明按半幅处理",
+       "按半幅处理" in demoted_full_summary(demo_profile),
+       demoted_full_summary(demo_profile))
+
+    demo_entries = plan_detect_submit_entries(
+        manifest_paths=[Path(name) for name in demo_boxes],
+        boxes_for=lambda text: demo_boxes[Path(text).name],
+        page_width_for=lambda _t: W,
+        page_size_for=lambda _t: (W, 1400),
+    )
+    demo_got = {e["label"]: e for e in demo_entries}
+    ok("被修正的整幅页：产物名无后缀、role=half-unsided",
+       "0006" in demo_got and demo_got["0006"]["role"] == "half-unsided",
+       str(demo_got.get("0006")))
+    ok("被修正页 full=True（单宽框归一化成整幅语义）",
+       demo_got["0006"]["full"] is True, str(demo_got["0006"]))
+    ok("真横向整幅页仍 role=full",
+       demo_got["0009"]["role"] == "full", str(demo_got["0009"]))
+
+    # 半幅样本不足（<3）→ 不改写（基线可能本身就是异常值）
+    few = profile_book(
+        [("a", WIDE, W), ("b", WIDE, W), ("c", HALF_LIKE_FULL, W)]
+    )
+    ok("半幅样本不足 3 → 不做改写（没证据不猜）",
+       few.half_width_median is None and few.demoted_full_pages == (),
+       f"{few.half_width_median} {few.demoted_full_pages}")
+
     # 页宽不可得时不得改写（保守回落，与判据一致）
     no_w = {e["label"]: e for e in _entries(nine, width=0)}
     ok("页宽取不到 → 不改写身份（保守回落成半幅）",

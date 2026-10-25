@@ -93,51 +93,32 @@ def run_detect(config: dict) -> int:
             interceptor._consume(interceptor.buffer.strip())
 
 
-def run_detect_pages(
-    files: list[Path], *, workers: int, reuse: dict | None, report
-) -> dict:
+def run_detect_pages(files: list[Path], *, workers: int, report) -> dict:
     """逐页检测（**全仓唯一实现**）：子进程阶段与 singletask 执行器都调这里。
+
+    **每次执行都重新跑全部页**（用户 2026-10-26：不再复用上次结果）。
 
     参数:
         files: 全部待处理的图片（按页序）。
         workers: 并发线程数；<=0 时按 ``core.args.default_workers`` 自动取。
-        reuse: ``{stem: page_boxes 负载}``（见 ``desktop.services.detect_reuse``）；
-            命中的页**不重跑推理**，只原样补发一次带 ``reused`` 的事件。
         report: ``(事件名, 负载)`` 回调，名字取 ``log`` / ``progress`` /
             ``page_boxes``（与 ``desktop.steps.kernel.Report`` 同形）。
 
     返回:
-        统计字典：``done/left/right/full/failed/reused/cost/elapsed/
+        统计字典：``done/left/right/full/failed/cost/elapsed/
         load_seconds/workers``。
 
     ⚠️ 为什么抽出来（用户 2026-10-20 的第二个问题）：singletask 与任务流程
-    必须跑**完全相同**的检测循环（并发、逐页日志、槽位事件、复用跳过），
-    各写一份必然漂移；这里只负责"怎么跑"，不关心产物落到哪个文件。
+    必须跑**完全相同**的检测循环（并发、逐页日志、槽位事件），各写一份必然
+    漂移；这里只负责"怎么跑"，不关心产物落到哪个文件。
     """
     total = len(files)
-    reuse = dict(reuse or {})
-    #: 复用页不参与推理；但进度分母仍是**全部**页（界面计数才不会跳）
-    todo = [path for path in files if Path(path).stem not in reuse]
     stat: dict = {
         "done": 0, "left": 0, "right": 0, "full": 0, "failed": 0,
-        "reused": 0, "cost": 0.0, "elapsed": 0.0, "load_seconds": 0.0,
+        "cost": 0.0, "elapsed": 0.0, "load_seconds": 0.0,
         "workers": 0,
     }
     if not total:
-        return stat
-
-    # 复用页先补发：界面立刻拿到这批框，进度也一口气推到"已复用"那一段
-    for payload in reuse.values():
-        stat["done"] += 1
-        stat["reused"] += 1
-        report("page_boxes", dict(payload))
-        report("progress", {"done": stat["done"], "total": total})
-    if reuse:
-        report("log", {
-            "message": f"复用上次结果 {len(reuse)} 页，需检测 {len(todo)} 页"
-        })
-
-    if not todo:
         return stat
 
     # 同上：跨层复用检测入口是登记在案的有意依赖。
@@ -159,7 +140,7 @@ def run_detect_pages(
     # 传入 command="detect" → min(8, CPU 核数, 张数)）：检测每张只在服务端
     # imread 一次，比去底/裁剪的 ~350MB/张轻得多，所以上限单独放宽到 8。
     # 具体数值只在 core/args.py 的 _COMMAND_WORKER_CAP 里写一次。
-    workers = max(1, int(workers or 0) or default_workers(len(todo), command="detect"))
+    workers = max(1, int(workers or 0) or default_workers(total, command="detect"))
     stat["workers"] = workers
     if workers > 1:
         report("log", {
@@ -218,7 +199,7 @@ def run_detect_pages(
             report("progress", {"done": stat["done"], "total": total})
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = [pool.submit(_detect_one, path) for path in todo]
+        futures = [pool.submit(_detect_one, path) for path in files]
         for future in as_completed(futures):
             # 单张的异常已在 _detect_one 内兜住；这里只是等全部跑完
             future.result()
@@ -228,7 +209,7 @@ def run_detect_pages(
     summary = (
         f"总计用时 {stat['elapsed']:.1f} s（共 {total} 张："
         f"半幅 左{stat['left']}/右{stat['right']}、整幅 {stat['full']}、"
-        f"失败 {stat['failed']}、复用 {stat['reused']}；"
+        f"失败 {stat['failed']}；"
         f"{workers} 线程，单张累计 {stat['cost']:.1f} s、"
         f"平均 {stat['cost'] / counted * 1000:.0f} ms/张）"
     )
@@ -280,7 +261,6 @@ def run_detect_stage(config: dict) -> int:
         stat = run_detect_pages(
             files,
             workers=int(args.get("workers") or 0),
-            reuse=args.get("reuse") or None,
             report=report,
         )
         # ⚠️ 并发分支的真实进度在 `stat["done"]`（2026-09-26 审计：以前 finished
