@@ -38,6 +38,7 @@ from desktop.utils.files import (
     singletask_thumbnails_dir,
     thumb_map_path,
 )
+from utils.file_utils import is_source_document
 
 if TYPE_CHECKING:
     from desktop.components.viewers.image_viewer import ImageViewerWidget
@@ -92,8 +93,9 @@ class ThumbSourceMixin:
         给了就按图片清单处理（detect/rembg/print/拼图这类「源是一批图」的步骤
         直接把清单传进来，省得各页再各自判断一遍）。
 
-        - 源是 **PDF** → 渲页缩略图到 ``singletask/<子任务>/thumbnails/<书>/``，
-          条目标签「第 N 页」，大图由查看器按需渲高清页；
+        - 源是 **PDF / DjVu** → 渲页缩略图到
+          ``singletask/<子任务>/thumbnails/<书>/``，条目标签「第 N 页」，
+          大图由查看器按需渲高清页；
         - 源是**图片或目录** → 用 ``spec.listing`` 取清单，每张渲一张缓存小图，
           条目标签是文件名。
         """
@@ -102,7 +104,7 @@ class ThumbSourceMixin:
             self._thumb_book = None
             return
         candidate = Path(source)
-        if paths is None and candidate.suffix.lower() == ".pdf":
+        if paths is None and is_source_document(candidate):
             self.show_pdf(candidate, numbered=self.NUMBERED_THUMBS)
             return
         images = list(paths) if paths is not None else self._listing(candidate)

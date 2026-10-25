@@ -177,14 +177,15 @@ class SourceThumbnailsWorker(QObject):
             )
             self._copy_thread.start()
         try:
-            import fitz
+            # PDF 与 DjVu 都由 utils 的后端分派读页数（fitz / djvu-rs）
+            from utils.pdf_extract import document_page_count
 
             source = self.pdf_path
             self._pdf_mtime = _stat_mtime(source)
-            self._document = fitz.open(str(source))
+            total = document_page_count(str(source))
             try:
-                if self._document.page_count == 0:
-                    raise ValueError("PDF 没有任何页面")
+                if total == 0:
+                    raise ValueError("源文件没有任何页面")
                 self.out_dir.mkdir(parents=True, exist_ok=True)
                 # ⚠️ 原子写：缓存可用性判据是 mtime，非原子写留下的截断 JPEG
                 #    mtime 更新 → 会被永久当成有效缓存且不自愈（见
@@ -193,7 +194,6 @@ class SourceThumbnailsWorker(QObject):
                 # 在场标记：告诉查看器"这个目录有人在填，别自己再渲一遍"
                 # （见 PRODUCING_MARKER 的说明）。失败不影响渲染。
                 self._mark_producing(True)
-                total = self._document.page_count
                 # 只备首屏（见 PREFETCH_PAGES）：其余页滚到可见窗口时按需补
                 planned = min(total, PREFETCH_PAGES)
                 self.progress.emit(0, planned)  # 开始渲染
@@ -259,10 +259,8 @@ class SourceThumbnailsWorker(QObject):
         # ⚠️ 真正决定后续页从哪渲的是 ``_render_path``（子进程按路径开文档）；
         #    下面那个文档对象只用于"副本能不能打开"的探测，打不开就继续用源文件。
         if self._copied and self.copy_to is not None:
-            probe = self._open_copy()
-            if probe is None:
+            if not self._copy_is_readable():
                 return
-            probe.close()
             self._render_path = Path(self.copy_to)
         else:
             return
@@ -282,20 +280,20 @@ class SourceThumbnailsWorker(QObject):
             for start in range(0, len(rest), BATCH_PAGES)
         ]
 
-    def _open_copy(self):
-        """打开任务目录里的副本继续渲染；打不开就返回 None（继续用源文件）。
+    def _copy_is_readable(self) -> bool:
+        """任务目录里的副本能不能打开（PDF / DjVu 都走同一套后端分派）。
 
-        ⚠️ 调用方负责先把**源文档** close 再换用返回值——这里绝不碰传入的
+        ⚠️ 调用方负责先把**源文档** close 再换用副本——这里绝不碰传入的
         文档（旧实现在这里把同一文档 close 了两次、还把副本开了两份只关一份）。
         """
         if not self._copied or self.copy_to is None:
-            return None
+            return False
         try:
-            import fitz
+            from utils.pdf_extract import document_page_count
 
-            return fitz.open(str(self.copy_to))
+            return document_page_count(str(self.copy_to)) > 0
         except Exception:  # noqa: BLE001 - 换副本失败不影响已渲的页
-            return None
+            return False
 
     def _render_batch(self, pages: list[int], on_page) -> None:
         """渲**一批**页：子进程并行，**每页一落地就写盘并回调** ``on_page(page)``。

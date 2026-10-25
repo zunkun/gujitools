@@ -101,7 +101,7 @@ python tools/check_docs.py            # 校验全部文档：相对链接、锚�
 ## 快速开始
 
 ```bash
-# 从 PDF 提取图片
+# 从 PDF/DjVu 提取图片
 guji extract -i book.pdf -o ./images
 
 # 只看检测结果（不落盘）

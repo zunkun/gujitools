@@ -342,8 +342,8 @@ class SubmitMixin:
                 )
             elif kind == "pdf":
                 self._toast(
-                    "warning", "尚未选择 PDF",
-                    "点页头的「选择 PDF」按钮为本任务补上源文件，之后才能执行。",
+                    "warning", "尚未选择源文件",
+                    "点页头的「选择源文件」按钮为本任务补上 PDF/DjVu，之后才能执行。",
                 )
             else:
                 self._toast(

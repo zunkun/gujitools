@@ -147,7 +147,7 @@ class CreateTaskPage(QWidget):
         root.addLayout(name_row)
 
         # 选 PDF 之后才更新（"留空就用哪个文件名"得说清，否则用户不知道留空的后果）
-        self.name_hint = CaptionLabel("可留空；不选 PDF 也能先建任务。")
+        self.name_hint = CaptionLabel("可留空；不选源文件也能先建任务。")
         ui.apply_to(self.name_hint, T.SIZE_CAPTION, color=T.INK_FAINT)
         self.name_hint.setWordWrap(True)
         root.addWidget(self.name_hint)
@@ -195,7 +195,7 @@ class CreateTaskPage(QWidget):
     def _refresh_hint(self, *_args) -> None:
         """提示行：说清"留空会用什么名字"（否则用户不知道留空会怎样）。
 
-        两种回落（用户 2026-10-06）：有 PDF ⇒ 用**文件名**；没 PDF ⇒ 用
+        两种回落（用户 2026-10-06）：有源文件 ⇒ 用**文件名**；没源文件 ⇒ 用
         ``任务#XXXX``。所以提示必须跟着"选了没选"变。
         """
         path = self.panel.selected_pdf()
@@ -204,11 +204,11 @@ class CreateTaskPage(QWidget):
             self.name_hint.setText(f"任务名将使用「{typed}」。")
         elif path is not None:
             self.name_hint.setText(
-                f"留空则使用 PDF 文件名「{path.stem}」。")
+                f"留空则使用源文件名「{path.stem}」。")
         else:
             self.name_hint.setText(
                 f"留空则使用默认名「{self.default_name()}」；"
-                "PDF 可以之后在任务详情里补选。")
+                "源文件可以之后在任务详情里补选。")
 
     def default_name(self) -> str:
         """默认任务名「任务#XXXX」（XXXX = 预测的下一个任务号）。
@@ -331,8 +331,8 @@ class CreateTaskPage(QWidget):
         if not self._should_ask_missing_pdf():
             return True
         dialog = MessageBox(
-            "流程需要一个 PDF 源文件",
-            "当前流程里有「提取图片」这一步，它需要一个 PDF 源文件。\n\n"
+            "流程需要一个源文件",
+            "当前流程里有「提取图片」这一步，它需要一个 PDF 或 DjVu 源文件。\n\n"
             "· 现在就选一个 → 任务建好后直接进详情页即可开始处理；\n"
             "· 先不选 → 任务照样能建，只是暂时不能执行，"
             "之后在任务详情页右上角可以随时补选。",

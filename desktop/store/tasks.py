@@ -21,6 +21,7 @@ from desktop.store.json_io import (
     owner_path, read_json, resolve_scoped_path, write_json, write_owner,
 )
 from desktop.utils.files import copy_file_atomic
+from utils.file_utils import SOURCE_DOCUMENT_EXTS
 from utils.rembg_algorithms import ALGORITHM_KEYS, REMBG_DEFAULT_ALGORITHM
 
 #: 默认流程的四个步骤（顺序即执行顺序）。
@@ -1447,9 +1448,20 @@ class TaskMixin:
             candidate = task_dir / Path(str(task.get("source_path") or "")).name
             if candidate.is_file():
                 return candidate
-        # 兜底：源被改名过（文件名对不上）时，任务目录下唯一的 PDF 就是备份
-        pdfs = sorted(task_dir.glob("*.pdf")) if task_dir.exists() else []
-        return pdfs[0] if pdfs else None
+        # 兜底：源被改名过（文件名对不上）时，任务目录下唯一的源文件就是备份
+        candidates = (
+            sorted(
+                (
+                    path
+                    for ext in SOURCE_DOCUMENT_EXTS
+                    for path in task_dir.glob(f"*{ext}")
+                ),
+                key=lambda path: path.name,
+            )
+            if task_dir.exists()
+            else []
+        )
+        return candidates[0] if candidates else None
 
     def ensure_source_copy(self, task_id: str) -> Path | None:
         """保证任务目录里有 PDF 备份；缺了就按索引里的 source_path 补一份。

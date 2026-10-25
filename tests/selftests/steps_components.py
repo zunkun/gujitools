@@ -108,12 +108,13 @@ def run(ctx) -> None:
     # 目录，也可以把文件拖进去，目录投进去」——下面这些就是那句话的规则化。
     ok(
         "后缀从过滤串推导（不另写一份后缀表）",
-        extract.suffixes() == (".pdf",) and ".png" in rembg.suffixes(),
+        extract.suffixes() == (".pdf", ".djvu", ".djv")
+        and ".png" in rembg.suffixes(),
         f"{extract.suffixes()} / {rembg.suffixes()}",
     )
     ok(
         "输入物称呼由 pick_label 派生",
-        (extract.input_noun(), rembg.input_noun()) == ("PDF", "图片"),
+        (extract.input_noun(), rembg.input_noun()) == ("PDF/DjVu", "图片"),
         f"{extract.input_noun()} / {rembg.input_noun()}",
     )
     # ⚠️ 「PDF 只支持文件」（用户 2026-10-03）——所以**不是**每条都收目录。
@@ -493,7 +494,7 @@ def run(ctx) -> None:
     ok(
         "导航文案与顺序逐字来自 spec（PDF排版 排最后）",
         [m.title for m in MODULES]
-        == ["PDF图片提取", "检测文本框", "图片去底色", "图片拼版", "PDF排版"],
+        == ["PDF/DjVu提取", "检测文本框", "图片去底色", "图片拼版", "PDF排版"],
         str([m.title for m in MODULES]),
     )
     # 护栏：调导航顺序**不许**动流程主链。FLOW_STAGES 从 SPECS 派生，若有人为了

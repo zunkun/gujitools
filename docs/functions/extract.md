@@ -1,6 +1,6 @@
 # extract 功能说明
 
-从 PDF 文件中批量提取页面为图片，支持缩放、页码选择与多线程处理。
+从 PDF 或 DjVu 文件中批量提取页面为图片，支持缩放、页码选择与多进程处理。
 
 ## 命令
 
@@ -64,7 +64,17 @@ else:
 的扫描件会被重新渲染成插值放大图，反而更糊。
 想回到旧行为（`zoom` 完全说了算），把 `--dpi` 设成 72 即可。
 
-### 3. 渲染模式
+### 3. DjVu 支持（.djvu / .djv）
+
+DjVu 走 **djvu-rs**（纯 Rust 解码，`pip install djvu-rs`，无需安装 DjVuLibre）：
+每页按**原生分辨率 × zoom** 解码成图片，受 6000px 宽度封顶。
+
+- DjVu 页面自带原生扫描分辨率，因此**不套 PDF 的 300 DPI 下限**——补 DPI
+  只是放大插值，细节不会变多，文件反而更大。要更高分辨率请用 `--zoom`；
+- `--quick` / `--dpi` 对 DjVu 无效（没有"内嵌原图直拷"这条捷径）；
+- 其余参数（`--pages` / `--start` / `--end` / `--ext` / `--workers` 等）与 PDF 相同。
+
+### 4. 渲染模式
 
 **自动直取（quick=True，默认）**：`zoom=1` 时自动判断能否直接取内嵌图。
 
@@ -97,10 +107,10 @@ else:
 - PNG: 无损
 - 输出尺寸 = 页面 pt 尺寸 × zoom（受 6000px 上限保护）
 
-### 4. 多线程批量处理
+### 5. 多进程批量处理
 
 - 将页码列表切分为批次（batch_size，默认 4）
-- 使用 ThreadPoolExecutor 并行处理各批次
+- 使用 `ProcessPoolExecutor`（多进程）并行处理各批次
 - 线程安全的进度计数器（lock 保护）
 - CLI 与 GUI **共用同一份**并发实现 `render_pages_parallel()`
   （GUI 曾经直接调 `process_page_batch()` 串行跑全部页，是提取慢的主因）
@@ -113,11 +123,11 @@ else:
 
 | 参数         | 默认值   | 说明                                   |
 | ------------ | -------- | -------------------------------------- |
-| -i/--input   | .        | PDF 文件路径或包含 PDF 的目录          |
+| -i/--input   | .        | PDF/DjVu 文件路径或包含它们的目录      |
 | -o/--output  | None     | 输出目录名称                           |
 | --zoom       | 1        | 缩放因子（整数，如 2 表示 2 倍分辨率） |
-| --dpi        | 300      | 整页渲染的 DPI 下限（内嵌图路径不生效） |
-| --quick      | True     | 快速模式（优先提取内嵌图片）           |
+| --dpi        | 300      | 整页渲染的 DPI 下限（内嵌图路径不生效；DjVu 不适用） |
+| --quick      | True     | 快速模式（优先提取内嵌图片；DjVu 忽略） |
 | --ext        | jpg      | 输出格式（jpg/png/tiff）               |
 | --pages      | None     | 页码字符串（如 "1,3-5,7"）             |
 | --start      | None     | 起始页码（1-based）                    |
@@ -135,6 +145,10 @@ else:
   ├── 2.jpg
   ├── ...
   └── 10.jpg
+
+输入: book.djvu（同样 10 页）
+输出目录: book/
+  └── …（命名规则与 PDF 完全相同）
 ```
 
 - 文件名 = 页码（1-based）+ 扩展名
@@ -145,22 +159,23 @@ else:
 ```
 输入路径（文件或目录）
   │
-  ├─ 遍历找到所有 PDF
+  ├─ 遍历找到所有 PDF / DjVu
   │
-  ├─ 对每个 PDF:
-  │   ├─ 打开文档，获取总页数
+  ├─ 对每个源文件:
+  │   ├─ 打开文档，获取总页数（PDF→PyMuPDF，DjVu→djvu-rs）
   │   ├─ 解析页码（--pages 或 --start/--end）
-  │   ├─ 计算实际缩放因子（限制 6000px；整页渲染还兜 300 DPI 下限）
+  │   ├─ 计算实际缩放因子（限制 6000px；PDF 整页渲染还兜 300 DPI 下限）
   │   ├─ 切分批次
   │   │
-  │   └─ 多线程处理各批次:
-  │       ├─ 打开 PDF
+  │   └─ 多进程处理各批次:
+  │       ├─ 打开源文件
   │       ├─ 对每页:
-  │       │   ├─ quick=True → 提取内嵌图片 / 渲染整页
-  │       │   ├─ quick=False → 渲染整页
+  │       │   ├─ DjVu → djvu-rs 按原生分辨率 × zoom 解码
+  │       │   ├─ PDF quick=True → 提取内嵌图片 / 渲染整页
+  │       │   ├─ PDF quick=False → 渲染整页
   │       │   ├─ 保存为 jpg/png/tiff
   │       │   └─ 更新进度计数器
-  │       └─ 关闭 PDF
+  │       └─ 关闭源文件
   │
   └─ 打印统计信息
 ```
@@ -198,5 +213,5 @@ guji extract -i ./pdfs/ -o ./images/
 - **quick 模式**：PDF 可能内嵌了原始扫描图片，直接提取比渲染更快。但若内嵌图片分辨率不足，应使用标准模式。
 - **缩放限制**：古籍扫描 PDF 通常页面宽度很大，zoom=2 可能导致输出图片超过 6000px，此时自动降低 zoom。
 - **JPEG 质量**：渲染/转码路径 quality=95, subsampling=0（无色度抽样）；quick 直拷路径**原样写 PDF 内嵌 JPEG 字节**，不重编码（质量与体积由源文件决定）。
-- **不使用 FunctionBase 并发引擎**：PDF 渲染的并发逻辑在 `pdf_utils` 内部实现，ExtractFunction 直接重写 `execute()`。
+- **不使用 FunctionBase 并发引擎**：页面渲染的并发逻辑在 `utils.pdf_extract` 内部实现，ExtractFunction 直接重写 `execute()`。
 - **clean 默认值**：extract 的 clean 默认为 False（不自动清空），其他功能默认 True。

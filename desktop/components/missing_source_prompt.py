@@ -79,14 +79,14 @@ CARD_WIDTH = 420
 #: 默认文案＝「缺 PDF」这一种。缺入口图片时宿主用 :meth:`MissingSourcePrompt.configure`
 #: 换掉（见``manifest.py``的 ``_source_prompt_content``）。
 DEFAULT_CONTENT = {
-    "title": "这个任务还没有 PDF",
-    "body": "当前任务的流程里有「提取图片」这一步，它需要一个 PDF 源文件。\n\n"
+    "title": "这个任务还没有源文件",
+    "body": "当前任务的流程里有「提取图片」这一步，它需要一个 PDF 或 DjVu 源文件。\n\n"
             "· 现在选择 → 选完立刻就能开始处理；\n"
             "· 稍后再说 → 右上角那个高亮的 PDF 按钮随时能补上。",
     "hint": "内容区暂时不可操作，页头与右上角按钮照常可用。",
     "later_text": "稍后再说",
     "pick_text": "现在选择",
-    #: 主按钮要宿主开哪种对话框：``"files"``＝文件框（缺 PDF 时选一个文件）。
+    #: 主按钮要宿主开哪种对话框：``"files"``＝文件框（缺源文件时选一个文件）。
     #: 缺入口图片时宿主会换成 ``"folder"``＝**目录**框（用户 2026-10-06
     #："改成选择图片目录"——一两百页图逐张多选不现实）。
     "pick_kind": "files",
@@ -94,7 +94,7 @@ DEFAULT_CONTENT = {
 
 
 class MissingSourcePrompt(QWidget):
-    """「这个任务还没有 PDF」的页内提示层（**非模态**）。
+    """「这个任务还没有源文件」的页内提示层（**非模态**）。
 
     :param parent: 任务详情页（提示层作为它的子控件铺在内容区上）。
     :param area_top_fn: 无参可调用，返回要遮盖区域的**上沿 y**（页内坐标）。

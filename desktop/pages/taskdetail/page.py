@@ -364,7 +364,7 @@ class TaskDetailPage(
         # 任务名却可随时改，两者必须能分开看（用户 2026-10-24）。
         self.task_no_label.setText(f"任务#{task_id}")
         self.source_label.setText(
-            self.source_path.name if self.source_path else "尚未选择 PDF")
+            self.source_path.name if self.source_path else "尚未选择源文件")
         self._warn_if_flow_degraded(task_id)
         self._refresh_source_actions()
         # 切任务时先把各阶段面板复位到默认：这些面板是长生命周期控件，
@@ -432,7 +432,7 @@ class TaskDetailPage(
         #    用户 2026-10-09 合并双标签）：PDF 页缩略图与提取产物同屏。
         self.extract_result_viewer.set_pdf(
             self.source_path,
-            placeholder=None if self.source_path else "尚未选择 PDF",
+            placeholder=None if self.source_path else "尚未选择源文件",
             cache_dir=self.store.source_thumbnails_dir(task_id),
         )
         self.extract_result_viewer.set_extract_dir(

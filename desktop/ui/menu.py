@@ -98,9 +98,9 @@ ACTION_CREATE_TASK = "新建任务(&N)"
 #: 助记符取 ``Q`` 而不是 ``K``：``K`` 在「文件」里没有别的含义，但 ``Q`` 更贴
 #: 中文"快速"的拼音首字母（quick），也不与其它助记符冲突。
 ACTION_QUICK_TASK = "快速任务(&Q)"
-#: 「快速任务」选文件时的对话框标题（与创建页那个「选择 PDF」区分开，用户
+#: 「快速任务」选文件时的对话框标题（与创建页那个「选择 PDF/DjVu」区分开，用户
 #: 一眼能看出是从菜单直接走的路）。
-QUICK_TASK_PICK_TITLE = "选择 PDF（快速任务）"
+QUICK_TASK_PICK_TITLE = "选择 PDF/DjVu（快速任务）"
 ACTION_QUIT = "退出(&X)"
 ACTION_MANUAL = "帮助文档(&D)"
 ACTION_UPDATE = "检查更新(&U)"
@@ -698,7 +698,8 @@ def open_quick_task(window) -> None:
     空壳任务"——那是创建页「PDF 可留空」那条路的语义，与"快速任务"正好相反。
     """
     filename, _ = QFileDialog.getOpenFileName(
-        window, QUICK_TASK_PICK_TITLE, str(default_open_dir()), "PDF (*.pdf)"
+        window, QUICK_TASK_PICK_TITLE, str(default_open_dir()),
+        "PDF/DjVu 文件 (*.pdf *.djvu *.djv)",
     )
     if not filename:
         return

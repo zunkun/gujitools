@@ -44,7 +44,7 @@ class PdfViewerWidget(QWidget, WorkerHost, ZoomPopupMixin):
     #: 视口还没算出来（离屏/未 show）时的兜底行数
     FALLBACK_VISIBLE = 16
 
-    def __init__(self, placeholder: str = "暂无 PDF", parent=None):
+    def __init__(self, placeholder: str = "暂无源文件", parent=None):
         """初始化 PDF 查看器：左侧页缩略图条 + 右侧大图。
 
         placeholder 为无 PDF 时的占位文案；缩略图/大图经 WorkerHost 异步
@@ -142,12 +142,12 @@ class PdfViewerWidget(QWidget, WorkerHost, ZoomPopupMixin):
         self._watching = self._cache_is_being_filled()
         self.strip.clear()
         self.close_zoom_popup()  # 换 PDF 了：弹窗里那页是旧文档
-        text = placeholder or (path.name if path else "暂无 PDF")
+        text = placeholder or (path.name if path else "暂无源文件")
         if path is None or not Path(path).exists():
             self.view.clear_image(text)
             self.strip.add_placeholder(text)
             return
-        self.view.clear_image("正在加载 PDF...")
+        self.view.clear_image("正在加载页面...")
         self.strip.add_placeholder("缩略图加载中...")
         # ⚠️ 第一轮**只读**：只为拿到页数（metadata）与已经存在的缓存文件。
         #    缺页改为"滚到可见窗口时再补"（``_fill_window``）——一本 2000 页的

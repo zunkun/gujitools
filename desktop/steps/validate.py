@@ -118,7 +118,7 @@ def _habit_warnings(diagram: FlowDiagram,
 
     if "extract" in order and order[0] != "extract":
         warnings.append(
-            f"「{ports.stage_label('extract')}」要吃任务的源 PDF，"
+            f"「{ports.stage_label('extract')}」要吃任务的源文件（PDF/DjVu），"
             "通常排在流程第一位。")
 
     if "extract" in order and not ports.source_pdf_node_ids(diagram):

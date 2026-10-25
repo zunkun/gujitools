@@ -1,8 +1,8 @@
 """
 File: functions/extract.py
-从 PDF 中提取页面图片的功能实现。
+从 PDF / DjVu 中提取页面图片的功能实现。
 
-此功能对应 `guji extract` 命令，将 PDF 每页渲染为图片并保存到输出目录。
+此功能对应 `guji extract` 命令，将源文件每页渲染为图片并保存到输出目录。
 
 处理流程：
 1. 计算输出根目录（支持文件/目录两种输入，--output 统一作为根目录）；
@@ -10,7 +10,7 @@ File: functions/extract.py
 3. 委托给 `utils.pdf_extract.run_on_input_directory` 执行实际渲染。
 
 注意：此功能不使用 FunctionBase 的并发执行引擎（不需要 _process_single_image），
-因为 PDF 渲染的并发逻辑在 `utils.pdf_extract` 内部实现。
+因为页面渲染的并发逻辑在 `utils.pdf_extract` 内部实现。
 """
 
 from functions.base import FunctionBase
@@ -20,7 +20,7 @@ from utils.path_utils import get_extract_output_root
 
 
 class ExtractFunction(FunctionBase):
-    """PDF 提取功能实现类。
+    """PDF / DjVu 提取功能实现类。
 
     直接重写 execute()，不使用基类的并发图片处理引擎。
     """
@@ -40,10 +40,11 @@ class ExtractFunction(FunctionBase):
         print(f"输出根目录：{self.outpath}")
 
     def execute(self):
-        """执行 PDF 提取：收集参数并委托给 utils.pdf_extract。
+        """执行提取：收集参数并委托给 utils.pdf_extract。
 
         输出规则：
-        - 每个 PDF 的输出位置为 <out_root>/<pdf_name>/<default_temp_name>/，
+        - 每个源文件（PDF/DjVu）的输出位置为
+          <out_root>/<源文件名>/<default_temp_name>/，
           其中 <out_root> 即 self.outpath，<default_temp_name> 为类属性。
         - 不再区分单文件/目录，统一行为。
         """

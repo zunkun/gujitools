@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 178 个模块、194 个公开类、1442 个公开函数/方法（生成于 2026-10-25）。
+覆盖 178 个模块、194 个公开类、1443 个公开函数/方法（生成于 2026-10-25）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -108,7 +108,7 @@
 | [`desktop.pages.taskdetail.imposition`](#desktoppagestaskdetailimposition) | 2 | 6 |
 | [`desktop.pages.taskdetail.imposition_layout`](#desktoppagestaskdetailimposition_layout) | 1 | 1 |
 | [`desktop.pages.taskdetail.imposition_pages`](#desktoppagestaskdetailimposition_pages) | 1 | 0 |
-| [`desktop.pages.taskdetail.manifest`](#desktoppagestaskdetailmanifest) | 1 | 5 |
+| [`desktop.pages.taskdetail.manifest`](#desktoppagestaskdetailmanifest) | 1 | 6 |
 | [`desktop.pages.taskdetail.page`](#desktoppagestaskdetailpage) | 1 | 22 |
 | [`desktop.pages.taskdetail.params_draft`](#desktoppagestaskdetailparams_draft) | 1 | 1 |
 | [`desktop.pages.taskdetail.print_list`](#desktoppagestaskdetailprint_list) | 1 | 1 |
@@ -2169,7 +2169,7 @@ qfluentwidgets 的 `TextEdit` 在构造时会给控件设置自己的样式表�
 
 ### `class MissingSourcePrompt(QWidget)`
 
-「这个任务还没有 PDF」的页内提示层（**非模态**）。
+「这个任务还没有源文件」的页内提示层（**非模态**）。
 
 :param parent: 任务详情页（提示层作为它的子控件铺在内容区上）。
 :param area_top_fn: 无参可调用，返回要遮盖区域的**上沿 y**（页内坐标）。
@@ -3330,7 +3330,7 @@ source_path 不单独成列，仅作任务名的悬浮提示。
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(placeholder: str='暂无 PDF', parent=None)` | — |
+| `__init__(placeholder: str='暂无源文件', parent=None)` | — |
 | `set_extract_dir(extract_dir: Path \| None) -> None` | 记录/刷新产物目录；当前页已有产物就**立即**切换显示。 |
 | `set_params_provider(provider: Callable[[], dict] \| None) -> None` | 注入提取参数来源（宿主读「图片提取」面板表单）。 |
 | `extract_path_for(page: int) -> Path \| None` | 第 page 页（0-based）的产物路径；没有产物目录时为 None。 |
@@ -5452,10 +5452,10 @@ PDF 查看器：左侧页面缩略图 + 右侧大图。
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(placeholder: str='暂无 PDF', parent=None)` | 初始化 PDF 查看器：左侧页缩略图条 + 右侧大图。 |
+| `__init__(placeholder: str='暂无源文件', parent=None)` | 初始化 PDF 查看器：左侧页缩略图条 + 右侧大图。 |
 | `set_pdf(path: Path \| None, placeholder: str \| None=None, cache_dir: Path \| None=None) -> None` | cache_dir：页缩略图缓存目录（如 thumbnails/source、thumbnails/print）， |
 
-##### `__init__(placeholder: str='暂无 PDF', parent=None)`
+##### `__init__(placeholder: str='暂无源文件', parent=None)`
 
 初始化 PDF 查看器：左侧页缩略图条 + 右侧大图。
 
@@ -6800,8 +6800,9 @@ detect/rembg/print 直接把**原图**塞进查看器（缩略图条每次现解
 给了就按图片清单处理（detect/rembg/print/拼图这类「源是一批图」的步骤
 直接把清单传进来，省得各页再各自判断一遍）。
 
-- 源是 **PDF** → 渲页缩略图到 ``singletask/<子任务>/thumbnails/<书>/``，
-  条目标签「第 N 页」，大图由查看器按需渲高清页；
+- 源是 **PDF / DjVu** → 渲页缩略图到
+  ``singletask/<子任务>/thumbnails/<书>/``，条目标签「第 N 页」，
+  大图由查看器按需渲高清页；
 - 源是**图片或目录** → 用 ``spec.listing`` 取清单，每张渲一张缓存小图，
   条目标签是文件名。
 
@@ -7417,6 +7418,24 @@ resize 子控件再 show），在这里重铺一次就对了。⚠️ 别改成"
 ``set_task`` 跑在页面还看不见的时候，``show_prompt()`` 铺的是旧几何；
 真正显示出来时这一句会重新 ``show_prompt()``（内部先重铺再 show），
 用户看到的才是铺好的那一版。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `reconcile_page_files(pages: list[dict], directory: Path) -> tuple[list[dict], int]` | 把页面清单按 **stem** 对齐到目录里的实际文件（jpg/png 等格式都支持）。 |
+
+#### `reconcile_page_files(pages: list[dict], directory: Path) -> tuple[list[dict], int]`
+
+把页面清单按 **stem** 对齐到目录里的实际文件（jpg/png 等格式都支持）。
+
+- 清单里的路径还在 → 原样保留；
+- 路径不在、但有同 stem 的其它格式（png ↔ jpg）→ 换成实际存在的那个；
+- 同 stem 同时有多个格式 → 优先保留原后缀，否则取目录里排序后的第一个；
+- 完全找不到同 stem → 原样保留（由 ``_manifest_paths`` 过滤），不清空清单。
+
+返回 ``(新清单, 对上的页数)``。对上的页数为 0 表示上游整批换了产物，
+调用方应整表重建；目录读不了时返回 ``-1``，调用方保持原样（不误清空）。
 
 ---
 
@@ -10001,7 +10020,7 @@ payload 交替入队、输出的仍是交错行。
 | 函数 | 说明 |
 | --- | --- |
 | `run_stage(config: dict) -> int` | 在子进程中执行一个 CLI 功能阶段，返回进程退出码（0/130/1）。 |
-| `run_extract_stage(config: dict) -> int` | extract 阶段：直接把 PDF 提取到任务目录 stages/extract/（无嵌套布局）。 |
+| `run_extract_stage(config: dict) -> int` | extract 阶段：直接把源文件（PDF/DjVu）提取到任务目录 stages/extract/（无嵌套布局）。 |
 
 #### `run_stage(config: dict) -> int`
 
@@ -10019,10 +10038,10 @@ config 需含 task_id/stage/run_id/args。结构与人类日志走两条通道�
 
 #### `run_extract_stage(config: dict) -> int`
 
-extract 阶段：直接把 PDF 提取到任务目录 stages/extract/（无嵌套布局）。
+extract 阶段：直接把源文件（PDF/DjVu）提取到任务目录 stages/extract/（无嵌套布局）。
 
 复用 utils.pdf_extract.render_pages_parallel 的提取/并发实现（与 CLI 同一份），
-但不走 CLI 的 <out_root>/<pdf名>/images 输出规则。
+但不走 CLI 的 <out_root>/<源文件名>/images 输出规则。
 
 ⚠️ 这里曾经直接调 process_page_batch(全部页码) —— 那是**串行**的，
 GUI 提取因此比 CLI 慢数倍。并发逻辑在 render_pages_parallel 里。
@@ -12157,7 +12176,7 @@ pages，问它"pages 输入"会拿到入口目录，而它要的其实是那个�
 | 名称 | 值 |
 | --- | --- |
 | IMAGE_FILTER | `"图片 (*.jpg *.jpeg *.png *.bmp *.tif *.tiff *.webp)"` |
-| PDF_FILTER | `"PDF 文件 (*.pdf)"` |
+| PDF_FILTER | `"PDF/DjVu 文件 (*.pdf *.djvu *.djv)"` |
 | AUTO_DESCEND_DEPTH | `2` |
 
 ### `class StepSpec`
@@ -12384,7 +12403,7 @@ _apply_control_width`` 按 stage 换宽度、``history._history_fill_keys``
 ⚠️ 与 ``title`` **有意分开**（同 :attr:`stage_title` 与 ``title`` 的
 道理）：导航那一列是"这一步做什么"的**短标签**，页头是完整标题，
 两处可以各说各的。用户 2026-10-03 就导航文案提过一轮（"图片提取"
-→ "PDF图片提取" 等），只改这里不会连带改掉页头与流程条。
+→ "PDF/DjVu提取" 等），只改这里不会连带改掉页头与流程条。
 
 ##### `disk_key() -> str`
 
@@ -14393,7 +14412,7 @@ qfluentwidgets 的 ``Dialog``，它只支持"字符串 + 两个按钮"）。
 | MENU_HELP | `"帮助(&H)"` |
 | ACTION_CREATE_TASK | `"新建任务(&N)"` |
 | ACTION_QUICK_TASK | `"快速任务(&Q)"` |
-| QUICK_TASK_PICK_TITLE | `"选择 PDF（快速任务）"` |
+| QUICK_TASK_PICK_TITLE | `"选择 PDF/DjVu（快速任务）"` |
 | ACTION_QUIT | `"退出(&X)"` |
 | ACTION_MANUAL | `"帮助文档(&D)"` |
 | ACTION_UPDATE | `"检查更新(&U)"` |
@@ -15228,7 +15247,7 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 | `reveal_in_explorer(path) -> bool` | 在 Windows 资源管理器里打开 ``path`` 的位置（2026-10-11 用户需求）。 |
 | `reveal_dir(path) -> bool` | 导出收尾用：把 ``path`` **当目录**打开（不存在/不是目录都不弹）。 |
 | `set_producing_marker(directory, on: bool) -> None` | 写/删「这个目录正有人在填」的在场标记（**永不抛**）。 |
-| `task_extract_pages_dir(pdf_path) -> Path \| None` | 任务目录里**已提取的整页图**目录；不是任务目录里的 PDF 就返回 None。 |
+| `task_extract_pages_dir(pdf_path) -> Path \| None` | 任务目录里**已提取的整页图**目录；不是任务目录里的源文件就返回 None。 |
 | `guji_data_dir() -> Path` | GUI 数据根目录：用户文档目录下的 guji。 |
 | `safe_dirname(name: str) -> str` | 把任意标题洗成能当目录名的一串（去掉非法字符、收敛空白）。 |
 | `singletask_dir(subtask: str) -> Path` | 独立任务区下某个**子任务**的目录：``~/Documents/guji/singletask/<子任务>``。 |
@@ -15284,14 +15303,14 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 
 #### `task_extract_pages_dir(pdf_path) -> Path | None`
 
-任务目录里**已提取的整页图**目录；不是任务目录里的 PDF 就返回 None。
+任务目录里**已提取的整页图**目录；不是任务目录里的源文件就返回 None。
 
 ⚠️ 为什么需要（2026-10-21）：生成 256px 缩略图最贵的不是"输出小"，而是
 **解一页内嵌的 JPX**（4285×5736 实测 ~850ms）；而"提取图片"的产物是一张
 2067×2767 的 **JPEG**，从它缩 256px 只要 **21ms**（JPEG 能在 DCT 域降采样）。
-所以**已提取的页**再也不用回 PDF 渲——省掉 40 倍。
+所以**已提取的页**再也不用回源文件渲——省掉 40 倍。
 
-判据只认"PDF 就在任务目录里"（导入后任务目录存的是源文件副本）：
+判据只认"源文件（PDF/DjVu）就在任务目录里"（导入后任务目录存的是源文件副本）：
 拿用户原始下载文件时同级没有 ``stages/``，自然返回 None，行为不变。
 
 #### `singletask_yolo_export_path(subtask: str) -> Path`

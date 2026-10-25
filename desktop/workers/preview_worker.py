@@ -20,7 +20,7 @@ from PySide6.QtGui import QColor, QFont, QImage, QImageReader, QFontMetrics, QPa
 
 from utils.box_geometry import build_output_layout, parse_border_mm
 from desktop.utils.files import THUMBNAIL_EDGE, task_extract_pages_dir
-from utils.file_utils import write_bytes_atomic
+from utils.file_utils import is_source_document, write_bytes_atomic
 
 
 def region_canvas_specs(
@@ -498,10 +498,13 @@ class PreviewWorker(QObject):
     def run(self) -> None:
         """按构造参数渲染单页大图或批量页缩略图，发出 finished/thumbnail_ready。"""
         try:
-            if self.path.suffix.lower() == ".pdf" and self.thumbnails:
+            # PDF 与 DjVu 都按「按页渲染」处理（渲染服务内部分派到
+            # PyMuPDF / djvu-rs）；图片文件仍旧直接解码。
+            source_is_document = is_source_document(self.path)
+            if source_is_document and self.thumbnails:
                 self._render_all_thumbnails()
                 return
-            if self.path.suffix.lower() == ".pdf":
+            if source_is_document:
                 image = self._render_pdf_page()
                 if image is None:
                     return  # 过期请求：skipped 已发出

@@ -343,11 +343,11 @@ GUI 的预览控件也要画同样的框。配色与命名必须一致，否则�
 
 ### `extract_pdf_optimized(...) -> bool`
 
-提取 PDF 页面为图片的主入口，支持多线程批次处理。参数包括 zoom、ext、workers、quick、pages、start、end、batch_size、clean。
+提取 PDF/DjVu 页面为图片的主入口，支持多进程批次处理。参数包括 zoom、ext、workers、quick、pages、start、end、batch_size、clean。
 
 ### `run_on_input_directory(input_path, out_root, ...)`
 
-处理输入路径（文件或目录），对每个 PDF 调用 `extract_pdf_optimized`。目录输入时按 PDF 文件名创建子目录。
+处理输入路径（文件或目录），对每个 PDF/DjVu 调用 `extract_pdf_optimized`。目录输入时按源文件名创建子目录。
 
 缺失路径或空目录会抛 `ValueError`；单页失败会汇总为 `RuntimeError`，不再静默返回成功。
 

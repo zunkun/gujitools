@@ -199,9 +199,9 @@ class CreateTaskPanel(QWidget):
         # ---- 选 PDF：**可留空**（用户 2026-10-06「PDF 输入不是必须的」）----
         pick_row = QHBoxLayout()
         pick_row.setSpacing(T.SPACE_SM)
-        self.pdf_label = BodyLabel("PDF 源文件：")
+        self.pdf_label = BodyLabel("PDF/DjVu 源文件：")
         pick_row.addWidget(self.pdf_label)
-        self.pick_button = PushButton("选择PDF文件…")
+        self.pick_button = PushButton("选择源文件…")
         self.pick_button.clicked.connect(self._on_pick_pdf)
         pick_row.addWidget(self.pick_button)
         self.pdf_state = BodyLabel(EMPTY_PDF_HINT)
@@ -324,13 +324,14 @@ class CreateTaskPanel(QWidget):
 
     # ------------------------------------------------------------ 选 PDF
     def _on_pick_pdf(self) -> None:
-        """选源 PDF。
+        """选源文件（PDF / DjVu）。
 
         ⚠️ 用**原生** ``QFileDialog``（不设 ``DontUseNativeDialog``）——
         项目硬规则：「资源管理器」指的是原生选择对话框，不是浏览窗口。
         """
         filename, _ = QFileDialog.getOpenFileName(
-            self, "选择 PDF", str(default_open_dir()), "PDF (*.pdf)"
+            self, "选择 PDF/DjVu", str(default_open_dir()),
+            "PDF/DjVu 文件 (*.pdf *.djvu *.djv)",
         )
         if not filename:
             return

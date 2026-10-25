@@ -91,7 +91,7 @@ class ExtractPreviewWidget(PdfViewerWidget):
     #: 宿主接线照旧）。目前只有「已提取页」的右键编辑会走到这里。
     image_saved = Signal(str, object)
 
-    def __init__(self, placeholder: str = "暂无 PDF", parent=None):
+    def __init__(self, placeholder: str = "暂无源文件", parent=None):
         super().__init__(placeholder, parent)
         self._extract_dir: Path | None = None
         self._params_provider: Callable[[], dict] | None = None

@@ -98,10 +98,10 @@ def run_stage(config: dict) -> int:
 
 
 def run_extract_stage(config: dict) -> int:
-    """extract 阶段：直接把 PDF 提取到任务目录 stages/extract/（无嵌套布局）。
+    """extract 阶段：直接把源文件（PDF/DjVu）提取到任务目录 stages/extract/（无嵌套布局）。
 
     复用 utils.pdf_extract.render_pages_parallel 的提取/并发实现（与 CLI 同一份），
-    但不走 CLI 的 <out_root>/<pdf名>/images 输出规则。
+    但不走 CLI 的 <out_root>/<源文件名>/images 输出规则。
 
     ⚠️ 这里曾经直接调 process_page_batch(全部页码) —— 那是**串行**的，
     GUI 提取因此比 CLI 慢数倍。并发逻辑在 render_pages_parallel 里。
@@ -115,16 +115,17 @@ def run_extract_stage(config: dict) -> int:
     try:
         import threading
 
-        import pymupdf as fitz
         from core.args import default_workers
-        from utils.pdf_extract import parse_pages, render_pages_parallel
+        from utils.pdf_extract import (
+            document_page_count,
+            parse_pages,
+            render_pages_parallel,
+        )
 
         pdf_path = Path(args["input"])
         out_dir = Path(args["output"])
         out_dir.mkdir(parents=True, exist_ok=True)
-        document = fitz.open(str(pdf_path))
-        total_pages = document.page_count
-        document.close()
+        total_pages = document_page_count(str(pdf_path))
 
         pages_str = args.get("pages")
         try:

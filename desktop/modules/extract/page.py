@@ -65,7 +65,7 @@ class ExtractModulePage(StepModulePage, ThumbSourceMixin):
         """
         self.viewer = ImageViewerWidget(
             editable=False,
-            empty_hint="选好 PDF 之后，这里会立刻显示每一页",
+            empty_hint="选好 PDF/DjVu 之后，这里会立刻显示每一页",
         )
         return self.viewer
 

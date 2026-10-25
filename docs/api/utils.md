@@ -4,7 +4,7 @@
 
 通用工具函数：几何、排序、图像 IO、PDF、YOLO
 
-覆盖 28 个模块、24 个公开类、187 个公开函数/方法（生成于 2026-10-25）。
+覆盖 28 个模块、24 个公开类、191 个公开函数/方法（生成于 2026-10-25）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -19,7 +19,7 @@
 | [`utils.compact_png`](#utilscompact_png) | 0 | 2 |
 | [`utils.data_package`](#utilsdata_package) | 1 | 24 |
 | [`utils.download`](#utilsdownload) | 1 | 1 |
-| [`utils.file_utils`](#utilsfile_utils) | 0 | 4 |
+| [`utils.file_utils`](#utilsfile_utils) | 0 | 5 |
 | [`utils.font_scan`](#utilsfont_scan) | 0 | 4 |
 | [`utils.font_setup`](#utilsfont_setup) | 3 | 11 |
 | [`utils.fonts`](#utilsfonts) | 1 | 13 |
@@ -30,7 +30,7 @@
 | [`utils.page_layout`](#utilspage_layout) | 2 | 13 |
 | [`utils.path_utils`](#utilspath_utils) | 0 | 3 |
 | [`utils.pdf_draw`](#utilspdf_draw) | 1 | 9 |
-| [`utils.pdf_extract`](#utilspdf_extract) | 0 | 10 |
+| [`utils.pdf_extract`](#utilspdf_extract) | 0 | 13 |
 | [`utils.pdf_stream`](#utilspdf_stream) | 1 | 2 |
 | [`utils.proc_utils`](#utilsproc_utils) | 0 | 1 |
 | [`utils.rembg_algorithms`](#utilsrembg_algorithms) | 10 | 14 |
@@ -1070,6 +1070,7 @@ sha256（不符就删掉、报错、**不切换**）→ 写 sidecar（= 启用�
 
 | 函数 | 说明 |
 | --- | --- |
+| `is_source_document(path) -> bool` | 这个路径是不是 extract 能吃的源文件（PDF / DjVu）。 |
 | `collect_image_files(input_path: Path, is_file: bool) -> List[Path]` | 收集输入路径下的所有图片文件，按自然排序返回。 |
 | `is_valid_image_size(path: Path, min_size: int=100) -> bool` | 校验文件大小是否大于最小阈值。 |
 | `replace_with_retry(source, target, attempts: int=6, delay: float=0.05) -> None` | `os.replace`，但在 Windows 上**短暂重试**。 |
@@ -2214,7 +2215,7 @@ PDF → 图片的部分在 `utils/pdf_extract.py`。
 
 源码：[`utils/pdf_extract.py`](../../utils/pdf_extract.py)
 
-PDF 页面提取：把 PDF 每页渲染成图片并保存。
+源文件页面提取：把 PDF / DjVu 每页渲染成图片并保存。
 
 从 `utils/pdf_utils.py` 拆出（见 docs/dev/refactor-modularity.md §3.B）——
 原文件把「PDF → 图片」与「生成 PDF 的绘制辅助」两种职责混在 759 行里。
@@ -2241,9 +2242,14 @@ PDF 页面提取：把 PDF 每页渲染成图片并保存。
    还把 GUI 拖卡）。详见 `render_pages_parallel` 的说明。
 
 4. **目录遍历** (`run_on_input_directory`)
-   支持输入为单个 PDF 文件或包含多个 PDF 的目录。
+   支持输入为单个 PDF/DjVu 文件或包含多个 PDF/DjVu 的目录。
 
-依赖: PyMuPDF (pymupdf), Pillow (PIL)。
+5. **DjVu 后端** (`_render_djvu_batch_in_worker`)
+   `.djvu/.djv` 用 djvu-rs（纯 Rust 解码，无需 DjVuLibre）逐页解码。
+   DjVu 是扫描位图，页面自带原生分辨率，因此**不套 PDF 的 DPI 下限**：
+   目标尺寸 = 原生像素 × zoom，仍受 6000px 宽度封顶。
+
+依赖: PyMuPDF (pymupdf)、djvu-rs、Pillow (PIL)。
 绘制辅助（字体注册 / 竖排文字 / 左右页判定）在 `utils/pdf_draw.py`。
 
 ### 模块常量
@@ -2259,16 +2265,19 @@ PDF 页面提取：把 PDF 每页渲染成图片并保存。
 
 | 函数 | 说明 |
 | --- | --- |
+| `is_djvu_path(path) -> bool` | 这个源文件是不是 DjVu（否则按 PDF 处理）。 |
 | `parse_pages(pages_str: str, total_pages: int) -> List[int]` | 解析页码字符串为 0-based 页码列表。 |
 | `validate_page_range(start: Optional[int], end: Optional[int], total_pages: int) -> List[int]` | 根据 start/end 整数对生成 0-based 页码列表。 |
 | `calculate_zoom(page_width: float, requested_zoom: float=1) -> float` | 计算实际缩放因子，限制最大输出宽度为 6000px。 |
 | `render_zoom(page_width: float, requested_zoom: float=1, dpi: float=DEFAULT_RENDER_DPI) -> float` | 整页渲染实际使用的缩放因子 = max(用户 zoom, DPI 下限)，再受宽度封顶。 |
 | `report_image_size(img_path, width: int, height: int, reporter=None) -> None` | 汇报一页输出图片的尺寸。 |
+| `djvu_page_count(djvu_path) -> int` | DjVu 总页数（打开一次即关，别把句柄留在调用方）。 |
+| `document_page_count(path) -> int` | 源文件（PDF / DjVu）总页数。 |
 | `extract_single_page(pdf_path: str, page_idx: int, out_dir: str, zoom: float=1, ext: str='jpg', quick: bool=True, dpi: float=DEFAULT_RENDER_DPI) -> dict` | 提取**单页**落盘，返回结构化结果（GUI「翻到哪页就提取哪页」用）。 |
-| `process_page_batch(pdf_path: str, page_indices: List[int], out_dir: str, zoom: float, ext: str, quick: bool=True, progress: Optional[dict]=None, reporter=None, dpi: float=DEFAULT_RENDER_DPI) -> List[bool]` | 处理一批 PDF 页面，返回每页的成功状态。 |
-| `render_pages_parallel(pdf_path: str, page_indices: List[int], out_dir: str, zoom: float, ext: str, quick: bool=True, workers: int=4, batch_size: int=4, progress: Optional[dict]=None, reporter=None, dpi: float=DEFAULT_RENDER_DPI) -> List[bool]` | 多**进程**提取指定页，返回每页成功状态。 |
-| `extract_pdf_optimized(pdf_path: str, out_dir: str, zoom: float=1, ext: str='jpg', workers: int=4, quick: bool=True, pages: Optional[str]=None, start: Optional[int]=None, end: Optional[int]=None, batch_size: int=4, clean: bool=False, reporter=None, dpi: float=DEFAULT_RENDER_DPI) -> bool` | 提取 PDF 页面为图片，支持多线程批次处理。 |
-| `run_on_input_directory(input_path: str, out_root: str, zoom: float=1, ext: str='jpg', workers: int=4, quick: bool=True, pages: Optional[str]=None, start: Optional[int]=None, end: Optional[int]=None, batch_size: int=4, clean: bool=False, subdir_name: str='images', reporter=None, dpi: float=DEFAULT_RENDER_DPI)` | 处理输入路径（文件或目录），对每个 PDF 在 out_root 下创建以其文件名命名的子目录， |
+| `process_page_batch(pdf_path: str, page_indices: List[int], out_dir: str, zoom: float, ext: str, quick: bool=True, progress: Optional[dict]=None, reporter=None, dpi: float=DEFAULT_RENDER_DPI) -> List[bool]` | 处理一批源文件页面（PDF / DjVu），返回每页的成功状态。 |
+| `render_pages_parallel(pdf_path: str, page_indices: List[int], out_dir: str, zoom: float, ext: str, quick: bool=True, workers: int=4, batch_size: int=4, progress: Optional[dict]=None, reporter=None, dpi: float=DEFAULT_RENDER_DPI) -> List[bool]` | 多**进程**提取指定页（PDF / DjVu），返回每页成功状态。 |
+| `extract_pdf_optimized(pdf_path: str, out_dir: str, zoom: float=1, ext: str='jpg', workers: int=4, quick: bool=True, pages: Optional[str]=None, start: Optional[int]=None, end: Optional[int]=None, batch_size: int=4, clean: bool=False, reporter=None, dpi: float=DEFAULT_RENDER_DPI) -> bool` | 提取 PDF / DjVu 页面为图片，支持多进程批次处理。 |
+| `run_on_input_directory(input_path: str, out_root: str, zoom: float=1, ext: str='jpg', workers: int=4, quick: bool=True, pages: Optional[str]=None, start: Optional[int]=None, end: Optional[int]=None, batch_size: int=4, clean: bool=False, subdir_name: str='images', reporter=None, dpi: float=DEFAULT_RENDER_DPI)` | 处理输入路径（文件或目录），对每个 PDF/DjVu 在 out_root 下创建以其文件名命名的 |
 
 #### `parse_pages(pages_str: str, total_pages: int) -> List[int]`
 
@@ -2340,10 +2349,11 @@ reporter 缺省为 None —— CLI 不注入，行为与原先「只 print 一�
 
 提取**单页**落盘，返回结构化结果（GUI「翻到哪页就提取哪页」用）。
 
-复用批量提取的 ``_render_batch_in_worker``（quick 自适应 / DPI 下限 /
-原子写全部同一条实现）——单页提取的产物与批量提取**逐位一致**，浏览过
-的页再跑批量提取也只是幂等覆盖。本函数**不 print、不汇报**：调用方
-（GUI worker 线程）自己负责界面反馈，别把批量那条进度刷屏带进来。
+复用批量提取的 ``_render_batch_dispatch``（quick 自适应 / DPI 下限 /
+原子写全部同一条实现；PDF 与 DjVu 按后缀分派）——单页提取的产物与批量
+提取**逐位一致**，浏览过的页再跑批量提取也只是幂等覆盖。本函数**不 print、
+不汇报**：调用方（GUI worker 线程）自己负责界面反馈，别把批量那条进度
+刷屏带进来。
 
 返回::
 
@@ -2351,10 +2361,10 @@ reporter 缺省为 None —— CLI 不注入，行为与原先「只 print 一�
 
 #### `process_page_batch(pdf_path: str, page_indices: List[int], out_dir: str, zoom: float, ext: str, quick: bool=True, progress: Optional[dict]=None, reporter=None, dpi: float=DEFAULT_RENDER_DPI) -> List[bool]`
 
-处理一批 PDF 页面，返回每页的成功状态。
+处理一批源文件页面（PDF / DjVu），返回每页的成功状态。
 
 参数:
-    pdf_path: PDF 文件路径。
+    pdf_path: 源文件路径（PDF 或 DjVu）。
     page_indices: 0-based 页码列表。
     out_dir: 输出目录。
     zoom: 缩放因子。
@@ -2372,7 +2382,7 @@ reporter 缺省为 None —— CLI 不注入，行为与原先「只 print 一�
 
 #### `render_pages_parallel(pdf_path: str, page_indices: List[int], out_dir: str, zoom: float, ext: str, quick: bool=True, workers: int=4, batch_size: int=4, progress: Optional[dict]=None, reporter=None, dpi: float=DEFAULT_RENDER_DPI) -> List[bool]`
 
-多**进程**提取指定页，返回每页成功状态。
+多**进程**提取指定页（PDF / DjVu），返回每页成功状态。
 
 CLI（`extract_pdf_optimized`）与 GUI（`run_extract_stage`）共用这一份并发
 实现——GUI 曾经直接调 `process_page_batch` 串行跑全部页，是提取慢的主因。
@@ -2400,16 +2410,17 @@ reporter 为结构化汇报通道（进度 + 页尺寸）；None → 保持纯 p
 
 #### `extract_pdf_optimized(pdf_path: str, out_dir: str, zoom: float=1, ext: str='jpg', workers: int=4, quick: bool=True, pages: Optional[str]=None, start: Optional[int]=None, end: Optional[int]=None, batch_size: int=4, clean: bool=False, reporter=None, dpi: float=DEFAULT_RENDER_DPI) -> bool`
 
-提取 PDF 页面为图片，支持多线程批次处理。
+提取 PDF / DjVu 页面为图片，支持多进程批次处理。
 
 参数:
-    pdf_path: PDF 文件路径。
-    out_dir: 输出目录（此目录将存放该 PDF 的所有页面图片）。
+    pdf_path: 源文件路径（PDF 或 DjVu）。
+    out_dir: 输出目录（此目录将存放该源文件的所有页面图片）。
     zoom: 缩放因子（整数，如 2 表示 2 倍分辨率）。
-    dpi: 整页渲染的 DPI 下限（见 `render_zoom`），不影响内嵌图路径。
+    dpi: 整页渲染的 DPI 下限（见 `render_zoom`），不影响内嵌图路径；
+         **对 DjVu 不生效**（DjVu 按原生分辨率渲染）。
     ext: 输出格式 jpg/png/tiff。
-    workers: 线程数。
-    quick: True=快速模式（优先提取内嵌图片）。
+    workers: 进程数。
+    quick: True=快速模式（优先提取 PDF 内嵌图片）；对 DjVu 无效。
     pages: 页码字符串（如 "1,3-5,7"），优先级高于 start/end。
     start: 起始页（1-based）。
     end: 结束页（1-based）。
@@ -2422,15 +2433,15 @@ reporter 为结构化汇报通道（进度 + 页尺寸）；None → 保持纯 p
 
 #### `run_on_input_directory(input_path: str, out_root: str, zoom: float=1, ext: str='jpg', workers: int=4, quick: bool=True, pages: Optional[str]=None, start: Optional[int]=None, end: Optional[int]=None, batch_size: int=4, clean: bool=False, subdir_name: str='images', reporter=None, dpi: float=DEFAULT_RENDER_DPI)`
 
-处理输入路径（文件或目录），对每个 PDF 在 out_root 下创建以其文件名命名的子目录，
-并在该子目录下创建 subdir_name 目录存放图片。
+处理输入路径（文件或目录），对每个 PDF/DjVu 在 out_root 下创建以其文件名命名的
+子目录，并在该子目录下创建 subdir_name 目录存放图片。
 
 参数:
-    input_path: 输入路径（单个 PDF 文件或包含 PDF 的目录）。
-    out_root: 输出根目录（所有 PDF 的子目录将创建在此目录下）。
+    input_path: 输入路径（单个 PDF/DjVu 文件或包含它们的目录）。
+    out_root: 输出根目录（所有源文件的子目录将创建在此目录下）。
     zoom, ext, workers, quick, pages, start, end, batch_size, clean, dpi:
         透传给 extract_pdf_optimized 的参数。
-    subdir_name: 每个 PDF 子目录下存放图片的子目录名。
+    subdir_name: 每个源文件子目录下存放图片的子目录名。
     reporter: 结构化汇报通道；None → 只 print（CLI 默认）。
 
 ---

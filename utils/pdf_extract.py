@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""PDF 页面提取：把 PDF 每页渲染成图片并保存。
+"""源文件页面提取：把 PDF / DjVu 每页渲染成图片并保存。
 
 从 `utils/pdf_utils.py` 拆出（见 docs/dev/refactor-modularity.md §3.B）——
 原文件把「PDF → 图片」与「生成 PDF 的绘制辅助」两种职责混在 759 行里。
@@ -26,9 +26,14 @@
    还把 GUI 拖卡）。详见 `render_pages_parallel` 的说明。
 
 4. **目录遍历** (`run_on_input_directory`)
-   支持输入为单个 PDF 文件或包含多个 PDF 的目录。
+   支持输入为单个 PDF/DjVu 文件或包含多个 PDF/DjVu 的目录。
 
-依赖: PyMuPDF (pymupdf), Pillow (PIL)。
+5. **DjVu 后端** (`_render_djvu_batch_in_worker`)
+   `.djvu/.djv` 用 djvu-rs（纯 Rust 解码，无需 DjVuLibre）逐页解码。
+   DjVu 是扫描位图，页面自带原生分辨率，因此**不套 PDF 的 DPI 下限**：
+   目标尺寸 = 原生像素 × zoom，仍受 6000px 宽度封顶。
+
+依赖: PyMuPDF (pymupdf)、djvu-rs、Pillow (PIL)。
 绘制辅助（字体注册 / 竖排文字 / 左右页判定）在 `utils/pdf_draw.py`。
 """
 
@@ -41,7 +46,11 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
-from utils.file_utils import write_bytes_atomic
+from utils.file_utils import (
+    SOURCE_DOCUMENT_EXTS,
+    is_source_document,
+    write_bytes_atomic,
+)
 from utils.sort_utils import natural_sort_key
 from utils.units import DEFAULT_RENDER_DPI as DEFAULT_UNITS_DPI
 
@@ -88,6 +97,17 @@ WIDE_PAGE_PT = 3000
 # 不做任何重采样）。
 #: 默认渲染 DPI（唯一定义处在 utils/units.py）
 DEFAULT_RENDER_DPI = DEFAULT_UNITS_DPI
+
+#: extract 认的源文件后缀（唯一定义处在 utils/file_utils.py）
+SOURCE_EXTS = SOURCE_DOCUMENT_EXTS
+
+#: DjVu 后缀；渲染走 djvu-rs 而不是 PyMuPDF。
+DJVU_EXTS = (".djvu", ".djv")
+
+
+def is_djvu_path(path) -> bool:
+    """这个源文件是不是 DjVu（否则按 PDF 处理）。"""
+    return Path(str(path)).suffix.lower() in DJVU_EXTS
 
 
 def parse_pages(pages_str: str, total_pages: int) -> List[int]:
@@ -779,6 +799,141 @@ def _render_batch_in_worker(payload: tuple) -> dict:
     }
 
 
+# ------------------------------------------------------------------ DjVu 后端
+def djvu_page_count(djvu_path) -> int:
+    """DjVu 总页数（打开一次即关，别把句柄留在调用方）。"""
+    import djvu_rs
+
+    document = djvu_rs.Document.open(str(djvu_path))
+    try:
+        return int(document.page_count())
+    finally:
+        document = None  # djvu-rs 的 Document 没有 close()，靠释放引用关文件
+
+
+def _djvu_target_size(width: int, height: int, zoom: float) -> tuple[int, int]:
+    """DjVu 的目标渲染尺寸 = 原生像素 × zoom，再受 6000px 宽度封顶。
+
+    ⚠️ **不套 PDF 那条 DPI 下限**：PDF 的 72 DPI 陷阱是"1pt 渲成 1px"，
+    而 DjVu 页面本身就以原生像素记录扫描分辨率，再补 DPI 只是无端放大插值
+    （细节不会变多，文件反而更大）。需要更高分辨率时用户可以给 ``--zoom``。
+    """
+    width = max(1, int(width))
+    height = max(1, int(height))
+    scale = float(zoom or 1)
+    if width * scale > MAX_OUTPUT_WIDTH_PX:
+        scale = MAX_OUTPUT_WIDTH_PX / float(width)
+    return max(1, int(round(width * scale))), max(1, int(round(height * scale)))
+
+
+def _flatten_on_white(image):
+    """把带 alpha 的 DjVu 渲染结果叠到白底上，返回 RGB。
+
+    DjVu 页通常有背景层（不透明）；少数只有前景层的文件解码出来是透明的，
+    直接存 JPEG 会变黑，所以统一按白纸合成——与扫描件的阅读观感一致。
+    """
+    from PIL import Image
+
+    if image.mode == "RGB":
+        return image
+    if image.mode != "RGBA":
+        return image.convert("RGB")
+    canvas = Image.new("RGBA", image.size, (255, 255, 255, 255))
+    return Image.alpha_composite(canvas, image).convert("RGB")
+
+
+def _render_djvu_batch_in_worker(payload: tuple) -> dict:
+    """子进程执行体：解码一批 DjVu 页并落盘（返回结构与 PDF 批次一致）。
+
+    payload = (djvu_path, page_indices, out_dir, zoom, ext, quick, dpi)
+
+    ``quick`` / ``dpi`` 对 DjVu 不生效（DjVu 没有"内嵌原图直拷"这条捷径，
+    也没有 72 DPI 陷阱），收下参数只是为了与 PDF 批次共用同一套并发调度。
+    """
+    djvu_path, page_indices, out_dir, zoom, ext, _quick, _dpi = payload
+
+    def _fail_all(msg: str) -> dict:
+        return {
+            "pages": [
+                {"idx": int(i), "ok": False, "err": msg, "elapsed": 0.0}
+                for i in page_indices
+            ],
+            "reasons": {},
+            "fallback": 0,
+            "jpx_fast": 0,
+            "quick_direct": 0,
+        }
+
+    try:
+        import djvu_rs
+    except ImportError as e:
+        return _fail_all(
+            f"依赖缺失: djvu-rs 未安装。请运行: pip install djvu-rs（{e}）"
+        )
+    try:
+        from PIL import Image  # noqa: F401 - 落盘依赖 PIL
+    except ImportError as e:
+        return _fail_all(f"依赖缺失: Pillow 未安装。请运行: pip install Pillow（{e}）")
+
+    try:
+        document = djvu_rs.Document.open(str(djvu_path))
+    except Exception as e:  # noqa: BLE001 - 打不开就是整批失败
+        return _fail_all(f"打开 DjVu 失败: {e}")
+
+    pages: List[dict] = []
+    try:
+        for page_idx in page_indices:
+            page_start = time.time()
+            try:
+                page = document.page(int(page_idx))
+                target_wh = _djvu_target_size(page.width, page.height, zoom)
+                pixmap = page.render(size=target_wh)
+                image = _flatten_on_white(pixmap.to_pil())
+                if image.size != target_wh:
+                    image = image.resize(target_wh)
+                img_path = os.path.join(out_dir, f"{page_idx + 1}.{ext}")
+                _save_pil(image, img_path, ext)
+                pages.append({
+                    "idx": int(page_idx), "ok": True, "path": img_path,
+                    "w": int(image.width), "h": int(image.height),
+                    "elapsed": time.time() - page_start, "err": None,
+                })
+            except Exception as e:  # noqa: BLE001 - 单页失败不拖垮整批
+                pages.append({
+                    "idx": int(page_idx), "ok": False, "err": str(e),
+                    "elapsed": time.time() - page_start,
+                })
+    finally:
+        document = None  # 释放即可关文件（djvu-rs 无 close()）
+    return {
+        "pages": pages,
+        "reasons": {},
+        "fallback": 0,
+        "jpx_fast": 0,
+        "quick_direct": 0,
+    }
+
+
+def _render_batch_dispatch(payload: tuple) -> dict:
+    """按源文件后缀分派到 PDF / DjVu 的批次执行体（两者返回结构一致）。"""
+    if is_djvu_path(payload[0]):
+        return _render_djvu_batch_in_worker(payload)
+    return _render_batch_in_worker(payload)
+
+
+def document_page_count(path) -> int:
+    """源文件（PDF / DjVu）总页数。"""
+    if is_djvu_path(path):
+        return djvu_page_count(path)
+    import pymupdf as fitz
+
+    document = fitz.open(str(path))
+    try:
+        return int(document.page_count)
+    finally:
+        document.close()
+
+
 def extract_single_page(
     pdf_path: str,
     page_idx: int,
@@ -790,10 +945,11 @@ def extract_single_page(
 ) -> dict:
     """提取**单页**落盘，返回结构化结果（GUI「翻到哪页就提取哪页」用）。
 
-    复用批量提取的 ``_render_batch_in_worker``（quick 自适应 / DPI 下限 /
-    原子写全部同一条实现）——单页提取的产物与批量提取**逐位一致**，浏览过
-    的页再跑批量提取也只是幂等覆盖。本函数**不 print、不汇报**：调用方
-    （GUI worker 线程）自己负责界面反馈，别把批量那条进度刷屏带进来。
+    复用批量提取的 ``_render_batch_dispatch``（quick 自适应 / DPI 下限 /
+    原子写全部同一条实现；PDF 与 DjVu 按后缀分派）——单页提取的产物与批量
+    提取**逐位一致**，浏览过的页再跑批量提取也只是幂等覆盖。本函数**不 print、
+    不汇报**：调用方（GUI worker 线程）自己负责界面反馈，别把批量那条进度
+    刷屏带进来。
 
     返回::
 
@@ -804,7 +960,7 @@ def extract_single_page(
         # （批量里由 extract_pdf_optimized 建；这里单独建，否则 PIL 落盘
         #   直接 FileNotFoundError。）
         os.makedirs(out_dir, exist_ok=True)
-        result = _render_batch_in_worker(
+        result = _render_batch_dispatch(
             (str(pdf_path), [int(page_idx)], str(out_dir), zoom, ext, quick, dpi)
         )
     except Exception as e:  # noqa: BLE001 - 兜底：调用方只认结构化结果
@@ -836,10 +992,10 @@ def process_page_batch(
     reporter=None,
     dpi: float = DEFAULT_RENDER_DPI,
 ) -> List[bool]:
-    """处理一批 PDF 页面，返回每页的成功状态。
+    """处理一批源文件页面（PDF / DjVu），返回每页的成功状态。
 
     参数:
-        pdf_path: PDF 文件路径。
+        pdf_path: 源文件路径（PDF 或 DjVu）。
         page_indices: 0-based 页码列表。
         out_dir: 输出目录。
         zoom: 缩放因子。
@@ -856,7 +1012,7 @@ def process_page_batch(
         每页成功/失败的 bool 列表。
     """
     try:
-        result = _render_batch_in_worker(
+        result = _render_batch_dispatch(
             (pdf_path, list(page_indices), out_dir, zoom, ext, quick, dpi)
         )
     except Exception as e:  # noqa: BLE001 - 兜底：批处理本身失败
@@ -882,7 +1038,7 @@ def render_pages_parallel(
     reporter=None,
     dpi: float = DEFAULT_RENDER_DPI,
 ) -> List[bool]:
-    """多**进程**提取指定页，返回每页成功状态。
+    """多**进程**提取指定页（PDF / DjVu），返回每页成功状态。
 
     CLI（`extract_pdf_optimized`）与 GUI（`run_extract_stage`）共用这一份并发
     实现——GUI 曾经直接调 `process_page_batch` 串行跑全部页，是提取慢的主因。
@@ -918,6 +1074,8 @@ def render_pages_parallel(
     progress.setdefault("quick_direct", 0)
 
     page_indices = [int(i) for i in page_indices]
+    # 子进程执行体：按源文件后缀分派（PDF → PyMuPDF，DjVu → djvu-rs）
+    worker = _render_batch_dispatch
     batches = [
         page_indices[i : i + batch_size]
         for i in range(0, len(page_indices), batch_size)
@@ -945,7 +1103,7 @@ def render_pages_parallel(
                 # map 按 batches 顺序 yield，done_batches 于是能准确表示
                 # 「已消费的批次数」，异常时据此决定补跑哪一段
                 for result in executor.map(
-                    _render_batch_in_worker, [_payload(b) for b in batches]
+                    worker, [_payload(b) for b in batches]
                 ):
                     _consume(result)
                     done_batches += 1
@@ -959,9 +1117,11 @@ def render_pages_parallel(
 
     # workers==1 时这是主路径；进程池崩溃时这是兜底
     for batch in batches[done_batches:]:
-        _consume(_render_batch_in_worker(_payload(batch)))
+        _consume(worker(_payload(batch)))
 
-    if quick:
+    # quick 是 PDF 专属概念（内嵌图直拷 / JPX 通道）；DjVu 每页都真解码，
+    # 打这些统计只会误导（"0 页直取内嵌图"并不代表有问题）。
+    if quick and not is_djvu_path(pdf_path):
         jpx_fast = int(progress.get("jpx_fast") or 0)
         quick_direct = int(progress.get("quick_direct") or 0)
         if jpx_fast:
@@ -1002,16 +1162,17 @@ def extract_pdf_optimized(
     reporter=None,
     dpi: float = DEFAULT_RENDER_DPI,
 ) -> bool:
-    """提取 PDF 页面为图片，支持多线程批次处理。
+    """提取 PDF / DjVu 页面为图片，支持多进程批次处理。
 
     参数:
-        pdf_path: PDF 文件路径。
-        out_dir: 输出目录（此目录将存放该 PDF 的所有页面图片）。
+        pdf_path: 源文件路径（PDF 或 DjVu）。
+        out_dir: 输出目录（此目录将存放该源文件的所有页面图片）。
         zoom: 缩放因子（整数，如 2 表示 2 倍分辨率）。
-        dpi: 整页渲染的 DPI 下限（见 `render_zoom`），不影响内嵌图路径。
+        dpi: 整页渲染的 DPI 下限（见 `render_zoom`），不影响内嵌图路径；
+             **对 DjVu 不生效**（DjVu 按原生分辨率渲染）。
         ext: 输出格式 jpg/png/tiff。
-        workers: 线程数。
-        quick: True=快速模式（优先提取内嵌图片）。
+        workers: 进程数。
+        quick: True=快速模式（优先提取 PDF 内嵌图片）；对 DjVu 无效。
         pages: 页码字符串（如 "1,3-5,7"），优先级高于 start/end。
         start: 起始页（1-based）。
         end: 结束页（1-based）。
@@ -1025,51 +1186,65 @@ def extract_pdf_optimized(
     try:
         start_time = time.time()
         if not os.path.exists(pdf_path):
-            print(f"❌ 错误: PDF文件不存在: {pdf_path}")
-            return False
-        try:
-            import pymupdf as fitz
-        except ImportError:
+            print(f"❌ 错误: 源文件不存在: {pdf_path}")
             return False
 
-        doc = fitz.open(pdf_path)
+        is_djvu = is_djvu_path(pdf_path)
+        actual_zoom = float(zoom)
+        if is_djvu:
+            try:
+                import djvu_rs  # noqa: F401 - 缺依赖时给一句能照做的提示
+            except ImportError:
+                print("❌ 依赖缺失: djvu-rs 未安装。请运行: pip install djvu-rs")
+                return False
+            try:
+                total_pages = djvu_page_count(pdf_path)
+            except Exception as e:  # noqa: BLE001 - 坏文件/坏目录统一给出人话
+                print(f"❌ 打开 DjVu 失败: {e}")
+                return False
+        else:
+            try:
+                import pymupdf as fitz
+            except ImportError:
+                return False
+            doc = fitz.open(pdf_path)
+            try:
+                total_pages = len(doc)
+                # 用首页宽度计算实际缩放因子（空文档会在这里抛，保持原有失败语义）
+                page_width = doc.load_page(0).rect.width
+            finally:
+                doc.close()
+            actual_zoom = render_zoom(page_width, zoom, dpi)
+
         if clean and os.path.exists(out_dir):
             shutil.rmtree(out_dir)
         os.makedirs(out_dir, exist_ok=True)
-        total_pages = len(doc)
 
         # 确定要处理的页码列表
         if pages is not None:
             try:
                 page_indices = parse_pages(pages, total_pages)
             except ValueError as e:
-                doc.close()
                 print(f"❌ 页面参数错误: {e}")
                 return False
         elif start is not None or end is not None:
             try:
                 page_indices = validate_page_range(start, end, total_pages)
             except ValueError as e:
-                doc.close()
                 print(f"❌ 页面范围错误: {e}")
                 return False
         else:
             page_indices = list(range(total_pages))
-
-        # 用首页宽度计算实际缩放因子（异常时也要关闭文档，避免句柄泄漏）
-        try:
-            first_page = doc.load_page(0)
-            page_width = first_page.rect.width
-        finally:
-            doc.close()
-        actual_zoom = render_zoom(page_width, zoom, dpi)
 
         total_selected = len(page_indices)
         print(f"\n📄 开始处理: {os.path.basename(pdf_path)}")
         print(f"📂 输出目录: {out_dir}")
         print(f"📏 总页数: {total_pages}")
         print(f"📄 处理页数: {total_selected}")
-        print(f"🔧 实际 zoom: {actual_zoom}（内嵌图路径按原图，不受 DPI 下限影响）")
+        if is_djvu:
+            print(f"🔧 渲染: DjVu 按原生分辨率 × zoom={zoom}（不套用 PDF 的 DPI 下限）")
+        else:
+            print(f"🔧 实际 zoom: {actual_zoom}（内嵌图路径按原图，不受 DPI 下限影响）")
 
         # 线程安全的进度计数器
         progress = {"total": total_selected, "done": 0, "lock": threading.Lock()}
@@ -1118,42 +1293,46 @@ def run_on_input_directory(
     dpi: float = DEFAULT_RENDER_DPI,
 ):
     """
-    处理输入路径（文件或目录），对每个 PDF 在 out_root 下创建以其文件名命名的子目录，
-    并在该子目录下创建 subdir_name 目录存放图片。
+    处理输入路径（文件或目录），对每个 PDF/DjVu 在 out_root 下创建以其文件名命名的
+    子目录，并在该子目录下创建 subdir_name 目录存放图片。
 
     参数:
-        input_path: 输入路径（单个 PDF 文件或包含 PDF 的目录）。
-        out_root: 输出根目录（所有 PDF 的子目录将创建在此目录下）。
+        input_path: 输入路径（单个 PDF/DjVu 文件或包含它们的目录）。
+        out_root: 输出根目录（所有源文件的子目录将创建在此目录下）。
         zoom, ext, workers, quick, pages, start, end, batch_size, clean, dpi:
             透传给 extract_pdf_optimized 的参数。
-        subdir_name: 每个 PDF 子目录下存放图片的子目录名。
+        subdir_name: 每个源文件子目录下存放图片的子目录名。
         reporter: 结构化汇报通道；None → 只 print（CLI 默认）。
     """
     if not os.path.exists(input_path):
         raise ValueError(f"路径不存在: {input_path}")
 
     if os.path.isfile(input_path):
-        pdfs = [input_path]
+        if not is_source_document(input_path):
+            raise ValueError(
+                f"不支持的源文件类型: {input_path}（仅支持 PDF/DjVu）"
+            )
+        documents = [input_path]
     else:
-        pdfs = [
+        documents = [
             os.path.join(input_path, f)
             for f in os.listdir(input_path)
-            if f.lower().endswith(".pdf")
+            if is_source_document(f)
         ]
 
-    if not pdfs:
-        raise ValueError(f"目录中没有 PDF 文件: {input_path}")
+    if not documents:
+        raise ValueError(f"目录中没有 PDF/DjVu 文件: {input_path}")
 
     # 确保输出根目录存在
     os.makedirs(out_root, exist_ok=True)
 
-    # 单个 PDF 失败不打断批量处理，但必须让调用方最终知道"有失败"，
+    # 单个文件失败不打断批量处理，但必须让调用方最终知道"有失败"，
     # 否则脚本/子进程会把失败当成功（退出码 0）
     # ⚠️ 排序用**自然序**（全仓唯一排序键 utils.sort_utils）：字典序会让
     #    「书2.pdf」排在「书10.pdf」后面，批量处理的先后与输出子目录的
     #    创建顺序都和用户对页序的直觉相反（2026-10-12 排序统一审计）。
     failures: list[str] = []
-    for pdf in sorted(pdfs, key=lambda p: natural_sort_key(Path(p).name)):
+    for pdf in sorted(documents, key=lambda p: natural_sort_key(Path(p).name)):
         try:
             fname = os.path.basename(pdf)
             folder_name = os.path.splitext(fname)[0]
@@ -1184,4 +1363,4 @@ def run_on_input_directory(
             failures.append(os.path.basename(pdf))
 
     if failures:
-        raise RuntimeError("以下 PDF 提取失败：" + "、".join(failures))
+        raise RuntimeError("以下文件提取失败：" + "、".join(failures))

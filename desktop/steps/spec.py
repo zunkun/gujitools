@@ -37,7 +37,7 @@ from utils.sort_utils import natural_sort_key
 
 #: 认得的图片后缀（选文件时的过滤串与"这是不是图片"的判断共用一份）
 IMAGE_FILTER = "图片 (*.jpg *.jpeg *.png *.bmp *.tif *.tiff *.webp)"
-PDF_FILTER = "PDF 文件 (*.pdf)"
+PDF_FILTER = "PDF/DjVu 文件 (*.pdf *.djvu *.djv)"
 
 #: 从过滤串里抠后缀用的正则：``*.jpg`` → ``.jpg``
 _SUFFIX_RE = re.compile(r"\*(\.[A-Za-z0-9]+)")
@@ -487,7 +487,7 @@ class StepSpec:
         ⚠️ 与 ``title`` **有意分开**（同 :attr:`stage_title` 与 ``title`` 的
         道理）：导航那一列是"这一步做什么"的**短标签**，页头是完整标题，
         两处可以各说各的。用户 2026-10-03 就导航文案提过一轮（"图片提取"
-        → "PDF图片提取" 等），只改这里不会连带改掉页头与流程条。
+        → "PDF/DjVu提取" 等），只改这里不会连带改掉页头与流程条。
         """
         return self.nav_title or self.title
 
@@ -540,14 +540,14 @@ SPECS: tuple[StepSpec, ...] = (
         nav=True,
         # 导航文案与 ``title`` 分开：这一列回答"这一步干什么"，页头仍是
         # 完整的「图片提取」（用户 2026-10-03 要求导航统一带对象名）。
-        nav_title="PDF图片提取",
-        nav_tooltip="从 PDF 提取页面图片",
+        nav_title="PDF/DjVu提取",
+        nav_tooltip="从 PDF 或 DjVu 提取页面图片",
         # ⚠️ 别用 ZIP_FOLDER：那是"压缩包/解压"，用户会以为这步跟压缩文件
-        #    有关；这步的真实语义是"从 PDF 把图导出来"。
+        #    有关；这步的真实语义是"从源文件把图导出来"。
         nav_icon="IMAGE_EXPORT",
-        subtitle="选择一个 PDF，把每页渲染成图片",
+        subtitle="选择一个 PDF 或 DjVu，把每页渲染成图片",
         panel="ExtractPanel",
-        pick_label="选择 PDF",
+        pick_label="选择 PDF/DjVu",
         # ⚠️ 单位是"页"不是"PDF"：这一步处理的是 PDF 里的每一页。
         progress_noun="页",
         run_label="开始提取",
@@ -562,8 +562,8 @@ SPECS: tuple[StepSpec, ...] = (
         #    只在**自动**回填时跳过；手动挑历史仍原样回填（那是"照那次再跑一遍"）。
         auto_fill_skip=("pages",),
         drop_icon="svg:PDF_FILE",
-        drop_title="把 PDF 拖到这里",
-        drop_hint="也可以点这里选择一个 PDF 文件",
+        drop_title="把 PDF/DjVu 拖到这里",
+        drop_hint="也可以点这里选择一个 PDF 或 DjVu 文件",
         # ⚠️ **只支持文件**（用户 2026-10-03：「PDF 只支持文件」）。
         #    extract 之前允许整个文件夹：里面每个 PDF 各自一个子目录摆图。
         #    但那与本模块「选一个 PDF → 看它的每一页」的用法不符——一次拖一

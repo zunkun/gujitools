@@ -1415,9 +1415,9 @@ class PageListMixin:
         #    对话框，不是浏览窗口）。
         filename, _ = QFileDialog.getOpenFileName(
             cast("QWidget", self),
-            "选择 PDF 源文件",
+            "选择 PDF/DjVu 源文件",
             str(default_open_dir()),
-            "PDF (*.pdf)",
+            "PDF/DjVu 文件 (*.pdf *.djvu *.djv)",
         )
         if not filename:
             return
@@ -1720,7 +1720,7 @@ class PageListMixin:
 #: ⚠️ **两套文案不能混用**（用户 2026-10-06）：对"流程第一步是检测"的用户说
 #: "请上传 PDF"是错的引导——他该去放图。
 _MISSING_INPUT_TEXT = {
-    "pdf": "尚未选择 PDF：本流程需要 PDF 源文件，请点右侧「选择 PDF」"
+    "pdf": "尚未选择源文件：本流程需要 PDF/DjVu 源文件，请点右侧「选择源文件」"
     "上传后才能执行各步骤。",
     "images": "本流程第一步需要图片：请点右侧的图片按钮上传，"
     "或把图片/图片文件夹放进任务目录下的 stages/input。",

@@ -100,7 +100,7 @@ guji -v                  # 显示版本
 
 | 命令         | 别名  | 功能                        | 详细文档                                    |
 | ------------ | ----- | --------------------------- | ------------------------------------------- |
-| `extract`    | `-e`  | 从 PDF 提取页面为图片       | [extract.md](../functions/extract.md)       |
+| `extract`    | `-e`  | 从 PDF/DjVu 提取页面为图片  | [extract.md](../functions/extract.md)       |
 | `detect`     | —     | 检测内容框坐标（半幅/整幅） | [detect.md](../functions/detect.md)         |
 | `crop`       | —     | 基于 YOLO 裁剪内容框        | [crop.md](../functions/crop.md)             |
 | `rembg`      | `-r`  | 整图去底色/二值化/印章保留  | [rembg.md](../functions/rembg.md)           |
@@ -137,12 +137,12 @@ guji -v                  # 显示版本
 - **纯名称**（无 `/` `\`）：相对于 `parent_path` 创建
 - **完整路径**：直接作为绝对输出目录
 
-默认输出目录名：extract=PDF文件名、detect=`detect`（仅 `--save` 时）、
+默认输出目录名：extract=源文件名（PDF/DjVu）、detect=`detect`（仅 `--save` 时）、
 crop=`crop`、rembg=`rembg`、cropremove=`rembg`
 
 ## 各命令参数
 
-### extract — PDF 提取图片
+### extract — PDF/DjVu 提取图片
 
 | 参数           | 默认值 | 说明                                               |
 | -------------- | ------ | -------------------------------------------------- |
@@ -280,7 +280,7 @@ CSS 风格写法：
 ### extract
 
 ```bash
-# 从 PDF 提取图片
+# 从 PDF/DjVu 提取图片
 guji extract -i book.pdf -o ./images
 
 # 高分辨率提取（2 倍缩放）

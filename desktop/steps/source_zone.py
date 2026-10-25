@@ -181,9 +181,9 @@ class SourceZone(QWidget):
         row.setSpacing(BUTTON_GAP)
         row.addStretch(1)
 
-        # 图标跟着步骤的输入物走：入口是 PDF 就用带 "PDF" 字样的自绘图
+        # 图标跟着步骤的输入物走：入口含 PDF 就用带 "PDF" 字样的自绘图
         # （``FIF.DOCUMENT`` 是空文档，会被读成"文档"），图片步骤仍旧用它。
-        file_icon = PDF_FILE if self.spec.input_noun() == "PDF" else FIF.DOCUMENT
+        file_icon = PDF_FILE if "PDF" in self.spec.input_noun() else FIF.DOCUMENT
         self.file_button = PushButton(file_icon, self.spec.pick_label, self)
         self.file_button.setFixedHeight(BUTTON_HEIGHT)
         self.file_button.setToolTip(f"从磁盘上挑一个{self.spec.input_noun()}文件")

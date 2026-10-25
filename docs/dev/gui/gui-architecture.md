@@ -39,7 +39,7 @@ desktop/
     base.py             #   ModulePage 骨架（页头/输入区/左右分栏/状态行/日志）
                          #     + StepModulePage（普通步骤页的共用外设，见 2.3）
     thumb_source.py     #   ThumbSourceMixin：左栏「缩略图条 + 大图」统一接线
-    extract/page.py     #   PDF图片提取
+    extract/page.py     #   PDF/DjVu提取
     detect/page.py      #   检测文本框（含导出标注图 / 导出坐标 JSON）
     rembg/page.py       #   图片去底色
     print/page.py       #   PDF排版

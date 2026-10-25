@@ -14,6 +14,17 @@ from utils.sort_utils import natural_sort_key
 # 用于 collect_image_files 中的扩展名过滤
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".gif", ".webp"}
 
+#: 「书籍源文件」后缀（小写，含点）：`extract` 步骤的输入。
+#:
+#: PDF 走 PyMuPDF、DjVu 走 djvu-rs 后端（见 `utils/pdf_extract.py`），
+#: 但对上层（CLI / 桌面选文件 / 目录遍历）来说它们是同一类源文件。
+SOURCE_DOCUMENT_EXTS = (".pdf", ".djvu", ".djv")
+
+
+def is_source_document(path) -> bool:
+    """这个路径是不是 extract 能吃的源文件（PDF / DjVu）。"""
+    return Path(str(path)).suffix.lower() in SOURCE_DOCUMENT_EXTS
+
 
 def collect_image_files(input_path: Path, is_file: bool) -> List[Path]:
     """收集输入路径下的所有图片文件，按自然排序返回。

@@ -11,7 +11,7 @@ File: functions/init.py
 - 可以交互式或通过命令行参数 `-i/--input` 提供输入路径。
 - **不再询问输出根目录**，`extract.output` 始终保持为空（null）。
 - 后续命令（crop/rembg/cropremove）的 `input` 根据输入类型自动计算：
-    - 若输入是 PDF 文件 → `<父目录>/<pdf_stem>/<DEFAULT_EXTRACT_NAME>`（实际路径）
+    - 若输入是 PDF/DjVu 文件 → `<父目录>/<源文件名>/<DEFAULT_EXTRACT_NAME>`（实际路径）
     - 若输入是目录 → `<输入目录>/<pdf_file_name>/<DEFAULT_EXTRACT_NAME>`（占位符，用户可自行替换）
 - `print` 命令的 `input` 自动指向 `rembg` 的输出目录（`DEFAULT_REMBG_NAME`），
   与其他命令共用相同的 `<pdf_stem>` 或 `<pdf_file_name>` 父目录，
@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from functions.base import DEFAULT_TEMP_NAME_MAP
-from utils.file_utils import replace_with_retry
+from utils.file_utils import is_source_document, replace_with_retry
 
 if TYPE_CHECKING:
     # 仅类型检查期导入：为下方惰性导入的占位名声明真实类型
@@ -143,11 +143,12 @@ class InitFunction:
             ver = defaults["version"]
 
         # ----- 计算各命令的 input 路径 -----
-        is_pdf = input_path.suffix.lower() == ".pdf"
+        # PDF 与 DjVu 的输出布局相同：<父目录>/<源文件名(无后缀)>/images
+        is_document = is_source_document(input_path)
         extract_input_str = self._norm_path_str(str(input_path))
 
-        if is_pdf:
-            # PDF 文件 -> 父目录/pdf_stem/DEFAULT_EXTRACT_NAME
+        if is_document:
+            # 源文件 -> 父目录/源文件名/DEFAULT_EXTRACT_NAME
             images_dir = input_path.parent / input_path.stem / DEFAULT_EXTRACT_NAME
             post_input = self._norm_path_str(str(images_dir))
         else:

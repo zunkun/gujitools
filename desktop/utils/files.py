@@ -10,7 +10,7 @@ import subprocess
 import threading
 from pathlib import Path
 
-from utils.file_utils import replace_with_retry
+from utils.file_utils import is_source_document, replace_with_retry
 from utils.sort_utils import natural_sort_key
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
@@ -94,18 +94,18 @@ EXTRACT_PAGES_REL = ("stages", "extract")
 
 
 def task_extract_pages_dir(pdf_path) -> Path | None:
-    """任务目录里**已提取的整页图**目录；不是任务目录里的 PDF 就返回 None。
+    """任务目录里**已提取的整页图**目录；不是任务目录里的源文件就返回 None。
 
     ⚠️ 为什么需要（2026-10-21）：生成 256px 缩略图最贵的不是"输出小"，而是
     **解一页内嵌的 JPX**（4285×5736 实测 ~850ms）；而"提取图片"的产物是一张
     2067×2767 的 **JPEG**，从它缩 256px 只要 **21ms**（JPEG 能在 DCT 域降采样）。
-    所以**已提取的页**再也不用回 PDF 渲——省掉 40 倍。
+    所以**已提取的页**再也不用回源文件渲——省掉 40 倍。
 
-    判据只认"PDF 就在任务目录里"（导入后任务目录存的是源文件副本）：
+    判据只认"源文件（PDF/DjVu）就在任务目录里"（导入后任务目录存的是源文件副本）：
     拿用户原始下载文件时同级没有 ``stages/``，自然返回 None，行为不变。
     """
     path = Path(str(pdf_path or ""))
-    if path.suffix.lower() != ".pdf":
+    if not is_source_document(path):
         return None
     candidate = path.parent.joinpath(*EXTRACT_PAGES_REL)
     return candidate if candidate.is_dir() else None

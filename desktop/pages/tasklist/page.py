@@ -501,7 +501,7 @@ class TaskListPage(QWidget, WorkerHost):
         if not str(path or "").strip():
             self._toast(
                 "info", "任务已创建",
-                "尚未选择 PDF，可在任务详情页右上角补选源文件。",
+                "尚未选择源文件（PDF/DjVu），可在任务详情页右上角补选。",
             )
             return
         # 逐页缩略图 + 源文件副本：后台生成，落到任务目录 thumbnails/ 与根目录，

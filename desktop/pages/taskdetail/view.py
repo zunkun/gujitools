@@ -320,7 +320,7 @@ class DetailViewMixin:
         #    这个按钮会被读成"打开文档"而不是"选 PDF"，与列表页「创建任务」
         #    按钮、第四步「下载 PDF」用的都是同一枚图标才一致。
         self.source_button = ToolButton(PDF_FILE)
-        self.source_button.setToolTip("为这个任务选择 PDF 源文件")
+        self.source_button.setToolTip("为这个任务选择 PDF/DjVu 源文件")
         self.source_button.setFixedSize(34, 34)
         self.source_button.clicked.connect(self._on_pick_source)
         row.addWidget(self.source_button)

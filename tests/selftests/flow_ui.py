@@ -2841,9 +2841,9 @@ def _check_shell_task(store, pdf, app) -> None:
         # ---- 缺源 PDF 时：按钮高亮 + 页头红字（用户 2026-10-06）----
         ok("缺源 PDF 时判据成立（该催用户补）",
            probe._missing_source() is True)
-        ok("缺源 PDF 时页头出红字提示",
+        ok("缺源文件时页头出红字提示",
            not probe.source_warning.isHidden()
-           and "尚未选择 PDF" in probe.source_warning.text(),
+           and "尚未选择源文件" in probe.source_warning.text(),
            probe.source_warning.text())
         ok("红字是**红**的（原生 QLabel 走 palette；qfluent 标签走 setTextColor）",
            _label_text_color(probe.source_warning).upper()
