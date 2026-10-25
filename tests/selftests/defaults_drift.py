@@ -91,12 +91,22 @@ def run(ctx) -> None:
        inspect.signature(render_pages_parallel).parameters["quick"].default
        == spec["quick"])
 
-    # ---- F6：rembg 默认值只有一处（utils/image_utils.py）----
+    # ---- F6：rembg 默认值只有一处（utils/image_utils.py + rembg_algorithms.py）----
+    from core.command_spec import REMBG_ALGORITHMS
     from utils import image_utils
+    from utils.rembg_algorithms import (
+        ALGORITHM_KEYS,
+        REMBG_DEFAULT_ALGORITHM,
+        REMBG_DEFAULT_K,
+        REMBG_DEFAULT_WINDOW,
+    )
 
     rembg_spec = COMMAND_SPECS["rembg"].defaults
     pairs = (
         ("offset", image_utils.REMBG_DEFAULT_OFFSET),
+        ("algorithm", REMBG_DEFAULT_ALGORITHM),
+        ("window", REMBG_DEFAULT_WINDOW),
+        ("k", REMBG_DEFAULT_K),
         ("type", image_utils.REMBG_DEFAULT_TYPE),
         ("seal", image_utils.REMBG_DEFAULT_ENABLE_SEAL),
         ("sealcolor", image_utils.REMBG_DEFAULT_SEAL_COLOR),
@@ -107,6 +117,14 @@ def run(ctx) -> None:
     ok("rembg 的规格默认值 = utils 里的常量", not drift, str(drift))
     ok("rembg_page 的签名默认值也用同一批常量",
        "offset: int = REMBG_DEFAULT_OFFSET" in text_of("utils/image_utils.py"))
+    ok("CLI 算法枚举 = 算法族注册表",
+       COMMAND_SPECS["rembg"].defaults["algorithm"] in ALGORITHM_KEYS
+       and set(ALGORITHM_KEYS) == set(REMBG_ALGORITHMS),
+       f"{ALGORITHM_KEYS} vs {REMBG_ALGORITHMS}")
+    ok("rembg_page 的算法/窗口/k 默认值来自 rembg_algorithms",
+       "algorithm: str = REMBG_DEFAULT_ALGORITHM" in text_of("utils/image_utils.py")
+       and "window: int = REMBG_DEFAULT_WINDOW" in text_of("utils/image_utils.py")
+       and "k: float = REMBG_DEFAULT_K" in text_of("utils/image_utils.py"))
 
     # ---- F7：排序键幂等（page1 / page01 不再同键）----
     from utils.sort_utils import natural_sort_key

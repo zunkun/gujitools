@@ -560,6 +560,22 @@ def node_scope_from_output_dir(dir_name: str) -> str:
     return f"{sep}{tail}" if sep else ""
 
 
+def rembg_methods_path(out_dir) -> Path | None:
+    """去底色「每页用了哪种算法」的侧车文件路径（worker / 实时预览共用）。
+
+    落点与 ``rembg_offsets[~节点].json`` 同级，都在**任务根目录**：
+    ``tasks/<任务号>/rembg_methods[~节点].json``，值是 ``{页名: 算法 key}``。
+
+    只在 ``stages/`` 下的真实任务产物目录返回路径；模块页/自测的临时输出目录
+    （父目录不叫 ``stages``）返回 ``None``——那里不该凭空长出一个任务侧车文件。
+    """
+    path = Path(out_dir)
+    if path.parent.name != "stages":
+        return None
+    scope = node_scope_from_output_dir(path.name)
+    return path.parents[1] / f"rembg_methods{scope}.json"
+
+
 def copy_location(stage: str, port: str, node_id: str) -> str | None:
     """**副本节点**（同阶段第二个及之后的节点）的相对落点；没登记返回 ``None``。
 

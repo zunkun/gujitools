@@ -21,6 +21,7 @@ from desktop.store.json_io import (
     owner_path, read_json, resolve_scoped_path, write_json, write_owner,
 )
 from desktop.utils.files import copy_file_atomic
+from utils.rembg_algorithms import ALGORITHM_KEYS, REMBG_DEFAULT_ALGORITHM
 
 #: 默认流程的四个步骤（顺序即执行顺序）。
 #:
@@ -628,6 +629,61 @@ class TaskMixin:
             write_json(path, data)
             write_owner(path, node_id or primary_id)
 
+    def rembg_algorithms_path(self, task_id: str, node_id: str | None = None,
+                              primary_id: str | None = None) -> Path:
+        """**逐张图片**去底色算法的存储文件（只记用户单独改过的图片）。
+
+        主节点沿用 ``rembg_algorithms.json``；同一步骤的副本节点落
+        ``rembg_algorithms~<节点>.json``（与 ``rembg_offsets`` 同一套命名）。
+        """
+        from desktop.steps import ports
+
+        if node_id:
+            items = self.task_diagram(task_id).node_ids_of("rembg")
+            primary_id = primary_id or (items[0] if items else None)
+        name = ports.scoped_name("rembg_algorithms.json", node_id, primary_id)
+        return resolve_scoped_path(self.task_dir(task_id) / name, node_id)
+
+    def load_rembg_algorithms(self, task_id: str, node_id: str | None = None,
+                              primary_id: str | None = None) -> dict[str, str]:
+        """读逐张算法表 ``{页名: 算法 key}``；坏文件/未知算法当没记录。"""
+        path = self.rembg_algorithms_path(task_id, node_id, primary_id)
+        data = read_json(path, {})
+        if not isinstance(data, dict):
+            return {}
+        out: dict[str, str] = {}
+        for key, value in data.items():
+            algorithm = str(value or "")
+            if algorithm in ALGORITHM_KEYS:
+                out[str(key)] = algorithm
+        return out
+
+    def rembg_algorithm(self, task_id: str, image_key: str,
+                        node_id: str | None = None,
+                        primary_id: str | None = None) -> str:
+        """某张图片单独指定的算法；没记录过 = 默认 Otsu。"""
+        return str(self.load_rembg_algorithms(
+            task_id, node_id, primary_id
+        ).get(str(image_key), REMBG_DEFAULT_ALGORITHM))
+
+    def save_rembg_algorithm(self, task_id: str, image_key: str, algorithm: str,
+                             node_id: str | None = None,
+                             primary_id: str | None = None) -> None:
+        """记录某张图片的算法（用户确实在这张图上改过时才调用）。
+
+        ⚠️ 与 offset 的「黑名单法」不同：这里**连默认值 otsu 也照存**。
+        原因是算法没有"0 等价未设置"的哨兵——用户明确把某页设回 otsu 时，
+        它必须继续留在表里，不能被后续的全局值覆盖。
+        """
+        if str(algorithm) not in ALGORITHM_KEYS:
+            return
+        path = self.rembg_algorithms_path(task_id, node_id, primary_id)
+        data = self.load_rembg_algorithms(task_id, node_id, primary_id)
+        data[str(image_key)] = str(algorithm)
+        if self.task_dir(task_id).exists():
+            write_json(path, data)
+            write_owner(path, node_id or primary_id)
+
     def imposition_output_dir(self, task_id: str) -> Path:
         """「图片拼版」产出的成品拼版页图目录（列表顺序即页序）。
 
@@ -1223,6 +1279,33 @@ class TaskMixin:
             self.task_diagram(task_id),
             self.scheduler_flags(task_id, imposition_active),
         )
+
+    def nearest_boxes_path(self, task_id: str, node_id: str | None,
+                           imposition_active: bool = False) -> Path | None:
+        """当前节点**沿流程往前最近的** ``boxes.json`` 路径（没有则 ``None``）。
+
+        用户 2026-10-25 口径：去底色合并左右裁图阈值时，要用「执行链上面当前
+        去底色节点之前最近的 detect 节点」写出的提交计划，而不是靠文件名猜
+        占位/左右归属。
+
+        ``boxes`` 不是 rembg 声明的输入端口（它只吃 ``pages``），所以不能走
+        :meth:`node_input`（那会因为没有声明而返回 ``None``）——这里直接问
+        流程图：最近产出 ``boxes`` 的节点是谁，再取它的端口落点。
+        """
+        if not node_id:
+            return None
+        diagram = self.task_diagram(task_id)
+        active = set(self.task_scheduler(task_id, imposition_active).stages)
+        producer = diagram.nearest_producer_node(node_id, "boxes", active)
+        if producer is None:
+            return None
+        try:
+            path = self.node_output(task_id, producer, "boxes")
+        except KeyError:
+            return None
+        # 「查看其是否有 boxes.json 数据」：最近节点还没跑过/没落盘时不要拿
+        # 不存在的路径去当提交计划，调用方据此回落逐图计算。
+        return path if path.is_file() else None
 
     def stage_output_dir(self, task_id: str, stage: str,
                          node_id: str | None = None) -> Path:

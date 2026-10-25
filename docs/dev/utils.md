@@ -12,7 +12,8 @@
 | ----------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
 | `box_geometry.py` | 文本框几何规则（GUI/CLI 共用） | `parse_border_mm`, `compute_final_boxes`                                                                                        |
 | `box_draw.py`     | 检测框标注绘制（GUI/CLI 共用） | `draw_boxes`, `box_color`, `box_name`, `find_cjk_font`                                                                          |
-| `image_utils.py`  | 图像处理核心算法               | `calculate_auto_threshold`, `extract_red_seal`, `apply_otsu_to_region`, `apply_otsu_whole`, `parse_border`, `parse_border_mm`   |
+| `image_utils.py`  | 图像处理核心算法               | `calculate_auto_threshold`, `extract_red_seal`, `apply_otsu_to_region`, `apply_otsu_whole`, `rembg_page`, `parse_border`, `parse_border_mm` |
+| `rembg_algorithms.py` | 去底色阈值算法族（7 种，统一入口/出口） | `RembgAlgorithm`, `get_algorithm`, `text_mask`, `ALGORITHMS`, `ALGORITHM_KEYS` |
 | `image_io.py`     | OpenCV 读写（中文路径安全）    | `imread`, `imwrite`                                                                                                             |
 | `transparent_png.py` | 白底 → 透明底的 PNG 编码（第三步提交产物专用） | `save_white_as_transparent`, `describe_encoding`, `WHITE_LEVEL`                                                            |
 | `file_utils.py`   | 文件收集与校验                 | `collect_image_files`, `is_valid_image_size`, `IMAGE_EXTS`                                                                      |
@@ -161,6 +162,54 @@ GUI 的预览控件也要画同样的框。配色与命名必须一致，否则�
 
 > 实现已迁移到 `utils.box_geometry.parse_border_mm`（无重依赖，GUI 共用），
 > 本模块的同名函数只是转发，保留是为了不破坏既有调用点。
+
+### `rembg_page(img_rgb, gray, *, algorithm="otsu", offset=0, window=25, k=0.2, ...) -> np.ndarray`
+
+**整页去底色的唯一实现**：把灰度图交给算法族算文本掩码，再统一做印章排除、
+形态学去噪与输出类型转换。CLI（`functions/rembg.py`）、桌面端全量执行与实时
+预览都调它，保证三处结果一致。`offset` 只对全局算法生效；局部算法逐像素定
+阈值，会忽略 `offset`（桌面面板选局部算法时该控件置灰并归零）。
+
+`threshold` 参数用于**同页左右裁图共享阈值**（桌面任务流程）：调用方先用
+`shared_threshold()` 合并算好基础阈值，再传给每张图；传 `None` 时按本图
+自行计算。CLI / 独立模块页没有 boxes 上下文，走逐图路径。
+
+---
+
+## rembg_algorithms.py — 去底色阈值算法族
+
+**为什么单独一个模块**：去底色从"只有全局 Otsu"变成 7 种算法可选，且要求
+统一的入口/出口。这里用 `RembgAlgorithm` 抽象基类收口：
+
+```text
+入口: thresholds(gray, offset, window, k) -> int（全局）| uint8[H,W]（局部）
+出口: text_mask(gray, ...) -> bool[H,W]（True = 文字）
+合并: shared_threshold(grays, offset) -> int（仅全局算法；局部返回 None）
+```
+
+`shared_threshold` 用于同页左右裁图共享：Otsu 把各图非白像素的直方图相加后
+再算一次（不拼大数组），均值按像素数加权，固定阈值与像素无关。单图结果与
+`thresholds` 逐位一致。
+
+| key | 类 | 说明 |
+| --- | -- | ---- |
+| `otsu` | `OtsuAlgorithm` | 默认；与旧实现逐像素一致（非白子集 + offset + clamp[30,240]） |
+| `fixed` | `FixedThresholdAlgorithm` | 固定 128 + offset |
+| `mean` | `GlobalMeanAlgorithm` | 整页平均灰度 + offset |
+| `niblack` | `NiblackAlgorithm` | `mean - k×std`（k 取正值） |
+| `sauvola` | `SauvolaAlgorithm` | `mean × (1 + k×(std/R - 1))`，R=128 |
+| `bernsen` | `BernsenAlgorithm` | 局部对比度；`k` 映射为对比度下限（k×75） |
+| `wolf` | `WolfJolionAlgorithm` | `mean - k×(mean - 全局最小值)×(1 - std/R)` |
+
+**两条实现约束**：
+
+1. **顶部不 import numpy/cv2**：桌面面板要读 `ALGORITHMS` 的 key/label，不能因此
+   把 cv2 拉进 GUI 主进程；重依赖全部在函数内延迟导入。
+2. **局部算法按 512 行分块**：每块上下留 `window/2` halo，`BORDER_REPLICATE`
+   与整页滤波一致；产物与整页计算逐像素相同（自测
+   `tests/selftests/rembg_algorithms.py` 钉住）。
+
+`get_algorithm(key)` 遇到未知 key 直接抛 `ValueError`，不静默回落 Otsu。
 
 ---
 

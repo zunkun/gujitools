@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any, Callable, cast
 from PySide6.QtCore import QObject, QProcess, QTimer
 
 from desktop.workers import RembgLiveWorker, connect_queued
+from utils.rembg_algorithms import REMBG_DEFAULT_ALGORITHM
 
 if TYPE_CHECKING:
     from desktop.components.viewers import RembgPreviewWidget
@@ -55,6 +56,7 @@ class RembgLiveMixin:
 
     #: 影响去底色结果的参数（与正式执行共用一份口径）。
     PREVIEW_PARAM_KEYS = (
+        "algorithm", "window", "k",
         "type", "offset", "seal", "sealcolor", "sealarea", "sealmin_sat",
     )
 
@@ -68,6 +70,8 @@ class RembgLiveMixin:
         self._live_pending: dict | None = None
         #: 待落盘的逐张 offset：(task_id, stem, value, node_id, primary_id)
         self._offset_pending: tuple | None = None
+        #: 待落盘的逐张算法：(task_id, stem, algorithm, node_id, primary_id)
+        self._algorithm_pending: tuple | None = None
 
         # ⚠️ Mixin 本体是普通类，类型检查器看不到宿主是 QObject，故收窄后当
         #    QTimer 的 parent 用（运行时是恒等）。
@@ -90,10 +94,14 @@ class RembgLiveMixin:
             add_hook = getattr(rembg_host, "add_created_hook", None)
             if callable(add_hook):
                 add_hook(
-                    lambda panel: panel.param_edited.connect(self._on_live_trigger)
+                    lambda panel: (
+                        panel.param_edited.connect(self._on_live_trigger),
+                        panel.algorithm_edited.connect(self._on_algorithm_edited),
+                    )
                 )
             else:
                 rembg_host.param_edited.connect(self._on_live_trigger)
+                rembg_host.algorithm_edited.connect(self._on_algorithm_edited)
         self.rembg_viewer.current_changed.connect(self._on_image_changed)
 
     # ---------------------------------------------------------------- 触发
@@ -103,6 +111,33 @@ class RembgLiveMixin:
             return
         self._note_offset_pending()
         self._live_timer.start()
+
+    def _on_algorithm_edited(self) -> None:
+        """用户**改了算法下拉**：只把当前这张图的算法记进逐张表。
+
+        ⚠️ 不能挂在 ``param_edited`` 上：改 offset/type 也会触发那个信号，那样
+        每张调过 offset 的图都会被钉死当时的算法，之后换全局算法时它们不再跟随。
+        """
+        if self.current_stage() != "rembg":
+            return
+        task_id = self.task_id
+        entry_path = self.rembg_viewer.current_entry_path()
+        if not task_id or not entry_path:
+            return
+        panel = self.panel_host_of_step("rembg")
+        if panel is None:
+            return
+        try:
+            args = panel.get_args()
+        except ValueError:
+            return
+        scope = self._node_scope(self.current_node())
+        self._algorithm_pending = (
+            task_id, Path(entry_path).stem,
+            str(args.get("algorithm") or "otsu"),
+            scope.get("node_id"), scope.get("primary_id"),
+        )
+        self._offset_save_timer.start()
 
     def _note_offset_pending(self) -> None:
         """记下"当前这张图 + 面板 offset"，防抖后落进逐张偏移表。"""
@@ -125,18 +160,24 @@ class RembgLiveMixin:
         self._offset_save_timer.start()
 
     def _flush_pending_offset(self) -> None:
-        """把待写的逐张 offset 落盘（切图/切任务/执行前都要调）。"""
+        """把待写的逐张 offset / 算法落盘（切图/切任务/执行前都要调）。"""
         if self._offset_save_timer.isActive():
             self._offset_save_timer.stop()
-        pending, self._offset_pending = self._offset_pending, None
-        if not pending:
-            return
-        task_id, stem, value, node_id, primary_id = pending
+        offset_pending, self._offset_pending = self._offset_pending, None
+        algorithm_pending, self._algorithm_pending = self._algorithm_pending, None
         try:
-            self.store.save_rembg_offset(
-                task_id, stem, value, node_id=node_id, primary_id=primary_id
-            )
-        except Exception:  # noqa: BLE001 - offset 记录失败不该拖垮实时调整
+            if offset_pending:
+                task_id, stem, value, node_id, primary_id = offset_pending
+                self.store.save_rembg_offset(
+                    task_id, stem, value, node_id=node_id, primary_id=primary_id
+                )
+            if algorithm_pending:
+                task_id, stem, algorithm, node_id, primary_id = algorithm_pending
+                self.store.save_rembg_algorithm(
+                    task_id, stem, algorithm,
+                    node_id=node_id, primary_id=primary_id,
+                )
+        except Exception:  # noqa: BLE001 - 逐张记录失败不该拖垮实时调整
             pass
 
     def _on_image_changed(self, *_args) -> None:
@@ -155,8 +196,25 @@ class RembgLiveMixin:
         self.rembg_viewer.refresh_display()
         self._live_timer.start()
 
+    def _formal_default_algorithm(self) -> str:
+        """最近一次**成功**全量执行所用的默认算法（没跑过 = Otsu）。
+
+        逐张算法表只记用户单独改过的页；没记录的页要回到"全量的默认算法"，
+        而不是把上一页的临时选择带过去。
+        """
+        record = self._latest_success_run("rembg")
+        if not record:
+            return REMBG_DEFAULT_ALGORITHM
+        params = record.get("parameters") or {}
+        return str(params.get("algorithm") or REMBG_DEFAULT_ALGORITHM)
+
     def _apply_current_image_offset(self) -> None:
-        """把当前图片记录的 offset 回填到面板（程序化，不算用户改动）。"""
+        """把当前图片记录的 offset / 算法回填到面板（程序化，不算用户改动）。
+
+        算法：有逐张记录用它，没有则回落到最近一次全量执行的默认算法
+        （与 offset 的"没记录 = 0"对称）；这样从单独调过算法的页切到普通页时，
+        面板不会把上一页的临时选择带过去。
+        """
         task_id = self.task_id
         entry_path = self.rembg_viewer.current_entry_path()
         if not task_id or not entry_path:
@@ -166,16 +224,25 @@ class RembgLiveMixin:
             return
         stem = Path(entry_path).stem
         try:
-            offset = self.store.rembg_offset(
-                task_id, stem, **self._node_scope(self.current_node())
+            scope = self._node_scope(self.current_node())
+            offset = self.store.rembg_offset(task_id, stem, **scope)
+            algorithm = str(
+                self.store.load_rembg_algorithms(task_id, **scope).get(
+                    stem, self._formal_default_algorithm()
+                )
             )
             args = panel.get_args()
         except Exception:  # noqa: BLE001 - 读不到/面板未填好：保持原值
             return
-        if int(args.get("offset") or 0) == int(offset):
-            return
-        args["offset"] = int(offset)
-        panel.apply_args(args)
+        changed = False
+        if int(args.get("offset") or 0) != int(offset):
+            args["offset"] = int(offset)
+            changed = True
+        if str(args.get("algorithm") or "") != str(algorithm):
+            args["algorithm"] = str(algorithm)
+            changed = True
+        if changed:
+            panel.apply_args(args)
 
     def _live_snapshot(self, args: dict) -> dict:
         """只取「影响去底色结果」的那几个键做快照。"""
@@ -196,6 +263,17 @@ class RembgLiveMixin:
                 snapshot["offset"] = int(params.get("offset", 0))
         except (TypeError, ValueError):
             snapshot["offset"] = params.get("offset", 0)
+        try:
+            # 算法：逐张表里有的页用它自己的值，否则用那轮全量执行的默认算法。
+            fallback = str(params.get("algorithm") or REMBG_DEFAULT_ALGORITHM)
+            if "algorithms" in params:
+                snapshot["algorithm"] = str(
+                    (params.get("algorithms") or {}).get(stem, fallback)
+                )
+            else:
+                snapshot["algorithm"] = fallback
+        except (TypeError, ValueError):
+            snapshot["algorithm"] = REMBG_DEFAULT_ALGORITHM
         return snapshot
 
     # ---------------------------------------------------------------- 执行
@@ -252,10 +330,21 @@ class RembgLiveMixin:
                 pass
         self._live_token = token
         self._live_pending = self._live_snapshot(args)
+        # 同页左右裁图共享阈值的上下文：最近上游 detect 的 boxes.json + 逐张
+        # 算法表（占位标记与"用哪种算法"都从这两处来，不靠文件名猜）。
+        live_args = dict(args)
+        boxes_path = self.store.nearest_boxes_path(
+            task_id, node, self.imposition_effective()
+        )
+        if boxes_path is not None:
+            live_args["_boxes_path"] = str(boxes_path)
+        live_args["algorithms"] = self.store.load_rembg_algorithms(
+            task_id, **self._node_scope(node)
+        )
         # ⚠️ 只在**说明行**提示，**不动大图**：页面要优先显示。
         self.rembg_viewer.show_live_pending()
         worker = RembgLiveWorker(
-            str(image_path), args, str(out_dir), str(thumb_dir), token
+            str(image_path), live_args, str(out_dir), str(thumb_dir), token
         )
         self._live_worker = worker
         self.run_worker(
@@ -307,6 +396,7 @@ class RembgLiveMixin:
         self._flush_pending_offset()
         self._live_timer.stop()
         self._offset_save_timer.stop()
+        self._algorithm_pending = None
         self._live_done.clear()
         self._live_token = None
         self._live_pending = None

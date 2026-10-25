@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 177 个模块、193 个公开类、1432 个公开函数/方法（生成于 2026-10-24）。
+覆盖 178 个模块、194 个公开类、1442 个公开函数/方法（生成于 2026-10-25）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -124,6 +124,7 @@
 | [`desktop.services.imposition`](#desktopservicesimposition) | 0 | 33 |
 | [`desktop.services.print_plan`](#desktopservicesprint_plan) | 0 | 10 |
 | [`desktop.services.rembg_export`](#desktopservicesrembg_export) | 0 | 7 |
+| [`desktop.services.rembg_groups`](#desktopservicesrembg_groups) | 1 | 4 |
 | [`desktop.services.rembg_live`](#desktopservicesrembg_live) | 0 | 1 |
 | [`desktop.services.stale_chain`](#desktopservicesstale_chain) | 0 | 5 |
 | [`desktop.services.submit_state`](#desktopservicessubmit_state) | 0 | 1 |
@@ -141,7 +142,7 @@
 | [`desktop.steps.control`](#desktopstepscontrol) | 1 | 11 |
 | [`desktop.steps.flow`](#desktopstepsflow) | 4 | 31 |
 | [`desktop.steps.kernel`](#desktopstepskernel) | 5 | 11 |
-| [`desktop.steps.ports`](#desktopstepsports) | 0 | 40 |
+| [`desktop.steps.ports`](#desktopstepsports) | 0 | 41 |
 | [`desktop.steps.process`](#desktopstepsprocess) | 1 | 7 |
 | [`desktop.steps.scheduler`](#desktopstepsscheduler) | 2 | 16 |
 | [`desktop.steps.source_zone`](#desktopstepssource_zone) | 1 | 20 |
@@ -154,7 +155,7 @@
 | [`desktop.store.pages`](#desktopstorepages) | 1 | 9 |
 | [`desktop.store.runs`](#desktopstoreruns) | 1 | 10 |
 | [`desktop.store.store`](#desktopstorestore) | 1 | 1 |
-| [`desktop.store.tasks`](#desktopstoretasks) | 1 | 57 |
+| [`desktop.store.tasks`](#desktopstoretasks) | 1 | 62 |
 | [`desktop.store.ui_state`](#desktopstoreui_state) | 1 | 9 |
 | [`desktop.ui.color_picker`](#desktopuicolor_picker) | 5 | 30 |
 | [`desktop.ui.font_setup`](#desktopuifont_setup) | 2 | 8 |
@@ -2829,16 +2830,16 @@ print 面板「位置」「文字方向」的固定取值（由 PrintFormMixin �
 
 ### `class RembgPanel(StagePanel)`
 
-图片去底色阶段面板：type / offset / 印章参数。
+图片去底色阶段面板：算法 / 局部窗口 / type / offset / 印章参数。
 
-整图 Otsu 二值化/灰度化去底（可保留印章）；参数经 get_args 收集后传给
+整图阈值去底（7 种算法可选，可保留印章）；参数经 get_args 收集后传给
 子进程。默认值统一取 ``params_spec.DEFAULTS["rembg"]``。
 
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
-| `get_args() -> dict` | 收集去底色参数：type/offset/seal/sealcolor/sealarea/sealmin_sat。 |
+| `get_args() -> dict` | 收集去底色参数（算法/窗口/k/type/offset/印章）。 |
 
 ---
 
@@ -9118,6 +9119,61 @@ singletask「去底色」导出目录的**标记**与白底→透明**副本**�
 
 ---
 
+## `desktop.services.rembg_groups`
+
+源码：[`desktop/services/rembg_groups.py`](../../desktop/services/rembg_groups.py)
+
+去底色全局阈值的**跨图分组**：同页左右裁图合并计算、共享一个阈值。
+
+用户 2026-10-25 口径：
+
+> 去底色全局方法计算阈值是一页中左右文本框内部进行计算的，比如
+> ``35-l.jpg, 35-r.jpg``；如果某一页有 ``xx-l, xx-r``，那么合在一起计算阈值，
+> 并把阈值应用在 xx 拆出来的两张图片。
+
+分组依据**不是文件名猜的**，而是「当前去底色节点在流程上游最近的 detect
+节点」写出的 ``boxes.json`` 提交计划（``entry["plan"]["outputs"]``）：
+
+- ``label``：产物名（``35-l`` / ``35-r`` / ``35``）；
+- ``placeholder``：占位图标记——占位图**不参与**合并，自己单独计算阈值；
+- ``role``：拼版身份（这里只用于区分半幅/整幅，不参与阈值计算）。
+
+只有同页左右两张**都真实存在**（非占位）且用同一个全局算法时才共享阈值；
+占位图、局部算法、算法不一致都回落逐图计算。
+
+没有 ``boxes.json``（自定义流程没有 detect、独立模块页、CLI）时按**逐图**
+处理，行为与改造前完全一致。本模块不依赖 Qt，worker 子进程与实时预览共用。
+
+### `class GroupMember`
+
+一张去底色输入图在分组里的身份。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `strip_side_suffix(label: str) -> str` | ``35-l`` / ``35-r`` → ``35``；没有后缀（整幅/半幅无侧）原样返回。 |
+| `load_plan_labels(boxes_path: str \| Path \| None) -> dict[str, dict]` | 读 ``boxes.json`` 的提交计划 → ``{产物名: {page, placeholder, role}}``。 |
+| `group_files(files, boxes_path: str \| Path \| None=None) -> list[list[GroupMember]]` | 把输入图按「源页」分组；没有 ``boxes_path`` 时每张图各自一组。 |
+| `group_of(files, target: str \| Path, boxes_path: str \| Path \| None=None) -> list[GroupMember]` | 在 ``files`` 里找 ``target`` 所在的分组（实时预览用）。 |
+
+#### `load_plan_labels(boxes_path: str | Path | None) -> dict[str, dict]`
+
+读 ``boxes.json`` 的提交计划 → ``{产物名: {page, placeholder, role}}``。
+
+只认 ``entry["plan"]["outputs"]``（「提交本次任务」写入的结构）。旧任务
+没有 plan，返回空表，调用方自然回落到逐图处理。
+
+#### `group_files(files, boxes_path: str | Path | None=None) -> list[list[GroupMember]]`
+
+把输入图按「源页」分组；没有 ``boxes_path`` 时每张图各自一组。
+
+同一页的 ``35-l`` / ``35-r`` 落进同一组（键是计划里的**源页名**）；
+计划里查不到的图单独成组——**不按后缀硬配对**，避免把来历不明的图
+与占位规则混在一起。
+
+---
+
 ## `desktop.services.rembg_live`
 
 源码：[`desktop/services/rembg_live.py`](../../desktop/services/rembg_live.py)
@@ -10030,9 +10086,12 @@ rembg 阶段执行器：**一步**完成整图去底色并直接落成品图。
 > 「生成预览」改成「执行去底色」，直接去底色到 rembg，不再需要预览了，
 > 图片直接全局 otsu……输入什么图片尺寸，输出就什么图片尺寸。
 
-所以这里**只有一个动作**：读输入图 → ``utils.rembg_page``（全局 Otsu）→
-白底转透明的 PNG 写进 ``stages/rembg[~节点]``。没有预览目录、没有提交动作，
-也不按检测框裁剪（裁剪已在第二步「提交本次任务」完成）。
+所以这里**只有一个动作**：读输入图 → ``utils.rembg_page``（所选阈值算法，
+默认全局 Otsu）→ 白底转透明的 PNG 写进 ``stages/rembg[~节点]``。没有预览目录、
+没有提交动作，也不按检测框裁剪（裁剪已在第二步「提交本次任务」完成）。
+
+每页实际使用的算法会写进任务根目录的 ``rembg_methods[~节点].json``
+（``{页名: 算法 key}``），供事后核对"这张图是按哪种方法去底色的"。
 
 产物一律是**白底透明**的 PNG（规则与编码形态的唯一实现在
 ``utils/transparent_png.py``）：第四步 PDF 排版依赖透明底叠在纸上。
@@ -10052,7 +10111,9 @@ args 约定：
 - ``input``：输入图片目录（或单张图片）；
 - ``_outpath``：精确输出目录（调用方给节点作用域后的 ``stages/rembg``）；
 - ``clean``：开始前清空输出目录；
-- ``offset/type/seal/sealcolor/sealarea/sealmin_sat``：去底色参数。
+- ``algorithm/window/k``：去底色算法与局部参数（``algorithm`` = 全量默认值）；
+- ``algorithms``：逐张算法覆盖表 ``{页名: 算法 key}``（用户单独调过的页）；
+- ``offset/type/seal/sealcolor/sealarea/sealmin_sat``：其他去底色参数。
 
 ``page_done`` 事件带 ``source``（输入图）与 ``output``（成品图），GUI 据此
 边跑边把该页刷成去底色结果。
@@ -11149,6 +11210,7 @@ BPM 编排引擎安全导入（与 :mod:`desktop.steps.spec` 同一约束）。
 | `suffix_last_segment(name: str, suffix: str) -> str` | 在路径**最后一段**插入后缀：目录名加在结尾、文件名加在扩展名前。 |
 | `scoped_name(name: str, node_id: str \| None, primary_id: str \| None) -> str` | 按**节点作用域**给一个名字加后缀：主节点/无节点 ⇒ 原名，副本 ⇒ ``~<节点>``。 |
 | `node_scope_from_output_dir(dir_name: str) -> str` | 从**产物目录名**里取出节点作用域后缀（``extract~Node_3`` → ``~Node_3``）。 |
+| `rembg_methods_path(out_dir) -> Path \| None` | 去底色「每页用了哪种算法」的侧车文件路径（worker / 实时预览共用）。 |
 | `copy_location(stage: str, port: str, node_id: str) -> str \| None` | **副本节点**（同阶段第二个及之后的节点）的相对落点；没登记返回 ``None``。 |
 | `node_location(stage: str, port: str, node_id: str \| None=None, primary_id: str \| None=None) -> str \| None` | **某节点实例**某端口的相对落点。 |
 | `artifact_path(task_dir: Path \| str, stage: str, port: str, node_id: str \| None=None, primary_id: str \| None=None) -> Path \| None` | 产物在任务目录下的**绝对路径**；该阶段没登记这个端口则 ``None``。 |
@@ -11371,6 +11433,16 @@ bpmn.io 里能把它改成任意字符串——拼进路径前必须洗一道，
 无后缀（主节点/单节点流程）⇒ 返回 ``""``。⚠️ 节点 id 经
 :func:`sanitize_node_id` 洗过 ⇒ **不含 ``~``**，所以按最后一个 ``~`` 切分是
 安全的：``~`` 只会出现在"主名~节点"这一处。
+
+#### `rembg_methods_path(out_dir) -> Path | None`
+
+去底色「每页用了哪种算法」的侧车文件路径（worker / 实时预览共用）。
+
+落点与 ``rembg_offsets[~节点].json`` 同级，都在**任务根目录**：
+``tasks/<任务号>/rembg_methods[~节点].json``，值是 ``{页名: 算法 key}``。
+
+只在 ``stages/`` 下的真实任务产物目录返回路径；模块页/自测的临时输出目录
+（父目录不叫 ``stages``）返回 ``None``——那里不该凭空长出一个任务侧车文件。
 
 #### `copy_location(stage: str, port: str, node_id: str) -> str | None`
 
@@ -13057,6 +13129,10 @@ JSON 文件，没有旧数据（SQLite）需要迁移。
 | `load_rembg_offsets(task_id: str, node_id: str \| None=None, primary_id: str \| None=None) -> dict[str, int]` | 读逐张偏移表 ``{页名: offset}``（只含非 0 项；坏文件当空表）。 |
 | `rembg_offset(task_id: str, image_key: str, node_id: str \| None=None, primary_id: str \| None=None) -> int` | 某张图片的阈值偏移（没记录过 = 0）。 |
 | `save_rembg_offset(task_id: str, image_key: str, offset: int, node_id: str \| None=None, primary_id: str \| None=None) -> None` | 记录某张图片的阈值偏移；**offset=0 就删掉这一项**（黑名单法）。 |
+| `rembg_algorithms_path(task_id: str, node_id: str \| None=None, primary_id: str \| None=None) -> Path` | **逐张图片**去底色算法的存储文件（只记用户单独改过的图片）。 |
+| `load_rembg_algorithms(task_id: str, node_id: str \| None=None, primary_id: str \| None=None) -> dict[str, str]` | 读逐张算法表 ``{页名: 算法 key}``；坏文件/未知算法当没记录。 |
+| `rembg_algorithm(task_id: str, image_key: str, node_id: str \| None=None, primary_id: str \| None=None) -> str` | 某张图片单独指定的算法；没记录过 = 默认 Otsu。 |
+| `save_rembg_algorithm(task_id: str, image_key: str, algorithm: str, node_id: str \| None=None, primary_id: str \| None=None) -> None` | 记录某张图片的算法（用户确实在这张图上改过时才调用）。 |
 | `imposition_output_dir(task_id: str) -> Path` | 「图片拼版」产出的成品拼版页图目录（列表顺序即页序）。 |
 | `print_output_pdf(task_id: str) -> Path` | print 阶段产物 print.pdf 的完整路径。 |
 | `task_diagram(task_id: str)` | 本任务的**流程图**（``FlowDiagram``：节点类型 + 坐标 + 折点）。 |
@@ -13082,6 +13158,7 @@ JSON 文件，没有旧数据（SQLite）需要迁移。
 | `step_enabled(task_id: str, step: str) -> bool` | 某个**可选步骤**的用户开关（``drafts/<步骤>.json`` 的 ``enabled``）。 |
 | `scheduler_flags(task_id: str, imposition_active: bool=False) -> dict[str, bool]` | 本任务传给状态机的条件开关表（key = 可选步骤 key）。 |
 | `task_scheduler(task_id: str, imposition_active: bool=False)` | 本任务的**状态机**（``Scheduler``）——"下一步跑谁 / 能不能跑 / 跳谁" |
+| `nearest_boxes_path(task_id: str, node_id: str \| None, imposition_active: bool=False) -> Path \| None` | 当前节点**沿流程往前最近的** ``boxes.json`` 路径（没有则 ``None``）。 |
 | `stage_output_dir(task_id: str, stage: str, node_id: str \| None=None) -> Path` | 返回某阶段（GUI）应写入的输出目录。 |
 | `workset_dir(task_id: str) -> Path` | 已废弃：检测/去底直接读 extract 输出目录，不再物化输入副本。 |
 | `runs_config_dir(task_id: str) -> Path` | 子进程执行配置（run-*.json / detect-config.json）。 |
@@ -13234,6 +13311,21 @@ exist_ok=False``，被抢就顺延），所以并发/历史残留时**实际拿�
 
 ⚠️ 只在用户**确实改过**这张图时调用；整表很小，读改写即可，不要为它
 再造缓存。
+
+##### `rembg_algorithms_path(task_id: str, node_id: str | None=None, primary_id: str | None=None) -> Path`
+
+**逐张图片**去底色算法的存储文件（只记用户单独改过的图片）。
+
+主节点沿用 ``rembg_algorithms.json``；同一步骤的副本节点落
+``rembg_algorithms~<节点>.json``（与 ``rembg_offsets`` 同一套命名）。
+
+##### `save_rembg_algorithm(task_id: str, image_key: str, algorithm: str, node_id: str | None=None, primary_id: str | None=None) -> None`
+
+记录某张图片的算法（用户确实在这张图上改过时才调用）。
+
+⚠️ 与 offset 的「黑名单法」不同：这里**连默认值 otsu 也照存**。
+原因是算法没有"0 等价未设置"的哨兵——用户明确把某页设回 otsu 时，
+它必须继续留在表里，不能被后续的全局值覆盖。
 
 ##### `imposition_output_dir(task_id: str) -> Path`
 
@@ -13488,6 +13580,18 @@ exist_ok=False``，被抢就顺延），所以并发/历史残留时**实际拿�
 
 与 :meth:`stage_input` 的分工：那个回答**"去哪个目录取产物"**，
 这个回答**"什么时候该跑、还差什么"**。
+
+##### `nearest_boxes_path(task_id: str, node_id: str | None, imposition_active: bool=False) -> Path | None`
+
+当前节点**沿流程往前最近的** ``boxes.json`` 路径（没有则 ``None``）。
+
+用户 2026-10-25 口径：去底色合并左右裁图阈值时，要用「执行链上面当前
+去底色节点之前最近的 detect 节点」写出的提交计划，而不是靠文件名猜
+占位/左右归属。
+
+``boxes`` 不是 rembg 声明的输入端口（它只吃 ``pages``），所以不能走
+:meth:`node_input`（那会因为没有声明而返回 ``None``）——这里直接问
+流程图：最近产出 ``boxes`` 的节点是谁，再取它的端口落点。
 
 ##### `stage_output_dir(task_id: str, stage: str, node_id: str | None=None) -> Path`
 

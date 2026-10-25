@@ -32,6 +32,7 @@ from core.command_spec import (
     TEXT_SIDE_MARGIN_MM,
 )
 from utils.page_layout import PAGE_NUMBER_FORMATS as _PAGE_NUMBER_FORMAT_VALUES
+from utils.rembg_algorithms import ALGORITHMS as _REMBG_ALGORITHMS
 
 # 不允许在表单中配置的键（系统管理：由 runner 按任务/阶段拼装）
 EXCLUDED_KEYS = ("input", "output", "workers", "clean", "resume", "_outpath")
@@ -57,6 +58,8 @@ EXTRACT_EXTS = list(OUTPUT_IMAGE_EXTS)  # 输出格式枚举（core 的唯一定
 # ⚠️ 2026-10-22：area 下拉候选表已随 area 参数整体删除——界面上没有这个控件，
 # 后端也不再有任何 area 分支。留着这张表只会变成第二份"看起来还能用"的界面数据。
 REMBG_TYPES = [(f"{v} ({name})", v) for v, name in zip(_REMBG_TYPES, ("二值", "1bit", "灰度"))]
+# 去底色算法下拉候选（显示文案与 key 都来自 utils.rembg_algorithms，唯一事实来源）
+REMBG_ALGORITHM_CHOICES = [(item.label, item.key) for item in _REMBG_ALGORITHMS]
 
 # print
 PAPER_SIZES = list(_PAPER_SIZES)

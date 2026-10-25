@@ -23,27 +23,29 @@ import numpy as np
 import cv2
 from typing import Optional, List, Tuple, cast
 
+from utils.rembg_algorithms import (
+    LOCAL_ALGORITHM_KEYS,
+    REMBG_DEFAULT_ALGORITHM,
+    REMBG_DEFAULT_K,
+    REMBG_DEFAULT_WINDOW,
+    get_algorithm,
+)
+
 
 # ---------- 阈值计算 ----------
-def calculate_auto_threshold(pixels: np.ndarray) -> int:
-    """大津法（Otsu）计算最佳阈值。
+def otsu_threshold_from_hist(hist: np.ndarray, total: int) -> int:
+    """从**直方图**算 Otsu 阈值（``calculate_auto_threshold`` 的内核）。
 
-    算法原理：遍历所有可能阈值 t (0~255)，将像素分为前景(≤t)和背景(>t)两类，
-    计算类间方差 σ² = w_b·w_f·(m_b - m_f)²，使 σ² 最大的 t 即为最佳阈值。
+    单独抽出来是为了让「同页左右裁图合并计算阈值」可以直接把多张图的
+    非白像素直方图相加，而不必先把像素拼成一个大数组（省一份整页内存）。
 
     参数:
-        pixels: 一维 uint8 像素数组（通常为非白像素子集）。
+        hist: 长度 256 的计数直方图（``np.bincount``/``np.histogram`` 均可）。
+        total: 直方图覆盖的像素总数。
 
     返回:
-        0~255 范围内的整数阈值。
-
-    实现细节:
-    - 使用直方图代替逐像素遍历，复杂度 O(256) 而非 O(N)；
-    - sum_total 预算所有像素值之和，避免重复求和；
-    - 当前景或背景像素数为 0 时跳过该阈值。
+        0~255 范围内的整数阈值（与逐像素版本逐位一致）。
     """
-    hist, _ = np.histogram(pixels, bins=256, range=(0, 256))
-    total = pixels.size
     sum_total = np.dot(np.arange(256), hist)  # 所有像素灰度值之和
     sum_b = 0      # 前景像素灰度值累计和
     w_b = 0        # 前景像素数
@@ -64,6 +66,27 @@ def calculate_auto_threshold(pixels: np.ndarray) -> int:
             max_var = var_between
             best_t = t
     return best_t
+
+
+def calculate_auto_threshold(pixels: np.ndarray) -> int:
+    """大津法（Otsu）计算最佳阈值。
+
+    算法原理：遍历所有可能阈值 t (0~255)，将像素分为前景(≤t)和背景(>t)两类，
+    计算类间方差 σ² = w_b·w_f·(m_b - m_f)²，使 σ² 最大的 t 即为最佳阈值。
+
+    参数:
+        pixels: 一维 uint8 像素数组（通常为非白像素子集）。
+
+    返回:
+        0~255 范围内的整数阈值。
+
+    实现细节:
+    - 使用直方图代替逐像素遍历，复杂度 O(256) 而非 O(N)；
+    - sum_total 预算所有像素值之和，避免重复求和；
+    - 当前景或背景像素数为 0 时跳过该阈值。
+    """
+    hist, _ = np.histogram(pixels, bins=256, range=(0, 256))
+    return otsu_threshold_from_hist(hist, int(pixels.size))
 
 
 # ---------- 红色印章提取 ----------
@@ -243,9 +266,25 @@ def apply_otsu_whole(
     返回:
         (H, W, 3) 彩色 或 (H, W) 单通道数组。
     """
+    return _render_text_mask(
+        img_rgb, gray, gray < threshold, red_mask, seal_color, img_type
+    )
+
+
+def _render_text_mask(
+    img_rgb: np.ndarray,
+    gray: np.ndarray,
+    text_mask: np.ndarray,
+    red_mask: Optional[np.ndarray],
+    seal_color: bool,
+    img_type: int = 1,
+) -> np.ndarray:
+    """**统一的去底收尾**：文本掩码 → 排除印章 → 形态学去噪 → 输出数组。
+
+    这是 ``apply_otsu_whole``（旧的阈值入参形态）与 ``rembg_page``（算法族形态）
+    共用的最后一步；把算法算出的掩码交给这里，四种输出类型的行为只有一份实现。
+    """
     H, W = gray.shape
-    # 文本掩码：灰度低于阈值 = 文字
-    text_mask = gray < threshold
     if red_mask is not None:
         # 排除印章区域，防止红色被误判为文字
         text_mask = text_mask & (~red_mask)
@@ -290,21 +329,31 @@ def rembg_page(
     img_rgb: np.ndarray,
     gray: np.ndarray,
     *,
+    algorithm: str = REMBG_DEFAULT_ALGORITHM,
     offset: int = REMBG_DEFAULT_OFFSET,
+    window: int = REMBG_DEFAULT_WINDOW,
+    k: float = REMBG_DEFAULT_K,
+    threshold: Optional[int] = None,
     img_type: int = REMBG_DEFAULT_TYPE,
     enable_seal: bool = REMBG_DEFAULT_ENABLE_SEAL,
     seal_color: bool = REMBG_DEFAULT_SEAL_COLOR,
     seal_area: int = REMBG_DEFAULT_SEAL_AREA,
     seal_min_sat: int = REMBG_DEFAULT_SEAL_MIN_SAT,
 ) -> np.ndarray:
-    """整页去底色的**唯一实现**：算阈值 → 叠加 offset → 整图去底。
+    """整页去底色的**唯一实现**：算法算掩码 → 统一收尾。
 
-    CLI（``functions.rembg``）与桌面端第三步的「实时预览」都调这里，保证界面
-    所见与最终产物逐像素一致——两处各写一份组装逻辑迟早会漂移。
+    CLI（``functions.rembg``）、桌面端第三步的全量执行与「实时预览」都调这里，
+    保证界面所见与最终产物逐像素一致——两处各写一份组装逻辑迟早会漂移。
 
     参数:
         img_rgb / gray: RGB 数组与灰度数组（同尺寸，H×W）。
-        offset: 阈值偏移（-100~100）。正数阈值更高 → 文字更粗更深。
+        algorithm: 阈值算法 key（见 ``utils.rembg_algorithms.ALGORITHMS``）；
+            默认 ``otsu``，与历史产物逐像素一致。
+        offset: 阈值偏移（-100~100）。正数阈值更高 → 文字更粗更深；
+            **只对全局算法生效**，局部算法是逐像素阈值，忽略 offset。
+        window / k: 局部算法的窗口边长与灵敏度；全局算法忽略。
+        threshold: 预计算的全局阈值（同页左右裁图共享时由调用方传入）；
+            为 ``None`` 时按本图自行计算。局部算法忽略该参数。
         img_type: 1=二值 / 2=1bit / 3=灰度（1bit 的转换由保存方负责）。
         enable_seal / seal_color / seal_area / seal_min_sat: 印章相关参数。
 
@@ -316,17 +365,21 @@ def rembg_page(
     if enable_seal:
         red_mask, _ = extract_red_seal(img_rgb, seal_area, seal_min_sat)
 
-    # 只让「非白像素」参与 Otsu：整页有大片白底，全图直算会把阈值拉偏。
-    # 非白像素不足 500 视为近似空白页，退化为固定 128。
-    non_white = gray < 250
-    if np.count_nonzero(non_white) > 500:
-        threshold = calculate_auto_threshold(gray[non_white]) + offset
+    # 阈值算法族（唯一实现）：入口灰度图，出口文本掩码（True=文字）。
+    algo = get_algorithm(algorithm)
+    if threshold is not None and algo.key not in LOCAL_ALGORITHM_KEYS:
+        # 同页左右裁图共享的阈值：直接按它出掩码，不再按本图重算。
+        text_mask = gray < int(threshold)
     else:
-        threshold = 128
-    # 夹紧阈值，避免极端 offset 把整页推成全黑或全白
-    threshold = min(max(threshold, 30), 240)
-
-    return apply_otsu_whole(img_rgb, gray, threshold, red_mask, seal_color, img_type)
+        # 局部算法逐像素定阈值：再叠一个全局常量偏移没有意义（用户 2026-10-24
+        # 口径），所有入口一律忽略；GUI 里选局部算法时 offset 控件也会置灰。
+        effective_offset = 0 if algo.key in LOCAL_ALGORITHM_KEYS else int(offset)
+        text_mask = algo.text_mask(
+            gray, offset=effective_offset, window=int(window), k=float(k)
+        )
+    return _render_text_mask(
+        img_rgb, gray, text_mask, red_mask, seal_color, img_type
+    )
 
 
 # ---------- border 参数解析 ----------

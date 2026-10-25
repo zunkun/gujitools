@@ -36,7 +36,7 @@ guji detect -i ./images --save     # 落地标注图（命令行必须带 --save
 | `extract.py`     | `ExtractFunction`     | `extract`    | `-e`  | 从 PDF 批量提取页面为图片                                                                   |
 | `detect.py`      | `DetectFunction`      | `detect`     | —     | 检测左右文本框坐标（默认不落盘，`--save` 输出标注图；crop/cropremove/GUI 的检测均复用此处） |
 | `crop.py`        | `CropFunction`        | `crop`       | —     | 基于 YOLO 检测裁剪文本框，逐框输出原图像素                                                  |
-| `rembg.py`       | `RembgFunction`       | `rembg`      | `-r`  | 整图 Otsu 去底色/二值化/印章保留                                                            |
+| `rembg.py`       | `RembgFunction`       | `rembg`      | `-r`  | 整图阈值去底色（7 种算法，默认 Otsu）/二值化/印章保留                                        |
 | `crop_remove.py` | `CropRemoveFunction`  | `cropremove` | `-cr` | 复合流程：YOLO 逐框裁剪 + 区域 Otsu 去底色                                                  |
 | `print.py`       | `PrintFunction`       | `print`      | —     | 将图片目录按规则生成为 PDF                                                                  |
 
@@ -114,6 +114,6 @@ rembg=`rembg`、cropremove=`rembg`、print=`pdf`。
 - [extract.md](extract.md) — PDF 提取：页码解析、缩放计算、渲染模式
 - [detect.md](detect.md) — 检测文本框：YOLO 推理、左右分割、坐标上报
 - [crop.md](crop.md) — 文本框裁剪：YOLO 检测、左右分割算法
-- [rembg.md](rembg.md) — 去底色：Otsu 阈值、HSV 印章提取、形态学去噪
+- [rembg.md](rembg.md) — 去底色：7 种阈值算法（默认 Otsu）、HSV 印章提取、形态学去噪
 - [cropremove.md](cropremove.md) — 复合流程：逐框裁剪 + 去底色
 - [print.md](print.md) — 图片生成 PDF：纸张、排序、标题和页码

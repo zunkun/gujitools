@@ -4,7 +4,7 @@
 
 通用工具函数：几何、排序、图像 IO、PDF、YOLO
 
-覆盖 27 个模块、14 个公开类、172 个公开函数/方法（生成于 2026-10-24）。
+覆盖 28 个模块、24 个公开类、187 个公开函数/方法（生成于 2026-10-25）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -25,7 +25,7 @@
 | [`utils.fonts`](#utilsfonts) | 1 | 13 |
 | [`utils.help`](#utilshelp) | 0 | 7 |
 | [`utils.image_io`](#utilsimage_io) | 0 | 2 |
-| [`utils.image_utils`](#utilsimage_utils) | 0 | 7 |
+| [`utils.image_utils`](#utilsimage_utils) | 0 | 8 |
 | [`utils.margin_utils`](#utilsmargin_utils) | 0 | 2 |
 | [`utils.page_layout`](#utilspage_layout) | 2 | 13 |
 | [`utils.path_utils`](#utilspath_utils) | 0 | 3 |
@@ -33,6 +33,7 @@
 | [`utils.pdf_extract`](#utilspdf_extract) | 0 | 10 |
 | [`utils.pdf_stream`](#utilspdf_stream) | 1 | 2 |
 | [`utils.proc_utils`](#utilsproc_utils) | 0 | 1 |
+| [`utils.rembg_algorithms`](#utilsrembg_algorithms) | 10 | 14 |
 | [`utils.sort_utils`](#utilssort_utils) | 0 | 1 |
 | [`utils.string_utils`](#utilsstring_utils) | 0 | 3 |
 | [`utils.transparent_png`](#utilstransparent_png) | 0 | 2 |
@@ -1615,13 +1616,28 @@ cv2 / numpy 体积大且加载慢，故在函数内延迟导入——GUI 主进�
 
 | 函数 | 说明 |
 | --- | --- |
+| `otsu_threshold_from_hist(hist: np.ndarray, total: int) -> int` | 从**直方图**算 Otsu 阈值（``calculate_auto_threshold`` 的内核）。 |
 | `calculate_auto_threshold(pixels: np.ndarray) -> int` | 大津法（Otsu）计算最佳阈值。 |
 | `extract_red_seal(rgb_img: np.ndarray, min_seal_area: int, min_saturation: int) -> Tuple[np.ndarray, bool]` | 从 RGB 图像中提取红色印章掩码。 |
 | `apply_otsu_to_region(img_rgb: np.ndarray, gray: np.ndarray, roi_box: tuple, threshold: int, enable_seal: bool, seal_color: bool, red_mask: Optional[np.ndarray], img_type: int=1) -> np.ndarray` | 对图像中指定矩形区域执行去底色处理，返回 ROI 大小的结果数组。 |
 | `apply_otsu_whole(img_rgb: np.ndarray, gray: np.ndarray, threshold: int, red_mask: Optional[np.ndarray], seal_color: bool, img_type: int=1) -> np.ndarray` | 对整张图执行去底色处理，返回与输入同尺寸的结果数组。 |
-| `rembg_page(img_rgb: np.ndarray, gray: np.ndarray, *, offset: int=REMBG_DEFAULT_OFFSET, img_type: int=REMBG_DEFAULT_TYPE, enable_seal: bool=REMBG_DEFAULT_ENABLE_SEAL, seal_color: bool=REMBG_DEFAULT_SEAL_COLOR, seal_area: int=REMBG_DEFAULT_SEAL_AREA, seal_min_sat: int=REMBG_DEFAULT_SEAL_MIN_SAT) -> np.ndarray` | 整页去底色的**唯一实现**：算阈值 → 叠加 offset → 整图去底。 |
+| `rembg_page(img_rgb: np.ndarray, gray: np.ndarray, *, algorithm: str=REMBG_DEFAULT_ALGORITHM, offset: int=REMBG_DEFAULT_OFFSET, window: int=REMBG_DEFAULT_WINDOW, k: float=REMBG_DEFAULT_K, threshold: Optional[int]=None, img_type: int=REMBG_DEFAULT_TYPE, enable_seal: bool=REMBG_DEFAULT_ENABLE_SEAL, seal_color: bool=REMBG_DEFAULT_SEAL_COLOR, seal_area: int=REMBG_DEFAULT_SEAL_AREA, seal_min_sat: int=REMBG_DEFAULT_SEAL_MIN_SAT) -> np.ndarray` | 整页去底色的**唯一实现**：算法算掩码 → 统一收尾。 |
 | `parse_border(border_value) -> Optional[List[int]]` | 解析 border 参数（像素单位），支持 CSS 风格 1~4 值写法。 |
 | `parse_border_mm(border_value, dpi: int=300) -> Optional[List[int]]` | 解析 border 参数（毫米单位），按 DPI 转换为像素。 |
+
+#### `otsu_threshold_from_hist(hist: np.ndarray, total: int) -> int`
+
+从**直方图**算 Otsu 阈值（``calculate_auto_threshold`` 的内核）。
+
+单独抽出来是为了让「同页左右裁图合并计算阈值」可以直接把多张图的
+非白像素直方图相加，而不必先把像素拼成一个大数组（省一份整页内存）。
+
+参数:
+    hist: 长度 256 的计数直方图（``np.bincount``/``np.histogram`` 均可）。
+    total: 直方图覆盖的像素总数。
+
+返回:
+    0~255 范围内的整数阈值（与逐像素版本逐位一致）。
 
 #### `calculate_auto_threshold(pixels: np.ndarray) -> int`
 
@@ -1699,16 +1715,22 @@ cv2 / numpy 体积大且加载慢，故在函数内延迟导入——GUI 主进�
 返回:
     (H, W, 3) 彩色 或 (H, W) 单通道数组。
 
-#### `rembg_page(img_rgb: np.ndarray, gray: np.ndarray, *, offset: int=REMBG_DEFAULT_OFFSET, img_type: int=REMBG_DEFAULT_TYPE, enable_seal: bool=REMBG_DEFAULT_ENABLE_SEAL, seal_color: bool=REMBG_DEFAULT_SEAL_COLOR, seal_area: int=REMBG_DEFAULT_SEAL_AREA, seal_min_sat: int=REMBG_DEFAULT_SEAL_MIN_SAT) -> np.ndarray`
+#### `rembg_page(img_rgb: np.ndarray, gray: np.ndarray, *, algorithm: str=REMBG_DEFAULT_ALGORITHM, offset: int=REMBG_DEFAULT_OFFSET, window: int=REMBG_DEFAULT_WINDOW, k: float=REMBG_DEFAULT_K, threshold: Optional[int]=None, img_type: int=REMBG_DEFAULT_TYPE, enable_seal: bool=REMBG_DEFAULT_ENABLE_SEAL, seal_color: bool=REMBG_DEFAULT_SEAL_COLOR, seal_area: int=REMBG_DEFAULT_SEAL_AREA, seal_min_sat: int=REMBG_DEFAULT_SEAL_MIN_SAT) -> np.ndarray`
 
-整页去底色的**唯一实现**：算阈值 → 叠加 offset → 整图去底。
+整页去底色的**唯一实现**：算法算掩码 → 统一收尾。
 
-CLI（``functions.rembg``）与桌面端第三步的「实时预览」都调这里，保证界面
-所见与最终产物逐像素一致——两处各写一份组装逻辑迟早会漂移。
+CLI（``functions.rembg``）、桌面端第三步的全量执行与「实时预览」都调这里，
+保证界面所见与最终产物逐像素一致——两处各写一份组装逻辑迟早会漂移。
 
 参数:
     img_rgb / gray: RGB 数组与灰度数组（同尺寸，H×W）。
-    offset: 阈值偏移（-100~100）。正数阈值更高 → 文字更粗更深。
+    algorithm: 阈值算法 key（见 ``utils.rembg_algorithms.ALGORITHMS``）；
+        默认 ``otsu``，与历史产物逐像素一致。
+    offset: 阈值偏移（-100~100）。正数阈值更高 → 文字更粗更深；
+        **只对全局算法生效**，局部算法是逐像素阈值，忽略 offset。
+    window / k: 局部算法的窗口边长与灵敏度；全局算法忽略。
+    threshold: 预计算的全局阈值（同页左右裁图共享时由调用方传入）；
+        为 ``None`` 时按本图自行计算。局部算法忽略该参数。
     img_type: 1=二值 / 2=1bit / 3=灰度（1bit 的转换由保存方负责）。
     enable_seal / seal_color / seal_area / seal_min_sat: 印章相关参数。
 
@@ -2499,6 +2521,158 @@ pid 对应的进程是否还活着。
 ⚠️ **保守优先**：任何"说不清"的情况（权限不足、psutil 不可用、平台差异）
 都返回 True（当作活着）。调用方是拿它做**删除判据**的（删暂存目录、删发现
 文件），把"不确定"当成"已死"就会误删正在用的东西；反过来只是少清一点垃圾。
+
+---
+
+## `utils.rembg_algorithms`
+
+源码：[`utils/rembg_algorithms.py`](../../utils/rembg_algorithms.py)
+
+整页去底色的**阈值算法族**：统一入口/出口 + 7 种实现。
+
+为什么单独一个模块
+------------------
+去底色原先只有一条「全局 Otsu」路径，阈值计算散在 ``utils/image_utils.py`` 里。
+用户 2026-10-24 要求把固定阈值、全局均值、Otsu、Niblack、Sauvola、Bernsen、
+Wolf-Jolion 都做成可选算法，并把「入口 / 出口」抽象成一套面向对象接口——这样
+加一种算法只需加一个子类，而不是在 ``rembg_page`` 里再长一条 ``if`` 分支。
+
+三条硬约定
+----------
+1. **入口 = 灰度图，出口 = 文本掩码**。
+   :meth:`RembgAlgorithm.text_mask` 吃 ``(H, W)`` 的 ``uint8`` 灰度数组，返回
+   ``(H, W)`` 的 ``bool`` 掩码（``True`` = 文字）。印章排除、形态学去噪与输出
+   类型（二值/1bit/灰度/彩色）都不属于算法本身，留在
+   :func:`utils.image_utils.rembg_page` 的公共收尾里。
+2. **Otsu 必须与旧实现逐像素一致**（默认算法，历史任务都按它出图）：
+   非白像素 > 500 时用「非白子集 + offset」，否则固定 128，最后夹到 [30, 240]。
+3. **本模块可被 GUI 主进程导入**：顶部不 import numpy/cv2，重依赖全部在函数内
+   延迟导入。桌面面板只取 :data:`ALGORITHMS` 里的 key/label，不会因此把 cv2
+   拉进主进程（域内规矩见 ``AGENTS.md``）。
+
+局部算法（Niblack / Sauvola / Bernsen / Wolf-Jolion）按**行分块**计算：一整页
+5000×4400 的 float32 中间数组约 88MB，整页算会乘上并发数；分块后峰值只与
+块宽有关，产物仍与整页计算等价（块上下各留 ``window // 2`` 行 halo，
+边界用 ``BORDER_REPLICATE``，与整页滤波一致）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| REMBG_DEFAULT_ALGORITHM | `"otsu"` |
+| REMBG_DEFAULT_WINDOW | `25` |
+| REMBG_DEFAULT_K | `0.2` |
+| THRESHOLD_MIN | `30` |
+| THRESHOLD_MAX | `240` |
+| _BLOCK_ROWS | `512` |
+| _DYNAMIC_RANGE | `128.0` |
+| _BERNSEN_CONTRAST_SCALE | `75.0` |
+
+### `class AlgorithmInfo`
+
+一种阈值算法的元数据（下拉框与帮助文案的唯一来源）。
+
+### `class RembgAlgorithm(ABC)`
+
+阈值算法基类：**入口 = 灰度图，出口 = 文本掩码**。
+
+子类只需实现 :meth:`thresholds`（全局算法返回一个整数阈值，局部算法返回
+与图像同尺寸的阈值图）；文字/背景的判定统一在 :meth:`text_mask` 里做。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `thresholds(gray: 'np.ndarray', *, offset: int=0, window: int=REMBG_DEFAULT_WINDOW, k: float=REMBG_DEFAULT_K) -> 'int \| np.ndarray'` | 计算阈值：整数（全局）或 ``(H, W)`` 数组（局部）。 |
+| `text_mask(gray: 'np.ndarray', *, offset: int=0, window: int=REMBG_DEFAULT_WINDOW, k: float=REMBG_DEFAULT_K) -> 'np.ndarray'` | **统一出口**：灰度 < 阈值 ⇒ ``True``（文字）。 |
+| `shared_threshold(grays: 'list[np.ndarray]', *, offset: int=0) -> 'int \| None'` | **多张图合并**算一个公共阈值（同页左右裁图共享）。 |
+
+##### `shared_threshold(grays: 'list[np.ndarray]', *, offset: int=0) -> 'int | None'`
+
+**多张图合并**算一个公共阈值（同页左右裁图共享）。
+
+默认返回 ``None``：局部算法逐像素定阈值，不能跨图共享。全局算法
+（fixed/mean/otsu）各自覆盖本方法，把多张图的统计量合在一起算。
+
+### `class FixedThresholdAlgorithm(RembgAlgorithm)`
+
+固定阈值：预设 128（叠加 offset 后夹紧）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `thresholds(gray, *, offset=0, window=REMBG_DEFAULT_WINDOW, k=REMBG_DEFAULT_K)` | — |
+| `shared_threshold(grays, *, offset=0)` | — |
+
+### `class GlobalMeanAlgorithm(RembgAlgorithm)`
+
+全局均值：整页平均灰度作阈值（叠加 offset 后夹紧）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `thresholds(gray, *, offset=0, window=REMBG_DEFAULT_WINDOW, k=REMBG_DEFAULT_K)` | — |
+| `shared_threshold(grays, *, offset=0)` | 多图合并的加权平均（按像素数加权），单图与 :meth:`thresholds` 一致。 |
+
+### `class OtsuAlgorithm(RembgAlgorithm)`
+
+Otsu 大津法：与旧 ``rembg_page`` 的阈值计算逐位一致。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `thresholds(gray, *, offset=0, window=REMBG_DEFAULT_WINDOW, k=REMBG_DEFAULT_K)` | — |
+| `shared_threshold(grays, *, offset=0)` | 多图合并：把各图非白像素的直方图相加，再算一次 Otsu。 |
+
+##### `shared_threshold(grays, *, offset=0)`
+
+多图合并：把各图非白像素的直方图相加，再算一次 Otsu。
+
+⚠️ 单图时与 :meth:`thresholds` **逐位一致**（同一直方图 + 同一循环）；
+多图时不需要把像素拼成一个大数组，峰值内存只多一张 256 长的直方图。
+
+### `class LocalAlgorithm(RembgAlgorithm, ABC)`
+
+局部算法的公共骨架：按行分块 → 每块算阈值图 → 拼回整页掩码。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `thresholds(gray, *, offset=0, window=REMBG_DEFAULT_WINDOW, k=REMBG_DEFAULT_K)` | 局部算法的阈值是逐像素图，统一出口是 :meth:`text_mask` 而不是这里。 |
+| `text_mask(gray, *, offset: int=0, window: int=REMBG_DEFAULT_WINDOW, k: float=REMBG_DEFAULT_K) -> 'np.ndarray'` | — |
+
+### `class NiblackAlgorithm(LocalAlgorithm)`
+
+Niblack：``T = mean - k × std``（k 取正值，内部固定为负号）。
+
+### `class SauvolaAlgorithm(LocalAlgorithm)`
+
+Sauvola：``T = mean × (1 + k × (std / R - 1))``，R=128。
+
+### `class WolfJolionAlgorithm(LocalAlgorithm)`
+
+Wolf-Jolion：``T = mean - k × (mean - M) × (1 - std / R)``。
+
+``M`` 是整页最小灰度（全局极值），用于低对比度/光照不均的页。
+
+### `class BernsenAlgorithm(LocalAlgorithm)`
+
+Bernsen：局部对比度（max - min）。
+
+对比度足够时取 ``(min + max) / 2``；对比度不足的平坦区按局部中值偏黑/偏白
+直接判为文字/背景。``k`` 映射为对比度下限（``k × 75``，默认 0.2 → 15）。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `clamp_global_threshold(value: float) -> int` | 全局阈值夹到 [30, 240]（避免极端 offset 把整页推成全黑/全白）。 |
+| `get_algorithm(key: Optional[str]) -> RembgAlgorithm` | 按 key 取算法实例；未知 key 抛 ``ValueError``（不静默回落）。 |
+| `text_mask(gray: 'np.ndarray', algorithm: Optional[str]=None, *, offset: int=0, window: int=REMBG_DEFAULT_WINDOW, k: float=REMBG_DEFAULT_K) -> 'np.ndarray'` | 便捷入口：灰度图 → 文本掩码（等价于 ``get_algorithm(...).text_mask(...)``）。 |
 
 ---
 

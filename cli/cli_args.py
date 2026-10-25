@@ -22,6 +22,7 @@ import argparse
 from pathlib import Path
 
 from cli.config_io import ConfigError
+from core.command_spec import REMBG_ALGORITHMS
 from utils.help import process_help_command, _DOC_MAP as _HELP_DOC_MAP
 
 
@@ -172,9 +173,34 @@ class CliArgsParser:
         rembg_parser.add_argument("-o", "--output", help="输出目录名称")
         rembg_parser.add_argument("--clean", action="store_true", help="清空输出目录")
         rembg_parser.add_argument(
+            "--algorithm",
+            choices=list(REMBG_ALGORITHMS),
+            help=(
+                "去底色阈值算法，默认 otsu\n"
+                "otsu/fixed/mean 为全局算法；niblack/sauvola/bernsen/wolf 为局部算法\n"
+                "可选：" + "/".join(REMBG_ALGORITHMS)
+            ),
+        )
+        rembg_parser.add_argument(
+            "--window",
+            type=int,
+            help="局部算法窗口边长（像素，>=3），默认25；全局算法忽略",
+        )
+        rembg_parser.add_argument(
+            "--k",
+            type=float,
+            help=(
+                "局部算法灵敏度（0~1），默认0.2；"
+                "Niblack 内部取负号，Bernsen 映射为对比度下限"
+            ),
+        )
+        rembg_parser.add_argument(
             "--offset",
             type=int,
-            help="二值阈值偏移量，正数文字加粗变深，负数文字变细，默认0",
+            help=(
+                "阈值偏移量（仅全局算法生效），正数文字加粗变深，负数文字变细，"
+                "默认0；局部算法忽略该参数"
+            ),
         )
         rembg_parser.add_argument(
             "--type",

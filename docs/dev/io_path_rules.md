@@ -265,6 +265,8 @@ tasks/<任务号>/
 ├── pages.json                当前参与处理的页清单
 ├── boxes.json                检测框坐标（端口 boxes）
 ├── rembg_offsets.json        逐张图片的阈值偏移（黑名单法，只记非 0）
+├── rembg_algorithms.json     逐张图片单独指定的去底色算法（只记用户改过的页）
+├── rembg_methods.json        每页实际使用的去底色算法（执行记录侧车）
 ├── sizes.json                页面图片原始尺寸（框坐标的缩放基准）
 ├── print.json                待打印列表 + 页序 + 逐页版面
 ├── runs.json                 每个阶段的执行历史（最新在前）

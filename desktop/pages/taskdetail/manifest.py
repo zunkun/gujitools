@@ -1588,7 +1588,11 @@ class PageListMixin:
         #    ``boxes~Node_2.json`` / ``print~Node_2.json`` 都在任务**根**下，
         #    下面 rmtree 的 ``stages``/``drafts`` 收不到它们——留着就是"换完源
         #    文件，旧书的页清单与检测框在副本节点上复活"。
-        for pattern in ("pages~*.json", "boxes~*.json", "sizes~*.json", "print~*.json"):
+        for pattern in (
+            "pages~*.json", "boxes~*.json", "sizes~*.json", "print~*.json",
+            # 逐张参数/算法/执行记录都是按**旧书页名**记的，换源后一律作废
+            "rembg_offsets*.json", "rembg_algorithms*.json", "rembg_methods*.json",
+        ):
             for stale in task_dir.glob(pattern):
                 try:
                     stale.unlink(missing_ok=True)

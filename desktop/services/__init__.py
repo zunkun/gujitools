@@ -2,6 +2,7 @@
 """桌面端业务规则层（纯逻辑，不依赖 Qt）。
 
 - print_plan   ：extract 缺页推导、rembg 提交条目/打印效果派生、待打印列表规划
+- rembg_groups ：去底色全局阈值的同页左右裁图分组（worker/实时预览共用）
 - submit_state ：rembg「提交本次任务」的版本状态机
 - imposition   ：图片拼版的版面派生（槽位/默认版面）与成品页合成
 """

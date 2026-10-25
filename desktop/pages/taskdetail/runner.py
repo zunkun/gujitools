@@ -607,6 +607,19 @@ class StageRunnerMixin:
                 args["offsets"] = self.store.load_rembg_offsets(
                     self.task_id, **self._node_scope(node)
                 )
+                # 逐张算法覆盖（白名单法）：用户单独改过算法的页按自己的值，
+                # 没记录的页用面板上的 ``args["algorithm"]``（全量默认算法）。
+                args["algorithms"] = self.store.load_rembg_algorithms(
+                    self.task_id, **self._node_scope(node)
+                )
+                # 当前去底色节点沿流程往前最近的 detect 提交计划：全局算法要
+                # 按「同页左右裁图」合并阈值（用户 2026-10-25 口径）。没有
+                # 上游 detect（自定义流程/独立模块）时为空，回落逐图计算。
+                boxes_path = self.store.nearest_boxes_path(
+                    self.task_id, node, self.imposition_effective()
+                )
+                if boxes_path is not None:
+                    args["_boxes_path"] = str(boxes_path)
             else:
                 # detect 的输出目录解析会在 output 后追加默认子目录名（detect）
                 args["output"] = str(self.store.task_dir(self.task_id) / "stages")

@@ -1,6 +1,7 @@
 """
 File: functions/rembg.py
-去底色功能：对单张图片执行整图 Otsu 二值化/灰度化/彩色保留印章。
+去底色功能：对单张图片执行整图阈值去底色（7 种算法，默认 Otsu），
+可灰度化/二值化/彩色保留印章。
 
 此功能对应 `guji rembg` 命令，处理流程：
 
@@ -13,12 +14,14 @@ File: functions/rembg.py
    - 连通域过滤噪声（面积/纵横比/填充率三重判定）。
 
 3. **阈值计算**
-   - 取非白像素（gray < 250）作为输入，调用 `calculate_auto_threshold` 计算 Otsu 阈值；
-   - 叠加 `offset` 偏移量，并限制在 [30, 240] 范围内；
-   - 非白像素不足 500 时退化为固定阈值 128。
+   - 按 `--algorithm` 选全局算法（固定/均值/Otsu）或局部算法（Niblack/
+     Sauvola/Bernsen/Wolf-Jolion），实现见 `utils.rembg_algorithms`；
+   - `offset` 只对全局算法生效（叠加后限制在 [30, 240]）；局部算法逐像素
+     定阈值，忽略 offset；
+   - 默认 Otsu：非白像素不足 500 时退化为固定阈值 128（与历史产物一致）。
 
 4. **去底处理**
-   - 调用 `apply_otsu_whole` 生成白底黑字输出；
+   - 算法输出文本掩码后，统一做印章排除、形态学去噪与输出类型转换；
    - 支持 3 种输出类型：二值(type=1)、1bit(type=2)、灰度(type=3)；
    - `--sealcolor` 开关下输出彩色图，保留红色印章原色。
 
@@ -145,14 +148,20 @@ class RembgFunction(FunctionBase):
         seal_color = self.command_args.get("sealcolor", False)
         offset = self.command_args.get("offset", 0)
         img_type = self.command_args.get("type", 1)
+        algorithm = self.command_args.get("algorithm", "otsu")
+        window = self.command_args.get("window", 25)
+        k = self.command_args.get("k", 0.2)
 
-        # 整图去底：阈值计算 + offset + 印章处理全部收在 utils.rembg_page。
+        # 整图去底：阈值算法 + offset + 印章处理全部收在 utils.rembg_page。
         # ⚠️ 必须走这个函数而不是自己拼 utils 的底层调用——桌面端的去底色
         #    阶段调的是同一个入口，两处组装逻辑分开写必然漂移。
         final_arr = utils.rembg_page(
             img_arr,
             gray_arr,
+            algorithm=str(algorithm),
             offset=int(offset),
+            window=int(window),
+            k=float(k),
             img_type=int(img_type),
             enable_seal=bool(enable_seal),
             seal_color=bool(seal_color),

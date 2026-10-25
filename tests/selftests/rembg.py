@@ -98,6 +98,39 @@ def run(ctx) -> None:
        [p.stem for p in _finals] == [p.stem for p in _inputs],
        f"{[p.name for p in _finals][:5]} vs {[p.name for p in _inputs][:5]}")
 
+    # --- 算法参数与「每页用了哪种算法」的执行记录 ---
+    from desktop.store.json_io import read_json
+
+    _p3_alg = d.control_stack.widget(2)
+    ok("去底色算法下拉默认 Otsu",
+       _p3_alg._combo_value(_p3_alg.algorithm) == "otsu",
+       str(_p3_alg._combo_value(_p3_alg.algorithm)))
+    _alg_args = _p3_alg.get_args()
+    ok("面板 get_args 透传 algorithm/window/k",
+       _alg_args.get("algorithm") == "otsu"
+       and _alg_args.get("window") == 25
+       and abs(float(_alg_args.get("k")) - 0.2) < 1e-9,
+       str({key: _alg_args.get(key) for key in ("algorithm", "window", "k")}))
+    _methods = read_json(repo.task_dir(tid) / "rembg_methods.json", {})
+    ok("执行记录逐页记下去底色算法（otsu）",
+       set(_methods) == {p.stem for p in _finals}
+       and set(_methods.values()) == {"otsu"},
+       str(_methods))
+    _runs = repo.list_stage_runs(tid, "rembg")
+    ok("运行记录 parameters 带 algorithm",
+       bool(_runs) and _runs[0].get("parameters", {}).get("algorithm") == "otsu",
+       str(_runs[:1]))
+
+    # 逐张算法表：单独改一张图不扩散到其它页（白名单法）
+    _scope = d._node_scope(d.current_node())
+    _one_stem = _finals[0].stem
+    d.store.save_rembg_algorithm(tid, _one_stem, "sauvola", **_scope)
+    ok("逐张算法表只记这一张图",
+       repo.load_rembg_algorithms(tid, **_scope) == {_one_stem: "sauvola"}
+       and repo.rembg_algorithm(tid, _finals[1].stem, **_scope) == "otsu",
+       str(repo.load_rembg_algorithms(tid, **_scope)))
+    d.store.save_rembg_algorithm(tid, _one_stem, "otsu", **_scope)
+
     # ⚠️ 执行时必须顺手生成第四步缩略图（不再对每条目现解码 6000px 原图）
     _s4_thumbs = sorted(repo.rembg_thumbnails_dir(tid).glob("*.jpg"))
     ok("执行时生成第四步缩略图（数量与成品图一致且不旧于成品图）",

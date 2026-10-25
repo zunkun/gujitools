@@ -88,8 +88,17 @@ def run(ctx) -> None:
     from desktop.services import rembg_live as live_mod
     from desktop.services.rembg_live import render_page
 
+    # 参考产物必须与实时任务带**同一套上下文**（上游 detect 的 boxes.json +
+    # 逐张算法表）：同页左右裁图合并阈值时，少传任一项都会算出不同阈值。
+    ref_args = panel.get_args()
+    _boxes_path = d.store.nearest_boxes_path(
+        tid, d.node_of_stage("rembg"), d.imposition_effective()
+    )
+    if _boxes_path is not None:
+        ref_args["_boxes_path"] = str(_boxes_path)
+    ref_args["algorithms"] = d.store.load_rembg_algorithms(tid, **scope)
     ref = Path(render_page(
-        str(entry_path), panel.get_args(), ctx.tmp / "rembg_live_ref"
+        str(entry_path), ref_args, ctx.tmp / "rembg_live_ref"
     ))
     ok("成品内容 == 当前面板参数的结果（offset 已落实到任务目录）",
        ref.read_bytes() == formal.read_bytes(), f"{ref} vs {formal}")
@@ -136,6 +145,40 @@ def run(ctx) -> None:
         ok("切回原图：显示的仍是它自己的成品",
            d.rembg_viewer._result_full_image() == formal,
            str(d.rembg_viewer._result_full_image()))
+
+        # ---- 4b. 逐张算法：改下拉 → 实时预览 → 落盘 → 切页回落 ----
+        panel.algorithm.setCurrentIndex(panel.algorithm.findData("sauvola"))
+        pump(app, times=1, interval=0.0)
+        ok("改算法触发实时预览防抖", d._live_timer.isActive())
+        d._live_timer.stop()
+        d._maybe_run_live_preview()
+        _wait(app, lambda: (d._live_done.get(stem) or {}).get("algorithm")
+              == "sauvola", timeout=40)
+        d._flush_pending_offset()
+        ok("选中算法后实时预览用的是新算法",
+           (d._live_done.get(stem) or {}).get("algorithm") == "sauvola",
+           str(d._live_done.get(stem)))
+        ok("逐张算法已落盘（只记当前这张图）",
+           repo.rembg_algorithm(tid, stem, **scope) == "sauvola"
+           and repo.rembg_algorithm(tid, other_stem, **scope) == "otsu",
+           str(repo.load_rembg_algorithms(tid, **scope)))
+        from desktop.store.json_io import read_json as _read_json
+        ok("执行记录侧车跟到新算法",
+           _read_json(repo.task_dir(tid) / "rembg_methods.json", {}).get(stem)
+           == "sauvola",
+           str(_read_json(repo.task_dir(tid) / "rembg_methods.json", {})))
+        d.rembg_viewer._select_image(1, other_path)
+        pump(app, times=6)
+        ok("切到没单独设过算法的页：回落默认 Otsu",
+           panel._combo_value(panel.algorithm) == "otsu",
+           str(panel._combo_value(panel.algorithm)))
+        d.rembg_viewer._select_image(0, entry_path)
+        pump(app, times=6)
+        ok("切回原图：恢复它记录的算法",
+           panel._combo_value(panel.algorithm) == "sauvola",
+           str(panel._combo_value(panel.algorithm)))
+        # 收尾：把这张图恢复成默认算法，避免影响后续模块的全量执行
+        d.store.save_rembg_algorithm(tid, stem, "otsu", **scope)
 
         # 用户 2026-10-23：切到**没有成品**的页（新占位图 / 上游换了页名）
         # 必须按当前参数自动补算，否则中间大图停在原图、看不到去底色效果。
@@ -194,14 +237,22 @@ def run(ctx) -> None:
         pump(app, times=1, interval=0.0)
         d._live_timer.stop()
         d._maybe_run_live_preview()
-        _wait(app, lambda: formal.stat().st_mtime_ns > mid_mtime, timeout=25)
+        # ⚠️ 等**台账**落地而不是只等文件：文件由 worker 线程写，记账要等排队
+        #    回主线程；只等 mtime 会读到"文件已新、台账还没更新"的中间态。
+        _wait(app, lambda: (
+            formal.stat().st_mtime_ns > mid_mtime
+            and (d._live_done.get(stem) or {}) == d._live_snapshot(panel.get_args())
+        ), timeout=40)
         d._flush_pending_offset()
         pump(app, times=4)
         ok("改回去：成品按原参数重算并覆盖（覆盖可逆）",
            formal.stat().st_mtime_ns > mid_mtime, str(formal))
         ok("盘上台账已跟到新参数",
            d._live_done.get(stem) == d._live_snapshot(panel.get_args()),
-           str(d._live_done.get(stem)))
+           f"ledger={d._live_done.get(stem)} "
+           f"panel={d._live_snapshot(panel.get_args())} "
+           f"pending={d._live_pending} "
+           f"log={d.log_view.toPlainText()[-400:]}")
         ok("offset 回到 0 后从黑名单里删除",
            repo.rembg_offset(tid, stem, **scope) == 0,
            str(repo.load_rembg_offsets(tid, **scope)))

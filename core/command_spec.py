@@ -26,6 +26,12 @@ from utils.image_utils import (
     REMBG_DEFAULT_SEAL_MIN_SAT,
     REMBG_DEFAULT_TYPE,
 )
+from utils.rembg_algorithms import (
+    ALGORITHM_KEYS,
+    REMBG_DEFAULT_ALGORITHM,
+    REMBG_DEFAULT_K,
+    REMBG_DEFAULT_WINDOW,
+)
 from utils.margin_utils import (
     DEFAULT_PAGE_MARGINS as _DEFAULT_PAGE_MARGINS,
     normalize_margin as _normalize_margin_impl,
@@ -53,6 +59,8 @@ TITLE_SIDES: Tuple[str, ...] = ("left", "right", "both")
 #: （以前 argparse 宣传 tiff、校验器只允许 jpg/png，用户按 --help 操作反而失败）。
 OUTPUT_IMAGE_EXTS: Tuple[str, ...] = ("jpg", "png", "tiff")
 REMBG_TYPES: Tuple[int, ...] = (1, 2, 3)
+#: 去底色阈值算法枚举（唯一定义处：``utils.rembg_algorithms.ALGORITHMS``）。
+REMBG_ALGORITHMS: Tuple[str, ...] = ALGORITHM_KEYS
 
 # 边距默认值（print）
 DEFAULT_PAGE_MARGINS: List[int] = [int(v) for v in _DEFAULT_PAGE_MARGINS]
@@ -215,11 +223,18 @@ def _validate_rembg(args) -> None:
     # ⚠️ 2026-10-22 起 rembg **不再有 area / border**：去底色就是整张图去底色，
     #    按检测框裁图挪到了「检测文本框」的「提交本次任务」（见 detect/submit）。
     _check_choice(args.get("type"), REMBG_TYPES, "type")
+    _check_choice(args.get("algorithm"), REMBG_ALGORITHMS, "algorithm")
     if args.get("sealarea") < 1:
         raise ValueError(f"sealarea 印章面积阈值必须 >=1，当前={args.get('sealarea')}")
     sat = args.get("sealmin_sat")
     if not (0 <= sat <= 255):
         raise ValueError(f"sealmin_sat 取值范围0‑255，当前={sat}")
+    window = args.get("window")
+    if window is not None and int(window) < 3:
+        raise ValueError(f"window 局部窗口边长必须 >=3，当前={window}")
+    k = args.get("k")
+    if k is not None and not (0 <= float(k) <= 1):
+        raise ValueError(f"k 局部算法灵敏度取值范围0‑1，当前={k}")
 
 
 def _validate_cropremove(args) -> None:
@@ -523,8 +538,12 @@ COMMAND_SPECS: Dict[str, CommandSpec] = {
     "rembg": CommandSpec(
         name="rembg",
         defaults={
-            # 值来自 utils/image_utils.py 的常量（那里是唯一定义处）
+            # 值来自 utils/image_utils.py / utils/rembg_algorithms.py 的常量
+            # （那里是唯一定义处）
             "offset": REMBG_DEFAULT_OFFSET,
+            "algorithm": REMBG_DEFAULT_ALGORITHM,
+            "window": REMBG_DEFAULT_WINDOW,
+            "k": REMBG_DEFAULT_K,
             "type": REMBG_DEFAULT_TYPE,
             "seal": REMBG_DEFAULT_ENABLE_SEAL,
             "sealcolor": REMBG_DEFAULT_SEAL_COLOR,
