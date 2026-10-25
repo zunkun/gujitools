@@ -5221,7 +5221,7 @@ render: ``(edge:int) -> worker``；cap: 渲染密度上限（如原图原生边�
 | RENDER_HEADROOM | `1.5` |
 | MIN_RENDER_EDGE | `1600` |
 | MAX_RENDER_EDGE | `4000` |
-| JPEG_QUALITY | `90` |
+| JPEG_QUALITY | `95` |
 | PAN_MARGIN_RATIO | `0.25` |
 | OVERWRITE_JPEG_QUALITY | `95` |
 
@@ -8929,7 +8929,7 @@ narrow_for       : (path_str) -> bool，该页是否**窄于全书**（单页扫
 ``size`` 是该条目图片的像素尺寸；``None`` 表示读不到文件头（坏图/被占用），
 该作业记 ``names=[]``——执行端据此报「无法读取图片」，不静默丢页。
 
-⚠️ 输出文件名规则（``{label}.png``；多画布 ``{label}-N.png``）**只在这里
+⚠️ 输出文件名规则（``{label}.jpg``；多画布 ``{label}-N.jpg``）**只在这里
 一份**：检测提交裁图端（``desktop.stages.detect_stage``）与 worker 合成端
 （``desktop.workers.preview_worker``）共用它，命名不会两处各写一套而漂移。
 
@@ -9822,6 +9822,12 @@ worker 起来只需几百毫秒，模型全局只加载一次、多次检测共�
 如何、花了多久」+「总计用时」。没有这些，一次检测跑完日志里只有进度条在动，
 用户根本不知道到底执行了什么。
 
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| SUBMIT_JPEG_QUALITY | `95` |
+
 ### 模块函数
 
 | 函数 | 说明 |
@@ -9829,7 +9835,7 @@ worker 起来只需几百毫秒，模型全局只加载一次、多次检测共�
 | `run_detect(config: dict) -> int` | 检测单张图片的内容框（半幅左右 / 整幅），返回像素坐标（重依赖由常驻服务承担）。 |
 | `run_detect_pages(files: list[Path], *, workers: int, reuse: dict \| None, report) -> dict` | 逐页检测（**全仓唯一实现**）：子进程阶段与 singletask 执行器都调这里。 |
 | `run_detect_stage(config: dict) -> int` | detect 阶段：逐图检测内容框（半幅左右 / 整幅）并上报坐标，不切割、不生成任何文件。 |
-| `run_detect_submit_stage(config: dict) -> int` | detect 提交：把**每个检测框**裁成一张图，写入 ``stages/detect``。 |
+| `run_detect_submit_stage(config: dict) -> int` | detect 提交：把**每个检测框**裁成一张图，写入 ``stages/detect``（JPG q95）。 |
 
 #### `run_detect_pages(files: list[Path], *, workers: int, reuse: dict | None, report) -> dict`
 
@@ -9868,7 +9874,7 @@ cropremove 用的同一入口），最终裁剪框由 GUI 按同一套规则
 
 #### `run_detect_submit_stage(config: dict) -> int`
 
-detect 提交：把**每个检测框**裁成一张图，写入 ``stages/detect``。
+detect 提交：把**每个检测框**裁成一张图，写入 ``stages/detect``（JPG q95）。
 
 用户 2026-10-22 口径：
 
@@ -9882,6 +9888,12 @@ detect 提交：把**每个检测框**裁成一张图，写入 ``stages/detect``
 几何/命名/张数（``plan_detect_submit_entries`` → ``entry_to_effect_spec``
 → ``plan_submit_job`` → ``compose_region_output``）：检测出几个框就裁几张
 图，``-l`` / ``-r`` 命名、单栏书归一化、用户指定左右这些既有约定不变。
+
+产物格式为 **JPEG q95（4:4:4）**：裁图只作为下一步去底色的输入，不需要
+无损；q95 在扫描件上与源像素 PSNR≈47.8dB，二值化后差异 ≤0.1%，体积
+约为旧 PNG 的 1/3、编码耗时约为 1/14（见 docs/dev/webp-format-benchmark.md
+的 3.2.1）。旧版本同页的 ``.png`` 会在写成功后删掉，避免下游把同一页
+的两个后缀当成两页。
 
 args["_effects"] = [
     {"file": 源页图, "label": 输出文件名(无扩展名),

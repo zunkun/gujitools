@@ -870,7 +870,9 @@ def _save_page_atomic(image, target: Path) -> None:
     """
     buf = io.BytesIO()
     if Path(target).suffix.lower() in _JPG_SUFFIXES:
-        _flatten_white(image).save(buf, format="JPEG", quality=JPEG_QUALITY)
+        _flatten_white(image).save(
+            buf, format="JPEG", quality=JPEG_QUALITY, subsampling=0,
+        )
     else:
         image.save(buf, format="PNG")
     write_bytes_atomic(target, buf.getvalue())

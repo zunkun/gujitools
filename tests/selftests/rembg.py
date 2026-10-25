@@ -89,7 +89,14 @@ def run(ctx) -> None:
 
     # rembg 直接处理**输入目录里的全部图片**（＝第二步提交裁好的那批），
     # 一条输入对应一条成品，文件名沿用页名（不裁剪、不缩放）。
-    _inputs = sorted(_crop_dir.glob("*.png"), key=lambda p: p.name)
+    # 提交裁图现在是 JPEG（旧任务可能是 PNG），这里两种后缀都认。
+    _inputs = sorted(
+        (
+            p for p in _crop_dir.iterdir()
+            if p.suffix.lower() in (".jpg", ".jpeg", ".png")
+        ),
+        key=lambda p: p.name,
+    )
     _finals = sorted(final_dir.glob("*.png"), key=lambda p: p.name)
     ok("成品图落在 stages/rembg（张数 == 输入张数）",
        len(_finals) == len(_inputs) > 0,

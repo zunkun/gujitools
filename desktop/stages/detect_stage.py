@@ -311,8 +311,13 @@ def run_detect_stage(config: dict) -> int:
 
 
 # ---------------------------------------------------------------- 提交（裁图）
-#: 提交裁图的并行 worker 数。瓶颈在 PNG 编码（与第三步提交同一个判据），
-#: 单个 worker 同时持有一整页位图 + 输出画布，峰值内存随线程数线性涨。
+#: 提交裁图的 JPEG 画质。裁图只是下一步去底色的输入，不需要无损；q95 +
+#: 4:4:4（subsampling=0）实测与源像素 PSNR≈47.8dB，二值化后差异 ≤0.1%，
+#: 体积约为原 PNG 的三分之一，编码耗时只有 PNG 的 1/14。
+SUBMIT_JPEG_QUALITY = 95
+
+#: 提交裁图的并行 worker 数。瓶颈在 JPEG 编码，单个 worker 同时持有一整页
+#: 位图 + 输出画布，峰值内存随线程数线性涨。
 #: ⚠️ 预算只走 ``core.args.machine_worker_budget()``（与函数层同一份），
 #: 这里**不自己调 ``os.cpu_count()``**——那等于第二份并发策略（护栏
 #: ``defaults_single_source`` 会盯着）。
@@ -327,7 +332,7 @@ SUBMIT_WORKERS = max(
 
 
 def run_detect_submit_stage(config: dict) -> int:
-    """detect 提交：把**每个检测框**裁成一张图，写入 ``stages/detect``。
+    """detect 提交：把**每个检测框**裁成一张图，写入 ``stages/detect``（JPG q95）。
 
     用户 2026-10-22 口径：
 
@@ -341,6 +346,12 @@ def run_detect_submit_stage(config: dict) -> int:
     几何/命名/张数（``plan_detect_submit_entries`` → ``entry_to_effect_spec``
     → ``plan_submit_job`` → ``compose_region_output``）：检测出几个框就裁几张
     图，``-l`` / ``-r`` 命名、单栏书归一化、用户指定左右这些既有约定不变。
+
+    产物格式为 **JPEG q95（4:4:4）**：裁图只作为下一步去底色的输入，不需要
+    无损；q95 在扫描件上与源像素 PSNR≈47.8dB，二值化后差异 ≤0.1%，体积
+    约为旧 PNG 的 1/3、编码耗时约为 1/14（见 docs/dev/webp-format-benchmark.md
+    的 3.2.1）。旧版本同页的 ``.png`` 会在写成功后删掉，避免下游把同一页
+    的两个后缀当成两页。
 
     args["_effects"] = [
         {"file": 源页图, "label": 输出文件名(无扩展名),
@@ -365,12 +376,12 @@ def run_detect_submit_stage(config: dict) -> int:
                     child.unlink()
         out_dir.mkdir(parents=True, exist_ok=True)
 
+        from PIL import Image
         from PySide6.QtGui import QImage, QImageReader
 
         from desktop.services.print_plan import plan_submit_job
         from desktop.stages.rembg_stage import _qimage_rgb_array
         from desktop.workers.preview_worker import compose_region_output
-        from utils.compact_png import save_png_compact
         from utils.file_utils import replace_with_retry
 
         # ---- 阶段一（主线程）：预计算每页的输出文件名 --------------------
@@ -386,12 +397,17 @@ def run_detect_submit_stage(config: dict) -> int:
         placeholder_total = sum(1 for j in jobs if j.get("placeholder"))
 
         def _save(image, dst: Path) -> None:
-            """无损紧凑 PNG 落盘（**绝不传 quality**，见 utils.compact_png）。"""
+            """JPEG q95 落盘（4:4:4）；原子写避免下游读到半截图。"""
             tmp = dst.with_name(dst.name + ".tmp")
-            save_png_compact(_qimage_rgb_array(image), tmp, dpi=(300, 300))
+            Image.fromarray(_qimage_rgb_array(image), "RGB").save(
+                tmp, "JPEG",
+                quality=SUBMIT_JPEG_QUALITY,
+                subsampling=0,
+                dpi=(300, 300),
+            )
             replace_with_retry(tmp, dst)
 
-        # ---- 阶段二（线程池）：并行 读图 → 逐框裁剪合成 → 写 PNG ----------
+        # ---- 阶段二（线程池）：并行 读图 → 逐框裁剪合成 → 写 JPG ----------
         # ⚠️ emit 只在主线程调（worker 线程往 stdout 写 JSON 行会交错）。
         def _process(job: dict):
             saved_names: list[str] = []
@@ -412,9 +428,9 @@ def run_detect_submit_stage(config: dict) -> int:
                 # 几何结果与预计算不一致（理论上不可能）：按张数现算，
                 # 命名规则不变，避免静默丢页
                 names = (
-                    [f"{job['label']}.png"]
+                    [f"{job['label']}.jpg"]
                     if len(outputs) == 1
-                    else [f"{job['label']}-{i + 1}.png"
+                    else [f"{job['label']}-{i + 1}.jpg"
                           for i in range(len(outputs))]
                 )
             for out, name in zip(outputs, names):
@@ -424,6 +440,8 @@ def run_detect_submit_stage(config: dict) -> int:
                 except Exception as exc:  # noqa: BLE001 - 单张失败不许拖垮整批
                     errors.append(f"写入失败: {dst}（{exc}）")
                     continue
+                # 旧版本产物是 .png：同页两个后缀会被下游当成两页（重复裁图）。
+                dst.with_suffix(".png").unlink(missing_ok=True)
                 saved_names.append(name)
             return saved_names, errors
 

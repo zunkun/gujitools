@@ -572,7 +572,7 @@ class ImageZoomDialog(QDialog, WorkerHost):
         suggested = str(Path.home() / f"{stem}.png")
         path, selected = QFileDialog.getSaveFileName(
             self, "保存图片", suggested,
-            "PNG 图片（无损） (*.png);;JPEG 图片（有损，画质 90） (*.jpg *.jpeg)",
+            "PNG 图片（无损） (*.png);;JPEG 图片（有损，画质 95） (*.jpg *.jpeg)",
         )
         if not path:
             return

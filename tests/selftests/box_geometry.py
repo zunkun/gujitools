@@ -164,7 +164,7 @@ def run(ctx) -> None:
     from desktop.stages import detect_stage, rembg_stage
 
     stage_src = inspect.getsource(detect_stage)
-    ok("检测提交阶段用线程池并行合成（PNG 编码是瓶颈）",
+    ok("检测提交阶段用线程池并行合成（JPEG 编码是瓶颈）",
        "ThreadPoolExecutor" in stage_src, "提交合成退回了串行")
     # 名称预计算必须走 ``plan_submit_job``（它内部用 region_canvas_specs 算画布
     # 张数），不许在阶段里自己数张数——那会和合成结果脱节。

@@ -229,7 +229,7 @@ GUI（QImage 渲染）共同消费同一份 `OutputLayout`，不得各自推导
     `params_spec.PRINT_DEFAULTS`（引用）→ `print_params._FORM_KEYS`（表单可见键）
     → `static/guji.yaml`。护栏 `config_template` 逐值校验 CLI ↔ yaml。
 - **第四步取图：只排版前面步骤落盘的成品图**（`SubmitMixin._build_print_effects`
-  / `submit.py`）。检测提交把每个框裁成一张图（`stages/detect`）、去底色
+  / `submit.py`）。检测提交把每个框裁成一张图（`stages/detect`，JPEG q95）、去底色
   一步把整图去底成透明 PNG（`stages/rembg`；拼版生效时是 `stages/imposition`），
   第四步只把列表**整图透传**（`effect=None`）——列表顺序
   即页序、删掉即消失；编辑第四步的「待打印图」则点「生成PDF」即生效。
@@ -295,7 +295,7 @@ GUI（QImage 渲染）共同消费同一份 `OutputLayout`，不得各自推导
   90°）；左旋用 `FIF.ROTATE` 的**水平镜像**（原图箭头在弧底指向左 = 顺时针/右旋）。
   自绘图标按 16/20/24/32/48 多档位塞进 QIcon，高分屏不掉清晰度。
 - **下载**：导出**整分辨率**（含翻转/旋转，与屏幕缩放无关）→ 保存对话框选
-  PNG（无损）或 JPEG（画质 90）。保存逻辑抽成 `save_image(image, path, quality)`
+  PNG（无损）或 JPEG（画质 95）。保存逻辑抽成 `save_image(image, path, quality)`
   以便自测（对话框在离屏环境弹不出来）。
 - **关窗**：作废在飞的渲染令牌 + `shutdown_workers()` + `canvas.clear()`
   （一张 4000px 预览约 45MB）。宿主换数据（`set_images`/`set_pdf`/`set_entries`/

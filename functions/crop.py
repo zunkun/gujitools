@@ -77,7 +77,9 @@ class CropFunction(TextRegionProcessor):
         if fmt == "PNG":
             save_kwargs.update({"optimize": True, "compress_level": 9})
         elif fmt == "JPEG":
-            save_kwargs.update({"quality": 95, "optimize": True})
+            # q95 + 4:4:4：与 extract 的 JPEG 导出同一画质口径（保住彩色印章的
+            # 色度细节；古籍正文多为灰阶，体积代价可接受）。
+            save_kwargs.update({"quality": 95, "optimize": True, "subsampling": 0})
         elif fmt == "WEBP":
             save_kwargs.update({"quality": 90})
 

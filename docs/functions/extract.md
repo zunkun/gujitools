@@ -197,6 +197,6 @@ guji extract -i ./pdfs/ -o ./images/
 
 - **quick 模式**：PDF 可能内嵌了原始扫描图片，直接提取比渲染更快。但若内嵌图片分辨率不足，应使用标准模式。
 - **缩放限制**：古籍扫描 PDF 通常页面宽度很大，zoom=2 可能导致输出图片超过 6000px，此时自动降低 zoom。
-- **JPEG 质量**：标准模式 quality=95, subsampling=0（无色度抽样）；快速模式 quality=85, subsampling=1（4:2:0 色度抽样，体积更小）。
+- **JPEG 质量**：渲染/转码路径 quality=95, subsampling=0（无色度抽样）；quick 直拷路径**原样写 PDF 内嵌 JPEG 字节**，不重编码（质量与体积由源文件决定）。
 - **不使用 FunctionBase 并发引擎**：PDF 渲染的并发逻辑在 `pdf_utils` 内部实现，ExtractFunction 直接重写 `execute()`。
 - **clean 默认值**：extract 的 clean 默认为 False（不自动清空），其他功能默认 True。

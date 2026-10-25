@@ -57,6 +57,14 @@ def _by_label(entries) -> dict:
     return {e["label"]: e for e in entries}
 
 
+def _near_gray(color, expected: int = 128, tolerance: int = 4) -> bool:
+    """JPEG 有损：深灰实心块写出再读回会有几级漂移，按容差判断。"""
+    return all(
+        abs(value - expected) <= tolerance
+        for value in (color.red(), color.green(), color.blue())
+    )
+
+
 def run(ctx) -> None:
     from tests.selftests._context import ok
 
@@ -233,8 +241,8 @@ def run(ctx) -> None:
        and spec["effect"] == {"boxes": [[25, 100, 475, 1300]], "border": "0"},
        str(spec))
     job = plan_submit_job(spec, (W, H))
-    ok("占位作业：输出名 = 标签.png、按单框合成、保留占位标记",
-       job["names"] == ["0001-l.png"] and job["compose"] is True
+    ok("占位作业：输出名 = 标签.jpg、按单框合成、保留占位标记",
+       job["names"] == ["0001-l.jpg"] and job["compose"] is True
        and job["placeholder"] is True
        and job["boxes"] == [[25, 100, 475, 1300]], str(job))
 
@@ -267,15 +275,22 @@ def run(ctx) -> None:
         },
     })
     ok("占位提交阶段 exit=0", rc == 0, f"rc={rc}")
-    written = sorted(p.name for p in out.glob("*.png"))
-    ok("占位提交阶段写出 0002.png", written == ["0002.png"], str(written))
-    image = QImage(str(out / "0002.png"))
+    written = sorted(p.name for p in out.glob("*.jpg"))
+    ok("占位提交阶段写出 0002.jpg", written == ["0002.jpg"], str(written))
+    from PIL import Image as _PILImage
+
+    with _PILImage.open(out / "0002.jpg") as saved_image:
+        ok("提交产物是 JPEG（不再是 PNG）",
+           saved_image.format == "JPEG", str(saved_image.format))
+    ok("提交 JPEG 画质为 95",
+       detect_stage.SUBMIT_JPEG_QUALITY == 95,
+       str(detect_stage.SUBMIT_JPEG_QUALITY))
+    image = QImage(str(out / "0002.jpg"))
     ok("占位产物尺寸 = 占位框尺寸（850×1200）",
        not image.isNull() and (image.width(), image.height()) == (850, 1200),
        f"{image.width()}x{image.height()}")
     ok("占位产物截的是原图内容（深灰），不是纯白",
        not image.isNull()
-       and image.pixelColor(0, 0).name() == "#808080"
-       and image.pixelColor(image.width() // 2, image.height() // 2).name()
-       == "#808080",
+       and _near_gray(image.pixelColor(0, 0))
+       and _near_gray(image.pixelColor(image.width() // 2, image.height() // 2)),
        image.pixelColor(0, 0).name())

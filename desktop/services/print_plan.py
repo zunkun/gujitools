@@ -398,7 +398,7 @@ def plan_submit_job(spec: dict, size: tuple[int, int] | None) -> dict:
     ``size`` 是该条目图片的像素尺寸；``None`` 表示读不到文件头（坏图/被占用），
     该作业记 ``names=[]``——执行端据此报「无法读取图片」，不静默丢页。
 
-    ⚠️ 输出文件名规则（``{label}.png``；多画布 ``{label}-N.png``）**只在这里
+    ⚠️ 输出文件名规则（``{label}.jpg``；多画布 ``{label}-N.jpg``）**只在这里
     一份**：检测提交裁图端（``desktop.stages.detect_stage``）与 worker 合成端
     （``desktop.workers.preview_worker``）共用它，命名不会两处各写一套而漂移。
 
@@ -425,8 +425,8 @@ def plan_submit_job(spec: dict, size: tuple[int, int] | None) -> dict:
         canvases = 1
         has_boxes = False
     names = (
-        [f"{label}.png"] if canvases == 1
-        else [f"{label}-{i + 1}.png" for i in range(canvases)]
+        [f"{label}.jpg"] if canvases == 1
+        else [f"{label}-{i + 1}.jpg" for i in range(canvases)]
     )
     job = {
         "file": str(spec["file"]), "compose": has_boxes,

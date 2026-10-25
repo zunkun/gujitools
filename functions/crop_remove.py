@@ -166,7 +166,10 @@ class CropRemoveFunction(TextRegionProcessor):
         if suffix in (".jpg", ".jpeg"):
             # JPEG 不支持 1bit/二值图，统一转 8bit 灰度或 RGB
             image = Image.fromarray(arr, "RGB") if arr.ndim == 3 else Image.fromarray(arr, "L")
-            image.convert("RGB").save(out_path, format="JPEG", quality=95, dpi=(300, 300))
+            image.convert("RGB").save(
+                out_path, format="JPEG", quality=95, subsampling=0,
+                dpi=(300, 300),
+            )
             return
         if suffix in (".tif", ".tiff"):
             # ⚠️ TIFF 必须显式给 format：PIL 从 ".tiff" 能猜，但从 ".tif" 也能猜，

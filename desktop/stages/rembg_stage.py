@@ -64,8 +64,8 @@ def _qimage_rgb_array(image):
        回收，数组就变成悬垂指针（产物里混进随机彩色像素，重则段错误）。
     3. ``convertToFormat`` 在格式已一致时会返回浅拷贝；这里只在格式不同时调用。
 
-    除去底色的透明 PNG 编码外，检测提交阶段的紧凑 PNG（``save_png_compact``）
-    也用它——两处都需要「Qt 位图 → RGB 数组」这同一个安全转换。
+    除去底色的透明 PNG 编码外，检测提交阶段的 JPEG q95 裁图也用它——两处
+    都需要「Qt 位图 → RGB 数组」这同一个安全转换。
     """
     import numpy as np
     from PySide6.QtGui import QImage

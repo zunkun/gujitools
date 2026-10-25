@@ -100,9 +100,9 @@ def run(ctx) -> None:
         sorted(_mine, key=lambda e: e["label"]),
         sorted([_bl, _br], key=lambda b: b[0], reverse=True),
     ):
-        _submitted = _out / f"{_entry['label']}.png"
+        _submitted = _out / f"{_entry['label']}.jpg"
         ok(f"提交产物存在：{_submitted.name}", _submitted.exists(),
-           str(sorted(p.name for p in _out.glob("*.png"))))
+           str(sorted(p.name for p in _out.glob("*.jpg"))))
         if not _submitted.exists():
             continue
         _ref = compose_region_output(_src, [_box], "0")
