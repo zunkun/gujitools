@@ -2449,6 +2449,36 @@ def run(ctx) -> None:
             _e.set_checked(True)
         import desktop.components.imposition.confirm_delete as _icdel
 
+        # 确认框**本体**（2026-10-26 用户报）：此前底座是 qfluentwidgets 的
+        # ``MessageBoxBase``（``MaskDialogBase``），它 ``setWindowFlags(
+        # FramelessWindowHint)`` 把窗口降级成主窗口里的**子控件遮罩**——
+        # 实机上点「删除」不生效、系统提示音"当当当"响（整个被模态禁用的
+        # 窗口树收不到点击）。这里钉住"真窗口 + 点删除能 accept"，替身
+        # 弹窗管不到这段。
+        _confirm = _icdel.BatchDeleteConfirmDialog(
+            [(0, _pages_backup[0])], page,
+        )
+        ok(
+            "批量删除确认框是**真窗口**（不是遮罩子控件）",
+            _confirm.isWindow() and _confirm.isModal(),
+            f"isWindow={_confirm.isWindow()} modal={_confirm.isModal()}",
+        )
+        ok(
+            "批量删除确认框：固定 520 宽、按钮文案与旧版一致",
+            _confirm.width() == _icdel.DIALOG_W
+            and _confirm.yesButton.text() == "删除"
+            and _confirm.cancelButton.text() == "取消",
+            f"{_confirm.width()} {_confirm.yesButton.text()}",
+        )
+        _confirm.yesButton.click()
+        ok(
+            "批量删除确认框：点「删除」= accept（实机点不动的回归）",
+            bool(_confirm.result()),  # 1 = QDialog.Accepted
+            f"result={_confirm.result()}",
+        )
+        _confirm.deleteLater()
+        pump(ctx.app, times=2)
+
         class _FakeConfirmDialog:
             def __init__(self, items, parent=None):
                 self.items = list(items)

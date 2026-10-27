@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 178 个模块、194 个公开类、1438 个公开函数/方法（生成于 2026-10-26）。
+覆盖 178 个模块、194 个公开类、1439 个公开函数/方法（生成于 2026-10-26）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -24,7 +24,7 @@
 | [`desktop.components.dialog_shell`](#desktopcomponentsdialog_shell) | 0 | 1 |
 | [`desktop.components.flow_dialog`](#desktopcomponentsflow_dialog) | 2 | 10 |
 | [`desktop.components.imposition.canvas`](#desktopcomponentsimpositioncanvas) | 1 | 27 |
-| [`desktop.components.imposition.confirm_delete`](#desktopcomponentsimpositionconfirm_delete) | 1 | 1 |
+| [`desktop.components.imposition.confirm_delete`](#desktopcomponentsimpositionconfirm_delete) | 1 | 2 |
 | [`desktop.components.imposition.page_list`](#desktopcomponentsimpositionpage_list) | 1 | 10 |
 | [`desktop.components.imposition.page_thumb`](#desktopcomponentsimpositionpage_thumb) | 1 | 14 |
 | [`desktop.components.imposition.panel`](#desktopcomponentsimpositionpanel) | 1 | 7 |
@@ -1561,6 +1561,15 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 - **高度封顶**：勾选的页再多，弹窗也不能无限变高——列表放进滚动区，
   超出封顶高度出现滚动条。
 
+⚠️ 底座是**真正的顶层模态窗口**（``QDialog``），**不能**用 qfluentwidgets 的
+``MessageBoxBase`` / ``MessageBox``：它们的 ``MaskDialogBase`` 会
+``setWindowFlags(Qt.FramelessWindowHint)``，把窗口类型降级成 ``Qt::Widget``
+——弹窗于是变成主窗口里的**子控件遮罩层**（``isWindow() == False``），
+不是窗口，就没有"模态窗口"该有的激活与焦点语义。实机（2026-10-26 用户报）
+表现为：点「删除」不生效、电脑还"当当当"响（点击落在一个不是窗口的遮罩上）。
+同页的「清空拼版」用的是 ``qfluentwidgets.Dialog``（``FramelessDialog``，
+真窗口），本弹窗此前是**全仓唯一**的遮罩式确认框，这就是差异所在。
+
 宿主（唤起与删除落盘）见 ``desktop/pages/taskdetail/imposition_pages.py``
 的 ``_on_imposition_batch_delete``。
 
@@ -1571,15 +1580,19 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 | DIALOG_W | `520` |
 | LIST_MAX_H | `264` |
 
-### `class BatchDeleteConfirmDialog(MessageBoxBase)`
+### `class BatchDeleteConfirmDialog(QDialog)`
 
 批量删除拼版页的确认框：正文折行 + 逐页列名 + 列表滚动。
+
+``exec()`` 走 ``QDialog`` 的嵌套事件循环：点「删除」= ``accept()``
+（返回 ``QDialog.Accepted``），点「取消」/按 Esc = ``reject()``。
 
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(pages: list, parent=None)` | ``pages`` 是被勾选的 ``[(页下标, 页数据), …]``（原顺序）。 |
+| `showEvent(event) -> None` | 显示时**显式置顶并激活**。 |
 
 ##### `__init__(pages: list, parent=None)`
 
@@ -1587,6 +1600,14 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 
 页数据只读它的 ``items``（两张源图），文案与左列清单同源
 （``page_source_stems`` + ``cn_page_label``）。
+
+##### `showEvent(event) -> None`
+
+显示时**显式置顶并激活**。
+
+父窗口是 qframelesswindow 的无边框主窗口，个别情况下（远程桌面、
+多屏、窗口刚从最小化恢复）系统不会把新弹窗提到最前；不置顶时
+用户点按钮点到的其实是"后面"的窗口，Windows 会响提示音。
 
 ---
 
