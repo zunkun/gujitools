@@ -10,7 +10,7 @@
 1. 连击的第二下被**静默**吞掉（不弹提示，免得刷一串"任务进行中"）；
 2. 子任务在跑时再点 → 拒绝并提示；
 3. **受理窗口期**（只有受理标记、还没进程对象）→ 照样拦住（就是上面那个洞）；
-4. 按钮状态跟随执行权，且「中断」只认子任务进程（检测在跑时不该亮）；
+4. 按钮状态跟随执行权：子任务或单页检测在跑时主按钮置灰；
 5. 「提交本次任务」与「执行本子任务」共用同一份执行权；
 6. 单页检测换页重检**允许顶替**（旧进程先断信号再杀，始终只有一个在跑）；
 7. **没跑起来的受理不占用防抖预算**（防抖量"距上次真正启动进程"，不是"距上次
@@ -87,10 +87,6 @@ def run(ctx) -> None:
     ok("执行按钮的 qss 完整（hasIcon 的 36px 左边距还在）",
        "hasIcon=true" in qss and "padding" in qss,
        f"样式表长度 {len(qss)}")
-    ok("「继续执行」「中断」两颗带图标按钮的 qss 同样完整",
-       all("hasIcon=true" in b.styleSheet() for b in (d.resume_button, d.cancel_button)),
-       str([len(b.styleSheet()) for b in (d.resume_button, d.cancel_button)]))
-
 
     # 专用任务：守卫要读阶段状态刷按钮，需要一个真实 task_id（用完即删）
     tid = repo.create_task(Path("D:/samples/守卫样例.pdf"), "hash-guard", "守卫样例")
@@ -162,15 +158,10 @@ def run(ctx) -> None:
 
         # ---- 4. 按钮状态 ----
         _reset(claim="子任务")
-        ok("持有执行权时主按钮置灰",
-           not d.run_button.isEnabled() and not d.resume_button.isEnabled())
-        ok("持有执行权时「中断」可用", d.cancel_button.isEnabled())
+        ok("持有执行权时主按钮置灰", not d.run_button.isEnabled())
 
         _reset(detect_proc=_FakeProc())
-        ok("单页检测在跑：主按钮置灰",
-           not d.run_button.isEnabled())
-        ok("单页检测在跑：「中断」不亮（它只杀子任务进程）",
-           not d.cancel_button.isEnabled())
+        ok("单页检测在跑：主按钮置灰", not d.run_button.isEnabled())
 
         # 释放只针对"受理标记"：假进程要撤掉，否则按钮本就该因它灰着
         _reset(claim="子任务")

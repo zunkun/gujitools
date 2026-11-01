@@ -106,14 +106,16 @@ def _audit(widget, label: str, ok, expect: dict) -> None:
             blank.append(row)
         elif not _near(got, want_rgb):
             bad_color.append((row, Path(entry["file"]).stem, got, want_rgb))
-        if item.text() != entry["label"]:
-            bad_text.append((row, item.text(), entry["label"]))
+        # 文字是**页码**（当前行号，四位补零），与条目自带的 label（源文件名）无关
+        want_text = f"{row + 1:04d}"
+        if item.text() != want_text:
+            bad_text.append((row, item.text(), want_text))
         if str(item.data(0x0100)) != str(entry["file"]):  # Qt.UserRole
             bad_path.append((row, Path(str(item.data(0x0100))).stem,
                              Path(entry["file"]).stem))
     ok(f"{label}：每一行的缩略图都是它自己那页（图不错位）",
        not bad_color, f"错位 {len(bad_color)} 行，前 3：{bad_color[:3]}")
-    ok(f"{label}：条目文字与数据层一致", not bad_text, str(bad_text[:3]))
+    ok(f"{label}：条目文字是按行重排后的页码", not bad_text, str(bad_text[:3]))
     ok(f"{label}：条目路径与数据层一致", not bad_path, str(bad_path[:3]))
     ok(f"{label}：没有行停在灰色占位图（图没被下标越界丢掉）",
        not blank, f"空白行 {blank[:6]}")

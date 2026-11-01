@@ -262,7 +262,7 @@ _SPECS: list[dict] = [
             "THUMB_EDGE": "PrintPreviewWidget",
             "_PAPER_TO_QPAGE": "PrintPreviewWidget",
             "__init__": "PrintPreviewWidget",
-            "_build_toolbar": "PrintPreviewWidget",
+            "_build_action_buttons": "PrintPreviewWidget",
             "_current_index": "PrintPreviewWidget",
             "_display": "PrintPreviewWidget",
             "_load_display": "PrintPreviewWidget",
@@ -277,7 +277,7 @@ _SPECS: list[dict] = [
             "_zoom_index": "PrintPreviewWidget",
             "_zoom_target": "PrintPreviewWidget",
             "count": "PrintPreviewWidget",
-            "download_requested": "PrintPreviewWidget",
+            "pdf_state_changed": "PrintPreviewWidget",
             "entries": "PrintPreviewWidget",
             "export_default_name": "PrintPreviewWidget",
             "export_failed": "PrintPreviewWidget",
@@ -285,6 +285,8 @@ _SPECS: list[dict] = [
             "export_image_requested": "PrintPreviewWidget",
             "hint": "PrintPreviewWidget",
             "image_saved": "PrintPreviewWidget",
+            "insert_after_requested": "PrintPreviewWidget",
+            "insert_before_requested": "PrintPreviewWidget",
             "insert_requested": "PrintPreviewWidget",
             "layout_changed": "PrintPreviewWidget",
             "navigate": "PrintPreviewWidget",
@@ -295,8 +297,10 @@ _SPECS: list[dict] = [
             "remove_selected": "PrintPreviewWidget",
             "set_entries": "PrintPreviewWidget",
             "set_pdf_path": "PrintPreviewWidget",
-            # thumbs.py -> PrintThumbsMixin（6 个）
+            "_show_context_menu": "PrintPreviewWidget",
+            # thumbs.py -> PrintThumbsMixin（7 个）
             "_apply_page_thumb": "PrintThumbsMixin",
+            "_page_label": "PrintThumbsMixin",
             "_emit_order_changed": "PrintThumbsMixin",
             "_load_page_thumbs": "PrintThumbsMixin",
             "_on_strip_order_changed": "PrintThumbsMixin",
@@ -322,8 +326,9 @@ _SPECS: list[dict] = [
         "cross": {
             "PrintPreviewWidget": [
                 "_emit_order_changed", "_load_page_thumbs", "_on_canvas_rect",
-                "_on_strip_order_changed", "_print_current", "_print_spec",
-                "_show_layout", "_sync_cache_order", "refresh_layout",
+                "_on_strip_order_changed", "_page_label", "_print_current",
+                "_print_spec", "_show_layout", "_sync_cache_order",
+                "refresh_layout",
             ],
             "PrintThumbsMixin": [
                 "THUMB_EDGE", "order_changed", "_current_index",

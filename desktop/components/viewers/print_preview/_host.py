@@ -41,6 +41,7 @@ class PrintPreviewHost(QWidget, ThumbsMixin, ZoomPopupMixin):
     _PAPER_TO_QPAGE: dict[Any, Any]
     _canvas_index: Any
     _canvas_image_size: Any
+    _context_menu: Any
     _empty_hint: Any
     _entries_cache: Any
     _entry_keys: Any
@@ -53,22 +54,21 @@ class PrintPreviewHost(QWidget, ThumbsMixin, ZoomPopupMixin):
     _thumb_provider: Any
     canvas: PrintLayoutCanvas
     caption: CaptionLabel
-    delete_button: PushButton
-    download_button: PrimaryPushButton
-    download_requested: Signal
     empty_label: QLabel
     export_failed: Signal
     export_finished: Signal
     export_image_button: PushButton
     export_image_requested: Signal
     hint: Signal
-    hint_label: CaptionLabel
     image_saved: Signal
+    insert_after_requested: Signal
+    insert_before_requested: Signal
     insert_button: PrimaryPushButton
     insert_requested: Signal
     layout_changed: Signal
     list: Any
     order_changed: Signal
+    pdf_state_changed: Signal
     print_button: PushButton
     print_failed: Signal
     print_finished: Signal
@@ -80,7 +80,7 @@ class PrintPreviewHost(QWidget, ThumbsMixin, ZoomPopupMixin):
     def _apply_page_thumb(self, key, image) -> None:
         ...
 
-    def _build_toolbar(self) -> QHBoxLayout:
+    def _build_action_buttons(self) -> None:
         ...
 
     def _capture_print_image(self, _page, image, _path: str) -> None:
@@ -119,6 +119,9 @@ class PrintPreviewHost(QWidget, ThumbsMixin, ZoomPopupMixin):
     def _on_zoom_image_saved(self, path_text: str, image=None) -> None:
         ...
 
+    def _page_label(self, row: int) -> str:
+        ...
+
     def _page_size_mm(self) -> tuple[float, float]:
         ...
 
@@ -147,6 +150,9 @@ class PrintPreviewHost(QWidget, ThumbsMixin, ZoomPopupMixin):
         ...
 
     def _set_mode(self, mode: str) -> None:
+        ...
+
+    def _show_context_menu(self, pos) -> None:
         ...
 
     def _show_layout(self, index: int) -> None:

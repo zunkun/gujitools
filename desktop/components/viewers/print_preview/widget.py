@@ -2,7 +2,7 @@
 """print 预览主控件 ``PrintPreviewWidget``：**装配点 + 展示主路径**。
 
 从 ``print_preview.py`` 拆出（2026-10-07）。本文件放：类头（信号/类属性）、
-``__init__``、工具栏、条目增删、当前页展示（``_load_display`` 等），以及
+``__init__``、动作按钮、条目增删、当前页展示（``_load_display`` 等），以及
 宿主协议（``_zoom_index`` / ``_zoom_target`` / ``_on_zoom_image_saved``）。
 缩略图、版面、导出分别由兄弟模块的 Mixin 提供；方法体逐字未改。
 
@@ -15,12 +15,11 @@ from pathlib import Path
 from typing import Callable
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPageSize
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 from qfluentwidgets import CaptionLabel, PrimaryPushButton, PushButton
 from qfluentwidgets import FluentIcon as FIF
 from desktop.ui import theme as T
 from desktop.ui import widgets as ui
-from desktop.ui.icons import PDF_FILE
 from desktop.ui.widgets import SegmentedToggle
 from desktop.workers import PreviewWorker, connect_queued
 from desktop.components.viewers.image_view import ImageView
@@ -45,8 +44,12 @@ class PrintPreviewWidget(
     """PDF排版预览：左侧待打印缩略图条（可拖动排序）+ 右侧单页效果。"""
 
     order_changed = Signal()        # 列表内容/顺序变化（含拖动与删除）
-    insert_requested = Signal()     # 请求插入图片
-    download_requested = Signal()   # 请求下载已生成的 PDF
+    insert_requested = Signal()     # 请求插入图片（默认落在当前页之后）
+    # 右键菜单：向前 / 向后插入图片（弹窗里落点可再改）
+    insert_before_requested = Signal()
+    insert_after_requested = Signal()
+    #: 已生成 PDF 的可用状态变了（宿主据此显示/隐藏右下方控制面板的「下载 PDF」）
+    pdf_state_changed = Signal(bool)
     # 请求把**当前页**导出为 A4 效果图片（宿主弹保存对话框，见 _export_print_image）
     export_image_requested = Signal()
     export_finished = Signal(str)   # 导出成功：文件路径
@@ -105,11 +108,13 @@ class PrintPreviewWidget(
         self._export_token = None   # 单页导出令牌：作废在飞的导出
         self._pdf_path: Path | None = None
         self._canvas_index = 0      # 当前在画布上编辑的页下标
+        #: 缩略图右键菜单（非阻塞弹窗，不持有引用就没人回收；见 _show_context_menu）
+        self._context_menu = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
-        layout.addLayout(self._build_toolbar())
+        self._build_action_buttons()
 
         body = QHBoxLayout()
         body.setSpacing(8)
@@ -123,7 +128,14 @@ class PrintPreviewWidget(
         self.strip.delete_requested.connect(self.remove_selected)
         self.strip.order_changed.connect(self._on_strip_order_changed)
         self.strip.current_path_changed.connect(self._select_image)
+        # 右键缩略图：删除当前图片（软删除，可在「插入图片」里恢复）/
+        # 向前插入 / 向后插入（均打开插入弹窗，落点可再改）
+        self.strip.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.strip.customContextMenuRequested.connect(self._show_context_menu)
         left.addWidget(self.strip, 1)
+        # 「插入图片」按钮放在缩略图**下面**（用户 2026-10-31）：
+        # 点它弹「恢复图片 / 新上传」弹窗，不再直接弹文件选择框。
+        left.addWidget(self.insert_button)
         body.addLayout(left)
         # 兼容旧名字：历史自测与宿主代码里有 print_preview.list 的用法
         self.list = self.strip
@@ -139,6 +151,10 @@ class PrintPreviewWidget(
         self.toggle.current_changed.connect(self._set_mode)
         toggle_row.addWidget(self.toggle)
         toggle_row.addStretch()
+        # 单页导出 / 单页打印：与「版面编辑 / 打印效果 / 原图」**同一行、靠右**
+        # （用户 2026-11-01：原来的顶部按钮行整行取消，这两颗挪到这一行）
+        toggle_row.addWidget(self.export_image_button)
+        toggle_row.addWidget(self.print_button)
         right.addLayout(toggle_row)
         self.caption = CaptionLabel("")
         right.addWidget(self.caption)
@@ -170,17 +186,19 @@ class PrintPreviewWidget(
 
 
     # ------------------------------------------------------------------ 构建
-    def _build_toolbar(self) -> QHBoxLayout:
-        toolbar = QHBoxLayout()
+    def _build_action_buttons(self) -> None:
+        """建预览区的动作按钮；**摆放位置**由 ``__init__`` 决定。
+
+        ⚠️ 顶部原来有一整行按钮（删除选中 / 下载本页图片 / 打印本页 / 下载 PDF），
+        用户 2026-11-01 要求整行取消：删除选中进窗口顶部菜单栏（见
+        ``desktop/ui/menu.py``），下载本页图片/打印本页挪到「版面编辑」那一行
+        右侧，下载 PDF 挪到右下方控制面板「生成PDF」的下一行（宿主负责）。
+        """
         self.insert_button = PrimaryPushButton(FIF.ADD, "插入图片")
+        self.insert_button.setToolTip(
+            "打开「插入图片」弹窗：可恢复已删除的图片，或新上传图片"
+        )
         self.insert_button.clicked.connect(self.insert_requested.emit)
-        self.delete_button = PushButton(FIF.DELETE, "删除选中")
-        self.delete_button.clicked.connect(self.remove_selected)
-        # 按钮带的就是 PDF 本身，用带 "PDF" 字样的图标（``FIF.SAVE`` 只是通用存档）
-        self.download_button = PrimaryPushButton(PDF_FILE, "下载 PDF")
-        self.download_button.setToolTip("请先执行「生成PDF」后再下载")
-        self.download_button.setEnabled(False)
-        self.download_button.clicked.connect(self.download_requested.emit)
         # 单页导出：当前页排进 A4 纸后的**最终效果**（与 PDF 同精度），不生成 PDF
         self.export_image_button = PushButton(FIF.IMAGE_EXPORT, "下载本页图片")
         self.export_image_button.setToolTip(
@@ -195,26 +213,8 @@ class PrintPreviewWidget(
             f"（{self.EXPORT_IMAGE_DPI}dpi，单页）"
         )
         self.print_button.clicked.connect(self._print_current)
-        self.hint_label = CaptionLabel("拖动缩略图排序 · Delete 删除选中")
-        # ⚠️ 提示文字是**次要信息**，必须能被压缩：QLabel 的 minimumSizeHint 默认
-        # 等于文字宽度（`setMinimumWidth(0)` 也压不动它，布局看的是 minimumSizeHint），
-        # 于是它会以固定宽度占住工具栏，把**整页/整个详情页**的最窄需求抬高——
-        # 窗口宽度固定时，被挤窄的是左侧控制面板（实测第三步输入框 200 → 178px，
-        # 正是 `panel_label_fit` 那条不变量在守的东西）。Ignored 策略让布局可以
-        # 把它压到 0，窄窗口下先牺牲提示、不牺牲输入框。
-        self.hint_label.setSizePolicy(
-            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
-        )
-        toolbar.addWidget(self.insert_button)
-        toolbar.addWidget(self.delete_button)
-        toolbar.addWidget(self.export_image_button)
-        toolbar.addWidget(self.print_button)
-        toolbar.addWidget(self.download_button)
-        toolbar.addStretch()
-        toolbar.addWidget(self.hint_label)
         # 初建时列表为空 → 先禁用（不能只等 set_entries，它会早退）
         self._sync_export_button()
-        return toolbar
 
 
     # ------------------------------------------------------------------ API
@@ -239,8 +239,9 @@ class PrintPreviewWidget(
             self.caption.setText("")
             return
         for index, entry in enumerate(entries):
-            label = entry.get("label") or Path(entry["file"]).stem
-            self.strip.add_page_item(str(label), str(entry["file"]))
+            # 缩略图下方的文字是**页码**（当前行号），不是源文件名：页码只在
+            # 列表顺序里成立，见 PrintThumbsMixin._page_label
+            self.strip.add_page_item(self._page_label(index), str(entry["file"]))
             self.strip.item(index).setData(Qt.ItemDataRole.UserRole + 1, index)
         self._load_page_thumbs()
         self._select_entry(0)
@@ -257,14 +258,10 @@ class PrintPreviewWidget(
 
 
     def set_pdf_path(self, path: str | Path | None) -> None:
-        """设置已生成 PDF 的路径；存在则启用下载按钮，否则禁用。"""
+        """记录已生成 PDF 的路径；宿主据此显示/隐藏右下方控制面板的下载按钮。"""
         p = Path(path) if path else None
         self._pdf_path = p if (p and p.exists()) else None
-        self.download_button.setEnabled(self._pdf_path is not None)
-        if self._pdf_path is not None:
-            self.download_button.setToolTip(f"下载 PDF：{self._pdf_path.name}")
-        else:
-            self.download_button.setToolTip("请先执行「生成PDF」后再下载")
+        self.pdf_state_changed.emit(self._pdf_path is not None)
 
 
     def remove_selected(self) -> None:
@@ -282,6 +279,43 @@ class PrintPreviewWidget(
         self._sync_export_button()
         self._emit_order_changed()
         self._load_display()
+
+
+    def _show_context_menu(self, pos) -> None:
+        """缩略图右键菜单：删除当前图片 / 向前插入 / 向后插入。
+
+        ⚠️ 先右键命中的条目设成当前行：用户点的是「这一张」，菜单动作
+        （删除/插入落点）必须作用在同一张上，不能沿用上一次的选中行。
+        """
+        item = self.strip.itemAt(pos)
+        if item is not None:
+            self.strip.setCurrentRow(self.strip.row(item))
+        if not self._entries_cache:
+            return
+        from qfluentwidgets import Action, FluentIcon as FIF, RoundMenu
+
+        # ⚠️ 菜单的父对象必须是**顶层窗口**（``self.window()``），不能用 ``self``：
+        #    qfluentwidgets 的 ``exec`` 只是非阻塞 ``show()``，Qt 会沿父链回溯
+        #    找 popup 的原生父窗口；父对象是页面里的嵌套控件时，回溯到的窗口
+        #    不是 top-level，控制台就会刷
+        #    ``QWidgetWindow(...) must be a top level window.``（用户 2026-11-01）。
+        #    上一份菜单也主动销毁：非阻塞 exec 不回收，右键一次就残留一个窗口。
+        previous = self._context_menu
+        if previous is not None:
+            previous.deleteLater()
+        menu = RoundMenu(parent=self.window())
+        self._context_menu = menu
+        for text, icon, slot in (
+            ("删除当前图片", FIF.DELETE, self.remove_selected),
+            ("向前插入图片", FIF.UP,
+             lambda: self.insert_before_requested.emit()),
+            ("向后插入图片", FIF.DOWN,
+             lambda: self.insert_after_requested.emit()),
+        ):
+            action = Action(icon, text, menu)
+            action.triggered.connect(slot)
+            menu.addAction(action)
+        menu.exec(self.strip.viewport().mapToGlobal(pos))
 
 
     def refresh_display(self) -> None:

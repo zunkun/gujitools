@@ -6,7 +6,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, cast
 
-from PySide6.QtWidgets import QFileDialog, QWidget
+from PySide6.QtWidgets import QDialog, QFileDialog, QWidget
 
 from desktop.services.print_plan import (
     drop_foreign_stage_pages,
@@ -14,7 +14,7 @@ from desktop.services.print_plan import (
     plan_print_entries,
     stale_rect_pages,
 )
-from desktop.utils.files import default_open_dir, list_stage_images
+from desktop.utils.files import list_stage_images
 from utils.sort_utils import natural_sort_key
 
 if TYPE_CHECKING:
@@ -47,6 +47,7 @@ class PrintListMixin:
         print_source_dir: Callable[[], Any]
         imposition_effective: Callable[[], bool]
         node_of_stage: Callable[[str], str | None]
+        current_stage: Callable[[], str]
         _node_scope: Callable[..., dict]
         # 本 Mixin 内部在多个方法间传递的快照（_print_entries 写、落盘读）
         _print_doc_snapshot: dict[str, Any]
@@ -199,13 +200,22 @@ class PrintListMixin:
         # ⚠️ 来源切换（拼版 ↔ 去底色）后，旧来源那一批还留在 print.json 里；
         # 不剔掉就会被当成"用户插入的外部图片"追加进 PDF（见 print_plan 的
         # drop_foreign_stage_pages）。
+        stages_root = self.store.task_dir(task_id) / "stages"
         cleaned = drop_foreign_stage_pages(
-            doc.get("pages") if doc else None,
-            source_dir,
-            self.store.task_dir(task_id) / "stages",
+            doc.get("pages") if doc else None, source_dir, stages_root,
         )
-        if doc and len(cleaned) != len(doc.get("pages") or []):
-            doc = {**doc, "pages": cleaned}
+        # 「已删除图片」同样要随来源切换清理：旧来源的页面残留既不该出现在
+        # 待打印列表，也不该出现在「恢复图片」里（恢复回来也取不到图）。
+        cleaned_deleted = drop_foreign_stage_pages(
+            doc.get("deleted_pages") if doc else None, source_dir, stages_root,
+        )
+        if doc and (
+            len(cleaned) != len(doc.get("pages") or [])
+            or len(cleaned_deleted) != len(doc.get("deleted_pages") or [])
+        ):
+            doc = {
+                **doc, "pages": cleaned, "deleted_pages": cleaned_deleted,
+            }
             self.store.save_print_doc(task_id, doc, **self._node_scope())
         # 「上一步更新了哪些图片」的记录 + 那些页的旧缩略图缓存失效：
         # 都在建表之前按**逐图判据**做掉（判据本体见 print_plan.rect_fits_image）。
@@ -241,9 +251,28 @@ class PrintListMixin:
             "rembg_snapshot": [],
             "pages": [],
         }
+        # 删除是**软删除**（用户 2026-10-31）：从列表里拿掉的条目记进
+        # ``deleted_pages``，供「插入图片 → 恢复图片」重新放回；文件本身不动。
+        # 用"上次落盘的 pages"与当前列表求差——拖动/删除/键盘 Delete 都走这里，
+        # 不必让每个删除入口各自上报（少一处就会漏记）。
+        previous = doc.get("pages") or []
+        current_files = {str(e.get("file")) for e in entries}
+        removed = [
+            p for p in previous
+            if str(p.get("file")) and str(p.get("file")) not in current_files
+        ]
+        deleted = list(doc.get("deleted_pages") or [])
+        known = {str(p.get("file")) for p in deleted}
+        for page in removed:
+            file_text = str(page.get("file"))
+            if file_text not in known:
+                deleted.append(ordered_page_record(page))
+                known.add(file_text)
         doc["pages"] = [
             ordered_page_record(e) for e in entries
         ]
+        if deleted:
+            doc["deleted_pages"] = deleted
         try:
             self.store.save_print_doc(self.task_id, doc, **self._node_scope())
         except OSError as exc:
@@ -259,26 +288,209 @@ class PrintListMixin:
                 f"待打印列表已更新（{self.print_preview.count()} 页）。"
             )
 
-    def _insert_print_images(self) -> None:
-        """插入外部图片到待打印列表末尾。"""
+    def _print_insert_dir(self) -> Path | None:
+        """「插入图片」的**复制落点**：``tasks/<任务号>/inserted/``。
+
+        ⚠️ 不能放 ``stages/`` 下：那一层是各阶段产物，``print_plan``
+        ``drop_foreign_stage_pages`` 会把"本任务其它阶段的残留"剔掉——用户插入的
+        图会被当成上一轮来源残留删掉。放任务根目录的兄弟目录，既不与阶段产物
+        混淆，也随「删除任务」整体清理。
+        """
+        if not self.task_id:
+            return None
+        return self.store.task_dir(self.task_id) / "inserted"
+
+    def _print_deleted_pages(self) -> list[dict]:
+        """当前任务里**已软删除、可恢复**的待打印条目。
+
+        只认 print.json 的 ``deleted_pages``（由 ``_save_print_order`` 记录），
+        文件已不存在的条目没有恢复价值，直接跳过。
+        """
+        if not self.task_id:
+            return []
+        doc = self.store.load_print_doc(self.task_id, **self._node_scope()) or {}
+        out: list[dict] = []
+        for page in doc.get("deleted_pages") or []:
+            file_text = str(page.get("file") or "")
+            if file_text and Path(file_text).exists():
+                out.append(dict(page))
+        return out
+
+    def _insert_print_images(self, position: str | None = None) -> None:
+        """打开「插入图片」弹窗（恢复已删除图片 / 新上传图片）。
+
+        ``position``：右键「向前插入 / 向后插入」指定的默认落点；工具栏按钮
+        不传，沿用旧行为「落在当前选中页之后」（弹窗里仍可改）。
+
+        弹窗底部的位置选项以**当前选中的页**为准（用户 2026-10-31：
+        「插入第x页之前 / 之后，x是当前的页」）。
+        """
         if not self.task_id:
             return
-        filenames, _ = QFileDialog.getOpenFileNames(
-            _parent(self),
-            "插入图片",
-            str(default_open_dir()),
-            "图片 (*.png *.jpg *.jpeg *.bmp *.tif *.tiff)",
+        from desktop.components.dialog_shell import shell_dialog
+        from desktop.components.print_insert_dialog import PrintInsertPanel
+
+        entries = self.print_preview.entries()
+        row = self.print_preview.strip.currentRow()
+        panel = PrintInsertPanel(
+            deleted=self._print_deleted_pages(),
+            current_row=row,
+            total=len(entries),
+            default_position=position or "after",
+            thumb_for=self._print_thumb_provider,
         )
+        dialog = shell_dialog(
+            "插入图片", panel, _parent(self),
+            size=(760, 640), ok_text="插入",
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        result = panel.result_data()
+        if not result["files"] and not result["deleted"]:
+            self._toast("warning", "未选择图片", "请勾选要恢复的图片或选择新图片。")
+            return
+        self._apply_print_insert(result, row)
+
+    def _apply_print_insert(self, result: dict, base_row: int) -> None:
+        """把弹窗结果落到列表：先恢复已删除图片，再异步复制新上传的图片。
+
+        ``base_row`` 是弹窗打开时选中的行（-1 = 未选中）。
+        """
+        if not self.task_id:
+            return
+        task_id = self.task_id
+        entries = self.print_preview.entries()
+        total = len(entries)
+        before = result.get("position") == "before"
+        if total <= 0:
+            insert_at = 0
+        elif base_row < 0:
+            insert_at = 0 if before else total
+        else:
+            insert_at = base_row if before else min(base_row + 1, total)
+        restored = [
+            dict(page) for page in result.get("deleted") or []
+            if Path(str(page.get("file") or "")).exists()
+        ]
+        if restored:
+            doc = self.store.load_print_doc(task_id, **self._node_scope()) or {
+                "rembg_snapshot": [], "pages": [],
+            }
+            restored_files = {str(p["file"]) for p in restored}
+            new_entries = list(entries)
+            new_entries[insert_at:insert_at] = restored
+            doc["pages"] = [ordered_page_record(e) for e in new_entries]
+            doc["deleted_pages"] = [
+                p for p in (doc.get("deleted_pages") or [])
+                if str(p.get("file")) not in restored_files
+            ]
+            try:
+                self.store.save_print_doc(task_id, doc, **self._node_scope())
+            except OSError as exc:
+                message = f"待打印列表保存失败：{type(exc).__name__}: {exc}"
+                self.log_view.append(message)
+                self._toast("error", "列表未保存", message)
+                return
+            # ⚠️ _print_entries 返回 (条目, 文档) 两件，set_entries 只要前者。
+            self.print_preview.set_entries(self._print_entries()[0])
+            entries = self.print_preview.entries()
+            self.print_preview.strip.setCurrentRow(
+                min(insert_at, max(len(entries) - 1, 0))
+            )
+            item = self.print_preview.strip.item(insert_at)
+            if item is not None:
+                self.print_preview.strip.scrollToItem(item)
+            self.log_view.append(
+                f"已恢复 {len(restored)} 张已删除的图片（第 {insert_at + 1} 页位置）。"
+            )
+        filenames = [str(p) for p in (result.get("files") or [])]
         if not filenames:
             return
-        entries = self.print_preview.entries()
+        task_id = self.task_id
+        # 落点锚点：插入位置**前一条**的路径。复制在后台，回来时按锚点重新定位
+        # （用户可能在复制期间又拖了列表）。
+        new_index = insert_at + len(restored)
+        anchor = (
+            entries[new_index - 1]["file"]
+            if 0 < new_index <= len(entries) else None
+        )
+        target_dir = self._print_insert_dir()
+        if target_dir is None:
+            return
+        try:
+            target_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            message = f"插入目录创建失败：{type(exc).__name__}: {exc}"
+            self.log_view.append(message)
+            self._toast("error", "插入图片失败", message)
+            return
+        # 主线程只算 (源, 目标) 对；重名避让：同一次多选里选到同一张图也要各自
+        # 落到不同文件名上（reserved 记录本次已占用的名字）。
+        jobs: list[tuple[Path, Path]] = []
+        reserved: set[str] = set()
         for filename in filenames:
             source = Path(filename)
-            entries.append({"file": str(source), "label": source.stem})
+            target = target_dir / source.name
+            counter = 1
+            while target.name in reserved or target.exists():
+                target = target_dir / f"{source.stem}-{counter}{source.suffix}"
+                counter += 1
+            reserved.add(target.name)
+            jobs.append((source, target))
+        from desktop.workers import CopyFilesWorker, connect_queued
+
+        worker = CopyFilesWorker(jobs)
+        self.run_worker(
+            lambda: worker,
+            lambda w, thread: (
+                connect_queued(
+                    self,
+                    w.finished,
+                    lambda done, errors: self._on_print_images_copied(
+                        done, errors, anchor, task_id, new_index
+                    ),
+                    thread,
+                ),
+                connect_queued(
+                    self,
+                    w.failed,
+                    lambda msg: self._toast("error", "插入图片失败", msg),
+                    thread,
+                ),
+                w.finished.connect(thread.quit),
+                w.failed.connect(thread.quit),
+            ),
+        )
+
+    def _on_print_images_copied(
+        self, done: list, errors: list, anchor: str | None, task_id: str,
+        fallback_index: int | None = None,
+    ) -> None:
+        """后台复制完成（主线程）：把成功的副本按锚点插进列表并刷新。"""
+        # 复制期间切了任务：这批文件属于旧任务，不能进新任务的清单
+        if self.task_id != task_id:
+            self.log_view.append("已切换任务，忽略上一次未完成的图片插入。")
+            return
+        if not self.task_id or not done:
+            if errors:
+                self._toast("error", "插入图片失败", errors[0][1])
+            return
+        entries = self.print_preview.entries()
+        insert_at = max(
+            0, min(int(fallback_index or 0), len(entries))
+        )
+        if anchor is not None:
+            for index, entry in enumerate(entries):
+                if entry.get("file") == anchor:
+                    insert_at = index + 1
+                    break
+        new_entries = [
+            {"file": str(Path(target)), "label": Path(target).stem}
+            for _source, target in done
+        ]
+        entries[insert_at:insert_at] = new_entries
         try:
-            self.store.save_print_pages(
-                self.task_id, entries, **self._node_scope()
-            )
+            self.store.save_print_pages(self.task_id, entries, **self._node_scope())
         except OSError as exc:
             # 同 _save_print_order：落盘失败必须可见，不能从 Qt 槽直接炸出去
             message = f"待打印列表保存失败：{type(exc).__name__}: {exc}"
@@ -287,7 +499,17 @@ class PrintListMixin:
             return
         # ⚠️ _print_entries 返回 (条目, 文档) 两件，set_entries 只要前者。
         self.print_preview.set_entries(self._print_entries()[0])
-        self.log_view.append(f"已插入 {len(filenames)} 张图片到待打印列表。")
+        # set_entries 会把当前行复位到第一页；落回第一张新图并滚到可见处，
+        # 让用户立刻看到"插在这里了"。
+        self.print_preview.strip.setCurrentRow(insert_at)
+        item = self.print_preview.strip.item(insert_at)
+        if item is not None:
+            self.print_preview.strip.scrollToItem(item)
+        note = f"已插入 {len(done)} 张图片（第 {insert_at + 1} 页位置）。"
+        if errors:
+            note += f"（{len(errors)} 张失败：{errors[0][1]}）"
+            self._toast("warning", "部分图片插入失败", errors[0][1])
+        self.log_view.append(note)
 
     def _latest_print_pdf_path(self) -> Path | None:
         """最近一次 print 执行产出的 PDF 路径（按 YAML pdf_name 解析）。
@@ -359,6 +581,18 @@ class PrintListMixin:
         if self._print_source_switched() or getattr(self, "_print_data_stale", False):
             return None
         return self._latest_print_pdf_path()
+
+    def can_delete_selected_print(self) -> bool:
+        """顶部菜单「编辑 → 删除选中」的启用判据：正在第四步且有选中项。"""
+        return (
+            self.current_stage() == "print"
+            and bool(self.print_preview.strip.selectedItems())
+        )
+
+    def delete_selected_print(self) -> None:
+        """顶部菜单「编辑 → 删除选中」：删掉缩略图条里选中的待打印图。"""
+        if self.can_delete_selected_print():
+            self.print_preview.remove_selected()
 
     def _download_print_pdf(self) -> None:
         """将已生成的 PDF 另存到用户选择的位置（默认下载目录、同名文件）。"""

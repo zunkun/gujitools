@@ -1967,9 +1967,7 @@ def run(ctx) -> None:
         ok(
             "拼版详情隐藏执行按钮组",
             not page.run_button.isVisible()
-            and not page.submit_button.isVisible()
-            and not page.resume_button.isVisible()
-            and not page.cancel_button.isVisible(),
+            and not page.submit_button.isVisible(),
         )
         ok(
             "详情里的拼版视图就是刚验证的那个控件",
@@ -2685,8 +2683,8 @@ def run(ctx) -> None:
             str(page._current_print_pdf_path()),
         )
         ok(
-            "「下载 PDF」按钮随之禁用",
-            not page.print_preview.download_button.isEnabled(),
+            "「下载 PDF」按钮随之收起",
+            page.download_row.isHidden(),
         )
         ok(
             "预览控件的 PDF 绑定被清空",
@@ -2779,9 +2777,9 @@ def run(ctx) -> None:
             f"data_stale={page._print_data_stale}",
         )
         ok(
-            "内容判旧后当前可用 PDF 为空、下载按钮禁用",
+            "内容判旧后当前可用 PDF 为空、下载按钮收起",
             page._current_print_pdf_path() is None
-            and not page.print_preview.download_button.isEnabled(),
+            and page.download_row.isHidden(),
             str(page._current_print_pdf_path()),
         )
         notice = page._regenerate_notice("print")

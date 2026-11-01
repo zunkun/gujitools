@@ -51,7 +51,7 @@ def _wait_new_image(widget, app, previous, timeout: float = 20.0):
 def run(ctx) -> None:
     from pathlib import Path
 
-    from PySide6.QtWidgets import QAbstractItemView, QSizePolicy
+    from PySide6.QtWidgets import QAbstractItemView
 
     from tests.selftests._context import ok, pump
 
@@ -589,9 +589,9 @@ def run(ctx) -> None:
         ok("顺序变化后 entries() 同步",
            [Path(e["file"]).stem for e in widget.entries()] == ["0002", "0001"],
            str([Path(e["file"]).stem for e in widget.entries()]))
-        ok("缩略图条文字顺序也同步",
+        ok("缩略图条文字顺序也同步（页码 = 当前行号，拖动后重排）",
            [widget.strip.item(i).text() for i in range(widget.strip.count())]
-           == ["0002", "0001"],
+           == ["0001", "0002"],
            str([widget.strip.item(i).text() for i in range(widget.strip.count())]))
 
         # 删除选中
@@ -599,6 +599,9 @@ def run(ctx) -> None:
         widget.remove_selected()
         ok("删除后列表与缓存同步",
            widget.strip.count() == 1 and widget.count() == 1)
+        ok("删除后剩下的页页码重新排序（不留着被删那版的旧号）",
+           widget.strip.item(0).text() == "0001",
+           widget.strip.item(0).text())
         ok("未选中时给出提示而不是静默",
            _hint_of(widget) == "请先在左侧缩略图条选中要删除的图片。")
     finally:
@@ -1218,15 +1221,6 @@ def run(ctx) -> None:
            str(exporter.export_default_name()))
         ok("无页时「下载本页图片」按钮不可点（不留死按钮）",
            not exporter.export_image_button.isEnabled(), "")
-        # ⚠️ 这条守的是**别的步骤**的布局：工具栏每加一个按钮都会抬高详情页的
-        # 最窄需求，而窗口宽度固定时被挤窄的是左侧控制面板——实测加这个按钮后
-        # 第三步的输入框从 ≥200px 掉到 178px（`panel_label_fit` 那条不变量红了）。
-        # 所以工具栏里的**次要提示文字必须可压缩**（QLabel 的 minimumSizeHint 等于
-        # 文字宽，`setMinimumWidth(0)` 压不动，只有 Ignored 策略才行）。
-        ok("工具栏提示文字可压缩（不会为它挤压左侧面板的输入框）",
-           exporter.hint_label.sizePolicy().horizontalPolicy()
-           == QSizePolicy.Policy.Ignored,
-           str(exporter.hint_label.sizePolicy().horizontalPolicy()))
 
         exporter.set_entries([{"file": str(export_src), "label": "0001"}])
         pump(app, times=4)
@@ -1361,8 +1355,14 @@ def run(ctx) -> None:
     # （用户 18:29 实测）。主窗口转发 + page.navigate_by_arrow 公开入口。
     app_src = (Path(__file__).resolve().parents[2]
                / "desktop/app.py").read_text(encoding="utf-8")
+    # ⚠️ 转发实现已搬到壳层（``ModuleShell.keyPressEvent`` → 详情页
+    #    ``navigate_by_arrow``）：主窗口只负责"把键交给壳层"，两条断言要一起看，
+    #    否则搬完家这条护栏会误报。
+    shell_src = (Path(__file__).resolve().parents[2]
+                 / "desktop/shell.py").read_text(encoding="utf-8")
     ok("主窗口把 ←/→ 转发给详情页（点击预览图后焦点落在主窗口）",
-       "def keyPressEvent" in app_src and "navigate_by_arrow" in app_src, "")
+       "def keyPressEvent" in app_src and "self.shell.keyPressEvent" in app_src
+       and "navigate_by_arrow" in shell_src, "")
     ok("详情页有 navigate_by_arrow 公开入口（主窗口转发用，含输入区守卫）",
        hasattr(detail, "navigate_by_arrow"), "")
     ok("预览组件暴露 navigate（方向键翻页入口）",

@@ -42,8 +42,13 @@ def run(ctx) -> None:
         app.processEvents(); time.sleep(0.05)
     _entries2, _ = d._print_entries()
     ok("删除的图片重新进入第四步不复活", len(_entries2) == 5, str(len(_entries2)))
-    # 恢复初始列表再往下走正式用例
-    d.store.save_print_doc(tid, {"rembg_snapshot": [], "pages": []})
+    # 恢复初始列表再往下走正式用例。
+    # ⚠️ 必须按**当前节点作用域**写：print.json 有"主节点用原名、副本用
+    # ``print~<节点>.json``"的隔离（还带 .owner 归属标记），不带 scope 会写到
+    # 另一份文件上，界面读的还是旧清单（删除页因此"恢复"不回来）。
+    d.store.save_print_doc(
+        tid, {"rembg_snapshot": [], "pages": []}, **d._node_scope()
+    )
     d._refresh_preview(3)
     ok("列表恢复 6 张", d.print_preview.count() == 6,
        str(d.print_preview.count()))
@@ -89,7 +94,12 @@ def run(ctx) -> None:
     doc = pymupdf.open(str(output_pdf))
     ok("输出 PDF 页数与列表一致", doc.page_count == 6, str(doc.page_count))
     doc.close()
-    ok("print.json 已保存", len(repo.load_print_pages(tid)) == 6)
+    # ⚠️ 必须按**当前节点作用域**读：print.json 有「主节点用原名、副本用
+    # ``print~<节点>.json``」的隔离，不带 scope 读到的可能是另一个节点/主名的
+    # 旧清单（删除后界面写的是 scoped 文件，主名仍留着旧页数）。
+    ok("print.json 已保存",
+       len(repo.load_print_pages(tid, **d._node_scope())) == 6,
+       str(len(repo.load_print_pages(tid, **d._node_scope()))))
     # worker 实际消费的运行配置（run-<run_id>.json）：取图必须是第三步
     # 「提交本次任务」的成品图，且不带任何区域合成规格（2026-10-01 起第四步
     # 不再拿去底图现算；第三步提交时就已逐框裁好）。
@@ -113,22 +123,27 @@ def run(ctx) -> None:
        not ({"_effects", "files", "page_rects"} & set(_hist_params))
        and _hist_params.get("pdf_name") == "print.pdf",
        str(sorted(_hist_params)))
-    # PDF 生成成功后下载按钮可用，且路径指向实际 PDF
+    # PDF 生成成功后下载按钮（右下方控制面板）出现，且路径指向实际 PDF
     _pdf = d._latest_print_pdf_path()
-    ok("生成 PDF 后下载按钮可用",
-       d.print_preview.download_button.isEnabled()
+    ok("生成 PDF 后下载按钮出现且可用",
+       not d.download_row.isHidden()
+       and d.download_print_button.isEnabled()
        and _pdf is not None and _pdf.exists()
        and d.print_preview._pdf_path == _pdf,
        str(_pdf))
 
     # 删除一条 → 列表与 print.json 同步，再重新生成
     d.print_preview.list.item(2).setSelected(True)
-    d.print_preview.remove_selected()
+    ok("顶部菜单「编辑 → 删除选中」：第四步有选中项时可点",
+       d.can_delete_selected_print() is True, "")
+    d.delete_selected_print()
     for _ in range(10):
         app.processEvents(); time.sleep(0.05)
     ok("删除条目后列表同步",
-       d.print_preview.count() == 5 and len(repo.load_print_pages(tid)) == 5,
-       f"count={d.print_preview.count()} json={len(repo.load_print_pages(tid))}")
+       d.print_preview.count() == 5
+       and len(repo.load_print_pages(tid, **d._node_scope())) == 5,
+       f"count={d.print_preview.count()} "
+       f"json={len(repo.load_print_pages(tid, **d._node_scope()))}")
     d.run_stage(resume=False)
     wait_worker(d, app, timeout=300)
     doc = pymupdf.open(str(repo.print_output_pdf(tid)))

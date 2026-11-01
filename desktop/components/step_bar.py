@@ -778,7 +778,12 @@ class StepBar(QWidget):
                 node, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
             )
             slot_row.addStretch(0)
-            insert_at = 2 * after + 2
+            # ⚠️ 夹到 ``row.count()``：流程只有**一个**真实步骤时（自定义流程
+            #    删掉了其它步骤），``2*after+2`` 会等于 2 而布局里只有 1 项，
+            #    Qt 打出 ``QBoxLayout::insert: index 2 out of range (max: 1)``
+            #    并**丢掉这次插入**——可选节点就静默不显示了（用户 2026-11-01
+            #    的报错）。夹到末尾等价于"插在这个步骤之后"，语义不变。
+            insert_at = min(2 * after + 2, row.count())
             row.insertWidget(
                 insert_at, connector, 0, Qt.AlignmentFlag.AlignVCenter
             )

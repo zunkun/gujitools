@@ -21,6 +21,17 @@ else:
 class PrintThumbsMixin(PrintPreviewHost):
     """缩略图路径/批量加载/条目排序缓存同步。"""
 
+    @staticmethod
+    def _page_label(row: int) -> str:
+        """缩略图下方的页码文字 = **列表当前位置**（1 起，四位补零）。
+
+        ⚠️ 不能用条目的 ``label``（= 源文件名）：那是**取图时**的名字，删除/
+        拖动之后它跟 PDF 的页序就对不上了（用户 2026-11-01 报「删除当前图片
+        后剩下的页面页码没有重新排序」）。页码只在视觉顺序里成立，所以由行号
+        算；异步缩略图到达、拖动重排、删除之后都要按行重写一遍。
+        """
+        return f"{row + 1:04d}"
+
     def _thumb_path_for(self, entry: dict) -> Path:
         """条目缩略图来源：条目自带 thumb → provider → 条目图片本身。"""
         spec = entry.get("thumb")
@@ -139,8 +150,9 @@ class PrintThumbsMixin(PrintPreviewHost):
         except ValueError:
             return
         entry = self._entries_cache[row]
-        label = entry.get("label") or Path(str(entry["file"])).stem
-        self.strip.set_item_icon(row, image, str(entry["file"]), str(label))
+        self.strip.set_item_icon(
+            row, image, str(entry["file"]), self._page_label(row)
+        )
 
 
     def _on_strip_order_changed(self) -> None:
@@ -166,7 +178,12 @@ class PrintThumbsMixin(PrintPreviewHost):
         # 当前所在的行号，两者一旦错位就会把缩略图写到别的页上
         self._entry_keys = [keys[i] for i in order]
         for row in range(self.strip.count()):
-            self.strip.item(row).setData(Qt.ItemDataRole.UserRole + 1, row)
+            item = self.strip.item(row)
+            item.setData(Qt.ItemDataRole.UserRole + 1, row)
+            # 页码跟着**新的行号**走（删除/拖动之后剩下的页要重新排序）
+            label = self._page_label(row)
+            if item.text() != label:
+                item.setText(label)
 
 
     def _emit_order_changed(self) -> None:

@@ -77,19 +77,95 @@ def run(ctx) -> None:
         holder.deleteLater()
         plain.deleteLater()
 
-    # ---- 4. 工具栏仍在（插入/删除/下载 PDF）----
+    # ---- 4. 预览区顶部按钮行已取消（用户 2026-11-01）----
     widget = PrintPreviewWidget()
     try:
-        ok("工具栏保留插入/删除/下载按钮",
-           widget.insert_button is not None
-           and widget.delete_button is not None
-           and widget.download_button is not None)
-        ok("下载按钮初始禁用（还没生成 PDF）",
-           widget.download_button.isEnabled() is False)
+        ok("预览区顶部按钮行已取消（删除选中 / 下载 PDF 不再挂预览控件上）",
+           not hasattr(widget, "delete_button")
+           and not hasattr(widget, "download_button")
+           and not hasattr(widget, "hint_label"))
+
+        # ---- 5. 插入图片在缩略图下面；单页导出/打印与视图切换同一行靠右 ----
+        def _sub_layout(layout, index: int):
+            if layout is None:
+                return None
+            item = layout.itemAt(index)
+            return item.layout() if item is not None else None
+
+        body = _sub_layout(widget.layout(), 0)
+        left = _sub_layout(body, 0)
+        right = _sub_layout(body, 1)
+        toggle_row = _sub_layout(right, 0)
+        ok("插入图片按钮紧跟缩略图条（同一左侧竖列的下方）",
+           left is not None
+           and left.indexOf(widget.strip) >= 0
+           and left.indexOf(widget.insert_button) == left.indexOf(widget.strip) + 1,
+           f"strip={left.indexOf(widget.strip) if left else None} "
+           f"insert={left.indexOf(widget.insert_button) if left else None}")
+        ok("「下载本页图片 / 打印本页」与「版面编辑」同一行、靠右",
+           toggle_row is not None
+           and toggle_row.indexOf(widget.toggle) >= 0
+           and toggle_row.indexOf(widget.export_image_button)
+           > toggle_row.indexOf(widget.toggle)
+           and toggle_row.indexOf(widget.print_button)
+           > toggle_row.indexOf(widget.export_image_button),
+           f"toggle={toggle_row.indexOf(widget.toggle) if toggle_row else None} "
+           f"export={toggle_row.indexOf(widget.export_image_button) if toggle_row else None} "
+           f"print={toggle_row.indexOf(widget.print_button) if toggle_row else None}")
+
+        # ---- 6. 右键菜单入口 + 两个「向前/向后插入」信号 ----
+        from PySide6.QtCore import Qt
+
+        ok("缩略图条开启自定义右键菜单",
+           widget.strip.contextMenuPolicy()
+           == Qt.ContextMenuPolicy.CustomContextMenu)
+        ok("右键「向前/向后插入」信号可用",
+           hasattr(widget, "insert_before_requested")
+           and hasattr(widget, "insert_after_requested"))
     finally:
         widget.deleteLater()
 
-    # ---- 5. 条目高度逐条自适应：不同宽高比的页面之间不再是"留白" ----
+    # ---- 7. 插入弹窗两个页签 + result_data() 契约 ----
+    from desktop.components.print_insert_dialog import PrintInsertPanel
+    from PySide6.QtWidgets import QListView
+
+    panel = PrintInsertPanel(
+        deleted=[{"file": str(ctx.tmp / "gone.png"), "label": "gone"}],
+        current_row=1,
+        total=4,
+    )
+    try:
+        ok("插入弹窗有两个页签（上传图片 / 删除恢复）", panel.stack.count() == 2)
+        # 用户 2026-11-01：页签顺序改成「上传图片」在前，默认停在第一个页签
+        ok("默认停在第一个页签「上传图片」",
+           panel.stack.currentIndex() == 0 and panel.toggle.current() == "upload")
+        ok("上传页的空白处是虚线拖放框（可拖入、可点击选图）",
+           hasattr(panel, "drop_area")
+           and panel.drop_area.acceptDrops(), str(dir(panel)))
+        ok("恢复页是图标网格（一行多张，不是一张一行）",
+           panel.restore_list.viewMode() == QListView.ViewMode.IconMode
+           and panel.restore_list.isWrapping(), str(panel.restore_list.viewMode()))
+        before_text = (
+            panel.before_radio.text() if panel.before_radio is not None else ""
+        )
+        after_text = (
+            panel.after_radio.text() if panel.after_radio is not None else ""
+        )
+        ok("位置选项写明当前页号（选第 2 行 → 第 2 页）",
+           "第 2 页" in before_text and "第 2 页" in after_text,
+           f"before={before_text} after={after_text}")
+        ok("默认落点为「当前页之后」",
+           panel.after_radio is not None and panel.after_radio.isChecked())
+        result = panel.result_data()
+        ok("result_data() 形状 = position/deleted/files",
+           set(result) == {"position", "deleted", "files"}
+           and result["position"] == "after"
+           and result["deleted"] == [] and result["files"] == [],
+           str(result))
+    finally:
+        panel.deleteLater()
+
+    # ---- 8. 条目高度逐条自适应：不同宽高比的页面之间不再是"留白" ----
     # 根因：早先网格单元统一高度（竖框 156 + 文字行），横幅双页拼合图缩进
     # 竖框后只占约一半幅高，剩下的是单元内空白；而网格高度若取"最高那张"，
     # 矮一点的条目各自留的空白还不一样大 → 用户看到"同高图间距 0、

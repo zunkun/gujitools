@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 178 个模块、194 个公开类、1439 个公开函数/方法（生成于 2026-10-26）。
+覆盖 179 个模块、195 个公开类、1444 个公开函数/方法（生成于 2026-11-01）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -45,6 +45,7 @@
 | [`desktop.components.panels.print_sections`](#desktopcomponentspanelsprint_sections) | 1 | 0 |
 | [`desktop.components.panels.print_text_layout`](#desktopcomponentspanelsprint_text_layout) | 1 | 0 |
 | [`desktop.components.panels.rembg_panel`](#desktopcomponentspanelsrembg_panel) | 1 | 1 |
+| [`desktop.components.print_insert_dialog`](#desktopcomponentsprint_insert_dialog) | 1 | 2 |
 | [`desktop.components.progress_row`](#desktopcomponentsprogress_row) | 1 | 8 |
 | [`desktop.components.step_bar`](#desktopcomponentsstep_bar) | 2 | 20 |
 | [`desktop.components.task_table`](#desktopcomponentstask_table) | 3 | 10 |
@@ -111,7 +112,7 @@
 | [`desktop.pages.taskdetail.manifest`](#desktoppagestaskdetailmanifest) | 1 | 6 |
 | [`desktop.pages.taskdetail.page`](#desktoppagestaskdetailpage) | 1 | 22 |
 | [`desktop.pages.taskdetail.params_draft`](#desktoppagestaskdetailparams_draft) | 1 | 1 |
-| [`desktop.pages.taskdetail.print_list`](#desktoppagestaskdetailprint_list) | 1 | 1 |
+| [`desktop.pages.taskdetail.print_list`](#desktoppagestaskdetailprint_list) | 1 | 3 |
 | [`desktop.pages.taskdetail.rembg_live`](#desktoppagestaskdetailrembg_live) | 1 | 0 |
 | [`desktop.pages.taskdetail.runner`](#desktoppagestaskdetailrunner) | 1 | 2 |
 | [`desktop.pages.taskdetail.submit`](#desktoppagestaskdetailsubmit) | 1 | 2 |
@@ -162,7 +163,7 @@
 | [`desktop.ui.help_dialog`](#desktopuihelp_dialog) | 0 | 6 |
 | [`desktop.ui.icons`](#desktopuiicons) | 2 | 5 |
 | [`desktop.ui.log_throttle`](#desktopuilog_throttle) | 1 | 5 |
-| [`desktop.ui.menu`](#desktopuimenu) | 3 | 17 |
+| [`desktop.ui.menu`](#desktopuimenu) | 3 | 18 |
 | [`desktop.ui.segmented_toggle`](#desktopuisegmented_toggle) | 1 | 14 |
 | [`desktop.ui.style`](#desktopuistyle) | 0 | 3 |
 | [`desktop.ui.theme`](#desktopuitheme) | 0 | 3 |
@@ -2861,6 +2862,40 @@ print 面板「位置」「文字方向」的固定取值（由 PrintFormMixin �
 | 方法 | 说明 |
 | --- | --- |
 | `get_args() -> dict` | 收集去底色参数（算法/窗口/k/type/offset/印章）。 |
+
+---
+
+## `desktop.components.print_insert_dialog`
+
+源码：[`desktop/components/print_insert_dialog.py`](../../desktop/components/print_insert_dialog.py)
+
+第四步「插入图片」弹窗面板：**上传图片 / 恢复已删除图片**。
+
+用户 2026-10-31 的口径：
+
+- 缩略图右键给「删除当前图片 / 向前插入图片 / 向后插入图片」；
+- 「插入图片」按钮从缩略图**顶部**挪到缩略图**下面**，点开是弹窗；
+- 弹窗两个页签：「上传图片」拖入/选择本地图、「恢复图片」列出已删除的图
+  （可多选恢复）；
+- 底部选落点：**插入第 x 页之前 / 之后**（x = 当前选中的页）。
+
+用户 2026-11-01 的口径（本版）：页签顺序改为「上传图片」在前、「删除恢复」
+在后；上传页空白处做成**虚线拖放框**（可拖入图片、点击打开文件选择框）；
+恢复页的列表改成**一行多张**的图标网格。
+
+⚠️ 本面板只负责收集用户意图，不碰数据层：恢复/复制由宿主
+（``pages/taskdetail/print_list.py``）落盘与执行。
+
+### `class PrintInsertPanel(QWidget)`
+
+「插入图片」弹窗的内容面板。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(*, deleted: list[dict] \| None=None, current_row: int=-1, total: int=0, default_position: str='after', thumb_for: Callable[[str], object] \| None=None, parent=None)` | deleted: print.json 的 deleted_pages 记录；current_row/total 决定页号。 |
+| `result_data() -> dict` | 弹窗关闭后宿主读取的三件事：落点 / 恢复哪些 / 新上传哪些。 |
 
 ---
 
@@ -5677,7 +5712,7 @@ print 预览 Mixin：**缩略图与排序**。
 print 预览主控件 ``PrintPreviewWidget``：**装配点 + 展示主路径**。
 
 从 ``print_preview.py`` 拆出（2026-10-07）。本文件放：类头（信号/类属性）、
-``__init__``、工具栏、条目增删、当前页展示（``_load_display`` 等），以及
+``__init__``、动作按钮、条目增删、当前页展示（``_load_display`` 等），以及
 宿主协议（``_zoom_index`` / ``_zoom_target`` / ``_on_zoom_image_saved``）。
 缩略图、版面、导出分别由兄弟模块的 Mixin 提供；方法体逐字未改。
 
@@ -5696,7 +5731,7 @@ PDF排版预览：左侧待打印缩略图条（可拖动排序）+ 右侧单页
 | `set_entries(entries: list[dict]) -> None` | 重建列表：entries = [{file, label}]，可按条目自带 thumb 指定小图。 |
 | `entries() -> list[dict]` | 当前视觉顺序的富条目列表。 |
 | `count() -> int` | 列表当前条目数。 |
-| `set_pdf_path(path: str \| Path \| None) -> None` | 设置已生成 PDF 的路径；存在则启用下载按钮，否则禁用。 |
+| `set_pdf_path(path: str \| Path \| None) -> None` | 记录已生成 PDF 的路径；宿主据此显示/隐藏右下方控制面板的下载按钮。 |
 | `remove_selected() -> None` | 删除所有选中条目，未选中则通过 hint 信号提示。 |
 | `refresh_display() -> None` | 右侧参数变化后按最新参数重画当前页（不生成任何文件）。 |
 | `navigate(forward: bool) -> None` | 方向键翻页（详情页 ←/→ 调用；联动预览刷新，见 ThumbStrip.navigate）。 |
@@ -7766,6 +7801,8 @@ _toast()。
 | 方法 | 说明 |
 | --- | --- |
 | `print_source_stage() -> str` | 第四步**当前**的取图来源阶段 key（``rembg`` 或 ``imposition``）。 |
+| `can_delete_selected_print() -> bool` | 顶部菜单「编辑 → 删除选中」的启用判据：正在第四步且有选中项。 |
+| `delete_selected_print() -> None` | 顶部菜单「编辑 → 删除选中」：删掉缩略图条里选中的待打印图。 |
 
 ##### `print_source_stage() -> str`
 
@@ -14294,7 +14331,7 @@ Markdown 里写的是 ``screenshots/guide/xxx.png`` 这样的相对路径，
 
 源码：[`desktop/ui/menu.py`](../../desktop/ui/menu.py)
 
-窗口顶部菜单栏：**文件 / 单任务 / 帮助**（原生 ``QMenuBar``）。
+窗口顶部菜单栏：**文件 / 编辑 / 单任务 / 帮助**（原生 ``QMenuBar``）。
 
 为什么是原生菜单栏（而不是自绘 Fluent 菜单条）
 --------------------------------------------
@@ -14314,6 +14351,8 @@ Qt 原生 ``QMenuBar``：与既有窗口装饰同族、自带 ``Alt`` 助记符�
   :func:`quit_app` 的说明）；
 - 单任务 → ``<key>``：``shell.show_module(key)``，清单**从 ``MODULES`` 派生**
   （与左侧导航同源同序，本文件不维护第二份清单）；
+- 编辑 → 删除选中：转发给当前页（目前只有「PDF排版」页有这份实现，用户
+  2026-11-01 从预览区顶部按钮行挪进菜单栏）；
 - 帮助 → 帮助文档：``desktop/ui/help_dialog.py::open_manual()``。
 
 新增的只有「检查更新」与「关于」两件事：前者在子线程查 GitHub Release
@@ -14329,8 +14368,10 @@ qfluentwidgets 的 ``Dialog``，它只支持"字符串 + 两个按钮"）。
 | PROJECT_URL | `"https://github.com/zunkun/gujitools"` |
 | DATA_PACKAGE_URL | `"https://github.com/zunkun/gujitrain/releases/tag/database"` |
 | MENU_FILE | `"文件(&F)"` |
+| MENU_EDIT | `"编辑(&E)"` |
 | MENU_SINGLE_TASK | `"单任务(&S)"` |
 | MENU_HELP | `"帮助(&H)"` |
+| ACTION_DELETE_SELECTED | `"删除选中(&D)"` |
 | ACTION_CREATE_TASK | `"新建任务(&N)"` |
 | ACTION_QUICK_TASK | `"快速任务(&Q)"` |
 | QUICK_TASK_PICK_TITLE | `"选择 PDF/DjVu（快速任务）"` |
@@ -14439,8 +14480,9 @@ qfluentwidgets 的 ``Dialog``，它只支持"字符串 + 两个按钮"）。
 | `data_package_result(kind: str, *, current: int, latest: dict \| None=None) -> UpdateVerdict` | 把一次「去底色数据包检查」结果收成 :class:`UpdateVerdict`（纯数据）。 |
 | `about_rows(window=None) -> list[tuple[str, str]]` | 「关于」弹窗的行（``(键, 值)``）。纯数据，自测直接断言。 |
 | `install_title_bar(window)` | 给**无边框主窗口**装自绘标题栏（图标 / 标题 / 菜单同排），返回标题栏。 |
-| `install_menu_bar(window) -> QMenuBar` | 把菜单栏（文件 / 单任务 / 帮助）插进**标题栏的标题之后**。 |
+| `install_menu_bar(window) -> QMenuBar` | 把菜单栏（文件 / 编辑 / 单任务 / 帮助）插进**标题栏的标题之后**。 |
 | `build_file_menu(bar: QMenuBar, window) -> QMenu` | 「文件」：新建任务 / 快速任务 / （分隔线）/ 退出。 |
+| `build_edit_menu(bar: QMenuBar, window) -> QMenu` | 「编辑」：目前只有「删除选中」（PDF排版缩略图条）。 |
 | `open_quick_task(window) -> None` | 「快速任务」：选一个 PDF，**随即建任务**（不再进创建页填名称/流程）。 |
 | `build_single_task_menu(bar: QMenuBar, window) -> QMenu` | 「单任务」：**从 ``MODULES`` 派生**（顺序/文案/图标与左侧导航同源）。 |
 | `build_help_menu(bar: QMenuBar, window) -> QMenu` | 「帮助」：帮助文档 / 检查更新 / 关于。 |
@@ -14511,7 +14553,7 @@ gh-proxy 镜像）都测过速**，``latest`` 里带着 ``mirror_label`` / ``dow
 
 #### `install_menu_bar(window) -> QMenuBar`
 
-把菜单栏（文件 / 单任务 / 帮助）插进**标题栏的标题之后**。
+把菜单栏（文件 / 编辑 / 单任务 / 帮助）插进**标题栏的标题之后**。
 
 ⚠️ 用 ``QMenuBar(window.titleBar)`` 而**不是** ``window.menuBar()``：
 ``QMainWindow.menuBar()`` 会就地造出**标题栏下面的一整行**空菜单栏——那正是
@@ -14533,6 +14575,17 @@ PySide6 把 ``QMenuBar.addMenu("文案")`` 造出来的 ``QMenu`` **交给 Pytho
 ``RuntimeError: Internal C++ object (QMenu) already deleted``（连读都读不到）。
 所以这里一律 ``QMenu(文案, bar)`` 显式给父 + 用 ``window.menus`` 留引用，
 两道保险都在。别退回 ``bar.addMenu("文案")`` 那种一行写法。
+
+#### `build_edit_menu(bar: QMenuBar, window) -> QMenu`
+
+「编辑」：目前只有「删除选中」（PDF排版缩略图条）。
+
+菜单层**不做业务判断**：是否可点、删什么全交给当前页（鸭子类型调
+``can_delete_selected_print`` / ``delete_selected_print``，见
+``pages/taskdetail/print_list.py``）。这样菜单不必 import 具体页面，将来
+别的页面有同类动作也照这套接。
+
+⚠️ 启用状态在 ``aboutToShow`` 现问：选中项是用户随时点的，缓存会过期。
 
 #### `open_quick_task(window) -> None`
 

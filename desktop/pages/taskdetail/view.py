@@ -119,7 +119,7 @@ class DetailViewMixin:
         process: QProcess | None
         detect_process: QProcess | None
         _toast: Callable[..., None]
-        _update_run_buttons: Callable[[dict], None]
+        _update_run_buttons: Callable[[], None]
         _on_back: Callable[[], None]
         _on_show_flow: Callable[[], None]
         _on_pick_source: Callable[[], None]
@@ -172,7 +172,6 @@ class DetailViewMixin:
         _on_history_selected: Callable[..., None]
         run_stage: Callable[..., None]
         run_submit: Callable[[], None]
-        cancel_stage: Callable[[], None]
         _set_stage_status: Callable[..., None]
         # 「图片拼版」占位详情页与拼版画布的动作槽（ImpositionMixin 提供）
         _on_imposition_page_selected: Callable[..., None]
@@ -239,7 +238,7 @@ class DetailViewMixin:
         self.log_panel.set_task_dir_action(self.task_dir_button)
         root.addWidget(self.log_panel)
 
-        self._update_run_buttons({"status": "pending"})
+        self._update_run_buttons()
 
     def _build_header(self) -> Card:
         card = Card(padding=0, spacing=0, radius=T.RADIUS_MD, layout="h")
@@ -724,7 +723,16 @@ class DetailViewMixin:
         )
         self.print_preview.order_changed.connect(self._save_print_order)
         self.print_preview.insert_requested.connect(self._insert_print_images)
-        self.print_preview.download_requested.connect(self._download_print_pdf)
+        # 右键「向前 / 向后插入」：同一个弹窗，只是默认落点不同
+        self.print_preview.insert_before_requested.connect(
+            lambda: self._insert_print_images("before")
+        )
+        self.print_preview.insert_after_requested.connect(
+            lambda: self._insert_print_images("after")
+        )
+        # 「下载 PDF」不归预览控件自己弹按钮：宿主右下方控制面板按 PDF 可用
+        # 状态显示/隐藏（用户 2026-11-01，见 _sync_download_print_button）
+        self.print_preview.pdf_state_changed.connect(self._sync_download_print_button)
         # 编辑器覆盖了某张待打印图：记日志提示「点生成 PDF 即生效」
         self.print_preview.image_saved.connect(self._on_page_image_saved)
         # 单页导出：当前页排进 A4 后的效果图（精度与 PDF 同级 300dpi）
@@ -1098,8 +1106,8 @@ class DetailViewMixin:
         # （先出框、再裁图），竖着堆叠会让人误以为是两个步骤。
         # ⚠️ 没有提交按钮的步骤（1/3/4）只有 run_button 可见，stretch=1 让它
         #    自动占满整行，视觉与并排前一致。
-        # ⚠️ 整行包进独立 QWidget（与 followup_row 同理）：拼版详情页要整组隐藏
-        #    执行按钮（`_select_imposition_detail`），用 addLayout 的话行高仍在，
+        # ⚠️ 整行包进独立 QWidget：拼版详情页要整组隐藏执行按钮
+        #    （`_select_imposition_detail`），用 addLayout 的话行高仍在，
         #    控制区底部会留一条空白。
         self.action_row = QWidget()
         action = QHBoxLayout(self.action_row)
@@ -1112,30 +1120,35 @@ class DetailViewMixin:
         self.submit_hint.setWordWrap(True)
         apply_to(self.submit_hint, T.SIZE_CAPTION)
         self.submit_hint.hide()
-        # 「继续执行 / 中断执行」并排一行：两者是同一时刻的两种后续动作
-        # （没跑完 → 继续；跑着 → 中断），上下堆叠会让人误以为是两个步骤。
-        # 「跳过已完成」这层含义降级到 tooltip，按钮上只留动词。
-        # ⚠️ 整行包进独立 QWidget：拼版详情页要整组隐藏（见
-        #    ``_select_imposition_detail``），只藏两个按钮的话行高仍在，
-        #    控制区底部会留一条空白。
-        self.followup_row = QWidget()
-        row = QHBoxLayout(self.followup_row)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(T.SPACE_SM)
-        self.resume_button = PushButton(FIF.UPDATE, "继续执行")
-        self.resume_button.setFixedHeight(34)
-        self.resume_button.setToolTip("跳过已完成的页，只补做剩下的")
-        self.resume_button.clicked.connect(lambda: self.run_stage(resume=True))
-        self.cancel_button = PushButton(FIF.CLOSE, "中断执行")
-        self.cancel_button.setFixedHeight(34)
-        self.cancel_button.setToolTip("立刻停止当前正在执行的子任务")
-        self.cancel_button.setEnabled(False)
-        self.cancel_button.clicked.connect(self.cancel_stage)
-        row.addWidget(self.resume_button, 1)
-        row.addWidget(self.cancel_button, 1)
         control.addWidget(self.action_row)
+        # 「下载 PDF」：**生成PDF 之后**才出现的第二行（用户 2026-11-01）。
+        # 摆在「生成PDF」正下方而不是预览区顶部——生成是这一行的主动作，
+        # 下载是它的后续，竖着读就是"先跑、再拿结果"。
+        self.download_print_button = PushButton(PDF_FILE, "下载 PDF")
+        self.download_print_button.setFixedHeight(34)
+        self.download_print_button.clicked.connect(self._download_print_pdf)
+        self.download_row = QWidget()
+        download_layout = QHBoxLayout(self.download_row)
+        download_layout.setContentsMargins(0, 0, 0, 0)
+        download_layout.addWidget(self.download_print_button, 1)
+        self.download_row.setVisible(False)
+        control.addWidget(self.download_row)
         control.addWidget(self.submit_hint)
-        control.addWidget(self.followup_row)
+
+    def _sync_download_print_button(self, _available: bool | None = None) -> None:
+        """「下载 PDF」只在**第四步有可用 PDF**时出现在「生成PDF」下面。
+
+        ``_available`` 是 ``PrintPreviewWidget.set_pdf_path`` 发来的状态位；
+        在此之外（切步骤、进拼版详情）也会被无参调用，所以判据统一现读
+        「当前步骤 + 预览控件记下的 PDF」，不信任传入值。
+        """
+        row = getattr(self, "download_row", None)
+        if row is None:
+            return
+        row.setVisible(
+            self.current_stage() == "print"
+            and getattr(self.print_preview, "_pdf_path", None) is not None
+        )
 
     # ------------------------------------------------------------------ 宽度
     def _apply_control_width(self) -> None:

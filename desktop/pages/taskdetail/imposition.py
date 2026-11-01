@@ -79,7 +79,6 @@ class ImpositionBaseMixin:
         control_stack: QStackedWidget
         preview_stack: QStackedWidget
         action_row: QWidget
-        followup_row: QWidget
         detect_stats: DetectStatsWidget
         history_block: QWidget
         bar_index_of_step: Callable[[str], int | None]
@@ -105,6 +104,8 @@ class ImpositionBaseMixin:
         _update_imposition_status: Callable[[int], None]
         close_imposition_zoom_popup: Callable[[], None]
         _current_print_pdf_path: Callable[[], Any]
+        #: 右下方「下载 PDF」行的显隐同步（DetailViewMixin 提供，见 view）
+        _sync_download_print_button: Callable[..., None]
         _print_entries: Callable[[], tuple]
         # ⚠️ 返回值是 LazyPanelHost 或真面板（属性转发、鸭子类型），用 Any 承接
         panel_host_of_step: Callable[[str], Any]
@@ -560,7 +561,7 @@ class ImpositionBaseMixin:
     def _select_imposition_detail(self) -> None:
         """流程条点了「图片拼版」：预览区/控制区切到拼版详情。
 
-        拼版没有可执行的子任务：执行/提交/继续/中断按钮整组隐藏，
+        拼版没有可执行的子任务：执行/提交按钮整组隐藏，
         执行记录与检测统计也不适用。
         """
         self._refresh_imposition_view()
@@ -577,7 +578,8 @@ class ImpositionBaseMixin:
         # ⚠️ 藏**整行**（action_row =「检测文本框 + 提交本次任务」并排），不是
         #    单个按钮：只藏按钮的话行高仍在，控制区底部会留一条空白。
         self.action_row.setVisible(False)
-        self.followup_row.setVisible(False)
+        # 「下载 PDF」同样只在第四步出现（拼版页没有生成 PDF 这一步）
+        self._sync_download_print_button()
         self.detect_stats.setVisible(False)
         self.history_block.setVisible(False)
         self._set_stage_status(f"{IMPOSITION_LABEL}：可选节点（拼版版面）")

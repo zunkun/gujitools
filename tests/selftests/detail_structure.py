@@ -77,8 +77,7 @@ def run(ctx) -> None:
     ok("点拼版节点进占位详情", d.control_stack.currentIndex() == 4
        and d.preview_stack.currentIndex() == 4)
     ok("占位详情隐藏执行按钮组",
-       not d.run_button.isVisible() and not d.submit_button.isVisible()
-       and not d.resume_button.isVisible() and not d.cancel_button.isVisible())
+       not d.run_button.isVisible() and not d.submit_button.isVisible())
     # ---- 流程条上这一格 = "这一步处理到哪了"（2026-10-18 用户口径）----
     # ⚠️ 判据是**本节点有没有拼版页**，**不是**"在流程中启用图片拼版"这个开关
     #    ——那是**流程级**条件（流程图上「是否拼版」网关问的就是它）。勾了开关但

@@ -885,18 +885,49 @@ def plan_print_entries(
             seen.add(file_text)
         return out
 
+    def _deleted(pages) -> list[dict]:
+        """「已删除图片」记录：文件仍存在才保留（恢复时要用它）。
+
+        与 ``pages`` 走同一套记录字段（含逐页 rect），恢复后版面原样回来；
+        文件已被外部删除的条目没有恢复价值，直接丢弃。
+        """
+        out, seen = [], set()
+        for p in pages or []:
+            file_text = p.get("file")
+            if not file_text or file_text in seen or not Path(file_text).exists():
+                continue
+            entry = {"file": file_text,
+                     "label": p.get("label") or Path(file_text).stem}
+            if p.get("rect") is not None:
+                entry["rect"] = list(p["rect"])
+                if p.get("rect_size") is not None:
+                    entry["rect_size"] = list(p["rect_size"])
+            out.append(entry)
+            seen.add(file_text)
+        return out
+
+    deleted = _deleted(doc.get("deleted_pages") if doc else None)
+    deleted_set = {str(page["file"]) for page in deleted}
     if doc and snapshot == current_set and current_set:
         # rembg 产物未变化：沿用用户保存的顺序（拖动/删除/插入结果）
         entries = _existing(doc.get("pages"))
     else:
         # 首次进入，或重新提交后 rembg 产物集合变化：
-        # rembg 最终图按阅读顺序排列；旧列表中用户插入的外部图片
-        # （不在 rembg 目录）按原顺序追加在末尾
+        # rembg 最终图按阅读顺序排列；**已删除的页不再复活**（用户 2026-10-31：
+        # 删除要留下来、能恢复，不该因为上游重跑就自动回到列表）；
+        # 旧列表中用户插入的外部图片（不在 rembg 目录）按原顺序追加在末尾
         external = [
             e for e in _existing(doc.get("pages") if doc else None)
             if e["file"] not in current_set
         ]
-        entries = [{"file": str(p), "label": p.stem} for p in rembg_files]
+        entries = [
+            {"file": str(p), "label": p.stem}
+            for p in rembg_files if str(p) not in deleted_set
+        ]
         entries.extend(external)
-    new_doc = {"rembg_snapshot": rembg_names, "pages": entries}
+    new_doc = {
+        "rembg_snapshot": rembg_names,
+        "pages": entries,
+        "deleted_pages": deleted,
+    }
     return list(entries), new_doc

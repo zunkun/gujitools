@@ -629,6 +629,7 @@ guji/
     sizes.json          # 页面图片原始尺寸 {页stem: [w, h]}
     ui.json             # 界面状态（当前只有 last_stage：上次停留的步骤 key）
     drafts/<阶段>.json  # 参数暂存：用户改过但还没执行的阶段参数（进页面时优先回填）
+    inserted/           # 第四步「插入图片」的副本（唯一文件名，可重复插入同一张图）
     runs/               # 子进程执行配置 run-*.json / detect-config.json
     thumbnails/
       source/0001.jpg…  # 源 PDF 页缩略图（256px，导入即生成，永不清理）

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""窗口顶部菜单栏：**文件 / 单任务 / 帮助**（原生 ``QMenuBar``）。
+"""窗口顶部菜单栏：**文件 / 编辑 / 单任务 / 帮助**（原生 ``QMenuBar``）。
 
 为什么是原生菜单栏（而不是自绘 Fluent 菜单条）
 --------------------------------------------
@@ -19,6 +19,8 @@ Qt 原生 ``QMenuBar``：与既有窗口装饰同族、自带 ``Alt`` 助记符�
   :func:`quit_app` 的说明）；
 - 单任务 → ``<key>``：``shell.show_module(key)``，清单**从 ``MODULES`` 派生**
   （与左侧导航同源同序，本文件不维护第二份清单）；
+- 编辑 → 删除选中：转发给当前页（目前只有「PDF排版」页有这份实现，用户
+  2026-11-01 从预览区顶部按钮行挪进菜单栏）；
 - 帮助 → 帮助文档：``desktop/ui/help_dialog.py::open_manual()``。
 
 新增的只有「检查更新」与「关于」两件事：前者在子线程查 GitHub Release
@@ -90,8 +92,13 @@ DATA_PACKAGE_URL = "https://github.com/zunkun/gujitrain/releases/tag/database"
 #: 顶级菜单与各动作文案。**含 ``&`` 助记符**（显示成下划线，``Alt`` 可唤起）；
 #: 集中在这里，自测按这些常量断言（改文案只动一处）。
 MENU_FILE = "文件(&F)"
+MENU_EDIT = "编辑(&E)"
 MENU_SINGLE_TASK = "单任务(&S)"
 MENU_HELP = "帮助(&H)"
+#: 「编辑 → 删除选中」：删掉「PDF排版」左侧缩略图条里选中的图片（用户 2026-11-01
+#: 把预览区顶部那排按钮里的「删除选中」挪到菜单栏）。只路由到详情页，不在这里
+#: 判断选中/步骤——菜单项是否可点由 ``aboutToShow`` 现问当前页。
+ACTION_DELETE_SELECTED = "删除选中(&D)"
 ACTION_CREATE_TASK = "新建任务(&N)"
 #: 「快速任务」（用户 2026-10-16）：选 PDF **直接建任务**，不经过创建任务页、
 #: 不问名称/流程（**任务名 = PDF 文件名**，流程用默认模板）。
@@ -591,7 +598,7 @@ def install_title_bar(window):
 
 
 def install_menu_bar(window) -> QMenuBar:
-    """把菜单栏（文件 / 单任务 / 帮助）插进**标题栏的标题之后**。
+    """把菜单栏（文件 / 编辑 / 单任务 / 帮助）插进**标题栏的标题之后**。
 
     ⚠️ 用 ``QMenuBar(window.titleBar)`` 而**不是** ``window.menuBar()``：
     ``QMainWindow.menuBar()`` 会就地造出**标题栏下面的一整行**空菜单栏——那正是
@@ -631,6 +638,7 @@ def install_menu_bar(window) -> QMenuBar:
     bar.setObjectName("appTitleMenuBar")
     window.menus = {
         MENU_FILE: build_file_menu(bar, window),
+        MENU_EDIT: build_edit_menu(bar, window),
         MENU_SINGLE_TASK: build_single_task_menu(bar, window),
         MENU_HELP: build_help_menu(bar, window),
     }
@@ -682,6 +690,54 @@ def build_file_menu(bar: QMenuBar, window) -> QMenu:
     quit_action.triggered.connect(lambda _checked=False: quit_app(window))
     menu.addAction(quit_action)
     return menu
+
+
+def build_edit_menu(bar: QMenuBar, window) -> QMenu:
+    """「编辑」：目前只有「删除选中」（PDF排版缩略图条）。
+
+    菜单层**不做业务判断**：是否可点、删什么全交给当前页（鸭子类型调
+    ``can_delete_selected_print`` / ``delete_selected_print``，见
+    ``pages/taskdetail/print_list.py``）。这样菜单不必 import 具体页面，将来
+    别的页面有同类动作也照这套接。
+
+    ⚠️ 启用状态在 ``aboutToShow`` 现问：选中项是用户随时点的，缓存会过期。
+    """
+    menu = _add_menu(bar, MENU_EDIT)
+    delete = QAction(ACTION_DELETE_SELECTED, menu)
+    delete.setToolTip("删除「PDF排版」左侧缩略图条里选中的图片（先选中再删除）")
+    delete.triggered.connect(lambda _checked=False: _delete_selected(window))
+    menu.addAction(delete)
+    menu.aboutToShow.connect(
+        lambda: delete.setEnabled(_can_delete_selected(window))
+    )
+    return menu
+
+
+def _current_page(window):
+    """当前页（壳层页面栈的 currentWidget）；窗口/壳层尚未就绪时返回 ``None``。
+
+    ⚠️ 菜单是在 ``install_title_bar`` 里装的，那时 ``window.shell`` 还没建
+    （见 ``desktop/app.py::MainWindow.__init__``），所以这里必须 ``getattr``
+    现取、不能建菜单时就把页面钉住。
+    """
+    shell = getattr(window, "shell", None)
+    pages = getattr(shell, "pages", None)
+    return pages.currentWidget() if pages is not None else None
+
+
+def _can_delete_selected(window) -> bool:
+    """「删除选中」当前是否可点：问当前页（不认识的页面一律不可点）。"""
+    page = _current_page(window)
+    probe = getattr(page, "can_delete_selected_print", None)
+    return bool(probe()) if probe is not None else False
+
+
+def _delete_selected(window) -> None:
+    """「删除选中」的动作：转发给当前页自己的实现。"""
+    page = _current_page(window)
+    action = getattr(page, "delete_selected_print", None)
+    if action is not None:
+        action()
 
 
 def open_quick_task(window) -> None:
@@ -1629,6 +1685,7 @@ __all__ = [
     "ACTION_ABOUT",
     "ACTION_CREATE_TASK",
     "ACTION_DATA_PACKAGE",
+    "ACTION_DELETE_SELECTED",
     "ACTION_MANUAL",
     "ACTION_QUICK_TASK",
     "ACTION_QUIT",
@@ -1639,6 +1696,7 @@ __all__ = [
     "DATA_PACKAGE_URL",
     "DataPackageController",
     "FAILURE_REASONS",
+    "MENU_EDIT",
     "MENU_FILE",
     "MENU_HELP",
     "MENU_SINGLE_TASK",
@@ -1649,6 +1707,7 @@ __all__ = [
     "UpdateController",
     "UpdateVerdict",
     "about_rows",
+    "build_edit_menu",
     "build_file_menu",
     "build_help_menu",
     "build_single_task_menu",

@@ -121,12 +121,13 @@ def run(ctx) -> None:
 
     app, w = ctx.app, ctx.w
 
-    # ---- 1. 结构：三个顶级菜单 + 动作文案（含助记符）----
+    # ---- 1. 结构：四个顶级菜单 + 动作文案（含助记符）----
     titles = [action.text() for action in w.menu_bar.actions()]
-    ok("顶部三个菜单：文件(&F) / 单任务(&S) / 帮助(&H)",
-       titles == [menu.MENU_FILE, menu.MENU_SINGLE_TASK, menu.MENU_HELP],
+    ok("顶部四个菜单：文件(&F) / 编辑(&E) / 单任务(&S) / 帮助(&H)",
+       titles == [menu.MENU_FILE, menu.MENU_EDIT, menu.MENU_SINGLE_TASK,
+                  menu.MENU_HELP],
        f"{titles}")
-    ok("三个菜单都有活引用（window.menus）且从菜单栏读得到动作",
+    ok("四个菜单都有活引用（window.menus）且从菜单栏读得到动作",
        sorted(getattr(w, "menus", {})) == sorted(titles)
        and all(m.actions() for m in w.menus.values()),
        f"{sorted(getattr(w, 'menus', {}))}")
@@ -219,6 +220,13 @@ def run(ctx) -> None:
        f"{[a.text() for a in file_menu.actions()]}")
     ok("退出项带 &X 助记符（用户点名的写法）",
        menu.ACTION_QUIT.endswith("(&X)"), menu.ACTION_QUIT)
+    edit_menu = _menu_of(w, menu.MENU_EDIT)
+    ok("编辑菜单：删除选中(&D)",
+       [a.text() for a in edit_menu.actions() if not a.isSeparator()]
+       == [menu.ACTION_DELETE_SELECTED],
+       f"{[a.text() for a in edit_menu.actions()]}")
+    ok("「删除选中」问当前页要可用性（任务列表页不认识 → 不可点）",
+       menu._can_delete_selected(w) is False, "")
     help_menu = _menu_of(w, menu.MENU_HELP)
     ok("帮助菜单：帮助文档(&D) / 检查更新(&U) / 检查数据包(&M) / 关于(&A)",
        [a.text() for a in help_menu.actions() if not a.isSeparator()]

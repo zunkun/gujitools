@@ -209,8 +209,6 @@ class TaskDetailPage(
         #: 运行阶段 → 该阶段全部节点 id，**按流程条先后**（bar 序）。
         #: 「（1）/（2）」这类给人看的序号取它——与用户看到的顺序一致。
         self._stage_nodes: dict[str, list[str]] = {}
-        #: 最近一次的阶段状态：执行权变化时要重刷按钮，但不值得为此再读一次盘
-        self._last_stage_state: dict = {"status": "pending"}
         self.detect_cache: dict[str, list[tuple] | None] = VersionedBoxCache()
         self._last_error_line: str | None = None
         self._extract_seen = 0  # 提取过程中已展示的结果页数
@@ -293,7 +291,7 @@ class TaskDetailPage(
         #    runs.json / 输出目录。单页检测是几秒的辅助操作，直接停掉即可。
         if self.process and self.process.state() != QProcess.ProcessState.NotRunning:
             self._toast(
-                "warning", "任务进行中", "请先中断当前子任务再切换其他任务。"
+                "warning", "任务进行中", "请等待当前子任务完成后再切换其他任务。"
             )
             return False
         self._stop_detect_process()
@@ -567,7 +565,7 @@ class TaskDetailPage(
 
     def _on_back(self) -> None:
         if self.process and self.process.state() != QProcess.ProcessState.NotRunning:
-            self._toast("warning", "任务进行中", "请先中断当前子任务再返回。")
+            self._toast("warning", "任务进行中", "请等待当前子任务完成后再返回。")
             return
         # ⚠️ 检测是几秒到十几秒的慢活：返回后旧进程的 boxes 事件才到达，
         #    task_id 已清空/换成别的任务 → 跨任务写 boxes.json（审计 H3）。
@@ -1175,7 +1173,6 @@ class TaskDetailPage(
         # ⚠️ 恢复的是**整行** action_row（「检测文本框 + 提交本次任务」并排），
         #    只恢复 run_button 的话行本身仍带着上一步的隐藏标记。
         self.action_row.setVisible(True)
-        self.followup_row.setVisible(True)
         # 按钮文案与区块显隐**全查 spec**（不再 `if stage == ...`）：
         # 第二步是「检测文本框」+「提交本次任务」，第三步是「执行去底色」，
         # 第四步是「生成PDF」，其余是「执行本子任务」——文案与"跑完会发生什么"
@@ -1206,6 +1203,8 @@ class TaskDetailPage(
         self.history_block.setVisible(not spec or not spec.panel_extra)
         self._apply_control_width()
         self._refresh_stage_views()
+        # 「下载 PDF」只属于第四步：切到别的步骤就收起来（拼版详情页另行处理）
+        self._sync_download_print_button()
         # ⚠️ **按内容判一次"这一步的输入产物换了没有"**（用户 2026-10-18）：
         #    上游产物会被同名覆盖（拼版成品重合成、单页重提取、编辑器回写），
         #    路径没变、内容变了。这种情况下列表/图标是**解码一次就缓存**的，
@@ -1316,7 +1315,7 @@ class TaskDetailPage(
             else stage_states[stage]
         )
         self._apply_stage_state(stage, state)
-        self._update_run_buttons(state)
+        self._update_run_buttons()
 
     def _slot_of_node(self, node_id: str | None):
         """节点 id → 它在步骤条上占的那一格（没有对应格返回 ``None``）。"""
@@ -1477,20 +1476,6 @@ class TaskDetailPage(
             return self._run_claim
         return None
 
-    def _stage_running(self) -> bool:
-        """阶段子任务（含"已受理、进程尚未 start"的窗口期）是否在跑。
-
-        比 :meth:`_busy_label` 更窄：单页检测**不算**，因为「中断」按钮只杀
-        子任务进程，检测在跑时给它点亮的会是个杀不掉东西的按钮。
-        """
-        if self.process is not None and self.process.state() != QProcess.ProcessState.NotRunning:
-            return True
-        return bool(
-            self._run_claim == "子任务"
-            and self.process is None
-            and self.detect_process is None
-        )
-
     def _acquire_run(self, what: str, *, replace: tuple = ()) -> bool:
         """领取执行权；拿不到返回 False，调用方直接 ``return``。
 
@@ -1504,7 +1489,7 @@ class TaskDetailPage(
         busy = self._busy_label()
         if busy and busy not in replace:
             self._toast(
-                "warning", "任务进行中", f"{busy}正在执行，请等待完成或先中断。"
+                "warning", "任务进行中", f"{busy}正在执行，请等待完成后再试。"
             )
             return False
         now = time.monotonic()
@@ -1529,17 +1514,12 @@ class TaskDetailPage(
         self._refresh_run_buttons()
 
     def _refresh_run_buttons(self) -> None:
-        """执行权变化后重刷按钮；复用最近一次的阶段状态，不额外读盘。"""
-        self._update_run_buttons(self._last_stage_state)
+        """执行权变化后重刷按钮（不额外读盘）。"""
+        self._update_run_buttons()
 
-    def _update_run_buttons(self, state: dict) -> None:
-        self._last_stage_state = state
+    def _update_run_buttons(self) -> None:
         running = self._busy_label() is not None
         self.run_button.setEnabled(not running)
-        self.resume_button.setEnabled(
-            not running and state["status"] in ("cancelled", "failed", "success")
-        )
-        self.cancel_button.setEnabled(self._stage_running())
         self._apply_regenerate_highlight()
         self._update_submit_button(running)
 
