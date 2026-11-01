@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 179 个模块、195 个公开类、1444 个公开函数/方法（生成于 2026-11-01）。
+覆盖 180 个模块、196 个公开类、1468 个公开函数/方法（生成于 2026-11-01）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -50,7 +50,8 @@
 | [`desktop.components.step_bar`](#desktopcomponentsstep_bar) | 2 | 20 |
 | [`desktop.components.task_table`](#desktopcomponentstask_table) | 3 | 10 |
 | [`desktop.components.viewers.edit_sync`](#desktopcomponentsviewersedit_sync) | 0 | 2 |
-| [`desktop.components.viewers.extract_viewer`](#desktopcomponentsviewersextract_viewer) | 1 | 6 |
+| [`desktop.components.viewers.extract_viewer`](#desktopcomponentsviewersextract_viewer) | 1 | 7 |
+| [`desktop.components.viewers.image_actions`](#desktopcomponentsviewersimage_actions) | 1 | 7 |
 | [`desktop.components.viewers.image_editor.bake`](#desktopcomponentsviewersimage_editorbake) | 0 | 2 |
 | [`desktop.components.viewers.image_editor.canvas.core`](#desktopcomponentsviewersimage_editorcanvascore) | 1 | 25 |
 | [`desktop.components.viewers.image_editor.canvas.distortion`](#desktopcomponentsviewersimage_editorcanvasdistortion) | 1 | 1 |
@@ -87,8 +88,8 @@
 | [`desktop.components.viewers.print_preview.export`](#desktopcomponentsviewersprint_previewexport) | 1 | 1 |
 | [`desktop.components.viewers.print_preview.layout`](#desktopcomponentsviewersprint_previewlayout) | 1 | 1 |
 | [`desktop.components.viewers.print_preview.thumbs`](#desktopcomponentsviewersprint_previewthumbs) | 1 | 1 |
-| [`desktop.components.viewers.print_preview.widget`](#desktopcomponentsviewersprint_previewwidget) | 1 | 9 |
-| [`desktop.components.viewers.rembg_viewer.core`](#desktopcomponentsviewersrembg_viewercore) | 1 | 10 |
+| [`desktop.components.viewers.print_preview.widget`](#desktopcomponentsviewersprint_previewwidget) | 1 | 10 |
+| [`desktop.components.viewers.rembg_viewer.core`](#desktopcomponentsviewersrembg_viewercore) | 1 | 11 |
 | [`desktop.components.viewers.rembg_viewer.entries`](#desktopcomponentsviewersrembg_viewerentries) | 1 | 0 |
 | [`desktop.components.viewers.rembg_viewer.thumbs`](#desktopcomponentsviewersrembg_viewerthumbs) | 1 | 3 |
 | [`desktop.components.viewers.thumb_strip`](#desktopcomponentsviewersthumb_strip) | 1 | 12 |
@@ -96,9 +97,9 @@
 | [`desktop.components.yolo_export_dialog`](#desktopcomponentsyolo_export_dialog) | 1 | 6 |
 | [`desktop.modules`](#desktopmodules) | 1 | 1 |
 | [`desktop.modules.base`](#desktopmodulesbase) | 2 | 21 |
-| [`desktop.modules.detect.page`](#desktopmodulesdetectpage) | 1 | 19 |
+| [`desktop.modules.detect.page`](#desktopmodulesdetectpage) | 1 | 21 |
 | [`desktop.modules.extract.page`](#desktopmodulesextractpage) | 1 | 5 |
-| [`desktop.modules.imposition.page`](#desktopmodulesimpositionpage) | 1 | 4 |
+| [`desktop.modules.imposition.page`](#desktopmodulesimpositionpage) | 1 | 8 |
 | [`desktop.modules.print.page`](#desktopmodulesprintpage) | 1 | 4 |
 | [`desktop.modules.rembg.page`](#desktopmodulesrembgpage) | 1 | 5 |
 | [`desktop.modules.thumb_source`](#desktopmodulesthumb_source) | 1 | 4 |
@@ -110,7 +111,7 @@
 | [`desktop.pages.taskdetail.imposition_layout`](#desktoppagestaskdetailimposition_layout) | 1 | 1 |
 | [`desktop.pages.taskdetail.imposition_pages`](#desktoppagestaskdetailimposition_pages) | 1 | 0 |
 | [`desktop.pages.taskdetail.manifest`](#desktoppagestaskdetailmanifest) | 1 | 6 |
-| [`desktop.pages.taskdetail.page`](#desktoppagestaskdetailpage) | 1 | 22 |
+| [`desktop.pages.taskdetail.page`](#desktoppagestaskdetailpage) | 1 | 30 |
 | [`desktop.pages.taskdetail.params_draft`](#desktoppagestaskdetailparams_draft) | 1 | 1 |
 | [`desktop.pages.taskdetail.print_list`](#desktoppagestaskdetailprint_list) | 1 | 3 |
 | [`desktop.pages.taskdetail.rembg_live`](#desktoppagestaskdetailrembg_live) | 1 | 0 |
@@ -3390,6 +3391,7 @@ source_path 不单独成列，仅作任务名的悬浮提示。
 | `set_extract_dir(extract_dir: Path \| None) -> None` | 记录/刷新产物目录；当前页已有产物就**立即**切换显示。 |
 | `set_params_provider(provider: Callable[[], dict] \| None) -> None` | 注入提取参数来源（宿主读「图片提取」面板表单）。 |
 | `extract_path_for(page: int) -> Path \| None` | 第 page 页（0-based）的产物路径；没有产物目录时为 None。 |
+| `current_display_path() -> Path \| None` | 当前大图显示的是**已提取产物**时返回它的路径；PDF 渲染页没有文件。 |
 | `set_pdf(path, placeholder=None, cache_dir=None) -> None` | 换 PDF：提取态全部作废（在飞的提取结果按代际丢弃）。 |
 | `refresh_page(path_text: str) -> None` | 某页产物文件被覆盖（编辑器完成/缩略图重生成）：重载当前页大图。 |
 
@@ -3402,12 +3404,67 @@ source_path 不单独成列，仅作任务名的悬浮提示。
 提取结果。还没有产物的页**不打断**当前显示——提取只由「切页」触发，
 刷新不该替用户发起提取。
 
+##### `current_display_path() -> Path | None`
+
+当前大图显示的是**已提取产物**时返回它的路径；PDF 渲染页没有文件。
+
+「编辑 → 下载/打印图片」只对真实文件开放（虚拟页返回 None ⇒ 菜单置灰）。
+
 ##### `refresh_page(path_text: str) -> None`
 
 某页产物文件被覆盖（编辑器完成/缩略图重生成）：重载当前页大图。
 
 ``show_edited_image`` 在本控件上没有 ``apply_edited_image``，会退到
 这里；按路径匹配**当前页的产物**才动，其余页不打扰。
+
+---
+
+## `desktop.components.viewers.image_actions`
+
+源码：[`desktop/components/viewers/image_actions.py`](../../desktop/components/viewers/image_actions.py)
+
+「编辑」菜单里「下载图片 / 打印图片」的通用实现。
+
+菜单层只认页面上的 ``can_edit_* / edit_*`` 四对方法（见 ``desktop/ui/menu.py``），
+具体取哪张图由各页面决定。本模块提供两件事：
+
+- :func:`download_image` / :func:`print_image`：与图片预览弹窗同一套存盘/打印行为；
+- :class:`ImageEditActionsMixin`：给「左栏就是一个查看器」的模块页直接混入，
+  按查看器的当前条目取图。
+
+⚠️ 取图一律走查看器自己的 ``current_display_path()`` / ``current_path()``：
+PDF 矢量页这类**没有真实文件**的条目返回 ``None`` ⇒ 菜单项自然置灰，不硬渲。
+
+### `class ImageEditActionsMixin`
+
+给「``self.viewer`` 是当前图来源」的模块页混入下载/打印能力。
+
+子类若当前图不来自 ``self.viewer``（如任务详情页按阶段选查看器），
+覆写 :meth:`_edit_image_path` 即可，四对方法不必重写。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `can_edit_download_image() -> bool` | — |
+| `can_edit_print_image() -> bool` | — |
+| `edit_download_image() -> None` | — |
+| `edit_print_image() -> None` | — |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `load_image(path: str \| Path) -> QImage \| None` | 按路径读整分辨率图（读不到/坏文件返回 ``None``）。 |
+| `download_image(image: QImage, stem: str, parent: QWidget \| None, title: str='保存图片') -> Path \| None` | 弹保存对话框并把整分辨率图写到磁盘（PNG/JPEG，与预览弹窗同规则）。 |
+| `print_image(image: QImage, parent: QWidget \| None, title: str='打印图片') -> bool` | 把整分辨率图送到打印机：等比铺满可打印区并居中（不拉伸变形）。 |
+
+#### `load_image(path: str | Path) -> QImage | None`
+
+按路径读整分辨率图（读不到/坏文件返回 ``None``）。
+
+用 ``QImageReader`` 而不是 ``QImage(path)``：前者能直接吃到 PNG/JPEG/TIFF
+的 EXIF 旋转标记，且对中文路径按 Qt 的文件名规则处理。
 
 ---
 
@@ -5733,6 +5790,7 @@ PDF排版预览：左侧待打印缩略图条（可拖动排序）+ 右侧单页
 | `count() -> int` | 列表当前条目数。 |
 | `set_pdf_path(path: str \| Path \| None) -> None` | 记录已生成 PDF 的路径；宿主据此显示/隐藏右下方控制面板的下载按钮。 |
 | `remove_selected() -> None` | 删除所有选中条目，未选中则通过 hint 信号提示。 |
+| `print_current() -> None` | 公开入口：把当前页按 A4 效果送打印机（窗口菜单「打印图片」用）。 |
 | `refresh_display() -> None` | 右侧参数变化后按最新参数重画当前页（不生成任何文件）。 |
 | `navigate(forward: bool) -> None` | 方向键翻页（详情页 ←/→ 调用；联动预览刷新，见 ThumbStrip.navigate）。 |
 | `export_default_name() -> str \| None` | 导出对话框的默认文件名；没有可导出的页时返回 None。 |
@@ -5744,6 +5802,13 @@ PDF排版预览：左侧待打印缩略图条（可拖动排序）+ 右侧单页
 params_provider: () -> print 参数字典；非法时抛异常（由本控件捕获
     并退回「原图」显示）。为 None 时关闭「打印效果」项。
 thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
+
+##### `print_current() -> None`
+
+公开入口：把当前页按 A4 效果送打印机（窗口菜单「打印图片」用）。
+
+与控件自己的「打印本页」按钮同一条实现（``_print_current``）；按钮
+只管显隐/启用，动作本身不复制一份。
 
 ---
 
@@ -5770,6 +5835,7 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 | `refresh_display() -> None` | 检测框/边距变化后，重建输出条目并按新区域重新加载。 |
 | `navigate(forward: bool) -> None` | 方向键翻页（详情页 ←/→ 调用；联动预览刷新，见 ThumbStrip.navigate）。 |
 | `current_entry_path() -> str \| None` | 当前选中条目的源图路径（无条目时为 None）。 |
+| `current_display_path() -> str \| None` | 当前**大图正在显示**的文件：结果态给结果图，原图态给源图。 |
 | `show_live_pending() -> None` | 实时去底色正在计算：只在**下方说明行**给个反馈，**不动大图**。 |
 | `refresh_page(path_text: str) -> None` | 某文件被覆盖后刷新本查看器：受影响条目图标 + 当前大图。 |
 | `result_dir() -> Path \| None` | 当前生效的去底色结果目录（未设置为 None）。 |
@@ -5805,6 +5871,13 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 参数重合成）——上游产物被同名覆盖后条目图标会一直停在旧图上，由宿主按
 "内容指纹变了没有"（``desktop.utils.files.dir_content_signature``）
 决定要不要传（不是每次刷新都强制）。
+
+##### `current_display_path() -> str | None`
+
+当前**大图正在显示**的文件：结果态给结果图，原图态给源图。
+
+「编辑 → 下载/打印图片」按用户此刻看到的形态取图（``_resolve_source``
+与主预览共用同一份判定，不另写一套）。
 
 ##### `show_live_pending() -> None`
 
@@ -6390,7 +6463,7 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 | _YOLO_EXPORT_DIR_KEY | `"yolo_export_dir"` |
 | _YOLO_EXPORT_NAME_KEY | `"yolo_export_name"` |
 
-### `class DetectModulePage(StepModulePage, ThumbSourceMixin)`
+### `class DetectModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin)`
 
 检测文本框模块页：拖入图片 → 检测内容框 → 图上修正 → 导出坐标 JSON。
 
@@ -6413,6 +6486,8 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 | `box_confirm(title: str, body: str, yes_text: str, cancel_text: str) -> bool` | — |
 | `box_resync_kind(_index: int) -> None` | 按现值回填类型控件高亮（类型操作结束后必调，别停在假位置）。 |
 | `box_current_path_text() -> str` | — |
+| `can_edit_delete_selected() -> bool` | 「编辑 → 删除选中」：本页的“选中”指**文本框**（用户 2026-11-01 定）。 |
+| `edit_delete_selected() -> None` | — |
 | `export_boxes() -> None` | 把各页框坐标写成 ``<输出目录>/boxes.json``（与任务流程同格式）。 |
 | `export_annotated_images() -> None` | 把框画回原图导出成 PNG：先选目录，**目录已存在就问是否覆盖**。 |
 | `export_yolo_labels() -> None` | 导出 YOLO 数据集切片：先弹窗填**名称**与选**导出目录**（用户 2026-10-16）。 |
@@ -6456,6 +6531,13 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 左/右可由用户指定（中心压在中线上，位置判定没意义）。
 
 ⚠️ 页级判据（用户 2026-10-23，任务 0004）：不要求整本书是单栏书。
+
+##### `can_edit_delete_selected() -> bool`
+
+「编辑 → 删除选中」：本页的“选中”指**文本框**（用户 2026-11-01 定）。
+
+与右栏「删除选中框」同一判据（``delete_box`` 只在有选中框时启用），
+不把整页删除混进来——本页源是用户图片清单，删页是另一套语义。
 
 ##### `export_boxes() -> None`
 
@@ -6532,7 +6614,7 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 （:meth:`desktop.steps.spec.StepSpec.default_output`）。singletask 下面**只放
 缩略图缓存**，不放产物（用户 2026-10-03 明确「生成目录按照原先的」）。
 
-### `class ExtractModulePage(StepModulePage, ThumbSourceMixin)`
+### `class ExtractModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin)`
 
 图片提取模块页：选 PDF → 看页缩略图 → 调参数 → 执行 → 看提取结果。
 
@@ -6655,6 +6737,10 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(parent=None)` | 先建骨架，再补「选图 / 自动拼版 / 导出」这条操作链。 |
+| `can_edit_delete_selected() -> bool` | 「编辑 → 删除选中」：左列**勾选**的拼版页可批量删除（与悬浮框同判据）。 |
+| `edit_delete_selected() -> None` | 走左列悬浮框「批量删除」同一条实现（含确认弹窗与落盘）。 |
+| `can_edit_insert_images() -> bool` | 「编辑 → 插入图片」：点「＋ 选择拼版」的同一入口（候选池含已删除图）。 |
+| `edit_insert_images() -> None` | — |
 | `close_zoom_dialog() -> None` | 关掉预览弹窗（内容失效时调：换源 / 清空）。 |
 | `shutdown_workers() -> None` | 关闭页面前中止并等待导出线程。 |
 
@@ -6711,7 +6797,7 @@ PDF 路径**回传给 ``on_result``；本页据此把左栏切到「产物 PDF �
 两种形态共用同一个 :class:`~desktop.components.viewers.ImageViewerWidget`——
 它既能显示一批图片，也能把一本 PDF 的页当"图片"列出来（``set_pdf_source``）。
 
-### `class PrintModulePage(StepModulePage, ThumbSourceMixin)`
+### `class PrintModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin)`
 
 PDF排版模块页：拖入成品图（一批或一个文件夹）→ 调版面 → 合成 PDF。
 
@@ -6767,7 +6853,7 @@ PDF排版模块页：拖入成品图（一批或一个文件夹）→ 调版面 
 | --- | --- |
 | _WARM_THUMB_LIMIT | `60` |
 
-### `class RembgModulePage(StepModulePage, ThumbSourceMixin)`
+### `class RembgModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin)`
 
 去底色模块页：拖入图片（单张或文件夹）→ 调参数 → 批量去底 → 对比看结果。
 
@@ -7524,7 +7610,7 @@ resize 子控件再 show），在这里重铺一次就对了。⚠️ 别改成"
   （共享基元 imposition.py + 模块一 imposition_pages.py「选择拼版」
   + 模块二 imposition_layout.py「拼版操作」）
 
-### `class TaskDetailPage(StageRunnerMixin, SubmitMixin, RembgLiveMixin, PrintListMixin, ParamDraftMixin, HistoryMixin, DetectMixin, ImpositionMixin, PageListMixin, DetailViewMixin, FlowMixin, QWidget, WorkerHost)`
+### `class TaskDetailPage(StageRunnerMixin, SubmitMixin, RembgLiveMixin, PrintListMixin, ParamDraftMixin, HistoryMixin, DetectMixin, ImpositionMixin, PageListMixin, DetailViewMixin, FlowMixin, ImageEditActionsMixin, QWidget, WorkerHost)`
 
 任务详情页：由多个 Mixin 组合，固定四阶段流程。
 
@@ -7552,6 +7638,14 @@ resize 子控件再 show），在这里重铺一次就对了。⚠️ 别改成"
 | `panel_host_of_step(step: str) -> Any` | 界面步骤 key → ``control_stack`` 里那一页的宿主控件。 |
 | `stack_index_of_step(step: str) -> int \| None` | 界面步骤 key → 两个栈的页号；这一步不在本流程里返回 ``None``。 |
 | `current_stage() -> str` | 返回当前所处阶段的key（extract/detect/rembg/print/imposition）。 |
+| `can_edit_delete_selected() -> bool` | — |
+| `edit_delete_selected() -> None` | — |
+| `can_edit_insert_images() -> bool` | — |
+| `edit_insert_images() -> None` | — |
+| `can_edit_download_image() -> bool` | — |
+| `edit_download_image() -> None` | — |
+| `can_edit_print_image() -> bool` | — |
+| `edit_print_image() -> None` | — |
 | `navigate_by_arrow(forward: bool) -> bool` | 方向键切换当前步骤的页面（主窗口 ←/→ 转发入口）。 |
 | `keyPressEvent(event) -> None` | ←/→ 切换当前步骤的页面（焦点链不消费时兜底到达这里）。 |
 | `closeEvent(event) -> None` | 关闭页面时杀掉并等待 worker/detect 子进程，并关停所有后台线程。 |
@@ -14351,8 +14445,10 @@ Qt 原生 ``QMenuBar``：与既有窗口装饰同族、自带 ``Alt`` 助记符�
   :func:`quit_app` 的说明）；
 - 单任务 → ``<key>``：``shell.show_module(key)``，清单**从 ``MODULES`` 派生**
   （与左侧导航同源同序，本文件不维护第二份清单）；
-- 编辑 → 删除选中：转发给当前页（目前只有「PDF排版」页有这份实现，用户
-  2026-11-01 从预览区顶部按钮行挪进菜单栏）；
+- 编辑 → 删除选中 / 插入图片 / 下载图片 / 打印图片：全部转发给当前页
+  （鸭子类型 ``can_edit_*`` / ``edit_*``；PDF排版四项全开，图片拼版给
+  删除/插入，其余步骤给下载/打印，用户 2026-11-01 从预览区顶部按钮行挪进
+  菜单栏并扩展到四项）；
 - 帮助 → 帮助文档：``desktop/ui/help_dialog.py::open_manual()``。
 
 新增的只有「检查更新」与「关于」两件事：前者在子线程查 GitHub Release
@@ -14372,6 +14468,9 @@ qfluentwidgets 的 ``Dialog``，它只支持"字符串 + 两个按钮"）。
 | MENU_SINGLE_TASK | `"单任务(&S)"` |
 | MENU_HELP | `"帮助(&H)"` |
 | ACTION_DELETE_SELECTED | `"删除选中(&D)"` |
+| ACTION_INSERT_IMAGES | `"插入图片(&I)"` |
+| ACTION_DOWNLOAD_IMAGE | `"下载图片(&X)"` |
+| ACTION_PRINT_IMAGE | `"打印图片(&P)"` |
 | ACTION_CREATE_TASK | `"新建任务(&N)"` |
 | ACTION_QUICK_TASK | `"快速任务(&Q)"` |
 | QUICK_TASK_PICK_TITLE | `"选择 PDF/DjVu（快速任务）"` |
@@ -14482,7 +14581,7 @@ qfluentwidgets 的 ``Dialog``，它只支持"字符串 + 两个按钮"）。
 | `install_title_bar(window)` | 给**无边框主窗口**装自绘标题栏（图标 / 标题 / 菜单同排），返回标题栏。 |
 | `install_menu_bar(window) -> QMenuBar` | 把菜单栏（文件 / 编辑 / 单任务 / 帮助）插进**标题栏的标题之后**。 |
 | `build_file_menu(bar: QMenuBar, window) -> QMenu` | 「文件」：新建任务 / 快速任务 / （分隔线）/ 退出。 |
-| `build_edit_menu(bar: QMenuBar, window) -> QMenu` | 「编辑」：目前只有「删除选中」（PDF排版缩略图条）。 |
+| `build_edit_menu(bar: QMenuBar, window) -> QMenu` | 「编辑」：删除选中 / 插入图片 / 下载图片 / 打印图片（用户 2026-11-01）。 |
 | `open_quick_task(window) -> None` | 「快速任务」：选一个 PDF，**随即建任务**（不再进创建页填名称/流程）。 |
 | `build_single_task_menu(bar: QMenuBar, window) -> QMenu` | 「单任务」：**从 ``MODULES`` 派生**（顺序/文案/图标与左侧导航同源）。 |
 | `build_help_menu(bar: QMenuBar, window) -> QMenu` | 「帮助」：帮助文档 / 检查更新 / 关于。 |
@@ -14578,14 +14677,14 @@ PySide6 把 ``QMenuBar.addMenu("文案")`` 造出来的 ``QMenu`` **交给 Pytho
 
 #### `build_edit_menu(bar: QMenuBar, window) -> QMenu`
 
-「编辑」：目前只有「删除选中」（PDF排版缩略图条）。
+「编辑」：删除选中 / 插入图片 / 下载图片 / 打印图片（用户 2026-11-01）。
 
-菜单层**不做业务判断**：是否可点、删什么全交给当前页（鸭子类型调
-``can_delete_selected_print`` / ``delete_selected_print``，见
-``pages/taskdetail/print_list.py``）。这样菜单不必 import 具体页面，将来
-别的页面有同类动作也照这套接。
+菜单层**不做业务判断**：是否可点、做什么全交给当前页（鸭子类型调
+``can_edit_<能力>`` / ``edit_<能力>``，命名见 :data:`EDIT_MENU_ITEMS`）。
+页面没实现某项能力 ⇒ 该项置灰（不认识当前页时四项全灰）。这样菜单不必
+import 具体页面，PDF排版、图片拼版、去底色、检测、提取各自按能力接。
 
-⚠️ 启用状态在 ``aboutToShow`` 现问：选中项是用户随时点的，缓存会过期。
+⚠️ 启用状态在 ``aboutToShow`` 现问：选中项/当前步是用户随时变的，缓存会过期。
 
 #### `open_quick_task(window) -> None`
 

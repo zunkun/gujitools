@@ -529,6 +529,16 @@ def run(ctx) -> None:
            and [Path(e["file"]).stem for e in widget.entries()]
            == ["0001", "0002"])
 
+        # 用户 2026-11-01：鼠标选中缩略图后要提示「右键能做什么」
+        ok("缩略图未被点选前不显示右键操作提示",
+           widget.strip_hint.isHidden(), str(widget.strip_hint.isHidden()))
+        widget.strip.itemClicked.emit(widget.strip.item(0))
+        ok("点选缩略图后显示右键操作提示（删除 / 前后插入）",
+           not widget.strip_hint.isHidden()
+           and all(k in widget.strip_hint.text()
+                   for k in ("右键", "删除", "插入")),
+           widget.strip_hint.text())
+
         # 版面编辑：默认用「当前参数自动排版出的框」初始化，用户再微调
         _rect0 = widget.canvas.current_rect()
         ok("版面编辑初始框来自自动排版（在页面内且非空）",
@@ -604,6 +614,27 @@ def run(ctx) -> None:
            widget.strip.item(0).text())
         ok("未选中时给出提示而不是静默",
            _hint_of(widget) == "请先在左侧缩略图条选中要删除的图片。")
+
+        # 用户 2026-11-01：右键「删除当前图片」要先弹窗确认，并告知可恢复
+        ok("删除确认文案说明删除后可用「插入图片 → 删除恢复」放回",
+           "插入图片" in widget._delete_confirm_text(1)
+           and "恢复" in widget._delete_confirm_text(1),
+           widget._delete_confirm_text(1))
+        ok("多选时确认文案写明张数",
+           "2 张" in widget._delete_confirm_text(2),
+           widget._delete_confirm_text(2))
+        widget.strip.clearSelection()
+        widget.strip.item(0).setSelected(True)
+        widget._ask_delete_confirm = lambda count: False  # 离屏自测不真弹模态
+        widget._remove_current_with_confirm()
+        ok("右键删除点「取消」时条目保留",
+           widget.strip.count() == 1 and widget.count() == 1,
+           f"strip={widget.strip.count()} cache={widget.count()}")
+        widget._ask_delete_confirm = lambda count: True
+        widget._remove_current_with_confirm()
+        ok("右键删除确认后才真的从列表删掉",
+           widget.strip.count() == 0 and widget.count() == 0,
+           f"strip={widget.strip.count()} cache={widget.count()}")
     finally:
         widget.deleteLater()
 
@@ -1105,6 +1136,20 @@ def run(ctx) -> None:
         cjk_lines = [ln for ln in lines if "呵" in _line_text(ln)]
         ok("PDF：汉字仍是一字一格（各自成行）",
            len(cjk_lines) == 2, str([_line_text(ln) for ln in lines]))
+        # ---- 8c-3. 混排对齐：旋转段与汉字同一列、且紧接上一字 ----
+        # 用户 2026-11-01 报「标题含英文字符/数字时没对齐、字符间有间隔」：
+        # 汉字以基线为底向上长，旋转段从串首向下排，落点不补偿就会**左移一个
+        # descent**（不同列）并在前面**空出约一个 ascent**（一条近一字高的缝）。
+        if latin_lines and cjk_lines:
+            latin = latin_lines[0]["bbox"]
+            cjk_x0 = min(ln["bbox"][0] for ln in cjk_lines)
+            ok("PDF：旋转段与汉字同一列（轮廓左缘一致，±1.5pt）",
+               abs(latin[0] - cjk_x0) <= 1.5,
+               f"latin={latin[0]:.1f} cjk={cjk_x0:.1f}")
+            cjk_bottom = max(ln["bbox"][3] for ln in cjk_lines)
+            ok("PDF：旋转段紧接上一汉字（不留一个 ascent 的空隙，±1.5pt）",
+               abs(latin[1] - cjk_bottom) <= 1.5,
+               f"latin.top={latin[1]:.1f} cjk.bottom={cjk_bottom:.1f}")
     finally:
         doc3.close()
 

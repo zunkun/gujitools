@@ -33,6 +33,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from desktop.components.viewers import ImageViewerWidget
+from desktop.components.viewers.image_actions import ImageEditActionsMixin
 from desktop.modules.base import StepModulePage
 from desktop.modules.thumb_source import ThumbSourceMixin
 from desktop.steps import spec_by_key
@@ -41,7 +42,7 @@ from desktop.steps import spec_by_key
 _SPEC = spec_by_key("print")
 
 
-class PrintModulePage(StepModulePage, ThumbSourceMixin):
+class PrintModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin):
     """PDF排版模块页：拖入成品图（一批或一个文件夹）→ 调版面 → 合成 PDF。"""
 
     SPEC = _SPEC

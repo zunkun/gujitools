@@ -56,6 +56,7 @@ from qfluentwidgets import PrimaryPushButton, PushButton
 from desktop.components.box_kinds import BoxKindEditor
 from desktop.components.progress_row import ProgressRow
 from desktop.components.viewers import ImageViewerWidget
+from desktop.components.viewers.image_actions import ImageEditActionsMixin
 from desktop.components.viewers.image_view import box_names
 from desktop.components.yolo_export_dialog import ask_yolo_export
 from desktop.modules.base import StepModulePage
@@ -111,7 +112,7 @@ _YOLO_EXPORT_DIR_KEY = "yolo_export_dir"
 _YOLO_EXPORT_NAME_KEY = "yolo_export_name"
 
 
-class DetectModulePage(StepModulePage, ThumbSourceMixin):
+class DetectModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin):
     """检测文本框模块页：拖入图片 → 检测内容框 → 图上修正 → 导出坐标 JSON。"""
 
     SPEC = _SPEC
@@ -557,6 +558,19 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin):
     def _delete_selected_box(self) -> None:
         """删除当前选中的文本框（与 Delete 键同一条路径）。"""
         self._box_editor().delete_selected()
+
+    # ---------------------------------------------------- 「编辑」菜单（删框）
+    def can_edit_delete_selected(self) -> bool:
+        """「编辑 → 删除选中」：本页的“选中”指**文本框**（用户 2026-11-01 定）。
+
+        与右栏「删除选中框」同一判据（``delete_box`` 只在有选中框时启用），
+        不把整页删除混进来——本页源是用户图片清单，删页是另一套语义。
+        """
+        return self.delete_box.isEnabled()
+
+    def edit_delete_selected(self) -> None:
+        self._delete_selected_box()
+
 
     def _store_slots(self, path_text: str, slots: list, select=None) -> None:
         """把槽位结果写进内存表 + 重画，并同步类型控件与导出按钮。

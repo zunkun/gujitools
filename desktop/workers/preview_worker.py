@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     import fitz
 
 from PySide6.QtCore import QObject, QPointF, Qt, Signal, Slot
-from PySide6.QtGui import QColor, QFont, QImage, QImageReader, QFontMetrics, QPainter
+from PySide6.QtGui import QColor, QFont, QFontMetricsF, QImage, QImageReader, QPainter
 
 from utils.box_geometry import build_output_layout, parse_border_mm
 from desktop.utils.image_scaling import smooth_downscale
@@ -301,7 +301,9 @@ def _draw_print_text(painter: QPainter, spec, px_per_mm: float) -> None:
     竖排的分段来自 `utils.page_layout.vertical_runs`（与 fpdf 那边同一份）：
     宽字符一字一格，ASCII 段**整体旋转 90°**（`Happiness` 不会拆成九格）。
     """
-    from utils.page_layout import vertical_chunk_advance_mm, vertical_runs
+    from utils.page_layout import (
+        rotated_run_offset_mm, vertical_chunk_advance_mm, vertical_runs,
+    )
 
     painter.setFont(preview_text_font(spec, px_per_mm))
     color = spec.color or (0, 0, 0)
@@ -310,14 +312,20 @@ def _draw_print_text(painter: QPainter, spec, px_per_mm: float) -> None:
     if spec.vertical:
         char_h_mm = float(spec.char_h_mm)
         step = char_h_mm * px_per_mm
-        metrics = QFontMetrics(painter.font())
+        metrics = QFontMetricsF(painter.font())
+        # 旋转段的对齐补偿（与 fpdf 侧同一份规则，见 rotated_run_offset_mm）：
+        # 汉字以基线为底向上长，旋转段从串首向下排，不补偿就会与前后汉字
+        # 之间各空出/压住约一个字的高度。
+        dx_mm, dy_mm = rotated_run_offset_mm(
+            metrics.ascent() / px_per_mm, metrics.descent() / px_per_mm
+        )
         y = spec.y_start_mm * px_per_mm
         for chunk, rotated in vertical_runs(spec.text):
             if rotated:
                 # 以列位置为基线旋转 90°（Qt 的 rotate 正角即顺时针），
                 # 与 fpdf 的 `pdf.rotation(90, x, y)` 同义：字头朝右、自上而下
                 painter.save()
-                painter.translate(x, y)
+                painter.translate(x + dx_mm * px_per_mm, y + dy_mm * px_per_mm)
                 painter.rotate(90)
                 painter.drawText(QPointF(0.0, 0.0), chunk)
                 painter.restore()

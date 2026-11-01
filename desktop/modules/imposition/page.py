@@ -276,6 +276,24 @@ class ImpositionModulePage(ModulePage):
         card.box.addWidget(self.view_output_button)
         return card
 
+    # ---------------------------------------------------- 「编辑」菜单
+    def can_edit_delete_selected(self) -> bool:
+        """「编辑 → 删除选中」：左列**勾选**的拼版页可批量删除（与悬浮框同判据）。"""
+        return bool(getattr(self.view, "checked_pages", lambda: [])())
+
+    def edit_delete_selected(self) -> None:
+        """走左列悬浮框「批量删除」同一条实现（含确认弹窗与落盘）。"""
+        if self.can_edit_delete_selected():
+            self._on_batch_delete()
+
+    def can_edit_insert_images(self) -> bool:
+        """「编辑 → 插入图片」：点「＋ 选择拼版」的同一入口（候选池含已删除图）。"""
+        return bool(self._sources) and self.view is not None
+
+    def edit_insert_images(self) -> None:
+        self._on_add_pages()
+
+
     # ------------------------------------------------------------------ 选图
     def _on_paths_chosen(self, paths: list) -> None:
         """大输入区给了路径：展开成**图片清单**（文件夹取图片，含唯一子目录下钻）。

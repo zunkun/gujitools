@@ -16,7 +16,7 @@ from typing import Callable
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPageSize
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
-from qfluentwidgets import CaptionLabel, PrimaryPushButton, PushButton
+from qfluentwidgets import CaptionLabel, MessageBox, PrimaryPushButton, PushButton
 from qfluentwidgets import FluentIcon as FIF
 from desktop.ui import theme as T
 from desktop.ui import widgets as ui
@@ -132,10 +132,24 @@ class PrintPreviewWidget(
         # 向前插入 / 向后插入（均打开插入弹窗，落点可再改）
         self.strip.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.strip.customContextMenuRequested.connect(self._show_context_menu)
+        # 用户 2026-11-01：鼠标点选缩略图后把「右键能做什么」提示出来——
+        # 右键菜单只在右键那一刻出现，没点过右键的用户根本不知道有这功能。
+        self.strip.itemClicked.connect(self._show_strip_hint)
         left.addWidget(self.strip, 1)
         # 「插入图片」按钮放在缩略图**下面**（用户 2026-10-31）：
         # 点它弹「恢复图片 / 新上传」弹窗，不再直接弹文件选择框。
         left.addWidget(self.insert_button)
+        # 提示文案放在**按钮下方**（左侧列很窄，分两三行显示）。放在这里
+        # 而不是缩略图与按钮之间：提示是选中后才出现的，夹在中间会让「插入
+        # 图片」按钮在选中那一刻突然往下跳。
+        self.strip_hint = CaptionLabel("")
+        self.strip_hint.setText(
+            "右键缩略图：删除 / 向前插入 / 向后插入图片"
+        )
+        self.strip_hint.setWordWrap(True)
+        ui.apply_to(self.strip_hint, T.SIZE_CAPTION, color=T.INK_FAINT)
+        self.strip_hint.hide()  # 选中一张之前不占地方
+        left.addWidget(self.strip_hint)
         body.addLayout(left)
         # 兼容旧名字：历史自测与宿主代码里有 print_preview.list 的用法
         self.list = self.strip
@@ -237,6 +251,8 @@ class PrintPreviewWidget(
             self.view.show()
             self.view.clear_image(self._empty_hint)
             self.caption.setText("")
+            # 列表空了：右键提示也跟着收起来（没有条目可右键）
+            self.strip_hint.hide()
             return
         for index, entry in enumerate(entries):
             # 缩略图下方的文字是**页码**（当前行号），不是源文件名：页码只在
@@ -266,10 +282,7 @@ class PrintPreviewWidget(
 
     def remove_selected(self) -> None:
         """删除所有选中条目，未选中则通过 hint 信号提示。"""
-        rows = sorted(
-            {self.strip.row(item) for item in self.strip.selectedItems()},
-            reverse=True,
-        )
+        rows = self._selected_rows()
         if not rows:
             self.hint.emit("请先在左侧缩略图条选中要删除的图片。")
             return
@@ -279,6 +292,63 @@ class PrintPreviewWidget(
         self._sync_export_button()
         self._emit_order_changed()
         self._load_display()
+
+    def _selected_rows(self) -> list[int]:
+        """选中的行号（**从大到小**：先删大行号，前面的行号才不会错位）。"""
+        return sorted(
+            {self.strip.row(item) for item in self.strip.selectedItems()},
+            reverse=True,
+        )
+
+    def _remove_current_with_confirm(self) -> None:
+        """右键「删除当前图片」：先确认再删。
+
+        删除是**软删除**（文件仍在任务目录、「插入图片 → 删除恢复」可以放回），
+        但缩略图一删就从列表里消失，误点一下也够吓人——弹窗里说明"能恢复"
+        再动手。未选中时仍按 ``remove_selected`` 的口径提示，不弹确认。
+        """
+        rows = self._selected_rows()
+        if not rows:
+            self.remove_selected()
+            return
+        if not self._ask_delete_confirm(len(rows)):
+            return
+        self.remove_selected()
+
+    def _delete_confirm_text(self, count: int) -> str:
+        """删除确认弹窗的正文（必须告诉用户"删了还能恢复"）。"""
+        what = "这张图片" if count <= 1 else f"这 {count} 张图片"
+        return (
+            f"确定从待打印列表删除{what}吗？\n\n"
+            "删除后图片文件仍保留在任务目录里，"
+            "之后可以用「插入图片 → 删除恢复」重新放回列表。"
+        )
+
+    def _ask_delete_confirm(self, count: int) -> bool:
+        """弹删除确认框；``False`` = 用户取消。
+
+        ⚠️ 弹窗与动作分开一层：离屏自测绝不真弹模态，替换本方法即可验
+        「取消不删 / 确认才删」两条分支。
+        """
+        dialog = MessageBox(
+            "删除当前图片", self._delete_confirm_text(count), self.window()
+        )
+        dialog.yesButton.setText("删除")
+        dialog.cancelButton.setText("取消")
+        return bool(dialog.exec())
+
+    def _show_strip_hint(self, *_args) -> None:
+        """鼠标点选了缩略图：提示「右键能做什么」（列表为空时不显示）。"""
+        if self._entries_cache:
+            self.strip_hint.show()
+
+    def print_current(self) -> None:
+        """公开入口：把当前页按 A4 效果送打印机（窗口菜单「打印图片」用）。
+
+        与控件自己的「打印本页」按钮同一条实现（``_print_current``）；按钮
+        只管显隐/启用，动作本身不复制一份。
+        """
+        self._print_current()
 
 
     def _show_context_menu(self, pos) -> None:
@@ -306,7 +376,9 @@ class PrintPreviewWidget(
         menu = RoundMenu(parent=self.window())
         self._context_menu = menu
         for text, icon, slot in (
-            ("删除当前图片", FIF.DELETE, self.remove_selected),
+            # 删除走确认（用户 2026-11-01）：误点一下就把页删没了，弹窗说清
+            # 「还能在插入图片里恢复」再动手；插入两项本身是弹窗，无需再确认
+            ("删除当前图片", FIF.DELETE, self._remove_current_with_confirm),
             ("向前插入图片", FIF.UP,
              lambda: self.insert_before_requested.emit()),
             ("向后插入图片", FIF.DOWN,

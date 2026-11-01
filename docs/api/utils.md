@@ -4,7 +4,7 @@
 
 通用工具函数：几何、排序、图像 IO、PDF、YOLO
 
-覆盖 28 个模块、24 个公开类、197 个公开函数/方法（生成于 2026-11-01）。
+覆盖 28 个模块、24 个公开类、198 个公开函数/方法（生成于 2026-11-01）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -27,7 +27,7 @@
 | [`utils.image_io`](#utilsimage_io) | 0 | 2 |
 | [`utils.image_utils`](#utilsimage_utils) | 0 | 8 |
 | [`utils.margin_utils`](#utilsmargin_utils) | 0 | 2 |
-| [`utils.page_layout`](#utilspage_layout) | 2 | 13 |
+| [`utils.page_layout`](#utilspage_layout) | 2 | 14 |
 | [`utils.path_utils`](#utilspath_utils) | 0 | 3 |
 | [`utils.pdf_draw`](#utilspdf_draw) | 1 | 9 |
 | [`utils.pdf_extract`](#utilspdf_extract) | 0 | 13 |
@@ -1939,6 +1939,8 @@ print.py 里的裸字面量 `8.0`，现在提为 `TEXT_MARGIN_MM`。
 | DEFAULT_PAGE_NUMBER_PREFIX | `"第"` |
 | DEFAULT_PAGE_NUMBER_SUFFIX | `"頁"` |
 | LATIN_ADVANCE_RATIO | `0.55` |
+| DEFAULT_ASCENT_RATIO | `0.86` |
+| DEFAULT_DESCENT_RATIO | `0.14` |
 
 ### `class PrintTextSpec`
 
@@ -1981,6 +1983,7 @@ print.py 里的裸字面量 `8.0`，现在提为 `TEXT_MARGIN_MM`。
 | 函数 | 说明 |
 | --- | --- |
 | `is_rotated_char(ch: str) -> bool` | 该字符是否属于"整段旋转 90°"的拉丁/半角段。 |
+| `rotated_run_offset_mm(ascent_mm: float, descent_mm: float) -> Tuple[float, float]` | 竖排里"整段旋转 90°"的拉丁段：绘制点相对列基线的偏移 (dx, dy)。 |
 | `vertical_runs(text: str) -> List[Tuple[str, bool]]` | 竖排文本 → [(片段, 是否旋转 90°)]，相邻同类字符合并成一段。 |
 | `vertical_advance_mm(chunk: str, char_h_mm: float, rotated: bool) -> float` | 一段竖排片段在竖直方向上占的高度（mm）——**估算值**。 |
 | `vertical_chunk_advance_mm(chunk: str, char_h_mm: float, rotated: bool, latin_width_mm=None) -> float` | 绘制端一段竖排片段的实际步进（mm）——`draw_vertical_text`（fpdf） |
@@ -1993,6 +1996,21 @@ print.py 里的裸字面量 `8.0`，现在提为 `TEXT_MARGIN_MM`。
 | `sides_for_pages(total: int, sorted_nodes: Sequence, page_number_start_page: int) -> List[str]` | 逐页给出标题/页码所在侧（left / right）。 |
 | `text_insets(value: Any) -> Optional[List[float]]` | 标题/页码的「距页边」设置 → [上, 右, 下, 左]（mm）。 |
 | `plan_print_page(image_size_px: Tuple[int, int], args: dict, page_index: int, total: int, sides: Optional[Sequence[str]]=None, sorted_nodes: Optional[Sequence]=None, image_name: Optional[str]=None, image_rect: Optional[Sequence[float]]=None) -> PrintPagePlan` | 单页排版几何。 |
+
+#### `rotated_run_offset_mm(ascent_mm: float, descent_mm: float) -> Tuple[float, float]`
+
+竖排里"整段旋转 90°"的拉丁段：绘制点相对列基线的偏移 (dx, dy)。
+
+为什么必须偏移
+------------
+宽字符（汉字）的落点是**基线**，字形以基线为底向上长（上方 ascent、
+下方 descent，两者之和 = 一个字高）；而旋转段的绘制点是**串首**，字形
+从那里沿列方向**向下**排，横向只占 ascent + descent。两者共用同一个
+落点 y 时：旋转段**之前**会空出约一个 ascent（与前一汉字之间出现近一
+个字高的缝），**之后**又会因没留出 descent 而压住下一个汉字。
+补偿：横向 +descent（旋转后 descender 本落在列左，右移后列才对得上）、
+纵向 -ascent（串首上提一个 ascent）。预览（QPainter）与成品（fpdf）都
+按这份偏移落笔，混排标题才是一列连续的竖排。
 
 #### `vertical_runs(text: str) -> List[Tuple[str, bool]]`
 
@@ -2267,6 +2285,11 @@ PDF → 图片的部分在 `utils/pdf_extract.py`。
 ``chain``（`FontChain`）给出时**逐字挑选字体**：主字体缺这个字的字形
 就顺位落到下一个（生僻字因此落到宋体-ExtB 之类的补字字体上），
 而不是画出空白。不给则整段用 ``font_name``（历史行为）。
+
+⚠️ 旋转段的落点按 `utils.page_layout.rotated_run_offset_mm` 偏移
+（横向 +descent、纵向 -ascent）：汉字以基线为底向上长，而旋转段从串首
+沿列方向向下排，不补偿就会与前后汉字之间各空出/压住约一个字的高度
+（中英数字混排标题"没对齐、字符间有间隔"的根因）。
 
 #### `draw_horizontal_text(pdf, text, x, y, font_name, font_size, color, chain=None)`
 

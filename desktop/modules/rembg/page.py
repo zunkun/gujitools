@@ -25,6 +25,7 @@ from PySide6.QtCore import QTimer
 
 from core.reporter import EVENT_PAGE_DONE
 from desktop.components.viewers import RembgPreviewWidget
+from desktop.components.viewers.image_actions import ImageEditActionsMixin
 from desktop.modules.base import StepModulePage
 from desktop.modules.thumb_source import ThumbSourceMixin
 from desktop.steps import spec_by_key
@@ -39,7 +40,7 @@ _SPEC = spec_by_key("rembg")
 _WARM_THUMB_LIMIT = 60
 
 
-class RembgModulePage(StepModulePage, ThumbSourceMixin):
+class RembgModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin):
     """去底色模块页：拖入图片（单张或文件夹）→ 调参数 → 批量去底 → 对比看结果。"""
 
     SPEC = _SPEC

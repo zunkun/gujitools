@@ -169,6 +169,18 @@ class RembgPreviewWidget(
         entry = self._current_entry()
         return entry["path"] if entry else None
 
+    def current_display_path(self) -> str | None:
+        """当前**大图正在显示**的文件：结果态给结果图，原图态给源图。
+
+        「编辑 → 下载/打印图片」按用户此刻看到的形态取图（``_resolve_source``
+        与主预览共用同一份判定，不另写一套）。
+        """
+        entry = self._current_entry()
+        if not entry:
+            return None
+        source, _effect, _has_result, _error = self._resolve_source(entry)
+        return str(source) if source is not None else None
+
 
     def show_live_pending(self) -> None:
         """实时去底色正在计算：只在**下方说明行**给个反馈，**不动大图**。

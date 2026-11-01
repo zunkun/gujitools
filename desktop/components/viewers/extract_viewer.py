@@ -148,6 +148,14 @@ class ExtractPreviewWidget(PdfViewerWidget):
             return None
         return self._extract_dir / f"{page + 1}.{self._extract_ext()}"
 
+    def current_display_path(self) -> Path | None:
+        """当前大图显示的是**已提取产物**时返回它的路径；PDF 渲染页没有文件。
+
+        「编辑 → 下载/打印图片」只对真实文件开放（虚拟页返回 None ⇒ 菜单置灰）。
+        """
+        page = self._shown_extract_page
+        return self.extract_path_for(page) if page is not None else None
+
     # ------------------------------------------------------------ 换文档
     def set_pdf(self, path, placeholder=None, cache_dir=None) -> None:
         """换 PDF：提取态全部作废（在飞的提取结果按代际丢弃）。"""

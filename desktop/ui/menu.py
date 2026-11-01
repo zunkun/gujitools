@@ -19,8 +19,10 @@ Qt 原生 ``QMenuBar``：与既有窗口装饰同族、自带 ``Alt`` 助记符�
   :func:`quit_app` 的说明）；
 - 单任务 → ``<key>``：``shell.show_module(key)``，清单**从 ``MODULES`` 派生**
   （与左侧导航同源同序，本文件不维护第二份清单）；
-- 编辑 → 删除选中：转发给当前页（目前只有「PDF排版」页有这份实现，用户
-  2026-11-01 从预览区顶部按钮行挪进菜单栏）；
+- 编辑 → 删除选中 / 插入图片 / 下载图片 / 打印图片：全部转发给当前页
+  （鸭子类型 ``can_edit_*`` / ``edit_*``；PDF排版四项全开，图片拼版给
+  删除/插入，其余步骤给下载/打印，用户 2026-11-01 从预览区顶部按钮行挪进
+  菜单栏并扩展到四项）；
 - 帮助 → 帮助文档：``desktop/ui/help_dialog.py::open_manual()``。
 
 新增的只有「检查更新」与「关于」两件事：前者在子线程查 GitHub Release
@@ -95,10 +97,26 @@ MENU_FILE = "文件(&F)"
 MENU_EDIT = "编辑(&E)"
 MENU_SINGLE_TASK = "单任务(&S)"
 MENU_HELP = "帮助(&H)"
-#: 「编辑 → 删除选中」：删掉「PDF排版」左侧缩略图条里选中的图片（用户 2026-11-01
-#: 把预览区顶部那排按钮里的「删除选中」挪到菜单栏）。只路由到详情页，不在这里
-#: 判断选中/步骤——菜单项是否可点由 ``aboutToShow`` 现问当前页。
+#: 「编辑」菜单的四项动作（用户 2026-11-01）：删除选中 / 插入图片 / 下载图片 /
+#: 打印图片。菜单层**零业务**：可点性与动作全问当前页的同名方法
+#: （``can_edit_delete_selected`` / ``edit_delete_selected`` …，见
+#: ``build_edit_menu``），这样别的页面有同类动作也照这套接，不必 import 具体页面。
 ACTION_DELETE_SELECTED = "删除选中(&D)"
+ACTION_INSERT_IMAGES = "插入图片(&I)"
+ACTION_DOWNLOAD_IMAGE = "下载图片(&X)"
+ACTION_PRINT_IMAGE = "打印图片(&P)"
+#: 四项能力 → 菜单项文案/提示（顺序即菜单顺序）。
+EDIT_MENU_ITEMS = (
+    ("delete_selected", ACTION_DELETE_SELECTED,
+     "删除当前页面里选中的图片；不能删除的页面会自动置灰"),
+    ("insert_images", ACTION_INSERT_IMAGES,
+     "向当前页面插入图片（PDF排版可恢复已删除的图片）"),
+    ("download_image", ACTION_DOWNLOAD_IMAGE,
+     "把当前显示的图片另存到磁盘"),
+    ("print_image", ACTION_PRINT_IMAGE,
+     "把当前显示的图片送到打印机"),
+)
+
 ACTION_CREATE_TASK = "新建任务(&N)"
 #: 「快速任务」（用户 2026-10-16）：选 PDF **直接建任务**，不经过创建任务页、
 #: 不问名称/流程（**任务名 = PDF 文件名**，流程用默认模板）。
@@ -693,23 +711,31 @@ def build_file_menu(bar: QMenuBar, window) -> QMenu:
 
 
 def build_edit_menu(bar: QMenuBar, window) -> QMenu:
-    """「编辑」：目前只有「删除选中」（PDF排版缩略图条）。
+    """「编辑」：删除选中 / 插入图片 / 下载图片 / 打印图片（用户 2026-11-01）。
 
-    菜单层**不做业务判断**：是否可点、删什么全交给当前页（鸭子类型调
-    ``can_delete_selected_print`` / ``delete_selected_print``，见
-    ``pages/taskdetail/print_list.py``）。这样菜单不必 import 具体页面，将来
-    别的页面有同类动作也照这套接。
+    菜单层**不做业务判断**：是否可点、做什么全交给当前页（鸭子类型调
+    ``can_edit_<能力>`` / ``edit_<能力>``，命名见 :data:`EDIT_MENU_ITEMS`）。
+    页面没实现某项能力 ⇒ 该项置灰（不认识当前页时四项全灰）。这样菜单不必
+    import 具体页面，PDF排版、图片拼版、去底色、检测、提取各自按能力接。
 
-    ⚠️ 启用状态在 ``aboutToShow`` 现问：选中项是用户随时点的，缓存会过期。
+    ⚠️ 启用状态在 ``aboutToShow`` 现问：选中项/当前步是用户随时变的，缓存会过期。
     """
     menu = _add_menu(bar, MENU_EDIT)
-    delete = QAction(ACTION_DELETE_SELECTED, menu)
-    delete.setToolTip("删除「PDF排版」左侧缩略图条里选中的图片（先选中再删除）")
-    delete.triggered.connect(lambda _checked=False: _delete_selected(window))
-    menu.addAction(delete)
-    menu.aboutToShow.connect(
-        lambda: delete.setEnabled(_can_delete_selected(window))
-    )
+    actions: dict[str, QAction] = {}
+    for capability, text, tooltip in EDIT_MENU_ITEMS:
+        action = QAction(text, menu)
+        action.setToolTip(tooltip)
+        action.triggered.connect(
+            lambda _checked=False, c=capability: _run_edit_action(window, c)
+        )
+        menu.addAction(action)
+        actions[capability] = action
+
+    def _sync_enabled() -> None:
+        for capability, action in actions.items():
+            action.setEnabled(_can_edit_action(window, capability))
+
+    menu.aboutToShow.connect(_sync_enabled)
     return menu
 
 
@@ -725,19 +751,33 @@ def _current_page(window):
     return pages.currentWidget() if pages is not None else None
 
 
-def _can_delete_selected(window) -> bool:
-    """「删除选中」当前是否可点：问当前页（不认识的页面一律不可点）。"""
+def _edit_capability(window, capability: str, verb: str):
+    """当前页上的 ``<verb>_edit_<capability>``；没实现/不可调时返回 ``None``。"""
     page = _current_page(window)
-    probe = getattr(page, "can_delete_selected_print", None)
+    hook = getattr(page, f"{verb}_edit_{capability}", None)
+    return hook if callable(hook) else None
+
+
+def _can_edit_action(window, capability: str) -> bool:
+    """某项编辑动作当前是否可点：问当前页（不认识的页面一律不可点）。"""
+    probe = _edit_capability(window, capability, "can")
     return bool(probe()) if probe is not None else False
 
 
-def _delete_selected(window) -> None:
-    """「删除选中」的动作：转发给当前页自己的实现。"""
-    page = _current_page(window)
-    action = getattr(page, "delete_selected_print", None)
+def _run_edit_action(window, capability: str) -> None:
+    """执行某项编辑动作：转发给当前页自己的实现。"""
+    action = _edit_capability(window, capability, "edit")
     if action is not None:
         action()
+
+
+#: 兼容旧名字（既有自测/文档按它断言「删除选中」的可用性）。
+def _can_delete_selected(window) -> bool:
+    return _can_edit_action(window, "delete_selected")
+
+
+def _delete_selected(window) -> None:
+    _run_edit_action(window, "delete_selected")
 
 
 def open_quick_task(window) -> None:

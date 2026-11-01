@@ -173,6 +173,30 @@ def register_fonts(pdf, preferred=None, texts=()):
     return build_font_chain(pdf, texts=texts, preferred=preferred).primary
 
 
+def _current_font_metrics_mm(pdf, font_size_mm: float) -> tuple[float, float]:
+    """当前字体的 (ascent, descent) 毫米值（descent 为正，朝下）。
+
+    fpdf2 的 ``current_font.desc`` 里 ascent / descent 以 1/1000 em 给出
+    （ascent 为正、descent 为负，来自 hhea 表）。核心字体（Helvetica）没有
+    desc，此时回落到 `utils.page_layout` 的缺省比例——只为不崩，正常路径
+    （TrueType 中文字体）都拿得到实测值。
+    """
+    from utils.page_layout import DEFAULT_ASCENT_RATIO, DEFAULT_DESCENT_RATIO
+
+    desc = getattr(getattr(pdf, "current_font", None), "desc", None)
+    ascent = getattr(desc, "ascent", None)
+    descent = getattr(desc, "descent", None)
+    if ascent is None or descent is None:
+        return (
+            DEFAULT_ASCENT_RATIO * font_size_mm,
+            DEFAULT_DESCENT_RATIO * font_size_mm,
+        )
+    return (
+        float(ascent) / 1000.0 * font_size_mm,
+        -float(descent) / 1000.0 * font_size_mm,
+    )
+
+
 def draw_vertical_text(
     pdf, text, x, y_start, font_name, font_size, color, direction="down",
     chain=None,
@@ -187,9 +211,14 @@ def draw_vertical_text(
     ``chain``（`FontChain`）给出时**逐字挑选字体**：主字体缺这个字的字形
     就顺位落到下一个（生僻字因此落到宋体-ExtB 之类的补字字体上），
     而不是画出空白。不给则整段用 ``font_name``（历史行为）。
+
+    ⚠️ 旋转段的落点按 `utils.page_layout.rotated_run_offset_mm` 偏移
+    （横向 +descent、纵向 -ascent）：汉字以基线为底向上长，而旋转段从串首
+    沿列方向向下排，不补偿就会与前后汉字之间各空出/压住约一个字的高度
+    （中英数字混排标题"没对齐、字符间有间隔"的根因）。
     """
     from utils.page_layout import (
-        vertical_chunk_advance_mm, vertical_runs,
+        rotated_run_offset_mm, vertical_chunk_advance_mm, vertical_runs,
     )
 
     r, g, b = color
@@ -210,6 +239,7 @@ def draw_vertical_text(
             # 实际（≈0.5）多出约 1 个字高，旋转段与后续汉字之间出现
             # 一条空隙。get_string_width 返回的就是当前文档单位（mm）。
             latin_width_mm = pdf.get_string_width(chunk)
+            ascent_mm, descent_mm = _current_font_metrics_mm(pdf, char_height_mm)
         else:
             latin_width_mm = None
         advance = vertical_chunk_advance_mm(
@@ -220,8 +250,12 @@ def draw_vertical_text(
             # ⚠️ fpdf 的 rotation 正角是**逆时针**，所以这里要写 -90；对应
             # Qt 侧是 `painter.rotate(+90)`（Qt 正角顺时针）。写 +90 的话
             # 单词会从下往上读（Happiness 变成 nippessH）。
-            with pdf.rotation(-90, x, y):
-                pdf.text(x, y, chunk)
+            # ⚠️ 落点还要按 `rotated_run_offset_mm` 偏移，否则旋转段与前后
+            # 汉字之间各差一个 descent/ascent（混排标题出现"断开"与错位）。
+            dx_mm, dy_mm = rotated_run_offset_mm(ascent_mm, descent_mm)
+            ax, ay = x + dx_mm, y + dy_mm
+            with pdf.rotation(-90, ax, ay):
+                pdf.text(ax, ay, chunk)
         else:
             # 宽字符逐字落格。⚠️ direction 的历史语义要照旧：`down` 是 y 递减、
             # 其余（默认 `up`，print.py 走这条）是 y 递增 —— 名字与页面上的

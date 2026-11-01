@@ -48,6 +48,7 @@ from desktop.store import (
 )
 from desktop.ui import theme as T
 from desktop.ui.toast import show_toast
+from desktop.components.viewers.image_actions import ImageEditActionsMixin
 from desktop.ui.widgets import apply_to, bold_button
 from desktop.utils.files import changed_images, image_files_fingerprint
 from desktop.workers import CopySourceWorker, WorkerHost, connect_queued
@@ -106,6 +107,7 @@ class TaskDetailPage(
     PageListMixin,
     DetailViewMixin,
     FlowMixin,
+    ImageEditActionsMixin,
     QWidget,
     WorkerHost,
 ):
@@ -984,6 +986,80 @@ class TaskDetailPage(
         #    返回空串当"当前阶段"的哨值，而不是 None——本方法的返回类型是 str，
         #    调方都拿它去查 STAGES/STAGE_LABELS，None 会一路炸到那里。
         return ""
+
+    # ---------------------------------------------------------------- 「编辑」菜单
+    #
+    # 菜单只认 ``can_edit_* / edit_*`` 四对方法（见 ``desktop/ui/menu.py``）。
+    # 详情页一个实例承载五个预览区，所以这里按**当前阶段**分派：PDF排版四项全开，
+    # 拼版给删除/插入，其余步骤给下载/打印（检测的“删除选中”= 删选中框）。
+    def _edit_image_path(self) -> Path | None:
+        """当前阶段能下载/打印的**真实图片文件**；虚拟页（PDF 渲染页）返回 None。"""
+        stage = self.current_stage()
+        if stage == "detect":
+            return self.detect_viewer.current_path()
+        if stage == "rembg":
+            text = self.rembg_viewer.current_display_path()
+            return Path(text) if text else None
+        if stage == "extract":
+            return self.extract_result_viewer.current_display_path()
+        return None
+
+    def _edit_image_toast(self, kind: str, title: str, content: str) -> None:
+        self._toast(kind, title, content)
+
+    def can_edit_delete_selected(self) -> bool:
+        stage = self.current_stage()
+        if stage == "print":
+            return self.can_delete_selected_print()
+        if stage == "imposition":
+            return bool(self.imposition_view.checked_pages())
+        if stage == "detect":
+            return self.detect_viewer.selected_index() >= 0
+        return False
+
+    def edit_delete_selected(self) -> None:
+        stage = self.current_stage()
+        if stage == "print":
+            self.delete_selected_print()
+        elif stage == "imposition":
+            self._on_imposition_batch_delete()
+        elif stage == "detect":
+            self._delete_selected_box()
+
+    def can_edit_insert_images(self) -> bool:
+        stage = self.current_stage()
+        if stage in ("print", "imposition"):
+            return bool(self.task_id)
+        return False
+
+    def edit_insert_images(self) -> None:
+        stage = self.current_stage()
+        if stage == "print":
+            self._insert_print_images()
+        elif stage == "imposition":
+            self._on_imposition_add_requested()
+
+    def can_edit_download_image(self) -> bool:
+        if self.current_stage() == "print":
+            return self.print_preview.export_image_button.isEnabled()
+        return super().can_edit_download_image()
+
+    def edit_download_image(self) -> None:
+        if self.current_stage() == "print":
+            self._export_print_image()
+            return
+        super().edit_download_image()
+
+    def can_edit_print_image(self) -> bool:
+        if self.current_stage() == "print":
+            return self.print_preview.print_button.isEnabled()
+        return super().can_edit_print_image()
+
+    def edit_print_image(self) -> None:
+        if self.current_stage() == "print":
+            self.print_preview.print_current()
+            return
+        super().edit_print_image()
 
     def navigate_by_arrow(self, forward: bool) -> bool:
         """方向键切换当前步骤的页面（主窗口 ←/→ 转发入口）。

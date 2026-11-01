@@ -221,12 +221,14 @@ def run(ctx) -> None:
     ok("退出项带 &X 助记符（用户点名的写法）",
        menu.ACTION_QUIT.endswith("(&X)"), menu.ACTION_QUIT)
     edit_menu = _menu_of(w, menu.MENU_EDIT)
-    ok("编辑菜单：删除选中(&D)",
+    ok("编辑菜单：删除选中 / 插入图片 / 下载图片 / 打印图片",
        [a.text() for a in edit_menu.actions() if not a.isSeparator()]
-       == [menu.ACTION_DELETE_SELECTED],
+       == [menu.ACTION_DELETE_SELECTED, menu.ACTION_INSERT_IMAGES,
+           menu.ACTION_DOWNLOAD_IMAGE, menu.ACTION_PRINT_IMAGE],
        f"{[a.text() for a in edit_menu.actions()]}")
-    ok("「删除选中」问当前页要可用性（任务列表页不认识 → 不可点）",
-       menu._can_delete_selected(w) is False, "")
+    ok("编辑菜单四项都问当前页要可用性（任务列表页不认识 → 全不可点）",
+       all(menu._can_edit_action(w, capability) is False
+           for capability, _text, _tip in menu.EDIT_MENU_ITEMS), "")
     help_menu = _menu_of(w, menu.MENU_HELP)
     ok("帮助菜单：帮助文档(&D) / 检查更新(&U) / 检查数据包(&M) / 关于(&A)",
        [a.text() for a in help_menu.actions() if not a.isSeparator()]

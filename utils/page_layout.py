@@ -166,9 +166,33 @@ LATIN_ADVANCE_RATIO = 0.55
 # 多出一条肉眼可见的空隙。
 
 
+#: 字体 ascent / descent 的缺省比例（以 em 为 1）。**只在渲染端拿不到实测
+#: 字体度量时**使用（fpdf 核心字体、Qt 的退化字体）。仿宋实测 ascent
+#: 0.859 / descent 0.141，fpdf 与 Qt 都从同一张 hhea 表取，实测值优先。
+DEFAULT_ASCENT_RATIO = 0.86
+DEFAULT_DESCENT_RATIO = 0.14
+
+
 def is_rotated_char(ch: str) -> bool:
     """该字符是否属于"整段旋转 90°"的拉丁/半角段。"""
     return 0x20 <= ord(ch) <= 0x7E
+
+
+def rotated_run_offset_mm(ascent_mm: float, descent_mm: float) -> Tuple[float, float]:
+    """竖排里"整段旋转 90°"的拉丁段：绘制点相对列基线的偏移 (dx, dy)。
+
+    为什么必须偏移
+    ------------
+    宽字符（汉字）的落点是**基线**，字形以基线为底向上长（上方 ascent、
+    下方 descent，两者之和 = 一个字高）；而旋转段的绘制点是**串首**，字形
+    从那里沿列方向**向下**排，横向只占 ascent + descent。两者共用同一个
+    落点 y 时：旋转段**之前**会空出约一个 ascent（与前一汉字之间出现近一
+    个字高的缝），**之后**又会因没留出 descent 而压住下一个汉字。
+    补偿：横向 +descent（旋转后 descender 本落在列左，右移后列才对得上）、
+    纵向 -ascent（串首上提一个 ascent）。预览（QPainter）与成品（fpdf）都
+    按这份偏移落笔，混排标题才是一列连续的竖排。
+    """
+    return float(descent_mm), -float(ascent_mm)
 
 
 def vertical_runs(text: str) -> List[Tuple[str, bool]]:

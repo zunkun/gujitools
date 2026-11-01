@@ -29,6 +29,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from desktop.components.viewers import ImageViewerWidget
+from desktop.components.viewers.image_actions import ImageEditActionsMixin
 from desktop.modules.base import StepModulePage
 from desktop.modules.thumb_source import ThumbSourceMixin
 from desktop.steps import spec_by_key
@@ -44,7 +45,7 @@ _SPEC = spec_by_key("extract")
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
 
 
-class ExtractModulePage(StepModulePage, ThumbSourceMixin):
+class ExtractModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin):
     """图片提取模块页：选 PDF → 看页缩略图 → 调参数 → 执行 → 看提取结果。"""
 
     SPEC = _SPEC
