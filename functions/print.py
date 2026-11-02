@@ -22,10 +22,13 @@ from utils.margin_utils import DEFAULT_PAGE_MARGINS, normalize_margin
 from utils.units import MM_PER_INCH
 from utils.page_layout import (
     PrintTextSpec,
+    fit_rotated_rect,
     image_name_parts,
+    normalize_page_rotation,
     paper_size_mm,
     plan_print_page,
     resolve_title_nodes,
+    rotated_bbox_size,
     sides_for_pages,
     text_insets,
     TEXT_MARGIN_MM,
@@ -106,6 +109,49 @@ def _normalize_page_rects(raw) -> dict:
         except (TypeError, ValueError):
             continue
     return out
+
+
+def _normalize_page_rotations(raw) -> dict:
+    """把逐图旋转角的页号键归一为 int，值归一为 **(-180, 180] 的浮点角度**。
+
+    与 :func:`_normalize_page_rects` 同一套原因：运行配置要过 JSON，键会变成
+    字符串；直接用 int 查表会让「版面编辑器里转好的方向」在 PDF 里失效。
+    角度可以是任意值（画布旋转钮可拖任意角度），口径统一走
+    ``utils.page_layout.normalize_page_rotation``。
+    0° 不写进结果表（没有旋转就是没有覆盖，省得调用方到处判空）。
+    """
+    out: dict = {}
+    if not isinstance(raw, dict):
+        return out
+    for key, value in raw.items():
+        try:
+            page = int(key)
+        except (TypeError, ValueError):
+            continue
+        rotate = normalize_page_rotation(value)
+        if rotate:
+            out[page] = rotate
+    return out
+
+
+def _rotate_pil(img: Image.Image, degrees) -> Image.Image:
+    """按顺时针 ``degrees`` 旋转 PIL 位图（任意角度，绕中心按外接框扩图）。
+
+    角度口径与预览/版面编辑器一致（``utils.page_layout.normalize_page_rotation``）。
+    直角（±90/180）仍走**无损转置**，老任务输出逐像素不变；其它角度用
+    ``rotate(-angle, expand=True)``——PIL 的 ``rotate`` 正角是逆时针，所以
+    顺时针角度要取负。⚠️ PIL 的 ``ROTATE_270`` 是**逆时针 270° = 顺时针 90°**。
+    """
+    angle = normalize_page_rotation(degrees)
+    if angle == 0:
+        return img
+    if angle == 90:
+        return img.transpose(Image.Transpose.ROTATE_270)
+    if angle == 180:
+        return img.transpose(Image.Transpose.ROTATE_180)
+    if angle == -90:
+        return img.transpose(Image.Transpose.ROTATE_90)
+    return img.rotate(-angle, expand=True, resample=Image.Resampling.BICUBIC)
 
 
 def _draw_plan_text(pdf, spec: PrintTextSpec, font_name: str, chain=None) -> None:
@@ -363,6 +409,11 @@ class PrintFunction(FunctionBase):
         page_rects = _normalize_page_rects(
             self.command_args.get("page_rects")
         )
+        # 逐图旋转覆盖：{页号(1-based): 角度}（float，顺时针为正）。与
+        # page_rects 同源，PDF 侧先按角度旋转位图，再贴进同一个框。
+        page_rotations = _normalize_page_rotations(
+            self.command_args.get("page_rotations")
+        )
 
         workers = self.command_args.get("workers", 4)
 
@@ -397,6 +448,7 @@ class PrintFunction(FunctionBase):
             skip_pages=skip_pages,
             workers=workers,
             page_rects=page_rects,
+            page_rotations=page_rotations,
             files=files,
             title_font=title_font,
             page_number_font=page_number_font,
@@ -434,6 +486,7 @@ class PrintFunction(FunctionBase):
         page_number_margins: Optional[List[float]] = None,
         title_font: Optional[str] = None,
         page_number_font: Optional[str] = None,
+        page_rotations: Optional[dict] = None,
     ) -> dict:
         if skip_pages is None:
             skip_pages = []
@@ -447,6 +500,10 @@ class PrintFunction(FunctionBase):
         if page_rects:
             print(f"采用版面编辑器坐标：{len(page_rects)} 页"
                   f"（第 {min(page_rects)}–{max(page_rects)} 页）")
+        page_rotations = _normalize_page_rotations(page_rotations)
+        if page_rotations:
+            print(f"采用版面编辑器旋转：{len(page_rotations)} 页"
+                  f"（第 {min(page_rotations)}–{max(page_rotations)} 页）")
 
         print(f"输入目录: {input_dir}")
         print(f"输出 PDF: {output_pdf}")
@@ -637,7 +694,19 @@ class PrintFunction(FunctionBase):
                 if not data or data.get("img") is None:
                     continue
                 img = data["img"]
-                w_img, h_img = data["size"]
+                # 逐图旋转：先转位图（直角无损转置、任意角度扩图），再按旋转后
+                # 的外接框走同一份排版几何——与预览侧「先转 QImage 再 plan」同序。
+                angle = page_rotations.get(i + 1) or 0.0
+                source_size = img.size
+                if angle:
+                    img = _rotate_pil(img, angle)
+                w_img, h_img = img.size
+                if angle:
+                    # 外接框尺寸按旋转前源图算（PIL 扩图会四舍五入差 1px，
+                    # 用它会让 preview 与 PDF 的落点差一丝）。
+                    w_img, h_img = rotated_bbox_size(
+                        source_size[0], source_size[1], angle
+                    )
 
                 pdf.add_page()
 
@@ -645,6 +714,12 @@ class PrintFunction(FunctionBase):
                 # page_rects 由 GUI 从 print.json pages[].rect 收集：给定页直接用
                 # 其坐标作图片框（所见即所得），否则走 page_margins 自动排版。
                 image_rect = page_rects.get(i + 1)
+                if image_rect is not None and angle:
+                    # 旋转后的图等比放进同一个用户框（不裁剪不拉伸），与预览/
+                    # 画布共用 fit_rotated_rect。
+                    image_rect = fit_rotated_rect(
+                        image_rect, source_size, angle
+                    )
                 plan = plan_print_page(
                     (w_img, h_img), plan_args, i, total,
                     sides=sides, sorted_nodes=sorted_nodes,

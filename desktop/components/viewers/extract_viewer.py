@@ -156,6 +156,10 @@ class ExtractPreviewWidget(PdfViewerWidget):
         page = self._shown_extract_page
         return self.extract_path_for(page) if page is not None else None
 
+    def navigate(self, forward: bool) -> None:
+        """方向键翻页：委托左侧 PDF 缩略图条（切页即触发按需提取）。"""
+        self.strip.navigate(forward)
+
     # ------------------------------------------------------------ 换文档
     def set_pdf(self, path, placeholder=None, cache_dir=None) -> None:
         """换 PDF：提取态全部作废（在飞的提取结果按代际丢弃）。"""

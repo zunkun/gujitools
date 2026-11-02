@@ -150,6 +150,8 @@ class PrintPreviewWidget(
         )
         self.toggle.current_changed.connect(self._set_mode)
         toggle_row.addWidget(self.toggle)
+        # 图片旋转不走按钮：画布上框外上方有旋转钮（与「图片拼版」同款，
+        # 用户 2026-11-02），可拖任意角度、Shift 吸附 15°。
         toggle_row.addStretch()
         # 单页导出 / 单页打印：与「版面编辑 / 打印效果 / 原图」**同一行、靠右**
         # （用户 2026-11-01：原来的顶部按钮行整行取消，这两颗挪到这一行）

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""第四步「版面编辑器」交互画布：在 A4 纸上拖拽 / 缩放图片。
+"""第四步「版面编辑器」交互画布：在 A4 纸上拖拽 / 缩放 / 旋转图片。
 
 坐标体系与 ``utils.page_layout.plan_print_page`` 算出的 ``plan.image`` 完全一致
 ——**页面毫米，左上原点，x 向右、y 向下**。控件把页面等比缩放到可视区，
@@ -11,20 +11,25 @@
 - 框内拖动 → 整体移动；**四角**手柄拖动 → 缩放（勾「原比例缩放」时等比）；
   **四条边整条都是命中带**（不限边中点的小圆点）→ 拖上/下边只改高度、
   拖左/右边只改宽度（自由拉伸改变比例）；松手 emit ``rect_changed``；
+- **框外上方的旋转钮**（用户 2026-11-02：与「图片拼版」同款组件）→ 左键
+  拖动绕框心旋转任意角度（按住 Shift 吸附 15°）；旋转后框按外接框重算，
+  角度与框一起落盘 ``pages[].rotate``；
 - 框始终被夹在页面内（夹到纸边即停），不会拖出页面；
-- 悬停手柄/边/框时显示对应光标。
+- 悬停手柄/边/旋转钮/框时显示对应光标。
 
 **标题与页码照画**：它们是「版面」的一部分，去掉就无从判断图片挪动后会不会
 压到字（曾误判为「标题页码被去除」）。绘制复用 ``preview_worker`` 的
 ``_draw_print_text``——与成品 PDF 同源，只是多了画布自身的居中偏移。
 标题/页码的落点只取决于 ``page_margins``，**不随图片框移动**，与 PDF 一致。
 
-图片在框内按目标矩形**拉伸**绘制，与成品 ``pdf.image(img, x, y, w, h)`` 的
-拉伸规则一致（PDF 用 w/h 直接定最终尺寸，不保比例）。
+图片按目标矩形绘制（未旋转时**拉伸**，与成品 ``pdf.image(img, x, y, w, h)``
+的拉伸规则一致）；旋转时先绕框心转、再按旋转后的外接框等比放进同一个框，
+与 PDF / 效果预览共用 ``utils.page_layout.fit_rotated_rect``。
 """
 
 from __future__ import annotations
 
+import math
 from typing import Sequence
 
 from PySide6.QtCore import Qt, QPointF, QRectF, Signal
@@ -33,6 +38,9 @@ from PySide6.QtWidgets import QWidget
 
 from desktop.ui import theme as T
 from desktop.utils.image_scaling import smooth_downscale
+from utils.page_layout import (
+    fit_rotated_rect, normalize_page_rotation, rotated_bbox_size,
+)
 # 标题/页码的绘制必须与成品 PDF 同源：直接复用效果预览那套（mm → px 换算
 # 与竖排分段完全一致），避免编辑器和 PDF 各画各的、看起来对不上。
 from desktop.workers.preview_worker import (
@@ -81,9 +89,25 @@ DISPLAY_IMAGE_EDGE = 2000
 #: 角仍是小圆点邻域（角落优先按对角缩放处理）。
 EDGE_HIT_PX = 6
 
+#: 框外上方的旋转钮（与「图片拼版」同款，用户 2026-11-02）：
+#: 距框上边的距离 / 圆钮半径 / 命中半宽（比画出来的圆大一圈，点太小不好抓）。
+ROTATE_KNOB_GAP = 26
+ROTATE_KNOB_RADIUS = 6
+ROTATE_KNOB_HIT = ROTATE_KNOB_RADIUS + 8
+#: 弧形箭头画在圆钮**外侧**（用户 2026-11-02：圆里那圈小弧看不清）：
+#: 距圆边的半径增量 / 起点角 / 跨度 / 箭头臂长。
+#: Qt 角度 0° = 3 点方向；跨度取**负值 = 顺时针**（用户要的旋转方向）；
+#: 缺口留在下方，避开引线。
+ROTATE_ARC_GAP = 5.0
+ROTATE_ARC_START = 210
+ROTATE_ARC_SPAN = -240
+ROTATE_ARC_BARB = 4.0
+#: 旋转吸附步长（按住 Shift）
+SNAP_DEGREES = 15.0
+
 
 class PrintLayoutCanvas(QWidget):
-    """A4 纸上的图片拖拽/缩放画布；rect_changed 发出页面 mm 坐标。"""
+    """A4 纸上的图片拖拽/缩放/旋转画布；rect_changed 发出页面 mm 坐标。"""
 
     rect_changed = Signal(list)  # [x_mm, y_mm, w_mm, h_mm]
     # 双击画布 → 宿主打开预览弹窗（看该页的打印效果放大；编辑态下没有
@@ -103,16 +127,24 @@ class PrintLayoutCanvas(QWidget):
         #: 键用对象本身做 `is` 比较而不是 id：旧图被回收后新对象可能拿到同一 id。
         self._display_source: QImage | None = None
         self._display_image: QImage | None = None
+        #: 图片朝向（度，顺时针为正，(-180, 180]）：显示 + 落盘共用的同一份
+        #: 状态，宿主经 ``rotation()`` 读取落盘 ``pages[].rotate``。
+        self._rotation = 0.0
         self._plan = None          # PrintPagePlan：标题/页码/跳过态的来源
         self._rect_mm = [0.0, 0.0, 0.0, 0.0]
         self._pad = 18
         self._px_per_mm = 1.0
         self._off_x = float(self._pad)
         self._off_y = float(self._pad)
-        self._mode: str | None = None  # move / resize
+        self._mode: str | None = None  # move / resize / rotate
         self._corner = 0
         self._grab_x = 0.0
         self._grab_y = 0.0
+        #: 旋转手势：起点角度 / 起点朝向 / 起点时的**未旋转内容尺寸**（mm）。
+        #: 每帧从起点内容尺寸重算外接框，避免逐帧累积误差（与拼版同一做法）。
+        self._grab_angle = 0.0
+        self._grab_rotation = 0.0
+        self._grab_content = (0.0, 0.0)
         # 原比例缩放（来自 print 参数 keep_ratio）：
         #   True  → 四角拖拽保持宽高比，且**不提供**四边手柄；
         #   False → 铺满语义，另给上/下/左/右四个边手柄，可单独拉伸改变比例。
@@ -136,6 +168,7 @@ class PrintLayoutCanvas(QWidget):
         rect_mm: Sequence[float],
         plan=None,
         keep_ratio: bool = True,
+        rotate: float = 0.0,
     ) -> None:
         """设置页面尺寸、待绘制图片与初始图片框（页面 mm）。
 
@@ -146,6 +179,10 @@ class PrintLayoutCanvas(QWidget):
         ``keep_ratio``（print 参数 `keep_ratio`）：True（默认）= 四角拖拽
         **保持宽高比**、不提供四边手柄；False = 四角自由拉伸 + 上/下/左/右
         四个边手柄可单独拉伸（与「铺满可用区域」的自动排版语义配套）。
+
+        ``rotate``：图片朝向（度，顺时针为正）。坐标框是**旋转后**的外接框；
+        传入的 ``rect_mm`` 若与旋转后的比例不符（例如老数据），先等比收进
+        这个框（与 PDF / 效果预览同一份 ``fit_rotated_rect``）。
         """
         self._page_w_mm = float(page_w_mm)
         self._page_h_mm = float(page_h_mm)
@@ -153,6 +190,11 @@ class PrintLayoutCanvas(QWidget):
         self._plan = plan
         self._keep_ratio = bool(keep_ratio)
         self._rect_mm = [float(v) for v in rect_mm]
+        self._rotation = normalize_page_rotation(rotate)
+        if self._rotation and image is not None and not image.isNull():
+            self._rect_mm = fit_rotated_rect(
+                self._rect_mm, (image.width(), image.height()), self._rotation
+            )
         self._recompute()
         self.update()
 
@@ -160,12 +202,72 @@ class PrintLayoutCanvas(QWidget):
         """当前图片框（页面 mm），供宿主落盘前读取。"""
         return list(self._rect_mm)
 
+    def rotation(self) -> float:
+        """当前图片朝向（度，顺时针为正），供宿主落盘前读取。"""
+        return self._rotation
+
+    def set_rotation(self, degrees) -> None:
+        """程序化设置朝向：绕框心重算外接框，并立即上报（与拖钮同口径）。"""
+        if self._image is None or self._image.isNull():
+            return
+        angle = normalize_page_rotation(degrees)
+        if angle == self._rotation:
+            return
+        content = self._content_size_mm(self._rect_mm, self._rotation)
+        self._rotation = angle
+        self._rect_mm = self._bbox_for_content(content, angle)
+        self._dirty = False
+        self.update()
+        self.rect_changed.emit([round(v, 2) for v in self._rect_mm])
+
+    # ---------------------------------------------------------------- 旋转几何
+    def _content_size_mm(self, rect, angle) -> tuple[float, float]:
+        """由「旋转后的外接框 + 朝向」反推**未旋转内容**的宽高（mm）。
+
+        用源图宽高比约束（框通常就是按它摆的）：内容等比落在框内，
+        旋转到任何角度都不会把图片拉伸变形。框被自由拉成别的比例时按
+        "完整放进框"取较小的一档，预览与 PDF 同样少一点而不裁掉内容。
+        """
+        box_w, box_h = float(rect[2]), float(rect[3])
+        image = self._image
+        if image is None or image.isNull() or image.height() <= 0:
+            return box_w, box_h
+        aspect = image.width() / image.height()
+        rad = math.radians(normalize_page_rotation(angle))
+        cos_v, sin_v = abs(math.cos(rad)), abs(math.sin(rad))
+        content_w = min(
+            aspect * box_w / (aspect * cos_v + sin_v),
+            aspect * box_h / (aspect * sin_v + cos_v),
+        )
+        return content_w, content_w / aspect
+
+    def _bbox_for_content(self, content, angle) -> list[float]:
+        """内容尺寸 + 朝向 → 居中的外接框（超出纸张时等比缩回页内）。"""
+        content_w, content_h = content
+        bbox_w, bbox_h = rotated_bbox_size(content_w, content_h, angle)
+        scale = min(
+            1.0,
+            self._page_w_mm / bbox_w if bbox_w > 0 else 1.0,
+            self._page_h_mm / bbox_h if bbox_h > 0 else 1.0,
+        )
+        bbox_w, bbox_h = bbox_w * scale, bbox_h * scale
+        center = self._rect_center_mm()
+        nx = min(max(center[0] - bbox_w / 2.0, 0.0),
+                 max(0.0, self._page_w_mm - bbox_w))
+        ny = min(max(center[1] - bbox_h / 2.0, 0.0),
+                 max(0.0, self._page_h_mm - bbox_h))
+        return [nx, ny, bbox_w, bbox_h]
+
+    def _rect_center_mm(self) -> tuple[float, float]:
+        x, y, w, h = self._rect_mm
+        return x + w / 2.0, y + h / 2.0
+
     def _display_image_for(self) -> QImage | None:
         """贴图用的底图：源图平滑缩到 ``DISPLAY_IMAGE_EDGE`` 以内（换图才重算）。
 
-        拖拽/缩放期间 ``_rect_mm`` 每帧在变，但**不参与**缓存的键——底图按
+        拖拽/缩放/旋转期间 ``_rect_mm`` 每帧在变，但**不参与**缓存键——底图按
         整页可能的最大显示尺寸准备（图片框被夹在页面内，不会比整页更大），
-        所以拖框时零重采样，只对这张 ≤2000px 的图做一次廉价平滑贴图。
+        所以拖框时零重采样；旋转是 QPainter 变换，同样不重采样位图。
         """
         source = self._image
         if source is None or source.isNull():
@@ -245,14 +347,26 @@ class PrintLayoutCanvas(QWidget):
             (r.x(), cy),                        # 7 左
         ]
 
-    def _hit_handle(self, pos: QPointF) -> int | None:
-        """命中手柄：先四角（圆点邻域），再四边（**整条边的命中带**）。
+    def _rotate_knob_pos(self) -> QPointF:
+        """旋转钮位置（控件坐标）：框上边中点再向上 ``ROTATE_KNOB_GAP``。"""
+        r = self._rect_px()
+        return QPointF(r.center().x(), r.y() - ROTATE_KNOB_GAP)
 
+    def _hit_handle(self, pos: QPointF) -> int | None:
+        """命中手柄：**旋转钮** → 四角（圆点邻域）→ 四边（**整条边的命中带**）。
+
+        ⚠️ 旋转钮在图片**外面**（框上方），命中区比画出来的圆大一圈：它是
+        唯一的旋转抓手，点太小抓不住（与「图片拼版」同一套手感，用户 2026-11-02）。
         ⚠️ 边命中**不限于边中点的小圆点**——整条边两侧 `EDGE_HIT_PX` 控件
         像素内都算拖那条边（窗口边缘的惯例：靠边即改宽/高，靠角即缩放）。
         角优先于边：角落同时邻近两条边，按角处理才符合直觉（圆点邻域
         判定在前，走到边判定时说明离角已经够远）。
         """
+        if self._image is not None:
+            knob = self._rotate_knob_pos()
+            if abs(pos.x() - knob.x()) <= ROTATE_KNOB_HIT and \
+                    abs(pos.y() - knob.y()) <= ROTATE_KNOB_HIT:
+                return 8  # 旋转
         positions = self._handle_positions()
         for i in range(4):  # 四角：圆点邻域
             cx, cy = positions[i]
@@ -285,6 +399,21 @@ class PrintLayoutCanvas(QWidget):
         if self._image is None or event.button() != Qt.MouseButton.LeftButton:
             return super().mousePressEvent(event)
         corner = self._hit_handle(event.position())
+        if corner == 8:
+            # 旋转钮：记下起点角度与起点内容尺寸，拖动时按增量算朝向
+            self._mode = "rotate"
+            center = self._rect_px().center()
+            mx, my = event.position().x(), event.position().y()
+            self._grab_angle = math.degrees(
+                math.atan2(mx - center.x(), center.y() - my)
+            )
+            self._grab_rotation = self._rotation
+            self._grab_content = self._content_size_mm(
+                self._rect_mm, self._rotation
+            )
+            self._dirty = False
+            self.update()
+            return
         if corner is not None:
             self._mode = "resize"
             self._corner = corner
@@ -306,6 +435,22 @@ class PrintLayoutCanvas(QWidget):
         return super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event) -> None:  # noqa: N802
+        if self._mode == "rotate":
+            center = self._rect_px().center()
+            mx, my = event.position().x(), event.position().y()
+            angle = math.degrees(
+                math.atan2(mx - center.x(), center.y() - my)
+            )
+            value = self._grab_rotation + angle - self._grab_angle
+            if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+                value = round(value / SNAP_DEGREES) * SNAP_DEGREES
+            self._rotation = normalize_page_rotation(value)
+            self._rect_mm = self._bbox_for_content(
+                self._grab_content, self._rotation
+            )
+            self._dirty = True
+            self.update()
+            return
         if self._mode == "move":
             mx, my = self._to_mm(event.position())
             nx = min(max(mx - self._grab_x, 0.0),
@@ -326,6 +471,9 @@ class PrintLayoutCanvas(QWidget):
         # 悬停光标提示
         if self._image is not None:
             corner = self._hit_handle(event.position())
+            if corner == 8:
+                self.setCursor(Qt.CursorShape.CrossCursor)
+                return
             if corner is not None:
                 self.setCursor(_HANDLE_CURSORS[corner])
                 return
@@ -428,7 +576,7 @@ class PrintLayoutCanvas(QWidget):
         return True
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802
-        if self._mode in ("move", "resize"):
+        if self._mode in ("move", "resize", "rotate"):
             self._mode = None
             self.setCursor(Qt.CursorShape.ArrowCursor)
             if self._dirty:
@@ -459,7 +607,8 @@ class PrintLayoutCanvas(QWidget):
         painter.fillRect(page_rect, PAGE_COLOR)
         painter.setPen(QPen(PAGE_BORDER, 1))
         painter.drawRect(page_rect)
-        # 图片（按目标矩形拉伸，与成品 pdf.image 一致）
+        # 图片（未旋转时按目标矩形拉伸，与成品 pdf.image 一致；旋转时绕框心
+        # 转、按旋转后的外接框等比放进框里，与预览/PDF 同一份几何）
         image = self._display_image_for()
         if image is not None and not image.isNull():
             r = self._rect_px()
@@ -471,7 +620,7 @@ class PrintLayoutCanvas(QWidget):
                 painter.setRenderHint(
                     QPainter.RenderHint.SmoothPixmapTransform, True
                 )
-                painter.drawImage(r, image)
+                self._draw_image(painter, image, r)
             painter.setPen(QPen(IMAGE_STROKE, 2))
             painter.drawRect(r)
         # 标题 / 页码：与成品 PDF 同一份 PrintTextSpec 与同一套绘制函数，
@@ -483,7 +632,7 @@ class PrintLayoutCanvas(QWidget):
                 if spec is not None:
                     _draw_print_text(painter, spec, self._px_per_mm)
             painter.restore()
-        # 四角缩放手柄
+        # 四角缩放手柄 + 框外上方的旋转钮
         if self._image is not None:
             painter.setPen(QPen(HANDLE_STROKE, 1.5))
             painter.setBrush(HANDLE_FILL)
@@ -492,4 +641,63 @@ class PrintLayoutCanvas(QWidget):
                     QRectF(cx - HANDLE_RADIUS, cy - HANDLE_RADIUS,
                            2 * HANDLE_RADIUS, 2 * HANDLE_RADIUS)
                 )
+            self._draw_rotate_knob(painter)
         painter.end()
+
+    def _draw_image(self, painter: QPainter, image: QImage,
+                    rect_px: QRectF) -> None:
+        """把图片画进当前框：未旋转直接拉伸；旋转时绕框心变换。
+
+        旋转后的内容尺寸由 :meth:`_content_size_mm` 反推（按源图宽高比），
+        因此画出来正好落在旋转后的**外接框**里——与 PDF / 效果预览用
+        ``fit_rotated_rect`` 算出的落点同一份几何，不会出现"预览转过去、
+        成品转回来"。
+        """
+        if not self._rotation:
+            painter.drawImage(rect_px, image)
+            return
+        content_w, content_h = self._content_size_mm(
+            self._rect_mm, self._rotation
+        )
+        cw = content_w * self._px_per_mm
+        ch = content_h * self._px_per_mm
+        painter.save()
+        painter.translate(rect_px.center())
+        painter.rotate(self._rotation)
+        painter.drawImage(QRectF(-cw / 2, -ch / 2, cw, ch), image)
+        painter.restore()
+
+    def _draw_rotate_knob(self, painter: QPainter) -> None:
+        """画框外上方的旋转钮（**常显**，与「图片拼版」同款）。
+
+        一条引线 + 一个白底圆钮，**圆外**环绕一段顺时针弧形箭头——一眼看出
+        这是"旋转"抓手而不是缩放手柄（用户 2026-11-02：画在圆里太小、看不清）。
+        左键拖它即可绕框心旋转当前页图片。
+        """
+        knob = self._rotate_knob_pos()
+        anchor = QPointF(knob.x(), knob.y() + ROTATE_KNOB_GAP)
+        painter.setPen(QPen(HANDLE_STROKE, 1.5))
+        painter.drawLine(anchor, knob)
+        painter.setBrush(HANDLE_FILL)
+        painter.drawEllipse(knob, ROTATE_KNOB_RADIUS, ROTATE_KNOB_RADIUS)
+        # 弧形箭头在圆钮外侧（顺时针；缺口在下方，不压住引线）
+        arc_r = ROTATE_KNOB_RADIUS + ROTATE_ARC_GAP
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawArc(
+            QRectF(knob.x() - arc_r, knob.y() - arc_r, arc_r * 2, arc_r * 2),
+            ROTATE_ARC_START * 16, ROTATE_ARC_SPAN * 16,
+        )
+        # 箭头：弧末端沿**顺时针**切线方向收两道短线
+        end = math.radians(ROTATE_ARC_START + ROTATE_ARC_SPAN)
+        tip = QPointF(
+            knob.x() + arc_r * math.cos(end),
+            knob.y() - arc_r * math.sin(end),
+        )
+        dx, dy = math.sin(end), math.cos(end)
+        for turn in (-0.8, 0.8):
+            barb_x = dx * math.cos(turn) - dy * math.sin(turn)
+            barb_y = dx * math.sin(turn) + dy * math.cos(turn)
+            painter.drawLine(
+                tip, QPointF(tip.x() - ROTATE_ARC_BARB * barb_x,
+                             tip.y() - ROTATE_ARC_BARB * barb_y)
+            )

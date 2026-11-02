@@ -325,3 +325,87 @@ def run(ctx) -> None:
            ratio_canvas._display_image_for() is cached, "")
     finally:
         ratio_canvas.deleteLater()
+
+    # ---- 9. 版面编辑的旋转钮：任意角度 → 条目 → 落盘 ----
+    # 用户 2026-11-02：「旋转组件跟图片拼版中的一样，而不是 90 度旋转组件」。
+    # 口径是**浮点角度（顺时针为正，(-180, 180]）**，存进 print.json 的
+    # pages[].rotate；预览与 PDF 都先转位图、再按旋转后的外接框等比放进同一个框。
+    from utils.page_layout import normalize_page_rotation, rotated_bbox_size
+
+    cases = (0, 90, 180, 270, 360, -90, 45.5, None, 181, -180)
+    expected = [0, 90, 180, -90, 0, -90, 45.5, 0, -179, 180]
+    ok("旋转角归一为 (-180, 180] 浮点（顺时针为正，270→-90）",
+       [normalize_page_rotation(v) for v in cases] == expected,
+       str([normalize_page_rotation(v) for v in cases]))
+
+    rot = PrintPreviewWidget(params_provider=lambda: dict(full))
+    rot.resize(1000, 700)
+    rot.canvas.resize(600, 500)
+    rot.show()
+    pump(app, 6)
+    rot.set_entries([{"file": str(png), "label": "0001", "rotate": 90}])
+    pump(app, 6)
+    c90 = rot.canvas.current_rect()
+    ok("存过的朝向进版面编辑器：画布角度=90，框是**旋转后**的外接框",
+       rot.canvas.rotation() == 90
+       and abs(c90[2] / c90[3] - 1200 / 800) < 0.02
+       and rot._canvas_image_size == [800, 1200],
+       f"rotate={rot.canvas.rotation()} rect={c90} "
+       f"size={rot._canvas_image_size}")
+
+    knob = rot.canvas._rotate_knob_pos()
+    ok("旋转钮在框外上方且可命中（与图片拼版同款组件）",
+       rot.canvas._hit_handle(knob) == 8
+       and knob.y() < rot.canvas._rect_px().y() - 10,
+       f"knob=({knob.x():.1f},{knob.y():.1f})")
+
+    rot_changed = []
+    rot.canvas.rect_changed.connect(rot_changed.append)
+    rot.canvas.set_rotation(180)
+    pump(app, 4)
+    c180 = rot.canvas.current_rect()
+    ok("set_rotation(180)：框宽高交换、条目写回 rotate、立即上报",
+       rot.canvas.rotation() == 180
+       and rot.entries()[0].get("rotate") == 180
+       and rot_changed[-1:] == [[round(v, 2) for v in c180]]
+       and abs(c180[2] / c180[3] - c90[3] / c90[2]) < 0.05
+       and c180[0] >= -0.01 and c180[1] >= -0.01
+       and c180[0] + c180[2] <= rot.canvas._page_w_mm + 0.01
+       and c180[1] + c180[3] <= rot.canvas._page_h_mm + 0.01,
+       f"{c90} -> {c180}, rotate={rot.entries()[0].get('rotate')}")
+
+    rot.canvas.set_rotation(30)
+    pump(app, 4)
+    c30 = rot.canvas.current_rect()
+    want = rotated_bbox_size(800, 1200, 30)
+    ok("任意角度（30°）：框=旋转后外接框，条目存浮点角度",
+       rot.canvas.rotation() == 30
+       and rot.entries()[0].get("rotate") == 30
+       and abs(c30[2] / c30[3] - want[0] / want[1]) < 0.02,
+       f"rect={c30} bbox={want}")
+
+    spec, note = rot._print_spec(0, Path(str(png)))
+    ok("预览 print_spec 带上浮点朝向（worker 先转位图再排版）",
+       spec is not None and spec.get("rotate") == 30 and note == "",
+       str((spec or {}).get("rotate")))
+
+    ok("旧的左右转按钮已移除（旋转统一走画布圆钮）",
+       not hasattr(rot, "rotate_left_button")
+       and not hasattr(rot, "rotate_right_button"), "")
+    rot.close()
+
+    # ---- 10. 落盘口径：pages[].rotate 非 0 才写 ----
+    from desktop.services.print_plan import ordered_page_record
+
+    rec = ordered_page_record({
+        "file": str(png), "label": "0001", "rotate": 90,
+        "rect": [10, 10, 100, 50], "rect_size": [800, 1200],
+    })
+    ok("ordered_page_record 写出 rotate，rect_size 仍是未旋转源图尺寸",
+       rec.get("rotate") == 90
+       and rec.get("rect_size") == [800, 1200], str(rec))
+    ok("0° 不写 rotate（没有旋转就不算覆盖）",
+       "rotate" not in ordered_page_record({
+           "file": str(png), "label": "0001", "rotate": 0,
+       }), "")
+

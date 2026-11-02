@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 181 个模块、197 个公开类、1478 个公开函数/方法（生成于 2026-11-02）。
+覆盖 182 个模块、197 个公开类、1482 个公开函数/方法（生成于 2026-11-02）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -51,7 +51,7 @@
 | [`desktop.components.step_bar`](#desktopcomponentsstep_bar) | 2 | 20 |
 | [`desktop.components.task_table`](#desktopcomponentstask_table) | 3 | 10 |
 | [`desktop.components.viewers.edit_sync`](#desktopcomponentsviewersedit_sync) | 0 | 2 |
-| [`desktop.components.viewers.extract_viewer`](#desktopcomponentsviewersextract_viewer) | 1 | 7 |
+| [`desktop.components.viewers.extract_viewer`](#desktopcomponentsviewersextract_viewer) | 1 | 8 |
 | [`desktop.components.viewers.image_actions`](#desktopcomponentsviewersimage_actions) | 1 | 7 |
 | [`desktop.components.viewers.image_editor.bake`](#desktopcomponentsviewersimage_editorbake) | 0 | 2 |
 | [`desktop.components.viewers.image_editor.canvas.core`](#desktopcomponentsviewersimage_editorcanvascore) | 1 | 25 |
@@ -85,7 +85,7 @@
 | [`desktop.components.viewers.image_zoom_dialog.io`](#desktopcomponentsviewersimage_zoom_dialogio) | 0 | 2 |
 | [`desktop.components.viewers.image_zoom_dialog.popup`](#desktopcomponentsviewersimage_zoom_dialogpopup) | 1 | 3 |
 | [`desktop.components.viewers.pdf_viewer`](#desktopcomponentsviewerspdf_viewer) | 1 | 2 |
-| [`desktop.components.viewers.print_layout_canvas`](#desktopcomponentsviewersprint_layout_canvas) | 1 | 12 |
+| [`desktop.components.viewers.print_layout_canvas`](#desktopcomponentsviewersprint_layout_canvas) | 1 | 14 |
 | [`desktop.components.viewers.print_preview.export`](#desktopcomponentsviewersprint_previewexport) | 1 | 1 |
 | [`desktop.components.viewers.print_preview.layout`](#desktopcomponentsviewersprint_previewlayout) | 1 | 1 |
 | [`desktop.components.viewers.print_preview.thumbs`](#desktopcomponentsviewersprint_previewthumbs) | 1 | 1 |
@@ -174,6 +174,7 @@
 | [`desktop.ui.window_size`](#desktopuiwindow_size) | 0 | 3 |
 | [`desktop.utils.files`](#desktoputilsfiles) | 0 | 28 |
 | [`desktop.utils.icon`](#desktoputilsicon) | 0 | 3 |
+| [`desktop.utils.image_rotate`](#desktoputilsimage_rotate) | 0 | 1 |
 | [`desktop.utils.image_scaling`](#desktoputilsimage_scaling) | 0 | 1 |
 | [`desktop.worker`](#desktopworker) | 0 | 1 |
 | [`desktop.workers.copy_source_worker`](#desktopworkerscopy_source_worker) | 2 | 4 |
@@ -1402,6 +1403,9 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 | HANDLE_RADIUS | `5` |
 | ROTATE_KNOB_RADIUS | `6` |
 | ROTATE_KNOB_GAP | `26` |
+| ROTATE_ARC_GAP | `5.0` |
+| ROTATE_ARC_START | `210` |
+| ROTATE_ARC_BARB | `4.0` |
 | MIN_RECT | `4.0` |
 | EDGE_HIT_PX | `6` |
 | SNAP_DEGREES | `15.0` |
@@ -3463,6 +3467,7 @@ source_path 不单独成列，仅作任务名的悬浮提示。
 | `set_params_provider(provider: Callable[[], dict] \| None) -> None` | 注入提取参数来源（宿主读「图片提取」面板表单）。 |
 | `extract_path_for(page: int) -> Path \| None` | 第 page 页（0-based）的产物路径；没有产物目录时为 None。 |
 | `current_display_path() -> Path \| None` | 当前大图显示的是**已提取产物**时返回它的路径；PDF 渲染页没有文件。 |
+| `navigate(forward: bool) -> None` | 方向键翻页：委托左侧 PDF 缩略图条（切页即触发按需提取）。 |
 | `set_pdf(path, placeholder=None, cache_dir=None) -> None` | 换 PDF：提取态全部作废（在飞的提取结果按代际丢弃）。 |
 | `refresh_page(path_text: str) -> None` | 某页产物文件被覆盖（编辑器完成/缩略图重生成）：重载当前页大图。 |
 
@@ -5663,7 +5668,7 @@ cache_dir：页缩略图缓存目录（如 thumbnails/source、thumbnails/print�
 
 源码：[`desktop/components/viewers/print_layout_canvas.py`](../../desktop/components/viewers/print_layout_canvas.py)
 
-第四步「版面编辑器」交互画布：在 A4 纸上拖拽 / 缩放图片。
+第四步「版面编辑器」交互画布：在 A4 纸上拖拽 / 缩放 / 旋转图片。
 
 坐标体系与 ``utils.page_layout.plan_print_page`` 算出的 ``plan.image`` 完全一致
 ——**页面毫米，左上原点，x 向右、y 向下**。控件把页面等比缩放到可视区，
@@ -5675,16 +5680,20 @@ cache_dir：页缩略图缓存目录（如 thumbnails/source、thumbnails/print�
 - 框内拖动 → 整体移动；**四角**手柄拖动 → 缩放（勾「原比例缩放」时等比）；
   **四条边整条都是命中带**（不限边中点的小圆点）→ 拖上/下边只改高度、
   拖左/右边只改宽度（自由拉伸改变比例）；松手 emit ``rect_changed``；
+- **框外上方的旋转钮**（用户 2026-11-02：与「图片拼版」同款组件）→ 左键
+  拖动绕框心旋转任意角度（按住 Shift 吸附 15°）；旋转后框按外接框重算，
+  角度与框一起落盘 ``pages[].rotate``；
 - 框始终被夹在页面内（夹到纸边即停），不会拖出页面；
-- 悬停手柄/边/框时显示对应光标。
+- 悬停手柄/边/旋转钮/框时显示对应光标。
 
 **标题与页码照画**：它们是「版面」的一部分，去掉就无从判断图片挪动后会不会
 压到字（曾误判为「标题页码被去除」）。绘制复用 ``preview_worker`` 的
 ``_draw_print_text``——与成品 PDF 同源，只是多了画布自身的居中偏移。
 标题/页码的落点只取决于 ``page_margins``，**不随图片框移动**，与 PDF 一致。
 
-图片在框内按目标矩形**拉伸**绘制，与成品 ``pdf.image(img, x, y, w, h)`` 的
-拉伸规则一致（PDF 用 w/h 直接定最终尺寸，不保比例）。
+图片按目标矩形绘制（未旋转时**拉伸**，与成品 ``pdf.image(img, x, y, w, h)``
+的拉伸规则一致）；旋转时先绕框心转、再按旋转后的外接框等比放进同一个框，
+与 PDF / 效果预览共用 ``utils.page_layout.fit_rotated_rect``。
 
 ### 模块常量
 
@@ -5694,18 +5703,26 @@ cache_dir：页缩略图缓存目录（如 thumbnails/source、thumbnails/print�
 | MIN_RECT_MM | `2.0` |
 | DISPLAY_IMAGE_EDGE | `2000` |
 | EDGE_HIT_PX | `6` |
+| ROTATE_KNOB_GAP | `26` |
+| ROTATE_KNOB_RADIUS | `6` |
+| ROTATE_ARC_GAP | `5.0` |
+| ROTATE_ARC_START | `210` |
+| ROTATE_ARC_BARB | `4.0` |
+| SNAP_DEGREES | `15.0` |
 
 ### `class PrintLayoutCanvas(QWidget)`
 
-A4 纸上的图片拖拽/缩放画布；rect_changed 发出页面 mm 坐标。
+A4 纸上的图片拖拽/缩放/旋转画布；rect_changed 发出页面 mm 坐标。
 
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(parent=None)` | — |
-| `set_page(page_w_mm: float, page_h_mm: float, image: QImage \| None, rect_mm: Sequence[float], plan=None, keep_ratio: bool=True) -> None` | 设置页面尺寸、待绘制图片与初始图片框（页面 mm）。 |
+| `set_page(page_w_mm: float, page_h_mm: float, image: QImage \| None, rect_mm: Sequence[float], plan=None, keep_ratio: bool=True, rotate: float=0.0) -> None` | 设置页面尺寸、待绘制图片与初始图片框（页面 mm）。 |
 | `current_rect() -> list[float]` | 当前图片框（页面 mm），供宿主落盘前读取。 |
+| `rotation() -> float` | 当前图片朝向（度，顺时针为正），供宿主落盘前读取。 |
+| `set_rotation(degrees) -> None` | 程序化设置朝向：绕框心重算外接框，并立即上报（与拖钮同口径）。 |
 | `resizeEvent(event) -> None` | Qt 事件覆写：尺寸变化时重算布局 / 重新缩放。 |
 | `showEvent(event) -> None` | 显示时重算：首次进入第四步可能在布局完成前就 ``set_page`` 过， |
 | `mousePressEvent(event) -> None` | Qt 事件覆写：按下（选中 / 开始拖拽或绘制）。 |
@@ -5716,7 +5733,7 @@ A4 纸上的图片拖拽/缩放画布；rect_changed 发出页面 mm 坐标。
 | `mouseReleaseEvent(event) -> None` | Qt 事件覆写：松开（提交本次编辑）。 |
 | `paintEvent(event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
 
-##### `set_page(page_w_mm: float, page_h_mm: float, image: QImage | None, rect_mm: Sequence[float], plan=None, keep_ratio: bool=True) -> None`
+##### `set_page(page_w_mm: float, page_h_mm: float, image: QImage | None, rect_mm: Sequence[float], plan=None, keep_ratio: bool=True, rotate: float=0.0) -> None`
 
 设置页面尺寸、待绘制图片与初始图片框（页面 mm）。
 
@@ -5727,6 +5744,10 @@ A4 纸上的图片拖拽/缩放画布；rect_changed 发出页面 mm 坐标。
 ``keep_ratio``（print 参数 `keep_ratio`）：True（默认）= 四角拖拽
 **保持宽高比**、不提供四边手柄；False = 四角自由拉伸 + 上/下/左/右
 四个边手柄可单独拉伸（与「铺满可用区域」的自动排版语义配套）。
+
+``rotate``：图片朝向（度，顺时针为正）。坐标框是**旋转后**的外接框；
+传入的 ``rect_mm`` 若与旋转后的比例不符（例如老数据），先等比收进
+这个框（与 PDF / 效果预览同一份 ``fit_rotated_rect``）。
 
 ##### `showEvent(event) -> None`
 
@@ -9190,6 +9211,7 @@ demote_for       : (path_str) -> list|None，全书统计得出的「整幅其�
 
 - ``file`` / ``label``：条目身份（顺序就是列表顺序，拖动即改这里）；
 - ``rect``：用户在 A4 纸上摆出来的坐标（mm），**有才写**（没有就走自动排版）；
+- ``rotate``：逐图旋转角（度，顺时针为正，(-180, 180]），**非 0 才写**；
 - ``rect_size``：**画这个框时那张图的像素尺寸**。它是"这张图的版面是按哪张图
   量的"的唯一凭据：图像后来被上游换掉（拼版成品重合成、去底色重提交）时，
   靠它判定旧框失效、改按当前 PDF排版参数重排（见 :func:`rect_fits_image`）。
@@ -15731,6 +15753,35 @@ Qt 给的位图去画，Qt 管不了圆不圆角。所以要在交给 ``setWindo
 读取图片并生成圆角窗口图标；读取失败返回 None。
 
 返回的 QIcon 内含 16~256 多帧，小帧已做 alpha 二值化。
+
+---
+
+## `desktop.utils.image_rotate`
+
+源码：[`desktop/utils/image_rotate.py`](../../desktop/utils/image_rotate.py)
+
+逐页图片的旋转（Qt 侧）。
+
+旋转角口径统一由 ``utils.page_layout.normalize_page_rotation`` 决定
+（(-180, 180]，顺时针为正）——版面编辑器、效果预览、单页导出都调这里，
+避免各自 `QTransform` 转出不同方向。
+
+PDF 侧（``functions/print.py``）用 PIL 的 ``rotate`` 实现同一套角度，
+两边都是"绕中心转、按外接框扩图"，只是位图后端不同。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `rotate_image(image: QImage, degrees) -> QImage` | 按顺时针 ``degrees`` 旋转位图；0° 或空图原样返回。 |
+
+#### `rotate_image(image: QImage, degrees) -> QImage`
+
+按顺时针 ``degrees`` 旋转位图；0° 或空图原样返回。
+
+``QImage.transformed`` 会按旋转后的包围盒自动调整尺寸/平移，不会裁掉
+角上的像素（与 PIL 的 ``expand=True`` 同一语义）；SmoothTransformation
+只在非直角角度才真正插值，直角转置是无损的。
 
 ---
 

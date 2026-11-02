@@ -80,10 +80,22 @@ class PrintPreviewHost(QWidget, ThumbsMixin, ZoomPopupMixin):
     def _apply_page_thumb(self, key, image) -> None:
         ...
 
+    def _ask_delete_confirm(self, count: int) -> bool:
+        ...
+
     def _build_action_buttons(self) -> None:
         ...
 
     def _capture_print_image(self, _page, image, _path: str) -> None:
+        ...
+
+    def _delete_confirm_text(self, count: int) -> str:
+        ...
+
+    def _remove_current_with_confirm(self) -> None:
+        ...
+
+    def _selected_rows(self) -> list[int]:
         ...
 
     def _current_index(self) -> int:
@@ -125,10 +137,13 @@ class PrintPreviewHost(QWidget, ThumbsMixin, ZoomPopupMixin):
     def _page_size_mm(self) -> tuple[float, float]:
         ...
 
-    def _plan_for(self, index: int, path: Path, rect=None):
+    def _plan_for(self, index: int, path: Path, rect=None, rotate: float = 0.0):
         ...
 
     def _print_current(self) -> None:
+        ...
+
+    def print_current(self) -> None:
         ...
 
     def _print_spec(self, index: int, path: Path) -> tuple[dict | None, str]:

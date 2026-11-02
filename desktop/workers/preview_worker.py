@@ -19,6 +19,7 @@ from PySide6.QtCore import QObject, QPointF, Qt, Signal, Slot
 from PySide6.QtGui import QColor, QFont, QFontMetricsF, QImage, QImageReader, QPainter
 
 from utils.box_geometry import build_output_layout, parse_border_mm
+from desktop.utils.image_rotate import rotate_image
 from desktop.utils.image_scaling import smooth_downscale
 from desktop.utils.files import THUMBNAIL_EDGE, task_extract_pages_dir
 from utils.file_utils import is_source_document, write_bytes_atomic
@@ -692,15 +693,31 @@ class PreviewWorker(QObject):
             image = compose_outputs_horizontal(outputs)
         if self.print_spec:
             # 打印效果：几何由 utils.page_layout 计算（PDF 生成也是同一份）
-            from utils.page_layout import plan_print_page
+            from utils.page_layout import (
+                fit_rotated_rect, normalize_page_rotation, plan_print_page,
+                rotated_bbox_size,
+            )
 
+            # 逐图旋转（度，顺时针为正）：先在位图上按外接框转好，再按**旋转
+            # 后**的外接框尺寸排版，并把旋转后的图等比放进同一个用户框——与
+            # PDF 侧「PIL 旋转 + page_rotations」同一口径，预览与成品才不会
+            # 一个横一个竖、也不会被拉伸变形。
+            angle = normalize_page_rotation(self.print_spec.get("rotate"))
+            source_size = (image.width(), image.height())
+            size = source_size
+            image_rect = self.print_spec.get("rect")
+            if angle:
+                image = rotate_image(image, angle)
+                size = rotated_bbox_size(source_size[0], source_size[1], angle)
+                if image_rect is not None:
+                    image_rect = fit_rotated_rect(image_rect, source_size, angle)
             plan = plan_print_page(
-                (image.width(), image.height()),
+                size,
                 self.print_spec.get("args") or {},
                 int(self.print_spec.get("index", 0)),
                 int(self.print_spec.get("total", 1)),
                 image_name=self.print_spec.get("name"),
-                image_rect=self.print_spec.get("rect"),
+                image_rect=image_rect,
                 # 节点由 GUI 侧按完整条目清单解析好（print_spec["nodes"]）：
                 # 这里拿不到清单，走 plan 内部兜底的话节点永远匹配不上
                 # （「添加动态节点预览不生效」的根因，2026-09-29）。

@@ -28,6 +28,7 @@ from utils.box_geometry import (
     describe_page_slots,
     is_full_content,
 )
+from utils.page_layout import normalize_page_rotation
 
 
 #: 提交产物角色（写进 ``boxes.json`` 的提交计划，供拼版配对使用）。
@@ -820,6 +821,7 @@ def ordered_page_record(entry: dict) -> dict:
 
     - ``file`` / ``label``：条目身份（顺序就是列表顺序，拖动即改这里）；
     - ``rect``：用户在 A4 纸上摆出来的坐标（mm），**有才写**（没有就走自动排版）；
+    - ``rotate``：逐图旋转角（度，顺时针为正，(-180, 180]），**非 0 才写**；
     - ``rect_size``：**画这个框时那张图的像素尺寸**。它是"这张图的版面是按哪张图
       量的"的唯一凭据：图像后来被上游换掉（拼版成品重合成、去底色重提交）时，
       靠它判定旧框失效、改按当前 PDF排版参数重排（见 :func:`rect_fits_image`）。
@@ -829,6 +831,9 @@ def ordered_page_record(entry: dict) -> dict:
     两处跟着改。
     """
     page: dict = {"file": entry.get("file"), "label": entry.get("label")}
+    rotate = normalize_page_rotation(entry.get("rotate"))
+    if rotate:
+        page["rotate"] = rotate
     if entry.get("rect") is not None:
         page["rect"] = list(entry["rect"])
         if entry.get("rect_size") is not None:
@@ -881,6 +886,9 @@ def plan_print_entries(
                 entry["rect"] = list(rect)
                 if p.get("rect_size") is not None:
                     entry["rect_size"] = list(p["rect_size"])
+            rotate = normalize_page_rotation(p.get("rotate"))
+            if rotate:
+                entry["rotate"] = rotate
             out.append(entry)
             seen.add(file_text)
         return out
@@ -902,6 +910,9 @@ def plan_print_entries(
                 entry["rect"] = list(p["rect"])
                 if p.get("rect_size") is not None:
                     entry["rect_size"] = list(p["rect_size"])
+            rotate = normalize_page_rotation(p.get("rotate"))
+            if rotate:
+                entry["rotate"] = rotate
             out.append(entry)
             seen.add(file_text)
         return out

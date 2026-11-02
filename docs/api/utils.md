@@ -4,7 +4,7 @@
 
 通用工具函数：几何、排序、图像 IO、PDF、YOLO
 
-覆盖 28 个模块、24 个公开类、198 个公开函数/方法（生成于 2026-11-02）。
+覆盖 28 个模块、24 个公开类、201 个公开函数/方法（生成于 2026-11-02）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -27,7 +27,7 @@
 | [`utils.image_io`](#utilsimage_io) | 0 | 2 |
 | [`utils.image_utils`](#utilsimage_utils) | 0 | 8 |
 | [`utils.margin_utils`](#utilsmargin_utils) | 0 | 2 |
-| [`utils.page_layout`](#utilspage_layout) | 2 | 14 |
+| [`utils.page_layout`](#utilspage_layout) | 2 | 17 |
 | [`utils.path_utils`](#utilspath_utils) | 0 | 3 |
 | [`utils.pdf_draw`](#utilspdf_draw) | 1 | 9 |
 | [`utils.pdf_extract`](#utilspdf_extract) | 0 | 13 |
@@ -1982,6 +1982,9 @@ print.py 里的裸字面量 `8.0`，现在提为 `TEXT_MARGIN_MM`。
 
 | 函数 | 说明 |
 | --- | --- |
+| `normalize_page_rotation(value) -> float` | 逐页图片旋转角归一为 **(-180, 180]** 的浮点角度（顺时针为正）。 |
+| `rotated_bbox_size(width: float, height: float, degrees) -> Tuple[float, float]` | ``width × height`` 的矩形绕中心顺时针转 ``degrees`` 后的**外接框**尺寸。 |
+| `fit_rotated_rect(rect: Sequence[float], image_size: Sequence[float], degrees) -> List[float]` | 把旋转后的图**等比**放进 ``rect`` 并居中，返回它在页面上的外接框。 |
 | `is_rotated_char(ch: str) -> bool` | 该字符是否属于"整段旋转 90°"的拉丁/半角段。 |
 | `rotated_run_offset_mm(ascent_mm: float, descent_mm: float) -> Tuple[float, float]` | 竖排里"整段旋转 90°"的拉丁段：绘制点相对列基线的偏移 (dx, dy)。 |
 | `vertical_runs(text: str) -> List[Tuple[str, bool]]` | 竖排文本 → [(片段, 是否旋转 90°)]，相邻同类字符合并成一段。 |
@@ -1995,7 +1998,31 @@ print.py 里的裸字面量 `8.0`，现在提为 `TEXT_MARGIN_MM`。
 | `resolve_title_nodes(image_files: Sequence, title_switch_nodes: Sequence) -> List[Tuple[int, Tuple[str, str]]]` | 把配置里的 [页名, 标题, side] 解析为「图片下标 → (标题, 侧别)」。 |
 | `sides_for_pages(total: int, sorted_nodes: Sequence, page_number_start_page: int) -> List[str]` | 逐页给出标题/页码所在侧（left / right）。 |
 | `text_insets(value: Any) -> Optional[List[float]]` | 标题/页码的「距页边」设置 → [上, 右, 下, 左]（mm）。 |
-| `plan_print_page(image_size_px: Tuple[int, int], args: dict, page_index: int, total: int, sides: Optional[Sequence[str]]=None, sorted_nodes: Optional[Sequence]=None, image_name: Optional[str]=None, image_rect: Optional[Sequence[float]]=None) -> PrintPagePlan` | 单页排版几何。 |
+| `plan_print_page(image_size_px: Tuple[float, float], args: dict, page_index: int, total: int, sides: Optional[Sequence[str]]=None, sorted_nodes: Optional[Sequence]=None, image_name: Optional[str]=None, image_rect: Optional[Sequence[float]]=None) -> PrintPagePlan` | 单页排版几何。 |
+
+#### `normalize_page_rotation(value) -> float`
+
+逐页图片旋转角归一为 **(-180, 180]** 的浮点角度（顺时针为正）。
+
+版面编辑器的旋转钮可以拖任意角度（与「图片拼版」同一款组件），不再限定
+90° 步进；这里只负责把任意输入收敛到同一区间。「预览 / 版面编辑 / 单页
+导出 / 生成 PDF」四条链路共用这一个口径：谁都不许自己取整，否则同一份
+``print.json`` 在四处转出四个方向。
+
+#### `rotated_bbox_size(width: float, height: float, degrees) -> Tuple[float, float]`
+
+``width × height`` 的矩形绕中心顺时针转 ``degrees`` 后的**外接框**尺寸。
+
+旋转后的图片按外接框占位（PDF ``pdf.image`` 也只能给轴对齐的 w/h），
+预览 / 画布 / 成品都拿这个函数算，三者才会得出同一个框。
+
+#### `fit_rotated_rect(rect: Sequence[float], image_size: Sequence[float], degrees) -> List[float]`
+
+把旋转后的图**等比**放进 ``rect`` 并居中，返回它在页面上的外接框。
+
+``rect`` 是用户在版面编辑器里拖出来的图片槽（页面 mm；画布以像素为
+单位调用，单位无关）。旋转不改变这个槽，图片按旋转后的外接框等比缩放
+后**完整地**放进去——不裁剪、不拉伸，所以预览与 PDF 的落点一致。
 
 #### `rotated_run_offset_mm(ascent_mm: float, descent_mm: float) -> Tuple[float, float]`
 
@@ -2083,7 +2110,7 @@ print.py 里的裸字面量 `8.0`，现在提为 `TEXT_MARGIN_MM`。
 非法输入也返回 None（宽松）：校验归入口层
 （`core.command_spec` / GUI 表单），库层不替调用方做决定。
 
-#### `plan_print_page(image_size_px: Tuple[int, int], args: dict, page_index: int, total: int, sides: Optional[Sequence[str]]=None, sorted_nodes: Optional[Sequence]=None, image_name: Optional[str]=None, image_rect: Optional[Sequence[float]]=None) -> PrintPagePlan`
+#### `plan_print_page(image_size_px: Tuple[float, float], args: dict, page_index: int, total: int, sides: Optional[Sequence[str]]=None, sorted_nodes: Optional[Sequence]=None, image_name: Optional[str]=None, image_rect: Optional[Sequence[float]]=None) -> PrintPagePlan`
 
 单页排版几何。
 

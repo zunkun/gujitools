@@ -505,6 +505,16 @@ class StageRunnerMixin:
             }
             if page_rects:
                 args["page_rects"] = page_rects
+            # 逐图旋转覆盖：{页号(1-based): 角度}（float，顺时针为正）。
+            # 与 page_rects 同源（版面编辑器里旋转后一起落进 pages[].rotate），
+            # PDF 侧据此先转位图再贴进同一个框——「预览看到的方向 = 成品方向」。
+            page_rotations = {
+                i + 1: float(e.get("rotate") or 0)
+                for i, e in enumerate(entries)
+                if e.get("rotate")
+            }
+            if page_rotations:
+                args["page_rotations"] = page_rotations
             args["input"] = str(self.store.task_dir(self.task_id))
             # ⚠️ 输出目录按**节点**取（B 方案）：两个「PDF排版」节点各自出 PDF，
             #    共用 stages/print 就会互相覆盖（默认 PDF 名都从源 PDF 名派生）。

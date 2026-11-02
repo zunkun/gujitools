@@ -108,7 +108,15 @@ ROTATE_KNOB_RADIUS = 6
 ROTATE_KNOB_GAP = 26  # 旋转钮距框上边的距离（控件像素）
 #: 旋转钮的命中半宽（比画出来的圆大一圈）：它是图片**外面**唯一的旋转抓手
 #: （用户 2026-10-23：「可以在图片外面……鼠标左键旋转操作」），点太小不好抓
-ROTATE_KNOB_HIT = ROTATE_KNOB_RADIUS + 6
+ROTATE_KNOB_HIT = ROTATE_KNOB_RADIUS + 8
+#: 弧形箭头画在圆钮**外侧**（用户 2026-11-02：圆里那圈小弧看不清）：
+#: 距圆边的半径增量 / 起点角 / 跨度 / 箭头臂长。
+#: Qt 角度 0° = 3 点方向；跨度取**负值 = 顺时针**（用户要的旋转方向）；
+#: 缺口留在下方，避开引线。
+ROTATE_ARC_GAP = 5.0
+ROTATE_ARC_START = 210
+ROTATE_ARC_SPAN = -240
+ROTATE_ARC_BARB = 4.0
 
 _CORNER_CURSORS = [
     Qt.CursorShape.SizeFDiagCursor, Qt.CursorShape.SizeBDiagCursor,
@@ -1227,32 +1235,35 @@ class ImpositionCanvas(QWidget):
 
         ⚠️ 调用方的 painter 必须已**平移到 rect 中心并旋转该项角度**——钮与
         框同一套局部坐标（``_rotate_knob_local``），跟着图一起转。
+
+        圆钮**外侧**环绕一段顺时针弧形箭头（用户 2026-11-02：画在圆里太小、
+        看不清）；缺口留在下方，不压住引线。
         """
         knob = QPointF(0.0, -height_px / 2.0 - ROTATE_KNOB_GAP)
         painter.setPen(QPen(HANDLE_STROKE, 1.5))
         painter.drawLine(QPointF(0.0, -height_px / 2.0), knob)
         painter.setBrush(HANDLE_FILL)
         painter.drawEllipse(knob, ROTATE_KNOB_RADIUS, ROTATE_KNOB_RADIUS)
-        # 圆钮里的小圆弧箭头：一眼看出这是"旋转"抓手（不是缩放柄）
-        radius = ROTATE_KNOB_RADIUS - 2.5
+        # 弧形箭头在圆钮外侧（顺时针；缺口在下方，不压住引线）
+        arc_r = ROTATE_KNOB_RADIUS + ROTATE_ARC_GAP
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.setPen(QPen(HANDLE_STROKE, 1.0))
         painter.drawArc(
-            QRectF(knob.x() - radius, knob.y() - radius, radius * 2, radius * 2),
-            60 * 16, 265 * 16,
+            QRectF(knob.x() - arc_r, knob.y() - arc_r, arc_r * 2, arc_r * 2),
+            ROTATE_ARC_START * 16, ROTATE_ARC_SPAN * 16,
         )
-        # 箭头：弧末端沿切线方向的反向收两道短线
-        end = math.radians(60 + 265)
+        # 箭头：弧末端沿**顺时针**切线方向收两道短线
+        end = math.radians(ROTATE_ARC_START + ROTATE_ARC_SPAN)
         tip = QPointF(
-            knob.x() + radius * math.cos(end),
-            knob.y() - radius * math.sin(end),
+            knob.x() + arc_r * math.cos(end),
+            knob.y() - arc_r * math.sin(end),
         )
-        dx, dy = -math.sin(end), -math.cos(end)
+        dx, dy = math.sin(end), math.cos(end)
         for turn in (-0.8, 0.8):
             barb_x = dx * math.cos(turn) - dy * math.sin(turn)
             barb_y = dx * math.sin(turn) + dy * math.cos(turn)
             painter.drawLine(
-                tip, QPointF(tip.x() - 3.0 * barb_x, tip.y() - 3.0 * barb_y)
+                tip, QPointF(tip.x() - ROTATE_ARC_BARB * barb_x,
+                             tip.y() - ROTATE_ARC_BARB * barb_y)
             )
 
     def _draw_selected_border(self, painter: QPainter, index: int) -> None:

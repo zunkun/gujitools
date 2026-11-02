@@ -491,6 +491,10 @@ PRINT_DEFAULTS: Dict[str, Any] = {
     # 由 GUI 从 print.json 的 pages[].rect 收集后注入；给定页直接用它作图片框，
     # 不再由 page_margins 推导。CLI 不传（默认 None）→ 全部走自动排版。
     "page_rects": None,
+    # 逐图旋转覆盖：{页号(1-based): 角度}（float，顺时针为正，(-180, 180]）。
+    # 与 page_rects 同源，由 GUI 从 pages[].rotate 收集；PDF 侧先把位图转正、
+    # 再按旋转后的外接框贴进 page_rects 的框。
+    "page_rotations": None,
 }
 
 # GUI 表单的初次默认值（面向用户，比 CLI 更「已开启」一些）

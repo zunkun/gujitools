@@ -121,3 +121,54 @@ def run(ctx) -> None:
            f"自动排版=(x={_auto.image[0] * MM_TO_PT:.1f},"
            f"w={_auto.image[2] * MM_TO_PT:.1f})")
     doc.close()
+
+    # ---------------- 4. 逐图旋转也必须落到 PDF（用户 2026-11-02） ----------------
+    # 版面编辑器的旋转钮存 pages[].rotate → runner 传 page_rotations
+    # （键同样过 JSON 变字符串）→ PDF 生成先转位图、再按**旋转后**尺寸排版。
+    from functions.print import _normalize_page_rotations
+
+    ok("page_rotations：字符串键归一为 int，角度归一为 (-180, 180] 浮点",
+       _normalize_page_rotations({"1": 90, 2: 0, "x": 3, 4: 270, 5: 45.5})
+       == {1: 90, 4: -90, 5: 45.5},
+       str(_normalize_page_rotations({"1": 90, 2: 0, "x": 3, 4: 270, 5: 45.5})))
+
+    ca_rot = CommandArgs(
+        command="print", input=str(tmp), output=str(tmp),
+        pdf_name="rotated.pdf", files=files,
+        paper_size="A4", orientation="landscape",
+        page_margins=[20, 20, 20, 20],
+        title_printing=False, page_number_printing=False,
+        page_rotations={"2": 90},
+    )
+    PrintFunction(ca_rot).execute()
+    rot_pdf = tmp / "rotated.pdf"
+    ok("旋转 PDF 落盘", rot_pdf.exists(), str(rot_pdf))
+
+    from utils.page_layout import plan_print_page
+
+    auto_rot = plan_print_page(
+        (600, 800),          # 800×600 顺时针 90° ⇒ 600×800
+        {"paper_size": "A4", "orientation": "landscape",
+         "page_margins": [20, 20, 20, 20],
+         "title_printing": False, "page_number_printing": False},
+        1, 2, image_name="2",
+    )
+    rdoc = pymupdf.open(str(rot_pdf))
+    if rdoc.page_count >= 2:
+        b1 = rdoc[0].get_image_info()[0]["bbox"]
+        b2 = rdoc[1].get_image_info()[0]["bbox"]
+        ok("未旋转的页仍是源图比例（800×600）",
+           abs((b1[2] - b1[0]) / (b1[3] - b1[1]) - 800 / 600) < 0.02,
+           f"ratio={(b1[2] - b1[0]) / (b1[3] - b1[1]):.3f}")
+        ok("旋转 90° 的页按旋转后尺寸排版（落点与预览几何一致）",
+           abs(b2[0] - auto_rot.image[0] * MM_TO_PT) < 1.0
+           and abs(b2[1] - auto_rot.image[1] * MM_TO_PT) < 1.0
+           and abs((b2[2] - b2[0]) - auto_rot.image[2] * MM_TO_PT) < 1.0
+           and abs((b2[3] - b2[1]) - auto_rot.image[3] * MM_TO_PT) < 1.0,
+           f"PDF=({b2[0]:.1f},{b2[1]:.1f},"
+           f"{b2[2] - b2[0]:.1f},{b2[3] - b2[1]:.1f}) "
+           f"期望=({auto_rot.image[0] * MM_TO_PT:.1f},"
+           f"{auto_rot.image[1] * MM_TO_PT:.1f},"
+           f"{auto_rot.image[2] * MM_TO_PT:.1f},"
+           f"{auto_rot.image[3] * MM_TO_PT:.1f})")
+    rdoc.close()

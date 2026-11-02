@@ -116,6 +116,9 @@ class RembgViewerHost(QWidget, ThumbsMixin, ZoomPopupMixin):
     def _zoom_target(self, index: int) -> ZoomTarget | None:
         ...
 
+    def current_display_path(self) -> str | None:
+        ...
+
     def current_entry_path(self) -> str | None:
         ...
 

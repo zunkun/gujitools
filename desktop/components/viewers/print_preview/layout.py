@@ -7,7 +7,10 @@ from __future__ import annotations
 
 from pathlib import Path
 from PySide6.QtGui import QImage
-from utils.page_layout import plan_print_page, print_page_size_mm, resolve_title_nodes
+from utils.page_layout import (
+    fit_rotated_rect, normalize_page_rotation, plan_print_page,
+    print_page_size_mm, resolve_title_nodes, rotated_bbox_size,
+)
 from typing import TYPE_CHECKING
 
 
@@ -42,6 +45,14 @@ class PrintLayoutMixin(PrintPreviewHost):
                 "rect": (
                     self._entries_cache[index].get("rect")
                     if 0 <= index < len(self._entries_cache) else None
+                ),
+                # 逐图旋转（度，顺时针为正）：worker 先在位图上按外接框转好，
+                # 再按旋转后的尺寸排版。与 PDF 侧 page_rotations 同一口径。
+                "rotate": (
+                    normalize_page_rotation(
+                        self._entries_cache[index].get("rotate")
+                    )
+                    if 0 <= index < len(self._entries_cache) else 0.0
                 ),
                 # 解析好的标题切换节点（见 _resolved_nodes）：worker 线程
                 # 拿不到条目清单，必须在这里解析好再传过去
@@ -89,12 +100,17 @@ class PrintLayoutMixin(PrintPreviewHost):
             return []  # 参数没填好不阻塞预览（与 _print_spec 的容错同口径）
 
 
-    def _plan_for(self, index: int, path: Path, rect=None):
+    def _plan_for(self, index: int, path: Path, rect=None, rotate: float = 0.0):
         """该页的完整排版几何（含标题/页码/跳过态）。
 
         ``rect`` 为已存的逐图坐标：传进去才能让**标题/页码也按同一份覆盖**
         算出来（它们的落点只取决于 page_margins，但 skipped/side 等仍需
         plan 给出）。返回 ``(plan, image)``，读图失败时为 ``(None, None)``。
+
+        ``rotate``（度，顺时针为正）会让排版按**旋转后**的图片尺寸算，并把
+        旋转后的外接框等比放进 ``rect``（与 PDF / 画布同一份
+        ``fit_rotated_rect``）。画布收到的是**未旋转**的源图，由它自己按
+        同一角度旋转显示。
         """
         provider = self._params_provider
         try:
@@ -104,10 +120,18 @@ class PrintLayoutMixin(PrintPreviewHost):
         image = QImage(str(path))
         if image.isNull():
             return None, None
+        angle = normalize_page_rotation(rotate)
+        source_size = (image.width(), image.height())
+        size = source_size
+        image_rect = rect
+        if angle:
+            size = rotated_bbox_size(source_size[0], source_size[1], angle)
+            if rect is not None:
+                image_rect = fit_rotated_rect(rect, source_size, angle)
         plan = plan_print_page(
-            (image.width(), image.height()), args, index,
+            size, args, index,
             len(self._entries_cache), image_name=path.stem,
-            image_rect=rect,
+            image_rect=image_rect,
             sorted_nodes=self._resolved_nodes(args),
         )
         return plan, image
@@ -136,18 +160,19 @@ class PrintLayoutMixin(PrintPreviewHost):
         path = Path(str(entry["file"]))
         total = len(self._entries_cache)
         pw, ph = self._page_size_mm()
+        rotate = normalize_page_rotation(entry.get("rotate"))
         if not path.exists():
             self.canvas.set_page(pw, ph, None, [0.0, 0.0, 0.0, 0.0],
-                                 keep_ratio=keep_ratio)
+                                 keep_ratio=keep_ratio, rotate=rotate)
             self.caption.setText(f"图片不存在：{path.name}")
             return
         # 已存坐标优先；否则用当前自动排版作为初始位置（用户再微调）。
         # 两种情况都要拿到完整 plan——标题/页码属于版面，编辑器必须画出来。
         rect = entry.get("rect")
-        plan, image = self._plan_for(index, path, rect)
+        plan, image = self._plan_for(index, path, rect, rotate)
         if plan is None:
             self.canvas.set_page(pw, ph, None, [0.0, 0.0, 0.0, 0.0],
-                                 keep_ratio=keep_ratio)
+                                 keep_ratio=keep_ratio, rotate=rotate)
             self.caption.setText(f"图片无法读取：{path.name}")
             return
         if rect is None:
@@ -156,17 +181,24 @@ class PrintLayoutMixin(PrintPreviewHost):
         # （``pages[].rect_size``）。图像被上游换掉后，"旧框是否还适用"就靠它判
         # ——图像尺寸变了说明这张图已经重新生成，旧框会把新图拉成错的宽高
         # （见 desktop.services.print_plan.rect_fits_image）。
+        # ⚠️ 这里记的是**未旋转**的源图尺寸：rect_size 的语义是"源文件多大"，
+        # 朝向单独存 rotate；记成旋转后的尺寸会和上游真实尺寸永远对不上。
         if image is not None:
             self._canvas_image_size = [image.width(), image.height()]
-        self.canvas.set_page(pw, ph, image, rect, plan, keep_ratio=keep_ratio)
+        self.canvas.set_page(pw, ph, image, rect, plan,
+                             keep_ratio=keep_ratio, rotate=rotate)
         handle_hint = (
             "拖四角等比缩放，拖四边拉伸宽/高"
             if keep_ratio else
             "拖四角/四边拉伸（可改变比例）"
         )
+        rotate_hint = (
+            f"已旋转 {rotate:g}°，可拖框外上方圆钮调整"
+            if rotate else "可拖框外上方圆钮旋转（Shift 吸附 15°）"
+        )
         self.caption.setText(
             f"版面编辑 · 第 {index + 1}/{total} 页 · 拖动移动，{handle_hint}，"
-            f"双击放大预览"
+            f"{rotate_hint}，双击放大预览"
         )
 
 
@@ -179,10 +211,14 @@ class PrintLayoutMixin(PrintPreviewHost):
         """
         index = self._canvas_index
         if 0 <= index < len(self._entries_cache):
-            self._entries_cache[index]["rect"] = list(rect)
+            entry = self._entries_cache[index]
+            entry["rect"] = list(rect)
+            # 朝向与框同一次落盘：拖动旋转钮时画布按外接框重算了 rect，
+            # 宿主读这里拿到的角度写 ``pages[].rotate``，PDF/预览都按它转。
+            entry["rotate"] = normalize_page_rotation(self.canvas.rotation())
             size = getattr(self, "_canvas_image_size", None)
             if size:
-                self._entries_cache[index]["rect_size"] = list(size)
+                entry["rect_size"] = list(size)
         self.layout_changed.emit(index, list(rect))
 
 
