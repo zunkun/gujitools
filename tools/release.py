@@ -151,7 +151,9 @@ def _check_auth() -> None:
 
 def _prepare_worktree(version: str, dry_run: bool) -> None:
     """工作区只允许有「config.py 版本号」这一处未提交改动，并自动提交它。"""
-    status = _git("status", "--porcelain")
+    # ⚠️ 不能用 _git（它会 strip 整个输出）：porcelain 的第一行以状态空格开头，
+    #    整段 strip 会把首个路径吃掉一个字符（" M config.py" → "onfig.py"）。
+    status = _run(["git", "status", "--porcelain"]).stdout
     dirty = [line for line in status.splitlines() if line.strip()]
     dirty_paths = [line[3:].strip() for line in dirty]
 
