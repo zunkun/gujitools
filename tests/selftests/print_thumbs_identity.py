@@ -96,6 +96,8 @@ def _wait_all_thumbs(widget, app, expect_calls: int, timeout: float = 30.0) -> N
 
 def _audit(widget, label: str, ok, expect: dict) -> None:
     """逐行核对：缩略图颜色 / 文字 / 路径 都必须属于该行自己的那一页。"""
+    from desktop.services.imposition import cn_page_label
+
     bad_color, bad_text, bad_path, blank = [], [], [], []
     for row in range(widget.strip.count()):
         entry = widget._entries_cache[row]
@@ -106,8 +108,8 @@ def _audit(widget, label: str, ok, expect: dict) -> None:
             blank.append(row)
         elif not _near(got, want_rgb):
             bad_color.append((row, Path(entry["file"]).stem, got, want_rgb))
-        # 文字是**页码**（当前行号，四位补零），与条目自带的 label（源文件名）无关
-        want_text = f"{row + 1:04d}"
+        # 文字是**页码**（当前行号；与条目自带的 label（源文件名）无关）
+        want_text = cn_page_label(row)
         if item.text() != want_text:
             bad_text.append((row, item.text(), want_text))
         if str(item.data(0x0100)) != str(entry["file"]):  # Qt.UserRole

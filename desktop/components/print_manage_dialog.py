@@ -76,6 +76,8 @@ TARGET_KEY = "_target"
 THUMB_SIZE = QSize(96, 128)
 #: 图标网格单元：缩略图 + 下方一行文字
 CELL_SIZE = QSize(THUMB_SIZE.width() + 40, THUMB_SIZE.height() + 38)
+#: 网格单元里名称区的高度（框高之外的固定部分）
+CELL_LABEL_H = CELL_SIZE.height() - THUMB_SIZE.height()
 #: 条目数据角色：图标的**实际显示尺寸**（自绘 x 与虚线框都要用它定位）
 SHOWN_SIZE_ROLE = Qt.ItemDataRole.UserRole + 1
 #: 右上角 x 的边长
@@ -94,17 +96,47 @@ def page_label(row: int) -> str:
     return cn_page_label(row)
 
 
-def _image_rect(cell: QRect, shown: QSize) -> QRect:
+def _image_rect(cell: QRect, shown: QSize, box: QSize | None = None) -> QRect:
     """缩略图在网格单元里的落点（水平居中、顶部留 6px）。"""
+    box = box or THUMB_SIZE
     if shown.width() <= 0 or shown.height() <= 0:
-        shown = THUMB_SIZE
-    fitted = shown.scaled(THUMB_SIZE, Qt.AspectRatioMode.KeepAspectRatio)
+        shown = box
+    fitted = shown.scaled(box, Qt.AspectRatioMode.KeepAspectRatio)
     return QRect(
         cell.left() + (cell.width() - fitted.width()) // 2,
         cell.top() + 6,
         fitted.width(),
         fitted.height(),
     )
+
+
+def _typical_thumb_height(heights: list[int]) -> int:
+    """从缩略图实际高度里取一个**稳健的典型值**当格子高度（用户 2026-11-02）。
+
+    同一本书的正文页长宽比基本一致，夹几张扉页/插图（特别高或特别矮）会把
+    取最大值/平均值的口径带偏。这里：
+
+    1. 取中位数 ``m``（不受极端值影响）；
+    2. 算平均绝对偏差 ``dev = mean(|h - m|)``；
+    3. 偏离 ``m`` 超过 ``2 * dev``（且至少 4px）的当作离群页，**不参与**；
+    4. 内点取均值（四舍五入）返回。
+
+    ``dev`` 为 0（几乎都一样）时所有页都参与；全被滤掉时退回中位数。
+    """
+    if not heights:
+        return THUMB_SIZE.height()
+    ordered = sorted(heights)
+    count = len(ordered)
+    mid = count // 2
+    median = (
+        ordered[mid]
+        if count % 2
+        else (ordered[mid - 1] + ordered[mid]) / 2
+    )
+    deviation = sum(abs(h - median) for h in heights) / count
+    limit = max(2 * deviation, 4)
+    inliers = [h for h in heights if abs(h - median) <= limit] or heights
+    return max(1, round(sum(inliers) / len(inliers)))
 
 
 def _close_rect(image: QRect) -> QRect:
@@ -124,16 +156,24 @@ def _check_rect(image: QRect) -> QRect:
 
 def _icon_and_size(
     file_text: str, thumb_for: Callable[[str], object] | None, size: QSize,
+    *, allow_original: bool = True,
 ) -> tuple[QIcon, QSize]:
-    """按目标尺寸**缩放解码**缩略图，并返回图标的实际显示尺寸。"""
+    """按目标尺寸**缩放解码**缩略图，并返回图标的实际显示尺寸。
+
+    ``allow_original=False``：有 ``thumb_for`` 但拿不到小图时**不再回落到原图
+    解码**——任务里的图由宿主预先生成到 ``thumbnails/print_manage/``，缺失只
+    说明后台还没渲完（用户 2026-11-02「弹窗打开慢」：85 张原图同步解码）。
+    """
     source = file_text
     if thumb_for is not None:
         try:
             provided = thumb_for(file_text)
-        except Exception:  # noqa: BLE001 - 小图来源坏了就回落原图
+        except Exception:  # noqa: BLE001 - 小图来源坏了就当没有
             provided = None
         if provided:
             source = str(provided)
+        elif not allow_original:
+            return QIcon(), QSize()
     try:
         reader = QImageReader(source)
         image_size = reader.size()
@@ -159,6 +199,11 @@ class _ThumbDelegate(QStyledItemDelegate):
     叠一层透明控件更轻（滚动/拖动时不会有一堆子控件跟着搬）。
     """
 
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        #: 本书的缩略图框（面板按实际长宽比算出后覆盖）；文字固定在框下方
+        self.thumb_box = QSize(THUMB_SIZE)
+
     def paint(  # noqa: N802 - Qt 覆写
         self, painter: QPainter, option: QStyleOptionViewItem, index,
     ) -> None:
@@ -178,7 +223,7 @@ class _ThumbDelegate(QStyledItemDelegate):
         pending = isinstance(entry, dict) and bool(entry.get(PENDING_KEY))
         icon = index.data(Qt.ItemDataRole.DecorationRole)
         shown = index.data(SHOWN_SIZE_ROLE) or QSize()
-        image = _image_rect(option.rect, shown)
+        image = _image_rect(option.rect, shown, self.thumb_box)
         if isinstance(icon, QIcon) and not icon.isNull():
             icon.paint(painter, image, Qt.AlignmentFlag.AlignCenter)
         # 新图片：暖色虚线框（还没保存进任务目录，与已有图片区分）
@@ -222,11 +267,14 @@ class _ThumbDelegate(QStyledItemDelegate):
         font = QFont(option.font)
         painter.setFont(font)
         painter.setPen(QColor(T.WARNING if pending else T.INK_SOFT))
+        # 名称紧跟**本张图**底部：文字挨着图片，不按统一框高摆放
+        # （用户 2026-11-02：「文字跟图片太远了」）
+        top = image.bottom() + 6
         text_rect = QRect(
             option.rect.left() + 2,
-            image.bottom() + 6,
+            top,
             option.rect.width() - 4,
-            max(option.rect.bottom() - image.bottom() - 6, 0),
+            max(option.rect.bottom() - top, 0),
         )
         painter.drawText(
             text_rect,
@@ -256,6 +304,9 @@ class _ThumbGrid(QListWidget):
         super().__init__(parent)
         self._drag_rows: list[int] = []
         self._drop_row: int | None = None
+        #: 与画布同一个缩略图框（面板按典型高度算出后覆盖），点击 x/方框要
+        #: 按它算落点，否则高图被缩下来后命中区会错位
+        self.thumb_box = QSize(THUMB_SIZE)
 
     # ---------------------------------------------------------------- 点击
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
@@ -266,6 +317,7 @@ class _ThumbGrid(QListWidget):
                 image = _image_rect(
                     self.visualItemRect(item),
                     item.data(SHOWN_SIZE_ROLE) or QSize(),
+                    self.thumb_box,
                 )
                 if _close_rect(image).contains(pos):
                     entry = item.data(Qt.ItemDataRole.UserRole)
@@ -499,7 +551,10 @@ class PrintManagePanel(QWidget):
         self.list.setDefaultDropAction(Qt.DropAction.MoveAction)
         # 落点指示器自己画（网格里 Qt 默认指示器的位置与"插到哪"对不上）
         self.list.setDropIndicatorShown(False)
-        self.list.setItemDelegate(_ThumbDelegate(self.list))
+        self._delegate = _ThumbDelegate(self.list)
+        self.list.setItemDelegate(self._delegate)
+        #: 当前网格单元（按本书图片长宽比自适应，见 ``_fit_cells``）
+        self._cell_size = QSize(self.CELL_SIZE)
         self.list.rows_removed.connect(self._on_removed)
         self.list.order_changed.connect(self._after_rows_changed)
         self.list.itemSelectionChanged.connect(self._sync_actions)
@@ -526,6 +581,7 @@ class PrintManagePanel(QWidget):
 
         for entry in entries or []:
             self._append_entry(dict(entry))
+        self._fit_cells()
         self._sync_count()
         self._sync_actions()
 
@@ -533,18 +589,96 @@ class PrintManagePanel(QWidget):
     def _append_entry(self, entry: dict, at: int | None = None) -> QListWidgetItem:
         """把一条草稿放进网格（``at=None`` 追加末尾，否则插入该行之前）。"""
         file_text = str(entry.get("file") or "")
-        icon, shown = _icon_and_size(file_text, self._thumb_for, self.THUMB_SIZE)
+        # 任务里的图只读预生成的小图；刚选入的 ``_pending`` 还没有缓存，
+        # 允许现解码（数量少，且是用户刚挑的本地图）。
+        icon, shown = _icon_and_size(
+            file_text, self._thumb_for, self.THUMB_SIZE,
+            allow_original=bool(entry.get(PENDING_KEY)),
+        )
         item = QListWidgetItem(icon, page_label(self.list.count()))
         item.setData(Qt.ItemDataRole.UserRole, entry)
         item.setData(SHOWN_SIZE_ROLE, shown)
         item.setToolTip(file_text)
-        item.setSizeHint(self.CELL_SIZE)
+        item.setSizeHint(self._cell_size)
         if at is None:
             self.list.addItem(item)
         else:
             self.list.insertItem(at, item)
         self._renumber()
         return item
+
+    def refresh_thumb(self, file_text: str) -> None:
+        """后台缩略图就绪：按**文件路径**找回那一格，就地换图标。
+
+        弹窗打开时缩略图可能还没渲完（首次进入本步），生成一张就补一张；
+        按路径而不是行号，用户此时拖动/删除过也不会刷错格。
+        """
+        if not file_text:
+            return
+        for row in range(self.list.count()):
+            item = self.list.item(row)
+            if item is None:
+                continue
+            entry = item.data(Qt.ItemDataRole.UserRole)
+            if isinstance(entry, dict) and str(entry.get("file")) == file_text:
+                self._refresh_item(item, entry)
+                return
+
+    def refresh_thumbs(self) -> None:
+        """整批刷新（所有小图都生成完时调用；此时只读缓存，开销很小）。"""
+        for row in range(self.list.count()):
+            item = self.list.item(row)
+            if item is None:
+                continue
+            entry = item.data(Qt.ItemDataRole.UserRole)
+            if isinstance(entry, dict):
+                self._refresh_item(item, entry)
+        # 之前没图时网格按 96×128 兜底，现在按真实长宽比收紧
+        self._fit_cells()
+
+    def _fit_cells(self) -> None:
+        """按**本书缩略图的典型高度**收紧网格（用户 2026-11-02）。
+
+        固定 96×128 的框对横版/方版书会让每行多出一大截空白（"文字下面好大
+        一段"）。这里用 :func:`_typical_thumb_height` 从实际缩略图高度里取
+        稳健值（扉页/插图这类特别高、特别矮的不参与统计），网格行高 =
+        典型高度 + 名称区；高过典型值的个别图按框高缩放，不撑破行。
+
+        每本书长宽比不同 → 每个任务/每次刷新自己算一份，不写死常量。
+        """
+        heights: list[int] = []
+        for row in range(self.list.count()):
+            item = self.list.item(row)
+            if item is None:
+                continue
+            shown = item.data(SHOWN_SIZE_ROLE)
+            if isinstance(shown, QSize) and shown.height() > 0:
+                heights.append(shown.height())
+        box_h = _typical_thumb_height(heights)
+        # 太扁的书也给右上角 x/多选框留够高度
+        box_h = max(box_h, self.THUMB_SIZE.height() // 2)
+        self._delegate.thumb_box = QSize(self.THUMB_SIZE.width(), box_h)
+        self.list.thumb_box = QSize(self._delegate.thumb_box)
+        self._cell_size = QSize(
+            self.CELL_SIZE.width(), box_h + CELL_LABEL_H,
+        )
+        self.list.setIconSize(self._delegate.thumb_box)
+        self.list.setGridSize(self._cell_size)
+        for row in range(self.list.count()):
+            item = self.list.item(row)
+            if item is not None:
+                item.setSizeHint(self._cell_size)
+
+    def _refresh_item(self, item: QListWidgetItem, entry: dict) -> None:
+        icon, shown = _icon_and_size(
+            str(entry.get("file") or ""), self._thumb_for, self.THUMB_SIZE,
+            allow_original=bool(entry.get(PENDING_KEY)),
+        )
+        if icon.isNull():
+            return
+        item.setIcon(icon)
+        item.setData(SHOWN_SIZE_ROLE, shown)
+        self.list.viewport().update(self.list.visualItemRect(item))
 
     def _renumber(self) -> None:
         """条目文字 = **当前行号**的页码（重排/删除/插入后都要重写）。"""
@@ -617,6 +751,7 @@ class PrintManagePanel(QWidget):
 
     def _after_rows_changed(self) -> None:
         self._renumber()
+        self._fit_cells()
         self._sync_count()
         self._sync_actions()
 

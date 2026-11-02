@@ -14,7 +14,7 @@ from desktop.services.print_plan import (
     plan_print_entries,
     stale_rect_pages,
 )
-from desktop.utils.files import list_stage_images
+from desktop.utils.files import THUMBNAIL_EDGE, book_key, list_stage_images
 from utils.sort_utils import natural_sort_key
 
 if TYPE_CHECKING:
@@ -53,12 +53,15 @@ class PrintListMixin:
         _print_doc_snapshot: dict[str, Any]
 
     def _print_thumb_provider(self, file_text: str):
-        """第四步缩略条的小图来源：去底色阶段预生成的缩略图（无则回落原图解码）。
+        """第四步缩略条的小图来源：一律给**已生成的小图**，不现解码原图。
 
-        只服务 ``stages/rembg[~<节点>]`` 的**去底色成品**（缩略图按成品图 stem
-        存放，mtime 不旧于成品图才算有效——外部改动了成品图就自动失效回落）；
-        拼版产物（``stages/imposition``）与用户手动「插入图片」的外部图没有预生成
-        缩略图，照旧现解码。
+        查找顺序：
+        1. 入口图片（``thumbnails/input/``，导入即生成）；
+        2. 去底色成品（``thumbnails/print[~<节点>]/<图名>.jpg``，第三步执行时生成）；
+        3. **PDF排版统一缓存**（``thumbnails/print_manage/``，本步进入时后台生成）
+           ——拼版成品、手动「插入图片」的外部图都靠它，管理弹窗才不用同步
+           解码 85 张原图（用户 2026-11-02「弹窗打开慢」）。
+        都没有时返回 ``None``（调用方决定要不要回落原图；管理弹窗不再回落）。
 
         ⚠️ **缩略图目录按节点取**（B 方案）：两个「图片去底色」节点各有各的成品
         产物目录，缩略图缓存也跟着分（``thumbnails/print[~<节点>]``）。这里从
@@ -66,10 +69,6 @@ class PrintListMixin:
         规则，见 :func:`desktop.steps.ports.node_scope_from_output_dir`）——比按
         界面当前节点取更准：第四步消费的是**上游那个**节点交的图，未必是当前选中
         的节点。
-
-        入口图片（流程第一步就是「PDF排版」时，输入回落到 ``stages/input/``）：
-        走导入时生成的 :meth:`store.entry_thumb_path`，不现解码原图（用户
-        2026-10-17）。
         """
         if not self.task_id:
             return None
@@ -85,26 +84,126 @@ class PrintListMixin:
 
         parent = page.parent
         # 去底色成品目录恒为 ``stages/rembg`` 或 ``stages/rembg~<节点>``。
-        if parent.parent != self.store.task_dir(self.task_id) / "stages" or not (
+        if parent.parent == self.store.task_dir(self.task_id) / "stages" and (
             parent.name == "rembg" or parent.name.startswith("rembg~")
         ):
-            return None
-        thumb_dir = (
-            self.store.task_dir(self.task_id)
-            / "thumbnails"
-            / f"print{node_scope_from_output_dir(parent.name)}"
-        )
-        thumb = thumb_dir / f"{page.stem}.jpg"
+            thumb_dir = (
+                self.store.task_dir(self.task_id)
+                / "thumbnails"
+                / f"print{node_scope_from_output_dir(parent.name)}"
+            )
+            thumb = thumb_dir / f"{page.stem}.jpg"
+            try:
+                if (
+                    thumb.is_file()
+                    and thumb.stat().st_mtime >= page.stat().st_mtime
+                    and thumb.stat().st_size >= 512
+                ):
+                    return thumb
+            except OSError:
+                return None
+        # PDF排版统一缓存（拼版成品 / 手动插入图 / 其它来源）
         try:
-            if (
-                thumb.is_file()
-                and thumb.stat().st_mtime >= page.stat().st_mtime
-                and thumb.stat().st_size >= 512
-            ):
-                return thumb
-        except OSError:
+            from desktop.workers.thumb_cache_worker import (
+                cache_usable,
+                stat_mtime,
+            )
+
+            manage = (
+                self.store.print_manage_thumbnails_dir(self.task_id)
+                / f"{book_key(page)}.jpg"
+            )
+            if cache_usable(manage, stat_mtime(page)):
+                return manage
+        except (OSError, ValueError):
             return None
         return None
+
+    def _warm_print_thumbs(self, files) -> None:
+        """PDF排版缩略图**后台预生成**到 ``thumbnails/print_manage/``。
+
+        用户 2026-11-02：「管理图片」弹窗打开慢——它构造时逐条同步解码原图。
+        这里在**进入本步 / 列表刷新**时就把待打印条目（连同已删除条目，供
+        「删除恢复」页签用）的小图生成好，弹窗只读小图。
+
+        ⚠️ 与 ``_warm_entry_thumbs`` 同样按 ``(路径, mtime)`` 记账：读不出来的
+        坏图永远写不出缓存，不记账会在每次刷新时反复派发同一批。
+        """
+        if not self.task_id:
+            return
+        cache_dir = self.store.print_manage_thumbnails_dir(self.task_id)
+        candidates: list[Path] = []
+        for item in files or ():
+            text = str(item or "")
+            if text:
+                candidates.append(Path(text))
+        if not candidates:
+            return
+        from desktop.workers import connect_queued
+        from desktop.workers.thumb_cache_worker import (
+            ImageThumbCacheWorker,
+            stat_mtime,
+        )
+
+        warmed = self.__dict__.setdefault("_print_thumb_warmed", {})
+        todo: list[Path | str] = []
+        for path in candidates:
+            # 已有可用小图（入口图 / 去底色成品 / 本缓存）就不用再渲一份：
+            # 85 页去底色成品若都往 print_manage 复制一遍，等于白解码 85 次。
+            if self._print_thumb_provider(str(path)) is not None:
+                continue
+            mtime = stat_mtime(path)
+            key = str(path)
+            if warmed.get(key) == mtime:
+                continue  # 已请求过且源没变（多为读不出来的坏图）
+            todo.append(path)
+            warmed[key] = mtime
+        if not todo:
+            return
+        worker = ImageThumbCacheWorker(todo, cache_dir, edge=THUMBNAIL_EDGE)
+        owner_task = self.task_id
+        # ⚠️ ``thumbnail_ready`` 第三参数是**缓存文件路径**（见 worker 的信号
+        #    注释），而弹窗按**源图路径**认条目；这里用 index → 源图 的回溯，
+        #    别把缓存路径直接当 file 传进去（那样一格都匹配不上）。
+        sources = list(todo)
+        self.run_worker(
+            lambda: worker,
+            lambda w, thread: (
+                connect_queued(
+                    self,
+                    w.thumbnail_ready,
+                    lambda index, _image, _cache, o=owner_task, p=sources:
+                    self._on_print_thumb_ready(
+                        o, str(p[index]) if 0 <= index < len(p) else "",
+                    ),
+                    thread,
+                ),
+                connect_queued(
+                    self,
+                    w.completed,
+                    lambda o=owner_task: self._on_print_thumbs_warmed(o),
+                    thread,
+                ),
+                w.completed.connect(thread.quit),
+                w.failed.connect(thread.quit),
+            ),
+        )
+
+    def _on_print_thumb_ready(self, owner_task: str, path: str) -> None:
+        """一张缩略图生成好：管理弹窗正开着就就地换掉那一格。"""
+        if owner_task != self.task_id:
+            return
+        panel = getattr(self, "_manage_panel", None)
+        if panel is not None and panel.isVisible():
+            panel.refresh_thumb(str(path))
+
+    def _on_print_thumbs_warmed(self, owner_task: str) -> None:
+        """整批缩略图生成完：管理弹窗还开着就整体刷一遍（此时都命中缓存）。"""
+        if owner_task != self.task_id:
+            return
+        panel = getattr(self, "_manage_panel", None)
+        if panel is not None and panel.isVisible():
+            panel.refresh_thumbs()
 
     def _print_image_size(self, path_text: str) -> tuple[int, int] | None:
         """某张待打印图片的**当前**像素尺寸（只读文件头，不解码整图）。
@@ -232,6 +331,12 @@ class PrintListMixin:
             new_doc["rembg_snapshot"]
         ):
             self.store.save_print_doc(task_id, new_doc, **self._node_scope())
+        # 管理弹窗/删除恢复页签要的缩略图：进入本步就后台备好（拼版成品、
+        # 手动插入图没有第三步的预生成缓存）。
+        self._warm_print_thumbs(
+            [str(e.get("file") or "") for e in entries]
+            + [str(p.get("file") or "") for p in (new_doc.get("deleted_pages") or [])]
+        )
         return entries, new_doc
 
     def _save_print_order(self, silent: bool = False) -> None:
@@ -328,17 +433,30 @@ class PrintListMixin:
         from desktop.components.dialog_shell import shell_dialog
         from desktop.components.print_manage_dialog import PrintManagePanel
 
+        entries = self.print_preview.entries()
+        # 打开前先确保缩略图在后台生成（已生成过的直接命中，不重复派发）：
+        # 弹窗构造只读小图，否则 85 张原图同步解码就是"打开慢"的来源。
+        self._warm_print_thumbs(
+            [str(entry.get("file") or "") for entry in entries]
+            + [str(page.get("file") or "") for page in self._print_deleted_pages()]
+        )
         panel = PrintManagePanel(
-            entries=self.print_preview.entries(),
+            entries=entries,
             deleted=self._print_deleted_pages(),
             thumb_for=self._print_thumb_provider,
             parent=_parent(self),
         )
-        dialog = shell_dialog(
-            "管理图片", panel, _parent(self),
-            size=(900, 640), ok_text="保存",
-        )
-        if dialog.exec() != QDialog.DialogCode.Accepted:
+        # 后台缩略图就绪后就地刷新弹窗（缩略图生成可能比弹窗慢）
+        self._manage_panel = panel
+        try:
+            dialog = shell_dialog(
+                "管理图片", panel, _parent(self),
+                size=(900, 640), ok_text="保存",
+            )
+            accepted = dialog.exec() == QDialog.DialogCode.Accepted
+        finally:
+            self._manage_panel = None
+        if not accepted:
             return
         self._apply_print_manage(panel.entries())
 
@@ -503,8 +621,13 @@ class PrintListMixin:
 
         entries = self.print_preview.entries()
         row = self.print_preview.strip.currentRow()
+        deleted = self._print_deleted_pages()
+        # 恢复页签的缩略图同样走 print_manage 缓存（刚删掉的图还没预热过）
+        self._warm_print_thumbs(
+            [str(page.get("file") or "") for page in deleted]
+        )
         panel = PrintInsertPanel(
-            deleted=self._print_deleted_pages(),
+            deleted=deleted,
             current_row=row,
             total=len(entries),
             default_position=position or "after",

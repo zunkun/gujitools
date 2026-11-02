@@ -1378,6 +1378,19 @@ class TaskMixin:
             return None
         return target
 
+    def print_manage_thumbnails_dir(self, task_id: str) -> Path:
+        """PDF排版「管理图片」弹窗的缩略图缓存：``thumbnails/print_manage/``。
+
+        这一份覆盖**待打印条目 + 已删除条目**（拼版成品、手动插入图、入口图、
+        去底色成品都可能进来），按 ``book_key``（图文件路径指纹）命名。弹窗
+        打开时只读这些小图，不再同步解码原图（用户 2026-11-02「弹窗打开慢」）。
+
+        ⚠️ 删除图片的小图**不删**：「插入图片 → 删除恢复」还要显示它；哪些
+        缩略图"在用"由 ``print.json`` 的 ``pages`` / ``deleted_pages`` 声明
+        （就是用户说的"用配置文件表示"）。不按节点分：``print.json`` 本身按节点。
+        """
+        return self.task_dir(task_id) / "thumbnails" / "print_manage"
+
     def source_thumbnails_dir(self, task_id: str) -> Path:
         """源 PDF 页缩略图：导入即生成，PDF 预览直接复用，永不清理。
 

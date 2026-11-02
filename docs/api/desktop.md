@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 182 个模块、197 个公开类、1482 个公开函数/方法（生成于 2026-11-02）。
+覆盖 182 个模块、197 个公开类、1485 个公开函数/方法（生成于 2026-11-02）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -46,7 +46,7 @@
 | [`desktop.components.panels.print_text_layout`](#desktopcomponentspanelsprint_text_layout) | 1 | 0 |
 | [`desktop.components.panels.rembg_panel`](#desktopcomponentspanelsrembg_panel) | 1 | 1 |
 | [`desktop.components.print_insert_dialog`](#desktopcomponentsprint_insert_dialog) | 1 | 2 |
-| [`desktop.components.print_manage_dialog`](#desktopcomponentsprint_manage_dialog) | 1 | 3 |
+| [`desktop.components.print_manage_dialog`](#desktopcomponentsprint_manage_dialog) | 1 | 5 |
 | [`desktop.components.progress_row`](#desktopcomponentsprogress_row) | 1 | 8 |
 | [`desktop.components.step_bar`](#desktopcomponentsstep_bar) | 2 | 20 |
 | [`desktop.components.task_table`](#desktopcomponentstask_table) | 3 | 10 |
@@ -157,7 +157,7 @@
 | [`desktop.store.pages`](#desktopstorepages) | 1 | 9 |
 | [`desktop.store.runs`](#desktopstoreruns) | 1 | 10 |
 | [`desktop.store.store`](#desktopstorestore) | 1 | 1 |
-| [`desktop.store.tasks`](#desktopstoretasks) | 1 | 62 |
+| [`desktop.store.tasks`](#desktopstoretasks) | 1 | 63 |
 | [`desktop.store.ui_state`](#desktopstoreui_state) | 1 | 9 |
 | [`desktop.ui.color_picker`](#desktopuicolor_picker) | 5 | 30 |
 | [`desktop.ui.font_setup`](#desktopuifont_setup) | 2 | 8 |
@@ -2957,7 +2957,16 @@ print 面板「位置」「文字方向」的固定取值（由 PrintFormMixin �
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(*, entries: list[dict] \| None=None, deleted: list[dict] \| None=None, thumb_for: Callable[[str], object] \| None=None, parent=None)` | entries: [{file, label, rect?}]；deleted: print.json 的已删除记录。 |
+| `refresh_thumb(file_text: str) -> None` | 后台缩略图就绪：按**文件路径**找回那一格，就地换图标。 |
+| `refresh_thumbs() -> None` | 整批刷新（所有小图都生成完时调用；此时只读缓存，开销很小）。 |
 | `entries() -> list[dict]` | 当前草稿顺序（宿主在「保存」后读取；含 ``_pending`` 标记）。 |
+
+##### `refresh_thumb(file_text: str) -> None`
+
+后台缩略图就绪：按**文件路径**找回那一格，就地换图标。
+
+弹窗打开时缩略图可能还没渲完（首次进入本步），生成一张就补一张；
+按路径而不是行号，用户此时拖动/删除过也不会刷错格。
 
 ### 模块函数
 
@@ -13363,6 +13372,7 @@ JSON 文件，没有旧数据（SQLite）需要迁移。
 | `thumbnails_dir(task_id: str, name: str, node_id: str \| None=None) -> Path` | 按**节点作用域**取一个缩略图缓存目录：``thumbnails/<名>[~<节点>]``。 |
 | `input_thumbnails_dir(task_id: str) -> Path` | **入口图片**的缩略图缓存：``thumbnails/input/``。 |
 | `entry_thumb_path(task_id: str, image: Path \| str) -> Path \| None` | 一张入口图片在 :meth:`input_thumbnails_dir` 里的缓存缩略图路径。 |
+| `print_manage_thumbnails_dir(task_id: str) -> Path` | PDF排版「管理图片」弹窗的缩略图缓存：``thumbnails/print_manage/``。 |
 | `source_thumbnails_dir(task_id: str) -> Path` | 源 PDF 页缩略图：导入即生成，PDF 预览直接复用，永不清理。 |
 | `rembg_thumbnails_dir(task_id: str, node_id: str \| None=None) -> Path` | 第四步缩略图缓存：去底色阶段随成品图一并生成， |
 | `imposition_thumbnails_dir(task_id: str, node_id: str \| None=None) -> Path` | 拼版页左列缩略图缓存（每页取第一张源图，``book_key`` 命名）。 |
@@ -13832,6 +13842,18 @@ PDF排版」时，它的输入是用户直接放进 ``stages/input/`` 的那批�
 没有缓存、或缓存比源图旧/体积像截断，一律返回 ``None``（调用方回落到
 真图解码）。按**图键**命名（``book_key``：文件名+大小+路径指纹）——入口
 图片名字五花八门，按序号会张冠李戴（与 ``thumb_cache_worker`` 同一规则）。
+
+##### `print_manage_thumbnails_dir(task_id: str) -> Path`
+
+PDF排版「管理图片」弹窗的缩略图缓存：``thumbnails/print_manage/``。
+
+这一份覆盖**待打印条目 + 已删除条目**（拼版成品、手动插入图、入口图、
+去底色成品都可能进来），按 ``book_key``（图文件路径指纹）命名。弹窗
+打开时只读这些小图，不再同步解码原图（用户 2026-11-02「弹窗打开慢」）。
+
+⚠️ 删除图片的小图**不删**：「插入图片 → 删除恢复」还要显示它；哪些
+缩略图"在用"由 ``print.json`` 的 ``pages`` / ``deleted_pages`` 声明
+（就是用户说的"用配置文件表示"）。不按节点分：``print.json`` 本身按节点。
 
 ##### `source_thumbnails_dir(task_id: str) -> Path`
 
