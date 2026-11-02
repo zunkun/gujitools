@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import cast
 from PySide6.QtCore import Qt
 from desktop.workers import ImageListWorker
+from desktop.services.imposition import cn_page_label
 from typing import TYPE_CHECKING
 
 
@@ -23,14 +24,17 @@ class PrintThumbsMixin(PrintPreviewHost):
 
     @staticmethod
     def _page_label(row: int) -> str:
-        """缩略图下方的页码文字 = **列表当前位置**（1 起，四位补零）。
+        """缩略图下方的页码文字 = **列表当前位置**（「第一页」「第十二页」）。
 
         ⚠️ 不能用条目的 ``label``（= 源文件名）：那是**取图时**的名字，删除/
         拖动之后它跟 PDF 的页序就对不上了（用户 2026-11-01 报「删除当前图片
         后剩下的页面页码没有重新排序」）。页码只在视觉顺序里成立，所以由行号
         算；异步缩略图到达、拖动重排、删除之后都要按行重写一遍。
+
+        用户 2026-11-02：写法与「图片拼版」/「管理图片」统一成中文页码
+        （``services.imposition.cn_page_label`` 是唯一来源）。
         """
-        return f"{row + 1:04d}"
+        return cn_page_label(row)
 
     def _thumb_path_for(self, entry: dict) -> Path:
         """条目缩略图来源：条目自带 thumb → provider → 条目图片本身。"""

@@ -106,18 +106,16 @@ def parse_margin4(text: str):
 
 
 def margin_to_text(value) -> str:
-    """边距列表转简写文本：四边相等→单值；上下/左右相等→两值；否则四值。"""
+    """边距列表 → 表单文本：**恒写成四个值**（上,右,下,左）。
+
+    用户 2026-11-02：通用边距显示成 ``20,20,20,20``（不再压成 ``20``），
+    四边一目了然；``parse_margin4`` 收得下同样写法，往返不变形。
+    """
     if not value:
         return ""
     if not isinstance(value, (list, tuple)):
         return str(value)
-    vals = [int(float(v)) for v in value]
-    if len(vals) == 4:
-        if vals[0] == vals[1] == vals[2] == vals[3]:
-            return str(vals[0])
-        if vals[0] == vals[2] and vals[1] == vals[3]:
-            return f"{vals[0]},{vals[1]}"
-    return ",".join(str(v) for v in vals)
+    return ",".join(str(int(float(v))) for v in value)
 
 
 def skip_pages_to_text(value) -> str:

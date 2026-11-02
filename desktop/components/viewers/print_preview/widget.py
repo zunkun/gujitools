@@ -44,7 +44,7 @@ class PrintPreviewWidget(
     """PDF排版预览：左侧待打印缩略图条（可拖动排序）+ 右侧单页效果。"""
 
     order_changed = Signal()        # 列表内容/顺序变化（含拖动与删除）
-    insert_requested = Signal()     # 请求插入图片（默认落在当前页之后）
+    manage_requested = Signal()     # 请求打开「管理图片」弹窗（草稿式）
     # 右键菜单：向前 / 向后插入图片（弹窗里落点可再改）
     insert_before_requested = Signal()
     insert_after_requested = Signal()
@@ -128,28 +128,14 @@ class PrintPreviewWidget(
         self.strip.delete_requested.connect(self.remove_selected)
         self.strip.order_changed.connect(self._on_strip_order_changed)
         self.strip.current_path_changed.connect(self._select_image)
-        # 右键缩略图：删除当前图片（软删除，可在「插入图片」里恢复）/
+        # 右键缩略图：删除当前图片（软删除，可在「管理图片 → 插入图片」里恢复）/
         # 向前插入 / 向后插入（均打开插入弹窗，落点可再改）
         self.strip.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.strip.customContextMenuRequested.connect(self._show_context_menu)
-        # 用户 2026-11-01：鼠标点选缩略图后把「右键能做什么」提示出来——
-        # 右键菜单只在右键那一刻出现，没点过右键的用户根本不知道有这功能。
-        self.strip.itemClicked.connect(self._show_strip_hint)
         left.addWidget(self.strip, 1)
-        # 「插入图片」按钮放在缩略图**下面**（用户 2026-10-31）：
-        # 点它弹「恢复图片 / 新上传」弹窗，不再直接弹文件选择框。
-        left.addWidget(self.insert_button)
-        # 提示文案放在**按钮下方**（左侧列很窄，分两三行显示）。放在这里
-        # 而不是缩略图与按钮之间：提示是选中后才出现的，夹在中间会让「插入
-        # 图片」按钮在选中那一刻突然往下跳。
-        self.strip_hint = CaptionLabel("")
-        self.strip_hint.setText(
-            "右键缩略图：删除 / 向前插入 / 向后插入图片"
-        )
-        self.strip_hint.setWordWrap(True)
-        ui.apply_to(self.strip_hint, T.SIZE_CAPTION, color=T.INK_FAINT)
-        self.strip_hint.hide()  # 选中一张之前不占地方
-        left.addWidget(self.strip_hint)
+        # 「管理图片」按钮放在缩略图**下面**（用户 2026-10-31 / 2026-11-02）：
+        # 点它弹草稿式管理弹窗（网格多选/拖动排序 + 二次「插入图片」）。
+        left.addWidget(self.manage_button)
         body.addLayout(left)
         # 兼容旧名字：历史自测与宿主代码里有 print_preview.list 的用法
         self.list = self.strip
@@ -208,11 +194,11 @@ class PrintPreviewWidget(
         ``desktop/ui/menu.py``），下载本页图片/打印本页挪到「版面编辑」那一行
         右侧，下载 PDF 挪到右下方控制面板「生成PDF」的下一行（宿主负责）。
         """
-        self.insert_button = PrimaryPushButton(FIF.ADD, "插入图片")
-        self.insert_button.setToolTip(
-            "打开「插入图片」弹窗：可恢复已删除的图片，或新上传图片"
+        self.manage_button = PrimaryPushButton(FIF.PHOTO, "管理图片")
+        self.manage_button.setToolTip(
+            "打开「管理图片」弹窗：拖动调整顺序、多选，或插入 / 恢复图片"
         )
-        self.insert_button.clicked.connect(self.insert_requested.emit)
+        self.manage_button.clicked.connect(self.manage_requested.emit)
         # 单页导出：当前页排进 A4 纸后的**最终效果**（与 PDF 同精度），不生成 PDF
         self.export_image_button = PushButton(FIF.IMAGE_EXPORT, "下载本页图片")
         self.export_image_button.setToolTip(
@@ -251,8 +237,6 @@ class PrintPreviewWidget(
             self.view.show()
             self.view.clear_image(self._empty_hint)
             self.caption.setText("")
-            # 列表空了：右键提示也跟着收起来（没有条目可右键）
-            self.strip_hint.hide()
             return
         for index, entry in enumerate(entries):
             # 缩略图下方的文字是**页码**（当前行号），不是源文件名：页码只在
@@ -321,7 +305,7 @@ class PrintPreviewWidget(
         return (
             f"确定从待打印列表删除{what}吗？\n\n"
             "删除后图片文件仍保留在任务目录里，"
-            "之后可以用「插入图片 → 删除恢复」重新放回列表。"
+            "之后可以用「管理图片 → 插入图片 → 删除恢复」重新放回列表。"
         )
 
     def _ask_delete_confirm(self, count: int) -> bool:
@@ -337,11 +321,6 @@ class PrintPreviewWidget(
         dialog.cancelButton.setText("取消")
         return bool(dialog.exec())
 
-    def _show_strip_hint(self, *_args) -> None:
-        """鼠标点选了缩略图：提示「右键能做什么」（列表为空时不显示）。"""
-        if self._entries_cache:
-            self.strip_hint.show()
-
     def print_current(self) -> None:
         """公开入口：把当前页按 A4 效果送打印机（窗口菜单「打印图片」用）。
 
@@ -352,14 +331,15 @@ class PrintPreviewWidget(
 
 
     def _show_context_menu(self, pos) -> None:
-        """缩略图右键菜单：删除当前图片 / 向前插入 / 向后插入。
+        """缩略图右键菜单：上移 / 下移 / 删除当前图片 / 向前插入 / 向后插入。
 
         ⚠️ 先右键命中的条目设成当前行：用户点的是「这一张」，菜单动作
-        （删除/插入落点）必须作用在同一张上，不能沿用上一次的选中行。
+        （上移/下移/删除/插入落点）必须作用在同一张上，不能沿用上一次的选中行。
         """
         item = self.strip.itemAt(pos)
-        if item is not None:
-            self.strip.setCurrentRow(self.strip.row(item))
+        row = self.strip.row(item) if item is not None else -1
+        if row >= 0:
+            self.strip.setCurrentRow(row)
         if not self._entries_cache:
             return
         from qfluentwidgets import Action, FluentIcon as FIF, RoundMenu
@@ -375,6 +355,23 @@ class PrintPreviewWidget(
             previous.deleteLater()
         menu = RoundMenu(parent=self.window())
         self._context_menu = menu
+        # 上移/下移（用户 2026-11-01 追加）：首/末行置灰，避免点了"没反应"。
+        # 走 ``strip.move_row``——它同时作废滚轮前缀和并让当前行跟到新位置，
+        # 顺序变化照常经 order_changed 落盘（与拖动排序同一条链路）。
+        count = self.strip.count()
+        for text, icon, delta, enabled in (
+            ("上移", FIF.CARE_UP_SOLID, -1, row > 0),
+            ("下移", FIF.CARE_DOWN_SOLID, +1, 0 <= row < count - 1),
+        ):
+            action = Action(icon, text, menu)
+            action.setEnabled(enabled)
+            action.triggered.connect(
+                lambda _checked=False, d=delta: self.strip.move_row(
+                    self.strip.currentRow(), d
+                )
+            )
+            menu.addAction(action)
+        menu.addSeparator()
         for text, icon, slot in (
             # 删除走确认（用户 2026-11-01）：误点一下就把页删没了，弹窗说清
             # 「还能在插入图片里恢复」再动手；插入两项本身是弹窗，无需再确认

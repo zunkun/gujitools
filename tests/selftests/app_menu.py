@@ -229,6 +229,59 @@ def run(ctx) -> None:
     ok("编辑菜单四项都问当前页要可用性（任务列表页不认识 → 全不可点）",
        all(menu._can_edit_action(w, capability) is False
            for capability, _text, _tip in menu.EDIT_MENU_ITEMS), "")
+    # ---- 真点一遍：动作必须转发到 ``edit_<能力>`` ----
+    # ⚠️ 回归守卫：曾经把动作名拼成 ``edit_edit_<能力>``，页面上一根钩子都找不到，
+    #    表现正是"菜单全灰/点了没反应"——只断言文案与 can_* 根本抓不到。
+    from PySide6.QtWidgets import QWidget
+
+    class _EditProbe(QWidget):
+        """只实现编辑钩子的假页面（放进页面栈当"当前页"）。"""
+
+        def __init__(self):
+            super().__init__()
+            self.fired: list[str] = []
+
+        def can_edit_delete_selected(self):
+            return True
+
+        def can_edit_insert_images(self):
+            return True
+
+        def can_edit_download_image(self):
+            return True
+
+        def can_edit_print_image(self):
+            return True
+
+        def edit_delete_selected(self):
+            self.fired.append("delete_selected")
+
+        def edit_insert_images(self):
+            self.fired.append("insert_images")
+
+        def edit_download_image(self):
+            self.fired.append("download_image")
+
+        def edit_print_image(self):
+            self.fired.append("print_image")
+
+    probe_page = _EditProbe()
+    w.pages.addWidget(probe_page)
+    w.pages.setCurrentWidget(probe_page)
+    edit_actions = [a for a in edit_menu.actions() if not a.isSeparator()]
+    edit_menu.aboutToShow.emit()
+    ok("编辑菜单四项在能力齐全的页面上全部可点",
+       all(a.isEnabled() for a in edit_actions),
+       f"{[(a.text(), a.isEnabled()) for a in edit_actions]}")
+    for action in edit_actions:
+        action.trigger()
+    ok("编辑菜单四项动作真的转发到当前页（不是点了没反应）",
+       probe_page.fired == [capability for capability, _t, _tip
+                            in menu.EDIT_MENU_ITEMS],
+       f"{probe_page.fired}")
+    w.pages.setCurrentWidget(w.list_page)
+    w.pages.removeWidget(probe_page)
+    probe_page.deleteLater()
     help_menu = _menu_of(w, menu.MENU_HELP)
     ok("帮助菜单：帮助文档(&D) / 检查更新(&U) / 检查数据包(&M) / 关于(&A)",
        [a.text() for a in help_menu.actions() if not a.isSeparator()]

@@ -316,6 +316,177 @@ class PrintListMixin:
                 out.append(dict(page))
         return out
 
+    def _manage_print_images(self) -> None:
+        """缩略图条下方「管理图片」：打开**草稿式**管理弹窗 A。
+
+        面板里的排序 / 多选 / 插入 / 恢复都只是草稿（用户 2026-11-02：
+        「管理弹窗A中的效果如果不保存，则不生效」）；只有外壳的「保存」才由
+        本方法写回数据层。
+        """
+        if not self.task_id:
+            return
+        from desktop.components.dialog_shell import shell_dialog
+        from desktop.components.print_manage_dialog import PrintManagePanel
+
+        panel = PrintManagePanel(
+            entries=self.print_preview.entries(),
+            deleted=self._print_deleted_pages(),
+            thumb_for=self._print_thumb_provider,
+            parent=_parent(self),
+        )
+        dialog = shell_dialog(
+            "管理图片", panel, _parent(self),
+            size=(900, 640), ok_text="保存",
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._apply_print_manage(panel.entries())
+
+    def _apply_print_manage(self, entries: list[dict]) -> None:
+        """把管理弹窗的草稿写回列表（离屏自测可直接调用，不弹窗）。
+
+        草稿里带 ``_pending`` 的是**刚从本地选入、还没复制**的新图：先按插入
+        口径复制进 ``inserted/``，成功后再整体落盘；复制期间界面保持原样，
+        全部完成才刷新一次。没有待复制项时同步落盘。
+        """
+        if not self.task_id:
+            return
+        from desktop.components.print_manage_dialog import PENDING_KEY, TARGET_KEY
+
+        draft = [dict(entry) for entry in entries]
+        pending = [entry for entry in draft if entry.get(PENDING_KEY)]
+        if not pending:
+            self._commit_print_manage(draft)
+            return
+        target_dir = self._print_insert_dir()
+        if target_dir is None:
+            return
+        try:
+            target_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            message = f"插入目录创建失败：{type(exc).__name__}: {exc}"
+            self.log_view.append(message)
+            self._toast("error", "管理图片失败", message)
+            return
+        # 重名避让：同一次里选中同一张图两次，也要各自落到不同文件名上
+        jobs: list[tuple[Path, Path]] = []
+        reserved: set[str] = set()
+        for entry in pending:
+            source = Path(str(entry.get("file") or ""))
+            target = target_dir / source.name
+            counter = 1
+            while target.name in reserved or target.exists():
+                target = target_dir / f"{source.stem}-{counter}{source.suffix}"
+                counter += 1
+            reserved.add(target.name)
+            entry[TARGET_KEY] = str(target)
+            jobs.append((source, target))
+        task_id = self.task_id
+        from desktop.workers import CopyFilesWorker, connect_queued
+
+        worker = CopyFilesWorker(jobs)
+        self.run_worker(
+            lambda: worker,
+            lambda w, thread: (
+                connect_queued(
+                    self,
+                    w.finished,
+                    lambda done, errors: self._on_print_manage_copied(
+                        done, errors, draft, task_id
+                    ),
+                    thread,
+                ),
+                connect_queued(
+                    self,
+                    w.failed,
+                    lambda msg: self._toast("error", "管理图片失败", msg),
+                    thread,
+                ),
+                w.finished.connect(thread.quit),
+                w.failed.connect(thread.quit),
+            ),
+        )
+
+    def _on_print_manage_copied(
+        self, done: list, errors: list, entries: list[dict], task_id: str,
+    ) -> None:
+        """后台复制完成（主线程）：把 ``_pending`` 换成任务目录里的副本再落盘。"""
+        from desktop.components.print_manage_dialog import PENDING_KEY, TARGET_KEY
+
+        # 复制期间切了任务：这批文件属于旧任务，不能进新任务的清单
+        if self.task_id != task_id:
+            self.log_view.append("已切换任务，忽略上一次未完成的管理图片保存。")
+            return
+        if not self.task_id:
+            return
+        done_targets = {str(target) for _source, target in done}
+        failed = 0
+        final: list[dict] = []
+        for entry in entries:
+            if not entry.get(PENDING_KEY):
+                final.append(entry)
+                continue
+            target = str(entry.get(TARGET_KEY) or "")
+            if target not in done_targets:
+                # 复制失败的新图不进清单（其余条目照常保存）
+                failed += 1
+                continue
+            renamed = {
+                key: value for key, value in entry.items()
+                if key not in (PENDING_KEY, TARGET_KEY, "file", "label")
+            }
+            final.append({
+                **renamed, "file": target, "label": Path(target).stem,
+            })
+        self._commit_print_manage(final)
+        if errors or failed:
+            reason = errors[0][1] if errors else "复制失败"
+            note = f"{failed or len(errors)} 张新图未能插入：{reason}"
+            self.log_view.append(note)
+            self._toast("warning", "部分图片未插入", note)
+
+    def _commit_print_manage(self, entries: list[dict]) -> None:
+        """管理弹窗「保存」的落盘：写回 pages 顺序，并维护软删除清单。"""
+        task_id = self.task_id
+        if not task_id:
+            return
+        doc = self.store.load_print_doc(
+            task_id, **self._node_scope()
+        ) or {"rembg_snapshot": [], "pages": []}
+        previous = doc.get("pages") or []
+        current_files = {
+            str(entry.get("file")) for entry in entries if entry.get("file")
+        }
+        # 在弹窗里拿掉的条目与右键删除同口径：记进 deleted_pages 以便恢复
+        removed = [
+            page for page in previous
+            if str(page.get("file")) and str(page.get("file")) not in current_files
+        ]
+        deleted = list(doc.get("deleted_pages") or [])
+        known = {str(page.get("file")) for page in deleted}
+        for page in removed:
+            file_text = str(page.get("file"))
+            if file_text not in known:
+                deleted.append(ordered_page_record(page))
+                known.add(file_text)
+        # 恢复回列表的图片不再属于「已删除」
+        doc["pages"] = [ordered_page_record(entry) for entry in entries]
+        doc["deleted_pages"] = [
+            page for page in deleted
+            if str(page.get("file")) not in current_files
+        ]
+        try:
+            self.store.save_print_doc(task_id, doc, **self._node_scope())
+        except OSError as exc:
+            message = f"待打印列表保存失败：{type(exc).__name__}: {exc}"
+            self.log_view.append(message)
+            self._toast("error", "列表未保存", message)
+            return
+        self.print_preview.set_entries(self._print_entries()[0])
+        self.log_view.append(
+            f"待打印列表已更新（{self.print_preview.count()} 页）。"
+        )
+
     def _insert_print_images(self, position: str | None = None) -> None:
         """打开「插入图片」弹窗（恢复已删除图片 / 新上传图片）。
 

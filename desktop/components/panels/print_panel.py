@@ -130,8 +130,7 @@ class PrintPanel(PrintFormMixin, StagePanel):
         ):
             combo.currentTextChanged.connect(emit)
         for edit in (
-            self.page_margins, self.left_margins, self.right_margins,
-            self.title_text, self.title_color,
+            self.page_margins, self.title_text, self.title_color,
             self.page_number_color, self.skip_pages,
             self.page_number_prefix, self.page_number_suffix,
         ):
@@ -201,9 +200,10 @@ class PrintPanel(PrintFormMixin, StagePanel):
             self._apply_upstream_margin_default()
 
     def _apply_upstream_margin_default(self) -> None:
-        default = (
-            "0" if border_has_padding(self._upstream_border)
-            else margin_to_text(DEFAULT_PARAMS["page_margins"])
+        default = margin_to_text(
+            [0, 0, 0, 0]
+            if border_has_padding(self._upstream_border)
+            else DEFAULT_PARAMS["page_margins"]
         )
         self.page_margins.blockSignals(True)
         self.page_margins.setText(default)
@@ -351,12 +351,6 @@ class PrintPanel(PrintFormMixin, StagePanel):
         }
         if not self.page_number_end_to_last.isChecked():
             args["page_number_end_page"] = self.page_number_end.value()
-        left = parse_margin4(self.left_margins.text())
-        if left is not None:
-            args["left_page_margins"] = left
-        right = parse_margin4(self.right_margins.text())
-        if right is not None:
-            args["right_page_margins"] = right
         return args
 
     def _apply_args(self, parameters: dict) -> None:
@@ -395,8 +389,6 @@ class PrintPanel(PrintFormMixin, StagePanel):
         }
 
         self.page_margins.setText(margin_to_text(p.get("page_margins")))
-        self.left_margins.setText(margin_to_text(p.get("left_page_margins")))
-        self.right_margins.setText(margin_to_text(p.get("right_page_margins")))
 
         self.title_printing.setChecked(bool(default_for(p, d, "title_printing")))
         self._set_font_combo(self.title_font, p.get("title_font"))

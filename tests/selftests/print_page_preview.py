@@ -529,15 +529,13 @@ def run(ctx) -> None:
            and [Path(e["file"]).stem for e in widget.entries()]
            == ["0001", "0002"])
 
-        # 用户 2026-11-01：鼠标选中缩略图后要提示「右键能做什么」
-        ok("缩略图未被点选前不显示右键操作提示",
-           widget.strip_hint.isHidden(), str(widget.strip_hint.isHidden()))
-        widget.strip.itemClicked.emit(widget.strip.item(0))
-        ok("点选缩略图后显示右键操作提示（删除 / 前后插入）",
-           not widget.strip_hint.isHidden()
-           and all(k in widget.strip_hint.text()
-                   for k in ("右键", "删除", "插入")),
-           widget.strip_hint.text())
+        # 用户 2026-11-02：底部提示文字删除；「插入图片」按钮改为「管理图片」
+        ok("缩略图区不再有底部提示文字",
+           not hasattr(widget, "strip_hint"))
+        ok("缩略图条下方是「管理图片」按钮（不再叫插入图片）",
+           widget.manage_button.text() == "管理图片"
+           and hasattr(widget, "manage_requested")
+           and not hasattr(widget, "insert_button"))
 
         # 版面编辑：默认用「当前参数自动排版出的框」初始化，用户再微调
         _rect0 = widget.canvas.current_rect()
@@ -601,8 +599,33 @@ def run(ctx) -> None:
            str([Path(e["file"]).stem for e in widget.entries()]))
         ok("缩略图条文字顺序也同步（页码 = 当前行号，拖动后重排）",
            [widget.strip.item(i).text() for i in range(widget.strip.count())]
-           == ["0001", "0002"],
+           == ["第一页", "第二页"],
            str([widget.strip.item(i).text() for i in range(widget.strip.count())]))
+
+        # 用户 2026-11-01：右键「上移 / 下移」——与拖动排序走同一套重排逻辑
+        before_moves = len(seen)
+        ok("右键「下移」把条目往后挪一格（缓存与页码同步）",
+           widget.strip.move_row(0, 1)
+           and [Path(e["file"]).stem for e in widget.entries()]
+           == ["0001", "0002"]
+           and [widget.strip.item(i).text()
+                for i in range(widget.strip.count())] == ["第一页", "第二页"],
+           str([Path(e["file"]).stem for e in widget.entries()]))
+        ok("右键「上移」把条目往前挪一格（回到原序）",
+           widget.strip.move_row(1, -1)
+           and [Path(e["file"]).stem for e in widget.entries()]
+           == ["0002", "0001"],
+           str([Path(e["file"]).stem for e in widget.entries()]))
+        ok("上移/下移都会落到 order_changed（宿主据此存顺序）",
+           len(seen) == before_moves + 2, str(seen))
+        ok("第一条再「上移」不动（返回 False，菜单里置灰）",
+           widget.strip.move_row(0, -1) is False)
+        ok("最后一条再「下移」不动（返回 False，菜单里置灰）",
+           widget.strip.move_row(1, 1) is False)
+        ok("越界的上移/下移不改变顺序",
+           [Path(e["file"]).stem for e in widget.entries()]
+           == ["0002", "0001"],
+           str([Path(e["file"]).stem for e in widget.entries()]))
 
         # 删除选中
         widget.strip.item(0).setSelected(True)
@@ -610,7 +633,7 @@ def run(ctx) -> None:
         ok("删除后列表与缓存同步",
            widget.strip.count() == 1 and widget.count() == 1)
         ok("删除后剩下的页页码重新排序（不留着被删那版的旧号）",
-           widget.strip.item(0).text() == "0001",
+           widget.strip.item(0).text() == "第一页",
            widget.strip.item(0).text())
         ok("未选中时给出提示而不是静默",
            _hint_of(widget) == "请先在左侧缩略图条选中要删除的图片。")
@@ -1494,8 +1517,13 @@ def run(ctx) -> None:
 
 
 def _hint_of(widget) -> str:
-    """触发一次空选删除，捕获 hint 文案。"""
+    """触发一次空选删除，捕获 hint 文案。
+
+    ⚠️ 先清掉选中：删掉当前行后 Qt 会把下一行自动设成当前（单选模式下
+    当前=选中），不清的话第二次 ``remove_selected`` 会真删下一张。
+    """
     messages = []
     widget.hint.connect(messages.append)
+    widget.strip.clearSelection()
     widget.remove_selected()
     return messages[0] if messages else ""

@@ -751,22 +751,22 @@ def _current_page(window):
     return pages.currentWidget() if pages is not None else None
 
 
-def _edit_capability(window, capability: str, verb: str):
-    """当前页上的 ``<verb>_edit_<capability>``；没实现/不可调时返回 ``None``。"""
+def _edit_hook(window, name: str):
+    """当前页上名为 ``name`` 的可调用钩子；没实现/不可调时返回 ``None``。"""
     page = _current_page(window)
-    hook = getattr(page, f"{verb}_edit_{capability}", None)
+    hook = getattr(page, name, None)
     return hook if callable(hook) else None
 
 
 def _can_edit_action(window, capability: str) -> bool:
     """某项编辑动作当前是否可点：问当前页（不认识的页面一律不可点）。"""
-    probe = _edit_capability(window, capability, "can")
+    probe = _edit_hook(window, f"can_edit_{capability}")
     return bool(probe()) if probe is not None else False
 
 
 def _run_edit_action(window, capability: str) -> None:
     """执行某项编辑动作：转发给当前页自己的实现。"""
-    action = _edit_capability(window, capability, "edit")
+    action = _edit_hook(window, f"edit_{capability}")
     if action is not None:
         action()
 

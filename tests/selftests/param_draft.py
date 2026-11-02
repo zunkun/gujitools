@@ -59,8 +59,13 @@ def run(ctx) -> None:
         print_panel = stage_panel(3, PrintPanel)  # 第 4 格是「PDF排版」面板
         page._select_stage(stage_index("print"))
         pump(app, times=6)
-
-        # ---- 1. 干净任务：没有暂存 ----
+        # 用户 2026-11-02：通用边距默认显示四值；左/右页边距字段已删除
+        ok("通用边距默认写成 20,20,20,20",
+           print_panel.page_margins.text() == "20,20,20,20",
+           print_panel.page_margins.text())
+        ok("左/右页边距输入框已删除",
+           not hasattr(print_panel, "left_margins")
+           and not hasattr(print_panel, "right_margins"))
         ok("新任务没有暂存文件", repo.load_draft(tid, "print") is None)
         ok("暂存文件路径在任务目录的 drafts/ 下",
            repo.draft_path(tid, "print").parent.name == "drafts"
@@ -86,7 +91,7 @@ def run(ctx) -> None:
         page.set_task(tid)
         page._select_stage(stage_index("print"))
         pump(app, times=6)
-        ok("重开任务后边距来自暂存", print_panel.page_margins.text() == "30,40",
+        ok("重开任务后边距来自暂存", print_panel.page_margins.text() == "30,40,30,40",
            print_panel.page_margins.text())
         ok("重开任务后标题来自暂存", print_panel.title_text.text() == "暂存书名",
            print_panel.title_text.text())
@@ -101,7 +106,7 @@ def run(ctx) -> None:
         page._select_stage(stage_index("print"))
         pump(app, times=6)
         ok("暂存比「最近一次执行参数」优先",
-           print_panel.page_margins.text() == "30,40",
+           print_panel.page_margins.text() == "30,40,30,40",
            print_panel.page_margins.text())
 
         # 清掉暂存 → 这次该轮到历史参数

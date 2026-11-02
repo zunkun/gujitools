@@ -85,12 +85,8 @@ class PrintSectionsMixin(PrintInsetMixin):
         hint = CaptionLabel("格式：20（四边）/ 20,30（上下,左右）/ 20,30,25,35（上,右,下,左）")
         hint.setWordWrap(True)
         form.addRow(hint)
-        self.page_margins = self._line_edit("如 20 或 20,30 或 20,30,25,35")
-        self.left_margins = self._line_edit("留空则同通用边距")
-        self.right_margins = self._line_edit("留空则同通用边距")
+        self.page_margins = self._line_edit("如 20,20,20,20（上,右,下,左）")
         self._add_row(form, "通用边距", self.page_margins)
-        self._add_row(form, "左页边距", self.left_margins)
-        self._add_row(form, "右页边距", self.right_margins)
 
     def _build_title_section(self, root: QVBoxLayout) -> None:
         form = self._section(root, "标题排版")

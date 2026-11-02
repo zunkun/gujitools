@@ -3,8 +3,8 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
+from PySide6.QtCore import QPoint, QRect, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QCursor, QDrag, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QAbstractItemView, QListWidget, QListWidgetItem
 
 
@@ -103,6 +103,10 @@ class ThumbStrip(QListWidget):
         #: 滚轮 delta 的**余量**：触控板/高分辨率滚轮会连发小于一格(120)的
         #: delta，攒够一格才翻；不累加的话一次轻推就会连翻好几格。
         self._wheel_rest = 0
+        #: 拖动中的**源行号**与**落点行号**（0..count，= 插到该行之前）。
+        #: 两者都是 None = 没在拖。落点由 ``_drop_row_at`` 现算，用来画插入线。
+        self._drag_source_row: int | None = None
+        self._drop_row: int | None = None
         self.setDragDropMode(QAbstractItemView.DragDropMode.NoDragDrop)
         self.model().rowsMoved.connect(self._on_rows_moved)
         # 当前行变化（鼠标点击 / 键盘方向键 / 程序化 setCurrentRow 都会走到）
@@ -177,16 +181,193 @@ class ThumbStrip(QListWidget):
         self.setDragEnabled(self._reorderable)
         self.setAcceptDrops(self._reorderable)
         self.viewport().setAcceptDrops(self._reorderable)
-        self.setDropIndicatorShown(self._reorderable)
+        # 落点指示器**自己画**（见 _paint_drop_indicator）：Qt 在 IconMode 下的
+        # 默认指示器只是一条几乎看不见的细线，用户反馈"拖了不知道落到哪"。
+        self.setDropIndicatorShown(False)
+
+    def move_row(self, row: int, delta: int) -> bool:
+        """把第 ``row`` 条上移/下移 ``delta`` 个位置；越界不动（返回 False）。
+
+        右键「上移 / 下移」走这里。条目高度逐条不同，重排后滚轮用的前缀和
+        必须作废（``_invalidate_prefix``）；当前行跟到新位置，右侧预览随之翻页。
+        """
+        count = self.count()
+        target = row + delta
+        if delta == 0 or not (0 <= row < count and 0 <= target < count):
+            return False
+        item = self.takeItem(row)
+        if item is None:
+            return False
+        self.insertItem(target, item)
+        self._invalidate_prefix()
+        self.setCurrentRow(target)
+        if self._reorderable:
+            self.order_changed.emit()
+        return True
 
     def _on_rows_moved(self, *_args) -> None:
         """拖放发生后通知宿主（仅在可排序状态下转发）。"""
+        # 行换了位置 = 前缀和（滚轮/可见窗口靠它）也失效了
+        self._invalidate_prefix()
         if self._reorderable:
             self.order_changed.emit()
 
     def set_deletable(self, on: bool) -> None:
         """打开/关闭 Delete/Backspace 删除（只发信号，删不删由宿主定）。"""
         self._deletable = bool(on)
+
+    # ---------------------------------------------------------------- 拖动效果
+    def startDrag(self, supported_actions) -> None:  # noqa: N802
+        """拖起缩略图时带上一张**半透明快照**跟着鼠标走。
+
+        Qt 默认的 InternalMove 拖动没有任何"拿起来"的反馈（IconMode 下尤其
+        像"条目凭空消失"）；这里自己建 QDrag，MIME 仍取模型的（落点搬运由
+        ``dropEvent`` 完成）。
+        """
+        if not self._reorderable:
+            return super().startDrag(supported_actions)
+        index = self.currentIndex()
+        item = self.currentItem()
+        if not index.isValid() or item is None:
+            return
+        data = self.model().mimeData([index])
+        if data is None:
+            return
+        pixmap, hotspot = self._drag_pixmap(item)
+        drag = QDrag(self)
+        drag.setMimeData(data)
+        drag.setPixmap(pixmap)
+        drag.setHotSpot(hotspot)
+        self._drag_source_row = index.row()
+        self._drop_row = index.row()
+        self.viewport().update()
+        drag.exec(Qt.DropAction.MoveAction)
+        self._drag_source_row = None
+        self._drop_row = None
+        self.viewport().update()
+
+    def _drag_pixmap(self, item) -> tuple[QPixmap, QPoint]:
+        """拖动快照：条目当前样子的半透明副本 + 主题色边框。"""
+        rect = self.visualItemRect(item)
+        if rect.isEmpty():
+            rect = QRect(QPoint(0, 0), ThumbStrip.ICON_SIZE)
+        source = self.viewport().grab(rect)
+        pixmap = QPixmap(source.size())
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        painter.setOpacity(0.78)
+        painter.drawPixmap(0, 0, source)
+        painter.setOpacity(1.0)
+        painter.setPen(QPen(self.palette().highlight().color(), 2))
+        painter.drawRect(pixmap.rect().adjusted(1, 1, -2, -2))
+        painter.end()
+        cursor = self.viewport().mapFromGlobal(QCursor.pos())
+        hotspot = cursor - rect.topLeft()
+        hotspot.setX(max(0, min(hotspot.x(), max(pixmap.width() - 1, 0))))
+        hotspot.setY(max(0, min(hotspot.y(), max(pixmap.height() - 1, 0))))
+        return pixmap, hotspot
+
+    def dragEnterEvent(self, event) -> None:  # noqa: N802
+        if self._reorderable and event.source() is self:
+            event.acceptProposedAction()
+            return
+        super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event) -> None:  # noqa: N802
+        if not self._reorderable or event.source() is not self:
+            return super().dragMoveEvent(event)
+        pos = event.position().toPoint()
+        self._auto_scroll_for_drag(pos)
+        row = self._drop_row_at(pos)
+        if row != self._drop_row:
+            self._drop_row = row
+            self.viewport().update()
+        event.acceptProposedAction()
+
+    def dragLeaveEvent(self, event) -> None:  # noqa: N802
+        self._drop_row = None
+        self.viewport().update()
+        super().dragLeaveEvent(event)
+
+    def dropEvent(self, event) -> None:  # noqa: N802
+        """内部拖动松手：按算好的落点搬条目（落点线所见即所得）。"""
+        if not self._reorderable or event.source() is not self:
+            return super().dropEvent(event)
+        source = (
+            self._drag_source_row
+            if self._drag_source_row is not None
+            else self.currentRow()
+        )
+        target = self._drop_row
+        self._drag_source_row = None
+        self._drop_row = None
+        self.viewport().update()
+        if source < 0 or target is None or self.count() <= 0:
+            event.ignore()
+            return
+        # 先移除再插入：落点在源之后时，移除这一条会让目标位置前移一格
+        insert_at = target - 1 if target > source else target
+        insert_at = max(0, min(insert_at, self.count() - 1))
+        if insert_at == source:
+            event.acceptProposedAction()
+            return
+        item = self.takeItem(source)
+        if item is None:
+            event.ignore()
+            return
+        self.insertItem(insert_at, item)
+        self._invalidate_prefix()
+        self.setCurrentRow(insert_at)
+        self.order_changed.emit()
+        event.acceptProposedAction()
+
+    def _drop_row_at(self, pos) -> int:
+        """把落点坐标换算成「插到第几行之前」（0..count）。"""
+        for row in range(self.count()):
+            item = self.item(row)
+            if item is None:
+                continue
+            rect = self.visualItemRect(item)
+            if rect.isEmpty():
+                continue
+            if pos.y() < rect.center().y():
+                return row
+        return self.count()
+
+    def _auto_scroll_for_drag(self, pos) -> None:
+        """拖到上下边缘时按条目滚动，长清单才拖得到远处的页。"""
+        height = self.viewport().height()
+        if height <= 0:
+            return
+        margin = 24
+        if pos.y() < margin:
+            self._scroll_items(-1)
+        elif pos.y() > height - margin:
+            self._scroll_items(1)
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        super().paintEvent(event)
+        if self._drag_source_row is None or self._drop_row is None:
+            return
+        self._paint_drag_feedback()
+
+    def _paint_drag_feedback(self) -> None:
+        """拖动反馈：源条目淡出 + 落点处一条主题色插入线。"""
+        row = self._drag_source_row
+        target = self._drop_row
+        if row is None or target is None:
+            return
+        painter = QPainter(self.viewport())
+        if 0 <= row < self.count():
+            rect = self.visualItemRect(self.item(row))
+            if not rect.isEmpty():
+                painter.fillRect(rect, QColor(255, 255, 255, 165))
+        y = self._row_top(target) - self.verticalScrollBar().value()
+        y -= ThumbStrip.ITEM_SPACING // 2
+        y = max(1, min(y, max(1, self.viewport().height() - 2)))
+        painter.setPen(QPen(self.palette().highlight().color(), 3))
+        painter.drawLine(6, y, max(6, self.viewport().width() - 8), y)
+        painter.end()
 
     def navigate(self, forward: bool) -> None:
         """方向键翻页：移动当前行（夹在两端，不回绕）。

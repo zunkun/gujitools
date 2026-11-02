@@ -958,10 +958,13 @@ class StepBar(QWidget):
             points = self._bypass_points(order)
             if points is None:
                 continue
-            done = self.optional_afters[order] in self._completed
+            # ⚠️ ``_completed`` 存的是**格序**，``optional_afters`` 是标**位置**
+            #    ——可选节点插在前面时两者会错开，必须查表（同 _connector_segments）。
+            done = self._bar_of_pos[self.optional_afters[order]] in self._completed
+            color = QColor(GREEN if done else "#d6d6d6")
             painter.setPen(
                 QPen(
-                    QColor(GREEN if done else "#d6d6d6"),
+                    color,
                     2,
                     Qt.PenStyle.SolidLine,
                     Qt.PenCapStyle.RoundCap,
@@ -970,6 +973,16 @@ class StepBar(QWidget):
             )
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawPath(_rounded_polyline(points))
+            # 终点箭头：常规连接线有箭头（见 _draw_connectors），绕行线是主流程
+            # 的替代连线，**同样必须带箭头**——否则「去底色 → PDF排版」的绿线
+            # 看着像断在半路（用户 2026-11-02）。位置与常规连接线的箭头一致，
+            # 用来盖住拼版那条灰色虚线的箭头。
+            tip_x, tip_y = points[-1]
+            arrow = QPainterPath()
+            arrow.moveTo(tip_x - 5, tip_y - 4)
+            arrow.lineTo(tip_x, tip_y)
+            arrow.lineTo(tip_x - 5, tip_y + 4)
+            painter.drawPath(arrow)
 
     def _bypass_points(self, order: int = 0
                        ) -> list[tuple[float, float]] | None:
@@ -1028,7 +1041,9 @@ class StepBar(QWidget):
             (x_in, y_top),
             (x_out, y_top),
             (x_out, y_main),
-            (float(right_c.x() - right_pill.width() // 2 - 1), y_main),
+            # 与 _draw_connectors 的箭头尖端一致（胶囊左缘外 2px），绿色箭头
+            # 正好盖住拼版支路那条灰色虚线的箭头，不出现"两个箭头/没有箭头"。
+            (float(right_c.x() - right_pill.width() // 2 - 2), y_main),
         ]
 
     # ------------------------------------------------------------------ 接口

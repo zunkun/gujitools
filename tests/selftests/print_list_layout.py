@@ -96,12 +96,15 @@ def run(ctx) -> None:
         left = _sub_layout(body, 0)
         right = _sub_layout(body, 1)
         toggle_row = _sub_layout(right, 0)
-        ok("插入图片按钮紧跟缩略图条（同一左侧竖列的下方）",
+        ok("「管理图片」按钮紧跟缩略图条（同一左侧竖列的下方）",
            left is not None
            and left.indexOf(widget.strip) >= 0
-           and left.indexOf(widget.insert_button) == left.indexOf(widget.strip) + 1,
+           and left.indexOf(widget.manage_button) == left.indexOf(widget.strip) + 1,
            f"strip={left.indexOf(widget.strip) if left else None} "
-           f"insert={left.indexOf(widget.insert_button) if left else None}")
+           f"manage={left.indexOf(widget.manage_button) if left else None}")
+        ok("按钮文案是「管理图片」（不再叫插入图片）",
+           widget.manage_button.text() == "管理图片",
+           widget.manage_button.text())
         ok("「下载本页图片 / 打印本页」与「版面编辑」同一行、靠右",
            toggle_row is not None
            and toggle_row.indexOf(widget.toggle) >= 0
@@ -127,7 +130,7 @@ def run(ctx) -> None:
 
     # ---- 7. 插入弹窗两个页签 + result_data() 契约 ----
     from desktop.components.print_insert_dialog import PrintInsertPanel
-    from PySide6.QtWidgets import QListView
+    from PySide6.QtWidgets import QAbstractItemView, QListView
 
     panel = PrintInsertPanel(
         deleted=[{"file": str(ctx.tmp / "gone.png"), "label": "gone"}],
@@ -164,6 +167,212 @@ def run(ctx) -> None:
            str(result))
     finally:
         panel.deleteLater()
+
+    # ---- 7b. 「管理图片」弹窗 A：草稿式网格（多选 / 拖动 / 二次插入）----
+    # 用户 2026-11-02：缩略图条底部改为「管理图片」，弹窗里一行多列、可多选、
+    # 可拖动；底部再开一次「插入图片」；**不点保存则一律不生效**。
+    from desktop.components.print_manage_dialog import (
+        PENDING_KEY,
+        PrintManagePanel,
+        SHOWN_SIZE_ROLE,
+        _ThumbDelegate,
+        _check_rect,
+        _close_rect,
+        _image_rect,
+        page_label,
+    )
+    from PySide6.QtCore import QEvent, QPoint, QPointF, QSize, Qt
+    from PySide6.QtGui import QMouseEvent
+    from pathlib import Path
+
+    seed = [
+        {"file": str(ctx.tmp / f"manage_{i}.png"), "label": str(i)}
+        for i in range(3)
+    ]
+    manage = PrintManagePanel(entries=seed)
+    try:
+        ok("管理弹窗是图标网格（一行多列）",
+           manage.list.viewMode() == QListView.ViewMode.IconMode
+           and manage.list.flow() == QListView.Flow.LeftToRight
+           and manage.list.isWrapping(),
+           f"mode={manage.list.viewMode()} flow={manage.list.flow()}")
+        ok("管理弹窗可多选、可内部拖动排序",
+           manage.list.selectionMode()
+           == QAbstractItemView.SelectionMode.ExtendedSelection
+           and manage.list.dragDropMode()
+           == QAbstractItemView.DragDropMode.DragDrop)
+        ok("管理弹窗底部是「插入图片」按钮",
+           manage.insert_button.text() == "插入图片",
+           manage.insert_button.text())
+        ok("条目名称写成「第一页 / 第二页 / 第三页」（与图片拼版同口径）",
+           [manage.list.item(r).text() for r in range(3)]
+           == ["第一页", "第二页", "第三页"]
+           and page_label(0) == "第一页",
+           str([manage.list.item(r).text() for r in range(3)]))
+        ok("每张图都由自绘条目提供右上角删除 x",
+           isinstance(manage.list.itemDelegate(), _ThumbDelegate))
+        ok("未选中时底部不显示「删除图片」", manage.delete_button.isHidden())
+        manage.list.item(0).setSelected(True)
+        ok("选中后底部出现「删除图片」",
+           not manage.delete_button.isHidden()
+           and manage.delete_button.text() == "删除图片",
+           manage.delete_button.text())
+        manage.list.clearSelection()
+        ok("取消选中后「删除图片」再次隐藏", manage.delete_button.isHidden())
+        manage.list.setCurrentRow(1)
+        manage._apply_insert_result(
+            {"position": "after", "deleted": [],
+             "files": [str(ctx.tmp / "manage_new.png")]},
+            row=1, total=3,
+        )
+        drafts = manage.entries()
+        ok("插入图片先落进草稿：位于选中页之后并标记待复制",
+           len(drafts) == 4
+           and drafts[2]["file"].endswith("manage_new.png")
+           and drafts[2].get(PENDING_KEY) is True,
+           str(drafts))
+        ok("待复制条目带实际缩略图尺寸（自绘虚线框据此定位）",
+           isinstance(
+               manage.list.item(2).data(SHOWN_SIZE_ROLE), QSize),
+           str(manage.list.item(2).data(SHOWN_SIZE_ROLE)))
+        ok("草稿改动不回写入参（不保存就不生效）",
+           len(seed) == 3 and seed[1]["file"].endswith("manage_1.png"))
+        # 还没复制进任务目录的新图没有可恢复的源文件，不进「删除恢复」
+        manage._remove_rows([2])
+        ok("删掉待复制的新图不会进「删除恢复」清单",
+           manage._deleted == [] and len(manage.entries()) == 3,
+           str(manage._deleted))
+    finally:
+        manage.deleteLater()
+
+    # 右上角 x 的命中删除：真的点到那条 18×18 的小叉，行数必须少一条
+    manage2 = PrintManagePanel(entries=seed)
+    try:
+        manage2.resize(560, 360)
+        manage2.show()
+        ctx.app.processEvents()
+        item = manage2.list.item(0)
+        cell = manage2.list.visualItemRect(item)
+        shown = item.data(SHOWN_SIZE_ROLE) or QSize()
+        pos = _close_rect(_image_rect(cell, shown)).center()
+        event = QMouseEvent(
+            QEvent.Type.MouseButtonPress, QPointF(pos),
+            Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        before = manage2.list.count()
+        manage2.list.mousePressEvent(event)
+        ok("点图片右上角的 x 即从草稿删掉这一张",
+           manage2.list.count() == before - 1,
+           f"{before} → {manage2.list.count()}")
+        # 左上角多选框：点一下只翻转这一条（多选就靠它）
+        manage2.list.clearSelection()
+        ctx.app.processEvents()
+        item = manage2.list.item(0)
+        cell = manage2.list.visualItemRect(item)
+        shown = item.data(SHOWN_SIZE_ROLE) or QSize()
+        check_pos = _check_rect(_image_rect(cell, shown)).center()
+        manage2.list.mousePressEvent(QMouseEvent(
+            QEvent.Type.MouseButtonPress, QPointF(check_pos),
+            Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        ))
+        ok("点左上角多选框即选中该图（并露出删除按钮）",
+           item.isSelected() and not manage2.delete_button.isHidden())
+        manage2.delete_button.click()
+        ok("底部「删除图片」删掉复选框选中的图片（仍是草稿）",
+           manage2.list.count() == before - 2, str(manage2.list.count()))
+        # 用户 2026-11-02：草稿里删掉的图仍要能在「插入图片 → 删除恢复」恢复
+        remembered = [str(p.get("file")) for p in manage2._deleted]
+        ok("草稿里删掉的图会记进「删除恢复」清单",
+           len(remembered) == 2
+           and all(str(ctx.tmp / f"manage_{i}.png") in remembered
+                   for i in (0, 1)),
+           str(remembered))
+        gone_file = str(ctx.tmp / "manage_0.png")
+        manage2._apply_insert_result(
+            {"position": "before",
+             "deleted": [{"file": gone_file, "label": "0"}],
+             "files": []},
+            row=0, total=manage2.list.count(),
+        )
+        restored_files = [str(e["file"]) for e in manage2.entries()]
+        ok("从「删除恢复」放回的图真的回到草稿最前面",
+           len(restored_files) == 2 and restored_files[0] == gone_file,
+           str(restored_files))
+        ok("放回后它不再挂在「删除恢复」里（不会重复出现）",
+           gone_file not in [str(p.get("file")) for p in manage2._deleted],
+           str(manage2._deleted))
+    finally:
+        manage2.deleteLater()
+
+    # 拖动重排：用户 2026-11-02 报「拖一张图片无法改变位置」——
+    # IconMode 的 InternalMove 不落位，这里改用自算落点 + take/insert。
+    manage3 = PrintManagePanel(entries=seed)
+    try:
+        manage3.resize(560, 360)
+        manage3.show()
+        ctx.app.processEvents()
+        before_files = [e["file"] for e in manage3.entries()]
+        ok("落点按左右半区判定（右半 → 插到该项之后）",
+           manage3.list._drop_index_at(
+               manage3.list.visualItemRect(manage3.list.item(0))
+               .center() + QPoint(30, 0)
+           ) == 1
+           and manage3.list._drop_index_at(
+               QPoint(
+                   manage3.list.visualItemRect(manage3.list.item(0)).left() + 2,
+                   manage3.list.visualItemRect(manage3.list.item(0)).center().y(),
+               )
+           ) == 0)
+        manage3.list._move_rows_to([0], 3)
+        after_files = [e["file"] for e in manage3.entries()]
+        ok("单张拖动重排真的换了位置",
+           after_files == before_files[1:] + before_files[:1],
+           f"{[Path(p).name for p in after_files]}")
+        ok("重排后的名称仍是当前页码",
+           [manage3.list.item(r).text() for r in range(3)]
+           == [page_label(0), page_label(1), page_label(2)])
+        manage3.list._move_rows_to([0, 2], 3)
+        after_batch = [e["file"] for e in manage3.entries()]
+        ok("多选后整批拖动（相对顺序不变）",
+           after_batch == [after_files[1], after_files[0], after_files[2]],
+           f"{[Path(p).name for p in after_batch]}")
+        ok("整批拖动后仍保持多选（当前项不吞掉其它选中）",
+           all(manage3.list.item(r).isSelected() for r in (1, 2)))
+    finally:
+        manage3.deleteLater()
+
+    # 用户 2026-11-02：每一行**最左边**也要能作为落点（插到该行开头）。
+    # 旧实现只认"最近条目"：瞄准某行最左边时会被上一行末尾抢走。
+    manage4 = PrintManagePanel(entries=seed)
+    try:
+        manage4.resize(300, 360)
+        manage4.show()
+        ctx.app.processEvents()
+        rows = {}
+        for r in range(manage4.list.count()):
+            rect = manage4.list.visualItemRect(manage4.list.item(r))
+            rows.setdefault(rect.top(), []).append((r, rect))
+        ok("窄窗口下网格自动换行成多行", len(rows) >= 2, str(len(rows)))
+        leftmost = {
+            top: manage4.list._drop_index_at(
+                QPoint(2, band[0][1].center().y()))
+            for top, band in rows.items()
+        }
+        ok("每行最左边的落点 = 该行第一张",
+           all(leftmost[top] == band[0][0] for top, band in rows.items()),
+           str(leftmost))
+        last_top = max(rows)
+        last_band = rows[last_top]
+        ok("行尾右侧 → 紧接下一行开头（末行为列表末尾）",
+           manage4.list._drop_index_at(
+               QPoint(last_band[-1][1].right() + 8,
+                      last_band[0][1].center().y()))
+           == last_band[-1][0] + 1,
+           str(manage4.list.count()))
+    finally:
+        manage4.deleteLater()
 
     # ---- 8. 条目高度逐条自适应：不同宽高比的页面之间不再是"留白" ----
     # 根因：早先网格单元统一高度（竖框 156 + 文字行），横幅双页拼合图缩进

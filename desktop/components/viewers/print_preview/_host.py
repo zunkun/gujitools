@@ -63,8 +63,8 @@ class PrintPreviewHost(QWidget, ThumbsMixin, ZoomPopupMixin):
     image_saved: Signal
     insert_after_requested: Signal
     insert_before_requested: Signal
-    insert_button: PrimaryPushButton
-    insert_requested: Signal
+    manage_button: PrimaryPushButton
+    manage_requested: Signal
     layout_changed: Signal
     list: Any
     order_changed: Signal

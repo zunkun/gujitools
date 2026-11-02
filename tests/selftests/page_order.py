@@ -287,4 +287,45 @@ def run(ctx) -> None:
        },
        str(doc_restored.get("deleted_pages")))
 
+    # ---------------------------------------------------------- 管理图片（草稿）
+    # 用户 2026-11-02：缩略图条底部「管理图片」弹窗 A 里的顺序/新图都只是草稿，
+    # 点「保存」才由宿主 ``_apply_print_manage`` 复制并落盘（不保存则不生效）。
+    manage_before, _ = d._print_entries()
+    n_manage = len(manage_before)
+    draft = [dict(e) for e in manage_before[1:] + manage_before[:1]]
+    pending = {"file": str(new_img), "label": new_img.stem, "_pending": True}
+    draft.append(pending)
+    d._apply_print_manage(draft)
+    wait_until(
+        app, lambda: len(d._print_entries()[0]) == n_manage + 1, timeout=15.0
+    )
+    manage_after, _ = d._print_entries()
+    manage_files = [e["file"] for e in manage_after]
+    ok("管理弹窗保存后按草稿顺序落盘（拖动生效）",
+       manage_files[:n_manage] == [e["file"] for e in draft[:n_manage]],
+       f"实际前{n_manage}项={[Path(p).name for p in manage_files[:n_manage]]}")
+    ok("管理弹窗里的新图在保存时复制进 inserted/（源文件不变）",
+       len(manage_files) == n_manage + 1
+       and Path(manage_files[-1]).parent == inserted_dir
+       and Path(manage_files[-1]).exists()
+       and new_img.exists(),
+       manage_files[-1] if manage_files else "")
+
+    # 在管理弹窗里拿掉的条目：与右键删除同口径，记进 deleted_pages 可恢复
+    # ⚠️ 用**已落盘**的清单（新图已复制成真实路径）做草稿，避免再次触发异步复制。
+    dropped = manage_after[0]
+    remaining_draft = [e for e in manage_after if e["file"] != dropped["file"]]
+    d._apply_print_manage(remaining_draft)
+    manage_removed, _ = d._print_entries()
+    doc_manage = repo.load_print_doc(tid, **d._node_scope()) or {}
+    ok("管理弹窗里拿掉的条目从列表消失",
+       all(e["file"] != dropped["file"] for e in manage_removed),
+       f"{len(manage_removed)} 条")
+    ok("管理弹窗里拿掉的条目记进 deleted_pages（可恢复）",
+       dropped["file"] in {
+           str(p.get("file")) for p in (doc_manage.get("deleted_pages") or [])
+       },
+       str(sorted(str(p.get("file")) for p in
+                  (doc_manage.get("deleted_pages") or []))))
+
 

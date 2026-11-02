@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 180 个模块、196 个公开类、1468 个公开函数/方法（生成于 2026-11-01）。
+覆盖 181 个模块、197 个公开类、1478 个公开函数/方法（生成于 2026-11-02）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -46,6 +46,7 @@
 | [`desktop.components.panels.print_text_layout`](#desktopcomponentspanelsprint_text_layout) | 1 | 0 |
 | [`desktop.components.panels.rembg_panel`](#desktopcomponentspanelsrembg_panel) | 1 | 1 |
 | [`desktop.components.print_insert_dialog`](#desktopcomponentsprint_insert_dialog) | 1 | 2 |
+| [`desktop.components.print_manage_dialog`](#desktopcomponentsprint_manage_dialog) | 1 | 3 |
 | [`desktop.components.progress_row`](#desktopcomponentsprogress_row) | 1 | 8 |
 | [`desktop.components.step_bar`](#desktopcomponentsstep_bar) | 2 | 20 |
 | [`desktop.components.task_table`](#desktopcomponentstask_table) | 3 | 10 |
@@ -92,7 +93,7 @@
 | [`desktop.components.viewers.rembg_viewer.core`](#desktopcomponentsviewersrembg_viewercore) | 1 | 11 |
 | [`desktop.components.viewers.rembg_viewer.entries`](#desktopcomponentsviewersrembg_viewerentries) | 1 | 0 |
 | [`desktop.components.viewers.rembg_viewer.thumbs`](#desktopcomponentsviewersrembg_viewerthumbs) | 1 | 3 |
-| [`desktop.components.viewers.thumb_strip`](#desktopcomponentsviewersthumb_strip) | 1 | 12 |
+| [`desktop.components.viewers.thumb_strip`](#desktopcomponentsviewersthumb_strip) | 1 | 19 |
 | [`desktop.components.viewers.thumbs_loader`](#desktopcomponentsviewersthumbs_loader) | 1 | 1 |
 | [`desktop.components.yolo_export_dialog`](#desktopcomponentsyolo_export_dialog) | 1 | 6 |
 | [`desktop.modules`](#desktopmodules) | 1 | 1 |
@@ -2770,7 +2771,7 @@ print 专用的解析/序列化纯函数，并把 ``DEFAULT_PARAMS`` 重新导�
 | --- | --- |
 | `parse_color(text: str) -> QColor` | 解析 'r,g,b'（0~255）颜色字符串，非法时抛出 ValueError。 |
 | `parse_margin4(text: str)` | 解析边距简写：1/2/3/4 值（CSS 简写）→ [上,右,下,左]；空→None。 |
-| `margin_to_text(value) -> str` | 边距列表转简写文本：四边相等→单值；上下/左右相等→两值；否则四值。 |
+| `margin_to_text(value) -> str` | 边距列表 → 表单文本：**恒写成四个值**（上,右,下,左）。 |
 | `skip_pages_to_text(value) -> str` | skip_pages 参数 → 表单文本（逗号分隔的页名）。 |
 | `text_to_skip_pages(text: str) -> list[str]` | 表单文本 → skip_pages 参数。 |
 
@@ -2782,6 +2783,13 @@ print 专用的解析/序列化纯函数，并把 ``DEFAULT_PARAMS`` 重新导�
 （2026-09-26 审计 #13）：三值「上,左右,下」是合法写法（spec 的
 title_margins 报错文案也明说 1/2/3/4），原先这里拒绝三值、同样的值
 写进 guji.yaml 却能跑——GUI 比命令行更严，没有道理。
+
+#### `margin_to_text(value) -> str`
+
+边距列表 → 表单文本：**恒写成四个值**（上,右,下,左）。
+
+用户 2026-11-02：通用边距显示成 ``20,20,20,20``（不再压成 ``20``），
+四边一目了然；``parse_margin4`` 收得下同样写法，往返不变形。
 
 ---
 
@@ -2897,6 +2905,69 @@ print 面板「位置」「文字方向」的固定取值（由 PrintFormMixin �
 | --- | --- |
 | `__init__(*, deleted: list[dict] \| None=None, current_row: int=-1, total: int=0, default_position: str='after', thumb_for: Callable[[str], object] \| None=None, parent=None)` | deleted: print.json 的 deleted_pages 记录；current_row/total 决定页号。 |
 | `result_data() -> dict` | 弹窗关闭后宿主读取的三件事：落点 / 恢复哪些 / 新上传哪些。 |
+
+---
+
+## `desktop.components.print_manage_dialog`
+
+源码：[`desktop/components/print_manage_dialog.py`](../../desktop/components/print_manage_dialog.py)
+
+第四步「管理图片」弹窗面板：**草稿式**缩略图网格 + 二次「插入图片」。
+
+用户 2026-11-02 的口径：
+
+- 缩略图条底部的「插入图片」按钮改为 **「管理图片」**，底部那行右键提示删掉；
+- 点「管理图片」弹出本面板：缩略图**一行多列**（图标网格），可多选、可拖动排序；
+- 面板底部仍有 **「插入图片」** 按钮，点开是原来的插入弹窗 B
+  （``PrintInsertPanel``，上传图片 / 删除恢复）；
+- 本面板里的改动只是**草稿**：点外壳的「保存」才写回，取消则一概不生效。
+
+本版补充（用户 2026-11-02 第二轮）：
+
+- 刚插入、还没保存的新图用**虚线框**圈起来（暖色，与已有图片区分）；
+- 每张图**右上角有 x**，点它即从草稿里删掉；
+- 选中一张或多张时，底部才出现 **「删除图片」** 按钮。
+
+⚠️ 本面板只收集草稿，不碰数据层：顺序落盘、新图复制、恢复项出
+``deleted_pages`` 全由宿主（``pages/taskdetail/print_list.py``）在「保存」后执行。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| PENDING_KEY | `"_pending"` |
+| TARGET_KEY | `"_target"` |
+| CLOSE_SIZE | `18` |
+| CHECK_SIZE | `18` |
+
+### `class PrintManagePanel(QWidget)`
+
+「管理图片」内容面板（草稿）。
+
+``entries`` 是宿主传入的**当前**待打印条目（会被逐条复制，面板改动不影响
+入参）；``deleted`` 是 ``print.json`` 的 ``deleted_pages``，供面板内的
+「插入图片 → 删除恢复」页签使用。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(*, entries: list[dict] \| None=None, deleted: list[dict] \| None=None, thumb_for: Callable[[str], object] \| None=None, parent=None)` | entries: [{file, label, rect?}]；deleted: print.json 的已删除记录。 |
+| `entries() -> list[dict]` | 当前草稿顺序（宿主在「保存」后读取；含 ``_pending`` 标记）。 |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `page_label(row: int) -> str` | 条目名称 = **页码**（列表当前位置，写法与图片拼版一致）。 |
+
+#### `page_label(row: int) -> str`
+
+条目名称 = **页码**（列表当前位置，写法与图片拼版一致）。
+
+用户 2026-11-02：显示「第一页」「第十二页」这种中文页码，不再用四位补零；
+文件名会误导（拖动/删除后它跟 PDF 页序对不上）。中文页码的唯一来源是
+``services.imposition.cn_page_label``，这里只是借来用。
 
 ---
 
@@ -6010,7 +6081,14 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 | `__init__(parent=None)` | 初始化条目尺寸与流式布局；当前行变化发出 current_path_changed(行号, 路径)。 |
 | `wheelEvent(event) -> None` | 滚轮按**条目**翻页：一格滚轮 = ``WHEEL_STEP_ITEMS`` 个条目。 |
 | `set_reorderable(on: bool) -> None` | 打开/关闭条目内部拖放排序（第四步待打印列表用）。 |
+| `move_row(row: int, delta: int) -> bool` | 把第 ``row`` 条上移/下移 ``delta`` 个位置；越界不动（返回 False）。 |
 | `set_deletable(on: bool) -> None` | 打开/关闭 Delete/Backspace 删除（只发信号，删不删由宿主定）。 |
+| `startDrag(supported_actions) -> None` | 拖起缩略图时带上一张**半透明快照**跟着鼠标走。 |
+| `dragEnterEvent(event) -> None` | Qt 事件覆写：拖入时校验并接受拖放。 |
+| `dragMoveEvent(event) -> None` | Qt 事件覆写：拖动过程中更新落点提示。 |
+| `dragLeaveEvent(event) -> None` | — |
+| `dropEvent(event) -> None` | 内部拖动松手：按算好的落点搬条目（落点线所见即所得）。 |
+| `paintEvent(event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
 | `navigate(forward: bool) -> None` | 方向键翻页：移动当前行（夹在两端，不回绕）。 |
 | `keyPressEvent(event) -> None` | Delete/Backspace → ``delete_requested``。 |
 | `add_placeholder(text: str) -> None` | 追加一个纯文字占位条目（无图标，如"缩略图加载中…"）。 |
@@ -6047,6 +6125,21 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 刻意不调 ``super()``：Qt 那条路径按 singleStep / 系统"滚动行数"算步长
 （见 WHEEL_STEP_ITEMS 的说明），会把一格变成十几页。这里自己算目标行号
 并把该行落到顶端，翻页量恒定。
+
+##### `move_row(row: int, delta: int) -> bool`
+
+把第 ``row`` 条上移/下移 ``delta`` 个位置；越界不动（返回 False）。
+
+右键「上移 / 下移」走这里。条目高度逐条不同，重排后滚轮用的前缀和
+必须作废（``_invalidate_prefix``）；当前行跟到新位置，右侧预览随之翻页。
+
+##### `startDrag(supported_actions) -> None`
+
+拖起缩略图时带上一张**半透明快照**跟着鼠标走。
+
+Qt 默认的 InternalMove 拖动没有任何"拿起来"的反馈（IconMode 下尤其
+像"条目凭空消失"）；这里自己建 QDrag，MIME 仍取模型的（落点搬运由
+``dropEvent`` 完成）。
 
 ##### `navigate(forward: bool) -> None`
 

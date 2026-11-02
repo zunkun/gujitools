@@ -149,6 +149,7 @@ class DetailViewMixin:
         _extract_params: Callable[[], dict]
         _print_thumb_provider: Callable[..., Any]
         _save_print_order: Callable[..., None]
+        _manage_print_images: Callable[..., None]
         _insert_print_images: Callable[..., None]
         _download_print_pdf: Callable[..., None]
         _export_print_image: Callable[..., None]
@@ -722,8 +723,8 @@ class DetailViewMixin:
             thumb_provider=self._print_thumb_provider,
         )
         self.print_preview.order_changed.connect(self._save_print_order)
-        self.print_preview.insert_requested.connect(self._insert_print_images)
-        # 右键「向前 / 向后插入」：同一个弹窗，只是默认落点不同
+        self.print_preview.manage_requested.connect(self._manage_print_images)
+        # 右键「向前 / 向后插入」：直接开插入弹窗，只是默认落点不同
         self.print_preview.insert_before_requested.connect(
             lambda: self._insert_print_images("before")
         )
