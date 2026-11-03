@@ -47,7 +47,7 @@ class SettingsPage(QWidget):
     """
 
     TITLE = "设置"
-    SUBTITLE = "开发者模式与训练/标注相关选项"
+    SUBTITLE = "自动更新、开发者模式与训练/标注相关选项"
 
     def __init__(self, parent=None):
         """建页头 + 设置卡片组（配置项绑在卡片上，本页不另存值）。"""
@@ -69,8 +69,31 @@ class SettingsPage(QWidget):
 
         container = QWidget()
         column = QVBoxLayout(container)
-        column.setContentsMargins(0, 0, 0, 0)
+        # 内容区（滚动区里的卡片组）再向内缩一圈，与外框留出间隔
+        # （用户 2026-11-03：「设置内部 红框区域跟外部有间隔」）。
+        column.setContentsMargins(
+            T.SPACE_XL, T.SPACE_MD, T.SPACE_XL, T.SPACE_LG,
+        )
         column.setSpacing(T.SPACE_MD)
+
+        # ---- 更新：两项自动更新（用户 2026-11-02 要求；默认关，2026-11-03）----
+        self.update_group = SettingCardGroup("更新", container)
+        self.auto_app_card = SwitchSettingCard(
+            FIF.SYNC,
+            "自动更新软件",
+            "启动时检查新版本，发现后自动下载安装包（在「帮助 → 检查更新」中完成安装）",
+            configItem=self.cfg.autoUpdateApp,
+            parent=self.update_group,
+        )
+        self.auto_data_card = SwitchSettingCard(
+            FIF.SYNC,
+            "自动更新数据包",
+            "启动时检查去底色模型，发现新版后自动下载并替换生效",
+            configItem=self.cfg.autoUpdateData,
+            parent=self.update_group,
+        )
+        self.update_group.addSettingCards([self.auto_app_card, self.auto_data_card])
+        column.addWidget(self.update_group)
 
         self.group = SettingCardGroup("开发者", container)
         self.dev_card = SwitchSettingCard(

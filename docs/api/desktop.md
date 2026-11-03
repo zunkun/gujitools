@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 182 个模块、197 个公开类、1485 个公开函数/方法（生成于 2026-11-02）。
+覆盖 183 个模块、198 个公开类、1491 个公开函数/方法（生成于 2026-11-03）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -50,6 +50,7 @@
 | [`desktop.components.progress_row`](#desktopcomponentsprogress_row) | 1 | 8 |
 | [`desktop.components.step_bar`](#desktopcomponentsstep_bar) | 2 | 20 |
 | [`desktop.components.task_table`](#desktopcomponentstask_table) | 3 | 10 |
+| [`desktop.components.update_banner`](#desktopcomponentsupdate_banner) | 1 | 4 |
 | [`desktop.components.viewers.edit_sync`](#desktopcomponentsviewersedit_sync) | 0 | 2 |
 | [`desktop.components.viewers.extract_viewer`](#desktopcomponentsviewersextract_viewer) | 1 | 8 |
 | [`desktop.components.viewers.image_actions`](#desktopcomponentsviewersimage_actions) | 1 | 7 |
@@ -131,7 +132,7 @@
 | [`desktop.services.stale_chain`](#desktopservicesstale_chain) | 0 | 5 |
 | [`desktop.services.submit_state`](#desktopservicessubmit_state) | 0 | 1 |
 | [`desktop.services.yolo_prewarm`](#desktopservicesyolo_prewarm) | 0 | 3 |
-| [`desktop.settings.config`](#desktopsettingsconfig) | 1 | 4 |
+| [`desktop.settings.config`](#desktopsettingsconfig) | 1 | 6 |
 | [`desktop.settings.page`](#desktopsettingspage) | 1 | 2 |
 | [`desktop.shell`](#desktopshell) | 1 | 22 |
 | [`desktop.single_instance`](#desktopsingle_instance) | 0 | 5 |
@@ -3389,6 +3390,34 @@ source_path 不单独成列，仅作任务名的悬浮提示。
 搜索、分页都无关，用户拿它去 ``tasks/0001`` 就能对上号。
 （早先用「页内行号 + 全局偏移」，翻页/搜索后同一条任务的号会变，
 用户按号找目录会对不上。）
+
+---
+
+## `desktop.components.update_banner`
+
+源码：[`desktop/components/update_banner.py`](../../desktop/components/update_banner.py)
+
+主窗口顶部的新版本提示条（用户 2026-11-02）。
+
+需求：启动时检查到新版本后，在窗口**顶部**提示，并且用户能**关掉**这条提示。
+
+它是常驻控件而不是 ``InfoBar`` 那种自动消失的浮层——"有新版本"需要一直看得见，
+直到用户自己关闭。关闭只影响本次会话，下次启动仍会按检查结果重新提示。
+
+⚠️ 底色/描边走 ``paintEvent`` 自绘（项目硬规则：界面控件不用样式表）。
+
+### `class UpdateBanner(QFrame)`
+
+顶部提示条：一行文案 + 右侧关闭按钮；无文案时自动隐藏。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(parent=None)` | — |
+| `message() -> str` | 当前提示文案（空串 = 没有提示）。 |
+| `show_message(text: str) -> None` | 显示一条提示；``text`` 为空则隐藏。 |
+| `paintEvent(event) -> None` | 自绘浅色底 + 一条主色分隔线（与正文区灰底区分开）。 |
 
 ---
 
@@ -9679,6 +9708,8 @@ done/total 为 0、completed 为 False）。执行过哪怕失败/中断都算�
 | --- | --- |
 | `config_path() -> Path` | 配置文件路径：数据根目录下的 ``config.json``。 |
 | `app_config() -> AppConfig` | 取应用配置（首次调用时从磁盘载入；重复调用返回同一个实例）。 |
+| `auto_update_app() -> bool` | 启动时是否自动下载程序新版本（默认关）。 |
+| `auto_update_data() -> bool` | 启动时是否自动下载并替换数据包（默认关）。 |
 | `developer_mode() -> bool` | 开发者模式是否打开。 |
 | `yolo_annotation() -> bool` | 是否启用 YOLO 标注（「导出YOLO标注」按钮的显示条件之一）。 |
 
@@ -9746,7 +9777,9 @@ done/total 为 0、completed 为 False）。执行过哪怕失败/中断都算�
 它仍只管导航栏 + 页面栈，且是 ``QMainWindow`` 的中央控件（标题栏占的是"菜单位"，
 中央控件自动让开，两者不重叠）。
 
-    hBoxLayout { navigationInterface, pageStack( stretch=1 ) }
+    hBoxLayout { navBackdrop( navigationInterface ), pageStack( stretch=1 ) }
+
+（背板只负责给导航栏一层浅色底 + 右侧分隔线，见 :class:`_NavBackdrop`。）
 
 导航条目分两组：
 
@@ -14662,7 +14695,7 @@ qfluentwidgets 的 ``Dialog``，它只支持"字符串 + 两个按钮"）。
 | --- | --- |
 | `__init__(window, action: QAction, parent=None)` | — |
 | `check() -> None` | 查一次 GitHub Release 最新版：**先弹「正在检查」窗，再弹结果窗**。 |
-| `check_silently() -> None` | **后台静默**检查一次（启动时自动跑，用户 2026-10-15）。 |
+| `check_silently(auto: bool=False) -> None` | **后台静默**检查一次（启动时自动跑，用户 2026-10-15）。 |
 
 ##### `check() -> None`
 
@@ -14675,7 +14708,7 @@ qfluentwidgets 的 ``Dialog``，它只支持"字符串 + 两个按钮"）。
 检查（挂上检查窗、结果照常弹），而不是回一句"正在检查"——用户在启动几秒内
 就点菜单是完全正常的事，让他白等一次很没道理；同一次请求两种模式共用。
 
-##### `check_silently() -> None`
+##### `check_silently(auto: bool=False) -> None`
 
 **后台静默**检查一次（启动时自动跑，用户 2026-10-15）。
 
@@ -14685,6 +14718,10 @@ qfluentwidgets 的 ``Dialog``，它只支持"字符串 + 两个按钮"）。
 2. **不动菜单项文案**（不置灰、不写"正在检查更新…"）——避免启动瞬间闪一下；
 3. 只有**发现有新版本**时，才在菜单项上挂提示（:data:`NEW_VERSION_SUFFIX`，
    版本号进 tooltip），失败则完全安静（网络不好时别在启动日志里刷错误）。
+
+``auto``（用户 2026-11-02）：发现新版本后**自动下载安装包**，不弹进度窗；
+由启动接线按设置页的「自动更新软件」传入（默认 ``False``，显式调用/自测
+走的仍是"只提示、不自动下"的老口径）。
 
 ### `class DataPackageController(QObject)`
 
@@ -14706,7 +14743,14 @@ qfluentwidgets 的 ``Dialog``，它只支持"字符串 + 两个按钮"）。
 | --- | --- |
 | `__init__(window, action: QAction, parent=None)` | — |
 | `check() -> None` | 查一次数据包最新版：**先弹「正在检查」窗，再弹结果窗**。 |
-| `check_silently() -> None` | **后台静默**检查一次（启动时自动跑）：不弹窗，有新版才挂菜单提示。 |
+| `check_silently(auto: bool=False) -> None` | **后台静默**检查一次（启动时自动跑）：不弹窗，有新版才挂菜单提示。 |
+
+##### `check_silently(auto: bool=False) -> None`
+
+**后台静默**检查一次（启动时自动跑）：不弹窗，有新版才挂菜单提示。
+
+``auto``（用户 2026-11-02）：有新版时**自动下载并替换**（不弹进度窗），
+由启动接线按设置页的「自动更新数据包」传入；默认 ``False`` 保持旧口径。
 
 ### 模块函数
 

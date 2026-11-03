@@ -106,10 +106,12 @@ python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirement
 python build.py
 ```
 
-`build.py` 生成 onedir 包，并在成功后调用 Inno Setup 生成带版本号和时间戳的
-安装包。**构建只产出 `dist/` 下的两样东西——一份可执行目录 + 一个安装包**：
-它不会（也不该）把程序复制到 `C:\Software` 之类的地方去"部署"，装到哪、PATH
-指向哪，由安装包决定（见下文「安装后」）。构建前应确认 `ISCC.exe` 已安装且
+`build.py` 生成 onedir 包，并在成功后调用 Inno Setup 生成按「版本 + 平台」命名的
+安装包（`gujitools_setup_<版本>_<平台>.exe`，**不带时间戳**），另加一份绿色免安装
+zip（`gujitools_portable_<版本>_<平台>.zip`）。**构建只产出 `dist/` 下的三样东西——一份可执行
+目录 + 一个安装包 + 一个绿色版压缩包**：它不会（也不该）把程序复制到
+`C:\Software` 之类的地方去"部署"，装到哪、PATH 指向哪，由安装包决定
+（见下文「安装后」与「绿色免安装版」）。构建前应确认 `ISCC.exe` 已安装且
 位于 Inno Setup 默认安装目录或 `PATH` 中（没装也不会让构建失败，只会跳过
 安装包，`dist/guji/` 照样可用）。不要只删除 `dist` 后重复打包；如果当前
 Python 环境使用 CUDA 版 PyTorch，PyInstaller 仍会把 CUDA 运行库收集进包中。
@@ -146,7 +148,7 @@ python3 build.py
 ```
 dist/guji/guji        命令行
 dist/guji/guji-desktop    桌面 GUI
-dist/guji_<版本>_<时间戳>_linux-x86_64.tar.gz
+dist/gujitools_portable_<版本>_linux-x86_64.tar.gz
 ```
 
 Linux 没有安装包（Inno Setup 是 Windows 专属），改为 `tar.gz` 分发；需要
@@ -256,6 +258,24 @@ HTML、安装版里退化成 `<pre>` 包裹的原始 markdown，而 `collect_sub
 打包后 `desktop` 包位于 PYZ 字节存档内，磁盘上没有 `desktop/static/icon.png`；
 窗口图标改由 `desktop/utils/files.py` 的 `package_dir()` 指向
 `_internal/desktop/static`（spec 的 `datas` 已收集该目录）。
+
+### 绿色免安装版（Windows zip）
+
+构建成功后会额外把瘦身后的 `dist/guji/` 压成
+`dist/gujitools_portable_<版本>_windows-<架构>.zip`。解压得到 `guji/` 目录，
+双击 `guji-desktop.exe` 即可运行：不写注册表、不建快捷方式、不注册 PATH，
+卸载只需删目录（任务数据仍在 `~/Documents/guji`，与安装版相同）。
+
+- **内容同源**：安装包与 zip 都是同一份瘦身后的 `dist/guji`，所以 zip 必须在
+  `prune_bloat()` **之后**打，否则会把已经清掉的 100+ MB 无用文件重新压进去。
+- **必须整目录使用**：`.exe` 依赖同级的 `_internal/`，不能只拷单个 exe。
+- `python build.py --manual-only` 刷新手册时也会重压这一份（否则 Release 上的
+  绿色版还带旧手册），该步骤会额外花几分钟。
+
+发布由 `tools/release.py` 统一完成：它按「版本 + 平台」找出同版本的安装包与
+绿色版，作为同一个 Release 的资产一起上传（Linux 没有安装包，只有 tar.gz）。
+产物名不含时间戳，同版本重打会覆盖同名文件。客户端「检查更新」只认 `.exe`
+资产，多传一个 zip 不会影响自动更新。
 
 ## 体积瘦身
 

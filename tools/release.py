@@ -1,13 +1,14 @@
 #!/usr/bin/env python
-"""发布新版本：把 ``dist/`` 里的安装包与线上 Release 比对，必要时发布。
+"""发布新版本：把 ``dist/`` 里的发布资产与线上 Release 比对，必要时发布。
 
 流程（脚本自己判断该不该发）：
 
-1. 从 ``config.py`` 读当前版本号，在 ``dist/`` 里找**同版本**的安装包；
+1. 从 ``config.py`` 读当前版本号，在 ``dist/`` 里找**同版本**的发布资产
+   （Windows：安装包 + 绿色免安装 zip；Linux：绿色免安装 tar.gz）；
 2. 用 ``gh`` 查线上最新 Release 的 tag，按 ``utils.version`` 的规则比大小；
 3. 线上已不比本地旧 → 直接退出，不重复发布；
 4. 本地较新 → 自动提交版本号、推送分支、打 tag，
-   再用 ``gh release create`` 上传安装包并设为 latest。
+   再用 ``gh release create`` 把**全部资产**一起上传并设为 latest。
 
 用法::
 
@@ -35,10 +36,16 @@ from utils.version import compare, parse_version
 CONFIG = ROOT / "config.py"
 DIST = ROOT / "dist"
 
-#: 安装包文件名里的版本号。Windows 走 Inno Setup，Linux 走 tar.gz。
-_INSTALLER_PATTERNS = (
-    re.compile(r"^guji_setup_(?P<version>.+)_\d{8}_\d{6}\.exe$"),
-    re.compile(r"^guji_(?P<version>.+)_\d{8}_\d{6}_linux-[\w.-]+\.tar\.gz$"),
+#: ``dist/`` 里可上传的发布资产：``<名称>_<版本>_<平台>.<后缀>``，不含时间戳。
+#: - Windows：安装包 ``gujitools_setup_*.exe`` + 绿色免安装 ``gujitools_portable_*.zip``；
+#: - Linux：绿色免安装 ``gujitools_portable_*.tar.gz``（Linux 没有安装包）。
+#: ⚠️ 绿色版命名与 ``build.py`` 的 ``PORTABLE_TEMPLATE`` 同源，
+#: 守卫见 ``tests/selftests/release_assets.py``。
+_ASSET_PATTERNS = (
+    re.compile(r"^gujitools_setup_(?P<version>.+)_(?:windows|linux)-[\w.-]+\.exe$"),
+    re.compile(
+        r"^gujitools_portable_(?P<version>.+)_(?:windows|linux)-[\w.-]+\.(?:zip|tar\.gz)$"
+    ),
 )
 
 
@@ -82,42 +89,48 @@ def _config_version() -> str:
     return match.group(1)
 
 
-def _parse_installer_version(name: str) -> str | None:
-    for pattern in _INSTALLER_PATTERNS:
+def _parse_asset(name: str) -> str | None:
+    """从发布资产的文件名解析版本号；不是资产则返回 None。"""
+    for pattern in _ASSET_PATTERNS:
         match = pattern.match(name)
         if match is not None:
             return match.group("version")
     return None
 
 
-def _find_installer(version: str) -> Path:
-    """在 dist/ 里找指定版本的安装包；找不到时把 dist 里现有版本列出来。"""
+def _find_assets(version: str) -> list[Path]:
+    """在 dist/ 里找指定版本的**全部**发布资产；找不到时列出 dist 里现有版本。
+
+    产物名不含时间戳，同一版本重打会覆盖同名文件，因此这里按版本号全收：
+    Windows 通常得到安装包 + 绿色版 zip 两个，Linux 只有绿色版 tar.gz。
+    """
     if not DIST.is_dir():
         raise ReleaseError("没有 dist/ 目录，请先执行 python build.py 打包")
 
-    matches = [
+    assets = sorted(
         path
         for path in DIST.iterdir()
-        if path.is_file() and _parse_installer_version(path.name) == version
-    ]
-    if not matches:
+        if path.is_file() and _parse_asset(path.name) == version
+    )
+    if not assets:
         available = sorted(
             {
                 found
                 for path in DIST.iterdir()
                 if path.is_file()
-                if (found := _parse_installer_version(path.name)) is not None
+                if (found := _parse_asset(path.name)) is not None
             }
         )
-        hint = f"dist/ 里现有版本：{', '.join(available)}" if available else "dist/ 里没有安装包"
+        hint = (
+            f"dist/ 里现有版本：{', '.join(available)}"
+            if available
+            else "dist/ 里没有发布资产"
+        )
         raise ReleaseError(
-            f"dist/ 里没有版本 {version} 的安装包（{hint}）。"
+            f"dist/ 里没有版本 {version} 的发布资产（{hint}）。"
             "请先执行 python build.py，或加 --build 让脚本自动打包"
         )
-    if len(matches) > 1:
-        # 同一版本重打过多次时只发最新那份
-        return max(matches, key=lambda path: path.stat().st_mtime)
-    return matches[0]
+    return assets
 
 
 def _latest_online_tag() -> str:
@@ -286,8 +299,10 @@ def main(argv: list[str] | None = None) -> int:
             if result.returncode != 0:
                 raise ReleaseError("打包失败，已中止发布")
 
-        installer = _find_installer(version)
-        print(f"安装包: {installer.relative_to(ROOT)}（{installer.stat().st_size / 1024 / 1024:.0f} MB）")
+        assets = _find_assets(version)
+        for asset in assets:
+            size_mb = asset.stat().st_size / 1024 / 1024
+            print(f"发布资产: {asset.relative_to(ROOT)}（{size_mb:.0f} MB）")
 
         online_tag = _latest_online_tag()
         print(f"线上最新: {online_tag or '（尚无 Release）'}")
@@ -309,14 +324,17 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\n▶ 发布 {tag}：《{title}》")
         print(notes)
         if args.dry_run:
-            print(f"  [dry-run] 将上传 {installer.name} 并设为 latest")
+            print(
+                "[dry-run] 将上传 "
+                f"{', '.join(asset.name for asset in assets)} 并设为 latest"
+            )
             return 0
 
         url = _gh(
             "release",
             "create",
             tag,
-            str(installer),
+            *[str(asset) for asset in assets],
             "--title",
             title,
             "--notes",

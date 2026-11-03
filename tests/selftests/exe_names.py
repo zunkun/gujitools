@@ -133,8 +133,8 @@ def run(ctx) -> None:
     ok("README：说的是自己去 Release 页下载（不写死具体版本直链）",
        "releases/download/" not in readme,
        "README 里出现了某个具体版本的直链，发版后会过期")
-    ok("README：安装包说明与 iss 命名规则同源（都是 guji_setup_ 前缀）",
-       "guji_setup_" in readme
-       and "OutputBaseFilename=guji_setup_{#VERSION}_{#BUILD_TIMESTAMP}" in iss,
+    ok("README：安装包说明与 iss 命名规则同源（都是 gujitools_setup_ 前缀）",
+       "gujitools_setup_" in readme
+       and "OutputBaseFilename=gujitools_setup_{#VERSION}_{#BUILD_PLATFORM}" in iss,
        "README 里的安装包名与 guji_setup.iss 对不上")
 

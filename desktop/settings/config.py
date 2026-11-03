@@ -39,6 +39,14 @@ class AppConfig(QConfig):
     ``SwitchSettingCard``（绑上它即可，读写/落盘全免）。
     """
 
+    #: 自动更新软件：启动时检查新版本，发现后**自动下载安装包**（默认关）。
+    autoUpdateApp = ConfigItem(
+        "Update", "AutoUpdateApp", False, BoolValidator()
+    )
+    #: 自动更新数据包：启动时检查去底色模型，发现新版**自动下载并替换**（默认关）。
+    autoUpdateData = ConfigItem(
+        "Update", "AutoUpdateData", False, BoolValidator()
+    )
     #: 开发者模式：打开后设置页才显示开发/训练相关的选项。
     developerMode = ConfigItem(
         "Developer", "DeveloperMode", False, BoolValidator()
@@ -73,6 +81,16 @@ def app_config() -> AppConfig:
     return _app_config
 
 
+def auto_update_app() -> bool:
+    """启动时是否自动下载程序新版本（默认关）。"""
+    return bool(app_config().autoUpdateApp.value)
+
+
+def auto_update_data() -> bool:
+    """启动时是否自动下载并替换数据包（默认关）。"""
+    return bool(app_config().autoUpdateData.value)
+
+
 def developer_mode() -> bool:
     """开发者模式是否打开。"""
     return bool(app_config().developerMode.value)
@@ -87,6 +105,8 @@ __all__ = [
     "AppConfig",
     "CONFIG_FILENAME",
     "app_config",
+    "auto_update_app",
+    "auto_update_data",
     "config_path",
     "developer_mode",
     "yolo_annotation",

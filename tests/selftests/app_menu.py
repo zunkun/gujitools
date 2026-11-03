@@ -190,6 +190,26 @@ def run(ctx) -> None:
        strip.width() > 0 and strip_colors.most_common(1)[0][0] == menu.TITLE_BAR_BG.lower(),
        f"取样={strip_colors.most_common(3)} 期望={menu.TITLE_BAR_BG.lower()}")
 
+    # ---- 1c2. 顶部「有新版本」提示条（用户 2026-11-02）----
+    banner = getattr(w, "update_banner", None)
+    ok("主窗口里有顶部提示条，且默认收起", banner is not None
+       and banner.isHidden(), f"banner={banner}")
+    w._show_update_notice("app", "发现新版本 v9.9")
+    pump(app, times=2)
+    ok("检查到新版本：顶部提示条显示且文案正确",
+       not banner.isHidden() and "v9.9" in banner.message(),
+       f"hidden={banner.isHidden()} text={banner.message()!r}")
+    w._show_update_notice("data", "数据包有新版本 v105")
+    ok("程序更新与数据包更新两个来源的提示互不覆盖",
+       "v9.9" in banner.message() and "v105" in banner.message(),
+       f"text={banner.message()!r}")
+    banner.close_button.click()
+    pump(app, times=2)
+    ok("点提示条右侧关闭按钮 → 提示收起（用户可关掉这条提示）",
+       banner.isHidden(), f"hidden={banner.isHidden()}")
+    w._show_update_notice("app", "")
+    w._show_update_notice("data", "")
+
     # ---- 1d. 「关于」的值要放得下（长路径/长网址曾只显示半截）----
     # 用**真实现算尺寸**（``_about_size`` 按内容撑宽），再量每个值标签的宽度够不够。
     about_dlg = menu.shell_dialog(

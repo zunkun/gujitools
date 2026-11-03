@@ -791,6 +791,30 @@ def run(ctx) -> None:
             menu.resolve_weights = real_resolve  # type: ignore[assignment]
             controller._newer_version = 0
             controller._apply_action_text()
+
+        # ---- 4g. 自动更新数据包（设置页「自动更新数据包」开着，用户 2026-11-02）----
+        recorder.calls.clear()
+        menu.read_local_version = lambda: 0  # type: ignore[assignment]
+        dw.fetch_data_json = (  # type: ignore[assignment]
+            lambda *a, **k: _payload(version=100)
+        )
+        notices: list[str] = []
+        controller.notify.connect(notices.append)
+        try:
+            controller.check_silently(auto=True)
+            ok(
+                "自动更新数据包：静默检查直接**下载并替换**，全程不弹任何窗",
+                wait_until(
+                    app,
+                    lambda: any("已下载并启用" in t for t in notices),
+                    timeout=8.0,
+                )
+                and recorder.calls == []
+                and controller.action.text() == menu.ACTION_DATA_PACKAGE,
+                f"弹窗={[c['title'] for c in recorder.calls]} 提示={notices}",
+            )
+        finally:
+            controller.notify.disconnect(notices.append)
     finally:
         menu.shell_dialog = real_shell  # type: ignore[assignment]
         dw.fetch_data_json = real_fetch  # type: ignore[assignment]

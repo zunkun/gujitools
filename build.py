@@ -7,10 +7,11 @@
 会通过 conda 环境 ``yolobuild`` 构建（缺依赖时自动安装），产出
 **一个目录内同时含 CLI 与 GUI 两个可执行文件**，随后生成安装包。
 
-输出（**就这两样：一份可执行目录 + 一个安装包**）:
+输出（**一份可执行目录 + 两条分发产物**）:
     dist/guji/guji.exe       命令行工具（console，安装后 PATH 可直接用 guji）
     dist/guji/guji-desktop.exe   桌面 GUI（windowed，安装包会建快捷方式）
-    dist/guji_setup_<版本>_<时间戳>.exe   安装包
+    dist/gujitools_setup_<版本>_<平台>.exe          安装包
+    dist/gujitools_portable_<版本>_<平台>.zip       绿色免安装版（解压即用）
 
 ⚠️ **构建脚本不负责部署**：本脚本只把产物落到 ``dist/``，**不再往
 ``C:\\Software\\guji`` 之类的地方复制一份**——那是历史行为，会让人分不清
@@ -55,6 +56,17 @@ IS_WINDOWS = sys.platform == "win32"
 #: 可执行文件名（Linux 无后缀）
 CLI_EXE = "guji.exe" if IS_WINDOWS else "guji"
 GUI_EXE = "guji-desktop.exe" if IS_WINDOWS else "guji-desktop"
+
+#: 绿色免安装版压缩包的文件名模板（解压即用，无需安装）。
+#: 命名口径与安装包一致：``<名称>_<版本>_<平台>``，**不带时间戳**
+#: （同一版本重打会覆盖同名文件，发布按「版本 + 平台」识别）。
+#: ⚠️ 这是该产物名的**唯一来源**：``tools/release.py`` 按它识别要上传的资产，
+#: ``tests/selftests/release_assets.py`` 守两者一致——改名必须同步。
+PORTABLE_TEMPLATE = (
+    "gujitools_portable_{version}_{platform}.zip"
+    if IS_WINDOWS
+    else "gujitools_portable_{version}_{platform}.tar.gz"
+)
 
 #: 安装向导右上角小图在各级 DPI 下的**显示尺寸**（Inno 官方表：100%~250% 依次
 #: 为 58/77/97/116/124/143/159）。逐尺寸各给一张原尺寸图，Inno 按当前 DPI 挑
@@ -468,11 +480,12 @@ def elapsed(start: float, label: str) -> None:
 
 
 def refresh_manual_only(project_root) -> int:
-    """只重生成手册并刷新部署与安装包（`python build.py --manual-only`）。
+    """只重生成手册并刷新发布产物（`python build.py --manual-only`）。
 
     为什么单开一条：完整打包要 19 分钟（PyInstaller 7m + 瘦身 8m），而调手册
-    版式/文案时 Python 侧一个字节都没变——重生成 `manual.html`、刷一次部署、
-    重压一次安装包，两分半就够了。**改了 `.py` 仍然必须完整打包。**
+    版式/文案时 Python 侧一个字节都没变——重生成 `manual.html`、重压安装包
+    **与绿色版 zip**（两者必须同一时间戳，发布脚本按它认「同一批」）。
+    **改了 `.py` 仍然必须完整打包。**
     """
     dist_dir = project_root / "dist" / "guji"
     if not dist_dir.is_dir():
@@ -486,7 +499,10 @@ def refresh_manual_only(project_root) -> int:
         # ⚠️ 这里曾经还有一步「复制到 C:\Software」把产物部署一份出去。
         # 已删除：构建只产出安装包，部署由安装包负责（否则本机同时存在
         # dist/、C:\Software\guji、安装目录三份，跑的是哪一份都说不清）。
+        # 产物名不含时间戳：安装包与绿色版都按「版本 + 平台」命名，重打直接覆盖。
         steps += [
+            ("打绿色版 zip",
+             lambda: pack_portable_zip(project_root, dist_dir)),
             ("生成安装包",
              lambda: build_installer(project_root, icon, wizard_images)),
         ]
@@ -569,12 +585,14 @@ def main():
         if IS_WINDOWS:
             # ⚠️ 构建只出安装包，不再往 C:\Software\guji 复制一份部署副本
             # （见模块 docstring）。dist/guji/ 本身可直接分发/就地运行。
+            # 产物名不含时间戳：安装包与绿色版都按「版本 + 平台」命名，重打直接覆盖。
             steps += [
+                ("打绿色版 zip", lambda: pack_portable_zip(project_root, dist_dir)),
                 ("生成安装包", lambda: build_installer(project_root, icon, wizard_images)),
             ]
         else:
             steps += [
-                ("打 tar.gz", lambda: pack_tarball(project_root, dist_dir)),
+                ("打绿色版 tar.gz", lambda: pack_tarball(project_root, dist_dir)),
                 ("中文字体提示", lambda: print_font_hint()),
             ]
 
@@ -741,7 +759,7 @@ def verify_outputs(dist_dir):
 
 
 def build_installer(project_root, icon=None, wizard_images=None):
-    """用 Inno Setup 生成带版本号和时间戳的安装包。
+    """用 Inno Setup 生成安装包（文件名按「版本 + 平台」，不带时间戳）。
 
     icon 为 .ico 路径时通过 /DICON_FILE 传给脚本（SetupIconFile）。
     wizard_images 为逗号分隔的 PNG 路径串时通过 /DWIZARD_SMALL_IMAGE 传给
@@ -784,22 +802,23 @@ def build_installer(project_root, icon=None, wizard_images=None):
         )
         return
 
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    platform_tag = _platform_tag()
+    installer_name = f"gujitools_setup_{VERSION}_{platform_tag}.exe"
     cmd = [
         str(iscc),
         f"/DVERSION={VERSION}",
-        f"/DBUILD_TIMESTAMP={timestamp}",
+        f"/DBUILD_PLATFORM={platform_tag}",
     ]
     if icon and Path(icon).is_file():
         cmd.append(f"/DICON_FILE={icon}")
     if wizard_images:
         cmd.append(f"/DWIZARD_SMALL_IMAGE={wizard_images}")
     cmd.append(str(project_root / "guji_setup.iss"))
-    print(f"\n📦 生成安装包: guji_setup_{VERSION}_{timestamp}.exe")
+    print(f"\n📦 生成安装包: {installer_name}")
     result = subprocess.run(cmd, cwd=str(project_root))
     if result.returncode != 0:
         raise RuntimeError("安装包生成失败")
-    print(f"✅ 安装包生成完成: dist/guji_setup_{VERSION}_{timestamp}.exe")
+    print(f"✅ 安装包生成完成: dist/{installer_name}")
 
 
 def _manual_image_reference_count():
@@ -863,25 +882,74 @@ def build_manual_html(dist_dir):
           f"内联 {inlined} 张截图）")
 
 
+def _platform_tag() -> str:
+    """产物名里的平台标记：``windows-x86_64`` / ``linux-x86_64``。
+
+    Windows 的 ``AMD64`` 归一成 ``x86_64``（与 Linux 同口径）。
+    """
+    import platform
+
+    machine = (platform.machine() or "unknown").lower()
+    arch = {
+        "amd64": "x86_64",
+        "x86_64": "x86_64",
+        "arm64": "arm64",
+        "aarch64": "arm64",
+    }.get(machine, machine)
+    return f"{'windows' if IS_WINDOWS else 'linux'}-{arch}"
+
+
+def pack_portable_zip(project_root, dist_dir):
+    """把 ``dist/guji/`` 打成绿色免安装 zip（解压即得 ``guji/`` 目录）。
+
+    与安装包是**两条并行的分发路径**：安装包负责装到 ``%LOCALAPPDATA%``、
+    注册 PATH 与快捷方式；zip 版本解压即用、不写注册表，只给不想安装的人。
+    两者内容同源（都是瘦身后的 ``dist/guji``），所以必须在 ``prune_bloat``
+    之后打包，否则会把已清掉的 100+ MB 无用文件重新压进去。
+
+    失败只警告：安装包与 ``dist/guji/`` 仍然是可用的产物。
+    """
+    import zipfile
+
+    if not dist_dir.is_dir():
+        print("⚠️ 未找到输出目录，跳过绿色免安装包")
+        return None
+
+    target = project_root / "dist" / PORTABLE_TEMPLATE.format(
+        version=VERSION, platform=_platform_tag()
+    )
+    print(f"📦 打包绿色免安装版: {target.name}（约 650MB，需几分钟）")
+    try:
+        with zipfile.ZipFile(
+            target, "w", zipfile.ZIP_DEFLATED, compresslevel=6
+        ) as archive:
+            for path in sorted(dist_dir.rglob("*")):
+                if path.is_file():
+                    arcname = (Path("guji") / path.relative_to(dist_dir)).as_posix()
+                    archive.write(path, arcname)
+    except OSError as exc:
+        print(f"⚠️ 绿色免安装包打包失败: {exc}")
+        return None
+    size_mb = target.stat().st_size / 1024 / 1024 if target.exists() else 0
+    print(f"📦 {target.name}（{size_mb:.0f} MB）")
+    return target
+
+
 def pack_tarball(project_root, dist_dir):
-    """Linux 产物打成 tar.gz（Windows 安装包之外的分发方式）。
+    """Linux 产物打成 tar.gz（Linux 没有安装包，这就是它的绿色免安装版）。
 
     用 Python 的 ``tarfile`` 而不是 subprocess 调 tar：tar 需要额外传参才能
     保留可执行位，各发行版行为也不一致；纯 Python 路径在哪都一样。
     """
-    import platform
     import tarfile
-    import time
-
-    from config import VERSION
 
     if not dist_dir.is_dir():
         print("⚠️ 未找到输出目录，跳过打包")
         return None
 
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
-    arch = platform.machine() or "unknown"
-    target = project_root / "dist" / f"guji_{VERSION}_{timestamp}_linux-{arch}.tar.gz"
+    target = project_root / "dist" / PORTABLE_TEMPLATE.format(
+        version=VERSION, platform=_platform_tag()
+    )
     try:
         with tarfile.open(target, "w:gz") as archive:
             archive.add(str(dist_dir), arcname=dist_dir.name)

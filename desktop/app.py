@@ -5,13 +5,14 @@ from __future__ import annotations
 import os
 import sys
 from PySide6.QtCore import QSize, QTimer
-from PySide6.QtWidgets import QApplication, QMainWindow
+from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget
 from PySide6.QtGui import QIcon
 from qfluentwidgets import setTheme, Theme
 # ⚠️ 无边框**主窗口**基类（背后是 WindowsFramelessMainWindow：frameless 标志 +
 # 原生命中测试的拖拽/缩放/贴边）。直接取自 ``qframelesswindow``——它是
 # qfluentwidgets 的依赖（qfluentwidgets 自己就在 import 它），所以不是新依赖。
 from qframelesswindow import FramelessMainWindow
+from desktop.components.update_banner import UpdateBanner
 from desktop.shell import NAV_COMPACT_WIDTH, ModuleShell
 from desktop.store import TaskStore
 from desktop.ui import theme as T
@@ -119,7 +120,29 @@ class MainWindow(FramelessMainWindow, WorkerHost):
         # 壳层持有「导航栏 + 页面栈 + 各模块页」；详情页仍是惰性创建
         # （构造约 400ms，用户还在列表页时不该付这笔钱）。
         self.shell = ModuleShell(self._store)
-        self.setCentralWidget(self.shell)
+        # 顶部「有新版本」提示条（用户 2026-11-02）：默认收起，检查到新版才显示，
+        # 用户点右侧关闭按钮即可收起。它与壳层**竖排**在中央区（提示条吃 36px，
+        # 壳层占满剩余高度）。
+        self.update_banner = UpdateBanner(self)
+        self._update_notices: dict[str, str] = {}
+        central = QWidget(self)
+        central_layout = QVBoxLayout(central)
+        central_layout.setContentsMargins(0, 0, 0, 0)
+        central_layout.setSpacing(0)
+        central_layout.addWidget(self.update_banner)
+        central_layout.addWidget(self.shell, 1)
+        self.setCentralWidget(central)
+        # 两个更新控制器各管一摊（程序 / 数据包），顶部提示条按来源聚合：
+        # 一个来源更新文案时，另一个来源的提示不该被覆盖掉。
+        for key, attr in (
+            ("app", "update_controller"),
+            ("data", "data_package_controller"),
+        ):
+            controller = getattr(self, attr, None)
+            if controller is not None:
+                controller.notify.connect(
+                    lambda text, key=key: self._show_update_notice(key, text)
+                )
         self.setStyleSheet(f"QMainWindow {{ background: {T.CANVAS}; }}")
         self.shell.list_page.open_detail.connect(self._open_detail)
         # 预热详情页（见 _prewarm_detail_page）：① 刚点完导入；② 启动后空闲。
@@ -193,6 +216,18 @@ class MainWindow(FramelessMainWindow, WorkerHost):
     def _back_to_list(self) -> None:
         """返回任务列表（转发壳层）。"""
         self.shell.back_to_list()
+
+    def _show_update_notice(self, key: str, text: str) -> None:
+        """聚合两个更新控制器的顶部提示（``text`` 为空 = 清掉这一条）。
+
+        程序更新与数据包更新是两个独立来源，提示文案不该互相覆盖；多条时用
+        「　·　」连成一行（提示条只有 36px 高，只放得下一行）。
+        """
+        if text:
+            self._update_notices[key] = text
+        else:
+            self._update_notices.pop(key, None)
+        self.update_banner.show_message("　·　".join(self._update_notices.values()))
 
     def keyPressEvent(self, event) -> None:  # noqa: N802
         """←/→ 转发给壳层（详情页翻页）。
@@ -312,9 +347,17 @@ def main() -> int:
     #    （``ctx.w``）的，放 __init__ 会让每个用例都偷偷发一次真实请求，还会污染那些
     #    把 ``update_worker.fetch_latest_release`` 换成替身的用例。
     if not os.environ.get("GUJI_GUI_SELFTEST"):
+        # 设置页「自动更新」两项（用户 2026-11-02，默认**关**）：打开后程序更新会
+        # 自动**下载安装包**（在「帮助 → 检查更新」中完成安装），数据包则自动
+        # **下载并替换生效**。默认关 ⇒ 只检查并提示，不自动下载。
+        from desktop.settings.config import auto_update_app, auto_update_data
+
         controller = getattr(window, "update_controller", None)
         if controller is not None:
-            QTimer.singleShot(STARTUP_UPDATE_CHECK_MS, controller.check_silently)
+            QTimer.singleShot(
+                STARTUP_UPDATE_CHECK_MS,
+                lambda: controller.check_silently(auto=auto_update_app()),
+            )
         # 顺带后台静默查一次**去底色数据包**（权重仓库的 database release，用户
         # 2026-10-16）：有新模型只在「帮助 → 检查数据包」菜单项上挂提示，用户
         # 点进去才下载启用。⚠️ 唯一的例外是本机**一份权重都没有**（被删/安装
@@ -323,7 +366,9 @@ def main() -> int:
         data_controller = getattr(window, "data_package_controller", None)
         if data_controller is not None:
             QTimer.singleShot(
-                STARTUP_UPDATE_CHECK_MS, data_controller.check_silently)
+                STARTUP_UPDATE_CHECK_MS,
+                lambda: data_controller.check_silently(auto=auto_update_data()),
+            )
     # 列表数据推迟到窗口显示之后的**下一拍**：TaskListPage 首次渲染要建每行的
     # 控件、还要读各任务的 runs.json（实测 ~74 ms），放在 show() 之前等于推迟
     # 窗口出现。先给用户一个空壳窗口，再填内容。

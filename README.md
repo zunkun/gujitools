@@ -9,12 +9,15 @@
 
 ## 下载程序
 
-下载 `guji_setup_*.exe`（两种模式一体，依赖已内置，装上就能用）：
+下载 `gujitools_setup_<版本>_<平台>.exe`（两种模式一体，依赖已内置，装上就能用）。
+不想安装也可以用同页提供的 **绿色免安装版** `gujitools_portable_<版本>_<平台>.zip`：
+解压后双击 `guji-desktop.exe` 即可运行，不写注册表、不建快捷方式。
 
-👉 **[Windows 安装包](https://github.com/zunkun/gujitools/releases/latest)**
+👉 **[Windows 下载（安装包 / 绿色免安装版）](https://github.com/zunkun/gujitools/releases/latest)**
 
 - 系统要求 **Windows 10 (1809) 及以上 / Windows 11**，64 位
-- 装好后：开始菜单「古籍重製」进桌面端；命令行 `guji` 自动加入 PATH
+- 安装版：开始菜单「古籍重製」进桌面端；命令行 `guji` 自动加入 PATH
+- 绿色版：解压即用，需手动把解压出的 `guji` 目录加进 PATH 才能用 `guji` 命令
 
 ## 两种使用模式
 

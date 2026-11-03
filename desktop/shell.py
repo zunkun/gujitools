@@ -12,7 +12,9 @@
 它仍只管导航栏 + 页面栈，且是 ``QMainWindow`` 的中央控件（标题栏占的是"菜单位"，
 中央控件自动让开，两者不重叠）。
 
-    hBoxLayout { navigationInterface, pageStack( stretch=1 ) }
+    hBoxLayout { navBackdrop( navigationInterface ), pageStack( stretch=1 ) }
+
+（背板只负责给导航栏一层浅色底 + 右侧分隔线，见 :class:`_NavBackdrop`。）
 
 导航条目分两组：
 
@@ -34,7 +36,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt, QProcess
+from PySide6.QtCore import QRect, QProcess, Qt
+from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QHBoxLayout, QStackedWidget, QWidget
 from qfluentwidgets import (
     FluentIcon as FIF,
@@ -98,6 +101,35 @@ ROUTE_SETTINGS = "settings"
 _SUBROUTES = (ROUTE_DETAIL, ROUTE_CREATE, ROUTE_FLOW)
 
 
+class _NavBackdrop(QWidget):
+    """导航栏背板：给导航区一层浅色底 + 右侧分隔线。
+
+    ⚠️ 为什么需要它（用户 2026-11-03 报「侧边导航太宽、图标没居中」）：
+    qfluentwidgets 的 ``NavigationPanel`` 在折叠/展开态（``menu=false``）且
+    关闭亚克力时是**完全透明**的（见 ``navigation_interface.qss``），导航栏
+    与页面底色（``CANVAS``）连成一片。页面的左内边距（24px）于是被读成
+    "导航栏的一部分"，视觉侧栏变成 48+24=72px、图标（中心 24.5px）看着左偏。
+    实测导航栏本身仍是官方的 48px、图标居中——**不是宽度 bug**，只是缺边界。
+
+    背板尺寸跟着导航栏走（折叠 48 / 展开 200），所以展开时也不会露馅。
+    """
+
+    def __init__(self, nav: NavigationInterface, parent=None):
+        super().__init__(parent)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(nav)
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt 命名
+        """浅色底 + 右侧 1px 分隔线（颜色取设计令牌，不写死色值）。"""
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor(T.SURFACE_SOFT))
+        painter.fillRect(
+            QRect(self.width() - 1, 0, 1, self.height()), QColor(T.BORDER)
+        )
+
+
 class ModuleShell(QWidget):
     """壳层根控件：左侧导航 + 右侧页面栈。
 
@@ -135,7 +167,9 @@ class ModuleShell(QWidget):
         # 背景透出桌面（本程序是普通窗口，不是 FluentWindow）。
         self.nav.setAcrylicEnabled(False)
         self._apply_nav_theme()
-        root.addWidget(self.nav)
+        # 导航栏本体透明，外面套一层背板给它浅色底和右侧边界（见 _NavBackdrop）
+        self._nav_backdrop = _NavBackdrop(self.nav, self)
+        root.addWidget(self._nav_backdrop)
 
         self.pages = QStackedWidget()
         self.pages.setObjectName("pageRoot")

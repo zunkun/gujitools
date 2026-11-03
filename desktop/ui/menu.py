@@ -40,7 +40,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, cast
 
-from PySide6.QtCore import QObject, Qt, QTimer, QUrl
+from PySide6.QtCore import QObject, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import (
     QAction,
     QColor,
@@ -930,6 +930,9 @@ class UpdateController(QObject):
        重复调用只生效一次。
     """
 
+    #: 顶部提示条文案（空串 = 清掉这条提示；用户 2026-11-02）
+    notify = Signal(str)
+
     def __init__(self, window, action: QAction, parent=None):
         super().__init__(parent if parent is not None else window)
         self.window = window
@@ -955,6 +958,10 @@ class UpdateController(QObject):
         #: 当前这次检查是**静默**的（启动时后台自动查）：不弹任何窗，只在菜单项上
         #: 挂"有新版本"提示；用户中途点了菜单就转成显式（见 :meth:`check`）。
         self._silent = False
+        #: 这次静默检查是否**自动下载**（来自设置页「自动更新软件」，用户 2026-11-02）
+        self._auto = False
+        #: 当前这次下载是**自动**发起的（不弹进度窗/结果窗，只更新顶部提示条）
+        self._auto_download = False
         #: 已知的新版本 tag（空 = 未知/已是最新）——菜单项文案与 tooltip 看它
         self._newer_tag = ""
 
@@ -972,6 +979,8 @@ class UpdateController(QObject):
         if self._checking:
             if self._silent:
                 self._silent = False
+                # 用户主动点进来 = 不要"静默自动下载"，改成显式流程（弹窗问用户）
+                self._auto = False
                 self._present_checking()
                 return
             show_toast(
@@ -987,13 +996,14 @@ class UpdateController(QObject):
             )
             return
         self._silent = False
+        self._auto = False
         self._aborted = False
         self.action.setEnabled(False)
         self.action.setText(ACTION_UPDATE_BUSY)
         self._present_checking()
         self._start_worker()
 
-    def check_silently(self) -> None:
+    def check_silently(self, auto: bool = False) -> None:
         """**后台静默**检查一次（启动时自动跑，用户 2026-10-15）。
 
         与显式检查的三点不同：
@@ -1002,10 +1012,15 @@ class UpdateController(QObject):
         2. **不动菜单项文案**（不置灰、不写"正在检查更新…"）——避免启动瞬间闪一下；
         3. 只有**发现有新版本**时，才在菜单项上挂提示（:data:`NEW_VERSION_SUFFIX`，
            版本号进 tooltip），失败则完全安静（网络不好时别在启动日志里刷错误）。
+
+        ``auto``（用户 2026-11-02）：发现新版本后**自动下载安装包**，不弹进度窗；
+        由启动接线按设置页的「自动更新软件」传入（默认 ``False``，显式调用/自测
+        走的仍是"只提示、不自动下"的老口径）。
         """
         if self._checking or self._downloading:
             return  # 显式检查在跑、已有一次静默检查在飞，或在下载安装包
         self._silent = True
+        self._auto = bool(auto)
         self._aborted = False
         self._start_worker()
 
@@ -1091,6 +1106,26 @@ class UpdateController(QObject):
             # 机器上升级后重开程序，提示不该留成"鬼影"）。
             self._newer_tag = tag if kind == RESULT_NEWER else ""
             self._apply_action_text()
+            if kind != RESULT_NEWER:
+                self.notify.emit("")      # 顶部提示条一并清掉
+                return
+            # 顶部提示条（用户 2026-11-02）：启动时发现新版本要一直看得见，
+            # 直到用户自己点关闭；自动更新开着就顺手把安装包下下来。
+            pending = self._pending_for(tag)
+            if pending is not None:
+                self._pending = pending
+                self.notify.emit(
+                    f"发现新版本 {tag}，安装包已下载，"
+                    "可在「帮助 → 检查更新」中重启安装。"
+                )
+                return
+            if self._auto:
+                self.notify.emit(f"发现新版本 {tag}，正在后台自动下载…")
+                self._start_app_download(auto=True)
+            else:
+                self.notify.emit(
+                    f"发现新版本 {tag}，可在「帮助 → 检查更新」中下载。"
+                )
             return
         if kind == RESULT_NEWER:
             # 上次点了「稍后」、安装包还躺在用户目录里 ⇒ 直接给「立即重启安装」，
@@ -1274,8 +1309,12 @@ class UpdateController(QObject):
         payload = self._last_payload or {}
         return str(payload.get("html_url") or "") or PROJECT_URL
 
-    def _start_app_download(self) -> None:
-        """开始**应用内**下载安装包（走测速排名里当前那条线路）。"""
+    def _start_app_download(self, auto: bool = False) -> None:
+        """开始**应用内**下载安装包（走测速排名里当前那条线路）。
+
+        ``auto=True``（用户 2026-11-02）表示这次是启动时自动更新发起的：**不弹
+        进度窗**，下载结果只写顶部提示条；``False`` 是用户点「下载」的显式流程。
+        """
         payload = self._last_payload or {}
         asset = payload.get("asset") or {}
         url = self._scheme_download_url()
@@ -1284,10 +1323,14 @@ class UpdateController(QObject):
         name = Path(str(asset.get("name") or "")).name or "guji_setup.exe"
         dest = updates_dir() / name
         self._downloading = True
+        self._auto_download = bool(auto)
         self.action.setEnabled(False)
         self.action.setText(ACTION_UPDATE_DOWNLOADING)
-        self._progress = _DownloadProgress(
-            self.window, "正在下载安装包", self._cancel_app_download)
+        self._progress = None
+        if not auto:
+            self._progress = _DownloadProgress(
+                self.window, "正在下载安装包", self._cancel_app_download
+            )
 
         from desktop.workers.update_worker import AppDownloadWorker
 
@@ -1327,7 +1370,11 @@ class UpdateController(QObject):
         self._progress.stage(APP_UPDATE_STAGES.get(str(code), "正在处理…"))
 
     def _on_app_downloaded(self, result) -> None:
-        """安装包下好：记一笔"待安装"记录（供「稍后」免重下），再提示重启安装。"""
+        """安装包下好：记一笔"待安装"记录（供「稍后」免重下），再提示重启安装。
+
+        ``_auto_download`` 时**不弹结果窗**，只更新顶部提示条（启动自动更新）。
+        """
+        was_auto = self._auto_download
         self._finish_download()
         result = result or {}
         tag = str((self._last_payload or {}).get("tag_name") or "")
@@ -1344,13 +1391,25 @@ class UpdateController(QObject):
         except OSError:
             pass      # 记不住只是"下次要重下"，不该挡住"提示重启安装"
         self._pending = record
+        self.notify.emit(
+            f"新版本 {tag or '已下载'} 已下载完成，"
+            "可在「帮助 → 检查更新」中立即重启安装。"
+        )
+        if was_auto:
+            return
         self._present(_ready_verdict(tag))
 
     def _on_app_failed(self, kind) -> None:
         """下载失败：关进度窗、复位菜单项；取消则静默，真失败就换线路给重试。"""
+        was_auto = self._auto_download
         self._finish_download()
         key = str(kind)
         if key == "cancelled":
+            return
+        if was_auto:
+            self.notify.emit(
+                "新版本安装包自动下载失败，可稍后在「帮助 → 检查更新」中重试。"
+            )
             return
         schemes = self._usable_schemes()
         if len(schemes) > 1:
@@ -1373,6 +1432,7 @@ class UpdateController(QObject):
         """下载收尾（成功/失败/线程结束三条路都会到，**幂等**）。"""
         self._close_progress()
         self._download = {}
+        self._auto_download = False
         if self._downloading:
             self._downloading = False
             self.action.setEnabled(True)
@@ -1426,6 +1486,9 @@ class DataPackageController(QObject):
     会**直接下载**（不再只挂个"有新版本"提示）——没有权重检测根本跑不起来。
     """
 
+    #: 顶部提示条文案（空串 = 清掉这条提示；用户 2026-11-02）
+    notify = Signal(str)
+
     def __init__(self, window, action: QAction, parent=None):
         super().__init__(parent if parent is not None else window)
         self.window = window
@@ -1436,6 +1499,10 @@ class DataPackageController(QObject):
         self._downloading = False
         #: 静默模式（启动时后台自动查）：不弹窗，只把"有新版本"挂到菜单项上
         self._silent = False
+        #: 这次静默检查是否**自动下载并替换**（设置页「自动更新数据包」，2026-11-02）
+        self._auto = False
+        #: 当前这次下载是**自动**发起的（不弹进度窗/结果窗，只更新顶部提示条）
+        self._auto_download = False
         #: 用户点了检查窗的「取消」：结果回来时静默丢弃
         self._aborted = False
         #: 上一次成功的检查结果（含 info 与 download_url；「下载」用它）
@@ -1456,6 +1523,7 @@ class DataPackageController(QObject):
         if self._checking:
             if self._silent:
                 self._silent = False
+                self._auto = False
                 self._present_checking()
                 return
             show_toast(
@@ -1466,17 +1534,23 @@ class DataPackageController(QObject):
             show_toast(self.window, "info", "正在下载数据包", "下载进行中，请稍候。")
             return
         self._silent = False
+        self._auto = False
         self._aborted = False
         self.action.setEnabled(False)
         self.action.setText(ACTION_DATA_PACKAGE_BUSY)
         self._present_checking()
         self._start_check()
 
-    def check_silently(self) -> None:
-        """**后台静默**检查一次（启动时自动跑）：不弹窗，有新版才挂菜单提示。"""
+    def check_silently(self, auto: bool = False) -> None:
+        """**后台静默**检查一次（启动时自动跑）：不弹窗，有新版才挂菜单提示。
+
+        ``auto``（用户 2026-11-02）：有新版时**自动下载并替换**（不弹进度窗），
+        由启动接线按设置页的「自动更新数据包」传入；默认 ``False`` 保持旧口径。
+        """
         if self._checking or self._downloading:
             return
         self._silent = True
+        self._auto = bool(auto)
         self._aborted = False
         self._start_check()
 
@@ -1548,11 +1622,27 @@ class DataPackageController(QObject):
             if kind == RESULT_NEWER and self._missing_weights:
                 # 本机一份权重都没有 ⇒ 检测根本跑不起来，别只挂个"有新版本"提示
                 # 让用户自己点：直接下（有进度窗，失败会弹原因）。
-                self._start_download()
+                self._newer_version = remote
+                self._apply_action_text()
+                self.notify.emit(f"本机缺少去底色数据包，正在自动下载 v{remote}…")
+                self._start_download(auto=self._auto)
                 return
             # 菜单提示：有新版才挂后缀；已是最新就清掉（别留成"鬼影"）。
             self._newer_version = remote if kind == RESULT_NEWER else 0
             self._apply_action_text()
+            if kind != RESULT_NEWER:
+                self.notify.emit("")      # 顶部提示条一并清掉
+                return
+            # 顶部提示条（用户 2026-11-02）：自动更新开着就顺手下载并替换。
+            if self._auto:
+                self.notify.emit(
+                    f"发现新版本数据包 v{remote}，正在后台自动下载并替换…"
+                )
+                self._start_download(auto=True)
+            else:
+                self.notify.emit(
+                    f"发现新版本数据包 v{remote}，可在「帮助 → 更新数据包」中下载。"
+                )
             return
         self._present(data_package_result(kind, current=local, latest=self._last))
 
@@ -1619,18 +1709,25 @@ class DataPackageController(QObject):
         dialog.exec()
 
     # ---- 下载 ----
-    def _start_download(self) -> None:
-        """开下载：弹进度窗 + 起 :class:`DataDownloadWorker`（子线程）。"""
+    def _start_download(self, auto: bool = False) -> None:
+        """开下载：弹进度窗 + 起 :class:`DataDownloadWorker`（子线程）。
+
+        ``auto=True``（用户 2026-11-02）：启动时自动更新发起的下载**不弹进度窗**，
+        结果只写顶部提示条；``False`` 是用户点「下载」的显式流程。
+        """
         payload = self._last or {}
         info = payload.get("info") or {}
         url = str(payload.get("download_url") or "")
         if not url:
             return
         self._downloading = True
+        self._auto_download = bool(auto)
         self.action.setEnabled(False)
         self.action.setText(ACTION_DATA_PACKAGE_DOWNLOADING)
-        self._progress = _DownloadProgress(
-            self.window, "正在下载并启用去底色数据包", self._cancel_download)
+        self._progress = None
+        if not auto:
+            self._progress = _DownloadProgress(
+                self.window, "正在下载并启用去底色数据包", self._cancel_download)
 
         from desktop.workers.data_package_worker import DataDownloadWorker
 
@@ -1667,12 +1764,21 @@ class DataPackageController(QObject):
         self._progress.stage(DATA_PACKAGE_STAGES.get(str(code), "正在处理…"))
 
     def _on_downloaded(self, result) -> None:
-        """下载成功：关进度窗、复位菜单项、给出成功提示。"""
+        """下载成功：关进度窗、复位菜单项、给出成功提示。
+
+        自动更新（``_auto_download``）时**不弹结果窗**，只更新顶部提示条。
+        """
+        was_auto = self._auto_download
         # 刚装上新模型 ⇒ "有新版本"提示该清掉（否则菜单项会一直催）。
         self._newer_version = 0
         self._finish_download()
         result = result or {}
         version = int(result.get("version") or 0)
+        self.notify.emit(
+            f"去底色数据包 v{version} 已下载并启用，下次检测即用新模型。"
+        )
+        if was_auto:
+            return
         body = f"已下载并启用新模型（版本 v{version}），并已重新加载到内存。\n\n下次检测会直接用上新模型。"
         if result.get("path"):
             body += f"\n\n保存位置：{result['path']}"
@@ -1684,6 +1790,7 @@ class DataPackageController(QObject):
 
     def _on_download_failed(self, kind) -> None:
         """下载失败（或被取消）：关进度窗、复位菜单项；取消则静默。"""
+        was_auto = self._auto_download
         self._finish_download()
         key = str(kind)
         if key == "cancelled":
@@ -1697,6 +1804,11 @@ class DataPackageController(QObject):
                 )
             else:
                 reason = f"下载失败（{key}）。"
+        if was_auto:
+            self.notify.emit(
+                f"去底色数据包自动下载失败：{reason} 可稍后在「帮助 → 更新数据包」中重试。"
+            )
+            return
         self._present(UpdateVerdict("数据包下载失败", f"{reason}\n\n稍后可以再试。"))
 
     def _cancel_download(self) -> None:
@@ -1715,6 +1827,7 @@ class DataPackageController(QObject):
         """下载收尾（成功/失败/线程结束三条路都会到，**幂等**）。"""
         self._close_progress()
         self._download = {}
+        self._auto_download = False
         if self._downloading:
             self._downloading = False
             self.action.setEnabled(True)

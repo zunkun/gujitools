@@ -80,6 +80,17 @@ def _check_settings_page(ctx, cfg, ok, qconfig) -> None:
        page.dev_card.configItem is cfg.developerMode)
     ok("「启用YOLO标注」卡片绑到配置项",
        page.yolo_card.configItem is cfg.yoloAnnotation)
+    ok("「自动更新软件」卡片绑到配置项",
+       page.auto_app_card.configItem is cfg.autoUpdateApp)
+    ok("「自动更新数据包」卡片绑到配置项",
+       page.auto_data_card.configItem is cfg.autoUpdateData)
+
+    # 两项自动更新的**默认值**：必须是关（用户 2026-11-03 要求默认不自动下载）。
+    # 查配置项的 defaultValue（不是当前值）——用户可能已经手动打开过。
+    ok("自动更新两项默认关闭",
+       cfg.autoUpdateApp.defaultValue is False
+       and cfg.autoUpdateData.defaultValue is False,
+       f"{cfg.autoUpdateApp.defaultValue} / {cfg.autoUpdateData.defaultValue}")
 
     # 开发者模式关闭 → YOLO 那张卡藏起来（它是下级选项）
     cfg.developerMode.value = False

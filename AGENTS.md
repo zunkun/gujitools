@@ -107,6 +107,25 @@ python tools/check_docs.py
 必须比对 `--list` 计划数与日志中 `==标题==` 数，缺了用 `--only` 补跑。
 ⚠️ 测试耗时，**不要每改一小处就跑**：按改动攒批，最后统一跑相关模块。
 
+## 发布 Release（一条命令，别手写 git/gh 流程）
+
+```bash
+python tools/release.py --dry-run   # 先看计划：版本 / 发布资产 / 要推的提交
+python tools/release.py             # 真发布；加 --build 会先跑 python build.py
+```
+
+- 脚本读 `config.py` 的 `VERSION`，到 **`dist/`** 找同版本的发布资产
+  （Windows：`gujitools_setup_<版本>_<平台>.exe` +
+  `gujitools_portable_<版本>_<平台>.zip`；Linux：`gujitools_portable_*.tar.gz`），
+  一起作为同一个 Release 的资产上传。产物名**不含时间戳**，同版本重打覆盖同名
+  文件；`dist/` 被 `.gitignore` 忽略（含几百 MB 的安装包与绿色版），**不进仓库**。
+- 只有本地版本比线上新才继续，自动完成：提交 `config.py`（`update: version`）
+  → 推分支 → 打 `v<版本>` tag → `gh release create` 上传全部发布资产并设为 latest。
+- `gh` 已本机安装并登录，用 `gh auth status` 自查；**不要**另写发布命令。
+- GitHub 直连不通时，先在当前命令环境设
+  `HTTPS_PROXY=http://127.0.0.1:7890` 再跑（**不要**写进 git config）。
+- 工作区只允许 `config.py` 版本号这一处未提交改动，其它改动会被拒绝发布。
+
 ## AI 写代码 / 写文件的落点（临时文件必清理）
 
 - **测试代码只进 `tests/`**：能被自测框架发现的用例放 `tests/selftests/<模块名>.py`
