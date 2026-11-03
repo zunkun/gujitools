@@ -381,9 +381,12 @@ class ImpositionBaseMixin:
         "没有可拼版的图片，请先提交本次任务"——而那一步压根不在流程里。
         现在与 :meth:`print_source_dir` 同构，走 ``store.stage_input``。
 
-        ⚠️ ``imposition_effective`` 传的是**图里有没有这一格 + 用户勾没勾**，
-        不是单独的"用户勾没勾"：这一格不存在时下方控件整体是置灰的，不该因为
-        "还没勾" 就换一个别的取图来源。
+        ⚠️ ``imposition_active`` 必须传 **True**（不是 ``imposition_effective()``）：
+        这里问的是"**如果**拼版要跑，它的输入来自谁"，与开关无关。开关没勾时
+        状态机把 ``imposition`` 剔出 active 集合，节点粒度的回溯连起点都不认
+        （``_node_producers`` 直接返回空），于是退回静态声明 ``rembg``——那是
+        默认流程里拼版的**下游**。用户 2026-11-03 自定义流程实测：选图弹窗的
+        候选跟着开关变（勾了是上一步、没勾是下一步去底色结果）。
         """
         if not self.task_id:
             return []
@@ -393,14 +396,14 @@ class ImpositionBaseMixin:
         node = self.node_of_stage("imposition")
         source = (
             self.store.node_input(
-                self.task_id, node, "pages", imposition_active=self.imposition_effective()
+                self.task_id, node, "pages", imposition_active=True
             )
             if node
             else self.store.stage_input(
                 self.task_id,
                 "imposition",
                 "pages",
-                imposition_active=self.imposition_effective(),
+                imposition_active=True,
             )
         ) or self.store.rembg_output_dir(self.task_id)
         files = list_stage_images(source)

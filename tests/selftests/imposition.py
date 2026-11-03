@@ -1927,6 +1927,55 @@ def run(ctx) -> None:
         #    （曾因此让"启用拼版：列表多一个子任务"假红）。
         repo.delete_task(fog_task)
 
+        # ---- 自定义流程：拼版在去底色**之前**，选图只看连线（2026-11-03）----
+        # 用户报障（测试任务 0019）：流程为 检测 → 拼版 → 去底色，没勾「启用
+        # 拼版」时「＋选择拼版」弹窗读成**下游**去底色的产物，勾了才是上游检测
+        # 的图。开关只决定第四步取谁，不该改变拼版这一步自己的输入来源。
+        order_task = repo.create_task(pdf, "imposition-before-rembg", "拼版在前")
+        repo.save_task_diagram(
+            order_task,
+            FlowDiagram(
+                nodes=tuple(
+                    DiagramNode(f"o{i}", KIND_TASK, name)
+                    for i, name in enumerate(
+                        ("提取图片", "检测文本框", "图片拼版", "图片去底色", "PDF排版")
+                    )
+                ),
+                flows=tuple(
+                    DiagramFlow(f"of{i}", f"o{i - 1}", f"o{i}") for i in range(1, 5)
+                ),
+            ),
+        )
+        _mk(repo.task_dir(order_task) / "stages" / "detect" / "o-1.png", RED)
+        _mk(repo.task_dir(order_task) / "stages" / "detect" / "o-2.png", GREEN)
+        _mk(repo.task_dir(order_task) / "stages" / "rembg" / "o-3.png", BLUE)
+        order_page = TaskDetailPage(repo)
+        order_page.resize(1080, 720)
+        order_page.show()
+        pump(ctx.app, times=12)
+        ok("进入拼版在前的任务", order_page.set_task(order_task))
+        pump(ctx.app, times=8)
+
+        def _order_sources() -> list[str]:
+            return sorted(Path(p).name for p in order_page.imposition_source_files())
+
+        ok(
+            "未启用拼版时，选图来源 = 上游检测产物（不是下游去底色）",
+            _order_sources() == ["o-1.png", "o-2.png"],
+            str(_order_sources()),
+        )
+        order_page.imposition_enabled_checkbox.setChecked(True)
+        pump(ctx.app, times=6)
+        ok(
+            "启用拼版后，选图来源仍是同一上游（与开关无关）",
+            _order_sources() == ["o-1.png", "o-2.png"],
+            str(_order_sources()),
+        )
+        order_page.deleteLater()
+        pump(ctx.app, times=4)
+        # ⚠️ 同 fog_task：留在列表里会抢 ``rows[0]``，必须删。
+        repo.delete_task(order_task)
+
         # ⚠️ **判据只看流程图**：面板参数不再影响拼版节点可见性
         before_visible = page._imposition_node_visible()
         repo.save_draft(tid, "rembg", {"type": 2})
