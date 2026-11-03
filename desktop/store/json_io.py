@@ -16,6 +16,7 @@ import json
 import os
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 from utils.file_utils import replace_with_retry
@@ -74,6 +75,37 @@ def resolve_scoped_path(path: Path, node_id: str | None) -> Path:
     ⚠️ 无标记 = 旧任务 ⇒ 原样使用（零迁移）；标记一致 ⇒ 原样使用。
     """
     if not node_id or "~" in path.name or owns(path, node_id):
+        return path
+    from desktop.steps import ports
+
+    return path.with_name(
+        ports.suffix_last_segment(path.name, ports.sanitize_node_id(str(node_id)))
+    )
+
+
+def resolve_shared_scoped_path(
+    path: Path,
+    node_id: str | None,
+    stage_of: Callable[[str], str | None],
+) -> Path:
+    """**跨步骤共享**文件（``pages.json``/``sizes.json``）的按节点落点。
+
+    与 :func:`resolve_scoped_path` 的唯一区别：主名文件被**别的阶段**的节点占用时
+    仍用主名文件。``pages.json`` 是"每任务一份"的页集合，提取/检测/去底色各步骤
+    都要读写同一份；按 owner 回退会让每个步骤各读各的 ``pages~<节点>.json`` 陈旧
+    副本（用户 2026-11-03 报"去底色只显示 2 张""第二步只有 1 页"）。
+
+    ``stage_of(node_id)`` 由宿主（``TaskStore.node_stage_of``）提供；旧主人已不在
+    图里（返回 ``None``）时按"不继承"处理，保留原归属标记的保护语义。
+    """
+    if not node_id or "~" in path.name:
+        return path
+    owner = read_owner(path)
+    if owner is None or owner == str(node_id):
+        return path
+    owner_stage = stage_of(owner)
+    node_stage = stage_of(str(node_id))
+    if owner_stage is not None and node_stage is not None and owner_stage != node_stage:
         return path
     from desktop.steps import ports
 

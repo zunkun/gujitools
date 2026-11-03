@@ -26,7 +26,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 from desktop.store.json_io import (
-    read_json, resolve_scoped_path, write_json, write_owner,
+    read_json, resolve_scoped_path, resolve_shared_scoped_path,
+    write_json, write_owner,
 )
 from utils.box_geometry import box_iou
 
@@ -162,6 +163,7 @@ class AnnotationMixin:
         artifact: Callable[..., Path]
         task_dir: Callable[[str], Path]
         task_diagram: Callable[[str], Any]
+        node_stage_of: Callable[[str, str], str | None]
 
     def _doc(self, path: Path, owner: str | None = None) -> _DocCache:
         """取某路径在本进程内的**唯一**文档（读写都走它，见模块 docstring）。"""
@@ -456,11 +458,17 @@ class AnnotationMixin:
         坐标按它缩放）。同一步骤多个节点若产出的页图尺寸不同（例如两个
         「图片提取」节点用了不同 zoom/dpi），共用一份基准就会把副本节点的框
         按主节点的比例缩放——框画错位。所以副本节点另存一份。
+
+        ⚠️ 但尺寸是**跨步骤共享**的（检测/去底色读的就是提取阶段写下的页尺寸），
+        别的阶段的 owner 不该让本步骤回退到空副本。
         """
         from desktop.steps import ports
 
         name = ports.scoped_name("sizes.json", node_id, primary_id)
-        return resolve_scoped_path(self.task_dir(task_id) / name, node_id)
+        path = self.task_dir(task_id) / name
+        return resolve_shared_scoped_path(
+            path, node_id, lambda nid: self.node_stage_of(task_id, nid)
+        )
 
     def save_image_size(self, task_id: str, image_key: str, width: int, height: int,
                         node_id: str | None = None,

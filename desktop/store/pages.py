@@ -8,7 +8,8 @@ from typing import TYPE_CHECKING, Callable
 
 from desktop.utils.files import IMAGE_SUFFIXES
 from desktop.store.json_io import (
-    read_json, resolve_scoped_path, write_json, write_owner,
+    read_json, resolve_shared_scoped_path, resolve_scoped_path,
+    write_json, write_owner,
 )
 from utils.sort_utils import natural_sort_key
 
@@ -20,7 +21,7 @@ class PageManifestMixin:
         # 宿主 TaskStore（或同级 Mixin）提供：只做类型声明，运行时零副作用。
         task_dir: Callable[[str], Path]
         #: 节点 → 运行阶段（``pages.<阶段>.json`` 的命名要用它）
-        node_stage_of: Callable[[str], str | None]
+        node_stage_of: Callable[[str, str], str | None]
 
     def pages_path(self, task_id: str, node_id: str | None = None,
                    primary_id: str | None = None) -> Path:
@@ -43,7 +44,10 @@ class PageManifestMixin:
         from desktop.steps import ports
 
         name = ports.scoped_name("pages.json", node_id, primary_id)
-        return resolve_scoped_path(self.task_dir(task_id) / name, node_id)
+        path = self.task_dir(task_id) / name
+        return resolve_shared_scoped_path(
+            path, node_id, lambda nid: self.node_stage_of(task_id, nid)
+        )
 
     def load_pages(self, task_id: str, node_id: str | None = None,
                    primary_id: str | None = None) -> list[dict]:

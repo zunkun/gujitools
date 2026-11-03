@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 183 个模块、198 个公开类、1491 个公开函数/方法（生成于 2026-11-03）。
+覆盖 183 个模块、198 个公开类、1492 个公开函数/方法（生成于 2026-11-03）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -154,7 +154,7 @@
 | [`desktop.store.annotations`](#desktopstoreannotations) | 1 | 18 |
 | [`desktop.store.drafts`](#desktopstoredrafts) | 1 | 5 |
 | [`desktop.store.imposition`](#desktopstoreimposition) | 1 | 4 |
-| [`desktop.store.json_io`](#desktopstorejson_io) | 0 | 7 |
+| [`desktop.store.json_io`](#desktopstorejson_io) | 0 | 8 |
 | [`desktop.store.pages`](#desktopstorepages) | 1 | 9 |
 | [`desktop.store.runs`](#desktopstoreruns) | 1 | 10 |
 | [`desktop.store.store`](#desktopstorestore) | 1 | 1 |
@@ -212,6 +212,7 @@ gujitools 桌面端主窗口：左侧导航壳层（任务管理 + 独立模块�
 | CONTENT_MIN_WIDTH | `1080` |
 | WINDOW_START_MAXIMIZED | `True` |
 | STARTUP_UPDATE_CHECK_MS | `4000` |
+| STARTUP_YOLO_PREWARM_MS | `3000` |
 
 ### `class MainWindow(FramelessMainWindow, WorkerHost)`
 
@@ -12883,6 +12884,9 @@ boxes.json / sizes.json 读写。
 「图片提取」节点用了不同 zoom/dpi），共用一份基准就会把副本节点的框
 按主节点的比例缩放——框画错位。所以副本节点另存一份。
 
+⚠️ 但尺寸是**跨步骤共享**的（检测/去底色读的就是提取阶段写下的页尺寸），
+别的阶段的 owner 不该让本步骤回退到空副本。
+
 ##### `image_size(task_id: str, image_key: str, node_id: str | None=None, primary_id: str | None=None) -> tuple[int, int] | None`
 
 返回某页原始像素尺寸 (width, height)；无记录时返回 None。
@@ -13078,6 +13082,7 @@ JSON 持久化的原子读写工具。
 | `write_owner(path: Path, node_id: str \| None) -> None` | 记录该文件属于哪个节点；``node_id`` 为空则不动（旧调用方零行为）。 |
 | `owns(path: Path, node_id: str \| None) -> bool` | 该文件是否属于 ``node_id``：无标记（旧数据）或标记一致 ⇒ True。 |
 | `resolve_scoped_path(path: Path, node_id: str \| None) -> Path` | 主名文件已被**别的节点**占用时，退回本节点自己的 ``~<节点>`` 文件。 |
+| `resolve_shared_scoped_path(path: Path, node_id: str \| None, stage_of: Callable[[str], str \| None]) -> Path` | **跨步骤共享**文件（``pages.json``/``sizes.json``）的按节点落点。 |
 | `read_json(path: Path, default)` | 读取 JSON；文件不存在返回 default，损坏则备份后返回 default。 |
 | `write_json(path: Path, data, indent: int=1) -> None` | 原子写 JSON（临时文件 + fsync + os.replace）。 |
 
@@ -13094,6 +13099,18 @@ JSON 持久化的原子读写工具。
 
 ⚠️ 只对**主名**（文件名不含 ``~``）判断：副本文件天然属于它自己。
 ⚠️ 无标记 = 旧任务 ⇒ 原样使用（零迁移）；标记一致 ⇒ 原样使用。
+
+#### `resolve_shared_scoped_path(path: Path, node_id: str | None, stage_of: Callable[[str], str | None]) -> Path`
+
+**跨步骤共享**文件（``pages.json``/``sizes.json``）的按节点落点。
+
+与 :func:`resolve_scoped_path` 的唯一区别：主名文件被**别的阶段**的节点占用时
+仍用主名文件。``pages.json`` 是"每任务一份"的页集合，提取/检测/去底色各步骤
+都要读写同一份；按 owner 回退会让每个步骤各读各的 ``pages~<节点>.json`` 陈旧
+副本（用户 2026-11-03 报"去底色只显示 2 张""第二步只有 1 页"）。
+
+``stage_of(node_id)`` 由宿主（``TaskStore.node_stage_of``）提供；旧主人已不在
+图里（返回 ``None``）时按"不继承"处理，保留原归属标记的保护语义。
 
 #### `read_json(path: Path, default)`
 

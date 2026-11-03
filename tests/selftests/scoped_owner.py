@@ -48,6 +48,8 @@ def run(ctx) -> None:
             self.ids: dict[str, tuple[str, ...]] = {
                 "detect": ("A", "B"), "print": ("P1", "P2"),
             }
+            #: 节点 → 运行阶段；未登记的节点（如已删除的主节点）按 detect 处理
+            self.stages: dict[str, str] = {}
 
         def task_dir(self, _tid):
             return Path(tmp)
@@ -55,8 +57,8 @@ def run(ctx) -> None:
         def task_diagram(self, _tid):
             return _Diagram(self.ids)
 
-        def node_stage_of(self, _nid):
-            return "detect"
+        def node_stage_of(self, _tid, nid):
+            return self.stages.get(str(nid), "detect")
 
     store = _Store()
     tid = "t1"
@@ -147,3 +149,29 @@ def run(ctx) -> None:
        (Path(tmp2) / "boxes.json").exists()
        and not owner_path(Path(tmp2) / "boxes.json").exists(),
        "旧调用方写出了标记")
+
+    # ---- 6. 跨阶段共享（用户 2026-11-03：去底色只显示 2 张）----
+    # pages.json / sizes.json 是"每任务一份"：提取写下的 owner 不能让检测/去底色
+    # 步骤回退到各自的 pages~<节点>.json 陈旧副本。
+    tmp3 = _temp_dir("owner_shared_")
+
+    class _SharedStore(_Store):
+        def task_dir(self, _tid):
+            return Path(tmp3)
+
+    shared = _SharedStore()
+    shared.stages.update({"E1": "extract", "D1": "detect"})
+    shared.save_pages(tid, [{"file": "1.jpg"}], node_id="E1", primary_id="E1")
+    ok("别的阶段的 owner 不会把 pages.json 变成私有副本",
+       shared.pages_path(tid, "D1", "D1") == Path(tmp3) / "pages.json",
+       str(shared.pages_path(tid, "D1", "D1")))
+    ok("检测步骤读到提取步骤写下的同一份页清单",
+       shared.load_pages(tid, "D1", "D1") == [{"file": "1.jpg"}],
+       str(shared.load_pages(tid, "D1", "D1")))
+    shared.save_image_size(tid, "1", 100, 200, node_id="E1", primary_id="E1")
+    ok("sizes.json 同样跨阶段共享（不退回空副本）",
+       shared.sizes_path(tid, "D1", "D1") == Path(tmp3) / "sizes.json"
+       and shared.image_size(tid, "1", node_id="D1", primary_id="D1")
+       == (100, 200),
+       f"{shared.sizes_path(tid, 'D1', 'D1')} / "
+       f"{shared.image_size(tid, '1', node_id='D1', primary_id='D1')}")
