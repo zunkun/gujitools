@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -111,9 +112,102 @@ def task_extract_pages_dir(pdf_path) -> Path | None:
     return candidate if candidate.is_dir() else None
 
 
-def guji_data_dir() -> Path:
-    """GUI 数据根目录：用户文档目录下的 guji。"""
+#: 「存储位置」指针文件名。它**不能**放在数据根里面（换了根就找不到），
+#: 所以固定落在**用户本地配置目录**，只记一行 ``{"data_dir": "…"}``。
+DATA_LOCATION_FILENAME = "location.json"
+
+#: 指针文件位置的测试覆盖入口（自测把它指到 ``tests/tmp/``，不碰真实配置）。
+DATA_LOCATION_FILE_ENV = "GUJI_LOCATION_FILE"
+
+
+def user_config_dir() -> Path:
+    """本程序的**固定**配置目录（与数据根无关）。
+
+    Windows 用 ``%LOCALAPPDATA%\\guji``；其它平台回落到 ``~/.guji``。
+    这里只放"数据根在哪"这类引导信息，不放任务数据。
+    """
+    base = os.environ.get("LOCALAPPDATA")
+    if base:
+        return Path(base) / "guji"
+    return Path.home() / ".guji"
+
+
+def data_location_file() -> Path:
+    """存储位置指针文件：``<用户配置目录>/location.json``（可用环境变量覆盖）。"""
+    override = os.environ.get(DATA_LOCATION_FILE_ENV, "").strip()
+    if override:
+        return Path(override).expanduser()
+    return user_config_dir() / DATA_LOCATION_FILENAME
+
+
+def default_guji_data_dir() -> Path:
+    """默认数据根：用户文档目录下的 ``guji``（历史口径，一直没变）。"""
     return Path.home() / "Documents" / "guji"
+
+
+#: 已读入的位置覆盖（``None`` = 用默认数据根）。
+_data_dir_override: Path | None = None
+#: 是否已经读过指针文件（只读一次，后续调用走缓存）。
+_data_dir_loaded = False
+
+
+def _read_data_location() -> Path | None:
+    """读指针文件（坏文件/读不动/内容为空都返回 ``None``，绝不抛）。"""
+    try:
+        payload = json.loads(data_location_file().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    raw = str(payload.get("data_dir") or "").strip()
+    return Path(raw).expanduser() if raw else None
+
+
+def reload_guji_data_dir() -> Path:
+    """丢掉缓存、重新读一次指针文件（设置页改完位置/自测隔离时用）。"""
+    global _data_dir_override, _data_dir_loaded
+    _data_dir_override = None
+    _data_dir_loaded = False
+    return guji_data_dir()
+
+
+def guji_data_dir() -> Path:
+    """GUI 数据根目录：默认 ``~/Documents/guji``，可在设置页改成任意目录。
+
+    位置指针见 :func:`data_location_file`；读一次后缓存，避免每个文件操作
+    都去碰磁盘（这个函数在 GUI 里调用非常频繁）。
+    """
+    global _data_dir_override, _data_dir_loaded
+    if not _data_dir_loaded:
+        _data_dir_override = _read_data_location()
+        _data_dir_loaded = True
+    return _data_dir_override or default_guji_data_dir()
+
+
+def set_guji_data_dir(path) -> Path:
+    """把数据根改到 ``path``（原子写指针文件，并刷新进程内缓存）。
+
+    ⚠️ 只负责记录位置与建目录，**不搬数据**——迁移由
+    ``desktop.settings.location.migrate_data`` 负责；调用方决定搬不搬。
+
+    返回规范化后的绝对路径。
+    """
+    global _data_dir_override, _data_dir_loaded
+    target = Path(path).expanduser().resolve()
+    target.mkdir(parents=True, exist_ok=True)
+    location = data_location_file()
+    location.parent.mkdir(parents=True, exist_ok=True)
+    temp = location.with_name(
+        f"{location.name}.{os.getpid():x}{threading.get_ident():x}.tmp"
+    )
+    temp.write_text(
+        json.dumps({"data_dir": str(target)}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    os.replace(temp, location)
+    _data_dir_override = target
+    _data_dir_loaded = True
+    return target
 
 
 #: **独立任务**数据区的目录名（相对 :func:`guji_data_dir`）。
@@ -140,7 +234,7 @@ def safe_dirname(name: str) -> str:
 
 
 def singletask_dir(subtask: str) -> Path:
-    """独立任务区下某个**子任务**的目录：``~/Documents/guji/singletask/<子任务>``。"""
+    """独立任务区下某个**子任务**的目录：``<数据根>/singletask/<子任务>``。"""
     return guji_data_dir() / SINGLETASK_DIRNAME / safe_dirname(subtask)
 
 
@@ -154,7 +248,7 @@ def singletask_yolo_export_path(subtask: str) -> Path:
     用户 2026-10-16：「导出目录，和前缀都要保存下来，跟任务绑定」——任务流程
     那一侧记在 ``tasks/<id>/ui.json``（见 ``desktop.store.ui_state``），独立
     任务这一侧按**子任务**记一份（名称 + 目录两个键），即
-    ``~/Documents/guji/singletask/<子任务>/yolo_export.json``。
+    ``<数据根>/singletask/<子任务>/yolo_export.json``。
 
     ⚠️ 按子任务记（而不是"每次导出"）：同一批图常要分几次导成不同前缀
     （b1 / b2…）汇进同一个数据集根，每次都重填纯属折腾。
@@ -172,7 +266,7 @@ UPDATES_DIRNAME = "updates"
 
 
 def updates_dir() -> Path:
-    """程序更新目录：``~/Documents/guji/updates``（安装包与"待安装"记录）。"""
+    """程序更新目录：``<数据根>/updates``（安装包与"待安装"记录）。"""
     return guji_data_dir() / UPDATES_DIRNAME
 
 

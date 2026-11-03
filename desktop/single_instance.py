@@ -67,6 +67,37 @@ def channel_name(identity: str) -> str:
     return f"{_CHANNEL_PREFIX}{_suffix(identity)}"
 
 
+def release() -> None:
+    """主动放掉单例互斥体与激活通道（**离开程序前**给"重启"让位）。
+
+    ``acquire`` 的句柄本来靠进程退出才释放；设置页「立即重启」会先起一个
+    新进程再关自己，新进程若在旧进程退出前启动就会被互斥体挡住。这里提前
+    ``CloseHandle`` 并关掉监听，两边就能顺利交接。
+
+    ⚠️ 只用于**同一构建的主动重启**；不要放进正常退出路径——正常退出由
+    进程结束自然释放，提前释放会让"退出瞬间再点图标"多开一个窗口。
+    """
+    global _held_mutex, _server
+    handle = _held_mutex
+    _held_mutex = None
+    if handle is not None and sys.platform == "win32":
+        import ctypes
+        from ctypes import wintypes
+
+        try:
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+            kernel32.CloseHandle(handle)
+        except OSError:
+            pass
+    if _server is not None:
+        try:
+            _server.close()  # type: ignore[attr-defined]
+        except (RuntimeError, AttributeError):
+            pass
+        _server = None
+
+
 def acquire(identity: str) -> bool:
     """尝试持有本构建的单例互斥体。False = 已有本构建实例（调用方应退出）。"""
     global _held_mutex

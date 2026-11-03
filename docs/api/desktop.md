@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 183 个模块、198 个公开类、1492 个公开函数/方法（生成于 2026-11-03）。
+覆盖 184 个模块、200 个公开类、1507 个公开函数/方法（生成于 2026-11-03）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -133,9 +133,10 @@
 | [`desktop.services.submit_state`](#desktopservicessubmit_state) | 0 | 1 |
 | [`desktop.services.yolo_prewarm`](#desktopservicesyolo_prewarm) | 0 | 3 |
 | [`desktop.settings.config`](#desktopsettingsconfig) | 1 | 6 |
-| [`desktop.settings.page`](#desktopsettingspage) | 1 | 2 |
+| [`desktop.settings.location`](#desktopsettingslocation) | 2 | 8 |
+| [`desktop.settings.page`](#desktopsettingspage) | 1 | 3 |
 | [`desktop.shell`](#desktopshell) | 1 | 22 |
-| [`desktop.single_instance`](#desktopsingle_instance) | 0 | 5 |
+| [`desktop.single_instance`](#desktopsingle_instance) | 0 | 6 |
 | [`desktop.stages.detect_stage`](#desktopstagesdetect_stage) | 0 | 4 |
 | [`desktop.stages.events`](#desktopstagesevents) | 2 | 9 |
 | [`desktop.stages.generic_stage`](#desktopstagesgeneric_stage) | 0 | 2 |
@@ -173,7 +174,7 @@
 | [`desktop.ui.toast`](#desktopuitoast) | 0 | 1 |
 | [`desktop.ui.widgets`](#desktopuiwidgets) | 10 | 49 |
 | [`desktop.ui.window_size`](#desktopuiwindow_size) | 0 | 3 |
-| [`desktop.utils.files`](#desktoputilsfiles) | 0 | 28 |
+| [`desktop.utils.files`](#desktoputilsfiles) | 0 | 33 |
 | [`desktop.utils.icon`](#desktoputilsicon) | 0 | 3 |
 | [`desktop.utils.image_rotate`](#desktoputilsimage_rotate) | 0 | 1 |
 | [`desktop.utils.image_scaling`](#desktoputilsimage_scaling) | 0 | 1 |
@@ -9689,7 +9690,8 @@ done/total 为 0、completed 为 False）。执行过哪怕失败/中断都算�
 **与项目约定的接口只有一个**：配置文件的位置。qconfig 默认写
 ``config/config.json``——那是**相对当前工作目录**的路径，开发期会把文件写进
 仓库根、打包后可能落到安装目录（只读）。所以这里用 ``qconfig.load(file, cfg)``
-把它指到数据根目录（``~/Documents/guji/config.json``，与 ``tasks/`` 同级），
+把它指到数据根目录（``<数据根>/config.json``，与 ``tasks/`` 同级；默认根是
+``~/Documents/guji``，可在设置页改），
 与其它状态文件放在一起。
 
 ⚠️ **``qconfig.load`` 全程序只调一次**：它把全局 ``qconfig`` 的存取/落盘
@@ -9732,6 +9734,78 @@ done/total 为 0、completed 为 False）。执行过哪怕失败/中断都算�
 
 ---
 
+## `desktop.settings.location`
+
+源码：[`desktop/settings/location.py`](../../desktop/settings/location.py)
+
+「存储位置」的**纯逻辑**：新目录合法性检查与整目录迁移。
+
+设置页只负责弹窗与进度条，真正的规则放这里（可脱离 Qt 自测）：
+
+- :func:`guard_destination` —— 目标目录不能是当前目录本身、它的子目录或
+  它的上级目录（最后一条防"把 ``guji`` 里的东西散进上级目录"，也防
+  "目标里还套着源目录"这种复制后自己复制自己的怪路径）；
+- :func:`plan_migration` —— 先扫一遍要复制哪些文件（给进度条总数）；
+- :func:`migrate_data` —— 按计划逐个 ``copy2``，可取消、可上报进度。
+
+⚠️ 迁移是**复制**，不是剪切：旧目录原样保留。这样用户在设置里改错位置、
+或中途取消，原来的数据都还在，随时能改回去。
+
+### `class MigrationCanceled(Exception)`
+
+用户点了进度条上的「取消」。调用方应保留**旧存储位置**不变。
+
+### `class MigrationPlan`
+
+一次迁移的清单：``files`` 每项是 ``(源文件, 目标文件, 字节数)``。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `total_files() -> int` | — |
+| `total_bytes() -> int` | — |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `resolve_data_root(selected) -> Path` | 把「用户在文件对话框选的目录」换算成**真正的数据根**。 |
+| `guard_destination(source, destination) -> str \| None` | 检查新存储位置能否使用；返回中文原因，能使用返回 ``None``。 |
+| `destination_has_content(destination) -> bool` | 目标目录里是否已经有东西（有的话迁移会覆盖同名文件，要先提示）。 |
+| `plan_migration(source, destination) -> MigrationPlan` | 扫出 ``source`` 下所有文件，映射到 ``destination`` 的对应相对路径。 |
+| `migrate_data(plan: MigrationPlan, on_progress=None, should_cancel=None) -> tuple[int, int]` | 执行迁移，返回 ``(已复制文件数, 已复制字节数)``。 |
+| `copy_file_if_missing(source, destination) -> bool` | 把单个文件复制到目标（目标已存在则**不动**）；返回是否复制了。 |
+
+#### `resolve_data_root(selected) -> Path`
+
+把「用户在文件对话框选的目录」换算成**真正的数据根**。
+
+数据根始终由 ``guji`` 文件夹包裹：选 ``D:\备份`` ⇒ ``D:\备份\guji``；
+但如果选的目录本身就叫 ``guji``（用户直接选中了那个文件夹），就沿用它，
+不再套一层 ``guji\guji``。
+
+#### `plan_migration(source, destination) -> MigrationPlan`
+
+扫出 ``source`` 下所有文件，映射到 ``destination`` 的对应相对路径。
+
+⚠️ 只扫**文件**（空目录不复制也无所谓）；不跟随目录软链，
+避免把别处的整棵树拖进来。
+
+#### `migrate_data(plan: MigrationPlan, on_progress=None, should_cancel=None) -> tuple[int, int]`
+
+执行迁移，返回 ``(已复制文件数, 已复制字节数)``。
+
+:param on_progress: ``(index, total, relative_name)`` 回调（从 1 开始）。
+:param should_cancel: 返回 True 时抛 :class:`MigrationCanceled`。
+    取消**不会**回滚已复制的文件（复制操作无法原子撤销），调用方应提示
+    "新目录里可能留下部分文件、但位置未切换"。
+
+⚠️ 按文件粒度复制而不是整棵 ``copytree``：既能报进度，也能让用户在
+中途取消（一本书几百页缩略图时，整棵复制会长时间没有反馈）。
+
+---
+
 ## `desktop.settings.page`
 
 源码：[`desktop/settings/page.py`](../../desktop/settings/page.py)
@@ -9755,7 +9829,7 @@ done/total 为 0、completed 为 False）。执行过哪怕失败/中断都算�
 
 ### `class SettingsPage(QWidget)`
 
-设置页：目前只有「开发者模式」与它下面的开发选项。
+设置页：存储位置、自动更新、开发者模式与它下面的开发选项。
 
 ⚠️ 页面**没有**自己的导航条目概念——它由壳层（``desktop/shell.py``）
 挂在导航栏底部并切页，与各步骤的独立模块页是两回事（模块页来自
@@ -9766,7 +9840,17 @@ done/total 为 0、completed 为 False）。执行过哪怕失败/中断都算�
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(parent=None)` | 建页头 + 设置卡片组（配置项绑在卡片上，本页不另存值）。 |
+| `change_storage_location() -> None` | 选上级目录（自动补 ``guji``）→ 问是否迁移 → 切换 → 重启。 |
 | `sync_dev_options(*_args) -> None` | 按「开发者模式」开关显隐下级选项（并重算卡片组高度）。 |
+
+##### `change_storage_location() -> None`
+
+选上级目录（自动补 ``guji``）→ 问是否迁移 → 切换 → 重启。
+
+用户 2026-11-03：「设置增加存储位置选项，默认 ~/Documents/guji，
+可以更改；选择新目录询问是否将旧数据迁移到新目录，并告知不迁移会
+丢失数据，同意迁移则迁移数据」；同日追加「迁移到某个位置后，还是
+需要 guji 目录包裹」。
 
 ---
 
@@ -10007,6 +10091,7 @@ desktop 单例守卫：**同一个构建**同时只允许一个 GUI 实例。
 | --- | --- |
 | `mutex_name(identity: str) -> str` | 由构建身份推出互斥体名。 |
 | `channel_name(identity: str) -> str` | 激活通道（QLocalServer）名，与互斥体同一套身份哈希、前缀不同。 |
+| `release() -> None` | 主动放掉单例互斥体与激活通道（**离开程序前**给"重启"让位）。 |
 | `acquire(identity: str) -> bool` | 尝试持有本构建的单例互斥体。False = 已有本构建实例（调用方应退出）。 |
 | `try_activate_existing(identity: str) -> bool` | 已有本构建实例在监听 → 让它报出主窗口 HWND，并把**那个**窗口带到前台。 |
 | `start_activation_server(identity: str, window_provider) -> bool` | 为本构建架起激活通道。第二实例连上来时报出主窗口 HWND。 |
@@ -10018,6 +10103,17 @@ desktop 单例守卫：**同一个构建**同时只允许一个 GUI 实例。
 identity 用 **desktop 包目录**（`desktop.utils.files.package_dir()`）：
 源码是 `D:\...\desktop`，打包是 `...\guji\_internal\desktop`——同一构建
 稳定不变，两个构建互不相同。
+
+#### `release() -> None`
+
+主动放掉单例互斥体与激活通道（**离开程序前**给"重启"让位）。
+
+``acquire`` 的句柄本来靠进程退出才释放；设置页「立即重启」会先起一个
+新进程再关自己，新进程若在旧进程退出前启动就会被互斥体挡住。这里提前
+``CloseHandle`` 并关掉监听，两边就能顺利交接。
+
+⚠️ 只用于**同一构建的主动重启**；不要放进正常退出路径——正常退出由
+进程结束自然释放，提前释放会让"退出瞬间再点图标"多开一个窗口。
 
 #### `try_activate_existing(identity: str) -> bool`
 
@@ -13356,9 +13452,9 @@ drafts/imposition.json（图片拼版的选择态 + 逐页版面）与 ui.json
 
 初始化数据根。
 
-root 省略时默认用 guji_data_dir()（~/Documents/guji）；传入自定义
-root 主要用于测试隔离。构造时只确保 tasks/ 存在——存储一直是纯
-JSON 文件，没有旧数据（SQLite）需要迁移。
+root 省略时默认用 guji_data_dir()（默认 ~/Documents/guji，可在设置页
+改）；传入自定义 root 主要用于测试隔离。构造时只确保 tasks/ 存在——
+存储一直是纯 JSON 文件，没有旧数据（SQLite）需要迁移。
 
 ---
 
@@ -15515,6 +15611,8 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 | --- | --- |
 | THUMBNAIL_EDGE | `256` |
 | PRODUCING_MARKER | `".producing"` |
+| DATA_LOCATION_FILENAME | `"location.json"` |
+| DATA_LOCATION_FILE_ENV | `"GUJI_LOCATION_FILE"` |
 | SINGLETASK_DIRNAME | `"singletask"` |
 | _SAFE_CHARS | `"<>:"/\\\|?*"` |
 | SINGLETASK_YOLO_EXPORT_NAME | `"yolo_export.json"` |
@@ -15528,11 +15626,16 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 | `reveal_dir(path) -> bool` | 导出收尾用：把 ``path`` **当目录**打开（不存在/不是目录都不弹）。 |
 | `set_producing_marker(directory, on: bool) -> None` | 写/删「这个目录正有人在填」的在场标记（**永不抛**）。 |
 | `task_extract_pages_dir(pdf_path) -> Path \| None` | 任务目录里**已提取的整页图**目录；不是任务目录里的源文件就返回 None。 |
-| `guji_data_dir() -> Path` | GUI 数据根目录：用户文档目录下的 guji。 |
+| `user_config_dir() -> Path` | 本程序的**固定**配置目录（与数据根无关）。 |
+| `data_location_file() -> Path` | 存储位置指针文件：``<用户配置目录>/location.json``（可用环境变量覆盖）。 |
+| `default_guji_data_dir() -> Path` | 默认数据根：用户文档目录下的 ``guji``（历史口径，一直没变）。 |
+| `reload_guji_data_dir() -> Path` | 丢掉缓存、重新读一次指针文件（设置页改完位置/自测隔离时用）。 |
+| `guji_data_dir() -> Path` | GUI 数据根目录：默认 ``~/Documents/guji``，可在设置页改成任意目录。 |
+| `set_guji_data_dir(path) -> Path` | 把数据根改到 ``path``（原子写指针文件，并刷新进程内缓存）。 |
 | `safe_dirname(name: str) -> str` | 把任意标题洗成能当目录名的一串（去掉非法字符、收敛空白）。 |
-| `singletask_dir(subtask: str) -> Path` | 独立任务区下某个**子任务**的目录：``~/Documents/guji/singletask/<子任务>``。 |
+| `singletask_dir(subtask: str) -> Path` | 独立任务区下某个**子任务**的目录：``<数据根>/singletask/<子任务>``。 |
 | `singletask_yolo_export_path(subtask: str) -> Path` | 独立任务页「导出YOLO标注」的记忆文件。 |
-| `updates_dir() -> Path` | 程序更新目录：``~/Documents/guji/updates``（安装包与"待安装"记录）。 |
+| `updates_dir() -> Path` | 程序更新目录：``<数据根>/updates``（安装包与"待安装"记录）。 |
 | `pending_install_file() -> Path` | 「下好但还没装」的安装包记录：``updates/pending.json``。 |
 | `migrate_legacy_singletask_dirs() -> list[str]` | 把按旧标题建的 ``singletask/<中文名>/`` 搬到新名（见 ``_LEGACY_SUBTASK_DIRS``）。 |
 | `singletask_thumbnails_dir(subtask: str, book: str \| Path \| None=None) -> Path` | 子任务的**页缩略图缓存**：``singletask/<子任务>/thumbnails[/<书>]``。 |
@@ -15593,6 +15696,29 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 判据只认"源文件（PDF/DjVu）就在任务目录里"（导入后任务目录存的是源文件副本）：
 拿用户原始下载文件时同级没有 ``stages/``，自然返回 None，行为不变。
 
+#### `user_config_dir() -> Path`
+
+本程序的**固定**配置目录（与数据根无关）。
+
+Windows 用 ``%LOCALAPPDATA%\guji``；其它平台回落到 ``~/.guji``。
+这里只放"数据根在哪"这类引导信息，不放任务数据。
+
+#### `guji_data_dir() -> Path`
+
+GUI 数据根目录：默认 ``~/Documents/guji``，可在设置页改成任意目录。
+
+位置指针见 :func:`data_location_file`；读一次后缓存，避免每个文件操作
+都去碰磁盘（这个函数在 GUI 里调用非常频繁）。
+
+#### `set_guji_data_dir(path) -> Path`
+
+把数据根改到 ``path``（原子写指针文件，并刷新进程内缓存）。
+
+⚠️ 只负责记录位置与建目录，**不搬数据**——迁移由
+``desktop.settings.location.migrate_data`` 负责；调用方决定搬不搬。
+
+返回规范化后的绝对路径。
+
 #### `singletask_yolo_export_path(subtask: str) -> Path`
 
 独立任务页「导出YOLO标注」的记忆文件。
@@ -15600,7 +15726,7 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 用户 2026-10-16：「导出目录，和前缀都要保存下来，跟任务绑定」——任务流程
 那一侧记在 ``tasks/<id>/ui.json``（见 ``desktop.store.ui_state``），独立
 任务这一侧按**子任务**记一份（名称 + 目录两个键），即
-``~/Documents/guji/singletask/<子任务>/yolo_export.json``。
+``<数据根>/singletask/<子任务>/yolo_export.json``。
 
 ⚠️ 按子任务记（而不是"每次导出"）：同一批图常要分几次导成不同前缀
 （b1 / b2…）汇进同一个数据集根，每次都重填纯属折腾。

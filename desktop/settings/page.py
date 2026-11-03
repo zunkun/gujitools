@@ -19,10 +19,24 @@
 
 from __future__ import annotations
 
-from PySide6.QtWidgets import QFrame, QVBoxLayout, QWidget
+import subprocess
+import sys
+from pathlib import Path
+
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QApplication,
+    QFileDialog,
+    QFrame,
+    QProgressDialog,
+    QVBoxLayout,
+    QWidget,
+)
 from qfluentwidgets import (
     CaptionLabel,
     FluentIcon as FIF,
+    MessageBox,
+    PushSettingCard,
     SettingCardGroup,
     SmoothScrollArea,
     SwitchSettingCard,
@@ -32,14 +46,29 @@ from desktop.services.detect_export import (
     YOLO_IMAGES_DIRNAME,
     YOLO_LABELS_DIRNAME,
 )
-from desktop.settings.config import AppConfig, app_config
+from desktop.settings.config import CONFIG_FILENAME, AppConfig, app_config
+from desktop.settings.location import (
+    MigrationCanceled,
+    copy_file_if_missing,
+    destination_has_content,
+    guard_destination,
+    migrate_data,
+    plan_migration,
+    resolve_data_root,
+)
 from desktop.ui import theme as T
+from desktop.ui.toast import show_toast
 from desktop.ui.widgets import PageHeader, apply_to
+from desktop.utils.files import (
+    guji_data_dir,
+    project_root,
+    set_guji_data_dir,
+)
 from utils.box_geometry import YOLO_CLASS_NAMES
 
 
 class SettingsPage(QWidget):
-    """设置页：目前只有「开发者模式」与它下面的开发选项。
+    """设置页：存储位置、自动更新、开发者模式与它下面的开发选项。
 
     ⚠️ 页面**没有**自己的导航条目概念——它由壳层（``desktop/shell.py``）
     挂在导航栏底部并切页，与各步骤的独立模块页是两回事（模块页来自
@@ -47,7 +76,7 @@ class SettingsPage(QWidget):
     """
 
     TITLE = "设置"
-    SUBTITLE = "自动更新、开发者模式与训练/标注相关选项"
+    SUBTITLE = "存储位置、自动更新、开发者模式与训练/标注相关选项"
 
     def __init__(self, parent=None):
         """建页头 + 设置卡片组（配置项绑在卡片上，本页不另存值）。"""
@@ -75,6 +104,21 @@ class SettingsPage(QWidget):
             T.SPACE_XL, T.SPACE_MD, T.SPACE_XL, T.SPACE_LG,
         )
         column.setSpacing(T.SPACE_MD)
+
+        # ---- 存储：数据根位置（用户 2026-11-03 要求可更改）----
+        # 卡片正文显示**当前生效**的目录；点「更改」选上级目录（自动补 guji），
+        # 再问是否迁移。
+        self.storage_group = SettingCardGroup("存储", container)
+        self.storage_card = PushSettingCard(
+            "更改",
+            FIF.FOLDER,
+            "存储位置",
+            str(guji_data_dir()),
+            parent=self.storage_group,
+        )
+        self.storage_card.clicked.connect(self.change_storage_location)
+        self.storage_group.addSettingCard(self.storage_card)
+        column.addWidget(self.storage_group)
 
         # ---- 更新：两项自动更新（用户 2026-11-02 要求；默认关，2026-11-03）----
         self.update_group = SettingCardGroup("更新", container)
@@ -137,6 +181,173 @@ class SettingsPage(QWidget):
         # 本页被销毁时 Qt 会自动断开，不必手动收）
         self.cfg.developerMode.valueChanged.connect(self.sync_dev_options)
         self.sync_dev_options()
+
+    # ------------------------------------------------------------ 存储位置
+    def change_storage_location(self) -> None:
+        """选上级目录（自动补 ``guji``）→ 问是否迁移 → 切换 → 重启。
+
+        用户 2026-11-03：「设置增加存储位置选项，默认 ~/Documents/guji，
+        可以更改；选择新目录询问是否将旧数据迁移到新目录，并告知不迁移会
+        丢失数据，同意迁移则迁移数据」；同日追加「迁移到某个位置后，还是
+        需要 guji 目录包裹」。
+        """
+        current = guji_data_dir()
+        chosen = QFileDialog.getExistingDirectory(
+            self.window(), "选择存放 guji 数据目录的上级目录", str(current.parent)
+        )
+        if not chosen:
+            return
+        # 数据根始终由 guji 文件夹包裹（用户 2026-11-03：「迁移到某个位置后，
+        # 还是需要 guji 目录包裹」）；选中的目录本身叫 guji 时直接沿用。
+        target = resolve_data_root(chosen)
+        reason = guard_destination(current, target)
+        if reason:
+            show_toast(self.window(), "warning", "无法使用该目录", reason)
+            return
+        if target == Path(chosen).expanduser().resolve():
+            body = f"当前存储位置：\n{current}\n\n新的存储位置：\n{target}\n\n"
+        else:
+            body = (
+                f"当前存储位置：\n{current}\n\n"
+                f"新的存储位置（会在所选目录下创建 guji 文件夹）：\n{target}\n\n"
+            )
+        if destination_has_content(target):
+            body += "⚠️ 新目录里已有内容，迁移会覆盖同名文件。\n\n"
+        body += (
+            "迁移前请先停止正在执行的任务。\n\n"
+            "是否把当前数据（任务、设置、缩略图缓存等）复制到新的存储位置？\n\n"
+            "选择「不迁移」会直接切换过去：新位置从空白开始，现有任务与设置"
+            "都不会出现在程序里（等同于丢失），旧目录的数据仍保留在原处，"
+            "之后可以改回来。"
+        )
+        if not self._confirm(
+            "更改存储位置", body, "迁移数据", "不迁移"
+        ):
+            # 不迁移：至少把设置文件带过去，免得自动更新等开关回到默认值。
+            copy_file_if_missing(
+                current / CONFIG_FILENAME, target / CONFIG_FILENAME
+            )
+        elif not self._migrate_data(current, target):
+            return
+        try:
+            applied = set_guji_data_dir(target)
+        except OSError as exc:
+            show_toast(
+                self.window(), "error", "更改存储位置失败", str(exc)
+            )
+            return
+        self.storage_card.setContent(str(applied))
+        self._restart_after_change(applied)
+
+    def _migrate_data(self, source: Path, destination: Path) -> bool:
+        """把 ``source`` 下的文件逐个复制到 ``destination``；返回是否完成。
+
+        复制放在主线程 + ``processEvents``：迁移是用户主动触发的低频操作，
+        逐个文件推进度既够用、又不引入额外的线程生命周期管理。
+        """
+        try:
+            plan = plan_migration(source, destination)
+        except OSError as exc:
+            show_toast(self.window(), "error", "读取旧数据失败", str(exc))
+            return False
+        total = max(plan.total_files, 1)
+        progress = QProgressDialog(
+            "正在准备迁移数据…", "取消", 0, total, self.window()
+        )
+        progress.setWindowTitle("迁移数据")
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setAutoClose(False)
+        progress.setAutoReset(False)
+        progress.setValue(0)
+
+        def on_progress(index: int, count: int, name: str) -> None:
+            progress.setMaximum(max(count, 1))
+            progress.setValue(index)
+            progress.setLabelText(f"正在迁移数据… {index}/{count}\n{name}")
+            QApplication.processEvents()
+
+        try:
+            copied, _copied_bytes = migrate_data(
+                plan, on_progress, progress.wasCanceled
+            )
+        except MigrationCanceled:
+            progress.close()
+            self._info(
+                "已取消迁移",
+                "当前存储位置没有改变。新目录里可能已留下部分复制的文件，"
+                "可以自行删除。",
+            )
+            return False
+        except OSError as exc:
+            progress.close()
+            self._info(
+                "迁移失败",
+                f"复制数据时出错：{exc}\n\n当前存储位置没有改变。",
+            )
+            return False
+        progress.close()
+        self._info("迁移完成", f"已复制 {copied} 个文件到新的存储位置。")
+        return True
+
+    def _restart_after_change(self, target: Path) -> None:
+        """位置已切换 ⇒ 立即重启（不做"稍后"：旧窗口的存储仍指向旧根，
+        继续用会把新任务写进旧位置，越早重启越不容易出现"两边各一半"）。"""
+        self._info(
+            "存储位置已更改",
+            f"新的存储位置：\n{target}\n\n"
+            "重启程序后生效。点「立即重启」将关闭并重新打开程序。",
+            "立即重启",
+        )
+        self._restart_app()
+
+    def _restart_app(self) -> None:
+        """先起新进程、再关自己（见 ``single_instance.release`` 的说明）。"""
+        try:
+            from desktop.single_instance import release
+
+            release()
+            frozen = bool(getattr(sys, "frozen", False))
+            args = [sys.executable]
+            cwd = None
+            if not frozen:
+                root = project_root()
+                args.append(str(root / "desktop.py"))
+                cwd = str(root)
+            common = {
+                "stdin": subprocess.DEVNULL,
+                "stdout": subprocess.DEVNULL,
+                "stderr": subprocess.DEVNULL,
+                "close_fds": True,
+            }
+            if sys.platform == "win32":
+                subprocess.Popen(
+                    args, cwd=cwd,
+                    creationflags=0x00000008 | 0x00000200, **common,
+                )
+            else:
+                subprocess.Popen(args, cwd=cwd, start_new_session=True, **common)
+        except OSError as exc:
+            show_toast(self.window(), "error", "重启失败", str(exc))
+            return
+        from desktop.ui.menu import quit_app
+
+        quit_app(self.window())
+
+    def _confirm(self, title: str, body: str, yes_text: str,
+                 cancel_text: str) -> bool:
+        """是/否确认框（返回是否点了左边那个"是"按钮）。"""
+        box = MessageBox(title, body, self.window())
+        box.yesButton.setText(yes_text)
+        box.cancelButton.setText(cancel_text)
+        return bool(box.exec())
+
+    def _info(self, title: str, body: str, button_text: str = "好的") -> None:
+        """只有一个确认按钮的提示框。"""
+        box = MessageBox(title, body, self.window())
+        box.cancelButton.setVisible(False)
+        box.yesButton.setText(button_text)
+        box.exec()
 
     def sync_dev_options(self, *_args) -> None:
         """按「开发者模式」开关显隐下级选项（并重算卡片组高度）。"""

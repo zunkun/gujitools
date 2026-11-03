@@ -8,7 +8,8 @@
 **与项目约定的接口只有一个**：配置文件的位置。qconfig 默认写
 ``config/config.json``——那是**相对当前工作目录**的路径，开发期会把文件写进
 仓库根、打包后可能落到安装目录（只读）。所以这里用 ``qconfig.load(file, cfg)``
-把它指到数据根目录（``~/Documents/guji/config.json``，与 ``tasks/`` 同级），
+把它指到数据根目录（``<数据根>/config.json``，与 ``tasks/`` 同级；默认根是
+``~/Documents/guji``，可在设置页改），
 与其它状态文件放在一起。
 
 ⚠️ **``qconfig.load`` 全程序只调一次**：它把全局 ``qconfig`` 的存取/落盘

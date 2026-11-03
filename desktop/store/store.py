@@ -37,9 +37,9 @@ class TaskStore(
     def __init__(self, root: Path | None = None):
         """初始化数据根。
 
-        root 省略时默认用 guji_data_dir()（~/Documents/guji）；传入自定义
-        root 主要用于测试隔离。构造时只确保 tasks/ 存在——存储一直是纯
-        JSON 文件，没有旧数据（SQLite）需要迁移。
+        root 省略时默认用 guji_data_dir()（默认 ~/Documents/guji，可在设置页
+        改）；传入自定义 root 主要用于测试隔离。构造时只确保 tasks/ 存在——
+        存储一直是纯 JSON 文件，没有旧数据（SQLite）需要迁移。
         """
         self.root = root or guji_data_dir()
         (self.root / "tasks").mkdir(parents=True, exist_ok=True)
