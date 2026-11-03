@@ -1825,6 +1825,11 @@ def run(ctx) -> None:
             ("2-l", YELLOW),
         ):
             _mk(rembg_dir / f"{name}.png", color)
+        # 新契约（2026-11-03）：上游的**产出动作**必须执行成功，下游才看得到
+        # 这批成品图（否则只算"实时预览的半成品"）。这里补一条去底色成功记录。
+        rembg_node = repo.task_diagram(tid).primary_of("rembg")
+        run_id = repo.create_stage_run(tid, "rembg", {}, node_id=rembg_node)
+        repo.finish_stage(tid, run_id, "success")
         # 顺带铺好上游夹具（提取清单 / 检测框）：它们已不参与第四步合成
         # （只透传去底色成品），但保留成"真实任务该有的样子"，
         # 免得测试跑在空目录上。
@@ -1949,6 +1954,11 @@ def run(ctx) -> None:
         _mk(repo.task_dir(order_task) / "stages" / "detect" / "o-1.png", RED)
         _mk(repo.task_dir(order_task) / "stages" / "detect" / "o-2.png", GREEN)
         _mk(repo.task_dir(order_task) / "stages" / "rembg" / "o-3.png", BLUE)
+        # 新契约（2026-11-03）：上游的**产出动作**必须执行成功，下游才拿得到
+        # 输入。这里直接造一条"检测已提交"的成功记录（模拟上游真的跑过），
+        # 否则本用例测的是"选哪个上游"，不该被"上游还没跑"挡住。
+        run_id = repo.create_stage_run(order_task, "detect_submit", {}, node_id="o1")
+        repo.finish_stage(order_task, run_id, "success")
         order_page = TaskDetailPage(repo)
         order_page.resize(1080, 720)
         order_page.show()

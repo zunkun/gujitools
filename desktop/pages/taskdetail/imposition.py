@@ -394,6 +394,17 @@ class ImpositionBaseMixin:
         #    连线走——同一步骤多个节点时，按阶段取会读到主节点的上游（用户给
         #    第二个拼版节点连了另一批图，界面却列第一批）。
         node = self.node_of_stage("imposition")
+        # ⚠️ 只看目录不够：上游（通常是「图片去底色」）的产出动作没执行成功时，
+        #    目录里可能只有实时预览提前写下的图，不该拿来拼版（用户 2026-11-03）。
+        ready = (
+            self.store.node_input_effective(self.task_id, node, "pages", True)
+            if node
+            else self.store.stage_input_effective(
+                self.task_id, "imposition", "pages", True
+            )
+        )
+        if not ready:
+            return []
         source = (
             self.store.node_input(
                 self.task_id, node, "pages", imposition_active=True

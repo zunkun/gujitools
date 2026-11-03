@@ -198,6 +198,19 @@ class PageListMixin:
             "imposition",
         ):
             return
+        # ⚠️ **上游的产出动作没成功执行过 ⇒ 这一步没有正式输入**（用户
+        #    2026-11-04「检查所有的步骤」）。此前这里只按目录重建清单，于是
+        #    未生效的目录内容会被写进清单，提交/统计/YOLO 导出/按钮状态全都
+        #    拿到旧图。现在只在内存里清空、**不落盘**——``pages.json`` 保留用户
+        #    之前的页序，等上游执行成功后按目录重建即可。
+        current = self.current_stage()
+        if (
+            current
+            and "pages" in _ports.stage_inputs(current)
+            and not self._stage_input_visible()
+        ):
+            self.pages = []
+            return
         directory = self._current_stage_input_dir()
         if directory is None or not directory.is_dir():
             return
@@ -240,6 +253,30 @@ class PageListMixin:
         #    ``pages~<节点>.json``，不覆盖主节点那份。
         self.pages = self.store.refresh_pages_from_dir(
             self.task_id, directory, **self._node_scope()
+        )
+
+    def _stage_input_visible(self) -> bool:
+        """当前这一步的输入是否**已经生效**（上游的产出动作真的执行过）。
+
+        ⚠️ 只查目录是不够的：去底色只是切缩略图就会把成品写进
+        ``stages/rembg``；检测没提交时上游目录也可能留有旧图。这些文件
+        不该被当成正式输入——**产物没执行成功，下一步就不该有数据**
+        （用户 2026-11-03）。判据统一走 store，见
+        :meth:`desktop.store.tasks.TaskStore.node_input_effective`。
+        """
+        if not self.task_id:
+            return False
+        stage = self.current_stage()
+        if not stage:
+            return False
+        active = self.imposition_effective()
+        node = self.node_of_stage(stage)
+        if node:
+            return self.store.node_input_effective(
+                self.task_id, node, "pages", active
+            )
+        return self.store.stage_input_effective(
+            self.task_id, stage, "pages", active
         )
 
     def _refresh_manifest(self) -> None:
@@ -724,7 +761,18 @@ class PageListMixin:
         """
         from desktop.steps import ports
 
-        spec = ports.spec_for_stage(self.current_stage())
+        current = self.current_stage()
+        if current and "pages" in ports.stage_inputs(current) and not self._stage_input_visible():
+            # 上游没执行成功时，这一步的"输入目录"其实是上游的正式产物目录；
+            # 往里塞图既不会被看见（可见性仍要求上游成功），又可能被当成上游
+            # 产物（用户 2026-11-04「检查所有的步骤」）。
+            self._toast(
+                "warning",
+                "上游尚未执行",
+                "这一步的图片来自流程上游：请先把上游步骤执行成功，再插入图片。",
+            )
+            return
+        spec = ports.spec_for_stage(current)
         sources = (
             spec.collect_files(paths) if spec is not None else [Path(p) for p in paths]
         )
@@ -1686,6 +1734,9 @@ class PageListMixin:
         for sub in (
             "stages",
             "drafts",
+            # 去底色实时预览草稿（``preview/rembg[~节点]/``）按**旧书页名**命名，
+            # 换源后不清就是"新书去底色页里冒出旧书的预览图"（用户 2026-11-04）。
+            "preview",
         ):
             try:
                 shutil.rmtree(task_dir / sub, ignore_errors=True)

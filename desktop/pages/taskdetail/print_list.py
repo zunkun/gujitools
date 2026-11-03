@@ -49,6 +49,9 @@ class PrintListMixin:
         node_of_stage: Callable[[str], str | None]
         current_stage: Callable[[], str]
         _node_scope: Callable[..., dict]
+        #: 上游输入是否**已经生效**（目录有东西 + 产出动作执行成功），
+        #: 由 ManifestMixin 提供（见 manifest.py）。
+        _stage_input_visible: Callable[[], bool]
         # 本 Mixin 内部在多个方法间传递的快照（_print_entries 写、落盘读）
         _print_doc_snapshot: dict[str, Any]
 
@@ -285,6 +288,14 @@ class PrintListMixin:
         有效——图片已被上游换掉的那些页不再套旧框，改由 ``plan_print_page`` 按
         **当前 PDF排版参数**（纸张/方向/边距/原比例）重新排版。
         """
+        task_id = self.task_id
+        if not task_id:
+            return [], {"rembg_snapshot": [], "pages": []}
+        # ⚠️ 上游**执行成功**之前不建表：去底色的实时预览会把成品写进
+        #    ``stages/rembg``，但那只是"去底色这一步内部能看到的东西"，
+        #    不该被 PDF排版看到（用户 2026-11-03）。
+        if self.current_stage() == "print" and not self._stage_input_visible():
+            return [], {"rembg_snapshot": [], "pages": []}
         source_dir = self.print_source_dir()
         rembg_files = sorted(
             list_stage_images(source_dir),
@@ -292,9 +303,6 @@ class PrintListMixin:
         )
         # ⚠️ 没有任务（task_id 为 None）时这份清单无处可落。调用方都在有任务时
         #    才进这里，这里显式挡一道：早失败比把 None 拼进路径好。
-        task_id = self.task_id
-        if not task_id:
-            return [], {"rembg_snapshot": [], "pages": []}
         doc = self.store.load_print_doc(task_id, **self._node_scope())
         # ⚠️ 来源切换（拼版 ↔ 去底色）后，旧来源那一批还留在 print.json 里；
         # 不剔掉就会被当成"用户插入的外部图片"追加进 PDF（见 print_plan 的

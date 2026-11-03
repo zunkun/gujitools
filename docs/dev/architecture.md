@@ -100,6 +100,7 @@ guji/
 │       ├── stages/<stage>/      各步骤产物（落点表：steps/ports.py STAGE_LOCATIONS）
 │       ├── thumbnails/          缩略图缓存：source / print / imposition / detect
 │       ├── drafts/<stage>.json  拼版等交互草稿
+│       ├── preview/rembg[~节点]/ 去底色实时调整草稿（不进下游）
 │       ├── boxes.json           检测框（detect 页交付格式与独立页一致）
 │       ├── runs/                历史执行记录
 │       └── ui.json              上次停留的步骤等界面状态

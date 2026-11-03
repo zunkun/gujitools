@@ -20,7 +20,7 @@
 - print_list.PrintListMixin  第四步待打印列表
 - runner.StageRunnerMixin    阶段执行（worker 子进程编排）
 - detect.DetectMixin         detect 检测控制
-- rembg_live.RembgLiveMixin  第三步改参数/翻页时只重算当前页（覆盖正式成品）
+- rembg_live.RembgLiveMixin  第三步改参数/翻页时只重算当前页（只写预览草稿）
 - imposition.ImpositionMixin 流程条「图片拼版」可选节点
   （共享基元 imposition.py + 模块一 imposition_pages.py「选择拼版」
   + 模块二 imposition_layout.py「拼版操作」）
@@ -1696,6 +1696,10 @@ class TaskDetailPage(
         #    extract 时清单不会被任何阶段刷新，用户放进stages/input/ 的图
         #    就成了"明明有图却显示暂无图片"（用户 2026-10-06）。
         self._sync_manifest_to_input()
+        # ⚠️ 清单有了不代表**上游已经生效**：去底色只是切缩略图就会把成品写进
+        #    ``stages/rembg``，检测没提交时上游目录也可能留图。上游的产出动作
+        #    没成功执行过，这一步就该显示"暂无图片"（用户 2026-11-03）。
+        visible = self._stage_input_visible()
         if stage == "extract":
             # ⚠️ 不再 set_images(manifest)（用户 2026-10-09 合并双标签）：
             #    左栏恒是 PDF 页缩略图；这里只把产物目录交给查看器——
@@ -1703,10 +1707,11 @@ class TaskDetailPage(
             # ⚠️ 目录按**节点**取（B 方案）：同一步骤的多个节点各有产物目录。
             self.extract_result_viewer.set_extract_dir(self._node_dir("extract"))
         elif stage == "detect":
-            self.detect_viewer.set_images(self._manifest_paths(), force=force)
+            paths = self._manifest_paths() if visible else []
+            self.detect_viewer.set_images(paths, force=force)
             # 入口图片（这一步是流程第一步时）缩略图预热：没有就后台生成，
             # 别让左栏一直现解码原图（用户 2026-10-17）
-            self._warm_entry_thumbs(self._manifest_paths())
+            self._warm_entry_thumbs(paths)
             # 清单可能变了（增删页/切任务/批量检测跑完）→ 统计跟着重算
             self._refresh_detect_stats()
         elif stage == "rembg":
@@ -1715,17 +1720,27 @@ class TaskDetailPage(
             #    查看器于是按"一张输入图 = 一个条目"显示整图，与产物一致。
             #    裁好的半页图（-l/-r）是上一步「提交本次任务」的产物，本来就是
             #    独立文件，不需要再合成。
+            paths = self._manifest_paths() if visible else []
+            # ⚠️ 实时调整的草稿目录（2026-11-04 用户）：只在这一步显示，
+            #    下游取图仍旧是正式成品目录。
+            preview_dir = (
+                self.store.rembg_preview_dir(
+                    self.task_id, self.node_of_stage("rembg")
+                )
+                if self.task_id else None
+            )
             self.rembg_viewer.set_images(
-                self._manifest_paths(),
+                paths,
                 self._node_dir("rembg"),
                 thumb_provider=self._page_thumb_for,
+                preview_dir=preview_dir,
                 force=force,
             )
             # 每张图片有自己的阈值偏移（黑名单法）：进入这一步/刷新清单后，
             # 把当前这张图的 offset 回填到面板（程序化回填，不算用户改动）。
             self._apply_current_image_offset()
             # 入口图片缩略图预热（同上：这一步是流程第一步时才有效）
-            self._warm_entry_thumbs(self._manifest_paths())
+            self._warm_entry_thumbs(paths)
         elif stage == "print":
             entries, _doc = self._print_entries()
             self.print_preview.set_entries(entries)

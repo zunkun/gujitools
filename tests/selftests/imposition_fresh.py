@@ -7,7 +7,7 @@
 
 修复后的三层语义（见 ``imposition_layout._compose_imposition_now``）：
 1. **磁盘新鲜度快路径**：成品已覆盖落盘版面（页数相符 + 最旧成品 mtime ≥
-   文档 mtime）→ 一个字节都不碰——本模块最核心的回归锁；
+   文档 mtime + 逐页源图签名没变）→ 一个字节都不碰——本模块最核心的回归锁；
 2. 拼版未生效 → 不白合成（第四步根本不读拼版目录）；
 3. 真要合成 → 后台线程 + 事件循环等待收敛（跨会话陈旧也能兜住）。
 
@@ -127,6 +127,20 @@ def run(ctx) -> None:
                 f"calls={calls['compose']}",
             )
 
+            # ---------------- 源图被上游重跑覆盖（mtime 快路径看不出来）----------------
+            _mk(a, (10, 10, 200))
+            ok(
+                "源图被同名覆盖 → 成品虽比文档新，仍判为不新鲜",
+                not page._imposition_products_fresh(),
+            )
+            page._compose_imposition_now()
+            pump(ctx.app, times=8)
+            ok(
+                "源图变化后重合成，恢复新鲜",
+                calls["compose"] == 3 and page._imposition_products_fresh(),
+                f"calls={calls['compose']}",
+            )
+
             # ---------------- 页数不符（多出来的旧编号）----------------
             (out_dir / "0009.png").write_bytes(b"junk")
             ok("成品页数与文档不符 → 判为不新鲜", not page._imposition_products_fresh())
@@ -137,11 +151,12 @@ def run(ctx) -> None:
             for product in out_dir.glob("*.png"):
                 os.utime(product, (past, past))  # 先弄陈旧
             repo.save_imposition_doc(tid, {"enabled": False, "pages": [made]})
+            baseline = calls["compose"]
             page._compose_imposition_now()
             ok(
                 "拼版未生效 → 即使陈旧也不合成（第四步不读拼版目录）",
-                calls["compose"] == 2,
-                f"calls={calls['compose']}",
+                calls["compose"] == baseline,
+                f"calls={calls['compose']} baseline={baseline}",
             )
         finally:
             S.compose_doc = original_compose

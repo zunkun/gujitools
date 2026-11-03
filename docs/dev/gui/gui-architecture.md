@@ -56,7 +56,7 @@ desktop/
       print_list.py     #     第四步待打印列表
       runner.py         #     阶段执行（worker 子进程编排）
       detect.py         #     detect 检测控制
-      rembg_live.py     #     第三步改参数/翻页时只重算当前页（覆盖正式成品）
+      rembg_live.py     #     第三步改参数/翻页时只重算当前页（写预览草稿，不进下游）
       imposition.py     #     流程条「图片拼版」共享基元（文档读写/取图来源/详情进出）
       imposition_pages.py #   模块一「选择拼版」控制器：启用开关、弹窗加页、删页/页序/清空
       imposition_layout.py #  模块二「拼版操作」控制器：旋转/复位、版面落盘、防抖合成、状态行
@@ -629,6 +629,7 @@ guji/
     sizes.json          # 页面图片原始尺寸 {页stem: [w, h]}
     ui.json             # 界面状态（当前只有 last_stage：上次停留的步骤 key）
     drafts/<阶段>.json  # 参数暂存：用户改过但还没执行的阶段参数（进页面时优先回填）
+    preview/rembg[~节点]/ # 去底色实时调整的草稿图（只在这步显示；执行前下游看不到）
     inserted/           # 第四步「插入图片」的副本（唯一文件名，可重复插入同一张图）
     runs/               # 子进程执行配置 run-*.json / detect-config.json
     thumbnails/

@@ -273,12 +273,14 @@ tasks/<任务号>/
 ├── ui.json                   界面状态（上次停留的步骤/节点、YOLO 导出记忆）
 ├── drafts/<阶段>.json         用户改过但还没执行的参数暂存
 ├── drafts/imposition.json    拼版版面（选择态 enabled + 逐页 items）
+├── preview/rembg[~节点]/     去底色实时调整的**草稿图**（只在这步显示；
+│                             用户点「执行去底色」前，拼版 / 第四步看不到它）
 └── stages/
     ├── input/                入口图片（用户直接放进来的图）
     ├── extract/              提取出的页面图
     ├── detect/               「提交本次任务」逐框裁好的成品图（JPEG q95）
-    ├── rembg/                「执行去底色」的成品图（print 的取图来源；调参数时
-    │                         当前页由实时调整**直接覆盖**此目录里的同名文件）
+    ├── rembg/                「执行去底色」的成品图（print 的取图来源；调参数时的
+    │                         预览只写 preview/ 草稿，**不覆盖**这里）
     ├── imposition/           拼版合成出的成品整页图
     └── print/                生成的 PDF
 ```
@@ -299,6 +301,7 @@ tasks/<任务号>/
 | 待打印列表       | `print.json`               | `print~Node_2.json`             |
 | 参数暂存         | `drafts/rembg.json`        | `drafts/rembg~Node_2.json`      |
 | 拼版版面         | `drafts/imposition.json`   | `drafts/imposition~Node_3.json` |
+| 去底色预览草稿   | `preview/rembg`            | `preview/rembg~Node_2`          |
 | PDF 排版输出目录 | `stages/print`             | `stages/print~Node_2`           |
 
 - **后缀规则只有一份实现**：`ports.scoped_name`（目录名加在结尾、文件名加在扩展名
@@ -348,14 +351,32 @@ tasks/<任务号>/
 快照**（`half-unsided` 让拼版认出"无后缀但其实是半幅"的图）。它描述的是
 **已经落盘的那批产物**，拖框 / 重跑检测不会清除；下次提交整份重写。
 
-去底色（`rembg`）只有**一个**动作：整图全局 Otsu 后直接写 `stages/rembg`，
-没有预览目录，也没有第二个提交动作。
+去底色（`rembg`）只有**一个**动作：点「执行去底色」后写 `stages/rembg`。
+改参数/翻页时的**实时预览**不算执行，只写草稿 `preview/rembg[~节点]`，不进下游。
 
 ### 3. runs.json 记录结构
 
 `{阶段: [record, …]}`，`record` 含 `run_id / status / node / parameters / done /
 total / started_at / finished_at / output_path / error`。`output_path` 记的是本次
 执行的产物落点（按**跑的那个节点**算）。
+
+#### 输入是否生效：**目录有内容 ≠ 上游执行过**（用户口径 2026-11-03/04）
+
+某个步骤"有没有输入"不能只看目录里有没有文件——预览、历史残留、手工拷图都会
+让目录看起来有货。统一判据：
+
+- `store.node_input_effective / stage_input_effective`：路径有内容 **且** 供给方
+  的产出动作在 `runs.json` 里有 `status="success"`；合成型阶段（拼版）继续递归
+  校验它自己的输入；入口图片（`stages/input`）视为永远生效。
+- **检测是两步**：`detect` 产框、`detect_submit` 裁图。消费方按
+  `fold_forward` 认 `detect_submit`，而 `detect_submit` 的成功记录还必须带上
+  参数 `_preview_run_id` = **最近一次成功检测的 `run_id`**（`store.detect_submit_fresh`）。
+  检测又跑过一次而没重新提交 ⇒ 旧裁图立刻失效（老记录无此字段时不判过期）。
+- 页面清单（`pages`）也走同一判据：当前步骤输入未生效时清单**只在内存清空、
+  不落盘**，避免把目录里的旧图写进 `pages.json`；「插入图片」在上游未生效时
+  直接拦下（目标目录就是上游的正式产物目录）。
+- 拼版成品的新鲜度除版面文档 mtime 外，还要逐页比对源图签名——上游重跑覆盖
+  同名源图时 mtime 比不出来。
 
 ---
 

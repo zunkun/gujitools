@@ -473,6 +473,88 @@ def run(ctx) -> None:
         finally:
             page.detect_viewer.set_images = original_set_images  # type: ignore[method-assign]
 
+        # ---------------- 输入生效：目录有文件 ≠ 上游执行过（2026-11-04）----------------
+        # 用户规则：上一步执行，下一步才有数据；检测要「检测 + 提交」两次都执行。
+        # 之前清单只看目录，未生效的目录内容会被当成正式输入（提交/统计/导出都拿旧图）。
+        gate_pdf = make_pdf(tmp / "输入生效源.pdf", 2)
+        gate = repo.create_task(gate_pdf, "fresh-input-gate", "输入生效判据")
+        try:
+            _mk(repo.extract_output_dir(gate) / "1.png", (90, 90, 90))
+            _mk(repo.node_or_stage_output(gate, None, "detect_submit") / "1.png",
+                (30, 30, 30))
+            ok(
+                "目录有图、但提取从未成功执行 → 检测的输入不算生效",
+                not repo.stage_input_effective(gate, "detect", "pages"),
+            )
+            page.set_task(gate)
+            detect_step = page.bar_index_of_step("detect")
+            assert detect_step is not None
+            page._select_stage(detect_step)
+            pump(ctx.app, times=4)
+            ok(
+                "切到检测步骤：清单为空（不把未生效目录的内容当输入）",
+                page.pages == [] and page._manifest_paths() == [],
+                f"pages={len(page.pages)}",
+            )
+            page._insert_paths([str(tmp / "inserted.png")])
+            ok(
+                "上游未执行 → 插入图片被拦下（不写进上游产物目录）",
+                page.pages == [],
+                f"pages={len(page.pages)}",
+            )
+            # ⚠️ 提取预览会在翻页时当场落图到 stages/extract（用户手册明说
+            #    "翻到哪页就当场提取哪页"，属于这一步的正常产物），所以下面的
+            #    重建断言只钉"清单取自目录"，不钉"目录里只有 1.png"。
+            extract_run = repo.create_stage_run(gate, "extract", {})
+            repo.finish_stage(gate, extract_run, "success")
+            ok(
+                "提取成功执行后，同样的目录立刻生效",
+                repo.stage_input_effective(gate, "detect", "pages"),
+            )
+            page._refresh_manifest()
+            rebuilt = [p.name for p in page._manifest_paths()]
+            ok(
+                "上游生效后清单按目录重建（含 1.png）",
+                "1.png" in rebuilt,
+                f"task={page.task_id}/{gate} pages={rebuilt}",
+            )
+
+            # 检测两步：提交的裁图必须对得上**最近一次成功检测**
+            detect1 = repo.create_stage_run(gate, "detect", {})
+            repo.finish_stage(gate, detect1, "success")
+            ok(
+                "只检测、还没提交 → 去底色的输入不算生效",
+                not repo.stage_input_effective(gate, "rembg", "pages"),
+            )
+            submit1 = repo.create_stage_run(gate, "detect_submit", {
+                "_preview_run_id": detect1,
+            })
+            repo.finish_stage(gate, submit1, "success")
+            ok(
+                "检测 + 提交都执行过 → 去底色的输入生效",
+                repo.stage_input_effective(gate, "rembg", "pages"),
+            )
+            detect2 = repo.create_stage_run(gate, "detect", {})
+            repo.finish_stage(gate, detect2, "success")
+            ok(
+                "检测又成功跑过一次、还没重新提交 → 输入立刻失效",
+                not repo.stage_input_effective(gate, "rembg", "pages"),
+            )
+            submit2 = repo.create_stage_run(gate, "detect_submit", {
+                "_preview_run_id": detect2,
+            })
+            repo.finish_stage(gate, submit2, "success")
+            ok(
+                "重新提交且对应最新检测 → 再次生效（两次都要执行）",
+                repo.stage_input_effective(gate, "rembg", "pages"),
+            )
+        finally:
+            try:
+                page.set_task(tid)
+            except Exception:  # noqa: BLE001
+                pass
+            repo.delete_task(gate)
+
         page.deleteLater()
         pump(ctx.app, times=4)
         repo.delete_task(tid)

@@ -283,10 +283,13 @@ class StageRunnerMixin:
             ):
                 if port in optional:
                     continue
-                path = self.store.node_input(
+                # ⚠️ 不只看"文件在不在"：上游的产出动作必须**执行成功**过
+                #    （去底色的实时预览会提前写 stages/rembg，检测没提交时
+                #    上游也可能留图），否则等于拿未生效的半成品当输入
+                #    （用户 2026-11-03）。
+                if not self.store.node_input_effective(
                     self.task_id, node, port, self.imposition_effective()
-                )
-                if path is None or not path.exists():
+                ):
                     return False
             return True
         for port in self.store.required_stage_inputs(
@@ -294,10 +297,9 @@ class StageRunnerMixin:
         ):
             if port in optional:
                 continue
-            path = self.store.stage_input(
+            if not self.store.stage_input_effective(
                 self.task_id, stage, port, self.imposition_effective()
-            )
-            if path is None or not path.exists():
+            ):
                 return False
         return True
 

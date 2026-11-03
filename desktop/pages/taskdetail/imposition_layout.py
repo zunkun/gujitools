@@ -920,7 +920,12 @@ class ImpositionLayoutMixin:
         except OSError:
             # 读不到（任务目录被删/竞态）就当不新鲜：重合成一遍无害
             return False
-        return oldest >= doc_mtime
+        if oldest < doc_mtime:
+            return False
+        # ⚠️ mtime 只能回答"版面改过没有"；**源图被上游重跑覆盖**时成品 mtime
+        #    照样比文档新，但图已经换了。逐页内容签名（rect/rotation + 每张源图
+        #    的大小/mtime）才看得出这种陈旧（用户 2026-11-04「检查所有的步骤」）。
+        return not self._stale_imposition_pages()
 
     def _compose_imposition_now(self) -> None:
         """点「生成PDF」前保证 stages/imposition 是**最新版面**。

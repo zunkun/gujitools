@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
-"""去底色参数实时调整的**单页重算**：直接覆盖正式成品。
+"""去底色参数实时调整的**单页重算**：只写预览草稿。
 
-用户口径（2026-10-22，任务 0014 报障）：
+用户口径（2026-11-04）：
 
-> 「在去底色步骤设置了 offset，没有能够传给下一步……图片任务目录下面要替换掉
->  rembg 下的图片」
+> 去底色没执行、只是切缩略图/改参数时算出来的图，**只能在去底色这一步查看**；
+> 下一步不该看到它（上一步执行，下一步才有数据）。
 
-所以这里**没有**"临时预览目录"：改 offset/type/印章或翻页时，当前页立刻按键入
-参数重算，结果**覆盖** ``stages/rembg[~节点]/<页名>.png``（透明底 PNG，与
-「执行去底色」的产物同规格），并顺带刷新第四步缩略图——不落进任务目录的话，
-下一步「图片拼版 / PDF排版」拿到的还是旧图。
+所以算出来的结果只落 ``tasks/<任务号>/preview/rembg[~节点]/<页名>.png``
+（草稿目录，见 ``store.rembg_preview_dir``）：第三步查看器优先显示它，
+拼版 / 第四步按阶段产物目录取图，看不到它。用户点「执行去底色」时，
+正式阶段会把全部页写进 ``stages/rembg[~节点]``，草稿随即清空。
 
 计算口径与正式阶段同源（``utils.rembg_page`` + ``utils.save_white_as_transparent``）。
 """
@@ -54,11 +54,15 @@ def _save_thumb(rgb, name: str, thumb_dir: Path) -> None:
 
 def render_page(image_path: str, args: dict, out_dir: str | Path,
                 thumb_dir: str | Path | None = None) -> str:
-    """单页整图去底色 → **覆盖**正式成品（并刷新第四步缩略图），返回成品路径。
+    """单页整图去底色 → 写草稿（``out_dir``），返回结果路径。
 
-    ⚠️ 覆盖走「同目录 ``.part`` + ``os.replace``」：这份成品随时会被第四步查看器
-    或拼版合成读到，直接 ``Image.save`` 会让人读到半截 PNG。``.part`` 后缀不在
+    ⚠️ 写入走「同目录 ``.part`` + ``os.replace``」：草稿会被当前查看器读到，
+    直接 ``Image.save`` 会让人读到半截 PNG。``.part`` 后缀不在
     ``IMAGE_SUFFIXES`` 里，也不会被当成一页。
+
+    ``thumb_dir``：仅正式产物目录才传（第四步缩略图属于下游数据，草稿不写）；
+    ``rembg_methods`` 侧车同理——草稿目录不是 ``stages/`` 下的目录，
+    ``rembg_methods_path`` 返回 None，天然不写。
     """
     import utils
     from functions.rembg import load_rgb_and_gray
@@ -173,8 +177,9 @@ def _shared_threshold_for(image_path: Path, gray, algorithm: str,
 def _record_method(out_dir: Path, stem: str, algorithm: str) -> None:
     """把这一页实际使用的算法写进 ``rembg_methods`` 侧车（失败静默）。
 
-    实时调整会**覆盖正式成品**，所以执行记录也要跟着改：否则页面看着是
-    Sauvola 的结果，侧车里还写着上一轮全量的 Otsu。
+    ⚠️ 只对**正式产物目录**有效：``rembg_methods_path`` 只认 ``stages/`` 下的
+    目录，草稿目录（``tasks/<任务号>/preview/...``）返回 None ⇒ 预览不会冒充
+    "正式执行记录"（用户 2026-11-04）。
     """
     try:
         from desktop.steps.ports import rembg_methods_path

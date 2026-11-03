@@ -109,6 +109,9 @@ class DetectMixin:
         _read_worker_error: Callable[[], None]
         _worker_env: Callable[[], QProcessEnvironment]
         _manifest_paths: Callable[[], list]
+        #: 上游输入是否**已经生效**（目录有东西 + 产出动作执行成功），
+        #: 由 ManifestMixin 提供（见 manifest.py）。
+        _stage_input_visible: Callable[[], bool]
         #: 立即重算检测统计（不走节流）——由 StageRunnerMixin 提供，
         #: 用户手工改框这类"错一拍就是错的"时机必须用它（见 runner.py）。
         _refresh_stats_now: Callable[[], None]
@@ -315,7 +318,10 @@ class DetectMixin:
         widget = getattr(self, "detect_stats", None)
         if widget is None:
             return
-        paths = self._manifest_paths()
+        # ⚠️ 上游没执行成功 ⇒ 这一步没有数据，统计也不能拿旧清单充数
+        #    （用户 2026-11-03：上一步没执行，下一步不该看到任何东西）。
+        visible = self.current_stage() != "detect" or self._stage_input_visible()
+        paths = self._manifest_paths() if visible else []
         if not self.task_id or not paths:
             # 没有页/没有任务＝没有整本书可判 → 明确退回"非单栏"，别让上一本书的
             # 结论残留到下一本（切任务时 stats 也会走这条）。

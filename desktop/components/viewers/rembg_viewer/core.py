@@ -53,6 +53,8 @@ class RembgPreviewWidget(
         self._paths: list[Path] = []
         self._entries: list[dict] = []  # [{label, path, box}]; box=None 表示整页规则
         self._rembg_dir: Path | None = None
+        #: 实时调整的草稿目录（见 set_images 的 preview_dir；优先级高于正式成品）
+        self._preview_dir: Path | None = None
         self._boxes_provider = None  # (path_text) -> list[检测框]
         self._border_provider = None  # () -> border
         self._single_column_book = False  # 整本书是否单栏书（见 set_images）
@@ -108,6 +110,7 @@ class RembgPreviewWidget(
         page_width_provider=None,
         side_for=None,
         force: bool = False,
+        preview_dir: Path | None = None,
     ) -> None:
         """设置图片清单与去底色目录，重建输出条目并加载显示。
 
@@ -115,6 +118,10 @@ class RembgPreviewWidget(
         :meth:`desktop.components.viewers.ImageViewerWidget.set_images`）；
         ``rembg_dir`` 为去底色结果目录（存在才显示结果）；
         各 provider 给出检测框 / 边距 / 缩略图来源。
+
+        ``preview_dir``：**实时调整的草稿目录**。里面的同名文件优先级高于
+        ``rembg_dir`` 的正式成品——用户改参数/翻页时的预览只存在这里，
+        它没"执行"，下游看不到（见 ``store.rembg_preview_dir``）。
 
         ``single_column_book``＋``page_width_provider``：整本书是否已判定为
         **单栏书**（``utils.book_layout``）。为真时「单个宽框」的半幅页要按
@@ -139,6 +146,7 @@ class RembgPreviewWidget(
         self._border_mm = None
         self._thumb_provider = thumb_provider
         self._rembg_dir = rembg_dir
+        self._preview_dir = Path(preview_dir) if preview_dir else None
         resolved = [Path(p) for p in paths]
         paths_changed = resolved != self._paths
         self._paths = resolved
@@ -185,8 +193,8 @@ class RembgPreviewWidget(
     def show_live_pending(self) -> None:
         """实时去底色正在计算：只在**下方说明行**给个反馈，**不动大图**。
 
-        ⚠️ 结果直接覆盖正式成品（``stages/rembg``），所以这里没有"临时目录"
-        可指——算完宿主调 :meth:`refresh_display` 大图自然就是新图。
+        ⚠️ 结果只写预览草稿（``preview_dir``），不算正式成品——算完宿主调
+        :meth:`refresh_display`，大图会优先显示草稿。
         """
         self.toggle_caption.setText("正在按新参数去底色…")
 
@@ -322,6 +330,9 @@ class RembgPreviewWidget(
         :meth:`refresh_running_results` 把该页刷成"去底色结果"。
         """
         self._rembg_dir = Path(path) if path else None
+        # 正式执行期间只认正式产物（草稿按约定已在执行前清空；
+        # 万一清空失败，也不能让草稿盖住刚写出的成品）。
+        self._preview_dir = None
         self._load_display()
 
 
