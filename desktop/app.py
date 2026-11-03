@@ -61,6 +61,14 @@ WINDOW_START_MAXIMIZED = True
 #: （``MainWindow.PREWARM_DELAY_MS``）错开一点，别挤在启动那一瞬间抢网络/CPU。
 STARTUP_UPDATE_CHECK_MS = 4000
 
+#: 启动后多久在**空闲**时预热常驻 YOLO 服务（ms，用户 2026-11-03）。
+#:
+#: 用户要求：不必先进入「检测文本框」步骤，程序起来后就在后台把模型热好；
+#: 但必须避开启动高峰，不阻塞前端页面。重活全在常驻服务子进程里，且该进程
+#: 被降到「低于正常」优先级（见 ``functions/yolo_service._set_process_priority``），
+#: 界面渲染一路先行。放在列表首帧画完之后、与更新检查错开。
+STARTUP_YOLO_PREWARM_MS = 3000
+
 
 class MainWindow(FramelessMainWindow, WorkerHost):
     """主窗口：左侧导航壳层（任务管理 + 独立模块）与详情页跳转。
@@ -347,6 +355,16 @@ def main() -> int:
     #    （``ctx.w``）的，放 __init__ 会让每个用例都偷偷发一次真实请求，还会污染那些
     #    把 ``update_worker.fetch_latest_release`` 换成替身的用例。
     if not os.environ.get("GUJI_GUI_SELFTEST"):
+        # YOLO 模型**启动预热**（用户 2026-11-03）：不必先进入「检测文本框」步骤，
+        # 程序起来后趁空闲把常驻服务的模型热好，之后每次检测都不用等那 5~10 秒
+        # 的加载（各次检测共用同一份常驻模型）。
+        # ⚠️ 主线程只排程：``request_prewarm`` 用 QTimer 延时 + daemon 线程，
+        #    真正的 torch 导入/载权重发生在**常驻服务子进程**里（BELOW_NORMAL
+        #    优先级，让出 CPU），GUI 主进程绝不加载模型（分层守卫）。
+        # ⚠️ 与下面的更新检查错开：预热排程在 3s，网络检查在 4s。
+        from desktop.services.yolo_prewarm import request_prewarm
+
+        request_prewarm(STARTUP_YOLO_PREWARM_MS)
         # 设置页「自动更新」两项（用户 2026-11-02，默认**关**）：打开后程序更新会
         # 自动**下载安装包**（在「帮助 → 检查更新」中完成安装），数据包则自动
         # **下载并替换生效**。默认关 ⇒ 只检查并提示，不自动下载。

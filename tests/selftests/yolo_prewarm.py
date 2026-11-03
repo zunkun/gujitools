@@ -10,7 +10,9 @@
 3. **不影响主进程**：预加载模块**模块级**不许 import functions（分层守卫
    只查函数内延迟导入）；整个模块**任何位置**都不许出现
    ``load_yolo_model``——GUI 主进程禁重依赖，预热失败也绝不回落进程内加载；
-   服务子进程要被降到低优先级、真检测时升回。
+   服务子进程要被降到低优先级、真检测时升回；
+4. **启动就预热**（用户 2026-11-03）：``main()`` 在启动 3s 后空闲预热一次，
+   不必先进入「检测文本框」；GUI 退出会关服务，这条兜住"重跑检测"场景。
 
 本用例**不拉起服务、不加载 torch**（那笔开销 yolo_service 用例已经付过），
 全部是纯逻辑断言 + 源码护栏 + 服务关闭态下的快速行为验证。
@@ -25,7 +27,7 @@ from types import SimpleNamespace
 
 NAME = "yolo_prewarm"
 DEPENDS: list[str] = []
-TITLE = "YOLO 预加载（进详情页后台热模型，全局只加载一次）"
+TITLE = "YOLO 预加载（启动/进详情页后台热模型，全局只加载一次）"
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -123,7 +125,17 @@ def run(ctx) -> None:
     ok("页面对预加载的 import 是函数内延迟导入（模块级零耦合）",
        "from desktop.services.yolo_prewarm import (  # noqa" in page_src)
 
-    # ---- 6. 源码护栏：服务侧的让出 CPU 与升回 ----
+    # ---- 6. 源码护栏：**启动时**就空闲预热，不必先进「检测文本框」 ----
+    # 用户 2026-11-03：常驻服务在 GUI 退出时被关掉，只靠「详情页 + 从没执行过」
+    # 预热会让重跑场景每次都现载模型，所以 main() 里要在启动后空闲预热一次。
+    app_src = (ROOT / "desktop" / "app.py").read_text(encoding="utf-8")
+    ok("main() 里有启动预热钩子，延时走 STARTUP_YOLO_PREWARM_MS",
+       "STARTUP_YOLO_PREWARM_MS" in app_src
+       and "request_prewarm(STARTUP_YOLO_PREWARM_MS)" in app_src)
+    ok("启动预热在自测环境下关闭（自测不拉起服务、不载模型）",
+       'os.environ.get("GUJI_GUI_SELFTEST")' in app_src)
+
+    # ---- 7. 源码护栏：服务侧的让出 CPU 与升回 ----
     ys_src = (ROOT / "functions" / "yolo_service.py").read_text(
         encoding="utf-8")
     tree = ast.parse(ys_src)
