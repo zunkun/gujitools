@@ -259,6 +259,26 @@ def _create_tag(version: str, dry_run: bool) -> str:
     return tag
 
 
+def _asset_notes(assets: list[Path]) -> str:
+    """按实际上传的资产生成固定的「安装包说明」，免得用户分不清 setup / portable。"""
+    lines: list[str] = []
+    if any(asset.name.startswith("gujitools_setup_") for asset in assets):
+        lines.append("- `gujitools_setup_*.exe`：Windows 安装版（带安装向导）")
+    if any(
+        asset.name.startswith("gujitools_portable_") and asset.name.endswith(".zip")
+        for asset in assets
+    ):
+        lines.append("- `gujitools_portable_*.zip`：绿色免安装版（解压即用，无需安装）")
+    if any(
+        asset.name.startswith("gujitools_portable_") and asset.name.endswith(".tar.gz")
+        for asset in assets
+    ):
+        lines.append("- `gujitools_portable_*.tar.gz`：绿色免安装版（解压即用，无需安装）")
+    if not lines:
+        return ""
+    return "安装包说明：\n" + "\n".join(lines)
+
+
 def _release_notes(previous_tag: str) -> str:
     """从上一版以来的提交生成发布说明（跳过版本号提交与合并提交）。"""
     git_range = f"{previous_tag}..HEAD" if parse_version(previous_tag) else "--max-count=20 HEAD"
@@ -319,6 +339,9 @@ def main(argv: list[str] | None = None) -> int:
             raise ReleaseError(f"Release {tag} 已存在，不能重复发布")
 
         notes = args.notes.strip() or _release_notes(online_tag)
+        asset_notes = _asset_notes(assets)
+        if asset_notes:
+            notes = f"{notes}\n\n{asset_notes}"
         title = f"v{version} {args.title}".strip()
 
         print(f"\n▶ 发布 {tag}：《{title}》")
