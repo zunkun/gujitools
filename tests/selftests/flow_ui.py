@@ -1982,6 +1982,12 @@ def _check_flow_saved_refreshes_bar() -> None:
         new.nodes = tuple(n for n in new.nodes if n.id != victim.id)
         new.flows = tuple(f for f in new.flows
                           if f.source != victim.id and f.target != victim.id)
+        # ⚠️ 2026-11-04 起孤立节点会被保存校验拒绝：删掉拼版后「PDF排版」
+        #    没了入线，必须像用户在画布上那样把 去底色 → PDF排版 接回来。
+        from desktop.steps.bpmn_diagram import DiagramFlow
+        new.flows = new.flows + (
+            DiagramFlow("f_saved", "b", "d"),
+        )
         editor.set_diagram(new)
         flow_page._on_done(True)
         app.processEvents()
@@ -2378,7 +2384,11 @@ def _check_create_page_reset(create_page, sample_pdf) -> None:
     assert _flow_editor is not None  # _on_edit_flow 后编辑器必然已建
     editor = _flow_editor.editor_panel.editor()
     assert editor is not None  # 编辑态必然有编辑器
-    editor.add_node(name="上一本书才有的步骤")
+    # ⚠️ 2026-11-04 起孤立节点会被保存校验拒绝，必须挂到图上；
+    #    挂在结束事件后面（它本来没有输出），不破坏既有步骤的连线。
+    from desktop.steps.bpmn_diagram import KIND_END
+    end_id = next(n.id for n in editor.diagram().nodes if n.kind == KIND_END)
+    editor.add_node(name="上一本书才有的步骤", connect_from=end_id)
     _flow_editor.accept()         # 「保存流程」→ 回写 _custom_diagram
     ok("先摆出事故现场：编辑器里加过节点并保存",
        any(n.name == "上一本书才有的步骤"

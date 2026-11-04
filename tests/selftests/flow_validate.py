@@ -82,6 +82,7 @@ def run(ctx) -> None:
 
     _check_legal_combos(ok)
     _check_illegal_combos(ok)
+    _check_structure(ok)
     _check_warnings(ok)
     _check_templates_clean(ok)
     _check_data_chain(ctx, ok)
@@ -126,17 +127,23 @@ def _check_legal_combos(ok) -> None:
 
     # 带「提交检测结果」显式节点的图同样合法（它与 detect 同格折叠）
     from desktop.steps.bpmn_diagram import (
-        KIND_TASK, DiagramFlow, DiagramNode, FlowDiagram, stage_of_name,
+        KIND_END, KIND_START, KIND_TASK, DiagramFlow, DiagramNode,
+        FlowDiagram, stage_of_name,
     )
 
     diagram = FlowDiagram(
-        nodes=(DiagramNode("a", KIND_TASK, "检测文本框",
+        nodes=(DiagramNode("s", KIND_START, "源PDF"),
+               DiagramNode("a", KIND_TASK, "检测文本框",
                            stage=stage_of_name("检测文本框")),
                DiagramNode("b", KIND_TASK, "提交检测结果",
                            stage="detect_submit"),
                DiagramNode("c", KIND_TASK, "PDF排版",
-                           stage=stage_of_name("PDF排版"))),
-        flows=(DiagramFlow("f1", "a", "b"), DiagramFlow("f2", "b", "c")),
+                           stage=stage_of_name("PDF排版")),
+               DiagramNode("e", KIND_END, "生成PDF")),
+        flows=(DiagramFlow("f0", "s", "a"),
+               DiagramFlow("f1", "a", "b"),
+               DiagramFlow("f2", "b", "c"),
+               DiagramFlow("f3", "c", "e")),
     )
     result = validate_flow(diagram)
     ok("「检测+提交」同格两个动作的图合法（不误判重复）",
@@ -180,6 +187,126 @@ def _check_illegal_combos(ok) -> None:
        any("PDF排版" in e and "去底色" in e for e in result.errors),
        str(result.errors))
 
+    # 缺少开始节点（源PDF）：2026-11-04 起是硬错误（用户要求"只有一个开始节点"）
+    result = validate_flow(_chain("extract", "print", source=False))
+    ok("没有「开始节点」⇒ 拒绝保存",
+       not result.ok and any("开始节点" in e for e in result.errors),
+       f"errors={result.errors}")
+
+
+# --------------------------------------- ②b 图结构（2026-11-04，任务 0021）
+def _check_structure(ok) -> None:
+    """孤立节点 / 环形回路 / 多输出 / 开始节点数量。"""
+    from desktop.steps.bpmn_diagram import (
+        KIND_END, KIND_EXCLUSIVE, KIND_PARALLEL, KIND_START, KIND_TASK,
+        DiagramFlow, DiagramNode, FlowDiagram,
+    )
+    from desktop.steps.validate import validate_flow
+
+    # 孤立节点：主链之外挂着一个没有任何连线的「OCR 识别」
+    chain = _chain("detect", "print")
+    isolated = FlowDiagram(
+        nodes=chain.nodes + (DiagramNode("iso", KIND_TASK, "OCR 识别"),),
+        flows=chain.flows,
+    )
+    result = validate_flow(isolated)
+    ok("有孤立节点 ⇒ 拒绝保存且点名节点",
+       not result.ok and any("孤立" in e and "OCR 识别" in e
+                             for e in result.errors),
+       f"errors={result.errors}")
+
+    # 两段图：主链从开始节点出发，另有一小段 b→e 接不上主链
+    detached = FlowDiagram(
+        nodes=(DiagramNode("s", KIND_START, "源PDF"),
+               DiagramNode("a", KIND_TASK, "检测文本框", stage="detect"),
+               DiagramNode("b", KIND_TASK, "图片去底色", stage="rembg"),
+               DiagramNode("e", KIND_END, "生成PDF")),
+        flows=(DiagramFlow("f1", "s", "a"),
+               DiagramFlow("f2", "b", "e")),
+    )
+    result = validate_flow(detached)
+    ok("断开的两段图 ⇒ 拒绝保存并指出孤立节点",
+       not result.ok and any("孤立" in e for e in result.errors),
+       f"errors={result.errors}")
+
+    # 环形回路：rembg → detect 回流
+    loop = FlowDiagram(
+        nodes=(DiagramNode("s", KIND_START, "源PDF"),
+               DiagramNode("a", KIND_TASK, "检测文本框", stage="detect"),
+               DiagramNode("b", KIND_TASK, "图片去底色", stage="rembg")),
+        flows=(DiagramFlow("f1", "s", "a"),
+               DiagramFlow("f2", "a", "b"),
+               DiagramFlow("f3", "b", "a")),
+    )
+    result = validate_flow(loop)
+    ok("环形回路 ⇒ 拒绝保存且点名回路",
+       not result.ok and any("环形回路" in e and "检测文本框" in e
+                             for e in result.errors),
+       f"errors={result.errors}")
+
+    # 普通节点两条输出（不借 XOR）
+    fork = FlowDiagram(
+        nodes=(DiagramNode("s", KIND_START, "源PDF"),
+               DiagramNode("a", KIND_TASK, "检测文本框", stage="detect"),
+               DiagramNode("b", KIND_TASK, "图片去底色", stage="rembg"),
+               DiagramNode("c", KIND_TASK, "图片去底色2", stage="rembg")),
+        flows=(DiagramFlow("f1", "s", "a"),
+               DiagramFlow("f2", "a", "b"),
+               DiagramFlow("f3", "a", "c")),
+    )
+    result = validate_flow(fork)
+    ok("普通节点两条输出 ⇒ 拒绝保存（只有 XOR 网关能分支）",
+       not result.ok and any("输出连线" in e and "检测文本框" in e
+                             for e in result.errors),
+       f"errors={result.errors}")
+
+    # XOR 网关两条输出 ⇒ 合法（默认流程「是否拼版」就靠它）
+    xor = FlowDiagram(
+        nodes=(DiagramNode("s", KIND_START, "源PDF"),
+               DiagramNode("a", KIND_TASK, "检测文本框", stage="detect"),
+               DiagramNode("g", KIND_EXCLUSIVE, "是否拼版"),
+               DiagramNode("b", KIND_TASK, "图片拼版", stage="imposition"),
+               DiagramNode("c", KIND_TASK, "图片去底色", stage="rembg")),
+        flows=(DiagramFlow("f1", "s", "a"),
+               DiagramFlow("f2", "a", "g"),
+               DiagramFlow("f3", "g", "b"),
+               DiagramFlow("f4", "g", "c")),
+    )
+    result = validate_flow(xor)
+    ok("XOR 网关两条输出 ⇒ 合法放行",
+       result.ok, f"errors={result.errors}")
+
+    # 非 XOR 网关两条输出 ⇒ 拒绝（运行语义没有并行/包容网关）
+    parallel = FlowDiagram(
+        nodes=(DiagramNode("s", KIND_START, "源PDF"),
+               DiagramNode("a", KIND_TASK, "检测文本框", stage="detect"),
+               DiagramNode("g", KIND_PARALLEL, "并行"),
+               DiagramNode("b", KIND_TASK, "图片去底色", stage="rembg"),
+               DiagramNode("c", KIND_TASK, "图片去底色2", stage="rembg")),
+        flows=(DiagramFlow("f1", "s", "a"),
+               DiagramFlow("f2", "a", "g"),
+               DiagramFlow("f3", "g", "b"),
+               DiagramFlow("f4", "g", "c")),
+    )
+    result = validate_flow(parallel)
+    ok("非 XOR 网关两条输出 ⇒ 拒绝保存",
+       not result.ok and any("输出连线" in e for e in result.errors),
+       f"errors={result.errors}")
+
+    # 两个开始节点
+    two_starts = FlowDiagram(
+        nodes=(DiagramNode("s1", KIND_START, "源PDF"),
+               DiagramNode("s2", KIND_START, "另一个开始"),
+               DiagramNode("a", KIND_TASK, "检测文本框", stage="detect")),
+        flows=(DiagramFlow("f1", "s1", "a"),
+               DiagramFlow("f2", "s2", "a")),
+    )
+    result = validate_flow(two_starts)
+    ok("两个开始节点 ⇒ 拒绝保存",
+       not result.ok and any("只能有一个「开始节点」" in e
+                             for e in result.errors),
+       f"errors={result.errors}")
+
 
 # --------------------------------------------------------------- ③ 警告
 def _check_warnings(ok) -> None:
@@ -201,38 +328,40 @@ def _check_warnings(ok) -> None:
        result.ok and any("提取" in w for w in result.warnings),
        f"warnings={result.warnings}")
 
-    # extract 在但没有「源PDF」入口节点
-    result = validate_flow(_chain("extract", "print", source=False))
-    ok("有 extract 没有「源PDF」入口 ⇒ 警告且不拦",
-       result.ok and any("源PDF" in w for w in result.warnings),
-       f"warnings={result.warnings}")
+    # ⚠️ 2026-11-04 起「有 extract 但没有源PDF」不再只是警告：缺少开始节点
+    #    是硬错误（见 _check_illegal_combos 的同一条用例）。
 
     # 同一阶段两个节点（两个「PDF排版」）——**B 方案后这是合法且零警告的**：
     # 图片拼版/检测文本框/图片去底色/PDF排版都可以有多个节点，它们彼此独立
     # （各自参数、各自产物落点 ``stages/<阶段>~<节点>``），所以不能把用户明确
     # 要的能力说成"有问题"（旧警告已于 2026-10-17 删除）。
     from desktop.steps.bpmn_diagram import (
-        KIND_TASK, DiagramFlow, DiagramNode, FlowDiagram, stage_of_name,
+        KIND_START, KIND_TASK, DiagramFlow, DiagramNode, FlowDiagram,
+        stage_of_name,
     )
 
     diagram = FlowDiagram(
-        nodes=(DiagramNode("a", KIND_TASK, "PDF排版",
+        nodes=(DiagramNode("s", KIND_START, "源PDF"),
+               DiagramNode("a", KIND_TASK, "PDF排版",
                            stage=stage_of_name("PDF排版")),
                DiagramNode("b", KIND_TASK, "PDF排版2",
                            stage=stage_of_name("PDF排版"))),
-        flows=(DiagramFlow("f1", "a", "b"),),
+        flows=(DiagramFlow("f0", "s", "a"),
+               DiagramFlow("f1", "a", "b")),
     )
     result = validate_flow(diagram)
     ok("同一阶段两个节点 ⇒ 合法且**不**警告（支持多节点）",
        result.ok and not result.warnings,
        f"ok={result.ok} warnings={result.warnings}")
 
-    # 未接入运行的节点（随手画的「OCR 识别」）
+    # 未接入运行的节点（随手画的「OCR 识别」，但**连着**主流程）
     diagram = FlowDiagram(
-        nodes=(DiagramNode("a", KIND_TASK, "检测文本框",
+        nodes=(DiagramNode("s", KIND_START, "源PDF"),
+               DiagramNode("a", KIND_TASK, "检测文本框",
                            stage=stage_of_name("检测文本框")),
                DiagramNode("b", KIND_TASK, "OCR 识别")),
-        flows=(DiagramFlow("f1", "a", "b"),),
+        flows=(DiagramFlow("f0", "s", "a"),
+               DiagramFlow("f1", "a", "b")),
     )
     result = validate_flow(diagram)
     ok("未接入运行的节点 ⇒ 警告且不拦",
