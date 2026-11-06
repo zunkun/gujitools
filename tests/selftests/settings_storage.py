@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 
 from tests.selftests._context import ok
@@ -69,6 +70,26 @@ def run(ctx) -> None:
             str(guji_data_dir()),
         )
         ok("指针内容可被重新解析", pointer.read_text("utf-8").find("new_guji") >= 0)
+
+        # ---- 2b. 记录的位置已不存在（如移动盘拔掉）⇒ 回落默认目录、不抛异常 ----
+        pointer.write_text(
+            json.dumps(
+                {"data_dir": str(work / "missing_guji")}, ensure_ascii=False
+            ),
+            encoding="utf-8",
+        )
+        ok(
+            "存储位置不存在时回落默认目录",
+            reload_guji_data_dir() == default_guji_data_dir(),
+            str(guji_data_dir()),
+        )
+        ok(
+            "指针同时改回默认目录（下次启动不再探测旧位置）",
+            json.loads(pointer.read_text("utf-8")).get("data_dir")
+            == str(default_guji_data_dir()),
+            pointer.read_text("utf-8"),
+        )
+        set_guji_data_dir(new_root)  # 恢复指针，后续节次沿用
 
         # ---- 3. 所选目录 → 数据根：始终带 guji 包裹 ----
         ok(

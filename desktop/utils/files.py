@@ -163,6 +163,20 @@ def _read_data_location() -> Path | None:
     return Path(raw).expanduser() if raw else None
 
 
+def _write_data_location(target: Path) -> None:
+    """原子写指针文件（临时文件 + ``os.replace``，内容只有 ``{"data_dir": …}``）。"""
+    location = data_location_file()
+    location.parent.mkdir(parents=True, exist_ok=True)
+    temp = location.with_name(
+        f"{location.name}.{os.getpid():x}{threading.get_ident():x}.tmp"
+    )
+    temp.write_text(
+        json.dumps({"data_dir": str(target)}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    os.replace(temp, location)
+
+
 def reload_guji_data_dir() -> Path:
     """丢掉缓存、重新读一次指针文件（设置页改完位置/自测隔离时用）。"""
     global _data_dir_override, _data_dir_loaded
@@ -171,15 +185,43 @@ def reload_guji_data_dir() -> Path:
     return guji_data_dir()
 
 
+def _usable_data_dir(path: Path | None) -> Path | None:
+    """已记录的存储位置现在是否还能用（**存在且是目录**才算）。
+
+    用户 2026-11-06：设置的目录可能在移动硬盘/U 盘上，拔掉后启动会在
+    ``tasks/`` 的 ``mkdir`` 处炸出「系统找不到指定的路径」的弹窗。那种情况
+    按**默认目录**走（并把设置改回默认，见 :func:`guji_data_dir`），而不是报错。
+    """
+    if path is None:
+        return None
+    try:
+        return path if path.is_dir() else None
+    except OSError:
+        return None
+
+
 def guji_data_dir() -> Path:
     """GUI 数据根目录：默认 ``~/Documents/guji``，可在设置页改成任意目录。
 
     位置指针见 :func:`data_location_file`；读一次后缓存，避免每个文件操作
     都去碰磁盘（这个函数在 GUI 里调用非常频繁）。
+
+    ⚠️ 记录的目录**已经不存在**（比如移到移动硬盘后盘没插）时：
+    ① 本次回落默认目录，不抛异常；② **把设置也改回默认目录**——否则每次启动
+    都要重新探测那个不存在的盘（用户 2026-11-06）。首次调用（启动流程里）就
+    把这两件事做完，后续调用直接走缓存。
     """
     global _data_dir_override, _data_dir_loaded
     if not _data_dir_loaded:
-        _data_dir_override = _read_data_location()
+        recorded = _read_data_location()
+        _data_dir_override = _usable_data_dir(recorded)
+        if recorded is not None and _data_dir_override is None:
+            fallback = default_guji_data_dir()
+            print(f"[guji] 存储位置 {recorded} 已不可用，改用默认目录 {fallback}")
+            try:
+                _write_data_location(fallback)
+            except OSError:
+                pass  # 写不动指针（权限/只读）也不影响本次使用默认目录
         _data_dir_loaded = True
     return _data_dir_override or default_guji_data_dir()
 
@@ -195,16 +237,7 @@ def set_guji_data_dir(path) -> Path:
     global _data_dir_override, _data_dir_loaded
     target = Path(path).expanduser().resolve()
     target.mkdir(parents=True, exist_ok=True)
-    location = data_location_file()
-    location.parent.mkdir(parents=True, exist_ok=True)
-    temp = location.with_name(
-        f"{location.name}.{os.getpid():x}{threading.get_ident():x}.tmp"
-    )
-    temp.write_text(
-        json.dumps({"data_dir": str(target)}, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    os.replace(temp, location)
+    _write_data_location(target)
     _data_dir_override = target
     _data_dir_loaded = True
     return target
