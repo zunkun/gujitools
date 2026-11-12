@@ -272,7 +272,7 @@ HTML、安装版里退化成 `<pre>` 包裹的原始 markdown，而 `collect_sub
 - `python build.py --manual-only` 刷新手册时也会重压这一份（否则 Release 上的
   绿色版还带旧手册），该步骤会额外花几分钟。
 
-发布由 `tools/release.py` 统一完成：它按「版本 + 平台」找出同版本的安装包与
+发布由根目录的 `publish_release.py` 统一完成：它按「版本 + 平台」找出同版本的安装包与
 绿色版，作为同一个 Release 的资产一起上传（Linux 没有安装包，只有 tar.gz）。
 产物名不含时间戳，同版本重打会覆盖同名文件。客户端「检查更新」只认 `.exe`
 资产，多传一个 zip 不会影响自动更新。

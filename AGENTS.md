@@ -110,8 +110,8 @@ python tools/check_docs.py
 ## 发布 Release（一条命令，别手写 git/gh 流程）
 
 ```bash
-python tools/release.py --dry-run   # 先看计划：版本 / 发布资产 / 要推的提交
-python tools/release.py             # 真发布；加 --build 会先跑 python build.py
+python publish_release.py --dry-run   # 先看计划：版本 / 发布资产 / 要推的提交
+python publish_release.py             # 真发布；加 --build 会先跑 python build.py
 ```
 
 - 脚本读 `config.py` 的 `VERSION`，到 **`dist/`** 找同版本的发布资产

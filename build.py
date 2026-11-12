@@ -60,7 +60,7 @@ GUI_EXE = "guji-desktop.exe" if IS_WINDOWS else "guji-desktop"
 #: 绿色免安装版压缩包的文件名模板（解压即用，无需安装）。
 #: 命名口径与安装包一致：``<名称>_<版本>_<平台>``，**不带时间戳**
 #: （同一版本重打会覆盖同名文件，发布按「版本 + 平台」识别）。
-#: ⚠️ 这是该产物名的**唯一来源**：``tools/release.py`` 按它识别要上传的资产，
+#: ⚠️ 这是该产物名的**唯一来源**：``publish_release.py`` 按它识别要上传的资产，
 #: ``tests/selftests/release_assets.py`` 守两者一致——改名必须同步。
 PORTABLE_TEMPLATE = (
     "gujitools_portable_{version}_{platform}.zip"

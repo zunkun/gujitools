@@ -10,13 +10,13 @@
 4. 本地较新 → 自动提交版本号、推送分支、打 tag，
    再用 ``gh release create`` 把**全部资产**一起上传并设为 latest。
 
-用法::
+用法（脚本在仓库根，与 ``build.py`` 同级）::
 
-    python tools/release.py                          # 发布 config.py 当前版本
-    python tools/release.py --title "自定义流程优化"   # Release 标题后缀
-    python tools/release.py --notes "本次更新：..."    # 手写发布说明
-    python tools/release.py --build                  # 先跑 python build.py 再发布
-    python tools/release.py --dry-run                # 只打印计划，不改任何东西
+    python publish_release.py                          # 发布 config.py 当前版本
+    python publish_release.py --title "自定义流程优化"   # Release 标题后缀
+    python publish_release.py --notes "本次更新：..."    # 手写发布说明
+    python publish_release.py --build                  # 先跑 python build.py 再发布
+    python publish_release.py --dry-run                # 只打印计划，不改任何东西
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parent
 # 复用运行时的版本比较规则（纯规则模块，不拉进 cv2/torch）
 sys.path.insert(0, str(ROOT))
 
@@ -78,7 +78,7 @@ def _gh(*args: str, check: bool = True) -> str:
 
 
 def _config_version() -> str:
-    """从 config.py 读 VERSION（不 import，避免受 tools/ 下 sys.path 影响）。"""
+    """从 config.py 读 VERSION（正则解析，不 import——避开模块级副作用）。"""
     match = re.search(
         r"""^VERSION\s*=\s*["']([^"']+)["']""",
         CONFIG.read_text(encoding="utf-8"),

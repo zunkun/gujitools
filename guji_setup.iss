@@ -27,7 +27,7 @@ DefaultGroupName=古籍重製
 PrivilegesRequired=lowest
 OutputDir=dist
 ; 产物名不带时间戳：同一版本重复打包会覆盖同名文件（发布按「版本 + 平台」识别）。
-; 与 build.py 的 PORTABLE_TEMPLATE、tools/release.py 的资产规则同源。
+; 与 build.py 的 PORTABLE_TEMPLATE、publish_release.py 的资产规则同源。
 OutputBaseFilename=gujitools_setup_{#VERSION}_{#BUILD_PLATFORM}
 Compression=lzma2
 SolidCompression=yes

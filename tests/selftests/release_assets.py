@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """发布资产守卫：安装包 + 绿色免安装版同名同规则、一起上传。
 
-背景（2026-11-03）：``tools/release.py`` 原先只认安装包，绿色版只能手工传。
+背景（2026-11-03）：``publish_release.py`` 原先只认安装包，绿色版只能手工传。
 现在 Windows 构建同时产出 ``gujitools_setup_<版本>_<平台>.exe`` 与
 ``gujitools_portable_<版本>_<平台>.zip``（**不带时间戳**），发布时一起上传。
 
 本模块钉死三件事：
 
-1. ``build.py`` 的 ``PORTABLE_TEMPLATE`` 产出的名字能被 ``release.py`` 的
+1. ``build.py`` 的 ``PORTABLE_TEMPLATE`` 产出的名字能被 ``publish_release.py`` 的
    资产规则识别（改一处忘改另一处 ⇒ 绿色版被静默漏发）；
 2. 同一版本的多份资产（安装包 + 绿色版）能一起找到，其它版本/无关文件不混入；
 3. 客户端「检查更新」（``update_worker.pick_asset``）仍然只认 ``.exe``，
@@ -26,14 +26,14 @@ def run(ctx) -> None:
     from tests.tmpdir import temp_dir
 
     import build
-    import tools.release as release
+    import publish_release as release
 
     version = "2.0.99"
     platform = "windows-x86_64" if build.IS_WINDOWS else "linux-x86_64"
     name = build.PORTABLE_TEMPLATE.format(version=version, platform=platform)
 
-    # ---- 1. 绿色版命名：build.py 产出 ⇄ release.py 识别同源，且不含时间戳 ----
-    ok(f"build.py 的绿色版产物名（{name}）能被 release.py 识别",
+    # ---- 1. 绿色版命名：build.py 产出 ⇄ publish_release.py 识别同源，且不含时间戳 ----
+    ok(f"build.py 的绿色版产物名（{name}）能被 publish_release.py 识别",
        release._parse_asset(name) == version, str(release._parse_asset(name)))
     ok("产物名只含「版本 + 平台」，不含构建时间戳",
        f"_{version}_{platform}" in name and "2026" not in name, name)
