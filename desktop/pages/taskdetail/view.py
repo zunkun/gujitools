@@ -163,6 +163,8 @@ class DetailViewMixin:
         _delete_selected_box: Callable[..., None]
         _on_box_selection_changed: Callable[..., None]
         _on_box_edit_rejected: Callable[..., None]
+        # 「保留框外空白」全局参数变了 → 重算所有页面的划线（DetectMixin 提供）
+        _on_keep_blank_changed: Callable[..., None]
         # 「导出YOLO标注」（开发者模式，DetectMixin 提供）：本层建卡片/接按钮，
         # 业务与显隐判据在那边——卡片自己不知道"当前是不是 detect 步骤"。
         export_yolo_labels: Callable[[], None]
@@ -928,6 +930,13 @@ class DetailViewMixin:
         detect_panel.detect_page_requested.connect(self._detect_current_page)
         # ⚠️ 2026-10-22：**area 参数已从整个项目移除**，所以这里没有
         #    「改 area → 重算参考框/提交按钮」这条联动。
+        # 「保留框外空白」（**全局**参数，2026-11-11）：一切换就把所有页面的
+        # 划线按新口径重算（只改显示，boxes.json 不动），并让提交按钮重新判定。
+        detect_panel.keep_blank_changed.connect(self._on_keep_blank_changed)
+        # 控件建出来时的框编辑口径：保留空白模式下会被临时关掉，退出时要还原成它
+        self._detect_boxes_editable = bool(
+            getattr(self.detect_viewer, "show_boxes", True)
+        )
         # 人工干预：选中框类型（左框/右框/整幅）与删除选中框
         detect_panel.box_kind_changed.connect(self._set_selected_box_kind)
         detect_panel.delete_box_requested.connect(self._delete_selected_box)

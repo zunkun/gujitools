@@ -53,6 +53,7 @@ class ImageViewerHost(QWidget, ThumbsMixin, ZoomPopupMixin):
     boxes_edited: Signal
     current_changed: Signal
     delete_requested: Signal
+    hint_banner: Any
     image_saved: Signal
     info_label: CaptionLabel
     insert_folder_requested: Signal
@@ -169,6 +170,9 @@ class ImageViewerHost(QWidget, ThumbsMixin, ZoomPopupMixin):
         ...
 
     def set_insert_visible(self, visible: bool) -> None:
+        ...
+
+    def set_hint_banner(self, text: str) -> None:
         ...
 
     def set_pdf_source(

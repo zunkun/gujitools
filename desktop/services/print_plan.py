@@ -27,6 +27,7 @@ from utils.box_geometry import (
     box_has_area,
     describe_page_slots,
     is_full_content,
+    keep_blank_regions,
 )
 from utils.page_layout import normalize_page_rotation
 
@@ -452,6 +453,92 @@ def plan_submit_job(spec: dict, size: tuple[int, int] | None) -> dict:
     return job
 
 
+def manual_blank_regions(regions) -> list[tuple[list[int], Optional[str]]]:
+    """手工扩展框（``boxes.json`` 的 ``blank``）→ ``keep_blank_regions`` 同形状。
+
+    一个矩形 ⇒ 整页一张（``side=None``）；两个 ⇒ 按左边界排序，左/右各一张。
+    与自动推导共用同一条下游（命名 ``-l``/``-r``、拼版配对都照旧）。
+    """
+    rects = [
+        [int(v) for v in rect] for rect in (regions or [])
+        if isinstance(rect, (list, tuple)) and len(rect) == 4
+    ]
+    if not rects:
+        return []
+    if len(rects) == 1:
+        return [(rects[0], None)]
+    order = sorted(rects, key=lambda r: (r[0], r[1]))
+    return [(order[0], "left"), (order[1], "right")]
+
+
+def _keep_blank_entries(
+    entries: list[dict], normalized: dict, sizes: dict, blank_for=None,
+    blank_slots: dict | None = None, blank_empty: dict | None = None,
+) -> list[dict]:
+    """把「逐框紧裁」条目换成「整页半幅保留空白」条目。
+
+    ``blank_slots[stem]`` 是该页按「保留框外空白」口径归一化后的槽位
+    （``book_layout.keep_blank_slots``，与显示侧同一实现）；不传时回落
+    ``normalized``。``blank_empty[stem]`` 决定**无框页**怎么补
+    （``split`` / ``single`` / ``skip``，见 ``book_layout.keep_blank_page_form``）。
+
+    ⚠️ 无框页**不再一律透传**（用户 2026-11-12）：统计上是双栏书且这页装得下
+    两个框时，它要出左右两张；只装得下一个就出整页一张。整本书一个框都没有
+    时 ``skip``，仍按原占位/透传（没有统计依据）。
+
+    ``blank_for(stem)`` 给出**用户手工调过的扩展框**时优先用它（用户 2026-11-12：
+    "可以调整的是扩展框"）——自动推导只是初值，手拉过的以手拉为准。
+    """
+    from utils.sort_utils import natural_sort_key
+
+    by_page: dict[str, list[dict]] = {}
+    for entry in entries:
+        stem = Path(str(entry.get("file") or "")).stem
+        by_page.setdefault(stem, []).append(entry)
+    kept: list[dict] = []
+    for stem, group in by_page.items():
+        manual = blank_for(stem) if blank_for is not None else None
+        if manual:
+            regions = manual_blank_regions(manual)
+        else:
+            slots = (blank_slots or {}).get(stem)
+            if slots is None:
+                slots = normalized.get(stem) or []
+            regions = keep_blank_regions(
+                slots, sizes.get(stem),
+                empty=(blank_empty or {}).get(stem, "skip"),
+            )
+        if not regions:
+            kept.extend(group)
+            continue
+        real = next((e for e in group if not e.get("placeholder")), group[0])
+        for box, side in regions:
+            if side == "left":
+                label, role = f"{stem}-l", ROLE_HALF_LEFT
+            elif side == "right":
+                label, role = f"{stem}-r", ROLE_HALF_RIGHT
+            else:
+                label = stem
+                # ⚠️ 整页一张时**不能**沿用占位条目的左右半幅角色：那是"双栏书
+                #    空白页补两张"的旧描述，现在只出一张，角色必须是整幅
+                #    （否则拼版会去找不存在的另一半）。单栏/窄页的
+                #    ``half-unsided`` 则要保留——它本来就是"一张、可配对"。
+                role = real.get("role") or ROLE_FULL
+                if role in (ROLE_HALF_LEFT, ROLE_HALF_RIGHT):
+                    role = ROLE_FULL
+            kept.append({
+                "file": group[0]["file"],
+                "label": label,
+                "box": box,
+                "boxes": [box],
+                "full": side is None,
+                "role": role,
+                "page_class": real.get("page_class") or PAGE_CLASS_EMPTY,
+            })
+    kept.sort(key=lambda e: natural_sort_key(e["label"]))
+    return kept
+
+
 def plan_detect_submit_entries(
     manifest_paths: list[Path],
     boxes_for,
@@ -460,6 +547,8 @@ def plan_detect_submit_entries(
     side_for=None,
     book_profile=None,
     page_size_for=None,
+    keep_blank: bool = False,
+    blank_for=None,
 ) -> list[dict]:
     """「检测文本框 → 提交本次任务」的裁图条目（含**回溯占位**）。
 
@@ -488,13 +577,31 @@ def plan_detect_submit_entries(
       这张图放不下第二栏，所以整页无框只补**一张**、只检出一个框也**不补**
       另一侧，命名也不带 ``-l``/``-r``（用户 2026-10-23，任务 0001 第 1 页）。
 
+    ``keep_blank=True``（界面「保留框外空白」）：有框页不再贴着检测框紧裁，
+    改为按整页半幅保留空白——双框页以两框相邻边界的中点分界，单框页以框的
+    **内侧边**分界，上下都到图片边缘，外侧也到图片边缘。整幅/单栏/窄页归一化后
+    只剩一槽，整页保留一张（不切分）。
+
+    **无框页也会出图**（用户 2026-11-12，见 ``book_layout.keep_blank_page_form``）：
+
+    - 统计上是**双栏书**、且这页**装得下两个框** ⇒ 按页中线拆左右两张；
+    - 只装得下一个（单页扫描）/ 单栏书 / 整幅书 / 混排 ⇒ 整页一张；
+    - 整本书一个框都没有 ⇒ ``skip``，仍走上面的占位/透传（没有统计依据）。
+
+    单框页同理多一条：双栏书里只检出一侧、而本页**装不下两个框**时退成整页
+    一张（装得下就保留 2 槽，分界线落在检出框的内侧边）。
+
+    ``blank_for(stem)``：该页**用户手工调过的扩展框**（``boxes.json`` 的
+    ``blank``，见 ``store.blank_regions_all_at``）。给了就用它、不再按检测框
+    推导——自动推导只是初值（用户 2026-11-12：「可以调整的是扩展框」）。
+
     ⚠️ 占位条目 ``file`` 仍是源页、``boxes`` 只有一个"占位框"，
     ``placeholder=True`` 只作日志/统计标记——执行端走与真框完全相同的裁剪
     路径（不画白图）。预览侧不会传 ``placeholder_for``，命名/条数保持原样。
     """
     from utils.book_layout import (
         BOOK_FORM_DOUBLE, BOOK_FORM_FULL, BOOK_FORM_MIXED, BOOK_FORM_SINGLE,
-        book_form, profile_book,
+        book_form, keep_blank_page_form, keep_blank_slots, profile_book,
     )
     from utils.box_geometry import (
         PAGE_CLASS_EMPTY, PAGE_CLASS_FULLCONTENT, PAGE_CLASS_HARFCONTENT,
@@ -684,7 +791,7 @@ def plan_detect_submit_entries(
     def placeholder_for(path_text: str) -> list[dict]:
         return placeholders.get(Path(path_text).stem, [])
 
-    return plan_rembg_submit_entries(
+    entries = plan_rembg_submit_entries(
         manifest_paths=manifest_paths,
         result_path_for=lambda stem: by_stem.get(stem),
         boxes_for=boxes_for,
@@ -694,6 +801,37 @@ def plan_detect_submit_entries(
         narrow_for=lambda text: narrow_pages.get(Path(text).stem, False),
         demote_for=lambda text: demoted.get(Path(text).stem),
     )
+    if keep_blank:
+        blank_for = blank_for or (lambda _stem: None)
+        # 保留空白专用的页级口径（**与显示侧同一实现**）：
+        # ① 单框页「装不下两个」→ 退单槽＝整页一张；
+        # ② 无框页按全书统计补框（双栏书且装得下两个 ⇒ 拆左右两半）。
+        # ⚠️ 必须显式传，不能让 ``_keep_blank_entries`` 自己去猜：预览与产物
+        #    一旦各按各的口径算，用户就会看到"画着两半、出来一张"。
+        expects_two = bool(profile.double_column_book)
+        blank_slots: dict[str, list] = {}
+        blank_empty: dict[str, str] = {}
+        for stem in by_stem:
+            width = widths.get(stem)
+            side_given = bool(side_for(str(by_stem[stem]))) if side_for else False
+            blank_slots[stem] = keep_blank_slots(
+                raw_slots[stem], width,
+                side_specified=side_given,
+                narrow=narrow_pages.get(stem, False),
+                expects_two=expects_two,
+                typical_width=typical_width,
+                half_width=profile.half_width_median,
+            )
+            blank_empty[stem] = keep_blank_page_form(
+                width, typical_width, profile.half_width_median,
+                expects_two=expects_two,
+                has_stats=profile.boxed_pages > 0,
+            )
+        entries = _keep_blank_entries(
+            entries, normalized, sizes, blank_for,
+            blank_slots=blank_slots, blank_empty=blank_empty,
+        )
+    return entries
 
 
 # ---------------------------------------------------------------- print 效果规格

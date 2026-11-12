@@ -43,6 +43,10 @@ def submit_version_state(
     sub_params = submit_run.get("parameters", {})
     if sub_params.get("_preview_run_id") != preview_run.get("run_id"):
         return NEW_VERSION  # 检测已重新跑过
-    if any(sub_params.get(k) != panel_args.get(k) for k in submit_param_keys):
+    # 旧运行里没有这个键 = 参数当时还不存在，按"没变"处理（不误报新版本）。
+    if any(
+        k in sub_params and sub_params.get(k) != panel_args.get(k)
+        for k in submit_param_keys
+    ):
         return NEW_VERSION  # 影响产物的参数变了，成品需要重做
     return UP_TO_DATE

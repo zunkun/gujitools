@@ -18,7 +18,7 @@ from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QSize
 from PySide6.QtGui import QImageReader
 from PIL import Image
 
-from desktop.components.box_kinds import BoxKindEditor
+from desktop.components.box_kinds import BoxKindEditor, manual_hint_text
 from desktop.components.yolo_export_dialog import ask_yolo_export
 from desktop.services.detect_export import export_yolo, yolo_entries
 from desktop.settings.config import app_config
@@ -26,16 +26,22 @@ from desktop.steps import StepKernel, StepRequest, callable_job
 from utils.book_layout import (
     demoted_full_summary,
     full_to_half_slots,
+    is_narrow_page,
+    is_single_wide_box,
     is_single_wide_half,
+    keep_blank_page_form,
+    keep_blank_slots,
     profile_book,
     single_column_summary,
     suspicious_summary,
+    typical_page_width,
 )
+from utils.box_draw import box_kind_name
 from utils.box_geometry import (
     classify_page_slots,
-    compute_final_boxes,
     half_slots,
     is_full_content,
+    keep_blank_regions,
     present_boxes,
 )
 from desktop.store.json_io import write_json
@@ -54,6 +60,9 @@ ORIGIN_SUFFIX = {
     "auto": "",
     "fullpage": "（整页，未检测）",
 }
+
+#: 「保留框外空白」开启时信息条的尾注：说明画的是**扩展框**（要裁的区域）。
+KEEP_BLANK_SUFFIX = "（保留框外空白：这是要裁的整页区域，可直接拖动）"
 
 
 class VersionedBoxCache(dict):
@@ -244,27 +253,119 @@ class DetectMixin:
         self._toast("warning", "框数已达上限", message)
 
     def _set_selected_box_kind(self, kind: str) -> None:
-        """面板里点了「左框 / 右框 / 整幅」。"""
+        """面板里点了「左框 / 右框 / 整幅 / 半幅」。
+
+        ⚠️ 「保留框外空白」开着时画布上是**扩展框**（不是检测框），类型按钮改的
+        也是扩展框（用户 2026-11-12：「即使是整幅也没法调整类型」）：
+        「整幅」= 这页并成整页一张，「左框/右框」= 按页中线拆成左右两半；
+        「半幅」对扩展框没有意义（那是检测框的形态），只提示不动作。
+        """
         path = self.detect_viewer.current_path()
         if path is None or not self.task_id:
+            return
+        if self._keep_blank_on():
+            self._set_blank_region_kind(str(path), kind)
             return
         self._box_editor().set_kind(str(path), self.detect_viewer.selected_index(), kind)
 
     def _select_box_of_kind(self, kind: str) -> None:
         """没有选中框时，点类型＝选中该类框；该类型不存在则提示。"""
+        if self._keep_blank_on():
+            # 扩展框：按几何认左右——点「左框」就选中左半那个，不需要别的语义
+            regions = self._keep_blank_regions(str(self.detect_viewer.current_path()))
+            kinds = self._region_kinds(regions)
+            if kind in kinds:
+                self.detect_viewer.select_box(kinds.index(kind))
+                return
+            self._toast(
+                "info", f"没有「{box_kind_name(kind)}」",
+                "「保留框外空白」下画的是整页的左右两半；点「整幅」可并回整页，"
+                "或直接在预览里拖框调整。",
+            )
+            return
         self._box_editor().select_box_of_kind(kind)
 
     def _make_box_full(self, path_text: str, index: int) -> None:
         """把第 index 个框设为「整幅」（整幅与半幅互斥、一页只能一个框）。"""
+        if self._keep_blank_on():
+            self._set_blank_region_kind(path_text, "full")
+            return
         self._box_editor().make_full(path_text, index)
 
     def _make_box_half(self, path_text: str, index: int, kind: str) -> None:
         """把第 index 个框改成半幅（左/右）。"""
+        if self._keep_blank_on():
+            self._set_blank_region_kind(path_text, kind)
+            return
         self._box_editor().make_half(path_text, index, kind)
 
     def _delete_selected_box(self) -> None:
-        """删除当前选中的文本框（与 Delete 键同一条路径）。"""
+        """删除当前选中的框（与 Delete 键同一条路径）。"""
+        if self._keep_blank_on():
+            self._delete_selected_region()
+            return
         self._box_editor().delete_selected()
+
+    # ------------------------------------------- 扩展框的类型/删除（保留空白时）
+    @staticmethod
+    def _region_kinds(regions) -> list:
+        """扩展框 → 类型键列表（``"left"``/``"right"``/``"full"``）。
+
+        与 ``box_styles`` 同一口径：只有一个框时是「整幅」，两个时按左边界拆左右。
+        """
+        if not regions:
+            return []
+        if len(regions) == 1:
+            return ["full"]
+        order = sorted(range(len(regions)), key=lambda i: regions[i][0])
+        kinds = ["right"] * len(regions)
+        kinds[order[0]] = "left"
+        return kinds
+
+    def _set_blank_region_kind(self, path_text: str, kind: str) -> None:
+        """把本页扩展框改成「整幅」或「左/右两半」。"""
+        regions = self._keep_blank_regions(path_text)
+        size = self._image_size_for(path_text)
+        if not size:
+            return
+        width, height = int(size[0]), int(size[1])
+        if kind == "half":
+            self._toast(
+                "info", "扩展框没有「半幅」",
+                "「半幅」是检测框的形态；保留框外空白时只有「整幅」和「左右两半」。",
+            )
+            return
+        if kind == "full":
+            target = [[0, 0, width, height]]
+        else:
+            # 左/右：并成整页再按页中线拆——已经是两半就不动（幂等）
+            if len(regions) == 2:
+                return
+            mid = int(round(width / 2.0))
+            target = [[0, 0, mid, height], [mid, 0, width, height]]
+        self._save_blank_regions(path_text, target)
+        if target != regions:
+            self.log_view.append(
+                f"保留框外空白：本页扩展框改为"
+                f"{'整页一张' if kind == 'full' else '左右两半'}（可再拖框微调）"
+            )
+
+    def _delete_selected_region(self) -> None:
+        """删除选中的扩展框。
+
+        ⚠️ **最后一个也能删**（用户 2026-11-12：「某一页最后一个框无法删除」是 bug）：
+        删空后这页退回「整页一张」——不能留空，否则这页没有裁图产物、整本书少一页。
+        """
+        path_text = self.detect_viewer.current_path()
+        if path_text is None or not self.task_id:
+            return
+        regions = self._keep_blank_regions(str(path_text))
+        index = self.detect_viewer.selected_index()
+        if not 0 <= index < len(regions):
+            self._toast("info", "未选中框", "先在预览里点一下要删除的框。")
+            return
+        remaining = [r for i, r in enumerate(regions) if i != index]
+        self._save_blank_regions(str(path_text), remaining)
 
     # ------------------------------------------------------- 检测结果统计
     #
@@ -330,6 +431,13 @@ class DetectMixin:
                 setter(False)
             self._half_width_median = None
             self._manual_stems = set()
+            self._narrow_stems = set()
+            # 「保留框外空白」的补框统计同理：不留上一本书的结论，否则空清单/
+            # 换任务后无框页会按**上一本**的框宽被凭空补出两半。
+            self._blank_has_stats = False
+            self._blank_expects_two = False
+            self._blank_typical_width = 0
+            self._blank_half_width = None
             widget.set_results(len(paths), {})
             return
         boxes_all = self.store.boxes_all_at(
@@ -364,6 +472,22 @@ class DetectMixin:
         # ⚠️ 全书判据**只算一次**：以前这里算一次、_book_note 里又算一次，
         #    2000 页的书等于白跑一遍（用户报「切类型卡顿」时排查到的重复项之一）。
         profile = profile_book(sampled)
+        # 「窄页」（单页扫描，页宽明显小于全书）：「保留框外空白」的划线要与
+        # **提交同一口径**——窄页只有一栏，提交会退化成整页一张，预览若还画
+        # 左右两半就自相矛盾（见 ``_keep_blank_geometry``）。
+        typical = typical_page_width(width for _stem, _raw, width in sampled)
+        self._narrow_stems = {
+            stem for stem, _raw, width in sampled
+            if is_narrow_page(width, typical)
+        }
+        # 「保留框外空白」给**无框页补框**要用全书统计（用户 2026-11-12）：
+        # 双栏书且本页装得下两个框 ⇒ 按页中线拆两半，否则整页一张。
+        # 判据素材在这里缓存，逐页上屏时不再重复算 profile（2000 页会卡）。
+        self._blank_typical_width = typical
+        self._blank_half_width = profile.half_width_median
+        self._blank_expects_two = bool(profile.double_column_book)
+        #: 整本书**一个框都没有** ⇒ 没有统计依据，无框页不补（保持旧行为）。
+        self._blank_has_stats = profile.boxed_pages > 0
         # 「整幅其实像半幅」的页（用户 2026-10-26，任务 0023）：统计与标注都要
         # 按**半幅**呈现，否则界面仍显示一堆「整幅」，和提交/拼版对不上。
         # 判据本体在 utils.book_layout，这里只负责按来源过滤（人工整幅不动）。
@@ -576,6 +700,12 @@ class DetectMixin:
         显示用的名称/颜色**由控件按中心位置现算**（`image_view.box_styles`），
         这里只把 ``full``（整幅页）标志、一行文案与要选中的下标交给它——
         规则不抄第二份。
+
+        ⚠️ **「保留框外空白」开着时画的是「扩展框」**（用户 2026-11-12 定）：
+        显示的框**不是检测框**，而是要裁的整页左右两半（或整页一张），带
+        「左框/右框」文字，并且**可以直接拖动**——拖的就是裁图区域，落库到
+        ``boxes.json`` 的 ``blank``（见 :meth:`_save_blank_regions`）。检测框
+        原样留在文件里，切回「不保留」立刻按它显示。
         """
         from desktop.components.viewers.image_view import box_names  # noqa: PLC0415
 
@@ -602,6 +732,16 @@ class DetectMixin:
         #    这里读 viewer 的现值以保证「标签」与「面板高亮」同一口径。
         # ⚠️ 若用户在半幅页上**指定过**左/右，标签就用指定值（优先级见 box_styles）。
         side = self._side_override_of(path_text, raw)
+        # 「保留空白」的扩展框：**没有检测框的页面也要能画**（用户 2026-11-12
+        # "任何页面都可以手动划线"）⇒ 不依赖 shown 是否为空。
+        regions = self._keep_blank_regions(path_text)
+        if regions:
+            # ⚠️ ``full`` 只看**自动推导**的形态（整幅/单栏/窄页＝整页一张），
+            #    不看当前区域个数：用户删掉一侧后剩下的那半仍是「左框/右框」，
+            #    绝不能因为"只剩一个"就蜕变成整幅（用户 2026-11-12 报的 bug）。
+            full = self._keep_blank_is_full_page(path_text)
+            shown = regions
+            side = None
         setter = getattr(self.detect_viewer, "set_side_override", None)
         if callable(setter):
             # ⚠️ rerender=False：下面紧接着 apply_boxes 会重绘一次，这里再画一遍
@@ -612,10 +752,21 @@ class DetectMixin:
             except TypeError:
                 setter(side)
         names = box_names(
-            shown, size, full, self._single_column_display(), side
+            shown, size, full,
+            False if regions else self._single_column_display(), side,
         )
-        info = self._describe_boxes(shown, names) + ORIGIN_SUFFIX.get(origin or "", "")
-        self._show_boxes_info(shown, origin, names=names)
+        # 扩展框模式下信息条说明"这是保留空白的裁图区域"
+        extra = KEEP_BLANK_SUFFIX if regions else ""
+        info = (
+            self._describe_boxes(shown, names)
+            + ("" if regions else ORIGIN_SUFFIX.get(origin or "", ""))
+            + extra
+        )
+        # 扩展框模式下不提「手动/自动」（那是检测框的来源标记，与裁图区域无关）
+        self._show_boxes_info(
+            shown, None if regions else origin, names=names, extra=extra
+        )
+        self._set_box_editable(True)
         self.detect_viewer.apply_boxes(
             shown,
             qsize,
@@ -623,6 +774,243 @@ class DetectMixin:
             full=full,
             selected=select_index,
         )
+        self._sync_box_hint(shown)
+
+    def _sync_box_hint(self, shown) -> None:
+        """画布顶部那条红框提示（用户 2026-11-12）：告诉用户**能手动改框**。
+
+        随"这页有没有框 / 是不是保留框外空白"换文案（文案本体的唯一实现在
+        ``box_kinds.manual_hint_text``）。⚠️ 走 ``getattr`` 兜底：自测的 viewer
+        替身只实现被断言用到的方法，缺这个方法不该把整次上屏打断。
+        """
+        setter = getattr(self.detect_viewer, "set_hint_banner", None)
+        if not callable(setter):
+            return
+        if self.detect_viewer.current_path() is None:
+            setter("")
+            return
+        setter(
+            manual_hint_text(
+                has_boxes=bool(shown),
+                keep_blank=self._keep_blank_on(),
+            )
+        )
+
+    # ----------------------------------------- 保留框外空白（本任务参数，显示侧）
+    def _keep_blank_on(self) -> bool:
+        """面板「保留框外空白」现值（面板还没建/替身没有读数 → 按关闭处理）。
+
+        它是**任务级**参数：面板随时值都只反映**当前任务**（切任务时
+        ``set_task`` 先复位再按本任务的暂存/历史回填），所以这里读面板就够，
+        不要再往全局配置里找"上次用的值"——那正好会造成任务间串味。
+
+        ⚠️ 走 ``peek`` 而不是直接读面板：``panel_host_of_step("detect")`` 拿到
+        的是 ``LazyPanelHost``，属性访问会**立刻把面板构造出来**（惰性就白做了）。
+        """
+        host = self.panel_host_of_step("detect")
+        peek = getattr(host, "peek", None)
+        panel = peek() if callable(peek) else host
+        if panel is None:
+            return False
+        try:
+            return bool(panel.get_args().get("keep_blank", False))
+        except Exception:  # noqa: BLE001 - 取不到就当没开（旧行为：紧裁框）
+            return False
+
+    def _keep_blank_slots(self, path_text: str, raw, side, size) -> list:
+        """页级归一化后的槽位——与提交侧 ``plan_detect_submit_entries``
+        **同一实现**（``book_layout.keep_blank_slots``），否则预览与产物各说一套。
+
+        三层规则（用户 2026-11-11 / 2026-11-12）：
+
+        1. 用户指定过左右的页**不归一化**（那是在说"这页其实是某一边"）；
+        2. 单个宽框（≥60% 页宽）→ 退成单槽 ⇒ 整页一张；
+        3. 双栏书里"只检出一侧"的页：本页**装得下两个**就保留 2 槽（下游以框的
+           内侧边分界＝"分割线在能识别的那个框边缘"）；装不下（单页扫描）就退成
+           单槽 ⇒ 整页一张，别硬切。
+        """
+        stem = Path(path_text).stem
+        return keep_blank_slots(
+            raw,
+            size[0] if size else None,
+            side_specified=bool(side),
+            narrow=stem in (getattr(self, "_narrow_stems", set()) or set()),
+            expects_two=bool(getattr(self, "_blank_expects_two", False)),
+            typical_width=getattr(self, "_blank_typical_width", 0),
+            half_width=getattr(self, "_blank_half_width", None),
+        )
+
+    def _blank_page_policy(self, size) -> str:
+        """**无框页**怎么补（``split`` / ``single`` / ``skip``）。
+
+        判据本体是 ``book_layout.keep_blank_page_form``（提交侧调同一个函数）：
+        双栏书 + 本页装得下两个框 ⇒ 左右两半；否则整页一张；整本书一个框都
+        没有 ⇒ 不处理（没有统计依据就不凭空造裁图范围）。
+        """
+        return keep_blank_page_form(
+            size[0] if size else None,
+            getattr(self, "_blank_typical_width", 0),
+            getattr(self, "_blank_half_width", None),
+            expects_two=bool(getattr(self, "_blank_expects_two", False)),
+            has_stats=bool(getattr(self, "_blank_has_stats", False)),
+        )
+
+    def _keep_blank_regions(self, path_text: str) -> list:
+        """「保留框外空白」要裁的区域：**手工调整优先**，否则由检测框现算。
+
+        自动规则（用户 2026-11-11 / 2026-11-12，本体在
+        ``utils.box_geometry.keep_blank_regions``，提交侧调同一个函数）：
+
+        - 左右双框：以两框相邻边界的中点分界，左右各一整页高的半页；
+        - 单框：以框的**内侧边**分界，另一侧同样留白（＝"分割线在能识别的
+          那个框边缘"）；本页装不下两个框时退成整页一张；
+        - 整幅/单栏/窄页：整页一张；
+        - **无框页**（用户 2026-11-12 新增）：按全书统计补——双栏书且本页装得下
+          两个框 ⇒ 按页中线拆左右两半；只装得下一个 ⇒ 整页一张；整本书一个框
+          都没有 ⇒ 不处理（没有统计依据）。
+
+        用户在预览里拉过扩展框后，文件里有 ``blank``（见 ``_save_blank_regions``），
+        它**优先**——自动推导只是初值（用户 2026-11-12：「可以调整的是扩展框」）。
+        ⚠️ 坐标一律是**真实裁图坐标**，画线那一侧负责处理"边压在图片边缘"（见
+        ``render._draw_boxes`` 的描边内收），不许在这里偷偷改数值。
+        """
+        if not self._keep_blank_on():
+            return []
+        getter = getattr(self.store, "blank_regions_at", None)
+        if callable(getter) and self.task_id:
+            manual = getter(self._boxes_write_path(), Path(path_text).stem)
+            if manual:
+                return [list(box) for box in manual]
+        size = self._image_size_for(path_text)
+        if not size:
+            return []
+        raw = self._raw_boxes_for(path_text)
+        side = self._side_override_of(path_text, raw)
+        return [
+            list(box) for box, _side in keep_blank_regions(
+                self._keep_blank_slots(path_text, raw, side, size),
+                size,
+                # 无框页也要补（用户 2026-11-12）：双栏书按页中线拆两半，
+                # 只装得下一个框的页整页一张；整本无框才不处理。
+                empty=self._blank_page_policy(size),
+            )
+        ]
+
+    def _keep_blank_is_full_page(self, path_text: str) -> bool:
+        """当前扩展框是否「整页一张」（整幅 / 单栏，或用户手动并成整页）。
+
+        判据＝**只剩一块、且这块宽到不可能是半页**（``is_single_wide_box``，≥60%
+        页宽）。⚠️ 不能只看"只剩一个"：删掉一侧后剩下的那半也是"一个"，那样会
+        把左框/右框错误地显示成整幅（用户 2026-11-12 报的 bug：「左右框删除一个，
+        另一个蜕变成了整幅」）。
+        """
+        regions = self._keep_blank_regions(path_text)
+        if len(regions) != 1:
+            return False
+        size = self._image_size_for(path_text)
+        if not size:
+            return False
+        return is_single_wide_box(regions[0], size[0])
+
+    def _save_blank_regions(self, path_text: str, boxes) -> None:
+        """预览里拖动/删除**扩展框**后写回（``boxes.json`` 的 ``blank``）。
+
+        ⚠️ 与「改检测框」分开写：``blank`` 是**裁图口径**，检测框是识别结果。
+        混在一条路上就会出现"拖一下区域，检测结果跟着变"。
+        ⚠️ **删光了也要能删**（用户 2026-11-12：「某一页最后一个框无法删除」）：
+        这一页退回**整页一张**，而不是"留空不写"——留空等于这页没有裁图产物，
+        整本书会少一页（下游那一堆占位规则就是为了防这个）。
+        """
+        if not self.task_id:
+            return
+        saver = getattr(self.store, "save_blank_regions", None)
+        if not callable(saver):
+            return
+        regions: list = []
+        for box in boxes or []:
+            if not box:
+                continue
+            rect = [int(round(float(v))) for v in box]
+            if rect[2] - rect[0] >= 1 and rect[3] - rect[1] >= 1:
+                regions.append(rect)
+        regions = regions[:2]  # 一页最多左右两块
+        if not regions:
+            size = self._image_size_for(path_text)
+            if not size:
+                return
+            regions = [[0, 0, int(size[0]), int(size[1])]]
+            self._toast(
+                "info", "已改成整页一张",
+                "删掉了最后一个扩展框：本页按整页一张裁（不拆左右）。"
+                "想拆回去点「左框/右框」，或重新「检测本页」回到自动。",
+            )
+        saver(
+            self.task_id, Path(path_text).stem, regions,
+            **self._node_scope(self.node_of_stage("detect")),
+        )
+        self._refresh_after_blank_edit(path_text, regions)
+
+    def _refresh_after_blank_edit(self, path_text: str, regions: list) -> None:
+        """改完扩展框后刷屏：重画（保持选中）+ 重判提交按钮。"""
+        sel = self.detect_viewer.selected_index()
+        sel_box = regions[sel] if 0 <= sel < len(regions) else None
+        index = -1
+        if sel_box is not None:
+            index = next((i for i, b in enumerate(regions) if b == sel_box), -1)
+        self._apply_boxes(
+            path_text, self._raw_boxes_for(path_text), "manual", select_index=index
+        )
+        updater = getattr(self, "_update_submit_button", None)
+        if callable(updater):
+            updater(getattr(self, "running_stage", None) is not None)
+
+    def _set_box_editable(self, editable: bool) -> None:
+        """开关「在预览上手绘/拖动框」（两种模式都开着：保留空白时拉的是扩展框）。
+
+        走 ``getattr`` 兜底：自测的 viewer 替身只实现被断言用到的方法，缺这个
+        不该把整次上屏打断。``_detect_boxes_editable`` 是控件建出来时的口径
+        （接线时记下）：本来就是只读预览时永远别再打开编辑。
+        """
+        view = getattr(self.detect_viewer, "view", None)
+        setter = getattr(view, "set_boxes_editable", None)
+        if callable(setter):
+            allowed = bool(getattr(self, "_detect_boxes_editable", True))
+            setter(bool(editable) and allowed)
+
+    def _on_keep_blank_changed(self, keep: bool) -> None:
+        """用户切换「保留框外空白」（**本任务参数**）→ 本任务所有页面的划线跟着调整。
+
+        ⚠️ **只重算显示**：``boxes.json`` 一个字节都不动（用户 2026-11-11：
+        "是划线，而不是检测结果的原始数据丢弃"）。每个页面在 ``_apply_boxes``
+        里按当前开关现算，所以翻到哪一页都是新口径；这里只把**当前页**重画
+        一次、顺手更新提交按钮（改了它，提交产物就过期了）。
+
+        ⚠️ 只在当前页**有已加载的框**时重画：``detect_cache`` 里的 ``None`` 是
+        "检测正在跑"的占位，这时拿磁盘旧框上屏会盖掉「正在检测…」。
+        ⚠️ 例外：这页有**手工扩展框**时照样重画——那种页可能压根没有检测结果
+        （用户 2026-11-12：任何页面都能手动划线）。
+        """
+        # 先把这个选择记进**任务级**状态（``tasks/<id>/ui.json``）：它是任务级
+        # 参数，任务之间互不影响，重开程序也要还在（用户 2026-11-12）。
+        # ⚠️ 走 getattr 兜底：自测的 store 替身只实现被断言用到的方法。
+        if self.task_id:
+            saver = getattr(self.store, "save_detect_keep_blank", None)
+            if callable(saver):
+                saver(self.task_id, bool(keep))
+        path = self.detect_viewer.current_path()
+        key = str(path) if path else ""
+        cached = self.detect_cache.get(key) if key else None
+        if key and (cached is not None or self._keep_blank_regions(key)):
+            self._apply_boxes(key, cached or [])  # 只读缓存里的原始槽位，不回写
+        elif key:
+            # 这页没有可显示的东西：提示条也要跟着换口径（保留空白开关本身
+            # 改变了"画的是什么"——检测框 ↔ 要裁的区域）
+            self._sync_box_hint([])
+        self._refresh_reference_boxes()
+        running = getattr(self, "running_stage", None) is not None
+        updater = getattr(self, "_update_submit_button", None)
+        if callable(updater):
+            updater(running)
 
     # ------------------------------------------------------------ 页面几何
     def _image_size_for(self, path_text: str):
@@ -643,10 +1031,6 @@ class DetectMixin:
             return head.width(), head.height()
         return None
 
-    def _current_boxes_for(self, path_text: str) -> list:
-        """当前应展示的框（内存缓存优先）。"""
-        return self._valid_boxes(self.detect_cache.get(str(path_text)) or [])
-
     def _detect_image_selected(self, index: int, path_text: str) -> None:
         """选中图片：只展示已有检测结果，绝不自动执行检测（重负载操作需用户触发）。"""
         path = Path(path_text)
@@ -654,7 +1038,10 @@ class DetectMixin:
         self.detect_viewer.set_reference_boxes([])
         if key in self.detect_cache:
             raw = self.detect_cache[key] or []
-            if self._valid_boxes(raw):
+            # ⚠️ 「保留空白」下手动画过的扩展框与检测框无关：即使本页没有检测
+            #    结果（raw 为空），也得走 ``_apply_boxes`` 把那几块画出来
+            #    （用户 2026-11-12：任何页面都可以手动划线）。
+            if self._valid_boxes(raw) or self._keep_blank_regions(key):
                 self._apply_boxes(key, raw)
             else:
                 self._show_boxes_info([])
@@ -666,6 +1053,10 @@ class DetectMixin:
                     self._describe_boxes([]),
                     full=is_full_content(raw),
                 )
+                # 框可以随时手绘（保留空白与否都一样，2026-11-12）
+                self._set_box_editable(True)
+                # 顶部提示跟着换文案（这页没框："拖一下就能手画一个"）
+                self._sync_box_hint([])
             self._refresh_reference_boxes()
             return
         # 优先使用库里的框（含手动调整过的）
@@ -679,9 +1070,18 @@ class DetectMixin:
             self._apply_boxes(key, boxes, origin)
             self._refresh_reference_boxes()
             return
-        self.detect_viewer.info_label.setText("尚未检测：点右上「检测文本框」批量检测，或点面板里的「检测本页」")
-
-        self.detect_viewer.info_label.setText("尚未检测：点右上「检测文本框」批量检测，或点面板里的「检测本页」")
+        # 「保留框外空白」给无框页补出来的区域（用户 2026-11-12）：这页可能
+        # **压根没有 boxes.json 条目**（从没检出过），也照样要画——否则预览
+        # 与提交产物对不上（产物里它有图，画布上却是空的）。
+        if self._keep_blank_regions(key):
+            self.detect_cache[key] = []
+            self._apply_boxes(key, [])
+            self._refresh_reference_boxes()
+            return
+        self.detect_viewer.info_label.setText(
+            "尚未检测：点右上「检测文本框」批量检测，或点面板里的「检测本页」"
+        )
+        self._sync_box_hint(self._raw_boxes_for(key))
 
     def _detect_current_page(self) -> None:
         """手动触发当前页的检测文本框（YOLO 子进程，重负载）。"""
@@ -801,18 +1201,13 @@ class DetectMixin:
         return boxes
 
     def _refresh_reference_boxes(self) -> None:
-        """重算参考框（虚线标注）。
+        """清掉参考层并同步第三步预览。
 
-        border 属于裁剪步骤，detect 预览的参考框只体现检测框本身
-        （默认不加边距），检测出几个框就画几个参考框。
+        ⚠️ 「保留框外空白」现在**把扩展框直接画成实线框**（见 ``_apply_boxes``），
+        不再需要"橙色虚线"那层参考框——留着反而与实线重影。参考层本身仍保留在
+        控件里（``set_reference_boxes`` 是 ImageView 的公开 API），只是本步不用。
         """
-        path = self.detect_viewer.current_path()
-        if path:
-            boxes = self._current_boxes_for(str(path))
-            if not boxes:
-                self.detect_viewer.set_reference_boxes([])
-            else:
-                self.detect_viewer.set_reference_boxes(compute_final_boxes(boxes, None))
+        self.detect_viewer.set_reference_boxes([])
         # rembg 预览的区域同步刷新（显示范围跟随检测框）
         # ⚠️ **只在本步就是「图片去底色」时才刷**（用户 2026-10-17 报「切换
         #    左/右/半幅/整幅卡顿」）：``refresh_display`` 会重建全部条目并重新
@@ -822,12 +1217,15 @@ class DetectMixin:
         if self.current_stage() == "rembg":
             self.rembg_viewer.refresh_display()
 
-    def _show_boxes_info(self, boxes, origin: str | None = None, names=None) -> None:
+    def _show_boxes_info(self, boxes, origin: str | None = None, names=None,
+                         extra: str = "") -> None:
         if boxes is None:
             self.detect_viewer.info_label.setText("正在检测文本框位置...")
             return
         suffix = ORIGIN_SUFFIX.get(origin or "", "")
-        self.detect_viewer.info_label.setText(self._describe_boxes(boxes, names) + suffix)
+        self.detect_viewer.info_label.setText(
+            self._describe_boxes(boxes, names) + suffix + extra
+        )
 
     @staticmethod
     def _describe_boxes(boxes, names=None) -> str:
@@ -846,7 +1244,11 @@ class DetectMixin:
     def _save_manual_boxes(self, path_text: str, boxes) -> None:
         """预览区编辑线框后保存到库（origin=manual），不生成任何文件。
 
-        ⚠️ 存的是**槽位**表示，不是"用户画了几个框"：
+        ⚠️ 「保留框外空白」开着时，预览上的框是**扩展框**（要裁的区域）：
+        这时写进 ``blank`` 而不是检测框（用户 2026-11-12：「可以调整的是扩展框」，
+        能调分界和区域大小）。检测框原样不动。
+
+        检测框那条路存的是**槽位**表示，不是"用户画了几个框"：
         - 整幅页 → 1 槽 ``[整幅]``；
         - 半幅页 → **恒 2 槽** ``[左, 右]``（缺失侧 null）。
 
@@ -854,6 +1256,9 @@ class DetectMixin:
         "删掉整幅框后，右边的框自动变成了整幅" 就是按元素个数推断类型的后果。
         """
         if not self.task_id:
+            return
+        if self._keep_blank_on():
+            self._save_blank_regions(path_text, boxes)
             return
         normalized = [[int(round(float(v))) for v in box] for box in boxes]
         size = self._image_size_for(path_text) or (0, 0)

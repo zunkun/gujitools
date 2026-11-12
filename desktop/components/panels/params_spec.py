@@ -83,10 +83,15 @@ SIDES = [("双面", "both"), ("左页", "left"), ("右页", "right")]
 # extract：zoom/dpi/quick/ext 全与 CLI 一致；表单把 pages 的 None 显示成空串
 EXTRACT_DEFAULTS: dict = _base("extract", pages="")
 
-# detect：**表单上没有参数**（2026-10-22 起 area 已从整个项目移除）。
-# ⚠️ 也不从 ``_base("detect")`` 整份取：那里的 ``save`` / ``ext`` 是**命令行**
+# detect：只有桌面端特有的「保留框外空白」（2026-11-11）。area 已于
+# 2026-10-22 从整个项目移除；这个键也**不是** CLI 参数（CLI detect 只出框、
+# 不裁图，裁剪发生在桌面「提交本次任务」）。
+# ⚠️ 它是**任务级**参数（用户 2026-11-12）：默认值在这里，但用户改过之后
+#    存在 ``tasks/<任务号>/ui.json``（``store.load_detect_keep_blank``），
+#    任务之间互不影响。不要往全局配置里放"上次用的值"。
+# ⚠️ 不从 ``_base("detect")`` 整份取：那里的 ``save`` / ``ext`` 是**命令行**
 #    产物格式开关（标注图要不要落盘、落什么格式），桌面端没有这两件事。
-DETECT_DEFAULTS: dict = {}
+DETECT_DEFAULTS: dict = {"keep_blank": False}
 
 # rembg：与 CLI 一致（**没有 area / border**：去底色就是整图去底色）
 REMBG_DEFAULTS: dict = _base("rembg")

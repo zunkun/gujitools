@@ -36,20 +36,31 @@ EMPTY: list = []
 MIRRORED_LEFT = [0, 100, 480, 1300]
 
 
-def _entries(boxes_map: dict, pages: list[str], sizes: dict | None = None):
+def _entries(
+    boxes_map: dict,
+    pages: list[str],
+    sizes: dict | None = None,
+    keep_blank: bool = False,
+    blanks: dict | None = None,
+):
     """按页名清单 + ``{页名: 槽位}`` 派生提交条目。
 
     默认每页 1000×1400；``sizes`` 可给个别页指定尺寸（窄页＝单页扫描用例）。
+    ``keep_blank=True`` 对应界面「保留框外空白」；``blanks`` 是用户手拉过的
+    扩展框（``{页名: [rect, ...]}``），对应 boxes.json 的 ``blank``。
     """
     from desktop.services.print_plan import plan_detect_submit_entries
 
     size_map = dict(sizes or {})
+    blank_map = dict(blanks or {})
     paths = [Path(name) for name in pages]
     return plan_detect_submit_entries(
         manifest_paths=paths,
         boxes_for=lambda text: boxes_map.get(Path(text).stem, []),
         page_width_for=lambda text: size_map.get(Path(text).stem, (W, H))[0],
         page_size_for=lambda text: size_map.get(Path(text).stem, (W, H)),
+        keep_blank=keep_blank,
+        blank_for=lambda stem: blank_map.get(stem),
     )
 
 
@@ -129,6 +140,95 @@ def run(ctx) -> None:
        [e["label"] for e in entries if e["label"].startswith("0006")]
        == ["0006-r", "0006-l"],
        str([e["label"] for e in entries if e["label"].startswith("0006")]))
+
+    # ---- 1a. 保留框外空白（用户 2026-11-11） ----
+    pages_kb = [f"{i:04d}.png" for i in range(1, 4)]
+    double_kb = {f"{i:04d}": DOUBLE for i in range(1, 4)}
+    got_kb = _by_label(_entries(double_kb, pages_kb, keep_blank=True))
+    ok("保留空白：双框页以两框中间 485 分界，左右各裁整页高",
+       got_kb["0001-l"]["boxes"] == [[0, 0, 485, 1400]]
+       and got_kb["0001-r"]["boxes"] == [[485, 0, 1000, 1400]],
+       f"{got_kb['0001-l']['boxes']} / {got_kb['0001-r']['boxes']}")
+    ok("保留空白：双框页两条目都是真框（不带占位标记）",
+       not got_kb["0001-l"].get("placeholder")
+       and not got_kb["0001-r"].get("placeholder"))
+
+    got_kb = _by_label(_entries({"0001": LEFT_ONLY}, ["0001.png"], keep_blank=True))
+    ok("保留空白：单左框以框右侧 450 分界，右半页保留空白",
+       got_kb["0001-l"]["boxes"] == [[0, 0, 450, 1400]]
+       and got_kb["0001-r"]["boxes"] == [[450, 0, 1000, 1400]],
+       f"{got_kb['0001-l']['boxes']} / {got_kb['0001-r']['boxes']}")
+
+    got_kb = _by_label(_entries({"0001": RIGHT_ONLY}, ["0001.png"], keep_blank=True))
+    ok("保留空白：单右框以框左侧 520 分界，左半页保留空白",
+       got_kb["0001-l"]["boxes"] == [[0, 0, 520, 1400]]
+       and got_kb["0001-r"]["boxes"] == [[520, 0, 1000, 1400]],
+       f"{got_kb['0001-l']['boxes']} / {got_kb['0001-r']['boxes']}")
+
+    got_kb = _by_label(_entries({"0001": FULL}, ["0001.png"], keep_blank=True))
+    ok("保留空白：整幅页不切分，整页保留一张",
+       "0001" in got_kb and got_kb["0001"]["boxes"] == [[0, 0, 1000, 1400]]
+       and "0001-l" not in got_kb,
+       str(sorted(got_kb)))
+
+    empty_kb = {f"{i:04d}": DOUBLE for i in range(1, 4)}
+    empty_kb["0002"] = EMPTY
+    got_kb = _by_label(_entries(empty_kb, pages_kb, keep_blank=True))
+    ok("保留空白：无框页按统计拆左右两半（中线 500），不再是占位透传",
+       got_kb["0002-l"]["boxes"] == [[0, 0, 500, 1400]]
+       and got_kb["0002-r"]["boxes"] == [[500, 0, 1000, 1400]]
+       and not got_kb["0002-l"].get("placeholder")
+       and not got_kb["0002-r"].get("placeholder"),
+       f"{got_kb.get('0002-l')} / {got_kb.get('0002-r')}")
+
+    # 用户 2026-11-12 的规则：无框页"装得下两个才拆"——窄页（单页扫描）
+    # 只容纳得下一个文本框，所以只能出一张（整页）。
+    narrow_kb = {f"{i:04d}": DOUBLE for i in range(1, 4)}
+    narrow_kb["0002"] = EMPTY
+    got_kb = _by_label(_entries(
+        narrow_kb, pages_kb,
+        sizes={"0002": (600, 1400)}, keep_blank=True,
+    ))
+    ok("保留空白：窄页无框 → 只能容纳一个文本框，整页一张（不拆两半）",
+       "0002" in got_kb and "0002-l" not in got_kb
+       and got_kb["0002"]["boxes"] == [[0, 0, 600, 1400]],
+       str(sorted(k for k in got_kb if k.startswith("0002"))))
+
+    got_kb = _by_label(_entries(
+        {"0001": LEFT_ONLY}, ["0001.png"],
+        sizes={"0001": (600, 1400)}, keep_blank=True,
+    ))
+    ok("保留空白：窄页只检出一个框 → 装不下两栏，整页一张（不产生 -l/-r）",
+       "0001" in got_kb and "0001-l" not in got_kb
+       and got_kb["0001"]["boxes"] == [[0, 0, 600, 1400]],
+       str(sorted(got_kb)))
+
+    # 整本书一个框都没有 ⇒ 没有统计依据，保持旧行为（透传，不凭空造区域）
+    got_kb = _by_label(_entries(
+        {"0001": EMPTY, "0002": EMPTY}, ["0001.png", "0002.png"], keep_blank=True,
+    ))
+    ok("保留空白：整本无框 → 没有统计依据，不补框（整页透传、不裁）",
+       sorted(got_kb) == ["0001", "0002"]
+       and got_kb["0001"]["boxes"] == [],
+       str({k: v["boxes"] for k, v in got_kb.items()}))
+
+    # 用户手拉过的扩展框（boxes.json 的 ``blank``）优先于自动推导
+    got_kb = _by_label(_entries(
+        {"0001": DOUBLE}, ["0001.png"], keep_blank=True,
+        blanks={"0001": [[0, 0, 430, 1400], [430, 0, 1000, 1400]]},
+    ))
+    ok("保留空白：手拉的分界 430 覆盖自动中点 485",
+       got_kb["0001-l"]["boxes"] == [[0, 0, 430, 1400]]
+       and got_kb["0001-r"]["boxes"] == [[430, 0, 1000, 1400]],
+       f"{got_kb['0001-l']['boxes']} / {got_kb['0001-r']['boxes']}")
+
+    got_kb = _by_label(_entries(
+        {"0001": DOUBLE}, ["0001.png"], keep_blank=True,
+        blanks={"0001": [[0, 60, 1000, 1340]]},
+    ))
+    ok("保留空白：手拉成单个矩形就出整页一张（不再拆 -l/-r）",
+       sorted(got_kb) == ["0001"] and got_kb["0001"]["boxes"] == [[0, 60, 1000, 1340]],
+       str(sorted(got_kb)))
 
     # ---- 1b. 窄页（单页扫描）：放不下第二栏 → 不补两张、不补另一侧 ----
     from utils.book_layout import (

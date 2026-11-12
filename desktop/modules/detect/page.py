@@ -53,7 +53,7 @@ from PySide6.QtWidgets import QFileDialog
 from qfluentwidgets import CaptionLabel, FluentIcon as FIF
 from qfluentwidgets import PrimaryPushButton, PushButton
 
-from desktop.components.box_kinds import BoxKindEditor
+from desktop.components.box_kinds import BoxKindEditor, manual_hint_text
 from desktop.components.progress_row import ProgressRow
 from desktop.components.viewers import ImageViewerWidget
 from desktop.components.viewers.image_actions import ImageEditActionsMixin
@@ -739,6 +739,12 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin):
         self.viewer.apply_boxes(
             shown, QSize(size[0], size[1]), info, full=full, selected=selected
         )
+        # 顶部红框提示（用户 2026-11-12，"能手动改框"的可发现性）：文案与任务
+        # 流程第二步共用 ``box_kinds.manual_hint_text``，本页没有「保留框外空白」
+        # 这个任务级参数，所以 keep_blank 恒为 False。
+        setter = getattr(self.viewer, "set_hint_banner", None)
+        if callable(setter):
+            setter(manual_hint_text(has_boxes=bool(shown)))
 
     @staticmethod
     def _manual_slots(boxes, size, full: bool) -> list:

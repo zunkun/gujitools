@@ -264,6 +264,81 @@ def half_slots(boxes, image_size) -> List[Optional[list]]:
     return [left, right]
 
 
+def _empty_page_regions(
+    width: int, height: int, policy: str,
+) -> List[Tuple[List[int], Optional[str]]]:
+    """**无框页**的「保留框外空白」区域（用户 2026-11-12 的补框规则）。
+
+    ``policy`` 由 :func:`utils.book_layout.keep_blank_page_form` 按全书统计
+    算好（那里是唯一判据），这里只负责落成矩形：
+
+    - ``"split"``：按**页中线**分左右两半（统计上这页该有两个框）；
+    - ``"single"``：整页一张（这页只装得下一个框）；
+    - 其余（含 ``"skip"``）：空表，不处理。
+    """
+    if policy == "split":
+        mid = max(1, min(width - 1, int(round(width / 2.0))))
+        return [
+            ([0, 0, mid, height], "left"),
+            ([mid, 0, width, height], "right"),
+        ]
+    if policy == "single":
+        return [([0, 0, width, height], None)]
+    return []
+
+
+def keep_blank_regions(
+    slots, image_size, *, empty: str = "skip",
+) -> List[Tuple[List[int], Optional[str]]]:
+    """「保留框外空白」：检测槽位 → 整页半幅裁图区域。
+
+    用户 2026-11-11 口径（第二步「保留框外空白」= 保留时）：
+
+    - **左右双框**：以两框相邻边界的中点作分界线，左、右各裁一张；
+    - **单框**（半幅缺一侧）：以框的**内侧边**作分界线（左框取右边界、
+      右框取左边界），另一侧同样裁一张空白页；
+    - 上下都到图片边缘，外侧也到图片边缘（整页高、半页宽）；
+    - **整幅**（单槽）不分左右——内容跨页，切一刀会截断画面，整页保留。
+
+    ``empty`` 决定**一个框都没有**的页怎么办（用户 2026-11-12：无框页也要
+    按全书统计补框）：
+
+    - ``"skip"``（默认）：返回空表，调用方保持原有占位/透传逻辑；
+    - ``"single"``：整页一张（这一页只装得下一个框，或整本书是单栏/整幅）；
+    - ``"split"``：按**页中线**分左右两半（统计上这页该有两个框）。
+
+    ``image_size`` 取不到时一律返回空表（没有页宽/页高就定不出边界，
+    调用方回落原有紧裁）。
+    """
+    try:
+        width, height = int(image_size[0]), int(image_size[1])
+    except (TypeError, ValueError, IndexError):
+        return []
+    if width <= 0 or height <= 0:
+        return []
+    raw = list(slots or [])
+    if not any(raw):
+        return _empty_page_regions(width, height, empty)
+    if len(raw) == 1:
+        # 整幅：横跨整页，切分只会把内容截成两半。
+        return [([0, 0, width, height], None)]
+    left = raw[0]
+    right = raw[1] if len(raw) > 1 else None
+    if left and right:
+        boundary = int(round((float(left[2]) + float(right[0])) / 2.0))
+    elif left:
+        boundary = int(left[2])
+    elif right:
+        boundary = int(right[0])
+    else:
+        return []
+    boundary = max(1, min(width - 1, boundary))
+    return [
+        ([0, 0, boundary, height], "left"),
+        ([boundary, 0, width, height], "right"),
+    ]
+
+
 def parse_border_mm(border_value, dpi: int = 300) -> Optional[List[int]]:
     """解析 border 参数（毫米单位），按 DPI 转换为像素。
 

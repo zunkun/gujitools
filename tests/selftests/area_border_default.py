@@ -61,8 +61,9 @@ def run(ctx) -> None:
     detect_panel = DetectPanel()
     rembg_panel = RembgPanel()
     try:
-        ok("detect 面板没有 area 控件、get_args 为空",
-           not hasattr(detect_panel, "area") and detect_panel.get_args() == {},
+        ok("detect 面板没有 area 控件、只有 keep_blank（默认 False）",
+           not hasattr(detect_panel, "area")
+           and detect_panel.get_args() == {"keep_blank": False},
            str(detect_panel.get_args()))
         ok("rembg 面板不再有 area / border",
            not hasattr(rembg_panel, "area") and not hasattr(rembg_panel, "border"))

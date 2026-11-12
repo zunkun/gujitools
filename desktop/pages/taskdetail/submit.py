@@ -83,9 +83,11 @@ class SubmitMixin:
         _boxes_write_path: Callable[[], Any]
         _page_width_of: Callable[..., int]
 
-    #: 第二步「检测文本框」：没有可调参数（area 已彻底移除，2026-10-22），
-    #: 产物只取决于检测框本身。
+    #: 第二步「检测文本框」：检测结果只取决于图片与模型——``keep_blank``
+    #: 不影响检测，只影响提交裁图，所以不进 preview 键。
     DETECT_PREVIEW_PARAM_KEYS = ()
+    #: 影响提交产物的参数：改了「保留框外空白」必须重新提交。
+    DETECT_SUBMIT_PARAM_KEYS = ("keep_blank",)
 
     # ---------------------------------------------------------- 状态判定
     def _latest_success_run(self, stage: str) -> dict | None:
@@ -113,14 +115,25 @@ class SubmitMixin:
         if stage != "detect":
             # 去底色已无提交动作（2026-10-22）；旧调用方拿到"无需提交"。
             return UP_TO_DATE
-        # ⚠️ 第二步没有表单参数（area 已彻底移除）：只比运行版本 + 检测框
-        #    是否在提交后被改过。
+        # panel 可能还没构造（不在第二步时）：用 peek 看一眼，绝不触发构造。
+        panel = self.panel_host_of_step("detect")
+        peek = getattr(panel, "peek", None)
+        panel_obj: Any = peek() if callable(peek) else panel
+        panel_args: dict = {}
+        if panel_obj is not None:
+            try:
+                panel_args = dict(panel_obj.get_args())
+            except ValueError:
+                panel_args = {}
         state = submit_version_state(
             preview_run=self._latest_success_run("detect"),
             submit_run=self._latest_success_run("detect_submit"),
-            panel_args={},
+            panel_args=panel_args,
             preview_param_keys=self.DETECT_PREVIEW_PARAM_KEYS,
-            submit_param_keys=self.DETECT_PREVIEW_PARAM_KEYS,
+            # 面板尚未构造时不比参数（否则空面板会让旧任务误报"有新版本"）。
+            submit_param_keys=(
+                self.DETECT_SUBMIT_PARAM_KEYS if panel_obj is not None else ()
+            ),
         )
         if state == UP_TO_DATE and self._boxes_edited_after_submit():
             # 检测框被改过：提交产物仍是改框前那份，必须重新提交。
@@ -214,18 +227,26 @@ class SubmitMixin:
         ]
         return profile_book(pages)
 
-    def _submit_entries(self) -> list[dict]:
+    def _submit_entries(self, keep_blank: bool = False) -> list[dict]:
         """第二步的提交条目：源页按检测框逐框裁图。
 
         全书级判定（单栏书 / 页宽 / 指定左右）与检测框都**一次读盘**：
         ``plan_detect_submit_entries`` 会遍历整本 manifest 逐页回调，逐页走
         ``_detect_boxes_for`` 就是 O(n²)。
+
+        ``keep_blank=True``（界面「保留框外空白」）时，有框页改为按整页半幅
+        切分，保留框外空白；无框页行为不变。用户在预览里手拉过的扩展框
+        （``boxes.json`` 的 ``blank``）优先于自动推导。
         """
         sizes = self._book_page_sizes()
         widths = {stem: int(size[0]) for stem, size in sizes.items()}
         profile = self._book_profile(widths)
         sides = self._side_overrides_all()
         boxes_map = self._boxes_map_all()
+        blanks = (
+            self.store.blank_regions_all_at(self._boxes_write_path())
+            if keep_blank and self.task_id else {}
+        )
         boxes_for = lambda text: boxes_map.get(Path(text).stem, []) or []  # noqa: E731
         return plan_detect_submit_entries(
             manifest_paths=self._manifest_paths(),
@@ -235,6 +256,8 @@ class SubmitMixin:
             side_for=lambda text: sides.get(Path(text).stem),
             book_profile=profile,
             page_size_for=lambda text: sizes.get(Path(text).stem),
+            keep_blank=keep_blank,
+            blank_for=lambda stem: blanks.get(stem),
         )
 
     def _save_submit_plan(self, entries: list[dict]) -> None:
@@ -370,10 +393,11 @@ class SubmitMixin:
             )
             return
         try:
-            panel.get_args()  # 本步没有表单参数；留着只为走同一条校验路径
+            panel_args = panel.get_args()
         except ValueError as exc:
             self._toast("error", "参数错误", str(exc))
             return
+        keep_blank = bool(panel_args.get("keep_blank", False))
         self._refresh_manifest()
         if not self._manifest_paths():
             self._toast(
@@ -383,7 +407,7 @@ class SubmitMixin:
             return
         # 检测框决定几何：每个框各裁一张图（2026-10-22 起没有 area）。
         # border 沿用历史默认 "0"（不加留白：第四步会在纸上重新排版）。
-        entries = self._submit_entries()
+        entries = self._submit_entries(keep_blank)
         if not entries:
             self._toast(
                 "warning", "没有可提交的页面",
@@ -398,6 +422,8 @@ class SubmitMixin:
                 )
             ),
             "clean": True,
+            # 记进运行参数：提交版本判定据此发现"改过保留空白设置"。
+            "keep_blank": keep_blank,
         }
         # 产物角色落进 boxes.json：拼版据此把"无后缀但其实是半幅"的图配对。
         self._save_submit_plan(entries)
@@ -440,7 +466,7 @@ class SubmitMixin:
         else:
             version = self._submit_version_state("detect")
             tip = {
-                NEW_VERSION: "检测框有改动（或还没提交过），"
+                NEW_VERSION: "检测框或「保留框外空白」有改动（或还没提交过），"
                              "请点击「提交本次任务」把文本框内容裁出来交给下一步",
                 PREVIEW_STALE: "检测结果已过期，请先重新「检测文本框」再提交",
                 UP_TO_DATE: "已提交：下一步（图片去底色）拿到的是这次裁好的图；"
@@ -448,7 +474,7 @@ class SubmitMixin:
                 NO_PREVIEW: "请先点击「检测文本框」，执行成功后才能提交本次任务",
             }[version]
         self._apply_submit_state(version, tip, {
-            NEW_VERSION: "● 有新版本待提交（检测框有改动，或还没提交）",
+            NEW_VERSION: "● 有新版本待提交（检测框或参数有改动，或还没提交）",
             PREVIEW_STALE: "● 检测结果已过期，请重新「检测文本框」后再提交",
             UP_TO_DATE: "已提交：下一步已能用这次裁好的图",
         })

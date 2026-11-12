@@ -405,6 +405,12 @@ class TaskDetailPage(
         # 整本书统计的「整幅→半幅」显示修正也按任务作废，别拿上一本的基线。
         self._half_width_median = None
         self._manual_stems = set()
+        # 「保留框外空白」给无框页补框用的全书统计同理：不清就会拿上一本的
+        # 框宽/形态，给新任务的空白页凭空拆出左右两半（用户 2026-11-12）。
+        self._blank_has_stats = False
+        self._blank_expects_two = False
+        self._blank_typical_width = 0
+        self._blank_half_width = None
         # 图头尺寸缓存按 (路径, mtime) 键控、只增不减：换任务清掉，别攒一整场会话
         self._thumb_size_cache = None
         # 「上游产物逐文件指纹」的记忆同理按任务清：同一个任务**重进**（换源 PDF

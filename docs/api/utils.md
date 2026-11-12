@@ -4,7 +4,7 @@
 
 通用工具函数：几何、排序、图像 IO、PDF、YOLO
 
-覆盖 28 个模块、24 个公开类、201 个公开函数/方法（生成于 2026-11-04）。
+覆盖 28 个模块、24 个公开类、205 个公开函数/方法（生成于 2026-11-12）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -12,9 +12,9 @@
 
 | 模块 | 类 | 函数 |
 | --- | --- | --- |
-| [`utils.book_layout`](#utilsbook_layout) | 1 | 18 |
+| [`utils.book_layout`](#utilsbook_layout) | 1 | 21 |
 | [`utils.box_draw`](#utilsbox_draw) | 0 | 8 |
-| [`utils.box_geometry`](#utilsbox_geometry) | 2 | 17 |
+| [`utils.box_geometry`](#utilsbox_geometry) | 2 | 18 |
 | [`utils.color_utils`](#utilscolor_utils) | 0 | 2 |
 | [`utils.compact_png`](#utilscompact_png) | 0 | 2 |
 | [`utils.data_package`](#utilsdata_package) | 1 | 24 |
@@ -85,6 +85,7 @@
 | BOOK_FORM_FULL | `"full"` |
 | BOOK_FORM_MIXED | `"mixed"` |
 | NARROW_PAGE_WIDTH_RATIO | `0.7` |
+| TWO_BOX_FIT_MARGIN | `1.02` |
 | FULL_HALF_WIDTH_TOLERANCE | `0.1` |
 | MIN_HALF_BOXES_FOR_BASELINE | `3` |
 
@@ -136,6 +137,9 @@
 | `typical_page_width(widths: Iterable) -> int` | 全书**典型页宽**：全部已知页宽的**中位数**（无有效宽度返回 0）。 |
 | `is_narrow_page(page_width, typical_width) -> bool` | 该页是否**明显窄于全书**（= 单页扫描，放不下第二栏）。 |
 | `narrow_page_slots(slots: Sequence, narrow: bool) -> list` | 窄页（单页扫描）里把「唯一的框」退化成**单槽**；其余原样返回。 |
+| `fits_two_boxes(page_width, typical_width, half_width) -> bool` | 本页宽度是否装得下**两个典型半幅框**。 |
+| `keep_blank_page_form(page_width, typical_width, half_width, *, expects_two: bool, has_stats: bool) -> str` | 「保留框外空白」给**这一页**的形态 → ``"split"`` / ``"single"`` / ``"skip"``。 |
+| `keep_blank_slots(slots: Sequence, page_width, *, side_specified: bool=False, narrow: bool=False, expects_two: bool=False, typical_width=None, half_width=None) -> list` | 「保留框外空白」用的**页级槽位**（显示与提交同一口径）。 |
 | `normalized_box_width(box, page_width) -> float \| None` | 框宽 / 页宽（0~1）；框畸形或页宽未知时返回 ``None``。 |
 | `half_width_median(pages: Iterable) -> float \| None` | 全书**半幅框**的典型归一化宽度（中位数）；样本不足时返回 ``None``。 |
 | `looks_like_half_box(box, page_width, half_width: float \| None) -> bool` | 单个**整幅框**是否在几何上像一栏（半幅）。 |
@@ -222,6 +226,51 @@
 但那一页本身就是单页扫描）。
 
 ⚠️ 只有「2 槽且恰好 1 个框」才退化；真双栏页（两个框）原样不动。
+
+#### `fits_two_boxes(page_width, typical_width, half_width) -> bool`
+
+本页宽度是否装得下**两个典型半幅框**。
+
+参数:
+    page_width: 本页宽度（像素）。
+    typical_width: 全书典型页宽（:func:`typical_page_width`）。
+    half_width: 全书半幅框的**归一化**宽度中位（``profile.half_width_median``）。
+
+典型框的绝对宽度 = ``half_width × typical_width``；本页要装下两个，
+就得 ``page_width ≥ 2 × 典型框宽 × TWO_BOX_FIT_MARGIN``。
+
+任一项缺失（全书没有足够的半幅框样本 / 页宽未知）→ ``False``：
+**没有统计依据就不猜**，调用方回落到"整页一张"。
+
+#### `keep_blank_page_form(page_width, typical_width, half_width, *, expects_two: bool, has_stats: bool) -> str`
+
+「保留框外空白」给**这一页**的形态 → ``"split"`` / ``"single"`` / ``"skip"``。
+
+- ``"split"``：左右各一张（统计上这书是双栏书，且本页装得下两个框）；
+- ``"single"``：整页一张（只装得下一个框 / 单栏书 / 整幅书 / 混排）；
+- ``"skip"``：不处理（整本书一个框都没有 ＝**没有统计依据**，不凭空造
+  裁图范围；此时下游沿用原来的占位/透传）。
+
+⚠️ 显示侧（``DetectMixin``）与提交侧（``print_plan._keep_blank_entries``）
+**必须都调这一个函数**：一边拆两半、另一边出整页，用户就会看到预览与
+产物对不上。
+
+#### `keep_blank_slots(slots: Sequence, page_width, *, side_specified: bool=False, narrow: bool=False, expects_two: bool=False, typical_width=None, half_width=None) -> list`
+
+「保留框外空白」用的**页级槽位**（显示与提交同一口径）。
+
+在普通页级归一化（:func:`page_single_wide_slots`、:func:`narrow_page_slots`）
+之上多加一条（用户 2026-11-12）：
+
+> 假设某一页只有一个文本框，但根据统计整体页面都应该是两个文本框，
+> 而本页**也可以容纳**两个文本框，则分割线在能够识别的那个文本框边缘。
+
+也就是：双栏书里"只检出一侧"的页，本页装得下两栏就**保留 2 槽**（下游
+以框的内侧边分界，正是"分割线在能识别的框边缘"）；装不下（凑近看就是
+单页扫描）就退成单槽 → 整页一张，别硬切。
+
+``side_specified``（用户在界面上指定过左/右）时**原样返回**，不归一化——
+那是在说"这页其实是某一边"，优先级高于统计。
 
 #### `half_width_median(pages: Iterable) -> float | None`
 
@@ -471,6 +520,7 @@ QImage 画。这样同一套规则不会因数像素后端不同而被复制成�
 | `describe_page_slots(slots) -> str` | 页的**检测层**形态（比 :func:`classify_page_slots` 多带左右侧别）。 |
 | `half_sides(boxes, image_size) -> List[str]` | 半幅(harfcontent)页的框 → 每个框的侧别 ``"left"`` / ``"right"``。 |
 | `half_slots(boxes, image_size) -> List[Optional[list]]` | 半幅页的框 → **2 槽** ``[左, 右]``（缺失侧 ``None``）。 |
+| `keep_blank_regions(slots, image_size, *, empty: str='skip') -> List[Tuple[List[int], Optional[str]]]` | 「保留框外空白」：检测槽位 → 整页半幅裁图区域。 |
 | `parse_border_mm(border_value, dpi: int=300) -> Optional[List[int]]` | 解析 border 参数（毫米单位），按 DPI 转换为像素。 |
 | `compute_final_boxes(boxes, border_mm, dpi: int=300) -> List[List[int]]` | 按 border 规则计算最终切割框（原始图片坐标）。 |
 | `build_output_layout(boxes: Sequence[Sequence[int]], border_padding, image_size: Tuple[int, int], sides: Optional[Sequence[Optional[str]]]=None) -> OutputLayout` | 按 border 规则计算输出画布布局：**每个检测框各自一张图**。 |
@@ -602,6 +652,28 @@ QImage 画。这样同一套规则不会因数像素后端不同而被复制成�
 ⚠️ 恒为 2 槽是**关键**：``is_full_content`` 靠槽数区分两种形态（整幅 = 1 槽）。
 半幅只要漏检/删剩一侧就退化成 1 槽，那个框就会被当成「整幅」——这正是
 "删掉整幅框后，右边的框自动变成了整幅" 的根因（用户 2026-09-29 报）。
+
+#### `keep_blank_regions(slots, image_size, *, empty: str='skip') -> List[Tuple[List[int], Optional[str]]]`
+
+「保留框外空白」：检测槽位 → 整页半幅裁图区域。
+
+用户 2026-11-11 口径（第二步「保留框外空白」= 保留时）：
+
+- **左右双框**：以两框相邻边界的中点作分界线，左、右各裁一张；
+- **单框**（半幅缺一侧）：以框的**内侧边**作分界线（左框取右边界、
+  右框取左边界），另一侧同样裁一张空白页；
+- 上下都到图片边缘，外侧也到图片边缘（整页高、半页宽）；
+- **整幅**（单槽）不分左右——内容跨页，切一刀会截断画面，整页保留。
+
+``empty`` 决定**一个框都没有**的页怎么办（用户 2026-11-12：无框页也要
+按全书统计补框）：
+
+- ``"skip"``（默认）：返回空表，调用方保持原有占位/透传逻辑；
+- ``"single"``：整页一张（这一页只装得下一个框，或整本书是单栏/整幅）；
+- ``"split"``：按**页中线**分左右两半（统计上这页该有两个框）。
+
+``image_size`` 取不到时一律返回空表（没有页宽/页高就定不出边界，
+调用方回落原有紧裁）。
 
 #### `parse_border_mm(border_value, dpi: int=300) -> Optional[List[int]]`
 

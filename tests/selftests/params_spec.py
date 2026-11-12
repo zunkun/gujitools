@@ -155,17 +155,17 @@ def run(ctx) -> None:
     detect.reset_to_default()
     ok("detect 面板没有 area 控件（参数已从整个项目移除）",
        not hasattr(detect, "area"))
-    ok("detect 的 get_args 不含 area（不在表单里伪造默认值）",
-       detect.get_args() == {}, str(detect.get_args()))
-    ok("detect 的默认表为空（默认值不写两处）",
-       DEFAULTS["detect"] == {}, str(DEFAULTS["detect"]))
+    ok("detect 的 get_args 只有 keep_blank 且默认 False",
+       detect.get_args() == {"keep_blank": False}, str(detect.get_args()))
+    ok("detect 的默认表只有 keep_blank=False（默认值不写两处）",
+       DEFAULTS["detect"] == {"keep_blank": False}, str(DEFAULTS["detect"]))
     ok("detect 命令规格里没有 area",
        "area" not in COMMAND_SPECS["detect"].defaults,
        str(sorted(COMMAND_SPECS["detect"].defaults)))
     # 历史回填不会凭空塞进一个 area（面板没有这个键）
     detect._apply_args_guarded({"area": 4})
     ok("detect 回填 area=4 不会在表单里留下痕迹",
-       detect.get_args() == {} and not hasattr(detect, "area"),
+       detect.get_args() == {"keep_blank": False} and not hasattr(detect, "area"),
        str(detect.get_args()))
 
     # ---------------------------------------------- 4b. rembg 面板不再有 area/border

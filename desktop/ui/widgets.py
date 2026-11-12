@@ -404,17 +404,24 @@ class Card(QFrame):
 
 
 class Divider(QFrame):
-    """1px 水平分隔线。"""
+    """水平分隔线（默认 1px）。"""
 
-    def __init__(self, parent=None):
-        """固定高 1px、水平拉伸的水平分隔线。"""
+    def __init__(self, parent=None, color: str | None = None,
+                 thickness: int = 1):
+        """固定高、水平拉伸的水平分隔线。
+
+        ``color`` 缺省用最淡的 ``BORDER_SOFT``（好当"同一组里的轻分隔"）；
+        需要一眼看出"这是两段"时传 ``T.BORDER_STRONG`` 并给 ``thickness``
+        （参数面板里把「全局参数」与「本页参数」分开用的就是这一档）。
+        """
         super().__init__(parent)
-        self.setFixedHeight(1)
+        self._color = color or T.BORDER_SOFT
+        self.setFixedHeight(max(1, int(thickness)))
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self)
-        painter.fillRect(self.rect(), QColor(T.BORDER_SOFT))
+        painter.fillRect(self.rect(), QColor(self._color))
 
 
 class SectionTitle(QLabel):

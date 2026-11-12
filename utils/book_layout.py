@@ -240,6 +240,96 @@ def narrow_page_slots(slots: Sequence, narrow: bool) -> list:
     return present
 
 
+# ------------------------------------------------- 「保留框外空白」的补框（任务级）
+#: 「本页装得下两个半幅框」的宽度余量：两个典型框宽之和再多留 2%。
+#:
+#: 用户 2026-11-12：**没有识别出文本框的页也要补框**——
+#: 「假如某一页没有识别出文本框，需要根据统计参考，比如当页应该有两个文本框，
+#: 可以从中间分割两块；如果当页只能容纳一个文本框大小，则应当只有一个文本框」。
+#:
+#: 「容纳」按**宽度**判：本页宽 ≥ 2 × 典型半幅框宽 × 该余量。余量不能省——
+#: 恰好等于两框宽时切出来两栏都窄于常规，边缘会被裁掉一点。留 2% 既排除
+#: 单页扫描（实测页宽 ≈0.55~0.70 典型宽，差得远），也不会误伤正常页。
+TWO_BOX_FIT_MARGIN = 1.02
+
+
+def fits_two_boxes(page_width, typical_width, half_width) -> bool:
+    """本页宽度是否装得下**两个典型半幅框**。
+
+    参数:
+        page_width: 本页宽度（像素）。
+        typical_width: 全书典型页宽（:func:`typical_page_width`）。
+        half_width: 全书半幅框的**归一化**宽度中位（``profile.half_width_median``）。
+
+    典型框的绝对宽度 = ``half_width × typical_width``；本页要装下两个，
+    就得 ``page_width ≥ 2 × 典型框宽 × TWO_BOX_FIT_MARGIN``。
+
+    任一项缺失（全书没有足够的半幅框样本 / 页宽未知）→ ``False``：
+    **没有统计依据就不猜**，调用方回落到"整页一张"。
+    """
+    try:
+        page = float(page_width)
+        typical = float(typical_width)
+        half = float(half_width)
+    except (TypeError, ValueError):
+        return False
+    if page <= 0 or typical <= 0 or half <= 0:
+        return False
+    return page >= 2.0 * half * typical * TWO_BOX_FIT_MARGIN
+
+
+def keep_blank_page_form(
+    page_width, typical_width, half_width, *, expects_two: bool, has_stats: bool,
+) -> str:
+    """「保留框外空白」给**这一页**的形态 → ``"split"`` / ``"single"`` / ``"skip"``。
+
+    - ``"split"``：左右各一张（统计上这书是双栏书，且本页装得下两个框）；
+    - ``"single"``：整页一张（只装得下一个框 / 单栏书 / 整幅书 / 混排）；
+    - ``"skip"``：不处理（整本书一个框都没有 ＝**没有统计依据**，不凭空造
+      裁图范围；此时下游沿用原来的占位/透传）。
+
+    ⚠️ 显示侧（``DetectMixin``）与提交侧（``print_plan._keep_blank_entries``）
+    **必须都调这一个函数**：一边拆两半、另一边出整页，用户就会看到预览与
+    产物对不上。
+    """
+    if not has_stats:
+        return "skip"
+    if expects_two and fits_two_boxes(page_width, typical_width, half_width):
+        return "split"
+    return "single"
+
+
+def keep_blank_slots(
+    slots: Sequence, page_width, *, side_specified: bool = False,
+    narrow: bool = False, expects_two: bool = False,
+    typical_width=None, half_width=None,
+) -> list:
+    """「保留框外空白」用的**页级槽位**（显示与提交同一口径）。
+
+    在普通页级归一化（:func:`page_single_wide_slots`、:func:`narrow_page_slots`）
+    之上多加一条（用户 2026-11-12）：
+
+    > 假设某一页只有一个文本框，但根据统计整体页面都应该是两个文本框，
+    > 而本页**也可以容纳**两个文本框，则分割线在能够识别的那个文本框边缘。
+
+    也就是：双栏书里"只检出一侧"的页，本页装得下两栏就**保留 2 槽**（下游
+    以框的内侧边分界，正是"分割线在能识别的框边缘"）；装不下（凑近看就是
+    单页扫描）就退成单槽 → 整页一张，别硬切。
+
+    ``side_specified``（用户在界面上指定过左/右）时**原样返回**，不归一化——
+    那是在说"这页其实是某一边"，优先级高于统计。
+    """
+    raw = list(slots or [])
+    if side_specified:
+        return raw
+    normalized = page_single_wide_slots(raw, page_width)
+    fits = fits_two_boxes(page_width, typical_width, half_width)
+    # ⚠️ 只有"统计上说该有两个框"时才用「装不下」去退化：单栏书/整幅书的单框
+    #    本来就不该拆，它们已经由 page_single_wide_slots 归一化掉了。
+    degrade = bool(narrow) or (bool(expects_two) and not fits)
+    return narrow_page_slots(normalized, degrade)
+
+
 # ---------------------------------------------------------------- 整幅误判回半幅
 #: 判定「这一页的整幅框其实是一栏」时，框宽与全书半幅宽度的最大允许偏差
 #: （都按**页宽归一化**后比较，所以不同 dpi/不同页宽的扫描也能比）。

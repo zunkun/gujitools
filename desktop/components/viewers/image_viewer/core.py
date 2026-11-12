@@ -18,6 +18,7 @@ from desktop.ui.widgets import mark_input_entry
 from desktop.utils.image_scaling import smooth_downscale
 from desktop.workers import ImageListWorker, PreviewWorker, connect_queued
 from desktop.components.viewers.image_view import ImageView
+from desktop.components.viewers.hint_banner import HintBanner
 from desktop.components.viewers.image_zoom_dialog import ZoomPopupMixin, ZoomTarget
 from desktop.components.viewers.thumb_strip import ThumbStrip
 from desktop.components.viewers.thumbs_loader import ThumbsMixin
@@ -144,6 +145,11 @@ class ImageViewerWidget(
             left.addLayout(buttons)
         layout.addLayout(left)
         right = QVBoxLayout()
+        # 画布**顶部**的红框提示（用户 2026-11-12）：默认隐藏，谁需要谁给文案
+        # （目前只有「检测文本框」：提示可以手绘框、改框类型）。藏着的控件在
+        # 布局里不占位，所以其它步骤的预览区高度一点不变。
+        self.hint_banner = HintBanner()
+        right.addWidget(self.hint_banner)
         self.view = ImageView(empty_hint)
         right.addWidget(self.view, 1)
         self.info_label = CaptionLabel("")
@@ -216,6 +222,16 @@ class ImageViewerWidget(
         self.strip.add_placeholder(hint)
         self.view.clear_image(hint)
 
+    def set_hint_banner(self, text: str) -> None:
+        """换画布顶部那条**红框提示**（空串＝收起）。
+
+        只有「检测文本框」用它（用户 2026-11-12：提示用户可以在图上手动调整
+        框类型与手绘框）。文案由业务层现算（``box_kinds.manual_hint_text``），
+        控件只负责显示；用户点过 × 之后这里怎么调都不会再弹（见 HintBanner）。
+        """
+        banner = getattr(self, "hint_banner", None)
+        if banner is not None:
+            banner.set_hint(text)
 
     def set_images(
         self, paths: list[Path | str], boxes_map: dict | None = None,
@@ -249,10 +265,13 @@ class ImageViewerWidget(
             paths == self._paths
             and self.strip.count() == len(paths)
         ):
-            # 页面清单未变化：默认跳过重建，但仍需通知宿主重新读取
+            # 清单未变化：默认跳过重建，但仍需通知宿主重新读取
             # 该页的检测框/参数（可能在其他阶段被更新过）。
             # ⚠️ ``force`` 时**重解一遍图标**（不 clear 列表：当前行/选中要保持，
             #    条目高度与标签也不该因刷新而抖）。
+            if not paths:
+                # 本来就没图：顶部提示条不该留着上一批页的"在图上拖一下"
+                self.set_hint_banner("")
             if force and self._paths:
                 self._load_thumbs(self.strip, list(self._paths))
             index = max(self.strip.currentRow(), 0)
@@ -281,6 +300,8 @@ class ImageViewerWidget(
             self.strip.add_placeholder(self._empty_hint)
             self.view.clear_image(self._empty_hint)
             self.info_label.setText("")
+            # 没有图就没有"在图上拖一下"的提示（不然提示条会浮在空态上）
+            self.set_hint_banner("")
             return
         for index, path in enumerate(paths):
             self.strip.add_page_item(Path(path).stem, str(path))

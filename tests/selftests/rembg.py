@@ -117,8 +117,8 @@ def run(ctx) -> None:
     # --- 第二步面板没有 area（2026-10-22 起 area 已从整个项目移除）---
     _p2 = d.control_stack.widget(1)
     ok("第二步面板没有 area 控件", not hasattr(_p2, "area"))
-    ok("第二步 get_args 为空（默认值不在表单里）",
-       _p2.get_args() == {}, str(_p2.get_args()))
+    ok("第二步 get_args 只有 keep_blank（默认 False）",
+       _p2.get_args() == {"keep_blank": False}, str(_p2.get_args()))
 
     final_dir = repo.rembg_output_dir(tid)
     ok("执行前 stages/rembg 为空",

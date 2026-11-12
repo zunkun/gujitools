@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 184 个模块、200 个公开类、1513 个公开函数/方法（生成于 2026-11-04）。
+覆盖 185 个模块、201 个公开类、1526 个公开函数/方法（生成于 2026-11-12）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -13,7 +13,7 @@
 | 模块 | 类 | 函数 |
 | --- | --- | --- |
 | [`desktop.app`](#desktopapp) | 1 | 8 |
-| [`desktop.components.box_kinds`](#desktopcomponentsbox_kinds) | 2 | 7 |
+| [`desktop.components.box_kinds`](#desktopcomponentsbox_kinds) | 2 | 8 |
 | [`desktop.components.bpmn_editor`](#desktopcomponentsbpmn_editor) | 1 | 31 |
 | [`desktop.components.bpmn_editor_panel`](#desktopcomponentsbpmn_editor_panel) | 1 | 6 |
 | [`desktop.components.bpmn_palette`](#desktopcomponentsbpmn_palette) | 1 | 7 |
@@ -53,6 +53,7 @@
 | [`desktop.components.update_banner`](#desktopcomponentsupdate_banner) | 1 | 4 |
 | [`desktop.components.viewers.edit_sync`](#desktopcomponentsviewersedit_sync) | 0 | 2 |
 | [`desktop.components.viewers.extract_viewer`](#desktopcomponentsviewersextract_viewer) | 1 | 8 |
+| [`desktop.components.viewers.hint_banner`](#desktopcomponentsviewershint_banner) | 1 | 5 |
 | [`desktop.components.viewers.image_actions`](#desktopcomponentsviewersimage_actions) | 1 | 7 |
 | [`desktop.components.viewers.image_editor.bake`](#desktopcomponentsviewersimage_editorbake) | 0 | 2 |
 | [`desktop.components.viewers.image_editor.canvas.core`](#desktopcomponentsviewersimage_editorcanvascore) | 1 | 25 |
@@ -76,7 +77,7 @@
 | [`desktop.components.viewers.image_view.render`](#desktopcomponentsviewersimage_viewrender) | 1 | 2 |
 | [`desktop.components.viewers.image_view.styles`](#desktopcomponentsviewersimage_viewstyles) | 0 | 3 |
 | [`desktop.components.viewers.image_viewer.boxes`](#desktopcomponentsviewersimage_viewerboxes) | 1 | 10 |
-| [`desktop.components.viewers.image_viewer.core`](#desktopcomponentsviewersimage_viewercore) | 1 | 10 |
+| [`desktop.components.viewers.image_viewer.core`](#desktopcomponentsviewersimage_viewercore) | 1 | 11 |
 | [`desktop.components.viewers.image_viewer.pdf`](#desktopcomponentsviewersimage_viewerpdf) | 1 | 3 |
 | [`desktop.components.viewers.image_viewer.thumbs`](#desktopcomponentsviewersimage_viewerthumbs) | 1 | 1 |
 | [`desktop.components.viewers.image_zoom_dialog.canvas`](#desktopcomponentsviewersimage_zoom_dialogcanvas) | 2 | 21 |
@@ -125,7 +126,7 @@
 | [`desktop.services.detect_export`](#desktopservicesdetect_export) | 0 | 7 |
 | [`desktop.services.font_catalog`](#desktopservicesfont_catalog) | 1 | 6 |
 | [`desktop.services.imposition`](#desktopservicesimposition) | 0 | 33 |
-| [`desktop.services.print_plan`](#desktopservicesprint_plan) | 0 | 10 |
+| [`desktop.services.print_plan`](#desktopservicesprint_plan) | 0 | 11 |
 | [`desktop.services.rembg_export`](#desktopservicesrembg_export) | 0 | 7 |
 | [`desktop.services.rembg_groups`](#desktopservicesrembg_groups) | 1 | 4 |
 | [`desktop.services.rembg_live`](#desktopservicesrembg_live) | 0 | 1 |
@@ -152,7 +153,7 @@
 | [`desktop.steps.source_zone`](#desktopstepssource_zone) | 1 | 20 |
 | [`desktop.steps.spec`](#desktopstepsspec) | 1 | 22 |
 | [`desktop.steps.validate`](#desktopstepsvalidate) | 1 | 2 |
-| [`desktop.store.annotations`](#desktopstoreannotations) | 1 | 18 |
+| [`desktop.store.annotations`](#desktopstoreannotations) | 1 | 21 |
 | [`desktop.store.drafts`](#desktopstoredrafts) | 1 | 5 |
 | [`desktop.store.imposition`](#desktopstoreimposition) | 1 | 4 |
 | [`desktop.store.json_io`](#desktopstorejson_io) | 0 | 8 |
@@ -160,7 +161,7 @@
 | [`desktop.store.runs`](#desktopstoreruns) | 1 | 10 |
 | [`desktop.store.store`](#desktopstorestore) | 1 | 1 |
 | [`desktop.store.tasks`](#desktopstoretasks) | 1 | 69 |
-| [`desktop.store.ui_state`](#desktopstoreui_state) | 1 | 9 |
+| [`desktop.store.ui_state`](#desktopstoreui_state) | 1 | 11 |
 | [`desktop.ui.color_picker`](#desktopuicolor_picker) | 5 | 30 |
 | [`desktop.ui.font_setup`](#desktopuifont_setup) | 2 | 8 |
 | [`desktop.ui.fonts`](#desktopuifonts) | 0 | 2 |
@@ -442,6 +443,31 @@ gujitools 桌面端主窗口：左侧导航壳层（任务管理 + 独立模块�
 框的颜色与名称、面板高亮本身就是结果，弹提示只是噪音。
 ⚠️ 无论哪条路都要**回填面板**：滑块在按下时已被移过去，不回填就停在
 假位置（看着切了、其实没切）。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `manual_hint_text(*, has_boxes: bool, keep_blank: bool=False) -> str` | 预览**顶部红框提示**的一句话（用户 2026-11-12，"检测文本框"两步共用）。 |
+
+#### `manual_hint_text(*, has_boxes: bool, keep_blank: bool=False) -> str`
+
+预览**顶部红框提示**的一句话（用户 2026-11-12，"检测文本框"两步共用）。
+
+为什么要有这条：拖动/缩放/空白处手绘、右上「选中框类型」这些能力此前只
+藏在面板 tooltip 与帮助文档里，用户不知道能手动改，于是把不满意的检测结果
+直接往下一步送。提示条常驻在画布顶部（可关掉），文案按当前情况分岔：
+
+- 有框："改位置/尺寸/手绘新框 + 去右栏改类型"；
+- 无框：先告诉用户**手画一个**（比"去点检测本页"快得多，很多页模型本来
+  就检不出）；
+- 「保留框外空白」开着时画的是**扩展框**（要裁的区域，不是检测框）：
+  此时能改的是分界与大小，能切的类型只有整幅 / 左 / 右。
+
+⚠️ 本函数是文案**唯一实现**：任务流程第二步与独立「检测文本框」页都调它，
+别在两边各写一份（改一处忘另一处，正是这条提示要避免的那类问题）。
+⚠️ **一句一行放得下**（画布宽约 600px 时 13px 字号 ≈ 40 个中文字）：折成
+两行且第二行只剩几个字很难看，所以宁可少说两句也别写长。
 
 ---
 
@@ -2413,7 +2439,7 @@ build_form 生成子类表单并占满剩余垂直空间，最后统一把表单
 
 源码：[`desktop/components/panels/detect_panel.py`](../../desktop/components/panels/detect_panel.py)
 
-检测文本框（detect）阶段面板：只有检测与人工干预，**没有 area 参数**。
+检测文本框（detect）阶段面板：检测、保留框外空白与人工干预，**没有 area 参数**。
 
 2026-10-22 口径（用户）：
 
@@ -2428,7 +2454,7 @@ build_form 生成子类表单并占满剩余垂直空间，最后统一把表单
 
 ### `class DetectPanel(StagePanel)`
 
-检测文本框阶段面板：检测 + 人工修正框（无表单参数）。
+检测文本框阶段面板：检测 + 保留框外空白 + 人工修正框。
 
 YOLO 检测每张图的内容框坐标（半幅：左右两栏；整幅：整页单一内容区），
 供预览标注与「提交本次任务」的裁图使用。
@@ -2444,12 +2470,23 @@ YOLO 检测每张图的内容框坐标（半幅：左右两栏；整幅：整页
 
 | 方法 | 说明 |
 | --- | --- |
-| `get_args() -> dict` | 本步骤**没有表单参数**（检测结果只取决于图片与模型）。 |
+| `get_args() -> dict` | 本步骤唯一的参数：``keep_blank``（保留框外空白，默认 False）。 |
 | `set_box_selection(index: int, kind: str) -> None` | 回填「选中框类型」控件：``index < 0``（无选中）时三段都不高亮。 |
 
 ##### `get_args() -> dict`
 
-本步骤**没有表单参数**（检测结果只取决于图片与模型）。
+本步骤唯一的参数：``keep_blank``（保留框外空白，默认 False）。
+
+它是**任务级**参数（不是系统级）：随本任务的参数暂存/历史落盘在
+``tasks/<任务号>/`` 下，任务 A 设成「保留」不会影响任务 B；
+新任务没有暂存也没有历史时回到内置默认（不保留）。
+
+两处生效、都不改检测结果本身：
+
+- 预览里画出来的框（宿主 ``DetectMixin._apply_boxes`` 换算成扩展框）；
+- 「提交本次任务」的裁图几何（``print_plan._keep_blank_entries``）。
+
+检测运行的参数里也存一份，便于历史回填与提交版本判定。
 
 ⚠️ 不要在这里补 ``{"area": 1}`` 之类的"友好默认"：area 已从整个项目
 移除，补回去会让运行历史与提交版本判定多出一个不存在的参数。
@@ -3532,6 +3569,48 @@ source_path 不单独成列，仅作任务名的悬浮提示。
 
 ``show_edited_image`` 在本控件上没有 ``apply_edited_image``，会退到
 这里；按路径匹配**当前页的产物**才动，其余页不打扰。
+
+---
+
+## `desktop.components.viewers.hint_banner`
+
+源码：[`desktop/components/viewers/hint_banner.py`](../../desktop/components/viewers/hint_banner.py)
+
+画布顶部的**红框提示条**（用户 2026-11-12）。
+
+需求："检测文本框区域，可以红线提示用户可以手动调整框类型和画框，可以放在
+中间图片顶部"。
+
+它解决的问题是**可发现性**：预览上能拖动/缩放/手绘框、右栏能改框类型，这些
+能力此前只写在面板的长 tooltip 里，用户根本不知道有。提示条**常驻**在图片
+上方（不是转瞬即逝的 InfoBar），用户点 × 认为学会了就永久关掉（本控件实例内
+一直关着，换文案也不会再冒出来）。
+
+⚠️ 底色/描边走 ``paintEvent`` 自绘（项目硬规则：界面控件不用样式表），
+与 :class:`desktop.components.update_banner.UpdateBanner` 同一套做法。
+⚠️ 文案不写在这里：业务层按"这页有没有框 / 是不是保留框外空白"现算后传进来
+（唯一实现在 ``desktop/components/box_kinds.py::manual_hint_text``）。
+
+### `class HintBanner(QWidget)`
+
+一行红字提示 + 右侧关闭按钮；没有文案时自动隐藏。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(parent: QWidget \| None=None) -> None` | — |
+| `text() -> str` | 当前提示文案（空串 = 没有提示）。 |
+| `set_hint(text: str) -> None` | 换一条提示；``text`` 为空则隐藏。 |
+| `reset_dismiss() -> None` | 恢复"可以再提示"（宿主若要"每换一本书重新提示一次"就调它）。 |
+| `paintEvent(event) -> None` | 自绘淡红底 + 红色圆角描边。 |
+
+##### `set_hint(text: str) -> None`
+
+换一条提示；``text`` 为空则隐藏。
+
+⚠️ 用户关掉过（``_dismissed``）就只记文案不上屏：调用方（每次都跟着
+"上屏一页框"重算文案）**不应该**把用户的关闭动作顶掉。
 
 ---
 
@@ -5136,6 +5215,7 @@ Qt 在窗口 dpr 变化时发 ``DevicePixelRatioChange``，**不保证**同时�
 | `navigate(forward: bool) -> None` | 方向键翻页（详情页 ←/→ 调用；联动预览刷新，见 ThumbStrip.navigate）。 |
 | `set_insert_visible(visible: bool) -> None` | 「＋/📁」两个**图片输入入口**的显隐（宿主按流程入口决定）。 |
 | `set_empty_hint(hint: str) -> None` | 换空态文案（输入入口藏起来后，"请点下方「＋」"就指错方向了）。 |
+| `set_hint_banner(text: str) -> None` | 换画布顶部那条**红框提示**（空串＝收起）。 |
 | `set_images(paths: list[Path \| str], boxes_map: dict \| None=None, force: bool=False) -> None` | 设置页面清单并重建缩略图条；清单未变则仅通知宿主重读。 |
 | `apply_edited_image(path_text: str, image) -> None` | 编辑结果**立即上屏**（不等文件重解码/缩略图重生成）。 |
 | `refresh_page(path_text: str) -> None` | 某页缩略图缓存重生成后刷新条目图标（大图由 apply_edited_image |
@@ -5184,6 +5264,14 @@ image_size_provider 供大图降采样时还原原始像素尺寸；thumb_provid
 当前正空着的话立刻把两处占位（缩略图条 + 大图）一起换掉；有图时
 只存着，等下次清空自然用新文案。⚠️ 占位要**清了重加**：
 ``add_placeholder`` 是追加语义，直接再调会叠出两条占位条目。
+
+##### `set_hint_banner(text: str) -> None`
+
+换画布顶部那条**红框提示**（空串＝收起）。
+
+只有「检测文本框」用它（用户 2026-11-12：提示用户可以在图上手动调整
+框类型与手绘框）。文案由业务层现算（``box_kinds.manual_hint_text``），
+控件只负责显示；用户点过 × 之后这里怎么调都不会再弹（见 HintBanner）。
 
 ##### `set_images(paths: list[Path | str], boxes_map: dict | None=None, force: bool=False) -> None`
 
@@ -7272,6 +7360,12 @@ placeholder 还写着旧的「任务#0007」就是错的（用户会以为下一
 - 子进程检测到的框写回（origin=auto）；
 - 预览区拖动线框后写回（origin=manual），全程不生成新文件。
 
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| KEEP_BLANK_SUFFIX | `"（保留框外空白：这是要裁的整页区域，可直接拖动）"` |
+
 ### `class VersionedBoxCache(dict)`
 
 ``detect_cache`` 的带版本号版：任何写入都自增 ``version``。
@@ -9090,7 +9184,8 @@ PDF 侧 ``functions/print._load_image`` 压平到白纸；编辑器/预览按 RG
 | `plan_rembg_submit_entries(manifest_paths: list[Path], result_path_for, boxes_for, page_width_for=None, side_for=None, placeholder_for=None, narrow_for=None, demote_for=None) -> list[dict]` | 预览结果 + 检测框 + border → 最终图片条目（**逐框一张**）。 |
 | `entry_to_effect_spec(entry: dict, border) -> dict` | 提交条目 → worker 效果合成规格（run_print_stage/run_detect_submit_stage 用）。 |
 | `plan_submit_job(spec: dict, size: tuple[int, int] \| None) -> dict` | 一条效果规格 → 单条合成作业（输出文件名 + 合成参数）。 |
-| `plan_detect_submit_entries(manifest_paths: list[Path], boxes_for, single_column_book: bool=False, page_width_for=None, side_for=None, book_profile=None, page_size_for=None) -> list[dict]` | 「检测文本框 → 提交本次任务」的裁图条目（含**回溯占位**）。 |
+| `manual_blank_regions(regions) -> list[tuple[list[int], Optional[str]]]` | 手工扩展框（``boxes.json`` 的 ``blank``）→ ``keep_blank_regions`` 同形状。 |
+| `plan_detect_submit_entries(manifest_paths: list[Path], boxes_for, single_column_book: bool=False, page_width_for=None, side_for=None, book_profile=None, page_size_for=None, keep_blank: bool=False, blank_for=None) -> list[dict]` | 「检测文本框 → 提交本次任务」的裁图条目（含**回溯占位**）。 |
 | `drop_foreign_stage_pages(pages: list[dict] \| None, source_dir: Path, stages_root: Path) -> list[dict]` | 从待打印清单里剔除「属于本任务**别的阶段**产物」的条目。 |
 | `rect_fits_image(rect, image_size_px, rect_size_px=None) -> bool` | 这条逐页 rect 是否**还适用于当前这张图**（判据唯一处）。 |
 | `stale_rect_pages(pages, size_for) -> list[dict]` | ``pages`` 里**图像已换、旧 rect 不再适用**的那几条（``[]`` = 全都还适用）。 |
@@ -9172,7 +9267,14 @@ demote_for       : (path_str) -> list|None，全书统计得出的「整幅其�
 ⚠️ ``region_canvas_specs`` 走**函数内延迟导入**：本模块整体是不依赖 Qt 的
 纯逻辑（见模块 docstring），只有真要算输出张数时才拉进那份 Qt 几何实现。
 
-#### `plan_detect_submit_entries(manifest_paths: list[Path], boxes_for, single_column_book: bool=False, page_width_for=None, side_for=None, book_profile=None, page_size_for=None) -> list[dict]`
+#### `manual_blank_regions(regions) -> list[tuple[list[int], Optional[str]]]`
+
+手工扩展框（``boxes.json`` 的 ``blank``）→ ``keep_blank_regions`` 同形状。
+
+一个矩形 ⇒ 整页一张（``side=None``）；两个 ⇒ 按左边界排序，左/右各一张。
+与自动推导共用同一条下游（命名 ``-l``/``-r``、拼版配对都照旧）。
+
+#### `plan_detect_submit_entries(manifest_paths: list[Path], boxes_for, single_column_book: bool=False, page_width_for=None, side_for=None, book_profile=None, page_size_for=None, keep_blank: bool=False, blank_for=None) -> list[dict]`
 
 「检测文本框 → 提交本次任务」的裁图条目（含**回溯占位**）。
 
@@ -9200,6 +9302,24 @@ demote_for       : (path_str) -> list|None，全书统计得出的「整幅其�
 - **窄页**（页宽明显小于全书典型页宽＝单页扫描）**优先于以上全部**：
   这张图放不下第二栏，所以整页无框只补**一张**、只检出一个框也**不补**
   另一侧，命名也不带 ``-l``/``-r``（用户 2026-10-23，任务 0001 第 1 页）。
+
+``keep_blank=True``（界面「保留框外空白」）：有框页不再贴着检测框紧裁，
+改为按整页半幅保留空白——双框页以两框相邻边界的中点分界，单框页以框的
+**内侧边**分界，上下都到图片边缘，外侧也到图片边缘。整幅/单栏/窄页归一化后
+只剩一槽，整页保留一张（不切分）。
+
+**无框页也会出图**（用户 2026-11-12，见 ``book_layout.keep_blank_page_form``）：
+
+- 统计上是**双栏书**、且这页**装得下两个框** ⇒ 按页中线拆左右两张；
+- 只装得下一个（单页扫描）/ 单栏书 / 整幅书 / 混排 ⇒ 整页一张；
+- 整本书一个框都没有 ⇒ ``skip``，仍走上面的占位/透传（没有统计依据）。
+
+单框页同理多一条：双栏书里只检出一侧、而本页**装不下两个框**时退成整页
+一张（装得下就保留 2 槽，分界线落在检出框的内侧边）。
+
+``blank_for(stem)``：该页**用户手工调过的扩展框**（``boxes.json`` 的
+``blank``，见 ``store.blank_regions_all_at``）。给了就用它、不再按检测框
+推导——自动推导只是初值（用户 2026-11-12：「可以调整的是扩展框」）。
 
 ⚠️ 占位条目 ``file`` 仍是源页、``boxes`` 只有一个"占位框"，
 ``placeholder=True`` 只作日志/统计标记——执行端走与真框完全相同的裁剪
@@ -12881,6 +13001,9 @@ boxes.json / sizes.json 读写。
 | `boxes_all_at(path: Path \| None) -> dict[str, tuple[list, str]]` | 读**指定文件**的全部 ``image_key → (boxes, origin)``（一次读盘）。 |
 | `boxes_raw_at(path: Path \| None) -> dict` | 读**指定文件**的**原始条目表** ``{image_key: entry}``（不裁剪字段）。 |
 | `save_detect_boxes(task_id: str, image_key: str, boxes: list, origin: str='auto', node_id: str \| None=None, primary_id: str \| None=None) -> None` | 写入某页的检测框及其来源标记（auto=自动检测，manual=人工编辑）。 |
+| `blank_regions_at(path: Path \| None, image_key: str) -> list \| None` | 读某页**手工调整过**的「保留空白」扩展框；没调过返回 ``None``。 |
+| `blank_regions_all_at(path: Path \| None) -> dict[str, list]` | 整份文件的 ``image_key → 手工扩展框``（一次读盘，只含调过的页）。 |
+| `save_blank_regions(task_id: str, image_key: str, regions, node_id: str \| None=None, primary_id: str \| None=None) -> None` | 写入/清除某页手工调整的「保留空白」扩展框（空表＝清除，回到自动）。 |
 | `box_side_at(path: Path \| None, image_key: str) -> str \| None` | 读**指定文件**里某页的人工左右指定（``"left"``/``"right"``/None）。 |
 | `box_sides_all_at(path: Path \| None) -> dict[str, str]` | 整份文件的 ``image_key → side``（一次读盘，只含有显式指定的页）。 |
 | `set_box_side_override(task_id: str, image_key: str, side: str \| None, node_id: str \| None=None, primary_id: str \| None=None) -> None` | 写入/清除某页的人工左右指定（``None``＝清除，退回"半幅"）。 |
@@ -12946,6 +13069,25 @@ boxes.json / sizes.json 读写。
 ⚠️ **保留**该页已有的 ``side``（用户在半幅页上指定的左右，见
 :meth:`set_box_side_override`）：拖框/缩放走的是这条路径，
 顺手把用户刚指定的左右清掉，等于"一拖就丢设定"。
+
+##### `blank_regions_at(path: Path | None, image_key: str) -> list | None`
+
+读某页**手工调整过**的「保留空白」扩展框；没调过返回 ``None``。
+
+格式 ``[[x1,y1,x2,y2], ...]``（1~2 个矩形，页图坐标）。它是**用户拉出来的
+裁图区域**，优先于「由检测框推导」的那份（见
+``utils.box_geometry.keep_blank_regions``）。
+
+##### `save_blank_regions(task_id: str, image_key: str, regions, node_id: str | None=None, primary_id: str | None=None) -> None`
+
+写入/清除某页手工调整的「保留空白」扩展框（空表＝清除，回到自动）。
+
+⚠️ 与 :meth:`save_detect_boxes` 分开：那条路是"改检测框"的高频路径，
+这条只记**扩展框**。两者的语义不同——检测框是识别结果，扩展框是
+裁图口径，混在一起写会让「改框」和「改裁图范围」互相覆盖。
+⚠️ 该页**还没有检测结果**时也要能写（用户 2026-11-12：「没有识别出
+文本框的页面也可以手动划线」）：这时补一条 ``boxes: []`` 的条目，
+让手工框有地方挂——否则静默丢掉，用户画完像没反应。
 
 ##### `box_side_at(path: Path | None, image_key: str) -> str | None`
 
@@ -14158,7 +14300,8 @@ PDF排版「管理图片」弹窗的缩略图缓存：``thumbnails/print_manage/
 
     {"last_stage": "rembg",                     # 上次在这个任务里停留的步骤 key
      "yolo_export_name": "b1",                  # 「导出YOLO标注」上次填的名称/前缀
-     "yolo_export_dir": "D:/…/bookcontent"}     # 同上，上次选的导出目录
+     "yolo_export_dir": "D:/…/bookcontent",     # 同上，上次选的导出目录
+     "detect_keep_blank": true}                 # 「保留框外空白」（任务级参数）
 
 **为什么记 key 而不是下标**：流程里的步骤会增减（「图片拼版」虚线节点就是
 条件出现的可选步骤），下标一旦错位就会把用户送到**另一个**步骤去；key 是按
@@ -14185,6 +14328,7 @@ key 取自 ``desktop.store.tasks``：``STAGES`` 里的一项，或伪步骤
 | --- | --- |
 | YOLO_EXPORT_DIR_KEY | `"yolo_export_dir"` |
 | YOLO_EXPORT_NAME_KEY | `"yolo_export_name"` |
+| DETECT_KEEP_BLANK_KEY | `"detect_keep_blank"` |
 
 ### `class UIStateMixin`
 
@@ -14203,6 +14347,8 @@ key 取自 ``desktop.store.tasks``：``STAGES`` 里的一项，或伪步骤
 | `save_last_stage(task_id: str, stage: str, node_id: str \| None=None) -> bool` | 记录上次停留的步骤 key（可带节点实例 id），返回是否真的写了。 |
 | `load_yolo_export_state(task_id: str) -> dict` | 本任务上次导出 YOLO 数据集时填的 ``{"name": …, "directory": …}``。 |
 | `save_yolo_export_state(task_id: str, name: str, directory: str) -> bool` | 记住本任务这次导出的名称与目录，返回是否真的写了。 |
+| `load_detect_keep_blank(task_id: str) -> bool \| None` | 本任务「保留框外空白」的上次选择；**没设过**返回 ``None``。 |
+| `save_detect_keep_blank(task_id: str, value: bool) -> bool` | 记住本任务「保留框外空白」的选择，返回是否真的写了。 |
 
 ##### `load_last_task() -> dict | None`
 
@@ -14250,6 +14396,21 @@ key 取自 ``desktop.store.tasks``：``STAGES`` 里的一项，或伪步骤
 
 与 :meth:`save_last_stage` 同规矩：任务目录没了就不写（不把已删任务
 重新创建出来），且只覆盖自己那两项、不动 ``last_stage``。
+
+##### `load_detect_keep_blank(task_id: str) -> bool | None`
+
+本任务「保留框外空白」的上次选择；**没设过**返回 ``None``。
+
+``None`` 与 ``False`` 必须分开：``False`` 是"用户明确选了不保留"，
+``None`` 是"这个任务还没设过"——后者要交给暂存/历史/内置默认去决定，
+不能一律当成不保留（否则老任务升级上来会丢掉历史里的选择）。
+
+##### `save_detect_keep_blank(task_id: str, value: bool) -> bool`
+
+记住本任务「保留框外空白」的选择，返回是否真的写了。
+
+与 :meth:`save_last_stage` 同规矩：任务目录没了就不写（不把已删任务
+重新创建出来），且只覆盖自己那一项、不动 ``last_stage`` 等。
 
 ---
 
@@ -15221,6 +15382,7 @@ QSS 里不会生效；它由 `desktop.components.log_panel.apply_log_view_style`
 | BORDER | `"#E2E7EC"` |
 | BORDER_SOFT | `"#EDF1F4"` |
 | BORDER_STRONG | `"#C9D1D8"` |
+| SEPARATOR | `"#A9B4BE"` |
 | ACCENT | `"#0E7C8B"` |
 | ACCENT_HOVER | `"#0B6A77"` |
 | ACCENT_SOFT | `"#E6F2F4"` |
@@ -15392,14 +15554,22 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 
 ### `class Divider(QFrame)`
 
-1px 水平分隔线。
+水平分隔线（默认 1px）。
 
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(parent=None)` | 固定高 1px、水平拉伸的水平分隔线。 |
+| `__init__(parent=None, color: str \| None=None, thickness: int=1)` | 固定高、水平拉伸的水平分隔线。 |
 | `paintEvent(event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
+
+##### `__init__(parent=None, color: str | None=None, thickness: int=1)`
+
+固定高、水平拉伸的水平分隔线。
+
+``color`` 缺省用最淡的 ``BORDER_SOFT``（好当"同一组里的轻分隔"）；
+需要一眼看出"这是两段"时传 ``T.BORDER_STRONG`` 并给 ``thickness``
+（参数面板里把「全局参数」与「本页参数」分开用的就是这一档）。
 
 ### `class SectionTitle(QLabel)`
 
@@ -15782,6 +15952,11 @@ GUI 数据根目录：默认 ``~/Documents/guji``，可在设置页改成任意�
 
 位置指针见 :func:`data_location_file`；读一次后缓存，避免每个文件操作
 都去碰磁盘（这个函数在 GUI 里调用非常频繁）。
+
+⚠️ 记录的目录**已经不存在**（比如移到移动硬盘后盘没插）时：
+① 本次回落默认目录，不抛异常；② **把设置也改回默认目录**——否则每次启动
+都要重新探测那个不存在的盘（用户 2026-11-06）。首次调用（启动流程里）就
+把这两件事做完，后续调用直接走缓存。
 
 #### `set_guji_data_dir(path) -> Path`
 

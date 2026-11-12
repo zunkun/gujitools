@@ -176,10 +176,15 @@ def run(ctx) -> None:
         extent = _box_line_extent(seen["pm"])
         left_expected = 100 * view._scale_x * dpr
         bottom_expected = 700 * view._scale_y * dpr
+        # ⚠️ 容差＝**半个线宽 + 取整**：`_box_line_extent` 探到的是笔画的**外缘**，
+        # 而未选中框的笔宽是 2 逻辑像素（dpr=2 时外缘比理想边线外扩 2 设备像素）。
+        # 判据仍是"位置没被 dpr 二次放大"——二次放大是 ×2 的偏差，不会被放过。
+        stroke_half = 2 * dpr / 2.0
+        tol = stroke_half + 1.5
         ok(f"dpr={dpr}：框线落在期望的物理位置（没被 dpr 二次放大）",
-           abs(extent["left"] - left_expected) <= 3
-           and abs(extent["bottom"] - bottom_expected) <= 3,
-           f"左边缘={extent['left']} 期望 {left_expected:.1f}；"
+           abs(extent["left"] - left_expected) <= tol
+           and abs(extent["bottom"] - bottom_expected) <= tol,
+           f"左边缘={extent['left']} 期望 {left_expected:.1f}（容差 {tol:.1f}）；"
            f"下边缘={extent['bottom']} 期望 {bottom_expected:.1f}")
         # ⚠️ 同一个框四条边必须**一样粗**：线宽不取整到设备像素时，125% 缩放
         # （2×1.25=2.5）会出现「上3 下3 左3 右2」——用户报的"有的线粗有的线细"。

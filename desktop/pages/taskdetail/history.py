@@ -111,6 +111,8 @@ class HistoryMixin:
         意图"（还没执行就切走了），比"上一次跑过的参数"更新；两者都没有时
         表单保持 `set_task` 复位后的内置默认（print 的 PDF 名/古籍名另由
         `set_source_defaults` 从源 PDF 名派生）。
+        ``detect`` 阶段的「保留框外空白」是**任务级**参数，回填后由
+        :meth:`_apply_task_scoped_params` 最后覆盖（优先级最高）。
 
         ⚠️ **按节点回填**（B 方案，2026-10-17）：同一步骤的多个节点各有自己的
         暂存与历史（``drafts/<阶段>~<节点>.json``）。回填标记 ``_history_prefilled``
@@ -157,18 +159,46 @@ class HistoryMixin:
         draft = self.store.load_draft(self.task_id, stage, **scope)
         if draft:
             panel.apply_args(draft)
+        else:
+            history = (
+                self.store.list_node_runs(self.task_id, node, stage)
+                if node
+                else self.store.list_stage_runs(self.task_id, stage)
+            )
+            if history:
+                params = {
+                    k: v for k, v in history[0].get("parameters", {}).items()
+                    if k not in self._auto_fill_keys(stage)
+                }
+                panel.apply_args(params)
+        # 任务级参数最后覆盖（优先级最高）：它不属于任何节点，代表用户对
+        # **这个任务**最近一次明确选择，暂存/历史里的同名键都该让位。
+        self._apply_task_scoped_params(panel, stage)
+
+    def _apply_task_scoped_params(self, panel, stage: str) -> None:
+        """用**任务级**参数覆盖表单（目前只有「保留框外空白」）。
+
+        用户 2026-11-12：「参数是任务级别的，不是整个系统一个参数，任务 A 的
+        设置不影响任务 B。并且默认是「不保留」，任务要记住这个参数。」
+
+        - 落点：``tasks/<任务号>/ui.json``（``ui_state.DETECT_KEEP_BLANK_KEY``），
+          **不是** ``drafts/``（那个按节点分）、也不是全局配置；
+        - 优先级：任务级 > 暂存 > 历史 > 内置默认。理由：用户手点这个开关就是
+          对这个任务的最终决定；历史里那份只是上次执行时顺手记的；
+        - 没设过（``None``）就**什么都不做**，让暂存/历史/默认自己决定——
+          不能当成"不保留"覆盖掉老任务历史里的选择。
+        """
+        if stage != "detect" or not self.task_id:
             return
-        history = (
-            self.store.list_node_runs(self.task_id, node, stage)
-            if node
-            else self.store.list_stage_runs(self.task_id, stage)
-        )
-        if history:
-            params = {
-                k: v for k, v in history[0].get("parameters", {}).items()
-                if k not in self._auto_fill_keys(stage)
-            }
-            panel.apply_args(params)
+        loader = getattr(self.store, "load_detect_keep_blank", None)
+        if not callable(loader):
+            return
+        value = loader(self.task_id)
+        if value is None:
+            return
+        applier = getattr(panel, "apply_args", None)
+        if callable(applier):
+            applier({"keep_blank": bool(value)})
 
     def _refresh_history_options(self) -> None:
         """把**当前节点**的历史执行记录填入下拉框（最新在前）。

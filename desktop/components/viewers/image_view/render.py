@@ -5,10 +5,11 @@
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QRectF, QSize, Qt
+from PySide6.QtCore import QEvent, QLineF, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QPainter, QPen
 from .styles import (
-    BOX_COLORS, BOX_NAMES, EDGE_DASH_COLOR, REFERENCE_COLOR, box_styles,
+    BOX_COLORS, BOX_NAMES, EDGE_DASH_COLOR, REFERENCE_COLOR, SHARED_EDGE_COLOR,
+    box_styles,
 )
 from typing import TYPE_CHECKING
 
@@ -126,7 +127,11 @@ class RenderMixin(ImageViewHost):
 
 
     def _draw_reference_boxes(self, painter: QPainter) -> None:
-        """参考框：按 area/border 规则推导的最终裁剪大框，橙色虚线。"""
+        """参考框：最终裁剪区域，橙色虚线（``set_reference_boxes``）。
+
+        ⚠️ 2026-11-12 起第二步不再用它（「保留空白」直接把扩展框画成实线框，
+        见 ``_draw_boxes``）；这里保留通用能力，供以后的区域预览复用。
+        """
         pen = QPen(REFERENCE_COLOR, self._pen_width(2), Qt.PenStyle.DashLine)
         painter.setPen(pen)
         for box in self._reference_boxes:
@@ -145,6 +150,18 @@ class RenderMixin(ImageViewHost):
 
 
     def _draw_boxes(self, painter: QPainter) -> None:
+        """画框（每条边单独画，为的是"相邻两框共用的竖线只画一条"）。
+
+        三件事（都是用户 2026-11-12 提的）：
+
+        1. **线不要太粗**：未选中 2 逻辑像素、选中 3（从 3/4 退回来）。
+        2. **边压在图片边缘也要看得见**：笔画以中心线对称，画在 x=0 上的竖线
+           有一半落在 pixmap 外面 ⇒ 看起来"没画出来"。这里把绘制矩形**往里收
+           半个线宽**（只是画的位置，框坐标本身不动）。
+        3. **左右两框中间那条线只画一条**：两个扩展框相邻时，左边框的右边缘与
+           右边框的左边缘是同一条线——各画一遍会互相覆盖（颜色打架）。这里先
+           把"共用的竖线"找出来，各自的彩色描边跳过它，最后用**中性灰**画一条。
+        """
         font = painter.font()
         font.setPixelSize(13)
         painter.setFont(font)
@@ -156,25 +173,61 @@ class RenderMixin(ImageViewHost):
             self._boxes, size, self._full_mode, self._single_column,
             getattr(self, "_side_override", None),
         )
-        for index, box in enumerate(self._boxes):
+        sx, sy = self._scale_x, self._scale_y
+        disp_w = (size[0] * sx) if size else 0.0
+        disp_h = (size[1] * sy) if size else 0.0
+
+        def _edges(box) -> tuple[float, float, float, float]:
+            """图片坐标 → 屏幕坐标（往里收半个线宽，见上面的第 2 条）。"""
             x1, y1, x2, y2 = box
+            half = self._pen_width(2) / 2.0
+            left = max(half, x1 * sx)
+            top = max(half, y1 * sy)
+            right = min(disp_w - half, x2 * sx) if disp_w else x2 * sx
+            bottom = min(disp_h - half, y2 * sy) if disp_h else y2 * sy
+            return left, top, max(right, left + 1.0), max(bottom, top + 1.0)
+
+        rects = [_edges(box) for box in self._boxes]
+        # 哪些竖线是**两个框共用**的（左框的右边缘 == 右框的左边缘）
+        shared_xs: set[int] = set()
+        for i, a in enumerate(rects):
+            for b in rects[i + 1:]:
+                if abs(a[2] - b[0]) <= 1.0:
+                    shared_xs.add(round(a[2]))
+                if abs(b[2] - a[0]) <= 1.0:
+                    shared_xs.add(round(b[2]))
+
+        shared_drawn: set[int] = set()
+        for index, box in enumerate(self._boxes):
+            left, top, right, bottom = rects[index]
             color = colors[index] if index < len(colors) else BOX_COLORS[0]
             selected = index == self._selected
             # 选中的框加粗（3 逻辑像素），未选中 2；两者都取整到设备像素，
             # 否则高分屏下四边会粗细不均（见 _pen_width）
-            pen = QPen(color, self._pen_width(3 if selected else 2))
-
-            painter.setPen(pen)
-            painter.drawRect(
-                round(x1 * self._scale_x), round(y1 * self._scale_y),
-                round((x2 - x1) * self._scale_x), round((y2 - y1) * self._scale_y),
-            )
+            stroke = self._pen_width(3 if selected else 2)
+            painter.setPen(QPen(color, stroke))
+            painter.drawLine(QLineF(left, top, right, top))       # 上
+            painter.drawLine(QLineF(left, bottom, right, bottom))  # 下
+            for x in (left, right):
+                if round(x) in shared_xs:
+                    # 共用竖线：交给下面的灰线统一画一次；同一条重复画会互相盖
+                    shared_drawn.add(round(x))
+                    continue
+                painter.drawLine(QLineF(x, top, x, bottom))
             name = names[index] if index < len(names) else BOX_NAMES[0]
             painter.drawText(
-                round(x1 * self._scale_x) + 4,
-                max(14, round(y1 * self._scale_y) - 4),
-                f"{name} ({x1},{y1},{x2},{y2})" + (" ｜ 已选中，Delete 删除" if selected else ""),
+                round(box[0] * self._scale_x) + 4,
+                max(14, round(box[1] * self._scale_y) - 4),
+                f"{name} ({box[0]},{box[1]},{box[2]},{box[3]})"
+                + (" ｜ 已选中，Delete 删除" if selected else ""),
             )
+        # 共用的分割线：中性灰，只画一次（左右框颜色不同，谁画都不合适）
+        if shared_drawn:
+            painter.setPen(QPen(SHARED_EDGE_COLOR, self._pen_width(2)))
+            for x in sorted(shared_drawn):
+                top = min(r[1] for r in rects)
+                bottom = max(r[3] for r in rects)
+                painter.drawLine(QLineF(x, top, x, bottom))
         # 选中框的四角缩放手柄
         if self._selected is not None and self._selected < len(self._boxes):
             painter.setPen(QPen(QColor("#ffffff")))

@@ -285,6 +285,74 @@ class AnnotationMixin:
         #    身份，所以与 `side` 一样原样保留；下次提交会整份重写。
         if isinstance(previous.get("plan"), dict):
             entry["plan"] = previous["plan"]
+        # 手工调整过的「保留空白」扩展框（见 :meth:`save_blank_regions`）：
+        # **手改检测框时保留**（那是用户自己拉的区域，不该被顺手抹掉），
+        # 但**自动重检（origin="auto"）时清掉**——"重新检测这页"就是要回自动。
+        if origin != "auto" and previous.get("blank"):
+            entry["blank"] = previous["blank"]
+        data[image_key] = entry
+        doc.flush()
+
+    # ---------- 「保留框外空白」的手工扩展框 ----------
+    def blank_regions_at(self, path: Path | None, image_key: str) -> list | None:
+        """读某页**手工调整过**的「保留空白」扩展框；没调过返回 ``None``。
+
+        格式 ``[[x1,y1,x2,y2], ...]``（1~2 个矩形，页图坐标）。它是**用户拉出来的
+        裁图区域**，优先于「由检测框推导」的那份（见
+        ``utils.box_geometry.keep_blank_regions``）。
+        """
+        if path is None:
+            return None
+        entry = self._doc(path).doc().get(image_key)
+        if not isinstance(entry, dict):
+            return None
+        regions = entry.get("blank")
+        if not isinstance(regions, list) or not regions:
+            return None
+        return [list(r) for r in regions if isinstance(r, (list, tuple)) and len(r) == 4]
+
+    def blank_regions_all_at(self, path: Path | None) -> dict[str, list]:
+        """整份文件的 ``image_key → 手工扩展框``（一次读盘，只含调过的页）。"""
+        if path is None:
+            return {}
+        out: dict[str, list] = {}
+        for key, entry in self._doc(path).doc().items():
+            if not isinstance(entry, dict):
+                continue
+            regions = entry.get("blank")
+            if isinstance(regions, list) and regions:
+                out[key] = [list(r) for r in regions
+                            if isinstance(r, (list, tuple)) and len(r) == 4]
+        return out
+
+    def save_blank_regions(
+        self, task_id: str, image_key: str, regions,
+        node_id: str | None = None, primary_id: str | None = None,
+    ) -> None:
+        """写入/清除某页手工调整的「保留空白」扩展框（空表＝清除，回到自动）。
+
+        ⚠️ 与 :meth:`save_detect_boxes` 分开：那条路是"改检测框"的高频路径，
+        这条只记**扩展框**。两者的语义不同——检测框是识别结果，扩展框是
+        裁图口径，混在一起写会让「改框」和「改裁图范围」互相覆盖。
+        ⚠️ 该页**还没有检测结果**时也要能写（用户 2026-11-12：「没有识别出
+        文本框的页面也可以手动划线」）：这时补一条 ``boxes: []`` 的条目，
+        让手工框有地方挂——否则静默丢掉，用户画完像没反应。
+        """
+        path = self.boxes_path(task_id, node_id, primary_id)
+        doc = self._doc(path, node_id or primary_id)
+        data = doc.doc()
+        entry = data.get(image_key)
+        if not isinstance(entry, dict):
+            entry = {"boxes": [], "origin": "manual"}
+        clean = [
+            [int(round(float(v))) for v in rect] for rect in (regions or [])
+            if isinstance(rect, (list, tuple)) and len(rect) == 4
+        ]
+        if clean:
+            entry["blank"] = clean
+        else:
+            entry.pop("blank", None)
+        entry["updated_at"] = time.time()
         data[image_key] = entry
         doc.flush()
 
