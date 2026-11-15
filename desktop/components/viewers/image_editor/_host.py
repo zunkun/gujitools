@@ -51,6 +51,8 @@ class DialogHost(QDialog):
     _redo: list[QImage]
     _reshape_uncheck: Any
     _save_back: bool
+    #: 原文件的像素尺寸（宽, 高）：内容被"收紧"过时用它还原画布基准。
+    _source_extent: tuple[float, float]
     _text_color: str
     _text_family: Any
     _text_size: int

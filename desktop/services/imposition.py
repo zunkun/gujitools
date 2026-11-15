@@ -34,6 +34,7 @@ import re
 import threading
 from pathlib import Path
 
+from utils.binary_ink import HARDEN_THRESHOLD as _HARDEN_THRESHOLD
 from utils.file_utils import write_bytes_atomic
 
 #: 一页拼版固定两项（右槽、左槽）
@@ -741,8 +742,10 @@ def auto_impose_pages(files: list, role_for=None) -> list[dict]:
 #: 每轮重扫就是白花的时间。签名带 mtime + 字节数，源图被编辑器覆盖后自动失效。
 _BINARY_CACHE: dict[tuple[str, int, int], bool] = {}
 
-#: 二值稿的 **alpha 阈值表**：插值出来的半透明边缘压回 0 / 255。
-_HARDEN_LUT = bytes(0 if value < 128 else 255 for value in range(256))
+#: 二值稿的 **alpha 阈值表**：插值出来的半透明边缘压回 0 / 255
+#: （分界取 ``utils.binary_ink.HARDEN_THRESHOLD``，与编辑器那一刀同一条）。
+_HARDEN_LUT = bytes(
+    255 if value >= _HARDEN_THRESHOLD else 0 for value in range(256))
 
 
 def source_stamp(path) -> tuple[str, int, int] | None:
@@ -761,18 +764,19 @@ def _looks_binary(image) -> bool:
     （调色板两项 + tRNS，逐像素是 ``(255,255,255,0)`` 与 ``(0,0,0,255)``）。
     全不透明的扫描件（只有 255）**不算**：它没有"无墨"这一态。
 
-    ⚠️ 用 ``getcolors(maxcolors=2)`` 而不是 ``histogram()``：前者一次 C 级扫描
-    就够（超 2 色直接返回 None），``getextrema() + histogram()`` 要扫两遍，
-    而这张图可能是一整页 8MP。
+    ⚠️ 规则本体在 :func:`utils.binary_ink.ink_only_levels`（编辑器烘焙前用的是
+    同一条，只是输入是 QImage）；这里只负责"用 getcolors 一趟拿到取值"。
     """
+    from utils.binary_ink import ink_only_levels
+
     try:
         alpha = image.getchannel("A")
     except (ValueError, AttributeError):      # 灰度/L 图没有 alpha 通道
         return False
     colors = alpha.getcolors(maxcolors=2)
-    if not colors or len(colors) != 2:
+    if not colors:
         return False
-    return sorted(color for _count, color in colors) == [0, 255]
+    return ink_only_levels(color for _count, color in colors)
 
 
 def is_binary_source(image, path) -> bool:

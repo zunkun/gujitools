@@ -160,3 +160,50 @@ def _qimage_rgba_array(image: QImage):
     buffer = np.frombuffer(source.constBits(), np.uint8)
     rows = buffer[: stride * height].reshape(height, stride)
     return rows[:, : width * 4].reshape(height, width, 4).copy()
+
+
+def binary_ink(image: QImage):
+    """这张图是**二值墨**稿 ⇒ 返回墨色 ``(r, g, b)``；否则 ``None``。
+
+    规则本体在 :func:`utils.binary_ink.ink_color`（拼版侧
+    ``services.imposition._looks_binary`` 判的是同一条 alpha 规则）。这里只做
+    QImage → 数组、以及"用过的 alpha 取值"那趟 ``bincount``。
+
+    ⚠️ 判的必须是**烘焙源**（变换前那张），不是烘出来的结果——结果已经被插值
+    抹成灰边了，永远判否。
+    """
+    import numpy as np
+
+    from utils.binary_ink import ink_color
+
+    if image is None or image.isNull():
+        return None
+    return ink_color(_qimage_rgba_array(image))
+
+
+def is_binary_image(image: QImage) -> bool:
+    """这张图是不是二值墨稿（``binary_ink`` 的布尔版本）。"""
+    return binary_ink(image) is not None
+
+
+def harden_alpha_image(image: QImage, ink) -> QImage:
+    """把插值出来的灰边**压回"墨 + 透明"两种像素**，返回新 QImage（不改入参）。
+
+    为什么要这一刀、以及为什么**必须连墨色一起归一**，见
+    :func:`utils.binary_ink.harden_alpha`（只压 alpha 会留下"灰色的墨"，
+    实测写回 594KB vs 归一后 85KB）。
+
+    ``ink`` 必须来自**变换前**的源图（``binary_ink(image)`` 的返回值）——
+    变换后的结果里已经挑不出干净的墨色了。
+    """
+    from PySide6.QtGui import QImage as _QImage
+
+    from utils.binary_ink import harden_alpha
+
+    array = _qimage_rgba_array(image)
+    harden_alpha(array, ink)
+    height, width = array.shape[:2]
+    # ⚠️ 必须 ``.copy()``：``QImage(bytes, …)`` 不接管 ``tobytes()`` 的临时缓冲，
+    #    不复制就是一个悬垂指针（与 :func:`_qimage_rgba_array` 坑 2 同源）。
+    return _QImage(array.tobytes(), width, height, width * 4,
+                   _QImage.Format.Format_RGBA8888).copy()

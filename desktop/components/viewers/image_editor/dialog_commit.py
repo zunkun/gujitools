@@ -79,6 +79,11 @@ def _transform_job(values: dict, progress=None):
     rect, xf, region = values["rect"], values["xf"], values["region"]
     original = values["image"]
     grow = bool(values["grow"])
+    # ⚠️ 判据拿**烘焙源**算（二值稿与否与这次怎么变换无关）；见下面的"那一刀"。
+    #    成本：一张 8MP 图多一趟通道统计（~30ms），烘焙本身是 300ms 级。
+    from desktop.components.viewers.image_zoom_dialog.io import binary_ink
+
+    ink = binary_ink(original)
     result = compose_transform(
         original, rect, xf, region, grow=grow,
         interpolation=values["interpolation"], progress=progress)
@@ -97,6 +102,21 @@ def _transform_job(values: dict, progress=None):
         # 居中裁回原比例也是一段原点平移（裁掉的是两边对称的边）
         origin = (origin[0] + (pre_w - image.width()) / 2.0,
                   origin[1] + (pre_h - image.height()) / 2.0)
+    # ---- 二值稿的「那一刀」（2026-11-15，与 ``services.imposition.compose_page``
+    #      同一个口径：判据看烘焙源，阈值化落在结果上）----
+    # 不压这一刀的话：83KB 的二值页旋转 0.5° 会写回 732KB（8.8x），**而且**
+    # 写回后不再是二值稿 ⇒ 拼版合成与 PDF 排版那边的"二值化省体积"直接失效
+    # （同页 194KB → 1.2MB）。判据天然挡住两类不该动的图：
+    #   · 照片/灰度页：alpha 恒 255，不是二值稿；
+    #   · 已经加过文字的页：文字抗锯齿让 alpha 出现中间值，判否。
+    # ⚠️ 墨色也要一起归一（``ink``）：Qt 的合成是非预乘的，黑墨混"白色透明"
+    #    会出**灰色的墨**，只压 alpha 只到 7.1x、归一到 1x 级。
+    if ink is not None:
+        from desktop.components.viewers.image_zoom_dialog.io import (
+            harden_alpha_image,
+        )
+
+        image = harden_alpha_image(image, ink)
     return image, origin
 
 

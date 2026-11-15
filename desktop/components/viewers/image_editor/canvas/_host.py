@@ -452,6 +452,9 @@ class CanvasHost(QGraphicsView):
     def _sync_scene_rect(self) -> None:
         ...
 
+    def _sync_item_render_mode(self) -> None:
+        ...
+
     def _sync_transform_overlay(self) -> None:
         ...
 
