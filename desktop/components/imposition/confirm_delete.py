@@ -8,14 +8,17 @@
 - **高度封顶**：勾选的页再多，弹窗也不能无限变高——列表放进滚动区，
   超出封顶高度出现滚动条。
 
-⚠️ 底座是**真正的顶层模态窗口**（``QDialog``），**不能**用 qfluentwidgets 的
+⚠️ 底座是 :class:`~desktop.ui.confirm_dialog.ConfirmDialog`（真窗口 ``QDialog``
++ 置顶/防连点/宿主点击静音三条防线）。**不能**用 qfluentwidgets 的
 ``MessageBoxBase`` / ``MessageBox``：它们的 ``MaskDialogBase`` 会
-``setWindowFlags(Qt.FramelessWindowHint)``，把窗口类型降级成 ``Qt::Widget``
+``setWindowFlags(Qt.FramelessWindowHint)``，把窗口降级成 ``Qt::Widget``
 ——弹窗于是变成主窗口里的**子控件遮罩层**（``isWindow() == False``），
 不是窗口，就没有"模态窗口"该有的激活与焦点语义。实机（2026-10-26 用户报）
-表现为：点「删除」不生效、电脑还"当当当"响（点击落在一个不是窗口的遮罩上）。
-同页的「清空拼版」用的是 ``qfluentwidgets.Dialog``（``FramelessDialog``，
-真窗口），本弹窗此前是**全仓唯一**的遮罩式确认框，这就是差异所在。
+表现为：点「删除」不生效、电脑还"当当当"响。
+
+2026-11-15 用户再报"有时候点确认框会当当响"——那时底座已是对的，响的是另一条
+路（点到弹窗外的宿主窗口 / 连点穿透），三条防线就是那次补的，现在收在
+``ConfirmDialog`` 里由全仓共用。
 
 宿主（唤起与删除落盘）见 ``desktop/pages/taskdetail/imposition_pages.py``
 的 ``_on_imposition_batch_delete``。
@@ -24,26 +27,26 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (
-    QDialog, QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget,
-)
-from qfluentwidgets import PrimaryPushButton, PushButton, ScrollArea
+from PySide6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
+from qfluentwidgets import ScrollArea
 
 from desktop.services.imposition import cn_page_label, page_source_stems
 from desktop.ui import theme as T
+from desktop.ui.confirm_dialog import ConfirmDialog
 from desktop.ui.widgets import apply_to
 
-#: 弹窗固定宽度（用户要求：宽度固定，文字折行）
+#: 弹窗固定宽度（用户要求：宽度固定，文字折行）。
+#: ⚠️ 与父类默认值不同（拼版要比普通确认框宽，才排得下"图名 · 图名"）
 DIALOG_W = 520
 #: 页列表滚动区的封顶高度（超过即滚动，弹窗不再变高）
 LIST_MAX_H = 264
 
 
-class BatchDeleteConfirmDialog(QDialog):
+class BatchDeleteConfirmDialog(ConfirmDialog):
     """批量删除拼版页的确认框：正文折行 + 逐页列名 + 列表滚动。
 
     ``exec()`` 走 ``QDialog`` 的嵌套事件循环：点「删除」= ``accept()``
-    （返回 ``QDialog.Accepted``），点「取消」/按 Esc = ``reject()``。
+    （返回真），点「取消」/按 Esc = ``reject()``。
     """
 
     def __init__(self, pages: list, parent=None):
@@ -52,80 +55,34 @@ class BatchDeleteConfirmDialog(QDialog):
         页数据只读它的 ``items``（两张源图），文案与左列清单同源
         （``page_source_stems`` + ``cn_page_label``）。
         """
-        super().__init__(parent)
-        self.setWindowTitle("批量删除拼版页")
-        # 模态 + 固定宽度：这是**真窗口**，``exec()`` 时由窗口管理器激活，
-        # 点击不会被当成"点到被挡住的地方"（那会触发系统提示音）。
-        self.setModal(True)
-        self.setFixedWidth(DIALOG_W)
-
         count = len(pages)
-
-        root = QVBoxLayout(self)
-        root.setContentsMargins(T.SPACE_XL, T.SPACE_LG, T.SPACE_XL, T.SPACE_LG)
-        root.setSpacing(T.SPACE_MD)
-
-        self.title_label = QLabel("批量删除拼版页", self)
-        apply_to(self.title_label, T.SIZE_SUBTITLE, bold=True, color=T.INK)
-        root.addWidget(self.title_label)
-
         # 正文不逐个罗列页码（用户 2026-09-30：第一行不要列举所有页，
         # 具体删哪几页看下面的逐页清单就够了）
-        self.content_label = QLabel(
+        super().__init__(
+            "批量删除拼版页",
             f"本操作将删除共 {count} 页图片：这些页的版面调整"
             "（位置/大小/旋转）会丢失，图片释放回未选择列表，且无法撤销。",
-            self,
+            parent,
+            width=DIALOG_W,
+            yes_text="删除",
         )
-        self.content_label.setWordWrap(True)
-        apply_to(self.content_label, T.SIZE_BODY, color=T.INK)
-        root.addWidget(self.content_label)
+        self.body.addWidget(self._make_ask_block(pages, count))
+        self.fit_height()
 
-        self.question_label = QLabel(f"确定删除如下 {count} 页？", self)
+    def _make_ask_block(self, pages: list, count: int) -> QWidget:
+        """「确定删除如下 N 页？」+ 逐页清单（接在正文下方）。"""
+        block = QWidget(self)
+        layout = QVBoxLayout(block)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(T.SPACE_MD)
+        self.question_label = QLabel(f"确定删除如下 {count} 页？", block)
         apply_to(self.question_label, T.SIZE_BODY, bold=True, color=T.INK)
-        root.addWidget(self.question_label)
-
-        root.addWidget(self._make_page_list(pages))
-
-        buttons = QHBoxLayout()
-        buttons.setSpacing(T.SPACE_SM)
-        buttons.addStretch(1)
-        self.cancelButton = PushButton("取消", self)
-        self.cancelButton.clicked.connect(self.reject)
-        buttons.addWidget(self.cancelButton)
-        self.yesButton = PrimaryPushButton("删除", self)
-        self.yesButton.clicked.connect(self.accept)
-        buttons.addWidget(self.yesButton)
-        root.addLayout(buttons)
-
-        self._fit_height()
-
-    # ------------------------------------------------------------------ 版式
-    def _fit_height(self) -> None:
-        """宽度已钉死，高度按**折行后的内容**收敛（列表同时受封顶约束）。
-
-        ⚠️ 不能用 ``adjustSize()``：它按 ``sizeHint()`` 同时改宽高，会把
-        "固定 520 宽"重新算成正文的自然宽度，宽度约束就丢了。这里只取
-        "在 520 宽下折行需要多高"——``totalHeightForWidth`` 已含布局外边距。
-        """
-        layout = self.layout()
-        if layout is None:
-            return
-        layout.activate()
-        self.setFixedHeight(layout.totalHeightForWidth(DIALOG_W))
-
-    def showEvent(self, event) -> None:  # noqa: N802
-        """显示时**显式置顶并激活**。
-
-        父窗口是 qframelesswindow 的无边框主窗口，个别情况下（远程桌面、
-        多屏、窗口刚从最小化恢复）系统不会把新弹窗提到最前；不置顶时
-        用户点按钮点到的其实是"后面"的窗口，Windows 会响提示音。
-        """
-        super().showEvent(event)
-        self.raise_()
-        self.activateWindow()
+        layout.addWidget(self.question_label)
+        layout.addWidget(self._make_page_list(pages, block))
+        return block
 
     # ------------------------------------------------------------------ 列表
-    def _make_page_list(self, pages: list) -> ScrollArea:
+    def _make_page_list(self, pages: list, parent: QWidget) -> ScrollArea:
         """被勾选页的逐行清单：一行一页「第一页：图名 · 图名」。
 
         ⚠️ 高度封顶（``LIST_MAX_H``）：页数少时弹窗贴合内容，页数多时
@@ -154,7 +111,7 @@ class BatchDeleteConfirmDialog(QDialog):
             box.addWidget(row)
         box.addStretch(1)
 
-        scroll = ScrollArea()
+        scroll = ScrollArea(parent)
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setWidget(container)

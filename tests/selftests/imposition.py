@@ -2542,6 +2542,55 @@ def run(ctx) -> None:
         _confirm.deleteLater()
         pump(ctx.app, times=2)
 
+        # ---- 弹出瞬间的连点防护 + 宿主点击静音（2026-11-15 用户报）----
+        # 实机表现为"有时候点确认框，系统当当响"：确认框弹出后用户**又点了
+        # 一下**（连点），那一下落在弹窗外的宿主窗口上——Qt 对被模态阻塞窗口
+        # 的点击一律 ``QApplication::beep()``；若落在弹窗内还可能替用户按到
+        # 「删除」/「取消」。这里钉住两道防线，且必须同时钉住"保护期过后
+        # 能不能点"——只吞不放就是 2026-10-26 那次"点删除没反应"的复发。
+        from PySide6.QtCore import Qt as _Qt
+        from PySide6.QtTest import QTest as _QTest
+
+        _confirm2 = _icdel.BatchDeleteConfirmDialog([(0, _pages_backup[0])], page)
+        _confirm2.show()
+        pump(ctx.app, times=1)
+        ok(
+            "确认框刚弹出：落在弹窗上的点击先被吞（连点不会替用户按按钮）",
+            _confirm2._armed is False,
+            f"armed={_confirm2._armed}",
+        )
+        _QTest.mouseClick(_confirm2.yesButton, _Qt.MouseButton.LeftButton)
+        ok(
+            "保护期内点「删除」不生效（也就不会误删）",
+            _confirm2.result() == 0,
+            f"result={_confirm2.result()}",
+        )
+        for _ in range(60):  # 等 _ARM_MS 到期（上限 1.2s，别死等）
+            if _confirm2._armed:
+                break
+            ctx.app.processEvents()
+            _time.sleep(0.02)
+        ok(
+            "过了保护期点击照常生效（不重犯「点删除没反应」）",
+            _confirm2._armed is True,
+            f"armed={_confirm2._armed}",
+        )
+        _QTest.mouseClick(_confirm2.yesButton, _Qt.MouseButton.LeftButton)
+        ok(
+            "解除防连点后点「删除」= accept",
+            bool(_confirm2.result()),
+            f"result={_confirm2.result()}",
+        )
+        _confirm2.close()
+        pump(ctx.app, times=2)
+        ok(
+            "确认框关掉后撤掉宿主点击静音（原生过滤器不残留）",
+            _confirm2._mute._filter is None,
+            str(_confirm2._mute._filter),
+        )
+        _confirm2.deleteLater()
+        pump(ctx.app, times=2)
+
         class _FakeConfirmDialog:
             def __init__(self, items, parent=None):
                 self.items = list(items)

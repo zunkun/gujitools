@@ -16,7 +16,7 @@ from typing import Callable
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPageSize
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
-from qfluentwidgets import CaptionLabel, MessageBox, PrimaryPushButton, PushButton
+from qfluentwidgets import CaptionLabel, PrimaryPushButton, PushButton
 from qfluentwidgets import FluentIcon as FIF
 from desktop.ui import theme as T
 from desktop.ui import widgets as ui
@@ -313,14 +313,24 @@ class PrintPreviewWidget(
     def _ask_delete_confirm(self, count: int) -> bool:
         """弹删除确认框；``False`` = 用户取消。
 
+        ⚠️ 底座必须是**真窗口**（:class:`~desktop.ui.confirm_dialog.ConfirmDialog`）：
+        qfluentwidgets 的 ``MessageBox`` 是 ``MaskDialogBase`` 派生的**子控件
+        遮罩层**（``isWindow() == False``），实机上点「删除」不生效、系统还
+        "当当当"响（2026-11-15 用户报的就是这里；同坑 2026-10-26 在拼版批量
+        删除上已踩过一次）。
+
         ⚠️ 弹窗与动作分开一层：离屏自测绝不真弹模态，替换本方法即可验
         「取消不删 / 确认才删」两条分支。
         """
-        dialog = MessageBox(
-            "删除当前图片", self._delete_confirm_text(count), self.window()
+        from desktop.ui.confirm_dialog import ConfirmDialog
+
+        dialog = ConfirmDialog(
+            "删除当前图片",
+            self._delete_confirm_text(count),
+            self.window(),
+            yes_text="删除",
+            cancel_text="取消",
         )
-        dialog.yesButton.setText("删除")
-        dialog.cancelButton.setText("取消")
         return bool(dialog.exec())
 
     def print_current(self) -> None:

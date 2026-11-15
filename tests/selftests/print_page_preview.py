@@ -646,6 +646,48 @@ def run(ctx) -> None:
         ok("多选时确认文案写明张数",
            "2 张" in widget._delete_confirm_text(2),
            widget._delete_confirm_text(2))
+
+        # 用户 2026-11-15：这个确认框在实机上点「删除」不生效、系统"当当响"。
+        # 根因是底座用了 qfluentwidgets 的 ``MessageBox``（``MaskDialogBase``
+        # 派生的**子控件遮罩**，``isWindow() == False``）——不是窗口就没有模态
+        # 窗口的激活语义，点击落在遮罩上。拼版批量删除 2026-10-26 踩过同一个坑。
+        # 这里钉两层：① 底座是真窗口；② 本方法确实走 ConfirmDialog（换回
+        # MessageBox 会立刻红），且**不真弹模态**（替身记录）。
+        from desktop.ui.confirm_dialog import ConfirmDialog
+
+        _probe = ConfirmDialog("删除当前图片", widget._delete_confirm_text(1), widget)
+        ok("删除确认框是**真窗口**（不是 qfluent 的遮罩子控件）",
+           _probe.isWindow() and _probe.isModal(),
+           f"isWindow={_probe.isWindow()} modal={_probe.isModal()}")
+        _probe.deleteLater()
+
+        import desktop.ui.confirm_dialog as _cdmod
+
+        _seen_box: dict = {}
+
+        class _FakeConfirmDialog:
+            def __init__(self, title, content, parent=None, **kw):
+                _seen_box["title"] = title
+                _seen_box["yes"] = kw.get("yes_text")
+                _seen_box["cancel"] = kw.get("cancel_text")
+                # 调用方只读 exec() 的返回值，替身不必造按钮
+                self.yesButton = None
+                self.cancelButton = None
+
+            def exec(self):
+                return 1
+
+        _real_confirm_cls = _cdmod.ConfirmDialog
+        _cdmod.ConfirmDialog = _FakeConfirmDialog
+        try:
+            ok("右键删除确认走真窗口 ConfirmDialog（换回遮罩 MessageBox 会红）",
+               widget._ask_delete_confirm(1) is True
+               and _seen_box.get("yes") == "删除"
+               and _seen_box.get("cancel") == "取消",
+               str(_seen_box))
+        finally:
+            _cdmod.ConfirmDialog = _real_confirm_cls
+
         widget.strip.clearSelection()
         widget.strip.item(0).setSelected(True)
         widget._ask_delete_confirm = lambda count: False  # 离屏自测不真弹模态
