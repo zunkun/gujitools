@@ -733,6 +733,80 @@ def auto_impose_pages(files: list, role_for=None) -> list[dict]:
 
 
 # ------------------------------------------------------------------ 合成
+#: 「这张源图是不是二值稿」的缓存，key = :func:`source_stamp` 的签名。
+#:
+#: ⚠️ 拼版合成会被**反复触发**（拖版面时的后台防抖 + 点「生成PDF」前的同步补
+#: 一轮），每次都要读同一批源图。尺寸有 ``_SIZE_CACHE`` 同理；这里缓存的是
+#: "只有「墨」和「透明」两种像素"这个判据——判一次要扫一遍 alpha，整本几十页
+#: 每轮重扫就是白花的时间。签名带 mtime + 字节数，源图被编辑器覆盖后自动失效。
+_BINARY_CACHE: dict[tuple[str, int, int], bool] = {}
+
+#: 二值稿的 **alpha 阈值表**：插值出来的半透明边缘压回 0 / 255。
+_HARDEN_LUT = bytes(0 if value < 128 else 255 for value in range(256))
+
+
+def source_stamp(path) -> tuple[str, int, int] | None:
+    """源图的**新鲜度签名**（路径 + mtime_ns + 字节数）；读不到返回 None。"""
+    try:
+        stat = os.stat(str(path))
+    except OSError:
+        return None
+    return (str(path), int(stat.st_mtime_ns), int(stat.st_size))
+
+
+def _looks_binary(image) -> bool:
+    """这张**已解码的 RGBA 图**是不是二值稿：alpha 只有 0 和 255 两种取值。
+
+    "只有 0 和 255" 就是「有墨 / 无墨」——去底色产物（``rembg``）正是这个形态
+    （调色板两项 + tRNS，逐像素是 ``(255,255,255,0)`` 与 ``(0,0,0,255)``）。
+    全不透明的扫描件（只有 255）**不算**：它没有"无墨"这一态。
+
+    ⚠️ 用 ``getcolors(maxcolors=2)`` 而不是 ``histogram()``：前者一次 C 级扫描
+    就够（超 2 色直接返回 None），``getextrema() + histogram()`` 要扫两遍，
+    而这张图可能是一整页 8MP。
+    """
+    try:
+        alpha = image.getchannel("A")
+    except (ValueError, AttributeError):      # 灰度/L 图没有 alpha 通道
+        return False
+    colors = alpha.getcolors(maxcolors=2)
+    if not colors or len(colors) != 2:
+        return False
+    return sorted(color for _count, color in colors) == [0, 255]
+
+
+def is_binary_source(image, path) -> bool:
+    """二值稿判据的**带缓存**版本（``image`` 是已经解码好的那张，省一次解码）。"""
+    stamp = source_stamp(path)
+    if stamp is not None:
+        cached = _BINARY_CACHE.get(stamp)
+        if cached is not None:
+            return cached
+    flag = _looks_binary(image)
+    if stamp is not None:
+        _BINARY_CACHE[stamp] = flag
+    return flag
+
+
+def _harden_alpha(image):
+    """把**插值出来的半透明边缘**阈值化回二值（原地改 ``image`` 的 alpha）。
+
+    为什么可以这么做（2026-11-15 体积排查，任务 0006）：
+
+    - 源图是二值稿 ⇒ 成品里出现的中间 alpha **100% 是 resize/rotate 插值发明的**，
+      不是原稿信息（实测第 60 页：35% 的墨像素被抹成平均灰度 64 的半透明边）；
+    - 不阈值化的话，一张 88KB 的二值源图合成后变成 2MB：8bit RGBA 是 32 位/像素，
+      而二值透明页只要 1 位/像素（见 ``utils.compact_png`` 的表）；
+    - 阈值化**不动几何、不动位置、不动落点**：只是把"灰边"还原成"有墨/无墨"，
+      笔画位置误差 ≤ 1 像素（打印 300DPI 看不出来）。
+
+    代价只有一条：斜边/拉伸边会出现 1 像素台阶（原本是灰渐变的"软边"）。
+    对黑白古籍稿来说这是"回到原稿的锐度"，不是降质。
+    """
+    image.putalpha(image.getchannel("A").point(_HARDEN_LUT))
+    return image
+
+
 def _open_rgba(path: str):
     from PIL import Image
 
@@ -826,6 +900,9 @@ def compose_page(page: dict, background=TRANSPARENT_BACKGROUND):
             image = _open_rgba(str(item["file"]))
         except Exception:  # noqa: BLE001 - 单张坏图不该毁掉整页
             continue
+        # ⚠️ 判据必须拿**变换前**的源图算（"源图是不是二值稿"和缩放/旋转无关），
+        #    阈值化则必须放在 resize/rotate **之后**——灰边正是那两步造出来的。
+        binary = is_binary_source(image, str(item["file"]))
         # ⚠️ 先裁掉透明留白再 resize：``rect`` 按**可见内容**记（见
         #    ``refresh_rects_for_edited_source``），不裁的话整张图会被硬塞
         #    进内容尺寸的框里 ⇒ 内容压扁。
@@ -836,6 +913,8 @@ def compose_page(page: dict, background=TRANSPARENT_BACKGROUND):
         if rotation:
             image = image.rotate(
                 -rotation, expand=True, resample=Image.Resampling.BICUBIC)
+        if binary:
+            image = _harden_alpha(image)
         center_x = x + w / 2.0 - left
         center_y = y + h / 2.0 - top
         canvas.alpha_composite(
@@ -864,18 +943,35 @@ def _save_page_atomic(image, target: Path) -> None:
     做法与项目既有的 JSON / 缩略图缓存一致：同目录临时文件 + ``os.replace``
     （Windows 上还要短暂重试，目标正被 PDF 渲染器打开时会 ``PermissionError``）。
 
-    ⚠️ **编码按目标后缀选**（用户 2026-10-17）：``.png`` 存 RGBA（保住透明底）；
+    ⚠️ **编码按目标后缀选**（用户 2026-10-17）：``.png`` 走**紧凑编码**
+    （:func:`utils.compact_png.encode_png_compact`，与去底色/编辑器写回同一口径）；
     ``.jpg`` 必须**先白底压平**（JPEG 没有 alpha 通道，透明处不压白会被固化成
     黑色——与 ``thumb_cache_worker.flatten_on_white`` 同一个坑）。
+
+    ⚠️ PNG 为什么必须是紧凑编码（2026-11-15 用户报「拼版后图片大 7 倍」）：
+    拼版成品绝大多数是**二值透明页**（源图只有「墨 / 透明」两态），而
+    ``image.save(format="PNG")`` 一律按 8bit RGBA（32 位/像素）写，
+    1 位/像素的最省形态被丢掉。实测任务 0006 第 60 页 2015KB → 194KB（10.4x），
+    整本 91 页 109.8MB → 15.7MB（7.0x；没到 10x 是因为个别页的源图带白纸底、
+    不是纯二值，只吃到编码这一层）。
     """
-    buf = io.BytesIO()
     if Path(target).suffix.lower() in _JPG_SUFFIXES:
+        buf = io.BytesIO()
         _flatten_white(image).save(
             buf, format="JPEG", quality=JPEG_QUALITY, subsampling=0,
         )
-    else:
-        image.save(buf, format="PNG")
-    write_bytes_atomic(target, buf.getvalue())
+        write_bytes_atomic(target, buf.getvalue())
+        return
+    # 调色板/1 位等模式先收敛成 RGB(A)：``encode_png_compact`` 只认像素数组，
+    # 直接 ``np.array(P 图)`` 会把调色板索引当灰度值（会画出乱码）。
+    if image.mode not in ("RGB", "RGBA", "L"):
+        image = image.convert("RGBA")
+    import numpy as np
+
+    from utils.compact_png import encode_png_compact
+
+    data, _info = encode_png_compact(np.array(image))
+    write_bytes_atomic(target, data)
 
 
 def _flatten_white(image):

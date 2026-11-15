@@ -5,6 +5,25 @@
 > 「PDF排版」生成耗时与成品 PDF 体积的影响。
 > 本报告**只做测量，未改任何代码**。
 
+> ⚠️ **2026-11-15 补记（本报告的"现状"那几行已过期，结论不变）**
+>
+> 拼版成品落盘不再用 `image.save(format="PNG")`（8bit RGBA），改走
+> `utils.compact_png.encode_png_compact`；同时**二值源图**（只有「墨 / 透明」两态）
+> 在 `resize/rotate` 之后把插值出来的半透明边缘阈值化回 0/255
+> （`services.imposition._looks_binary` / `_harden_alpha`）。
+> 下面表格里「PNG RGBA（现状）」已经**不是**现状了，任务 0006 实测：
+>
+> | | 旧（RGBA） | 新（紧凑 + 二值） |
+> | --- | ---: | ---: |
+> | 单页（二值页） | 2015 KB | **194 KB（10.4×）** |
+> | 整本 91 页 | 109.8 MB | **15.7 MB（7.0×）** |
+> | PDF 单页 Flate | 1567 KB | **413 KB（3.8×）** |
+> | 整本 PDF | 123 MB | **≈37 MB** |
+>
+> 结论仍是「用 PNG、别换 JPEG」，而且现在 PNG 比当初这份基准还小一个数量级。
+> 护栏见 `tests/selftests/imposition_binary.py`。
+
+
 ## 结论摘要
 
 1. **PNG 明显更小**：同一批拼版页，PNG 平均 1.0MB/页，JPEG q95 4.8MB/页

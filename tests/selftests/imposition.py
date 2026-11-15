@@ -516,10 +516,16 @@ def run(ctx) -> None:
         with Image.open(_flat_dst) as _fim:
             _fim.load()
             _fmode, _fpx = _fim.mode, _fim.convert("RGBA").getpixel((5, 5))
+            _ftrns = "transparency" in _fim.info
         ok(
             "手改整页压白：透明源 → 不透明白底 PNG",
-            _fmode == "RGB" and _fpx == (255, 255, 255, 255),
-            f"mode={_fmode} pixel={_fpx}",
+            # ⚠️ 不钉死 ``"RGB"``（2026-11-15）：成品落盘改走**紧凑编码**，
+            #    纯黑白页会写成调色板（P）。要钉的是**语义**——没有 alpha 通道、
+            #    角落是白；"用哪种 PNG 色彩类型"是实现细节（见
+            #    ``services.imposition._save_page_atomic``）。
+            _fmode in ("RGB", "P") and not _ftrns
+            and _fpx == (255, 255, 255, 255),
+            f"mode={_fmode} pixel={_fpx} transparency={_ftrns}",
         )
 
         # ---- 2a-3. 去底色导出目录衔接（2026-10-13 用户）--------------------

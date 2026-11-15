@@ -44,6 +44,18 @@ from utils.sort_utils import natural_sort_key
 # 300DPI 对古籍扫描足够清晰，同时避免 fpdf 对数千像素原图逐页 zlib 压缩。
 PRINT_IMAGE_DPI = 300
 
+#: 二值输入（只有纯黑/纯白两级）在**降采样之后**要不要重新阈值化（2026-11-15）。
+#:
+#: 为什么必须这么干：拼版成品/去底色产物都是二值页，而 :meth:`_load_image` 的
+#: 降采样是 LANCZOS——它把硬边插值成一圈灰，PDF 的单页 Flate 数据立刻涨近 4 倍
+#: （任务 0006 第 60 页实测，zlib 级别 3：阈值化 413KB vs 插值回灰 1567KB）。
+#: 阈值化只是把"降采样发明出来的灰边"还回二值，几何与落点完全不变，
+#: 变化的只有边缘 1 像素以内的灰度。
+PRINT_KEEP_BINARY = True
+
+#: 二值阈值的 256 项查表（PIL ``point`` 用，比逐像素 numpy 快一个量级）。
+_BINARY_LUT = [0] * 128 + [255] * 128
+
 #: fpdf 图片 FlateDecode 用的 zlib 级别（fpdf 默认 -1，等价 6）。
 #
 #: ⚠️ 这是 print 阶段**最大的单项耗时**：fpdf 逐页串行压缩嵌入数据，
@@ -72,6 +84,21 @@ def _flatten_alpha(img: Image.Image) -> Image.Image:
     bg = Image.new("RGB", rgba.size, (255, 255, 255))
     bg.paste(rgba, mask=rgba.getchannel("A"))
     return bg
+
+
+def _is_binary_l(img: Image.Image) -> bool:
+    """``L`` 图是否只有纯黑 / 纯白两级（二值稿的判据）。
+
+    与拼版侧 ``services.imposition._looks_binary`` **同一语义**（那边看 alpha
+    的 0/255，这边看压平后的 0/255），但分开实现：一边是 RGBA 的 alpha 通道、
+    一边是压平白底后的灰阶，硬合并只会让两边都难读。
+    """
+    if img.mode != "L":
+        return False
+    colors = img.getcolors(maxcolors=2)
+    if not colors or len(colors) != 2:
+        return False
+    return sorted(color for _count, color in colors) == [0, 255]
 
 
 def _is_grayscale(img: Image.Image) -> bool:
@@ -810,6 +837,14 @@ class PrintFunction(FunctionBase):
             #    先查方向标签：无标签时 exif_transpose 也会整图复制一份。
             if img.getexif().get(274, 1) != 1:
                 img = ImageOps.exif_transpose(img)
+            # ⚠️ 带 tRNS 的**调色板 PNG 必须先展成 RGBA**（2026-11-15）：拼版成品
+            #    走紧凑编码后就是 ``P + tRNS``，而它"透明"那一项自己的 RGB 是
+            #    **(0,0,0)**（合成画布是透明黑）。``_flatten_alpha`` 只认 RGBA/LA，
+            #    P 会被原样放过、最后落到 fpdf 的 ``convert("RGB")``——透明白区
+            #    会整片印成黑底。去底色产物（``rembg``）同理：它的透明项是白色，
+            #    侥幸没炸，但不能靠运气。
+            if img.mode in ("P", "PA") and "transparency" in img.info:
+                img = img.convert("RGBA")
             img = _flatten_alpha(img)
             # ⚠️ 灰度转 L（2026-10-24，用户报「生成 PDF 慢」实测）：
             #    fpdf 对每页做 FlateDecode 时是**串行** zlib 压缩，耗时与像素
@@ -820,6 +855,9 @@ class PrintFunction(FunctionBase):
             #    RGB，不丢任何颜色。
             if img.mode == "RGB" and _is_grayscale(img):
                 img = img.convert("L")
+            # 二值稿标记：**必须在降采样前**判（降采样会把它毁掉），
+            # 判完在降采样之后再把灰边阈值化回去，见 PRINT_KEEP_BINARY。
+            binary = PRINT_KEEP_BINARY and _is_binary_l(img)
             # 超过打印所需像素时等比缩小（只缩不放），宽高比不变，
             # 后续排版几何完全一致，但压缩速度与 PDF 体积大幅改善。
             w, h = img.size
@@ -834,6 +872,10 @@ class PrintFunction(FunctionBase):
                     max(1, int(h * scale)),
                 )
                 img = img.resize(target, Image.Resampling.LANCZOS)
+                if binary:
+                    # 只对二值稿：把 LANCZOS 插出来的灰边还原成 0/255。
+                    # 非二值稿（扫描灰度页、彩色插图）一律不碰。
+                    img = img.point(_BINARY_LUT)
             return {"idx": idx, "img": img, "path": path, "size": img.size}
         except Exception as e:
             print(f"加载图片失败 {path}: {e}")

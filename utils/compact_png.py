@@ -54,6 +54,7 @@
 
 from __future__ import annotations
 
+import io
 from pathlib import Path
 from typing import Optional, Sequence
 
@@ -96,9 +97,53 @@ def save_png_compact(
         ``{"encoding": "P"|"LA"|"RGBA"|"RGB", "colors": int|None,
         "bits": int, "bytes": int}``，供调用方打日志/统计。
     """
+    target = Path(path)
+    info = _encode_png(rgba, target, dpi=dpi, compress_level=compress_level)
+    info["bytes"] = target.stat().st_size
+    return info
+
+
+def encode_png_compact(
+    rgba,
+    *,
+    dpi: Optional[Sequence[float]] = None,
+    compress_level: int = PNG_COMPRESS_LEVEL,
+) -> tuple[bytes, dict]:
+    """与 :func:`save_png_compact` **同一套编码**，但把字节返回给调用方。
+
+    给"不能直接落盘"的调用方用：拼版成品页（``services.imposition._save_page_
+    atomic``）要求**原子写**（临时文件 + ``os.replace``），自己已经把内容攒在
+    内存里了，再让它落一次临时文件纯属多余；而"先算体积再决定要不要写"这类
+    判断也只有拿得到字节才做得了。
+
+    返回 ``(png 字节, 与 save_png_compact 同形的 dict)``；dict 里的 ``bytes``
+    由这里的 ``len(data)`` 填，与"文件大小"逐字节一致。
+    """
+    buf = io.BytesIO()
+    info = _encode_png(rgba, buf, dpi=dpi, compress_level=compress_level)
+    data = buf.getvalue()
+    info["bytes"] = len(data)
+    return data, info
+
+
+def _encode_png(
+    rgba,
+    sink,
+    *,
+    dpi: Optional[Sequence[float]],
+    compress_level: int,
+) -> dict:
+    """按像素挑形态后编码进 ``sink``（路径或文件对象）；返回值**不含** ``bytes``。
+
+    ⚠️ ``bytes`` 由两个公开入口各自填：走文件时取 ``stat().st_size``，走内存时
+    取 ``len()``——这里刻意不猜 ``sink`` 的类型（``Path`` 没有 ``tell``、
+    ``BytesIO`` 没有 ``stat``）。
+
+    ⚠️ 入参在这里统一 ``_as_rgba``：两个入口共用同一份归一化，少一次就是
+    ``RGB``（白底拼版成品）输入直接 IndexError（实测踩过）。
+    """
     arr = _as_rgba(rgba)
     plan = _plan(arr)
-    target = Path(path)
     extra = {"dpi": (float(dpi[0]), float(dpi[1]))} if dpi else {}
 
     if plan[0] == "P":
@@ -108,24 +153,21 @@ def save_png_compact(
         kwargs = {"format": "PNG", "compress_level": compress_level, **extra}
         if trns is not None:
             kwargs["transparency"] = trns
-        image.save(target, **kwargs)
-        return {"encoding": "P", "colors": len(palette) // 3, "bits": bits,
-                "bytes": target.stat().st_size}
+        image.save(sink, **kwargs)
+        return {"encoding": "P", "colors": len(palette) // 3, "bits": bits}
 
     if plan[0] == "LA":
         stack = np.dstack([arr[:, :, 2], arr[:, :, 3]])
         Image.fromarray(np.ascontiguousarray(stack), "LA").save(
-            target, format="PNG", compress_level=compress_level, **extra)
-        return {"encoding": "LA", "colors": None, "bits": 16,
-                "bytes": target.stat().st_size}
+            sink, format="PNG", compress_level=compress_level, **extra)
+        return {"encoding": "LA", "colors": None, "bits": 16}
 
     mode = plan[0]
     data = arr if mode == "RGBA" else arr[:, :, :3]
     Image.fromarray(np.ascontiguousarray(data), mode).save(
-        target, format="PNG", compress_level=compress_level, **extra)
+        sink, format="PNG", compress_level=compress_level, **extra)
     return {"encoding": mode, "colors": None,
-            "bits": 32 if mode == "RGBA" else 24,
-            "bytes": target.stat().st_size}
+            "bits": 32 if mode == "RGBA" else 24}
 
 
 def read_png_dpi(path: str | Path) -> Optional[tuple[float, float]]:
