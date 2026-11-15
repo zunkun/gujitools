@@ -11,6 +11,9 @@
    PDF排版）；
 2. **反例全部拒绝**——``print → rembg``（用户给的原例）、拼版排在
    PDF排版 之后、只摆起止事件没有可执行步骤的空流程；
+   ⚠️ 2026-11-15 起「没有开始节点」**不再**是反例：用户口径是"任何一个
+   任务节点（方框）都能当开始节点、也能当结束节点"，起止圈纯属图示；
+   仍然拒绝的是**两个及以上**开始事件（说不清几处入口）。
 3. **警告只提示不拦**——extract 不在第一位、未接入运行的节点，``ok`` 仍为真。
    ⚠️ 「有拼版没判断节点」这条警告已于 2026-10-08 删除（网关依附「图片拼版」，
    界面上没有"添加判断"入口，提示用户去做一件做不到的事就是死胡同）。
@@ -150,6 +153,19 @@ def _check_legal_combos(ok) -> None:
        result.ok and not result.warnings,
        f"errors={result.errors} warnings={result.warnings}")
 
+    # ---- 没有起止圈也合法（用户 2026-11-15）--------------------------------
+    # 用户原话："任何一个任务节点，就说是方框形的那种任务节点都可以作为开始
+    # 节点，所以说这个包括结束节点，任何一个任务节点都可以作为结束节点"。
+    # 起止圈只是**图示**：图上没有入线的第一个步骤就是入口（输入回落到
+    # ``stages/input/``），没有出线的最后一步就是收尾 —— 删掉圆圈不该拦保存。
+    for stages in [("extract", "detect", "print"), ("detect", "rembg"),
+                   ("rembg", "imposition", "print"), ("print",)]:
+        for end in (True, False):
+            result = validate_flow(_chain(*stages, source=False, end=end))
+            label = " → ".join(stages) + ("（无开始节点）" if end
+                                          else "（无起止节点）")
+            ok(f"合法组合 {label} 放行", result.ok, f"errors={result.errors}")
+
 
 # --------------------------------------------------------------- ② 反例
 def _check_illegal_combos(ok) -> None:
@@ -187,11 +203,9 @@ def _check_illegal_combos(ok) -> None:
        any("PDF排版" in e and "去底色" in e for e in result.errors),
        str(result.errors))
 
-    # 缺少开始节点（源PDF）：2026-11-04 起是硬错误（用户要求"只有一个开始节点"）
-    result = validate_flow(_chain("extract", "print", source=False))
-    ok("没有「开始节点」⇒ 拒绝保存",
-       not result.ok and any("开始节点" in e for e in result.errors),
-       f"errors={result.errors}")
+    # 缺少开始节点（源PDF）：2026-11-04 曾是硬错误；**2026-11-15 撤销**
+    # （用户："任何一个任务节点都可以作为开始节点……包括结束节点"）——
+    # 起止圈只是图示，见 _check_legal_combos 的"无起止节点"用例。
 
 
 # --------------------------------------- ②b 图结构（2026-11-04，任务 0021）
@@ -304,6 +318,18 @@ def _check_structure(ok) -> None:
     result = validate_flow(two_starts)
     ok("两个开始节点 ⇒ 拒绝保存",
        not result.ok and any("只能有一个「开始节点」" in e
+                             for e in result.errors),
+       f"errors={result.errors}")
+
+    # 没有开始节点时孤立节点**照样**要拦（0 个起点的分支：弱连通分量判据）
+    no_source = _chain("detect", "print", source=False, end=False)
+    lone = FlowDiagram(
+        nodes=no_source.nodes + (DiagramNode("iso", KIND_TASK, "OCR 识别"),),
+        flows=no_source.flows,
+    )
+    result = validate_flow(lone)
+    ok("无开始节点时孤立节点仍被拒绝（弱连通分量兜底）",
+       not result.ok and any("孤立" in e and "OCR 识别" in e
                              for e in result.errors),
        f"errors={result.errors}")
 

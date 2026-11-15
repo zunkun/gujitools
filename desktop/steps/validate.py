@@ -23,15 +23,25 @@
 
 2026-11-04 用户补充了四条**图结构**硬规则（任务 0021 暴露的孤立节点）：
 
-3. **只能有一个「开始节点」（源PDF）**——0 个或多个都拒绝保存；
-4. **不允许孤立节点**——每个节点都要能从开始节点沿连线走到；
+3. **「开始节点」（源PDF）最多一个**——**0 个也合法**（见下）；
+4. **不允许孤立节点**——每个节点都要能沿连线走到（无开始节点时按弱连通判）；
 5. **不允许环形回路**；
 6. **除 XOR 网关外，任何节点只能有一条输出连线**——多路分支只能用
    「是否拼版」那个排他网关（``exclusiveGateway``）。
 
+⚠️ **「必须有开始节点」已于 2026-11-15 取消**（用户口径）：开始/结束圈只是
+**图示标注**，不是运行前提——"任何一个任务节点（方框）都可以作为开始节点，
+也可以作为结束节点"。图上没有入线的第一个步骤就是入口
+（:func:`desktop.steps.ports.flow_entry_node` 按"沿图往回没有 ``pages`` 产出方"
+判），没有出线的最后一步就是收尾；运行时本来就靠
+:func:`desktop.steps.ports.stage_blocking_inputs` 的"入口回落
+``stages/input/``"接住这种流程。所以删掉「源PDF」圆圈**不该拦保存**。
+仍然拦的是**两个及以上**开始事件——那才是图上说不清有几处入口的坏图。
+
 ## 错误与警告分两档
 
-- **errors**（拒绝保存）：上面 2 条原有规则 + 4 条图结构规则；
+- **errors**（拒绝保存）：上面 2 条原有规则 + 3 类图结构规则（多开始节点、
+  孤立节点、环形回路、多输出）；
 - **warnings**（提示但不拦）：``extract`` 不在第一位、有 ``extract`` 却没有
   「源PDF」入口节点、图上有未接入运行的节点。这些**跑得通**，只是与习惯
   不符——拦下来会把合法操作堵死（与状态机"缺上游只提示不硬拦"同一条纪律）。
@@ -158,10 +168,15 @@ def _structure_errors(diagram: FlowDiagram) -> list[str]:
 
 
 def _start_node_errors(diagram: FlowDiagram) -> list[str]:
-    """必须**恰好**有一个「开始节点」（``startEvent``，即源PDF入口）。"""
+    """开始事件（``startEvent``，即「源PDF」圆圈）**最多一个**，0 个合法。
+
+    ⚠️ 2026-11-15 之前这里还要求"必须有"，用户否掉了：开始/结束圈只是图示
+    标注，任何一个任务节点都能当开始、也能当收尾（见模块 docstring）。
+    删掉圆圈后图仍然跑得通（入口 = 图上没有入线的第一个步骤，输入回落到
+    ``stages/input/``），所以这里只在**画了多个**入口时拦——那种图说不清
+    "到底从哪儿进"，也没法确定源 PDF 挂在谁身上。
+    """
     starts = [node for node in diagram.nodes if node.kind == KIND_START]
-    if not starts:
-        return ["流程缺少「开始节点」：请保留默认流程里的「源PDF」开始事件。"]
     if len(starts) > 1:
         return [
             f"流程只能有一个「开始节点」，当前有 {len(starts)} 个"
@@ -236,10 +251,14 @@ def _cycle_errors(diagram: FlowDiagram) -> list[str]:
 
 
 def _isolated_errors(diagram: FlowDiagram) -> list[str]:
-    """不允许孤立节点：每个节点都要能从「开始节点」沿连线走到。
+    """不允许孤立节点：每个节点都要能沿连线走到，不能断成两段图。
 
-    开始节点数量异常（0 个或多个）时无法从它回溯，退化为**弱连通分量**
-    判断：节点最多的那片算主流程，其余都报孤立。
+    判法分两种（**都成立**，只是入口不同）：
+
+    * 图上**恰好一个**开始事件 ⇒ 从它沿连线走出可达集，走不到的就是孤立；
+    * **没有**开始事件（2026-11-15 起合法：任何任务节点都能当入口）或开始
+      事件多于一个 ⇒ 没有唯一入口可回溯，退化为**弱连通分量**判断：节点最多
+      的那片算主流程，其余都报孤立。
     """
     if not diagram.nodes:
         return []
@@ -255,6 +274,7 @@ def _isolated_errors(diagram: FlowDiagram) -> list[str]:
                     reached.add(flow.target)
                     stack.append(flow.target)
         detached = [node.id for node in diagram.nodes if node.id not in reached]
+        reason = "从「开始节点」走不到"
     else:
         adjacency = {node.id: set() for node in diagram.nodes}
         for flow in diagram.flows:
@@ -281,10 +301,11 @@ def _isolated_errors(diagram: FlowDiagram) -> list[str]:
             return []
         anchor = set(max(components, key=len))
         detached = [node.id for node in diagram.nodes if node.id not in anchor]
+        reason = "跟主流程之间没有连线"
     if not detached:
         return []
     return [
-        f"流程里有 {len(detached)} 个孤立节点（从开始节点走不到）："
+        f"流程里有 {len(detached)} 个孤立节点（{reason}）："
         f"{_join_labels(diagram, detached)}——请把连线接回流程，或删掉这些节点。"
     ]
 
