@@ -18,7 +18,15 @@ import html
 import math
 
 from PySide6.QtCore import QPoint, QRect, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QKeySequence,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QShortcut,
+)
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 from qfluentwidgets import PushButton
 from qfluentwidgets import FluentIcon as FIF
@@ -32,6 +40,23 @@ from desktop.components.imposition.page_list import ImpositionPageList
 from desktop.services.imposition import cn_page_label, page_source_stems
 from desktop.ui import theme as T
 from desktop.ui.widgets import apply_to
+
+#: 键盘翻页的键位映射（**唯一来源**）：← / ↑ 上一页，→ / ↓ 下一页。
+#:
+#: 用户 2026-11-15：「图片拼版页面，可以通过上下左右键切换上一页下一页」。
+#: 底部「上一页 / 下一页」按钮、``navigate()``、``keyPressEvent``、子树级
+#: QShortcut 全都走这里 → ``_step_page`` 一个实现，别在别处再写一份 if。
+_KEY_PREV = (Qt.Key.Key_Left, Qt.Key.Key_Up)
+_KEY_NEXT = (Qt.Key.Key_Right, Qt.Key.Key_Down)
+
+
+def page_step_for_key(key: int) -> int:
+    """方向键 → 翻页增量（``-1`` 上一页 / ``+1`` 下一页 / ``0`` 不是翻页键）。"""
+    if key in _KEY_PREV:
+        return -1
+    if key in _KEY_NEXT:
+        return 1
+    return 0
 
 
 class _EmptyGuideOverlay(QWidget):
@@ -238,15 +263,38 @@ class ImpositionViewWidget(QWidget):
         # 翻页（用户 2026-09-30：页码切换不放右侧面板，放中间编辑区底部右侧；
         # 页序调整在左列拖动，这里只负责「看哪一页」）
         self.prev_button = PushButton(FIF.PAGE_LEFT, "上一页")
-        self.prev_button.setToolTip("切到上一页拼版")
+        self.prev_button.setToolTip("切到上一页拼版（← / ↑）")
         self.prev_button.clicked.connect(lambda: self._step_page(-1))
         bottom.addWidget(self.prev_button)
         self.next_button = PushButton(FIF.PAGE_RIGHT, "下一页")
-        self.next_button.setToolTip("切到下一页拼版")
+        self.next_button.setToolTip("切到下一页拼版（→ / ↓）")
         self.next_button.clicked.connect(lambda: self._step_page(1))
         bottom.addWidget(self.next_button)
         right.addLayout(bottom)
         row.addLayout(right, 1)
+
+        # ---- 键盘翻页（用户 2026-11-15：← / ↑ 上一页、→ / ↓ 下一页）----
+        # 两条路都要接，互补：
+        # 1) ``keyPressEvent``：焦点在画布/本控件时，未消费的按键冒泡到这里；
+        # 2) **子树级** QShortcut：左列是 QScrollArea，它抢到焦点后上下键会被
+        #    它当成滚动内容——快捷键在 ShortcutOverride 阶段就先命中。
+        # ⚠️ 作用域只能是 ``WidgetWithChildrenShortcut``：本控件同时出现在
+        #    单文件拼图页与任务流程的拼版步骤里，窗口级会把右侧参数输入框、
+        #    其它步骤的方向键一起吞掉（那里要移光标/改值）。
+        # ⚠️ 点击即聚焦（``ClickFocus``）：不聚焦的话按键根本到不了这棵子树，
+        #    快捷键也不会命中——"点了画布再按方向键没反应"就是这么来的。
+        self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
+        self.canvas.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
+        self._page_shortcuts: list[QShortcut] = []
+        for delta, keys in ((-1, _KEY_PREV), (1, _KEY_NEXT)):
+            for key in keys:
+                shortcut = QShortcut(QKeySequence(key), self)
+                shortcut.setContext(
+                    Qt.ShortcutContext.WidgetWithChildrenShortcut
+                )
+                # 默认 autoRepeat 保持开启：按住方向键连续翻页
+                shortcut.activated.connect(lambda d=delta: self._step_page(d))
+                self._page_shortcuts.append(shortcut)
 
         # ---- 空态引导层（用户 2026-10-13）：还没有拼版页时，提示去点
         #      左下角「＋ 选择拼版」（红框圈住按钮 + 箭头指向它）。鼠标
@@ -354,19 +402,45 @@ class ImpositionViewWidget(QWidget):
         self.canvas.flush_pending()
 
     # ------------------------------------------------------------------ 内部
-    def _step_page(self, delta: int) -> None:
+    def _step_page(self, delta: int) -> bool:
         """「上一页/下一页」：与左列点选同一条路径（切页 + 发 page_selected）。
 
         先 ``flush_pending``：拖住图没松手就点翻页时，这一下改动不能丢。
+
+        返回**是否真的切了页**（首/末页越界时为 ``False``）——键盘路径要拿这个
+        决定「吃不吃掉这次按键」：越界就不消费，交给上层（详情页的 ←/→ 切
+        步骤等）继续处理，而不是在这里悄悄吞掉。
         """
         target = self._current + delta
         if not (0 <= target < len(self._pages)):
-            return
+            return False
         self.canvas.flush_pending()
         self._on_page_selected(target)
+        return True
+
+    def navigate(self, forward: bool) -> bool:
+        """方向键翻页的统一入口（与各步骤主预览的 ``navigate`` 同签名）。
+
+        详情页的 ``navigate_by_arrow`` 就是照着这个方法名转发的，这里补上后
+        拼版步骤也有了「←/→ 翻拼版页」的语义（返回值：是否真的切了页）。
+        """
+        return self._step_page(1 if forward else -1)
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802 - Qt 命名
+        """← / ↑ 上一页、→ / ↓ 下一页（焦点在拼版区内时的事件冒泡路径）。"""
+        delta = page_step_for_key(event.key())
+        if delta and self._step_page(delta):
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def _on_page_selected(self, index: int) -> None:
         self.set_current(index)
+        # 点左列条目 / 按翻页按钮之后把焦点收进拼版区：紧接着按 ←/→ 就能继续
+        # 翻页（否则焦点还留在刚才那个按钮上，子树级快捷键不命中）。
+        # ⚠️ 只在这条**用户交互**路径上抢焦点；``set_pages``/``set_current``
+        #    这类程序性刷新不走这里，刷新时不会把焦点从别处拽走。
+        self.setFocus(Qt.FocusReason.MouseFocusReason)
         self.page_selected.emit(index)
 
     def _on_items_changed(self, items: list) -> None:
@@ -412,7 +486,8 @@ class ImpositionViewWidget(QWidget):
             f'　·　左侧<b><font color="{spine}">「{left}」</font></b>'
         )
         self.hint.setText(
-            "拖动移动　·　四角/四边缩放拉伸　·　拖动框外上方圆钮旋转　·　滚轮缩放视图　｜　"
+            "拖动移动　·　四角/四边缩放拉伸　·　拖动框外上方圆钮旋转　·　滚轮缩放视图　·　"
+            "←/↑ 上一页　·　→/↓ 下一页　｜　"
             "双击图片编辑整页　·　双击空白处预览成品组合　｜　"
             "右键图片/空白处可预览或编辑（编辑统一作用于整页）　｜　"
             "点击图片选中后可在右侧「当前图片样式」里调整"
