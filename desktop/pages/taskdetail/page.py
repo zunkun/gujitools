@@ -1287,12 +1287,12 @@ class TaskDetailPage(
         self.preview_stack.setCurrentIndex(page)
         # 真实步骤：执行按钮组恢复可见（拼版详情页整组藏掉，见
         # _select_imposition_detail；两种状态互斥、切换时都要还原）
-        # ⚠️ 恢复的是**整行** action_row（「检测文本框 + 提交本次任务」并排），
+        # ⚠️ 恢复的是**整行** action_row（「检测文本框 + 分割图片」并排），
         #    只恢复 run_button 的话行本身仍带着上一步的隐藏标记。
         self.action_row.setVisible(True)
         # 按钮文案与区块显隐**全查 spec**（不再 `if stage == ...`）：
-        # 第二步是「检测文本框」+「提交本次任务」，第三步是「执行去底色」，
-        # 第四步是「生成PDF」，其余是「执行本子任务」——文案与"跑完会发生什么"
+        # 第二步是「检测文本框」+「分割图片」，第三步是「图片去底色」，
+        # 第四步是「生成PDF」，其余是「提取文档图片」——文案与"跑完会发生什么"
         # 绑定，所以放 spec 而不是散在页面里（加一步 / BPM 换顺序都不必改这里）。
         # ⚠️ 走 ``ports.spec_for_stage``：伪步骤（拼版）取不到 spec 时用默认值。
         spec = ports.spec_for_stage(step)
@@ -1314,8 +1314,8 @@ class TaskDetailPage(
         self.detect_stats.setVisible(
             bool(spec) and spec.panel_extra == "detect_stats"
         )
-        # 「导出YOLO标注」那张卡片也只在第二步出现，另加"开发者模式 + 开关"
-        # 两个条件（判据全在 DetectMixin._sync_yolo_export_card 里，见那里）
+        # 「导出YOLO标注」那张卡片也只在第二步出现，另加"YOLO 开关"条件
+        # （判据全在 DetectMixin._sync_yolo_export_card 里，见那里）
         self._sync_yolo_export_card()
         # 执行记录：还多一道"设置 →「功能」→ 显示执行记录"的总开关（默认关）
         self._sync_history_block()
@@ -1644,7 +1644,7 @@ class TaskDetailPage(
     def _apply_regenerate_highlight(self) -> None:
         """本步产物过期（改了版面 / 上游又跑过）时把主按钮加粗高亮。
 
-        与第三步「提交本次任务」待重新提交时的视觉语言一致：**用加粗**点明
+        与第三步「分割图片」待重新提交时的视觉语言一致：**用加粗**点明
         该动作，但**不阻止**用户先干别的——只提示，不自动重跑。
         """
         pending = self._regenerate_notice(self.current_stage()) is not None
@@ -1760,7 +1760,7 @@ class TaskDetailPage(
             # ⚠️ 2026-10-22：去底色**不再按区域裁图**（area/border 已移除），
             #    所以这里不再喂 boxes_provider / border_provider——
             #    查看器于是按"一张输入图 = 一个条目"显示整图，与产物一致。
-            #    裁好的半页图（-l/-r）是上一步「提交本次任务」的产物，本来就是
+            #    裁好的半页图（-l/-r）是上一步「分割图片」的产物，本来就是
             #    独立文件，不需要再合成。
             paths = self._manifest_paths() if visible else []
             # ⚠️ 实时调整的草稿目录（2026-11-04 用户）：只在这一步显示，

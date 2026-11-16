@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 188 个模块、204 个公开类、1558 个公开函数/方法（生成于 2026-11-16）。
+覆盖 188 个模块、205 个公开类、1555 个公开函数/方法（生成于 2026-11-17）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -41,7 +41,7 @@
 | [`desktop.components.panels.print_inset`](#desktopcomponentspanelsprint_inset) | 1 | 0 |
 | [`desktop.components.panels.print_nodes`](#desktopcomponentspanelsprint_nodes) | 2 | 9 |
 | [`desktop.components.panels.print_panel`](#desktopcomponentspanelsprint_panel) | 1 | 9 |
-| [`desktop.components.panels.print_params`](#desktopcomponentspanelsprint_params) | 0 | 5 |
+| [`desktop.components.panels.print_params`](#desktopcomponentspanelsprint_params) | 0 | 3 |
 | [`desktop.components.panels.print_sections`](#desktopcomponentspanelsprint_sections) | 1 | 0 |
 | [`desktop.components.panels.print_text_layout`](#desktopcomponentspanelsprint_text_layout) | 1 | 0 |
 | [`desktop.components.panels.rembg_panel`](#desktopcomponentspanelsrembg_panel) | 1 | 1 |
@@ -134,9 +134,9 @@
 | [`desktop.services.stale_chain`](#desktopservicesstale_chain) | 0 | 5 |
 | [`desktop.services.submit_state`](#desktopservicessubmit_state) | 0 | 1 |
 | [`desktop.services.yolo_prewarm`](#desktopservicesyolo_prewarm) | 0 | 3 |
-| [`desktop.settings.config`](#desktopsettingsconfig) | 1 | 7 |
+| [`desktop.settings.config`](#desktopsettingsconfig) | 1 | 6 |
 | [`desktop.settings.location`](#desktopsettingslocation) | 2 | 8 |
-| [`desktop.settings.page`](#desktopsettingspage) | 1 | 3 |
+| [`desktop.settings.page`](#desktopsettingspage) | 1 | 2 |
 | [`desktop.shell`](#desktopshell) | 1 | 22 |
 | [`desktop.single_instance`](#desktopsingle_instance) | 0 | 6 |
 | [`desktop.stages.detect_stage`](#desktopstagesdetect_stage) | 0 | 4 |
@@ -176,7 +176,7 @@
 | [`desktop.ui.style`](#desktopuistyle) | 0 | 3 |
 | [`desktop.ui.theme`](#desktopuitheme) | 0 | 3 |
 | [`desktop.ui.toast`](#desktopuitoast) | 0 | 1 |
-| [`desktop.ui.widgets`](#desktopuiwidgets) | 11 | 50 |
+| [`desktop.ui.widgets`](#desktopuiwidgets) | 12 | 51 |
 | [`desktop.ui.window_size`](#desktopuiwindow_size) | 0 | 3 |
 | [`desktop.utils.files`](#desktoputilsfiles) | 0 | 33 |
 | [`desktop.utils.icon`](#desktoputilsicon) | 0 | 3 |
@@ -2450,8 +2450,15 @@ page       当前页码，1-based；越界会在读取时被钳制
 
 title 来自子类类属性；description 不再平铺占高度，改挂在标题右侧
 问号按钮上（hover 出 ToolTip 气泡、点击出 Flyout）。随后调用
-build_form 生成子类表单并占满剩余垂直空间，最后统一把表单里输入
-控件的信号接到 ``param_edited``（供参数暂存）。
+build_form 生成子类表单并**吃满剩余垂直空间**（stretch=1），最后
+统一把表单里输入控件的信号接到 ``param_edited``（供参数暂存）。
+
+⚠️ 表单滚动区必须 ``stretch=1``，**不能**在它后面再 ``addStretch()``：
+留 stretch 的话，卡片越高、漏给 stretch 的空白越多，而滚动区仍被
+压在 sizeHint 附近——高分屏（字体逻辑高度更大）下表单自然高度一
+超过这个被压小的视口，就出现"底部一大段空白、表单却还要滚动"的怪相
+（用户 2026-11-16 报，离屏实测 spacer 吃掉 521px、scroll 只拿到 521px）。
+滚动区吃满后：视口 ≥ 表单自然高时无滚动条；窗口矮时照常滚动。
 
 ##### `mark_params_edited() -> None`
 
@@ -2599,6 +2606,7 @@ extract 阶段把源 PDF 每页渲染为图片；参数经 get_args 收集后由
 
 pages 留空表示全部页；非法页码由 runner 在取参时以 ValueError 拦截。
 dpi 默认 300，是**整页渲染**的 DPI 下限（内嵌图路径不生效）。
+ext 走下拉的 itemData（桌面只有 jpg/png，见 ``params_spec.EXTRACT_EXTS``）。
 
 ⚠️ ``quick`` 不再暴露在界面上（用户 2026-10-24）：zoom=1 时由脚本
 自动判断「纯扫描页才直取内嵌图」，有文字/矢量/注释等可见内容就整页
@@ -2863,7 +2871,9 @@ values = [上,右,下,左]（mm）表示启用并填值；None 表示不启用�
 收集 PDF 生成参数（校验颜色/边距，缺省回落内置默认）。
 
 input/output/workers/clean 不在此列；颜色或边距非法会抛 ValueError
-阻止执行；title_switch_nodes 取节点行、skip_pages 解析为文件名列表。
+阻止执行；title_switch_nodes 取节点行。
+⚠️ skip_pages 已从桌面表单删除（2026-11-16），get_args 不再导出它
+（历史参数里残留的键也不会被带进新执行）；命令行仍可用 --skip-pages。
 
 ---
 
@@ -2887,8 +2897,6 @@ print 专用的解析/序列化纯函数，并把 ``DEFAULT_PARAMS`` 重新导�
 | `parse_color(text: str) -> QColor` | 解析 'r,g,b'（0~255）颜色字符串，非法时抛出 ValueError。 |
 | `parse_margin4(text: str)` | 解析边距简写：1/2/3/4 值（CSS 简写）→ [上,右,下,左]；空→None。 |
 | `margin_to_text(value) -> str` | 边距列表 → 表单文本：**恒写成四个值**（上,右,下,左）。 |
-| `skip_pages_to_text(value) -> str` | skip_pages 参数 → 表单文本（逗号分隔的页名）。 |
-| `text_to_skip_pages(text: str) -> list[str]` | 表单文本 → skip_pages 参数。 |
 
 #### `parse_margin4(text: str)`
 
@@ -6781,8 +6789,8 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
      ``tasks/<id>/boxes.json`` **逐字段一致**（``{stem: {boxes, origin,
      updated_at}}``），可直接当作下一步（或将来自定义流程里任意一步）的输入。
 
-4. **开发者模式**打开且「启用YOLO标注」勾上时，导出区最底部多一个
-   「**导出YOLO标注**」（用户 2026-10-16）：点它先弹窗填**名称**（父节点名 =
+4. 设置里「**启用YOLO标注**」勾上时，导出区最底部多一个
+   「**导出YOLO标注**」（用户 2026-10-16；2026-11-17 起不再挂在开发者模式下）：点它先弹窗填**名称**（父节点名 =
    文件名前缀）并选**导出目录**（按子任务记住上次选的），确认后把全部页面
    导出成 YOLO 数据集切片 ``<导出目录>/<名称>/{images,labels}/<名称>-1.…``
    （类别顺序见 ``utils.box_geometry.YOLO_CLASS_NAMES``；无框页写空标签当负样本）。
@@ -8385,7 +8393,7 @@ control_stack、stage_* 控件、log_view、process/run_id 等。
 
 | 名称 | 值 |
 | --- | --- |
-| SUBMIT_TEXT | `"提交本次任务"` |
+| SUBMIT_TEXT | `"分割图片"` |
 | MISSING_LABEL_PREVIEW | `12` |
 
 ### `class SubmitMixin`
@@ -10043,7 +10051,6 @@ done/total 为 0、completed 为 False）。执行过哪怕失败/中断都算�
 | `app_config() -> AppConfig` | 取应用配置（首次调用时从磁盘载入；重复调用返回同一个实例）。 |
 | `auto_update_app() -> bool` | 启动时是否自动下载程序新版本（默认关）。 |
 | `auto_update_data() -> bool` | 启动时是否自动下载并替换数据包（默认关）。 |
-| `developer_mode() -> bool` | 开发者模式是否打开。 |
 | `yolo_annotation() -> bool` | 是否启用 YOLO 标注（「导出YOLO标注」按钮的显示条件之一）。 |
 | `show_history() -> bool` | 各步骤右栏是否显示「执行记录」（默认**不显示**，用户 2026-11-16）。 |
 
@@ -10144,14 +10151,12 @@ done/total 为 0、completed 为 False）。执行过哪怕失败/中断都算�
 ``SettingCardGroup``。开关用 ``SwitchSettingCard``，它**直接绑配置项**
 （``configItem=…``）——勾选即落盘，本页不自己存值。
 
-⚠️ **「启用YOLO标注」是开发者模式的下级选项**：开发者模式关着时它整张卡
-藏起来（``SettingCardGroup`` 的 ``ExpandLayout`` 会跳过隐藏项，但**组自己的
-高度**是算好的，所以藏完必须补一次 ``adjustSize()``，否则卡片下方留一块
-空白）。
+用户 2026-11-17：「启用YOLO标注」不再挂在开发者模式下——**开发者分类整个
+删除**（连同「启用开发者模式」开关），YOLO 标注挪进「功能」分组，常显。
 
 ### `class SettingsPage(QWidget)`
 
-设置页：存储位置、自动更新、界面功能、开发者模式与它下面的开发选项。
+设置页：存储位置、自动更新与界面功能开关。
 
 ⚠️ 页面**没有**自己的导航条目概念——它由壳层（``desktop/shell.py``）
 挂在导航栏底部并切页，与各步骤的独立模块页是两回事（模块页来自
@@ -10163,7 +10168,6 @@ done/total 为 0、completed 为 False）。执行过哪怕失败/中断都算�
 | --- | --- |
 | `__init__(parent=None)` | 建页头 + 设置卡片组（配置项绑在卡片上，本页不另存值）。 |
 | `change_storage_location() -> None` | 选上级目录（自动补 ``guji``）→ 问是否迁移 → 切换 → 重启。 |
-| `sync_dev_options(*_args) -> None` | 按「开发者模式」开关显隐下级选项（并重算卡片组高度）。 |
 
 ##### `change_storage_location() -> None`
 
@@ -15909,12 +15913,36 @@ qfluent 的 ``enableTransparentBackground()`` 帮不上忙——它必须在
 
 控制面板里的分组小标题（比正文略重，前面带一条主色短竖线）。
 
+所有步骤面板的「小分类/分块标题」统一走这一个组件（用户 2026-11-16：
+「参考检测文本框的『识别文本框模式』这种风格样式，只是文字要大一些」）
+——字号用 ``SIZE_LABEL``（14px，比正文大一号），别再各自用
+``StrongBodyLabel`` 之类的另起一套。
+
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(text: str, parent=None)` | 左侧预留 10px 给主色竖线，控件固定高 20px。 |
+| `__init__(text: str, parent=None)` | 左侧预留 10px 给主色竖线，控件固定高 24px。 |
 | `paintEvent(event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
+
+### `class PanelTitle(QWidget)`
+
+控制面板的**大标题行**：加粗标题 + 圆圈问号说明按钮（步骤面板统一款）。
+
+所有步骤面板的「大标题」统一走这一个组件（用户 2026-11-16：以
+「检测文本框」面板为基准——加粗大字 + 标题末尾挂问号；「图片拼版」
+用 ``SectionTitle`` 当大标题属于风格跑偏）。说明文字（description）
+不平铺占高度，全部收进问号按钮：hover 弹 ToolTip、点击弹 Flyout；
+没有说明就不放问号。
+
+``title_label`` / ``help_button``（无说明时为 ``None``）挂在实例上，
+供宿主与自测按旧属性名访问。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(title: str, description: str='', parent=None)` | — |
 
 ### `class StatusChip(QWidget)`
 

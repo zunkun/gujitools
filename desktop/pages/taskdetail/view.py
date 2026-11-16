@@ -168,7 +168,7 @@ class DetailViewMixin:
         _on_reuse_prev_changed: Callable[..., None]
         #: 当前是不是「人工标注」方式（DetectMixin 读面板现值，带兜底）
         _detect_manual: Callable[[], bool]
-        # 「导出YOLO标注」（开发者模式，DetectMixin 提供）：本层建卡片/接按钮，
+        # 「导出YOLO标注」（DetectMixin 提供）：本层建卡片/接按钮，
         # 业务与显隐判据在那边——卡片自己不知道"当前是不是 detect 步骤"。
         export_yolo_labels: Callable[[], None]
         _wire_yolo_export_card: Callable[[], None]
@@ -721,7 +721,7 @@ class DetailViewMixin:
         #: ``_refresh_stale_notices`` 重算（见 page.py）。
         self._print_data_stale = False
         self.print_preview = PrintPreviewWidget(
-            empty_hint="暂无图片，请先在第三步「执行去底色」生成成品图",
+            empty_hint="暂无图片，请先在第三步「图片去底色」生成成品图",
             params_provider=self._print_params,
             # 提交阶段预生成的缩略图（thumbnails/print）：不再对每条目现解码
             # 6000px 原图（2026-09-27 用户反馈第四步缩略图渲染慢）
@@ -899,8 +899,8 @@ class DetailViewMixin:
         self._build_history_controls(column)
         column.addWidget(Divider())
         self._build_run_controls(column)
-        # 「导出YOLO标注」（开发者模式专属）：右栏**最底部**的独立入口，
-        # 只在 detect 步骤 + 两个开关都打开时出现（用户 2026-10-16）
+        # 「导出YOLO标注」：右栏**最底部**的独立入口，
+        # 只在 detect 步骤 + YOLO 开关打开时出现（用户 2026-10-16）
         column.addWidget(self._build_yolo_export_card())
 
         # 控制面板限宽：参数表单需要舒适宽度，第四步 YAML 编辑器尤甚
@@ -909,12 +909,12 @@ class DetailViewMixin:
         return self.control_widget
 
     def _build_yolo_export_card(self) -> Card:
-        """右栏最底部的「导出YOLO标注」（开发者模式专属）。
+        """右栏最底部的「导出YOLO标注」。
 
         与模块页那一侧同一条业务链（``DetectMixin.export_yolo_labels``），
         只是**宿主不同**：卡片摆在详情页控制列末端，显隐由
         ``DetectMixin._sync_yolo_export_card`` 按"当前是不是 detect 步骤 +
-        两个开关"决定。
+        YOLO 开关"决定。
         """
         card = Card(padding=T.SPACE_SM, spacing=T.SPACE_XS, radius=T.RADIUS_SM)
         card.box.addWidget(SectionTitle("YOLO 标注"))
@@ -1067,7 +1067,7 @@ class DetailViewMixin:
         """把「上游有没有留白」告诉第四步面板（决定它默认边距是 0 还是 20）。
 
         ⚠️ 2026-10-22：上游（去底色）**已经没有 border 了**——按框裁图归第二步
-        的「提交本次任务」，那里固定不加留白（第四步会在纸上重新排版）。
+        的「分割图片」，那里固定不加留白（第四步会在纸上重新排版）。
         所以这里恒传 ``None``：第四步保持自己的默认边距（20mm），不再有
         "上游留白 + 页面边距"双重留白的级联分支。
 
@@ -1137,10 +1137,10 @@ class DetailViewMixin:
         return combo
 
     def _build_run_controls(self, control: QBoxLayout) -> None:
-        self.run_button = PrimaryPushButton(FIF.PLAY, "执行本子任务")
+        self.run_button = PrimaryPushButton(FIF.PLAY, "提取文档图片")
         self.run_button.setFixedHeight(36)
         self.run_button.clicked.connect(lambda: self.run_stage(resume=False))
-        # 「提交本次任务」：第二步（检测 → 逐框裁图）的**次动作**按钮。
+        # 「分割图片」（原「提交本次任务」）：第二步（检测 → 逐框裁图）的**次动作**按钮。
         # ⚠️ 文案取 SUBMIT_TEXT（submit.py 的唯一来源）：并排一行后放不下
         #    更长的写法，"有新版本"由加粗 + 下方红字提示表达。
         self.submit_button = PrimaryPushButton(FIF.ACCEPT, SUBMIT_TEXT)
@@ -1150,7 +1150,7 @@ class DetailViewMixin:
         )
         self.submit_button.clicked.connect(self.run_submit)
         self.submit_button.setVisible(False)
-        # 「检测文本框 / 提交本次任务」并排一行：它们是同一步骤的前后两跳
+        # 「检测文本框 / 分割图片」并排一行：它们是同一步骤的前后两跳
         # （先出框、再裁图），竖着堆叠会让人误以为是两个步骤。
         # ⚠️ 没有提交按钮的步骤（1/3/4）只有 run_button 可见，stretch=1 让它
         #    自动占满整行，视觉与并排前一致。

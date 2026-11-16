@@ -96,7 +96,7 @@ class DetectMixin:
         detect_process: QProcess | None
         detect_viewer: ImageViewerWidget
         rembg_viewer: RembgPreviewWidget
-        # 「导出YOLO标注」（开发者模式）那张卡片与按钮，由视图层
+        # 「导出YOLO标注」那张卡片与按钮，由视图层
         # ``view._build_yolo_export_card`` 建出来后挂在本类实例上
         yolo_export_card: QWidget
         yolo_export_button: QWidget
@@ -1225,34 +1225,30 @@ class DetectMixin:
         self._apply_boxes(str(path), boxes or [])
         self._refresh_reference_boxes()
 
-    # ------------------------------------------------- 「导出YOLO标注」（开发者模式）
+    # ------------------------------------------------- 「导出YOLO标注」
     #
-    # 用户 2026-10-16：开发者模式下打开「启用YOLO标注」后，第二步右栏**最底部**
+    # 用户 2026-10-16：设置里打开「启用YOLO标注」后，第二步右栏**最底部**
     # 多一个「导出YOLO标注」。点它先弹窗（名称 = 父节点名 = 文件名前缀；
     # 导出目录按**任务**记住），确认后把本任务的页面导出成 YOLO 数据集切片。
     #
     # 与独立「检测文本框」模块页是**同一条业务链**（同一个
     # `services.detect_export.export_yolo` 与同一个弹窗），区别只在宿主：
     # 那边用页面的输出目录，这边用任务目录里的页面清单。
+    #
+    # 用户 2026-11-17：开发者模式删掉了，显隐只看 YOLO 开关。
 
     def _wire_yolo_export_card(self) -> None:
-        """卡片建好后接线：订阅两个开关 + 立刻算一次显隐（视图层建卡片时调）。"""
+        """卡片建好后接线：订阅开关 + 立刻算一次显隐（视图层建卡片时调）。"""
         self._yolo_kernel: StepKernel | None = None
         #: 导出 job 的统计（见 ``detect_export.export_yolo`` 的返回值）
         self._yolo_summary: dict = {}
         cfg = app_config()
         # 配置项是长期存活的 QObject，页面销毁时 Qt 会自动断开
-        cfg.developerMode.valueChanged.connect(self._sync_yolo_export_card)
         cfg.yoloAnnotation.valueChanged.connect(self._sync_yolo_export_card)
         self._sync_yolo_export_card()
 
     def _sync_yolo_export_card(self) -> None:
-        """按「当前是不是 detect 步骤 + 开发者模式 + YOLO 开关」显隐那张卡片。
-
-        ⚠️ 三个条件缺一不可：YOLO 标注是开发者模式下的选项（设置页里它在开关
-        后面藏着），开发者模式关掉时那个开关不可见 ⇒ 按"未启用"处理，否则会
-        出现"设置里看不到开关、详情页却多出一块"的错位。
-        """
+        """按「当前是不是 detect 步骤 + YOLO 开关」显隐那张卡片。"""
         card = getattr(self, "yolo_export_card", None)
         if card is None:
             return
@@ -1261,7 +1257,6 @@ class DetectMixin:
         cfg = app_config()
         card.setVisible(
             stage == "detect"
-            and bool(cfg.developerMode.value)
             and bool(cfg.yoloAnnotation.value)
         )
 

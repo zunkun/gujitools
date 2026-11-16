@@ -33,7 +33,6 @@ from qfluentwidgets import (
     LineEdit,
     PushButton,
     ScrollArea,
-    StrongBodyLabel,
     ToolButton,
 )
 from qfluentwidgets import FluentIcon as FIF
@@ -42,7 +41,7 @@ from desktop.components.common.safecomponents import SafeSpinBox
 from desktop.components.panels.print_params import parse_color
 from desktop.components.panels.print_sections import PrintSectionsMixin
 from desktop.components.panels.print_text_layout import PrintTextLayoutMixin
-from desktop.ui.widgets import SurfacePanel, combo_box
+from desktop.ui.widgets import SectionTitle, SurfacePanel, combo_box
 
 
 class PrintFormMixin(PrintSectionsMixin, PrintTextLayoutMixin):
@@ -102,7 +101,8 @@ class PrintFormMixin(PrintSectionsMixin, PrintTextLayoutMixin):
         self._build_margin_section(root)
         self._build_title_section(root)
         self._build_pagenum_section(root)
-        self._build_filter_section(root)
+        # 「过滤」分区已整体删除（用户 2026-11-16）：跳过页面不再出现在桌面端
+        # 表单，get_args 也不再导出 skip_pages（命令行 --skip-pages 仍可用）。
         root.addStretch()
 
         scroll.setWidget(container)
@@ -135,7 +135,9 @@ class PrintFormMixin(PrintSectionsMixin, PrintTextLayoutMixin):
                 w.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
     def _section(self, root: QVBoxLayout, text: str) -> QFormLayout:
-        root.addWidget(StrongBodyLabel(text))
+        # 分区小标题统一走 ``SectionTitle``（主色短竖线 + 加粗，与检测/去底色
+        # 面板同款；2026-11-16 用户要求各步骤风格统一）
+        root.addWidget(SectionTitle(text))
         form = QFormLayout()
         form.setSpacing(6)
         # 标签列不强制占宽，字段列吃掉剩余空间

@@ -64,9 +64,9 @@ def run(ctx) -> None:
        _crop_dir.is_dir() and any(_crop_dir.iterdir()), str(_crop_dir))
 
     d._select_stage(2)
-    ok("步骤三主按钮为『执行去底色』", d.run_button.text() == "执行去底色",
+    ok("步骤三主按钮为『图片去底色』", d.run_button.text() == "图片去底色",
        d.run_button.text())
-    ok("第三步没有『提交本次任务』按钮（去底色只有一步）",
+    ok("第三步没有『分割图片』按钮（去底色只有一步）",
        d.submit_button.isHidden())
 
     # 回归（2026-10-25）：检测提交从 PNG 改成 JPEG 后，旧 pages.json 仍指向

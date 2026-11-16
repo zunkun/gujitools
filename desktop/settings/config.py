@@ -52,10 +52,8 @@ class AppConfig(QConfig):
     showHistory = ConfigItem(
         "Feature", "ShowHistory", False, BoolValidator()
     )
-    #: 开发者模式：打开后设置页才显示开发/训练相关的选项。
-    developerMode = ConfigItem(
-        "Developer", "DeveloperMode", False, BoolValidator()
-    )
+    # ⚠️ 落盘组名保留 "Developer" 是**历史遗留**（2026-11-17 删除开发者模式时
+    #    顺手改组名会把用户已打开的 YOLO 标注开关重置回默认关，故不动）。
     #: YOLO 标注：「检测文本框」右栏底部露出「导出YOLO标注」按钮。
     yoloAnnotation = ConfigItem(
         "Developer", "YoloAnnotation", False, BoolValidator()
@@ -96,11 +94,6 @@ def auto_update_data() -> bool:
     return bool(app_config().autoUpdateData.value)
 
 
-def developer_mode() -> bool:
-    """开发者模式是否打开。"""
-    return bool(app_config().developerMode.value)
-
-
 def yolo_annotation() -> bool:
     """是否启用 YOLO 标注（「导出YOLO标注」按钮的显示条件之一）。"""
     return bool(app_config().yoloAnnotation.value)
@@ -118,7 +111,6 @@ __all__ = [
     "auto_update_app",
     "auto_update_data",
     "config_path",
-    "developer_mode",
     "show_history",
     "yolo_annotation",
 ]

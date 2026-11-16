@@ -11,10 +11,8 @@
 ``SettingCardGroup``。开关用 ``SwitchSettingCard``，它**直接绑配置项**
 （``configItem=…``）——勾选即落盘，本页不自己存值。
 
-⚠️ **「启用YOLO标注」是开发者模式的下级选项**：开发者模式关着时它整张卡
-藏起来（``SettingCardGroup`` 的 ``ExpandLayout`` 会跳过隐藏项，但**组自己的
-高度**是算好的，所以藏完必须补一次 ``adjustSize()``，否则卡片下方留一块
-空白）。
+用户 2026-11-17：「启用YOLO标注」不再挂在开发者模式下——**开发者分类整个
+删除**（连同「启用开发者模式」开关），YOLO 标注挪进「功能」分组，常显。
 """
 
 from __future__ import annotations
@@ -68,7 +66,7 @@ from utils.box_geometry import YOLO_CLASS_NAMES
 
 
 class SettingsPage(QWidget):
-    """设置页：存储位置、自动更新、界面功能、开发者模式与它下面的开发选项。
+    """设置页：存储位置、自动更新与界面功能开关。
 
     ⚠️ 页面**没有**自己的导航条目概念——它由壳层（``desktop/shell.py``）
     挂在导航栏底部并切页，与各步骤的独立模块页是两回事（模块页来自
@@ -76,7 +74,7 @@ class SettingsPage(QWidget):
     """
 
     TITLE = "设置"
-    SUBTITLE = "存储位置、自动更新、界面功能、开发者模式与训练/标注相关选项"
+    SUBTITLE = "存储位置、自动更新与界面功能开关"
 
     def __init__(self, parent=None):
         """建页头 + 设置卡片组（配置项绑在卡片上，本页不另存值）。"""
@@ -142,6 +140,7 @@ class SettingsPage(QWidget):
         # ---- 功能：界面行为类的常规开关（用户 2026-11-16）----
         # 「显示执行记录」默认**关**：各步骤右栏默认不再露出历史配置下拉框，
         # 需要「照上次参数再跑一遍」时到这里打开。
+        # 「启用YOLO标注」也在这里（用户 2026-11-17：删除开发者分类，挪进来）。
         self.feature_group = SettingCardGroup("功能", container)
         self.history_card = SwitchSettingCard(
             FIF.HISTORY,
@@ -150,26 +149,15 @@ class SettingsPage(QWidget):
             configItem=self.cfg.showHistory,
             parent=self.feature_group,
         )
-        self.feature_group.addSettingCard(self.history_card)
-        column.addWidget(self.feature_group)
-
-        self.group = SettingCardGroup("开发者", container)
-        self.dev_card = SwitchSettingCard(
-            FIF.DEVELOPER_TOOLS,
-            "启用开发者模式",
-            "打开后才显示开发/训练相关的功能选项（普通使用请保持关闭）",
-            configItem=self.cfg.developerMode,
-            parent=self.group,
-        )
         self.yolo_card = SwitchSettingCard(
             FIF.TAG,
             "启用YOLO标注",
             "在「检测文本框」的右栏底部显示「导出YOLO标注」按钮",
             configItem=self.cfg.yoloAnnotation,
-            parent=self.group,
+            parent=self.feature_group,
         )
-        self.group.addSettingCards([self.dev_card, self.yolo_card])
-        column.addWidget(self.group)
+        self.feature_group.addSettingCards([self.history_card, self.yolo_card])
+        column.addWidget(self.feature_group)
 
         # 文案里的目录与类别顺序都取自**唯一来源**（不在这里重抄字符串）
         self.yolo_hint = CaptionLabel(
@@ -190,11 +178,6 @@ class SettingsPage(QWidget):
 
         scroll.setWidget(container)
         root.addWidget(scroll, 1)
-
-        # 开发者模式变化 → YOLO 卡片跟着显隐（配置项是长期存活的 QObject，
-        # 本页被销毁时 Qt 会自动断开，不必手动收）
-        self.cfg.developerMode.valueChanged.connect(self.sync_dev_options)
-        self.sync_dev_options()
 
     # ------------------------------------------------------------ 存储位置
     def change_storage_location(self) -> None:
@@ -362,15 +345,6 @@ class SettingsPage(QWidget):
         box.cancelButton.setVisible(False)
         box.yesButton.setText(button_text)
         box.exec()
-
-    def sync_dev_options(self, *_args) -> None:
-        """按「开发者模式」开关显隐下级选项（并重算卡片组高度）。"""
-        shown = bool(self.cfg.developerMode.value)
-        self.yolo_card.setVisible(shown)
-        self.yolo_hint.setVisible(shown)
-        # ⚠️ 必须补这一句：SettingCardGroup 的高度是 adjustSize() 时算好的，
-        #    只 setVisible 的话组还留着藏起来那张卡的高度（下方一块空白）。
-        self.group.adjustSize()
 
 
 __all__ = ["SettingsPage"]

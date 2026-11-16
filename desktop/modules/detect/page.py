@@ -21,8 +21,8 @@
      ``tasks/<id>/boxes.json`` **逐字段一致**（``{stem: {boxes, origin,
      updated_at}}``），可直接当作下一步（或将来自定义流程里任意一步）的输入。
 
-4. **开发者模式**打开且「启用YOLO标注」勾上时，导出区最底部多一个
-   「**导出YOLO标注**」（用户 2026-10-16）：点它先弹窗填**名称**（父节点名 =
+4. 设置里「**启用YOLO标注**」勾上时，导出区最底部多一个
+   「**导出YOLO标注**」（用户 2026-10-16；2026-11-17 起不再挂在开发者模式下）：点它先弹窗填**名称**（父节点名 =
    文件名前缀）并选**导出目录**（按子任务记住上次选的），确认后把全部页面
    导出成 YOLO 数据集切片 ``<导出目录>/<名称>/{images,labels}/<名称>-1.…``
    （类别顺序见 ``utils.box_geometry.YOLO_CLASS_NAMES``；无框页写空标签当负样本）。
@@ -148,7 +148,7 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin):
         self._export_kind = _EXPORT_ANNOTATED
         #: YOLO 导出 job 的统计（见 ``detect_export.export_yolo`` 的返回值）
         self._yolo_summary: dict = {}
-        #: 应用配置（开发者模式 / YOLO 标注两个开关，见 desktop.settings.config）
+        #: 应用配置（YOLO 标注等开关，见 desktop.settings.config）
         self.cfg = app_config()
         super().__init__(parent)
         # 整本书形态判定的重算节流（见 _LAYOUT_UI_MS / _flush_layout_ui）。
@@ -312,7 +312,7 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin):
         self.export_button.clicked.connect(self.export_boxes)
         holder.box.addWidget(self.export_button)
 
-        # ---- YOLO 标注（开发者模式专属，摆在导出区**最底部**）----
+        # ---- YOLO 标注（摆在导出区**最底部**）----
         self.yolo_button = PushButton(FIF.TAG, "导出YOLO标注")
         self.yolo_button.setFixedHeight(34)
         self.yolo_button.setToolTip(
@@ -326,23 +326,19 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin):
         self.yolo_button.clicked.connect(self.export_yolo_labels)
         holder.box.addWidget(self.yolo_button)
 
-        # 两个开关任一变化都要重算按钮显隐（配置项是长期存活的 QObject，
+        # 开关变化要重算按钮显隐（配置项是长期存活的 QObject，
         # 页面销毁时 Qt 自动断开）
-        self.cfg.developerMode.valueChanged.connect(self._sync_yolo_button)
         self.cfg.yoloAnnotation.valueChanged.connect(self._sync_yolo_button)
         self._sync_yolo_button()
         return holder
 
     def _sync_yolo_button(self, *_args) -> None:
-        """「导出YOLO标注」按钮的显隐：开发者模式**且** YOLO 标注都开着。
+        """「导出YOLO标注」按钮的显隐：YOLO 标注开关开着就显示。
 
-        ⚠️ 两个条件缺一不可：YOLO 标注是开发者模式下的选项（见设置页），
-        开发者模式关着时那个开关根本不可见，此时把按钮当"未启用"处理——否则
-        会出现"设置里看不到开关、检测页却多出一个按钮"的错位。
+        （用户 2026-11-17：开发者模式整个删掉了，原来"开发者模式且 YOLO
+        都开"的条件只剩 YOLO 一个。）
         """
-        self.yolo_button.setVisible(
-            bool(self.cfg.developerMode.value) and bool(self.cfg.yoloAnnotation.value)
-        )
+        self.yolo_button.setVisible(bool(self.cfg.yoloAnnotation.value))
 
     # ------------------------------------------------------------------ 回调
     def _on_source_changed(self, source) -> None:

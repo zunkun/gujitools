@@ -29,7 +29,8 @@ from desktop.components.panels.params_spec import (
     REMBG_ALGORITHM_CHOICES,
     REMBG_TYPES,
 )
-from desktop.ui.widgets import combo_box
+from desktop.ui import theme as T
+from desktop.ui.widgets import SectionTitle, combo_box
 from utils.rembg_algorithms import LOCAL_ALGORITHM_KEYS
 
 
@@ -50,11 +51,16 @@ class RembgPanel(StagePanel):
     description = (
         "整图自动去底色/二值化/灰度化，可保留印章。"
         "去底色直接处理输入图片（整张图），不再按检测框裁剪——"
-        "按框裁图是第二步「检测文本框」的「提交本次任务」做的事。"
+        "按框裁图是第二步「检测文本框」的「分割图片」做的事。"
     )
 
     def _build_form(self, form: QFormLayout) -> None:
         d = DEFAULTS[self.stage]
+        # ⚠️ 行距比默认紧一档（默认 SPACE_SM=8）：加了「算法/印章/输出」三个
+        #    分区标题后表单明显变高，窄卡里已经压到滚动（用户 2026-11-16：
+        #    "控制面板区域现在跟底部大段空白，导致出现滚轮"）。参数名与它
+        #    下面的控件本来就该贴紧，4px 行距与检测面板同款。
+        form.setVerticalSpacing(T.SPACE_XS)
         # 阈值算法（全局默认；任务流程里改它会记到**当前这张图**上，
         # 与 offset 同一套逐张落盘规则）。值存 itemData，取值走 _combo_value。
         self.algorithm = combo_box(REMBG_ALGORITHM_CHOICES)
@@ -92,7 +98,7 @@ class RembgPanel(StagePanel):
         self.type.setCurrentIndex(self._index_of(self.type, d["type"]))
         # offset 用「**滑块 + 可输入数字框**」：范围 -100~100、默认 0。
         # 允许为负，是因为最终阈值 = Otsu 自动阈值 + offset（再夹到 30~240）：
-        # 负数让文字变细变淡，正数变粗变深。改完点「执行去底色」即按新参数出图。
+        # 负数让文字变细变淡，正数变粗变深。改完点「图片去底色」即按新参数出图。
         # 两者双向同步——setValue 在值相同时不发信号，所以不会来回循环。
         self.offset = Slider(Qt.Orientation.Horizontal)
         self.offset.setRange(-100, 100)
@@ -135,6 +141,9 @@ class RembgPanel(StagePanel):
         # 标签格式（用户 2026-09-23 口径）：中文在前、键名放括号里。
         # 用户 2026-10-24 口径：阈值偏移紧跟阈值算法（它是对算法结果的微调），
         # 不再放到面板最后一行、也不再画分隔线。
+        # 用户 2026-11-16 口径：分三个小分类（算法 / 印章 / 输出），标题用
+        # 统一的 ``SectionTitle``（主色短竖线 + 加粗）。
+        form.addRow(SectionTitle("算法"))
         self._add_row(form, "阈值算法（algorithm）", self.algorithm)
         self._add_row(form, "阈值偏移（offset）", offset_row)
         # ⚠️ qfluentwidgets 的 Slider **自己不画禁用态**（paintEvent 不读
@@ -146,11 +155,17 @@ class RembgPanel(StagePanel):
         offset_row.setGraphicsEffect(self._offset_effect)
         self._add_row(form, "窗口大小（window）", self.local_window)
         self._add_row(form, "灵敏度（k）", self.k)
-        self._add_row(form, "输出类型（type）", self.type)
+
+        form.addRow(SectionTitle("印章"))
+        # 两个开关**靠左**（用户 2026-11-16：不需要跟上面输入区对齐）——
+        # addRow(控件) 跨两列；_add_row(form, "", …) 会把开关挤进右列字段位。
+        form.addRow(self.seal)
+        form.addRow(self.sealcolor)
         self._add_row(form, "印章面积阈值（sealarea）", self.sealarea)
         self._add_row(form, "印章最小饱和度（sealmin_sat）", self.sealmin_sat)
-        self._add_row(form, "", self.seal)
-        self._add_row(form, "", self.sealcolor)
+
+        form.addRow(SectionTitle("输出"))
+        self._add_row(form, "输出类型（type）", self.type)
         self._sync_local_controls()
 
     @staticmethod

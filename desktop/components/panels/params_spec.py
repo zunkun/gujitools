@@ -25,7 +25,6 @@ from __future__ import annotations
 
 from core.command_spec import (
     COMMAND_SPECS,
-    OUTPUT_IMAGE_EXTS,
     PAPER_SIZES as _PAPER_SIZES,
     PRINT_FORM_DEFAULTS,
     REMBG_TYPES as _REMBG_TYPES,
@@ -53,7 +52,10 @@ def _base(stage: str, **overrides) -> dict:
 # 避免「改一下中文文案就把参数解析弄挂」。
 
 # extract
-EXTRACT_EXTS = list(OUTPUT_IMAGE_EXTS)  # 输出格式枚举（core 的唯一定义处）
+# 输出格式下拉候选（2026-11-16 用户口径：桌面端**只有 jpg/png**，删掉 tiff）。
+# ⚠️ ``core.command_spec.OUTPUT_IMAGE_EXTS`` 是**命令行**的枚举（仍含 tiff），
+# 别动它；桌面下拉用本地这张「(显示, 值)」表，取值走 ``currentData()``。
+EXTRACT_EXTS = [("JPG", "jpg"), ("PNG", "png")]
 
 # ⚠️ 2026-10-22：area 下拉候选表已随 area 参数整体删除——界面上没有这个控件，
 # 后端也不再有任何 area 分支。留着这张表只会变成第二份"看起来还能用"的界面数据。

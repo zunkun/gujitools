@@ -19,7 +19,6 @@ from desktop.services.font_catalog import AUTO_VALUE, catalog
 from desktop.components.panels.print_params import (
     DEFAULT_PARAMS, EXCLUDED_KEYS, PAPER_SIZES,
     margin_to_text, parse_color, parse_margin4,
-    skip_pages_to_text, text_to_skip_pages,
 )
 
 
@@ -73,6 +72,13 @@ class PrintPanel(PrintFormMixin, StagePanel):
         self._upstream_border = None
         # 用户是否手动改过通用边距；改过后上游 border 变化不再覆盖其值。
         self._margin_edited = False
+        # 起始页码 → 页码基数的反向联动（用户 2026-11-16）：起始 +x 则基数 −x，
+        # 保持「基数 + 页码」的首页编号不变；反方向（改基数）**不**联动。
+        # ⚠️ 必须在 _connect_preview_signals **之前**接：这样用户改起始页码时
+        #    先把基数改到位、再发 params_changed，效果预览一次就拿到新基数。
+        #    程序化回填（_applying=True）只记快照、不联动。
+        self._last_start = int(DEFAULT_PARAMS["page_number_start_page"])
+        self.page_number_start.valueChanged.connect(self._on_start_changed)
         self.reset_to_default()
         # 焦点策略：必须在基类 __init__ 之后调（ScrollArea 已 addWidget 到 layout），
         # 且必须用 self 而非 container——因为只有此时 self.findChildren(QWidget)
@@ -119,7 +125,7 @@ class PrintPanel(PrintFormMixin, StagePanel):
         """把影响排版的控件接到 params_changed（供第四步效果预览刷新）。
 
         只连"会改变 PDF 版面"的控件：纸张/方向/边距/标题与页码的开关、
-        内容、字号、颜色、位置，以及跳过页。pdf_name 不影响版面，不入列。
+        内容、字号、颜色。pdf_name 不影响版面，不入列。
         """
         def emit(*_args):
             self.params_changed.emit()
@@ -131,7 +137,7 @@ class PrintPanel(PrintFormMixin, StagePanel):
             combo.currentTextChanged.connect(emit)
         for edit in (
             self.page_margins, self.title_text, self.title_color,
-            self.page_number_color, self.skip_pages,
+            self.page_number_color,
             self.page_number_prefix, self.page_number_suffix,
         ):
             edit.textChanged.connect(emit)
@@ -198,6 +204,31 @@ class PrintPanel(PrintFormMixin, StagePanel):
         self._upstream_border = border
         if not self._margin_edited:
             self._apply_upstream_margin_default()
+
+    def _on_start_changed(self, value: int) -> None:
+        """起始页码变了 → 页码基数反向联动（用户 2026-11-16）。
+
+        起始页码增加 x，则页码基数减少 x——「基数 + 页码」的首页编号不变
+        （默认：起始 1、基数 0，改成起始 11 时基数自动变 -10）。
+        **反方向不联动**：用户直接改基数，起始页码不动。
+
+        ⚠️ 程序化回填（历史/暂存/复位，``_applying=True``）只记快照、
+        **不**改写基数——否则回填一个键会把另一个键悄悄改掉，属于最难查
+        的那类参数漂移（口径同「位置/文字方向」的 `_fixed_layout_echo`）。
+        """
+        if self._applying:
+            self._last_start = int(value)
+            return
+        delta = int(value) - int(self._last_start)
+        self._last_start = int(value)
+        if not delta:
+            return
+        # 基数的 setValue 挡掉信号：它自己也是 params_changed 的来源，
+        # 不挡的话这次改动会上报两次（预览刷两遍）。start 的 valueChanged
+        # 随后照样发 params_changed，预览拿到的就是已经改好的基数。
+        self.page_number_base.blockSignals(True)
+        self.page_number_base.setValue(self.page_number_base.value() - delta)
+        self.page_number_base.blockSignals(False)
 
     def _apply_upstream_margin_default(self) -> None:
         default = margin_to_text(
@@ -305,7 +336,9 @@ class PrintPanel(PrintFormMixin, StagePanel):
         """收集 PDF 生成参数（校验颜色/边距，缺省回落内置默认）。
 
         input/output/workers/clean 不在此列；颜色或边距非法会抛 ValueError
-        阻止执行；title_switch_nodes 取节点行、skip_pages 解析为文件名列表。
+        阻止执行；title_switch_nodes 取节点行。
+        ⚠️ skip_pages 已从桌面表单删除（2026-11-16），get_args 不再导出它
+        （历史参数里残留的键也不会被带进新执行）；命令行仍可用 --skip-pages。
         """
         # 颜色先校验，非法直接报错阻止执行
         parse_color(self.title_color.text())
@@ -347,7 +380,6 @@ class PrintPanel(PrintFormMixin, StagePanel):
             "page_number_position": self._fixed_layout("page_number", "position"),
             "page_number_orientation": self._fixed_layout("page_number", "orientation"),
             "page_number_margins": self._inset_values("page_number"),
-            "skip_pages": text_to_skip_pages(self.skip_pages.text()),
         }
         if not self.page_number_end_to_last.isChecked():
             args["page_number_end_page"] = self.page_number_end.value()
@@ -443,8 +475,7 @@ class PrintPanel(PrintFormMixin, StagePanel):
         self.page_number_color.setText(str(default_for(p, d, "page_number_color")))
         # 同标题：「位置」「文字方向」已在桌面端删除，不回填、不改写。
         self._set_inset_values("page_number", p.get("page_number_margins"))
-
-        self.skip_pages.setText(skip_pages_to_text(p.get("skip_pages")))
+        # skip_pages 同理：界面已删，历史值不回填也不改写（get_args 不导出）。
 
         self._sync_enabled()
         # 历史回填/恢复默认也要刷新第四步的效果预览（此时可能还没人监听）

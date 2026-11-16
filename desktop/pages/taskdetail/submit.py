@@ -53,7 +53,8 @@ if TYPE_CHECKING:
 #: 提交按钮的**唯一**文案（构造处与状态刷新处共用一份，避免两处各写一遍）。
 #: ⚠️ 别再加「（有新版本）」后缀：它与主按钮并排后放不下（见
 #:    ``_update_detect_submit_button`` 的说明），"待提交"由加粗 + 红字提示表达。
-SUBMIT_TEXT = "提交本次任务"
+#: 用户 2026-11-17：「提交本次任务」→「分割图片」（按钮直接说出这一下干什么）。
+SUBMIT_TEXT = "分割图片"
 
 #: 「还有页面没有标注」弹窗里最多列出多少个页码（再多就折成"等 N 页"）
 MISSING_LABEL_PREVIEW = 12
@@ -452,7 +453,7 @@ class SubmitMixin:
             if detect_state != "success":
                 self._toast(
                     "warning", "请先检测文本框",
-                    "「检测文本框」执行成功后才能提交本次任务"
+                    "「检测文本框」执行成功后才能分割图片"
                     + ("" if detect_state == "pending" else
                        f"（当前状态：{STATUS_LABELS.get(detect_state, detect_state)}）"),
                 )
@@ -500,7 +501,7 @@ class SubmitMixin:
         pages = len({Path(str(e.get("file") or "")).stem for e in entries})
         total = len(self._manifest_paths())
         self.log_view.append(
-            f"提交本次任务：按{'人工标注' if manual else '检测框'}裁图"
+            f"分割图片：按{'人工标注' if manual else '检测框'}裁图"
             f" {len(entries)} 张（{pages}/{total} 页有框，没框的页不出图）"
             f" → {out_args['output']}"
         )
@@ -590,24 +591,24 @@ class SubmitMixin:
             version = NO_PREVIEW
             tip = (
                 f"上次「检测文本框」{STATUS_LABELS.get(preview_state, preview_state)}，"
-                "请重新执行并成功后再提交本次任务"
+                "请重新执行并成功后再分割图片"
                 if preview_state in ("failed", "cancelled")
-                else "请先点击「检测文本框」，执行成功后才能提交本次任务"
+                else "请先点击「检测文本框」，执行成功后才能分割图片"
             )
         else:
             version = self._submit_version_state("detect")
             tip = {
                 NEW_VERSION: (
-                    "检测框有改动（或还没提交过），请点击「提交本次任务」"
+                    "检测框有改动（或还没提交过），请点击「分割图片」"
                     "把文本框内容裁出来交给下一步"
                     if not manual else
-                    "标注有改动（或还没提交过），请点击「提交本次任务」"
+                    "标注有改动（或还没提交过），请点击「分割图片」"
                     "把文本框内容裁出来交给下一步（没画框的页会先提示）"
                 ),
                 PREVIEW_STALE: "检测结果已过期，请先重新「检测文本框」再提交",
                 UP_TO_DATE: "已提交：下一步（图片去底色）拿到的是这次裁好的图；"
                             "改框后需再次提交",
-                NO_PREVIEW: "请先点击「检测文本框」，执行成功后才能提交本次任务",
+                NO_PREVIEW: "请先点击「检测文本框」，执行成功后才能分割图片",
             }[version]
         self._apply_submit_state(version, tip, {
             NEW_VERSION: (

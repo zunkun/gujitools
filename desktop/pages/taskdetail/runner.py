@@ -194,7 +194,7 @@ class StageRunnerMixin:
         """这条进度是否该画在**当前显示的这一步**上。
 
         ⚠️ 进度条与状态文字是**全页面共享**的一份控件，必须只服务当前这一步。
-        以前无条件更新，于是第三步「提交本次任务」的进度被画在第四步的界面上：
+        以前无条件更新，于是第三步「分割图片」的进度被画在第四步的界面上：
         走动的进度条 +「进度 42/91」+ 灰掉的「生成PDF」按钮 —— 看起来就像第四步
         在自己出 PDF（用户报的「在第三步提交，然后进第四步，pdf 在生成过程中」）。
 
@@ -417,7 +417,7 @@ class StageRunnerMixin:
                 args["pages"] = missing
                 args["clean"] = False
         elif stage == "print":
-            # print：左侧列表顺序即 PDF 页序。图片就是第三步「执行去底色」
+            # print：左侧列表顺序即 PDF 页序。图片就是第三步「图片去底色」
             # 落盘的成品图（非拼版 stages/rembg、拼版 stages/imposition），
             # 不在这一步重新合成（裁图/透明底已在前面的步骤兑现）。
             #
@@ -458,7 +458,7 @@ class StageRunnerMixin:
                 self._toast(
                     "warning",
                     "无输入页面",
-                    "待打印列表为空，请先在第三步「执行去底色」生成成品图，"
+                    "待打印列表为空，请先在第三步「图片去底色」生成成品图，"
                     "或在左侧列表插入图片。",
                 )
                 return
@@ -538,7 +538,7 @@ class StageRunnerMixin:
                     f"图片拼版：{len(effects)} 页（PDF排版用拼版结果）"
                     if self.imposition_effective()
                     else f"PDF排版：{len(effects)} 页"
-                    "（用第三步「提交本次任务」的成品图）"
+                    "（用第二步「分割图片」的成品图）"
                 )
             )
         else:
@@ -1319,7 +1319,7 @@ class StageRunnerMixin:
                     override_toast = (
                         "info",
                         "检测完成",
-                        "请核对检测框；确认后点「提交本次任务」把文本框内容裁出来，"
+                        "请核对检测框；确认后点「分割图片」把文本框内容裁出来，"
                         "下一步才能用",
                     )
             else:  # detect_submit

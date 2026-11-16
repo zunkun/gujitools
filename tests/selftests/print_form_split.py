@@ -53,12 +53,11 @@ _EXPECTED_HOME = {
     "_collect_nodes": "PrintFormMixin",
     "_reset_default_clicked": "PrintFormMixin",
     "_reset_edits_clicked": "PrintFormMixin",
-    # print_sections：五个分区
+    # print_sections：四个分区（「过滤」分区已于 2026-11-16 整体删除）
     "_build_output_section": "PrintSectionsMixin",
     "_build_margin_section": "PrintSectionsMixin",
     "_build_title_section": "PrintSectionsMixin",
     "_build_pagenum_section": "PrintSectionsMixin",
-    "_build_filter_section": "PrintSectionsMixin",
     # print_inset：距页边
     "_make_inset": "PrintInsetMixin",
     "_inset_key": "PrintInsetMixin",
@@ -93,11 +92,10 @@ _CROSS_DEPS = {
         "reset_to_default",      # PrintPanel
         "nodes_list",            # print_sections 建的控件，节点行方法在这
         "_scroll",               # 存给 PrintPanel/基类用的滚动区
-        # build_form 是编排者，五个分区 builder 住在**子类** PrintSectionsMixin
+        # build_form 是编排者，分区 builder 住在**子类** PrintSectionsMixin
         # （MRO 上排在后面），静态扫不到——这是编排层唯一允许的"向下调用"
         "_build_output_section", "_build_margin_section",
         "_build_title_section", "_build_pagenum_section",
-        "_build_filter_section",
     },
     "PrintSectionsMixin": {
         "_add_row",              # base.StagePanel
@@ -120,7 +118,6 @@ _CROSS_DEPS = {
         "page_number_color", "_page_number_inset",
         # 页码样式与前后缀（PAGE_NUMBER_FORMATS 的下拉 + 两个输入框）
         "page_number_format", "page_number_prefix", "page_number_suffix",
-        "skip_pages",
         # 本类继承 PrintInsetMixin，这两个是本类的"自己人"，但静态扫不到
         "_make_inset", "_add_inset_rows",
     },

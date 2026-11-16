@@ -141,7 +141,8 @@ class PrintSectionsMixin(PrintInsetMixin):
         form.addRow(nodes_box)
 
     def _build_pagenum_section(self, root: QVBoxLayout) -> None:
-        form = self._section(root, "页码")
+        # 用户 2026-11-16：分区名「页码」改「页码排版」（与「标题排版」对齐）
+        form = self._section(root, "页码排版")
         self.page_number_printing = CheckBox("打印页码")
         form.addRow(self.page_number_printing)
         self.page_number_printing.toggled.connect(self._sync_enabled)
@@ -196,8 +197,3 @@ class PrintSectionsMixin(PrintInsetMixin):
         # 「位置」「文字方向」同标题：已在桌面端删除，页码恒在纸张**下边**、
         # 恒**竖排**（见 `FIXED_TEXT_LAYOUT`）。命令行/YAML 仍可用这两个键。
         self._add_inset_rows(form, self._page_number_inset)
-
-    def _build_filter_section(self, root: QVBoxLayout) -> None:
-        form = self._section(root, "过滤")
-        self.skip_pages = self._line_edit("逗号分隔的文件名（不含扩展名），如 cover,menu")
-        self._add_row(form, "跳过页面", self.skip_pages)

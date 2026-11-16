@@ -220,7 +220,7 @@ class ModuleShell(QWidget):
             "设置",
             onClick=self._settings_click_handler(),
             position=NavigationItemPosition.BOTTOM,
-            tooltip="开发者模式与训练/标注相关选项",
+            tooltip="存储位置、自动更新与功能开关",
         )
 
         # ---- 详情页：惰性（同 app.py 原逻辑，构造约 400ms）----

@@ -24,7 +24,7 @@ from qfluentwidgets import FluentIcon as FIF
 from qfluentwidgets import Slider
 
 from desktop.ui import theme as T
-from desktop.ui.widgets import Card, HelpButton, SectionTitle, apply_to
+from desktop.ui.widgets import Card, PanelTitle, SectionTitle, apply_to
 
 #: 旋转组件的量程：-180°~180°。输入框 2 位小数（步进 0.1°）；
 #: 滑块**通栏独占一行**、按 **0.01°/格** 走（值 = 度数 × ``ANGLE_SLIDER_SCALE``）
@@ -69,23 +69,22 @@ class ImpositionPanel(Card):
         """
         super().__init__(padding=T.SPACE_MD, spacing=T.SPACE_MD, radius=T.RADIUS_MD)
         column: QVBoxLayout | QHBoxLayout = self.box
-        # 标题行：说明挂问号按钮（同其他步骤面板），不再平铺占高度
-        title_row = QHBoxLayout()
-        title_row.setContentsMargins(0, 0, 0, 0)
-        title_row.setSpacing(T.SPACE_XS)
-        title_row.addWidget(SectionTitle("图片拼版"))
-        self.help_button = HelpButton("图片拼版", PANEL_DESCRIPTION)
-        title_row.addWidget(self.help_button, 0, Qt.AlignmentFlag.AlignTop)
-        title_row.addStretch(1)
-        column.addLayout(title_row)
+        # 标题行：说明挂问号按钮（同其他步骤面板），不再平铺占高度。
+        # ⚠️ 大标题必须用公共组件 ``PanelTitle``（加粗大字 + 问号）——
+        #    2026-11-16 用户指出这里原来用 ``SectionTitle`` 当大标题风格错了；
+        #    ``help_button`` 按旧属性名透出（自测 imposition.py 钉着它）。
+        self.title_row = PanelTitle("图片拼版", PANEL_DESCRIPTION)
+        self.help_button = self.title_row.help_button
+        column.addWidget(self.title_row)
 
         self.status_label = CaptionLabel("尚未添加拼版页")
         self.status_label.setWordWrap(True)
         apply_to(self.status_label, T.SIZE_CAPTION, color=T.INK_SOFT)
         column.addWidget(self.status_label)
 
-        # ---- 「操作当前图片页」：页级操作（用户 2026-09-30 分区口径）----
-        column.addWidget(SectionTitle("操作当前图片页"))
+        # ---- 「操作当前页拼版」：页级操作（用户 2026-09-30 分区口径；
+        #      2026-11-16 改名并把「清空全部拼版」拆到「操作所有页拼版」区）----
+        column.addWidget(SectionTitle("操作当前页拼版"))
 
         self._syncing_rotation = False  # 程序化回填滑块/输入框时挡住信号回抛
         self._whole_angle = 0.0  # 整版角度；选中单图时保留以便取消选择后恢复
@@ -147,6 +146,8 @@ class ImpositionPanel(Card):
         self.delete_item_button.hide()
         column.addLayout(page_actions)
 
+        # ---- 「操作所有页拼版」：整本级的动作只有清空（2026-11-16 分区）----
+        column.addWidget(SectionTitle("操作所有页拼版"))
         self.clear_button = PushButton(FIF.CLEAR_SELECTION, "清空全部拼版")
         self.clear_button.clicked.connect(self.clear_requested)
         column.addWidget(self.clear_button)

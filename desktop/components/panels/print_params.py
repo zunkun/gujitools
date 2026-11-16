@@ -29,7 +29,6 @@ __all__ = [
     "PAPER_SIZES",
     "POSITIONS", "SIDES", "TEXT_ORIENTATIONS",
     "parse_color", "parse_margin4", "margin_to_text",
-    "skip_pages_to_text", "text_to_skip_pages",
 ]
 
 # 桌面表单的默认参数（= params_spec.PRINT_DEFAULTS）。
@@ -54,7 +53,8 @@ _FORM_KEYS = (
     "page_number_font", "page_number_font_size", "page_number_color",
     "page_number_margins",
     "page_number_format", "page_number_prefix", "page_number_suffix",
-    "skip_pages",
+    # ⚠️ skip_pages 已删（2026-11-16）：桌面表单不再提供「过滤」分区，
+    # get_args 不导出、DEFAULT_PARAMS 不兜底；命令行 --skip-pages 仍可用。
 )
 DEFAULT_PARAMS: dict = {k: v for k, v in PRINT_DEFAULTS.items() if k in _FORM_KEYS}
 assert set(DEFAULT_PARAMS) == set(_FORM_KEYS), "PRINT_DEFAULTS 缺少表单可见键"
@@ -116,19 +116,3 @@ def margin_to_text(value) -> str:
     if not isinstance(value, (list, tuple)):
         return str(value)
     return ",".join(str(int(float(v))) for v in value)
-
-
-def skip_pages_to_text(value) -> str:
-    """skip_pages 参数 → 表单文本（逗号分隔的页名）。"""
-    if isinstance(value, (list, tuple)):
-        return ",".join(str(s) for s in value)
-    return str(value or "")
-
-
-def text_to_skip_pages(text: str) -> list[str]:
-    """表单文本 → skip_pages 参数。"""
-    return [
-        p.strip()
-        for p in str(text).replace("，", ",").split(",")
-        if p.strip()
-    ]

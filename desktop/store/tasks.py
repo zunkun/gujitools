@@ -71,7 +71,7 @@ STAGE_SHORT[IMPOSITION_STAGE] = cast(StepSpec, spec_by_key(IMPOSITION_STAGE)).sh
 
 #: 运行阶段 → 它归属的**界面步骤**（值取 STAGES 里的一项）。
 #:
-#: ⚠️ 「提交本次任务」（detect_submit）不是独立步骤，而是第二步 detect 面板上的
+#: ⚠️ 「分割图片」（detect_submit）不是独立步骤，而是第二步 detect 面板上的
 #: 动作：它的进度必须显示在第二步。有了这张表，界面才谈得上"只有当前这一步的
 #: 进度才上屏"（详见 desktop/pages/taskdetail/runner.py::_progress_belongs_here）。
 STAGE_STEP = ports.STAGE_STEPS

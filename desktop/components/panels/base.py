@@ -14,13 +14,13 @@ from typing import Any
 
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QLabel,
+    QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QLabel,
     QLineEdit, QSpinBox, QVBoxLayout, QWidget,
 )
 from qfluentwidgets import ComboBox, ScrollArea
 
 from desktop.ui import theme as T
-from desktop.ui.widgets import HelpButton, SurfacePanel, apply_to
+from desktop.ui.widgets import PanelTitle, SurfacePanel
 
 
 def default_for(parameters: dict, defaults: dict, key: str) -> Any:
@@ -75,8 +75,15 @@ class StagePanel(QWidget):
 
         title 来自子类类属性；description 不再平铺占高度，改挂在标题右侧
         问号按钮上（hover 出 ToolTip 气泡、点击出 Flyout）。随后调用
-        build_form 生成子类表单并占满剩余垂直空间，最后统一把表单里输入
-        控件的信号接到 ``param_edited``（供参数暂存）。
+        build_form 生成子类表单并**吃满剩余垂直空间**（stretch=1），最后
+        统一把表单里输入控件的信号接到 ``param_edited``（供参数暂存）。
+
+        ⚠️ 表单滚动区必须 ``stretch=1``，**不能**在它后面再 ``addStretch()``：
+        留 stretch 的话，卡片越高、漏给 stretch 的空白越多，而滚动区仍被
+        压在 sizeHint 附近——高分屏（字体逻辑高度更大）下表单自然高度一
+        超过这个被压小的视口，就出现"底部一大段空白、表单却还要滚动"的怪相
+        （用户 2026-11-16 报，离屏实测 spacer 吃掉 521px、scroll 只拿到 521px）。
+        滚动区吃满后：视口 ≥ 表单自然高时无滚动条；窗口矮时照常滚动。
         """
         super().__init__(parent)
         # ⚠️ 必须在 build_form 之前置位：子类构造期会调 _apply_args 复位，
@@ -86,24 +93,16 @@ class StagePanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(T.SPACE_SM)
 
-        # 标题不参与拉伸：问号按钮要紧贴标题文字末尾，多余空间留在行尾
-        title_row = QHBoxLayout()
-        title_row.setContentsMargins(0, 0, 0, 0)
-        title_row.setSpacing(T.SPACE_XS)
-        self.title_label = QLabel(self.title)
-        apply_to(self.title_label, T.SIZE_SUBTITLE, bold=True, color=T.INK)
-        self.title_label.setWordWrap(True)
-        title_row.addWidget(self.title_label)
+        # 标题行是公共组件 ``PanelTitle``（加粗标题 + 问号说明按钮，各步骤
+        # 面板统一款）；``title_label`` / ``help_button`` 按旧属性名透出，
+        # 宿主与自测不用感知组件化这件事。
+        self.title_row = PanelTitle(self.title, self.description, self)
+        self.title_label = self.title_row.title_label
+        self.help_button = self.title_row.help_button
+        layout.addWidget(self.title_row)
 
-        if self.description:
-            self.help_button = HelpButton(self.title, self.description, self)
-            title_row.addWidget(self.help_button, 0, Qt.AlignmentFlag.AlignTop)
-        title_row.addStretch(1)
-        layout.addLayout(title_row)
-
-        layout.addWidget(self.build_form())
+        layout.addWidget(self.build_form(), 1)
         self._connect_param_edit_signals()
-        layout.addStretch()
 
     # ------------------------------------------------------------------ 参数变动
     def _connect_param_edit_signals(self) -> None:

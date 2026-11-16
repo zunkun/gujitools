@@ -589,7 +589,7 @@ class ImpositionBaseMixin:
         if page is not None:
             self.control_stack.setCurrentIndex(page)
             self.preview_stack.setCurrentIndex(page)
-        # ⚠️ 藏**整行**（action_row =「检测文本框 + 提交本次任务」并排），不是
+        # ⚠️ 藏**整行**（action_row =「检测文本框 + 分割图片」并排），不是
         #    单个按钮：只藏按钮的话行高仍在，控制区底部会留一条空白。
         self.action_row.setVisible(False)
         # 「下载 PDF」同样只在第四步出现（拼版页没有生成 PDF 这一步）

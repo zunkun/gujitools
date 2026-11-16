@@ -9,7 +9,7 @@ from qfluentwidgets import LineEdit
 from desktop.components.common.safecomponents import SafeSpinBox
 from desktop.components.panels.base import StagePanel, default_for
 from desktop.components.panels.params_spec import DEFAULTS, EXTRACT_EXTS
-from desktop.ui.widgets import combo_box
+from desktop.ui.widgets import SectionTitle, combo_box
 
 
 class ExtractPanel(StagePanel):
@@ -40,10 +40,12 @@ class ExtractPanel(StagePanel):
             "取内嵌图时按原图字节落盘，这个值不生效。\n"
             "想要旧的 72 行为，就把它设成 72。"
         )
-        self.ext = combo_box(list(EXTRACT_EXTS))
-        self.ext.setCurrentText(str(d["ext"]))
+        self.ext = combo_box(EXTRACT_EXTS)
+        self._set_ext(str(d["ext"]))
         self.pages_edit = LineEdit()
         self.pages_edit.setPlaceholderText("留空=全部页，示例：1,2,5-7")
+        # ---- 分区小标题：本面板只有一组参数（2026-11-16 统一版式）----
+        form.addRow(SectionTitle("提取参数"))
         # 标签格式（用户 2026-09-23 口径）：**中文在前、参数键名放在括号里**。
         # 键名是有必要留的——这些参数与命令行一一对应，纯中文有时说不清指的是哪个。
         self._add_row(form, "缩放因子（zoom）", self.zoom)
@@ -56,6 +58,7 @@ class ExtractPanel(StagePanel):
 
         pages 留空表示全部页；非法页码由 runner 在取参时以 ValueError 拦截。
         dpi 默认 300，是**整页渲染**的 DPI 下限（内嵌图路径不生效）。
+        ext 走下拉的 itemData（桌面只有 jpg/png，见 ``params_spec.EXTRACT_EXTS``）。
 
         ⚠️ ``quick`` 不再暴露在界面上（用户 2026-10-24）：zoom=1 时由脚本
         自动判断「纯扫描页才直取内嵌图」，有文字/矢量/注释等可见内容就整页
@@ -64,11 +67,16 @@ class ExtractPanel(StagePanel):
         args = {
             "zoom": self.zoom.value(),
             "dpi": self.dpi.value(),
-            "ext": self.ext.currentText(),
+            "ext": str(self.ext.currentData() or self.ext.currentText()),
         }
         if self.pages_edit.text().strip():
             args["pages"] = self.pages_edit.text().strip()
         return args
+
+    def _set_ext(self, value: str) -> None:
+        """按参数值回填输出格式下拉（itemData 里找不到时回落第一项）。"""
+        idx = self.ext.findData(value)
+        self.ext.setCurrentIndex(idx if idx >= 0 else 0)
 
     def _apply_args(self, parameters: dict) -> None:
         d = DEFAULTS[self.stage]
@@ -76,5 +84,6 @@ class ExtractPanel(StagePanel):
         # ⚠️ dpi 的默认值是 300，用 default_for 的「None 也回落」语义：
         # 历史里存着 dpi: null 时不能把 None 塞进 setValue
         self.dpi.setValue(int(default_for(parameters, d, "dpi")))
-        self.ext.setCurrentText(str(default_for(parameters, d, "ext")))
+        # 历史配置里存着 tiff 时下拉里没有它：回落到第一项（jpg）。
+        self._set_ext(str(default_for(parameters, d, "ext")))
         self.pages_edit.setText(str(parameters.get("pages") or ""))

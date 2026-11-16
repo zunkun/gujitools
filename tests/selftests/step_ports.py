@@ -785,10 +785,10 @@ def _check_detail_metadata(ctx, ok) -> None:
     from desktop.store.tasks import STAGES
 
     # --- spec 层面的值（与改动前的 if-else 逐条对照）---
-    ok("extract 按钮是「执行本子任务」",
-       _spec_for("extract").run_button_text == "执行本子任务")
-    ok("rembg 按钮是「执行去底色」且无提交按钮",
-       _spec_for("rembg").run_button_text == "执行去底色"
+    ok("extract 按钮是「提取文档图片」",
+       _spec_for("extract").run_button_text == "提取文档图片")
+    ok("rembg 按钮是「图片去底色」且无提交按钮",
+       _spec_for("rembg").run_button_text == "图片去底色"
        and _spec_for("rembg").has_submit is False)
     ok("print 按钮是「生成PDF」且无提交按钮",
        _spec_for("print").run_button_text == "生成PDF"
@@ -833,8 +833,8 @@ def _check_detail_metadata(ctx, ok) -> None:
         pump(app, times=6)
 
         page._select_stage(2)
-        ok("第三步：按钮=执行去底色、提交按钮隐藏",
-           page.run_button.text() == "执行去底色"
+        ok("第三步：按钮=图片去底色、提交按钮隐藏",
+           page.run_button.text() == "图片去底色"
            and not page.submit_button.isVisibleTo(page), page.run_button.text())
         print_bar = page.bar_index_of_step("print")
         assert print_bar is not None      # ⚠️ 默认流程里有「生成PDF」这一格
@@ -843,8 +843,8 @@ def _check_detail_metadata(ctx, ok) -> None:
            page.run_button.text() == "生成PDF"
            and not page.submit_button.isVisibleTo(page), page.run_button.text())
         page._select_stage(0)
-        ok("第一步：按钮=执行本子任务、提交按钮隐藏",
-           page.run_button.text() == "执行本子任务"
+        ok("第一步：按钮=提取文档图片、提交按钮隐藏",
+           page.run_button.text() == "提取文档图片"
            and not page.submit_button.isVisibleTo(page), page.run_button.text())
 
         page._select_stage(1)

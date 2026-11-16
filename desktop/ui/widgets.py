@@ -50,6 +50,7 @@ __all__ = [
     "EmptyState",
     "HelpButton",
     "PageHeader",
+    "PanelTitle",
     "Pill",
     "ProgressLine",
     "RedDashFrame",
@@ -445,23 +446,59 @@ class Divider(QFrame):
 
 
 class SectionTitle(QLabel):
-    """控制面板里的分组小标题（比正文略重，前面带一条主色短竖线）。"""
+    """控制面板里的分组小标题（比正文略重，前面带一条主色短竖线）。
+
+    所有步骤面板的「小分类/分块标题」统一走这一个组件（用户 2026-11-16：
+    「参考检测文本框的『识别文本框模式』这种风格样式，只是文字要大一些」）
+    ——字号用 ``SIZE_LABEL``（14px，比正文大一号），别再各自用
+    ``StrongBodyLabel`` 之类的另起一套。
+    """
 
     def __init__(self, text: str, parent=None):
-        """左侧预留 10px 给主色竖线，控件固定高 20px。"""
+        """左侧预留 10px 给主色竖线，控件固定高 24px。"""
         super().__init__(text, parent)
-        self.setFont(ui_font(T.SIZE_CAPTION, bold=True))
+        self.setFont(ui_font(T.SIZE_LABEL, bold=True))
         # 左侧留出 10px 给主色短竖线
         self.setContentsMargins(10, 0, 0, 0)
-        self.setFixedHeight(20)
+        self.setFixedHeight(24)
 
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(T.ACCENT))
-        painter.drawRoundedRect(QRectF(0, 4, 3, 12), 1.5, 1.5)
+        painter.drawRoundedRect(QRectF(0, 5, 3, 14), 1.5, 1.5)
         super().paintEvent(event)
+
+
+class PanelTitle(QWidget):
+    """控制面板的**大标题行**：加粗标题 + 圆圈问号说明按钮（步骤面板统一款）。
+
+    所有步骤面板的「大标题」统一走这一个组件（用户 2026-11-16：以
+    「检测文本框」面板为基准——加粗大字 + 标题末尾挂问号；「图片拼版」
+    用 ``SectionTitle`` 当大标题属于风格跑偏）。说明文字（description）
+    不平铺占高度，全部收进问号按钮：hover 弹 ToolTip、点击弹 Flyout；
+    没有说明就不放问号。
+
+    ``title_label`` / ``help_button``（无说明时为 ``None``）挂在实例上，
+    供宿主与自测按旧属性名访问。
+    """
+
+    def __init__(self, title: str, description: str = "", parent=None):
+        super().__init__(parent)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(T.SPACE_XS)
+        self.title_label = QLabel(title, self)
+        apply_to(self.title_label, T.SIZE_SUBTITLE, bold=True, color=T.INK)
+        self.title_label.setWordWrap(True)
+        row.addWidget(self.title_label)
+        self.help_button: HelpButton | None = None
+        if description:
+            self.help_button = HelpButton(title, description, self)
+            # 问号按钮要紧贴标题文字末尾，多余空间留在行尾
+            row.addWidget(self.help_button, 0, Qt.AlignmentFlag.AlignTop)
+        row.addStretch(1)
 
 
 class StatusChip(QWidget):

@@ -485,7 +485,7 @@ STAGE_LOCATIONS: dict[str, dict[str, str]] = {
     # detect 两个产物分两处（2026-10-22）：
     #   · ``boxes`` 落在**任务根**（``boxes.json``）——它不是一堆图片、是一个
     #     坐标文件，第二步预览与 YOLO 导出都按这个固定名读；
-    #   · ``pages`` 是「提交本次任务」逐框裁出来的成品图，落 ``stages/detect``，
+    #   · ``pages`` 是「分割图片」逐框裁出来的成品图，落 ``stages/detect``，
     #     给第三步「图片去底色」当输入（未提交 ⇒ 这个目录是空的/不存在，
     #     第三步自然转不过去，正是"提交才算本步完成"的落地方式）。
     "detect": {"boxes": "boxes.json"},

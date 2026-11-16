@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
-"""开发者模式与「导出YOLO标注」自测（用户 2026-10-16 提的功能）。
+"""「启用YOLO标注」与「导出YOLO标注」自测（用户 2026-10-16 提的功能）。
+
+用户 2026-11-17：设置页**删除「开发者」分类与「启用开发者模式」开关**，
+「启用YOLO标注」挪进「功能」分组、常显——显隐判据相应只剩 YOLO 一个开关。
 
 守护五件事：
 
-1. **设置页**：左侧栏底部「设置」进得去，里面两张 ``SwitchSettingCard``
-   分别绑到两个配置项上；「启用YOLO标注」是开发者模式的**下级**（关掉开发者
-   模式它就藏起来）；
+1. **设置页**：左侧栏底部「设置」进得去，「功能」分组里「启用YOLO标注」
+   ``SwitchSettingCard`` 绑到配置项上（不再受任何上级开关控制）；
 2. **壳层入口**：导航栏底部有「设置」条目，真点它能切过去（``clicked(bool)``
    的坑：槽不吞那个 bool 就会把 ``True`` 当 key，导航静默退回任务管理）；
 3. **导出服务（纯函数）**：类别号（左/右 → 0 harfcontent、整幅 → 1
@@ -14,7 +16,7 @@
 4. **落点与命名**：``<导出目录>/<名称>/{images,labels}/<名称>-<页序>.…``，
    图片按页序复制过去、非法字符被洗掉；
 5. **两个宿主页**：独立「检测文本框」右栏底部与任务流程第二步右栏底部都有
-   「导出YOLO标注」，且只在"开发者模式 + YOLO 开关"都打开时出现。
+   「导出YOLO标注」，且只在"YOLO 开关"打开时出现。
 
 ⚠️ 配置项一律**直接改 ``item.value``**（不落盘）；只有"点开关能不能写回配置项"
 那一条走 ``qconfig.set``，且先把 ``qconfig.save`` 换成空实现——不然自测会把
@@ -27,7 +29,7 @@ from pathlib import Path
 
 NAME = "dev_yolo"
 DEPENDS: list[str] = ["tasklist"]
-TITLE = "开发者模式与导出YOLO标注"
+TITLE = "启用YOLO标注与导出YOLO标注"
 
 W, H = 1000, 800
 LEFT = [40, 100, 460, 700]
@@ -57,7 +59,7 @@ def run(ctx) -> None:  # noqa: ARG001 - 用 ctx 的窗口，不共享它的夹�
     tmp = Path(ctx.tmp) / "dev_yolo"
     tmp.mkdir(parents=True, exist_ok=True)
     cfg = app_config()
-    before = (bool(cfg.developerMode.value), bool(cfg.yoloAnnotation.value))
+    before = bool(cfg.yoloAnnotation.value)
     try:
         _check_settings_page(ctx, cfg, ok, qconfig)
         _check_shell_entry(ctx, ok)
@@ -67,8 +69,7 @@ def run(ctx) -> None:  # noqa: ARG001 - 用 ctx 的窗口，不共享它的夹�
         _check_module_page(ctx, cfg, tmp, ok)
         _check_detail_page(ctx, cfg, tmp, ok)
     finally:
-        cfg.developerMode.value = before[0]
-        cfg.yoloAnnotation.value = before[1]
+        cfg.yoloAnnotation.value = before
 
 
 # ------------------------------------------------------------------ ① 设置页
@@ -76,14 +77,16 @@ def _check_settings_page(ctx, cfg, ok, qconfig) -> None:
     page = ctx.w.shell.settings_page()
     ok("设置页能构造", page is not None)
     ok("设置页标题/副标题是「设置」", page.TITLE == "设置", page.TITLE)
-    ok("「启用开发者模式」卡片绑到配置项",
-       page.dev_card.configItem is cfg.developerMode)
     ok("「启用YOLO标注」卡片绑到配置项",
        page.yolo_card.configItem is cfg.yoloAnnotation)
     ok("「自动更新软件」卡片绑到配置项",
        page.auto_app_card.configItem is cfg.autoUpdateApp)
     ok("「自动更新数据包」卡片绑到配置项",
        page.auto_data_card.configItem is cfg.autoUpdateData)
+    ok("开发者分类/开关已删除（用户 2026-11-17）",
+       not hasattr(page, "dev_card") and not hasattr(page, "group"))
+    ok("「启用YOLO标注」常显（不再藏进开发者模式）",
+       not page.yolo_card.isHidden())
 
     # 两项自动更新的**默认值**：必须是关（用户 2026-11-03 要求默认不自动下载）。
     # 查配置项的 defaultValue（不是当前值）——用户可能已经手动打开过。
@@ -91,14 +94,6 @@ def _check_settings_page(ctx, cfg, ok, qconfig) -> None:
        cfg.autoUpdateApp.defaultValue is False
        and cfg.autoUpdateData.defaultValue is False,
        f"{cfg.autoUpdateApp.defaultValue} / {cfg.autoUpdateData.defaultValue}")
-
-    # 开发者模式关闭 → YOLO 那张卡藏起来（它是下级选项）
-    cfg.developerMode.value = False
-    ctx.app.processEvents()
-    ok("开发者模式关 → 「启用YOLO标注」藏起来", page.yolo_card.isHidden())
-    cfg.developerMode.value = True
-    ctx.app.processEvents()
-    ok("开发者模式开 → 「启用YOLO标注」出现", not page.yolo_card.isHidden())
 
     # 点开关真的会写回配置项（⚠️ 先把落盘换成空实现，别写用户真实配置）
     saved = qconfig.save
@@ -297,15 +292,12 @@ def _check_module_page(ctx, cfg, tmp: Path, ok) -> None:
 
         ok("摆出「导出YOLO标注」按钮（排在导出区最底部）",
            page.yolo_button.text() == "导出YOLO标注", page.yolo_button.text())
-        cfg.developerMode.value = False
         cfg.yoloAnnotation.value = False
         ctx.app.processEvents()
-        ok("两个开关都关着 → 按钮不显示", page.yolo_button.isHidden())
-        cfg.developerMode.value = True
-        ok("只开开发者模式 → 仍不显示", page.yolo_button.isHidden())
+        ok("YOLO 开关关着 → 按钮不显示", page.yolo_button.isHidden())
         cfg.yoloAnnotation.value = True
         ctx.app.processEvents()
-        ok("两个开关都打开 → 按钮出现", not page.yolo_button.isHidden())
+        ok("YOLO 开关打开 → 按钮出现", not page.yolo_button.isHidden())
 
         page._boxes["0001"] = [LEFT, RIGHT]
         page._origins["0001"] = "manual"
@@ -458,7 +450,6 @@ def _check_detail_export_request(d, ctx, tmp, ok) -> None:
 def _check_detail_page(ctx, cfg, tmp: Path, ok) -> None:
     d = ctx.d
     ok("详情页有「导出YOLO标注」卡片", hasattr(d, "yolo_export_card"))
-    ok("详情页默认藏起这张卡（开发者模式关着）", d.yolo_export_card.isHidden())
     ok("卡片上的按钮文案是「导出YOLO标注」",
        d.yolo_export_button.text() == "导出YOLO标注",
        d.yolo_export_button.text())
@@ -477,7 +468,6 @@ def _check_detail_page(ctx, cfg, tmp: Path, ok) -> None:
     ok("「名称」默认值 = b + 任务号（如 b0020，用户 2026-10-16）",
        d._yolo_dataset_name() == f"b{ctx.tid}", d._yolo_dataset_name())
 
-    cfg.developerMode.value = True
     cfg.yoloAnnotation.value = True
     # 把"上次记住的那一份"清成空，才能测"没记过时回填什么"
     from desktop.store.json_io import read_json, write_json
@@ -496,11 +486,11 @@ def _check_detail_page(ctx, cfg, tmp: Path, ok) -> None:
         write_json(state_path, before_doc)
     d._select_stage(bar)
     ctx.app.processEvents()
-    ok("两个开关都开 + 停在第二步 → 卡片出现", not d.yolo_export_card.isHidden())
-    cfg.developerMode.value = False
+    ok("YOLO 开关开 + 停在第二步 → 卡片出现", not d.yolo_export_card.isHidden())
+    cfg.yoloAnnotation.value = False
     ctx.app.processEvents()
-    ok("开发者模式一关 → 卡片立刻收起", d.yolo_export_card.isHidden())
-    cfg.developerMode.value = True
+    ok("YOLO 开关一关 → 卡片立刻收起", d.yolo_export_card.isHidden())
+    cfg.yoloAnnotation.value = True
     ctx.app.processEvents()
     ok("再开回来 → 卡片又出现（同一步不用切页）",
        not d.yolo_export_card.isHidden())
