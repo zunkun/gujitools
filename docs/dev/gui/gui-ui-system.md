@@ -85,7 +85,8 @@ status_label(status)   # -> 中文文案，未知状态原样返回
 | 控件 | 说明 |
 | --- | --- |
 | `Card` | 圆角白底卡片，`padding` 控制内边距；自绘圆角矩形 |
-| `Divider` | 1px 水平分隔线（固定高 1px、水平拉伸） |
+| `SurfacePanel` | 白底容器（自绘 `T.SURFACE`）：参数表单塞进 `ScrollArea` 时用它当内容根，盖掉滚动区 viewport 刷的系统窗口灰 `#EFEFEF`（`setPalette` 会被样式表 polish 重置回去，别走那条路） |
+| `Divider` | 1px 水平分隔线（固定高 1px、水平拉伸）。**分组别再用它**：参数面板两段之间改留白（见 `detect_panel.SECTION_GAP`） |
 | `SectionTitle` | 带主色竖条的分区标题 |
 | `StatusChip` | 状态胶囊：圆点 + 文案 + 淡色底，`set_state(text, status)` |
 | `ProgressLine` | 细进度条，`setRange/setValue/value/maximum/finish/ratio`，`height` 可调；**上限为 0 时自动走「来回滑动」的未知态**（总量拿不到时用，别自己再画一根不动的空条） |
@@ -160,7 +161,7 @@ status_label(status)   # -> 中文文案，未知状态原样返回
 预览的**上方**（不压在图上），一行字 + 右侧 ×，淡红底 + 红色圆角描边（自绘）。
 
 - 只服务「检测文本框」：任务流程第二步与独立检测页共用；文案的唯一实现在
-  `components/box_kinds.py::manual_hint_text`，按「有框 / 没框 / 保留框外空白」
+  `components/box_kinds.py::manual_hint_text`，按「有框 / 没框 / 人工标注」
   三种口径给话。
 - **默认隐藏**，按需 `ImageViewerWidget.set_hint_banner(text)` 点亮。藏着的控件
   在布局里不占位 ⇒ 提取/去底色/打印各步的预览区高度一点没变。

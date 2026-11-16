@@ -28,13 +28,17 @@
 
 要在正文下方塞自定义内容（逐页清单之类）就往 ``dialog.body`` 里 ``addWidget``，
 然后调一次 :meth:`fit_height` 重算高度。
+
+要**强调其中某个词**（文件名、任务名）就传 ``rich=True`` 并用 ``<font color=…>``
+包起来（见任务列表页的导入查重框）：宽度是钉死的、正文折行，长文件名只会让
+弹窗**变高**，不会像 qfluent ``Dialog`` 那样把窗口撑到屏幕外。
 """
 
 from __future__ import annotations
 
 import sys
 
-from PySide6.QtCore import QEvent, QTimer
+from PySide6.QtCore import QEvent, Qt, QTimer
 from PySide6.QtWidgets import (
     QApplication, QDialog, QHBoxLayout, QLabel, QVBoxLayout, QWidget,
 )
@@ -80,6 +84,7 @@ class ConfirmDialog(QDialog):
         width: int = DIALOG_W,
         yes_text: str = "确定",
         cancel_text: str = "取消",
+        rich: bool = False,
     ):
         super().__init__(parent)
         self.setWindowTitle(title)
@@ -98,6 +103,11 @@ class ConfirmDialog(QDialog):
 
         self.content_label = QLabel(content, self)
         self.content_label.setWordWrap(True)
+        # ⚠️ 富文本要**显式**设格式：AutoText 的嗅探靠"像不像标签"猜，正文里
+        #    混了 ``<`` 之类的普通字符时会猜错，用户看到的就是一串尖括号。
+        #    富文本里换行必须写 ``<br>``（``\n`` 会被当成空格吞掉）。
+        if rich:
+            self.content_label.setTextFormat(Qt.TextFormat.RichText)
         apply_to(self.content_label, T.SIZE_BODY, color=T.INK)
         root.addWidget(self.content_label)
 

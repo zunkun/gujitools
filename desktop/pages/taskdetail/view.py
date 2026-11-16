@@ -158,13 +158,15 @@ class DetailViewMixin:
         _on_print_finished: Callable[..., None]
         _on_print_failed: Callable[..., None]
         _goto_stats_page: Callable[..., None]
-        _detect_current_page: Callable[..., None]
         _set_selected_box_kind: Callable[..., None]
         _delete_selected_box: Callable[..., None]
         _on_box_selection_changed: Callable[..., None]
         _on_box_edit_rejected: Callable[..., None]
-        # 「保留框外空白」全局参数变了 → 重算所有页面的划线（DetectMixin 提供）
-        _on_keep_blank_changed: Callable[..., None]
+        # 识别方式 / 自动沿用上一页标注变了（DetectMixin 提供）：落盘 + 刷按钮
+        _on_detect_mode_changed: Callable[..., None]
+        _on_reuse_prev_changed: Callable[..., None]
+        #: 当前是不是「人工标注」方式（DetectMixin 读面板现值，带兜底）
+        _detect_manual: Callable[[], bool]
         # 「导出YOLO标注」（开发者模式，DetectMixin 提供）：本层建卡片/接按钮，
         # 业务与显隐判据在那边——卡片自己不知道"当前是不是 detect 步骤"。
         export_yolo_labels: Callable[[], None]
@@ -780,6 +782,14 @@ class DetailViewMixin:
         self.imposition_view.page_reorder_requested.connect(
             self._on_imposition_page_reorder
         )
+        # 左列右键：上移/下移、向前/向后插入拼版（用户 2026-11-16，照「PDF排版」
+        # 左列那套菜单）
+        self.imposition_view.page_move_requested.connect(
+            self._on_imposition_page_move
+        )
+        self.imposition_view.page_insert_requested.connect(
+            self._on_imposition_page_insert
+        )
         self.imposition_view.page_remove_requested.connect(
             self._on_imposition_release_page
         )
@@ -926,14 +936,13 @@ class DetailViewMixin:
 
     def _wire_detect_panel(self, detect_panel) -> None:
         """第二步面板**首次构造后**的接线（LazyPanelHost 的 created 回调）。"""
-        # detect 面板「检测本页」：手动触发当前页的 YOLO 检测（不自动执行）
-        detect_panel.detect_page_requested.connect(self._detect_current_page)
         # ⚠️ 2026-10-22：**area 参数已从整个项目移除**，所以这里没有
         #    「改 area → 重算参考框/提交按钮」这条联动。
-        # 「保留框外空白」（**全局**参数，2026-11-11）：一切换就把所有页面的
-        # 划线按新口径重算（只改显示，boxes.json 不动），并让提交按钮重新判定。
-        detect_panel.keep_blank_changed.connect(self._on_keep_blank_changed)
-        # 控件建出来时的框编辑口径：保留空白模式下会被临时关掉，退出时要还原成它
+        # 「识别方式」（**任务级**参数，2026-11-16）：人工标注不调 YOLO ⇒
+        # 底部「检测文本框」主按钮不显示、提交门槛也不同，切一下要立刻反映。
+        detect_panel.mode_changed.connect(self._on_detect_mode_changed)
+        detect_panel.reuse_prev_changed.connect(self._on_reuse_prev_changed)
+        # 控件建出来时的框编辑口径：实时预览被关掉编辑时，退出时要还原成它
         self._detect_boxes_editable = bool(
             getattr(self.detect_viewer, "show_boxes", True)
         )
@@ -944,6 +953,32 @@ class DetailViewMixin:
         self.detect_viewer.selection_changed.connect(self._on_box_selection_changed)
         # 超框数上限（整幅 1 个 / 半幅 2 个）时给出可操作的提示
         self.detect_viewer.box_edit_rejected.connect(self._on_box_edit_rejected)
+
+    def _sync_detect_mode_ui(self) -> None:
+        """按识别方式显示/隐藏底部「检测文本框」主按钮（人工标注**不显示**它）。
+
+        用户 2026-11-16 第 2 条：「人工标注模式的时候不显示『检测文本框』按钮，
+        只显示『提交本次任务』按钮」。
+
+        ⚠️ **只有第二步、且当前任务是人工标注时才藏**；其它步骤一律恢复显示
+        ——否则在人工标注任务里切到第三步，那颗主按钮会一直是灰的/不见，
+        整个流程就没法往下走了（它是每一步的"执行"按钮）。
+
+        ⚠️ 走 ``_detect_manual()``（DetectMixin，内部 ``peek()`` 读面板）：
+        这里绝不直接访问面板控件——``panel_host_of_step`` 拿到的是惰性宿主，
+        属性访问会把面板立刻构造出来。
+        """
+        button = getattr(self, "run_button", None)
+        if button is None:
+            return
+        on_detect = False
+        if getattr(self, "task_id", None):
+            try:
+                on_detect = self.current_stage() == "detect"
+            except Exception:  # noqa: BLE001 - 构造期没有步骤条，按"不在第二步"
+                on_detect = False
+        manual = on_detect and self._detect_manual()
+        button.setVisible(not manual)
 
     def _wire_print_panel(self, panel) -> None:
         """第四步面板**首次构造后**的接线（LazyPanelHost 的 created 回调）。"""

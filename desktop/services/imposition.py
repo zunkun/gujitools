@@ -169,9 +169,11 @@ def normalize_page(page) -> dict | None:
 def normalize_doc(doc) -> dict:
     """整份文档收敛：``{"enabled", "pages", "removed"}``（永不为 None）。
 
-    ``removed`` 是**黑名单**（用户在「选择拼版」弹窗里删掉的图，软删除——
-    文件不动，只是不再进入候选范围）。存字符串路径列表，去重保序；
-    读老任务没有这个键时为空列表。
+    ``removed`` 是**旧版黑名单**（曾经在「选择拼版」弹窗里「删除图片」移出的图，
+    软删——文件不动，只是不再进入候选范围）。⚠️ **2026-11-16 起弹窗不再写它**
+    （两个页签连同「删除图片」一起取消，候选 = 所有没被页引用的图）：这里仍
+    原样保留，老任务读进来不丢数据，`:func:`remaining_files` 的行为也不变。
+    存字符串路径列表，去重保序；读老任务没有这个键时为空列表。
     """
     if not isinstance(doc, dict):
         return {"enabled": False, "pages": [], "removed": []}

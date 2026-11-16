@@ -851,10 +851,20 @@ def _check_detail_metadata(ctx, ok) -> None:
         ok("第二步：显示检测统计、隐藏执行记录",
            page.detect_stats.isVisibleTo(page)
            and not page.history_block.isVisibleTo(page))
-        page._select_stage(2)
-        ok("第三步：显示执行记录、隐藏检测统计",
-           page.history_block.isVisibleTo(page)
-           and not page.detect_stats.isVisibleTo(page))
+        # 「执行记录」另有设置总开关（默认关，用户 2026-11-16）：临时打开再判
+        # "第三步用执行记录、不用检测统计"这条 spec 判据。
+        from desktop.settings.config import app_config
+
+        _cfg = app_config()
+        _before_show = bool(_cfg.showHistory.value)
+        _cfg.showHistory.value = True
+        try:
+            page._select_stage(2)
+            ok("第三步：显示执行记录、隐藏检测统计",
+               page.history_block.isVisibleTo(page)
+               and not page.detect_stats.isVisibleTo(page))
+        finally:
+            _cfg.showHistory.value = _before_show
 
         # 控制列宽度跟着 spec 走（第四步更宽）。
         page._select_stage(print_bar)

@@ -1,17 +1,36 @@
 # -*- coding: utf-8 -*-
-"""「选择拼版」弹窗（**模块一：选择拼版** 的 UI）。
+"""「选择拼版」/「插入拼版」弹窗（**模块一：选择拼版** 的 UI）。
 
-从**剩余未被选择拼版的图片**（源清单里还没被任何一页用过的，见
-``services.imposition.remaining_files``）里**自由多选**——选择阶段不限
-张数、不做任何配对；点「开始拼版」时才把勾选的图按源清单顺序**每两张
-配成一页**（序号在前的进右槽），落单的不拼。
+**一个列表，没有页签**（用户 2026-11-16 定的 UI）：
 
-「删除图片」把勾选的图移出选择范围（**软删除**：黑名单由宿主落盘到
-``drafts/imposition.json`` 的 ``removed`` 字段，源文件不动）；
-「查看删除的图片」切换到已删除视图，可勾选批量恢复。
+- 列表里是**所有还能用的图**——上一节点传过来、还没被任何拼版页用掉的成品图，
+  加上**用户自己上传过的图**（上传即复制进任务目录，之后一直是候选，删掉拼版页
+  也会回到这里）。自由多选：1 张单独成一页、2 张拼成一页；点确认才把勾选的图
+  按**列表顺序**成页（序号在前的进右槽，落单的单独一页）；
+- 没有想要的图时点「上传图片…」或直接把图拖进窗口：上传的图排在列表末尾、
+  默认勾上、**带缩略图**；同一张图可以上传多次（每次都是独立的一条候选）。
 
-这里只做控件与信号；弹窗怎么被唤起、选中之后怎么建页落盘，见
-``desktop/pages/taskdetail/imposition_pages.py``（模块一控制器）。
+三种用法（``mode``）：
+
+- ``"pick"``（默认）：左列「＋ 选择拼版」——确认后追加到清单末尾；
+- ``"insert"``：左列右键「向前 / 向后插入拼版」——``position`` 给出默认落点
+  （当前页之前/之后，弹窗里可改），确认后插到那个位置；
+- ``"append"``：单图页「新增图片」——只能勾 1 张，确认按钮叫「添加」。
+
+⚠️ **上传的图本弹窗不落盘**：它只把本地路径交回去（:meth:`chosen_items` 里
+``uploaded=True``），复制进任务目录由宿主调
+``services.imposition_insert.resolve_chosen`` 统一做。弹窗写任务目录会让
+"取消"也留下垃圾文件，而且自测还得准备目录。
+
+⚠️ **上传的图与缩略图都不许写进上一步的目录/清单**（用户 2026-11-16）：
+复制落点是 ``<任务目录>/inserted/imposition/``（见
+``services.imposition_insert.upload_dir``），那既不是 ``stages/`` 下的阶段产物，
+也不与打印侧的 ``inserted/`` 混放——上一步的页面清单不会因此多出一条，
+打印侧插入的图也不会混进拼版候选。
+
+这里只做控件与信号；弹窗怎么被唤起、选完之后怎么建页落盘，见
+``desktop/pages/taskdetail/imposition_pages.py``（任务流程控制器）与
+``desktop/modules/imposition/page.py``（独立拼图页）。
 """
 
 from __future__ import annotations
@@ -24,15 +43,18 @@ from qframelesswindow import FramelessDialog
 from PySide6.QtCore import QPoint, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QImageReader, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
-    QFrame, QGridLayout, QHBoxLayout, QLabel, QScrollArea, QStackedWidget,
+    QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QScrollArea,
     QVBoxLayout, QWidget,
 )
-from qfluentwidgets import CheckBox, PrimaryPushButton, PushButton
+from qfluentwidgets import CheckBox, FluentIcon as FIF, PrimaryPushButton, PushButton
+from qfluentwidgets import RadioButton
 
+from desktop.components.print_insert_dialog import IMAGE_FILTER, image_paths
 from desktop.services.imposition import SOURCE_FULL, classify_source
 from desktop.ui import theme as T
 from desktop.ui.widgets import apply_to
 from desktop.ui.window_size import apply_window_size
+from desktop.utils.files import default_open_dir
 from desktop.utils.image_scaling import smooth_downscale
 
 #: 弹窗缩略图的**固定框**（源图按比例缩进这个框，白底居中）
@@ -55,7 +77,7 @@ THUMB_BATCH = 6
 #: 循环空闲就立刻再解一批"，批与批之间**零间隔**。配上 :func:`_source_thumb_pixmap`
 #: 的**整幅解码 + 平滑缩放**（每张源图都是几千像素见方），N 张候选图就是
 #: ``ceil(N/6)`` 轮零间隔的连续重解码，全程占着 GUI 主线程 —— 用户看到的就是
-#: "CPU 跑满、界面像崩了"。同项目别处的分批装载都留了间隔（见
+#: "CPU 跑满、界面像崩溃了"。同项目别处的分批装载都留了间隔（见
 #: ``ThumbsMixin.BATCH_GAP_MS = 150``），这里属于疏漏。
 THUMB_GAP_MS = 150
 
@@ -100,14 +122,22 @@ class _SourceCard(QFrame):
 
     clicked = Signal(object)  # 传出自己，宿主负责切换勾选
 
-    def __init__(self, path: Path, parent=None):
+    def __init__(self, path: Path, parent=None, key: str = "", uploaded=False):
         super().__init__(parent)
         self.path = Path(path)
+        #: 这条候选的**身份键**（宿主用：列表里的图 = 路径串；本次上传的图 =
+        #: 每次上传一个唯一键）。同一张图上传两次会是两条不同键的候选。
+        self.cand_key = key or str(self.path)
+        #: 是否本次上传的图（`True` ⇒ 确认后宿主先把文件复制进任务目录）
+        self.uploaded = bool(uploaded)
         self._checked = False
         self._pixmap = QPixmap()
         self.setFixedSize(CARD_W, CARD_H)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setToolTip(f"{self.path}\n勾选后：序号在前的排到拼版页右侧")
+        self.setToolTip(
+            f"{self.path}\n勾选后：序号在前的排到拼版页右侧"
+            + ("\n（本次上传的图片，确认后复制进任务目录）" if self.uploaded else "")
+        )
 
         column = QVBoxLayout(self)
         # ⚠️ 上留白必须够放下勾选框：勾选框画在卡片的 paintEvent 里，而缩略图是
@@ -223,12 +253,7 @@ class _CardGrid(QWidget):
         self._cards = []
 
     def adopt_cards(self, cards: list) -> None:
-        """装入一批卡片并重排（调用前必须先 ``detach_cards`` 两边网格——
-
-        ⚠️ 卡片会在两个网格间迁移：若目标网格装入时卡片还挂在另一个网格的
-        布局里，Qt 的布局一致性会被打破（实测段错误）。所以宿主 ``_sync_grids``
-        的顺序是：先两边都 detach，再各自 adopt。
-        """
+        """装入一批卡片并重排（调用前必须先 ``detach_cards``）。"""
         self._cards = list(cards)
         self._cols = 0
         self._relayout(force=True)
@@ -256,13 +281,11 @@ class _CardGrid(QWidget):
 
 
 class ImpositionPickerDialog(FramelessDialog):
-    """「选择拼版」弹窗：从剩余未使用的源图里勾选两张。
+    """拼版选图弹窗：**一个候选列表**（上游剩余图 + 自己上传的图）。
 
-    两种模式（2026-09-30 新增 ``mode`` 参数）：
-
-    - **``"pick"``**（默认，选页）：自由多选，1 张单独成页 / 2 张拼一页；
-    - **``"append"``**（单图页「新增图片」）：**只能勾 1 张**，确认按钮叫
-      「添加」——宿主把这张图并进当前那一页拼版（见模块一控制器）。
+    三种 ``mode`` 见模块 docstring。``files`` 是**候选池**（宿主按源清单顺序给：
+    上游还没用过的图 + 这个任务上传过、现在又没被页引用的图）。
+    本次新上传的图追加在后面（``uploaded=True``，确认后才由宿主复制落盘）。
 
     **卡片网格**：一行摆好几张（列数随窗口宽度自动变），卡片 ``CARD_W×CARD_H``、
     缩略图固定 ``THUMB_W×THUMB_H``（用户要求「一行好几个、选框宽一些」且
@@ -272,12 +295,8 @@ class ImpositionPickerDialog(FramelessDialog):
     恢复它的最小化/最大化按钮与「双击标题栏放大/还原」；边缘还能拖拽调整大小，
     网格列数跟着窗口宽度自动变。
 
-    **删除/恢复**（用户 2026-09-30 要求）：勾选卡片可「删除图片」——移出选择
-    范围（软删除，源文件不动，黑名单由宿主落盘）；「查看删除的图片」切到
-    已删除视图，勾选后「恢复选中」或「全部恢复」。
-
-    源清单顺序在前的图会被放到拼版页**右侧**（用户口径），这里按同一顺序
-    展示，勾选结果也按**源清单顺序**返回（不是点选先后）。
+    列表顺序在前的图会被放到拼版页**右侧**（用户口径），这里按同一顺序展示，
+    勾选结果也按**列表顺序**返回（不是点选先后）。
     """
 
     if TYPE_CHECKING:
@@ -286,34 +305,33 @@ class ImpositionPickerDialog(FramelessDialog):
         # 只影响类型检查、运行时零副作用。
         scroll: QScrollArea
 
-    def __init__(self, files: list, parent=None, removed_files=None,
-                 mode: str = "pick", thumb_provider=None):
+    def __init__(self, files: list, parent=None, mode: str = "pick",
+                 thumb_provider=None, position: str = "after",
+                 current_row: int = -1, total: int = 0):
         super().__init__(parent)
-        self._mode = "append" if mode == "append" else "pick"
+        self._mode = mode if mode in ("insert", "append") else "pick"
         #: 候选图的**预生成缩略图**来源：``(path_text) -> Path | None``。
         #: 由宿主给出（任务流程里是「上一节点的成品小图 / 入口图片小图」）；
         #: 拿不到就回落整幅解码原图（见 :meth:`_thumb_pixmap_for`）。
         self._thumb_provider = thumb_provider
-        # ``files`` 是**候选池**：剩余未用 + 已删除（宿主按源清单顺序合并传入），
-        # 实际候选 = 池子减去黑名单——这样"恢复"后的图才有地方回去。
+        #: 候选池（列表口径：宿主的"上游剩余 + 本任务上传过的"）
         self._files = [Path(f) for f in files]
-        self._removed: list[Path] = []
-        seen: set[str] = set()
-        for f in removed_files or []:
-            key = str(Path(f))
-            if key not in seen:
-                seen.add(key)
-                self._removed.append(Path(f))
-        self._initial_removed = {str(p) for p in self._removed}
-        self._pixmaps: dict[str, QPixmap] = {}  # 解码好的缩略图（路径 → 图）
+        #: 本次**上传**的图：``[(候选键, 本地路径)]``。键每次上传唯一（同一张图
+        #: 上传两次是两条候选，符合「图片可以多次上传」的规范）。
+        self._uploads: list[tuple[str, Path]] = []
+        self._upload_seq = 0
+        self._pixmaps: dict[str, QPixmap] = {}  # 解码好的缩略图（候选键 → 图）
         self._cand_cards: dict[str, _SourceCard] = {}
-        self._rem_cards: dict[str, _SourceCard] = {}
-        self.cards: list[_SourceCard] = []  # 候选视图当前卡片（源清单顺序）
-        self.removed_cards: list[_SourceCard] = []  # 已删除视图当前卡片
-        self._removed_view_visited = False
-        # append 模式（单图页「新增图片」）：标题与确认按钮换文案
-        self.setWindowTitle("新增图片" if self._mode == "append" else "选择拼版")
+        self.cards: list[_SourceCard] = []  # 当前卡片（列表顺序）
+        #: 插入模式的页数/当前页（底部「插入第 x 页之前/之后」用它算页号）
+        self._total = max(0, int(total))
+        self._current_row = int(current_row)
+        self.setWindowTitle(
+            {"append": "新增图片", "insert": "插入拼版"}.get(self._mode, "选择拼版")
+        )
         self.setModal(True)
+        # 拖进来的图片直接进候选（用户 2026-11-16：没有想要的图片可以自己上传）
+        self.setAcceptDrops(True)
         # 默认 1000×680 是**期望值**：1366×768 @125%（逻辑可用约 1093×574）
         # 之类的机器上 680 高会顶出屏幕，统一按可用区域夹一次。
         apply_window_size(self, QSize(DIALOG_W, DIALOG_H))
@@ -336,12 +354,8 @@ class ImpositionPickerDialog(FramelessDialog):
         self.scroll = QScrollArea(self)
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self.body = _CardGrid()  # 第 0 页：候选
-        self.removed_body = _CardGrid()  # 第 1 页：已删除
-        self.stack = QStackedWidget(self)
-        self.stack.addWidget(self.body)
-        self.stack.addWidget(self.removed_body)
-        self.scroll.setWidget(self.stack)
+        self.body = _CardGrid()
+        self.scroll.setWidget(self.body)
         column.addWidget(self.scroll, 1)
 
         self.status = QLabel("", self)
@@ -349,10 +363,34 @@ class ImpositionPickerDialog(FramelessDialog):
         apply_to(self.status, T.SIZE_CAPTION, color=T.INK_SOFT)
         column.addWidget(self.status)
 
+        # ---- 自己上传图片（用户 2026-11-16）----
+        self.upload_row = QWidget(self)
+        upload_row = QHBoxLayout(self.upload_row)
+        upload_row.setContentsMargins(0, 0, 0, 0)
+        upload_row.setSpacing(T.SPACE_MD)
+        self.upload_button = PushButton(FIF.ADD, "上传图片…", self.upload_row)
+        self.upload_button.setToolTip(
+            "从本机选图片加入候选（也可以直接把图片拖进这个窗口）。\n"
+            "同一张图片可以上传多次，每次都是独立的一条候选；"
+            "上传的图会复制进任务目录，删掉拼版页后仍会回到这个列表。"
+        )
+        self.upload_button.clicked.connect(self._choose_uploads)
+        upload_row.addWidget(self.upload_button)
+        self.upload_hint = QLabel("", self.upload_row)
+        apply_to(self.upload_hint, T.SIZE_CAPTION, color=T.INK_FAINT)
+        upload_row.addWidget(self.upload_hint)
+        upload_row.addStretch(1)
+        column.addWidget(self.upload_row)
+
+        # ---- 插入落点（仅 insert 模式）：第 x 页之前 / 之后 ----
+        self.position_row = self._build_position_row(position)
+        column.addWidget(self.position_row)
+
         # 「从这张图片开始自动拼版」：**恰好勾 1 张**时出现在下方（不限
-        # 整幅/半幅，用户 2026-10-01 定）——勾上后点「开始拼版」，宿主从
-        # 这张图起把剩余候选按自动拼版规则（整幅单独一页、左半幅+右半幅
-        # 配对）全部拼完。
+        # 整幅/半幅，用户 2026-10-01 定）——勾上后点确认，宿主从这张图起把
+        # 剩余候选按自动拼版规则（整幅单独一页、左半幅+右半幅配对）全部拼完。
+        # ⚠️ 只在 pick 模式出现：插入是"插到某个位置的 1~2 页"，从某张起把
+        # 后面全部拼完与"插入"的语义冲突。
         self.auto_checkbox = CheckBox("从这张图片开始自动拼版", self)
         self.auto_checkbox.setToolTip(
             "只勾选 1 张图片时可用：从这张图起，把剩余未拼版的图片按顺序"
@@ -363,33 +401,13 @@ class ImpositionPickerDialog(FramelessDialog):
         self.auto_checkbox.hide()
         column.addWidget(self.auto_checkbox)
 
-        self.restore_button = PushButton("恢复选中", self)
-        self.restore_button.clicked.connect(self._on_restore_clicked)
-        self.restore_button.hide()
-        self.restore_all_button = PushButton("全部恢复", self)
-        self.restore_all_button.clicked.connect(self._on_restore_all)
-        self.restore_all_button.hide()
-        self.removed_entry_button = PushButton("查看删除的图片", self)
-        self.removed_entry_button.clicked.connect(
-            lambda: self._show_removed_view(True)
-        )
-        self.back_button = PushButton("返回选择", self)
-        self.back_button.clicked.connect(lambda: self._show_removed_view(False))
-        self.back_button.hide()
-        self.delete_button = PushButton("删除图片", self)
-        self.delete_button.clicked.connect(self._on_delete_clicked)
         buttons = QHBoxLayout()
-        buttons.addWidget(self.restore_button)
-        buttons.addWidget(self.restore_all_button)
         buttons.addStretch(1)
-        buttons.addWidget(self.removed_entry_button)
-        buttons.addWidget(self.back_button)
-        buttons.addWidget(self.delete_button)
         cancel = PushButton("取消", self)
         cancel.clicked.connect(self.reject)
         buttons.addWidget(cancel)
         self.ok_button = PrimaryPushButton(
-            "添加" if self._mode == "append" else "开始拼版", self
+            {"append": "添加", "insert": "插入"}.get(self._mode, "开始拼版"), self
         )
         self.ok_button.setEnabled(False)
         self.ok_button.clicked.connect(self.accept)
@@ -397,7 +415,6 @@ class ImpositionPickerDialog(FramelessDialog):
         column.addLayout(buttons)
 
         self._populate()
-        self._update_status()
 
     # -------------------------------------------------------------- 标题栏
     def _setup_title_bar(self) -> None:
@@ -438,16 +455,31 @@ class ImpositionPickerDialog(FramelessDialog):
 
     # ------------------------------------------------------------------ 接口
     def count(self) -> int:
-        """候选视图的卡片数（已删除的不算）。"""
+        """列表里的卡片数（含本次上传的图）。"""
         return len(self.cards)
 
     def checked_files(self) -> list[Path]:
-        """用户勾选的源图（**按源清单顺序**，不是勾选先后）。
+        """用户勾选的图（**按列表顺序**，不是勾选先后）。
 
-        张数不限——配对（每两张一页）由宿主在「开始拼版」后做。
+        张数不限——配对（每两张一页）由宿主做。⚠️ 同一个本地文件被上传两次时
+        这里会出现**两条相同路径**（那正是"同一张图多次使用"的口径），宿主
+        复制时会各自落成不同的文件名（见 ``services.imposition_insert``）。
         """
-        chosen = {str(card.path) for card in self.cards if card.is_checked()}
-        return [path for path in self._candidate_paths() if str(path) in chosen]
+        return [card.path for card in self.cards if card.is_checked()]
+
+    def chosen_items(self) -> list[dict]:
+        """勾选的候选（带"是不是本次上传"的标记），宿主据此决定要不要复制。
+
+        形状：``[{"path": Path, "uploaded": bool}, ...]``，顺序同 :meth:`checked_files`。
+        """
+        return [
+            {"path": card.path, "uploaded": card.uploaded}
+            for card in self.cards if card.is_checked()
+        ]
+
+    def uploaded_files(self) -> list[Path]:
+        """本次上传过的图（不管勾没勾；复制落盘只看勾选的那些）。"""
+        return [path for _key, path in self._uploads]
 
     #: 兼容旧名（宿主与护栏历史上叫 picked_files）
     def picked_files(self) -> list[Path]:
@@ -456,105 +488,148 @@ class ImpositionPickerDialog(FramelessDialog):
     def auto_mode_file(self) -> Path | None:
         """「从这张图片开始自动拼版」生效的那张图（不生效返回 None）。
 
-        生效条件：勾选框被勾上、且**恰好勾了 1 张图**——选项只在恰好
+        生效条件：勾选框被勾上、且**恰好勾了 1 张**——选项只在恰好
         勾 1 张时出现（不限整幅/半幅，用户 2026-10-01 定），多选不走自动。
+        本次上传的图**不参与自动拼版**（它没有页号/半幅标记可依）。
         """
-        if not self.auto_checkbox.isChecked():
+        if not self.auto_checkbox.isChecked() or self._mode != "pick":
             return None
-        picked = self.checked_files()
-        return picked[0] if len(picked) == 1 else None
+        picked = [card for card in self.cards if card.is_checked()]
+        if len(picked) != 1 or picked[0].uploaded:
+            return None
+        return picked[0].path
 
     def auto_sequence(self) -> list[Path]:
-        """自动拼版的图片序列：从勾选那张起到候选清单末尾（源清单顺序）。
+        """自动拼版的图片序列：从勾选那张起到**列表末尾**（列表顺序）。
 
-        「自此之后」= 含勾选的那张本身；它之前的图片不参与（留在候选池，
-        之后仍可手动拼）。
+        「自此之后」= 含勾选的那张本身；它之前的图片不参与（留在候选里，
+        之后仍可手动拼）。本次上传的图不在序列里（见 :meth:`auto_mode_file`）。
         """
         file = self.auto_mode_file()
         if file is None:
             return []
-        candidates = self._candidate_paths()
-        return candidates[candidates.index(file):]
+        candidates = self._source_candidate_paths()
+        keys = [str(p) for p in candidates]
+        if str(file) not in keys:
+            return []
+        return candidates[keys.index(str(file)):]
 
-    def removed_files(self) -> list[Path]:
-        """当前黑名单（含会话内新删的，不含已恢复的）。"""
-        return list(self._removed)
-
-    def removed_changed(self) -> bool:
-        """黑名单与打开时是否不同（宿主据此决定要不要落盘）。"""
-        return {str(p) for p in self._removed} != self._initial_removed
+    def position(self) -> str:
+        """插入落点（只 insert 模式有单选；其余模式恒 ``"after"``）。"""
+        if self.before_radio is not None and self.before_radio.isChecked():
+            return "before"
+        return "after"
 
     def toggle_card(self, card: _SourceCard) -> None:
-        """切换一张候选卡片的勾选（自由多选，不设上限）。"""
+        """切换一张卡片的勾选（自由多选，不设上限）。"""
         card.set_checked(not card.is_checked())
         self._update_status()
 
-    # -------------------------------------------------------------- 删除/恢复
-    def _on_delete_clicked(self) -> None:
-        """「删除图片」：勾选的候选移入黑名单（软删除，可恢复）。"""
-        picked = self.checked_files()
-        if not picked:
-            return
-        self._removed.extend(picked)
-        self._sync_grids()
-        self._update_status()
-
-    def _on_restore_clicked(self) -> None:
-        """「恢复选中」：勾选的已删除图移回候选。"""
-        chosen = {str(c.path) for c in self.removed_cards if c.is_checked()}
-        if not chosen:
-            return
-        self._removed = [p for p in self._removed if str(p) not in chosen]
-        self._sync_grids()
-        self._update_status()
-
-    def _on_restore_all(self) -> None:
-        """「全部恢复」：清空黑名单。"""
-        if not self._removed:
-            return
-        for card in self.removed_cards:
-            card.set_checked(False)
-        self._removed.clear()
-        self._sync_grids()
-        self._update_status()
-
-    def _show_removed_view(self, on: bool) -> None:
-        """在候选 / 已删除两个视图间切换。"""
-        self.stack.setCurrentIndex(1 if on else 0)
-        if on:
-            self._removed_view_visited = True
-            QTimer.singleShot(0, self._fill_thumbs)
-        self._update_status()
-
     def _on_card_clicked(self, card: _SourceCard) -> None:
-        """卡片点击分发：候选走「最多两张」的勾选规则，已删除随便勾（批量恢复）。"""
-        if card in self.removed_cards:
-            card.set_checked(not card.is_checked())
-            self._update_status()
+        """卡片点击：切换勾选（勾选数不设上限，确认按钮按 1/2 张判可用）。"""
+        card.set_checked(not card.is_checked())
+        self._update_status()
+
+    # ------------------------------------------------------------------ 上传
+    def _choose_uploads(self) -> None:
+        """「上传图片…」：本机选图加进列表（可多选，同一张也能选两次）。"""
+        filenames, _ = QFileDialog.getOpenFileNames(
+            self, "选择图片", str(default_open_dir()), IMAGE_FILTER
+        )
+        if filenames:
+            self.add_uploads(filenames)
+
+    def add_uploads(self, paths) -> None:
+        """把本地图片加进列表（拖放与文件框共用）。
+
+        ⚠️ **不去重**（用户 2026-11-16：「同一张图片可以多次上传」）：每次上传
+        都是一个新候选键，确认后由宿主复制成 ``x.png`` / ``x-1.png``。
+        新上传的图默认勾上（已勾满 2 张时不再替用户做决定）。
+
+        ⚠️ 加完**必须**再排一次缩略图（``_fill_thumbs``）：分批解码只由
+        "打开弹窗"时的那一次 ``singleShot`` 驱动，那时新卡片还不存在——不补这
+        一下，用户的图上来了但卡片是**空白**的（用户 2026-11-16 报的就是这个）。
+        """
+        added: list[str] = []
+        for text in paths or []:
+            path = Path(str(text))
+            if not path.is_file():
+                continue
+            self._upload_seq += 1
+            key = f"upload#{self._upload_seq}"
+            self._uploads.append((key, path))
+            added.append(key)
+        if not added:
             return
-        self.toggle_card(card)
+        self._sync_grids()
+        for key in added:
+            checked = sum(1 for card in self.cards if card.is_checked())
+            if checked >= (1 if self._mode == "append" else 2):
+                break
+            card = self._cand_cards.get(key)
+            if card is not None:
+                card.set_checked(True)
+        self._update_status()
+        # 新卡片补缩略图（分批判，见 _fill_thumbs）；顺手滚到列表末尾，
+        # 让用户立刻看见"加进来了"
+        QTimer.singleShot(0, self._fill_thumbs)
+        QTimer.singleShot(0, self._scroll_to_end)
+
+    def _scroll_to_end(self) -> None:
+        """把滚动条拖到最底部（新上传的图排在列表末尾）。"""
+        try:
+            bar = self.scroll.verticalScrollBar()
+        except RuntimeError:  # 弹窗已销毁（延迟队列里的 singleShot 才轮到）
+            return
+        bar.setValue(bar.maximum())
+
+    def dragEnterEvent(self, event) -> None:  # noqa: N802
+        if image_paths(event.mimeData()):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event) -> None:  # noqa: N802
+        if image_paths(event.mimeData()):
+            event.acceptProposedAction()
+
+    def dropEvent(self, event) -> None:  # noqa: N802
+        paths = image_paths(event.mimeData())
+        if not paths:
+            event.ignore()
+            return
+        event.acceptProposedAction()
+        self.add_uploads(paths)
 
     # ------------------------------------------------------------------ 填充
-    def _candidate_paths(self) -> list[Path]:
-        removed = {str(p) for p in self._removed}
-        return [p for p in self._files if str(p) not in removed]
+    def _source_candidate_paths(self) -> list[Path]:
+        """宿主给的候选（不含本次上传的；自动拼版序列用它）。"""
+        return list(self._files)
 
-    def _sync_grid(self, grid, store: dict, keys: list[str]) -> list:
-        """把一个网格收敛到 ``keys`` 这批卡片：多退少补、顺序重排。
+    def _candidate_entries(self) -> list[tuple[str, Path, bool]]:
+        """列表内容：``[(键, 路径, 是否本次上传)]``，宿主候选在前、上传的在后。"""
+        entries: list[tuple[str, Path, bool]] = [
+            (str(path), path, False) for path in self._source_candidate_paths()
+        ]
+        entries.extend((key, path, True) for key, path in self._uploads)
+        return entries
 
-        ⚠️ 卡片**不跨网格复用**（删除/恢复时旧卡销毁、新卡重建，只把解码好的
+    def _sync_grid(self, grid, store: dict, entries: list) -> list:
+        """把网格收敛到 ``entries`` 这批卡片：多退少补、顺序重排。
+
+        ⚠️ 卡片**不跨网格复用**（删/加时旧卡销毁、新卡重建，只把解码好的
         QPixmap 转移过去）。跨网格搬 widget 实例要在布局间摘了又挂，这条路径
         在 Qt 里脆弱（实测能段错误）；缩略图与卡片分离后，销毁重建只是几个
         空壳控件的事。
         """
-        want = set(keys)
+        want = {key for key, _path, _up in entries}
         for key in [k for k in store if k not in want]:
             store.pop(key).deleteLater()
         cards = []
-        for key in keys:
+        for key, path, uploaded in entries:
             card = store.get(key)
             if card is None:
-                card = _SourceCard(Path(key), grid)
+                card = _SourceCard(path, grid, key=key, uploaded=uploaded)
                 card.clicked.connect(self._on_card_clicked)
                 card.set_pixmap(self._pixmaps.get(key, QPixmap()))
                 store[key] = card
@@ -564,24 +639,19 @@ class ImpositionPickerDialog(FramelessDialog):
         return cards
 
     def _sync_grids(self) -> None:
-        """按当前候选/黑名单重建两个网格。"""
-        removed_keys = [str(p) for p in self._removed]
-        removed_set = set(removed_keys)
+        """按当前候选重建网格（一个列表，没有页签）。"""
         self.cards = self._sync_grid(
-            self.body, self._cand_cards,
-            [str(p) for p in self._files if str(p) not in removed_set],
-        )
-        self.removed_cards = self._sync_grid(
-            self.removed_body, self._rem_cards, removed_keys,
+            self.body, self._cand_cards, self._candidate_entries()
         )
 
     def _populate(self) -> None:
         self._sync_grids()
+        self._update_status()
         # 缩略图分批解码：一次全解上百张大图会把弹窗卡住几秒
         QTimer.singleShot(0, self._fill_thumbs)
 
-    def _thumb_pixmap_for(self, path: Path) -> QPixmap:
-        """一张候选图的缩略图：**优先用宿主给的预生成小图**，拿不到才整幅解码。
+    def _thumb_pixmap_for(self, card: _SourceCard) -> QPixmap:
+        """一张候选的缩略图：**优先用宿主给的预生成小图**，拿不到才整幅解码。
 
         用户 2026-10-17：弹窗此前对每张候选图**整幅解码**源图再缩——几千像素的
         扫描件一张就要几十 MB 内存、几十毫秒。而这两种候选图**本来就有**
@@ -590,27 +660,28 @@ class ImpositionPickerDialog(FramelessDialog):
         - 上游是「图片去底色」的**提交成品** ⇒ ``thumbnails/print[~<节点>]``；
         - 这一步是**流程第一个节点**（候选=入口图片）⇒ ``thumbnails/input/``。
 
-        宿主把这些小图经 ``thumb_provider`` 给出（返回路径；没有返回 ``None``）。
-        小图本身是普通 JPEG，**整幅解码它也很便宜**，所以直接复用
-        :func:`_source_thumb_pixmap`（它固定尺寸、白底居中，口径与原来一致）。
+        本次上传的图没有预生成小图（刚选进来），直接整幅解码——它们通常只有
+        几张，可以接受。
 
         ⚠️ **回落路径必须保留**：去底色成品是「1bit 调色板 + tRNS」的透明 PNG，
         缩放读取会给出异常尺寸，只能整幅解码——这条坑见 :func:`_source_thumb_pixmap`。
         """
+        if card.uploaded:
+            return _source_thumb_pixmap(card.path)
         provided = None
         if self._thumb_provider is not None:
             try:
-                provided = self._thumb_provider(str(path))
+                provided = self._thumb_provider(str(card.path))
             except Exception:  # noqa: BLE001 - provider 坏掉不该让弹窗整片空白
                 provided = None
         if provided:
             pixmap = _source_thumb_pixmap(provided)
             if not pixmap.isNull():
                 return pixmap
-        return _source_thumb_pixmap(path)
+        return _source_thumb_pixmap(card.path)
 
     def _fill_thumbs(self) -> None:
-        """给还没有缩略图的卡片分批解码（已删除视图访问过才解它的图）。
+        """给还没有缩略图的卡片分批解码。
 
         ⚠️ 批次之间走 :data:`THUMB_GAP_MS` **有间隔**，不是 ``singleShot(0)``
         ——零间隔会让这一串重解码无缝连着跑满 CPU（用户 2026-10-03 报
@@ -618,99 +689,98 @@ class ImpositionPickerDialog(FramelessDialog):
         界面滚动/勾选/关闭都还有响应。
         """
         try:
-            self.stack.currentIndex()  # noqa: B018 - 真访问 C++：弹窗已销毁就退出
+            self.body.columns()  # noqa: B018 - 真访问 C++：弹窗已销毁就退出
         except RuntimeError:
             return  # 弹窗已被销毁（延迟队列里的 singleShot 才轮到）
-        pools = self.cards + self.removed_cards \
-            if self._removed_view_visited else self.cards
-        todo = [card for card in pools
-                if str(card.path) not in self._pixmaps]
+        todo = [card for card in self.cards if card.cand_key not in self._pixmaps]
         for card in todo[:THUMB_BATCH]:
-            pixmap = self._thumb_pixmap_for(card.path)
-            self._pixmaps[str(card.path)] = pixmap
+            pixmap = self._thumb_pixmap_for(card)
+            self._pixmaps[card.cand_key] = pixmap
             card.set_pixmap(pixmap)
         if len(todo) > THUMB_BATCH:
             QTimer.singleShot(THUMB_GAP_MS, self._fill_thumbs)
 
+    # ------------------------------------------------------- 落点选项（插入）
+    def _build_position_row(self, default_position: str) -> QWidget:
+        """底部「插入第 x 页之前 / 之后」——**只 insert 模式显示**。
+
+        ⚠️ 右键菜单已经表达了落点（向前/向后），这里再给一次单选是为了
+        "能在弹窗里改"：「PDF排版 → 插入图片」也是这个口径（用户 2026-10-31）。
+        """
+        row = QWidget(self)
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(T.SPACE_MD)
+        self.before_radio: RadioButton | None = None
+        self.after_radio: RadioButton | None = None
+        if self._total <= 0:
+            label = QLabel("清单为空，插入的页会放到最前面。")
+            apply_to(label, T.SIZE_CAPTION, color=T.INK_SOFT)
+            layout.addWidget(label)
+            layout.addStretch()
+            row.setVisible(False)
+            return row
+        page_no = min(max(self._current_row, 0) + 1, self._total)
+        self.before_radio = RadioButton(f"插入第 {page_no} 页之前", row)
+        self.after_radio = RadioButton(f"插入第 {page_no} 页之后", row)
+        (self.before_radio if default_position == "before"
+         else self.after_radio).setChecked(True)
+        layout.addWidget(self.before_radio)
+        layout.addWidget(self.after_radio)
+        layout.addStretch()
+        row.setVisible(self._mode == "insert")
+        return row
+
     # ------------------------------------------------------------------ 状态
     def _update_status(self) -> None:
-        """说明行/状态行 + 各按钮的显隐与可用性。
+        """说明行/状态行 + 确认按钮的可用性。
 
         口径：
-        1. 勾 **1 张**（整幅或半幅）→「开始拼版」可点，单张单独成页；
-           同时下方出现「从这张图片开始自动拼版」（不限整幅/半幅，
-           用户 2026-10-01 定），勾上即走自动拼版；
-        2. 勾 **2 张**（半幅）→ 拼成一页，序号在前的排右侧；
-        3. 自动拼版从勾选那张起拼完剩余候选（整幅单独一页；半幅按
-           「前一左＋后一右」且页号连续配对）。
-        勾 0 张或 ≥3 张时「开始拼版」不可点。已删除视图里可恢复。
+        1. 勾 **1 张** → 确认可点，单张单独成一页；
+        2. 勾 **2 张** → 拼成一页，序号在前的排右侧；
+        3. 勾 0 张或 ≥3 张 → 确认不可点（宿主的兜底逻辑按 1/2 张处理）；
+        4. 只勾 1 张且是**宿主候选**（不是本次上传）时，pick 模式下方出现
+           「从这张图片开始自动拼版」。
 
         **append 模式**（单图页「新增图片」）：只能勾 **1 张**——0 张或
-        ≥2 张时「添加」不可点，「自动拼版」选项整段隐藏（加进已有页的
-        动作与自动拼版互斥）。
+        ≥2 张时「添加」不可点，「自动拼版」选项整段隐藏。
         """
-        removed_view = self.stack.currentIndex() == 1
-        candidates = self._candidate_paths()
-        picked = self.checked_files()
         append_mode = self._mode == "append"
+        picked = [card for card in self.cards if card.is_checked()]
+        self.position_row.setVisible(self._mode == "insert")
         auto_available = (
-            not append_mode
-            and not removed_view and len(picked) == 1
+            not append_mode and self._mode == "pick"
+            and len(picked) == 1 and not picked[0].uploaded
         )
         self.auto_checkbox.setVisible(auto_available)
         if not auto_available and self.auto_checkbox.isChecked():
             # 选项只在恰好勾 1 张时有意义：离开该状态就复位，避免残留旧勾选
             self.auto_checkbox.setChecked(False)
         self.ok_button.setEnabled(len(picked) in ((1,) if append_mode else (1, 2)))
-        self.removed_entry_button.setVisible(not removed_view)
-        self.delete_button.setVisible(not removed_view)
-        self.ok_button.setVisible(not removed_view)
-        self.restore_button.setVisible(removed_view)
-        self.restore_all_button.setVisible(removed_view)
-        self.back_button.setVisible(removed_view)
-        self.removed_entry_button.setText(f"查看删除的图片 ({len(self._removed)})")
-        self.delete_button.setEnabled(bool(picked))
-        self.restore_button.setEnabled(
-            any(c.is_checked() for c in self.removed_cards)
+        uploaded = len(self._uploads)
+        self.upload_hint.setText(
+            f"本次已上传 {uploaded} 张（排在列表末尾、默认勾选）" if uploaded else ""
         )
-        self.restore_all_button.setEnabled(bool(self._removed))
-        if removed_view:
-            self.note.setText(
-                f"以下 {len(self._removed)} 张图片已被移出「选择拼版」范围"
-                "（源文件不受影响）。勾选后「恢复选中」，或「全部恢复」，"
-                "恢复后重新进入选择范围。"
-            )
-            self.status.setStyleSheet(f"color:{T.INK_SOFT};")
-            self.status.setText(
-                f"已删除 {len(self._removed)} 张。"
-                if self._removed else "没有已删除的图片。"
-            )
-            return
         if append_mode:
             self.note.setText(
-                f"从剩余未拼版的 {len(candidates)} 张图片中选 1 张，"
-                "添加到当前这一页拼版（「删除图片」把不用的图移出选择范围）。"
+                f"从剩余未拼版的 {self.count()} 张图片中选 1 张，"
+                "添加到当前这一页拼版；也可以拖入/上传自己的图片。"
             )
-            self.status.setStyleSheet(f"color:{T.INK_SOFT};")
-            count = len(picked)
-            if count == 0:
-                self.status.setText("已选 0 张。点卡片勾选 1 张图片。")
-            elif count == 1:
-                self.status.setText(
-                    f"已选 1 张：「{picked[0].stem}」。"
-                    "点「添加」把它加进当前页拼版。"
-                )
-            else:
-                self.status.setText(
-                    f"已选 {count} 张：本页只能再添加 1 张，请取消多余的勾选。"
-                )
-            return
-        self.note.setText(
-            f"从剩余未拼版的 {len(candidates)} 张图片中勾选："
-            "1 张单独成一页，2 张拼成一页（序号在前的排在右侧）；"
-            "只勾 1 张图片时可勾选下方「从这张图片开始自动拼版」，"
-            "从那张图起自动拼完。「删除图片」把不用的图移出选择范围。"
-        )
+        elif self._mode == "insert":
+            page_no = min(max(self._current_row, 0) + 1, max(self._total, 1))
+            where = "之前" if self.position() == "before" else "之后"
+            self.note.setText(
+                f"从剩余未拼版的 {self.count()} 张图片中勾选，插到第 {page_no} 页"
+                f"{where}：1 张单独成一页，2 张拼成一页（序号在前的排在右侧）；"
+                "也可以拖入/上传自己的图片。"
+            )
+        else:
+            self.note.setText(
+                f"从剩余未拼版的 {self.count()} 张图片中勾选："
+                "1 张单独成一页，2 张拼成一页（序号在前的排在右侧）；"
+                "只勾 1 张图片时可勾选下方「从这张图片开始自动拼版」，"
+                "从那张图起自动拼完。也可以拖入/上传自己的图片。"
+            )
         self.status.setStyleSheet(f"color:{T.INK_SOFT};")
         count = len(picked)
         if count == 0:
@@ -719,11 +789,15 @@ class ImpositionPickerDialog(FramelessDialog):
             )
             return
         if count == 1:
-            tag = "（整幅）" if classify_source(picked[0]) == SOURCE_FULL else ""
+            first = picked[0]
+            tag = ""
+            if not first.uploaded and classify_source(first.path) == SOURCE_FULL:
+                tag = "（整幅）"
             self.status.setText(
-                f"已选 1 张：「{picked[0].stem}」{tag}。点「开始拼版」"
-                "单独成一页；也可勾选下方「从这张图片开始自动拼版」"
-                "从这张起自动拼完。"
+                f"已选 1 张：「{first.path.stem}」{tag}。"
+                + ("点「插入」把它插到目标位置。" if self._mode == "insert"
+                   else "点「开始拼版」单独成一页；也可勾选下方"
+                        "「从这张图片开始自动拼版」从这张起自动拼完。")
             )
             return
         if count == 2:
@@ -734,3 +808,6 @@ class ImpositionPickerDialog(FramelessDialog):
         self.status.setText(
             f"已选 {count} 张：最多勾 2 张——两张拼一页，或 1 张单独成页。"
         )
+
+
+__all__ = ["ImpositionPickerDialog", "THUMB_W", "THUMB_H", "CARD_W", "CARD_H"]

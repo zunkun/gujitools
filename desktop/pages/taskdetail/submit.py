@@ -17,6 +17,12 @@
 检测文本框                    「检测文本框」：只出框        「提交本次任务」：逐框裁图 → stages/detect
 ==========================  ==========================  ==========================
 
+⚠️ 2026-11-16 起第二步有两种**识别方式**（「自动识别 / 人工标注」，见
+``components/panels/detect_panel.py``）：人工标注**不调 YOLO**，框全靠用户画，
+所以「检测」那次运行可能压根不存在——提交的门槛与版本判定都按方式分岔
+（人工标注只比"提交之后有没有动过框"），并且提交前会先查一遍有没有漏标注的页
+（用户 2026-11-16 第 4 条）。
+
 去底色**只有一个动作**（「执行去底色」直接落 ``stages/rembg``），不再有提交
 按钮/版本状态机，也没有预览目录。本模块负责：
 - ``run_submit``              ：提交按钮入口（当前固定分发到检测提交）；
@@ -48,6 +54,47 @@ if TYPE_CHECKING:
 #: ⚠️ 别再加「（有新版本）」后缀：它与主按钮并排后放不下（见
 #:    ``_update_detect_submit_button`` 的说明），"待提交"由加粗 + 红字提示表达。
 SUBMIT_TEXT = "提交本次任务"
+
+#: 「还有页面没有标注」弹窗里最多列出多少个页码（再多就折成"等 N 页"）
+MISSING_LABEL_PREVIEW = 12
+
+
+def missing_labels_message(labels) -> str:
+    """漏标注提示的**正文**（纯函数：页数/页码怎么折都在这里，便于自测钉住）。
+
+    ``labels`` 是页码展示文案（``"7"`` / ``"12"``）而不是文件名——
+    用户看的是页码，不是 ``0007.png``。
+    """
+    shown = [str(item) for item in list(labels)[:MISSING_LABEL_PREVIEW]]
+    total = len(list(labels))
+    pages = "、".join(shown)
+    if total > len(shown):
+        pages += f" 等 {total} 页"
+    return (
+        f"有 {total} 页还没有标注文本框：{pages}。\n\n"
+        "这些页面提交后没有可裁的文本框（下游会缺这几页）。\n"
+        "「继续标注」回去把框画完；「执行任务」按现在的标注直接裁图。"
+    )
+
+
+def confirm_missing_labels(parent, labels) -> bool:
+    """「还有页面没有标注」的二次确认 → ``True`` 表示**执行任务**。
+
+    ⚠️ 必须用真窗口底座的 ``ConfirmDialog``（``desktop/ui/confirm_dialog.py``）：
+    qfluent 的 ``MessageBox`` 是主窗口里的**子控件遮罩层**，点按钮会"当当"响
+    且可能根本不生效（用户 2026-10-26 报过两次）。
+    ⚠️ 延迟导入：本模块在纯逻辑自测里也要能导入，不想连带 Qt 控件一起拉起来。
+    """
+    from desktop.ui.confirm_dialog import ConfirmDialog
+
+    dialog = ConfirmDialog(
+        "还有页面没有标注",
+        missing_labels_message(labels),
+        parent,
+        yes_text="执行任务",
+        cancel_text="继续标注",
+    )
+    return bool(dialog.exec())
 
 
 class SubmitMixin:
@@ -83,11 +130,13 @@ class SubmitMixin:
         _boxes_write_path: Callable[[], Any]
         _page_width_of: Callable[..., int]
 
-    #: 第二步「检测文本框」：检测结果只取决于图片与模型——``keep_blank``
-    #: 不影响检测，只影响提交裁图，所以不进 preview 键。
+    #: 第二步「识别文本框」：检测结果只取决于图片与模型（识别方式、沿用上一页
+    #: 都不影响已经落盘的框），所以没有任何参数要进 preview 键。
     DETECT_PREVIEW_PARAM_KEYS = ()
-    #: 影响提交产物的参数：改了「保留框外空白」必须重新提交。
-    DETECT_SUBMIT_PARAM_KEYS = ("keep_blank",)
+    #: 影响提交产物的参数：**现在一个都没有**——裁图几何完全由 ``boxes.json``
+    #: 决定，而"提交后又改过框"由 :meth:`_boxes_edited_after_submit` 的 mtime
+    #: 判定（比参数比对更准）。保留这个常量是给以后真有"影响裁图"的开关用。
+    DETECT_SUBMIT_PARAM_KEYS: tuple = ()
 
     # ---------------------------------------------------------- 状态判定
     def _latest_success_run(self, stage: str) -> dict | None:
@@ -125,6 +174,13 @@ class SubmitMixin:
                 panel_args = dict(panel_obj.get_args())
             except ValueError:
                 panel_args = {}
+        if self._is_manual_detect(panel_args):
+            # 人工标注：没有「检测」那次运行可比（压根不调 YOLO）⇒ 只判
+            # "提交之后有没有动过框"。用检测/提交两个 run 去比会把按钮永远
+            # 钉在 NO_PREVIEW 上（用户点不动提交）。
+            if self._latest_success_run("detect_submit") is None:
+                return NEW_VERSION
+            return NEW_VERSION if self._boxes_edited_after_submit() else UP_TO_DATE
         state = submit_version_state(
             preview_run=self._latest_success_run("detect"),
             submit_run=self._latest_success_run("detect_submit"),
@@ -169,10 +225,12 @@ class SubmitMixin:
     def _book_page_sizes(self) -> dict:
         """整本书每页的原始像素尺寸：``{页名: (宽, 高)}``。
 
-        占位图要「从页面中间截取」（用户 2026-10-23），落点需要**页高**，
-        所以这里保留完整尺寸而不是只取宽。同样**一次读盘**（``image_sizes_all``）；
-        缺记录的页回落读图片头（由 ``_page_width_of`` 负责，只能拿到宽——
-        高记 0，占位框退化为从页顶开始）。
+        **一次读盘**（``store.image_sizes_all``）；缺记录的页回落读图片头
+        （由 ``_page_width_of`` 负责，只能拿到宽——高记 0）。
+
+        ⚠️ 2026-11-16 起提交**不再补框**（占位图那张"按页高从中间截取"的规则
+        已删），这里保留完整尺寸只是本方法的历史形状：宽度是单宽框/窄页归一化
+        的必需输入（见 :meth:`_book_page_widths`），高度目前没有消费方。
         """
         sizes: dict = {}
         if self.task_id:
@@ -227,26 +285,23 @@ class SubmitMixin:
         ]
         return profile_book(pages)
 
-    def _submit_entries(self, keep_blank: bool = False) -> list[dict]:
-        """第二步的提交条目：源页按检测框逐框裁图。
+    def _submit_entries(self) -> list[dict]:
+        """第二步的提交条目：源页按文本框逐框裁图。
 
-        全书级判定（单栏书 / 页宽 / 指定左右）与检测框都**一次读盘**：
+        全书级判定（单栏书 / 页宽 / 指定左右）与框都**一次读盘**：
         ``plan_detect_submit_entries`` 会遍历整本 manifest 逐页回调，逐页走
         ``_detect_boxes_for`` 就是 O(n²)。
 
-        ``keep_blank=True``（界面「保留框外空白」）时，有框页改为按整页半幅
-        切分，保留框外空白；无框页行为不变。用户在预览里手拉过的扩展框
-        （``boxes.json`` 的 ``blank``）优先于自动推导。
+        框从哪来（YOLO 检测 / 用户手画）对这一步没有区别：两者在
+        ``boxes.json`` 里同构，都是槽位。
+
+        ⚠️ 派生结果里**不会**有"补出来的框"（用户 2026-11-16）：一个框都没有
+        的页直接没有条目（＝这一步不出那张图），漏检一侧的页只裁画出来的那一侧。
         """
-        sizes = self._book_page_sizes()
-        widths = {stem: int(size[0]) for stem, size in sizes.items()}
+        widths = self._book_page_widths()
         profile = self._book_profile(widths)
         sides = self._side_overrides_all()
         boxes_map = self._boxes_map_all()
-        blanks = (
-            self.store.blank_regions_all_at(self._boxes_write_path())
-            if keep_blank and self.task_id else {}
-        )
         boxes_for = lambda text: boxes_map.get(Path(text).stem, []) or []  # noqa: E731
         return plan_detect_submit_entries(
             manifest_paths=self._manifest_paths(),
@@ -255,9 +310,6 @@ class SubmitMixin:
             page_width_for=lambda text: widths.get(Path(text).stem, 0),
             side_for=lambda text: sides.get(Path(text).stem),
             book_profile=profile,
-            page_size_for=lambda text: sizes.get(Path(text).stem),
-            keep_blank=keep_blank,
-            blank_for=lambda stem: blanks.get(stem),
         )
 
     def _save_submit_plan(self, entries: list[dict]) -> None:
@@ -283,10 +335,12 @@ class SubmitMixin:
                 {"page_class": entry.get("page_class") or "empty",
                  "outputs": []},
             )
+            # ⚠️ 2026-11-16 起没有占位条目了（不再补框），所以这里只记
+            #    产物名与角色。老任务那份计划里可能还带 ``placeholder``，
+            #    读侧（``rembg_groups``）保留容错、照旧认它。
             plan["outputs"].append({
                 "label": entry.get("label") or stem,
                 "role": entry.get("role") or "full",
-                "placeholder": bool(entry.get("placeholder")),
             })
         try:
             saver(self.task_id, plans, self.current_node())
@@ -341,9 +395,11 @@ class SubmitMixin:
         self.run_detect_submit()
 
     def run_detect_submit(self) -> None:
-        """第二步提交：把检测框逐框裁成下一步要的图 → ``stages/detect``。
+        """第二步提交：把文本框逐框裁成下一步要的图 → ``stages/detect``。
 
-        前提是最近一次「检测文本框」成功：没检测就没框可裁，提交没有意义。
+        自动识别：前提是最近一次「检测文本框」成功（没检测就没框可裁）。
+        人工标注：没有那次运行，框是用户自己画的 ⇒ 只要求页面清单非空，
+        且提交前先查一遍**有没有漏标注的页**（用户 2026-11-16 第 4 条）。
         """
         if not self._acquire_run("子任务"):
             return
@@ -375,15 +431,6 @@ class SubmitMixin:
                     "或到「查看 / 编辑流程」里检查连线。",
                 )
             return
-        detect_state = self._node_stage_state("detect")["status"]
-        if detect_state != "success":
-            self._toast(
-                "warning", "请先检测文本框",
-                "「检测文本框」执行成功后才能提交本次任务"
-                + ("" if detect_state == "pending" else
-                   f"（当前状态：{STATUS_LABELS.get(detect_state, detect_state)}）"),
-            )
-            return
         panel = self.panel_host_of_step("detect")
         if panel is None:
             self._toast(
@@ -397,7 +444,19 @@ class SubmitMixin:
         except ValueError as exc:
             self._toast("error", "参数错误", str(exc))
             return
-        keep_blank = bool(panel_args.get("keep_blank", False))
+        manual = self._is_manual_detect(panel_args)
+        if not manual:
+            # 自动识别：没有成功的检测就没有框可裁（人工标注跳过这条：
+            # 框是用户自己画的，可能压根没跑过检测）
+            detect_state = self._node_stage_state("detect")["status"]
+            if detect_state != "success":
+                self._toast(
+                    "warning", "请先检测文本框",
+                    "「检测文本框」执行成功后才能提交本次任务"
+                    + ("" if detect_state == "pending" else
+                       f"（当前状态：{STATUS_LABELS.get(detect_state, detect_state)}）"),
+                )
+                return
         self._refresh_manifest()
         if not self._manifest_paths():
             self._toast(
@@ -405,13 +464,20 @@ class SubmitMixin:
                 "页面清单为空，请先完成上一步子任务，或在预览区插入图片。",
             )
             return
+        if manual and not self._confirm_missing_labels():
+            return
         # 检测框决定几何：每个框各裁一张图（2026-10-22 起没有 area）。
         # border 沿用历史默认 "0"（不加留白：第四步会在纸上重新排版）。
-        entries = self._submit_entries(keep_blank)
+        entries = self._submit_entries()
         if not entries:
+            # 两种可能：①页面清单里没有能读的图；②有图但**一个框都没标注**
+            # （2026-11-16 起不补框，没框＝不出图）。人工标注时后者更常见，
+            # 提示要说得出来，否则用户会以为程序坏了。
             self._toast(
-                "warning", "没有可提交的页面",
-                "页面清单里没有能读取的图片，请检查上一步的产物。",
+                "warning", "没有可裁剪的文本框",
+                "页面清单里没有能读取的图片，请检查上一步的产物；"
+                "如果图片都在，那就是**还没有任何页面画了框**——"
+                "请先在预览里标注，再提交。",
             )
             return
         out_args = {
@@ -422,25 +488,73 @@ class SubmitMixin:
                 )
             ),
             "clean": True,
-            # 记进运行参数：提交版本判定据此发现"改过保留空白设置"。
-            "keep_blank": keep_blank,
+            # 记进运行参数：审计时能看出这次提交是哪种识别方式送的
+            # （不影响产物几何，裁图只认 boxes.json）。
+            "mode": "manual" if manual else "auto",
         }
         # 产物角色落进 boxes.json：拼版据此把"无后缀但其实是半幅"的图配对。
         self._save_submit_plan(entries)
         detect_run = self._latest_success_run("detect")
         if detect_run:
             out_args["_preview_run_id"] = detect_run.get("run_id")
-        blanks = sum(1 for e in entries if e.get("placeholder"))
+        pages = len({Path(str(e.get("file") or "")).stem for e in entries})
+        total = len(self._manifest_paths())
         self.log_view.append(
-            f"提交本次任务：按检测框裁图 {len(entries) - blanks} 张"
-            + (f"，原图占位 {blanks} 张" if blanks else "")
-            + f" → {out_args['output']}"
+            f"提交本次任务：按{'人工标注' if manual else '检测框'}裁图"
+            f" {len(entries)} 张（{pages}/{total} 页有框，没框的页不出图）"
+            f" → {out_args['output']}"
         )
         self._launch_stage_process("detect_submit", out_args, resume=False)
 
+    # ---------------------------------------------------- 识别方式 / 漏标注检查
+    @staticmethod
+    def _is_manual_detect(panel_args: dict) -> bool:
+        """这次提交是不是「人工标注」方式送的（未知按键按自动识别处理）。"""
+        return str((panel_args or {}).get("mode") or "auto") == "manual"
+
+    def _confirm_missing_labels(self) -> bool:
+        """人工标注提交前查漏：有页没画框就弹二次确认，返回是否**真去执行**。
+
+        用户 2026-11-16 第 4 条：点「提交本次任务」时检查哪些页面没有标注，
+        提醒用户；弹窗两个按钮都对——「继续标注」什么也不做（回来接着画），
+        「执行任务」才真的裁图。
+
+        没有漏标注的页 ⇒ 直接放行（不弹窗）。返回 False 时调用方**什么都不做**。
+        """
+        finder = getattr(self, "_unlabeled_pages", None)
+        if not callable(finder):
+            return True
+        pages = list(finder() or [])
+        if not pages:
+            return True
+        labels = [self._page_label_of(path) for path in pages]
+        self.log_view.append(
+            f"提交前检查：有 {len(pages)} 页没有标注（{'、'.join(labels[:20])}）"
+        )
+        return bool(confirm_missing_labels(self.window(), labels))
+
+    def _page_label_of(self, path) -> str:
+        """页码展示文案（去前导零）：与统计面板同一个口径，取不到就原样。"""
+        labeler = getattr(self, "_page_label", None)
+        if callable(labeler):
+            try:
+                return str(labeler(Path(path)))
+            except Exception:  # noqa: BLE001 - 取不到就退回页名
+                pass
+        return Path(path).stem
+
     # ---------------------------------------------------------- 按钮状态
     def _update_submit_button(self, running: bool) -> None:
-        """「提交本次任务」按钮：只在第二步显示，其余步骤隐藏。"""
+        """「提交本次任务」按钮：只在第二步显示，其余步骤隐藏。
+
+        ⚠️ 顺带同步主按钮（「检测文本框」）的显隐：人工标注方式下它不显示。
+        放在这里是因为本方法在**每次切步骤/执行权变化**时都会被调一次
+        （``_update_run_buttons`` → 本方法），是最全的刷新点；离开第二步时
+        也正好由它把主按钮还原回来。
+        """
+        sync = getattr(self, "_sync_detect_mode_ui", None)
+        if callable(sync):
+            sync()
         if not self.task_id or self.current_stage() != "detect":
             self.submit_hint.hide()
             # 离开第二步（或没任务）时把红框一起收掉，别圈到别的步骤去
@@ -449,11 +563,30 @@ class SubmitMixin:
         self._update_detect_submit_button(running)
 
     def _update_detect_submit_button(self, running: bool) -> None:
-        """第二步「提交本次任务」：最近一次「检测文本框」成功后才可用。"""
+        """第二步「提交本次任务」的可用性与提示。
+
+        门槛按**识别方式**分岔（用户 2026-11-16）：
+
+        - 自动识别：最近一次「检测文本框」成功后才可用；
+        - 人工标注：**不看那次运行**（压根不调 YOLO），有页面就能提交——
+          漏画的页在点下去时再查（``_confirm_missing_labels``）。
+        """
+        panel = self.panel_host_of_step("detect")
+        peek = getattr(panel, "peek", None)
+        panel_obj: Any = peek() if callable(peek) else panel
+        panel_args: dict = {}
+        if panel_obj is not None:
+            try:
+                panel_args = dict(panel_obj.get_args())
+            except ValueError:
+                panel_args = {}
+        manual = self._is_manual_detect(panel_args)
         preview_state = self._node_stage_state("detect")["status"]
         if running:
             version, tip = NO_PREVIEW, "当前有任务正在执行，请等待完成后再提交"
-        elif preview_state != "success":
+        elif not self._manifest_paths():
+            version, tip = NO_PREVIEW, "没有可提交的页面，请先放入图片"
+        elif not manual and preview_state != "success":
             version = NO_PREVIEW
             tip = (
                 f"上次「检测文本框」{STATUS_LABELS.get(preview_state, preview_state)}，"
@@ -461,20 +594,26 @@ class SubmitMixin:
                 if preview_state in ("failed", "cancelled")
                 else "请先点击「检测文本框」，执行成功后才能提交本次任务"
             )
-        elif not self._manifest_paths():
-            version, tip = NO_PREVIEW, "没有可提交的页面，请先放入图片"
         else:
             version = self._submit_version_state("detect")
             tip = {
-                NEW_VERSION: "检测框或「保留框外空白」有改动（或还没提交过），"
-                             "请点击「提交本次任务」把文本框内容裁出来交给下一步",
+                NEW_VERSION: (
+                    "检测框有改动（或还没提交过），请点击「提交本次任务」"
+                    "把文本框内容裁出来交给下一步"
+                    if not manual else
+                    "标注有改动（或还没提交过），请点击「提交本次任务」"
+                    "把文本框内容裁出来交给下一步（没画框的页会先提示）"
+                ),
                 PREVIEW_STALE: "检测结果已过期，请先重新「检测文本框」再提交",
                 UP_TO_DATE: "已提交：下一步（图片去底色）拿到的是这次裁好的图；"
                             "改框后需再次提交",
                 NO_PREVIEW: "请先点击「检测文本框」，执行成功后才能提交本次任务",
             }[version]
         self._apply_submit_state(version, tip, {
-            NEW_VERSION: "● 有新版本待提交（检测框或参数有改动，或还没提交）",
+            NEW_VERSION: (
+                "● 有新版本待提交（标注有改动，或还没提交）" if manual
+                else "● 有新版本待提交（检测框有改动，或还没提交）"
+            ),
             PREVIEW_STALE: "● 检测结果已过期，请重新「检测文本框」后再提交",
             UP_TO_DATE: "已提交：下一步已能用这次裁好的图",
         })

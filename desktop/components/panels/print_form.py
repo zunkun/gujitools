@@ -42,7 +42,7 @@ from desktop.components.common.safecomponents import SafeSpinBox
 from desktop.components.panels.print_params import parse_color
 from desktop.components.panels.print_sections import PrintSectionsMixin
 from desktop.components.panels.print_text_layout import PrintTextLayoutMixin
-from desktop.ui.widgets import combo_box
+from desktop.ui.widgets import SurfacePanel, combo_box
 
 
 class PrintFormMixin(PrintSectionsMixin, PrintTextLayoutMixin):
@@ -77,7 +77,8 @@ class PrintFormMixin(PrintSectionsMixin, PrintTextLayoutMixin):
         # 再画一层边框就成了"卡片套卡片"
         scroll.enableTransparentBackground()
 
-        container = QWidget()
+        # 白底容器（`SurfacePanel`）：盖掉滚动区 viewport 刷的那层系统灰
+        container = SurfacePanel()
         # 关键：允许内部内容收缩到比 sizeHint 更窄，防止横向超出/被裁剪
         container.setMinimumWidth(0)
         root = QVBoxLayout(container)

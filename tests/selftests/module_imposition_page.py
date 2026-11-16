@@ -74,8 +74,10 @@ class _StubPicker:
     last_init: tuple | None = None
     picked: list = []
 
-    def __init__(self, files, parent=None, removed_files=None, mode="pick"):
-        _StubPicker.last_init = (list(files), mode, list(removed_files or []))
+    def __init__(self, files, parent=None, mode="pick", thumb_provider=None,
+                 **kwargs):
+        # 2026-11-16 起真弹窗**没有 removed_files**（页签删了），签名要与它对齐
+        _StubPicker.last_init = (list(files), mode)
 
     def exec(self) -> int:
         return 1
@@ -84,12 +86,6 @@ class _StubPicker:
         return list(_StubPicker.picked)
 
     picked_files = checked_files
-
-    def removed_changed(self) -> bool:
-        return False
-
-    def removed_files(self) -> list:
-        return []
 
 
 def _shutdown(page, app) -> None:

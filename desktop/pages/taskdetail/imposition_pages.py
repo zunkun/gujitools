@@ -5,7 +5,8 @@
 ``picker.py``）与右侧面板的页管理按钮（``panel.py``）：
 - 启用/取消拼版（决定第四步取图来源，落盘到 ``drafts/imposition.json``）；
 - 「选择拼版」→ 弹窗挑两张加一页；或挑一张勾「自动拼版」批量加页；
-  弹窗里还能「删除图片」（黑名单 ``removed`` 字段，软删除）与恢复；
+  弹窗是**一个列表**（上游剩余图 + 本任务上传过的图），也能自己上传图片
+  （2026-11-16：不再有「删除恢复」页签——删掉的图直接回到这个列表）；
 - **单图页「新增图片」**（2026-09-30）：append 模式弹窗挑 1 张并进当前页；
 - 删页入口只剩**左列**：「✕」释放单页 / 勾选悬浮框批量删除 / 清空全部
   ——右侧面板的「删除本页拼版」按钮已删（2026-09-30 用户定）；
@@ -25,11 +26,28 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from desktop.services.imposition import (
     ITEMS_PER_PAGE, append_item_to_page, auto_impose_pages, cn_page_label,
-    excluded_files, make_page, make_single_page, same_path, used_source_files,
+    page_source_stems, same_path, used_source_files,
 )
 
 if TYPE_CHECKING:
     from desktop.store.store import TaskStore
+
+
+def _chosen_items(dialog) -> list[dict]:
+    """弹窗勾选结果 → ``[{"path": Path, "uploaded": bool}]``。
+
+    ⚠️ 自测替身（``tests/selftests/imposition.py`` 里的 *_Fake*Dialog）只实现
+    了 ``picked_files()``：这里用 ``getattr`` 兜底，替身不必跟着改；真弹窗
+    走 ``chosen_items()``（带"是不是本次上传"的标记，宿主据此决定要不要
+    复制文件）。
+    """
+    reader = getattr(dialog, "chosen_items", None)
+    if callable(reader):
+        return list(reader())
+    return [
+        {"path": Path(str(path)), "uploaded": False}
+        for path in dialog.picked_files()
+    ]
 
 
 class ImpositionPagesMixin:
@@ -131,7 +149,18 @@ class ImpositionPagesMixin:
         缓存」：:meth:`_print_thumb_provider`（入口图片 + 去底色提交成品）优先，
         :meth:`_page_thumb_for`（源 PDF 页）兜底——次序不能反：去底色成品与源
         PDF 页可能同名同页号，反了会把"去底色结果"显示成"PDF 原页"。
+
+        ⚠️ **本任务上传的图一律现解码**（直接返回 ``None``）：两份缓存都是**按
+        文件名**取图的，用户上传的图与上游某张同名时（``1-r.png`` 之类）会把
+        别人的缩略图贴到它脸上。上传的图只有几张，现解码不慢。
         """
+        insert_dir = self._imposition_insert_dir()
+        if insert_dir is not None:
+            try:
+                if Path(path_text).is_relative_to(insert_dir):
+                    return None
+            except (OSError, ValueError):
+                pass
         product = self._print_thumb_provider(path_text)
         if product is not None:
             return product
@@ -140,6 +169,59 @@ class ImpositionPagesMixin:
             return Path(page_spec["path"])
         return None if page_spec is None else Path(page_spec)
 
+    def _imposition_insert_dir(self) -> Path | None:
+        """**上传图**的复制落点：``tasks/<任务号>/inserted/imposition/``。
+
+        与「PDF排版 → 插入图片」同一口径（``print_list._print_insert_dir``）：
+        不能放 ``stages/`` 下——那一层是阶段产物，``print_plan`` 会清理"本任务
+        其它阶段的残留"，用户插进来的图会被当残留删掉。放任务根目录的兄弟
+        目录，既不与阶段产物混淆，也随「删除任务」整体清理。
+
+        ⚠️ 又**不与打印侧的 ``inserted/`` 混放**（用户 2026-11-16）：拼版的候选
+        是**扫这个目录**得来的（见 :meth:`_imposition_candidate_pool`），混在一起
+        会把「PDF排版」插进来的图也列进拼版候选。
+        """
+        if not self.task_id:
+            return None
+        from desktop.services.imposition_insert import upload_dir
+
+        return upload_dir(self.store.task_dir(self.task_id))
+
+    def _imposition_candidate_pool(self, doc: dict) -> list[Path]:
+        """弹窗的**候选列表**：上游没用过的图 + 本任务上传过、现在没被页引用的图。
+
+        用户 2026-11-16：删掉拼版页之后，自己上传的图必须像上游图一样**回到
+        列表**（原先它不在任何"源清单"里，删页即永久消失）；上传过的图本就在
+        任务目录里，扫目录即可，不必再往 ``imposition.json`` 里记一份（也就
+        不会与上一步的页面清单打架）。
+
+        顺序：上游图按源清单顺序在前，上传的按自然页序在后（``uploaded_candidates``
+        已排序）。
+        """
+        from desktop.services.imposition_insert import uploaded_candidates
+
+        used = used_source_files(doc)
+        sources = [p for p in self.imposition_source_files() if str(p) not in used]
+        seen = {str(path) for path in sources}
+        uploaded = [
+            path for path in uploaded_candidates(self._imposition_insert_dir())
+            if str(path) not in used and str(path) not in seen
+        ]
+        return sources + uploaded
+
+    def _resolve_chosen(self, items: list[dict]) -> list[Path]:
+        """弹窗给的候选 → 可用文件路径（上传的图先复制进任务目录）。
+
+        失败原因**逐条写进日志**（不弹一长串弹窗）：一张图读不到不该让整次
+        插入报废，但用户必须知道少了一张。
+        """
+        from desktop.services.imposition_insert import resolve_chosen
+
+        files, errors = resolve_chosen(items, self._imposition_insert_dir())
+        for message in errors:
+            self.log_view.append(f"插入图片：{message}")
+        return files
+
     def _on_imposition_add_requested(self) -> None:
         """点「＋ 选择拼版」：弹窗自由多选，点「开始拼版」按每两张一页配对。"""
         if not self.task_id:
@@ -147,38 +229,23 @@ class ImpositionPagesMixin:
         from desktop.components.imposition.picker import ImpositionPickerDialog
 
         doc = self._imposition_doc()
-        sources = self.imposition_source_files()
-        if not sources:
+        pool = self._imposition_candidate_pool(doc)
+        if not pool:
+            # 一张候选都没有：**仍然打开弹窗**——用户可以直接上传自己的图
+            # （用户 2026-11-16），只是先说清"为什么列表是空的"。
             self._toast(
-                "warning", "没有可拼版的图片",
-                "请先在第三步「执行去底色」生成成品图，"
-                "再从拼版里选择成品图片。",
+                "info", "没有未使用的图片",
+                "上一步还没有可用的成品图，或者所有图片都已被拼版使用；"
+                "可以在弹窗里「上传图片」自己加图。",
             )
-            return
-        used = used_source_files(doc)
-        removed = excluded_files(sources, doc)
-        # 候选池 = 没被页用过的图（**含已删除的**——弹窗里可以恢复它们）；
-        # remaining 才是真正的候选。池子按源清单顺序传给弹窗。
-        removed_keys = {str(f) for f in removed}
-        pool = [f for f in sources if str(f) not in used]
-        remaining = [f for f in pool if str(f) not in removed_keys]
-        if not remaining and not removed:
-            self._toast(
-                "warning", "没有可选的图片",
-                "所有图片都已被拼版使用。可先删掉某些拼版页再来选。",
-            )
-            return
         dialog = ImpositionPickerDialog(
-            pool, self.window(), removed_files=removed,
+            pool, self.window(),
             # 候选图走**预生成小图**（上一节点成品小图 / 入口图片小图），
             # 不再每张整幅解码源图（用户 2026-10-17）
             thumb_provider=self._imposition_picker_thumb,
         )
         if not dialog.exec():
-            # 取消也落盘：删除/恢复是即时意图，与是否开始拼版无关
-            self._apply_picker_removed(dialog)
             return
-        self._apply_picker_removed(dialog)
         # 「从这张图片开始自动拼版」：只勾 1 张 + 勾了复选框 → 从那张起把
         # 剩余候选按规则自动拼完（整幅单独一页；前一个左半幅 + 当前右半幅
         # 配对；落单单页）。规则唯一实现在 services.imposition.auto_impose_pages。
@@ -202,18 +269,13 @@ class ImpositionPagesMixin:
             # 手动勾选（用户 2026-09-30 定的三种形态）：**1 张 → 单独一页**；
             # 2 张 → 拼成一页（序号在前的排右侧）。弹窗里勾 0/≥3 张时
             # 「开始拼版」不可点，这里只做兜底。
-            batch = dialog.picked_files()
+            #
+            # ⚠️ 用户 2026-11-16：「同一张图片可以多次上传」——所以勾选结果里
+            # 可能含**本次上传**的图，必须先把它们复制进任务目录再成页
+            # （见 _resolve_chosen）；`batch` 是复制后的**最终路径**。
+            new_pages, batch = self._pages_from_chosen(_chosen_items(dialog))
             if not batch:
                 return
-            if len(batch) == 1:
-                made = make_single_page(batch[0])
-                new_pages = [made] if made is not None else []
-            else:
-                new_pages = []
-                for i in range(0, len(batch) - 1, 2):
-                    made = make_page(batch[i:i + ITEMS_PER_PAGE])
-                    if made is not None:
-                        new_pages.append(made)
         if not new_pages:
             self._toast(
                 "error", "拼版失败",
@@ -256,33 +318,24 @@ class ImpositionPagesMixin:
             # 加了拼版页却还没启用：顺手启用，否则第四步不会用到它
             self._set_imposition_checked(True)
 
-    def _apply_picker_removed(self, dialog) -> None:
-        """把弹窗里「删除图片 / 恢复」的结果落盘（``removed`` 黑名单字段）。
+    def _pages_from_chosen(self, items: list[dict]) -> tuple[list[dict], list[Path]]:
+        """弹窗勾选结果 → 拼版页（上传的图先复制进任务目录）。
 
-        集合没变（删了又恢复）就不动文档；有变化就写日志——被删的图不再
-        进入「选择拼版」候选（``remaining_files`` 会排除它），恢复即回来。
+        返回 ``(页列表, 复制后可用的文件列表)``：文件列表按**候选顺序**给出，
+        调用方用它写日志（"从哪张开始每两张一页""哪张落单"）。
         """
-        if self.task_id is None or not dialog.removed_changed():
-            return
-        removed = [str(p) for p in dialog.removed_files()]
-        # ⚠️ 候选黑名单属于**本节点**的版面文档（B 方案）
-        scope = self._imposition_scope()
-        doc = self.store.load_imposition_doc(self.task_id, **scope)
-        old = {str(f) for f in doc.get("removed") or []}
-        doc["removed"] = removed
-        self.store.save_imposition_doc(self.task_id, doc, **scope)
-        added = [f for f in removed if f not in old]
-        restored = [f for f in old if f not in set(removed)]
-        if added:
+        from desktop.services.imposition_insert import pages_from_candidates
+
+        files = self._resolve_chosen(items)
+        if not files:
+            return [], []
+        pages, failed = pages_from_candidates(files)
+        if failed:
             self.log_view.append(
-                f"已把 {len(added)} 张图片移出选择范围："
-                + "、".join(Path(f).stem for f in added) + "。"
+                f"有 {len(failed)} 张图片读不到尺寸，未参与拼版："
+                + "、".join(failed) + "（文件可能已被移动或删除）。"
             )
-        if restored:
-            self.log_view.append(
-                f"已恢复 {len(restored)} 张图片到选择范围："
-                + "、".join(Path(f).stem for f in restored) + "。"
-            )
+        return pages, files
 
     # ------------------------------------------------------------- 单图页加图
     def _on_imposition_add_image(self) -> None:
@@ -306,34 +359,21 @@ class ImpositionPagesMixin:
         from desktop.components.imposition.picker import ImpositionPickerDialog
 
         doc = self._imposition_doc()
-        sources = self.imposition_source_files()
-        if not sources:
+        pool = self._imposition_candidate_pool(doc)
+        if not pool:
+            # 一张候选都没有：仍开弹窗，用户可以直接上传自己的图（2026-11-16）
             self._toast(
-                "warning", "没有可添加的图片",
-                "请先在第三步「执行去底色」生成成品图。",
+                "info", "没有未使用的图片",
+                "上一步还没有可用的成品图，或者所有图片都已被拼版使用；"
+                "可以在弹窗里「上传图片」自己加图。",
             )
-            return
-        used = used_source_files(doc)
-        removed = excluded_files(sources, doc)
-        removed_keys = {str(f) for f in removed}
-        pool = [f for f in sources if str(f) not in used]
-        remaining = [f for f in pool if str(f) not in removed_keys]
-        if not remaining and not removed:
-            self._toast(
-                "warning", "没有可选的图片",
-                "所有图片都已被拼版使用。可先删掉某些拼版页再来选。",
-            )
-            return
         dialog = ImpositionPickerDialog(
-            pool, self.window(), removed_files=removed, mode="append",
+            pool, self.window(), mode="append",
             thumb_provider=self._imposition_picker_thumb,
         )
         if not dialog.exec():
-            # 取消也落盘：删除/恢复是即时意图，与是否添加无关
-            self._apply_picker_removed(dialog)
             return
-        self._apply_picker_removed(dialog)
-        picked = dialog.picked_files()
+        picked = self._resolve_chosen(_chosen_items(dialog))
         if len(picked) != 1:
             return  # append 弹窗只放行 1 张；这里兜底
         merged = append_item_to_page(items, picked[0])
@@ -428,6 +468,82 @@ class ImpositionPagesMixin:
         if view is not None:
             view.set_current(target)
         self._update_imposition_status(target)
+
+    def _on_imposition_page_move(self, index: int, delta: int) -> None:
+        """左列右键「上移 / 下移」：把第 ``index`` 页挪一位（``delta`` = ±1）。
+
+        与拖动排序（:meth:`_on_imposition_page_reorder`）落到同一份文档：都是
+        "先改顺序再 ``_save_imposition_pages``"。``✕``/批量删除不同——那两个
+        会**释放图片**回候选池，挪位只是换顺序，图片引用一个不动。
+
+        越界不动（首行上移 / 末行下移）：右键菜单里已经置灰，这里再兜一次。
+        """
+        pages = self._imposition_pages()
+        target = index + delta
+        if not (0 <= index < len(pages) and 0 <= target < len(pages)):
+            return
+        page = pages.pop(index)
+        pages.insert(target, page)
+        self._save_imposition_pages(pages)
+        view = getattr(self, "imposition_view", None)
+        if view is not None:
+            view.set_current(target)
+        self._update_imposition_status(target)
+
+    def _on_imposition_page_insert(self, index: int, position: str) -> None:
+        """左列右键「向前 / 向后插入拼版」：选图后把新页插到该页前/后。
+
+        用户 2026-11-16：弹窗与「＋ 选择拼版」**同一个**（选择拼版 / 删除恢复
+        两个页签 + 自己上传），只是多一行落点单选、并默认按右键那一项落位。
+        与「＋ 选择拼版」的差别只在**插到哪儿**：那个追加到末尾，这个插中间。
+        """
+        if not self.task_id:
+            return
+        from desktop.components.imposition.picker import ImpositionPickerDialog
+
+        doc = self._imposition_doc()
+        pages = self._imposition_pages(doc)
+        if not 0 <= index < len(pages):
+            return
+        pool = self._imposition_candidate_pool(doc)
+        if not pool:
+            # 一张候选都没有：仍开弹窗，用户可以直接上传自己的图（2026-11-16）
+            self._toast(
+                "info", "没有未使用的图片",
+                "上一步还没有可用的成品图，或者所有图片都已被拼版使用；"
+                "可以在弹窗里「上传图片」自己加图。",
+            )
+        dialog = ImpositionPickerDialog(
+            pool, self.window(), mode="insert",
+            thumb_provider=self._imposition_picker_thumb,
+            position=position, current_row=index, total=len(pages),
+        )
+        if not dialog.exec():
+            return
+        new_pages, _batch = self._pages_from_chosen(_chosen_items(dialog))
+        if not new_pages:
+            self._toast(
+                "error", "插入失败",
+                "选中的图片无法读取尺寸，请换一张或换两张。",
+            )
+            return
+        before = dialog.position() == "before"
+        at = index if before else index + 1
+        from desktop.services.imposition_insert import insert_pages_at
+
+        merged = insert_pages_at(pages, new_pages, at)
+        self._save_imposition_pages(merged)
+        view = getattr(self, "imposition_view", None)
+        if view is not None:
+            view.set_current(at)
+        self._update_imposition_status(at)
+        listing = "、".join(
+            " · ".join(page_source_stems(page)) for page in new_pages
+        )
+        self.log_view.append(
+            f"已在第 {index + 1} 页{'之前' if before else '之后'}插入"
+            f" {len(new_pages)} 页拼版：{listing}。"
+        )
 
     def _on_imposition_release_page(self, index: int) -> None:
         """左列某页右侧的「✕」：删掉该页，把它的两张图释放回未选择列表。

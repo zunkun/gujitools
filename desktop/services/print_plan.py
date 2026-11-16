@@ -22,13 +22,7 @@ from utils.book_layout import (
     page_single_wide_slots,
     typical_page_width,
 )
-from utils.box_geometry import (
-    PAGE_CLASS_EMPTY,
-    box_has_area,
-    describe_page_slots,
-    is_full_content,
-    keep_blank_regions,
-)
+from utils.box_geometry import box_has_area, describe_page_slots, is_full_content
 from utils.page_layout import normalize_page_rotation
 
 
@@ -92,158 +86,12 @@ def _valid_slots(slots) -> list:
     return [b if box_has_area(b) else None for b in (slots or [])]
 
 
-def _average_size(boxes) -> tuple[int, int] | None:
-    """一组框的**平均宽高**（像素，至少 1）；无有效框时 ``None``。
-
-    占位图只用它定**尺寸**；落点用户 2026-10-23 追加为「**从中间截取**」，
-    见 :func:`_center_box`。
-    """
-    sizes: list[tuple[int, int]] = [
-        (int(b[2]) - int(b[0]), int(b[3]) - int(b[1]))
-        for b in boxes or []
-        if box_has_area(b)
-    ]
-    if not sizes:
-        return None
-    count = len(sizes)
-    return (
-        max(1, round(sum(w for w, _h in sizes) / count)),
-        max(1, round(sum(h for _w, h in sizes) / count)),
-    )
-
-
-def _center_box(size, page_width, page_height, center_x=None) -> list[int] | None:
-    """按**页面中心**（或指定的横向中心）截取给定尺寸的区域。
-
-    用户 2026-10-23：「占位图原则**从中间截取**」——空白页没有框，落点不再
-    抄别页的平均坐标（容易偏），直接取这一页正中的一块；双栏页的左右两张
-    则各取**本半页的中心**（``center_x`` 传页宽 1/4、3/4）。
-
-    页尺寸未知时退化为左上角起（宽已知则水平居中），并把尺寸夹进页面。
-    """
-    if not size:
-        return None
-    try:
-        width, height = int(size[0]), int(size[1])
-    except (TypeError, ValueError, IndexError):
-        return None
-    if width <= 0 or height <= 0:
-        return None
-    try:
-        page_w = int(page_width or 0)
-    except (TypeError, ValueError):
-        page_w = 0
-    try:
-        page_h = int(page_height or 0)
-    except (TypeError, ValueError):
-        page_h = 0
-    if page_w > 0:
-        width = min(width, page_w)
-    if page_h > 0:
-        height = min(height, page_h)
-    if center_x is not None:
-        center = center_x
-    elif page_w > 0:
-        center = page_w / 2.0
-    else:
-        center = None
-    x1 = 0 if center is None else round(center - width / 2.0)
-    y1 = 0 if page_h <= 0 else round(page_h / 2.0 - height / 2.0)
-    x1 = max(0, x1)
-    if page_w > 0:
-        x1 = min(x1, page_w - width)
-    y1 = max(0, y1)
-    return [x1, y1, x1 + width, y1 + height]
-
-
-def _fit_box(box, page_width) -> list[int] | None:
-    """占位框按**页宽**夹紧（水平方向）；无效/越界到零面积时返回 ``None``。
-
-    平均框来自别的页，页宽可能略有出入（不同扫描批次）。超出页宽的框直接
-    交给合成端会被裁掉一部分、剩下白边；先夹紧位置，截到的才是"原图内容"。
-    高度不夹——规划层拿不到页高，合成端会按真实图高裁切。
-    """
-    if not box_has_area(box):
-        return None
-    x1, y1, x2, y2 = (int(v) for v in box)
-    try:
-        width = int(page_width)
-    except (TypeError, ValueError):
-        width = 0
-    if width <= 0:
-        return [x1, y1, x2, y2]
-    x1 = max(0, min(x1, width - 1))
-    x2 = min(width, max(x2, x1 + 1))
-    if x2 <= x1:
-        return None
-    return [x1, y1, x2, y2]
-
-
-def _mirror_box(box, page_width) -> list[int] | None:
-    """把框以**页中线**为轴镜像——缺一侧时占位图的落点（用户 2026-10-23）。
-
-    左右双栏页只有右栏时，左栏占位要截"对应位置"的原图内容：以页宽中线
-    镜像右框，得到同样的尺寸、对称的位置。没有页宽时位置不动（至少尺寸对）。
-    """
-    if not box_has_area(box):
-        return None
-    x1, y1, x2, y2 = (int(v) for v in box)
-    try:
-        width = int(page_width)
-    except (TypeError, ValueError):
-        width = 0
-    if width <= 0:
-        return [x1, y1, x2, y2]
-    return _fit_box([width - x2, y1, width - x1, y2], width)
-
-
-def _placeholder_entries(stem: str, file_text: str, descriptors,
-                         page_class: str = PAGE_CLASS_EMPTY) -> list[dict]:
-    """占位描述 → 提交条目：**从该页原图的对应区域截一张**。
-
-    ``descriptors`` 形如 ``[{"side": "left"|"right"|None, "box": [x1,y1,x2,y2],
-    "role": "..."}]`` — ``box`` 是该页源图上的裁切区域（已按页宽夹紧）。
-    条目与普通裁图条目同形（``file`` 仍是源页、``boxes`` 只有一个框），只多一个
-    ``placeholder=True`` 标记：执行端照常裁剪，日志与统计据此区分"占位"与"真检测框"。
-
-    ``role`` 缺省按 ``side`` 推：left/right → 半幅，无侧别 → 整幅。**单栏书 /
-    窄页**的空白占位由调用方显式给 ``half-unsided``——它产物名不带后缀，但拼版
-    要按半幅配对（见 :data:`ROLE_HALF_UNSIDED`）。
-    """
-    entries: list[dict] = []
-    for item in descriptors or []:
-        box = item.get("box")
-        if not box_has_area(box):
-            continue
-        side = item.get("side")
-        role = item.get("role")
-        if role is None:
-            role = (
-                ROLE_HALF_LEFT if side == "left"
-                else ROLE_HALF_RIGHT if side == "right"
-                else ROLE_FULL
-            )
-        if side == "left":
-            label = f"{stem}-l"
-        elif side == "right":
-            label = f"{stem}-r"
-        else:
-            label = stem
-        entries.append({
-            "file": file_text, "label": label, "box": list(box),
-            "boxes": [list(box)], "full": side is None, "placeholder": True,
-            "role": role, "page_class": page_class,
-        })
-    return entries
-
-
 def plan_rembg_submit_entries(
     manifest_paths: list[Path],
     result_path_for,
     boxes_for,
     page_width_for=None,
     side_for=None,
-    placeholder_for=None,
     narrow_for=None,
     demote_for=None,
 ) -> list[dict]:
@@ -259,10 +107,6 @@ def plan_rembg_submit_entries(
     side_for         : (path_str) -> ``"left"``/``"right"``/None，用户在
         **半幅页**上指定的左右。给了指定就**不做**单栏归一化——那是用户在说
         「这页其实是某一边」（用户 2026-10-17），命名/拼版都要按左/右走。
-    placeholder_for  : (path_str) -> list[dict]，该页缺图的**原图占位**描述
-        ``[{"side": "left"|"right"|None, "box": [x1,y1,x2,y2]}]``（框是该页源图
-        上的裁切区域）。只有「检测文本框 → 提交」会传它（用户 2026-10-23 的
-        占位规则）；预览侧默认 ``None``，行为与改造前一字不变。
     narrow_for       : (path_str) -> bool，该页是否**窄于全书**（单页扫描）。
         为真且只检出一个框时退化成**单槽**（不拆 ``-l``/``-r``、不补另一栏），
         见 :func:`utils.book_layout.narrow_page_slots`。默认 ``None``＝不判断。
@@ -279,8 +123,8 @@ def plan_rembg_submit_entries(
     - 整幅内容(fullcontent)：单槽单框，label 就是页名（不拆），框原样裁剪；
     - 单栏书：整本书只有一栏，页里不会有左页+右页，于是「单个宽框（≥60%
       页宽）的半幅页」被退化成**单槽**，直接继承整幅的语义；
-    - 无框：整页原图透传（条目不带 effect）；**若有占位描述则改为占位条目**
-      （空白页不再透传原图，见用户 2026-10-23 规则一~四）。
+    - 无框：整页原图透传（条目不带 effect，``boxes`` 为空）。⚠️ 「检测文本框 →
+      提交」那一侧会把这类条目**过滤掉**（用户 2026-11-16：没标注的页不出图）。
     最终按 CLI natural sort 排序（同页 r 在 l 前）。
 
     每条条目额外带 ``role`` / ``page_class``（**提交计划**，用户 2026-10-23）：
@@ -335,13 +179,6 @@ def plan_rembg_submit_entries(
         # 归一化前是「2 槽半幅」→ 即便产物名无后缀，也记成可配对的半幅。
         was_half = len(pre_slots) == 2 and any(pre_slots)
         boxes = [b for b in raw_boxes if b]
-        extra = (
-            _placeholder_entries(
-                path.stem, str(result), placeholder_for(str(path)), page_class,
-            )
-            if placeholder_for is not None and len(boxes) < 2
-            else []
-        )
         if len(boxes) == 2:
             entries.append(
                 {"file": str(result), "label": f"{path.stem}-r",
@@ -369,13 +206,12 @@ def plan_rembg_submit_entries(
                  "boxes": [boxes[0]], "full": full,
                  "role": role, "page_class": page_class}
             )
-        elif not extra:
+        else:
             entries.append(
                 {"file": str(result), "label": path.stem,
                  "box": None, "boxes": [], "full": False,
                  "role": ROLE_FULL, "page_class": page_class}
             )
-        entries.extend(extra)
     entries.sort(key=lambda e: natural_sort_key(e["label"]))
     return entries
 
@@ -385,10 +221,6 @@ def entry_to_effect_spec(entry: dict, border) -> dict:
 
     ``effect`` 里只有 ``boxes`` 与 ``border``——2026-10-22 起没有 area，几何
     恒为「每个检测框各自剪一张图」（见 ``utils.box_geometry.build_output_layout``）。
-
-    **占位条目**（``placeholder``，用户 2026-10-23）就是"该页原图上按占位框
-    裁一张"——走**同一条** effect 路径，只多带一个 ``placeholder=True`` 标记
-    供日志/统计区分（不再画纯白图）。
     """
     raw = [b for b in (entry.get("boxes") or []) if b]
     if not raw and entry.get("box"):
@@ -402,8 +234,6 @@ def entry_to_effect_spec(entry: dict, border) -> dict:
             else None
         ),
     }
-    if entry.get("placeholder"):
-        spec["placeholder"] = True
     return spec
 
 
@@ -443,100 +273,11 @@ def plan_submit_job(spec: dict, size: tuple[int, int] | None) -> dict:
         [f"{label}.jpg"] if canvases == 1
         else [f"{label}-{i + 1}.jpg" for i in range(canvases)]
     )
-    job = {
+    return {
         "file": str(spec["file"]), "compose": has_boxes,
         "boxes": boxes, "border": border,
         "names": names, "label": label,
     }
-    if spec.get("placeholder"):
-        job["placeholder"] = True
-    return job
-
-
-def manual_blank_regions(regions) -> list[tuple[list[int], Optional[str]]]:
-    """手工扩展框（``boxes.json`` 的 ``blank``）→ ``keep_blank_regions`` 同形状。
-
-    一个矩形 ⇒ 整页一张（``side=None``）；两个 ⇒ 按左边界排序，左/右各一张。
-    与自动推导共用同一条下游（命名 ``-l``/``-r``、拼版配对都照旧）。
-    """
-    rects = [
-        [int(v) for v in rect] for rect in (regions or [])
-        if isinstance(rect, (list, tuple)) and len(rect) == 4
-    ]
-    if not rects:
-        return []
-    if len(rects) == 1:
-        return [(rects[0], None)]
-    order = sorted(rects, key=lambda r: (r[0], r[1]))
-    return [(order[0], "left"), (order[1], "right")]
-
-
-def _keep_blank_entries(
-    entries: list[dict], normalized: dict, sizes: dict, blank_for=None,
-    blank_slots: dict | None = None, blank_empty: dict | None = None,
-) -> list[dict]:
-    """把「逐框紧裁」条目换成「整页半幅保留空白」条目。
-
-    ``blank_slots[stem]`` 是该页按「保留框外空白」口径归一化后的槽位
-    （``book_layout.keep_blank_slots``，与显示侧同一实现）；不传时回落
-    ``normalized``。``blank_empty[stem]`` 决定**无框页**怎么补
-    （``split`` / ``single`` / ``skip``，见 ``book_layout.keep_blank_page_form``）。
-
-    ⚠️ 无框页**不再一律透传**（用户 2026-11-12）：统计上是双栏书且这页装得下
-    两个框时，它要出左右两张；只装得下一个就出整页一张。整本书一个框都没有
-    时 ``skip``，仍按原占位/透传（没有统计依据）。
-
-    ``blank_for(stem)`` 给出**用户手工调过的扩展框**时优先用它（用户 2026-11-12：
-    "可以调整的是扩展框"）——自动推导只是初值，手拉过的以手拉为准。
-    """
-    from utils.sort_utils import natural_sort_key
-
-    by_page: dict[str, list[dict]] = {}
-    for entry in entries:
-        stem = Path(str(entry.get("file") or "")).stem
-        by_page.setdefault(stem, []).append(entry)
-    kept: list[dict] = []
-    for stem, group in by_page.items():
-        manual = blank_for(stem) if blank_for is not None else None
-        if manual:
-            regions = manual_blank_regions(manual)
-        else:
-            slots = (blank_slots or {}).get(stem)
-            if slots is None:
-                slots = normalized.get(stem) or []
-            regions = keep_blank_regions(
-                slots, sizes.get(stem),
-                empty=(blank_empty or {}).get(stem, "skip"),
-            )
-        if not regions:
-            kept.extend(group)
-            continue
-        real = next((e for e in group if not e.get("placeholder")), group[0])
-        for box, side in regions:
-            if side == "left":
-                label, role = f"{stem}-l", ROLE_HALF_LEFT
-            elif side == "right":
-                label, role = f"{stem}-r", ROLE_HALF_RIGHT
-            else:
-                label = stem
-                # ⚠️ 整页一张时**不能**沿用占位条目的左右半幅角色：那是"双栏书
-                #    空白页补两张"的旧描述，现在只出一张，角色必须是整幅
-                #    （否则拼版会去找不存在的另一半）。单栏/窄页的
-                #    ``half-unsided`` 则要保留——它本来就是"一张、可配对"。
-                role = real.get("role") or ROLE_FULL
-                if role in (ROLE_HALF_LEFT, ROLE_HALF_RIGHT):
-                    role = ROLE_FULL
-            kept.append({
-                "file": group[0]["file"],
-                "label": label,
-                "box": box,
-                "boxes": [box],
-                "full": side is None,
-                "role": role,
-                "page_class": real.get("page_class") or PAGE_CLASS_EMPTY,
-            })
-    kept.sort(key=lambda e: natural_sort_key(e["label"]))
-    return kept
 
 
 def plan_detect_submit_entries(
@@ -546,91 +287,42 @@ def plan_detect_submit_entries(
     page_width_for=None,
     side_for=None,
     book_profile=None,
-    page_size_for=None,
-    keep_blank: bool = False,
-    blank_for=None,
 ) -> list[dict]:
-    """「检测文本框 → 提交本次任务」的裁图条目（含**回溯占位**）。
+    """「检测文本框 → 提交本次任务」的裁图条目：**只裁标注过的文本框**。
 
-    与 :func:`plan_rembg_submit_entries` **同一条规则**，只有两个区别：
+    与 :func:`plan_rembg_submit_entries` 同一条规则，只有一处区别：合成源就是
+    **源页图自己**（这一步不产生中间结果图），所以 ``file`` 直接是那一页路径。
 
-    1. 合成源就是**源页图自己**（这一步不产生中间结果图），所以 ``file``
-       直接是那一页的路径。**每个检测框各自裁成一张图**——没有 area；
-    2. 它额外算「回溯占位」：漏检/空白页按**全书形态**补图，避免下游丢页
-       或拼版错配（用户 2026-10-23 的四条规则）。
+    ⚠️⚠️ **这里没有任何"补全"**（用户 2026-11-16）：「删除这条规则，没有文本框
+    的不再进行补全，只裁剪出标注过的文本框」。2026-10-23 那套「回溯占位」已整体
+    删除——漏检一侧的页不再按页中线镜像补另一栏，空白页不再按全书平均框尺寸
+    造一个框。派生结果只剩三条：
 
-    **占位图不是纯白，而是从该页原图截对应区域**（用户 2026-10-23 追加），
-    空白页的落点**以页面中心为准**（「占位图原则从中间截取」）：
+    - **双框页**：``-r`` / ``-l`` 各一条；
+    - **单框页**：一条（半幅页保住 ``-l``/``-r`` 身份，即使用户只画了一侧；
+      整幅/单栏/窄页用页名，``role=half-unsided`` 记"可配对的半幅"）；
+    - **一个框都没有的页**：**不出图**（没有可裁的东西）。
 
-    - **左右双栏书**：一页只有一侧框 → 缺失侧按**页中线镜像**已有那一侧，
-      截同样大小的区域（规则一.1）；整页无框 → 截 **左、右两张**，各自以
-      **本半页的中心**截取，尺寸取全书左右框各自的平均（规则一.2）；
-    - **单栏书（半幅单宽框）**：整页无框 → 以**页面中心**截 **一张**，
-      尺寸取全书半幅框平均（规则二）；
-    - **整幅书**：整页无框 → 以**页面中心**截 **一张**，尺寸取全书整幅框
-      平均（规则三）；
-    - **混排书**（三种极端都不成立）：整页无框 → **完全跟随前一页**的产物
-      形态（前页双框 → 补左右两张；前页单侧 → 补同侧一张；前页整幅/单栏 →
-      补一张）；只有一侧框的页，前页是双框时才补缺失侧（规则四）。
-      首页就空白（没有前一页）→ 向前找最近的有框页；全书都空白则不补。
-    - **窄页**（页宽明显小于全书典型页宽＝单页扫描）**优先于以上全部**：
-      这张图放不下第二栏，所以整页无框只补**一张**、只检出一个框也**不补**
-      另一侧，命名也不带 ``-l``/``-r``（用户 2026-10-23，任务 0001 第 1 页）。
+    全书级归一化照旧，但它只决定"这一条叫什么、算不算可配对半幅"，**不补框**：
+    「整幅其实像半幅」修正（``demote_for``）、单宽框退单槽、窄页退单槽。
 
-    ``keep_blank=True``（界面「保留框外空白」）：有框页不再贴着检测框紧裁，
-    改为按整页半幅保留空白——双框页以两框相邻边界的中点分界，单框页以框的
-    **内侧边**分界，上下都到图片边缘，外侧也到图片边缘。整幅/单栏/窄页归一化后
-    只剩一槽，整页保留一张（不切分）。
-
-    **无框页也会出图**（用户 2026-11-12，见 ``book_layout.keep_blank_page_form``）：
-
-    - 统计上是**双栏书**、且这页**装得下两个框** ⇒ 按页中线拆左右两张；
-    - 只装得下一个（单页扫描）/ 单栏书 / 整幅书 / 混排 ⇒ 整页一张；
-    - 整本书一个框都没有 ⇒ ``skip``，仍走上面的占位/透传（没有统计依据）。
-
-    单框页同理多一条：双栏书里只检出一侧、而本页**装不下两个框**时退成整页
-    一张（装得下就保留 2 槽，分界线落在检出框的内侧边）。
-
-    ``blank_for(stem)``：该页**用户手工调过的扩展框**（``boxes.json`` 的
-    ``blank``，见 ``store.blank_regions_all_at``）。给了就用它、不再按检测框
-    推导——自动推导只是初值（用户 2026-11-12：「可以调整的是扩展框」）。
-
-    ⚠️ 占位条目 ``file`` 仍是源页、``boxes`` 只有一个"占位框"，
-    ``placeholder=True`` 只作日志/统计标记——执行端走与真框完全相同的裁剪
-    路径（不画白图）。预览侧不会传 ``placeholder_for``，命名/条数保持原样。
+    ⚠️ ``page_width_for`` 仍然要传：单宽框/窄页两条归一化都靠页宽。
     """
-    from utils.book_layout import (
-        BOOK_FORM_DOUBLE, BOOK_FORM_FULL, BOOK_FORM_MIXED, BOOK_FORM_SINGLE,
-        book_form, keep_blank_page_form, keep_blank_slots, profile_book,
-    )
-    from utils.box_geometry import (
-        PAGE_CLASS_EMPTY, PAGE_CLASS_FULLCONTENT, PAGE_CLASS_HARFCONTENT,
-        classify_page_slots,
-    )
+    from utils.book_layout import is_narrow_page, profile_book, typical_page_width
 
     by_stem = {path.stem: path for path in manifest_paths}
     # ⚠️ 先剔掉零面积框（保留槽数）：它会让单栏页被统计成「双栏页」，
-    #    空白页的占位就会从 1 张错成 2 张（任务 0009）。
+    #    也会让"只画了一侧"的页被当成整幅。
     raw_slots = {
         path.stem: _valid_slots(boxes_for(str(path)) or [])
         for path in manifest_paths
     }
-    sizes: dict[str, tuple[int, int] | None] = {
-        path.stem: (
-            page_size_for(str(path)) if page_size_for is not None else None
-        )
-        for path in manifest_paths
+    widths = {
+        stem: (page_width_for(str(path)) if page_width_for is not None else None)
+        for stem, path in by_stem.items()
     }
-
-    def _page_width(stem: str):
-        if page_width_for is not None:
-            return page_width_for(str(by_stem[stem]))
-        size = sizes.get(stem)
-        return size[0] if size else None
-
-    widths = {stem: _page_width(stem) for stem in by_stem}
     # 「窄页」= 单页扫描（页宽明显小于全书典型页宽，用户 2026-10-23）：
-    # 这种页最多只有一栏，空白页只补一张、单框页不补另一侧。
+    # 这种页最多只有一栏，单框页不拆 -l/-r。
     typical_width = typical_page_width(widths.values())
     narrow_pages = {
         stem: is_narrow_page(widths.get(stem), typical_width) for stem in by_stem
@@ -639,8 +331,7 @@ def plan_detect_submit_entries(
         [(stem, raw_slots[stem], widths[stem]) for stem in by_stem]
     )
     # ⚠️ 全书统计的「整幅其实像半幅」修正（用户 2026-10-25）：改在**派生层**，
-    #    原始 boxes.json 快照不动。先替换 raw_slots，后面的形态统计、占位
-    #    描述、单宽/窄页归一化才会全部按半幅口径走。
+    #    原始 boxes.json 快照不动。
     demoted: dict[str, list] = {}
     if profile.half_width_median is not None:
         for stem in profile.demoted_full_pages:
@@ -652,144 +343,6 @@ def plan_detect_submit_entries(
             if corrected != raw_slots[stem]:
                 raw_slots[stem] = corrected
                 demoted[stem] = corrected
-    single = bool(single_column_book) or profile.single_column_book
-    form = BOOK_FORM_SINGLE if single else book_form(profile)
-
-    # 平均**尺寸**按原始槽位分组（半幅整体 / 左槽 / 右槽 / 整幅）：
-    # 单栏书的归一化只是"身份改写"，不该把它的宽框混进整幅组。
-    half_boxes = [
-        b for slots in raw_slots.values() if len(slots) == 2 for b in slots if b
-    ]
-    left_boxes = [
-        slots[0] for slots in raw_slots.values()
-        if len(slots) == 2 and slots[0]
-    ]
-    right_boxes = [
-        slots[1] for slots in raw_slots.values()
-        if len(slots) == 2 and slots[1]
-    ]
-    full_boxes = [
-        b for slots in raw_slots.values() if len(slots) == 1 for b in slots if b
-    ]
-    half_size = _average_size(half_boxes)
-    left_size = _average_size(left_boxes) or half_size
-    right_size = _average_size(right_boxes) or half_size
-    full_size = _average_size(full_boxes) or half_size
-
-    def _normalized(stem: str, boxes) -> list:
-        """页级单宽归一化（用户指定过左右的页不归一化，与提交命名同一口径）。"""
-        if side_for is not None and side_for(str(by_stem[stem])):
-            return list(boxes)
-        slots = page_single_wide_slots(boxes, widths[stem])
-        return narrow_page_slots(slots, narrow_pages.get(stem, False))
-
-    normalized = {stem: _normalized(stem, raw_slots[stem]) for stem in by_stem}
-
-    # 每页的**产物形态**：double / half-left / half-right / full / column。
-    # 只用于「混排书空白页跟随前一页」；空白页记 None。
-    shapes: dict[str, str | None] = {}
-    for stem, slots in normalized.items():
-        kind = classify_page_slots(slots)
-        if kind == PAGE_CLASS_EMPTY:
-            shapes[stem] = None
-        elif kind == PAGE_CLASS_FULLCONTENT:
-            shapes[stem] = "column" if len(raw_slots[stem]) == 2 else "full"
-        elif kind == PAGE_CLASS_HARFCONTENT:
-            shapes[stem] = "double"
-        else:
-            shapes[stem] = "half-left" if slots[0] else "half-right"
-
-    def _nearby_shape(index: int) -> str | None:
-        """混排书里空白页的形态：先向前找，再向后找，全空白返回 None。"""
-        for j in range(index - 1, -1, -1):
-            shape = shapes.get(manifest_paths[j].stem)
-            if shape:
-                return shape
-        for j in range(index + 1, len(manifest_paths)):
-            shape = shapes.get(manifest_paths[j].stem)
-            if shape:
-                return shape
-        return None
-
-    def _shape_placeholders(shape: str | None, stem: str) -> list[dict]:
-        """产物形态 → 占位描述（尺寸取全书同类框平均，落点取页面中心）。"""
-        page_w = widths.get(stem) or 0
-        page_size = sizes.get(stem)
-        page_h = page_size[1] if page_size else 0
-        items: list[dict] = []
-        if shape == "double":
-            # 双栏空白页：左右各取**本半页的中心**（页宽 1/4、3/4）
-            for side, size, center in (
-                ("left", left_size, page_w / 4.0 if page_w else None),
-                ("right", right_size, page_w * 0.75 if page_w else None),
-            ):
-                box = _center_box(size, page_w, page_h, center_x=center)
-                if box:
-                    items.append({"side": side, "box": box})
-        elif shape in ("half-left", "half-right"):
-            side = shape.split("-", 1)[1]
-            box = _center_box(
-                left_size if side == "left" else right_size, page_w, page_h
-            )
-            if box:
-                items.append({"side": side, "box": box})
-        elif shape == "full":
-            box = _center_box(full_size, page_w, page_h)
-            if box:
-                items.append({"side": None, "box": box})
-        elif shape == "column":
-            box = _center_box(half_size, page_w, page_h)
-            if box:
-                # 单栏书 / 窄页：产物名不带后缀，但它是"无侧半幅"——
-                # 拼版要靠这个角色才能与相邻页配对（见 ROLE_HALF_UNSIDED）。
-                items.append(
-                    {"side": None, "box": box, "role": ROLE_HALF_UNSIDED}
-                )
-        return items
-
-    placeholders: dict[str, list[dict]] = {}
-    for index, path in enumerate(manifest_paths):
-        stem = path.stem
-        slots = normalized[stem]
-        present = [b for b in slots if b]
-        kind = classify_page_slots(slots)
-        if kind == PAGE_CLASS_EMPTY:
-            if narrow_pages.get(stem):
-                # 单页扫描（窄于全书）：这张图最多一栏，只补一张
-                shape = "column"
-            elif form == BOOK_FORM_DOUBLE:
-                shape = "double"
-            elif form == BOOK_FORM_FULL:
-                shape = "full"
-            elif form == BOOK_FORM_SINGLE:
-                shape = "column"
-            else:
-                shape = _nearby_shape(index)
-            items = _shape_placeholders(shape, stem)
-        elif len(slots) == 2 and len(present) == 1:
-            # 缺一侧：只有双栏书（或混排时前一页是双框）才补缺失侧。
-            # 落点 = 已有那一侧以页中线镜像，尺寸天然相同（规则一.1）。
-            needed = form == BOOK_FORM_DOUBLE
-            if form == BOOK_FORM_MIXED:
-                prev_shape = None
-                for j in range(index - 1, -1, -1):
-                    prev_shape = shapes.get(manifest_paths[j].stem)
-                    if prev_shape:
-                        break
-                needed = prev_shape == "double"
-            items = []
-            if needed:
-                missing = "right" if slots[0] else "left"
-                mirrored = _mirror_box(present[0], widths[stem])
-                if mirrored:
-                    items = [{"side": missing, "box": mirrored}]
-        else:
-            items = []
-        if items:
-            placeholders[stem] = items
-
-    def placeholder_for(path_text: str) -> list[dict]:
-        return placeholders.get(Path(path_text).stem, [])
 
     entries = plan_rembg_submit_entries(
         manifest_paths=manifest_paths,
@@ -797,45 +350,15 @@ def plan_detect_submit_entries(
         boxes_for=boxes_for,
         page_width_for=page_width_for,
         side_for=side_for,
-        placeholder_for=placeholder_for,
         narrow_for=lambda text: narrow_pages.get(Path(text).stem, False),
         demote_for=lambda text: demoted.get(Path(text).stem),
     )
-    if keep_blank:
-        blank_for = blank_for or (lambda _stem: None)
-        # 保留空白专用的页级口径（**与显示侧同一实现**）：
-        # ① 单框页「装不下两个」→ 退单槽＝整页一张；
-        # ② 无框页按全书统计补框（双栏书且装得下两个 ⇒ 拆左右两半）。
-        # ⚠️ 必须显式传，不能让 ``_keep_blank_entries`` 自己去猜：预览与产物
-        #    一旦各按各的口径算，用户就会看到"画着两半、出来一张"。
-        expects_two = bool(profile.double_column_book)
-        blank_slots: dict[str, list] = {}
-        blank_empty: dict[str, str] = {}
-        for stem in by_stem:
-            width = widths.get(stem)
-            side_given = bool(side_for(str(by_stem[stem]))) if side_for else False
-            blank_slots[stem] = keep_blank_slots(
-                raw_slots[stem], width,
-                side_specified=side_given,
-                narrow=narrow_pages.get(stem, False),
-                expects_two=expects_two,
-                typical_width=typical_width,
-                half_width=profile.half_width_median,
-            )
-            blank_empty[stem] = keep_blank_page_form(
-                width, typical_width, profile.half_width_median,
-                expects_two=expects_two,
-                has_stats=profile.boxed_pages > 0,
-            )
-        entries = _keep_blank_entries(
-            entries, normalized, sizes, blank_for,
-            blank_slots=blank_slots, blank_empty=blank_empty,
-        )
-    return entries
+    # ⚠️ 无框页在共用派生里会得到一条 ``boxes=[]`` 的"整页透传"条目（那是第三步
+    #    预览/去底色需要的语义）。这一步**不要**它：用户 2026-11-16 定"没标注的
+    #    页不出图"，所以在这里过滤掉，而不是让下游去认一个空框条目。
+    return [entry for entry in entries if entry.get("boxes")]
 
 
-# ---------------------------------------------------------------- print 效果规格
-# ---------------------------------------------------------------- 待打印列表
 def drop_foreign_stage_pages(
     pages: list[dict] | None, source_dir: Path, stages_root: Path,
 ) -> list[dict]:

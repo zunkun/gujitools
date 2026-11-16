@@ -58,10 +58,10 @@ desktop/
       detect.py         #     detect 检测控制
       rembg_live.py     #     第三步改参数/翻页时只重算当前页（写预览草稿，不进下游）
       imposition.py     #     流程条「图片拼版」共享基元（文档读写/取图来源/详情进出）
-      imposition_pages.py #   模块一「选择拼版」控制器：启用开关、弹窗加页、删页/页序/清空
+      imposition_pages.py #   模块一「选择拼版」控制器：启用开关、弹窗加页、插入/上移下移/删页/清空
       imposition_layout.py #  模块二「拼版操作」控制器：旋转/复位、版面落盘、防抖合成、状态行
   services/             # 纯业务规则（无 Qt）：print_plan 条目派生、submit_state 版本状态机、
-                        #   imposition 拼版版面与合成
+                        #   imposition 拼版版面与合成、imposition_insert 插入/上传落点与成页
   ui/                   # 界面系统：设计令牌 + 基础自绘控件 + 全局样式（详见 gui-ui-system.md）
     theme.py            #   颜色/间距/圆角/字号/状态色映射（唯一色值来源）
     style.py            #   全局字体、主题色、极简全局 QSS
@@ -69,8 +69,8 @@ desktop/
   components/           # 步骤条、任务表格、查看器（PDF/图片/rembg）、阶段参数面板、日志
     step_bar.py             # 顶部步骤条：编号/对勾徽标 + 连接箭头 + 状态色（自绘，不用样式表）
     imposition/                    # 图片拼版组件包（components/imposition/），按操作逻辑分两个模块
-      page_list.py                 #   模块一「选择拼版」：左列拼版页清单
-      picker.py                    #   模块一「选择拼版」：「选择拼版」弹窗
+      page_list.py                 #   模块一「选择拼版」：左列拼版页清单（右键：上移/下移/删除/插入）
+      picker.py                    #   模块一「选择拼版」：选图弹窗（单一列表 + 自己上传图片）
       canvas.py                    #   模块二「拼版操作」：拖动/缩放拉伸/旋转画布（同 PrintLayoutCanvas 一族）
       panel.py                     #   模块二「拼版操作」：右侧控制面板（开关/页序/旋转/复位/删除）
       view.py                      #   装配层：左列清单 + 画布（ImpositionViewWidget）

@@ -11,7 +11,7 @@
 
 ⚠️ 底色/描边走 ``paintEvent`` 自绘（项目硬规则：界面控件不用样式表），
 与 :class:`desktop.components.update_banner.UpdateBanner` 同一套做法。
-⚠️ 文案不写在这里：业务层按"这页有没有框 / 是不是保留框外空白"现算后传进来
+⚠️ 文案不写在这里：业务层按"这页有没有框 / 是不是人工标注方式"现算后传进来
 （唯一实现在 ``desktop/components/box_kinds.py::manual_hint_text``）。
 """
 

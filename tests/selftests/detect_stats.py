@@ -6,7 +6,8 @@
    半幅=双槽齐全、单独页=双槽缺一侧、无框=无文本框；
 2. 第二步右侧显示「检测结果统计」，且**「执行记录」整体隐藏**（用户
    2026-09-29 定：detect 无表单参数，历史回填没有用武之地）；其它步骤
-   反过来；
+   反过来（⚠️ 前提是把设置 →「功能」→「显示执行记录」打开——2026-11-16
+   起它默认关，本模块临时打开再判，测完还原）；
 3. 总览计数与明细页码：点分类看页码，点页码跳转预览；
 4. 人工编辑框（拖动/删框）后统计实时重算。
 
@@ -59,14 +60,25 @@ def run(ctx) -> None:
         d.detect_cache.clear()
 
         # ---- 2. 步骤专属区块的可见性 ----
-        d._select_stage(1)
-        app.processEvents()
-        ok("第二步隐藏「执行记录」", not d.history_block.isVisibleTo(d))
-        ok("第二步显示「检测结果统计」", d.detect_stats.isVisibleTo(d))
-        d._select_stage(0)
-        app.processEvents()
-        ok("其它步骤恢复「执行记录」", d.history_block.isVisibleTo(d))
-        ok("其它步骤隐藏统计", not d.detect_stats.isVisibleTo(d))
+        # ⚠️ 「执行记录」还受设置 →「功能」→「显示执行记录」总开关约束，
+        #    **默认关**（用户 2026-11-16）。这里临时打开，测的仍是原有的
+        #    "第二步用专属区块「检测结果统计」、其它步骤用执行记录"这条判据。
+        from desktop.settings.config import app_config
+
+        cfg = app_config()
+        before_show = bool(cfg.showHistory.value)
+        cfg.showHistory.value = True
+        try:
+            d._select_stage(1)
+            app.processEvents()
+            ok("第二步隐藏「执行记录」", not d.history_block.isVisibleTo(d))
+            ok("第二步显示「检测结果统计」", d.detect_stats.isVisibleTo(d))
+            d._select_stage(0)
+            app.processEvents()
+            ok("其它步骤恢复「执行记录」", d.history_block.isVisibleTo(d))
+            ok("其它步骤隐藏统计", not d.detect_stats.isVisibleTo(d))
+        finally:
+            cfg.showHistory.value = before_show
         d._select_stage(1)
         app.processEvents()
 

@@ -155,17 +155,24 @@ def run(ctx) -> None:
     detect.reset_to_default()
     ok("detect 面板没有 area 控件（参数已从整个项目移除）",
        not hasattr(detect, "area"))
-    ok("detect 的 get_args 只有 keep_blank 且默认 False",
-       detect.get_args() == {"keep_blank": False}, str(detect.get_args()))
-    ok("detect 的默认表只有 keep_blank=False（默认值不写两处）",
-       DEFAULTS["detect"] == {"keep_blank": False}, str(DEFAULTS["detect"]))
+    ok("detect 的 get_args 是识别方式两个键且取默认值",
+       detect.get_args() == {"mode": "auto", "reuse_prev": True},
+       str(detect.get_args()))
+    ok("detect 的默认表只有这两个键（默认值不写两处）",
+       DEFAULTS["detect"] == {"mode": "auto", "reuse_prev": True},
+       str(DEFAULTS["detect"]))
+    ok("detect 不再有「保留框外空白」这个参数（功能已整体移除）",
+       "keep_blank" not in detect.get_args()
+       and "keep_blank" not in DEFAULTS["detect"],
+       str(detect.get_args()))
     ok("detect 命令规格里没有 area",
        "area" not in COMMAND_SPECS["detect"].defaults,
        str(sorted(COMMAND_SPECS["detect"].defaults)))
     # 历史回填不会凭空塞进一个 area（面板没有这个键）
     detect._apply_args_guarded({"area": 4})
     ok("detect 回填 area=4 不会在表单里留下痕迹",
-       detect.get_args() == {"keep_blank": False} and not hasattr(detect, "area"),
+       detect.get_args() == {"mode": "auto", "reuse_prev": True}
+       and not hasattr(detect, "area"),
        str(detect.get_args()))
 
     # ---------------------------------------------- 4b. rembg 面板不再有 area/border

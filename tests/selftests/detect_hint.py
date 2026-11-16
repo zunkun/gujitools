@@ -6,7 +6,7 @@
 
 守三件事：
 
-1. 文案按情况分岔（有框 / 没框 / 保留框外空白），且**只有一份实现**
+1. 文案按情况分岔（有框 / 没框 / 人工标注），且**只有一份实现**
    （``box_kinds.manual_hint_text``，任务流程与独立检测页共用）；
 2. 提示条真的在**图片上方**（不是压在图上、也不是跑到图下面去），
    没文案时**不占位**（其它步骤的预览区高度不受影响）；
@@ -29,7 +29,7 @@ TITLE = "检测文本框：画布顶部可手动改框提示"
 #: 各分支必须出现的关键词（用户最需要被告知的动作）
 WANT_BOX_KINDS = "框类型"
 WANT_DRAW = "手画"
-WANT_REGION = "要裁的区域"
+WANT_MANUAL = "人工标注"
 
 
 class _ViewerStub:
@@ -49,12 +49,12 @@ class _ViewerStub:
 class _HostStub(DetectMixin):
     """把 ``_sync_box_hint`` 单独挂在最小宿主上（其余成员它不碰）。"""
 
-    def __init__(self, path: str | None, keep_blank: bool = False):
+    def __init__(self, path: str | None, manual: bool = False):
         self.detect_viewer = _ViewerStub(path)  # type: ignore[assignment]
-        self._keep_blank = keep_blank
+        self._manual = manual
 
-    def _keep_blank_on(self) -> bool:
-        return self._keep_blank
+    def _detect_manual(self) -> bool:
+        return self._manual
 
 
 def run(ctx) -> None:  # noqa: ARG001 - 本模块自带夹具，不用共享 ctx
@@ -67,8 +67,8 @@ def run(ctx) -> None:  # noqa: ARG001 - 本模块自带夹具，不用共享 ctx
     # ---------------------------------------------------------------- 文案
     with_boxes = manual_hint_text(has_boxes=True)
     without = manual_hint_text(has_boxes=False)
-    blank = manual_hint_text(has_boxes=True, keep_blank=True)
-    blank_empty = manual_hint_text(has_boxes=False, keep_blank=True)
+    manual_boxes = manual_hint_text(has_boxes=True, manual=True)
+    manual_empty = manual_hint_text(has_boxes=False, manual=True)
 
     ok("有框：提示可以改框类型（点名右栏那个控件）",
        WANT_BOX_KINDS in with_boxes and "右栏" in with_boxes, with_boxes)
@@ -76,17 +76,21 @@ def run(ctx) -> None:  # noqa: ARG001 - 本模块自带夹具，不用共享 ctx
        "拖动" in with_boxes and "拉角" in with_boxes and "新框" in with_boxes,
        with_boxes)
     ok("文案短到一行放得下（不折成第二行只剩几个字）",
-       max(len(with_boxes), len(without), len(blank), len(blank_empty)) <= 40,
-       str(max(len(with_boxes), len(without), len(blank), len(blank_empty))))
+       max(len(with_boxes), len(without), len(manual_boxes),
+           len(manual_empty)) <= 40,
+       str(max(len(with_boxes), len(without), len(manual_boxes),
+               len(manual_empty))))
     ok("无框：先告诉用户**能直接手画**（模型检不出时最快的出路）",
        WANT_DRAW in without, without)
-    ok("无框：也给出「检测本页」这条自动路径",
-       "检测本页" in without, without)
-    ok("保留框外空白：说清这是**要裁的区域**（不是检测框）",
-       WANT_REGION in blank, blank)
-    ok("保留框外空白：能切的类型只有整幅/左/右（不提「半幅」）",
-       "半幅" not in blank and "整幅" in blank, blank)
-    ok("保留框外空白 + 无框：提示先画一块区域", WANT_DRAW in blank_empty, blank_empty)
+    ok("无框：也给出底部「检测文本框」这条批量路径",
+       "检测文本框" in without, without)
+    ok("有框时两种方式共用同一句（框的操作没差别）",
+       manual_boxes == with_boxes, manual_boxes)
+    ok("人工标注 + 无框：点名当前方式，且**不提**「检测文本框」"
+       "（该方式下那个按钮压根不显示）",
+       WANT_MANUAL in manual_empty and "检测文本框" not in manual_empty,
+       manual_empty)
+    ok("人工标注 + 无框：仍然告诉用户怎么画", WANT_DRAW in manual_empty, manual_empty)
 
     # ------------------------------------------------- 宿主：文案随状态切换
     host = _HostStub("/t/0001.png")
@@ -96,10 +100,11 @@ def run(ctx) -> None:  # noqa: ARG001 - 本模块自带夹具，不用共享 ctx
     host._sync_box_hint([])
     ok("宿主：没框时给「手画一个」那句",
        host.detect_viewer.hint == without, str(host.detect_viewer.hint))
-    host_blank = _HostStub("/t/0001.png", keep_blank=True)
-    host_blank._sync_box_hint([[10, 10, 100, 100]])
-    ok("宿主：保留框外空白时给「要裁的区域」那句",
-       host_blank.detect_viewer.hint == blank, str(host_blank.detect_viewer.hint))
+    host_manual = _HostStub("/t/0001.png", manual=True)
+    host_manual._sync_box_hint([])
+    ok("宿主：人工标注 + 没框时给「人工标注」那句",
+       host_manual.detect_viewer.hint == manual_empty,
+       str(host_manual.detect_viewer.hint))
     host_none = _HostStub(None)
     host_none._sync_box_hint([[10, 10, 100, 100]])
     ok("宿主：没有当前页时收起提示（空态上不该浮一句「在图上拖」）",

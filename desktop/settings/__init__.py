@@ -7,8 +7,8 @@
   qfluentwidgets 的 ``SettingCard`` 摆开关。
 
 读开关一律走 ``config`` 里的取值函数（``developer_mode()`` /
-``yolo_annotation()``），**不要在各页面里直接摸 ``qconfig``** —— 那样
-"配置项叫什么、默认值是多少"就会散成好几份。
+``yolo_annotation()`` / ``show_history()``），**不要在各页面里直接摸
+``qconfig``** —— 那样"配置项叫什么、默认值是多少"就会散成好几份。
 """
 
 from __future__ import annotations

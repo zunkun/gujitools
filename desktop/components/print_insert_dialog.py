@@ -58,7 +58,7 @@ IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"}
 IMAGE_FILTER = "图片 (" + " ".join("*" + s for s in sorted(IMAGE_SUFFIXES)) + ")"
 
 
-def _image_paths(mime) -> list[str]:
+def image_paths(mime) -> list[str]:
     """拖放数据里的**本地图片文件**（扩展名与文件框过滤同源）。"""
     if mime is None or not mime.hasUrls():
         return []
@@ -191,7 +191,7 @@ class _DropArea(QWidget):
 
     # ------------------------------------------------------------------ 交互
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:  # noqa: N802
-        if _image_paths(event.mimeData()):
+        if image_paths(event.mimeData()):
             event.acceptProposedAction()
             self._drag_active = True
             self.update()
@@ -199,7 +199,7 @@ class _DropArea(QWidget):
             event.ignore()
 
     def dragMoveEvent(self, event) -> None:  # noqa: N802
-        if _image_paths(event.mimeData()):
+        if image_paths(event.mimeData()):
             event.acceptProposedAction()
 
     def dragLeaveEvent(self, event: QDragLeaveEvent) -> None:  # noqa: N802
@@ -207,7 +207,7 @@ class _DropArea(QWidget):
         self.update()
 
     def dropEvent(self, event: QDropEvent) -> None:  # noqa: N802
-        paths = _image_paths(event.mimeData())
+        paths = image_paths(event.mimeData())
         self._drag_active = False
         self.update()
         if not paths:
@@ -467,4 +467,4 @@ class PrintInsertPanel(QWidget):
             return QIcon()
 
 
-__all__ = ["PrintInsertPanel", "IMAGE_FILTER"]
+__all__ = ["PrintInsertPanel", "IMAGE_FILTER", "image_paths"]

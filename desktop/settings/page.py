@@ -68,7 +68,7 @@ from utils.box_geometry import YOLO_CLASS_NAMES
 
 
 class SettingsPage(QWidget):
-    """设置页：存储位置、自动更新、开发者模式与它下面的开发选项。
+    """设置页：存储位置、自动更新、界面功能、开发者模式与它下面的开发选项。
 
     ⚠️ 页面**没有**自己的导航条目概念——它由壳层（``desktop/shell.py``）
     挂在导航栏底部并切页，与各步骤的独立模块页是两回事（模块页来自
@@ -76,7 +76,7 @@ class SettingsPage(QWidget):
     """
 
     TITLE = "设置"
-    SUBTITLE = "存储位置、自动更新、开发者模式与训练/标注相关选项"
+    SUBTITLE = "存储位置、自动更新、界面功能、开发者模式与训练/标注相关选项"
 
     def __init__(self, parent=None):
         """建页头 + 设置卡片组（配置项绑在卡片上，本页不另存值）。"""
@@ -138,6 +138,20 @@ class SettingsPage(QWidget):
         )
         self.update_group.addSettingCards([self.auto_app_card, self.auto_data_card])
         column.addWidget(self.update_group)
+
+        # ---- 功能：界面行为类的常规开关（用户 2026-11-16）----
+        # 「显示执行记录」默认**关**：各步骤右栏默认不再露出历史配置下拉框，
+        # 需要「照上次参数再跑一遍」时到这里打开。
+        self.feature_group = SettingCardGroup("功能", container)
+        self.history_card = SwitchSettingCard(
+            FIF.HISTORY,
+            "显示执行记录",
+            "在各步骤右栏显示「执行记录」下拉框（选一条历史配置回填到表单）",
+            configItem=self.cfg.showHistory,
+            parent=self.feature_group,
+        )
+        self.feature_group.addSettingCard(self.history_card)
+        column.addWidget(self.feature_group)
 
         self.group = SettingCardGroup("开发者", container)
         self.dev_card = SwitchSettingCard(

@@ -37,9 +37,9 @@
 ⚠️ **框类型控件摆在这里、检测按钮不搬过来**（用户 2026-10-03）：
 - 「选中框类型 / 删除选中框」**摆出来**并接线——它们只依赖查看器，本页完全
   驱动得了，而用户要的"手绘之后能标成左框/右框/整幅"正需要它们；
-- ``DetectPanel`` 里的「检测本页」**不摆**：它由任务流程宿主用子进程驱动
-  单页检测，本页的执行入口是整批的 :class:`StepControl`。留着就是个点不动的
-  死控件。
+- 整个 ``DetectPanel`` **不摆**：它的参数（识别方式 / 沿用上一页标注）都是
+  **任务级**概念、由任务流程宿主驱动，本页的执行入口是整批的
+  :class:`StepControl`。
 """
 
 from __future__ import annotations
@@ -190,10 +190,9 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin):
             self._on_step_event
         )
         if self.control.panel is not None:
-            # 面板的控件全由任务流程宿主驱动，本页接管不了（见模块 docstring）：
-            # 「检测本页」要子进程单页检测。里面**唯一**该搬出来的是
-            # 「选中框类型 / 删除选中框」，本方法单独重建这两个
-            # （下面的 _build_box_kind_controls），不搬整个面板。
+            # 面板的控件全由任务流程宿主驱动，本页接管不了（见模块 docstring）。
+            # 里面**唯一**该搬出来的是「选中框类型 / 删除选中框」，本方法单独
+            # 重建这两个（下面的 _build_box_kind_controls），不搬整个面板。
             self.control.panel.setVisible(False)
         card.box.addWidget(self._build_box_kind_controls())
         card.box.addWidget(self._build_export_buttons())
@@ -243,8 +242,8 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin):
     def _build_box_kind_controls(self) -> Card:
         """「选中框类型（左框/右框/整幅）」+「删除选中框」。
 
-        ⚠️ 为什么不复用 ``DetectPanel``：那个面板还带「检测本页」（任务流程的
-        子进程单页检测），单文件模式下没有对应宿主；只把这两个控件的**声明**
+        ⚠️ 为什么不复用 ``DetectPanel``：那个面板还带「识别文本框模式」等
+        **任务级**参数，单文件模式下没有对应宿主；只把这两个控件的**声明**
         搬过来（``BOX_KIND_ITEMS`` 仍取自 ``utils.box_draw``，文案不另写一份），
         接线由本页负责。
         """
@@ -272,7 +271,12 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin):
         self.box_kind.current_changed.connect(self._on_box_kind_changed)
         holder.box.addWidget(self.box_kind)
 
+        # 删除是危险动作 ⇒ 与「图片拼版」的「删除选中图片」同一份样式
+        # （`theme.danger_button_qss`，用户 2026-11-16）
         self.delete_box = PushButton("删除选中框")
+        self.delete_box.setStyleSheet(
+            T.danger_button_qss(padding="6px 12px 7px 12px")
+        )
         self.delete_box.setFixedHeight(CONTROL_HEIGHT)
         self.delete_box.setToolTip("删除当前选中的文本框（也可以用 Delete 键）")
         self.delete_box.clicked.connect(self._delete_selected_box)
@@ -740,8 +744,8 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin):
             shown, QSize(size[0], size[1]), info, full=full, selected=selected
         )
         # 顶部红框提示（用户 2026-11-12，"能手动改框"的可发现性）：文案与任务
-        # 流程第二步共用 ``box_kinds.manual_hint_text``，本页没有「保留框外空白」
-        # 这个任务级参数，所以 keep_blank 恒为 False。
+        # 流程第二步共用 ``box_kinds.manual_hint_text``。本页是"单机版检测"，
+        # 一直走自动识别口径（``manual=False``）。
         setter = getattr(self.viewer, "set_hint_banner", None)
         if callable(setter):
             setter(manual_hint_text(has_boxes=bool(shown)))

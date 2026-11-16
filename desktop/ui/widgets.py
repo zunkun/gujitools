@@ -56,6 +56,7 @@ __all__ = [
     "SectionTitle",
     "SegmentedToggle",
     "StatusChip",
+    "SurfacePanel",
     "apply_to",
     "bold_button",
     "combo_box",
@@ -403,6 +404,23 @@ class Card(QFrame):
         painter.drawRoundedRect(rect, self._radius, self._radius)
 
 
+class SurfacePanel(QWidget):
+    """白底容器：自己铺一层卡片白（``T.SURFACE``），用来盖住底色漏色。
+
+    为什么要自绘：参数面板把表单塞进 ``ScrollArea``，滚动区的 viewport 会刷
+    一层系统窗口灰（``#EFEFEF``），铺在白卡片上就是一块突兀的"灰砖"。
+    qfluent 的 ``enableTransparentBackground()`` 帮不上忙——它必须在
+    ``setWidget()`` **之后**调用才作用到内容上，而且靠样式表接管整棵子树，
+    会把输入框一起刷成透明；``setPalette`` + ``autoFillBackground`` 也不行
+    （样式表 polish 时调色板会被重置回系统灰）。自绘不受这两条影响，也符合
+    本模块「基础视觉控件自绘、不靠样式表」的约定。
+    """
+
+    def paintEvent(self, event) -> None:  # noqa: N802 (Qt 命名)
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor(T.SURFACE))
+
+
 class Divider(QFrame):
     """水平分隔线（默认 1px）。"""
 
@@ -411,8 +429,10 @@ class Divider(QFrame):
         """固定高、水平拉伸的水平分隔线。
 
         ``color`` 缺省用最淡的 ``BORDER_SOFT``（好当"同一组里的轻分隔"）；
-        需要一眼看出"这是两段"时传 ``T.BORDER_STRONG`` 并给 ``thickness``
-        （参数面板里把「全局参数」与「本页参数」分开用的就是这一档）。
+        需要一眼看出"这是两段"时传 ``T.BORDER_STRONG`` 并给 ``thickness``。
+        参数面板里**不再用它分「识别文本框 / 本页参数」**——用户 2026-11-16
+        说那条深色横线"太深、太宽"，改用固定高度的空白行（见
+        ``panels/detect_panel.py``）。
         """
         super().__init__(parent)
         self._color = color or T.BORDER_SOFT

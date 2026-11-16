@@ -40,6 +40,7 @@ from PySide6.QtWidgets import (
 
 from desktop.services.font_catalog import start_background_scan
 from desktop.services.stale_chain import stale_upstream
+from desktop.settings.config import app_config
 from desktop.steps import ports
 from desktop.steps.flow import FlowDefinition
 from desktop.steps.spec import FLOW_STAGES
@@ -231,6 +232,9 @@ class TaskDetailPage(
         #: 收尾/中断按它取进程；未启动时为 None。
         self._stage_transport = None
         self._init_ui()
+        # 「执行记录」区块的总开关（设置 →「功能」）：开关一变就立刻重算显隐，
+        # 不必让用户退出再进详情页
+        self._wire_history_switch()
         # 进度事件的界面刷新节流器（见 StageRunnerMixin._PROGRESS_UI_MS）
         self._init_progress_ui()
         # 执行日志的合并器（见 desktop/ui/log_throttle，StageRunnerMixin._init_log_coalescer）
@@ -405,12 +409,13 @@ class TaskDetailPage(
         # 整本书统计的「整幅→半幅」显示修正也按任务作废，别拿上一本的基线。
         self._half_width_median = None
         self._manual_stems = set()
-        # 「保留框外空白」给无框页补框用的全书统计同理：不清就会拿上一本的
-        # 框宽/形态，给新任务的空白页凭空拆出左右两半（用户 2026-11-12）。
-        self._blank_has_stats = False
-        self._blank_expects_two = False
-        self._blank_typical_width = 0
-        self._blank_half_width = None
+        # 「自动沿用上一页标注」的"这一页已经带过了"记号按任务清：
+        # 上一个任务带过的页名（0001…）在新任务里是**另一页**，留着会让新任务
+        # 的头几页永远带不过来框（两个任务的页名天然重复）。
+        self._inherit_done = set()
+        # 「上一个停留的页面」同理会跨任务串味：新任务的第一次选页不该去沿用
+        # 上一个任务的最后一页。
+        self._detect_prev_path = None
         # 图头尺寸缓存按 (路径, mtime) 键控、只增不减：换任务清掉，别攒一整场会话
         self._thumb_size_cache = None
         # 「上游产物逐文件指纹」的记忆同理按任务清：同一个任务**重进**（换源 PDF
@@ -1170,6 +1175,36 @@ class TaskDetailPage(
             self.task_id, stage, (slot.node_id or None) if slot else None
         )
 
+    # ------------------------------------------------- 执行记录区块（设置开关）
+    def _wire_history_switch(self) -> None:
+        """订阅「显示执行记录」总开关（设置 →「功能」），并立刻算一次显隐。
+
+        用户 2026-11-16：右栏的「执行记录」默认**不显示**，需要时到设置里打开。
+        ⚠️ 配置项是长期存活的 QObject，本页被销毁时 Qt 会自动断开，不必手动收
+        （范式同 ``DetectMixin._wire_yolo_export_card``）。
+        """
+        app_config().showHistory.valueChanged.connect(self._sync_history_block)
+        self._sync_history_block()
+
+    def _sync_history_block(self, *_args) -> None:
+        """「执行记录」区块的显隐：总开关 × 这一步自己有没有专属区块。
+
+        两个条件都满足才显示：
+        1. 设置 →「功能」→「显示执行记录」打开（默认关）；
+        2. 这一步**没有** ``spec.panel_extra``（第二步显示的是「检测结果统计」，
+           那里没有表单参数、历史回填用不上，见 ``spec_for_stage``）。
+
+        「图片拼版」是可选节点（伪步骤）：它没有可执行的子任务，执行记录不适用
+        （``_select_imposition_detail`` 也会藏它，这里同样挡掉，保证"切到别处
+        再切回来"不会把它露出来）。
+        """
+        stage = self.current_stage() if getattr(self, "task_id", None) else ""
+        if not app_config().showHistory.value or stage == IMPOSITION_STAGE:
+            self.history_block.setVisible(False)
+            return
+        spec = ports.spec_for_stage(stage)
+        self.history_block.setVisible(not spec or not spec.panel_extra)
+
     def _select_stage(self, index: int) -> None:
         """切到步骤条的**第``index`` 格**（格序，含可选节点占位）。
 
@@ -1282,7 +1317,8 @@ class TaskDetailPage(
         # 「导出YOLO标注」那张卡片也只在第二步出现，另加"开发者模式 + 开关"
         # 两个条件（判据全在 DetectMixin._sync_yolo_export_card 里，见那里）
         self._sync_yolo_export_card()
-        self.history_block.setVisible(not spec or not spec.panel_extra)
+        # 执行记录：还多一道"设置 →「功能」→ 显示执行记录"的总开关（默认关）
+        self._sync_history_block()
         self._apply_control_width()
         self._refresh_stage_views()
         # 「下载 PDF」只属于第四步：切到别的步骤就收起来（拼版详情页另行处理）

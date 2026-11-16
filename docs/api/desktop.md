@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 185 个模块、201 个公开类、1526 个公开函数/方法（生成于 2026-11-12）。
+覆盖 188 个模块、204 个公开类、1558 个公开函数/方法（生成于 2026-11-16）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -24,17 +24,17 @@
 | [`desktop.components.dialog_shell`](#desktopcomponentsdialog_shell) | 0 | 1 |
 | [`desktop.components.flow_dialog`](#desktopcomponentsflow_dialog) | 2 | 10 |
 | [`desktop.components.imposition.canvas`](#desktopcomponentsimpositioncanvas) | 1 | 27 |
-| [`desktop.components.imposition.confirm_delete`](#desktopcomponentsimpositionconfirm_delete) | 1 | 2 |
-| [`desktop.components.imposition.page_list`](#desktopcomponentsimpositionpage_list) | 1 | 10 |
+| [`desktop.components.imposition.confirm_delete`](#desktopcomponentsimpositionconfirm_delete) | 1 | 1 |
+| [`desktop.components.imposition.page_list`](#desktopcomponentsimpositionpage_list) | 1 | 11 |
 | [`desktop.components.imposition.page_thumb`](#desktopcomponentsimpositionpage_thumb) | 1 | 14 |
 | [`desktop.components.imposition.panel`](#desktopcomponentsimpositionpanel) | 1 | 7 |
-| [`desktop.components.imposition.picker`](#desktopcomponentsimpositionpicker) | 1 | 9 |
-| [`desktop.components.imposition.view`](#desktopcomponentsimpositionview) | 1 | 13 |
+| [`desktop.components.imposition.picker`](#desktopcomponentsimpositionpicker) | 1 | 14 |
+| [`desktop.components.imposition.view`](#desktopcomponentsimpositionview) | 1 | 16 |
 | [`desktop.components.log_panel`](#desktopcomponentslog_panel) | 1 | 10 |
 | [`desktop.components.missing_source_prompt`](#desktopcomponentsmissing_source_prompt) | 1 | 7 |
 | [`desktop.components.pagination`](#desktopcomponentspagination) | 2 | 11 |
 | [`desktop.components.panels.base`](#desktopcomponentspanelsbase) | 1 | 7 |
-| [`desktop.components.panels.detect_panel`](#desktopcomponentspanelsdetect_panel) | 1 | 2 |
+| [`desktop.components.panels.detect_panel`](#desktopcomponentspanelsdetect_panel) | 1 | 4 |
 | [`desktop.components.panels.extract_panel`](#desktopcomponentspanelsextract_panel) | 1 | 1 |
 | [`desktop.components.panels.params_spec`](#desktopcomponentspanelsparams_spec) | 0 | 2 |
 | [`desktop.components.panels.print_form`](#desktopcomponentspanelsprint_form) | 1 | 1 |
@@ -45,7 +45,7 @@
 | [`desktop.components.panels.print_sections`](#desktopcomponentspanelsprint_sections) | 1 | 0 |
 | [`desktop.components.panels.print_text_layout`](#desktopcomponentspanelsprint_text_layout) | 1 | 0 |
 | [`desktop.components.panels.rembg_panel`](#desktopcomponentspanelsrembg_panel) | 1 | 1 |
-| [`desktop.components.print_insert_dialog`](#desktopcomponentsprint_insert_dialog) | 1 | 2 |
+| [`desktop.components.print_insert_dialog`](#desktopcomponentsprint_insert_dialog) | 1 | 3 |
 | [`desktop.components.print_manage_dialog`](#desktopcomponentsprint_manage_dialog) | 1 | 5 |
 | [`desktop.components.progress_row`](#desktopcomponentsprogress_row) | 1 | 8 |
 | [`desktop.components.step_bar`](#desktopcomponentsstep_bar) | 2 | 20 |
@@ -84,7 +84,7 @@
 | [`desktop.components.viewers.image_zoom_dialog.consts`](#desktopcomponentsviewersimage_zoom_dialogconsts) | 0 | 0 |
 | [`desktop.components.viewers.image_zoom_dialog.dialog`](#desktopcomponentsviewersimage_zoom_dialogdialog) | 1 | 7 |
 | [`desktop.components.viewers.image_zoom_dialog.icons`](#desktopcomponentsviewersimage_zoom_dialogicons) | 0 | 3 |
-| [`desktop.components.viewers.image_zoom_dialog.io`](#desktopcomponentsviewersimage_zoom_dialogio) | 0 | 2 |
+| [`desktop.components.viewers.image_zoom_dialog.io`](#desktopcomponentsviewersimage_zoom_dialogio) | 0 | 5 |
 | [`desktop.components.viewers.image_zoom_dialog.popup`](#desktopcomponentsviewersimage_zoom_dialogpopup) | 1 | 3 |
 | [`desktop.components.viewers.pdf_viewer`](#desktopcomponentsviewerspdf_viewer) | 1 | 2 |
 | [`desktop.components.viewers.print_layout_canvas`](#desktopcomponentsviewersprint_layout_canvas) | 1 | 14 |
@@ -102,7 +102,7 @@
 | [`desktop.modules.base`](#desktopmodulesbase) | 2 | 21 |
 | [`desktop.modules.detect.page`](#desktopmodulesdetectpage) | 1 | 21 |
 | [`desktop.modules.extract.page`](#desktopmodulesextractpage) | 1 | 5 |
-| [`desktop.modules.imposition.page`](#desktopmodulesimpositionpage) | 1 | 8 |
+| [`desktop.modules.imposition.page`](#desktopmodulesimpositionpage) | 1 | 9 |
 | [`desktop.modules.print.page`](#desktopmodulesprintpage) | 1 | 4 |
 | [`desktop.modules.rembg.page`](#desktopmodulesrembgpage) | 1 | 5 |
 | [`desktop.modules.thumb_source`](#desktopmodulesthumb_source) | 1 | 4 |
@@ -119,21 +119,22 @@
 | [`desktop.pages.taskdetail.print_list`](#desktoppagestaskdetailprint_list) | 1 | 3 |
 | [`desktop.pages.taskdetail.rembg_live`](#desktoppagestaskdetailrembg_live) | 1 | 0 |
 | [`desktop.pages.taskdetail.runner`](#desktoppagestaskdetailrunner) | 1 | 2 |
-| [`desktop.pages.taskdetail.submit`](#desktoppagestaskdetailsubmit) | 1 | 2 |
+| [`desktop.pages.taskdetail.submit`](#desktoppagestaskdetailsubmit) | 1 | 4 |
 | [`desktop.pages.taskdetail.view`](#desktoppagestaskdetailview) | 2 | 5 |
 | [`desktop.pages.taskflow.page`](#desktoppagestaskflowpage) | 1 | 2 |
 | [`desktop.pages.tasklist.page`](#desktoppagestasklistpage) | 1 | 7 |
 | [`desktop.services.detect_export`](#desktopservicesdetect_export) | 0 | 7 |
 | [`desktop.services.font_catalog`](#desktopservicesfont_catalog) | 1 | 6 |
-| [`desktop.services.imposition`](#desktopservicesimposition) | 0 | 33 |
-| [`desktop.services.print_plan`](#desktopservicesprint_plan) | 0 | 11 |
+| [`desktop.services.imposition`](#desktopservicesimposition) | 0 | 35 |
+| [`desktop.services.imposition_insert`](#desktopservicesimposition_insert) | 0 | 5 |
+| [`desktop.services.print_plan`](#desktopservicesprint_plan) | 0 | 10 |
 | [`desktop.services.rembg_export`](#desktopservicesrembg_export) | 0 | 7 |
 | [`desktop.services.rembg_groups`](#desktopservicesrembg_groups) | 1 | 4 |
 | [`desktop.services.rembg_live`](#desktopservicesrembg_live) | 0 | 1 |
 | [`desktop.services.stale_chain`](#desktopservicesstale_chain) | 0 | 5 |
 | [`desktop.services.submit_state`](#desktopservicessubmit_state) | 0 | 1 |
 | [`desktop.services.yolo_prewarm`](#desktopservicesyolo_prewarm) | 0 | 3 |
-| [`desktop.settings.config`](#desktopsettingsconfig) | 1 | 6 |
+| [`desktop.settings.config`](#desktopsettingsconfig) | 1 | 7 |
 | [`desktop.settings.location`](#desktopsettingslocation) | 2 | 8 |
 | [`desktop.settings.page`](#desktopsettingspage) | 1 | 3 |
 | [`desktop.shell`](#desktopshell) | 1 | 22 |
@@ -153,7 +154,7 @@
 | [`desktop.steps.source_zone`](#desktopstepssource_zone) | 1 | 20 |
 | [`desktop.steps.spec`](#desktopstepsspec) | 1 | 22 |
 | [`desktop.steps.validate`](#desktopstepsvalidate) | 1 | 2 |
-| [`desktop.store.annotations`](#desktopstoreannotations) | 1 | 21 |
+| [`desktop.store.annotations`](#desktopstoreannotations) | 1 | 18 |
 | [`desktop.store.drafts`](#desktopstoredrafts) | 1 | 5 |
 | [`desktop.store.imposition`](#desktopstoreimposition) | 1 | 4 |
 | [`desktop.store.json_io`](#desktopstorejson_io) | 0 | 8 |
@@ -161,19 +162,21 @@
 | [`desktop.store.runs`](#desktopstoreruns) | 1 | 10 |
 | [`desktop.store.store`](#desktopstorestore) | 1 | 1 |
 | [`desktop.store.tasks`](#desktopstoretasks) | 1 | 69 |
-| [`desktop.store.ui_state`](#desktopstoreui_state) | 1 | 11 |
+| [`desktop.store.ui_state`](#desktopstoreui_state) | 1 | 13 |
 | [`desktop.ui.color_picker`](#desktopuicolor_picker) | 5 | 30 |
+| [`desktop.ui.confirm_dialog`](#desktopuiconfirm_dialog) | 1 | 5 |
 | [`desktop.ui.font_setup`](#desktopuifont_setup) | 2 | 8 |
 | [`desktop.ui.fonts`](#desktopuifonts) | 0 | 2 |
 | [`desktop.ui.help_dialog`](#desktopuihelp_dialog) | 0 | 6 |
 | [`desktop.ui.icons`](#desktopuiicons) | 2 | 5 |
 | [`desktop.ui.log_throttle`](#desktopuilog_throttle) | 1 | 5 |
 | [`desktop.ui.menu`](#desktopuimenu) | 3 | 18 |
+| [`desktop.ui.modal_quiet`](#desktopuimodal_quiet) | 1 | 3 |
 | [`desktop.ui.segmented_toggle`](#desktopuisegmented_toggle) | 1 | 14 |
 | [`desktop.ui.style`](#desktopuistyle) | 0 | 3 |
 | [`desktop.ui.theme`](#desktopuitheme) | 0 | 3 |
 | [`desktop.ui.toast`](#desktopuitoast) | 0 | 1 |
-| [`desktop.ui.widgets`](#desktopuiwidgets) | 10 | 49 |
+| [`desktop.ui.widgets`](#desktopuiwidgets) | 11 | 50 |
 | [`desktop.ui.window_size`](#desktopuiwindow_size) | 0 | 3 |
 | [`desktop.utils.files`](#desktoputilsfiles) | 0 | 33 |
 | [`desktop.utils.icon`](#desktoputilsicon) | 0 | 3 |
@@ -448,9 +451,9 @@ gujitools 桌面端主窗口：左侧导航壳层（任务管理 + 独立模块�
 
 | 函数 | 说明 |
 | --- | --- |
-| `manual_hint_text(*, has_boxes: bool, keep_blank: bool=False) -> str` | 预览**顶部红框提示**的一句话（用户 2026-11-12，"检测文本框"两步共用）。 |
+| `manual_hint_text(*, has_boxes: bool, manual: bool=False) -> str` | 预览**顶部红框提示**的一句话（用户 2026-11-12，"检测文本框"两步共用）。 |
 
-#### `manual_hint_text(*, has_boxes: bool, keep_blank: bool=False) -> str`
+#### `manual_hint_text(*, has_boxes: bool, manual: bool=False) -> str`
 
 预览**顶部红框提示**的一句话（用户 2026-11-12，"检测文本框"两步共用）。
 
@@ -459,10 +462,12 @@ gujitools 桌面端主窗口：左侧导航壳层（任务管理 + 独立模块�
 直接往下一步送。提示条常驻在画布顶部（可关掉），文案按当前情况分岔：
 
 - 有框："改位置/尺寸/手绘新框 + 去右栏改类型"；
-- 无框：先告诉用户**手画一个**（比"去点检测本页"快得多，很多页模型本来
-  就检不出）；
-- 「保留框外空白」开着时画的是**扩展框**（要裁的区域，不是检测框）：
-  此时能改的是分界与大小，能切的类型只有整幅 / 左 / 右。
+- 无框：先告诉用户**手画一个**（比"去点一次批量检测"快得多，很多页模型本来
+  就检不出），并点名底部那颗「检测文本框」主按钮（2026-11-16 起面板上不再
+  有「检测本页」，单页检测只剩"自己画"这一条快路）；
+- ``manual=True``（人工标注方式，用户 2026-11-16）：这页的框全靠用户画，
+  无框时**不能**再让人去点「检测文本框」（自动识别的入口，这个方式下压根
+  不显示）。
 
 ⚠️ 本函数是文案**唯一实现**：任务流程第二步与独立「检测文本框」页都调它，
 别在两边各写一份（改一处忘另一处，正是这条提示要避免的那类问题）。
@@ -1597,14 +1602,17 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 - **高度封顶**：勾选的页再多，弹窗也不能无限变高——列表放进滚动区，
   超出封顶高度出现滚动条。
 
-⚠️ 底座是**真正的顶层模态窗口**（``QDialog``），**不能**用 qfluentwidgets 的
+⚠️ 底座是 :class:`~desktop.ui.confirm_dialog.ConfirmDialog`（真窗口 ``QDialog``
++ 置顶/防连点/宿主点击静音三条防线）。**不能**用 qfluentwidgets 的
 ``MessageBoxBase`` / ``MessageBox``：它们的 ``MaskDialogBase`` 会
-``setWindowFlags(Qt.FramelessWindowHint)``，把窗口类型降级成 ``Qt::Widget``
+``setWindowFlags(Qt.FramelessWindowHint)``，把窗口降级成 ``Qt::Widget``
 ——弹窗于是变成主窗口里的**子控件遮罩层**（``isWindow() == False``），
 不是窗口，就没有"模态窗口"该有的激活与焦点语义。实机（2026-10-26 用户报）
-表现为：点「删除」不生效、电脑还"当当当"响（点击落在一个不是窗口的遮罩上）。
-同页的「清空拼版」用的是 ``qfluentwidgets.Dialog``（``FramelessDialog``，
-真窗口），本弹窗此前是**全仓唯一**的遮罩式确认框，这就是差异所在。
+表现为：点「删除」不生效、电脑还"当当当"响。
+
+2026-11-15 用户再报"有时候点确认框会当当响"——那时底座已是对的，响的是另一条
+路（点到弹窗外的宿主窗口 / 连点穿透），三条防线就是那次补的，现在收在
+``ConfirmDialog`` 里由全仓共用。
 
 宿主（唤起与删除落盘）见 ``desktop/pages/taskdetail/imposition_pages.py``
 的 ``_on_imposition_batch_delete``。
@@ -1616,19 +1624,18 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 | DIALOG_W | `520` |
 | LIST_MAX_H | `264` |
 
-### `class BatchDeleteConfirmDialog(QDialog)`
+### `class BatchDeleteConfirmDialog(ConfirmDialog)`
 
 批量删除拼版页的确认框：正文折行 + 逐页列名 + 列表滚动。
 
 ``exec()`` 走 ``QDialog`` 的嵌套事件循环：点「删除」= ``accept()``
-（返回 ``QDialog.Accepted``），点「取消」/按 Esc = ``reject()``。
+（返回真），点「取消」/按 Esc = ``reject()``。
 
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(pages: list, parent=None)` | ``pages`` 是被勾选的 ``[(页下标, 页数据), …]``（原顺序）。 |
-| `showEvent(event) -> None` | 显示时**显式置顶并激活**。 |
 
 ##### `__init__(pages: list, parent=None)`
 
@@ -1636,14 +1643,6 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 
 页数据只读它的 ``items``（两张源图），文案与左列清单同源
 （``page_source_stems`` + ``cn_page_label``）。
-
-##### `showEvent(event) -> None`
-
-显示时**显式置顶并激活**。
-
-父窗口是 qframelesswindow 的无边框主窗口，个别情况下（远程桌面、
-多屏、窗口刚从最小化恢复）系统不会把新弹窗提到最前；不置顶时
-用户点按钮点到的其实是"后面"的窗口，Windows 会响提示音。
 
 ---
 
@@ -1661,6 +1660,11 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 标题「第一页」与副标题（两张源图名）排在缩略图**下方**（用户 2026-10-04：
 文字要在缩略图下面）。勾了页，一条**悬浮操作框**（「已选 N 页」+「取消选择」
 「批量删除」）悬在页码栏右侧中部，可拖动——取消选择即收起。
+
+**右键某页缩略图**（用户 2026-11-16，照「PDF排版」左列那套菜单）：上移 /
+下移 / 删除当前拼版 / 向前插入拼版 / 向后插入拼版。三条动作都不在本文件
+执行——分别发 ``move_requested`` / ``remove_requested`` /
+``insert_requested``，由控制器落盘（插入还要先弹选图窗）。
 
 这里只做控件与信号：清单**只认页标题/副标题文案**，不认拼版文档本身——
 页清单的数据（``drafts/imposition.json``）由装配层
@@ -1695,6 +1699,7 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 | `set_page_thumbs(thumbs: list) -> None` | 给每页条目灌缩略图（``thumbs[i]`` 是第 i 页的 ``QImage``/``QPixmap``， |
 | `set_thumb_at(index: int, image) -> None` | 只给**指定条目**贴缩略图（``index`` 是它在当前清单里的位置）。 |
 | `current() -> int` | — |
+| `menu_actions() -> list` | 当前右键菜单里的动作（护栏/自检用；没弹过菜单返回空列表）。 |
 | `checked_indexes() -> list[int]` | 勾选了的页下标（升序）。 |
 
 ##### `set_float_host(host) -> None`
@@ -1931,19 +1936,38 @@ worker）→ 连 :attr:`page_ready` 把生成好的那条贴回左列。版面/�
 
 源码：[`desktop/components/imposition/picker.py`](../../desktop/components/imposition/picker.py)
 
-「选择拼版」弹窗（**模块一：选择拼版** 的 UI）。
+「选择拼版」/「插入拼版」弹窗（**模块一：选择拼版** 的 UI）。
 
-从**剩余未被选择拼版的图片**（源清单里还没被任何一页用过的，见
-``services.imposition.remaining_files``）里**自由多选**——选择阶段不限
-张数、不做任何配对；点「开始拼版」时才把勾选的图按源清单顺序**每两张
-配成一页**（序号在前的进右槽），落单的不拼。
+**一个列表，没有页签**（用户 2026-11-16 定的 UI）：
 
-「删除图片」把勾选的图移出选择范围（**软删除**：黑名单由宿主落盘到
-``drafts/imposition.json`` 的 ``removed`` 字段，源文件不动）；
-「查看删除的图片」切换到已删除视图，可勾选批量恢复。
+- 列表里是**所有还能用的图**——上一节点传过来、还没被任何拼版页用掉的成品图，
+  加上**用户自己上传过的图**（上传即复制进任务目录，之后一直是候选，删掉拼版页
+  也会回到这里）。自由多选：1 张单独成一页、2 张拼成一页；点确认才把勾选的图
+  按**列表顺序**成页（序号在前的进右槽，落单的单独一页）；
+- 没有想要的图时点「上传图片…」或直接把图拖进窗口：上传的图排在列表末尾、
+  默认勾上、**带缩略图**；同一张图可以上传多次（每次都是独立的一条候选）。
 
-这里只做控件与信号；弹窗怎么被唤起、选中之后怎么建页落盘，见
-``desktop/pages/taskdetail/imposition_pages.py``（模块一控制器）。
+三种用法（``mode``）：
+
+- ``"pick"``（默认）：左列「＋ 选择拼版」——确认后追加到清单末尾；
+- ``"insert"``：左列右键「向前 / 向后插入拼版」——``position`` 给出默认落点
+  （当前页之前/之后，弹窗里可改），确认后插到那个位置；
+- ``"append"``：单图页「新增图片」——只能勾 1 张，确认按钮叫「添加」。
+
+⚠️ **上传的图本弹窗不落盘**：它只把本地路径交回去（:meth:`chosen_items` 里
+``uploaded=True``），复制进任务目录由宿主调
+``services.imposition_insert.resolve_chosen`` 统一做。弹窗写任务目录会让
+"取消"也留下垃圾文件，而且自测还得准备目录。
+
+⚠️ **上传的图与缩略图都不许写进上一步的目录/清单**（用户 2026-11-16）：
+复制落点是 ``<任务目录>/inserted/imposition/``（见
+``services.imposition_insert.upload_dir``），那既不是 ``stages/`` 下的阶段产物，
+也不与打印侧的 ``inserted/`` 混放——上一步的页面清单不会因此多出一条，
+打印侧插入的图也不会混进拼版候选。
+
+这里只做控件与信号；弹窗怎么被唤起、选完之后怎么建页落盘，见
+``desktop/pages/taskdetail/imposition_pages.py``（任务流程控制器）与
+``desktop/modules/imposition/page.py``（独立拼图页）。
 
 ### 模块常量
 
@@ -1956,13 +1980,11 @@ worker）→ 连 :attr:`page_ready` 把生成好的那条贴回左列。版面/�
 
 ### `class ImpositionPickerDialog(FramelessDialog)`
 
-「选择拼版」弹窗：从剩余未使用的源图里勾选两张。
+拼版选图弹窗：**一个候选列表**（上游剩余图 + 自己上传的图）。
 
-两种模式（2026-09-30 新增 ``mode`` 参数）：
-
-- **``"pick"``**（默认，选页）：自由多选，1 张单独成页 / 2 张拼一页；
-- **``"append"``**（单图页「新增图片」）：**只能勾 1 张**，确认按钮叫
-  「添加」——宿主把这张图并进当前那一页拼版（见模块一控制器）。
+三种 ``mode`` 见模块 docstring。``files`` 是**候选池**（宿主按源清单顺序给：
+上游还没用过的图 + 这个任务上传过、现在又没被页引用的图）。
+本次新上传的图追加在后面（``uploaded=True``，确认后才由宿主复制落盘）。
 
 **卡片网格**：一行摆好几张（列数随窗口宽度自动变），卡片 ``CARD_W×CARD_H``、
 缩略图固定 ``THUMB_W×THUMB_H``（用户要求「一行好几个、选框宽一些」且
@@ -1972,46 +1994,68 @@ worker）→ 连 :attr:`page_ready` 把生成好的那条贴回左列。版面/�
 恢复它的最小化/最大化按钮与「双击标题栏放大/还原」；边缘还能拖拽调整大小，
 网格列数跟着窗口宽度自动变。
 
-**删除/恢复**（用户 2026-09-30 要求）：勾选卡片可「删除图片」——移出选择
-范围（软删除，源文件不动，黑名单由宿主落盘）；「查看删除的图片」切到
-已删除视图，勾选后「恢复选中」或「全部恢复」。
-
-源清单顺序在前的图会被放到拼版页**右侧**（用户口径），这里按同一顺序
-展示，勾选结果也按**源清单顺序**返回（不是点选先后）。
+列表顺序在前的图会被放到拼版页**右侧**（用户口径），这里按同一顺序展示，
+勾选结果也按**列表顺序**返回（不是点选先后）。
 
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(files: list, parent=None, removed_files=None, mode: str='pick', thumb_provider=None)` | — |
-| `count() -> int` | 候选视图的卡片数（已删除的不算）。 |
-| `checked_files() -> list[Path]` | 用户勾选的源图（**按源清单顺序**，不是勾选先后）。 |
+| `__init__(files: list, parent=None, mode: str='pick', thumb_provider=None, position: str='after', current_row: int=-1, total: int=0)` | — |
+| `count() -> int` | 列表里的卡片数（含本次上传的图）。 |
+| `checked_files() -> list[Path]` | 用户勾选的图（**按列表顺序**，不是勾选先后）。 |
+| `chosen_items() -> list[dict]` | 勾选的候选（带"是不是本次上传"的标记），宿主据此决定要不要复制。 |
+| `uploaded_files() -> list[Path]` | 本次上传过的图（不管勾没勾；复制落盘只看勾选的那些）。 |
 | `picked_files() -> list[Path]` | — |
 | `auto_mode_file() -> Path \| None` | 「从这张图片开始自动拼版」生效的那张图（不生效返回 None）。 |
-| `auto_sequence() -> list[Path]` | 自动拼版的图片序列：从勾选那张起到候选清单末尾（源清单顺序）。 |
-| `removed_files() -> list[Path]` | 当前黑名单（含会话内新删的，不含已恢复的）。 |
-| `removed_changed() -> bool` | 黑名单与打开时是否不同（宿主据此决定要不要落盘）。 |
-| `toggle_card(card: _SourceCard) -> None` | 切换一张候选卡片的勾选（自由多选，不设上限）。 |
+| `auto_sequence() -> list[Path]` | 自动拼版的图片序列：从勾选那张起到**列表末尾**（列表顺序）。 |
+| `position() -> str` | 插入落点（只 insert 模式有单选；其余模式恒 ``"after"``）。 |
+| `toggle_card(card: _SourceCard) -> None` | 切换一张卡片的勾选（自由多选，不设上限）。 |
+| `add_uploads(paths) -> None` | 把本地图片加进列表（拖放与文件框共用）。 |
+| `dragEnterEvent(event) -> None` | Qt 事件覆写：拖入时校验并接受拖放。 |
+| `dragMoveEvent(event) -> None` | Qt 事件覆写：拖动过程中更新落点提示。 |
+| `dropEvent(event) -> None` | Qt 事件覆写：放下时处理拖入内容。 |
 
 ##### `checked_files() -> list[Path]`
 
-用户勾选的源图（**按源清单顺序**，不是勾选先后）。
+用户勾选的图（**按列表顺序**，不是勾选先后）。
 
-张数不限——配对（每两张一页）由宿主在「开始拼版」后做。
+张数不限——配对（每两张一页）由宿主做。⚠️ 同一个本地文件被上传两次时
+这里会出现**两条相同路径**（那正是"同一张图多次使用"的口径），宿主
+复制时会各自落成不同的文件名（见 ``services.imposition_insert``）。
+
+##### `chosen_items() -> list[dict]`
+
+勾选的候选（带"是不是本次上传"的标记），宿主据此决定要不要复制。
+
+形状：``[{"path": Path, "uploaded": bool}, ...]``，顺序同 :meth:`checked_files`。
 
 ##### `auto_mode_file() -> Path | None`
 
 「从这张图片开始自动拼版」生效的那张图（不生效返回 None）。
 
-生效条件：勾选框被勾上、且**恰好勾了 1 张图**——选项只在恰好
+生效条件：勾选框被勾上、且**恰好勾了 1 张**——选项只在恰好
 勾 1 张时出现（不限整幅/半幅，用户 2026-10-01 定），多选不走自动。
+本次上传的图**不参与自动拼版**（它没有页号/半幅标记可依）。
 
 ##### `auto_sequence() -> list[Path]`
 
-自动拼版的图片序列：从勾选那张起到候选清单末尾（源清单顺序）。
+自动拼版的图片序列：从勾选那张起到**列表末尾**（列表顺序）。
 
-「自此之后」= 含勾选的那张本身；它之前的图片不参与（留在候选池，
-之后仍可手动拼）。
+「自此之后」= 含勾选的那张本身；它之前的图片不参与（留在候选里，
+之后仍可手动拼）。本次上传的图不在序列里（见 :meth:`auto_mode_file`）。
+
+##### `add_uploads(paths) -> None`
+
+把本地图片加进列表（拖放与文件框共用）。
+
+⚠️ **不去重**（用户 2026-11-16：「同一张图片可以多次上传」）：每次上传
+都是一个新候选键，确认后由宿主复制成 ``x.png`` / ``x-1.png``。
+新上传的图默认勾上（已勾满 2 张时不再替用户做决定）。
+
+⚠️ 加完**必须**再排一次缩略图（``_fill_thumbs``）：分批解码只由
+"打开弹窗"时的那一次 ``singleShot`` 驱动，那时新卡片还不存在——不补这
+一下，用户的图上来了但卡片是**空白**的（用户 2026-11-16 报的就是这个）。
 
 ---
 
@@ -2052,6 +2096,8 @@ worker）→ 连 :attr:`page_ready` 把生成好的那条贴回左列。版面/�
 | `selected_slot() -> int` | — |
 | `update_current_items(items: list[dict]) -> None` | 把外部（面板按钮）改过的版面写回当前页并重画画布。 |
 | `flush_pending() -> None` | 离开页面前的补发（拖住未松手就切走时别丢改动）。 |
+| `navigate(forward: bool) -> bool` | 方向键翻页的统一入口（与各步骤主预览的 ``navigate`` 同签名）。 |
+| `keyPressEvent(event) -> None` | ← / ↑ 上一页、→ / ↓ 下一页（焦点在拼版区内时的事件冒泡路径）。 |
 
 ##### `set_page_thumbs(thumbs: list) -> None`
 
@@ -2068,6 +2114,19 @@ worker）→ 连 :attr:`page_ready` 把生成好的那条贴回左列。版面/�
 而每条都要重跑一次缩放——380 张陆续到达就是 7.2 万次（用户
 2026-10-06 报"拼版阶段程序卡死"）。转发见
 :meth:`ImpositionPageList.set_thumb_at`。
+
+##### `navigate(forward: bool) -> bool`
+
+方向键翻页的统一入口（与各步骤主预览的 ``navigate`` 同签名）。
+
+详情页的 ``navigate_by_arrow`` 就是照着这个方法名转发的，这里补上后
+拼版步骤也有了「←/→ 翻拼版页」的语义（返回值：是否真的切了页）。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `page_step_for_key(key: int) -> int` | 方向键 → 翻页增量（``-1`` 上一页 / ``+1`` 下一页 / ``0`` 不是翻页键）。 |
 
 ---
 
@@ -2439,25 +2498,33 @@ build_form 生成子类表单并占满剩余垂直空间，最后统一把表单
 
 源码：[`desktop/components/panels/detect_panel.py`](../../desktop/components/panels/detect_panel.py)
 
-检测文本框（detect）阶段面板：检测、保留框外空白与人工干预，**没有 area 参数**。
+检测文本框（detect）阶段面板：识别方式 + 人工干预，**没有 area 参数**。
 
-2026-10-22 口径（用户）：
+2026-11-16 口径（用户）：
 
-> 移除所有 area 相关代码，不再有 area；识别出文本框后，把文本框裁剪出来。
+> 一. 「保留框外空白」功能去除
+> 二. 改成「识别文本框模式」：自动识别 / 人工标注 两种模式
+> 三. 「检测本页」这个功能去除（检测只走底部「检测文本框」/ 主按钮那条批处理）
 
-所以这一步现在是**两个动作**，但 area 已从整个项目移除：
+两种模式的分岔**只有一件事：调不调 YOLO**。
 
-- 「检测文本框」（详情页主按钮）：只跑检测，出框到 ``boxes.json``；
-- 「提交本次任务」（详情页次按钮）：把每个检测框各自裁成一张图
-  （半幅页 ``-l``/``-r``，整幅页用页名），落到 ``stages/detect``。
-  **没提交就不算这一步完成**——下一步的输入目录是空的。
+- **自动识别**（``mode="auto"``，默认）：主按钮「检测文本框」照旧跑 YOLO 出框；
+  预览区仍然可以手动画框/拖框改结果；
+- **人工标注**（``mode="manual"``）：**完全不调 YOLO**——底部不显示「检测文本
+  框」，用户自己在每一页画框；
+  另外提供「自动使用上一个文本框标注」（默认勾选）：切到一个**还没有任何标注**
+  的页面时，把上一个页面的框带过来（已经标注过的页不受影响）。
+
+两种模式共用同一个收尾动作「提交本次任务」（把框裁成图交给下一步）；人工标注
+点它时会先检查有没有漏标注的页（见 ``pages/taskdetail/submit.py``）。
+
+⚠️ 两段之间的**距离是固定的**（用户 2026-11-16 第 4 条）：自动识别没有「自动
+使用上一个文本框标注」这一行，但那一行的**高度照样空着**，所以切换模式时
+「识别文本框模式 / 本页参数」不会坍塌到一起（见 ``REUSE_ROW_HEIGHT``）。
 
 ### `class DetectPanel(StagePanel)`
 
-检测文本框阶段面板：检测 + 保留框外空白 + 人工修正框。
-
-YOLO 检测每张图的内容框坐标（半幅：左右两栏；整幅：整页单一内容区），
-供预览标注与「提交本次任务」的裁图使用。
+检测文本框阶段面板：识别方式 + 人工修正框。
 
 **人工干预**（用户 2026-09-29 定）：框的类型是**框自己的属性**，不随
 "还剩几个框"变化——
@@ -2470,26 +2537,30 @@ YOLO 检测每张图的内容框坐标（半幅：左右两栏；整幅：整页
 
 | 方法 | 说明 |
 | --- | --- |
-| `get_args() -> dict` | 本步骤唯一的参数：``keep_blank``（保留框外空白，默认 False）。 |
+| `get_args() -> dict` | 本步骤的参数：``mode``（识别方式）与 ``reuse_prev``（沿用上一页标注）。 |
+| `is_applying() -> bool` | 当前是不是**程序化回填**（历史/暂存/换任务），而不是用户点击。 |
+| `is_manual() -> bool` | 当前是不是「人工标注」模式。 |
 | `set_box_selection(index: int, kind: str) -> None` | 回填「选中框类型」控件：``index < 0``（无选中）时三段都不高亮。 |
 
 ##### `get_args() -> dict`
 
-本步骤唯一的参数：``keep_blank``（保留框外空白，默认 False）。
+本步骤的参数：``mode``（识别方式）与 ``reuse_prev``（沿用上一页标注）。
 
-它是**任务级**参数（不是系统级）：随本任务的参数暂存/历史落盘在
-``tasks/<任务号>/`` 下，任务 A 设成「保留」不会影响任务 B；
-新任务没有暂存也没有历史时回到内置默认（不保留）。
+两者都是**任务级**参数（不是系统级）：随本任务的参数落盘在
+``tasks/<任务号>/ui.json`` 下（``store.save_detect_mode`` /
+``save_detect_reuse_prev``），任务 A 设成人工标注不会影响任务 B；
+新任务没有记录时回到内置默认（自动识别 + 沿用上一页）。
 
-两处生效、都不改检测结果本身：
+⚠️ 它们**不影响检测结果本身**（框一直在 ``boxes.json`` 里）：
+``mode`` 只决定调不调 YOLO，``reuse_prev`` 只决定切页时要不要带框。
 
-- 预览里画出来的框（宿主 ``DetectMixin._apply_boxes`` 换算成扩展框）；
-- 「提交本次任务」的裁图几何（``print_plan._keep_blank_entries``）。
+##### `is_applying() -> bool`
 
-检测运行的参数里也存一份，便于历史回填与提交版本判定。
+当前是不是**程序化回填**（历史/暂存/换任务），而不是用户点击。
 
-⚠️ 不要在这里补 ``{"area": 1}`` 之类的"友好默认"：area 已从整个项目
-移除，补回去会让运行历史与提交版本判定多出一个不存在的参数。
+宿主用它决定"要不要把这个值写进 ``tasks/<id>/ui.json``"：回填本身来自
+那份记录（或历史），再写回去只会多一次无意义的落盘，还会在"先复位再
+回填"的时序里短暂写错一次。
 
 ##### `set_box_selection(index: int, kind: str) -> None`
 
@@ -2949,6 +3020,12 @@ print 面板「位置」「文字方向」的固定取值（由 PrintFormMixin �
 | --- | --- |
 | `__init__(*, deleted: list[dict] \| None=None, current_row: int=-1, total: int=0, default_position: str='after', thumb_for: Callable[[str], object] \| None=None, parent=None)` | deleted: print.json 的 deleted_pages 记录；current_row/total 决定页号。 |
 | `result_data() -> dict` | 弹窗关闭后宿主读取的三件事：落点 / 恢复哪些 / 新上传哪些。 |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `image_paths(mime) -> list[str]` | 拖放数据里的**本地图片文件**（扩展名与文件框过滤同源）。 |
 
 ---
 
@@ -3588,7 +3665,7 @@ source_path 不单独成列，仅作任务名的悬浮提示。
 
 ⚠️ 底色/描边走 ``paintEvent`` 自绘（项目硬规则：界面控件不用样式表），
 与 :class:`desktop.components.update_banner.UpdateBanner` 同一套做法。
-⚠️ 文案不写在这里：业务层按"这页有没有框 / 是不是保留框外空白"现算后传进来
+⚠️ 文案不写在这里：业务层按"这页有没有框 / 是不是人工标注方式"现算后传进来
 （唯一实现在 ``desktop/components/box_kinds.py::manual_hint_text``）。
 
 ### `class HintBanner(QWidget)`
@@ -5667,6 +5744,9 @@ qfluentwidgets 没有可用的翻转图标：``SEARCH_MIRROR`` 是"带镜子的�
 | --- | --- |
 | `save_image(image: QImage, path: str \| Path, quality: int=JPEG_QUALITY) -> bool` | 把 QImage 写到磁盘：``.jpg``/``.jpeg`` 走有损（quality），``.png`` 走 |
 | `overwrite_image_file(image: QImage, target: Path, quality: int=OVERWRITE_JPEG_QUALITY) -> bool` | 把 ``image`` **原子**覆盖到 ``target``（格式按目标后缀）。 |
+| `binary_ink(image: QImage)` | 这张图是**二值墨**稿 ⇒ 返回墨色 ``(r, g, b)``；否则 ``None``。 |
+| `is_binary_image(image: QImage) -> bool` | 这张图是不是二值墨稿（``binary_ink`` 的布尔版本）。 |
+| `harden_alpha_image(image: QImage, ink) -> QImage` | 把插值出来的灰边**压回"墨 + 透明"两种像素**，返回新 QImage（不改入参）。 |
 
 #### `save_image(image: QImage, path: str | Path, quality: int=JPEG_QUALITY) -> bool`
 
@@ -5706,6 +5786,28 @@ qfluentwidgets 没有可用的翻转图标：``SEARCH_MIRROR`` 是"带镜子的�
 所以 PNG 走 :func:`_save_png_compact`：既不传 quality，又按像素挑回
 "1 位调色板 + tRNS"这类最省形态（规则与实测见 ``utils.compact_png``）。
 其它格式沿用旧写法（BMP/TIFF 不认 quality，传了也无意义）。
+
+#### `binary_ink(image: QImage)`
+
+这张图是**二值墨**稿 ⇒ 返回墨色 ``(r, g, b)``；否则 ``None``。
+
+规则本体在 :func:`utils.binary_ink.ink_color`（拼版侧
+``services.imposition._looks_binary`` 判的是同一条 alpha 规则）。这里只做
+QImage → 数组、以及"用过的 alpha 取值"那趟 ``bincount``。
+
+⚠️ 判的必须是**烘焙源**（变换前那张），不是烘出来的结果——结果已经被插值
+抹成灰边了，永远判否。
+
+#### `harden_alpha_image(image: QImage, ink) -> QImage`
+
+把插值出来的灰边**压回"墨 + 透明"两种像素**，返回新 QImage（不改入参）。
+
+为什么要这一刀、以及为什么**必须连墨色一起归一**，见
+:func:`utils.binary_ink.harden_alpha`（只压 alpha 会留下"灰色的墨"，
+实测写回 594KB vs 归一后 85KB）。
+
+``ink`` 必须来自**变换前**的源图（``binary_ink(image)`` 的返回值）——
+变换后的结果里已经挑不出干净的墨色了。
 
 ---
 
@@ -6695,9 +6797,9 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 ⚠️ **框类型控件摆在这里、检测按钮不搬过来**（用户 2026-10-03）：
 - 「选中框类型 / 删除选中框」**摆出来**并接线——它们只依赖查看器，本页完全
   驱动得了，而用户要的"手绘之后能标成左框/右框/整幅"正需要它们；
-- ``DetectPanel`` 里的「检测本页」**不摆**：它由任务流程宿主用子进程驱动
-  单页检测，本页的执行入口是整批的 :class:`StepControl`。留着就是个点不动的
-  死控件。
+- 整个 ``DetectPanel`` **不摆**：它的参数（识别方式 / 沿用上一页标注）都是
+  **任务级**概念、由任务流程宿主驱动，本页的执行入口是整批的
+  :class:`StepControl`。
 
 ### 模块常量
 
@@ -6971,6 +7073,7 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 | 名称 | 值 |
 | --- | --- |
 | EDITED_DIRNAME | `"edited"` |
+| UPLOAD_DIRNAME | `"inserted"` |
 | THUMB_REFRESH_DEBOUNCE_MS | `2000` |
 | EDIT_COMMIT_DEBOUNCE_MS | `250` |
 
@@ -6994,7 +7097,18 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 
 | 函数 | 说明 |
 | --- | --- |
+| `uploaded_page_dir() -> Path` | 「上传图片」在独立拼图页里的复制落点（**缓存**，与任务流程的 |
 | `edited_page_dir() -> Path` | 手工修饰过的整页组合的存放目录（**缓存**，不是产物）。 |
+
+#### `uploaded_page_dir() -> Path`
+
+「上传图片」在独立拼图页里的复制落点（**缓存**，与任务流程的
+``tasks/<任务号>/inserted/`` 对应）。
+
+⚠️ 上传的图**必须复制一份**再进版面：源文件放在桌面/下载里，用户随手
+挪走或删掉，拼版就再也合不出来（导出时 ``_open_rgba`` 直接抛错）。复制
+进 singletask 缓存区意味着它会跟着"清空输入"一起被丢弃——那正是我们要的
+语义（这批图只属于这一次拼版）。
 
 #### `edited_page_dir() -> Path`
 
@@ -7360,12 +7474,6 @@ placeholder 还写着旧的「任务#0007」就是错的（用户会以为下一
 - 子进程检测到的框写回（origin=auto）；
 - 预览区拖动线框后写回（origin=manual），全程不生成新文件。
 
-### 模块常量
-
-| 名称 | 值 |
-| --- | --- |
-| KEEP_BLANK_SUFFIX | `"（保留框外空白：这是要裁的整页区域，可直接拖动）"` |
-
 ### `class VersionedBoxCache(dict)`
 
 ``detect_cache`` 的带版本号版：任何写入都自增 ``version``。
@@ -7693,7 +7801,8 @@ label 记身份，而下游文件名可能跨版本不一致（计划无后缀�
 ``picker.py``）与右侧面板的页管理按钮（``panel.py``）：
 - 启用/取消拼版（决定第四步取图来源，落盘到 ``drafts/imposition.json``）；
 - 「选择拼版」→ 弹窗挑两张加一页；或挑一张勾「自动拼版」批量加页；
-  弹窗里还能「删除图片」（黑名单 ``removed`` 字段，软删除）与恢复；
+  弹窗是**一个列表**（上游剩余图 + 本任务上传过的图），也能自己上传图片
+  （2026-11-16：不再有「删除恢复」页签——删掉的图直接回到这个列表）；
 - **单图页「新增图片」**（2026-09-30）：append 模式弹窗挑 1 张并进当前页；
 - 删页入口只剩**左列**：「✕」释放单页 / 勾选悬浮框批量删除 / 清空全部
   ——右侧面板的「删除本页拼版」按钮已删（2026-09-30 用户定）；
@@ -8260,6 +8369,12 @@ control_stack、stage_* 控件、log_view、process/run_id 等。
 检测文本框                    「检测文本框」：只出框        「提交本次任务」：逐框裁图 → stages/detect
 ==========================  ==========================  ==========================
 
+⚠️ 2026-11-16 起第二步有两种**识别方式**（「自动识别 / 人工标注」，见
+``components/panels/detect_panel.py``）：人工标注**不调 YOLO**，框全靠用户画，
+所以「检测」那次运行可能压根不存在——提交的门槛与版本判定都按方式分岔
+（人工标注只比"提交之后有没有动过框"），并且提交前会先查一遍有没有漏标注的页
+（用户 2026-11-16 第 4 条）。
+
 去底色**只有一个动作**（「执行去底色」直接落 ``stages/rembg``），不再有提交
 按钮/版本状态机，也没有预览目录。本模块负责：
 - ``run_submit``              ：提交按钮入口（当前固定分发到检测提交）；
@@ -8271,6 +8386,7 @@ control_stack、stage_* 控件、log_view、process/run_id 等。
 | 名称 | 值 |
 | --- | --- |
 | SUBMIT_TEXT | `"提交本次任务"` |
+| MISSING_LABEL_PREVIEW | `12` |
 
 ### `class SubmitMixin`
 
@@ -8282,13 +8398,38 @@ control_stack、submit_button/submit_hint、log_view、_toast()。
 | 方法 | 说明 |
 | --- | --- |
 | `run_submit() -> None` | 「提交本次任务」按钮入口：当前只有第二步有提交动作。 |
-| `run_detect_submit() -> None` | 第二步提交：把检测框逐框裁成下一步要的图 → ``stages/detect``。 |
+| `run_detect_submit() -> None` | 第二步提交：把文本框逐框裁成下一步要的图 → ``stages/detect``。 |
 
 ##### `run_detect_submit() -> None`
 
-第二步提交：把检测框逐框裁成下一步要的图 → ``stages/detect``。
+第二步提交：把文本框逐框裁成下一步要的图 → ``stages/detect``。
 
-前提是最近一次「检测文本框」成功：没检测就没框可裁，提交没有意义。
+自动识别：前提是最近一次「检测文本框」成功（没检测就没框可裁）。
+人工标注：没有那次运行，框是用户自己画的 ⇒ 只要求页面清单非空，
+且提交前先查一遍**有没有漏标注的页**（用户 2026-11-16 第 4 条）。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `missing_labels_message(labels) -> str` | 漏标注提示的**正文**（纯函数：页数/页码怎么折都在这里，便于自测钉住）。 |
+| `confirm_missing_labels(parent, labels) -> bool` | 「还有页面没有标注」的二次确认 → ``True`` 表示**执行任务**。 |
+
+#### `missing_labels_message(labels) -> str`
+
+漏标注提示的**正文**（纯函数：页数/页码怎么折都在这里，便于自测钉住）。
+
+``labels`` 是页码展示文案（``"7"`` / ``"12"``）而不是文件名——
+用户看的是页码，不是 ``0007.png``。
+
+#### `confirm_missing_labels(parent, labels) -> bool`
+
+「还有页面没有标注」的二次确认 → ``True`` 表示**执行任务**。
+
+⚠️ 必须用真窗口底座的 ``ConfirmDialog``（``desktop/ui/confirm_dialog.py``）：
+qfluent 的 ``MessageBox`` 是主窗口里的**子控件遮罩层**，点按钮会"当当"响
+且可能根本不生效（用户 2026-10-26 报过两次）。
+⚠️ 延迟导入：本模块在纯逻辑自测里也要能导入，不想连带 Qt 控件一起拉起来。
 
 ---
 
@@ -8817,6 +8958,8 @@ GUI 主进程**绝不能**在这里 import 到 cv2（实测 ``import functions.d
 | `source_kind(path, role_for=None) -> str` | 源图形态：优先用提交计划的 ``role``，缺失时回落到文件名后缀。 |
 | `source_page_number(path) -> int \| None` | 源图**页号**：文件名开头的连续数字（``3-r`` → 3、``004-l`` → 4）。 |
 | `auto_impose_pages(files: list, role_for=None) -> list[dict]` | 自动拼版（用户 2026-09-30 规则，**唯一实现**）： |
+| `source_stamp(path) -> tuple[str, int, int] \| None` | 源图的**新鲜度签名**（路径 + mtime_ns + 字节数）；读不到返回 None。 |
+| `is_binary_source(image, path) -> bool` | 二值稿判据的**带缓存**版本（``image`` 是已经解码好的那张，省一次解码）。 |
 | `page_bounds(page: dict) -> tuple[float, float, float, float]` | 一页的**内容范围**：所有图外接框的并集（用户说的「图片的四个区域」）。 |
 | `compose_page(page: dict, background=TRANSPARENT_BACKGROUND)` | 一页拼版 → PIL **RGBA** 图：所有图外接框的紧裁。 |
 | `flatten_onto_background(source, target, background=WHITE_BACKGROUND) -> None` | 把一张图片（可能带透明）压到指定底色上，原子写出 PNG 到 ``target``。 |
@@ -8856,9 +8999,11 @@ alpha，而 jpg 成品必须白底压平（见 :func:`_save_page_atomic`），�
 
 整份文档收敛：``{"enabled", "pages", "removed"}``（永不为 None）。
 
-``removed`` 是**黑名单**（用户在「选择拼版」弹窗里删掉的图，软删除——
-文件不动，只是不再进入候选范围）。存字符串路径列表，去重保序；
-读老任务没有这个键时为空列表。
+``removed`` 是**旧版黑名单**（曾经在「选择拼版」弹窗里「删除图片」移出的图，
+软删——文件不动，只是不再进入候选范围）。⚠️ **2026-11-16 起弹窗不再写它**
+（两个页签连同「删除图片」一起取消，候选 = 所有没被页引用的图）：这里仍
+原样保留，老任务读进来不丢数据，`:func:`remaining_files` 的行为也不变。
+存字符串路径列表，去重保序；读老任务没有这个键时为空列表。
 
 #### `cn_page_label(index: int) -> str`
 
@@ -9151,6 +9296,96 @@ PDF 侧 ``functions/print._load_image`` 压平到白纸；编辑器/预览按 RG
 
 ---
 
+## `desktop.services.imposition_insert`
+
+源码：[`desktop/services/imposition_insert.py`](../../desktop/services/imposition_insert.py)
+
+拼版「插入 / 上传」的文件落点与成页规则（**纯数据，不碰 Qt**）。
+
+用户 2026-11-16 的口径（左列缩略图右键「向前插入拼版 / 向后插入拼版」、以及
+「选择拼版」弹窗里「自己上传图片」）：
+
+- 插入用的图来自**两处**：上一节点给过来的候选池（原文件直接引用，不复制），
+  以及用户**当场上传的本地图**（必须复制进任务目录，否则源文件一挪走，
+  拼版成品就再也合不出来）；
+- **同一张图片可以多次上传**（与「PDF排版 → 插入图片」同一套规范）：复制时
+  重名避让，``x.png`` 第二次上传落成 ``x-1.png``，两次各自成页；
+- 复制落点 ``<任务目录>/inserted/imposition/``（用户 2026-11-16）：不能放
+  ``stages/`` 下——那层是阶段产物，``print_plan`` 会清理"本任务其它阶段的残留"，
+  用户插进来的图会被当残留删掉；也不能与打印侧的 ``inserted/`` 混在一起，
+  否则打印插进来的图会出现在拼版候选里；
+- 上传过的图**一直是候选**：删掉拼版页之后，它们要能像上游图一样回到候选
+  列表（见 :func:`uploaded_candidates`——扫的就是这个目录）。
+
+⚠️ 本模块只做"算目标名 / 复制 / 列候选 / 成页 / 插入"这些纯函数，界面与日志
+由宿主负责。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| UPLOAD_DIRNAME | `"inserted"` |
+| UPLOAD_SUBDIRNAME | `"imposition"` |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `upload_dir(task_dir: Path \| str) -> Path` | 拼版上传图的落点：``<任务目录>/inserted/imposition/``。 |
+| `uploaded_candidates(directory: Path \| str \| None) -> list[Path]` | 某任务**曾经上传过、现在还在**的图片（拼版候选的一部分）。 |
+| `resolve_chosen(chosen: list[dict], target_dir: Path \| str \| None) -> tuple[list[Path], list[str]]` | 把弹窗给的候选落成**可用的文件路径**。 |
+| `pages_from_candidates(files: list) -> tuple[list[dict], list[str]]` | 候选图 → 拼版页：**每两张一页**、落单的单图一页（与选图弹窗同一配对口径）。 |
+| `insert_pages_at(pages: list[dict], new_pages: list[dict], at: int) -> list[dict]` | 把 ``new_pages`` 插到 ``pages`` 的第 ``at`` 个位置（越界自动夹住）。 |
+
+#### `upload_dir(task_dir: Path | str) -> Path`
+
+拼版上传图的落点：``<任务目录>/inserted/imposition/``。
+
+⚠️ 放**任务根目录**的兄弟目录、不进 ``stages/``：那一层是阶段产物，
+``print_plan`` 会清理"本任务其它阶段的残留"，用户插进来的图会被当残留
+删掉。也**不进上一步的目录**——那会让上一步的页面清单凭空多出一条。
+
+#### `uploaded_candidates(directory: Path | str | None) -> list[Path]`
+
+某任务**曾经上传过、现在还在**的图片（拼版候选的一部分）。
+
+用户 2026-11-16：删掉拼版页之后，自己上传过的图要像上游图一样**回到候选
+列表**（否则它就再也不出现了）。上传的图本就是复制进这个目录的，所以
+"扫目录"= "列出所有上传过的图"；被页引用过的那些由调用方按
+``used_source_files`` 减掉。
+
+只收图片扩展名、按**自然页序**排（``utils.sort_utils.natural_sort_key``，
+与全仓其它图片清单同一个排序键）。目录不存在返回空列表。
+
+#### `resolve_chosen(chosen: list[dict], target_dir: Path | str | None) -> tuple[list[Path], list[str]]`
+
+把弹窗给的候选落成**可用的文件路径**。
+
+``chosen`` 是弹窗 :meth:`ImpositionPickerDialog.chosen_items` 的形状：
+``[{"path": Path, "uploaded": bool}, ...]``（列表顺序 = 候选顺序）。
+
+- ``uploaded=False``：源池里的图，**原样引用**（不复制、不动文件）；
+- ``uploaded=True``：用户本次上传的图，复制进 ``target_dir`` 再引用。
+
+返回 ``(文件路径列表, 失败说明列表)``。上传失败的那几张**跳过**（其余照常
+插入）：一张图读不到不该让整次插入报废，但必须让用户在日志里看见。
+
+#### `pages_from_candidates(files: list) -> tuple[list[dict], list[str]]`
+
+候选图 → 拼版页：**每两张一页**、落单的单图一页（与选图弹窗同一配对口径）。
+
+返回 ``(页列表, 读不出尺寸的文件名列表)``。读不到尺寸（文件被挪走/损坏）
+的那张跳过，其余照常成页——这是既有行为（``make_page`` 返回 ``None``）。
+
+#### `insert_pages_at(pages: list[dict], new_pages: list[dict], at: int) -> list[dict]`
+
+把 ``new_pages`` 插到 ``pages`` 的第 ``at`` 个位置（越界自动夹住）。
+
+返回**新列表**（不改入参）：宿主拿到它直接落盘，落盘失败时内存里的旧清单
+还能原样再试一次。
+
+---
+
 ## `desktop.services.print_plan`
 
 源码：[`desktop/services/print_plan.py`](../../desktop/services/print_plan.py)
@@ -9181,11 +9416,10 @@ PDF 侧 ``functions/print._load_image`` 压平到白纸；编辑器/预览按 RG
 | 函数 | 说明 |
 | --- | --- |
 | `missing_extract_pages_spec(output_dir: Path, total: int) -> str \| None` | 提取输出目录中缺失的页码，压缩为 CLI pages 参数（如 "3,7-9"）。 |
-| `plan_rembg_submit_entries(manifest_paths: list[Path], result_path_for, boxes_for, page_width_for=None, side_for=None, placeholder_for=None, narrow_for=None, demote_for=None) -> list[dict]` | 预览结果 + 检测框 + border → 最终图片条目（**逐框一张**）。 |
+| `plan_rembg_submit_entries(manifest_paths: list[Path], result_path_for, boxes_for, page_width_for=None, side_for=None, narrow_for=None, demote_for=None) -> list[dict]` | 预览结果 + 检测框 + border → 最终图片条目（**逐框一张**）。 |
 | `entry_to_effect_spec(entry: dict, border) -> dict` | 提交条目 → worker 效果合成规格（run_print_stage/run_detect_submit_stage 用）。 |
 | `plan_submit_job(spec: dict, size: tuple[int, int] \| None) -> dict` | 一条效果规格 → 单条合成作业（输出文件名 + 合成参数）。 |
-| `manual_blank_regions(regions) -> list[tuple[list[int], Optional[str]]]` | 手工扩展框（``boxes.json`` 的 ``blank``）→ ``keep_blank_regions`` 同形状。 |
-| `plan_detect_submit_entries(manifest_paths: list[Path], boxes_for, single_column_book: bool=False, page_width_for=None, side_for=None, book_profile=None, page_size_for=None, keep_blank: bool=False, blank_for=None) -> list[dict]` | 「检测文本框 → 提交本次任务」的裁图条目（含**回溯占位**）。 |
+| `plan_detect_submit_entries(manifest_paths: list[Path], boxes_for, single_column_book: bool=False, page_width_for=None, side_for=None, book_profile=None) -> list[dict]` | 「检测文本框 → 提交本次任务」的裁图条目：**只裁标注过的文本框**。 |
 | `drop_foreign_stage_pages(pages: list[dict] \| None, source_dir: Path, stages_root: Path) -> list[dict]` | 从待打印清单里剔除「属于本任务**别的阶段**产物」的条目。 |
 | `rect_fits_image(rect, image_size_px, rect_size_px=None) -> bool` | 这条逐页 rect 是否**还适用于当前这张图**（判据唯一处）。 |
 | `stale_rect_pages(pages, size_for) -> list[dict]` | ``pages`` 里**图像已换、旧 rect 不再适用**的那几条（``[]`` = 全都还适用）。 |
@@ -9199,7 +9433,7 @@ PDF 侧 ``functions/print._load_image`` 压平到白纸；编辑器/预览按 RG
 页文件名以数字开头（0001.jpg / 0002.jpg …）。无缺失或 total 为 0
 时返回 None（无需续跑）。
 
-#### `plan_rembg_submit_entries(manifest_paths: list[Path], result_path_for, boxes_for, page_width_for=None, side_for=None, placeholder_for=None, narrow_for=None, demote_for=None) -> list[dict]`
+#### `plan_rembg_submit_entries(manifest_paths: list[Path], result_path_for, boxes_for, page_width_for=None, side_for=None, narrow_for=None, demote_for=None) -> list[dict]`
 
 预览结果 + 检测框 + border → 最终图片条目（**逐框一张**）。
 
@@ -9213,10 +9447,6 @@ page_width_for   : (path_str) -> 页宽像素，用于算单宽框（``None``/0 
 side_for         : (path_str) -> ``"left"``/``"right"``/None，用户在
     **半幅页**上指定的左右。给了指定就**不做**单栏归一化——那是用户在说
     「这页其实是某一边」（用户 2026-10-17），命名/拼版都要按左/右走。
-placeholder_for  : (path_str) -> list[dict]，该页缺图的**原图占位**描述
-    ``[{"side": "left"|"right"|None, "box": [x1,y1,x2,y2]}]``（框是该页源图
-    上的裁切区域）。只有「检测文本框 → 提交」会传它（用户 2026-10-23 的
-    占位规则）；预览侧默认 ``None``，行为与改造前一字不变。
 narrow_for       : (path_str) -> bool，该页是否**窄于全书**（单页扫描）。
     为真且只检出一个框时退化成**单槽**（不拆 ``-l``/``-r``、不补另一栏），
     见 :func:`utils.book_layout.narrow_page_slots`。默认 ``None``＝不判断。
@@ -9233,8 +9463,8 @@ demote_for       : (path_str) -> list|None，全书统计得出的「整幅其�
 - 整幅内容(fullcontent)：单槽单框，label 就是页名（不拆），框原样裁剪；
 - 单栏书：整本书只有一栏，页里不会有左页+右页，于是「单个宽框（≥60%
   页宽）的半幅页」被退化成**单槽**，直接继承整幅的语义；
-- 无框：整页原图透传（条目不带 effect）；**若有占位描述则改为占位条目**
-  （空白页不再透传原图，见用户 2026-10-23 规则一~四）。
+- 无框：整页原图透传（条目不带 effect，``boxes`` 为空）。⚠️ 「检测文本框 →
+  提交」那一侧会把这类条目**过滤掉**（用户 2026-11-16：没标注的页不出图）。
 最终按 CLI natural sort 排序（同页 r 在 l 前）。
 
 每条条目额外带 ``role`` / ``page_class``（**提交计划**，用户 2026-10-23）：
@@ -9248,10 +9478,6 @@ demote_for       : (path_str) -> list|None，全书统计得出的「整幅其�
 
 ``effect`` 里只有 ``boxes`` 与 ``border``——2026-10-22 起没有 area，几何
 恒为「每个检测框各自剪一张图」（见 ``utils.box_geometry.build_output_layout``）。
-
-**占位条目**（``placeholder``，用户 2026-10-23）就是"该页原图上按占位框
-裁一张"——走**同一条** effect 路径，只多带一个 ``placeholder=True`` 标记
-供日志/统计区分（不再画纯白图）。
 
 #### `plan_submit_job(spec: dict, size: tuple[int, int] | None) -> dict`
 
@@ -9267,63 +9493,27 @@ demote_for       : (path_str) -> list|None，全书统计得出的「整幅其�
 ⚠️ ``region_canvas_specs`` 走**函数内延迟导入**：本模块整体是不依赖 Qt 的
 纯逻辑（见模块 docstring），只有真要算输出张数时才拉进那份 Qt 几何实现。
 
-#### `manual_blank_regions(regions) -> list[tuple[list[int], Optional[str]]]`
+#### `plan_detect_submit_entries(manifest_paths: list[Path], boxes_for, single_column_book: bool=False, page_width_for=None, side_for=None, book_profile=None) -> list[dict]`
 
-手工扩展框（``boxes.json`` 的 ``blank``）→ ``keep_blank_regions`` 同形状。
+「检测文本框 → 提交本次任务」的裁图条目：**只裁标注过的文本框**。
 
-一个矩形 ⇒ 整页一张（``side=None``）；两个 ⇒ 按左边界排序，左/右各一张。
-与自动推导共用同一条下游（命名 ``-l``/``-r``、拼版配对都照旧）。
+与 :func:`plan_rembg_submit_entries` 同一条规则，只有一处区别：合成源就是
+**源页图自己**（这一步不产生中间结果图），所以 ``file`` 直接是那一页路径。
 
-#### `plan_detect_submit_entries(manifest_paths: list[Path], boxes_for, single_column_book: bool=False, page_width_for=None, side_for=None, book_profile=None, page_size_for=None, keep_blank: bool=False, blank_for=None) -> list[dict]`
+⚠️⚠️ **这里没有任何"补全"**（用户 2026-11-16）：「删除这条规则，没有文本框
+的不再进行补全，只裁剪出标注过的文本框」。2026-10-23 那套「回溯占位」已整体
+删除——漏检一侧的页不再按页中线镜像补另一栏，空白页不再按全书平均框尺寸
+造一个框。派生结果只剩三条：
 
-「检测文本框 → 提交本次任务」的裁图条目（含**回溯占位**）。
+- **双框页**：``-r`` / ``-l`` 各一条；
+- **单框页**：一条（半幅页保住 ``-l``/``-r`` 身份，即使用户只画了一侧；
+  整幅/单栏/窄页用页名，``role=half-unsided`` 记"可配对的半幅"）；
+- **一个框都没有的页**：**不出图**（没有可裁的东西）。
 
-与 :func:`plan_rembg_submit_entries` **同一条规则**，只有两个区别：
+全书级归一化照旧，但它只决定"这一条叫什么、算不算可配对半幅"，**不补框**：
+「整幅其实像半幅」修正（``demote_for``）、单宽框退单槽、窄页退单槽。
 
-1. 合成源就是**源页图自己**（这一步不产生中间结果图），所以 ``file``
-   直接是那一页的路径。**每个检测框各自裁成一张图**——没有 area；
-2. 它额外算「回溯占位」：漏检/空白页按**全书形态**补图，避免下游丢页
-   或拼版错配（用户 2026-10-23 的四条规则）。
-
-**占位图不是纯白，而是从该页原图截对应区域**（用户 2026-10-23 追加），
-空白页的落点**以页面中心为准**（「占位图原则从中间截取」）：
-
-- **左右双栏书**：一页只有一侧框 → 缺失侧按**页中线镜像**已有那一侧，
-  截同样大小的区域（规则一.1）；整页无框 → 截 **左、右两张**，各自以
-  **本半页的中心**截取，尺寸取全书左右框各自的平均（规则一.2）；
-- **单栏书（半幅单宽框）**：整页无框 → 以**页面中心**截 **一张**，
-  尺寸取全书半幅框平均（规则二）；
-- **整幅书**：整页无框 → 以**页面中心**截 **一张**，尺寸取全书整幅框
-  平均（规则三）；
-- **混排书**（三种极端都不成立）：整页无框 → **完全跟随前一页**的产物
-  形态（前页双框 → 补左右两张；前页单侧 → 补同侧一张；前页整幅/单栏 →
-  补一张）；只有一侧框的页，前页是双框时才补缺失侧（规则四）。
-  首页就空白（没有前一页）→ 向前找最近的有框页；全书都空白则不补。
-- **窄页**（页宽明显小于全书典型页宽＝单页扫描）**优先于以上全部**：
-  这张图放不下第二栏，所以整页无框只补**一张**、只检出一个框也**不补**
-  另一侧，命名也不带 ``-l``/``-r``（用户 2026-10-23，任务 0001 第 1 页）。
-
-``keep_blank=True``（界面「保留框外空白」）：有框页不再贴着检测框紧裁，
-改为按整页半幅保留空白——双框页以两框相邻边界的中点分界，单框页以框的
-**内侧边**分界，上下都到图片边缘，外侧也到图片边缘。整幅/单栏/窄页归一化后
-只剩一槽，整页保留一张（不切分）。
-
-**无框页也会出图**（用户 2026-11-12，见 ``book_layout.keep_blank_page_form``）：
-
-- 统计上是**双栏书**、且这页**装得下两个框** ⇒ 按页中线拆左右两张；
-- 只装得下一个（单页扫描）/ 单栏书 / 整幅书 / 混排 ⇒ 整页一张；
-- 整本书一个框都没有 ⇒ ``skip``，仍走上面的占位/透传（没有统计依据）。
-
-单框页同理多一条：双栏书里只检出一侧、而本页**装不下两个框**时退成整页
-一张（装得下就保留 2 槽，分界线落在检出框的内侧边）。
-
-``blank_for(stem)``：该页**用户手工调过的扩展框**（``boxes.json`` 的
-``blank``，见 ``store.blank_regions_all_at``）。给了就用它、不再按检测框
-推导——自动推导只是初值（用户 2026-11-12：「可以调整的是扩展框」）。
-
-⚠️ 占位条目 ``file`` 仍是源页、``boxes`` 只有一个"占位框"，
-``placeholder=True`` 只作日志/统计标记——执行端走与真框完全相同的裁剪
-路径（不画白图）。预览侧不会传 ``placeholder_for``，命名/条数保持原样。
+⚠️ ``page_width_for`` 仍然要传：单宽框/窄页两条归一化都靠页宽。
 
 #### `drop_foreign_stage_pages(pages: list[dict] | None, source_dir: Path, stages_root: Path) -> list[dict]`
 
@@ -9855,6 +10045,7 @@ done/total 为 0、completed 为 False）。执行过哪怕失败/中断都算�
 | `auto_update_data() -> bool` | 启动时是否自动下载并替换数据包（默认关）。 |
 | `developer_mode() -> bool` | 开发者模式是否打开。 |
 | `yolo_annotation() -> bool` | 是否启用 YOLO 标注（「导出YOLO标注」按钮的显示条件之一）。 |
+| `show_history() -> bool` | 各步骤右栏是否显示「执行记录」（默认**不显示**，用户 2026-11-16）。 |
 
 #### `app_config() -> AppConfig`
 
@@ -9960,7 +10151,7 @@ done/total 为 0、completed 为 False）。执行过哪怕失败/中断都算�
 
 ### `class SettingsPage(QWidget)`
 
-设置页：存储位置、自动更新、开发者模式与它下面的开发选项。
+设置页：存储位置、自动更新、界面功能、开发者模式与它下面的开发选项。
 
 ⚠️ 页面**没有**自己的导航条目概念——它由壳层（``desktop/shell.py``）
 挂在导航栏底部并切页，与各步骤的独立模块页是两回事（模块页来自
@@ -12902,15 +13093,25 @@ _apply_control_width`` 按 stage 换宽度、``history._history_fill_keys``
 
 2026-11-04 用户补充了四条**图结构**硬规则（任务 0021 暴露的孤立节点）：
 
-3. **只能有一个「开始节点」（源PDF）**——0 个或多个都拒绝保存；
-4. **不允许孤立节点**——每个节点都要能从开始节点沿连线走到；
+3. **「开始节点」（源PDF）最多一个**——**0 个也合法**（见下）；
+4. **不允许孤立节点**——每个节点都要能沿连线走到（无开始节点时按弱连通判）；
 5. **不允许环形回路**；
 6. **除 XOR 网关外，任何节点只能有一条输出连线**——多路分支只能用
    「是否拼版」那个排他网关（``exclusiveGateway``）。
 
+⚠️ **「必须有开始节点」已于 2026-11-15 取消**（用户口径）：开始/结束圈只是
+**图示标注**，不是运行前提——"任何一个任务节点（方框）都可以作为开始节点，
+也可以作为结束节点"。图上没有入线的第一个步骤就是入口
+（:func:`desktop.steps.ports.flow_entry_node` 按"沿图往回没有 ``pages`` 产出方"
+判），没有出线的最后一步就是收尾；运行时本来就靠
+:func:`desktop.steps.ports.stage_blocking_inputs` 的"入口回落
+``stages/input/``"接住这种流程。所以删掉「源PDF」圆圈**不该拦保存**。
+仍然拦的是**两个及以上**开始事件——那才是图上说不清有几处入口的坏图。
+
 ## 错误与警告分两档
 
-- **errors**（拒绝保存）：上面 2 条原有规则 + 4 条图结构规则；
+- **errors**（拒绝保存）：上面 2 条原有规则 + 3 类图结构规则（多开始节点、
+  孤立节点、环形回路、多输出）；
 - **warnings**（提示但不拦）：``extract`` 不在第一位、有 ``extract`` 却没有
   「源PDF」入口节点、图上有未接入运行的节点。这些**跑得通**，只是与习惯
   不符——拦下来会把合法操作堵死（与状态机"缺上游只提示不硬拦"同一条纪律）。
@@ -13001,9 +13202,6 @@ boxes.json / sizes.json 读写。
 | `boxes_all_at(path: Path \| None) -> dict[str, tuple[list, str]]` | 读**指定文件**的全部 ``image_key → (boxes, origin)``（一次读盘）。 |
 | `boxes_raw_at(path: Path \| None) -> dict` | 读**指定文件**的**原始条目表** ``{image_key: entry}``（不裁剪字段）。 |
 | `save_detect_boxes(task_id: str, image_key: str, boxes: list, origin: str='auto', node_id: str \| None=None, primary_id: str \| None=None) -> None` | 写入某页的检测框及其来源标记（auto=自动检测，manual=人工编辑）。 |
-| `blank_regions_at(path: Path \| None, image_key: str) -> list \| None` | 读某页**手工调整过**的「保留空白」扩展框；没调过返回 ``None``。 |
-| `blank_regions_all_at(path: Path \| None) -> dict[str, list]` | 整份文件的 ``image_key → 手工扩展框``（一次读盘，只含调过的页）。 |
-| `save_blank_regions(task_id: str, image_key: str, regions, node_id: str \| None=None, primary_id: str \| None=None) -> None` | 写入/清除某页手工调整的「保留空白」扩展框（空表＝清除，回到自动）。 |
 | `box_side_at(path: Path \| None, image_key: str) -> str \| None` | 读**指定文件**里某页的人工左右指定（``"left"``/``"right"``/None）。 |
 | `box_sides_all_at(path: Path \| None) -> dict[str, str]` | 整份文件的 ``image_key → side``（一次读盘，只含有显式指定的页）。 |
 | `set_box_side_override(task_id: str, image_key: str, side: str \| None, node_id: str \| None=None, primary_id: str \| None=None) -> None` | 写入/清除某页的人工左右指定（``None``＝清除，退回"半幅"）。 |
@@ -13069,25 +13267,6 @@ boxes.json / sizes.json 读写。
 ⚠️ **保留**该页已有的 ``side``（用户在半幅页上指定的左右，见
 :meth:`set_box_side_override`）：拖框/缩放走的是这条路径，
 顺手把用户刚指定的左右清掉，等于"一拖就丢设定"。
-
-##### `blank_regions_at(path: Path | None, image_key: str) -> list | None`
-
-读某页**手工调整过**的「保留空白」扩展框；没调过返回 ``None``。
-
-格式 ``[[x1,y1,x2,y2], ...]``（1~2 个矩形，页图坐标）。它是**用户拉出来的
-裁图区域**，优先于「由检测框推导」的那份（见
-``utils.box_geometry.keep_blank_regions``）。
-
-##### `save_blank_regions(task_id: str, image_key: str, regions, node_id: str | None=None, primary_id: str | None=None) -> None`
-
-写入/清除某页手工调整的「保留空白」扩展框（空表＝清除，回到自动）。
-
-⚠️ 与 :meth:`save_detect_boxes` 分开：那条路是"改检测框"的高频路径，
-这条只记**扩展框**。两者的语义不同——检测框是识别结果，扩展框是
-裁图口径，混在一起写会让「改框」和「改裁图范围」互相覆盖。
-⚠️ 该页**还没有检测结果**时也要能写（用户 2026-11-12：「没有识别出
-文本框的页面也可以手动划线」）：这时补一条 ``boxes: []`` 的条目，
-让手工框有地方挂——否则静默丢掉，用户画完像没反应。
 
 ##### `box_side_at(path: Path | None, image_key: str) -> str | None`
 
@@ -14301,7 +14480,8 @@ PDF排版「管理图片」弹窗的缩略图缓存：``thumbnails/print_manage/
     {"last_stage": "rembg",                     # 上次在这个任务里停留的步骤 key
      "yolo_export_name": "b1",                  # 「导出YOLO标注」上次填的名称/前缀
      "yolo_export_dir": "D:/…/bookcontent",     # 同上，上次选的导出目录
-     "detect_keep_blank": true}                 # 「保留框外空白」（任务级参数）
+     "detect_mode": "manual",                   # 「识别文本框」方式（任务级参数）
+     "detect_reuse_prev": true}                 # 人工标注：自动沿用上一页标注
 
 **为什么记 key 而不是下标**：流程里的步骤会增减（「图片拼版」虚线节点就是
 条件出现的可选步骤），下标一旦错位就会把用户送到**另一个**步骤去；key 是按
@@ -14328,7 +14508,8 @@ key 取自 ``desktop.store.tasks``：``STAGES`` 里的一项，或伪步骤
 | --- | --- |
 | YOLO_EXPORT_DIR_KEY | `"yolo_export_dir"` |
 | YOLO_EXPORT_NAME_KEY | `"yolo_export_name"` |
-| DETECT_KEEP_BLANK_KEY | `"detect_keep_blank"` |
+| DETECT_MODE_KEY | `"detect_mode"` |
+| DETECT_REUSE_PREV_KEY | `"detect_reuse_prev"` |
 
 ### `class UIStateMixin`
 
@@ -14347,8 +14528,10 @@ key 取自 ``desktop.store.tasks``：``STAGES`` 里的一项，或伪步骤
 | `save_last_stage(task_id: str, stage: str, node_id: str \| None=None) -> bool` | 记录上次停留的步骤 key（可带节点实例 id），返回是否真的写了。 |
 | `load_yolo_export_state(task_id: str) -> dict` | 本任务上次导出 YOLO 数据集时填的 ``{"name": …, "directory": …}``。 |
 | `save_yolo_export_state(task_id: str, name: str, directory: str) -> bool` | 记住本任务这次导出的名称与目录，返回是否真的写了。 |
-| `load_detect_keep_blank(task_id: str) -> bool \| None` | 本任务「保留框外空白」的上次选择；**没设过**返回 ``None``。 |
-| `save_detect_keep_blank(task_id: str, value: bool) -> bool` | 记住本任务「保留框外空白」的选择，返回是否真的写了。 |
+| `load_detect_mode(task_id: str) -> str \| None` | 本任务「识别文本框」方式（``"auto"`` / ``"manual"``）；**没设过**返回 ``None``。 |
+| `save_detect_mode(task_id: str, mode: str) -> bool` | 记住本任务「识别文本框」方式，返回是否真的写了。 |
+| `load_detect_reuse_prev(task_id: str) -> bool \| None` | 本任务「自动使用上一个文本框标注」的上次选择；**没设过**返回 ``None``。 |
+| `save_detect_reuse_prev(task_id: str, value: bool) -> bool` | 记住本任务「自动使用上一个文本框标注」的选择，返回是否真的写了。 |
 
 ##### `load_last_task() -> dict | None`
 
@@ -14397,20 +14580,13 @@ key 取自 ``desktop.store.tasks``：``STAGES`` 里的一项，或伪步骤
 与 :meth:`save_last_stage` 同规矩：任务目录没了就不写（不把已删任务
 重新创建出来），且只覆盖自己那两项、不动 ``last_stage``。
 
-##### `load_detect_keep_blank(task_id: str) -> bool | None`
+##### `load_detect_mode(task_id: str) -> str | None`
 
-本任务「保留框外空白」的上次选择；**没设过**返回 ``None``。
+本任务「识别文本框」方式（``"auto"`` / ``"manual"``）；**没设过**返回 ``None``。
 
-``None`` 与 ``False`` 必须分开：``False`` 是"用户明确选了不保留"，
-``None`` 是"这个任务还没设过"——后者要交给暂存/历史/内置默认去决定，
-不能一律当成不保留（否则老任务升级上来会丢掉历史里的选择）。
-
-##### `save_detect_keep_blank(task_id: str, value: bool) -> bool`
-
-记住本任务「保留框外空白」的选择，返回是否真的写了。
-
-与 :meth:`save_last_stage` 同规矩：任务目录没了就不写（不把已删任务
-重新创建出来），且只覆盖自己那一项、不动 ``last_stage`` 等。
+``None`` 与 ``"auto"`` 必须分开：``"auto"`` 是"用户明确选了自动识别"，
+``None`` 是"这个任务还没设过"——后者交给暂存/历史/内置默认去决定，
+不能一律当成自动（否则老任务升级上来会丢掉历史里的选择）。
 
 ---
 
@@ -14534,6 +14710,92 @@ key 取自 ``desktop.store.tasks``：``STAGES`` 里的一项，或伪步骤
 | `enterEvent(event) -> None` | Qt 事件覆写：鼠标移入时进入高亮态。 |
 | `leaveEvent(event) -> None` | Qt 事件覆写：鼠标移出时恢复常态。 |
 | `paintEvent(event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
+
+---
+
+## `desktop.ui.confirm_dialog`
+
+源码：[`desktop/ui/confirm_dialog.py`](../../desktop/ui/confirm_dialog.py)
+
+通用「真窗口」确认框：一点就响的那类弹窗的正确底座。
+
+⚠️ **不要用 qfluentwidgets 的 ``MessageBox`` / ``MessageBoxBase``**：它们的
+``MaskDialogBase`` 会 ``setWindowFlags(Qt.FramelessWindowHint)``，把窗口降级成
+``Qt::Widget``——弹窗于是变成主窗口里的**子控件遮罩层**（``isWindow() == False``），
+不是窗口，就没有"模态窗口"该有的激活与焦点语义。实机表现（2026-10-26 拼版批量
+删除、2026-11-15 PDF 排版删除图片，两次都是这个坑）：点「确定」不生效、电脑
+"当当当"响。
+
+本类用真正的 ``QDialog``（``exec()`` → 真窗口 + 应用模态），并带三条"别响"的防线：
+
+1. :meth:`_force_front` —— 上屏后隔一帧再抢前台（原生 ``SetForegroundWindow``）。
+   ``activateWindow()`` 只在弹窗"不在任何按钮/菜单的 release 链里创建"时可靠，
+   而确认框几乎总是被点击触发的，隔一帧成功率明显更高；
+2. :meth:`eventFilter` —— 弹出后 ``ARM_MS`` 内吞掉**落在弹窗上**的点击，挡连点
+   穿透（否则连点的第二下会替用户按到「确定」/「取消」）；
+3. :class:`~desktop.ui.modal_quiet.HostClickMute` —— 弹窗期间落在**宿主窗口**上的
+   点击连声音一起吞掉。Qt 对被模态阻塞窗口的点击一律 ``QApplication::beep()``
+   （Windows 上就是"当"），用户连点时最常命中的就是这一条。
+
+用法（与 qfluent ``MessageBox`` 的形状基本一致，替换时只改构造那几行）::
+
+    dialog = ConfirmDialog("删除当前图片", "确定删除吗？", self.window())
+    dialog.yesButton.setText("删除")
+    if dialog.exec():
+        ...
+
+要在正文下方塞自定义内容（逐页清单之类）就往 ``dialog.body`` 里 ``addWidget``，
+然后调一次 :meth:`fit_height` 重算高度。
+
+要**强调其中某个词**（文件名、任务名）就传 ``rich=True`` 并用 ``<font color=…>``
+包起来（见任务列表页的导入查重框）：宽度是钉死的、正文折行，长文件名只会让
+弹窗**变高**，不会像 qfluent ``Dialog`` 那样把窗口撑到屏幕外。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| DIALOG_W | `440` |
+| ARM_MS | `150` |
+
+### `class ConfirmDialog(QDialog)`
+
+标题 + 正文（折行）+ 可选自定义区 + 「取消 / 确定」两按钮。
+
+点「确定」= ``accept()``（``exec()`` 返回真），点「取消」/Esc = ``reject()``。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(title: str, content: str, parent=None, *, width: int=DIALOG_W, yes_text: str='确定', cancel_text: str='取消', rich: bool=False)` | — |
+| `fit_height() -> None` | 宽度已钉死，高度按**折行后的内容**收敛。 |
+| `showEvent(event) -> None` | 显示时**显式置顶并激活**，同时布好两道"别响"的防线。 |
+| `hideEvent(event) -> None` | 关掉/掩掉就撤掉两道防线（幂等）。 |
+| `eventFilter(obj, event) -> bool` | 弹出后 ``ARM_MS`` 内吞掉落在本弹窗上的鼠标点击。 |
+
+##### `fit_height() -> None`
+
+宽度已钉死，高度按**折行后的内容**收敛。
+
+⚠️ 不能用 ``adjustSize()``：它按 ``sizeHint()`` 同时改宽高，会把
+"固定宽度"重新算成正文的自然宽度，宽度约束就丢了。这里只取
+"在这个宽度下折行需要多高"——``totalHeightForWidth`` 已含布局外边距。
+
+##### `showEvent(event) -> None`
+
+显示时**显式置顶并激活**，同时布好两道"别响"的防线。
+
+父窗口通常是 qframelesswindow 的无边框主窗口，个别情况下（远程桌面、
+多屏、窗口刚从最小化恢复、弹窗恰好在按钮/菜单的 release 处理链里创建）
+系统不会把新弹窗提到最前——那就等着"当当"响了。
+
+##### `eventFilter(obj, event) -> bool`
+
+弹出后 ``ARM_MS`` 内吞掉落在本弹窗上的鼠标点击。
+
+⚠️ 只吞**落在本弹窗**（含子控件）的事件：落在弹窗外的点击由
+``HostClickMute`` 处理，别在这里抢——吞错了用户会以为"点不动"。
 
 ---
 
@@ -15264,6 +15526,59 @@ import 具体页面，PDF排版、图片拼版、去底色、检测、提取各�
 
 ---
 
+## `desktop.ui.modal_quiet`
+
+源码：[`desktop/ui/modal_quiet.py`](../../desktop/ui/modal_quiet.py)
+
+模态弹窗期间的「宿主窗口点击静音」。
+
+Qt 对**被模态阻塞的窗口**上的鼠标按下会 ``QApplication::beep()``——Windows
+上就是一声"当"。实机表现（2026-11-15 用户报）：拼版页勾选多页后点
+「批量删除」，确认框弹出的那一瞬间再点一下（连点、或习惯性的第二下确认），
+那一下就落在弹窗**外面**的宿主窗口上：功能没坏，但"当当"响。
+
+本模块按 **HWND** 精确判断一条鼠标消息落在谁身上：
+``GetAncestor(hwnd, GA_ROOT)`` 命中「宿主顶层窗口」就吞掉这条消息——不响、
+也不动作，与系统原生「禁用窗口」的行为一致。确认框自己是另一个顶层窗口，
+不在名单里，点它照常生效。
+
+⚠️ 只吞**按下/抬起/双击**，不动 ``WM_MOUSEMOVE``：移动照常，弹窗的悬停态
+才不失灵。
+
+⚠️ 非 Windows 平台（以及 offscreen 平台）根本不会有原生事件经过这里，
+本模块等价于空操作，调用侧不必按平台分支。
+
+用法（宿主窗口在整个弹窗生命周期内静音）::
+
+    self._mute = HostClickMute(parent)
+    # 弹窗 show 时
+    self._mute.start()
+    # 弹窗 hide / 关闭时（幂等，可重复调用）
+    self._mute.stop()
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| _GA_ROOT | `2` |
+
+### `class HostClickMute`
+
+让 ``host`` 这棵窗口在弹窗期间「点了不出声」。
+
+``host`` 传哪个 widget 都行——内部取它的**顶层窗口**（真窗口）hwnd；
+宿主还没上屏（``winId()`` 拿不到）时 :meth:`start` 直接跳过，不报错。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(host: QWidget \| None)` | — |
+| `start() -> None` | 开始静音（幂等；非 Windows / 无宿主时什么都不做）。 |
+| `stop() -> None` | 结束静音（幂等，可重复调用）。 |
+
+---
+
 ## `desktop.ui.segmented_toggle`
 
 源码：[`desktop/ui/segmented_toggle.py`](../../desktop/ui/segmented_toggle.py)
@@ -15382,7 +15697,6 @@ QSS 里不会生效；它由 `desktop.components.log_panel.apply_log_view_style`
 | BORDER | `"#E2E7EC"` |
 | BORDER_SOFT | `"#EDF1F4"` |
 | BORDER_STRONG | `"#C9D1D8"` |
-| SEPARATOR | `"#A9B4BE"` |
 | ACCENT | `"#0E7C8B"` |
 | ACCENT_HOVER | `"#0B6A77"` |
 | ACCENT_SOFT | `"#E6F2F4"` |
@@ -15552,6 +15866,24 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 
 内部布局通过 ``self.box`` 暴露，调用方直接往里加控件。
 
+### `class SurfacePanel(QWidget)`
+
+白底容器：自己铺一层卡片白（``T.SURFACE``），用来盖住底色漏色。
+
+为什么要自绘：参数面板把表单塞进 ``ScrollArea``，滚动区的 viewport 会刷
+一层系统窗口灰（``#EFEFEF``），铺在白卡片上就是一块突兀的"灰砖"。
+qfluent 的 ``enableTransparentBackground()`` 帮不上忙——它必须在
+``setWidget()`` **之后**调用才作用到内容上，而且靠样式表接管整棵子树，
+会把输入框一起刷成透明；``setPalette`` + ``autoFillBackground`` 也不行
+（样式表 polish 时调色板会被重置回系统灰）。自绘不受这两条影响，也符合
+本模块「基础视觉控件自绘、不靠样式表」的约定。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `paintEvent(event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
+
 ### `class Divider(QFrame)`
 
 水平分隔线（默认 1px）。
@@ -15568,8 +15900,10 @@ layout="v"/"h" 选择内部盒方向；padding 同时作为四边内边距。
 固定高、水平拉伸的水平分隔线。
 
 ``color`` 缺省用最淡的 ``BORDER_SOFT``（好当"同一组里的轻分隔"）；
-需要一眼看出"这是两段"时传 ``T.BORDER_STRONG`` 并给 ``thickness``
-（参数面板里把「全局参数」与「本页参数」分开用的就是这一档）。
+需要一眼看出"这是两段"时传 ``T.BORDER_STRONG`` 并给 ``thickness``。
+参数面板里**不再用它分「识别文本框 / 本页参数」**——用户 2026-11-16
+说那条深色横线"太深、太宽"，改用固定高度的空白行（见
+``panels/detect_panel.py``）。
 
 ### `class SectionTitle(QLabel)`
 

@@ -1719,65 +1719,29 @@ def run(ctx) -> None:
         )
         full_only.deleteLater()
 
-        # ---- 「删除图片」/「查看删除的图片」（用户 2026-09-30）----
-        del_dlg = ImpositionPickerDialog([a, b, c, d])
+        # ---- 用户 2026-11-16：**取消"删除图片/删除恢复"整套** ----
+        # 弹窗只剩一个列表：所有还能用的图都在里面（上游剩余 + 自己上传的），
+        # 删掉拼版页的图也直接回到这个列表。这条钉的是"旧控件真的没了"。
+        one_list = ImpositionPickerDialog([a, b, c, d])
         ok(
             "「确定」按钮已改为「开始拼版」",
-            del_dlg.ok_button.text() == "开始拼版",
-            del_dlg.ok_button.text(),
-        )
-        ok("没勾选时「删除图片」不可点", not del_dlg.delete_button.isEnabled())
-        del_dlg.cards[0].toggle()
-        del_dlg.cards[1].toggle()
-        ok("勾选后「删除图片」可点", del_dlg.delete_button.isEnabled())
-        del_dlg.delete_button.click()
-        ok(
-            "删除后两张移出候选（候选剩 2 张）",
-            del_dlg.count() == 2
-            and _names(del_dlg.removed_files()) == ["1-r.png", "1-l.png"],
-            f"count={del_dlg.count()} removed={_names(del_dlg.removed_files())}",
+            one_list.ok_button.text() == "开始拼版",
+            one_list.ok_button.text(),
         )
         ok(
-            "「查看删除的图片」入口带数量提示",
-            "(2)" in del_dlg.removed_entry_button.text(),
-            del_dlg.removed_entry_button.text(),
+            "弹窗没有页签 / 删除按钮 / 恢复按钮（只有一个列表）",
+            not hasattr(one_list, "toggle")
+            and not hasattr(one_list, "delete_button")
+            and not hasattr(one_list, "restore_button")
+            and not hasattr(one_list, "removed_cards")
+            and not hasattr(one_list, "removed_files"),
         )
-        del_dlg.removed_entry_button.click()
         ok(
-            "切到已删除视图：列出两张被删卡片",
-            del_dlg.stack.currentIndex() == 1 and len(del_dlg.removed_cards) == 2,
+            "候选池里的图**全部**列出（不再有黑名单）",
+            one_list.count() == 4,
+            str(one_list.count()),
         )
-        del_dlg.removed_cards[0].toggle()
-        ok("勾选已删除卡片后「恢复选中」可用", del_dlg.restore_button.isEnabled())
-        del_dlg.restore_button.click()
-        ok(
-            "恢复一张：候选 3 张、黑名单剩 1 张",
-            del_dlg.count() == 3 and _names(del_dlg.removed_files()) == ["1-l.png"],
-            f"count={del_dlg.count()} removed={_names(del_dlg.removed_files())}",
-        )
-        ok("黑名单与打开时不同（宿主需落盘）", del_dlg.removed_changed())
-        del_dlg.restore_all_button.click()
-        ok(
-            "全部恢复：候选 4 张、黑名单清空、视为未变化",
-            del_dlg.count() == 4
-            and not del_dlg.removed_files()
-            and not del_dlg.removed_changed(),
-        )
-        del_dlg.deleteLater()
-
-        # 打开时就带黑名单：已删除的不占候选，可一键恢复
-        preset = ImpositionPickerDialog([a, b, c, d], removed_files=[a])
-        ok(
-            "打开时已删除的图不占候选",
-            preset.count() == 3 and _names(preset.removed_files()) == ["1-r.png"],
-            f"count={preset.count()}",
-        )
-        preset.removed_entry_button.click()
-        ok("黑名单视图列出打开时已删除的卡片", len(preset.removed_cards) == 1)
-        preset.restore_all_button.click()
-        ok("一键恢复后回到候选", preset.count() == 4 and not preset.removed_files())
-        preset.deleteLater()
-        # ⚠️ 立刻驱动一轮事件：延迟删除在这里处理完，别拖到详情页的 pump 里
+        one_list.deleteLater()
         pump(ctx.app, times=10)
 
         # ---- 真实产物形态：第三步提交产物是「白底透明」的 1bit 调色板 PNG
@@ -2059,15 +2023,17 @@ def run(ctx) -> None:
         class _FakeDialog:
             """替身弹窗：直接认下前两张候选（真实弹窗是模态的，测试里不能 exec）。"""
 
-            def __init__(self, files, parent=None, removed_files=None,
-                         mode="pick", thumb_provider=None):
-                # ⚠️ 必须跟真实弹窗的签名对齐（``mode`` / ``thumb_provider``）：
-                #    控制器现在会传 ``thumb_provider``（弹窗候选走预生成小图，
-                #    用户 2026-10-17），少一个参数就是"点了没反应"。
+            def __init__(self, files, parent=None, mode="pick",
+                         thumb_provider=None, **kwargs):
+                # ⚠️ 必须跟真实弹窗的签名对齐（``mode`` / ``thumb_provider`` /
+                #    插入落点三项）：控制器会按 mode/position 传参，少一个参数就是
+                #    "点了没反应"。2026-11-16 起弹窗没有 ``removed_files``。
                 self.files = list(files)
                 self.mode = mode
                 self.thumb_provider = thumb_provider
-                self.initial_removed = list(removed_files or [])
+                self.position_default = kwargs.get("position", "after")
+                self.current_row = kwargs.get("current_row", -1)
+                self.total = kwargs.get("total", 0)
 
             def exec(self) -> int:
                 return 1
@@ -2078,72 +2044,80 @@ def run(ctx) -> None:
             def auto_mode_file(self):
                 return None
 
-            def removed_files(self):
-                return list(self.initial_removed)
-
-            def removed_changed(self):
-                return False
-
         class _FakeManyDialog(_FakeDialog):
             """替身弹窗：勾选全部候选——「开始拼版」按每两张一页配对。"""
 
             def picked_files(self):
                 return list(self.files)
 
-        class _FakeRemoveDialog(_FakeDialog):
-            """替身弹窗：把第一张候选「删除」（移出选择范围），不开始拼版。"""
-
-            def picked_files(self):
-                return []
-
-            def removed_files(self):
-                return [self.files[0]]
-
-            def removed_changed(self):
-                return True
-
-        class _FakeRestoreDialog(_FakeRemoveDialog):
-            """替身弹窗：把黑名单全部恢复（removed 变空）。"""
-
-            def removed_files(self):
-                return []
-
-        class _FakeOneDialog(_FakeRemoveDialog):
+        class _FakeOneDialog(_FakeDialog):
             """替身弹窗：只勾一张——单张单独成页（用户 2026-09-30）。"""
 
             def picked_files(self):
                 return self.files[:1]
 
-            def removed_changed(self):
-                return False
+        # ---- 候选池：上游剩余图 + 这个任务上传过的图（用户 2026-11-16）----
+        # 删掉拼版页之后，**自己上传的图**也要回到"选择拼版"列表（原先它不在任何
+        # 源清单里，删页即永久消失）。候选池判据只有一条：没被任何页引用。
+        from desktop.services.imposition_insert import upload_dir
 
-        # ---- 「删除图片」黑名单：落盘 + 移出候选（取消也生效）----
-        _ipick.ImpositionPickerDialog = _FakeRemoveDialog
+        insert_dir = upload_dir(page.store.task_dir(page.task_id))
+        insert_dir.mkdir(parents=True, exist_ok=True)
+        mine = insert_dir / "my-scan.png"
+        _mk(mine, RED)
+        pool = page._imposition_candidate_pool(page._imposition_doc())
+        ok(
+            "候选池 = 上游剩余图 + 上传过的图（上传的排在后面、只出现一次）",
+            _names(pool)[-1] == "my-scan.png"
+            and _names(pool).count("my-scan.png") == 1,
+            str(_names(pool)),
+        )
+
+        class _FakeUploadedDialog(_FakeDialog):
+            """替身弹窗：只勾那张上传的图。"""
+
+            def picked_files(self):
+                return [f for f in self.files if Path(f).name == "my-scan.png"]
+
+        _ipick.ImpositionPickerDialog = _FakeUploadedDialog
         try:
             page._on_imposition_add_requested()
             page._imposition_timer.stop()
-            pump(ctx.app, times=4)
-            doc = page._imposition_doc()
+            pump(ctx.app, times=6)
+            upload_pages = page._imposition_pages()
             ok(
-                "弹窗里删除的图片落盘到 removed 字段",
-                [Path(f).name for f in doc.get("removed") or []] == ["1-r.png"],
-                str(doc.get("removed")),
+                "上传的图能直接拼成一页（已在任务目录里，不再复制第二份）",
+                len(upload_pages) == 1
+                and Path(upload_pages[0]["items"][0]["file"]) == mine,
+                str([[Path(i["file"]).name for i in p["items"]] for p in upload_pages]),
             )
             ok(
-                "被删除的图片不再进入「选择拼版」候选",
-                "1-r.png"
-                not in _names(S.remaining_files(page.imposition_source_files(), doc)),
+                "上传的图不落进上一步的产物目录（上一步页面清单不会多一条）",
+                str(mine) not in {str(p) for p in page.imposition_source_files()}
+                and Path(mine).parent != rembg_dir,
+                f"{mine.parent} vs {rembg_dir}",
             )
-            # 全部恢复：黑名单清空，图片回到候选范围
-            _ipick.ImpositionPickerDialog = _FakeRestoreDialog
-            page._on_imposition_add_requested()
+            ok(
+                "上传的图不落进上一步的产物目录（上一步页面清单不会多一条）",
+                str(mine) not in {str(p) for p in page.imposition_source_files()}
+                and Path(mine).parent != rembg_dir,
+                f"{mine.parent} vs {rembg_dir}",
+            )
+            ok(
+                "被页引用后它不再出现在候选池里",
+                "my-scan.png"
+                not in _names(page._imposition_candidate_pool(page._imposition_doc())),
+            )
+            page._on_imposition_release_page(0)
             page._imposition_timer.stop()
             pump(ctx.app, times=4)
             ok(
-                "恢复后黑名单清空（重新进入候选范围）",
-                page._imposition_doc().get("removed") == [],
+                "删掉拼版页后，上传的图回到候选池（不再永久消失）",
+                "my-scan.png"
+                in _names(page._imposition_candidate_pool(page._imposition_doc())),
+                str(_names(page._imposition_candidate_pool(page._imposition_doc()))),
             )
-            # 只勾一张 → 单图单独一页（用户 2026-09-30：单张允许拼版）
+            # 只勾一张（上游图）→ 单图单独一页（用户 2026-09-30：单张允许拼版）
             _ipick.ImpositionPickerDialog = _FakeOneDialog
             page._on_imposition_add_requested()
             page._imposition_timer.stop()
@@ -2162,6 +2136,10 @@ def run(ctx) -> None:
             pump(ctx.app, times=4)
         finally:
             _ipick.ImpositionPickerDialog = real_dialog
+            try:
+                mine.unlink()
+            except OSError:
+                pass
 
         # ---- 多选配对：勾 4 张 →「开始拼版」两两成页（用户 2026-09-30）----
         _ipick.ImpositionPickerDialog = _FakeManyDialog
@@ -2190,6 +2168,86 @@ def run(ctx) -> None:
             pump(ctx.app, times=4)
         finally:
             _ipick.ImpositionPickerDialog = real_dialog
+
+        # ---- 左列右键「上移 / 下移」与「向前 / 向后插入拼版」（用户 2026-11-16）----
+        # 菜单本身（文案/置灰/信号）在 ``imposition_edit`` 里验；这里钉的是
+        # **控制器落盘**：挪位只换顺序、插入落在目标页前/后、当前页跟到新页。
+        class _FakeInsertDialog(_FakeOneDialog):
+            """替身弹窗：只勾 1 张，落点取调用方传进来的 ``position``。"""
+
+            def position(self):
+                return self.position_default
+
+        def _page_names():
+            return [
+                [Path(i["file"]).name for i in _p["items"]]
+                for _p in page._imposition_pages()
+            ]
+
+        _ipick.ImpositionPickerDialog = _FakeOneDialog
+        try:
+            page._on_imposition_add_requested()   # 第 1 页 = 1-r
+            page._imposition_timer.stop()
+            pump(ctx.app, times=4)
+            page._on_imposition_add_requested()   # 第 2 页 = 1-l
+            page._imposition_timer.stop()
+            pump(ctx.app, times=4)
+        finally:
+            _ipick.ImpositionPickerDialog = real_dialog
+        ok(
+            "前置：两次「选择拼版」各造一页单图",
+            _page_names() == [["1-r.png"], ["1-l.png"]],
+            str(_page_names()),
+        )
+        page._on_imposition_page_move(0, +1)
+        page._imposition_timer.stop()
+        pump(ctx.app, times=4)
+        ok(
+            "右键「下移」：第 1 页挪到第 2 位（只换顺序，图片引用不动）",
+            _page_names() == [["1-l.png"], ["1-r.png"]]
+            and page.imposition_view.current_index() == 1,
+            f"{_page_names()} current={page.imposition_view.current_index()}",
+        )
+        page._on_imposition_page_move(0, -1)
+        page._imposition_timer.stop()
+        pump(ctx.app, times=4)
+        ok(
+            "首行「上移」越界：顺序不变（不会把页弄丢）",
+            _page_names() == [["1-l.png"], ["1-r.png"]],
+            str(_page_names()),
+        )
+        _ipick.ImpositionPickerDialog = _FakeInsertDialog
+        try:
+            page._on_imposition_page_insert(1, "before")
+            page._imposition_timer.stop()
+            pump(ctx.app, times=6)
+        finally:
+            _ipick.ImpositionPickerDialog = real_dialog
+        ok(
+            "「向前插入拼版」：新页落在目标页**之前**，视图停在它上面",
+            _page_names() == [["1-l.png"], ["2-r.png"], ["1-r.png"]]
+            and page.imposition_view.current_index() == 1,
+            f"{_page_names()} current={page.imposition_view.current_index()}",
+        )
+        _ipick.ImpositionPickerDialog = _FakeInsertDialog
+        try:
+            page._on_imposition_page_insert(1, "after")
+            page._imposition_timer.stop()
+            pump(ctx.app, times=6)
+        finally:
+            _ipick.ImpositionPickerDialog = real_dialog
+        ok(
+            "「向后插入拼版」：新页落在目标页**之后**，左列页数同步",
+            _page_names()
+            == [["1-l.png"], ["2-r.png"], ["2-l.png"], ["1-r.png"]]
+            and len(page.imposition_view.page_list.entries()) == 4,
+            f"{_page_names()} entries="
+            f"{len(page.imposition_view.page_list.entries())}",
+        )
+        # 清空，接后续用例（它们从"没有页"开始重建）
+        page._save_imposition_pages([])
+        page._imposition_timer.stop()
+        pump(ctx.app, times=4)
 
         # ---- 自动拼版接线：勾 1 张 + 「从这张图片开始自动拼版」→ 规则引擎接管
         # （用户 2026-09-30：1-r 单独一页、左半幅+右半幅配对、落单单页）----
@@ -3362,12 +3420,6 @@ def run(ctx) -> None:
 
             def picked_files(self):
                 return self._picked
-
-            def removed_files(self):
-                return []
-
-            def removed_changed(self):
-                return False
 
         # ⚠️ 赋给弹窗槽位的必须是**可调用对象**（工厂），不能是替身实例——
         # 控制器拿到的是 `ImpositionPickerDialog(...)` 调用形式。

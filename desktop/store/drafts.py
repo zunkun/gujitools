@@ -25,14 +25,14 @@ from desktop.store.json_io import (
 )
 
 # 不入暂存的键：系统管理 / 运行时覆盖，与 HistoryMixin._HISTORY_SKIP 同源。
-# ⚠️ 外加一条 **draft 侧特有**的：``keep_blank``（「保留框外空白」）。
-#    它是**任务级**参数，唯一落点是 ``tasks/<id>/ui.json``
-#    （``store.load_detect_keep_blank`` / ``save_detect_keep_blank``）；
+# ⚠️ 外加两条 **draft 侧特有**的：``mode`` / ``reuse_prev``（「识别文本框」的
+#    识别方式与「自动沿用上一页标注」）。它们是**任务级**参数，唯一落点是
+#    ``tasks/<id>/ui.json``（``store.load_detect_mode`` / ``save_detect_mode``）；
 #    而暂存是**按节点**分的，两处都存会在同任务的两个「检测文本框」节点上
-#    打架（A 节点写一份、B 节点读另一份）。历史里仍然保留这个键（审计/兜底用）。
+#    打架（A 节点写一份、B 节点读另一份）。历史里仍然保留这两个键（审计/兜底用）。
 DRAFT_SKIP = frozenset(
     {"input", "output", "workers", "clean", "resume",
-     "_effects", "_outpath", "_preview_run_id", "keep_blank"}
+     "_effects", "_outpath", "_preview_run_id", "mode", "reuse_prev"}
 )
 
 

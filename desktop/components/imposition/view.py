@@ -183,6 +183,11 @@ class ImpositionViewWidget(QWidget):
     add_requested = Signal()
     #: 左列拖动排序松手：``from`` 移到 ``target``（移除后口径）
     page_reorder_requested = Signal(int, int)
+    #: 左列右键「上移 / 下移」：``index`` 页上移(-1)/下移(+1) 一位
+    page_move_requested = Signal(int, int)
+    #: 左列右键「向前 / 向后插入拼版」：``index`` 页之前/之后插入新页
+    #: （``position`` 为 ``"before"`` / ``"after"``；选图由控制器弹窗做）
+    page_insert_requested = Signal(int, str)
     #: 左列某页的「✕」：释放该页图片回未选择列表
     page_remove_requested = Signal(int)
     #: 左列悬浮框「批量删除」（勾选页后浮出）
@@ -219,6 +224,8 @@ class ImpositionViewWidget(QWidget):
         self.page_list.page_selected.connect(self._on_page_selected)
         self.page_list.add_requested.connect(self.add_requested)
         self.page_list.reorder_requested.connect(self.page_reorder_requested)
+        self.page_list.move_requested.connect(self.page_move_requested)
+        self.page_list.insert_requested.connect(self.page_insert_requested)
         self.page_list.remove_requested.connect(self.page_remove_requested)
         self.page_list.batch_delete_requested.connect(self.pages_batch_delete_requested)
         row.addWidget(self.page_list)

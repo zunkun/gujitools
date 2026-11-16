@@ -36,6 +36,22 @@ def run(ctx) -> None:
     d.set_task(tid)
     # ⚠️ 去底色的输入是「检测文本框」**提交后**的裁图（stages/detect）。
     #    进第三步之前先替用户点一次第二步的「提交本次任务」。
+    #
+    # ⚠️⚠️ 2026-11-16 起提交**只裁标注过的文本框**（不再给没框的页按平均尺寸补图），
+    #    而夹具里的页面本来一个框都没有 ⇒ 不给框就会提交出空目录、后面每条断言
+    #    连锁失败。这里按"用户逐页画了一个整页框"备好（每页 1 张，产物名 = 页名），
+    #    与改造前"无框页整页透传"的产物形状一致。
+    #    ⚠️ 必须带**节点作用域**写（`_node_scope`）：存储按节点分流（主节点
+    #       `boxes.json`、副本节点 `boxes~<节点>.json`），提交侧读的就是那份；
+    #       不带作用域会写进主文件，与读侧不是一个文件 ⇒ 提交仍然空。
+    _scope = d._node_scope(d.node_of_stage("detect"))
+    for _page in d._manifest_paths():
+        _size = d._image_size_for(str(_page)) or (0, 0)
+        repo.save_detect_boxes(
+            tid, _page.stem,
+            [[0, 0, int(_size[0]), int(_size[1])]], origin="manual", **_scope,
+        )
+    d.detect_cache.clear()
     d._select_stage(1)
     d.run_detect_submit()
     wait_worker(d, app, timeout=300)
@@ -117,8 +133,9 @@ def run(ctx) -> None:
     # --- 第二步面板没有 area（2026-10-22 起 area 已从整个项目移除）---
     _p2 = d.control_stack.widget(1)
     ok("第二步面板没有 area 控件", not hasattr(_p2, "area"))
-    ok("第二步 get_args 只有 keep_blank（默认 False）",
-       _p2.get_args() == {"keep_blank": False}, str(_p2.get_args()))
+    ok("第二步 get_args 是识别方式两个键（默认自动识别 + 沿用上一页）",
+       _p2.get_args() == {"mode": "auto", "reuse_prev": True},
+       str(_p2.get_args()))
 
     final_dir = repo.rembg_output_dir(tid)
     ok("执行前 stages/rembg 为空",

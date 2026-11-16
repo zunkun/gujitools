@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import html
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal, Slot, QSize
@@ -29,6 +30,7 @@ from qfluentwidgets import (
 
 from desktop import ui
 from desktop.ui import theme as T
+from desktop.ui.confirm_dialog import ConfirmDialog
 from desktop.ui.help_dialog import open_manual
 from desktop.ui.icons import HELP_CIRCLE, PDF_FILE
 from desktop.workers import (
@@ -50,6 +52,33 @@ STATUS_LABELS = T.STATUS_LABELS
 
 #: 页头副标题的默认文案；导入期间会被「正在导入 · …」临时顶掉（见 _show_import_status）
 HEADER_SUBTITLE = "创建任务后按流程节点依次处理"
+
+
+def _duplicate_message(file_name: str, names: list) -> str:
+    """导入查重弹窗的正文（**富文本**，供 ``_build_duplicate_dialog`` 用）。
+
+    用户 2026-11-16 的两条要求：①弹窗宽度固定、文字自动折行（长书名不能把
+    窗口撑宽）；②**文件名用红色标出来**——一眼看出拦的是哪个文件。
+
+    - 红字走 ``<font color=…>``（取 ``desktop/ui/theme`` 的危险色），**不用
+      样式表**：样式表只能整段上色，分不出"文件名"和"其余说明"。
+    - 名字/文件名一律 ``html.escape``：书名里带 ``<``、``&`` 是常事，不转义
+      会被当成标签吃掉（连后面的字一起吞）。
+    - 最多列 3 个已有任务，其余折成「共 N 个」：宽度钉死时列出 20 个任务只会
+      让弹窗高到屏幕外。
+    """
+    total = len(names)
+    shown = [html.escape(str(n)) for n in names[:3]]
+    quoted = "、".join(f"「{n}」" for n in shown)
+    if total > len(shown):
+        quoted += f" 等（共 {total} 个）"
+    red = T.DANGER
+    return (
+        f'源文件<font color="{red}">「{html.escape(file_name)}」</font>'
+        f"已在任务列表中导入过，内容相同的任务："
+        f'<font color="{red}">{quoted}</font>。<br><br>'
+        "是否仍然创建一条新任务？"
+    )
 
 
 class TaskListPage(QWidget, WorkerHost):
@@ -432,16 +461,31 @@ class TaskListPage(QWidget, WorkerHost):
 
     def _confirm_duplicate(self, path: Path, duplicates: list) -> bool:
         """发现相同内容文件时弹窗确认；返回 True 表示仍创建新任务。"""
-        names = "、".join(f"「{t['name']}」" for t in duplicates[:3])
-        more = f" 等 {len(duplicates)} 个任务" if len(duplicates) > 3 else ""
-        dialog = Dialog(
+        return bool(self._build_duplicate_dialog(path, duplicates).exec())
+
+    def _build_duplicate_dialog(self, path: Path, duplicates: list) -> ConfirmDialog:
+        """构造（**不弹出**）查重确认框。
+
+        ⚠️ 构造与 ``exec()`` 分开：离屏自测绝不真弹模态（项目硬规则），自测
+        只造框、验宽度/折行/红字，验完 ``deleteLater()``。
+
+        ⚠️ 为什么不用 qfluent 的 ``Dialog``（2026-11-16 用户报"弹窗会随 PDF
+        文件名加宽"）：它的 ``setContentText`` 让窗口按**单行自然宽度**算
+        sizeHint，任务名默认就是 PDF 文件名，名字一长窗口就顶到屏幕边缘，长
+        到一定程度还点不到按钮。``ConfirmDialog`` 宽度钉死、正文折行，名字
+        再长也只让弹窗**变高**（三条"不响"的防线一并得到，见该模块头）。
+        """
+        dialog = ConfirmDialog(
             "发现相同文件",
-            f"任务列表中已存在内容相同的任务：{names}{more}。\n是否仍然创建一条新任务？",
-            self,
+            _duplicate_message(
+                path.name, [t.get("name") or "" for t in duplicates]
+            ),
+            self.window(),
+            rich=True,
+            yes_text="创建新任务",
+            cancel_text="定位已有任务",
         )
-        dialog.yesButton.setText("创建新任务")
-        dialog.cancelButton.setText("定位已有任务")
-        return bool(dialog.exec())
+        return dialog
 
     @Slot(str)
     def _hash_failed(self, message: str) -> None:

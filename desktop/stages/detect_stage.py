@@ -372,9 +372,6 @@ def run_detect_submit_stage(config: dict) -> int:
             px = None if size.isEmpty() else (size.width(), size.height())
             jobs.append(plan_submit_job(spec, px))
         total = sum(len(j["names"]) for j in jobs)  # 输出**张数**
-        # 占位条目与真框走**同一条裁剪路径**（都从原图截对应区域），
-        # ``placeholder`` 标记只用于日志/统计区分。
-        placeholder_total = sum(1 for j in jobs if j.get("placeholder"))
 
         def _save(image, dst: Path) -> None:
             """JPEG q95 落盘（4:4:4）；原子写避免下游读到半截图。"""
@@ -440,9 +437,7 @@ def run_detect_submit_stage(config: dict) -> int:
                 emit({"type": "progress", **context, "done": done, "total": total})
                 emit({
                     "type": "log", **context,
-                    "message": f"提交处理 {done}/{total}：{job['label']}"
-                               + ("（原图占位）" if job.get("placeholder") else "")
-                               + " → "
+                    "message": f"提交处理 {done}/{total}：{job['label']} → "
                                + ("、".join(saved_names) if saved_names else "无输出"),
                 })
                 for message in errors:
@@ -452,11 +447,7 @@ def run_detect_submit_stage(config: dict) -> int:
         emit({"type": "progress", **context, "done": total, "total": total})
         emit(
             {"type": "log", **context,
-             "message": (
-                 f"检测结果已提交（按文本框裁图 {saved - placeholder_total} 张"
-                 + (f"，原图占位 {placeholder_total} 张" if placeholder_total else "")
-                 + f"）：{out_dir}"
-             )}
+             "message": f"检测结果已提交（按文本框裁图 {saved} 张）：{out_dir}"}
         )
         if not saved:
             emit(

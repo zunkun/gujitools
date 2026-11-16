@@ -85,6 +85,7 @@ core（命令定义、reporter）   →   utils（纯算法：box_geometry、ima
 | 框几何/绘制                                                    | `utils/box_geometry.py`（半幅恒 2 槽、整幅恒 1 槽）；标注统一 `utils/box_draw.draw_slots`                                                                |
 | 框类型人工干预交互流（切类型/整幅互斥/删框）                   | `desktop/components/box_kinds.py::BoxKindEditor`（taskdetail 与独立检测页共用）                                                                          |
 | 编辑生效链的查看器原语（立即上屏/单条缩略图刷新）              | `desktop/components/viewers/edit_sync.py`                                                                                                                |
+| 拼版「插入/上传」的落点、重名避让、候选扫描与成页配对          | `desktop/services/imposition_insert.py`（`inserted/imposition/`；同一张图可多次上传）                                                                    |
 | InfoBar 弹出（位置/时长/兜底）                                 | `desktop/ui/toast.py::show_toast`                                                                                                                        |
 | 色距字号                                                       | `desktop/ui/theme.py`                                                                                                                                    |
 | JSON 落盘                                                      | `desktop/store/json_io.py`（临时文件 + `os.replace` 原子写）                                                                                             |

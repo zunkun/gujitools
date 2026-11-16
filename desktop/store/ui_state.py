@@ -6,7 +6,8 @@
     {"last_stage": "rembg",                     # 上次在这个任务里停留的步骤 key
      "yolo_export_name": "b1",                  # 「导出YOLO标注」上次填的名称/前缀
      "yolo_export_dir": "D:/…/bookcontent",     # 同上，上次选的导出目录
-     "detect_keep_blank": true}                 # 「保留框外空白」（任务级参数）
+     "detect_mode": "manual",                   # 「识别文本框」方式（任务级参数）
+     "detect_reuse_prev": true}                 # 人工标注：自动沿用上一页标注
 
 **为什么记 key 而不是下标**：流程里的步骤会增减（「图片拼版」虚线节点就是
 条件出现的可选步骤），下标一旦错位就会把用户送到**另一个**步骤去；key 是按
@@ -41,19 +42,30 @@ from desktop.store.json_io import read_json, write_json
 YOLO_EXPORT_DIR_KEY = "yolo_export_dir"
 YOLO_EXPORT_NAME_KEY = "yolo_export_name"
 
-#: **任务级**参数：「保留框外空白」（用户 2026-11-12：「参数是任务级别的，
-#: 不是整个系统一个参数，任务 A 的设置不影响任务 B」）。
+#: **任务级**参数：「识别文本框」的方式（用户 2026-11-16）——
+#: ``"auto"``＝自动识别（可调 YOLO 检测），``"manual"``＝人工标注（完全不调
+#: YOLO，用户自己在每页画框）。
 #:
 #: ⚠️ 不放进 ``drafts/<阶段>.json``：暂存是**按节点**分的（``<阶段>~<节点>``），
 #: 而这个开关语义上是整个任务共用一份（同任务里几个「检测文本框」节点应该
 #: 一致）。放这里 ⇒ 天然任务级隔离，删任务即随之清掉。
-DETECT_KEEP_BLANK_KEY = "detect_keep_blank"
+DETECT_MODE_KEY = "detect_mode"
+
+#: **任务级**参数：人工标注模式下「自动使用上一个文本框标注」是否勾选
+#: （用户 2026-11-16，默认勾选）。与 :data:`DETECT_MODE_KEY` 同放
+#: ``tasks/<任务号>/ui.json``，理由同上。
+DETECT_REUSE_PREV_KEY = "detect_reuse_prev"
+
+#: 识别方式的合法取值（``DETECT_MODE_KEY`` 的值域）
+DETECT_MODES = ("auto", "manual")
 
 __all__ = [
     "UIStateMixin",
     "YOLO_EXPORT_DIR_KEY",
     "YOLO_EXPORT_NAME_KEY",
-    "DETECT_KEEP_BLANK_KEY",
+    "DETECT_MODE_KEY",
+    "DETECT_REUSE_PREV_KEY",
+    "DETECT_MODES",
 ]
 
 
@@ -199,22 +211,40 @@ class UIStateMixin:
         write_json(path, doc)
         return True
 
-    # ---------- 任务级：「保留框外空白」（检测文本框参数） ----------
-    def load_detect_keep_blank(self, task_id: str) -> bool | None:
-        """本任务「保留框外空白」的上次选择；**没设过**返回 ``None``。
+    # ---------- 任务级：「识别文本框」方式与「自动沿用上一页标注」 ----------
+    def load_detect_mode(self, task_id: str) -> str | None:
+        """本任务「识别文本框」方式（``"auto"`` / ``"manual"``）；**没设过**返回 ``None``。
 
-        ``None`` 与 ``False`` 必须分开：``False`` 是"用户明确选了不保留"，
-        ``None`` 是"这个任务还没设过"——后者要交给暂存/历史/内置默认去决定，
-        不能一律当成不保留（否则老任务升级上来会丢掉历史里的选择）。
+        ``None`` 与 ``"auto"`` 必须分开：``"auto"`` 是"用户明确选了自动识别"，
+        ``None`` 是"这个任务还没设过"——后者交给暂存/历史/内置默认去决定，
+        不能一律当成自动（否则老任务升级上来会丢掉历史里的选择）。
         """
         data = read_json(self.ui_state_path(task_id), None)
         if not isinstance(data, dict):
             return None
-        value = data.get(DETECT_KEEP_BLANK_KEY)
+        value = data.get(DETECT_MODE_KEY)
+        return value if value in DETECT_MODES else None
+
+    def save_detect_mode(self, task_id: str, mode: str) -> bool:
+        """记住本任务「识别文本框」方式，返回是否真的写了。"""
+        if mode not in DETECT_MODES:
+            raise ValueError(f"未知的识别方式：{mode!r}")
+        return self._save_ui_key(task_id, DETECT_MODE_KEY, str(mode))
+
+    def load_detect_reuse_prev(self, task_id: str) -> bool | None:
+        """本任务「自动使用上一个文本框标注」的上次选择；**没设过**返回 ``None``。"""
+        data = read_json(self.ui_state_path(task_id), None)
+        if not isinstance(data, dict):
+            return None
+        value = data.get(DETECT_REUSE_PREV_KEY)
         return value if isinstance(value, bool) else None
 
-    def save_detect_keep_blank(self, task_id: str, value: bool) -> bool:
-        """记住本任务「保留框外空白」的选择，返回是否真的写了。
+    def save_detect_reuse_prev(self, task_id: str, value: bool) -> bool:
+        """记住本任务「自动使用上一个文本框标注」的选择，返回是否真的写了。"""
+        return self._save_ui_key(task_id, DETECT_REUSE_PREV_KEY, bool(value))
+
+    def _save_ui_key(self, task_id: str, key: str, value) -> bool:
+        """往任务 ``ui.json`` 写**一项**（保留其它键），返回是否真的写了。
 
         与 :meth:`save_last_stage` 同规矩：任务目录没了就不写（不把已删任务
         重新创建出来），且只覆盖自己那一项、不动 ``last_stage`` 等。
@@ -226,6 +256,6 @@ class UIStateMixin:
         path = self.ui_state_path(task_id)
         data = read_json(path, None)
         doc = dict(data) if isinstance(data, dict) else {}
-        doc[DETECT_KEEP_BLANK_KEY] = bool(value)
+        doc[key] = value
         write_json(path, doc)
         return True

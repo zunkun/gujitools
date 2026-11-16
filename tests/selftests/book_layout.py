@@ -226,7 +226,6 @@ def run(ctx) -> None:
         manifest_paths=[Path(name) for name in demo_boxes],
         boxes_for=lambda text: demo_boxes[Path(text).name],
         page_width_for=lambda _t: W,
-        page_size_for=lambda _t: (W, 1400),
     )
     demo_got = {e["label"]: e for e in demo_entries}
     ok("被修正的整幅页：产物名无后缀、role=half-unsided",

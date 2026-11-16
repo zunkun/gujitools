@@ -372,6 +372,34 @@ GUI（QImage 渲染）共同消费同一份 `OutputLayout`，不得各自推导
 落选；勾选框吃掉自己的鼠标事件，不会触发条目的切页/拖动排序。
 「＋ 选择拼版」格**钉在左列最底部**（滚动区之外，不随页数上下移动）。
 
+**左列右键菜单**（用户 2026-11-16，与「PDF排版」左列同一套）：每格
+`_PageEntry` 的 `ContextMenuPolicy` 是 `CustomContextMenu`，右键事件冒泡到
+条目后由 `ImpositionPageList._on_entry_context_menu(entry, pos)` 弹菜单——
+**上移 / 下移 / 删除当前拼版 / 向前插入拼版 / 向后插入拼版**（首末行的
+上移/下移置灰）。菜单只发信号：`move_requested(index, ±1)`、
+`insert_requested(index, "before"|"after")`、`remove_requested(index)`，
+视图（`view.py`）原样转发成 `page_move_requested` / `page_insert_requested` /
+`page_remove_requested`，落盘归控制器（`imposition_pages.py`）。三条语义：
+挪位**只换顺序**（图片引用不动）、删除**释放图片回候选池**（与「✕」同款）、
+插入**弹选图窗**再按落点 splice。⚠️ qfluentwidgets `Action.triggered` 自带一个
+`checked=False` 实参，直连 `emit` 会多塞一个参数（TypeError），要用默认参数吃掉。
+
+**选图弹窗**（`picker.py::ImpositionPickerDialog`）**一个列表、没有页签**
+（用户 2026-11-16 把「选择拼版 / 删除恢复」两个页签与「删除图片」一键取消）：
+列表 = 上游还没用过的成品图 + **本任务上传过的图**（`services.imposition_insert.
+uploaded_candidates` 扫上传目录得来），判据只有一条"没被任何页引用"——所以**删掉
+拼版页的图会直接回到这个列表**，上传过的图也一样（旧版删页即永久消失）。
+三种 `mode`：`pick`（＋选择拼版，追加到末尾）/ `insert`（右键插入，落点单选、
+默认按右键那一项）/ `append`（单图页「新增图片」，只放行 1 张）。
+⚠️ **上传的图弹窗不落盘**：它只交出 `chosen_items()`（`uploaded=True` 标记），
+复制与成页由宿主调 `services/imposition_insert` 统一做——复制落点是
+`<任务目录>/inserted/imposition/`（单文件页是 `singletask/imposition/inserted/`），
+**重名避让**（`x.png` → `x-1.png`），因此**同一张图可以上传多次**、各自成页
+（与「PDF排版 → 插入图片」同一规范）。落点**既不在 `stages/` 下、也不与打印侧的
+`inserted/` 混放**：上一步的页面清单不会因此多一条，打印插的图也不会混进候选。
+⚠️ 上传的图**必须补缩略图**：分批解码只由"打开弹窗"那一次驱动，`add_uploads`
+之后要再排一次 `_fill_thumbs`（否则新卡片是空白的——用户 2026-11-16 报的就是这个）。
+
 画布是 `PrintLayoutCanvas` 的同族实现（页面坐标 → 控件像素等比适配），差异在于
 可以放**多张**图、每张带旋转：`rect` 是落点框、`rotation` 只作用于框内图像
 （框线恒画在未旋转的矩形上），手柄命中沿用「四角圆点邻域 + 四边整条命中带」

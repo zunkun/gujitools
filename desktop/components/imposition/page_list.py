@@ -10,6 +10,11 @@
 文字要在缩略图下面）。勾了页，一条**悬浮操作框**（「已选 N 页」+「取消选择」
 「批量删除」）悬在页码栏右侧中部，可拖动——取消选择即收起。
 
+**右键某页缩略图**（用户 2026-11-16，照「PDF排版」左列那套菜单）：上移 /
+下移 / 删除当前拼版 / 向前插入拼版 / 向后插入拼版。三条动作都不在本文件
+执行——分别发 ``move_requested`` / ``remove_requested`` /
+``insert_requested``，由控制器落盘（插入还要先弹选图窗）。
+
 这里只做控件与信号：清单**只认页标题/副标题文案**，不认拼版文档本身——
 页清单的数据（``drafts/imposition.json``）由装配层
 ``view.ImpositionViewWidget`` 灌进来。
@@ -144,6 +149,13 @@ class _PageEntry(QFrame):
         labels.addWidget(self.caption_label)
         root.addLayout(labels)
         self.remove_button.hide()
+        # 右键菜单（用户 2026-11-16：参考「PDF排版」左列缩略图，给
+        # 上移/下移/删除/向前插入/向后插入）：条目自己只发"在哪儿右键"，
+        # 菜单与动作归 :class:`ImpositionPageList`——条目是每次重建的短命
+        # 对象，把菜单挂在它身上，重建一次就丢一个菜单窗口。
+        # ⚠️ 子控件（缩略图 QLabel、勾选框、✕）自己不处理右键，事件冒泡到
+        # 本条目，所以"在缩略图上右键"也能命中。
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         #: 当前已贴缩略图的 ``QPixmap.cacheKey()``（``None`` = 还没贴/已清空）。
         #: ``set_thumb`` 的"同一张图不重贴"早退靠它，见该方法说明。
         self._thumb_key: int | None = None
@@ -463,6 +475,11 @@ class ImpositionPageList(QWidget):
     add_requested = Signal()
     #: 拖动某页松手：``from`` 移到 ``target``（都是移除前的口径）
     reorder_requested = Signal(int, int)
+    #: 右键「上移 / 下移」：``index`` 页上移(-1)/下移(+1) 一位
+    move_requested = Signal(int, int)
+    #: 右键「向前插入拼版 / 向后插入拼版」：``index`` 页之前/之后插入新页
+    #: （``position`` 是 ``"before"`` / ``"after"``，由控制器弹窗选图）
+    insert_requested = Signal(int, str)
     #: 点了某页右侧的「✕」：释放该页图片回未选择列表
     remove_requested = Signal(int)
     #: 勾选集合变了（含「取消选择」一键清空；控制器一般不用接）
@@ -519,6 +536,9 @@ class ImpositionPageList(QWidget):
         self._drag_timer = QTimer(self)
         self._drag_timer.setInterval(self._POLL_MS)
         self._drag_timer.timeout.connect(self._poll_drag)
+        #: 最近一次弹出的右键菜单（非阻塞 ``exec`` 不回收；下一次右键先销毁它，
+        #: 否则每右键一次就残留一个窗口）
+        self._context_menu = None
 
         row = QVBoxLayout(self)
         row.setContentsMargins(0, 0, 0, 0)
@@ -573,6 +593,9 @@ class ImpositionPageList(QWidget):
             entry.drag_started.connect(self._on_drag_started)
             entry.remove_clicked.connect(self.remove_requested)
             entry.check_toggled.connect(self._on_entry_check_toggled)
+            entry.customContextMenuRequested.connect(
+                partial(self._on_entry_context_menu, entry)
+            )
             entry.set_checked(caption in keep_checked)
             self.list_box.insertWidget(index, entry)
             self._entries.append(entry)
@@ -634,6 +657,77 @@ class ImpositionPageList(QWidget):
     def _on_entry_clicked(self, index: int) -> None:
         self.set_current(index)
         self.page_selected.emit(index)
+
+    # ------------------------------------------------------------- 右键菜单
+    def _on_entry_context_menu(self, entry: "_PageEntry", pos) -> None:
+        """某页缩略图右键：上移 / 下移 / 删除当前拼版 / 向前 / 向后插入拼版。
+
+        用户 2026-11-16：与「PDF排版」左列缩略图**同一套菜单**（拖动能做的
+        事，右键也能做，且不用对准 8px 的描边拖）。
+
+        ⚠️ 先右键把命中的那一页设成当前页：菜单动作（上移/下移/删除/插入
+        落点）必须作用在**刚点的那一页**上，不能沿用上一次的选中页。
+        ⚠️ 菜单父对象必须是**顶层窗口**（``self.window()``）：qfluentwidgets
+        的 ``exec`` 只是非阻塞 ``show()``，Qt 会沿父链找 popup 的原生父窗口，
+        父对象是嵌套控件时控制台会刷 "must be a top level window"。
+        """
+        from qfluentwidgets import Action, FluentIcon as FIF, RoundMenu
+
+        if entry not in self._entries:
+            return
+        index = self._entries.index(entry)
+        self.set_current(index)
+        self.page_selected.emit(index)
+        previous = self._context_menu
+        if previous is not None:
+            previous.deleteLater()
+        menu = RoundMenu(parent=self.window())
+        self._context_menu = menu
+        count = len(self._entries)
+        # 首/末行置灰：点了"没反应"比置灰更让人困惑
+        for text, icon, delta, enabled in (
+            ("上移", FIF.CARE_UP_SOLID, -1, index > 0),
+            ("下移", FIF.CARE_DOWN_SOLID, +1, index < count - 1),
+        ):
+            action = Action(icon, text, menu)
+            action.setEnabled(enabled)
+            # ⚠️ ``triggered`` 带一个 ``checked=False`` 实参，直接 partial
+            # ``emit(index, delta)`` 会多塞一个参数进信号（TypeError）——
+            # 用默认参数把它吃掉。
+            action.triggered.connect(
+                lambda _checked=False, i=index, d=delta:
+                self.move_requested.emit(i, d)
+            )
+            menu.addAction(action)
+        menu.addSeparator()
+        for text, icon, key in (
+            ("删除当前拼版", FIF.DELETE, "remove"),
+            ("向前插入拼版", FIF.UP, "before"),
+            ("向后插入拼版", FIF.DOWN, "after"),
+        ):
+            action = Action(icon, text, menu)
+            action.triggered.connect(
+                lambda _checked=False, k=key, i=index:
+                self._run_menu_action(k, i)
+            )
+            menu.addAction(action)
+        menu.exec(entry.mapToGlobal(pos))
+
+    def _run_menu_action(self, key: str, index: int) -> None:
+        """右键菜单项分发（``triggered`` 的 checked 实参已在调用处吃掉）。"""
+        if not (0 <= index < len(self._entries)):
+            return
+        if key == "remove":
+            self.remove_requested.emit(index)
+        elif key == "before":
+            self.insert_requested.emit(index, "before")
+        elif key == "after":
+            self.insert_requested.emit(index, "after")
+
+    def menu_actions(self) -> list:
+        """当前右键菜单里的动作（护栏/自检用；没弹过菜单返回空列表）。"""
+        menu = self._context_menu
+        return list(menu.actions()) if menu is not None else []
 
     # ------------------------------------------------------------- 勾选批量
     def checked_indexes(self) -> list[int]:

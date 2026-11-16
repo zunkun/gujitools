@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 from qfluentwidgets import ComboBox, ScrollArea
 
 from desktop.ui import theme as T
-from desktop.ui.widgets import HelpButton, apply_to
+from desktop.ui.widgets import HelpButton, SurfacePanel, apply_to
 
 
 def default_for(parameters: dict, defaults: dict, key: str) -> Any:
@@ -38,8 +38,8 @@ def default_for(parameters: dict, defaults: dict, key: str) -> Any:
     return value
 
 
-class _ShrinkableForm(QWidget):
-    """参数表单容器：**水平方向允许被压缩到 0**。
+class _ShrinkableForm(SurfacePanel):
+    """参数表单容器：**水平方向允许被压缩到 0**，竖向**自己铺白底**。
 
     为什么需要它：qfluentwidgets 的滚动条是**浮在内容上**的（overlay），而
     QFormLayout 的最小宽度 = 各行 field 的 minimumSizeHint 之和，qfluent 的
@@ -50,6 +50,9 @@ class _ShrinkableForm(QWidget):
     只调 ``container.setMinimumWidth(0)`` **不管用**：Qt 取 ``minimumSize`` 与
     ``minimumSizeHint`` 的**较大值**，后者由 layout 算出，改前者无效。
     所以这里直接收窄 minimumSizeHint —— 只收宽度，高度保持自然（纵向靠滚动）。
+
+    白底那半（见 ``widgets.SurfacePanel``）：滚动区的 viewport 会刷系统窗口灰
+    （``#EFEFEF``），铺在白卡片上像一块灰砖；容器自己铺白就干净了。
     """
 
     def minimumSizeHint(self) -> QSize:
@@ -168,8 +171,11 @@ class StagePanel(QWidget):
         scroll = ScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        # 去掉滚动区自带的白底与描边：它嵌在参数卡片里，
-        # 再画一层边框就成了"卡片套卡片"（同 print 面板的做法）
+        # 去掉滚动区自带的描边：它嵌在参数卡片里，再画一层边框就成了"卡片套卡片"
+        # （同 print 面板的做法）。
+        # ⚠️ 它**去不掉灰底**：这行在 ``setWidget()`` 之前，那时内容还没挂上，
+        #    样式表只落到滚动区自己身上；viewport 照旧刷系统窗口灰（#EFEFEF）。
+        #    盖住那块灰的是容器自己的白底（``_ShrinkableForm`` → ``SurfacePanel``）。
         scroll.enableTransparentBackground()
         scroll.setWidget(container)
         return scroll

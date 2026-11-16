@@ -48,6 +48,10 @@ class AppConfig(QConfig):
     autoUpdateData = ConfigItem(
         "Update", "AutoUpdateData", False, BoolValidator()
     )
+    #: 显示执行记录：各步骤右栏是否显示「执行记录」下拉框（默认关，用户 2026-11-16）。
+    showHistory = ConfigItem(
+        "Feature", "ShowHistory", False, BoolValidator()
+    )
     #: 开发者模式：打开后设置页才显示开发/训练相关的选项。
     developerMode = ConfigItem(
         "Developer", "DeveloperMode", False, BoolValidator()
@@ -102,6 +106,11 @@ def yolo_annotation() -> bool:
     return bool(app_config().yoloAnnotation.value)
 
 
+def show_history() -> bool:
+    """各步骤右栏是否显示「执行记录」（默认**不显示**，用户 2026-11-16）。"""
+    return bool(app_config().showHistory.value)
+
+
 __all__ = [
     "AppConfig",
     "CONFIG_FILENAME",
@@ -110,5 +119,6 @@ __all__ = [
     "auto_update_data",
     "config_path",
     "developer_mode",
+    "show_history",
     "yolo_annotation",
 ]

@@ -51,6 +51,60 @@ def run(ctx) -> None:
     ok("重复文件确认后新建一条", len(repo.list_tasks()) == rows_before + 1)
     newest = repo.list_tasks()[0]
     ok("新建任务标记 duplicate_confirmed", newest["duplicate_confirmed"] == 1)
+    # ---- 查重弹窗的版式（用户 2026-11-16：宽度固定 + 文字折行 + 文件名红字）----
+    # ⚠️ 只**造**框不 exec（离屏绝不真弹模态）：`_build_duplicate_dialog` 与
+    #    `_confirm_duplicate` 分开正是为此。
+    from pathlib import Path as _Path
+
+    from PySide6.QtCore import Qt as _Qt
+
+    from desktop.ui.confirm_dialog import DIALOG_W as _DLG_W
+
+    long_name = (
+        "明清之际徽州府县赋役全书考述补遗与校勘记第三卷（附索引）"
+        "(扫描版)_final_v2.pdf"
+    )
+    dlg_long = w.list_page._build_duplicate_dialog(
+        _Path(long_name), [{"name": "古籍样例"}]
+    )
+    dlg_short = w.list_page._build_duplicate_dialog(_Path("a.pdf"), [{"name": "x"}])
+    ok(
+        "查重弹窗宽度固定（长文件名不会把窗口撑宽）",
+        dlg_long.width() == dlg_short.width() == _DLG_W
+        and dlg_long.minimumWidth() == dlg_long.maximumWidth() == _DLG_W,
+        f"长名 {dlg_long.width()} / 短名 {dlg_short.width()} 期望 {_DLG_W}",
+    )
+    ok("查重弹窗正文自动折行", dlg_long.content_label.wordWrap())
+    ok(
+        "查重弹窗正文是富文本（能只给文件名上色）",
+        dlg_long.content_label.textFormat() == _Qt.TextFormat.RichText,
+        str(dlg_long.content_label.textFormat()),
+    )
+    ok(
+        "查重弹窗文件名用危险色标出",
+        f'<font color="{T.DANGER}">「{long_name}」</font>'
+        in dlg_long.content_label.text(),
+        dlg_long.content_label.text()[:80],
+    )
+    inner = _DLG_W - 2 * T.SPACE_XL
+    line_h = dlg_long.content_label.fontMetrics().height()
+    ok(
+        "长文件名折成多行（弹窗变高而不是变宽）",
+        dlg_long.content_label.heightForWidth(inner) > line_h * 2,
+        f"{dlg_long.content_label.heightForWidth(inner)}px，行高 {line_h}px",
+    )
+    dlg_esc = w.list_page._build_duplicate_dialog(
+        _Path("a<&>.pdf"), [{"name": "<b>x&y</b>"}]
+    )
+    ok(
+        "查重弹窗对文件名/任务名做 HTML 转义",
+        "&lt;b&gt;x&amp;y&lt;/b&gt;" in dlg_esc.content_label.text()
+        and "a&lt;&amp;&gt;.pdf" in dlg_esc.content_label.text(),
+        dlg_esc.content_label.text(),
+    )
+    for _d in (dlg_long, dlg_short, dlg_esc):
+        _d.deleteLater()
+
     # ⚠️ 源文件副本是**后台**落的（导入只保证"立刻出一行"，复制/缩略图都在
     #    串行队列里跑），所以这里必须等，不能同步断言——等待期间要 processEvents
     ok(
