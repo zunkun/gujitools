@@ -199,6 +199,9 @@ class StagePanel(QWidget):
     #:
     #: 第三步实测：字段 112 → **232px**，只有最长的 `sealmin_sat` 那一条换成上下排
     #: （字段 364px）；第一步最长标签 132px，两条规则都不触发，一行都没动。
+    #:
+    #: 2026-11-17 起面板参数标签改为纯中文（不再带英文键名，唯一例外「输出DPI」），
+    #: 标签普遍变短，这两档折行/上下排退化为兜底机制继续保留。
     LABEL_MAX_WIDTH = 140
 
     def _add_row(self, form: QFormLayout, label: str, widget) -> None:
@@ -233,7 +236,7 @@ class StagePanel(QWidget):
 
         if width(label) <= self.LABEL_MAX_WIDTH:
             return label, False
-        # 尾部「（键名）」：只在最末尾找一层，中间带括号的（如「边距(mm)（border）」）
+        # 尾部括号段：只在最末尾找一层，中间带括号的（如「边距(mm)（border）」）
         # 也能正确切出 head="边距(mm)"、key="（border）"
         match = re.search(r"[（(][^（）()]*[）)]$", label)
         if match is not None:

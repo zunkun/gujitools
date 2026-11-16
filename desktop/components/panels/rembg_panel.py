@@ -64,9 +64,7 @@ class RembgPanel(StagePanel):
         # 阈值算法（全局默认；任务流程里改它会记到**当前这张图**上，
         # 与 offset 同一套逐张落盘规则）。值存 itemData，取值走 _combo_value。
         self.algorithm = combo_box(REMBG_ALGORITHM_CHOICES)
-        self.algorithm.setCurrentIndex(
-            self._index_of(self.algorithm, d["algorithm"])
-        )
+        self.algorithm.setCurrentIndex(self._index_of(self.algorithm, d["algorithm"]))
         self.algorithm.setToolTip(
             "阈值算法；默认 Otsu。任务流程里修改只影响当前这张图，"
             "全量执行时面板上的值作为其余图片的默认算法。"
@@ -123,9 +121,9 @@ class RembgPanel(StagePanel):
         offset_layout.setSpacing(8)
         offset_layout.addWidget(self.offset, 1)
         offset_layout.addWidget(self.offset_input)
-        self.seal = CheckBox("保留印章（seal）")
+        self.seal = CheckBox("保留印章")
         self.seal.setChecked(bool(d["seal"]))
-        self.sealcolor = CheckBox("印章彩色（sealcolor）")
+        self.sealcolor = CheckBox("印章彩色")
         self.sealcolor.setChecked(bool(d["sealcolor"]))
         self.sealarea = SafeSpinBox()
         self.sealarea.setRange(1, 100000)
@@ -138,14 +136,14 @@ class RembgPanel(StagePanel):
         # （输入框是 QSpinBox 子类，基类会自动连上）。
         self.offset.valueChanged.connect(self._on_offset_changed)
         self.offset_input.textChanged.connect(self._on_offset_input_changed)
-        # 标签格式（用户 2026-09-23 口径）：中文在前、键名放括号里。
+        # 标签格式（用户 2026-11-17 口径）：纯中文、不带英文参数键名。
         # 用户 2026-10-24 口径：阈值偏移紧跟阈值算法（它是对算法结果的微调），
         # 不再放到面板最后一行、也不再画分隔线。
         # 用户 2026-11-16 口径：分三个小分类（算法 / 印章 / 输出），标题用
         # 统一的 ``SectionTitle``（主色短竖线 + 加粗）。
         form.addRow(SectionTitle("算法"))
-        self._add_row(form, "阈值算法（algorithm）", self.algorithm)
-        self._add_row(form, "阈值偏移（offset）", offset_row)
+        self._add_row(form, "阈值算法", self.algorithm)
+        self._add_row(form, "阈值偏移", offset_row)
         # ⚠️ qfluentwidgets 的 Slider **自己不画禁用态**（paintEvent 不读
         # isEnabled），只 setEnabled(False) 的话用户看不出变化、以为没生效。
         # 这一层不透明度效果是"置灰"的可见实现；标签走 QLabel 的禁用调色板。
@@ -153,19 +151,19 @@ class RembgPanel(StagePanel):
         self._offset_effect = QGraphicsOpacityEffect(offset_row)
         self._offset_effect.setOpacity(1.0)
         offset_row.setGraphicsEffect(self._offset_effect)
-        self._add_row(form, "窗口大小（window）", self.local_window)
-        self._add_row(form, "灵敏度（k）", self.k)
+        self._add_row(form, "窗口大小", self.local_window)
+        self._add_row(form, "灵敏度", self.k)
 
         form.addRow(SectionTitle("印章"))
         # 两个开关**靠左**（用户 2026-11-16：不需要跟上面输入区对齐）——
         # addRow(控件) 跨两列；_add_row(form, "", …) 会把开关挤进右列字段位。
         form.addRow(self.seal)
         form.addRow(self.sealcolor)
-        self._add_row(form, "印章面积阈值（sealarea）", self.sealarea)
-        self._add_row(form, "印章最小饱和度（sealmin_sat）", self.sealmin_sat)
+        self._add_row(form, "印章面积阈值", self.sealarea)
+        self._add_row(form, "印章最小饱和度", self.sealmin_sat)
 
         form.addRow(SectionTitle("输出"))
-        self._add_row(form, "输出类型（type）", self.type)
+        self._add_row(form, "输出类型", self.type)
         self._sync_local_controls()
 
     @staticmethod
@@ -274,7 +272,9 @@ class RembgPanel(StagePanel):
         )
         self.local_window.setValue(int(default_for(parameters, d, "window")))
         self.k.setValue(float(default_for(parameters, d, "k")))
-        self.type.setCurrentIndex(self._index_of(self.type, default_for(parameters, d, "type")))
+        self.type.setCurrentIndex(
+            self._index_of(self.type, default_for(parameters, d, "type"))
+        )
         self.offset.setValue(int(default_for(parameters, d, "offset")))
         # 显式同步文本框：值相同时 setValue 不发信号，靠同步链路兜底更稳
         self.offset_input.setText(str(self.offset.value()))

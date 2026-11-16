@@ -149,12 +149,13 @@ def run(ctx) -> None:
     ok("用户操作手册里没有技术说明（内部文件名/旧行为/实现口径）",
        not hits, "命中=" + "; ".join(hits))
 
-    # ---- 7. 步骤名纯中文；**参数标签「中文（键名）」**（用户 2026-09-23 口径）----
-    # 两条不同的规矩，别混：
+    # ---- 7. 步骤名纯中文；**面板参数标签纯中文、不带英文键名**（用户 2026-11-17 口径）----
+    # 三条不同的规矩，别混：
     # ① **顶部四个步骤名不要英文**（「提取图片 (extract)」→「提取图片」）；
-    # ② **参数标签要中文在前、键名放括号里**（「缩放因子（zoom）」）——参数与命令行
-    #    一一对应，纯中文有时说不清指的是哪个；带单位的写成「中文(单位)（键名）」。
-    # 唯一与键名无关的放行项是**格式名 PDF** 与**单位 mm**。
+    # ② **面板参数标签纯中文，不带英文参数键名**（旧口径「缩放因子（zoom）」
+    #    →「缩放因子」）；唯一保留的英文是「输出DPI」的 DPI（用户指定）。
+    # ③ **手册（user-guide）参数名仍保留英文键名**（用户 2026-11-17：方便理解
+    #    查看、与 CLI 对照），CLI 参考章节更不在检查范围。
     from desktop.store import STAGE_LABELS
 
     allowed = {"PDF"}
@@ -180,38 +181,43 @@ def run(ctx) -> None:
         ]
 
     def _bare_latin(text: str) -> list[str]:
-        """括号**外面**的英文词 —— 键名必须待在括号里，不许裸着写。"""
-        outside = re.sub(r"（[^）]*）|\([^)]*\)", "", text).replace("PDF", "")
+        """标签里不许出现的英文词——放行「输出DPI」的 DPI（用户 2026-11-17）。"""
+        outside = text.replace("DPI", "").replace("PDF", "")
         return re.findall(r"[A-Za-z][A-Za-z_]*", outside)
 
     latin_titles = [t for t in titles if _bare_latin(t)]
     bare = [f"{f}:{t}" for f, t in row_labels + check_texts if _bare_latin(t)]
-    ok("面板标题不含英文键名（格式名 PDF 例外）",
+    ok("面板标题不含英文（格式名 PDF 例外）",
        not latin_titles, str(latin_titles))
-    ok("参数标签/勾选项里的英文一律待在括号里（不出现裸英文）",
+    ok("参数标签/勾选项纯中文（唯一例外：输出DPI）",
        not bare, str(bare))
 
-    # 第一步、第三步的参数与命令行一一对应 → 每个标签都必须带（键名）
-    keyed_panels = {"extract_panel.py", "rembg_panel.py"}
-    missing_key = [f"{f}:{t}" for f, t in row_labels if f in keyed_panels and "（" not in t]
-    ok("第一步/第三步的参数标签都带（键名）", not missing_key, str(missing_key))
+    # 旧口径的「中文（键名）」不许残留在面板标签里：括号里出现英文键名 = 没改干净
+    # （括号里只允许单位段）
+    with_key = [
+        f"{f}:{t}" for f, t in row_labels + check_texts
+        if re.search(r"[（(][^（）()]*[A-Za-z_][^（）()]*[）)]", t)
+    ]
+    ok("面板参数标签不再带（英文键名）", not with_key, str(with_key))
     ok("面板标题与标签都有内容（别把扫描写成永远为空而假绿）",
        len(titles) >= 4 and len(row_labels) >= 8,
        f"titles={len(titles)} labels={len(row_labels)}")
 
-    # 手册参数表与界面用同一套格式：新写法必须在、旧的裸键名写法不许残留
-    # ⚠️ 2026-10-24 起 extract 面板不再暴露「快速模式（quick）」（zoom=1 时
-    #    自动走快速渲染），手册与代码一起删掉了它，这里不再点名。
-    expected = ["缩放因子（zoom）", "目标清晰度（dpi）", "输出格式（ext）",
+    # 手册参数名与 CLI 用同一套「中文（键名）」写法（用户 2026-11-17：手册保留
+    # 英文键名方便理解），新标签「输出DPI」对应的键名口径必须在；旧的裸键名
+    # 混排不许残留。⚠️ 2026-10-24 起 extract 面板不再暴露「快速模式（quick）」，
+    # 手册与代码一起删掉了它，这里不再点名。
+    expected = ["缩放因子（zoom）", "输出DPI（dpi）", "输出格式（ext）",
                 "页码范围（pages）",
                 "边距(mm)（border）", "输出类型（type）",
                 "阈值偏移（offset）", "保留印章（seal）", "印章彩色（sealcolor）"]
     missing_doc = [t for t in expected if t not in guide]
     ok("手册参数表用的是「中文（键名）」格式", not missing_doc,
        f"缺失={missing_doc}")
-    legacy = ["缩放因子 zoom", "目标 DPI", "输出格式 ext", "快速模式 quick",
-              "页码范围 pages", "area 区域模式", "border 边距", "type 输出类型",
-              "offset 阈值偏移", "(seal)", "(sealcolor)"]
+    legacy = ["缩放因子 zoom", "目标 DPI", "目标清晰度", "输出格式 ext",
+              "快速模式 quick", "页码范围 pages", "area 区域模式",
+              "border 边距", "type 输出类型", "offset 阈值偏移",
+              "(seal)", "(sealcolor)"]
     left = [t for t in legacy if t in guide]
     ok("手册参数表已无「中文 + 参数键名」混排", not left, f"残留={left}")
 

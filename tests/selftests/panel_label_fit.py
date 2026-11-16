@@ -172,10 +172,12 @@ def run(ctx) -> None:
            f"跨列 {[r['field_w'] for r in stacked_fields]} / 并排最宽 {widest_field}")
 
     # ---------- 3. 第一步：标签都不长，同样只是"放得下"这条不变量 ----------
+    # ⚠️ 第一步只有 4 个参数行（zoom/dpi/ext/pages；「快速模式」2026-10-24 起不再
+    #    暴露，「提取参数」SectionTitle 是跨列行、不计入并排行）。
     extract = show_detail(ctx, 0, size=_min_window())
     e_rows = _rows(extract)
     e_side = [r for r in e_rows if not r["stacked"]]
-    ok("第一步表单已布局出多行", len(e_side) >= 5, f"并排 {len(e_side)} 行")
+    ok("第一步表单已布局出多行", len(e_side) >= 4, f"并排 {len(e_side)} 行")
     e_widest = max(r["label_w"] for r in e_side)
     # ⚠️ 字段列的下限**不能写死像素**（2026-09-26 自己踩的坑）：全量套件里
     #    字体自测模块会先装 CJK 字体，中文标签列随之变宽（132px），字段列被

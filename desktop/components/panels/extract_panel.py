@@ -46,12 +46,12 @@ class ExtractPanel(StagePanel):
         self.pages_edit.setPlaceholderText("留空=全部页，示例：1,2,5-7")
         # ---- 分区小标题：本面板只有一组参数（2026-11-16 统一版式）----
         form.addRow(SectionTitle("提取参数"))
-        # 标签格式（用户 2026-09-23 口径）：**中文在前、参数键名放在括号里**。
-        # 键名是有必要留的——这些参数与命令行一一对应，纯中文有时说不清指的是哪个。
-        self._add_row(form, "缩放因子（zoom）", self.zoom)
-        self._add_row(form, "目标清晰度（dpi）", self.dpi)
-        self._add_row(form, "输出格式（ext）", self.ext)
-        self._add_row(form, "页码范围（pages）", self.pages_edit)
+        # 标签格式（用户 2026-11-17 口径）：**纯中文，不带英文参数键名**。
+        # 唯一例外是 DPI（业内通用叫法，用户指定「输出DPI」）。
+        self._add_row(form, "缩放因子", self.zoom)
+        self._add_row(form, "输出DPI", self.dpi)
+        self._add_row(form, "输出格式", self.ext)
+        self._add_row(form, "页码范围", self.pages_edit)
 
     def get_args(self) -> dict:
         """收集提取参数：zoom/dpi/ext/pages（不含 input/output）。
