@@ -286,6 +286,44 @@ def _press_image(widget, ix: float, iy: float) -> None:
     )
 
 
+def _drag_new(widget, x1: float, y1: float, x2: float, y2: float) -> None:
+    """在**图片坐标**里从 (x1, y1) 拖到 (x2, y2)，完整走一遍手绘新框的
+    press → move → release（松手那一刻才判定"要不要这个框"）。"""
+    from PySide6.QtCore import QEvent, QPointF, Qt
+    from PySide6.QtGui import QMouseEvent, QPixmap
+
+    def _pt(ix: float, iy: float) -> QPointF:
+        return QPointF(
+            ix * widget._scale_x + widget._offset_x,
+            iy * widget._scale_y + widget._offset_y,
+        )
+
+    widget._boxes_editable = True
+    # press 分支要求"有图"（真实界面里图一定在），否则连 new 都进不去
+    widget._pixmap = QPixmap(2, 2)
+    # ⚠️ 先把图片↔控件映射算稳定再取坐标：press 里还会 `_rerender()` 一次，
+    #    若映射在 press 前后不同，"拖到的位置"与"按下时的起点"就不在同一坐标系里
+    #    （实测会画出一个起点/终点都被换算错位的框）。
+    widget._rerender()
+    start, end = _pt(x1, y1), _pt(x2, y2)
+    widget.mousePressEvent(QMouseEvent(
+        QEvent.Type.MouseButtonPress, start,
+        Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    ))
+    # 拖拽中间帧：验证橡皮筋（ghost）跟着走、不炸
+    widget.mouseMoveEvent(QMouseEvent(
+        QEvent.Type.MouseMove, end,
+        Qt.MouseButton.NoButton, Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    ))
+    widget.mouseReleaseEvent(QMouseEvent(
+        QEvent.Type.MouseButtonRelease, end,
+        Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier,
+    ))
+
+
 def run(ctx) -> None:  # noqa: ARG001 - 本模块自带夹具，不用共享 ctx
     from PySide6.QtCore import QSize
 
@@ -352,9 +390,65 @@ def run(ctx) -> None:  # noqa: ARG001 - 本模块自带夹具，不用共享 ctx
     ok("点在已有框上会选中它", half_view.selected_index() == 0,
        str(half_view.selected_index()))
 
+    # ---- 手绘的框**太小就不生效**，并即时提示 ----
+    # 判据是用户 2026-11-16 第二次定稿：宽 < 页宽×20% 或 < 100px、高 < 页高×20%
+    # 或 < 100px，**满足一个就丢**。1000×800 页 → 至少 200×160。
+    # ⚠️ 这条规则会把竖排窄列（150×700）也拦掉——用户明确要的（他的文本框
+    # 语义是"半栏/整栏大块"，第一稿"面积 0.15%"已被他推翻）。
+    from utils.box_geometry import (
+        MIN_BOX_SIDE_PX, MIN_BOX_SIDE_RATIO, box_too_small, min_box_sides,
+    )
+
+    ok("合格线 = max(页宽×20%, 100px) / max(页高×20%, 100px)（1000×800 → 200×160）",
+       min_box_sides((1000, 800)) == (200, 160), str(min_box_sides((1000, 800))))
+    ok("比例太松时 100px 兜底（400×300 页 → 100×100）",
+       min_box_sides((400, 300)) == (100, 100), str(min_box_sides((400, 300))))
+    ok("20×20 的框判「太小」", box_too_small([10, 10, 30, 30], (1000, 800)) is True)
+    ok("60×60 的框判「太小」（高 60 < 160）",
+       box_too_small([10, 10, 70, 70], (1000, 800)) is True)
+    ok("300×200 的框不算太小（=合格线）",
+       box_too_small([10, 10, 310, 210], (1000, 800)) is False)
+    ok("窄而高的框（150×700）也拦（用户 2026-11-16 第二稿明确要拦）",
+       box_too_small([10, 10, 160, 710], (1000, 800)) is True)
+    ok("小页上 100px 绝对下限起作用（90 宽 < 100）",
+       box_too_small([10, 10, 100, 150], (400, 300)) is True)
+    ok("拿不到图幅尺寸时不拦（没有判据就不误杀）",
+       box_too_small([10, 10, 30, 30], None) is False)
+
+    mini = ImageView()
+    mini.set_boxes([], QSize(W, H), full=False)
+    tiny: list = []
+    edits: list = []
+    mini.box_too_small.connect(tiny.append)
+    mini.boxes_edited.connect(edits.append)
+    _drag_new(mini, 100, 100, 120, 120)          # 20×20：太小
+    ok("画 20×20 的框：不入库", mini._boxes == [], str(mini._boxes))
+    ok("画 20×20 的框：不提交（boxes_edited 不发，宿主不会存盘）",
+       not edits, str(edits))
+    min_w, min_h = min_box_sides((W, H))
+    ok("画 20×20 的框：即时提示「太小」并说清至少要多大",
+       bool(tiny and "太小" in tiny[0]
+            and f"宽至少 {min_w}" in tiny[0] and f"高至少 {min_h}" in tiny[0]),
+       str(tiny))
+    _drag_new(mini, 200, 200, 520, 420)          # 320×220：两条都过线
+    ok("画 320×220 的框：生效、被选中、并且提交了",
+       mini._boxes == [[200, 200, 520, 420]] and mini.selected_index() == 0
+       and len(edits) == 1, f"{mini._boxes} / {len(edits)}")
+    ok("生效的那个框不会再报「太小」", len(tiny) == 1, str(tiny))
+    ok("判据常量没被人动过（20% / 100px）",
+       MIN_BOX_SIDE_RATIO == 0.20 and MIN_BOX_SIDE_PX == 100,
+       f"{MIN_BOX_SIDE_RATIO} / {MIN_BOX_SIDE_PX}")
+
     # ================= 宿主侧：入库形态与类型切换 =================
     host = _Host("/t/0001.png", SIZE)
     KEY = cast(Any, host.detect_viewer).path
+
+    # 宿主收到「太小」→ 标题必须说清是「画框太小」（不能借用"框数已达上限"）
+    host.toasts.clear()
+    host._on_box_too_small("这次画的框只有 20×20 像素，太小了没有生效。")
+    ok("宿主收到「太小」→ 弹「画框太小」提示（标题不串到框数上限）",
+       bool(host.toasts and host.toasts[-1][1] == "画框太小"),
+       str(host.toasts))
 
     # 规则 1：删掉一个框，另一个框的类型不变
     host._store_slots(KEY, [LEFT, RIGHT], "manual")

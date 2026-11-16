@@ -242,6 +242,14 @@ class DetectMixin:
         """框数已达上限（整幅 1 / 半幅 2）→ 弹出可操作的提示。"""
         self._toast("warning", "框数已达上限", message)
 
+    def _on_box_too_small(self, message: str) -> None:
+        """手绘的框太小（宽/高低于 ``box_geometry.min_box_sides`` 合格线）
+        → 不入库并即时提示。
+
+        用户 2026-11-16：「太小的话不生效、不显示，可以即时消息提示画框太小不生效」。
+        """
+        self._toast("warning", "画框太小", message)
+
     def _set_selected_box_kind(self, kind: str) -> None:
         """面板里点了「左框 / 右框 / 整幅 / 半幅」→ 切换选中框的类型。"""
         path = self.detect_viewer.current_path()

@@ -4,7 +4,7 @@
 
 通用工具函数：几何、排序、图像 IO、PDF、YOLO
 
-覆盖 29 个模块、24 个公开类、205 个公开函数/方法（生成于 2026-11-16）。
+覆盖 29 个模块、24 个公开类、208 个公开函数/方法（生成于 2026-11-16）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -15,7 +15,7 @@
 | [`utils.binary_ink`](#utilsbinary_ink) | 0 | 3 |
 | [`utils.book_layout`](#utilsbook_layout) | 1 | 18 |
 | [`utils.box_draw`](#utilsbox_draw) | 0 | 8 |
-| [`utils.box_geometry`](#utilsbox_geometry) | 2 | 17 |
+| [`utils.box_geometry`](#utilsbox_geometry) | 2 | 20 |
 | [`utils.color_utils`](#utilscolor_utils) | 0 | 2 |
 | [`utils.compact_png`](#utilscompact_png) | 0 | 3 |
 | [`utils.data_package`](#utilsdata_package) | 1 | 24 |
@@ -524,6 +524,8 @@ QImage 画。这样同一套规则不会因数像素后端不同而被复制成�
 
 | 名称 | 值 |
 | --- | --- |
+| MIN_BOX_SIDE_RATIO | `0.2` |
+| MIN_BOX_SIDE_PX | `100` |
 | PAGE_CLASS_FULLCONTENT | `"fullcontent"` |
 | PAGE_CLASS_HARFCONTENT | `"harfcontent"` |
 | PAGE_CLASS_HARFCONTENT_LEFT | `"harfcontent-left"` |
@@ -555,6 +557,9 @@ QImage 画。这样同一套规则不会因数像素后端不同而被复制成�
 | 函数 | 说明 |
 | --- | --- |
 | `box_has_area(box) -> bool` | 框是否有**面积**（宽、高都 > 0）；空项 / 畸形项一律 ``False``。 |
+| `size_wh(image_size) -> Tuple[int, int]` | 图幅尺寸 → ``(宽, 高)``，兼容 ``(w, h)`` / ``QSize`` / ``None``。 |
+| `min_box_sides(image_size) -> Tuple[int, int]` | 本页允许的最小文本框 ``(最小宽, 最小高)``（像素）。 |
+| `box_too_small(box, image_size) -> bool` | 框是否**小到不能用**（宽或高低于 :func:`min_box_sides` 的合格线）。 |
 | `box_iou(a, b) -> float` | 两个框的交并比（0~1）；任一方畸形/零面积时返回 ``0.0``。 |
 | `is_full_content(boxes) -> bool` | ``boxes`` 是否为「整幅内容」(fullcontent) 的**槽位表示**。 |
 | `page_box_slots(left, right, full) -> List[Optional[list]]` | 三类框 → **槽位表示**（槽位约定的**唯一实现**）。 |
@@ -580,6 +585,37 @@ QImage 画。这样同一套规则不会因数像素后端不同而被复制成�
 它不是"一个框"。下游若把它当框看，会凭空多裁一张 1px 宽的空白图、
 并把单栏页误判成「双栏页」——任务 0009 的页码整体错位就是这么来的
 （``1-l.png`` 只有 1×37 像素）。判据只在本函数实现一处。
+
+#### `size_wh(image_size) -> Tuple[int, int]`
+
+图幅尺寸 → ``(宽, 高)``，兼容 ``(w, h)`` / ``QSize`` / ``None``。
+
+``utils`` 不许 import Qt（分层单向），所以只按"能下标就下标、否则取
+``width()/height()``"的鸭子类型处理；拿不到就给 ``(0, 0)``，由调用方
+把 0 解释成"没有判据"。
+
+#### `min_box_sides(image_size) -> Tuple[int, int]`
+
+本页允许的最小文本框 ``(最小宽, 最小高)``（像素）。
+
+各边合格线 = ``max(页宽(高) × MIN_BOX_SIDE_RATIO, MIN_BOX_SIDE_PX)``。
+图幅尺寸缺失（或不合法）时给 ``(0, 0)``＝"没有下限"——拿不到尺寸就没有
+判据，宁可放过也不误杀用户画的框。
+
+#### `box_too_small(box, image_size) -> bool`
+
+框是否**小到不能用**（宽或高低于 :func:`min_box_sides` 的合格线）。
+
+存在的理由：用户自己画的框如果只有几十像素，裁出来交给 YOLO / 去底色
+毫无意义（缩放到 640 就是一坨糊），还会在产物里多出 ``1-l.png`` 这类
+"1×37 像素"的残渣图。所以手绘结束后先过这道闸：**太小就不入库**，
+并由宿主即时告诉用户原因（见 ``ImageView.box_too_small``）。
+
+判据是用户 2026-11-16 指定的："宽 < 页宽 20% 或 < 100px，或高 < 页高 20%
+或 < 100px，满足一个条件就丢"。
+
+⚠️ 只用于**新建**框。移动/缩放已有框不在这里拦——那会让框"卡住回弹"，
+用户没法把大框先画出来再微调。
 
 #### `box_iou(a, b) -> float`
 

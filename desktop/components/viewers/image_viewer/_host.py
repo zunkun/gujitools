@@ -50,6 +50,7 @@ class ImageViewerHost(QWidget, ThumbsMixin, ZoomPopupMixin):
     _thumb_cache_worker: Any
     _thumb_provider: Any
     box_edit_rejected: Signal
+    box_too_small: Signal
     boxes_edited: Signal
     current_changed: Signal
     delete_requested: Signal

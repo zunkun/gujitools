@@ -34,6 +34,10 @@ class ImageView(
     selection_changed = Signal(int)
     #: 本次编辑被拒绝（含原因文案）：超框数上限等，宿主弹出提示
     edit_rejected = Signal(str)
+    #: 手绘的框**太小、没有生效**（含原因文案）：宿主弹出提示。
+    #: ⚠️ 与 :attr:`edit_rejected` 分开是因为两者给用户的标题不同
+    #: （「框数已达上限」vs「画框太小」），混用一个信号就只能靠解析文案猜原因。
+    box_too_small = Signal(str)
 
     #: 预览渲染最长边的**下限**：控件尚未布局（尺寸还是 0）时的兜底，也避免
     #: 小控件把预览渲染得过小——之后窗口一最大化就只能放大、糊掉。

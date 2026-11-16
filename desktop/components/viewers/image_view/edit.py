@@ -7,6 +7,9 @@ from __future__ import annotations
 
 from PySide6.QtCore import QPointF, Qt
 from .styles import HANDLE_RADIUS, _HANDLE_CURSORS
+from utils.box_geometry import (
+    MIN_BOX_SIDE_PX, MIN_BOX_SIDE_RATIO, box_too_small, min_box_sides,
+)
 from typing import TYPE_CHECKING
 
 
@@ -203,25 +206,49 @@ class EditMixin(ImageViewHost):
             self._new_start = None
             self._mode = None
             self._ghost_box = None
-            # 过滤误触产生的极小框
-            if box[2] - box[0] > 8 and box[3] - box[1] > 8 and self._image_size is not None:
-                if len(self._boxes) >= self.max_boxes:
-                    self.edit_rejected.emit(self._limit_message())
-                    self._rerender()
-                    return
-                box = [
-                    min(max(box[0], 0), self._image_size.width()),
-                    min(max(box[1], 0), self._image_size.height()),
-                    min(max(box[2], 0), self._image_size.width()),
-                    min(max(box[3], 0), self._image_size.height()),
-                ]
-                self._boxes.append(box)
-                self._select(len(self._boxes) - 1)
-                self._commit_edit()
+            if self._image_size is None:
+                # 没有图幅尺寸：框坐标没有参照系，不入库（原逻辑同样跳过）
+                self._rerender()
+                return
+            # 已达框数上限：先说这个（结构性限制，比"太小"更该先解决）
+            if len(self._boxes) >= self.max_boxes:
+                self.edit_rejected.emit(self._limit_message())
+                self._rerender()
+                return
+            # 太小（误触点一下、或画了个几十像素的小块）→ **不生效**，并即时说出来。
+            # 用户 2026-11-16：「太小的话不生效、不显示，可以即时消息提示」。
+            if box_too_small(box, self._image_size):
+                self.box_too_small.emit(self._too_small_message(box))
+                self._rerender()
+                return
+            box = [
+                min(max(box[0], 0), self._image_size.width()),
+                min(max(box[1], 0), self._image_size.height()),
+                min(max(box[2], 0), self._image_size.width()),
+                min(max(box[3], 0), self._image_size.height()),
+            ]
+            self._boxes.append(box)
+            self._select(len(self._boxes) - 1)
+            self._commit_edit()
             self._rerender()
             return
         super().mouseReleaseEvent(event)
 
+    def _too_small_message(self, box) -> str:
+        """手绘的框太小 → 提示文案：说清"画了多大"与"至少要多大"。
+
+        判据是用户 2026-11-16 定的（宽/高各 ≥ 页宽(高)×20% 且 ≥ 100px），
+        但跟用户说话要落到"本页最少多少像素"，不然他不知道该画多大。
+        """
+        width = int(box[2]) - int(box[0])
+        height = int(box[3]) - int(box[1])
+        min_w, min_h = min_box_sides(self._image_size)
+        return (
+            f"这次画的框是 {width}×{height} 像素，太小了没有生效。"
+            f"本页的文本框宽至少 {min_w}、高至少 {min_h} 像素"
+            f"（页宽/页高的 {MIN_BOX_SIDE_RATIO:.0%}，且不小于 "
+            f"{MIN_BOX_SIDE_PX} 像素），请拉大一点再画。"
+        )
 
     def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802
         """双击 → ``double_clicked``（宿主打开图片预览弹窗）。

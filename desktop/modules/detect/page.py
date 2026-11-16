@@ -172,6 +172,10 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin):
         self.viewer.box_edit_rejected.connect(
             lambda message: self.toast("warning", "这个框改不了", message)
         )
+        # 手绘的框太小 → 不生效 + 即时提示（用户 2026-11-16；与任务流程第二步同一条链）
+        self.viewer.box_too_small.connect(
+            lambda message: self.toast("warning", "画框太小", message)
+        )
         # 选中态 → 回填右栏「选中框类型」与删除按钮（任务流程第二步同一条链）
         self.viewer.selection_changed.connect(self._on_selection_changed)
         return self.viewer

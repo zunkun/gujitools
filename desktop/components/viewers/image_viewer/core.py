@@ -50,6 +50,9 @@ class ImageViewerWidget(
     selection_changed = Signal(int)
     #: 编辑被拒绝（超框数上限等）：宿主弹提示
     box_edit_rejected = Signal(str)
+    #: 手绘的框太小、没有生效：宿主弹「画框太小」提示（与上面那条分开，
+    #: 标题不同；见 ``image_view.core.ImageView.box_too_small``）
+    box_too_small = Signal(str)
     #: 编辑器在放大弹窗里覆盖了某张页面图 ``image_saved(path, edited)``：
     #: 宿主据此同步 sizes.json、重生成缩略图并刷新各处显示
     image_saved = Signal(str, object)
@@ -161,6 +164,7 @@ class ImageViewerWidget(
         # 选中态与"编辑被拒"直接转发给宿主（第二步面板据此高亮框类型/提示）
         self.view.selection_changed.connect(self.selection_changed.emit)
         self.view.edit_rejected.connect(self.box_edit_rejected.emit)
+        self.view.box_too_small.connect(self.box_too_small.emit)
         # 双击大图 → 图片预览弹窗（只读查看；编辑仍在原画布上做）
         self._init_zoom_popup(self.view, editable=image_editable)
         self._pending_boxes: tuple | None = None  # (boxes, image_size, info, full)，等大图加载后应用

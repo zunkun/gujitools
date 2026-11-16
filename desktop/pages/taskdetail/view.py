@@ -162,6 +162,7 @@ class DetailViewMixin:
         _delete_selected_box: Callable[..., None]
         _on_box_selection_changed: Callable[..., None]
         _on_box_edit_rejected: Callable[..., None]
+        _on_box_too_small: Callable[..., None]
         # 识别方式 / 自动沿用上一页标注变了（DetectMixin 提供）：落盘 + 刷按钮
         _on_detect_mode_changed: Callable[..., None]
         _on_reuse_prev_changed: Callable[..., None]
@@ -953,6 +954,8 @@ class DetailViewMixin:
         self.detect_viewer.selection_changed.connect(self._on_box_selection_changed)
         # 超框数上限（整幅 1 个 / 半幅 2 个）时给出可操作的提示
         self.detect_viewer.box_edit_rejected.connect(self._on_box_edit_rejected)
+        # 手绘的框太小 → 不入库，并即时说明（用户 2026-11-16）
+        self.detect_viewer.box_too_small.connect(self._on_box_too_small)
 
     def _sync_detect_mode_ui(self) -> None:
         """按识别方式显示/隐藏底部「检测文本框」主按钮（人工标注**不显示**它）。

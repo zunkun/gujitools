@@ -39,6 +39,86 @@ def box_has_area(box) -> bool:
         return False
 
 
+#: 「这个框太小、不算数」的**单边下限**（用户 2026-11-16 第二次定稿）：
+#:
+#: - :data:`MIN_BOX_SIDE_RATIO = 0.20` —— 框宽 < 页宽的 20%、或框高 < 页高的
+#:   20%，就算太小；
+#: - :data:`MIN_BOX_SIDE_PX = 100` —— 同时任何一边不足 100 像素也算太小。
+#:
+#: **两个条件满足其一带上另一个"或"**：合格线 = ``max(页宽×20%, 100px)``、
+#: ``max(页高×20%, 100px)``——比例太松时 100px 兜底，绝对值太松时比例兜底。
+#:
+#: 实际等效（tasks/*/sizes.json 实测页幅 1410~6000）：
+#: 2400×2376 页 → 至少 480×475；1410×2400 页 → 至少 282×480；6000×5933 页 →
+#: 至少 1200×1187。
+#:
+#: ⚠️ 这是**用户明确指定的规则**（第二稿；第一稿"面积 0.15%"被推翻）：竖排
+#: 窄列（150×2000 这种）也会被拦——用户的文本框语义是"半栏/整栏的大块"，
+#: 不含单列正文，所以宁严勿松。
+MIN_BOX_SIDE_RATIO = 0.20
+MIN_BOX_SIDE_PX = 100
+
+
+def size_wh(image_size) -> Tuple[int, int]:
+    """图幅尺寸 → ``(宽, 高)``，兼容 ``(w, h)`` / ``QSize`` / ``None``。
+
+    ``utils`` 不许 import Qt（分层单向），所以只按"能下标就下标、否则取
+    ``width()/height()``"的鸭子类型处理；拿不到就给 ``(0, 0)``，由调用方
+    把 0 解释成"没有判据"。
+    """
+    if image_size is None:
+        return (0, 0)
+    try:
+        return (int(image_size[0]), int(image_size[1]))
+    except (TypeError, IndexError, KeyError):
+        pass
+    try:
+        return (int(image_size.width()), int(image_size.height()))
+    except (AttributeError, TypeError):
+        return (0, 0)
+
+
+def min_box_sides(image_size) -> Tuple[int, int]:
+    """本页允许的最小文本框 ``(最小宽, 最小高)``（像素）。
+
+    各边合格线 = ``max(页宽(高) × MIN_BOX_SIDE_RATIO, MIN_BOX_SIDE_PX)``。
+    图幅尺寸缺失（或不合法）时给 ``(0, 0)``＝"没有下限"——拿不到尺寸就没有
+    判据，宁可放过也不误杀用户画的框。
+    """
+    width, height = size_wh(image_size)
+    if width <= 0 or height <= 0:
+        return (0, 0)
+    return (
+        max(int(round(width * MIN_BOX_SIDE_RATIO)), MIN_BOX_SIDE_PX),
+        max(int(round(height * MIN_BOX_SIDE_RATIO)), MIN_BOX_SIDE_PX),
+    )
+
+
+def box_too_small(box, image_size) -> bool:
+    """框是否**小到不能用**（宽或高低于 :func:`min_box_sides` 的合格线）。
+
+    存在的理由：用户自己画的框如果只有几十像素，裁出来交给 YOLO / 去底色
+    毫无意义（缩放到 640 就是一坨糊），还会在产物里多出 ``1-l.png`` 这类
+    "1×37 像素"的残渣图。所以手绘结束后先过这道闸：**太小就不入库**，
+    并由宿主即时告诉用户原因（见 ``ImageView.box_too_small``）。
+
+    判据是用户 2026-11-16 指定的："宽 < 页宽 20% 或 < 100px，或高 < 页高 20%
+    或 < 100px，满足一个条件就丢"。
+
+    ⚠️ 只用于**新建**框。移动/缩放已有框不在这里拦——那会让框"卡住回弹"，
+    用户没法把大框先画出来再微调。
+    """
+    min_w, min_h = min_box_sides(image_size)
+    if min_w <= 0 or min_h <= 0 or not box:
+        return False
+    try:
+        width = int(box[2]) - int(box[0])
+        height = int(box[3]) - int(box[1])
+    except (TypeError, ValueError, IndexError):
+        return False
+    return width < min_w or height < min_h
+
+
 def box_iou(a, b) -> float:
     """两个框的交并比（0~1）；任一方畸形/零面积时返回 ``0.0``。
 

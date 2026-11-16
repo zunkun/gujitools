@@ -58,6 +58,7 @@ class ImageViewHost(QLabel):
     _side_override: str | None
     _single_column: bool
     boxes_edited: Signal
+    box_too_small: Signal
     context_menu_requested: Signal
     double_clicked: Signal
     edit_rejected: Signal
@@ -102,6 +103,9 @@ class ImageViewHost(QLabel):
         ...
 
     def _to_image_coords(self, pos: QPointF) -> tuple[float, float]:
+        ...
+
+    def _too_small_message(self, box) -> str:
         ...
 
     def _update_mapping(self, scaled: QPixmap) -> None:
