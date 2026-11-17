@@ -366,7 +366,7 @@ def _check_singletask_thumbnails(ctx, ok) -> None:
 
     起因：用户报「从上一层导入PDF，没有立即提取缩略图」——以前选完 PDF 左栏全空，
     得先跑一遍提取才知道书里是什么。现在选完就渲，且落在
-    ``~/Documents/guji/singletask/<子任务>/thumbnails/``。
+    ``~/Documents/guji/singletask/<独立功能>/thumbnails/``。
     """
     import time
 
@@ -395,7 +395,7 @@ def _check_singletask_thumbnails(ctx, ok) -> None:
 
     ok("singletask 落在 guji/singletask 下",
        "singletask" in cache.parts, str(cache))
-    ok("不同子任务各有自己的目录",
+    ok("不同独立功能各有自己的目录",
        # ⚠️ 用另一个步骤的 disk_key（不是它的 title）：目录名锚在路由键上。
        cache != extract_thumbs_dir(
            rembg_spec.disk_key(), pdf, THUMBNAIL_EDGE))

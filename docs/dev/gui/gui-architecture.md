@@ -74,7 +74,7 @@ desktop/
       canvas.py                    #   模块二「拼版操作」：拖动/缩放拉伸/旋转画布（同 PrintLayoutCanvas 一族）
       panel.py                     #   模块二「拼版操作」：右侧控制面板（开关/页序/旋转/复位/删除）
       view.py                      #   装配层：左列清单 + 画布（ImpositionViewWidget）
-    task_table.py           # 任务表格：子任务状态用状态胶囊组显示
+    task_table.py           # 任务表格：节点状态用状态胶囊组显示
     log_panel.py            # 执行日志：底部状态条 + 点击唤出的浮层（出错自动标红）
     panels/params_spec.py   # 各阶段默认参数与下拉候选表（唯一默认值来源，见下）
     panels/print_params.py  # print 参数解析/序列化纯函数（默认值转发自 params_spec）
@@ -312,7 +312,7 @@ class MyPage(StepModulePage):
 #### `singletask`：独立任务的数据区（2026-10-03）
 
 用户口径：「这个缩略图也可以放在 `~/Documents/guji/singletask` 下面，
-singletask 是独立任务，下面有各种子任务」。
+singletask 是独立任务，下面有各种独立功能」。
 
 ```
 ~/Documents/guji/

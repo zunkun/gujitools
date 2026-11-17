@@ -24,7 +24,7 @@
 4. **整个「导出」分类随设置里「**启用YOLO标注**」开关显隐**（用户
    2026-11-17：分类要按 yolo 参数决定显隐；开关开着时导出区最底部是
    「**导出YOLO标注**」，用户 2026-10-16；2026-11-17 起不再挂在开发者模式下）：点它先弹窗填**名称**（父节点名 =
-   文件名前缀）并选**导出目录**（按子任务记住上次选的），确认后把全部页面
+   文件名前缀）并选**导出目录**（按独立功能记住上次选的），确认后把全部页面
    导出成 YOLO 数据集切片 ``<导出目录>/<名称>/{images,labels}/<名称>-1.…``
    （类别顺序见 ``utils.box_geometry.YOLO_CLASS_NAMES``；无框页写空标签当负样本）。
 
@@ -119,7 +119,7 @@ _EXPORT_ANNOTATED = "annotated"
 _EXPORT_YOLO = "yolo"
 
 #: 本页「导出YOLO标注」记忆文件里的两个键（与 ``store.ui_state`` 那份同名同义，
-#: 但不是同一个文件：那边按任务记在 ``ui.json`` 里，这边按子任务单独一份）。
+#: 但不是同一个文件：那边按任务记在 ``ui.json`` 里，这边按独立功能单独一份）。
 _YOLO_EXPORT_DIR_KEY = "yolo_export_dir"
 _YOLO_EXPORT_NAME_KEY = "yolo_export_name"
 
@@ -951,7 +951,7 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin):
         """导出 YOLO 数据集切片：先弹窗填**名称**与选**导出目录**（用户 2026-10-16）。
 
         弹窗的两个默认值都取**上次记住的那一份**（独立任务页记在
-        ``singletask/<子任务>/yolo_export.json``，见
+        ``singletask/<独立功能>/yolo_export.json``，见
         :func:`desktop.utils.files.singletask_yolo_export_path`）：同一批图分几次
         导成不同前缀时要汇进同一个数据集根，重填重选纯属折腾。
 
@@ -1001,7 +1001,7 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin):
         return path.stem if path.is_file() else path.name
 
     def _yolo_export_state_path(self) -> Path:
-        """本页「导出YOLO标注」的记忆文件（按子任务一份，见 files.py 的说明）。"""
+        """本页「导出YOLO标注」的记忆文件（按独立功能一份，见 files.py 的说明）。"""
         spec = self.SPEC
         assert spec is not None, "步骤模块页必须声明 SPEC"
         return singletask_yolo_export_path(spec.disk_key())

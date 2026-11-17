@@ -1228,7 +1228,7 @@ class PageListMixin:
         ⚠️ 步骤→查看器走 ``StepSpec.preview_attr``（与方向键翻页同一份映射），
         这里别再写第二份 ``stage → 控件属性名`` 表。
         ⚠️ 空态文案只改**非入口**步骤的查看器：入口那一步的文案在构造处
-        已经说对了该干什么（extract「执行本子任务」/ detect「点下方＋」），
+        已经说对了该干什么（extract「执行本步骤」/ detect「点下方＋」），
         用"等上游"去覆盖反而指错方向——入口没有上游。
         """
         from desktop.steps.ports import flow_entry_stage, spec_for_stage

@@ -1899,7 +1899,7 @@ def run(ctx) -> None:
         pump(ctx.app, times=4)
         # ⚠️ **必须把它删掉**：本模块后面的断言用 ``rows[0]``（任务列表的
         #    第一行）来找本测试的任务，多一个任务留在列表里就会把那一行抢走
-        #    （曾因此让"启用拼版：列表多一个子任务"假红）。
+        #    （曾因此让"启用拼版：列表多一个节点"假红）。
         repo.delete_task(fog_task)
 
         # ---- 自定义流程：拼版在去底色**之前**，选图只看连线（2026-11-03）----
@@ -2731,7 +2731,7 @@ def run(ctx) -> None:
         )
 
         # ------ 6b. 列表胶囊 + 「旧数据不显示」（用户 2026-10-03）------
-        # 口径一："任务列表子任务到底有几个需要根据详情决定，特别是拼版这个
+        # 口径一："任务列表节点到底有几个需要根据详情决定，特别是拼版这个
         #        节点可能存在，需要看详情里面是否启用，如果启用就添加这个节点"
         # 口径二："如果之前流程里面没有启用拼版，但是生成了pdf，此时再次启用
         #        拼版，则生成PDF的数据要来源于拼版，旧的数据不显示"
@@ -2753,7 +2753,7 @@ def run(ctx) -> None:
         page._imposition_timer.stop()
         pump(ctx.app, times=6)
         ok(
-            "未启用拼版：列表只有四个子任务",
+            "未启用拼版：列表只有四个节点",
             len(_chips_of(tid)) == 4,
             str([c["short"] for c in _chips_of(tid)]),
         )
@@ -2762,7 +2762,7 @@ def run(ctx) -> None:
         pump(ctx.app, times=6)
         chips = _chips_of(tid)
         shorts = [c["short"] for c in chips]
-        ok("启用拼版：列表多一个子任务（共五个）", len(chips) == 5, str(shorts))
+        ok("启用拼版：列表多一个节点（共五个）", len(chips) == 5, str(shorts))
         ok(
             "拼版胶囊排在 PDF 之前（与流程条节点同位）",
             STAGE_SHORT[IMPOSITION_STAGE] in shorts

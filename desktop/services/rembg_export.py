@@ -33,7 +33,7 @@ MARKER_NAME = "guji_singletask_rembg.json"
 #: 拼版的输入缓存，不是去底色的产物）。
 _COPIES_SUBDIR = "rembg_transparent"
 
-#: 副本缓存挂在哪个 singletask 子任务下。⚠️ 与独立拼图页的
+#: 副本缓存挂在哪个 singletask 独立功能目录下。⚠️ 与独立拼图页的
 #: ``spec.disk_key()``（= "imposition"）一致——那里 editable/缩略图缓存同根；
 #: 服务层不 import spec，写字面量并钉住（改 disk_key 必须同步这里）。
 _IMPOSITION_DISK_KEY = "imposition"

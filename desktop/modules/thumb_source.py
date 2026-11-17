@@ -94,7 +94,7 @@ class ThumbSourceMixin:
         直接把清单传进来，省得各页再各自判断一遍）。
 
         - 源是 **PDF / DjVu** → 渲页缩略图到
-          ``singletask/<子任务>/thumbnails/<书>/``，条目标签「第 N 页」，
+          ``singletask/<独立功能>/thumbnails/<书>/``，条目标签「第 N 页」，
           大图由查看器按需渲高清页；
         - 源是**图片或目录** → 用 ``spec.listing`` 取清单，每张渲一张缓存小图，
           条目标签是文件名。
@@ -131,9 +131,9 @@ class ThumbSourceMixin:
         self._pdf_gen += 1
         gen = self._pdf_gen
         cache_dir = (
-            extract_thumbs_dir(self._subtask(), pdf, self.THUMB_EDGE)
+            extract_thumbs_dir(self._func_key(), pdf, self.THUMB_EDGE)
             if numbered
-            else singletask_thumbnails_dir(self._subtask(), pdf)
+            else singletask_thumbnails_dir(self._func_key(), pdf)
         )
         #: extract 记住「这本书」，提取后按序号重渲要写回同一个目录
         self._thumb_book = pdf if numbered else None
@@ -164,7 +164,7 @@ class ThumbSourceMixin:
             # list 不变型：清单是 list[Path]，查看器收 list[Path | str]
             self.viewer.set_thumb_source(
                 cast("list[Path | str]", images),
-                extract_thumbs_dir(self._subtask(), book, self.THUMB_EDGE),
+                extract_thumbs_dir(self._func_key(), book, self.THUMB_EDGE),
                 edge=self.THUMB_EDGE,
                 names=names,
             )
@@ -282,7 +282,7 @@ class ThumbSourceMixin:
         """编辑重渲的目标目录：与首次装载**同一个**（见 :meth:`show_images`）。"""
         book = self._thumb_book
         if self.NUMBERED_THUMBS and book is not None:
-            return extract_thumbs_dir(self._subtask(), book, self.THUMB_EDGE)
+            return extract_thumbs_dir(self._func_key(), book, self.THUMB_EDGE)
         return self._thumb_cache_dir()
 
     def _edited_thumb_names(self, paths: list[Path]) -> list[str | None] | None:
@@ -308,11 +308,11 @@ class ThumbSourceMixin:
             return [source] if spec.accepts_path(source) else []
         return list(spec.listing(source))
 
-    def _subtask(self) -> str:
-        """缓存目录的「子任务」名：取 ``spec.disk_key()``（步骤路由键）。
+    def _func_key(self) -> str:
+        """缓存目录的「独立功能」名：取 ``spec.disk_key()``（步骤路由键）。
 
         ⚠️ 刻意**不用** ``title`` / ``nav_title``：那是会改的显示文案，而这里
-        是磁盘上已经存在的目录名（``singletask/<子任务>/``）。改标题会让用户
+        是磁盘上已经存在的目录名（``singletask/<独立功能>/``）。改标题会让用户
         攒下的缩略图缓存与手改件全部失联。
         """
         spec = getattr(self, "SPEC", None)
@@ -321,14 +321,14 @@ class ThumbSourceMixin:
     def _thumb_cache_dir(self) -> Path:
         """一批图片的缩略图缓存**目录**（单图文件名由 worker 逐图算键）。
 
-        目录只按「子任务 + 边长」分层，**不含单图键**——单图的文件名带大小与
+        目录只按「独立功能 + 边长」分层，**不含单图键**——单图的文件名带大小与
         路径指纹（:func:`desktop.utils.files.image_thumb_cache_path`），拿它
         当目录名既会很长，也会让「同图改名」直接换目录、旧缓存全丢。
 
         规则本体在 :func:`desktop.utils.files.image_thumbs_dir`（拼图页、
-        编辑回写后的重渲都取同一份），这里只是把它接到本步骤的子任务名上。
+        编辑回写后的重渲都取同一份），这里只是把它接到本步骤的独立功能名上。
         """
-        return image_thumbs_dir(self._subtask(), self.THUMB_EDGE)
+        return image_thumbs_dir(self._func_key(), self.THUMB_EDGE)
 
     def _watch_pdf_thumbs(self, pdf: Path, cache_dir: Path, gen: int) -> None:
         """起一个 PDF 缩略图 pass（命中即复用，缺页现渲）。

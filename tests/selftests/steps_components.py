@@ -520,12 +520,12 @@ def run(ctx) -> None:
         str([(k, spec_of(k).nav_tooltip, spec_of(k).nav_icon) for k in NAV_STEPS]),
     )
 
-    # ---- 子任务目录名（磁盘路径）与显示文案**必须解耦** ----
-    # singletask/<子任务>/ 里是缩略图缓存与**用户手改过的版面图**。目录名一旦
+    # ---- 独立功能目录名（磁盘路径）与显示文案**必须解耦** ----
+    # singletask/<独立功能>/ 里是缩略图缓存与**用户手改过的版面图**。目录名一旦
     # 跟着文案变，那些文件就成了没人再去找的孤儿（"我明明改过版面，重新打开又
     # 变回原样"）。所以目录名锚在 disk_key（路由键）上，与 title/nav_title 无关。
     ok(
-        "磁盘子任务目录名取 disk_key，不取任何显示文案",
+        "磁盘独立功能目录名取 disk_key，不取任何显示文案",
         all(spec_of(k).disk_key() == k for k in NAV_STEPS),
         str([(k, spec_of(k).disk_key()) for k in NAV_STEPS]),
     )
@@ -1296,8 +1296,8 @@ def run(ctx) -> None:
     ok("传输层初始没有进程", StageProcess().process is None)
     ok("传输层初始不忙", StageProcess().running() is False)
 
-    # ---- 6. 子任务目录改名的一次性迁移（磁盘路径不能被文案改动带走）----
-    # singletask/<子任务>/ 里是缩略图缓存与用户手改过的版面图，目录名换成
+    # ---- 6. 独立功能目录改名的一次性迁移（磁盘路径不能被文案改动带走）----
+    # singletask/<独立功能>/ 里是缩略图缓存与用户手改过的版面图，目录名换成
     # disk_key 后，老的中文名目录必须被搬过去，且**旧目录不删**（误删不可恢复）。
     import tempfile
 

@@ -231,7 +231,7 @@ class StageRunnerMixin:
         """
         if self.current_stage() == IMPOSITION_STAGE:
             return
-        if not self._acquire_run("子任务"):
+        if not self._acquire_run("步骤"):
             return
         try:
             self._run_stage_unchecked(resume)
@@ -351,7 +351,7 @@ class StageRunnerMixin:
                 )
             return
         if self.process and self.process.state() != QProcess.ProcessState.NotRunning:
-            self._toast("warning", "任务进行中", "当前子任务正在执行")
+            self._toast("warning", "任务进行中", "当前步骤正在执行")
             return
         stage = self.current_stage()
         task = self.store.get_task(self.task_id)
@@ -544,7 +544,7 @@ class StageRunnerMixin:
         else:
             self._refresh_manifest()
             if not self._manifest_paths():
-                # ⚠️ 别说"请先完成上一步子任务"——流程里可能**没有**上一步
+                # ⚠️ 别说"请先完成上一步"——流程里可能**没有**上一步
                 #    （自定义流程把这一步放在第一位，用户 2026-10-06 报障）。
                 #    那时唯一说得通、也真能解决问题的出路就是"放图进来"。
                 self._toast(
@@ -628,7 +628,7 @@ class StageRunnerMixin:
         """写入运行配置并启动 worker 子进程。"""
         # ⚠️ 调用前 _run_stage_unchecked 的输入守卫已保证有任务在身
         task_id = self.task_id
-        assert task_id is not None, "启动子任务时没有任务在身"
+        assert task_id is not None, "启动步骤时没有任务在身"
         # ⚠️ 记下是**哪个节点**在跑（B 方案）：收尾时用户可能已经切到同一步骤的
         #    另一个节点，那时 ``current_node()`` 不再是"跑的那个"。
         node = self.current_node()
@@ -757,13 +757,13 @@ class StageRunnerMixin:
         """
         if self.process and self.process.state() != QProcess.ProcessState.NotRunning:
             self.cancel_requested = True
-            self._set_stage_status("正在中断子任务...")
-            self._logs.append_now("已请求中断，正在终止子任务进程...")
+            self._set_stage_status("正在中断步骤...")
+            self._logs.append_now("已请求中断，正在终止步骤子进程...")
             # 立即把运行记录置为已中断：进程被强杀来不及回调时，
             # 状态不会永远停留在 "running"（否则重启后按钮状态是错的）
             # ⚠️ 有进程在跑必有任务在身（见 run_stage 的守卫）
             task_id = self.task_id
-            assert task_id is not None, "中断子任务时没有任务在身"
+            assert task_id is not None, "中断步骤时没有任务在身"
             if self.run_id:
                 self.store.finish_stage(task_id, self.run_id, "cancelled")
             self.process.kill()
@@ -803,8 +803,8 @@ class StageRunnerMixin:
 
     def _on_stage_unclean_exit(self) -> None:
         """传输层报"进程已退出但 Qt 没能正常收尾"：记成失败原因（看门狗兜底）。"""
-        self._logs.append("[看门狗] 子任务进程已退出但未正常收尾，按失败处理")
-        self._last_error_line = "子任务进程未正常收尾（看门狗兜底）"
+        self._logs.append("[看门狗] 步骤子进程已退出但未正常收尾，按失败处理")
+        self._last_error_line = "步骤子进程未正常收尾（看门狗兜底）"
 
     def _on_stage_finished(self, exit_code: int, status) -> None:
         """传输层报"进程结束"（**保证只发一次**）→ 走页面收尾链。"""
@@ -859,7 +859,7 @@ class StageRunnerMixin:
                 self._on_worker_page_done(event)
             elif etype == "started":
                 self._logs.append(
-                    f"子任务进程已启动：{STAGE_LABELS.get(event.get('stage'), event.get('stage'))}"
+                    f"步骤子进程已启动：{STAGE_LABELS.get(event.get('stage'), event.get('stage'))}"
                 )
             elif etype == "error":
                 # ⚠️ 结构化 error 事件是 worker 侧**最准确的失败原因**（stage 自己发的，
@@ -872,7 +872,7 @@ class StageRunnerMixin:
                 if message.strip():
                     self._last_error_line = message.strip()
             elif etype == "cancelled":
-                self._logs.append_now("子任务进程已被中断。")
+                self._logs.append_now("步骤子进程已被中断。")
 
     def _on_worker_page_done(self, event: dict) -> None:
         """一条 ``page_done``：该页产物已落盘 → 攒进脏集合，节流刷界面。
@@ -1257,7 +1257,7 @@ class StageRunnerMixin:
         if status == "success" and self.task_id:
             if stage == "extract":
                 # 页面清单只由 extract 输出决定；detect/rembg 结果留在各自目录，
-                # 不回写清单，避免污染 extract 预览和后续子任务的输入。
+                # 不回写清单，避免污染 extract 预览和后续步骤的输入。
                 # ⚠️ 清单与目录都按**跑的那个节点**（B 方案）：副本节点的页清单
                 #    落 ``pages~<节点>.json``，读的时候也按节点读——写 A 读 B
                 #    就是"跑完了还是空的"。

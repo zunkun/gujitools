@@ -207,7 +207,7 @@ def _edit_flow(ctx, page_cls, keyword: str, prepare, ok, has_apply: bool) -> Non
         book = getattr(page, "_thumb_book", None)
         if numbered and book is not None and image.stem.isdigit():
             return extract_thumbs_dir(
-                page._subtask(), book, page.THUMB_EDGE,
+                page._func_key(), book, page.THUMB_EDGE,
             ) / f"{int(image.stem):04d}.jpg"
         return image_thumb_cache_path(page.SPEC.disk_key(), image, page.THUMB_EDGE)
 

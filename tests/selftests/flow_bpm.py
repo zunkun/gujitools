@@ -897,13 +897,13 @@ def _check_unmapped_nodes(ok) -> None:
        str(diagram.stage_order()))
 
 
-# ------------------------------------- 12. 列表页的子任务胶囊按流程图给
+# ------------------------------------- 12. 列表页的节点胶囊按流程图给
 def _check_list_chips_follow_diagram(ctx, ok) -> None:
-    """任务列表每行的子任务胶囊必须**跟着该任务的流程图**走。
+    """任务列表每行的节点胶囊必须**跟着该任务的流程图**走。
 
     ⚠️ 2026-10-05 之前它是硬编码 ``for stage in STAGES``（四个固定阶段），
     改流程图列表也不变：图上删掉「图片去底色」照样显示"去底"，图上加了新
-    步骤不显示——用户看到的"这条任务有几个子任务"与实际流程对不上。
+    步骤不显示——用户看到的"这条任务有几个节点"与实际流程对不上。
 
     判据 = :meth:`TaskStore.task_slots`（图的界面投影，唯一真源）。
     """
@@ -930,7 +930,7 @@ def _check_list_chips_follow_diagram(ctx, ok) -> None:
 
     # ① 默认流程：四个
     full = repo.create_task(pdf, "chips-full", "胶囊-完整流程")
-    ok("默认流程：四个子任务胶囊",
+    ok("默认流程：四个节点胶囊",
        chips_of(full) == ["提取", "检测", "去底", "PDF"], str(chips_of(full)))
     ok("默认流程的胶囊个数 = 槽位里的真实步骤数",
        len(chips_of(full)) == len([s for s in repo.task_slots(full)
@@ -949,7 +949,7 @@ def _check_list_chips_follow_diagram(ctx, ok) -> None:
     ok("胶囊顺序按步骤条格序（不是写死的四步顺序）",
        shorts == ["提取", "检测", "PDF"], str(shorts))
 
-    # ③ 图里有"没功能"的节点 → 胶囊**不含**它（不能执行的不占子任务）
+    # ③ 图里有"没功能"的节点 → 胶囊**不含**它（不能执行的不占节点）
     ghosty = FlowDiagram(
         nodes=(node("h0", "提取图片"), node("h1", "OCR 识别"),
                node("h2", "PDF排版")),
@@ -957,7 +957,7 @@ def _check_list_chips_follow_diagram(ctx, ok) -> None:
     )
     task = repo.create_task(pdf, "chips-ghost", "胶囊-带未知节点",
                             diagram=ghosty)
-    ok("图里没功能的节点不进胶囊（不可执行的不占子任务名额）",
+    ok("图里没功能的节点不进胶囊（不可执行的不占节点名额）",
        chips_of(task) == ["提取", "PDF"], str(chips_of(task)))
 
     # ④ stage_states 仍保留全部静态键（调用方大量硬索引），另给 in_flow 标记

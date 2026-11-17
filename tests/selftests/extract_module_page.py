@@ -49,13 +49,13 @@ def _redirect_caches(page, tmp: Path) -> dict:
         "page_thumb_map_path": page_mod.thumb_map_path,
     }
     ts_mod.extract_thumbs_dir = (
-        lambda subtask, book, edge, *a, **k: tmp / "thumbs_extract" / "edge"
+        lambda func_key, book, edge, *a, **k: tmp / "thumbs_extract" / "edge"
     )
     ts_mod.singletask_thumbnails_dir = (
-        lambda subtask, book=None, *a, **k: tmp / "thumbs_pdf" / "book"
+        lambda func_key, book=None, *a, **k: tmp / "thumbs_pdf" / "book"
     )
     page_mod.thumb_map_path = (
-        lambda subtask, book, *a, **k: tmp / "map.json"
+        lambda func_key, book, *a, **k: tmp / "map.json"
     )
     page._thumb_cache_dir = lambda: tmp / "thumbs_images"  # type: ignore[method-assign]
     return real

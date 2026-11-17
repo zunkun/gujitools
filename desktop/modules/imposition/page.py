@@ -89,10 +89,10 @@ assert _SPEC_OR_NONE is not None, "spec 表里缺少 imposition 这一步"
 #: 显式再声明一次类型（运行时就是上面那个对象，零开销）。
 _SPEC: StepSpec = _SPEC_OR_NONE
 
-#: 手工修饰过的整页组合落在 ``singletask/<子任务>/`` 下的哪个子目录。
+#: 手工修饰过的整页组合落在 ``singletask/<独立功能>/`` 下的哪个子目录。
 EDITED_DIRNAME = "edited"
 
-#: 「上传图片」复制进 ``singletask/<子任务>/`` 的哪个子目录（与任务流程的
+#: 「上传图片」复制进 ``singletask/<独立功能>/`` 的哪个子目录（与任务流程的
 #: ``tasks/<任务号>/inserted/`` 同一口径，见 :func:`uploaded_page_dir`）。
 UPLOAD_DIRNAME = "inserted"
 

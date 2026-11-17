@@ -32,7 +32,7 @@ from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, Signa
 def worker_arguments(config_path: Path) -> list[str]:
     """按运行环境给出启动 worker 子进程的参数表。
 
-    - 打包（``sys.frozen``）：主程序即入口，``--worker --config`` 路由到子任务执行；
+    - 打包（``sys.frozen``）：主程序即入口，``--worker --config`` 路由到步骤执行；
     - 源码：按模块启动（``-m desktop.worker``），不依赖入口文件名（``desktop.py``
       改名无影响），工作目录必须是项目根（能解析出 ``desktop`` 包的那一级）。
     """

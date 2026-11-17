@@ -170,8 +170,8 @@ class StepSpec:
     nav_order: int = 0
     # ---- 任务流程详情页的"这一步长什么样"（2026-10-03）----
     #: 详情页**主动作按钮**文案。与 ``run_label``（独立模块页的按钮）**有意不同**：
-    #: 流程里点它跑的是"本子任务"这一环节，模块页点它跑的是整个功能。
-    run_button_text: str = "执行本子任务"
+    #: 流程里点它跑的是"本步骤"这一环节，模块页点它跑的是整个功能。
+    run_button_text: str = "执行本步骤"
     #: 有没有「分割图片」这类**次动作按钮**（目前只有检测文本框有：
     #: 先检测出框、用户核对后再提交裁图）。
     has_submit: bool = False
@@ -492,7 +492,7 @@ class StepSpec:
         return self.nav_title or self.title
 
     def disk_key(self) -> str:
-        """``singletask/`` 下这个子任务的**目录名**（缓存/手改件的归属）。
+        """``singletask/`` 下这个独立功能的**目录名**（缓存/手改件的归属）。
 
         ⚠️ **不是** ``title`` 也不是 ``nav_title``：这两者都是会随文案需求改的
         人类可读名字，而这里是**已经在磁盘上存在的路径**。``singletask/`` 里
@@ -502,7 +502,7 @@ class StepSpec:
         改过版面，重新打开又变回原样"）。
 
         所以这里锚在 ``key`` 上（步骤的唯一路由键，改名不会动它）。改动此值
-        等于换一整个子任务目录，**必须**先做旧目录迁移。
+        等于换一整个独立功能目录，**必须**先做旧目录迁移。
         """
         return self.key
 
@@ -552,7 +552,7 @@ SPECS: tuple[StepSpec, ...] = (
         progress_noun="页",
         run_label="开始提取",
         # 详情页按钮文案（用户 2026-11-17）：按钮直接说出这一步干什么，
-        # 不再叫通用的「执行本子任务」。独立任务页仍用上面的 ``run_label``。
+        # 不再用通用的默认文案。独立任务页仍用上面的 ``run_label``。
         run_button_text="提取文档图片",
         file_filter=PDF_FILTER,
         flat_output=True,
@@ -608,7 +608,7 @@ SPECS: tuple[StepSpec, ...] = (
         preview_attr="detect_viewer",
         # detect 无表单参数、历史回填没用武之地，右栏改显「检测结果统计」。
         panel_extra="detect_stats",
-        # 按钮文案：用户 2026-10-22 定（原来叫「执行本子任务」，说不清这一步干什么）
+        # 按钮文案：用户 2026-10-22 定（不再用通用的默认文案，那个说不清这一步干什么）
         run_button_text="检测文本框",
         has_submit=True,
         drop_icon="PHOTO",

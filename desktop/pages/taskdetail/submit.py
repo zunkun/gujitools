@@ -402,7 +402,7 @@ class SubmitMixin:
         人工标注：没有那次运行，框是用户自己画的 ⇒ 只要求页面清单非空，
         且提交前先查一遍**有没有漏标注的页**（用户 2026-11-16 第 4 条）。
         """
-        if not self._acquire_run("子任务"):
+        if not self._acquire_run("步骤"):
             return
         try:
             self._run_detect_submit_unchecked()
@@ -462,7 +462,7 @@ class SubmitMixin:
         if not self._manifest_paths():
             self._toast(
                 "warning", "无输入页面",
-                "页面清单为空，请先完成上一步子任务，或在预览区插入图片。",
+                "页面清单为空，请先完成上一步，或在预览区插入图片。",
             )
             return
         if manual and not self._confirm_missing_labels():

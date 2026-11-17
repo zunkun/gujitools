@@ -43,7 +43,7 @@ def _redirect_caches(page, tmp: Path) -> dict:
         "singletask_thumbnails_dir": ts_mod.singletask_thumbnails_dir,
     }
     ts_mod.singletask_thumbnails_dir = (
-        lambda subtask, book=None, *a, **k: tmp / "thumbs_pdf" / "book"
+        lambda func_key, book=None, *a, **k: tmp / "thumbs_pdf" / "book"
     )
     page._thumb_cache_dir = lambda: tmp / "thumbs_images"  # type: ignore[method-assign]
     return real

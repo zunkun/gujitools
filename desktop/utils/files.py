@@ -248,14 +248,14 @@ def set_guji_data_dir(path) -> Path:
 #: 用户 2026-10-03：
 #:
 #: > 这个缩略图也可以放在 ~/Documents/guji/singletask 下面，
-#: > singletask 是独立任务，下面有各种子任务
+#: > singletask 是独立任务，下面有各种独立功能
 #:
 #: 与任务流程那套 ``tasks/<id>/`` 是**两个世界**：那边一个 id = 一本完整的书、
 #: 带四步流程与 runs/boxes/草稿；这边是左侧导航里那**几个独立功能页**（图片提取 /
-#: 去底色 / 生成 PDF / 拼图），每个子任务自己一个目录、只放自己的缓存与中间物。
+#: 去底色 / 生成 PDF / 拼图），每个独立功能自己一个目录、只放自己的缓存与中间物。
 SINGLETASK_DIRNAME = "singletask"
 
-#: 子任务目录名里不能出现的字符（Windows 文件名限制），换成一横线。
+#: 独立功能目录名里不能出现的字符（Windows 文件名限制），换成一横线。
 _SAFE_CHARS = '<>:"/\\|?*'
 
 
@@ -266,27 +266,27 @@ def safe_dirname(name: str) -> str:
     return text or "untitled"
 
 
-def singletask_dir(subtask: str) -> Path:
-    """独立任务区下某个**子任务**的目录：``<数据根>/singletask/<子任务>``。"""
-    return guji_data_dir() / SINGLETASK_DIRNAME / safe_dirname(subtask)
+def singletask_dir(func_key: str) -> Path:
+    """独立任务区下某个**独立功能**的目录：``<数据根>/singletask/<独立功能>``。"""
+    return guji_data_dir() / SINGLETASK_DIRNAME / safe_dirname(func_key)
 
 
 #: 独立任务页「导出YOLO标注」的记忆文件名（记上次填的名称与导出目录）。
 SINGLETASK_YOLO_EXPORT_NAME = "yolo_export.json"
 
 
-def singletask_yolo_export_path(subtask: str) -> Path:
+def singletask_yolo_export_path(func_key: str) -> Path:
     """独立任务页「导出YOLO标注」的记忆文件。
 
     用户 2026-10-16：「导出目录，和前缀都要保存下来，跟任务绑定」——任务流程
     那一侧记在 ``tasks/<id>/ui.json``（见 ``desktop.store.ui_state``），独立
-    任务这一侧按**子任务**记一份（名称 + 目录两个键），即
-    ``<数据根>/singletask/<子任务>/yolo_export.json``。
+    任务这一侧按**独立功能**记一份（名称 + 目录两个键），即
+    ``<数据根>/singletask/<独立功能>/yolo_export.json``。
 
-    ⚠️ 按子任务记（而不是"每次导出"）：同一批图常要分几次导成不同前缀
+    ⚠️ 按独立功能记（而不是"每次导出"）：同一批图常要分几次导成不同前缀
     （b1 / b2…）汇进同一个数据集根，每次都重填纯属折腾。
     """
-    return singletask_dir(subtask) / SINGLETASK_YOLO_EXPORT_NAME
+    return singletask_dir(func_key) / SINGLETASK_YOLO_EXPORT_NAME
 
 
 #: **程序更新**产物目录名（相对 :func:`guji_data_dir`）：应用内下载的安装包落点。
@@ -312,7 +312,7 @@ def pending_install_file() -> Path:
     return updates_dir() / "pending.json"
 
 
-#: 子任务目录名改名时的**旧名 → 新名**映射（2026-10-03 换``disk_key``）。
+#: 独立功能目录名改名时的**旧名 → 新名**映射（2026-10-03 换``disk_key``）。
 #:
 #: 目录名以前取的是 spec 的中文标题，于是它跟着文案变；而里面躺着用户攒下的
 #: 缩略图缓存与**手改过的版面图**（``拼图/edited/``）。文案一改，这些目录就成了
@@ -321,7 +321,7 @@ def pending_install_file() -> Path:
 #: 现在目录名取 :meth:`StepSpec.disk_key`（步骤路由键，不随文案动）。这条表负责
 #: 把已经存在的老目录**搬**过去。⚠️ 它是一次性迁移，不是长期兼容层：新老并存时
 #: **以新目录为准**（旧目录留着不删，用户确认没用了自己清）。
-_LEGACY_SUBTASK_DIRS: dict[str, str] = {
+_LEGACY_SINGLETASK_DIRS: dict[str, str] = {
     "图片提取": "extract",
     "检测文本框": "detect",
     "去底色": "rembg",
@@ -331,7 +331,7 @@ _LEGACY_SUBTASK_DIRS: dict[str, str] = {
 
 
 def migrate_legacy_singletask_dirs() -> list[str]:
-    """把按旧标题建的 ``singletask/<中文名>/`` 搬到新名（见 ``_LEGACY_SUBTASK_DIRS``）。
+    """把按旧标题建的 ``singletask/<中文名>/`` 搬到新名（见 ``_LEGACY_SINGLETASK_DIRS``）。
 
     **幂等**：目标已存在就跳过（只当新目录存在的老数据，不会来回搬）；旧目录
     **不删**——里面可能有用户还在意的东西，误删不可恢复。
@@ -340,7 +340,7 @@ def migrate_legacy_singletask_dirs() -> list[str]:
     """
     base = guji_data_dir() / SINGLETASK_DIRNAME
     moved: list[str] = []
-    for old_name, new_name in _LEGACY_SUBTASK_DIRS.items():
+    for old_name, new_name in _LEGACY_SINGLETASK_DIRS.items():
         old_dir = base / safe_dirname(old_name)
         if not old_dir.is_dir():
             continue
@@ -355,8 +355,8 @@ def migrate_legacy_singletask_dirs() -> list[str]:
     return moved
 
 
-def singletask_thumbnails_dir(subtask: str, book: str | Path | None = None) -> Path:
-    """子任务的**页缩略图缓存**：``singletask/<子任务>/thumbnails[/<书>]``。
+def singletask_thumbnails_dir(func_key: str, book: str | Path | None = None) -> Path:
+    """独立功能的**页缩略图缓存**：``singletask/<独立功能>/thumbnails[/<书>]``。
 
     导入 PDF 时**立刻**渲染到这里（用户 2026-10-03："从上一层导入PDF，没有立即
     提取缩略图"）。命中即复用，缺页才渲染——所以第二次打开同一本书几乎不花时间。
@@ -373,7 +373,7 @@ def singletask_thumbnails_dir(subtask: str, book: str | Path | None = None) -> P
     （:meth:`desktop.steps.spec.StepSpec.default_output`），别把用户已经习惯的
     产物位置改掉。
     """
-    base = singletask_dir(subtask) / "thumbnails"
+    base = singletask_dir(func_key) / "thumbnails"
     if book is None:
         return base
     return base / safe_dirname(book_key(book))
@@ -394,11 +394,11 @@ def book_key(book: str | Path) -> str:
 
 
 def image_thumb_cache_path(
-    subtask: str, image: str | Path, edge: int = THUMBNAIL_EDGE,
+    func_key: str, image: str | Path, edge: int = THUMBNAIL_EDGE,
 ) -> Path:
     """一张**源图片**在 singletask 缓存里的缩略图路径。
 
-    ``singletask/<子任务>/thumbs/<边缘边长>/<book_key>.jpg``
+    ``singletask/<独立功能>/thumbs/<边缘边长>/<book_key>.jpg``
 
     用户 2026-10-03 定的口径：**所有独立任务的左侧都显示缩略图**，且缩略图
     统一缓存在 ``~/Documents/guji/singletask`` 下（PDF 用
@@ -413,25 +413,25 @@ def image_thumb_cache_path(
     - 键里带**大小与路径指纹**（复用 :func:`book_key`）：同名不同图靠它区分，
       同图改名后仍能命中旧缓存。
     """
-    return image_thumbs_dir(subtask, edge) / f"{safe_dirname(book_key(image))}.jpg"
+    return image_thumbs_dir(func_key, edge) / f"{safe_dirname(book_key(image))}.jpg"
 
 
-def image_thumbs_dir(subtask: str, edge: int = THUMBNAIL_EDGE) -> Path:
-    """一批**图片源**的缩略图缓存**目录**：``singletask/<子任务>/thumbs/<边长>``。
+def image_thumbs_dir(func_key: str, edge: int = THUMBNAIL_EDGE) -> Path:
+    """一批**图片源**的缩略图缓存**目录**：``singletask/<独立功能>/thumbs/<边长>``。
 
     与 :func:`image_thumb_cache_path` 是同一套规则的两种用法：那个给**单张图**
     的缓存文件路径，这个给**目录**（一批图共用、或宿主需要"重渲一张"时交给
     ``ImageThumbCacheWorker``）。
 
-    ⚠️ 目录**只按「子任务 + 边长」分层**，不按单图键：单图键里带着大小与路径
+    ⚠️ 目录**只按「独立功能 + 边长」分层**，不按单图键：单图键里带着大小与路径
     指纹，拿它当目录名既很长，也会让"同一张图被编辑后尺寸变了"直接换目录
     （旧缓存全成孤儿）。⚠️ 边长必须进目录名（``decode_edge`` 随 dpr 变）。
     """
-    return singletask_dir(subtask) / "thumbs" / str(int(edge))
+    return singletask_dir(func_key) / "thumbs" / str(int(edge))
 
 
-def page_thumbs_dir(subtask: str) -> Path:
-    """独立拼图页的**页面效果缩略图实体**目录：``singletask/<子任务>/page_thumbs/``。
+def page_thumbs_dir(func_key: str) -> Path:
+    """独立拼图页的**页面效果缩略图实体**目录：``singletask/<独立功能>/page_thumbs/``。
 
     与 :func:`image_thumbs_dir`（页内**单张源图**的缩略图）各归各：这里放
     按版面合成的**整页**实体——``page1.jpg`` 从第一页起数，映射数据（页号
@@ -441,7 +441,7 @@ def page_thumbs_dir(subtask: str) -> Path:
     ``tasks/<id>/thumbnails/imposition_pages/``，两边不共用（2026-10-04
     「singletask 和 taskdetail 不是一回事」）。
     """
-    return singletask_dir(subtask) / "page_thumbs"
+    return singletask_dir(func_key) / "page_thumbs"
 
 
 # ---------------------------------------------------------------- 序号口径的缩略图
@@ -456,7 +456,7 @@ def page_thumbs_dir(subtask: str) -> Path:
 # 于是「原始名称 ↔ 序号」是恒等映射，不必真去生成一张对照表；真正需要记下来的
 # 只有「哪些序号**没**产出」，那才是映射表里唯一有信息量的部分。
 #
-# ⚠️ **这为什么能砍掉第二份缓存**：此前 extract 一个子任务目录下有两套缩略图：
+# ⚠️ **这为什么能砍掉第二份缓存**：此前 extract 一个独立功能目录下有两套缩略图：
 # ``thumbnails/<书>/NNNN.jpg``（PDF 整页渲染）与 ``thumbs/256/<图键>.jpg``
 # （按提取产物重渲）。实测同页两者像素差 < 12/255（内容基本一致），因为这批书
 # 每页恰好一张内嵌整页图。统一到序号口径后，同一页**只落一个文件**：
@@ -464,40 +464,40 @@ def page_thumbs_dir(subtask: str) -> Path:
 
 
 def extract_thumbs_dir(
-    subtask: str, book: str | Path, edge: int = THUMBNAIL_EDGE,
+    func_key: str, book: str | Path, edge: int = THUMBNAIL_EDGE,
 ) -> Path:
-    """某个子任务下**一本书**的序号口径缩略图目录。
+    """某个独立功能下**一本书**的序号口径缩略图目录。
 
-    ``singletask/<子任务>/thumbnails/<书>/<边长>/``
+    ``singletask/<独立功能>/thumbnails/<书>/<边长>/``
 
     ⚠️ 仍然**必须带 ``book`` 分一层**（与 :func:`singletask_thumbnails_dir`
     同一条护栏）：文件名是**序号**，A 书第 1 页与 B 书第 1 页会撞名 ⇒ 翻出
     别本书的内容。
     """
     return (
-        singletask_thumbnails_dir(subtask, book) / str(int(edge))
+        singletask_thumbnails_dir(func_key, book) / str(int(edge))
     )
 
 
 def extract_thumb_path(
-    subtask: str, book: str | Path, seq: int, edge: int = THUMBNAIL_EDGE,
+    func_key: str, book: str | Path, seq: int, edge: int = THUMBNAIL_EDGE,
 ) -> Path:
     """第 ``seq`` 页（1 起始）的缩略图路径：``<序号4位补零>.jpg``。
 
     ⚠️ 四位补零不是装饰，是**排序键**：``1.jpg`` 排在 ``10.jpg`` 前面，
     缩略图条的顺序必须与产物序号一致（``collect_result_images`` 用自然排序）。
     """
-    return extract_thumbs_dir(subtask, book, edge) / f"{int(seq):04d}.jpg"
+    return extract_thumbs_dir(func_key, book, edge) / f"{int(seq):04d}.jpg"
 
 
-def thumb_map_path(subtask: str, book: str | Path) -> Path:
-    """序号 ↔ 产物的映射表：``singletask/<子任务>/thumbnails/<书>/map.json``。
+def thumb_map_path(func_key: str, book: str | Path) -> Path:
+    """序号 ↔ 产物的映射表：``singletask/<独立功能>/thumbnails/<书>/map.json``。
 
     记录 ``{"book":…, "pages": N, "seqs": [1,2,…]}``——``seqs`` 是**真实产出
     的序号**（失败页不在其中）。它是缩略图与产物之间的唯一权威对照：左栏条目
     按它与缓存文件对齐，缺号的地方不会出现"有缩略图却没产物"的幽灵条目。
     """
-    return singletask_thumbnails_dir(subtask, book) / "map.json"
+    return singletask_thumbnails_dir(func_key, book) / "map.json"
 
 
 def default_open_dir() -> Path:

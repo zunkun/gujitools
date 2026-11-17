@@ -171,7 +171,7 @@ class TaskDetailPage(
         #: 还要校验参数、组装 effects、写运行配置，做完才 QProcess.start()，
         #: 这段同步重活里 self.process 仍是 None——没有这个标记，连点第二下
         #: 就能溜过守卫、起出第二个 worker 子进程（torch 各自加载一遍）。
-        #: 存名字（"子任务"/"单页检测"）而非 bool，提示里能直接说清"什么在跑"。
+        #: 存名字（"步骤"/"单页检测"）而非 bool，提示里能直接说清"什么在跑"。
         self._run_claim: str | None = None
         #: 上次**真正启动进程**的时刻（monotonic）。⚠️ 防抖量的是"距上次启动"，
         #: 而**不是**"距上次受理"：一次没跑起来的尝试（参数错、无输出、无需续跑、
@@ -287,17 +287,17 @@ class TaskDetailPage(
 
         加载任务后先调用各面板 reset_to_default 清掉上一任务手改参数，再清
         detect 缓存/运行态引用并刷新清单与预览；防止参数或 run_id 串到新任务。
-        返回 False = 拒绝切换（任务不存在 / 子任务执行中），调用方应留在原地。
+        返回 False = 拒绝切换（任务不存在 / 步骤执行中），调用方应留在原地。
         """
         task = self.store.get_task(task_id)
         if not task:
             return False
-        # ⚠️ 子任务执行中禁止切换（2026-09-26 第二轮审计）：runner 的收尾
+        # ⚠️ 步骤执行中禁止切换（2026-09-26 第二轮审计）：runner 的收尾
         #    全部按 self.task_id 落盘，切走后事件到达就会写进**新任务**的
         #    runs.json / 输出目录。单页检测是几秒的辅助操作，直接停掉即可。
         if self.process and self.process.state() != QProcess.ProcessState.NotRunning:
             self._toast(
-                "warning", "任务进行中", "请等待当前子任务完成后再切换其他任务。"
+                "warning", "任务进行中", "请等待当前步骤完成后再切换其他任务。"
             )
             return False
         self._stop_detect_process()
@@ -578,7 +578,7 @@ class TaskDetailPage(
 
     def _on_back(self) -> None:
         if self.process and self.process.state() != QProcess.ProcessState.NotRunning:
-            self._toast("warning", "任务进行中", "请等待当前子任务完成后再返回。")
+            self._toast("warning", "任务进行中", "请等待当前步骤完成后再返回。")
             return
         # ⚠️ 检测是几秒到十几秒的慢活：返回后旧进程的 boxes 事件才到达，
         #    task_id 已清空/换成别的任务 → 跨任务写 boxes.json（审计 H3）。
@@ -1194,7 +1194,7 @@ class TaskDetailPage(
         2. 这一步**没有** ``spec.panel_extra``（第二步显示的是「检测结果统计」，
            那里没有表单参数、历史回填用不上，见 ``spec_for_stage``）。
 
-        「图片拼版」是可选节点（伪步骤）：它没有可执行的子任务，执行记录不适用
+        「图片拼版」是可选节点（伪步骤）：它不是可执行步骤，执行记录不适用
         （``_select_imposition_detail`` 也会藏它，这里同样挡掉，保证"切到别处
         再切回来"不会把它露出来）。
         """
@@ -1297,7 +1297,7 @@ class TaskDetailPage(
         # ⚠️ 走 ``ports.spec_for_stage``：伪步骤（拼版）取不到 spec 时用默认值。
         spec = ports.spec_for_stage(step)
         self.run_button.setText(
-            spec.run_button_text if spec else "执行本子任务"
+            spec.run_button_text if spec else "执行本步骤"
         )
         submit_visible = bool(spec and spec.has_submit)
         self.submit_button.setVisible(submit_visible)
@@ -1580,13 +1580,13 @@ class TaskDetailPage(
 
         ⚠️ 只看 ``self.process`` 会有两个盲区，所以这里分两步判断：
 
-        1. **先看进程实况**（硬事实）：子任务进程、单页检测进程任一在跑就是在忙。
+        1. **先看进程实况**（硬事实）：步骤子进程、单页检测进程任一在跑就是在忙。
         2. **再看受理标记**，且**只在还没有任何进程对象时**才算数：
            - 受理窗口期（点下去了，进程还没 start）→ 拦住，这正是漏点；
            - 进程刚结束、``finished`` 尚未派发完的瞬间 → 此时 ``self.process``
              已存在，直接放行——否则"中断后续跑"这类连招会像点了没反应。
         """
-        for attr, label in (("process", "子任务"), ("detect_process", "单页检测")):
+        for attr, label in (("process", "步骤"), ("detect_process", "单页检测")):
             proc = getattr(self, attr, None)
             if proc is not None and proc.state() != QProcess.ProcessState.NotRunning:
                 return label

@@ -1890,7 +1890,7 @@ def _check_flow_saved_refreshes_bar() -> None:
     1. 保存 → 自动回详情页，且步骤条**立刻**是���流程（4 格 → 3 格）；
     2. 高亮与完成态**按步骤 key 跨重建保住**——重建时若拿"旧格序"去查
        **新**槽位表（``flow_slots()`` 读的是磁盘上那张新图），会贴错格子；
-    3. ``set_task`` 拒绝重载时（正在跑子任务）**不许静默**：必须把详情页
+    3. ``set_task`` 拒绝重载时（正在跑步骤）**不许静默**：必须把详情页
        切出来并说明，否则用户被留在流程页上、以为没保存成功。
     """
     import copy
@@ -2050,7 +2050,7 @@ def _rebuild_keeps_highlight(page, store, task_id: str) -> bool:
 
 
 def _open_detail_failure_shows_page(shell, page) -> bool:
-    """``set_task`` 被拒（模拟子任务在跑）后，详情页仍被切到前台**且有提示**。
+    """``set_task`` 被拒（模拟步骤在跑）后，详情页仍被切到前台**且有提示**。
 
     ⚠️ 直接把 ``set_task`` 替换成返回 False 的替身：真实拒绝条件是
     "QProcess 在跑"，而离屏下起不了子进程，构造不出那个状态。

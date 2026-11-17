@@ -899,7 +899,7 @@ class DetectMixin:
         # 执行权守卫：单页检测同样要抢 worker 槽位（一次 torch 冷启动 5 秒以上）。
         # ``replace=("单页检测",)`` 是刻意留的口子——连点不同页面时应该「换一页重检」
         # （_start_detect 会先断旧进程信号再杀），而不是弹一句"正在执行"卡住用户；
-        # 但子任务在跑时必须拦住，那种情况下再塞一个检测只会两个 torch 抢内存。
+        # 但步骤在跑时必须拦住，那种情况下再塞一个检测只会两个 torch 抢内存。
         if not self._acquire_run("单页检测", replace=("单页检测",)):
             return
         self.detect_viewer.info_label.setText("正在检测文本框位置...")

@@ -26,7 +26,7 @@ imposition_page_thumb_worker.ImpositionPageThumbWorker`）生成落盘——UI �
 两处宿主（任务流程的拼版详情页与独立拼图页）目录各归各（用户 2026-10-04
 明确「singletask 和 taskdetail 不是一回事」）：任务写
 ``tasks/<id>/thumbnails/imposition_pages/``，独立区写
-``singletask/<子任务>/page_thumbs/``。
+``singletask/<独立功能>/page_thumbs/``。
 """
 
 from __future__ import annotations
@@ -265,7 +265,7 @@ class PageThumbManager(QObject):
 
     # ------------------------------------------------------------- 生命周期
     def bind(self, out_dir: Path | str) -> None:
-        """换目录（换任务/换子任务）：状态全清、重读那份映射。"""
+        """换目录（换任务/换独立功能）：状态全清、重读那份映射。"""
         self._dir = Path(out_dir)
         self.reset()
         self.reload()

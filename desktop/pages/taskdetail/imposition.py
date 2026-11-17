@@ -575,7 +575,7 @@ class ImpositionBaseMixin:
     def _select_imposition_detail(self) -> None:
         """流程条点了「图片拼版」：预览区/控制区切到拼版详情。
 
-        拼版没有可执行的子任务：执行/提交按钮整组隐藏，
+        拼版不是可执行步骤：执行/提交按钮整组隐藏，
         执行记录与检测统计也不适用。
         """
         self._refresh_imposition_view()

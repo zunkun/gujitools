@@ -1793,7 +1793,7 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 两处宿主（任务流程的拼版详情页与独立拼图页）目录各归各（用户 2026-10-04
 明确「singletask 和 taskdetail 不是一回事」）：任务写
 ``tasks/<id>/thumbnails/imposition_pages/``，独立区写
-``singletask/<子任务>/page_thumbs/``。
+``singletask/<独立功能>/page_thumbs/``。
 
 ### 模块常量
 
@@ -1817,7 +1817,7 @@ worker）→ 连 :attr:`page_ready` 把生成好的那条贴回左列。版面/�
 | --- | --- |
 | `__init__(out_dir: Path \| str, edge: int, submit: Callable, parent: QObject \| None=None)` | ``out_dir`` 实体目录；``edge`` 最长边；``submit``＝宿主的 |
 | `directory() -> Path` | — |
-| `bind(out_dir: Path \| str) -> None` | 换目录（换任务/换子任务）：状态全清、重读那份映射。 |
+| `bind(out_dir: Path \| str) -> None` | 换目录（换任务/换独立功能）：状态全清、重读那份映射。 |
 | `reset() -> None` | 清空内存态（映射/位图缓存/排队）；盘上实体不动。 |
 | `reload() -> None` | 从盘上重读映射数据。 |
 | `retain(count: int) -> None` | 页清单缩到 ``count`` 后：多出来的映射删掉、孤儿实体清掉。 |
@@ -3422,11 +3422,11 @@ status 为失败/中断时，徽标保持对勾、副标题仍显示最近一次
 源码：[`desktop/components/task_table.py`](../../desktop/components/task_table.py)
 
 任务列表表格组件：每行带阶段状态胶囊与 详情/删除 操作按钮。
-「子任务状态」原来是一整串 ``提取图片:成功  检测文本框:成功 …`` 纯文本，
+「节点状态」原来是一整串 ``提取图片:成功  检测文本框:成功 …`` 纯文本，
 列宽一紧就被截断、颜色上也没法区分成败。现在改为状态胶囊，颜色来自统一的
 语义色，鼠标悬停能看到完整阶段名与进度。
 
-⚠️ **每行的胶囊数量不固定**（用户 2026-10-03："子任务到底有几个需要根据详情
+⚠️ **每行的胶囊数量不固定**（用户 2026-10-03："节点到底有几个需要根据详情
 决定"）：详情里启用了「图片拼版」的任务会多一个「拼版」胶囊，插在「PDF」前面；
 没启用的仍是四个。哪些胶囊由 ``desktop/workers/task_rows_worker.py`` 按任务
 逐个判定，本组件只负责把给定的 stages 画出来——**别在这里写死数量**。
@@ -3489,7 +3489,7 @@ status 为失败/中断时，徽标保持对勾、副标题仍显示最近一次
 
 任务列表表格：每行带阶段状态胶囊与 详情/删除 操作。
 
-列固定为 序号 / 任务名 / 创建时间 / 子任务状态 / 操作；源文件路径
+列固定为 序号 / 任务名 / 创建时间 / 节点状态 / 操作；源文件路径
 不成列，仅作为任务名 tooltip。open_detail / delete_request 信号
 分别携带任务 id。
 
@@ -3616,7 +3616,7 @@ source_path 不单独成列，仅作任务名的悬浮提示。
 - 批量提取照旧落同一目录：浏览过的页已提好，批量跑只是幂等覆盖（原子写）。
 
 参数（zoom/ext/quick/dpi）由宿主经 :meth:`set_params_provider` 注入——读
-「图片提取」面板当前的表单值，保证单页提取与点「执行本子任务」的批量提取
+「图片提取」面板当前的表单值，保证单页提取与点「执行本步骤」的批量提取
 产物一致。表单填到一半 ``get_args()`` 抛 ``ValueError`` 时按默认参数兜底。
 
 编辑链：产物是磁盘上的真实文件，放大弹窗/右键对**已提取**的页给
@@ -6801,7 +6801,7 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 4. **整个「导出」分类随设置里「**启用YOLO标注**」开关显隐**（用户
    2026-11-17：分类要按 yolo 参数决定显隐；开关开着时导出区最底部是
    「**导出YOLO标注**」，用户 2026-10-16；2026-11-17 起不再挂在开发者模式下）：点它先弹窗填**名称**（父节点名 =
-   文件名前缀）并选**导出目录**（按子任务记住上次选的），确认后把全部页面
+   文件名前缀）并选**导出目录**（按独立功能记住上次选的），确认后把全部页面
    导出成 YOLO 数据集切片 ``<导出目录>/<名称>/{images,labels}/<名称>-1.…``
    （类别顺序见 ``utils.box_geometry.YOLO_CLASS_NAMES``；无框页写空标签当负样本）。
 
@@ -6951,7 +6951,7 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 导出 YOLO 数据集切片：先弹窗填**名称**与选**导出目录**（用户 2026-10-16）。
 
 弹窗的两个默认值都取**上次记住的那一份**（独立任务页记在
-``singletask/<子任务>/yolo_export.json``，见
+``singletask/<独立功能>/yolo_export.json``，见
 :func:`desktop.utils.files.singletask_yolo_export_path`）：同一批图分几次
 导成不同前缀时要汇进同一个数据集根，重填重选纯属折腾。
 
@@ -7332,7 +7332,7 @@ detect/rembg/print 直接把**原图**塞进查看器（缩略图条每次现解
 直接把清单传进来，省得各页再各自判断一遍）。
 
 - 源是 **PDF / DjVu** → 渲页缩略图到
-  ``singletask/<子任务>/thumbnails/<书>/``，条目标签「第 N 页」，
+  ``singletask/<独立功能>/thumbnails/<书>/``，条目标签「第 N 页」，
   大图由查看器按需渲高清页；
 - 源是**图片或目录** → 用 ``spec.listing`` 取清单，每张渲一张缓存小图，
   条目标签是文件名。
@@ -7670,7 +7670,7 @@ bpmn.io 画的图进页面长得一样。
 那条链路是**整页切换**，用户本来就站在流程页上，回详情页是一次
 ``open_detail`` → ``set_task`` 全量重载，**步骤条当场按新图重排**，不必
 "重新进入任务"（用户 2026-10-06 报障"编辑后顶部流程图没立即更新"）。
-真遇到"子任务在跑导致重载被拒"时，壳层会切回详情页**并说明**，
+真遇到"步骤在跑导致重载被拒"时，壳层会切回详情页**并说明**，
 不再静默把人留在流程页上。
 
 ### `class FlowMixin`
@@ -8108,7 +8108,7 @@ resize 子控件再 show），在这里重铺一次就对了。⚠️ 别改成"
 
 加载任务后先调用各面板 reset_to_default 清掉上一任务手改参数，再清
 detect 缓存/运行态引用并刷新清单与预览；防止参数或 run_id 串到新任务。
-返回 False = 拒绝切换（任务不存在 / 子任务执行中），调用方应留在原地。
+返回 False = 拒绝切换（任务不存在 / 步骤执行中），调用方应留在原地。
 
 ##### `flow_slots() -> tuple`
 
@@ -12505,7 +12505,7 @@ pages，问它"pages 输入"会拿到入口目录，而它要的其实是那个�
 
 按运行环境给出启动 worker 子进程的参数表。
 
-- 打包（``sys.frozen``）：主程序即入口，``--worker --config`` 路由到子任务执行；
+- 打包（``sys.frozen``）：主程序即入口，``--worker --config`` 路由到步骤执行；
 - 源码：按模块启动（``-m desktop.worker``），不依赖入口文件名（``desktop.py``
   改名无影响），工作目录必须是项目根（能解析出 ``desktop`` 包的那一级）。
 
@@ -13014,7 +13014,7 @@ _apply_control_width`` 按 stage 换宽度、``history._history_fill_keys``
 | `stage_name() -> str` | 流程步骤条上的名字（``stage_title`` 为空时用 ``title``）。 |
 | `nav_tip() -> str` | 导航条目悬停提示（``nav_tooltip`` 为空时用 ``subtitle``）。 |
 | `nav_name() -> str` | 左侧导航条目上的名字（``nav_title`` 为空时用 ``title``）。 |
-| `disk_key() -> str` | ``singletask/`` 下这个子任务的**目录名**（缓存/手改件的归属）。 |
+| `disk_key() -> str` | ``singletask/`` 下这个独立功能的**目录名**（缓存/手改件的归属）。 |
 | `drop_title_text() -> str` | 大输入区空态的标题（``drop_title`` 为空时兜底）。 |
 | `drop_hint_text() -> str` | 大输入区空态的提示行（``drop_hint`` 为空时按能否选目录兜底）。 |
 | `summary() -> str` | 一行可读描述（日志/自测用，别拿它做判断）。 |
@@ -13144,7 +13144,7 @@ _apply_control_width`` 按 stage 换宽度、``history._history_fill_keys``
 
 ##### `disk_key() -> str`
 
-``singletask/`` 下这个子任务的**目录名**（缓存/手改件的归属）。
+``singletask/`` 下这个独立功能的**目录名**（缓存/手改件的归属）。
 
 ⚠️ **不是** ``title`` 也不是 ``nav_title``：这两者都是会随文案需求改的
 人类可读名字，而这里是**已经在磁盘上存在的路径**。``singletask/`` 里
@@ -13154,7 +13154,7 @@ _apply_control_width`` 按 stage 换宽度、``history._history_fill_keys``
 改过版面，重新打开又变回原样"）。
 
 所以这里锚在 ``key`` 上（步骤的唯一路由键，改名不会动它）。改动此值
-等于换一整个子任务目录，**必须**先做旧目录迁移。
+等于换一整个独立功能目录，**必须**先做旧目录迁移。
 
 ### 模块函数
 
@@ -13579,9 +13579,9 @@ boxes.json / sizes.json 读写。
 
 这个任务**是否启用了拼版**（只有 ``enabled``，不看有没有拼版页）。
 
-给**任务列表**用：列表要回答"这条任务有几个子任务"，而拼版是个可选
+给**任务列表**用：列表要回答"这条任务有几个节点"，而拼版是个可选
 节点——详情页勾了「在流程中启用图片拼版」才把它算进流程（用户 2026-10-03
-口径："子任务到底有几个需要根据详情决定"）。所以判据是**勾没勾**，
+口径："节点到底有几个需要根据详情决定"）。所以判据是**勾没勾**，
 不是"生不生效"（生效还要至少一页，那是 ``imposition_active`` 的口径）。
 
 ⚠️ 这里**只读 enabled 一个键**，不走 ``load_imposition_doc``：那份文档
@@ -16192,7 +16192,7 @@ qfluent 的 ``enableTransparentBackground()`` 帮不上忙——它必须在
 ``PushButton[hasIcon=true] { padding: 5px 12px 6px 36px; }`` —— 图标是
 ``paintEvent`` 手绘在左边 12px 处的，**全靠这 36px 左边距让居中的文字让开**。
 整串替换后 padding 全没了，图标就画到文字上了（2026-09-23 用户报
-「执行本子任务按钮中的图片显示在了文字上面」）。``setFont`` 只动字体，
+「执行本步骤按钮中的图片显示在了文字上面」）。``setFont`` 只动字体，
 不碰样式表；按钮 qss 里没有 ``font:`` 规则，所以控件字体生效。
 
 #### `mark_input_entry(button: QWidget) -> None`
@@ -16333,19 +16333,19 @@ qfluent 的 ``enableTransparentBackground()`` 帮不上忙——它必须在
 | `guji_data_dir() -> Path` | GUI 数据根目录：默认 ``~/Documents/guji``，可在设置页改成任意目录。 |
 | `set_guji_data_dir(path) -> Path` | 把数据根改到 ``path``（原子写指针文件，并刷新进程内缓存）。 |
 | `safe_dirname(name: str) -> str` | 把任意标题洗成能当目录名的一串（去掉非法字符、收敛空白）。 |
-| `singletask_dir(subtask: str) -> Path` | 独立任务区下某个**子任务**的目录：``<数据根>/singletask/<子任务>``。 |
-| `singletask_yolo_export_path(subtask: str) -> Path` | 独立任务页「导出YOLO标注」的记忆文件。 |
+| `singletask_dir(func_key: str) -> Path` | 独立任务区下某个**独立功能**的目录：``<数据根>/singletask/<独立功能>``。 |
+| `singletask_yolo_export_path(func_key: str) -> Path` | 独立任务页「导出YOLO标注」的记忆文件。 |
 | `updates_dir() -> Path` | 程序更新目录：``<数据根>/updates``（安装包与"待安装"记录）。 |
 | `pending_install_file() -> Path` | 「下好但还没装」的安装包记录：``updates/pending.json``。 |
-| `migrate_legacy_singletask_dirs() -> list[str]` | 把按旧标题建的 ``singletask/<中文名>/`` 搬到新名（见 ``_LEGACY_SUBTASK_DIRS``）。 |
-| `singletask_thumbnails_dir(subtask: str, book: str \| Path \| None=None) -> Path` | 子任务的**页缩略图缓存**：``singletask/<子任务>/thumbnails[/<书>]``。 |
+| `migrate_legacy_singletask_dirs() -> list[str]` | 把按旧标题建的 ``singletask/<中文名>/`` 搬到新名（见 ``_LEGACY_SINGLETASK_DIRS``）。 |
+| `singletask_thumbnails_dir(func_key: str, book: str \| Path \| None=None) -> Path` | 独立功能的**页缩略图缓存**：``singletask/<独立功能>/thumbnails[/<书>]``。 |
 | `book_key(book: str \| Path) -> str` | 一本书在缓存目录里的唯一名字：``<文件名去后缀>-<大小>-<路径指纹前8位>``。 |
-| `image_thumb_cache_path(subtask: str, image: str \| Path, edge: int=THUMBNAIL_EDGE) -> Path` | 一张**源图片**在 singletask 缓存里的缩略图路径。 |
-| `image_thumbs_dir(subtask: str, edge: int=THUMBNAIL_EDGE) -> Path` | 一批**图片源**的缩略图缓存**目录**：``singletask/<子任务>/thumbs/<边长>``。 |
-| `page_thumbs_dir(subtask: str) -> Path` | 独立拼图页的**页面效果缩略图实体**目录：``singletask/<子任务>/page_thumbs/``。 |
-| `extract_thumbs_dir(subtask: str, book: str \| Path, edge: int=THUMBNAIL_EDGE) -> Path` | 某个子任务下**一本书**的序号口径缩略图目录。 |
-| `extract_thumb_path(subtask: str, book: str \| Path, seq: int, edge: int=THUMBNAIL_EDGE) -> Path` | 第 ``seq`` 页（1 起始）的缩略图路径：``<序号4位补零>.jpg``。 |
-| `thumb_map_path(subtask: str, book: str \| Path) -> Path` | 序号 ↔ 产物的映射表：``singletask/<子任务>/thumbnails/<书>/map.json``。 |
+| `image_thumb_cache_path(func_key: str, image: str \| Path, edge: int=THUMBNAIL_EDGE) -> Path` | 一张**源图片**在 singletask 缓存里的缩略图路径。 |
+| `image_thumbs_dir(func_key: str, edge: int=THUMBNAIL_EDGE) -> Path` | 一批**图片源**的缩略图缓存**目录**：``singletask/<独立功能>/thumbs/<边长>``。 |
+| `page_thumbs_dir(func_key: str) -> Path` | 独立拼图页的**页面效果缩略图实体**目录：``singletask/<独立功能>/page_thumbs/``。 |
+| `extract_thumbs_dir(func_key: str, book: str \| Path, edge: int=THUMBNAIL_EDGE) -> Path` | 某个独立功能下**一本书**的序号口径缩略图目录。 |
+| `extract_thumb_path(func_key: str, book: str \| Path, seq: int, edge: int=THUMBNAIL_EDGE) -> Path` | 第 ``seq`` 页（1 起始）的缩略图路径：``<序号4位补零>.jpg``。 |
+| `thumb_map_path(func_key: str, book: str \| Path) -> Path` | 序号 ↔ 产物的映射表：``singletask/<独立功能>/thumbnails/<书>/map.json``。 |
 | `default_open_dir() -> Path` | 文件对话框的默认打开目录：用户文档目录。 |
 | `project_root() -> Path` | 项目根目录（`desktop` 包的上一级）。 |
 | `package_dir() -> Path` | `desktop` 包目录（源码与 PyInstaller 打包两种模式下都可用）。 |
@@ -16424,16 +16424,16 @@ GUI 数据根目录：默认 ``~/Documents/guji``，可在设置页改成任意�
 
 返回规范化后的绝对路径。
 
-#### `singletask_yolo_export_path(subtask: str) -> Path`
+#### `singletask_yolo_export_path(func_key: str) -> Path`
 
 独立任务页「导出YOLO标注」的记忆文件。
 
 用户 2026-10-16：「导出目录，和前缀都要保存下来，跟任务绑定」——任务流程
 那一侧记在 ``tasks/<id>/ui.json``（见 ``desktop.store.ui_state``），独立
-任务这一侧按**子任务**记一份（名称 + 目录两个键），即
-``<数据根>/singletask/<子任务>/yolo_export.json``。
+任务这一侧按**独立功能**记一份（名称 + 目录两个键），即
+``<数据根>/singletask/<独立功能>/yolo_export.json``。
 
-⚠️ 按子任务记（而不是"每次导出"）：同一批图常要分几次导成不同前缀
+⚠️ 按独立功能记（而不是"每次导出"）：同一批图常要分几次导成不同前缀
 （b1 / b2…）汇进同一个数据集根，每次都重填纯属折腾。
 
 #### `pending_install_file() -> Path`
@@ -16445,16 +16445,16 @@ GUI 数据根目录：默认 ``~/Documents/guji``，可在设置页改成任意�
 
 #### `migrate_legacy_singletask_dirs() -> list[str]`
 
-把按旧标题建的 ``singletask/<中文名>/`` 搬到新名（见 ``_LEGACY_SUBTASK_DIRS``）。
+把按旧标题建的 ``singletask/<中文名>/`` 搬到新名（见 ``_LEGACY_SINGLETASK_DIRS``）。
 
 **幂等**：目标已存在就跳过（只当新目录存在的老数据，不会来回搬）；旧目录
 **不删**——里面可能有用户还在意的东西，误删不可恢复。
 
 返回实际搬动过的目录名（给自测与日志用）。
 
-#### `singletask_thumbnails_dir(subtask: str, book: str | Path | None=None) -> Path`
+#### `singletask_thumbnails_dir(func_key: str, book: str | Path | None=None) -> Path`
 
-子任务的**页缩略图缓存**：``singletask/<子任务>/thumbnails[/<书>]``。
+独立功能的**页缩略图缓存**：``singletask/<独立功能>/thumbnails[/<书>]``。
 
 导入 PDF 时**立刻**渲染到这里（用户 2026-10-03："从上一层导入PDF，没有立即
 提取缩略图"）。命中即复用，缺页才渲染——所以第二次打开同一本书几乎不花时间。
@@ -16477,11 +16477,11 @@ GUI 数据根目录：默认 ``~/Documents/guji``，可在设置页改成任意�
 
 路径参与指纹：``D:/书/甲.pdf`` 与 ``E:/书/甲.pdf`` 同名同大小，但不是同一本书。
 
-#### `image_thumb_cache_path(subtask: str, image: str | Path, edge: int=THUMBNAIL_EDGE) -> Path`
+#### `image_thumb_cache_path(func_key: str, image: str | Path, edge: int=THUMBNAIL_EDGE) -> Path`
 
 一张**源图片**在 singletask 缓存里的缩略图路径。
 
-``singletask/<子任务>/thumbs/<边缘边长>/<book_key>.jpg``
+``singletask/<独立功能>/thumbs/<边缘边长>/<book_key>.jpg``
 
 用户 2026-10-03 定的口径：**所有独立任务的左侧都显示缩略图**，且缩略图
 统一缓存在 ``~/Documents/guji/singletask`` 下（PDF 用
@@ -16496,21 +16496,21 @@ GUI 数据根目录：默认 ``~/Documents/guji``，可在设置页改成任意�
 - 键里带**大小与路径指纹**（复用 :func:`book_key`）：同名不同图靠它区分，
   同图改名后仍能命中旧缓存。
 
-#### `image_thumbs_dir(subtask: str, edge: int=THUMBNAIL_EDGE) -> Path`
+#### `image_thumbs_dir(func_key: str, edge: int=THUMBNAIL_EDGE) -> Path`
 
-一批**图片源**的缩略图缓存**目录**：``singletask/<子任务>/thumbs/<边长>``。
+一批**图片源**的缩略图缓存**目录**：``singletask/<独立功能>/thumbs/<边长>``。
 
 与 :func:`image_thumb_cache_path` 是同一套规则的两种用法：那个给**单张图**
 的缓存文件路径，这个给**目录**（一批图共用、或宿主需要"重渲一张"时交给
 ``ImageThumbCacheWorker``）。
 
-⚠️ 目录**只按「子任务 + 边长」分层**，不按单图键：单图键里带着大小与路径
+⚠️ 目录**只按「独立功能 + 边长」分层**，不按单图键：单图键里带着大小与路径
 指纹，拿它当目录名既很长，也会让"同一张图被编辑后尺寸变了"直接换目录
 （旧缓存全成孤儿）。⚠️ 边长必须进目录名（``decode_edge`` 随 dpr 变）。
 
-#### `page_thumbs_dir(subtask: str) -> Path`
+#### `page_thumbs_dir(func_key: str) -> Path`
 
-独立拼图页的**页面效果缩略图实体**目录：``singletask/<子任务>/page_thumbs/``。
+独立拼图页的**页面效果缩略图实体**目录：``singletask/<独立功能>/page_thumbs/``。
 
 与 :func:`image_thumbs_dir`（页内**单张源图**的缩略图）各归各：这里放
 按版面合成的**整页**实体——``page1.jpg`` 从第一页起数，映射数据（页号
@@ -16520,26 +16520,26 @@ GUI 数据根目录：默认 ``~/Documents/guji``，可在设置页改成任意�
 ``tasks/<id>/thumbnails/imposition_pages/``，两边不共用（2026-10-04
 「singletask 和 taskdetail 不是一回事」）。
 
-#### `extract_thumbs_dir(subtask: str, book: str | Path, edge: int=THUMBNAIL_EDGE) -> Path`
+#### `extract_thumbs_dir(func_key: str, book: str | Path, edge: int=THUMBNAIL_EDGE) -> Path`
 
-某个子任务下**一本书**的序号口径缩略图目录。
+某个独立功能下**一本书**的序号口径缩略图目录。
 
-``singletask/<子任务>/thumbnails/<书>/<边长>/``
+``singletask/<独立功能>/thumbnails/<书>/<边长>/``
 
 ⚠️ 仍然**必须带 ``book`` 分一层**（与 :func:`singletask_thumbnails_dir`
 同一条护栏）：文件名是**序号**，A 书第 1 页与 B 书第 1 页会撞名 ⇒ 翻出
 别本书的内容。
 
-#### `extract_thumb_path(subtask: str, book: str | Path, seq: int, edge: int=THUMBNAIL_EDGE) -> Path`
+#### `extract_thumb_path(func_key: str, book: str | Path, seq: int, edge: int=THUMBNAIL_EDGE) -> Path`
 
 第 ``seq`` 页（1 起始）的缩略图路径：``<序号4位补零>.jpg``。
 
 ⚠️ 四位补零不是装饰，是**排序键**：``1.jpg`` 排在 ``10.jpg`` 前面，
 缩略图条的顺序必须与产物序号一致（``collect_result_images`` 用自然排序）。
 
-#### `thumb_map_path(subtask: str, book: str | Path) -> Path`
+#### `thumb_map_path(func_key: str, book: str | Path) -> Path`
 
-序号 ↔ 产物的映射表：``singletask/<子任务>/thumbnails/<书>/map.json``。
+序号 ↔ 产物的映射表：``singletask/<独立功能>/thumbnails/<书>/map.json``。
 
 记录 ``{"book":…, "pages": N, "seqs": [1,2,…]}``——``seqs`` 是**真实产出
 的序号**（失败页不在其中）。它是缩略图与产物之间的唯一权威对照：左栏条目
@@ -17701,11 +17701,11 @@ copy_to 给了就**另起一个线程**把它复制成任务目录里的源文�
 放到这里在后台线程读，读完一次性把整批行回传主线程渲染。只读不写，因此
 与主线程的 store 访问不冲突。
 
-⚠️ **每个任务的子任务数量不是固定的**（用户 2026-10-03 口径："任务列表子任务
+⚠️ **每个任务的节点数量不是固定的**（用户 2026-10-03 口径："任务列表节点
 到底有几个需要根据详情决定"）：胶囊**按本任务自己的流程图**给——图上有几步
 就有几枚，图上删掉的步骤不显示。叠加一条用户 2026-10-05 的口径：「图片拼版」
 要在**图里**且在详情里勾了「在流程中启用图片拼版」才进流程，此时「PDF」前面
-多一个「拼版」胶囊；没勾的、或流程图里没有这一格的，都不占子任务。两处判据
+多一个「拼版」胶囊；没勾的、或流程图里没有这一格的，都不占节点。两处判据
 必须同源：
 - **插不插 / 详情里流程走不走** → ``store.imposition_enabled()``（只看勾没勾，
   与 ``ImpositionMixin.imposition_active`` 同一口径）；
@@ -17729,7 +17729,7 @@ copy_to 给了就**另起一个线程**把它复制成任务目录里的源文�
 
 源码：[`desktop/workers/thumb_cache_worker.py`](../../desktop/workers/thumb_cache_worker.py)
 
-**独立任务左栏缩略图的统一缓存层**（``~/Documents/guji/singletask/<子任务>/``）。
+**独立任务左栏缩略图的统一缓存层**（``~/Documents/guji/singletask/<独立功能>/``）。
 
 用户 2026-10-03 的要求之一是「**所有独立任务左侧显示的都是缩略图**」。此前
 只有图片提取页有 PDF 页缩略图（走 ``PdfViewerWidget`` 自己的缩略图通道），
@@ -17737,7 +17737,7 @@ copy_to 给了就**另起一个线程**把它复制成任务目录里的源文�
 页面有五种实现，缓存也无处安放。
 
 本模块管**非 PDF 源**（一批图片）这一半：把每张图渲成
-``singletask/<子任务>/thumbs/<边长>/<键>.jpg``（路径规则见
+``singletask/<独立功能>/thumbs/<边长>/<键>.jpg``（路径规则见
 :func:`desktop.utils.files.image_thumb_cache_path`）。
 
 PDF 源**不在这里**——它已有了一份成熟实现（``PreviewWorker`` 的缩略图通道：
@@ -17785,7 +17785,7 @@ str)`` / ``completed`` / ``failed``），所以各查看器的分批装载
 ##### `__init__(paths: list[Path | str], out_dir: Path | str, edge: int=THUMBNAIL_EDGE, names: list[str | None] | None=None)`
 
 ``paths`` 为源图清单；``out_dir`` 是这一批共用的缓存目录
-（``singletask/<子任务>/thumbs/<边长>/``）；``edge`` 为缩略图最长边。
+（``singletask/<独立功能>/thumbs/<边长>/``）；``edge`` 为缩略图最长边。
 
 ``names``（可选，与 ``paths`` 等长）：每张图**显式指定的缓存文件名**。
 给了就用它，为 ``None`` 的项回落到 :func:`thumb_cache_file` 的图键命名。

@@ -63,7 +63,7 @@ IMPOSITION_LABEL = cast(StepSpec, spec_by_key(IMPOSITION_STAGE)).stage_name()
 #: 就是给下一个人留一个"看起来能用"的默认流程假设。查格序一律走
 #: ``TaskDetailPage.bar_index_of_step(IMPOSITION_STAGE)``。
 
-# 「图片拼版」**不是 STAGES 里的一步**（它是可选节点），但任务列表的「子任务
+# 「图片拼版」**不是 STAGES 里的一步**（它是可选节点），但任务列表的「节点
 # 状态」胶囊会按任务详情里的启用情况把它插进去，所以上面两张文案表都得有它。
 # ⚠️ 取值仍走 ``stage_name()`` / ``short_name()``，不另写一份中文。
 STAGE_LABELS[IMPOSITION_STAGE] = IMPOSITION_LABEL

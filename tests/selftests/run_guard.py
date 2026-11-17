@@ -8,10 +8,10 @@
 
 六条断言线：
 1. 连击的第二下被**静默**吞掉（不弹提示，免得刷一串"任务进行中"）；
-2. 子任务在跑时再点 → 拒绝并提示；
+2. 步骤在跑时再点 → 拒绝并提示；
 3. **受理窗口期**（只有受理标记、还没进程对象）→ 照样拦住（就是上面那个洞）；
-4. 按钮状态跟随执行权：子任务或单页检测在跑时主按钮置灰；
-5. 「提交本次任务」与「执行本子任务」共用同一份执行权；
+4. 按钮状态跟随执行权：步骤或单页检测在跑时主按钮置灰；
+5. 「提交本次任务」与「执行本步骤」共用同一份执行权；
 6. 单页检测换页重检**允许顶替**（旧进程先断信号再杀，始终只有一个在跑）；
 7. **没跑起来的受理不占用防抖预算**（防抖量"距上次真正启动进程"，不是"距上次
    受理"——否则「提交被拒 → 马上点执行」会被静默吞掉）；
@@ -58,7 +58,7 @@ def run(ctx) -> None:
     # ---- 0. 带图标的按钮不得用 setStyleSheet 上样式（会把 qss 整串抹掉）----
     # qfluent 按钮的 qss 里有 `PushButton[hasIcon=true]{padding-left:36px}`，
     # 图标是 paintEvent 手绘的，全靠这条让居中的文字让开；整串替换后图标就
-    # 压到文字上（2026-09-23 用户报「执行本子任务按钮中的图片显示在了文字上面」）。
+    # 压到文字上（2026-09-23 用户报「执行本步骤按钮中的图片显示在了文字上面」）。
     # 加粗一律走 desktop.ui.widgets.bold_button（setFont）。
     bypass = []
     for path in sorted((ROOT / "desktop").rglob("*.py")):
@@ -140,16 +140,16 @@ def run(ctx) -> None:
         ok("防抖是静默的（不弹'任务进行中'骚扰手快的用户）",
            toasts == [], str(toasts))
 
-        # ---- 2. 子任务在跑 → 拒绝并提示 ----
+        # ---- 2. 步骤在跑 → 拒绝并提示 ----
         _reset(running_proc=_FakeProc())
         toasts.clear()
         d.run_stage()
-        ok("子任务在跑时不二次执行", calls == [("stage", False)], str(calls))
+        ok("步骤在跑时不二次执行", calls == [("stage", False)], str(calls))
         ok("拒绝时说清了「什么在跑」",
-           len(toasts) == 1 and "子任务" in toasts[0][2], str(toasts))
+           len(toasts) == 1 and "步骤" in toasts[0][2], str(toasts))
 
         # ---- 3. 受理窗口期（关键：就是原先溜过去的那个洞）----
-        _reset(claim="子任务")
+        _reset(claim="步骤")
         toasts.clear()
         d.run_stage()
         ok("只有受理标记、进程还没起时同样拦住",
@@ -157,14 +157,14 @@ def run(ctx) -> None:
         ok("窗口期也给了提示", len(toasts) == 1, str(toasts))
 
         # ---- 4. 按钮状态 ----
-        _reset(claim="子任务")
+        _reset(claim="步骤")
         ok("持有执行权时主按钮置灰", not d.run_button.isEnabled())
 
         _reset(detect_proc=_FakeProc())
         ok("单页检测在跑：主按钮置灰", not d.run_button.isEnabled())
 
         # 释放只针对"受理标记"：假进程要撤掉，否则按钮本就该因它灰着
-        _reset(claim="子任务")
+        _reset(claim="步骤")
         ok("只持有受理标记时主按钮也是灰的", not d.run_button.isEnabled())
         d._release_run()
         ok("释放执行权后主按钮恢复可用", d.run_button.isEnabled())
@@ -173,7 +173,7 @@ def run(ctx) -> None:
         _reset(running_proc=_FakeProc())
         toasts.clear()
         d.run_detect_submit()
-        ok("子任务在跑时「提交本次任务」也被拦住",
+        ok("步骤在跑时「提交本次任务」也被拦住",
            ("submit", None) not in calls, str(calls))
 
         _reset()
@@ -183,15 +183,15 @@ def run(ctx) -> None:
         ok("空闲时「提交本次任务」正常受理",
            calls[-1] == ("submit", None), str(calls))
 
-        # ---- 6. 替换语义：换页重检允许顶替，但子任务在跑时必须让路 ----
+        # ---- 6. 替换语义：换页重检允许顶替，但步骤在跑时必须让路 ----
         _reset(detect_proc=_FakeProc())
         ok("旧检测在跑时允许换一页重检（replace）",
            d._acquire_run("单页检测", replace=("单页检测",)))
         d._release_run()
 
-        # replace 只放行"同类顶替"：子任务在跑时必须让路
+        # replace 只放行"同类顶替"：步骤在跑时必须让路
         _reset(running_proc=_FakeProc())
-        ok("子任务在跑时不允许塞进单页检测",
+        ok("步骤在跑时不允许塞进单页检测",
            not d._acquire_run("单页检测", replace=("单页检测",)))
 
         # ---- 7. 没跑起来的受理不占用防抖预算 ----
@@ -207,7 +207,7 @@ def run(ctx) -> None:
            calls == [("stage", False)], str(calls))
 
         # ---- 8. 进程收尾自动释放（含正常结束 / 被杀 / 看门狗兜底三条汇流）----
-        _reset(claim="子任务")
+        _reset(claim="步骤")
         # task_id 置空做隔离：_worker_finished 会写 store 与刷视图，这里只想验释放
         saved_tid = d.task_id
         d.task_id = None

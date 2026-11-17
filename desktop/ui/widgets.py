@@ -118,7 +118,7 @@ def bold_button(button: QWidget, bold: bool) -> None:
     ``PushButton[hasIcon=true] { padding: 5px 12px 6px 36px; }`` —— 图标是
     ``paintEvent`` 手绘在左边 12px 处的，**全靠这 36px 左边距让居中的文字让开**。
     整串替换后 padding 全没了，图标就画到文字上了（2026-09-23 用户报
-    「执行本子任务按钮中的图片显示在了文字上面」）。``setFont`` 只动字体，
+    「执行本步骤按钮中的图片显示在了文字上面」）。``setFont`` 只动字体，
     不碰样式表；按钮 qss 里没有 ``font:`` 规则，所以控件字体生效。
     """
     font = button.font()

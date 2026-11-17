@@ -60,7 +60,7 @@ def _emit_fatal(exc: BaseException) -> None:
     import traceback
 
     detail = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
-    message = f"子任务进程启动失败：{type(exc).__name__}: {exc}"
+    message = f"步骤子进程启动失败：{type(exc).__name__}: {exc}"
     try:
         from desktop.stages.events import emit
 

@@ -6,13 +6,13 @@ worker 子进程 stdout 每行一个 JSON 对象，均含 `type` 与 `task_id/st
 
 | type | 说明 | 关键字段 |
 | --- | --- | --- |
-| `started` | 子任务启动 | stage |
+| `started` | 步骤子进程启动 | stage |
 | `progress` | 进度（GUI 更新 runs.json + 进度条） | done, total |
 | ~~`progress_total`~~ | **不作为独立事件类型**：被两个 reporter 归一化成 `done=0` 的 `progress`（判定用 `core.reporter.PROGRESS_TOTAL_EVENT`） | — |
 | `log` | 日志行（进日志视图） | message |
 | `page_boxes` | detect 阶段逐页文本框坐标（入 boxes.json） | image(stem), left, right |
 | `page_size` | extract 阶段逐页图片原始尺寸（入 sizes.json） | image(stem), width, height |
-| `finished` | 子任务完成 | output, result |
+| `finished` | 步骤子进程完成 | output, result |
 | `error` | 失败（原因进日志） | message |
 | `cancelled` | 被中断 | — |
 | `boxes` | 预览单图检测结果（mode=detect） | image, left, right |

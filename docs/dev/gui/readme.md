@@ -13,7 +13,7 @@
 | 术语 | 含义 |
 | --- | --- |
 | Task / 任务 | 一个 PDF 一个任务，顺序任务号 `0001`、`0002`… 即任务目录名 |
-| Stage / 阶段（子任务） | `extract` → `detect` → `rembg` → `print`，固定顺序 |
+| Stage / 阶段（步骤） | `extract` → `detect` → `rembg` → `print`，固定顺序 |
 | StageRun / 运行记录 | 某阶段的一次执行（状态、进度、参数），存于任务目录 `runs.json` |
 | 独立任务页 / singletask | 左侧导航里**不用建任务**的独立功能页（`desktop/modules/`），把流程中的一步拆出来单独用；与任务流程**只共用组件与步骤元数据，数据不相通** |
 | 独立任务缓存区 | `~/Documents/guji/singletask/<key>/`，独立页的缩略图等缓存；与 `tasks/<id>/thumbnails/` 各归各，**禁止借道** |

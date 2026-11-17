@@ -171,12 +171,12 @@ def run(ctx) -> None:
         + 2 * T.SPACE_SM
     )
     ok(
-        "子任务状态列固定宽",
+        "节点状态列固定宽",
         header_view.sectionResizeMode(3) == QHeaderView.ResizeMode.Interactive,
         str(header_view.sectionResizeMode(3)),
     )
     ok(
-        f"子任务状态列宽放得下全部胶囊（本行 {len(_chips)} 个也不截字）",
+        f"节点状态列宽放得下全部胶囊（本行 {len(_chips)} 个也不截字）",
         header_view.sectionSize(3) >= _need,
         f"列宽={header_view.sectionSize(3)} 需要={_need}",
     )

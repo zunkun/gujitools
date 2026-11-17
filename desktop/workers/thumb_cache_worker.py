@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""**独立任务左栏缩略图的统一缓存层**（``~/Documents/guji/singletask/<子任务>/``）。
+"""**独立任务左栏缩略图的统一缓存层**（``~/Documents/guji/singletask/<独立功能>/``）。
 
 用户 2026-10-03 的要求之一是「**所有独立任务左侧显示的都是缩略图**」。此前
 只有图片提取页有 PDF 页缩略图（走 ``PdfViewerWidget`` 自己的缩略图通道），
@@ -7,7 +7,7 @@
 页面有五种实现，缓存也无处安放。
 
 本模块管**非 PDF 源**（一批图片）这一半：把每张图渲成
-``singletask/<子任务>/thumbs/<边长>/<键>.jpg``（路径规则见
+``singletask/<独立功能>/thumbs/<边长>/<键>.jpg``（路径规则见
 :func:`desktop.utils.files.image_thumb_cache_path`）。
 
 PDF 源**不在这里**——它已有了一份成熟实现（``PreviewWorker`` 的缩略图通道：
@@ -184,7 +184,7 @@ class ImageThumbCacheWorker(QObject):
         names: list[str | None] | None = None,
     ):
         """``paths`` 为源图清单；``out_dir`` 是这一批共用的缓存目录
-        （``singletask/<子任务>/thumbs/<边长>/``）；``edge`` 为缩略图最长边。
+        （``singletask/<独立功能>/thumbs/<边长>/``）；``edge`` 为缩略图最长边。
 
         ``names``（可选，与 ``paths`` 等长）：每张图**显式指定的缓存文件名**。
         给了就用它，为 ``None`` 的项回落到 :func:`thumb_cache_file` 的图键命名。

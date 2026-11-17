@@ -1,7 +1,7 @@
 """gujitools 桌面端与 worker 统一入口。
 
 - 启动 GUI：            python desktop.py   （或 hupper -m desktop 热重载开发）
-- 子进程执行单个子任务： python desktop.py --worker --config <json>
+- 子进程执行单个步骤： python desktop.py --worker --config <json>
 """
 
 import os

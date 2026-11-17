@@ -141,7 +141,7 @@ class ExtractModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin)
             "entries": sorted(entries, key=lambda e: e["seq"]),
         }
         try:
-            target = thumb_map_path(self._subtask(), book)
+            target = thumb_map_path(self._func_key(), book)
             target.parent.mkdir(parents=True, exist_ok=True)
             # 原子写：这张表随时可能被另一个线程/进程读，半截 JSON 会让解析炸掉
             write_bytes_atomic(target, json.dumps(
