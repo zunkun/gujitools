@@ -21,8 +21,9 @@
      ``tasks/<id>/boxes.json`` **逐字段一致**（``{stem: {boxes, origin,
      updated_at}}``），可直接当作下一步（或将来自定义流程里任意一步）的输入。
 
-4. 设置里「**启用YOLO标注**」勾上时，导出区最底部多一个
-   「**导出YOLO标注**」（用户 2026-10-16；2026-11-17 起不再挂在开发者模式下）：点它先弹窗填**名称**（父节点名 =
+4. **整个「导出」分类随设置里「**启用YOLO标注**」开关显隐**（用户
+   2026-11-17：分类要按 yolo 参数决定显隐；开关开着时导出区最底部是
+   「**导出YOLO标注**」，用户 2026-10-16；2026-11-17 起不再挂在开发者模式下）：点它先弹窗填**名称**（父节点名 =
    文件名前缀）并选**导出目录**（按子任务记住上次选的），确认后把全部页面
    导出成 YOLO 数据集切片 ``<导出目录>/<名称>/{images,labels}/<名称>-1.…``
    （类别顺序见 ``utils.box_geometry.YOLO_CLASS_NAMES``；无框页写空标签当负样本）。
@@ -34,12 +35,24 @@
 本页不自己数"还剩几个框"——按个数推类型会造成"删掉整幅框后右边的框自动变成
 整幅"（用户 2026-09-29 报过的老问题）。
 
-⚠️ **框类型控件摆在这里、检测按钮不搬过来**（用户 2026-10-03）：
-- 「选中框类型 / 删除选中框」**摆出来**并接线——它们只依赖查看器，本页完全
-  驱动得了，而用户要的"手绘之后能标成左框/右框/整幅"正需要它们；
-- 整个 ``DetectPanel`` **不摆**：它的参数（识别方式 / 沿用上一页标注）都是
-  **任务级**概念、由任务流程宿主驱动，本页的执行入口是整批的
-  :class:`StepControl`。
+⚠️ **面板与任务流程第二步共用同一个** ``DetectPanel``（用户 2026-11-17：
+「主任务节点功能发生变化，单任务要同步发生变化，将两套代码功能保持一致」）：
+识别方式（自动识别/人工标注）、「自动使用上一个文本框标注」、「选中框类型 /
+删除选中框」全部来自共享面板——主任务面板一改，本页**自动**跟着变，不再各抄
+一份控件。此前本页把整个面板藏了、自己手抄两个框类型控件，主任务 2026-11-16
+加「识别文本框模式」时这边就没同步上，正是那条要求的由来。
+
+两种模式在本页的语义与任务流程一致：
+
+- **自动识别**：主按钮「检测文本框」跑 YOLO 出框，预览里可手改；
+- **人工标注**：**不调 YOLO**——执行按钮隐藏（与详情页
+  ``_sync_detect_mode_ui`` 同口径），逐页画框；勾选「自动使用上一个文本框
+  标注」时，切到还没有任何框的页会把上一页的框整份带过来（上一页有真框 +
+  本页零框才带，判据与任务流程一致）。
+
+交付（本页特有，任务流程没有）：「导出标注图」「导出坐标 JSON」与可选的
+「导出YOLO标注」摆在与主任务相同的执行链之外，走 :meth:`StepControl.add_extra`
+插在底部动作区（输出目录/执行/中断）**上方**。
 """
 
 from __future__ import annotations
@@ -50,7 +63,7 @@ from pathlib import Path
 from PySide6.QtCore import QSize, QTimer
 from PySide6.QtGui import QImageReader
 from PySide6.QtWidgets import QFileDialog
-from qfluentwidgets import CaptionLabel, FluentIcon as FIF
+from qfluentwidgets import FluentIcon as FIF
 from qfluentwidgets import PrimaryPushButton, PushButton
 
 from desktop.components.box_kinds import BoxKindEditor, manual_hint_text
@@ -78,14 +91,13 @@ from desktop.steps import (
 )
 from desktop.store.json_io import read_json, write_json
 from desktop.ui import theme as T
-from desktop.ui.widgets import CONTROL_HEIGHT, Card, SectionTitle, apply_to
+from desktop.ui.widgets import Card, SectionTitle
 from desktop.utils.files import (
     default_open_dir,
     reveal_dir,
     singletask_yolo_export_path,
 )
 from utils.book_layout import full_to_half_slots, is_single_wide_half, profile_book
-from utils.box_draw import BOX_KIND_INDEX, box_kind_name
 from utils.box_geometry import (
     YOLO_CLASS_NAMES,
     half_slots,
@@ -150,6 +162,13 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin):
         self._yolo_summary: dict = {}
         #: 应用配置（YOLO 标注等开关，见 desktop.settings.config）
         self.cfg = app_config()
+        # ---- 识别方式与沿用上一页标注（与共享 DetectPanel 同一套参数）----
+        # ⚠️ 必须在 super() 之前给默认值：_build_control 在构造期跑，接面板
+        #    信号后要把面板现值抄进来（面板的真实默认在 params_spec/控件里）。
+        self._detect_mode = "auto"
+        self._reuse_prev = True
+        #: 当前停留页的 stem（「沿用上一页标注」的参照页）。
+        self._last_page_key: str | None = None
         super().__init__(parent)
         # 整本书形态判定的重算节流（见 _LAYOUT_UI_MS / _flush_layout_ui）。
         # ⚠️ 只能建在 super() **之后**：QTimer 要一个已初始化的 QObject 当父。
@@ -182,29 +201,40 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin):
 
     # ------------------------------------------------------------------ 控制
     def _build_control(self) -> Card:
-        """右栏：共用步骤控件 + 框类型控件 + 两个导出按钮。
+        """右栏：共用步骤控件（含**共享 DetectPanel**）+ 导出块。
 
-        ⚠️ 在 :class:`StepModulePage` 的通用控制区之外**再加两段**（本页特有）：
-        手绘修正的框类型控件与两个导出出口。共用的那部分（输入区接线、状态/日志/
-        失败提示、源变了怎么改副标题）由基类负责，本方法只做加法。
+        ⚠️ 面板即任务流程第二步那个 ``DetectPanel``（识别方式/沿用上一页/框
+        类型全在其中），本页只做**接线**，不重建控件——主任务面板一改这里
+        自动同步（用户 2026-11-17）。本页在共用控制区之外**只加**「导出」一段
+        （任务流程没有导出标注图/YOLO 的概念），它经
+        :meth:`StepControl.add_extra` 插在底部动作区（输出目录/执行/中断）
+        **上方**，执行按钮因此恒在右栏最底下。
         """
         card = super()._build_control()
         #: 步骤私有事件：这一步的产物（每页框坐标）就是从这里上来的。
         self.control.event.connect(  # type: ignore[reportAttributeAccessIssue]  # ``event`` 与 QObject.event 同名，运行时是 Signal
             self._on_step_event
         )
-        if self.control.panel is not None:
-            # 面板的控件全由任务流程宿主驱动，本页接管不了（见模块 docstring）。
-            # 里面**唯一**该搬出来的是「选中框类型 / 删除选中框」，本方法单独
-            # 重建这两个（下面的 _build_box_kind_controls），不搬整个面板。
-            self.control.panel.setVisible(False)
-        card.box.addWidget(self._build_box_kind_controls())
-        card.box.addWidget(self._build_export_buttons())
+        panel = self.control.panel
+        assert panel is not None, "detect 的 spec 必须带 DetectPanel"
+        # ---- 与任务流程第二步同一条接线（view.py::_wire_detect_panel）----
+        # 人工干预：选中框类型（左框/右框/整幅）与删除选中框
+        panel.box_kind_changed.connect(self._on_box_kind_changed)
+        panel.delete_box_requested.connect(self._delete_selected_box)
+        # 识别方式切换：人工标注不调 YOLO ⇒ 藏执行按钮（_sync_detect_mode_ui
+        # 的单机版）；「自动使用上一个文本框标注」勾选随切随记。
+        panel.mode_changed.connect(self._on_detect_mode_changed)
+        panel.reuse_prev_changed.connect(self._on_reuse_prev_changed)
+        self._reuse_prev = panel.reuse_prev.isChecked()
+        # 共享面板控件的别名（老调用点与自测沿用 page.box_kind/page.delete_box）
+        self.box_kind = panel.box_kind
+        self.delete_box = panel.delete_box
+        self._on_detect_mode_changed(self._detect_mode)
 
-        # 导出（标注图 / YOLO 标签）走**另一条**执行内核：它是纯函数 job
-        # （画框 / 写标签 + 落盘），与 detect 的命令 job 互不干扰——用户可以在
-        # 检测跑完后再导出，两次执行不抢同一个槽位，也不会因为 detect 失败而
-        # 不能导出。
+        # ---- 导出（标注图 / YOLO 标签）走**另一条**执行内核：它是纯函数 job
+        #    （画框 / 写标签 + 落盘），与 detect 的命令 job 互不干扰——用户可以在
+        #    检测跑完后再导出，两次执行不抢同一个槽位，也不会因为 detect 失败而
+        #    不能导出。
         # ⚠️ 两种导出**共用**这一条线（job 按 ``request.args["kind"]`` 分派）：
         #    它们都是"把已有框落盘"的短活，并行没有意义，各占一条进度行反而让
         #    用户看不出是哪条在跑。
@@ -218,8 +248,11 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin):
         #    ``StepControl``），两者能同时跑（用户可以边检测边导出上一批的框）。
         #    所以它要**自己一条**进度行，不能借用 control 那条——共用的话两边的
         #    进度会互相覆盖，用户看到"12/30"却不知道是谁在跑。
+        #    ⚠️ 导出块与导出进度都走 add_extra：排到底部动作区（执行/中断）
+        #    **上方**（用户 2026-11-17：执行/中断恒在控制面板底部）。
         self.export_progress = ProgressRow(noun="张")
-        card.box.addWidget(self.export_progress)
+        self.control.add_extra(self._build_export_buttons())
+        self.control.add_extra(self.export_progress)
         return card
 
     # ------------------------------------------------------------------ 执行内核
@@ -243,54 +276,64 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin):
         run_detect_pages(self.source_images(), workers=0, report=report)
         return str(request.dest) if request.dest is not None else None
 
-    def _build_box_kind_controls(self) -> Card:
-        """「选中框类型（左框/右框/整幅）」+「删除选中框」。
+    # ------------------------------------------------- 识别方式（人工标注）
+    #
+    # 与任务详情页 ``_sync_detect_mode_ui`` 同口径：人工标注 = **完全不调
+    # YOLO**，执行按钮隐藏，逐页自己画框；「自动使用上一个文本框标注」只在
+    # 人工标注下有意义。
 
-        ⚠️ 为什么不复用 ``DetectPanel``：那个面板还带「识别文本框模式」等
-        **任务级**参数，单文件模式下没有对应宿主；只把这两个控件的**声明**
-        搬过来（``BOX_KIND_ITEMS`` 仍取自 ``utils.box_draw``，文案不另写一份），
-        接线由本页负责。
+    def _on_detect_mode_changed(self, mode: str) -> None:
+        """识别方式变了：记下现值并按模式显隐执行按钮（单机版状态机）。"""
+        self._detect_mode = "manual" if mode == "manual" else "auto"
+        self.control.set_run_visible(self._detect_mode == "auto")
+        # 有源时把状态行纠正过来：人工标注下"点击「检测文本框」"是误导
+        # （按钮已经藏了，交付走手绘 + 导出）。
+        if self.control.source() is not None:
+            if self._detect_mode == "manual":
+                self.status("人工标注：逐页手绘文本框，画完用「导出」交付", "info")
+            else:
+                spec = self.SPEC
+                if spec is not None:
+                    self.status(
+                        f"已选择{spec.input_noun()}，点击「{spec.run_text()}」",
+                        "info",
+                    )
+
+    def _on_reuse_prev_changed(self, checked: bool) -> None:
+        """「自动使用上一个文本框标注」勾选随切随记（仅人工标注下生效）。"""
+        self._reuse_prev = bool(checked)
+
+    def _carry_prev_boxes(self, path_text: str) -> None:
+        """人工标注 + 勾选沿用：切页时把上一页的框带过来。
+
+        判据与任务流程一致：**上一页有真框 + 本页零框**才整份带过来；本页已
+        画过（或上一页没画）都不动。带过来的框记 ``origin=manual``——后续就算
+        跑自动检测也不许覆盖用户（继承）的框。
         """
-        from desktop.ui.widgets import SegmentedToggle
-
-        holder = Card(padding=T.SPACE_SM, spacing=T.SPACE_XS, radius=T.RADIUS_SM)
-        holder.box.addWidget(SectionTitle("手绘修正"))
-        tip = CaptionLabel("在图上拖动空白处画新框；拖框移动、拖角缩放、Delete 删除")
-        tip.setWordWrap(True)
-        apply_to(tip, T.SIZE_CAPTION, color=T.INK_FAINT)
-        holder.box.addWidget(tip)
-
-        self.box_kind = SegmentedToggle(
-            tuple((kind, box_kind_name(kind)) for kind in BOX_KIND_INDEX)
-        )
-        # 没选中框时三段都不高亮；点任意一段 = "选中该类框"（与任务流程同口径）
-        self.box_kind.set_current("")
-        self.box_kind.setToolTip(
-            "把选中的框改成左框 / 右框 / 整幅：\n"
-            "· 左框、右框由框的中心位置自动判定，拖过中线会换边；\n"
-            "· 整幅是整页唯一内容区，选过之后不随位置/大小改变；\n"
-            "· 整幅与左右半幅互斥，且整幅一页只能有一个框。\n"
-            "没有选中框时，点这三项＝选中该类型的框。"
-        )
-        self.box_kind.current_changed.connect(self._on_box_kind_changed)
-        holder.box.addWidget(self.box_kind)
-
-        # 删除是危险动作 ⇒ 与「图片拼版」的「删除选中图片」同一份样式
-        # （`theme.danger_button_qss`，用户 2026-11-16）
-        self.delete_box = PushButton("删除选中框")
-        self.delete_box.setStyleSheet(
-            T.danger_button_qss(padding="6px 12px 7px 12px")
-        )
-        self.delete_box.setFixedHeight(CONTROL_HEIGHT)
-        self.delete_box.setToolTip("删除当前选中的文本框（也可以用 Delete 键）")
-        self.delete_box.clicked.connect(self._delete_selected_box)
-        self.delete_box.setEnabled(False)
-        holder.box.addWidget(self.delete_box)
-        return holder
+        if self._detect_mode != "manual" or not self._reuse_prev:
+            return
+        key = Path(path_text).stem
+        prev_key = self._last_page_key
+        if (
+            prev_key
+            and prev_key != key
+            and any(self._boxes.get(prev_key) or [])
+            and not self._boxes.get(key)
+        ):
+            self._boxes[key] = list(self._boxes[prev_key])
+            self._origins[key] = "manual"
+            self._sync_export_buttons()
 
     def _build_export_buttons(self) -> Card:
-        """三个交付出口（前两个是用户 2026-10-03 定的两条路，第三个是 2026-10-16 的 YOLO 标注）。"""
+        """三个交付出口（前两个是用户 2026-10-03 定的两条路，第三个是 2026-10-16 的 YOLO 标注）。
+
+        ⚠️ **整个「导出」分类随设置里「启用YOLO标注」开关显隐**（用户
+        2026-11-17：这个分类要"根据设置中 yolo 参数决定是否显示"）——开关关
+        着时三颗导出按钮一起收起，开着时一起回来。设置页拨开关经
+        ``cfg.yoloAnnotation.valueChanged`` 实时联动，不用重开页面。
+        """
         holder = Card(padding=T.SPACE_SM, spacing=T.SPACE_XS, radius=T.RADIUS_SM)
+        self._export_holder = holder
         holder.box.addWidget(SectionTitle("导出"))
 
         self.annotated_button = PrimaryPushButton(FIF.PHOTO, "导出标注图")
@@ -326,19 +369,23 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin):
         self.yolo_button.clicked.connect(self.export_yolo_labels)
         holder.box.addWidget(self.yolo_button)
 
-        # 开关变化要重算按钮显隐（配置项是长期存活的 QObject，
-        # 页面销毁时 Qt 自动断开）
+        # 开关变化要重算显隐（配置项是长期存活的 QObject，页面销毁时 Qt 自动断开）
         self.cfg.yoloAnnotation.valueChanged.connect(self._sync_yolo_button)
         self._sync_yolo_button()
         return holder
 
     def _sync_yolo_button(self, *_args) -> None:
-        """「导出YOLO标注」按钮的显隐：YOLO 标注开关开着就显示。
+        """「导出」分类的显隐：YOLO 标注开关开着就显示（用户 2026-11-17）。
 
-        （用户 2026-11-17：开发者模式整个删掉了，原来"开发者模式且 YOLO
-        都开"的条件只剩 YOLO 一个。）
+        ⚠️ 开关关着时**整块收起**（``_export_holder`` 连同里面的标注图/坐标
+        JSON/YOLO 三颗），不是只藏第三颗。
+        ⚠️ 按钮**自己**也要显式 setVisible：``isHidden()`` 只看控件自身的显式
+        隐藏标记——父卡片藏了但按钮没被显式藏的话，``isHidden()`` 仍报 False
+        （自测 ``dev_yolo`` 靠这个判），所以要两处一起设。
         """
-        self.yolo_button.setVisible(bool(self.cfg.yoloAnnotation.value))
+        visible = bool(self.cfg.yoloAnnotation.value)
+        self._export_holder.setVisible(visible)
+        self.yolo_button.setVisible(visible)
 
     # ------------------------------------------------------------------ 回调
     def _on_source_changed(self, source) -> None:
@@ -385,7 +432,13 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin):
         )
 
     def _on_page_changed(self, index: int, path_text: str) -> None:
-        """切页：把这一页的框画到大图上（没有就清空并给一句说明）。"""
+        """切页：先按「沿用上一页标注」补框，再把这一页的框画到大图上。
+
+        ⚠️ ``_last_page_key`` 恒在补框**之前**更新到本页：连续切过两页都没框
+        时，第三页不应该拿到第一页的框（参照页就是紧邻的上一页）。
+        """
+        self._carry_prev_boxes(path_text)
+        self._last_page_key = Path(path_text).stem
         self._apply_boxes(path_text)
 
     def _on_step_event(self, name: str, payload) -> None:
@@ -469,14 +522,16 @@ class DetectModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin):
         self._sync_box_kind()
 
     def _sync_box_kind(self) -> None:
-        """按当前选中框回填类型控件与删除按钮（无选中时三段都不高亮）。"""
+        """按当前选中框回填类型控件与删除按钮（无选中时三段都不高亮）。
+
+        回填统一走共享面板的 :meth:`DetectPanel.set_box_selection`：它内部就是
+        "程序化切换不发信号"的写法（不会自我递归），并且与任务详情页回填是
+        **同一段实现**——面板侧怎么改，两边一起变。
+        """
         index = self.viewer.selected_index()
         kinds = self.viewer.box_kinds()
         kind = kinds[index] if 0 <= index < len(kinds) else ""
-        # ⚠️ ``set_current`` 是程序化切换、**不发** ``current_changed``，否则
-        # 回填会反过来再触发一次类型切换（自我递归）。
-        self.box_kind.set_current(kind if index >= 0 else "")
-        self.delete_box.setEnabled(index >= 0)
+        self.control.panel.set_box_selection(index, kind)
 
     def _on_box_kind_changed(self, kind: str) -> None:
         """用户点了「左框 / 右框 / 整幅」（交互实现委托共享 BoxKindEditor）。"""

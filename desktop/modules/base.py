@@ -117,16 +117,16 @@ class ModulePage(QWidget, WorkerHost):
         control = self._build_control()
         control.setMinimumWidth(self.CONTROL_MIN_WIDTH)
         control.setMaximumWidth(self.CONTROL_MAX_WIDTH)
-        # ⚠️ 控制卡片**顶部对齐**：Card 默认 Preferred/Preferred，塞进 QSplitter
-        #    后会被拉成满高——参数面板只占上面一小块，下面一大片白边很难看
-        #    （实测 920 高的窗口里控制卡片比内容高 500px）。这里把它包进一个
-        #    自顶向下的容器，卡片自己保持自然高度。
+        # ⚠️ 控制卡片**撑满整列**（用户 2026-11-17：输出目录/执行/中断要贴着
+        #    控制列底部）。此前这里顶部对齐（卡片自然高度 + 下方 stretch），
+        #    是为了避免"卡片被拉满、下面一大片白边"；现在那片余量由
+        #    ``StepControl`` 内部的弹性空白吃掉、把底部动作区压到列底，白边
+        #    变成了"参数区与动作区之间的呼吸空间"，正是要的形态。
         control_column = QWidget()
         column_layout = QVBoxLayout(control_column)
         column_layout.setContentsMargins(0, 0, 0, 0)
         column_layout.setSpacing(0)
         column_layout.addWidget(control)
-        column_layout.addStretch(1)
         control_column.setMinimumWidth(self.CONTROL_MIN_WIDTH)
         control_column.setMaximumWidth(self.CONTROL_MAX_WIDTH)
         self.control_widget = control_column

@@ -27,7 +27,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QFileDialog, QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget,
+)
 from qfluentwidgets import FluentIcon as FIF, PushButton, PrimaryPushButton
 
 from desktop.steps.kernel import StepKernel, StepRequest, job_for
@@ -114,12 +116,23 @@ class StepControl(QWidget):
         if self.panel is not None:
             layout.addWidget(self.panel)
 
+        # ---- 底部动作区（用户 2026-11-17：「输出目录/执行/中断等，放在控制
+        #      面板底部」）----
+        # 输出目录、进度、执行/中断、查看处理文件收进**同一个容器**，且它恒是
+        # 本布局的最后一项。宿主特有的控件（如检测页的「导出」块、导出进度）
+        # 走 :meth:`add_extra` 插在参数面板之后、本区之前——之后无论宿主加多少
+        # 段自己的东西，「执行/中断」都留在右栏最底下，不会上浮到中间。
+        self._bottom = QWidget()
+        bottom = QVBoxLayout(self._bottom)
+        bottom.setContentsMargins(0, 0, 0, 0)
+        bottom.setSpacing(T.SPACE_SM)
+
         # ---- 输出目录 ----
         self.out_button = PushButton(FIF.SAVE, "输出目录")
         self.out_button.setFixedHeight(34)
         self.out_button.setToolTip("默认与源同级；点这里可以改到别处")
         self.out_button.clicked.connect(self._pick_output)
-        layout.addWidget(self.out_button)
+        bottom.addWidget(self.out_button)
 
         # ---- 执行进度（细条 + 计数，见 ProgressRow 的类 docstring）----
         # ⚠️ 位置在**执行按钮上方**：进度是"这次执行"的反馈，与按钮同属一个
@@ -127,10 +140,14 @@ class StepControl(QWidget):
         from desktop.components.progress_row import ProgressRow
 
         self.progress_row = ProgressRow(noun=spec.progress_unit())
-        layout.addWidget(self.progress_row)
+        bottom.addWidget(self.progress_row)
 
         # ---- 执行 / 中断 ----
-        run_row = QHBoxLayout()
+        # ⚠️ 整行包进独立 QWidget：addLayout 没法整组隐/显（检测页人工标注
+        #    模式要藏的是 run_button 一颗，但保持"行是控件"的惯例与详情页一致，
+        #    后续要整行藏也做得到）。
+        run_holder = QWidget()
+        run_row = QHBoxLayout(run_holder)
         run_row.setContentsMargins(0, 0, 0, 0)
         run_row.setSpacing(T.SPACE_SM)
         self.run_button = PrimaryPushButton(FIF.PLAY, spec.run_text())
@@ -143,7 +160,7 @@ class StepControl(QWidget):
         self.cancel_button.setEnabled(False)
         self.cancel_button.clicked.connect(self.cancel)
         run_row.addWidget(self.cancel_button, 0)
-        layout.addLayout(run_row)
+        bottom.addWidget(run_holder)
 
         # ---- 查看处理文件（2026-10-11 用户：singletask 执行成功之后，
         #      右侧下边要有入口查看处理文件）----
@@ -155,7 +172,44 @@ class StepControl(QWidget):
         self.view_output_button.setToolTip("在资源管理器中打开本次处理结果")
         self.view_output_button.setVisible(False)
         self.view_output_button.clicked.connect(self._open_last_output)
-        layout.addWidget(self.view_output_button)
+        bottom.addWidget(self.view_output_button)
+
+        # ---- 弹性空白：把底部动作区压到控制列**最底** ----
+        # 用户 2026-11-17（截图反馈）：输出目录/执行/中断要贴着右栏底部，不是
+        # 吊在参数面板正下方。控制列被拉高时（窗口高/面板矮），余量全部被这块
+        # 弹性空白吃掉。⚠️ 宿主特有段（add_extra）插在弹性空白**之前**——它们
+        # 跟着参数面板走，不参与"贴底"。
+        # ⚠️ 用空 QWidget 而不是 addStretch()：add_extra 要按它定位插入点，
+        #    spacer item 不好 indexOf，控件可以。
+        self._flex = QWidget()
+        self._flex.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding
+        )
+        layout.addWidget(self._flex)
+
+        # 底部动作区永远排最后（add_extra 的插入锚点也按它定位）
+        layout.addWidget(self._bottom)
+
+    # ------------------------------------------------------------------ 结构
+    def add_extra(self, widget: QWidget) -> None:
+        """把宿主特有的控件插到「参数面板之后、弹性空白之前」。
+
+        为什么需要：模块页会在共用控制区里加自己的段（检测页的「导出」块、
+        导出进度）。直接 ``layout().addWidget`` 会排到执行/中断按钮**下面**，
+        主按钮就被挤到右栏中间了（用户 2026-11-17：「输出目录/执行/中断等，
+        放在控制面板底部」）。统一走本方法，宿主加的东西跟着参数面板走，
+        弹性空白与底部动作区的位置永远不变。
+        """
+        box = self.layout()
+        box.insertWidget(box.indexOf(self._flex), widget)
+
+    def set_run_visible(self, visible: bool) -> None:
+        """显隐「执行」主按钮（中断按钮不动）。
+
+        检测页「人工标注」模式下不调 YOLO，执行按钮隐藏（与任务详情页
+        ``_sync_detect_mode_ui`` 同口径）；其它步骤一律显示。
+        """
+        self.run_button.setVisible(bool(visible))
 
     # ------------------------------------------------------------------ 源/输出
     def source(self) -> Path | None:

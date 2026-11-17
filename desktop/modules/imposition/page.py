@@ -255,7 +255,13 @@ class ImpositionModulePage(ModulePage):
 
     # ------------------------------------------------------------------ 控制
     def _build_control(self) -> Card:
-        """右栏：自动拼版/导出按钮 + 复用 ``ImpositionPanel``（选图在页头输入区）。"""
+        """右栏：自动拼版 + 复用 ``ImpositionPanel`` + **底部动作区**。
+
+        底部动作区与其它单任务页（``StepControl``）同一套排法（用户
+        2026-11-17：「输出目录/执行/中断等功能，放在控制面板底部」）：
+        输出目录 → 进度 → 导出成品 → 查看处理文件，恒在控制列最底下；
+        「自动拼版」是版面参数区的一部分，随面板放在上面。
+        """
         card = Card()
 
         # 导出走共用执行内核：拼版是纯函数，所以用 CallableJob
@@ -264,13 +270,6 @@ class ImpositionModulePage(ModulePage):
         self.kernel.progress.connect(self._on_progress)
         self.kernel.finished.connect(self._on_exported)
         self.kernel.failed.connect(self._on_export_failed)
-
-        # 执行进度：与四个步骤页**同一个**组件（``StepControl`` 内部那条也是
-        # 它），所以拼图页的进度条长得跟别处一模一样。
-        # ⚠️ 本页**不继承** ``StepModulePage``（源是一批图、执行是纯函数导出），
-        # 所以这条得自己摆、自己接——别以为基类会捎带带上。
-        self.progress_row = ProgressRow(noun=_SPEC.progress_unit())
-        card.box.addWidget(self.progress_row)
 
         self.auto_button = PushButton(FIF.MOVE, "自动拼版")
         self.auto_button.setFixedHeight(34)
@@ -294,6 +293,27 @@ class ImpositionModulePage(ModulePage):
         self.panel.clear_requested.connect(self._on_clear)
         card.box.addWidget(self.panel)
 
+        # ---- 底部动作区（与 StepControl 同一排法）----
+        # ⚠️ 弹性空白把动作区压到控制列最底（用户 2026-11-17 截图反馈，
+        #     与 ``StepControl`` 内部同一手法）。
+        card.box.addStretch(1)
+
+        # 执行进度：与四个步骤页**同一个**组件（``StepControl`` 内部那条也是
+        # 它），所以拼图页的进度条长得跟别处一模一样。
+        # ⚠️ 本页**不继承** ``StepModulePage``（源是一批图、执行是纯函数导出），
+        # 所以这条得自己摆、自己接——别以为基类会捎带带上。
+        self.out_button = PushButton(FIF.SAVE, "输出目录")
+        self.out_button.setFixedHeight(34)
+        self.out_button.setToolTip(
+            "默认在源图旁边（拼图成品/）；点这里可以改到别处。\n"
+            "「导出成品」直接写进这个目录，不再每次弹选择框。"
+        )
+        self.out_button.clicked.connect(self._pick_output)
+        card.box.addWidget(self.out_button)
+
+        self.progress_row = ProgressRow(noun=_SPEC.progress_unit())
+        card.box.addWidget(self.progress_row)
+
         self.export_button = PrimaryPushButton(FIF.SAVE, "导出成品")
         self.export_button.setFixedHeight(36)
         self.export_button.clicked.connect(self._export)
@@ -309,6 +329,17 @@ class ImpositionModulePage(ModulePage):
         self.view_output_button.clicked.connect(self._open_last_output)
         card.box.addWidget(self.view_output_button)
         return card
+
+    def _pick_output(self) -> None:
+        """改输出目录（与 ``StepControl`` 的输出目录按钮同语义：手动选择后
+        记住，不再被自动重推覆盖）。"""
+        current = self._out_dir
+        directory = QFileDialog.getExistingDirectory(
+            self, "选择输出目录", str(current) if current else ""
+        )
+        if directory:
+            self._out_dir = Path(directory)
+            self.status(f"输出目录：{directory}", "info")
 
     # ---------------------------------------------------- 「编辑」菜单
     def can_edit_delete_selected(self) -> bool:
@@ -1183,14 +1214,12 @@ class ImpositionModulePage(ModulePage):
             return
         out_dir = self._out_dir
         if out_dir is None:
+            # ⚠️ 默认输出目录沿用旧口径（源图旁边「拼图成品/」），但**不再每次
+            #    弹选择框**：与其它单任务页一致，输出目录由「输出目录」按钮管
+            #    （用户 2026-11-17：控制面板底部统一「输出目录/执行/中断」）。
             base = Path(self._sources[0]).parent if self._sources else Path.cwd()
             out_dir = base / "拼图成品"
-        directory = QFileDialog.getExistingDirectory(
-            self, "选择导出目录", str(out_dir)
-        )
-        if directory:
-            out_dir = Path(directory)
-        self._out_dir = out_dir
+            self._out_dir = out_dir
 
         self.export_button.setEnabled(False)
         # 再导一次：上一轮的「查看处理文件」先收起，成功后按新目录再亮

@@ -49,6 +49,7 @@ def run(ctx) -> None:  # noqa: ARG001 - 用自己的夹具，不共享 ctx 的�
     try:
         _check_controls(page, ok)
         _check_drawing(page, tmp, ok)
+        _check_mode_and_reuse(page, tmp, ok, ctx)
         _check_step_job_and_throttle(page, ok, ctx)
         _check_export_annotated(page, tmp, QFileDialog, ok, ctx)
         _check_export_json(page, tmp, ok)
@@ -58,8 +59,17 @@ def run(ctx) -> None:  # noqa: ARG001 - 用自己的夹具，不共享 ctx 的�
 
 
 def _check_controls(page, ok) -> None:
-    """① 框类型控件摆出来了、且导出按钮存在。"""
-    ok("摆出「选中框类型」分段控件", hasattr(page, "box_kind"))
+    """① 共享面板摆出来了、框类型控件来自面板、导出按钮存在、动作区在底部。"""
+    panel = page.control.panel
+    # ⚠️ 判**没有被显式隐藏**（isHidden 只看控件自身）：页面初始工作区整体
+    #    收起（show_workspace(False)），isVisibleTo(page) 那时恒为 False，
+    #    没法用来判"面板摆没摆"。
+    ok("DetectPanel 与主任务第二步共用同一实例类（面板一改单任务同步变）",
+       panel is not None and not panel.isHidden()
+       and type(panel).__name__ == "DetectPanel", str(panel))
+    ok("摆出「选中框类型」分段控件（实体是面板里那个，不是手抄副本）",
+       hasattr(page, "box_kind") and page.box_kind is panel.box_kind,
+       str(page.box_kind))
     ok("分段控件四项：左框/右框/半幅/整幅（半幅挨着左右、排在整幅前）",
        [label for _key, label in page.box_kind._items]
        == ["左框", "右框", "半幅", "整幅"],
@@ -75,13 +85,50 @@ def _check_controls(page, ok) -> None:
     ok("无框时两个导出按钮都禁用",
        not page.annotated_button.isEnabled()
        and not page.export_button.isEnabled())
-    # 整页模式 / 检测本页 仍不摆（单文件模式没有宿主驱动它们）。
-    # ⚠️ 判**面板本身**对页面可见，而不是判里面的控件对面板可见——父控件
-    #    藏起来时子控件对父仍报"可见"，那样这条断言恒真、等于没钉。
-    ok("DetectPanel 整体不摆（整页模式/检测本页无宿主驱动）",
-       page.control.panel is not None
-       and not page.control.panel.isVisibleTo(page),
-       str(page.control.panel))
+    # ---- 底部动作区（用户 2026-11-17：输出目录/执行/中断恒在控制面板底部）----
+    control_layout = page.control.layout()
+    ok("底部动作区是控制列的最后一项（宿主加东西只能在它上面长）",
+       control_layout.count() > 0
+       and control_layout.itemAt(control_layout.count() - 1).widget()
+       is page.control._bottom,
+       str(control_layout.count()))
+    box = page.control._bottom.layout()
+    items = [box.itemAt(i).widget() for i in range(box.count())]
+    ok("底部动作区顺序：输出目录 → 进度 → 执行行 → 查看处理文件",
+       items[:4] == [page.control.out_button, page.control.progress_row,
+                     page.control.run_button.parentWidget(),
+                     page.control.view_output_button],
+       str([type(i).__name__ for i in items]))
+    widgets = [control_layout.itemAt(i).widget() for i in range(control_layout.count())]
+    ok("导出块与导出进度排在底部动作区之前（执行/中断不被挤离底部）",
+       widgets.index(page.annotated_button.parentWidget())
+       < widgets.index(page.control._bottom)
+       and widgets.index(page.export_progress)
+       < widgets.index(page.control._bottom),
+       str([type(w).__name__ for w in widgets]))
+    ok("参数面板与底部动作区之间有弹性空白（动作区贴控制列最底）",
+       widgets.count(page.control._flex) == 1
+       and widgets.index(page.control._flex) == len(widgets) - 2,
+       str([type(w).__name__ for w in widgets]))
+    # ---- 整个「导出」分类随 YOLO 开关显隐（用户 2026-11-17）----
+    # ⚠️ 直接改 item.value（不落盘，与 dev_yolo 同规矩）；收工恢复原值。
+    from desktop.settings.config import app_config
+
+    cfg = app_config()
+    prev = bool(cfg.yoloAnnotation.value)
+    holder = page.annotated_button.parentWidget()
+    cfg.yoloAnnotation.value = False
+    ok("YOLO 关 → 整个「导出」分类收起（三颗一起藏）",
+       holder.isHidden() and not page.annotated_button.isVisibleTo(page)
+       and not page.export_button.isVisibleTo(page)
+       and page.yolo_button.isHidden(),
+       f"holder={holder.isHidden()}")
+    cfg.yoloAnnotation.value = True
+    ok("YOLO 开 → 整个「导出」分类出现",
+       not holder.isHidden() and not page.yolo_button.isHidden(), "")
+    cfg.yoloAnnotation.value = prev
+    # prev 与上一行同值时 setValue 不发信号，兜底刷一次显隐
+    page._sync_yolo_button()
 
 
 def _check_drawing(page, tmp: Path, ok) -> None:
@@ -165,6 +212,92 @@ def _check_drawing(page, tmp: Path, ok) -> None:
     page._on_box_kind_changed("right")
     ok("没选中时点「右框」→ 选中右侧那个框",
        page.viewer.selected_index() == 1, str(page.viewer.selected_index()))
+
+
+def _check_mode_and_reuse(page, tmp: Path, ok, ctx) -> None:
+    """② 识别方式与「自动使用上一个文本框标注」（与任务流程第二步同口径）。
+
+    人工标注 = **不调 YOLO** ⇒ 执行按钮隐藏（详情页 ``_sync_detect_mode_ui``
+    的单机版）；沿用上一页标注 = 上一页有真框 + 本页零框才整份带过来。
+    """
+    images = tmp / "images"
+    page_a = images / "0001.png"
+    page_b = images / "0002.png"
+    # _apply_boxes 要按真实文件读原始尺寸（QImageReader），先落两张图
+    if not page_b.is_file():
+        _png(page_b)
+    assert page_a.is_file(), "前置段落应已造出 0001.png"
+
+    # ---- 自动识别（默认）：执行按钮显示 ----
+    ok("默认是自动识别", page._detect_mode == "auto", str(page._detect_mode))
+    ok("自动识别下执行按钮显示（走 YOLO 那条批量检测）",
+       not page.control.run_button.isHidden(), "")
+
+    # ---- 切人工标注：执行按钮隐藏、沿用勾选框出现 ----
+    # ⚠️ 走**面板**的切换入口（真实用户链路）：面板先同步自己的显隐，再发
+    #    mode_changed 让页面藏执行按钮。直接调页面处理器会绕过面板同步。
+    # ⚠️ 真实点击的顺序：分段控件先更新 current、再发 current_changed。
+    #    两步分开做（set_current 不发信号，_on_mode_changed 才是槽）。
+    page.control.panel.mode.set_current("manual")
+    page.control.panel._on_mode_changed("manual")
+    ok("人工标注下执行按钮隐藏（完全不调 YOLO，同详情页口径）",
+       page.control.run_button.isHidden(), "")
+    ok("人工标注下「自动使用上一个文本框标注」勾选框出现",
+       not page.control.panel.reuse_prev.isHidden(), "")
+    ok("人工标注下中断按钮仍可用显隐（只是不执行检测）",
+       not page.control.cancel_button.isHidden(), "")
+
+    # ---- 沿用上一页标注：上一页有真框 + 本页零框 → 整份带过来 ----
+    page._boxes["0001"] = [LEFT, RIGHT]
+    page._origins["0001"] = "manual"
+    page._boxes.pop("0002", None)
+    page._last_page_key = "0001"
+    page._on_page_changed(1, str(page_b))
+    ok("上一页有真框 + 本页零框 → 框整份带过来",
+       page._boxes.get("0002") == [LEFT, RIGHT], str(page._boxes.get("0002")))
+    ok("带过来的框记 manual（后续自动检测不许覆盖）",
+       page._origins.get("0002") == "manual", str(page._origins.get("0002")))
+
+    # ---- 本页已画过 → 不覆盖 ----
+    page._boxes["0002"] = [FULL]
+    page._origins["0002"] = "manual"
+    page._last_page_key = "0001"
+    page._on_page_changed(1, str(page_b))
+    ok("本页已有框 → 沿用不动它（不覆盖用户画过的框）",
+       page._boxes.get("0002") == [FULL], str(page._boxes.get("0002")))
+
+    # ---- 关掉沿用 → 不带 ----
+    page._boxes.pop("0002", None)
+    page._origins.pop("0002", None)
+    page._reuse_prev = False
+    page._last_page_key = "0001"
+    page._on_page_changed(1, str(page_b))
+    ok("取消勾选「沿用上一页」→ 本页保持零框",
+       not page._boxes.get("0002"), str(page._boxes.get("0002")))
+    page._reuse_prev = True
+
+    # ---- 参照页是紧邻上一页：连切两页空页，第三页不该拿到第一页的框 ----
+    page._boxes.pop("0002", None)
+    page._boxes["0001"] = [LEFT, RIGHT]
+    page._last_page_key = "0002"   # 模拟已经切过一张零框页
+    page._on_page_changed(1, str(page_b))
+    ok("参照页是紧邻上一页（连切空页不拿到更早页的框）",
+       not page._boxes.get("0002"), str(page._boxes.get("0002")))
+
+    # ---- 切回自动识别：执行按钮恢复、本页零框不再自动带框 ----
+    page.control.panel.mode.set_current("auto")
+    page.control.panel._on_mode_changed("auto")
+    ok("切回自动识别 → 执行按钮恢复显示",
+       not page.control.run_button.isHidden(), "")
+    page._boxes.pop("0002", None)
+    page._last_page_key = "0001"
+    page._on_page_changed(1, str(page_b))
+    ok("自动识别下切页不带框（沿用是人工标注专属行为）",
+       not page._boxes.get("0002"), str(page._boxes.get("0002")))
+    # 清掉测试期间留下的框，别污染后续段落
+    page._boxes.pop("0002", None)
+    page._origins.pop("0002", None)
+    page._last_page_key = None
 
 
 def _check_step_job_and_throttle(page, ok, ctx) -> None:
