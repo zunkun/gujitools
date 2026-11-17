@@ -16,11 +16,12 @@
 
 （背板只负责给导航栏一层浅色底 + 右侧分隔线，见 :class:`_NavBackdrop`。）
 
-导航条目分两组：
+导航条目（用户 2026-11-17 起）：
 
 - ``TOP``：**任务管理**（原 ``TaskListPage``，点任务仍在栈内打开详情页）+
-  各独立模块（图片提取 / 去底色 / 拼图，来自 ``desktop.modules.MODULES``）；
-- 模块条目全部**惰性构造**：第一次点进去才 ``factory()``，不点不建。
+  **独立功能**（一条入口，点进去是方块页，每个方块 = 一个模块入口，
+  模块清单来自 ``desktop.modules.MODULES``）；
+- 模块页与入口页全部**惰性构造**：第一次点进去才 ``factory()``，不点不建。
 
 ⚠️ 导航栏**默认折叠**（用户 2026-10-02：「左侧的目录，默认关闭」）：启动后
 只剩一列图标，正文区拿到整幅宽度；想看到条目文字就点左上角的菜单按钮展开，
@@ -53,10 +54,10 @@ from desktop.modules import MODULES, module_by_key
 from desktop.pages.tasklist.page import TaskListPage
 from desktop.store import TaskStore
 from desktop.ui import theme as T
-from desktop.ui.icons import resolve_nav_icon
 
 if TYPE_CHECKING:
     from desktop.pages.createtask.page import CreateTaskPage
+    from desktop.pages.modulehub.page import ModuleHubPage
     from desktop.pages.taskdetail.page import TaskDetailPage
     from desktop.pages.taskflow.page import TaskFlowPage
     from desktop.settings.page import SettingsPage
@@ -96,6 +97,8 @@ ROUTE_CREATE = "create"
 ROUTE_FLOW = "flow"
 #: 「设置」页（左侧导航栏**底部**的条目，用户 2026-10-16）
 ROUTE_SETTINGS = "settings"
+#: 「独立功能」入口页（用户 2026-11-17：左侧导航收成一条，模块页都是它的下级）
+ROUTE_MODULES = "modules"
 
 #: 这两个页面**没有**自己的导航条目（它们是「任务管理」的下级，像详情页一样）
 _SUBROUTES = (ROUTE_DETAIL, ROUTE_CREATE, ROUTE_FLOW)
@@ -147,6 +150,12 @@ class ModuleShell(QWidget):
         self._selected_route = ROUTE_TASKS
         #: PDF 渲染子进程池是否已预热（见 :meth:`_prewarm_pdf_renderer`）
         self._render_prewarmed = False
+        # ⚠️ 模块页缓存与「独立功能」入口页必须**先**初始化：下面 addWidget
+        #    （列表页）就会触发 ``pages.currentChanged`` → :meth:`_sync_nav_to_page`，
+        #    那里按 ``_module_pages`` 判路由归属——晚一步就是 AttributeError
+        #    （只在构造期打印、不崩，但属于脏异常）。
+        self._module_pages: dict[str, QWidget] = {}
+        self._modules_page: ModuleHubPage | None = None
 
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -195,20 +204,20 @@ class ModuleShell(QWidget):
             position=NavigationItemPosition.TOP,
         )
 
-        # ---- 独立模块：按注册表登记，全部惰性 ----
+        # ---- 独立功能（用户 2026-11-17）：**一个**导航条目 + 方块入口页 ----
+        # 此前这里为每个模块各摆一个条目（图片提取/检测文本框/去底色/拼图/
+        # PDF排版），导航栏被五个功能占满；现在收成一条「独立功能」，点进去
+        # 是 :class:`ModuleHubPage`（方块网格，每个方块 = 一个模块入口）。
+        # 模块页本身仍是**惰性构造**（见 show_module），入口页只发 key。
         self.nav.addSeparator(position=NavigationItemPosition.TOP)
-        self._module_pages: dict[str, QWidget] = {}
-        self._module_items: dict[str, object] = {}
-        for module in MODULES:
-            item = self.nav.addItem(
-                module.key,
-                resolve_nav_icon(module.icon),
-                module.title,
-                onClick=self._module_click_handler(module.key),
-                position=NavigationItemPosition.TOP,
-                tooltip=module.subtitle,
-            )
-            self._module_items[module.key] = item
+        self._modules_item = self.nav.addItem(
+            ROUTE_MODULES,
+            FIF.TILES,
+            "独立功能",
+            onClick=self._modules_click_handler(),
+            position=NavigationItemPosition.TOP,
+            tooltip="图片提取 / 检测文本框 / 去底色 / 拼图 / PDF排版 等独立入口",
+        )
 
         # ---- 设置：导航栏**底部**的条目（用户 2026-10-16）----
         # ⚠️ 它**不是** MODULES 里的一员：模块条目清一色是"处理步骤的独立页"
@@ -237,23 +246,16 @@ class ModuleShell(QWidget):
         self._settings_page: SettingsPage | None = None
 
     # ------------------------------------------------------------------ 点击槽
-    def _module_click_handler(self, key: str):
-        """生成"点某个模块"的槽。
+    def _modules_click_handler(self):
+        """生成"点独立功能入口"的槽。
 
-        ⚠️⚠️ 这里的 ``_checked`` 形参**必须有**（不能省成 ``lambda key=key:``）：
-        qfluentwidgets 的 ``NavigationWidget.clicked`` 是 ``Signal(bool)``
-        （``clicked.emit(True)``），而 ``NavigationPanel._registerWidget`` 把
-        onClick **直接连到这个信号**上——Qt 会把那个 bool 当**第一个位置参数**
-        传进来。写成 ``lambda key=module.key: self.show_module(key)`` 的话，
-        ``key`` 实际收到的是 ``True``，于是走 ``show_module(True)`` → 注册表里
-        找不到 → 安静退回任务管理。
-
-        症状（用户 2026-10-02 实测报障）：「点击左侧的图片提取，显示的还是任务
-        管理」——**导航高亮跳一下就回到"任务管理"**，三个模块全都点不开。
-        「任务管理」那条当时"能用"纯属巧合（它的槽没有形参，PySide 会把多余的
-        参数丢掉），所以只有模块条目坏掉，更容易被当成"模块没实现"。
+        ⚠️ ``_checked`` 形参**必须有**：qfluentwidgets 的
+        ``NavigationWidget.clicked`` 是 ``Signal(bool)``，onClick 直连这个信号，
+        Qt 会把那个 bool 当**第一个位置参数**传进来。写成无参 lambda 会让
+        ``show_module(True)`` 之类静默退回任务管理（用户 2026-10-02 实测报障，
+        守卫见 ``modules_shell`` 自测第 6a 节）。
         """
-        return lambda _checked=False: self.show_module(key)
+        return lambda _checked=False: self.show_modules()
 
     def _tasks_click_handler(self):
         """生成"点任务管理"的槽（同样要吞掉 clicked 的 bool，理由见上）。"""
@@ -324,10 +326,9 @@ class ModuleShell(QWidget):
             self._create_page = page
         return self._create_page
 
-    def _on_create_submitted(self, path: str, name: str, diagram,
-                             uses_custom: bool) -> None:
+    def _on_create_submitted(self, path: str, name: str, diagram) -> None:
         """创建页填完了 → 交给列表页建任务（建完它发 open_detail 进详情）。"""
-        self.list_page.start_create(path, name, diagram, uses_custom)
+        self.list_page.start_create(path, name, diagram)
 
     def open_create(self) -> None:
         """打开「创建任务」二级页（列表页的「创建任务」按钮走这里）。
@@ -358,13 +359,13 @@ class ModuleShell(QWidget):
           「快速任务，任务名称为PDF 文件名称默认」）。与创建页选完 PDF 后
           ``_autofill_name`` 自动填进去的那一份**完全一致**（那边也是取 stem，
           不带 ``.pdf``）；想改名去详情页页头的铅笔按钮。
-        - ``diagram=None`` / ``uses_custom=False`` ⇒ 用默认流程模板。
+        - ``diagram=None`` ⇒ 用默认流程模板（字节拷贝）。
 
         ⚠️ 唯一"少做"的一步是**不经过创建任务页**；**查重那道闸仍会弹**——同一个
         PDF 已经建过任务时再建第二个，多半是误操作，不该因为"快速"就跳过。
         """
         name = Path(path).stem
-        self.list_page.start_create(str(path), name, None, False)
+        self.list_page.start_create(str(path), name, None)
 
     def flow_page(self):
         """任务流程编辑页（惰性构造）。"""
@@ -486,7 +487,29 @@ class ModuleShell(QWidget):
 
     def back_to_list(self) -> None:
         """详情页「返回」→ 切回列表并刷新。"""
-        self.show_tasks()    # ------------------------------------------------------------------ 模块
+        self.show_tasks()
+
+    # ------------------------------------------------------------------ 独立功能
+    def modules_page(self) -> ModuleHubPage:
+        """「独立功能」入口页（惰性构造；外部截图/自测按这个方法取）。"""
+        if self._modules_page is None:
+            from desktop.pages.modulehub.page import ModuleHubPage
+
+            # 清单只有一份：入口页的方块 = MODULES（spec 里 nav=True 的派生）。
+            # ⚠️ 入口页**不 import** desktop.modules（守住 pages 不反向依赖），
+            #    元数据由壳层注入。
+            page = ModuleHubPage(MODULES)
+            page.module_requested.connect(self.show_module)
+            self.pages.addWidget(page)
+            self._modules_page = page
+        return self._modules_page
+
+    def show_modules(self) -> None:
+        """切到「独立功能」入口页（左侧导航那条「独立功能」走这里）。"""
+        page = self.modules_page()
+        self.pages.setCurrentWidget(page)
+        if self.pages.currentWidget() is page:
+            self._sync_nav_to_page(0)
     def show_module(self, key: str) -> None:
         """切到某个模块页；首次进入时惰性构造。
 
@@ -566,6 +589,8 @@ class ModuleShell(QWidget):
             return ROUTE_FLOW
         if self._settings_page is not None and current is self._settings_page:
             return ROUTE_SETTINGS
+        if self._modules_page is not None and current is self._modules_page:
+            return ROUTE_MODULES
         for key, page in self._module_pages.items():
             if page is current:
                 return key
@@ -582,8 +607,14 @@ class ModuleShell(QWidget):
         if not route:
             return
         # 详情/创建/流程三个页面都没有自己的导航条目，高亮一律留在「任务管理」；
-        # 设置页**有**自己的条目（导航栏底部那个），所以照实高亮。
-        target = ROUTE_TASKS if route in _SUBROUTES else route
+        # 模块页是「独立功能」的**下级**（2026-11-17 起导航里没有逐模块条目），
+        # 高亮留在那条「独立功能」上；设置页与入口页有自己的条目，照实高亮。
+        if route in _SUBROUTES:
+            target = ROUTE_TASKS
+        elif route in self._module_pages:
+            target = ROUTE_MODULES
+        else:
+            target = route
         self._selected_route = target
         try:
             self.nav.setCurrentItem(target)
@@ -657,6 +688,7 @@ __all__ = [
     "ROUTE_CREATE",
     "ROUTE_DETAIL",
     "ROUTE_FLOW",
+    "ROUTE_MODULES",
     "ROUTE_SETTINGS",
     "ROUTE_TASKS",
 ]

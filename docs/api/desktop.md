@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 188 个模块、205 个公开类、1555 个公开函数/方法（生成于 2026-11-17）。
+覆盖 189 个模块、206 个公开类、1562 个公开函数/方法（生成于 2026-11-17）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -107,6 +107,7 @@
 | [`desktop.modules.rembg.page`](#desktopmodulesrembgpage) | 1 | 5 |
 | [`desktop.modules.thumb_source`](#desktopmodulesthumb_source) | 1 | 4 |
 | [`desktop.pages.createtask.page`](#desktoppagescreatetaskpage) | 1 | 6 |
+| [`desktop.pages.modulehub.page`](#desktoppagesmodulehubpage) | 1 | 3 |
 | [`desktop.pages.taskdetail.detect`](#desktoppagestaskdetaildetect) | 2 | 13 |
 | [`desktop.pages.taskdetail.flow_mixin`](#desktoppagestaskdetailflow_mixin) | 1 | 0 |
 | [`desktop.pages.taskdetail.history`](#desktoppagestaskdetailhistory) | 1 | 0 |
@@ -137,7 +138,7 @@
 | [`desktop.settings.config`](#desktopsettingsconfig) | 1 | 6 |
 | [`desktop.settings.location`](#desktopsettingslocation) | 2 | 8 |
 | [`desktop.settings.page`](#desktopsettingspage) | 1 | 2 |
-| [`desktop.shell`](#desktopshell) | 1 | 22 |
+| [`desktop.shell`](#desktopshell) | 1 | 24 |
 | [`desktop.single_instance`](#desktopsingle_instance) | 0 | 6 |
 | [`desktop.stages.detect_stage`](#desktopstagesdetect_stage) | 0 | 4 |
 | [`desktop.stages.events`](#desktopstagesevents) | 2 | 9 |
@@ -145,7 +146,7 @@
 | [`desktop.stages.print_stage`](#desktopstagesprint_stage) | 0 | 3 |
 | [`desktop.stages.rembg_stage`](#desktopstagesrembg_stage) | 0 | 1 |
 | [`desktop.steps.bpmn_diagram`](#desktopstepsbpmn_diagram) | 4 | 35 |
-| [`desktop.steps.control`](#desktopstepscontrol) | 1 | 11 |
+| [`desktop.steps.control`](#desktopstepscontrol) | 1 | 13 |
 | [`desktop.steps.flow`](#desktopstepsflow) | 4 | 31 |
 | [`desktop.steps.kernel`](#desktopstepskernel) | 5 | 11 |
 | [`desktop.steps.ports`](#desktopstepsports) | 0 | 41 |
@@ -1011,17 +1012,27 @@ widget.installEventFilter(_filter)
 
 ::
 
-    [ ] 使用自定义任务流程        ← 决定用哪份流程
-    说明文字（随勾选变化，含步骤串——"当前流程"由它承担）
+    说明文字（随是否编辑过变化，含步骤串——"当前流程"由它承担）
     ────────────────────────────
     选择 PDF   [选择文件…]  已选择：xxx.pdf     ← 两种模式都要选 PDF
     ────────────────────────────
-    [编辑流程] [恢复默认流程]                  ← 仅自定义模式可用（右对齐）
+    [编辑流程] [恢复默认流程]                  ← 恒可用（右对齐）
     ┌ 流程节点图（按 bpmn 文件渲染）┐
     └───────────────────────────┘
     共 4 步：提取图片 → 检测文本框 → 图片拼版 → PDF排版
     ────────────────────────────
     [取消]  [创建任务]
+
+## 2026-11-17：「使用自定义任务流程」复选框撤掉（用户本轮要求）
+
+> 1. 默认使用自定义流程，这个选项不再需要
+> 2. 默认流程可编辑
+
+语义变成**单一模式**：流程恒从默认模板（``task_default.bpmn``）起步、恒可
+编辑——「编辑流程」按钮不再只在自定义模式出现。原来"勾了才落自定义图"的
+分界改由 :attr:`_flow_edited` 承担：**用户真的进编辑器保存过**才算自定义
+（此时 ``result_diagram()`` 传图落盘）；没动过就返回 ``None``，store 走
+**字节拷贝**默认模板。
 
 三层结构（每层只干一件事）：
 
@@ -1059,15 +1070,15 @@ widget.installEventFilter(_filter)
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(parent=None, flow: FlowDiagram \| None=None, *, outer_margins: bool=True)` | ``outer_margins``：要不要自带外层留白（默认带，弹窗形态需要）。 |
-| `current_diagram() -> FlowDiagram` | 当前**显示**的图（未勾=默认流程，勾了=自定义流程）。 |
+| `current_diagram() -> FlowDiagram` | 当前**显示**的图（未编辑 = 默认模板，编辑保存过 = 用户那张）。 |
 | `set_pdf(path: Path) -> None` | 设已选 PDF（自测与"创建后直接进详情"的快路径用）。 |
 | `clear_pdf() -> None` | 清掉已选 PDF（页面上那个「清除」按钮、:meth:`reset` 与自测共用）。 |
 | `reset() -> None` | 回到**刚打开**的样子（用户 2026-10-06：上一次创建任务信息要清掉）。 |
 | `selected_pdf() -> Path \| None` | — |
-| `set_custom_diagram(diagram: FlowDiagram) -> None` | 换自定义流程图并刷新预览（编辑弹窗确认后由 :meth:`_on_edit_flow` 调）。 |
+| `set_custom_diagram(diagram: FlowDiagram) -> None` | 换流程图并刷新预览（编辑弹窗确认后由 :meth:`_on_edit_flow` 调）。 |
 | `result_diagram() -> FlowDiagram \| None` | 用哪份流程图建任务。 |
-| `uses_custom_flow() -> bool` | — |
-| `set_custom_mode(enabled: bool) -> None` | 设流程模式（自测与将来"记住上次选择"用）。 |
+| `uses_custom_flow() -> bool` | 流程是不是**自定义**的（= 编辑保存过；兼容旧调用方保留此名）。 |
+| `set_custom_mode(enabled: bool) -> None` | 设"是否自定义流程"（自测兼容入口；等效于标记已编辑）。 |
 | `can_submit() -> bool` | 能不能点「创建任务」。 |
 | `submit() -> None` | 点「创建任务」：发 :attr:`submitted`，**不碰窗口**。 |
 | `reject() -> None` | 取消：**只发 :attr:`cancelled`，不碰窗口**。 |
@@ -1096,8 +1107,8 @@ widget.installEventFilter(_filter)
 
 回到**刚打开**的样子（用户 2026-10-06：上一次创建任务信息要清掉）。
 
-清四样：已选 PDF、勾选状态、自定义流程图（回到默认模板那份）、以及
-正开着的流程编辑器。
+清四样：已选 PDF、「编辑过流程」标记、自定义流程图（回到默认模板
+那份）、以及正开着的流程编辑器。
 
 ⚠️ **自定义流程图也要清**：用户编了半天流程，建完任务再进来却还带着
 那张图——他要建第二个任务时会以为"又得从头编一遍"（其实这是上一本
@@ -1111,8 +1122,8 @@ widget.installEventFilter(_filter)
 
 用哪份流程图建任务。
 
-- 自定义模式：返回用户编的那张图（store 会写进 ``flow.bpmn``）；
-- 默认模式：返回 ``None`` —— 语义是"用默认模板"，store 会**原样字节
+- **编辑保存过**：返回用户编的那张图（store 会写进 ``flow.bpmn``）；
+- **没动过**：返回 ``None`` —— 语义是"用默认模板"，store 会**原样字节
   拷贝** ``task_default.bpmn``，不经 ``FlowDiagram`` 的重新序列化
   （那会把连线上的 ``guji:port`` 抹掉）。
 
@@ -6789,8 +6800,9 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
      ``tasks/<id>/boxes.json`` **逐字段一致**（``{stem: {boxes, origin,
      updated_at}}``），可直接当作下一步（或将来自定义流程里任意一步）的输入。
 
-4. 设置里「**启用YOLO标注**」勾上时，导出区最底部多一个
-   「**导出YOLO标注**」（用户 2026-10-16；2026-11-17 起不再挂在开发者模式下）：点它先弹窗填**名称**（父节点名 =
+4. **整个「导出」分类随设置里「**启用YOLO标注**」开关显隐**（用户
+   2026-11-17：分类要按 yolo 参数决定显隐；开关开着时导出区最底部是
+   「**导出YOLO标注**」，用户 2026-10-16；2026-11-17 起不再挂在开发者模式下）：点它先弹窗填**名称**（父节点名 =
    文件名前缀）并选**导出目录**（按子任务记住上次选的），确认后把全部页面
    导出成 YOLO 数据集切片 ``<导出目录>/<名称>/{images,labels}/<名称>-1.…``
    （类别顺序见 ``utils.box_geometry.YOLO_CLASS_NAMES``；无框页写空标签当负样本）。
@@ -6802,12 +6814,24 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 本页不自己数"还剩几个框"——按个数推类型会造成"删掉整幅框后右边的框自动变成
 整幅"（用户 2026-09-29 报过的老问题）。
 
-⚠️ **框类型控件摆在这里、检测按钮不搬过来**（用户 2026-10-03）：
-- 「选中框类型 / 删除选中框」**摆出来**并接线——它们只依赖查看器，本页完全
-  驱动得了，而用户要的"手绘之后能标成左框/右框/整幅"正需要它们；
-- 整个 ``DetectPanel`` **不摆**：它的参数（识别方式 / 沿用上一页标注）都是
-  **任务级**概念、由任务流程宿主驱动，本页的执行入口是整批的
-  :class:`StepControl`。
+⚠️ **面板与任务流程第二步共用同一个** ``DetectPanel``（用户 2026-11-17：
+「主任务节点功能发生变化，单任务要同步发生变化，将两套代码功能保持一致」）：
+识别方式（自动识别/人工标注）、「自动使用上一个文本框标注」、「选中框类型 /
+删除选中框」全部来自共享面板——主任务面板一改，本页**自动**跟着变，不再各抄
+一份控件。此前本页把整个面板藏了、自己手抄两个框类型控件，主任务 2026-11-16
+加「识别文本框模式」时这边就没同步上，正是那条要求的由来。
+
+两种模式在本页的语义与任务流程一致：
+
+- **自动识别**：主按钮「检测文本框」跑 YOLO 出框，预览里可手改；
+- **人工标注**：**不调 YOLO**——执行按钮隐藏（与详情页
+  ``_sync_detect_mode_ui`` 同口径），逐页画框；勾选「自动使用上一个文本框
+  标注」时，切到还没有任何框的页会把上一页的框整份带过来（上一页有真框 +
+  本页零框才带，判据与任务流程一致）。
+
+交付（本页特有，任务流程没有）：「导出标注图」「导出坐标 JSON」与可选的
+「导出YOLO标注」摆在与主任务相同的执行链之外，走 :meth:`StepControl.add_extra`
+插在底部动作区（输出目录/执行/中断）**上方**。
 
 ### 模块常量
 
@@ -7378,7 +7402,7 @@ detect/rembg/print 直接把**原图**塞进查看器（缩略图条每次现解
     任务名称  [ 一本古籍            ]  ← 最多 360px，placeholder＝任务#0007
     留空则使用默认名「任务#0007」；PDF 可以之后在任务详情里补选。
     ┌ CreateTaskPanel ────────────────────────┐
-    │ ☑ 使用自定义任务流程                     │
+    │ （流程说明 + 流程图 + 编辑/恢复按钮）      │  ← 默认流程恒可编辑
     │ …                                        │
     │ [取消]                     [创建任务]    │  ← 面板自带按钮
     └─────────────────────────────────────────┘
@@ -7451,7 +7475,7 @@ detect/rembg/print 直接把**原图**塞进查看器（缩略图条每次现解
 
 回到**刚打开**的样子（用户 2026-10-06：上一次创建任务信息没清理）。
 
-面板那份（已选 PDF / 勾选 / 自定义流程图 / 开着的编辑器）由
+面板那份（已选 PDF / 编辑过的流程图 / 开着的编辑器）由
 :meth:`CreateTaskPanel.reset` 清；这里清本页自己的两样：
 
 - **任务名输入框**（截图里留着的正是它）；
@@ -7468,6 +7492,54 @@ placeholder 还写着旧的「任务#0007」就是错的（用户会以为下一
 
 ⚠️ 指纹计算与查重确认都发生在**列表页**的链路里（`_start_import`），
 所以这里只能"锁住 + 说清在等"，真正的进度条不在本页。
+
+---
+
+## `desktop.pages.modulehub.page`
+
+源码：[`desktop/pages/modulehub/page.py`](../../desktop/pages/modulehub/page.py)
+
+「独立功能」入口页（用户 2026-11-17）：左侧导航只剩这一个条目，点进来
+看到的是**各个独立任务的方块入口**，点方块进入对应功能页。
+
+为什么是这一页
+--------------
+此前左侧导航为每个模块各摆一个条目（图片提取 / 检测文本框 / 去底色 / 拼图 /
+PDF排版），导航栏被五个功能占满。用户 2026-11-17：「左侧目录菜单单任务列表
+不再需要，改成一个菜单『独立功能』，页面是各个单独任务的入口，页面 UI 是
+各个方块排列，每个方块都是一个单任务入口。」
+
+结构契约：
+
+- **清单只有一份**：本页**不维护**模块清单——壳层把
+  :data:`desktop.modules.MODULES`（由 ``steps/spec.py`` 的 ``nav=True`` 派生）
+  传进来，方块按传入顺序摆。加一个模块 = 加一条 spec，本页零改动。
+- **只做入口不做业务**：方块只发 :attr:`module_requested`，切页/惰性构造/
+  路由全在壳层（``desktop/shell.py``）——本页因此可以住在 pages 里而不破坏
+  「模块页不 import pages」的边界（pages → modules 只经壳层转手的元数据，
+  本文件**不 import** ``desktop.modules``）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| TILE_WIDTH | `240` |
+| TILE_HEIGHT | `120` |
+
+### `class ModuleHubPage(QWidget)`
+
+「独立功能」入口页：方块网格，每个方块 = 一个独立任务的入口。
+
+对外壳层的契约只有一个信号：:attr:`module_requested`（模块 key）。
+模块元数据由壳层注入（``modules`` 参数），本页不认得 ``MODULES`` 的来源。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(modules: Sequence['Module'], parent=None)` | — |
+| `tiles() -> list['_ModuleTile']` | — |
+| `tile_for(key: str) -> '_ModuleTile \| None'` | 按模块 key 取方块；没有返回 ``None``。 |
 
 ---
 
@@ -8595,7 +8667,7 @@ Mixin，``super()`` 后面未必有实现 ``eventFilter`` 的类（对象默认
 | `refresh() -> None` | 刷新任务行：**读盘放后台线程**，读完回主线程渲染。 |
 | `focus_task(task_id: str) -> bool` | 翻到任务所在页并选中它；不在当前过滤结果里则返回 False。 |
 | `import_pdf() -> None` | 「创建任务」入口：**切到创建任务页**（不再弹模态窗）。 |
-| `start_create(path: str, name: str, diagram, uses_custom: bool) -> None` | 创建任务页提交了 → 走**既有**的指纹/查重/建任务链路。 |
+| `start_create(path: str, name: str, diagram) -> None` | 创建任务页提交了 → 走**既有**的指纹/查重/建任务链路。 |
 | `shutdown_workers() -> None` | 关程序前的收尾：先停导入后台队列（复制/缩略图），再走基类线程。 |
 | `delete_task(task_id: str) -> None` | 删除指定任务及其全部中间产物（带确认弹窗）。 |
 
@@ -8633,7 +8705,7 @@ parent 一般为 MainWindow；会创建 store 引用与导入按钮状态占位�
 用户 2026-10-06：「创建任务不再是弹窗，而是进入二级页面」。本方法只
 发信号，真正切页由壳层做（列表页不认识壳层）。
 
-##### `start_create(path: str, name: str, diagram, uses_custom: bool) -> None`
+##### `start_create(path: str, name: str, diagram) -> None`
 
 创建任务页提交了 → 走**既有**的指纹/查重/建任务链路。
 
@@ -8645,8 +8717,9 @@ parent 一般为 MainWindow；会创建 store 引用与导入按钮状态占位�
     「PDF 输入不是必须的」）。这时**跳过整个指纹/查重链路**直接建
     任务：没有文件就无从算指纹，无从查重。空壳任务建好后进详情页，
     那边有补选 PDF 的入口。
-:param diagram: 自定义流程图（``None`` = 用默认流程模板）
-:param uses_custom: 勾了「使用自定义任务流程」才传 ``diagram``
+:param diagram: 流程图（``None`` = 没编辑过，用默认流程模板字节拷贝；
+    用户 2026-11-17 起"是否自定义"不再单独传——流程恒可编辑，
+    编辑保存过才传图）
 
 ##### `delete_task(task_id: str) -> None`
 
@@ -10201,11 +10274,12 @@ done/total 为 0、completed 为 False）。执行过哪怕失败/中断都算�
 
 （背板只负责给导航栏一层浅色底 + 右侧分隔线，见 :class:`_NavBackdrop`。）
 
-导航条目分两组：
+导航条目（用户 2026-11-17 起）：
 
 - ``TOP``：**任务管理**（原 ``TaskListPage``，点任务仍在栈内打开详情页）+
-  各独立模块（图片提取 / 去底色 / 拼图，来自 ``desktop.modules.MODULES``）；
-- 模块条目全部**惰性构造**：第一次点进去才 ``factory()``，不点不建。
+  **独立功能**（一条入口，点进去是方块页，每个方块 = 一个模块入口，
+  模块清单来自 ``desktop.modules.MODULES``）；
+- 模块页与入口页全部**惰性构造**：第一次点进去才 ``factory()``，不点不建。
 
 ⚠️ 导航栏**默认折叠**（用户 2026-10-02：「左侧的目录，默认关闭」）：启动后
 只剩一列图标，正文区拿到整幅宽度；想看到条目文字就点左上角的菜单按钮展开，
@@ -10227,6 +10301,7 @@ done/total 为 0、completed 为 False）。执行过哪怕失败/中断都算�
 | ROUTE_CREATE | `"create"` |
 | ROUTE_FLOW | `"flow"` |
 | ROUTE_SETTINGS | `"settings"` |
+| ROUTE_MODULES | `"modules"` |
 
 ### `class ModuleShell(QWidget)`
 
@@ -10251,6 +10326,8 @@ done/total 为 0、completed 为 False）。执行过哪怕失败/中断都算�
 | `prewarm_detail_page() -> None` | 预构造详情页骨架与**流程第一步**面板（同 app.py 原 ``_prewarm_detail_page``）。 |
 | `open_detail(task_id: str) -> None` | 打开某个任务的详情页（行为与 ``app.py::_open_detail`` 一致）。 |
 | `back_to_list() -> None` | 详情页「返回」→ 切回列表并刷新。 |
+| `modules_page() -> ModuleHubPage` | 「独立功能」入口页（惰性构造；外部截图/自测按这个方法取）。 |
+| `show_modules() -> None` | 切到「独立功能」入口页（左侧导航那条「独立功能」走这里）。 |
 | `show_module(key: str) -> None` | 切到某个模块页；首次进入时惰性构造。 |
 | `module_page(key: str) -> QWidget \| None` | 已构造的模块页；**没建过返回 None**（自测用它断言"惰性没被破坏"）。 |
 | `settings_page() -> SettingsPage` | 设置页（惰性构造；外部截图/自测按这个方法取）。 |
@@ -10303,7 +10380,7 @@ done/total 为 0、completed 为 False）。执行过哪怕失败/中断都算�
   「快速任务，任务名称为PDF 文件名称默认」）。与创建页选完 PDF 后
   ``_autofill_name`` 自动填进去的那一份**完全一致**（那边也是取 stem，
   不带 ``.pdf``）；想改名去详情页页头的铅笔按钮。
-- ``diagram=None`` / ``uses_custom=False`` ⇒ 用默认流程模板。
+- ``diagram=None`` ⇒ 用默认流程模板（字节拷贝）。
 
 ⚠️ 唯一"少做"的一步是**不经过创建任务页**；**查重那道闸仍会弹**——同一个
 PDF 已经建过任务时再建第二个，多半是误操作，不该因为"快速"就跳过。
@@ -11293,6 +11370,8 @@ bpmn.io 生成的 id，解析失败就**静默回落到默认流程** ⇒ 用户
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(spec: StepSpec, job=None, zone: SourceZone \| None=None, parent=None)` | 按 ``spec`` 组装控件；``job`` 省略时按 ``spec.command`` 造命令 job。 |
+| `add_extra(widget: QWidget) -> None` | 把宿主特有的控件插到「参数面板之后、弹性空白之前」。 |
+| `set_run_visible(visible: bool) -> None` | 显隐「执行」主按钮（中断按钮不动）。 |
 | `source() -> Path \| None` | 当前源（文件或目录）；未选为 ``None``。 |
 | `set_source(path: Path \| str \| None) -> None` | 设置源；未手动选过输出时，按 :meth:`StepSpec.default_output` 重推输出。 |
 | `output() -> Path \| None` | 当前输出目录；未定则为 ``None``（执行时按默认规则补）。 |
@@ -11311,6 +11390,23 @@ bpmn.io 生成的 id，解析失败就**静默回落到默认流程** ⇒ 用户
 ``zone``：宿主已经建好的**大输入区**。模块页把它横跨整幅放在页头下方
 （用户要的"页面上有一个大的输入框"），这时候传进来，本组件只接线、
 不重复摆放；不传就自己建一个摆在自己顶部（给"整块塞进卡片"的用法）。
+
+##### `add_extra(widget: QWidget) -> None`
+
+把宿主特有的控件插到「参数面板之后、弹性空白之前」。
+
+为什么需要：模块页会在共用控制区里加自己的段（检测页的「导出」块、
+导出进度）。直接 ``layout().addWidget`` 会排到执行/中断按钮**下面**，
+主按钮就被挤到右栏中间了（用户 2026-11-17：「输出目录/执行/中断等，
+放在控制面板底部」）。统一走本方法，宿主加的东西跟着参数面板走，
+弹性空白与底部动作区的位置永远不变。
+
+##### `set_run_visible(visible: bool) -> None`
+
+显隐「执行」主按钮（中断按钮不动）。
+
+检测页「人工标注」模式下不调 YOLO，执行按钮隐藏（与任务详情页
+``_sync_detect_mode_ui`` 同口径）；其它步骤一律显示。
 
 ##### `set_source(path: Path | str | None) -> None`
 
@@ -15217,7 +15313,7 @@ Markdown 里写的是 ``screenshots/guide/xxx.png`` 这样的相对路径，
 
 源码：[`desktop/ui/menu.py`](../../desktop/ui/menu.py)
 
-窗口顶部菜单栏：**文件 / 编辑 / 单任务 / 帮助**（原生 ``QMenuBar``）。
+窗口顶部菜单栏：**文件 / 编辑 / 独立功能 / 帮助**（原生 ``QMenuBar``）。
 
 为什么是原生菜单栏（而不是自绘 Fluent 菜单条）
 --------------------------------------------
@@ -15235,7 +15331,7 @@ Qt 原生 ``QMenuBar``：与既有窗口装饰同族、自带 ``Alt`` 助记符�
   用户 2026-10-16）；
 - 文件 → 退出：``window.close()`` —— **不是** ``QApplication.quit()``（见
   :func:`quit_app` 的说明）；
-- 单任务 → ``<key>``：``shell.show_module(key)``，清单**从 ``MODULES`` 派生**
+- 独立功能 → ``<key>``：``shell.show_module(key)``，清单**从 ``MODULES`` 派生**
   （与左侧导航同源同序，本文件不维护第二份清单）；
 - 编辑 → 删除选中 / 插入图片 / 下载图片 / 打印图片：全部转发给当前页
   （鸭子类型 ``can_edit_*`` / ``edit_*``；PDF排版四项全开，图片拼版给
@@ -15257,7 +15353,7 @@ qfluentwidgets 的 ``Dialog``，它只支持"字符串 + 两个按钮"）。
 | DATA_PACKAGE_URL | `"https://github.com/zunkun/gujitrain/releases/tag/database"` |
 | MENU_FILE | `"文件(&F)"` |
 | MENU_EDIT | `"编辑(&E)"` |
-| MENU_SINGLE_TASK | `"单任务(&S)"` |
+| MENU_MODULES | `"独立功能(&S)"` |
 | MENU_HELP | `"帮助(&H)"` |
 | ACTION_DELETE_SELECTED | `"删除选中(&D)"` |
 | ACTION_INSERT_IMAGES | `"插入图片(&I)"` |
@@ -15382,11 +15478,11 @@ qfluentwidgets 的 ``Dialog``，它只支持"字符串 + 两个按钮"）。
 | `data_package_result(kind: str, *, current: int, latest: dict \| None=None) -> UpdateVerdict` | 把一次「去底色数据包检查」结果收成 :class:`UpdateVerdict`（纯数据）。 |
 | `about_rows(window=None) -> list[tuple[str, str]]` | 「关于」弹窗的行（``(键, 值)``）。纯数据，自测直接断言。 |
 | `install_title_bar(window)` | 给**无边框主窗口**装自绘标题栏（图标 / 标题 / 菜单同排），返回标题栏。 |
-| `install_menu_bar(window) -> QMenuBar` | 把菜单栏（文件 / 编辑 / 单任务 / 帮助）插进**标题栏的标题之后**。 |
+| `install_menu_bar(window) -> QMenuBar` | 把菜单栏（文件 / 编辑 / 独立功能 / 帮助）插进**标题栏的标题之后**。 |
 | `build_file_menu(bar: QMenuBar, window) -> QMenu` | 「文件」：新建任务 / 快速任务 / （分隔线）/ 退出。 |
 | `build_edit_menu(bar: QMenuBar, window) -> QMenu` | 「编辑」：删除选中 / 插入图片 / 下载图片 / 打印图片（用户 2026-11-01）。 |
 | `open_quick_task(window) -> None` | 「快速任务」：选一个 PDF，**随即建任务**（不再进创建页填名称/流程）。 |
-| `build_single_task_menu(bar: QMenuBar, window) -> QMenu` | 「单任务」：**从 ``MODULES`` 派生**（顺序/文案/图标与左侧导航同源）。 |
+| `build_modules_menu(bar: QMenuBar, window) -> QMenu` | 「独立功能」：**从 ``MODULES`` 派生**（顺序/文案/图标与入口页同源）。 |
 | `build_help_menu(bar: QMenuBar, window) -> QMenu` | 「帮助」：帮助文档 / 检查更新 / 关于。 |
 | `quit_app(window) -> None` | 「退出」：先收掉非模态子弹窗，再 ``window.close()``。 |
 | `open_about(window) -> None` | 「关于」：程序名 / 版本 / 数据目录 / 项目地址。 |
@@ -15455,7 +15551,7 @@ gh-proxy 镜像）都测过速**，``latest`` 里带着 ``mirror_label`` / ``dow
 
 #### `install_menu_bar(window) -> QMenuBar`
 
-把菜单栏（文件 / 编辑 / 单任务 / 帮助）插进**标题栏的标题之后**。
+把菜单栏（文件 / 编辑 / 独立功能 / 帮助）插进**标题栏的标题之后**。
 
 ⚠️ 用 ``QMenuBar(window.titleBar)`` 而**不是** ``window.menuBar()``：
 ``QMainWindow.menuBar()`` 会就地造出**标题栏下面的一整行**空菜单栏——那正是
@@ -15503,13 +15599,13 @@ import 具体页面，PDF排版、图片拼版、去底色、检测、提取各�
 ⚠️ 用户在对话框里按取消（返回空串）就**什么都不做**：尤其别当成"建一个
 空壳任务"——那是创建页「PDF 可留空」那条路的语义，与"快速任务"正好相反。
 
-#### `build_single_task_menu(bar: QMenuBar, window) -> QMenu`
+#### `build_modules_menu(bar: QMenuBar, window) -> QMenu`
 
-「单任务」：**从 ``MODULES`` 派生**（顺序/文案/图标与左侧导航同源）。
+「独立功能」：**从 ``MODULES`` 派生**（顺序/文案/图标与入口页同源）。
 
-⚠️ 这里**不**再写一份清单：左侧导航栏遍历的是同一个 ``MODULES``
-（``desktop/modules/__init__.py`` 由 ``NAV_STEPS`` 派生），所以"导航里有的
-菜单里都有"，改模块只改 ``steps/spec.py`` 一处。
+⚠️ 这里**不**再写一份清单：左侧导航的「独立功能」入口页遍历的是同一个
+``MODULES``（``desktop/modules/__init__.py`` 由 ``NAV_STEPS`` 派生），所以
+"入口页里有的菜单里都有"，改模块只改 ``steps/spec.py`` 一处。
 
 #### `build_help_menu(bar: QMenuBar, window) -> QMenu`
 

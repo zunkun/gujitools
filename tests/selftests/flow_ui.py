@@ -472,46 +472,51 @@ def run(ctx) -> None:
             app.processEvents()
             ok("面板点关闭能关掉弹窗（关的是所属窗口）",
                not shell.dialog.isVisible())
-        # 创建任务面板：**两种模式都必须显示"当前流程"**（用户 2026-10-05 要求）
+        # 创建任务面板：**恒显示"当前流程"**（用户 2026-10-05 要求；2026-11-17
+        # 起复选框已撤——单一模式，默认流程恒可编辑）
         panel = create_task_dialog.CreateTaskPanel()
         panel.show()
         app.processEvents()
         try:
-            ok("默认是默认流程模式", not panel.uses_custom_flow())
+            ok("初始未编辑（uses_custom_flow 为 False）",
+               not panel.uses_custom_flow())
+            ok("面板里**没有**「使用自定义任务流程」复选框（用户 2026-11-17 撤）",
+               not hasattr(panel, "custom_check"))
             # ⚠️ 这组断言就是用户反馈的那条："无论是否勾选自定流程，都要告诉
             #    用户当前流程长什么样"——以前默认模式下节点图整块被藏起来。
             default_names = [n.name for n in load_default_diagram().nodes]
-            ok("默认模式下**也显示**节点图（不是空白/隐藏）",
+            ok("未编辑时**也显示**节点图（不是空白/隐藏）",
                len(panel.flow_view.diagram().nodes) > 0
                and [n.name for n in panel.flow_view.diagram().nodes]
                == default_names,
                f"{[n.name for n in panel.flow_view.diagram().nodes]}")
-            ok("默认模式下提示写明用的是默认流程（「当前流程」标题行已删，"
+            ok("未编辑时提示写明用的是默认流程（「当前流程」标题行已删，"
                "由 mode_hint 承担告知）",
                "默认" in panel.mode_hint.text(), panel.mode_hint.text())
-            ok("默认模式不传图（走字节拷贝模板，保住 guji:port）",
+            ok("未编辑时不传图（走字节拷贝模板，保住 guji:port）",
                panel.result_diagram() is None)
-            ok("默认模式下「编辑流程」「恢复默认」不可见",
-               not panel.edit_button.isVisible()
-               and not panel.reset_button.isVisible())
-            ok("默认模式也有选 PDF 的地方",
+            # ⚠️ 用户 2026-11-17：默认流程**可编辑**——「编辑流程」「恢复默认」
+            #    恒可见（不再"仅自定义模式出现"）
+            ok("「编辑流程」「恢复默认」恒可见（默认流程就可编辑）",
+               panel.edit_button.isVisible() and panel.reset_button.isVisible())
+            ok("未编辑时也有选 PDF 的地方",
                panel.pick_button.isVisible() and panel.selected_pdf() is None)
 
             panel.set_custom_mode(True)
             app.processEvents()
-            ok("勾上 checkbox 切自定义模式", panel.uses_custom_flow())
+            ok("标记已编辑后 uses_custom_flow 为 True", panel.uses_custom_flow())
             custom_names = [n.name for n in panel.flow_view.diagram().nodes]
             # 自定义初值即默认模板（"从默认流程开始改"的起点）。
             # 要钉的是**显示的是"自定义那份图"**，而不是又一次默认图。
             init_names = [n.name for n in
                           create_task_dialog.load_custom_init().nodes]
-            ok("自定义模式显示的是**初值**那张图",
+            ok("已编辑模式显示的是**初值**那张图",
                len(custom_names) > 0 and custom_names == init_names,
                f"{custom_names} vs {init_names}")
-            ok("自定义模式提示写明用的是自定义流程",
+            ok("已编辑模式提示写明用的是自定义流程",
                "自定义" in panel.mode_hint.text(), panel.mode_hint.text())
             _result = panel.result_diagram()
-            ok("自定义模式传用户那张图（不是 None）",
+            ok("已编辑模式传用户那张图（不是 None）",
                _result is not None
                and [n.name for n in _result.nodes] == custom_names)
             ok("有「编辑流程」入口",
@@ -529,11 +534,15 @@ def run(ctx) -> None:
             ok("未选 PDF 时「创建任务」按钮是可点的（不是灰的）",
                panel.confirm_button.isEnabled()
                and not panel.confirm_button.isHidden())
-            # 切回默认模式：图要跟着回去
-            panel.set_custom_mode(False)
+            # 恢复默认流程：「已编辑」标记跟着清（又回到字节拷贝语义）
+            panel._on_reset_flow()
             app.processEvents()
-            ok("切回默认模式后节点图跟着换回默认流程",
-               [n.name for n in panel.flow_view.diagram().nodes] == default_names)
+            ok("恢复默认流程后不传图（回到字节拷贝语义）"
+               "且节点图换回默认流程",
+               panel.result_diagram() is None
+               and not panel.uses_custom_flow()
+               and [n.name for n in panel.flow_view.diagram().nodes]
+               == default_names)
         finally:
             panel.close()
             app.processEvents()
@@ -2301,7 +2310,7 @@ def _check_open_create_resets() -> None:
         shell.open_create()
         ok("open_create 每次进入都复位任务名（不是留着上一次的）",
            page.name_edit.text() == "", repr(page.name_edit.text()))
-        ok("open_create 每次进入都复位勾选状态",
+        ok("open_create 每次进入都复位流程编辑标记（回到默认流程）",
            page.panel.uses_custom_flow() is False)
         # 已经在这一页时再点一次「创建任务」也要清（复位在换页判断之前）
         page.set_name("又填了一次")
@@ -2348,7 +2357,7 @@ def _check_create_page_reset(create_page, sample_pdf) -> None:
     ok("复位后 PDF 那行回到「可留空」（不是留着一句假的已选）",
        create_page.panel.pdf_state.text() == EMPTY_PDF_HINT,
        create_page.panel.pdf_state.text())
-    ok("复位后回到默认流程模式（勾选被清）",
+    ok("复位后回到默认流程（编辑标记被清）",
        create_page.panel.uses_custom_flow() is False)
     ok("复位后自定义流程图回到初值（不是带着上一本书的图）",
        [n.name for n in create_page.panel._custom_diagram.nodes]

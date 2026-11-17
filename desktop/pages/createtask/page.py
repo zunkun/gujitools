@@ -20,7 +20,7 @@
     任务名称  [ 一本古籍            ]  ← 最多 360px，placeholder＝任务#0007
     留空则使用默认名「任务#0007」；PDF 可以之后在任务详情里补选。
     ┌ CreateTaskPanel ────────────────────────┐
-    │ ☑ 使用自定义任务流程                     │
+    │ （流程说明 + 流程图 + 编辑/恢复按钮）      │  ← 默认流程恒可编辑
     │ …                                        │
     │ [取消]                     [创建任务]    │  ← 面板自带按钮
     └─────────────────────────────────────────┘
@@ -92,8 +92,10 @@ NAME_EDIT_MAX_WIDTH = 360
 class CreateTaskPage(QWidget):
     """创建任务页：选 PDF + 任务名称 + 看/编流程 → 交给列表页建任务。"""
 
-    #: 用户填完了，可以建任务：(pdf 路径, 任务名, 流程图 or None, 是否自定义)
-    create_requested = Signal(str, str, object, bool)
+    #: 用户填完了，可以建任务：(pdf 路径, 任务名, 流程图 or None)
+    #: ⚠️ 第 4 参「是否自定义」已撤（用户 2026-11-17：默认流程恒可编辑）——
+    #:    ``diagram`` 为 ``None`` = 没编辑过，store 字节拷贝默认模板。
+    create_requested = Signal(str, str, object)
     #: 用户点了「取消」/「返回」，宿主切回列表
     closed = Signal()
 
@@ -233,7 +235,7 @@ class CreateTaskPage(QWidget):
     def reset(self) -> None:
         """回到**刚打开**的样子（用户 2026-10-06：上一次创建任务信息没清理）。
 
-        面板那份（已选 PDF / 勾选 / 自定义流程图 / 开着的编辑器）由
+        面板那份（已选 PDF / 编辑过的流程图 / 开着的编辑器）由
         :meth:`CreateTaskPanel.reset` 清；这里清本页自己的两样：
 
         - **任务名输入框**（截图里留着的正是它）；
@@ -300,7 +302,7 @@ class CreateTaskPage(QWidget):
         self.create_requested.emit(
             str(path) if path is not None else "",
             self.task_name(),
-            self.panel.result_diagram(), self.panel.uses_custom_flow(),
+            self.panel.result_diagram(),
         )
 
     def _flow_needs_source_pdf(self) -> bool:

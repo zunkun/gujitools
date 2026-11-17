@@ -66,9 +66,22 @@ def run(ctx) -> None:
     ok("list_page 就是壳层的列表页", w.list_page is w.shell.list_page)
     ok("pages 就是壳层的页面栈", w.pages is w.shell.pages)
 
-    # ---- 3. 导航条目与注册表一致 ----
-    nav_items = w.shell._module_items
-    ok("导航为每个模块都建了条目", set(nav_items) == set(keys), str(sorted(nav_items)))
+    # ---- 3. 导航：模块收成一条「独立功能」入口（用户 2026-11-17）----
+    # 旧契约（每个模块一条导航）已废：导航只有「任务管理 + 独立功能」，点
+    # 「独立功能」是方块入口页，每个方块 = 一个模块入口。
+    from desktop.shell import ROUTE_MODULES
+
+    ok("导航不再有逐模块条目（已收成一条「独立功能」）",
+       not hasattr(w.shell, "_module_items"), "")
+    ok("导航有「独立功能」条目",
+       getattr(w.shell, "_modules_item", None) is not None, "")
+    hub = w.shell.modules_page()
+    ok("入口页方块与 MODULES 逐一对应（顺序一致 = 与注册表同源）",
+       [t.key for t in hub.tiles()] == keys,
+       str([t.key for t in hub.tiles()]))
+    ok("每个方块都有标题与副标题（文案来自注册表）",
+       all(t.title_label.text() == module.title
+           for t, module in zip(hub.tiles(), MODULES)), "")
 
     # ---- 3b. 导航默认折叠（用户 2026-10-02：「左侧的目录，默认关闭」）----
     # ⚠️ 这里必须显式给一个够宽的窗口：qfluentwidgets 在"窗口窄于最小展开宽度"
@@ -237,27 +250,35 @@ def run(ctx) -> None:
     ok("切回任务管理", w.shell.current_route() == "tasks", w.shell.current_route())
     ok("任务管理切回后栈里就是列表页", w.pages.currentWidget() is w.list_page)
 
-    # ---- 6a. 点导航条目必须**真的切页**（真点，不是直接调 show_module）----
-    # ⚠️ 回归钉子（用户 2026-10-02 报障：「点击左侧的图片提取，显示的还是任务
-    #    管理」）：qfluentwidgets 的 ``NavigationWidget.clicked`` 是
-    #    ``Signal(bool)``，``NavigationPanel._registerWidget`` 把 onClick **直接
-    #    连到这个信号**上——槽写成 ``lambda key=module.key: ...`` 的话，Qt 会把
-    #    那个 ``True`` 当第一个位置参数塞给 key，于是 ``show_module(True)``
-    #    找不到模块、安静退回任务管理。三个模块"点不开"全靠这条守。
-    #    （老断言只直接调 show_module，走的不是真实点击链路，所以漏了它。）
+    # ---- 6a. 真点导航/方块必须**真的切页**（真点，不是直接调 show_module）----
+    # ⚠️ 回归钉子（用户 2026-10-02 报障）：qfluentwidgets 的
+    #    ``NavigationWidget.clicked`` 是 ``Signal(bool)``，onClick **直接连这个
+    #    信号**——槽不吞那个 bool 时，``True`` 会被当第一个位置参数塞进去，
+    #    表现是"点了导航显示的还是任务管理"。
+    # 2026-11-17 起导航只有一条「独立功能」：真点它 → 入口页；再真点方块 →
+    # 模块页；模块页是「独立功能」的下级，高亮应留在「独立功能」上。
+    w.shell.show_tasks()
+    app.processEvents()
+    from PySide6.QtCore import Qt as _Qt
+    from PySide6.QtTest import QTest
+
+    w.shell._modules_item.click()
+    app.processEvents()
+    ok("点「独立功能」条目真的切到入口页",
+       w.shell.current_route() == ROUTE_MODULES, w.shell.current_route())
+    ok("入口页的导航高亮在「独立功能」",
+       w.shell.selected_route() == ROUTE_MODULES, w.shell.selected_route())
     for module in MODULES:
-        w.shell._module_items[module.key].click()
+        tile = hub.tile_for(module.key)
+        assert tile is not None
+        QTest.mouseClick(tile, _Qt.MouseButton.LeftButton)
         app.processEvents()
-        ok(
-            f"点导航条目 {module.key} 真的切过去了",
-            w.shell.current_route() == module.key,
-            w.shell.current_route(),
-        )
-        ok(
-            f"点 {module.key} 后导航高亮也跟着走",
-            w.shell.selected_route() == module.key,
-            w.shell.selected_route(),
-        )
+        ok(f"点方块 {module.key} 真的切过去了",
+           w.shell.current_route() == module.key,
+           w.shell.current_route())
+        ok(f"点方块 {module.key} 后高亮在「独立功能」",
+           w.shell.selected_route() == ROUTE_MODULES,
+           w.shell.selected_route())
     w.shell._tasks_item.click()
     app.processEvents()
     ok("点「任务管理」条目能切回列表页",
@@ -268,7 +289,8 @@ def run(ctx) -> None:
     # 不走 show_module；若不同步，截图里会出现"左边高亮一页、右边显示另一页"。
     w.shell.show_module("rembg")
     app.processEvents()
-    ok("切到 rembg 后高亮在 rembg", w.shell.selected_route() == "rembg",
+    ok("切到 rembg 后高亮在「独立功能」（模块页是它的下级）",
+       w.shell.selected_route() == ROUTE_MODULES,
        w.shell.selected_route())
     w.pages.setCurrentWidget(w.list_page)
     app.processEvents()
@@ -280,16 +302,21 @@ def run(ctx) -> None:
     app.processEvents()
     w.shell.show_module("rembg")
     app.processEvents()
-    ok("重复进同一模块仍保持高亮", w.shell.selected_route() == "rembg",
+    ok("重复进同一模块仍保持高亮",
+       w.shell.selected_route() == ROUTE_MODULES,
        w.shell.selected_route())
 
     # ---- 6c. 详情页没有导航条目：高亮必须留在「任务管理」而不是丢空 ----
-    # 直接驱动 _sync_nav_to_page 的映射：ROUTE_DETAIL → ROUTE_TASKS。
+    # 直接驱动 _sync_nav_to_page 的映射验证。当前页是 rembg 模块页（6b 结尾
+    # 留下的）：它是「独立功能」的下级，同步后高亮应落在 ROUTE_MODULES。
     from desktop.shell import ROUTE_DETAIL, ROUTE_TASKS
 
     w.shell._selected_route = ROUTE_TASKS
-    w.shell._sync_nav_to_page(0)  # 当前页是列表页 → 走一次真实同步
-    ok("同步后高亮 = 当前路由", w.shell.selected_route() == w.shell.current_route())
+    w.shell._sync_nav_to_page(0)  # 当前页是 rembg 模块页 → 走一次真实同步
+    ok("同步后模块页高亮 = 「独立功能」",
+       w.shell.selected_route() == ROUTE_MODULES
+       and w.shell.current_route() == "rembg",
+       f"selected={w.shell.selected_route()} current={w.shell.current_route()}")
     ok("详情页路由键与任务管理不同", ROUTE_DETAIL != ROUTE_TASKS)
 
     # ---- 7. 「独立」：模块之间、模块与详情页之间不许有 import 依赖 ----

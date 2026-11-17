@@ -109,13 +109,13 @@ def _check_settings_page(ctx, cfg, ok, qconfig) -> None:
 
 # ------------------------------------------------------------------ ② 壳层入口
 def _check_shell_entry(ctx, ok) -> None:
-    from desktop.shell import ROUTE_SETTINGS, ROUTE_TASKS
+    from desktop.shell import ROUTE_MODULES, ROUTE_SETTINGS, ROUTE_TASKS
 
     shell = ctx.w.shell
     ok("导航栏底部有「设置」条目",
        getattr(shell, "_settings_item", None) is not None)
-    ok("设置页在导航里是底部分组（不混进步骤那一列）",
-       ROUTE_SETTINGS not in {key for key in shell._module_items})
+    ok("设置页有独立路由（不混在「独立功能」里）",
+       ROUTE_SETTINGS != ROUTE_MODULES)
     shell.show_settings()
     ctx.app.processEvents()
     ok("show_settings 后路由 = settings",

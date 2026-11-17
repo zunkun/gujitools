@@ -20,17 +20,27 @@
 
 ::
 
-    [ ] 使用自定义任务流程        ← 决定用哪份流程
-    说明文字（随勾选变化，含步骤串——"当前流程"由它承担）
+    说明文字（随是否编辑过变化，含步骤串——"当前流程"由它承担）
     ────────────────────────────
     选择 PDF   [选择文件…]  已选择：xxx.pdf     ← 两种模式都要选 PDF
     ────────────────────────────
-    [编辑流程] [恢复默认流程]                  ← 仅自定义模式可用（右对齐）
+    [编辑流程] [恢复默认流程]                  ← 恒可用（右对齐）
     ┌ 流程节点图（按 bpmn 文件渲染）┐
     └───────────────────────────┘
     共 4 步：提取图片 → 检测文本框 → 图片拼版 → PDF排版
     ────────────────────────────
     [取消]  [创建任务]
+
+## 2026-11-17：「使用自定义任务流程」复选框撤掉（用户本轮要求）
+
+> 1. 默认使用自定义流程，这个选项不再需要
+> 2. 默认流程可编辑
+
+语义变成**单一模式**：流程恒从默认模板（``task_default.bpmn``）起步、恒可
+编辑——「编辑流程」按钮不再只在自定义模式出现。原来"勾了才落自定义图"的
+分界改由 :attr:`_flow_edited` 承担：**用户真的进编辑器保存过**才算自定义
+（此时 ``result_diagram()`` 传图落盘）；没动过就返回 ``None``，store 走
+**字节拷贝**默认模板。
 
 三层结构（每层只干一件事）：
 
@@ -61,7 +71,6 @@ from PySide6.QtWidgets import (
 from qfluentwidgets import (
     BodyLabel,
     CaptionLabel,
-    CheckBox,
     FluentIcon as FIF,
     PrimaryPushButton,
     PushButton,
@@ -154,10 +163,16 @@ class CreateTaskPanel(QWidget):
         差异用构造参数声明，组件不猜自己在哪。
         """
         super().__init__(parent)
-        # ⚠️ 自定义模式的**初值**即默认模板那份图（整张图，含坐标），
-        # 页面照着它渲染。文件缺失/损坏 → 空图（由 load_default_diagram 兜底）。
+        # ⚠️ 流程的**初值**即默认模板那份图（整张图，含坐标），页面照着它渲染。
+        # 文件缺失/损坏 → 空图（由 load_default_diagram 兜底）。
+        # 调用方显式给了 ``flow`` ⇒ 视为"用户带来的自定义图"（要落盘）。
         self._custom_diagram = flow or load_custom_init()
-        # 默认流程 = 默认模板文件那份图（**只用于预览**；建任务时走字节拷贝）
+        # ⚠️ 「使用自定义任务流程」复选框已撤（用户 2026-11-17）：单一模式，
+        # 流程恒从默认模板起步、恒可编辑。落不落自定义图改由这个标记判：
+        # **真的进编辑器保存过**才算自定义（见 result_diagram）。
+        self._flow_edited = flow is not None
+        # 默认流程 = 默认模板文件那份图（**只用于预览与提示文案**；建任务时
+        # 未编辑走字节拷贝）
         self._default_diagram = self._load_default_diagram()
         self._pdf: Path | None = None
         self._editor = None
@@ -185,12 +200,9 @@ class CreateTaskPanel(QWidget):
         #    后页头已有标题，再摆一行就是重复；弹窗形态（``CreateTaskDialog``）
         #    的窗口标题栏仍由 ``DIALOG_TITLE`` 提供。
 
-        # ---- 流程模式 checkbox（文档要求的核心组件）----
-        self.custom_check = CheckBox("使用自定义任务流程")
-        self.custom_check.setChecked(False)
-        self.custom_check.stateChanged.connect(self._on_mode_changed)
-        layout.addWidget(self.custom_check)
-
+        # ---- 流程说明行（"当前用哪条流程"由它承担；随编辑状态变文案）----
+        # ⚠️ 原来上面还有一个「使用自定义任务流程」复选框（用户 2026-11-17
+        #    撤掉）：默认流程本身就可编辑，不需要一个开关来"解锁"编辑。
         self.mode_hint = BodyLabel()
         ui.apply_to(self.mode_hint, T.SIZE_BODY, color=T.INK_SOFT)
         self.mode_hint.setWordWrap(True)
@@ -229,8 +241,10 @@ class CreateTaskPanel(QWidget):
         # ---- 「编辑流程/恢复默认流程」按钮行（右对齐）----
         # ⚠️ 原来这行左边还有一个「当前流程：默认/自定义任务流程」标题
         #    （用户 2026-10-06 要求删掉）：上面 mode_hint 已经说了用哪条流程
-        #    （默认模式是完整步骤串，自定义模式点名"自定义任务流程"），再摆
+        #    （未编辑是完整步骤串，编辑过点名"自定义任务流程"），再摆
         #    一行标题是重复信息。只留右侧两个按钮。
+        # ⚠️ 两个按钮**恒可用**（用户 2026-11-17）：默认流程本身就可编辑，
+        #    不再"仅自定义模式出现"。
         flow_button_row = QHBoxLayout()
         flow_button_row.setSpacing(T.SPACE_SM)
         flow_button_row.addStretch()
@@ -291,24 +305,18 @@ class CreateTaskPanel(QWidget):
 
         self._refresh_confirm()
 
-    # ------------------------------------------------------------ 模式切换
-    def _on_mode_changed(self) -> None:
-        self._refresh_mode()
-
+    # ------------------------------------------------------------ 模式刷新
     def _refresh_mode(self) -> None:
-        """按 checkbox 换**当前显示的流程**、文案与按钮可见性。
+        """刷**当前显示的流程**、文案与按钮可见性（单一模式，无开关）。
 
-        ⚠️ 节点图**不隐藏**（这是本轮的核心改动）：未勾选时显示默认流程，
-        勾上后显示自定义流程。用户任何时候都能看到"这次会用哪条流程"。
+        ⚠️ 节点图恒显示当前流程（未编辑 = 默认模板那张；编辑保存过 = 用户
+        那张）。用户任何时候都能看到"这次会用哪条流程"。
         """
-        custom = self.uses_custom_flow()
-        if custom:
-            self.mode_hint.setText(CUSTOM_HINT)
-        else:
-            self.mode_hint.setText(default_hint(self._default_diagram))
-        self.edit_button.setVisible(custom)
-        self.reset_button.setVisible(custom)
-        self.confirm_button.setText("确认流程并创建" if custom else "创建任务")
+        self.mode_hint.setText(
+            CUSTOM_HINT if self._flow_edited
+            else default_hint(self._default_diagram)
+        )
+        self.confirm_button.setText("创建任务")
         self.flow_view.set_diagram(self.current_diagram())
         # 换图后高度可能变（默认 8 节点 vs 自定义 4 节点），给个贴合的最小高度
         self.flow_scroll.setMinimumHeight(
@@ -317,10 +325,8 @@ class CreateTaskPanel(QWidget):
         self._flow_summary_update()
 
     def current_diagram(self) -> FlowDiagram:
-        """当前**显示**的图（未勾=默认流程，勾了=自定义流程）。"""
-        return (
-            self._custom_diagram if self.uses_custom_flow() else self._default_diagram
-        )
+        """当前**显示**的图（未编辑 = 默认模板，编辑保存过 = 用户那张）。"""
+        return self._custom_diagram
 
     # ------------------------------------------------------------ 选 PDF
     def _on_pick_pdf(self) -> None:
@@ -372,8 +378,8 @@ class CreateTaskPanel(QWidget):
     def reset(self) -> None:
         """回到**刚打开**的样子（用户 2026-10-06：上一次创建任务信息要清掉）。
 
-        清四样：已选 PDF、勾选状态、自定义流程图（回到默认模板那份）、以及
-        正开着的流程编辑器。
+        清四样：已选 PDF、「编辑过流程」标记、自定义流程图（回到默认模板
+        那份）、以及正开着的流程编辑器。
 
         ⚠️ **自定义流程图也要清**：用户编了半天流程，建完任务再进来却还带着
         那张图——他要建第二个任务时会以为"又得从头编一遍"（其实这是上一本
@@ -394,9 +400,7 @@ class CreateTaskPanel(QWidget):
             self._editor = None
         self._editor_host.setVisible(False)
         self._set_flow_preview_visible(True)
-        # ⚠️ 顺序要紧：先清 checkbox（触发 _refresh_mode 走一遍默认流程），
-        #    再换自定义图——反过来会拿着旧的自定义图去刷默认模式的预览。
-        self.custom_check.setChecked(False)
+        self._flow_edited = False
         self._custom_diagram = load_custom_init()
         self._refresh_mode()
 
@@ -445,10 +449,15 @@ class CreateTaskPanel(QWidget):
         self._editor_host.setVisible(True)
 
     def _on_editor_done(self, ok: bool) -> None:
-        """内嵌编辑器结束：保存了才回写，然后切回流程图预览。"""
+        """内嵌编辑器结束：保存了才回写并标记"已编辑"，然后切回流程图预览。
+
+        ⚠️ 保存过才算自定义（``_flow_edited = True``）：只是打开编辑器看了看
+        又关掉，不该把默认流程当自定义图落盘。
+        """
         if ok and self._editor is not None:
             updated = self._editor.result_diagram()
             if updated is not None:
+                self._flow_edited = True
                 self.set_custom_diagram(updated)
         self._editor_host.setVisible(False)
         self._set_flow_preview_visible(True)
@@ -463,29 +472,34 @@ class CreateTaskPanel(QWidget):
         2026-10-06）。⚠️ 漏掉任何一个都会在编辑时露出来——图和按钮同时
         可见，用户以为没切进编辑。
         """
-        custom = self.uses_custom_flow()
         for widget in (self.flow_scroll, self.flow_summary):
             widget.setVisible(visible)
-        # 「编辑流程/恢复默认」只在自定义模式下出现（默认流程没得编）
-        self.edit_button.setVisible(visible and custom)
-        self.reset_button.setVisible(visible and custom)
-        # 底部「取消/确认流程并创建」只在预览态出现（编辑态由编辑器的
+        # 「编辑流程/恢复默认」恒可用（用户 2026-11-17：默认流程就可编辑），
+        # 只跟着预览态显隐
+        self.edit_button.setVisible(visible)
+        self.reset_button.setVisible(visible)
+        # 底部「取消/创建任务」只在预览态出现（编辑态由编辑器的
         # 「保存流程/关闭」接管，保存后自动回到预览态）
         self._button_bar.setVisible(visible)
 
     def _on_reset_flow(self) -> None:
-        """恢复默认流程：回到默认模板那一份（``task_default.bpmn``）。"""
+        """恢复默认流程：回到默认模板那一份（``task_default.bpmn``）。
+
+        ⚠️ 回到的就是默认模板 ⇒ 「已编辑」标记一并清掉：此后
+        :meth:`result_diagram` 返回 ``None``，store 走字节拷贝（保住
+        ``guji:port``），与"没动过"完全同一语义。
+        """
+        self._flow_edited = False
         self.set_custom_diagram(load_custom_init())
 
     def set_custom_diagram(self, diagram: FlowDiagram) -> None:
-        """换自定义流程图并刷新预览（编辑弹窗确认后由 :meth:`_on_edit_flow` 调）。"""
+        """换流程图并刷新预览（编辑弹窗确认后由 :meth:`_on_edit_flow` 调）。"""
         self._custom_diagram = diagram
-        if self.uses_custom_flow():
-            self.flow_view.set_diagram(diagram)
-            self.flow_scroll.setMinimumHeight(
-                max(FLOW_MIN_HEIGHT, self.flow_view.sizeHint().height() + 24)
-            )
-            self._flow_summary_update()
+        self.flow_view.set_diagram(diagram)
+        self.flow_scroll.setMinimumHeight(
+            max(FLOW_MIN_HEIGHT, self.flow_view.sizeHint().height() + 24)
+        )
+        self._flow_summary_update()
 
     def _flow_summary_update(self) -> None:
         from desktop.components.flow_dialog import summarize
@@ -495,21 +509,23 @@ class CreateTaskPanel(QWidget):
     def result_diagram(self) -> FlowDiagram | None:
         """用哪份流程图建任务。
 
-        - 自定义模式：返回用户编的那张图（store 会写进 ``flow.bpmn``）；
-        - 默认模式：返回 ``None`` —— 语义是"用默认模板"，store 会**原样字节
+        - **编辑保存过**：返回用户编的那张图（store 会写进 ``flow.bpmn``）；
+        - **没动过**：返回 ``None`` —— 语义是"用默认模板"，store 会**原样字节
           拷贝** ``task_default.bpmn``，不经 ``FlowDiagram`` 的重新序列化
           （那会把连线上的 ``guji:port`` 抹掉）。
         """
-        if self.uses_custom_flow():
+        if self._flow_edited:
             return self._custom_diagram
         return None
 
     def uses_custom_flow(self) -> bool:
-        return self.custom_check.isChecked()
+        """流程是不是**自定义**的（= 编辑保存过；兼容旧调用方保留此名）。"""
+        return self._flow_edited
 
     def set_custom_mode(self, enabled: bool) -> None:
-        """设流程模式（自测与将来"记住上次选择"用）。"""
-        self.custom_check.setChecked(bool(enabled))
+        """设"是否自定义流程"（自测兼容入口；等效于标记已编辑）。"""
+        self._flow_edited = bool(enabled)
+        self._refresh_mode()
 
     # ------------------------------------------------------------ 提交
     def can_submit(self) -> bool:

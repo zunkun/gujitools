@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-"""顶部菜单栏（文件 / 单任务 / 帮助）自测。
+"""顶部菜单栏（文件 / 独立功能 / 帮助）自测。
 
 断言线（用户 2026-10-15 提的三组菜单，"点了要真到那儿"）：
 
 1. **结构**：三个顶级菜单与各自的动作文案（含 ``&`` 助记符）；
-2. **路由**：点「单任务 → <模块>」真的切到该模块页、左侧导航高亮同步；
+2. **路由**：点「独立功能 → <模块>」真的切到该模块页、导航高亮同步到「独立功能」；
    点「文件 → 新建任务」真的落到创建任务页——菜单只做转发，不另建页；
 3. **检查更新三分支**：已是最新 / 有新版本 / 查询失败各自的弹窗标题与正文，
    以及**重入防护**（检查期间再点不叠加请求、菜单项置灰改名）；
@@ -23,7 +23,7 @@ import time
 from tests.selftests._context import ok, pump, wait_until
 
 NAME = "app_menu"
-TITLE = "顶部菜单栏（文件/单任务/帮助）"
+TITLE = "顶部菜单栏（文件/独立功能/帮助）"
 DEPENDS: list[str] = ["tasklist"]
 
 
@@ -123,8 +123,8 @@ def run(ctx) -> None:
 
     # ---- 1. 结构：四个顶级菜单 + 动作文案（含助记符）----
     titles = [action.text() for action in w.menu_bar.actions()]
-    ok("顶部四个菜单：文件(&F) / 编辑(&E) / 单任务(&S) / 帮助(&H)",
-       titles == [menu.MENU_FILE, menu.MENU_EDIT, menu.MENU_SINGLE_TASK,
+    ok("顶部四个菜单：文件(&F) / 编辑(&E) / 独立功能(&S) / 帮助(&H)",
+       titles == [menu.MENU_FILE, menu.MENU_EDIT, menu.MENU_MODULES,
                   menu.MENU_HELP],
        f"{titles}")
     ok("四个菜单都有活引用（window.menus）且从菜单栏读得到动作",
@@ -309,21 +309,23 @@ def run(ctx) -> None:
            menu.ACTION_ABOUT],
        f"{[a.text() for a in help_menu.actions()]}")
 
-    # ---- 2. 单任务：清单从 MODULES 派生（不写死），逐项都能切过去 ----
-    single_menu = _menu_of(w, menu.MENU_SINGLE_TASK)
+    # ---- 2. 独立功能：清单从 MODULES 派生（不写死），逐项都能切过去 ----
+    single_menu = _menu_of(w, menu.MENU_MODULES)
     expected = [module.title for module in MODULES]
-    ok("单任务菜单逐项等于 MODULES 的文案（顺序也一致 = 与左侧导航同源）",
+    ok("独立功能菜单逐项等于 MODULES 的文案（顺序也一致 = 与入口页同源）",
        [a.text() for a in single_menu.actions()] == expected,
        f"菜单={[a.text() for a in single_menu.actions()]} 注册表={expected}")
+    from desktop.shell import ROUTE_MODULES
+
     for module in MODULES:
         _action_of(single_menu, module.title).trigger()
         pump(app, times=2)
-        ok(f"点单任务「{module.title}」：切到该模块页且左侧导航高亮同步",
+        ok(f"点独立功能「{module.title}」：切到该模块页且导航高亮在「独立功能」",
            w.shell.current_route() == module.key
-           and w.shell.selected_route() == module.key,
+           and w.shell.selected_route() == ROUTE_MODULES,
            f"current={w.shell.current_route()} "
            f"selected={w.shell.selected_route()}")
-        ok(f"点单任务「{module.title}」：模块页真的被建出来了",
+        ok(f"点独立功能「{module.title}」：模块页真的被建出来了",
            w.shell.module_page(module.key) is not None, module.key)
     w.shell.show_tasks()
     pump(app, times=2)
@@ -379,7 +381,7 @@ def run(ctx) -> None:
     finally:
         w.shell.list_page.start_create = original_start
     ok("shell.quick_task：复用 start_create，任务名 = PDF 文件名（b1，不带 .pdf）",
-       seen_create == [("C:/books/b1.pdf", "b1", None, False)], str(seen_create))
+       seen_create == [("C:/books/b1.pdf", "b1", None)], str(seen_create))
     seen_create.clear()
     original_start = w.shell.list_page.start_create
     w.shell.list_page.start_create = lambda *a: seen_create.append(a)
@@ -388,7 +390,7 @@ def run(ctx) -> None:
     finally:
         w.shell.list_page.start_create = original_start
     ok("shell.quick_task：名字取 stem（去掉最后一级后缀，中文名也照用）",
-       seen_create == [("C:\\books\\某本古籍.下册.PDF", "某本古籍.下册", None, False)],
+       seen_create == [("C:\\books\\某本古籍.下册.PDF", "某本古籍.下册", None)],
        str(seen_create))
 
     # ---- 4. 检查更新的三分支文案（纯函数，先钉死不碰控件）----

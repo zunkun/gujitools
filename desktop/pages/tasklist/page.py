@@ -386,8 +386,7 @@ class TaskListPage(QWidget, WorkerHost):
         """
         self.create_requested.emit()
 
-    def start_create(self, path: str, name: str, diagram,
-                      uses_custom: bool) -> None:
+    def start_create(self, path: str, name: str, diagram) -> None:
         """创建任务页提交了 → 走**既有**的指纹/查重/建任务链路。
 
         ⚠️ 这一页只负责收集输入（PDF、任务名、流程图），指纹计算、查重确认、
@@ -398,10 +397,11 @@ class TaskListPage(QWidget, WorkerHost):
             「PDF 输入不是必须的」）。这时**跳过整个指纹/查重链路**直接建
             任务：没有文件就无从算指纹，无从查重。空壳任务建好后进详情页，
             那边有补选 PDF 的入口。
-        :param diagram: 自定义流程图（``None`` = 用默认流程模板）
-        :param uses_custom: 勾了「使用自定义任务流程」才传 ``diagram``
+        :param diagram: 流程图（``None`` = 没编辑过，用默认流程模板字节拷贝；
+            用户 2026-11-17 起"是否自定义"不再单独传——流程恒可编辑，
+            编辑保存过才传图）
         """
-        self._pending_diagram = diagram if uses_custom else None
+        self._pending_diagram = diagram
         self._pending_name = str(name or "").strip()
         if not str(path or "").strip():
             # 空壳任务：不等文件，直接建（名字留空 ⇒ store 用「任务#实际号」）

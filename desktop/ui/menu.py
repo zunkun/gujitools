@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""窗口顶部菜单栏：**文件 / 编辑 / 单任务 / 帮助**（原生 ``QMenuBar``）。
+"""窗口顶部菜单栏：**文件 / 编辑 / 独立功能 / 帮助**（原生 ``QMenuBar``）。
 
 为什么是原生菜单栏（而不是自绘 Fluent 菜单条）
 --------------------------------------------
@@ -17,7 +17,7 @@ Qt 原生 ``QMenuBar``：与既有窗口装饰同族、自带 ``Alt`` 助记符�
   用户 2026-10-16）；
 - 文件 → 退出：``window.close()`` —— **不是** ``QApplication.quit()``（见
   :func:`quit_app` 的说明）；
-- 单任务 → ``<key>``：``shell.show_module(key)``，清单**从 ``MODULES`` 派生**
+- 独立功能 → ``<key>``：``shell.show_module(key)``，清单**从 ``MODULES`` 派生**
   （与左侧导航同源同序，本文件不维护第二份清单）；
 - 编辑 → 删除选中 / 插入图片 / 下载图片 / 打印图片：全部转发给当前页
   （鸭子类型 ``can_edit_*`` / ``edit_*``；PDF排版四项全开，图片拼版给
@@ -95,7 +95,7 @@ DATA_PACKAGE_URL = "https://github.com/zunkun/gujitrain/releases/tag/database"
 #: 集中在这里，自测按这些常量断言（改文案只动一处）。
 MENU_FILE = "文件(&F)"
 MENU_EDIT = "编辑(&E)"
-MENU_SINGLE_TASK = "单任务(&S)"
+MENU_MODULES = "独立功能(&S)"
 MENU_HELP = "帮助(&H)"
 #: 「编辑」菜单的四项动作（用户 2026-11-01）：删除选中 / 插入图片 / 下载图片 /
 #: 打印图片。菜单层**零业务**：可点性与动作全问当前页的同名方法
@@ -616,7 +616,7 @@ def install_title_bar(window):
 
 
 def install_menu_bar(window) -> QMenuBar:
-    """把菜单栏（文件 / 编辑 / 单任务 / 帮助）插进**标题栏的标题之后**。
+    """把菜单栏（文件 / 编辑 / 独立功能 / 帮助）插进**标题栏的标题之后**。
 
     ⚠️ 用 ``QMenuBar(window.titleBar)`` 而**不是** ``window.menuBar()``：
     ``QMainWindow.menuBar()`` 会就地造出**标题栏下面的一整行**空菜单栏——那正是
@@ -657,7 +657,7 @@ def install_menu_bar(window) -> QMenuBar:
     window.menus = {
         MENU_FILE: build_file_menu(bar, window),
         MENU_EDIT: build_edit_menu(bar, window),
-        MENU_SINGLE_TASK: build_single_task_menu(bar, window),
+        MENU_MODULES: build_modules_menu(bar, window),
         MENU_HELP: build_help_menu(bar, window),
     }
     window.update_controller = window.menus[MENU_HELP].controller  # type: ignore[attr-defined]
@@ -802,14 +802,14 @@ def open_quick_task(window) -> None:
     window.shell.quick_task(filename)
 
 
-def build_single_task_menu(bar: QMenuBar, window) -> QMenu:
-    """「单任务」：**从 ``MODULES`` 派生**（顺序/文案/图标与左侧导航同源）。
+def build_modules_menu(bar: QMenuBar, window) -> QMenu:
+    """「独立功能」：**从 ``MODULES`` 派生**（顺序/文案/图标与入口页同源）。
 
-    ⚠️ 这里**不**再写一份清单：左侧导航栏遍历的是同一个 ``MODULES``
-    （``desktop/modules/__init__.py`` 由 ``NAV_STEPS`` 派生），所以"导航里有的
-    菜单里都有"，改模块只改 ``steps/spec.py`` 一处。
+    ⚠️ 这里**不**再写一份清单：左侧导航的「独立功能」入口页遍历的是同一个
+    ``MODULES``（``desktop/modules/__init__.py`` 由 ``NAV_STEPS`` 派生），所以
+    "入口页里有的菜单里都有"，改模块只改 ``steps/spec.py`` 一处。
     """
-    menu = _add_menu(bar, MENU_SINGLE_TASK)
+    menu = _add_menu(bar, MENU_MODULES)
     for module in MODULES:
         action = QAction(resolve_nav_icon(module.icon).icon(), module.title, menu)
         action.setToolTip(module.subtitle)
@@ -1852,7 +1852,7 @@ __all__ = [
     "MENU_EDIT",
     "MENU_FILE",
     "MENU_HELP",
-    "MENU_SINGLE_TASK",
+    "MENU_MODULES",
     "PROJECT_URL",
     "QUICK_TASK_PICK_TITLE",
     "RESULT_LATEST",
