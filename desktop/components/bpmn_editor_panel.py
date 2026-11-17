@@ -12,12 +12,14 @@
 按钮去调它们**（死代码）。本模块把"动作"摆成看得见的按钮：
 
 ==========================  ==========================================
-添加步骤                      从已知阶段里挑一个接上流程（能被运行时认出来）
-连线                          开连线模式：点起点 → 点终点（日常用拖连接点）
-重命名                        改节点名 / 连线上的字（如「否」）
+添加步骤                      点方块直接选一个步骤接上流程（能被运行时认出来）
 删除                          删选中的节点或连线
 自动排版                      整图分层铺开，连线按新坐标重算
+恢复默认                      整图回到默认模板（给了 reset_factory 才有）
 ==========================  ==========================================
+
+⚠️ **「连线」「重命名」按钮已撤**（用户 2026-11-17：连线拖节点边上的
+圆点就够、改名**双击节点**就行，按钮是多余的）。选中连线后仍可「删除」。
 
 ⚠️ **没有「添加判断」**（用户 2026-10-08）：
 
@@ -45,7 +47,6 @@ from qfluentwidgets import FluentIcon as FIF
 
 from desktop import ui
 from desktop.components.bpmn_editor import BpmnEditor
-from desktop.components.bpmn_palette import NodePalette
 from desktop.components.bpmn_view import BpmnView
 from desktop.steps.bpmn_diagram import FlowDiagram
 from desktop.ui import theme as T
@@ -98,15 +99,10 @@ class BpmnEditorPanel(QWidget):
             self.toolbar = self._build_toolbar()
             root.addWidget(self.toolbar)
 
-        # ---- 画布区：左边固定节点面板（拖出来就加一格）+ 右边画布 ----
-        body = QHBoxLayout()
-        body.setContentsMargins(0, 0, 0, 0)
-        body.setSpacing(T.SPACE_SM)
-        self.palette: NodePalette | None = None
-        if self._editable:
-            self.palette = NodePalette()
-            body.addWidget(self.palette)
-
+        # ---- 画布区：可滚动编辑画布 ----
+        # ⚠️ 左侧的「固定节点面板」（拖拽加节点）已撤（用户 2026-11-17：
+        #    "左側這塊區域不需要了"）——加步骤统一走工具栏「添加步骤」的
+        #    方块弹窗（:meth:`BpmnEditor.ask_add_node`），入口只有一个。
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(False)
         self._scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -118,15 +114,13 @@ class BpmnEditorPanel(QWidget):
             canvas.diagram_changed.connect(self._on_changed)
             canvas.selection_changed.connect(lambda _=None: self._sync_status())
             canvas.flow_selection_changed.connect(lambda _=None: self._sync_status())
-            canvas.link_mode_changed.connect(self._sync_link_button)
             self._canvas = canvas
             self._scroll.viewport().installEventFilter(self)
         else:
             self._canvas = BpmnView(self._diagram)
         self._scroll.setWidget(self._canvas)
         self._scroll.setMinimumHeight(MIN_CANVAS_HEIGHT)
-        body.addWidget(self._scroll, 1)
-        root.addLayout(body, 1)
+        root.addWidget(self._scroll, 1)
 
         self.status = CaptionLabel("")
         ui.apply_to(self.status, T.SIZE_CAPTION, color=T.INK_FAINT)
@@ -134,7 +128,6 @@ class BpmnEditorPanel(QWidget):
 
         self._sync_status()
         self._sync_floor()
-        self._refresh_palette()
 
     def _name_source(self) -> FlowDiagram:
         """给新节点取名字时参考的图（默认模板，缓存一次）。
@@ -148,13 +141,6 @@ class BpmnEditorPanel(QWidget):
             self._template = load_default_diagram()
         return self._template
 
-    def _refresh_palette(self) -> None:
-        """重建面板条目，并把**已经在流程里**的步骤置灰（防重复）。"""
-        if self.palette is None:
-            return
-        self.palette.refresh(self._canvas.diagram(),
-                             template=self._name_source())
-
     def _build_toolbar(self) -> QWidget:
         bar = QWidget()
         row = QHBoxLayout(bar)
@@ -163,21 +149,9 @@ class BpmnEditorPanel(QWidget):
 
         self.add_button = PushButton("添加步骤")
         self.add_button.setIcon(FIF.ADD)
-        self.add_button.setToolTip("在流程里加一个可运行的步骤")
+        self.add_button.setToolTip("点开方块面板，选一个步骤加到流程里")
         self.add_button.clicked.connect(self._on_add)
         row.addWidget(self.add_button)
-
-        self.link_button = PushButton("连线")
-        self.link_button.setIcon(FIF.LINK)
-        self.link_button.setCheckable(True)
-        self.link_button.setToolTip("开着它：先点起点节点、再点终点节点")
-        self.link_button.clicked.connect(self._on_toggle_link)
-        row.addWidget(self.link_button)
-
-        self.rename_button = PushButton("重命名")
-        self.rename_button.setIcon(FIF.EDIT)
-        self.rename_button.clicked.connect(self._on_rename)
-        row.addWidget(self.rename_button)
 
         self.delete_button = PushButton("删除")
         self.delete_button.setIcon(FIF.DELETE)
@@ -254,13 +228,10 @@ class BpmnEditorPanel(QWidget):
         self._canvas.set_diagram(fresh)
         self._sync_floor()
         self._sync_status()
-        self._refresh_palette()
         self.diagram_changed.emit()
 
     def _on_changed(self) -> None:
         self._sync_status()
-        # 图变了 ⇒ "哪些步骤已经有了"跟着变，面板的置灰要重算
-        self._refresh_palette()
         self.diagram_changed.emit()
 
     # ------------------------------------------------------------ 工具栏动作
@@ -274,25 +245,6 @@ class BpmnEditorPanel(QWidget):
         editor = self.editor()
         if editor is not None:
             editor.auto_layout()
-
-    def _on_toggle_link(self, checked: bool | None = None) -> None:
-        """⚠️ ``checked`` 允许缺省：qfluentwidgets 的 ``clicked`` 在这里发的是
-        **无参**信号（实测），按 ``bool`` 形参接会直接 TypeError。"""
-        editor = self.editor()
-        if editor is not None:
-            enabled = self.link_button.isChecked() if checked is None \
-                else bool(checked)
-            editor.set_link_mode(enabled)
-
-    def _sync_link_button(self, enabled: bool) -> None:
-        if self._editable and self.link_button.isChecked() != enabled:
-            self.link_button.setChecked(enabled)
-        self._sync_status()
-
-    def _on_rename(self) -> None:
-        editor = self.editor()
-        if editor is not None:
-            editor.ask_rename_selected()
 
     def _on_delete(self) -> None:
         editor = self.editor()
@@ -319,8 +271,7 @@ class BpmnEditorPanel(QWidget):
             source = editor.diagram().node(flow.source) if flow else None
             target = editor.diagram().node(flow.target) if flow else None
             text = (f"已选中连线：{source.name if source else '?'} → "
-                    f"{target.name if target else '?'}"
-                    f"（可「重命名」写分支条件，或「删除」）")
+                    f"{target.name if target else '?'}（可「删除」）")
         elif node_id:
             item = editor.diagram().node(node_id)
             name = item.name if item else node_id
@@ -344,7 +295,6 @@ class BpmnEditorPanel(QWidget):
     def _sync_buttons(self, has_node: bool, has_any: bool) -> None:
         if not self._editable:
             return
-        self.rename_button.setEnabled(has_any)
         self.delete_button.setEnabled(has_any)
         self.add_button.setEnabled(True)
 

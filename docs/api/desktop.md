@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 189 个模块、206 个公开类、1562 个公开函数/方法（生成于 2026-11-17）。
+覆盖 189 个模块、205 个公开类、1558 个公开函数/方法（生成于 2026-11-17）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -14,12 +14,12 @@
 | --- | --- | --- |
 | [`desktop.app`](#desktopapp) | 1 | 8 |
 | [`desktop.components.box_kinds`](#desktopcomponentsbox_kinds) | 2 | 8 |
-| [`desktop.components.bpmn_editor`](#desktopcomponentsbpmn_editor) | 1 | 31 |
+| [`desktop.components.bpmn_editor`](#desktopcomponentsbpmn_editor) | 1 | 28 |
 | [`desktop.components.bpmn_editor_panel`](#desktopcomponentsbpmn_editor_panel) | 1 | 6 |
-| [`desktop.components.bpmn_palette`](#desktopcomponentsbpmn_palette) | 1 | 7 |
+| [`desktop.components.bpmn_palette`](#desktopcomponentsbpmn_palette) | 0 | 4 |
 | [`desktop.components.bpmn_view`](#desktopcomponentsbpmn_view) | 1 | 17 |
 | [`desktop.components.common.safecomponents`](#desktopcomponentscommonsafecomponents) | 6 | 12 |
-| [`desktop.components.create_task_dialog`](#desktopcomponentscreate_task_dialog) | 2 | 20 |
+| [`desktop.components.create_task_dialog`](#desktopcomponentscreate_task_dialog) | 2 | 22 |
 | [`desktop.components.detect_stats`](#desktopcomponentsdetect_stats) | 1 | 4 |
 | [`desktop.components.dialog_shell`](#desktopcomponentsdialog_shell) | 0 | 1 |
 | [`desktop.components.flow_dialog`](#desktopcomponentsflow_dialog) | 2 | 10 |
@@ -493,18 +493,20 @@ BPMN 流程图**编辑控件**：拖节点、连边、改名、增删。
   节点挪了而注释留在原地，虚线会横穿整张图）。
 - **注释也能单独拖**（用户 2026-10-08）：注释是图上的内容，位置该由用户说了算；
   拖它只改坐标，**挂接关系不变**（虚线依旧连回原来那个节点）。
-- **连线有两条路**（都能用，用户挑顺手的）：
-  1. **拖连接点**（推荐）：每个节点有上下左右**四个中线连接点**（悬停/
-     选中时显示），按住任一个拖到目标节点即连上；起止两端的连接点按两
-     节点相对方位**自动匹配**（横向主导走左右、纵向主导走上下）；
-  2. **连线模式**：点工具栏「连线」→ 点起点节点 → 点终点节点。
+- **连线只有一条主路**：每个节点有上下左右**四个中线连接点**（悬停/
+  选中时显示），按住任一个拖到目标节点即连上；起止两端的连接点按两
+  节点相对方位**自动匹配**（横向主导走左右、纵向主导走上下）。
+  ⚠️ 工具栏的「连线」按钮已撤（用户 2026-11-17：拖连接点就够，
+  按钮是多余的）；画布内部的连线模式（:meth:`set_link_mode`）保留，
+  供程序化驱动与测试用。
 - **「是否拼版」网关不是可自由增删的组件**（用户 2026-10-08）：它依附
   「图片拼版」那一步，只能随模板文件来——面板与工具栏都**没有**"添加判断"
   入口（用户原话："其实根本就没有判断这个组件"）。删掉「图片拼版」时它
   跟着删（判据在 :func:`desktop.steps.ports.orphaned_gateway_ids`）；
   反方向不成立——「图片拼版」可以没有网关。
-- **节点与连线各有一套选中**，互斥；选中后工具栏的「重命名 / 删除」才可用。
+- **节点与连线各有一套选中**，互斥；选中后工具栏的「删除」才可用。
   这条是硬需求：之前只有"点一下变个色"，用户不知道选中能干什么。
+  改名走**双击节点**（工具栏「重命名」按钮已撤，用户 2026-11-17）。
 - 所有鼠标/键盘事件 ``try/except``（控件在弹窗里，一次未捕获异常会连用户
   编好的图一起丢）。
 
@@ -539,9 +541,6 @@ BPMN 流程图**编辑控件**：拖节点、连边、改名、增删。
 | `set_link_mode(enabled: bool) -> None` | 开/关「点两下连线」模式（开时禁用拖拽，避免两种手势打架）。 |
 | `add_node(kind: str=KIND_TASK, name: str='新步骤', stage: str \| None=None, at: tuple[float, float] \| None=None, connect_from: str \| None=None) -> str` | 加一个节点，返回它的 id。 |
 | `add_step(token: str, at: tuple[float, float] \| None=None, connect_from: str \| None=None) -> str \| None` | 按**步骤 key**加节点（固定节点面板拖放的入口）。 |
-| `dragEnterEvent(event) -> None` | Qt 事件覆写：拖入时校验并接受拖放。 |
-| `dragMoveEvent(event) -> None` | Qt 事件覆写：拖动过程中更新落点提示。 |
-| `dropEvent(event) -> None` | 面板拖过来的节点在这里落地。 |
 | `rename_node(node_id: str, name: str) -> None` | 改节点名（就地换 dataclass：frozen，只能重建）。 |
 | `rename_flow(flow_id: str, label: str) -> None` | 改连线上的文字（如网关分支的「否」）。 |
 | `remove_node(node_id: str) -> None` | 删节点：连到它的线一起删（悬空连线会让渲染与解析都出错）。 |
@@ -558,7 +557,7 @@ BPMN 流程图**编辑控件**：拖节点、连边、改名、增删。
 | `mouseDoubleClickEvent(event) -> None` | 双击节点 = 改名（最顺手的入口）。 |
 | `keyPressEvent(event) -> None` | Qt 事件覆写：键盘操作（如 Delete 删除选中项）。 |
 | `paintEvent(event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
-| `ask_add_node() -> None` | 加一个**能被运行时认出来**的步骤（从已知阶段里选）。 |
+| `ask_add_node() -> None` | 加一个**能被运行时认出来**的步骤（方块面板，点一下即加）。 |
 | `ask_rename_selected() -> None` | 给选中的（连线优先）改名。 |
 | `ask_delete_selected() -> None` | — |
 
@@ -600,12 +599,6 @@ BPMN 流程图**编辑控件**：拖节点、连边、改名、增删。
 ⚠️ **只认步骤 key**：网关（「是否拼版」）不再是可拖的条目——它依附
 「图片拼版」那一步、只能随模板文件来（见模块文档）。认不出的 token
 一律返回 ``None``，不凭空造节点。
-
-##### `dropEvent(event) -> None`
-
-面板拖过来的节点在这里落地。
-
-⚠️ 全程 ``try/except``：拖放异常冒泡会连用户编好的图一起丢（同鼠标事件）。
 
 ##### `rename_node(node_id: str, name: str) -> None`
 
@@ -651,11 +644,17 @@ BPMN 流程图**编辑控件**：拖节点、连边、改名、增删。
 
 ##### `ask_add_node() -> None`
 
-加一个**能被运行时认出来**的步骤（从已知阶段里选）。
+加一个**能被运行时认出来**的步骤（方块面板，点一下即加）。
 
 ⚠️ 不让用户直接敲名字：随手打的"新步骤"接不上任何阶段（
 :func:`stage_of_name` 认不出），加进去也**不参与运行**——用户会以为
-加了没生效。所以列出现有阶段让他选，名字自动就是阶段的中文名。
+加了没生效。所以列出固定步骤让他点。
+
+⚠️ 用户 2026-11-17 三条：下拉里的「提交检测结果」不需要（那是
+「检测文本框」的第二个动作 ``detect_submit``，不是独立步骤）、
+「其他（自定义名称）」不需要、下拉框改成**排列的方块**直接点选。
+条目 = 固定步骤表（:func:`palette_steps`）那一套——主链四步 +
+可选的「图片拼版」，别另写一份名单。
 
 ---
 
@@ -676,12 +675,14 @@ BPMN **编辑器面板**：工具栏 + 可滚动画布 + 选中状态行。
 按钮去调它们**（死代码）。本模块把"动作"摆成看得见的按钮：
 
 ==========================  ==========================================
-添加步骤                      从已知阶段里挑一个接上流程（能被运行时认出来）
-连线                          开连线模式：点起点 → 点终点（日常用拖连接点）
-重命名                        改节点名 / 连线上的字（如「否」）
+添加步骤                      点方块直接选一个步骤接上流程（能被运行时认出来）
 删除                          删选中的节点或连线
 自动排版                      整图分层铺开，连线按新坐标重算
+恢复默认                      整图回到默认模板（给了 reset_factory 才有）
 ==========================  ==========================================
+
+⚠️ **「连线」「重命名」按钮已撤**（用户 2026-11-17：连线拖节点边上的
+圆点就够、改名**双击节点**就行，按钮是多余的）。选中连线后仍可「删除」。
 
 ⚠️ **没有「添加判断」**（用户 2026-10-08）：
 
@@ -733,17 +734,16 @@ BPMN **编辑器面板**：工具栏 + 可滚动画布 + 选中状态行。
 
 源码：[`desktop/components/bpmn_palette.py`](../../desktop/components/bpmn_palette.py)
 
-BPMN **固定节点面板**：拖一个节点到画布上，就加了一格。
+BPMN **固定步骤表**：「添加步骤」的候选名单与命名规则。
 
 用户 2026-10-05 的口径：
 
 > 编辑呢，我希望能够有 BPMN.js 那种（bpmn.io）可以编辑的节点。或许我们不需要
-> 那么多节点，**我们的节点是固定的**，拖拖拽拽就行了。我们节点默认是在页面画好
-> 的，它可能有些节点不需要，他就删了就行了，可以恢复。
+> 那么多节点，**我们的节点是固定的**，拖拖拽拽就行了。
 
 所以这里**不提供"任意节点类型"**：条目就是本工具认识的步骤
-（提取图片 / 检测文本框 / 图片去底色 / 图片拼版 / PDF 排版）。
-拖到画布上是"添加"，画布上删掉是"不需要"，工具栏「恢复默认」是"恢复"。
+（提取图片 / 检测文本框 / 图片去底色 / PDF 排版 / 图片拼版）。
+「添加步骤」弹窗（:meth:`BpmnEditor.ask_add_node`）的方块直接照这份表摆。
 
 ⚠️ **没有「判断」这一项**（用户 2026-10-08）：
 
@@ -754,51 +754,23 @@ BPMN **固定节点面板**：拖一个节点到画布上，就加了一格。
 不是可自由增删的独立组件——它只能随模板文件来，删掉「图片拼版」时跟着删
 （:func:`desktop.steps.ports.orphaned_gateway_ids`）。
 
-## 两个细节
+## 命名规则
 
-1. **已在流程里的步骤置灰**：同一步骤加两遍没有意义（运行阶段是按名字接回的，
-   两个同名节点只会让 :meth:`FlowDiagram.stage_order` 去重、界面更乱）。
-2. **节点名沿用流程图里已有的叫法**：``print`` 那格在默认模板里叫「PDF排版」
-   （与 :attr:`StepSpec.stage_title` 一致），再拖一次就该还叫「PDF排版」——
-   不要凭空长出一个新名字，更别和结束事件「生成PDF」重名。
+节点名**沿用流程图里已有的叫法**：``print`` 那格在默认模板里叫「PDF排版」
+（与 :attr:`StepSpec.stage_title` 一致），再加一个就叫「PDF排版」——
+不要凭空长出一个新名字，更别和结束事件「生成PDF」重名。
 
-### 模块常量
+## 历史
 
-| 名称 | 值 |
-| --- | --- |
-| NODE_MIME | `"application/x-guji-bpmn-node"` |
-| PALETTE_WIDTH | `132` |
-
-### `class NodePalette(ListWidget)`
-
-可拖拽的固定节点列表。
-
-拖出去的是 :data:`NODE_MIME`（负载为步骤 key），由
-:class:`~desktop.components.bpmn_editor.BpmnEditor` 的 ``dropEvent`` 接收。
-
-用 qfluentwidgets 的 ``ListWidget``（它是 ``QListWidget`` 子类，``mimeData``
-照样能改写）：原生 ``QListWidget`` 在本界面里长得像异类。
-
-#### 方法
-
-| 方法 | 说明 |
-| --- | --- |
-| `__init__(parent=None)` | — |
-| `refresh(diagram=None, *, template=None) -> None` | 重建条目，并把**已在流程里**的步骤置灰。 |
-| `mimeData(items)` | — |
-
-##### `refresh(diagram=None, *, template=None) -> None`
-
-重建条目，并把**已在流程里**的步骤置灰。
-
-``diagram`` = 当前正在编辑的流程图（判"已经有了"）；
-``template`` = 默认模板（取名字用，保证新加的节点用的是既有叫法）。
+⚠️ 原来的拖拽面板（``NodePalette``，摆在画布左侧）已撤（用户 2026-11-17：
+"左側這塊區域不需要了"）——加步骤统一走工具栏「添加步骤」的方块弹窗，
+拖放 MIME（``NODE_MIME``）随之删除。本模块保留为**步骤表 + 命名规则**。
 
 ### 模块函数
 
 | 函数 | 说明 |
 | --- | --- |
-| `palette_steps() -> list[str]` | 面板上的**步骤 key**（顺序 = 静态步骤表：主链 + 可选节点）。 |
+| `palette_steps() -> list[str]` | **步骤 key** 名单（顺序 = 静态步骤表：主链 + 可选节点）。 |
 | `step_stage(step: str) -> str \| None` | 步骤 key → 拿它当节点名时要写的**运行阶段**。 |
 | `palette_name(step: str, *diagrams) -> str` | 这一格该叫什么名字。 |
 | `is_optional_step(step: str) -> bool` | — |
@@ -815,8 +787,8 @@ BPMN **固定节点面板**：拖一个节点到画布上，就加了一格。
 这一格该叫什么名字。
 
 优先沿用**已有流程图**里的叫法（用户的词汇），其次 ``ports.stage_label``。
-⚠️ 一定要沿用：``print`` 那格现在正式叫「PDF排版」，若面板另起一个
-「生成PDF」，拖进去就会与**结束事件**同名（渲染与自检都会炸）。
+⚠️ 一定要沿用：``print`` 那格现在正式叫「PDF排版」，若另起一个
+「生成PDF」，加进去就会与**结束事件**同名（渲染与自检都会炸）。
 
 ---
 
@@ -993,46 +965,47 @@ widget.installEventFilter(_filter)
 
 **创建任务弹窗**（``docs/tasks/bpm.md`` 的 M3）。
 
-用户 2026-10-05 的要求（原文）：
+用户 2026-10-05 的要求（原文，历史记录）：
 
 > 任务列表中 导入PDF 改成 "创建任务"，出现弹窗
 >
 > - 默认任务流程/自定义任务流程 checkbox 组件
-> - 默认任务流程下有选择PDF，上传 PDF 后自动进入任务详情界面
 > - 自定义任务流程下面有任务流程bpmn 节点渲染，默认是 task_default.bpmn 的
->   节点渲染（自定义初值即默认模板），同时提供按钮 "编辑流程" 点击调用 bpmn 自定义面板，编辑后同步到
->   弹窗中，同时提供确认流程 按钮，进入详情页面
+>   节点渲染（自定义初值即默认模板），同时提供按钮 "编辑流程" 点击调用 bpmn 自定义面板……
 
-后来用户又补了一条（这就是本版改动的由来）：
+## 2026-11-17 两轮改造（均出自用户当日反馈）
 
-> 默认流程在 创建任务的时候，弹窗上面显示，**无论是否选择"使用自定义流程"
-> 选项，下面都要告诉用户，当前流程是怎样的**，所以要显示默认流程
+第一轮：撤「使用自定义任务流程」复选框——默认流程本身就可编辑。
 
-所以布局不再是"默认页 = 选 PDF / 自定义页 = 看流程"的**互斥两页**，而是：
+第二轮（本轮）：**编辑器直接常驻**——
+
+> 默认就直接展示流程编辑功能，不再通过点击 "编辑流程" 触发
+
+面板内容区从此就是 :class:`~desktop.components.bpmn_editor_panel.BpmnEditorPanel`
+（工具栏 + 画布 + 「恢复默认」），打开页面即可拖节点/连线/改名；
+「编辑流程」按钮与只读预览图（``BpmnView``）整体退役：
 
 ::
 
+    选择 PDF   [选择文件…]  已选择：xxx.pdf     ← 流程不吃源文件时**整行隐藏**
     说明文字（随是否编辑过变化，含步骤串——"当前流程"由它承担）
-    ────────────────────────────
-    选择 PDF   [选择文件…]  已选择：xxx.pdf     ← 两种模式都要选 PDF
-    ────────────────────────────
-    [编辑流程] [恢复默认流程]                  ← 恒可用（右对齐）
-    ┌ 流程节点图（按 bpmn 文件渲染）┐
-    └───────────────────────────┘
-    共 4 步：提取图片 → 检测文本框 → 图片拼版 → PDF排版
+    ┌ BpmnEditorPanel（工具栏 + 画布 + 恢复默认）┐   ← 恒在、恒可编辑
+    └────────────────────────────────┘
+    共 5 步：提取图片 → …（摘要随编辑实时刷新）
     ────────────────────────────
     [取消]  [创建任务]
 
-## 2026-11-17：「使用自定义任务流程」复选框撤掉（用户本轮要求）
+（选文件行在上、说明行紧贴编辑器——用户 2026-11-17 截图要求两行对调。）
 
-> 1. 默认使用自定义流程，这个选项不再需要
-> 2. 默认流程可编辑
+落不落自定义图仍由 :attr:`_flow_edited` 判：**编辑器内容变过**（收到
+``diagram_changed``）才算自定义（``result_diagram()`` 传图落盘）；没动过返回
+``None``，store 走**字节拷贝**默认模板。点编辑器工具栏的「恢复默认」清掉
+标记，回到字节拷贝语义。
 
-语义变成**单一模式**：流程恒从默认模板（``task_default.bpmn``）起步、恒可
-编辑——「编辑流程」按钮不再只在自定义模式出现。原来"勾了才落自定义图"的
-分界改由 :attr:`_flow_edited` 承担：**用户真的进编辑器保存过**才算自定义
-（此时 ``result_diagram()`` 传图落盘）；没动过就返回 ``None``，store 走
-**字节拷贝**默认模板。
+⚠️ **合法性校验挪到点「创建任务」时**（原来在编辑器的「保存流程」里，
+而那个按钮已随常驻编辑器一起退役）：:func:`desktop.steps.validate.validate_flow`
+报硬错误就 toast 并挡下本次提交；警告只提示不拦。未编辑过（默认模板）
+不校验——那份文件本来就是好的。
 
 三层结构（每层只干一件事）：
 
@@ -1041,7 +1014,7 @@ widget.installEventFilter(_filter)
 - :mod:`desktop.pages.tasklist.page` —— 拿到结果后走原有的指纹查重 → 建任务
   → 预热详情页链路（**不重复实现导入逻辑**）。
 
-⚠️ **默认模式不传图**（:meth:`CreateTaskPanel.result_diagram` 返回 ``None``）：
+⚠️ **没编辑过不传图**（:meth:`CreateTaskPanel.result_diagram` 返回 ``None``）：
 默认流程 = ``desktop/static/task_default.bpmn`` 这份文件，由 store **原样字节
 拷贝**进任务目录。过一次 ``FlowDiagram.to_xml`` 会把它重新序列化，而
 ``FlowDiagram`` 不建模连线上的端口标记（``guji:port``）——那会把信息抹掉。
@@ -1051,36 +1024,40 @@ widget.installEventFilter(_filter)
 | 名称 | 值 |
 | --- | --- |
 | DIALOG_TITLE | `"创建任务"` |
-| DEFAULT_HINT_PREFIX | `"使用默认任务流程："` |
-| CUSTOM_HINT | `"使用自定义任务流程（点「编辑流程」可改）："` |
+| DEFAULT_HINT_PREFIX | `"使用默认任务流程（下方编辑器可直接改）："` |
+| CUSTOM_HINT | `"使用自定义任务流程（已修改，下方编辑器可继续调整）："` |
 | EMPTY_PDF_HINT | `"可留空，之后在任务详情里补选"` |
 | PDF_STATE_MAX_WIDTH | `420` |
-| FLOW_MIN_HEIGHT | `240` |
 
 ### `class CreateTaskPanel(QWidget)`
 
-创建任务弹窗的**内容**（不含Dialog 外壳，便于自测直接实例化）。
+创建任务弹窗的**内容**（不含 Dialog 外壳，便于自测直接实例化）。
 
 对外只认三件事：:meth:`selected_pdf`（选了哪个 PDF）、
 :meth:`result_diagram`（用哪份流程图建任务）、:meth:`uses_custom_flow`
-（是不是自定义）。任务列表页拿这三样走原有的建任务链路。
+（流程是否编辑过）。任务列表页拿这三样走原有的建任务链路。
+
+⚠️ 流程**编辑器恒在**（用户 2026-11-17：默认直接展示编辑功能，不再点
+「编辑流程」触发）——编辑走 :attr:`editor_panel`，改动实时生效。
 
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(parent=None, flow: FlowDiagram \| None=None, *, outer_margins: bool=True)` | ``outer_margins``：要不要自带外层留白（默认带，弹窗形态需要）。 |
-| `current_diagram() -> FlowDiagram` | 当前**显示**的图（未编辑 = 默认模板，编辑保存过 = 用户那张）。 |
+| `editor_panel()` | 内嵌的常驻编辑器（:class:`BpmnEditorPanel`；``reset()`` 重建后换新实例）。 |
+| `reset_button()` | 「恢复默认」按钮（编辑器工具栏那颗；兼容旧调用方/自测的入口）。 |
+| `current_diagram() -> FlowDiagram` | 当前**显示**的图（未编辑 = 默认模板那份的副本，编辑过 = 用户那张）。 |
 | `set_pdf(path: Path) -> None` | 设已选 PDF（自测与"创建后直接进详情"的快路径用）。 |
 | `clear_pdf() -> None` | 清掉已选 PDF（页面上那个「清除」按钮、:meth:`reset` 与自测共用）。 |
 | `reset() -> None` | 回到**刚打开**的样子（用户 2026-10-06：上一次创建任务信息要清掉）。 |
 | `selected_pdf() -> Path \| None` | — |
-| `set_custom_diagram(diagram: FlowDiagram) -> None` | 换流程图并刷新预览（编辑弹窗确认后由 :meth:`_on_edit_flow` 调）。 |
+| `set_custom_diagram(diagram: FlowDiagram) -> None` | 换流程图：整张交给编辑器（它内部拿副本），并标记"已编辑"。 |
 | `result_diagram() -> FlowDiagram \| None` | 用哪份流程图建任务。 |
-| `uses_custom_flow() -> bool` | 流程是不是**自定义**的（= 编辑保存过；兼容旧调用方保留此名）。 |
+| `uses_custom_flow() -> bool` | 流程是不是**自定义**的（= 编辑器内容变过；兼容旧调用方保留此名）。 |
 | `set_custom_mode(enabled: bool) -> None` | 设"是否自定义流程"（自测兼容入口；等效于标记已编辑）。 |
 | `can_submit() -> bool` | 能不能点「创建任务」。 |
-| `submit() -> None` | 点「创建任务」：发 :attr:`submitted`，**不碰窗口**。 |
+| `submit() -> None` | 点「创建任务」：流程合法就发 :attr:`submitted`，**不碰窗口**。 |
 | `reject() -> None` | 取消：**只发 :attr:`cancelled`，不碰窗口**。 |
 
 ##### `__init__(parent=None, flow: FlowDiagram | None=None, *, outer_margins: bool=True)`
@@ -1092,6 +1069,17 @@ widget.installEventFilter(_filter)
 多缩进 24px"的双层缩进（用户 2026-10-06 截图确认）。与
 ``ImpositionPanel(enable_switch=…)`` 同一条纪律——宿主专属的布局
 差异用构造参数声明，组件不猜自己在哪。
+
+``flow``：编辑器的初值（缺省 = 默认模板）。调用方显式给了就视为
+"用户带来的自定义图"（要落盘）。
+
+##### `reset_button()`
+
+装饰器：`property`
+
+「恢复默认」按钮（编辑器工具栏那颗；兼容旧调用方/自测的入口）。
+
+⚠️ 没有了面板级的「编辑流程」按钮：编辑器恒在，无需入口。
 
 ##### `clear_pdf() -> None`
 
@@ -1107,25 +1095,35 @@ widget.installEventFilter(_filter)
 
 回到**刚打开**的样子（用户 2026-10-06：上一次创建任务信息要清掉）。
 
-清四样：已选 PDF、「编辑过流程」标记、自定义流程图（回到默认模板
-那份）、以及正开着的流程编辑器。
+清三样：已选 PDF、「编辑过流程」标记、编辑器内容（重建回默认模板
+那份）。
 
-⚠️ **自定义流程图也要清**：用户编了半天流程，建完任务再进来却还带着
+⚠️ **编辑器内容也要清**：用户编了半天流程，建完任务再进来却还带着
 那张图——他要建第二个任务时会以为"又得从头编一遍"（其实这是上一本
-书的流程）。回到 ``load_custom_init()`` 才是"每次都从初值起步"的
-干净语义。
-⚠️ **编辑器要销毁**：``_editor_host`` 可见时复位，用户会看到一个
-开着的编辑器却已经没有任何输入了；而且编辑器面板里抱着旧图，不销毁
-就会被下次「编辑流程」复用（见 :meth:`_on_edit_flow`）。
+书的流程）。重建回 ``load_custom_init()`` 才是"每次都从初值起步"的
+干净语义（2026-10-07 事故回归钉见自测 ``_check_create_page_reset``）。
+
+##### `set_custom_diagram(diagram: FlowDiagram) -> None`
+
+换流程图：整张交给编辑器（它内部拿副本），并标记"已编辑"。
+
+供外部喂图（自测 / 将来"带入上次流程"）用；用户手上普通的编辑直接
+在常驻编辑器里做，不需要调这里。
 
 ##### `result_diagram() -> FlowDiagram | None`
 
 用哪份流程图建任务。
 
-- **编辑保存过**：返回用户编的那张图（store 会写进 ``flow.bpmn``）；
+- **编辑器内容变过**：返回用户编的那张图（store 会写进 ``flow.bpmn``）；
 - **没动过**：返回 ``None`` —— 语义是"用默认模板"，store 会**原样字节
   拷贝** ``task_default.bpmn``，不经 ``FlowDiagram`` 的重新序列化
   （那会把连线上的 ``guji:port`` 抹掉）。
+
+##### `set_custom_mode(enabled: bool) -> None`
+
+设"是否自定义流程"（自测兼容入口；等效于标记已编辑）。
+
+⚠️ 只动标记，不换编辑器内容——要喂图走 :meth:`set_custom_diagram`。
 
 ##### `can_submit() -> bool`
 
@@ -1136,12 +1134,12 @@ widget.installEventFilter(_filter)
 True——按钮的可用性不该由"还没挑文件"决定（用户同一条反馈：
 「创建任务按钮不必等上传 pdf 才可以点」）。
 
-真要拦，只剩一种情况：建任务的过程中（重复点击），那由宿主页面的
-``_busy`` 负责，不归这里。
+真要拦，只剩两种情况：建任务的过程中（重复点击，归宿主页面的
+``_busy``），以及**流程不合法**（见 :meth:`_validate_flow`）。
 
 ##### `submit() -> None`
 
-点「创建任务」：发 :attr:`submitted`，**不碰窗口**。
+点「创建任务」：流程合法就发 :attr:`submitted`，**不碰窗口**。
 
 ⚠️⚠️ 这里原来有一句 ``self.window().close()``，面板被内嵌进
 **创建任务页**之后它就是**整个主窗口**——点一次「创建任务」把整个
@@ -1179,18 +1177,18 @@ True——按钮的可用性不该由"还没挑文件"决定（用户同一条�
 用哪份流程图建任务（⚠️ 任务列表页调的就是它；``None`` = 用默认模板）。
 
 缺这个方法时 `page.import_pdf` 会 **AttributeError**，而按钮在
-`try` 之外 ⇒ 自定义模式点「确认流程并创建」直接没反应。
+`try` 之外 ⇒ 自定义模式点「创建任务」直接没反应。
 
 ### 模块函数
 
 | 函数 | 说明 |
 | --- | --- |
 | `default_hint(diagram: FlowDiagram) -> str` | 默认模式的完整提示：前缀 + **文件里真实的**步骤串。 |
-| `load_custom_init() -> FlowDiagram` | 自定义模式的初值（整张图）——即默认模板那份图。 |
+| `load_custom_init() -> FlowDiagram` | 编辑器的初值（整张图）——即默认模板那份图。 |
 
 #### `load_custom_init() -> FlowDiagram`
 
-自定义模式的初值（整张图）——即默认模板那份图。
+编辑器的初值（整张图）——即默认模板那份图。
 
 ⚠️ 历史别名：以前初值是独立的 ``desktop/static/task_detail.bpmn``，
 2026-10-08 起只保留 ``task_default.bpmn``，自定义就是"从默认流程开始改"。
@@ -7407,8 +7405,9 @@ detect/rembg/print 直接把**原图**塞进查看器（缩略图条每次现解
     │ [取消]                     [创建任务]    │  ← 面板自带按钮
     └─────────────────────────────────────────┘
 
-「编辑流程」**就地**展开在本页里（:class:`CreateTaskPanel` 内嵌
-``FlowPanel``），不再弹第二层——见该面板的 ``_on_edit_flow``。
+「流程编辑器」**默认就摆在本页里**（:class:`CreateTaskPanel` 内嵌
+``BpmnEditorPanel``，恒在、恒可编辑）——用户 2026-11-17：不再通过点
+「编辑流程」触发。
 
 ## 任务名称（用户 2026-10-06）
 

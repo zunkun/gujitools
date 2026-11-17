@@ -11,18 +11,20 @@
   节点挪了而注释留在原地，虚线会横穿整张图）。
 - **注释也能单独拖**（用户 2026-10-08）：注释是图上的内容，位置该由用户说了算；
   拖它只改坐标，**挂接关系不变**（虚线依旧连回原来那个节点）。
-- **连线有两条路**（都能用，用户挑顺手的）：
-  1. **拖连接点**（推荐）：每个节点有上下左右**四个中线连接点**（悬停/
-     选中时显示），按住任一个拖到目标节点即连上；起止两端的连接点按两
-     节点相对方位**自动匹配**（横向主导走左右、纵向主导走上下）；
-  2. **连线模式**：点工具栏「连线」→ 点起点节点 → 点终点节点。
+- **连线只有一条主路**：每个节点有上下左右**四个中线连接点**（悬停/
+  选中时显示），按住任一个拖到目标节点即连上；起止两端的连接点按两
+  节点相对方位**自动匹配**（横向主导走左右、纵向主导走上下）。
+  ⚠️ 工具栏的「连线」按钮已撤（用户 2026-11-17：拖连接点就够，
+  按钮是多余的）；画布内部的连线模式（:meth:`set_link_mode`）保留，
+  供程序化驱动与测试用。
 - **「是否拼版」网关不是可自由增删的组件**（用户 2026-10-08）：它依附
   「图片拼版」那一步，只能随模板文件来——面板与工具栏都**没有**"添加判断"
   入口（用户原话："其实根本就没有判断这个组件"）。删掉「图片拼版」时它
   跟着删（判据在 :func:`desktop.steps.ports.orphaned_gateway_ids`）；
   反方向不成立——「图片拼版」可以没有网关。
-- **节点与连线各有一套选中**，互斥；选中后工具栏的「重命名 / 删除」才可用。
+- **节点与连线各有一套选中**，互斥；选中后工具栏的「删除」才可用。
   这条是硬需求：之前只有"点一下变个色"，用户不知道选中能干什么。
+  改名走**双击节点**（工具栏「重命名」按钮已撤，用户 2026-11-17）。
 - 所有鼠标/键盘事件 ``try/except``（控件在弹窗里，一次未捕获异常会连用户
   编好的图一起丢）。
 
@@ -36,7 +38,11 @@ from pathlib import Path
 
 from PySide6.QtCore import QPointF, Qt, Signal
 from PySide6.QtGui import QColor, QPen
-from PySide6.QtWidgets import QInputDialog, QMessageBox, QSizePolicy
+from PySide6.QtWidgets import (
+    QGridLayout, QInputDialog, QMessageBox, QPushButton, QDialog, QSizePolicy,
+    QVBoxLayout, QWidget,
+)
+from qfluentwidgets import CaptionLabel, PushButton
 
 from desktop.components.bpmn_view import BpmnView
 from desktop.steps.bpmn_diagram import (
@@ -101,8 +107,6 @@ class BpmnEditor(BpmnView):
         self._floor = (1.0, 1.0)
         super().__init__(diagram, parent)
         self._name_source = name_source
-        # 接收从固定节点面板拖过来的节点（见 bpmn_palette）
-        self.setAcceptDrops(True)
         self._drag_id: str | None = None
         self._drag_offset = QPointF()
         #: 正在拖动的**注释** id（与 ``_drag_id`` 互斥：一次只拖一个东西）
@@ -270,43 +274,6 @@ class BpmnEditor(BpmnView):
         self.diagram_changed.emit()
         self.update()
         return node_id
-
-    # ------------------------------------------------------------ 面板拖放
-    def dragEnterEvent(self, event) -> None:  # noqa: N802
-        from desktop.components.bpmn_palette import NODE_MIME
-
-        if event.mimeData().hasFormat(NODE_MIME):
-            event.acceptProposedAction()
-        else:
-            super().dragEnterEvent(event)
-
-    def dragMoveEvent(self, event) -> None:  # noqa: N802
-        from desktop.components.bpmn_palette import NODE_MIME
-
-        if event.mimeData().hasFormat(NODE_MIME):
-            event.acceptProposedAction()
-        else:
-            super().dragMoveEvent(event)
-
-    def dropEvent(self, event) -> None:  # noqa: N802
-        """面板拖过来的节点在这里落地。
-
-        ⚠️ 全程 ``try/except``：拖放异常冒泡会连用户编好的图一起丢（同鼠标事件）。
-        """
-        from desktop.components.bpmn_palette import NODE_MIME
-
-        mime = event.mimeData()
-        if not mime.hasFormat(NODE_MIME):
-            super().dropEvent(event)
-            return
-        try:
-            token = bytes(mime.data(NODE_MIME)).decode("utf-8")
-            pos = event.position()
-            self.add_step(token, at=(pos.x(), pos.y()),
-                          connect_from=self.selected())
-        except Exception:  # noqa: BLE001 - 编辑期异常绝不冒泡
-            return
-        event.acceptProposedAction()
 
     def rename_node(self, node_id: str, name: str) -> None:
         """改节点名（就地换 dataclass：frozen，只能重建）。
@@ -872,32 +839,108 @@ class BpmnEditor(BpmnView):
 
     # ------------------------------------------------------------ 对话框动作
     def ask_add_node(self) -> None:
-        """加一个**能被运行时认出来**的步骤（从已知阶段里选）。
+        """加一个**能被运行时认出来**的步骤（方块面板，点一下即加）。
 
         ⚠️ 不让用户直接敲名字：随手打的"新步骤"接不上任何阶段（
         :func:`stage_of_name` 认不出），加进去也**不参与运行**——用户会以为
-        加了没生效。所以列出现有阶段让他选，名字自动就是阶段的中文名。
+        加了没生效。所以列出固定步骤让他点。
+
+        ⚠️ 用户 2026-11-17 三条：下拉里的「提交检测结果」不需要（那是
+        「检测文本框」的第二个动作 ``detect_submit``，不是独立步骤）、
+        「其他（自定义名称）」不需要、下拉框改成**排列的方块**直接点选。
+        条目 = 固定步骤表（:func:`palette_steps`）那一套——主链四步 +
+        可选的「图片拼版」，别另写一份名单。
         """
-        options = _stage_options()
-        choice, confirmed = QInputDialog.getItem(
-            self, "添加步骤", "选择步骤（名称即为运行阶段）：", options, 0, False
+        from desktop.components.bpmn_palette import (
+            is_optional_step, palette_name, palette_steps,
         )
-        if not confirmed:
-            return
-        if choice == options[-1]:
-            name, typed = QInputDialog.getText(self, "添加步骤", "节点名称：")
-            if typed and name.strip():
-                self.add_node(KIND_TASK, name.strip())
-            return
-        self.add_node(KIND_TASK, choice)
+        from desktop.components.dialog_shell import shell_dialog
+
+        chosen: list[str] = []
+        holder: dict = {}       # 弹窗引用（按钮回调里要关它）
+
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        # ⚠️ own_chrome=True 的外壳把边距归零了，这里自己 pad 回来——
+        #    不然提示字贴着左缘、按钮一直排到窗口边上（用户 2026-11-17：
+        #    "添加步骤这个弹窗 ui 太丑"）。
+        layout.setContentsMargins(
+            T.SPACE_LG, T.SPACE_LG, T.SPACE_LG, T.SPACE_LG)
+        layout.setSpacing(T.SPACE_MD)
+        hint = CaptionLabel("点一个方块，加到画布（名称即为运行阶段）：")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
+        grid_host = QWidget()
+        grid = QGridLayout(grid_host)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setSpacing(T.SPACE_MD)
+        for index, token in enumerate(palette_steps()):
+            name = palette_name(token, self.diagram(), self._name_source)
+            if is_optional_step(token):
+                name = f"{name}（可选）"
+            button = PushButton(name)
+            button.setMinimumHeight(44)
+            button.setMinimumWidth(140)
+
+            def _pick(_checked=False, _token=token):
+                chosen.append(_token)
+                dialog = holder.get("dlg")
+                if dialog is not None:
+                    dialog.accept()
+
+            button.clicked.connect(_pick)
+            grid.addWidget(button, index // 3, index % 3)
+        layout.addWidget(grid_host)
+        layout.addStretch()
+
+        dialog = shell_dialog("添加步骤", content, self,
+                              size=(520, 240), own_chrome=True)
+        holder["dlg"] = dialog
+        dialog.exec()
+        if chosen:
+            self.add_step(chosen[0])
+
+    def _confirm_zh(self, title: str, text: str, *, yes_text: str = "删除",
+                    no_text: str = "取消") -> bool:
+        """中文按钮的删除确认框（``True`` = 点了"是"）。
+
+        ⚠️ 不用 ``QMessageBox.question`` 静态方法：标准按钮文字由**系统语言**
+        决定（英文环境下就是 "Yes"/"No"，2026-11-17 用户报「确认弹窗是英文」）。
+        这里用实例并显式改按钮文字；离屏自测把本方法整体替掉即可，不弹真模态。
+        """
+        box = QMessageBox(
+            QMessageBox.Icon.Question, title, text,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            self,
+        )
+        box.button(QMessageBox.StandardButton.Yes).setText(yes_text)
+        box.button(QMessageBox.StandardButton.No).setText(no_text)
+        box.setDefaultButton(QMessageBox.StandardButton.No)
+        return box.exec() == QMessageBox.StandardButton.Yes
+
+    def _input_text_zh(self, title: str, label: str, text: str = "") -> tuple[str, bool]:
+        """中文按钮的单行输入框（``QInputDialog.getText`` 的按钮也是英文）。"""
+        dlg = QInputDialog(self)
+        dlg.setWindowTitle(title)
+        dlg.setLabelText(label)
+        dlg.setTextValue(text)
+        for btn in dlg.findChildren(QPushButton):
+            plain = btn.text().replace("&", "")
+            if plain == "OK":
+                btn.setText("确定")
+            elif plain == "Cancel":
+                btn.setText("取消")
+        confirmed = dlg.exec() == QDialog.Accepted
+        return dlg.textValue(), confirmed
 
     def ask_rename_selected(self) -> None:
         """给选中的（连线优先）改名。"""
         flow_id = self.selected_flow()
         if flow_id:
             flow = next((f for f in self.diagram().flows if f.id == flow_id), None)
-            label, confirmed = QInputDialog.getText(
-                self, "连线文字", "这条线上写什么（如网关分支的「否」）：",
+            label, confirmed = self._input_text_zh(
+                "连线文字", "这条线上写什么（如网关分支的「否」）：",
                 text=flow.label if flow else "")
             if confirmed:
                 self.rename_selected(label.strip())
@@ -906,8 +949,8 @@ class BpmnEditor(BpmnView):
         if not node_id:
             return
         item = self.diagram().node(node_id)
-        name, confirmed = QInputDialog.getText(
-            self, "重命名节点",
+        name, confirmed = self._input_text_zh(
+            "重命名节点",
             "节点名称（改成已知阶段名可切换步骤类型；其他名字只改显示，不影响运行）：",
             text=item.name if item else "")
         if confirmed and name.strip():
@@ -921,9 +964,7 @@ class BpmnEditor(BpmnView):
             target = self.diagram().node(flow.target) if flow else None
             label = (f"{source.name if source else '?'} → "
                      f"{target.name if target else '?'}")
-            answer = QMessageBox.question(
-                self, "删除连线", f"确定删除连线「{label}」？")
-            if answer == QMessageBox.StandardButton.Yes:
+            if self._confirm_zh("删除连线", f"确定删除连线「{label}」？"):
                 self.remove_flow(flow_id)
             return
         node_id = self.selected()
@@ -965,15 +1006,15 @@ class BpmnEditor(BpmnView):
                 f"「{gateway.name if gateway else gateway_id}」是依附它的"
                 "「是否拼版」判断，拼版没了它也就没有意义")
         if notes:
-            answer = QMessageBox.question(
-                self, "删除节点",
+            answer = self._confirm_zh(
+                "删除节点",
                 f"确定删除「{label}」？\n\n"
                 f"{'；'.join(notes)}，会**一起删除**。")
         else:
-            answer = QMessageBox.question(
-                self, "删除节点",
+            answer = self._confirm_zh(
+                "删除节点",
                 f"确定删除「{label}」？连到它的连线会一起删除。")
-        if answer == QMessageBox.StandardButton.Yes:
+        if answer:
             self.remove_node(node_id)
             # ⚠️ **配对/收尾/网关节点跟着删**（正反两向都走这里，所以删哪个都
             #    成对消失）。用``remove_node`` 而不是直接改 diagram：它会连带
@@ -981,14 +1022,6 @@ class BpmnEditor(BpmnView):
             for other in (partner_id, *orphan_ids, *gateway_ids):
                 if other:
                     self.remove_node(other)
-
-
-def _stage_options() -> list[str]:
-    """可选步骤名（= 现有阶段的中文名）+ 一个"自己起名"兜底项。"""
-    from desktop.steps import ports
-
-    labels = [ports.stage_label(stage) for stage in ports.STAGE_STEPS]
-    return labels + ["其他（自定义名称）"]
 
 
 __all__ = ["BpmnEditor", "EDGE_HIT", "PORT_HIT", "PORT_RADIUS"]

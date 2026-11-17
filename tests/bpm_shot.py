@@ -124,7 +124,7 @@ def main() -> int:
     board = editor_panel.editor_panel
     canvas = board.editor()
     if canvas is not None and canvas.diagram().nodes:
-        # 选中第一个任务节点：状态行与「重命名/删除」按钮会跟着变化
+        # 选中第一个任务节点：状态行与「删除」按钮会跟着变化
         task = next((n for n in canvas.diagram().nodes
                      if n.kind == "task"), canvas.diagram().nodes[0])
         canvas.set_selected(task.id)
@@ -138,7 +138,7 @@ def main() -> int:
     board2 = editor_link.editor_panel
     canvas2 = board2.editor()
     if canvas2 is not None:
-        board2.link_button.click()          # 进连线模式
+        canvas2.set_link_mode(True)         # 进连线模式（按钮已撤，直接驱动画布）
         pump(app, 6)
         tasks = [n for n in canvas2.diagram().nodes if n.kind == "task"]
         if len(tasks) >= 2:

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:guji="https://guji.tools/bpmn/2025" id="guji-definitions" targetNamespace="https://guji.tools/bpmn/2025" exporter="bpmn-js (https://demo.bpmn.io)" exporterVersion="18.31.0">
   <bpmn:process id="guji_task" isExecutable="false">
-    <bpmn:startEvent id="Event_0uho7pd" name="源PDF">
+    <bpmn:startEvent id="Event_0uho7pd" name="上传文件">
       <bpmn:outgoing>Flow_1lrh9wv</bpmn:outgoing>
     </bpmn:startEvent>
     <bpmn:task id="Activity_05a13ao" name="提取图片">
@@ -46,11 +46,11 @@
     </bpmn:textAnnotation>
     <bpmn:association id="Association_1yjzl27" associationDirection="None" sourceRef="Activity_1cifgja" targetRef="TextAnnotation_08kvy43" />
     <bpmn:textAnnotation id="TextAnnotation_1wbus4s">
-      <bpmn:text>从PDF提取图片</bpmn:text>
+      <bpmn:text>从文件提取图片</bpmn:text>
     </bpmn:textAnnotation>
     <bpmn:association id="Association_0v64vvl" associationDirection="None" sourceRef="Activity_05a13ao" targetRef="TextAnnotation_1wbus4s" />
     <bpmn:textAnnotation id="TextAnnotation_09plygt">
-      <bpmn:text>用户上传PDF</bpmn:text>
+      <bpmn:text>用户上传PDF/DjVu文件</bpmn:text>
     </bpmn:textAnnotation>
     <bpmn:association id="Association_1i4dluq" associationDirection="None" sourceRef="Event_0uho7pd" targetRef="TextAnnotation_09plygt" />
     <bpmn:textAnnotation id="TextAnnotation_1izyivv">

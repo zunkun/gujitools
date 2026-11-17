@@ -813,10 +813,15 @@ class ImageEditorDialog(
                 if layout_updates:
                     self.multi_layout_saved.emit(layout_updates)
                 self._load_layer(active_index)
-                QMessageBox.warning(
-                    self, "保存失败",
+                # ⚠️ 不用 QMessageBox.warning 静态方法：单按钮文字由系统语言
+                #    决定（英文环境显示 "OK"，2026-11-17 用户报「弹窗是英文」）。
+                box = QMessageBox(
+                    QMessageBox.Icon.Warning, "保存失败",
                     f"无法保存「{layer['label']}」：{Path(layer['file']).name}",
+                    QMessageBox.StandardButton.Ok, self,
                 )
+                box.button(QMessageBox.StandardButton.Ok).setText("知道了")
+                box.exec()
                 return False
             self._load_layer(index)
             sync_content_quad(layer["file"], self)

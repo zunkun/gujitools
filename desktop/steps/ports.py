@@ -247,7 +247,9 @@ def stage_artifacts(stage: str) -> tuple[str, ...]:
 #: 使用方）与界面显隐都从这里取，别在两处各写一遍"extract↔startEvent"。
 SOURCE_PDF_STAGE = "extract"
 #: 源 PDF 在图上不是阶段、而是一个事件节点，用**它在这张图里的名字**认。
-SOURCE_PDF_NODE_NAMES = ("源PDF", "源 PDF", "上传PDF", "上传 PDF", "PDF")
+#: ⚠️ 默认模板里它叫「上传文件」（用户 2026-11-17：「源PDF 应该改成上传文件」
+#: ——它管的不只是 PDF，DjVu 也走这里）。
+SOURCE_PDF_NODE_NAMES = ("上传文件", "源PDF", "源 PDF", "上传PDF", "上传 PDF", "PDF")
 
 #: 「是否拼版」（排他网关）守着的那一格。
 #:

@@ -35,9 +35,7 @@ from utils.file_utils import replace_with_retry
 _ENTRY_THUMB_WARM_LIMIT = 60
 
 
-def reconcile_page_files(
-    pages: list[dict], directory: Path
-) -> tuple[list[dict], int]:
+def reconcile_page_files(pages: list[dict], directory: Path) -> tuple[list[dict], int]:
     """把页面清单按 **stem** 对齐到目录里的实际文件（jpg/png 等格式都支持）。
 
     - 清单里的路径还在 → 原样保留；
@@ -83,8 +81,7 @@ def reconcile_page_files(
             kept.append(page)
             continue
         chosen = next(
-            (path for path in options
-             if path.suffix.lower() == current.suffix.lower()),
+            (path for path in options if path.suffix.lower() == current.suffix.lower()),
             options[0],
         )
         updated = dict(page)
@@ -272,12 +269,8 @@ class PageListMixin:
         active = self.imposition_effective()
         node = self.node_of_stage(stage)
         if node:
-            return self.store.node_input_effective(
-                self.task_id, node, "pages", active
-            )
-        return self.store.stage_input_effective(
-            self.task_id, stage, "pages", active
-        )
+            return self.store.node_input_effective(self.task_id, node, "pages", active)
+        return self.store.stage_input_effective(self.task_id, stage, "pages", active)
 
     def _refresh_manifest(self) -> None:
         if not self.task_id:
@@ -301,9 +294,7 @@ class PageListMixin:
         cached = getattr(self, "_manifest_paths_cache", None)
         if cached is not None and cached[0] == signature:
             return list(cached[1])
-        paths = [
-            Path(text) for text in signature if text and Path(text).exists()
-        ]
+        paths = [Path(text) for text in signature if text and Path(text).exists()]
         self._manifest_paths_cache = (signature, paths)
         return list(paths)
 
@@ -762,7 +753,11 @@ class PageListMixin:
         from desktop.steps import ports
 
         current = self.current_stage()
-        if current and "pages" in ports.stage_inputs(current) and not self._stage_input_visible():
+        if (
+            current
+            and "pages" in ports.stage_inputs(current)
+            and not self._stage_input_visible()
+        ):
             # 上游没执行成功时，这一步的"输入目录"其实是上游的正式产物目录；
             # 往里塞图既不会被看见（可见性仍要求上游成功），又可能被当成上游
             # 产物（用户 2026-11-04「检查所有的步骤」）。
@@ -958,9 +953,7 @@ class PageListMixin:
         的产物落点，同一步骤有多个节点时也各归各（B 方案：副本落 ``~<节点>``）。
         """
         if self.task_id:
-            QDesktopServices.openUrl(
-                QUrl.fromLocalFile(str(self._current_node_dir()))
-            )
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._current_node_dir())))
 
     def _current_node_dir(self) -> Path:
         """「打开任务目录」的目标：**节点产物目录优先，其次任务根目录**。
@@ -1463,7 +1456,7 @@ class PageListMixin:
         #    对话框，不是浏览窗口）。
         filename, _ = QFileDialog.getOpenFileName(
             cast("QWidget", self),
-            "选择 PDF/DjVu 源文件",
+            "选择 PDF/DjVu 文件",
             str(default_open_dir()),
             "PDF/DjVu 文件 (*.pdf *.djvu *.djv)",
         )
@@ -1722,9 +1715,14 @@ class PageListMixin:
         #    下面 rmtree 的 ``stages``/``drafts`` 收不到它们——留着就是"换完源
         #    文件，旧书的页清单与检测框在副本节点上复活"。
         for pattern in (
-            "pages~*.json", "boxes~*.json", "sizes~*.json", "print~*.json",
+            "pages~*.json",
+            "boxes~*.json",
+            "sizes~*.json",
+            "print~*.json",
             # 逐张参数/算法/执行记录都是按**旧书页名**记的，换源后一律作废
-            "rembg_offsets*.json", "rembg_algorithms*.json", "rembg_methods*.json",
+            "rembg_offsets*.json",
+            "rembg_algorithms*.json",
+            "rembg_methods*.json",
         ):
             for stale in task_dir.glob(pattern):
                 try:

@@ -472,8 +472,8 @@ def run(ctx) -> None:
             app.processEvents()
             ok("面板点关闭能关掉弹窗（关的是所属窗口）",
                not shell.dialog.isVisible())
-        # 创建任务面板：**恒显示"当前流程"**（用户 2026-10-05 要求；2026-11-17
-        # 起复选框已撤——单一模式，默认流程恒可编辑）
+        # 创建任务面板：**编辑器恒在**（用户 2026-11-17：默认直接展示流程编辑
+        # 功能，不再点「编辑流程」触发；复选框同日已撤）
         panel = create_task_dialog.CreateTaskPanel()
         panel.show()
         app.processEvents()
@@ -482,50 +482,65 @@ def run(ctx) -> None:
                not panel.uses_custom_flow())
             ok("面板里**没有**「使用自定义任务流程」复选框（用户 2026-11-17 撤）",
                not hasattr(panel, "custom_check"))
-            # ⚠️ 这组断言就是用户反馈的那条："无论是否勾选自定流程，都要告诉
-            #    用户当前流程长什么样"——以前默认模式下节点图整块被藏起来。
+            ok("面板里**没有**「编辑流程」按钮（编辑器默认就在，无需触发）",
+               not hasattr(panel, "edit_button"))
+            # ⚠️ 这组断言就是用户反馈的那条："无论是否编辑，都要告诉用户当前
+            #    流程长什么样"——现在承担者从只读预览换成了常驻编辑器。
             default_names = [n.name for n in load_default_diagram().nodes]
-            ok("未编辑时**也显示**节点图（不是空白/隐藏）",
-               len(panel.flow_view.diagram().nodes) > 0
-               and [n.name for n in panel.flow_view.diagram().nodes]
+            ok("编辑器**默认就在页面上**且显示默认流程（不是空白/隐藏）",
+               panel.editor_panel is not None
+               and panel.editor_panel.editor() is not None
+               and not panel._editor_host.isHidden()
+               and [n.name for n in panel.editor_panel.diagram().nodes]
                == default_names,
-               f"{[n.name for n in panel.flow_view.diagram().nodes]}")
+               f"{[n.name for n in panel.editor_panel.diagram().nodes]}")
             ok("未编辑时提示写明用的是默认流程（「当前流程」标题行已删，"
                "由 mode_hint 承担告知）",
                "默认" in panel.mode_hint.text(), panel.mode_hint.text())
             ok("未编辑时不传图（走字节拷贝模板，保住 guji:port）",
                panel.result_diagram() is None)
-            # ⚠️ 用户 2026-11-17：默认流程**可编辑**——「编辑流程」「恢复默认」
-            #    恒可见（不再"仅自定义模式出现"）
-            ok("「编辑流程」「恢复默认」恒可见（默认流程就可编辑）",
-               panel.edit_button.isVisible() and panel.reset_button.isVisible())
+            ok("有「恢复默认」入口（编辑器工具栏自带）",
+               panel.reset_button is not None
+               and "恢复默认" in panel.reset_button.text())
             ok("未编辑时也有选 PDF 的地方",
                panel.pick_button.isVisible() and panel.selected_pdf() is None)
-
-            panel.set_custom_mode(True)
-            app.processEvents()
-            ok("标记已编辑后 uses_custom_flow 为 True", panel.uses_custom_flow())
-            custom_names = [n.name for n in panel.flow_view.diagram().nodes]
-            # 自定义初值即默认模板（"从默认流程开始改"的起点）。
-            # 要钉的是**显示的是"自定义那份图"**，而不是又一次默认图。
-            init_names = [n.name for n in
-                          create_task_dialog.load_custom_init().nodes]
-            ok("已编辑模式显示的是**初值**那张图",
-               len(custom_names) > 0 and custom_names == init_names,
-               f"{custom_names} vs {init_names}")
-            ok("已编辑模式提示写明用的是自定义流程",
-               "自定义" in panel.mode_hint.text(), panel.mode_hint.text())
-            _result = panel.result_diagram()
-            ok("已编辑模式传用户那张图（不是 None）",
-               _result is not None
-               and [n.name for n in _result.nodes] == custom_names)
-            ok("有「编辑流程」入口",
-               hasattr(panel, "edit_button") and "编辑流程" in panel.edit_button.text())
-            ok("有「恢复默认流程」入口",
-               hasattr(panel, "reset_button")
-               and "恢复默认" in panel.reset_button.text())
             ok("摘要讲清了步数与顺序",
                "步" in panel.flow_summary.text(), panel.flow_summary.text())
+
+            # ---- 直接在常驻编辑器里改图：改动**实时**算自定义 ----
+            from desktop.steps.bpmn_diagram import KIND_END
+            editor = panel.editor_panel.editor()
+            end_id = next(n.id for n in editor.diagram().nodes
+                          if n.kind == KIND_END)
+            editor.add_node(name="随手加的步骤", connect_from=end_id)
+            app.processEvents()
+            ok("编辑器里加了节点 ⇒ 立刻标记已编辑（result_diagram 不是 None）",
+               panel.uses_custom_flow()
+               and panel.result_diagram() is not None
+               and any(n.name == "随手加的步骤"
+                       for n in panel.result_diagram().nodes))
+            ok("编辑过后提示写明用的是自定义流程",
+               "自定义" in panel.mode_hint.text(), panel.mode_hint.text())
+            # ⚠️ 用户 2026-11-17：选文件行在说明行**上面**（两行对调）
+            ok("选文件行在说明行上面（用户要求两行对调）",
+               panel.layout().indexOf(panel._pdf_row)
+               < panel.layout().indexOf(panel.mode_hint))
+            # ⚠️ 用户 2026-11-17：先选了文件、再把「上传文件/提取图片」删掉
+            #    ⇒ 这个文件就没有意义了，整行隐藏
+            panel.set_pdf(ctx.pdf)
+            app.processEvents()
+            from desktop.steps.bpmn_diagram import KIND_START
+            editor2 = panel.editor_panel.editor()
+            start_id = next(n.id for n in editor2.diagram().nodes
+                            if n.kind == KIND_START)
+            editor2.set_selected(start_id)
+            editor2.remove_selected()      # 成对删除：提取图片跟着没
+            app.processEvents()
+            ok("删「上传文件/提取图片」⇒ 选源文件整行隐藏（文件没意义了）",
+               panel._pdf_row.isHidden())
+            ok("成对删除没把整条流程删光（后面还有可跑的步骤）",
+               panel.result_diagram() is not None
+               and panel.result_diagram().stage_order())
             # ⚠️ PDF **非必需**（用户 2026-10-06：「PDF 输入不是必须的」
             #    ＋「创建任务按钮不必等上传 pdf 才可以点」）——这两条是钉子，
             #    别哪天又给改回"没选文件就灰着"。
@@ -534,14 +549,15 @@ def run(ctx) -> None:
             ok("未选 PDF 时「创建任务」按钮是可点的（不是灰的）",
                panel.confirm_button.isEnabled()
                and not panel.confirm_button.isHidden())
-            # 恢复默认流程：「已编辑」标记跟着清（又回到字节拷贝语义）
-            panel._on_reset_flow()
+            # 恢复默认流程（点编辑器工具栏那颗）：标记跟着清，图换回默认
+            panel.reset_button.click()
             app.processEvents()
-            ok("恢复默认流程后不传图（回到字节拷贝语义）"
-               "且节点图换回默认流程",
+            ok("恢复默认流程后不传图（回到字节拷贝语义）、编辑器换回默认流程、"
+               "选文件行跟着回来",
                panel.result_diagram() is None
                and not panel.uses_custom_flow()
-               and [n.name for n in panel.flow_view.diagram().nodes]
+               and not panel._pdf_row.isHidden()
+               and [n.name for n in panel.editor_panel.diagram().nodes]
                == default_names)
         finally:
             panel.close()
@@ -565,13 +581,14 @@ def run(ctx) -> None:
         ok("流程弹窗打开就是编辑态（不用再点一次「编辑流程」）",
            editor is not None and isinstance(editor, BpmnEditor))
         assert editor is not None  # 上一条 ok 已断言编辑态必有编辑器
-        ok("工具栏有全部编辑动作",
+        ok("工具栏有全部编辑动作（「连线」「重命名」已撤，用户 2026-11-17）",
            board.toolbar is not None
-           and [b.text() for b in (board.add_button,
-                                   board.link_button, board.rename_button,
-                                   board.delete_button)]
-           == ["添加步骤", "连线", "重命名", "删除"],
+           and [b.text() for b in (board.add_button, board.delete_button)]
+           == ["添加步骤", "删除"],
            str(board.toolbar))
+        ok("工具栏**没有**「连线」「重命名」按钮（连线拖连接点、改名双击节点）",
+           not hasattr(board, "link_button")
+           and not hasattr(board, "rename_button"))
         # ⚠️ 「添加判断」入口已撤（用户 2026-10-08："其实根本就没有判断这个
         #    组件，只有「是否拼版」这个特殊的判断组件……是否拼版依附拼版"）。
         #    网关只能随模板文件来，界面上**不该**再有加它的按钮。
@@ -582,15 +599,13 @@ def run(ctx) -> None:
         target = node_ids[0]
         editor.set_selected(None)
         app.processEvents()
-        ok("没选中时「重命名/删除」是灰的（选中才有意义）",
-           not board.rename_button.isEnabled()
-           and not board.delete_button.isEnabled())
+        ok("没选中时「删除」是灰的（选中才有意义）",
+           not board.delete_button.isEnabled())
         rect = editor.rect_of(target)
         _click_at(editor, rect.center().x(), rect.center().y())
         app.processEvents()
         ok("点节点能选中", editor.selected() == target, str(editor.selected()))
-        ok("选中后「重命名/删除」变可用",
-           board.rename_button.isEnabled() and board.delete_button.isEnabled())
+        ok("选中后「删除」变可用", board.delete_button.isEnabled())
         _target_node = editor.diagram().node(target)
         assert _target_node is not None  # target 刚从图里挑出来，必然存在
         ok("状态行写出了选中的是哪个步骤与它的运行阶段",
@@ -601,18 +616,15 @@ def run(ctx) -> None:
         # 动作按钮**真的接上了**编辑器（接不上就是死按钮——上一版的毛病）
         fired: list[str] = []
         editor.ask_add_node = lambda: fired.append("add")
-        editor.ask_rename_selected = lambda: fired.append("rename")
         editor.ask_delete_selected = lambda: fired.append("delete")
         board.add_button.click()
-        board.rename_button.click()
         board.delete_button.click()
         ok("工具栏按钮都真的接到编辑器动作上（不是死按钮）",
-           fired == ["add", "rename", "delete"], str(fired))
+           fired == ["add", "delete"], str(fired))
         # 撤掉落上的替身（实例属性会盖住类方法）——后面要用**真**方法验证行为。
         del editor.ask_add_node
-        del editor.ask_rename_selected, editor.ask_delete_selected
+        del editor.ask_delete_selected
         editor.set_link_mode(False)
-        board.link_button.setChecked(False)
 
         # 选中连线
         flow_ids = [f.id for f in editor.diagram().flows]
@@ -622,6 +634,14 @@ def run(ctx) -> None:
            editor.selected_flow() == flow_ids[0] and not editor.selected())
         ok("状态行写出了选中的是哪条连线",
            "连线" in board.status.text(), board.status.text())
+
+        # 「添加步骤」方块面板的**候选名单**（用户 2026-11-17：下拉改方块；
+        # 「提交检测结果」与「其他（自定义名称）」都不在名单里）
+        from desktop.components.bpmn_palette import palette_steps
+        ok("「添加步骤」候选 = 固定步骤表"
+           "（没有「提交检测结果」的 detect_submit，也没有自定义项）",
+           "detect_submit" not in palette_steps()
+           and len(palette_steps()) == 5, str(palette_steps()))
 
         # 元素添加：加一个能被运行时认出来的步骤
         before = len(editor.diagram().nodes)
@@ -642,11 +662,12 @@ def run(ctx) -> None:
         ok("认不出的拖放 token 被拒绝（不凭空造节点）",
            editor.add_step("__gateway__") is None
            and editor.add_step("") is None)
-        # 两个任务关联：连线模式（点起点 → 点终点）+ connect
+        # 两个任务关联：连线（画布内部连线模式——工具栏按钮已撤，
+        # 这里直接驱动画布验证连线动作本身仍在）
         ok("开始不在连线模式", not editor.link_mode())
-        board.link_button.click()
+        editor.set_link_mode(True)
         app.processEvents()
-        ok("点「连线」进入连线模式", editor.link_mode())
+        ok("进入连线模式（程序化驱动，按钮已撤）", editor.link_mode())
         link_src = editor.diagram().nodes[1].id
         link_dst = new_id
         flows_before = len(editor.diagram().flows)
@@ -824,88 +845,22 @@ def run(ctx) -> None:
         ok("落盘往返后阶段顺序一致",
            reloaded.stage_order() == editor.diagram().stage_order())
 
-        # ---- 固定节点面板：拖一个到画布就加一格（bpmn.io 手感）----
-        from PySide6.QtCore import QMimeData, QPointF, Qt
-        from PySide6.QtGui import QDropEvent
+        # ---- 左侧固定节点面板已撤（用户 2026-11-17："左側這塊區域不需要了"）
+        #      ——加步骤统一走工具栏「添加步骤」方块弹窗 ----
+        # ⚠️ 别用 hasattr(board, "palette")：``palette`` 是 QWidget 的**内置
+        #    Qt 属性**（QPalette），恒为真，判不出我们的面板撤没撤。
+        #    面板本体是 ListWidget，查子控件里还有没有它。
+        from qfluentwidgets import ListWidget
 
-        from desktop.components.bpmn_palette import NODE_MIME, palette_steps
-
-        palette = board.palette
-        ok("编辑态有固定节点面板", palette is not None)
-        assert palette is not None  # 上一条 ok 已断言面板存在
-
-        def _palette_state() -> dict:
-            return {
-                palette.item(i).data(Qt.ItemDataRole.UserRole):
-                bool(palette.item(i).flags() & Qt.ItemFlag.ItemIsEnabled)
-                for i in range(palette.count())
-            }
-
-        def _drop(token: str, x: float, y: float) -> None:
-            mime = QMimeData()
-            mime.setData(NODE_MIME, token.encode("utf-8"))
-            editor.dropEvent(QDropEvent(
-                QPointF(x, y), Qt.DropAction.CopyAction, mime,
-                Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier))
-
-        state = _palette_state()
-        # ⚠️ 面板条目**只有步骤**，没有「判断」（用户 2026-10-08）：网关依附
-        #    「图片拼版」，不是可拖出来的独立组件——面板上多一条就等于告诉
-        #    用户可以凭空加一个判断。
-        ok("面板条目 = 固定步骤集（**没有**「判断」条目）",
-           set(palette_steps()) == set(state),
-           f"面板 {sorted(state)} vs 步骤表 {sorted(palette_steps())}")
-        # 当前图（默认模板）里已有的步骤必须**置灰**，否则能拖出重复节点
-        live = _palette_state()
-        before_nodes = len(editor.diagram().nodes)
-
-        # 先删掉「图片去底色」——面板对应条目应恢复可拖
-        rembg_node = next((n for n in editor.diagram().nodes
-                           if n.stage == "rembg"), None)
-        if rembg_node is not None:
-            editor.set_selected(rembg_node.id)
-            editor.remove_selected()
-            app.processEvents()
-            ok("删掉某一步之后，面板里那一条恢复可拖（能加回来）",
-               _palette_state().get("rembg") is True,
-               str(_palette_state()))
-            # 拖回来：落点**居中**，名字/阶段都接回运行
-            _drop("rembg", 400.0, 400.0)
-            app.processEvents()
-            ok("从面板拖出一个节点即加了一格",
-               len(editor.diagram().nodes) == before_nodes,
-               f"{before_nodes} -> {len(editor.diagram().nodes)}")
-            _sel = editor.selected()
-            assert _sel is not None  # 拖放完成后新节点处于选中态
-            made = editor.diagram().node(_sel)
-            ok("拖出来的节点接得上运行阶段（名字 → 阶段表）",
-               made is not None and made.stage == "rembg",
-               str(made and (made.name, made.stage)))
-            if made is not None:
-                center = editor.rect_of(made.id).center()
-                ok("节点**以落点为中心**落位（所见即所得）",
-                   abs(center.x() - 400) < 2 and abs(center.y() - 400) < 2,
-                   f"{center.x():.1f},{center.y():.1f}")
-            ok("加回来之后面板该条又置灰了",
-               _palette_state().get("rembg") is False)
-        # 选中一个节点再拖 → 顺手接一条线（"挂在它后面"）
+        ok("编辑态**没有**左侧固定节点面板（区域已撤）",
+           not board.findChildren(ListWidget))
+        # 任务节点仍是"接在选中节点后面"：加一个任务节点验自动连线还在
         some = editor.diagram().nodes[0].id
         editor.set_selected(some)
         flows_before = len(editor.diagram().flows)
-        # ⚠️ 拖放负载里塞网关 token 也**不该**造出节点（用户 2026-10-08）：
-        #    面板已经没有这一项，但拖放是公开入口，仍要挡住。
-        nodes_before = len(editor.diagram().nodes)
-        _drop("__gateway__", 700.0, 520.0)
-        app.processEvents()
-        ok("往画布拖「网关 token」什么也不加（网关不是可拖的组件）",
-           len(editor.diagram().nodes) == nodes_before
-           and len(editor.diagram().flows) == flows_before,
-           f"节点 {nodes_before} -> {len(editor.diagram().nodes)}，"
-           f"连线 {flows_before} -> {len(editor.diagram().flows)}")
-        # 任务节点仍是"接在选中节点后面"：加一个任务节点验自动连线还在
         linked = editor.add_node(KIND_TASK, "PDF排版", stage="print",
                                  connect_from=some)
-        ok("任务节点拖进来时若选中了节点，仍自动连上一条线",
+        ok("任务节点加进来时若选中了节点，仍自动连上一条线",
            len(editor.diagram().flows) == flows_before + 1,
            f"{flows_before} -> {len(editor.diagram().flows)}")
         editor.remove_node(linked)
@@ -1074,31 +1029,41 @@ def run(ctx) -> None:
        and _page_layout.contentsMargins().left() > 0,
        f"panel={_panel_layout.contentsMargins().left()} "
        f"page={_page_layout.contentsMargins().left()}")
-    # 流程编辑**内嵌**：不弹窗、预览让位
-    ctx_page.panel.set_custom_mode(True)
+    # 流程编辑器**默认就在本页上**（用户 2026-11-17：不再点「编辑流程」触发）
+    ok("创建页默认就带着流程编辑器（BpmnEditorPanel 恒在）",
+       ctx_page.panel.editor_panel is not None
+       and ctx_page.panel.editor_panel.editor() is not None
+       and not ctx_page.panel._editor_host.isHidden())
+    ok("编辑器显示的是默认模板那张图（还没编辑过）",
+       [n.name for n in ctx_page.panel.editor_panel.diagram().nodes]
+       == [n.name for n in load_default_diagram().nodes])
+    ok("底部「取消/创建任务」恒在（编辑器常驻后没有两态切换）",
+       not ctx_page.panel._button_bar.isHidden()
+       and not hasattr(ctx_page.panel, "edit_button"))
+    # 删「上传文件/提取图片」⇒ 选了的文件**不进任务**（用户 2026-11-17：
+    # 文件没意义了——行已隐藏，提交时也不能对一个看不见的文件弹查重）
+    from desktop.steps.bpmn_diagram import KIND_START
+    ctx_page.panel.set_pdf(ctx.pdf)
+    _ed = ctx_page.panel.editor_panel.editor()
+    _start = next(n.id for n in _ed.diagram().nodes if n.kind == KIND_START)
+    _ed.set_selected(_start)
+    _ed.remove_selected()
+    _fired = []
+    _collector = lambda *a: _fired.append(a)  # noqa: E731 - 收集器
+    ctx_page.create_requested.connect(_collector)
+    ctx_page._emit_create()
+    ok("流程不吃源文件 ⇒ 选了的文件不传给建任务（不查重、不拷贝）",
+       len(_fired) == 1 and _fired[0][0] == ""
+       and ctx_page.panel._pdf_row.isHidden(),
+       f"fired={_fired}")
+    ctx_page.create_requested.disconnect(_collector)
+    # ⚠️ 还原成默认流程：后面的 10~12 节还要在这页上验"默认流程要 PDF"等判据。
+    # ⚠️ 文件要**重新选上**：section 10 的 `_submit_keeps_window` 会真走
+    #    `_on_submit`——没文件 + 默认流程要 PDF ⇒ 真弹「缺源 PDF」MessageBox，
+    #    离屏没人点它就是挂死（看门狗 600s 强杀的那次正是这么来的）。
+    ctx_page.panel.reset()
+    ctx_page.panel.set_pdf(ctx.pdf)
     app.processEvents()
-    ctx_page.panel._on_edit_flow()
-    app.processEvents()
-    ok("「编辑流程」就地展开在本页里（编辑器已建）",
-       ctx_page.panel._editor is not None)
-    assert ctx_page.panel._editor is not None  # 上一条 ok 已断言编辑器已建
-    ok("进编辑态时流程预览让位（不与编辑器同屏）",
-       ctx_page.panel._editor_host.isVisible()
-       and ctx_page.panel.flow_scroll.isHidden()
-       and ctx_page.panel.edit_button.isHidden())
-    ok("进编辑态时底部「取消/确认」整行收起（只留编辑器的关闭/保存，"
-       "不出现两排确认按钮）",
-       ctx_page.panel._button_bar.isHidden())
-    ok("内嵌编辑器不带自己的标题（避免页面套页面）",
-       ctx_page.panel._editor.title_label.isHidden())
-    ok("内嵌编辑器不会去关宿主窗口（否则整页消失）",
-       ctx_page.panel._editor._close_window_on_end is False)
-    ctx_page.panel._on_editor_done(False)      # 「关闭」= 丢弃
-    app.processEvents()
-    ok("关掉编辑器回到流程预览",
-       ctx_page.panel._editor_host.isHidden()
-       and ctx_page.panel.flow_scroll.isVisible()
-       and ctx_page.panel._button_bar.isVisible())
 
     # 详情页「查看/编辑流程」→ 流程编辑**页面**
     ok("详情页发的是 flow_edit_requested（宿主切页，不再自己弹窗）",
@@ -1299,8 +1264,9 @@ def _check_source_pdf_pairing() -> None:
 
     from pathlib import Path
 
-    from PySide6.QtWidgets import QApplication, QMessageBox
+    from PySide6.QtWidgets import QApplication
 
+    from desktop.components.bpmn_editor import BpmnEditor
     from desktop.pages.taskdetail.page import TaskDetailPage
     from desktop.pages.taskflow.page import TaskFlowPage
     from desktop.shell import ModuleShell
@@ -1313,7 +1279,7 @@ def _check_source_pdf_pairing() -> None:
         app = QApplication([])
 
     tmp = Path(tempfile.mkdtemp(prefix="guji_pairing_"))
-    orig_question = QMessageBox.question
+    orig_confirm = BpmnEditor._confirm_zh
     try:
         store = TaskStore(tmp / "data")
         shell = ModuleShell(store)
@@ -1367,8 +1333,7 @@ def _check_source_pdf_pairing() -> None:
         # ---- ③④ 成对删除（正反两向）----
         # ⚠️ 确认框替成"是"：不替的话 ``ask_delete_selected`` 会挂住整个自测
         #    （离屏下真弹模态＝看门狗 os._exit(3)）。
-        QMessageBox.question = staticmethod(  # type: ignore[reportAttributeAccessIssue]  # 测试替身：把确认框换成自动答「是」，离屏不许真弹模态
-            lambda *a, **k: QMessageBox.StandardButton.Yes)
+        BpmnEditor._confirm_zh = lambda self, *a, **k: True  # type: ignore[reportAttributeAccessIssue]  # 测试替身：把确认框换成自动答「是」，离屏不许真弹模态
 
         def names_after_deleting(task_id: str, node_id: str) -> list[str]:
             """选中原生节点 → 走工具栏那条删除路径 → 剩下哪些节点名。"""
@@ -1417,7 +1382,7 @@ def _check_source_pdf_pairing() -> None:
 
         shell.close()
     finally:
-        QMessageBox.question = orig_question
+        BpmnEditor._confirm_zh = orig_confirm
         shutil.rmtree(tmp, ignore_errors=True)
 
 
@@ -1461,7 +1426,7 @@ def _check_end_event_cascade() -> None:
 
     from pathlib import Path
 
-    from PySide6.QtWidgets import QApplication, QMessageBox
+    from PySide6.QtWidgets import QApplication
 
     from desktop.components.bpmn_editor import BpmnEditor
     from desktop.shell import ModuleShell
@@ -1473,7 +1438,7 @@ def _check_end_event_cascade() -> None:
         app = QApplication([])
 
     tmp = Path(tempfile.mkdtemp(prefix="guji_end_event_"))
-    orig_question = QMessageBox.question
+    orig_confirm = BpmnEditor._confirm_zh
     try:
         store = TaskStore(tmp / "data")
         shell = ModuleShell(store)
@@ -1485,8 +1450,7 @@ def _check_end_event_cascade() -> None:
                                     name="带收尾")
         (store.task_dir(task_id) / "flow.bpmn").write_text(
             _FLOW_PRINT_WITH_END, encoding="utf-8")
-        QMessageBox.question = staticmethod(  # type: ignore[reportAttributeAccessIssue]  # 测试替身：把确认框换成自动答「是」，离屏不许真弹模态
-            lambda *a, **k: QMessageBox.StandardButton.Yes)
+        BpmnEditor._confirm_zh = lambda self, *a, **k: True  # type: ignore[reportAttributeAccessIssue]  # 测试替身：把确认框换成自动答「是」，离屏不许真弹模态
 
         def open_editor() -> BpmnEditor:
             from desktop.pages.taskflow.page import TaskFlowPage
@@ -1541,11 +1505,11 @@ def _check_end_event_cascade() -> None:
         editor = open_editor()
         seen: dict = {}
 
-        def spy_question(*args, **kwargs):
-            seen["text"] = args[2] if len(args) > 2 else kwargs.get("text", "")
-            return QMessageBox.StandardButton.Yes
+        def spy_confirm(self, title, text, **kwargs):
+            seen["text"] = text
+            return True
 
-        QMessageBox.question = staticmethod(spy_question)  # type: ignore[reportAttributeAccessIssue]  # 测试替身：换成记录确认框文案的探针，离屏不许真弹模态
+        BpmnEditor._confirm_zh = spy_confirm  # type: ignore[reportAttributeAccessIssue]  # 测试替身：换成记录确认框文案的探针，离屏不许真弹模态
         editor.set_selected("pr")
         editor.ask_delete_selected()
         app.processEvents()
@@ -1554,7 +1518,7 @@ def _check_end_event_cascade() -> None:
 
         shell.close()
     finally:
-        QMessageBox.question = orig_question
+        BpmnEditor._confirm_zh = orig_confirm
         shutil.rmtree(tmp, ignore_errors=True)
 
 
@@ -2337,13 +2301,10 @@ def _check_create_page_reset(create_page, sample_pdf) -> None:
     # 先把页面弄成"上一次用过的样子"
     create_page.set_name("上一次的书")
     create_page.panel.set_pdf(sample_pdf)
-    create_page.panel.set_custom_mode(True)
     create_page._autofill_name()
     create_page.set_busy(True, "建任务中…")
-    create_page.panel._on_edit_flow()          # 编辑器开着
-    ok("先摆出「上一次用过的样子」（自定义模式 + 编辑器开着）",
-       create_page.panel.uses_custom_flow()
-       and create_page.panel._editor is not None
+    ok("先摆出「上一次用过的样子」（编辑器恒在 + busy）",
+       create_page.panel.editor_panel is not None
        and not create_page.panel._editor_host.isHidden()
        and create_page._busy is True
        and not create_page.name_edit.isEnabled())
@@ -2359,17 +2320,15 @@ def _check_create_page_reset(create_page, sample_pdf) -> None:
        create_page.panel.pdf_state.text())
     ok("复位后回到默认流程（编辑标记被清）",
        create_page.panel.uses_custom_flow() is False)
-    ok("复位后自定义流程图回到初值（不是带着上一本书的图）",
-       [n.name for n in create_page.panel._custom_diagram.nodes]
+    ok("复位后编辑器仍在页面上（常驻，不收起）",
+       not create_page.panel._editor_host.isHidden()
+       and create_page.panel.editor_panel.editor() is not None)
+    ok("复位后编辑器内容回到初值（不是带着上一本书的图）",
+       [n.name for n in create_page.panel.editor_panel.diagram().nodes]
        == [n.name for n in
            create_task_dialog.load_custom_init().nodes])
-    ok("复位后流程预览回来、编辑器收起（不是留个开着的空编辑器）",
-       create_page.panel._editor_host.isHidden()
-       and not create_page.panel.flow_scroll.isHidden()
-       and not create_page.panel.flow_summary.isHidden())
-    ok("复位后编辑器面板被销毁（不是留着等下次复用旧图）",
-       create_page.panel._editor is None,
-       repr(create_page.panel._editor))
+    ok("复位后 flow_summary 还在（摘要随编辑实时刷新）",
+       not create_page.panel.flow_summary.isHidden())
     ok("复位后 busy 态与控件禁用一起清（否则这页永久半残）",
        create_page._busy is False
        and create_page.name_edit.isEnabled()
@@ -2384,41 +2343,30 @@ def _check_create_page_reset(create_page, sample_pdf) -> None:
        create_page.name_edit.placeholderText())
 
     # ---- 2026-10-07 事故回归钉：编辑器复用会抱着上一次编的图 ----
-    # 现象：编过一次自定义流程 → 建任务 → 再进创建页，点「编辑流程」看到的
-    # 还是上一本书的图，不是当前的初值。根因是编辑器面板被缓存复用（它又是
-    # 原地改图的）。现在：复位销毁编辑器 + 每次进编辑从当前图重建。
-    create_page.panel.set_custom_mode(True)
-    create_page.panel._on_edit_flow()
-    _flow_editor = create_page.panel._editor
-    assert _flow_editor is not None  # _on_edit_flow 后编辑器必然已建
-    editor = _flow_editor.editor_panel.editor()
-    assert editor is not None  # 编辑态必然有编辑器
+    # 现象：编过一次自定义流程 → 建任务 → 再进创建页，编辑器里看到的还是
+    # 上一本书的图，不是当前的初值。根因是编辑器面板被缓存复用（它又是原地
+    # 改图的）。现在：复位**重建**编辑器，每次都从默认模板起步。
+    editor = create_page.panel.editor_panel.editor()
+    assert editor is not None  # 常驻编辑器必然已建
     # ⚠️ 2026-11-04 起孤立节点会被保存校验拒绝，必须挂到图上；
     #    挂在结束事件后面（它本来没有输出），不破坏既有步骤的连线。
     from desktop.steps.bpmn_diagram import KIND_END
     end_id = next(n.id for n in editor.diagram().nodes if n.kind == KIND_END)
     editor.add_node(name="上一本书才有的步骤", connect_from=end_id)
-    _flow_editor.accept()         # 「保存流程」→ 回写 _custom_diagram
-    ok("先摆出事故现场：编辑器里加过节点并保存",
+    # 信号是同线程直连：diagram_changed（⇒「已编辑」标记）同步到达，无需 flush
+    ok("先摆出事故现场：编辑器里加过节点（实时生效，无需保存）",
        any(n.name == "上一本书才有的步骤"
-           for n in create_page.panel._custom_diagram.nodes))
+           for n in create_page.panel._custom_diagram.nodes)
+       and create_page.panel.uses_custom_flow())
     create_page.panel.reset()                  # 建完任务再进来（open_create 会调）
-    create_page.panel._on_edit_flow()
-    _flow_editor2 = create_page.panel._editor
-    assert _flow_editor2 is not None  # 再次 _on_edit_flow 后编辑器必然已建
-    editor_again = _flow_editor2.editor_panel.editor()
-    assert editor_again is not None  # 编辑态必然有编辑器
-    ok("编过流程并复位后，再进编辑器显示的是当前初值（不是上一次编的图）",
+    editor_again = create_page.panel.editor_panel.editor()
+    assert editor_again is not None  # 复位重建后编辑器必然已建
+    ok("编过流程并复位后，编辑器显示的是当前初值（不是上一次编的图）",
        all(n.name != "上一本书才有的步骤"
            for n in editor_again.diagram().nodes),
        str([n.name for n in editor_again.diagram().nodes]))
-    # 「关闭」= 丢弃：在编辑器里改的不能漏进 _custom_diagram（它是副本）
-    editor_again.add_node(name="这次不要了")
-    _flow_editor2._close()         # 「关闭」（不保存）
-    ok("编辑器里改了但「关闭」＝丢弃（_custom_diagram 不被原地污染）",
-       all(n.name != "这次不要了"
-           for n in create_page.panel._custom_diagram.nodes),
-       str([n.name for n in create_page.panel._custom_diagram.nodes]))
+    ok("复位后回到未编辑态（不把上一本书的图落盘）",
+       create_page.panel.result_diagram() is None)
 
 
 def _check_pdf_button_icon(detail) -> None:
@@ -2470,12 +2418,13 @@ def _check_missing_pdf_prompt(create_page, sample_pdf) -> None:
     keep = [n for n in create_page.panel._default_diagram.nodes
             if n.name != "提取图片"]
     if len(keep) >= 2:
-        create_page.panel._custom_diagram = FlowDiagram(
+        # ⚠️ 2026-11-17 起编辑器常驻：喂图走 set_custom_diagram（整张交给
+        #    编辑器重建），不再直接戳 _custom_diagram
+        create_page.panel.set_custom_diagram(FlowDiagram(
             nodes=tuple(keep),
             flows=tuple(DiagramFlow(f"sf{i}", keep[i - 1].id, keep[i].id)
                         for i in range(1, len(keep))),
-        )
-        create_page.panel.set_custom_mode(True)
+        ))
         ok("流程里没有要源 PDF 的步骤 ⇒ 不该问（不白问）",
            create_page._flow_needs_source_pdf() is False,
            f"stages={[n.name for n in keep]}")

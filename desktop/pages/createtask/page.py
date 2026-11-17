@@ -25,8 +25,9 @@
     │ [取消]                     [创建任务]    │  ← 面板自带按钮
     └─────────────────────────────────────────┘
 
-「编辑流程」**就地**展开在本页里（:class:`CreateTaskPanel` 内嵌
-``FlowPanel``），不再弹第二层——见该面板的 ``_on_edit_flow``。
+「流程编辑器」**默认就摆在本页里**（:class:`CreateTaskPanel` 内嵌
+``BpmnEditorPanel``，恒在、恒可编辑）——用户 2026-11-17：不再通过点
+「编辑流程」触发。
 
 ## 任务名称（用户 2026-10-06）
 
@@ -299,6 +300,12 @@ class CreateTaskPage(QWidget):
     def _emit_create(self) -> None:
         """把当前输入交出去（真正发信号的那一步）。"""
         path = self.panel.selected_pdf()
+        if path is not None and not self._flow_needs_source_pdf():
+            # ⚠️ 流程不吃源文件（「上传文件/提取图片」被删了）⇒ 选了的文件
+            #    用不上：那一行已经藏了（见 CreateTaskPanel._sync_pdf_row），
+            #    这里也不能把它带进任务——否则会对一个**看不见的文件**弹
+            #    查重确认。面板里的选择保留：节点加回来文件还在。
+            path = None
         self.create_requested.emit(
             str(path) if path is not None else "",
             self.task_name(),

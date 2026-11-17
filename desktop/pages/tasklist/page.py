@@ -19,7 +19,6 @@ from PySide6.QtWidgets import (
 )
 from qfluentwidgets import (
     CaptionLabel,
-    Dialog,
     FluentIcon as FIF,
     InfoBar,
     InfoBarPosition,
@@ -507,6 +506,17 @@ class TaskListPage(QWidget, WorkerHost):
         - 多个渲染线程并行时主线程 ``create_task`` 中位从 5ms 涨到 929ms。
         所以：**先出行，再放后台干活**，且一次只跑一个。
         """
+        # ⚠️⚠️ **空壳判据必须把 "." 一起挡掉**（2026-11-17 任务 0017）：
+        #    ``start_create`` 的空壳分支传的是 ``Path()`` —— 它在 pathlib 里
+        #    就是 ``Path('.')``，``str()`` 是 "."（**真值**）。下面的
+        #    ``str(path or "").strip()`` 挡不住它，于是空壳任务被当成
+        #    "选了源文件"：① 给 thumbnails/source 立了假 `.producing` 标记
+        #    （查看器白等一轮回扫）；② 往串行队列塞一个 ``pdf_path=Path('.')``
+        #    的 worker —— 复制线程 ``copy('.')`` 报
+        #    「[Errno 13] Permission denied: '.'」，``fitz.open('.')`` 报
+        #    「'.' is no file」，用户看到两块错误 toast。与
+        #    ``store.create_task`` 里那条 "Path('') 是 '.'" 的守卫同一口径。
+        has_source = str(path or "").strip() not in ("", ".")
         # ⚠️ 任务名：创建页填了就用它；留空回落到**源文件名**，连PDF 都没选
         #    时回落到「任务#实际号」（两级回落都在 store.create_task 里，
         #    用户 2026-10-06：「任务名称可以有默认的」「没填写可以是上传的
@@ -514,7 +524,7 @@ class TaskListPage(QWidget, WorkerHost):
         task_name = self._pending_name
         self._pending_name = ""
         task_id = self.store.create_task(
-            path if str(path or "").strip() else None,
+            path if has_source else None,
             source_hash,
             task_name,
             duplicate_confirmed=duplicate_confirmed,
@@ -530,7 +540,7 @@ class TaskListPage(QWidget, WorkerHost):
         #    没有标记时它看不到生产者（此刻目录还是空的），于是自己又渲一遍
         #    整本——与导入任务各渲一遍，28 页 JPX 就是 56 次 ~850ms 的解码，
         #    用户看到的是"缩略图老半天不齐"。标记由 worker 收尾时撤掉。
-        if str(path or "").strip():
+        if has_source:
             # 空壳任务（没选 PDF）不会有缩略图生产者，别立标记（否则查看器
             # 白等一轮回扫）
             set_producing_marker(self.store.source_thumbnails_dir(task_id), True)
@@ -542,7 +552,7 @@ class TaskListPage(QWidget, WorkerHost):
         # ⚠️ **空壳任务没有 PDF**：不排队任何后台活——SourceThumbnailsWorker
         #    会去开那个不存在的文件（白报错，还可能把整个串行队列卡住）。
         #    补选 PDF 由详情页的入口负责（store.set_task_source）。
-        if not str(path or "").strip():
+        if not has_source:
             self._toast(
                 "info", "任务已创建",
                 "尚未选择源文件（PDF/DjVu），可在任务详情页右上角补选。",
@@ -658,8 +668,9 @@ class TaskListPage(QWidget, WorkerHost):
         task = self.store.get_task(task_id)
         if not task:
             return
-        dialog = Dialog(
-            "删除任务", f"确定删除任务「{task['name']}」及其全部中间产物？", self
+        dialog = ConfirmDialog(
+            "删除任务", f"确定删除任务「{task['name']}」及其全部中间产物？",
+            self, yes_text="删除",
         )
         if not dialog.exec():
             return
@@ -691,7 +702,12 @@ class TaskListPage(QWidget, WorkerHost):
         factory(
             title=title,
             content=content,
-            parent=self,
+            # ⚠️ 挂**主窗口**，不挂本页（2026-11-17 用户报障）：建空壳任务的
+            #    链路里 `open_detail.emit` 在 toast **之前**——壳层已同步切到
+            #    详情页，本页此刻是隐藏的。InfoBar 挂在隐藏控件上要等父级
+            #    重新显示（用户点回任务管理）才弹出来，用户看到的就是"回到
+            #    列表页才弹出"的迟到提示。主窗口恒可见，任何页面下都立刻弹。
+            parent=self.window(),
             position=InfoBarPosition.BOTTOM_RIGHT,
             duration=2500,
         )

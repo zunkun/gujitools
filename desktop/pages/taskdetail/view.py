@@ -18,11 +18,20 @@ from typing import TYPE_CHECKING, Any, Callable, cast
 
 from PySide6.QtCore import QObject, QProcess, QTimer
 from PySide6.QtWidgets import (
-    QBoxLayout, QHBoxLayout, QLabel, QLineEdit, QStackedWidget,
-    QVBoxLayout, QWidget,
+    QBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
 )
 from qfluentwidgets import (
-    CaptionLabel, ComboBox, PrimaryPushButton, PushButton, ToolButton,
+    CaptionLabel,
+    ComboBox,
+    PrimaryPushButton,
+    PushButton,
+    ToolButton,
 )
 from qfluentwidgets import FluentIcon as FIF
 
@@ -32,15 +41,22 @@ from desktop.components.imposition import ImpositionPanel, ImpositionViewWidget
 from desktop.components.log_panel import LogPanel
 from desktop.components.step_bar import StepBar
 from desktop.components.viewers import (
-    ExtractPreviewWidget, ImageViewerWidget,
-    PrintPreviewWidget, RembgPreviewWidget,
+    ExtractPreviewWidget,
+    ImageViewerWidget,
+    PrintPreviewWidget,
+    RembgPreviewWidget,
 )
 from desktop.steps.spec import FLOW_STAGES
 from desktop.store import IMPOSITION_STAGE
 from desktop.ui import theme as T
 from desktop.ui.icons import PDF_FILE
 from desktop.ui.widgets import (
-    Card, Divider, ProgressLine, SectionTitle, apply_to, combo_box,
+    Card,
+    Divider,
+    ProgressLine,
+    SectionTitle,
+    apply_to,
+    combo_box,
     mark_input_entry,
 )
 from desktop.pages.taskdetail.submit import SUBMIT_TEXT
@@ -277,7 +293,7 @@ class DetailViewMixin:
         self.rename_edit.setVisible(False)
         self.rename_edit.setMinimumWidth(280)
         self.rename_edit.editingFinished.connect(self._commit_rename)
-        self.rename_edit.installEventFilter(cast("QObject", self))   # Esc 取消
+        self.rename_edit.installEventFilter(cast("QObject", self))  # Esc 取消
         title_row.addWidget(self.rename_edit)
         self.task_no_label = QLabel("")
         apply_to(self.task_no_label, T.SIZE_CAPTION, color=T.INK_FAINT)
@@ -293,8 +309,7 @@ class DetailViewMixin:
         #    之前一直成立（四个步骤都跑不了）。它得**一直在**，直到补上文件。
         #    默认隐藏——不是每个任务都缺文件，常驻一条红字会变成噪声。
         self.source_warning = QLabel("")
-        apply_to(self.source_warning, T.SIZE_CAPTION, bold=True,
-                 color=T.DANGER)
+        apply_to(self.source_warning, T.SIZE_CAPTION, bold=True, color=T.DANGER)
         self.source_warning.setVisible(False)
         text_column.addWidget(self.source_warning)
         row.addLayout(text_column)
@@ -325,7 +340,7 @@ class DetailViewMixin:
         #    这个按钮会被读成"打开文档"而不是"选 PDF"，与列表页「创建任务」
         #    按钮、第四步「下载 PDF」用的都是同一枚图标才一致。
         self.source_button = ToolButton(PDF_FILE)
-        self.source_button.setToolTip("为这个任务选择 PDF/DjVu 源文件")
+        self.source_button.setToolTip("为这个任务选择 PDF/DjVu 文件")
         self.source_button.setFixedSize(34, 34)
         self.source_button.clicked.connect(self._on_pick_source)
         row.addWidget(self.source_button)
@@ -343,8 +358,7 @@ class DetailViewMixin:
         #    什么"是**两码事**：那个是动态提醒（补上就灭），这个是常驻标识。
         #    实现上不能互相覆盖，故由 ``_INPUT_ENTRY_MARK`` 统一给样式。
         self.insert_button = ToolButton(FIF.PHOTO)
-        self.insert_button.setToolTip(
-            "为本任务插入图片（放到入口图片目录，可多选）")
+        self.insert_button.setToolTip("为本任务插入图片（放到入口图片目录，可多选）")
         self.insert_button.setFixedSize(34, 34)
         self.insert_button.clicked.connect(self.insert_pages)
         mark_input_entry(self.insert_button)
@@ -353,7 +367,8 @@ class DetailViewMixin:
         # 📁 同样红框：整目录导入（文件对话框选不了目录，得单独一个入口）
         self.insert_dir_button = ToolButton(FIF.FOLDER)
         self.insert_dir_button.setToolTip(
-            "把一个文件夹里的图片批量插入（放到入口图片目录）")
+            "把一个文件夹里的图片批量插入（放到入口图片目录）"
+        )
         self.insert_dir_button.setFixedSize(34, 34)
         self.insert_dir_button.clicked.connect(self.insert_pages_from_folder)
         mark_input_entry(self.insert_dir_button)
@@ -389,20 +404,20 @@ class DetailViewMixin:
         #    ⇒ 该 return。（写成 ``not isHidden()`` 会变成"可见才 return"，
         #    改名永远不生效——这个错我犯过一次。）
         if self.rename_edit.isHidden():
-            return                      # 没在编辑态（Esc 取消后失焦会再触发一次）
+            return  # 没在编辑态（Esc 取消后失焦会再触发一次）
         typed = self.rename_edit.text().strip()
         self.rename_edit.setVisible(False)
         self.detail_title.setVisible(True)
         self.task_no_label.setVisible(True)
         if not typed:
-            return                      # 留空 = 不改（rename_task 的空回落只在
-                                        # 明确"清空后保存"时用）
+            return  # 留空 = 不改（rename_task 的空回落只在
+            # 明确"清空后保存"时用）
         task_id = self.task_id
         if task_id is None:
-            return                      # 没有任务可改（详情页必然已开任务）
+            return  # 没有任务可改（详情页必然已开任务）
         try:
             changed = self.store.rename_task(task_id, typed)
-        except Exception as exc:        # noqa: BLE001 - 落盘失败要说清，不能静默
+        except Exception as exc:  # noqa: BLE001 - 落盘失败要说清，不能静默
             self._toast("error", "改名失败", f"{type(exc).__name__}: {exc}")
             return
         if changed:
@@ -423,10 +438,12 @@ class DetailViewMixin:
         from PySide6.QtCore import QEvent, Qt
         from PySide6.QtGui import QKeyEvent
 
-        if (watched is self.rename_edit
-                and event.type() == QEvent.Type.KeyPress
-                and isinstance(event, QKeyEvent)
-                and event.key() == Qt.Key.Key_Escape):
+        if (
+            watched is self.rename_edit
+            and event.type() == QEvent.Type.KeyPress
+            and isinstance(event, QKeyEvent)
+            and event.key() == Qt.Key.Key_Escape
+        ):
             # ⚠️ **先清文本再失焦**：``clearFocus`` 会触发 ``editingFinished``
             # → ``_commit_rename``，那里看到非空文本就会**真的存下去**，
             # Esc 等于"改名并保存"，与预期相反。
@@ -444,7 +461,8 @@ class DetailViewMixin:
         #    唯一可靠凭据。
         self._step_bar_slots = self.flow_slots()
         self.step_bar = StepBar(
-            self._bar_step_titles(), optional_after=self._optional_after_index(),
+            self._bar_step_titles(),
+            optional_after=self._optional_after_index(),
             unmapped=self._unmapped_step_indices(),
             # ⚠️ 下标只有一种语义＝格序 bar_index（MEMORY「三套下标」第①种）。
             #    少传这一张映射表，StepBar 就会退回"真实步骤序"，于是点「生成
@@ -517,9 +535,7 @@ class DetailViewMixin:
         slots = self.flow_slots()
         real = [s for s in slots if not s.optional]
         specs: list[tuple[int, int, str]] = []
-        for slot in sorted(
-            (s for s in slots if s.optional), key=lambda s: s.bar_index
-        ):
+        for slot in sorted((s for s in slots if s.optional), key=lambda s: s.bar_index):
             after = -1
             for position, item in enumerate(real):
                 if item.bar_index < slot.bar_index:
@@ -538,19 +554,21 @@ class DetailViewMixin:
         ⚠️ 只算**真实步骤**（``optional`` 的拼版不算），下标要与
         :meth:`_bar_step_titles` 的序列一致——那个序列过滤掉了可选节点。
         """
-        return {i for i, slot in enumerate(
-            (s for s in self.flow_slots() if not s.optional))
-            if not slot.mapped}
+        return {
+            i
+            for i, slot in enumerate((s for s in self.flow_slots() if not s.optional))
+            if not slot.mapped
+        }
 
     def _optional_after_index(self) -> int | None:
         """可选节点插在**第几个真实步骤之后**（喂 :class:`StepBar`）。
 
-    口径与算法都在 :meth:`FlowDiagram.optional_after`（⚠️ 那是
-    "真实步骤列表里的下标"，**不是**槽位表的 ``bar_index``——后者含了
-    可选节点自己占的格子，两者不相等）。本流程没有可选节点时返回
-    ``None``；可选节点排在**最前**（没有左邻居）时返回 ``-1``，
-    :class:`StepBar` 据此把节点插在第一个真实步骤之前。
-    """
+        口径与算法都在 :meth:`FlowDiagram.optional_after`（⚠️ 那是
+        "真实步骤列表里的下标"，**不是**槽位表的 ``bar_index``——后者含了
+        可选节点自己占的格子，两者不相等）。本流程没有可选节点时返回
+        ``None``；可选节点排在**最前**（没有左邻居）时返回 ``-1``，
+        :class:`StepBar` 据此把节点插在第一个真实步骤之前。
+        """
         task_id = getattr(self, "task_id", None)
         if not task_id:
             # 没任务时按**默认模板**算（静态展示）。⚠️ 此前这里是
@@ -563,8 +581,7 @@ class DetailViewMixin:
             return load_default_diagram().optional_after(IMPOSITION_STAGE)
         # ⚠️ 走**图模型**（能读 bpmn.io 的网关/自定义 id）；旧 `task_flow`
         #    读不了就静默回落默认流程 ⇒ 步骤条永远长的像 task_default。
-        return self.store.task_diagram(task_id).optional_after(
-            IMPOSITION_STAGE)
+        return self.store.task_diagram(task_id).optional_after(IMPOSITION_STAGE)
 
     @staticmethod
     def _step_key_at(slots, bar_index: int) -> str | None:
@@ -613,7 +630,8 @@ class DetailViewMixin:
             old_slots = self.flow_slots()
         current_step = self._step_key_at(old_slots, old_bar._current)
         completed_steps = [
-            s.step for s in old_slots
+            s.step
+            for s in old_slots
             if not s.optional and s.bar_index in old_bar._completed
         ]
         # ⚠️ 先把旧步骤条从根布局里摘掉再换新的，否则两个步骤条叠在一起
@@ -668,13 +686,12 @@ class DetailViewMixin:
         # 单页提取落盘（stages/extract）后显示。产物目录与参数由宿主注入。
         self.extract_result_viewer = ExtractPreviewWidget("尚未导入 PDF")
         self.extract_result_viewer.page_count_changed.connect(
-            self._pdf_page_count_ready)
+            self._pdf_page_count_ready
+        )
         # 单页提取落盘完成 → 宿主登记 sizes.json / 重建页面清单
-        self.extract_result_viewer.extract_saved.connect(
-            self._on_single_extract_saved)
+        self.extract_result_viewer.extract_saved.connect(self._on_single_extract_saved)
         # 右键「编辑图片」覆盖了产物文件 → 与旧 ImageViewerWidget 同形接线
-        self.extract_result_viewer.image_saved.connect(
-            self._on_page_image_saved)
+        self.extract_result_viewer.image_saved.connect(self._on_page_image_saved)
         # 单页提取参数跟「图片提取」面板的当前表单走（与批量提取一致）
         self.extract_result_viewer.set_params_provider(self._extract_params)
         self.preview_stack.addWidget(self.extract_result_viewer)
@@ -685,9 +702,10 @@ class DetailViewMixin:
         #    会把用户引到一个不存在的目标上。统一说"插入图片/文件夹"，
         #    对有无上游都成立。
         self.detect_viewer = ImageViewerWidget(
-            editable=True, show_boxes=True,
+            editable=True,
+            show_boxes=True,
             empty_hint="暂无图片，请点下方「＋」插入图片或整个文件夹，"
-                       "或把图片放进本任务的输入目录",
+            "或把图片放进本任务的输入目录",
             image_size_provider=self._original_image_size,
             thumb_provider=self._page_thumb_for,
         )
@@ -695,7 +713,8 @@ class DetailViewMixin:
         self.detect_viewer.delete_requested.connect(self.delete_selected_page)
         self.detect_viewer.insert_requested.connect(self.insert_pages)
         self.detect_viewer.insert_folder_requested.connect(
-            self.insert_pages_from_folder)
+            self.insert_pages_from_folder
+        )
         self.detect_viewer.boxes_edited.connect(self._save_manual_boxes)
         # 编辑器「完成」覆盖原图后：同步 sizes.json/缩略图并刷新显示
         self.detect_viewer.image_saved.connect(self._on_page_image_saved)
@@ -771,23 +790,15 @@ class DetailViewMixin:
         self.imposition_view = ImpositionViewWidget()
         # 右键「定位图片资源」的目标 = **拼版成品**（不是画布上那张输入源图）：
         # 拼版会实时重合成产出新图，用户要定位的是这一步的产物（用户 2026-10-18）
-        self.imposition_view.canvas.set_locate_resolver(
-            self._imposition_locate_targets
-        )
-        self.imposition_view.page_selected.connect(
-            self._on_imposition_page_selected
-        )
-        self.imposition_view.add_requested.connect(
-            self._on_imposition_add_requested
-        )
+        self.imposition_view.canvas.set_locate_resolver(self._imposition_locate_targets)
+        self.imposition_view.page_selected.connect(self._on_imposition_page_selected)
+        self.imposition_view.add_requested.connect(self._on_imposition_add_requested)
         self.imposition_view.page_reorder_requested.connect(
             self._on_imposition_page_reorder
         )
         # 左列右键：上移/下移、向前/向后插入拼版（用户 2026-11-16，照「PDF排版」
         # 左列那套菜单）
-        self.imposition_view.page_move_requested.connect(
-            self._on_imposition_page_move
-        )
+        self.imposition_view.page_move_requested.connect(self._on_imposition_page_move)
         self.imposition_view.page_insert_requested.connect(
             self._on_imposition_page_insert
         )
@@ -797,12 +808,8 @@ class DetailViewMixin:
         self.imposition_view.pages_batch_delete_requested.connect(
             self._on_imposition_batch_delete
         )
-        self.imposition_view.items_changed.connect(
-            self._on_imposition_items_changed
-        )
-        self.imposition_view.slot_selected.connect(
-            self._on_imposition_slot_selected
-        )
+        self.imposition_view.items_changed.connect(self._on_imposition_items_changed)
+        self.imposition_view.slot_selected.connect(self._on_imposition_slot_selected)
         self.imposition_view.item_preview_requested.connect(
             self._open_imposition_item_preview
         )

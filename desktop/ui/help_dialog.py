@@ -1200,6 +1200,8 @@ def _notify_open_failed(path: Path) -> None:
         "可以复制下面的路径，手动粘到浏览器地址栏（或双击文件）打开：",
         QMessageBox.StandardButton.Ok,
     )
+    # 标准按钮文字由系统语言决定（英文环境显示 "OK"），显式改成中文
+    box.button(QMessageBox.StandardButton.Ok).setText("知道了")
     box.setInformativeText(str(path))
     box.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
     box.exec()

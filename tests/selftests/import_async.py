@@ -14,7 +14,8 @@
    重活只是进队列排队；
 2. 列表行画完（`_on_rows_ready`）才 `release()` 放行后台；
 3. 后台**串行**：同一时刻最多一个 job，连续导入多少本都一样；
-4. 干完：源文件副本原子落地、逐页缩略图齐全、右下角提示条自动收掉。
+4. 干完：源文件副本原子落地、首屏缩略图备齐（2026-10-21 起懒加载，
+   不再整本预渲染）、右下角提示条自动收掉。
 """
 
 NAME = "import_async"
@@ -84,8 +85,15 @@ def run(ctx) -> None:
             "源文件副本原子落地（.part 替换完才会出现）",
             (repo.task_dir(task["id"]) / src.name).exists(),
         )
-        ok("逐页缩略图齐全", thumbs_of(task["id"]) == pages,
-           f"实际 {thumbs_of(task['id'])} 张 / 预期 {pages}")
+        # ⚠️ 2026-10-21 起不再整本预渲染：只备 PREFETCH_PAGES（首屏 + 余量），
+        #    其余页滚到可见窗口时按需补（旧断言 ==80 是懒加载改造前的契约，
+        #    一直红着没更新，把后面的模块全挡住了）。
+        from desktop.workers.source_thumbnails_worker import PREFETCH_PAGES
+
+        prerendered = min(pages, PREFETCH_PAGES)
+        ok("导入后台只备首屏缩略图（懒加载，不再整本预渲染）",
+           thumbs_of(task["id"]) == prerendered,
+           f"实际 {thumbs_of(task['id'])} 张 / 预期 {prerendered}")
         ok("干完后页头恢复默认说明", "正在导入" not in subtitle(), subtitle())
 
         # ---- ④ 串行不变式：连导 3 本，并发恒不超过 1 ----
@@ -107,7 +115,62 @@ def run(ctx) -> None:
 
         ok("三本都能跑完", wait_until(app, lambda: not queue.busy(), timeout=120.0))
         counts = [thumbs_of(tid) for tid in ids]
-        ok("三本缩略图都齐全", counts == [pages] * 3, str(counts))
+        ok("三本首屏缩略图都备齐（懒加载契约）",
+           counts == [prerendered] * 3, str(counts))
+
+        # ---- ⑤ 空壳任务（没选源文件）绝不排队后台活（任务 0017，2026-11-17）----
+        # ``start_create`` 的空壳分支传的是 ``Path()`` —— 它就是 ``Path('.')``，
+        # ``str()`` 是 "."（真值）。判"有没有源"必须把 "." 一起挡掉，否则：
+        # ① 给 thumbnails/source 立假 `.producing` 标记（查看器白等回扫）；
+        # ② 排队一个 ``pdf_path='.'`` 的 worker → 复制线程报
+        #    「Permission denied: '.'」、fitz 报「'.' is no file」，
+        #    用户回到列表页看到两块错误 toast。
+        from pathlib import Path
+
+        from desktop.utils.files import PRODUCING_MARKER
+
+        ok("进入⑤前队列空闲",
+           wait_until(app, lambda: not queue.busy(), timeout=60.0))
+        # ⚠️ **替身 submit，同步断言**：放真队列会有竞态——坏 worker 毫秒级
+        #    就失败收场（fitz 打不开 '.'），收尾 finally 还会把 `.producing`
+        #    撤掉，事后查"队列空不空""标记在不在"都可能"恰好"绿（注入复验
+        #    实测）。替身只记录不动真格，"排没排队""立没立标记"变成同步判据。
+        submitted: list[str] = []
+        real_submit = queue.submit
+        queue.submit = lambda *a, **k: submitted.append(k.get("label", ""))
+        try:
+            page._create_imported_task(Path(), "")
+            shell = repo.list_tasks()[0]
+        finally:
+            queue.submit = real_submit
+        created.append(shell["id"])
+        ok("空壳任务照常建出来（PDF 非必需）",
+           len(repo.list_tasks()) == before + 5,
+           f"tasks={len(repo.list_tasks())} expected={before + 5}")
+        ok("空壳任务不排队任何后台活（不白报错、不堵串行队列）",
+           submitted == [], f"submitted={submitted}")
+        ok("空壳任务不立 .producing 假标记（否则查看器白等一轮回扫）",
+           not (repo.source_thumbnails_dir(shell["id"]) / PRODUCING_MARKER)
+           .exists())
+        ok("空壳任务没有写过缩略图缓存（worker 根本没跑）",
+           thumbs_of(shell["id"]) == 0,
+           f"thumbs={thumbs_of(shell['id'])}")
+
+        # ---- toast 挂主窗口（2026-11-17 用户报障"回列表页才弹出"）----
+        # 建任务链路 open_detail 在 toast 之前：壳层已切到详情页，列表页隐藏。
+        # InfoBar 挂在隐藏控件上要等父级重新显示才弹出来 ⇒ 必须挂主窗口。
+        from desktop.pages.tasklist import page as tasklist_page_module
+
+        captured: dict = {}
+        real_info = tasklist_page_module.InfoBar.info
+        tasklist_page_module.InfoBar.info = lambda **kw: captured.update(kw)
+        try:
+            page._toast("info", "任务已创建", "尚未选择源文件")
+        finally:
+            tasklist_page_module.InfoBar.info = real_info
+        ok("列表页 toast 挂**主窗口**（挂在本页＝被切走后迟到弹出）",
+           captured.get("parent") is page.window(),
+           f"parent={captured.get('parent')} page={page}")
     finally:
         # 清场：本模块造的临时任务全部删掉，别影响后面的模块数任务数
         for tid in created:
