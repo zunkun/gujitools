@@ -428,6 +428,12 @@ class ImpositionPickerDialog(FramelessDialog):
         self.titleBar.maxBtn.show()
         self.titleBar.setDoubleClickEnabled(True)
         self._restore_maximize_style()
+        # 选图窗是主窗口的"子窗口"（owned）：默认没有任务栏按钮（用户
+        # 2026-11-18：要在任务栏看到多个窗口）。补 WS_EX_APPWINDOW（失败
+        # 不致命——按钮、缩放都不依赖这个位，与 _restore_maximize_style 同口径）。
+        from desktop.ui.native_minimize import enable_taskbar_button
+
+        enable_taskbar_button(self)
         title = QLabel(self.windowTitle(), self.titleBar)
         apply_to(title, T.SIZE_BODY, bold=True, color=T.INK)
         self.titleBar.hBoxLayout.insertSpacing(0, 12)

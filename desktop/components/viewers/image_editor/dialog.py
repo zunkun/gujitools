@@ -127,6 +127,12 @@ class ImageEditorDialog(
             | Qt.WindowType.WindowMaximizeButtonHint
             | Qt.WindowType.WindowCloseButtonHint
         )
+        # 编辑窗是主窗口的"子窗口"（owned）：默认没有任务栏按钮（用户
+        # 2026-11-18：要在任务栏看到多个窗口）。补 WS_EX_APPWINDOW。
+        # ⚠️ 必须在 setWindowFlags 之后（那会重建原生窗口、丢样式位）。
+        from desktop.ui.native_minimize import enable_taskbar_button
+
+        enable_taskbar_button(self)
         base = image if image is not None else QImage()
         # 统一转 ARGB32：rembg 产物可能是调色板 PNG，就地绘制需要真彩格式
         base = base.convertToFormat(QImage.Format.Format_ARGB32)

@@ -54,6 +54,12 @@ class TaskPreviewDialog(QDialog):
         self.setWindowFlags(
             self.windowFlags() | Qt.WindowType.WindowMinMaxButtonsHint
         )
+        # 预览窗是主窗口的"子窗口"（owned）：默认没有任务栏按钮（用户
+        # 2026-11-18：要在任务栏看到多个窗口）。补 WS_EX_APPWINDOW。
+        # ⚠️ 必须在 setWindowFlags 之后（那会重建原生窗口、丢样式位）。
+        from desktop.ui.native_minimize import enable_taskbar_button
+
+        enable_taskbar_button(self)
         self.setModal(False)
         self.setWindowTitle(f"任务详情 · {task_id}")
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)

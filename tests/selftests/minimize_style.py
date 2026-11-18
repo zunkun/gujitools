@@ -40,6 +40,8 @@ def run(ctx) -> None:
        hex(nm.WS_SYSMENU))
     ok("常量：GWL_STYLE = -16", nm.GWL_STYLE == -16)
     ok("常量：SWP_FRAMECHANGED = 0x20", nm.SWP_FRAMECHANGED == 0x0020)
+    ok("常量：GWL_EXSTYLE = -20", nm.GWL_EXSTYLE == -20)
+    ok("常量：WS_EX_APPWINDOW = 0x40000", nm.WS_EX_APPWINDOW == 0x0004_0000)
 
     # ---- 2. 取函数对：Windows 给真函数；非 Windows 返回 (None, None) ----
     if _sys.platform == "win32":
@@ -85,9 +87,34 @@ def run(ctx) -> None:
            f"platform={platform}")
         ok("离屏：假句柄（winId 命中容错分支）也不会写坏样式",
            isinstance(nm.enable_native_minimize(window), bool))
+        ok("离屏：enable_taskbar_button 优雅返回 False（不抛异常）",
+           nm.enable_taskbar_button(window) is False,
+           f"platform={platform}")
+
+    # ---- 3.5 子窗口任务栏按钮（WS_EX_APPWINDOW）接线守卫 ----
+    # 图片预览 / 图片编辑 / 聚合任务预览 / 拼版选图四个"真窗口"必须在
+    # setWindowFlags 之后调 enable_taskbar_button（否则样式位随原生窗口
+    # 重建而丢）。
+    root = Path(__file__).resolve().parents[2]
+    wiring = [
+        ("components/viewers/image_zoom_dialog/dialog.py",
+         "enable_taskbar_button(self)"),
+        ("components/viewers/image_editor/dialog.py",
+         "enable_taskbar_button(self)"),
+        ("pages/taskdetail/preview.py", "enable_taskbar_button(self)"),
+        ("components/imposition/picker.py", "enable_taskbar_button(self)"),
+    ]
+    for rel, call in wiring:
+        src = (root / "desktop" / rel).read_text(encoding="utf-8")
+        ok(f"接线：{rel} 调用了 enable_taskbar_button", call in src)
+        if rel.endswith("picker.py"):
+            ok("接线：选图窗在恢复最大化样式之后补任务栏位",
+               src.index("_restore_maximize_style()") < src.index(call))
+        else:
+            ok(f"接线：{rel} 调用点在 setWindowFlags 之后",
+               src.rindex("setWindowFlags(") < src.index(call))
 
     # ---- 4. 接线守卫：入口必须真的调了修复 ----
-    root = Path(__file__).resolve().parents[2]
     entry = (root / "desktop" / "app.py").read_text(encoding="utf-8")
     ok("接线：desktop/app.py 导入了 enable_native_minimize",
        "from desktop.ui.native_minimize import enable_native_minimize" in entry)

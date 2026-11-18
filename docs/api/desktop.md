@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 196 个模块、213 个公开类、1615 个公开函数/方法（生成于 2026-11-18）。
+覆盖 196 个模块、213 个公开类、1616 个公开函数/方法（生成于 2026-11-18）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -178,7 +178,7 @@
 | [`desktop.ui.log_throttle`](#desktopuilog_throttle) | 1 | 5 |
 | [`desktop.ui.menu`](#desktopuimenu) | 3 | 18 |
 | [`desktop.ui.modal_quiet`](#desktopuimodal_quiet) | 1 | 3 |
-| [`desktop.ui.native_minimize`](#desktopuinative_minimize) | 0 | 1 |
+| [`desktop.ui.native_minimize`](#desktopuinative_minimize) | 0 | 2 |
 | [`desktop.ui.segmented_toggle`](#desktopuisegmented_toggle) | 1 | 15 |
 | [`desktop.ui.style`](#desktopuistyle) | 0 | 3 |
 | [`desktop.ui.theme`](#desktopuitheme) | 0 | 3 |
@@ -381,7 +381,7 @@ gujitools 桌面端主窗口：左侧导航壳层（任务管理 + 独立模块�
 「选择子任务」弹窗的**内容**（搜索 + 分页的勾选表格；外壳由
 :func:`shell_dialog` 给）。
 
-列 = 勾选 / 序号 / 任务名称 / 节点状态 / 创建时间，与任务管理列表同一套
+列 = 勾选（表头只有复选框、无文字）/ 序号 / 任务名称 / 节点状态 / 创建时间，与任务管理列表同一套
 观感（边框/圆角/表头/行高取 :class:`desktop.components.task_table.TaskTable`
 的参数）；搜索与分页复用 ``Pagination``/``Pager``，匹配判据共用
 ``task_table.task_row_matches``——「过滤 → 分页 → 填表」的数据流向与
@@ -16448,6 +16448,7 @@ Snap Layout 也能弹出来。
 | WS_SYSMENU | `524288` |
 | WS_MINIMIZEBOX | `131072` |
 | WS_MAXIMIZEBOX | `65536` |
+| WS_EX_APPWINDOW | `262144` |
 | SWP_NOSIZE | `1` |
 | SWP_NOMOVE | `2` |
 | SWP_NOZORDER | `4` |
@@ -16458,6 +16459,7 @@ Snap Layout 也能弹出来。
 | 函数 | 说明 |
 | --- | --- |
 | `enable_native_minimize(window) -> bool` | 给 ``window`` 的原生窗口补回最小化/最大化样式位。 |
+| `enable_taskbar_button(window) -> bool` | 给**子窗口**（被主窗口拥有的对话框）补 ``WS_EX_APPWINDOW``。 |
 
 #### `enable_native_minimize(window) -> bool`
 
@@ -16466,6 +16468,19 @@ Snap Layout 也能弹出来。
 返回 ``True`` = 样式已具备（本来就够位或这次改成功）；
 返回 ``False`` = 环境（非 Windows / 离屏无真句柄 / API 失败）不允许改，
 调用方不需要也不能拿它做分支——宁可维持旧行为，也不抛异常打断启动。
+
+#### `enable_taskbar_button(window) -> bool`
+
+给**子窗口**（被主窗口拥有的对话框）补 ``WS_EX_APPWINDOW``。
+
+背景（2026-11-18 用户报障）：图片预览/编辑这类弹窗在 Win32 层是
+**owned window**——Windows 默认不给被拥有的窗口任务栏按钮，于是它们
+在任务栏上是隐形的：悬停主程序图标看不到它们，最小化后也没有按钮可点。
+补上 ``WS_EX_APPWINDOW`` 后强制获得自己的任务栏按钮（Alt+Tab 同步可见），
+且父子关系原样保留——居中、置顶、模态行为都不变。
+
+⚠️ 必须在该窗口**最后一次 ``setWindowFlags`` 之后**调用：那会重建原生
+窗口，先打的样式位会丢。返回值语义与 :func:`enable_native_minimize` 一致。
 
 ---
 

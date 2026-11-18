@@ -76,6 +76,12 @@ class ImageZoomDialog(QDialog, WorkerHost):
             | Qt.WindowType.WindowMinimizeButtonHint
             | Qt.WindowType.WindowMaximizeButtonHint
         )
+        # 预览窗是主窗口的"子窗口"（owned）：默认没有任务栏按钮，任务栏上看
+        # 不到它（用户 2026-11-18：要在任务栏看到多个窗口）。补 WS_EX_APPWINDOW
+        # ⚠️ 必须在 setWindowFlags 之后（那会重建原生窗口、丢样式位）。
+        from desktop.ui.native_minimize import enable_taskbar_button
+
+        enable_taskbar_button(self)
         # 键盘翻页/全屏：用 **QShortcut（窗口级）**，不受焦点在哪个控件影响。
         # ⚠️ 只靠 keyPressEvent 会掉：真实键盘走焦点链，焦点在画布/按钮上时
         # 方向键被消费或导航走，到不了对话框——离屏 QTest 直接把按键发给
