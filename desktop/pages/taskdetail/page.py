@@ -65,6 +65,11 @@ from desktop.pages.taskdetail.runner import STATUS_LABELS, StageRunnerMixin
 from desktop.pages.taskdetail.submit import SubmitMixin
 from desktop.pages.taskdetail.view import DetailViewMixin
 
+#: 聚合任务汇集期间，起点清单的重刷间隔（分批显示：文件落一批显示一批）。
+#: 逐文件复制几百张扫描件要几十秒，1.2s 一次的重刷只是 readdir + 差量装条目，
+#: 不解码原图，不构成负担。
+INPUT_NODE_POLL_MS = 1200
+
 
 #: 方向键**不抢**的控件：它们的 ←/→ 有本职工作（移光标/改值/翻选择）。
 #: 焦点落在这些控件上时方向键归它们；落在按钮/预览/页面本身时才翻页。
@@ -182,6 +187,12 @@ class TaskDetailPage(
         self._backup_timer.setSingleShot(True)
         self._backup_timer.timeout.connect(self._run_source_backup)
         self._backup_task_id: str | None = None
+        #: 聚合任务汇集期间的「分批显示」轮询（见 _schedule_input_node_poll）：
+        #: 后台复制是逐文件进行的，清单不必等全部复制完才出现——每 1.2s 重刷
+        #: 一次起点清单，文件落一批显示一批（用户 2026-11-18）。
+        self._input_node_poll = QTimer(self)
+        self._input_node_poll.setSingleShot(True)
+        self._input_node_poll.timeout.connect(self._on_input_node_poll)
         #: 「按源 PDF 名派生第四步默认 PDF 名/古籍名」的挂起值：第四步面板是
         #: 惰性的，set_task 只记下源名，等面板真被建出来再应用（见 view.py
         #: 的 _apply_pending_source_defaults）
@@ -422,6 +433,10 @@ class TaskDetailPage(
         # 后又 set_task、或从列表再打开）时目录是老的、内容可能已被换过一遍，
         # 留着旧指纹会把"内容变了"漏判成"没变"。
         self._dir_files = {}
+        # "当前步是不是聚合任务的输入节点"的缓存也按任务作废（换任务即换答案）
+        self._input_node_cached = None
+        # 汇集轮询停表：换任务后旧任务的轮询不许再刷新任务的清单
+        self._input_node_poll.stop()
         self.pdf_page_count = 0
         self._history_prefilled: set[str] = set()
         #: ``control_stack`` 页号 → 上次为它复位的**节点标记**（B 方案）。
@@ -1009,9 +1024,17 @@ class TaskDetailPage(
         if stage == "detect":
             return self.detect_viewer.current_path()
         if stage == "rembg":
+            if self._input_node_mode():
+                # 聚合任务的去底色起点：屏上是只读清单，当前页就是成品图文件
+                path = self.rembg_input_viewer.current_path()
+                return Path(path) if path else None
             text = self.rembg_viewer.current_display_path()
             return Path(text) if text else None
         if stage == "extract":
+            if self._input_node_mode():
+                # 聚合任务的提取起点：屏上是只读图片清单，当前页就是磁盘上那张图
+                path = self.extract_input_viewer.current_path()
+                return Path(path) if path else None
             return self.extract_result_viewer.current_display_path()
         return None
 
@@ -1397,6 +1420,9 @@ class TaskDetailPage(
     def _refresh_stage_views(self) -> None:
         if not self.task_id:
             return
+        # 换步骤/跑完都可能换掉"这一步是不是聚合输入节点"的答案：先作废缓存
+        # （``_input_node_mode`` 里说明为什么需要缓存）
+        self._input_node_cached = None
         stage_states = self.store.stage_states(self.task_id)
         # ⚠️ 一次读全（runs.json）：逐槽位问 store 会把整份文件读 N 遍。
         node_states = self.store.node_states(self.task_id)
@@ -1433,6 +1459,16 @@ class TaskDetailPage(
             else stage_states[stage]
         )
         self._apply_stage_state(stage, state)
+        if self._input_node_mode():
+            # 输入节点说清楚"为什么不给执行按钮"，别让人以为界面坏了
+            if self._aggregate_pending():
+                self._set_stage_status(
+                    "正在汇集子任务产物……清单会随复制进度陆续补全"
+                )
+            else:
+                self._set_stage_status(
+                    "输入节点：图片由子任务汇集而来，无需执行（直接看左侧清单）"
+                )
         self._update_run_buttons()
 
     def _slot_of_node(self, node_id: str | None):
@@ -1637,9 +1673,34 @@ class TaskDetailPage(
 
     def _update_run_buttons(self) -> None:
         running = self._busy_label() is not None
-        self.run_button.setEnabled(not running)
+        # ⚠️ 聚合任务的**输入节点**（起点、产物由子任务汇集）没有可执行的东西：
+        #    没有源 PDF 可提、也没有上游输入可处理。按钮留着可点只会让人以为
+        #    "点了就能提取"，结果是一句找不到源文件（用户 2026-11-18 任务 0025）。
+        input_node = self._input_node_mode()
+        self.run_button.setEnabled(not running and not input_node)
+        self.run_button.setToolTip(
+            "这一步是聚合任务的输入节点：图片由子任务汇集而来，不需要执行"
+            if input_node else ""
+        )
         self._apply_regenerate_highlight()
         self._update_submit_button(running)
+
+    def _input_node_mode(self) -> bool:
+        """当前步骤是不是聚合任务的输入节点（判据见 manifest 同名方法）。
+
+        ⚠️ 缓存一次（``_input_node_cached``）：``_update_run_buttons`` 在运行期
+        是热路径（每 ≤200ms 一次），而判据要读任务索引 + 流程图。缓存由
+        :meth:`_refresh_stage_views` 与 :meth:`set_task` 刷新。
+        """
+        cached = getattr(self, "_input_node_cached", None)
+        if cached is not None:
+            return cached
+        try:
+            value = bool(self._is_aggregate_input_node())
+        except Exception:  # noqa: BLE001 - 判据读坏了按普通步骤处理
+            value = False
+        self._input_node_cached = value
+        return value
 
     def _apply_regenerate_highlight(self) -> None:
         """本步产物过期（改了版面 / 上游又跑过）时把主按钮加粗高亮。
@@ -1742,7 +1803,25 @@ class TaskDetailPage(
         #    ``stages/rembg``，检测没提交时上游目录也可能留图。上游的产出动作
         #    没成功执行过，这一步就该显示"暂无图片"（用户 2026-11-03）。
         visible = self._stage_input_visible()
+        # ⚠️ 聚合任务的**输入节点**（起点这一步）：它没有上游输入——上游在图
+        #    上被裁掉了，入口目录也是空的（汇集只搬产出）。所以"输入是否生效"
+        #    这条判据对它恒为假，照它算就永远"暂无图片"。用户 2026-11-18
+        #    任务 0026：「起始节点是去底色，但是聚合任务去底色节点没有显示任何
+        #    图片……检查所有可以使用的节点作为第一个节点的时候，聚合数据来源
+        #    需要显示在第一个节点中」。
+        input_node = self._is_aggregate_input_node()
+        visible = visible or input_node
         if stage == "extract":
+            if input_node:
+                # 没有 PDF 可看、也不该现场提取：屏上是只读图片清单（列表来自
+                # 页清单＝产出目录，见 ``manifest._aggregate_start_output_dir``）
+                self.extract_viewer_host.setCurrentWidget(self.extract_input_viewer)
+                self.extract_input_viewer.set_images(
+                    self._manifest_paths(), force=force
+                )
+                self._schedule_input_node_poll()
+                return
+            self.extract_viewer_host.setCurrentWidget(self.extract_result_viewer)
             # ⚠️ 不再 set_images(manifest)（用户 2026-10-09 合并双标签）：
             #    左栏恒是 PDF 页缩略图；这里只把产物目录交给查看器——
             #    当前页已有产物就立即显示产物，没有等切页时现场提取。
@@ -1756,7 +1835,20 @@ class TaskDetailPage(
             self._warm_entry_thumbs(paths)
             # 清单可能变了（增删页/切任务/批量检测跑完）→ 统计跟着重算
             self._refresh_detect_stats()
+            if input_node:
+                # 检测起点也是输入节点：汇集期间同样分批显示
+                self._schedule_input_node_poll()
         elif stage == "rembg":
+            if input_node:
+                # 去底色的"结果"就是汇集来的成品图，没有原图可比（原图属于上游，
+                # 而起点没有上游）⇒ 同样换成只读图片清单
+                self.rembg_viewer_host.setCurrentWidget(self.rembg_input_viewer)
+                self.rembg_input_viewer.set_images(
+                    self._manifest_paths(), force=force
+                )
+                self._schedule_input_node_poll()
+                return
+            self.rembg_viewer_host.setCurrentWidget(self.rembg_viewer)
             # ⚠️ 2026-10-22：去底色**不再按区域裁图**（area/border 已移除），
             #    所以这里不再喂 boxes_provider / border_provider——
             #    查看器于是按"一张输入图 = 一个条目"显示整图，与产物一致。
@@ -1802,6 +1894,35 @@ class TaskDetailPage(
             # 拼版开关一改，磁盘上那份 PDF 就是旧来源的产物，得让下载按钮
             # 灭掉——用户 2026-10-03："旧的数据不显示"。
             self.print_preview.set_pdf_path(self._current_print_pdf_path())
+
+    def _schedule_input_node_poll(self) -> None:
+        """汇集期间每 ``INPUT_NODE_POLL_MS`` 重刷一次起点清单（**分批显示**）。
+
+        后台汇集是逐文件复制的：清单不必等全部复制完才出现——每次轮询都会
+        ``_sync_manifest_to_input`` 按**产出目录现状**重建页清单，文件落一批
+        显示一批（用户 2026-11-18：「如果时间长，是否可以分批导入，分批显示」）。
+        汇集结束（``.aggregate-pending`` 撤掉）就停表，改由 ``aggregate_ready``
+        的整页重载收尾。
+        """
+        if self._aggregate_pending():
+            self._input_node_poll.start(INPUT_NODE_POLL_MS)
+        else:
+            self._input_node_poll.stop()
+
+    def _on_input_node_poll(self) -> None:
+        """轮询到点：还在汇集且还停在输入节点上就重刷清单，否则停表。"""
+        if not self.task_id or not self._is_aggregate_input_node():
+            self._input_node_poll.stop()
+            return
+        if not self._aggregate_pending():
+            self._input_node_poll.stop()
+            return
+        self._refresh_preview()
+        count = len(self.pages or [])
+        self._set_stage_status(
+            f"正在汇集子任务产物……已列出 {count} 张，清单会陆续补全"
+            "（汇集完成后自动就绪）"
+        )
 
     def _extract_params(self) -> dict:
         """第一步「图片提取」参数（单页按需提取用）：读当前面板表单。

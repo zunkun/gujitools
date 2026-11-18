@@ -8,9 +8,9 @@ from desktop.ui import theme
 from desktop.ui.style import apply_app_style, resolve_font_family
 from desktop.ui.toast import show_toast
 from desktop.ui.widgets import (
-    CONTROL_HEIGHT, Card, Divider, EmptyState, PageHeader, Pill, ProgressLine,
-    SectionTitle, SegmentedToggle, StatusChip, apply_to, combo_box, icon_pixmap,
-    ui_font,
+    CONTROL_HEIGHT, Card, CheckBoxGroup, Divider, EmptyState, PageHeader, Pill,
+    ProgressLine, SectionTitle, SegmentedToggle, StatusChip, apply_to, combo_box,
+    icon_pixmap, ui_font,
 )
 
 __all__ = [
@@ -19,6 +19,7 @@ __all__ = [
     "resolve_font_family",
     "CONTROL_HEIGHT",
     "Card",
+    "CheckBoxGroup",
     "Divider",
     "EmptyState",
     "PageHeader",

@@ -195,6 +195,9 @@ class ModuleShell(QWidget):
         #: 「任务管理」导航条目（自测要点它；也便于将来做快捷键/命令面板）
         # 列表页「创建任务」按钮 → 切到创建任务二级页（不再弹模态窗）
         self.list_page.create_requested.connect(self.open_create)
+        # 聚合任务的成员产物在后台汇集完成 → 若详情页正开着它，就地重载
+        # （否则用户看到的是"创建了但什么都没有"的空任务）
+        self.list_page.aggregate_ready.connect(self._on_aggregate_ready)
 
         self._tasks_item = self.nav.addItem(
             ROUTE_TASKS,
@@ -322,6 +325,11 @@ class ModuleShell(QWidget):
             page.closed.connect(self.back_to_list)
             # 提交 → 列表页走既有链路（指纹/查重/预热都在那边，一字未改）
             page.create_requested.connect(self._on_create_submitted)
+            # 聚合任务提交 → 列表页建聚合任务（无指纹/查重：不吃源文件）
+            page.aggregate_requested.connect(self._on_aggregate_submitted)
+            # ⚠️ 聚合成员表格的「详情」**不再**由壳层切详情页（用户 2026-11-17）：
+            #    那个按钮现在开一个非模态预览窗（`CreateTaskPage.open_member_preview`），
+            #    创建到一半的表单不该被路由跳走。
             self.pages.addWidget(page)
             self._create_page = page
         return self._create_page
@@ -329,6 +337,27 @@ class ModuleShell(QWidget):
     def _on_create_submitted(self, path: str, name: str, diagram) -> None:
         """创建页填完了 → 交给列表页建任务（建完它发 open_detail 进详情）。"""
         self.list_page.start_create(path, name, diagram)
+
+    def _on_aggregate_submitted(self, members: list, member_stages: list,
+                                name: str, diagram) -> None:
+        """聚合任务填完了 → 列表页建聚合任务（建完进详情）。"""
+        self.list_page.start_create_aggregate(
+            members, member_stages, name, diagram
+        )
+
+    def _on_aggregate_ready(self, task_id: str) -> None:
+        """聚合汇集完成：详情页正开着这个任务就重载一次。
+
+        ⚠️ 只在**同一任务**上重载：用户可能已经切去别的任务/别的页面，这时
+        抢着切回详情页是打扰。重载走 ``set_task``（它会复位各阶段面板并重读
+        页面清单），与"重新点进这一行"完全等价。
+        """
+        page = self._detail_page
+        if page is None:
+            return
+        if getattr(page, "task_id", None) != task_id:
+            return
+        page.set_task(task_id)
 
     def open_create(self) -> None:
         """打开「创建任务」二级页（列表页的「创建任务」按钮走这里）。
@@ -375,6 +404,9 @@ class ModuleShell(QWidget):
             page = TaskFlowPage(self.store)
             page.closed.connect(self._back_from_flow)
             page.flow_saved.connect(self._on_flow_saved)
+            page.aggregate_start_changed.connect(
+                self._on_aggregate_start_changed
+            )
             self.pages.addWidget(page)
             self._flow_page = page
         return self._flow_page
@@ -420,6 +452,26 @@ class ModuleShell(QWidget):
     def _on_flow_saved(self, task_id: str) -> None:
         """流程保存后回详情页并**重载**（步骤条/槽位/取图来源要按新图重排）。"""
         self.open_detail(task_id)
+
+    def _on_aggregate_start_changed(self, task_id: str) -> None:
+        """聚合任务**改了起始节点**：旧起点汇集的数据已作废，立刻按新起点重取。
+
+        用户 2026-11-18：「起始节点可以切换变更，如果变更了保存流程的时候，
+        提示起始节点丢失，聚合任务之前历史处理数据都丢失」——确认之后这条
+        链路就是"丢失"的落地：旧产物被新起点的成员产物覆盖（见
+        ``services/aggregate_ingest``），不重取的话详情页那一步永远是空的。
+
+        ⚠️ 这两步的顺序（先 open_detail 再起汇集）是有意的：详情页必须停在
+        这个任务上（``restart_aggregate_ingest`` 只对当前任务生效），而它起来
+        之前立好 ``.aggregate-pending`` 标记，页面才能说"正在汇集"而不是
+        "没有输入"。
+        """
+        page = self._ensure_detail_page()
+        if getattr(page, "task_id", None) != task_id:
+            self.open_detail(task_id)
+        restart = getattr(page, "restart_aggregate_ingest", None)
+        if callable(restart):
+            restart(task_id)
 
     def prewarm_detail_page(self) -> None:
         """预构造详情页骨架与**流程第一步**面板（同 app.py 原 ``_prewarm_detail_page``）。"""

@@ -11,23 +11,39 @@
 
 ## 页面长什么样
 
-页面**沿用面板原样**（同一套控件与顺序，用户的"页面跟现在的一样"），只多
-一行「任务名称」：
-
-::
+页面**沿用面板原样**（同一套控件与顺序，用户的"页面跟现在的一样"），顶部多
+**「任务类型」行**（常规任务 / 聚合任务）与**「任务名称」行**，两者都是
+**所有类型共用**的；再往下才是各类型自己的内容（用户 2026-11-17 定顺序）::
 
     [← 创建任务]
-    任务名称  [ 一本古籍            ]  ← 最多 360px，placeholder＝任务#0007
-    留空则使用默认名「任务#0007」；PDF 可以之后在任务详情里补选。
-    ┌ CreateTaskPanel ────────────────────────┐
-    │ （流程说明 + 流程图 + 编辑/恢复按钮）      │  ← 默认流程恒可编辑
-    │ …                                        │
-    │ [取消]                     [创建任务]    │  ← 面板自带按钮
+    任务类型  ☑ 常规任务   ☐ 聚合任务        ← CheckBoxGroup（复选框外观、单选）
+    任务名称  [ 一本古籍            ]
+    留空则使用默认名「任务#0007」；…
+    ┌ 常规任务：CreateTaskPanel ──────────────┐
+    │ （选 PDF + 流程编辑器 + 取消/创建任务）    │
     └─────────────────────────────────────────┘
+    ┌ 聚合任务：AggregateCreatePanel ──────────┐
+    │ （选子任务 + 排序 + 起始节点 + 流程编辑器） │  ← desktop/components/
+    └─────────────────────────────────────────┘    aggregate_create_panel.py
 
-「流程编辑器」**默认就摆在本页里**（:class:`CreateTaskPanel` 内嵌
-``BpmnEditorPanel``，恒在、恒可编辑）——用户 2026-11-17：不再通过点
-「编辑流程」触发。
+⚠️ **任务类型为什么是复选框而不是胶囊**（用户 2026-11-17）：胶囊像"视图切换"，
+读不出"这是一类任务、后面还能再加"；复选框样式点明"可以多选其一"，而这里是
+**单选**（:class:`~desktop.ui.check_group.CheckBoxGroup`：勾一个别的自动灭，
+点掉当前那个不生效）。类型清单见 ``TASK_TYPES``——加新类型只加一项 + 加一个
+面板进 ``_stack``。
+
+「常规任务」的「流程编辑器」**默认就摆在本页里**
+（:class:`CreateTaskPanel` 内嵌 ``BpmnEditorPanel``，恒在、恒可编辑）——
+用户 2026-11-17：不再通过点「编辑流程」触发。
+
+## 成员「详情」＝弹窗，不是跳转（用户 2026-11-17）
+
+聚合任务成员表格里的「详情」原来由壳层切成该子任务的详情页——创建到一半的
+表单就没了。现在改成本页自己开一个**非模态预览窗**
+（:meth:`CreateTaskPage.open_member_preview` →
+:class:`desktop.pages.taskdetail.preview.TaskPreviewDialog`）：窗口宽、直接复用
+真的详情页、``show()`` 而不是 ``exec()``（不挡本页操作，也不会出系统提示音）。
+同一任务只开一个窗；离开本页/``reset()`` 时一起关。
 
 ## 任务名称（用户 2026-10-06）
 
@@ -66,19 +82,44 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QFrame, QHBoxLayout, QScrollArea, QStackedWidget, QVBoxLayout, QWidget,
+)
 from qfluentwidgets import (
     BodyLabel, CaptionLabel, FluentIcon as FIF, LineEdit, MessageBox,
     StrongBodyLabel, ToolButton,
 )
 
 from desktop import ui
+from desktop.components.aggregate_create_panel import AggregateCreatePanel
 from desktop.components.create_task_dialog import CreateTaskPanel
 from desktop.ui import theme as T
-from desktop.ui.widgets import CONTROL_HEIGHT
+from desktop.ui.widgets import CONTROL_HEIGHT, CheckBoxGroup
 
 #: 路由键（在 :class:`desktop.shell.ModuleShell` 里反查用）
 ROUTE_CREATE = "create"
+
+#: 任务类型键（同时是 ``_stack`` 里对应面板的键）
+TAB_TASK = "task"
+TAB_AGGREGATE = "aggregate"
+
+#: 任务类型清单：``(键, 文案)``，**顺序＝界面顺序、第一项＝默认**。
+#:
+#: ⚠️ 加新类型（用户 2026-11-17：「后续还可以加其他任务」）＝这里加一项 +
+#:    在 :meth:`CreateTaskPage._build_ui` 里给 ``_stack`` 加一个面板并在
+#:    ``self._pages`` 里登记——界面那行复选框自己会多出一个
+#:    （:class:`CheckBoxGroup` 不含任何"任务"专属知识）。
+TASK_TYPES = ((TAB_TASK, "常规任务"), (TAB_AGGREGATE, "聚合任务"))
+
+#: 每种任务类型的一句话说明（**各自的**复选框 tooltip；缺项就不挂提示）。
+#:
+#: ⚠️ 别整组共用一句：用户要比的是"这两类差在哪"，共用一句等于没说。
+TASK_TYPE_TIPS = {
+    TAB_TASK: "从一份 PDF 走完整流程：提取图片 → 检测文本框 → 图片去底色 → "
+              "PDF排版（可选拼版）。",
+    TAB_AGGREGATE: "拿若干已有任务在同一节点上的产物合成一本（如分册合订）："
+                   "选成员 → 排顺序 → 选起始节点。",
+}
 
 #: 「任务名称」输入框的**上限宽度**（px）。
 #:
@@ -97,6 +138,9 @@ class CreateTaskPage(QWidget):
     #: ⚠️ 第 4 参「是否自定义」已撤（用户 2026-11-17：默认流程恒可编辑）——
     #:    ``diagram`` 为 ``None`` = 没编辑过，store 字节拷贝默认模板。
     create_requested = Signal(str, str, object)
+    #: 聚合任务提交了：(成员任务号列表, 各成员节点 key 列表, 任务名, 流程图 or None)。
+    #: ``diagram`` 为 ``None`` = 没编辑过派生图，store 落派生图本身。
+    aggregate_requested = Signal(list, list, str, object)
     #: 用户点了「取消」/「返回」，宿主切回列表
     closed = Signal()
 
@@ -104,11 +148,29 @@ class CreateTaskPage(QWidget):
         super().__init__(parent)
         self.store = store
         self._busy = False
+        #: 成员「详情」开出来的预览窗：``{任务号: 窗口}``（同一任务不重复开）
+        self._previews: dict[str, object] = {}
         self._build_ui()
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self) -> None:
-        root = QVBoxLayout(self)
+        # ---- 外层：整页**纵向滚动**（用户 2026-11-18：「创建任务页面 y 轴也
+        #      可以显示滚轮，因此底部画布不需要滚轮，直接完整展示就行」）----
+        # 流程画布在创建页里传 ``scroll=False`` 整张铺开，页面一长就用这里的
+        # 滚动条翻——两个滚动条叠着谁都不好用。
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        self.scroll = QScrollArea(self)
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
+        content = QWidget()
+        self.scroll.setWidget(content)
+        outer.addWidget(self.scroll)
+        #: 滚动内容（页面真正的边距/排版都在它身上；测试量对齐也看它）
+        self.content = content
+
+        root = QVBoxLayout(content)
         root.setContentsMargins(
             T.SPACE_XL, T.SPACE_LG, T.SPACE_XL, T.SPACE_LG
         )
@@ -126,11 +188,30 @@ class CreateTaskPage(QWidget):
         top.addStretch()
         root.addLayout(top)
 
-        # ---- 任务名称（非必需；留空回落）----
+        # ---- 任务类型（用户 2026-11-17：**排在名称之前**，复选框外观、单选）----
+        # ⚠️ 为什么是复选框不是胶囊：胶囊读起来像"视图切换"，而这里要表达的是
+        #    "这是一类任务、后面还能再加几类"；复选框样式点明"可以多选其一"，
+        #    但业务上**恒单选**（组件内部保证：勾一个别的自动灭、点掉当前那个
+        #    不生效）。
+        type_row = QHBoxLayout()
+        type_row.setSpacing(T.SPACE_SM)
+        type_label = BodyLabel("任务类型：")
+        # ⚠️ 字段名一律**加粗**（用户 2026-11-17：任务类型/任务名称/子任务/
+        #    上传文件 这些标题要加粗，像"字段名"而不是正文）。
+        ui.apply_to(type_label, T.SIZE_BODY, bold=True, color=T.INK)
+        type_row.addWidget(type_label)
+        self.type_selector = CheckBoxGroup(TASK_TYPES)
+        self.type_selector.current_changed.connect(self._on_type_changed)
+        self._describe_types()
+        type_row.addWidget(self.type_selector)
+        type_row.addStretch()
+        root.addLayout(type_row)
+
+        # ---- 任务名称（非必需；留空回落；**所有任务类型共用**）----
         name_row = QHBoxLayout()
         name_row.setSpacing(T.SPACE_SM)
         label = BodyLabel("任务名称：")
-        ui.apply_to(label, T.SIZE_BODY, color=T.INK)
+        ui.apply_to(label, T.SIZE_BODY, bold=True, color=T.INK)
         name_row.addWidget(label)
         # ⚠️ 用 qfluentwidgets 的 ``LineEdit`` 而不是裸 ``QLineEdit``（用户
         #    2026-10-06："输入框不好看，而且高度不够"）：裸的那个在 Windows
@@ -155,7 +236,10 @@ class CreateTaskPage(QWidget):
         self.name_hint.setWordWrap(True)
         root.addWidget(self.name_hint)
 
-        # ---- 面板原样搬过来（自带标题、流程图、按钮行）----
+        self._stack = QStackedWidget(self)
+        root.addWidget(self._stack, 1)
+
+        # ---- 常规任务（面板原样搬过来，自带标题、流程图、按钮行）----
         # ⚠️ outer_margins=False：页面根布局已有 SPACE_XL 边距，面板再 pad
         #    一层会让「创建任务」标题比上面的「任务名称」多缩进 24px
         #    （用户 2026-10-06 截图反馈的对齐问题）。
@@ -167,7 +251,97 @@ class CreateTaskPage(QWidget):
         self.panel.pdf_cleared.connect(self._on_pdf_cleared)
         # 选了 PDF 就自动填上文件名（可随时改；清空则回落文件名，见模块头）
         self.panel.pick_button.clicked.connect(self._autofill_name)
-        root.addWidget(self.panel, 1)
+        self._stack.addWidget(self.panel)
+
+        # ---- 聚合任务（选成员 → 排序 → 起始节点 → 流程图）----
+        self.aggregate_panel = AggregateCreatePanel(self.store, self)
+        self.aggregate_panel.submitted.connect(self._on_aggregate_submit)
+        self.aggregate_panel.cancelled.connect(self._on_back)
+        # 成员表格的「详情」→ **本页弹非模态预览窗**（用户 2026-11-17：不跳转，
+        # 不再让壳层切路由——创建到一半的表单不能消失）。
+        self.aggregate_panel.detail_requested.connect(self.open_member_preview)
+        self._stack.addWidget(self.aggregate_panel)
+
+        # 类型 → 面板。⚠️ 加新类型就在这里再挂一个面板（``_on_type_changed``
+        # 按这张表找目标，不写死下标——否则每加一类都要改两处映射）。
+        self._pages = {
+            TAB_TASK: self.panel,
+            TAB_AGGREGATE: self.aggregate_panel,
+        }
+        # 初始态：默认类型（TASK_TYPES 第一项）对应的面板
+        self._on_type_changed(self.current_tab())
+
+    def _describe_types(self) -> None:
+        """给每个类型复选框挂一句说明（各自的 tooltip，别整组共用一句）。"""
+        for key, tip in TASK_TYPE_TIPS.items():
+            box = self.type_selector.box(key)
+            if box is not None:
+                box.setToolTip(tip)
+
+    def _on_type_changed(self, key: str) -> None:
+        """切任务类型：内容区换到该类型的面板（类型行/名称行共用，不动）。"""
+        panel = getattr(self, "_pages", {}).get(key)
+        if panel is not None:
+            self._stack.setCurrentWidget(panel)
+
+    def current_tab(self) -> str:
+        """当前**任务类型**的键（自测/外层判断用；方法名沿用历史的 tab 口径）。"""
+        try:
+            return str(self.type_selector.current())
+        except Exception:  # noqa: BLE001 - 纯辅助查询，取不到就按默认类型
+            return TAB_TASK
+
+    def select_tab(self, route: str) -> None:
+        """程序化切任务类型（不发 ``current_changed``，自己驱动内容区）。"""
+        self.type_selector.set_current(route)
+        self._on_type_changed(route)
+
+    # ------------------------------------------------------- 成员详情预览
+    def open_member_preview(self, task_id: str):
+        """开（或前置）该子任务的**非模态详情预览窗**，返回窗口对象。
+
+        用户 2026-11-17：「详情按钮点击，不再跳转，而是弹窗显示任务详情信息，
+        这个弹窗要宽一些，直接复用任务详情页，详情弹窗不阻塞页面操作其他内容，
+        不会发出当当当声音」——
+
+        - **非模态**：``show()``（绝 ``exec()``），创建页照常可操作；模态窗会挡
+          住父窗口，"点到被挡的地方"就是那声「当当」的来源（见 ``confirm_dialog``
+          纪律）；
+        - **同一任务不重复开**：已经开着就前置它，而不是叠出第二个窗口；
+        - 关窗后从 ``self._previews`` 里摘掉（窗口是 ``WA_DeleteOnClose``）。
+
+        窗口实现见 :class:`desktop.pages.taskdetail.preview.TaskPreviewDialog`
+        （延迟导入：详情页整包很重，创建页不需要在启动时就吃进来）。
+        """
+        if not task_id:
+            return None
+        existing = self._previews.get(task_id)
+        if existing is not None:
+            try:
+                if existing.isVisible():
+                    existing.raise_()
+                    existing.activateWindow()
+                    return existing
+            except RuntimeError:      # 底层对象已被销毁：当没有，重开一个
+                self._previews.pop(task_id, None)
+        from desktop.pages.taskdetail.preview import TaskPreviewDialog
+
+        dialog = TaskPreviewDialog(self.store, task_id, self)
+        self._previews[task_id] = dialog
+        dialog.destroyed.connect(
+            lambda *_args, _tid=task_id: self._previews.pop(_tid, None)
+        )
+        dialog.show()
+        return dialog
+
+    def _close_previews(self) -> None:
+        """关掉全部预览窗（离开本页/重置时用，别让旧任务的窗口飘着）。"""
+        for dialog in list(self._previews.values()):
+            try:
+                dialog.close()
+            except RuntimeError:      # 已经销毁
+                pass
+        self._previews.clear()
 
     # ------------------------------------------------------------- 名称联动
     def _on_pdf_cleared(self, previous) -> None:
@@ -249,12 +423,18 @@ class CreateTaskPage(QWidget):
         """
         self.name_edit.setText("")
         self.panel.reset()
+        self.aggregate_panel.reset()
         self._busy = False
         self.panel.setEnabled(True)
+        self.aggregate_panel.setEnabled(True)
         self.name_edit.setEnabled(True)
         self.back_button.setEnabled(True)
         self.name_edit.setPlaceholderText(self.default_name())
         self._refresh_hint()
+        # 旧任务的详情预览窗跟着这批表单一起收（否则留着上一个成员的信息）
+        self._close_previews()
+        # 回到「常规任务」：下一次创建默认从普通任务起步
+        self.select_tab(TAB_TASK)
 
     # ------------------------------------------------------------- 状态与提交
     def set_busy(self, busy: bool, message: str = "") -> None:
@@ -265,6 +445,7 @@ class CreateTaskPage(QWidget):
         """
         self._busy = bool(busy)
         self.panel.setEnabled(not busy)
+        self.aggregate_panel.setEnabled(not busy)
         self.name_edit.setEnabled(not busy)
         self.back_button.setEnabled(not busy)
         if message:
@@ -272,9 +453,22 @@ class CreateTaskPage(QWidget):
         elif not busy:
             self._refresh_hint()
 
+    def _on_aggregate_submit(self, members: list, member_stages: list, diagram) -> None:
+        """聚合面板说"可以建了" → 带上任务名交出去。
+
+        ⚠️ 成员为空面板自己已经拦了（submit 里有 toast），这里只补 busy 守卫。
+        """
+        if self._busy:
+            return
+        self.aggregate_requested.emit(
+            list(members), list(member_stages), self.task_name(), diagram
+        )
+
     def _on_back(self, *_args) -> None:
         if self._busy:
             return          # 正在建任务时不许走（半路放弃会留下悬空状态）
+        # 预览窗是"看子任务"的辅助窗口，离开创建页就没有意义了
+        self._close_previews()
         self.closed.emit()
 
     def _on_submit(self, *_args) -> None:

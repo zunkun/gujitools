@@ -110,6 +110,10 @@ class SegmentedToggle(QWidget):
         """当前选中项的键。"""
         return self._current
 
+    def keys(self) -> list[str]:
+        """全部段的键，顺序即摆放顺序（自测核"有几段、都是谁"用）。"""
+        return [key for key, _ in self._items]
+
     def set_current(self, key: str) -> None:
         """程序化切换选中项，不发 ``current_changed``。"""
         if key != self._current:

@@ -74,7 +74,7 @@ desktop/
       canvas.py                    #   模块二「拼版操作」：拖动/缩放拉伸/旋转画布（同 PrintLayoutCanvas 一族）
       panel.py                     #   模块二「拼版操作」：右侧控制面板（开关/页序/旋转/复位/删除）
       view.py                      #   装配层：左列清单 + 画布（ImpositionViewWidget）
-    task_table.py           # 任务表格：节点状态用状态胶囊组显示
+    task_table.py           # 任务表格：任务节点用状态胶囊组显示
     log_panel.py            # 执行日志：底部状态条 + 点击唤出的浮层（出错自动标红）
     panels/params_spec.py   # 各阶段默认参数与下拉候选表（唯一默认值来源，见下）
     panels/print_params.py  # print 参数解析/序列化纯函数（默认值转发自 params_spec）
@@ -399,11 +399,11 @@ imposition,detect}`。**任何一侧都禁止借道另一侧的缓存区**（历
 
 现在分成两步（都在 `dialog_commit.CommitMixin`）：
 
-| 方法              | 时机                                           | 做什么                                              |
-| ----------------- | ---------------------------------------------- | --------------------------------------------------- |
-| `_preview_crop()` | 裁剪框松手（`crop_selection_changed` 信号）    | **只**写 `_pending_crop` + 刷尺寸提示，像素一个不动 |
+| 方法              | 时机                                           | 做什么                                                                        |
+| ----------------- | ---------------------------------------------- | ----------------------------------------------------------------------------- |
+| `_preview_crop()` | 裁剪框松手（`crop_selection_changed` 信号）    | **只**写 `_pending_crop` + 刷尺寸提示，像素一个不动                           |
 | `_commit_crop()`  | **切走裁剪工具** / 点「完成」                  | `_push_undo(裁剪)` + 真正的 `QImage.copy`；框内拖动图片时扩展透明画布保留位移 |
-| `_discard_crop()` | Ctrl+Z / Ctrl+Y / 「还原」/ 参数页「重置选区」 | 清 `_pending_crop` + 选区弹回整幅，**不记撤销步**   |
+| `_discard_crop()` | Ctrl+Z / Ctrl+Y / 「还原」/ 参数页「重置选区」 | 清 `_pending_crop` + 选区弹回整幅，**不记撤销步**                             |
 
 - 画布画的**始终是原图**，选区外那 4 块半透明遮罩每帧按选区重算
   （`overlay._sync_overlay`）⇒ 向外拖时被变暗的区域立刻重新显露；夹取上界是

@@ -43,12 +43,12 @@ from desktop.steps.bpmn_diagram import FlowDiagram
 from desktop.steps.spec import OPTIONAL_STEPS
 
 #: 阶段状态
-PENDING = "pending"     # 还没轮到
-READY = "ready"         # 轮到了，可以跑
-RUNNING = "running"     # 正在跑
-DONE = "done"           # 跑完了
-SKIPPED = "skipped"     # 本流程不含这一步（或条件不满足）
-FAILED = "failed"       # 跑挂了
+PENDING = "pending"  # 还没轮到
+READY = "ready"  # 轮到了，可以跑
+RUNNING = "running"  # 正在跑
+DONE = "done"  # 跑完了
+SKIPPED = "skipped"  # 本流程不含这一步（或条件不满足）
+FAILED = "failed"  # 跑挂了
 
 #: 需要"条件满足"才执行的阶段 → 条件名。
 #:
@@ -125,7 +125,7 @@ class Scheduler:
     #: 本流程要跑的**节点实例**（拓扑序 ``(node_id, stage)``）——B 方案真源。
     nodes: tuple[tuple[str, str], ...] = ()
     #: 阶段 → 状态（:meth:`mark` / :meth:`state_of` 的兼容面；
-    #: 单节点阶段与节点状态一一对应）
+    #: 单节点阶段与任务节点一一对应）
     states: dict[str, str] = field(default_factory=dict)
     #: 条件开关
     flags: dict[str, bool] = field(default_factory=dict)
@@ -144,8 +144,9 @@ class Scheduler:
 
     # ------------------------------------------------------------ 构造
     @classmethod
-    def from_diagram(cls, diagram: FlowDiagram,
-                     flags: dict[str, bool] | None = None) -> "Scheduler":
+    def from_diagram(
+        cls, diagram: FlowDiagram, flags: dict[str, bool] | None = None
+    ) -> "Scheduler":
         """从流程图建状态机：顺序取**节点**拓扑序，条件不满足的阶段直接剔除。
 
         ⚠️ 顺序来自 :meth:`FlowDiagram.node_order`（``(node_id, stage)``，
@@ -235,7 +236,7 @@ class Scheduler:
                 candidates = self.stages
             else:
                 index = self.stages.index(current)
-                candidates = self.stages[index + 1:]
+                candidates = self.stages[index + 1 :]
         for stage in candidates:
             if not self.state_of(stage) in (DONE, SKIPPED):
                 return stage
@@ -253,9 +254,9 @@ class Scheduler:
         done = sum(1 for st in self.states.values() if st in (DONE, SKIPPED))
         return done, total
 
-    def missing_inputs(self, task_dir, stage: str,
-                       port_names: dict[str, str] | None = None
-                       ) -> list[str]:
+    def missing_inputs(
+        self, task_dir, stage: str, port_names: dict[str, str] | None = None
+    ) -> list[str]:
         """这一步的哪些输入还没就位（**只用于提示**，不拦执行）。
 
         ``port_names`` 是端口 → 落点目录/文件名的映射（默认查 ports 的
@@ -294,7 +295,16 @@ class Scheduler:
 
 
 __all__ = [
-    "CONDITIONS", "DEFAULT_TEMPLATE", "DONE", "FAILED", "PENDING", "READY",
-    "RUNNING", "SKIPPED", "Scheduler", "StageState", "default_template_path",
+    "CONDITIONS",
+    "DEFAULT_TEMPLATE",
+    "DONE",
+    "FAILED",
+    "PENDING",
+    "READY",
+    "RUNNING",
+    "SKIPPED",
+    "Scheduler",
+    "StageState",
+    "default_template_path",
     "load_default_diagram",
 ]

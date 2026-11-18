@@ -5,4 +5,5 @@
 - rembg_groups ：去底色全局阈值的同页左右裁图分组（worker/实时预览共用）
 - submit_state ：rembg「提交本次任务」的版本状态机
 - imposition   ：图片拼版的版面派生（槽位/默认版面）与成品页合成
+- aggregate_ingest：聚合任务把成员任务在起始节点上的输入/产出按成员顺序汇集
 """

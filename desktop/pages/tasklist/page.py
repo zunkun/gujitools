@@ -42,8 +42,9 @@ from desktop.workers import (
     connect_queued,
 )
 from desktop.store import TaskStore
+from desktop.steps import ports
 from desktop.components.pagination import DEFAULT_PAGE_SIZE, Pager, Pagination
-from desktop.components.task_table import TaskTable
+from desktop.components.task_table import TaskTable, task_row_matches
 from desktop.utils.files import default_open_dir, set_producing_marker
 
 # 状态文案统一取自 ui.theme，避免各处各自维护一份
@@ -103,6 +104,9 @@ class TaskListPage(QWidget, WorkerHost):
     #: 窗口里点进去再建，会被拖成 ~2 秒（实测 1987ms）——那正是「从列表点进
     #: 详情要等几秒」。挪到"刚点完导入、本来就在等"的时机付掉这笔开销。
     import_queued = Signal()
+    #: 聚合任务的成员产物**汇集完成**（后台复制完毕、起点已置为已完成）。
+    #: 宿主据此刷新详情页——否则用户看到的是"创建了但什么都没有"的空任务。
+    aggregate_ready = Signal(str)
 
     def __init__(self, store: TaskStore, parent=None):
         """初始化页面：构建 UI、绑定信号并刷新首次列表。
@@ -115,6 +119,10 @@ class TaskListPage(QWidget, WorkerHost):
         self.store = store
         self.hash_thread: QThread | None = None
         self.hash_worker: HashWorker | None = None
+        #: 正在汇集成员产物的聚合任务：``{任务号: (QThread, worker)}``。
+        #: 保留强引用防 GC（线程在跑而 Python 侧对象被回收＝Qt abort）；
+        #: 线程结束时摘掉（见 :meth:`_start_aggregate_ingest` 的接线）。
+        self._aggregate_jobs: dict[str, tuple[QThread, object]] = {}
         self._import_button: PrimaryPushButton | None = None
         #: 当前挂着的「创建任务」弹窗（防GC；弹窗期间用户点不了列表）
         self._create_dialog = None
@@ -293,20 +301,10 @@ class TaskListPage(QWidget, WorkerHost):
     def _matches(row: dict, keyword: str) -> bool:
         """模糊匹配：任务名或源文件名（不含目录）包含关键词，大小写不敏感。
 
-        只做**子串**匹配就够了——任务名是用户自己起或 PDF 文件名，长度短、
-        没有拼写容错的需求；上 difflib 之类的模糊算法反而会让「搜 A 出来 B」
-        变得不可预期。
+        实现在 ``components/task_table.task_row_matches``——聚合任务「选择
+        子任务」弹窗用同一份判据，别在这里再抄一份。
         """
-        if not keyword:
-            return True
-        haystack = " ".join(
-            [
-                str(row.get("name") or ""),
-                # 只取文件名，避免用户磁盘上带关键词的父目录导致误命中
-                Path(str(row.get("source_path") or "")).name,
-            ]
-        ).lower()
-        return keyword.lower() in haystack
+        return task_row_matches(row, keyword)
 
     def _render(self) -> None:
         """过滤 → 分页 → 填表，并同步空状态、分页条与提示文案。
@@ -411,6 +409,106 @@ class TaskListPage(QWidget, WorkerHost):
                         "上一个文件指纹尚未计算完成，请稍候。")
             return
         self._start_import(Path(path))
+
+    def start_create_aggregate(self, members: list, member_stages: list, name: str,
+                               diagram) -> None:
+        """聚合任务提交了 → 建聚合任务（不走指纹/查重：聚合任务不吃源文件）。
+
+        ``member_stages`` 与成员对齐（创建页 2026-11-17 本轮：全体共用
+        一个起始节点，所以值都相同；老口径允许逐成员不同）；store 落库时取
+        清单里最早的作 ``member_stage`` 并从它派生流程。成员不存在 / 节点
+        非法时 ``store.create_aggregate_task`` 抛 ``ValueError``——这里 toast
+        说清原因留在创建页，不崩。
+        """
+        from desktop.steps.aggregate import (
+            aggregate_start_label,
+            earliest_aggregate_stage,
+        )
+
+        try:
+            task_id = self.store.create_aggregate_task(
+                [str(m) for m in (members or [])],
+                member_stages=[str(s) for s in (member_stages or [])],
+                name=str(name or "").strip(),
+                diagram=diagram,
+            )
+        except ValueError as exc:
+            self._toast("warning", "无法创建聚合任务", str(exc))
+            return
+        self.refresh()
+        # 建完直接进详情（与普通任务同一体验）
+        self.open_detail.emit(task_id)
+        earliest = earliest_aggregate_stage(member_stages)
+        self._toast(
+            "info", "聚合任务已创建",
+            f"成员 {len(members)} 个，起始节点「"
+            f"{aggregate_start_label(earliest) if earliest else '—'}」。"
+            "正在把各成员的输入与产出汇集进来…",
+        )
+        # ⚠️ **必须后台做**：一本古籍几百页，逐页复制就是几十秒的界面冻结。
+        #    做完发 aggregate_ready，由壳层决定要不要刷新详情页。
+        self._start_aggregate_ingest(task_id)
+
+    def _start_aggregate_ingest(self, task_id: str) -> None:
+        """后台汇集聚合任务的成员产物（见 ``services/aggregate_ingest``）。"""
+        from desktop.workers import AggregateIngestWorker
+
+        try:
+            worker = AggregateIngestWorker(self.store, task_id)
+            # ⚠️ 起线程**之前**立标记：用户此刻已经被带进详情页（open_detail
+            #    在调用本方法之前），晚一步就会先看到"输入还没就位"的误导提示。
+            from desktop.services.aggregate_ingest import set_pending_marker
+
+            set_pending_marker(self.store.task_dir(task_id), True)
+        except Exception as exc:  # noqa: BLE001 - 建 worker 失败不该拖垮建任务
+            self._toast("warning", "聚合汇集未能启动", str(exc))
+            return
+        thread = QThread(self)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._on_aggregate_ingest_finished)
+        worker.failed.connect(self._on_aggregate_ingest_failed)
+        worker.finished.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        # 线程收尾就从表里摘掉：留着已删除的 QThread 包装，之后任何访问都会
+        # 抛 RuntimeError（删任务前的"等它停"会踩到）。
+        thread.finished.connect(
+            lambda tid=task_id: self._aggregate_jobs.pop(tid, None)
+        )
+        self._aggregate_jobs[task_id] = (thread, worker)
+        thread.start()
+
+    @Slot(str, int, int, list)
+    def _on_aggregate_ingest_finished(self, task_id: str, pages: int,
+                                      copied: int, notes: list) -> None:
+        """汇集完成：提示 + 让宿主刷新详情页（若正开着这个任务）。"""
+        self.refresh()
+        if pages:
+            detail = f"共 {pages} 页（复制 {copied} 个文件）。"
+            if notes:
+                # 部分成员缺产物：说清第一个原因，别让用户以为"全都搬过来了"
+                detail += f"（{notes[0]}）"
+            self._toast(
+                "success", "聚合输入已汇集",
+                detail + "起始节点的输入与产出都已就位。",
+            )
+        else:
+            self._toast(
+                "warning", "聚合输入为空",
+                "各成员在起始节点上都没有可用的图，请检查成员任务是否真跑完。"
+                + (f"（{notes[0]}）" if notes else ""),
+            )
+        self.aggregate_ready.emit(task_id)
+
+    @Slot(str, str)
+    def _on_aggregate_ingest_failed(self, task_id: str, error: str) -> None:
+        """汇集失败：任务已建好但内容不完整，说清怎么收拾。"""
+        self._toast(
+            "warning", "聚合汇集失败",
+            f"{error}（可删除该聚合任务后重新创建）",
+        )
 
     def _start_import(self, path: Path) -> None:
         """选定 PDF 之后：后台算指纹，完成后按查重结果建任务。"""
@@ -634,6 +732,14 @@ class TaskListPage(QWidget, WorkerHost):
         """关程序前的收尾：先停导入后台队列（复制/缩略图），再走基类线程。"""
         self._thumb_queue.shutdown()
         self._shutdown_hash_thread()
+        # 聚合汇集是"一次性的重复制"，不可中断；等不到就摘父对象保命
+        # （与指纹线程同一处理）。
+        if self._aggregate_jobs:
+            from desktop.workers.worker_host import stop_thread
+
+            for thread, _worker in list(self._aggregate_jobs.values()):
+                stop_thread(thread, self.DELETE_STOP_WAIT_MS, "聚合汇集线程")
+            self._aggregate_jobs.clear()
         super().shutdown_workers()
 
     def _shutdown_hash_thread(self) -> None:
@@ -689,6 +795,12 @@ class TaskListPage(QWidget, WorkerHost):
                 "该任务的缩略图/源文件副本还在写，请几秒后再删除。",
             )
             return
+        # 聚合任务的汇集线程同样可能在写这个目录（几百张图）：先等它收手。
+        job = self._aggregate_jobs.pop(task_id, None)
+        if job is not None:
+            from desktop.workers.worker_host import stop_thread
+
+            stop_thread(job[0], self.DELETE_STOP_WAIT_MS, "聚合汇集线程")
         if not self.store.delete_task(task_id):
             # 目录被占用时 store 会保留任务记录，不留孤儿目录
             self._toast("error", "删除未完成", "文件正被占用，请稍后重试。")

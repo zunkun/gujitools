@@ -26,17 +26,21 @@ def run(ctx) -> None:
     ctx.tid = tid
     w.list_page.refresh()
     # refresh 是异步的（后台线程读 tasks.json + 各任务 runs.json），必须等它回来
-    ok("导入后立即出条目",
-       wait_until(app, lambda: w.list_page.table.table.rowCount() == 1),
-       f"实际 {w.list_page.table.table.rowCount()} 行")
+    ok(
+        "导入后立即出条目",
+        wait_until(app, lambda: w.list_page.table.table.rowCount() == 1),
+        f"实际 {w.list_page.table.table.rowCount()} 行",
+    )
     ok("创建任务带指纹", repo.get_task(tid)["source_hash"] == "hashA")
 
     tid_dup = repo.create_task(ctx.big_pdf, "hashA", "大部头")
     ctx.tid_dup = tid_dup
     w.list_page.refresh()
-    ok("列表条目数正确",
-       wait_until(app, lambda: w.list_page.table.table.rowCount() == 2),
-       f"实际 {w.list_page.table.table.rowCount()} 行")
+    ok(
+        "列表条目数正确",
+        wait_until(app, lambda: w.list_page.table.table.rowCount() == 2),
+        f"实际 {w.list_page.table.table.rowCount()} 行",
+    )
 
     # 查重：取消 → 不新建，定位到已有任务
     w.list_page._confirm_duplicate = lambda path, dups: False
@@ -124,16 +128,23 @@ def run(ctx) -> None:
     for _ in range(100):
         if thumbs_dir.exists() and len(list(thumbs_dir.glob("*.jpg"))) >= expect:
             break
-        app.processEvents(); time.sleep(0.1)
+        app.processEvents()
+        time.sleep(0.1)
     got = len(list(thumbs_dir.glob("*.jpg"))) if thumbs_dir.exists() else 0
-    ok("导入后只生成**首屏**缩略图（不再整本预渲染）", got == expect,
-       f"实际 {got} 张（应 {expect}）")
+    ok(
+        "导入后只生成**首屏**缩略图（不再整本预渲染）",
+        got == expect,
+        f"实际 {got} 张（应 {expect}）",
+    )
     # 再等一小会儿，确认它**没有**偷偷继续渲后面的页
     for _ in range(20):
-        app.processEvents(); time.sleep(0.05)
-    ok("导入后台不会继续渲染整本（懒加载）",
-       len(list(thumbs_dir.glob("*.jpg"))) == expect,
-       f"{len(list(thumbs_dir.glob('*.jpg')))} 张")
+        app.processEvents()
+        time.sleep(0.05)
+    ok(
+        "导入后台不会继续渲染整本（懒加载）",
+        len(list(thumbs_dir.glob("*.jpg"))) == expect,
+        f"{len(list(thumbs_dir.glob('*.jpg')))} 张",
+    )
     repo.delete_task(newest["id"])
 
     # 行内按钮存在 + 防回归守卫：表头垂直居中、任务名称列占主体、删除按钮危险色
@@ -171,12 +182,12 @@ def run(ctx) -> None:
         + 2 * T.SPACE_SM
     )
     ok(
-        "节点状态列固定宽",
+        "任务节点列固定宽",
         header_view.sectionResizeMode(3) == QHeaderView.ResizeMode.Interactive,
         str(header_view.sectionResizeMode(3)),
     )
     ok(
-        f"节点状态列宽放得下全部胶囊（本行 {len(_chips)} 个也不截字）",
+        f"任务节点列宽放得下全部胶囊（本行 {len(_chips)} 个也不截字）",
         header_view.sectionSize(3) >= _need,
         f"列宽={header_view.sectionSize(3)} 需要={_need}",
     )
@@ -192,9 +203,7 @@ def run(ctx) -> None:
     # ⚠️ refresh 是**异步**的（后台线程读盘），必须等表格行数跟上再取值。
     w.list_page.refresh()
     wait_until(app, lambda: table.rowCount() == len(repo.list_tasks()), timeout=5.0)
-    shown_numbers = [
-        table.item(r, 0).text() for r in range(table.rowCount())
-    ]
+    shown_numbers = [table.item(r, 0).text() for r in range(table.rowCount())]
     ok(
         "序号列显示任务自己的编号",
         shown_numbers == [t["id"] for t in repo.list_tasks()],
@@ -251,7 +260,9 @@ def run(ctx) -> None:
     # 无论此前容器处于什么状态，一次更新必须精确落到目标单元格。
     opt = QStyleOptionViewItem()
     opt.rect = QRect(0, ROW_HEIGHT, 132, ROW_HEIGHT)  # 模拟第 1 行操作列
-    table.itemDelegate().updateEditorGeometry(action_cell, opt, table.model().index(1, 4))
+    table.itemDelegate().updateEditorGeometry(
+        action_cell, opt, table.model().index(1, 4)
+    )
     g = action_cell.geometry()
     ok(
         "几何更新后容器精确填满单元格",

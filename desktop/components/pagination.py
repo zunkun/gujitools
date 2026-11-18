@@ -108,7 +108,11 @@ class Pagination(QWidget):
     # 新的每页条数
     page_size_changed = Signal(int)
 
-    def __init__(self, page_size: int = DEFAULT_PAGE_SIZE, parent=None):
+    def __init__(self, page_size: int = DEFAULT_PAGE_SIZE, parent=None, *,
+                 size_selector: bool = True):
+        """``size_selector=False``：**不给**"每页 N 条"下拉（条数是既定规格时用，
+        例如创建页的子任务表格——那里最多 10 行/页，让人改成 50 会直接把表格
+        撑成 50 行高）。只影响外观，``page_size_changed`` 照旧存在。"""
         super().__init__(parent)
         self._pager = Pager(0, page_size, 1)
 
@@ -121,7 +125,12 @@ class Pagination(QWidget):
         layout.addWidget(self.total_label)
         layout.addStretch()
 
-        layout.addWidget(QLabel("每页"))
+        # "每页 N 条"整组放进一个容器：可整块隐藏（见 size_selector）
+        self.size_box = QWidget()
+        size_row = QHBoxLayout(self.size_box)
+        size_row.setContentsMargins(0, 0, 0, 0)
+        size_row.setSpacing(T.SPACE_SM)
+        size_row.addWidget(QLabel("每页"))
         self.size_combo = ComboBox()
         self.size_combo.setFixedWidth(84)
         for size in PAGE_SIZE_OPTIONS:
@@ -129,8 +138,10 @@ class Pagination(QWidget):
         index = self.size_combo.findData(page_size)
         self.size_combo.setCurrentIndex(index if index >= 0 else 0)
         self.size_combo.currentIndexChanged.connect(self._on_page_size_changed)
-        layout.addWidget(self.size_combo)
-        layout.addWidget(QLabel("条"))
+        size_row.addWidget(self.size_combo)
+        size_row.addWidget(QLabel("条"))
+        self.size_box.setVisible(bool(size_selector))
+        layout.addWidget(self.size_box)
 
         self.prev_btn = ToolButton(FIF.PAGE_LEFT)
         self.prev_btn.setFixedSize(32, 30)

@@ -35,17 +35,19 @@ from qfluentwidgets import (
 )
 
 from desktop.ui.fonts import ui_font
+from desktop.ui.check_group import CheckBoxGroup
 from desktop.ui.icons import HELP_CIRCLE
 from desktop.ui.segmented_toggle import SegmentedToggle
 from desktop.ui import theme as T
 
-#: 本模块是「控件总入口」：``SegmentedToggle`` / ``ui_font`` 的实现已分别迁到
-#: ``desktop.ui.segmented_toggle`` 与 ``desktop.ui.fonts``，这里保留同名
-#: re-export，调用点不必改。列进 ``__all__`` 是为了让 pyflakes 认账（它不认
-#: ``# noqa``，只认 ``__all__``）。
+#: 本模块是「控件总入口」：``SegmentedToggle`` / ``CheckBoxGroup`` / ``ui_font``
+#: 的实现已分别迁到 ``desktop.ui.segmented_toggle`` / ``desktop.ui.check_group``
+#: 与 ``desktop.ui.fonts``，这里保留同名 re-export，调用点不必改。列进
+#: ``__all__`` 是为了让 pyflakes 认账（它不认 ``# noqa``，只认 ``__all__``）。
 __all__ = [
     "CONTROL_HEIGHT",
     "Card",
+    "CheckBoxGroup",
     "Divider",
     "EmptyState",
     "HelpButton",

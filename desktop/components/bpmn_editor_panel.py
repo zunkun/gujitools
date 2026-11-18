@@ -48,6 +48,7 @@ from qfluentwidgets import FluentIcon as FIF
 from desktop import ui
 from desktop.components.bpmn_editor import BpmnEditor
 from desktop.components.bpmn_view import BpmnView
+from desktop.steps import ports
 from desktop.steps.bpmn_diagram import FlowDiagram
 from desktop.ui import theme as T
 
@@ -66,15 +67,21 @@ class BpmnEditorPanel(QWidget):
     diagram_changed = Signal()
 
     def __init__(self, diagram: FlowDiagram, parent=None, *,
-                 editable: bool = True, reset_factory=None):
+                 editable: bool = True, reset_factory=None,
+                 scroll: bool = True):
         """
         :param reset_factory: 无参可调用，返回一张"默认流程"的**新图**。给了就
             在工具栏右侧出「恢复默认」——用户把节点删光了也能一键回到起点
             （用户 2026-10-05："他可能有些节点不需要，删了就行了，**可以恢复**"）。
             不给就没有这个按钮（详情页看流程时不需要）。
+        :param scroll: ``True`` = 画布自带滚动条（详情页 / 流程弹窗那种"固定高
+            的窗体里看图"）；``False`` = **画布整张铺开、高度跟着内容走**，滚动
+            交给外层页面（用户 2026-11-18："创建任务页面 y 轴也可以显示滚轮，
+            因此底部画布不需要滚轮，直接完整展示就行"）。
         """
         super().__init__(parent)
         self._editable = editable
+        self._scrollable = bool(scroll)
         # ⚠️ **必须复制一份再用**：画布的编辑动作是**原地改**这张图的（节点/连线
         # 直接替换与增删）。而 ``TaskStore.task_diagram()`` 现在带解析缓存、返回
         # 的是**同一个对象**——直接交给编辑器会把缓存里的图改脏：用户改了又点
@@ -99,28 +106,41 @@ class BpmnEditorPanel(QWidget):
             self.toolbar = self._build_toolbar()
             root.addWidget(self.toolbar)
 
-        # ---- 画布区：可滚动编辑画布 ----
+        # ---- 画布区 ----
         # ⚠️ 左侧的「固定节点面板」（拖拽加节点）已撤（用户 2026-11-17：
         #    "左側這塊區域不需要了"）——加步骤统一走工具栏「添加步骤」的
         #    方块弹窗（:meth:`BpmnEditor.ask_add_node`），入口只有一个。
-        self._scroll = QScrollArea()
-        self._scroll.setWidgetResizable(False)
-        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
-        # ⚠️ 编辑态用**左上对齐**（不是居中）：拖动时鼠标坐标直接映射到画布
-        #    坐标，居中会在不同窗口尺寸下产生不同的偏移，手感飘。
-        self._scroll.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        self._scroll: QScrollArea | None = None
         if self._editable:
             canvas = BpmnEditor(self._diagram, name_source=self._name_source())
             canvas.diagram_changed.connect(self._on_changed)
             canvas.selection_changed.connect(lambda _=None: self._sync_status())
             canvas.flow_selection_changed.connect(lambda _=None: self._sync_status())
             self._canvas = canvas
-            self._scroll.viewport().installEventFilter(self)
         else:
             self._canvas = BpmnView(self._diagram)
-        self._scroll.setWidget(self._canvas)
-        self._scroll.setMinimumHeight(MIN_CANVAS_HEIGHT)
-        root.addWidget(self._scroll, 1)
+
+        if self._scrollable:
+            self._scroll = QScrollArea()
+            self._scroll.setWidgetResizable(False)
+            self._scroll.setFrameShape(QFrame.Shape.NoFrame)
+            # ⚠️ 编辑态用**左上对齐**（不是居中）：拖动时鼠标坐标直接映射到画布
+            #    坐标，居中会在不同窗口尺寸下产生不同的偏移，手感飘。
+            self._scroll.setAlignment(
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
+            )
+            if self._editable:
+                self._scroll.viewport().installEventFilter(self)
+            self._scroll.setWidget(self._canvas)
+            self._scroll.setMinimumHeight(MIN_CANVAS_HEIGHT)
+            root.addWidget(self._scroll, 1)
+        else:
+            # 不滚动：画布**整张铺开**（高度＝内容高度，不足则补到 MIN），滚动
+            # 由外层页面负责。⚠️ 画布自身的 sizePolicy 是 Minimum/Fixed 且
+            # min=max，所以这里给多少它就画多少，不会把页面撑出多余空白。
+            root.addWidget(self._canvas, 0)
+            if self._editable:
+                self._canvas.set_canvas_floor(*self._canvas_floor())
 
         self.status = CaptionLabel("")
         ui.apply_to(self.status, T.SIZE_CAPTION, color=T.INK_FAINT)
@@ -197,7 +217,11 @@ class BpmnEditorPanel(QWidget):
     # ------------------------------------------------------------ 事件
     def eventFilter(self, obj, event):  # noqa: N802 - Qt 命名
         """视口尺寸变了就同步画布下限（否则缩窗口后没地方拖节点）。"""
-        if obj is self._scroll.viewport() and event.type() == event.Type.Resize:
+        if (
+            self._scroll is not None
+            and obj is self._scroll.viewport()
+            and event.type() == event.Type.Resize
+        ):
             self._sync_floor()
         return super().eventFilter(obj, event)
 
@@ -205,12 +229,25 @@ class BpmnEditorPanel(QWidget):
         super().showEvent(event)
         self._sync_floor()
 
+    def _canvas_floor(self) -> tuple[float, float]:
+        """**不滚动**模式的画布下限：内容尺寸，高度不足 ``MIN_CANVAS_HEIGHT``
+        就补到它。
+
+        宽度取内容宽（不拉满面板）：画布不滚动了，宽了下不来就该让外层页面
+        横向出滚动条，而不是把图裁掉。
+        """
+        width, height = self._canvas.content_size()
+        return float(width), float(max(height, MIN_CANVAS_HEIGHT))
+
     def _sync_floor(self) -> None:
         editor = self.editor()
         if editor is None:
             return
-        viewport = self._scroll.viewport().size()
-        editor.set_canvas_floor(viewport.width(), viewport.height())
+        if self._scroll is not None:
+            viewport = self._scroll.viewport().size()
+            editor.set_canvas_floor(viewport.width(), viewport.height())
+        else:
+            editor.set_canvas_floor(*self._canvas_floor())
 
     def _on_fit(self) -> None:
         """收紧画布：把下限复位到视口，再让内容决定尺寸。"""
@@ -279,9 +316,12 @@ class BpmnEditorPanel(QWidget):
             if item is not None and (item.is_gateway or item.is_event):
                 text = f"已选中「{name}」（图形元素，不占运行步骤）"
             elif stage:
-                text = f"已选中步骤「{name}」——运行阶段：{stage}"
+                # ⚠️ 用户 2026-11-18：这里以前直接印阶段 key（`rembg`/`extract`），
+                #    状态行上只剩英文，与界面其它地方的中文名（流程图节点名、
+                #    步骤条）对不上。阶段的中文名唯一走 ``ports.stage_label``。
+                text = f"已选中步骤「{name}」——运行阶段：{ports.stage_label(stage)}"
             else:
-                text = (f"已选中步骤「{name}」——**未被识别为运行步骤**，"
+                text = (f"已选中步骤「{name}」——未被识别为运行步骤，"
                         f"改成已知阶段名即可参与运行")
         elif editor.link_mode():
             text = "连线模式：点起点节点，再点终点节点"

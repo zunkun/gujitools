@@ -18,6 +18,16 @@
   与 ``ImpositionMixin.imposition_active`` 同一口径）；
 - **胶囊的颜色** → 再叠一层"有没有拼版页"（绿=已能出图，灰=还没拼版）。
 拼版没有 runs.json 记录（它是纯合成、不走 worker），所以状态只能这么派生。
+
+⚠️⚠️ **颜色必须按"节点"取，不能按"阶段"取**（2026-11-17 用户报 0011）：
+「检测文本框」这一格在 ``runs.json`` 里对应**两个动作**——``detect``（YOLO
+出框）与 ``detect_submit``（提交裁图）。用户手工标注 / 沿用上一页时只跑
+后者，``runs["detect"]`` 压根没有记录；按阶段取就会显示灰色「未执行」，
+可它的产物（裁好的图）明明已经产出、下游去底/拼版/PDF 全跑完了。
+用户口径：「只要这个节点执行过，那么就应当是生效的」。
+判据与详情页步骤条**同一口径**（``TaskDetailPage._slot_state``）：
+``store.node_states()`` 按**节点 id** 归并同格内的全部动作，谁跑过都算这一格
+跑过。别在这里按 ``stage`` 取 ``stage_states()``——那会把同格的动作拆开看。
 """
 
 from __future__ import annotations
@@ -28,6 +38,11 @@ from desktop.store import (
     IMPOSITION_STAGE, STAGE_LABELS, STAGE_SHORT,
 )
 from desktop.ui import theme as T
+
+#: 某节点从没跑过时的状态（胶囊画成灰色「未执行」）。
+#: 与 ``TaskDetailPage._PENDING_STATE`` 同值——列表与详情页对"没跑过"的
+#: 表达必须一致，否则会出现"列表灰、详情绿"的第二种错。
+_PENDING_STATE = {"status": "pending", "done": 0, "total": 0, "completed": False}
 
 
 class TaskRowsWorker(QObject):
@@ -70,7 +85,7 @@ class TaskRowsWorker(QObject):
             "tip": tip,
         }
 
-    def _stage_chips(self, task_id: str, states: dict) -> list[dict]:
+    def _stage_chips(self, task_id: str, states: dict, nodes: dict) -> list[dict]:
         """这一行的节点胶囊——**按本任务自己的流程图**给。
 
         ⚠️ 2026-10-05 口径变更：以前硬编码 ``for stage in STAGES``（四个固定
@@ -91,12 +106,21 @@ class TaskRowsWorker(QObject):
         阶段——流程图坏了的任务在列表里显示四个默认胶囊，正是"自定义流程里
         总是冒出默认流程"的观感来源之一；合法空图（用户把节点删光）也会触发
         这条，把"没有步骤"显示成"四个步骤"。
+
+        ``states`` = :meth:`~desktop.store.runs.RunMixin.stage_states`
+        （兜底用：槽位没有节点 id 的老模型投影）；``nodes`` =
+        :meth:`~desktop.store.runs.RunMixin.node_states`（**主口径**）。
+        空 ``nodes``（读盘异常时的降级）⇒ 自然退回阶段级，即旧行为。
         """
         chips: list[dict] = []
         try:
             slots = list(self.store.task_slots(task_id))
         except Exception:  # noqa: BLE001 - 读不到流程就给空，不伪造
             return []
+        # ``nodes`` 空 = 节点级读盘失败（调用方已降级）⇒ 整行退回阶段级。
+        # ⚠️ 别把它当成"每个节点都没跑过"：那样显示出来的是"全灰未执行"，
+        #    正好就是这一轮要修的错相，只是换成了另一种触发路径。
+        by_node = bool(nodes)
         for slot in sorted(slots, key=lambda s: s.bar_index):
             if slot.optional:
                 # 可选节点（拼版）：**在图里 + 已勾启用**才算一个节点
@@ -108,9 +132,19 @@ class TaskRowsWorker(QObject):
                     chips.append(self._imposition_chip(task_id))
                 continue
             stage = slot.stage or slot.step
-            state = states.get(stage)
-            if state is None or not state.get("in_flow", True):
-                continue
+            # ⚠️⚠️ 先按**节点**取（同格的 detect / detect_submit 归并在一起），
+            #    没有节点 id 才退回**阶段**——反序就是 0011 那个"提交过却显示
+            #    未执行"（详见模块 docstring）。
+            if by_node and slot.node_id:
+                # 这一格从没跑过 ⇒ 灰色「未执行」胶囊（**不是**不画）：新任务
+                # 一个节点都没跑，列表照样要显示"有这几步、都还没开始"。
+                # 与详情页 ``TaskDetailPage._slot_state`` 的 ``_PENDING_STATE``
+                # 同一口径。
+                state = nodes.get(slot.node_id) or dict(_PENDING_STATE)
+            else:
+                state = states.get(stage)
+                if state is None or not state.get("in_flow", True):
+                    continue
             status = state["status"]
             progress = (
                 f" {state['done']}/{state['total']}" if state["total"] else ""
@@ -134,13 +168,23 @@ class TaskRowsWorker(QObject):
             rows = []
             for task in self.store.list_tasks():
                 states = self.store.stage_states(task["id"])
+                # 节点级状态（颜色主口径）：同一步骤的多个节点各算各的，
+                # 同格多动作（detect / detect_submit）归并到同一个节点上。
+                # ⚠️ 读失败不该拖垮整张列表：降级成空字典 ⇒ 胶囊退回阶段级
+                #    （旧口径），行照常显示。
+                try:
+                    nodes = self.store.node_states(task["id"])
+                except Exception:  # noqa: BLE001 - 降级见上
+                    nodes = {}
                 rows.append(
                     {
                         "id": task["id"],
                         "name": task["name"],
-                        "source_path": task["source_path"],
+                        "source_path": task.get("source_path", ""),
                         "created_at": task["created_at"],
-                        "stages": self._stage_chips(task["id"], states),
+                        # 「聚合」标记（aggregate 任务特有；普通任务没有这个键）
+                        "kind": task.get("kind", ""),
+                        "stages": self._stage_chips(task["id"], states, nodes),
                     }
                 )
             self.completed.emit(rows)

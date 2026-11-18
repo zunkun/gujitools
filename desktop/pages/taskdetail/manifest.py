@@ -120,6 +120,10 @@ class PageListMixin:
         #    提取，合并了旧「PDF 预览 | 提取结果」双标签）；编辑同步走它的
         #    refresh_page / image_saved，与旧 ImageViewerWidget 同形。
         extract_result_viewer: ExtractPreviewWidget
+        #: 聚合任务起点=提取/去底色时的**只读图片清单**（与各自查看器同屏互斥，
+        #: 见 ``_is_aggregate_input_node``）
+        extract_input_viewer: ImageViewerWidget
+        rembg_input_viewer: ImageViewerWidget
         detect_viewer: ImageViewerWidget
         rembg_viewer: RembgPreviewWidget
         current_stage: Callable[[], str]
@@ -195,6 +199,17 @@ class PageListMixin:
             "imposition",
         ):
             return
+        # ⚠️ 聚合任务的**起点节点**没有上游输入（用户 2026-11-18：「哪个节点
+        #    生成的结果，就作为聚合任务的输入数据」）：汇集器把成员的结果直接
+        #    写进这个节点的**产出**目录并把它记成已完成。所以这一步的页清单只能
+        #    取产出——否则详情页写着"暂无图片，请先完成提取"，磁盘上却明明躺着
+        #    汇集成的一整本书。
+        aggregate_out = self._aggregate_start_output_dir()
+        if aggregate_out is not None:
+            self.pages = self.store.refresh_pages_from_dir(
+                self.task_id, aggregate_out, **self._node_scope()
+            )
+            return
         # ⚠️ **上游的产出动作没成功执行过 ⇒ 这一步没有正式输入**（用户
         #    2026-11-04「检查所有的步骤」）。此前这里只按目录重建清单，于是
         #    未生效的目录内容会被写进清单，提交/统计/YOLO 导出/按钮状态全都
@@ -251,6 +266,58 @@ class PageListMixin:
         self.pages = self.store.refresh_pages_from_dir(
             self.task_id, directory, **self._node_scope()
         )
+
+    def _aggregate_start_output_dir(self) -> Path | None:
+        """聚合任务**起点节点**的产出目录；不是这种情形返回 ``None``。
+
+        判据（三者同时成立）：
+
+        1. 本任务是聚合任务（``kind == "aggregate"``）；
+        2. 当前步骤就是它的起点（``member_stage``）；
+        3. 起点这一步的产物是**图片批**（提取/检测/去底色）——「PDF排版」的
+           产物是一本 PDF、「图片拼版」有自己的版面文档，那两步在
+           :meth:`_sync_manifest_to_input` 开头就已经早退了。
+
+        为什么要这条：聚合任务的起点被汇集器置为**已完成**，它没有上游输入，
+        页清单只能来自它自己的产出（用户 2026-11-18 的"结果即输入"）。
+        """
+        from desktop.steps import ports as _ports
+
+        if not self.task_id:
+            return None
+        try:
+            record = self.store.get_task(self.task_id) or {}
+        except Exception:  # noqa: BLE001 —— 读不到任务就当普通任务
+            return None
+        if record.get("kind") != "aggregate":
+            return None
+        stage = str(record.get("member_stage") or "")
+        if not stage or self.current_stage() != stage:
+            return None
+        node = self.node_of_stage(stage)
+        if not node:
+            return None
+        folded = _ports.fold_forward(stage, "pages")
+        if folded in ("print", "imposition"):
+            return None
+        return self.store.node_or_stage_output(self.task_id, node, folded, "pages")
+
+    def _is_aggregate_input_node(self) -> bool:
+        """当前这一步是不是聚合任务的**输入节点**（起点、图片批产物）。
+
+        是 ⇒ 它的图片由子任务汇集而来（:mod:`desktop.services.aggregate_ingest`），
+        这一步**没有可执行的东西**：不用选 PDF、不用跑「提取文档图片」，
+        只需要把汇集来的图片列出来。用户 2026-11-18（任务 0025）：
+
+        > 选择的开始节点是提取图片，但是进入任务详情里面，提取图片里面没有
+        > 显示任何图片…… 提取图片虽然是处理 PDF 的，但是此时作为输入节点，
+        > 不需要 PDF，只需要图片列表显示出来。
+
+        判据只有 :meth:`_aggregate_start_output_dir` 那一条（它已经把
+        "聚合任务 / 当前步==起点 / 产物是图片批" 三件事判完了），本方法只是
+        给它一个面向界面的名字，避免调用方各自拼条件。
+        """
+        return self._aggregate_start_output_dir() is not None
 
     def _stage_input_visible(self) -> bool:
         """当前这一步的输入是否**已经生效**（上游的产出动作真的执行过）。
@@ -662,7 +729,17 @@ class PageListMixin:
         （它是第一个节点时），写死1 会把 detect 的增删插接到 extract 上去。
         """
         stage = self.stage_at_stack_index(self.preview_stack.currentIndex())
-        return self.detect_viewer if stage == "detect" else self.extract_result_viewer
+        if stage == "detect":
+            return self.detect_viewer
+        if stage in ("extract", "rembg") and self._is_aggregate_input_node():
+            # 聚合任务的起点显示的是**只读图片清单**（不是 PDF 查看器 / 原图
+            # 对比）：增删/定位/编辑这些动作要落到真正在屏上的那个控件上
+            return (
+                self.extract_input_viewer
+                if stage == "extract"
+                else self.rembg_input_viewer
+            )
+        return self.extract_result_viewer
 
     def _refresh_downstream_preview(self, source_step: str) -> None:
         """改了 ``source_step`` 那一格的图，顺手把它的下游预览也刷一遍。
@@ -1011,6 +1088,127 @@ class PageListMixin:
         return self.store.task_dir(task_id)
 
     # ------------------------------------------------------- 补选源 PDF
+    def _is_aggregate_task(self) -> bool:
+        """本任务是不是**聚合任务**（输入来自成员产物，不是用户上传的文件）。
+
+        聚合任务（用户 2026-11-17）没有源 PDF、也不该催用户"上传图片/文件夹"
+        ——它的输入是创建时按成员顺序汇集进来的（见
+        :mod:`desktop.services.aggregate_ingest`）。凡是"缺输入该提醒什么"
+        的判据都先问这一句。
+        """
+        task_id = getattr(self, "task_id", None)
+        if not task_id:
+            return False
+        try:
+            record = self.store.get_task(task_id) or {}
+        except Exception:  # noqa: BLE001 - 读不到就按普通任务处理
+            return False
+        return record.get("kind") == "aggregate"
+
+    def _aggregate_pending(self) -> bool:
+        """聚合任务的成员产物**还在汇集**（后台正在复制）。"""
+        task_id = getattr(self, "task_id", None)
+        if not task_id or not self._is_aggregate_task():
+            return False
+        from desktop.services.aggregate_ingest import is_pending
+
+        try:
+            return is_pending(self.store.task_dir(task_id))
+        except (OSError, ValueError):
+            return False
+
+    def refresh_aggregate_inputs(self) -> None:
+        """页头按钮：**重新汇集**成员产物（成员后来重跑过某一步时用）。
+
+        聚合任务的输入与产出是"创建那一刻"的**快照**（按成员顺序复制，见
+        :mod:`desktop.services.aggregate_ingest`）。成员重跑之后这份快照就
+        过期了，而聚合任务的成员/顺序是创建时定的——没有这个入口，用户只能
+        删掉聚合任务重选一遍成员。
+
+        ⚠️ 会**覆盖**聚合任务现有的输入/产出（只动 ``NNN_`` 前缀的文件与
+        起点那条合成记录），所以先弹确认框；确认后整套搬运在后台跑。
+        """
+        task_id = getattr(self, "task_id", None)
+        if not task_id or not self._is_aggregate_task():
+            return
+        if self._aggregate_pending():
+            self._toast("info", "正在汇集", "上一次汇集还没结束，请稍候。")
+            return
+        from desktop.ui.confirm_dialog import ConfirmDialog
+
+        record = self.store.get_task(task_id) or {}
+        members = "、".join(str(m) for m in (record.get("members") or []))
+        dialog = ConfirmDialog(
+            "重新汇集聚合输入",
+            f"将按当前成员顺序（{members}）重新复制各成员在起始节点上的"
+            "输入与产出。聚合任务里已有的输入/产出会被覆盖，起点节点重新记为"
+            "「已完成」。",
+            self,
+            yes_text="重新汇集",
+        )
+        if not dialog.exec():
+            return
+        self._run_aggregate_refresh(task_id)
+
+    def restart_aggregate_ingest(self, task_id: str) -> bool:
+        """**已经确认过**要重取数时直接开工（不弹确认框，返回是否真起了）。
+
+        供流程页"改了起始节点"用（用户 2026-11-18）：起点一变，旧起点汇集的
+        输入与处理结果就作废了，必须立刻按新起点重取一遍——否则详情页那一步
+        永远没有数据，用户还得自己去点页头那颗 ⟳。
+
+        ⚠️ 不做确认：调用方（``TaskFlowPage._on_done``）已经弹过"历史数据
+        作废"的确认框，这里再问一次就是重复打扰。
+        """
+        if not task_id:
+            return False
+        if getattr(self, "task_id", None) != task_id:
+            return False
+        if not self._is_aggregate_task():
+            return False
+        if self._aggregate_pending():
+            self._toast("info", "正在汇集", "上一次汇集还没结束，请稍候。")
+            return False
+        self._run_aggregate_refresh(task_id)
+        return True
+
+    def _run_aggregate_refresh(self, task_id: str) -> None:
+        """真正启动重新汇集（不含确认框；自测直接调这一层）。"""
+        from desktop.services.aggregate_ingest import set_pending_marker
+        from desktop.workers import AggregateIngestWorker
+
+        try:
+            set_pending_marker(self.store.task_dir(task_id), True)
+        except (OSError, ValueError):
+            pass
+        worker = AggregateIngestWorker(self.store, task_id)
+
+        def wire(w, thread) -> None:
+            connect_queued(
+                self, w.finished,
+                lambda *_: self._on_aggregate_refreshed(task_id), thread,
+            )
+            connect_queued(
+                self, w.failed,
+                lambda _tid, msg: self._on_aggregate_refresh_failed(msg), thread,
+            )
+            w.finished.connect(thread.quit)
+            w.failed.connect(thread.quit)
+
+        self.run_worker(lambda: worker, wire)
+
+    def _on_aggregate_refreshed(self, task_id: str) -> None:
+        """重新汇集完成：提示并就地重载（页面清单/步骤状态全换新）。"""
+        self._toast(
+            "success", "聚合输入已重新汇集",
+            "各成员在起始节点上的输入与产出已按当前顺序重新复制。",
+        )
+        if getattr(self, "task_id", None) == task_id:
+            self.set_task(task_id)
+
+    def _on_aggregate_refresh_failed(self, message: str) -> None:
+        self._toast("error", "重新汇集失败", message)
+
     def _entry_input_kind(self) -> str:
         """本任务流程**入口那一步**要用户提供什么：``"pdf"/"images"/""``。
 
@@ -1019,7 +1217,12 @@ class PageListMixin:
         PDF；②检测/排版/去底色/PDF排版 打头只显示图片+文件夹；③非第一个
         流程节点不配输入控件）。没有任务时按**默认流程**给（入口是
         「图片提取」⇒ ``"pdf"``），与 :meth:`flow_slots` 的兜底同源。
+
+        ⚠️ **聚合任务恒 ``""``**：它的入口输入由成员产物汇集而来，不是用户
+        上传的——显示"选择图片/文件夹"按钮只会让人以为这台任务要自己喂图。
         """
+        if self._is_aggregate_task():
+            return ""
         from desktop.steps.ports import flow_entry_input_kind
 
         task_id = getattr(self, "task_id", None)
@@ -1166,6 +1369,10 @@ class PageListMixin:
         #    "上传图片"（用户 2026-10-06），那时高亮的必须是**图片按钮**。
         kind = self._missing_input_kind()
         entry_kind = self._entry_input_kind()
+        # ---- 聚合任务专属的「重新汇集」（入口输入按钮对它全藏）----
+        agg_button = getattr(self, "aggregate_refresh_button", None)
+        if agg_button is not None:
+            agg_button.setVisible(self._is_aggregate_task())
         # ---- 显隐：入口要 PDF ⇒ 只亮 PDF；要图片 ⇒ 只亮两个图片入口 ----
         needs_pdf = entry_kind == "pdf"
         needs_images = entry_kind == "images"

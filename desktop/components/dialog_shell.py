@@ -20,6 +20,7 @@
 
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog, QHBoxLayout, QVBoxLayout, QWidget
 
 from qfluentwidgets import PrimaryPushButton, PushButton, StrongBodyLabel
@@ -34,7 +35,9 @@ def shell_dialog(title: str, panel: QWidget, parent=None, *,
                  cancel_text: str = "取消",
                  on_ok=None, on_cancel=None,
                  show_cancel: bool = True,
-                 own_chrome: bool = False) -> QDialog:
+                 own_chrome: bool = False,
+                 resizable: bool = False,
+                 min_size: tuple[int, int] | None = None) -> QDialog:
     """搭一个模态弹窗，返回 ``QDialog``。
 
     :param panel: 内容面板（三个 ``*Panel`` 之一）。
@@ -43,15 +46,35 @@ def shell_dialog(title: str, panel: QWidget, parent=None, *,
     :param own_chrome:
         ``True`` = **面板自带标题与按钮行**（``CreateTaskPanel`` 就是这种），
         外壳不再加——否则同一弹窗里会出现两套标题、两排按钮。
+    :param resizable:
+        ``True`` = 标题栏给「最小化 / 最大化」按钮，窗口可自由拉伸（用户
+        2026-11-18：「选择子任务弹窗要显示窗口功能，放大缩小」）。默认
+        ``False`` 保持既有弹窗的固定观感——小弹窗（确认框、导出框）不需要
+        最大化按钮，多了反而让人误以为能拉成任意形状。
+    :param min_size: 仅 ``resizable`` 时有意义：窗口的**最小**尺寸。默认取
+        ``size`` 的 3/4——不锁死成开窗尺寸，小屏上才缩得回屏幕里。
 
     ⚠️ 面板自带的按钮**只是外观**，真正决定"确定/取消"的是本外壳：
     面板上的按钮是给自测与"无外壳直接用面板"的场景留的。
     """
     dlg = QDialog(parent)
     dlg.setWindowTitle(title)
-    dlg.setModal(True)
-    dlg.setMinimumSize(*size)
+    if resizable:
+        # ⚠️ QDialog 默认 flags = Dialog|WindowTitleHint|WindowSystemMenuHint|
+        #    WindowCloseButtonHint —— **没有**最小化/最大化按钮，不加这个标志
+        #    标题栏上就只有那个 ×。
+        dlg.setWindowFlags(
+            dlg.windowFlags() | Qt.WindowType.WindowMinMaxButtonsHint
+        )
+        # 右下角的拖拽手柄：qfluent 窗口边框很窄，没这个不好抓
+        dlg.setSizeGripEnabled(True)
+        dlg.setMinimumSize(*(min_size or (size[0] * 3 // 4, size[1] * 3 // 4)))
+    else:
+        dlg.setMinimumSize(*size)
     dlg.resize(*size)
+    # ⚠️ 模态放在改 flags 之后：setWindowFlags 会重建原生窗口，先设模态容易被
+    #    一并重置（弹窗不挡父窗口 ⇒ 用户能点创建页，正是本轮要避免的）
+    dlg.setModal(True)
 
     root = QVBoxLayout(dlg)
     if own_chrome:

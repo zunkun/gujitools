@@ -612,6 +612,15 @@ def run(ctx) -> None:
            "已选中" in board.status.text()
            and _target_node.name in board.status.text(),
            board.status.text())
+        # ⚠️ 用户 2026-11-18：状态行以前直接印阶段 key（「运行阶段：rembg」），
+        #    界面上只剩英文；必须走 ports.stage_label 的中文名。
+        from desktop.steps import ports
+
+        assert _target_node.stage  # 刚挑的必然是 task 节点
+        ok("状态行的运行阶段印中文名（不再是 rembg/extract 这种 key）",
+           f"运行阶段：{ports.stage_label(_target_node.stage)}" in board.status.text()
+           and _target_node.stage not in board.status.text(),
+           board.status.text())
 
         # 动作按钮**真的接上了**编辑器（接不上就是死按钮——上一版的毛病）
         fired: list[str] = []
@@ -1022,7 +1031,9 @@ def run(ctx) -> None:
        ctx.pdf.stem in ctx_page.name_hint.text(),
        ctx_page.name_hint.text())
     _panel_layout = ctx_page.panel.layout()
-    _page_layout = ctx_page.layout()
+    # ⚠️ 创建页外层是 QScrollArea（用户 2026-11-18：整页纵向滚动），页面的
+    #    边距在**滚动内容**那一层的布局上——量 page.layout() 会拿到 0。
+    _page_layout = ctx_page.content.layout()
     assert _panel_layout is not None and _page_layout is not None  # 布局必然已建
     ok("面板在页面内不带第二层边距（「创建任务」与「任务名称」左对齐）",
        _panel_layout.contentsMargins().left() == 0

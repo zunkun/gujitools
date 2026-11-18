@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """任务列表表格组件：每行带阶段状态胶囊与 详情/删除 操作按钮。
-「节点状态」原来是一整串 ``提取图片:成功  检测文本框:成功 …`` 纯文本，
+「任务节点」原来是一整串 ``提取图片:成功  检测文本框:成功 …`` 纯文本，
 列宽一紧就被截断、颜色上也没法区分成败。现在改为状态胶囊，颜色来自统一的
 语义色，鼠标悬停能看到完整阶段名与进度。
 
@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 from datetime import datetime
+from pathlib import Path
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPen
 from PySide6.QtWidgets import (
@@ -27,6 +28,27 @@ from desktop import ui
 from desktop.ui import theme as T
 
 ROW_HEIGHT = 56
+
+
+def task_row_matches(row: dict, keyword: str) -> bool:
+    """任务行模糊匹配：任务名或源文件名（不含目录）包含关键词，大小写不敏感。
+
+    任务管理列表页与聚合任务「选择子任务」弹窗**共用**的过滤判据（单一来源）。
+    只做**子串**匹配就够了——任务名是用户自己起或 PDF 文件名，长度短、
+    没有拼写容错的需求；上 difflib 之类的模糊算法反而会让「搜 A 出来 B」
+    变得不可预期。
+    """
+    if not keyword:
+        return True
+    haystack = " ".join(
+        [
+            str(row.get("name") or ""),
+            # 只取文件名，避免用户磁盘上带关键词的父目录导致误命中
+            Path(str(row.get("source_path") or "")).name,
+        ]
+    ).lower()
+    return keyword.lower() in haystack
+
 
 # 危险操作按钮（删除）样式已提升为共享函数：`theme.danger_button_qss()`，
 # 任务表格与拼版面板的删除按钮共用同一份（单一来源，2026-09-30）。
@@ -66,7 +88,9 @@ class NameLabel(QLabel):
         统一走这个方法——hover 进入/离开都调它。
         """
         self._link_color = QColor(color)
-        super().setStyleSheet(f"QLabel {{ color: {self._link_color.name()}; background:transparent; }}")
+        super().setStyleSheet(
+            f"QLabel {{ color: {self._link_color.name()}; background:transparent; }}"
+        )
         self.update()  # 触发重绘，下划线颜色跟着变
 
     def linkColor(self) -> QColor:
@@ -83,7 +107,10 @@ class NameLabel(QLabel):
             self.setText(self._full)
             return
         fm = QFontMetrics(self.font())
-        self.setText(fm.elidedText(self._full, Qt.TextElideMode.ElideMiddle, self.width()) or self._full)
+        self.setText(
+            fm.elidedText(self._full, Qt.TextElideMode.ElideMiddle, self.width())
+            or self._full
+        )
 
     def paintEvent(self, event):
         """先让父类画文字，再在文字下方自绘一条同色下划线。
@@ -148,7 +175,7 @@ class StageChips(QWidget):
 class TaskTable(QWidget):
     """任务列表表格：每行带阶段状态胶囊与 详情/删除 操作。
 
-    列固定为 序号 / 任务名 / 创建时间 / 节点状态 / 操作；源文件路径
+    列固定为 序号 / 任务名 / 创建时间 / 任务节点 / 操作；源文件路径
     不成列，仅作为任务名 tooltip。open_detail / delete_request 信号
     分别携带任务 id。
 
@@ -159,13 +186,13 @@ class TaskTable(QWidget):
     open_detail = Signal(str)
     delete_request = Signal(str)
 
-    COLUMNS = ["序号", "任务名称", "创建时间", "节点状态", "操作"]
+    COLUMNS = ["序号", "任务名称", "创建时间", "任务节点", "操作"]
 
     # 各列宽度；None 表示该列自适应拉伸。
     # ⚠️ 「序号」列**不用**这里的值：它按字体实测（见 `_number_column_width`）。
     # 任务号是 4 位数字（`0001`），写死 56px 会被省略成「…」（已踩）。
     # 「任务名称」是主体信息，拉伸列给它。
-    # 「节点状态」按**最多 5 个胶囊**给宽：启用「图片拼版」的任务会在「PDF」
+    # 「任务节点」按**最多 5 个胶囊**给宽：启用「图片拼版」的任务会在「PDF」
     # 前多一个「拼版」胶囊（用户 2026-10-03：节点有几个要看详情）。胶囊实际
     # 宽度 = 文字宽 + 30（见 ui.widgets.StatusChip.sizeHint），四个短名
     # （提取/检测/去底/拼版，各 2 字 ≈ 24px → 54px；PDF 3 字符更窄）合计
@@ -245,7 +272,9 @@ class TaskTable(QWidget):
         字体实测，字号/DPI 变了也跟得上。
         """
         metrics = QFontMetrics(self.table.font())
-        needed = metrics.horizontalAdvance("0000") + 2 * self._CELL_TEXT_MARGIN + 4  # 余量：不同字体/DPI 下的字宽差
+        needed = (
+            metrics.horizontalAdvance("0000") + 2 * self._CELL_TEXT_MARGIN + 4
+        )  # 余量：不同字体/DPI 下的字宽差
         return max(self._NUMBER_COLUMN_MIN, needed)
 
     def _on_cell_clicked(self, row: int, column: int) -> None:
@@ -269,6 +298,11 @@ class TaskTable(QWidget):
     def _name_widget(self, task: dict) -> QWidget:
         """任务名单元格：链接样式标签（自绘下划线 + 主色 + hover 变深 + 手型光标）。
 
+        聚合任务（``task["kind"] == "aggregate"``）在名字后面**追加一枚
+        「聚合」小标记**：它与普通任务混在同一张列表里（用户 2026-11-17
+        定的呈现方式），不带标记的话"这条任务的输入是别的任务"这件事
+        完全看不出来。
+
         ⚠️ 容器必须与 StageChips 一样锁成整行高：qfluent 的
         ``TableItemDelegate.updateEditorGeometry`` 用「改高度前」的容器高算居中
         偏移、随后又把高度改成整格高，容器高 ≠ 行高时标签在真实运行中会偏到行底。
@@ -279,7 +313,7 @@ class TaskTable(QWidget):
         w.setFixedHeight(ROW_HEIGHT)
         layout = QHBoxLayout(w)
         layout.setContentsMargins(T.SPACE_SM, 0, T.SPACE_SM, 0)
-        layout.setSpacing(0)
+        layout.setSpacing(T.SPACE_SM)
 
         label = NameLabel(str(task["name"]))
         # 不再用 font.setUnderline(True)：字体下划线紧贴字形、间距不可调；
@@ -311,6 +345,10 @@ class TaskTable(QWidget):
         label.mousePressEvent = _press
 
         layout.addWidget(label)
+        if task.get("kind") == "aggregate":
+            # 「聚合」小标记：中性灰（draft 色），别用状态语义色——它不是
+            # 阶段进度，只是"这条任务的类型"说明。
+            layout.addWidget(ui.StatusChip("聚合", "draft"))
         layout.addStretch()
         return w
 

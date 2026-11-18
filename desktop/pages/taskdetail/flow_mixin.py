@@ -75,10 +75,15 @@ class FlowMixin:
             return
         diagram = self.store.task_diagram(self.task_id)
         if not diagram.nodes:
-            self._toast("warning", "流程为空",
-                        "本任务的流程文件读不出节点，"
-                        "请在列表页重新创建任务。")
-            return
+            # ⚠️ 聚合任务的流程页还有"子任务 + 起始节点"可看，图读不出时它会按
+            #    落库的起始节点派生一张兜底（见 ``TaskFlowPage._open_aggregate``）
+            #    ——所以别在这里就把人拦住，否则用户连子任务都看不到。
+            record = self.store.get_task(self.task_id) or {}
+            if str(record.get("kind") or "") != "aggregate":
+                self._toast("warning", "流程为空",
+                            "本任务的流程文件读不出节点，"
+                            "请在列表页重新创建任务。")
+                return
         self.flow_edit_requested.emit(self.task_id)
 
     def _open_flow_panel(self):

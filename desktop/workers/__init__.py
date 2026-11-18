@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 #: **只影响类型检查**——运行时的惰性导入一点没变（启动期仍不会拉进
 #: preview_worker 等重模块）。
 if TYPE_CHECKING:
+    from desktop.workers.aggregate_ingest_worker import AggregateIngestWorker
     from desktop.workers.copy_source_worker import CopyFilesWorker, CopySourceWorker
     from desktop.workers.data_package_worker import (
         DataCheckWorker, DataDownloadWorker,
@@ -46,6 +47,7 @@ if TYPE_CHECKING:
     from desktop.workers.update_worker import AppDownloadWorker, UpdateCheckWorker
 
 __all__ = [
+    "AggregateIngestWorker",
     "AppDownloadWorker",
     "CopyFilesWorker",
     "CopySourceWorker",
@@ -71,6 +73,9 @@ __all__ = [
 
 #: 惰性导出的名字 → (模块路径, 属性名)
 _LAZY = {
+    "AggregateIngestWorker": (
+        "desktop.workers.aggregate_ingest_worker", "AggregateIngestWorker",
+    ),
     "AppDownloadWorker": (
         "desktop.workers.update_worker", "AppDownloadWorker",
     ),

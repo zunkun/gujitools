@@ -86,6 +86,7 @@ def run(ctx) -> None:
     _check_stack_pages_use_static_table(ok)
     _check_unmapped_nodes(ok)
     _check_list_chips_follow_diagram(ctx, ok)
+    _check_chips_status_by_node(ctx, ok)
 
 
 # ---------------------------------------------------------------- 1. 旧运行语义模型
@@ -924,7 +925,8 @@ def _check_list_chips_follow_diagram(ctx, ok) -> None:
         worker = TaskRowsWorker(repo)
         try:
             return [c["short"] for c in
-                    worker._stage_chips(task_id, repo.stage_states(task_id))]
+                    worker._stage_chips(task_id, repo.stage_states(task_id),
+                                        repo.node_states(task_id))]
         finally:
             worker.deleteLater()
 
@@ -1009,6 +1011,121 @@ def _check_list_chips_follow_diagram(ctx, ok) -> None:
             repo.delete_task(task_id)
         except Exception:  # noqa: BLE001 - 清理失败不该让自测失败
             pass
+
+
+def _check_chips_status_by_node(ctx, ok) -> None:
+    """列表胶囊的**颜色**按"节点"取，不按"阶段"取（2026-11-17 用户报 0011）。
+
+    现象：某任务的「检测文本框」胶囊一直是灰色「未执行」，可它的裁图产物明明
+    已经产出、下游去底/拼版/PDF 全跑完了（用户截图 0011 一行）。
+
+    根因：「检测文本框」这一格在 ``runs.json`` 里对应**两个动作**——
+    ``detect``（YOLO 出框）与 ``detect_submit``（提交裁图）。沿用上一页 /
+    全部手工标注时不跑 ``detect``，``runs["detect"]`` 压根没有记录；
+    按``stage``取 ``stage_states()`` 就只会读到"没有记录 ⇒ pending"。
+
+    用户口径：「只要这个节点执行过，那么就应当是生效的」。判据 = 详情页步骤条
+    同一条：``store.node_states()`` 按节点 id 归并同格内的全部动作。
+
+    同时守住反向：**节点没跑过**就是灰的（不能因为"同阶段的另一个节点跑过"
+    而点亮——那是多节点任务里最容易造假的一种绿）。
+    """
+    from desktop.steps.bpmn_diagram import (
+        KIND_END, KIND_START, KIND_TASK, DiagramFlow, DiagramNode, FlowDiagram,
+    )
+    from desktop.store import TaskStore
+    from desktop.workers.task_rows_worker import TaskRowsWorker
+
+    repo = TaskStore(ctx.tmp / "chips_status_store")
+    pdf = ctx.pdf
+
+    def chips(task_id: str) -> list[dict]:
+        worker = TaskRowsWorker(repo)
+        try:
+            return worker._stage_chips(
+                task_id, repo.stage_states(task_id), repo.node_states(task_id)
+            )
+        finally:
+            worker.deleteLater()
+
+    def chip_of(chips_: list[dict], short: str, nth: int = 0) -> dict:
+        hits = [c for c in chips_ if c["short"] == short]
+        return hits[nth] if len(hits) > nth else {}
+
+    def mark(task_id: str, stage: str, node: str, done: int = 3) -> None:
+        """直接往 runs.json 里记一条成功记录（不真跑 worker）。"""
+        run_id = repo.create_stage_run(task_id, stage, {}, node_id=node)
+        repo.finish_stage(task_id, run_id, "success", progress=(done, done))
+
+    created: list[str] = []
+    try:
+        # ① 全新任务：四个胶囊都在，且全是灰色「未执行」
+        fresh = repo.create_task(pdf, "chips-status-fresh", "胶囊-全新任务")
+        created.append(fresh)
+        fresh_chips = chips(fresh)
+        ok("全新任务：四个胶囊照旧画出来（不是空）",
+           [c["short"] for c in fresh_chips] == ["提取", "检测", "去底", "PDF"],
+           str([c["short"] for c in fresh_chips]))
+        ok("全新任务：胶囊全是「未执行」（pending），一个都不许绿",
+           all(c["status"] == "pending" for c in fresh_chips),
+           str([c["status"] for c in fresh_chips]))
+
+        # ② 只跑了「提交检测结果」（detect_submit），没跑 YOLO 检测（detect）
+        #    ⇒ 检测胶囊必须是绿的，进度取提交那次的数量。
+        only_submit = repo.create_task(pdf, "chips-status-submit",
+                                       "胶囊-只提交裁图")
+        created.append(only_submit)
+        de_node = next(
+            s.node_id for s in repo.task_slots(only_submit)
+            if s.step == "detect"
+        )
+        mark(only_submit, "detect_submit", de_node, done=7)
+        ok("只提交过裁图（没有 detect 记录）⇒ 阶段级状态仍是 pending",
+           repo.stage_states(only_submit)["detect"]["status"] == "pending",
+           str(repo.stage_states(only_submit)["detect"]))
+        de_chip = chip_of(chips(only_submit), "检测")
+        ok("只提交过裁图 ⇒ 检测胶囊是「成功」（节点执行过就生效）",
+           de_chip.get("status") == "success", str(de_chip))
+        ok("检测胶囊的提示带提交那次的进度",
+           "7/7" in str(de_chip.get("tip")), str(de_chip.get("tip")))
+
+        # ③ 多节点反向：同阶段有两个节点，只跑了第一个 ⇒ 第二个仍是灰的
+        #    （按阶段取会把"另一个节点的成功"借过来，正是 B 方案要防的）
+        twin = FlowDiagram(
+            nodes=(
+                DiagramNode("s0", KIND_START, "源PDF"),
+                DiagramNode("e1", KIND_TASK, "提取图片", stage="extract"),
+                DiagramNode("d1", KIND_TASK, "检测文本框", stage="detect"),
+                DiagramNode("d2", KIND_TASK, "检测文本框2", stage="detect"),
+                DiagramNode("p1", KIND_TASK, "PDF排版", stage="print"),
+                DiagramNode("s9", KIND_END, "完成"),
+            ),
+            flows=(
+                DiagramFlow("t0", "s0", "e1"),
+                DiagramFlow("t1", "e1", "d1"),
+                DiagramFlow("t2", "d1", "d2"),
+                DiagramFlow("t3", "d2", "p1"),
+                DiagramFlow("t4", "p1", "s9"),
+            ),
+        )
+        two = repo.create_task(pdf, "chips-status-two", "胶囊-两个检测节点",
+                              diagram=twin)
+        created.append(two)
+        mark(two, "detect", "d1")
+        two_chips = chips(two)
+        ok("两个检测节点：胶囊也画两枚「检测」",
+           len([c for c in two_chips if c["short"] == "检测"]) == 2,
+           str([c["short"] for c in two_chips]))
+        ok("两个检测节点：跑过的那个绿、没跑的那个灰（不借邻节点状态）",
+           chip_of(two_chips, "检测", 0).get("status") == "success"
+           and chip_of(two_chips, "检测", 1).get("status") == "pending",
+           str([c["short"] + "=" + c["status"] for c in two_chips]))
+    finally:
+        for task_id in created:
+            try:
+                repo.delete_task(task_id)
+            except Exception:  # noqa: BLE001 - 清理失败不该让自测失败
+                pass
 
 
 __all__ = ["NAME", "DEPENDS", "TITLE", "run"]

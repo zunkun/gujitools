@@ -17,6 +17,7 @@ from desktop.shell import NAV_COMPACT_WIDTH, ModuleShell
 from desktop.store import TaskStore
 from desktop.ui import theme as T
 from desktop.ui.menu import install_title_bar
+from desktop.ui.native_minimize import enable_native_minimize
 from desktop.utils.icon import rounded_window_icon
 from desktop.ui.style import apply_app_style
 from desktop.ui.window_size import apply_window_size
@@ -123,6 +124,10 @@ class MainWindow(FramelessMainWindow, WorkerHost):
         # 自绘标题栏（图标 / 标题 / 菜单同排）+ 中央壳层。⚠️ 必须在图标之后：
         # install_title_bar 要把窗口图标同步给标题栏的 iconLabel（见那里说明）。
         install_title_bar(self)
+        # 无边框窗口缺 WS_MINIMIZEBOX：最小化会退化成"左下角老式瓦片"且
+        # 任务栏没有按钮（用户 2026-11-18 报障）。构造后补一次原生样式位，
+        # 离屏/非 Windows 自动跳过（见 native_minimize.py 的根因分析）。
+        enable_native_minimize(self)
 
         self._store = TaskStore()
         # 壳层持有「导航栏 + 页面栈 + 各模块页」；详情页仍是惰性创建

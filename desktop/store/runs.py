@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 from desktop.store.json_io import read_json, write_json
-from desktop.store.tasks import STAGES
+from desktop.store.tasks import IMPOSITION_STAGE, STAGES
 
 MAX_RUN_HISTORY = 20  # 每阶段保留的执行历史条数
 
@@ -28,9 +28,7 @@ MAX_RUN_HISTORY = 20  # 每阶段保留的执行历史条数
 #: 64KB~0.5MB，×20 条历史，运行期每 200ms 的 ``set_progress`` 全量重写一次 →
 #: 每秒几十 MB 的磁盘写放大 + 主线程 json.dumps 卡顿（2026-09-26 第二轮审计 M5）。
 #: ⚠️ ``pdf_name`` 等**表单字段必须保留**（``_latest_print_pdf_path`` 靠它解析产物名）。
-_RUN_STRIP_KEYS = frozenset(
-    {"_effects", "files", "page_rects", "page_rotations"}
-)
+_RUN_STRIP_KEYS = frozenset({"_effects", "files", "page_rects", "page_rotations"})
 
 
 class RunMixin:
@@ -41,7 +39,7 @@ class RunMixin:
         root: Path
         task_dir: Callable[[str], Path]
         task_slots: Callable[[str], Any]
-        #: 本任务流程图（``FlowDiagram``）——节点状态查询要按它把老记录
+        #: 本任务流程图（``FlowDiagram``）——任务节点查询要按它把老记录
         #: 归属到主节点（见 :meth:`RunMixin._node_primary`）。
         task_diagram: Callable[[str], Any]
 
@@ -73,7 +71,11 @@ class RunMixin:
         return []
 
     def create_stage_run(
-        self, task_id: str, stage: str, parameters: dict, resume: bool = False,
+        self,
+        task_id: str,
+        stage: str,
+        parameters: dict,
+        resume: bool = False,
         node_id: str | None = None,
     ) -> str:
         """
@@ -164,8 +166,9 @@ class RunMixin:
         """某阶段的历史执行记录，最新在前。"""
         return self._as_history(self._load_runs(task_id).get(stage))
 
-    def list_node_runs(self, task_id: str, node_id: str,
-                       stage: str | None = None) -> list[dict]:
+    def list_node_runs(
+        self, task_id: str, node_id: str, stage: str | None = None
+    ) -> list[dict]:
         """某**节点实例**的历史执行记录（最新在前）。
 
         B 方案（2026-10-17）：同一步骤的多个节点各跑各的，历史下拉框只该列
@@ -177,13 +180,15 @@ class RunMixin:
         records = (
             self.list_stage_runs(task_id, stage)
             if stage
-            else [r for history in self._load_runs(task_id).values()
-                  for r in self._as_history(history)]
+            else [
+                r
+                for history in self._load_runs(task_id).values()
+                for r in self._as_history(history)
+            ]
         )
         primary = self._node_primary(task_id, stage)
         return [
-            record for record in records
-            if (record.get("node") or primary) == node_id
+            record for record in records if (record.get("node") or primary) == node_id
         ]
 
     def _node_primary(self, task_id: str, stage: str | None) -> str | None:
@@ -241,9 +246,7 @@ class RunMixin:
         会把整份 runs.json 读 N 遍（任务多跑过几次就有几十上百 KB）。
         """
         runs = self._load_runs(task_id)
-        return {
-            stage: self._as_history(records) for stage, records in runs.items()
-        }
+        return {stage: self._as_history(records) for stage, records in runs.items()}
 
     def flow_stages(self, task_id: str) -> set[str]:
         """本任务流程里**真实存在**的运行阶段集合（按界面格摊开）。
@@ -266,12 +269,12 @@ class RunMixin:
         from desktop.steps import ports
 
         try:
-            steps = {slot.step for slot in self.task_slots(task_id)
-                     if not slot.optional}
+            steps = {
+                slot.step for slot in self.task_slots(task_id) if not slot.optional
+            }
         except Exception:  # noqa: BLE001 - 读不到流程不该拖垮调用方
             return set()
-        return {stage for stage, step in ports.STAGE_STEPS.items()
-                if step in steps}
+        return {stage for stage, step in ports.STAGE_STEPS.items() if step in steps}
 
     def stage_states(self, task_id: str) -> dict[str, dict]:
         """每个阶段最近一次运行的状态与进度（页面步骤条渲染用）。
@@ -303,7 +306,44 @@ class RunMixin:
                 }
             else:
                 states[stage] = {
-                    "status": "pending", "done": 0, "total": 0, "completed": False,
+                    "status": "pending",
+                    "done": 0,
+                    "total": 0,
+                    "completed": False,
                     "in_flow": stage in in_flow,
                 }
         return states
+
+    def completed_aggregate_stages(self, task_id: str) -> list[str]:
+        """这个任务**已经完成**、可作聚合成员节点的阶段清单（按拓扑序）。
+
+        口径（用户 2026-11-17 晚 → 2026-11-18 修订）：只列**已经完成**的
+        节点，**含「提取图片」**——2026-11-18 起「提取」也可以是聚合的起始
+        节点（"提取只能使用其产生的结果，没有输入源"，汇集器对 extract 只
+        搬产出），它完成后同样能交得出产物，界面候选（并集）要看得见它。
+
+        - extract/detect/rembg/print：``stage_states`` 里 ``completed``（历史
+          上成功过，重试失败不算翻案）且 ``in_flow`` 的；
+        - imposition：没有 runs 记录（纯合成、不走 worker），与列表胶囊同
+          一口径——已启用**且**已经有拼版页才算完成；
+        - 与 ``AGGREGATE_START_STAGES`` 求交后按其顺序返回（= 默认流程拓扑序，
+          下拉框选项顺序与流程方向一致）。
+        """
+        from desktop.steps.aggregate import AGGREGATE_START_STAGES
+
+        done: set[str] = set()
+        try:
+            for stage, state in self.stage_states(task_id).items():
+                if state.get("completed") and state.get("in_flow", True):
+                    done.add(stage)
+        except Exception:  # noqa: BLE001 - 读不到进度就按"没完成"降级
+            return []
+        try:
+            if self.imposition_enabled(task_id) and self.load_imposition_doc(
+                task_id
+            ).get("pages"):
+                done.add(IMPOSITION_STAGE)
+        except Exception:  # noqa: BLE001 - 拼版信息读失败不拖垮清单
+            pass
+        done &= set(AGGREGATE_START_STAGES)
+        return [s for s in AGGREGATE_START_STAGES if s in done]

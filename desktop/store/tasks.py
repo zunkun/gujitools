@@ -259,6 +259,37 @@ class TaskMixin:
                 return task
         return None
 
+    def _allocate_task_dir(self) -> tuple[str, Path]:
+        """原子占号：分配一个空闲任务号并**建出任务目录**。
+
+        ⚠️ **取号靠"目录创建的原子性"，不靠"先查后建"**（2026-09-26 审计）：
+        单例守卫是**按构建目录**判定的，开发版与安装版会同时运行、共用同一个
+        数据目录（`desktop/single_instance.py` 明说了）。两个进程会算出同一个
+        `_next_task_no()`、同时通过"号没被占用"的检查 → 拿到同一个任务号、
+        写同一个目录、索引里互相覆盖（一个任务凭空消失）。
+        `mkdir(exist_ok=False)` 在文件系统层是原子的：抢不到就顺延取号。
+
+        返回 ``(task_id, task_dir)``；占住号的同时抬水位
+        （:meth:`_bump_max_allocated`：此后哪怕任务马上被删，号也不回收）。
+        """
+        base_no = int(self._next_task_no())
+        task_dir: Path | None = None
+        task_id = ""
+        for offset in range(400):
+            task_id = f"{base_no + offset:04d}"
+            candidate = self.task_dir(task_id)
+            try:
+                # 原子占号：目录已存在说明别人（或旧数据）占了 → 顺延
+                candidate.mkdir(parents=True, exist_ok=False)
+            except FileExistsError:
+                continue
+            task_dir = candidate
+            break
+        if task_dir is None:
+            raise RuntimeError("无法分配到空闲的任务号（连续 400 个都被占用）")
+        self._bump_max_allocated(int(task_id))
+        return task_id, task_dir
+
     def create_task(
         self,
         source_path: Path | str | None,
@@ -304,24 +335,7 @@ class TaskMixin:
           可能顺延，用预测值会让「任务#0008」落在 0009 号任务上）。
         """
         now = time.time()
-        base_no = int(self._next_task_no())
-        task_dir: Path | None = None
-        task_id = ""
-        for offset in range(400):
-            task_id = f"{base_no + offset:04d}"
-            candidate = self.task_dir(task_id)
-            try:
-                # 原子占号：目录已存在说明别人（或旧数据）占了 → 顺延
-                candidate.mkdir(parents=True, exist_ok=False)
-            except FileExistsError:
-                continue
-            task_dir = candidate
-            break
-        if task_dir is None:
-            raise RuntimeError("无法分配到空闲的任务号（连续 400 个都被占用）")
-        # 号已占住（目录建成了）⇒ 立刻抬水位：此后**哪怕这个任务马上被删**，
-        # 这个号也不会被回收（用户 2026-10-16，见 _bump_max_allocated）。
-        self._bump_max_allocated(int(task_id))
+        task_id, task_dir = self._allocate_task_dir()
 
         for sub in ("stages", "runs", "thumbnails/source"):
             (task_dir / sub).mkdir(parents=True, exist_ok=True)
@@ -395,6 +409,143 @@ class TaskMixin:
         )
         self._save_tasks_index(tasks)
         return task_id
+
+    def create_aggregate_task(
+        self,
+        members: list[str],
+        member_stage: str = "",
+        name: str = "",
+        diagram=None,
+        member_stages: list[str] | None = None,
+    ) -> str:
+        """新建**聚合任务**并返回任务号（四位零填充）。
+
+        聚合任务（用户 2026-11-17）：选几个**已有任务**在各自节点上的产物
+        作输入（顺序有意义，决定合并页序）。与 :meth:`create_task` 的差别：
+
+        - **不吃源文件**：索引里 ``source_path`` 存空串（详情页按"尚未选择
+          PDF"处理）。运行期的输入是成员任务的产物——创建之后由
+          :mod:`desktop.services.aggregate_ingest` 在后台按成员顺序汇集进来
+          （输入落到入口目录、产出落到同一步骤的产物目录，起点记为已完成）；
+        - 索引多四个字段：``kind="aggregate"``（列表加标记、弹窗选择器
+          排除聚合任务嵌套聚合）、``members``（成员任务号，**按用户排序**）、
+          ``member_stages``（与 members 对齐的节点 key 清单；界面 2026-11-17
+          本轮改回**全体共用一个起始节点**，所以创建页传来的值都相同，
+          字段形状保持不变——老任务里仍可能逐成员不同）、``member_stage``
+          （成员节点里**拓扑序最早**的那个——派生流程从它开始，"前面的丢弃，
+          后面的接上"）；
+        - ``flow.bpmn`` **永远不是**默认模板的字节拷贝：给了 ``diagram``
+          （用户在创建面板里编辑过的派生图）就落它；没给就落
+          :func:`desktop.steps.aggregate.derive_aggregate_diagram` 派生的图
+          ——模板里有 extract，对聚合任务语义不对。
+
+        ``members`` 里出现不存在的任务号时抛 ``ValueError``（聚合任务指向
+        一个不存在的任务等于埋雷，宁可当场炸在创建时）。``member_stages``
+        不给（旧口径）⇒ 全体成员都用 ``member_stage``；给了 ⇒ 按清单逐个
+        校验（长度必须与成员数一致、每个都在允许清单里），``member_stage``
+        由清单**重新推导**（取最早），传什么都以推导为准。
+        """
+        from desktop.steps.aggregate import (
+            AGGREGATE_START_STAGES,
+            derive_aggregate_diagram,
+            earliest_aggregate_stage,
+        )
+
+        clean_members = [str(m).strip() for m in (members or []) if str(m).strip()]
+        if not clean_members:
+            raise ValueError("聚合任务至少要选一个成员任务")
+        unknown = [m for m in clean_members if self.get_task(m) is None]
+        if unknown:
+            raise ValueError(f"成员任务不存在：{'、'.join(unknown)}")
+        if member_stages is None:
+            if member_stage not in AGGREGATE_START_STAGES:
+                raise ValueError(f"非法的聚合起始节点：{member_stage}")
+            clean_stages = [member_stage] * len(clean_members)
+        else:
+            clean_stages = [str(s).strip() for s in member_stages]
+            if len(clean_stages) != len(clean_members):
+                raise ValueError(
+                    f"成员节点数（{len(clean_stages)}）与成员数"
+                    f"（{len(clean_members)}）不一致"
+                )
+            bad = sorted({s for s in clean_stages if s not in AGGREGATE_START_STAGES})
+            if bad:
+                raise ValueError(f"非法的成员起始节点：{'、'.join(bad)}")
+            # 单一事实：落库的 member_stage 恒等于成员节点里最早的
+            member_stage = earliest_aggregate_stage(clean_stages)
+
+        now = time.time()
+        task_id, task_dir = self._allocate_task_dir()
+
+        for sub in ("stages", "runs", "thumbnails/source"):
+            (task_dir / sub).mkdir(parents=True, exist_ok=True)
+
+        # 聚合任务没有源 PDF，thumbnails/source 是空目录占位（与空壳任务
+        # 同一待遇）；flow.bpmn 落派生图/用户编辑过的图（不走字节拷贝）。
+        flow = diagram if diagram is not None else derive_aggregate_diagram(member_stage)
+        if flow is not None and flow.nodes:
+            try:
+                flow.save(default_flow_path(task_dir))
+            except OSError as exc:
+                # 同 create_task：写失败不拖死建任务，但至少留一条日志
+                self._log_flow_write_error(task_id, exc)
+
+        tasks = self._load_tasks_index()
+        clean_name = str(name or "").strip()
+        if not clean_name:
+            clean_name = f"任务#{task_id}"
+        tasks.append(
+            {
+                "id": task_id,
+                "name": clean_name,
+                "source_path": "",
+                "source_hash": "",
+                "status": "draft",
+                "created_at": now,
+                "updated_at": now,
+                "kind": "aggregate",
+                "members": clean_members,
+                "member_stage": member_stage,
+                "member_stages": clean_stages,
+            }
+        )
+        self._save_tasks_index(tasks)
+        return task_id
+
+    def set_aggregate_start(self, task_id: str, stage: str) -> bool:
+        """改**已建好的**聚合任务的起始节点（用户 2026-11-18）。
+
+        用户原话：「起始节点可以切换变更，如果变更了保存流程的时候，提示起始
+        节点丢失，聚合任务之前历史处理数据都丢失」。所以这里只管改 record
+        里的 ``member_stage`` / ``member_stages``（全体成员同一口径，与创建时
+        一致）；**作废旧数据、按新起点重新汇集**由调用方（流程页 → 详情页
+        ``restart_aggregate_ingest``）负责——store 不碰磁盘产物。
+
+        ⚠️ ``member_stage`` 是汇集器唯一认的起点（``aggregate_ingest.plan_ingest``
+        读它），改完必须与**新流程图**对得上：调用方要同时保存按新起点派生的
+        流程，否则详情页的起点节点找不到。
+
+        任务不存在/不是聚合任务/节点不合法 ⇒ 返回 ``False``。
+        """
+        from desktop.steps.aggregate import AGGREGATE_START_STAGES
+
+        key = str(stage or "").strip()
+        if key not in AGGREGATE_START_STAGES:
+            return False
+        tasks = self._load_tasks_index()
+        for record in tasks:
+            if str(record.get("id") or "") != str(task_id):
+                continue
+            if record.get("kind") != "aggregate":
+                return False
+            members = [str(m) for m in (record.get("members") or [])]
+            record["member_stage"] = key
+            # 界面 2026-11-17 起全体共用一个起点，形状保持不变（逐成员节点）
+            record["member_stages"] = [key] * len(members)
+            record["updated_at"] = time.time()
+            self._save_tasks_index(tasks)
+            return True
+        return False
 
     def set_task_source(self, task_id: str, source_path: Path | str,
                         source_hash: str | None = None) -> bool:

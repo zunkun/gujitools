@@ -271,6 +271,7 @@ tasks/<任务号>/
 ├── print.json                待打印列表 + 页序 + 逐页版面
 ├── runs.json                 每个阶段的执行历史（最新在前）
 ├── ui.json                   界面状态（上次停留的步骤/节点、YOLO 导出记忆）
+├── .aggregate-pending        聚合任务**正在汇集**成员产物（收尾即删，见第 3 小节）
 ├── drafts/<阶段>.json         用户改过但还没执行的参数暂存
 ├── drafts/imposition.json    拼版版面（选择态 enabled + 逐页 items）
 ├── preview/rembg[~节点]/     去底色实时调整的**草稿图**（只在这步显示；
@@ -354,7 +355,30 @@ tasks/<任务号>/
 去底色（`rembg`）只有**一个**动作：点「执行去底色」后写 `stages/rembg`。
 改参数/翻页时的**实时预览**不算执行，只写草稿 `preview/rembg[~节点]`，不进下游。
 
-### 3. runs.json 记录结构
+### 3. 聚合任务：成员产物怎么进来（2026-11-17）
+
+聚合任务的任务目录里，**起点节点之前的一切都是"汇集"出来的**（唯一实现
+`desktop/services/aggregate_ingest.py`，创建后在后台线程跑）：
+
+| 地方 | 内容 |
+| ---- | ---- |
+| `stages/input/<NNN>_<原页名>` | 各成员在起点节点上的 **`pages` 输入**，按成员顺序拼起来 |
+| 起点节点的产出落点（`stages/rembg` / `stages/detect` / `stages/imposition`） | 各成员在**同一步骤**的产出，同样按成员顺序 |
+| `stages/print/print.pdf` | 起点是「PDF排版」时，把各成员的 PDF 按成员顺序 `insert_pdf` 合并成一本 |
+| `pages.json` / `sizes.json` / `boxes.json` / `drafts/imposition.json` | 按**新页名**同步重写（框坐标、像素基准、拼版版面都指向聚合任务自己的图） |
+
+- **页名前缀 `NNN_`**（`MEMBER_PREFIX_WIDTH = 3`）：成员各自的 `1.jpg` 必然撞名，
+  统一改成 `001_1.jpg`；`natural_sort_key` 下 `001_* < 002_*` 保住成员顺序，
+  成员内部仍是原来的页序。输入与产出**用同一前缀** ⇒ 同 stem（`001_1`）天然对齐，
+  去底色页的"原图 / 结果"不需要映射表。
+- **起点的产出复制过来就算"已完成"**：汇集器写一条合成的 `runs.json` 记录
+  （检测写 `detect` + `detect_submit` 两条，后者带 `_preview_run_id`；拼版不写，
+  它是合成型阶段）。下游的 `*_input_effective` 靠这条记录才认这份产物。
+- **进行中标记**：任务目录下的 `.aggregate-pending`（`AGGREGATE_PENDING_MARKER`）
+  ——汇集期间存在，收尾必删。详情页据此说"正在汇集"而不是"输入没就位"。
+- 只清理自己命名的 `NNN_` 文件（成员变少/页变少时），**不碰用户手工放进的图**。
+
+### 4. runs.json 记录结构
 
 `{阶段: [record, …]}`，`record` 含 `run_id / status / node / parameters / done /
 total / started_at / finished_at / output_path / error`。`output_path` 记的是本次

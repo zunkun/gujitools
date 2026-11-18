@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 189 个模块、205 个公开类、1558 个公开函数/方法（生成于 2026-11-17）。
+覆盖 196 个模块、213 个公开类、1615 个公开函数/方法（生成于 2026-11-18）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -13,6 +13,7 @@
 | 模块 | 类 | 函数 |
 | --- | --- | --- |
 | [`desktop.app`](#desktopapp) | 1 | 8 |
+| [`desktop.components.aggregate_create_panel`](#desktopcomponentsaggregate_create_panel) | 2 | 21 |
 | [`desktop.components.box_kinds`](#desktopcomponentsbox_kinds) | 2 | 8 |
 | [`desktop.components.bpmn_editor`](#desktopcomponentsbpmn_editor) | 1 | 28 |
 | [`desktop.components.bpmn_editor_panel`](#desktopcomponentsbpmn_editor_panel) | 1 | 6 |
@@ -49,7 +50,7 @@
 | [`desktop.components.print_manage_dialog`](#desktopcomponentsprint_manage_dialog) | 1 | 5 |
 | [`desktop.components.progress_row`](#desktopcomponentsprogress_row) | 1 | 8 |
 | [`desktop.components.step_bar`](#desktopcomponentsstep_bar) | 2 | 20 |
-| [`desktop.components.task_table`](#desktopcomponentstask_table) | 3 | 10 |
+| [`desktop.components.task_table`](#desktopcomponentstask_table) | 3 | 11 |
 | [`desktop.components.update_banner`](#desktopcomponentsupdate_banner) | 1 | 4 |
 | [`desktop.components.viewers.edit_sync`](#desktopcomponentsviewersedit_sync) | 0 | 2 |
 | [`desktop.components.viewers.extract_viewer`](#desktopcomponentsviewersextract_viewer) | 1 | 8 |
@@ -106,7 +107,7 @@
 | [`desktop.modules.print.page`](#desktopmodulesprintpage) | 1 | 4 |
 | [`desktop.modules.rembg.page`](#desktopmodulesrembgpage) | 1 | 5 |
 | [`desktop.modules.thumb_source`](#desktopmodulesthumb_source) | 1 | 4 |
-| [`desktop.pages.createtask.page`](#desktoppagescreatetaskpage) | 1 | 6 |
+| [`desktop.pages.createtask.page`](#desktoppagescreatetaskpage) | 1 | 9 |
 | [`desktop.pages.modulehub.page`](#desktoppagesmodulehubpage) | 1 | 3 |
 | [`desktop.pages.taskdetail.detect`](#desktoppagestaskdetaildetect) | 2 | 13 |
 | [`desktop.pages.taskdetail.flow_mixin`](#desktoppagestaskdetailflow_mixin) | 1 | 0 |
@@ -114,16 +115,18 @@
 | [`desktop.pages.taskdetail.imposition`](#desktoppagestaskdetailimposition) | 2 | 6 |
 | [`desktop.pages.taskdetail.imposition_layout`](#desktoppagestaskdetailimposition_layout) | 1 | 1 |
 | [`desktop.pages.taskdetail.imposition_pages`](#desktoppagestaskdetailimposition_pages) | 1 | 0 |
-| [`desktop.pages.taskdetail.manifest`](#desktoppagestaskdetailmanifest) | 1 | 6 |
+| [`desktop.pages.taskdetail.manifest`](#desktoppagestaskdetailmanifest) | 1 | 8 |
 | [`desktop.pages.taskdetail.page`](#desktoppagestaskdetailpage) | 1 | 30 |
 | [`desktop.pages.taskdetail.params_draft`](#desktoppagestaskdetailparams_draft) | 1 | 1 |
+| [`desktop.pages.taskdetail.preview`](#desktoppagestaskdetailpreview) | 1 | 2 |
 | [`desktop.pages.taskdetail.print_list`](#desktoppagestaskdetailprint_list) | 1 | 3 |
 | [`desktop.pages.taskdetail.rembg_live`](#desktoppagestaskdetailrembg_live) | 1 | 0 |
 | [`desktop.pages.taskdetail.runner`](#desktoppagestaskdetailrunner) | 1 | 2 |
 | [`desktop.pages.taskdetail.submit`](#desktoppagestaskdetailsubmit) | 1 | 4 |
 | [`desktop.pages.taskdetail.view`](#desktoppagestaskdetailview) | 2 | 5 |
 | [`desktop.pages.taskflow.page`](#desktoppagestaskflowpage) | 1 | 2 |
-| [`desktop.pages.tasklist.page`](#desktoppagestasklistpage) | 1 | 7 |
+| [`desktop.pages.tasklist.page`](#desktoppagestasklistpage) | 1 | 8 |
+| [`desktop.services.aggregate_ingest`](#desktopservicesaggregate_ingest) | 3 | 8 |
 | [`desktop.services.detect_export`](#desktopservicesdetect_export) | 0 | 7 |
 | [`desktop.services.font_catalog`](#desktopservicesfont_catalog) | 1 | 6 |
 | [`desktop.services.imposition`](#desktopservicesimposition) | 0 | 35 |
@@ -145,6 +148,7 @@
 | [`desktop.stages.generic_stage`](#desktopstagesgeneric_stage) | 0 | 2 |
 | [`desktop.stages.print_stage`](#desktopstagesprint_stage) | 0 | 3 |
 | [`desktop.stages.rembg_stage`](#desktopstagesrembg_stage) | 0 | 1 |
+| [`desktop.steps.aggregate`](#desktopstepsaggregate) | 0 | 6 |
 | [`desktop.steps.bpmn_diagram`](#desktopstepsbpmn_diagram) | 4 | 35 |
 | [`desktop.steps.control`](#desktopstepscontrol) | 1 | 13 |
 | [`desktop.steps.flow`](#desktopstepsflow) | 4 | 31 |
@@ -160,10 +164,11 @@
 | [`desktop.store.imposition`](#desktopstoreimposition) | 1 | 4 |
 | [`desktop.store.json_io`](#desktopstorejson_io) | 0 | 8 |
 | [`desktop.store.pages`](#desktopstorepages) | 1 | 9 |
-| [`desktop.store.runs`](#desktopstoreruns) | 1 | 10 |
+| [`desktop.store.runs`](#desktopstoreruns) | 1 | 11 |
 | [`desktop.store.store`](#desktopstorestore) | 1 | 1 |
-| [`desktop.store.tasks`](#desktopstoretasks) | 1 | 69 |
+| [`desktop.store.tasks`](#desktopstoretasks) | 1 | 71 |
 | [`desktop.store.ui_state`](#desktopstoreui_state) | 1 | 13 |
+| [`desktop.ui.check_group`](#desktopuicheck_group) | 1 | 6 |
 | [`desktop.ui.color_picker`](#desktopuicolor_picker) | 5 | 30 |
 | [`desktop.ui.confirm_dialog`](#desktopuiconfirm_dialog) | 1 | 5 |
 | [`desktop.ui.font_setup`](#desktopuifont_setup) | 2 | 8 |
@@ -173,7 +178,8 @@
 | [`desktop.ui.log_throttle`](#desktopuilog_throttle) | 1 | 5 |
 | [`desktop.ui.menu`](#desktopuimenu) | 3 | 18 |
 | [`desktop.ui.modal_quiet`](#desktopuimodal_quiet) | 1 | 3 |
-| [`desktop.ui.segmented_toggle`](#desktopuisegmented_toggle) | 1 | 14 |
+| [`desktop.ui.native_minimize`](#desktopuinative_minimize) | 0 | 1 |
+| [`desktop.ui.segmented_toggle`](#desktopuisegmented_toggle) | 1 | 15 |
 | [`desktop.ui.style`](#desktopuistyle) | 0 | 3 |
 | [`desktop.ui.theme`](#desktopuitheme) | 0 | 3 |
 | [`desktop.ui.toast`](#desktopuitoast) | 0 | 1 |
@@ -184,6 +190,7 @@
 | [`desktop.utils.image_rotate`](#desktoputilsimage_rotate) | 0 | 1 |
 | [`desktop.utils.image_scaling`](#desktoputilsimage_scaling) | 0 | 1 |
 | [`desktop.worker`](#desktopworker) | 0 | 1 |
+| [`desktop.workers.aggregate_ingest_worker`](#desktopworkersaggregate_ingest_worker) | 1 | 2 |
 | [`desktop.workers.copy_source_worker`](#desktopworkerscopy_source_worker) | 2 | 4 |
 | [`desktop.workers.data_package_worker`](#desktopworkersdata_package_worker) | 3 | 8 |
 | [`desktop.workers.hash_worker`](#desktopworkershash_worker) | 1 | 2 |
@@ -308,6 +315,205 @@ gujitools 桌面端主窗口：左侧导航壳层（任务管理 + 独立模块�
 自动退出（退出码 0）。仅供打包后冒烟使用——GUI 是 windowed 程序，没有
 控制台，导入期崩溃会弹错误框并一直挂住，靠"进程还活着"根本判断不了
 成败；有了这个开关就能用**退出码**判定。
+
+---
+
+## `desktop.components.aggregate_create_panel`
+
+源码：[`desktop/components/aggregate_create_panel.py`](../../desktop/components/aggregate_create_panel.py)
+
+**聚合任务**创建面板（创建任务页「任务类型：聚合任务」的内容）。
+
+## 用户口径（2026-11-17）
+
+> 同一部书有多个 PDF 子集，每个子集作为一个任务处理；拼版之后想把所有
+> 拼版后的图片组合成一个 PDF——创建一个聚合任务，选择多个子任务、选择
+> 图片拼版节点，同时可以对这几个子任务进行排序。
+
+面板三件事：
+
+1. **选子任务**：「选择子任务…」按钮弹「选择子任务」弹窗多选
+   (:class:`AggregateMemberPicker`，**搜索 + 分页的勾选表格**，与任务管理
+   列表同一套观感：节点状态胶囊/匹配判据/分页控件全部复用)；已选成员进
+   下方成员表格，弹窗里勾掉已有的成员即移除，新勾的按任务号追加在后面
+   ——**已排好的顺序不被弹窗冲掉**；
+2. **成员表格**（用户 2026-11-17 晚：列表升级为表格，操作全在行内）：
+   列 = 序号 / 任务名称 / **任务节点** / 操作——
+   - **任务节点**：该子任务**已经完成**的节点（只读展示，不含「提取图片」）
+     ——它是"起始节点能选什么"的依据，一眼看到每个子任务各自跑到了哪；
+     列宽按**内容实测**放宽（最长那行的节点名全显示，不再裁字）；
+   - **操作**：行内「详情 / 上移 / 下移 / 删除」（详情＝**非模态预览窗**，
+     不再跳走创建页；顺序有意义，决定合并页序）；
+   - 表格上方「选择子任务…」随时追加（同一个弹窗）。
+3. **起始节点**（用户 2026-11-17 本轮：checkbox 列表 + **单选**）：
+   候选 = 所选子任务里**任意一个已经完成**的任务节点（逐成员取
+   :meth:`store.completed_aggregate_stages`，再用
+   :func:`desktop.steps.aggregate.any_member_stages` 求**并集**；用户
+   2026-11-18 口径，取代早先"每个成员都完成过"的交集）。全体子任务共用这
+   一个节点，选它就等于选"流程从哪开始"。
+   ⚠️ 并集的代价必须让用户看见：选中的节点有成员没跑过 ⇒ 汇集时缺它的
+   页面，所以候选下方**点名**这些子任务（:func:`missing_members`）。
+   ⚠️ 勾选是**单选**：勾一个别的自动灭；点掉当前唯一勾选不生效（不可能
+   出现"没有起始节点"）。还没选成员、或并集为空时兜底列出全部候选
+   （提交时 ``store`` 仍会校验）。
+4. **流程**：起始节点变化 ⇒ 流程编辑器换到新派生图（开始节点自动变化）。
+
+流程编辑器常驻（与普通创建页同一条纪律）：展示
+:func:`desktop.steps.aggregate.derive_aggregate_diagram` 的派生图，用户可以
+继续拖改；改过就随 ``submitted`` 一起交出去，没改过传 ``None``（store 落
+派生图本身）。
+
+⚠️ 起始节点变化会**整体重建编辑器**（派生图变了，旧图不能原地改）；
+用户在旧根下做的流程编辑随之丢弃——起始节点是流程的根，根换了的
+"自定义"没有意义。同理，成员集合变化导致候选集变化时，起始节点若不在
+新候选里就自动落到新候选的第一个（见 :meth:`_sync_candidates`）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| MEMBER_PAGE_SIZE | `10` |
+| MEMBER_HEADER_HEIGHT | `38` |
+| DEFAULT_START_STAGE | `"imposition"` |
+
+### `class AggregateMemberPicker(QWidget)`
+
+「选择子任务」弹窗的**内容**（搜索 + 分页的勾选表格；外壳由
+:func:`shell_dialog` 给）。
+
+列 = 勾选 / 序号 / 任务名称 / 节点状态 / 创建时间，与任务管理列表同一套
+观感（边框/圆角/表头/行高取 :class:`desktop.components.task_table.TaskTable`
+的参数）；搜索与分页复用 ``Pagination``/``Pager``，匹配判据共用
+``task_table.task_row_matches``——「过滤 → 分页 → 填表」的数据流向与
+列表页一致：搜索/翻页只重画，不重新读盘。
+
+- 候选：普通任务（聚合任务不能再嵌套聚合），按任务号**倒序**（新建的排
+  最前，用户 2026-11-18：「任务列表要倒序」——刚建的任务不用翻到末页找）；
+- 勾选状态记在 ``self._checked``：**翻页 / 搜索 / 换每页条数都不会丢**；
+- ``checked_ids()`` 按**列表顺序**（任务号倒序）返回——面板端「勾掉即移除、
+  新勾追加」的语义不变。
+
+勾选列放**真 CheckBox 控件**而不是勾选型表格项：qfluent 的表格委托只
+自绘复选框（``_drawCheckBox``），不处理点击切换（``editorEvent`` 未重写），
+原生 toggle 矩形和自绘位置对不齐——控件是唯一点击行为确定的做法。
+
+数据来源：调用方给**含 stages 的全量行**（``TaskRowsWorker`` 的产物，
+与任务管理列表同一份数据），节点状态胶囊复用 ``task_table.StageChips``；
+行缺 stages 时按空处理。⚠️ 离屏自测**不会**真弹模态：直接实例化本类、
+操作 ``set_rows`` / ``set_checked`` 验证逻辑，``build_dialog()`` 只在真用时才调。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(rows: list[dict], checked_ids: list[str], parent=None)` | — |
+| `set_rows(rows: list[dict]) -> None` | 整批替换候选行（后台读完/回填用）；页码回第 1 页。 |
+| `set_checked(task_id: str, checked: bool) -> None` | 程序化勾选/取消（自测与回填用；与手点同一入口）。 |
+| `checked_ids() -> list[str]` | 勾选中的任务号，按**列表顺序**（任务号倒序，最新的在前）。 |
+| `build_dialog(parent=None)` | 把本面板装进外壳（真用时才调；自测直接操作面板本身）。 |
+
+##### `build_dialog(parent=None)`
+
+把本面板装进外壳（真用时才调；自测直接操作面板本身）。
+
+``resizable=True``（用户 2026-11-18）：「选择子任务弹窗要显示窗口功能，
+放大缩小」——标题栏出现最小化/最大化按钮，也能拖边拉伸。默认尺寸
+1040×720 只是**开窗**尺寸，最小尺寸由外壳按 3/4 兜底。
+
+### `class AggregateCreatePanel(QWidget)`
+
+聚合任务面板：选成员 → 成员表格（排序/删除）→ 起始节点 → 流程图 → 提交。
+
+对外只认 :attr:`submitted`（成员 / 各成员节点 / 是否带了编辑过的流程图）
+与 :attr:`cancelled`；任务名称由宿主页面（创建任务页）统一收集。
+
+## 两种用途（``inspect``）
+
+- ``inspect=False``（默认）：**创建**聚合任务（创建任务页用）——能挑成员、
+  能排序/删除、能改起始节点、底部有「创建聚合任务」。
+- ``inspect=True``：**查看 / 继续编辑**一个已经建好的聚合任务（详情页 →
+  「查看 / 编辑流程」二级页用，用户 2026-11-18：「进入流程入口……应当显示
+  聚合任务的子任务相关信息，跟创建聚合任务时候一样」）——**成员只读**
+  （改成员集合等于重建聚合任务），起始节点**可以改**（用户 2026-11-18：
+  「起始节点可以切换变更，如果变更了保存流程的时候，提示起始节点丢失，
+  聚合任务之前历史处理数据都丢失」⇒ 改完由宿主在保存时弹确认），行内只留
+  「详情」，底部按钮行收起（保存/关闭在页面顶栏），流程画布仍可编辑。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(store, parent=None, *, inspect: bool=False, members: list[str] \| None=None, start_stage: str=DEFAULT_START_STAGE, initial_diagram=None)` | :param inspect: ``True`` = 查看已建好的聚合任务（成员/起始节点只读， |
+| `start_candidates() -> tuple[str, ...]` | 当前候选起始节点（按拓扑序；含「提取图片」，可作起点）。 |
+| `current_stage() -> str` | 当前起始节点（全体成员共用；无成员时回落默认值）。 |
+| `record_stage() -> str` | **落库的**起始节点（用户没改过时与 :meth:`current_stage` 相同）。 |
+| `stage_changed() -> bool` | 用户是否改了起始节点（改没改决定保存时要不要弹"数据作废"确认）。 |
+| `mark_stage_saved() -> None` | 起始节点已落库：把记录值追平，之后 :meth:`stage_changed` 复归 ``False``。 |
+| `members() -> list[str]` | 当前成员（只读副本）。 |
+| `member_stages() -> list[str]` | 各成员的节点（与 :meth:`members` 对齐；全体共用起始节点 ⇒ 值相同）。 |
+| `set_members(members: list[str]) -> None` | 回填成员（自测快路径）：候选与起始节点按新成员重算。 |
+| `set_start_stage(stage: str) -> None` | 设起始节点（自测/回填用）：走勾选框，信号链自然跑一遍。 |
+| `current_diagram()` | 编辑器手里那张图（派生图或用户改过的版本）。 |
+| `result_diagram()` | 要落盘的流程图：编辑过 = 用户那张；没动过 = ``None``（store 落派生图）。 |
+| `uses_custom_flow() -> bool` | — |
+| `can_submit() -> bool` | — |
+| `submit() -> None` | 校验通过就发 :attr:`submitted`；成员为空先拦（聚合没有成员不成立）。 |
+| `reset() -> None` | 回到刚打开的样子：成员清空、候选回到全部节点、起始节点回默认。 |
+
+##### `__init__(store, parent=None, *, inspect: bool=False, members: list[str] | None=None, start_stage: str=DEFAULT_START_STAGE, initial_diagram=None)`
+
+:param inspect: ``True`` = 查看已建好的聚合任务（成员/起始节点只读，
+    收起底部按钮行）。见类头「两种用途」。
+:param members: 初始成员（``inspect`` 时由调用方从 record 回填）。
+:param start_stage: 初始起始节点（同上；不在合法清单里就回默认）。
+:param initial_diagram: 初始画布内容（``inspect`` 时传**已落盘的**
+    ``flow.bpmn``，用户看到的才是他上次存下的那张图；只在第一次建
+    编辑器时用一次，之后换起始节点仍按派生图重建）。
+
+##### `start_candidates() -> tuple[str, ...]`
+
+当前候选起始节点（按拓扑序；含「提取图片」，可作起点）。
+
+候选 = 所选子任务里**任意一个已经完成**的任务节点（用户 2026-11-18，
+取代早先"每个成员都完成过"的交集）：逐成员取
+:meth:`store.completed_aggregate_stages`（历史上成功过才算完成，
+拼版=已启用且有拼版页），再用
+:func:`desktop.steps.aggregate.any_member_stages` 求**并集**
+——"现有任务已经存在生效的节点是提取/检测/去底，因此可以从这些节点
+里挑一个"。交集口径在"各子集进度不同步"时会收成空集（实测三个子集
+分别完成 检测/检测/去底 ⇒ 交集为空），列表就退化成兜底全集，等于
+没跟着子任务变。
+
+⚠️ 并集意味着某些成员可能缺这个节点，汇集时缺它的页面——
+:meth:`_refresh_stage_hint` 会点名这些子任务。
+
+还没选成员、或并集为空时兜底成全部候选：列表空着用户连"先选一个"
+都做不到（提交时 ``store`` 仍会校验）。
+
+⚠️ 查看模式（``inspect``）额外一条：**落库的那个起始节点必须在候选
+里**。它当年是按成员当时的进度选的，成员后来重跑/清理过的话并集可能
+已经不含它——那样勾选框里就看不到"当前起点"，看着像坏了。这里把它
+按拓扑序补回清单（只影响显示，不改落库值）。
+
+##### `stage_changed() -> bool`
+
+用户是否改了起始节点（改没改决定保存时要不要弹"数据作废"确认）。
+
+⚠️ 判据是"与落库值比"而不是"点过没有"——用户改回原值再保存不该弹框。
+
+##### `member_stages() -> list[str]`
+
+各成员的节点（与 :meth:`members` 对齐；全体共用起始节点 ⇒ 值相同）。
+
+⚠️ 形状保持"逐成员"是为了跟 store 的 ``member_stages`` 字段一致——
+用户 2026-11-17 本轮改回**全体共用一个节点**，值必然一模一样。
+
+##### `set_start_stage(stage: str) -> None`
+
+设起始节点（自测/回填用）：走勾选框，信号链自然跑一遍。
+
+不在候选里的节点直接忽略（它对这个成员集合不存在）——不偷偷改数据，
+免得界面勾着的和实际用的不是同一个（用户点不到的东西不该被设上）。
 
 ---
 
@@ -714,19 +920,23 @@ BPMN **编辑器面板**：工具栏 + 可滚动画布 + 选中状态行。
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(diagram: FlowDiagram, parent=None, *, editable: bool=True, reset_factory=None)` | :param reset_factory: 无参可调用，返回一张"默认流程"的**新图**。给了就 |
+| `__init__(diagram: FlowDiagram, parent=None, *, editable: bool=True, reset_factory=None, scroll: bool=True)` | :param reset_factory: 无参可调用，返回一张"默认流程"的**新图**。给了就 |
 | `diagram() -> FlowDiagram` | — |
 | `canvas()` | — |
 | `editor() -> BpmnEditor \| None` | — |
 | `eventFilter(obj, event)` | 视口尺寸变了就同步画布下限（否则缩窗口后没地方拖节点）。 |
 | `showEvent(event) -> None` | Qt 事件覆写：显示时刷新状态。 |
 
-##### `__init__(diagram: FlowDiagram, parent=None, *, editable: bool=True, reset_factory=None)`
+##### `__init__(diagram: FlowDiagram, parent=None, *, editable: bool=True, reset_factory=None, scroll: bool=True)`
 
 :param reset_factory: 无参可调用，返回一张"默认流程"的**新图**。给了就
     在工具栏右侧出「恢复默认」——用户把节点删光了也能一键回到起点
     （用户 2026-10-05："他可能有些节点不需要，删了就行了，**可以恢复**"）。
     不给就没有这个按钮（详情页看流程时不需要）。
+:param scroll: ``True`` = 画布自带滚动条（详情页 / 流程弹窗那种"固定高
+    的窗体里看图"）；``False`` = **画布整张铺开、高度跟着内容走**，滚动
+    交给外层页面（用户 2026-11-18："创建任务页面 y 轴也可以显示滚轮，
+    因此底部画布不需要滚轮，直接完整展示就行"）。
 
 ---
 
@@ -1267,9 +1477,9 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 
 | 函数 | 说明 |
 | --- | --- |
-| `shell_dialog(title: str, panel: QWidget, parent=None, *, size=(920, 620), ok_text: str='确定', cancel_text: str='取消', on_ok=None, on_cancel=None, show_cancel: bool=True, own_chrome: bool=False) -> QDialog` | 搭一个模态弹窗，返回 ``QDialog``。 |
+| `shell_dialog(title: str, panel: QWidget, parent=None, *, size=(920, 620), ok_text: str='确定', cancel_text: str='取消', on_ok=None, on_cancel=None, show_cancel: bool=True, own_chrome: bool=False, resizable: bool=False, min_size: tuple[int, int] \| None=None) -> QDialog` | 搭一个模态弹窗，返回 ``QDialog``。 |
 
-#### `shell_dialog(title: str, panel: QWidget, parent=None, *, size=(920, 620), ok_text: str='确定', cancel_text: str='取消', on_ok=None, on_cancel=None, show_cancel: bool=True, own_chrome: bool=False) -> QDialog`
+#### `shell_dialog(title: str, panel: QWidget, parent=None, *, size=(920, 620), ok_text: str='确定', cancel_text: str='取消', on_ok=None, on_cancel=None, show_cancel: bool=True, own_chrome: bool=False, resizable: bool=False, min_size: tuple[int, int] | None=None) -> QDialog`
 
 搭一个模态弹窗，返回 ``QDialog``。
 
@@ -1279,6 +1489,13 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 :param own_chrome:
     ``True`` = **面板自带标题与按钮行**（``CreateTaskPanel`` 就是这种），
     外壳不再加——否则同一弹窗里会出现两套标题、两排按钮。
+:param resizable:
+    ``True`` = 标题栏给「最小化 / 最大化」按钮，窗口可自由拉伸（用户
+    2026-11-18：「选择子任务弹窗要显示窗口功能，放大缩小」）。默认
+    ``False`` 保持既有弹窗的固定观感——小弹窗（确认框、导出框）不需要
+    最大化按钮，多了反而让人误以为能拉成任意形状。
+:param min_size: 仅 ``resizable`` 时有意义：窗口的**最小**尺寸。默认取
+    ``size`` 的 3/4——不锁死成开窗尺寸，小屏上才缩得回屏幕里。
 
 ⚠️ 面板自带的按钮**只是外观**，真正决定"确定/取消"的是本外壳：
 面板上的按钮是给自测与"无外壳直接用面板"的场景留的。
@@ -2421,10 +2638,16 @@ page       当前页码，1-based；越界会在读取时被钳制
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(page_size: int=DEFAULT_PAGE_SIZE, parent=None)` | — |
+| `__init__(page_size: int=DEFAULT_PAGE_SIZE, parent=None, *, size_selector: bool=True)` | ``size_selector=False``：**不给**"每页 N 条"下拉（条数是既定规格时用， |
 | `pager() -> Pager` | — |
 | `set_pager(pager: Pager) -> None` | 用新的分页状态刷新显示（宿主算完过滤/切片后调它）。 |
 | `set_visible_for(total: int) -> None` | 总数为 0 时隐藏（配合空状态卡片，避免「共 0 条 第 1/1 页」的噪音）。 |
+
+##### `__init__(page_size: int=DEFAULT_PAGE_SIZE, parent=None, *, size_selector: bool=True)`
+
+``size_selector=False``：**不给**"每页 N 条"下拉（条数是既定规格时用，
+例如创建页的子任务表格——那里最多 10 行/页，让人改成 50 会直接把表格
+撑成 50 行高）。只影响外观，``page_size_changed`` 照旧存在。
 
 ---
 
@@ -3422,7 +3645,7 @@ status 为失败/中断时，徽标保持对勾、副标题仍显示最近一次
 源码：[`desktop/components/task_table.py`](../../desktop/components/task_table.py)
 
 任务列表表格组件：每行带阶段状态胶囊与 详情/删除 操作按钮。
-「节点状态」原来是一整串 ``提取图片:成功  检测文本框:成功 …`` 纯文本，
+「任务节点」原来是一整串 ``提取图片:成功  检测文本框:成功 …`` 纯文本，
 列宽一紧就被截断、颜色上也没法区分成败。现在改为状态胶囊，颜色来自统一的
 语义色，鼠标悬停能看到完整阶段名与进度。
 
@@ -3489,7 +3712,7 @@ status 为失败/中断时，徽标保持对勾、副标题仍显示最近一次
 
 任务列表表格：每行带阶段状态胶囊与 详情/删除 操作。
 
-列固定为 序号 / 任务名 / 创建时间 / 节点状态 / 操作；源文件路径
+列固定为 序号 / 任务名 / 创建时间 / 任务节点 / 操作；源文件路径
 不成列，仅作为任务名 tooltip。open_detail / delete_request 信号
 分别携带任务 id。
 
@@ -3523,6 +3746,21 @@ source_path 不单独成列，仅作任务名的悬浮提示。
 搜索、分页都无关，用户拿它去 ``tasks/0001`` 就能对上号。
 （早先用「页内行号 + 全局偏移」，翻页/搜索后同一条任务的号会变，
 用户按号找目录会对不上。）
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `task_row_matches(row: dict, keyword: str) -> bool` | 任务行模糊匹配：任务名或源文件名（不含目录）包含关键词，大小写不敏感。 |
+
+#### `task_row_matches(row: dict, keyword: str) -> bool`
+
+任务行模糊匹配：任务名或源文件名（不含目录）包含关键词，大小写不敏感。
+
+任务管理列表页与聚合任务「选择子任务」弹窗**共用**的过滤判据（单一来源）。
+只做**子串**匹配就够了——任务名是用户自己起或 PDF 文件名，长度短、
+没有拼写容错的需求；上 difflib 之类的模糊算法反而会让「搜 A 出来 B」
+变得不可预期。
 
 ---
 
@@ -7391,23 +7629,39 @@ detect/rembg/print 直接把**原图**塞进查看器（缩略图条每次现解
 
 ## 页面长什么样
 
-页面**沿用面板原样**（同一套控件与顺序，用户的"页面跟现在的一样"），只多
-一行「任务名称」：
-
-::
+页面**沿用面板原样**（同一套控件与顺序，用户的"页面跟现在的一样"），顶部多
+**「任务类型」行**（常规任务 / 聚合任务）与**「任务名称」行**，两者都是
+**所有类型共用**的；再往下才是各类型自己的内容（用户 2026-11-17 定顺序）::
 
     [← 创建任务]
-    任务名称  [ 一本古籍            ]  ← 最多 360px，placeholder＝任务#0007
-    留空则使用默认名「任务#0007」；PDF 可以之后在任务详情里补选。
-    ┌ CreateTaskPanel ────────────────────────┐
-    │ （流程说明 + 流程图 + 编辑/恢复按钮）      │  ← 默认流程恒可编辑
-    │ …                                        │
-    │ [取消]                     [创建任务]    │  ← 面板自带按钮
+    任务类型  ☑ 常规任务   ☐ 聚合任务        ← CheckBoxGroup（复选框外观、单选）
+    任务名称  [ 一本古籍            ]
+    留空则使用默认名「任务#0007」；…
+    ┌ 常规任务：CreateTaskPanel ──────────────┐
+    │ （选 PDF + 流程编辑器 + 取消/创建任务）    │
     └─────────────────────────────────────────┘
+    ┌ 聚合任务：AggregateCreatePanel ──────────┐
+    │ （选子任务 + 排序 + 起始节点 + 流程编辑器） │  ← desktop/components/
+    └─────────────────────────────────────────┘    aggregate_create_panel.py
 
-「流程编辑器」**默认就摆在本页里**（:class:`CreateTaskPanel` 内嵌
-``BpmnEditorPanel``，恒在、恒可编辑）——用户 2026-11-17：不再通过点
-「编辑流程」触发。
+⚠️ **任务类型为什么是复选框而不是胶囊**（用户 2026-11-17）：胶囊像"视图切换"，
+读不出"这是一类任务、后面还能再加"；复选框样式点明"可以多选其一"，而这里是
+**单选**（:class:`~desktop.ui.check_group.CheckBoxGroup`：勾一个别的自动灭，
+点掉当前那个不生效）。类型清单见 ``TASK_TYPES``——加新类型只加一项 + 加一个
+面板进 ``_stack``。
+
+「常规任务」的「流程编辑器」**默认就摆在本页里**
+（:class:`CreateTaskPanel` 内嵌 ``BpmnEditorPanel``，恒在、恒可编辑）——
+用户 2026-11-17：不再通过点「编辑流程」触发。
+
+## 成员「详情」＝弹窗，不是跳转（用户 2026-11-17）
+
+聚合任务成员表格里的「详情」原来由壳层切成该子任务的详情页——创建到一半的
+表单就没了。现在改成本页自己开一个**非模态预览窗**
+（:meth:`CreateTaskPage.open_member_preview` →
+:class:`desktop.pages.taskdetail.preview.TaskPreviewDialog`）：窗口宽、直接复用
+真的详情页、``show()`` 而不是 ``exec()``（不挡本页操作，也不会出系统提示音）。
+同一任务只开一个窗；离开本页/``reset()`` 时一起关。
 
 ## 任务名称（用户 2026-10-06）
 
@@ -7445,6 +7699,8 @@ detect/rembg/print 直接把**原图**塞进查看器（缩略图条每次现解
 | 名称 | 值 |
 | --- | --- |
 | ROUTE_CREATE | `"create"` |
+| TAB_TASK | `"task"` |
+| TAB_AGGREGATE | `"aggregate"` |
 | NAME_EDIT_MAX_WIDTH | `360` |
 
 ### `class CreateTaskPage(QWidget)`
@@ -7456,11 +7712,31 @@ detect/rembg/print 直接把**原图**塞进查看器（缩略图条每次现解
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(store, parent=None)` | — |
+| `current_tab() -> str` | 当前**任务类型**的键（自测/外层判断用；方法名沿用历史的 tab 口径）。 |
+| `select_tab(route: str) -> None` | 程序化切任务类型（不发 ``current_changed``，自己驱动内容区）。 |
+| `open_member_preview(task_id: str)` | 开（或前置）该子任务的**非模态详情预览窗**，返回窗口对象。 |
 | `default_name() -> str` | 默认任务名「任务#XXXX」（XXXX = 预测的下一个任务号）。 |
 | `task_name() -> str` | 本页收集到的任务名（**可能为空**＝调用方按默认口径回落）。 |
 | `set_name(name: str) -> None` | 回填任务名（快路径/测试用）。 |
 | `reset() -> None` | 回到**刚打开**的样子（用户 2026-10-06：上一次创建任务信息没清理）。 |
 | `set_busy(busy: bool, message: str='') -> None` | 建任务进行中：锁住输入并说明在等什么。 |
+
+##### `open_member_preview(task_id: str)`
+
+开（或前置）该子任务的**非模态详情预览窗**，返回窗口对象。
+
+用户 2026-11-17：「详情按钮点击，不再跳转，而是弹窗显示任务详情信息，
+这个弹窗要宽一些，直接复用任务详情页，详情弹窗不阻塞页面操作其他内容，
+不会发出当当当声音」——
+
+- **非模态**：``show()``（绝 ``exec()``），创建页照常可操作；模态窗会挡
+  住父窗口，"点到被挡的地方"就是那声「当当」的来源（见 ``confirm_dialog``
+  纪律）；
+- **同一任务不重复开**：已经开着就前置它，而不是叠出第二个窗口；
+- 关窗后从 ``self._previews`` 里摘掉（窗口是 ``WA_DeleteOnClose``）。
+
+窗口实现见 :class:`desktop.pages.taskdetail.preview.TaskPreviewDialog`
+（延迟导入：详情页整包很重，创建页不需要在启动时就吃进来）。
 
 ##### `default_name() -> str`
 
@@ -7923,6 +8199,8 @@ preview_stack、detect_viewer、extract_result_viewer、log_view、_toast()。
 | `delete_selected_page() -> None` | 删除当前选中的页面：按路径反查 manifest 下标后落盘。 |
 | `insert_pages_from_folder() -> None` | 「选文件夹」按钮：把**一个目录**里的图片批量插进来（用户 2026-10-06）。 |
 | `insert_pages() -> None` | 「＋」按钮：插入**图片**（可多选），复制到当前这一步的输入目录。 |
+| `refresh_aggregate_inputs() -> None` | 页头按钮：**重新汇集**成员产物（成员后来重跑过某一步时用）。 |
+| `restart_aggregate_ingest(task_id: str) -> bool` | **已经确认过**要重取数时直接开工（不弹确认框，返回是否真起了）。 |
 | `resizeEvent(event) -> None` | 窗口尺寸变了：让「缺源 PDF」提示层**跟着重铺**。 |
 | `showEvent(event) -> None` | 页面真正显示出来：把「缺源 PDF」提示层铺到**最终**尺寸上。 |
 
@@ -7964,6 +8242,29 @@ preview_stack、detect_viewer、extract_result_viewer、log_view、_toast()。
 （界面表现为插完左侧列表空着）。这里走
 ``store.stage_input``，它在无上游时回落到 ``stages/input/``，
 与执行时读的是**同一个目录**。
+
+##### `refresh_aggregate_inputs() -> None`
+
+页头按钮：**重新汇集**成员产物（成员后来重跑过某一步时用）。
+
+聚合任务的输入与产出是"创建那一刻"的**快照**（按成员顺序复制，见
+:mod:`desktop.services.aggregate_ingest`）。成员重跑之后这份快照就
+过期了，而聚合任务的成员/顺序是创建时定的——没有这个入口，用户只能
+删掉聚合任务重选一遍成员。
+
+⚠️ 会**覆盖**聚合任务现有的输入/产出（只动 ``NNN_`` 前缀的文件与
+起点那条合成记录），所以先弹确认框；确认后整套搬运在后台跑。
+
+##### `restart_aggregate_ingest(task_id: str) -> bool`
+
+**已经确认过**要重取数时直接开工（不弹确认框，返回是否真起了）。
+
+供流程页"改了起始节点"用（用户 2026-11-18）：起点一变，旧起点汇集的
+输入与处理结果就作废了，必须立刻按新起点重取一遍——否则详情页那一步
+永远没有数据，用户还得自己去点页头那颗 ⟳。
+
+⚠️ 不做确认：调用方（``TaskFlowPage._on_done``）已经弹过"历史数据
+作废"的确认框，这里再问一次就是重复打扰。
 
 ##### `resizeEvent(event) -> None`
 
@@ -8052,6 +8353,12 @@ resize 子控件再 show），在这里重铺一次就对了。⚠️ 别改成"
 - imposition.ImpositionMixin 流程条「图片拼版」可选节点
   （共享基元 imposition.py + 模块一 imposition_pages.py「选择拼版」
   + 模块二 imposition_layout.py「拼版操作」）
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| INPUT_NODE_POLL_MS | `1200` |
 
 ### `class TaskDetailPage(StageRunnerMixin, SubmitMixin, RembgLiveMixin, PrintListMixin, ParamDraftMixin, HistoryMixin, DetectMixin, ImpositionMixin, PageListMixin, DetailViewMixin, FlowMixin, ImageEditActionsMixin, QWidget, WorkerHost)`
 
@@ -8319,6 +8626,54 @@ B 方案（2026-10-17）：同一步骤可以有多个节点，每个节点各�
 
 ``node_id`` 缺省 = 当前节点（:meth:`current_node`）：同一页上的多个
 节点各有自己的暂存文件（``drafts/<阶段>~<节点>.json``）。
+
+---
+
+## `desktop.pages.taskdetail.preview`
+
+源码：[`desktop/pages/taskdetail/preview.py`](../../desktop/pages/taskdetail/preview.py)
+
+「任务详情」预览窗：**非模态**、直接复用详情页（用户 2026-11-17）。
+
+## 为什么要有它
+
+聚合任务创建页的成员表格里点「详情」，原来会**跳走**到该子任务的详情页
+（壳层切路由）——创建到一半的表单就看不见了，回来还得重进创建页。
+
+用户原话：
+
+    「详情按钮点击，不再跳转，而是弹窗显示任务详情信息，这个弹窗要宽一些，
+     直接复用任务详情页，详情弹窗不阻塞页面操作其他内容，不会发出当当当声音」
+
+所以这里就是一个**普通窗口** + 一个 ``TaskDetailPage`` 实例：
+
+- **绝不 ``exec()`` / ``setModal(True)``**：模态窗会挡住创建页，且"点到被模态
+  阻塞的父窗口"时 Windows 会「当当当」响（项目里踩过，见 ``confirm_dialog``
+  那条纪律）。这里 ``setModal(False)`` + ``show()``，创建页照常能点。
+- **宽**：按屏幕可用区的 92% 开窗（上限 1600×1000），详情页本来就是宽布局
+  （左控制列 + 右预览），窄了四处挤。
+- **复用而不是重画**：里面就是真的 :class:`TaskDetailPage`，步骤条/预览/
+  历史/执行按钮全在；只是把「查看 / 编辑流程」收起来（那要靠壳层切二级页，
+  预览窗没有壳层），把页头「←」的含义改成"关闭预览"。
+- 关窗时按"返回"的同一套口径释放（停检测、落暂存、关共享 PDF 缓存）——直接
+  销毁可能撞上正在跑的 worker，所以只在**没有步骤在跑**时走这条清理。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| SCREEN_RATIO | `0.92` |
+
+### `class TaskPreviewDialog(QDialog)`
+
+非模态的任务详情预览窗（一个任务一个窗口）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(store, task_id: str, parent=None)` | — |
+| `closeEvent(event) -> None` | 关窗＝离开这个任务：没在跑步骤时按详情页「返回」的口径释放资源。 |
 
 ---
 
@@ -8607,6 +8962,24 @@ Mixin，``super()`` 后面未必有实现 ``eventFilter`` 的类（对象默认
 :attr:`flow_saved` 发出任务号，壳层据此回详情页并**重新加载**（流程图换了，
 步骤条/槽位/取图来源都要按新图重排）。
 
+## 聚合任务（用户 2026-11-18）
+
+> 聚合任务 0025，详情页面右上角有个详情流程入口，进入流程入口，现在显示的
+> 是常规任务流程，应当显示聚合任务的子任务相关信息，跟创建聚合任务时候一样
+
+同一个入口进来看的东西按 ``record["kind"]`` 分流：
+
+- 普通任务 ⇒ 只有流程画布（本页原来的样子）；
+- 聚合任务 ⇒ **聚合面板**（``AggregateCreatePanel(inspect=True)``）：子任务
+  表格（各自已完成的节点）+ 起始节点 + 派生流程，与创建聚合任务时同一套
+  控件、同一套文案。成员**只读**（改成员集合＝重建聚合任务），**起始节点
+  可改**；画布仍可编辑，保存落 ``flow.bpmn``（与普通任务同一条落盘路径）。
+- ⚠️ 改了起始节点再保存流程 ⇒ 先弹确认（用户 2026-11-18）：「起始节点丢失、
+  聚合任务之前历史处理数据都丢失」。确认后：record 的 ``member_stage`` 一起
+  改（:meth:`store.tasks.TaskStore.set_aggregate_start`）、发
+  :attr:`aggregate_start_changed` 让壳层**按新起点重新汇集**（旧数据被覆盖，
+  这正是"历史数据作废"的落地方式）；取消则不落盘、留在本页。
+
 ### 模块常量
 
 | 名称 | 值 |
@@ -8615,21 +8988,24 @@ Mixin，``super()`` 后面未必有实现 ``eventFilter`` 的类（对象默认
 
 ### `class TaskFlowPage(QWidget)`
 
-任务流程编辑页：整页就是编辑器 + 返回/保存。
+任务流程页：整页就是编辑器 + 返回/保存（聚合任务换成聚合面板）。
 
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(store, parent=None)` | — |
-| `open_task(task_id: str) -> bool` | 打开某个任务的流程编辑。任务号无效/流程读不出返回 ``False``。 |
+| `open_task(task_id: str) -> bool` | 打开某个任务的流程页。任务号无效/流程读不出返回 ``False``。 |
 
 ##### `open_task(task_id: str) -> bool`
 
-打开某个任务的流程编辑。任务号无效/流程读不出返回 ``False``。
+打开某个任务的流程页。任务号无效/流程读不出返回 ``False``。
 
 ⚠️ 每次进来都**重新读盘**（不缓存）：用户在别处改过流程（比如在创建
 任务页编的）时，进本页看到的必须是当前那一份。
+
+⚠️ **聚合任务走另一套界面**（用户 2026-11-18）：不是"光一张流程图"，
+而是和创建聚合任务时一样的聚合面板（子任务表格 + 起始节点 + 流程）。
 
 ---
 
@@ -8667,6 +9043,7 @@ Mixin，``super()`` 后面未必有实现 ``eventFilter`` 的类（对象默认
 | `focus_task(task_id: str) -> bool` | 翻到任务所在页并选中它；不在当前过滤结果里则返回 False。 |
 | `import_pdf() -> None` | 「创建任务」入口：**切到创建任务页**（不再弹模态窗）。 |
 | `start_create(path: str, name: str, diagram) -> None` | 创建任务页提交了 → 走**既有**的指纹/查重/建任务链路。 |
+| `start_create_aggregate(members: list, member_stages: list, name: str, diagram) -> None` | 聚合任务提交了 → 建聚合任务（不走指纹/查重：聚合任务不吃源文件）。 |
 | `shutdown_workers() -> None` | 关程序前的收尾：先停导入后台队列（复制/缩略图），再走基类线程。 |
 | `delete_task(task_id: str) -> None` | 删除指定任务及其全部中间产物（带确认弹窗）。 |
 
@@ -8720,11 +9097,125 @@ parent 一般为 MainWindow；会创建 store 引用与导入按钮状态占位�
     用户 2026-11-17 起"是否自定义"不再单独传——流程恒可编辑，
     编辑保存过才传图）
 
+##### `start_create_aggregate(members: list, member_stages: list, name: str, diagram) -> None`
+
+聚合任务提交了 → 建聚合任务（不走指纹/查重：聚合任务不吃源文件）。
+
+``member_stages`` 与成员对齐（创建页 2026-11-17 本轮：全体共用
+一个起始节点，所以值都相同；老口径允许逐成员不同）；store 落库时取
+清单里最早的作 ``member_stage`` 并从它派生流程。成员不存在 / 节点
+非法时 ``store.create_aggregate_task`` 抛 ``ValueError``——这里 toast
+说清原因留在创建页，不崩。
+
 ##### `delete_task(task_id: str) -> None`
 
 删除指定任务及其全部中间产物（带确认弹窗）。
 
 任务不存在时直接返回；否则弹确认框，确认后删库并刷新列表与提示。
+
+---
+
+## `desktop.services.aggregate_ingest`
+
+源码：[`desktop/services/aggregate_ingest.py`](../../desktop/services/aggregate_ingest.py)
+
+**聚合任务**的成员产物汇集：把成员任务在**起始节点**上**生成的结果**
+按成员顺序复制进聚合任务自己的任务目录。
+
+## 用户口径（2026-11-18）
+
+> 选择的开始节点选项列表，就是所有生效的节点，选择哪个节点，哪个节点生成
+> 的结果，就作为当前聚合任务的输入数据。
+
+所以汇集搬的是**产出**，不是它的上游输入：选了「图片去底色」，进来的是各
+成员**去掉底色之后的成品图**，不是还没去底的原图（早先两样都搬，2026-11-17
+口径；现在作废——那样页面清单还指向"没处理过"的图）。
+
+一个聚合任务在创建之后立刻拥有三样东西：
+
+1. **起点节点的产出**（``stages/extract`` / ``stages/detect`` /
+   ``stages/rembg`` / ``stages/imposition`` / ``stages/print/print.pdf``）：
+   成员任务在同一步骤的产出，按成员顺序拼起来。因为产出已经就位，聚合任务
+   的起点视为**已完成**（写一条合成的 runs 记录），下一步能直接跑；
+2. **配套的派生数据**：``pages.json``（页集合，指向**产出**）、
+   ``sizes.json``（逐页像素尺寸）、``boxes.json``（检测框，起点是检测时）、
+   ``drafts/imposition.json``（拼版版面，起点是拼版时）；
+3. **拼版是唯一的例外**：它的产物是一份**版面**，版面里引用的是"被拼的
+   那批图"，所以那批图（成员的起点输入）也必须一起搬过来，否则版面指向
+   不存在的文件（见 :func:`plan_ingest` 里的 ``IN_BOUND_PAGES``）。
+
+## 页名与顺序：``001_1.jpg``
+
+成员各自的页名都是 ``1.jpg`` / ``10-l.jpg`` 这种**本任务内唯一**的名字，
+拼到一起必然撞名。所以汇集后的页名统一是 ``<成员序号3位>_<原页名>``：
+
+- ``natural_sort_key`` 下 ``001_* < 002_*``（成员顺序被保住），
+  同一成员内部 ``001_2 < 001_10``（页序被保住）；
+- 拼版那种"版面 + 源图"的情形，两者用同一个前缀 ⇒ 版面的 ``001_1.jpg``
+  与 ``stages/imposition/001_1.png`` 共享 stem，按页名天然对齐。
+
+## 边界
+
+- **只做一次、幂等**：重复调只会覆盖同名文件、补齐缺的，不会删用户的图；
+  ``NNN_`` 前缀的**陈旧**文件（成员变了/页少了）会被清掉，其余不动。
+- 起点是 ``print`` 时产出不是目录而是一个 PDF：用 PyMuPDF 按成员顺序
+  ``insert_pdf`` 合并成 ``stages/print/print.pdf``（这类任务没有"页图片"，
+  ``pages.json`` 不写）。
+- 成员缺这一步的产物 ⇒ 记一条 note 跳过（不抛异常：聚合是"尽力而为"，
+  一个成员没跑完不该让整次汇集失败），调用方把 note 展示给用户。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| MEMBER_PREFIX_WIDTH | `3` |
+| AGGREGATE_PDF_NAME | `"print.pdf"` |
+| AGGREGATE_PENDING_MARKER | `".aggregate-pending"` |
+
+### `class IngestCopy`
+
+一次复制：``source`` → ``target``。
+
+### `class IngestPlan`
+
+汇集计划（纯数据，可断言；:func:`run_ingest` 负责落盘）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `total_files() -> int` | — |
+
+### `class IngestResult`
+
+汇集结果（给调用方做提示/日志）。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `set_pending_marker(task_dir, on: bool) -> None` | 写/删「正在汇集」标记（**永不抛**：它只是协作信号）。 |
+| `is_pending(task_dir) -> bool` | 这个任务的成员产物是不是**还在汇集**。 |
+| `member_prefix(index: int) -> str` | 成员序号（1 起）→ 三段零填充前缀（``1 -> "001"``）。 |
+| `aggregate_page_name(index: int, name: str) -> str` | 成员页名 → 聚合任务里的页名（``1.jpg`` -> ``001_1.jpg``）。 |
+| `is_generated_name(name: str) -> bool` | 这个名字是不是汇集器生成的（只看 ``NNN_`` 前缀）。 |
+| `plan_ingest(store, task_id: str) -> IngestPlan \| None` | 算出「怎么把成员产物拼进聚合任务」；不是聚合任务/数据不全返回 ``None``。 |
+| `run_ingest(store, task_id: str, progress=None) -> IngestResult` | 执行汇集（文件复制 + 派生数据 + 起点置为已完成）。 |
+
+#### `plan_ingest(store, task_id: str) -> IngestPlan | None`
+
+算出「怎么把成员产物拼进聚合任务」；不是聚合任务/数据不全返回 ``None``。
+
+纯读：不建目录、不写文件（可以放心在界面线程调来预览页数）。
+
+#### `run_ingest(store, task_id: str, progress=None) -> IngestResult`
+
+执行汇集（文件复制 + 派生数据 + 起点置为已完成）。
+
+``progress(done, total)`` 可选：每复制一个文件调一次（后台 worker 用它
+报进度；每 20 个报一次，避免信号风暴）。
+
+不是聚合任务 / 计划为空 ⇒ ``ValueError``（调用方不该静默成功）。
 
 ---
 
@@ -10866,6 +11357,141 @@ args 约定：
 
 ``page_done`` 事件带 ``source``（输入图）与 ``output``（成品图），GUI 据此
 边跑边把该页刷成去底色结果。
+
+---
+
+## `desktop.steps.aggregate`
+
+源码：[`desktop/steps/aggregate.py`](../../desktop/steps/aggregate.py)
+
+**聚合任务**的流程派生（纯逻辑，无 Qt——store 与自测都能导入）。
+
+## 聚合任务是什么
+
+同一部书拆成多个 PDF 子集、各建一个普通任务分别处理；处理到某一步（比如
+「图片拼版」）之后，想把**所有子任务在这一步的产物**合并成一本完整的 PDF。
+聚合任务就是这样一条任务：它的输入不是源文件，而是**若干成员任务在同一
+节点上的产物**。
+
+- 成员任务：创建聚合任务时从已有任务里挑选（弹窗多选），**顺序有意义**
+  （决定合并时的页序）；
+- 起始节点：**全体成员共用一个**（用户 2026-11-17 本轮口径：界面上用
+  checkbox 列表**单选**一个），候选 = 所选子任务里**任意一个已经完成**的阶段
+  （:func:`any_member_stages`，并集，用户 2026-11-18 口径；早先是"每个成员
+  流程图里都有"的交集）。候选**跟着子任务列表变**：一个子任务都没选时不是
+  空清单，而是允许的全集。聚合流程从起始节点开始派生：**前面的丢弃，后面的
+  接上**；
+- 起始节点**可以是「提取图片」**（``extract``，用户 2026-11-18：「可选，但是
+  提取只能使用其产生的结果，没有输入源」）——这种聚合任务的输入就是各成员
+  的提取产物（:mod:`desktop.services.aggregate_ingest` 只搬产出、不搬输入）。
+
+⚠️ 并集有个必须让用户看见的代价：某成员没跑到这个节点 ⇒ 它交不出这一步的
+产物，汇集时它的页面会被跳过。所以界面要在候选下方点名**缺这个节点的子任务**
+（:func:`missing_members`），别让"少了一册"悄悄发生。
+
+⚠️ **产物怎么进来**（本模块只管"流程从哪开始"，不管文件搬运）：创建之后由
+:mod:`desktop.services.aggregate_ingest` 在后台把各成员在起始节点上的
+**输入**（落到 ``stages/input/<NNN>_<页名>``）与**产出**（落到同一步骤的
+产物目录）按成员顺序复制进来，并把起点记成"已完成"。页名前缀保证成员顺序
+与页序都不丢。
+
+## 流程怎么派生
+
+真源仍是默认模板 ``task_default.bpmn``（不在这里写第二份流程顺序）：
+从模板的**拓扑序**里找到起始节点，把它之前（拓扑序在前）的可执行节点
+全部丢掉，然后：
+
+- 换一个新开始事件「聚合输入」（原「上传文件」对聚合任务语义不对——
+  聚合任务没有源文件）；
+- 起始节点是 ``imposition`` / ``print`` 时把「是否拼版」网关一起丢掉：
+  网关守护的是"拼版做不做"，用户明确选了从拼版开始（或拼版已被丢弃），
+  "否"分支与选择自相矛盾；
+- 结束事件（生成PDF）挂在 print 后面，print 恒被保留 ⇒ 恒保留；
+- 保留图上其余节点间的连线与标签（网关的「是/否」）、以及挂在**保留**
+  节点上的文字注释；
+- 最后 :meth:`FlowDiagram.relayout` 重排坐标（被丢弃节点留下的空洞
+  不能留在图上）。
+
+派生出来的图交给创建面板的编辑器展示/微调；用户没再编辑时 store 直接
+落这张派生图（聚合任务的 ``flow.bpmn`` **永远不是**默认模板的字节拷贝
+——默认模板里还有 extract，语义不对）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| AGGREGATE_START_LABEL | `"聚合输入"` |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `aggregate_start_label(stage: str) -> str` | 起始节点的**中文**名（勾选框/摘要文案用；唯一走 ``stage_label``）。 |
+| `earliest_aggregate_stage(stages) -> str` | 成员节点清单里**拓扑序最早**的一个。 |
+| `any_member_stages(stage_lists) -> tuple[str, ...]` | 候选起始节点 = **任意一个**成员已经完成的阶段（并集，按拓扑序）。 |
+| `missing_members(stage: str, stage_lists) -> tuple[int, ...]` | 哪些成员**没完成** ``stage``（返回它们在 ``stage_lists`` 里的下标）。 |
+| `preferred_start_stage(stage_lists, current: str='') -> str` | 成员变了、当前起点不在候选里时，**默认落到哪个节点**。 |
+| `derive_aggregate_diagram(start_stage: str) -> FlowDiagram` | 从默认模板派生聚合任务的流程图：**从 ``start_stage`` 开始，前面丢弃**。 |
+
+#### `earliest_aggregate_stage(stages) -> str`
+
+成员节点清单里**拓扑序最早**的一个。
+
+⚠️ 界面本轮改回**全体共用**一个起始节点（用户 2026-11-17 本轮），这个
+函数现在只服务 store 的 ``member_stage`` 归一（老口径的 ``member_stages``
+仍可能长短不一，落库时取最早的那个）。
+
+清单为空、或给进来的全不在 :data:`AGGREGATE_START_STAGES` 里 ⇒ 返回
+**空串**（调用方自己兜底），这里不猜。
+
+#### `any_member_stages(stage_lists) -> tuple[str, ...]`
+
+候选起始节点 = **任意一个**成员已经完成的阶段（并集，按拓扑序）。
+
+用户 2026-11-18：起始节点清单**跟着所选子任务变**——"现有任务已经存在
+生效的节点是提取、检测、去底，因此可以选择这些节点中的一个"。早先的
+交集口径（每个成员流程图里都必须有）在"各子集跑到不同步"时会收成空集
+（实测：三个子任务分别完成 检测/检测/去底 ⇒ 交集只剩提取），用户看不
+到任何可变项，只能看到兜底的全集——那正是这条反馈要治的病。
+
+⚠️ 并集的代价：没跑到这个节点的成员交不出产物，汇集时会缺它的页面。
+调用方必须用 :func:`missing_members` 点名叫出这些成员，别静默少册。
+
+``stage_lists`` = 逐成员**已完成**的阶段（各自
+``store.completed_aggregate_stages``）。空输入（还没选子任务）⇒
+**空元组**，由调用方决定怎么兜底（创建面板按允许的全集先列出来），
+这里不猜。
+
+#### `missing_members(stage: str, stage_lists) -> tuple[int, ...]`
+
+哪些成员**没完成** ``stage``（返回它们在 ``stage_lists`` 里的下标）。
+
+界面拿它点名"选了这个节点，但这几册没跑过 ⇒ 汇集时不会带上它们的页面"。
+没选成员时返**空元组**（没有"成员缺"这回事，别报假警）。
+
+#### `preferred_start_stage(stage_lists, current: str='') -> str`
+
+成员变了、当前起点不在候选里时，**默认落到哪个节点**。
+
+规则（按优先级）：
+
+1. ``current`` 还在候选里 ⇒ 原样保留（用户已经选过就别动他）；
+2. 有**每个成员都完成**过的节点 ⇒ 取其中**最靠后**的那个：那是"各子集
+   都已做到、直接合并就能出书"的位置，既不丢页、也不重跑；
+3. 一个公共节点都没有（有人啥都没跑）⇒ 退回并集里**最靠前**的那个：
+   起点越早，能交得出产物的成员越多——宁可多跑几步，也不静默少册。
+   缺页风险由界面的点名提示兜住。
+
+空输入（没选成员）⇒ 返回 ``current``，让调用方自己兜底。
+
+#### `derive_aggregate_diagram(start_stage: str) -> FlowDiagram`
+
+从默认模板派生聚合任务的流程图：**从 ``start_stage`` 开始，前面丢弃**。
+
+- ``start_stage`` 不在 :data:`AGGREGATE_START_STAGES` 里、或模板读不到
+  ⇒ 返回**空图**（调用方按"没有流程"处理，不抛异常——与
+  :func:`load_default_diagram` 同一条纪律）；
+- 返回的图已 :meth:`FlowDiagram.relayout` 重排坐标，可直接 ``save()``。
 
 ---
 
@@ -13768,6 +14394,7 @@ runs.json 读写。
 | `all_stage_runs(task_id: str) -> dict[str, list[dict]]` | 整份运行历史（**一次读盘**），键为阶段名、值为最新在前的记录列表。 |
 | `flow_stages(task_id: str) -> set[str]` | 本任务流程里**真实存在**的运行阶段集合（按界面格摊开）。 |
 | `stage_states(task_id: str) -> dict[str, dict]` | 每个阶段最近一次运行的状态与进度（页面步骤条渲染用）。 |
+| `completed_aggregate_stages(task_id: str) -> list[str]` | 这个任务**已经完成**、可作聚合成员节点的阶段清单（按拓扑序）。 |
 
 ##### `create_stage_run(task_id: str, stage: str, parameters: dict, resume: bool=False, node_id: str | None=None) -> str`
 
@@ -13860,6 +14487,22 @@ B 方案（2026-10-17）：同一步骤的多个节点各跑各的，历史下�
 而不是干净降级。要"只列流程里的阶段"请走 :meth:`flow_stages` 或
 ``task_slots``。
 
+##### `completed_aggregate_stages(task_id: str) -> list[str]`
+
+这个任务**已经完成**、可作聚合成员节点的阶段清单（按拓扑序）。
+
+口径（用户 2026-11-17 晚 → 2026-11-18 修订）：只列**已经完成**的
+节点，**含「提取图片」**——2026-11-18 起「提取」也可以是聚合的起始
+节点（"提取只能使用其产生的结果，没有输入源"，汇集器对 extract 只
+搬产出），它完成后同样能交得出产物，界面候选（并集）要看得见它。
+
+- extract/detect/rembg/print：``stage_states`` 里 ``completed``（历史
+  上成功过，重试失败不算翻案）且 ``in_flow`` 的；
+- imposition：没有 runs 记录（纯合成、不走 worker），与列表胶囊同
+  一口径——已启用**且**已经有拼版页才算完成；
+- 与 ``AGGREGATE_START_STAGES`` 求交后按其顺序返回（= 默认流程拓扑序，
+  下拉框选项顺序与流程方向一致）。
+
 ---
 
 ## `desktop.store.store`
@@ -13920,6 +14563,8 @@ root 省略时默认用 guji_data_dir()（默认 ~/Documents/guji，可在设置
 | `list_tasks() -> list[dict]` | 全部任务，按 updated_at 倒序（最近改动的排在前面）。 |
 | `get_task(task_id: str) -> dict \| None` | 按任务号取任务记录；不存在返回 None。 |
 | `create_task(source_path: Path \| str \| None, source_hash: str, name: str='', duplicate_confirmed: bool=False, flow: FlowDefinition \| None=None, flow_layout: FlowLayout \| None=None, diagram=None, template_flow=None) -> str` | 新建任务并返回任务号（四位零填充）。 |
+| `create_aggregate_task(members: list[str], member_stage: str='', name: str='', diagram=None, member_stages: list[str] \| None=None) -> str` | 新建**聚合任务**并返回任务号（四位零填充）。 |
+| `set_aggregate_start(task_id: str, stage: str) -> bool` | 改**已建好的**聚合任务的起始节点（用户 2026-11-18）。 |
 | `set_task_source(task_id: str, source_path: Path \| str, source_hash: str \| None=None) -> bool` | 给**已建好但还没有 PDF** 的任务补上源文件（用户 2026-10-06）。 |
 | `rename_task(task_id: str, name: str) -> bool` | 改任务名称（用户 2026-10-06："任务名非必需，可随时修改"）。 |
 | `update_task(task_id: str, status: str) -> None` | 更新任务状态与 updated_at；任务号不存在时静默忽略。 |
@@ -14042,6 +14687,51 @@ exist_ok=False``，被抢就顺延），所以并发/历史残留时**实际拿�
 - ``name`` 传空 ⇒ 用 :meth:`default_task_name` 的格式，序号取**这里
   实际分配到的** ``task_id``（不是 ``next_task_no()`` 的预测值：占号
   可能顺延，用预测值会让「任务#0008」落在 0009 号任务上）。
+
+##### `create_aggregate_task(members: list[str], member_stage: str='', name: str='', diagram=None, member_stages: list[str] | None=None) -> str`
+
+新建**聚合任务**并返回任务号（四位零填充）。
+
+聚合任务（用户 2026-11-17）：选几个**已有任务**在各自节点上的产物
+作输入（顺序有意义，决定合并页序）。与 :meth:`create_task` 的差别：
+
+- **不吃源文件**：索引里 ``source_path`` 存空串（详情页按"尚未选择
+  PDF"处理）。运行期的输入是成员任务的产物——创建之后由
+  :mod:`desktop.services.aggregate_ingest` 在后台按成员顺序汇集进来
+  （输入落到入口目录、产出落到同一步骤的产物目录，起点记为已完成）；
+- 索引多四个字段：``kind="aggregate"``（列表加标记、弹窗选择器
+  排除聚合任务嵌套聚合）、``members``（成员任务号，**按用户排序**）、
+  ``member_stages``（与 members 对齐的节点 key 清单；界面 2026-11-17
+  本轮改回**全体共用一个起始节点**，所以创建页传来的值都相同，
+  字段形状保持不变——老任务里仍可能逐成员不同）、``member_stage``
+  （成员节点里**拓扑序最早**的那个——派生流程从它开始，"前面的丢弃，
+  后面的接上"）；
+- ``flow.bpmn`` **永远不是**默认模板的字节拷贝：给了 ``diagram``
+  （用户在创建面板里编辑过的派生图）就落它；没给就落
+  :func:`desktop.steps.aggregate.derive_aggregate_diagram` 派生的图
+  ——模板里有 extract，对聚合任务语义不对。
+
+``members`` 里出现不存在的任务号时抛 ``ValueError``（聚合任务指向
+一个不存在的任务等于埋雷，宁可当场炸在创建时）。``member_stages``
+不给（旧口径）⇒ 全体成员都用 ``member_stage``；给了 ⇒ 按清单逐个
+校验（长度必须与成员数一致、每个都在允许清单里），``member_stage``
+由清单**重新推导**（取最早），传什么都以推导为准。
+
+##### `set_aggregate_start(task_id: str, stage: str) -> bool`
+
+改**已建好的**聚合任务的起始节点（用户 2026-11-18）。
+
+用户原话：「起始节点可以切换变更，如果变更了保存流程的时候，提示起始
+节点丢失，聚合任务之前历史处理数据都丢失」。所以这里只管改 record
+里的 ``member_stage`` / ``member_stages``（全体成员同一口径，与创建时
+一致）；**作废旧数据、按新起点重新汇集**由调用方（流程页 → 详情页
+``restart_aggregate_ingest``）负责——store 不碰磁盘产物。
+
+⚠️ ``member_stage`` 是汇集器唯一认的起点（``aggregate_ingest.plan_ingest``
+读它），改完必须与**新流程图**对得上：调用方要同时保存按新起点派生的
+流程，否则详情页的起点节点找不到。
+
+任务不存在/不是聚合任务/节点不合法 ⇒ 返回 ``False``。
 
 ##### `set_task_source(task_id: str, source_path: Path | str, source_hash: str | None=None) -> bool`
 
@@ -14686,6 +15376,48 @@ key 取自 ``desktop.store.tasks``：``STAGES`` 里的一项，或伪步骤
 ``None`` 与 ``"auto"`` 必须分开：``"auto"`` 是"用户明确选了自动识别"，
 ``None`` 是"这个任务还没设过"——后者交给暂存/历史/内置默认去决定，
 不能一律当成自动（否则老任务升级上来会丢掉历史里的选择）。
+
+---
+
+## `desktop.ui.check_group`
+
+源码：[`desktop/ui/check_group.py`](../../desktop/ui/check_group.py)
+
+一组「复选框外观、单选语义」的选项（创建任务页的**任务类型**用它）。
+
+用户 2026-11-17：
+
+    「任务类型，不要使用胶囊，而是 Checkbox 样式框，但是是单选，分别是
+     常规任务/聚合任务，后续还可以加其他任务」
+
+所以这里刻意**不是** :class:`~desktop.ui.segmented_toggle.SegmentedToggle`
+（那个是胶囊滑块，给"同一视图换形态"用的），而是真的 ``CheckBox``：
+
+- 外观＝qfluentwidgets 的 ``CheckBox``（方框 + 勾），选中项文字加粗，一眼看得出
+  勾在哪一个；
+- 语义＝**单选**：勾一个，别的自动灭；**点掉当前唯一勾选不生效**（恒有一个被
+  选中，与「聚合任务起始节点」同一条纪律——界面不能出现"什么都没选"）；
+- 只有用户点击才发 ``current_changed``；``set_current`` 是程序化切换、不发信号
+  （否则"回流刷新选中项"会自我递归，同 ``SegmentedToggle``）；
+- **加新类型**＝调用方在选项表里多给一项（:meth:`add_item` 也支持运行时追加），
+  这里不含任何"任务"专属知识。
+
+### `class CheckBoxGroup(QWidget)`
+
+复选框外观、单选语义的一组选项。
+
+``items`` 为 ``[(键, 文案), ...]``，默认选中第一项。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(items: Sequence[Sequence[str]], parent=None)` | — |
+| `current() -> str` | 当前选中的键。 |
+| `keys() -> list[str]` | 全部选项的键，顺序即摆放顺序。 |
+| `box(key: str) -> CheckBox \| None` | 取某一项的复选框（设置 tooltip / 判状态用）。 |
+| `set_current(key: str) -> None` | 程序化切换选中项，**不发** ``current_changed``。 |
+| `add_item(key: str, text: str) -> CheckBox` | 追加一个选项（运行时加新类型用），返回它的复选框。 |
 
 ---
 
@@ -15678,6 +16410,65 @@ Qt 对**被模态阻塞的窗口**上的鼠标按下会 ``QApplication::beep()``
 
 ---
 
+## `desktop.ui.native_minimize`
+
+源码：[`desktop/ui/native_minimize.py`](../../desktop/ui/native_minimize.py)
+
+给无边框窗口补回原生「最小化/最大化」样式位，修两个 Windows 老毛病：
+
+**现象**（2026-11-18 用户报障）：
+
+1. 主窗口点「最小化」后，屏幕**左下角**（任务栏正上方）残留一小块窗口
+   ——那是整个窗口被 Windows 缩成的"老式最小化瓦片"，自绘标题栏那一截
+   被原样画在里面；
+2. 最小化后**任务栏上没有这个窗口的按钮**，用户没法从任务栏把它还原。
+
+**根因**：主窗口基类是 ``qframelesswindow.FramelessMainWindow``（Qt 的
+``FramelessWindowHint``），Win32 层是 ``WS_POPUP`` 窗口，**没有
+``WS_MINIMIZEBOX`` 样式位**。Windows 对没有 ``WS_MINIMIZEBOX`` 的窗口执行
+最小化时不走"最小化动画 + 收进任务栏"那套现代流程，而是退回 Win 3.x 时代
+的图标瓦片行为：把窗口缩小成一小块画在屏幕左下角。任务栏自然也就没有按钮
+可点。``qframelesswindow`` 0.8.2 没有补回这个样式位（它的标题栏
+``minBtn`` 直接调 ``showMinimized()``，原生层没有任何补偿）。
+
+**修复**：窗口构造后用 ``SetWindowLongPtrW`` 给原生样式补上
+``WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU``（MSDN 要求 MINIMIZEBOX
+必须与 SYSMENU 同给），再 ``SetWindowPos(SWP_FRAMECHANGED)`` 让样式生效。
+副作用全是正面的：最小化动画恢复、任务栏按钮正常、Win11 悬停最大化按钮的
+Snap Layout 也能弹出来。
+
+⚠️ 只在**真有原生 HWND** 时动手：离屏自测（``QT_QPA_PLATFORM=offscreen``）
+拿到的 winId 不是真窗口句柄，``GetWindowLong`` 会失败——函数原样返回
+``False``，绝不抛异常，调用点无脑一行即可。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| WS_SYSMENU | `524288` |
+| WS_MINIMIZEBOX | `131072` |
+| WS_MAXIMIZEBOX | `65536` |
+| SWP_NOSIZE | `1` |
+| SWP_NOMOVE | `2` |
+| SWP_NOZORDER | `4` |
+| SWP_FRAMECHANGED | `32` |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `enable_native_minimize(window) -> bool` | 给 ``window`` 的原生窗口补回最小化/最大化样式位。 |
+
+#### `enable_native_minimize(window) -> bool`
+
+给 ``window`` 的原生窗口补回最小化/最大化样式位。
+
+返回 ``True`` = 样式已具备（本来就够位或这次改成功）；
+返回 ``False`` = 环境（非 Windows / 离屏无真句柄 / API 失败）不允许改，
+调用方不需要也不能拿它做分支——宁可维持旧行为，也不抛异常打断启动。
+
+---
+
 ## `desktop.ui.segmented_toggle`
 
 源码：[`desktop/ui/segmented_toggle.py`](../../desktop/ui/segmented_toggle.py)
@@ -15716,6 +16507,7 @@ qfluentwidgets 的 ``SegmentedWidget``——后者是给页面导航设计的
 | --- | --- |
 | `__init__(items: Sequence[Sequence[str]], parent=None)` | items 为 ``[(键, 文案), ...]``，默认选中第一项。 |
 | `current() -> str` | 当前选中项的键。 |
+| `keys() -> list[str]` | 全部段的键，顺序即摆放顺序（自测核"有几段、都是谁"用）。 |
 | `set_current(key: str) -> None` | 程序化切换选中项，不发 ``current_changed``。 |
 | `set_item_enabled(key: str, enabled: bool) -> None` | 启用/禁用某一项；禁用项不可悬停、不可点击，文案变灰。 |
 | `is_item_enabled(key: str) -> bool` | 某一项当前是否可用。 |
@@ -15886,6 +16678,10 @@ QSS 里不会生效；它由 `desktop.components.log_panel.apply_log_view_style`
 
 ``kind``：``InfoBar`` 的工厂方法名（info/success/warning/error），
 未知值回落为 info。
+
+⚠️ **同键去重**：同 parent + 同标题 + 同内容的 toast 还没消失时，再次
+调用直接跳过（不再叠一条）。关闭时（``closedSignal``）从去重表摘除，
+之后同样的话可以正常再弹。
 
 ---
 
@@ -16774,6 +17570,33 @@ run_stage）。进程启动即启用 faulthandler 并统一 stdout/stderr 为 UT
 ⚠️ 启动期（读配置 / 解析 JSON / 路由之前）的异常一律转成 error 事件
 + stderr 堆栈，绝不让它变成"静默的退出码 1"（见 `_emit_fatal`）。
 SystemExit 放行（argparse 的用法错误已经写到 stderr 了）。
+
+---
+
+## `desktop.workers.aggregate_ingest_worker`
+
+源码：[`desktop/workers/aggregate_ingest_worker.py`](../../desktop/workers/aggregate_ingest_worker.py)
+
+**聚合任务汇集**的后台 worker（绝不在主线程复制几百张图）。
+
+聚合任务创建后要把它所有成员在起始节点上的产物按顺序复制进自己的任务
+目录（见 :mod:`desktop.services.aggregate_ingest`）。一本古籍 300~600 页、
+每页几百 KB，同步复制就是几十秒的界面冻结——所以固定放后台线程。
+
+⚠️ ``store`` 是纯 Python（不 import Qt），可安全在子线程里用；``boxes.json``
+/ ``sizes.json`` 的进程内缓存带 RLock（``store.annotations._DocCache``），
+与界面线程并发读不会写坏。
+
+### `class AggregateIngestWorker(QObject)`
+
+把成员产物按成员顺序汇集进聚合任务（后台线程里跑）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(store, task_id: str)` | — |
+| `run() -> None` | — |
 
 ---
 
@@ -17711,6 +18534,16 @@ copy_to 给了就**另起一个线程**把它复制成任务目录里的源文�
   与 ``ImpositionMixin.imposition_active`` 同一口径）；
 - **胶囊的颜色** → 再叠一层"有没有拼版页"（绿=已能出图，灰=还没拼版）。
 拼版没有 runs.json 记录（它是纯合成、不走 worker），所以状态只能这么派生。
+
+⚠️⚠️ **颜色必须按"节点"取，不能按"阶段"取**（2026-11-17 用户报 0011）：
+「检测文本框」这一格在 ``runs.json`` 里对应**两个动作**——``detect``（YOLO
+出框）与 ``detect_submit``（提交裁图）。用户手工标注 / 沿用上一页时只跑
+后者，``runs["detect"]`` 压根没有记录；按阶段取就会显示灰色「未执行」，
+可它的产物（裁好的图）明明已经产出、下游去底/拼版/PDF 全跑完了。
+用户口径：「只要这个节点执行过，那么就应当是生效的」。
+判据与详情页步骤条**同一口径**（``TaskDetailPage._slot_state``）：
+``store.node_states()`` 按**节点 id** 归并同格内的全部动作，谁跑过都算这一格
+跑过。别在这里按 ``stage`` 取 ``stage_states()``——那会把同格的动作拆开看。
 
 ### `class TaskRowsWorker(QObject)`
 

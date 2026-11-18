@@ -268,11 +268,11 @@ class DetailViewMixin:
         row.setContentsMargins(T.SPACE_MD, T.SPACE_SM, T.SPACE_MD, T.SPACE_SM)
         row.setSpacing(T.SPACE_MD)
 
-        back_btn = ToolButton(FIF.RETURN)
-        back_btn.setToolTip("返回任务列表")
-        back_btn.setFixedSize(34, 34)
-        back_btn.clicked.connect(self._on_back)
-        row.addWidget(back_btn)
+        self.back_button = ToolButton(FIF.RETURN)
+        self.back_button.setToolTip("返回任务列表")
+        self.back_button.setFixedSize(34, 34)
+        self.back_button.clicked.connect(self._on_back)
+        row.addWidget(self.back_button)
 
         text_column = QVBoxLayout()
         text_column.setContentsMargins(0, 0, 0, 0)
@@ -330,6 +330,20 @@ class DetailViewMixin:
         self.flow_button.setFixedSize(34, 34)
         self.flow_button.clicked.connect(self._on_show_flow)
         row.addWidget(self.flow_button)
+
+        # ---- 聚合任务：重新汇集成员产物（仅聚合任务显示）----
+        # 聚合任务的输入/产出是**创建那一刻**按成员顺序复制进来的快照；成员
+        # 后来又重跑了某一步，这份快照就过期了。没有这个入口，用户只能删掉
+        # 聚合任务重建（成员表格要重选、顺序要重排）。
+        # ⚠️ 显隐由 ``_refresh_source_actions`` 统一管（普通任务恒藏）。
+        self.aggregate_refresh_button = ToolButton(FIF.SYNC)
+        self.aggregate_refresh_button.setToolTip(
+            "重新汇集成员任务在起始节点上的输入与产出（成员重跑之后用）"
+        )
+        self.aggregate_refresh_button.setFixedSize(34, 34)
+        self.aggregate_refresh_button.setVisible(False)
+        self.aggregate_refresh_button.clicked.connect(self.refresh_aggregate_inputs)
+        row.addWidget(self.aggregate_refresh_button)
 
         # ---- 补选源 PDF（用户 2026-10-06「PDF 输入不是必须的」）----
         # 创建任务时可以先不选文件，建出来的就是"空壳任务"。这个按钮是它的
@@ -678,6 +692,39 @@ class DetailViewMixin:
         card.box.addWidget(self._build_preview_stack())
         return card
 
+    def _wrap_with_input_list(self, stage_viewer, edge_dashed: bool = False):
+        """把某一步的预览包成 ``[正常查看器 | 只读图片清单]`` 的两页宿主。
+
+        **只读图片清单**是给"聚合任务的输入节点"用的（用户 2026-11-18，任务
+        0025/0026）：那一步没有上游输入，屏上要显示的就是子任务汇集来的图片
+        本身——提取步骤没有 PDF 可看、去底色步骤也没有"原图/结果"可比，硬用
+        各自的查看器只会显示"暂无图片"。
+
+        为什么包两层而不是直接加一页到 ``preview_stack``：外层栈的页号与步骤
+        一一对应（``stack_index_of`` / ``stage_at_stack_index`` 全靠它），
+        多一页就会把这些下标算错；内层宿主不影响任何页号映射。
+
+        ``edge_dashed``：给透明底成品（去底色）勾一圈虚线边界——否则页面与浅色
+        画布同色，看不出边界（与 ``RembgPreviewWidget`` 同一口径）。
+
+        返回 ``(宿主, 清单控件)``；宿主自己 :meth:`QStackedWidget.addWidget` 到
+        外层栈。
+        """
+        listing = ImageViewerWidget(
+            editable=False,
+            show_boxes=False,
+            image_editable=False,
+            empty_hint="暂无图片（子任务汇集完成后会出现在这里）",
+            image_size_provider=self._original_image_size,
+            thumb_provider=self._page_thumb_for,
+        )
+        if edge_dashed:
+            listing.view.set_edge_dashed(True)
+        host = QStackedWidget()
+        host.addWidget(stage_viewer)
+        host.addWidget(listing)
+        return host, listing
+
     def _build_preview_stack(self) -> QStackedWidget:
         self.preview_stack = QStackedWidget()
         # extract：**单缩略图**预览（用户 2026-10-09：不再分「PDF 预览 |
@@ -694,7 +741,10 @@ class DetailViewMixin:
         self.extract_result_viewer.image_saved.connect(self._on_page_image_saved)
         # 单页提取参数跟「图片提取」面板的当前表单走（与批量提取一致）
         self.extract_result_viewer.set_params_provider(self._extract_params)
-        self.preview_stack.addWidget(self.extract_result_viewer)
+        self.extract_viewer_host, self.extract_input_viewer = (
+            self._wrap_with_input_list(self.extract_result_viewer)
+        )
+        self.preview_stack.addWidget(self.extract_viewer_host)
 
         # detect：图片 + 检测框
         # ⚠️ 空态文案**不写死"请先完成提取"**（用户2026-10-06）：自定义流程
@@ -725,7 +775,10 @@ class DetailViewMixin:
         #    不许编辑**——右键不给「编辑图片」、弹窗不给「编辑」按钮。
         self.rembg_viewer = RembgPreviewWidget(image_editable=False)
         self.rembg_viewer.image_saved.connect(self._on_page_image_saved)
-        self.preview_stack.addWidget(self.rembg_viewer)
+        self.rembg_viewer_host, self.rembg_input_viewer = (
+            self._wrap_with_input_list(self.rembg_viewer, edge_dashed=True)
+        )
+        self.preview_stack.addWidget(self.rembg_viewer_host)
 
         # print：左缩略图条 + 右「打印效果」预览（可拖动排序/删除/插入）
         # ⚠️ params_provider 必须传：缺了它预览永远显示"未接入打印参数，已显示原图"，

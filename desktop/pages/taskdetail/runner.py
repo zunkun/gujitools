@@ -71,6 +71,7 @@ class StageRunnerMixin:
         _release_run: Callable[[], None]
         _mark_run_launched: Callable[[], None]
         _missing_input_kind: Callable[[], str]
+        _input_node_mode: Callable[[], bool]
         _toast: Callable[..., None]
         _refresh_stage_views: Callable[[], None]
         _set_stage_status: Callable[..., None]
@@ -231,6 +232,18 @@ class StageRunnerMixin:
         """
         if self.current_stage() == IMPOSITION_STAGE:
             return
+        # ⚠️ 聚合任务的**输入节点**执行起来毫无意义（没有源 PDF、也没有上游
+        #    输入，图片就是子任务汇集来的结果）：按钮已置灰，这里再挡一道，
+        #    防快捷键/自动化绕过可见性直接触发（用户 2026-11-18 任务 0025）。
+        if self._input_node_mode():
+            from desktop.ui.toast import show_toast
+
+            show_toast(
+                self.window(), "info", "这一步不用执行",
+                "当前步骤是聚合任务的输入节点：图片由子任务汇集而来，"
+                "直接看清单或进入下一步即可。",
+            )
+            return
         if not self._acquire_run("步骤"):
             return
         try:
@@ -311,6 +324,26 @@ class StageRunnerMixin:
         输出/错误/完成信号，再挂看门狗兜底 Windows 偶发的 finished 丢失。
         """
         if not self.task_id or not self._stage_inputs_ready():
+            # ⚠️ **聚合任务**：它的输入是创建时按成员顺序汇集进来的（见
+            #    ``services/aggregate_ingest``），不是用户上传的、也没有上游
+            #    可以"先跑完"。缺输入只有两种真实原因，必须说准，否则用户会
+            #    被引去点一个不存在的按钮/反复重跑不存在的上游。
+            if self._is_aggregate_task():
+                if self._aggregate_pending():
+                    self._toast(
+                        "info",
+                        "聚合输入正在汇集",
+                        "正在把各成员任务在起始节点上的输入与产出复制进来，"
+                        "请稍候再执行。",
+                    )
+                else:
+                    self._toast(
+                        "warning",
+                        "聚合输入不完整",
+                        "成员任务在起始节点上没有可复制的图。请先确认各成员"
+                        "任务这一步真的跑完了，或删除本聚合任务后重新创建。",
+                    )
+                return
             # ⚠️ 空壳任务（创建时没选 PDF，用户 2026-10-06）说清去哪儿补，
             #    而不是"请先导入 PDF"——那听着像要去列表页重新导入。
             #

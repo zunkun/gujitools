@@ -232,6 +232,8 @@ class CreateTaskPanel(QWidget):
         pick_row.setContentsMargins(0, 0, 0, 0)
         pick_row.setSpacing(T.SPACE_SM)
         self.pdf_label = BodyLabel("上传文件：")
+        # 字段名加粗（用户 2026-11-17：与「任务类型 / 任务名称」同一档视觉）
+        ui.apply_to(self.pdf_label, T.SIZE_BODY, bold=True, color=T.INK)
         pick_row.addWidget(self.pdf_label)
         self.pick_button = PushButton("选择 PDF/DjVu 文件")
         self.pick_button.clicked.connect(self._on_pick_pdf)
@@ -319,6 +321,9 @@ class CreateTaskPanel(QWidget):
             self,
             editable=True,
             reset_factory=load_custom_init,
+            # 画布**不自己滚动**：创建任务页整体纵向滚动，流程图一次看全
+            # （用户 2026-11-18）。
+            scroll=False,
         )
         panel.diagram_changed.connect(self._on_diagram_changed)
         if panel.reset_button is not None:
