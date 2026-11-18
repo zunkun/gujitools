@@ -38,6 +38,15 @@
 ``stages/input/``"接住这种流程。所以删掉「源PDF」圆圈**不该拦保存**。
 仍然拦的是**两个及以上**开始事件——那才是图上说不清有几处入口的坏图。
 
+2026-11-18 用户补充**聚合任务**专用规则（:func:`validate_flow` 的
+``aggregate_start`` 参数；普通任务不传、不受影响）：
+
+7. **聚合流程必须以起始节点作为第一个任务节点**。聚合任务的输入是各成员
+   产物汇集进「聚合输入」的（:mod:`desktop.services.aggregate_ingest`），
+   汇集数据只对起始节点那一格有效——用户编辑流程图时把别的步骤挪到它
+   前面，「聚合输入」的产物就喂给了错误的步骤。所以创建面板提交、流程页
+   保存时都要按**当前起始节点**校验：拓扑序里第一个可执行阶段必须等于它。
+
 ## 错误与警告分两档
 
 - **errors**（拒绝保存）：上面 2 条原有规则 + 3 类图结构规则（多开始节点、
@@ -90,8 +99,13 @@ class FlowValidation:
         return not self.errors
 
 
-def validate_flow(diagram: FlowDiagram | None) -> FlowValidation:
+def validate_flow(diagram: FlowDiagram | None,
+                  aggregate_start: str = "") -> FlowValidation:
     """校验一张流程图；返回 :class:`FlowValidation`。
+
+    :param aggregate_start: **聚合任务**的起始节点（stage key）。给了就追加
+        硬规则 ⑦：拓扑序第一个可执行阶段必须等于它（聚合流程必须以起始
+        节点打头，见模块 docstring）。普通任务不传——规则不生效。
 
     ⚠️ 判"顺序"用的是 :meth:`FlowDiagram.stage_order`（拓扑序）——与状态机
     同一份答案，别在这里另写一份顺序推导。网关/事件/认不出阶段的节点都不
@@ -110,6 +124,11 @@ def validate_flow(diagram: FlowDiagram | None) -> FlowValidation:
             "流程里没有可执行的步骤：至少要保留一个功能节点"
             "（提取/检测/去底色/拼版/PDF排版）。",))
 
+    # ---- 硬规则 ⑦：聚合流程必须以起始节点打头（先于 ②：最具体的错误
+    #      最先报，用户改哪儿一目了然）---------------------------------
+    if aggregate_start:
+        errors.extend(_aggregate_start_errors(order, aggregate_start))
+
     # ---- 硬规则 ②：print 在流程里就必须排最后 -------------------------
     steps = _step_sequence(order)
     if "print" in steps and steps[-1] != "print":
@@ -125,6 +144,29 @@ def validate_flow(diagram: FlowDiagram | None) -> FlowValidation:
     warnings.extend(_habit_warnings(diagram, order))
 
     return FlowValidation(errors=tuple(errors), warnings=tuple(warnings))
+
+
+def _aggregate_start_errors(order: tuple[str, ...],
+                            start_stage: str) -> list[str]:
+    """硬规则 ⑦：聚合流程的**第一个可执行阶段**必须是起始节点。
+
+    ``order`` 为空不会走到这里（硬规则 ① 已经提前返回）；起始节点本身
+    不是合法 stage key 时跳过（调用方传的是界面勾选值，store 落库前已经
+    校验过，这里不替它报第二遍）。
+    """
+    if ports.spec_for_stage(start_stage) is None:
+        return []
+    first = order[0] if order else ""
+    if first == start_stage:
+        return []
+    head = (
+        f"「{ports.stage_label(first)}」" if first else "（无可执行步骤）"
+    )
+    return [
+        f"聚合流程必须以起始节点「{ports.stage_label(start_stage)}」"
+        f"作为第一个任务节点——当前「聚合输入」后面接的是{head}，"
+        "请把它挪回最前，或把排在它前面的步骤删掉。"
+    ]
 
 
 def _step_sequence(order: tuple[str, ...]) -> list[str]:

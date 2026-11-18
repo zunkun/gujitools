@@ -4,7 +4,7 @@
 对应 ``docs/tasks/bpm测试.md``：BPM 可以任意组合，但并非所有组合都合法；
 **不合法的流程在创建或编辑保存时就判出来、拒绝保存**。
 
-本模块钉死四件事：
+本模块钉死五件事：
 
 1. **文档里的 10 条合法组合全部放行**——包括"没有提取"的入口流程
    （detect/rembg/imposition 任意顺序任意个数）、单步流程（只留一个
@@ -22,7 +22,10 @@
    产物落点）——本模块改为钉**零警告放行**。
 4. **保存入口真的拦**——``FlowPanel.accept``（弹窗/创建页内嵌编辑器）
    与 ``TaskFlowPage._on_done``（流程编辑二级页）对不合法的图都
-   **不落盘、不切页**。
+   **不落盘、不切页**；
+5. **聚合流程必须以起始节点打头**（2026-11-18，``validate_flow`` 的
+   ``aggregate_start`` 参数）：派生图天然满足、把别的步骤挪到起始节点前面
+   会被拒，普通任务不传参数不受影响。
 
 纯逻辑部分不建窗口；第 4 条建离屏控件（不弹模态）。
 """
@@ -87,6 +90,7 @@ def run(ctx) -> None:
     _check_illegal_combos(ok)
     _check_structure(ok)
     _check_warnings(ok)
+    _check_aggregate_start(ok)
     _check_templates_clean(ok)
     _check_data_chain(ctx, ok)
     _check_panel_gate(ctx, ok)
@@ -401,6 +405,52 @@ def _check_warnings(ok) -> None:
        f"warnings={result.warnings}")
 
 
+# ----------------------------- ④a 聚合流程必须以起始节点打头（2026-11-18）
+def _check_aggregate_start(ok) -> None:
+    """聚合任务硬规则 ⑦（``aggregate_start`` 参数）。
+
+    用户口径：聚合任务设置的起始节点，下面的流程图必须以这个节点作为
+    **第一个任务节点**；修改流程图（添加步骤、改连线）把它挪到后面时，
+    保存要校验、拒绝落盘——否则「聚合输入」汇集的成员产物喂给了错误的
+    步骤（``aggregate_ingest`` 的汇集数据只对起始节点那一格有效）。
+    """
+    from desktop.steps.aggregate import (
+        AGGREGATE_START_STAGES,
+        derive_aggregate_diagram,
+    )
+    from desktop.steps.validate import validate_flow
+
+    # 派生图（用户没编辑过）对每个合法起点都必须**天然满足**——
+    # 派生逻辑把起始节点放在「聚合输入」后面第一位，规则不能误伤它。
+    for stage in AGGREGATE_START_STAGES:
+        result = validate_flow(
+            derive_aggregate_diagram(stage), aggregate_start=stage
+        )
+        ok(f"派生图（起始={stage}）以起始节点打头 ⇒ 放行",
+           result.ok, f"errors={result.errors}")
+
+    # 反例：起始节点是「图片拼版」，用户把 检测/去底色 挪到了它前面
+    result = validate_flow(
+        _chain("detect", "rembg", "imposition", "print"),
+        aggregate_start="imposition",
+    )
+    ok("聚合流程把检测挪到拼版前面 ⇒ 拒绝并点名起始节点",
+       not result.ok and any("起始节点" in e and "拼版" in e
+                             for e in result.errors),
+       f"errors={result.errors}")
+
+    # 起始节点在第一位 ⇒ 放行
+    result = validate_flow(_chain("imposition", "print"),
+                           aggregate_start="imposition")
+    ok("聚合流程以拼版打头 ⇒ 放行", result.ok, f"errors={result.errors}")
+
+    # 同一张反例图**不带** aggregate_start（普通任务）⇒ 照常放行——
+    # 参数是聚合任务专用，不能影响普通任务的合法性判据
+    result = validate_flow(_chain("detect", "rembg", "imposition", "print"))
+    ok("同一张图不带 aggregate_start ⇒ 普通任务不受影响",
+       result.ok, f"errors={result.errors}")
+
+
 # ------------------------------------------------- ④ 模板必须干净通过
 def _check_templates_clean(ok) -> None:
     """默认模板必须**零错误零警告**——模板是用户起点，
@@ -584,6 +634,43 @@ def _check_flow_page_gate(ctx, ok) -> None:
                saved == [tid] and store.task_diagram(tid).stage_order()
                == ("detect", "rembg", "print"),
                f"saved={saved} order={store.task_diagram(tid).stage_order()}")
+
+            # ---- 聚合任务：起始节点打头的保存闸（用户 2026-11-18）----
+            member = store.create_task(ctx.pdf, "agg-member", "成员任务")
+            agg = store.create_aggregate_task(
+                [member], member_stage="imposition")
+            try:
+                ok("流程编辑页能打开聚合任务", page.open_task(agg))
+                assert page._aggregate_panel is not None
+                agg_flow = store.task_dir(agg) / "flow.bpmn"
+                on_disk = agg_flow.read_bytes()
+
+                # 反例：把「检测」挪到起始节点（拼版）前面——保存必须被拒
+                page._aggregate_panel._editor_panel._canvas.set_diagram(
+                    _chain("detect", "rembg", "imposition", "print"))
+                app.processEvents()
+                page._on_done(True)
+                app.processEvents()
+                ok("聚合流程不以起始节点打头 ⇒ 二级页拒绝保存（文件没动）",
+                   agg_flow.read_bytes() == on_disk,
+                   "flow.bpmn 被覆盖了")
+                ok("聚合流程被拒时不发 flow_saved（不切回详情页）",
+                   saved == [tid], str(saved))
+
+                # 换回以起始节点打头的图：放行落盘
+                page._aggregate_panel._editor_panel._canvas.set_diagram(
+                    _chain("imposition", "print"))
+                app.processEvents()
+                page._on_done(True)
+                app.processEvents()
+                ok("聚合流程以拼版打头 ⇒ 正常落盘并发出 flow_saved",
+                   saved == [tid, agg]
+                   and store.task_diagram(agg).stage_order()
+                   == ("imposition", "print"),
+                   f"saved={saved} order={store.task_diagram(agg).stage_order()}")
+            finally:
+                store.delete_task(agg)
+                store.delete_task(member)
         finally:
             page.close()
             app.processEvents()

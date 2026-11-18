@@ -266,6 +266,25 @@ class TaskFlowPage(QWidget):
         """
         task_id = self._task_id
         if ok and task_id:
+            diagram = self._current_diagram()
+            # 聚合任务按**当前起始节点**校验（硬规则 ⑦：用户可能刚改过起点、
+            # 又在画布上把别的步骤挪到了它前面——校验先拦，别让用户确认完
+            # 「历史数据作废」才发现流程本身不合法）。
+            aggregate_start = (
+                self._aggregate_panel.current_stage()
+                if self._aggregate_panel is not None else ""
+            )
+            flow_warnings: tuple[str, ...] = ()
+            if diagram is not None:
+                from desktop.steps.validate import validate_flow
+                from desktop.ui.toast import show_toast
+
+                result = validate_flow(diagram, aggregate_start=aggregate_start)
+                if not result.ok:
+                    show_toast(self, "warning", "流程不合法，未保存",
+                               "；".join(result.errors))
+                    return
+                flow_warnings = result.warnings
             stage_changed = (
                 self._aggregate_panel is not None
                 and self._aggregate_panel.stage_changed()
@@ -276,19 +295,10 @@ class TaskFlowPage(QWidget):
                 if not self._confirm_start_change(old, new):
                     # 取消：不落盘、不切页，用户留在本页（可以改回去再保存）
                     return
-            diagram = self._current_diagram()
             if diagram is not None:
-                from desktop.steps.validate import validate_flow
-                from desktop.ui.toast import show_toast
-
-                result = validate_flow(diagram)
-                if not result.ok:
-                    show_toast(self, "warning", "流程不合法，未保存",
-                               "；".join(result.errors))
-                    return
-                if result.warnings:
+                if flow_warnings:
                     show_toast(self, "warning", "流程已保存（有提示）",
-                               "；".join(result.warnings))
+                               "；".join(flow_warnings))
                 # ⚠️ 起点先落 record 再落流程图：详情页一进来就按 `member_stage`
                 #    找起点节点，两处必须是"同一次保存"的结果。
                 if stage_changed:

@@ -13839,6 +13839,15 @@ _apply_control_width`` 按 stage 换宽度、``history._history_fill_keys``
 ``stages/input/``"接住这种流程。所以删掉「源PDF」圆圈**不该拦保存**。
 仍然拦的是**两个及以上**开始事件——那才是图上说不清有几处入口的坏图。
 
+2026-11-18 用户补充**聚合任务**专用规则（:func:`validate_flow` 的
+``aggregate_start`` 参数；普通任务不传、不受影响）：
+
+7. **聚合流程必须以起始节点作为第一个任务节点**。聚合任务的输入是各成员
+   产物汇集进「聚合输入」的（:mod:`desktop.services.aggregate_ingest`），
+   汇集数据只对起始节点那一格有效——用户编辑流程图时把别的步骤挪到它
+   前面，「聚合输入」的产物就喂给了错误的步骤。所以创建面板提交、流程页
+   保存时都要按**当前起始节点**校验：拓扑序里第一个可执行阶段必须等于它。
+
 ## 错误与警告分两档
 
 - **errors**（拒绝保存）：上面 2 条原有规则 + 3 类图结构规则（多开始节点、
@@ -13877,11 +13886,15 @@ _apply_control_width`` 按 stage 换宽度、``history._history_fill_keys``
 
 | 函数 | 说明 |
 | --- | --- |
-| `validate_flow(diagram: FlowDiagram \| None) -> FlowValidation` | 校验一张流程图；返回 :class:`FlowValidation`。 |
+| `validate_flow(diagram: FlowDiagram \| None, aggregate_start: str='') -> FlowValidation` | 校验一张流程图；返回 :class:`FlowValidation`。 |
 
-#### `validate_flow(diagram: FlowDiagram | None) -> FlowValidation`
+#### `validate_flow(diagram: FlowDiagram | None, aggregate_start: str='') -> FlowValidation`
 
 校验一张流程图；返回 :class:`FlowValidation`。
+
+:param aggregate_start: **聚合任务**的起始节点（stage key）。给了就追加
+    硬规则 ⑦：拓扑序第一个可执行阶段必须等于它（聚合流程必须以起始
+    节点打头，见模块 docstring）。普通任务不传——规则不生效。
 
 ⚠️ 判"顺序"用的是 :meth:`FlowDiagram.stage_order`（拓扑序）——与状态机
 同一份答案，别在这里另写一份顺序推导。网关/事件/认不出阶段的节点都不

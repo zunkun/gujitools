@@ -1241,13 +1241,20 @@ class AggregateCreatePanel(QWidget):
         return bool(self._members)
 
     def _validate_flow(self) -> bool:
-        """提交前过流程合法性（与普通创建面板同一道闸；没编辑过不校验）。"""
+        """提交前过流程合法性（与普通创建面板同一道闸；没编辑过不校验）。
+
+        ⚠️ 必须带上 ``aggregate_start``（硬规则 ⑦）：用户编辑过的图把别的
+        步骤挪到起始节点前面，「聚合输入」汇集的产物就喂错了步骤——保存时
+        当场拒绝。没编辑过时画布就是按起始节点派生的图，天然满足，不必验。
+        """
         if not self._flow_edited:
             return True
         from desktop.steps.validate import validate_flow
         from desktop.ui.toast import show_toast
 
-        result = validate_flow(self.current_diagram())
+        result = validate_flow(
+            self.current_diagram(), aggregate_start=self._start_stage
+        )
         if not result.ok:
             show_toast(
                 self.window(), "warning", "流程不合法，未创建",
