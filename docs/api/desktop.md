@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 196 个模块、213 个公开类、1616 个公开函数/方法（生成于 2026-11-18）。
+覆盖 196 个模块、213 个公开类、1617 个公开函数/方法（生成于 2026-11-18）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -164,7 +164,7 @@
 | [`desktop.store.imposition`](#desktopstoreimposition) | 1 | 4 |
 | [`desktop.store.json_io`](#desktopstorejson_io) | 0 | 8 |
 | [`desktop.store.pages`](#desktopstorepages) | 1 | 9 |
-| [`desktop.store.runs`](#desktopstoreruns) | 1 | 11 |
+| [`desktop.store.runs`](#desktopstoreruns) | 1 | 12 |
 | [`desktop.store.store`](#desktopstorestore) | 1 | 1 |
 | [`desktop.store.tasks`](#desktopstoretasks) | 1 | 71 |
 | [`desktop.store.ui_state`](#desktopstoreui_state) | 1 | 13 |
@@ -9119,30 +9119,37 @@ parent 一般为 MainWindow；会创建 store 引用与导入按钮状态占位�
 
 源码：[`desktop/services/aggregate_ingest.py`](../../desktop/services/aggregate_ingest.py)
 
-**聚合任务**的成员产物汇集：把成员任务在**起始节点**上**生成的结果**
+**聚合任务**的成员产物汇集：把成员任务在**起始节点**上的「输入 + 产出」
 按成员顺序复制进聚合任务自己的任务目录。
 
-## 用户口径（2026-11-18）
+## 用户口径（2026-11-18 晚，统一模型）
 
-> 选择的开始节点选项列表，就是所有生效的节点，选择哪个节点，哪个节点生成
-> 的结果，就作为当前聚合任务的输入数据。
+> 比如选择子任务节点 x，那么默认 x 的输入做了聚合开始节点的输入，x 的输出
+> 作为聚合开始节点的输出。
 
-所以汇集搬的是**产出**，不是它的上游输入：选了「图片去底色」，进来的是各
-成员**去掉底色之后的成品图**，不是还没去底的原图（早先两样都搬，2026-11-17
-口径；现在作废——那样页面清单还指向"没处理过"的图）。
+起始节点 X 是对成员在 X 这一步「做过的活」的**整体回放**：
+
+1. **X 的输入**（成员侧该节点的上游产物）→ 复制进聚合任务 X 节点的输入目录
+   （``stages/input/``）——页清单指向它，起点页面上显示的就是这些图；
+2. **X 的产出**（成员在这一步生成的结果）→ 复制进聚合任务 X 节点的产出目录，
+   起点视为**已完成**（写一条合成的 runs 记录），下游能直接跑。
 
 一个聚合任务在创建之后立刻拥有三样东西：
 
-1. **起点节点的产出**（``stages/extract`` / ``stages/detect`` /
-   ``stages/rembg`` / ``stages/imposition`` / ``stages/print/print.pdf``）：
-   成员任务在同一步骤的产出，按成员顺序拼起来。因为产出已经就位，聚合任务
-   的起点视为**已完成**（写一条合成的 runs 记录），下一步能直接跑；
-2. **配套的派生数据**：``pages.json``（页集合，指向**产出**）、
-   ``sizes.json``（逐页像素尺寸）、``boxes.json``（检测框，起点是检测时）、
-   ``drafts/imposition.json``（拼版版面，起点是拼版时）；
-3. **拼版是唯一的例外**：它的产物是一份**版面**，版面里引用的是"被拼的
-   那批图"，所以那批图（成员的起点输入）也必须一起搬过来，否则版面指向
-   不存在的文件（见 :func:`plan_ingest` 里的 ``IN_BOUND_PAGES``）。
+1. **起点节点的输入与产出**（``stages/input`` + ``stages/extract`` /
+   ``stages/detect`` / ``stages/rembg`` / ``stages/imposition``）；
+2. **配套的派生数据**：``pages.json``（页集合，指向**起点输入**——
+   ``extract`` / ``imposition`` 例外，见下）、``sizes.json``（逐页像素尺寸）、
+   ``boxes.json``（检测框，起点是检测时）、``drafts/imposition.json``
+   （拼版版面，起点是拼版时）；
+3. **两个例外**：
+   - ``extract``：它的输入是成员的**源 PDF**——PDF 不搬（"输入源没有 PDF"），
+     只搬产出；页面只读显示汇集来的图（不能现场提取）；
+   - ``print``：它的**输出是聚合任务自己生成的 PDF**，不是成员的输出
+     （"输出的话是聚合任务的输出，不是子任务的输出"）——创建时**不合并**
+     成员 PDF、起点**不记已完成**；汇集只搬成员的印刷取图（拼版生效取
+     拼版成品、否则取去底色成品）当输入，用户在聚合任务里点「PDF排版」
+     现场生成 ``print.pdf``。
 
 ## 页名与顺序：``001_1.jpg``
 
@@ -9158,10 +9165,7 @@ parent 一般为 MainWindow；会创建 store 引用与导入按钮状态占位�
 
 - **只做一次、幂等**：重复调只会覆盖同名文件、补齐缺的，不会删用户的图；
   ``NNN_`` 前缀的**陈旧**文件（成员变了/页少了）会被清掉，其余不动。
-- 起点是 ``print`` 时产出不是目录而是一个 PDF：用 PyMuPDF 按成员顺序
-  ``insert_pdf`` 合并成 ``stages/print/print.pdf``（这类任务没有"页图片"，
-  ``pages.json`` 不写）。
-- 成员缺这一步的产物 ⇒ 记一条 note 跳过（不抛异常：聚合是"尽力而为"，
+- 成员缺这一步的产物/输入 ⇒ 记一条 note 跳过（不抛异常：聚合是"尽力而为"，
   一个成员没跑完不该让整次汇集失败），调用方把 note 展示给用户。
 
 ### 模块常量
@@ -9169,7 +9173,6 @@ parent 一般为 MainWindow；会创建 store 引用与导入按钮状态占位�
 | 名称 | 值 |
 | --- | --- |
 | MEMBER_PREFIX_WIDTH | `3` |
-| AGGREGATE_PDF_NAME | `"print.pdf"` |
 | AGGREGATE_PENDING_MARKER | `".aggregate-pending"` |
 
 ### `class IngestCopy`
@@ -11392,8 +11395,11 @@ args 约定：
 ⚠️ **产物怎么进来**（本模块只管"流程从哪开始"，不管文件搬运）：创建之后由
 :mod:`desktop.services.aggregate_ingest` 在后台把各成员在起始节点上的
 **输入**（落到 ``stages/input/<NNN>_<页名>``）与**产出**（落到同一步骤的
-产物目录）按成员顺序复制进来，并把起点记成"已完成"。页名前缀保证成员顺序
-与页序都不丢。
+产物目录）按成员顺序复制进来，并把起点记成"已完成"。统一模型（用户
+2026-11-18 晚）：**x 的输入做聚合起点的输入，x 的输出做聚合起点的输出**。
+两个例外：``extract`` 起点不搬输入（成员的源 PDF 不搬）；``print`` 起点
+不搬产出也**不记已完成**——它的输出是聚合任务现场执行生成的 PDF。
+页名前缀保证成员顺序与页序都不丢。
 
 ## 流程怎么派生
 
@@ -14392,6 +14398,7 @@ runs.json 读写。
 | `list_node_runs(task_id: str, node_id: str, stage: str \| None=None) -> list[dict]` | 某**节点实例**的历史执行记录（最新在前）。 |
 | `node_states(task_id: str) -> dict[str, dict]` | 每个**节点实例**最近一次运行的状态与进度（B 方案，步骤条渲染用）。 |
 | `all_stage_runs(task_id: str) -> dict[str, list[dict]]` | 整份运行历史（**一次读盘**），键为阶段名、值为最新在前的记录列表。 |
+| `clear_synthetic_aggregate_runs(task_id: str) -> list[str]` | 删掉本任务**所有**「聚合汇集」合成的 runs 记录，返回被清的 |
 | `flow_stages(task_id: str) -> set[str]` | 本任务流程里**真实存在**的运行阶段集合（按界面格摊开）。 |
 | `stage_states(task_id: str) -> dict[str, dict]` | 每个阶段最近一次运行的状态与进度（页面步骤条渲染用）。 |
 | `completed_aggregate_stages(task_id: str) -> list[str]` | 这个任务**已经完成**、可作聚合成员节点的阶段清单（按拓扑序）。 |
@@ -14453,6 +14460,19 @@ B 方案（2026-10-17）：同一步骤的多个节点各跑各的，历史下�
 
 给"跨阶段比对时间戳"这类一次要看全的场景用：逐个 ``list_stage_runs()``
 会把整份 runs.json 读 N 遍（任务多跑过几次就有几十上百 KB）。
+
+##### `clear_synthetic_aggregate_runs(task_id: str) -> list[str]`
+
+删掉本任务**所有**「聚合汇集」合成的 runs 记录，返回被清的
+``<阶段>:<run_id>`` 清单。
+
+汇集器写的合成记录都带 ``parameters.aggregate == True``（普通执行没有
+这个标记，不受影响）。**重新汇集/改起点时必须先清**：旧起点（或旧
+口径）的合成记录描述的是另一份数据——留着它，下游的"这一步完成了吗"
+就拿旧记录当真（用户 2026-11-18 任务 0026：起点从去底色改成检测后，
+旧 rembg 合成记录让「图片去底色」假显示已完成，而它其实是要重跑的
+下游）。清完由 :func:`desktop.services.aggregate_ingest.run_ingest`
+按新起点重写该写的那几条。
 
 ##### `flow_stages(task_id: str) -> set[str]`
 

@@ -346,9 +346,10 @@ class TaskTable(QWidget):
 
         layout.addWidget(label)
         if task.get("kind") == "aggregate":
-            # 「聚合」小标记：中性灰（draft 色），别用状态语义色——它不是
-            # 阶段进度，只是"这条任务的类型"说明。
-            layout.addWidget(ui.StatusChip("聚合", "draft"))
+            # 「聚合」小标记：主题主色高亮（accent），用户 2026-11-18 要求
+            # 一眼能认出聚合任务——中性灰太淡看不出。色值统一取 theme 的
+            # "aggregate" 状态键，别在这里硬编码颜色。
+            layout.addWidget(ui.StatusChip("聚合", "aggregate"))
         layout.addStretch()
         return w
 

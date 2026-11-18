@@ -187,12 +187,12 @@ class TaskDetailPage(
         self._backup_timer.setSingleShot(True)
         self._backup_timer.timeout.connect(self._run_source_backup)
         self._backup_task_id: str | None = None
-        #: 聚合任务汇集期间的「分批显示」轮询（见 _schedule_input_node_poll）：
+        #: 聚合任务汇集期间的「分批显示」轮询（见 _schedule_aggregate_start_poll）：
         #: 后台复制是逐文件进行的，清单不必等全部复制完才出现——每 1.2s 重刷
         #: 一次起点清单，文件落一批显示一批（用户 2026-11-18）。
-        self._input_node_poll = QTimer(self)
-        self._input_node_poll.setSingleShot(True)
-        self._input_node_poll.timeout.connect(self._on_input_node_poll)
+        self._aggregate_start_poll = QTimer(self)
+        self._aggregate_start_poll.setSingleShot(True)
+        self._aggregate_start_poll.timeout.connect(self._on_aggregate_start_poll)
         #: 「按源 PDF 名派生第四步默认 PDF 名/古籍名」的挂起值：第四步面板是
         #: 惰性的，set_task 只记下源名，等面板真被建出来再应用（见 view.py
         #: 的 _apply_pending_source_defaults）
@@ -436,7 +436,7 @@ class TaskDetailPage(
         # "当前步是不是聚合任务的输入节点"的缓存也按任务作废（换任务即换答案）
         self._input_node_cached = None
         # 汇集轮询停表：换任务后旧任务的轮询不许再刷新任务的清单
-        self._input_node_poll.stop()
+        self._aggregate_start_poll.stop()
         self.pdf_page_count = 0
         self._history_prefilled: set[str] = set()
         #: ``control_stack`` 页号 → 上次为它复位的**节点标记**（B 方案）。
@@ -1024,10 +1024,6 @@ class TaskDetailPage(
         if stage == "detect":
             return self.detect_viewer.current_path()
         if stage == "rembg":
-            if self._input_node_mode():
-                # 聚合任务的去底色起点：屏上是只读清单，当前页就是成品图文件
-                path = self.rembg_input_viewer.current_path()
-                return Path(path) if path else None
             text = self.rembg_viewer.current_display_path()
             return Path(text) if text else None
         if stage == "extract":
@@ -1803,23 +1799,24 @@ class TaskDetailPage(
         #    ``stages/rembg``，检测没提交时上游目录也可能留图。上游的产出动作
         #    没成功执行过，这一步就该显示"暂无图片"（用户 2026-11-03）。
         visible = self._stage_input_visible()
-        # ⚠️ 聚合任务的**输入节点**（起点这一步）：它没有上游输入——上游在图
-        #    上被裁掉了，入口目录也是空的（汇集只搬产出）。所以"输入是否生效"
-        #    这条判据对它恒为假，照它算就永远"暂无图片"。用户 2026-11-18
-        #    任务 0026：「起始节点是去底色，但是聚合任务去底色节点没有显示任何
-        #    图片……检查所有可以使用的节点作为第一个节点的时候，聚合数据来源
-        #    需要显示在第一个节点中」。
+        # ⚠️ 聚合任务的**纯展示起点**（只有图片提取）：它没有输入（源 PDF
+        #    不搬）⇒ 输入判据恒为假，用 input_node 兜住，别让起点显示"暂无
+        #    图片"。其余起点（检测/去底色/拼版/PDF排版）的输入回落到
+        #    ``stages/input``、入口输入天然生效，判据照普通步骤算就成立
+        #    （用户 2026-11-18 任务 0026：「聚合数据来源需要显示在第一个
+        #    节点中」；晚上口径：那些起点照常可重跑/编辑）。
         input_node = self._is_aggregate_input_node()
         visible = visible or input_node
         if stage == "extract":
             if input_node:
                 # 没有 PDF 可看、也不该现场提取：屏上是只读图片清单（列表来自
-                # 页清单＝产出目录，见 ``manifest._aggregate_start_output_dir``）
+                # 页清单＝产出目录，见 ``manifest._sync_manifest_to_input``
+                # 的提取起点特判）
                 self.extract_viewer_host.setCurrentWidget(self.extract_input_viewer)
                 self.extract_input_viewer.set_images(
                     self._manifest_paths(), force=force
                 )
-                self._schedule_input_node_poll()
+                self._schedule_aggregate_start_poll()
                 return
             self.extract_viewer_host.setCurrentWidget(self.extract_result_viewer)
             # ⚠️ 不再 set_images(manifest)（用户 2026-10-09 合并双标签）：
@@ -1835,19 +1832,12 @@ class TaskDetailPage(
             self._warm_entry_thumbs(paths)
             # 清单可能变了（增删页/切任务/批量检测跑完）→ 统计跟着重算
             self._refresh_detect_stats()
-            if input_node:
-                # 检测起点也是输入节点：汇集期间同样分批显示
-                self._schedule_input_node_poll()
+            # 检测起点可重跑/编辑（2026-11-18 晚口径）；汇集期间分批显示
+            self._schedule_aggregate_start_poll()
         elif stage == "rembg":
-            if input_node:
-                # 去底色的"结果"就是汇集来的成品图，没有原图可比（原图属于上游，
-                # 而起点没有上游）⇒ 同样换成只读图片清单
-                self.rembg_viewer_host.setCurrentWidget(self.rembg_input_viewer)
-                self.rembg_input_viewer.set_images(
-                    self._manifest_paths(), force=force
-                )
-                self._schedule_input_node_poll()
-                return
+            # 去底色起点（聚合任务）不再特判成只读清单：输入（成员的裁图）与
+            # 产出（成员的成品图）都已汇集进来 ⇒ 原图/成品对比查看器就是
+            # 这一步的如实回放（2026-11-18 晚口径）。
             self.rembg_viewer_host.setCurrentWidget(self.rembg_viewer)
             # ⚠️ 2026-10-22：去底色**不再按区域裁图**（area/border 已移除），
             #    所以这里不再喂 boxes_provider / border_provider——
@@ -1875,6 +1865,8 @@ class TaskDetailPage(
             self._apply_current_image_offset()
             # 入口图片缩略图预热（同上：这一步是流程第一步时才有效）
             self._warm_entry_thumbs(paths)
+            # 去底色起点可重跑（2026-11-18 晚口径）；汇集期间分批显示
+            self._schedule_aggregate_start_poll()
         elif stage == "print":
             entries, _doc = self._print_entries()
             self.print_preview.set_entries(entries)
@@ -1895,27 +1887,29 @@ class TaskDetailPage(
             # 灭掉——用户 2026-10-03："旧的数据不显示"。
             self.print_preview.set_pdf_path(self._current_print_pdf_path())
 
-    def _schedule_input_node_poll(self) -> None:
-        """汇集期间每 ``INPUT_NODE_POLL_MS`` 重刷一次起点清单（**分批显示**）。
+    def _schedule_aggregate_start_poll(self) -> None:
+        """汇集期间每 ``INPUT_NODE_POLL_MS`` 重刷一次**聚合起点**清单
+        （**分批显示**）。
 
         后台汇集是逐文件复制的：清单不必等全部复制完才出现——每次轮询都会
-        ``_sync_manifest_to_input`` 按**产出目录现状**重建页清单，文件落一批
-        显示一批（用户 2026-11-18：「如果时间长，是否可以分批导入，分批显示」）。
-        汇集结束（``.aggregate-pending`` 撤掉）就停表，改由 ``aggregate_ready``
-        的整页重载收尾。
+        ``_sync_manifest_to_input`` 按**当前输入目录现状**重建页清单，文件落
+        一批显示一批（用户 2026-11-18：「如果时间长，是否可以分批导入，分批
+        显示」）。检测/去底色起点显示的也是输入图，同样受益；提取起点显示
+        产出图（它没有输入）。汇集结束（``.aggregate-pending`` 撤掉）就停表，
+        改由 ``aggregate_ready`` 的整页重载收尾。
         """
         if self._aggregate_pending():
-            self._input_node_poll.start(INPUT_NODE_POLL_MS)
+            self._aggregate_start_poll.start(INPUT_NODE_POLL_MS)
         else:
-            self._input_node_poll.stop()
+            self._aggregate_start_poll.stop()
 
-    def _on_input_node_poll(self) -> None:
-        """轮询到点：还在汇集且还停在输入节点上就重刷清单，否则停表。"""
-        if not self.task_id or not self._is_aggregate_input_node():
-            self._input_node_poll.stop()
+    def _on_aggregate_start_poll(self) -> None:
+        """轮询到点：还在汇集且还停在聚合起点上就重刷清单，否则停表。"""
+        if not self.task_id or self._aggregate_start_stage() is None:
+            self._aggregate_start_poll.stop()
             return
         if not self._aggregate_pending():
-            self._input_node_poll.stop()
+            self._aggregate_start_poll.stop()
             return
         self._refresh_preview()
         count = len(self.pages or [])

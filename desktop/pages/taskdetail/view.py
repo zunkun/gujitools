@@ -692,20 +692,18 @@ class DetailViewMixin:
         card.box.addWidget(self._build_preview_stack())
         return card
 
-    def _wrap_with_input_list(self, stage_viewer, edge_dashed: bool = False):
+    def _wrap_with_input_list(self, stage_viewer):
         """把某一步的预览包成 ``[正常查看器 | 只读图片清单]`` 的两页宿主。
 
-        **只读图片清单**是给"聚合任务的输入节点"用的（用户 2026-11-18，任务
-        0025/0026）：那一步没有上游输入，屏上要显示的就是子任务汇集来的图片
-        本身——提取步骤没有 PDF 可看、去底色步骤也没有"原图/结果"可比，硬用
-        各自的查看器只会显示"暂无图片"。
+        **只读图片清单**是给"聚合任务的提取起点"用的（用户 2026-11-18，任务
+        0025）：提取起点没有输入源可看（成员的源 PDF 不搬），屏上要显示的就
+        是子任务汇集来的提取产物本身——硬用 PDF 查看器只会显示"暂无图片"。
+        （检测起点用 detect_viewer、去底色起点用原图/成品对比查看器——它们的
+        输入与产出都已汇集进来，2026-11-18 晚口径。）
 
         为什么包两层而不是直接加一页到 ``preview_stack``：外层栈的页号与步骤
         一一对应（``stack_index_of`` / ``stage_at_stack_index`` 全靠它），
         多一页就会把这些下标算错；内层宿主不影响任何页号映射。
-
-        ``edge_dashed``：给透明底成品（去底色）勾一圈虚线边界——否则页面与浅色
-        画布同色，看不出边界（与 ``RembgPreviewWidget`` 同一口径）。
 
         返回 ``(宿主, 清单控件)``；宿主自己 :meth:`QStackedWidget.addWidget` 到
         外层栈。
@@ -718,8 +716,6 @@ class DetailViewMixin:
             image_size_provider=self._original_image_size,
             thumb_provider=self._page_thumb_for,
         )
-        if edge_dashed:
-            listing.view.set_edge_dashed(True)
         host = QStackedWidget()
         host.addWidget(stage_viewer)
         host.addWidget(listing)
@@ -773,11 +769,13 @@ class DetailViewMixin:
         # rembg：原图/结果对比
         # ⚠️ image_editable=False（2026-10-09 用户）：去底色阶段**只许预览、
         #    不许编辑**——右键不给「编辑图片」、弹窗不给「编辑」按钮。
+        # ⚠️ 2026-11-18 晚口径：去底色做聚合起点时，输入（成员裁图）与产出
+        #    （成员成品）都已汇集进来 ⇒ 对比查看器就是这一步的如实回放，
+        #    不再包「只读图片清单」（那是"起点没有输入"年代的兜底）。
         self.rembg_viewer = RembgPreviewWidget(image_editable=False)
         self.rembg_viewer.image_saved.connect(self._on_page_image_saved)
-        self.rembg_viewer_host, self.rembg_input_viewer = (
-            self._wrap_with_input_list(self.rembg_viewer, edge_dashed=True)
-        )
+        self.rembg_viewer_host = QStackedWidget()
+        self.rembg_viewer_host.addWidget(self.rembg_viewer)
         self.preview_stack.addWidget(self.rembg_viewer_host)
 
         # print：左缩略图条 + 右「打印效果」预览（可拖动排序/删除/插入）

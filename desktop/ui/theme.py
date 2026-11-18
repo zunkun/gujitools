@@ -52,6 +52,9 @@ STATUS_COLORS = {
     "cancelled": (WARNING, WARNING_SOFT),
     "draft": (NEUTRAL, NEUTRAL_SOFT),
     "completed": (SUCCESS, SUCCESS_SOFT),
+    # 聚合任务类型标记（任务列表「聚合」小胶囊）：用主题主色高亮——它不是
+    # 阶段进度，是"这条任务的类型"，用户要求一眼能认出聚合任务。
+    "aggregate": (ACCENT, ACCENT_SOFT),
 }
 
 STATUS_LABELS = {
@@ -62,6 +65,7 @@ STATUS_LABELS = {
     "cancelled": "已中断",
     "draft": "未开始",
     "completed": "已完成",
+    "aggregate": "聚合",
 }
 
 

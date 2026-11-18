@@ -368,7 +368,7 @@ def run(ctx) -> None:
     agg_ing = repo.create_aggregate_task([tid_d, tid_c], "rembg", "汇集·去底")
     plan = plan_ingest(repo, agg_ing)
     ok(
-        "汇集计划：起点=去底色，产出落在 stages/rembg",
+        "汇集计划：起点=去底色，输入落 stages/input、产出落 stages/rembg",
         plan is not None
         and plan.start_stage == "rembg"
         and plan.entry_dir == repo.task_dir(agg_ing) / "stages" / "input"
@@ -376,15 +376,14 @@ def run(ctx) -> None:
         f"{plan.start_stage if plan else None}",
     )
     ok(
-        "汇集计划：只搬产出（用户 2026-11-18「结果就是聚合任务的输入数据」）",
-        plan is not None and plan.input_copies == (),
-        str([c.target.name for c in plan.input_copies]) if plan else "",
-    )
-    ok(
-        "汇集计划：产出按成员顺序（001=下、002=上）且成员内按页序",
-        [c.target.name for c in plan.output_copies]
+        "汇集计划：输入=成员的裁图、产出=成员的成品图（都搬，按成员顺序）"
+        "（2026-11-18 晚口径：x 的输入做起点输入、x 的输出做起点输出）",
+        plan is not None
+        and [c.target.name for c in plan.input_copies]
+        == ["001_1.jpg", "001_2.jpg", "002_1.jpg", "002_2.jpg", "002_10-l.jpg"]
+        and [c.target.name for c in plan.output_copies]
         == ["001_1.png", "001_2.png", "002_1.png", "002_2.png", "002_10-l.png"],
-        str([c.target.name for c in plan.output_copies]),
+        str([c.target.name for c in plan.input_copies]) if plan else "",
     )
     ok(
         "汇集计划：页面清单按成员顺序编号 1..5",
@@ -397,8 +396,8 @@ def run(ctx) -> None:
     out_dir = repo.task_dir(agg_ing) / "stages" / "rembg"
     entries = [p.name for p in list_stage_images(entry_dir)]
     ok(
-        "汇集：入口目录不再留一份上游原图（只搬结果）",
-        entries == [],
+        "汇集：入口目录躺着成员的裁图（= 去底色的输入，001=下、002=上）",
+        entries == ["001_1.jpg", "001_2.jpg", "002_1.jpg", "002_2.jpg", "002_10-l.jpg"],
         str(entries),
     )
     ok(
@@ -412,15 +411,15 @@ def run(ctx) -> None:
         str([p.name for p in list_stage_images(out_dir)]),
     )
     ok(
-        "汇集：结果统计（5 页 / 5 个文件）",
-        (result.pages, result.copied) == (5, 5),
+        "汇集：结果统计（5 页清单 / 10 个文件＝输入+产出）",
+        (result.pages, result.copied) == (5, 10),
         f"{result.pages}/{result.copied}",
     )
     pages_json = repo.load_pages(agg_ing)
     ok(
-        "汇集：pages.json 指向聚合任务里那份**产出**（不是成员的、也不是原图）",
+        "汇集：pages.json 指向**起点输入**（stages/input 的裁图，2026-11-18 晚口径）",
         [p["label"] for p in pages_json] == ["1", "2", "3", "4", "5"]
-        and all(Path(p["file"]).parent == out_dir for p in pages_json),
+        and all(Path(p["file"]).parent == entry_dir for p in pages_json),
         str(pages_json[:2]),
     )
     ok(
@@ -453,6 +452,31 @@ def run(ctx) -> None:
     )
     ok("汇集：重跑不删用户自己放进的图", stray.exists(), "")
 
+    # 重新汇集/改起点的卫生守卫（任务 0026）：旧起点的合成 runs 记录与旧
+    # 起点产物目录里的汇集产物都要清掉，否则下游拿旧记录当真、旧图冒充结果。
+    fake_run = repo.create_stage_run(agg_ing, "extract", {"aggregate": True})
+    repo.finish_stage(agg_ing, fake_run, "success")
+    old_leftover = repo.task_dir(agg_ing) / "stages" / "extract" / "001_9.png"
+    old_leftover.parent.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", (10, 10), "white").save(str(old_leftover))
+    run_ingest(repo, agg_ing)
+    extract_runs = repo.list_stage_runs(agg_ing, "extract")
+    ok(
+        "汇集：旧起点的合成 runs 记录被清掉（extract 的 aggregate 记录消失）",
+        extract_runs == [],
+        str(extract_runs),
+    )
+    ok(
+        "汇集：起点自身的合成记录重新写好（rembg 仍是已完成）",
+        repo.completed_aggregate_stages(agg_ing) == ["rembg"],
+        str(repo.completed_aggregate_stages(agg_ing)),
+    )
+    ok(
+        "汇集：旧起点产物目录里的 NNN_ 文件被清、用户图不碰",
+        not old_leftover.exists() and stray.exists(),
+        f"{old_leftover.exists()}",
+    )
+
     # ---- 起点=检测：检测框按同一前缀搬过来 ----
     tid_e = repo.create_task(ctx.pdf, "agg-hash-e", "子集·检测")
     root_e = repo.task_dir(tid_e)
@@ -466,7 +490,29 @@ def run(ctx) -> None:
         run_id = repo.create_stage_run(tid_e, stage, {})
         repo.finish_stage(tid_e, run_id, "success")
     agg_det = repo.create_aggregate_task([tid_e], "detect", "汇集·检测")
+    det_plan = plan_ingest(repo, agg_det)
+    ok(
+        "汇集[检测]：输入=成员的提取页图、产出=成员的检测裁图（都搬）",
+        det_plan is not None
+        and [c.target.name for c in det_plan.input_copies]
+        == ["001_1.jpg", "001_2.jpg"]
+        and [c.target.name for c in det_plan.output_copies]
+        == ["001_1.jpg", "001_2.jpg"]
+        and all(
+            Path(p["file"]).parent == det_plan.entry_dir for p in det_plan.pages
+        ),
+        str([c.target.name for c in det_plan.input_copies]) if det_plan else "",
+    )
     run_ingest(repo, agg_det)
+    det_entry = [
+        p.name
+        for p in list_stage_images(repo.task_dir(agg_det) / "stages" / "input")
+    ]
+    ok(
+        "汇集[检测]：入口目录躺着成员的提取页图（检测页显示整页图+框）",
+        det_entry == ["001_1.jpg", "001_2.jpg"],
+        str(det_entry),
+    )
     ok(
         "汇集[检测]：框文件按新页名搬过来（001_1 / 001_2）",
         sorted(repo.detect_boxes_all(agg_det)) == ["001_1", "001_2"],
@@ -516,52 +562,95 @@ def run(ctx) -> None:
         f"{repo.completed_aggregate_stages(agg_ext2)} / {ext_result.notes}",
     )
 
-    # ---- 起点=PDF排版：成员的 PDF 按顺序合并成一本 ----
-    try:
-        import pymupdf as fitz
-    except ImportError:  # 老版 PyMuPDF
-        import fitz
-
-    for tid, count in ((tid_d, 3), (tid_e, 2)):
-        doc = fitz.open()
-        for _ in range(count):
-            doc.new_page()
-        target = repo.task_dir(tid) / "stages" / "print" / "print.pdf"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        doc.save(str(target))
-        doc.close()
-        run_id = repo.create_stage_run(tid, "print", {})
-        repo.finish_stage(tid, run_id, "success", str(target))
+    # ---- 起点=PDF排版：只搬成员的**印刷取图**当输入，输出不预填 ----
+    # 用户 2026-11-18 晚口径：「输入是 PDF排版的输入源……输出的话是聚合任务
+    # 的输出，不是子任务的输出」⇒ 不再合并成员 PDF、起点不记已完成，用户在
+    # 聚合任务里点「PDF排版」现场生成自己的 print.pdf（创建时没有输出）。
+    for tid in (tid_d, tid_e):
+        _make_images(
+            repo.task_dir(tid) / "stages" / "rembg",
+            ["1.png", "2.png"],
+        )
+    # 成员在第四步手工拖动过页序（print.json 持久化用户的顺序调整）：
+    # 聚合任务要原样重现（2026-11-18 原则：子任务该节点显示什么，
+    # 聚合起点就显示什么）。
+    repo.save_print_doc(
+        tid_d,
+        {
+            "rembg_snapshot": [],
+            "pages": [
+                {"file": str(repo.task_dir(tid_d) / "stages" / "rembg" / "2.png"),
+                 "label": "2"},
+                {"file": str(repo.task_dir(tid_d) / "stages" / "rembg" / "1.png"),
+                 "label": "1"},
+            ],
+            "deleted_pages": [],
+        },
+    )
     agg_pdf = repo.create_aggregate_task([tid_d, tid_e], "print", "汇集·PDF")
+    pdf_plan = plan_ingest(repo, agg_pdf)
+    ok(
+        "汇集[PDF排版]：输入=成员的印刷取图（拼版未生效 → 去底色成品），无产出复制",
+        pdf_plan is not None
+        and [c.target.name for c in pdf_plan.input_copies]
+        == ["001_1.png", "001_2.png", "002_1.png", "002_2.png"]
+        and pdf_plan.output_copies == ()
+        and pdf_plan.output_dir == repo.scoped_stage_dir(agg_pdf, None, "print"),
+        str([c.target.name for c in pdf_plan.input_copies]) if pdf_plan else "",
+    )
+    ok(
+        "汇集[PDF排版]：成员手工拖过的页序按文件映射组合进 print.json"
+        "（001 先 2 后 1，002 按目录序）",
+        pdf_plan is not None
+        and [Path(p["file"]).name for p in pdf_plan.print_doc["pages"]]
+        == ["001_2.png", "001_1.png", "002_1.png", "002_2.png"],
+        str([Path(p["file"]).name for p in pdf_plan.print_doc["pages"]])
+        if pdf_plan else "",
+    )
     pdf_result = run_ingest(repo, agg_pdf)
-    merged = repo.task_dir(agg_pdf) / "stages" / "print" / "print.pdf"
+    pdf_entry = [
+        p.name
+        for p in list_stage_images(repo.task_dir(agg_pdf) / "stages" / "input")
+    ]
     ok(
-        "汇集[PDF排版]：成员的 PDF 按成员顺序合并成一本（3+2=5 页）",
-        merged.is_file() and pdf_result.pdf_pages == 5,
-        f"{pdf_result.pdf_pages}",
+        "汇集[PDF排版]：入口目录躺着待印刷的成品图（待打印列表有内容）",
+        pdf_entry == ["001_1.png", "001_2.png", "002_1.png", "002_2.png"]
+        and [p["label"] for p in repo.load_pages(agg_pdf)] == ["1", "2", "3", "4"],
+        str(pdf_entry),
     )
-    if merged.is_file():
-        doc = fitz.open(str(merged))
-        ok("汇集[PDF排版]：合并后的 PDF 真实页数也是 5", doc.page_count == 5, str(doc.page_count))
-        doc.close()
     ok(
-        "汇集[PDF排版]：产出 PDF 落在 print 的落点上（第四步能预览/下载）",
-        merged.parent == repo.scoped_stage_dir(agg_pdf, None, "print"),
-        str(merged.parent),
+        "汇集[PDF排版]：不合并成员 PDF（创建时没有输出）且起点未完成",
+        not (repo.scoped_stage_dir(agg_pdf, None, "print") / "print.pdf").exists()
+        and repo.completed_aggregate_stages(agg_pdf) == []
+        and pdf_result.pages == 4,
+        f"done={repo.completed_aggregate_stages(agg_pdf)} pages={pdf_result.pages}",
     )
-    # 起点=PDF排版/拼版的聚合任务**不走**"只读图片清单"那条路：它们的产物
-    # 不是图片批（一本 PDF / 一份版面），各自的查看器照旧显示（见
-    # ``manifest._aggregate_start_output_dir`` 的 print/imposition 早退）。
+    # 待打印列表真按成员保存的顺序来（plan_print_entries 的快照判断走通）
+    from desktop.services.print_plan import plan_print_entries
+
+    pdf_entries, _pdf_doc = plan_print_entries(
+        list_stage_images(repo.task_dir(agg_pdf) / "stages" / "input"),
+        repo.load_print_doc(agg_pdf),
+    )
+    ok(
+        "汇集[PDF排版]：待打印列表按成员保存的顺序排列（001 先 2 后 1）",
+        [Path(e["file"]).name for e in pdf_entries]
+        == ["001_2.png", "001_1.png", "002_1.png", "002_2.png"],
+        str([Path(e["file"]).name for e in pdf_entries]),
+    )
+    # 起点=PDF排版的聚合任务**不走**"只读图片清单"那条路：它有汇集来的输入、
+    # 要现场执行（2026-11-18 晚口径），第四步照常显示待打印列表 + 执行按钮。
     d_pdf = ctx.d
     ok("详情页：聚合（起点=PDF排版）装得进去", d_pdf.set_task(agg_pdf) is True, "")
     pump(app, times=8)
     ok(
-        "详情页：PDF排版起点不算「输入节点」（PDF 预览/下载照旧）",
+        "详情页：PDF排版起点不算「输入节点」且**能跑**（输出由本任务生成）",
         d_pdf.current_stage() == "print"
         and not d_pdf._is_aggregate_input_node()
-        and d_pdf.run_button.isEnabled(),
+        and d_pdf.run_button.isEnabled()
+        and d_pdf._stage_inputs_ready(),
         f"{d_pdf.current_stage()} / {d_pdf._is_aggregate_input_node()}"
-        f" / {d_pdf.run_button.isEnabled()}",
+        f" / {d_pdf.run_button.isEnabled()} / ready={d_pdf._stage_inputs_ready()}",
     )
 
     # 清场本段建的任务
@@ -1482,8 +1571,14 @@ def run(ctx) -> None:
         str(_out_names()),
     )
     ok(
-        "后台汇集：不再复制一份上游原图到入口目录（结果即输入）",
-        _entry_names() == [],
+        "后台汇集：成员的**输入**（检测裁图）也按顺序搬进入口目录"
+        "（2026-11-18 晚口径：x 的输入做起点输入）",
+        wait_until(
+            app,
+            lambda: _entry_names()
+            == ["001_1.jpg", "001_2.jpg", "002_1.jpg"],
+            timeout=15.0,
+        ),
         str(_entry_names()),
     )
     ok(
@@ -1585,24 +1680,26 @@ def run(ctx) -> None:
     ok("详情页：聚合（起点=去底色）装得进去", d.set_task(agg_rembg) is True, "")
     pump(app, times=10)
     ok(
-        "详情页：去底色起点判成输入节点、当前步就是它",
-        d._is_aggregate_input_node() and d.current_stage() == "rembg",
+        "详情页：去底色起点**不算**纯展示起点、当前步就是它"
+        "（2026-11-18 晚口径：保留完整操作能力，可重跑）",
+        not d._is_aggregate_input_node() and d.current_stage() == "rembg",
         f"{d._is_aggregate_input_node()} / {d.current_stage()}",
     )
     ok(
-        "详情页：去底色起点换成只读图片清单（不是原图/结果对比）",
-        d.rembg_viewer_host.currentWidget() is d.rembg_input_viewer,
+        "详情页：去底色起点用**原图/成品对比**查看器（输入=汇集来的裁图，"
+        "产出=成员的成品图，2026-11-18 晚口径）",
+        d.rembg_viewer_host.currentWidget() is d.rembg_viewer,
         type(d.rembg_viewer_host.currentWidget()).__name__,
     )
     ok(
-        "详情页：去底色清单把汇集来的图全列出来（与页清单同数）",
-        d.rembg_input_viewer.strip.count() == len(d.pages or []) > 0,
-        f"{d.rembg_input_viewer.strip.count()} / {len(d.pages or [])}",
+        "详情页：对比查看器把汇集来的输入图全列出来（与页清单同数）",
+        len(d.rembg_viewer._paths) == len(d.pages or []) > 0,
+        f"{len(d.rembg_viewer._paths)} / {len(d.pages or [])}",
     )
     ok(
-        "详情页：去底色起点的执行按钮也置灰",
-        not d.run_button.isEnabled(),
-        str(d.run_button.isEnabled()),
+        "详情页：去底色起点**可以再次执行**（输入齐、按钮可点，2026-11-18 晚口径）",
+        d.run_button.isEnabled() and d._stage_inputs_ready(),
+        f"enabled={d.run_button.isEnabled()} ready={d._stage_inputs_ready()}",
     )
 
     agg_det2 = repo.create_aggregate_task([tid_a, tid_b], "detect", "汇集·检测起点")
@@ -1610,13 +1707,16 @@ def run(ctx) -> None:
     ok("详情页：聚合（起点=检测）装得进去", d.set_task(agg_det2) is True, "")
     pump(app, times=10)
     ok(
-        "详情页：检测起点也把图列出来（与页清单同数）且按钮置灰",
-        d._is_aggregate_input_node()
+        "详情页：检测起点把图列出来（与页清单同数）且**可以再次检测/操作**"
+        "（2026-11-18 晚口径：不再是纯展示）",
+        not d._is_aggregate_input_node()
         and d.current_stage() == "detect"
         and d.detect_viewer.strip.count() == len(d.pages or []) > 0
-        and not d.run_button.isEnabled(),
+        and d.run_button.isEnabled()
+        and d._stage_inputs_ready(),
         f"{d.current_stage()} / {d.detect_viewer.strip.count()}"
-        f" / {len(d.pages or [])} / {d.run_button.isEnabled()}",
+        f" / {len(d.pages or [])} / enabled={d.run_button.isEnabled()}"
+        f" ready={d._stage_inputs_ready()}",
     )
     for tid in (agg_rembg, agg_det2):
         repo.delete_task(tid)
@@ -1633,33 +1733,33 @@ def run(ctx) -> None:
     ok(
         "详情页：还在汇集 ⇒ 清单为空但**轮询已启动**",
         d.current_stage() == "rembg"
-        and d.rembg_input_viewer._paths == []
-        and d._input_node_poll.isActive(),
-        f"{len(d.rembg_input_viewer._paths)} / {d._input_node_poll.isActive()}",
+        and d.rembg_viewer._paths == []
+        and d._aggregate_start_poll.isActive(),
+        f"{len(d.rembg_viewer._paths)} / {d._aggregate_start_poll.isActive()}",
     )
-    # 模拟第一批文件复制落盘 → 轮询到点就该把它们列出来
-    _make_images(repo.task_dir(agg_poll) / "stages" / "rembg", ["001_1.png"])
-    d._on_input_node_poll()
+    # 模拟第一批文件复制落盘（输入先进入口目录）→ 轮询到点就该把它们列出来
+    _make_images(repo.task_dir(agg_poll) / "stages" / "input", ["001_1.png"])
+    d._on_aggregate_start_poll()
     pump(app, times=6)
     ok(
         "详情页：落一批显示一批（1 张就先显示 1 张）",
-        d.rembg_input_viewer.strip.count() == 1
+        len(d.rembg_viewer._paths) == 1
         and "正在汇集" in d.stage_status.text(),
-        f"{d.rembg_input_viewer.strip.count()} / {d.stage_status.text()}",
+        f"{len(d.rembg_viewer._paths)} / {d.stage_status.text()}",
     )
     ok(
         "详情页：还在汇集 ⇒ 轮询继续排下一轮",
-        d._input_node_poll.isActive(),
-        str(d._input_node_poll.isActive()),
+        d._aggregate_start_poll.isActive(),
+        str(d._aggregate_start_poll.isActive()),
     )
     # 汇集结束（标记撤掉）⇒ 轮询停表，改由 aggregate_ready 整页重载收尾
     set_pending_marker(repo.task_dir(agg_poll), on=False)
-    d._on_input_node_poll()
+    d._on_aggregate_start_poll()
     pump(app, times=4)
     ok(
         "详情页：汇集结束 ⇒ 轮询停表",
-        not d._input_node_poll.isActive(),
-        str(d._input_node_poll.isActive()),
+        not d._aggregate_start_poll.isActive(),
+        str(d._aggregate_start_poll.isActive()),
     )
     repo.delete_task(agg_poll)
 

@@ -120,10 +120,9 @@ class PageListMixin:
         #    提取，合并了旧「PDF 预览 | 提取结果」双标签）；编辑同步走它的
         #    refresh_page / image_saved，与旧 ImageViewerWidget 同形。
         extract_result_viewer: ExtractPreviewWidget
-        #: 聚合任务起点=提取/去底色时的**只读图片清单**（与各自查看器同屏互斥，
-        #: 见 ``_is_aggregate_input_node``）
+        #: 聚合任务起点=提取时的**只读图片清单**（与 PDF 查看器同屏互斥，
+        #: 见 ``_is_aggregate_input_node``——提取起点没有输入源可看）
         extract_input_viewer: ImageViewerWidget
-        rembg_input_viewer: ImageViewerWidget
         detect_viewer: ImageViewerWidget
         rembg_viewer: RembgPreviewWidget
         current_stage: Callable[[], str]
@@ -199,15 +198,18 @@ class PageListMixin:
             "imposition",
         ):
             return
-        # ⚠️ 聚合任务的**起点节点**没有上游输入（用户 2026-11-18：「哪个节点
-        #    生成的结果，就作为聚合任务的输入数据」）：汇集器把成员的结果直接
-        #    写进这个节点的**产出**目录并把它记成已完成。所以这一步的页清单只能
-        #    取产出——否则详情页写着"暂无图片，请先完成提取"，磁盘上却明明躺着
-        #    汇集成的一整本书。
-        aggregate_out = self._aggregate_start_output_dir()
-        if aggregate_out is not None:
+        # ⚠️ 聚合任务的**提取起点**没有输入（成员的源 PDF 不搬，见
+        #    ``aggregate_ingest.INPUT_COPY_STAGES``）：页清单取它的**产出**
+        #    ——汇集进来的整本书。检测/去底色起点不在这里特判：它们的输入
+        #    已由汇集器搬进 ``stages/input``（入口输入天然生效），走下面
+        #    普通路径按输入目录重建即可；PDF排版/拼版起点在方法开头早退。
+        if self._aggregate_start_stage() == "extract":
+            node = self.node_of_stage("extract")
+            out_dir = self.store.node_or_stage_output(
+                self.task_id, node, "extract", "pages"
+            )
             self.pages = self.store.refresh_pages_from_dir(
-                self.task_id, aggregate_out, **self._node_scope()
+                self.task_id, out_dir, **self._node_scope()
             )
             return
         # ⚠️ **上游的产出动作没成功执行过 ⇒ 这一步没有正式输入**（用户
@@ -267,22 +269,19 @@ class PageListMixin:
             self.task_id, directory, **self._node_scope()
         )
 
-    def _aggregate_start_output_dir(self) -> Path | None:
-        """聚合任务**起点节点**的产出目录；不是这种情形返回 ``None``。
+    def _aggregate_start_stage(self) -> str | None:
+        """本任务是聚合任务、且**当前步骤就是它的起点**时返回起点阶段。
 
         判据（三者同时成立）：
 
         1. 本任务是聚合任务（``kind == "aggregate"``）；
         2. 当前步骤就是它的起点（``member_stage``）；
-        3. 起点这一步的产物是**图片批**（提取/检测/去底色）——「PDF排版」的
-           产物是一本 PDF、「图片拼版」有自己的版面文档，那两步在
-           :meth:`_sync_manifest_to_input` 开头就已经早退了。
+        3. 流程图上找得到这个阶段的节点（用户改图把起点删了就按普通步骤算）。
 
-        为什么要这条：聚合任务的起点被汇集器置为**已完成**，它没有上游输入，
-        页清单只能来自它自己的产出（用户 2026-11-18 的"结果即输入"）。
+        起点节点的图片由子任务汇集而来（:mod:`desktop.services.aggregate_ingest`
+        搬成员该节点的**输入 + 产出**，2026-11-18 晚口径："x 的输入做了聚合
+        开始节点的输入，x 的输出作为聚合开始节点的输出"）。
         """
-        from desktop.steps import ports as _ports
-
         if not self.task_id:
             return None
         try:
@@ -294,30 +293,29 @@ class PageListMixin:
         stage = str(record.get("member_stage") or "")
         if not stage or self.current_stage() != stage:
             return None
-        node = self.node_of_stage(stage)
-        if not node:
+        if not self.node_of_stage(stage):
             return None
-        folded = _ports.fold_forward(stage, "pages")
-        if folded in ("print", "imposition"):
-            return None
-        return self.store.node_or_stage_output(self.task_id, node, folded, "pages")
+        return stage
 
     def _is_aggregate_input_node(self) -> bool:
-        """当前这一步是不是聚合任务的**输入节点**（起点、图片批产物）。
+        """当前这一步是不是聚合任务的**纯展示起点**（只有「图片提取」）。
 
-        是 ⇒ 它的图片由子任务汇集而来（:mod:`desktop.services.aggregate_ingest`），
-        这一步**没有可执行的东西**：不用选 PDF、不用跑「提取文档图片」，
-        只需要把汇集来的图片列出来。用户 2026-11-18（任务 0025）：
+        是 ⇒ 这一步**没有可执行的东西**：成员的输入是源 PDF、不搬（
+        ``aggregate_ingest.INPUT_COPY_STAGES`` 不含 extract），没有源 PDF
+        就不能现场提取，屏上只需把汇集来的页图列出来。用户 2026-11-18（
+        任务 0025）：
 
         > 选择的开始节点是提取图片，但是进入任务详情里面，提取图片里面没有
         > 显示任何图片…… 提取图片虽然是处理 PDF 的，但是此时作为输入节点，
         > 不需要 PDF，只需要图片列表显示出来。
 
-        判据只有 :meth:`_aggregate_start_output_dir` 那一条（它已经把
-        "聚合任务 / 当前步==起点 / 产物是图片批" 三件事判完了），本方法只是
-        给它一个面向界面的名字，避免调用方各自拼条件。
+        ⚠️ **其余起点（检测/去底色/拼版/PDF排版）不再是"输入节点"**（用户
+        2026-11-18 晚：检测起点"不需要执行再次检测"是不对的——子任务的节点
+        本来就能重跑，聚合起点同样保留完整操作能力）：输入与产出都由汇集器
+        备好（产出记已完成，下游能直接跑），但这一步照常可以重跑/编辑，
+        重跑的产物覆盖汇集来的那份。
         """
-        return self._aggregate_start_output_dir() is not None
+        return self._aggregate_start_stage() == "extract"
 
     def _stage_input_visible(self) -> bool:
         """当前这一步的输入是否**已经生效**（上游的产出动作真的执行过）。
@@ -731,14 +729,12 @@ class PageListMixin:
         stage = self.stage_at_stack_index(self.preview_stack.currentIndex())
         if stage == "detect":
             return self.detect_viewer
-        if stage in ("extract", "rembg") and self._is_aggregate_input_node():
-            # 聚合任务的起点显示的是**只读图片清单**（不是 PDF 查看器 / 原图
-            # 对比）：增删/定位/编辑这些动作要落到真正在屏上的那个控件上
-            return (
-                self.extract_input_viewer
-                if stage == "extract"
-                else self.rembg_input_viewer
-            )
+        if stage == "extract" and self._is_aggregate_input_node():
+            # 聚合任务的提取起点显示的是**只读图片清单**（没有 PDF 可看）：
+            # 增删/定位/编辑这些动作要落到真正在屏上的那个控件上。
+            # 检测起点本就用 detect_viewer、去底色起点用原图/成品对比查看器
+            # （输入与产出都已汇集进来），不需要这里的替身。
+            return self.extract_input_viewer
         return self.extract_result_viewer
 
     def _refresh_downstream_preview(self, source_step: str) -> None:
@@ -1142,7 +1138,7 @@ class PageListMixin:
             "重新汇集聚合输入",
             f"将按当前成员顺序（{members}）重新复制各成员在起始节点上的"
             "输入与产出。聚合任务里已有的输入/产出会被覆盖，起点节点重新记为"
-            "「已完成」。",
+            "「已完成」（PDF排版起点除外：它的输出由本任务现场执行生成）。",
             self,
             yes_text="重新汇集",
         )

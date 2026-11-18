@@ -248,6 +248,34 @@ class RunMixin:
         runs = self._load_runs(task_id)
         return {stage: self._as_history(records) for stage, records in runs.items()}
 
+    def clear_synthetic_aggregate_runs(self, task_id: str) -> list[str]:
+        """删掉本任务**所有**「聚合汇集」合成的 runs 记录，返回被清的
+        ``<阶段>:<run_id>`` 清单。
+
+        汇集器写的合成记录都带 ``parameters.aggregate == True``（普通执行没有
+        这个标记，不受影响）。**重新汇集/改起点时必须先清**：旧起点（或旧
+        口径）的合成记录描述的是另一份数据——留着它，下游的"这一步完成了吗"
+        就拿旧记录当真（用户 2026-11-18 任务 0026：起点从去底色改成检测后，
+        旧 rembg 合成记录让「图片去底色」假显示已完成，而它其实是要重跑的
+        下游）。清完由 :func:`desktop.services.aggregate_ingest.run_ingest`
+        按新起点重写该写的那几条。
+        """
+        runs = self._load_runs(task_id)
+        removed: list[str] = []
+        new_runs: dict = {}
+        for stage, records in runs.items():
+            kept = []
+            for record in self._as_history(records):
+                if (record.get("parameters") or {}).get("aggregate"):
+                    removed.append(f"{stage}:{record.get('run_id', '?')}")
+                else:
+                    kept.append(record)
+            if kept:
+                new_runs[stage] = kept
+        if removed:
+            self._save_runs(task_id, new_runs)
+        return removed
+
     def flow_stages(self, task_id: str) -> set[str]:
         """本任务流程里**真实存在**的运行阶段集合（按界面格摊开）。
 
