@@ -27,6 +27,7 @@ from core.reporter import EVENT_PAGE_DONE
 from desktop.components.viewers import RembgPreviewWidget
 from desktop.components.viewers.image_actions import ImageEditActionsMixin
 from desktop.modules.base import StepModulePage
+from desktop.modules.rembg.live import RembgModuleLiveMixin
 from desktop.modules.thumb_source import ThumbSourceMixin
 from desktop.steps import spec_by_key
 from desktop.ui.widgets import Card
@@ -40,8 +41,16 @@ _SPEC = spec_by_key("rembg")
 _WARM_THUMB_LIMIT = 60
 
 
-class RembgModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin):
-    """去底色模块页：拖入图片（单张或文件夹）→ 调参数 → 批量去底 → 对比看结果。"""
+class RembgModulePage(
+    StepModulePage, RembgModuleLiveMixin, ThumbSourceMixin, ImageEditActionsMixin
+):
+    """去底色模块页：拖入图片（单张或文件夹）→ 调参数 → 批量去底 → 对比看结果。
+
+    ⚠️ **调参数即看效果**（用户 2026-11-21）：用户改了算法/偏移/印章等参数后，
+    当前这张图会立刻按新参数重算并上屏（``RembgModuleLiveMixin``），不必先点
+    「开始去底色」跑完整批。算出来的只进**草稿目录**
+    （``singletask/rembg/preview/<源>/``），产物输出目录仍然只在真正执行时才写。
+    """
 
     SPEC = _SPEC
 
@@ -58,6 +67,9 @@ class RembgModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin):
         viewer: RembgPreviewWidget  # type: ignore[reportIncompatibleVariableOverride]
 
     def __init__(self, parent=None):
+        #: 实时预览草稿目录（见 :class:`RembgModuleLiveMixin`）。在 ``super()``
+        #: 之前给个默认值：控件建好前若有人换了源，``_on_source_changed`` 会读它。
+        self._live_dir: Path | None = None
         #: 当前缓存 pass 的映射（真实图路径 → 缓存小图路径）。换源即换新
         #: 对象＝代际：旧 worker 的迟到信号按**对象身份**丢弃。缓存 pass
         #: 结束时它被整体交给查看器（``RembgPreviewWidget.set_cached_thumbs``
@@ -71,6 +83,9 @@ class RembgModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin):
         self._rembg_ui_timer.setSingleShot(True)
         self._rembg_ui_timer.setInterval(self._REMBG_UI_MS)
         self._rembg_ui_timer.timeout.connect(self._flush_rembg_feedback)
+        # 实时调整（改参数 → 当前这张图立刻重算）：控件与面板都在 super() 里
+        # 建好之后才能接信号
+        self._init_module_live()
 
     # ------------------------------------------------------------------ 预览
     def _build_preview(self) -> RembgPreviewWidget:
@@ -133,15 +148,20 @@ class RembgModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin):
         还没点执行」这段时间左栏是空的——得先跑一遍才知道有哪些图。
 
         ``set_images`` 的第二参是**去底色结果目录**，这里传 ``None``：条目照源图
-        建好、显示原图，结果生成后 :meth:`on_result` 再传真目录。
+        建好、显示原图，结果生成后 :meth:`on_result` 再传真目录。第三参是
+        **实时预览草稿目录**（改参数时算出的图只进这里，用户 2026-11-21）。
         """
         self._thumb_cache_batch = {}
         # 换源：上一轮攒着的 page_done 属于旧清单，别刷到新条目上
         self._rembg_dirty.clear()
         self._rembg_ui_timer.stop()
+        # 草稿目录跟着源走（旧目录连同台账一起丢弃，见 RembgModuleLiveMixin）
+        self._reset_module_live(source)
         images = self.source_images() if source is not None else []
         # list 不变型：清单是 list[Path]，控件收 list[Path | str]
-        self.viewer.set_images(cast("list[Path | str]", images), None)
+        self.viewer.set_images(
+            cast("list[Path | str]", images), None, preview_dir=self._live_dir
+        )
         self._warm_thumb_cache(images)
         super()._on_source_changed(source)
 
@@ -254,8 +274,13 @@ class RembgModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin):
             self.log(f"导出目录标记写入失败（不影响本次结果）：{exc}")
         # RembgPreviewWidget.set_images(原图列表, 结果目录, ...)：
         # 传输出目录让它按同名文件找去底结果并做成左右对比。
+        # ``preview_dir`` 继续挂着实时草稿目录：用户执行完再改参数时，预览仍然
+        # 立刻生效（草稿虽在执行前清空，但目录本身还要接上，否则改参数不显示）。
         # list 不变型：清单是 list[Path]，控件收 list[Path | str]
-        self.viewer.set_images(cast("list[Path | str]", sources), out_dir)
+        self.viewer.set_images(
+            cast("list[Path | str]", sources), out_dir,
+            preview_dir=self._live_dir,
+        )
         self.toast("success", "处理完成", f"共处理 {len(sources)} 张图片。")
 
 
@@ -268,6 +293,7 @@ class RembgModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin):
         """
         self._rembg_ui_timer.stop()
         self._rembg_dirty.clear()
+        self._shutdown_module_live()
         self.viewer.shutdown_workers()
         super().shutdown_workers()
 

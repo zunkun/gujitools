@@ -56,6 +56,7 @@ from desktop.ui.widgets import apply_to
 from desktop.ui.window_size import apply_window_size
 from desktop.utils.files import default_open_dir
 from desktop.utils.image_scaling import smooth_downscale
+from utils.crash_log import breadcrumb
 
 #: 弹窗缩略图的**固定框**（源图按比例缩进这个框，白底居中）
 THUMB_W, THUMB_H = 156, 196
@@ -459,6 +460,13 @@ class ImpositionPickerDialog(FramelessDialog):
         except Exception:  # noqa: BLE001 - 样式位丢了只影响原生最大化动画
             pass
 
+    def showEvent(self, event) -> None:  # noqa: N802 - Qt 命名
+        """留一条面包屑：这个弹窗是**独立顶层窗口**，崩在窗口几何计算上时
+        能据此判断"是不是刚开了它"（2026-11-21 排查用）。"""
+        super().showEvent(event)
+        breadcrumb(f"拼版选图弹窗显示：候选 {len(self._files)} 张，"
+                   f"mode={self._mode}")
+
     # ------------------------------------------------------------------ 接口
     def count(self) -> int:
         """列表里的卡片数（含本次上传的图）。"""
@@ -539,9 +547,13 @@ class ImpositionPickerDialog(FramelessDialog):
     # ------------------------------------------------------------------ 上传
     def _choose_uploads(self) -> None:
         """「上传图片…」：本机选图加进列表（可多选，同一张也能选两次）。"""
+        # 系统选图框是**真窗口**（IFileOpenDialog），崩溃点在窗口几何计算上时
+        # 这两条面包屑能把"是不是它"钉死（2026-11-21）。
+        breadcrumb("打开系统选图对话框")
         filenames, _ = QFileDialog.getOpenFileNames(
             self, "选择图片", str(default_open_dir()), IMAGE_FILTER
         )
+        breadcrumb(f"系统选图对话框返回：{len(filenames or [])} 张")
         if filenames:
             self.add_uploads(filenames)
 
@@ -567,6 +579,7 @@ class ImpositionPickerDialog(FramelessDialog):
             added.append(key)
         if not added:
             return
+        breadcrumb(f"选图弹窗新增上传 {len(added)} 张")
         self._sync_grids()
         for key in added:
             checked = sum(1 for card in self.cards if card.is_checked())

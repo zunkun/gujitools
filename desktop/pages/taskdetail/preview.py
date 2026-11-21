@@ -125,3 +125,17 @@ class TaskPreviewDialog(QDialog):
         except RuntimeError:
             # 底层 C++ 对象已提前释放（连点关闭等）：没什么可释放的了
             pass
+        # ⚠️⚠️ 页面是**本对话框的子控件**，随 ``WA_DeleteOnClose`` 一起销毁——
+        #    它**不会**收到 closeEvent（Qt 只把 QCloseEvent 发给被 close() 的
+        #    那个窗口，子控件不发），所以 ``TaskDetailPage.closeEvent`` 里那套
+        #    收尾不会自动跑。必须在这里照同一顺序补上（释放预览位图 → 停后台
+        #    线程）：带着还在跑的 QThread 销毁页面，Qt 直接
+        #    ``QThread: Destroyed while thread is still running`` 硬中止
+        #    （症状＝退出码 127、stderr 全空、断言打到一半就停）。
+        #    2026-11-21 合并后实测：离开步骤时释放位图/回来重装（缩略图与大图
+        #    都要重读）之后，关窗这一拍常有一条在跑的线程。
+        try:
+            self.page.release_stage_buffers()
+            self.page.shutdown_all_workers()
+        except RuntimeError:
+            pass

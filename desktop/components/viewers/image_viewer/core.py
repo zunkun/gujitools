@@ -104,9 +104,13 @@ class ImageViewerWidget(
         # 原始尺寸提供者：(path_text) -> QSize | None。
         # 预览加载的大图可能被降采样，框坐标以原始尺寸为坐标系基准。
         self._image_size_provider = image_size_provider
-        # 缩略图提供者：(path_text) -> Path | None。返回预生成的小图路径，
+        #: 缩略图提供者：(path_text) -> Path | None。返回预生成的小图路径，
         # 避免左侧缩略图条反复解码原始分辨率大图；返回 None/原路径则解码真图。
         self._thumb_provider = thumb_provider
+        #: 「大图按参数合成」的提供者：(path_text, index, total) -> dict | None。
+        #: 目前只有独立「PDF排版」页用（打印效果，见
+        #: :meth:`set_preview_spec_provider`）。缩略图条**不**套用它。
+        self._preview_spec_provider = None
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
@@ -203,6 +207,34 @@ class ImageViewerWidget(
     def navigate(self, forward: bool) -> None:
         """方向键翻页（详情页 ←/→ 调用；联动预览刷新，见 ThumbStrip.navigate）。"""
         self.strip.navigate(forward)
+
+    def set_preview_spec_provider(self, provider) -> None:
+        """设置「大图按参数合成」的提供者（``None`` = 关掉，显示原图）。
+
+        ``provider(path_text, index, total) -> dict | None``：返回的字典原样交给
+        ``PreviewWorker(print_spec=...)``（几何规则见 ``utils.page_layout``），
+        并可带一个 ``note`` 键——它会顶替大图下方那行"原始像素尺寸"文案。
+
+        用户 2026-11-21：独立功能页也要"改参数立刻看单张效果"。参数变化后的
+        重载走 :meth:`refresh_current`，两者配合就是实时预览。
+
+        ⚠️ **只影响大图**：缩略图条仍按真实文件解码——把排版效果套到缩略图上
+        会让每一条都变成一整张纸（全白、看不清内容，还慢）。
+        """
+        self._preview_spec_provider = provider
+        self.refresh_current()
+
+    def refresh_current(self) -> None:
+        """按**最新参数**重载当前页大图（清单、缩略图条、当前行都不动）。
+
+        PDF 页模式（提取页未提取时的形态）直接返回：那里没有"按参数重合成"
+        的语义，页内容由 PDF 本身决定。
+        """
+        if self._page_source is not None:
+            return
+        row = max(self.strip.currentRow(), 0)
+        if 0 <= row < len(self._paths):
+            self._select_image(row, str(self._paths[row]))
 
 
     def set_insert_visible(self, visible: bool) -> None:
@@ -442,14 +474,26 @@ class ImageViewerWidget(
         # 读的是控件尺寸与 dpr，worker 线程里碰 QWidget 是越界的
         # （见 selftests/worker_thread_affinity.py）。
         edge = self.view.preview_edge()
+        # 「按参数合成」的预览（目前只有 PDF排版 的打印效果）：只作用于大图，
+        # 缩略图条仍按真实文件解码（见 set_preview_spec_provider）。
+        spec = self._preview_spec_for(str(path), index)
         self.run_worker(
-            lambda: PreviewWorker(path, longest_edge=edge),
+            lambda: PreviewWorker(
+                path,
+                # 给了 spec ⇒ 排版按 target_edge 的密度重新绘制，不能再缩放一次
+                # （否则标题/页码糊掉；实测结论同 PrintPreviewWidget）。
+                longest_edge=0 if spec else edge,
+                print_spec=(
+                    {**spec, "target_edge": max(edge, ImageView.MAX_PREVIEW_EDGE)}
+                    if spec else None
+                ),
+            ),
             lambda worker, thread: (
                 connect_queued(
                     self,
                     worker.finished,
-                    lambda page, image, p: self._image_ready_if_current(
-                        token, page, image, p
+                    lambda page, image, p, s=spec: self._image_ready_if_current(
+                        token, page, image, p, s
                     ),
                     thread,
                 ),
@@ -465,11 +509,27 @@ class ImageViewerWidget(
         )
         self.current_changed.emit(index, str(path))
 
+    def _preview_spec_for(self, path_text: str, index: int) -> dict | None:
+        """向宿主要这一页的合成参数；没接提供者/宿主抛异常时退回原图。
 
-    def _image_ready_if_current(self, token: int, page: int, image, path: str) -> None:
+        宿主抛异常（参数填了一半、条目越界）不该阻断预览——这一帧显示原图，
+        参数改对之后下一个防抖周期再来。
+        """
+        provider = self._preview_spec_provider
+        if provider is None:
+            return None
+        try:
+            spec = provider(path_text, index, len(self._paths))
+        except Exception:  # noqa: BLE001 - 预览不该被宿主参数问题拖死
+            return None
+        return spec if isinstance(spec, dict) and spec else None
+
+    def _image_ready_if_current(
+        self, token: int, page: int, image, path: str, spec: dict | None = None
+    ) -> None:
         """只接受最新一次选择的渲染结果，迟到的旧图直接丢弃。"""
         if token == self._load_token:
-            self._image_ready(page, image, path)
+            self._image_ready(page, image, path, spec)
 
 
     def _load_failed_if_current(self, token: int, msg: str) -> None:
@@ -490,11 +550,20 @@ class ImageViewerWidget(
         return size if size.isValid() else None
 
 
-    def _image_ready(self, _page: int, image, _path: str) -> None:
+    def _image_ready(
+        self, _page: int, image, _path: str, spec: dict | None = None
+    ) -> None:
         path = self.current_path()
         original = self._original_size(str(path)) if path else None
         # 无框坐标场景（如尺寸信息缺失）回退为显示图自身尺寸
         self.view.set_image(image, image_size=original if original else None)
+        if spec is not None:
+            # 合成预览（打印效果）显示的不是原图：别再拿"原始像素尺寸/预览已
+            # 缩放"去解释它（会让人以为图被裁了）。宿主给的 note 才说得清。
+            note = str(spec.get("note") or "")
+            if note:
+                self.info_label.setText(note)
+                return
         if self._pending_boxes is not None:
             boxes, size, info_text, full, selected = self._pending_boxes
             self._pending_boxes = None

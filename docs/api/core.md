@@ -202,6 +202,7 @@ File: core/command_spec.py
 
 | 名称 | 值 |
 | --- | --- |
+| PRINT_MARGIN_LIMIT_MM | `100` |
 | _PDF_NAME_MAX | `200` |
 | TEXT_SIDE_MARGIN_MM | `10.0` |
 

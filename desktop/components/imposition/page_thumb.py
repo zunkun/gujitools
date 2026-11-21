@@ -463,6 +463,14 @@ class PageThumbManager(QObject):
         self._inflight = True
         self._inflight_window = window is not None
         self._inflight_count = len(jobs)
+        try:
+            from utils.crash_log import breadcrumb
+
+            span = f"{window[0] + 1}-{window[1] + 1}" if window else "全部"
+            breadcrumb(f"缩略图批次：{len(jobs)} 页（窗口 {span}，"
+                       f"待办 {len(self._pending)}）")
+        except Exception:  # noqa: BLE001 - 取证绝不该影响出图
+            pass
         self._submit(
             lambda: ImpositionPageThumbWorker(jobs, self._dir, self._edge),
             lambda worker, thread: (

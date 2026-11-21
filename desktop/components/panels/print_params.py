@@ -82,7 +82,14 @@ def parse_margin4(text: str):
     （2026-09-26 审计 #13）：三值「上,左右,下」是合法写法（spec 的
     title_margins 报错文案也明说 1/2/3/4），原先这里拒绝三值、同样的值
     写进 guji.yaml 却能跑——GUI 比命令行更严，没有道理。
+
+    ⚠️ **允许负值**（用户 2026-11-21：「设 0 还不合适，可以继续往负值设」）：
+    负边距 = 图片顶出纸边、超出部分被裁掉。区间与校验器同一份常量
+    （``core.command_spec.PRINT_MARGIN_MIN_MM/LIMIT_MM``）——界面若比校验
+    更宽，用户填了 -300 要等点「生成PDF」才被拒，是更难查的那种错。
     """
+    from core.command_spec import PRINT_MARGIN_LIMIT_MM, PRINT_MARGIN_MIN_MM
+
     text = str(text or "").strip()
     if not text:
         return None
@@ -91,8 +98,11 @@ def parse_margin4(text: str):
         vals = [float(p) for p in parts]
     except ValueError as exc:
         raise ValueError(f"边距必须为数字（mm）：{text!r}") from exc
-    if any(v < 0 for v in vals):
-        raise ValueError(f"边距不能为负数：{text!r}")
+    if any(not PRINT_MARGIN_MIN_MM <= v <= PRINT_MARGIN_LIMIT_MM for v in vals):
+        raise ValueError(
+            f"边距需在 {PRINT_MARGIN_MIN_MM}~{PRINT_MARGIN_LIMIT_MM}mm 之间"
+            f"（负值 = 图片顶出纸边）：{text!r}"
+        )
     if len(vals) == 1:
         vals = vals * 4
     elif len(vals) == 2:

@@ -22,6 +22,9 @@ import tempfile
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+# 本脚本要复用 build.py 的口径（如手册截图期望数），得先让仓库根可导入
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 PASSED = 0
 FAILED: list[str] = []
@@ -115,6 +118,17 @@ def main() -> int:
         else:
             check("GUI 自检退出码为 0", code == 0, f"退出码 {code}")
 
+        # 崩溃取证必须在打包产物里也生效：安装版崩了只留这一个现场。
+        # 判据是「刚跑过一轮 GUI，日志里已有本次启动的横幅 + 转储就位」。
+        log = Path.home() / "Documents" / "guji" / "logs" / "crash.log"
+        body = log.read_text(encoding="utf-8", errors="replace") if log.is_file() else ""
+        check("打包产物里崩溃日志已就位", "崩溃日志开始" in body, str(log))
+        check(
+            "打包产物里原生转储钩子装上了（安装顺序对）",
+            "崩溃转储已就位" in body and "[qt:" in body,
+            "缺「崩溃转储已就位」或没有 Qt 消息",
+        )
+
     print("\n== 用户手册：构建期预生成的自包含 HTML ==")
     # ⚠️ 安装包**不含 docs/guide**（md + 截图都不进包），手册必须是单个自包含
     # 文件：截图内联成 data URI，任何外部引用到了用户机器上都是碎图。
@@ -123,7 +137,16 @@ def main() -> int:
     if manual.is_file():
         doc = manual.read_text(encoding="utf-8", errors="replace")
         inlined = doc.count("data:image/")
-        check("手册内联了 13 张截图", inlined == 13, f"实际 {inlined} 张")
+        # ⚠️ 期望张数从 build.py 的同一口径取（手册源 md 里的 ![..](..) 计数），
+        # 不要在这里写死数字：写死过 13，手册加到 17 张后就变成一条假失败。
+        from build import _manual_image_reference_count
+
+        expected = _manual_image_reference_count()
+        check(
+            "手册内联截图数与 docs/guide 引用一致",
+            expected is None or inlined == expected,
+            f"实际 {inlined} 张 / 源引用 {expected} 张",
+        )
         check("手册没有外部图片引用（装机后不会碎图）", 'src="file:' not in doc and 'src="screenshots/' not in doc)
         check(
             "手册不再引用 md 文档（包内没有 docs/guide）",

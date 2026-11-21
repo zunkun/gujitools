@@ -4,7 +4,7 @@
 
 通用工具函数：几何、排序、图像 IO、PDF、YOLO
 
-覆盖 31 个模块、24 个公开类、215 个公开函数/方法（生成于 2026-11-21）。
+覆盖 33 个模块、25 个公开类、231 个公开函数/方法（生成于 2026-11-21）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -18,6 +18,8 @@
 | [`utils.box_geometry`](#utilsbox_geometry) | 2 | 20 |
 | [`utils.color_utils`](#utilscolor_utils) | 0 | 2 |
 | [`utils.compact_png`](#utilscompact_png) | 0 | 3 |
+| [`utils.crash_dump`](#utilscrash_dump) | 0 | 1 |
+| [`utils.crash_log`](#utilscrash_log) | 1 | 15 |
 | [`utils.data_package`](#utilsdata_package) | 1 | 24 |
 | [`utils.download`](#utilsdownload) | 1 | 1 |
 | [`utils.exif_clean`](#utilsexif_clean) | 0 | 2 |
@@ -955,6 +957,146 @@ atomic``）要求**原子写**（临时文件 + ``os.replace``），自己已经
 读不到（没有 pHYs / 不是图片 / 文件被占）返回 ``None``——调用方按"不写
 pHYs"处理，与"原本就没有"一致（实测提交产物 ``rembg/*-l.png`` 就没有
 pHYs，而 ``rembg/*.png`` 有）。
+
+---
+
+## `utils.crash_dump`
+
+源码：[`utils/crash_dump.py`](../../utils/crash_dump.py)
+
+崩溃转储：进程自己把现场写下来（**仅 Windows**）。
+
+和 :mod:`utils.crash_log` 的分工：那边管「日志 + faulthandler（Python 栈）」，
+这边管「原生栈 + 一份 minidump」。为什么自己做：这台机器上 WER ``LocalDumps``
+实测不落盘（配好了也不出文件），而崩溃发生在 Qt 的 C++ 里——光有 Python 栈
+不够，必须知道**掉在哪个模块的哪个偏移、调用链上有谁**。
+
+做法（全部 ctypes，不引第三方库）：
+
+1. ``SetUnhandledExceptionFilter`` 挂一个顶层异常过滤器；
+2. 过滤器里读异常码 / 出错地址 / ``Rip`` ``Rsp`` ``Rcx``，把地址换算成
+   ``模块名+偏移``（枚举模块 + 大小）；再从栈顶往下扫若干 KB，把落在模块里的
+   返回地址挑出来，依次换算 —— 这就是一份**不带符号的原生调用链**，配合导出表
+   就能查（``tools/`` 里那个 PE 解析脚本干的就是这事）；
+3. ``MiniDumpWriteDump`` 落一份 ``MiniDumpNormal | WithThreadInfo`` 的小 dump；
+4. 最后把过滤器链交给**上一个**过滤器（= faulthandler），所以 Python 各线程的
+   栈照旧会写进 ``crash.log``。
+
+⚠️ 安装顺序有讲究：先 :func:`utils.crash_log.install`（faulthandler），再调
+本模块。反过来的话 faulthandler 覆盖掉过滤器、且不会回调我们，dump 就没了。
+⚠️ 过滤器里**只做读写文件**这类安全动作，任何异常都吞掉并返回
+``EXCEPTION_CONTINUE_SEARCH``，绝不能因为它自己再崩一次。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| MAX_FRAMES | `48` |
+| _EXCEPTION_CONTINUE_SEARCH | `1` |
+| _CTX_RCX | `128` |
+| _CTX_RSP | `152` |
+| _CTX_RBP | `160` |
+| _CTX_RIP | `248` |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `install(directory: str \| Path) -> bool` | 挂上异常过滤器，返回是否成功（**绝不抛**，失败只记日志）。 |
+
+#### `install(directory: str | Path) -> bool`
+
+挂上异常过滤器，返回是否成功（**绝不抛**，失败只记日志）。
+
+⚠️ 必须在 :func:`utils.crash_log.install` **之后**调用：本模块会把上一个
+过滤器串在末尾，顺序反了就拿不到 Python 栈。
+
+---
+
+## `utils.crash_log`
+
+源码：[`utils/crash_log.py`](../../utils/crash_log.py)
+
+崩溃取证：把「最后一刻」留在磁盘上。
+
+为什么需要它（2026-11-21）：生产版偶发 ``Qt6Gui.dll`` 访问违例（异常码
+``0xc0000005`` 紧接着 ``0xc000041d``）直接闪退，而 GUI 是 windowed 程序、
+没有控制台，stderr 全丢；Windows 的 WER ``LocalDumps`` 在这台机器上实测
+**根本不落盘**（配了 DumpFolder/DumpType=2，崩溃后目录一直是空的，用探针
+程序验过），所以拿不到任何现场。这里自备三条证据链：
+
+1. ``faulthandler`` —— 原生崩溃（访问违例/段错误）时把**所有 Python 线程**
+   的栈写进日志。标准库实现，进 GUI 主进程不引入任何依赖。
+2. ``sys.excepthook`` / ``threading.excepthook`` —— Python 层漏出来的异常
+   也进同一份日志（崩溃之前常有被吞掉的异常，这条经常是破案关键）。
+3. :func:`breadcrumb` —— 关键动作留痕（切步骤、切页、开弹窗、合成/缩略图
+   批次…）。崩溃时日志末尾那几行就等于「最后做了什么」，比栈还好用。
+
+本模块**不许 import Qt**（住在 ``utils`` 层，GUI 与 CLI 都能用）；Windows 专属
+的 minidump 在 :mod:`utils.crash_dump` 里。
+
+⚠️ 日志只记**动作与位置**，不记用户内容（页号、数量、文件名按需截断）。整份
+日志超过 ``MAX_BYTES`` 就滚动一份 ``.1``，不会无限长。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| LOG_ENV | `"GUJI_CRASH_LOG"` |
+| STALL_THRESHOLD_MS | `3000` |
+| STALL_POLL_MS | `500` |
+| STALL_MAX_REPORTS | `20` |
+
+### `class StallWatchdog`
+
+盯着主线程心跳：卡住就把线程栈钉进日志。
+
+用法（GUI 入口）::
+
+    dog = install_stall_watchdog()        # 起监控线程
+    timer = QTimer(app); timer.timeout.connect(dog.beat); timer.start(dog.poll_ms)
+
+``beat()`` 可以被**任何**线程调（只更新时间戳），但语义是"主线程还活着"，
+所以只在主线程的事件循环里调。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(threshold_ms: int \| None=None, poll_ms: int=STALL_POLL_MS) -> None` | — |
+| `beat() -> None` | 主线程报一次活。 |
+| `start() -> 'StallWatchdog'` | — |
+| `stop() -> None` | — |
+| `running() -> bool` | — |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `install(directory: str \| Path \| None=None, name: str='crash.log') -> Path \| None` | 装好三条证据链，返回日志路径（装不上返回 ``None``，**绝不抛**）。 |
+| `log(text: str) -> None` | 写一行带时间戳与线程名的日志（没装就静默丢弃，绝不抛）。 |
+| `breadcrumb(text: str) -> None` | 记一条「做了什么」。保持短、可 grep：统一前缀 ``[crumb]``。 |
+| `dump_stacks(heading: str, limit: int=30) -> None` | 把**所有** Python 线程的栈写进日志（主线程排最前，看门狗自己截短）。 |
+| `install_stall_watchdog(threshold_ms: int \| None=None, poll_ms: int=STALL_POLL_MS) -> StallWatchdog` | 装好（或复用）卡顿看门狗并启动监控线程；心跳要调用方自己打。 |
+| `stall_watchdog() -> 'StallWatchdog \| None'` | 当前进程的看门狗（没装为 ``None``）。 |
+| `tail(lines: int=40) -> str` | 取日志末尾若干行（崩溃转储里带上，省得回头再对时间）。 |
+| `path() -> Path \| None` | 当前日志文件（没装为 ``None``）。 |
+| `installed() -> bool` | — |
+| `uninstall() -> None` | 关掉取证（只有自测会用；正常进程跑到死为止）。 |
+
+#### `install(directory: str | Path | None=None, name: str='crash.log') -> Path | None`
+
+装好三条证据链，返回日志路径（装不上返回 ``None``，**绝不抛**）。
+
+``directory=None`` 时看环境变量 :data:`LOG_ENV`，再退到 ``%TEMP%``。
+⚠️ 绝不能因为取证装不上而拦住启动——它是排障设施，不是功能。
+
+#### `dump_stacks(heading: str, limit: int=30) -> None`
+
+把**所有** Python 线程的栈写进日志（主线程排最前，看门狗自己截短）。
+
+纯 Python 实现（``sys._current_frames``），所以从别的线程也能读主线程栈；
+代价是需要 GIL——主线程不放 GIL 时调不到这里（见模块注释）。
 
 ---
 

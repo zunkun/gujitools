@@ -337,6 +337,37 @@ class PageListMixin:
             return self.store.node_input_effective(self.task_id, node, "pages", active)
         return self.store.stage_input_effective(self.task_id, stage, "pages", active)
 
+    def _stage_input_is_entry(self) -> bool:
+        """当前这一步的图片输入是不是**用户自己的入口图片**（``stages/input/``）。
+
+        ⚠️ 与 :meth:`_stage_input_visible` 是两个问题（用户 2026-11-21 报障）：
+
+        - "生效了吗"问的是**上游**跑没跑——入口图没有上游可等；
+        - "能不能往里放图"问的是**这个目录归谁**——归用户，放多久都行。
+
+        混成一个判据的后果：流程里只有「图片去底色」（它打头、没有上游）时，
+        入口目录本来就是**空的**（正因为空才等着用户导图），而"空 ⇒ 未生效"
+        会把这一步判成"上游没执行"，插图直接被拦并弹"这一步的图片来自流程
+        上游"。用户原话：**任何节点都可以作为第一个节点，都可以导入数据**。
+
+        判据用"这一步输入目录 == 入口图片目录"：这类目录里的图**就是**本步
+        的输入，插进去立刻可用；而指向上游产物目录（如 ``stages/detect`` 的
+        裁图）时仍是"上游没跑就别塞"，那条守卫照旧成立。
+        """
+        if not self.task_id:
+            return False
+        directory = self._current_stage_input_dir()
+        if directory is None:
+            return False
+        try:
+            entry = self.store.task_input_dir(self.task_id)
+        except (OSError, ValueError):
+            return False
+        try:
+            return directory.resolve() == entry.resolve()
+        except OSError:  # 网络盘/路径异常：按名字兜底比直接崩了好
+            return directory == entry
+
     def _refresh_manifest(self) -> None:
         if not self.task_id:
             return
@@ -829,11 +860,17 @@ class PageListMixin:
         if (
             current
             and "pages" in ports.stage_inputs(current)
+            and not self._stage_input_is_entry()
             and not self._stage_input_visible()
         ):
             # 上游没执行成功时，这一步的"输入目录"其实是上游的正式产物目录；
             # 往里塞图既不会被看见（可见性仍要求上游成功），又可能被当成上游
             # 产物（用户 2026-11-04「检查所有的步骤」）。
+            #
+            # ⚠️ 入口节点（目录就是 ``stages/input/``）**不受这条拦**（用户
+            # 2026-11-21）：那目录归用户，空着只说明"还没导图"，正是要插的
+            # 时候。流程里只有「去底色」这一步时它打头、没有上游，旧判据把
+            # "空"读成"上游没跑"，导图就被挡在门外（见 _stage_input_is_entry）。
             self._toast(
                 "warning",
                 "上游尚未执行",

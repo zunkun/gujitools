@@ -40,6 +40,10 @@ fpdf2>=2.7.0             # PDF 生成（import fpdf）
 # 构建环境装到 6.13+，Win10 用户的支持就没了，而且不会有任何人报错。
 # 另一个上限理由：6.11 的 Linux wheel 是 manylinux_2_34，对应 Ubuntu 22.04+；
 # 若要支持 Ubuntu 20.04（glibc 2.31），需降到 6.8.x（manylinux_2_28）。
+# ⚠️ Qt 6.11 会把 qfluentwidgets spin 的内部 QLineEdit 压成 1px（值看不见，
+# 2026-11-21 打包版实测）。已由 desktop/components/common/safecomponents.py
+# 的 keep_spin_text_visible 兜底（升级 qfluentwidgets 修复后可删）；上界
+# 暂不收窄到 <6.11，是因为 6.12 是最后支持 Win10 的版本、且兜底已验证有效。
 PySide6>=6.6.0,<6.13              # Qt 绑定
 PySide6-Fluent-Widgets>=1.5.0     # import qfluentwidgets（GPLv3，商用另购授权）
 

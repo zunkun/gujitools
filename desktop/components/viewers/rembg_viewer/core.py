@@ -359,6 +359,26 @@ class RembgPreviewWidget(
         self._preview_dir = None
         self._load_display()
 
+    def set_preview_dir(self, path: Path | None) -> None:
+        """只换**实时预览草稿**的来源（不重建条目、不动正式结果目录）。
+
+        独立功能页用：它的草稿落在 ``singletask/<功能>/preview/<源>/``，
+        换源才换目录；既没有任务号，也不该把草稿当成 ``rembg_dir``（那会让
+        「原图/去底色结果」的分段开关误以为这一页已经执行过）。
+
+        与 :meth:`set_result_dir` 相反：这里**不碰** ``_rembg_dir``，
+        只把 ``_preview_dir`` 换上并重载当前页。
+        """
+        target = Path(path) if path else None
+        if target == self._preview_dir:
+            return
+        self._preview_dir = target
+        self._load_display()
+
+    def clear_preview_dir(self) -> None:
+        """摘掉草稿来源（正式产物重新变成唯一来源）。"""
+        self.set_preview_dir(None)
+
 
     def refresh_running_results(self, changed: set[str]) -> None:
         """执行期间：某几页结果刚落盘 → 只刷**看得见**的那几条 + 当前大图。

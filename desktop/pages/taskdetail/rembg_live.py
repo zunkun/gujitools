@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any, Callable, cast
 from PySide6.QtCore import QObject, QProcess, QTimer
 
 from desktop.workers import RembgLiveWorker, connect_queued
+from desktop.services.rembg_live import REMBG_PREVIEW_PARAM_KEYS
 from utils.rembg_algorithms import REMBG_DEFAULT_ALGORITHM
 
 if TYPE_CHECKING:
@@ -56,10 +57,9 @@ class RembgLiveMixin:
     LIVE_DEBOUNCE_MS = 350
 
     #: 影响去底色结果的参数（与正式执行共用一份口径）。
-    PREVIEW_PARAM_KEYS = (
-        "algorithm", "window", "k",
-        "type", "offset", "seal", "sealcolor", "sealarea", "sealmin_sat",
-    )
+    #: ⚠️ 取自 ``services.rembg_live`` 的唯一一份——独立功能页的实时预览用的是
+    #: 同一个常量，两边一起改才不会出现"一边认这个参数、一边不认"。
+    PREVIEW_PARAM_KEYS = REMBG_PREVIEW_PARAM_KEYS
 
     # ---------------------------------------------------------------- 初始化
     def _init_rembg_live(self) -> None:

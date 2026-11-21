@@ -40,6 +40,7 @@ from desktop.components.imposition.page_list import ImpositionPageList
 from desktop.services.imposition import cn_page_label, page_source_stems
 from desktop.ui import theme as T
 from desktop.ui.widgets import apply_to
+from utils.crash_log import breadcrumb
 
 #: 键盘翻页的键位映射（**唯一来源**）：← / ↑ 上一页，→ / ↓ 下一页。
 #:
@@ -391,6 +392,11 @@ class ImpositionViewWidget(QWidget):
             index = len(self._pages) - 1
         previous = self._current
         self._current = index if index >= 0 else -1
+        if self._current != previous:
+            # 面包屑：拼版页的"切页"是缩略图批次/整页预览的起点，崩溃时能据此
+            # 判断当时停在哪一页（2026-11-21 排查 QScreen 崩溃用）。
+            breadcrumb(f"拼版切页：{previous + 1} → {self._current + 1}"
+                       f"（共 {len(self._pages)} 页）")
         self.page_list.set_current(self._current)
         if self._current != previous and self._current >= 0:
             # 换了当前页（点条目 / 键盘翻页 / 加页后跳到新页）：左列跟着滚到

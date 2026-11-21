@@ -291,6 +291,61 @@ def _install_sigint_handler(app: QApplication) -> None:
     setattr(app, "_sigint_keepalive", keepalive)
 
 
+def _install_crash_forensics(app) -> None:
+    """装崩溃取证（日志 + Qt 消息 + 原生转储），落在数据根的 ``logs/`` 下。
+
+    用户 2026-11-21：生产版反复在 ``Qt6Gui.dll+0xe0130``（``QScreen::geometry``
+    首指令）崩，而 WER ``LocalDumps`` 在这台机器上实测**不落盘**，等于完全没有
+    现场。这里自备三条证据链，见 :mod:`utils.crash_log` 与 :mod:`utils.crash_dump`。
+
+    ⚠️ 顺序不能反：先 ``crash_log``（faulthandler 抢到异常过滤器），再
+    ``crash_dump``（它保存上一个过滤器并在末尾回调）；反了就没有 Python 栈。
+    ⚠️ 取证是排障设施：任何一步失败都只记一行、**绝不拦启动**。数据根可能在
+    拔掉的移动硬盘上（见 ``guji_data_dir`` 的注释），那种情况直接放弃。
+    """
+    try:
+        from pathlib import Path
+
+        from desktop.utils.files import guji_data_dir
+        from utils.crash_log import install as install_crash_log
+
+        log_dir = Path(guji_data_dir()) / "logs"
+        install_crash_log(log_dir)
+        try:
+            from utils.crash_dump import install as install_crash_dump
+
+            install_crash_dump(log_dir)
+        except Exception as exc:  # noqa: BLE001 - 转储装不上，日志还有
+            print(f"[guji] 原生崩溃转储跳过：{exc}")
+        try:
+            from desktop.ui.qt_log import install as install_qt_log
+
+            install_qt_log()
+        except Exception as exc:  # noqa: BLE001
+            print(f"[guji] Qt 消息接入跳过：{exc}")
+        # ---- 卡顿看门狗（用户 2026-11-21「拼版卡死」没有现场）----
+        # 闪退有 faulthandler 兜着，**卡死什么都没有**：主线程被占住时进程活着、
+        # 一个字都不写，用户只能强杀，事后无从查起。这里让主线程每 0.5s 打一次
+        # 心跳，另一个线程盯着；超过阈值没心跳就把所有线程的栈写进 crash.log
+        # （``[stall]`` 前缀，栈里能看出卡在哪一行、谁在持锁）。
+        # ⚠️ 心跳必须挂在**主线程**的事件循环上：后台 worker 打心跳等于没盯住。
+        try:
+            from PySide6.QtCore import QTimer
+
+            from utils.crash_log import install_stall_watchdog
+
+            dog = install_stall_watchdog()
+            heartbeat = QTimer(app)
+            heartbeat.setInterval(dog.poll_ms)
+            heartbeat.timeout.connect(dog.beat)
+            heartbeat.start()
+            setattr(app, "_stall_heartbeat", heartbeat)  # 方便排查时取
+        except Exception as exc:  # noqa: BLE001 - 看门狗装不上不该拦住界面
+            print(f"[guji] 卡顿看门狗跳过：{exc}")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[guji] 崩溃取证跳过：{exc}")
+
+
 def main() -> int:
     """创建 QApplication、套用样式并显示主窗口，返回退出码。
 
@@ -300,6 +355,10 @@ def main() -> int:
     成败；有了这个开关就能用**退出码**判定。
     """
     app = QApplication(sys.argv)
+    # ---- 崩溃取证：越早越好（用户 2026-11-21）----
+    # 崩溃点在 Qt 的 C++ 里、Windowed 程序又没有控制台，先取证再谈别的：
+    # 之后任何一步崩掉，数据根的 logs/ 下都会有日志（+ 原生转储）。
+    _install_crash_forensics(app)
     # ---- 子进程全部拴在本进程上（用户 2026-11-21 报"拼版崩溃后一堆野进程"）----
     # 建作业对象并把自己装进去：之后派生的所有子进程（YOLO 常驻服务、
     # multiprocessing 池、渲染服务）都继承这个作业，本进程一退出——正常关、

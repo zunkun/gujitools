@@ -3,7 +3,8 @@
 
 背景（用户 2026-10-09）：详情页旧的「PDF 预览 | 提取结果」双标签合并成
 :class:`ExtractPreviewWidget` 单控件——左栏一份 PDF 页缩略图；切到某页时
-``stages/extract/N.<ext>`` 已存在就显示产物，没有就**真的提取落盘**后显示
+``stages/extract/`` 里已有这一页的产物（**任何格式**，用户 2026-11-21：
+参数没变不得二次提取）就显示产物，没有就**真的提取落盘**后显示
 （与批量提取同一条渲染实现 ``utils.pdf_extract.extract_single_page``）。
 """
 
@@ -75,6 +76,39 @@ def run(ctx) -> None:
     pump(app, times=4)
     ok("宿主刷新后仍显示当前页产物", viewer._shown_extract_page == 2
        and viewer.view.has_image)
+
+    # ---- 跨格式复用（用户 2026-11-21：已提取 + 参数没变 ⇒ 不二次提取） ----
+    # 产物目录里已有 1.jpg（批量提取落盘），面板 ext 却是 png：此前判据只看
+    # ``1.png`` 在不在 ⇒ 翻回第 1 页又提一遍、目录里多出同页号的第二份文件
+    # （任务 0034 实测 384 张 jpg 之外多了 11 张 png）。现在按"这一页有没有
+    # 任何格式的产物"判：直接显示 1.jpg，一个字节都不再写。
+    out3 = ctx.tmp / "extract_preview_out3"
+    thumb3 = ctx.tmp / "extract_preview_thumbs3"
+    out3.mkdir(parents=True)
+    (out3 / "1.jpg").write_bytes((out_dir / "1.jpg").read_bytes())
+    viewer3 = ExtractPreviewWidget()
+    viewer3.set_params_provider(lambda: {"ext": "png", "zoom": 1,
+                                         "quick": True, "dpi": 200})
+    viewer3.set_extract_dir(out3)
+    viewer3.set_pdf(pdf, cache_dir=thumb3)
+    ok("跨格式：等缩略图条目建好",
+       wait_until(app, lambda: viewer3.strip.count() == 3, timeout=15))
+    pump(app, times=6)
+    ok("跨格式：认出 1.jpg 是第 1 页的产物",
+       viewer3.page_product(0) == out3 / "1.jpg",
+       str(viewer3.page_product(0)))
+    ok("跨格式：翻回第 1 页直接显示旧格式产物",
+       wait_until(app, lambda: viewer3._shown_extract_page == 0
+                  and viewer3.view.has_image, timeout=15),
+       f"shown={viewer3._shown_extract_page}")
+    pump(app, times=8)
+    ok("跨格式：没有再落一份 1.png", not (out3 / "1.png").exists())
+    # 没提过的页照旧现场提取（落当前 ext）
+    viewer3.strip.setCurrentRow(1)
+    ok("跨格式：没提过的第 2 页仍按面板 ext 提取",
+       wait_until(app, lambda: (out3 / "2.png").is_file(), timeout=15))
+    viewer3.shutdown_workers()
+    viewer3.deleteLater()
 
     # ---- 连点两页：一次只跑一个提取，后面的只排队（不把子进程池塞满） ----
     # ⚠️ 用户 2026-10-24 报「JPX 提取时点其他页一直转圈」：连点 N 页时若每页

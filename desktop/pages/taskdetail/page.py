@@ -1247,6 +1247,17 @@ class TaskDetailPage(
         查表，**不要写死数字**（``IMPOSITION_INDEX=len(STAGES)=4`` 是改造前的
         遗留口径，现在落在 print 那一格）。
         """
+        # 面包屑：切步骤会成批创建/销毁界面与线程，崩溃取证里这一条最值钱
+        # （2026-11-21 排查 Qt6Gui 崩溃用）。放在 flush 之前，这样"切到哪一步"
+        # 与"切之前先落了什么"顺序清楚。
+        try:
+            from utils.crash_log import breadcrumb
+
+            breadcrumb(f"切步骤：{self.current_stage() or '-'} → "
+                       f"{self.stage_at_index(index) or '-'}"
+                       f"（任务 {self.task_id}）")
+        except Exception:  # noqa: BLE001 - 取证绝不该影响切页
+            pass
         # 离开当前阶段前把待写暂存落盘、把未提交的版面拖动补发
         # （防抖未到期/拖住未松手就走人不该丢改动）
         self.flush_layout_pending()

@@ -129,6 +129,67 @@ guji/
    ⚠️ 要**活过父进程**的子进程（更新安装器、设置里的「重启程序」）必须用
    `proc_job.detached_creationflags()` 申请脱离作业，否则会被一起收走。
 
+### 4.2 崩溃取证（原生崩溃的现场）
+
+生产版曾反复在 `Qt6Gui.dll+0xe0130`（`QScreen::geometry` 首指令）崩，而 Windows
+自带的 WER `LocalDumps` 在这台机器上实测**不落盘**（探针验证过，不是配置错）。
+所以现场由程序自己留，三件产物全落在 `~/Documents/guji/logs/`：
+
+```
+logs/
+├── crash.log                    常驻日志：面包屑 + faulthandler + excepthook + Qt 消息
+├── crash.log.1                  上一份（超过 2MB 滚动，磁盘占用封顶）
+├── crash_<时间>_pid<pid>.txt    崩溃报告：异常码/出错地址/寄存器/调用链候选/日志尾部
+└── crash_<时间>_pid<pid>.dmp    minidump（可用 WinDbg/VS 打开看真栈）
+```
+
+- 三个模块分工：`utils/crash_log.py`（日志 + `faulthandler`，管 Python 栈）、
+  `utils/crash_dump.py`（`SetUnhandledExceptionFilter` + `MiniDumpWriteDump`，
+  管原生现场）、`desktop/ui/qt_log.py`（`qInstallMessageHandler` 把 Qt 警告
+  也接进同一份日志）。
+- ⚠️ **安装顺序硬约束**：先 `install_crash_log()`（抢 `faulthandler`），再
+  `install_crash_dump()`（过滤器末尾回调上一个过滤器）。反过来的话原生过滤器
+  会先接管异常，Python 栈就没了。入口在 `desktop/app.py::_install_crash_forensics`，
+  位置是 `QApplication` 构造之后、`kill_children_on_exit` 之前。
+- ⚠️ 崩溃取证**不许 import Qt**、不许在异常处理里再抛异常：它自己炸了就彻底
+  没有现场了。所有步骤都 try/except 兜住，失败只打印。
+- 面包屑只在"用户动作/阶段切换"这类粗粒度节点上打（切步骤、切页、选图弹窗、
+  开始合成、缩略图批次），一条是一次 IO——别放进渲染循环里。
+- 栈扫描是按 `rsp` 往上找"落在模块地址区间内的值"再换算成 `模块+偏移`，
+  是**启发式候选**而非真栈回溯；`dmp` 才是准的。栈只按 1KB 分块读（整段读会
+  因为越过栈顶而整段失败，看起来像"没有调用链"）。
+
+### 4.3 卡死取证（进程活着、界面不动）
+
+闪退那三件套救不了**卡死**：进程活着、窗口没响应，`faulthandler` / 原生过滤器
+都不触发，用户只能强杀，现场全丢（2026-11-21 用户报「拼版卡死」时，`crash.log`
+末尾只剩「拼版切页」一条面包屑，无从查起）。
+
+办法是**心跳 + 外部线程**（`utils/crash_log.py::StallWatchdog`）：
+
+- 主线程挂一个 `QTimer` 调 `beat()` 更新时间戳；另一个 daemon 线程盯着它，
+  超过 `STALL_THRESHOLD_MS`（默认 3000ms，环境变量 `GUJI_STALL_THRESHOLD_MS`
+  可覆盖）没更新就把**所有** Python 线程的栈写进同一份 `crash.log`，前缀
+  `[stall]`：
+
+```
+22:29:05.462 [stall-watchdog:82a0] [stall] 主线程卡顿：已 3.1s 没有心跳（阈值 3.0s，第 1 次）
+--- 主线程 ---
+  File ".../desktop/pages/taskdetail/imposition_layout.py", line 812, in _compose_imposition_async
+--- 看门狗线程 ---
+  ...
+22:29:06.978 [stall-watchdog:82a0] [stall] 主线程恢复：这次卡了 4.6s（判定阈值 3.0s）
+```
+
+- ⚠️ 心跳必须挂在**主线程**的事件循环上：后台 worker 打心跳等于没盯住。
+  心跳间隔必须小于阈值，否则空闲时必误报。
+- 主线程卡在**不放 GIL** 的 C 调用里（PIL 编码、cv2、Qt 的部分 C++ 调用）时，
+  看门狗线程自己也会被饿死；日志会记下"自身被饿死 X s"，并说明这份栈多半
+  已随主线程恢复而前移，只当参考。
+- 同一进程最多写 `STALL_MAX_REPORTS`（20）份栈，滚动卡顿不会刷爆日志。
+- 入口同上：`_install_crash_forensics(app)` 里 `install_stall_watchdog()` +
+  `QTimer(app)` 打心跳；`uninstall()` 会**先停看门狗再关流**。
+
 ## 5. 测试地图
 
 - 运行器：`tests/gui_selftest.py`（offscreen），`--only` 选模块自动补依赖、
@@ -141,6 +202,8 @@ guji/
     进 `tasks/<id>/thumbnails/imposition/`，不许借道 singletask）；
   - `selftests/imposition_thumb_window.py` — 缩略图"只生成可见页"+ 合成让路；
   - `selftests/proc_job.py` — 作业对象：父进程被硬杀后子进程必须跟着退出；
+  - `selftests/crash_forensics.py` — 崩溃取证：日志/面包屑/excepthook 链、Qt 消息、
+    真 AV 崩溃产生**报告 + minidump + Python 栈**三件套、安装顺序静态契约；
   - `selftests/params_spec.py` — 面板默认值单一来源。
 - CLI 侧契约：`tests/reporter_cli_parity.py` 等（改 progress 事件协议前先看它）。
 

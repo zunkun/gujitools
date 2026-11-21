@@ -19,10 +19,11 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QBoxLayout, QHBoxLayout, QVBoxLayout
-from qfluentwidgets import CaptionLabel, CheckBox, DoubleSpinBox, PushButton
+from qfluentwidgets import CaptionLabel, CheckBox, PushButton
 from qfluentwidgets import FluentIcon as FIF
 from qfluentwidgets import Slider
 
+from desktop.components.common.safecomponents import SafeDoubleSpinBox
 from desktop.ui import theme as T
 from desktop.ui.widgets import Card, PanelTitle, SectionTitle, apply_to
 
@@ -166,9 +167,14 @@ class ImpositionPanel(Card):
             self.enabled_checkbox.setChecked(True)  # 面板内部按"已启用"渲染
 
     # ------------------------------------------------------------------ 状态
-    def _build_angle_spin(self) -> DoubleSpinBox:
-        """度数输入框：±180°、2 位小数、点按 0.1°（微调口径，用户 2026-09-30）。"""
-        spin = DoubleSpinBox()
+    def _build_angle_spin(self) -> SafeDoubleSpinBox:
+        """度数输入框：±180°、2 位小数、点按 0.1°（微调口径，用户 2026-09-30）。
+
+        ⚠️ 用 ``SafeDoubleSpinBox`` 而不是裸 ``DoubleSpinBox``（2026-11-21）：
+        前者会把内部 QLineEdit 的最小宽度托住；PySide6 6.11 起裸 spin 的文字
+        会被压成 1px（值看不见，只剩两个箭头），打包版实测就栽在这。
+        """
+        spin = SafeDoubleSpinBox()
         spin.setRange(*ANGLE_SPIN_RANGE)
         spin.setDecimals(2)
         spin.setSingleStep(0.1)

@@ -42,6 +42,7 @@ class ImageViewerHost(QWidget, ThumbsMixin, ZoomPopupMixin):
     _page_source_cache: Any
     _paths: Any
     _pending_boxes: tuple | tuple[Any, ...] | None
+    _preview_spec_provider: Any
     _thumb_cache_dir: Path | None
     _thumb_cache_edge: Any
     _thumb_cache_lookup: Any
@@ -71,10 +72,17 @@ class ImageViewerHost(QWidget, ThumbsMixin, ZoomPopupMixin):
     def _clear_page_source(self) -> None:
         ...
 
-    def _image_ready(self, _page: int, image, _path: str) -> None:
+    def _image_ready(
+        self, _page: int, image, _path: str, spec: dict | None = None
+    ) -> None:
         ...
 
-    def _image_ready_if_current(self, token: int, page: int, image, path: str) -> None:
+    def _image_ready_if_current(
+        self, token: int, page: int, image, path: str, spec: dict | None = None
+    ) -> None:
+        ...
+
+    def _preview_spec_for(self, path_text: str, index: int) -> dict | None:
         ...
 
     def _load_failed_if_current(self, token: int, msg: str) -> None:
@@ -155,6 +163,9 @@ class ImageViewerHost(QWidget, ThumbsMixin, ZoomPopupMixin):
     def refresh_page(self, path_text: str) -> None:
         ...
 
+    def refresh_current(self) -> None:
+        ...
+
     def reload_thumb(self, path_text: str) -> None:
         ...
 
@@ -182,6 +193,9 @@ class ImageViewerHost(QWidget, ThumbsMixin, ZoomPopupMixin):
         ...
 
     def set_pdf_thumb(self, gen: int, index: int, image) -> None:
+        ...
+
+    def set_preview_spec_provider(self, provider) -> None:
         ...
 
     def set_single_column(self, single_column: bool) -> None:

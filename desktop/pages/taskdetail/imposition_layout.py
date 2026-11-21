@@ -824,6 +824,14 @@ class ImpositionLayoutMixin:
         #    上一轮的成品会留在盘上，第四步照旧把旧图打进 PDF。这一轮的代价只是
         #    一次目录清扫，零次图片合成。
         page_count = len(doc.get("pages") or [])
+        try:
+            from utils.crash_log import breadcrumb
+
+            todo = page_count if (force_full or only is None) else len(only)
+            breadcrumb(f"开始合成拼版：共 {page_count} 页，本轮 {todo} 页，"
+                       f"{'整本' if force_full else '增量'}")
+        except Exception:  # noqa: BLE001 - 取证绝不该影响合成
+            pass
         if force_full or only is None:
             order = list(range(page_count))
         else:

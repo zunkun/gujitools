@@ -1785,6 +1785,12 @@ def _check_insert_from_folder() -> None:
     2. 目录被展开成图片清单——**非图片被忽略**、按名排序；
     3. 落在**这一步的输入目录**，与执行读的是同一处（否则"导入了却读不到"）；
     4. 再次选**同一个目录不产生重复**（否则清单里同一张图出现两次）。
+
+    2026-11-21 追加两件（用户："任何节点都可以作为第一个节点，都可以导入数据"）：
+
+    5. **入口节点**（流程里只有去底色这一步）导图时**不许**弹"上游尚未执行"
+       —— 入口目录空着正是等着导图；
+    6. 反例：这一步的图**真来自上游**（默认流程、检测没跑）时，仍然拦住。
     """
     import shutil
     import tempfile
@@ -1833,6 +1839,21 @@ def _check_insert_from_folder() -> None:
         page._select_stage(_bar_idx)
         app.processEvents()
 
+        # 记下弹出的提示：入口节点导图**不该**被"上游还没跑"挡住（2026-11-21）
+        toasts: list[tuple[str, str]] = []
+        real_toast = page._toast
+
+        def _record_toast(kind: str, title: str, content: str) -> None:
+            toasts.append((str(title), str(content)))
+            real_toast(kind, title, content)
+
+        page._toast = _record_toast
+        # 没有这一步时单靠"入口目录空着"就会误判成"上游没跑"；先确认现场如此
+        _entry_before = page._current_stage_input_dir()
+        ok("刚建好的去底色打头任务：入口图片目录还不存在（正是要导图的时候）",
+           _entry_before is not None and not _entry_before.exists(),
+           str(_entry_before))
+
         # ---- ① 按钮在（提示语要说清是"文件夹"）----
         tips = [b.toolTip() for b in page.detect_viewer.findChildren(ToolButton)]
         ok("预览区有「选文件夹」按钮（文件对话框选不了目录，得单独一个）",
@@ -1859,6 +1880,9 @@ def _check_insert_from_folder() -> None:
            [p.name for p in page._manifest_paths()]
            == ["0001.jpg", "0002.png", "0003.jpg"],
            str([p.name for p in page._manifest_paths()]))
+        # ⚠️ 2026-11-21 的回归点：入口目录空着 ≠ 上游没跑
+        ok("入口节点导图**不提示**「上游尚未执行」（任何节点都能当第一个节点）",
+           not any("上游尚未执行" in t for t, _ in toasts), str(toasts))
 
         # ---- 再选一次输入目录本身：不得重复 ----
         QFileDialog.getExistingDirectory = staticmethod(  # type: ignore[reportAttributeAccessIssue]  # 测试替身：把目录框换成固定返回，离屏不许真弹
@@ -1873,6 +1897,30 @@ def _check_insert_from_folder() -> None:
            [Path(p["file"]).name for p in page.pages]
            == ["0001.jpg", "0002.png", "0003.jpg"],
            str([Path(p["file"]).name for p in page.pages]))
+
+        # ---- 反例：这一步的图**真的来自上游**时，守卫照旧（不能放宽成"谁都能塞"）----
+        # 默认流程 extract→detect→rembg→print：检测没跑，去底色的输入是上游的
+        # 裁图目录，往那儿塞图既不会被看见、又可能被当成上游产物。
+        tid2 = store.create_task(source_path="", source_hash="", name="默认流程")
+        shell.open_detail(tid2)
+        app.processEvents()
+        _idx2 = page.bar_index_of_step("rembg")
+        assert _idx2 is not None  # 默认流程里有「图片去底色」
+        page._select_stage(_idx2)
+        app.processEvents()
+        upstream = page._current_stage_input_dir()
+        toasts.clear()
+        QFileDialog.getExistingDirectory = staticmethod(  # type: ignore[reportAttributeAccessIssue]  # 测试替身：把目录框换成固定返回，离屏不许真弹
+            lambda *a, **k: str(source))
+        page.insert_pages_from_folder()
+        _pump(app, rounds=6)
+        ok("上游（检测）还没跑 ⇒ 插图仍被拦下（这一步的图确实来自上游）",
+           any("上游尚未执行" in t for t, _ in toasts), str(toasts))
+        leftover = (
+            sorted(p.name for p in upstream.iterdir())
+            if upstream is not None and upstream.exists() else []
+        )
+        ok("  拦下时一张也没复制进上游产物目录", not leftover, str(leftover))
 
         shell.close()
     finally:

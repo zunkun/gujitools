@@ -23,6 +23,17 @@ from pathlib import Path
 from desktop.utils.files import THUMBNAIL_EDGE
 from utils.file_utils import write_bytes_atomic
 
+#: 影响去底色结果的参数键（实时预览"这份参数算过了没有"的快照口径）。
+#:
+#: ⚠️ **只能有这一份**（2026-11-21）：任务流程第三步（``pages/taskdetail/
+#: rembg_live.py``）与独立功能页（``modules/rembg/live.py``）都用它判断要不要
+#: 重算。两处各写一份的话，某天给面板加了参数、只改了一处，那一处就会"面板变了
+#: 但预览不变"——用户看到的是参数不生效。
+REMBG_PREVIEW_PARAM_KEYS: tuple[str, ...] = (
+    "algorithm", "window", "k",
+    "type", "offset", "seal", "sealcolor", "sealarea", "sealmin_sat",
+)
+
 
 def _rgb_of(final_arr):
     """去底结果 → ``(H, W, 3)`` RGB 数组（透明 PNG 编码的输入形状）。"""

@@ -6,15 +6,27 @@
 
 - 左侧**只有一份**缩略图：PDF 的每一页（缓存于 ``thumbnails/source``，
   与导入后台任务共用同一条生产链，见 :class:`PdfViewerWidget.set_pdf`）；
-- 切到第 N 页时：``stages/extract/N.<ext>`` **已存在** → 直接显示提取结果；
-  **不存在** → 后台把这一页**真的提取落盘**（与批量提取同一条渲染实现，
+- 切到第 N 页时：``stages/extract/`` 里**已有这一页的产物**（任何支持的图片
+  格式，见 :meth:`ExtractPreviewWidget.page_product`）→ 直接显示提取结果；
+  **没有** → 后台把这一页**真的提取落盘**（与批量提取同一条渲染实现，
   :func:`utils.pdf_extract.extract_single_page`），完成后上屏提取结果——
   「预览即产物」，不再有"预览渲的和提取存的不是同一张图"的两套口径；
 - 批量提取照旧落同一目录：浏览过的页已提好，批量跑只是幂等覆盖（原子写）。
 
+⚠️ **「提没提过」按"这一页有没有产物文件"判，不按"当前格式的文件名在不在"**
+（用户 2026-11-21：「已經提取了，並且提取參數沒變的情況下，下次切換到當前
+圖片，不必要二次提取」）。此前判据是 ``N.<当前ext>`` 存不存在——用户把
+「输出格式」从 jpg 换成 png 再翻页（或面板值与批量那次不一致）时，每一页都
+被当成"没提过"再提一遍：任务 0034 实测 ``stages/extract`` 里 384 张 jpg
+之外又多出 11 张同页号的 png，白付一遍 JPX 解码，还让下游按文件名收集时
+同一页出现两条。参数（zoom/dpi）同理**不参与**"要不要再提"：改参数后想
+更新产物请点「提取文档图片」整步重跑（那是显式动作，会整本覆盖），翻页
+预览永远复用已有产物、绝不静默重写。
+
 参数（zoom/ext/quick/dpi）由宿主经 :meth:`set_params_provider` 注入——读
-「图片提取」面板当前的表单值，保证单页提取与点「执行本步骤」的批量提取
-产物一致。表单填到一半 ``get_args()`` 抛 ``ValueError`` 时按默认参数兜底。
+「图片提取」面板当前的表单值，只用于**决定新提取落盘的文件名/参数**（与点
+「执行本步骤」的批量提取产物一致）。表单填到一半 ``get_args()`` 抛
+``ValueError`` 时按默认参数兜底。
 
 编辑链：产物是磁盘上的真实文件，放大弹窗/右键对**已提取**的页给
 ``edit_path``（右键「编辑图片」覆盖回写）；未提取的页仍是矢量页，只有
@@ -35,6 +47,11 @@ from desktop.components.viewers.pdf_viewer import PdfViewerWidget
 from desktop.components.viewers.image_zoom_dialog import ZoomTarget
 from desktop.workers import PreviewWorker, connect_queued
 from utils.pdf_extract import DEFAULT_RENDER_DPI
+
+#: 单页产物可能落盘的图片后缀（= CLI ``OUTPUT_IMAGE_EXTS`` 的全集 + jpeg 别名）。
+#: 「这一页提没提过」要**跨格式**认——用户换过「输出格式」再翻页时，
+#: 旧格式的那份也是这一页的正式产物，绝不能再提一遍（见模块 docstring）。
+_PRODUCT_EXTS = ("jpg", "jpeg", "png", "bmp", "tif", "tiff", "webp")
 
 
 class _SingleExtractWorker(QObject):
@@ -93,6 +110,9 @@ class ExtractPreviewWidget(PdfViewerWidget):
 
     def __init__(self, placeholder: str = "暂无源文件", parent=None):
         super().__init__(placeholder, parent)
+        #: 无 PDF 时的占位文案：基类只把它交给了 ``ImageView``，自己没留字段，
+        #: 而 :meth:`restore_buffers` 的「没有文档就还原成占位」要用到它。
+        self._empty_hint = placeholder
         self._extract_dir: Path | None = None
         self._params_provider: Callable[[], dict] | None = None
         #: 提取/加载请求的代际号：换文档即失效，迟到的结果不许上屏
@@ -178,10 +198,36 @@ class ExtractPreviewWidget(PdfViewerWidget):
         return ext.lower().lstrip(".") or "jpg"
 
     def extract_path_for(self, page: int) -> Path | None:
-        """第 page 页（0-based）的产物路径；没有产物目录时为 None。"""
+        """第 page 页（0-based）**将要落盘**的产物路径；没有产物目录时为 None。
+
+        ⚠️ 只用于"准备新提取"的落点（文件名跟面板当前 ext 走）；判断"这一页
+        提没提过"一律走 :meth:`page_product`——那里跨格式认产物。
+        """
         if self._extract_dir is None:
             return None
         return self._extract_dir / f"{page + 1}.{self._extract_ext()}"
+
+    def page_product(self, page: int) -> Path | None:
+        """第 page 页（0-based）**已有的**产物文件；没提过返回 None。
+
+        判据是"这一页有没有任何支持格式的产物文件"（用户 2026-11-21：
+        已提取 + 参数没变 ⇒ 切回这页不得二次提取）：先认面板当前 ext，
+        再按 :data:`_PRODUCT_EXTS` 兜底扫其余格式。于是换过「输出格式」
+        （或面板值与批量那次不一致）时，旧格式那份照常复用——不会同名
+        再造一份、也不会把同一页喂给下游两次。
+        """
+        if self._extract_dir is None:
+            return None
+        current = self._extract_ext()
+        exts = [current] + [e for e in _PRODUCT_EXTS if e != current]
+        for ext in exts:
+            candidate = self._extract_dir / f"{page + 1}.{ext}"
+            try:
+                if candidate.is_file():
+                    return candidate
+            except OSError:  # noqa: PERF203 - 单个候选 stat 失败不影响其余
+                continue
+        return None
 
     def current_display_path(self) -> Path | None:
         """当前大图显示的是**已提取产物**时返回它的路径；PDF 渲染页没有文件。
@@ -189,7 +235,9 @@ class ExtractPreviewWidget(PdfViewerWidget):
         「编辑 → 下载/打印图片」只对真实文件开放（虚拟页返回 None ⇒ 菜单置灰）。
         """
         page = self._shown_extract_page
-        return self.extract_path_for(page) if page is not None else None
+        if page is None:
+            return None
+        return self.page_product(page)
 
     def navigate(self, forward: bool) -> None:
         """方向键翻页：委托左侧 PDF 缩略图条（切页即触发按需提取）。"""
@@ -213,16 +261,23 @@ class ExtractPreviewWidget(PdfViewerWidget):
         ⚠️ 完全取代父类的「渲 PDF 大图」分支——本控件的语义就是"看提取
         结果"；只有 ``set_extract_dir`` 还没被调过（宿主尚未接好产物目录，
         理论上只在构造早期出现）才退回父类的纯预览。
+
+        ⚠️ "有产物"按 :meth:`page_product` 跨格式认（用户 2026-11-21）：
+        这一页哪怕是以别的格式落的盘也算提过，直接显示，不再二次提取。
         """
         if not self._pdf_path:
             return
-        target = self.extract_path_for(page)
-        if target is None:
+        if self._extract_dir is None:
             self._shown_extract_page = None
             super()._select_page(page, _path)
             return
-        if target.exists():
-            self._display_extract_file(page, target)
+        found = self.page_product(page)
+        if found is not None:
+            self._display_extract_file(page, found)
+            return
+        target = self.extract_path_for(page)
+        if target is None:
+            super()._select_page(page, _path)
             return
         self._extract_and_display(page, target)
 
@@ -361,10 +416,11 @@ class ExtractPreviewWidget(PdfViewerWidget):
         target = self.extract_path_for(page)
         if target is None:
             return
-        if target.exists():
+        found = self.page_product(page)
+        if found is not None:
             # 等待期间产物已被别的途径落盘：直接显示，不再重复提取
             if max(self.strip.currentRow(), 0) == page:
-                self._display_extract_file(page, target)
+                self._display_extract_file(page, found)
             return
         self._extract_and_display(page, target)
 
@@ -375,10 +431,10 @@ class ExtractPreviewWidget(PdfViewerWidget):
         page = max(self.strip.currentRow(), 0)
         if page in self._extracting or self._shown_extract_page == page:
             return  # 在提了 / 已经显示的就是这页产物：不用动
-        target = self.extract_path_for(page)
-        if target is None or not target.exists():
+        found = self.page_product(page)
+        if found is None:
             return
-        self._display_extract_file(page, target)
+        self._display_extract_file(page, found)
 
     # ------------------------------------------------------------ 编辑生效链
     def refresh_page(self, path_text: str) -> None:
@@ -390,14 +446,18 @@ class ExtractPreviewWidget(PdfViewerWidget):
         if self._shown_extract_page is None or not self._pdf_path:
             return
         page = self._shown_extract_page
-        target = self.extract_path_for(page)
+        target = self.page_product(page)
         if target is None or str(target) != str(path_text):
             return
         self._display_extract_file(page, target)
 
     def _zoom_target(self, index: int) -> ZoomTarget | None:
-        """放大弹窗目标：**已提取**的页给真实文件（可编辑回写），否则矢量页。"""
-        target = self.extract_path_for(index)
+        """放大弹窗目标：**已提取**的页给真实文件（可编辑回写），否则矢量页。
+
+        ⚠️ 跨格式认产物（:meth:`page_product`）：右键编辑回写的是**屏上
+        这份文件**，别因面板 ext 变了就退回矢量页（那样"编辑图片"会消失）。
+        """
+        target = self.page_product(index)
         if target is not None and target.exists():
             reader = QImageReader(str(target))
             size = reader.size()
@@ -422,8 +482,11 @@ class ExtractPreviewWidget(PdfViewerWidget):
         page = self._shown_extract_page
         if page is None:
             return
-        target = self.extract_path_for(page)
+        target = self.page_product(page)
         if target is None or str(target) != str(path_text):
             return
         if image is not None and not getattr(image, "isNull", lambda: True)():
             self.view.set_image(image)
+        else:
+            # 编辑器只报了路径没带回图（旧弹窗路径）：按文件重载当前页
+            self._display_extract_file(page, target)

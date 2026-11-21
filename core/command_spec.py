@@ -65,6 +65,18 @@ REMBG_ALGORITHMS: Tuple[str, ...] = ALGORITHM_KEYS
 # 边距默认值（print）
 DEFAULT_PAGE_MARGINS: List[int] = [int(v) for v in _DEFAULT_PAGE_MARGINS]
 
+#: 通用页边距的取值区间（mm）。**唯一定义处**：校验器
+#: （`_validate_print`）与桌面表单（`panels/print_params.parse_margin4`）都读它，
+#: 免得界面放行 -300 而校验只接受到 -100（用户点「生成PDF」才看到报错）。
+#:
+#: - 上界 100：边距太大会把可排版区域挤成负数（`avail_h = page_h - mt - mb`），
+#:   图片框算出负宽高传给 `pdf.image()`；
+#: - 下界 -100（用户 2026-11-21 要求「设 0 还不合适就继续往负值设」）：负边距让
+#:   图片顶出纸边、超出部分被裁掉，等于按纸宽放大再裁边；再往负走，可用区宽高
+#:   会成倍膨胀，`print.py` 按它 × 300dpi 算 `max_w_px/max_h_px`，会把内存吃光。
+PRINT_MARGIN_LIMIT_MM: int = 100
+PRINT_MARGIN_MIN_MM: int = -PRINT_MARGIN_LIMIT_MM
+
 
 # ---------------------------------------------------------------- CSS 简写
 
@@ -281,18 +293,28 @@ def _validate_print(args) -> None:
     #    `avail_h = page_h - mt - mb` 变成负数 → 图片框算出**负宽高**传给
     #    `pdf.image()`，产出畸形 PDF 或直接报错。上界按"纸上还得放得下东西"取，
     #    不按纸张尺寸算（这里不知道纸张），给一个宽松但安全的值：100mm。
-    _MARGIN_MAX_MM = 100
+    #
+    # ⚠️ **允许负值**（用户 2026-11-21）：「设成 0 还不合适，可以继续往负值设」。
+    #    负边距 = 让图片**顶出纸边**（超出部分被纸张裁掉），等于按纸宽放大再裁边，
+    #    古籍影印常用来切掉扫描件自带的白边。下界取对称的 -100mm：可用区宽高会
+    #    随负值成倍膨胀（`print.py` 按可用区 × 300dpi 定 `max_w_px/max_h_px`），
+    #    再放开就变成"每页多算出上亿像素"，逐个 worker 加载直接吃光内存。
     for key in ("page_margins", "left_page_margins", "right_page_margins"):
         val = args.get(key)
         if val is not None:
             if not isinstance(val, list) or len(val) != 4:
                 raise ValueError(f"{key} 应为四元素列表")
-            if any(not isinstance(v, (int, float)) or v < 0 for v in val):
-                raise ValueError(f"{key} 中的值不能为负数")
-            if any(v > _MARGIN_MAX_MM for v in val):
+            if any(
+                not isinstance(v, (int, float))
+                or v != v  # NaN
+                for v in val
+            ):
+                raise ValueError(f"{key} 中的值必须为数字")
+            if any(v < PRINT_MARGIN_MIN_MM or v > PRINT_MARGIN_LIMIT_MM for v in val):
                 raise ValueError(
-                    f"{key} 中的值不能超过 {_MARGIN_MAX_MM}mm，当前={val}"
-                    "（边距太大会把可排版区域挤成负数）"
+                    f"{key} 中的值不能超过 {PRINT_MARGIN_LIMIT_MM}mm"
+                    f"、也不能低于 {PRINT_MARGIN_MIN_MM}mm，当前={val}"
+                    "（正值 = 留白；负值 = 图片顶出纸边、超出部分被裁掉）"
                 )
 
     _check_choice(args.get("title_position"), POSITIONS, "title_position")
@@ -306,7 +328,9 @@ def _validate_print(args) -> None:
         PAGE_NUMBER_FORMATS, "page_number_format",
     )
 
-    # 标题/页码「距页边」：与 page_margins 同一套校验，但允许为空（未配置）
+    # 标题/页码「距页边」：与 page_margins 同一套上界，但**仍要求非负**——
+    # 通用边距为负是「图片顶出纸边」，而文字距页边为负等于把标题/页码画到纸外
+    # （用户看不见，只会以为没生效）；真要隐藏文字，请关掉对应的打印开关。
     for key in ("title_margins", "page_number_margins"):
         val = args.get(key)
         if val is None or (isinstance(val, str) and not val.strip()):
@@ -316,8 +340,10 @@ def _validate_print(args) -> None:
             raise ValueError(f"{key} 应为 1/2/3/4 个数字（mm），当前={val}")
         if any(v < 0 for v in parsed):
             raise ValueError(f"{key} 中的值不能为负数")
-        if any(v > 100 for v in parsed):
-            raise ValueError(f"{key} 中的值不能超过 100mm，当前={val}")
+        if any(v > PRINT_MARGIN_LIMIT_MM for v in parsed):
+            raise ValueError(
+                f"{key} 中的值不能超过 {PRINT_MARGIN_LIMIT_MM}mm，当前={val}"
+            )
 
     start, end = args.get("page_number_start_page"), args.get("page_number_end_page")
     if start is not None and (not isinstance(start, int) or start < 1):

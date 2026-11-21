@@ -82,7 +82,12 @@ class PrintSectionsMixin(PrintInsetMixin):
 
     def _build_margin_section(self, root: QVBoxLayout) -> None:
         form = self._section(root, "页边距（mm）")
-        hint = CaptionLabel("格式：20（四边）/ 20,30（上下,左右）/ 20,30,25,35（上,右,下,左）")
+        # ⚠️ 「可为负值」必须写在提示里（用户 2026-11-21）：设 0 还嫌图小/白边多时，
+        #    用户得知道能继续往负值调；负值 = 图片顶出纸边、超出部分被纸张裁掉。
+        hint = CaptionLabel(
+            "格式：20（四边）/ 20,30（上下,左右）/ 20,30,25,35（上,右,下,左）；"
+            "可为负值（如 -10），负值 = 图片顶出纸边、超出部分被裁掉"
+        )
         hint.setWordWrap(True)
         form.addRow(hint)
         self.page_margins = self._line_edit("如 20,20,20,20（上,右,下,左）")

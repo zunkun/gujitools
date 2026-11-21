@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 196 个模块、213 个公开类、1644 个公开函数/方法（生成于 2026-11-21）。
+覆盖 198 个模块、214 个公开类、1652 个公开函数/方法（生成于 2026-11-21）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -19,7 +19,7 @@
 | [`desktop.components.bpmn_editor_panel`](#desktopcomponentsbpmn_editor_panel) | 1 | 6 |
 | [`desktop.components.bpmn_palette`](#desktopcomponentsbpmn_palette) | 0 | 4 |
 | [`desktop.components.bpmn_view`](#desktopcomponentsbpmn_view) | 1 | 17 |
-| [`desktop.components.common.safecomponents`](#desktopcomponentscommonsafecomponents) | 6 | 12 |
+| [`desktop.components.common.safecomponents`](#desktopcomponentscommonsafecomponents) | 6 | 13 |
 | [`desktop.components.create_task_dialog`](#desktopcomponentscreate_task_dialog) | 2 | 22 |
 | [`desktop.components.detect_stats`](#desktopcomponentsdetect_stats) | 1 | 4 |
 | [`desktop.components.dialog_shell`](#desktopcomponentsdialog_shell) | 0 | 1 |
@@ -29,7 +29,7 @@
 | [`desktop.components.imposition.page_list`](#desktopcomponentsimpositionpage_list) | 1 | 14 |
 | [`desktop.components.imposition.page_thumb`](#desktopcomponentsimpositionpage_thumb) | 1 | 20 |
 | [`desktop.components.imposition.panel`](#desktopcomponentsimpositionpanel) | 1 | 7 |
-| [`desktop.components.imposition.picker`](#desktopcomponentsimpositionpicker) | 1 | 14 |
+| [`desktop.components.imposition.picker`](#desktopcomponentsimpositionpicker) | 1 | 15 |
 | [`desktop.components.imposition.view`](#desktopcomponentsimpositionview) | 1 | 19 |
 | [`desktop.components.log_panel`](#desktopcomponentslog_panel) | 1 | 10 |
 | [`desktop.components.missing_source_prompt`](#desktopcomponentsmissing_source_prompt) | 1 | 7 |
@@ -53,7 +53,7 @@
 | [`desktop.components.task_table`](#desktopcomponentstask_table) | 3 | 11 |
 | [`desktop.components.update_banner`](#desktopcomponentsupdate_banner) | 1 | 4 |
 | [`desktop.components.viewers.edit_sync`](#desktopcomponentsviewersedit_sync) | 0 | 2 |
-| [`desktop.components.viewers.extract_viewer`](#desktopcomponentsviewersextract_viewer) | 1 | 10 |
+| [`desktop.components.viewers.extract_viewer`](#desktopcomponentsviewersextract_viewer) | 1 | 11 |
 | [`desktop.components.viewers.hint_banner`](#desktopcomponentsviewershint_banner) | 1 | 5 |
 | [`desktop.components.viewers.image_actions`](#desktopcomponentsviewersimage_actions) | 1 | 7 |
 | [`desktop.components.viewers.image_editor.bake`](#desktopcomponentsviewersimage_editorbake) | 0 | 2 |
@@ -78,7 +78,7 @@
 | [`desktop.components.viewers.image_view.render`](#desktopcomponentsviewersimage_viewrender) | 1 | 2 |
 | [`desktop.components.viewers.image_view.styles`](#desktopcomponentsviewersimage_viewstyles) | 0 | 3 |
 | [`desktop.components.viewers.image_viewer.boxes`](#desktopcomponentsviewersimage_viewerboxes) | 1 | 10 |
-| [`desktop.components.viewers.image_viewer.core`](#desktopcomponentsviewersimage_viewercore) | 1 | 13 |
+| [`desktop.components.viewers.image_viewer.core`](#desktopcomponentsviewersimage_viewercore) | 1 | 15 |
 | [`desktop.components.viewers.image_viewer.pdf`](#desktopcomponentsviewersimage_viewerpdf) | 1 | 3 |
 | [`desktop.components.viewers.image_viewer.thumbs`](#desktopcomponentsviewersimage_viewerthumbs) | 1 | 1 |
 | [`desktop.components.viewers.image_zoom_dialog.canvas`](#desktopcomponentsviewersimage_zoom_dialogcanvas) | 2 | 21 |
@@ -93,7 +93,7 @@
 | [`desktop.components.viewers.print_preview.layout`](#desktopcomponentsviewersprint_previewlayout) | 1 | 1 |
 | [`desktop.components.viewers.print_preview.thumbs`](#desktopcomponentsviewersprint_previewthumbs) | 1 | 1 |
 | [`desktop.components.viewers.print_preview.widget`](#desktopcomponentsviewersprint_previewwidget) | 1 | 11 |
-| [`desktop.components.viewers.rembg_viewer.core`](#desktopcomponentsviewersrembg_viewercore) | 1 | 13 |
+| [`desktop.components.viewers.rembg_viewer.core`](#desktopcomponentsviewersrembg_viewercore) | 1 | 15 |
 | [`desktop.components.viewers.rembg_viewer.entries`](#desktopcomponentsviewersrembg_viewerentries) | 1 | 0 |
 | [`desktop.components.viewers.rembg_viewer.thumbs`](#desktopcomponentsviewersrembg_viewerthumbs) | 1 | 3 |
 | [`desktop.components.viewers.thumb_strip`](#desktopcomponentsviewersthumb_strip) | 1 | 21 |
@@ -105,6 +105,7 @@
 | [`desktop.modules.extract.page`](#desktopmodulesextractpage) | 1 | 5 |
 | [`desktop.modules.imposition.page`](#desktopmodulesimpositionpage) | 1 | 11 |
 | [`desktop.modules.print.page`](#desktopmodulesprintpage) | 1 | 4 |
+| [`desktop.modules.rembg.live`](#desktopmodulesrembglive) | 1 | 0 |
 | [`desktop.modules.rembg.page`](#desktopmodulesrembgpage) | 1 | 5 |
 | [`desktop.modules.thumb_source`](#desktopmodulesthumb_source) | 1 | 4 |
 | [`desktop.pages.createtask.page`](#desktoppagescreatetaskpage) | 1 | 9 |
@@ -179,6 +180,7 @@
 | [`desktop.ui.menu`](#desktopuimenu) | 3 | 18 |
 | [`desktop.ui.modal_quiet`](#desktopuimodal_quiet) | 1 | 3 |
 | [`desktop.ui.native_minimize`](#desktopuinative_minimize) | 0 | 2 |
+| [`desktop.ui.qt_log`](#desktopuiqt_log) | 0 | 1 |
 | [`desktop.ui.segmented_toggle`](#desktopuisegmented_toggle) | 1 | 15 |
 | [`desktop.ui.style`](#desktopuistyle) | 0 | 3 |
 | [`desktop.ui.theme`](#desktopuitheme) | 0 | 3 |
@@ -1097,6 +1099,12 @@ File: safecomponents.py
 修复 QFluentWidgets SpinBox / LineEdit 悬浮滚轮直接修改数值、hover自动抢焦点问题
 规则：只有控件获得焦点后，滚轮才响应；无焦点时滚轮透传给外层滚动区域
 
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| _SPIN_TEXT_SAMPLE | `"0000.0 mm"` |
+
 ### `class SafeLineEdit(QLineEdit)`
 
 普通文本输入框：悬浮不自动聚焦，无焦点时滚轮透传
@@ -1166,6 +1174,31 @@ widget.installEventFilter(_filter)
 | 方法 | 说明 |
 | --- | --- |
 | `eventFilter(obj, event)` | Qt 事件过滤器。 |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `keep_spin_text_visible(spin) -> None` | 兜底：别让 fluent spin 内部的 QLineEdit 被压成 1px（值就看不见了）。 |
+
+#### `keep_spin_text_visible(spin) -> None`
+
+兜底：别让 fluent spin 内部的 QLineEdit 被压成 1px（值就看不见了）。
+
+⚠️⚠️ **2026-11-21 打包版实测事故**：qfluentwidgets 的 SpinBox 把「上/下」
+两个按钮放进**自己的 QHBoxLayout**（`InlineSpinBoxBase.__init__`）。PySide6
+6.11 起 `QAbstractSpinBox` 按"控件已有布局"的方式排内部 QLineEdit，把它压到
+**1px 宽**——值其实在（`text()` 是对的），但一个像素都不显示；界面上只剩
+两个箭头，看起来像"整个界面的输入框都不显示值了"。开发环境装的是 6.9.2，
+同一个 qfluentwidgets 1.11.3 正常 ⇒ 只有构建环境（yolobuild 里 6.11.3）
+出的包有病，极难在开发机上复现（用户 2026-11-21 报的就是这个）。
+
+修法是给内部 QLineEdit 一个**足以放下最长文本的最小宽度**：6.9/6.10 上它
+远小于可用宽度，布局照旧拉伸，视觉零变化；6.11+ 上它正好托住被压扁的
+编辑框。Qt 只认"最小宽度"，不会因此变成固定宽。
+
+⚠️ 只在我们自己的控件上调用；直接用 qfluentwidgets 的 spin 的地方
+（如拼版角度框）必须显式调一次，否则仍会被压扁。
 
 ---
 
@@ -2335,6 +2368,7 @@ worker）→ 连 :attr:`page_ready` 把生成好的那条贴回左列。版面/�
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(files: list, parent=None, mode: str='pick', thumb_provider=None, position: str='after', current_row: int=-1, total: int=0)` | — |
+| `showEvent(event) -> None` | 留一条面包屑：这个弹窗是**独立顶层窗口**，崩在窗口几何计算上时 |
 | `count() -> int` | 列表里的卡片数（含本次上传的图）。 |
 | `checked_files() -> list[Path]` | 用户勾选的图（**按列表顺序**，不是勾选先后）。 |
 | `chosen_items() -> list[dict]` | 勾选的候选（带"是不是本次上传"的标记），宿主据此决定要不要复制。 |
@@ -2348,6 +2382,11 @@ worker）→ 连 :attr:`page_ready` 把生成好的那条贴回左列。版面/�
 | `dragEnterEvent(event) -> None` | Qt 事件覆写：拖入时校验并接受拖放。 |
 | `dragMoveEvent(event) -> None` | Qt 事件覆写：拖动过程中更新落点提示。 |
 | `dropEvent(event) -> None` | Qt 事件覆写：放下时处理拖入内容。 |
+
+##### `showEvent(event) -> None`
+
+留一条面包屑：这个弹窗是**独立顶层窗口**，崩在窗口几何计算上时
+能据此判断"是不是刚开了它"（2026-11-21 排查用）。
 
 ##### `checked_files() -> list[Path]`
 
@@ -3277,6 +3316,11 @@ print 专用的解析/序列化纯函数，并把 ``DEFAULT_PARAMS`` 重新导�
 title_margins 报错文案也明说 1/2/3/4），原先这里拒绝三值、同样的值
 写进 guji.yaml 却能跑——GUI 比命令行更严，没有道理。
 
+⚠️ **允许负值**（用户 2026-11-21：「设 0 还不合适，可以继续往负值设」）：
+负边距 = 图片顶出纸边、超出部分被裁掉。区间与校验器同一份常量
+（``core.command_spec.PRINT_MARGIN_MIN_MM/LIMIT_MM``）——界面若比校验
+更宽，用户填了 -300 要等点「生成PDF」才被拒，是更难查的那种错。
+
 #### `margin_to_text(value) -> str`
 
 边距列表 → 表单文本：**恒写成四个值**（上,右,下,左）。
@@ -3985,15 +4029,27 @@ source_path 不单独成列，仅作任务名的悬浮提示。
 
 - 左侧**只有一份**缩略图：PDF 的每一页（缓存于 ``thumbnails/source``，
   与导入后台任务共用同一条生产链，见 :class:`PdfViewerWidget.set_pdf`）；
-- 切到第 N 页时：``stages/extract/N.<ext>`` **已存在** → 直接显示提取结果；
-  **不存在** → 后台把这一页**真的提取落盘**（与批量提取同一条渲染实现，
+- 切到第 N 页时：``stages/extract/`` 里**已有这一页的产物**（任何支持的图片
+  格式，见 :meth:`ExtractPreviewWidget.page_product`）→ 直接显示提取结果；
+  **没有** → 后台把这一页**真的提取落盘**（与批量提取同一条渲染实现，
   :func:`utils.pdf_extract.extract_single_page`），完成后上屏提取结果——
   「预览即产物」，不再有"预览渲的和提取存的不是同一张图"的两套口径；
 - 批量提取照旧落同一目录：浏览过的页已提好，批量跑只是幂等覆盖（原子写）。
 
+⚠️ **「提没提过」按"这一页有没有产物文件"判，不按"当前格式的文件名在不在"**
+（用户 2026-11-21：「已經提取了，並且提取參數沒變的情況下，下次切換到當前
+圖片，不必要二次提取」）。此前判据是 ``N.<当前ext>`` 存不存在——用户把
+「输出格式」从 jpg 换成 png 再翻页（或面板值与批量那次不一致）时，每一页都
+被当成"没提过"再提一遍：任务 0034 实测 ``stages/extract`` 里 384 张 jpg
+之外又多出 11 张同页号的 png，白付一遍 JPX 解码，还让下游按文件名收集时
+同一页出现两条。参数（zoom/dpi）同理**不参与**"要不要再提"：改参数后想
+更新产物请点「提取文档图片」整步重跑（那是显式动作，会整本覆盖），翻页
+预览永远复用已有产物、绝不静默重写。
+
 参数（zoom/ext/quick/dpi）由宿主经 :meth:`set_params_provider` 注入——读
-「图片提取」面板当前的表单值，保证单页提取与点「执行本步骤」的批量提取
-产物一致。表单填到一半 ``get_args()`` 抛 ``ValueError`` 时按默认参数兜底。
+「图片提取」面板当前的表单值，只用于**决定新提取落盘的文件名/参数**（与点
+「执行本步骤」的批量提取产物一致）。表单填到一半 ``get_args()`` 抛
+``ValueError`` 时按默认参数兜底。
 
 编辑链：产物是磁盘上的真实文件，放大弹窗/右键对**已提取**的页给
 ``edit_path``（右键「编辑图片」覆盖回写）；未提取的页仍是矢量页，只有
@@ -4014,7 +4070,8 @@ source_path 不单独成列，仅作任务名的悬浮提示。
 | `restore_buffers() -> None` | 回来：从缩略图缓存目录重读页缩略图，并按当前页重走一次切页。 |
 | `set_extract_dir(extract_dir: Path \| None) -> None` | 记录/刷新产物目录；当前页已有产物就**立即**切换显示。 |
 | `set_params_provider(provider: Callable[[], dict] \| None) -> None` | 注入提取参数来源（宿主读「图片提取」面板表单）。 |
-| `extract_path_for(page: int) -> Path \| None` | 第 page 页（0-based）的产物路径；没有产物目录时为 None。 |
+| `extract_path_for(page: int) -> Path \| None` | 第 page 页（0-based）**将要落盘**的产物路径；没有产物目录时为 None。 |
+| `page_product(page: int) -> Path \| None` | 第 page 页（0-based）**已有的**产物文件；没提过返回 None。 |
 | `current_display_path() -> Path \| None` | 当前大图显示的是**已提取产物**时返回它的路径；PDF 渲染页没有文件。 |
 | `navigate(forward: bool) -> None` | 方向键翻页：委托左侧 PDF 缩略图条（切页即触发按需提取）。 |
 | `set_pdf(path, placeholder=None, cache_dir=None) -> None` | 换 PDF：提取态全部作废（在飞的提取结果按代际丢弃）。 |
@@ -4035,6 +4092,23 @@ source_path 不单独成列，仅作任务名的悬浮提示。
 ``_refresh_preview`` 都走这里：文件一出现，大图马上从"等提取"换成
 提取结果。还没有产物的页**不打断**当前显示——提取只由「切页」触发，
 刷新不该替用户发起提取。
+
+##### `extract_path_for(page: int) -> Path | None`
+
+第 page 页（0-based）**将要落盘**的产物路径；没有产物目录时为 None。
+
+⚠️ 只用于"准备新提取"的落点（文件名跟面板当前 ext 走）；判断"这一页
+提没提过"一律走 :meth:`page_product`——那里跨格式认产物。
+
+##### `page_product(page: int) -> Path | None`
+
+第 page 页（0-based）**已有的**产物文件；没提过返回 None。
+
+判据是"这一页有没有任何支持格式的产物文件"（用户 2026-11-21：
+已提取 + 参数没变 ⇒ 切回这页不得二次提取）：先认面板当前 ext，
+再按 :data:`_PRODUCT_EXTS` 兜底扫其余格式。于是换过「输出格式」
+（或面板值与批量那次不一致）时，旧格式那份照常复用——不会同名
+再造一份、也不会把同一页喂给下游两次。
 
 ##### `current_display_path() -> Path | None`
 
@@ -5702,6 +5776,8 @@ Qt 在窗口 dpr 变化时发 ``DevicePixelRatioChange``，**不保证**同时�
 | `paths() -> list[Path \| str]` | 当前页面清单（按显示顺序）。 |
 | `current_path() -> Path \| None` | 当前选中的页面路径；无选中或无清单时为 None。 |
 | `navigate(forward: bool) -> None` | 方向键翻页（详情页 ←/→ 调用；联动预览刷新，见 ThumbStrip.navigate）。 |
+| `set_preview_spec_provider(provider) -> None` | 设置「大图按参数合成」的提供者（``None`` = 关掉，显示原图）。 |
+| `refresh_current() -> None` | 按**最新参数**重载当前页大图（清单、缩略图条、当前行都不动）。 |
 | `set_insert_visible(visible: bool) -> None` | 「＋/📁」两个**图片输入入口**的显隐（宿主按流程入口决定）。 |
 | `set_empty_hint(hint: str) -> None` | 换空态文案（输入入口藏起来后，"请点下方「＋」"就指错方向了）。 |
 | `set_hint_banner(text: str) -> None` | 换画布顶部那条**红框提示**（空串＝收起）。 |
@@ -5739,6 +5815,27 @@ image_size_provider 供大图降采样时还原原始像素尺寸；thumb_provid
 
 返回 ``Path``：清单元素可能是 str，这里统一成 Path 交出去，调用方
 就直接 ``.name`` / ``.stem`` 了。
+
+##### `set_preview_spec_provider(provider) -> None`
+
+设置「大图按参数合成」的提供者（``None`` = 关掉，显示原图）。
+
+``provider(path_text, index, total) -> dict | None``：返回的字典原样交给
+``PreviewWorker(print_spec=...)``（几何规则见 ``utils.page_layout``），
+并可带一个 ``note`` 键——它会顶替大图下方那行"原始像素尺寸"文案。
+
+用户 2026-11-21：独立功能页也要"改参数立刻看单张效果"。参数变化后的
+重载走 :meth:`refresh_current`，两者配合就是实时预览。
+
+⚠️ **只影响大图**：缩略图条仍按真实文件解码——把排版效果套到缩略图上
+会让每一条都变成一整张纸（全白、看不清内容，还慢）。
+
+##### `refresh_current() -> None`
+
+按**最新参数**重载当前页大图（清单、缩略图条、当前行都不动）。
+
+PDF 页模式（提取页未提取时的形态）直接返回：那里没有"按参数重合成"
+的语义，页内容由 PDF 本身决定。
 
 ##### `set_insert_visible(visible: bool) -> None`
 
@@ -6597,6 +6694,8 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 | `refresh_page(path_text: str) -> None` | 某文件被覆盖后刷新本查看器：受影响条目图标 + 当前大图。 |
 | `result_dir() -> Path \| None` | 当前生效的去底色结果目录（未设置为 None）。 |
 | `set_result_dir(path: Path \| None) -> None` | 执行**开始前**先把结果目录告诉查看器（边跑边出结果）。 |
+| `set_preview_dir(path: Path \| None) -> None` | 只换**实时预览草稿**的来源（不重建条目、不动正式结果目录）。 |
+| `clear_preview_dir() -> None` | 摘掉草稿来源（正式产物重新变成唯一来源）。 |
 | `refresh_running_results(changed: set[str]) -> None` | 执行期间：某几页结果刚落盘 → 只刷**看得见**的那几条 + 当前大图。 |
 
 ##### `__init__(empty_hint: str='暂无图片', image_editable: bool=True, parent=None)`
@@ -6667,6 +6766,17 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 与 :meth:`set_images` 的差别：不重建条目/不重装缩略图条，只换结果来源
 并重载当前大图。去底色每页产物一落盘，宿主就能调
 :meth:`refresh_running_results` 把该页刷成"去底色结果"。
+
+##### `set_preview_dir(path: Path | None) -> None`
+
+只换**实时预览草稿**的来源（不重建条目、不动正式结果目录）。
+
+独立功能页用：它的草稿落在 ``singletask/<功能>/preview/<源>/``，
+换源才换目录；既没有任务号，也不该把草稿当成 ``rembg_dir``（那会让
+「原图/去底色结果」的分段开关误以为这一页已经执行过）。
+
+与 :meth:`set_result_dir` 相反：这里**不碰** ``_rembg_dir``，
+只把 ``_preview_dir`` 换上并重载当前页。
 
 ##### `refresh_running_results(changed: set[str]) -> None`
 
@@ -7656,6 +7766,11 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 ``functions.get_function("print")``——与任务流程第四步是同一条代码路径（连参数
 面板都是同一个 ``PrintPanel``）。外设由 :class:`StepModulePage` 收口。
 
+⚠️ **改参数即看单页效果**（用户 2026-11-21）：用户调纸张/边距/标题/页码
+时，左栏**当前这张图**会立刻按新参数重排成"打印效果"（与任务流程第四步的
+效果预览同一条合成链 ``PreviewWorker(print_spec=...)``），不必先点「生成PDF」。
+合成只在内存里做，一个文件都不写。
+
 ⚠️ **与任务流程第四步的有意差别：页序。** 流程里页序 = 第四步列表里用户手动排的
 那份清单（``functions/print`` 的 ``files`` 参数）。独立页面按用户 2026-10-02 的
 选择**不提供手动排序**——页序就是文件名顺序
@@ -7675,6 +7790,12 @@ PDF 路径**回传给 ``on_result``；本页据此把左栏切到「产物 PDF �
 
 两种形态共用同一个 :class:`~desktop.components.viewers.ImageViewerWidget`——
 它既能显示一批图片，也能把一本 PDF 的页当"图片"列出来（``set_pdf_source``）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| LIVE_DEBOUNCE_MS | `250` |
 
 ### `class PrintModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin)`
 
@@ -7706,6 +7827,52 @@ PDF排版模块页：拖入成品图（一批或一个文件夹）→ 调版面 
 
 ---
 
+## `desktop.modules.rembg.live`
+
+源码：[`desktop/modules/rembg/live.py`](../../desktop/modules/rembg/live.py)
+
+独立「去底色」页的**单页实时调整**：改参数 → 当前这张图立刻重算并上屏。
+
+为什么独立页此前没有这个能力（用户 2026-11-21 提出）：
+
+任务流程第三步有 :class:`~desktop.pages.taskdetail.rembg_live.RembgLiveMixin`，
+它把草稿写进 ``tasks/<任务号>/preview/rembg[~节点]/``——那个路径的前提是**有
+任务号**。独立功能页没有任务，于是这条链整条空着：用户调阈值偏移必须点
+「开始去底色」跑完整批，才看得到效果。
+
+本模块把同一件事接到独立页上，差别只有**草稿落在哪**：
+
+- 任务流程：``tasks/<任务号>/preview/rembg[~节点]/``（随任务删除）；
+- 独立页：``singletask/<独立功能>/preview/<源名-指纹>/``（随换源丢弃）。
+
+两条线共用同一份计算与口径：
+
+- 算法：``services/rembg_live.render_page``（与正式阶段同源）；
+- 参数键：``services/rembg_live.REMBG_PREVIEW_PARAM_KEYS``（唯一一份）。
+
+⚠️ **独立页是"没任务"的形态，草稿绝不能写进产物输出目录**：用户点「开始
+去底色」之前，那些图还不该出现在产物里（否则"没执行却已经有结果"）。草稿目录
+只服务预览控件（``RembgPreviewWidget`` 的 ``preview_dir``）。
+
+⚠️ 触发闸：只有**用户改过参数**（``panels/base.py::param_edited``）之后才给
+翻页/切图补算。没改参数时行为与改造前完全一致（显示上次执行结果 / 原图），
+不会因为"翻了一下页"就凭空多算一张、也不会让用户误以为已经执行过。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| LIVE_DEBOUNCE_MS | `300` |
+
+### `class RembgModuleLiveMixin`
+
+依赖宿主（``RembgModulePage``）提供：
+
+``control`` / ``viewer`` / ``log`` / ``SPEC`` / ``source_images()`` /
+``run_worker()`` / ``shutdown_workers()``。
+
+---
+
 ## `desktop.modules.rembg.page`
 
 源码：[`desktop/modules/rembg/page.py`](../../desktop/modules/rembg/page.py)
@@ -7732,9 +7899,14 @@ PDF排版模块页：拖入成品图（一批或一个文件夹）→ 调版面 
 | --- | --- |
 | _WARM_THUMB_LIMIT | `60` |
 
-### `class RembgModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin)`
+### `class RembgModulePage(StepModulePage, RembgModuleLiveMixin, ThumbSourceMixin, ImageEditActionsMixin)`
 
 去底色模块页：拖入图片（单张或文件夹）→ 调参数 → 批量去底 → 对比看结果。
+
+⚠️ **调参数即看效果**（用户 2026-11-21）：用户改了算法/偏移/印章等参数后，
+当前这张图会立刻按新参数重算并上屏（``RembgModuleLiveMixin``），不必先点
+「开始去底色」跑完整批。算出来的只进**草稿目录**
+（``singletask/rembg/preview/<源>/``），产物输出目录仍然只在真正执行时才写。
 
 #### 方法
 
@@ -16791,6 +16963,28 @@ Snap Layout 也能弹出来。
 
 ⚠️ 必须在该窗口**最后一次 ``setWindowFlags`` 之后**调用：那会重建原生
 窗口，先打的样式位会丢。返回值语义与 :func:`enable_native_minimize` 一致。
+
+---
+
+## `desktop.ui.qt_log`
+
+源码：[`desktop/ui/qt_log.py`](../../desktop/ui/qt_log.py)
+
+把 Qt 自己的消息（warning/fatal/debug）接进崩溃日志。
+
+为什么要它：Qt 崩溃前几乎总会先骂几句——``QPainter::begin: Paint device
+returned engine == 0``、``QWidget::paintEngine: Should no longer be called``、
+``QBackingStore::endPaint() called with active painter`` 之类。GUI 是 windowed
+程序没有控制台，这些话平时全被丢掉；接进 ``crash.log`` 之后，崩之前的上下文
+就能和栈一起看（2026-11-21 排查 ``QScreen::geometry`` 崩溃时加的）。
+
+⚠️ 处理器里**只写文件**，不做任何可能重入 Qt 的事；写不进去就静默丢弃。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `install() -> None` | 装上处理器（幂等：Qt 侧本来就只留一个）。 |
 
 ---
 

@@ -622,6 +622,8 @@ class PrintFunction(FunctionBase):
         # 「距页边」不再收窄图片——用户设的距离只决定文字画在哪儿。
         text_margin = TEXT_MARGIN_MM
         _mt, _mr, _mb, _ml = margins
+        # ⚠️ 页边距可为负（2026-11-21）：负值只会把可用区算得更大（图更少被缩），
+        #    `max(1.0, …)` 只兜"正边距过大把可用区挤成 0"那一种。
         avail_w_mm = max(1.0, page_w - _ml - _mr - 2 * text_margin)
         avail_h_mm = max(1.0, page_h - _mt - _mb)
         max_w_px = int(avail_w_mm / MM_PER_INCH * PRINT_IMAGE_DPI)
