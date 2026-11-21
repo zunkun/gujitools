@@ -831,10 +831,14 @@ class PrintFunction(FunctionBase):
             img = Image.open(path)
             # ⚠️ EXIF 方向必须转正（2026-09-26 第二轮审计）：cv2 链
             #    （detect/crop，utils.image_io.imdecode）默认按 EXIF 方向
-            #    自动转正、Qt 预览（QImageReader autoTransform）也转正，
-            #    唯独 PIL 不转——不处理的话，带 EXIF 方向的 JPEG 会被
-            #    **横躺 90°** 嵌进 PDF，与检测框/预览方向全不一致。
+            #    自动转正，唯独 PIL 不转——不处理的话，带 EXIF 方向的 JPEG 会被
+            #    **横躺 90°** 嵌进 PDF，与检测框方向不一致。
             #    先查方向标签：无标签时 exif_transpose 也会整图复制一份。
+            # ⚠️（2026-11-20 更正）别再写"Qt 预览也转正"：``QImage`` /
+            #    ``QImageReader`` 的 ``autoTransform`` 默认 **False**，全仓也没有
+            #    任何 ``setAutoTransform(True)``。所以本程序落盘的页面图一律先
+            #    剥掉方向标签（``utils.exif_clean``），这里对它们只是空操作；
+            #    真正的转正对象是"用户直接放进来的素材"。
             if img.getexif().get(274, 1) != 1:
                 img = ImageOps.exif_transpose(img)
             # ⚠️ 带 tRNS 的**调色板 PNG 必须先展成 RGBA**（2026-11-15）：拼版成品

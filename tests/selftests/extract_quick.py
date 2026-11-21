@@ -240,7 +240,99 @@ def run(ctx) -> None:
     ok("守卫：zoom≠1 一律整页渲染",
        not _copy_is_raw(_scan_page("zoom2"), "zoom2", zoom=2))
 
-    # ---- 4. 降级统计：多图时全部降级且原因被记录 ----
+    # ---- 4. EXIF 方向：quick 直拷**不许**把方向标签带给下游 ----
+    # 背景（用户 2026-11-20 反馈「图片去底色后整本书全倒过来了」）：
+    # 扫描 PDF 的内嵌 JPEG 常残留 EXIF 方向标签，而 **PDF 渲染不看 EXIF**——
+    # 也就是说"PDF 里看到的方向"就是像素原样。quick 直拷把标签一起写到产物上，
+    # 下游去底色（PIL）/检测（cv2）会**按标签再转一次**，Qt 预览却不转
+    # （autoTransform 默认 False）⇒ 预览正、成品倒，且各步骤互相错位。
+    # 契约：这两条路产出的图，下游读到的方向必须一致。
+    def _oriented_jpg(orientation):
+        from PIL import Image
+
+        buf = io.BytesIO()
+        arr = Image.new("RGB", (1600, 2400), (255, 255, 255))
+        arr.paste((0, 0, 0), (0, 0, 1600, 700))  # 上方黑条：方向可辨
+        exif = Image.Exif()
+        exif[274] = orientation
+        arr.save(buf, "JPEG", quality=88, exif=exif)
+        return buf.getvalue()
+
+    def _read_orientation(path):
+        """按**下游口径**读图（PIL 会应用 EXIF）→ (顶部是否黑, 尺寸)。"""
+        from PIL import Image, ImageOps
+
+        with Image.open(path) as image:
+            image = ImageOps.exif_transpose(image).convert("RGB")
+            small = image.resize((8, 12))
+            top = sum(small.getpixel((x, 1))[0] for x in range(8)) / 8
+            return top < 128, image.size
+
+    for orientation in (3, 6):
+        oriented = _make_pdf(tmp / f"exif{orientation}.pdf",
+                             _oriented_jpg(orientation))
+        sizes: dict = {}
+
+        class _Cap:
+            def event(self, name, **payload):
+                if name == "page_size":
+                    sizes[str(payload.get("image"))] = (
+                        payload.get("width"), payload.get("height"))
+
+            def progress(self, done, total):
+                pass
+
+        out_fast = tmp / f"out_exif{orientation}_fast"
+        out_fast.mkdir()
+        render_pages_parallel(oriented, [0], str(out_fast), 1, "jpg",
+                              quick=True, workers=1, batch_size=1,
+                              dpi=72, reporter=_Cap())
+        out_ref = tmp / f"out_exif{orientation}_ref"
+        out_ref.mkdir()
+        render_pages_parallel(oriented, [0], str(out_ref), 1, "jpg",
+                              quick=False, workers=1, batch_size=1, dpi=72)
+        fast_file = sorted(out_fast.glob("*.jpg"))[0]
+        ref_file = sorted(out_ref.glob("*.jpg"))[0]
+        with Image.open(fast_file) as probe:
+            tag = probe.getexif().get(274, 1)
+        ok(f"EXIF{orientation}：quick 产物不带方向标签", tag == 1,
+           f"EXIF274={tag}")
+        fast_dark, fast_size = _read_orientation(fast_file)
+        ref_dark, ref_size = _read_orientation(ref_file)
+        ok(f"EXIF{orientation}：quick 与整页渲染方向一致", fast_dark == ref_dark,
+           f"quick顶黑={fast_dark} 渲染顶黑={ref_dark}（{fast_file.name}）")
+        # 直拷保留原始像素（分辨率比 dpi=72 的渲染高，这是 quick 的本意），
+        # 但 **上报尺寸必须等于落盘像素尺寸**——sizes.json 是框坐标的基准。
+        ok(f"EXIF{orientation}：上报尺寸 = 落盘像素尺寸",
+           sizes.get("1") == fast_size, f"上报={sizes.get('1')} 落盘={fast_size}")
+        ok(f"EXIF{orientation}：直拷保留原始像素（不被缩放）",
+           fast_size != ref_size and max(fast_size) > max(ref_size),
+           f"quick={fast_size} 渲染={ref_size}")
+
+    # 剥标签原语本身的两条契约（quick 直拷的"零改动"就靠它们）
+    from utils.exif_clean import read_orientation, strip_orientation
+
+    ok("无方向标签时原样返回同一对象（零拷贝）", strip_orientation(jpg) is jpg)
+    oriented_bytes = _oriented_jpg(3)
+    ok("带方向标签时才改写", strip_orientation(oriented_bytes) is not oriented_bytes)
+
+    png_buf = io.BytesIO()
+    _png_marked = Image.new("RGB", (400, 600), (255, 255, 255))
+    _png_exif = Image.Exif()
+    _png_exif[274] = 3
+    _png_marked.save(png_buf, "PNG", exif=_png_exif)
+    png_bytes = png_buf.getvalue()
+    if read_orientation(png_bytes) == 3:
+        png_clean = strip_orientation(png_bytes)
+        ok("PNG 的 eXIf 块同样被剥掉", read_orientation(png_clean) == 1)
+        with Image.open(io.BytesIO(png_clean)) as _a, \
+                Image.open(io.BytesIO(png_bytes)) as _b:
+            same_pixels = _a.convert("RGB").tobytes() == _b.convert("RGB").tobytes()
+        ok("剥 eXIf 只删块、像素逐位不变", same_pixels)
+    else:
+        ok("Pillow 未写入 PNG EXIF（跳过该分支）", True, "环境不支持写 eXIf")
+
+    # ---- 5. 降级统计：多图时全部降级且原因被记录 ----
     out = tmp / "out_stat"
     out.mkdir()
     import threading

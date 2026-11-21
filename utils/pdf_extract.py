@@ -51,6 +51,7 @@ from utils.file_utils import (
     is_source_document,
     write_bytes_atomic,
 )
+from utils.exif_clean import strip_orientation
 from utils.sort_utils import natural_sort_key
 from utils.units import DEFAULT_RENDER_DPI as DEFAULT_UNITS_DPI
 
@@ -388,10 +389,12 @@ def _embedded_page_image(doc, page, page_rect, ext: str, actual_zoom: float):
 def _exif_swap_dims(data: bytes, w: int, h: int) -> tuple[int, int]:
     """EXIF 方向为 5~8（横竖互换）时交换宽高。
 
-    ⚠️ 为什么必须（2026-09-26 第二轮审计）：quick 路径**原样落盘内嵌字节**
-    （EXIF 保留），而消费端 cv2（detect 框坐标）与 Qt 预览（autoTransform）
-    都按 EXIF **转正后**处理——sizes.json 若报未旋转尺寸，GUI 叠框/版面
-    计算的坐标系就整体错位。只读文件头，不解码像素。
+    ⚠️ **2026-11-20 起 quick 直拷不再用它**：落盘前会剥掉方向标签
+    （:func:`utils.exif_clean.strip_orientation`），像素＝PDF 所见，上报尺寸
+    就是内嵌图原始宽高。保留本函数是给"未剥段"的诊断/回溯按标签换算出
+    **下游会看到**的尺寸用。
+
+    事实基础：**PDF 渲染不看 EXIF**——PDF 里看到的方向就是像素原样。
     """
     try:
         from PIL import Image
@@ -406,7 +409,14 @@ def _exif_swap_dims(data: bytes, w: int, h: int) -> tuple[int, int]:
 
 def _save_embedded_image(info, out_dir: str, page_idx: int, ext: str,
                          actual_zoom: float):
-    """保存内嵌图：能原样落盘就直接写字节，否则解码转码。返回 (路径, 宽, 高)。"""
+    """保存内嵌图：能原样落盘就直接写字节，否则解码转码。返回 (路径, 宽, 高)。
+
+    ⚠️ **两条分支都不许让 EXIF 方向标签活到下游**（用户 2026-11-20 报
+    「图片去底色后整本书全倒过来了」）：扫描 PDF 的内嵌 JPEG 常残留
+    ``Orientation``，而 PDF 渲染不看它。标签一旦落盘，去底色（PIL）与检测
+    （cv2）会再转一次、Qt 预览却不转（``autoTransform`` 默认 False），同一
+    步骤里的图方向各不相同。详见 :mod:`utils.exif_clean`。
+    """
     src_ext = (info.get("ext") or "").lower().lstrip(".")
     img_path = os.path.join(out_dir, f"{page_idx + 1}.{ext}")
 
@@ -419,18 +429,27 @@ def _save_embedded_image(info, out_dir: str, page_idx: int, ext: str,
         #    图片文件，而下游（detect/rembg/print）会把它当成有效页继续处理——
         #    表现为"某一页莫名处理失败/出半张白图"，且没有任何提示。
         #    原子写保证目标名下要么没有、要么完整。
-        write_bytes_atomic(img_path, info["image"])
-        w, h = int(info["width"]), int(info["height"])
-        return img_path, *_exif_swap_dims(info["image"], w, h)
+        # ⚠️ **不许把 EXIF 方向标签带到下游**（用户 2026-11-20 报「图片去底色后
+        #    整本书全倒过来了」）：扫描 PDF 的内嵌 JPEG 常残留 ``Orientation``，
+        #    而 PDF 渲染根本不看它。标签一旦落盘，去底色（PIL）与检测（cv2）会
+        #    再转一次、Qt 预览却不转（``autoTransform`` 默认 False）——同一步骤
+        #    里的图方向各不相同，成品整本倒置、拼版左右身份互换。
+        #    ``strip_orientation`` 只做字节级段搬移（不解码像素），没有标签时
+        #    原样返回入参，"零解码零重编码"契约不变。见 :mod:`utils.exif_clean`。
+        write_bytes_atomic(img_path, strip_orientation(info["image"]))
+        # 尺寸＝落盘像素尺寸：标签已剥，不再按 EXIF 换算（否则框坐标基准会错）
+        return img_path, int(info["width"]), int(info["height"])
 
-    from PIL import Image, ImageOps
+    from PIL import Image
 
     img = Image.open(io.BytesIO(info["image"]))
-    # ⚠️ 转码分支必须先转正再存（与 quick 路径的消费端视角一致）：存出的
-    #    文件没有 EXIF，若原样存未旋转像素，同一本书里 quick 页与转码页
-    #    方向相反。转正后尺寸按旋转后计。
-    if img.getexif().get(274, 1) != 1:
-        img = ImageOps.exif_transpose(img)
+    # ⚠️ 元数据里的方向标签一并摘掉：即使某些 Pillow 版本会顺手把 ``info["exif"]``
+    #    带到下一个文件里，也不许它活到下游（理由同上）。
+    img.info.pop("exif", None)
+    # ⚠️ **不按 EXIF 转正**（2026-11-20）：这里以前做 ``exif_transpose``，等于
+    #    拿"PDF 里根本不生效的元数据"去改像素——标签是假的时候（扫描软件转了
+    #    像素却留着旧标签）整页就此倒过来。像素原样才与 PDF 显示一致；标签也
+    #    不写回（``_save_pil`` 不传 ``exif=``），下游同理不会二次旋转。
     if not math.isclose(actual_zoom, 1.0):
         img = img.resize(
             (max(1, int(img.width * actual_zoom)), max(1, int(img.height * actual_zoom))),
