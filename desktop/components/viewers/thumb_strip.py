@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QPoint, QRect, QSize, Qt, Signal
+from PySide6.QtCore import QPoint, QRect, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QCursor, QDrag, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QAbstractItemView, QListWidget, QListWidgetItem
 
@@ -111,6 +111,13 @@ class ThumbStrip(QListWidget):
         self.model().rowsMoved.connect(self._on_rows_moved)
         # 当前行变化（鼠标点击 / 键盘方向键 / 程序化 setCurrentRow 都会走到）
         self.currentRowChanged.connect(self._on_current_row_changed)
+        # 「条目尺寸变了别把当前行挤出视口」的**合并**复核（见 set_item_icon）：
+        # 一批缩略图陆续到达时只排一个定时器，不是每张都排一个。
+        self._keep_current_timer = QTimer(self)
+        self._keep_current_timer.setSingleShot(True)
+        self._keep_current_timer.setInterval(0)
+        self._keep_current_timer.timeout.connect(self._restore_current_visible)
+        self._keep_current_armed = False
 
     # ---------------------------------------------------------------- 滚轮
     def wheelEvent(self, event) -> None:  # noqa: N802
@@ -157,16 +164,41 @@ class ThumbStrip(QListWidget):
         return QSize(ThumbStrip.GRID_SIZE.width(), icon_h + ThumbStrip.LABEL_H)
 
     def _on_current_row_changed(self, row: int) -> None:
-        """当前行变化 → 通知宿主切换预览。
+        """当前行变化 → 通知宿主切换预览（**并且把这一条滚进视口**）。
 
         清空列表期间会来 -1，此时条目已不存在，直接忽略。
+
+        ⚠️ **滚进视口是硬要求**（用户 2026-11-21：「按方向键切页，切到超出
+        可视范围的那页时左列不跟着滚，那一页根本看不见」）：本控件是四个步骤
+        左侧缩略图条的**唯一实现**（提取/检测/去底色/打印），所有"换当前页"
+        的路——方向键 ``navigate``、删除/插入后的 ``setCurrentRow``、宿主恢复
+        上次停留页——最后都落到这个信号上。Qt 自己的 ``setCurrentIndex`` 顺带
+        会滚，但**布局脏了/条目刚重建**时算出来的位置是旧几何（Qt 只在
+        ``scrollTo`` 里补跑一次布局，视口尺寸那几拍还在变），实测会差十几像素
+        到整条看不见。这里显式再滚一次，滚的是"滚动区里看得见"，已经可见时
+        是空操作，不会把用户手动滚好的位置顶掉。
         """
         if row < 0:
             return
         item = self.item(row)
         if item is None:
             return
+        self.ensure_row_visible(row)
         self.current_path_changed.emit(row, item.data(Qt.ItemDataRole.UserRole) or "")
+
+    def ensure_row_visible(self, row: int | None = None) -> None:
+        """把第 ``row`` 条（``None`` = 当前行）滚进视口，滚动区里看得见为止。
+
+        与 ``ImpositionPageList.ensure_visible`` 同一口径：只在**整条不完全
+        可见**时才滚（``EnsureVisible`` 的语义），已经看得见就一点不动。
+        """
+        row = self.currentRow() if row is None else int(row)
+        if not (0 <= row < self.count()):
+            return
+        item = self.item(row)
+        if item is None:
+            return
+        self.scrollToItem(item, QAbstractItemView.ScrollHint.EnsureVisible)
 
     # ---------------------------------------------------------------- 排序
     def set_reorderable(self, on: bool) -> None:
@@ -436,7 +468,16 @@ class ThumbStrip(QListWidget):
         self._invalidate_prefix()
 
     def set_item_icon(self, index: int, image, path: str, label: str) -> None:
-        """替换某条目的图标/文字/路径（缩略图异步就绪后回调）。"""
+        """替换某条目的图标/文字/路径（缩略图异步就绪后回调）。
+
+        ⚠️ **条目变矮会把当前行挤出视口**（2026-11-21 实测）：占位图按满框给
+        sizeHint（高 182），真实缩略图一到就按比例改小（宽页只剩 ~80）。当前行
+        **上方**那几条一变矮，它们之后的所有条目在像素上整体上移，而滚动条的
+        值是像素——当前行就跑到视口上面去了（实测第 51 条直接从视口消失，且
+        滚动条已到 max）。所以这里先记下"改之前当前行是看得见的"，改完让
+        :meth:`_restore_current_visible` 补一拍复核；只有**改之前就看得见**才补，
+        用户自己滚走看别处时不会被拽回来。
+        """
         if index >= self.count():
             return
         item = self.item(index)
@@ -449,9 +490,34 @@ class ThumbStrip(QListWidget):
         display = pixmap.size().scaled(
             ThumbStrip.ICON_SIZE, Qt.AspectRatioMode.KeepAspectRatio
         )
+        current = self.currentRow()
+        keep_current = index < current and self.is_row_visible(current)
         item.setSizeHint(self._item_hint(display.height()))
         self._invalidate_prefix()
         self.scheduleDelayedItemsLayout()
+        if keep_current and not self._keep_current_armed:
+            # 合并成一拍：一批缩略图陆续到达只复核一次（见 __init__）
+            self._keep_current_armed = True
+            self._keep_current_timer.start()
+
+    def _restore_current_visible(self) -> None:
+        """条目尺寸变了（缩略图到货）：当前行若被挤出视口，补滚回来。"""
+        self._keep_current_armed = False
+        row = self.currentRow()
+        if row < 0:
+            return
+        item = self.item(row)
+        if item is None:
+            return
+        # `setSizeHint` 之后布局是**延迟**执行的：先把它跑完，否则拿到的是旧几何
+        self.executeDelayedItemsLayout()
+        rect = self.visualItemRect(item)
+        if rect.isEmpty():
+            return
+        height = self.viewport().height()
+        if rect.top() >= 0 and rect.bottom() <= height:
+            return
+        self.ensure_row_visible(row)
 
     # ------------------------------------------------------ 前缀和（审计 D7）
     #: ⚠️ `_row_top`/`_first_visible_row` 原先每次滚轮都逐条 `sizeHint()` 累计

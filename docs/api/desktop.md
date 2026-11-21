@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 189 个模块、205 个公开类、1566 个公开函数/方法（生成于 2026-11-21）。
+覆盖 189 个模块、205 个公开类、1567 个公开函数/方法（生成于 2026-11-21）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -95,7 +95,7 @@
 | [`desktop.components.viewers.rembg_viewer.core`](#desktopcomponentsviewersrembg_viewercore) | 1 | 11 |
 | [`desktop.components.viewers.rembg_viewer.entries`](#desktopcomponentsviewersrembg_viewerentries) | 1 | 0 |
 | [`desktop.components.viewers.rembg_viewer.thumbs`](#desktopcomponentsviewersrembg_viewerthumbs) | 1 | 3 |
-| [`desktop.components.viewers.thumb_strip`](#desktopcomponentsviewersthumb_strip) | 1 | 19 |
+| [`desktop.components.viewers.thumb_strip`](#desktopcomponentsviewersthumb_strip) | 1 | 20 |
 | [`desktop.components.viewers.thumbs_loader`](#desktopcomponentsviewersthumbs_loader) | 1 | 1 |
 | [`desktop.components.yolo_export_dialog`](#desktopcomponentsyolo_export_dialog) | 1 | 6 |
 | [`desktop.modules`](#desktopmodules) | 1 | 1 |
@@ -1704,7 +1704,7 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 | `set_float_host(host) -> None` | 把悬浮框的宿主换成外部装配层（拼版视图整体）。 |
 | `entries() -> list[_PageEntry]` | — |
 | `set_pages(captions: list[str], current: int=-1) -> None` | 按页数重建清单（``captions[i]`` 是第 i 页的副标题）。 |
-| `ensure_visible(index: int) -> None` | 把第 ``index`` 页滚进视口（当前页切换时用）。 |
+| `ensure_visible(index: int) -> None` | 把第 ``index`` 页滚进视口（当前页切换 / 清单重建后都要走这里）。 |
 | `visible_index_range(margin: int=3) -> tuple[int, int] \| None` | 左列**当前看得见**的页号闭区间（上下各多算 ``margin`` 条余量）。 |
 | `set_current(index: int) -> None` | 高亮当前页（-1 = 无页）。 |
 | `set_page_thumbs(thumbs: list) -> None` | 给每页条目灌缩略图（``thumbs[i]`` 是第 i 页的 ``QImage``/``QPixmap``， |
@@ -1730,11 +1730,19 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 
 ##### `ensure_visible(index: int) -> None`
 
-把第 ``index`` 页滚进视口（当前页切换时用）。
+把第 ``index`` 页滚进视口（当前页切换 / 清单重建后都要走这里）。
 
 只在那一页**完全看不见**时才滚（滚动条位置按"整条刚露出来"算），
 已经在视口里就一点不动——键盘翻页时左列跟着走，但不会因为切页把
-用户手动滚好的位置顶掉。布局还没跑（条目几何全是默认值）时什么都不做。
+用户手动滚好的位置顶掉。
+
+⚠️ **布局还没跑时必须补做**（用户 2026-11-21 报「方向键翻到超出可视
+范围的那页，左列不跟着滚、那一页根本看不见」）：``set_pages`` 重建
+条目后的**那一拍**里，条目几何还是 QWidget 默认值（高 30px、滚动条
+max 还是 0）——照几何算出来"已经在视口里"或"滚不动"，于是什么都不做；
+等布局算完范围变了也没人再问一次，当前页就永远停在视口外。现在的做法：
+记进 ``_visible_pending``，由 :meth:`_apply_pending_visible` 在下一拍
+补做，另有滚动条 ``rangeChanged`` 兜底（见 ``__init__``）。
 
 ##### `visible_index_range(margin: int=3) -> tuple[int, int] | None`
 
@@ -6438,6 +6446,7 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 | `decode_edge(dpr: float=1.0, base: int \| None=None) -> int` | 按 dpr 给出的缩略图**解码最长边**（调用方在**主线程**算好后传进 worker）。 |
 | `__init__(parent=None)` | 初始化条目尺寸与流式布局；当前行变化发出 current_path_changed(行号, 路径)。 |
 | `wheelEvent(event) -> None` | 滚轮按**条目**翻页：一格滚轮 = ``WHEEL_STEP_ITEMS`` 个条目。 |
+| `ensure_row_visible(row: int \| None=None) -> None` | 把第 ``row`` 条（``None`` = 当前行）滚进视口，滚动区里看得见为止。 |
 | `set_reorderable(on: bool) -> None` | 打开/关闭条目内部拖放排序（第四步待打印列表用）。 |
 | `move_row(row: int, delta: int) -> bool` | 把第 ``row`` 条上移/下移 ``delta`` 个位置；越界不动（返回 False）。 |
 | `set_deletable(on: bool) -> None` | 打开/关闭 Delete/Backspace 删除（只发信号，删不删由宿主定）。 |
@@ -6484,6 +6493,13 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 （见 WHEEL_STEP_ITEMS 的说明），会把一格变成十几页。这里自己算目标行号
 并把该行落到顶端，翻页量恒定。
 
+##### `ensure_row_visible(row: int | None=None) -> None`
+
+把第 ``row`` 条（``None`` = 当前行）滚进视口，滚动区里看得见为止。
+
+与 ``ImpositionPageList.ensure_visible`` 同一口径：只在**整条不完全
+可见**时才滚（``EnsureVisible`` 的语义），已经看得见就一点不动。
+
 ##### `move_row(row: int, delta: int) -> bool`
 
 把第 ``row`` 条上移/下移 ``delta`` 个位置；越界不动（返回 False）。
@@ -6523,6 +6539,18 @@ Delete/Backspace → ``delete_requested``。
 
 占位图按满框（ICON_SIZE）给 sizeHint——此时还不知道这张图的宽高比；
 真实缩略图一到就由 set_item_icon 按实际比例改小。
+
+##### `set_item_icon(index: int, image, path: str, label: str) -> None`
+
+替换某条目的图标/文字/路径（缩略图异步就绪后回调）。
+
+⚠️ **条目变矮会把当前行挤出视口**（2026-11-21 实测）：占位图按满框给
+sizeHint（高 182），真实缩略图一到就按比例改小（宽页只剩 ~80）。当前行
+**上方**那几条一变矮，它们之后的所有条目在像素上整体上移，而滚动条的
+值是像素——当前行就跑到视口上面去了（实测第 51 条直接从视口消失，且
+滚动条已到 max）。所以这里先记下"改之前当前行是看得见的"，改完让
+:meth:`_restore_current_visible` 补一拍复核；只有**改之前就看得见**才补，
+用户自己滚走看别处时不会被拽回来。
 
 ##### `visible_row_range() -> tuple[int, int]`
 
