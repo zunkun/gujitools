@@ -99,6 +99,8 @@ class ExtractPreviewWidget(PdfViewerWidget):
         self._extract_seq = 0
         #: 文档代际号：set_pdf 递增，worker 回调按它丢弃跨任务的迟到结果
         self._doc_gen = 0
+        #: 离开步骤时被 :meth:`release_buffers` 清过位图（见 restore_buffers）
+        self._buffers_released = False
         #: 正在提取或**排队中**的页号（0-based）：同一页不重复发起
         self._extracting: set[int] = set()
         #: 正在后台提取的页号（0-based）；**同一时刻只跑一个**。
@@ -110,6 +112,39 @@ class ExtractPreviewWidget(PdfViewerWidget):
         self._extract_pending: int | None = None
         #: 当前大图显示的是第几页的**提取结果**（None = 显示的是 PDF 渲染页）
         self._shown_extract_page: int | None = None
+
+    # ------------------------------------------------------ 离开/回来（内存）
+    def release_buffers(self) -> None:
+        """离开本步骤：丢掉大图、页缩略图与 PDF 大图字节缓存。
+
+        本步骤的左列是**PDF 每一页**的缩略图（一本书就是几百上千条），
+        离开后这些 QIcon 与 ``_page_cache``（24 条 JPEG 字节）都再没人用。
+        """
+        self._buffers_released = True
+        self._page_req_seq += 1     # 在飞的 PDF 页渲染/预取作废
+        self._extract_seq += 1      # 在飞的产物解码/单页提取回执不许再上屏
+        self._page_cache.clear()
+        self._page_order.clear()
+        # 大图已清：这个"当前显示的是哪页产物"的标记也得清，否则回来时
+        # ``_refresh_current_extract`` 会以为"已经显示着"而不再上屏。
+        self._shown_extract_page = None
+        self.view.clear_image("")
+        self.strip.release_icons()
+
+    def restore_buffers(self) -> None:
+        """回来：从缩略图缓存目录重读页缩略图，并按当前页重走一次切页。"""
+        if not self._buffers_released:
+            return
+        self._buffers_released = False
+        if not self._pdf_path:
+            self.view.clear_image(self._empty_hint)
+            return
+        self._thumb_received.clear()
+        # **只读**（render_missing=False）：缺的页等用户滚到那儿再由窗口补，
+        # 别在这里为了"填满左列"把整本渲一遍（2000 页 = 几分钟）。
+        self._start_thumb_pass(render_missing=False)
+        row = max(self.strip.currentRow(), 0)
+        self._select_page(row, str(row))
 
     # ------------------------------------------------------------ 宿主注入
     def set_extract_dir(self, extract_dir: Path | None) -> None:

@@ -66,6 +66,8 @@ class RembgPreviewWidget(
         self._cached_thumbs: dict[str, str] = {}
         self._mode = "result"  # result / original
         self._load_token = None  # 请求令牌：仅最新一次加载生效
+        #: 离开步骤时被 :meth:`release_buffers` 清过位图（回来整条重装）
+        self._buffers_released = False
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
@@ -150,7 +152,10 @@ class RembgPreviewWidget(
         resolved = [Path(p) for p in paths]
         paths_changed = resolved != self._paths
         self._paths = resolved
-        self._rebuild_entries(force_strip=paths_changed or force)
+        # 释放过就整条重装（force_strip）：否则条目 icon 停在占位图、
+        # 大图停在空白（清单没变的常规刷新本来就该早退）。
+        released, self._buffers_released = self._buffers_released, False
+        self._rebuild_entries(force_strip=paths_changed or force or released)
         if not self._entries:
             self.view.clear_image("暂无图片")
             self.toggle_caption.setText("")
@@ -164,6 +169,25 @@ class RembgPreviewWidget(
     def refresh_display(self) -> None:
         """检测框/边距变化后，重建输出条目并按新区域重新加载。"""
         self._rebuild_entries()
+        self._load_display()
+
+    def release_buffers(self) -> None:
+        """离开本步骤：丢掉大图与整条缩略图位图（条目/当前行原地保留）。
+
+        去底色的缩略图是**现场合成**的（源图 + 效果），比普通缩略图更贵；
+        这些位图离开后没人用，回来由 ``set_images`` 按释放标记整条重装。
+        """
+        self._buffers_released = True
+        self._load_token = None    # 在飞的大图加载作废
+        self.view.clear_image("")
+        self.strip.release_icons()
+
+    def restore_buffers(self) -> None:
+        """回来：按内存里的清单整条重装（图标 + 当前页大图）。"""
+        if not self._buffers_released:
+            return
+        self._buffers_released = False
+        self._rebuild_entries(force_strip=True)
         self._load_display()
 
 

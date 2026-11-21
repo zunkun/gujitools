@@ -604,13 +604,34 @@ class ImpositionPageList(QWidget):
     def entries(self) -> list[_PageEntry]:
         return list(self._entries)
 
+    def release_thumbs(self) -> None:
+        """丢掉每条已贴的缩略图位图（页码/副标题/勾选/当前页都不动）。
+
+        离开「图片拼版」步骤时调：一本 2000 页的书左列贴着的位图是几百 MB。
+        回来时 ``set_pages`` 重建条目、宿主按缩略图管理者重新读盘贴回。
+        """
+        for entry in self._entries:
+            entry.set_thumb(None)
+
     def set_pages(self, captions: list[str], current: int = -1) -> None:
         """按页数重建清单（``captions[i]`` 是第 i 页的副标题）。
 
         勾选集合**按副标题跨重建保留**：拖动排序/加页不丢勾选；页被删掉
         （副标题不在了）自然落选——批量删除自己就是靠这次重建清空的。
+
+        ⚠️ **清单没变就只切当前页、不重建条目**（2026-11-21）：离开再回到
+        拼版步骤时宿主每次都调这里（``_refresh_imposition_view``），而一本
+        91 页的书重建 91 个 ``_PageEntry``（各自带 QLabel/QCheckBox/缩略图）
+        纯属白费——位图已经在离开时释放，条目对象没必要跟着换一遍。
         """
         self._cancel_drag()
+        captions = list(captions)
+        if captions == [entry.caption for entry in self._entries]:
+            self.set_current(current)
+            self._update_select_bar()
+            if 0 <= current < len(self._entries):
+                self.ensure_visible(current)
+            return
         keep_checked = {e.caption for e in self._entries if e.is_checked()}
         for entry in self._entries:
             self.list_box.removeWidget(entry)

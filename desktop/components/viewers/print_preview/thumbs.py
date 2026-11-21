@@ -66,22 +66,45 @@ class PrintThumbsMixin(PrintPreviewHost):
         ⚠️ 走基类 ``_load_thumbs_chunked`` 分批：页面多时一次性解码会把
         一个核打满（风扇起转），分批后首批立刻可见、其余按间隙补齐。
 
+        ⚠️⚠️ **路径解析也必须跟着窗口走**（2026-11-21 用户报「任务 0032 进详情
+        有些慢」）：旧实现先把**全部**条目的缩略图路径算好塞进 ``pending``，
+        再交给分批装载——一本 343 页的书就是 343 次"查缓存文件在哪"（每页
+        2 次 ``book_key``＋若干 ``stat``，实测 ~470ms），而真正要解码的只有
+        视口那十几条。现在把解析挪进 ``make_worker``：分批装载**只对视口
+        窗口**调 ``make_worker``（见 ``ThumbsMixin._dispatch_visible_thumbs``），
+        于是解析次数 ≈ 可见条目数。与「检测/去底色」的查看器同一套口径。
+
         ⚠️ 分批派发的是**条目身份令牌**而不是下标：批次跑完之前用户可能已经
         删除/拖动过条目，行号会变（详见 :meth:`_apply_page_thumb`）。
+        ⚠️ 路径要按**派发时刻的清单快照**解析（``pairs``），不能现读
+        ``_entries_cache``：用户拖动后缓存顺序会变，现读会让"路径属于第 i 条"
+        与"令牌属于第 i 条"错位，缩略图就贴到别的页上。
         """
         entries = self._entries_cache
         if not entries:
             return
-        pending = [
-            (key, self._thumb_path_for(entry))
-            for key, entry in zip(self._entry_keys, entries)
-        ]
-        keys = [key for key, _ in pending]
+        # 快照只拷引用（不碰文件系统）：路径留到真正派发那一拍再解析
+        pairs = list(zip(self._entry_keys, entries))
+        keys = [key for key, _ in pairs]
         edge = self._decode_edge(self.THUMB_EDGE)
+
+        def path_at(index: int) -> Path:
+            """第 ``index`` 条要解码的图。解析失败回落到条目自己的文件。
+
+            ⚠️ 解析已经从 ``set_entries``（调用方栈里）挪进了**定时器槽**
+            （分批装载），异常在这里抛出去就没人接了——一条坏路径不该让整条
+            缩略图条停摆，回落原图与旧行为一致。
+            """
+            try:
+                return self._thumb_path_for(pairs[index][1])
+            except Exception:  # noqa: BLE001 - 单条解析失败不影响整条清单
+                return Path(str(pairs[index][1].get("file") or ""))
+
         self._load_thumbs_chunked(
-            len(pending),
+            len(pairs),
             make_worker=lambda start, end: ImageListWorker(
-                [path for _, path in pending[start:end]], edge=edge
+                [path_at(i) for i in range(start, min(end, len(pairs)))],
+                edge=edge,
             ),
             sink=lambda index, image, _path, keys=keys: (
                 self._apply_page_thumb(keys[index], image)

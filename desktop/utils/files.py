@@ -9,6 +9,7 @@ import os
 import shutil
 import subprocess
 import threading
+from functools import lru_cache
 from pathlib import Path
 
 from utils.file_utils import is_source_document, replace_with_retry
@@ -379,17 +380,44 @@ def singletask_thumbnails_dir(subtask: str, book: str | Path | None = None) -> P
     return base / safe_dirname(book_key(book))
 
 
+@lru_cache(maxsize=8192)
+def _resolved_path_digest(text: str) -> str:
+    """绝对路径 → 规范化路径的 sha1（**按输入字符串记忆**）。
+
+    ⚠️ 为什么要缓存：``Path.resolve()`` 在 Windows 上是一次
+    ``GetFinalPathNameByHandle`` 系统调用（实测 ~0.12ms/次，且内部跑两遍）。
+    第四步一页要问两三次"这张图的缩略图在哪"，一本 343 页的书就是近千次
+    ——2026-11-21 实测占进页面耗时的一大半（用户报「点任务进详情有些慢」）。
+
+    ⚠️ 语义不变：缓存的 key 是**输入路径字符串**，值仍是"``resolve()`` 之后的
+    摘要"。同一个字符串在会话内解析结果恒定（除非有人把该路径换成指向别处的
+    软链），而这个函数只用来给**缓存文件名**加路径指纹——真出现抖动也只是
+    缓存键换了一个（多解一次码），不会拿错别人的图。
+    相对路径不走缓存（它的结果依赖 cwd，会变）。
+    """
+    return hashlib.sha1(str(Path(text).resolve()).encode("utf-8", "replace")).hexdigest()
+
+
 def book_key(book: str | Path) -> str:
     """一本书在缓存目录里的唯一名字：``<文件名去后缀>-<大小>-<路径指纹前8位>``。
 
     路径参与指纹：``D:/书/甲.pdf`` 与 ``E:/书/甲.pdf`` 同名同大小，但不是同一本书。
+
+    ⚠️ 大小每次现取（``stat``），只有**路径摘要**走缓存：大小是键的一部分，
+    文件被替换后键必须跟着变（缩略图缓存靠它换代）。
     """
     path = Path(book)
     try:
         size = path.stat().st_size
     except OSError:
         size = 0
-    digest = hashlib.sha1(str(path.resolve()).encode("utf-8", "replace")).hexdigest()
+    text = str(path)
+    if os.path.isabs(text):
+        digest = _resolved_path_digest(text)
+    else:
+        digest = hashlib.sha1(
+            str(path.resolve()).encode("utf-8", "replace")
+        ).hexdigest()
     return f"{path.stem}-{size}-{digest[:8]}"
 
 

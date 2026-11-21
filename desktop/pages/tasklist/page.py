@@ -434,6 +434,14 @@ class TaskListPage(QWidget, WorkerHost):
         # 按钮由 _init_ui 建好；这里断言只为让类型检查器收窄（可能为 None 的声明）
         assert self._import_button is not None
         self._import_button.setEnabled(True)
+        # ⚠️ 线程对象也要销毁（parent=本页，只覆盖属性不会析构 C++ 对象）：
+        #    每次导入一个，长期使用会一批批堆着（2026-11-21「内存越用越大」）。
+        thread = self.hash_thread
+        if thread is not None:
+            try:
+                thread.deleteLater()
+            except RuntimeError:  # C++ 侧已销毁
+                pass
 
     @Slot(str, str)
     def _hash_ready(self, path_text: str, source_hash: str) -> None:

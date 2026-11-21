@@ -279,12 +279,34 @@ class ModuleShell(QWidget):
         self.nav.setFont(font)
 
     # ------------------------------------------------------------------ 任务
+    def _release_module_buffers(self, keep=None) -> None:
+        """切走独立功能页：把其余模块页预览区的位图放掉（用户 2026-11-21）。
+
+        模块页是常驻实例（切回来不重建），但预览区的大图与缩略图位图没有
+        必要一直攥着。``keep`` 是**马上要显示**的那一页，不能放（它的
+        ``showEvent`` 也不会再触发，放了就一直是空白）。
+        """
+        for page in self._module_pages.values():
+            if page is keep:
+                continue
+            release = getattr(page, "release_buffers", None)
+            if callable(release):
+                try:
+                    release()
+                except RuntimeError:
+                    pass  # 控件已析构
+
     def show_tasks(self) -> None:
         """切回任务列表页并刷新列表。
 
         ⚠️ 不去手动 ``setCurrentItem``：切页会触发 ``pages.currentChanged``
         → :meth:`_sync_nav_to_page` 统一同步高亮，单点维护不易漏。
         """
+        # 返回列表：详情页是**常驻实例**（下次还要复用），但预览区那些
+        # 大图/缩略图位图没必要留在内存里（用户 2026-11-21「离开就释放」）。
+        # 释放的是可重建的位图；清单、当前页、暂存在离开前已落盘。
+        if self._detail_page is not None:
+            self._detail_page.release_stage_buffers()
         self.pages.setCurrentWidget(self.list_page)
         self.list_page.refresh()
 
@@ -606,6 +628,10 @@ class ModuleShell(QWidget):
         route = self.current_route()
         if not route:
             return
+        # 换页即释放：除了**当前正显示**的那个模块页，其余模块页预览区的
+        # 位图都放掉（用户 2026-11-21「离开就释放」）。当前页不能放——它的
+        # ``showEvent`` 已经跑过，放了就一直是空白。
+        self._release_module_buffers(keep=self.pages.currentWidget())
         # 详情/创建/流程三个页面都没有自己的导航条目，高亮一律留在「任务管理」；
         # 模块页是「独立功能」的**下级**（2026-11-17 起导航里没有逐模块条目），
         # 高亮留在那条「独立功能」上；设置页与入口页有自己的条目，照实高亮。

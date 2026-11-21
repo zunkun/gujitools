@@ -411,6 +411,17 @@ class PrintPreviewWidget(
         self._refresh_zoom_popup_if_open()
 
 
+    def release_buffers(self) -> None:
+        """离开本步骤：丢掉大图与整条缩略图位图（条目清单原地保留）。
+
+        ⚠️ 不需要 ``restore_buffers``：回到这一步时宿主**每次都重建**列表
+        （``_refresh_preview`` 无条件 ``set_entries``），图标与大图会自然重装。
+        """
+        self._stop_worker()
+        self.close_zoom_popup()   # 弹窗里那页的位图也是几十 MB
+        self.view.clear_image(self._empty_hint)
+        self.strip.release_icons()
+
     def _refresh_zoom_popup_if_open(self) -> None:
         """弹窗开着 → 用**当前参数**重渲染该页（快照保持新鲜）。"""
         dialog = self._zoom_dialog

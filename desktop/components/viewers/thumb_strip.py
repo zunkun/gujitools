@@ -450,6 +450,25 @@ class ThumbStrip(QListWidget):
         painter.end()
         return QIcon(pixmap)
 
+    def release_icons(self) -> None:
+        """把**所有**条目的缩略图换回共享占位图（离开步骤时释放解码位图）。
+
+        条目的 QIcon 是"解码一次就存进去"的：几十页就是几十 MB，而重建
+        成本只是重新从缓存小图解码（几十 ms/页，且分批）。离开这一步时丢掉，
+        回来由宿主重装（见各预览控件的 ``release_buffers``/``restore_buffers``）。
+
+        ⚠️ 只换图标，**不动 sizeHint / 文字 / 当前行**：条目高度是按真实图
+        比例算过的，一起收回去会让整列缩回占位高度，用户滚到的位置跟着漂；
+        而 ``add_page_item`` 之后再回来重装时，行号与选中也要原地不动。
+        """
+        placeholder = getattr(self, "_placeholder", None)
+        if placeholder is None:
+            return
+        for row in range(self.count()):
+            item = self.item(row)
+            if item is not None:
+                item.setIcon(placeholder)
+
     def add_placeholder(self, text: str) -> None:
         """追加一个纯文字占位条目（无图标，如"缩略图加载中…"）。"""
         self.addItem(QListWidgetItem(text))

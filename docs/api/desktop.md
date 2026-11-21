@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 189 个模块、205 个公开类、1567 个公开函数/方法（生成于 2026-11-21）。
+覆盖 189 个模块、205 个公开类、1578 个公开函数/方法（生成于 2026-11-21）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -25,11 +25,11 @@
 | [`desktop.components.flow_dialog`](#desktopcomponentsflow_dialog) | 2 | 10 |
 | [`desktop.components.imposition.canvas`](#desktopcomponentsimpositioncanvas) | 1 | 27 |
 | [`desktop.components.imposition.confirm_delete`](#desktopcomponentsimpositionconfirm_delete) | 1 | 1 |
-| [`desktop.components.imposition.page_list`](#desktopcomponentsimpositionpage_list) | 1 | 13 |
-| [`desktop.components.imposition.page_thumb`](#desktopcomponentsimpositionpage_thumb) | 1 | 19 |
+| [`desktop.components.imposition.page_list`](#desktopcomponentsimpositionpage_list) | 1 | 14 |
+| [`desktop.components.imposition.page_thumb`](#desktopcomponentsimpositionpage_thumb) | 1 | 20 |
 | [`desktop.components.imposition.panel`](#desktopcomponentsimpositionpanel) | 1 | 7 |
 | [`desktop.components.imposition.picker`](#desktopcomponentsimpositionpicker) | 1 | 14 |
-| [`desktop.components.imposition.view`](#desktopcomponentsimpositionview) | 1 | 17 |
+| [`desktop.components.imposition.view`](#desktopcomponentsimpositionview) | 1 | 18 |
 | [`desktop.components.log_panel`](#desktopcomponentslog_panel) | 1 | 10 |
 | [`desktop.components.missing_source_prompt`](#desktopcomponentsmissing_source_prompt) | 1 | 7 |
 | [`desktop.components.pagination`](#desktopcomponentspagination) | 2 | 11 |
@@ -52,7 +52,7 @@
 | [`desktop.components.task_table`](#desktopcomponentstask_table) | 3 | 10 |
 | [`desktop.components.update_banner`](#desktopcomponentsupdate_banner) | 1 | 4 |
 | [`desktop.components.viewers.edit_sync`](#desktopcomponentsviewersedit_sync) | 0 | 2 |
-| [`desktop.components.viewers.extract_viewer`](#desktopcomponentsviewersextract_viewer) | 1 | 8 |
+| [`desktop.components.viewers.extract_viewer`](#desktopcomponentsviewersextract_viewer) | 1 | 10 |
 | [`desktop.components.viewers.hint_banner`](#desktopcomponentsviewershint_banner) | 1 | 5 |
 | [`desktop.components.viewers.image_actions`](#desktopcomponentsviewersimage_actions) | 1 | 7 |
 | [`desktop.components.viewers.image_editor.bake`](#desktopcomponentsviewersimage_editorbake) | 0 | 2 |
@@ -77,7 +77,7 @@
 | [`desktop.components.viewers.image_view.render`](#desktopcomponentsviewersimage_viewrender) | 1 | 2 |
 | [`desktop.components.viewers.image_view.styles`](#desktopcomponentsviewersimage_viewstyles) | 0 | 3 |
 | [`desktop.components.viewers.image_viewer.boxes`](#desktopcomponentsviewersimage_viewerboxes) | 1 | 10 |
-| [`desktop.components.viewers.image_viewer.core`](#desktopcomponentsviewersimage_viewercore) | 1 | 11 |
+| [`desktop.components.viewers.image_viewer.core`](#desktopcomponentsviewersimage_viewercore) | 1 | 13 |
 | [`desktop.components.viewers.image_viewer.pdf`](#desktopcomponentsviewersimage_viewerpdf) | 1 | 3 |
 | [`desktop.components.viewers.image_viewer.thumbs`](#desktopcomponentsviewersimage_viewerthumbs) | 1 | 1 |
 | [`desktop.components.viewers.image_zoom_dialog.canvas`](#desktopcomponentsviewersimage_zoom_dialogcanvas) | 2 | 21 |
@@ -91,11 +91,11 @@
 | [`desktop.components.viewers.print_preview.export`](#desktopcomponentsviewersprint_previewexport) | 1 | 1 |
 | [`desktop.components.viewers.print_preview.layout`](#desktopcomponentsviewersprint_previewlayout) | 1 | 1 |
 | [`desktop.components.viewers.print_preview.thumbs`](#desktopcomponentsviewersprint_previewthumbs) | 1 | 1 |
-| [`desktop.components.viewers.print_preview.widget`](#desktopcomponentsviewersprint_previewwidget) | 1 | 10 |
-| [`desktop.components.viewers.rembg_viewer.core`](#desktopcomponentsviewersrembg_viewercore) | 1 | 11 |
+| [`desktop.components.viewers.print_preview.widget`](#desktopcomponentsviewersprint_previewwidget) | 1 | 11 |
+| [`desktop.components.viewers.rembg_viewer.core`](#desktopcomponentsviewersrembg_viewercore) | 1 | 12 |
 | [`desktop.components.viewers.rembg_viewer.entries`](#desktopcomponentsviewersrembg_viewerentries) | 1 | 0 |
 | [`desktop.components.viewers.rembg_viewer.thumbs`](#desktopcomponentsviewersrembg_viewerthumbs) | 1 | 3 |
-| [`desktop.components.viewers.thumb_strip`](#desktopcomponentsviewersthumb_strip) | 1 | 20 |
+| [`desktop.components.viewers.thumb_strip`](#desktopcomponentsviewersthumb_strip) | 1 | 21 |
 | [`desktop.components.viewers.thumbs_loader`](#desktopcomponentsviewersthumbs_loader) | 1 | 1 |
 | [`desktop.components.yolo_export_dialog`](#desktopcomponentsyolo_export_dialog) | 1 | 6 |
 | [`desktop.modules`](#desktopmodules) | 1 | 1 |
@@ -115,7 +115,7 @@
 | [`desktop.pages.taskdetail.imposition_layout`](#desktoppagestaskdetailimposition_layout) | 1 | 1 |
 | [`desktop.pages.taskdetail.imposition_pages`](#desktoppagestaskdetailimposition_pages) | 1 | 0 |
 | [`desktop.pages.taskdetail.manifest`](#desktoppagestaskdetailmanifest) | 1 | 6 |
-| [`desktop.pages.taskdetail.page`](#desktoppagestaskdetailpage) | 1 | 30 |
+| [`desktop.pages.taskdetail.page`](#desktoppagestaskdetailpage) | 1 | 31 |
 | [`desktop.pages.taskdetail.params_draft`](#desktoppagestaskdetailparams_draft) | 1 | 1 |
 | [`desktop.pages.taskdetail.print_list`](#desktoppagestaskdetailprint_list) | 1 | 3 |
 | [`desktop.pages.taskdetail.rembg_live`](#desktoppagestaskdetailrembg_live) | 1 | 0 |
@@ -1703,6 +1703,7 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 | `resizeEvent(event) -> None` | Qt 事件覆写：尺寸变化时重算布局 / 重新缩放。 |
 | `set_float_host(host) -> None` | 把悬浮框的宿主换成外部装配层（拼版视图整体）。 |
 | `entries() -> list[_PageEntry]` | — |
+| `release_thumbs() -> None` | 丢掉每条已贴的缩略图位图（页码/副标题/勾选/当前页都不动）。 |
 | `set_pages(captions: list[str], current: int=-1) -> None` | 按页数重建清单（``captions[i]`` 是第 i 页的副标题）。 |
 | `ensure_visible(index: int) -> None` | 把第 ``index`` 页滚进视口（当前页切换 / 清单重建后都要走这里）。 |
 | `visible_index_range(margin: int=3) -> tuple[int, int] \| None` | 左列**当前看得见**的页号闭区间（上下各多算 ``margin`` 条余量）。 |
@@ -1721,12 +1722,24 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 悬到右边画布上——挂到视图底下才行。``view.py`` 装配时调用；不设置
 则兜底贴在清单内右缘、垂直居中。
 
+##### `release_thumbs() -> None`
+
+丢掉每条已贴的缩略图位图（页码/副标题/勾选/当前页都不动）。
+
+离开「图片拼版」步骤时调：一本 2000 页的书左列贴着的位图是几百 MB。
+回来时 ``set_pages`` 重建条目、宿主按缩略图管理者重新读盘贴回。
+
 ##### `set_pages(captions: list[str], current: int=-1) -> None`
 
 按页数重建清单（``captions[i]`` 是第 i 页的副标题）。
 
 勾选集合**按副标题跨重建保留**：拖动排序/加页不丢勾选；页被删掉
 （副标题不在了）自然落选——批量删除自己就是靠这次重建清空的。
+
+⚠️ **清单没变就只切当前页、不重建条目**（2026-11-21）：离开再回到
+拼版步骤时宿主每次都调这里（``_refresh_imposition_view``），而一本
+91 页的书重建 91 个 ``_PageEntry``（各自带 QLabel/QCheckBox/缩略图）
+纯属白费——位图已经在离开时释放，条目对象没必要跟着换一遍。
 
 ##### `ensure_visible(index: int) -> None`
 
@@ -1863,6 +1876,7 @@ worker）→ 连 :attr:`page_ready` 把生成好的那条贴回左列。版面/�
 | `directory() -> Path` | — |
 | `bind(out_dir: Path \| str) -> None` | 换目录（换任务/换子任务）：状态全清、重读那份映射。 |
 | `reset() -> None` | 清空内存态（映射/位图缓存/排队）；盘上实体不动。 |
+| `release_pixmaps() -> None` | 只丢**内存里的缩略图位图**；映射与盘上实体不动。 |
 | `reload() -> None` | 从盘上重读映射数据。 |
 | `retain(count: int) -> None` | 页清单缩到 ``count`` 后：多出来的映射删掉、孤儿实体清掉。 |
 | `pixmap_for(index: int, page: dict) -> QPixmap \| None` | 这一页的缩略图：实体命中回 QPixmap；映射对不上就排队补实体。 |
@@ -1882,6 +1896,14 @@ worker）→ 连 :attr:`page_ready` 把生成好的那条贴回左列。版面/�
 ``window_provider``：可选，返回左列**当前可见**的页号闭区间
 ``(first, last)``（0 基）；返回 ``None`` = 判不出可见范围（窗口还没
 布局出来），此时退化成"排队多少交多少"。
+
+##### `release_pixmaps() -> None`
+
+只丢**内存里的缩略图位图**；映射与盘上实体不动。
+
+离开「图片拼版」步骤时调（用户 2026-11-21：离开就释放）。回来时
+:meth:`pixmap_for` 命中映射会直接从盘上 ``QImage`` 重读——**不重新
+合成**，所以这个释放是"白拿"的：省下内存，回来的代价只是磁盘读。
 
 ##### `retain(count: int) -> None`
 
@@ -2183,6 +2205,7 @@ worker）→ 连 :attr:`page_ready` 把生成好的那条贴回左列。版面/�
 | `set_page_thumbs(thumbs: list) -> None` | 把左列每页的缩略图贴上去（``thumbs[i]`` 对应第 i 页，可为 ``None``）。 |
 | `set_thumb_at(index: int, image) -> None` | 只给**第 ``index`` 页**贴缩略图（"一张张到齐"的回填走这里）。 |
 | `pages() -> list[dict]` | — |
+| `release_buffers() -> None` | 离开「图片拼版」：丢掉画布与左列的所有位图（版面/页清单不动）。 |
 | `visible_page_range(margin: int=3) -> tuple[int, int] \| None` | 左列当前可见的页号闭区间（见 ``ImpositionPageList.visible_index_range``）。 |
 | `set_current(index: int) -> None` | 切到某一页（-1 = 无页，画布清空）。 |
 | `current_index() -> int` | — |
@@ -2209,6 +2232,18 @@ worker）→ 连 :attr:`page_ready` 把生成好的那条贴回左列。版面/�
 而每条都要重跑一次缩放——380 张陆续到达就是 7.2 万次（用户
 2026-10-06 报"拼版阶段程序卡死"）。转发见
 :meth:`ImpositionPageList.set_thumb_at`。
+
+##### `release_buffers() -> None`
+
+离开「图片拼版」：丢掉画布与左列的所有位图（版面/页清单不动）。
+
+画布一页只有两张大图（各几十 MB），左列每页一张缩略图——离开了就
+全没人看。回来由 :meth:`_refresh_imposition_view` 按盘上版面重灌
+（``canvas.set_page`` 重解码当前页、左列按缩略图实体重读），
+用户看到的内容一样，只是内存清零。
+
+⚠️ **不调 ``page_list.set_pages``**：那会重建整列条目（2000 页就是
+2000 个控件）。释放只动位图，条目与滚动位置原地保留。
 
 ##### `visible_page_range(margin: int=3) -> tuple[int, int] | None`
 
@@ -3728,6 +3763,8 @@ source_path 不单独成列，仅作任务名的悬浮提示。
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(placeholder: str='暂无源文件', parent=None)` | — |
+| `release_buffers() -> None` | 离开本步骤：丢掉大图、页缩略图与 PDF 大图字节缓存。 |
+| `restore_buffers() -> None` | 回来：从缩略图缓存目录重读页缩略图，并按当前页重走一次切页。 |
 | `set_extract_dir(extract_dir: Path \| None) -> None` | 记录/刷新产物目录；当前页已有产物就**立即**切换显示。 |
 | `set_params_provider(provider: Callable[[], dict] \| None) -> None` | 注入提取参数来源（宿主读「图片提取」面板表单）。 |
 | `extract_path_for(page: int) -> Path \| None` | 第 page 页（0-based）的产物路径；没有产物目录时为 None。 |
@@ -3735,6 +3772,13 @@ source_path 不单独成列，仅作任务名的悬浮提示。
 | `navigate(forward: bool) -> None` | 方向键翻页：委托左侧 PDF 缩略图条（切页即触发按需提取）。 |
 | `set_pdf(path, placeholder=None, cache_dir=None) -> None` | 换 PDF：提取态全部作废（在飞的提取结果按代际丢弃）。 |
 | `refresh_page(path_text: str) -> None` | 某页产物文件被覆盖（编辑器完成/缩略图重生成）：重载当前页大图。 |
+
+##### `release_buffers() -> None`
+
+离开本步骤：丢掉大图、页缩略图与 PDF 大图字节缓存。
+
+本步骤的左列是**PDF 每一页**的缩略图（一本书就是几百上千条），
+离开后这些 QIcon 与 ``_page_cache``（24 条 JPEG 字节）都再没人用。
 
 ##### `set_extract_dir(extract_dir: Path | None) -> None`
 
@@ -5180,6 +5224,16 @@ boxes 为图片像素坐标；image_size 为坐标映射基准，与显示缩放
 ⚠️ 名称/颜色不在这里传：它们由 `box_styles` 按**中心位置**每帧现算，
 这样拖动框跨过中线时名字与颜色会立刻跟着换（用户 2026-09-29 要求）。
 
+##### `clear_image(text: str='无预览') -> None`
+
+清空图片与全部框（含参考框），显示占位文案。
+
+⚠️ ``_scaled_base`` 必须一起丢：它是按 ``_pixmap_version`` 缓存的那张
+SmoothTransformation 底图（3000px 源图缩到画布约 37MB）。只清
+``_pixmap`` 的话，离开步骤后这张降采样图仍被这个缓存攥着，等于
+"以为释放了、其实没释放"（离屏自测里也看不出来：内存涨在 QPixmap
+里的隐式共享上）。
+
 ##### `preview_edge() -> int`
 
 当前控件需要多高的预览分辨率（**最长边**像素数）。
@@ -5405,6 +5459,8 @@ Qt 在窗口 dpr 变化时发 ``DevicePixelRatioChange``，**不保证**同时�
 | `set_empty_hint(hint: str) -> None` | 换空态文案（输入入口藏起来后，"请点下方「＋」"就指错方向了）。 |
 | `set_hint_banner(text: str) -> None` | 换画布顶部那条**红框提示**（空串＝收起）。 |
 | `set_images(paths: list[Path \| str], boxes_map: dict \| None=None, force: bool=False) -> None` | 设置页面清单并重建缩略图条；清单未变则仅通知宿主重读。 |
+| `release_buffers() -> None` | 离开本步骤：丢掉大图与整条缩略图位图（清单/当前行原地保留）。 |
+| `restore_buffers() -> None` | 回来：重装条目图标 + 重载当前页大图（未被释放时是空操作）。 |
 | `apply_edited_image(path_text: str, image) -> None` | 编辑结果**立即上屏**（不等文件重解码/缩略图重生成）。 |
 | `refresh_page(path_text: str) -> None` | 某页缩略图缓存重生成后刷新条目图标（大图由 apply_edited_image |
 | `reload_thumb(path_text: str) -> None` | 某张图的**文件内容**被覆盖后：忘掉旧缓存记忆并按新文件重取缩略图。 |
@@ -5480,6 +5536,17 @@ run() 内部**，只经 ``failed`` 信号回到预览区显示成
 路径清单看不出变化，而条目图标是**解码一次就存进 QIcon**的——不强制
 重装就永远停在覆盖前那张。判据由宿主按"上游产物内容变了没有"给出
 （``desktop.utils.files.dir_content_signature``），不是每次刷新都强制。
+
+##### `release_buffers() -> None`
+
+离开本步骤：丢掉大图与整条缩略图位图（清单/当前行原地保留）。
+
+只释放**可重建的位图**：大图（含降采样底图）与条目图标都是几十 MB
+级的解码结果，离开这一步就再也用不到；回来由 :meth:`restore_buffers`
+按同一份清单重装（图标走 ``_load_thumbs`` 的缓存小图，不重新解码原图）。
+
+⚠️ 不改 ``_paths`` / 不清 ``currentRow``：切回来要停在用户原来那页，
+且 ``set_images`` 的增量/早退判据都靠这两样。
 
 ##### `apply_edited_image(path_text: str, image) -> None`
 
@@ -6225,6 +6292,7 @@ PDF排版预览：左侧待打印缩略图条（可拖动排序）+ 右侧单页
 | `remove_selected() -> None` | 删除所有选中条目，未选中则通过 hint 信号提示。 |
 | `print_current() -> None` | 公开入口：把当前页按 A4 效果送打印机（窗口菜单「打印图片」用）。 |
 | `refresh_display() -> None` | 右侧参数变化后按最新参数重画当前页（不生成任何文件）。 |
+| `release_buffers() -> None` | 离开本步骤：丢掉大图与整条缩略图位图（条目清单原地保留）。 |
 | `navigate(forward: bool) -> None` | 方向键翻页（详情页 ←/→ 调用；联动预览刷新，见 ThumbStrip.navigate）。 |
 | `export_default_name() -> str \| None` | 导出对话框的默认文件名；没有可导出的页时返回 None。 |
 
@@ -6242,6 +6310,13 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 
 与控件自己的「打印本页」按钮同一条实现（``_print_current``）；按钮
 只管显隐/启用，动作本身不复制一份。
+
+##### `release_buffers() -> None`
+
+离开本步骤：丢掉大图与整条缩略图位图（条目清单原地保留）。
+
+⚠️ 不需要 ``restore_buffers``：回到这一步时宿主**每次都重建**列表
+（``_refresh_preview`` 无条件 ``set_entries``），图标与大图会自然重装。
 
 ---
 
@@ -6266,6 +6341,7 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 | `__init__(empty_hint: str='暂无图片', image_editable: bool=True, parent=None)` | 构建缩略图条与「去底色结果 / 原图」切换行，默认显示去底色结果。 |
 | `set_images(paths: list[Path \| str], rembg_dir: Path \| None, boxes_provider=None, border_provider=None, thumb_provider=None, single_column_book: bool=False, page_width_provider=None, side_for=None, force: bool=False, preview_dir: Path \| None=None) -> None` | 设置图片清单与去底色目录，重建输出条目并加载显示。 |
 | `refresh_display() -> None` | 检测框/边距变化后，重建输出条目并按新区域重新加载。 |
+| `release_buffers() -> None` | 离开本步骤：丢掉大图与整条缩略图位图（条目/当前行原地保留）。 |
 | `navigate(forward: bool) -> None` | 方向键翻页（详情页 ←/→ 调用；联动预览刷新，见 ThumbStrip.navigate）。 |
 | `current_entry_path() -> str \| None` | 当前选中条目的源图路径（无条目时为 None）。 |
 | `current_display_path() -> str \| None` | 当前**大图正在显示**的文件：结果态给结果图，原图态给源图。 |
@@ -6308,6 +6384,13 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 参数重合成）——上游产物被同名覆盖后条目图标会一直停在旧图上，由宿主按
 "内容指纹变了没有"（``desktop.utils.files.dir_content_signature``）
 决定要不要传（不是每次刷新都强制）。
+
+##### `release_buffers() -> None`
+
+离开本步骤：丢掉大图与整条缩略图位图（条目/当前行原地保留）。
+
+去底色的缩略图是**现场合成**的（源图 + 效果），比普通缩略图更贵；
+这些位图离开后没人用，回来由 ``set_images`` 按释放标记整条重装。
 
 ##### `current_display_path() -> str | None`
 
@@ -6458,6 +6541,7 @@ thumb_provider: (path_text) -> Path | dict | None，可选的小图来源。
 | `paintEvent(event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
 | `navigate(forward: bool) -> None` | 方向键翻页：移动当前行（夹在两端，不回绕）。 |
 | `keyPressEvent(event) -> None` | Delete/Backspace → ``delete_requested``。 |
+| `release_icons() -> None` | 把**所有**条目的缩略图换回共享占位图（离开步骤时释放解码位图）。 |
 | `add_placeholder(text: str) -> None` | 追加一个纯文字占位条目（无图标，如"缩略图加载中…"）。 |
 | `add_page_item(label: str, path: str='') -> None` | 新增一个带占位图的条目，缩略图就绪后由 set_item_icon 替换。 |
 | `set_item_icon(index: int, image, path: str, label: str) -> None` | 替换某条目的图标/文字/路径（缩略图异步就绪后回调）。 |
@@ -6532,6 +6616,18 @@ Delete/Backspace → ``delete_requested``。
 ⚠️ 第四步工具条的提示写着「Delete 删除选中」，原先没有任何地方接这个
 键——提示是空头支票，按下去毫无反应。这里只负责把键翻成信号，
 「删哪些、要不要落盘」仍归宿主（``PrintPreviewWidget.remove_selected``）。
+
+##### `release_icons() -> None`
+
+把**所有**条目的缩略图换回共享占位图（离开步骤时释放解码位图）。
+
+条目的 QIcon 是"解码一次就存进去"的：几十页就是几十 MB，而重建
+成本只是重新从缓存小图解码（几十 ms/页，且分批）。离开这一步时丢掉，
+回来由宿主重装（见各预览控件的 ``release_buffers``/``restore_buffers``）。
+
+⚠️ 只换图标，**不动 sizeHint / 文字 / 当前行**：条目高度是按真实图
+比例算过的，一起收回去会让整列缩回占位高度，用户滚到的位置跟着漂；
+而 ``add_page_item`` 之后再回来重装时，行号与选中也要原地不动。
 
 ##### `add_page_item(label: str, path: str='') -> None`
 
@@ -8208,6 +8304,7 @@ resize 子控件再 show），在这里重铺一次就对了。⚠️ 别改成"
 | `edit_print_image() -> None` | — |
 | `navigate_by_arrow(forward: bool) -> bool` | 方向键切换当前步骤的页面（主窗口 ←/→ 转发入口）。 |
 | `keyPressEvent(event) -> None` | ←/→ 切换当前步骤的页面（焦点链不消费时兜底到达这里）。 |
+| `release_stage_buffers(stage: str \| None=None) -> None` | 丢掉某一步骤（``None`` = 全部）预览区里**可重建的位图**。 |
 | `closeEvent(event) -> None` | 关闭页面时杀掉并等待 worker/detect 子进程，并关停所有后台线程。 |
 | `flush_layout_pending() -> None` | 把各处"未提交的界面改动"补发/落盘（关窗口、切步骤、切页前都要调）。 |
 | `shutdown_all_workers() -> None` | 连同各预览控件自己的缩略图线程一起收尾。 |
@@ -8365,6 +8462,22 @@ B 方案（2026-10-17）：同一步骤可以有多个节点，每个节点各�
 - 焦点在预览弹窗里则由弹窗自己的窗口级 QShortcut 接管；
 - 四个步骤的主预览都支持（移动缩略图条当前行，联动预览刷新）。
 
+##### `release_stage_buffers(stage: str | None=None) -> None`
+
+丢掉某一步骤（``None`` = 全部）预览区里**可重建的位图**。
+
+用户 2026-11-21：「离开拼版页面就释放，其他步骤也一样」。切走之后
+的几十~几百 MB 大图与缩略图没人再看，没必要攥着等内存涨到顶。
+
+只释放位图：页面清单、当前页、勾选、未落盘的版面改动全都不动
+（离开前 ``flush_layout_pending`` / ``_flush_param_drafts`` 已补发）。
+回来由各控件的 ``restore_buffers`` 或既有的"进步骤刷新"重建。
+
+⚠️ 这些预览控件是**直接构造的实例**，不是 ``LazyPanelHost``，
+``getattr`` 探测 ``release_buffers`` 安全——``flush_layout_pending``
+那条"禁 getattr"约束针对的是 LazyPanelHost（它的 ``__getattr__``
+会把面板顺带建出来），与此无关。
+
 ##### `closeEvent(event) -> None`
 
 关闭页面时杀掉并等待 worker/detect 子进程，并关停所有后台线程。
@@ -8444,6 +8557,12 @@ B 方案（2026-10-17）：同一步骤可以有多个节点，每个节点各�
 源码：[`desktop/pages/taskdetail/print_list.py`](../../desktop/pages/taskdetail/print_list.py)
 
 任务详情页的第四步（print）列表控制器：条目规划、排序持久化、插入、下载。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| PRINT_WARM_DELAY_MS | `200` |
 
 ### `class PrintListMixin`
 
@@ -16594,6 +16713,9 @@ GUI 数据根目录：默认 ``~/Documents/guji``，可在设置页改成任意�
 
 路径参与指纹：``D:/书/甲.pdf`` 与 ``E:/书/甲.pdf`` 同名同大小，但不是同一本书。
 
+⚠️ 大小每次现取（``stat``），只有**路径摘要**走缓存：大小是键的一部分，
+文件被替换后键必须跟着变（缩略图缓存靠它换代）。
+
 #### `image_thumb_cache_path(subtask: str, image: str | Path, edge: int=THUMBNAIL_EDGE) -> Path`
 
 一张**源图片**在 singletask 缓存里的缩略图路径。
@@ -18148,7 +18270,13 @@ Mixin：在拥有者 widget 内启动一次性后台 worker 线程。
 启动一次性 worker 线程并登记引用以便回收。
 
 factory() 负责造 worker，wire(worker, thread) 负责连信号；线程结束后
-worker 自动 deleteLater 并移出引用表，避免长会话下线程对象堆积。
+worker **与 QThread 对象本身**都回收，避免长会话下线程对象堆积。
+
+⚠️⚠️ **必须回收 QThread 本身**（2026-11-21 实测「内存越用越大」）：
+它的 parent 是本宿主（长寿命的 viewer / 详情页），只从 ``_threads``
+里移除**不会**析构 C++ 对象——parent 仍持有它。于是每翻一页、每批
+缩略图就永久留下一个 QThread（实测约 0.25MB/次），一本千页书滚一遍
+就是几百 MB，返回列表也不回落。
 
 ##### `shutdown_workers() -> None`
 

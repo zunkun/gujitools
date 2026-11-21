@@ -351,6 +351,31 @@ class ImpositionViewWidget(QWidget):
     def pages(self) -> list[dict]:
         return list(self._pages)
 
+    def release_buffers(self) -> None:
+        """离开「图片拼版」：丢掉画布与左列的所有位图（版面/页清单不动）。
+
+        画布一页只有两张大图（各几十 MB），左列每页一张缩略图——离开了就
+        全没人看。回来由 :meth:`_refresh_imposition_view` 按盘上版面重灌
+        （``canvas.set_page`` 重解码当前页、左列按缩略图实体重读），
+        用户看到的内容一样，只是内存清零。
+
+        ⚠️ **不调 ``page_list.set_pages``**：那会重建整列条目（2000 页就是
+        2000 个控件）。释放只动位图，条目与滚动位置原地保留。
+        """
+        self.canvas.clear_page()
+        self.page_list.release_thumbs()
+
+    def restore_buffers(self) -> None:
+        """回来：按内存里的页清单重灌当前页画布（左列缩略图由宿主重喂）。
+
+        任务详情页走 ``_refresh_imposition_view`` 整条刷新，用不到这里；
+        独立拼版页则在 ``showEvent`` 里调它（它自己的 ``_refresh_view`` 负责
+        左列缩略图，本方法只兜画布这一半）。
+        """
+        if 0 <= self._current < len(self._pages):
+            self.canvas.set_page(self._pages[self._current].get("items") or [])
+        self._update_hint()
+
     def visible_page_range(self, margin: int = 3) -> tuple[int, int] | None:
         """左列当前可见的页号闭区间（见 ``ImpositionPageList.visible_index_range``）。
 

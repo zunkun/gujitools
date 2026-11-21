@@ -1389,6 +1389,22 @@ class ImpositionModulePage(ModulePage):
                 f"{cn_page_label(index)}　·　右「{stems[0]}」　左「{stems[1]}」"
             )
 
+    # ------------------------------------------------------ 离开/回来（内存）
+    def release_buffers(self) -> None:
+        """离开本页：画布两张大图 + 左列缩略图 + 缩略图实体管理者的内存位图。
+
+        基类只清 ``view`` 自己那份（画布与左列条目），这里再补管理者那张
+        ``_pix`` 表——它挂在**页面**上，不在 view 里。
+        """
+        super().release_buffers()
+        manager = getattr(self, "_page_thumb_mgr", None)
+        if manager is not None:
+            manager.release_pixmaps()
+
+    def restore_buffers(self) -> None:
+        """回来：按磁盘上的文档整条重灌（画布 + 左列缩略图 + 面板状态）。"""
+        self._refresh_view()
+
     # ------------------------------------------------------------------ 收尾
     def shutdown_workers(self) -> None:
         """关闭页面前中止并等待导出线程。"""

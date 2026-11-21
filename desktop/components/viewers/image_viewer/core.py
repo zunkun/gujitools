@@ -172,6 +172,10 @@ class ImageViewerWidget(
         #: ⚠️ 不能改用「路径是否相同」判断：同一页也会被重复选择（见
         #: ``_select_image`` 的递归回调），路径一样但加载任务有两个。
         self._load_token = 0
+        #: 离开步骤时被 :meth:`release_buffers` 清过位图：回来第一次
+        #: ``set_images`` 必须**重装图标并重载当前页**（清单没变也不许早退，
+        #: 否则左列停在占位图、右侧停在空白）。
+        self._buffers_released = False
 
 
     @property
@@ -266,8 +270,21 @@ class ImageViewerWidget(
         self._clear_page_source()
         paths = [Path(p) for p in paths]
         if (
+            self._buffers_released
+            and paths == self._paths
+            and self.strip.count() == len(paths)
+        ):
+            # 离开步骤时释放过、清单又没变：**只重装**，不整条 clear+重建
+            # （重建会把当前行打回第一条——用户切回来看的应该还是那一页）。
+            self.restore_buffers()
+            index = max(self.strip.currentRow(), 0)
+            if self._paths:
+                self.current_changed.emit(index, str(self._paths[index]))
+            return
+        if (
             paths == self._paths
             and self.strip.count() == len(paths)
+            and not self._buffers_released
         ):
             # 清单未变化：默认跳过重建，但仍需通知宿主重新读取
             # 该页的检测框/参数（可能在其他阶段被更新过）。
@@ -283,6 +300,8 @@ class ImageViewerWidget(
                 self.current_changed.emit(index, str(self._paths[index]))
             return
         self.close_zoom_popup()  # 清单换了：弹窗里那页已是旧数据
+        # 清单变了：本次会整条重建（图标 + 大图），释放标记自然失效
+        self._buffers_released = False
         # ⚠️ 前缀扩展走**增量 append**（2026-09-26 第二轮审计 L1）：extract
         #    执行期每 200ms 轮询一次输出目录，页面陆续落地；整表 clear+重建
         #    320 个条目 = O(N²) 控件 churn。清单尾部追加时只补新条目。
@@ -312,6 +331,34 @@ class ImageViewerWidget(
         self._load_thumbs(self.strip, paths)
         self._select_image(0, str(paths[0]))
 
+
+    def release_buffers(self) -> None:
+        """离开本步骤：丢掉大图与整条缩略图位图（清单/当前行原地保留）。
+
+        只释放**可重建的位图**：大图（含降采样底图）与条目图标都是几十 MB
+        级的解码结果，离开这一步就再也用不到；回来由 :meth:`restore_buffers`
+        按同一份清单重装（图标走 ``_load_thumbs`` 的缓存小图，不重新解码原图）。
+
+        ⚠️ 不改 ``_paths`` / 不清 ``currentRow``：切回来要停在用户原来那页，
+        且 ``set_images`` 的增量/早退判据都靠这两样。
+        """
+        self._buffers_released = True
+        self._load_token += 1      # 在飞的大图加载作废（结果回来也不再上屏）
+        self._pending_boxes = None
+        self.view.clear_image("")
+        self.strip.release_icons()
+
+    def restore_buffers(self) -> None:
+        """回来：重装条目图标 + 重载当前页大图（未被释放时是空操作）。"""
+        if not self._buffers_released:
+            return
+        self._buffers_released = False
+        if not self._paths:
+            self.view.clear_image(self._empty_hint)
+            return
+        self._load_thumbs(self.strip, list(self._paths))
+        row = max(self.strip.currentRow(), 0)
+        self._select_image(row, str(self._paths[row]))
 
     def _thumb_for(self, path_text: str) -> Path:
         # ⚠️ **缓存优先于 provider**：:meth:`set_thumb_source` 的缓存小图就绪后，

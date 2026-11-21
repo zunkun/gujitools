@@ -1791,6 +1791,14 @@ def _set_tool_highlight(button, on: bool) -> None:
     """
     if button is None:
         return
+    on = bool(on)
+    # ⚠️ **状态没变就别重复 setStyleSheet**（2026-11-21「内存越用越大」）：
+    #    qfluentwidgets 的 StyleSheetManager 每设一次就给控件挂一对 watcher
+    #    （CustomStyleSheetWatcher / DirtyStyleSheetWatcher），旧的不解绑；切
+    #    步骤/刷新清单都会走到这里，反复设置就会一路堆着（实测每轮上百个）。
+    if getattr(button, "_tool_hl_on", None) is on:
+        return
+    button._tool_hl_on = on  # type: ignore[attr-defined]
     if on:
         button.setStyleSheet(
             f"ToolButton {{ border: 1.5px solid {T.DANGER};"

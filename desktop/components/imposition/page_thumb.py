@@ -312,6 +312,15 @@ class PageThumbManager(QObject):
         self._inflight_window = False
         self._inflight_count = 0
 
+    def release_pixmaps(self) -> None:
+        """只丢**内存里的缩略图位图**；映射与盘上实体不动。
+
+        离开「图片拼版」步骤时调（用户 2026-11-21：离开就释放）。回来时
+        :meth:`pixmap_for` 命中映射会直接从盘上 ``QImage`` 重读——**不重新
+        合成**，所以这个释放是"白拿"的：省下内存，回来的代价只是磁盘读。
+        """
+        self._pix.clear()
+
     def reload(self) -> None:
         """从盘上重读映射数据。"""
         self._mapping = load_page_index(self._dir, self._edge)
