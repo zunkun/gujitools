@@ -330,6 +330,10 @@ class TaskDetailPage(
         # 实时去底色的台账同理：它记的是"哪张图盘上成品是按哪份参数算的"，
         # 属于**上一个任务**——放在覆盖 task_id 之后清，清的就是新任务（空表）。
         self._reset_rembg_live()
+        # 换任务：上一任务的预览位图都用不上了，先全放掉（新任务会按各自的
+        # refresh 重新装）。放在覆盖 task_id **之前**：此时 flush 已把上一
+        # 任务的暂存落盘，放位图不会丢任何未保存状态。
+        self.release_stage_buffers()
         # 当前节点（B 方案）随任务一起清：新流程的节点 id 与旧任务无关，
         # 留着会让"按节点寻址"在新任务上指错节点（末尾 _select_stage 会重设）。
         self._current_node_id = None
@@ -429,6 +433,15 @@ class TaskDetailPage(
         self._detect_prev_path = None
         # 图头尺寸缓存按 (路径, mtime) 键控、只增不减：换任务清掉，别攒一整场会话
         self._thumb_size_cache = None
+        # 第四步缩略图**路径记忆**同理：它按 (路径, mtime) 键控，键里有绝对路径，
+        # 跨任务不会给错图，但会白攒一整场会话的内存（每页一条）。
+        self._print_thumb_paths = {}
+        # 上一个任务排着的"补生成待打印缩略图"必须撤掉：定时器回来时 task_id
+        # 已换成新任务，会把上一任务的图生成进新任务的缓存目录。
+        warm_timer = getattr(self, "_print_warm_timer", None)
+        if warm_timer is not None:
+            warm_timer.stop()
+        self._print_warm_pending = []
         # 「上游产物逐文件指纹」的记忆同理按任务清：同一个任务**重进**（换源 PDF
         # 后又 set_task、或从列表再打开）时目录是老的、内容可能已被换过一遍，
         # 留着旧指纹会把"内容变了"漏判成"没变"。
@@ -1248,6 +1261,13 @@ class TaskDetailPage(
         # ⚠️ **先**把当前格对应的节点记下来再刷一切（B 方案）：随后的预览刷新、
         #    参数回填、历史选项、就绪判据都按 `_current_node_id` 寻址。同一步骤
         #    的多个节点共用同一页面板，靠这个字段把数据按节点重定向。
+        # 离开上一步：把它预览区的位图放掉（用户 2026-11-21「离开就释放」）。
+        # 只在**真的切走**时放——点了"图上有、还没功能"的灰节点在上面已经
+        # return（那时界面还停在这一步，释放了就得白白重装）。
+        leaving_stage = self.current_stage() if self.task_id else ""
+        target_stage = self.stage_at_index(index)
+        if leaving_stage and target_stage and leaving_stage != target_stage:
+            self.release_stage_buffers(leaving_stage)
         previous_node = self._current_node_id
         self._current_node_id = (slot.node_id or None) if slot is not None else None
         # 缩略图白名单与节点索引跟着切（B 方案：新节点的副本产物目录要进白名单）
@@ -1768,6 +1788,52 @@ class TaskDetailPage(
                     except Exception:  # noqa: BLE001
                         pass
 
+    # ------------------------------------------- 离开步骤 → 释放预览区位图
+    def _stage_preview_widget(self, stage: str):
+        """步骤 → 它的预览控件（``preview_attr`` 是事实来源，拼版另开一路）。"""
+        if stage == IMPOSITION_STAGE:
+            return getattr(self, "imposition_view", None)
+        spec = ports.spec_for_stage(stage)
+        attr = spec.preview_attr if spec else ""
+        return getattr(self, attr, None) if attr else None
+
+    def release_stage_buffers(self, stage: str | None = None) -> None:
+        """丢掉某一步骤（``None`` = 全部）预览区里**可重建的位图**。
+
+        用户 2026-11-21：「离开拼版页面就释放，其他步骤也一样」。切走之后
+        的几十~几百 MB 大图与缩略图没人再看，没必要攥着等内存涨到顶。
+
+        只释放位图：页面清单、当前页、勾选、未落盘的版面改动全都不动
+        （离开前 ``flush_layout_pending`` / ``_flush_param_drafts`` 已补发）。
+        回来由各控件的 ``restore_buffers`` 或既有的"进步骤刷新"重建。
+
+        ⚠️ 这些预览控件是**直接构造的实例**，不是 ``LazyPanelHost``，
+        ``getattr`` 探测 ``release_buffers`` 安全——``flush_layout_pending``
+        那条"禁 getattr"约束针对的是 LazyPanelHost（它的 ``__getattr__``
+        会把面板顺带建出来），与此无关。
+        """
+        stages = (
+            [stage] if stage
+            else ["extract", "detect", "rembg", "print", IMPOSITION_STAGE]
+        )
+        for key in stages:
+            widget = self._stage_preview_widget(key)
+            release = getattr(widget, "release_buffers", None)
+            if callable(release):
+                release()
+        if stage in (None, IMPOSITION_STAGE):
+            # 拼版左列缩略图的**实体管理者**挂在页面层（不在 view 里）
+            manager = getattr(self, "_page_thumb_mgr", None)
+            if manager is not None:
+                manager.release_pixmaps()
+
+    def _restore_stage_buffers(self, stage: str) -> None:
+        """进入某步：它若被释放过，按原清单重装（未释放时是空操作）。"""
+        widget = self._stage_preview_widget(stage)
+        restore = getattr(widget, "restore_buffers", None)
+        if callable(restore):
+            restore()
+
     def _refresh_preview(self, index: int | None = None,
                          force: bool = False) -> None:
         """刷新某一步的预览；``force`` = 清单没变也按磁盘最新内容重装一遍。
@@ -1791,6 +1857,9 @@ class TaskDetailPage(
         stage = self.stage_at_stack_index(page)
         if stage is None:
             return
+        # 这一步若在离开时被释放过位图，先按原清单重装：否则随后的 set_images
+        # 会因"清单没变"早退，用户回到这一步看到的是占位图 + 空白预览。
+        self._restore_stage_buffers(stage)
         # ⚠️ 进detect/rembg 前按"这一步的输入目录"兜一次清单：流程里没有
         #    extract 时清单不会被任何阶段刷新，用户放进stages/input/ 的图
         #    就成了"明明有图却显示暂无图片"（用户 2026-10-06）。
@@ -1956,6 +2025,9 @@ class TaskDetailPage(
         #    （2026-09-26 审计）。
         self.flush_layout_pending()
         self._flush_param_drafts()
+        # 关窗口：预览区的位图（大图 + 每条缩略图）先放掉再收线程，避免
+        # 退出时几十上百 MB 的 QPixmap 与线程收尾抢同一段收尾时间。
+        self.release_stage_buffers()
         self.shutdown_all_workers()
         event.accept()
 

@@ -395,8 +395,17 @@ class StepKernel(QObject):
         self.event.emit(name, payload)  # type: ignore[reportAttributeAccessIssue]  # 同上：``event`` 与 QObject.event 同名
 
     def _on_thread_finished(self) -> None:
+        # ⚠️ QThread 的 parent 是本对象（长寿命），只把引用置 None **不会**
+        #    析构 C++ 对象——每执行一次步骤就永久留下一个线程对象
+        #    （2026-11-21「内存越用越大」）。线程已结束，此刻销毁安全。
+        thread = self._thread
         self._thread = None
         self._worker = None
+        if thread is not None:
+            try:
+                thread.deleteLater()
+            except RuntimeError:  # C++ 侧已销毁
+                pass
 
 
 __all__ = [

@@ -39,7 +39,9 @@ from typing import Callable
 from PySide6.QtCore import (
     QObject, QRectF, QSize, Qt, Signal, Slot,
 )
-from PySide6.QtGui import QColor, QImage, QImageReader, QPainter, QPixmap
+from PySide6.QtGui import (
+    QColor, QImage, QImageIOHandler, QImageReader, QPainter, QPixmap,
+)
 
 from desktop.services.imposition import normalize_page, page_bounds
 from desktop.workers.thumb_cache_worker import flatten_on_white
@@ -93,14 +95,23 @@ def _decode_scaled(path_text: str, width: int, height: int) -> QImage | None:
     """把一张源图按**目标矩形尺寸**缩放解码（不把整张原图读进内存）。
 
     ``rect`` 存的就是源图像素坐标，比例映射后目标像素尺寸 = rect 尺寸 ×
-    缩放系数——直接让解码器出这个尺寸（``QImageReader.setScaledSize``），
-    2000×3000 的源图缩到 256px 只解一小块。少数文件缩放解码失败时回退
-    整图解码后内存缩放。rembg 产物"白底被标成透明"，一律过
-    :func:`flatten_on_white`（透明 = 纸色，与打印效果一致）。
+    缩放系数——**当解码器真支持缩放读**（``supportsOption(ScaledSize)``，
+    JPEG 的 libjpeg 就是）时直接让它出这个尺寸，2000×3000 的源图缩到 256px
+    只解一小块。
+
+    ⚠️ 不支持时**别再设** ``setScaledSize``（2026-11-21 实测）：Qt 的 PNG 处理器
+    不支持缩放读，``QImageReader`` 会先整幅解码、再用平滑缩放缩一遍——多花一道
+    全图缩放的工夫（同一张 1600×2100 单色 PNG：整幅读 2ms，设了缩放读反而
+    15ms）。跳过它，整幅读回来直接交给 ``QPainter.drawImage(目标矩形)`` 缩，
+    一次就够了，画质口径不变（都是平滑变换）。
+
+    少数文件缩放解码失败时回退整图解码后内存缩放。rembg 产物"白底被标成
+    透明"，一律过 :func:`flatten_on_white`（透明 = 纸色，与打印效果一致）。
     """
     reader = QImageReader(path_text)
     reader.setAutoTransform(True)
-    reader.setScaledSize(QSize(max(1, width), max(1, height)))
+    if reader.supportsOption(QImageIOHandler.ImageOption.ScaledSize):
+        reader.setScaledSize(QSize(max(1, width), max(1, height)))
     image = flatten_on_white(reader.read())
     if image.isNull():
         image = QImage(path_text)
@@ -235,6 +246,17 @@ class PageThumbManager(QObject):
     未命中回 ``None`` 占位并自动排队）→ :meth:`flush`（把排队页交后台
     worker）→ 连 :attr:`page_ready` 把生成好的那条贴回左列。版面/源图
     变了调 :meth:`invalidate`（宿主的防抖计时器到点后）。
+
+    ⚠️ **只生成"看得见的那几页"**（2026-11-21，用户报拼版首屏要等 5 分钟）：
+    宿主用 :meth:`set_window_provider` 给出左列当前可见的页号范围，:meth:`flush`
+    只把**落在窗口里**的页交出去，窗口外的留在队列里等用户滚到那儿再生成
+    （与导入预览"只预渲染首屏"同一口径）。不设 provider 的宿主（旧调用/自测）
+    保持原行为：排队多少交多少。
+
+    一页实测：整页合成 24ms（开发机）。81 页整本跑一遍 2 秒，看着不多——
+    但在生产环境里它要和**整本拼版成品合成**（每页 0.5s 起、PIL 攥着 GIL）
+    抢同一个进程，实测被拖到 4~7 秒/页。先出可见页，剩下的等滚动，用户
+    打开就是"立刻有图"。
     """
 
     #: 一页的实体缩略图生成完：(0 基页号, QPixmap)
@@ -246,9 +268,15 @@ class PageThumbManager(QObject):
         edge: int,
         submit: Callable,
         parent: QObject | None = None,
+        window_provider: Callable[[], tuple[int, int] | None] | None = None,
     ):
         """``out_dir`` 实体目录；``edge`` 最长边；``submit``＝宿主的
-        ``run_worker(factory, wire)``（线程的创建与回收归宿主管）。"""
+        ``run_worker(factory, wire)``（线程的创建与回收归宿主管）。
+
+        ``window_provider``：可选，返回左列**当前可见**的页号闭区间
+        ``(first, last)``（0 基）；返回 ``None`` = 判不出可见范围（窗口还没
+        布局出来），此时退化成"排队多少交多少"。
+        """
         super().__init__(parent)
         self._edge = int(edge)
         self._submit = submit
@@ -257,6 +285,12 @@ class PageThumbManager(QObject):
         self._pix: dict[str, QPixmap] = {}
         self._pending: dict[int, dict] = {}
         self._inflight = False
+        #: 在飞的那一批里是否含**可见窗口**的页（拼版合成据此让路，见
+        #: ``imposition_layout.ImpositionLayoutMixin._defer_compose_for_thumbs``）
+        self._inflight_window = False
+        #: 在飞的那一批的页数（配合 ``_inflight_window`` 判断"是不是批量出首屏"）
+        self._inflight_count = 0
+        self._window_provider = window_provider
         self.reload()
 
     @property
@@ -275,6 +309,17 @@ class PageThumbManager(QObject):
         self._mapping.clear()
         self._pix.clear()
         self._pending.clear()
+        self._inflight_window = False
+        self._inflight_count = 0
+
+    def release_pixmaps(self) -> None:
+        """只丢**内存里的缩略图位图**；映射与盘上实体不动。
+
+        离开「图片拼版」步骤时调（用户 2026-11-21：离开就释放）。回来时
+        :meth:`pixmap_for` 命中映射会直接从盘上 ``QImage`` 重读——**不重新
+        合成**，所以这个释放是"白拿"的：省下内存，回来的代价只是磁盘读。
+        """
+        self._pix.clear()
 
     def reload(self) -> None:
         """从盘上重读映射数据。"""
@@ -331,17 +376,83 @@ class PageThumbManager(QObject):
             }
         return pixmap
 
+    def set_window_provider(
+        self, provider: Callable[[], tuple[int, int] | None] | None
+    ) -> None:
+        """告诉管理者"左列现在看得见哪几页"（``None`` = 不按窗口筛）。
+
+        传的应当是个**取用方式**而不是快照：滚动/翻页/换任务后范围会变，
+        :meth:`flush` 每次提交前现取，宿主不必跟着同步。
+        """
+        self._window_provider = provider
+
+    def window(self) -> tuple[int, int] | None:
+        """当前可见页号闭区间 ``(first, last)``；没设 provider 或判不出时 ``None``。"""
+        provider = self._window_provider
+        if provider is None:
+            return None
+        try:
+            value = provider()
+        except Exception:  # noqa: BLE001 - 取窗口失败只该退化成"不筛"
+            return None
+        if not value:
+            return None
+        try:
+            first, last = int(value[0]), int(value[1])
+        except (TypeError, ValueError, IndexError):
+            return None
+        if last < first:
+            return None
+        return (first, last)
+
+    @property
+    def window_batch_size(self) -> int:
+        """在飞的那一批里**窗口内**的页数（没在跑/不是窗口批则 0）。
+
+        拼版成品合成据此决定要不要让路：批量出首屏（十几页）值得让，单页
+        重生成（拖版面后的防抖回合）不该拖慢"1 秒内看到成品"这条硬指标。
+        """
+        return self._inflight_count if self._inflight_window else 0
+
+    @property
+    def pending_count(self) -> int:
+        """还没生成实体的页数（含窗口外的，自测/排障用）。"""
+        return len(self._pending)
+
+    def refresh_window(self) -> None:
+        """可见范围变了（滚动/翻页）：把新进窗口的页排进下一批。
+
+        在飞时不抢——收尾回调 :meth:`_on_done` 会按**那一刻**的窗口再补一批，
+        正好接上用户滚到的位置。
+        """
+        if self._inflight:
+            return
+        self.flush()
+
     def flush(self) -> None:
-        """把排队的页整批交给后台 worker（一批一个；在跑就等它收尾续批）。"""
+        """把排队的页交给后台 worker（一批一个；在跑就等它收尾续批）。
+
+        ⚠️ 设了 :meth:`set_window_provider` 时**只交窗口里**的页：窗口外的
+        留在 :attr:`_pending` 里，等用户滚到那儿（或翻页）再生成。这就是
+        "拼版首屏不必等整本 380 页"的实现方式——不是把剩下的丢掉，而是
+        推迟到真需要的那一刻。
+        """
         if self._inflight or not self._pending:
             return
+        window = self.window()
+        indexes = sorted(self._pending)
+        if window is not None:
+            first, last = window
+            indexes = [index for index in indexes if first <= index <= last]
+            if not indexes:
+                return  # 窗口内的页都已就绪，窗口外的等滚动
         from desktop.workers.imposition_page_thumb_worker import (
             ImpositionPageThumbWorker,
         )
         from desktop.workers.worker_host import connect_queued
 
         jobs = []
-        for index in sorted(self._pending):
+        for index in indexes:
             job = self._pending[index]
             jobs.append({
                 "index": index,
@@ -350,12 +461,18 @@ class PageThumbManager(QObject):
                 "page": job["page"],
             })
         self._inflight = True
+        self._inflight_window = window is not None
+        self._inflight_count = len(jobs)
         self._submit(
             lambda: ImpositionPageThumbWorker(jobs, self._dir, self._edge),
             lambda worker, thread: (
                 connect_queued(
                     self, worker.page_ready, self._on_page_ready, thread),
                 connect_queued(self, worker.completed, self._on_done, thread),
+                # ⚠️ 失败也必须**解开在飞标记**（2026-11-21）：只连 thread.quit
+                #    的话 ``_inflight`` 会永远停在 True，之后整列缩略图再也不
+                #    生成（下一次刷新/滚动全被"有一批在跑"挡掉）。
+                connect_queued(self, worker.failed, self._on_failed, thread),
                 worker.failed.connect(thread.quit),
             ),
         )
@@ -387,10 +504,25 @@ class PageThumbManager(QObject):
     @Slot()
     def _on_done(self) -> None:
         self._inflight = False
+        self._inflight_window = False
+        self._inflight_count = 0
         self._save_index()
         self._cleanup_orphans()
         if self._pending:
-            self.flush()  # 批次跑的时候又排进了新页（防抖/编辑回写）
+            # 批次跑的时候又排进了新页（防抖/编辑回写），或者用户滚到了
+            # 新的位置：按**现在**的窗口再交一批（窗口外仍留在队列里）。
+            self.flush()
+
+    @Slot(str)
+    def _on_failed(self, _message: str) -> None:
+        """这一批整个失败（磁盘满/目录被删等）：解开在飞标记，等下次刷新重试。
+
+        不在这里自动重排：异常通常不是单页问题，立刻重试会变成死循环。
+        页面下一次刷新（换页/滚动/版面落盘）会把缺的页重新排进队列，自愈。
+        """
+        self._inflight = False
+        self._inflight_window = False
+        self._inflight_count = 0
 
     # -------------------------------------------------------------- 内部
     def _save_index(self) -> None:

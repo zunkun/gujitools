@@ -318,9 +318,14 @@ class SettingsPage(QWidget):
                 "close_fds": True,
             }
             if sys.platform == "win32":
+                # ⚠️ 新实例必须**脱离本进程的作业**（见 utils/proc_job.py）：
+                #    否则本进程一退出，作业就把刚起来的新实例一起收走，
+                #    表现是"点重启之后程序整个没了"。
+                from utils.proc_job import detached_creationflags
+
                 subprocess.Popen(
                     args, cwd=cwd,
-                    creationflags=0x00000008 | 0x00000200, **common,
+                    creationflags=detached_creationflags(), **common,
                 )
             else:
                 subprocess.Popen(args, cwd=cwd, start_new_session=True, **common)

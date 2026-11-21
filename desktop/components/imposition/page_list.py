@@ -486,6 +486,9 @@ class ImpositionPageList(QWidget):
     check_changed = Signal()
     #: 点了悬浮框「批量删除」
     batch_delete_requested = Signal()
+    #: **可见页范围变了**（滚动/翻页/换任务/窗口缩放）。控制器据此只给看得见
+    #: 的那几页生成缩略图（见 ``page_thumb.PageThumbManager.set_window_provider``）。
+    viewport_changed = Signal()
 
     #: 拖动期间轮询光标的间隔（毫秒）
     _POLL_MS = 16
@@ -497,6 +500,9 @@ class ImpositionPageList(QWidget):
     _EDGE_PX = 24
     #: 自动滚动每轮步长（像素）
     _EDGE_STEP = 6
+    #: 可见范围变化的**合并窗口**（毫秒）：滚动条每滚一格都会发 valueChanged，
+    #: 立刻回调会让控制器反复取窗口；等手停下来一拍再报一次就够。
+    _VIEWPORT_DEBOUNCE_MS = 120
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -511,6 +517,11 @@ class ImpositionPageList(QWidget):
         self._grab_dy = 0                     # 光标到卡片顶缘的抓取偏移
         self._drag_x = 0                      # 拖动横坐标（只上下拖，不横移）
         self._committing = False              # 松手落位动画进行中
+        #: 待办的"把第几页滚进视口"（-1 = 没有）。布局还没跑时记下来补做，
+        #: 见 :meth:`ensure_visible` / :meth:`_apply_pending_visible`。
+        self._visible_pending = -1
+        #: 补做还剩几拍（布局一般一两拍就跑完，别无限重试）
+        self._visible_retries = 0
 
         # 滚不动时也不挤压右侧画布
         self.list_scroll = QScrollArea()
@@ -556,10 +567,28 @@ class ImpositionPageList(QWidget):
         self.select_bar.delete_requested.connect(self.batch_delete_requested)
         self.select_bar.hide()
 
+        # 可见范围变化的合并上报（滚动、窗口缩放、换任务清单都会触发）
+        self._viewport_timer = QTimer(self)
+        self._viewport_timer.setSingleShot(True)
+        self._viewport_timer.setInterval(self._VIEWPORT_DEBOUNCE_MS)
+        self._viewport_timer.timeout.connect(self.viewport_changed.emit)
+        self.list_scroll.verticalScrollBar().valueChanged.connect(
+            lambda *_: self._viewport_timer.start()
+        )
+        # 滚动条**范围**变了（条目增删/布局终于跑完）→ 有待办的当前页就补滚一次。
+        # ⚠️ 这是 `ensure_visible` 的兜底触发：刚 `set_pages` 出来的那几拍里
+        #    几何还是默认值（滚不动），等布局真正算完范围才会变——那时才知道
+        #    该滚到哪儿（见 ensure_visible 的说明）。
+        self.list_scroll.verticalScrollBar().rangeChanged.connect(
+            self._on_scroll_range_changed
+        )
+
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
         if self.select_bar.isVisible() and not self.select_bar._user_moved:
             self._place_select_bar()
+        # 窗口一高一矮，可见页数就变了：让宿主重算一次窗口
+        self._viewport_timer.start()
 
     def set_float_host(self, host) -> None:
         """把悬浮框的宿主换成外部装配层（拼版视图整体）。
@@ -575,13 +604,34 @@ class ImpositionPageList(QWidget):
     def entries(self) -> list[_PageEntry]:
         return list(self._entries)
 
+    def release_thumbs(self) -> None:
+        """丢掉每条已贴的缩略图位图（页码/副标题/勾选/当前页都不动）。
+
+        离开「图片拼版」步骤时调：一本 2000 页的书左列贴着的位图是几百 MB。
+        回来时 ``set_pages`` 重建条目、宿主按缩略图管理者重新读盘贴回。
+        """
+        for entry in self._entries:
+            entry.set_thumb(None)
+
     def set_pages(self, captions: list[str], current: int = -1) -> None:
         """按页数重建清单（``captions[i]`` 是第 i 页的副标题）。
 
         勾选集合**按副标题跨重建保留**：拖动排序/加页不丢勾选；页被删掉
         （副标题不在了）自然落选——批量删除自己就是靠这次重建清空的。
+
+        ⚠️ **清单没变就只切当前页、不重建条目**（2026-11-21）：离开再回到
+        拼版步骤时宿主每次都调这里（``_refresh_imposition_view``），而一本
+        91 页的书重建 91 个 ``_PageEntry``（各自带 QLabel/QCheckBox/缩略图）
+        纯属白费——位图已经在离开时释放，条目对象没必要跟着换一遍。
         """
         self._cancel_drag()
+        captions = list(captions)
+        if captions == [entry.caption for entry in self._entries]:
+            self.set_current(current)
+            self._update_select_bar()
+            if 0 <= current < len(self._entries):
+                self.ensure_visible(current)
+            return
         keep_checked = {e.caption for e in self._entries if e.is_checked()}
         for entry in self._entries:
             self.list_box.removeWidget(entry)
@@ -601,6 +651,141 @@ class ImpositionPageList(QWidget):
             self._entries.append(entry)
         self.set_current(current)
         self._update_select_bar()
+        # 重建后当前页多半落在视口外（滚到第 20 页改一下版面就必然如此），
+        # 必须把它滚进来——否则用户只看到清单回到顶部、正在编辑的那页不见
+        # （用户 2026-11-21 报的正是这个）。布局还没跑，ensure_visible 自己会
+        # 下一拍补做，见其说明。
+        if 0 <= current < len(self._entries):
+            self.ensure_visible(current)
+        # 清单重建后可见范围必然变了（页数/顺序/滚动位置都可能不同）。延到
+        # 下一拍：那时布局才把条目几何算出来，否则取到的是全 0 的旧几何。
+        QTimer.singleShot(0, self._viewport_timer.start)
+
+    def ensure_visible(self, index: int) -> None:
+        """把第 ``index`` 页滚进视口（当前页切换 / 清单重建后都要走这里）。
+
+        只在那一页**完全看不见**时才滚（滚动条位置按"整条刚露出来"算），
+        已经在视口里就一点不动——键盘翻页时左列跟着走，但不会因为切页把
+        用户手动滚好的位置顶掉。
+
+        ⚠️ **布局还没跑时必须补做**（用户 2026-11-21 报「方向键翻到超出可视
+        范围的那页，左列不跟着滚、那一页根本看不见」）：``set_pages`` 重建
+        条目后的**那一拍**里，条目几何还是 QWidget 默认值（高 30px、滚动条
+        max 还是 0）——照几何算出来"已经在视口里"或"滚不动"，于是什么都不做；
+        等布局算完范围变了也没人再问一次，当前页就永远停在视口外。现在的做法：
+        记进 ``_visible_pending``，由 :meth:`_apply_pending_visible` 在下一拍
+        补做，另有滚动条 ``rangeChanged`` 兜底（见 ``__init__``）。
+        """
+        if not (0 <= index < len(self._entries)):
+            self._visible_pending = -1
+            return
+        self._visible_pending = index
+        self._visible_retries = self._VISIBLE_RETRIES
+        self._apply_pending_visible()
+
+    #: 布局没跑完时最多补做几拍。实测（离屏 40 页）布局要约 4 拍才把滚动条
+    #: 范围算全，这里给到 8 拍；再多就是真滚不动了（条目少 / 视口还没显示）。
+    _VISIBLE_RETRIES = 8
+
+    def _entry_laid_out(self, index: int) -> bool:
+        """第 ``index`` 条的几何是否已经由布局算出来。
+
+        判据是"实际高度已经长到 sizeHint 高度"：本清单的条目由
+        ``QVBoxLayout`` 按 sizeHint 摆，布局没跑时高度停在 QWidget 的默认值
+        （30px，比 sizeHint 的 ~156px 小）。⚠️ 不用"滚动条 max > 0"当判据：
+        条目少到不用滚时 max 本来就是 0，那是**正常**状态，不是没布局。
+        """
+        if not (0 <= index < len(self._entries)):
+            return False
+        entry = self._entries[index]
+        hint = entry.sizeHint().height()
+        return entry.height() > 0 and entry.height() >= max(1, hint)
+
+    def _on_scroll_range_changed(self, *_args) -> None:
+        """滚动条范围变了：有待办的当前页就补滚一次（布局终于算完了）。"""
+        if self._visible_pending >= 0:
+            self._apply_pending_visible()
+
+    def _apply_pending_visible(self) -> None:
+        """按待办把当前页滚进视口；布局还没就绪时下一拍再来（有次数上限）。
+
+        ⚠️ **滚完不等于做完**：滚动条范围/视口高度在接下来一两拍里还可能变
+        （``set_pages`` 刚重建完，配套的提示行、外层布局也在同时定型——实测
+        视口从 547 掉到 533，前一拍"刚好放下"的条目就又被切掉 14px）。所以
+        只要这一拍**动过滚动条**就留待办、下一拍复核，直到"确实整条都看得见"
+        才收工。
+        """
+        index = self._visible_pending
+        if not (0 <= index < len(self._entries)):
+            self._visible_pending = -1
+            return
+        viewport = self.list_scroll.viewport()
+        if (
+            viewport is None
+            or viewport.height() <= 0
+            or not self._entry_laid_out(index)
+        ):
+            self._retry_pending_visible()
+            return
+        entry = self._entries[index]
+        bar = self.list_scroll.verticalScrollBar()
+        top = entry.mapTo(viewport, QPoint(0, 0)).y()
+        bottom = top + entry.height()
+        if top >= 0 and bottom <= viewport.height():
+            self._visible_pending = -1  # 整条都在视口里：收工
+            return
+        if top < 0:
+            bar.setValue(max(bar.minimum(), bar.value() + top - T.SPACE_SM))
+        else:
+            bar.setValue(
+                min(bar.maximum(), bar.value() + bottom - viewport.height()
+                    + T.SPACE_SM)
+            )
+        self._retry_pending_visible()  # 下一拍复核（范围可能还没算全）
+
+    def _retry_pending_visible(self) -> None:
+        """待办还没做成：下一拍再试（次数用完就作废，别留个永不结束的定时器）。"""
+        if self._visible_retries > 0:
+            self._visible_retries -= 1
+            QTimer.singleShot(0, self._apply_pending_visible)
+            return
+        self._visible_pending = -1
+
+    def visible_index_range(self, margin: int = 3) -> tuple[int, int] | None:
+        """左列**当前看得见**的页号闭区间（上下各多算 ``margin`` 条余量）。
+
+        宿主的缩略图生成按这个范围筛（只给看得见的页生成实体）。只有
+        **还没有条目**（空清单）才给 ``None``——调用方据此退化成"不筛"。
+
+        ⚠️ **布局还没跑时要给"第一屏"而不是整列**（2026-11-21 实测坑）：刚
+        ``set_pages`` 出来的条目几何全是同一个默认值（都叠在 0 处），照几何
+        判"看得见"会把**整列 30 页**都算进窗口——首屏照样一次排满，改法就白
+        做了。判据是"条目高度还是 0"或"多个条目纵向位置完全一样"，那时一律
+        返回 ``0 .. margin*2+1``（宁可多生成一屏，也不排整本）；真正的范围
+        等布局完成后由 ``viewport_changed`` 再报一次。视口高度为 0（页面从没
+        显示过）同样按第一屏处理——"算不出来"绝不等于"整本都要"。
+        """
+        if not self._entries:
+            return None
+        first_screen = (0, min(len(self._entries) - 1, margin * 2 + 1))
+        viewport = self.list_scroll.viewport()
+        if viewport is None or viewport.height() <= 0:
+            return first_screen
+        tops = [entry.mapTo(viewport, QPoint(0, 0)).y() for entry in self._entries]
+        if any(entry.height() <= 0 for entry in self._entries):
+            return first_screen  # 还没布局：条目高度都没算出来
+        if len(tops) > 1 and len(set(tops)) == 1:
+            return first_screen  # 还没布局：条目全叠在同一个 y 上
+        bottom_limit = viewport.height()
+        hits = [
+            index for index, top in enumerate(tops)
+            if top + self._entries[index].height() >= 0 and top <= bottom_limit
+        ]
+        if not hits:
+            return first_screen
+        first = max(0, hits[0] - margin)
+        last = min(len(self._entries) - 1, hits[-1] + margin)
+        return (first, last)
 
     def set_current(self, index: int) -> None:
         """高亮当前页（-1 = 无页）。"""

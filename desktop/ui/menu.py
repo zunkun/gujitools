@@ -1461,7 +1461,11 @@ class UpdateController(QObject):
                 "close_fds": True,
             }
             if sys.platform == "win32":
-                kwargs["creationflags"] = 0x00000008 | 0x00000200
+                # ⚠️ 必须**脱离本进程的作业**（见 utils/proc_job.py）：本进程
+                #    退出时作业会把成员进程一并终止，安装器得活下来继续装。
+                from utils.proc_job import detached_creationflags
+
+                kwargs["creationflags"] = detached_creationflags()
             else:
                 kwargs["start_new_session"] = True
             subprocess.Popen([str(path)], **kwargs)

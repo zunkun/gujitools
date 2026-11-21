@@ -251,7 +251,16 @@ class ImpositionModulePage(ModulePage):
         self.view.locate_failed.connect(
             lambda message: self.toast("warning", "定位图片资源", message)
         )
+        # 左列滚到新的位置：按新窗口补生成缩略图（只生成看得见的那几页，
+        # 与任务流程拼版步骤同一套口径，见 page_thumb.PageThumbManager）
+        self.view.viewport_changed.connect(self._on_viewport_changed)
         return self.view
+
+    def _on_viewport_changed(self) -> None:
+        """左列可见范围变了：让缩略图管理者按新窗口补一批。"""
+        manager = getattr(self, "_page_thumb_mgr", None)
+        if manager is not None:
+            manager.refresh_window()
 
     # ------------------------------------------------------------------ 控制
     def _build_control(self) -> Card:
@@ -1289,9 +1298,12 @@ class ImpositionModulePage(ModulePage):
             manager = PageThumbManager(
                 page_thumbs_dir(_SPEC.disk_key()), THUMB_EDGE,
                 self.run_worker, parent=self,
+                # 只生成左列看得见的那几页（同任务流程拼版页；2026-11-21）
+                window_provider=self.view.visible_page_range,
             )
             manager.page_ready.connect(self._on_page_thumb_ready)
             self._page_thumb_mgr = manager
+        manager.set_window_provider(self.view.visible_page_range)
         return manager
 
     def _on_page_thumb_ready(self, index: int, pixmap) -> None:
@@ -1376,6 +1388,22 @@ class ImpositionModulePage(ModulePage):
             label.setText(
                 f"{cn_page_label(index)}　·　右「{stems[0]}」　左「{stems[1]}」"
             )
+
+    # ------------------------------------------------------ 离开/回来（内存）
+    def release_buffers(self) -> None:
+        """离开本页：画布两张大图 + 左列缩略图 + 缩略图实体管理者的内存位图。
+
+        基类只清 ``view`` 自己那份（画布与左列条目），这里再补管理者那张
+        ``_pix`` 表——它挂在**页面**上，不在 view 里。
+        """
+        super().release_buffers()
+        manager = getattr(self, "_page_thumb_mgr", None)
+        if manager is not None:
+            manager.release_pixmaps()
+
+    def restore_buffers(self) -> None:
+        """回来：按磁盘上的文档整条重灌（画布 + 左列缩略图 + 面板状态）。"""
+        self._refresh_view()
 
     # ------------------------------------------------------------------ 收尾
     def shutdown_workers(self) -> None:

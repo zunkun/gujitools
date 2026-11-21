@@ -877,6 +877,10 @@ class DetailViewMixin:
         self.imposition_view.locate_failed.connect(
             lambda message: self._toast("warning", "定位图片资源", message)
         )
+        # 左列滚到新的位置：按新窗口补生成缩略图（只生成看得见的那几页）
+        self.imposition_view.viewport_changed.connect(
+            self._on_imposition_viewport_changed
+        )
         card.box.addWidget(self.imposition_view)
         return card
 

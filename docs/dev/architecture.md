@@ -116,6 +116,19 @@ guji/
 - 缩略图键含文件大小（编辑换尺寸即换键）、边长进目录名——规则在
   `desktop/utils/files.py`，别在调用处自算。
 
+### 4.1 后台任务的两条硬约束
+
+1. **拼版页缩略图只生成"看得见的那几页"**（`components/imposition/page_thumb.py`
+   的 `PageThumbManager.set_window_provider` + `page_list.viewport_changed`）：
+   进入拼版页时只交当前可见窗口（±3 页）给 worker，窗口外的页留在队列里，
+   用户滚动/翻页时再补。**不要改回"整本一次排满"**——那会和整本成品合成抢
+   同一个进程的 GIL，实测把缩略图从 24ms/页 拖到 4~7 秒/页。
+2. **GUI 进程装在 Job Object 里**（`utils/proc_job.py`，`desktop/app.py::main`
+   开头装配）：本进程一退出（正常关、崩溃、被强杀），系统把子进程一并终止，
+   不留孤儿（现场踩过：崩溃后 9 个子进程、约 550MB 残留）。
+   ⚠️ 要**活过父进程**的子进程（更新安装器、设置里的「重启程序」）必须用
+   `proc_job.detached_creationflags()` 申请脱离作业，否则会被一起收走。
+
 ## 5. 测试地图
 
 - 运行器：`tests/gui_selftest.py`（offscreen），`--only` 选模块自动补依赖、
@@ -126,6 +139,8 @@ guji/
   - `selftests/step_ports.py` — BPM 端口：spec 声明的 inputs/outputs 与落点一致；
   - `selftests/imposition.py` — 拼版全链，含**缓存边界断言**（拼版缩略图必须写
     进 `tasks/<id>/thumbnails/imposition/`，不许借道 singletask）；
+  - `selftests/imposition_thumb_window.py` — 缩略图"只生成可见页"+ 合成让路；
+  - `selftests/proc_job.py` — 作业对象：父进程被硬杀后子进程必须跟着退出；
   - `selftests/params_spec.py` — 面板默认值单一来源。
 - CLI 侧契约：`tests/reporter_cli_parity.py` 等（改 progress 事件协议前先看它）。
 

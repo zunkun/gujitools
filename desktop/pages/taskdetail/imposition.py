@@ -623,6 +623,8 @@ class ImpositionBaseMixin:
         self.close_imposition_zoom_popup()
         self._imposition_dirty = False
         self._imposition_composing = False
+        # 「给可见页缩略图让路」的计时随任务清（旧任务的等待不该拖住新任务合成）
+        self._imposition_compose_deferred_at = None
         # 「上次落盘时的逐页签名」随任务清：新任务的版面与本任务无关，留着会让
         # "只重存变了的那几页"算错页（也会把本任务的成品误判成已最新）。
         # ⚠️ 真正的基线在**侧车文件**里（``drafts/imposition[~节点].composed.json``，

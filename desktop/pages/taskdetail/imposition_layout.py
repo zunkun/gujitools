@@ -24,6 +24,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, cast
 
@@ -100,6 +101,20 @@ THUMB_REFRESH_DEBOUNCE_MS = 2000
 #: 「生成PDF」前等后台拼版合成收敛的轮询间隔（ms）。轮询只查两个内存
 #: 布尔（在飞/待合成），100ms 足够跟手，事件循环里的开销可忽略。
 PRINT_WAIT_POLL_MS = 100
+#: 左列**可见页**缩略图正在生成时，全本合成让路的复查间隔（ms）。
+#:
+#: 为什么让路（2026-11-21 现场）：成品合成每页约 0.5s 且 PIL 编码期间攥着 GIL，
+#: 与缩略图 worker 同在一个进程里——实测缩略图从 24ms/页 被拖到 **4~7 秒/页**，
+#: 用户进拼版页后 5 分钟看不到图（还被当成"卡死"）。先让缩略图把可见页出完
+#: （十几页 × 几十毫秒），合成再跟上，视觉上是"一进去就有图"。
+COMPOSE_YIELD_TO_THUMBS_MS = 250
+#: 让路的上限（ms）。缩略图若一直有活干（用户持续滚动），也不能把合成饿死
+#: ——超过这个时长就照常合成，宁可慢一点也不误下游（第四步要读成品）。
+COMPOSE_YIELD_MAX_MS = 20000
+#: 值得让路的最小批次（页）。**只让"批量出首屏"**：拖版面之后单页重生成那
+#: 一笔很快，而且用户 2026-10-18 的硬指标是「松手 1 秒内看到成品更新」——
+#: 让单页批次也插队会把这条顶穿。
+COMPOSE_YIELD_MIN_PAGES = 3
 
 
 class ImpositionLayoutMixin:
@@ -641,7 +656,9 @@ class ImpositionLayoutMixin:
         self._imposition_dirty = True
         timer = getattr(self, "_imposition_timer", None)
         if timer is not None:
-            timer.start()
+            # ⚠️ 间隔**显式给**：让路那条路径会把它临时改成 250ms（见
+            # ``_defer_compose_for_thumbs``），不重设的话之后每轮防抖都被拖慢。
+            timer.start(COMPOSE_DEBOUNCE_MS)
         else:
             # 定时器还没建（视图未初始化）：直接同步兜底，别让改动悬着
             self._compose_imposition_now()
@@ -667,6 +684,9 @@ class ImpositionLayoutMixin:
         self._imposition_compose_doc_path: Path | None = None
         self._imposition_compose_doc_mtime: float | None = None
         self._imposition_composed_pages: list[int] = []
+        #: 本轮合成为了给**可见页缩略图**让路，从什么时候开始往后挪的
+        #: （``time.monotonic()``；None = 没在让）。见 ``_defer_compose_for_thumbs``。
+        self._imposition_compose_deferred_at: float | None = None
         # ⚠️ Mixin 本体是普通类，类型检查器看不到宿主（TaskDetailPage）是 QWidget，
         #    故把 self 收窄成 QWidget 再当 QTimer 的 parent 用；运行时是恒等。
         self._imposition_timer = QTimer(cast(QWidget, self))
@@ -738,6 +758,47 @@ class ImpositionLayoutMixin:
             if (page_signature(page) or "") != recorded.get(index, "")
         ]
 
+    def _defer_compose_for_thumbs(self) -> bool:
+        """可见页缩略图**批量**生成中 → 把这一轮合成往后挪，返回 True（已让路）。
+
+        两个 worker 同在一个进程里，成品合成每页约 0.5s 且 PIL 编码期间攥着
+        GIL——实测把缩略图从 24ms/页 拖到 4~7 秒/页（用户 2026-11-21 报
+        "拼版页 5 分钟没图"）。缩略图那一批小（只含可见页，十几页），让完
+        立刻轮到合成，总时长几乎不变，但用户是"一进去就有图"。
+
+        ⚠️ **只让批量批次**（:data:`COMPOSE_YIELD_MIN_PAGES`）：拖版面后单页
+           重生成那一笔很快，而"松手 1 秒内看到成品更新"是用户定的硬指标，
+           让单页批次插队会把它顶穿。
+        ⚠️ **force_full 不走这里**（点「生成PDF」前那条要的是"磁盘一定最新"，
+           用户已经在等结果，不能再往后挪）。
+        ⚠️ 有上限（:data:`COMPOSE_YIELD_MAX_MS`）：用户一直滚，缩略图就一直
+           有活，合成不能无限期饿着。
+        """
+        manager = getattr(self, "_page_thumb_mgr", None)
+        batch = getattr(manager, "window_batch_size", 0) if manager else 0
+        if batch < COMPOSE_YIELD_MIN_PAGES:
+            self._imposition_compose_deferred_at = None
+            return False
+        now = time.monotonic()
+        since = getattr(self, "_imposition_compose_deferred_at", None)
+        if since is None:
+            since = now
+            self._imposition_compose_deferred_at = since
+        elif (now - since) * 1000.0 >= COMPOSE_YIELD_MAX_MS:
+            # 让够了：照常合成（否则用户一直滚，第四步永远拿不到新成品）
+            self._imposition_compose_deferred_at = None
+            return False
+        # 改动还挂着：下一拍再看一眼（单飞/补轮机制原样保留）
+        self._imposition_dirty = True
+        timer = getattr(self, "_imposition_timer", None)
+        if timer is not None:
+            timer.start(COMPOSE_YIELD_TO_THUMBS_MS)
+        else:
+            QTimer.singleShot(
+                COMPOSE_YIELD_TO_THUMBS_MS, self._compose_imposition_async
+            )
+        return True
+
     def _compose_imposition_async(self, force_full: bool = False) -> None:
         """后台合成（不阻塞界面）：拖动版面时会被反复触发。
 
@@ -750,6 +811,10 @@ class ImpositionLayoutMixin:
             return
         if self._imposition_composing:
             return  # 上一批还在跑；跑完会看 _imposition_dirty 再补一次
+        # 首屏优先：可见页缩略图没出完就先别抢 GIL（见 _defer_compose_for_thumbs）
+        if not force_full and self._defer_compose_for_thumbs():
+            return
+        self._imposition_compose_deferred_at = None
         doc = self._imposition_doc()
         out_dir = self._imposition_output_dir()
         only = None if force_full else self._stale_imposition_pages()
@@ -871,7 +936,8 @@ class ImpositionLayoutMixin:
         self._imposition_composing = False
         self._record_composed_pages()
         if self._imposition_dirty:
-            self._imposition_timer.start()
+            # 间隔显式给（让路路径改过它，见 _schedule_imposition_compose）
+            self._imposition_timer.start(COMPOSE_DEBOUNCE_MS)
             return
         self._refresh_print_source()
 

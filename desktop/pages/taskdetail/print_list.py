@@ -6,6 +6,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, cast
 
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QDialog, QFileDialog, QWidget
 
 from desktop.services.print_plan import (
@@ -31,6 +32,26 @@ def _parent(page) -> "QWidget":
     return cast(QWidget, page)
 
 
+def _file_stamp(path: Path) -> tuple[int, int] | None:
+    """文件的 ``(mtime_ns, 字节数)``：缩略图路径记忆的失效判据。读不到给 ``None``。
+
+    与 ``thumb_cache_worker`` 的有效性判据同源（那套判"缓存不旧于源图"），
+    这里只判"源图还是不是刚才那张"——源图被上游覆盖（拼版重合成、编辑器
+    回写）后 mtime/大小必变 ⇒ 记忆自动作废，重新查一遍缓存。
+    """
+    try:
+        info = path.stat()
+    except OSError:
+        return None
+    return (info.st_mtime_ns, info.st_size)
+
+
+#: 「进入第四步」之后多久补生成待打印缩略图（毫秒）。
+#: 见 :meth:`PrintListMixin._schedule_print_thumbs_warm`：这笔活只服务
+#: 「管理图片」弹窗，不该记在"进页面"的账上。
+PRINT_WARM_DELAY_MS = 200
+
+
 class PrintListMixin:
     """依赖宿主页面提供的属性：store/task_id、print_preview、log_view、
     _toast()。"""
@@ -54,6 +75,11 @@ class PrintListMixin:
         _stage_input_visible: Callable[[], bool]
         # 本 Mixin 内部在多个方法间传递的快照（_print_entries 写、落盘读）
         _print_doc_snapshot: dict[str, Any]
+        #: 缩略图路径记忆：``{图路径: ((mtime_ns, 大小), 缓存路径|None)}``。
+        #: 切任务清空（见 ``TaskDetailPage.set_task``）；源图变了自动作废。
+        _print_thumb_paths: dict[str, tuple[tuple[int, int], Any]]
+        #: 待补生成的缩略图（等 ``PRINT_WARM_DELAY_MS`` 之后再派发）
+        _print_warm_pending: list[str]
 
     def _print_thumb_provider(self, file_text: str):
         """第四步缩略条的小图来源：一律给**已生成的小图**，不现解码原图。
@@ -72,15 +98,34 @@ class PrintListMixin:
         规则，见 :func:`desktop.steps.ports.node_scope_from_output_dir`）——比按
         界面当前节点取更准：第四步消费的是**上游那个**节点交的图，未必是当前选中
         的节点。
+
+        ⚠️⚠️ **结果按 (路径, 大小+mtime) 记住**（``_print_thumb_paths``）：同一页
+        在一次进页面里会被问**两遍**——``_warm_print_thumbs`` 一遍、缩略图条
+        ``_load_page_thumbs`` 一遍（用户 2026-11-21 报「任务 0032 点进详情有些
+        慢」的根因：343 页 × 2 遍 × 每遍 2 次 ``book_key``＋3 次 ``stat``）。
+        命中记忆时只付 **1 次 stat**；源图被覆盖（mtime/大小变）自然落回重算，
+        切任务时整份清掉（见 ``TaskDetailPage.set_task``）。
         """
         if not self.task_id:
             return None
+        page = Path(file_text)
+        memo = self.__dict__.setdefault("_print_thumb_paths", {})
+        stamp = _file_stamp(page)
+        if stamp is not None:
+            hit = memo.get(file_text)
+            if hit is not None and hit[0] == stamp:
+                return hit[1]
+
+        def _remember(value):
+            if stamp is not None:
+                memo[file_text] = (stamp, value)
+            return value
+
         try:
-            page = Path(file_text)
             # 入口图片的预生成小图优先（按图键缓存，命中即用）
             entry = self.store.entry_thumb_path(self.task_id, page)
             if entry is not None:
-                return entry
+                return _remember(entry)
         except (OSError, ValueError):
             return None
         from desktop.steps.ports import node_scope_from_output_dir
@@ -102,7 +147,7 @@ class PrintListMixin:
                     and thumb.stat().st_mtime >= page.stat().st_mtime
                     and thumb.stat().st_size >= 512
                 ):
-                    return thumb
+                    return _remember(thumb)
             except OSError:
                 return None
         # PDF排版统一缓存（拼版成品 / 手动插入图 / 其它来源）
@@ -117,10 +162,43 @@ class PrintListMixin:
                 / f"{book_key(page)}.jpg"
             )
             if cache_usable(manage, stat_mtime(page)):
-                return manage
+                return _remember(manage)
         except (OSError, ValueError):
             return None
-        return None
+        return _remember(None)
+
+    def _schedule_print_thumbs_warm(self, files) -> None:
+        """把"补生成待打印缩略图"**推迟到首帧之后**（``PRINT_WARM_DELAY_MS``）。
+
+        为什么不在 ``_print_entries`` 里直接调 :meth:`_warm_print_thumbs`：
+        那次调用要对**全部**待打印图逐条查一遍缩略图缓存（一本 343 页的书
+        = 343 次路径查询，实测 ~470ms），而它服务的是「管理图片」弹窗——
+        用户此刻还没点开，先让列表上屏才对（用户 2026-11-21：「点任务进详情
+        有些慢」）。
+
+        ⚠️ 「管理图片 / 插入图片」两个入口仍**同步**调 ``_warm_print_thumbs``：
+        它们紧接着就要用缓存，等定时器就来不及了（见各自调用处）。
+
+        ⚠️ 待办表是**合并覆盖**而不是累加：连续两次刷新（比如刚进来又改了参数）
+        只按最新那份清单派发，不会把上一份里已删除的图又生成一遍。
+        """
+        self._print_warm_pending = [
+            str(item or "") for item in (files or ()) if str(item or "").strip()
+        ]
+        timer = self.__dict__.get("_print_warm_timer")
+        if timer is None:
+            timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.timeout.connect(self._run_print_thumbs_warm)
+            self._print_warm_timer = timer
+        timer.start(PRINT_WARM_DELAY_MS)
+
+    def _run_print_thumbs_warm(self) -> None:
+        """定时器到期：真正去查缓存、缺什么生成什么（用户在界面里了）。"""
+        files = self.__dict__.pop("_print_warm_pending", None) or []
+        if not files or not self.task_id:
+            return
+        self._warm_print_thumbs(files)
 
     def _warm_print_thumbs(self, files) -> None:
         """PDF排版缩略图**后台预生成**到 ``thumbnails/print_manage/``。
@@ -131,6 +209,10 @@ class PrintListMixin:
 
         ⚠️ 与 ``_warm_entry_thumbs`` 同样按 ``(路径, mtime)`` 记账：读不出来的
         坏图永远写不出缓存，不记账会在每次刷新时反复派发同一批。
+
+        ⚠️ **进页面那条路不要直接调它，走** :meth:`_schedule_print_thumbs_warm`：
+        本方法要对**全部**待打印图逐条查一遍缓存（343 页 = 343 次路径查询），
+        直接放在 ``_print_entries`` 里就把这笔钱记在"进页面"账上了。
         """
         if not self.task_id:
             return
@@ -193,9 +275,14 @@ class PrintListMixin:
         )
 
     def _on_print_thumb_ready(self, owner_task: str, path: str) -> None:
-        """一张缩略图生成好：管理弹窗正开着就就地换掉那一格。"""
+        """一张缩略图生成好：管理弹窗正开着就就地换掉那一格。
+
+        ⚠️ 同时把这张图的**路径记忆**丢掉：记忆里可能还压着"没有小图"（``None``），
+        不丢的话缩略图条下次刷新仍按原图解码（用户看不到刚生成的小图）。
+        """
         if owner_task != self.task_id:
             return
+        self.__dict__.get("_print_thumb_paths", {}).pop(str(path), None)
         panel = getattr(self, "_manage_panel", None)
         if panel is not None and panel.isVisible():
             panel.refresh_thumb(str(path))
@@ -204,6 +291,8 @@ class PrintListMixin:
         """整批缩略图生成完：管理弹窗还开着就整体刷一遍（此时都命中缓存）。"""
         if owner_task != self.task_id:
             return
+        # 整批落盘 ⇒ 整份路径记忆作废（否则那批 None 会一直压着）
+        self.__dict__.get("_print_thumb_paths", {}).clear()
         panel = getattr(self, "_manage_panel", None)
         if panel is not None and panel.isVisible():
             panel.refresh_thumbs()
@@ -339,9 +428,10 @@ class PrintListMixin:
             new_doc["rembg_snapshot"]
         ):
             self.store.save_print_doc(task_id, new_doc, **self._node_scope())
-        # 管理弹窗/删除恢复页签要的缩略图：进入本步就后台备好（拼版成品、
-        # 手动插入图没有第三步的预生成缓存）。
-        self._warm_print_thumbs(
+        # 管理弹窗/删除恢复页签要的缩略图：**推后**在首帧之后后台备好（拼版成品、
+        # 手动插入图没有第三步的预生成缓存）。⚠️ 不能在这里同步做——那是 343 次
+        # 逐条查缓存，全落在"进页面"这一拍上（见 _schedule_print_thumbs_warm）。
+        self._schedule_print_thumbs_warm(
             [str(e.get("file") or "") for e in entries]
             + [str(p.get("file") or "") for p in (new_doc.get("deleted_pages") or [])]
         )

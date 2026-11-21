@@ -271,8 +271,17 @@ class ImageView(
 
 
     def clear_image(self, text: str = "无预览") -> None:
-        """清空图片与全部框（含参考框），显示占位文案。"""
+        """清空图片与全部框（含参考框），显示占位文案。
+
+        ⚠️ ``_scaled_base`` 必须一起丢：它是按 ``_pixmap_version`` 缓存的那张
+        SmoothTransformation 底图（3000px 源图缩到画布约 37MB）。只清
+        ``_pixmap`` 的话，离开步骤后这张降采样图仍被这个缓存攥着，等于
+        "以为释放了、其实没释放"（离屏自测里也看不出来：内存涨在 QPixmap
+        里的隐式共享上）。
+        """
         self._pixmap = None
+        self._scaled_base = None
+        self._scaled_key = None
         self._boxes = []
         self._full_mode = False
         self._reference_boxes = []

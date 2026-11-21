@@ -16,6 +16,8 @@
 - `margin_utils`: 边距 CSS 简写标准化（单/两/三/四值 → [上,右,下,左]）。
 - `transparent_png`: 白底 → 透明底的 PNG 编码（第三步提交产物专用，自带最省形态选择）。
 - `compact_png`: 任意 RGBA/RGB/灰度数组 → **最省形态** PNG（逐像素无损，实体图回写用）。
+- `exif_clean`: 剥掉图片的 EXIF 方向标签（像素原样）——自己落盘的页面图一律不带方向语义。
+- `proc_job`: Windows 作业对象——本进程一退出（含崩溃）就带走全部子进程，不留孤儿。
 - `help`: man 风格帮助文本加载与分页显示。
 
 `color_utils` 与 `margin_utils` 位于最低层，供 core 与 functions 共用，

@@ -651,5 +651,13 @@ class SubmitMixin:
 
     def _show_submit_hint(self, text: str, color: str) -> None:
         self.submit_hint.setText(text)
-        self.submit_hint.setStyleSheet(f"color:{color}; font-weight:bold;")
+        # ⚠️ **颜色没变就别重复 setStyleSheet**（2026-11-21「内存越用越大」）：
+        #    qfluentwidgets 的 StyleSheetManager 每调一次就给控件挂一对 watcher
+        #    （CustomStyleSheetWatcher / DirtyStyleSheetWatcher），同一个控件被
+        #    反复设置，旧的 watcher 不会解绑——切步骤每次都走这里，实测每轮多
+        #    出上百个 watcher，且永不回落。
+        wanted = f"color:{color}; font-weight:bold;"
+        if getattr(self, "_submit_hint_qss", None) != wanted:
+            self._submit_hint_qss = wanted
+            self.submit_hint.setStyleSheet(wanted)
         self.submit_hint.show()

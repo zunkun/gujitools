@@ -89,6 +89,8 @@ class ModulePage(QWidget, WorkerHost):
     def __init__(self, parent=None):
         """组装骨架：页头 → 整幅输入区（可选）→ 左右分栏 → 状态行。"""
         super().__init__(parent)
+        #: 离开本页时是否释放过预览位图（``showEvent`` 据此决定要不要重装）
+        self._buffers_released = False
         self._init_worker_host()
         root = QVBoxLayout(self)
         root.setContentsMargins(T.SPACE_XL, T.SPACE_LG, T.SPACE_XL, T.SPACE_LG)
@@ -194,6 +196,45 @@ class ModulePage(QWidget, WorkerHost):
     def workspace_shown(self) -> bool:
         """操作界面当前是否显示（自测与截图脚本用）。"""
         return self._workspace_shown
+
+    # ---------------------------------------------------------- 离开/回来（内存）
+    def release_buffers(self) -> None:
+        """离开本页：丢掉预览控件里**可重建的位图**（用户 2026-11-21）。
+
+        独立功能页是**常驻实例**（切走不销毁，下次还要用），但预览区的大图
+        与整条缩略图位图留着的唯一意义是"下次回来快一点"；一本古书动辄几十
+        上百 MB，留着就是"越用越大"。回来由 :meth:`showEvent` 按原清单重装。
+
+        ⚠️ 控件属性名按惯例是 ``viewer``（步骤页）或 ``view``（拼版页）——
+        这里两个都探，子类不必为了释放改名。这是**能力探测**，不是取业务
+        数据，和"禁 getattr 探测 LazyPanelHost"那条纪律无关。
+        """
+        self._buffers_released = True
+        for attr in ("viewer", "view"):
+            widget = getattr(self, attr, None)
+            release = getattr(widget, "release_buffers", None)
+            if callable(release):
+                release()
+
+    def restore_buffers(self) -> None:
+        """重新装回预览位图（控件未释放时是空操作）。子类可覆写补自己的活。"""
+        for attr in ("viewer", "view"):
+            widget = getattr(self, attr, None)
+            restore = getattr(widget, "restore_buffers", None)
+            if callable(restore):
+                restore()
+
+    def showEvent(self, event) -> None:  # noqa: N802 - Qt 命名
+        """页面重新显示：把切走时释放掉的位图按原清单装回来。
+
+        ⚠️ 只在**确实释放过**时才重装：首次显示也走 ``showEvent``，那时
+        什么都没有可装，白跑一遍 ``_refresh_*`` 会多做一次整页刷新。
+        """
+        super().showEvent(event)
+        if not self._buffers_released:
+            return
+        self._buffers_released = False
+        self.restore_buffers()
 
     def _build_header(self) -> QWidget:
         """页头：标题 + 副标题 + 右侧操作区（``self.header.actions`` 加按钮）。"""

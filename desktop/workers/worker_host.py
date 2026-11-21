@@ -79,6 +79,14 @@ def _prune_detached_threads() -> None:
     _DETACHED_THREADS[:] = alive
 
 
+def _thread_running(thread: QThread) -> bool:
+    """线程是否还在跑；C++ 对象已被回收时按"没在跑"处理（不抛 RuntimeError）。"""
+    try:
+        return thread.isRunning()
+    except RuntimeError:
+        return False
+
+
 def stop_thread(thread: QThread, timeout_ms: int, label: str) -> bool:
     """请线程收手并最多等 `timeout_ms`；等不到就**摘下来别让它被销毁**。
 
@@ -93,7 +101,7 @@ def stop_thread(thread: QThread, timeout_ms: int, label: str) -> bool:
         （用户看到的是"关程序时崩一下"）。等不到时的正确做法不是假装成功，
         而是把线程从父对象上摘下来、由模块级列表持有引用，让它自然跑完。
     """
-    if thread is None or not thread.isRunning():
+    if thread is None or not _thread_running(thread):
         return True
     thread.quit()
     if thread.wait(timeout_ms):
@@ -124,7 +132,13 @@ class WorkerHost:
         启动一次性 worker 线程并登记引用以便回收。
 
         factory() 负责造 worker，wire(worker, thread) 负责连信号；线程结束后
-        worker 自动 deleteLater 并移出引用表，避免长会话下线程对象堆积。
+        worker **与 QThread 对象本身**都回收，避免长会话下线程对象堆积。
+
+        ⚠️⚠️ **必须回收 QThread 本身**（2026-11-21 实测「内存越用越大」）：
+        它的 parent 是本宿主（长寿命的 viewer / 详情页），只从 ``_threads``
+        里移除**不会**析构 C++ 对象——parent 仍持有它。于是每翻一页、每批
+        缩略图就永久留下一个 QThread（实测约 0.25MB/次），一本千页书滚一遍
+        就是几百 MB，返回列表也不回落。
         """
         thread = QThread(cast(QObject, self))
         worker = factory()
@@ -132,16 +146,19 @@ class WorkerHost:
         thread.started.connect(worker.run)
         wire(worker, thread)
         thread.finished.connect(worker.deleteLater)
-        # thread.finished 由 worker 线程发出 → 排队回主线程再改引用表
+        # thread.finished 由 worker 线程发出 → 排队回主线程再改引用表。
+        # ⚠️ 必须把 thread 传给 connect_queued：让中继对象随线程结束一起
+        #    回收，否则每起一个 worker 就多一个永驻的 _SlotRelay。
         connect_queued(self, thread.finished,
-                       lambda *_: self._forget_worker(worker, thread))
-        self._threads = [t for t in self._threads if t.isRunning()]
+                       lambda *_: self._forget_worker(worker, thread), thread)
+        self._threads = [t for t in self._threads if _thread_running(t)]
         self._threads.append(thread)
         # 持有引用，避免 worker 在线程启动前被垃圾回收
         self._workers.append(worker)
         thread.start()
 
     def _forget_worker(self, worker: QObject, thread: QThread) -> None:
+        """线程结束（已在主线程）：移出引用表，并**销毁 QThread 对象本身**。"""
         for container in (self._workers, self._threads):
             # 两个容器的元素类型不同（QObject / QThread），统一按 QObject 容器操作
             box = cast(list[QObject], container)
@@ -149,6 +166,12 @@ class WorkerHost:
                 box.remove(worker)
             if thread in box:
                 box.remove(thread)
+        # 线程已结束 ⇒ 此刻销毁是安全的（运行中析构会让 Qt abort，那条路走
+        # stop_thread：摘出父对象、留着引用等它自然跑完）。
+        try:
+            thread.deleteLater()
+        except RuntimeError:  # C++ 侧已销毁
+            pass
 
     def shutdown_workers(self) -> None:
         """退出并等待所有后台线程，随后清空引用表。

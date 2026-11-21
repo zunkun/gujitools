@@ -4,7 +4,7 @@
 
 通用工具函数：几何、排序、图像 IO、PDF、YOLO
 
-覆盖 29 个模块、24 个公开类、208 个公开函数/方法（生成于 2026-11-18）。
+覆盖 31 个模块、24 个公开类、215 个公开函数/方法（生成于 2026-11-21）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -20,6 +20,7 @@
 | [`utils.compact_png`](#utilscompact_png) | 0 | 3 |
 | [`utils.data_package`](#utilsdata_package) | 1 | 24 |
 | [`utils.download`](#utilsdownload) | 1 | 1 |
+| [`utils.exif_clean`](#utilsexif_clean) | 0 | 2 |
 | [`utils.file_utils`](#utilsfile_utils) | 0 | 5 |
 | [`utils.font_scan`](#utilsfont_scan) | 0 | 4 |
 | [`utils.font_setup`](#utilsfont_setup) | 3 | 11 |
@@ -33,6 +34,7 @@
 | [`utils.pdf_draw`](#utilspdf_draw) | 1 | 9 |
 | [`utils.pdf_extract`](#utilspdf_extract) | 0 | 13 |
 | [`utils.pdf_stream`](#utilspdf_stream) | 1 | 2 |
+| [`utils.proc_job`](#utilsproc_job) | 0 | 5 |
 | [`utils.proc_utils`](#utilsproc_utils) | 0 | 1 |
 | [`utils.rembg_algorithms`](#utilsrembg_algorithms) | 10 | 14 |
 | [`utils.sort_utils`](#utilssort_utils) | 0 | 1 |
@@ -1259,6 +1261,62 @@ sha256（不符就删掉、报错、**不切换**）→ 写 sidecar（= 启用�
 ⚠️ 失败/取消**一定删掉 ``target``**（半截文件绝不能留下）。
 
 异常：:class:`DownloadCancelled`、``urllib`` 的错误、``OSError``。
+
+---
+
+## `utils.exif_clean`
+
+源码：[`utils/exif_clean.py`](../../utils/exif_clean.py)
+
+剥掉图片里的 **EXIF 方向语义**（保留像素原样）。
+
+为什么需要（用户 2026-11-20 报「图片去底色后整本书全倒过来了」）：
+
+扫描 PDF 的内嵌 JPEG 常残留 ``EXIF Orientation``（274）标签，而 **PDF 渲染
+并不看 EXIF**——PDF 里看到的方向就是**像素原样**。提取走 quick 直拷时若把
+标签一起写到产物上，下游各消费端对它的处理并不一致：
+
+- 去底色 / 生成 PDF（PIL）与检测（``cv2.imdecode``）**会按标签再转一次**；
+- Qt（``QImage`` / ``QImageReader``，``autoTransform`` 默认 False）**不转**。
+
+于是同一张图在预览里是正的、在去底色成品里是倒的（整本 180° 或整页横躺），
+拼版按 ``-l``/``-r`` 的名字配对时左右身份也跟着互换，表现为"整本书倒过来、
+只能从最后一页开始拼"。
+
+约定：**凡本程序自己落盘的页面图，一律不带方向标签**——像素以 PDF 所见为准，
+下游谁都不必再猜。用户直接放进来的素材不在此列（那是他自己的文件）。
+
+本模块只做字节级搬移，**不解码像素**；没有方向标签时原样返回同一份字节对象
+（quick 直拷的"零解码零重编码"契约因此不受影响）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| _JPEG_EXIF_MARK | `b'Exif\\x00\\x00'` |
+| _PNG_SIGNATURE | `b'\\x89PNG\\r\\n\\x1a\\n'` |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `strip_orientation(data: bytes) -> bytes` | 返回**不带 EXIF 方向标签**的图片字节（像素逐位不变）。 |
+| `read_orientation(data: Optional[bytes]) -> int` | 图片字节的 EXIF 方向标签（274），无标签返回 1。供自测/诊断使用。 |
+
+#### `strip_orientation(data: bytes) -> bytes`
+
+返回**不带 EXIF 方向标签**的图片字节（像素逐位不变）。
+
+参数:
+    data: 完整图片字节（JPEG / PNG）。
+
+返回:
+    去掉方向标签后的字节；**没有标签或格式不认识时原样返回入参对象**，
+    调用方可据此直接走"零拷贝直写"。
+
+说明:
+    只在方向标签存在且不为 1 时动手——``Orientation=1``（正向）的 EXIF
+    段保留，避免无意义地改写文件。
 
 ---
 
@@ -2763,6 +2821,83 @@ reporter 为结构化汇报通道（进度 + 页尺寸）；None → 保持纯 p
 
 ⚠️ 同一个 pdf 只能输出一次：fpdf 的 `output()` 会把自己标成"已定稿"，再调
 会抛 `FPDFException`（这是 fpdf 原本就有的约束，不是本模块引入的）。
+
+---
+
+## `utils.proc_job`
+
+源码：[`utils/proc_job.py`](../../utils/proc_job.py)
+
+进程组收尾：Windows Job Object —— 父进程退出（含崩溃/被强杀）时带走全部子进程。
+
+为什么需要（2026-11-21 现场）：拼版崩溃后任务管理器里留下 9 个孤儿——常驻
+YOLO 服务（306MB）+ 8 个 multiprocessing 子进程，父进程早已退出。Windows
+不像 Linux 会把孤儿挂到 init 下，父进程一死，子进程就是"没人管的野进程"：
+不吃 CPU、也不自己退出，只能手工杀（重启程序还会复用那个旧服务）。
+
+做法：建一个 Job Object，打开 ``KILL_ON_JOB_CLOSE`` 与 ``BREAKAWAY_OK``，
+把**当前进程**放进去。之后所有子进程（``subprocess`` / ``multiprocessing`` /
+PyInstaller bootloader 链）默认继承这个作业；本进程一退出——正常关闭、崩溃、
+任务管理器结束进程都一样——作业句柄随进程关闭，系统把作业里的进程一并终止。
+
+⚠️ **必须带 BREAKAWAY_OK**：有两类子进程是"要活过父进程"的——
+   安装器（``desktop/ui/menu.py::_install_and_restart``）与「重启程序」
+   （``desktop/settings/page.py::_restart_app``）。它们用
+   :func:`breakaway_flags` 显式申请脱离作业；不给这个权限的话，"检查更新装
+   新版"和"重启"会变成**静默失败**（新进程刚起来就被作业收走）。
+
+⚠️ 句柄必须活到进程结束（模块级 ``_JOB_HANDLE`` 持有）：主动 CloseHandle 等于
+   立刻杀死自己和所有子进程。
+
+⚠️ 作业**匿名创建**（``CreateJobObjectW(None, None)``）：命名作业会被同机另一个
+   实例的 ``CreateJobObject`` 复用同一个作业对象，那样关掉开发版会把正式版的
+   子进程一起带走（两个构建是允许同时开的，见 ``desktop/single_instance.py``）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | `8192` |
+| _JOB_OBJECT_LIMIT_BREAKAWAY_OK | `2048` |
+| _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION | `9` |
+| CREATE_BREAKAWAY_FROM_JOB | `16777216` |
+| _JOB_HANDLE | `None` |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `job_active() -> bool` | 当前进程是否已装进本模块建的作业（``breakaway_flags`` 的判据）。 |
+| `kill_children_on_exit() -> bool` | 把**当前进程**装进"关闭即杀子进程"的作业；成功返回 True。 |
+| `breakaway_flags() -> int` | 要脱离作业的子进程该叠加的 ``creationflags``（没装作业时返回 0）。 |
+| `detached_creationflags() -> int` | 「脱离本进程也要活」的子进程的完整 ``creationflags``（Windows 专用）。 |
+| `in_job() -> bool` | 当前进程是否**处在任何**作业里（自测/排障用，不改变状态）。 |
+
+#### `kill_children_on_exit() -> bool`
+
+把**当前进程**装进"关闭即杀子进程"的作业；成功返回 True。
+
+幂等：重复调用只回 True，不会再建一个作业。非 Windows 平台直接返回 False
+（POSIX 下没有这个问题，进程组由终端/服务管理器收）。
+
+失败也不影响程序运行——最坏情况回到旧行为（子进程可能残留），因此所有
+调用点都只记一行日志，绝不因为装不上作业而中断启动。
+
+#### `breakaway_flags() -> int`
+
+要脱离作业的子进程该叠加的 ``creationflags``（没装作业时返回 0）。
+
+用于"必须活过本进程"的子进程：安装器、重启出来的新实例。没装作业时返回
+0，调用点可以无脑 ``|=``，不必判断平台/状态。
+
+#### `detached_creationflags() -> int`
+
+「脱离本进程也要活」的子进程的完整 ``creationflags``（Windows 专用）。
+
+口径与既有两类调用点一致：``DETACHED_PROCESS``（不共用控制台）+
+``CREATE_NEW_PROCESS_GROUP``（不接父进程的 Ctrl+C / 信号），再叠加
+:func:`breakaway_flags` 让它逃出本进程的作业——否则安装器/新实例会在本
+进程退出的那一刻被作业一起收走。
 
 ---
 
