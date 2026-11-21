@@ -486,6 +486,9 @@ class ImpositionPageList(QWidget):
     check_changed = Signal()
     #: 点了悬浮框「批量删除」
     batch_delete_requested = Signal()
+    #: **可见页范围变了**（滚动/翻页/换任务/窗口缩放）。控制器据此只给看得见
+    #: 的那几页生成缩略图（见 ``page_thumb.PageThumbManager.set_window_provider``）。
+    viewport_changed = Signal()
 
     #: 拖动期间轮询光标的间隔（毫秒）
     _POLL_MS = 16
@@ -497,6 +500,9 @@ class ImpositionPageList(QWidget):
     _EDGE_PX = 24
     #: 自动滚动每轮步长（像素）
     _EDGE_STEP = 6
+    #: 可见范围变化的**合并窗口**（毫秒）：滚动条每滚一格都会发 valueChanged，
+    #: 立刻回调会让控制器反复取窗口；等手停下来一拍再报一次就够。
+    _VIEWPORT_DEBOUNCE_MS = 120
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -556,10 +562,21 @@ class ImpositionPageList(QWidget):
         self.select_bar.delete_requested.connect(self.batch_delete_requested)
         self.select_bar.hide()
 
+        # 可见范围变化的合并上报（滚动、窗口缩放、换任务清单都会触发）
+        self._viewport_timer = QTimer(self)
+        self._viewport_timer.setSingleShot(True)
+        self._viewport_timer.setInterval(self._VIEWPORT_DEBOUNCE_MS)
+        self._viewport_timer.timeout.connect(self.viewport_changed.emit)
+        self.list_scroll.verticalScrollBar().valueChanged.connect(
+            lambda *_: self._viewport_timer.start()
+        )
+
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
         if self.select_bar.isVisible() and not self.select_bar._user_moved:
             self._place_select_bar()
+        # 窗口一高一矮，可见页数就变了：让宿主重算一次窗口
+        self._viewport_timer.start()
 
     def set_float_host(self, host) -> None:
         """把悬浮框的宿主换成外部装配层（拼版视图整体）。
@@ -601,6 +618,71 @@ class ImpositionPageList(QWidget):
             self._entries.append(entry)
         self.set_current(current)
         self._update_select_bar()
+        # 清单重建后可见范围必然变了（页数/顺序/滚动位置都可能不同）。延到
+        # 下一拍：那时布局才把条目几何算出来，否则取到的是全 0 的旧几何。
+        QTimer.singleShot(0, self._viewport_timer.start)
+
+    def ensure_visible(self, index: int) -> None:
+        """把第 ``index`` 页滚进视口（当前页切换时用）。
+
+        只在那一页**完全看不见**时才滚（滚动条位置按"整条刚露出来"算），
+        已经在视口里就一点不动——键盘翻页时左列跟着走，但不会因为切页把
+        用户手动滚好的位置顶掉。布局还没跑（条目几何全是默认值）时什么都不做。
+        """
+        if not (0 <= index < len(self._entries)):
+            return
+        viewport = self.list_scroll.viewport()
+        if viewport is None or viewport.height() <= 0:
+            return
+        entry = self._entries[index]
+        if entry.height() <= 0:
+            return
+        top = entry.mapTo(viewport, QPoint(0, 0)).y()
+        bottom = top + entry.height()
+        bar = self.list_scroll.verticalScrollBar()
+        if top < 0:
+            bar.setValue(max(bar.minimum(), bar.value() + top - T.SPACE_SM))
+        elif bottom > viewport.height():
+            bar.setValue(
+                min(bar.maximum(), bar.value() + bottom - viewport.height()
+                    + T.SPACE_SM)
+            )
+
+    def visible_index_range(self, margin: int = 3) -> tuple[int, int] | None:
+        """左列**当前看得见**的页号闭区间（上下各多算 ``margin`` 条余量）。
+
+        宿主的缩略图生成按这个范围筛（只给看得见的页生成实体）。只有
+        **还没有条目**（空清单）才给 ``None``——调用方据此退化成"不筛"。
+
+        ⚠️ **布局还没跑时要给"第一屏"而不是整列**（2026-11-21 实测坑）：刚
+        ``set_pages`` 出来的条目几何全是同一个默认值（都叠在 0 处），照几何
+        判"看得见"会把**整列 30 页**都算进窗口——首屏照样一次排满，改法就白
+        做了。判据是"条目高度还是 0"或"多个条目纵向位置完全一样"，那时一律
+        返回 ``0 .. margin*2+1``（宁可多生成一屏，也不排整本）；真正的范围
+        等布局完成后由 ``viewport_changed`` 再报一次。视口高度为 0（页面从没
+        显示过）同样按第一屏处理——"算不出来"绝不等于"整本都要"。
+        """
+        if not self._entries:
+            return None
+        first_screen = (0, min(len(self._entries) - 1, margin * 2 + 1))
+        viewport = self.list_scroll.viewport()
+        if viewport is None or viewport.height() <= 0:
+            return first_screen
+        tops = [entry.mapTo(viewport, QPoint(0, 0)).y() for entry in self._entries]
+        if any(entry.height() <= 0 for entry in self._entries):
+            return first_screen  # 还没布局：条目高度都没算出来
+        if len(tops) > 1 and len(set(tops)) == 1:
+            return first_screen  # 还没布局：条目全叠在同一个 y 上
+        bottom_limit = viewport.height()
+        hits = [
+            index for index, top in enumerate(tops)
+            if top + self._entries[index].height() >= 0 and top <= bottom_limit
+        ]
+        if not hits:
+            return first_screen
+        first = max(0, hits[0] - margin)
+        last = min(len(self._entries) - 1, hits[-1] + margin)
+        return (first, last)
 
     def set_current(self, index: int) -> None:
         """高亮当前页（-1 = 无页）。"""

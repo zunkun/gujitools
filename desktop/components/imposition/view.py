@@ -206,6 +206,9 @@ class ImpositionViewWidget(QWidget):
     spread_edit_requested = Signal()
     #: 「定位图片资源」没定位成（文件已不存在等）：一行人读说明
     locate_failed = Signal(str)
+    #: 左列**可见页范围**变了（滚动/换任务/窗口缩放）：宿主据此只给看得见的
+    #: 那几页生成缩略图（转发 ``ImpositionPageList.viewport_changed``）。
+    viewport_changed = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -228,6 +231,7 @@ class ImpositionViewWidget(QWidget):
         self.page_list.insert_requested.connect(self.page_insert_requested)
         self.page_list.remove_requested.connect(self.page_remove_requested)
         self.page_list.batch_delete_requested.connect(self.pages_batch_delete_requested)
+        self.page_list.viewport_changed.connect(self.viewport_changed)
         row.addWidget(self.page_list)
 
         # ---- 模块二：操作画布（底部一行：左侧提示语 + 右侧翻页按钮）----
@@ -347,12 +351,28 @@ class ImpositionViewWidget(QWidget):
     def pages(self) -> list[dict]:
         return list(self._pages)
 
+    def visible_page_range(self, margin: int = 3) -> tuple[int, int] | None:
+        """左列当前可见的页号闭区间（见 ``ImpositionPageList.visible_index_range``）。
+
+        缩略图管理者拿它做"只生成看得见的页"的筛子（传给
+        ``PageThumbManager.set_window_provider``）。整页清单是 ``page_list``
+        的私产，本方法只做转发。
+        """
+        return self.page_list.visible_index_range(margin)
+
     def set_current(self, index: int) -> None:
         """切到某一页（-1 = 无页，画布清空）。"""
         if index >= len(self._pages):
             index = len(self._pages) - 1
+        previous = self._current
         self._current = index if index >= 0 else -1
         self.page_list.set_current(self._current)
+        if self._current != previous and self._current >= 0:
+            # 换了当前页（点条目 / 键盘翻页 / 加页后跳到新页）：左列跟着滚到
+            # 那一页。不滚的话键盘翻到第 20 页时左列还停在开头——那一页的
+            # 缩略图也因此永远不进"可见窗口"（2026-11-21 起缩略图只生成看得
+            # 见的页），用户会以为它没生成。
+            self.page_list.ensure_visible(self._current)
         if self._current < 0:
             self.canvas.clear_page()
         elif not self._canvas_shows_current():

@@ -295,6 +295,22 @@ def main() -> int:
     成败；有了这个开关就能用**退出码**判定。
     """
     app = QApplication(sys.argv)
+    # ---- 子进程全部拴在本进程上（用户 2026-11-21 报"拼版崩溃后一堆野进程"）----
+    # 建作业对象并把自己装进去：之后派生的所有子进程（YOLO 常驻服务、
+    # multiprocessing 池、渲染服务）都继承这个作业，本进程一退出——正常关、
+    # 崩溃、任务管理器强杀都一样——系统把它们一并终止，不会再留下父进程已死
+    # 却不退出的孤儿（现场实测残留 9 个、约 550MB）。
+    # ⚠️ 必须在**任何子进程被拉起之前**装好（YOLO 预热在 3s 后、渲染服务更晚，
+    #    所以放在 main() 开头即可）；装不上（已在不允许嵌套的作业里）只记一行
+    #    日志，绝不拦启动。
+    try:
+        from utils.proc_job import kill_children_on_exit
+
+        if not kill_children_on_exit():
+            print("[guji] 进程组看护未启用（Job Object 装配失败），"
+                  "崩溃后子进程可能残留")
+    except Exception as exc:  # noqa: BLE001 - 看护装不上不该挡住界面
+        print(f"[guji] 进程组看护跳过：{exc}")
     setTheme(Theme.LIGHT)
     apply_app_style(app)  # 统一字体、主题色、底色与滚动条
     from desktop.ui.widgets import install_button_pointer_cursor

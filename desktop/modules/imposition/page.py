@@ -251,7 +251,16 @@ class ImpositionModulePage(ModulePage):
         self.view.locate_failed.connect(
             lambda message: self.toast("warning", "定位图片资源", message)
         )
+        # 左列滚到新的位置：按新窗口补生成缩略图（只生成看得见的那几页，
+        # 与任务流程拼版步骤同一套口径，见 page_thumb.PageThumbManager）
+        self.view.viewport_changed.connect(self._on_viewport_changed)
         return self.view
+
+    def _on_viewport_changed(self) -> None:
+        """左列可见范围变了：让缩略图管理者按新窗口补一批。"""
+        manager = getattr(self, "_page_thumb_mgr", None)
+        if manager is not None:
+            manager.refresh_window()
 
     # ------------------------------------------------------------------ 控制
     def _build_control(self) -> Card:
@@ -1289,9 +1298,12 @@ class ImpositionModulePage(ModulePage):
             manager = PageThumbManager(
                 page_thumbs_dir(_SPEC.disk_key()), THUMB_EDGE,
                 self.run_worker, parent=self,
+                # 只生成左列看得见的那几页（同任务流程拼版页；2026-11-21）
+                window_provider=self.view.visible_page_range,
             )
             manager.page_ready.connect(self._on_page_thumb_ready)
             self._page_thumb_mgr = manager
+        manager.set_window_provider(self.view.visible_page_range)
         return manager
 
     def _on_page_thumb_ready(self, index: int, pixmap) -> None:

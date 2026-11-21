@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 189 个模块、205 个公开类、1558 个公开函数/方法（生成于 2026-11-17）。
+覆盖 189 个模块、205 个公开类、1566 个公开函数/方法（生成于 2026-11-21）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -25,11 +25,11 @@
 | [`desktop.components.flow_dialog`](#desktopcomponentsflow_dialog) | 2 | 10 |
 | [`desktop.components.imposition.canvas`](#desktopcomponentsimpositioncanvas) | 1 | 27 |
 | [`desktop.components.imposition.confirm_delete`](#desktopcomponentsimpositionconfirm_delete) | 1 | 1 |
-| [`desktop.components.imposition.page_list`](#desktopcomponentsimpositionpage_list) | 1 | 11 |
-| [`desktop.components.imposition.page_thumb`](#desktopcomponentsimpositionpage_thumb) | 1 | 14 |
+| [`desktop.components.imposition.page_list`](#desktopcomponentsimpositionpage_list) | 1 | 13 |
+| [`desktop.components.imposition.page_thumb`](#desktopcomponentsimpositionpage_thumb) | 1 | 19 |
 | [`desktop.components.imposition.panel`](#desktopcomponentsimpositionpanel) | 1 | 7 |
 | [`desktop.components.imposition.picker`](#desktopcomponentsimpositionpicker) | 1 | 14 |
-| [`desktop.components.imposition.view`](#desktopcomponentsimpositionview) | 1 | 16 |
+| [`desktop.components.imposition.view`](#desktopcomponentsimpositionview) | 1 | 17 |
 | [`desktop.components.log_panel`](#desktopcomponentslog_panel) | 1 | 10 |
 | [`desktop.components.missing_source_prompt`](#desktopcomponentsmissing_source_prompt) | 1 | 7 |
 | [`desktop.components.pagination`](#desktopcomponentspagination) | 2 | 11 |
@@ -1704,6 +1704,8 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 | `set_float_host(host) -> None` | 把悬浮框的宿主换成外部装配层（拼版视图整体）。 |
 | `entries() -> list[_PageEntry]` | — |
 | `set_pages(captions: list[str], current: int=-1) -> None` | 按页数重建清单（``captions[i]`` 是第 i 页的副标题）。 |
+| `ensure_visible(index: int) -> None` | 把第 ``index`` 页滚进视口（当前页切换时用）。 |
+| `visible_index_range(margin: int=3) -> tuple[int, int] \| None` | 左列**当前看得见**的页号闭区间（上下各多算 ``margin`` 条余量）。 |
 | `set_current(index: int) -> None` | 高亮当前页（-1 = 无页）。 |
 | `set_page_thumbs(thumbs: list) -> None` | 给每页条目灌缩略图（``thumbs[i]`` 是第 i 页的 ``QImage``/``QPixmap``， |
 | `set_thumb_at(index: int, image) -> None` | 只给**指定条目**贴缩略图（``index`` 是它在当前清单里的位置）。 |
@@ -1725,6 +1727,29 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 
 勾选集合**按副标题跨重建保留**：拖动排序/加页不丢勾选；页被删掉
 （副标题不在了）自然落选——批量删除自己就是靠这次重建清空的。
+
+##### `ensure_visible(index: int) -> None`
+
+把第 ``index`` 页滚进视口（当前页切换时用）。
+
+只在那一页**完全看不见**时才滚（滚动条位置按"整条刚露出来"算），
+已经在视口里就一点不动——键盘翻页时左列跟着走，但不会因为切页把
+用户手动滚好的位置顶掉。布局还没跑（条目几何全是默认值）时什么都不做。
+
+##### `visible_index_range(margin: int=3) -> tuple[int, int] | None`
+
+左列**当前看得见**的页号闭区间（上下各多算 ``margin`` 条余量）。
+
+宿主的缩略图生成按这个范围筛（只给看得见的页生成实体）。只有
+**还没有条目**（空清单）才给 ``None``——调用方据此退化成"不筛"。
+
+⚠️ **布局还没跑时要给"第一屏"而不是整列**（2026-11-21 实测坑）：刚
+``set_pages`` 出来的条目几何全是同一个默认值（都叠在 0 处），照几何
+判"看得见"会把**整列 30 页**都算进窗口——首屏照样一次排满，改法就白
+做了。判据是"条目高度还是 0"或"多个条目纵向位置完全一样"，那时一律
+返回 ``0 .. margin*2+1``（宁可多生成一屏，也不排整本）；真正的范围
+等布局完成后由 ``viewport_changed`` 再报一次。视口高度为 0（页面从没
+显示过）同样按第一屏处理——"算不出来"绝不等于"整本都要"。
 
 ##### `set_page_thumbs(thumbs: list) -> None`
 
@@ -1811,24 +1836,44 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 worker）→ 连 :attr:`page_ready` 把生成好的那条贴回左列。版面/源图
 变了调 :meth:`invalidate`（宿主的防抖计时器到点后）。
 
+⚠️ **只生成"看得见的那几页"**（2026-11-21，用户报拼版首屏要等 5 分钟）：
+宿主用 :meth:`set_window_provider` 给出左列当前可见的页号范围，:meth:`flush`
+只把**落在窗口里**的页交出去，窗口外的留在队列里等用户滚到那儿再生成
+（与导入预览"只预渲染首屏"同一口径）。不设 provider 的宿主（旧调用/自测）
+保持原行为：排队多少交多少。
+
+一页实测：整页合成 24ms（开发机）。81 页整本跑一遍 2 秒，看着不多——
+但在生产环境里它要和**整本拼版成品合成**（每页 0.5s 起、PIL 攥着 GIL）
+抢同一个进程，实测被拖到 4~7 秒/页。先出可见页，剩下的等滚动，用户
+打开就是"立刻有图"。
+
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(out_dir: Path \| str, edge: int, submit: Callable, parent: QObject \| None=None)` | ``out_dir`` 实体目录；``edge`` 最长边；``submit``＝宿主的 |
+| `__init__(out_dir: Path \| str, edge: int, submit: Callable, parent: QObject \| None=None, window_provider: Callable[[], tuple[int, int] \| None] \| None=None)` | ``out_dir`` 实体目录；``edge`` 最长边；``submit``＝宿主的 |
 | `directory() -> Path` | — |
 | `bind(out_dir: Path \| str) -> None` | 换目录（换任务/换子任务）：状态全清、重读那份映射。 |
 | `reset() -> None` | 清空内存态（映射/位图缓存/排队）；盘上实体不动。 |
 | `reload() -> None` | 从盘上重读映射数据。 |
 | `retain(count: int) -> None` | 页清单缩到 ``count`` 后：多出来的映射删掉、孤儿实体清掉。 |
 | `pixmap_for(index: int, page: dict) -> QPixmap \| None` | 这一页的缩略图：实体命中回 QPixmap；映射对不上就排队补实体。 |
-| `flush() -> None` | 把排队的页整批交给后台 worker（一批一个；在跑就等它收尾续批）。 |
+| `set_window_provider(provider: Callable[[], tuple[int, int] \| None] \| None) -> None` | 告诉管理者"左列现在看得见哪几页"（``None`` = 不按窗口筛）。 |
+| `window() -> tuple[int, int] \| None` | 当前可见页号闭区间 ``(first, last)``；没设 provider 或判不出时 ``None``。 |
+| `window_batch_size() -> int` | 在飞的那一批里**窗口内**的页数（没在跑/不是窗口批则 0）。 |
+| `pending_count() -> int` | 还没生成实体的页数（含窗口外的，自测/排障用）。 |
+| `refresh_window() -> None` | 可见范围变了（滚动/翻页）：把新进窗口的页排进下一批。 |
+| `flush() -> None` | 把排队的页交给后台 worker（一批一个；在跑就等它收尾续批）。 |
 | `invalidate(indexes, pages: list) -> None` | 版面/源图变了：把这几页排进重生成批次（签名不匹配自然排队）。 |
 
-##### `__init__(out_dir: Path | str, edge: int, submit: Callable, parent: QObject | None=None)`
+##### `__init__(out_dir: Path | str, edge: int, submit: Callable, parent: QObject | None=None, window_provider: Callable[[], tuple[int, int] | None] | None=None)`
 
 ``out_dir`` 实体目录；``edge`` 最长边；``submit``＝宿主的
 ``run_worker(factory, wire)``（线程的创建与回收归宿主管）。
+
+``window_provider``：可选，返回左列**当前可见**的页号闭区间
+``(first, last)``（0 基）；返回 ``None`` = 判不出可见范围（窗口还没
+布局出来），此时退化成"排队多少交多少"。
 
 ##### `retain(count: int) -> None`
 
@@ -1849,6 +1894,38 @@ worker）→ 连 :attr:`page_ready` 把生成好的那条贴回左列。版面/�
   又回来了）：内存 memo 里有这一版就**先贴着**保显示，同时**排队**
   把实体补回盘上——显示与落盘最终一致（实测坑：只贴不排队的话，
   实体被清掉的页永远不会再落盘，重进任务就没图了）。
+
+##### `set_window_provider(provider: Callable[[], tuple[int, int] | None] | None) -> None`
+
+告诉管理者"左列现在看得见哪几页"（``None`` = 不按窗口筛）。
+
+传的应当是个**取用方式**而不是快照：滚动/翻页/换任务后范围会变，
+:meth:`flush` 每次提交前现取，宿主不必跟着同步。
+
+##### `window_batch_size() -> int`
+
+装饰器：`property`
+
+在飞的那一批里**窗口内**的页数（没在跑/不是窗口批则 0）。
+
+拼版成品合成据此决定要不要让路：批量出首屏（十几页）值得让，单页
+重生成（拖版面后的防抖回合）不该拖慢"1 秒内看到成品"这条硬指标。
+
+##### `refresh_window() -> None`
+
+可见范围变了（滚动/翻页）：把新进窗口的页排进下一批。
+
+在飞时不抢——收尾回调 :meth:`_on_done` 会按**那一刻**的窗口再补一批，
+正好接上用户滚到的位置。
+
+##### `flush() -> None`
+
+把排队的页交给后台 worker（一批一个；在跑就等它收尾续批）。
+
+⚠️ 设了 :meth:`set_window_provider` 时**只交窗口里**的页：窗口外的
+留在 :attr:`_pending` 里，等用户滚到那儿（或翻页）再生成。这就是
+"拼版首屏不必等整本 380 页"的实现方式——不是把剩下的丢掉，而是
+推迟到真需要的那一刻。
 
 ### 模块函数
 
@@ -2098,6 +2175,7 @@ worker）→ 连 :attr:`page_ready` 把生成好的那条贴回左列。版面/�
 | `set_page_thumbs(thumbs: list) -> None` | 把左列每页的缩略图贴上去（``thumbs[i]`` 对应第 i 页，可为 ``None``）。 |
 | `set_thumb_at(index: int, image) -> None` | 只给**第 ``index`` 页**贴缩略图（"一张张到齐"的回填走这里）。 |
 | `pages() -> list[dict]` | — |
+| `visible_page_range(margin: int=3) -> tuple[int, int] \| None` | 左列当前可见的页号闭区间（见 ``ImpositionPageList.visible_index_range``）。 |
 | `set_current(index: int) -> None` | 切到某一页（-1 = 无页，画布清空）。 |
 | `current_index() -> int` | — |
 | `checked_pages() -> list[int]` | 左列勾选了的页下标（升序）——批量操作用。 |
@@ -2123,6 +2201,14 @@ worker）→ 连 :attr:`page_ready` 把生成好的那条贴回左列。版面/�
 而每条都要重跑一次缩放——380 张陆续到达就是 7.2 万次（用户
 2026-10-06 报"拼版阶段程序卡死"）。转发见
 :meth:`ImpositionPageList.set_thumb_at`。
+
+##### `visible_page_range(margin: int=3) -> tuple[int, int] | None`
+
+左列当前可见的页号闭区间（见 ``ImpositionPageList.visible_index_range``）。
+
+缩略图管理者拿它做"只生成看得见的页"的筛子（传给
+``PageThumbManager.set_window_provider``）。整页清单是 ``page_list``
+的私产，本方法只做转发。
 
 ##### `navigate(forward: bool) -> bool`
 
@@ -7857,6 +7943,9 @@ label 记身份，而下游文件名可能跨版本不一致（计划无后缀�
 | EDIT_COMMIT_DEBOUNCE_MS | `250` |
 | THUMB_REFRESH_DEBOUNCE_MS | `2000` |
 | PRINT_WAIT_POLL_MS | `100` |
+| COMPOSE_YIELD_TO_THUMBS_MS | `250` |
+| COMPOSE_YIELD_MAX_MS | `20000` |
+| COMPOSE_YIELD_MIN_PAGES | `3` |
 
 ### `class ImpositionLayoutMixin`
 

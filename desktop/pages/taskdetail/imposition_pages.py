@@ -593,6 +593,26 @@ class ImpositionPagesMixin:
         self.log_view.append("已清空全部拼版页。")
 
     # ------------------------------------------------------------- 左列缩略图
+    def _imposition_thumb_window(self) -> tuple[int, int] | None:
+        """左列**当前可见**的页号闭区间（缩略图只给这几页生成实体）。
+
+        取不到（视图还没建/还没布局）返回 ``None`` ⇒ 管理者退化成"不筛"。
+        """
+        view = getattr(self, "imposition_view", None)
+        if view is None:
+            return None
+        return view.visible_page_range()
+
+    def _on_imposition_viewport_changed(self) -> None:
+        """左列滚动/翻页/换任务：把新进窗口的页排进缩略图生成队列。
+
+        ⚠️ 生成期间**不抢**（``refresh_window`` 在飞时直接返回）：那一批跑完
+        的收尾回调会按**那一刻**的窗口再补一批，正好接上用户滚到的位置。
+        """
+        manager = getattr(self, "_page_thumb_mgr", None)
+        if manager is not None:
+            manager.refresh_window()
+
     def _imposition_page_thumb_manager(self):
         """页面缩略图**实体**的管理者（懒建；换任务自动换目录重读映射）。"""
         from desktop.components.imposition.page_thumb import PageThumbManager
@@ -611,11 +631,16 @@ class ImpositionPagesMixin:
         if manager is None:
             manager = PageThumbManager(
                 target, THUMBNAIL_EDGE, self.run_worker, parent=self,
+                # 只生成左列**看得见**的那几页（用户 2026-11-21：拼版首屏
+                # 在生产环境要等 5 分钟——整本 81 页一次性排进去，还要跟整本
+                # 成品合成抢同一个进程）
+                window_provider=self._imposition_thumb_window,
             )
             manager.page_ready.connect(self._on_imposition_page_thumb_ready)
             self._page_thumb_mgr = manager
         elif manager.directory != target:
             manager.bind(target)
+        manager.set_window_provider(self._imposition_thumb_window)
         return manager
 
     def _on_imposition_page_thumb_ready(self, index: int, pixmap) -> None:
