@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 371 个模块、321 个公开类、1585 个公开函数/方法（生成于 2026-11-22）。
+覆盖 371 个模块、321 个公开类、1586 个公开函数/方法（生成于 2026-11-22）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -366,7 +366,7 @@
 | [`desktop.workers.imposition_worker`](#desktopworkersimposition_worker) | 2 | 4 |
 | [`desktop.workers.pdf_render_service.api`](#desktopworkerspdf_render_serviceapi) | 0 | 6 |
 | [`desktop.workers.pdf_render_service.constants`](#desktopworkerspdf_render_serviceconstants) | 0 | 0 |
-| [`desktop.workers.pdf_render_service.jpx`](#desktopworkerspdf_render_servicejpx) | 0 | 1 |
+| [`desktop.workers.pdf_render_service.jpx`](#desktopworkerspdf_render_servicejpx) | 0 | 2 |
 | [`desktop.workers.pdf_render_service.pool`](#desktopworkerspdf_render_servicepool) | 0 | 5 |
 | [`desktop.workers.preview_worker.compose`](#desktopworkerspreview_workercompose) | 0 | 3 |
 | [`desktop.workers.preview_worker.constants`](#desktopworkerspreview_workerconstants) | 0 | 0 |
@@ -5954,6 +5954,12 @@ SmoothTransformation 底图（3000px 源图缩到画布约 37MB）。只清
 ``ImageView`` Mixin：**鼠标/键盘编辑**。
 
 框的选中/拖拽/四角缩放/双击/右键/键盘删除。（从 ``image_view.py`` 拆出，2026-10-07；方法体逐字未改）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| _NEW_BOX_MIN_DRAG_PX | `3` |
 
 ### `class EditMixin(ImageViewHost)`
 
@@ -19865,6 +19871,20 @@ JPX 快速通道：用 OpenJPEG 按需降分辨率解码（比 MuPDF 快 5 倍�
 | 函数 | 说明 |
 | --- | --- |
 | `jpx_fast_available() -> bool` | 本机有没有可用的 OpenJPEG 解码器（自测/排障用）。 |
+| `opj_run_kwargs() -> dict` | ``opj_decompress`` 的启动参数——**唯一决定"会不会闪黑窗"的地方**。 |
+
+#### `opj_run_kwargs() -> dict`
+
+``opj_decompress`` 的启动参数——**唯一决定"会不会闪黑窗"的地方**。
+
+⚠️ ``CREATE_NO_WINDOW`` 不能省（2026-11-22 用户报「导入 PDF 时大量黑色命令行
+弹窗一闪而过」）：``opj_decompress`` 是控制台程序，而**每渲一页缩略图就要起
+一次**。父进程若有控制台（源码版从终端跑）子进程就继承、看不见；但打包版
+``guji-desktop.exe`` 是 windowed、**没有控制台**，于是每次调用都由 Windows
+新开一个黑窗——导入一本书的首屏（24 页）就是二十多个窗口接连闪烁。
+
+加了标志只是不建窗口：stdout/stderr 仍是管道（``capture_output``），解码结果
+与"缺失即回落 MuPDF"的降级路径都不受影响。
 
 ---
 

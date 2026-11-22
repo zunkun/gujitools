@@ -143,9 +143,36 @@ def _child_jpx_thumb(pdf_path: str, page_index: int, edge: int,
         document.close()
 
 
+def opj_run_kwargs() -> dict:
+    """``opj_decompress`` 的启动参数——**唯一决定"会不会闪黑窗"的地方**。
+
+    ⚠️ ``CREATE_NO_WINDOW`` 不能省（2026-11-22 用户报「导入 PDF 时大量黑色命令行
+    弹窗一闪而过」）：``opj_decompress`` 是控制台程序，而**每渲一页缩略图就要起
+    一次**。父进程若有控制台（源码版从终端跑）子进程就继承、看不见；但打包版
+    ``guji-desktop.exe`` 是 windowed、**没有控制台**，于是每次调用都由 Windows
+    新开一个黑窗——导入一本书的首屏（24 页）就是二十多个窗口接连闪烁。
+
+    加了标志只是不建窗口：stdout/stderr 仍是管道（``capture_output``），解码结果
+    与"缺失即回落 MuPDF"的降级路径都不受影响。
+    """
+    import subprocess
+    import sys
+
+    kwargs: dict = {"capture_output": True, "timeout": 30}
+    if sys.platform == "win32":
+        kwargs["creationflags"] = getattr(
+            subprocess, "CREATE_NO_WINDOW", 0x08000000
+        )
+    return kwargs
+
+
 def _run_opj_thumb(opj: str, stream: bytes, ext: str, reduce: int,
                    edge: int, quality: int) -> bytes:
-    """把 JPX 码流交给 ``opj_decompress -r N``，再缩成目标尺寸。失败返回空字节。"""
+    """把 JPX 码流交给 ``opj_decompress -r N``，再缩成目标尺寸。失败返回空字节。
+
+    启动参数见 :func:`opj_run_kwargs`（**必须**带 ``CREATE_NO_WINDOW``，否则打包版
+    每页一个黑窗）。
+    """
     import subprocess
     import tempfile
 
@@ -161,8 +188,7 @@ def _run_opj_thumb(opj: str, stream: bytes, ext: str, reduce: int,
             out = Path(tmp) / "page.ppm"
             proc = subprocess.run(
                 [opj, "-i", str(source), "-o", str(out), "-r", str(int(reduce))],
-                capture_output=True,
-                timeout=30,
+                **opj_run_kwargs(),
             )
             if proc.returncode != 0 or not out.is_file():
                 return b""

@@ -289,6 +289,31 @@ def run(ctx) -> None:
         ok("JPX 快速通道：没有解码器时照常出图（MuPDF）",
            bool(svc._child_render_jpeg(jpx_pdf, 0, 256, 70, "jpg")))
 
+    # ---- 8d. opj 子进程不许弹黑窗 ----
+    # 用户 2026-11-22 报「导入 PDF 时大量黑色命令行弹窗一闪而过」：``opj_decompress``
+    # 是**控制台程序**，而每渲一页缩略图就起一次；父进程没有控制台时（打包版
+    # ``guji-desktop.exe`` 是 windowed）Windows 每次都会新开一个黑窗，一本 24 页的
+    # 首屏就是二十多个窗口接连闪烁。判据落在**启动参数**上——本机没装 OpenJPEG 时
+    # 真实调用根本不发生（8c 已 SKIP），不能靠它兜；替身替换 ``subprocess.run`` 会
+    # 波及本测试其余代码（实测：删除守卫内部也调它），所以判据收敛到唯一入口。
+    from desktop.workers.pdf_render_service import jpx as _jpx
+
+    kwargs = _jpx.opj_run_kwargs()
+    ok("opj 子进程：stdout/stderr 走管道（capture_output）",
+       kwargs.get("capture_output") is True)
+    ok("opj 子进程：有超时兜底（不会卡死渲染线程）",
+       float(kwargs.get("timeout") or 0) > 0, str(kwargs.get("timeout")))
+    if os.name == "nt":
+        ok("opj 子进程：带 CREATE_NO_WINDOW（windowed 版不再闪黑窗）",
+           bool(int(kwargs.get("creationflags") or 0) & 0x08000000),
+           f"creationflags={kwargs.get('creationflags')}")
+    else:
+        ok("opj 子进程：非 Windows 不传 creationflags",
+           "creationflags" not in kwargs)
+    jpx_src = code_of("desktop/workers/pdf_render_service/jpx.py")
+    ok("opj 子进程：启动时真的用了这份参数（不许另写一份）",
+       jpx_src.count("opj_run_kwargs") >= 2, f"出现 {jpx_src.count('opj_run_kwargs')} 次")
+
     # ---- 9. 「正在填缓存」的在场标记：查看器不重复渲整本 ----
     from desktop.components.viewers.pdf_viewer import PdfViewerWidget
     from desktop.utils.files import PRODUCING_MARKER
