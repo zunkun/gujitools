@@ -26,7 +26,7 @@
 - **一套算法，两个入口**：`functions/` 是图像与 PDF 处理的唯一实现，CLI 直接调它，
   桌面端的 worker 子进程也跑同一份代码——因此两边对同一输入的处理结果完全一致。
 - **分层严格单向**：`utils ← core ← {cli, functions, desktop}`；`desktop` 不 import
-  `cli`，`cli` 不 import `desktop`。白名单与例外见 `tests/selftests/layering.py`。
+  `cli`，`cli` 不 import `desktop`。白名单与例外见 `tests/selftests/architecture/layering.py`。
 - **进程模型**：桌面端主进程只做界面；所有重活（YOLO 推理、批量处理）在独立
   worker 子进程里跑。打包环境下 worker 以 `guji-desktop.exe --worker --config …`
   启动自身（`desktop.py` 负责路由），不需要额外可执行文件。
@@ -195,17 +195,17 @@ logs/
 - 运行器：`tests/gui_selftest.py`（offscreen），`--only` 选模块自动补依赖、
   `--list` 列出全部。**按改动范围分档跑**，不要每次全量。
 - 守护契约的自测：
-  - `selftests/layering.py` — 分层白名单（含「desktop 不 import cli」）；
-  - `selftests/modules_shell.py` — 导航注册表 = `NAV_STEPS` 派生、模块惰性构造；
-  - `selftests/step_ports.py` — BPM 端口：spec 声明的 inputs/outputs 与落点一致；
-  - `selftests/imposition.py` — 拼版全链，含**缓存边界断言**（拼版缩略图必须写
+  - `selftests/architecture/layering.py` — 分层白名单（含「desktop 不 import cli」）；
+  - `selftests/ui/modules_shell.py` — 导航注册表 = `NAV_STEPS` 派生、模块惰性构造；
+  - `selftests/flow/step_ports/` — BPM 端口：spec 声明的 inputs/outputs 与落点一致；
+  - `selftests/printing/imposition/` — 拼版全链，含**缓存边界断言**（拼版缩略图必须写
     进 `tasks/<id>/thumbnails/imposition/`，不许借道 singletask）；
-  - `selftests/imposition_thumb_window.py` — 缩略图"只生成可见页"+ 合成让路；
-  - `selftests/proc_job.py` — 作业对象：父进程被硬杀后子进程必须跟着退出；
-  - `selftests/crash_forensics.py` — 崩溃取证：日志/面包屑/excepthook 链、Qt 消息、
+  - `selftests/printing/imposition_thumb_window.py` — 缩略图"只生成可见页"+ 合成让路；
+  - `selftests/safety/proc_job.py` — 作业对象：父进程被硬杀后子进程必须跟着退出；
+  - `selftests/safety/crash_forensics.py` — 崩溃取证：日志/面包屑/excepthook 链、Qt 消息、
     真 AV 崩溃产生**报告 + minidump + Python 栈**三件套、安装顺序静态契约；
-  - `selftests/params_spec.py` — 面板默认值单一来源。
-- CLI 侧契约：`tests/reporter_cli_parity.py` 等（改 progress 事件协议前先看它）。
+  - `selftests/architecture/params_spec.py` — 面板默认值单一来源。
+- CLI 侧契约：`tests/reporter/reporter_cli_parity.py` 等（改 progress 事件协议前先看它）。
 
 ## 6. 演进方向：BPM 流程化
 
@@ -222,7 +222,7 @@ logs/
 序列化成 BPMN 2.0 兼容子集；建任务时落到 `tasks/<任务号>/flow.bpmn`，
 `TaskStore.stage_input` 按**本任务的流程定义**解析输入（文件缺失/写坏回落默认）。
 自定义流程 = 换一份 `flow.bpmn` 文件，算法、落点、界面代码不动（自测：
-`tests/selftests/flow_bpm.py`）。条件连线（拼版生效 → print 换上游）用
+`tests/selftests/flow/flow_bpm/`）。条件连线（拼版生效 → print 换上游）用
 `guji:condition` 属性表达。后续：详情页按 BPMN 节点渲染 → 创建任务弹窗 →
 拖拽编辑画布（见 `docs/tasks/bpm.md`）。
 

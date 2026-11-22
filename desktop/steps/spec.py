@@ -126,7 +126,7 @@ class StepSpec:
       补完）：:mod:`desktop.steps.ports` 按这两个字段 + 它的连线表把步骤连起来，
       任务流程不再靠"约定目录布局"。**声明必须与事实一致**——端口模型靠它做
       依赖检查，写漏一个就等于给 BPM 一条假的边（``rembg`` 漏写 ``boxes`` 就是
-      这样被 ``tests/selftests/step_ports.py`` 逮到的）。
+      这样被 ``tests/selftests/flow/step_ports/`` 逮到的）。
     """
 
     key: str

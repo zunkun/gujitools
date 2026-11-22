@@ -805,7 +805,7 @@ class PageHeader(QWidget):
         # 会按基类方法解析、于是判成「布局没有 addWidget」。这里补一条类型侧
         # 声明把它钉回布局——只影响类型检查，运行时零副作用。
         # ⚠️ 对外名字不能改：页头操作区的用法 ``header.actions.addWidget(...)``
-        # 被 tests/selftests/manual_dialog.py 按源码文本钉住。
+        # 被 tests/selftests/ui/manual_dialog.py 按源码文本钉住。
         actions: QHBoxLayout
 
     def __init__(self, title: str, subtitle: str = "", parent=None):

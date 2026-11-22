@@ -472,7 +472,7 @@ class ImageViewerWidget(
         self.view.clear_image("正在加载图片...")
         # ⚠️ 渲染密度必须在 **GUI 线程**先算好再传进 worker：``preview_edge()``
         # 读的是控件尺寸与 dpr，worker 线程里碰 QWidget 是越界的
-        # （见 selftests/worker_thread_affinity.py）。
+        # （见 selftests/safety/worker_thread_affinity.py）。
         edge = self.view.preview_edge()
         # 「按参数合成」的预览（目前只有 PDF排版 的打印效果）：只作用于大图，
         # 缩略图条仍按真实文件解码（见 set_preview_spec_provider）。

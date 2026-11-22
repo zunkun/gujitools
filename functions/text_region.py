@@ -197,7 +197,7 @@ class TextRegionProcessor(FunctionBase):
             return ",".join(str(int(round(float(v)))) for v in box[:4])
 
         # ⚠️ 只在行尾追加耗时，**不要改动行内既有字段**：
-        # `tests/reporter_cli_parity.py` 会按 `left=<nums>` 子串比对两通道同源。
+        # `tests/reporter/reporter_cli_parity.py` 会按 `left=<nums>` 子串比对两通道同源。
         cost = "" if elapsed is None else f" cost={elapsed * 1000:.0f}ms"
         print(
             f"[boxes] {image_path.stem} left={fmt(left_box)} "

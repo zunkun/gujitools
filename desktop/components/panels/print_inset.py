@@ -11,7 +11,7 @@
 ⚠️ **拆出后仍然靠 `self._xxx` 共享状态**——这是 Mixin 拆分的固有代价，
 不要为了"看起来独立"去加构造参数：面板的 MRO 是线性的，共享 self
 反而是这里最简单正确的做法。共享点全部登记在
-``tests/selftests/print_form_split.py`` 的白名单里。
+``tests/selftests/printing/print_form_split.py`` 的白名单里。
 """
 
 from __future__ import annotations

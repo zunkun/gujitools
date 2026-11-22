@@ -61,7 +61,7 @@ GUI_EXE = "guji-desktop.exe" if IS_WINDOWS else "guji-desktop"
 #: 命名口径与安装包一致：``<名称>_<版本>_<平台>``，**不带时间戳**
 #: （同一版本重打会覆盖同名文件，发布按「版本 + 平台」识别）。
 #: ⚠️ 这是该产物名的**唯一来源**：``publish_release.py`` 按它识别要上传的资产，
-#: ``tests/selftests/release_assets.py`` 守两者一致——改名必须同步。
+#: ``tests/selftests/architecture/release_assets.py`` 守两者一致——改名必须同步。
 PORTABLE_TEMPLATE = (
     "gujitools_portable_{version}_{platform}.zip"
     if IS_WINDOWS
@@ -234,7 +234,7 @@ def install_build_dependencies(conda_exe, project_root):
     # （`_md_to_fragment` 的 ImportError 兜底），而 `collect_submodules('markdown')`
     # 对缺失的包**静默返回空**，PyInstaller 全程不报错，只有用户点了「用户手册」
     # 才看见。现在一次装全，torch 的风险由「只跑一次 -r requirements.txt」规避。
-    # 护栏：tests/selftests/manual_dialog.py 从 help_dialog.py 的 import 反推
+    # 护栏：tests/selftests/ui/manual_dialog.py 从 help_dialog.py 的 import 反推
     # 依赖，逐个比对 requirements.txt。
 
 
@@ -1000,7 +1000,7 @@ def print_font_hint():
 #    删除钩子拦下，把 16 分钟的构建判成失败）。
 #
 # 想在本机跑一份：直接双击 ``dist/guji/guji-desktop.exe``，或装一次安装包。
-# 守卫：``tests/selftests/installer_paths.py``。
+# 守卫：``tests/selftests/architecture/installer_paths.py``。
 
 
 if __name__ == "__main__":

@@ -34,7 +34,7 @@ CLI 手册是另一份：`docs/guide/cli.md`。两者在应用内以分段开关
 | `docs/README.md` | 文档树与索引表 |
 | `README.md` | 文档索引一节 |
 | `docs/dev/gui/readme.md` | 指向操作手册的链接 |
-| 护栏 | `tests/selftests/gui_guide.py`（路径 + 三处索引断言）、`tests/selftests/docs_layout.py`（白名单与索引） |
+| 护栏 | `tests/selftests/architecture/gui_guide.py`（路径 + 三处索引断言）、`tests/selftests/architecture/docs_layout.py`（白名单与索引） |
 
 ## 3. 截图怎么刷新
 
@@ -73,7 +73,7 @@ CLI 手册是另一份：`docs/guide/cli.md`。两者在应用内以分段开关
    `is_full_content` 靠槽数区分，所以"半幅删剩一侧"必须写回 2 槽，
    否则那个框会被当成整幅（用户报的 bug）。半幅最多 2 个框、整幅 1 个，
    超出时由 `image_view.edit_rejected` 提示。规则细节与护栏见
-   `tests/selftests/detect_edit.py`。
+   `tests/selftests/detect/detect_edit.py`。
 3c. **手绘的框太小＝不生效（2026-11-16 用户定稿，第二稿）**：松手时按**单边**判
    （`utils.box_geometry.box_too_small`）：框宽 < 页宽×20% **或** < 100px、
    框高 < 页高×20% **或** < 100px，满足一个就丢——合格线 =

@@ -18,13 +18,24 @@
 2. 有 CLI 入口的功能必须有 L3 CLI 端到端（`cli_run`），有 GUI 流程的必须有 L3 worker 端到端。
 3. L0 守卫是"改了就必红"的安全网：新增 CLI 参数、新增步骤、改默认值时，必须确认对应守卫模块
    （`command_registry` / `defaults_drift` / `params_spec`）的断言天然覆盖，否则补断言。
-4. 探针脚本（`tests/probe_*.py`）只允许两类：**视觉截图工具**（与 `bpm_shot.py` 同类）和
+4. 探针脚本（`tests/probes/probe_*.py`）只允许两类：**视觉截图工具**（与 `bpm_shot.py` 同类）和
    **一次性排查记录**（用完可删）。凡是"判据适合自动化"的探针，**必须转正**为 selftest——
    留在 probe 里等于没有回归保护。
 
-## 2. 用例组织规范（`tests/selftests/` 动态发现契约）
+## 2. 用例组织规范（`tests/` 目录布局与动态发现契约）
 
-- **一个功能域一个文件**。运行器扫描目录发现用例，新增用例 = 新增文件，不改运行器。
+- **`tests/` 根目录不留独立脚本，只留入口**：`gui_selftest.py`（唯一入口）与
+  `__init__.py`（包标记）。其余按用途进子目录：用例 `selftests/<分类>/`、探针/截图
+  `probes/`、进度协议双跑 `reporter/`、共享设施（`tmpdir.py`）`common/`、临时产物
+  `tmp/`（已 gitignore）。新增探针/脚本放对应子目录，**不要在 `tests/` 根新建 .py**。
+- **按功能域分目录**：用例放 `tests/selftests/<分类>/` 下，现有分类
+  `architecture`（分层/单一事实来源/文档与发布）、`cli`、`algorithms`（纯算法与格式）、
+  `safety`（健壮性/资源/持久化）、`flow`（BPM 与步骤编排）、`task`（任务列表/详情）、
+  `ui`（通用界面/缩略图/预览壳层）、`image_editor`、`detect`、`extract`、`rembg`、
+  `printing`（PDF 排版与拼版）。分类目录的 `__init__.py` 只写 `CATEGORY = True`，
+  运行器据此下钻；分类名**不参与模块名**，`--only` 仍用 `NAME`。
+- **一个功能域一个文件（超过 600 行则一个包）**。运行器扫描目录发现用例，新增用例 =
+  在对应分类下新增文件（或新增包），不改运行器。包的拆法见 §2.1。
 - 文件头四件套（缺一不可）：
 
   ```python
@@ -44,8 +55,46 @@
 - **断言必须会红**（双向验证）：新写的行为断言，先想清楚"这个 bug 发生时它为什么红"；
   测"接线生效"就真点（`QTest.mouseClick`），不查 `childAt()` 猜坐标。
 - 共享夹具（`ctx.tid` / `ctx.injected_boxes` / …）按依赖链传递；不在自己模块里造第二份。
-- 临时数据只落 `tests/tmp/`（`tests/tmpdir.py::install()`，worker 子进程也覆盖）；
+- 临时数据只落 `tests/tmp/`（`tests/common/tmpdir.py::install()`，worker 子进程也覆盖）；
   临时脚本落 `_scratch/`，**收工删净**。仓库根不许出现 `_xxx.py` / `_xxx.log`。
+
+### 2.1 大用例必须按章节拆成包（单文件 > 600 行）
+
+一个功能域的用例超过 **600 行**就必须从「单文件」升级为「包」，否则改一行要读几千行、
+一次上传几百 KB，既费 token 又容易误改。运行器**同等对待**单文件与包，`--only <NAME>`
+行为不变。
+
+```
+tests/selftests/<分类>/<NAME>/
+    __init__.py     # 只做契约重导出：from .summary import NAME, DEPENDS, TITLE, run
+    summary.py      # NAME / DEPENDS / TITLE / TEARDOWN + run(ctx)：建共享 st，按序调分片
+    _helpers.py     # 原模块的模块级常量、像素/夹具助手、检查函数（重依赖仍留在 run 内）
+    p01.py          # 第 1 章；docstring 写本章标题
+    p02.py          # 第 2 章
+    ...
+```
+
+硬规则：
+
+1. **一章一片**：按原文件里的 `# ---- N. xxx ----` 章节注释切，单片建议 150~450 行，
+   不按「每 100 行一刀」硬切。
+2. **契约只在 `summary.py`**：`NAME` 与原模块同名（`--only` / `DEPENDS` 不变）、
+   `TITLE` 保留原中文标题、`TEARDOWN` 原样搬；`__init__.py` 只重导出，不写逻辑。
+3. **跨片夹具走 `st`**：`summary.run(ctx)` 建 `SimpleNamespace`（`ctx`、`tmp`、`page`…），
+   分片签名统一 `def run(st: Any) -> None`，按 `PARTS = ((p01, "第1章"), ...)` 顺序执行。
+   分片之间**禁止靠模块全局变量传值**；需要共享就挂到 `st` 上，并在 `summary.py` 顶部
+   写清这个约定。
+4. **重依赖不进模块顶层**：Qt/torch/PIL 的 import 继续写在 `run()` 函数体内（运行器发现
+   用例时会 import 每个模块/包，顶层进重依赖会拖慢整轮自测）。
+5. **`_helpers.py` 只放无状态件**：常量、纯函数、`_mk`/`_check_*` 这类检查助手；不许在
+   里面放「本包专用的可变全局状态」。
+6. **改哪章只动哪片**：以后修一个章节的断言，只读/改对应 `pNN.py`；改动跨章才动
+   `summary.py`。新增章节 = 新增 `pNN.py` + 在 `summary.py` 的 `PARTS` 里登记一行。
+7. **拆分后必须验证**：`QT_QPA_PLATFORM=offscreen python tests/gui_selftest.py --only <NAME>`，
+   断言数与拆分前一致（或更多），不允许静默少跑。
+
+> 反例：把 `imposition.py`（4400+ 行）继续堆在一个文件里；正例：`tests/selftests/imposition/`
+> 的 `summary.py` + `p01.py`…`p12.py`，`--only imposition` 仍是 439 项断言全过。
 
 ## 3. 测试代码规范
 
@@ -56,7 +105,7 @@
 - 端到端 CLI 用 `subprocess.run([sys.executable, "cli.py", ...])`（打包语义等价 `guji`），
   断退出码 + 断产物文件；YOLO 类命令前先探 `import torch`，模型不可用时打印 SKIP 并继续
   （跳过必须**显式可见**，不许静默）。
-- 涉及 `functions/` 协议的改动，跑 `tests/reporter_cli_parity.py` / `reporter_worker_e2e.py`。
+- 涉及 `functions/` 协议的改动，跑 `tests/reporter/reporter_cli_parity.py` / `reporter_worker_e2e.py`。
 - 用例内不写 `git` / 不动任务目录以外的用户数据。
 
 ## 4. 架构规范（与测试强相关的那部分）

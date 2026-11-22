@@ -297,7 +297,7 @@ flow.bpmn ──读──> FlowDiagram        bpmn_editor.py + bpmn_editor_panel
 ## 怎么看效果（不用先装包）
 
 ```bash
-python tests/bpm_shot.py            # 拍界面截图到 _bpm_shots/
+python tests/probes/bpm_shot.py            # 拍界面截图到 _bpm_shots/
 python tools/gen_default_bpmn.py --check   # 校验两个模板没写坏
 ```
 
@@ -409,7 +409,7 @@ python tools/gen_default_bpmn.py --check   # 校验两个模板没写坏
 - **开关仍有两处是流程级**（刻意不分节点）：「在流程中启用图片拼版」的 `enabled`
   与拼版的**候选黑名单**之外的选择态（`drafts/imposition[~节点].json` 只分版面）；
   `step_enabled` / `scheduler_flags` 没有节点上下文，分节点会让条件边失去语义。
-- **自测**：`tests/selftests/multi_node.py`（零迁移 + 各文件按节点隔离 + 界面分格）。
+- **自测**：`tests/selftests/flow/multi_node.py`（零迁移 + 各文件按节点隔离 + 界面分格）。
 
 #### 2026-10-17 第二轮：两条实测报障的修正
 

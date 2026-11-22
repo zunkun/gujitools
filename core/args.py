@@ -181,7 +181,7 @@ def default_workers(files: int | None = None, command: str | None = None) -> int
 
 #: 默认值是 `None` 但语义为数字的键——没法从默认值推断类型，只能显式登记。
 #: 其余数字键（`zoom`/`dpi`/`batch_size`/`area`/`sealarea`…）都按**默认值的类型**
-#: 自动推断，所以这里只有这三个。`tests/selftests/arg_types.py` 会检查：这个集合里的
+#: 自动推断，所以这里只有这三个。`tests/selftests/cli/arg_types.py` 会检查：这个集合里的
 #: 每个键都真的存在于某个 CommandSpec 里（键被改名/删除时会红）。
 _NUMERIC_KEYS_WITH_NONE_DEFAULT = frozenset(
     {"start", "end", "page_number_end_page"}

@@ -21,7 +21,7 @@
 > | 整本 PDF | 123 MB | **≈37 MB** |
 >
 > 结论仍是「用 PNG、别换 JPEG」，而且现在 PNG 比当初这份基准还小一个数量级。
-> 护栏见 `tests/selftests/imposition_binary.py`。
+> 护栏见 `tests/selftests/printing/imposition_binary.py`。
 
 
 ## 结论摘要

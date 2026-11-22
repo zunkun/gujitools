@@ -36,7 +36,7 @@ if TYPE_CHECKING:
 def _chosen_items(dialog) -> list[dict]:
     """弹窗勾选结果 → ``[{"path": Path, "uploaded": bool}]``。
 
-    ⚠️ 自测替身（``tests/selftests/imposition.py`` 里的 *_Fake*Dialog）只实现
+    ⚠️ 自测替身（``tests/selftests/printing/imposition/`` 里的 *_Fake*Dialog）只实现
     了 ``picked_files()``：这里用 ``getattr`` 兜底，替身不必跟着改；真弹窗
     走 ``chosen_items()``（带"是不是本次上传"的标记，宿主据此决定要不要
     复制文件）。

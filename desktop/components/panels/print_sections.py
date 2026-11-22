@@ -12,7 +12,7 @@
 
 ⚠️ 控件在**本模块**创建、却在 ``PrintPanel`` 里读写（``get_args`` /
 ``_apply_args`` / ``_connect_preview_signals``）——这条跨模块的隐式契约由
-``tests/selftests/print_form_split.py`` 钉住：新增分区必须同时登记它挂到
+``tests/selftests/printing/print_form_split.py`` 钉住：新增分区必须同时登记它挂到
 self 上的控件名，否则漏挂没人会发现。
 """
 

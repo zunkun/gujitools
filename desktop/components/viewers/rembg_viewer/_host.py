@@ -12,7 +12,7 @@
         RembgViewerHost = object        # 运行期退化成 object ⇒ MRO 与行为零改动
 
 ⚠️ 成员落点 / 签名改动后要同步本文件——守卫
-``tests/selftests/viewer_split.py`` 会核对它覆盖了全部成员。
+``tests/selftests/ui/viewer_split.py`` 会核对它覆盖了全部成员。
 """
 from __future__ import annotations
 

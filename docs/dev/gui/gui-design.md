@@ -265,7 +265,7 @@
   控件初值、`_apply_args` 的缺键兜底、`reset_to_default` 三处都从它取。
   面板里**不许再写** `p.get("键", 字面量)` 这种自带默认兜底的写法——
   `page_number_font_size` 就曾因此出现 12 / 18 两套值（详见 gui-architecture.md
-  2.1 节与 `tests/selftests/params_spec.py` 的守卫）。
+  2.1 节与 `tests/selftests/architecture/params_spec.py` 的守卫）。
 
 ### 2.6 图片拼版（可选节点）
 

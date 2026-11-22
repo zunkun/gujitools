@@ -1,7 +1,7 @@
 # BPM 流程合法性校验与测试
 
 > 状态：已实现（2026-10-06）。校验器：`desktop/steps/validate.py`；
-> 自测：`tests/selftests/flow_validate.py`（模块名 `flow_validate`）。
+> 自测：`tests/selftests/flow/flow_validate/`（模块名 `flow_validate`）。
 
 BPM 允许任意组合节点，但**并非所有组合都合法**。我们希望用户用默认流程，
 但真实需求千奇百怪——所以策略是：**合法的尽量放行（运行时按图判就绪），
@@ -139,7 +139,7 @@ imposition → print` 逐跳核对（rembg 吃入口目录 → 提交成品传 i
 历史口径曾是「没有检测数据 ⇒ area 锁整页 4」。**2026-10-22 起 area 参数已从
 整个项目移除**：检测文本框永远逐框裁图，去底色固定整图处理；拼版只看「图里
 有没有拼版节点」，不再依赖 area。相关代码与测试见
-`tests/selftests/area_border_default.py` 与 `imposition.py::_imposition_switch_state`。
+`tests/selftests/cli/area_border_default.py` 与 `imposition.py::_imposition_switch_state`。
 
 ## 节点可重复执行
 
@@ -152,7 +152,7 @@ imposition → print` 逐跳核对（rembg 吃入口目录 → 提交成品传 i
 
 ### 自测（离屏，进 `gui_selftest` 套件）
 
-`tests/selftests/flow_validate.py`（依赖 `flow_bpm`）钉这些事：
+`tests/selftests/flow/flow_validate/`（依赖 `flow_bpm`）钉这些事：
 
 1. 上面 10 条合法组合全部放行；「去底色+提交」同格两动作不误判重复；
    **没有起止圈的图也放行**（任何任务节点都能当首末节点，2026-11-15）；

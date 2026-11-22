@@ -5,7 +5,7 @@
 > 三类产物的编码格式能不能从 JPG/PNG 换成 WebP，换完页面能不能正确渲染。
 > **测量阶段未改任何生产代码**；2026-10-25 已按第 9 节落地：检测提交裁图改为
 > **JPEG q95（4:4:4）**，extract 的导出路径保持 JPEG q95，rembg 保持 PNG。
-> 探针见 [probe_webp_benchmark.py](../../tests/probe_webp_benchmark.py)。
+> 探针见 [probe_webp_benchmark.py](../../tests/probes/probe_webp_benchmark.py)。
 
 ## 结论摘要
 
@@ -403,14 +403,14 @@
 
 ```bash
 # 全量（编码矩阵 + Qt 渲染 + 内存 + 真实提取链路 + YOLO）
-C:\Users\liuzu\anaconda3\envs\py310\python.exe tests\probe_webp_benchmark.py
+C:\Users\liuzu\anaconda3\envs\py310\python.exe tests/probes/probe_webp_benchmark.py
 
 # 只跑编码/渲染（快）
-C:\Users\liuzu\anaconda3\envs\py310\python.exe tests\probe_webp_benchmark.py \
+C:\Users\liuzu\anaconda3\envs\py310\python.exe tests/probes/probe_webp_benchmark.py \
     --samples 4 --skip-memory --skip-yolo --skip-integration
 
 # 指定另一份素材
-C:\Users\liuzu\anaconda3\envs\py310\python.exe tests\probe_webp_benchmark.py \
+C:\Users\liuzu\anaconda3\envs\py310\python.exe tests/probes/probe_webp_benchmark.py \
     --task C:\Users\liuzu\Documents\guji\tasks\0021 --samples 4
 ```
 

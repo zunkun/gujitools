@@ -67,7 +67,7 @@ if TYPE_CHECKING:
 #: ⚠️ 这个数不只影响导航栏自己：它是**主窗口最小宽度必须多出来的那一截**
 #: （见 ``desktop/app.py::WINDOW_MIN_SIZE``）。壳层是常驻外框，正文区少了这
 #: 48px，四个步骤的参数表单就会被挤到 178px（第三步「印章面积阈值」那行的
-#: 输入框，实测；没有壳层时是 226px）——`tests/selftests/panel_label_fit.py`
+#: 输入框，实测；没有壳层时是 226px）——`tests/selftests/ui/panel_label_fit.py`
 #: 卡的 200px 下限就是这么被踩掉的。
 #:
 #: 取值来自 qfluentwidgets ``NavigationPanel`` 的 COMPACT 宽度（实测 48，
@@ -634,7 +634,7 @@ class ModuleShell(QWidget):
         ⚠️ 必须一起换：壳层自己持一份（惰性详情页构造时取的就是它）、列表页
         持一份、已经建出来的详情页又持一份。只改 ``MainWindow.store`` 而漏掉
         这里，惰性构造的详情页会继续指向**老目录**——表现是"打开的是同名任务
-        号的另一个任务"（`tests/selftests/last_stage.py` 就是这么红的：真实数据
+        号的另一个任务"（`tests/selftests/task/last_stage.py` 就是这么红的：真实数据
         目录里恰好也有 0001，而它停在拼版步）。测试的
         「换 store 指向临时目录」这一手（`_context.prepare`）全靠它。
         """

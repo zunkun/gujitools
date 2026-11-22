@@ -4,7 +4,7 @@
 从 ``image_editor.py`` 拆出（2026-10-07）。本文件只放：类头（信号）、
 ``__init__``，以及**与工具无关的基座方法**（装图/取图/缩放适配/工具切换）。
 各工具（裁剪/变换/扭曲/擦除/文字）在兄弟模块里以 Mixin 提供，
-方法体逐字未改；成员归属由 ``tests/selftests/image_editor_split.py`` 钉住。
+方法体逐字未改；成员归属由 ``tests/selftests/image_editor/image_editor_split.py`` 钉住。
 
 ⚠️ 信号必须定义在**这个 QObject 子类**上（PySide6 的 ``Signal`` 描述符
 要求宿主是 QObject）；Mixin 只 emit，不声明。

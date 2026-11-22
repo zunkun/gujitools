@@ -130,7 +130,7 @@
 
 ### 4.4 测试覆盖
 
-[`tests/selftests/extract_quick.py`](../../tests/selftests/extract_quick.py) 新增 5 条断言：
+[`tests/selftests/extract/extract_quick.py`](../../tests/selftests/extract/extract_quick.py) 新增 5 条断言：
 
 1. 能降档的 JP2 页全部走快通道；
 2. 快通道输出尺寸与 `quick=False` 整页渲染**逐尺寸一致**；
@@ -159,10 +159,10 @@
 ## 7. 复现
 
 ```bash
-python tests/probe_pdf_engines.py --pdf <书.pdf> --pages 0-7 --dpi 300 --parallel 4
+python tests/probes/probe_pdf_engines.py --pdf <书.pdf> --pages 0-7 --dpi 300 --parallel 4
 ```
 
-- 探针脚本：[`tests/probe_pdf_engines.py`](../../tests/probe_pdf_engines.py)
+- 探针脚本：[`tests/probes/probe_pdf_engines.py`](../../tests/probes/probe_pdf_engines.py)
 - 每引擎结果与汇总 JSON 落在 `tests/tmp/probe_*/`（已被 gitignore）
 - 测试用引擎只在开发环境安装：`pip install pypdfium2 pdf-oxide`（生产不依赖它们）
 

@@ -120,7 +120,7 @@ desktop/
 时兜底永不生效），也不能写成 `parameters.get(key) or 默认`（合法的 `False`/`0`
 会被误判成"没值"）。
 
-守卫见 `tests/selftests/params_spec.py`：源码层（不许再写 `p.get("键", 字面量)`）、
+守卫见 `tests/selftests/architecture/params_spec.py`：源码层（不许再写 `p.get("键", 字面量)`）、
 覆盖层（`get_args()` 的键必须登记）、行为层（恢复默认 == 默认表）、
 文档层（`docs/functions/print.md` 的数值默认值与 `command_spec` 一致）。
 
@@ -202,7 +202,7 @@ repo.stage_input(tid, "print", "pages")                  # 自动解析成 stage
 - **BPM 化的前提是端口按类型匹配**：`rembg` 声明吃 `("pages",)`，
   它不关心 `pages` 来自 `detect_submit` 还是将来的别的步骤——这才是"解耦"。
   ⚠️ 声明必须与事实一致：漏写/多写一个就等于给 BPM 一条**假的边**（由
-  `tests/selftests/step_ports.py` 盯着）；
+  `tests/selftests/flow/step_ports/` 盯着）；
 - **运行阶段 ≠ 步骤 key**：多一个 `detect_submit`（「提交本次任务」是 `detect`
   的第二个动作）。`STAGE_STEPS` 负责映射，否则裁好的图没有落点；
 - **条件连线单列**：`print` 的上游随"拼版是否生效"变化，用
@@ -257,7 +257,7 @@ self.run_button.setText(spec.run_button_text)
 ```
 
 ⚠️ **不要用 `spec_by_key(stage)`**：`detect_submit` 是同一步骤的第二个动作，
-直接按 key 查会拿到 `None`。护栏在 `tests/selftests/step_ports.py` 第 6 节
+直接按 key 查会拿到 `None`。护栏在 `tests/selftests/flow/step_ports/` 第 6 节
 （既验 spec 的值，也验页面真的读它）。
 
 **加一步现在只改两处**：`SPECS` 加一条 spec（端口 + 界面元数据）+ 一张连线表
@@ -271,7 +271,7 @@ self.run_button.setText(spec.run_button_text)
   `nav=True` 的 spec，**壳层一行都不用动**（壳层只认元数据与工厂，从不 import
   具体页面）；
 - 模块页**惰性构造**：用户第一次点进去才建；模块之间、模块与 `TaskDetailPage`
-  之间**没有 import 依赖**（由 `tests/selftests/modules_shell.py` 用 AST 静态检查）；
+  之间**没有 import 依赖**（由 `tests/selftests/ui/modules_shell.py` 用 AST 静态检查）；
 - 五个模块（extract / detect / rembg / print / imposition）**各持自己的一份**
   `StepControl`（各自的源、输出、执行线程）⇒ 一个模块在跑，另一个模块的按钮
   不受影响。
@@ -295,7 +295,7 @@ class MyPage(StepModulePage):
 
 可选钩子：`source_summary()`（副标题那一行，默认 `<源> → <输出>`）、
 `source_images()`（源里的图片清单）、`on_failed()`、`idle_text()`。
-`tests/selftests/step_ports.py` 第 5 节钉住"页面里不再出现 `SourceZone(` /
+`tests/selftests/flow/step_ports/` 第 5 节钉住"页面里不再出现 `SourceZone(` /
 `StepControl(`"，防止又抄回来。
 
 ⚠️ **拼版页有意不继承** `StepModulePage`：它的"源"是**一批图片**（要
@@ -330,7 +330,7 @@ singletask 是独立任务，下面有各种独立功能」。
 共用渲染组件、参数面板与步骤元数据；缓存根各归各——独立页缓存在
 `singletask/<key>/`，任务流程缓存在 `tasks/<id>/thumbnails/{source,print,
 imposition,detect}`。**任何一侧都禁止借道另一侧的缓存区**（历史 bug：拼版左列
-缩略图曾误写进 singletask，由 `tests/selftests/imposition.py` 的缓存边界断言
+缩略图曾误写进 singletask，由 `tests/selftests/printing/imposition/` 的缓存边界断言
 钉住）。taskdetail 缓存随「删除任务」整体清理；singletask 缓存独立生命周期。
 ```
 
@@ -360,7 +360,7 @@ imposition,detect}`。**任何一侧都禁止借道另一侧的缓存区**（历
   `begin_pdf_pages(count)` + `set_pdf_thumb(gen, idx, img)`，大图按需渲高清页，
   **不是**拿 256px 小图放大）。⚠️ `set_images` **必须先 `_clear_page_source()`**，
   否则清单里的 `1.jpg` 会被当页号去 PDF 里渲。护栏在
-  `tests/selftests/modules_shell.py` 第 10 节（含"换一本书渲出的是它自己的页数"）。
+  `tests/selftests/ui/modules_shell.py` 第 10 节（含"换一本书渲出的是它自己的页数"）。
 
 ⚠️ **PDF 源走 `PreviewWorker` 的缩略图通道，图片源走 `ImageThumbCacheWorker`**：
 前者的单飞锁、按耗时让出 GIL、原子写、页边界可取消都是踩出来的，别重写。
@@ -416,7 +416,7 @@ imposition,detect}`。**任何一侧都禁止借道另一侧的缓存区**（历
 - 右下角尺寸提示在待定期间并排写出"裁完是多大"（`裁剪后 140 × 90 px
 （当前 200 × 120 px）`），因为 `_image` 那会儿还是整幅。
 
-护栏：`tests/selftests/image_editor_crop.py` 第 7 组（含"向外拖回去 ⇒ 遮罩显著
+护栏：`tests/selftests/image_editor/image_editor_crop.py` 第 7 组（含"向外拖回去 ⇒ 遮罩显著
 缩小、图仍是原幅"这条用户报障的直接回归）。
 
 **「独立任务」与「任务流程」的落地口径不同（这是设计，不是 bug）**：独立任务
@@ -430,7 +430,7 @@ PDF 矢量页没有可回写文件，右键菜单干脆不给「编辑图片」�
 具体文件名的覆盖确认等于没确认。⚠️ 刻意做成**属性而不是 `__init__` 参数**——
 六个宿主的签名被自测的替身编辑器（`_StubEditor(parent, image, save_back)`）
 硬编码着，`_open_editor` 多一个关键字参数就让整条自测抛 `TypeError`。
-护栏：`tests/selftests/image_editor_saveback.py` 第 6 节。
+护栏：`tests/selftests/image_editor/image_editor_saveback.py` 第 6 节。
 
 #### 独立任务页的「编辑生效链」（2026-10-03）
 
@@ -457,7 +457,7 @@ PDF 矢量页没有可回写文件，右键菜单干脆不给「编辑图片」�
 字节数就换了键；若查看器还记着旧键那条路径，刷新出来的是**覆盖前**那张缓存
 （左栏一直是旧图）。`ImageViewerWidget.reload_thumb()` 会先 pop 掉
 `_thumb_cache_ready[path]` 再重取——这是"编辑生效"在左栏的关键一步。
-护栏：`tests/selftests/module_edit_sync.py`（同尺寸换色 / 换尺寸 / 同键 mtime
+护栏：`tests/selftests/image_editor/module_edit_sync.py`（同尺寸换色 / 换尺寸 / 同键 mtime
 三条路都验，并直接读左栏条目图标的像素）。
 
 **拼图独立页的四条入口**（2026-10-03 补齐）：`ImpositionViewWidget` 一直有

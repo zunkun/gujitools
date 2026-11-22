@@ -273,7 +273,7 @@ gujitools 桌面端主窗口：左侧导航壳层（任务管理 + 独立模块�
 ⚠️ 赋值必须**传到壳层**，不能只改 MainWindow 自己：壳层存了一份（惰性
 详情页构造时取它）、列表页存了一份、已建出来的详情页又存了一份。只改
 这里的话，惰性构造的详情页会继续读**真实数据目录**——表现是"打开的是
-同名任务号的另一个任务"（`tests/selftests/last_stage.py` 实测）：
+同名任务号的另一个任务"（`tests/selftests/task/last_stage.py` 实测）：
 它给 MainWindow 换 store 后打开 0001，而详情页
 拿的是真实目录里的 0001，于是落到了那台机器上真正停留的步骤。
 
@@ -3080,7 +3080,7 @@ PDF排版（print）阶段的表单构建 Mixin：编排、通用控件工厂、
 
 ⚠️ 拆分只改**代码落在哪个文件**，不改任何行为：四个类的成员名对外一律从
 ``PrintFormMixin`` 可见（``PrintPanel`` 只继承它一个），
-``tests/selftests/print_form_split.py`` 钉住这条不变量。
+``tests/selftests/printing/print_form_split.py`` 钉住这条不变量。
 
 ### `class PrintFormMixin(PrintSectionsMixin, PrintTextLayoutMixin)`
 
@@ -3123,7 +3123,7 @@ PrintTextLayoutMixin``。前三者都只依赖 ``self`` 上的成员，最终由
 ⚠️ **拆出后仍然靠 `self._xxx` 共享状态**——这是 Mixin 拆分的固有代价，
 不要为了"看起来独立"去加构造参数：面板的 MRO 是线性的，共享 self
 反而是这里最简单正确的做法。共享点全部登记在
-``tests/selftests/print_form_split.py`` 的白名单里。
+``tests/selftests/printing/print_form_split.py`` 的白名单里。
 
 ### `class PrintInsetMixin`
 
@@ -3347,7 +3347,7 @@ print 表单的五个分区（输出与纸张 / 页边距 / 标题 / 页码 / �
 
 ⚠️ 控件在**本模块**创建、却在 ``PrintPanel`` 里读写（``get_args`` /
 ``_apply_args`` / ``_connect_preview_signals``）——这条跨模块的隐式契约由
-``tests/selftests/print_form_split.py`` 钉住：新增分区必须同时登记它挂到
+``tests/selftests/printing/print_form_split.py`` 钉住：新增分区必须同时登记它挂到
 self 上的控件名，否则漏挂没人会发现。
 
 ### `class PrintSectionsMixin(PrintInsetMixin)`
@@ -4271,7 +4271,7 @@ worker 会变成孤儿线程，而它是被 ``parent``（编辑器对话框）�
 从 ``image_editor.py`` 拆出（2026-10-07）。本文件只放：类头（信号）、
 ``__init__``，以及**与工具无关的基座方法**（装图/取图/缩放适配/工具切换）。
 各工具（裁剪/变换/扭曲/擦除/文字）在兄弟模块里以 Mixin 提供，
-方法体逐字未改；成员归属由 ``tests/selftests/image_editor_split.py`` 钉住。
+方法体逐字未改；成员归属由 ``tests/selftests/image_editor/image_editor_split.py`` 钉住。
 
 ⚠️ 信号必须定义在**这个 QObject 子类**上（PySide6 的 ``Signal`` 描述符
 要求宿主是 QObject）；Mixin 只 emit，不声明。
@@ -11359,7 +11359,7 @@ PDF 已经建过任务时再建第二个，多半是误操作，不该因为"快
 ⚠️ 必须一起换：壳层自己持一份（惰性详情页构造时取的就是它）、列表页
 持一份、已经建出来的详情页又持一份。只改 ``MainWindow.store`` 而漏掉
 这里，惰性构造的详情页会继续指向**老目录**——表现是"打开的是同名任务
-号的另一个任务"（`tests/selftests/last_stage.py` 就是这么红的：真实数据
+号的另一个任务"（`tests/selftests/task/last_stage.py` 就是这么红的：真实数据
 目录里恰好也有 0001，而它停在拼版步）。测试的
 「换 store 指向临时目录」这一手（`_context.prepare`）全靠它。
 
@@ -14082,7 +14082,7 @@ _apply_control_width`` 按 stage 换宽度、``history._history_fill_keys``
   补完）：:mod:`desktop.steps.ports` 按这两个字段 + 它的连线表把步骤连起来，
   任务流程不再靠"约定目录布局"。**声明必须与事实一致**——端口模型靠它做
   依赖检查，写漏一个就等于给 BPM 一条假的边（``rembg`` 漏写 ``boxes`` 就是
-  这样被 ``tests/selftests/step_ports.py`` 逮到的）。
+  这样被 ``tests/selftests/flow/step_ports/`` 逮到的）。
 
 #### 方法
 
@@ -16545,7 +16545,7 @@ qfluentwidgets 1.11.2 **没有** MenuBar 组件（只有 ``RoundMenu`` 这类弹
 Qt 原生 ``QMenuBar``：与既有窗口装饰同族、自带 ``Alt`` 助记符与键盘导航
 （``文件(F)`` 这类写法就是助记符）。**不改窗口尺寸、不动壳层布局**——菜单栏
 只吃高度、不吃宽度，因此 ``desktop/app.py::WINDOW_MIN_SIZE`` 的宽度下限与
-``tests/selftests/panel_label_fit.py`` 的 200px 断言都不受影响。
+``tests/selftests/ui/panel_label_fit.py`` 的 200px 断言都不受影响。
 
 菜单项**只做路由与转发**，业务一律复用既有入口：
 

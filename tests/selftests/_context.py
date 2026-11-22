@@ -27,10 +27,10 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-# 测试临时文件统一落点（见 tests/tmpdir.py）：本模块被运行器与**每个**用例
+# 测试临时文件统一落点（见 tests/common/tmpdir.py）：本模块被运行器与**每个**用例
 # 模块导入，在这里装一次即可覆盖整轮自测（含 worker 子进程）。
 # ⚠️ 必须早于任何 tempfile 调用——gettempdir() 算过就缓存，晚了不生效。
-from tests.tmpdir import install as _install_tmpdir  # noqa: E402
+from tests.common.tmpdir import install as _install_tmpdir  # noqa: E402
 
 _install_tmpdir()
 
@@ -420,7 +420,7 @@ class Context:
 
         from desktop.app import MainWindow
         from desktop.store import TaskStore
-        from tests.tmpdir import temp_dir
+        from tests.common.tmpdir import temp_dir
 
         self.tmp = temp_dir("guji_selftest_")
         print(f"工作目录：{self.tmp}")

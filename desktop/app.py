@@ -39,7 +39,7 @@ WINDOW_TITLE = "古籍重製"
 #: 的设计下限（四个步骤的参数表单在这个宽度下才不被挤扁——第三步的输入框
 #: 226px，再窄就掉到 178px），而壳层的导航栏是**常驻外框**、折叠时也占
 #: ``NAV_COMPACT_WIDTH``。只写 1080 的话，用户在最小窗口下就正好少这 48px，
-#: `tests/selftests/panel_label_fit.py` 的 200px 下限当场就红（实测 178px）。
+#: `tests/selftests/ui/panel_label_fit.py` 的 200px 下限当场就红（实测 178px）。
 #: 屏幕不够宽时 window_size.apply_window_size 会把最小尺寸再夹下来，不影响小屏。
 CONTENT_MIN_WIDTH = 1080
 WINDOW_SIZE = QSize(1440, 920)
@@ -180,7 +180,7 @@ class MainWindow(FramelessMainWindow, WorkerHost):
         ⚠️ 赋值必须**传到壳层**，不能只改 MainWindow 自己：壳层存了一份（惰性
         详情页构造时取它）、列表页存了一份、已建出来的详情页又存了一份。只改
         这里的话，惰性构造的详情页会继续读**真实数据目录**——表现是"打开的是
-        同名任务号的另一个任务"（`tests/selftests/last_stage.py` 实测）：
+        同名任务号的另一个任务"（`tests/selftests/task/last_stage.py` 实测）：
         它给 MainWindow 换 store 后打开 0001，而详情页
         拿的是真实目录里的 0001，于是落到了那台机器上真正停留的步骤。
         """

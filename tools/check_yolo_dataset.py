@@ -62,7 +62,7 @@ from utils.sort_utils import natural_sort_key  # noqa: E402
 #: 切片自带的凭据文件名（导出时写的，含任务号）。⚠️ 与
 #: ``desktop.services.detect_export.SLICE_META_NAME`` 是**同一个约定**——
 #: 这里不 import desktop（工具要能在没装 GUI 依赖时跑），所以字面量写死，
-#: 并由 ``tests/selftests/dev_yolo.py`` 钉住两者一致。
+#: 并由 ``tests/selftests/detect/dev_yolo.py`` 钉住两者一致。
 SLICE_META_NAME = "data.json"
 
 #: 「导出YOLO标注」写出的文件名形状：``<名称>-<页序>.<后缀>``（见

@@ -78,7 +78,7 @@ class ThumbsMixin(WorkerHost):
 
         ⚠️ 必须在**主线程**先算好再闭包进 ``make_worker``：批次工厂是在 worker
         线程里被调用的，那里碰 QWidget（``devicePixelRatioF``）是越界的
-        （见 selftests/worker_thread_affinity.py）。
+        （见 selftests/safety/worker_thread_affinity.py）。
         """
         return ThumbStrip.decode_edge(cast(QWidget, self).devicePixelRatioF() or 1.0, base)
 

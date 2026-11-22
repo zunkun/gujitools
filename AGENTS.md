@@ -30,7 +30,7 @@ core（命令定义、reporter）   →   utils（纯算法：box_geometry、ima
 ```
 
 - 严格单向：`utils ← core ← {cli, functions, desktop}`；跨层白名单见
-  `tests/selftests/layering.py`（函数内延迟导入放行）。
+  `tests/selftests/architecture/layering.py`（函数内延迟导入放行）。
 - **GUI 主进程不许进重依赖**（cv2/torch）：主进程要用的纯规则放 `utils`；
   重活全部走 worker 子进程（`functions.detect.detect_page_content` 是唯一检测入口）。
 - 中文路径禁止直接 `cv2.imread/imwrite`，一律走 `utils.image_io`。
@@ -130,11 +130,19 @@ python publish_release.py             # 真发布；加 --build 会先跑 python
 
 ## AI 写代码 / 写文件的落点（临时文件必清理）
 
-- **测试代码只进 `tests/`**：能被自测框架发现的用例放 `tests/selftests/<模块名>.py`
-  （顶部必须有 `NAME` / `TITLE`，依赖写 `DEPENDS`）；探针、截图等辅助脚本放 `tests/`
-  （如 `probe_*.py`）。**禁止在仓库根目录新建测试脚本。**
-- **测试产生的临时数据一律落 `tests/tmp/`**——`tests/tmpdir.py` 是唯一落点：
-  新代码 `from tests.tmpdir import temp_dir` 用 `temp_dir("前缀_")`；存量代码/测试入口
+- **测试代码只进 `tests/`**：能被自测框架发现的用例放
+  `tests/selftests/<分类>/<模块名>.py`（分类见 `tests/selftests/` 下现有目录，如
+  `flow` / `printing` / `image_editor`；顶部必须有 `NAME` / `TITLE`，依赖写
+  `DEPENDS`）；探针、截图等辅助脚本放 `tests/probes/`，进度协议双跑放
+  `tests/reporter/`，共享设施放 `tests/common/`。**`tests/` 根目录只留入口
+  `gui_selftest.py` 与 `__init__.py`，禁止新建独立脚本。**
+- **测试单文件 ≤ 600 行**：超过就按
+  [`docs/dev/testing-standards.md`](docs/dev/testing-standards.md) §2.1 拆成
+  `tests/selftests/<分类>/<模块名>/` 包（`__init__.py` 重导出 + `summary.py` 编排 +
+  `_helpers.py` + `p01.py`/`p02.py` 按章节分片，跨片夹具挂 `st`）。运行器同等发现
+  单文件与包，`--only <NAME>` 不变；改哪章只动哪个 `pNN.py`。
+- **测试产生的临时数据一律落 `tests/tmp/`**——`tests/common/tmpdir.py` 是唯一落点：
+  新代码 `from tests.common.tmpdir import temp_dir` 用 `temp_dir("前缀_")`；存量代码/测试入口
   在**最顶部**调一次 `install()`（它把 `tempfile.tempdir` 与 `TMPDIR/TEMP/TMP` 一起
   指过去，连 **worker 子进程**也覆盖）。
   ⚠️ 两个"落错地方"都不行：落**系统临时目录** ⇒ 产物散在项目外、看不见清不掉；

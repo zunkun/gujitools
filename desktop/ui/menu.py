@@ -8,7 +8,7 @@ qfluentwidgets 1.11.2 **没有** MenuBar 组件（只有 ``RoundMenu`` 这类弹
 Qt 原生 ``QMenuBar``：与既有窗口装饰同族、自带 ``Alt`` 助记符与键盘导航
 （``文件(F)`` 这类写法就是助记符）。**不改窗口尺寸、不动壳层布局**——菜单栏
 只吃高度、不吃宽度，因此 ``desktop/app.py::WINDOW_MIN_SIZE`` 的宽度下限与
-``tests/selftests/panel_label_fit.py`` 的 200px 断言都不受影响。
+``tests/selftests/ui/panel_label_fit.py`` 的 200px 断言都不受影响。
 
 菜单项**只做路由与转发**，业务一律复用既有入口：
 

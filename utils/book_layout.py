@@ -56,7 +56,7 @@ from utils.box_geometry import (
 #: ⚠️ 与 yolo_utils 里那个"窄整幅算失败检测"的 0.70 阈值是**两回事**，别混：
 #:    那个是**单页消解**规则，作用对象是整幅框；这里是**全书统计**规则，
 #:    作用对象是半幅框。
-#:    ⚠️ 全仓唯一性守卫（``tests/selftests/content_classes.py`` 第 7 节）按
+#:    ⚠️ 全仓唯一性守卫（``tests/selftests/detect/content_classes.py`` 第 7 节）按
 #:    **标识符文本**扫描，禁止别处再抄那个常量名——所以这里刻意不写出它，
 #:    以免被守卫误判成"重复定义"。要查那个阈值请直接看 yolo_utils。
 SINGLE_COLUMN_WIDTH_RATIO = 0.60

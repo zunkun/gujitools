@@ -31,23 +31,47 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
-# 测试临时文件统一落点：tests/tmp/（见 tests/tmpdir.py）。
+# 测试临时文件统一落点：tests/tmp/（见 tests/common/tmpdir.py）。
 # ⚠️ 必须早于任何 tempfile 调用，否则 gettempdir() 已缓存、改不回来。
-from tests.tmpdir import install as _install_tmpdir  # noqa: E402
+from tests.common.tmpdir import install as _install_tmpdir  # noqa: E402
 
 _install_tmpdir()
 
 
-def discover_modules() -> dict:
-    """扫描 tests/selftests/*.py 动态发现用例模块，返回 {NAME: module}。"""
-    modules: dict = {}
-    package_dir = Path(__file__).parent / "selftests"
-    for path in sorted(package_dir.glob("*.py")):
+def _iter_case_paths(package_dir: Path, prefix: str):
+    """递归产出用例的导入路径；``CATEGORY = True`` 的目录只是分类壳层。"""
+    for path in sorted(package_dir.iterdir()):
         if path.name.startswith("_"):
             continue  # _context 等内部设施不当作用例
-        module = importlib.import_module(f"tests.selftests.{path.stem}")
-        name = getattr(module, "NAME", path.stem)
-        modules[name] = module
+        if path.is_file() and path.suffix == ".py":
+            yield f"{prefix}.{path.stem}"
+        elif path.is_dir() and (path / "__init__.py").is_file():
+            dotted = f"{prefix}.{path.name}"
+            module = importlib.import_module(dotted)
+            if getattr(module, "CATEGORY", False):
+                yield from _iter_case_paths(path, dotted)
+            else:
+                yield dotted
+
+
+def discover_modules() -> dict:
+    """扫描 tests/selftests/ 动态发现用例模块，返回 {NAME: module}。
+
+    用例可以是**单文件**（``foo.py``）或**包**（``foo/__init__.py`` + 分片）：
+    大功能按章节拆成 ``foo/pNN.py``、由 ``foo/summary.py`` 编排，改一处只动
+    一个小文件。包与单文件同权，NAME/DEPENDS/TITLE/run 都从包的 ``__init__``
+    取。
+
+    用例按功能域放在分类目录下（``<分类>/foo.py``）；分类目录的
+    ``__init__.py`` 只写 ``CATEGORY = True``，运行器据此下钻，分类名不参与
+    模块名，``--only`` 仍用 ``NAME``。
+    """
+    modules: dict = {}
+    package_dir = Path(__file__).parent / "selftests"
+    for dotted in _iter_case_paths(package_dir, "tests.selftests"):
+        module = importlib.import_module(dotted)
+        name = dotted.rsplit(".", 1)[-1]
+        modules[getattr(module, "NAME", name)] = module
     return modules
 
 

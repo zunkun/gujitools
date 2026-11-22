@@ -390,7 +390,7 @@ def _release_model() -> bool:
     返回是否真的关掉了一个在跑的服务（没有服务时 ``False``，属正常）。
 
     ⚠️ 函数内延迟导入 ``functions``：分层守卫要求 desktop 的**模块级** import 只能
-    到 utils/core（见 ``tests/selftests/layering.py``），延迟导入是放行的。
+    到 utils/core（见 ``tests/selftests/architecture/layering.py``），延迟导入是放行的。
     ⚠️ 释放失败**不当错误抛**（服务可能本来就没起、或关不掉）：让后续更名去暴露
     真正的占用问题。
     """

@@ -274,7 +274,7 @@ apply_app_style(app)
 界面截图已改由**人工截取**（2026-10-12 起旧的离屏截图脚本 `tests/gui_shot.py`
 退役删除），文件放 `docs/guide/screenshots/`，命名与文档引用一致即可。
 `tests/gui_shot.py` 退役后，视觉自查靠：真机过一遍主流程 + BPM 截图工具
-（`tests/bpm_shot.py`，流程图专用）+ `tests/gui_selftest.py`（功能断言）。
+（`tests/probes/bpm_shot.py`，流程图专用）+ `tests/gui_selftest.py`（功能断言）。
 
 ## 7. 用户手册页（浏览器里渲染的那一页）
 
@@ -336,16 +336,16 @@ markdown 渲染、临时文件、防缓存文件名、旧文件清理整套绕�
 - **截图可点开看原图**：1500px 宽的界面截图在 900px 行宽里必然被压缩；
   ⚠️ 放大浮层的 `img` **必须由 JS 动态创建**——在 HTML 里静态写一个空
   `<img ...>` 会让护栏「12 张截图都被引用」的计数变成 13 而报红
-  （见 `tests/selftests/manual_dialog.py` 第 7 节）；
+  （见 `tests/selftests/ui/manual_dialog.py` 第 7 节）；
 - **`@media print`** 去掉吸顶栏/目录，只留正文，配合顶栏的「另存为 PDF」；
 - ⚠️ **绝对不要给手册页加 `<base>` 标签**（曾经加过，为的是让相对截图路径能解析）：
   **片段链接是按 base 解析的**，base 一旦指向 `docs/guide/`，点标题旁那个 `#`
   锚点就等于「打开手册目录」——浏览器把**目录列表**当页面显示（用户直接截图报过）。
   现在开发模式的截图写成绝对 `file://` URL、生产模式内联成 data URI，两边都不需要
-  base。护栏：`tests/selftests/manual_dialog.py` 第 8 节（断言页面里没有 base 标签，
+  base。护栏：`tests/selftests/ui/manual_dialog.py` 第 8 节（断言页面里没有 base 标签，
   并对照"塞回 base 后点击会导航走"的真机实验）。
 
-护栏在 `tests/selftests/manual_dialog.py` 第 8 / 14 / 15 / 19 节：钉住"没有 base 标签"
+护栏在 `tests/selftests/ui/manual_dialog.py` 第 8 / 14 / 15 / 19 节：钉住"没有 base 标签"
 "开发不启用静态" "打包打开静态文件" "静态页自包含（12 张 data URI、无外部引用）"
 "目录 id 带页签前缀 + 有滚动处理" "replaceState 被接住且滚动在前"。
 
@@ -365,7 +365,7 @@ markdown 渲染、临时文件、防缓存文件名、旧文件清理整套绕�
 - 回退链里**刻意不放 `webbrowser.open`**：它在 Windows 上就是 `os.startfile`，
   且同样会挂；只有非 Windows 平台才用它。
 
-护栏在 `tests/selftests/manual_dialog.py` 第 13 节：拦 `os.startfile` /
+护栏在 `tests/selftests/ui/manual_dialog.py` 第 13 节：拦 `os.startfile` /
 `webbrowser.open`，行为断言「第一跳是原生路径、且不出现 `file:` 前缀」。
 全部打开方式都失败时会弹一个带路径的提示框（可选中复制），别让用户对着
 按钮干瞪眼。

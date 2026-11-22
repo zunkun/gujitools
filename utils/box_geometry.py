@@ -195,7 +195,7 @@ def page_box_slots_from_event(payload) -> List[Optional[list]]:
 
     ⚠️ 本模块（utils）**不 import functions**——分层是单向的
     ``utils ← core ← {cli, functions, desktop}``，反过来引用会被
-    ``tests/selftests/layering.py`` 判违规。所以这里只按负载里的三个键出槽位，
+    ``tests/selftests/architecture/layering.py`` 判违规。所以这里只按负载里的三个键出槽位，
     不去构造 ``functions.detect.PageBoxes``：两侧共用的是**规则**
     （:func:`page_box_slots`），不是类型。
     """

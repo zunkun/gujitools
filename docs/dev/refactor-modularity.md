@@ -78,7 +78,7 @@ utils/pdf_utils.parse_color        ← 又一层委托（冗余）
 
 ### A. 注册点收敛（用守卫，不是硬集中）
 
-**不改结构，只加一致性断言**——放在 `tests/selftests/command_registry.py`（新模块）。
+**不改结构，只加一致性断言**——放在 `tests/selftests/architecture/command_registry.py`（新模块）。
 
 | 守卫        | 判据                                                                        |
 | --------- | ------------------------------------------------------------------------- |
@@ -175,8 +175,8 @@ QT_QPA_PLATFORM=offscreen KMP_DUPLICATE_LIB_OK=TRUE \
   C:/Users/liuzu/anaconda3/envs/py310/python.exe -u tests/gui_selftest.py
 
 # 2. CLI 侧两条链路
-python -u tests/reporter_cli_parity.py     # CLI stdout 文案不变
-python -u tests/reporter_worker_e2e.py     # worker 子进程 JSON Lines 协议
+python -u tests/reporter/reporter_cli_parity.py     # CLI stdout 文案不变
+python -u tests/reporter/reporter_worker_e2e.py     # worker 子进程 JSON Lines 协议
 python -u tests/cli_print_smoke.py         # 真跑一次 guji run print
 
 # 3. 文档工具
@@ -196,7 +196,7 @@ python -m pyflakes core/ cli/ functions/ utils/ desktop/
 ⚠️ 拆 `utils/` 下任何模块后，**必须重跑 `gen_api_docs.py`**（`--check` 会点名  
 `docs/api/utils.md`）。
 
-⚠️ 新增/移动公开函数后，`tests/selftests/docs_layout.py` 与  
+⚠️ 新增/移动公开函数后，`tests/selftests/architecture/docs_layout.py` 与  
 `tests/selftests/api_docs.py`（若存在）也要过。
 
 ## 6. 验收标准
@@ -215,16 +215,16 @@ python -m pyflakes core/ cli/ functions/ utils/ desktop/
 | 步骤    | 动作                                                                                   | 新增守卫                                                                  |
 | ----- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
 | C     | `stages/` 改从 `core.args` 取 `CommandArgs`；`detect_stage` 的跨层复用加注释登记                   | —                                                                     |
-| A     | 注册点一致性                                                                               | `tests/selftests/command_registry.py`（10 项）                           |
+| A     | 注册点一致性                                                                               | `tests/selftests/architecture/command_registry.py`（10 项）                           |
 | D     | `functions/print.py` 直连 `utils.margin_utils` / `utils.color_utils`；顺手修掉过时硬编码兜底 18/12 | —                                                                     |
 | B1    | `utils/pdf_utils.py` → `pdf_extract.py` + `pdf_draw.py`，原文件留 re-export 壳             | —                                                                     |
 | B2    | `desktop/ui/widgets.py` → `fonts.py` + `segmented_toggle.py`，原文件 `__all__` re-export | —                                                                     |
-| B3    | `print_form.py` 拆四层 Mixin                                                            | `tests/selftests/print_form_split.py`（6 项）                            |
-| B1 收尾 | 生产代码全部直连 `pdf_extract` / `pdf_draw`，不再走 `pdf_utils` 壳                                | `tests/selftests/deprecated_shim.py`（2 项）+ `tests/cli_print_smoke.py` |
+| B3    | `print_form.py` 拆四层 Mixin                                                            | `tests/selftests/printing/print_form_split.py`（6 项）                            |
+| B1 收尾 | 生产代码全部直连 `pdf_extract` / `pdf_draw`，不再走 `pdf_utils` 壳                                | `tests/selftests/architecture/deprecated_shim.py`（2 项）+ `tests/cli_print_smoke.py` |
 
 ### 7.1 print_form 拆分的三条不变量
 
-`tests/selftests/print_form_split.py` 用 AST 钉住：
+`tests/selftests/printing/print_form_split.py` 用 AST 钉住：
 
 1. 每个成员仍在**指定的那个类**里（改落点必须同步改守卫里的 `_EXPECTED_HOME`）；
 2. 四个类之间**无同名成员**——同名会被 MRO 静默遮蔽，等于偷偷改了行为；
@@ -251,7 +251,7 @@ python -m pyflakes core/ cli/ functions/ utils/ desktop/
 | # | 解耦项                                                            | 现状                                                                                      | 做法                                                                                                                                                                                                                                                                                           | 风险     |
 | - | -------------------------------------------------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
 | 1 | ✅ **toast 工厂合一**（2026-10-04 已做）                                | `TaskDetailPage._toast` 与 `ModulePage.toast` 逐字重复                                       | 收进 `desktop/ui/toast.py::show_toast`，两侧转发                                                                                                                                                                                                                                                    | 低      |
-| 2 | ✅ **拼版面板「流程启用」开关参数化**（2026-10-04 已做）                           | 公共面板 `ImpositionPanel` 底部内置 taskdetail 专属的「在流程中启用图片拼版」复选框，独立拼图页构造后"伸手"隐藏                | `ImpositionPanel(enable_switch=False)` 构造时声明；契约钉进 `tests/selftests/imposition.py`                                                                                                                                                                                                            | 低      |
+| 2 | ✅ **拼版面板「流程启用」开关参数化**（2026-10-04 已做）                           | 公共面板 `ImpositionPanel` 底部内置 taskdetail 专属的「在流程中启用图片拼版」复选框，独立拼图页构造后"伸手"隐藏                | `ImpositionPanel(enable_switch=False)` 构造时声明；契约钉进 `tests/selftests/printing/imposition/`                                                                                                                                                                                                            | 低      |
 | 3 | ✅ **壳层搬出 `desktop/modules/`**（2026-10-04 已做）                   | `modules/shell.py` import `pages`（tasklist/TaskDetailPage），包边界与"modules 不依赖 pages"的叙述不符 | 已移到 `desktop/shell.py`；`modules_shell` 自测同步改读新位置                                                                                                                                                                                                                                             | 低      |
 | 4 | ✅ **detect 人工干预的共享交互器**（2026-10-04 已做）                         | 两页各写一份"框类型回填/删除/整幅互斥确认"                                                                 | 已抽 `desktop/components/box_kinds.py::BoxKindEditor`（无 Qt；确认框走宿主 `box_confirm` 回调，两侧的 `Dialog`/`MessageBox` 自测替身机制原样保留）；两侧旧方法名保留、实现委托                                                                                                                                                         | 中低     |
 | 5 | ⚖️ **`STAGE_LOCATIONS` 评估后决定保留在 `steps/ports.py`**（2026-10-04） | 曾考虑迁到 store 层                                                                           | 不迁：① 依赖方向本来就对（store→steps 单向），没有分层违规；② `PORT_ARTIFACTS`/`STAGE_LOCATIONS`/`SUPPLIERS` 三张表是同一个 BPM 连线故事（"换连线只改一张表"），拆到两个模块反而稀释叙事、破坏 `step_ports` 自测的契约面；③ 它是"落点表"，本来就是流程级知识。真正的边界守则是：**steps 包不许出现 UI/编排代码**，声明表不算                                                                            | —      |
@@ -319,9 +319,9 @@ python -m pyflakes core/ cli/ functions/ utils/ desktop/
 
 | 守卫                                           | 覆盖                                                               | 钉什么                                 |
 | -------------------------------------------- | ---------------------------------------------------------------- | ----------------------------------- |
-| `tests/selftests/image_editor_split.py`      | `EditorCanvas` / `ImageEditorDialog` 的全部成员（成员数会随工具增删变，别在文档里写死） | 成员归属 / 无同名 / 跨 Mixin 依赖白名单 / 对外 API |
-| `tests/selftests/image_zoom_dialog_split.py` | `image_zoom_dialog` 子包                                           | 子包结构 / 对外 API / 四个宿主仍可导入            |
-| `tests/selftests/viewer_split.py`            | `image_view` / `image_viewer` / `rembg_viewer` / `print_preview` | 上面四条 + 旧单文件已删 + 模块级函数仍在包命名空间        |
+| `tests/selftests/image_editor/image_editor_split.py`      | `EditorCanvas` / `ImageEditorDialog` 的全部成员（成员数会随工具增删变，别在文档里写死） | 成员归属 / 无同名 / 跨 Mixin 依赖白名单 / 对外 API |
+| `tests/selftests/ui/image_zoom_dialog_split.py` | `image_zoom_dialog` 子包                                           | 子包结构 / 对外 API / 四个宿主仍可导入            |
+| `tests/selftests/ui/viewer_split.py`            | `image_view` / `image_viewer` / `rembg_viewer` / `print_preview` | 上面四条 + 旧单文件已删 + 模块级函数仍在包命名空间        |
 
 ⚠️ **MRO 遮蔽是这次拆分的头号风险**：两个 Mixin 出现同名方法**不报错**，  
 排在前的静默赢 —— 等于偷偷改了行为。所以"无同名成员"必须**单独**断言一次。

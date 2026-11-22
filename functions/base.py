@@ -155,7 +155,7 @@ class FunctionBase:
             # ⚠️ 归零之后**必须报错**，不能像以前那样 `return {"processed": 0}`
             # 静默成功：那会让「输入目录写错一层」「上游没产出图」这类问题
             # 以退出码 0 悄悄过去，脚本/流水线完全发现不了（print 命令就是
-            # 这么坑过一次，见 tests/selftests/print_stream.py）。
+            # 这么坑过一次，见 tests/selftests/printing/print_stream.py）。
             raise FileNotFoundError(
                 f"未在 {self.input} 找到任何图片"
                 "（支持 jpg/jpeg/png 等；若图片在子目录里，请指向该子目录）"

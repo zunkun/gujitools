@@ -11,7 +11,7 @@
 
 ⚠️ 拆分只改**代码落在哪个文件**，不改任何行为：四个类的成员名对外一律从
 ``PrintFormMixin`` 可见（``PrintPanel`` 只继承它一个），
-``tests/selftests/print_form_split.py`` 钉住这条不变量。
+``tests/selftests/printing/print_form_split.py`` 钉住这条不变量。
 """
 
 from __future__ import annotations

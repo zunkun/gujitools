@@ -77,7 +77,7 @@ class HistoryMixin:
         而且历史里存的还是这个残缺范围，越跑越窄。
 
         ⚠️ **只在自动回填时跳过**。用户在下拉框里主动挑一条历史配置时仍然原样
-        回填（那是"照那次参数再跑一遍"的明确指令，tests/selftests/history.py 钉着）。
+        回填（那是"照那次参数再跑一遍"的明确指令，tests/selftests/task/history.py 钉着）。
         """
         from desktop.steps import ports
 

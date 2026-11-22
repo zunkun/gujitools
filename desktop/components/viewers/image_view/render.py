@@ -40,7 +40,7 @@ class RenderMixin(ImageViewHost):
         ——dpr 是在设备层生效的，不体现在 painter 的变换里）。再乘一次 dpr
         等于放大两次：框会整体放大并偏移，而底图是对的，看上去就是"框和图片
         对不上/比例不对"。离屏自测（dpr 恒为 1）测不出这个，必须在 dpr≠1 下
-        用像素级断言验（见 tests/selftests/preview_dpr.py）。
+        用像素级断言验（见 tests/selftests/ui/preview_dpr.py）。
         """
         if self._pixmap is None:
             return

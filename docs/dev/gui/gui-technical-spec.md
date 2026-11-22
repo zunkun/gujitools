@@ -33,7 +33,7 @@ worker 子进程 stdout 每行一个 JSON 对象，均含 `type` 与 `task_id/st
 `[boxes]`/`[imgsize]` 两行文本在 functions 侧兼容保留一个版本，便于对照核验，
 但 worker 已不解析它们。
 
-⚠️ **`progress_total` 的归一化必须**两个** reporter 都做**（`core.reporter.CallbackReporter` 走进程内、独立功能页那条；`desktop.stages.events.JsonLinesReporter` 走子进程、任务流程那条）。只做一处的话，独立功能页永远拿不到上限、进度条一直是「总量未知」——两处口径分叉过一次，由 `tests/selftests/module_progress.py` 钉住。
+⚠️ **`progress_total` 的归一化必须**两个** reporter 都做**（`core.reporter.CallbackReporter` 走进程内、独立功能页那条；`desktop.stages.events.JsonLinesReporter` 走子进程、任务流程那条）。只做一处的话，独立功能页永远拿不到上限、进度条一直是「总量未知」——两处口径分叉过一次，由 `tests/selftests/ui/module_progress.py` 钉住。
 
 ⚠️ 渐进式迁移约定：
 ⚠️ `finished` 不再携带 `done/total`：进度由 `progress` 事件实时汇报，
@@ -128,9 +128,9 @@ GUI（QImage 渲染）共同消费同一份 `OutputLayout`，不得各自推导
   第三步「调参数实时覆盖当前页」都走它）：判据只看像素不看 `type`（面板参数与预览可能不同步），灰阶页走调色板 +
   tRNS（纯黑白页 1bit、灰度页 2/4/8bit；透明区 RGB 保留 255，第四步 JPEG 缩略图
   才不会变黑底），彩色印章页走 RGBA 保原色。回归防护：
-  `tests/selftests/rembg_transparent.py`。
+  `tests/selftests/rembg/rembg_transparent.py`。
 - rembg 预览默认显示去底色结果，可切换原图；两者均按上述规则裁剪显示。
-- 回归防护：`tests/selftests/box_geometry.py`（规格一致 + 两侧同源）。
+- 回归防护：`tests/selftests/algorithms/box_geometry.py`（规格一致 + 两侧同源）。
 
 ## 4. 检测框规范
 
@@ -162,8 +162,8 @@ GUI（QImage 渲染）共同消费同一份 `OutputLayout`，不得各自推导
   ⚠️ 必须在 **GUI 线程**先算好再闭包进 worker 的 lambda（worker 线程碰 QWidget 越界）。
 - 编辑交互：点选（四角手柄缩放）、拖动、Delete 删除、空白拖拽手绘；
   仅坐标变化时提交。
-- 回归防护：`tests/selftests/preview_dpr.py`（74 项，含**像素级**框线位置与四边等粗断言）。
-  ⚠️ 第三步预览的**显示源解析**另有 `tests/selftests/rembg_preview.py`（15 项，
+- 回归防护：`tests/selftests/ui/preview_dpr.py`（74 项，含**像素级**框线位置与四边等粗断言）。
+  ⚠️ 第三步预览的**显示源解析**另有 `tests/selftests/rembg/rembg_preview.py`（15 项，
   `DEPENDS=[]`，不碰管道）：`rembg.py` 依赖 `extract` 子进程，跑不了管道的环境里
   整条被跳过——2026-09-24 的 `NameError` 就是这样漏过去的。
 
@@ -300,7 +300,7 @@ GUI（QImage 渲染）共同消费同一份 `OutputLayout`，不得各自推导
 - **关窗**：作废在飞的渲染令牌 + `shutdown_workers()` + `canvas.clear()`
   （一张 4000px 预览约 45MB）。宿主换数据（`set_images`/`set_pdf`/`set_entries`/
   条目重建、第三步切形态）时调 `close_zoom_popup()`——弹窗里那页是打开时的快照。
-- 回归防护：`tests/selftests/preview_zoom.py`（93 项）。
+- 回归防护：`tests/selftests/ui/preview_zoom/`（93 项）。
 
 **已知不足（未做）**：>100% 的显示是放大（屏幕像素上限）。要让深放大也是 1:1，
 需要「按缩放级别重渲可见区域」：缩放后按 `edge × zoom`（受 cap）重渲，再把倍率
@@ -469,5 +469,5 @@ uploaded_candidates` 扫上传目录得来），判据只有一条"没被任何�
 - 交互：点**整张卡片**即勾选（`toggle_card`），超过两张回退并提示；勾选结果
   按**源清单顺序**返回（序号在前的排拼版页右侧）。
 
-护栏：`tests/selftests/imposition.py`（88 条，含"真实白底透明 PNG 也能出缩略图"、
+护栏：`tests/selftests/printing/imposition/`（88 条，含"真实白底透明 PNG 也能出缩略图"、
 "无纸张：产出按外接框紧裁"、"拖动/缩放不设范围限制"）。

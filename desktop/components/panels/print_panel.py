@@ -31,7 +31,7 @@ class PrintPanel(PrintFormMixin, StagePanel):
 
     stage = "print"
     # ⚠️ 必须**逐字等于** ``store.STAGE_LABELS["print"]``（= ``stage_label``
-    #    → ``StepSpec.stage_title``）：``tests/selftests/gui_guide.py`` 拿它跟
+    #    → ``StepSpec.stage_title``）：``tests/selftests/architecture/gui_guide.py`` 拿它跟
     #    用户手册的小节标题对照，改一处漏一处会立刻红。
     title = "PDF排版"
     description = (

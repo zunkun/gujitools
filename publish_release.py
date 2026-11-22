@@ -40,7 +40,7 @@ DIST = ROOT / "dist"
 #: - Windows：安装包 ``gujitools_setup_*.exe`` + 绿色免安装 ``gujitools_portable_*.zip``；
 #: - Linux：绿色免安装 ``gujitools_portable_*.tar.gz``（Linux 没有安装包）。
 #: ⚠️ 绿色版命名与 ``build.py`` 的 ``PORTABLE_TEMPLATE`` 同源，
-#: 守卫见 ``tests/selftests/release_assets.py``。
+#: 守卫见 ``tests/selftests/architecture/release_assets.py``。
 _ASSET_PATTERNS = (
     re.compile(r"^gujitools_setup_(?P<version>.+)_(?:windows|linux)-[\w.-]+\.exe$"),
     re.compile(

@@ -207,7 +207,7 @@ GUI 的预览控件也要画同样的框。配色与命名必须一致，否则�
    把 cv2 拉进 GUI 主进程；重依赖全部在函数内延迟导入。
 2. **局部算法按 512 行分块**：每块上下留 `window/2` halo，`BORDER_REPLICATE`
    与整页滤波一致；产物与整页计算逐像素相同（自测
-   `tests/selftests/rembg_algorithms.py` 钉住）。
+   `tests/selftests/rembg/rembg_algorithms.py` 钉住）。
 
 `get_algorithm(key)` 遇到未知 key 直接抛 `ValueError`，不静默回落 Otsu。
 
@@ -298,7 +298,7 @@ GUI 的预览控件也要画同样的框。配色与命名必须一致，否则�
 > 调用 `detect_content_boxes` 的地方。`crop` / `cropremove`（经
 > `TextRegionProcessor`）与 GUI 的 detect 阶段都必须走 `detect_page_content`，
 > **不得直接调用本文件的原语**。
-> `tests/selftests/detect_shared.py` 会扫描全仓库守卫这条约束，违反即测试红。
+> `tests/selftests/detect/detect_shared.py` 会扫描全仓库守卫这条约束，违反即测试红。
 
 `functions.detect.PageBoxes` 把结果表达为**槽位**：半幅固定 2 槽 `[左, 右]`
 （缺失侧为 None），整幅只占 1 槽 `[整幅]`。下游（`utils.box_geometry
@@ -377,7 +377,7 @@ GUI 的预览控件也要画同样的框。配色与命名必须一致，否则�
 trailer 的 /ID，`output.py:650`）。不碰 fpdf 内部，而是覆盖 `file_id()`——fpdf
 文档明说这是留给子类定义自定义 /ID 的钩子（`fpdf.py:5869`）；`_SpoolToFile`
 维护**增量 md5**，与全量算结果必然相同，因此 **产物逐字节一致**（护栏
-`tests/selftests/print_stream.py` 直接比 A/B 两侧的字节）。
+`tests/selftests/printing/print_stream.py` 直接比 A/B 两侧的字节）。
 
 落盘走**临时 `.part` + `os.replace`**：中途失败不会留下半本 PDF 被用户点开。
 
@@ -488,7 +488,7 @@ dnf / pacman / zypper 有各自的包名表（ Fedora 叫
 
 1. **非 Linux 一律走 `unsupported` 早退**，`_run` 一次都不能调——Windows 上
    若误进了安装分支，用户点一下就会弹 sudo/pkexec，是最难查的那种 bug
-   （`tests/selftests/font_setup.py` 用 `_run` 探针钉住"零子进程"）；
+   （`tests/selftests/algorithms/font_setup.py` 用 `_run` 探针钉住"零子进程"）；
 2. **pkexec 优先于 sudo**：GUI 里没有终端，`sudo` 会直接报
    `no tty present and no askpass program`；
 3. apt 必须带 `-y` 并设 `DEBIAN_FRONTEND=noninteractive`，否则 debconf
