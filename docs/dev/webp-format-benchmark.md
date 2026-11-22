@@ -357,13 +357,13 @@
 | 位置 | 现状 | 后果 |
 | --- | --- | --- |
 | [core/command_spec.py](../../core/command_spec.py#L59) | `OUTPUT_IMAGE_EXTS = ("jpg","png","tiff")` | CLI/GUI 无法选择 webp；`CommandArgs.validate()` 拒绝 |
-| [utils/pdf_extract.py](../../utils/pdf_extract.py#L247-L256) | webp 落 `Image.save(path, ext.upper())`，**默认 q80、无参数** | 实际切换后画质/体积不可控（第 7.1 节就是 q80 的结果） |
-| [utils/pdf_extract.py](../../utils/pdf_extract.py#L393-L404) | quick 直拷只认 jpg/jpeg/png | ext=webp 永远无法直拷，必须整页解码重编码 |
-| [functions/print.py](../../functions/print.py#L225) | 目录兜底扫描只认 png/jpg/jpeg/bmp/gif | 第四步按目录取图时**漏掉全部 webp 页**，PDF 少页 |
-| [pdf_render_service.py](../../desktop/workers/pdf_render_service.py#L295-L305) | `_thumb_from_page_image` 只找 `.jpg/.jpeg/.png` | 缩略图回落失效（实测返回 0 字节），只能退回 PDF 渲染 |
+| [utils/pdf_extract/render.py](../../utils/pdf_extract/render.py) | webp 落 `Image.save(path, ext.upper())`，**默认 q80、无参数** | 实际切换后画质/体积不可控（第 7.1 节就是 q80 的结果） |
+| [utils/pdf_extract/quick.py](../../utils/pdf_extract/quick.py) | quick 直拷只认 jpg/jpeg/png | ext=webp 永远无法直拷，必须整页解码重编码 |
+| [functions/print/files.py](../../functions/print/files.py) | 目录兜底扫描只认 png/jpg/jpeg/bmp/gif | 第四步按目录取图时**漏掉全部 webp 页**，PDF 少页 |
+| [pdf_render_service/thumbs.py](../../desktop/workers/pdf_render_service/thumbs.py) | `_thumb_from_page_image` 只找 `.jpg/.jpeg/.png` | 缩略图回落失效（实测返回 0 字节），只能退回 PDF 渲染 |
 | [files.py](../../desktop/utils/files.py#L16) + [pages.py](../../desktop/store/pages.py#L71) | `IMAGE_SUFFIXES` 不含 webp | 任务页清单/阶段图像列表**看不到 webp**，界面显示 0 页 |
 | [io.py](../../desktop/components/viewers/image_zoom_dialog/io.py#L38-L44) + [consts.py](../../desktop/components/viewers/image_zoom_dialog/consts.py#L45-L48) | 覆盖写回只认 jpg/png/bmp/tiff | 编辑器对 `.webp` 目标会按 PNG 写内容（文件损坏） |
-| [imposition.py](../../desktop/services/imposition.py#L52-L54) | 成品后缀集合只有 png/jpg/jpeg | 若拼版改成 webp 成品，清理旧成品时漏掉 webp，换格式后旧页会残留；当前 rembg 仍出 PNG，暂不受影响 |
+| [imposition/constants.py](../../desktop/services/imposition/constants.py) | 成品后缀集合只有 png/jpg/jpeg | 若拼版改成 webp 成品，清理旧成品时漏掉 webp，换格式后旧页会残留；当前 rembg 仍出 PNG，暂不受影响 |
 
 已确认**不用改**的入口：`utils/file_utils.IMAGE_EXTS`（含 webp）、
 `desktop/modules/extract/page.py` 的 `_IMAGE_EXTS`（含 webp）、

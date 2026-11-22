@@ -153,7 +153,7 @@ def run(ctx) -> None:
     ok("建表这条路只排定时器，不直接同步预热",
        "self._warm_print_thumbs(" not in entries_body
        and "_schedule_print_thumbs_warm(" in entries_body)
-    whole_module = inspect.getsource(print_list_mod)
+    whole_module = inspect.getsource(print_list_mod.manage)
     ok("「管理图片 / 插入图片」仍同步预热（它们紧接着就要用缓存）",
        whole_module.count("self._warm_print_thumbs(") >= 2,
        str(whole_module.count("self._warm_print_thumbs(")))

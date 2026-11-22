@@ -4,7 +4,7 @@
 
 图像处理功能模块：GUI 与 CLI 共用同一套算法
 
-覆盖 11 个模块、12 个公开类、49 个公开函数/方法（生成于 2026-11-22）。
+覆盖 15 个模块、12 个公开类、49 个公开函数/方法（生成于 2026-11-22）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -19,10 +19,14 @@
 | [`functions.detect`](#functionsdetect) | 3 | 16 |
 | [`functions.extract`](#functionsextract) | 1 | 2 |
 | [`functions.init`](#functionsinit) | 1 | 3 |
-| [`functions.print`](#functionsprint) | 1 | 2 |
+| [`functions.print.constants`](#functionsprintconstants) | 0 | 0 |
+| [`functions.print.execute`](#functionsprintexecute) | 1 | 2 |
 | [`functions.rembg`](#functionsrembg) | 1 | 3 |
 | [`functions.text_region`](#functionstext_region) | 1 | 2 |
-| [`functions.yolo_service`](#functionsyolo_service) | 1 | 14 |
+| [`functions.yolo_service`](#functionsyolo_service) | 1 | 8 |
+| [`functions.yolo_service.common`](#functionsyolo_servicecommon) | 0 | 5 |
+| [`functions.yolo_service.constants`](#functionsyolo_serviceconstants) | 0 | 0 |
+| [`functions.yolo_service.server`](#functionsyolo_serviceserver) | 0 | 1 |
 
 ---
 
@@ -580,15 +584,11 @@ static/guji.yaml 模板派生的配置，保留原模板的注释与键顺序。
 
 ---
 
-## `functions.print`
+## `functions.print.constants`
 
-源码：[`functions/print.py`](../../functions/print.py)
+源码：[`functions/print/constants.py`](../../functions/print/constants.py)
 
-图片目录 → PDF：纸张/方向/页边距、标题与页码、双页左右标注。
-
-本模块同时被 CLI（``guji run print``）与 GUI 的 print 阶段复用。页序完全由
-数据层决定：GUI 把列表顺序作为 ``files`` 清单传进来，这里照单执行，不再解析
-文件名；CLI 独立用法（无清单）才回退按文件名排序。
+print 阶段的常量：打印分辨率、二值处理与 fpdf 压缩级别。
 
 ### 模块常量
 
@@ -597,6 +597,14 @@ static/guji.yaml 模板派生的配置，保留原模板的注释与键顺序。
 | PRINT_IMAGE_DPI | `300` |
 | PRINT_KEEP_BINARY | `True` |
 | PRINT_IMAGE_ZLIB_LEVEL | `3` |
+
+---
+
+## `functions.print.execute`
+
+源码：[`functions/print/execute.py`](../../functions/print/execute.py)
+
+`PrintFunction`：图片目录 → PDF 的执行核心。
 
 ### `class PrintFunction(FunctionBase)`
 
@@ -750,7 +758,7 @@ ctx 通过参数传递（而非 self 实例变量），保证 ThreadPoolExecutor
 
 ## `functions.yolo_service`
 
-源码：[`functions/yolo_service.py`](../../functions/yolo_service.py)
+源码：[`functions/yolo_service/__init__.py`](../../functions/yolo_service/__init__.py)
 
 常驻 YOLO 服务：**desktop 侧**多次检测共用同一份已加载的模型。
 
@@ -798,18 +806,23 @@ frozen 打包下 `import torch` + 首次 `YOLO(weights)` 要 **约 5.4 秒**，d
 多线程共享一个模型并发推理，服务里也必须保持同样的并发度，否则等于把并行度
 砍成 1。模型加载本身仍然只做一次（双重检查锁在 `yolo_utils` 里）。
 
+子模块（按职责）::
+
+    constants   发现文件名 / 超时 / 日志上限 / 优先级常量
+    common      服务开关、发现文件与日志路径、身份指纹
+    priority    服务进程优先级
+    server      服务端主循环与请求处理
+    __main__    `python -m functions.yolo_service` 入口
+
+客户端（连接缓存、拉起服务、检测/预热/状态查询）住在本文件——它与
+``_given_up`` / ``_local`` 这些**进程内可变状态**同处一个命名空间，
+``yolo_service._given_up = False`` 这类外部重置才能照旧生效。
+
 ### 模块常量
 
 | 名称 | 值 |
 | --- | --- |
-| SERVICE_FILE_PREFIX | `"guji-yolo-service-"` |
-| DEFAULT_TTL_SECONDS | `None` |
-| CONNECT_TIMEOUT | `3.0` |
-| DETECT_TIMEOUT | `300.0` |
-| SPAWN_WAIT | `25.0` |
 | _SERVICE_PROCS | `[]` |
-| _BELOW_NORMAL_PRIORITY_CLASS | `16384` |
-| _NORMAL_PRIORITY_CLASS | `32` |
 
 ### `class ServiceDetect(NamedTuple)`
 
@@ -825,12 +838,6 @@ frozen 打包下 `import torch` + 首次 `YOLO(weights)` 要 **约 5.4 秒**，d
 
 | 函数 | 说明 |
 | --- | --- |
-| `require_service() -> bool` | 是否**禁止**回落到本进程内加载模型（默认否 ⇒ CLI 行为不变）。 |
-| `service_file(fp: str) -> Path` | 发现文件的完整路径（**按指纹区分**，开发版与正式版各用各的）。 |
-| `log_file() -> Path` | 服务日志路径（服务是分离进程、没有控制台，日志必须落文件才可诊断）。 |
-| `model_fingerprint() -> str` | 服务身份指纹（公开版；供日志/诊断读取，不参与内部决策）。 |
-| `sweep_stale_service_files() -> int` | 删掉「属主进程已死」的发现文件，返回删除个数。 |
-| `serve() -> int` | 服务主循环：绑定回环端口、写发现文件、**默认常驻**（TTL 仅在显式 |
 | `service_in_use() -> bool` | 本线程是否已经在用常驻服务（日志里说明"模型住在哪"用）。 |
 | `detect_boxes_via_service(image_path) -> ServiceDetect \| None` | 把一张图交给常驻服务检测，返回 :class:`ServiceDetect`。 |
 | `warm_up() -> tuple[str, float]` | 确保模型就绪，返回 ``(backend, 本次加载耗时秒)``。 |
@@ -839,36 +846,6 @@ frozen 打包下 `import torch` + 首次 `YOLO(weights)` 要 **约 5.4 秒**，d
 | `client_log(message: str) -> None` | 客户端侧诊断写服务日志（公开入口；GUI 侧预加载调度也用它）。 |
 | `service_status(timeout: float=CONNECT_TIMEOUT)` | 查询当前服务的状态（测试与排障用）；没有服务返回 None。 |
 | `shutdown_service(timeout: float=CONNECT_TIMEOUT) -> bool` | 让**本构建**的服务退出（desktop 关闭时调用；测试收尾也用它）。 |
-
-#### `require_service() -> bool`
-
-是否**禁止**回落到本进程内加载模型（默认否 ⇒ CLI 行为不变）。
-
-置 ``GUJI_YOLO_REQUIRE_SERVICE=1`` 的进程里，一旦"这次没走成服务"就报错，
-而不是自己 `import torch` 载模型。给 GUI 主进程用——它不许进重依赖
-（torch/ultralytics 约 350MB，见 AGENTS.md 分层守卫）。
-
-与 :func:`_service_enabled` 同款真假解析（``0/false/no/off`` 为假）。
-
-#### `model_fingerprint() -> str`
-
-服务身份指纹（公开版；供日志/诊断读取，不参与内部决策）。
-
-内容与 :func:`_fingerprint` 完全一致——版本 + 权重路径 + 权重大小/修改时间。
-
-#### `sweep_stale_service_files() -> int`
-
-删掉「属主进程已死」的发现文件，返回删除个数。
-
-⚠️ 发现文件只在服务**正常退出**时清（`_remove_service_file`）；被 kill、崩溃、
-断电都会留下它，而且它是**按指纹分文件**的——换权重、升级版本各留一份、
-从不回收（2026-09-26 审计）。留着不只是垃圾：客户端扫到陈旧文件会去连一个
-已经不存在的端口，白等一轮建连超时。
-
-#### `serve() -> int`
-
-服务主循环：绑定回环端口、写发现文件、**默认常驻**（TTL 仅在显式
-设了 `GUJI_YOLO_TTL` 时生效）。返回进程退出码。
 
 #### `detect_boxes_via_service(image_path) -> ServiceDetect | None`
 
@@ -914,5 +891,87 @@ backend 为 ``"service"``（常驻服务里就绪）或 ``"in-process"``（服�
 让**本构建**的服务退出（desktop 关闭时调用；测试收尾也用它）。
 
 只动自己指纹的服务——开发版与正式版可同时存在，互不驱逐。
+
+---
+
+## `functions.yolo_service.common`
+
+源码：[`functions/yolo_service/common.py`](../../functions/yolo_service/common.py)
+
+服务开关、发现文件/日志路径与身份指纹（客户端与服务端共用）。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `require_service() -> bool` | 是否**禁止**回落到本进程内加载模型（默认否 ⇒ CLI 行为不变）。 |
+| `service_file(fp: str) -> Path` | 发现文件的完整路径（**按指纹区分**，开发版与正式版各用各的）。 |
+| `log_file() -> Path` | 服务日志路径（服务是分离进程、没有控制台，日志必须落文件才可诊断）。 |
+| `model_fingerprint() -> str` | 服务身份指纹（公开版；供日志/诊断读取，不参与内部决策）。 |
+| `sweep_stale_service_files() -> int` | 删掉「属主进程已死」的发现文件，返回删除个数。 |
+
+#### `require_service() -> bool`
+
+是否**禁止**回落到本进程内加载模型（默认否 ⇒ CLI 行为不变）。
+
+置 ``GUJI_YOLO_REQUIRE_SERVICE=1`` 的进程里，一旦"这次没走成服务"就报错，
+而不是自己 `import torch` 载模型。给 GUI 主进程用——它不许进重依赖
+（torch/ultralytics 约 350MB，见 AGENTS.md 分层守卫）。
+
+与 :func:`_service_enabled` 同款真假解析（``0/false/no/off`` 为假）。
+
+#### `model_fingerprint() -> str`
+
+服务身份指纹（公开版；供日志/诊断读取，不参与内部决策）。
+
+内容与 :func:`_fingerprint` 完全一致——版本 + 权重路径 + 权重大小/修改时间。
+
+#### `sweep_stale_service_files() -> int`
+
+删掉「属主进程已死」的发现文件，返回删除个数。
+
+⚠️ 发现文件只在服务**正常退出**时清（`_remove_service_file`）；被 kill、崩溃、
+断电都会留下它，而且它是**按指纹分文件**的——换权重、升级版本各留一份、
+从不回收（2026-09-26 审计）。留着不只是垃圾：客户端扫到陈旧文件会去连一个
+已经不存在的端口，白等一轮建连超时。
+
+---
+
+## `functions.yolo_service.constants`
+
+源码：[`functions/yolo_service/constants.py`](../../functions/yolo_service/constants.py)
+
+常驻 YOLO 服务的常量：发现文件、超时、日志上限与进程优先级。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| SERVICE_FILE_PREFIX | `"guji-yolo-service-"` |
+| DEFAULT_TTL_SECONDS | `None` |
+| CONNECT_TIMEOUT | `3.0` |
+| DETECT_TIMEOUT | `300.0` |
+| SPAWN_WAIT | `25.0` |
+| _BELOW_NORMAL_PRIORITY_CLASS | `16384` |
+| _NORMAL_PRIORITY_CLASS | `32` |
+
+---
+
+## `functions.yolo_service.server`
+
+源码：[`functions/yolo_service/server.py`](../../functions/yolo_service/server.py)
+
+常驻服务进程：监听回环端口、处理请求、写发现文件。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `serve() -> int` | 服务主循环：绑定回环端口、写发现文件、**默认常驻**（TTL 仅在显式 |
+
+#### `serve() -> int`
+
+服务主循环：绑定回环端口、写发现文件、**默认常驻**（TTL 仅在显式
+设了 `GUJI_YOLO_TTL` 时生效）。返回进程退出码。
 
 ---

@@ -132,7 +132,8 @@ def run(ctx) -> None:
         raw = (repo / rel).read_text(encoding="utf-8")
         return "\n".join(line.split("#", 1)[0] for line in raw.splitlines())
 
-    runner_code = code_of("desktop/pages/taskdetail/runner.py")
+    runner_code = code_of("desktop/pages/taskdetail/runner/worker_events.py") + code_of(
+        "desktop/pages/taskdetail/runner/worker_output.py")
     ok("error 事件要写进 _last_error_line",
        'self._last_error_line = message.strip()' in runner_code)
     ok("annotations 落盘失败不许再 except: pass",

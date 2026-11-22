@@ -110,7 +110,7 @@ def run(ctx) -> None:
     # ---- 回归形态：源码里不许再出现"空输入静默返回 processed: 0" ----
     # ⚠️ 先剥注释：说明性注释里正当地提到了旧写法，不剥会把自己判违规。
     root_dir = Path(__file__).resolve().parents[3]
-    for rel in ("functions/print.py", "functions/base.py", "functions/detect.py"):
+    for rel in ("functions/print/execute.py", "functions/base.py", "functions/detect.py"):
         raw = (root_dir / rel).read_text(encoding="utf-8")
         code = "\n".join(line.split("#", 1)[0] for line in raw.splitlines())
         ok(

@@ -87,9 +87,8 @@ def run(ctx) -> None:
     # ⚠️ 先**剥掉注释**再扫：说明性注释里正当地提到了旧写法
     #    （`page_data = [None] * total`），不剥就会把自己的注释判成违规
     #    （踩过一次，项目里 installer_paths 护栏也踩过同类坑）。
-    raw = (Path(__file__).resolve().parents[3] / "functions" / "print.py").read_text(
-        encoding="utf-8"
-    )
+    raw = (Path(__file__).resolve().parents[3] / "functions" / "print"
+           / "execute.py").read_text(encoding="utf-8")
     code = "\n".join(line.split("#", 1)[0] for line in raw.splitlines())
     ok(
         "不许再整本预加载（page_data = [None] * total 是旧写法的标志）",

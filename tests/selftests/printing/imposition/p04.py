@@ -197,13 +197,17 @@ def run(st: Any) -> None:
         f"上报 {len(knob_events)} 次",
     )
     # 虚线是**样式常量**层面的要求（像素级"是不是虚线"太脆，改查定义处）
-    canvas_src = (
-        ROOT
-        / "desktop"
-        / "components"
-        / "imposition"
-        / "canvas.py"
-    ).read_text(encoding="utf-8")
+    canvas_src = "".join(
+        (
+            ROOT
+            / "desktop"
+            / "components"
+            / "imposition"
+            / "canvas"
+            / name
+        ).read_text(encoding="utf-8")
+        for name in ("constants.py", "paint.py")
+    )
     # PySide6 6.x 的存根把枚举收进了 ``Qt.PenStyle``：未限定的 ``Qt.DashLine``
     # 在运行期仍可用（同一值），但 pyright 会报 reportAttributeAccessIssue，
     # 所以全仓统一写限定形式，这里跟着钉限定形式。

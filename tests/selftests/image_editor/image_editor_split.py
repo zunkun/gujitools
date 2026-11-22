@@ -41,13 +41,14 @@ _ROOT = Path(__file__).resolve().parents[3]
 _PKG = _ROOT / "desktop" / "components" / "viewers" / "image_editor"
 _CANVAS = _PKG / "canvas"
 
-#: 拆分后的画布类（模块文件 → 类名）。顺序 = MRO 顺序。
+#: 拆分后的画布类（模块文件 / 子包目录 → 逻辑类名）。顺序 = MRO 顺序。
+#: 子包目录（如 ``core`` / ``transform``）内的所有类合并成同一个逻辑类。
 _MODULES = [
-    ("core.py", "EditorCanvas"),
+    ("core", "EditorCanvas"),
     ("interaction.py", "InteractionMixin"),
     ("overlay.py", "OverlayMixin"),
     ("text.py", "TextMixin"),
-    ("transform.py", "TransformMixin"),
+    ("transform", "TransformMixin"),
     ("distortion.py", "DistortionMixin"),
 ]
 
@@ -241,13 +242,13 @@ _CROSS_METHOD_DEPS = {
     },
 }
 
-#: 拆分后的**弹窗**类（模块文件 → 类名）。顺序 = MRO 顺序。
+#: 拆分后的**弹窗**类（模块文件 / 子包目录 → 逻辑类名）。顺序 = MRO 顺序。
 _DIALOG_MODULES = [
-    ("dialog.py", "ImageEditorDialog"),
+    ("dialog", "ImageEditorDialog"),
     ("dialog_toolbar.py", "ToolbarMixin"),
     ("dialog_pages.py", "ToolPagesMixin"),
     ("dialog_undo.py", "UndoMixin"),
-    ("dialog_commit.py", "CommitMixin"),
+    ("dialog_commit", "CommitMixin"),
 ]
 
 #: 每个弹窗成员**应当**归属的类（成员名 → 类名）。
@@ -357,15 +358,75 @@ _DIALOG_CROSS_DEPS = {
 _REQUIRED_FILES = [
     "__init__.py", "consts.py", "geometry.py", "distortion.py",
     "bake.py", "text_item.py",
-    "dialog.py", "canvas/__init__.py",
-    "canvas/core.py", "canvas/interaction.py", "canvas/overlay.py",
-    "canvas/text.py", "canvas/transform.py", "canvas/distortion.py",
+    "canvas/__init__.py",
+    "canvas/interaction.py", "canvas/overlay.py",
+    "canvas/text.py", "canvas/distortion.py",
+    # 2026-11 三次拆分：core.py / transform.py 再拆成子包
+    "canvas/core/__init__.py", "canvas/core/assembly.py",
+    "canvas/core/image.py", "canvas/core/context.py",
+    "canvas/core/border.py", "canvas/core/view.py",
+    "canvas/core/tools.py", "canvas/core/zoom.py",
+    "canvas/transform/__init__.py", "canvas/transform/constants.py",
+    "canvas/transform/helpers.py", "canvas/transform/options.py",
+    "canvas/transform/handles.py", "canvas/transform/preview.py",
+    "canvas/transform/state.py", "canvas/transform/backdrop.py",
+    "canvas/transform/float_preview.py", "canvas/transform/restore.py",
+    "canvas/transform/operations.py", "canvas/transform/pivot.py",
+    "canvas/transform/drag.py", "canvas/transform/hit.py",
+    "canvas/transform/guides.py",
     # 2026-10-07 二次拆分：894 行的 ImageEditorDialog 再按职责拆 4 个 Mixin
     "dialog_toolbar.py", "dialog_pages.py", "dialog_undo.py",
-    "dialog_commit.py",
+    "dialog_commit/__init__.py", "dialog_commit/state.py",
+    "dialog_commit/jobs.py", "dialog_commit/tool_transition.py",
+    "dialog_commit/crop.py", "dialog_commit/content.py",
+    "dialog_commit/async_apply.py", "dialog_commit/text.py",
+    "dialog/__init__.py", "dialog/assembly.py", "dialog/constants.py",
+    "dialog/layers.py", "dialog/layer_switch.py", "dialog/finish.py",
     # 类型检查期宿主面（拆分后 pyright 看不到兄弟 Mixin 的成员，见
     # ``tests/selftests/_context.py::check_type_only_host``）
     "_host.py", "canvas/_host.py",
+]
+
+#: ``check_type_only_host`` 的 Mixin 清单（子包内每个类都要单独列出）。
+_CANVAS_MIXINS = [
+    ("core/image.py", "ImageStateMixin"),
+    ("core/context.py", "ContextImageMixin"),
+    ("core/border.py", "BorderMixin"),
+    ("core/view.py", "ViewMixin"),
+    ("core/tools.py", "ToolsMixin"),
+    ("core/zoom.py", "ZoomMixin"),
+    ("interaction.py", "InteractionMixin"),
+    ("overlay.py", "OverlayMixin"),
+    ("text.py", "TextMixin"),
+    ("transform/options.py", "TransformOptionsMixin"),
+    ("transform/handles.py", "TransformHandlesMixin"),
+    ("transform/preview.py", "TransformPreviewMixin"),
+    ("transform/state.py", "TransformStateMixin"),
+    ("transform/backdrop.py", "TransformBackdropMixin"),
+    ("transform/float_preview.py", "TransformFloatMixin"),
+    ("transform/restore.py", "TransformRestoreMixin"),
+    ("transform/operations.py", "TransformOperationsMixin"),
+    ("transform/pivot.py", "TransformPivotMixin"),
+    ("transform/drag.py", "TransformDragMixin"),
+    ("transform/hit.py", "TransformHitMixin"),
+    ("transform/guides.py", "TransformGuidesMixin"),
+    ("distortion.py", "DistortionMixin"),
+]
+
+#: 弹窗侧的 Mixin 清单（同上）。
+_DIALOG_MIXINS = [
+    ("dialog_toolbar.py", "ToolbarMixin"),
+    ("dialog_pages.py", "ToolPagesMixin"),
+    ("dialog_undo.py", "UndoMixin"),
+    ("dialog/layers.py", "LayersMixin"),
+    ("dialog/layer_switch.py", "LayerSwitchMixin"),
+    ("dialog/finish.py", "FinishMixin"),
+    ("dialog_commit/__init__.py", "CommitTransformMixin"),
+    ("dialog_commit/tool_transition.py", "ToolTransitionMixin"),
+    ("dialog_commit/crop.py", "CropCommitMixin"),
+    ("dialog_commit/content.py", "ContentCommitMixin"),
+    ("dialog_commit/async_apply.py", "AsyncApplyMixin"),
+    ("dialog_commit/text.py", "TextCommitMixin"),
 ]
 
 #: 对外 API：外部（生产代码 + 测试）实际导入的名字，一个都不能少。
@@ -378,30 +439,39 @@ _PUBLIC_API = [
 ]
 
 
-def _load_classes(modules, base: Path) -> dict[str, ast.ClassDef]:
-    out: dict[str, ast.ClassDef] = {}
+def _load_classes(modules, base: Path) -> dict[str, list[ast.ClassDef]]:
+    """模块文件 → 类；**子包目录**则把目录内所有类合并成一个逻辑类。"""
+    out: dict[str, list[ast.ClassDef]] = {}
     for fname, cname in modules:
-        tree = ast.parse((base / fname).read_text(encoding="utf-8"))
-        out[cname] = next(
-            n for n in tree.body
-            if isinstance(n, ast.ClassDef) and n.name == cname
-        )
+        path = base / fname
+        files = sorted(path.glob("*.py")) if path.is_dir() else [path]
+        nodes: list[ast.ClassDef] = []
+        for file in files:
+            tree = ast.parse(file.read_text(encoding="utf-8"))
+            found = [n for n in tree.body if isinstance(n, ast.ClassDef)]
+            if path.is_dir():
+                nodes.extend(found)
+            else:
+                nodes.extend(n for n in found if n.name == cname)
+        out[cname] = nodes
     return out
 
 
-def _members(cls: ast.ClassDef) -> set[str]:
+def _members(classes: list[ast.ClassDef]) -> set[str]:
     out: set[str] = set()
-    for node in cls.body:
-        if isinstance(node, ast.FunctionDef):
-            out.add(node.name)
-        elif isinstance(node, ast.Assign):
-            for t in node.targets:
-                if isinstance(t, ast.Name):
-                    out.add(t.id)
+    for cls in classes:
+        for node in cls.body:
+            if isinstance(node, ast.FunctionDef):
+                out.add(node.name)
+            elif isinstance(node, ast.Assign):
+                for t in node.targets:
+                    if isinstance(t, ast.Name):
+                        out.add(t.id)
     return out
 
 
-def _check_assembly(label: str, main: str, classes: dict[str, ast.ClassDef],
+def _check_assembly(label: str, main: str,
+                    classes: dict[str, list[ast.ClassDef]],
                     expected_home: dict[str, str],
                     cross_deps: dict[str, set[str]],
                     min_members: int) -> None:
@@ -415,8 +485,8 @@ def _check_assembly(label: str, main: str, classes: dict[str, ast.ClassDef],
 
     # ---- 1. 成员归属 ----
     home_of: dict[str, str] = {}
-    for cname, cls in classes.items():
-        for name in _members(cls):
+    for cname, cls_list in classes.items():
+        for name in _members(cls_list):
             home_of.setdefault(name, cname)
 
     ok(f"守卫覆盖了{label}全部成员（不是空跑）",
@@ -437,19 +507,20 @@ def _check_assembly(label: str, main: str, classes: dict[str, ast.ClassDef],
     # ---- 2. Mixin 之间无同名成员 ----
     overlap: dict[str, list[str]] = {}
     seen: dict[str, str] = {}
-    for cname, cls in classes.items():
-        for name in _members(cls):
-            if name in seen:
-                overlap.setdefault(name, [seen[name]]).append(cname)
-            else:
-                seen[name] = cname
+    for cname, cls_list in classes.items():
+        for cls in cls_list:
+            for name in _members([cls]):
+                if name in seen:
+                    overlap.setdefault(name, [seen[name]]).append(cname)
+                else:
+                    seen[name] = cname
     ok(f"{label}的 Mixin 之间没有同名成员（否则 MRO 会静默遮蔽）",
        not overlap, f"重叠={overlap}")
 
     # ---- 3. 跨 Mixin 依赖在白名单内 ----
     bad: dict[str, list[str]] = {}
-    for cname, cls in classes.items():
-        own = _members(cls)
+    for cname, cls_list in classes.items():
+        own = _members(cls_list)
         allowed = cross_deps.get(cname, set())
         # 只关心"别处也定义了的成员"（即跨 Mixin 的方法调用）；
         # 实例属性（self._xxx = ...）与 Qt 自带方法不在此列。
@@ -458,11 +529,12 @@ def _check_assembly(label: str, main: str, classes: dict[str, ast.ClassDef],
             if other_name != cname
         ))
         foreign: set[str] = set()
-        for node in ast.walk(cls):
-            if (isinstance(node, ast.Attribute)
-                    and isinstance(node.value, ast.Name)
-                    and node.value.id == "self"):
-                foreign.add(node.attr)
+        for cls in cls_list:
+            for node in ast.walk(cls):
+                if (isinstance(node, ast.Attribute)
+                        and isinstance(node.value, ast.Name)
+                        and node.value.id == "self"):
+                    foreign.add(node.attr)
         unknown = sorted((foreign & others) - own - allowed)
         if unknown:
             bad[cname] = unknown
@@ -502,8 +574,8 @@ def run(ctx) -> None:
         root=_ROOT,
         pkg_rel="desktop/components/viewers/image_editor/canvas",
         host_file="_host.py", host_cls="CanvasHost",
-        main_file="core.py", main_cls="EditorCanvas",
-        mixin_modules=_MODULES[1:],
+        main_file="core", main_cls="EditorCanvas",
+        mixin_modules=_CANVAS_MIXINS,
         expected_bases=["QGraphicsView"],
     )
     check_type_only_host(
@@ -511,8 +583,8 @@ def run(ctx) -> None:
         root=_ROOT,
         pkg_rel="desktop/components/viewers/image_editor",
         host_file="_host.py", host_cls="DialogHost",
-        main_file="dialog.py", main_cls="ImageEditorDialog",
-        mixin_modules=_DIALOG_MODULES[1:],
+        main_file="dialog", main_cls="ImageEditorDialog",
+        mixin_modules=_DIALOG_MIXINS,
         expected_bases=["QDialog"],
     )
 

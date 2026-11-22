@@ -211,14 +211,15 @@ def _run(ctx) -> None:
     ok("顺序：faulthandler 先装、原生过滤器后装（否则丢 Python 栈）",
        app_src.index("install_crash_log(log_dir)")
        < app_src.index("install_crash_dump(log_dir)"))
-    picker_src = (root / "desktop/components/imposition/picker.py").read_text(
-        encoding="utf-8")
+    picker_src = (
+        root / "desktop/components/imposition/picker/dialog.py"
+    ).read_text(encoding="utf-8")
     ok("选图弹窗：记住「开过弹窗」与「开过系统选图框」",
        "拼版选图弹窗显示" in picker_src and "打开系统选图对话框" in picker_src)
     view_src = (root / "desktop/components/imposition/view.py").read_text(
         encoding="utf-8")
     ok("拼版切页留痕", "拼版切页" in view_src)
-    page_src = (root / "desktop/pages/taskdetail/page.py").read_text(
+    page_src = (root / "desktop/pages/taskdetail/page/stage_switch.py").read_text(
         encoding="utf-8")
     ok("切步骤留痕", "切步骤" in page_src)
 

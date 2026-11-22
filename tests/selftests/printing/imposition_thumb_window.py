@@ -233,12 +233,14 @@ def run(ctx) -> None:
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[3]
-    view_src = (root / "desktop/pages/taskdetail/view.py").read_text(encoding="utf-8")
+    view_src = (
+        root / "desktop/pages/taskdetail/view/previews.py"
+    ).read_text(encoding="utf-8")
     pages_src = (
-        root / "desktop/pages/taskdetail/imposition_pages.py"
+        root / "desktop/pages/taskdetail/imposition_pages/thumbnails.py"
     ).read_text(encoding="utf-8")
     layout_src = (
-        root / "desktop/pages/taskdetail/imposition_layout.py"
+        root / "desktop/pages/taskdetail/imposition_layout/compose.py"
     ).read_text(encoding="utf-8")
     ok("任务详情页：把左列可见范围变化接到了控制器",
        "viewport_changed.connect" in view_src)

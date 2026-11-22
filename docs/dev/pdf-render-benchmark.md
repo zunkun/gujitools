@@ -94,7 +94,7 @@
 
 ## 4. 已落地的改动
 
-代码位于 [`utils/pdf_extract.py`](../../utils/pdf_extract.py)。
+代码位于 [`utils/pdf_extract/extract.py`](../../utils/pdf_extract/extract.py)。
 
 ### 4.0 自动判断（界面取消 quick 开关）
 

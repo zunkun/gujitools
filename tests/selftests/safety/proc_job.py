@@ -129,7 +129,7 @@ def run(ctx) -> None:
 
     # ---------------- 3. 接线（静态契约）----------------
     app_src = (root / "desktop/app.py").read_text(encoding="utf-8")
-    menu_src = (root / "desktop/ui/menu.py").read_text(encoding="utf-8")
+    menu_src = (root / "desktop/ui/menu/installer.py").read_text(encoding="utf-8")
     settings_src = (root / "desktop/settings/page.py").read_text(encoding="utf-8")
     ok("GUI 入口装了看护（main() 里、窗口构造之前）",
        "kill_children_on_exit" in app_src

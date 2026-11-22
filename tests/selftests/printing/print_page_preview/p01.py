@@ -247,7 +247,7 @@ def run(st: Any) -> None:
         "desktop/components/viewers/print_preview",
     )
     pw_src = (ROOT
-              / "desktop" / "workers" / "preview_worker.py"
+              / "desktop" / "workers" / "preview_worker" / "worker.py"
               ).read_text(encoding="utf-8")
     ok("print_spec 携带解析好的 nodes、worker 透传给 plan_print_page",
        '"nodes": self._resolved_nodes(args)' in pv_src

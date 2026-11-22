@@ -4,7 +4,7 @@
 
 桌面端：GUI 主进程、worker 子进程、存储、界面系统
 
-覆盖 198 个模块、214 个公开类、1652 个公开函数/方法（生成于 2026-11-22）。
+覆盖 371 个模块、321 个公开类、1585 个公开函数/方法（生成于 2026-11-22）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -13,9 +13,12 @@
 | 模块 | 类 | 函数 |
 | --- | --- | --- |
 | [`desktop.app`](#desktopapp) | 1 | 8 |
-| [`desktop.components.aggregate_create_panel`](#desktopcomponentsaggregate_create_panel) | 2 | 21 |
+| [`desktop.components.aggregate_create_panel.constants`](#desktopcomponentsaggregate_create_panelconstants) | 0 | 0 |
+| [`desktop.components.aggregate_create_panel.panel`](#desktopcomponentsaggregate_create_panelpanel) | 1 | 15 |
+| [`desktop.components.aggregate_create_panel.picker`](#desktopcomponentsaggregate_create_panelpicker) | 1 | 5 |
 | [`desktop.components.box_kinds`](#desktopcomponentsbox_kinds) | 2 | 8 |
-| [`desktop.components.bpmn_editor`](#desktopcomponentsbpmn_editor) | 1 | 28 |
+| [`desktop.components.bpmn_editor.constants`](#desktopcomponentsbpmn_editorconstants) | 0 | 0 |
+| [`desktop.components.bpmn_editor.editor`](#desktopcomponentsbpmn_editoreditor) | 1 | 18 |
 | [`desktop.components.bpmn_editor_panel`](#desktopcomponentsbpmn_editor_panel) | 1 | 6 |
 | [`desktop.components.bpmn_palette`](#desktopcomponentsbpmn_palette) | 0 | 4 |
 | [`desktop.components.bpmn_view`](#desktopcomponentsbpmn_view) | 1 | 17 |
@@ -24,12 +27,14 @@
 | [`desktop.components.detect_stats`](#desktopcomponentsdetect_stats) | 1 | 4 |
 | [`desktop.components.dialog_shell`](#desktopcomponentsdialog_shell) | 0 | 1 |
 | [`desktop.components.flow_dialog`](#desktopcomponentsflow_dialog) | 2 | 10 |
-| [`desktop.components.imposition.canvas`](#desktopcomponentsimpositioncanvas) | 1 | 27 |
+| [`desktop.components.imposition.canvas.constants`](#desktopcomponentsimpositioncanvasconstants) | 0 | 0 |
+| [`desktop.components.imposition.canvas.widget`](#desktopcomponentsimpositioncanvaswidget) | 1 | 15 |
 | [`desktop.components.imposition.confirm_delete`](#desktopcomponentsimpositionconfirm_delete) | 1 | 1 |
-| [`desktop.components.imposition.page_list`](#desktopcomponentsimpositionpage_list) | 1 | 14 |
+| [`desktop.components.imposition.page_list.list_widget`](#desktopcomponentsimpositionpage_listlist_widget) | 1 | 12 |
 | [`desktop.components.imposition.page_thumb`](#desktopcomponentsimpositionpage_thumb) | 1 | 20 |
 | [`desktop.components.imposition.panel`](#desktopcomponentsimpositionpanel) | 1 | 7 |
-| [`desktop.components.imposition.picker`](#desktopcomponentsimpositionpicker) | 1 | 15 |
+| [`desktop.components.imposition.picker.constants`](#desktopcomponentsimpositionpickerconstants) | 0 | 0 |
+| [`desktop.components.imposition.picker.dialog`](#desktopcomponentsimpositionpickerdialog) | 1 | 15 |
 | [`desktop.components.imposition.view`](#desktopcomponentsimpositionview) | 1 | 19 |
 | [`desktop.components.log_panel`](#desktopcomponentslog_panel) | 1 | 10 |
 | [`desktop.components.missing_source_prompt`](#desktopcomponentsmissing_source_prompt) | 1 | 7 |
@@ -47,9 +52,13 @@
 | [`desktop.components.panels.print_text_layout`](#desktopcomponentspanelsprint_text_layout) | 1 | 0 |
 | [`desktop.components.panels.rembg_panel`](#desktopcomponentspanelsrembg_panel) | 1 | 1 |
 | [`desktop.components.print_insert_dialog`](#desktopcomponentsprint_insert_dialog) | 1 | 3 |
-| [`desktop.components.print_manage_dialog`](#desktopcomponentsprint_manage_dialog) | 1 | 5 |
+| [`desktop.components.print_manage_dialog.constants`](#desktopcomponentsprint_manage_dialogconstants) | 0 | 0 |
+| [`desktop.components.print_manage_dialog.helpers`](#desktopcomponentsprint_manage_dialoghelpers) | 0 | 1 |
+| [`desktop.components.print_manage_dialog.panel`](#desktopcomponentsprint_manage_dialogpanel) | 1 | 4 |
 | [`desktop.components.progress_row`](#desktopcomponentsprogress_row) | 1 | 8 |
-| [`desktop.components.step_bar`](#desktopcomponentsstep_bar) | 2 | 20 |
+| [`desktop.components.step_bar.bar`](#desktopcomponentsstep_barbar) | 1 | 10 |
+| [`desktop.components.step_bar.constants`](#desktopcomponentsstep_barconstants) | 0 | 0 |
+| [`desktop.components.step_bar.widgets`](#desktopcomponentsstep_barwidgets) | 1 | 9 |
 | [`desktop.components.task_table`](#desktopcomponentstask_table) | 3 | 11 |
 | [`desktop.components.update_banner`](#desktopcomponentsupdate_banner) | 1 | 4 |
 | [`desktop.components.viewers.edit_sync`](#desktopcomponentsviewersedit_sync) | 0 | 2 |
@@ -57,16 +66,43 @@
 | [`desktop.components.viewers.hint_banner`](#desktopcomponentsviewershint_banner) | 1 | 5 |
 | [`desktop.components.viewers.image_actions`](#desktopcomponentsviewersimage_actions) | 1 | 7 |
 | [`desktop.components.viewers.image_editor.bake`](#desktopcomponentsviewersimage_editorbake) | 0 | 2 |
-| [`desktop.components.viewers.image_editor.canvas.core`](#desktopcomponentsviewersimage_editorcanvascore) | 1 | 25 |
+| [`desktop.components.viewers.image_editor.canvas.core.assembly`](#desktopcomponentsviewersimage_editorcanvascoreassembly) | 1 | 1 |
+| [`desktop.components.viewers.image_editor.canvas.core.border`](#desktopcomponentsviewersimage_editorcanvascoreborder) | 1 | 0 |
+| [`desktop.components.viewers.image_editor.canvas.core.context`](#desktopcomponentsviewersimage_editorcanvascorecontext) | 1 | 2 |
+| [`desktop.components.viewers.image_editor.canvas.core.image`](#desktopcomponentsviewersimage_editorcanvascoreimage) | 1 | 1 |
+| [`desktop.components.viewers.image_editor.canvas.core.tools`](#desktopcomponentsviewersimage_editorcanvascoretools) | 1 | 6 |
+| [`desktop.components.viewers.image_editor.canvas.core.view`](#desktopcomponentsviewersimage_editorcanvascoreview) | 1 | 9 |
+| [`desktop.components.viewers.image_editor.canvas.core.zoom`](#desktopcomponentsviewersimage_editorcanvascorezoom) | 1 | 6 |
 | [`desktop.components.viewers.image_editor.canvas.distortion`](#desktopcomponentsviewersimage_editorcanvasdistortion) | 1 | 1 |
 | [`desktop.components.viewers.image_editor.canvas.interaction`](#desktopcomponentsviewersimage_editorcanvasinteraction) | 1 | 7 |
 | [`desktop.components.viewers.image_editor.canvas.overlay`](#desktopcomponentsviewersimage_editorcanvasoverlay) | 1 | 0 |
 | [`desktop.components.viewers.image_editor.canvas.text`](#desktopcomponentsviewersimage_editorcanvastext) | 1 | 6 |
-| [`desktop.components.viewers.image_editor.canvas.transform`](#desktopcomponentsviewersimage_editorcanvastransform) | 1 | 23 |
+| [`desktop.components.viewers.image_editor.canvas.transform`](#desktopcomponentsviewersimage_editorcanvastransform) | 1 | 0 |
+| [`desktop.components.viewers.image_editor.canvas.transform.backdrop`](#desktopcomponentsviewersimage_editorcanvastransformbackdrop) | 1 | 0 |
+| [`desktop.components.viewers.image_editor.canvas.transform.drag`](#desktopcomponentsviewersimage_editorcanvastransformdrag) | 1 | 0 |
+| [`desktop.components.viewers.image_editor.canvas.transform.float_preview`](#desktopcomponentsviewersimage_editorcanvastransformfloat_preview) | 1 | 1 |
+| [`desktop.components.viewers.image_editor.canvas.transform.guides`](#desktopcomponentsviewersimage_editorcanvastransformguides) | 1 | 0 |
+| [`desktop.components.viewers.image_editor.canvas.transform.handles`](#desktopcomponentsviewersimage_editorcanvastransformhandles) | 1 | 0 |
+| [`desktop.components.viewers.image_editor.canvas.transform.hit`](#desktopcomponentsviewersimage_editorcanvastransformhit) | 1 | 0 |
+| [`desktop.components.viewers.image_editor.canvas.transform.operations`](#desktopcomponentsviewersimage_editorcanvastransformoperations) | 1 | 7 |
+| [`desktop.components.viewers.image_editor.canvas.transform.options`](#desktopcomponentsviewersimage_editorcanvastransformoptions) | 1 | 5 |
+| [`desktop.components.viewers.image_editor.canvas.transform.pivot`](#desktopcomponentsviewersimage_editorcanvastransformpivot) | 1 | 0 |
+| [`desktop.components.viewers.image_editor.canvas.transform.preview`](#desktopcomponentsviewersimage_editorcanvastransformpreview) | 1 | 0 |
+| [`desktop.components.viewers.image_editor.canvas.transform.restore`](#desktopcomponentsviewersimage_editorcanvastransformrestore) | 1 | 5 |
+| [`desktop.components.viewers.image_editor.canvas.transform.state`](#desktopcomponentsviewersimage_editorcanvastransformstate) | 1 | 5 |
 | [`desktop.components.viewers.image_editor.consts`](#desktopcomponentsviewersimage_editorconsts) | 0 | 0 |
 | [`desktop.components.viewers.image_editor.content_quad`](#desktopcomponentsviewersimage_editorcontent_quad) | 0 | 7 |
-| [`desktop.components.viewers.image_editor.dialog`](#desktopcomponentsviewersimage_editordialog) | 1 | 5 |
-| [`desktop.components.viewers.image_editor.dialog_commit`](#desktopcomponentsviewersimage_editordialog_commit) | 1 | 2 |
+| [`desktop.components.viewers.image_editor.dialog.assembly`](#desktopcomponentsviewersimage_editordialogassembly) | 1 | 1 |
+| [`desktop.components.viewers.image_editor.dialog.finish`](#desktopcomponentsviewersimage_editordialogfinish) | 1 | 3 |
+| [`desktop.components.viewers.image_editor.dialog.layer_switch`](#desktopcomponentsviewersimage_editordialoglayer_switch) | 1 | 0 |
+| [`desktop.components.viewers.image_editor.dialog.layers`](#desktopcomponentsviewersimage_editordialoglayers) | 1 | 1 |
+| [`desktop.components.viewers.image_editor.dialog_commit`](#desktopcomponentsviewersimage_editordialog_commit) | 2 | 0 |
+| [`desktop.components.viewers.image_editor.dialog_commit.async_apply`](#desktopcomponentsviewersimage_editordialog_commitasync_apply) | 1 | 1 |
+| [`desktop.components.viewers.image_editor.dialog_commit.content`](#desktopcomponentsviewersimage_editordialog_commitcontent) | 1 | 1 |
+| [`desktop.components.viewers.image_editor.dialog_commit.crop`](#desktopcomponentsviewersimage_editordialog_commitcrop) | 1 | 0 |
+| [`desktop.components.viewers.image_editor.dialog_commit.state`](#desktopcomponentsviewersimage_editordialog_commitstate) | 0 | 0 |
+| [`desktop.components.viewers.image_editor.dialog_commit.text`](#desktopcomponentsviewersimage_editordialog_committext) | 1 | 0 |
+| [`desktop.components.viewers.image_editor.dialog_commit.tool_transition`](#desktopcomponentsviewersimage_editordialog_committool_transition) | 1 | 0 |
 | [`desktop.components.viewers.image_editor.dialog_pages`](#desktopcomponentsviewersimage_editordialog_pages) | 1 | 0 |
 | [`desktop.components.viewers.image_editor.dialog_toolbar`](#desktopcomponentsviewersimage_editordialog_toolbar) | 1 | 1 |
 | [`desktop.components.viewers.image_editor.dialog_undo`](#desktopcomponentsviewersimage_editordialog_undo) | 1 | 0 |
@@ -78,7 +114,9 @@
 | [`desktop.components.viewers.image_view.render`](#desktopcomponentsviewersimage_viewrender) | 1 | 2 |
 | [`desktop.components.viewers.image_view.styles`](#desktopcomponentsviewersimage_viewstyles) | 0 | 3 |
 | [`desktop.components.viewers.image_viewer.boxes`](#desktopcomponentsviewersimage_viewerboxes) | 1 | 10 |
-| [`desktop.components.viewers.image_viewer.core`](#desktopcomponentsviewersimage_viewercore) | 1 | 15 |
+| [`desktop.components.viewers.image_viewer.core`](#desktopcomponentsviewersimage_viewercore) | 1 | 7 |
+| [`desktop.components.viewers.image_viewer.display`](#desktopcomponentsviewersimage_viewerdisplay) | 1 | 5 |
+| [`desktop.components.viewers.image_viewer.listing`](#desktopcomponentsviewersimage_viewerlisting) | 1 | 3 |
 | [`desktop.components.viewers.image_viewer.pdf`](#desktopcomponentsviewersimage_viewerpdf) | 1 | 3 |
 | [`desktop.components.viewers.image_viewer.thumbs`](#desktopcomponentsviewersimage_viewerthumbs) | 1 | 1 |
 | [`desktop.components.viewers.image_zoom_dialog.canvas`](#desktopcomponentsviewersimage_zoom_dialogcanvas) | 2 | 21 |
@@ -88,7 +126,11 @@
 | [`desktop.components.viewers.image_zoom_dialog.io`](#desktopcomponentsviewersimage_zoom_dialogio) | 0 | 5 |
 | [`desktop.components.viewers.image_zoom_dialog.popup`](#desktopcomponentsviewersimage_zoom_dialogpopup) | 1 | 3 |
 | [`desktop.components.viewers.pdf_viewer`](#desktopcomponentsviewerspdf_viewer) | 1 | 2 |
-| [`desktop.components.viewers.print_layout_canvas`](#desktopcomponentsviewersprint_layout_canvas) | 1 | 14 |
+| [`desktop.components.viewers.print_layout_canvas.canvas`](#desktopcomponentsviewersprint_layout_canvascanvas) | 1 | 7 |
+| [`desktop.components.viewers.print_layout_canvas.constants`](#desktopcomponentsviewersprint_layout_canvasconstants) | 0 | 0 |
+| [`desktop.components.viewers.print_layout_canvas.geometry`](#desktopcomponentsviewersprint_layout_canvasgeometry) | 1 | 0 |
+| [`desktop.components.viewers.print_layout_canvas.mouse`](#desktopcomponentsviewersprint_layout_canvasmouse) | 1 | 6 |
+| [`desktop.components.viewers.print_layout_canvas.paint`](#desktopcomponentsviewersprint_layout_canvaspaint) | 1 | 1 |
 | [`desktop.components.viewers.print_preview.export`](#desktopcomponentsviewersprint_previewexport) | 1 | 1 |
 | [`desktop.components.viewers.print_preview.layout`](#desktopcomponentsviewersprint_previewlayout) | 1 | 1 |
 | [`desktop.components.viewers.print_preview.thumbs`](#desktopcomponentsviewersprint_previewthumbs) | 1 | 1 |
@@ -101,36 +143,115 @@
 | [`desktop.components.yolo_export_dialog`](#desktopcomponentsyolo_export_dialog) | 1 | 6 |
 | [`desktop.modules`](#desktopmodules) | 1 | 1 |
 | [`desktop.modules.base`](#desktopmodulesbase) | 2 | 24 |
-| [`desktop.modules.detect.page`](#desktopmodulesdetectpage) | 1 | 21 |
+| [`desktop.modules.detect.page`](#desktopmodulesdetectpage) | 1 | 0 |
+| [`desktop.modules.detect.page.constants`](#desktopmodulesdetectpageconstants) | 0 | 0 |
+| [`desktop.modules.detect.page.mixin_core`](#desktopmodulesdetectpagemixin_core) | 1 | 2 |
+| [`desktop.modules.detect.page.mixin_export`](#desktopmodulesdetectpagemixin_export) | 1 | 4 |
+| [`desktop.modules.detect.page.mixin_geometry`](#desktopmodulesdetectpagemixin_geometry) | 1 | 0 |
+| [`desktop.modules.detect.page.mixin_view`](#desktopmodulesdetectpagemixin_view) | 1 | 15 |
 | [`desktop.modules.extract.page`](#desktopmodulesextractpage) | 1 | 5 |
-| [`desktop.modules.imposition.page`](#desktopmodulesimpositionpage) | 1 | 11 |
+| [`desktop.modules.imposition.page`](#desktopmodulesimpositionpage) | 1 | 1 |
+| [`desktop.modules.imposition.page.constants`](#desktopmodulesimpositionpageconstants) | 0 | 0 |
+| [`desktop.modules.imposition.page.mixin_export`](#desktopmodulesimpositionpagemixin_export) | 1 | 3 |
+| [`desktop.modules.imposition.page.mixin_layout`](#desktopmodulesimpositionpagemixin_layout) | 1 | 0 |
+| [`desktop.modules.imposition.page.mixin_pages`](#desktopmodulesimpositionpagemixin_pages) | 1 | 0 |
+| [`desktop.modules.imposition.page.mixin_preview`](#desktopmodulesimpositionpagemixin_preview) | 1 | 1 |
+| [`desktop.modules.imposition.page.mixin_sources`](#desktopmodulesimpositionpagemixin_sources) | 1 | 0 |
+| [`desktop.modules.imposition.page.mixin_thumbs`](#desktopmodulesimpositionpagemixin_thumbs) | 1 | 0 |
+| [`desktop.modules.imposition.page.mixin_ui`](#desktopmodulesimpositionpagemixin_ui) | 1 | 4 |
+| [`desktop.modules.imposition.page.paths`](#desktopmodulesimpositionpagepaths) | 0 | 2 |
 | [`desktop.modules.print.page`](#desktopmodulesprintpage) | 1 | 4 |
 | [`desktop.modules.rembg.live`](#desktopmodulesrembglive) | 1 | 0 |
 | [`desktop.modules.rembg.page`](#desktopmodulesrembgpage) | 1 | 5 |
 | [`desktop.modules.thumb_source`](#desktopmodulesthumb_source) | 1 | 4 |
 | [`desktop.pages.createtask.page`](#desktoppagescreatetaskpage) | 1 | 9 |
 | [`desktop.pages.modulehub.page`](#desktoppagesmodulehubpage) | 1 | 3 |
-| [`desktop.pages.taskdetail.detect`](#desktoppagestaskdetaildetect) | 2 | 13 |
+| [`desktop.pages.taskdetail.detect`](#desktoppagestaskdetaildetect) | 1 | 0 |
+| [`desktop.pages.taskdetail.detect.box_cache`](#desktoppagestaskdetaildetectbox_cache) | 1 | 0 |
+| [`desktop.pages.taskdetail.detect.boxes`](#desktoppagestaskdetaildetectboxes) | 1 | 10 |
+| [`desktop.pages.taskdetail.detect.cache`](#desktoppagestaskdetaildetectcache) | 1 | 2 |
+| [`desktop.pages.taskdetail.detect.modes`](#desktoppagestaskdetaildetectmodes) | 1 | 0 |
+| [`desktop.pages.taskdetail.detect.process`](#desktoppagestaskdetaildetectprocess) | 1 | 0 |
+| [`desktop.pages.taskdetail.detect.stats`](#desktoppagestaskdetaildetectstats) | 1 | 0 |
+| [`desktop.pages.taskdetail.detect.yolo`](#desktoppagestaskdetaildetectyolo) | 1 | 1 |
 | [`desktop.pages.taskdetail.flow_mixin`](#desktoppagestaskdetailflow_mixin) | 1 | 0 |
 | [`desktop.pages.taskdetail.history`](#desktoppagestaskdetailhistory) | 1 | 0 |
-| [`desktop.pages.taskdetail.imposition`](#desktoppagestaskdetailimposition) | 2 | 6 |
-| [`desktop.pages.taskdetail.imposition_layout`](#desktoppagestaskdetailimposition_layout) | 1 | 1 |
-| [`desktop.pages.taskdetail.imposition_pages`](#desktoppagestaskdetailimposition_pages) | 1 | 0 |
-| [`desktop.pages.taskdetail.manifest`](#desktoppagestaskdetailmanifest) | 1 | 8 |
-| [`desktop.pages.taskdetail.page`](#desktoppagestaskdetailpage) | 1 | 31 |
+| [`desktop.pages.taskdetail.imposition.detail`](#desktoppagestaskdetailimpositiondetail) | 1 | 0 |
+| [`desktop.pages.taskdetail.imposition.document`](#desktoppagestaskdetailimpositiondocument) | 1 | 0 |
+| [`desktop.pages.taskdetail.imposition.mixin`](#desktoppagestaskdetailimpositionmixin) | 2 | 0 |
+| [`desktop.pages.taskdetail.imposition.node_visibility`](#desktoppagestaskdetailimpositionnode_visibility) | 1 | 1 |
+| [`desktop.pages.taskdetail.imposition.print_source`](#desktoppagestaskdetailimpositionprint_source) | 1 | 0 |
+| [`desktop.pages.taskdetail.imposition.sources`](#desktoppagestaskdetailimpositionsources) | 1 | 5 |
+| [`desktop.pages.taskdetail.imposition_layout.compose`](#desktoppagestaskdetailimposition_layoutcompose) | 1 | 0 |
+| [`desktop.pages.taskdetail.imposition_layout.constants`](#desktoppagestaskdetailimposition_layoutconstants) | 0 | 0 |
+| [`desktop.pages.taskdetail.imposition_layout.layout_ops`](#desktoppagestaskdetailimposition_layoutlayout_ops) | 1 | 0 |
+| [`desktop.pages.taskdetail.imposition_layout.mixin`](#desktoppagestaskdetailimposition_layoutmixin) | 1 | 0 |
+| [`desktop.pages.taskdetail.imposition_layout.persist`](#desktoppagestaskdetailimposition_layoutpersist) | 1 | 0 |
+| [`desktop.pages.taskdetail.imposition_layout.preview`](#desktoppagestaskdetailimposition_layoutpreview) | 1 | 1 |
+| [`desktop.pages.taskdetail.imposition_pages.mixin`](#desktoppagestaskdetailimposition_pagesmixin) | 1 | 0 |
+| [`desktop.pages.taskdetail.imposition_pages.page_ops`](#desktoppagestaskdetailimposition_pagespage_ops) | 1 | 0 |
+| [`desktop.pages.taskdetail.imposition_pages.picker`](#desktoppagestaskdetailimposition_pagespicker) | 1 | 0 |
+| [`desktop.pages.taskdetail.imposition_pages.state`](#desktoppagestaskdetailimposition_pagesstate) | 1 | 0 |
+| [`desktop.pages.taskdetail.imposition_pages.thumbnails`](#desktoppagestaskdetailimposition_pagesthumbnails) | 1 | 0 |
+| [`desktop.pages.taskdetail.manifest.aggregate`](#desktoppagestaskdetailmanifestaggregate) | 1 | 2 |
+| [`desktop.pages.taskdetail.manifest.pages`](#desktoppagestaskdetailmanifestpages) | 1 | 3 |
+| [`desktop.pages.taskdetail.manifest.reconcile`](#desktoppagestaskdetailmanifestreconcile) | 0 | 1 |
+| [`desktop.pages.taskdetail.manifest.source_pick`](#desktoppagestaskdetailmanifestsource_pick) | 1 | 2 |
+| [`desktop.pages.taskdetail.manifest.source_prompt`](#desktoppagestaskdetailmanifestsource_prompt) | 1 | 0 |
+| [`desktop.pages.taskdetail.manifest.sync`](#desktoppagestaskdetailmanifestsync) | 1 | 0 |
+| [`desktop.pages.taskdetail.manifest.thumbs`](#desktoppagestaskdetailmanifestthumbs) | 1 | 0 |
+| [`desktop.pages.taskdetail.manifest.widget`](#desktoppagestaskdetailmanifestwidget) | 1 | 0 |
+| [`desktop.pages.taskdetail.page.constants`](#desktoppagestaskdetailpageconstants) | 0 | 0 |
+| [`desktop.pages.taskdetail.page.edit_menu`](#desktoppagestaskdetailpageedit_menu) | 1 | 4 |
+| [`desktop.pages.taskdetail.page.lifecycle`](#desktoppagestaskdetailpagelifecycle) | 1 | 3 |
+| [`desktop.pages.taskdetail.page.nodes`](#desktoppagestaskdetailpagenodes) | 1 | 15 |
+| [`desktop.pages.taskdetail.page.page_preview`](#desktoppagestaskdetailpagepage_preview) | 1 | 1 |
+| [`desktop.pages.taskdetail.page.run_control`](#desktoppagestaskdetailpagerun_control) | 1 | 0 |
+| [`desktop.pages.taskdetail.page.stage_state`](#desktoppagestaskdetailpagestage_state) | 1 | 0 |
+| [`desktop.pages.taskdetail.page.stage_switch`](#desktoppagestaskdetailpagestage_switch) | 1 | 0 |
+| [`desktop.pages.taskdetail.page.task_switch`](#desktoppagestaskdetailpagetask_switch) | 1 | 1 |
+| [`desktop.pages.taskdetail.page.widget`](#desktoppagestaskdetailpagewidget) | 1 | 7 |
 | [`desktop.pages.taskdetail.params_draft`](#desktoppagestaskdetailparams_draft) | 1 | 1 |
 | [`desktop.pages.taskdetail.preview`](#desktoppagestaskdetailpreview) | 1 | 2 |
-| [`desktop.pages.taskdetail.print_list`](#desktoppagestaskdetailprint_list) | 1 | 3 |
+| [`desktop.pages.taskdetail.print_list`](#desktoppagestaskdetailprint_list) | 1 | 0 |
+| [`desktop.pages.taskdetail.print_list.constants`](#desktoppagestaskdetailprint_listconstants) | 0 | 0 |
+| [`desktop.pages.taskdetail.print_list.entries`](#desktoppagestaskdetailprint_listentries) | 1 | 0 |
+| [`desktop.pages.taskdetail.print_list.manage`](#desktoppagestaskdetailprint_listmanage) | 1 | 0 |
+| [`desktop.pages.taskdetail.print_list.pdf`](#desktoppagestaskdetailprint_listpdf) | 1 | 3 |
+| [`desktop.pages.taskdetail.print_list.thumbs`](#desktoppagestaskdetailprint_listthumbs) | 1 | 0 |
 | [`desktop.pages.taskdetail.rembg_live`](#desktoppagestaskdetailrembg_live) | 1 | 0 |
-| [`desktop.pages.taskdetail.runner`](#desktoppagestaskdetailrunner) | 1 | 2 |
+| [`desktop.pages.taskdetail.runner.finish`](#desktoppagestaskdetailrunnerfinish) | 1 | 0 |
+| [`desktop.pages.taskdetail.runner.launch`](#desktoppagestaskdetailrunnerlaunch) | 1 | 1 |
+| [`desktop.pages.taskdetail.runner.process_io`](#desktoppagestaskdetailrunnerprocess_io) | 1 | 1 |
+| [`desktop.pages.taskdetail.runner.progress_ui`](#desktoppagestaskdetailrunnerprogress_ui) | 1 | 0 |
+| [`desktop.pages.taskdetail.runner.stage_exec`](#desktoppagestaskdetailrunnerstage_exec) | 1 | 0 |
+| [`desktop.pages.taskdetail.runner.widget`](#desktoppagestaskdetailrunnerwidget) | 1 | 0 |
+| [`desktop.pages.taskdetail.runner.worker_events`](#desktoppagestaskdetailrunnerworker_events) | 1 | 0 |
+| [`desktop.pages.taskdetail.runner.worker_output`](#desktoppagestaskdetailrunnerworker_output) | 1 | 0 |
 | [`desktop.pages.taskdetail.submit`](#desktoppagestaskdetailsubmit) | 1 | 4 |
-| [`desktop.pages.taskdetail.view`](#desktoppagestaskdetailview) | 2 | 5 |
+| [`desktop.pages.taskdetail.view`](#desktoppagestaskdetailview) | 1 | 0 |
+| [`desktop.pages.taskdetail.view.controls`](#desktoppagestaskdetailviewcontrols) | 1 | 0 |
+| [`desktop.pages.taskdetail.view.header`](#desktoppagestaskdetailviewheader) | 1 | 1 |
+| [`desktop.pages.taskdetail.view.lazy_host`](#desktoppagestaskdetailviewlazy_host) | 1 | 4 |
+| [`desktop.pages.taskdetail.view.panels`](#desktoppagestaskdetailviewpanels) | 1 | 0 |
+| [`desktop.pages.taskdetail.view.previews`](#desktoppagestaskdetailviewpreviews) | 1 | 0 |
+| [`desktop.pages.taskdetail.view.step_bar`](#desktoppagestaskdetailviewstep_bar) | 1 | 0 |
 | [`desktop.pages.taskflow.page`](#desktoppagestaskflowpage) | 1 | 2 |
-| [`desktop.pages.tasklist.page`](#desktoppagestasklistpage) | 1 | 8 |
+| [`desktop.pages.tasklist.page.constants`](#desktoppagestasklistpageconstants) | 0 | 0 |
+| [`desktop.pages.tasklist.page.importing`](#desktoppagestasklistpageimporting) | 1 | 4 |
+| [`desktop.pages.tasklist.page.rows`](#desktoppagestasklistpagerows) | 1 | 2 |
+| [`desktop.pages.tasklist.page.view`](#desktoppagestasklistpageview) | 1 | 0 |
+| [`desktop.pages.tasklist.page.widget`](#desktoppagestasklistpagewidget) | 1 | 2 |
 | [`desktop.services.aggregate_ingest`](#desktopservicesaggregate_ingest) | 3 | 8 |
 | [`desktop.services.detect_export`](#desktopservicesdetect_export) | 0 | 7 |
 | [`desktop.services.font_catalog`](#desktopservicesfont_catalog) | 1 | 6 |
-| [`desktop.services.imposition`](#desktopservicesimposition) | 0 | 35 |
+| [`desktop.services.imposition.auto`](#desktopservicesimpositionauto) | 0 | 3 |
+| [`desktop.services.imposition.compose`](#desktopservicesimpositioncompose) | 0 | 6 |
+| [`desktop.services.imposition.constants`](#desktopservicesimpositionconstants) | 0 | 0 |
+| [`desktop.services.imposition.document`](#desktopservicesimpositiondocument) | 0 | 11 |
+| [`desktop.services.imposition.images`](#desktopservicesimpositionimages) | 0 | 4 |
+| [`desktop.services.imposition.layout`](#desktopservicesimpositionlayout) | 0 | 8 |
+| [`desktop.services.imposition.sources`](#desktopservicesimpositionsources) | 0 | 3 |
 | [`desktop.services.imposition_insert`](#desktopservicesimposition_insert) | 0 | 5 |
 | [`desktop.services.print_plan`](#desktopservicesprint_plan) | 0 | 10 |
 | [`desktop.services.rembg_export`](#desktopservicesrembg_export) | 0 | 7 |
@@ -142,7 +263,12 @@
 | [`desktop.settings.config`](#desktopsettingsconfig) | 1 | 6 |
 | [`desktop.settings.location`](#desktopsettingslocation) | 2 | 8 |
 | [`desktop.settings.page`](#desktopsettingspage) | 1 | 2 |
-| [`desktop.shell`](#desktopshell) | 1 | 24 |
+| [`desktop.shell.constants`](#desktopshellconstants) | 0 | 0 |
+| [`desktop.shell.create_flow`](#desktopshellcreate_flow) | 1 | 5 |
+| [`desktop.shell.feature_pages`](#desktopshellfeature_pages) | 1 | 7 |
+| [`desktop.shell.navigation`](#desktopshellnavigation) | 1 | 4 |
+| [`desktop.shell.task_pages`](#desktopshelltask_pages) | 1 | 5 |
+| [`desktop.shell.widget`](#desktopshellwidget) | 1 | 3 |
 | [`desktop.single_instance`](#desktopsingle_instance) | 0 | 6 |
 | [`desktop.stages.detect_stage`](#desktopstagesdetect_stage) | 0 | 4 |
 | [`desktop.stages.events`](#desktopstagesevents) | 2 | 9 |
@@ -150,15 +276,29 @@
 | [`desktop.stages.print_stage`](#desktopstagesprint_stage) | 0 | 3 |
 | [`desktop.stages.rembg_stage`](#desktopstagesrembg_stage) | 0 | 1 |
 | [`desktop.steps.aggregate`](#desktopstepsaggregate) | 0 | 6 |
-| [`desktop.steps.bpmn_diagram`](#desktopstepsbpmn_diagram) | 4 | 35 |
+| [`desktop.steps.bpmn_diagram.constants`](#desktopstepsbpmn_diagramconstants) | 0 | 0 |
+| [`desktop.steps.bpmn_diagram.diagram`](#desktopstepsbpmn_diagramdiagram) | 1 | 0 |
+| [`desktop.steps.bpmn_diagram.elements`](#desktopstepsbpmn_diagramelements) | 3 | 2 |
+| [`desktop.steps.bpmn_diagram.helpers`](#desktopstepsbpmn_diagramhelpers) | 0 | 2 |
 | [`desktop.steps.control`](#desktopstepscontrol) | 1 | 13 |
-| [`desktop.steps.flow`](#desktopstepsflow) | 4 | 31 |
+| [`desktop.steps.flow.constants`](#desktopstepsflowconstants) | 0 | 0 |
+| [`desktop.steps.flow.definition`](#desktopstepsflowdefinition) | 1 | 15 |
+| [`desktop.steps.flow.layout`](#desktopstepsflowlayout) | 1 | 11 |
+| [`desktop.steps.flow.model`](#desktopstepsflowmodel) | 2 | 1 |
+| [`desktop.steps.flow.serialization`](#desktopstepsflowserialization) | 1 | 4 |
 | [`desktop.steps.kernel`](#desktopstepskernel) | 5 | 11 |
-| [`desktop.steps.ports`](#desktopstepsports) | 0 | 41 |
+| [`desktop.steps.ports.connections`](#desktopstepsportsconnections) | 0 | 16 |
+| [`desktop.steps.ports.constants`](#desktopstepsportsconstants) | 0 | 0 |
+| [`desktop.steps.ports.declaration`](#desktopstepsportsdeclaration) | 0 | 8 |
+| [`desktop.steps.ports.locations`](#desktopstepsportslocations) | 0 | 10 |
+| [`desktop.steps.ports.nodes`](#desktopstepsportsnodes) | 0 | 7 |
 | [`desktop.steps.process`](#desktopstepsprocess) | 1 | 7 |
 | [`desktop.steps.scheduler`](#desktopstepsscheduler) | 2 | 16 |
-| [`desktop.steps.source_zone`](#desktopstepssource_zone) | 1 | 20 |
-| [`desktop.steps.spec`](#desktopstepsspec) | 1 | 22 |
+| [`desktop.steps.source_zone.constants`](#desktopstepssource_zoneconstants) | 0 | 0 |
+| [`desktop.steps.source_zone.events`](#desktopstepssource_zoneevents) | 1 | 9 |
+| [`desktop.steps.spec.catalog`](#desktopstepsspeccatalog) | 0 | 1 |
+| [`desktop.steps.spec.constants`](#desktopstepsspecconstants) | 0 | 0 |
+| [`desktop.steps.spec.step_spec`](#desktopstepsspecstep_spec) | 1 | 21 |
 | [`desktop.steps.validate`](#desktopstepsvalidate) | 1 | 2 |
 | [`desktop.store.annotations`](#desktopstoreannotations) | 1 | 18 |
 | [`desktop.store.drafts`](#desktopstoredrafts) | 1 | 5 |
@@ -167,17 +307,35 @@
 | [`desktop.store.pages`](#desktopstorepages) | 1 | 9 |
 | [`desktop.store.runs`](#desktopstoreruns) | 1 | 12 |
 | [`desktop.store.store`](#desktopstorestore) | 1 | 1 |
-| [`desktop.store.tasks`](#desktopstoretasks) | 1 | 71 |
+| [`desktop.store.tasks`](#desktopstoretasks) | 1 | 0 |
+| [`desktop.store.tasks.base`](#desktopstoretasksbase) | 1 | 0 |
+| [`desktop.store.tasks.diagram`](#desktopstoretasksdiagram) | 1 | 5 |
+| [`desktop.store.tasks.inputs`](#desktopstoretasksinputs) | 1 | 15 |
+| [`desktop.store.tasks.paths`](#desktopstoretaskspaths) | 1 | 31 |
+| [`desktop.store.tasks.readiness`](#desktopstoretasksreadiness) | 1 | 4 |
+| [`desktop.store.tasks.records`](#desktopstoretasksrecords) | 1 | 12 |
+| [`desktop.store.tasks.scheduling`](#desktopstoretasksscheduling) | 1 | 4 |
 | [`desktop.store.ui_state`](#desktopstoreui_state) | 1 | 13 |
 | [`desktop.ui.check_group`](#desktopuicheck_group) | 1 | 6 |
 | [`desktop.ui.color_picker`](#desktopuicolor_picker) | 5 | 30 |
 | [`desktop.ui.confirm_dialog`](#desktopuiconfirm_dialog) | 1 | 5 |
 | [`desktop.ui.font_setup`](#desktopuifont_setup) | 2 | 8 |
 | [`desktop.ui.fonts`](#desktopuifonts) | 0 | 2 |
-| [`desktop.ui.help_dialog`](#desktopuihelp_dialog) | 0 | 6 |
+| [`desktop.ui.help_dialog.document`](#desktopuihelp_dialogdocument) | 0 | 2 |
+| [`desktop.ui.help_dialog.opener`](#desktopuihelp_dialogopener) | 0 | 1 |
+| [`desktop.ui.help_dialog.paths`](#desktopuihelp_dialogpaths) | 0 | 3 |
+| [`desktop.ui.help_dialog.script`](#desktopuihelp_dialogscript) | 0 | 0 |
 | [`desktop.ui.icons`](#desktopuiicons) | 2 | 5 |
 | [`desktop.ui.log_throttle`](#desktopuilog_throttle) | 1 | 5 |
-| [`desktop.ui.menu`](#desktopuimenu) | 3 | 18 |
+| [`desktop.ui.menu.about`](#desktopuimenuabout) | 0 | 1 |
+| [`desktop.ui.menu.actions`](#desktopuimenuactions) | 0 | 2 |
+| [`desktop.ui.menu.constants`](#desktopuimenuconstants) | 0 | 0 |
+| [`desktop.ui.menu.data_package`](#desktopuimenudata_package) | 1 | 3 |
+| [`desktop.ui.menu.installer`](#desktopuimenuinstaller) | 0 | 1 |
+| [`desktop.ui.menu.menus`](#desktopuimenumenus) | 0 | 4 |
+| [`desktop.ui.menu.titlebar`](#desktopuimenutitlebar) | 0 | 2 |
+| [`desktop.ui.menu.updates`](#desktopuimenuupdates) | 1 | 3 |
+| [`desktop.ui.menu.verdicts`](#desktopuimenuverdicts) | 1 | 3 |
 | [`desktop.ui.modal_quiet`](#desktopuimodal_quiet) | 1 | 3 |
 | [`desktop.ui.native_minimize`](#desktopuinative_minimize) | 0 | 2 |
 | [`desktop.ui.qt_log`](#desktopuiqt_log) | 0 | 1 |
@@ -185,7 +343,14 @@
 | [`desktop.ui.style`](#desktopuistyle) | 0 | 3 |
 | [`desktop.ui.theme`](#desktopuitheme) | 0 | 3 |
 | [`desktop.ui.toast`](#desktopuitoast) | 0 | 1 |
-| [`desktop.ui.widgets`](#desktopuiwidgets) | 12 | 51 |
+| [`desktop.ui.widgets.combobox`](#desktopuiwidgetscombobox) | 0 | 1 |
+| [`desktop.ui.widgets.constants`](#desktopuiwidgetsconstants) | 0 | 0 |
+| [`desktop.ui.widgets.cursor`](#desktopuiwidgetscursor) | 0 | 1 |
+| [`desktop.ui.widgets.frames`](#desktopuiwidgetsframes) | 4 | 12 |
+| [`desktop.ui.widgets.header`](#desktopuiwidgetsheader) | 2 | 4 |
+| [`desktop.ui.widgets.help`](#desktopuiwidgetshelp) | 1 | 1 |
+| [`desktop.ui.widgets.indicators`](#desktopuiwidgetsindicators) | 4 | 27 |
+| [`desktop.ui.widgets.text`](#desktopuiwidgetstext) | 1 | 5 |
 | [`desktop.ui.window_size`](#desktopuiwindow_size) | 0 | 3 |
 | [`desktop.utils.files`](#desktoputilsfiles) | 0 | 33 |
 | [`desktop.utils.icon`](#desktoputilsicon) | 0 | 3 |
@@ -199,8 +364,16 @@
 | [`desktop.workers.image_list_worker`](#desktopworkersimage_list_worker) | 1 | 2 |
 | [`desktop.workers.imposition_page_thumb_worker`](#desktopworkersimposition_page_thumb_worker) | 1 | 3 |
 | [`desktop.workers.imposition_worker`](#desktopworkersimposition_worker) | 2 | 4 |
-| [`desktop.workers.pdf_render_service`](#desktopworkerspdf_render_service) | 0 | 12 |
-| [`desktop.workers.preview_worker`](#desktopworkerspreview_worker) | 1 | 11 |
+| [`desktop.workers.pdf_render_service.api`](#desktopworkerspdf_render_serviceapi) | 0 | 6 |
+| [`desktop.workers.pdf_render_service.constants`](#desktopworkerspdf_render_serviceconstants) | 0 | 0 |
+| [`desktop.workers.pdf_render_service.jpx`](#desktopworkerspdf_render_servicejpx) | 0 | 1 |
+| [`desktop.workers.pdf_render_service.pool`](#desktopworkerspdf_render_servicepool) | 0 | 5 |
+| [`desktop.workers.preview_worker.compose`](#desktopworkerspreview_workercompose) | 0 | 3 |
+| [`desktop.workers.preview_worker.constants`](#desktopworkerspreview_workerconstants) | 0 | 0 |
+| [`desktop.workers.preview_worker.doc_cache`](#desktopworkerspreview_workerdoc_cache) | 0 | 1 |
+| [`desktop.workers.preview_worker.fonts`](#desktopworkerspreview_workerfonts) | 0 | 2 |
+| [`desktop.workers.preview_worker.print_page`](#desktopworkerspreview_workerprint_page) | 0 | 2 |
+| [`desktop.workers.preview_worker.worker`](#desktopworkerspreview_workerworker) | 1 | 3 |
 | [`desktop.workers.rembg_live_worker`](#desktopworkersrembg_live_worker) | 1 | 3 |
 | [`desktop.workers.rembg_transparent_worker`](#desktopworkersrembg_transparent_worker) | 1 | 2 |
 | [`desktop.workers.render_lock`](#desktopworkersrender_lock) | 0 | 1 |
@@ -320,55 +493,11 @@ gujitools 桌面端主窗口：左侧导航壳层（任务管理 + 独立模块�
 
 ---
 
-## `desktop.components.aggregate_create_panel`
+## `desktop.components.aggregate_create_panel.constants`
 
-源码：[`desktop/components/aggregate_create_panel.py`](../../desktop/components/aggregate_create_panel.py)
+源码：[`desktop/components/aggregate_create_panel/constants.py`](../../desktop/components/aggregate_create_panel/constants.py)
 
-**聚合任务**创建面板（创建任务页「任务类型：聚合任务」的内容）。
-
-## 用户口径（2026-11-17）
-
-> 同一部书有多个 PDF 子集，每个子集作为一个任务处理；拼版之后想把所有
-> 拼版后的图片组合成一个 PDF——创建一个聚合任务，选择多个子任务、选择
-> 图片拼版节点，同时可以对这几个子任务进行排序。
-
-面板三件事：
-
-1. **选子任务**：「选择子任务…」按钮弹「选择子任务」弹窗多选
-   (:class:`AggregateMemberPicker`，**搜索 + 分页的勾选表格**，与任务管理
-   列表同一套观感：节点状态胶囊/匹配判据/分页控件全部复用)；已选成员进
-   下方成员表格，弹窗里勾掉已有的成员即移除，新勾的按任务号追加在后面
-   ——**已排好的顺序不被弹窗冲掉**；
-2. **成员表格**（用户 2026-11-17 晚：列表升级为表格，操作全在行内）：
-   列 = 序号 / 任务名称 / **任务节点** / 操作——
-   - **任务节点**：该子任务**已经完成**的节点（只读展示，不含「提取图片」）
-     ——它是"起始节点能选什么"的依据，一眼看到每个子任务各自跑到了哪；
-     列宽按**内容实测**放宽（最长那行的节点名全显示，不再裁字）；
-   - **操作**：行内「详情 / 上移 / 下移 / 删除」（详情＝**非模态预览窗**，
-     不再跳走创建页；顺序有意义，决定合并页序）；
-   - 表格上方「选择子任务…」随时追加（同一个弹窗）。
-3. **起始节点**（用户 2026-11-17 本轮：checkbox 列表 + **单选**）：
-   候选 = 所选子任务里**任意一个已经完成**的任务节点（逐成员取
-   :meth:`store.completed_aggregate_stages`，再用
-   :func:`desktop.steps.aggregate.any_member_stages` 求**并集**；用户
-   2026-11-18 口径，取代早先"每个成员都完成过"的交集）。全体子任务共用这
-   一个节点，选它就等于选"流程从哪开始"。
-   ⚠️ 并集的代价必须让用户看见：选中的节点有成员没跑过 ⇒ 汇集时缺它的
-   页面，所以候选下方**点名**这些子任务（:func:`missing_members`）。
-   ⚠️ 勾选是**单选**：勾一个别的自动灭；点掉当前唯一勾选不生效（不可能
-   出现"没有起始节点"）。还没选成员、或并集为空时兜底列出全部候选
-   （提交时 ``store`` 仍会校验）。
-4. **流程**：起始节点变化 ⇒ 流程编辑器换到新派生图（开始节点自动变化）。
-
-流程编辑器常驻（与普通创建页同一条纪律）：展示
-:func:`desktop.steps.aggregate.derive_aggregate_diagram` 的派生图，用户可以
-继续拖改；改过就随 ``submitted`` 一起交出去，没改过传 ``None``（store 落
-派生图本身）。
-
-⚠️ 起始节点变化会**整体重建编辑器**（派生图变了，旧图不能原地改）；
-用户在旧根下做的流程编辑随之丢弃——起始节点是流程的根，根换了的
-"自定义"没有意义。同理，成员集合变化导致候选集变化时，起始节点若不在
-新候选里就自动落到新候选的第一个（见 :meth:`_sync_candidates`）。
+聚合任务创建面板的共享常量（见 :mod:`desktop.components.aggregate_create_panel`）。
 
 ### 模块常量
 
@@ -377,6 +506,91 @@ gujitools 桌面端主窗口：左侧导航壳层（任务管理 + 独立模块�
 | MEMBER_PAGE_SIZE | `10` |
 | MEMBER_HEADER_HEIGHT | `38` |
 | DEFAULT_START_STAGE | `"imposition"` |
+
+---
+
+## `desktop.components.aggregate_create_panel.panel`
+
+源码：[`desktop/components/aggregate_create_panel/panel.py`](../../desktop/components/aggregate_create_panel/panel.py)
+
+聚合任务创建面板主体 :class:`AggregateCreatePanel`（组合两个 Mixin）。
+
+### `class AggregateCreatePanel(_StartStageMixin, _MembersMixin, QWidget)`
+
+聚合任务面板：选成员 → 成员表格（排序/删除）→ 起始节点 → 流程图 → 提交。
+
+对外只认 :attr:`submitted`（成员 / 各成员节点 / 是否带了编辑过的流程图）
+与 :attr:`cancelled`；任务名称由宿主页面（创建任务页）统一收集。
+
+## 两种用途（``inspect``）
+
+- ``inspect=False``（默认）：**创建**聚合任务（创建任务页用）——能挑成员、
+  能排序/删除、能改起始节点、底部有「创建聚合任务」。
+- ``inspect=True``：**查看 / 继续编辑**一个已经建好的聚合任务（详情页 →
+  「查看 / 编辑流程」二级页用，用户 2026-11-18：「进入流程入口……应当显示
+  聚合任务的子任务相关信息，跟创建聚合任务时候一样」）——**成员只读**
+  （改成员集合等于重建聚合任务），起始节点**可以改**（用户 2026-11-18：
+  「起始节点可以切换变更，如果变更了保存流程的时候，提示起始节点丢失，
+  聚合任务之前历史处理数据都丢失」⇒ 改完由宿主在保存时弹确认），行内只留
+  「详情」，底部按钮行收起（保存/关闭在页面顶栏），流程画布仍可编辑。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(store, parent=None, *, inspect: bool=False, members: list[str] \| None=None, start_stage: str=DEFAULT_START_STAGE, initial_diagram=None)` | :param inspect: ``True`` = 查看已建好的聚合任务（成员/起始节点只读， |
+| `current_stage() -> str` | 当前起始节点（全体成员共用；无成员时回落默认值）。 |
+| `record_stage() -> str` | **落库的**起始节点（用户没改过时与 :meth:`current_stage` 相同）。 |
+| `stage_changed() -> bool` | 用户是否改了起始节点（改没改决定保存时要不要弹"数据作废"确认）。 |
+| `mark_stage_saved() -> None` | 起始节点已落库：把记录值追平，之后 :meth:`stage_changed` 复归 ``False``。 |
+| `members() -> list[str]` | 当前成员（只读副本）。 |
+| `member_stages() -> list[str]` | 各成员的节点（与 :meth:`members` 对齐；全体共用起始节点 ⇒ 值相同）。 |
+| `set_members(members: list[str]) -> None` | 回填成员（自测快路径）：候选与起始节点按新成员重算。 |
+| `set_start_stage(stage: str) -> None` | 设起始节点（自测/回填用）：走勾选框，信号链自然跑一遍。 |
+| `current_diagram()` | 编辑器手里那张图（派生图或用户改过的版本）。 |
+| `result_diagram()` | 要落盘的流程图：编辑过 = 用户那张；没动过 = ``None``（store 落派生图）。 |
+| `uses_custom_flow() -> bool` | — |
+| `can_submit() -> bool` | — |
+| `submit() -> None` | 校验通过就发 :attr:`submitted`；成员为空先拦（聚合没有成员不成立）。 |
+| `reset() -> None` | 回到刚打开的样子：成员清空、候选回到全部节点、起始节点回默认。 |
+
+##### `__init__(store, parent=None, *, inspect: bool=False, members: list[str] | None=None, start_stage: str=DEFAULT_START_STAGE, initial_diagram=None)`
+
+:param inspect: ``True`` = 查看已建好的聚合任务（成员/起始节点只读，
+    收起底部按钮行）。见类头「两种用途」。
+:param members: 初始成员（``inspect`` 时由调用方从 record 回填）。
+:param start_stage: 初始起始节点（同上；不在合法清单里就回默认）。
+:param initial_diagram: 初始画布内容（``inspect`` 时传**已落盘的**
+    ``flow.bpmn``，用户看到的才是他上次存下的那张图；只在第一次建
+    编辑器时用一次，之后换起始节点仍按派生图重建）。
+
+##### `stage_changed() -> bool`
+
+用户是否改了起始节点（改没改决定保存时要不要弹"数据作废"确认）。
+
+⚠️ 判据是"与落库值比"而不是"点过没有"——用户改回原值再保存不该弹框。
+
+##### `member_stages() -> list[str]`
+
+各成员的节点（与 :meth:`members` 对齐；全体共用起始节点 ⇒ 值相同）。
+
+⚠️ 形状保持"逐成员"是为了跟 store 的 ``member_stages`` 字段一致——
+用户 2026-11-17 本轮改回**全体共用一个节点**，值必然一模一样。
+
+##### `set_start_stage(stage: str) -> None`
+
+设起始节点（自测/回填用）：走勾选框，信号链自然跑一遍。
+
+不在候选里的节点直接忽略（它对这个成员集合不存在）——不偷偷改数据，
+免得界面勾着的和实际用的不是同一个（用户点不到的东西不该被设上）。
+
+---
+
+## `desktop.components.aggregate_create_panel.picker`
+
+源码：[`desktop/components/aggregate_create_panel/picker.py`](../../desktop/components/aggregate_create_panel/picker.py)
+
+「选择子任务」弹窗内容：搜索 + 分页的勾选表格（:class:`AggregateMemberPicker`）。
 
 ### `class AggregateMemberPicker(QWidget)`
 
@@ -421,101 +635,6 @@ gujitools 桌面端主窗口：左侧导航壳层（任务管理 + 独立模块�
 ``resizable=True``（用户 2026-11-18）：「选择子任务弹窗要显示窗口功能，
 放大缩小」——标题栏出现最小化/最大化按钮，也能拖边拉伸。默认尺寸
 1040×720 只是**开窗**尺寸，最小尺寸由外壳按 3/4 兜底。
-
-### `class AggregateCreatePanel(QWidget)`
-
-聚合任务面板：选成员 → 成员表格（排序/删除）→ 起始节点 → 流程图 → 提交。
-
-对外只认 :attr:`submitted`（成员 / 各成员节点 / 是否带了编辑过的流程图）
-与 :attr:`cancelled`；任务名称由宿主页面（创建任务页）统一收集。
-
-## 两种用途（``inspect``）
-
-- ``inspect=False``（默认）：**创建**聚合任务（创建任务页用）——能挑成员、
-  能排序/删除、能改起始节点、底部有「创建聚合任务」。
-- ``inspect=True``：**查看 / 继续编辑**一个已经建好的聚合任务（详情页 →
-  「查看 / 编辑流程」二级页用，用户 2026-11-18：「进入流程入口……应当显示
-  聚合任务的子任务相关信息，跟创建聚合任务时候一样」）——**成员只读**
-  （改成员集合等于重建聚合任务），起始节点**可以改**（用户 2026-11-18：
-  「起始节点可以切换变更，如果变更了保存流程的时候，提示起始节点丢失，
-  聚合任务之前历史处理数据都丢失」⇒ 改完由宿主在保存时弹确认），行内只留
-  「详情」，底部按钮行收起（保存/关闭在页面顶栏），流程画布仍可编辑。
-
-#### 方法
-
-| 方法 | 说明 |
-| --- | --- |
-| `__init__(store, parent=None, *, inspect: bool=False, members: list[str] \| None=None, start_stage: str=DEFAULT_START_STAGE, initial_diagram=None)` | :param inspect: ``True`` = 查看已建好的聚合任务（成员/起始节点只读， |
-| `start_candidates() -> tuple[str, ...]` | 当前候选起始节点（按拓扑序；含「提取图片」，可作起点）。 |
-| `current_stage() -> str` | 当前起始节点（全体成员共用；无成员时回落默认值）。 |
-| `record_stage() -> str` | **落库的**起始节点（用户没改过时与 :meth:`current_stage` 相同）。 |
-| `stage_changed() -> bool` | 用户是否改了起始节点（改没改决定保存时要不要弹"数据作废"确认）。 |
-| `mark_stage_saved() -> None` | 起始节点已落库：把记录值追平，之后 :meth:`stage_changed` 复归 ``False``。 |
-| `members() -> list[str]` | 当前成员（只读副本）。 |
-| `member_stages() -> list[str]` | 各成员的节点（与 :meth:`members` 对齐；全体共用起始节点 ⇒ 值相同）。 |
-| `set_members(members: list[str]) -> None` | 回填成员（自测快路径）：候选与起始节点按新成员重算。 |
-| `set_start_stage(stage: str) -> None` | 设起始节点（自测/回填用）：走勾选框，信号链自然跑一遍。 |
-| `current_diagram()` | 编辑器手里那张图（派生图或用户改过的版本）。 |
-| `result_diagram()` | 要落盘的流程图：编辑过 = 用户那张；没动过 = ``None``（store 落派生图）。 |
-| `uses_custom_flow() -> bool` | — |
-| `can_submit() -> bool` | — |
-| `submit() -> None` | 校验通过就发 :attr:`submitted`；成员为空先拦（聚合没有成员不成立）。 |
-| `reset() -> None` | 回到刚打开的样子：成员清空、候选回到全部节点、起始节点回默认。 |
-
-##### `__init__(store, parent=None, *, inspect: bool=False, members: list[str] | None=None, start_stage: str=DEFAULT_START_STAGE, initial_diagram=None)`
-
-:param inspect: ``True`` = 查看已建好的聚合任务（成员/起始节点只读，
-    收起底部按钮行）。见类头「两种用途」。
-:param members: 初始成员（``inspect`` 时由调用方从 record 回填）。
-:param start_stage: 初始起始节点（同上；不在合法清单里就回默认）。
-:param initial_diagram: 初始画布内容（``inspect`` 时传**已落盘的**
-    ``flow.bpmn``，用户看到的才是他上次存下的那张图；只在第一次建
-    编辑器时用一次，之后换起始节点仍按派生图重建）。
-
-##### `start_candidates() -> tuple[str, ...]`
-
-当前候选起始节点（按拓扑序；含「提取图片」，可作起点）。
-
-候选 = 所选子任务里**任意一个已经完成**的任务节点（用户 2026-11-18，
-取代早先"每个成员都完成过"的交集）：逐成员取
-:meth:`store.completed_aggregate_stages`（历史上成功过才算完成，
-拼版=已启用且有拼版页），再用
-:func:`desktop.steps.aggregate.any_member_stages` 求**并集**
-——"现有任务已经存在生效的节点是提取/检测/去底，因此可以从这些节点
-里挑一个"。交集口径在"各子集进度不同步"时会收成空集（实测三个子集
-分别完成 检测/检测/去底 ⇒ 交集为空），列表就退化成兜底全集，等于
-没跟着子任务变。
-
-⚠️ 并集意味着某些成员可能缺这个节点，汇集时缺它的页面——
-:meth:`_refresh_stage_hint` 会点名这些子任务。
-
-还没选成员、或并集为空时兜底成全部候选：列表空着用户连"先选一个"
-都做不到（提交时 ``store`` 仍会校验）。
-
-⚠️ 查看模式（``inspect``）额外一条：**落库的那个起始节点必须在候选
-里**。它当年是按成员当时的进度选的，成员后来重跑/清理过的话并集可能
-已经不含它——那样勾选框里就看不到"当前起点"，看着像坏了。这里把它
-按拓扑序补回清单（只影响显示，不改落库值）。
-
-##### `stage_changed() -> bool`
-
-用户是否改了起始节点（改没改决定保存时要不要弹"数据作废"确认）。
-
-⚠️ 判据是"与落库值比"而不是"点过没有"——用户改回原值再保存不该弹框。
-
-##### `member_stages() -> list[str]`
-
-各成员的节点（与 :meth:`members` 对齐；全体共用起始节点 ⇒ 值相同）。
-
-⚠️ 形状保持"逐成员"是为了跟 store 的 ``member_stages`` 字段一致——
-用户 2026-11-17 本轮改回**全体共用一个节点**，值必然一模一样。
-
-##### `set_start_stage(stage: str) -> None`
-
-设起始节点（自测/回填用）：走勾选框，信号链自然跑一遍。
-
-不在候选里的节点直接忽略（它对这个成员集合不存在）——不偷偷改数据，
-免得界面勾着的和实际用的不是同一个（用户点不到的东西不该被设上）。
 
 ---
 
@@ -685,9 +804,28 @@ gujitools 桌面端主窗口：左侧导航壳层（任务管理 + 独立模块�
 
 ---
 
-## `desktop.components.bpmn_editor`
+## `desktop.components.bpmn_editor.constants`
 
-源码：[`desktop/components/bpmn_editor.py`](../../desktop/components/bpmn_editor.py)
+源码：[`desktop/components/bpmn_editor/constants.py`](../../desktop/components/bpmn_editor/constants.py)
+
+BPMN 编辑控件的共享常量与几何辅助（见 :mod:`desktop.components.bpmn_editor`）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| PORT_RADIUS | `5.0` |
+| PORT_HIT | `14.0` |
+| DRAG_THRESHOLD | `3.0` |
+| EDGE_HIT | `9.0` |
+| NEW_NODE_GAP | `40.0` |
+| PLACE_TRIES | `8` |
+
+---
+
+## `desktop.components.bpmn_editor.editor`
+
+源码：[`desktop/components/bpmn_editor/editor.py`](../../desktop/components/bpmn_editor/editor.py)
 
 BPMN 流程图**编辑控件**：拖节点、连边、改名、增删。
 
@@ -721,18 +859,12 @@ BPMN 流程图**编辑控件**：拖节点、连边、改名、增删。
 ⚠️ 编辑结果落在 :meth:`diagram` 返回的那份图上（原地改），由宿主调
 :meth:`save_to` 落盘。
 
-### 模块常量
+⚠️ 2026-11-22 起按职责拆成子包：常量/几何 ``constants``、宿主类型面
+``_host``、交互与绘制 ``interaction``、对话框 ``dialogs``、主体 ``editor``。
+本 ``__init__`` 只做重导出——既有 ``from desktop.components.bpmn_editor
+import X`` 全部不变，子模块之间不要反过来导入本包（会形成循环）。
 
-| 名称 | 值 |
-| --- | --- |
-| PORT_RADIUS | `5.0` |
-| PORT_HIT | `14.0` |
-| DRAG_THRESHOLD | `3.0` |
-| EDGE_HIT | `9.0` |
-| NEW_NODE_GAP | `40.0` |
-| PLACE_TRIES | `8` |
-
-### `class BpmnEditor(BpmnView)`
+### `class BpmnEditor(_DialogMixin, _InteractionMixin, BpmnView)`
 
 可编辑的 BPMN 视图（继承 :class:`BpmnView` 的渲染，加交互）。
 
@@ -758,16 +890,6 @@ BPMN 流程图**编辑控件**：拖节点、连边、改名、增删。
 | `connect(source: str, target: str, label: str='') -> str \| None` | 连一条边；自连/重复/悬空都拒绝（返回 ``None``）。 |
 | `save_to(path: Path \| str) -> Path` | 把当前图写回 ``.bpmn`` 文件（原子写）。 |
 | `auto_layout() -> None` | 整图**自动排版**（:meth:`FlowDiagram.relayout`）。 |
-| `flow_at(point: QPointF) -> str \| None` | 点是否落在某条**连线**上（返回最近的那条）。 |
-| `mousePressEvent(event) -> None` | Qt 事件覆写：按下（选中 / 开始拖拽或绘制）。 |
-| `mouseMoveEvent(event) -> None` | Qt 事件覆写：移动（拖拽 / 缩放中的实时更新）。 |
-| `mouseReleaseEvent(event) -> None` | Qt 事件覆写：松开（提交本次编辑）。 |
-| `mouseDoubleClickEvent(event) -> None` | 双击节点 = 改名（最顺手的入口）。 |
-| `keyPressEvent(event) -> None` | Qt 事件覆写：键盘操作（如 Delete 删除选中项）。 |
-| `paintEvent(event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
-| `ask_add_node() -> None` | 加一个**能被运行时认出来**的步骤（方块面板，点一下即加）。 |
-| `ask_rename_selected() -> None` | 给选中的（连线优先）改名。 |
-| `ask_delete_selected() -> None` | — |
 
 ##### `__init__(diagram: FlowDiagram | None=None, parent=None, *, name_source: FlowDiagram | None=None)`
 
@@ -849,20 +971,6 @@ BPMN 流程图**编辑控件**：拖节点、连边、改名、增删。
 分层铺开 + 连线按新坐标现算（连接点自动匹配）。⚠️ 入口是工具栏按钮
 而不是鼠标事件——Qt 槽函数里没 catch 的话异常只进终端，用户看到的
 就是"点了没反应"（与鼠标事件同一条教训），所以这里自己兜住。
-
-##### `ask_add_node() -> None`
-
-加一个**能被运行时认出来**的步骤（方块面板，点一下即加）。
-
-⚠️ 不让用户直接敲名字：随手打的"新步骤"接不上任何阶段（
-:func:`stage_of_name` 认不出），加进去也**不参与运行**——用户会以为
-加了没生效。所以列出固定步骤让他点。
-
-⚠️ 用户 2026-11-17 三条：下拉里的「提交检测结果」不需要（那是
-「检测文本框」的第二个动作 ``detect_submit``，不是独立步骤）、
-「其他（自定义名称）」不需要、下拉框改成**排列的方块**直接点选。
-条目 = 固定步骤表（:func:`palette_steps`）那一套——主链四步 +
-可选的「图片拼版」，别另写一份名单。
 
 ---
 
@@ -1632,9 +1740,35 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 
 ---
 
-## `desktop.components.imposition.canvas`
+## `desktop.components.imposition.canvas.constants`
 
-源码：[`desktop/components/imposition/canvas.py`](../../desktop/components/imposition/canvas.py)
+源码：[`desktop/components/imposition/canvas/constants.py`](../../desktop/components/imposition/canvas/constants.py)
+
+拼版画布的常量：配色、手柄/旋转钮几何、缩放手感、贴图采样档位。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| HANDLE_RADIUS | `5` |
+| ROTATE_KNOB_RADIUS | `6` |
+| ROTATE_KNOB_GAP | `26` |
+| ROTATE_ARC_GAP | `5.0` |
+| ROTATE_ARC_START | `210` |
+| ROTATE_ARC_BARB | `4.0` |
+| MIN_RECT | `4.0` |
+| EDGE_HIT_PX | `6` |
+| SNAP_DEGREES | `15.0` |
+| WHEEL_ZOOM_STEP | `1.15` |
+| ZOOM_MIN | `0.2` |
+| ZOOM_MAX | `8.0` |
+| WHEEL_REPAINT_MS | `30` |
+
+---
+
+## `desktop.components.imposition.canvas.widget`
+
+源码：[`desktop/components/imposition/canvas/widget.py`](../../desktop/components/imposition/canvas/widget.py)
 
 图片拼版操作画布：**白底**上拖动 / 缩放拉伸 / 旋转两张源图。
 
@@ -1689,25 +1823,10 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 ⚠️ ``rotation`` 是**顺时针角度**（与 Qt ``QPainter.rotate`` 同向），绕该项
 ``rect`` 的中心转——与 PIL 合成侧的取负口径配套（见 services.imposition）。
 
-### 模块常量
+本文件只放**主类骨架**（信号 / 构造 / 对外 API / 编辑入口）；坐标换算见
+:mod:`.geometry`、渲染见 :mod:`.paint`、鼠标与滚轮见 :mod:`.interaction`。
 
-| 名称 | 值 |
-| --- | --- |
-| HANDLE_RADIUS | `5` |
-| ROTATE_KNOB_RADIUS | `6` |
-| ROTATE_KNOB_GAP | `26` |
-| ROTATE_ARC_GAP | `5.0` |
-| ROTATE_ARC_START | `210` |
-| ROTATE_ARC_BARB | `4.0` |
-| MIN_RECT | `4.0` |
-| EDGE_HIT_PX | `6` |
-| SNAP_DEGREES | `15.0` |
-| WHEEL_ZOOM_STEP | `1.15` |
-| ZOOM_MIN | `0.2` |
-| ZOOM_MAX | `8.0` |
-| WHEEL_REPAINT_MS | `30` |
-
-### `class ImpositionCanvas(QWidget)`
+### `class ImpositionCanvas(_PaintMixin, _InteractionMixin, _GeometryMixin, QWidget)`
 
 拼版画布：白底上拖动/缩放/旋转两张图；``items_changed`` 发出图坐标。
 
@@ -1730,18 +1849,6 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 | `selected_rotation() -> float \| None` | 选中图当前的旋转角（无选中返回 None）。 |
 | `refit() -> None` | 按当前 items 重新适配可视区并重绘（整版旋转后外接框变了）。 |
 | `flush_pending() -> bool` | 把"还没松手"的编辑结果补发出去（切页/切步骤/离开时调）。 |
-| `resizeEvent(event) -> None` | Qt 事件覆写：尺寸变化时重算布局 / 重新缩放。 |
-| `showEvent(event) -> None` | Qt 事件覆写：显示时刷新状态。 |
-| `invalidate_image(path: str) -> None` | 某个源图文件被外部覆盖（编辑器「完成」回写）后：丢掉它的解码 |
-| `contextMenuEvent(event) -> None` | 右键菜单：**预览图片 / 编辑图片**。 |
-| `set_locate_resolver(resolver: Callable[[int], list] \| None) -> None` | 宿主给出「定位图片资源」要定位的目标（``(index) -> list[Path]``，按优先级）。 |
-| `mouseDoubleClickEvent(event) -> None` | 双击图片编辑整页组合；双击空白预览整页组合。 |
-| `mousePressEvent(event) -> None` | Qt 事件覆写：按下（选中 / 开始拖拽或绘制）。 |
-| `mouseMoveEvent(event) -> None` | Qt 事件覆写：移动（拖拽 / 缩放中的实时更新）。 |
-| `mouseReleaseEvent(event) -> None` | Qt 事件覆写：松开（提交本次编辑）。 |
-| `leaveEvent(event) -> None` | 指针离开画布：按下状态收不到 release 时也别留着框线。 |
-| `wheelEvent(event) -> None` | 滚轮缩放视图（以光标为锚点）；**重绘按帧合并**（减渲染的关键）。 |
-| `paintEvent(event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
 
 ##### `set_page(items) -> None`
 
@@ -1790,61 +1897,6 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 
 与 ``print_layout_canvas.flush_pending`` 同一理由：``items_changed``
 只在松手时发，拖住不放直接切走会让这一下改动永久丢失。
-
-##### `invalidate_image(path: str) -> None`
-
-某个源图文件被外部覆盖（编辑器「完成」回写）后：丢掉它的解码
-缓存并重绘——不丢的话画布会一直显示覆盖前的旧图。
-
-⚠️⚠️ 命中判据必须**规范化**（``normpath`` + ``normcase``），不能拿
-字符串直接比：缓存键是 ``item["file"]`` 原样存进来的，而调用方给的
-路径可能来自 ``Path(...)``（Windows 上斜杠会被翻成 ``\``）、
-``QFileDialog``（给的是 ``/``）或带大小写差异——只要有一处形态不同，
-``pop`` 就落空、画布**静默地继续显示旧图**（用户 2026-10-08 报：
-从预览弹窗里编辑完，关掉弹窗拼版页还是老图）。这里把"同一路径的
-各种写法"一并清掉，调用方传哪种形态都能命中。
-
-##### `contextMenuEvent(event) -> None`
-
-右键菜单：**预览图片 / 编辑图片**。
-
-「预览图片」仍按命中对象预览单张或整页组合；「编辑图片」统一编辑
-整页组合，不再提供单张源图编辑。右键图片时仍先选中该图。
-空画布没有菜单（没有可预览/可编辑的东西）。
-
-##### `set_locate_resolver(resolver: Callable[[int], list] | None) -> None`
-
-宿主给出「定位图片资源」要定位的目标（``(index) -> list[Path]``，按优先级）。
-
-⚠️ **拼版这一步必须给**（用户 2026-10-18）：画布上那张图是**输入源图**
-（如 ``stages/input``），而拼版的"图片资源"是**实时重合成出来的成品**
-（``stages/imposition[~<节点>]``）。不设时退回旧口径——定位画布上那张
-源图文件（其余步骤/独立页没有"实时产物"的说法，行为不变）。
-
-##### `mouseDoubleClickEvent(event) -> None`
-
-双击图片编辑整页组合；双击空白预览整页组合。
-
-⚠️ 处理了就 ``accept``：Qt 对未接受的双击会**再补一个 mousePress**，
-那会走进 ``mousePressEvent`` 把编辑手势带起来（用户双击预览、松手时
-画布却以为刚拖动过一下）。
-
-##### `wheelEvent(event) -> None`
-
-滚轮缩放视图（以光标为锚点）；**重绘按帧合并**（减渲染的关键）。
-
-缩放本身只是 ``_zoom_at`` 里几个乘法——不解码、不重排、不碰图缓存。
-真正贵的是重绘：两张几千像素见方的原图 + 平滑采样。高分滚轮/触控板
-一秒能吐上百个 wheel 事件，若每个事件都 ``update()``，重绘就被拉到
-事件率。所以这里**不直接要重绘**：
-
-- 启动帧窗口定时器（``WHEEL_REPAINT_MS``），窗口内再来滚动只置
-  ``_wheel_paint_pending``；
-- 窗口到期画一帧（``_on_wheel_frame``）；窗口内还有滚动就滚到下一帧，
-  没有就关掉快速档、补一帧带平滑的高质量重绘收尾。
-
-连发期间 paintEvent 走**快速档**（不做 ``SmoothPixmapTransform``，
-大图缩放的重头开销在这）——反正下一滚就整帧重画，糊一帧没人看得出。
 
 ---
 
@@ -1905,31 +1957,17 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 
 ---
 
-## `desktop.components.imposition.page_list`
+## `desktop.components.imposition.page_list.list_widget`
 
-源码：[`desktop/components/imposition/page_list.py`](../../desktop/components/imposition/page_list.py)
+源码：[`desktop/components/imposition/page_list/list_widget.py`](../../desktop/components/imposition/page_list/list_widget.py)
 
-拼版页清单——**模块一：选择拼版** 的左列（「第一页」「第二页」…）。
+左列拼版页清单（``ImpositionPageList``）主类骨架：信号 / 构造 / 数据 / 视口。
 
-虚线的**「＋ 选择拼版」固定钉在左列最底部**（不随页条目增长下移出视野），
-点了发 ``add_requested``，由模块一控制器
-（``desktop/pages/taskdetail/imposition_pages.py``）弹窗挑图建页。
+拆包后的职责划分：条目与「＋ 选择拼版」见 :mod:`.entries`，批量悬浮框见
+:mod:`.select_bar`，右键菜单见 :mod:`.menu`，勾选批量见 :mod:`.selection`，
+拖动排序见 :mod:`.drag`。
 
-页条目左上是**勾选框**、右上是当前页的「✕」；主体是**缩略图**，
-标题「第一页」与副标题（两张源图名）排在缩略图**下方**（用户 2026-10-04：
-文字要在缩略图下面）。勾了页，一条**悬浮操作框**（「已选 N 页」+「取消选择」
-「批量删除」）悬在页码栏右侧中部，可拖动——取消选择即收起。
-
-**右键某页缩略图**（用户 2026-11-16，照「PDF排版」左列那套菜单）：上移 /
-下移 / 删除当前拼版 / 向前插入拼版 / 向后插入拼版。三条动作都不在本文件
-执行——分别发 ``move_requested`` / ``remove_requested`` /
-``insert_requested``，由控制器落盘（插入还要先弹选图窗）。
-
-这里只做控件与信号：清单**只认页标题/副标题文案**，不认拼版文档本身——
-页清单的数据（``drafts/imposition.json``）由装配层
-``view.ImpositionViewWidget`` 灌进来。
-
-### `class ImpositionPageList(QWidget)`
+### `class ImpositionPageList(_DragMixin, _MenuMixin, _SelectionMixin, QWidget)`
 
 左列拼版页清单：滚动的页条目 + 底部固定的虚线「＋ 选择拼版」。
 
@@ -1961,8 +1999,6 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 | `set_page_thumbs(thumbs: list) -> None` | 给每页条目灌缩略图（``thumbs[i]`` 是第 i 页的 ``QImage``/``QPixmap``， |
 | `set_thumb_at(index: int, image) -> None` | 只给**指定条目**贴缩略图（``index`` 是它在当前清单里的位置）。 |
 | `current() -> int` | — |
-| `menu_actions() -> list` | 当前右键菜单里的动作（护栏/自检用；没弹过菜单返回空列表）。 |
-| `checked_indexes() -> list[int]` | 勾选了的页下标（升序）。 |
 
 ##### `set_float_host(host) -> None`
 
@@ -2298,9 +2334,26 @@ worker）→ 连 :attr:`page_ready` 把生成好的那条贴回左列。版面/�
 
 ---
 
-## `desktop.components.imposition.picker`
+## `desktop.components.imposition.picker.constants`
 
-源码：[`desktop/components/imposition/picker.py`](../../desktop/components/imposition/picker.py)
+源码：[`desktop/components/imposition/picker/constants.py`](../../desktop/components/imposition/picker/constants.py)
+
+「选择拼版」/「插入拼版」弹窗的常量：缩略图/卡片/弹窗尺寸与分批节流。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| CARD_HEAD | `30` |
+| CARD_GAP | `12` |
+| THUMB_BATCH | `6` |
+| THUMB_GAP_MS | `150` |
+
+---
+
+## `desktop.components.imposition.picker.dialog`
+
+源码：[`desktop/components/imposition/picker/dialog.py`](../../desktop/components/imposition/picker/dialog.py)
 
 「选择拼版」/「插入拼版」弹窗（**模块一：选择拼版** 的 UI）。
 
@@ -2335,16 +2388,7 @@ worker）→ 连 :attr:`page_ready` 把生成好的那条贴回左列。版面/�
 ``desktop/pages/taskdetail/imposition_pages.py``（任务流程控制器）与
 ``desktop/modules/imposition/page.py``（独立拼图页）。
 
-### 模块常量
-
-| 名称 | 值 |
-| --- | --- |
-| CARD_HEAD | `30` |
-| CARD_GAP | `12` |
-| THUMB_BATCH | `6` |
-| THUMB_GAP_MS | `150` |
-
-### `class ImpositionPickerDialog(FramelessDialog)`
+### `class ImpositionPickerDialog(_FillMixin, _StatusMixin, FramelessDialog)`
 
 拼版选图弹窗：**一个候选列表**（上游剩余图 + 自己上传的图）。
 
@@ -3451,28 +3495,11 @@ print 面板「位置」「文字方向」的固定取值（由 PrintFormMixin �
 
 ---
 
-## `desktop.components.print_manage_dialog`
+## `desktop.components.print_manage_dialog.constants`
 
-源码：[`desktop/components/print_manage_dialog.py`](../../desktop/components/print_manage_dialog.py)
+源码：[`desktop/components/print_manage_dialog/constants.py`](../../desktop/components/print_manage_dialog/constants.py)
 
-第四步「管理图片」弹窗面板：**草稿式**缩略图网格 + 二次「插入图片」。
-
-用户 2026-11-02 的口径：
-
-- 缩略图条底部的「插入图片」按钮改为 **「管理图片」**，底部那行右键提示删掉；
-- 点「管理图片」弹出本面板：缩略图**一行多列**（图标网格），可多选、可拖动排序；
-- 面板底部仍有 **「插入图片」** 按钮，点开是原来的插入弹窗 B
-  （``PrintInsertPanel``，上传图片 / 删除恢复）；
-- 本面板里的改动只是**草稿**：点外壳的「保存」才写回，取消则一概不生效。
-
-本版补充（用户 2026-11-02 第二轮）：
-
-- 刚插入、还没保存的新图用**虚线框**圈起来（暖色，与已有图片区分）；
-- 每张图**右上角有 x**，点它即从草稿里删掉；
-- 选中一张或多张时，底部才出现 **「删除图片」** 按钮。
-
-⚠️ 本面板只收集草稿，不碰数据层：顺序落盘、新图复制、恢复项出
-``deleted_pages`` 全由宿主（``pages/taskdetail/print_list.py``）在「保存」后执行。
+「管理图片」弹窗的共享常量（见 :mod:`desktop.components.print_manage_dialog`）。
 
 ### 模块常量
 
@@ -3482,6 +3509,36 @@ print 面板「位置」「文字方向」的固定取值（由 PrintFormMixin �
 | TARGET_KEY | `"_target"` |
 | CLOSE_SIZE | `18` |
 | CHECK_SIZE | `18` |
+
+---
+
+## `desktop.components.print_manage_dialog.helpers`
+
+源码：[`desktop/components/print_manage_dialog/helpers.py`](../../desktop/components/print_manage_dialog/helpers.py)
+
+「管理图片」弹窗的纯几何/缩略图辅助（无 Qt 控件状态）。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `page_label(row: int) -> str` | 条目名称 = **页码**（列表当前位置，写法与图片拼版一致）。 |
+
+#### `page_label(row: int) -> str`
+
+条目名称 = **页码**（列表当前位置，写法与图片拼版一致）。
+
+用户 2026-11-02：显示「第一页」「第十二页」这种中文页码，不再用四位补零；
+文件名会误导（拖动/删除后它跟 PDF 页序对不上）。中文页码的唯一来源是
+``services.imposition.cn_page_label``，这里只是借来用。
+
+---
+
+## `desktop.components.print_manage_dialog.panel`
+
+源码：[`desktop/components/print_manage_dialog/panel.py`](../../desktop/components/print_manage_dialog/panel.py)
+
+「管理图片」内容面板（草稿）：:class:`PrintManagePanel`。
 
 ### `class PrintManagePanel(QWidget)`
 
@@ -3506,20 +3563,6 @@ print 面板「位置」「文字方向」的固定取值（由 PrintFormMixin �
 
 弹窗打开时缩略图可能还没渲完（首次进入本步），生成一张就补一张；
 按路径而不是行号，用户此时拖动/删除过也不会刷错格。
-
-### 模块函数
-
-| 函数 | 说明 |
-| --- | --- |
-| `page_label(row: int) -> str` | 条目名称 = **页码**（列表当前位置，写法与图片拼版一致）。 |
-
-#### `page_label(row: int) -> str`
-
-条目名称 = **页码**（列表当前位置，写法与图片拼版一致）。
-
-用户 2026-11-02：显示「第一页」「第十二页」这种中文页码，不再用四位补零；
-文件名会误导（拖动/删除后它跟 PDF 页序对不上）。中文页码的唯一来源是
-``services.imposition.cn_page_label``，这里只是借来用。
 
 ---
 
@@ -3584,97 +3627,13 @@ print 面板「位置」「文字方向」的固定取值（由 PrintFormMixin �
 
 ---
 
-## `desktop.components.step_bar`
+## `desktop.components.step_bar.bar`
 
-源码：[`desktop/components/step_bar.py`](../../desktop/components/step_bar.py)
+源码：[`desktop/components/step_bar/bar.py`](../../desktop/components/step_bar/bar.py)
 
-详情页顶部步骤条：编号/对勾徽标 + 连接箭头 + 主副标题。
+横向步骤条 :class:`StepBar`（真实步骤 + 条件「图片拼版」可选节点）。
 
-设计要点：
-- 每一步 = 圆形徽标（编号或 ✓）+ 标题 + 状态副标题，用形状表达"第几步"；
-- 步骤之间用带箭头的连接线连起来，已完成的线段变色，直观表达先后顺序；
-  连接线由 **StepBar 底层统一画**、从节点框**后面**穿过——节点框有实底
-  （``_StepItem.pill`` / 拼版节点自己画），框内那截线被遮住，线自然"从
-  框后面出发"，不用再对齐框边缘；
-- 节点框：所有节点**同一套外观**——SURFACE 实底 + 浅色描边 + 高亮底色，
-  选中/当前只有底色变化、**没有边框差异**（用户 2026-09-30：其他节点即使
-  选中也没有 border，只有背景色；拼版节点生效与否样式统一）；
-- 状态色：未执行（灰）· 执行中（蓝）· 成功（绿）· 失败（红）· 已中断（橙）；
-- 整步可点击切换，带悬停底色，避免按钮样式的标签堆叠感。
-
-对外接口（兼容旧调用）：
-- ``buttons``：StepItem 列表（长度 = 步骤数）；
-- ``_completed``：已完成步骤下标集合；
-- ``set_steps`` / ``set_current`` / ``mark_completed`` / ``current_changed``。
-
-### 模块常量
-
-| 名称 | 值 |
-| --- | --- |
-| UNMAPPED_DETAIL | `"未接入"` |
-| _BADGE | `26` |
-| _CONNECTOR_W | `38` |
-| _BYPASS_CLEAR | `28` |
-| _NODE_MIN_W | `140` |
-
-### `class StepItem(QFrame)`
-
-单个步骤：徽标 + 标题 + 状态副标题，整块可点击。
-
-外层只负责在步骤条里占位（等宽拉伸，保证徽标横向均匀），
-真正的底色/悬停胶囊是内层 ``#stepPill``——它贴合内容宽度，
-避免当前步骤的高亮底色被拉成一整格的"按钮"。
-
-#### 方法
-
-| 方法 | 说明 |
-| --- | --- |
-| `__init__(index: int, title: str, parent=None)` | 初始化单个步骤项：徽标 + 标题 + 副标题，整块可点击。 |
-| `set_title(title: str) -> None` | 只替换标题文案，不改动状态与徽标。 |
-| `set_status(status: str, detail: str='', badge_status: str='') -> None` | status 决定副标题/标题色，badge_status 决定徽标（缺省同 status）。 |
-| `set_current(current: bool) -> None` | 设置是否为当前步骤，切换高亮底色与标题字重。 |
-| `set_unmapped(flag: bool=True) -> None` | 标记为「图上有、但还没有对应功能」的**灰节点**（2026-10-05）。 |
-| `paintEvent(_event) -> None` | 自己画胶囊：样式表一旦出现在子树里，Qt 会把 QFrame 底色填白 |
-| `enterEvent(event) -> None` | Qt 事件覆写：鼠标移入时进入高亮态。 |
-| `leaveEvent(event) -> None` | Qt 事件覆写：鼠标移出时恢复常态。 |
-| `mouseReleaseEvent(event) -> None` | Qt 事件覆写：松开（提交本次编辑）。 |
-
-##### `__init__(index: int, title: str, parent=None)`
-
-初始化单个步骤项：徽标 + 标题 + 副标题，整块可点击。
-
-index 为步骤下标（从 0）；pill 为真身胶囊，底色由 paintEvent 自绘
-（不用样式表），current 高亮由 _apply_style 控制。
-
-##### `set_status(status: str, detail: str='', badge_status: str='') -> None`
-
-status 决定副标题/标题色，badge_status 决定徽标（缺省同 status）。
-
-两者分开是为了表达"这一步有产出，但最近一次重试失败"：
-徽标仍是对勾，副标题用失败色写明最近一次的结果。
-
-##### `set_unmapped(flag: bool=True) -> None`
-
-标记为「图上有、但还没有对应功能」的**灰节点**（2026-10-05）。
-
-用户在流程图上可以画任意节点（bpmn.io 里加一个「OCR 识别」之类），
-本程序没有对应实现。这类节点**不再被静默丢掉**（界面上根本找不到
-"流程节点对不上"），而是照常占一格、显示为灰色并标注「未接入」。
-
-**仍可点**：点了由页面解释怎么接上（改名成已有步骤名）或怎么删掉
-——比"点了没反应"或"直接不显示"都好解释。
-
-##### `paintEvent(_event) -> None`
-
-自己画胶囊：样式表一旦出现在子树里，Qt 会把 QFrame 底色填白
-（盖住步骤条的卡片底色），所以这里不用样式表。
-
-胶囊**始终**有 SURFACE 实底 + 实线 border：实底用来遮住从框后面
-穿过的连接线（见 ``StepBar._draw_connectors``），实线 border 是
-真实步骤的视觉语言（可选节点才是虚线）。高亮底色（当前/悬停）
-叠在实底之上。
-
-### `class StepBar(QWidget)`
+### `class StepBar(_StepBarPaintMixin, QWidget)`
 
 横向步骤条：真实步骤按顺序排列，当前步骤高亮、已完成步骤打勾。
 
@@ -3712,7 +3671,6 @@ status 决定副标题/标题色，badge_status 决定徽标（缺省同 status�
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(steps, parent=None, optional_after=None, unmapped=None, bar_indices=None, optional_bar_index=None, optionals=None)` | 按给定步骤标题逐项构建；steps 允许传生成器。 |
-| `paintEvent(_event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
 | `set_current(index: int) -> None` | 设置当前步骤的**格序**并同步各步骤高亮与徽标。 |
 | `mark_completed(index: int) -> None` | 标记某步骤已完成（徽标改为对勾，连接线着色）。 |
 | `set_steps(texts) -> None` | 兼容旧调用：只更新标题文本。 |
@@ -3819,6 +3777,89 @@ status 决定副标题/标题色，badge_status 决定徽标（缺省同 status�
 
 completed=False 但 status='success' 不可能出现；completed=True 而
 status 为失败/中断时，徽标保持对勾、副标题仍显示最近一次的结果。
+
+---
+
+## `desktop.components.step_bar.constants`
+
+源码：[`desktop/components/step_bar/constants.py`](../../desktop/components/step_bar/constants.py)
+
+步骤条的共享常量与状态配色（见 :mod:`desktop.components.step_bar`）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| UNMAPPED_DETAIL | `"未接入"` |
+| _BADGE | `26` |
+| _CONNECTOR_W | `38` |
+| _BYPASS_CLEAR | `28` |
+| _NODE_MIN_W | `140` |
+
+---
+
+## `desktop.components.step_bar.widgets`
+
+源码：[`desktop/components/step_bar/widgets.py`](../../desktop/components/step_bar/widgets.py)
+
+步骤条的节点控件：徽标 / 占位连接件 / 可省略标签 / 真实节点 / 可选节点。
+
+### `class StepItem(QFrame)`
+
+单个步骤：徽标 + 标题 + 状态副标题，整块可点击。
+
+外层只负责在步骤条里占位（等宽拉伸，保证徽标横向均匀），
+真正的底色/悬停胶囊是内层 ``#stepPill``——它贴合内容宽度，
+避免当前步骤的高亮底色被拉成一整格的"按钮"。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(index: int, title: str, parent=None)` | 初始化单个步骤项：徽标 + 标题 + 副标题，整块可点击。 |
+| `set_title(title: str) -> None` | 只替换标题文案，不改动状态与徽标。 |
+| `set_status(status: str, detail: str='', badge_status: str='') -> None` | status 决定副标题/标题色，badge_status 决定徽标（缺省同 status）。 |
+| `set_current(current: bool) -> None` | 设置是否为当前步骤，切换高亮底色与标题字重。 |
+| `set_unmapped(flag: bool=True) -> None` | 标记为「图上有、但还没有对应功能」的**灰节点**（2026-10-05）。 |
+| `paintEvent(_event) -> None` | 自己画胶囊：样式表一旦出现在子树里，Qt 会把 QFrame 底色填白 |
+| `enterEvent(event) -> None` | Qt 事件覆写：鼠标移入时进入高亮态。 |
+| `leaveEvent(event) -> None` | Qt 事件覆写：鼠标移出时恢复常态。 |
+| `mouseReleaseEvent(event) -> None` | Qt 事件覆写：松开（提交本次编辑）。 |
+
+##### `__init__(index: int, title: str, parent=None)`
+
+初始化单个步骤项：徽标 + 标题 + 副标题，整块可点击。
+
+index 为步骤下标（从 0）；pill 为真身胶囊，底色由 paintEvent 自绘
+（不用样式表），current 高亮由 _apply_style 控制。
+
+##### `set_status(status: str, detail: str='', badge_status: str='') -> None`
+
+status 决定副标题/标题色，badge_status 决定徽标（缺省同 status）。
+
+两者分开是为了表达"这一步有产出，但最近一次重试失败"：
+徽标仍是对勾，副标题用失败色写明最近一次的结果。
+
+##### `set_unmapped(flag: bool=True) -> None`
+
+标记为「图上有、但还没有对应功能」的**灰节点**（2026-10-05）。
+
+用户在流程图上可以画任意节点（bpmn.io 里加一个「OCR 识别」之类），
+本程序没有对应实现。这类节点**不再被静默丢掉**（界面上根本找不到
+"流程节点对不上"），而是照常占一格、显示为灰色并标注「未接入」。
+
+**仍可点**：点了由页面解释怎么接上（改名成已有步骤名）或怎么删掉
+——比"点了没反应"或"直接不显示"都好解释。
+
+##### `paintEvent(_event) -> None`
+
+自己画胶囊：样式表一旦出现在子树里，Qt 会把 QFrame 底色填白
+（盖住步骤条的卡片底色），所以这里不用样式表。
+
+胶囊**始终**有 SURFACE 实底 + 实线 border：实底用来遮住从框后面
+穿过的连接线（见 ``StepBar._draw_connectors``），实线 border 是
+真实步骤的视觉语言（可选节点才是虚线）。高亮底色（当前/悬停）
+叠在实底之上。
 
 ---
 
@@ -4262,21 +4303,13 @@ worker 会变成孤儿线程，而它是被 ``parent``（编辑器对话框）�
 
 ---
 
-## `desktop.components.viewers.image_editor.canvas.core`
+## `desktop.components.viewers.image_editor.canvas.core.assembly`
 
-源码：[`desktop/components/viewers/image_editor/canvas/core.py`](../../desktop/components/viewers/image_editor/canvas/core.py)
+源码：[`desktop/components/viewers/image_editor/canvas/core/assembly.py`](../../desktop/components/viewers/image_editor/canvas/core/assembly.py)
 
 编辑画布 ``EditorCanvas``：**基座 + 各工具 Mixin 的装配点**。
 
-从 ``image_editor.py`` 拆出（2026-10-07）。本文件只放：类头（信号）、
-``__init__``，以及**与工具无关的基座方法**（装图/取图/缩放适配/工具切换）。
-各工具（裁剪/变换/扭曲/擦除/文字）在兄弟模块里以 Mixin 提供，
-方法体逐字未改；成员归属由 ``tests/selftests/image_editor/image_editor_split.py`` 钉住。
-
-⚠️ 信号必须定义在**这个 QObject 子类**上（PySide6 的 ``Signal`` 描述符
-要求宿主是 QObject）；Mixin 只 emit，不声明。
-
-### `class EditorCanvas(InteractionMixin, OverlayMixin, TextMixin, TransformMixin, DistortionMixin, QGraphicsView)`
+### `class EditorCanvas(ImageStateMixin, ContextImageMixin, BorderMixin, ViewMixin, ToolsMixin, ZoomMixin, InteractionMixin, OverlayMixin, TextMixin, TransformMixin, DistortionMixin, QGraphicsView)`
 
 编辑画布：滚轮缩放、中/右键拖拽平移、左键按工具交互。
 
@@ -4295,30 +4328,63 @@ worker 会变成孤儿线程，而它是被 ``parent``（编辑器对话框）�
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(parent=None)` | — |
-| `set_image(image: QImage \| None, refit: bool=True) -> None` | 装入/替换图片。 |
+
+---
+
+## `desktop.components.viewers.image_editor.canvas.core.border`
+
+源码：[`desktop/components/viewers/image_editor/canvas/core/border.py`](../../desktop/components/viewers/image_editor/canvas/core/border.py)
+
+画布基座：边框 / 场景矩形同步。
+
+### `class BorderMixin(CanvasHost)`
+
+画布基座：边框 / 场景矩形同步。
+
+---
+
+## `desktop.components.viewers.image_editor.canvas.core.context`
+
+源码：[`desktop/components/viewers/image_editor/canvas/core/context.py`](../../desktop/components/viewers/image_editor/canvas/core/context.py)
+
+画布基座：双图编辑的上下文底图。
+
+### `class ContextImageMixin(CanvasHost)`
+
+画布基座：双图编辑的上下文底图。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
 | `set_context_image(image: QImage \| None, offset: QPointF=QPointF(), scale_x: float=1.0, scale_y: float=1.0, rotation: float=0.0) -> None` | 在活动图旁显示可点击切换、但不直接编辑的另一张图。 |
 | `context_image_at(scene_pos: QPointF) -> bool` | 返回场景坐标是否命中非活动图片。 |
-| `refresh() -> None` | 像素被就地改过（擦除）后只刷显示，不动缩放与滚动位置。 |
-| `paintEvent(event) -> None` | 整个视口铺**一层素色浅底**，再让场景画上去。 |
-| `replace_image(image: QImage) -> None` | 就地换图（尺寸不变的语义，如文字写入）：不动缩放与滚动位置。 |
-| `image() -> QImage \| None` | — |
-| `tool() -> str` | 当前工具键（``crop``/``transform``/``distort``/``erase``/``text``）。 |
-| `image_rect() -> QRectF` | 图片占位（场景坐标；裁剪拖动预览会临时平移）。 |
-| `set_source_extent(rect: QRectF) -> None` | 登记**原始文件**在场景坐标里占的矩形，作为裁剪/平移的固定上界。 |
-| `source_extent_rect() -> QRectF` | 裁剪框允许达到的最大矩形（**场景坐标**）。 |
-| `crop_offset() -> QPointF` | 裁剪工具中图片相对原点的待定位移。 |
-| `set_tool(tool: str) -> None` | 切换工具：裁剪/变换默认全选，其余清选区、换光标。 |
-| `provide_restore_pixels(upright: QImage) -> None` | 弹窗把延迟计算的 upright 内容补回来（:meth:`abort_content_restore` |
-| `abort_content_restore() -> None` | 放弃恢复会话（sidecar 缺失/损坏/反变换失败）：退回普通会话。 |
-| `set_eraser(size: int) -> None` | 设置橡皮擦直径（图片像素）；擦除固定涂白，没有颜色可选。 |
-| `selection() -> QRectF \| None` | 当前选区（图片坐标）；不足最小边视为没有。 |
-| `reset_selection() -> None` | 选区恢复到整幅图，**像素一个都不动**。 |
-| `fit(ratio: float \| None=None) -> None` | 适应窗口（整图完整可见）；``ratio`` < 1 时四周留白。 |
-| `set_fit_ratio(ratio: float) -> None` | 设「适应窗口」时图片占视口的比例（1.0 = 铺满，< 1 = 四周留白）。 |
-| `zoom_in() -> None` | 放大一档（工具栏按钮用；无档位表，连续乘 1.25）。 |
-| `zoom_out() -> None` | 缩小一档。 |
-| `set_zoom(zoom: float, anchor_view: QPointF \| None=None) -> None` | 锚点缩放（同预览弹窗的 translate 补偿法，缩放不漂移）。 |
-| `fit_selection() -> None` | 视图适配当前选区（选区约占视口 80%，四周留出可操作白边）。 |
+
+##### `set_context_image(image: QImage | None, offset: QPointF=QPointF(), scale_x: float=1.0, scale_y: float=1.0, rotation: float=0.0) -> None`
+
+在活动图旁显示可点击切换、但不直接编辑的另一张图。
+
+场景矩形的并集按 :attr:`_context_display_rect` 算。它取图元的实际场景
+外接矩形，因此包含版面旋转后的扩展范围；否则旋转图像的角会落在场景
+矩形之外，被视口裁掉。
+
+---
+
+## `desktop.components.viewers.image_editor.canvas.core.image`
+
+源码：[`desktop/components/viewers/image_editor/canvas/core/image.py`](../../desktop/components/viewers/image_editor/canvas/core/image.py)
+
+画布基座：装图 / 换图与渲染模式。
+
+### `class ImageStateMixin(CanvasHost)`
+
+画布基座：装图 / 换图与渲染模式。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `set_image(image: QImage \| None, refit: bool=True) -> None` | 装入/替换图片。 |
 
 ##### `set_image(image: QImage | None, refit: bool=True) -> None`
 
@@ -4329,13 +4395,82 @@ worker 会变成孤儿线程，而它是被 ``parent``（编辑器对话框）�
 fit 就等于"每次松手都把图缩小一档"，反复旋转会越转越小（用户报的
 "越旋转图形越小"）。所以提交走这条，只换像素、不动视图。
 
-##### `set_context_image(image: QImage | None, offset: QPointF=QPointF(), scale_x: float=1.0, scale_y: float=1.0, rotation: float=0.0) -> None`
+---
 
-在活动图旁显示可点击切换、但不直接编辑的另一张图。
+## `desktop.components.viewers.image_editor.canvas.core.tools`
 
-场景矩形的并集按 :attr:`_context_display_rect` 算。它取图元的实际场景
-外接矩形，因此包含版面旋转后的扩展范围；否则旋转图像的角会落在场景
-矩形之外，被视口裁掉。
+源码：[`desktop/components/viewers/image_editor/canvas/core/tools.py`](../../desktop/components/viewers/image_editor/canvas/core/tools.py)
+
+画布基座：工具切换与选区 / 恢复像素。
+
+### `class ToolsMixin(CanvasHost)`
+
+画布基座：工具切换与选区 / 恢复像素。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `set_tool(tool: str) -> None` | 切换工具：裁剪/变换默认全选，其余清选区、换光标。 |
+| `provide_restore_pixels(upright: QImage) -> None` | 弹窗把延迟计算的 upright 内容补回来（:meth:`abort_content_restore` |
+| `abort_content_restore() -> None` | 放弃恢复会话（sidecar 缺失/损坏/反变换失败）：退回普通会话。 |
+| `set_eraser(size: int) -> None` | 设置橡皮擦直径（图片像素）；擦除固定涂白，没有颜色可选。 |
+| `selection() -> QRectF \| None` | 当前选区（图片坐标）；不足最小边视为没有。 |
+| `reset_selection() -> None` | 选区恢复到整幅图，**像素一个都不动**。 |
+
+##### `provide_restore_pixels(upright: QImage) -> None`
+
+弹窗把延迟计算的 upright 内容补回来（:meth:`abort_content_restore`
+的反面）。调用方是 :meth:`TransformMixin._ensure_transform_preview`
+发出 ``restore_pixels_requested`` 后被同步回调的弹窗槽——像素一到，
+预览就能照常搭起来。
+
+##### `abort_content_restore() -> None`
+
+放弃恢复会话（sidecar 缺失/损坏/反变换失败）：退回普通会话。
+
+延迟供像素模式下框已经按 rect0 挂出来了，这里要把那套"挂起"状态
+整体撤掉——框弹回整幅、矩阵归零，与"从来没有 sidecar"一致
+（口径：宁可不恢复，也不能错恢复）。
+
+##### `reset_selection() -> None`
+
+选区恢复到整幅图，**像素一个都不动**。
+
+两种场景用：
+
+- 弹窗丢掉一次**待定**裁剪（Ctrl+Z 优先退掉的就是它，参数页也有
+  「重置选区」）——像素本来就没被裁，框弹回整幅就等于反悔成功；
+- 选区被拖成小于 ``MIN_RECT_EDGE`` 的"废框"时的兜底。
+
+⚠️ 与 :meth:`set_tool` 的差别只在于**不动工具、不清变换预览**，所以
+拿它撤销"待定裁剪"是安全的（不会把正在预览的变换一起掀掉）。
+
+---
+
+## `desktop.components.viewers.image_editor.canvas.core.view`
+
+源码：[`desktop/components/viewers/image_editor/canvas/core/view.py`](../../desktop/components/viewers/image_editor/canvas/core/view.py)
+
+画布基座：刷新与绘制。
+
+### `class ViewMixin(CanvasHost)`
+
+画布基座：刷新与绘制。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `refresh() -> None` | 像素被就地改过（擦除）后只刷显示，不动缩放与滚动位置。 |
+| `paintEvent(event) -> None` | 整个视口铺**一层素色浅底**，再让场景画上去。 |
+| `replace_image(image: QImage) -> None` | 就地换图（尺寸不变的语义，如文字写入）：不动缩放与滚动位置。 |
+| `image() -> QImage \| None` | — |
+| `tool() -> str` | 当前工具键（``crop``/``transform``/``distort``/``erase``/``text``）。 |
+| `image_rect() -> QRectF` | 图片占位（场景坐标；裁剪拖动预览会临时平移）。 |
+| `set_source_extent(rect: QRectF) -> None` | 登记**原始文件**在场景坐标里占的矩形，作为裁剪/平移的固定上界。 |
+| `source_extent_rect() -> QRectF` | 裁剪框允许达到的最大矩形（**场景坐标**）。 |
+| `crop_offset() -> QPointF` | 裁剪工具中图片相对原点的待定位移。 |
 
 ##### `paintEvent(event) -> None`
 
@@ -4388,33 +4523,28 @@ fit 就等于"每次松手都把图缩小一档"，反复旋转会越转越小�
 于是三条同时成立：①框的宽高**恒不超过原文件**；②入口收紧过透明边
 时原文件比当前图大 ⇒ 能把框拖回**原始大小**；③框内平移照常可用。
 
-##### `provide_restore_pixels(upright: QImage) -> None`
+---
 
-弹窗把延迟计算的 upright 内容补回来（:meth:`abort_content_restore`
-的反面）。调用方是 :meth:`TransformMixin._ensure_transform_preview`
-发出 ``restore_pixels_requested`` 后被同步回调的弹窗槽——像素一到，
-预览就能照常搭起来。
+## `desktop.components.viewers.image_editor.canvas.core.zoom`
 
-##### `abort_content_restore() -> None`
+源码：[`desktop/components/viewers/image_editor/canvas/core/zoom.py`](../../desktop/components/viewers/image_editor/canvas/core/zoom.py)
 
-放弃恢复会话（sidecar 缺失/损坏/反变换失败）：退回普通会话。
+画布基座：缩放适配。
 
-延迟供像素模式下框已经按 rect0 挂出来了，这里要把那套"挂起"状态
-整体撤掉——框弹回整幅、矩阵归零，与"从来没有 sidecar"一致
-（口径：宁可不恢复，也不能错恢复）。
+### `class ZoomMixin(CanvasHost)`
 
-##### `reset_selection() -> None`
+画布基座：缩放适配。
 
-选区恢复到整幅图，**像素一个都不动**。
+#### 方法
 
-两种场景用：
-
-- 弹窗丢掉一次**待定**裁剪（Ctrl+Z 优先退掉的就是它，参数页也有
-  「重置选区」）——像素本来就没被裁，框弹回整幅就等于反悔成功；
-- 选区被拖成小于 ``MIN_RECT_EDGE`` 的"废框"时的兜底。
-
-⚠️ 与 :meth:`set_tool` 的差别只在于**不动工具、不清变换预览**，所以
-拿它撤销"待定裁剪"是安全的（不会把正在预览的变换一起掀掉）。
+| 方法 | 说明 |
+| --- | --- |
+| `fit(ratio: float \| None=None) -> None` | 适应窗口（整图完整可见）；``ratio`` < 1 时四周留白。 |
+| `set_fit_ratio(ratio: float) -> None` | 设「适应窗口」时图片占视口的比例（1.0 = 铺满，< 1 = 四周留白）。 |
+| `zoom_in() -> None` | 放大一档（工具栏按钮用；无档位表，连续乘 1.25）。 |
+| `zoom_out() -> None` | 缩小一档。 |
+| `set_zoom(zoom: float, anchor_view: QPointF \| None=None) -> None` | 锚点缩放（同预览弹窗的 translate 补偿法，缩放不漂移）。 |
+| `fit_selection() -> None` | 视图适配当前选区（选区约占视口 80%，四周留出可操作白边）。 |
 
 ##### `fit(ratio: float | None=None) -> None`
 
@@ -4566,38 +4696,177 @@ fit 就等于"每次松手都把图缩小一档"，反复旋转会越转越小�
 
 ## `desktop.components.viewers.image_editor.canvas.transform`
 
-源码：[`desktop/components/viewers/image_editor/canvas/transform.py`](../../desktop/components/viewers/image_editor/canvas/transform.py)
+源码：[`desktop/components/viewers/image_editor/canvas/transform/__init__.py`](../../desktop/components/viewers/image_editor/canvas/transform/__init__.py)
 
 画布 Mixin：**统一变换**（GIMP「Unified Transform」口径）。
 
-从 ``EditorCanvas`` 拆出（2026-10-07）。2026-10-08 按 GIMP 统一变换重做：
-手柄从"8 个方向缩放方块"扩成 **角方框(双轴缩放) / 角内小菱形(透视) /
-边中方框(单轴缩放) / 边上菱形(切变)** 四类，并接上 GIMP 的选项
-（方向 / 插值 / 剪裁 / 预览不透明度 / 参考线 / 限制 / 从轴心 / 轴心吸附锁定）。
+（本文件已拆成子包 ``transform/``，仍按原模块路径 ``canvas.transform``
+对外导出 ``TransformMixin`` 与全部模块级名字。）
 
-手柄词汇表与理由见 ``consts.py`` 里那一段长注释——**方框=缩放、菱形=切变、
-角上的小菱形=透视**，位置全部由 :meth:`TransformMixin._transform_local_handles`
-从 ``_xf_rect`` 的参数坐标算出来，绘制与命中用的是**同一份**结果
-（:meth:`TransformMixin._transform_handle_points`），不会再出现"画在这里、
-却要点那里"。
+### `class TransformMixin(TransformOptionsMixin, TransformHandlesMixin, TransformPreviewMixin, TransformStateMixin, TransformBackdropMixin, TransformFloatMixin, TransformRestoreMixin, TransformOperationsMixin, TransformPivotMixin, TransformDragMixin, TransformHitMixin, TransformGuidesMixin, CanvasHost)`
 
-⚠️ 累计矩阵 ``_xf`` 的复合约定（与 ``geometry.py`` 同一条）：``(A * B)``
-= **先 A 后 B**。于是
-  * 在**原图坐标**里发生的操作（缩放/切变/翻转）写成 ``局部操作 * _xf``；
-  * 在**画布坐标**里发生的操作（透视把四角重映射）写成 ``_xf * 步骤``。
-搞反的话表现是"拖动方向对、但位置整体偏掉"，很难看出来。
+按 GIMP 统一变换口径实现的变换 Mixin（实现分散在同包各子模块）。
 
-⚠️⚠️ **视觉矩阵**（2026-10-09 修「方向=校正，图片和操作框方向相反」）：
-屏幕上真正呈现的矩阵是 :meth:`_visual_xf`——正向 = ``_xf`` 本身，
-**校正（向后）= ``_xf`` 的逆**（``_preview_xf``，与浮层内容、烘焙同口径）。
-覆盖层（四边形框/手柄/参考线/轴心）与拖拽数学一律吃**视觉矩阵**，
-算完经 :meth:`_apply_visual` 落账回 ``_xf``。旧版框画的是 ``_xf``、
-内容走的是 ``_preview_xf``，校正模式下两套口径各动各的 ⇒ 图往左转、
-框往右转。语义入口（``transform_*``）同理：先在视觉空间里叠操作。
+---
 
-### `class TransformMixin(CanvasHost)`
+## `desktop.components.viewers.image_editor.canvas.transform.backdrop`
 
-统一变换：手柄几何与命中、变换应用、实时预览与覆盖层。
+源码：[`desktop/components/viewers/image_editor/canvas/transform/backdrop.py`](../../desktop/components/viewers/image_editor/canvas/transform/backdrop.py)
+
+统一变换：底图 / 纸面 / 剪裁矩形。
+
+### `class TransformBackdropMixin(CanvasHost)`
+
+统一变换：底图 / 纸面 / 剪裁矩形。
+
+---
+
+## `desktop.components.viewers.image_editor.canvas.transform.drag`
+
+源码：[`desktop/components/viewers/image_editor/canvas/transform/drag.py`](../../desktop/components/viewers/image_editor/canvas/transform/drag.py)
+
+统一变换：拖拽开始与应用。
+
+### `class TransformDragMixin(CanvasHost)`
+
+统一变换：拖拽开始与应用。
+
+---
+
+## `desktop.components.viewers.image_editor.canvas.transform.float_preview`
+
+源码：[`desktop/components/viewers/image_editor/canvas/transform/float_preview.py`](../../desktop/components/viewers/image_editor/canvas/transform/float_preview.py)
+
+统一变换：拖动中的浮层快档与落账。
+
+### `class TransformFloatMixin(CanvasHost)`
+
+统一变换：拖动中的浮层快档与落账。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `finish_transform_drag() -> None` | 松手：把预览从"拖动快档"升回**精确档**（与烘焙同一套数学）。 |
+
+##### `finish_transform_drag() -> None`
+
+松手：把预览从"拖动快档"升回**精确档**（与烘焙同一套数学）。
+
+拖动中像素不重采样、变换交给图元（亚毫秒级，见
+:meth:`_apply_float_fast`）；松手瞬间图不再动，这一次重采样只做一遍
+（用户看不到卡），于是**松手后看到的预览就是烘焙结果**——"预览 ==
+烘焙"的判据一点没松。
+
+---
+
+## `desktop.components.viewers.image_editor.canvas.transform.guides`
+
+源码：[`desktop/components/viewers/image_editor/canvas/transform/guides.py`](../../desktop/components/viewers/image_editor/canvas/transform/guides.py)
+
+统一变换：覆盖层 / 焦点环 / 参考线同步。
+
+### `class TransformGuidesMixin(CanvasHost)`
+
+统一变换：覆盖层 / 焦点环 / 参考线同步。
+
+---
+
+## `desktop.components.viewers.image_editor.canvas.transform.handles`
+
+源码：[`desktop/components/viewers/image_editor/canvas/transform/handles.py`](../../desktop/components/viewers/image_editor/canvas/transform/handles.py)
+
+统一变换：手柄局部几何与焦点环。
+
+### `class TransformHandlesMixin(CanvasHost)`
+
+统一变换：手柄局部几何与焦点环。
+
+---
+
+## `desktop.components.viewers.image_editor.canvas.transform.hit`
+
+源码：[`desktop/components/viewers/image_editor/canvas/transform/hit.py`](../../desktop/components/viewers/image_editor/canvas/transform/hit.py)
+
+统一变换：命中测试。
+
+### `class TransformHitMixin(CanvasHost)`
+
+统一变换：命中测试。
+
+---
+
+## `desktop.components.viewers.image_editor.canvas.transform.operations`
+
+源码：[`desktop/components/viewers/image_editor/canvas/transform/operations.py`](../../desktop/components/viewers/image_editor/canvas/transform/operations.py)
+
+统一变换：语义操作入口（移动/旋转/缩放/切变/透视/翻转）。
+
+### `class TransformOperationsMixin(CanvasHost)`
+
+统一变换：语义操作入口（移动/旋转/缩放/切变/透视/翻转）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `transform_move(dx: float, dy: float) -> None` | 整体平移 ``dx, dy``（图片像素，**视觉方向**）。 |
+| `transform_rotate(degrees: float) -> None` | 绕**轴心当前视觉位置**旋转（轴心保持不动）。 |
+| `transform_scale(sx: float, sy: float, anchor: QPointF \| None=None) -> None` | 缩放（局部空间，锚点缺省=轴心；sx/sy 是相对当前内容的倍率）。 |
+| `transform_scale_axis(edge: str, factor: float, anchor: QPointF \| None=None) -> None` | **单轴**缩放：抓 ``edge``（l/r/t/b）方向的边，只改这一个轴。 |
+| `transform_shear(edge: str, k: float) -> None` | 拖边切变：``edge`` 是被抓的边（l/r/t/b），``k`` 是切变系数， |
+| `transform_perspective(corner: str, point: QPointF) -> None` | 把 ``corner`` 这个角拖到 ``point``（图片坐标）——投影（透视）。 |
+| `transform_flip(horizontal: bool=True) -> None` | 绕选区中心翻转（内容镜像；提交时由弹窗烘焙成一步）。 |
+
+##### `transform_rotate(degrees: float) -> None`
+
+绕**轴心当前视觉位置**旋转（轴心保持不动）。
+
+⚠️ 在**视觉空间**里叠旋转：校正（向后）模式下内容与框也同向转
+（旧版直接转 ``_xf`` ⇒ 图片和操作框方向相反，用户 2026-10-09 报障）。
+
+##### `transform_scale_axis(edge: str, factor: float, anchor: QPointF | None=None) -> None`
+
+**单轴**缩放：抓 ``edge``（l/r/t/b）方向的边，只改这一个轴。
+
+这是统一变换相对"只能整体放大缩小"的关键补充：横拉左边=只改宽度、
+竖拉上边=只改高度。锚点缺省 = 对边中点（拖动时锚在轴心）。
+
+##### `transform_shear(edge: str, k: float) -> None`
+
+拖边切变：``edge`` 是被抓的边（l/r/t/b），``k`` 是切变系数，
+对边为锚（抓右边往下拖 = 内容随 x 增大而下斜）。
+
+##### `transform_perspective(corner: str, point: QPointF) -> None`
+
+把 ``corner`` 这个角拖到 ``point``（图片坐标）——投影（透视）。
+
+四个角各自可动 ⇒ 平面不再是平行四边形：扫描件拍歪、书页中间鼓起
+这类"四条边对不上"的情况靠它掰正（GIMP 的透视手柄同款）。
+
+⚠️ 拖成自交 / 塌陷（把角推到对角附近）的那一步会被
+:func:`_perspective_step` 判为病态并**丢弃**——保持原样，绝不把
+"把内容放大百万倍"的矩阵交给重采样（那会崩，见该函数）。
+
+##### `transform_flip(horizontal: bool=True) -> None`
+
+绕选区中心翻转（内容镜像；提交时由弹窗烘焙成一步）。
+
+⚠️ 在**视觉空间**里叠镜像（``F * 视觉矩阵``）：正向与旧版完全一致；
+校正（向后）模式下旧版直接叠 ``_xf``，视觉上变成"先转再绕**原位**
+中心镜像"，与拖拽/旋转的视觉口径不一致。
+
+---
+
+## `desktop.components.viewers.image_editor.canvas.transform.options`
+
+源码：[`desktop/components/viewers/image_editor/canvas/transform/options.py`](../../desktop/components/viewers/image_editor/canvas/transform/options.py)
+
+统一变换：选项 / 轴心 / 限制 / 重塑开关。
+
+### `class TransformOptionsMixin(CanvasHost)`
+
+统一变换：选项 / 轴心 / 限制 / 重塑开关。
 
 #### 方法
 
@@ -4608,24 +4877,6 @@ fit 就等于"每次松手都把图缩小一档"，反复旋转会越转越小�
 | `set_transform_pivot_op(op: str, on: bool) -> None` | 「从轴心 (Ctrl)」单个动作：勾上后该动作以轴心为锚。 |
 | `set_transform_constraint(op: str, on: bool) -> None` | 「限制 (Shift)」单个动作：移动 45° / 缩放等比 / 旋转 15° / |
 | `set_transform_reshape(on: bool) -> None` | 「调整范围」模式：拖手柄/边 = 收小变换区域，而不是缩放内容。 |
-| `make_transform_pending() -> None` | **挂起**这次变换：松手后保留预览，等离开工具再烘焙（GIMP 口径）。 |
-| `has_pending_transform() -> bool` | 有"已预览但还没烘焙"的变换？（弹窗据此在切工具/完成时收尾） |
-| `reset_transform_preview_flags() -> None` | 取消"挂起"标记（松手后不烘焙那一支走这里），矩阵与预览都留着。 |
-| `capture_transform_state() -> dict` | 保存当前图层的变换预览，以便切换活动图层时不必烘焙像素。 |
-| `restore_transform_state(state: dict \| None) -> None` | 恢复另一图层的挂起预览；不触发变换提交或像素重采样。 |
-| `finish_transform_drag() -> None` | 松手：把预览从"拖动快档"升回**精确档**（与烘焙同一套数学）。 |
-| `reset_transform() -> None` | 「重置」：丢弃未应用的变换，选区回到整幅、轴心回到中心。 |
-| `transform_pending() -> tuple[QRectF, QTransform, QImage] \| None` | 未应用的变换 ``(选区, 矩阵, 选区像素快照)``；没有则 None。 |
-| `consume_content_restore() -> None` | 标记 sidecar 恢复已处理（无数据/失败/完成）：本会话不再触发。 |
-| `rearm_content_restore() -> None` | 内容节点仍有效时，允许下次进变换工具**重新触发** sidecar 恢复。 |
-| `begin_restored_transform(xf: QTransform, region: QImage \| None=None, rect0: QRectF \| None=None) -> None` | 把恢复出来的矩阵挂成**未触摸**的待定变换（画布保持文件原样）。 |
-| `transform_move(dx: float, dy: float) -> None` | 整体平移 ``dx, dy``（图片像素，**视觉方向**）。 |
-| `transform_rotate(degrees: float) -> None` | 绕**轴心当前视觉位置**旋转（轴心保持不动）。 |
-| `transform_scale(sx: float, sy: float, anchor: QPointF \| None=None) -> None` | 缩放（局部空间，锚点缺省=轴心；sx/sy 是相对当前内容的倍率）。 |
-| `transform_scale_axis(edge: str, factor: float, anchor: QPointF \| None=None) -> None` | **单轴**缩放：抓 ``edge``（l/r/t/b）方向的边，只改这一个轴。 |
-| `transform_shear(edge: str, k: float) -> None` | 拖边切变：``edge`` 是被抓的边（l/r/t/b），``k`` 是切变系数， |
-| `transform_perspective(corner: str, point: QPointF) -> None` | 把 ``corner`` 这个角拖到 ``point``（图片坐标）——投影（透视）。 |
-| `transform_flip(horizontal: bool=True) -> None` | 绕选区中心翻转（内容镜像；提交时由弹窗烘焙成一步）。 |
 
 ##### `set_transform_options(**options) -> None`
 
@@ -4656,26 +4907,51 @@ fit 就等于"每次松手都把图缩小一档"，反复旋转会越转越小�
 快照做的，区域一变它们就与画布对不上了。退出（收边完成/取消
 勾选）后保留收小的区域，下一次拖动即以它为变换对象。
 
-##### `make_transform_pending() -> None`
+---
 
-**挂起**这次变换：松手后保留预览，等离开工具再烘焙（GIMP 口径）。
+## `desktop.components.viewers.image_editor.canvas.transform.pivot`
 
-⚠️ 这是"能不能实时预览"的关键（用户 2026-10-09 报障）：原来松手就把
-整幅重采样一遍（12 MP 约 11 秒），所以只能"最后才看到结果"。现在松手
-只是**记下"有东西没应用"**，内容继续由画布上的浮层实时显示——拖动中
-连像素都不重采样（见 :meth:`_apply_float_fast`），随便转多少圈都不用等。
+源码：[`desktop/components/viewers/image_editor/canvas/transform/pivot.py`](../../desktop/components/viewers/image_editor/canvas/transform/pivot.py)
 
-**例外**：选区的预览版大到连一帧都出不来时（:meth:`_realtime_budget`）
-就退回"松手即烘焙"——宁可慢一次，也不要拖不动的假实时。
+统一变换：轴心 / 限制 / 锚点计算。
 
-##### `finish_transform_drag() -> None`
+### `class TransformPivotMixin(CanvasHost)`
 
-松手：把预览从"拖动快档"升回**精确档**（与烘焙同一套数学）。
+统一变换：轴心 / 限制 / 锚点计算。
 
-拖动中像素不重采样、变换交给图元（亚毫秒级，见
-:meth:`_apply_float_fast`）；松手瞬间图不再动，这一次重采样只做一遍
-（用户看不到卡），于是**松手后看到的预览就是烘焙结果**——"预览 ==
-烘焙"的判据一点没松。
+---
+
+## `desktop.components.viewers.image_editor.canvas.transform.preview`
+
+源码：[`desktop/components/viewers/image_editor/canvas/transform/preview.py`](../../desktop/components/viewers/image_editor/canvas/transform/preview.py)
+
+统一变换：预览浮层建立与收尾。
+
+### `class TransformPreviewMixin(CanvasHost)`
+
+统一变换：预览浮层建立与收尾。
+
+---
+
+## `desktop.components.viewers.image_editor.canvas.transform.restore`
+
+源码：[`desktop/components/viewers/image_editor/canvas/transform/restore.py`](../../desktop/components/viewers/image_editor/canvas/transform/restore.py)
+
+统一变换：内容恢复会话与清理。
+
+### `class TransformRestoreMixin(CanvasHost)`
+
+统一变换：内容恢复会话与清理。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `reset_transform() -> None` | 「重置」：丢弃未应用的变换，选区回到整幅、轴心回到中心。 |
+| `transform_pending() -> tuple[QRectF, QTransform, QImage] \| None` | 未应用的变换 ``(选区, 矩阵, 选区像素快照)``；没有则 None。 |
+| `consume_content_restore() -> None` | 标记 sidecar 恢复已处理（无数据/失败/完成）：本会话不再触发。 |
+| `rearm_content_restore() -> None` | 内容节点仍有效时，允许下次进变换工具**重新触发** sidecar 恢复。 |
+| `begin_restored_transform(xf: QTransform, region: QImage \| None=None, rect0: QRectF \| None=None) -> None` | 把恢复出来的矩阵挂成**未触摸**的待定变换（画布保持文件原样）。 |
 
 ##### `rearm_content_restore() -> None`
 
@@ -4717,43 +4993,39 @@ fit 就等于"每次松手都把图缩小一档"，反复旋转会越转越小�
 ``restore_pixels_requested`` 向弹窗要。之前把反变换算好再调
 ``begin_restored_transform(seed, upright)`` 的旧入口原样可用。
 
-##### `transform_rotate(degrees: float) -> None`
+---
 
-绕**轴心当前视觉位置**旋转（轴心保持不动）。
+## `desktop.components.viewers.image_editor.canvas.transform.state`
 
-⚠️ 在**视觉空间**里叠旋转：校正（向后）模式下内容与框也同向转
-（旧版直接转 ``_xf`` ⇒ 图片和操作框方向相反，用户 2026-10-09 报障）。
+源码：[`desktop/components/viewers/image_editor/canvas/transform/state.py`](../../desktop/components/viewers/image_editor/canvas/transform/state.py)
 
-##### `transform_scale_axis(edge: str, factor: float, anchor: QPointF | None=None) -> None`
+统一变换：待定状态与快照捕获/恢复。
 
-**单轴**缩放：抓 ``edge``（l/r/t/b）方向的边，只改这一个轴。
+### `class TransformStateMixin(CanvasHost)`
 
-这是统一变换相对"只能整体放大缩小"的关键补充：横拉左边=只改宽度、
-竖拉上边=只改高度。锚点缺省 = 对边中点（拖动时锚在轴心）。
+统一变换：待定状态与快照捕获/恢复。
 
-##### `transform_shear(edge: str, k: float) -> None`
+#### 方法
 
-拖边切变：``edge`` 是被抓的边（l/r/t/b），``k`` 是切变系数，
-对边为锚（抓右边往下拖 = 内容随 x 增大而下斜）。
+| 方法 | 说明 |
+| --- | --- |
+| `make_transform_pending() -> None` | **挂起**这次变换：松手后保留预览，等离开工具再烘焙（GIMP 口径）。 |
+| `has_pending_transform() -> bool` | 有"已预览但还没烘焙"的变换？（弹窗据此在切工具/完成时收尾） |
+| `reset_transform_preview_flags() -> None` | 取消"挂起"标记（松手后不烘焙那一支走这里），矩阵与预览都留着。 |
+| `capture_transform_state() -> dict` | 保存当前图层的变换预览，以便切换活动图层时不必烘焙像素。 |
+| `restore_transform_state(state: dict \| None) -> None` | 恢复另一图层的挂起预览；不触发变换提交或像素重采样。 |
 
-##### `transform_perspective(corner: str, point: QPointF) -> None`
+##### `make_transform_pending() -> None`
 
-把 ``corner`` 这个角拖到 ``point``（图片坐标）——投影（透视）。
+**挂起**这次变换：松手后保留预览，等离开工具再烘焙（GIMP 口径）。
 
-四个角各自可动 ⇒ 平面不再是平行四边形：扫描件拍歪、书页中间鼓起
-这类"四条边对不上"的情况靠它掰正（GIMP 的透视手柄同款）。
+⚠️ 这是"能不能实时预览"的关键（用户 2026-10-09 报障）：原来松手就把
+整幅重采样一遍（12 MP 约 11 秒），所以只能"最后才看到结果"。现在松手
+只是**记下"有东西没应用"**，内容继续由画布上的浮层实时显示——拖动中
+连像素都不重采样（见 :meth:`_apply_float_fast`），随便转多少圈都不用等。
 
-⚠️ 拖成自交 / 塌陷（把角推到对角附近）的那一步会被
-:func:`_perspective_step` 判为病态并**丢弃**——保持原样，绝不把
-"把内容放大百万倍"的矩阵交给重采样（那会崩，见该函数）。
-
-##### `transform_flip(horizontal: bool=True) -> None`
-
-绕选区中心翻转（内容镜像；提交时由弹窗烘焙成一步）。
-
-⚠️ 在**视觉空间**里叠镜像（``F * 视觉矩阵``）：正向与旧版完全一致；
-校正（向后）模式下旧版直接叠 ``_xf``，视觉上变成"先转再绕**原位**
-中心镜像"，与拖拽/旋转的视觉口径不一致。
+**例外**：选区的预览版大到连一帧都出不来时（:meth:`_realtime_budget`）
+就退回"松手即烘焙"——宁可慢一次，也不要拖不动的假实时。
 
 ---
 
@@ -4891,34 +5163,13 @@ rect0 裁掉——用户报的「PA1 顶部被削去一段」正是它）。
 
 ---
 
-## `desktop.components.viewers.image_editor.dialog`
+## `desktop.components.viewers.image_editor.dialog.assembly`
 
-源码：[`desktop/components/viewers/image_editor/dialog.py`](../../desktop/components/viewers/image_editor/dialog.py)
+源码：[`desktop/components/viewers/image_editor/dialog/assembly.py`](../../desktop/components/viewers/image_editor/dialog/assembly.py)
 
-``ImageEditorDialog``：**装配点 + 基座 + 收尾**。
+``ImageEditorDialog``：**装配点 + 基座 + 收尾**（子包）。
 
-从 894 行的单类拆出（2026-10-07）。本文件放模块级常量、类头（类属性）、
-``__init__``、快捷键、覆盖确认与「完成」收尾；顶部功能条/右侧参数面板、
-各功能参数页、撤销与步骤历史、工具提交分别在兄弟模块的 Mixin 里。
-
-MRO 顺序：功能条/参数页在前（``__init__`` 里就要用），提交与历史在后。
-
-版式（2026-10-08 重排）：**顶部功能选择 + 中间画布 + 右侧参数面板 + 底部状态**，
-另有右侧面板里的「编辑历史」步骤列表。编辑**实时生效**——文字块本身就是预览、
-切功能或「完成」时自动写入，变换拖动中由画布浮层实时显示，因此没有「应用裁剪」
-「应用变换」「插入文字」三个确认按钮。
-
-⚠️ **裁剪是非破坏性的**（用户 2026-10-10：「裁剪线可以向内移动也可以向外移动，
-向外移动，原本被隐藏的区域要显示出来」）：裁剪框松手只**记下选区**，不切像素，
-画布画的始终是原图 + 选区外的半透明遮罩 ⇒ 裁剪线在整段编辑里都能来回推拉。
-落定时机 = **切走裁剪工具**或点**「完成」**（各调一次 ``_commit_crop``，一步一个
-撤销点）；Ctrl+Z / Ctrl+Y / 「还原」遇到待定裁剪先把它退掉（像素没动过，不记步）。
-
-⚠️ 「完成」仍然要求一次覆盖确认（``_confirm_overwrite``）：这一步不是"单步
-变更确认"，而是"要不要覆盖磁盘上的原图"，原图被覆盖后不可逆，用户
-2026-10-04 明确要求必须问。
-
-### `class ImageEditorDialog(ToolbarMixin, ToolPagesMixin, UndoMixin, CommitMixin, QDialog)`
+### `class ImageEditorDialog(ToolbarMixin, ToolPagesMixin, UndoMixin, CommitMixin, LayersMixin, LayerSwitchMixin, FinishMixin, QDialog)`
 
 图片编辑器弹窗：顶部功能条 + 中间画布 + 右侧参数面板 + 底部状态栏。
 
@@ -4927,7 +5178,23 @@ MRO 顺序：功能条/参数页在前（``__init__`` 里就要用），提交�
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(parent=None, image: QImage \| None=None, save_back: bool=False)` | — |
-| `configure_multiple_images(items: list[dict]) -> None` | 把拼版源图装入同一编辑器画布，并以点击切换活动图片。 |
+
+---
+
+## `desktop.components.viewers.image_editor.dialog.finish`
+
+源码：[`desktop/components/viewers/image_editor/dialog/finish.py`](../../desktop/components/viewers/image_editor/dialog/finish.py)
+
+弹窗收尾：覆盖确认 / 完成 / 释放缓冲。
+
+### `class FinishMixin(DialogHost)`
+
+弹窗收尾：覆盖确认 / 完成 / 释放缓冲。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
 | `release_buffers(keep_result: bool=False) -> None` | 释放**整图级**缓冲（原图/当前图/撤销与重做快照/upright 缓存）。 |
 | `closeEvent(event) -> None` | 关闭时清理画布引用。 |
 | `result_image() -> QImage \| None` | 编辑结果（无图时 None；是否采纳由调用方的 exec 结果决定）。 |
@@ -4964,29 +5231,66 @@ accept() 的关闭不触发 closeEvent，而调用方在 ``exec()`` 返回后还
 
 ---
 
-## `desktop.components.viewers.image_editor.dialog_commit`
+## `desktop.components.viewers.image_editor.dialog.layer_switch`
 
-源码：[`desktop/components/viewers/image_editor/dialog_commit.py`](../../desktop/components/viewers/image_editor/dialog_commit.py)
+源码：[`desktop/components/viewers/image_editor/dialog/layer_switch.py`](../../desktop/components/viewers/image_editor/dialog/layer_switch.py)
 
-``ImageEditorDialog`` Mixin：**工具提交**。
+多图编辑：右侧图层切换器与换层。
 
-把画布上的临时状态烘焙进当前图像（含后台烘焙与失败提示）。（从 ``image_editor/dialog.py`` 拆出，2026-10-07；方法体逐字未改）。
+### `class LayerSwitchMixin(DialogHost)`
 
-### 模块常量
+多图编辑：右侧图层切换器与换层。
 
-| 名称 | 值 |
-| --- | --- |
-| _ACTIVE_APPLIES | `[]` |
+---
 
-### `class CommitMixin(DialogHost)`
+## `desktop.components.viewers.image_editor.dialog.layers`
 
-把画布上的临时状态烘焙进当前图像（含后台烘焙与失败提示）。
+源码：[`desktop/components/viewers/image_editor/dialog/layers.py`](../../desktop/components/viewers/image_editor/dialog/layers.py)
+
+多图编辑：图层状态 / 原点 / 切换画布。
+
+### `class LayersMixin(DialogHost)`
+
+多图编辑：图层状态 / 原点 / 切换画布。
 
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
-| `content_state()` | 内容节点 ``(rect0, V)``；None = 无节点（宿主据此写/清 sidecar）。 |
+| `configure_multiple_images(items: list[dict]) -> None` | 把拼版源图装入同一编辑器画布，并以点击切换活动图片。 |
+
+---
+
+## `desktop.components.viewers.image_editor.dialog_commit`
+
+源码：[`desktop/components/viewers/image_editor/dialog_commit/__init__.py`](../../desktop/components/viewers/image_editor/dialog_commit/__init__.py)
+
+``ImageEditorDialog`` Mixin：**工具提交**（子包）。
+
+### `class CommitTransformMixin(DialogHost)`
+
+统一变换的提交 / 后台烘焙 / 翻转。
+
+### `class CommitMixin(CommitTransformMixin, ToolTransitionMixin, CropCommitMixin, ContentCommitMixin, AsyncApplyMixin, TextCommitMixin, DialogHost)`
+
+把画布上的临时状态烘焙进当前图像（含后台烘焙与失败提示）。
+
+---
+
+## `desktop.components.viewers.image_editor.dialog_commit.async_apply`
+
+源码：[`desktop/components/viewers/image_editor/dialog_commit/async_apply.py`](../../desktop/components/viewers/image_editor/dialog_commit/async_apply.py)
+
+「完成」的后台应用与取消。
+
+### `class AsyncApplyMixin(DialogHost)`
+
+「完成」的后台应用与取消。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
 | `apply_in_progress() -> bool` | 「完成」的**后台应用**是否进行中（宿主在 ``exec()`` 返回后分流）。 |
 
 ##### `apply_in_progress() -> bool`
@@ -4996,6 +5300,74 @@ accept() 的关闭不触发 closeEvent，而调用方在 ``exec()`` 返回后还
 True = 编辑器已关、烘焙+写底片在工作线程里跑；宿主不要再走
 ``result_image()`` → 写盘那条同步路（图还没烘出来），改接
 ``apply_completed`` / ``apply_failed`` 信号收尾（2026-10-10）。
+
+---
+
+## `desktop.components.viewers.image_editor.dialog_commit.content`
+
+源码：[`desktop/components/viewers/image_editor/dialog_commit/content.py`](../../desktop/components/viewers/image_editor/dialog_commit/content.py)
+
+工具提交：内容四角节点恢复会话。
+
+### `class ContentCommitMixin(DialogHost)`
+
+工具提交：内容四角节点恢复会话。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `content_state()` | 内容节点 ``(rect0, V)``；None = 无节点（宿主据此写/清 sidecar）。 |
+
+---
+
+## `desktop.components.viewers.image_editor.dialog_commit.crop`
+
+源码：[`desktop/components/viewers/image_editor/dialog_commit/crop.py`](../../desktop/components/viewers/image_editor/dialog_commit/crop.py)
+
+工具提交：裁剪。
+
+### `class CropCommitMixin(DialogHost)`
+
+工具提交：裁剪。
+
+---
+
+## `desktop.components.viewers.image_editor.dialog_commit.state`
+
+源码：[`desktop/components/viewers/image_editor/dialog_commit/state.py`](../../desktop/components/viewers/image_editor/dialog_commit/state.py)
+
+后台应用进行中的编辑器强引用表（从 ``dialog_commit.py`` 拆出）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| _ACTIVE_APPLIES | `[]` |
+
+---
+
+## `desktop.components.viewers.image_editor.dialog_commit.text`
+
+源码：[`desktop/components/viewers/image_editor/dialog_commit/text.py`](../../desktop/components/viewers/image_editor/dialog_commit/text.py)
+
+工具提交：文字块。
+
+### `class TextCommitMixin(DialogHost)`
+
+工具提交：文字块。
+
+---
+
+## `desktop.components.viewers.image_editor.dialog_commit.tool_transition`
+
+源码：[`desktop/components/viewers/image_editor/dialog_commit/tool_transition.py`](../../desktop/components/viewers/image_editor/dialog_commit/tool_transition.py)
+
+大图切走统一变换的后台过渡。
+
+### `class ToolTransitionMixin(DialogHost)`
+
+大图切走统一变换的后台过渡。
 
 ---
 
@@ -5758,13 +6130,14 @@ Qt 在窗口 dpr 变化时发 ``DevicePixelRatioChange``，**不保证**同时�
 
 ``ImageViewerWidget``：**装配点 + 基座 + 展示主路径**。
 
-从 ``image_viewer.py`` 拆出（2026-10-07）。本文件放类头（信号/类属性）、
-``__init__``、条目装填与当前页展示、以及宿主协议（``_zoom_*``）。
-缩略图缓存、PDF 页源、框数据分别在兄弟模块的 Mixin 里；方法体逐字未改。
+从 ``image_viewer.py`` 拆出（2026-10-07），2026-11-22 又按职责把「清单装填 /
+缩略图 / 选页加载」拆到 ``listing.py``（ListingMixin）、把「大图上屏 / 刷新 /
+尺寸文案」拆到 ``display.py``（DisplayMixin）。本文件放类头（信号/类属性）、
+``__init__``、宿主协议（``_zoom_*``）与少量与清单无关的开关。方法体逐字未改。
 
 ⚠️ 宿主协议三个方法留在本类，才能盖住 ``ZoomPopupMixin`` 的默认实现。
 
-### `class ImageViewerWidget(ThumbsCacheMixin, PdfSourceMixin, BoxesMixin, QWidget, ThumbsMixin, ZoomPopupMixin)`
+### `class ImageViewerWidget(ThumbsCacheMixin, PdfSourceMixin, BoxesMixin, ListingMixin, DisplayMixin, QWidget, ThumbsMixin, ZoomPopupMixin)`
 
 图片查看器：缩略图条 + 大图，支持切割框叠加、拖动与页面增删按钮。
 
@@ -5776,17 +6149,9 @@ Qt 在窗口 dpr 变化时发 ``DevicePixelRatioChange``，**不保证**同时�
 | `paths() -> list[Path \| str]` | 当前页面清单（按显示顺序）。 |
 | `current_path() -> Path \| None` | 当前选中的页面路径；无选中或无清单时为 None。 |
 | `navigate(forward: bool) -> None` | 方向键翻页（详情页 ←/→ 调用；联动预览刷新，见 ThumbStrip.navigate）。 |
-| `set_preview_spec_provider(provider) -> None` | 设置「大图按参数合成」的提供者（``None`` = 关掉，显示原图）。 |
-| `refresh_current() -> None` | 按**最新参数**重载当前页大图（清单、缩略图条、当前行都不动）。 |
 | `set_insert_visible(visible: bool) -> None` | 「＋/📁」两个**图片输入入口**的显隐（宿主按流程入口决定）。 |
 | `set_empty_hint(hint: str) -> None` | 换空态文案（输入入口藏起来后，"请点下方「＋」"就指错方向了）。 |
 | `set_hint_banner(text: str) -> None` | 换画布顶部那条**红框提示**（空串＝收起）。 |
-| `set_images(paths: list[Path \| str], boxes_map: dict \| None=None, force: bool=False) -> None` | 设置页面清单并重建缩略图条；清单未变则仅通知宿主重读。 |
-| `release_buffers() -> None` | 离开本步骤：丢掉大图与整条缩略图位图（清单/当前行原地保留）。 |
-| `restore_buffers() -> None` | 回来：重装条目图标 + 重载当前页大图（未被释放时是空操作）。 |
-| `apply_edited_image(path_text: str, image) -> None` | 编辑结果**立即上屏**（不等文件重解码/缩略图重生成）。 |
-| `refresh_page(path_text: str) -> None` | 某页缩略图缓存重生成后刷新条目图标（大图由 apply_edited_image |
-| `reload_thumb(path_text: str) -> None` | 某张图的**文件内容**被覆盖后：忘掉旧缓存记忆并按新文件重取缩略图。 |
 
 ##### `__init__(editable: bool=False, show_boxes: bool=False, empty_hint: str='暂无图片', image_size_provider=None, thumb_provider=None, image_editable: bool=True, parent=None)`
 
@@ -5816,27 +6181,6 @@ image_size_provider 供大图降采样时还原原始像素尺寸；thumb_provid
 返回 ``Path``：清单元素可能是 str，这里统一成 Path 交出去，调用方
 就直接 ``.name`` / ``.stem`` 了。
 
-##### `set_preview_spec_provider(provider) -> None`
-
-设置「大图按参数合成」的提供者（``None`` = 关掉，显示原图）。
-
-``provider(path_text, index, total) -> dict | None``：返回的字典原样交给
-``PreviewWorker(print_spec=...)``（几何规则见 ``utils.page_layout``），
-并可带一个 ``note`` 键——它会顶替大图下方那行"原始像素尺寸"文案。
-
-用户 2026-11-21：独立功能页也要"改参数立刻看单张效果"。参数变化后的
-重载走 :meth:`refresh_current`，两者配合就是实时预览。
-
-⚠️ **只影响大图**：缩略图条仍按真实文件解码——把排版效果套到缩略图上
-会让每一条都变成一整张纸（全白、看不清内容，还慢）。
-
-##### `refresh_current() -> None`
-
-按**最新参数**重载当前页大图（清单、缩略图条、当前行都不动）。
-
-PDF 页模式（提取页未提取时的形态）直接返回：那里没有"按参数重合成"
-的语义，页内容由 PDF 本身决定。
-
 ##### `set_insert_visible(visible: bool) -> None`
 
 「＋/📁」两个**图片输入入口**的显隐（宿主按流程入口决定）。
@@ -5860,6 +6204,91 @@ PDF 页模式（提取页未提取时的形态）直接返回：那里没有"按
 只有「检测文本框」用它（用户 2026-11-12：提示用户可以在图上手动调整
 框类型与手绘框）。文案由业务层现算（``box_kinds.manual_hint_text``），
 控件只负责显示；用户点过 × 之后这里怎么调都不会再弹（见 HintBanner）。
+
+---
+
+## `desktop.components.viewers.image_viewer.display`
+
+源码：[`desktop/components/viewers/image_viewer/display.py`](../../desktop/components/viewers/image_viewer/display.py)
+
+``ImageViewerWidget`` 的**大图展示**（DisplayMixin）：上屏、刷新与尺寸文案。
+
+### `class DisplayMixin(ImageViewerHost)`
+
+当前页大图的上屏、重载与信息条。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `set_preview_spec_provider(provider) -> None` | 设置「大图按参数合成」的提供者（``None`` = 关掉，显示原图）。 |
+| `refresh_current() -> None` | 按**最新参数**重载当前页大图（清单、缩略图条、当前行都不动）。 |
+| `apply_edited_image(path_text: str, image) -> None` | 编辑结果**立即上屏**（不等文件重解码/缩略图重生成）。 |
+| `refresh_page(path_text: str) -> None` | 某页缩略图缓存重生成后刷新条目图标（大图由 apply_edited_image |
+| `reload_thumb(path_text: str) -> None` | 某张图的**文件内容**被覆盖后：忘掉旧缓存记忆并按新文件重取缩略图。 |
+
+##### `set_preview_spec_provider(provider) -> None`
+
+设置「大图按参数合成」的提供者（``None`` = 关掉，显示原图）。
+
+``provider(path_text, index, total) -> dict | None``：返回的字典原样交给
+``PreviewWorker(print_spec=...)``（几何规则见 ``utils.page_layout``），
+并可带一个 ``note`` 键——它会顶替大图下方那行"原始像素尺寸"文案。
+
+用户 2026-11-21：独立功能页也要"改参数立刻看单张效果"。参数变化后的
+重载走 :meth:`refresh_current`，两者配合就是实时预览。
+
+⚠️ **只影响大图**：缩略图条仍按真实文件解码——把排版效果套到缩略图上
+会让每一条都变成一整张纸（全白、看不清内容，还慢）。
+
+##### `refresh_current() -> None`
+
+按**最新参数**重载当前页大图（清单、缩略图条、当前行都不动）。
+
+PDF 页模式（提取页未提取时的形态）直接返回：那里没有"按参数重合成"
+的语义，页内容由 PDF 本身决定。
+
+##### `apply_edited_image(path_text: str, image) -> None`
+
+编辑结果**立即上屏**（不等文件重解码/缩略图重生成）。
+
+编辑弹窗确认后由宿主调用：当前页大图直接换成编辑结果，条目图标
+用编辑结果现缩一张，缩略图缓存随后由宿主后台重生兜底。清单里没有
+这个路径（或图无效）时是空操作。
+
+##### `refresh_page(path_text: str) -> None`
+
+某页缩略图缓存重生成后刷新条目图标（大图由 apply_edited_image
+即时同步过，不再重载）。路径不在清单里时是空操作。
+
+##### `reload_thumb(path_text: str) -> None`
+
+某张图的**文件内容**被覆盖后：忘掉旧缓存记忆并按新文件重取缩略图。
+
+⚠️ 必须真的"忘掉"（:attr:`_thumb_cache_ready` 里那条）：缓存文件名带
+**大小**（``book_key`` 含 size），编辑器改了像素尺寸就换了文件名，
+而记忆里那条旧路径仍指向**覆盖前**的缓存文件——只刷不丢会一直显示
+编辑前的样子（用户报「独立步骤里编辑不生效」就是这么来的）。
+
+---
+
+## `desktop.components.viewers.image_viewer.listing`
+
+源码：[`desktop/components/viewers/image_viewer/listing.py`](../../desktop/components/viewers/image_viewer/listing.py)
+
+``ImageViewerWidget`` 的**清单装填 / 缩略图 / 选页加载**（ListingMixin）。
+
+### `class ListingMixin(ImageViewerHost)`
+
+页面清单、缩略图装填与当前页大图的加载编排。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `set_images(paths: list[Path \| str], boxes_map: dict \| None=None, force: bool=False) -> None` | 设置页面清单并重建缩略图条；清单未变则仅通知宿主重读。 |
+| `release_buffers() -> None` | 离开本步骤：丢掉大图与整条缩略图位图（清单/当前行原地保留）。 |
+| `restore_buffers() -> None` | 回来：重装条目图标 + 重载当前页大图（未被释放时是空操作）。 |
 
 ##### `set_images(paths: list[Path | str], boxes_map: dict | None=None, force: bool=False) -> None`
 
@@ -5891,28 +6320,6 @@ run() 内部**，只经 ``failed`` 信号回到预览区显示成
 
 ⚠️ 不改 ``_paths`` / 不清 ``currentRow``：切回来要停在用户原来那页，
 且 ``set_images`` 的增量/早退判据都靠这两样。
-
-##### `apply_edited_image(path_text: str, image) -> None`
-
-编辑结果**立即上屏**（不等文件重解码/缩略图重生成）。
-
-编辑弹窗确认后由宿主调用：当前页大图直接换成编辑结果，条目图标
-用编辑结果现缩一张，缩略图缓存随后由宿主后台重生兜底。清单里没有
-这个路径（或图无效）时是空操作。
-
-##### `refresh_page(path_text: str) -> None`
-
-某页缩略图缓存重生成后刷新条目图标（大图由 apply_edited_image
-即时同步过，不再重载）。路径不在清单里时是空操作。
-
-##### `reload_thumb(path_text: str) -> None`
-
-某张图的**文件内容**被覆盖后：忘掉旧缓存记忆并按新文件重取缩略图。
-
-⚠️ 必须真的"忘掉"（:attr:`_thumb_cache_ready` 里那条）：缓存文件名带
-**大小**（``book_key`` 含 size），编辑器改了像素尺寸就换了文件名，
-而记忆里那条旧路径仍指向**覆盖前**的缓存文件——只刷不丢会一直显示
-编辑前的样子（用户报「独立步骤里编辑不生效」就是这么来的）。
 
 ---
 
@@ -6416,53 +6823,13 @@ cache_dir：页缩略图缓存目录（如 thumbnails/source、thumbnails/print�
 
 ---
 
-## `desktop.components.viewers.print_layout_canvas`
+## `desktop.components.viewers.print_layout_canvas.canvas`
 
-源码：[`desktop/components/viewers/print_layout_canvas.py`](../../desktop/components/viewers/print_layout_canvas.py)
+源码：[`desktop/components/viewers/print_layout_canvas/canvas.py`](../../desktop/components/viewers/print_layout_canvas/canvas.py)
 
-第四步「版面编辑器」交互画布：在 A4 纸上拖拽 / 缩放 / 旋转图片。
+``PrintLayoutCanvas`` 类头 + 初始化 + 对外 API（几何/鼠标/绘制在兄弟 Mixin）。
 
-坐标体系与 ``utils.page_layout.plan_print_page`` 算出的 ``plan.image`` 完全一致
-——**页面毫米，左上原点，x 向右、y 向下**。控件把页面等比缩放到可视区，
-用 ``px_per_mm`` 在「页面 mm」与「控件像素」之间换算；用户拖拽/缩放得到的
-``[x_mm, y_mm, w_mm, h_mm]`` 直接写回 ``print.json`` 的 ``pages[].rect``，
-出 PDF 时由 ``plan_print_page(image_rect=...)`` 原样采用——所见即所得。
-
-交互（与 detect/rembg 的裁剪框编辑同款手感）：
-- 框内拖动 → 整体移动；**四角**手柄拖动 → 缩放（勾「原比例缩放」时等比）；
-  **四条边整条都是命中带**（不限边中点的小圆点）→ 拖上/下边只改高度、
-  拖左/右边只改宽度（自由拉伸改变比例）；松手 emit ``rect_changed``；
-- **框外上方的旋转钮**（用户 2026-11-02：与「图片拼版」同款组件）→ 左键
-  拖动绕框心旋转任意角度（按住 Shift 吸附 15°）；旋转后框按外接框重算，
-  角度与框一起落盘 ``pages[].rotate``；
-- 框始终被夹在页面内（夹到纸边即停），不会拖出页面；
-- 悬停手柄/边/旋转钮/框时显示对应光标。
-
-**标题与页码照画**：它们是「版面」的一部分，去掉就无从判断图片挪动后会不会
-压到字（曾误判为「标题页码被去除」）。绘制复用 ``preview_worker`` 的
-``_draw_print_text``——与成品 PDF 同源，只是多了画布自身的居中偏移。
-标题/页码的落点只取决于 ``page_margins``，**不随图片框移动**，与 PDF 一致。
-
-图片按目标矩形绘制（未旋转时**拉伸**，与成品 ``pdf.image(img, x, y, w, h)``
-的拉伸规则一致）；旋转时先绕框心转、再按旋转后的外接框等比放进同一个框，
-与 PDF / 效果预览共用 ``utils.page_layout.fit_rotated_rect``。
-
-### 模块常量
-
-| 名称 | 值 |
-| --- | --- |
-| HANDLE_RADIUS | `6` |
-| MIN_RECT_MM | `2.0` |
-| DISPLAY_IMAGE_EDGE | `2000` |
-| EDGE_HIT_PX | `6` |
-| ROTATE_KNOB_GAP | `26` |
-| ROTATE_KNOB_RADIUS | `6` |
-| ROTATE_ARC_GAP | `5.0` |
-| ROTATE_ARC_START | `210` |
-| ROTATE_ARC_BARB | `4.0` |
-| SNAP_DEGREES | `15.0` |
-
-### `class PrintLayoutCanvas(QWidget)`
+### `class PrintLayoutCanvas(GeometryMixin, MouseMixin, PaintMixin, QWidget)`
 
 A4 纸上的图片拖拽/缩放/旋转画布；rect_changed 发出页面 mm 坐标。
 
@@ -6477,13 +6844,6 @@ A4 纸上的图片拖拽/缩放/旋转画布；rect_changed 发出页面 mm 坐�
 | `set_rotation(degrees) -> None` | 程序化设置朝向：绕框心重算外接框，并立即上报（与拖钮同口径）。 |
 | `resizeEvent(event) -> None` | Qt 事件覆写：尺寸变化时重算布局 / 重新缩放。 |
 | `showEvent(event) -> None` | 显示时重算：首次进入第四步可能在布局完成前就 ``set_page`` 过， |
-| `mousePressEvent(event) -> None` | Qt 事件覆写：按下（选中 / 开始拖拽或绘制）。 |
-| `mouseMoveEvent(event) -> None` | Qt 事件覆写：移动（拖拽 / 缩放中的实时更新）。 |
-| `mouseDoubleClickEvent(event) -> None` | 双击 → ``double_clicked``（宿主打开预览弹窗）。 |
-| `contextMenuEvent(event) -> None` | 右键 → ``context_menu_requested``（宿主弹「预览图片 / 编辑图片」菜单）。 |
-| `flush_pending() -> bool` | 把"还没松手"的拖动结果补发出去（关窗口/切步骤/切页时调）。 |
-| `mouseReleaseEvent(event) -> None` | Qt 事件覆写：松开（提交本次编辑）。 |
-| `paintEvent(event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
 
 ##### `set_page(page_w_mm: float, page_h_mm: float, image: QImage | None, rect_mm: Sequence[float], plan=None, keep_ratio: bool=True, rotate: float=0.0) -> None`
 
@@ -6507,6 +6867,64 @@ A4 纸上的图片拖拽/缩放/旋转画布；rect_changed 发出页面 mm 坐�
 那时 ``width()/height()`` 还是 0，``_px_per_mm`` 会退化为 1.0。
 仅靠 resizeEvent 兜不住「已分配尺寸但从未显示」的情况。
 
+---
+
+## `desktop.components.viewers.print_layout_canvas.constants`
+
+源码：[`desktop/components/viewers/print_layout_canvas/constants.py`](../../desktop/components/viewers/print_layout_canvas/constants.py)
+
+``print_layout_canvas`` 的配色、手柄与旋转常量（各子模块共用）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| HANDLE_RADIUS | `6` |
+| MIN_RECT_MM | `2.0` |
+| DISPLAY_IMAGE_EDGE | `2000` |
+| EDGE_HIT_PX | `6` |
+| ROTATE_KNOB_GAP | `26` |
+| ROTATE_KNOB_RADIUS | `6` |
+| ROTATE_ARC_GAP | `5.0` |
+| ROTATE_ARC_START | `210` |
+| ROTATE_ARC_BARB | `4.0` |
+| SNAP_DEGREES | `15.0` |
+
+---
+
+## `desktop.components.viewers.print_layout_canvas.geometry`
+
+源码：[`desktop/components/viewers/print_layout_canvas/geometry.py`](../../desktop/components/viewers/print_layout_canvas/geometry.py)
+
+画布几何：页面 mm ↔ 控件像素换算、旋转外接框、手柄/命中区。
+
+### `class GeometryMixin(PrintLayoutCanvasHost)`
+
+坐标换算与旋转几何（页面 mm、左上原点）。
+
+---
+
+## `desktop.components.viewers.print_layout_canvas.mouse`
+
+源码：[`desktop/components/viewers/print_layout_canvas/mouse.py`](../../desktop/components/viewers/print_layout_canvas/mouse.py)
+
+画布鼠标交互：拖移 / 缩放 / 旋转 / 双击 / 右键。
+
+### `class MouseMixin(PrintLayoutCanvasHost)`
+
+鼠标手势：框内移动、手柄缩放、旋转钮旋转。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `mousePressEvent(event) -> None` | Qt 事件覆写：按下（选中 / 开始拖拽或绘制）。 |
+| `mouseMoveEvent(event) -> None` | Qt 事件覆写：移动（拖拽 / 缩放中的实时更新）。 |
+| `mouseDoubleClickEvent(event) -> None` | 双击 → ``double_clicked``（宿主打开预览弹窗）。 |
+| `contextMenuEvent(event) -> None` | 右键 → ``context_menu_requested``（宿主弹「预览图片 / 编辑图片」菜单）。 |
+| `flush_pending() -> bool` | 把"还没松手"的拖动结果补发出去（关窗口/切步骤/切页时调）。 |
+| `mouseReleaseEvent(event) -> None` | Qt 事件覆写：松开（提交本次编辑）。 |
+
 ##### `contextMenuEvent(event) -> None`
 
 右键 → ``context_menu_requested``（宿主弹「预览图片 / 编辑图片」菜单）。
@@ -6523,6 +6941,24 @@ A4 纸上的图片拖拽/缩放/旋转画布；rect_changed 发出页面 mm 坐�
 （画布上就是拖动后的样子）。这里主动补发一次，语义与正常松手完全一致。
 
 返回 True 表示确实补发了一次（即存在未提交的改动）。
+
+---
+
+## `desktop.components.viewers.print_layout_canvas.paint`
+
+源码：[`desktop/components/viewers/print_layout_canvas/paint.py`](../../desktop/components/viewers/print_layout_canvas/paint.py)
+
+画布绘制：纸张、图片（含旋转）、标题/页码、手柄与旋转钮。
+
+### `class PaintMixin(PrintLayoutCanvasHost)`
+
+``paintEvent`` 与图片 / 旋转钮的绘制细节。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `paintEvent(event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
 
 ---
 
@@ -7367,7 +7803,7 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 
 ## `desktop.modules.detect.page`
 
-源码：[`desktop/modules/detect/page.py`](../../desktop/modules/detect/page.py)
+源码：[`desktop/modules/detect/page/__init__.py`](../../desktop/modules/detect/page/__init__.py)
 
 「检测文本框」独立模块页：与任务流程无关，选一批图片直接检测内容框。
 
@@ -7424,6 +7860,25 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 「导出YOLO标注」摆在与主任务相同的执行链之外，走 :meth:`StepControl.add_extra`
 插在底部动作区（输出目录/执行/中断）**上方**。
 
+2026-11-22 起按职责拆成子包：常量在 ``constants``，页面能力按「骨架/控件 /
+回调与框类型 / 尺寸与画框 / 导出」分到各 ``mixin_*`` 子模块；本 ``__init``
+只负责组装页面类并重导出既有名字（``from desktop.modules.detect.page import X``
+保持不变）。
+
+⚠️ 子模块之间只互相 import，不要反过来导入本包（会形成循环）。
+
+### `class DetectModulePage(CoreMixin, ViewMixin, GeometryMixin, ExportMixin, StepModulePage, ThumbSourceMixin, ImageEditActionsMixin)`
+
+检测文本框模块页：拖入图片 → 检测内容框 → 图上修正 → 导出坐标 JSON。
+
+---
+
+## `desktop.modules.detect.page.constants`
+
+源码：[`desktop/modules/detect/page/constants.py`](../../desktop/modules/detect/page/constants.py)
+
+检测文本框独立页的常量与步骤元数据（从原 ``page.py`` 拆出）。
+
 ### 模块常量
 
 | 名称 | 值 |
@@ -7434,9 +7889,17 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 | _YOLO_EXPORT_DIR_KEY | `"yolo_export_dir"` |
 | _YOLO_EXPORT_NAME_KEY | `"yolo_export_name"` |
 
-### `class DetectModulePage(StepModulePage, ThumbSourceMixin, ImageEditActionsMixin)`
+---
 
-检测文本框模块页：拖入图片 → 检测内容框 → 图上修正 → 导出坐标 JSON。
+## `desktop.modules.detect.page.mixin_core`
+
+源码：[`desktop/modules/detect/page/mixin_core.py`](../../desktop/modules/detect/page/mixin_core.py)
+
+检测文本框独立页的骨架、左右两栏与识别方式（从原 ``page.py`` 拆出）。
+
+### `class CoreMixin`
+
+构造期骨架、预览/控制栏搭建、执行 job 与识别方式显隐。
 
 #### 方法
 
@@ -7444,25 +7907,6 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 | --- | --- |
 | `__init__(parent=None)` | 建骨架、共用步骤控件与内存中的框表。 |
 | `step_job()` | 本页执行内核要跑的 job：走**共用逐页循环**（见 :func:`run_detect_pages`）。 |
-| `source_summary(source) -> str` | 在共用的 ``<源> → <输出>`` 之外，**补上待检测张数**。 |
-| `edit_effect_note(path: Path) -> str` | 编辑器改了待检测的图片：框坐标以**图片原始像素**为基准。 |
-| `on_result(out_dir: Path, _result: dict) -> None` | 检测跑完：重画当前页，并把「检出几页 / 几页无框」写到状态行。 |
-| `box_viewer()` | — |
-| `box_toast(kind: str, title: str, content: str) -> None` | — |
-| `box_raw_slots(path_text: str) -> list` | — |
-| `box_page_is_full(path_text: str) -> bool` | — |
-| `box_image_size(path_text: str)` | — |
-| `box_commit(path_text: str, slots: list, select_box=None, side='keep') -> None` | 落库 + 重画；``side`` 按需写入/清除这页的人工左右指定。 |
-| `box_page_half_candidate(path_text: str) -> bool` | 这页是否**够「半幅」**（只有一个横跨整页的框）——为真时 |
-| `box_confirm(title: str, body: str, yes_text: str, cancel_text: str) -> bool` | — |
-| `box_resync_kind(_index: int) -> None` | 按现值回填类型控件高亮（类型操作结束后必调，别停在假位置）。 |
-| `box_current_path_text() -> str` | — |
-| `can_edit_delete_selected() -> bool` | 「编辑 → 删除选中」：本页的“选中”指**文本框**（用户 2026-11-01 定）。 |
-| `edit_delete_selected() -> None` | — |
-| `export_boxes() -> None` | 把各页框坐标写成 ``<输出目录>/boxes.json``（与任务流程同格式）。 |
-| `export_annotated_images() -> None` | 把框画回原图导出成 PNG：先选目录，**目录已存在就问是否覆盖**。 |
-| `export_yolo_labels() -> None` | 导出 YOLO 数据集切片：先弹窗填**名称**与选**导出目录**（用户 2026-10-16）。 |
-| `shutdown_workers() -> None` | 收尾：查看器自己的后台线程 + 两个执行线程（检测、导出标注图）。 |
 
 ##### `step_job()`
 
@@ -7473,42 +7917,26 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 送回界面），默认命令 job 只转进度/日志；注入纯函数 job 后，本页与任务
 流程第二步跑的是**同一份**批量检测实现。
 
-##### `edit_effect_note(path: Path) -> str`
+---
 
-编辑器改了待检测的图片：框坐标以**图片原始像素**为基准。
+## `desktop.modules.detect.page.mixin_export`
 
-改了尺寸就必须重跑检测（旧框还按旧图的坐标系画，会整体偏移）；只改
-像素不改尺寸时旧框仍然对得上，所以提示里区分这两种情况而不是一律要求
-重跑。
+源码：[`desktop/modules/detect/page/mixin_export.py`](../../desktop/modules/detect/page/mixin_export.py)
 
-##### `on_result(out_dir: Path, _result: dict) -> None`
+检测文本框独立页的导出线（坐标 JSON / 标注图 / YOLO，从原 ``page.py`` 拆出）。
 
-检测跑完：重画当前页，并把「检出几页 / 几页无框」写到状态行。
+### `class ExportMixin`
 
-``out_dir`` 是输出目录（``detect`` 默认不落盘，这里只是共用控件回传的
-那个路径），导出按钮会用到它。
+坐标 JSON、标注图与 YOLO 数据集的导出执行线与回调。
 
-##### `box_commit(path_text: str, slots: list, select_box=None, side='keep') -> None`
+#### 方法
 
-落库 + 重画；``side`` 按需写入/清除这页的人工左右指定。
-
-⚠️ **先写 side、再上屏**（同任务流程那份）：``_store_slots`` →
-``_apply_boxes`` 要读 ``_sides`` 决定标签与面板高亮。先上屏后写的话
-第一次点击读到的还是旧值 ⇒ 界面不动、得点第二次（用户 2026-10-17 报）。
-
-##### `box_page_half_candidate(path_text: str) -> bool`
-
-这页是否**够「半幅」**（只有一个横跨整页的框）——为真时
-左/右可由用户指定（中心压在中线上，位置判定没意义）。
-
-⚠️ 页级判据（用户 2026-10-23，任务 0004）：不要求整本书是单栏书。
-
-##### `can_edit_delete_selected() -> bool`
-
-「编辑 → 删除选中」：本页的“选中”指**文本框**（用户 2026-11-01 定）。
-
-与右栏「删除选中框」同一判据（``delete_box`` 只在有选中框时启用），
-不把整页删除混进来——本页源是用户图片清单，删页是另一套语义。
+| 方法 | 说明 |
+| --- | --- |
+| `export_boxes() -> None` | 把各页框坐标写成 ``<输出目录>/boxes.json``（与任务流程同格式）。 |
+| `export_annotated_images() -> None` | 把框画回原图导出成 PNG：先选目录，**目录已存在就问是否覆盖**。 |
+| `export_yolo_labels() -> None` | 导出 YOLO 数据集切片：先弹窗填**名称**与选**导出目录**（用户 2026-10-16）。 |
+| `shutdown_workers() -> None` | 收尾：查看器自己的后台线程 + 两个执行线程（检测、导出标注图）。 |
 
 ##### `export_boxes() -> None`
 
@@ -7554,6 +7982,87 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 
 ⚠️ 导出的是**全部图片**（不止有框的页）：没有框的页照样复制图片 + 写
 空标签当负样本（用户 2026-10-16：「写空标签当负样本」）。
+
+---
+
+## `desktop.modules.detect.page.mixin_geometry`
+
+源码：[`desktop/modules/detect/page/mixin_geometry.py`](../../desktop/modules/detect/page/mixin_geometry.py)
+
+检测文本框独立页的尺寸、整本书判定与画框（从原 ``page.py`` 拆出）。
+
+### `class GeometryMixin`
+
+图片尺寸/页宽缓存、整本书形态判定与查看器画框。
+
+---
+
+## `desktop.modules.detect.page.mixin_view`
+
+源码：[`desktop/modules/detect/page/mixin_view.py`](../../desktop/modules/detect/page/mixin_view.py)
+
+检测文本框独立页的源变化、事件回调与框类型交互（从原 ``page.py`` 拆出）。
+
+### `class ViewMixin`
+
+换源、逐页事件、结果回填与框类型人工干预。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `source_summary(source) -> str` | 在共用的 ``<源> → <输出>`` 之外，**补上待检测张数**。 |
+| `edit_effect_note(path: Path) -> str` | 编辑器改了待检测的图片：框坐标以**图片原始像素**为基准。 |
+| `on_result(out_dir: Path, _result: dict) -> None` | 检测跑完：重画当前页，并把「检出几页 / 几页无框」写到状态行。 |
+| `box_viewer()` | — |
+| `box_toast(kind: str, title: str, content: str) -> None` | — |
+| `box_raw_slots(path_text: str) -> list` | — |
+| `box_page_is_full(path_text: str) -> bool` | — |
+| `box_image_size(path_text: str)` | — |
+| `box_commit(path_text: str, slots: list, select_box=None, side='keep') -> None` | 落库 + 重画；``side`` 按需写入/清除这页的人工左右指定。 |
+| `box_page_half_candidate(path_text: str) -> bool` | 这页是否**够「半幅」**（只有一个横跨整页的框）——为真时 |
+| `box_confirm(title: str, body: str, yes_text: str, cancel_text: str) -> bool` | — |
+| `box_resync_kind(_index: int) -> None` | 按现值回填类型控件高亮（类型操作结束后必调，别停在假位置）。 |
+| `box_current_path_text() -> str` | — |
+| `can_edit_delete_selected() -> bool` | 「编辑 → 删除选中」：本页的“选中”指**文本框**（用户 2026-11-01 定）。 |
+| `edit_delete_selected() -> None` | — |
+
+##### `edit_effect_note(path: Path) -> str`
+
+编辑器改了待检测的图片：框坐标以**图片原始像素**为基准。
+
+改了尺寸就必须重跑检测（旧框还按旧图的坐标系画，会整体偏移）；只改
+像素不改尺寸时旧框仍然对得上，所以提示里区分这两种情况而不是一律要求
+重跑。
+
+##### `on_result(out_dir: Path, _result: dict) -> None`
+
+检测跑完：重画当前页，并把「检出几页 / 几页无框」写到状态行。
+
+``out_dir`` 是输出目录（``detect`` 默认不落盘，这里只是共用控件回传的
+那个路径），导出按钮会用到它。
+
+##### `box_commit(path_text: str, slots: list, select_box=None, side='keep') -> None`
+
+落库 + 重画；``side`` 按需写入/清除这页的人工左右指定。
+
+⚠️ **先写 side、再上屏**（同任务流程那份）：``_store_slots`` →
+``_apply_boxes`` 要读 ``_sides`` 决定标签与面板高亮。先上屏后写的话
+第一次点击读到的还是旧值 ⇒ 界面不动、得点第二次（用户 2026-10-17 报）。
+
+##### `box_page_half_candidate(path_text: str) -> bool`
+
+这页是否**够「半幅」**（只有一个横跨整页的框）——为真时
+左/右可由用户指定（中心压在中线上，位置判定没意义）。
+
+⚠️ 页级判据（用户 2026-10-23，任务 0004）：不要求整本书是单栏书。
+
+##### `can_edit_delete_selected() -> bool`
+
+「编辑 → 删除选中」：本页的“选中”指**文本框**（用户 2026-11-01 定）。
+
+与右栏「删除选中框」同一判据（``delete_box`` 只在有选中框时启用），
+不把整页删除混进来——本页源是用户图片清单，删页是另一套语义。
 
 ---
 
@@ -7654,7 +8163,7 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 
 ## `desktop.modules.imposition.page`
 
-源码：[`desktop/modules/imposition/page.py`](../../desktop/modules/imposition/page.py)
+源码：[`desktop/modules/imposition/page/__init__.py`](../../desktop/modules/imposition/page/__init__.py)
 
 「拼图」独立模块页（= 图片拼版）。
 
@@ -7691,6 +8200,31 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 「删除选中图片」（选中才出现；本页最后一张删除前先确认）、整体旋转/
 选中图旋转（停手 250ms 统一提交）——语义逐条与任务流程的拼版步骤一致。
 
+2026-11-22 起按职责拆成子包：常量/落点在 ``constants`` / ``paths``，
+页面能力按「选源 / 页面操作 / 版面 / 预览 / 缩略图 / 界面 / 导出」分到
+各 ``mixin_*`` 子模块；本 ``__init`` 只负责组装页面类并重导出既有名字
+（``from desktop.modules.imposition.page import X`` 保持不变）。
+
+⚠️ 子模块之间只互相 import，不要反过来导入本包（会形成循环）。
+
+### `class ImpositionModulePage(SourcesMixin, PagesMixin, LayoutMixin, PreviewMixin, ThumbsMixin, UiMixin, ExportMixin, ModulePage)`
+
+拼图模块页：选图 → 自动/手动拼版 → 调整版面 → 导出成品。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(parent=None)` | 先建骨架，再补「选图 / 自动拼版 / 导出」这条操作链。 |
+
+---
+
+## `desktop.modules.imposition.page.constants`
+
+源码：[`desktop/modules/imposition/page/constants.py`](../../desktop/modules/imposition/page/constants.py)
+
+独立拼图页的常量与步骤元数据（从原 ``page.py`` 拆出）。
+
 ### 模块常量
 
 | 名称 | 值 |
@@ -7700,20 +8234,22 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 | THUMB_REFRESH_DEBOUNCE_MS | `2000` |
 | EDIT_COMMIT_DEBOUNCE_MS | `250` |
 
-### `class ImpositionModulePage(ModulePage)`
+---
 
-拼图模块页：选图 → 自动/手动拼版 → 调整版面 → 导出成品。
+## `desktop.modules.imposition.page.mixin_export`
+
+源码：[`desktop/modules/imposition/page/mixin_export.py`](../../desktop/modules/imposition/page/mixin_export.py)
+
+独立拼图页的导出执行线与页面刷新/收尾（从原 ``page.py`` 拆出）。
+
+### `class ExportMixin`
+
+导出 job、进度/结果回调、视图刷新与离开/收尾。
 
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(parent=None)` | 先建骨架，再补「选图 / 自动拼版 / 导出」这条操作链。 |
-| `can_edit_delete_selected() -> bool` | 「编辑 → 删除选中」：左列**勾选**的拼版页可批量删除（与悬浮框同判据）。 |
-| `edit_delete_selected() -> None` | 走左列悬浮框「批量删除」同一条实现（含确认弹窗与落盘）。 |
-| `can_edit_insert_images() -> bool` | 「编辑 → 插入图片」：点「＋ 选择拼版」的同一入口（候选池含已删除图）。 |
-| `edit_insert_images() -> None` | — |
-| `close_zoom_dialog() -> None` | 关掉预览弹窗（内容失效时调：换源 / 清空）。 |
 | `release_buffers() -> None` | 离开本页：画布两张大图 + 左列缩略图 + 缩略图实体管理者的内存位图。 |
 | `restore_buffers() -> None` | 回来：按磁盘上的文档整条重灌（画布 + 左列缩略图 + 面板状态）。 |
 | `shutdown_workers() -> None` | 关闭页面前中止并等待导出线程。 |
@@ -7724,6 +8260,101 @@ qfluentwidgets 的 ``TextEdit``（与详情页同款），只有 ``append``。
 
 基类只清 ``view`` 自己那份（画布与左列条目），这里再补管理者那张
 ``_pix`` 表——它挂在**页面**上，不在 view 里。
+
+---
+
+## `desktop.modules.imposition.page.mixin_layout`
+
+源码：[`desktop/modules/imposition/page/mixin_layout.py`](../../desktop/modules/imposition/page/mixin_layout.py)
+
+独立拼图页的版面改动、旋转提交与面板回填（从原 ``page.py`` 拆出）。
+
+### `class LayoutMixin`
+
+画布版面写回、缩略图脏页、旋转防抖与面板状态同步。
+
+---
+
+## `desktop.modules.imposition.page.mixin_pages`
+
+源码：[`desktop/modules/imposition/page/mixin_pages.py`](../../desktop/modules/imposition/page/mixin_pages.py)
+
+独立拼图页的页面增删/排序/插入操作（从原 ``page.py`` 拆出）。
+
+### `class PagesMixin`
+
+「选择拼版」弹窗、自动拼版、增删/排序/插入页与清空。
+
+---
+
+## `desktop.modules.imposition.page.mixin_preview`
+
+源码：[`desktop/modules/imposition/page/mixin_preview.py`](../../desktop/modules/imposition/page/mixin_preview.py)
+
+独立拼图页的预览弹窗与编辑生效链（从原 ``page.py`` 拆出）。
+
+### `class PreviewMixin`
+
+双击/右键预览、整页编辑与编辑回写后的刷新链。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `close_zoom_dialog() -> None` | 关掉预览弹窗（内容失效时调：换源 / 清空）。 |
+
+---
+
+## `desktop.modules.imposition.page.mixin_sources`
+
+源码：[`desktop/modules/imposition/page/mixin_sources.py`](../../desktop/modules/imposition/page/mixin_sources.py)
+
+独立拼图页的输入区与选源链路（从原 ``page.py`` 拆出）。
+
+### `class SourcesMixin`
+
+大输入区、选源、去底色导出目录衔接与清空输入。
+
+---
+
+## `desktop.modules.imposition.page.mixin_thumbs`
+
+源码：[`desktop/modules/imposition/page/mixin_thumbs.py`](../../desktop/modules/imposition/page/mixin_thumbs.py)
+
+独立拼图页的左列缩略图实体管理（从原 ``page.py`` 拆出）。
+
+### `class ThumbsMixin`
+
+左列可见窗口、缩略图实体生成与失效。
+
+---
+
+## `desktop.modules.imposition.page.mixin_ui`
+
+源码：[`desktop/modules/imposition/page/mixin_ui.py`](../../desktop/modules/imposition/page/mixin_ui.py)
+
+独立拼图页的预览区/控制列搭建与编辑菜单（从原 ``page.py`` 拆出）。
+
+### `class UiMixin`
+
+左右两栏控件搭建与「编辑」菜单入口。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `can_edit_delete_selected() -> bool` | 「编辑 → 删除选中」：左列**勾选**的拼版页可批量删除（与悬浮框同判据）。 |
+| `edit_delete_selected() -> None` | 走左列悬浮框「批量删除」同一条实现（含确认弹窗与落盘）。 |
+| `can_edit_insert_images() -> bool` | 「编辑 → 插入图片」：点「＋ 选择拼版」的同一入口（候选池含已删除图）。 |
+| `edit_insert_images() -> None` | — |
+
+---
+
+## `desktop.modules.imposition.page.paths`
+
+源码：[`desktop/modules/imposition/page/paths.py`](../../desktop/modules/imposition/page/paths.py)
+
+独立拼图页的目录落点与页面覆盖清单（从原 ``page.py`` 拆出）。
 
 ### 模块函数
 
@@ -8246,34 +8877,46 @@ PDF排版），导航栏被五个功能占满。用户 2026-11-17：「左侧目
 
 ## `desktop.pages.taskdetail.detect`
 
-源码：[`desktop/pages/taskdetail/detect.py`](../../desktop/pages/taskdetail/detect.py)
+源码：[`desktop/pages/taskdetail/detect/__init__.py`](../../desktop/pages/taskdetail/detect/__init__.py)
 
-任务详情页的 detect 检测控制器。
+任务详情页的 detect 检测控制器（子包入口，只做重导出）。
 
 框坐标持久化在任务目录的 `boxes.json`（键为页面 stem）：
 - 选中图片时优先读已有结果（命中则不再检测，手动框不被自动结果覆盖）；
 - 子进程检测到的框写回（origin=auto）；
 - 预览区拖动线框后写回（origin=manual），全程不生成新文件。
 
-### `class VersionedBoxCache(dict)`
+2026-11-22 起由单文件拆成子包（原因：原文件 1417 行），对外导入路径
+``desktop.pages.taskdetail.detect`` 与名字完全不变。
 
-``detect_cache`` 的带版本号版：任何写入都自增 ``version``。
-
-给"整书判据"（单栏书结论 / 逐页检测框）做缓存失效用——那些判据要遍历
-全部页并读 ``boxes.json``，不能每次重算。用户在第二步改框会写这份缓存
-⇒ 版本号自增 ⇒ 判据缓存失效，不会拿旧框去命名产物。
-
-#### 方法
-
-| 方法 | 说明 |
-| --- | --- |
-| `__init__(*args, **kwargs) -> None` | — |
-| `clear() -> None` | — |
-
-### `class DetectMixin`
+### `class DetectMixin(DetectBoxesMixin, DetectBoxCacheMixin, DetectStatsMixin, DetectModesMixin, DetectProcessMixin, YoloExportMixin)`
 
 依赖宿主页面提供的属性：store/task_id、detect_viewer、log_view、
 detect_process/detect_cache、current_stage()。
+
+---
+
+## `desktop.pages.taskdetail.detect.box_cache`
+
+源码：[`desktop/pages/taskdetail/detect/box_cache.py`](../../desktop/pages/taskdetail/detect/box_cache.py)
+
+检测框文件的定位与整本缓存（从原 ``detect.py`` 拆出）。
+
+### `class DetectBoxCacheMixin(DetectHost)`
+
+本步/消费方要读的 ``boxes`` 文件，以及逐页/整本取框缓存。
+
+---
+
+## `desktop.pages.taskdetail.detect.boxes`
+
+源码：[`desktop/pages/taskdetail/detect/boxes.py`](../../desktop/pages/taskdetail/detect/boxes.py)
+
+检测框的人工干预、落库与上屏（从原 ``detect.py`` 拆出）。
+
+### `class DetectBoxesMixin(DetectHost)`
+
+检测框：类型协议、槽位读写、上屏与信息条。
 
 #### 方法
 
@@ -8289,7 +8932,6 @@ detect_process/detect_cache、current_stage()。
 | `box_confirm(title: str, body: str, yes_text: str, cancel_text: str) -> bool` | — |
 | `box_resync_kind(index: int) -> None` | 按现值回填面板的「选中框类型」高亮（类型操作结束后必调）。 |
 | `box_current_path_text() -> str` | — |
-| `export_yolo_labels() -> None` | 导出 YOLO 数据集切片：先弹窗，确认后在后台线程复制图片 + 写标签。 |
 
 ##### `box_commit(path_text: str, slots: list, select_box=None, side='keep') -> None`
 
@@ -8317,6 +8959,83 @@ detect_process/detect_cache、current_stage()。
 ⚠️ 分段控件在按下那一刻就把滑块移到了被点的段，而有些点击本来就不会
 改数据（普通半幅页点另一侧、整幅声明被取消）——不回填就会停在"看起来
 切了、其实没切"的位置（用户 2026-10-17 报「切换有问题」）。
+
+---
+
+## `desktop.pages.taskdetail.detect.cache`
+
+源码：[`desktop/pages/taskdetail/detect/cache.py`](../../desktop/pages/taskdetail/detect/cache.py)
+
+``detect_cache`` 的带版本号容器（从原 ``detect.py`` 拆出）。
+
+### `class VersionedBoxCache(dict)`
+
+``detect_cache`` 的带版本号版：任何写入都自增 ``version``。
+
+给"整书判据"（单栏书结论 / 逐页检测框）做缓存失效用——那些判据要遍历
+全部页并读 ``boxes.json``，不能每次重算。用户在第二步改框会写这份缓存
+⇒ 版本号自增 ⇒ 判据缓存失效，不会拿旧框去命名产物。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(*args, **kwargs) -> None` | — |
+| `clear() -> None` | — |
+
+---
+
+## `desktop.pages.taskdetail.detect.modes`
+
+源码：[`desktop/pages/taskdetail/detect/modes.py`](../../desktop/pages/taskdetail/detect/modes.py)
+
+识别方式（自动 / 人工标注）与「沿用上一页标注」（从原 ``detect.py`` 拆出）。
+
+### `class DetectModesMixin(DetectHost)`
+
+面板参数读取、识别方式切换落盘、上一页框的沿用。
+
+---
+
+## `desktop.pages.taskdetail.detect.process`
+
+源码：[`desktop/pages/taskdetail/detect/process.py`](../../desktop/pages/taskdetail/detect/process.py)
+
+单页检测子进程与输出解析（从原 ``detect.py`` 拆出）。
+
+### `class DetectProcessMixin(DetectHost)`
+
+手动触发单页检测、进程生命周期与 JSON Lines 输出解析。
+
+---
+
+## `desktop.pages.taskdetail.detect.stats`
+
+源码：[`desktop/pages/taskdetail/detect/stats.py`](../../desktop/pages/taskdetail/detect/stats.py)
+
+第二步的检测结果统计与全书形态结论（从原 ``detect.py`` 拆出）。
+
+### `class DetectStatsMixin(DetectHost)`
+
+按页形态分类计数，并把全书结论同步给预览控件。
+
+---
+
+## `desktop.pages.taskdetail.detect.yolo`
+
+源码：[`desktop/pages/taskdetail/detect/yolo.py`](../../desktop/pages/taskdetail/detect/yolo.py)
+
+「导出YOLO标注」的卡片显隐与后台导出（从原 ``detect.py`` 拆出）。
+
+### `class YoloExportMixin(DetectHost)`
+
+导出卡片显隐、导出请求与后台 job 的完成播报。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `export_yolo_labels() -> None` | 导出 YOLO 数据集切片：先弹窗，确认后在后台线程复制图片 + 写标签。 |
 
 ##### `export_yolo_labels() -> None`
 
@@ -8394,57 +9113,67 @@ history_combo、_toast()。
 
 ---
 
-## `desktop.pages.taskdetail.imposition`
+## `desktop.pages.taskdetail.imposition.detail`
 
-源码：[`desktop/pages/taskdetail/imposition.py`](../../desktop/pages/taskdetail/imposition.py)
+源码：[`desktop/pages/taskdetail/imposition/detail.py`](../../desktop/pages/taskdetail/imposition/detail.py)
 
-任务详情页的「图片拼版」共享基元与 Mixin 装配。
+拼版共享基元的**拼版详情**分片：视图灌装、进详情、切任务复位。
 
-流程条上的「图片拼版」是**虚线可选节点**（``desktop.components.step_bar``）。
-它牵涉**两个判据，各管一件事、互不替代**（2026-10-05 逐层查证业务流程后定，
-2026-10-22 移除 area 后简化为两条）：
+### `class DetailMixin(ImpositionBaseHost)`
 
-1. **在不在流程里** ← **本任务的流程图**。图上画了「图片拼版」就有这一格
-   （:meth:`ImpositionBaseMixin._imposition_node_visible`）。
-2. **要不要真跑** ← **拼版面板底部的开关**（:meth:`imposition_active`
-   只看勾没勾，那是"用户意图"）。开关在 ① 不满足时**置灰并写明原因**。
+拼版视图刷新、详情切换与任务切换复位。
 
-⚠️ 2026-10-22 起 **area 概念彻底移除**：检测文本框后永远逐框裁图，
-半幅页天然产出成对的 ``-l`` / ``-r``，拼版不再需要"区域模式 = 左右分开"
-这个业务前提；没有检测步骤时拼整图照样能拼。
+---
 
-按操作逻辑拆成三个文件（后续可由不同 agent 分头维护，互不影响）：
+## `desktop.pages.taskdetail.imposition.document`
 
-- **本文件** ``ImpositionBaseMixin``：两个模块都要用的**共享基元**——
-  节点可见性（查流程图）、
-  拼版文档读写（``drafts/imposition.json``）、
-  源图清单与「拼版生效」判定、第四步取图切换（``print_source_dir``）、
-  视图灌装、详情进出与切任务复位；
-- **``imposition_pages.ImpositionPagesMixin``**（模块一「选择拼版」）：
-  启用开关、弹窗加页、删页/页序/清空；
-- **``imposition_layout.ImpositionLayoutMixin``**（模块二「拼版操作」）：
-  旋转/复位、版面落盘、防抖后台合成、状态行。
+源码：[`desktop/pages/taskdetail/imposition/document.py`](../../desktop/pages/taskdetail/imposition/document.py)
 
-⚠️ 拼版本身**不是** STAGES 里的一步：runs.json / 阶段面板机制一概不感知它，
-执行按钮组在拼版详情里整组隐藏。
+拼版共享基元的**文档读写**分片：拼版文档、作用域与成品目录。
 
-### `class ImpositionBaseMixin`
+### `class DocumentMixin(ImpositionBaseHost)`
+
+拼版文档读写、节点作用域、成品输出目录与启用开关落盘。
+
+---
+
+## `desktop.pages.taskdetail.imposition.mixin`
+
+源码：[`desktop/pages/taskdetail/imposition/mixin.py`](../../desktop/pages/taskdetail/imposition/mixin.py)
+
+拼版共享基元与 Mixin 装配。
+
+### `class ImpositionBaseMixin(NodeVisibilityMixin, DocumentMixin, SourcesMixin, DetailMixin, PrintSourceMixin)`
 
 拼版共享基元：节点可见性、文档读写、取图切换、详情进出。
 
 依赖宿主页面提供：store/task_id、control_stack、step_bar、
 _select_stage()、_set_stage_status()、_toast()、log_view。
 
+### `class ImpositionMixin(ImpositionPagesMixin, ImpositionLayoutMixin, ImpositionBaseMixin)`
+
+「图片拼版」节点控制器 = 模块一（页管理） + 模块二（版面/合成） + 基元。
+
+方法查找顺序：模块一 → 模块二 → 共享基元；三个文件互不 import，
+只经 ``self`` 在组合后的宿主页面上协作。
+
+---
+
+## `desktop.pages.taskdetail.imposition.node_visibility`
+
+源码：[`desktop/pages/taskdetail/imposition/node_visibility.py`](../../desktop/pages/taskdetail/imposition/node_visibility.py)
+
+拼版共享基元的**节点可见性**分片：节点是否在流程里、三态同步到流程条。
+
+### `class NodeVisibilityMixin(ImpositionBaseHost)`
+
+节点可见性、启用开关判据与步骤条三态同步。
+
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
 | `imposition_effective() -> bool` | 拼版这一步**当前能不能真跑**（节点在流程里 + 用户勾了）。 |
-| `imposition_source_files() -> list[Path]` | 可挑选的源图：**拼版这一步的 pages 端口**指向的目录。 |
-| `imposition_role_map() -> dict[str, str]` | ``{产物 label: role}``（来自上游检测节点的提交计划，拼版配对用）。 |
-| `imposition_active() -> bool` | 拼版**是否已启用**（用户勾了「在流程中启用图片拼版」就是启用）。 |
-| `imposition_has_pages() -> bool` | 拼版文档里**至少有一页**版面（能不能真的合成出图）。 |
-| `print_source_dir() -> Path` | 第四步的取图目录：拼版生效 → stages/imposition，否则 stages/rembg。 |
 
 ##### `imposition_effective() -> bool`
 
@@ -8453,6 +9182,40 @@ _select_stage()、_set_stage_status()、_toast()、log_view。
 与 :meth:`imposition_active`（"用户意图：勾没勾"）**刻意分开**：
 勾了但流程图里没这一步，**不会**真跑。取图来源认这个，步骤条
 "生效态"也认这个。
+
+---
+
+## `desktop.pages.taskdetail.imposition.print_source`
+
+源码：[`desktop/pages/taskdetail/imposition/print_source.py`](../../desktop/pages/taskdetail/imposition/print_source.py)
+
+拼版共享基元的**第四步取图来源刷新**分片。
+
+### `class PrintSourceMixin(ImpositionBaseHost)`
+
+第四步取图目录的内容标记与待打印列表刷新。
+
+---
+
+## `desktop.pages.taskdetail.imposition.sources`
+
+源码：[`desktop/pages/taskdetail/imposition/sources.py`](../../desktop/pages/taskdetail/imposition/sources.py)
+
+拼版共享基元的**源图与生效**分片：候选源图、产物角色、第四步取图来源。
+
+### `class SourcesMixin(ImpositionBaseHost)`
+
+拼版源图清单、产物角色映射、生效判据与第四步取图目录。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `imposition_source_files() -> list[Path]` | 可挑选的源图：**拼版这一步的 pages 端口**指向的目录。 |
+| `imposition_role_map() -> dict[str, str]` | ``{产物 label: role}``（来自上游检测节点的提交计划，拼版配对用）。 |
+| `imposition_active() -> bool` | 拼版**是否已启用**（用户勾了「在流程中启用图片拼版」就是启用）。 |
+| `imposition_has_pages() -> bool` | 拼版文档里**至少有一页**版面（能不能真的合成出图）。 |
+| `print_source_dir() -> Path` | 第四步的取图目录：拼版生效 → stages/imposition，否则 stages/rembg。 |
 
 ##### `imposition_source_files() -> list[Path]`
 
@@ -8515,40 +9278,27 @@ label 记身份，而下游文件名可能跨版本不一致（计划无后缀�
 端口由谁供给"），不是在这里 if/else 挑目录——BPM 换上游时只改连线表，
 这一行不用动。
 
-### `class ImpositionMixin(ImpositionPagesMixin, ImpositionLayoutMixin, ImpositionBaseMixin)`
+---
 
-「图片拼版」节点控制器 = 模块一（页管理） + 模块二（版面/合成） + 基元。
+## `desktop.pages.taskdetail.imposition_layout.compose`
 
-方法查找顺序：模块一 → 模块二 → 共享基元；三个文件互不 import，
-只经 ``self`` 在组合后的宿主页面上协作。
+源码：[`desktop/pages/taskdetail/imposition_layout/compose.py`](../../desktop/pages/taskdetail/imposition_layout/compose.py)
+
+模块二「拼版操作」的**后台合成**分片：防抖排期、增量合成、签名记录。
+
+### `class ComposeMixin(ImpositionLayoutHost)`
+
+拼版成品合成：防抖排期、单飞/补轮、增量签名与打印源通知。
 
 ---
 
-## `desktop.pages.taskdetail.imposition_layout`
+## `desktop.pages.taskdetail.imposition_layout.constants`
 
-源码：[`desktop/pages/taskdetail/imposition_layout.py`](../../desktop/pages/taskdetail/imposition_layout.py)
+源码：[`desktop/pages/taskdetail/imposition_layout/constants.py`](../../desktop/pages/taskdetail/imposition_layout/constants.py)
 
-**模块二「拼版操作」控制器**：画布版面操作与拼版合成落盘。
+拼版版面控制器的常量（防抖窗口 / 让路阈值 / 签名侧车后缀）。
 
-对应 UI 模块二（``desktop/components/imposition/canvas.py`` +
-``panel.py``）：
-- 画布里拖动 / 缩放拉伸 / 旋转 → ``items_changed`` → 落盘 + 防抖合成；
-- **双击预览**（用户 2026-09-30）：双击空白处预览整页左右组合；
-- **右键菜单「预览图片 / 编辑图片」**：预览仍可针对单图或整页；编辑统一在
-  同一画布显示本页两张源图，点击切换活动图并分别保存有修改的源图；
-- **弹窗里「编辑」也落盘**（2026-10-07 用户定：预览弹窗不再只读）：单张
-  原图回写源图文件；整页组合只预览，不提供合成图回写入口，
-  生效链汇聚在 ``_on_imposition_zoom_image_saved``；
-- 面板的**整体旋转**（滑块/输入框增量）、复位本页版面（对当前页或
-  选中槽位做版面变换）、**删除选中图片**（2026-09-30 用户定：选中哪张
-  就能删哪张，页保留、图回未选择列表）；
-- 状态行（当前页 / 选中槽位 / 拼版是否生效 / 单图页显隐「新增图片」）；
-- **后台防抖合成**（``stages/imposition/``，列表顺序即页序）与点「生成PDF」前
-  的同步兜底合成。
-
-只通过 ``self`` 依赖共享基元（``imposition.ImpositionBaseMixin``）与宿主
-页面（``store``、``log_view``、``run_worker``、``_toast``），本文件
-**不 import** 其它拼版控制器模块。
+从 ``imposition_layout.py`` 按职责拆出：常量集中在这里，其余子模块只读不写。
 
 ### 模块常量
 
@@ -8563,9 +9313,53 @@ label 记身份，而下游文件名可能跨版本不一致（计划无后缀�
 | COMPOSE_YIELD_MAX_MS | `20000` |
 | COMPOSE_YIELD_MIN_PAGES | `3` |
 
-### `class ImpositionLayoutMixin`
+---
+
+## `desktop.pages.taskdetail.imposition_layout.layout_ops`
+
+源码：[`desktop/pages/taskdetail/imposition_layout/layout_ops.py`](../../desktop/pages/taskdetail/imposition_layout/layout_ops.py)
+
+模块二「拼版操作」的**版面操作**分片：旋转、复位、删除选中图片。
+
+### `class LayoutOpsMixin(ImpositionLayoutHost)`
+
+画布版面操作：整体/单图旋转、复位本页版面、删除选中图片。
+
+---
+
+## `desktop.pages.taskdetail.imposition_layout.mixin`
+
+源码：[`desktop/pages/taskdetail/imposition_layout/mixin.py`](../../desktop/pages/taskdetail/imposition_layout/mixin.py)
+
+拼版版面控制器（模块二）的 Mixin 装配。
+
+### `class ImpositionLayoutMixin(LayoutOpsMixin, PreviewMixin, PersistMixin, ComposeMixin)`
 
 拼版版面操作（模块二）：旋转/复位、版面落盘、防抖后台合成。
+
+---
+
+## `desktop.pages.taskdetail.imposition_layout.persist`
+
+源码：[`desktop/pages/taskdetail/imposition_layout/persist.py`](../../desktop/pages/taskdetail/imposition_layout/persist.py)
+
+模块二「拼版操作」的**版面落盘与状态行**分片。
+
+### `class PersistMixin(ImpositionLayoutHost)`
+
+版面改动落盘（拖动/缩放/旋转）与状态行刷新。
+
+---
+
+## `desktop.pages.taskdetail.imposition_layout.preview`
+
+源码：[`desktop/pages/taskdetail/imposition_layout/preview.py`](../../desktop/pages/taskdetail/imposition_layout/preview.py)
+
+模块二「拼版操作」的**预览与编辑**分片：整页预览、定位、右键编辑回写。
+
+### `class PreviewMixin(ImpositionLayoutHost)`
+
+画布双击预览、右键「预览/编辑图片」与编辑回写的生效链。
 
 #### 方法
 
@@ -8575,51 +9369,117 @@ label 记身份，而下游文件名可能跨版本不一致（计划无后缀�
 
 ---
 
-## `desktop.pages.taskdetail.imposition_pages`
+## `desktop.pages.taskdetail.imposition_pages.mixin`
 
-源码：[`desktop/pages/taskdetail/imposition_pages.py`](../../desktop/pages/taskdetail/imposition_pages.py)
+源码：[`desktop/pages/taskdetail/imposition_pages/mixin.py`](../../desktop/pages/taskdetail/imposition_pages/mixin.py)
 
-**模块一「选择拼版」控制器**：拼版页的增删与选择状态。
+拼版页管理控制器（模块一）的 Mixin 装配。
 
-对应 UI 模块一（``desktop/components/imposition/page_list.py`` +
-``picker.py``）与右侧面板的页管理按钮（``panel.py``）：
-- 启用/取消拼版（决定第四步取图来源，落盘到 ``drafts/imposition.json``）；
-- 「选择拼版」→ 弹窗挑两张加一页；或挑一张勾「自动拼版」批量加页；
-  弹窗是**一个列表**（上游剩余图 + 本任务上传过的图），也能自己上传图片
-  （2026-11-16：不再有「删除恢复」页签——删掉的图直接回到这个列表）；
-- **单图页「新增图片」**（2026-09-30）：append 模式弹窗挑 1 张并进当前页；
-- 删页入口只剩**左列**：「✕」释放单页 / 勾选悬浮框批量删除 / 清空全部
-  ——右侧面板的「删除本页拼版」按钮已删（2026-09-30 用户定）；
-  页序在左列**拖动排序**，翻页在画布下方「上一页/下一页」。
-
-只通过 ``self`` 依赖共享基元（``imposition.ImpositionBaseMixin`` 提供的
-``_imposition_doc`` / ``_save_imposition_pages`` / ``imposition_active`` /
-``_refresh_print_source`` / ``_update_imposition_status`` 等）与宿主页面
-（``step_bar``、``log_view``、``_toast``），本文件**不 import** 其它拼版
-控制器模块——两个模块的 agent 可以互不影响地改。
-
-### `class ImpositionPagesMixin`
+### `class ImpositionPagesMixin(PagesStateMixin, PickerMixin, PageOpsMixin, ThumbnailsMixin)`
 
 拼版页管理（模块一）：启用开关、加页、删页、清空。
 
 ---
 
-## `desktop.pages.taskdetail.manifest`
+## `desktop.pages.taskdetail.imposition_pages.page_ops`
 
-源码：[`desktop/pages/taskdetail/manifest.py`](../../desktop/pages/taskdetail/manifest.py)
+源码：[`desktop/pages/taskdetail/imposition_pages/page_ops.py`](../../desktop/pages/taskdetail/imposition_pages/page_ops.py)
 
-任务详情页的页面清单控制器：manifest 维护、缩略图/尺寸提供、页面增删。
+模块一「选择拼版」的**页序/删页**分片：切页、批量删除、排序、插入、释放、清空。
 
-### 模块常量
+### `class PageOpsMixin(ImpositionPagesHost)`
 
-| 名称 | 值 |
+切页、页序调整、删页/释放与清空。
+
+---
+
+## `desktop.pages.taskdetail.imposition_pages.picker`
+
+源码：[`desktop/pages/taskdetail/imposition_pages/picker.py`](../../desktop/pages/taskdetail/imposition_pages/picker.py)
+
+模块一「选择拼版」的**弹窗选图**分片：候选池、上传解析、加页/新增图片。
+
+### `class PickerMixin(ImpositionPagesHost)`
+
+「选择拼版 / 新增图片」弹窗：候选图、上传复制与成页。
+
+---
+
+## `desktop.pages.taskdetail.imposition_pages.state`
+
+源码：[`desktop/pages/taskdetail/imposition_pages/state.py`](../../desktop/pages/taskdetail/imposition_pages/state.py)
+
+模块一「选择拼版」的**启用状态**分片：读写开关与勾选回调。
+
+### `class PagesStateMixin(ImpositionPagesHost)`
+
+拼版启用开关：读盘、落盘与勾选回调。
+
+---
+
+## `desktop.pages.taskdetail.imposition_pages.thumbnails`
+
+源码：[`desktop/pages/taskdetail/imposition_pages/thumbnails.py`](../../desktop/pages/taskdetail/imposition_pages/thumbnails.py)
+
+模块一「选择拼版」的**左列缩略图**分片：可视窗口、实体管理者与刷新。
+
+### `class ThumbnailsMixin(ImpositionPagesHost)`
+
+左列页面缩略图的可见窗口、实体管理者与重生成。
+
+---
+
+## `desktop.pages.taskdetail.manifest.aggregate`
+
+源码：[`desktop/pages/taskdetail/manifest/aggregate.py`](../../desktop/pages/taskdetail/manifest/aggregate.py)
+
+聚合任务的成员产物汇集与定期刷新。
+
+### `class ManifestAggregateMixin`
+
+聚合任务输入汇集（只搬产出，拼版例外）。
+
+#### 方法
+
+| 方法 | 说明 |
 | --- | --- |
-| _ENTRY_THUMB_WARM_LIMIT | `60` |
+| `refresh_aggregate_inputs() -> None` | 页头按钮：**重新汇集**成员产物（成员后来重跑过某一步时用）。 |
+| `restart_aggregate_ingest(task_id: str) -> bool` | **已经确认过**要重取数时直接开工（不弹确认框，返回是否真起了）。 |
 
-### `class PageListMixin`
+##### `refresh_aggregate_inputs() -> None`
 
-依赖宿主页面提供的属性：store/task_id、pages、pdf_page_count、
-preview_stack、detect_viewer、extract_result_viewer、log_view、_toast()。
+页头按钮：**重新汇集**成员产物（成员后来重跑过某一步时用）。
+
+聚合任务的输入与产出是"创建那一刻"的**快照**（按成员顺序复制，见
+:mod:`desktop.services.aggregate_ingest`）。成员重跑之后这份快照就
+过期了，而聚合任务的成员/顺序是创建时定的——没有这个入口，用户只能
+删掉聚合任务重选一遍成员。
+
+⚠️ 会**覆盖**聚合任务现有的输入/产出（只动 ``NNN_`` 前缀的文件与
+起点那条合成记录），所以先弹确认框；确认后整套搬运在后台跑。
+
+##### `restart_aggregate_ingest(task_id: str) -> bool`
+
+**已经确认过**要重取数时直接开工（不弹确认框，返回是否真起了）。
+
+供流程页"改了起始节点"用（用户 2026-11-18）：起点一变，旧起点汇集的
+输入与处理结果就作废了，必须立刻按新起点重取一遍——否则详情页那一步
+永远没有数据，用户还得自己去点页头那颗 ⟳。
+
+⚠️ 不做确认：调用方（``TaskFlowPage._on_done``）已经弹过"历史数据
+作废"的确认框，这里再问一次就是重复打扰。
+
+---
+
+## `desktop.pages.taskdetail.manifest.pages`
+
+源码：[`desktop/pages/taskdetail/manifest/pages.py`](../../desktop/pages/taskdetail/manifest/pages.py)
+
+页面清单的增删与插入（插入/上传的落点由 services 决定）。
+
+### `class ManifestPagesMixin`
+
+页面增删、插入图片/文件夹、打开任务目录。
 
 #### 方法
 
@@ -8628,10 +9488,6 @@ preview_stack、detect_viewer、extract_result_viewer、log_view、_toast()。
 | `delete_selected_page() -> None` | 删除当前选中的页面：按路径反查 manifest 下标后落盘。 |
 | `insert_pages_from_folder() -> None` | 「选文件夹」按钮：把**一个目录**里的图片批量插进来（用户 2026-10-06）。 |
 | `insert_pages() -> None` | 「＋」按钮：插入**图片**（可多选），复制到当前这一步的输入目录。 |
-| `refresh_aggregate_inputs() -> None` | 页头按钮：**重新汇集**成员产物（成员后来重跑过某一步时用）。 |
-| `restart_aggregate_ingest(task_id: str) -> bool` | **已经确认过**要重取数时直接开工（不弹确认框，返回是否真起了）。 |
-| `resizeEvent(event) -> None` | 窗口尺寸变了：让「缺源 PDF」提示层**跟着重铺**。 |
-| `showEvent(event) -> None` | 页面真正显示出来：把「缺源 PDF」提示层铺到**最终**尺寸上。 |
 
 ##### `delete_selected_page() -> None`
 
@@ -8672,28 +9528,50 @@ preview_stack、detect_viewer、extract_result_viewer、log_view、_toast()。
 ``store.stage_input``，它在无上游时回落到 ``stages/input/``，
 与执行时读的是**同一个目录**。
 
-##### `refresh_aggregate_inputs() -> None`
+---
 
-页头按钮：**重新汇集**成员产物（成员后来重跑过某一步时用）。
+## `desktop.pages.taskdetail.manifest.reconcile`
 
-聚合任务的输入与产出是"创建那一刻"的**快照**（按成员顺序复制，见
-:mod:`desktop.services.aggregate_ingest`）。成员重跑之后这份快照就
-过期了，而聚合任务的成员/顺序是创建时定的——没有这个入口，用户只能
-删掉聚合任务重选一遍成员。
+源码：[`desktop/pages/taskdetail/manifest/reconcile.py`](../../desktop/pages/taskdetail/manifest/reconcile.py)
 
-⚠️ 会**覆盖**聚合任务现有的输入/产出（只动 ``NNN_`` 前缀的文件与
-起点那条合成记录），所以先弹确认框；确认后整套搬运在后台跑。
+页面清单按 stem 对齐到目录里的实际文件（独立任务页复用）。
 
-##### `restart_aggregate_ingest(task_id: str) -> bool`
+### 模块函数
 
-**已经确认过**要重取数时直接开工（不弹确认框，返回是否真起了）。
+| 函数 | 说明 |
+| --- | --- |
+| `reconcile_page_files(pages: list[dict], directory: Path) -> tuple[list[dict], int]` | 把页面清单按 **stem** 对齐到目录里的实际文件（jpg/png 等格式都支持）。 |
 
-供流程页"改了起始节点"用（用户 2026-11-18）：起点一变，旧起点汇集的
-输入与处理结果就作废了，必须立刻按新起点重取一遍——否则详情页那一步
-永远没有数据，用户还得自己去点页头那颗 ⟳。
+#### `reconcile_page_files(pages: list[dict], directory: Path) -> tuple[list[dict], int]`
 
-⚠️ 不做确认：调用方（``TaskFlowPage._on_done``）已经弹过"历史数据
-作废"的确认框，这里再问一次就是重复打扰。
+把页面清单按 **stem** 对齐到目录里的实际文件（jpg/png 等格式都支持）。
+
+- 清单里的路径还在 → 原样保留；
+- 路径不在、但有同 stem 的其它格式（png ↔ jpg）→ 换成实际存在的那个；
+- 同 stem 同时有多个格式 → 优先保留原后缀，否则取目录里排序后的第一个；
+- 完全找不到同 stem → 原样保留（由 ``_manifest_paths`` 过滤），不清空清单。
+
+返回 ``(新清单, 对上的页数)``。对上的页数为 0 表示上游整批换了产物，
+调用方应整表重建；目录读不了时返回 ``-1``，调用方保持原样（不误清空）。
+
+---
+
+## `desktop.pages.taskdetail.manifest.source_pick`
+
+源码：[`desktop/pages/taskdetail/manifest/source_pick.py`](../../desktop/pages/taskdetail/manifest/source_pick.py)
+
+选择/替换源文件：后台算指纹、查重确认、换源后复位产物。
+
+### `class ManifestSourcePickMixin`
+
+选择与替换源文件（指纹 / 查重 / 产物复位）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `resizeEvent(event) -> None` | 窗口尺寸变了：让「缺源 PDF」提示层**跟着重铺**。 |
+| `showEvent(event) -> None` | 页面真正显示出来：把「缺源 PDF」提示层铺到**最终**尺寸上。 |
 
 ##### `resizeEvent(event) -> None`
 
@@ -8733,55 +9611,77 @@ resize 子控件再 show），在这里重铺一次就对了。⚠️ 别改成"
 真正显示出来时这一句会重新 ``show_prompt()``（内部先重铺再 show），
 用户看到的才是铺好的那一版。
 
-### 模块函数
+---
 
-| 函数 | 说明 |
-| --- | --- |
-| `reconcile_page_files(pages: list[dict], directory: Path) -> tuple[list[dict], int]` | 把页面清单按 **stem** 对齐到目录里的实际文件（jpg/png 等格式都支持）。 |
+## `desktop.pages.taskdetail.manifest.source_prompt`
 
-#### `reconcile_page_files(pages: list[dict], directory: Path) -> tuple[list[dict], int]`
+源码：[`desktop/pages/taskdetail/manifest/source_prompt.py`](../../desktop/pages/taskdetail/manifest/source_prompt.py)
 
-把页面清单按 **stem** 对齐到目录里的实际文件（jpg/png 等格式都支持）。
+缺源提示：入口输入类型判定、页内提示层、页头按钮红框高亮。
 
-- 清单里的路径还在 → 原样保留；
-- 路径不在、但有同 stem 的其它格式（png ↔ jpg）→ 换成实际存在的那个；
-- 同 stem 同时有多个格式 → 优先保留原后缀，否则取目录里排序后的第一个；
-- 完全找不到同 stem → 原样保留（由 ``_manifest_paths`` 过滤），不清空清单。
+### `class ManifestSourcePromptMixin`
 
-返回 ``(新清单, 对上的页数)``。对上的页数为 0 表示上游整批换了产物，
-调用方应整表重建；目录读不了时返回 ``-1``，调用方保持原样（不误清空）。
+缺源提示层与入口工具按钮高亮。
 
 ---
 
-## `desktop.pages.taskdetail.page`
+## `desktop.pages.taskdetail.manifest.sync`
 
-源码：[`desktop/pages/taskdetail/page.py`](../../desktop/pages/taskdetail/page.py)
+源码：[`desktop/pages/taskdetail/manifest/sync.py`](../../desktop/pages/taskdetail/manifest/sync.py)
 
-任务详情页：顶部步骤条 + 左侧多标签预览 + 右侧阶段控制面板。
+页面清单与当前步骤输入目录的对齐（含聚合任务起点判定）。
 
-预览区按阶段组织：
-- extract：**单缩略图**预览——左栏是 PDF 每页一份缩略图，切到某页时
-  该页的提取产物已存在就显示产物，没有就后台单页提取落盘
-  （``stages/extract``，与批量提取同一条实现）后显示（用户 2026-10-09：
-  不再分「PDF 预览 | 提取结果」双标签）；
-- detect：图片预览，叠加显示每张图的检测框位置；
-- rembg：原图 / 去底结果对比；
-- print：输出 PDF 预览。
+### `class ManifestSyncMixin`
 
-本文件只保留页面骨架（任务切换、阶段切换、状态刷新），
-其余职责按功能分文件（均位于 desktop/pages/taskdetail/）：
-- view.DetailViewMixin       UI 组装（头部/步骤条/预览区/控制列/日志）
-- manifest.PageListMixin     页面清单、缩略图、页面增删
-- history.HistoryMixin       历史执行配置回填（暂存优先）
-- params_draft.ParamDraftMixin 参数暂存（改过没执行也不丢）
-- submit.SubmitMixin         检测提交控制器与按钮状态
-- print_list.PrintListMixin  第四步待打印列表
-- runner.StageRunnerMixin    阶段执行（worker 子进程编排）
-- detect.DetectMixin         detect 检测控制
-- rembg_live.RembgLiveMixin  第三步改参数/翻页时只重算当前页（只写预览草稿）
-- imposition.ImpositionMixin 流程条「图片拼版」可选节点
-  （共享基元 imposition.py + 模块一 imposition_pages.py「选择拼版」
-  + 模块二 imposition_layout.py「拼版操作」）
+清单同步：把页面清单对齐到当前步骤的输入目录。
+
+---
+
+## `desktop.pages.taskdetail.manifest.thumbs`
+
+源码：[`desktop/pages/taskdetail/manifest/thumbs.py`](../../desktop/pages/taskdetail/manifest/thumbs.py)
+
+页面清单的缩略图与尺寸：图头尺寸缓存、编辑回写后的刷新、入口预热。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| _ENTRY_THUMB_WARM_LIMIT | `60` |
+
+### `class ManifestThumbsMixin`
+
+缩略图/尺寸提供与编辑回写后的刷新。
+
+---
+
+## `desktop.pages.taskdetail.manifest.widget`
+
+源码：[`desktop/pages/taskdetail/manifest/widget.py`](../../desktop/pages/taskdetail/manifest/widget.py)
+
+任务详情页页面清单控制器的装配点（由 ``manifest.py`` 拆出，只搬不改）。
+
+- sync：清单与输入目录对齐、聚合起点判定
+- thumbs：页缩略图、尺寸、编辑回写后的刷新
+- pages：页面增删 / 插入 / 打开目录
+- aggregate：聚合任务输入汇集与刷新
+- source_prompt：缺源提示层、入口动作高亮
+- source_pick：选择/替换源文件、查重与产物复位
+- reconcile：清单按 stem 对齐到目录实际文件
+- thumbs 里定义 ``_ENTRY_THUMB_WARM_LIMIT``，``source_prompt`` 里定义
+  ``_set_tool_highlight``。
+
+### `class PageListMixin(ManifestSyncMixin, ManifestThumbsMixin, ManifestPagesMixin, ManifestAggregateMixin, ManifestSourcePromptMixin, ManifestSourcePickMixin)`
+
+页面清单控制器：清单维护、缩略图/尺寸提供、页面增删。
+
+---
+
+## `desktop.pages.taskdetail.page.constants`
+
+源码：[`desktop/pages/taskdetail/page/constants.py`](../../desktop/pages/taskdetail/page/constants.py)
+
+任务详情页模块级常量。
 
 ### 模块常量
 
@@ -8789,19 +9689,91 @@ resize 子控件再 show），在这里重铺一次就对了。⚠️ 别改成"
 | --- | --- |
 | INPUT_NODE_POLL_MS | `1200` |
 
-### `class TaskDetailPage(StageRunnerMixin, SubmitMixin, RembgLiveMixin, PrintListMixin, ParamDraftMixin, HistoryMixin, DetectMixin, ImpositionMixin, PageListMixin, DetailViewMixin, FlowMixin, ImageEditActionsMixin, QWidget, WorkerHost)`
+---
 
-任务详情页：由多个 Mixin 组合，固定四阶段流程。
+## `desktop.pages.taskdetail.page.edit_menu`
 
-编排 extract→detect→rembg→print 四阶段；各职责（预览、清单、历史、
-提交、执行、检测）分散到同级 Mixin，本类只持有任务切换与阶段切换骨架。
+源码：[`desktop/pages/taskdetail/page/edit_menu.py`](../../desktop/pages/taskdetail/page/edit_menu.py)
+
+任务详情页「编辑」菜单按当前阶段分派（删除/插入/下载/打印）。
+
+### `class EditMenuMixin`
+
+「编辑」菜单：按当前阶段分派 can_edit_* / edit_* 四对方法。
 
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(store, parent=None)` | 初始化详情页：建 worker 宿主、清运行态并组装 UI。 |
-| `set_task(task_id: str) -> bool` | 切换当前任务：复位所有阶段面板与运行态，避免跨任务泄漏。 |
+| `can_edit_delete_selected() -> bool` | — |
+| `edit_delete_selected() -> None` | — |
+| `can_edit_insert_images() -> bool` | — |
+| `edit_insert_images() -> None` | — |
+
+---
+
+## `desktop.pages.taskdetail.page.lifecycle`
+
+源码：[`desktop/pages/taskdetail/page/lifecycle.py`](../../desktop/pages/taskdetail/page/lifecycle.py)
+
+任务详情页的收尾：toast、关窗口、关前补发、停全部 worker。
+
+### `class PageLifecycleMixin`
+
+页面收尾与关窗前补发。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `closeEvent(event) -> None` | 关闭页面时杀掉并等待 worker/detect 子进程，并关停所有后台线程。 |
+| `flush_layout_pending() -> None` | 把各处"未提交的界面改动"补发/落盘（关窗口、切步骤、切页前都要调）。 |
+| `shutdown_all_workers() -> None` | 连同各预览控件自己的缩略图线程一起收尾。 |
+
+##### `closeEvent(event) -> None`
+
+关闭页面时杀掉并等待 worker/detect 子进程，并关停所有后台线程。
+
+详情页持有 QProcess 与多个 WorkerHost 线程；先 kill 正在跑的执行/
+检测子进程并等待（最多 1.5s），再 shutdown_all_workers 收尾其余线程，
+最后接受关闭事件，避免解释器退出时被强杀崩溃。
+
+##### `flush_layout_pending() -> None`
+
+把各处"未提交的界面改动"补发/落盘（关窗口、切步骤、切页前都要调）。
+
+目前是第四步的版面画布与拼版画布：拖动中不落盘，只在松手/补发时提交。
+
+⚠️ **只按具体的类 `findChildren`，绝不用 `getattr(widget, ...)` 探测能力**：
+四个阶段面板是 `LazyPanelHost`，属性转发（`__getattr__`）会**立刻把面板
+构造出来**——那就把用户要求的「不进去就不建」破坏掉了。（2026-09-26 自己
+踩到：写成 `getattr(w, "flush_pending", None)` 之后，`detail_prewarm`
+护栏直接红成"四个面板全建"。）
+⚠️ 拼版画布是**直接构造**的（不在 LazyPanelHost 里），按类查安全。
+
+##### `shutdown_all_workers() -> None`
+
+连同各预览控件自己的缩略图线程一起收尾。
+
+页面自身、PDF 预览、打印预览、缩略图条分别持有 WorkerHost 的线程，
+只停页面的会让其余线程在解释器退出时被强杀（偶发崩溃/卡顿）。
+
+---
+
+## `desktop.pages.taskdetail.page.nodes`
+
+源码：[`desktop/pages/taskdetail/page/nodes.py`](../../desktop/pages/taskdetail/page/nodes.py)
+
+任务详情页的节点索引：流程槽位、节点寻址、当前阶段。
+
+### `class NodeIndexMixin`
+
+节点索引与槽位查询（B 方案：同一步骤可有多个节点实例）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
 | `flow_slots() -> tuple` | 本任务流程投影出的**界面槽位**（BPM 驱动界面的唯一入口）。 |
 | `step_at_index(index: int) -> str \| None` | 步骤条格序 → **界面步骤 key**；这一格不在本流程里返回 ``None``。 |
 | `stage_at_index(index: int) -> str \| None` | 步骤条格序 → **运行阶段**（``control_stack`` 页号语义那一层）。 |
@@ -8817,35 +9789,6 @@ resize 子控件再 show），在这里重铺一次就对了。⚠️ 别改成"
 | `panel_host_of_step(step: str) -> Any` | 界面步骤 key → ``control_stack`` 里那一页的宿主控件。 |
 | `stack_index_of_step(step: str) -> int \| None` | 界面步骤 key → 两个栈的页号；这一步不在本流程里返回 ``None``。 |
 | `current_stage() -> str` | 返回当前所处阶段的key（extract/detect/rembg/print/imposition）。 |
-| `can_edit_delete_selected() -> bool` | — |
-| `edit_delete_selected() -> None` | — |
-| `can_edit_insert_images() -> bool` | — |
-| `edit_insert_images() -> None` | — |
-| `can_edit_download_image() -> bool` | — |
-| `edit_download_image() -> None` | — |
-| `can_edit_print_image() -> bool` | — |
-| `edit_print_image() -> None` | — |
-| `navigate_by_arrow(forward: bool) -> bool` | 方向键切换当前步骤的页面（主窗口 ←/→ 转发入口）。 |
-| `keyPressEvent(event) -> None` | ←/→ 切换当前步骤的页面（焦点链不消费时兜底到达这里）。 |
-| `release_stage_buffers(stage: str \| None=None) -> None` | 丢掉某一步骤（``None`` = 全部）预览区里**可重建的位图**。 |
-| `closeEvent(event) -> None` | 关闭页面时杀掉并等待 worker/detect 子进程，并关停所有后台线程。 |
-| `flush_layout_pending() -> None` | 把各处"未提交的界面改动"补发/落盘（关窗口、切步骤、切页前都要调）。 |
-| `shutdown_all_workers() -> None` | 连同各预览控件自己的缩略图线程一起收尾。 |
-
-##### `__init__(store, parent=None)`
-
-初始化详情页：建 worker 宿主、清运行态并组装 UI。
-
-创建 store 引用与 _init_worker_host 后台线程宿主；初始化全部运行态
-字段（task_id/process/run_id/detect_cache 等）为空，再构建界面骨架。
-
-##### `set_task(task_id: str) -> bool`
-
-切换当前任务：复位所有阶段面板与运行态，避免跨任务泄漏。
-
-加载任务后先调用各面板 reset_to_default 清掉上一任务手改参数，再清
-detect 缓存/运行态引用并刷新清单与预览；防止参数或 run_id 串到新任务。
-返回 False = 拒绝切换（任务不存在 / 步骤执行中），调用方应留在原地。
 
 ##### `flow_slots() -> tuple`
 
@@ -8974,16 +9917,23 @@ B 方案（2026-10-17）：同一步骤可以有多个节点，每个节点各�
 里查的，都必须先挡掉（见 _refresh_stage_views / _apply_control_width
 等处的守卫）。
 
-##### `navigate_by_arrow(forward: bool) -> bool`
+---
 
-方向键切换当前步骤的页面（主窗口 ←/→ 转发入口）。
+## `desktop.pages.taskdetail.page.page_preview`
 
-返回是否消费（主窗口据此决定要不要继续处理）。
-「焦点在哪里，哪里就切换」：
-- 焦点在**输入类控件**上时不抢（`_ARROW_OCCUPIED` 表——参数输入区
-  的方向键移光标/改值，用户 18:30 明确那里不需要切换）；
-- 焦点在预览弹窗里则由弹窗自己的窗口级 QShortcut 接管；
-- 四个步骤的主预览都支持（移动缩略图条当前行，联动预览刷新）。
+源码：[`desktop/pages/taskdetail/page/page_preview.py`](../../desktop/pages/taskdetail/page/page_preview.py)
+
+任务详情页的预览刷新：切步骤重装预览、位图释放、聚合起点轮询。
+
+### `class PagePreviewMixin`
+
+预览刷新与阶段位图生命周期。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `release_stage_buffers(stage: str \| None=None) -> None` | 丢掉某一步骤（``None`` = 全部）预览区里**可重建的位图**。 |
 
 ##### `release_stage_buffers(stage: str | None=None) -> None`
 
@@ -9008,33 +9958,122 @@ use-after-free（切换任务详情瞬间，Qt6Widgets notify_helper 写已释�
 那条"禁 getattr"约束针对的是 LazyPanelHost（它的 ``__getattr__``
 会把面板顺带建出来），与此无关。
 
-##### `closeEvent(event) -> None`
+---
 
-关闭页面时杀掉并等待 worker/detect 子进程，并关停所有后台线程。
+## `desktop.pages.taskdetail.page.run_control`
 
-详情页持有 QProcess 与多个 WorkerHost 线程；先 kill 正在跑的执行/
-检测子进程并等待（最多 1.5s），再 shutdown_all_workers 收尾其余线程，
-最后接受关闭事件，避免解释器退出时被强杀崩溃。
+源码：[`desktop/pages/taskdetail/page/run_control.py`](../../desktop/pages/taskdetail/page/run_control.py)
 
-##### `flush_layout_pending() -> None`
+任务详情页的执行控制：执行权占用、防抖、按钮状态。
 
-把各处"未提交的界面改动"补发/落盘（关窗口、切步骤、切页前都要调）。
+### `class RunControlMixin`
 
-目前是第四步的版面画布与拼版画布：拖动中不落盘，只在松手/补发时提交。
+执行权占用与执行按钮状态。
 
-⚠️ **只按具体的类 `findChildren`，绝不用 `getattr(widget, ...)` 探测能力**：
-四个阶段面板是 `LazyPanelHost`，属性转发（`__getattr__`）会**立刻把面板
-构造出来**——那就把用户要求的「不进去就不建」破坏掉了。（2026-09-26 自己
-踩到：写成 `getattr(w, "flush_pending", None)` 之后，`detail_prewarm`
-护栏直接红成"四个面板全建"。）
-⚠️ 拼版画布是**直接构造**的（不在 LazyPanelHost 里），按类查安全。
+---
 
-##### `shutdown_all_workers() -> None`
+## `desktop.pages.taskdetail.page.stage_state`
 
-连同各预览控件自己的缩略图线程一起收尾。
+源码：[`desktop/pages/taskdetail/page/stage_state.py`](../../desktop/pages/taskdetail/page/stage_state.py)
 
-页面自身、PDF 预览、打印预览、缩略图条分别持有 WorkerHost 的线程，
-只停页面的会让其余线程在解释器退出时被强杀（偶发崩溃/卡顿）。
+任务详情页的阶段状态：槽位状态、步骤条刷新、「上游已过期」提示。
+
+### `class StageStateMixin`
+
+阶段状态计算与刷新（步骤条 / 过期提示 / 重新生成提示）。
+
+---
+
+## `desktop.pages.taskdetail.page.stage_switch`
+
+源码：[`desktop/pages/taskdetail/page/stage_switch.py`](../../desktop/pages/taskdetail/page/stage_switch.py)
+
+任务详情页的阶段切换：索引换算、记忆停留、切步骤主入口。
+
+### `class StageSwitchMixin`
+
+阶段切换与「上次停留的步骤」记忆。
+
+---
+
+## `desktop.pages.taskdetail.page.task_switch`
+
+源码：[`desktop/pages/taskdetail/page/task_switch.py`](../../desktop/pages/taskdetail/page/task_switch.py)
+
+任务详情页的任务切换：复位运行态、换源文件、补建副本、返回列表。
+
+### `class TaskSwitchMixin`
+
+任务切换与源文件生命周期（依赖宿主页面提供的界面控件）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `set_task(task_id: str) -> bool` | 切换当前任务：复位所有阶段面板与运行态，避免跨任务泄漏。 |
+
+##### `set_task(task_id: str) -> bool`
+
+切换当前任务：复位所有阶段面板与运行态，避免跨任务泄漏。
+
+加载任务后先调用各面板 reset_to_default 清掉上一任务手改参数，再清
+detect 缓存/运行态引用并刷新清单与预览；防止参数或 run_id 串到新任务。
+返回 False = 拒绝切换（任务不存在 / 步骤执行中），调用方应留在原地。
+
+---
+
+## `desktop.pages.taskdetail.page.widget`
+
+源码：[`desktop/pages/taskdetail/page/widget.py`](../../desktop/pages/taskdetail/page/widget.py)
+
+任务详情页的**装配点**：信号、任务级类属性、``__init__``、方向键入口。
+
+由 ``page.py`` 拆出（只搬不改）。其余职责分散在兄弟模块的 Mixin 里：
+- task_switch：任务切换、源文件副本补建、返回列表
+- nodes：节点索引 / 槽位查询 / 当前阶段
+- stage_switch：编辑菜单分派、阶段切换、上次停留
+- stage_state：阶段状态与「上游已过期」提示
+- run_control：执行权与按钮状态
+- page_preview：预览刷新、阶段位图释放、聚合起点轮询
+- lifecycle：toast、关窗口、关前补发、worker 收尾
+- edit_menu：``can_edit_* / edit_*`` 编辑菜单分派
+- constants：模块级常量
+
+⚠️ Signal 必须声明在这个 QWidget 子类里（Mixin 是普通类，声明不了）。
+
+### `class TaskDetailPage(TaskSwitchMixin, NodeIndexMixin, EditMenuMixin, StageSwitchMixin, StageStateMixin, RunControlMixin, PagePreviewMixin, PageLifecycleMixin, StageRunnerMixin, SubmitMixin, RembgLiveMixin, PrintListMixin, ParamDraftMixin, HistoryMixin, DetectMixin, ImpositionMixin, PageListMixin, DetailViewMixin, FlowMixin, ImageEditActionsMixin, QWidget, WorkerHost)`
+
+任务详情页：由多个 Mixin 组合，固定四阶段流程。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(store, parent=None)` | 初始化详情页：建 worker 宿主、清运行态并组装 UI。 |
+| `can_edit_download_image() -> bool` | — |
+| `edit_download_image() -> None` | — |
+| `can_edit_print_image() -> bool` | — |
+| `edit_print_image() -> None` | — |
+| `navigate_by_arrow(forward: bool) -> bool` | 方向键切换当前步骤的页面（主窗口 ←/→ 转发入口）。 |
+| `keyPressEvent(event) -> None` | ←/→ 切换当前步骤的页面（焦点链不消费时兜底到达这里）。 |
+
+##### `__init__(store, parent=None)`
+
+初始化详情页：建 worker 宿主、清运行态并组装 UI。
+
+创建 store 引用与 _init_worker_host 后台线程宿主；初始化全部运行态
+字段（task_id/process/run_id/detect_cache 等）为空，再构建界面骨架。
+
+##### `navigate_by_arrow(forward: bool) -> bool`
+
+方向键切换当前步骤的页面（主窗口 ←/→ 转发入口）。
+
+返回是否消费（主窗口据此决定要不要继续处理）。
+「焦点在哪里，哪里就切换」：
+- 焦点在**输入类控件**上时不抢（`_ARROW_OCCUPIED` 表——参数输入区
+  的方向键移光标/改值，用户 18:30 明确那里不需要切换）；
+- 焦点在预览弹窗里则由弹窗自己的窗口级 QShortcut 接管；
+- 四个步骤的主预览都支持（移动缩略图条当前行，联动预览刷新）。
 
 ---
 
@@ -9132,9 +10171,25 @@ use-after-free（切换任务详情瞬间，Qt6Widgets notify_helper 写已释�
 
 ## `desktop.pages.taskdetail.print_list`
 
-源码：[`desktop/pages/taskdetail/print_list.py`](../../desktop/pages/taskdetail/print_list.py)
+源码：[`desktop/pages/taskdetail/print_list/__init__.py`](../../desktop/pages/taskdetail/print_list/__init__.py)
 
 任务详情页的第四步（print）列表控制器：条目规划、排序持久化、插入、下载。
+
+2026-11-22 起由单文件拆成子包，对外导入路径
+``desktop.pages.taskdetail.print_list`` 与名字完全不变。
+
+### `class PrintListMixin(PrintThumbsMixin, PrintEntriesMixin, PrintManageMixin, PrintPdfMixin)`
+
+依赖宿主页面提供的属性：store/task_id、print_preview、log_view、
+_toast()。
+
+---
+
+## `desktop.pages.taskdetail.print_list.constants`
+
+源码：[`desktop/pages/taskdetail/print_list/constants.py`](../../desktop/pages/taskdetail/print_list/constants.py)
+
+print_list 子包共享常量（从原 ``print_list.py`` 拆出）。
 
 ### 模块常量
 
@@ -9142,10 +10197,41 @@ use-after-free（切换任务详情瞬间，Qt6Widgets notify_helper 写已释�
 | --- | --- |
 | PRINT_WARM_DELAY_MS | `200` |
 
-### `class PrintListMixin`
+---
 
-依赖宿主页面提供的属性：store/task_id、print_preview、log_view、
-_toast()。
+## `desktop.pages.taskdetail.print_list.entries`
+
+源码：[`desktop/pages/taskdetail/print_list/entries.py`](../../desktop/pages/taskdetail/print_list/entries.py)
+
+待打印条目的规划与顺序持久化（从原 ``print_list.py`` 拆出）。
+
+### `class PrintEntriesMixin(PrintListHost)`
+
+条目规划（``plan_print_entries``）与 ``print.json`` 落盘。
+
+---
+
+## `desktop.pages.taskdetail.print_list.manage`
+
+源码：[`desktop/pages/taskdetail/print_list/manage.py`](../../desktop/pages/taskdetail/print_list/manage.py)
+
+「管理图片」与「插入图片」弹窗（从原 ``print_list.py`` 拆出）。
+
+### `class PrintManageMixin(PrintListHost)`
+
+管理/插入图片对话框、改名与批量插入后的落盘。
+
+---
+
+## `desktop.pages.taskdetail.print_list.pdf`
+
+源码：[`desktop/pages/taskdetail/print_list/pdf.py`](../../desktop/pages/taskdetail/print_list/pdf.py)
+
+已生成 PDF 的定位、下载与导出打印（从原 ``print_list.py`` 拆出）。
+
+### `class PrintPdfMixin(PrintListHost)`
+
+PDF 路径解析、旧数据判定、另存与逐页导出。
 
 #### 方法
 
@@ -9162,6 +10248,18 @@ _toast()。
 ⚠️ 与 :meth:`print_source_dir` 同源：那边取路径、这边取 key，都走
 ``ports.print_pages_supplier(imposition_active())`` 这一次判定——
 "PDF 是从哪儿取的"只有一个答案，不许两处各判一次。
+
+---
+
+## `desktop.pages.taskdetail.print_list.thumbs`
+
+源码：[`desktop/pages/taskdetail/print_list/thumbs.py`](../../desktop/pages/taskdetail/print_list/thumbs.py)
+
+待打印图的缩略图供给与预热（从原 ``print_list.py`` 拆出）。
+
+### `class PrintThumbsMixin(PrintListHost)`
+
+缩略图缓存键、预热节流与失效重刷。
 
 ---
 
@@ -9194,27 +10292,33 @@ _latest_success_run() / panel_host_of_step() / imposition_effective()。
 
 ---
 
-## `desktop.pages.taskdetail.runner`
+## `desktop.pages.taskdetail.runner.finish`
 
-源码：[`desktop/pages/taskdetail/runner.py`](../../desktop/pages/taskdetail/runner.py)
+源码：[`desktop/pages/taskdetail/runner/finish.py`](../../desktop/pages/taskdetail/runner/finish.py)
 
-任务详情页的阶段执行控制器：构建参数、启动 worker 子进程、解析进度日志。
+阶段收尾：识别结果、写 runs.json、刷新状态与提示。
 
-纯业务派生规则见 desktop/services/print_plan.py，
-检测提交控制器见 desktop/pages/taskdetail/submit.py，
-历史配置回填见 desktop/pages/taskdetail/history.py。
+### `class StageFinishMixin`
 
-### `class StageRunnerMixin`
+阶段收尾（含看门狗兜底）。
 
-依赖宿主页面提供的属性：store/task_id/source_path/pages、
-control_stack、stage_* 控件、log_view、process/run_id 等。
+---
+
+## `desktop.pages.taskdetail.runner.launch`
+
+源码：[`desktop/pages/taskdetail/runner/launch.py`](../../desktop/pages/taskdetail/runner/launch.py)
+
+阶段执行入口：执行权校验、输入就绪判定。
+
+### `class StageLaunchMixin`
+
+阶段执行入口（run_stage）与输入就绪判据。
 
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
 | `run_stage(resume: bool=False) -> None` | 启动当前阶段的 worker 子进程（带执行权守卫，防连点起两个）。 |
-| `cancel_stage() -> None` | 中断正在执行的阶段：先落 cancelled 再 kill 子进程。 |
 
 ##### `run_stage(resume: bool=False) -> None`
 
@@ -9231,12 +10335,99 @@ control_stack、stage_* 控件、log_view、process/run_id 等。
 ⚠️ 「图片拼版」伪步骤没有可执行内容（占位详情页，执行按钮组处于
 隐藏态）；这里再挡一道，防自动化/快捷路径绕过可见性直接触发。
 
+---
+
+## `desktop.pages.taskdetail.runner.process_io`
+
+源码：[`desktop/pages/taskdetail/runner/process_io.py`](../../desktop/pages/taskdetail/runner/process_io.py)
+
+阶段子进程的启动、日志标签、输出路径与取消。
+
+### `class StageProcessMixin`
+
+子进程传输层接线：启动、输出路径、取消。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `cancel_stage() -> None` | 中断正在执行的阶段：先落 cancelled 再 kill 子进程。 |
+
 ##### `cancel_stage() -> None`
 
 中断正在执行的阶段：先落 cancelled 再 kill 子进程。
 
 先立即把运行记录置为 cancelled——防止进程被强杀来不及回调时状态永远
 停留 running（重启后按钮状态错乱）；随后置 cancel_requested 并 kill。
+
+---
+
+## `desktop.pages.taskdetail.runner.progress_ui`
+
+源码：[`desktop/pages/taskdetail/runner/progress_ui.py`](../../desktop/pages/taskdetail/runner/progress_ui.py)
+
+阶段执行的进度/日志界面节流器。
+
+### `class ProgressUiMixin`
+
+进度与日志的界面刷新节流。
+
+---
+
+## `desktop.pages.taskdetail.runner.stage_exec`
+
+源码：[`desktop/pages/taskdetail/runner/stage_exec.py`](../../desktop/pages/taskdetail/runner/stage_exec.py)
+
+一次完整阶段执行：参数校验、effects 组装、写运行配置并起进程。
+
+### `class StageExecMixin`
+
+真正执行一个阶段（不含执行权守卫）。
+
+---
+
+## `desktop.pages.taskdetail.runner.widget`
+
+源码：[`desktop/pages/taskdetail/runner/widget.py`](../../desktop/pages/taskdetail/runner/widget.py)
+
+阶段执行的装配点（由 ``runner.py`` 拆出，只搬不改）。
+
+- progress_ui：进度/日志/统计的界面节流器
+- launch：run_stage 入口与输入就绪判据
+- stage_exec：一次完整阶段执行（参数校验 / effects / 写运行配置）
+- process_io：启动子进程、输出落点、取消与暂存回收
+- worker_events：worker 事件消费（stdout/progress/page_done）
+- worker_output：尺寸/页框落盘、统计刷新、stderr 错误采集
+- finish：收尾（runs.json 落盘、结果识别、后续状态）
+- constants：``STATUS_LABELS``
+
+### `class StageRunnerMixin(ProgressUiMixin, StageLaunchMixin, StageExecMixin, StageProcessMixin, WorkerEventsMixin, WorkerOutputMixin, StageFinishMixin)`
+
+阶段执行（worker 子进程编排）。
+
+---
+
+## `desktop.pages.taskdetail.runner.worker_events`
+
+源码：[`desktop/pages/taskdetail/runner/worker_events.py`](../../desktop/pages/taskdetail/runner/worker_events.py)
+
+worker 事件消费：stdout 半行缓冲、progress / page_done、去底色反馈。
+
+### `class WorkerEventsMixin`
+
+worker 事件消费。
+
+---
+
+## `desktop.pages.taskdetail.runner.worker_output`
+
+源码：[`desktop/pages/taskdetail/runner/worker_output.py`](../../desktop/pages/taskdetail/runner/worker_output.py)
+
+worker 输出的落盘与错误采集：页面尺寸/检测框攒批、统计刷新、stderr。
+
+### `class WorkerOutputMixin`
+
+输出落盘与错误采集。
 
 ---
 
@@ -9328,7 +10519,7 @@ qfluent 的 ``MessageBox`` 是主窗口里的**子控件遮罩层**，点按钮�
 
 ## `desktop.pages.taskdetail.view`
 
-源码：[`desktop/pages/taskdetail/view.py`](../../desktop/pages/taskdetail/view.py)
+源码：[`desktop/pages/taskdetail/view/__init__.py`](../../desktop/pages/taskdetail/view/__init__.py)
 
 任务详情页的视图构建：头部/步骤条/预览区/控制列/日志的 UI 组装。
 
@@ -9341,6 +10532,58 @@ qfluent 的 ``MessageBox`` 是主窗口里的**子控件遮罩层**，点按钮�
 3. 主体：左侧预览卡片（自适应）+ 右侧参数卡片（固定宽度区间）；
 4. 底部：执行日志状态条（常驻一行，点击唤出不挤压布局的日志浮层），
    ���**最右端是「打开任务数据目录」**（用户 2026-10-06 从页头移来）。
+
+### `class DetailViewMixin(DetailHeaderMixin, DetailStepBarMixin, DetailPreviewMixin, DetailPanelsMixin, DetailControlsMixin)`
+
+依赖宿主页面提供的方法：_on_back、_select_stage、各预览联动槽、
+current_stage()、_update_run_buttons() 等。
+
+---
+
+## `desktop.pages.taskdetail.view.controls`
+
+源码：[`desktop/pages/taskdetail/view/controls.py`](../../desktop/pages/taskdetail/view/controls.py)
+
+执行记录、运行按钮与右侧面板宽度（从原 ``view.py`` 拆出）。
+
+### `class DetailControlsMixin(DetailViewHost)`
+
+执行记录下拉、运行/下载按钮与面板宽度区间。
+
+---
+
+## `desktop.pages.taskdetail.view.header`
+
+源码：[`desktop/pages/taskdetail/view/header.py`](../../desktop/pages/taskdetail/view/header.py)
+
+页头组装、任务改名与 Esc 取消（从原 ``view.py`` 拆出）。
+
+### `class DetailHeaderMixin(DetailViewHost)`
+
+页头卡片、根布局与任务名行内编辑。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `eventFilter(watched, event) -> bool` | 任务名输入框里按 Esc = 放弃编辑（不改盘上）。 |
+
+##### `eventFilter(watched, event) -> bool`
+
+任务名输入框里按 Esc = 放弃编辑（不改盘上）。
+
+⚠️ ``return False`` 而不是 ``super().eventFilter(...)``：本类是
+Mixin，``super()`` 后面未必有实现 ``eventFilter`` 的类（对象默认
+没有这个方法）⇒ 调 ``super().eventFilter`` 会 AttributeError。
+返回 False = "不拦截，事件照常交给控件"，正是我们要的。
+
+---
+
+## `desktop.pages.taskdetail.view.lazy_host`
+
+源码：[`desktop/pages/taskdetail/view/lazy_host.py`](../../desktop/pages/taskdetail/view/lazy_host.py)
+
+阶段面板的惰性宿主 ``LazyPanelHost``（从原 ``view.py`` 拆出）。
 
 ### `class LazyPanelHost(QWidget)`
 
@@ -9370,25 +10613,41 @@ qfluent 的 ``MessageBox`` 是主窗口里的**子控件遮罩层**，点按钮�
 ⚠️ 必须支持挂多个回调：视图层要接预览刷新、暂存层要接 param_edited，
 它们分属不同 Mixin，各自只知道自己的接线，不能互相覆盖。
 
-### `class DetailViewMixin`
+---
 
-依赖宿主页面提供的方法：_on_back、_select_stage、各预览联动槽、
-current_stage()、_update_run_buttons() 等。
+## `desktop.pages.taskdetail.view.panels`
 
-#### 方法
+源码：[`desktop/pages/taskdetail/view/panels.py`](../../desktop/pages/taskdetail/view/panels.py)
 
-| 方法 | 说明 |
-| --- | --- |
-| `eventFilter(watched, event) -> bool` | 任务名输入框里按 Esc = 放弃编辑（不改盘上）。 |
+右侧控制卡片、面板接线与第四步参数联动（从原 ``view.py`` 拆出）。
 
-##### `eventFilter(watched, event) -> bool`
+### `class DetailPanelsMixin(DetailViewHost)`
 
-任务名输入框里按 Esc = 放弃编辑（不改盘上）。
+控制列、惰性面板接线、YOLO 卡片与打印参数回填。
 
-⚠️ ``return False`` 而不是 ``super().eventFilter(...)``：本类是
-Mixin，``super()`` 后面未必有实现 ``eventFilter`` 的类（对象默认
-没有这个方法）⇒ 调 ``super().eventFilter`` 会 AttributeError。
-返回 False = "不拦截，事件照常交给控件"，正是我们要的。
+---
+
+## `desktop.pages.taskdetail.view.previews`
+
+源码：[`desktop/pages/taskdetail/view/previews.py`](../../desktop/pages/taskdetail/view/previews.py)
+
+左侧预览栈与拼版预览的组装（从原 ``view.py`` 拆出）。
+
+### `class DetailPreviewMixin(DetailViewHost)`
+
+四步预览控件与拼版伪步骤的画布。
+
+---
+
+## `desktop.pages.taskdetail.view.step_bar`
+
+源码：[`desktop/pages/taskdetail/view/step_bar.py`](../../desktop/pages/taskdetail/view/step_bar.py)
+
+步骤条构建与按流程重建（从原 ``view.py`` 拆出）。
+
+### `class DetailStepBarMixin(DetailViewHost)`
+
+步骤条的槽位快照、标题序数与重建。
 
 ---
 
@@ -9468,11 +10727,11 @@ Mixin，``super()`` 后面未必有实现 ``eventFilter`` 的类（对象默认
 
 ---
 
-## `desktop.pages.tasklist.page`
+## `desktop.pages.tasklist.page.constants`
 
-源码：[`desktop/pages/tasklist/page.py`](../../desktop/pages/tasklist/page.py)
+源码：[`desktop/pages/tasklist/page/constants.py`](../../desktop/pages/tasklist/page/constants.py)
 
-任务管理页：表格列表 + **创建任务**（弹窗选流程与PDF → 算指纹查重 → 建任务）。
+任务列表页的文案常量。
 
 ### 模块常量
 
@@ -9480,58 +10739,26 @@ Mixin，``super()`` 后面未必有实现 ``eventFilter`` 的类（对象默认
 | --- | --- |
 | HEADER_SUBTITLE | `"创建任务后按流程节点依次处理"` |
 
-### `class TaskListPage(QWidget, WorkerHost)`
+---
 
-任务管理页：搜索 + 分页的任务列表，支持导入 PDF 与删除。
+## `desktop.pages.tasklist.page.importing`
 
-数据流是单向的：``refresh()`` 从 store 读出**全量**行并缓存，
-``_render()`` 负责「按关键词过滤 → 分页切片 → 填表」。搜索框只触发
-``_render()``（不再读盘），所以打字时不会每次都去扫一遍任务目录。
+源码：[`desktop/pages/tasklist/page/importing.py`](../../desktop/pages/tasklist/page/importing.py)
 
-含表格/空状态二选一的内容区。导入刻意分两段：**主线程**只做「算指纹 →
-查重 → 确认 → 建任务 → 刷新列表」（毫秒级，用户立刻看到新行）；**后台**
-串行做「复制源文件 + 生成整本缩略图」，且等列表画完才开工，期间挂一条
-「正在导入」提示条。
+创建任务（指纹 / 查重 / 建任务 / 后台导入）与删除任务。
+
+### `class TaskListImportMixin`
+
+从「创建任务」到后台复制/缩略图，以及删除任务。
 
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(store: TaskStore, parent=None)` | 初始化页面：构建 UI、绑定信号并刷新首次列表。 |
-| `refresh() -> None` | 刷新任务行：**读盘放后台线程**，读完回主线程渲染。 |
-| `focus_task(task_id: str) -> bool` | 翻到任务所在页并选中它；不在当前过滤结果里则返回 False。 |
 | `import_pdf() -> None` | 「创建任务」入口：**切到创建任务页**（不再弹模态窗）。 |
 | `start_create(path: str, name: str, diagram) -> None` | 创建任务页提交了 → 走**既有**的指纹/查重/建任务链路。 |
-| `start_create_aggregate(members: list, member_stages: list, name: str, diagram) -> None` | 聚合任务提交了 → 建聚合任务（不走指纹/查重：聚合任务不吃源文件）。 |
-| `shutdown_workers() -> None` | 关程序前的收尾：先停导入后台队列（复制/缩略图），再走基类线程。 |
 | `delete_task(task_id: str) -> None` | 删除指定任务及其全部中间产物（带确认弹窗）。 |
-
-##### `__init__(store: TaskStore, parent=None)`
-
-初始化页面：构建 UI、绑定信号并刷新首次列表。
-
-parent 一般为 MainWindow；会创建 store 引用与导入按钮状态占位，
-随后调用 refresh 重建表格与空状态。
-
-##### `refresh() -> None`
-
-刷新任务行：**读盘放后台线程**，读完回主线程渲染。
-
-⚠️ 读盘不能占着 UI 线程：这里要遍历全部任务、逐个读它的 runs.json
-（任务一多就是几十次文件 IO），同步做会把已经画出来的窗口卡住。行的
-组装挪进了 ``TaskRowsWorker``，结果走 ``_on_rows_ready`` 回来渲染。
-
-⚠️ 每次刷新带一个**代际令牌**：连续调用（导入任务后紧跟着又刷新）会让
-多个 worker 并发跑，先发的可能后回来，把新数据盖成旧的——只认最后
-一次发出的那个令牌，其余结果直接丢弃。
-
-##### `focus_task(task_id: str) -> bool`
-
-翻到任务所在页并选中它；不在当前过滤结果里则返回 False。
-
-⚠️ 分页后不能直接用 ``table.select_task``：任务可能不在当前页，
-表格里根本没有那一行。要先按**过滤后**的下标算出页码、切过去，
-再在表格里选中。
+| `start_create_aggregate(members: list, member_stages: list, name: str, diagram) -> None` | 聚合任务提交了 → 建聚合任务（不走指纹/查重：聚合任务不吃源文件）。 |
 
 ##### `import_pdf() -> None`
 
@@ -9556,6 +10783,12 @@ parent 一般为 MainWindow；会创建 store 引用与导入按钮状态占位�
     用户 2026-11-17 起"是否自定义"不再单独传——流程恒可编辑，
     编辑保存过才传图）
 
+##### `delete_task(task_id: str) -> None`
+
+删除指定任务及其全部中间产物（带确认弹窗）。
+
+任务不存在时直接返回；否则弹确认框，确认后删库并刷新列表与提示。
+
 ##### `start_create_aggregate(members: list, member_stages: list, name: str, diagram) -> None`
 
 聚合任务提交了 → 建聚合任务（不走指纹/查重：聚合任务不吃源文件）。
@@ -9566,11 +10799,98 @@ parent 一般为 MainWindow；会创建 store 引用与导入按钮状态占位�
 非法时 ``store.create_aggregate_task`` 抛 ``ValueError``——这里 toast
 说清原因留在创建页，不崩。
 
-##### `delete_task(task_id: str) -> None`
+---
 
-删除指定任务及其全部中间产物（带确认弹窗）。
+## `desktop.pages.tasklist.page.rows`
 
-任务不存在时直接返回；否则弹确认框，确认后删库并刷新列表与提示。
+源码：[`desktop/pages/tasklist/page/rows.py`](../../desktop/pages/tasklist/page/rows.py)
+
+任务列表页的数据刷新、过滤与分页渲染。
+
+### `class TaskListRowsMixin`
+
+从 store 读全量行并渲染当前页（搜索只重渲染，不读盘）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `refresh() -> None` | 刷新任务行：**读盘放后台线程**，读完回主线程渲染。 |
+| `focus_task(task_id: str) -> bool` | 翻到任务所在页并选中它；不在当前过滤结果里则返回 False。 |
+
+##### `refresh() -> None`
+
+刷新任务行：**读盘放后台线程**，读完回主线程渲染。
+
+⚠️ 读盘不能占着 UI 线程：这里要遍历全部任务、逐个读它的 runs.json
+（任务一多就是几十次文件 IO），同步做会把已经画出来的窗口卡住。行的
+组装挪进了 ``TaskRowsWorker``，结果走 ``_on_rows_ready`` 回来渲染。
+
+⚠️ 每次刷新带一个**代际令牌**：连续调用（导入任务后紧跟着又刷新）会让
+多个 worker 并发跑，先发的可能后回来，把新数据盖成旧的——只认最后
+一次发出的那个令牌，其余结果直接丢弃。
+
+##### `focus_task(task_id: str) -> bool`
+
+翻到任务所在页并选中它；不在当前过滤结果里则返回 False。
+
+⚠️ 分页后不能直接用 ``table.select_task``：任务可能不在当前页，
+表格里根本没有那一行。要先按**过滤后**的下标算出页码、切过去，
+再在表格里选中。
+
+---
+
+## `desktop.pages.tasklist.page.view`
+
+源码：[`desktop/pages/tasklist/page/view.py`](../../desktop/pages/tasklist/page/view.py)
+
+任务列表页的视图组装：页头 / 搜索条 / 表格与空状态 / 底栏 / toast。
+
+### `class TaskListViewMixin`
+
+页头、搜索条、内容区、底栏与 toast 的构建。
+
+---
+
+## `desktop.pages.tasklist.page.widget`
+
+源码：[`desktop/pages/tasklist/page/widget.py`](../../desktop/pages/tasklist/page/widget.py)
+
+任务管理页：表格列表 + **创建任务**（弹窗选流程与PDF → 算指纹查重 → 建任务）。
+
+本文件只保留页面骨架（信号、构造、收尾），其余职责按功能分文件
+（均位于 desktop/pages/tasklist/page/）：
+- view.TaskListViewMixin   页头 / 搜索条 / 表格与空状态 / 底栏 / toast
+- rows.TaskListRowsMixin   数据刷新、过滤与分页渲染
+- importing.TaskListImportMixin 创建任务（指纹/查重/建任务/后台导入）、
+  聚合任务汇集与删除
+
+### `class TaskListPage(TaskListViewMixin, TaskListRowsMixin, TaskListImportMixin, QWidget, WorkerHost)`
+
+任务管理页：搜索 + 分页的任务列表，支持导入 PDF 与删除。
+
+数据流是单向的：``refresh()`` 从 store 读出**全量**行并缓存，
+``_render()`` 负责「按关键词过滤 → 分页切片 → 填表」。搜索框只触发
+``_render()``（不再读盘），所以打字时不会每次都去扫一遍任务目录。
+
+含表格/空状态二选一的内容区。导入刻意分两段：**主线程**只做「算指纹 →
+查重 → 确认 → 建任务 → 刷新列表」（毫秒级，用户立刻看到新行）；**后台**
+串行做「复制源文件 + 生成整本缩略图」，且等列表画完才开工，期间挂一条
+「正在导入」提示条。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(store: TaskStore, parent=None)` | 初始化页面：构建 UI、绑定信号并刷新首次列表。 |
+| `shutdown_workers() -> None` | 关程序前的收尾：先停导入后台队列（复制/缩略图），再走基类线程。 |
+
+##### `__init__(store: TaskStore, parent=None)`
+
+初始化页面：构建 UI、绑定信号并刷新首次列表。
+
+parent 一般为 MainWindow；会创建 store 引用与导入按钮状态占位，
+随后调用 refresh 重建表格与空状态。
 
 ---
 
@@ -9914,265 +11234,22 @@ GUI 主进程**绝不能**在这里 import 到 cv2（实测 ``import functions.d
 
 ---
 
-## `desktop.services.imposition`
+## `desktop.services.imposition.auto`
 
-源码：[`desktop/services/imposition.py`](../../desktop/services/imposition.py)
+源码：[`desktop/services/imposition/auto.py`](../../desktop/services/imposition/auto.py)
 
-图片拼版的派生与合成规则（纯函数 + PIL，无 Qt 依赖，便于独立测试）。
+自动拼版：按提交计划/文件名把源图两两配成页。
 
-一句话职责：**把每页的两张源图按版面摆到指定底色上**（任务流程默认透明底，
-独立拼图页「导出成品」白底，见 :data:`TRANSPARENT_BACKGROUND` /
-:data:`WHITE_BACKGROUND`），落成 ``stages/imposition`` 里的成品页图，供第四步
-「PDF排版」当整页图片直接用。
-
-三件事在这里定死（别在别处再写一份）：
-
-1. **槽位约定**：一页拼版恒两项，``items[0]`` = **右槽**、``items[1]`` = **左槽**。
-   用户口径「序号排前面的在右侧、序号大的在左侧」——所以按源清单顺序取两张
-   （序号小的在前）时，序号小的进右槽。
-2. **坐标口径**：``rect`` 是**源图像素**，左上原点、x 向右、y 向下；
-   ``rotation`` 是**顺时针角度**（Qt 口径；PIL 侧取负），绕该项 ``rect`` 的中心。
-3. **没有"纸张"**（用户 2026-09-30：「这个拼版不需要设置纸张，只需要背景是白色的
-   就行，后续提交的时候根据图片的四个区域合并出一张图片」；⚠️ 2026-10-10 修订：
-   背景**不再铺白**，改透明底——白底会烙进成品页图，编辑器里统一变换/裁剪
-   全都带着白底走。PDF 侧 ``functions/print._load_image`` 会把 RGBA 压平到
-   白纸，成书效果不变；⚠️ 2026-10-13 再修订：独立拼图页「导出成品」是
-   **白底**（``WHITE_BACKGROUND``）——singletask 导出的 PNG 就是交付物，
-   透明底不合理；透明底仍只是任务流程的默认）：版面只有底，图可以随意
-   移动/拉伸；
-   **产出图 = 所有图外接框的紧裁**（``page_bounds`` → ``compose_page``），
-   所以加多少留白、挪多远，用户自己说了算。
-
-### 模块常量
-
-| 名称 | 值 |
-| --- | --- |
-| ITEMS_PER_PAGE | `2` |
-| FILE_FMT | `"{:04d}.png"` |
-| PNG_SUFFIX | `".png"` |
-| JPG_SUFFIX | `".jpg"` |
-| JPEG_QUALITY | `95` |
-| _CN_DIGITS | `"零一二三四五六七八九"` |
-| SOURCE_LEFT | `"left"` |
-| SOURCE_RIGHT | `"right"` |
-| SOURCE_FULL | `"full"` |
-| SOURCE_HALF_UNSIDED | `"half-unsided"` |
+从 ``desktop/services/imposition.py`` 拆出（2026-11-22）。配对规则
+（左侧别 + 页号连续 + 整幅单独成页）的唯一实现在 ``auto_impose_pages``。
 
 ### 模块函数
 
 | 函数 | 说明 |
 | --- | --- |
-| `page_product_suffix(page: dict) -> str` | 一页成品的**输出后缀**：源图全是 jpg/jpeg ⇒ ``.jpg``，否则 ``.png``。 |
-| `product_path(dest_dir: Path \| str, index: int, page: dict) -> Path` | 第 ``index``（0 基）页成品的落盘路径：``dest/0001.png`` / ``dest/0001.jpg``。 |
-| `is_product_file(candidate: Path \| str) -> bool` | 这个文件是不是**拼版成品页**（``NNNN.png`` / ``NNNN.jpg``，4 位数字名）。 |
-| `normalize_page(page) -> dict \| None` | 把任意来源的一页拼版收敛成合法形状；不可修复时返回 None。 |
-| `normalize_doc(doc) -> dict` | 整份文档收敛：``{"enabled", "pages", "removed"}``（永不为 None）。 |
-| `cn_page_label(index: int) -> str` | 页序（0 起）→ 中文页码标签：``第一页`` / ``第十二页`` / ``第100页``。 |
-| `image_size(path) -> tuple[int, int]` | 图片像素尺寸（读文件头，不解码整图）；读不到返回 (0, 0)。 |
-| `invalidate_size(path) -> None` | 源图被外部覆盖（图片编辑器写回）后丢掉它的尺寸缓存。 |
-| `image_content_bounds(path) -> tuple[int, int, int, int] \| None` | 源图**可见内容**框 ``(x, y, w, h)``；没有透明留白时返回 None。 |
-| `refresh_rects_for_edited_source(doc: dict, path_text: str) -> bool` | 源图被编辑覆盖后，把文档里引用它的 ``rect`` 刷成**新图可见内容**的几何。 |
-| `used_source_files(doc: dict) -> set[str]` | 已被任何一页拼版引用的源图（用于算「剩余未被选择拼版的图片」）。 |
-| `remaining_files(files: list, doc: dict) -> list` | 源清单里**还没被任何拼版页用过、也没被删除**的图片（顺序沿用源清单）。 |
-| `removed_source_files(doc: dict) -> set[str]` | 被用户「删除图片」移出选择范围的源图路径集合（软删除黑名单）。 |
-| `excluded_files(files: list, doc: dict) -> list` | 源清单里被删除的图（**按源清单顺序**）——给弹窗的「已删除」视图展示。 |
-| `page_source_stems(page: dict) -> list[str]` | 一页拼版两张源图的名字（去扩展名），按槽位顺序（右、左）。 |
-| `same_path(left, right) -> bool` | 两个路径串是否指同一处文件（**形态无关**）。 |
-| `apply_editor_layout(items: list[dict], updates: list[dict]) -> set[str]` | 把双图编辑器回传的画布位置/尺寸写回对应页面项。 |
-| `page_has_file(page: dict, path_text: str) -> bool` | 这一页的某张源图是否就是这个文件（形态无关比较）。 |
-| `pages_having_file(pages: list, path_text: str) -> list[int]` | 哪些页用了这个源文件（页号列表）。 |
-| `default_items(files: list) -> list[dict] \| None` | 两张源图 → **默认并排版面**（各按原始像素，不改动用户的图）。 |
-| `make_page(sources: list) -> dict \| None` | 按**源清单顺序**取两张图造一页拼版版面。 |
-| `single_items(file) -> list[dict] \| None` | 一张源图 → **单图版面**（整幅图 / 落单图专用：原始像素、不旋转）。 |
-| `make_single_page(file) -> dict \| None` | 一张源图**自成一页**（整幅不拼、落单）：版面里只有一项。 |
-| `append_item_to_page(items: list[dict], file) -> list[dict] \| None` | 单图页「新增图片」：把 ``file`` 并进当前页，返回**新的 items**。 |
-| `classify_source(path) -> str` | 源图形态：左半幅 / 右半幅 / 整幅（**判据唯一处：文件名后缀**）。 |
 | `expand_role_aliases(roles: dict[str, str]) -> dict[str, str]` | 角色表补上**同一页的各种文件名写法**（按页号归并）。 |
 | `source_kind(path, role_for=None) -> str` | 源图形态：优先用提交计划的 ``role``，缺失时回落到文件名后缀。 |
-| `source_page_number(path) -> int \| None` | 源图**页号**：文件名开头的连续数字（``3-r`` → 3、``004-l`` → 4）。 |
 | `auto_impose_pages(files: list, role_for=None) -> list[dict]` | 自动拼版（用户 2026-09-30 规则，**唯一实现**）： |
-| `source_stamp(path) -> tuple[str, int, int] \| None` | 源图的**新鲜度签名**（路径 + mtime_ns + 字节数）；读不到返回 None。 |
-| `is_binary_source(image, path) -> bool` | 二值稿判据的**带缓存**版本（``image`` 是已经解码好的那张，省一次解码）。 |
-| `page_bounds(page: dict) -> tuple[float, float, float, float]` | 一页的**内容范围**：所有图外接框的并集（用户说的「图片的四个区域」）。 |
-| `compose_page(page: dict, background=TRANSPARENT_BACKGROUND)` | 一页拼版 → PIL **RGBA** 图：所有图外接框的紧裁。 |
-| `flatten_onto_background(source, target, background=WHITE_BACKGROUND) -> None` | 把一张图片（可能带透明）压到指定底色上，原子写出 PNG 到 ``target``。 |
-| `compose_doc(doc: dict, dest_dir, report=None, background=TRANSPARENT_BACKGROUND, suffix_for=None, only=None) -> list[Path]` | 把拼版文档落成 ``dest_dir/0001.png`` …（列表顺序即页序）。 |
-
-#### `page_product_suffix(page: dict) -> str`
-
-一页成品的**输出后缀**：源图全是 jpg/jpeg ⇒ ``.jpg``，否则 ``.png``。
-
-用户 2026-10-17：「图片拼版，输入图片是 png，就输出 png，输入是 jpg，
-输出也是 jpg」。
-
-⚠️ 一页可能混着两种源图 ⇒ **任一张不是 jpg/jpeg 就出 png**：只有 png 带
-alpha，而 jpg 成品必须白底压平（见 :func:`_save_page_atomic`），会把上游
-「去底色」产物的透明底**抹掉**。宁可体积大一点，也不悄悄丢透明。
-
-#### `is_product_file(candidate: Path | str) -> bool`
-
-这个文件是不是**拼版成品页**（``NNNN.png`` / ``NNNN.jpg``，4 位数字名）。
-
-⚠️ 后缀认**两种**（用户 2026-10-17 起成品后缀随源图走）：只认 ``.png``
-的话，"格式切换后上一轮多出来的页"会留在盘上，被第四步当成一页打进 PDF。
-清扫（:func:`_sweep_stale`）与新鲜度判据都走这一个函数，别各写一套。
-
-#### `normalize_page(page) -> dict | None`
-
-把任意来源的一页拼版收敛成合法形状；不可修复时返回 None。
-
-⚠️ 校验必须严：``rect`` 会直接喂给合成函数当落点，坏值（缺字段、0 宽、
-非数字）会让合成抛异常或产出空图，而这份文档在用户的文档目录里、可被
-外部编辑写坏。
-
-⚠️ 老版本存过 ``"sheet": [w, h]``（有纸张的时代）。现在**忽略它**：
-版面以两张图为准，纸张已经不存在了，读老任务照样能合成。
-
-#### `normalize_doc(doc) -> dict`
-
-整份文档收敛：``{"enabled", "pages", "removed"}``（永不为 None）。
-
-``removed`` 是**旧版黑名单**（曾经在「选择拼版」弹窗里「删除图片」移出的图，
-软删——文件不动，只是不再进入候选范围）。⚠️ **2026-11-16 起弹窗不再写它**
-（两个页签连同「删除图片」一起取消，候选 = 所有没被页引用的图）：这里仍
-原样保留，老任务读进来不丢数据，`:func:`remaining_files` 的行为也不变。
-存字符串路径列表，去重保序；读老任务没有这个键时为空列表。
-
-#### `cn_page_label(index: int) -> str`
-
-页序（0 起）→ 中文页码标签：``第一页`` / ``第十二页`` / ``第100页``。
-
-只覆盖 1~99 的中文写法（古籍拼版页数够用），超出退回阿拉伯数字——
-这里只是**界面文案**，不参与任何匹配，宁可难看也不要写错数字。
-
-#### `invalidate_size(path) -> None`
-
-源图被外部覆盖（图片编辑器写回）后丢掉它的尺寸缓存。
-
-⚠️ :func:`image_size` 的缓存**只进不出**：编辑器把图旋转/裁剪后覆盖回
-同一文件，不丢缓存的话后续 :func:`default_items` / :func:`refresh_rects_
-for_edited_source` 读到的还是旧尺寸。
-
-#### `image_content_bounds(path) -> tuple[int, int, int, int] | None`
-
-源图**可见内容**框 ``(x, y, w, h)``；没有透明留白时返回 None。
-
-⚠️ 为什么拼版要按"内容"而不是整张图摆框（2026-10-14 用户报障「弹窗
-编辑保存后，拼版页图片与虚线框错位」）：图片编辑器的**裁剪移动**会把
-位移编码成**透明边距**——像素图因此变大（实测 200×100 → 240×130），
-可见内容缩在其中一个角上。若版面 rect 按整张图尺寸刷，画出来的虚线框
-会把透明留白一并框进去（240×130），而图里看得见的只有 200×100 且偏离
-中心 ⇒ 框比图大一圈、位置也偏，正是截图里的现象。
-
-整幅不透明（普通扫描件）或读不出 alpha 时返回 ``None``＝"内容就是整
-张图"，调用方按旧口径走，不改变既有版面。读图失败也返回 None。
-
-#### `refresh_rects_for_edited_source(doc: dict, path_text: str) -> bool`
-
-源图被编辑覆盖后，把文档里引用它的 ``rect`` 刷成**新图可见内容**的几何。
-
-⚠️⚠️ 版面 ``rect`` 的宽高是**按源图像素**记的（见 :func:`default_items`）。
-编辑器把图旋转 90°（宽高互换）或裁剪后**覆盖回同一文件**，旧 rect 就成了
-压扁新图的"模子"：:func:`compose_page` 会把新图无条件 ``resize`` 回旧
-宽高——旋转 90° 的图被横向压扁（3500px 的宽压进 2480px），既变形又
-清晰度下降（用户 2026-10-10 报障："旋转后拼版里图片被压宽"）。
-
-规则：宽高取新图**可见内容**的尺寸（见 :func:`image_content_bounds`——
-裁剪移动会把位移编码成透明边距，按整张图刷会让虚线框比图大一圈，
-2026-10-14 报障）。位置＝**旧 rect 中心 + 内容在画布内的偏移**，即
-
-    ``new_rect = [旧中心 - 新内容尺寸/2 + 内容偏移, 新内容尺寸]``
-
-两项各管一件事，互不干扰：
-
-- **尺寸变化绕旧中心**（旋转 90°／纯裁剪）：图还待在用户摆的地方，按新
-  形状向四周长开/收拢（2026-10-10「旋转后被压宽」的既有口径，保持不变）；
-- **内容偏移量平移**（裁剪"移动"把位移编码成透明边距）：用户拖了 200px
-  就整整平移 200px，大小不变。
-
-⚠️⚠️ 偏移项**只能是内容框在画布里的左上角 ``(content_x, content_y)``**，
-不要再减 ``整图尺寸/2``（2026-10-14 用户报障「向下移 200px 后图变大了」：
-减掉半张图高把 200 砍成 100，rect 落在 Top1+100 ⇒ 顶部没跟着走、底部长
-出 200px，看着就是"顶部与右图平齐、底部多出一截、左右不等高"）。
-纯尺寸变化时内容偏移为 0，本式退化成既有的绕中心口径，不影响旧行为。
-尺寸与偏移都没变（普通修饰）就一个字节都不动。返回是否有 rect 被改过
-（调用方据此决定要不要落盘/刷视图）。
-
-#### `remaining_files(files: list, doc: dict) -> list`
-
-源清单里**还没被任何拼版页用过、也没被删除**的图片（顺序沿用源清单）。
-
-「删除」是黑名单（``removed``，弹窗里用户主动移出选择范围的图），
-不是删文件——恢复后重新回到候选范围。
-
-#### `same_path(left, right) -> bool`
-
-两个路径串是否指同一处文件（**形态无关**）。
-
-文档里存的是路径**原样字符串**，而"编辑器刚覆盖的那个文件"往往是从
-``Path(...)`` 取出来的——Windows 上 ``Path`` 会把 ``/`` 翻成 ``\``，
-大小写也可能有差异。拿字符串直接 ``==`` 比会**静默落空**（用户
-2026-10-08 报的"预览弹窗里编辑完，拼版页还是老图"就是这个）。
-比较前一律 ``normpath`` + ``normcase``；空串永远不相等（``Path("")``
-会退化成 ``"."``，那是"还没选文件"，不是同一处）。
-
-#### `apply_editor_layout(items: list[dict], updates: list[dict]) -> set[str]`
-
-把双图编辑器回传的画布位置/尺寸写回对应页面项。
-
-编辑器用当前图像素系记录新画布原点，并以入口版面比例换算到页面
-``rect``。更新携带源项序号与路径，避免页面或源清单变化时误改其他项。
-
-#### `default_items(files: list) -> list[dict] | None`
-
-两张源图 → **默认并排版面**（各按原始像素，不改动用户的图）。
-
-``files`` 顺序即槽位顺序 ``[右槽, 左槽]``：左槽贴 x=0，右槽紧挨在它右边，
-两者顶部对齐。古籍一页的两半通常同尺寸，摆出来就是标准对开。
-
-尺寸读不到 / 少于两张时返回 None（调用方负责提示）。
-
-#### `make_page(sources: list) -> dict | None`
-
-按**源清单顺序**取两张图造一页拼版版面。
-
-``sources`` 顺序即源清单顺序（序号小在前）；本函数把 ``sources[0]``
-放进**右槽**、``sources[1]`` 放进**左槽**——这就是用户的口径
-「序号排前面的在右侧，序号大的在左侧」。版面本身见 ``default_items``。
-
-#### `single_items(file) -> list[dict] | None`
-
-一张源图 → **单图版面**（整幅图 / 落单图专用：原始像素、不旋转）。
-
-尺寸读不到返回 None（调用方负责跳过 / 提示）。
-
-#### `append_item_to_page(items: list[dict], file) -> list[dict] | None`
-
-单图页「新增图片」：把 ``file`` 并进当前页，返回**新的 items**。
-
-槽位与摆放口径（用户 2026-09-30：单图页可以再导一张图拼成对页）：
-
-- 原图是**左半幅**（文件名 ``-l``/``_l`` 结尾）→ 新图进**右槽**
-  （``items[0]``），摆在原图**右边**；
-- 其余（右半幅 / 整幅 / 无后缀）→ 新图进**左槽**（``items[1]``），
-  摆在原图**左边**；
-- 新图按**原始像素**进版面、顶边与原图对齐、紧贴原图边缘（用户可再
-  拖动/缩放）；原图的版面（位置/大小/旋转）**原样保留**，不重排。
-
-``items`` 不是恰好一项（只有单图页能加图）或尺寸读不到时返回 None，
-调用方负责提示。
-
-#### `classify_source(path) -> str`
-
-源图形态：左半幅 / 右半幅 / 整幅（**判据唯一处：文件名后缀**）。
-
-自动拼版只能靠文件名认图——拼版侧读不到检测框，而第三步的落盘口径是
-半幅页 ``<页号>-l`` / ``<页号>-r``、整幅页 ``<页号>``（见
-``desktop.services.print_plan.plan_detect_submit_entries``）。
-
-⚠️ 单栏书 / 窄页会把半幅的侧别归一化掉（产物仍叫 ``<页号>``），此时
-文件名与整幅**无法区分**。那种页的形态必须由任务提交计划给出，见
-:func:`source_kind`。
 
 #### `expand_role_aliases(roles: dict[str, str]) -> dict[str, str]`
 
@@ -10211,13 +11288,6 @@ for_edited_source` 读到的还是旧尺寸。
 ``role_for`` 是 ``(路径文本) -> role | None``：任务详情页从
 ``boxes.json`` 的提交计划建映射（见 ``expand_role_aliases``）。
 
-#### `source_page_number(path) -> int | None`
-
-源图**页号**：文件名开头的连续数字（``3-r`` → 3、``004-l`` → 4）。
-
-「不连续的图片不可以合并在一页」的判据。文件名不带数字前缀的图
-（如 ``cover``）返回 None——永不参与配对，只能单独成页。
-
 #### `auto_impose_pages(files: list, role_for=None) -> list[dict]`
 
 自动拼版（用户 2026-09-30 规则，**唯一实现**）：
@@ -10243,6 +11313,28 @@ for_edited_source` 读到的还是旧尺寸。
 
 遍历按源清单顺序（``natural_sort_key``：同页号 r 在前），产出的
 页清单顺序即 PDF 页序。尺寸读不到的图跳过（不产出残页）。
+
+---
+
+## `desktop.services.imposition.compose`
+
+源码：[`desktop/services/imposition/compose.py`](../../desktop/services/imposition/compose.py)
+
+拼版合成：把版面页摆到底色上、紧裁落盘（PIL，无 Qt）。
+
+从 ``desktop/services/imposition.py`` 拆出（2026-11-22）：``compose_page``
+管单页、``compose_doc`` 管整轮（持锁 + 清扫）。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `source_stamp(path) -> tuple[str, int, int] \| None` | 源图的**新鲜度签名**（路径 + mtime_ns + 字节数）；读不到返回 None。 |
+| `is_binary_source(image, path) -> bool` | 二值稿判据的**带缓存**版本（``image`` 是已经解码好的那张，省一次解码）。 |
+| `page_bounds(page: dict) -> tuple[float, float, float, float]` | 一页的**内容范围**：所有图外接框的并集（用户说的「图片的四个区域」）。 |
+| `compose_page(page: dict, background=TRANSPARENT_BACKGROUND)` | 一页拼版 → PIL **RGBA** 图：所有图外接框的紧裁。 |
+| `flatten_onto_background(source, target, background=WHITE_BACKGROUND) -> None` | 把一张图片（可能带透明）压到指定底色上，原子写出 PNG 到 ``target``。 |
+| `compose_doc(doc: dict, dest_dir, report=None, background=TRANSPARENT_BACKGROUND, suffix_for=None, only=None) -> list[Path]` | 把拼版文档落成 ``dest_dir/0001.png`` …（列表顺序即页序）。 |
 
 #### `page_bounds(page: dict) -> tuple[float, float, float, float]`
 
@@ -10326,6 +11418,305 @@ PDF 侧 ``functions/print._load_image`` 压平到白纸；编辑器/预览按 RG
 默认透明底（任务流程：PDF 侧压平白纸、编辑器要透明）；独立拼图页
 「导出成品」显式传 :data:`WHITE_BACKGROUND`（2026-10-13 用户：singletask
 导出的 PNG 就是交付物，不要透明底）。
+
+---
+
+## `desktop.services.imposition.constants`
+
+源码：[`desktop/services/imposition/constants.py`](../../desktop/services/imposition/constants.py)
+
+拼版的常量：槽位/落盘命名、底色、锁、源图形态键与角色映射。
+
+从 ``desktop/services/imposition.py`` 拆出（2026-11-22）：只放常量，不做
+任何计算。槽位/坐标/底色的口径说明见本包 ``__init__``。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| ITEMS_PER_PAGE | `2` |
+| FILE_FMT | `"{:04d}.png"` |
+| PNG_SUFFIX | `".png"` |
+| JPG_SUFFIX | `".jpg"` |
+| JPEG_QUALITY | `95` |
+| _CN_DIGITS | `"零一二三四五六七八九"` |
+| SOURCE_LEFT | `"left"` |
+| SOURCE_RIGHT | `"right"` |
+| SOURCE_FULL | `"full"` |
+| SOURCE_HALF_UNSIDED | `"half-unsided"` |
+
+---
+
+## `desktop.services.imposition.document`
+
+源码：[`desktop/services/imposition/document.py`](../../desktop/services/imposition/document.py)
+
+拼版文档（页/项）的收敛、命名与页级查询。
+
+从 ``desktop/services/imposition.py`` 拆出（2026-11-22）：只管文档结构与
+页级纯查询，不碰像素。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `page_product_suffix(page: dict) -> str` | 一页成品的**输出后缀**：源图全是 jpg/jpeg ⇒ ``.jpg``，否则 ``.png``。 |
+| `product_path(dest_dir: Path \| str, index: int, page: dict) -> Path` | 第 ``index``（0 基）页成品的落盘路径：``dest/0001.png`` / ``dest/0001.jpg``。 |
+| `is_product_file(candidate: Path \| str) -> bool` | 这个文件是不是**拼版成品页**（``NNNN.png`` / ``NNNN.jpg``，4 位数字名）。 |
+| `normalize_page(page) -> dict \| None` | 把任意来源的一页拼版收敛成合法形状；不可修复时返回 None。 |
+| `normalize_doc(doc) -> dict` | 整份文档收敛：``{"enabled", "pages", "removed"}``（永不为 None）。 |
+| `cn_page_label(index: int) -> str` | 页序（0 起）→ 中文页码标签：``第一页`` / ``第十二页`` / ``第100页``。 |
+| `used_source_files(doc: dict) -> set[str]` | 已被任何一页拼版引用的源图（用于算「剩余未被选择拼版的图片」）。 |
+| `remaining_files(files: list, doc: dict) -> list` | 源清单里**还没被任何拼版页用过、也没被删除**的图片（顺序沿用源清单）。 |
+| `removed_source_files(doc: dict) -> set[str]` | 被用户「删除图片」移出选择范围的源图路径集合（软删除黑名单）。 |
+| `excluded_files(files: list, doc: dict) -> list` | 源清单里被删除的图（**按源清单顺序**）——给弹窗的「已删除」视图展示。 |
+| `page_source_stems(page: dict) -> list[str]` | 一页拼版两张源图的名字（去扩展名），按槽位顺序（右、左）。 |
+
+#### `page_product_suffix(page: dict) -> str`
+
+一页成品的**输出后缀**：源图全是 jpg/jpeg ⇒ ``.jpg``，否则 ``.png``。
+
+用户 2026-10-17：「图片拼版，输入图片是 png，就输出 png，输入是 jpg，
+输出也是 jpg」。
+
+⚠️ 一页可能混着两种源图 ⇒ **任一张不是 jpg/jpeg 就出 png**：只有 png 带
+alpha，而 jpg 成品必须白底压平（见 :func:`_save_page_atomic`），会把上游
+「去底色」产物的透明底**抹掉**。宁可体积大一点，也不悄悄丢透明。
+
+#### `is_product_file(candidate: Path | str) -> bool`
+
+这个文件是不是**拼版成品页**（``NNNN.png`` / ``NNNN.jpg``，4 位数字名）。
+
+⚠️ 后缀认**两种**（用户 2026-10-17 起成品后缀随源图走）：只认 ``.png``
+的话，"格式切换后上一轮多出来的页"会留在盘上，被第四步当成一页打进 PDF。
+清扫（:func:`_sweep_stale`）与新鲜度判据都走这一个函数，别各写一套。
+
+#### `normalize_page(page) -> dict | None`
+
+把任意来源的一页拼版收敛成合法形状；不可修复时返回 None。
+
+⚠️ 校验必须严：``rect`` 会直接喂给合成函数当落点，坏值（缺字段、0 宽、
+非数字）会让合成抛异常或产出空图，而这份文档在用户的文档目录里、可被
+外部编辑写坏。
+
+⚠️ 老版本存过 ``"sheet": [w, h]``（有纸张的时代）。现在**忽略它**：
+版面以两张图为准，纸张已经不存在了，读老任务照样能合成。
+
+#### `normalize_doc(doc) -> dict`
+
+整份文档收敛：``{"enabled", "pages", "removed"}``（永不为 None）。
+
+``removed`` 是**旧版黑名单**（曾经在「选择拼版」弹窗里「删除图片」移出的图，
+软删——文件不动，只是不再进入候选范围）。⚠️ **2026-11-16 起弹窗不再写它**
+（两个页签连同「删除图片」一起取消，候选 = 所有没被页引用的图）：这里仍
+原样保留，老任务读进来不丢数据，`:func:`remaining_files` 的行为也不变。
+存字符串路径列表，去重保序；读老任务没有这个键时为空列表。
+
+#### `cn_page_label(index: int) -> str`
+
+页序（0 起）→ 中文页码标签：``第一页`` / ``第十二页`` / ``第100页``。
+
+只覆盖 1~99 的中文写法（古籍拼版页数够用），超出退回阿拉伯数字——
+这里只是**界面文案**，不参与任何匹配，宁可难看也不要写错数字。
+
+#### `remaining_files(files: list, doc: dict) -> list`
+
+源清单里**还没被任何拼版页用过、也没被删除**的图片（顺序沿用源清单）。
+
+「删除」是黑名单（``removed``，弹窗里用户主动移出选择范围的图），
+不是删文件——恢复后重新回到候选范围。
+
+---
+
+## `desktop.services.imposition.images`
+
+源码：[`desktop/services/imposition/images.py`](../../desktop/services/imposition/images.py)
+
+源图尺寸/可见内容框的读取与编辑后的 rect 刷新。
+
+从 ``desktop/services/imposition.py`` 拆出（2026-11-22）：只读图头/alpha，
+不解码整页。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `image_size(path) -> tuple[int, int]` | 图片像素尺寸（读文件头，不解码整图）；读不到返回 (0, 0)。 |
+| `invalidate_size(path) -> None` | 源图被外部覆盖（图片编辑器写回）后丢掉它的尺寸缓存。 |
+| `image_content_bounds(path) -> tuple[int, int, int, int] \| None` | 源图**可见内容**框 ``(x, y, w, h)``；没有透明留白时返回 None。 |
+| `refresh_rects_for_edited_source(doc: dict, path_text: str) -> bool` | 源图被编辑覆盖后，把文档里引用它的 ``rect`` 刷成**新图可见内容**的几何。 |
+
+#### `invalidate_size(path) -> None`
+
+源图被外部覆盖（图片编辑器写回）后丢掉它的尺寸缓存。
+
+⚠️ :func:`image_size` 的缓存**只进不出**：编辑器把图旋转/裁剪后覆盖回
+同一文件，不丢缓存的话后续 :func:`default_items` / :func:`refresh_rects_
+for_edited_source` 读到的还是旧尺寸。
+
+#### `image_content_bounds(path) -> tuple[int, int, int, int] | None`
+
+源图**可见内容**框 ``(x, y, w, h)``；没有透明留白时返回 None。
+
+⚠️ 为什么拼版要按"内容"而不是整张图摆框（2026-10-14 用户报障「弹窗
+编辑保存后，拼版页图片与虚线框错位」）：图片编辑器的**裁剪移动**会把
+位移编码成**透明边距**——像素图因此变大（实测 200×100 → 240×130），
+可见内容缩在其中一个角上。若版面 rect 按整张图尺寸刷，画出来的虚线框
+会把透明留白一并框进去（240×130），而图里看得见的只有 200×100 且偏离
+中心 ⇒ 框比图大一圈、位置也偏，正是截图里的现象。
+
+整幅不透明（普通扫描件）或读不出 alpha 时返回 ``None``＝"内容就是整
+张图"，调用方按旧口径走，不改变既有版面。读图失败也返回 None。
+
+#### `refresh_rects_for_edited_source(doc: dict, path_text: str) -> bool`
+
+源图被编辑覆盖后，把文档里引用它的 ``rect`` 刷成**新图可见内容**的几何。
+
+⚠️⚠️ 版面 ``rect`` 的宽高是**按源图像素**记的（见 :func:`default_items`）。
+编辑器把图旋转 90°（宽高互换）或裁剪后**覆盖回同一文件**，旧 rect 就成了
+压扁新图的"模子"：:func:`compose_page` 会把新图无条件 ``resize`` 回旧
+宽高——旋转 90° 的图被横向压扁（3500px 的宽压进 2480px），既变形又
+清晰度下降（用户 2026-10-10 报障："旋转后拼版里图片被压宽"）。
+
+规则：宽高取新图**可见内容**的尺寸（见 :func:`image_content_bounds`——
+裁剪移动会把位移编码成透明边距，按整张图刷会让虚线框比图大一圈，
+2026-10-14 报障）。位置＝**旧 rect 中心 + 内容在画布内的偏移**，即
+
+    ``new_rect = [旧中心 - 新内容尺寸/2 + 内容偏移, 新内容尺寸]``
+
+两项各管一件事，互不干扰：
+
+- **尺寸变化绕旧中心**（旋转 90°／纯裁剪）：图还待在用户摆的地方，按新
+  形状向四周长开/收拢（2026-10-10「旋转后被压宽」的既有口径，保持不变）；
+- **内容偏移量平移**（裁剪"移动"把位移编码成透明边距）：用户拖了 200px
+  就整整平移 200px，大小不变。
+
+⚠️⚠️ 偏移项**只能是内容框在画布里的左上角 ``(content_x, content_y)``**，
+不要再减 ``整图尺寸/2``（2026-10-14 用户报障「向下移 200px 后图变大了」：
+减掉半张图高把 200 砍成 100，rect 落在 Top1+100 ⇒ 顶部没跟着走、底部长
+出 200px，看着就是"顶部与右图平齐、底部多出一截、左右不等高"）。
+纯尺寸变化时内容偏移为 0，本式退化成既有的绕中心口径，不影响旧行为。
+尺寸与偏移都没变（普通修饰）就一个字节都不动。返回是否有 rect 被改过
+（调用方据此决定要不要落盘/刷视图）。
+
+---
+
+## `desktop.services.imposition.layout`
+
+源码：[`desktop/services/imposition/layout.py`](../../desktop/services/imposition/layout.py)
+
+版面项：默认并排/单图版面、编辑器回传写回、单图页加图。
+
+从 ``desktop/services/imposition.py`` 拆出（2026-11-22）：纯几何与文档改写，
+不读像素尺寸以外的东西（尺寸见 ``images``）。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `apply_editor_layout(items: list[dict], updates: list[dict]) -> set[str]` | 把双图编辑器回传的画布位置/尺寸写回对应页面项。 |
+| `page_has_file(page: dict, path_text: str) -> bool` | 这一页的某张源图是否就是这个文件（形态无关比较）。 |
+| `pages_having_file(pages: list, path_text: str) -> list[int]` | 哪些页用了这个源文件（页号列表）。 |
+| `default_items(files: list) -> list[dict] \| None` | 两张源图 → **默认并排版面**（各按原始像素，不改动用户的图）。 |
+| `make_page(sources: list) -> dict \| None` | 按**源清单顺序**取两张图造一页拼版版面。 |
+| `single_items(file) -> list[dict] \| None` | 一张源图 → **单图版面**（整幅图 / 落单图专用：原始像素、不旋转）。 |
+| `make_single_page(file) -> dict \| None` | 一张源图**自成一页**（整幅不拼、落单）：版面里只有一项。 |
+| `append_item_to_page(items: list[dict], file) -> list[dict] \| None` | 单图页「新增图片」：把 ``file`` 并进当前页，返回**新的 items**。 |
+
+#### `apply_editor_layout(items: list[dict], updates: list[dict]) -> set[str]`
+
+把双图编辑器回传的画布位置/尺寸写回对应页面项。
+
+编辑器用当前图像素系记录新画布原点，并以入口版面比例换算到页面
+``rect``。更新携带源项序号与路径，避免页面或源清单变化时误改其他项。
+
+#### `default_items(files: list) -> list[dict] | None`
+
+两张源图 → **默认并排版面**（各按原始像素，不改动用户的图）。
+
+``files`` 顺序即槽位顺序 ``[右槽, 左槽]``：左槽贴 x=0，右槽紧挨在它右边，
+两者顶部对齐。古籍一页的两半通常同尺寸，摆出来就是标准对开。
+
+尺寸读不到 / 少于两张时返回 None（调用方负责提示）。
+
+#### `make_page(sources: list) -> dict | None`
+
+按**源清单顺序**取两张图造一页拼版版面。
+
+``sources`` 顺序即源清单顺序（序号小在前）；本函数把 ``sources[0]``
+放进**右槽**、``sources[1]`` 放进**左槽**——这就是用户的口径
+「序号排前面的在右侧，序号大的在左侧」。版面本身见 ``default_items``。
+
+#### `single_items(file) -> list[dict] | None`
+
+一张源图 → **单图版面**（整幅图 / 落单图专用：原始像素、不旋转）。
+
+尺寸读不到返回 None（调用方负责跳过 / 提示）。
+
+#### `append_item_to_page(items: list[dict], file) -> list[dict] | None`
+
+单图页「新增图片」：把 ``file`` 并进当前页，返回**新的 items**。
+
+槽位与摆放口径（用户 2026-09-30：单图页可以再导一张图拼成对页）：
+
+- 原图是**左半幅**（文件名 ``-l``/``_l`` 结尾）→ 新图进**右槽**
+  （``items[0]``），摆在原图**右边**；
+- 其余（右半幅 / 整幅 / 无后缀）→ 新图进**左槽**（``items[1]``），
+  摆在原图**左边**；
+- 新图按**原始像素**进版面、顶边与原图对齐、紧贴原图边缘（用户可再
+  拖动/缩放）；原图的版面（位置/大小/旋转）**原样保留**，不重排。
+
+``items`` 不是恰好一项（只有单图页能加图）或尺寸读不到时返回 None，
+调用方负责提示。
+
+---
+
+## `desktop.services.imposition.sources`
+
+源码：[`desktop/services/imposition/sources.py`](../../desktop/services/imposition/sources.py)
+
+源图的路径比较键与形态判定（左/右半幅、整幅、无侧半幅）。
+
+从 ``desktop/services/imposition.py`` 拆出（2026-11-22）。判据唯一处仍是
+文件名后缀（提交计划的 role 见 ``auto.source_kind``）。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `classify_source(path) -> str` | 源图形态：左半幅 / 右半幅 / 整幅（**判据唯一处：文件名后缀**）。 |
+| `source_page_number(path) -> int \| None` | 源图**页号**：文件名开头的连续数字（``3-r`` → 3、``004-l`` → 4）。 |
+| `same_path(left, right) -> bool` | 两个路径串是否指同一处文件（**形态无关**）。 |
+
+#### `classify_source(path) -> str`
+
+源图形态：左半幅 / 右半幅 / 整幅（**判据唯一处：文件名后缀**）。
+
+自动拼版只能靠文件名认图——拼版侧读不到检测框，而第三步的落盘口径是
+半幅页 ``<页号>-l`` / ``<页号>-r``、整幅页 ``<页号>``（见
+``desktop.services.print_plan.plan_detect_submit_entries``）。
+
+⚠️ 单栏书 / 窄页会把半幅的侧别归一化掉（产物仍叫 ``<页号>``），此时
+文件名与整幅**无法区分**。那种页的形态必须由任务提交计划给出，见
+:func:`source_kind`。
+
+#### `source_page_number(path) -> int | None`
+
+源图**页号**：文件名开头的连续数字（``3-r`` → 3、``004-l`` → 4）。
+
+「不连续的图片不可以合并在一页」的判据。文件名不带数字前缀的图
+（如 ``cover``）返回 None——永不参与配对，只能单独成页。
+
+#### `same_path(left, right) -> bool`
+
+两个路径串是否指同一处文件（**形态无关**）。
+
+文档里存的是路径**原样字符串**，而"编辑器刚覆盖的那个文件"往往是从
+``Path(...)`` 取出来的——Windows 上 ``Path`` 会把 ``/`` 翻成 ``\``，
+大小写也可能有差异。拿字符串直接 ``==`` 比会**静默落空**（用户
+2026-10-08 报的"预览弹窗里编辑完，拼版页还是老图"就是这个）。
+比较前一律 ``normpath`` + ``normcase``；空串永远不相等（``Path("")``
+会退化成 ``"."``，那是"还没选文件"，不是同一处）。
 
 ---
 
@@ -11205,41 +12596,11 @@ done/total 为 0、completed 为 False）。执行过哪怕失败/中断都算�
 
 ---
 
-## `desktop.shell`
+## `desktop.shell.constants`
 
-源码：[`desktop/shell.py`](../../desktop/shell.py)
+源码：[`desktop/shell/constants.py`](../../desktop/shell/constants.py)
 
-左侧导航壳层：qfluentwidgets 的 ``NavigationInterface`` + 页面栈。
-
-布局照搬 ``FluentWindow`` 的做法（导航栏在左、页面栈在右、拉伸因子给页面栈），
-但不继承 ``FluentWindow``——那个类自带自己的导航栏与页面栈（会与本壳层打架），
-我们只借它的**布局套路**。
-
-⚠️ 窗口装饰的现状（2026-10-15 变更）：主窗口是**无边框 + 自绘标题栏**
-（``desktop/app.py::MainWindow`` 基类 ``qframelesswindow.FramelessMainWindow``，
-标题栏由 ``desktop/ui/menu.py::install_title_bar`` 装配成"图标 / 标题 / 菜单"一排）。
-改这一层的原因是"菜单要跟在标题后面、不许另起一行"；壳层本身**不受影响**——
-它仍只管导航栏 + 页面栈，且是 ``QMainWindow`` 的中央控件（标题栏占的是"菜单位"，
-中央控件自动让开，两者不重叠）。
-
-    hBoxLayout { navBackdrop( navigationInterface ), pageStack( stretch=1 ) }
-
-（背板只负责给导航栏一层浅色底 + 右侧分隔线，见 :class:`_NavBackdrop`。）
-
-导航条目（用户 2026-11-17 起）：
-
-- ``TOP``：**任务管理**（原 ``TaskListPage``，点任务仍在栈内打开详情页）+
-  **独立功能**（一条入口，点进去是方块页，每个方块 = 一个模块入口，
-  模块清单来自 ``desktop.modules.MODULES``）；
-- 模块页与入口页全部**惰性构造**：第一次点进去才 ``factory()``，不点不建。
-
-⚠️ 导航栏**默认折叠**（用户 2026-10-02：「左侧的目录，默认关闭」）：启动后
-只剩一列图标，正文区拿到整幅宽度；想看到条目文字就点左上角的菜单按钮展开，
-再点一次收回。**不要**再在 resizeEvent 里替用户 `expand()`——那会让"默认
-关闭"失效（见 :meth:`resizeEvent` 的说明）。
-
-⚠️ 壳层**不 import 任何具体模块页**，只认 :class:`desktop.modules.Module` 的
-元数据与工厂——这是「模块独立」在壳层侧的落实：删模块只需要改 ``MODULES``。
+导航壳层的尺寸常量与路由键。
 
 ### 模块常量
 
@@ -11255,59 +12616,27 @@ done/total 为 0、completed 为 False）。执行过哪怕失败/中断都算�
 | ROUTE_SETTINGS | `"settings"` |
 | ROUTE_MODULES | `"modules"` |
 
-### `class ModuleShell(QWidget)`
+---
 
-壳层根控件：左侧导航 + 右侧页面栈。
+## `desktop.shell.create_flow`
 
-对外暴露 :meth:`open_detail` / :meth:`back_to_list` 供 ``MainWindow``
-转发（两者都走栈切换，行为与 ``app.py`` 原来的 ``_open_detail`` /
-``_back_to_list`` 一致）。
+源码：[`desktop/shell/create_flow.py`](../../desktop/shell/create_flow.py)
+
+创建任务页 / 快速任务 / 流程编辑页。
+
+### `class CreateFlowMixin`
+
+创建任务页与任务流程编辑页的切页。
 
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(store: TaskStore, parent=None)` | 建导航与页面栈，挂上「任务管理」页，模块条目按注册表登记。 |
-| `show_tasks() -> None` | 切回任务列表页并刷新列表。 |
-| `detail_page()` | 任务详情页（惰性构造）。 |
 | `create_page()` | 创建任务页（惰性构造；外部截图/自测按这个属性取）。 |
 | `open_create() -> None` | 打开「创建任务」二级页（列表页的「创建任务」按钮走这里）。 |
 | `quick_task(path: str) -> None` | 「快速任务」（菜单 文件 → 快速任务）：拿一个 PDF **直接建任务**。 |
 | `flow_page()` | 任务流程编辑页（惰性构造）。 |
 | `open_flow(task_id: str) -> None` | 打开某个任务的流程编辑页（详情页页头按钮走这里）。 |
-| `prewarm_detail_page() -> None` | 预构造详情页骨架与**流程第一步**面板（同 app.py 原 ``_prewarm_detail_page``）。 |
-| `open_detail(task_id: str) -> None` | 打开某个任务的详情页（行为与 ``app.py::_open_detail`` 一致）。 |
-| `back_to_list() -> None` | 详情页「返回」→ 切回列表并刷新。 |
-| `modules_page() -> ModuleHubPage` | 「独立功能」入口页（惰性构造；外部截图/自测按这个方法取）。 |
-| `show_modules() -> None` | 切到「独立功能」入口页（左侧导航那条「独立功能」走这里）。 |
-| `show_module(key: str) -> None` | 切到某个模块页；首次进入时惰性构造。 |
-| `module_page(key: str) -> QWidget \| None` | 已构造的模块页；**没建过返回 None**（自测用它断言"惰性没被破坏"）。 |
-| `settings_page() -> SettingsPage` | 设置页（惰性构造；外部截图/自测按这个方法取）。 |
-| `show_settings() -> None` | 切到设置页（左侧导航栏底部的「设置」条目走这里）。 |
-| `rebind_store(store: TaskStore) -> None` | 把壳层与**已建页面**上的 store 引用一起换掉（换数据目录用）。 |
-| `current_route() -> str` | 当前**显示中**页面的路由键。 |
-| `selected_route() -> str` | 导航栏**当前高亮**的条目路由键。 |
-| `nav_is_expanded() -> bool` | 导航栏当前是否展开（``EXPAND``）。 |
-| `toggle_nav() -> None` | 展开/收回导航栏（等价于点左上角的菜单按钮）。 |
-| `shutdown_workers() -> None` | 收尾所有页面的后台线程（壳层 + 惰性页 + 已建模块页）。 |
-| `keyPressEvent(event) -> None` | ←/→ 在详情页内转发翻页（同 app.py 原逻辑，焦点链不消费时兜底）。 |
-
-##### `show_tasks() -> None`
-
-切回任务列表页并刷新列表。
-
-⚠️ 不去手动 ``setCurrentItem``：切页会触发 ``pages.currentChanged``
-→ :meth:`_sync_nav_to_page` 统一同步高亮，单点维护不易漏。
-
-##### `detail_page()`
-
-装饰器：`property`
-
-任务详情页（惰性构造）。
-
-保留这个名字：``tests/selftests/_context.py``
-按 ``window.detail_page`` 取页面来操作控件（原来在 MainWindow 上，
-现在壳层转发一层，外部契约不变）。
 
 ##### `open_create() -> None`
 
@@ -11337,13 +12666,29 @@ done/total 为 0、completed 为 False）。执行过哪怕失败/中断都算�
 ⚠️ 唯一"少做"的一步是**不经过创建任务页**；**查重那道闸仍会弹**——同一个
 PDF 已经建过任务时再建第二个，多半是误操作，不该因为"快速"就跳过。
 
-##### `open_detail(task_id: str) -> None`
+---
 
-打开某个任务的详情页（行为与 ``app.py::_open_detail`` 一致）。
+## `desktop.shell.feature_pages`
 
-⚠️ 顺带把「PDF 渲染子进程池」**预热**一次（见
-``pdf_render_service.prewarm``）：那套池首次建起来要 ~1.5s，不预热就
-会砸在"用户看到的第一张缩略图"上。预热在后台线程做、幂等、不阻塞。
+源码：[`desktop/shell/feature_pages.py`](../../desktop/shell/feature_pages.py)
+
+独立功能入口页 / 设置页 / 切换数据目录。
+
+### `class FeaturePagesMixin`
+
+模块入口页、模块页与设置页的惰性构造和切换。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `modules_page() -> ModuleHubPage` | 「独立功能」入口页（惰性构造；外部截图/自测按这个方法取）。 |
+| `show_modules() -> None` | 切到「独立功能」入口页（左侧导航那条「独立功能」走这里）。 |
+| `show_module(key: str) -> None` | 切到某个模块页；首次进入时惰性构造。 |
+| `module_page(key: str) -> QWidget \| None` | 已构造的模块页；**没建过返回 None**（自测用它断言"惰性没被破坏"）。 |
+| `settings_page() -> SettingsPage` | 设置页（惰性构造；外部截图/自测按这个方法取）。 |
+| `show_settings() -> None` | 切到设置页（左侧导航栏底部的「设置」条目走这里）。 |
+| `rebind_store(store: TaskStore) -> None` | 把壳层与**已建页面**上的 store 引用一起换掉（换数据目录用）。 |
 
 ##### `show_module(key: str) -> None`
 
@@ -11362,6 +12707,27 @@ PDF 已经建过任务时再建第二个，多半是误操作，不该因为"快
 号的另一个任务"（`tests/selftests/task/last_stage.py` 就是这么红的：真实数据
 目录里恰好也有 0001，而它停在拼版步）。测试的
 「换 store 指向临时目录」这一手（`_context.prepare`）全靠它。
+
+---
+
+## `desktop.shell.navigation`
+
+源码：[`desktop/shell/navigation.py`](../../desktop/shell/navigation.py)
+
+壳层的导航交互：点击槽、主题、高亮同步、展开 / 收回。
+
+### `class NavigationMixin`
+
+导航条目点击、高亮与展开状态。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `current_route() -> str` | 当前**显示中**页面的路由键。 |
+| `selected_route() -> str` | 导航栏**当前高亮**的条目路由键。 |
+| `nav_is_expanded() -> bool` | 导航栏当前是否展开（``EXPAND``）。 |
+| `toggle_nav() -> None` | 展开/收回导航栏（等价于点左上角的菜单按钮）。 |
 
 ##### `current_route() -> str`
 
@@ -11395,6 +12761,88 @@ PDF 已经建过任务时再建第二个，多半是误操作，不该因为"快
 ⚠️ 必须走 ``NavigationInterface.toggle()``：``NavigationInterface``
 **只有 ``expand()`` 没有 ``collapse()``**（收回在 ``panel`` 上），
 自己拼 expand/collapse 会踩 ``AttributeError``。
+
+---
+
+## `desktop.shell.task_pages`
+
+源码：[`desktop/shell/task_pages.py`](../../desktop/shell/task_pages.py)
+
+任务列表 / 详情页的切换与预热。
+
+### `class TaskPagesMixin`
+
+任务列表页与惰性详情页的切换。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `show_tasks() -> None` | 切回任务列表页并刷新列表。 |
+| `detail_page()` | 任务详情页（惰性构造）。 |
+| `prewarm_detail_page() -> None` | 预构造详情页骨架与**流程第一步**面板（同 app.py 原 ``_prewarm_detail_page``）。 |
+| `open_detail(task_id: str) -> None` | 打开某个任务的详情页（行为与 ``app.py::_open_detail`` 一致）。 |
+| `back_to_list() -> None` | 详情页「返回」→ 切回列表并刷新。 |
+
+##### `show_tasks() -> None`
+
+切回任务列表页并刷新列表。
+
+⚠️ 不去手动 ``setCurrentItem``：切页会触发 ``pages.currentChanged``
+→ :meth:`_sync_nav_to_page` 统一同步高亮，单点维护不易漏。
+
+##### `detail_page()`
+
+装饰器：`property`
+
+任务详情页（惰性构造）。
+
+保留这个名字：``tests/selftests/_context.py``
+按 ``window.detail_page`` 取页面来操作控件（原来在 MainWindow 上，
+现在壳层转发一层，外部契约不变）。
+
+##### `open_detail(task_id: str) -> None`
+
+打开某个任务的详情页（行为与 ``app.py::_open_detail`` 一致）。
+
+⚠️ 顺带把「PDF 渲染子进程池」**预热**一次（见
+``pdf_render_service.prewarm``）：那套池首次建起来要 ~1.5s，不预热就
+会砸在"用户看到的第一张缩略图"上。预热在后台线程做、幂等、不阻塞。
+
+---
+
+## `desktop.shell.widget`
+
+源码：[`desktop/shell/widget.py`](../../desktop/shell/widget.py)
+
+壳层根控件 ModuleShell（导航栏 + 页面栈）。
+
+本文件只保留骨架（构造、收尾、按键转发），其余职责按功能分文件
+（均位于 desktop/shell/）：
+
+- navigation.NavigationMixin  导航点击槽 / 主题 / 高亮同步 / 展开收回
+- task_pages.TaskPagesMixin   任务列表页与惰性详情页的切换、预热
+- create_flow.CreateFlowMixin 创建任务页 / 快速任务 / 流程编辑页
+- feature_pages.FeaturePagesMixin 独立功能入口页 / 模块页 / 设置页
+- constants                   尺寸常量与路由键
+
+（导航栏浅色背板 ``_NavBackdrop`` 与壳层同住本文件。）
+
+### `class ModuleShell(TaskPagesMixin, CreateFlowMixin, FeaturePagesMixin, NavigationMixin, QWidget)`
+
+壳层根控件：左侧导航 + 右侧页面栈。
+
+对外暴露 :meth:`open_detail` / :meth:`back_to_list` 供 ``MainWindow``
+转发（两者都走栈切换，行为与 ``app.py`` 原来的 ``_open_detail`` /
+``_back_to_list`` 一致）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(store: TaskStore, parent=None)` | 建导航与页面栈，挂上「任务管理」页，模块条目按注册表登记。 |
+| `shutdown_workers() -> None` | 收尾所有页面的后台线程（壳层 + 惰性页 + 已建模块页）。 |
+| `keyPressEvent(event) -> None` | ←/→ 在详情页内转发翻页（同 app.py 原逻辑，焦点链不消费时兜底）。 |
 
 ---
 
@@ -11960,35 +13408,11 @@ args 约定：
 
 ---
 
-## `desktop.steps.bpmn_diagram`
+## `desktop.steps.bpmn_diagram.constants`
 
-源码：[`desktop/steps/bpmn_diagram.py`](../../desktop/steps/bpmn_diagram.py)
+源码：[`desktop/steps/bpmn_diagram/constants.py`](../../desktop/steps/bpmn_diagram/constants.py)
 
-BPMN 2.0 流程图的**忠实模型**：文件是唯一真源，页面照着它渲染与编辑。
-
-## 为什么另起一个模型（与 :mod:`desktop.steps.flow` 的分工）
-
-:mod:`~desktop.steps.flow` 的 ``FlowDefinition`` 是**运行语义**模型：它把流程
-表达成「端口级边表」``(consumer, port) → supplier``——那是为了回答"这一步该去
-谁那儿取产物"。它**不是**流程图，页面拿它渲染只能自己算坐标、自己猜图形。
-
-本模块是**图形模型**：节点带 BPMN 元素类型（task / exclusiveGateway /
-startEvent / …）、带文件里 DI 段的真实坐标，连线带折点。页面（
-:class:`desktop.components.bpmn_view.BpmnView`）照着它画，**看到的就是文件里
-画的**——用 bpmn.io 画的图，进页面长得一样。
-
-## 为什么不做完整 BPMN 引擎
-
-用户 2026-10-05 的口径：
-
-> 后端驱动可以使用状态机来实现，bpm 流程引擎太复杂
-
-所以这里**只做"读得懂、画得出、改得动"**：认识本工具用得到的元素类型，
-不认识的原样保留（``kind`` 存原始标签名，绘图时按类型降级成矩形）。语义
-（谁先谁后、跳过谁）由运行时的状态机负责，不在这里推导。
-
-⚠️ 本模块**纯数据 + 纯 XML，不 import Qt**（与 ports/spec/flow 同一约束），
-可以被子进程、CLI、自测安全导入。
+BPMN 模型的常量：命名空间、元素类型、默认尺寸、排版容差、节点别名。
 
 ### 模块常量
 
@@ -12019,6 +13443,31 @@ startEvent / …）、带文件里 DI 段的真实坐标，连线带折点。页
 | NOTE_LINE_H | `16.0` |
 | NOTE_CHROME_W | `26.0` |
 | NOTE_MIN_H | `30.0` |
+
+---
+
+## `desktop.steps.bpmn_diagram.diagram`
+
+源码：[`desktop/steps/bpmn_diagram/diagram.py`](../../desktop/steps/bpmn_diagram/diagram.py)
+
+``FlowDiagram`` 本体：字段定义 + 各职责 mixin 的组合。
+
+### `class FlowDiagram(_QueryMixin, _SlotMixin, _LayoutMixin, _SerializationMixin, _RoutingMixin)`
+
+一张完整的流程图：节点 + 连线 + 坐标（= bpmn 文件的全部内容）。
+
+``boxes`` / ``waypoints`` 直接来自文件的 **DI 段**（``dc:Bounds`` /
+``di:waypoint``）——这正是 bpmn.io 等编辑器存布局的地方，所以"页面上看到
+的"与"文件里存下的"是同一份坐标。文件没有 DI 段时按 :meth:`auto_layout`
+兜底排一份。
+
+---
+
+## `desktop.steps.bpmn_diagram.elements`
+
+源码：[`desktop/steps/bpmn_diagram/elements.py`](../../desktop/steps/bpmn_diagram/elements.py)
+
+图的元素数据模型：节点 / 连线 / 注释。
 
 ### `class DiagramNode`
 
@@ -12052,348 +13501,13 @@ startEvent / …）、带文件里 DI 段的真实坐标，连线带折点。页
 :attr:`attached_to` 是它挂在哪张节点上（``association`` 的 ``sourceRef``）；
 空串表示没挂（图上孤立的一条注释）。
 
-### `class FlowDiagram`
+---
 
-一张完整的流程图：节点 + 连线 + 坐标（= bpmn 文件的全部内容）。
+## `desktop.steps.bpmn_diagram.helpers`
 
-``boxes`` / ``waypoints`` 直接来自文件的 **DI 段**（``dc:Bounds`` /
-``di:waypoint``）——这正是 bpmn.io 等编辑器存布局的地方，所以"页面上看到
-的"与"文件里存下的"是同一份坐标。文件没有 DI 段时按 :meth:`auto_layout`
-兜底排一份。
+源码：[`desktop/steps/bpmn_diagram/helpers.py`](../../desktop/steps/bpmn_diagram/helpers.py)
 
-#### 方法
-
-| 方法 | 说明 |
-| --- | --- |
-| `node(node_id: str) -> DiagramNode \| None` | — |
-| `flows_of(node_id: str) -> list[DiagramFlow]` | 以该节点为**起点**的连线（画箭头/找下一步用）。 |
-| `node_box(node_id: str) -> tuple[float, float, float, float]` | 节点矩形；没有坐标就按类型给个默认尺寸摆 (0,0)。 |
-| `note_box(note_id: str) -> tuple[float, float, float, float]` | 注释框（和 :meth:`node_box` 同一套坐标；没有就按默认尺寸摆 0,0）。 |
-| `notes_of(node_id: str) -> list[DiagramNote]` | 挂在某个节点上的注释（显示用；顺序即文件声明顺序）。 |
-| `content_size() -> tuple[float, float]` | 内容包围盒（宽, 高），含留白。空图返回留白尺寸。 |
-| `stage_order() -> tuple[str, ...]` | 可运行的阶段，按**图上的拓扑顺序**排（旧模型：状态机按 stage 寻址）。 |
-| `node_order() -> tuple[tuple[str, str], ...]` | 图上**可运行节点**按拓扑序排：``(node_id, stage)``，**不折叠同阶段**。 |
-| `primary_of(stage: str) -> str \| None` | 该阶段在本图里的**主节点** id（没有该阶段返回 ``None``）。 |
-| `node_ids_of(stage: str) -> tuple[str, ...]` | 该阶段在本图里的**全部节点** id（文件声明顺序；没有则空元组）。 |
-| `next_node_id() -> str` | 分配一个**全新且永不复用**的节点 id（``Node_<n>``），并抬水位。 |
-| `incoming(node_id: str) -> list[DiagramFlow]` | 以该节点为**终点**的连线。 |
-| `upstream_stages(stage: str) -> tuple[str, ...]` | 沿图往前找，哪些阶段是 ``stage`` 的**上游**（传递闭包）。 |
-| `nearest_producer(stage: str, port: str, active) -> str \| None` | 沿图**往前**找最近的、产出 ``port`` 的**在流程里**的阶段。 |
-| `producers_of(stage: str, port: str, active) -> tuple[str, ...]` | 沿图往前能到达的、产出 ``port`` 的**全部**在流程阶段（已折叠）。 |
-| `nearest_producer_node(node_id: str, port: str, active) -> str \| None` | **节点粒度**：从 ``node_id`` 沿图往前，最近的产出 ``port`` 的节点 id。 |
-| `producer_nodes_of(node_id: str, port: str, active) -> tuple[str, ...]` | **节点粒度**：``node_id`` 沿图可达的全部产出 ``port`` 的节点 id。 |
-| `stage_slots() -> tuple` | 把本图投影成**界面步骤条上的格子序列**（与 ``FlowDefinition`` |
-| `optional_after(step: str \| None=None) -> int \| None` | 可选节点插在**真实步骤数组的第几位之后**（喂 ``StepBar``）。 |
-| `slot_of(step: str)` | 按**界面步骤 key** 找槽位；不在流程里返回 ``None``。 |
-| `bar_index_of(step: str) -> int \| None` | — |
-| `step_at(bar_index: int) -> str \| None` | 步骤条格序 → 界面步骤 key（点节点后反查）。 |
-| `contains(stage: str) -> bool` | 这个运行阶段在**本图**里吗。 |
-| `auto_layout(diagram: 'FlowDiagram') -> 'FlowDiagram'` | 给"没有 DI 段"的图排一份坐标（就地改 ``boxes``）。 |
-| `relayout() -> 'FlowDiagram'` | 整图**自动排版**（就地改 ``boxes``、清空 ``waypoints``）。 |
-| `load(path: Path \| str) -> 'FlowDiagram'` | 从 ``.bpmn`` 文件读回整张图（节点/连线/坐标）。 |
-| `to_xml() -> bytes` | 写回 BPMN 2.0（含 DI 段），保证 bpmn.io 等工具能原样打开。 |
-| `route_anchor(flow: DiagramFlow) -> tuple[str, float, str, float]` | 连线两端**该用哪个连接点**：``(源方向, 源位置t, 目标方向, 目标位置t)``。 |
-| `route(flow: DiagramFlow) -> list[tuple[float, float]]` | 连线的折点（文件没存 ``di:waypoint`` 时算一份）。 |
-| `route_sides(flow: DiagramFlow, anchor: tuple[str, float, str, float]) -> list[tuple[float, float]]` | 按**指定的连接点**算折点（锚点冻结的走线）。 |
-| `save(path: Path \| str) -> Path` | 原子落盘（写 ``.part`` 再 ``os.replace``，防半截文件）。 |
-
-##### `content_size() -> tuple[float, float]`
-
-内容包围盒（宽, 高），含留白。空图返回留白尺寸。
-
-⚠️ 注释框**也要算进来**：注释常挂在节点外侧（本例里都在节点下方
-一行的位置），只按节点算包围盒会把它们裁在画布外——现象是"注释
-看不见"，而模型里明明有。
-
-##### `stage_order() -> tuple[str, ...]`
-
-可运行的阶段，按**图上的拓扑顺序**排（旧模型：状态机按 stage 寻址）。
-
-⚠️ **同阶段的多个节点折叠成一个阶段**——这是 :meth:`node_order` 去掉
-阶段维度后的投影。B 方案（2026-10-17）后运行时按 ``node_id`` 寻址
-（:meth:`node_order`），本方法保留给仍按 stage 说话的旧调用方。
-
-⚠️ **必须是拓扑序而不是遍历序**：图上从网关分叉出「否 → PDF排版」与
-「→ 古籍拼版 → PDF排版」两条路，广度遍历会先撞到短路的「PDF排版」，
-把 ``print`` 排到 ``imposition`` 前面——那样状态机会拿"还没拼版的
-图"去打印（实测踩过）。拓扑排序保证**所有前驱都排完才轮到它**，
-所以 ``imposition`` 稳稳排在 ``print`` 前面。
-
-认不出阶段的节点（``stage is None``，即网关/事件）跳过但不影响
-拓扑计算——它们是图上的控制元素，本身不占一格。
-
-实现用 Kahn 算法，**同层按文件声明顺序**出队（结果稳定、可预期）。
-有环（BPMN 允许回环）时剩下的按声明顺序兜底，不丢阶段。
-
-##### `node_order() -> tuple[tuple[str, str], ...]`
-
-图上**可运行节点**按拓扑序排：``(node_id, stage)``，**不折叠同阶段**。
-
-B 方案（2026-10-17）的运行时真源：任务流程按**节点实例** ``node_id``
-寻址——同类型步骤（图片拼版 / 检测文本框 / 图片去底色 / PDF排版）可以
-放多个节点，它们彼此独立（各自参数、各自产物落点）。
-
-与 :meth:`stage_order` 是同一趟拓扑排序的两份投影：那个把同阶段的多个
-节点**折叠成一个阶段**（旧调用方按 stage 寻址，保持兼容），本方法
-**保留每个节点实例**。认不出阶段的节点（网关/事件/未知 task 不接功能）
-不进结果——它们不占运行位。
-
-##### `primary_of(stage: str) -> str | None`
-
-该阶段在本图里的**主节点** id（没有该阶段返回 ``None``）。
-
-「主节点」是 B 方案里"沿用旧路径"的那个节点：同阶段**恰好一个节点**
-时它就是主节点，产物仍落在 ``stages/<阶段>``（现存任务与默认流程**零
-迁移**）；同阶段**多个节点**时其余节点是副本，产物落在
-``stages/<阶段>~<node_id>``。
-
-⚠️ 取法是该阶段在**文件声明顺序**里第一个节点，**不是**拓扑序第一个
-——声明顺序比拓扑序稳定（拖拽、改连线都不改声明顺序，只有增删节点才
-变），所以"谁是主节点"不会因为用户改了连线而漂移。
-
-##### `node_ids_of(stage: str) -> tuple[str, ...]`
-
-该阶段在本图里的**全部节点** id（文件声明顺序；没有则空元组）。
-
-``node_ids_of(stage)[0]`` 恒等于 :meth:`primary_of`（同一取法），其余
-是副本。界面按它给每个节点实例各建一页。
-
-##### `next_node_id() -> str`
-
-分配一个**全新且永不复用**的节点 id（``Node_<n>``），并抬水位。
-
-水位 = ``max(自身记录的 node_seq, 现有 ``Node_<n>`` id 里的最大 n) + 1``
-（见 :attr:`node_seq`）。调用方（编辑器 ``_add_node``）必须走这里，
-**别再用"当前节点数 + 1"**——那会在删节点后复用旧 id。
-
-##### `upstream_stages(stage: str) -> tuple[str, ...]`
-
-沿图往前找，哪些阶段是 ``stage`` 的**上游**（传递闭包）。
-
-用途：**"上游重跑过 ⇒ 本步产物可能过期"** 的判定链。它必须**按图算**，
-不能写死一张表——用户改了流程（加一步、去掉一步、换分支）之后，
-写死的链会把不相干的步骤算成上游（提示"上游已重新执行"却指错人），
-或者漏掉真正影响它的那一步。
-
-走法：从该阶段的节点出发反向遍历；遇到**网关/事件**（不带 stage 的）
-继续往前穿（它们是控制元素，不产出产物）；遇到产出阶段就收下并
-**继续往前**（传递性）。
-
-⚠️⚠️ **要按"界面格"摊开，而不是只认图上出现的阶段**：
-``detect_submit``（提交检测结果）是第二步内的第二个动作，用户画图时
-不会给它单独开节点——但它**确实**是下游的输入（``rembg.pages
-← detect_submit``）。只按图上的阶段算，链里就少了它，于是"提交过之后
-去底色已过期"这句提示永远不出现。所以收下阶段后要按
-``ports.STAGE_STEPS`` 反查它那一格里的**所有**阶段。
-
-结果按 :meth:`stage_order` 排（顺序稳定、可断言），图上没有节点的阶段
-追加在后面。该阶段不在图里时返回 ``()``。
-
-##### `nearest_producer(stage: str, port: str, active) -> str | None`
-
-沿图**往前**找最近的、产出 ``port`` 的**在流程里**的阶段。
-
-⚠️ 为什么需要它：运行时要回答"这一步的 ``pages`` 去哪个目录取"，
-而旧答案来自代码里的端口级边表（``ports.SUPPLIERS``）。一旦用户把
-流程改成**不含某一步**（例如去掉「图片去底色」），边表给的供给方就
-不在流程里了——按它取路径会指向**永远不会产生的文件**（故障现象是
-"生成 PDF 报找不到输入"，而不是流程报错，极难查）。
-
-规则：从 ``stage`` 反向广度遍历（跳过网关与事件——它们不产出产物），
-返回**第一个**既在 ``active`` 里、又产出 ``port`` 的阶段。
-找不到返回 ``None``（调用方按"没有这个输入"处理）。
-
-``active`` = 本流程实际要跑的阶段集合（由 :class:`Scheduler` 给，
-已排除条件不满足的步骤，如未启用拼版时的 ``imposition``）。
-
-##### `producers_of(stage: str, port: str, active) -> tuple[str, ...]`
-
-沿图往前能到达的、产出 ``port`` 的**全部**在流程阶段（已折叠）。
-
-与 :meth:`nearest_producer` 的区别是**返回全部**而不是"广度序第一个"
-——用来判断"**图能不能给出唯一答案**"。
-
-⚠️ 为什么需要这个判据（2026-10-06，用户"这个问题再次提出"）：
-``store.stage_supplier`` 原先的规则是**"先静态声明、后沿图回退"**，
-于是 ``ports.SUPPLIERS``（一份**写死在代码里的默认流程连线**）在
-静态供给方还留在流程里时**压过用户的连线**。实测：两条节点集合相同、
-连线不同的流程（`extract→detect→rembg→print` 与用户自己连的
-`extract→print`），``print`` 的取图目录**完全一样**——用户明确画的
-连线被静默丢弃。这就是"自定义流程里总是冒出默认流程逻辑"的病根：
-**BPM 化只覆盖了"顺序"，没覆盖"语义"**。
-
-⚠️ 但**不能无条件改成"图说了算"**：默认流程带一个网关（是否拼版），
-沿图回溯 ``print`` 会同时找到「图片拼版」与「图片去底色」两个产出方
-——**图说不清**。那种情况必须退回静态声明 + 条件开关（那正是
-``ports.print_pages_supplier`` 建模的东西）。所以调用方的判据是
-"**恰好一个**产出方 ⇒ 图说了算；0 个或多个 ⇒ 退回静态表"。
-
-产出方按 :func:`fold_forward` 折叠到同格最靠后的动作（去重后返回）。
-
-⚠️ **遇到产出方就停，不再往它上游走**（"谁喂我"的语义）：一条线性链
-``extract→detect→rembg→print`` 里，``print`` 的产出方是 ``rembg``，
-**不是** ``extract``——后者只是 rembg 的上游。若继续穿（把"可达"当
-"喂我"），线性链也会被判成"多个产出方"而退回静态表，等于图白做。
-真正需要"歧义"的是**网关分支**（两条**实线**都进同一个节点），那种
-情况在网关处就会同时看到两个产出方，判据照样成立。
-
-##### `nearest_producer_node(node_id: str, port: str, active) -> str | None`
-
-**节点粒度**：从 ``node_id`` 沿图往前，最近的产出 ``port`` 的节点 id。
-
-``active`` 是本流程实际要跑的**阶段**集合（Scheduler 给）；候选按节点
-的 ``stage`` 判在不在流程里。
-
-##### `producer_nodes_of(node_id: str, port: str, active) -> tuple[str, ...]`
-
-**节点粒度**：``node_id`` 沿图可达的全部产出 ``port`` 的节点 id。
-
-用来判"**图能不能给出唯一答案**"（与阶段版 :meth:`producers_of` 同一
-判据，只是按节点实例）。
-
-##### `stage_slots() -> tuple`
-
-把本图投影成**界面步骤条上的格子序列**（与 ``FlowDefinition``
-的同名方法语义一致，但顺序来自**本图**而不是代码里的阶段表）。
-
-⚠️ 这是"页面按文件渲染"的关键一步：详情页的步骤条与阶段寻址都走
-它，所以**换文件即换界面**。旧实现走 ``FlowDefinition.stage_slots()``
-——那读的是 `FlowDefinition.load()`，而它不认 ``exclusiveGateway`` 与
-bpmn.io 生成的 id，解析失败就**静默回落到默认流程** ⇒ 用户无论选
-默认还是自定义，详情页永远显示 ``task_default.bpmn``。
-
-折叠规则（与 ``FlowDefinition.stage_slots`` 保持一致）：
-
-1. **同一步骤的其他节点各占一格**（B 方案，2026-10-17：图片拼版 /
-   检测文本框 / 图片去底色 / PDF排版都可以有多个节点，它们彼此独立）；
-2. ``bar_index`` 只数**本图里有**的格子（步骤条上就这么多格）；
-3. **图上画了、但本程序还没有对应功能的 task 节点**（例如随手加的
-   「OCR 识别」）也**占一格**，排在真实步骤之后，标 ``mapped=False``
-   且 ``stack_index = NO_PAGE``——界面据此画灰节点并在点它时解释
-   （改成已有步骤名即可接上）。这类节点不会进 ``stage_order()``
-   （那里只收认得出阶段的），所以是单独扫节点表挑出来的。
-
-每个真实步骤格都带 ``node_id``（:attr:`~desktop.steps.flow.StageSlot.node_id`）
-——界面据此**按节点**寻址产物与参数（单节点时它就是主节点）。
-
-⚠️⚠️ **``stack_index`` 不是"数出来的"，而是"查出来的"**——这是最容易
-写错的一处（2026-10-05 实测踩中）：
-
-两个栈（``control_stack`` / ``preview_stack``）是**按静态步骤表**一次
-建好的固定页数（``FLOW_STAGES`` 各一页 + ``OPTIONAL_STEPS`` 追加在末尾），
-**与流程图文件无关**。所以页号必须查"这一步在静态表里的位置"：
-
-- 文件里**少了**某一步（例如默认流程改成不含「图片去底色」）时，若还
-  按"数当前有几格"来编号，后面每一步的页号都会**整体前移**——
-  点「PDF排版」会翻到「图片去底色」那一页（用户报的"改了文件程序
-  没跟着变"就是这个）。
-- 文件里**多了/调换了顺序**也一样：页号只认静态位置，步骤条上哪一格
-  对应哪一页由 :meth:`slot_of` / ``_select_stage`` 查出来。
-
-⚠️ 同一步骤的**多个节点共用同一页**（静态表里同一步骤只有一个位置）：
-页面在切到某一格时把该格对应的**节点**记下来（``node_id``），按节点
-重定向数据（产物目录 / 参数暂存 / 状态）。这样两个栈的建页数仍与静态
-表一致，不必为每个节点各建一页昂贵的预览控件。
-
-##### `optional_after(step: str | None=None) -> int | None`
-
-可选节点插在**真实步骤数组的第几位之后**（喂 ``StepBar``）。
-
-语义抄自 ``FlowDefinition.optional_after``（那里有详细推演，别重推）：
-``after`` 指的是**最后一个左邻居的下标**，不是左邻居的个数。
-
-⚠️ 返回值三态（2026-10-07，任务 #0027 踩坑）：``None`` 只表示**本图
-没有可选节点**；图里有拼版但它排在**最前**（没有任何左邻居）时返回
-``-1``——早先这种情况也回 ``None``，``StepBar`` 把 ``None`` 当"按默认
-位插到最后"，于是「拼版→PDF排版」的流程在步骤条上显示成
-「生成PDF → 图片拼版」，与图相反。
-
-##### `auto_layout(diagram: 'FlowDiagram') -> 'FlowDiagram'`
-
-装饰器：`classmethod`
-
-给"没有 DI 段"的图排一份坐标（就地改 ``boxes``）。
-
-简单横向铺开 + 分支下移：够用即可，用户拖一下就会覆盖它。
-
-##### `relayout() -> 'FlowDiagram'`
-
-整图**自动排版**（就地改 ``boxes``、清空 ``waypoints``）。
-
-与 :meth:`auto_layout` 的分工：那个只在**文件没有 DI 段**时兜底，
-这个是用户点「自动排版」时的主动整理——不管有没有坐标都重排。
-
-分层布局（Sugiyama 简化版）：
-
-1. **分层**：层号 = 无入边节点出发的最长路（Kahn 拓扑序上逐点取
-   ``max(前驱层)+1``）；环上剩下的点按声明顺序垫在最底层。
-2. **长边插虚拟节点**：跨了多层的那条边在中间层各占一个格子（经典
-   Sugiyama 的 dummy node）。少了这一步，「是否拼版 →(否)→ PDF排版」
-   会从同层的「图片拼版」框里横穿过去（用户 2026-10-06）。虚拟节点
-   **只参与排序与占行**，不落坐标、不写文件。
-3. **同层排序**：按前驱重心向下扫一遍、再按后继重心向上扫一遍，
-   减少连线交叉；重心相同时**虚拟节点优先**——让长边保持直线，
-   分支节点被挤到下一行（与 bpmn.io 画出来的一致）。
-4. **落坐标**：x 按层排开；y **按行号**排（不再"相对最宽层居中"——
-   那会让主链忽高忽低），每个节点在自己的行里**垂直居中**：要对齐
-   的是水平中线，不是顶边（36px 的事件与 80px 的任务顶边对齐会高
-   出一截）。
-5. **注释重挂**：每条注释放到**宿主节点正下方**，互相压住就往下让。
-   ⚠️ 早期做法是"注释跟着宿主一起平移"——保留文件里的旧相对偏移，
-   节点重排后那些偏移就变成一堆斜飘的注释、虚线还压着别的节点。
-
-⚠️ 只动**节点**坐标与折点；阶段顺序（语义）不受影响——排版是纯视觉。
-
-##### `load(path: Path | str) -> 'FlowDiagram'`
-
-装饰器：`classmethod`
-
-从 ``.bpmn`` 文件读回整张图（节点/连线/坐标）。
-
-⚠️ 与 :meth:`desktop.steps.flow.FlowDefinition.load` 的区别：那个只读
-**能跑的阶段**、认不出就抛错；这个读**图上画的一切**、认不出也保留。
-页面渲染用这个，运行语义用那个（或状态机）。
-
-##### `to_xml() -> bytes`
-
-写回 BPMN 2.0（含 DI 段），保证 bpmn.io 等工具能原样打开。
-
-⚠️ 连线必须**双向引用**：``sourceRef``/``targetRef`` 属性给解析用，
-节点里的 ``<bpmn:incoming>``/``<bpmn:outgoing>`` 子元素给渲染器用
-—— 缺了后者，标准渲染器画不出箭头。
-
-##### `route_anchor(flow: DiagramFlow) -> tuple[str, float, str, float]`
-
-连线两端**该用哪个连接点**：``(源方向, 源位置t, 目标方向, 目标位置t)``。
-
-方向按两节点中心的相对方位挑（横向主导走左右、纵向主导走上下）。
-
-**多条边怎么分开**（用户 2026-10-06，2026-10-07 细化）：
-
-- **同侧挤车先改侧**：一个节点有多条入边/出边、且多条按方位落到
-  同一条**横向边**上时，只留与它**同一行**的那条（保持中线对齐），
-  其余按"对端在下方→走下边、在上方→走上边"改走竖边——
-  「图片拼版 → PDF排版」因此从**下边**进，不再把网关「否」那条
-  顶得偏离 PDF排版 的水平中线。竖边内部真撞车才沿边摊开。
-- **任务框 / 事件圆**：改侧之后仍同侧的多条边沿边摊开（``t`` 均分）。
-- **网关（判断）**：**分配到不同的角**（:meth:`_corner_pick`）。
-
-##### `route(flow: DiagramFlow) -> list[tuple[float, float]]`
-
-连线的折点（文件没存 ``di:waypoint`` 时算一份）。
-
-连接点自动匹配（:meth:`route_anchor`）；两端**正好共线**时走直线，
-但直线被中间节点挡住就**绕行**——线段不许被别的节点盖住（用户
-2026-10-06）。需要"锚点不动"的场合（拖动中预览）走 :meth:`route_sides`。
-
-##### `route_sides(flow: DiagramFlow, anchor: tuple[str, float, str, float]) -> list[tuple[float, float]]`
-
-按**指定的连接点**算折点（锚点冻结的走线）。
-
-⚠️ **近似共线就拉直**（容差 :data:`ROUTE_ALIGN_TOLERANCE`）：同一节点
-的多条出入边要沿边摊开（判断的「是/否」不能从同一点出发），于是出口
-与入口的 y 会差几像素——这时画成 L 形会多出一个肉眼看得见的小台阶，
-不如直接拉一条直线（BPMN 惯例）。
+纯函数助手：XML 标签、节点名 → 阶段、注释尺寸、默认尺寸。
 
 ### 模块函数
 
@@ -12516,59 +13630,11 @@ bpmn.io 生成的 id，解析失败就**静默回落到默认流程** ⇒ 用户
 
 ---
 
-## `desktop.steps.flow`
+## `desktop.steps.flow.constants`
 
-源码：[`desktop/steps/flow.py`](../../desktop/steps/flow.py)
+源码：[`desktop/steps/flow/constants.py`](../../desktop/steps/flow/constants.py)
 
-任务**流程定义**：把「这条任务走哪些步骤、谁喂谁」从硬编码搬进一份 BPMN 文件。
-
-用户 2026-10-05 的口径（``docs/tasks/bpm.md``）：
-
-> 按照现有流程，生成默认 task_default.bpmn 文件, bpm 驱动节点
-
-定位（与 :mod:`desktop.steps.ports` 的分工）：
-
-- **ports 是"步骤怎么连"的静态事实来源**——:data:`~desktop.steps.ports.SUPPLIERS`
-  写死了默认流程的每条边；落点表 :data:`~desktop.steps.ports.STAGE_LOCATIONS`
-  写死了产物放在任务目录哪里。它们**不会**被本模块替代；
-- **flow 是"这一次任务按什么流程跑"的运行时载体**——默认从 ports 派生
-  （``FlowDefinition.default()``，两者逐边相等，自测钉死），序列化成
-  BPMN 2.0 兼容子集存进 ``tasks/<任务号>/flow.bpmn``（建任务时生成）；
-  自定义流程 = 换这份文件，算法、落点、界面代码全都不动。
-
-BPMN 子集（只取表达本仓库流程所需的最小面，不做完整 BPMN 引擎）：
-
-.. code-block:: xml
-
-    <bpmn:definitions xmlns:bpmn="…" xmlns:guji="…">
-      <bpmn:process id="guji_task" isExecutable="false">
-        <bpmn:startEvent id="start" name="源 PDF"/>
-        <bpmn:task id="extract" name="提取PDF图片" guji:stage="extract"/>
-        …
-        <bpmn:endEvent id="end" name="完成"/>
-        <bpmn:sequenceFlow id="f0" sourceRef="start" targetRef="extract"
-                           guji:port="pdf"/>
-        <bpmn:sequenceFlow id="f5" sourceRef="imposition" targetRef="print"
-                           guji:port="pages" guji:condition="imposition"/>
-      </bpmn:process>
-    </bpmn:definitions>
-
-- **task 节点 = 运行阶段**（``STAGE_STEPS`` 的键，含 ``detect_submit`` 这个
-  二段动作；不是步骤 key——BPM 驱动的是"跑什么动作"）。节点 ``id`` 即阶段名，
-  ``guji:stage`` 冗余存一份做显式标记；界面文案用 ``name``，仅作展示、
-  不作解析依据（解析只认 ``guji:stage``）。
-- **sequenceFlow = 一条边**：``sourceRef`` 供给方（``start`` 事件映射回
-  :data:`~desktop.steps.ports.SUPPLY_TASK_SOURCE` 哨兵），``guji:port``
-  标注喂的是消费方哪个端口——**端口级连线必须显式**，因为同一个上游可能
-  产出多种产物（extract 出 pages，rembg 也出 pages），只靠节点序列推不出来。
-- **条件连线**用 ``guji:condition`` 表达（BPMN 标准做法是在连线上挂条件表达式，
-  这里用仓库自己的命名空间存条件**名**）：解析时按上下文标志位选边——
-  名字对应的标志为真时走这条，否则走无条件边。现有唯一一条是
-  「拼版生效 → print 改吃 imposition」（由
-  :func:`desktop.steps.ports.print_input_overrides` 派生，不另写一份）。
-
-⚠️ 本模块**纯逻辑、不 import 任何 Qt**（与 ports/spec 同一约束），可以被
-自测、CLI 与将来的 BPM 编辑面板安全导入。
+BPMN 命名空间、流程文件名与 XML 限定名小工具。
 
 ### 模块常量
 
@@ -12583,100 +13649,15 @@ BPMN 子集（只取表达本仓库流程所需的最小面，不做完整 BPMN 
 | FLOW_FILENAME | `"flow.bpmn"` |
 | CONDITION_IMPOSITION | `"imposition"` |
 
-### `class FlowEdge`
+---
 
-一条连线：``supplier`` 阶段的 ``port`` 端口产物喂给 ``consumer`` 阶段。
+## `desktop.steps.flow.definition`
 
-``condition`` 为 ``None`` 表示**无条件边**（默认路径）；否则是条件名
-（如 ``"imposition"``），解析时按上下文标志位决定走不走它。
+源码：[`desktop/steps/flow/definition.py`](../../desktop/steps/flow/definition.py)
 
-### `class StageSlot`
+一条流程的**运行语义** :class:`FlowDefinition`（阶段序列 + 端口边表）。
 
-**界面槽位**：BPMN 节点折叠到界面步骤条上的一格。
-
-⚠️ 为什么要这层折叠——BPMN 的节点是**运行阶段**，界面步骤条上的格子是
-**界面步骤**，两者不是一一对应：
-
-- ``detect_submit`` 是第二步「检测文本框」面板上的第二个动作（提交裁图），
-  进度也显示在第二步 ⇒ 折叠进 ``detect`` 那一格，不单独占格；
-- ``imposition`` 是**条件伪步骤**（``StepSpec.role == "optional"``），
-  流程里有它，但界面上是否出现由运行态决定（第三步区域模式为 1 才出现）。
-
-两个下标各管一件事，别混：
-
-- ``bar_index``：在**步骤条上**的显示次序（自定义流程换顺序就变它）；
-- ``stack_index``：在 ``control_stack`` / ``preview_stack`` 里的页号。
-  真实步骤按流程顺序排名，可选节点统一排在真实步骤之后（沿用既有的
-  「伪步骤占最后一位」约定），这样两个栈的**建页顺序不用动**。
-
-#### 方法
-
-| 方法 | 说明 |
-| --- | --- |
-| `label() -> str` | 步骤条上显示的中文名（已接入的走 :func:`ports.stage_label`）。 |
-
-### `class FlowLayout`
-
-流程的**图形布局**：节点框位置 + 连线折点（BPMN DI 段的来源）。
-
-坐标单位是 BPMN ``dc:Bounds`` 的用户单位（1 ≈ 1px，本项目不缩放）。
-
-⚠️ **纯数据、纯计算，不 import Qt**（与本模块其余部分同一约束）：它既是
-:meth:`FlowDefinition.to_xml` 写 DI 段的数据源，也是 GUI 画布（需要
-``QPointF``）的换算依据。GUI 侧只做类型转换，几何算法**只有这一份**。
-
-- ``boxes``：``节点 id → (x, y, w, h)``，缺节点按 :meth:`auto` 补；
-- :meth:`node_box` 返回矩形 :meth:`auto` 生成的节点，:meth:`edge_points`
-  返回 :meth:`route` 生成的折点。
-
-#### 方法
-
-| 方法 | 说明 |
-| --- | --- |
-| `auto(flow: 'FlowDefinition', max_width: float \| None=None) -> 'FlowLayout'` | 默认排布：``start → 节点… → end``。 |
-| `widest_row(nodes: list[str], per_row: int) -> float` | 折行后**最宽那一行**的节点带宽度（不含留白，用来把各行居中）。 |
-| `node_box(node_id: str) -> tuple[float, float, float, float]` | 节点矩形 ``(x, y, w, h)``；没有就按默认排布补一个。 |
-| `has(node_id: str) -> bool` | — |
-| `move(node_id: str, x: float, y: float) -> None` | 拖动节点：只改左上角坐标，**尺寸不变**（拖拽不改语义）。 |
-| `remove(node_id: str) -> None` | — |
-| `edge_points(source: str, consumer: str, landing: int=0, total: int=1) -> list[tuple[float, float]]` | 一条无条件连线的折点（``di:waypoint`` 序列）。 |
-| `bypass_points(source: str, consumer: str, landing: int=0, total: int=1) -> list[tuple[float, float]]` | 条件边的折点：**永远绕行**（不因同行就直连）。 |
-| `bypass_y() -> float` | 条件边绕行那一行的 y（所有节点下方、留白之内）。 |
-| `to_dict() -> dict[str, list[float]]` | — |
-| `from_dict(raw: dict \| None) -> 'FlowLayout'` | 从 :meth:`to_dict` 的结构还原；**忽略尺寸为 0 的坏数据**。 |
-
-##### `auto(flow: 'FlowDefinition', max_width: float | None=None) -> 'FlowLayout'`
-
-装饰器：`classmethod`
-
-默认排布：``start → 节点… → end``。
-
-:param max_width:
-    ``None``（默认）= 强制**一行到底**，落进 ``flow.bpmn`` 的 DI 段
-    用这个——文件里的坐标要稳定可预期，不能随打开它的窗口宽度变。
-
-    给定宽度时**超宽就折行**：默认流程 8 个节点一字排开约 1400px，
-    弹窗/面板通常只有 1000 出头，不折行的话右侧节点被横向滚动条
-    挡住——用户在"创建任务"弹窗里一眼看不完整个流程，这正是
-    入口该做到的事。
-
-有条件边时底部**多留一行** ``BYPASS_ROW``——条件边要从节点底下绕
-过去，留白不够那条线会被裁掉（现象是"虚线条件边看不见"）。
-折行时每行都按需留绕行空间（绕行路径按行数逐层下移）。
-
-##### `edge_points(source: str, consumer: str, landing: int=0, total: int=1) -> list[tuple[float, float]]`
-
-一条无条件连线的折点（``di:waypoint`` 序列）。
-
-源点取源框**右缘中点**，终点取目标框**左缘中点**——与 GUI 画布
-(:mod:`desktop.components.flow_view`) 的画法一致，两边不会画出
-两条不一样的线。
-
-- ``landing`` / ``total``：这条边在"进 ``consumer`` 的所有边"里排第
-  几、共几条。**必须错开落点**（纵向均分），否则多条边画成同一条线，
-  只看得出最后画的那条（默认流程 ``rembg``/``print`` 都有多条入边）。
-
-### `class FlowDefinition`
+### `class FlowDefinition(FlowSerializationPart)`
 
 一条流程：运行阶段节点序列 + 端口级连线表。
 
@@ -12690,7 +13671,6 @@ BPMN 子集（只取表达本仓库流程所需的最小面，不做完整 BPMN 
 | 方法 | 说明 |
 | --- | --- |
 | `supplier_of(stage: str, port: str, context: dict[str, bool] \| None=None) -> str \| None` | 按连线解析 ``(stage, port)`` 该由谁供给；没连线返回 ``None``。 |
-| `suppliers() -> list[FlowEdge]` | 全部边（扁平化，节点编辑器/自测遍历用）。 |
 | `resolve_input(task_dir: Path \| str, stage: str, port: str, context: dict[str, bool] \| None=None) -> Path \| None` | 按连线解析输入**绝对路径**（落点仍查 ports 的表，不另写一份）。 |
 | `input_ready(task_dir: Path \| str, stage: str, port: str, context: dict[str, bool] \| None=None) -> bool` | 这个端口的输入**已经就位**吗（落点存在且非空）。 |
 | `missing_stages(order: list[str] \| None=None, *, start: str \| None=None) -> list[str]` | 给定顺序，返回**输入还缺上游**的阶段（纯逻辑，不读磁盘）。 |
@@ -12703,10 +13683,7 @@ BPMN 子集（只取表达本仓库流程所需的最小面，不做完整 BPMN 
 | `contains(stage: str) -> bool` | 这个运行阶段在**本流程**里吗（详情页判断该不该显示某一步用）。 |
 | `with_edges(edges: list[FlowEdge]) -> 'FlowDefinition'` | 以本流程为底、替换连线表，返回**新**对象（编辑器改线用）。 |
 | `default() -> 'FlowDefinition'` | 默认流程：**从 ports 的静态表派生**，不在这里另写一份连线。 |
-| `to_xml(layout: 'FlowLayout \| None'=None) -> bytes` | 序列化成 BPMN 2.0 文件（``flow.bpmn`` 的内容）。 |
-| `save(path: Path \| str, layout: 'FlowLayout \| None'=None) -> Path` | 原子落盘（写 ``.part`` 再 ``os.replace``，防半截文件）。 |
 | `load(path: Path \| str) -> 'FlowDefinition'` | 从 ``flow.bpmn`` 读回流程定义；文件缺失/结构不对抛 :class:`ValueError`。 |
-| `load_layout(path: Path \| str) -> FlowLayout` | 从 ``flow.bpmn`` 的 **DI 段**读回节点坐标（拖拽结果）。 |
 
 ##### `supplier_of(stage: str, port: str, context: dict[str, bool] | None=None) -> str | None`
 
@@ -12792,6 +13769,153 @@ BPMN 子集（只取表达本仓库流程所需的最小面，不做完整 BPMN 
 - 节点顺序 = 消费方在 ``SUPPLIERS`` 里的声明顺序做拓扑稳定排序
   （默认表本身就是依赖序，派生结果与其一致）。
 
+##### `load(path: Path | str) -> 'FlowDefinition'`
+
+装饰器：`classmethod`
+
+从 ``flow.bpmn`` 读回流程定义；文件缺失/结构不对抛 :class:`ValueError`。
+
+⚠️ 宿主（如 :class:`desktop.store.TaskMixin`）对**手编坏文件**应有
+兜底（回落默认流程），别让一个写坏的 XML 拖死整个任务。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `default_flow_path(task_dir: Path \| str) -> Path` | 任务目录里流程定义文件的标准位置（``tasks/<任务号>/flow.bpmn``）。 |
+
+---
+
+## `desktop.steps.flow.layout`
+
+源码：[`desktop/steps/flow/layout.py`](../../desktop/steps/flow/layout.py)
+
+流程的**图形布局** :class:`FlowLayout`（纯数据、纯计算，不 import Qt）。
+
+### `class FlowLayout`
+
+流程的**图形布局**：节点框位置 + 连线折点（BPMN DI 段的来源）。
+
+坐标单位是 BPMN ``dc:Bounds`` 的用户单位（1 ≈ 1px，本项目不缩放）。
+
+⚠️ **纯数据、纯计算，不 import Qt**（与本模块其余部分同一约束）：它既是
+:meth:`FlowDefinition.to_xml` 写 DI 段的数据源，也是 GUI 画布（需要
+``QPointF``）的换算依据。GUI 侧只做类型转换，几何算法**只有这一份**。
+
+- ``boxes``：``节点 id → (x, y, w, h)``，缺节点按 :meth:`auto` 补；
+- :meth:`node_box` 返回矩形 :meth:`auto` 生成的节点，:meth:`edge_points`
+  返回 :meth:`route` 生成的折点。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `auto(flow: 'FlowDefinition', max_width: float \| None=None) -> 'FlowLayout'` | 默认排布：``start → 节点… → end``。 |
+| `widest_row(nodes: list[str], per_row: int) -> float` | 折行后**最宽那一行**的节点带宽度（不含留白，用来把各行居中）。 |
+| `node_box(node_id: str) -> tuple[float, float, float, float]` | 节点矩形 ``(x, y, w, h)``；没有就按默认排布补一个。 |
+| `has(node_id: str) -> bool` | — |
+| `move(node_id: str, x: float, y: float) -> None` | 拖动节点：只改左上角坐标，**尺寸不变**（拖拽不改语义）。 |
+| `remove(node_id: str) -> None` | — |
+| `edge_points(source: str, consumer: str, landing: int=0, total: int=1) -> list[tuple[float, float]]` | 一条无条件连线的折点（``di:waypoint`` 序列）。 |
+| `bypass_points(source: str, consumer: str, landing: int=0, total: int=1) -> list[tuple[float, float]]` | 条件边的折点：**永远绕行**（不因同行就直连）。 |
+| `bypass_y() -> float` | 条件边绕行那一行的 y（所有节点下方、留白之内）。 |
+| `to_dict() -> dict[str, list[float]]` | — |
+| `from_dict(raw: dict \| None) -> 'FlowLayout'` | 从 :meth:`to_dict` 的结构还原；**忽略尺寸为 0 的坏数据**。 |
+
+##### `auto(flow: 'FlowDefinition', max_width: float | None=None) -> 'FlowLayout'`
+
+装饰器：`classmethod`
+
+默认排布：``start → 节点… → end``。
+
+:param max_width:
+    ``None``（默认）= 强制**一行到底**，落进 ``flow.bpmn`` 的 DI 段
+    用这个——文件里的坐标要稳定可预期，不能随打开它的窗口宽度变。
+
+    给定宽度时**超宽就折行**：默认流程 8 个节点一字排开约 1400px，
+    弹窗/面板通常只有 1000 出头，不折行的话右侧节点被横向滚动条
+    挡住——用户在"创建任务"弹窗里一眼看不完整个流程，这正是
+    入口该做到的事。
+
+有条件边时底部**多留一行** ``BYPASS_ROW``——条件边要从节点底下绕
+过去，留白不够那条线会被裁掉（现象是"虚线条件边看不见"）。
+折行时每行都按需留绕行空间（绕行路径按行数逐层下移）。
+
+##### `edge_points(source: str, consumer: str, landing: int=0, total: int=1) -> list[tuple[float, float]]`
+
+一条无条件连线的折点（``di:waypoint`` 序列）。
+
+源点取源框**右缘中点**，终点取目标框**左缘中点**——与 GUI 画布
+(:mod:`desktop.components.flow_view`) 的画法一致，两边不会画出
+两条不一样的线。
+
+- ``landing`` / ``total``：这条边在"进 ``consumer`` 的所有边"里排第
+  几、共几条。**必须错开落点**（纵向均分），否则多条边画成同一条线，
+  只看得出最后画的那条（默认流程 ``rembg``/``print`` 都有多条入边）。
+
+---
+
+## `desktop.steps.flow.model`
+
+源码：[`desktop/steps/flow/model.py`](../../desktop/steps/flow/model.py)
+
+流程的节点与边：:class:`FlowEdge` / :class:`StageSlot`。
+
+### `class FlowEdge`
+
+一条连线：``supplier`` 阶段的 ``port`` 端口产物喂给 ``consumer`` 阶段。
+
+``condition`` 为 ``None`` 表示**无条件边**（默认路径）；否则是条件名
+（如 ``"imposition"``），解析时按上下文标志位决定走不走它。
+
+### `class StageSlot`
+
+**界面槽位**：BPMN 节点折叠到界面步骤条上的一格。
+
+⚠️ 为什么要这层折叠——BPMN 的节点是**运行阶段**，界面步骤条上的格子是
+**界面步骤**，两者不是一一对应：
+
+- ``detect_submit`` 是第二步「检测文本框」面板上的第二个动作（提交裁图），
+  进度也显示在第二步 ⇒ 折叠进 ``detect`` 那一格，不单独占格；
+- ``imposition`` 是**条件伪步骤**（``StepSpec.role == "optional"``），
+  流程里有它，但界面上是否出现由运行态决定（第三步区域模式为 1 才出现）。
+
+两个下标各管一件事，别混：
+
+- ``bar_index``：在**步骤条上**的显示次序（自定义流程换顺序就变它）；
+- ``stack_index``：在 ``control_stack`` / ``preview_stack`` 里的页号。
+  真实步骤按流程顺序排名，可选节点统一排在真实步骤之后（沿用既有的
+  「伪步骤占最后一位」约定），这样两个栈的**建页顺序不用动**。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `label() -> str` | 步骤条上显示的中文名（已接入的走 :func:`ports.stage_label`）。 |
+
+---
+
+## `desktop.steps.flow.serialization`
+
+源码：[`desktop/steps/flow/serialization.py`](../../desktop/steps/flow/serialization.py)
+
+流程定义的 BPMN 序列化：写 ``flow.bpmn`` / 从文件读回坐标。
+
+### `class FlowSerializationPart`
+
+:class:`FlowDefinition` 的序列化部分（BPMN 2.0 读写）。
+
+只声明本部分要用到的字段，字段本身由 :class:`FlowDefinition` 定义。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `suppliers() -> list[FlowEdge]` | 全部边（扁平化，节点编辑器/自测遍历用）。 |
+| `to_xml(layout: 'FlowLayout \| None'=None) -> bytes` | 序列化成 BPMN 2.0 文件（``flow.bpmn`` 的内容）。 |
+| `save(path: Path \| str, layout: 'FlowLayout \| None'=None) -> Path` | 原子落盘（写 ``.part`` 再 ``os.replace``，防半截文件）。 |
+| `load_layout(path: Path \| str) -> FlowLayout` | 从 ``flow.bpmn`` 的 **DI 段**读回节点坐标（拖拽结果）。 |
+
 ##### `to_xml(layout: 'FlowLayout | None'=None) -> bytes`
 
 序列化成 BPMN 2.0 文件（``flow.bpmn`` 的内容）。
@@ -12808,22 +13932,13 @@ BPMN 子集（只取表达本仓库流程所需的最小面，不做完整 BPMN 
 
 ⚠️ 节点坐标**存在 DI 段的 ``dc:Bounds`` 里**，这正是流程编辑器
 （含本项目 M4 的拖拽画布）读写布局的标准位置。``layout`` 缺省时给
-一份默认横向排布，���证文件在任何工具里打开都有完整图形。
+一份默认横向排布，保证文件在任何工具里打开都有完整图形。
 
 ##### `save(path: Path | str, layout: 'FlowLayout | None'=None) -> Path`
 
 原子落盘（写 ``.part`` 再 ``os.replace``，防半截文件）。
 
 ``layout`` 缺省给默认排布——文件在任何 BPMN 工具里打开都有完整图形。
-
-##### `load(path: Path | str) -> 'FlowDefinition'`
-
-装饰器：`classmethod`
-
-从 ``flow.bpmn`` 读回流程定义；文件缺失/结构不对抛 :class:`ValueError`。
-
-⚠️ 宿主（如 :class:`desktop.store.TaskMixin`）对**手编坏文件**应有
-兜底（回落默认流程），别让一个写坏的 XML 拖死整个任务。
 
 ##### `load_layout(path: Path | str) -> FlowLayout`
 
@@ -12834,12 +13949,6 @@ BPMN 子集（只取表达本仓库流程所需的最小面，不做完整 BPMN 
 读不到 / 文件坏 / 缺 DI 段时**回默认排布**并按实际节点集合补全——
 布局是"锦上添花"，缺了不该让流程定义整个打不开（:meth:`load` 才负责
 语义校验）。
-
-### 模块函数
-
-| 函数 | 说明 |
-| --- | --- |
-| `default_flow_path(task_dir: Path \| str) -> Path` | 任务目录里流程定义文件的标准位置（``tasks/<任务号>/flow.bpmn``）。 |
 
 ---
 
@@ -12980,100 +14089,16 @@ BPMN 子集（只取表达本仓库流程所需的最小面，不做完整 BPMN 
 
 ---
 
-## `desktop.steps.ports`
+## `desktop.steps.ports.connections`
 
-源码：[`desktop/steps/ports.py`](../../desktop/steps/ports.py)
+源码：[`desktop/steps/ports/connections.py`](../../desktop/steps/ports/connections.py)
 
-步骤的**输入 / 输出端口**：把「这一步吃什么、吐什么」写成可连线的声明。
-
-用户 2026-10-03 的口径：
-
-> 任务流程每一步解耦，后续我会使用 bpm 流程处理不同的任务流程顺序，
-> 因此每一步都有输入，输出就可以了
-
-本模块只回答三个问题，**不碰界面、不碰算法、不决定顺序**：
-
-1. **数据"是什么"** —— :data:`ARTIFACTS` 里的**产物类型**（PDF / 图片 /
-   检测框）。BPM 连线按它匹配：上游只要吐出 ``pages``，无论它来自图片提取
-   还是图片拼版，下游都接得上。**这是"解耦"真正落地的地方**——下游不认
-   上游是谁，只认产物类型。
-2. **这一步要什么、给什么** —— :func:`stage_inputs` / :func:`stage_outputs`，
-   它们从 :class:`~desktop.steps.spec.StepSpec` 的 ``inputs`` / ``outputs``
-   字段派生（那是**唯一的端口声明处**），不在这里另写一份。
-3. **产物落在哪** —— :data:`STAGE_LOCATIONS` 给出每个端口在
-   ``tasks/<任务号>/`` 下的相对落点，:func:`artifact_path` 解析成绝对路径。
-
-**顺序与连线**由 :data:`SUPPLIERS` 一处决定：键是消费阶段，值是
-``{端口名: 供给阶段}``。将来的 BPM 换顺序 / 换连线只改这张表，算法、界面、
-任务目录布局全都不用动。
-
-⚠️ **运行阶段名与步骤 key 不是一回事**（本模块唯一的额外概念）：
-
-- 步骤 key 是 :data:`~desktop.steps.spec.STEP_KEYS` 里的 ``extract`` /
-  ``detect`` / ``rembg`` / ``print`` / ``imposition``，描述"这是什么功能"；
-- **运行阶段**多一个（2026-10-22 起）：
-  ``detect_submit``——第二步「检测文本框」右上「提交本次任务」按钮触发的
-  **同一步骤的第二个动作**（先检测出框到 ``boxes.json``，提交时才逐框裁图
-  把页面图裁到 ``stages/detect``）。端口系统必须认得它，否则这一步的产物
-  没有落点、下一步也没有输入。
-
-    ====================  ==========================================
-    运行阶段               步骤 key / 端口
-    ====================  ==========================================
-    ``extract``            ``extract``：in=pdf / out=pages
-    ``detect``              ``detect``：in=pages / out=boxes（只检测，出框）
-    ``detect_submit``       ``detect``：in=pages / out=pages（逐框裁图）
-    ``rembg``               ``rembg``：in=pages / out=pages（整图去底色成品）
-    ``print``              ``print``：in=pages / out=pdf
-    ====================  ==========================================
-
-⚠️ 本模块**纯逻辑、不 import 任何 Qt**，因此可以被自测、CLI 与将来的
-BPM 编排引擎安全导入（与 :mod:`desktop.steps.spec` 同一约束）。
-
-### 模块常量
-
-| 名称 | 值 |
-| --- | --- |
-| ARTIFACT_PDF | `"pdf"` |
-| ARTIFACT_PAGES | `"pages"` |
-| ARTIFACT_BOXES | `"boxes"` |
-| ARTIFACT_INPUT | `"input"` |
-| SOURCE_PDF_STAGE | `"extract"` |
-| GATEWAY_GUARD_STAGE | `"imposition"` |
-| SUPPLY_TASK_SOURCE | `"<task>"` |
-| SUPPLY_TASK_INPUT | `"<task-input>"` |
-| TASK_INPUT_LOCATION | `"stages/input"` |
-| IMPOSITION_ANCHOR | `"print"` |
+连线（BPM 的边）与就绪判定：谁供给谁、输入解析、入口判定。
 
 ### 模块函数
 
 | 函数 | 说明 |
 | --- | --- |
-| `artifact_of(port: str) -> str` | 端口名 → 产物类型；未知端口按"页面图片"兜底（别让界面崩）。 |
-| `stage_inputs(stage: str) -> tuple[str, ...]` | 这一步**消费**哪些端口（来自 ``StepSpec.inputs``，不另写一份）。 |
-| `stage_outputs(stage: str) -> tuple[str, ...]` | 这一步**产出**哪些端口（来自 ``StepSpec.outputs``，不另写一份）。 |
-| `action_outputs(stage: str) -> tuple[str, ...]` | **动作级**产出端口：同格的每个动作各自只产一样（:func:`fold_forward` 用）。 |
-| `fold_forward(stage: str, port: str) -> str` | 把阶段折到**同格里最靠后的、也产出该端口的动作**。 |
-| `stage_label(stage: str) -> str` | 运行阶段 → 流程图节点名（默认走 spec，只有 ``detect_submit`` 单独一句）。 |
-| `spec_for_stage(stage: str) -> StepSpec \| None` | 运行阶段 → 它对应的 :class:`StepSpec`（界面查表统一走这里）。 |
-| `stage_artifacts(stage: str) -> tuple[str, ...]` | 这一步消费哪些**产物类型**（端口名翻译过来）。 |
-| `source_pdf_node_ids(diagram) -> tuple[str, ...]` | 图里代表「源 PDF」的节点 id（没有则空元组）。 |
-| `is_source_pdf_node(diagram, node_id: str) -> bool` | 这个节点是不是「源 PDF」（图上那个入口事件）。 |
-| `paired_node_for_stage(diagram, node_id: str) -> str \| None` | 删掉 ``node_id`` 时**该一起删掉**的配对节点 id；没有则 ``None``。 |
-| `orphaned_end_event_ids(diagram, *node_ids: str) -> tuple[str, ...]` | 删掉 ``node_ids`` 后会**悬空**的结束事件 id；没有则空元组。 |
-| `orphaned_gateway_ids(diagram, *node_ids: str) -> tuple[str, ...]` | 删掉 ``node_ids`` 后会**失去依附对象**的「是否拼版」网关 id；没有则空元组。 |
-| `flow_needs_source_pdf(diagram) -> bool` | **这条流程**里有没有直接吃源 PDF 的阶段吗（要问图，别写死）。 |
-| `flow_crops_pages(diagram) -> bool` | 这条流程里页面会不会被「检测文本框」的提交**逐框裁开**。 |
-| `location_of(stage: str, port: str) -> str \| None` | 运行阶段某端口的相对落点；没有登记返回 ``None``。 |
-| `sanitize_node_id(node_id: str) -> str` | 把节点 id 收成**可安全拼进路径**的名字（只留字母数字与 ``._-``）。 |
-| `suffix_last_segment(name: str, suffix: str) -> str` | 在路径**最后一段**插入后缀：目录名加在结尾、文件名加在扩展名前。 |
-| `scoped_name(name: str, node_id: str \| None, primary_id: str \| None) -> str` | 按**节点作用域**给一个名字加后缀：主节点/无节点 ⇒ 原名，副本 ⇒ ``~<节点>``。 |
-| `node_scope_from_output_dir(dir_name: str) -> str` | 从**产物目录名**里取出节点作用域后缀（``extract~Node_3`` → ``~Node_3``）。 |
-| `rembg_methods_path(out_dir) -> Path \| None` | 去底色「每页用了哪种算法」的侧车文件路径（worker / 实时预览共用）。 |
-| `copy_location(stage: str, port: str, node_id: str) -> str \| None` | **副本节点**（同阶段第二个及之后的节点）的相对落点；没登记返回 ``None``。 |
-| `node_location(stage: str, port: str, node_id: str \| None=None, primary_id: str \| None=None) -> str \| None` | **某节点实例**某端口的相对落点。 |
-| `artifact_path(task_dir: Path \| str, stage: str, port: str, node_id: str \| None=None, primary_id: str \| None=None) -> Path \| None` | 产物在任务目录下的**绝对路径**；该阶段没登记这个端口则 ``None``。 |
-| `task_input_dir(task_dir: Path \| str) -> Path` | 入口图片目录的绝对路径（``tasks/<任务号>/stages/input/``）。 |
 | `supplier_of(stage: str, port: str) -> str \| None` | 某阶段某端口由谁供给；没有连线返回 ``None``。 |
 | `print_pages_supplier(imposition_active: bool) -> str` | PDF排版（``print``）取图的上游：拼版生效时是 ``imposition``，否则是去底色。 |
 | `print_input_overrides(imposition_active: bool) -> dict[tuple[str, str], str]` | 打印阶段的运行时连线覆盖（拼版开关 → 上游换成 imposition）。 |
@@ -13090,256 +14115,6 @@ BPM 编排引擎安全导入（与 :mod:`desktop.steps.spec` 同一约束）。
 | `resolve_input_with_entry(task_dir: Path \| str, stage: str, port: str, supplier: str \| None, overrides: dict[tuple[str, str], str] \| None=None) -> Path \| None` | 按供给方解析输入路径，并把**入口回落**收在这一处。 |
 | `missing_stages(order: list[str], *, start: str \| None=None) -> list[str]` | 给定顺序，返回**输入还缺上游**的阶段（按顺序）。 |
 | `describe(stage: str) -> str` | 一行可读描述（``去底色：图片 + 检测框 → 图片``，日志/自测用）。 |
-
-#### `stage_inputs(stage: str) -> tuple[str, ...]`
-
-这一步**消费**哪些端口（来自 ``StepSpec.inputs``，不另写一份）。
-
-``detect_submit`` 是"把检测结果定稿"的动作，不重新检测、也不看检测框，
-只吃上游的 ``pages``；这里显式覆盖，其余阶段直接取 spec。
-
-#### `stage_outputs(stage: str) -> tuple[str, ...]`
-
-这一步**产出**哪些端口（来自 ``StepSpec.outputs``，不另写一份）。
-
-⚠️ 这是**步骤级**声明：``detect`` 声明 ``("boxes", "pages")``——这一步整体
-两样都给（框在"检测"、图在"提交"）。凡是要问"图上这个节点能不能供给某个
-端口"（:meth:`FlowDiagram.nearest_producer`）都用它，否则第二步之后的下游
-会沿图跳过检测节点、直接去拿提取的原图。
-
-动作级（"这一下具体写了什么文件"）见 :func:`action_outputs`。
-
-#### `action_outputs(stage: str) -> tuple[str, ...]`
-
-**动作级**产出端口：同格的每个动作各自只产一样（:func:`fold_forward` 用）。
-
-``detect`` 那一下只写 ``boxes.json``、``detect_submit`` 才裁图。折返时
-必须按这个粒度挑"最靠后的、也产出该端口的动作"，否则 `detect.pages`
-会折到 ``detect`` 自己（它声明了 pages，却没有那个落点）。
-
-#### `fold_forward(stage: str, port: str) -> str`
-
-把阶段折到**同格里最靠后的、也产出该端口的动作**。
-
-判定完全从 :data:`STAGE_STEPS`（同格关系）与 :func:`action_outputs`
-（**每个动作**产什么）派生，**不另写一张表**：同格里多个阶段都产出该端口时取声明
-顺序里最靠后的那个；没有同格伙伴时原样返回。语义与用途见上面那段说明。
-
-#### `stage_label(stage: str) -> str`
-
-运行阶段 → 流程图节点名（默认走 spec，只有 ``detect_submit`` 单独一句）。
-
-页面里凡是"按 stage 给这个阶段起个中文名"（BPMN 节点名、进度/日志文案）
-都走本函数，**不要**自己 ``spec_by_key(stage)``——那会在
-``detect_submit`` 上拿到 ``None`` 或与 ``detect`` 同名。
-
-#### `spec_for_stage(stage: str) -> StepSpec | None`
-
-运行阶段 → 它对应的 :class:`StepSpec`（界面查表统一走这里）。
-
-⚠️ 这一层映射（:data:`STAGE_STEPS`）在：``detect_submit`` 要拿 ``detect``
-的声明（它是同一步骤的第二个动作），而 ``imposition`` 虽是**伪步骤**（不在
-``STAGES`` 里）却也有自己的 spec。页面里凡是"按 stage 取这一步的界面元数据"
-（按钮文案、控制列宽度、预览控件名、右栏专属区块）都必须走本函数，
-**不要**自己 ``spec_by_key(stage)``——那会在 ``detect_submit`` 上拿到 None。
-
-#### `source_pdf_node_ids(diagram) -> tuple[str, ...]`
-
-图里代表「源 PDF」的节点 id（没有则空元组）。
-
-认法有两条，任一命中即可：
-
-1. **事件型**节点（``startEvent``）——BPMN 里流程入口就是它；
-2. **名字**在 :data:`SOURCE_PDF_NODE_NAMES` 里——用户可以把它改名，
-   事件型仍是主判据；名字判据兜住"被改成 task 型"或用户自己画的。
-
-⚠️ **别按 stage 判**：「源 PDF」没有 ``stage``（它不是运行阶段，
-:data:`desktop.steps.ports.SUPPLY_TASK_SOURCE` 才是它的语义标记）。
-
-#### `paired_node_for_stage(diagram, node_id: str) -> str | None`
-
-删掉 ``node_id`` 时**该一起删掉**的配对节点 id；没有则 ``None``。
-
-用户 2026-10-06：
-
-> 流程编辑中，如果删除了 上传pdf或者 pdf图片提取中的一个，
-> 另外���个的存在没有意义，因此需要同步删除另外一个
-
-成对关系是双向的：
-
-- 删「源 PDF」事件 ⇒ 一并删 ``extract`` 节点；
-- 删 ``extract`` 节点 ⇒ 一并删「源 PDF」事件。
-
-⚠️ **只删一个会留下坏图**：留着 startEvent 时第一步的``pages`` 沿图回溯
-不到任何产出者，界面就一直催"上传图片"；留着 extract 时它吃的是
-:data:`SUPPLY_TASK_SOURCE`（任务源 PDF），而界面上那个 PDF 图标会**仍然
-亮着**催你上传——正是用户说的"不需要 PDF 上传图标"。
-
-⚠️ 返回 ``None``（而不是"没有配对就不删"里的空字符串）表示"无配对"；
-调用方**必须自己再判一次** ``extract`` 节点是否真的在图里（可能已经被
-用户先删了），别假定它一定存在。
-
-#### `orphaned_end_event_ids(diagram, *node_ids: str) -> tuple[str, ...]`
-
-删掉 ``node_ids`` 后会**悬空**的结束事件 id；没有则空元组。
-
-用户 2026-10-07：
-
-> 流程图编辑中，生成PDF附在PDF排版，如果删除了PDF排版，
-> 那么生成PDF就一定不存在
-
-默认流程里「生成PDF」是挂在「PDF排版」（``print``）后面的**结束事件**
-——它不进拓扑序、没有运行语义，唯一意义是图示"流程在此收尾"。
-「PDF排版」一删它就一条入线不剩，留着是句谎话：图上写着"生成PDF"，
-流程却不再产出 PDF。
-
-⚠️ 同名不同物（用户同日定的口径）：**步骤名**已改成「PDF排版」，与流程图
-那一格统一；而「生成PDF」现在只指两样东西——**结束事件**的名字，与**执行
-按钮**的文案（``StepSpec.run_label`` / ``run_button_text``）。
-
-⚠️ 判据是**图上的性质**（入线是否全部来自将被删的节点），**不按名字
-认「生成PDF」**——用户改了名、自己画的收尾事件同理；反之「图片拼版」
-被删时「生成PDF」的入线还剩「PDF排版」那条，不跟着删。
-
-⚠️ 只收**入线非空**的结束事件：本来就悬空的事件不是这次删除造成的，
-不归这里管（别借删除顺手清扫，删除面越界）。
-
-#### `orphaned_gateway_ids(diagram, *node_ids: str) -> tuple[str, ...]`
-
-删掉 ``node_ids`` 后会**失去依附对象**的「是否拼版」网关 id；没有则空元组。
-
-用户 2026-10-08：
-
-> 是否拼版依附拼版……因此删除左侧的判断 gateway、顶部的添加判断按钮
-
-图上的排他网关就是「是否拼版」这个判断（见 :data:`GATEWAY_GUARD_STAGE`）：
-它问的问题只对「图片拼版」这一步成立。删掉「图片拼版」之后，网关的两条
-分支里有一条已经悬空（``remove_node`` 会连带删掉那半条线），剩下一个
-"无条件放行"的菱形——图上写着"是否拼版"，流程里却已经没有拼版这一步，
-留着就是误导。所以跟着删。
-
-⚠️ **反方向不删**（用户同日的前一条口径："图片拼版可以不需要判断是否拼版"）：
-删网关不动「图片拼版」——那一步照跑，只是不再画那个分支。
-
-⚠️ 判据只看"删完之后图里**还剩不剩** ``imposition``"，**不看网关连在谁身上**：
-网关是这一步的附属图形（不是独立组件），一个流程里本就只该有一个
-（网关问的是同一件事，问两遍没有意义）。
-
-#### `flow_needs_source_pdf(diagram) -> bool`
-
-**这条流程**里有没有直接吃源 PDF 的阶段吗（要问图，别写死）。
-⚠️ **两处界面问的是同一个问题**（用户 2026-10-06）：
-  ①创建任务页——"流程要 PDF 而用户没给，是否问一句"；
-  ②任务详情页——"流程要 PDF 而这个任务还没源文件，按钮该高亮 + 顶部
-  该红字提示 + 进页面该弹窗"。所以这个判据**只有这一份实现**，
-  别在两个页面各写一遍（漂移起来是"创建时问了、详情页却不提示"）。
-
-阶段→"要不要源 PDF"走 :meth:`StepSpec.needs_source_pdf`（端口声明
-``inputs`` 含 ``pdf``）；⚠️ **别拿** ``input_noun()`` 判——它是给人看的
-称呼，四步里三步都写着"选择图片"，用它会把去底色/PDF排版也算进去
-（它们吃的是上游产出的页，不是用户的文件）。
-
-:param diagram: :class:`~desktop.steps.bpmn_diagram.FlowDiagram`；
-    空图/``None`` 一律 False（没有流程就没有"要不要"可言）。
-
-#### `flow_crops_pages(diagram) -> bool`
-
-这条流程里页面会不会被「检测文本框」的提交**逐框裁开**。
-
-2026-10-22 起没有 area：有检测节点就一定会逐框裁图（半幅 ``-l``/``-r``）。
-凡是要问"这一步拿到的图是整页还是裁好的框"的地方都用本函数，别各写一份
-"流程里有没有 detect 节点"。
-
-``imposition`` 那一格传 False（条件不满足时被剔除，与答案无关）。
-空图 / 没有 detect ⇒ False（＝图是整页的）。
-
-#### `sanitize_node_id(node_id: str) -> str`
-
-把节点 id 收成**可安全拼进路径**的名字（只留字母数字与 ``._-``）。
-
-BPMN 节点 id 一般是 ``Node_7`` / ``Activity_1a2b`` 这种安全形状，但用户在
-bpmn.io 里能把它改成任意字符串——拼进路径前必须洗一道，否则 ``/`` 或 ``\``
-会把落点引到别的目录（副本产物跑到任务目录之外）。
-
-#### `suffix_last_segment(name: str, suffix: str) -> str`
-
-在路径**最后一段**插入后缀：目录名加在结尾、文件名加在扩展名前。
-
-- ``stages/extract`` → ``stages/extract~X``
-- ``boxes.json`` → ``boxes~X.json``
-- ``stages/print/print.pdf`` → ``stages/print/print~X.pdf``
-- 裸文件名 ``pages.json`` → ``pages~X.json``（没有 ``/`` 时 ``head`` 为空）
-
-这是"副本产物怎么命名"的**唯一一处**实现：任务目录里的每一种按节点隔离的
-文件（阶段产物目录 / ``boxes.json`` / ``pages.json`` / ``drafts/<阶段>.json``）
-都走它，规则不会各写一份。
-
-#### `scoped_name(name: str, node_id: str | None, primary_id: str | None) -> str`
-
-按**节点作用域**给一个名字加后缀：主节点/无节点 ⇒ 原名，副本 ⇒ ``~<节点>``。
-
-⚠️ **主节点零迁移**：同阶段恰好一个节点时（=所有现存任务与默认流程）
-名字与改造前**逐字节相同**，没有任何文件需要搬家。
-
-#### `node_scope_from_output_dir(dir_name: str) -> str`
-
-从**产物目录名**里取出节点作用域后缀（``extract~Node_3`` → ``~Node_3``）。
-
-场景：worker 子进程（如 ``stages/rembg_stage.py``）拿不到 store，也读不到
-流程图，只能从它写入的产物落点 ``out_dir.name`` 反推节点作用域，好把**缩略
-图缓存目录**（``thumbnails/<名>[~<节点>]``）算成与产物同一份作用域。
-
-无后缀（主节点/单节点流程）⇒ 返回 ``""``。⚠️ 节点 id 经
-:func:`sanitize_node_id` 洗过 ⇒ **不含 ``~``**，所以按最后一个 ``~`` 切分是
-安全的：``~`` 只会出现在"主名~节点"这一处。
-
-#### `rembg_methods_path(out_dir) -> Path | None`
-
-去底色「每页用了哪种算法」的侧车文件路径（worker / 实时预览共用）。
-
-落点与 ``rembg_offsets[~节点].json`` 同级，都在**任务根目录**：
-``tasks/<任务号>/rembg_methods[~节点].json``，值是 ``{页名: 算法 key}``。
-
-只在 ``stages/`` 下的真实任务产物目录返回路径；模块页/自测的临时输出目录
-（父目录不叫 ``stages``）返回 ``None``——那里不该凭空长出一个任务侧车文件。
-
-#### `copy_location(stage: str, port: str, node_id: str) -> str | None`
-
-**副本节点**（同阶段第二个及之后的节点）的相对落点；没登记返回 ``None``。
-
-规则：在主落点的**最后一段**插入 ``~<node_id>``——目录名结尾加后缀、文件名
-在扩展名前加后缀：
-
-- ``stages/extract`` → ``stages/extract~Node_3``
-- ``boxes.json`` → ``boxes~Node_3.json``
-- ``stages/print/print.pdf`` → ``stages/print/print~Node_3.pdf``
-
-⚠️ **主节点沿用旧落点**（:func:`node_location`），所以"同阶段恰好一个节点"
-的现存任务与默认流程**零迁移**——只有第二个及之后的节点才落到副本落点。
-
-#### `node_location(stage: str, port: str, node_id: str | None=None, primary_id: str | None=None) -> str | None`
-
-**某节点实例**某端口的相对落点。
-
-``node_id`` 空、或等于该阶段的 ``primary_id``（主节点）⇒ 旧落点（零迁移）；
-否则 ⇒ 副本落点（:func:`copy_location`）。没登记该端口返回 ``None``。
-
-#### `artifact_path(task_dir: Path | str, stage: str, port: str, node_id: str | None=None, primary_id: str | None=None) -> Path | None`
-
-产物在任务目录下的**绝对路径**；该阶段没登记这个端口则 ``None``。
-
-``task_dir`` 传 ``tasks/<任务号>/``（不是数据根）。
-
-``node_id`` / ``primary_id`` 给定时按 :func:`node_location` 支持**多节点**
-（同阶段副本落到带 ``~<node_id>`` 后缀的副本落点）；不给则恒取旧落点
-（单节点场景与改造前逐字节一致）。
-
-#### `task_input_dir(task_dir: Path | str) -> Path`
-
-入口图片目录的绝对路径（``tasks/<任务号>/stages/input/``）。
-
-⚠️ **目录不需要事先存在**：它是"用户往里放图"的地方，任务刚建出来时
-本来就是空的。判"有没有图"要看里面有没有图片文件，别只看目录在不在。
 
 #### `print_pages_supplier(imposition_active: bool) -> str`
 
@@ -13526,6 +14301,343 @@ pages，问它"pages 输入"会拿到入口目录，而它要的其实是那个�
 
 ⚠️ 不在这里判断"目录里有没有文件"——那要读磁盘、不是纯逻辑。运行态
 的就绪判断走 :func:`input_ready`。
+
+---
+
+## `desktop.steps.ports.constants`
+
+源码：[`desktop/steps/ports/constants.py`](../../desktop/steps/ports/constants.py)
+
+端口 / 落点 / 连线相关的常量表（唯一事实来源，别处不另写一份）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| ARTIFACT_PDF | `"pdf"` |
+| ARTIFACT_PAGES | `"pages"` |
+| ARTIFACT_BOXES | `"boxes"` |
+| ARTIFACT_INPUT | `"input"` |
+| SOURCE_PDF_STAGE | `"extract"` |
+| GATEWAY_GUARD_STAGE | `"imposition"` |
+| SUPPLY_TASK_SOURCE | `"<task>"` |
+| SUPPLY_TASK_INPUT | `"<task-input>"` |
+| TASK_INPUT_LOCATION | `"stages/input"` |
+| IMPOSITION_ANCHOR | `"print"` |
+
+---
+
+## `desktop.steps.ports.declaration`
+
+源码：[`desktop/steps/ports/declaration.py`](../../desktop/steps/ports/declaration.py)
+
+端口声明：某一步吃什么、吐什么，以及端口名与产物类型的翻译。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `artifact_of(port: str) -> str` | 端口名 → 产物类型；未知端口按"页面图片"兜底（别让界面崩）。 |
+| `stage_inputs(stage: str) -> tuple[str, ...]` | 这一步**消费**哪些端口（来自 ``StepSpec.inputs``，不另写一份）。 |
+| `stage_outputs(stage: str) -> tuple[str, ...]` | 这一步**产出**哪些端口（来自 ``StepSpec.outputs``，不另写一份）。 |
+| `action_outputs(stage: str) -> tuple[str, ...]` | **动作级**产出端口：同格的每个动作各自只产一样（:func:`fold_forward` 用）。 |
+| `fold_forward(stage: str, port: str) -> str` | 把阶段折到**同格里最靠后的、也产出该端口的动作**。 |
+| `stage_label(stage: str) -> str` | 运行阶段 → 流程图节点名（默认走 spec，只有 ``detect_submit`` 单独一句）。 |
+| `spec_for_stage(stage: str) -> StepSpec \| None` | 运行阶段 → 它对应的 :class:`StepSpec`（界面查表统一走这里）。 |
+| `stage_artifacts(stage: str) -> tuple[str, ...]` | 这一步消费哪些**产物类型**（端口名翻译过来）。 |
+
+#### `stage_inputs(stage: str) -> tuple[str, ...]`
+
+这一步**消费**哪些端口（来自 ``StepSpec.inputs``，不另写一份）。
+
+``detect_submit`` 是"把检测结果定稿"的动作，不重新检测、也不看检测框，
+只吃上游的 ``pages``；这里显式覆盖，其余阶段直接取 spec。
+
+#### `stage_outputs(stage: str) -> tuple[str, ...]`
+
+这一步**产出**哪些端口（来自 ``StepSpec.outputs``，不另写一份）。
+
+⚠️ 这是**步骤级**声明：``detect`` 声明 ``("boxes", "pages")``——这一步整体
+两样都给（框在"检测"、图在"提交"）。凡是要问"图上这个节点能不能供给某个
+端口"（:meth:`FlowDiagram.nearest_producer`）都用它，否则第二步之后的下游
+会沿图跳过检测节点、直接去拿提取的原图。
+
+动作级（"这一下具体写了什么文件"）见 :func:`action_outputs`。
+
+#### `action_outputs(stage: str) -> tuple[str, ...]`
+
+**动作级**产出端口：同格的每个动作各自只产一样（:func:`fold_forward` 用）。
+
+``detect`` 那一下只写 ``boxes.json``、``detect_submit`` 才裁图。折返时
+必须按这个粒度挑"最靠后的、也产出该端口的动作"，否则 `detect.pages`
+会折到 ``detect`` 自己（它声明了 pages，却没有那个落点）。
+
+#### `fold_forward(stage: str, port: str) -> str`
+
+把阶段折到**同格里最靠后的、也产出该端口的动作**。
+
+判定完全从 :data:`STAGE_STEPS`（同格关系）与 :func:`action_outputs`
+（**每个动作**产什么）派生，**不另写一张表**：同格里多个阶段都产出该端口时取声明
+顺序里最靠后的那个；没有同格伙伴时原样返回。语义与用途见上面那段说明。
+
+#### `stage_label(stage: str) -> str`
+
+运行阶段 → 流程图节点名（默认走 spec，只有 ``detect_submit`` 单独一句）。
+
+页面里凡是"按 stage 给这个阶段起个中文名"（BPMN 节点名、进度/日志文案）
+都走本函数，**不要**自己 ``spec_by_key(stage)``——那会在
+``detect_submit`` 上拿到 ``None`` 或与 ``detect`` 同名。
+
+#### `spec_for_stage(stage: str) -> StepSpec | None`
+
+运行阶段 → 它对应的 :class:`StepSpec`（界面查表统一走这里）。
+
+⚠️ 这一层映射（:data:`STAGE_STEPS`）在：``detect_submit`` 要拿 ``detect``
+的声明（它是同一步骤的第二个动作），而 ``imposition`` 虽是**伪步骤**（不在
+``STAGES`` 里）却也有自己的 spec。页面里凡是"按 stage 取这一步的界面元数据"
+（按钮文案、控制列宽度、预览控件名、右栏专属区块）都必须走本函数，
+**不要**自己 ``spec_by_key(stage)``——那会在 ``detect_submit`` 上拿到 None。
+
+---
+
+## `desktop.steps.ports.locations`
+
+源码：[`desktop/steps/ports/locations.py`](../../desktop/steps/ports/locations.py)
+
+产物落点：每个端口在 ``tasks/<任务号>/`` 下的相对/绝对路径与节点后缀规则。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `location_of(stage: str, port: str) -> str \| None` | 运行阶段某端口的相对落点；没有登记返回 ``None``。 |
+| `sanitize_node_id(node_id: str) -> str` | 把节点 id 收成**可安全拼进路径**的名字（只留字母数字与 ``._-``）。 |
+| `suffix_last_segment(name: str, suffix: str) -> str` | 在路径**最后一段**插入后缀：目录名加在结尾、文件名加在扩展名前。 |
+| `scoped_name(name: str, node_id: str \| None, primary_id: str \| None) -> str` | 按**节点作用域**给一个名字加后缀：主节点/无节点 ⇒ 原名，副本 ⇒ ``~<节点>``。 |
+| `node_scope_from_output_dir(dir_name: str) -> str` | 从**产物目录名**里取出节点作用域后缀（``extract~Node_3`` → ``~Node_3``）。 |
+| `rembg_methods_path(out_dir) -> Path \| None` | 去底色「每页用了哪种算法」的侧车文件路径（worker / 实时预览共用）。 |
+| `copy_location(stage: str, port: str, node_id: str) -> str \| None` | **副本节点**（同阶段第二个及之后的节点）的相对落点；没登记返回 ``None``。 |
+| `node_location(stage: str, port: str, node_id: str \| None=None, primary_id: str \| None=None) -> str \| None` | **某节点实例**某端口的相对落点。 |
+| `artifact_path(task_dir: Path \| str, stage: str, port: str, node_id: str \| None=None, primary_id: str \| None=None) -> Path \| None` | 产物在任务目录下的**绝对路径**；该阶段没登记这个端口则 ``None``。 |
+| `task_input_dir(task_dir: Path \| str) -> Path` | 入口图片目录的绝对路径（``tasks/<任务号>/stages/input/``）。 |
+
+#### `sanitize_node_id(node_id: str) -> str`
+
+把节点 id 收成**可安全拼进路径**的名字（只留字母数字与 ``._-``）。
+
+BPMN 节点 id 一般是 ``Node_7`` / ``Activity_1a2b`` 这种安全形状，但用户在
+bpmn.io 里能把它改成任意字符串——拼进路径前必须洗一道，否则 ``/`` 或 ``\``
+会把落点引到别的目录（副本产物跑到任务目录之外）。
+
+#### `suffix_last_segment(name: str, suffix: str) -> str`
+
+在路径**最后一段**插入后缀：目录名加在结尾、文件名加在扩展名前。
+
+- ``stages/extract`` → ``stages/extract~X``
+- ``boxes.json`` → ``boxes~X.json``
+- ``stages/print/print.pdf`` → ``stages/print/print~X.pdf``
+- 裸文件名 ``pages.json`` → ``pages~X.json``（没有 ``/`` 时 ``head`` 为空）
+
+这是"副本产物怎么命名"的**唯一一处**实现：任务目录里的每一种按节点隔离的
+文件（阶段产物目录 / ``boxes.json`` / ``pages.json`` / ``drafts/<阶段>.json``）
+都走它，规则不会各写一份。
+
+#### `scoped_name(name: str, node_id: str | None, primary_id: str | None) -> str`
+
+按**节点作用域**给一个名字加后缀：主节点/无节点 ⇒ 原名，副本 ⇒ ``~<节点>``。
+
+⚠️ **主节点零迁移**：同阶段恰好一个节点时（=所有现存任务与默认流程）
+名字与改造前**逐字节相同**，没有任何文件需要搬家。
+
+#### `node_scope_from_output_dir(dir_name: str) -> str`
+
+从**产物目录名**里取出节点作用域后缀（``extract~Node_3`` → ``~Node_3``）。
+
+场景：worker 子进程（如 ``stages/rembg_stage.py``）拿不到 store，也读不到
+流程图，只能从它写入的产物落点 ``out_dir.name`` 反推节点作用域，好把**缩略
+图缓存目录**（``thumbnails/<名>[~<节点>]``）算成与产物同一份作用域。
+
+无后缀（主节点/单节点流程）⇒ 返回 ``""``。⚠️ 节点 id 经
+:func:`sanitize_node_id` 洗过 ⇒ **不含 ``~``**，所以按最后一个 ``~`` 切分是
+安全的：``~`` 只会出现在"主名~节点"这一处。
+
+#### `rembg_methods_path(out_dir) -> Path | None`
+
+去底色「每页用了哪种算法」的侧车文件路径（worker / 实时预览共用）。
+
+落点与 ``rembg_offsets[~节点].json`` 同级，都在**任务根目录**：
+``tasks/<任务号>/rembg_methods[~节点].json``，值是 ``{页名: 算法 key}``。
+
+只在 ``stages/`` 下的真实任务产物目录返回路径；模块页/自测的临时输出目录
+（父目录不叫 ``stages``）返回 ``None``——那里不该凭空长出一个任务侧车文件。
+
+#### `copy_location(stage: str, port: str, node_id: str) -> str | None`
+
+**副本节点**（同阶段第二个及之后的节点）的相对落点；没登记返回 ``None``。
+
+规则：在主落点的**最后一段**插入 ``~<node_id>``——目录名结尾加后缀、文件名
+在扩展名前加后缀：
+
+- ``stages/extract`` → ``stages/extract~Node_3``
+- ``boxes.json`` → ``boxes~Node_3.json``
+- ``stages/print/print.pdf`` → ``stages/print/print~Node_3.pdf``
+
+⚠️ **主节点沿用旧落点**（:func:`node_location`），所以"同阶段恰好一个节点"
+的现存任务与默认流程**零迁移**——只有第二个及之后的节点才落到副本落点。
+
+#### `node_location(stage: str, port: str, node_id: str | None=None, primary_id: str | None=None) -> str | None`
+
+**某节点实例**某端口的相对落点。
+
+``node_id`` 空、或等于该阶段的 ``primary_id``（主节点）⇒ 旧落点（零迁移）；
+否则 ⇒ 副本落点（:func:`copy_location`）。没登记该端口返回 ``None``。
+
+#### `artifact_path(task_dir: Path | str, stage: str, port: str, node_id: str | None=None, primary_id: str | None=None) -> Path | None`
+
+产物在任务目录下的**绝对路径**；该阶段没登记这个端口则 ``None``。
+
+``task_dir`` 传 ``tasks/<任务号>/``（不是数据根）。
+
+``node_id`` / ``primary_id`` 给定时按 :func:`node_location` 支持**多节点**
+（同阶段副本落到带 ``~<node_id>`` 后缀的副本落点）；不给则恒取旧落点
+（单节点场景与改造前逐字节一致）。
+
+#### `task_input_dir(task_dir: Path | str) -> Path`
+
+入口图片目录的绝对路径（``tasks/<任务号>/stages/input/``）。
+
+⚠️ **目录不需要事先存在**：它是"用户往里放图"的地方，任务刚建出来时
+本来就是空的。判"有没有图"要看里面有没有图片文件，别只看目录在不在。
+
+---
+
+## `desktop.steps.ports.nodes`
+
+源码：[`desktop/steps/ports/nodes.py`](../../desktop/steps/ports/nodes.py)
+
+图上的节点语义：源 PDF、配对删除、悬空事件/网关、流程要什么输入。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `source_pdf_node_ids(diagram) -> tuple[str, ...]` | 图里代表「源 PDF」的节点 id（没有则空元组）。 |
+| `is_source_pdf_node(diagram, node_id: str) -> bool` | 这个节点是不是「源 PDF」（图上那个入口事件）。 |
+| `paired_node_for_stage(diagram, node_id: str) -> str \| None` | 删掉 ``node_id`` 时**该一起删掉**的配对节点 id；没有则 ``None``。 |
+| `orphaned_end_event_ids(diagram, *node_ids: str) -> tuple[str, ...]` | 删掉 ``node_ids`` 后会**悬空**的结束事件 id；没有则空元组。 |
+| `orphaned_gateway_ids(diagram, *node_ids: str) -> tuple[str, ...]` | 删掉 ``node_ids`` 后会**失去依附对象**的「是否拼版」网关 id；没有则空元组。 |
+| `flow_needs_source_pdf(diagram) -> bool` | **这条流程**里有没有直接吃源 PDF 的阶段吗（要问图，别写死）。 |
+| `flow_crops_pages(diagram) -> bool` | 这条流程里页面会不会被「检测文本框」的提交**逐框裁开**。 |
+
+#### `source_pdf_node_ids(diagram) -> tuple[str, ...]`
+
+图里代表「源 PDF」的节点 id（没有则空元组）。
+
+认法有两条，任一命中即可：
+
+1. **事件型**节点（``startEvent``）——BPMN 里流程入口就是它；
+2. **名字**在 :data:`SOURCE_PDF_NODE_NAMES` 里——用户可以把它改名，
+   事件型仍是主判据；名字判据兜住"被改成 task 型"或用户自己画的。
+
+⚠️ **别按 stage 判**：「源 PDF」没有 ``stage``（它不是运行阶段，
+:data:`desktop.steps.ports.SUPPLY_TASK_SOURCE` 才是它的语义标记）。
+
+#### `paired_node_for_stage(diagram, node_id: str) -> str | None`
+
+删掉 ``node_id`` 时**该一起删掉**的配对节点 id；没有则 ``None``。
+
+用户 2026-10-06：
+
+> 流程编辑中，如果删除了 上传pdf或者 pdf图片提取中的一个，
+> 另外���个的存在没有意义，因此需要同步删除另外一个
+
+成对关系是双向的：
+
+- 删「源 PDF」事件 ⇒ 一并删 ``extract`` 节点；
+- 删 ``extract`` 节点 ⇒ 一并删「源 PDF」事件。
+
+⚠️ **只删一个会留下坏图**：留着 startEvent 时第一步的``pages`` 沿图回溯
+不到任何产出者，界面就一直催"上传图片"；留着 extract 时它吃的是
+:data:`SUPPLY_TASK_SOURCE`（任务源 PDF），而界面上那个 PDF 图标会**仍然
+亮着**催你上传——正是用户说的"不需要 PDF 上传图标"。
+
+⚠️ 返回 ``None``（而不是"没有配对就不删"里的空字符串）表示"无配对"；
+调用方**必须自己再判一次** ``extract`` 节点是否真的在图里（可能已经被
+用户先删了），别假定它一定存在。
+
+#### `orphaned_end_event_ids(diagram, *node_ids: str) -> tuple[str, ...]`
+
+删掉 ``node_ids`` 后会**悬空**的结束事件 id；没有则空元组。
+
+用户 2026-10-07：
+
+> 流程图编辑中，生成PDF附在PDF排版，如果删除了PDF排版，
+> 那么生成PDF就一定不存在
+
+默认流程里「生成PDF」是挂在「PDF排版」（``print``）后面的**结束事件**
+——它不进拓扑序、没有运行语义，唯一意义是图示"流程在此收尾"。
+「PDF排版」一删它就一条入线不剩，留着是句谎话：图上写着"生成PDF"，
+流程却不再产出 PDF。
+
+⚠️ 同名不同物（用户同日定的口径）：**步骤名**已改成「PDF排版」，与流程图
+那一格统一；而「生成PDF」现在只指两样东西——**结束事件**的名字，与**执行
+按钮**的文案（``StepSpec.run_label`` / ``run_button_text``）。
+
+⚠️ 判据是**图上的性质**（入线是否全部来自将被删的节点），**不按名字
+认「生成PDF」**——用户改了名、自己画的收尾事件同理；反之「图片拼版」
+被删时「生成PDF」的入线还剩「PDF排版」那条，不跟着删。
+
+⚠️ 只收**入线非空**的结束事件：本来就悬空的事件不是这次删除造成的，
+不归这里管（别借删除顺手清扫，删除面越界）。
+
+#### `orphaned_gateway_ids(diagram, *node_ids: str) -> tuple[str, ...]`
+
+删掉 ``node_ids`` 后会**失去依附对象**的「是否拼版」网关 id；没有则空元组。
+
+用户 2026-10-08：
+
+> 是否拼版依附拼版……因此删除左侧的判断 gateway、顶部的添加判断按钮
+
+图上的排他网关就是「是否拼版」这个判断（见 :data:`GATEWAY_GUARD_STAGE`）：
+它问的问题只对「图片拼版」这一步成立。删掉「图片拼版」之后，网关的两条
+分支里有一条已经悬空（``remove_node`` 会连带删掉那半条线），剩下一个
+"无条件放行"的菱形——图上写着"是否拼版"，流程里却已经没有拼版这一步，
+留着就是误导。所以跟着删。
+
+⚠️ **反方向不删**（用户同日的前一条口径："图片拼版可以不需要判断是否拼版"）：
+删网关不动「图片拼版」——那一步照跑，只是不再画那个分支。
+
+⚠️ 判据只看"删完之后图里**还剩不剩** ``imposition``"，**不看网关连在谁身上**：
+网关是这一步的附属图形（不是独立组件），一个流程里本就只该有一个
+（网关问的是同一件事，问两遍没有意义）。
+
+#### `flow_needs_source_pdf(diagram) -> bool`
+
+**这条流程**里有没有直接吃源 PDF 的阶段吗（要问图，别写死）。
+⚠️ **两处界面问的是同一个问题**（用户 2026-10-06）：
+  ①创建任务页——"流程要 PDF 而用户没给，是否问一句"；
+  ②任务详情页——"流程要 PDF 而这个任务还没源文件，按钮该高亮 + 顶部
+  该红字提示 + 进页面该弹窗"。所以这个判据**只有这一份实现**，
+  别在两个页面各写一遍（漂移起来是"创建时问了、详情页却不提示"）。
+
+阶段→"要不要源 PDF"走 :meth:`StepSpec.needs_source_pdf`（端口声明
+``inputs`` 含 ``pdf``）；⚠️ **别拿** ``input_noun()`` 判——它是给人看的
+称呼，四步里三步都写着"选择图片"，用它会把去底色/PDF排版也算进去
+（它们吃的是上游产出的页，不是用户的文件）。
+
+:param diagram: :class:`~desktop.steps.bpmn_diagram.FlowDiagram`；
+    空图/``None`` 一律 False（没有流程就没有"要不要"可言）。
+
+#### `flow_crops_pages(diagram) -> bool`
+
+这条流程里页面会不会被「检测文本框」的提交**逐框裁开**。
+
+2026-10-22 起没有 area：有检测节点就一定会逐框裁图（半幅 ``-l``/``-r``）。
+凡是要问"这一步拿到的图是整页还是裁好的框"的地方都用本函数，别各写一份
+"流程里有没有 detect 节点"。
+
+``imposition`` 那一格传 False（条件不满足时被剔除，与答案无关）。
+空图 / 没有 detect ⇒ False（＝图是整页的）。
 
 ---
 
@@ -13778,66 +14890,11 @@ pages，问它"pages 输入"会拿到入口目录，而它要的其实是那个�
 
 ---
 
-## `desktop.steps.source_zone`
+## `desktop.steps.source_zone.constants`
 
-源码：[`desktop/steps/source_zone.py`](../../desktop/steps/source_zone.py)
+源码：[`desktop/steps/source_zone/constants.py`](../../desktop/steps/source_zone/constants.py)
 
-共用「大输入区」：拖拽 / 点选，把**文件或文件夹**交给一个步骤。
-
-用户 2026-10-02 的要求（原话）：
-
-> 你就在左侧这些目录点上去，页面上有一个大的输入框，可以输入图片和输入文件，
-> 或者输入目录，也可以把文件拖进去，目录投进去。
-
-于是有了这一块：**一个控件同时承担"选择"和"放下"两件事**，三条入口都通——
-
-1. 拖**文件**进来；
-2. 拖**文件夹**进来（含图片/PDF 的目录）；
-3. **点按钮**选（空态底部两个真按钮「选择文件 / 选择文件夹」；已选态右端
-   「更换」）——也可以点空态空白处或按回车，那条老入口仍留着。
-
-⚠️ 第 3 条为什么要做成**看得见的按钮**（用户 2026-10-03 报）：原先只有"点
-空白处弹两选项小菜单"这一条隐式入口，界面上没有任何东西提示它能点，用户看到
-的只是一句"把 PDF 拖到这里"，于是报「不能直接点击按钮选择文件或文件夹」。
-入口既然是主路径，就得画出来。
-
-⚠️⚠️ **点空白处不再弹"选文件 / 选文件夹"那个两选项小菜单**（用户 2026-10-03
-第二次提要求：「能否底部不设置选择图片或者目录的弹窗」）。那个小菜单锚在控件
-**底部**，正是用户说的"底部弹窗"。现在点空白处 = **直接开选择对话框**（选文件），
-不再先问一遍"你要文件还是目录"。
-
-⚠️⚠️⚠️ **"选择对话框" ≠ "资源管理器窗口"**（2026-10-03 用户第三次纠正）。
-曾经误实现成"弹一个 ``explorer.exe`` 窗口 + 监听用户在窗口里的选中项"，用户
-明确否掉：「不对，现在直接打开资源浏览器了，而不是调用资源浏览器选择文件或者
-目录」。二者区别很大：
-
-- **要的**：资源管理器那套**选文件/选目录的对话框**，选完直接拿到结果 ——
-  也就是 :class:`QFileDialog` 的**原生**对话框（不设 ``DontUseNativeDialog``，
-  Windows 上它本来就是资源管理器式的那套界面），有"打开/取消"、结果确定；
-- **不要的**：另开一个**浏览用的资源管理器窗口**，再靠轮询/监听去猜他点了谁 ——
-  用户还得自己双击文件夹去定位，程序只能猜，且弹出的窗口与"选文件"无关。
-
-它是 :mod:`desktop.steps` 层的一部分，所以左侧三个模块与任务流程**共用同一份
-实现**——这正是用户要的"抽成公共组件、定义好入口/出口 API"。
-
-设计要点（改之前先读）：
-
-- **只管"用户给了哪些路径"，不管"这算不算合法输入"**。归一化（一堆文件/文件夹
-  → 一个"源"）由 :meth:`desktop.steps.spec.StepSpec.resolve_source` 负责，
-  那是纯逻辑、可以脱离 Qt 单测；本控件只把原始路径经 ``paths_chosen`` 发出去。
-  这样"拼图"这种要整份清单的调用方也能直接复用本控件。
-- **虚框自绘、按钮用真控件**：外框、图标、两行文案、清空 ✕ 都是 ``paintEvent``
-  画的（项目规矩：基础控件不引样式表），但「选择文件 / 选择文件夹 / 更换」
-  必须是 :class:`qfluentwidgets.PushButton` —— 它们要 hover、按下、焦点态，
-  自绘等于把这些交互重写一遍还写不好。因此本控件内部**有一个子控件层**，
-  几何由 :meth:`SourceZone._relayout_buttons` 手工摆（空态摆在文案下方、
-  已选态右端一枚），自绘内容按同一个基准排（见 :meth:`_empty_block_top`）。
-- **空态的"文案 + 按钮"是一整块、垂直居中**（用户 2026-10-03 截图反馈）：
-  独占模式下控件高达 700px+，若文案贴顶、按钮钉在框底，中间是一大片空白，
-  看着像两个不相干的区域。``_empty_block_height`` 把按钮也算进整块高度，
-  两边共用 ``_empty_block_top`` ⇒ 文案与按钮永远贴在一起、一起居中。
-- **拖拽热区**：拖到控件上（或宿主页面上，见 ``ModulePage``）时描边与底色变主色，
-  给"松手就放这儿"的反馈。
+大输入区的尺寸/留白常量。
 
 ### 模块常量
 
@@ -13852,7 +14909,15 @@ pages，问它"pages 输入"会拿到入口目录，而它要的其实是那个�
 | SOLO_HEIGHT | `320` |
 | SOLO_MIN_WIDTH | `360` |
 
-### `class SourceZone(QWidget)`
+---
+
+## `desktop.steps.source_zone.events`
+
+源码：[`desktop/steps/source_zone/events.py`](../../desktop/steps/source_zone/events.py)
+
+大输入区的事件入口：拖拽 / 键盘 / 鼠标。
+
+### `class SourceZone(_SourceZoneBase)`
 
 一个步骤的**大输入区**：拖入 / 点选文件或文件夹（自绘，可清空）。
 
@@ -13877,14 +14942,6 @@ pages，问它"pages 输入"会拿到入口目录，而它要的其实是那个�
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(spec: StepSpec, parent=None)` | 按 ``spec`` 取文案/图标/过滤串；初始为空态。 |
-| `source() -> Path \| None` | 当前**显示**的源（宿主设进来的；未设为 ``None``）。 |
-| `set_source(path: Path \| str \| None, detail: str='') -> None` | 把"当前源"画出来（不发 ``paths_chosen``，避免与宿主来回打环）。 |
-| `offer(paths) -> None` | 把一批路径当作用户给的输入送出去（拖拽/点选/宿主转发都走这里）。 |
-| `set_hot(hot: bool) -> None` | 外部（宿主页面的整页拖拽）切换"正在拖入"高亮。 |
-| `clear() -> None` | 清空当前源并发 ``cleared``（点右上角 ✕ 与宿主主动复位走同一条）。 |
-| `busy_lock(locked: bool) -> None` | 执行中禁用（拖拽也不收），并保持当前画面。 |
-| `set_solo_mode(solo: bool) -> None` | 切**独占模式**：页面上再没有别的控件，本控件撑满整幅（空态）。 |
 | `paths_from_mime(mime) -> list[str]` | 从拖拽数据里取**本地**路径（URL 形式的文件/文件夹，非本地的丢掉）。 |
 | `dragEnterEvent(event) -> None` | 有东西拖上来：认得本地文件/文件夹就收，并亮起来。 |
 | `dragMoveEvent(event) -> None` | 拖拽移动中：保持接受（Qt 要求显式接受才会给 drop）。 |
@@ -13894,42 +14951,6 @@ pages，问它"pages 输入"会拿到入口目录，而它要的其实是那个�
 | `leaveEvent(event) -> None` | 鼠标离开：恢复底色。 |
 | `keyPressEvent(event) -> None` | 回车/空格 = 点一下（键盘可达）。 |
 | `mousePressEvent(event) -> None` | 点清空 = 清空；点已选态的 ✕ = 清空；点其余任何地方 = 换源（开对话框）。 |
-| `browse() -> None` | 点空白处 / 按回车 = 直接开**选文件**对话框。 |
-| `resizeEvent(event) -> None` | 尺寸变了：按钮行跟着重新居中。 |
-| `paintEvent(event) -> None` | 画底（圆角虚线框）+ 内容（空态两行 / 已选态一行）。 |
-
-##### `set_source(path: Path | str | None, detail: str='') -> None`
-
-把"当前源"画出来（不发 ``paths_chosen``，避免与宿主来回打环）。
-
-``path=None`` 回到空态；``detail`` 是已选态的第二行小字（如"文件夹 ·
-12 个文件"），留空时按路径自动生成。
-
-##### `offer(paths) -> None`
-
-把一批路径当作用户给的输入送出去（拖拽/点选/宿主转发都走这里）。
-
-⚠️ **空列表一律静默**（用户 2026-10-04：「如果没有导入完全没有必要提示」）：
-走到这里只有一种情形——**用户在选择对话框里点了「取消」**（`_pick` 拿到
-空结果）。那是"我什么都没选"，不是"你给的东西用不了"，弹一句
-「这个用不上 / 没有拿到可用的文件或文件夹」纯属噪声（用户反馈的正是这条）。
-
-**"东西真的给过、但一步都跑不了"是另一回事**，由
-:meth:`StepSpec.resolve_source` 给出理由（目录里没有目标文件、后缀不符…），
-走宿主的 ``status`` 通道说清楚；只有**控件自己**失败（对话框根本打不开，
-见 :meth:`_open_dialog`）才发 ``rejected``。
-
-##### `set_solo_mode(solo: bool) -> None`
-
-切**独占模式**：页面上再没有别的控件，本控件撑满整幅（空态）。
-
-由 :meth:`desktop.modules.base.ModulePage.show_workspace` 调用——
-用户 2026-10-03 要求「初始就只有一个输入框，下面的操作面板和预览
-这些都要选择输入文件后才显示出来」。分栏一收，页面上半屏是框、
-下半屏一片空白，看着像没加载完；独占模式把这个观感补回来。
-
-⚠️ **已选态不参与**：源一旦选中就切回常规高度（``FILLED_HEIGHT``），
-因为那时分栏会回来，输入区要还给预览让出纵向空间。
 
 ##### `paths_from_mime(mime) -> list[str]`
 
@@ -13953,51 +14974,27 @@ pages，问它"pages 输入"会拿到入口目录，而它要的其实是那个�
 把整条已选态都做成入口，就**不再依赖任何子控件的几何**：无论按钮在哪、
 是否被盖住，点这块区域都能换源。右上角 ✕ 优先（它更靠右、语义不同）。
 
-##### `browse() -> None`
+---
 
-点空白处 / 按回车 = 直接开**选文件**对话框。
+## `desktop.steps.spec.catalog`
 
-⚠️ 2026-10-03 用户要求「底部不设置选择图片或者目录的弹窗」：原先这里
-会先弹一个"选文件 / 选文件夹"的两选项小菜单（锚点就在控件**底部**，
-见旧的 ``_anchor_point``），用户点完小菜单**紧接着**才看到真正的选择
-界面——两层弹窗叠着，正对应用户说的"底部弹窗"。现在那一层整个去掉：
-点空白处直接进选择对话框。
+源码：[`desktop/steps/spec/catalog.py`](../../desktop/steps/spec/catalog.py)
 
-⚠️ 只能默认"选文件"：``accepts_dir=True`` 的步骤想选目录有专门的
-「选择文件夹」按钮（那是显式入口），不必在这里再问一遍。
+步骤清单 :data:`SPECS` 及由它派生的主链 / 可选节点 / 导航清单。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `spec_by_key(key: str) -> StepSpec \| None` | 按 key 取步骤元数据；不存在返回 ``None``。 |
 
 ---
 
-## `desktop.steps.spec`
+## `desktop.steps.spec.constants`
 
-源码：[`desktop/steps/spec.py`](../../desktop/steps/spec.py)
+源码：[`desktop/steps/spec/constants.py`](../../desktop/steps/spec/constants.py)
 
-步骤的**声明式元数据**：一个步骤"是什么"，与流程顺序无关。
-
-用户口径（2026-10-02）：
-
-> 任务管理每个步骤组件有先后关系，因此我们的组件不需要相互关联，
-> 公共组件定义好 API 就行，比如入口文件目录，输出文件目录等。
-
-所以 :class:`StepSpec` 只描述**这一步自己**：跑哪个命令、用哪个参数面板、
-输入是 PDF 还是图片（单张 / 目录 / 一批）、默认输出目录怎么从输入推出来。
-「上一步是谁、下一步是谁、产物给谁用」**一概不写**——那是任务管理自己的
-编排，不是步骤的属性。正因如此，同一个 spec 既能被任务流程用，也能被左侧
-导航的独立模块用。
-
-「入口」这一侧的三件事也都收在这里，**不散到界面代码**去（用户 2026-10-02：
-「页面上有一个大的输入框，可以输入图片和输入文件，或者输入目录，也可以把
-文件拖进去」）：
-
-1. 认哪些后缀 —— :meth:`StepSpec.suffixes`（从 ``file_filter`` 里抠，过滤串
-   仍是唯一事实来源）；
-2. 允不允许直接拿目录当输入 —— ``accepts_dir``；
-3. 用户给了一堆东西（拖进来的文件/文件夹混在一起）**到底算哪个源** ——
-   :meth:`StepSpec.resolve_source`。这是纯逻辑，可以脱离 Qt 单测。
-
-⚠️ 面板只记**类名**（字符串），到用的时候才从 ``desktop.components.panels``
-惰性取——本模块因此不 import 任何 Qt 面板，可以被纯逻辑（CLI、自测、未来的
-批处理）安全导入。
+步骤元数据的共享常量：文件过滤串 / 后缀正则 / 自动下钻层数。
 
 ### 模块常量
 
@@ -14006,6 +15003,14 @@ pages，问它"pages 输入"会拿到入口目录，而它要的其实是那个�
 | IMAGE_FILTER | `"图片 (*.jpg *.jpeg *.png *.bmp *.tif *.tiff *.webp)"` |
 | PDF_FILTER | `"PDF/DjVu 文件 (*.pdf *.djvu *.djv)"` |
 | AUTO_DESCEND_DEPTH | `2` |
+
+---
+
+## `desktop.steps.spec.step_spec`
+
+源码：[`desktop/steps/spec/step_spec.py`](../../desktop/steps/spec/step_spec.py)
+
+一个处理步骤的元数据 :class:`StepSpec`（纯逻辑、不 import Qt）。
 
 ### `class StepSpec`
 
@@ -14246,12 +15251,6 @@ _apply_control_width`` 按 stage 换宽度、``history._history_fill_keys``
 
 所以这里锚在 ``key`` 上（步骤的唯一路由键，改名不会动它）。改动此值
 等于换一整个独立功能目录，**必须**先做旧目录迁移。
-
-### 模块函数
-
-| 函数 | 说明 |
-| --- | --- |
-| `spec_by_key(key: str) -> StepSpec \| None` | 按 key 取步骤元数据；不存在返回 ``None``。 |
 
 ---
 
@@ -15037,30 +16036,328 @@ root 省略时默认用 guji_data_dir()（默认 ~/Documents/guji，可在设置
 
 ## `desktop.store.tasks`
 
-源码：[`desktop/store/tasks.py`](../../desktop/store/tasks.py)
+源码：[`desktop/store/tasks/__init__.py`](../../desktop/store/tasks/__init__.py)
 
 任务索引（tasks.json）与任务目录布局。
 
-### `class TaskMixin`
+2026-11-22 起按职责拆成子包（与本仓 ``utils/pdf_extract/`` 同一模式）：
+
+1. ``constants``：运行阶段清单与界面文案（``STAGES`` / ``STAGE_LABELS`` …）；
+2. ``base``     ：共享状态与流程图/开关读盘缓存；
+3. ``records``  ：任务索引、任务号水位、任务 CRUD 与聚合任务；
+4. ``paths``    ：任务目录布局、产物落点、缩略图缓存、源文件副本；
+5. ``diagram``  ：``flow.bpmn`` 解析、槽位投影与降级提示；
+6. ``inputs``   ：按图解析阶段/节点的输入供给方与落点；
+7. ``readiness``：输入/产物是否已就绪；
+8. ``scheduling``：可选步骤开关与状态机装配。
+
+⚠️ 本 ``__init__`` 只做重导出：既有 ``from desktop.store.tasks import X``
+全部不变，子模块之间不要反过来导入本包（会形成循环）。
+
+### `class TaskMixin(TaskRecordMixin, TaskLayoutMixin, TaskDiagramMixin, TaskInputMixin, TaskReadinessMixin, TaskSchedulerMixin)`
 
 任务索引读写与任务目录/阶段输出目录的路径推导。
+
+---
+
+## `desktop.store.tasks.base`
+
+源码：[`desktop/store/tasks/base.py`](../../desktop/store/tasks/base.py)
+
+TaskMixin 的共享状态：数据根、流程图/开关读盘缓存与跨 Mixin 声明。
+
+从 ``desktop/store/tasks.py`` 拆出（2026-11-22）：这些缓存与方法原先挂在
+唯一的 ``TaskMixin`` 上，供「流程图解析」与「可选步骤开关」两处共用。
+各职责 Mixin 都继承本类，组合后的 ``TaskMixin`` 行为不变。
+
+⚠️ 缓存字典**必须是每实例一份**（见各自的注释），所以只声明默认值、
+惰性建在实例上。
+
+### `class TaskMixinBase`
+
+共享状态与读盘缓存的宿主（不直接实例化）。
+
+---
+
+## `desktop.store.tasks.diagram`
+
+源码：[`desktop/store/tasks/diagram.py`](../../desktop/store/tasks/diagram.py)
+
+任务流程图（flow.bpmn）的解析、缓存与界面槽位投影。
+
+从 ``desktop/store/tasks.py`` 拆出（2026-11-22）。文件是唯一真源，解析失败
+回落默认模板并留下降级原因（见 ``flow_degraded_reason``）。
+
+### `class TaskDiagramMixin(TaskMixinBase)`
+
+流程图的读取/保存、槽位投影与降级提示。
 
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
-| `next_task_no() -> str` | 下一个任务号（**预测值**）：当前最大号 + 1，参考索引、磁盘目录与水位。 |
-| `default_task_name() -> str` | 默认任务名「任务#XXXX」（XXXX = 预测的下一个任务号）。 |
-| `find_tasks(source_hash: str) -> list[dict]` | 按源文件指纹查重，返回全部命中的任务记录（可能多条）。 |
-| `list_tasks() -> list[dict]` | 全部任务，按 updated_at 倒序（最近改动的排在前面）。 |
-| `get_task(task_id: str) -> dict \| None` | 按任务号取任务记录；不存在返回 None。 |
-| `create_task(source_path: Path \| str \| None, source_hash: str, name: str='', duplicate_confirmed: bool=False, flow: FlowDefinition \| None=None, flow_layout: FlowLayout \| None=None, diagram=None, template_flow=None) -> str` | 新建任务并返回任务号（四位零填充）。 |
-| `create_aggregate_task(members: list[str], member_stage: str='', name: str='', diagram=None, member_stages: list[str] \| None=None) -> str` | 新建**聚合任务**并返回任务号（四位零填充）。 |
-| `set_aggregate_start(task_id: str, stage: str) -> bool` | 改**已建好的**聚合任务的起始节点（用户 2026-11-18）。 |
-| `set_task_source(task_id: str, source_path: Path \| str, source_hash: str \| None=None) -> bool` | 给**已建好但还没有 PDF** 的任务补上源文件（用户 2026-10-06）。 |
-| `rename_task(task_id: str, name: str) -> bool` | 改任务名称（用户 2026-10-06："任务名非必需，可随时修改"）。 |
-| `update_task(task_id: str, status: str) -> None` | 更新任务状态与 updated_at；任务号不存在时静默忽略。 |
-| `delete_task(task_id: str) -> bool` | 删除任务及其中间产物，返回是否真的删掉。 |
+| `task_diagram(task_id: str)` | 本任务的**流程图**（``FlowDiagram``：节点类型 + 坐标 + 折点）。 |
+| `flow_degraded_reason(task_id: str) -> str` | 本任务的流程图是不是**降级**了（读的是默认模板而非自己的图）。 |
+| `save_task_diagram(task_id: str, diagram) -> None` | 把流程图写回 ``tasks/<任务号>/flow.bpmn``（原子写）。 |
+| `task_slots(task_id: str) -> tuple[StageSlot, ...]` | 本任务流程投影出的**界面槽位**（步骤条格子 + 两个栈的页号）。 |
+| `task_stage_of(task_id: str, bar_index: int) -> str \| None` | 步骤条格序 → **运行阶段**（点节点后反查该跑/该显示什么）。 |
+
+##### `task_diagram(task_id: str)`
+
+本任务的**流程图**（``FlowDiagram``：节点类型 + 坐标 + 折点）。
+
+⚠️ 与 :mod:`desktop.steps.flow`（``FlowDefinition``）的区别：那个是**旧模型**
+（阶段序列 + 端口边表），已不再被 store 暴露给界面——页面渲染、运行
+顺序、供给方、就绪判据全部走这张图。两者读的
+是同一个 ``flow.bpmn``——文件是唯一真源。
+
+读不到 / 文件坏一律**回落默认模板**：界面宁可显示默认流程，也不能
+整个详情页打不开。⚠️ 但**回落必须是可见的**——见
+:meth:`flow_degraded_reason`。
+
+⚠️ **"解析得动但一个可执行步骤都认不出"也算坏**：那种图会让
+:meth:`stage_supplier` 的"在流程里"集合变成空集，于是**每个端口都
+解析成 None**（现象是"每一步都说找不到输入"，而流程看起来是有节点的，
+极难查）。所以这里判的是"有没有能跑的步骤"，不是"有没有节点"。
+
+⚠️ 第三条最隐蔽：用户在 bpmn.io 里把「图片去底色」改名成「AI 抠图」
+——一次完全合法的编辑——所有 ``task`` 节点的名字都认不出来，
+``stage_order()`` 就是空，整张自定义图被**静默**判成"坏"并换回默认
+流程。所以回落一定要配一条提示，见 ``flow_degraded_reason``。
+
+##### `flow_degraded_reason(task_id: str) -> str`
+
+本任务的流程图是不是**降级**了（读的是默认模板而非自己的图）。
+
+空串 = 正常。⚠️ 这是"自定义流程莫名其妙变回默认"这类报障**唯一**的
+线索来源：``task_diagram`` 的回落必须配一条提示，否则用户看到的现象
+与"我没改过它"完全一样（用户 2026-10-06）。
+
+##### `save_task_diagram(task_id: str, diagram) -> None`
+
+把流程图写回 ``tasks/<任务号>/flow.bpmn``（原子写）。
+
+⚠️ 只改**流程定义**，不碰任何产物。改完流程后已有产物是否还有效，是
+**界面该提示的事**，由调用方判断——store 只管存。
+
+⚠️ 落盘后**只作废**解析缓存，不能拿传进来的这张图回填：调用方给的往往是
+编辑器手里的**在制品**（节点 ``stage`` 等派生字段可能是 None），而
+``FlowDiagram.load`` 会按节点名把 ``stage`` 补出来——``stage_slots()``
+正是吃这个字段。回填未归一化的对象会让步骤条退化成"每格都是空步骤"
+（自测 last_stage 6b 当场红）。代价只是保存后多解析一次文件，保存本来
+就是低频操作。
+
+##### `task_slots(task_id: str) -> tuple[StageSlot, ...]`
+
+本任务流程投影出的**界面槽位**（步骤条格子 + 两个栈的页号）。
+
+界面的步骤条与阶段寻址都走这里（``docs/tasks/bpm.md`` 的 M2），
+不再按``STAGES`` 四步硬索引——自定义流程换了顺序/增删了节点，
+步骤条与寻址一起跟着变。折叠规则见
+:meth:`desktop.steps.flow.FlowDefinition.stage_slots`。
+
+##### `task_stage_of(task_id: str, bar_index: int) -> str | None`
+
+步骤条格序 → **运行阶段**（点节点后反查该跑/该显示什么）。
+
+返回 ``None`` 说明这一格在本流程里不存在（自定义流程删掉了它），
+调用方必须挡住而不是当成第一步。
+
+---
+
+## `desktop.store.tasks.inputs`
+
+源码：[`desktop/store/tasks/inputs.py`](../../desktop/store/tasks/inputs.py)
+
+按流程图解析某阶段/某节点的输入供给方与产物落点。
+
+从 ``desktop/store/tasks.py`` 拆出（2026-11-22）。规则（图优先、静态兜底）
+只在这里一份；"输入是否真的就绪"见 ``readiness.py``。
+
+### `class TaskInputMixin(TaskMixinBase)`
+
+阶段/节点粒度的输入解析与落点。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `stage_input(task_id: str, stage: str, port: str='pages', imposition_active: bool=False) -> Path \| None` | 按**本任务的流程定义**解析某阶段某端口的输入绝对路径。 |
+| `task_input_dir(task_id: str) -> Path` | **流程入口图片**目录（``stages/input/``）。 |
+| `required_stage_inputs(task_id: str, stage: str, imposition_active: bool=False) -> tuple[str, ...]` | 本流程里这一步**真正要等就位**的输入端口。 |
+| `stage_supplier(task_id: str, stage: str, port: str, imposition_active: bool=False) -> str \| None` | 本任务里 ``(stage, port)`` 的**实际供给方**（运行时按图求解）。 |
+| `node_supplier(task_id: str, node_id: str, port: str, imposition_active: bool=False) -> str \| None` | 本任务里某**节点实例**某端口的实际供给方（返回**节点 id** 或哨兵）。 |
+| `node_supplier_stage(task_id: str, node_id: str, port: str, imposition_active: bool=False) -> str \| None` | 节点粒度的供给方，但结果折成**阶段 key**（不是节点 id）。 |
+| `node_input(task_id: str, node_id: str, port: str='pages', imposition_active: bool=False) -> Path \| None` | 某**节点实例**某端口输入的绝对路径（带**入口回落**）。 |
+| `node_output(task_id: str, node_id: str, port: str='pages', stage: str \| None=None) -> Path` | 某**节点实例**某端口产物的绝对路径（**落点的唯一入口**）。 |
+| `required_node_inputs(task_id: str, node_id: str, imposition_active: bool=False) -> tuple[str, ...]` | 某**节点实例**真正要等就位的输入端口（节点粒度的就绪判据）。 |
+| `node_ids(task_id: str) -> tuple[str, ...]` | 本任务流程图里**全部可运行节点**的 id（拓扑序）——界面按它建页。 |
+| `node_or_stage_output(task_id: str, node_id: str \| None, stage: str, port: str='pages') -> Path` | **落点的统一入口**：有节点按节点取，没节点/没登记回落该阶段的旧落点。 |
+| `scoped_stage_dir(task_id: str, node_id: str \| None, name: str) -> Path` | ``stages/<name>`` 的**节点作用域**版本。 |
+| `node_stage_of(task_id: str, node_id: str) -> str \| None` | 节点实例 → 它的**运行阶段**（不是界面步骤 key）；认不出返回 ``None``。 |
+| `node_primary_of(task_id: str, node_id: str) -> str \| None` | 节点实例 → 它所属阶段的**主节点** id（"沿用旧路径"的那一个）。 |
+| `scoped_file_scope(task_id: str, node_id: str \| None) -> dict[str, str \| None]` | 给 ``load_pages``/``save_draft``/``boxes_path`` 这类按节点隔离的读写 |
+
+##### `stage_input(task_id: str, stage: str, port: str='pages', imposition_active: bool=False) -> Path | None`
+
+按**本任务的流程定义**解析某阶段某端口的输入绝对路径。
+
+⚠️ 这是 BPM 化的关键入口：调用方不再问"第三步的图片在哪"，而是问
+"这一步的 ``pages`` 输入在哪"——连线由任务的 ``flow.bpmn`` 决定
+（没有就用默认流程，与 :data:`desktop.steps.ports.SUPPLIERS` 逐边
+相等）。``imposition_active`` 对应那条唯一的**条件连线**（拼版生效
+时换上游），以条件名 ``"imposition"`` 传入解析上下文。
+
+⚠️ **沿图回溯不出上游时回落到入口图片目录**（用户 2026-10-06：
+「如果某个节点作为第一个节点，一定要可以有输入可用」）。落点是
+:func:`desktop.steps.ports.task_input_dir`（``stages/input/``），
+界面的「插入图片」也写进那里（见 ``manifest.insert_pages``）。
+回落由 :func:`~desktop.steps.ports.resolve_input_with_entry` 统一做，
+**只对 ``pages`` 生效**——``boxes``/``pdf`` 没得回落。
+
+##### `task_input_dir(task_id: str) -> Path`
+
+**流程入口图片**目录（``stages/input/``）。
+
+供"没有上游的步骤"当输入：用户往这里放图/从界面插图，第一个节点
+（例如自定义流程里的「检测文本框」）就拿它当pages 输入。落点由
+:data:`desktop.steps.ports.TASK_INPUT_LOCATION` 唯一声明。
+
+##### `required_stage_inputs(task_id: str, stage: str, imposition_active: bool=False) -> tuple[str, ...]`
+
+本流程里这一步**真正要等就位**的输入端口。
+
+规则只在 :func:`desktop.steps.ports.stage_blocking_inputs` 一份（那里
+解释了为什么"声明的端口"不能直接当就绪判据：``pdf`` 由任务供给、
+``boxes`` 在没有「检测文本框」的流程里压根没人产出）。
+
+:param imposition_active: 拼版开关的运行态（调用方传 effective）。
+
+##### `stage_supplier(task_id: str, stage: str, port: str, imposition_active: bool=False) -> str | None`
+
+本任务里 ``(stage, port)`` 的**实际供给方**（运行时按图求解）。
+
+⚠️ **这一步是"运行时跟着图走"的关键**：以前直接查代码里的端口级边表
+（``ports.SUPPLIERS``），一旦用户把流程改成不含某一步（例如去掉
+「图片去底色」），边表给的供给方就不在流程里了——按它取路径会指向
+**永远不会产生的文件**（现象是"PDF排版找不到输入"，而不是流程报错，
+极难查）。
+
+规则（先声明、后回退）：
+1. 取 ``ports`` 声明的供给方（``print/pages`` 走拼版开关那条特例）；
+2. 它**在本流程里**⇒ 就用它；
+3. 不在 ⇒ 沿图往前找**最近的、产出该端口的在流程阶段**
+   （:meth:`FlowDiagram.nearest_producer`）。
+
+⚠️ **"在流程里"要按"界面格子"判，不能按节点判**：
+``detect_submit``（提交检测结果）是第二步内的**第二个动作**，用户画图
+时通常不会给它单独开一个节点（界面槽位也把它折回「检测文本框」那一格）。
+若按"图里有没有这个节点"判，就会认为它不在流程里，于是 ``rembg.pages``
+回退到 ``detect`` ——而 ``detect`` 只出坐标、没有裁好的图。
+所以判据是"它所属的**界面格**在不在流程里"（:data:`ports.STAGE_STEPS`
+给出 stage→step 的折叠关系）。
+⚠️⚠️ **图优先，静态表兜底**（2026-10-06 掉头）。原先的规则是**反的**
+（"先静态声明、后沿图回退"），后果是 ``ports.SUPPLIERS``——一份**写死在
+代码里的默认流程连线**——在它给的供给方还留在流程里时**压过用户画的
+连线**。实测两条节点集合相同、连线不同的流程（默认的
+``extract→detect→rembg→print`` 与用户自己连的 ``extract→print``），
+``print`` 的取图目录**完全一样**——用户明确要求的连线被静默丢弃。
+这就是"自定义流程里总是冒出默认流程逻辑"的**病根**：BPM 化只覆盖了
+**顺序**，没覆盖**语义**。
+
+现在的规则：
+
+1. **图能给出唯一答案**（沿图可达的产出方恰好一个）⇒ **图说了算**；
+2. 图给不出、或给出**多个**（默认流程的「是否拼版」网关就是这种：沿图
+   回溯 ``print`` 会同时看到「图片拼版」与「图片去底色」）⇒ 退回静态
+   声明 + 条件开关（``ports.print_pages_supplier`` 建模的那一条）；
+3. 静态声明是**任务源**哨兵（``extract`` 的 ``pdf``）⇒ 直接返回，它
+   本来就没有上游。
+
+⚠️ 第2 条是**确定性**的要求，不是将就：网关分支要用"拼版开关"这个
+运行态来选，两条边在图上都是实线，靠遍历顺序选是随机的。
+
+##### `node_supplier(task_id: str, node_id: str, port: str, imposition_active: bool=False) -> str | None`
+
+本任务里某**节点实例**某端口的实际供给方（返回**节点 id** 或哨兵）。
+
+与 :meth:`stage_supplier` 同一套规则（图优先、静态兜底），区别是把
+"图说的产出方"落到**节点粒度**：同阶段有多个节点时，喂给 ``node_id``
+的是图上那个**具体节点**，而不是"整阶段的主节点"。
+
+##### `node_supplier_stage(task_id: str, node_id: str, port: str, imposition_active: bool=False) -> str | None`
+
+节点粒度的供给方，但结果折成**阶段 key**（不是节点 id）。
+
+:meth:`node_supplier` 回答的是"喂你的是哪个**节点**"（B 方案寻址要用
+节点 id）；而"记进 runs 历史、供旧数据判定比对"的那个字段
+（``args["source_stage"]`` ← :func:`desktop.services.stale_chain.print_source_switched`）
+历来是**阶段 key**（``detect_submit`` / ``imposition``）。两者不是一回事，
+所以这里折一道：节点 → 它的运行阶段 →（同格多动作再折）该端口成品的
+产出阶段。哨兵值原样透传。
+
+##### `node_input(task_id: str, node_id: str, port: str='pages', imposition_active: bool=False) -> Path | None`
+
+某**节点实例**某端口输入的绝对路径（带**入口回落**）。
+
+与 :meth:`stage_input` 同构，只是把消费方定位到**节点**：没有上游而该
+节点确实吃 ``pages`` 时，回落到入口图片目录（``stages/input/``）。
+
+##### `node_output(task_id: str, node_id: str, port: str='pages', stage: str | None=None) -> Path`
+
+某**节点实例**某端口产物的绝对路径（**落点的唯一入口**）。
+
+``stage`` 缺省取节点自身的阶段；显式给时表示"同一步骤的第二个动作"
+（如 ``detect`` 节点的 ``detect_submit`` 裁图落点）。主节点沿用旧落点，
+副本落到 ``~<node_id>`` 后缀的副本落点。
+
+##### `node_or_stage_output(task_id: str, node_id: str | None, stage: str, port: str='pages') -> Path`
+
+**落点的统一入口**：有节点按节点取，没节点/没登记回落该阶段的旧落点。
+
+主节点与"没有节点信息"（程序化调用、旧测试探针）都拿到 ``stages/<阶段>``
+——与改造前逐字节相同。副本节点拿到 ``stages/<阶段>~<节点>``。
+
+调用方（执行端、取图、缩略图）一律走它，别自己 ``if node:`` 分叉：
+分叉处漏一处，就是"副本节点跑完产物写到主节点去了"。
+
+##### `scoped_stage_dir(task_id: str, node_id: str | None, name: str) -> Path`
+
+``stages/<name>`` 的**节点作用域**版本。
+
+主节点/无节点 ⇒ ``stages/<name>``（零迁移）；副本 ⇒
+``stages/<name>~<节点>``。用于**没有登记在 STAGE_LOCATIONS 里**的
+辅助目录（如 detect 的标注图目录）。
+
+##### `scoped_file_scope(task_id: str, node_id: str | None) -> dict[str, str | None]`
+
+给 ``load_pages``/``save_draft``/``boxes_path`` 这类按节点隔离的读写
+用的**作用域参数**：``{"node_id": …, "primary_id": …}``。
+
+统一在这里算，调用方不必各自去查"谁是主节点"——那是**只有图知道**的
+事实（见 :meth:`~desktop.steps.bpmn_diagram.FlowDiagram.primary_of`），
+散在各处迟早漂移。``node_id`` 为空时给 ``{"node_id": None,
+"primary_id": None}``，所有读写都落回**旧路径**（零迁移）。
+
+---
+
+## `desktop.store.tasks.paths`
+
+源码：[`desktop/store/tasks/paths.py`](../../desktop/store/tasks/paths.py)
+
+任务目录布局与各类落点：产物目录、预览草稿、缩略图缓存、源文件副本。
+
+从 ``desktop/store/tasks.py`` 拆出（2026-11-22）。落点的唯一事实来源仍是
+``desktop.steps.ports``——这里只做路径推导，不读写业务数据。
+
+### `class TaskLayoutMixin(TaskMixinBase)`
+
+任务目录布局、产物落点与缓存目录（路径推导）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
 | `task_dir(task_id: str) -> Path` | 任务根目录：tasks/<任务号>。 |
 | `stage_dir(task_id: str, stage: str) -> Path` | 某阶段的输出目录：tasks/<任务号>/stages/<阶段>。 |
 | `artifact(task_id: str, stage: str, port: str='pages') -> Path` | 某阶段某端口的产物绝对路径（**落点的唯一入口**）。 |
@@ -15078,34 +16375,6 @@ root 省略时默认用 guji_data_dir()（默认 ~/Documents/guji，可在设置
 | `save_rembg_algorithm(task_id: str, image_key: str, algorithm: str, node_id: str \| None=None, primary_id: str \| None=None) -> None` | 记录某张图片的算法（用户确实在这张图上改过时才调用）。 |
 | `imposition_output_dir(task_id: str) -> Path` | 「图片拼版」产出的成品拼版页图目录（列表顺序即页序）。 |
 | `print_output_pdf(task_id: str) -> Path` | print 阶段产物 print.pdf 的完整路径。 |
-| `task_diagram(task_id: str)` | 本任务的**流程图**（``FlowDiagram``：节点类型 + 坐标 + 折点）。 |
-| `flow_degraded_reason(task_id: str) -> str` | 本任务的流程图是不是**降级**了（读的是默认模板而非自己的图）。 |
-| `save_task_diagram(task_id: str, diagram) -> None` | 把流程图写回 ``tasks/<任务号>/flow.bpmn``（原子写）。 |
-| `task_slots(task_id: str) -> tuple[StageSlot, ...]` | 本任务流程投影出的**界面槽位**（步骤条格子 + 两个栈的页号）。 |
-| `task_stage_of(task_id: str, bar_index: int) -> str \| None` | 步骤条格序 → **运行阶段**（点节点后反查该跑/该显示什么）。 |
-| `stage_input(task_id: str, stage: str, port: str='pages', imposition_active: bool=False) -> Path \| None` | 按**本任务的流程定义**解析某阶段某端口的输入绝对路径。 |
-| `task_input_dir(task_id: str) -> Path` | **流程入口图片**目录（``stages/input/``）。 |
-| `required_stage_inputs(task_id: str, stage: str, imposition_active: bool=False) -> tuple[str, ...]` | 本流程里这一步**真正要等就位**的输入端口。 |
-| `stage_supplier(task_id: str, stage: str, port: str, imposition_active: bool=False) -> str \| None` | 本任务里 ``(stage, port)`` 的**实际供给方**（运行时按图求解）。 |
-| `node_supplier(task_id: str, node_id: str, port: str, imposition_active: bool=False) -> str \| None` | 本任务里某**节点实例**某端口的实际供给方（返回**节点 id** 或哨兵）。 |
-| `node_supplier_stage(task_id: str, node_id: str, port: str, imposition_active: bool=False) -> str \| None` | 节点粒度的供给方，但结果折成**阶段 key**（不是节点 id）。 |
-| `node_input(task_id: str, node_id: str, port: str='pages', imposition_active: bool=False) -> Path \| None` | 某**节点实例**某端口输入的绝对路径（带**入口回落**）。 |
-| `node_action_executed(task_id: str, node_id: str \| None, stage: str) -> bool` | 某**节点实例**的某个动作是否成功执行过。 |
-| `detect_submit_fresh(task_id: str, node_id: str \| None=None) -> bool` | 「提交检测结果」的裁图是否对应**最近一次成功的「检测文本框」**。 |
-| `node_input_effective(task_id: str, node_id: str, port: str='pages', imposition_active: bool=False) -> bool` | 本节点某端口的输入**现在该不该有数据**。 |
-| `stage_input_effective(task_id: str, stage: str, port: str='pages', imposition_active: bool=False) -> bool` | :meth:`node_input_effective` 的**阶段粒度**版本（没有节点信息时用）。 |
-| `node_output(task_id: str, node_id: str, port: str='pages', stage: str \| None=None) -> Path` | 某**节点实例**某端口产物的绝对路径（**落点的唯一入口**）。 |
-| `required_node_inputs(task_id: str, node_id: str, imposition_active: bool=False) -> tuple[str, ...]` | 某**节点实例**真正要等就位的输入端口（节点粒度的就绪判据）。 |
-| `node_ids(task_id: str) -> tuple[str, ...]` | 本任务流程图里**全部可运行节点**的 id（拓扑序）——界面按它建页。 |
-| `node_or_stage_output(task_id: str, node_id: str \| None, stage: str, port: str='pages') -> Path` | **落点的统一入口**：有节点按节点取，没节点/没登记回落该阶段的旧落点。 |
-| `scoped_stage_dir(task_id: str, node_id: str \| None, name: str) -> Path` | ``stages/<name>`` 的**节点作用域**版本。 |
-| `node_stage_of(task_id: str, node_id: str) -> str \| None` | 节点实例 → 它的**运行阶段**（不是界面步骤 key）；认不出返回 ``None``。 |
-| `node_primary_of(task_id: str, node_id: str) -> str \| None` | 节点实例 → 它所属阶段的**主节点** id（"沿用旧路径"的那一个）。 |
-| `scoped_file_scope(task_id: str, node_id: str \| None) -> dict[str, str \| None]` | 给 ``load_pages``/``save_draft``/``boxes_path`` 这类按节点隔离的读写 |
-| `step_enabled(task_id: str, step: str) -> bool` | 某个**可选步骤**的用户开关（``drafts/<步骤>.json`` 的 ``enabled``）。 |
-| `scheduler_flags(task_id: str, imposition_active: bool=False) -> dict[str, bool]` | 本任务传给状态机的条件开关表（key = 可选步骤 key）。 |
-| `task_scheduler(task_id: str, imposition_active: bool=False)` | 本任务的**状态机**（``Scheduler``）——"下一步跑谁 / 能不能跑 / 跳谁" |
-| `nearest_boxes_path(task_id: str, node_id: str \| None, imposition_active: bool=False) -> Path \| None` | 当前节点**沿流程往前最近的** ``boxes.json`` 路径（没有则 ``None``）。 |
 | `stage_output_dir(task_id: str, stage: str, node_id: str \| None=None) -> Path` | 返回某阶段（GUI）应写入的输出目录。 |
 | `workset_dir(task_id: str) -> Path` | 已废弃：检测/去底直接读 extract 输出目录，不再物化输入副本。 |
 | `runs_config_dir(task_id: str) -> Path` | 子进程执行配置（run-*.json / detect-config.json）。 |
@@ -15120,6 +16389,278 @@ root 省略时默认用 guji_data_dir()（默认 ~/Documents/guji，可在设置
 | `copy_source_to_task(task_id: str, source_path: Path) -> Path` | 导入时在任务目录下保留一份源文件副本（原子落地）。 |
 | `source_copy_path(task_id: str) -> Path \| None` | 任务目录里的 PDF 备份路径；没有备份返回 None。 |
 | `ensure_source_copy(task_id: str) -> Path \| None` | 保证任务目录里有 PDF 备份；缺了就按索引里的 source_path 补一份。 |
+
+##### `task_dir(task_id: str) -> Path`
+
+任务根目录：tasks/<任务号>。
+
+⚠️ **必须校验形状**（2026-09-26 审计）：`task_id` 会被直接拼进路径，而
+`delete_task` 对它做 `rmtree`。`tasks.json` 就在用户的文档目录下、可被
+外部编辑或别的工具写坏，一旦出现 `"id": "..\..\somewhere"` 就会
+**越界删除任务目录之外的东西**。这里只认 `create_task` 生成的形状。
+
+##### `artifact(task_id: str, stage: str, port: str='pages') -> Path`
+
+某阶段某端口的产物绝对路径（**落点的唯一入口**）。
+
+⚠️ 这四个 ``*_output_dir`` 方法以前各自写死了路径，是"加一步要改四处"
+的根源；现在它们都转调到这里，而落点表
+（:data:`desktop.steps.ports.STAGE_LOCATIONS`）是唯一事实来源。
+加一步 = 加一行表，不用动 store。
+
+##### `rembg_preview_dir(task_id: str, node_id: str | None=None, primary_id: str | None=None) -> Path`
+
+去底色「实时调整」的**草稿目录**（``tasks/<任务号>/preview/rembg[~节点]``）。
+
+⚠️ **必须与正式成品目录分开**（用户 2026-11-04）：改参数/切缩略图时的
+实时结果只是"这一步里看到的预览"，用户还没点「执行去底色」——
+- 不能落进 ``stages/rembg``（否则拼版 / 第四步直接把它当正式输入，
+  而且会覆盖掉上一轮全量执行的成品）；
+- 不能落进 ``stages/`` 下任何地方（那边的目录一概被当成阶段产物）；
+- 也不能顺手写 ``rembg_methods`` 侧车（``ports.rembg_methods_path``
+  只认 ``stages/`` 下的目录，草稿目录天然不命中，正好）。
+
+草稿在「执行去底色」开始时整体清空（见 ``RembgLiveMixin._drop_live_results``）。
+
+##### `rembg_offsets_path(task_id: str, node_id: str | None=None, primary_id: str | None=None) -> Path`
+
+**逐张图片**阈值偏移的存储文件（黑名单法，只记非 0 的图片）。
+
+主节点沿用 ``rembg_offsets.json``；同一步骤的副本节点落
+``rembg_offsets~<节点>.json``（与 ``boxes`` / ``pages`` 同一套命名）。
+
+##### `save_rembg_offset(task_id: str, image_key: str, offset: int, node_id: str | None=None, primary_id: str | None=None) -> None`
+
+记录某张图片的阈值偏移；**offset=0 就删掉这一项**（黑名单法）。
+
+⚠️ 只在用户**确实改过**这张图时调用；整表很小，读改写即可，不要为它
+再造缓存。
+
+##### `rembg_algorithms_path(task_id: str, node_id: str | None=None, primary_id: str | None=None) -> Path`
+
+**逐张图片**去底色算法的存储文件（只记用户单独改过的图片）。
+
+主节点沿用 ``rembg_algorithms.json``；同一步骤的副本节点落
+``rembg_algorithms~<节点>.json``（与 ``rembg_offsets`` 同一套命名）。
+
+##### `save_rembg_algorithm(task_id: str, image_key: str, algorithm: str, node_id: str | None=None, primary_id: str | None=None) -> None`
+
+记录某张图片的算法（用户确实在这张图上改过时才调用）。
+
+⚠️ 与 offset 的「黑名单法」不同：这里**连默认值 otsu 也照存**。
+原因是算法没有"0 等价未设置"的哨兵——用户明确把某页设回 otsu 时，
+它必须继续留在表里，不能被后续的全局值覆盖。
+
+##### `imposition_output_dir(task_id: str) -> Path`
+
+「图片拼版」产出的成品拼版页图目录（列表顺序即页序）。
+
+拼版节点**生效**时（选择态为真且有拼版页），第四步「PDF排版」与它的
+待打印列表一律从这里取图；否则仍从 ``rembg_output_dir`` 取。
+
+##### `stage_output_dir(task_id: str, stage: str, node_id: str | None=None) -> Path`
+
+返回某阶段（GUI）应写入的输出目录。
+
+rembg 返回成品图目录、print 返回 print.pdf 所在目录。
+
+##### `workset_dir(task_id: str) -> Path`
+
+已废弃：检测/去底直接读 extract 输出目录，不再物化输入副本。
+
+仅为清理历史遗留目录保留（老版本任务目录下可能仍有 workset/）。
+
+##### `thumbnails_dir(task_id: str, name: str, node_id: str | None=None) -> Path`
+
+按**节点作用域**取一个缩略图缓存目录：``thumbnails/<名>[~<节点>]``。
+
+主节点/无节点 ⇒ ``thumbnails/<名>``（旧路径，**零迁移**）；副本节点 ⇒
+``thumbnails/<名>~<节点>``。规则由 :func:`desktop.steps.ports.scoped_name`
+唯一给出，与产物落点（``stages/<阶段>~<节点>``）同一套——同一步骤有多个
+节点时各自的缩略图缓存互不覆盖（用户 2026-10-17：「缩略图目录也要
+按节点这样处理」）。
+
+##### `input_thumbnails_dir(task_id: str) -> Path`
+
+**入口图片**的缩略图缓存：``thumbnails/input/``。
+
+用户 2026-10-17：流程第一个节点是「检测文本框 / 图片去底色 / 图片拼版 /
+PDF排版」时，它的输入是用户直接放进 ``stages/input/`` 的那批图——此前
+左栏只能现解码原图（几千像素的扫描图）。现在**导入即按图键生成**到这份
+缓存里，左栏直接读小图。
+
+⚠️ **不按节点分**：入口图片目录（``stages/input/``）是**整个任务共用**
+的（所有无上游的节点都回落到它），所以缓存也与它同作用域（任务级）。
+
+##### `entry_thumb_path(task_id: str, image: Path | str) -> Path | None`
+
+一张入口图片在 :meth:`input_thumbnails_dir` 里的缓存缩略图路径。
+
+没有缓存、或缓存比源图旧/体积像截断，一律返回 ``None``（调用方回落到
+真图解码）。按**图键**命名（``book_key``：文件名+大小+路径指纹）——入口
+图片名字五花八门，按序号会张冠李戴（与 ``thumb_cache_worker`` 同一规则）。
+
+##### `print_manage_thumbnails_dir(task_id: str) -> Path`
+
+PDF排版「管理图片」弹窗的缩略图缓存：``thumbnails/print_manage/``。
+
+这一份覆盖**待打印条目 + 已删除条目**（拼版成品、手动插入图、入口图、
+去底色成品都可能进来），按 ``book_key``（图文件路径指纹）命名。弹窗
+打开时只读这些小图，不再同步解码原图（用户 2026-11-02「弹窗打开慢」）。
+
+⚠️ 删除图片的小图**不删**：「插入图片 → 删除恢复」还要显示它；哪些
+缩略图"在用"由 ``print.json`` 的 ``pages`` / ``deleted_pages`` 声明
+（就是用户说的"用配置文件表示"）。不按节点分：``print.json`` 本身按节点。
+
+##### `source_thumbnails_dir(task_id: str) -> Path`
+
+源 PDF 页缩略图：导入即生成，PDF 预览直接复用，永不清理。
+
+⚠️ **不按节点分**：它来自**源 PDF**（一本书一份），同一步骤的多个提取
+节点产出的页图同名同页号，共用这份按页号命名的缓存是正确且省事的。
+
+##### `rembg_thumbnails_dir(task_id: str, node_id: str | None=None) -> Path`
+
+第四步缩略图缓存：去底色阶段随成品图一并生成，
+缩略条直接复用，不必每次现解码 6000px 的原图。
+
+⚠️ 按**节点**取（B 方案）：两个「图片去底色」节点各有各的成品产物
+（``stages/rembg[~<节点>]``），缩略图缓存也跟着分（裸名 ``print`` /
+``print~<节点>``），否则副本节点会命中主节点的缩略图（张冠李戴）。
+
+##### `imposition_thumbnails_dir(task_id: str, node_id: str | None=None) -> Path`
+
+拼版页左列缩略图缓存（每页取第一张源图，``book_key`` 命名）。
+
+⚠️ 与独立拼图页的 ``singletask/imposition/`` **各归各**（用户
+2026-10-04 明确「singletask 和 taskdetail 不是一回事」）：任务缓存
+随任务目录走，``delete_task`` 整体清理时一并清掉；两边只共用组件与
+``ImageThumbCacheWorker``，**不共用缓存根**。
+
+##### `imposition_page_thumbs_dir(task_id: str, node_id: str | None=None) -> Path`
+
+拼版**页面效果缩略图实体**目录：``tasks/<id>/thumbnails/imposition_pages/``。
+
+与 :meth:`imposition_thumbnails_dir`（页内**单张源图**的缩略图）
+不是一层：这里放按版面合成的**整页**实体，``page1.jpg`` 从第一页
+起数，映射数据（页号 ↔ 文件 ↔ 内容签名）在同目录 ``index.json``
+（用户 2026-10-09：「缩略图实体其实没有生成落地……组合成拼版图片
+应该另外放在一个目录中，直接按照 page1 page2 命名，注意做好映射
+数据」）。随任务目录走，``delete_task`` 一并清掉。
+
+⚠️ 按**节点**取（B 方案）：两个「图片拼版」节点各有各的版面文档与
+合成产物，缩略图实体也跟着分（``imposition_pages[~<节点>]``）。
+
+##### `copy_source_to_task(task_id: str, source_path: Path) -> Path`
+
+导入时在任务目录下保留一份源文件副本（原子落地）。
+
+⚠️ 复制本身可能是在**后台线程**里做的（见
+``desktop/workers/serial_jobs.py``），而详情页/预览随时会来读这份
+副本，所以走 ``copy_file_atomic``：写 ``.part`` 再 ``os.replace``，
+别人不会读到半截 PDF。
+
+##### `source_copy_path(task_id: str) -> Path | None`
+
+任务目录里的 PDF 备份路径；没有备份返回 None。
+
+⚠️ 后续所有操作（详情页预览、extract 入参…）**都必须用它**，不能用
+``task['source_path']``：源文件在用户磁盘上，会被移动/改名/删除，
+一走就「渲染失败」。备份随任务走，任务才是自包含的。
+
+##### `ensure_source_copy(task_id: str) -> Path | None`
+
+保证任务目录里有 PDF 备份；缺了就按索引里的 source_path 补一份。
+
+老任务（导入时复制失败）或备份被误删时靠它自愈；源也一起没了就
+返回 None，调用方负责提示。
+
+---
+
+## `desktop.store.tasks.readiness`
+
+源码：[`desktop/store/tasks/readiness.py`](../../desktop/store/tasks/readiness.py)
+
+输入/产物"是否已就绪"的判据（目录有货 + 上游动作真的跑过）。
+
+从 ``desktop/store/tasks.py`` 拆出（2026-11-22）：路径怎么找见 ``inputs.py``，
+这里只管"这份输入现在算不算数"。
+
+### `class TaskReadinessMixin(TaskMixinBase)`
+
+就绪判据（阶段粒度与节点粒度）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `node_action_executed(task_id: str, node_id: str \| None, stage: str) -> bool` | 某**节点实例**的某个动作是否成功执行过。 |
+| `detect_submit_fresh(task_id: str, node_id: str \| None=None) -> bool` | 「提交检测结果」的裁图是否对应**最近一次成功的「检测文本框」**。 |
+| `node_input_effective(task_id: str, node_id: str, port: str='pages', imposition_active: bool=False) -> bool` | 本节点某端口的输入**现在该不该有数据**。 |
+| `stage_input_effective(task_id: str, stage: str, port: str='pages', imposition_active: bool=False) -> bool` | :meth:`node_input_effective` 的**阶段粒度**版本（没有节点信息时用）。 |
+
+##### `node_action_executed(task_id: str, node_id: str | None, stage: str) -> bool`
+
+某**节点实例**的某个动作是否成功执行过。
+
+⚠️ ``detect`` 与 ``detect_submit`` 是同一个节点的两个动作，各有各的
+执行记录：只跑了检测、还没提交时，``detect_submit`` 必须为 False，
+否则「图片去底色」会提前把未裁好的图当成上游产物（用户 2026-11-03）。
+
+##### `detect_submit_fresh(task_id: str, node_id: str | None=None) -> bool`
+
+「提交检测结果」的裁图是否对应**最近一次成功的「检测文本框」**。
+
+用户规则（2026-11-03）：检测文本框是**两个动作**（检测 + 提交），
+两次都执行了下一步才有数据。检测又成功跑过一次而没重新提交时，
+``stages/detect``（提交产物）里的裁图还是旧框裁出来的——它是去底色的
+**输入**，不该继续生效（否则用户看到"改了框、还没提交，去底色
+却已经有图"）。
+
+``_preview_run_id`` 是提交时写进执行记录的检测 run_id（见
+``submit.py::_run_detect_submit_unchecked``）。老记录没有该字段时
+**不判过期**——宁可少拦一次，也不误伤改造前跑过的任务。
+
+##### `node_input_effective(task_id: str, node_id: str, port: str='pages', imposition_active: bool=False) -> bool`
+
+本节点某端口的输入**现在该不该有数据**。
+
+判据 = **目录里有东西** 且 **上游产出该端口的动作已成功执行**。
+⚠️ 只看目录不够：预览落图、历史残留、手工拷图都会让目录"看起来有货"，
+但上游若没成功执行过就不能算正式输入；检测与提交是两步，还要对账
+（见 :meth:`detect_submit_fresh`）。
+
+---
+
+## `desktop.store.tasks.records`
+
+源码：[`desktop/store/tasks/records.py`](../../desktop/store/tasks/records.py)
+
+任务索引（tasks.json）读写、任务号水位与任务增删改查。
+
+从 ``desktop/store/tasks.py`` 拆出（2026-11-22）：只管**记录**，不推导路径
+落点（见 ``paths.py``）也不解析流程图（见 ``diagram.py``）。
+
+### `class TaskRecordMixin(TaskMixinBase)`
+
+任务索引读写与任务 CRUD（含聚合任务）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `next_task_no() -> str` | 下一个任务号（**预测值**）：当前最大号 + 1，参考索引、磁盘目录与水位。 |
+| `default_task_name() -> str` | 默认任务名「任务#XXXX」（XXXX = 预测的下一个任务号）。 |
+| `find_tasks(source_hash: str) -> list[dict]` | 按源文件指纹查重，返回全部命中的任务记录（可能多条）。 |
+| `list_tasks() -> list[dict]` | 全部任务，按 updated_at 倒序（最近改动的排在前面）。 |
+| `get_task(task_id: str) -> dict \| None` | 按任务号取任务记录；不存在返回 None。 |
+| `create_task(source_path: Path \| str \| None, source_hash: str, name: str='', duplicate_confirmed: bool=False, flow: FlowDefinition \| None=None, flow_layout: FlowLayout \| None=None, diagram=None, template_flow=None) -> str` | 新建任务并返回任务号（四位零填充）。 |
+| `create_aggregate_task(members: list[str], member_stage: str='', name: str='', diagram=None, member_stages: list[str] \| None=None) -> str` | 新建**聚合任务**并返回任务号（四位零填充）。 |
+| `set_aggregate_start(task_id: str, stage: str) -> bool` | 改**已建好的**聚合任务的起始节点（用户 2026-11-18）。 |
+| `set_task_source(task_id: str, source_path: Path \| str, source_hash: str \| None=None) -> bool` | 给**已建好但还没有 PDF** 的任务补上源文件（用户 2026-10-06）。 |
+| `rename_task(task_id: str, name: str) -> bool` | 改任务名称（用户 2026-10-06："任务名非必需，可随时修改"）。 |
+| `update_task(task_id: str, status: str) -> None` | 更新任务状态与 updated_at；任务号不存在时静默忽略。 |
+| `delete_task(task_id: str) -> bool` | 删除任务及其中间产物，返回是否真的删掉。 |
 
 ##### `next_task_no() -> str`
 
@@ -15273,306 +16814,29 @@ exist_ok=False``，被抢就顺延），所以并发/历史残留时**实际拿�
 （见 :meth:`_bump_max_allocated`）——**光靠索引与目录做不到**，删除正是
 把这两个来源同时抹掉的那个动作。
 
-##### `task_dir(task_id: str) -> Path`
+---
 
-任务根目录：tasks/<任务号>。
+## `desktop.store.tasks.scheduling`
 
-⚠️ **必须校验形状**（2026-09-26 审计）：`task_id` 会被直接拼进路径，而
-`delete_task` 对它做 `rmtree`。`tasks.json` 就在用户的文档目录下、可被
-外部编辑或别的工具写坏，一旦出现 `"id": "..\..\somewhere"` 就会
-**越界删除任务目录之外的东西**。这里只认 `create_task` 生成的形状。
+源码：[`desktop/store/tasks/scheduling.py`](../../desktop/store/tasks/scheduling.py)
 
-##### `artifact(task_id: str, stage: str, port: str='pages') -> Path`
+可选步骤开关、状态机装配与"最近的 boxes.json"查询。
 
-某阶段某端口的产物绝对路径（**落点的唯一入口**）。
+从 ``desktop/store/tasks.py`` 拆出（2026-11-22）：顺序/跳过由
+``desktop.steps.scheduler.Scheduler`` 决定，这里只把本任务的开关表喂给它。
 
-⚠️ 这四个 ``*_output_dir`` 方法以前各自写死了路径，是"加一步要改四处"
-的根源；现在它们都转调到这里，而落点表
-（:data:`desktop.steps.ports.STAGE_LOCATIONS`）是唯一事实来源。
-加一步 = 加一行表，不用动 store。
+### `class TaskSchedulerMixin(TaskMixinBase)`
 
-##### `rembg_preview_dir(task_id: str, node_id: str | None=None, primary_id: str | None=None) -> Path`
+可选步骤开关与本任务状态机的查询面。
 
-去底色「实时调整」的**草稿目录**（``tasks/<任务号>/preview/rembg[~节点]``）。
+#### 方法
 
-⚠️ **必须与正式成品目录分开**（用户 2026-11-04）：改参数/切缩略图时的
-实时结果只是"这一步里看到的预览"，用户还没点「执行去底色」——
-- 不能落进 ``stages/rembg``（否则拼版 / 第四步直接把它当正式输入，
-  而且会覆盖掉上一轮全量执行的成品）；
-- 不能落进 ``stages/`` 下任何地方（那边的目录一概被当成阶段产物）；
-- 也不能顺手写 ``rembg_methods`` 侧车（``ports.rembg_methods_path``
-  只认 ``stages/`` 下的目录，草稿目录天然不命中，正好）。
-
-草稿在「执行去底色」开始时整体清空（见 ``RembgLiveMixin._drop_live_results``）。
-
-##### `rembg_offsets_path(task_id: str, node_id: str | None=None, primary_id: str | None=None) -> Path`
-
-**逐张图片**阈值偏移的存储文件（黑名单法，只记非 0 的图片）。
-
-主节点沿用 ``rembg_offsets.json``；同一步骤的副本节点落
-``rembg_offsets~<节点>.json``（与 ``boxes`` / ``pages`` 同一套命名）。
-
-##### `save_rembg_offset(task_id: str, image_key: str, offset: int, node_id: str | None=None, primary_id: str | None=None) -> None`
-
-记录某张图片的阈值偏移；**offset=0 就删掉这一项**（黑名单法）。
-
-⚠️ 只在用户**确实改过**这张图时调用；整表很小，读改写即可，不要为它
-再造缓存。
-
-##### `rembg_algorithms_path(task_id: str, node_id: str | None=None, primary_id: str | None=None) -> Path`
-
-**逐张图片**去底色算法的存储文件（只记用户单独改过的图片）。
-
-主节点沿用 ``rembg_algorithms.json``；同一步骤的副本节点落
-``rembg_algorithms~<节点>.json``（与 ``rembg_offsets`` 同一套命名）。
-
-##### `save_rembg_algorithm(task_id: str, image_key: str, algorithm: str, node_id: str | None=None, primary_id: str | None=None) -> None`
-
-记录某张图片的算法（用户确实在这张图上改过时才调用）。
-
-⚠️ 与 offset 的「黑名单法」不同：这里**连默认值 otsu 也照存**。
-原因是算法没有"0 等价未设置"的哨兵——用户明确把某页设回 otsu 时，
-它必须继续留在表里，不能被后续的全局值覆盖。
-
-##### `imposition_output_dir(task_id: str) -> Path`
-
-「图片拼版」产出的成品拼版页图目录（列表顺序即页序）。
-
-拼版节点**生效**时（选择态为真且有拼版页），第四步「PDF排版」与它的
-待打印列表一律从这里取图；否则仍从 ``rembg_output_dir`` 取。
-
-##### `task_diagram(task_id: str)`
-
-本任务的**流程图**（``FlowDiagram``：节点类型 + 坐标 + 折点）。
-
-⚠️ 与 :mod:`desktop.steps.flow`（``FlowDefinition``）的区别：那个是**旧模型**
-（阶段序列 + 端口边表），已不再被 store 暴露给界面——页面渲染、运行
-顺序、供给方、就绪判据全部走这张图。两者读的
-是同一个 ``flow.bpmn``——文件是唯一真源。
-
-读不到 / 文件坏一律**回落默认模板**：界面宁可显示默认流程，也不能
-整个详情页打不开。⚠️ 但**回落必须是可见的**——见
-:meth:`flow_degraded_reason`。
-
-⚠️ **"解析得动但一个可执行步骤都认不出"也算坏**：那种图会让
-:meth:`stage_supplier` 的"在流程里"集合变成空集，于是**每个端口都
-解析成 None**（现象是"每一步都说找不到输入"，而流程看起来是有节点的，
-极难查）。所以这里判的是"有没有能跑的步骤"，不是"有没有节点"。
-
-⚠️ 第三条最隐蔽：用户在 bpmn.io 里把「图片去底色」改名成「AI 抠图」
-——一次完全合法的编辑——所有 ``task`` 节点的名字都认不出来，
-``stage_order()`` 就是空，整张自定义图被**静默**判成"坏"并换回默认
-流程。所以回落一定要配一条提示，见 ``flow_degraded_reason``。
-
-##### `flow_degraded_reason(task_id: str) -> str`
-
-本任务的流程图是不是**降级**了（读的是默认模板而非自己的图）。
-
-空串 = 正常。⚠️ 这是"自定义流程莫名其妙变回默认"这类报障**唯一**的
-线索来源：``task_diagram`` 的回落必须配一条提示，否则用户看到的现象
-与"我没改过它"完全一样（用户 2026-10-06）。
-
-##### `save_task_diagram(task_id: str, diagram) -> None`
-
-把流程图写回 ``tasks/<任务号>/flow.bpmn``（原子写）。
-
-⚠️ 只改**流程定义**，不碰任何产物。改完流程后已有产物是否还有效，是
-**界面该提示的事**，由调用方判断——store 只管存。
-
-⚠️ 落盘后**只作废**解析缓存，不能拿传进来的这张图回填：调用方给的往往是
-编辑器手里的**在制品**（节点 ``stage`` 等派生字段可能是 None），而
-``FlowDiagram.load`` 会按节点名把 ``stage`` 补出来——``stage_slots()``
-正是吃这个字段。回填未归一化的对象会让步骤条退化成"每格都是空步骤"
-（自测 last_stage 6b 当场红）。代价只是保存后多解析一次文件，保存本来
-就是低频操作。
-
-##### `task_slots(task_id: str) -> tuple[StageSlot, ...]`
-
-本任务流程投影出的**界面槽位**（步骤条格子 + 两个栈的页号）。
-
-界面的步骤条与阶段寻址都走这里（``docs/tasks/bpm.md`` 的 M2），
-不再按``STAGES`` 四步硬索引——自定义流程换了顺序/增删了节点，
-步骤条与寻址一起跟着变。折叠规则见
-:meth:`desktop.steps.flow.FlowDefinition.stage_slots`。
-
-##### `task_stage_of(task_id: str, bar_index: int) -> str | None`
-
-步骤条格序 → **运行阶段**（点节点后反查该跑/该显示什么）。
-
-返回 ``None`` 说明这一格在本流程里不存在（自定义流程删掉了它），
-调用方必须挡住而不是当成第一步。
-
-##### `stage_input(task_id: str, stage: str, port: str='pages', imposition_active: bool=False) -> Path | None`
-
-按**本任务的流程定义**解析某阶段某端口的输入绝对路径。
-
-⚠️ 这是 BPM 化的关键入口：调用方不再问"第三步的图片在哪"，而是问
-"这一步的 ``pages`` 输入在哪"——连线由任务的 ``flow.bpmn`` 决定
-（没有就用默认流程，与 :data:`desktop.steps.ports.SUPPLIERS` 逐边
-相等）。``imposition_active`` 对应那条唯一的**条件连线**（拼版生效
-时换上游），以条件名 ``"imposition"`` 传入解析上下文。
-
-⚠️ **沿图回溯不出上游时回落到入口图片目录**（用户 2026-10-06：
-「如果某个节点作为第一个节点，一定要可以有输入可用」）。落点是
-:func:`desktop.steps.ports.task_input_dir`（``stages/input/``），
-界面的「插入图片」也写进那里（见 ``manifest.insert_pages``）。
-回落由 :func:`~desktop.steps.ports.resolve_input_with_entry` 统一做，
-**只对 ``pages`` 生效**——``boxes``/``pdf`` 没得回落。
-
-##### `task_input_dir(task_id: str) -> Path`
-
-**流程入口图片**目录（``stages/input/``）。
-
-供"没有上游的步骤"当输入：用户往这里放图/从界面插图，第一个节点
-（例如自定义流程里的「检测文本框」）就拿它当pages 输入。落点由
-:data:`desktop.steps.ports.TASK_INPUT_LOCATION` 唯一声明。
-
-##### `required_stage_inputs(task_id: str, stage: str, imposition_active: bool=False) -> tuple[str, ...]`
-
-本流程里这一步**真正要等就位**的输入端口。
-
-规则只在 :func:`desktop.steps.ports.stage_blocking_inputs` 一份（那里
-解释了为什么"声明的端口"不能直接当就绪判据：``pdf`` 由任务供给、
-``boxes`` 在没有「检测文本框」的流程里压根没人产出）。
-
-:param imposition_active: 拼版开关的运行态（调用方传 effective）。
-
-##### `stage_supplier(task_id: str, stage: str, port: str, imposition_active: bool=False) -> str | None`
-
-本任务里 ``(stage, port)`` 的**实际供给方**（运行时按图求解）。
-
-⚠️ **这一步是"运行时跟着图走"的关键**：以前直接查代码里的端口级边表
-（``ports.SUPPLIERS``），一旦用户把流程改成不含某一步（例如去掉
-「图片去底色」），边表给的供给方就不在流程里了——按它取路径会指向
-**永远不会产生的文件**（现象是"PDF排版找不到输入"，而不是流程报错，
-极难查）。
-
-规则（先声明、后回退）：
-1. 取 ``ports`` 声明的供给方（``print/pages`` 走拼版开关那条特例）；
-2. 它**在本流程里**⇒ 就用它；
-3. 不在 ⇒ 沿图往前找**最近的、产出该端口的在流程阶段**
-   （:meth:`FlowDiagram.nearest_producer`）。
-
-⚠️ **"在流程里"要按"界面格子"判，不能按节点判**：
-``detect_submit``（提交检测结果）是第二步内的**第二个动作**，用户画图
-时通常不会给它单独开一个节点（界面槽位也把它折回「检测文本框」那一格）。
-若按"图里有没有这个节点"判，就会认为它不在流程里，于是 ``rembg.pages``
-回退到 ``detect`` ——而 ``detect`` 只出坐标、没有裁好的图。
-所以判据是"它所属的**界面格**在不在流程里"（:data:`ports.STAGE_STEPS`
-给出 stage→step 的折叠关系）。
-⚠️⚠️ **图优先，静态表兜底**（2026-10-06 掉头）。原先的规则是**反的**
-（"先静态声明、后沿图回退"），后果是 ``ports.SUPPLIERS``——一份**写死在
-代码里的默认流程连线**——在它给的供给方还留在流程里时**压过用户画的
-连线**。实测两条节点集合相同、连线不同的流程（默认的
-``extract→detect→rembg→print`` 与用户自己连的 ``extract→print``），
-``print`` 的取图目录**完全一样**——用户明确要求的连线被静默丢弃。
-这就是"自定义流程里总是冒出默认流程逻辑"的**病根**：BPM 化只覆盖了
-**顺序**，没覆盖**语义**。
-
-现在的规则：
-
-1. **图能给出唯一答案**（沿图可达的产出方恰好一个）⇒ **图说了算**；
-2. 图给不出、或给出**多个**（默认流程的「是否拼版」网关就是这种：沿图
-   回溯 ``print`` 会同时看到「图片拼版」与「图片去底色」）⇒ 退回静态
-   声明 + 条件开关（``ports.print_pages_supplier`` 建模的那一条）；
-3. 静态声明是**任务源**哨兵（``extract`` 的 ``pdf``）⇒ 直接返回，它
-   本来就没有上游。
-
-⚠️ 第2 条是**确定性**的要求，不是将就：网关分支要用"拼版开关"这个
-运行态来选，两条边在图上都是实线，靠遍历顺序选是随机的。
-
-##### `node_supplier(task_id: str, node_id: str, port: str, imposition_active: bool=False) -> str | None`
-
-本任务里某**节点实例**某端口的实际供给方（返回**节点 id** 或哨兵）。
-
-与 :meth:`stage_supplier` 同一套规则（图优先、静态兜底），区别是把
-"图说的产出方"落到**节点粒度**：同阶段有多个节点时，喂给 ``node_id``
-的是图上那个**具体节点**，而不是"整阶段的主节点"。
-
-##### `node_supplier_stage(task_id: str, node_id: str, port: str, imposition_active: bool=False) -> str | None`
-
-节点粒度的供给方，但结果折成**阶段 key**（不是节点 id）。
-
-:meth:`node_supplier` 回答的是"喂你的是哪个**节点**"（B 方案寻址要用
-节点 id）；而"记进 runs 历史、供旧数据判定比对"的那个字段
-（``args["source_stage"]`` ← :func:`desktop.services.stale_chain.print_source_switched`）
-历来是**阶段 key**（``detect_submit`` / ``imposition``）。两者不是一回事，
-所以这里折一道：节点 → 它的运行阶段 →（同格多动作再折）该端口成品的
-产出阶段。哨兵值原样透传。
-
-##### `node_input(task_id: str, node_id: str, port: str='pages', imposition_active: bool=False) -> Path | None`
-
-某**节点实例**某端口输入的绝对路径（带**入口回落**）。
-
-与 :meth:`stage_input` 同构，只是把消费方定位到**节点**：没有上游而该
-节点确实吃 ``pages`` 时，回落到入口图片目录（``stages/input/``）。
-
-##### `node_action_executed(task_id: str, node_id: str | None, stage: str) -> bool`
-
-某**节点实例**的某个动作是否成功执行过。
-
-⚠️ ``detect`` 与 ``detect_submit`` 是同一个节点的两个动作，各有各的
-执行记录：只跑了检测、还没提交时，``detect_submit`` 必须为 False，
-否则「图片去底色」会提前把未裁好的图当成上游产物（用户 2026-11-03）。
-
-##### `detect_submit_fresh(task_id: str, node_id: str | None=None) -> bool`
-
-「提交检测结果」的裁图是否对应**最近一次成功的「检测文本框」**。
-
-用户规则（2026-11-03）：检测文本框是**两个动作**（检测 + 提交），
-两次都执行了下一步才有数据。检测又成功跑过一次而没重新提交时，
-``stages/detect``（提交产物）里的裁图还是旧框裁出来的——它是去底色的
-**输入**，不该继续生效（否则用户看到"改了框、还没提交，去底色
-却已经有图"）。
-
-``_preview_run_id`` 是提交时写进执行记录的检测 run_id（见
-``submit.py::_run_detect_submit_unchecked``）。老记录没有该字段时
-**不判过期**——宁可少拦一次，也不误伤改造前跑过的任务。
-
-##### `node_input_effective(task_id: str, node_id: str, port: str='pages', imposition_active: bool=False) -> bool`
-
-本节点某端口的输入**现在该不该有数据**。
-
-判据 = **目录里有东西** 且 **上游产出该端口的动作已成功执行**。
-⚠️ 只看目录不够：预览落图、历史残留、手工拷图都会让目录"看起来有货"，
-但上游若没成功执行过就不能算正式输入；检测与提交是两步，还要对账
-（见 :meth:`detect_submit_fresh`）。
-
-##### `node_output(task_id: str, node_id: str, port: str='pages', stage: str | None=None) -> Path`
-
-某**节点实例**某端口产物的绝对路径（**落点的唯一入口**）。
-
-``stage`` 缺省取节点自身的阶段；显式给时表示"同一步骤的第二个动作"
-（如 ``detect`` 节点的 ``detect_submit`` 裁图落点）。主节点沿用旧落点，
-副本落到 ``~<node_id>`` 后缀的副本落点。
-
-##### `node_or_stage_output(task_id: str, node_id: str | None, stage: str, port: str='pages') -> Path`
-
-**落点的统一入口**：有节点按节点取，没节点/没登记回落该阶段的旧落点。
-
-主节点与"没有节点信息"（程序化调用、旧测试探针）都拿到 ``stages/<阶段>``
-——与改造前逐字节相同。副本节点拿到 ``stages/<阶段>~<节点>``。
-
-调用方（执行端、取图、缩略图）一律走它，别自己 ``if node:`` 分叉：
-分叉处漏一处，就是"副本节点跑完产物写到主节点去了"。
-
-##### `scoped_stage_dir(task_id: str, node_id: str | None, name: str) -> Path`
-
-``stages/<name>`` 的**节点作用域**版本。
-
-主节点/无节点 ⇒ ``stages/<name>``（零迁移）；副本 ⇒
-``stages/<name>~<节点>``。用于**没有登记在 STAGE_LOCATIONS 里**的
-辅助目录（如 detect 的标注图目录）。
-
-##### `scoped_file_scope(task_id: str, node_id: str | None) -> dict[str, str | None]`
-
-给 ``load_pages``/``save_draft``/``boxes_path`` 这类按节点隔离的读写
-用的**作用域参数**：``{"node_id": …, "primary_id": …}``。
-
-统一在这里算，调用方不必各自去查"谁是主节点"——那是**只有图知道**的
-事实（见 :meth:`~desktop.steps.bpmn_diagram.FlowDiagram.primary_of`），
-散在各处迟早漂移。``node_id`` 为空时给 ``{"node_id": None,
-"primary_id": None}``，所有读写都落回**旧路径**（零迁移）。
+| 方法 | 说明 |
+| --- | --- |
+| `step_enabled(task_id: str, step: str) -> bool` | 某个**可选步骤**的用户开关（``drafts/<步骤>.json`` 的 ``enabled``）。 |
+| `scheduler_flags(task_id: str, imposition_active: bool=False) -> dict[str, bool]` | 本任务传给状态机的条件开关表（key = 可选步骤 key）。 |
+| `task_scheduler(task_id: str, imposition_active: bool=False)` | 本任务的**状态机**（``Scheduler``）——"下一步跑谁 / 能不能跑 / 跳谁" |
+| `nearest_boxes_path(task_id: str, node_id: str \| None, imposition_active: bool=False) -> Path \| None` | 当前节点**沿流程往前最近的** ``boxes.json`` 路径（没有则 ``None``）。 |
 
 ##### `step_enabled(task_id: str, step: str) -> bool`
 
@@ -15630,123 +16894,6 @@ exist_ok=False``，被抢就顺延），所以并发/历史残留时**实际拿�
 ``boxes`` 不是 rembg 声明的输入端口（它只吃 ``pages``），所以不能走
 :meth:`node_input`（那会因为没有声明而返回 ``None``）——这里直接问
 流程图：最近产出 ``boxes`` 的节点是谁，再取它的端口落点。
-
-##### `stage_output_dir(task_id: str, stage: str, node_id: str | None=None) -> Path`
-
-返回某阶段（GUI）应写入的输出目录。
-
-rembg 返回成品图目录、print 返回 print.pdf 所在目录。
-
-##### `workset_dir(task_id: str) -> Path`
-
-已废弃：检测/去底直接读 extract 输出目录，不再物化输入副本。
-
-仅为清理历史遗留目录保留（老版本任务目录下可能仍有 workset/）。
-
-##### `thumbnails_dir(task_id: str, name: str, node_id: str | None=None) -> Path`
-
-按**节点作用域**取一个缩略图缓存目录：``thumbnails/<名>[~<节点>]``。
-
-主节点/无节点 ⇒ ``thumbnails/<名>``（旧路径，**零迁移**）；副本节点 ⇒
-``thumbnails/<名>~<节点>``。规则由 :func:`desktop.steps.ports.scoped_name`
-唯一给出，与产物落点（``stages/<阶段>~<节点>``）同一套——同一步骤有多个
-节点时各自的缩略图缓存互不覆盖（用户 2026-10-17：「缩略图目录也要
-按节点这样处理」）。
-
-##### `input_thumbnails_dir(task_id: str) -> Path`
-
-**入口图片**的缩略图缓存：``thumbnails/input/``。
-
-用户 2026-10-17：流程第一个节点是「检测文本框 / 图片去底色 / 图片拼版 /
-PDF排版」时，它的输入是用户直接放进 ``stages/input/`` 的那批图——此前
-左栏只能现解码原图（几千像素的扫描图）。现在**导入即按图键生成**到这份
-缓存里，左栏直接读小图。
-
-⚠️ **不按节点分**：入口图片目录（``stages/input/``）是**整个任务共用**
-的（所有无上游的节点都回落到它），所以缓存也与它同作用域（任务级）。
-
-##### `entry_thumb_path(task_id: str, image: Path | str) -> Path | None`
-
-一张入口图片在 :meth:`input_thumbnails_dir` 里的缓存缩略图路径。
-
-没有缓存、或缓存比源图旧/体积像截断，一律返回 ``None``（调用方回落到
-真图解码）。按**图键**命名（``book_key``：文件名+大小+路径指纹）——入口
-图片名字五花八门，按序号会张冠李戴（与 ``thumb_cache_worker`` 同一规则）。
-
-##### `print_manage_thumbnails_dir(task_id: str) -> Path`
-
-PDF排版「管理图片」弹窗的缩略图缓存：``thumbnails/print_manage/``。
-
-这一份覆盖**待打印条目 + 已删除条目**（拼版成品、手动插入图、入口图、
-去底色成品都可能进来），按 ``book_key``（图文件路径指纹）命名。弹窗
-打开时只读这些小图，不再同步解码原图（用户 2026-11-02「弹窗打开慢」）。
-
-⚠️ 删除图片的小图**不删**：「插入图片 → 删除恢复」还要显示它；哪些
-缩略图"在用"由 ``print.json`` 的 ``pages`` / ``deleted_pages`` 声明
-（就是用户说的"用配置文件表示"）。不按节点分：``print.json`` 本身按节点。
-
-##### `source_thumbnails_dir(task_id: str) -> Path`
-
-源 PDF 页缩略图：导入即生成，PDF 预览直接复用，永不清理。
-
-⚠️ **不按节点分**：它来自**源 PDF**（一本书一份），同一步骤的多个提取
-节点产出的页图同名同页号，共用这份按页号命名的缓存是正确且省事的。
-
-##### `rembg_thumbnails_dir(task_id: str, node_id: str | None=None) -> Path`
-
-第四步缩略图缓存：去底色阶段随成品图一并生成，
-缩略条直接复用，不必每次现解码 6000px 的原图。
-
-⚠️ 按**节点**取（B 方案）：两个「图片去底色」节点各有各的成品产物
-（``stages/rembg[~<节点>]``），缩略图缓存也跟着分（裸名 ``print`` /
-``print~<节点>``），否则副本节点会命中主节点的缩略图（张冠李戴）。
-
-##### `imposition_thumbnails_dir(task_id: str, node_id: str | None=None) -> Path`
-
-拼版页左列缩略图缓存（每页取第一张源图，``book_key`` 命名）。
-
-⚠️ 与独立拼图页的 ``singletask/imposition/`` **各归各**（用户
-2026-10-04 明确「singletask 和 taskdetail 不是一回事」）：任务缓存
-随任务目录走，``delete_task`` 整体清理时一并清掉；两边只共用组件与
-``ImageThumbCacheWorker``，**不共用缓存根**。
-
-##### `imposition_page_thumbs_dir(task_id: str, node_id: str | None=None) -> Path`
-
-拼版**页面效果缩略图实体**目录：``tasks/<id>/thumbnails/imposition_pages/``。
-
-与 :meth:`imposition_thumbnails_dir`（页内**单张源图**的缩略图）
-不是一层：这里放按版面合成的**整页**实体，``page1.jpg`` 从第一页
-起数，映射数据（页号 ↔ 文件 ↔ 内容签名）在同目录 ``index.json``
-（用户 2026-10-09：「缩略图实体其实没有生成落地……组合成拼版图片
-应该另外放在一个目录中，直接按照 page1 page2 命名，注意做好映射
-数据」）。随任务目录走，``delete_task`` 一并清掉。
-
-⚠️ 按**节点**取（B 方案）：两个「图片拼版」节点各有各的版面文档与
-合成产物，缩略图实体也跟着分（``imposition_pages[~<节点>]``）。
-
-##### `copy_source_to_task(task_id: str, source_path: Path) -> Path`
-
-导入时在任务目录下保留一份源文件副本（原子落地）。
-
-⚠️ 复制本身可能是在**后台线程**里做的（见
-``desktop/workers/serial_jobs.py``），而详情页/预览随时会来读这份
-副本，所以走 ``copy_file_atomic``：写 ``.part`` 再 ``os.replace``，
-别人不会读到半截 PDF。
-
-##### `source_copy_path(task_id: str) -> Path | None`
-
-任务目录里的 PDF 备份路径；没有备份返回 None。
-
-⚠️ 后续所有操作（详情页预览、extract 入参…）**都必须用它**，不能用
-``task['source_path']``：源文件在用户磁盘上，会被移动/改名/删除，
-一走就「渲染失败」。备份随任务走，任务才是自包含的。
-
-##### `ensure_source_copy(task_id: str) -> Path | None`
-
-保证任务目录里有 PDF 备份；缺了就按索引里的 source_path 补一份。
-
-老任务（导入时复制失败）或备份被误删时靠它自愈；源也一起没了就
-返回 None，调用方负责提示。
 
 ---
 
@@ -16242,101 +17389,18 @@ widgets 里会让 `segmented_toggle` 反向 import widgets，形成循环导入�
 
 ---
 
-## `desktop.ui.help_dialog`
+## `desktop.ui.help_dialog.document`
 
-源码：[`desktop/ui/help_dialog.py`](../../desktop/ui/help_dialog.py)
+源码：[`desktop/ui/help_dialog/document.py`](../../desktop/ui/help_dialog/document.py)
 
-用户手册：Markdown → HTML → 系统默认浏览器渲染。
-
-为什么不再用 ``QTextBrowser`` / ``QTextDocument`` 直接渲染 Markdown：
-
-- Qt 的 ``setMarkdown()`` 只支持 GFM 的**子集**，表格、围栏代码块、深层嵌套
-  列表的渲染都很勉强，长文档读起来发闷；
-- ``setHtml()`` 走的是**同一条富文本引擎**，CSS 只是 HTML 的一个小子集
-  （没有 flex、没有伪元素、 ``nth-child`` 之类选择器也不全），多绕一圈
-  换不来真正的样式自由度；
-- ``QWebEngineView`` 能彻底解决，但会拖进 ``QtWebEngineProcess.exe`` 与
-  百 MB 级资源包，和 ``guji.spec`` 现有的 excludes 裁剪策略直接冲突。
-
-于是走第三条路：**用 Python 的 ``markdown`` 库（纯 Python、无二进制依赖）
-把 ``docs/guide/*.md`` 转成完整 HTML，内嵌匹配应用主题的 CSS，交给系统默认
-浏览器打开。**
-
-**两条路，按模式分流**（判据见 ``prefer_static_manual``，是"打包与否"而不是
-"文件在不在"）：
-
-| 模式 | 手册来源 | 截图 | 何时用 |
-| --- | --- | --- | --- |
-| 开发（源码运行） | 每次现渲染到 %TEMP% | 绝对 ``file://`` URL | md 随时在改，改完立刻可见 |
-| 打包（生产） | 构建期预生成的 ``desktop/static/manual.html`` | **内联 data URI** | 内容已定死，点开即用 |
-
-生产侧预生成是必须的，不只是"快一点"：``docs/guide/`` 整目录**不进安装包**
-（对最终用户无用的 md 与截图，白占体积），所以安装后既读不到 md、也找不到
-截图——只有把手册连同截图压成一个自包含 HTML 放进包里才成立。
-
-这样做的好处：
-
-1. **零重量依赖** —— ``markdown`` 纯 Python 单包；且**只有构建环境需要它**，
-   打包产物里已把它排除（运行时不渲染 md，缺了它也只是退化成占位提示）；
-2. **完整 GFM** —— 表格、围栏代码块、嵌套列表都按规范渲染；
-3. **图片永远不碎** —— 开发靠 ``<base>`` 指回 ``docs/guide/``，生产靠内联，
-   两种模式都不存在"相对路径解析错"的可能；
-4. **样式自由** —— 真实浏览器渲染，CSS 不受 Qt 富文本子集限制；
-5. **性能与产物一致** —— 生产端点开就是浏览器那一下，没有首次渲染延迟，
-   也不再有"临时文件堆积 + 防缓存文件名"那套绕法。
-
-三条关键实现约束（改动时别踩）：
-
-- **开发模式的 ``<base>`` 必须指向手册目录且带结尾斜杠**：HTML 落在临时目录，
-  不设 base 就会把 ``screenshots/guide/*.png`` 解析成碎图；
-- **指南之间的互链要改成页内 tab 跳转**：``user-guide.md`` 里有
-  ``[cli.md]\(cli.md)``，浏览器会把 .md 当纯文本显示，必须改写为
-  ``#tab-cli`` 交给 JS 切页；
-- **打开时只把「原生路径」交给系统，绝不传 ``file:///`` URI**：见
-  ``_open_with_system`` 的注释，这是「点了按钮没反应」的元凶。
-
-### 模块常量
-
-| 名称 | 值 |
-| --- | --- |
-| _HTML_PREFIX | `"guji_manual_"` |
-| _KEEP_RECENT | `3` |
-| STATIC_MANUAL_NAME | `"manual.html"` |
-| _JS | `" (function () {   const tocNav = document.getElementById(…"` |
+拼装完整手册 HTML 并落盘（自 ``desktop/ui/help_dialog.py`` 拆出）。
 
 ### 模块函数
 
 | 函数 | 说明 |
 | --- | --- |
-| `manual_dir() -> Path` | 手册目录（源码与打包两种模式下都可用）。 |
-| `static_manual_path() -> Path` | 构建期预生成的自包含手册路径（**只有打包版才有**；可能不存在）。 |
-| `prefer_static_manual() -> bool` | 当前是否该走「构建期静态手册」这条路。 |
 | `generate_manual_html(entry: str \| None=None) -> Path` | 把手册渲染成一个带分段开关的 HTML 文件（临时目录），返回其路径。 |
 | `generate_static_manual(output_path: Path \| None=None) -> Path` | **构建期**把手册渲染成单个自包含 HTML（默认 ``desktop/static/manual.html``）。 |
-| `open_manual(entry: str \| None=None) -> Path` | 打开用户手册，返回被打开的 HTML 路径。 |
-
-#### `manual_dir() -> Path`
-
-手册目录（源码与打包两种模式下都可用）。
-
-与 ``package_dir()`` 同源：源码模式下 ``desktop/`` 的上一级就是仓库根，
-打包后数据文件由 ``guji.spec`` 的 ``gui_datas`` 落到 ``_internal/``，
-``package_dir()`` 在 frozen 下返回 ``_MEIPASS/desktop``，再上一级同样是
-资源根，因此 ``package_dir().parent / "docs" / "guide"`` 两种模式通用。
-
-#### `prefer_static_manual() -> bool`
-
-当前是否该走「构建期静态手册」这条路。
-
-判据是**打包与否（frozen）**，不是「静态文件在不在」：
-
-- 开发模式：``docs/guide/*.md`` 随时在改，必须每次现渲染，改完立刻能看到
-  效果；若按「文件存在」判断，仓库里哪天留了一个 ``manual.html``（手动生成
-  过一次、或从安装包里拷回来的），开发者就会一直看到旧内容；
-- 生产模式（PyInstaller 打包后）：手册内容在构建那一刻就定死了，直接打开
-  预生成的静态 HTML，不渲染、不写临时文件。
-
-``GUJI_MANUAL_STATIC=1`` / ``=0`` 可强制指定，供冒烟与自测用。
 
 #### `generate_manual_html(entry: str | None=None) -> Path`
 
@@ -16363,6 +17427,20 @@ Markdown 里写的是 ``screenshots/guide/xxx.png`` 这样的相对路径，
 ``desktop/static/manual.html``——那个位置会被打包版优先打开，万一留在仓库里
 容易让人以为改了 md 就生效（实际必须重新打包）。
 
+---
+
+## `desktop.ui.help_dialog.opener`
+
+源码：[`desktop/ui/help_dialog/opener.py`](../../desktop/ui/help_dialog/opener.py)
+
+把手册交给系统浏览器打开（自 ``desktop/ui/help_dialog.py`` 拆出）。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `open_manual(entry: str \| None=None) -> Path` | 打开用户手册，返回被打开的 HTML 路径。 |
+
 #### `open_manual(entry: str | None=None) -> Path`
 
 打开用户手册，返回被打开的 HTML 路径。
@@ -16384,6 +17462,67 @@ Markdown 里写的是 ``screenshots/guide/xxx.png`` 这样的相对路径，
 带时间戳**（见 ``_HTML_PREFIX``）保证 URL 唯一；静态文件靠"重装即替换"。
 
 ⚠️ 不要把 ``html_path.as_uri()`` 直接丢给系统（见 ``_open_with_system``）。
+
+---
+
+## `desktop.ui.help_dialog.paths`
+
+源码：[`desktop/ui/help_dialog/paths.py`](../../desktop/ui/help_dialog/paths.py)
+
+手册目录、静态手册路径与模式判据（自 ``desktop/ui/help_dialog.py`` 拆出）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| _HTML_PREFIX | `"guji_manual_"` |
+| _KEEP_RECENT | `3` |
+| STATIC_MANUAL_NAME | `"manual.html"` |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `manual_dir() -> Path` | 手册目录（源码与打包两种模式下都可用）。 |
+| `static_manual_path() -> Path` | 构建期预生成的自包含手册路径（**只有打包版才有**；可能不存在）。 |
+| `prefer_static_manual() -> bool` | 当前是否该走「构建期静态手册」这条路。 |
+
+#### `manual_dir() -> Path`
+
+手册目录（源码与打包两种模式下都可用）。
+
+与 ``package_dir()`` 同源：源码模式下 ``desktop/`` 的上一级就是仓库根，
+打包后数据文件由 ``guji.spec`` 的 ``gui_datas`` 落到 ``_internal/``，
+``package_dir()`` 在 frozen 下返回 ``_MEIPASS/desktop``，再上一级同样是
+资源根，因此 ``package_dir().parent / "docs" / "guide"`` 两种模式通用。
+
+#### `prefer_static_manual() -> bool`
+
+当前是否该走「构建期静态手册」这条路。
+
+判据是**打包与否（frozen）**，不是「静态文件在不在」：
+
+- 开发模式：``docs/guide/*.md`` 随时在改，必须每次现渲染，改完立刻能看到
+  效果；若按「文件存在」判断，仓库里哪天留了一个 ``manual.html``（手动生成
+  过一次、或从安装包里拷回来的），开发者就会一直看到旧内容；
+- 生产模式（PyInstaller 打包后）：手册内容在构建那一刻就定死了，直接打开
+  预生成的静态 HTML，不渲染、不写临时文件。
+
+``GUJI_MANUAL_STATIC=1`` / ``=0`` 可强制指定，供冒烟与自测用。
+
+---
+
+## `desktop.ui.help_dialog.script`
+
+源码：[`desktop/ui/help_dialog/script.py`](../../desktop/ui/help_dialog/script.py)
+
+手册页的内嵌 JS（自 ``desktop/ui/help_dialog.py`` 拆出）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| _JS | `" (function () {   const tocNav = document.getElementById(…"` |
 
 ---
 
@@ -16532,41 +17671,63 @@ Markdown 里写的是 ``screenshots/guide/xxx.png`` 这样的相对路径，
 
 ---
 
-## `desktop.ui.menu`
+## `desktop.ui.menu.about`
 
-源码：[`desktop/ui/menu.py`](../../desktop/ui/menu.py)
+源码：[`desktop/ui/menu/about.py`](../../desktop/ui/menu/about.py)
 
-窗口顶部菜单栏：**文件 / 编辑 / 独立功能 / 帮助**（原生 ``QMenuBar``）。
+「关于」弹窗（自 ``desktop/ui/menu.py`` 拆出）。
 
-为什么是原生菜单栏（而不是自绘 Fluent 菜单条）
---------------------------------------------
-qfluentwidgets 1.11.2 **没有** MenuBar 组件（只有 ``RoundMenu`` 这类弹出菜单），
-而本程序用的就是原生标题栏（见 ``desktop/shell.py`` 的模块头），所以顶部菜单走
-Qt 原生 ``QMenuBar``：与既有窗口装饰同族、自带 ``Alt`` 助记符与键盘导航
-（``文件(F)`` 这类写法就是助记符）。**不改窗口尺寸、不动壳层布局**——菜单栏
-只吃高度、不吃宽度，因此 ``desktop/app.py::WINDOW_MIN_SIZE`` 的宽度下限与
-``tests/selftests/ui/panel_label_fit.py`` 的 200px 断言都不受影响。
+### 模块函数
 
-菜单项**只做路由与转发**，业务一律复用既有入口：
+| 函数 | 说明 |
+| --- | --- |
+| `open_about(window) -> None` | 「关于」：程序名 / 版本 / 数据目录 / 项目地址。 |
 
-- 文件 → 新建任务：``shell.open_create()``（含"每次进入复位"，别另建页）；
-- 文件 → 快速任务：原生选 PDF → ``shell.quick_task()``（**不经创建页**直接建，
-  用户 2026-10-16）；
-- 文件 → 退出：``window.close()`` —— **不是** ``QApplication.quit()``（见
-  :func:`quit_app` 的说明）；
-- 独立功能 → ``<key>``：``shell.show_module(key)``，清单**从 ``MODULES`` 派生**
-  （与左侧导航同源同序，本文件不维护第二份清单）；
-- 编辑 → 删除选中 / 插入图片 / 下载图片 / 打印图片：全部转发给当前页
-  （鸭子类型 ``can_edit_*`` / ``edit_*``；PDF排版四项全开，图片拼版给
-  删除/插入，其余步骤给下载/打印，用户 2026-11-01 从预览区顶部按钮行挪进
-  菜单栏并扩展到四项）；
-- 帮助 → 帮助文档：``desktop/ui/help_dialog.py::open_manual()``。
+---
 
-新增的只有「检查更新」与「关于」两件事：前者在子线程查 GitHub Release
-（``desktop/workers/update_worker.py``），版本比较是纯规则
-（``utils/version.py``）；两者都用项目统一的弹窗外壳
-（``desktop/components/dialog_shell.py::shell_dialog``——AGENTS 明确别用
-qfluentwidgets 的 ``Dialog``，它只支持"字符串 + 两个按钮"）。
+## `desktop.ui.menu.actions`
+
+源码：[`desktop/ui/menu/actions.py`](../../desktop/ui/menu/actions.py)
+
+菜单动作的转发与窗口退出（自 ``desktop/ui/menu.py`` 拆出）。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `open_quick_task(window) -> None` | 「快速任务」：选一个 PDF，**随即建任务**（不再进创建页填名称/流程）。 |
+| `quit_app(window) -> None` | 「退出」：先收掉非模态子弹窗，再 ``window.close()``。 |
+
+#### `open_quick_task(window) -> None`
+
+「快速任务」：选一个 PDF，**随即建任务**（不再进创建页填名称/流程）。
+
+用户 2026-10-16：「菜单 文件下新增，快速任务选项，导入PDF，直接创建任务」。
+
+只做两件事——选文件、把路径交给 ``shell.quick_task()``；指纹/查重/建任务/
+进详情全走列表页那条**既有**链路（``start_create``），本模块不碰业务。
+
+⚠️ 用**原生** ``QFileDialog``（不设 ``DontUseNativeDialog``）——项目硬规则：
+「资源管理器」指的是原生选择对话框。与 ``CreateTaskPanel._on_pick_pdf`` 同一款。
+⚠️ 用户在对话框里按取消（返回空串）就**什么都不做**：尤其别当成"建一个
+空壳任务"——那是创建页「PDF 可留空」那条路的语义，与"快速任务"正好相反。
+
+#### `quit_app(window) -> None`
+
+「退出」：先收掉非模态子弹窗，再 ``window.close()``。
+
+⚠️⚠️ **不能用 ``QApplication.quit()``**：它只退事件循环、**不触发**
+``closeEvent``，而 QProcess 子进程与后台线程的收尾全挂在
+``MainWindow.closeEvent``（→ ``shell.shutdown_workers()``）这条链上；
+绕过去就会出现 ``worker_host`` 里写的「QThread 运行中被析构 → Qt abort」。
+
+---
+
+## `desktop.ui.menu.constants`
+
+源码：[`desktop/ui/menu/constants.py`](../../desktop/ui/menu/constants.py)
+
+菜单文案、URL 与顶栏配色常量（自 ``desktop/ui/menu.py`` 拆出）。
 
 ### 模块常量
 
@@ -16608,61 +17769,13 @@ qfluentwidgets 的 ``Dialog``，它只支持"字符串 + 两个按钮"）。
 | RESULT_NEWER | `"newer"` |
 | TITLE_BAR_ROW_HEIGHT | `24` |
 
-### `class UpdateVerdict`
+---
 
-一次检查更新该呈现什么（纯数据，自测直接断言它，不碰控件）。
+## `desktop.ui.menu.data_package`
 
-- ``ok_text`` 决定**主按钮**的语义：:data:`BUTTON_DOWNLOAD` = 应用内下载、
-  :data:`BUTTON_INSTALL` = 立即重启安装、:data:`BUTTON_RETRY` = 换线路重试；
-  其余（``BUTTON_OK``）只关窗。
-- ``link`` 非空 ⇒ 正文里附一行**可复制的下载地址**；
-- ``browser_url`` 非空 ⇒ 次按钮「前往下载页」开浏览器（**备用**，用户自己下）。
+源码：[`desktop/ui/menu/data_package.py`](../../desktop/ui/menu/data_package.py)
 
-### `class UpdateController(QObject)`
-
-「检查更新」的编排者：一次一个请求，结果用弹窗汇报。
-
-三条硬约束：
-
-1. **重入防护**：连点菜单不叠出第二个请求（``_checking``），期间菜单项
-   **置灰**并改名「正在检查更新…」，用户看得见"正在跑"；
-2. **网络在子线程**（``window.run_worker``，见 ``WorkerHost``）；
-3. **收尾幂等**：``_finish`` 由 worker 信号与线程结束两条路都会调到，
-   重复调用只生效一次。
-
-#### 方法
-
-| 方法 | 说明 |
-| --- | --- |
-| `__init__(window, action: QAction, parent=None)` | — |
-| `check() -> None` | 查一次 GitHub Release 最新版：**先弹「正在检查」窗，再弹结果窗**。 |
-| `check_silently(auto: bool=False) -> None` | **后台静默**检查一次（启动时自动跑，用户 2026-10-15）。 |
-
-##### `check() -> None`
-
-查一次 GitHub Release 最新版：**先弹「正在检查」窗，再弹结果窗**。
-
-用户 2026-10-15：「检查更新，先出弹窗，再反馈结果」——点下去立刻要有可见反馈
-（后台要并发测四条线路，可能几秒），不能像以前那样只有菜单项变灰 + 静默等。
-
-⚠️ 若此刻正有一次**静默**检查在飞（启动时自动跑的那次），这里**升级**成显式
-检查（挂上检查窗、结果照常弹），而不是回一句"正在检查"——用户在启动几秒内
-就点菜单是完全正常的事，让他白等一次很没道理；同一次请求两种模式共用。
-
-##### `check_silently(auto: bool=False) -> None`
-
-**后台静默**检查一次（启动时自动跑，用户 2026-10-15）。
-
-与显式检查的三点不同：
-
-1. **不弹任何窗**（没有「正在检查」窗，也没有结果窗）——启动时不该打扰用户；
-2. **不动菜单项文案**（不置灰、不写"正在检查更新…"）——避免启动瞬间闪一下；
-3. 只有**发现有新版本**时，才在菜单项上挂提示（:data:`NEW_VERSION_SUFFIX`，
-   版本号进 tooltip），失败则完全安静（网络不好时别在启动日志里刷错误）。
-
-``auto``（用户 2026-11-02）：发现新版本后**自动下载安装包**，不弹进度窗；
-由启动接线按设置页的「自动更新软件」传入（默认 ``False``，显式调用/自测
-走的仍是"只提示、不自动下"的老口径）。
+「去底色数据包」检查 + 下载控制器（自 ``desktop/ui/menu.py`` 拆出）。
 
 ### `class DataPackageController(QObject)`
 
@@ -16693,58 +17806,89 @@ qfluentwidgets 的 ``Dialog``，它只支持"字符串 + 两个按钮"）。
 ``auto``（用户 2026-11-02）：有新版时**自动下载并替换**（不弹进度窗），
 由启动接线按设置页的「自动更新数据包」传入；默认 ``False`` 保持旧口径。
 
+---
+
+## `desktop.ui.menu.installer`
+
+源码：[`desktop/ui/menu/installer.py`](../../desktop/ui/menu/installer.py)
+
+启动下载好的安装器（自 ``desktop/ui/menu.py`` 拆出）。
+
 ### 模块函数
 
 | 函数 | 说明 |
 | --- | --- |
-| `update_result(kind: str, *, current: str, latest: dict \| None=None) -> UpdateVerdict` | 把一次检查结果收成 :class:`UpdateVerdict`。 |
-| `data_package_result(kind: str, *, current: int, latest: dict \| None=None) -> UpdateVerdict` | 把一次「去底色数据包检查」结果收成 :class:`UpdateVerdict`（纯数据）。 |
-| `about_rows(window=None) -> list[tuple[str, str]]` | 「关于」弹窗的行（``(键, 值)``）。纯数据，自测直接断言。 |
-| `install_title_bar(window)` | 给**无边框主窗口**装自绘标题栏（图标 / 标题 / 菜单同排），返回标题栏。 |
-| `install_menu_bar(window) -> QMenuBar` | 把菜单栏（文件 / 编辑 / 独立功能 / 帮助）插进**标题栏的标题之后**。 |
+| `install_and_restart(window, pending) -> None` | 启动安装器（分离进程）后退出本程序，让安装器接管文件替换。 |
+
+#### `install_and_restart(window, pending) -> None`
+
+启动安装器（分离进程）后退出本程序，让安装器接管文件替换。
+
+⚠️ 安装器是 **Inno Setup**（见 ``guji_setup.iss``）：不传静默参数——向导里
+由用户自己点「下一步」，比程序替他决定稳；Inno 默认 ``CloseApplications``
+会用 Restart Manager 处理仍占着 ``{app}`` 文件的进程（本程序正在退出，
+交给它兜底）。
+⚠️ 用**分离**进程（DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP）：本进程
+退出、或用户在终端 Ctrl+C，都不会把安装器一起带走（同 yolo_service 的拉起）。
+
+---
+
+## `desktop.ui.menu.menus`
+
+源码：[`desktop/ui/menu/menus.py`](../../desktop/ui/menu/menus.py)
+
+四个顶级菜单的组装（自 ``desktop/ui/menu.py`` 拆出）。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
 | `build_file_menu(bar: QMenuBar, window) -> QMenu` | 「文件」：新建任务 / 快速任务 / （分隔线）/ 退出。 |
 | `build_edit_menu(bar: QMenuBar, window) -> QMenu` | 「编辑」：删除选中 / 插入图片 / 下载图片 / 打印图片（用户 2026-11-01）。 |
-| `open_quick_task(window) -> None` | 「快速任务」：选一个 PDF，**随即建任务**（不再进创建页填名称/流程）。 |
 | `build_modules_menu(bar: QMenuBar, window) -> QMenu` | 「独立功能」：**从 ``MODULES`` 派生**（顺序/文案/图标与入口页同源）。 |
 | `build_help_menu(bar: QMenuBar, window) -> QMenu` | 「帮助」：帮助文档 / 检查更新 / 关于。 |
-| `quit_app(window) -> None` | 「退出」：先收掉非模态子弹窗，再 ``window.close()``。 |
-| `open_about(window) -> None` | 「关于」：程序名 / 版本 / 数据目录 / 项目地址。 |
 
-#### `update_result(kind: str, *, current: str, latest: dict | None=None) -> UpdateVerdict`
+#### `build_edit_menu(bar: QMenuBar, window) -> QMenu`
 
-把一次检查结果收成 :class:`UpdateVerdict`。
+「编辑」：删除选中 / 插入图片 / 下载图片 / 打印图片（用户 2026-11-01）。
 
-``kind`` 取 ``RESULT_LATEST`` / ``RESULT_NEWER`` / 失败分类串
-（``network`` / ``not_found`` / ``rate_limited`` / ``bad_json`` / ``http:<code>``）。
+菜单层**不做业务判断**：是否可点、做什么全交给当前页（鸭子类型调
+``can_edit_<能力>`` / ``edit_<能力>``，命名见 :data:`EDIT_MENU_ITEMS`）。
+页面没实现某项能力 ⇒ 该项置灰（不认识当前页时四项全灰）。这样菜单不必
+import 具体页面，PDF排版、图片拼版、去底色、检测、提取各自按能力接。
 
-⚠️ 正文**不用 markdown 粗体**（``**…**``）：内容面板是普通 QLabel，星号会
-原样显示出来（与 ``_ask_overwrite`` 同款教训）。
+⚠️ 启用状态在 ``aboutToShow`` 现问：选中项/当前步是用户随时变的，缓存会过期。
 
-线路（用户 2026-10-15：「github 容易被 ban，所以可以使用代理……检测更新，下载
-更新的时候，可以选择测试选择最优方案」）：worker 已经把**四条线路（直连 + 三个
-gh-proxy 镜像）都测过速**，``latest`` 里带着 ``mirror_label`` / ``download_url`` /
-``ranking``——这里把它们写进正文：用户看得见这次走的是哪条、多快，下载地址也是
-**拼过该线路前缀**的那个（不然给了地址还是被 ban）。
+#### `build_modules_menu(bar: QMenuBar, window) -> QMenu`
 
-#### `data_package_result(kind: str, *, current: int, latest: dict | None=None) -> UpdateVerdict`
+「独立功能」：**从 ``MODULES`` 派生**（顺序/文案/图标与入口页同源）。
 
-把一次「去底色数据包检查」结果收成 :class:`UpdateVerdict`（纯数据）。
+⚠️ 这里**不**再写一份清单：左侧导航的「独立功能」入口页遍历的是同一个
+``MODULES``（``desktop/modules/__init__.py`` 由 ``NAV_STEPS`` 派生），所以
+"入口页里有的菜单里都有"，改模块只改 ``steps/spec.py`` 一处。
 
-``kind`` 取 ``RESULT_LATEST`` / ``RESULT_NEWER`` / 失败分类串。与
-:func:`update_result` 的关键区别：**没有外链备用按钮**——有新版时主按钮是
-:data:`BUTTON_DOWNLOAD`（「下载」），点了由控制器**在程序内**下载并替换，
-而不是开浏览器（用户 2026-10-16：「不要让用户自己去下载」）。
+#### `build_help_menu(bar: QMenuBar, window) -> QMenu`
 
-``current`` 是**本机已安装版本**（整数）；``latest`` 是检查结果
-（``data_package_worker.fetch_data_json`` 的返回，含 ``info`` 与线路信息）。
+「帮助」：帮助文档 / 检查更新 / 关于。
 
-#### `about_rows(window=None) -> list[tuple[str, str]]`
+返回的菜单上挂着 ``controller``（更新控制器）——``install_menu_bar`` 从它取
+出来放到 ``window.update_controller``，这样"检查更新"只有**一个**实例
+（忙标记、菜单项文案都在它身上，两个实例会各转各的）。
 
-「关于」弹窗的行（``(键, 值)``）。纯数据，自测直接断言。
+---
 
-版本取 ``config.VERSION``（**唯一来源**）；程序名取窗口标题（不 import
-``desktop.app``——那会与本模块形成循环导入）；数据目录取 ``window.store.root``
-（没有 store 时省略该行）。
+## `desktop.ui.menu.titlebar`
+
+源码：[`desktop/ui/menu/titlebar.py`](../../desktop/ui/menu/titlebar.py)
+
+无边框主窗口的自绘标题栏与菜单栏装配（自 ``desktop/ui/menu.py`` 拆出）。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `install_title_bar(window)` | 给**无边框主窗口**装自绘标题栏（图标 / 标题 / 菜单同排），返回标题栏。 |
+| `install_menu_bar(window) -> QMenuBar` | 把菜单栏（文件 / 编辑 / 独立功能 / 帮助）插进**标题栏的标题之后**。 |
 
 #### `install_title_bar(window)`
 
@@ -16797,55 +17941,121 @@ PySide6 把 ``QMenuBar.addMenu("文案")`` 造出来的 ``QMenu`` **交给 Pytho
 所以这里一律 ``QMenu(文案, bar)`` 显式给父 + 用 ``window.menus`` 留引用，
 两道保险都在。别退回 ``bar.addMenu("文案")`` 那种一行写法。
 
-#### `build_edit_menu(bar: QMenuBar, window) -> QMenu`
+---
 
-「编辑」：删除选中 / 插入图片 / 下载图片 / 打印图片（用户 2026-11-01）。
+## `desktop.ui.menu.updates`
 
-菜单层**不做业务判断**：是否可点、做什么全交给当前页（鸭子类型调
-``can_edit_<能力>`` / ``edit_<能力>``，命名见 :data:`EDIT_MENU_ITEMS`）。
-页面没实现某项能力 ⇒ 该项置灰（不认识当前页时四项全灰）。这样菜单不必
-import 具体页面，PDF排版、图片拼版、去底色、检测、提取各自按能力接。
+源码：[`desktop/ui/menu/updates.py`](../../desktop/ui/menu/updates.py)
 
-⚠️ 启用状态在 ``aboutToShow`` 现问：选中项/当前步是用户随时变的，缓存会过期。
+「检查更新」控制器（自 ``desktop/ui/menu.py`` 拆出）。
 
-#### `open_quick_task(window) -> None`
+### `class UpdateController(QObject)`
 
-「快速任务」：选一个 PDF，**随即建任务**（不再进创建页填名称/流程）。
+「检查更新」的编排者：一次一个请求，结果用弹窗汇报。
 
-用户 2026-10-16：「菜单 文件下新增，快速任务选项，导入PDF，直接创建任务」。
+三条硬约束：
 
-只做两件事——选文件、把路径交给 ``shell.quick_task()``；指纹/查重/建任务/
-进详情全走列表页那条**既有**链路（``start_create``），本模块不碰业务。
+1. **重入防护**：连点菜单不叠出第二个请求（``_checking``），期间菜单项
+   **置灰**并改名「正在检查更新…」，用户看得见"正在跑"；
+2. **网络在子线程**（``window.run_worker``，见 ``WorkerHost``）；
+3. **收尾幂等**：``_finish`` 由 worker 信号与线程结束两条路都会调到，
+   重复调用只生效一次。
 
-⚠️ 用**原生** ``QFileDialog``（不设 ``DontUseNativeDialog``）——项目硬规则：
-「资源管理器」指的是原生选择对话框。与 ``CreateTaskPanel._on_pick_pdf`` 同一款。
-⚠️ 用户在对话框里按取消（返回空串）就**什么都不做**：尤其别当成"建一个
-空壳任务"——那是创建页「PDF 可留空」那条路的语义，与"快速任务"正好相反。
+#### 方法
 
-#### `build_modules_menu(bar: QMenuBar, window) -> QMenu`
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(window, action: QAction, parent=None)` | — |
+| `check() -> None` | 查一次 GitHub Release 最新版：**先弹「正在检查」窗，再弹结果窗**。 |
+| `check_silently(auto: bool=False) -> None` | **后台静默**检查一次（启动时自动跑，用户 2026-10-15）。 |
 
-「独立功能」：**从 ``MODULES`` 派生**（顺序/文案/图标与入口页同源）。
+##### `check() -> None`
 
-⚠️ 这里**不**再写一份清单：左侧导航的「独立功能」入口页遍历的是同一个
-``MODULES``（``desktop/modules/__init__.py`` 由 ``NAV_STEPS`` 派生），所以
-"入口页里有的菜单里都有"，改模块只改 ``steps/spec.py`` 一处。
+查一次 GitHub Release 最新版：**先弹「正在检查」窗，再弹结果窗**。
 
-#### `build_help_menu(bar: QMenuBar, window) -> QMenu`
+用户 2026-10-15：「检查更新，先出弹窗，再反馈结果」——点下去立刻要有可见反馈
+（后台要并发测四条线路，可能几秒），不能像以前那样只有菜单项变灰 + 静默等。
 
-「帮助」：帮助文档 / 检查更新 / 关于。
+⚠️ 若此刻正有一次**静默**检查在飞（启动时自动跑的那次），这里**升级**成显式
+检查（挂上检查窗、结果照常弹），而不是回一句"正在检查"——用户在启动几秒内
+就点菜单是完全正常的事，让他白等一次很没道理；同一次请求两种模式共用。
 
-返回的菜单上挂着 ``controller``（更新控制器）——``install_menu_bar`` 从它取
-出来放到 ``window.update_controller``，这样"检查更新"只有**一个**实例
-（忙标记、菜单项文案都在它身上，两个实例会各转各的）。
+##### `check_silently(auto: bool=False) -> None`
 
-#### `quit_app(window) -> None`
+**后台静默**检查一次（启动时自动跑，用户 2026-10-15）。
 
-「退出」：先收掉非模态子弹窗，再 ``window.close()``。
+与显式检查的三点不同：
 
-⚠️⚠️ **不能用 ``QApplication.quit()``**：它只退事件循环、**不触发**
-``closeEvent``，而 QProcess 子进程与后台线程的收尾全挂在
-``MainWindow.closeEvent``（→ ``shell.shutdown_workers()``）这条链上；
-绕过去就会出现 ``worker_host`` 里写的「QThread 运行中被析构 → Qt abort」。
+1. **不弹任何窗**（没有「正在检查」窗，也没有结果窗）——启动时不该打扰用户；
+2. **不动菜单项文案**（不置灰、不写"正在检查更新…"）——避免启动瞬间闪一下；
+3. 只有**发现有新版本**时，才在菜单项上挂提示（:data:`NEW_VERSION_SUFFIX`，
+   版本号进 tooltip），失败则完全安静（网络不好时别在启动日志里刷错误）。
+
+``auto``（用户 2026-11-02）：发现新版本后**自动下载安装包**，不弹进度窗；
+由启动接线按设置页的「自动更新软件」传入（默认 ``False``，显式调用/自测
+走的仍是"只提示、不自动下"的老口径）。
+
+---
+
+## `desktop.ui.menu.verdicts`
+
+源码：[`desktop/ui/menu/verdicts.py`](../../desktop/ui/menu/verdicts.py)
+
+检查更新的纯数据结论（自 ``desktop/ui/menu.py`` 拆出，不碰控件）。
+
+### `class UpdateVerdict`
+
+一次检查更新该呈现什么（纯数据，自测直接断言它，不碰控件）。
+
+- ``ok_text`` 决定**主按钮**的语义：:data:`BUTTON_DOWNLOAD` = 应用内下载、
+  :data:`BUTTON_INSTALL` = 立即重启安装、:data:`BUTTON_RETRY` = 换线路重试；
+  其余（``BUTTON_OK``）只关窗。
+- ``link`` 非空 ⇒ 正文里附一行**可复制的下载地址**；
+- ``browser_url`` 非空 ⇒ 次按钮「前往下载页」开浏览器（**备用**，用户自己下）。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `update_result(kind: str, *, current: str, latest: dict \| None=None) -> UpdateVerdict` | 把一次检查结果收成 :class:`UpdateVerdict`。 |
+| `data_package_result(kind: str, *, current: int, latest: dict \| None=None) -> UpdateVerdict` | 把一次「去底色数据包检查」结果收成 :class:`UpdateVerdict`（纯数据）。 |
+| `about_rows(window=None) -> list[tuple[str, str]]` | 「关于」弹窗的行（``(键, 值)``）。纯数据，自测直接断言。 |
+
+#### `update_result(kind: str, *, current: str, latest: dict | None=None) -> UpdateVerdict`
+
+把一次检查结果收成 :class:`UpdateVerdict`。
+
+``kind`` 取 ``RESULT_LATEST`` / ``RESULT_NEWER`` / 失败分类串
+（``network`` / ``not_found`` / ``rate_limited`` / ``bad_json`` / ``http:<code>``）。
+
+⚠️ 正文**不用 markdown 粗体**（``**…**``）：内容面板是普通 QLabel，星号会
+原样显示出来（与 ``_ask_overwrite`` 同款教训）。
+
+线路（用户 2026-10-15：「github 容易被 ban，所以可以使用代理……检测更新，下载
+更新的时候，可以选择测试选择最优方案」）：worker 已经把**四条线路（直连 + 三个
+gh-proxy 镜像）都测过速**，``latest`` 里带着 ``mirror_label`` / ``download_url`` /
+``ranking``——这里把它们写进正文：用户看得见这次走的是哪条、多快，下载地址也是
+**拼过该线路前缀**的那个（不然给了地址还是被 ban）。
+
+#### `data_package_result(kind: str, *, current: int, latest: dict | None=None) -> UpdateVerdict`
+
+把一次「去底色数据包检查」结果收成 :class:`UpdateVerdict`（纯数据）。
+
+``kind`` 取 ``RESULT_LATEST`` / ``RESULT_NEWER`` / 失败分类串。与
+:func:`update_result` 的关键区别：**没有外链备用按钮**——有新版时主按钮是
+:data:`BUTTON_DOWNLOAD`（「下载」），点了由控制器**在程序内**下载并替换，
+而不是开浏览器（用户 2026-10-16：「不要让用户自己去下载」）。
+
+``current`` 是**本机已安装版本**（整数）；``latest`` 是检查结果
+（``data_package_worker.fetch_data_json`` 的返回，含 ``info`` 与线路信息）。
+
+#### `about_rows(window=None) -> list[tuple[str, str]]`
+
+「关于」弹窗的行（``(键, 值)``）。纯数据，自测直接断言。
+
+版本取 ``config.VERSION``（**唯一来源**）；程序名取窗口标题（不 import
+``desktop.app``——那会与本模块形成循环导入）；数据目录取 ``window.store.root``
+（没有 store 时省略该行）。
 
 ---
 
@@ -17215,18 +18425,36 @@ QSS 里不会生效；它由 `desktop.components.log_panel.apply_log_view_style`
 
 ---
 
-## `desktop.ui.widgets`
+## `desktop.ui.widgets.combobox`
 
-源码：[`desktop/ui/widgets.py`](../../desktop/ui/widgets.py)
+源码：[`desktop/ui/widgets/combobox.py`](../../desktop/ui/widgets/combobox.py)
 
-基础视觉控件：卡片、分区标题、状态胶囊、空状态、页头。
+与输入框同高的下拉框（自 ``desktop/ui/widgets.py`` 拆出）。
 
-统一用自绘而非样式表：Qt 的样式表引擎会在子树里有任何 ``setStyleSheet``
-时把 QFrame 底色刷成白色，之前步骤条的卡片底就因此被整片盖掉过。自绘
-（``paintEvent``）不受此影响，颜色完全可控，也不会污染子控件。
+### 模块函数
 
-表单控件则相反，一律用 qfluentwidgets 的现成控件（它们自带绘制与焦点
-动画），只把高度对齐到 ``CONTROL_HEIGHT``——见 ``combo_box()``。
+| 函数 | 说明 |
+| --- | --- |
+| `combo_box(items: Iterable[str \| Sequence[Any]] \| None=None, width: int \| None=None) -> ComboBox` | 创建与输入框同高的下拉框（统一表单的行高节奏）。 |
+
+#### `combo_box(items: Iterable[str | Sequence[Any]] | None=None, width: int | None=None) -> ComboBox`
+
+创建与输入框同高的下拉框（统一表单的行高节奏）。
+
+直接在表单里 ``ComboBox()`` 会比同列的 ``LineEdit``/``SafeSpinBox`` 矮
+6px（见 ``CONTROL_HEIGHT`` 的说明），所以下拉框一律用本函数建。
+
+``items`` 传字符串序列时只填显示文案；传 ``(文案, 值)`` 二元组序列时
+值写进 ``itemData``，读出用 ``currentData()``。``width`` 非空则固定宽度
+（用于节点行这类需要横向对齐的窄列）。
+
+---
+
+## `desktop.ui.widgets.constants`
+
+源码：[`desktop/ui/widgets/constants.py`](../../desktop/ui/widgets/constants.py)
+
+公共控件的尺寸/文本常量（自 ``desktop/ui/widgets.py`` 拆出）。
 
 ### 模块常量
 
@@ -17235,6 +18463,28 @@ QSS 里不会生效；它由 `desktop.components.log_panel.apply_log_view_style`
 | CONTROL_HEIGHT | `33` |
 | HELP_TOOLTIP_WIDTH | `26` |
 | HELP_BUBBLE_WIDTH | `360` |
+
+---
+
+## `desktop.ui.widgets.cursor`
+
+源码：[`desktop/ui/widgets/cursor.py`](../../desktop/ui/widgets/cursor.py)
+
+按钮手型光标过滤器（自 ``desktop/ui/widgets.py`` 拆出）。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `install_button_pointer_cursor(app: QApplication) -> None` | 给整个应用的按钮启用 hover 手型光标（见 :class:`_ButtonCursorFilter`）。 |
+
+---
+
+## `desktop.ui.widgets.frames`
+
+源码：[`desktop/ui/widgets/frames.py`](../../desktop/ui/widgets/frames.py)
+
+卡片、面板、分隔线与红色虚线框（自 ``desktop/ui/widgets.py`` 拆出）。
 
 ### `class RedDashFrame(QWidget)`
 
@@ -17330,21 +18580,31 @@ qfluent 的 ``enableTransparentBackground()`` 帮不上忙——它必须在
 说那条深色横线"太深、太宽"，改用固定高度的空白行（见
 ``panels/detect_panel.py``）。
 
-### `class SectionTitle(QLabel)`
+### 模块函数
 
-控制面板里的分组小标题（比正文略重，前面带一条主色短竖线）。
-
-所有步骤面板的「小分类/分块标题」统一走这一个组件（用户 2026-11-16：
-「参考检测文本框的『识别文本框模式』这种风格样式，只是文字要大一些」）
-——字号用 ``SIZE_LABEL``（14px，比正文大一号），别再各自用
-``StrongBodyLabel`` 之类的另起一套。
-
-#### 方法
-
-| 方法 | 说明 |
+| 函数 | 说明 |
 | --- | --- |
-| `__init__(text: str, parent=None)` | 左侧预留 10px 给主色竖线，控件固定高 24px。 |
-| `paintEvent(event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
+| `set_red_frame(target: QWidget, on: bool) -> None` | 给控件挂上/摘掉 :class:`RedDashFrame`（幂等；重复调用不重建控件）。 |
+
+#### `set_red_frame(target: QWidget, on: bool) -> None`
+
+给控件挂上/摘掉 :class:`RedDashFrame`（幂等；重复调用不重建控件）。
+
+⚠️ 覆盖层挂在控件的**父控件**上（外扩画框），所以引用**不能**走
+``target.findChild``（只搜子孙搜不到），钉在控件的动态属性里。
+摘掉只是 ``hide()``：控件留着，下次要亮直接 show，省一次构造。
+
+⚠️ **另存一份 Python 强引用**（``_red_dash_frame_ref``）：动态属性里只
+留 C++ 指针，Python 包装器一旦被回收，再 ``property()`` 取回的就成了
+基类 ``QObject``（没有 ``set_wanted``/``isVisible``，自测当场炸过）。
+
+---
+
+## `desktop.ui.widgets.header`
+
+源码：[`desktop/ui/widgets/header.py`](../../desktop/ui/widgets/header.py)
+
+面板标题与页头（自 ``desktop/ui/widgets.py`` 拆出）。
 
 ### `class PanelTitle(QWidget)`
 
@@ -17364,6 +18624,50 @@ qfluent 的 ``enableTransparentBackground()`` 帮不上忙——它必须在
 | 方法 | 说明 |
 | --- | --- |
 | `__init__(title: str, description: str='', parent=None)` | — |
+
+### `class PageHeader(QWidget)`
+
+页面头部：左侧标题 + 副标题，右侧操作区。
+
+带一条底部分隔线，把页头和内容区分开——原来只有一行孤立的标题，
+和下面的内容混在一起，层次不清。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(title: str, subtitle: str='', parent=None)` | 固定高 64px；右侧操作区通过 ``self.actions`` 布局添加按钮。 |
+| `set_subtitle(text: str) -> None` | 设置副标题文案，空串则隐藏副标题行。 |
+| `paintEvent(event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
+
+---
+
+## `desktop.ui.widgets.help`
+
+源码：[`desktop/ui/widgets/help.py`](../../desktop/ui/widgets/help.py)
+
+问号帮助按钮与说明气泡（自 ``desktop/ui/widgets.py`` 拆出）。
+
+### `class HelpButton(TransparentToolButton)`
+
+问号帮助按钮：hover 弹 ToolTip 气泡，点击弹/收说明 Flyout。
+
+各阶段面板（``StagePanel``）与「图片拼版」面板的标题旁都用它——
+说明文字不再平铺在标题下方占高度，全部收进这个按钮。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `__init__(title: str='', description: str='', parent=None)` | — |
+
+---
+
+## `desktop.ui.widgets.indicators`
+
+源码：[`desktop/ui/widgets/indicators.py`](../../desktop/ui/widgets/indicators.py)
+
+状态胶囊、进度条、文字胶囊与空状态（自 ``desktop/ui/widgets.py`` 拆出）。
 
 ### `class StatusChip(QWidget)`
 
@@ -17452,33 +18756,35 @@ qfluent 的 ``enableTransparentBackground()`` 帮不上忙——它必须在
 | `set_text(text: str) -> None` | 更新主文案。 |
 | `set_hint(hint: str) -> None` | 更新补充说明；传空串则隐藏该行。 |
 
-### `class PageHeader(QWidget)`
+### 模块函数
 
-页面头部：左侧标题 + 副标题，右侧操作区。
+| 函数 | 说明 |
+| --- | --- |
+| `icon_pixmap(icon, size: int=24, color: str=T.INK_FAINT) -> QPixmap` | 把 FluentIcon 渲染成指定颜色的 pixmap（用于空状态插画）。 |
 
-带一条底部分隔线，把页头和内容区分开——原来只有一行孤立的标题，
-和下面的内容混在一起，层次不清。
+---
+
+## `desktop.ui.widgets.text`
+
+源码：[`desktop/ui/widgets/text.py`](../../desktop/ui/widgets/text.py)
+
+字体/颜色与文本类基础控件（自 ``desktop/ui/widgets.py`` 拆出）。
+
+### `class SectionTitle(QLabel)`
+
+控制面板里的分组小标题（比正文略重，前面带一条主色短竖线）。
+
+所有步骤面板的「小分类/分块标题」统一走这一个组件（用户 2026-11-16：
+「参考检测文本框的『识别文本框模式』这种风格样式，只是文字要大一些」）
+——字号用 ``SIZE_LABEL``（14px，比正文大一号），别再各自用
+``StrongBodyLabel`` 之类的另起一套。
 
 #### 方法
 
 | 方法 | 说明 |
 | --- | --- |
-| `__init__(title: str, subtitle: str='', parent=None)` | 固定高 64px；右侧操作区通过 ``self.actions`` 布局添加按钮。 |
-| `set_subtitle(text: str) -> None` | 设置副标题文案，空串则隐藏副标题行。 |
+| `__init__(text: str, parent=None)` | 左侧预留 10px 给主色竖线，控件固定高 24px。 |
 | `paintEvent(event) -> None` | Qt 事件覆写：自绘控件外观（本项目控件不走样式表）。 |
-
-### `class HelpButton(TransparentToolButton)`
-
-问号帮助按钮：hover 弹 ToolTip 气泡，点击弹/收说明 Flyout。
-
-各阶段面板（``StagePanel``）与「图片拼版」面板的标题旁都用它——
-说明文字不再平铺在标题下方占高度，全部收进这个按钮。
-
-#### 方法
-
-| 方法 | 说明 |
-| --- | --- |
-| `__init__(title: str='', description: str='', parent=None)` | — |
 
 ### 模块函数
 
@@ -17487,10 +18793,6 @@ qfluent 的 ``enableTransparentBackground()`` 帮不上忙——它必须在
 | `apply_to(widget: QWidget, size: int=T.SIZE_BODY, bold: bool=False, color: str \| None=None) -> QWidget` | 给控件统一设置字体与颜色（返回原控件，便于链式书写）。 |
 | `bold_button(button: QWidget, bold: bool) -> None` | 把按钮文字加粗 / 还原（高亮用）。 |
 | `mark_input_entry(button: QWidget) -> None` | 给「给这一步喂图片」这类**输入入口**按钮加**常驻红框**。 |
-| `set_red_frame(target: QWidget, on: bool) -> None` | 给控件挂上/摘掉 :class:`RedDashFrame`（幂等；重复调用不重建控件）。 |
-| `combo_box(items: Iterable[str \| Sequence[Any]] \| None=None, width: int \| None=None) -> ComboBox` | 创建与输入框同高的下拉框（统一表单的行高节奏）。 |
-| `icon_pixmap(icon, size: int=24, color: str=T.INK_FAINT) -> QPixmap` | 把 FluentIcon 渲染成指定颜色的 pixmap（用于空状态插画）。 |
-| `install_button_pointer_cursor(app: QApplication) -> None` | 给整个应用的按钮启用 hover 手型光标（见 :class:`_ButtonCursorFilter`）。 |
 
 #### `apply_to(widget: QWidget, size: int=T.SIZE_BODY, bold: bool=False, color: str | None=None) -> QWidget`
 
@@ -17536,29 +18838,6 @@ qfluent 的 ``enableTransparentBackground()`` 帮不上忙——它必须在
 
 ⚠️ 用样式表而不是换 ``PrimaryPushButton``：那会让这一排工具按钮的
 **尺寸**变掉（文字按钮比图标按钮宽），把页头撑变形（同 ``bold_button``）。
-
-#### `set_red_frame(target: QWidget, on: bool) -> None`
-
-给控件挂上/摘掉 :class:`RedDashFrame`（幂等；重复调用不重建控件）。
-
-⚠️ 覆盖层挂在控件的**父控件**上（外扩画框），所以引用**不能**走
-``target.findChild``（只搜子孙搜不到），钉在控件的动态属性里。
-摘掉只是 ``hide()``：控件留着，下次要亮直接 show，省一次构造。
-
-⚠️ **另存一份 Python 强引用**（``_red_dash_frame_ref``）：动态属性里只
-留 C++ 指针，Python 包装器一旦被回收，再 ``property()`` 取回的就成了
-基类 ``QObject``（没有 ``set_wanted``/``isVisible``，自测当场炸过）。
-
-#### `combo_box(items: Iterable[str | Sequence[Any]] | None=None, width: int | None=None) -> ComboBox`
-
-创建与输入框同高的下拉框（统一表单的行高节奏）。
-
-直接在表单里 ``ComboBox()`` 会比同列的 ``LineEdit``/``SafeSpinBox`` 矮
-6px（见 ``CONTROL_HEIGHT`` 的说明），所以下拉框一律用本函数建。
-
-``items`` 传字符串序列时只填显示文案；传 ``(文案, 值)`` 二元组序列时
-值写进 ``itemData``，读出用 ``currentData()``。``width`` 非空则固定宽度
-（用于节点行这类需要横向对齐的窄列）。
 
 ---
 
@@ -18473,81 +19752,22 @@ doc 为拼版文档；out_dir 为目标目录（stages/imposition）。
 
 ---
 
-## `desktop.workers.pdf_render_service`
+## `desktop.workers.pdf_render_service.api`
 
-源码：[`desktop/workers/pdf_render_service.py`](../../desktop/workers/pdf_render_service.py)
+源码：[`desktop/workers/pdf_render_service/api.py`](../../desktop/workers/pdf_render_service/api.py)
 
-PDF 页渲染**出进程**（GUI 进程里只发请求，不碰 PyMuPDF 的像素）。
-
-## 为什么必须搬到子进程
-
-PyMuPDF 的 ``page.get_pixmap()`` 在**整段解码期间持有 GIL**，而且扫描古籍常见
-的内嵌格式是 **JPX（JPEG2000）**：
-
-=====  =========================  ===================  ============
-内嵌格式  内嵌图尺寸                 渲一张 256px 缩略图     备注
-=====  =========================  ===================  ============
-JPX    4285×5736（本仓样例书）      **~850 ms**          解码按像素线性增长
-JPX    1280×2688                  ~190 ms
-Flate  702×1360                   ~11 ms
-=====  =========================  ===================  ============
-
-这 850ms 里 GUI 线程**拿不到一次时间片**（实测：另一线程 1ms 心跳被拖成
-800~970ms 一整块）。于是"导入后生成整本缩略图"＝一本 28 页的书把界面冻成
-28 个 0.85 秒的卡顿块，用户感知就是「创建任务卡、进详情卡、切缩略图卡」。
-
-单飞锁（``render_lock``）只能把**并发**压平，压不掉**单次**的 850ms——线程
-方案对 PyMuPDF 渲染没有任何加速（见 ``utils.pdf_extract.render_pages_parallel``
-的实测：6 线程仅 1.15×）。唯一出路是**换进程**：GIL 不共享，GUI 一次都不冻，
-而且多个子进程可以真并行（本模块默认按 CPU 数开 2~3 个）。
-
-## 用法
-
-调用方**必须是后台线程**（``PreviewWorker.run`` / ``SourceThumbnailsWorker.run``
-之类），这些函数是**阻塞**的：
-
-- :func:`render_jpeg`：渲一页，返回 JPEG 字节（缩略图 / 大图预览）；
-- :func:`page_count`：页数；
-- :func:`extract_page`：单页"提取图片"落盘（与批量提取逐位一致）；
-- :func:`shutdown`：退出前收子进程。
-
-## 降级
-
-子进程起不来（打包漏模块 / 权限 / OOM）时**自动退回进程内渲染**（并持
-``single_flight`` 单飞锁），行为与改动前一致——宁可慢一点，也不能让缩略图
-整片不出来。降级只发生一次，之后一直走进程内（避免每个请求都白试一遍）。
-
-``GUJI_PDF_RENDER=inproc`` 可强制关闭出进程（排障 / 单测用）。
-
-### 模块常量
-
-| 名称 | 值 |
-| --- | --- |
-| ENV_MODE | `"GUJI_PDF_RENDER"` |
-| MAX_WORKERS | `3` |
-| CALL_TIMEOUT_S | `60.0` |
-| JPX_FAST_MAX_EDGE | `512` |
-| JPX_FAST_MIN_REDUCE | `2` |
-| _OPJ_PATH | `False` |
-| EXTRACT_WORKERS | `1` |
-| POOL_FAILURE_LIMIT | `3` |
+对外 API：渲页 / 批量渲 / 页数 / 单页提取 / 预热（均为阻塞调用）。
 
 ### 模块函数
 
 | 函数 | 说明 |
 | --- | --- |
-| `jpx_fast_available() -> bool` | 本机有没有可用的 OpenJPEG 解码器（自测/排障用）。 |
-| `offloaded() -> bool` | 渲染是否**真的**在子进程里做（宿主据此决定要不要"让出 GIL"的 sleep）。 |
-| `workers() -> int` | 池大小（批量路径按它决定一批渲几页）。 |
 | `render_jpeg(pdf_path, page_index: int, edge: int, quality: int=70, fmt: str='jpg') -> bytes` | 渲一页并返回编码后的字节（**阻塞调用，只许在后台线程里用**）。 |
 | `render_jpegs(pdf_path, pages, edge: int, quality: int=70, fmt: str='jpg', pages_dir=None) -> list[bytes]` | **并行**渲多页，按入参顺序返回（每页一条；失败的那页是空字节）。 |
 | `render_stream(pdf_path, pages, edge: int, quality: int=70, fmt: str='jpg', on_page=None, pages_dir=None) -> None` | **并行渲多页，每渲好一页就回调**（``on_page(page, bytes)``）。 |
 | `page_count(pdf_path) -> int` | PDF 页数（阻塞调用）。 |
 | `extract_page(pdf_path, page_index: int, out_dir, zoom: float=1, ext: str='jpg', quick: bool=True, dpi: float=300) -> dict` | 单页「提取图片」落盘（阻塞调用）；返回 ``{ok, path, w, h, err}``。 |
-| `stats() -> dict` | 运行计数（自测断言用）：``renders`` / ``extracts`` / ``page_counts`` / |
-| `reset_stats() -> None` | 清零计数（自测用；不动池）。 |
 | `prewarm() -> None` | **后台**把子进程池拉起来并预热（进任务详情页时调一次，幂等）。 |
-| `shutdown() -> None` | 收掉子进程池（关程序/单测收尾）。 |
 
 #### `render_jpeg(pdf_path, page_index: int, edge: int, quality: int=70, fmt: str='jpg') -> bytes`
 
@@ -18590,11 +19810,6 @@ Flate  702×1360                   ~11 ms
 ⚠️ 走**独立的提取池**（``kind="extract"``）：它绝不排在缩略图/预览批次
 后面——否则用户点一页提取时会看到"一直转圈"（见 ``EXTRACT_WORKERS``）。
 
-#### `stats() -> dict`
-
-运行计数（自测断言用）：``renders`` / ``extracts`` / ``page_counts`` /
-``fallbacks`` / ``mode`` / ``workers`` / ``pool_failures``。
-
 #### `prewarm() -> None`
 
 **后台**把子进程池拉起来并预热（进任务详情页时调一次，幂等）。
@@ -18605,6 +19820,69 @@ Flate  702×1360                   ~11 ms
 
 ⚠️ 绝不阻塞调用线程（它在 GUI 线程被调用），也绝不因为起不来而报错。
 
+---
+
+## `desktop.workers.pdf_render_service.constants`
+
+源码：[`desktop/workers/pdf_render_service/constants.py`](../../desktop/workers/pdf_render_service/constants.py)
+
+``pdf_render_service`` 的共享常量（子模块与 ``__init__`` 共用）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| ENV_MODE | `"GUJI_PDF_RENDER"` |
+| MAX_WORKERS | `3` |
+| CALL_TIMEOUT_S | `60.0` |
+| EXTRACT_WORKERS | `1` |
+| POOL_FAILURE_LIMIT | `3` |
+| JPX_FAST_MAX_EDGE | `512` |
+| JPX_FAST_MIN_REDUCE | `2` |
+
+---
+
+## `desktop.workers.pdf_render_service.jpx`
+
+源码：[`desktop/workers/pdf_render_service/jpx.py`](../../desktop/workers/pdf_render_service/jpx.py)
+
+JPX 快速通道：用 OpenJPEG 按需降分辨率解码（比 MuPDF 快 5 倍）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| _OPJ_PATH | `False` |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `jpx_fast_available() -> bool` | 本机有没有可用的 OpenJPEG 解码器（自测/排障用）。 |
+
+---
+
+## `desktop.workers.pdf_render_service.pool`
+
+源码：[`desktop/workers/pdf_render_service/pool.py`](../../desktop/workers/pdf_render_service/pool.py)
+
+子进程池管理、运行计数与收尾（``pdf_render_service`` 的状态中心）。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `offloaded() -> bool` | 渲染是否**真的**在子进程里做（宿主据此决定要不要"让出 GIL"的 sleep）。 |
+| `workers() -> int` | 池大小（批量路径按它决定一批渲几页）。 |
+| `stats() -> dict` | 运行计数（自测断言用）：``renders`` / ``extracts`` / ``page_counts`` / |
+| `reset_stats() -> None` | 清零计数（自测用；不动池）。 |
+| `shutdown() -> None` | 收掉子进程池（关程序/单测收尾）。 |
+
+#### `stats() -> dict`
+
+运行计数（自测断言用）：``renders`` / ``extracts`` / ``page_counts`` /
+``fallbacks`` / ``mode`` / ``workers`` / ``pool_failures``。
+
 #### `shutdown() -> None`
 
 收掉子进程池（关程序/单测收尾）。
@@ -18614,13 +19892,45 @@ Flate  702×1360                   ~11 ms
 
 ---
 
-## `desktop.workers.preview_worker`
+## `desktop.workers.preview_worker.compose`
 
-源码：[`desktop/workers/preview_worker.py`](../../desktop/workers/preview_worker.py)
+源码：[`desktop/workers/preview_worker/compose.py`](../../desktop/workers/preview_worker/compose.py)
 
-PDF/图片渲染：整页大图、页缩略图（带磁盘缓存）与去底色效果合成。
+效果区域合成：按 border 规则把检测框裁成多张预览图（纯 QImage 绘制）。
 
-区域合成（rembg 预览）在本线程内完成，避免主线程处理原始分辨率大图导致卡顿。
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `region_canvas_specs(image_size: tuple[int, int], boxes: list, border_mm, dpi: int=300) -> list` | compose_region_output 的**纯几何**部分：返回 ``[(画布尺寸, sources)]``。 |
+| `compose_region_output(image: QImage, boxes: list, border_mm, dpi: int=300) -> list` | 按 border 规则，把**每个检测框**裁成一张"效果预览图"。 |
+| `compose_outputs_horizontal(outputs: list, gap: int=12) -> QImage` | 多张输出横向拼接为一张展示图（灰底间隔，便于区分各框输出）。 |
+
+#### `region_canvas_specs(image_size: tuple[int, int], boxes: list, border_mm, dpi: int=300) -> list`
+
+compose_region_output 的**纯几何**部分：返回 ``[(画布尺寸, sources)]``。
+
+不碰位图——只依据图片**尺寸**（QImageReader 读文件头即可拿到）就能
+算出每张输出画布的大小与贴图来源。第三步提交据此**预先算好输出
+文件名**（张数 × 名称），再并行处理各页；规则仍然只有这一份。
+
+**每个检测框各自一张输出画布**（框 + border）；无框时整页原图一张。
+
+#### `compose_region_output(image: QImage, boxes: list, border_mm, dpi: int=300) -> list`
+
+按 border 规则，把**每个检测框**裁成一张"效果预览图"。
+
+**几何规则来自 utils.box_geometry**（与 functions/text_region.py 的 CLI
+输出共用同一份实现），本函数只负责用 QImage 把布局画出来——这样规则
+不会因数像素后端不同而被复制成两份。几何部分见 `region_canvas_specs`。
+
+---
+
+## `desktop.workers.preview_worker.constants`
+
+源码：[`desktop/workers/preview_worker/constants.py`](../../desktop/workers/preview_worker/constants.py)
+
+``preview_worker`` 的共享常量。
 
 ### 模块常量
 
@@ -18630,7 +19940,109 @@ PDF/图片渲染：整页大图、页缩略图（带磁盘缓存）与去底色�
 | PRINT_PREVIEW_MIN_PX_PER_MM | `2.0` |
 | PRINT_PREVIEW_MAX_PX_PER_MM | `8.0` |
 | THUMB_YIELD_RATIO | `0.5` |
+
+---
+
+## `desktop.workers.preview_worker.doc_cache`
+
+源码：[`desktop/workers/preview_worker/doc_cache.py`](../../desktop/workers/preview_worker/doc_cache.py)
+
+共享文档缓存（本进程渲染兜底时才会真正用到；关文件句柄的唯一收口）。
+
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
 | _PDF_DOC_CACHE_MAX | `2` |
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `close_cached_documents() -> None` | 关掉共享文档缓存里的全部文档，释放 Windows 文件句柄。 |
+
+#### `close_cached_documents() -> None`
+
+关掉共享文档缓存里的全部文档，释放 Windows 文件句柄。
+
+⚠️ 删除任务/关闭文档前必须调用：缓存里的 Document 一直握着 PDF 文件，
+Windows 上不先关掉，`rmtree` 会一直 PermissionError（store 的重试兜底
+救不了"永远不关"的句柄）。会等到当前正在跑的那次渲染结束（≤几百 ms）。
+
+---
+
+## `desktop.workers.preview_worker.fonts`
+
+源码：[`desktop/workers/preview_worker/fonts.py`](../../desktop/workers/preview_worker/fonts.py)
+
+预览绘制用的字体选择（内容字与界面字分开取，与成品 PDF 同源）。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `qt_family_for_file(path: str) -> str \| None` | 按**字体文件**加载并取回 Qt 族名；失败返回 None。 |
+| `preview_text_font(spec, px_per_mm: float) -> QFont` | 按 PrintTextSpec 与像素密度给出**已设好像素大小**的字体。 |
+
+#### `qt_family_for_file(path: str) -> str | None`
+
+按**字体文件**加载并取回 Qt 族名；失败返回 None。
+
+为什么要按文件而不是按族名：PDF 侧（`utils.pdf_draw.build_font_chain`）
+也是按文件注册字体的，两边用同一个文件才能保证「预览 = 成品」。按族名
+查表在离屏/精简环境下会落空（那时 `QFontDatabase.families()` 几乎是
+空的），预览就退回默认字体，与成品对不上。
+
+#### `preview_text_font(spec, px_per_mm: float) -> QFont`
+
+按 PrintTextSpec 与像素密度给出**已设好像素大小**的字体。
+
+字体族走 ``_pick_content_font``（内容是标题 / 页码，仿宋优先）——与
+``pdf_draw.register_fonts`` 取到的字体同一种，预览与成品才对得上。
+
+⚠️ 不能直接用 ``setPointSizeF(spec.font_size_pt)``：那是固定像素大小，
+而逐字步进是 ``char_h_mm × px_per_mm``（随密度缩放）。两处口径不同时，
+密度一变小（第四步版面编辑画布把整页缩到可视区，≈2 px/mm，远小于效果
+预览的 ≈5.4 px/mm），字仍是原大小、步进却按比例缩小 → **字叠在一起**。
+
+统一口径后：字高 = 字号(mm) × 密度，与步进同源，任何密度下都不重叠，
+且与成品 PDF 的真实字号（pt → mm）一致。
+
+``spec.font`` 是用户为这段文字（标题 / 页码各自独立）指定的字体，
+能解析到文件就按文件加载——与成品 PDF 用同一个字体文件。
+
+---
+
+## `desktop.workers.preview_worker.print_page`
+
+源码：[`desktop/workers/preview_worker/print_page.py`](../../desktop/workers/preview_worker/print_page.py)
+
+打印效果页合成：按 ``utils.page_layout.PrintPagePlan`` 画整页位图（内存，不落盘）。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `preview_px_per_mm(page_w_mm: float, page_h_mm: float, target_edge: int=PRINT_PREVIEW_TARGET_EDGE) -> float` | 按纸张尺寸给出效果预览的像素密度（px/mm）。 |
+| `compose_print_page(image: QImage, plan, px_per_mm: float \| None=None) -> QImage` | 按 ``utils.page_layout.PrintPagePlan`` 合成"打印效果"位图。 |
+
+#### `compose_print_page(image: QImage, plan, px_per_mm: float | None=None) -> QImage`
+
+按 ``utils.page_layout.PrintPagePlan`` 合成"打印效果"位图。
+
+**只画内存位图，不写任何文件**——第四步的效果预览就是它；真正生成
+PDF 仍要走「生成PDF」按钮（functions/print.py）。
+
+几何全部取自 ``plan``，而 ``plan`` 由 PDF 生成与预览共用，所以用户
+按预览调好的边距/纸张/标题，与最终 PDF 必然一致。
+
+---
+
+## `desktop.workers.preview_worker.worker`
+
+源码：[`desktop/workers/preview_worker/worker.py`](../../desktop/workers/preview_worker/worker.py)
+
+``PreviewWorker``：整页大图 / 页缩略图（带磁盘缓存）的后台渲染 worker。
 
 ### `class PreviewWorker(QObject)`
 
@@ -18676,82 +20088,6 @@ GIL，界面直接冻住（2026-09-25 实测）。
 批量缩略图（整本几百上千页）会在**下一页开头**退出——已经渲好的页都已
 落盘，重进会命中缓存，不会白干。单页渲染不可中断（一次 get_pixmap
 只有 ~160ms，等它一下比打断安全）。
-
-### 模块函数
-
-| 函数 | 说明 |
-| --- | --- |
-| `region_canvas_specs(image_size: tuple[int, int], boxes: list, border_mm, dpi: int=300) -> list` | compose_region_output 的**纯几何**部分：返回 ``[(画布尺寸, sources)]``。 |
-| `compose_region_output(image: QImage, boxes: list, border_mm, dpi: int=300) -> list` | 按 border 规则，把**每个检测框**裁成一张"效果预览图"。 |
-| `close_cached_documents() -> None` | 关掉共享文档缓存里的全部文档，释放 Windows 文件句柄。 |
-| `preview_px_per_mm(page_w_mm: float, page_h_mm: float, target_edge: int=PRINT_PREVIEW_TARGET_EDGE) -> float` | 按纸张尺寸给出效果预览的像素密度（px/mm）。 |
-| `qt_family_for_file(path: str) -> str \| None` | 按**字体文件**加载并取回 Qt 族名；失败返回 None。 |
-| `preview_text_font(spec, px_per_mm: float) -> QFont` | 按 PrintTextSpec 与像素密度给出**已设好像素大小**的字体。 |
-| `compose_print_page(image: QImage, plan, px_per_mm: float \| None=None) -> QImage` | 按 ``utils.page_layout.PrintPagePlan`` 合成"打印效果"位图。 |
-| `compose_outputs_horizontal(outputs: list, gap: int=12) -> QImage` | 多张输出横向拼接为一张展示图（灰底间隔，便于区分各框输出）。 |
-
-#### `region_canvas_specs(image_size: tuple[int, int], boxes: list, border_mm, dpi: int=300) -> list`
-
-compose_region_output 的**纯几何**部分：返回 ``[(画布尺寸, sources)]``。
-
-不碰位图——只依据图片**尺寸**（QImageReader 读文件头即可拿到）就能
-算出每张输出画布的大小与贴图来源。第三步提交据此**预先算好输出
-文件名**（张数 × 名称），再并行处理各页；规则仍然只有这一份。
-
-**每个检测框各自一张输出画布**（框 + border）；无框时整页原图一张。
-
-#### `compose_region_output(image: QImage, boxes: list, border_mm, dpi: int=300) -> list`
-
-按 border 规则，把**每个检测框**裁成一张"效果预览图"。
-
-**几何规则来自 utils.box_geometry**（与 functions/text_region.py 的 CLI
-输出共用同一份实现），本函数只负责用 QImage 把布局画出来——这样规则
-不会因数像素后端不同而被复制成两份。几何部分见 `region_canvas_specs`。
-
-#### `close_cached_documents() -> None`
-
-关掉共享文档缓存里的全部文档，释放 Windows 文件句柄。
-
-⚠️ 删除任务/关闭文档前必须调用：缓存里的 Document 一直握着 PDF 文件，
-Windows 上不先关掉，`rmtree` 会一直 PermissionError（store 的重试兜底
-救不了"永远不关"的句柄）。会等到当前正在跑的那次渲染结束（≤几百 ms）。
-
-#### `qt_family_for_file(path: str) -> str | None`
-
-按**字体文件**加载并取回 Qt 族名；失败返回 None。
-
-为什么要按文件而不是按族名：PDF 侧（`utils.pdf_draw.build_font_chain`）
-也是按文件注册字体的，两边用同一个文件才能保证「预览 = 成品」。按族名
-查表在离屏/精简环境下会落空（那时 `QFontDatabase.families()` 几乎是
-空的），预览就退回默认字体，与成品对不上。
-
-#### `preview_text_font(spec, px_per_mm: float) -> QFont`
-
-按 PrintTextSpec 与像素密度给出**已设好像素大小**的字体。
-
-字体族走 ``_pick_content_font``（内容是标题 / 页码，仿宋优先）——与
-``pdf_draw.register_fonts`` 取到的字体同一种，预览与成品才对得上。
-
-⚠️ 不能直接用 ``setPointSizeF(spec.font_size_pt)``：那是固定像素大小，
-而逐字步进是 ``char_h_mm × px_per_mm``（随密度缩放）。两处口径不同时，
-密度一变小（第四步版面编辑画布把整页缩到可视区，≈2 px/mm，远小于效果
-预览的 ≈5.4 px/mm），字仍是原大小、步进却按比例缩小 → **字叠在一起**。
-
-统一口径后：字高 = 字号(mm) × 密度，与步进同源，任何密度下都不重叠，
-且与成品 PDF 的真实字号（pt → mm）一致。
-
-``spec.font`` 是用户为这段文字（标题 / 页码各自独立）指定的字体，
-能解析到文件就按文件加载——与成品 PDF 用同一个字体文件。
-
-#### `compose_print_page(image: QImage, plan, px_per_mm: float | None=None) -> QImage`
-
-按 ``utils.page_layout.PrintPagePlan`` 合成"打印效果"位图。
-
-**只画内存位图，不写任何文件**——第四步的效果预览就是它；真正生成
-PDF 仍要走「生成PDF」按钮（functions/print.py）。
-
-几何全部取自 ``plan``，而 ``plan`` 由 PDF 生成与预览共用，所以用户
-按预览调好的边距/纸张/标题，与最终 PDF 必然一致。
 
 ---
 

@@ -148,11 +148,16 @@ def _class_members(node) -> set[str]:
 
 
 def _find_class(path: Path, name: str):
+    """按路径找类；``path`` 也接受**子包目录**（拆分后主类/兄弟 Mixin 分居各文件）。"""
     import ast
 
-    tree = ast.parse(path.read_text(encoding="utf-8"))
-    return next(n for n in tree.body
-                if isinstance(n, ast.ClassDef) and n.name == name)
+    files = sorted(path.glob("*.py")) if path.is_dir() else [path]
+    for file in files:
+        tree = ast.parse(file.read_text(encoding="utf-8"))
+        for n in tree.body:
+            if isinstance(n, ast.ClassDef) and n.name == name:
+                return n
+    raise StopIteration(f"{path} 下找不到类 {name}")
 
 
 def check_type_only_host(ok, *, label, root, pkg_rel, host_file, host_cls,
@@ -211,6 +216,8 @@ def check_type_only_host(ok, *, label, root, pkg_rel, host_file, host_cls,
        not (declared - expected), f"多={sorted(declared - expected)}")
 
     # ---- (3) 各 Mixin 都是「TYPE_CHECKING 期继承、运行期 object」----
+    import re
+
     bad: dict[str, str] = {}
     for fname, cname in mixin_modules:
         src = (pkg_dir / fname).read_text(encoding="utf-8")
@@ -218,7 +225,7 @@ def check_type_only_host(ok, *, label, root, pkg_rel, host_file, host_cls,
         base_names = [ast.unparse(b) for b in cls.bases]
         guarded = (
             "if TYPE_CHECKING:" in src
-            and f"from ._host import {host_cls}" in src
+            and re.search(rf"from \.+_host import {host_cls}", src) is not None
             and f"{host_cls} = object" in src
         )
         if not guarded:

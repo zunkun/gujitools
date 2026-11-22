@@ -226,3 +226,6 @@ class PrintPreviewHost(QWidget, ThumbsMixin, ZoomPopupMixin):
 
     def set_pdf_path(self, path: str | Path | None) -> None:
         ...
+
+    def release_buffers(self) -> None:
+        ...

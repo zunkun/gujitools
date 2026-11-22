@@ -1,0 +1,484 @@
+# -*- coding: utf-8 -*-
+"""一个处理步骤的元数据 :class:`StepSpec`（纯逻辑、不 import Qt）。"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+
+from utils.sort_utils import natural_sort_key
+
+from desktop.steps.spec.constants import _SUFFIX_RE, AUTO_DESCEND_DEPTH
+
+
+@dataclass(frozen=True)
+class StepSpec:
+    """一个处理步骤的元数据（不可变，可当字典键/常量用）。
+
+    字段含义：
+
+    - ``key``：唯一路由键，与 ``desktop.modules.MODULES`` 的 key 同名同义；
+    - ``command``：``functions.get_function`` 的命令名；``None`` 表示这一步
+      不是 CLI 命令（如拼版是纯函数 ``compose_doc``，由调用方给 job）；
+    - ``title``：**模块页头大标题**的名字（"图片提取"）。⚠️ 左侧导航那一列
+      用自己的 ``nav_title``（见下），磁盘目录用 ``disk_key()``——三者互不相干；
+    - ``nav_title``：**左侧导航条目**的名字（空则用 ``title``）；
+    - ``subtitle``：**模块页头副标题**（"选择一个 PDF（…），把每页渲染成图片"）；
+    - ``nav_tooltip``：**导航条目悬停提示**（空则用 ``subtitle``）；
+    - ``nav_icon``：**导航条目图标**（``FluentIcon`` 成员名；或 ``svg:名字``
+      引用 ``desktop.ui.icons.CustomIcon`` 的自绘图——内置图标没有的图形），
+      由 ``desktop.ui.icons.resolve_nav_icon`` 统一解析；
+    - ``panel``：参数面板**类名**（``desktop.components.panels`` 里的名字）；
+      ``None`` 表示这一步没有可调参数；
+    - ``pick_label``：源选择对话框的标题（"选择 PDF" / "选择图片"）；
+    - ``run_label``：执行按钮文案（空则回落到"开始 + 标题"）；
+    - ``file_filter``：``QFileDialog`` 的文件过滤串，**同时是后缀的唯一来源**
+      （见 :meth:`suffixes`）；
+    - ``accepts_dir``：源能不能直接是目录（拖进来一个文件夹算不算一个源）；
+    - ``allow_multi``：对话框允许一次多选（拖拽天然支持多选，此项只管对话框）；
+    - ``flat_output``：单源时要不要把产物**平铺到输出目录根下**。置 ``True`` 的
+      只有 ``extract``——它的命令习惯是 ``<输出>/<PDF名>/images/``（见
+      :func:`desktop.steps.kernel.job_for`），单 PDF 时这层嵌套既多余又断链；
+    - ``artifact_is_file``：这一步的产物是**单个文件**（而不是一目录文件）。
+      ``print`` 为 ``True``——它的 ``--output`` 是**目录**，文件名由命令自己在其下
+      取（``<输出>/output.pdf``），所以执行内核**不能**把 ``function.outpath``
+      覆盖成那个目录（覆盖了就会拿目录当文件路径写，直接报错）；内核还会把
+      **真正的产物路径**（而不是目录）回传给 ``finished``；
+    - ``output_suffix``：默认输出目录名 = 源名 + 这个后缀；
+    - ``output_name``：给了就用**固定名**（如"拼图成品"），不再用后缀规则；
+    - ``drop_icon`` / ``drop_title`` / ``drop_hint``：共用大输入区
+      （:class:`desktop.steps.source_zone.SourceZone`）的图标与两行文案；
+      后两者留空时按 ``title`` 生成兜底文案。
+
+    ⚠️ **文案字段按"界面上有哪几个地方要显示"逐个建，不合并**。同一步在流程条
+    和左侧导航里叫法确实不一样（流程条说的是**动作**「提取图片」，导航说的是
+    **东西**「图片提取」），硬合成一个名字就会改动其中一处界面。所以：
+
+    ===============  ==========================================
+    字段              用在哪
+    ===============  ==========================================
+    ``title``         模块页头大标题（**不含**左侧导航，见 ``nav_title``）
+    ``nav_title``     左侧导航条目的名字（空则用 ``title``）
+    ``subtitle``      模块页头副标题
+    ``nav_tooltip``   导航条目悬停提示
+    ``stage_title``   流程步骤条上的名字（空则用 ``title``）
+    ``short``         流程步骤条上的短名（空则用 ``stage_title``）
+    ===============  ==========================================
+
+    **详情页侧**（``run_button_text`` / ``has_submit`` / ``control_width`` /
+    ``preview_attr`` / ``panel_extra`` / ``history_skip`` / ``auto_fill_skip``）：
+    "这一步在任务流程详情页里长什么样"。⚠️ 这些**曾经散在页面的 if-else 里**
+    （``page._select_stage`` 按 stage 改按钮文案与区块显隐、``view.
+    _apply_control_width`` 按 stage 换宽度、``history._history_fill_keys``
+    按 stage 跳过不同键）——加一步就得改那几处 if，BPM 换顺序更是无从下手。
+    现在都是**声明**：页面只查表，不认哪个 step 是谁。
+
+    **流程侧**：
+
+    - ``role``：``"stage"`` = 默认流程主链上的一步；``"optional"`` = 流程条上的
+      **可选节点**（拼版就是：``STAGES`` 里没有它，但它有自己的模块页）。
+      见 :data:`FLOW_STAGES` / :data:`OPTIONAL_STEPS`；
+    - ``nav``：这一步**有没有独立的模块页**、要不要进左侧导航。``False`` 表示
+      还没抽出来——壳层据此不过去建页面（``desktop.modules.MODULES`` 会把它
+      过滤掉），免得出现"清单里有、页面不存在"；
+    - ``inputs`` / ``outputs``：**BPM 端口**——这一步消费/产出哪些产物
+      （``pages`` 图片 / ``boxes`` 检测框 / ``pdf``）。⚠️ **已接线**（2026-10-03
+      补完）：:mod:`desktop.steps.ports` 按这两个字段 + 它的连线表把步骤连起来，
+      任务流程不再靠"约定目录布局"。**声明必须与事实一致**——端口模型靠它做
+      依赖检查，写漏一个就等于给 BPM 一条假的边（``rembg`` 漏写 ``boxes`` 就是
+      这样被 ``tests/selftests/flow/step_ports/`` 逮到的）。
+    """
+
+    key: str
+    command: str | None
+    title: str
+    panel: str | None
+    pick_label: str
+    file_filter: str
+    subtitle: str = ""
+    run_label: str = ""
+    accepts_dir: bool = True
+    allow_multi: bool = False
+    flat_output: bool = False
+    artifact_is_file: bool = False
+    output_suffix: str = ""
+    output_name: str = ""
+    drop_icon: str = "FOLDER_ADD"
+    drop_title: str = ""
+    drop_hint: str = ""
+    # ---- 流程侧（是不是主链的一步、步骤条上叫什么）----
+    role: str = "stage"
+    stage_title: str = ""
+    short: str = ""
+    # ---- BPM 端口（本次只声明、未接线，见类 docstring）----
+    inputs: tuple[str, ...] = ()
+    outputs: tuple[str, ...] = ()
+    # ---- 左侧导航侧（有没有独立模块页、图标、悬停提示）----
+    nav: bool = False
+    nav_title: str = ""
+    nav_tooltip: str = ""
+    nav_icon: str = ""
+    #: 导航里的排位（**小的在前**；留空按 ``SPECS`` 的书写顺序兜底）。
+    #:
+    #: 为什么要它：``print``（PDF排版）是流程主链的第4 步，却要在导航里排到
+    #: **最后**——它吃的是前面几步的产物，"出书"这件事天然是收尾。改
+    #: ``SPECS`` 里两段的书写位置也能达到同样效果，但那是**流程顺序**的事实
+    #: 来源（``FLOW_STAGES`` 从它派生），为了导航顺序去动它等于把"导航怎么排"
+    #: 的意图藏进一个看不出因果的位置里；而且 ``imposition`` 在 ``SPECS`` 里本来
+    #: 就写在 ``print`` 之后（可选节点在主链之后），单纯对调书写位置还得再对调
+    #: 一次才走得通。显式声明排序意图更直白，也只影响导航这一条线。
+    nav_order: int = 0
+    # ---- 任务流程详情页的"这一步长什么样"（2026-10-03）----
+    #: 详情页**主动作按钮**文案。与 ``run_label``（独立模块页的按钮）**有意不同**：
+    #: 流程里点它跑的是"本步骤"这一环节，模块页点它跑的是整个功能。
+    run_button_text: str = "执行本步骤"
+    #: 有没有「分割图片」这类**次动作按钮**（目前只有检测文本框有：
+    #: 先检测出框、用户核对后再提交裁图）。
+    has_submit: bool = False
+    #: 右栏控制列的宽度区间（px）。第四步参数多，要更宽的编辑区。
+    control_width: tuple[int, int] = (340, 440)
+    #: 详情页**主预览控件**的属性名（←/→ 翻页、方向键导航都按它寻址）。
+    preview_attr: str = ""
+    #: 右栏「步骤专属区块」的名字（空 = 显示默认的「执行记录」）。detect 无表单
+    #: 参数、历史回填没用武之地，改显「检测结果统计」。页面按名字取控件。
+    panel_extra: str = ""
+    #: 历史回填（**手动挑历史 + 自动回填都**）要跳过的键。
+    history_skip: tuple[str, ...] = ()
+    #: **仅自动回填**额外跳过的键（手动挑历史仍原样回填）。
+    auto_fill_skip: tuple[str, ...] = ()
+    #: 进度计量的**单位**（"页"/"张"/空）。独立功能页的进度条按它写
+    #: "完成 12 页"这类收尾文案（``ProgressRow`` 的 ``noun``）。
+    #: ⚠️ 与 ``input_noun``（入口文件的称呼，"PDF"/"图片"）**不是一回事**：
+    #: 入口是 PDF、处理的是页；入口是图片、处理的是张。
+    progress_noun: str = ""
+
+    # ------------------------------------------------------------------ 面板
+    def panel_class(self):
+        """惰性取参数面板类（``None`` 表示这一步没有面板）。
+
+        ``panel`` 支持两种写法：
+
+        - ``"ExtractPanel"``：在 ``desktop.components.panels`` 里找（四个阶段
+          面板都在那儿，是绝大多数情况）；
+        - ``"desktop.components.imposition:ImpositionPanel"``：**指定模块**再找
+          ——拼版面板住在 ``desktop.components.imposition``，不在上面那个包里。
+        """
+        if not self.panel:
+            return None
+        import importlib
+
+        if ":" in self.panel:
+            module_name, class_name = self.panel.split(":", 1)
+        else:
+            module_name, class_name = "desktop.components.panels", self.panel
+        return getattr(importlib.import_module(module_name), class_name)
+
+    # ------------------------------------------------------------------ 入口
+    def suffixes(self) -> tuple[str, ...]:
+        """本步骤认的文件后缀（小写，含点）；从 ``file_filter`` 推导。
+
+        ⚠️ 故意**解析过滤串**而不是另写一份后缀表：两处一旦并存就一定会漂移
+        （用户看到的对话框按过滤串，拖拽判定却按另一份表）。
+        """
+        return tuple(s.lower() for s in _SUFFIX_RE.findall(self.file_filter or ""))
+
+    def input_noun(self) -> str:
+        """输入物的中文称呼（"PDF" / "图片"），由 ``pick_label`` 派生，用于提示语。"""
+        return self.pick_label.removeprefix("选择").strip() or "文件"
+
+    def accepts_path(self, path: Path | str) -> bool:
+        """这个路径能不能当源：目录看 ``accepts_dir``，文件看后缀。"""
+        path = Path(path)
+        if path.is_dir():
+            return self.accepts_dir
+        return path.suffix.lower() in self.suffixes()
+
+    def collect_files(self, paths) -> list[Path]:
+        """把一批路径展开成**文件清单**（给"要一批文件"的调用方，如拼图）。
+
+        与 :meth:`resolve_source` 的分工：那个把一堆路径收成**一个源**（文件
+        提取 / 去底色要的），这个把它们**摊平成一份清单**（拼图要的）。
+
+        - 文件：后缀对就留下；
+        - 目录：先取顶层的；顶层没有、但只有**一个**子目录装着 → 用那一层
+          （同 :meth:`resolve_source` 的下钻理由：提取模块的产物是
+          ``<输出根>/<PDF名>/images/``）；
+        - 结果去重并按**页序自然排序**（``utils.sort_utils.natural_sort_key``，
+          与 taskdetail 拼版 / 打印同口径）：页号按数值（``2`` < ``10``），
+          同页号 ``r`` 在 ``l`` 前，cover/menu 优先。拼版"前一页左半幅 +
+          当前页右半幅"的配对规则依赖这个稳定顺序——**不能用字典序**，
+          否则 ``page10`` 会排到 ``page2`` 前面、左右半幅配错对。
+        """
+        found: dict[str, Path] = {}
+        for raw in paths or []:
+            path = Path(raw)
+            if path.is_dir():
+                files = self.listing(path)
+                if not files:
+                    deeper = self.nested_listing(path)
+                    if len(deeper) == 1:
+                        files = self.listing(deeper[0])
+            elif path.is_file() and self.accepts_path(path):
+                files = [path]
+            else:
+                files = []
+            for file in files:
+                found.setdefault(str(file), file)
+        return sorted(found.values(), key=lambda p: natural_sort_key(p.name))
+
+    def listing(self, directory: Path | str) -> list[Path]:
+        """目录里符合本步骤后缀的文件（**只看顶层**，与功能层
+        ``collect_image_files`` / ``run_on_input_directory`` 同口径），
+        按**页序自然排序**（``utils.sort_utils.natural_sort_key``）。
+
+        ⚠️ 顺序有真实消费方：singletask 各页左栏缩略图条
+        （``ThumbSourceMixin._listing``）与 ``source_images()`` 都直接用
+        本方法的顺序——**不能用字典序**，否则缩略图条出现
+        "1, 10, 11, 2…"（2026-10-11 用户报障）。
+
+        读不了（不存在/没权限）时返回空表——调用方据此给"这里没有可用文件"。
+        """
+        directory = Path(directory)
+        try:
+            children = sorted(directory.iterdir(), key=lambda p: natural_sort_key(p.name))
+        except OSError:
+            return []
+        wanted = self.suffixes()
+        return [p for p in children if p.is_file() and p.suffix.lower() in wanted]
+
+    def nested_listing(self, directory: Path | str, max_depth: int = AUTO_DESCEND_DEPTH) -> list[Path]:
+        """在下面 1~``max_depth`` 层里找**装着本步骤文件的子目录**（广度优先）。
+
+        命中一层就停在该层——找到更浅的就不再往下挖，避免把"某一层唯一"误判成
+        "最深处唯一"。返回的是目录清单（不是文件），调用方按数量决定怎么办。
+        """
+        directory = Path(directory)
+        frontier = [directory]
+        for _ in range(max(0, max_depth)):
+            found: list[Path] = []
+            nxt: list[Path] = []
+            for current in frontier:
+                try:
+                    # ⚠️ 目录清单也按**自然序**（与 listing/collect_image_files
+                    #    同一把排序键）：字典序「第10课」会排在「第2课」前面，
+                    #    多个候选子目录时"选哪个/按什么顺序"就跟页序直觉相反。
+                    children = sorted(current.iterdir(),
+                                      key=lambda p: natural_sort_key(p.name))
+                except OSError:
+                    continue
+                for child in children:
+                    if not child.is_dir():
+                        continue
+                    (found if self.listing(child) else nxt).append(child)
+            if found:
+                return found
+            frontier = nxt
+            if not frontier:
+                break
+        return []
+
+    def resolve_source(self, paths) -> tuple[Path | None, str]:
+        """把用户给的一批路径**归一成"这一步的源"**（文件或目录）。
+
+        返回 ``(源, 说明)``：说明为空 = 顺利且无需交代；非空是一句给用户看的
+        话（可能是我替你选了哪一个，也可能是不接受的理由）。
+
+        规则（顺序即优先级）：
+
+        1. 混着文件夹进来时，只要 ``accepts_dir`` 就**取第一个文件夹当源**
+           （拖一个文件夹进来是最自然的批量用法）；**不接受目录的步骤直接
+           拒绝**（``accepts_dir=False``，如"PDF 只支持文件"的图片提取）——
+           别在这里"从文件夹里挑出符合后缀的文件"替用户做主：挑到哪几个、
+           为什么是这几个，用户在界面上看不见，而下一步的产物又依赖这个
+           选择，错了要等到看结果时才发现；
+        2. 文件夹**顶层没有**本步骤能用的文件时，往下钻一~两层（见
+           :meth:`nested_listing`）：恰好一个子目录装着 → 自动指向它并说明；
+           多个 → 拒绝并让用户挑一个（混着处理会把不同书的页拼在一起）；
+        3. 单个文件 → 它自己；
+        4. 多个文件 → 它们的**共同父目录**（批量语义就是"处理这个目录"）；
+           共同父目录不存在（跨盘）时退到第一个文件所在的目录；
+        5. 一件都不匹配 → ``(None, 理由)``。
+        """
+        candidates = [Path(p) for p in (paths or []) if str(p or "").strip()]
+        if not candidates:
+            return None, "没有收到任何文件或文件夹"
+
+        folders = [p for p in candidates if p.is_dir()]
+        files = [p for p in candidates if p.is_file()]
+
+        if folders and not self.accepts_dir:
+            names = "、".join(p.name for p in folders[:3])
+            more = "…" if len(folders) > 3 else ""
+            return None, (f"本步骤只支持{self.input_noun()}**文件**，不支持文件夹" f"（收到：{names}{more}）")
+
+        if folders and self.accepts_dir:
+            chosen = folders[0]
+            note = ""
+            if len(candidates) > 1:
+                note = f"已从 {len(candidates)} 个路径里选用文件夹「{chosen.name}」"
+            if not self.listing(chosen):
+                picked, deeper_note = self._descend_for_source(chosen)
+                if picked is None:
+                    return None, deeper_note
+                if picked != chosen:
+                    note = (note + "；" if note else "") + deeper_note
+                    chosen = picked
+            return chosen, note
+
+        if folders:
+            for folder in folders:
+                files.extend(self.listing(folder))
+
+        if not files:
+            if not any(p.exists() for p in candidates):
+                return None, "这些路径都不存在了，请重新选择"
+            return None, f"里面没有本步骤能用的{self.input_noun()}文件"
+
+        matched = [p for p in files if p.suffix.lower() in self.suffixes()]
+        if not matched:
+            return None, (f"这些文件不是本步骤支持的格式" f"（{'、'.join(self.suffixes())}）")
+        if len(matched) == 1:
+            note = "" if len(matched) == len(candidates) == 1 else (f"已选用「{matched[0].name}」")
+            return matched[0], note
+
+        parents = {p.parent for p in matched}
+        parent = parents.pop() if len(parents) == 1 else matched[0].parent
+        return parent, f"共 {len(matched)} 个文件，按目录「{parent.name}」批量处理"
+
+    def _descend_for_source(self, folder: Path) -> tuple[Path | None, str]:
+        """文件夹顶层没有可用文件时，决定要不要自动指向某个子目录。
+
+        返回 ``(源, 说明)``：``源`` 为 ``None`` 表示**不能用作源**，说明是
+        给用户看的理由（用户 2026-10-04：「如果导入的是目录，可以检测是否有
+        需要的图片或者文件，没有则可以提示」）。
+
+        ⚠️ **兜底从"放行"改成"当场拒绝"**（原先返回 ``folder`` 自己、
+        说明留空）：一个顶层空的、再往下两层也找不到本步骤文件的目录，
+        交给功能层的结果只是稍后一句"未找到图片"——那时源已经选上、输出目录
+        已经推好、预览已经空着，用户得自己回头猜是哪一步挑错了。当场说清
+        「这个目录里没有你要的图片文件」才是有用的反馈。
+        """
+        deeper = self.nested_listing(folder)
+        if len(deeper) == 1:
+            return deeper[0], (
+                f"「{folder.name}」里没有直接的{self.input_noun()}文件，" f"已自动指向子目录「{deeper[0].name}」"
+            )
+        if len(deeper) > 1:
+            names = "、".join(p.name for p in deeper[:3])
+            more = "…" if len(deeper) > 3 else ""
+            return None, (
+                f"「{folder.name}」下有 {len(deeper)} 个子目录各装着"
+                f"{self.input_noun()}文件（{names}{more}），"
+                "请直接把其中一个拖进来"
+            )
+        return None, (
+            f"「{folder.name}」里没有可用的{self.input_noun()}文件"
+            f"（本步骤只认 {'、'.join(self.suffixes())}，含下面两层子目录）"
+        )
+
+    # ------------------------------------------------------------------ 输出
+    def default_output(self, source: Path | None) -> Path | None:
+        """从源路径推出默认输出目录（源为空则返回 ``None``）。
+
+        规则（与三个模块改造前的行为逐字一致，改动会让老用户找不到产物）：
+
+        - 固定名（``output_name``）优先，放在源的**同级目录**下；
+        - 否则：源是目录 → ``<父目录>/<目录名><后缀>``；
+          源是文件 → ``<父目录>/<文件名去后缀><后缀>``。
+        """
+        if source is None:
+            return None
+        source = Path(source)
+        parent = source.parent
+        if self.output_name:
+            return parent / self.output_name
+        if source.is_dir():
+            return parent / (source.name + self.output_suffix)
+        return parent / (source.stem + self.output_suffix)
+
+    def accepts_files(self) -> bool:
+        """源可以是一批文件吗（多选 / 单选都算）。"""
+        return bool(self.file_filter)
+
+    def needs_source_pdf(self) -> bool:
+        """这一步**直接吃一个 PDF 文件**吗（判据是端口声明 ``inputs``）。
+
+        ⚠️ 别拿 ``input_noun()`` 判：它是给人看的称呼（"PDF" / "图片"），
+        而且四步里三步都写着"选择图片"——用称呼判会把去底色/PDF排版也算成
+        "需要源 PDF"，而它们吃的是**上游产出的页**，不是用户的文件。真正的
+        分界是端口：只有 ``extract`` 声明 ``inputs=("pdf",)``，其余都是
+        ``("pages", …)``。
+
+        创建页用它判断"流程需不需要一个源 PDF"（用户 2026-10-06：没上传时
+        要提醒用户确认），见``CreateTaskPage._flow_needs_source_pdf``。
+        """
+        return "pdf" in self.inputs
+
+    def run_text(self) -> str:
+        """执行按钮文案（``run_label`` 为空时回落到"开始 + 标题"）。"""
+        return self.run_label or f"开始{self.title}"
+
+    def progress_unit(self) -> str:
+        """进度计量的单位（``progress_noun`` 为空时回落到 ``input_noun``）。
+
+        给 :class:`~desktop.components.progress_row.ProgressRow` 用；回落到
+        ``input_noun`` 是为了"没显式声明也能说出个大概"，总比空着强。
+        """
+        return self.progress_noun or self.input_noun()
+
+    def short_name(self) -> str:
+        """流程步骤条上的短名（``short`` 为空时用 ``stage_name()``）。"""
+        return self.short or self.stage_name()
+
+    def stage_name(self) -> str:
+        """流程步骤条上的名字（``stage_title`` 为空时用 ``title``）。
+
+        ⚠️ 与 ``title``（模块页头/导航）**有意分开**：见类 docstring 的文案表。
+        """
+        return self.stage_title or self.title
+
+    def nav_tip(self) -> str:
+        """导航条目悬停提示（``nav_tooltip`` 为空时用 ``subtitle``）。"""
+        return self.nav_tooltip or self.subtitle
+
+    def nav_name(self) -> str:
+        """左侧导航条目上的名字（``nav_title`` 为空时用 ``title``）。
+
+        ⚠️ 与 ``title`` **有意分开**（同 :attr:`stage_title` 与 ``title`` 的
+        道理）：导航那一列是"这一步做什么"的**短标签**，页头是完整标题，
+        两处可以各说各的。用户 2026-10-03 就导航文案提过一轮（"图片提取"
+        → "PDF/DjVu提取" 等），只改这里不会连带改掉页头与流程条。
+        """
+        return self.nav_title or self.title
+
+    def disk_key(self) -> str:
+        """``singletask/`` 下这个独立功能的**目录名**（缓存/手改件的归属）。
+
+        ⚠️ **不是** ``title`` 也不是 ``nav_title``：这两者都是会随文案需求改的
+        人类可读名字，而这里是**已经在磁盘上存在的路径**。``singletask/`` 里
+        已经躺着按旧标题建的目录（``去底色`` / ``图片提取`` / ``拼图`` /
+        ``检测文本框`` / ``生成 PDF``），其中 ``拼图/edited/`` 存着用户手改过
+        的版面图——标题一改，这些缓存与手改件就再也找不到了（表现是"我明明
+        改过版面，重新打开又变回原样"）。
+
+        所以这里锚在 ``key`` 上（步骤的唯一路由键，改名不会动它）。改动此值
+        等于换一整个独立功能目录，**必须**先做旧目录迁移。
+        """
+        return self.key
+
+    # ------------------------------------------------------------------ 文案
+    def drop_title_text(self) -> str:
+        """大输入区空态的标题（``drop_title`` 为空时兜底）。"""
+        return self.drop_title or f"把{self.input_noun()}拖到这里"
+
+    def drop_hint_text(self) -> str:
+        """大输入区空态的提示行（``drop_hint`` 为空时按能否选目录兜底）。"""
+        if self.drop_hint:
+            return self.drop_hint
+        tail = "（文件或文件夹都行）" if self.accepts_dir else ""
+        return f"也可以点这里选{self.input_noun()}{tail}"
+
+    def summary(self) -> str:
+        """一行可读描述（日志/自测用，别拿它做判断）。"""
+        kind = "目录或文件" if self.accepts_dir else "文件"
+        return f"{self.title}（{self.command or '纯函数'} ← {kind} → 目录）"

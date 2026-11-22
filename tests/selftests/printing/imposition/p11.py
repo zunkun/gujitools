@@ -285,7 +285,8 @@ def run(st: Any) -> None:
         / "desktop"
         / "components"
         / "imposition"
-        / "canvas.py"
+        / "canvas"
+        / "interaction.py"
     ).read_text(encoding="utf-8")
     wheel_src = wheel_src[
         wheel_src.index("def wheelEvent") : wheel_src.index("def _zoom_at")

@@ -37,7 +37,7 @@ def run(ctx) -> None:
     ok("desktop/ui/help_dialog.py 存在", help_dialog_py.exists(), str(help_dialog_py))
 
     # 任务列表页 PageHeader 必须接出按钮
-    tasklist_page = root / "desktop" / "pages" / "tasklist" / "page.py"
+    tasklist_page = root / "desktop" / "pages" / "tasklist" / "page" / "view.py"
     ok("任务列表页存在", tasklist_page.exists(), str(tasklist_page))
     if tasklist_page.exists():
         page_src = tasklist_page.read_text(encoding="utf-8")

@@ -125,9 +125,10 @@ def run(ctx) -> None:
     ok("重渲不留 .part", not list(out_dir.glob("*.part")))
 
     # ---- 5. 回归形态 ----
-    canvas = code_of("desktop/components/viewers/print_layout_canvas.py")
+    canvas = code_of("desktop/components/viewers/print_layout_canvas/mouse.py")
     ok("版面画布提供 flush_pending（补发未松手的拖动）", "def flush_pending(self)" in canvas)
-    page = code_of("desktop/pages/taskdetail/page.py")
+    page = code_of("desktop/pages/taskdetail/page/lifecycle.py") + code_of(
+        "desktop/pages/taskdetail/page/stage_switch.py")
     ok("关窗口前补发未提交的版面改动", "flush_layout_pending()" in page)
     ok("切步骤前也补发", "self.flush_layout_pending()" in page)
     init_code = code_of("functions/init.py")
@@ -136,14 +137,14 @@ def run(ctx) -> None:
        "模板文件未找到" in init_code and "模板文件无法解析" in init_code)
     ok("init 写配置是原子的（不留半截覆盖用户配置）",
        "replace_with_retry(tmp, target)" in init_code)
-    extract = code_of("utils/pdf_extract.py")
+    extract = code_of("utils/pdf_extract/quick.py")
     ok("extract 快路径的图片落盘改成原子写",
        "write_bytes_atomic(img_path" in extract)
     thumbs = code_of("desktop/workers/source_thumbnails_worker.py")
     ok("缩略图落盘改成原子写", "write_bytes_atomic(target, data)" in thumbs)
-    preview = code_of("desktop/workers/preview_worker.py")
+    preview = code_of("desktop/workers/preview_worker/worker.py")
     ok("预览缓存落盘改成原子写", "write_bytes_atomic(cache_file, data)" in preview)
-    tasks = code_of("desktop/store/tasks.py")
+    tasks = code_of("desktop/store/tasks/records.py")
     ok("取号改为 mkdir(exist_ok=False) 原子占号 + 抢不到就顺延",
        "mkdir(parents=True, exist_ok=False)" in tasks and "except FileExistsError" in tasks,
        "找不到原子占号")

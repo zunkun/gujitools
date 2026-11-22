@@ -134,7 +134,7 @@ def run(ctx) -> None:
     stage = code_of("desktop/stages/print_stage.py")
     ok("print_stage 不再用 TemporaryDirectory（kill 时清不掉）",
        "TemporaryDirectory" not in stage and "sweep_orphan_staging" in stage)
-    runner = code_of("desktop/pages/taskdetail/runner.py")
+    runner = code_of("desktop/pages/taskdetail/runner/process_io.py")
     ok("取消阶段时顺手回收暂存目录", "sweep_orphan_staging()" in runner)
     # ⚠️ 2026-10-02：看门狗（含"无进展预警"）已从详情页抽到共用步骤组件层
     #    desktop/steps/process.py 的 StageProcess —— 详情页只接它的信号。
@@ -144,14 +144,14 @@ def run(ctx) -> None:
     ok("看门狗有无进展预警（不是只能干等）",
        "_warn_if_stalled" in transport and "STALL_WARN_S" in transport)
     ok("worker 有输出会重置无进展计时", "_last_event_at = time.time()" in transport)
-    preview = code_of("desktop/workers/preview_worker.py")
+    preview = code_of("desktop/workers/preview_worker/worker.py")
     ok("PreviewWorker 有 cancel() 且渲染循环会检查它",
        "def cancel(self)" in preview and "if self._cancelled:" in preview)
     host = code_of("desktop/workers/worker_host.py")
     ok("收尾时先给 worker 发 cancel() 再等", "cancel()" in host and "stop_thread(" in host)
     queue_code = code_of("desktop/workers/serial_jobs.py")
     ok("队列支持按 tag 取消", "def cancel_tag(" in queue_code)
-    page = code_of("desktop/pages/tasklist/page.py")
+    page = code_of("desktop/pages/tasklist/page/importing.py")
     ok("删任务前先停该任务自己的后台导入", "cancel_tag(task_id" in page)
     ok("导入提交时带上归属 tag", "tag=task_id" in page)
     worker = code_of("desktop/workers/source_thumbnails_worker.py")

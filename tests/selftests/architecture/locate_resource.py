@@ -239,15 +239,22 @@ def run(ctx) -> None:
     from desktop.modules.imposition import page as module_imposition
 
     # 独立页的方法名以实际为准，这里只查文件文本，避免把断言绑死在方法名上
-    module_text = Path(module_imposition.__file__).read_text(encoding="utf-8")
+    # （page 已拆成子包：取包内全部源码拼起来查）
+    module_dir = Path(module_imposition.__file__).resolve().parent
+    module_text = "\n".join(
+        p.read_text(encoding="utf-8") for p in sorted(module_dir.glob("*.py"))
+    )
     ok("独立拼版页：单张原图与整页组合都带 locate_path",
        module_text.count("locate_path=path") >= 1
        and "locate_path=locate_path" in module_text,
        "独立页的定位入口不全")
 
     # ⚠️ 任务流程的拼版画布必须**挂上成品解析器**（不挂就退到源图，用户报过）
+    # imposition_layout 现为子包：``__file__`` 指向包内 __init__.py，上跳两级才是
+    # 本目录；view.py 也已拆成 ``view/`` 子包，画布接线在 ``view/previews.py``。
     view_src = (
-        Path(imposition_layout.__file__).parent / "view.py"
+        Path(imposition_layout.__file__).resolve().parent.parent
+        / "view" / "previews.py"
     ).read_text(encoding="utf-8")
     ok("任务流程·拼版画布挂了「定位成品」解析器",
        "set_locate_resolver" in view_src

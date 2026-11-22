@@ -61,7 +61,8 @@ def run(ctx) -> None:
     units = text_of("utils/units.py")
     ok("默认 DPI 在 utils/units.py 定义", "DEFAULT_RENDER_DPI = 300" in units)
     for rel in ("core/command_spec.py", "functions/extract.py",
-                "desktop/stages/generic_stage.py", "utils/pdf_extract.py"):
+                "desktop/stages/generic_stage.py",
+                "utils/pdf_extract/constants.py"):
         code = text_of(rel)
         ok(f"{rel} 引用 DEFAULT_RENDER_DPI（不裸写 300）",
            "DEFAULT_RENDER_DPI" in code and "or 300" not in code)

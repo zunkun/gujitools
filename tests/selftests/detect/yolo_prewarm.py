@@ -136,8 +136,10 @@ def run(ctx) -> None:
        'os.environ.get("GUJI_GUI_SELFTEST")' in app_src)
 
     # ---- 7. 源码护栏：服务侧的让出 CPU 与升回 ----
-    ys_src = (ROOT / "functions" / "yolo_service.py").read_text(
-        encoding="utf-8")
+    ys_src = "\n".join(
+        p.read_text(encoding="utf-8")
+        for p in sorted((ROOT / "functions" / "yolo_service").glob("*.py"))
+    )
     tree = ast.parse(ys_src)
     warm = next(n for n in ast.walk(tree)
                 if isinstance(n, ast.FunctionDef)

@@ -39,7 +39,7 @@ _FILE_TO_COMMAND = {
     "crop.py": "crop",
     "rembg.py": "rembg",
     "crop_remove.py": "cropremove",
-    "print.py": "print",
+    "print/execute.py": "print",
 }
 
 #: 允许与命令规格不一致的键（**登记在案**，想加请先写理由）。

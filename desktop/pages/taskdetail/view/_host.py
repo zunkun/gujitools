@@ -1,0 +1,149 @@
+# -*- coding: utf-8 -*-
+"""``DetailViewMixin`` 拆分后的宿主成员面——仅供类型检查，运行期从不加载。
+
+拆分后每个 Mixin 都是独立类，类型检查器看不到兄弟 Mixin / 宿主页面上的
+成员。这里集中声明一次，各 Mixin 在**类型检查期**以 ``DetailViewHost`` 为
+基类继承进来，运行期退化成 ``object``（MRO 与行为零改动）。
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+
+class DetailViewHost:
+    """宿主 TaskDetailPage（或同级 Mixin）提供的属性/方法面。"""
+
+    rename_edit: Any
+    detail_title: Any
+    task_no_label: Any
+    source_label: Any
+    source_warning: Any
+    back_button: Any
+    rename_button: Any
+    flow_button: Any
+    aggregate_refresh_button: Any
+    source_button: Any
+    insert_button: Any
+    insert_dir_button: Any
+    header_card: Any
+    step_bar: Any
+    _step_bar_slots: Any
+    _step_bar_row: Any
+    _root_layout: Any
+    log_panel: Any
+    log_view: Any
+    task_dir_button: Any
+    preview_stack: Any
+    extract_result_viewer: Any
+    extract_viewer_host: Any
+    extract_input_viewer: Any
+    detect_viewer: Any
+    rembg_viewer: Any
+    rembg_viewer_host: Any
+    print_preview: Any
+    imposition_view: Any
+    imposition_panel: Any
+    imposition_enabled_checkbox: Any
+    imposition_panel_status: Any
+    control_stack: Any
+    control_widget: Any
+    detect_stats: Any
+    stage_status: Any
+    stage_progress: Any
+    history_block: Any
+    history_caption: Any
+    history_combo: Any
+    run_button: Any
+    submit_button: Any
+    submit_hint: Any
+    action_row: Any
+    download_print_button: Any
+    download_row: Any
+    yolo_export_button: Any
+    yolo_export_card: Any
+    _pending_source_stem: Any
+    _pending_print_border: Any
+    _pending_print_reset: Any
+    _print_preview_timer: Any
+    _print_dirty: Any
+    _print_source_stale: Any
+    _print_data_stale: Any
+    _detect_boxes_editable: Any
+    store: Any
+    task_id: Any
+    process: Any
+    detect_process: Any
+    _toast: Any
+    _update_run_buttons: Any
+    _on_back: Any
+    _on_show_flow: Any
+    _on_pick_source: Any
+    _open_task_dir: Any
+    insert_pages: Any
+    insert_pages_from_folder: Any
+    flow_slots: Any
+    _select_stage: Any
+    bar_index_of_step: Any
+    node_display_suffix: Any
+    _rebuild_node_index: Any
+    current_stage: Any
+    panel_host_of_step: Any
+    _pdf_page_count_ready: Any
+    _page_thumb_for: Any
+    _warm_entry_thumbs: Any
+    _image_selected: Any
+    delete_selected_page: Any
+    _original_image_size: Any
+    _detect_image_selected: Any
+    _save_manual_boxes: Any
+    _on_page_image_saved: Any
+    _on_single_extract_saved: Any
+    _extract_params: Any
+    _print_thumb_provider: Any
+    _save_print_order: Any
+    _manage_print_images: Any
+    _insert_print_images: Any
+    _download_print_pdf: Any
+    _export_print_image: Any
+    _on_export_finished: Any
+    _on_export_failed: Any
+    _on_print_finished: Any
+    _on_print_failed: Any
+    _goto_stats_page: Any
+    _set_selected_box_kind: Any
+    _delete_selected_box: Any
+    _on_box_selection_changed: Any
+    _on_box_edit_rejected: Any
+    _on_box_too_small: Any
+    _on_detect_mode_changed: Any
+    _on_reuse_prev_changed: Any
+    _detect_manual: Any
+    export_yolo_labels: Any
+    _wire_yolo_export_card: Any
+    _refresh_reference_boxes: Any
+    _update_submit_button: Any
+    _refresh_imposition_node: Any
+    _on_history_selected: Any
+    run_stage: Any
+    run_submit: Any
+    _set_stage_status: Any
+    _on_imposition_page_selected: Any
+    _on_imposition_add_requested: Any
+    _on_imposition_page_reorder: Any
+    _on_imposition_release_page: Any
+    _on_imposition_batch_delete: Any
+    _on_imposition_items_changed: Any
+    _on_imposition_slot_selected: Any
+    _open_imposition_item_preview: Any
+    _open_imposition_spread_preview: Any
+    _imposition_locate_targets: Any
+    _open_imposition_item_edit: Any
+    _open_imposition_spread_edit: Any
+    _on_imposition_enabled_toggled: Any
+    _on_imposition_whole_rotate: Any
+    _on_imposition_item_rotate: Any
+    _on_imposition_reset_layout: Any
+    _on_imposition_add_image: Any
+    _on_imposition_delete_item: Any
+    _on_imposition_clear: Any

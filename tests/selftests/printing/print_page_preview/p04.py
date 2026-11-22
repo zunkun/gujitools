@@ -221,7 +221,7 @@ def run(st: Any) -> None:
         ROOT / "desktop/stages/print_stage.py"
     ).read_text(encoding="utf-8")
     func_text = (
-        ROOT / "functions/print.py"
+        ROOT / "functions/print/execute.py"
     ).read_text(encoding="utf-8")
     ok("合成阶段不发 progress（否则进度条会先跑完再跳回 0 重跑）",
        '"type": "progress"' not in stage_text, "")
@@ -373,10 +373,10 @@ def run(st: Any) -> None:
         stale.deleteLater()
     ok("详情页接了 ←/→ 键盘处理（第四步翻页，输入类控件不抢）",
        "def keyPressEvent" in (ROOT
-                               / "desktop/pages/taskdetail/page.py").read_text(
+                               / "desktop/pages/taskdetail/page/widget.py").read_text(
                                    encoding="utf-8")
        and "_arrow_free_to_navigate" in (ROOT
-                                         / "desktop/pages/taskdetail/page.py").read_text(
+                                         / "desktop/pages/taskdetail/page/widget.py").read_text(
                                              encoding="utf-8"), "")
     # ⚠️ 点击预览大图（QLabel 不收焦点）后焦点落在**主窗口本身**——按键只会
     # 到 MainWindow.keyPressEvent，不转发的话用户点完图片按左右毫无反应
@@ -387,7 +387,7 @@ def run(st: Any) -> None:
     #    ``navigate_by_arrow``）：主窗口只负责"把键交给壳层"，两条断言要一起看，
     #    否则搬完家这条护栏会误报。
     shell_src = (ROOT
-                 / "desktop/shell.py").read_text(encoding="utf-8")
+                 / "desktop/shell/widget.py").read_text(encoding="utf-8")
     ok("主窗口把 ←/→ 转发给详情页（点击预览图后焦点落在主窗口）",
        "def keyPressEvent" in app_src and "self.shell.keyPressEvent" in app_src
        and "navigate_by_arrow" in shell_src, "")

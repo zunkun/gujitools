@@ -136,13 +136,12 @@ class _DropArea(QWidget):
         if not self._files:
             painter.setPen(QColor(T.INK_SOFT))
             painter.drawText(
-                rect, Qt.AlignmentFlag.AlignCenter,
+                rect,
+                Qt.AlignmentFlag.AlignCenter,
                 "把图片拖到这里\n或点击选择图片",
             )
             return
-        inner = rect.adjusted(
-            self.PADDING, self.PADDING, -self.PADDING, -self.PADDING
-        )
+        inner = rect.adjusted(self.PADDING, self.PADDING, -self.PADDING, -self.PADDING)
         step_x = self.CELL_SIZE.width() + T.SPACE_MD
         step_y = self.CELL_SIZE.height() + T.SPACE_MD
         cols = max(1, (inner.width() + T.SPACE_MD) // step_x)
@@ -177,9 +176,7 @@ class _DropArea(QWidget):
             size = reader.size()
             if size.isValid():
                 reader.setScaledSize(
-                    size.scaled(
-                        self.CELL_SIZE, Qt.AspectRatioMode.KeepAspectRatio
-                    )
+                    size.scaled(self.CELL_SIZE, Qt.AspectRatioMode.KeepAspectRatio)
                 )
             image = reader.read()
             if not image.isNull():
@@ -217,8 +214,9 @@ class _DropArea(QWidget):
         self.files_dropped.emit(paths)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802
-        if (event.button() == Qt.MouseButton.LeftButton
-                and self.rect().contains(event.position().toPoint())):
+        if event.button() == Qt.MouseButton.LeftButton and self.rect().contains(
+            event.position().toPoint()
+        ):
             self.clicked.emit()
 
 
@@ -253,9 +251,7 @@ class PrintInsertPanel(QWidget):
 
         # ⚠️ 页签顺序（用户 2026-11-01）：**上传图片在前、删除恢复在后**，
         #    默认停在第一个页签（上传）。
-        self.toggle = SegmentedToggle(
-            [("upload", "上传图片"), ("restore", "删除恢复")]
-        )
+        self.toggle = SegmentedToggle([("upload", "上传图片"), ("restore", "删除恢复")])
         self.toggle.setFixedWidth(320)
         self.toggle.current_changed.connect(self._set_page)
         root.addWidget(self.toggle, 0, Qt.AlignmentFlag.AlignLeft)
@@ -388,7 +384,8 @@ class PrintInsertPanel(QWidget):
         count = len(self.drop_area.files())
         self.upload_hint.setText(
             f"已选择 {count} 张图片。"
-            if count else "尚未选择图片（也可以直接把图片拖进上方虚线框）。"
+            if count
+            else "尚未选择图片（也可以直接把图片拖进上方虚线框）。"
         )
 
     # ------------------------------------------------------------- 落点选项
@@ -408,8 +405,9 @@ class PrintInsertPanel(QWidget):
         page_no = min(max(self.current_row, 0) + 1, self.total)
         self.before_radio = RadioButton(f"插入第 {page_no} 页之前", row)
         self.after_radio = RadioButton(f"插入第 {page_no} 页之后", row)
-        (self.before_radio if default_position == "before"
-         else self.after_radio).setChecked(True)
+        (
+            self.before_radio if default_position == "before" else self.after_radio
+        ).setChecked(True)
         layout.addWidget(self.before_radio)
         layout.addWidget(self.after_radio)
         layout.addStretch()
@@ -422,16 +420,12 @@ class PrintInsertPanel(QWidget):
         if self._deleted and self.restore_list is not None:
             for row in range(self.restore_list.count()):
                 item = self.restore_list.item(row)
-                if (
-                    item.checkState() == Qt.CheckState.Checked
-                    and row < len(self._deleted)
+                if item.checkState() == Qt.CheckState.Checked and row < len(
+                    self._deleted
                 ):
                     restored.append(dict(self._deleted[row]))
         position = "after"
-        if (
-            self.before_radio is not None
-            and self.before_radio.isChecked()
-        ):
+        if self.before_radio is not None and self.before_radio.isChecked():
             position = "before"
         return {
             "position": position,
@@ -456,7 +450,8 @@ class PrintInsertPanel(QWidget):
             if size.isValid():
                 reader.setScaledSize(
                     size.scaled(
-                        self.THUMB_SIZE, Qt.AspectRatioMode.KeepAspectRatio,
+                        self.THUMB_SIZE,
+                        Qt.AspectRatioMode.KeepAspectRatio,
                     )
                 )
             image = reader.read()

@@ -321,20 +321,34 @@ def run(ctx) -> None:
 
     # ---- 7. 「独立」：模块之间、模块与详情页之间不许有 import 依赖 ----
     root = Path(__file__).resolve().parents[3]
-    page_files = sorted((root / _MODULES_DIR).glob("*/page.py"))
+    # 模块页可以是单文件 ``<key>/page.py``，也可以是子包 ``<key>/page/*.py``
+    # （2026-11-22 起 detect / imposition 拆成子包）：子包内**每个文件**都要
+    # 检查，不能只看 ``__init__``。
+    page_sources: list[tuple[str, Path]] = []
+    for module_dir in sorted((root / _MODULES_DIR).iterdir()):
+        if not module_dir.is_dir():
+            continue
+        single = module_dir / "page.py"
+        if single.is_file():
+            page_sources.append((module_dir.name, single))
+            continue
+        package_dir = module_dir / "page"
+        if package_dir.is_dir():
+            for file in sorted(package_dir.glob("*.py")):
+                page_sources.append((module_dir.name, file))
+    page_modules = {name for name, _file in page_sources}
     # ⚠️ 数量跟着注册表走：不写死 3/4，"加一个模块"不该让这条测试变红。
     ok("每个注册条目都有对应的模块页源码",
-       len(page_files) == len(MODULES), f"{len(page_files)} 个页面 vs {len(MODULES)} 个条目")
+       len(page_modules) == len(MODULES), f"{len(page_modules)} 个页面 vs {len(MODULES)} 个条目")
     ok("模块页目录名与注册 key 一一对应",
-       {f.parent.name for f in page_files} == set(keys),
-       str(sorted({f.parent.name for f in page_files} ^ set(keys))))
-    module_pkgs = {f.parent.name for f in page_files}
+       page_modules == set(keys),
+       str(sorted(page_modules ^ set(keys))))
     forbidden = {"desktop.pages.taskdetail"} | {
-        f"desktop.modules.{name}" for name in module_pkgs
+        f"desktop.modules.{name}" for name in page_modules
     }
-    for file in page_files:
+    for name, file in page_sources:
         imported = _imported_modules(file.read_text(encoding="utf-8"))
-        own_pkg = f"desktop.modules.{file.parent.name}"
+        own_pkg = f"desktop.modules.{name}"
         clashes = sorted(
             entry
             for entry in imported
@@ -342,10 +356,15 @@ def run(ctx) -> None:
             # 自己 import 自己包内的子模块是允许的（__init__ 的惰性导出）
             and not entry.startswith(own_pkg)
         )
-        ok(f"{file.parent.name}/page.py 无跨模块/详情页依赖", not clashes, str(clashes))
+        ok(f"{file.relative_to(root / _MODULES_DIR)} 无跨模块/详情页依赖",
+           not clashes, str(clashes))
 
     # ---- 8. 壳层也不许静态 import 具体模块页 ----
-    shell_src = (root / "desktop" / "shell.py").read_text(encoding="utf-8")
+    # 壳层已拆成子包（desktop/shell/*.py），逐个文件一起检查。
+    shell_src = "\n".join(
+        f.read_text(encoding="utf-8")
+        for f in sorted((root / "desktop" / "shell").glob("*.py"))
+    )
     shell_imports = _imported_modules(shell_src)
     bad = sorted(
         entry for entry in shell_imports

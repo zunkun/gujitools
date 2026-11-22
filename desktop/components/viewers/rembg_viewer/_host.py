@@ -45,6 +45,7 @@ class RembgViewerHost(QWidget, ThumbsMixin, ZoomPopupMixin):
     _page_width_provider: Any
     _paths: Any
     _border_provider: Any
+    _buffers_released: Any
     _rembg_dir: Any
     _preview_dir: Any
     _single_column_book: Any
@@ -163,4 +164,16 @@ class RembgViewerHost(QWidget, ThumbsMixin, ZoomPopupMixin):
         ...
 
     def show_live_pending(self) -> None:
+        ...
+
+    def release_buffers(self) -> None:
+        ...
+
+    def restore_buffers(self) -> None:
+        ...
+
+    def set_preview_dir(self, path: Path | None) -> None:
+        ...
+
+    def clear_preview_dir(self) -> None:
         ...

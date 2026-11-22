@@ -4,7 +4,7 @@
 
 通用工具函数：几何、排序、图像 IO、PDF、YOLO
 
-覆盖 33 个模块、25 个公开类、231 个公开函数/方法（生成于 2026-11-22）。
+覆盖 43 个模块、25 个公开类、231 个公开函数/方法（生成于 2026-11-22）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -31,10 +31,20 @@
 | [`utils.image_io`](#utilsimage_io) | 0 | 2 |
 | [`utils.image_utils`](#utilsimage_utils) | 0 | 8 |
 | [`utils.margin_utils`](#utilsmargin_utils) | 0 | 2 |
-| [`utils.page_layout`](#utilspage_layout) | 2 | 17 |
+| [`utils.page_layout.constants`](#utilspage_layoutconstants) | 0 | 0 |
+| [`utils.page_layout.nodes`](#utilspage_layoutnodes) | 0 | 3 |
+| [`utils.page_layout.paper`](#utilspage_layoutpaper) | 0 | 2 |
+| [`utils.page_layout.plan`](#utilspage_layoutplan) | 0 | 2 |
+| [`utils.page_layout.rotation`](#utilspage_layoutrotation) | 0 | 3 |
+| [`utils.page_layout.spec`](#utilspage_layoutspec) | 2 | 0 |
+| [`utils.page_layout.vertical`](#utilspage_layoutvertical) | 0 | 7 |
 | [`utils.path_utils`](#utilspath_utils) | 0 | 3 |
 | [`utils.pdf_draw`](#utilspdf_draw) | 1 | 9 |
-| [`utils.pdf_extract`](#utilspdf_extract) | 0 | 13 |
+| [`utils.pdf_extract.constants`](#utilspdf_extractconstants) | 0 | 0 |
+| [`utils.pdf_extract.djvu`](#utilspdf_extractdjvu) | 0 | 1 |
+| [`utils.pdf_extract.extract`](#utilspdf_extractextract) | 0 | 6 |
+| [`utils.pdf_extract.pages`](#utilspdf_extractpages) | 0 | 5 |
+| [`utils.pdf_extract.render`](#utilspdf_extractrender) | 0 | 1 |
 | [`utils.pdf_stream`](#utilspdf_stream) | 1 | 2 |
 | [`utils.proc_job`](#utilsproc_job) | 0 | 5 |
 | [`utils.proc_utils`](#utilsproc_utils) | 0 | 1 |
@@ -2225,56 +2235,11 @@ utils.pdf_utils.parse_margins（已废弃）、desktop 面板 parse_margin4）�
 
 ---
 
-## `utils.page_layout`
+## `utils.page_layout.constants`
 
-源码：[`utils/page_layout.py`](../../utils/page_layout.py)
+源码：[`utils/page_layout/constants.py`](../../utils/page_layout/constants.py)
 
-print 页面排版的几何规则（纯计算，不依赖 cv2 / Qt / fpdf）。
-
-**这里是被 `functions/print.py`（生成 PDF）与 desktop 第四步「打印效果
-预览」共用的唯一事实来源**——两处若各写一份公式，预览就会和成品悄悄
-漂移（用户按预览调好边距，生成的 PDF 却不一样，最难排查）。
-
-只算几何，不画图：
-- CLI/desktop 拿到 `PrintPagePlan` 后各自用 fpdf / QPainter 渲染；
-- 坐标单位统一为 **毫米**，与 fpdf 的 `unit="mm"` 一致；
-- 输入图片尺寸为**像素**，换算只发生在"图片放进可用区"这一步
-  （scale = mm/px，与 print.py 里的算法逐字等价）。
-
-历史坑：`text_margin`（图片左右额外留白，给竖排标题/页码让位）原先是
-print.py 里的裸字面量 `8.0`，现在提为 `TEXT_MARGIN_MM`。
-
-竖排里的拉丁字符（`vertical_runs` / `vertical_extent_mm`）：
-- 汉字等宽字符**一字一格**；ASCII 可打印字符连成一段**整体旋转 90°**，
-  按竖排惯例（如「呵呵Happiness」）而不是把 9 个字母各占一格；
-- 分段规则只在本模块定义，`functions/print.py`（fpdf）与 desktop 预览
-  （QPainter）都调它，不会出现"预览排一版、成品排另一版"。
-
-标题/页码的「距页边」（`title_margins` / `page_number_margins`）：
-- 语义是**距纸张边界**的绝对距离（mm），不再由 page_margins 推导；
-- 用与 `page_margins` 同一套 CSS 简写（1/2/3/4 值 → 上,右,下,左），
-  所以「左页取左值、右页取右值」天然可以不一样；
-- ⚠️ 横向的口径是**文字轮廓边缘**到纸边，不是落点/字格到纸边：
-  文字从落点 x 往右画，所以**右页**要把落点再往左退一个文字宽度
-  （`text_block_width_mm`：竖排 = 一个字宽，横排 = 整串宽），
-  这样右页的**轮廓右缘**才正好离右纸边 `右` 值。不退的话右页空白会比
-  左页多一个字宽（写 10mm 实得 10mm+字宽），左右看着不对称。
-  左页不需要退——轮廓左缘就是落点。
-- ⚠️ 四值里有**两个永远读不到**：上方文字（标题）只取「上」、下方文字
-  （页码）只取「下」（见 `_text_anchor` 的 `is_top` 分支）。桌面端因此
-  只摆用得上的两个分量、分两行（第一行「左右边距：」一个值管两边、第二行
-  「上边距：」/「下边距：」，见
-  `desktop.components.panels.print_form.PrintFormMixin.INSET_VISIBLE`），
-  并按键把四值补全后导出（`_inset_values`）——但**参数契约仍是四元素**，
-  命令行/YAML 照旧写四值；
-- 不填（None）时**完全回落到旧行为**（左页 ml/2、右页 mr-6、上下 2mm），
-  老任务的输出一个像素都不会变；
-- ⚠️ **填了之后图片不再收窄**：用户填的是"文字离纸边多远"，就按这个距离画，
-  **允许文字压在图片上**（用户明确要求取消"自动避让图片"这个限制）。
-  图片左右始终只留固定的 `TEXT_MARGIN_MM`——那是「距页边」留空时竖排
-  标题/页码的默认落点所在，也是老任务输出的既定几何。
-  历史：这里曾经按「距页边 + 字宽」把图片收窄（`text_reserve_mm`），
-  结果用户设一个 10mm 的左距就把图缩掉一大圈，且判定口径很难解释。
+print 页面排版的常量：留白修正量、页码样式、纸张表、竖排比例。
 
 ### 模块常量
 
@@ -2289,6 +2254,146 @@ print.py 里的裸字面量 `8.0`，现在提为 `TEXT_MARGIN_MM`。
 | LATIN_ADVANCE_RATIO | `0.55` |
 | DEFAULT_ASCENT_RATIO | `0.86` |
 | DEFAULT_DESCENT_RATIO | `0.14` |
+
+---
+
+## `utils.page_layout.nodes`
+
+源码：[`utils/page_layout/nodes.py`](../../utils/page_layout/nodes.py)
+
+页名解析、标题切换节点与逐页左右侧。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `image_name_parts(path) -> Tuple[Optional[int], Optional[str]]` | 解析数字页名，返回 (页名数字, side)；side 可能为空。 |
+| `resolve_title_nodes(image_files: Sequence, title_switch_nodes: Sequence) -> List[Tuple[int, Tuple[str, str]]]` | 把配置里的 [页名, 标题, side] 解析为「图片下标 → (标题, 侧别)」。 |
+| `sides_for_pages(total: int, sorted_nodes: Sequence, page_number_start_page: int) -> List[str]` | 逐页给出标题/页码所在侧（left / right）。 |
+
+#### `resolve_title_nodes(image_files: Sequence, title_switch_nodes: Sequence) -> List[Tuple[int, Tuple[str, str]]]`
+
+把配置里的 [页名, 标题, side] 解析为「图片下标 → (标题, 侧别)」。
+
+``页名`` 是**原始页码**（如 ``5`` / ``5-r``），不是列表下标——用户填
+「15」想的是原书第 15 页，即使该页被拖到别处，标题切换仍要跟着它。
+
+#### `sides_for_pages(total: int, sorted_nodes: Sequence, page_number_start_page: int) -> List[str]`
+
+逐页给出标题/页码所在侧（left / right）。
+
+从起始标注页（或最近的章节节点）开始按图片序号交替左右。
+
+---
+
+## `utils.page_layout.paper`
+
+源码：[`utils/page_layout/paper.py`](../../utils/page_layout/paper.py)
+
+纸张尺寸解析。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `paper_size_mm(paper_size: str) -> Tuple[float, float]` | 纸张名 → (短边, 长边) 毫米；非法纸张抛 ValueError。 |
+| `print_page_size_mm(paper_size: str, orientation: str) -> Tuple[float, float]` | 纸张 + 方向 → (页宽, 页高) 毫米。 |
+
+#### `print_page_size_mm(paper_size: str, orientation: str) -> Tuple[float, float]`
+
+纸张 + 方向 → (页宽, 页高) 毫米。
+
+方向同时接受 fpdf 的 "P"/"L" 与 CLI/GUI 的 "portrait"/"landscape"：
+`functions/print.py` 在 execute() 里把后者映射成了前者再传给排版，
+两条路径都要能对上。
+
+---
+
+## `utils.page_layout.plan`
+
+源码：[`utils/page_layout/plan.py`](../../utils/page_layout/plan.py)
+
+单页排版几何：边距、标题/页码落点与整页计划。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `text_insets(value: Any) -> Optional[List[float]]` | 标题/页码的「距页边」设置 → [上, 右, 下, 左]（mm）。 |
+| `plan_print_page(image_size_px: Tuple[float, float], args: dict, page_index: int, total: int, sides: Optional[Sequence[str]]=None, sorted_nodes: Optional[Sequence]=None, image_name: Optional[str]=None, image_rect: Optional[Sequence[float]]=None) -> PrintPagePlan` | 单页排版几何。 |
+
+#### `text_insets(value: Any) -> Optional[List[float]]`
+
+标题/页码的「距页边」设置 → [上, 右, 下, 左]（mm）。
+
+与 `page_margins` 同款 CSS 简写（1/2/3/4 值）。**空值返回 None**，
+表示"沿用由 page_margins 推导的旧行为"——老任务（没有这两个键）
+的输出必须一个像素都不变，所以这里绝不能回落到某个默认数字。
+
+非法输入也返回 None（宽松）：校验归入口层
+（`core.command_spec` / GUI 表单），库层不替调用方做决定。
+
+#### `plan_print_page(image_size_px: Tuple[float, float], args: dict, page_index: int, total: int, sides: Optional[Sequence[str]]=None, sorted_nodes: Optional[Sequence]=None, image_name: Optional[str]=None, image_rect: Optional[Sequence[float]]=None) -> PrintPagePlan`
+
+单页排版几何。
+
+参数:
+    image_size_px: 图片原始像素 (w, h)。
+    args: print 参数（CLI 的 command_args 或 GUI 面板 get_args()）。
+    page_index: **0-based** 图片下标。
+    total: 图片总数（页码结束页缺省时用）。
+    sides: 逐页左右侧（由 `sides_for_pages` 预计算）；不传则临时算。
+    sorted_nodes: 章节节点（`resolve_title_nodes` 结果）；不传则临时算。
+    image_name: 当前图片文件名（stem 即可），用于 ``skip_pages``
+        按页名回查；不传则只能按序号匹配。
+
+---
+
+## `utils.page_layout.rotation`
+
+源码：[`utils/page_layout/rotation.py`](../../utils/page_layout/rotation.py)
+
+逐页旋转角归一与外接框计算（预览 / 版面编辑 / 单页导出 / PDF 共用）。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `normalize_page_rotation(value) -> float` | 逐页图片旋转角归一为 **(-180, 180]** 的浮点角度（顺时针为正）。 |
+| `rotated_bbox_size(width: float, height: float, degrees) -> Tuple[float, float]` | ``width × height`` 的矩形绕中心顺时针转 ``degrees`` 后的**外接框**尺寸。 |
+| `fit_rotated_rect(rect: Sequence[float], image_size: Sequence[float], degrees) -> List[float]` | 把旋转后的图**等比**放进 ``rect`` 并居中，返回它在页面上的外接框。 |
+
+#### `normalize_page_rotation(value) -> float`
+
+逐页图片旋转角归一为 **(-180, 180]** 的浮点角度（顺时针为正）。
+
+版面编辑器的旋转钮可以拖任意角度（与「图片拼版」同一款组件），不再限定
+90° 步进；这里只负责把任意输入收敛到同一区间。「预览 / 版面编辑 / 单页
+导出 / 生成 PDF」四条链路共用这一个口径：谁都不许自己取整，否则同一份
+``print.json`` 在四处转出四个方向。
+
+#### `rotated_bbox_size(width: float, height: float, degrees) -> Tuple[float, float]`
+
+``width × height`` 的矩形绕中心顺时针转 ``degrees`` 后的**外接框**尺寸。
+
+旋转后的图片按外接框占位（PDF ``pdf.image`` 也只能给轴对齐的 w/h），
+预览 / 画布 / 成品都拿这个函数算，三者才会得出同一个框。
+
+#### `fit_rotated_rect(rect: Sequence[float], image_size: Sequence[float], degrees) -> List[float]`
+
+把旋转后的图**等比**放进 ``rect`` 并居中，返回它在页面上的外接框。
+
+``rect`` 是用户在版面编辑器里拖出来的图片槽（页面 mm；画布以像素为
+单位调用，单位无关）。旋转不改变这个槽，图片按旋转后的外接框等比缩放
+后**完整地**放进去——不裁剪、不拉伸，所以预览与 PDF 的落点一致。
+
+---
+
+## `utils.page_layout.spec`
+
+源码：[`utils/page_layout/spec.py`](../../utils/page_layout/spec.py)
+
+单页排版的几何数据结构：文字规格与整页计划。
 
 ### `class PrintTextSpec`
 
@@ -2326,13 +2431,18 @@ print.py 里的裸字面量 `8.0`，现在提为 `TEXT_MARGIN_MM`。
         `TEXT_MARGIN_MM`**：「距页边」现在只决定文字画在哪儿，
         不再反过来收窄图片（见模块 docstring 的说明）。
 
+---
+
+## `utils.page_layout.vertical`
+
+源码：[`utils/page_layout/vertical.py`](../../utils/page_layout/vertical.py)
+
+竖排文字的分段与占位规则（fpdf 与 Qt 预览共用的唯一实现）。
+
 ### 模块函数
 
 | 函数 | 说明 |
 | --- | --- |
-| `normalize_page_rotation(value) -> float` | 逐页图片旋转角归一为 **(-180, 180]** 的浮点角度（顺时针为正）。 |
-| `rotated_bbox_size(width: float, height: float, degrees) -> Tuple[float, float]` | ``width × height`` 的矩形绕中心顺时针转 ``degrees`` 后的**外接框**尺寸。 |
-| `fit_rotated_rect(rect: Sequence[float], image_size: Sequence[float], degrees) -> List[float]` | 把旋转后的图**等比**放进 ``rect`` 并居中，返回它在页面上的外接框。 |
 | `is_rotated_char(ch: str) -> bool` | 该字符是否属于"整段旋转 90°"的拉丁/半角段。 |
 | `rotated_run_offset_mm(ascent_mm: float, descent_mm: float) -> Tuple[float, float]` | 竖排里"整段旋转 90°"的拉丁段：绘制点相对列基线的偏移 (dx, dy)。 |
 | `vertical_runs(text: str) -> List[Tuple[str, bool]]` | 竖排文本 → [(片段, 是否旋转 90°)]，相邻同类字符合并成一段。 |
@@ -2340,37 +2450,6 @@ print.py 里的裸字面量 `8.0`，现在提为 `TEXT_MARGIN_MM`。
 | `vertical_chunk_advance_mm(chunk: str, char_h_mm: float, rotated: bool, latin_width_mm=None) -> float` | 绘制端一段竖排片段的实际步进（mm）——`draw_vertical_text`（fpdf） |
 | `vertical_extent_mm(text: str, char_h_mm: float) -> float` | 整串竖排文本的高度（mm）。 |
 | `text_block_width_mm(text: str, char_h_mm: float, vertical: bool) -> float` | 一段文字的**横向宽度**（mm）——即它从落点 x 向右占多宽。 |
-| `paper_size_mm(paper_size: str) -> Tuple[float, float]` | 纸张名 → (短边, 长边) 毫米；非法纸张抛 ValueError。 |
-| `print_page_size_mm(paper_size: str, orientation: str) -> Tuple[float, float]` | 纸张 + 方向 → (页宽, 页高) 毫米。 |
-| `image_name_parts(path) -> Tuple[Optional[int], Optional[str]]` | 解析数字页名，返回 (页名数字, side)；side 可能为空。 |
-| `resolve_title_nodes(image_files: Sequence, title_switch_nodes: Sequence) -> List[Tuple[int, Tuple[str, str]]]` | 把配置里的 [页名, 标题, side] 解析为「图片下标 → (标题, 侧别)」。 |
-| `sides_for_pages(total: int, sorted_nodes: Sequence, page_number_start_page: int) -> List[str]` | 逐页给出标题/页码所在侧（left / right）。 |
-| `text_insets(value: Any) -> Optional[List[float]]` | 标题/页码的「距页边」设置 → [上, 右, 下, 左]（mm）。 |
-| `plan_print_page(image_size_px: Tuple[float, float], args: dict, page_index: int, total: int, sides: Optional[Sequence[str]]=None, sorted_nodes: Optional[Sequence]=None, image_name: Optional[str]=None, image_rect: Optional[Sequence[float]]=None) -> PrintPagePlan` | 单页排版几何。 |
-
-#### `normalize_page_rotation(value) -> float`
-
-逐页图片旋转角归一为 **(-180, 180]** 的浮点角度（顺时针为正）。
-
-版面编辑器的旋转钮可以拖任意角度（与「图片拼版」同一款组件），不再限定
-90° 步进；这里只负责把任意输入收敛到同一区间。「预览 / 版面编辑 / 单页
-导出 / 生成 PDF」四条链路共用这一个口径：谁都不许自己取整，否则同一份
-``print.json`` 在四处转出四个方向。
-
-#### `rotated_bbox_size(width: float, height: float, degrees) -> Tuple[float, float]`
-
-``width × height`` 的矩形绕中心顺时针转 ``degrees`` 后的**外接框**尺寸。
-
-旋转后的图片按外接框占位（PDF ``pdf.image`` 也只能给轴对齐的 w/h），
-预览 / 画布 / 成品都拿这个函数算，三者才会得出同一个框。
-
-#### `fit_rotated_rect(rect: Sequence[float], image_size: Sequence[float], degrees) -> List[float]`
-
-把旋转后的图**等比**放进 ``rect`` 并居中，返回它在页面上的外接框。
-
-``rect`` 是用户在版面编辑器里拖出来的图片槽（页面 mm；画布以像素为
-单位调用，单位无关）。旋转不改变这个槽，图片按旋转后的外接框等比缩放
-后**完整地**放进去——不裁剪、不拉伸，所以预览与 PDF 的落点一致。
 
 #### `rotated_run_offset_mm(ascent_mm: float, descent_mm: float) -> Tuple[float, float]`
 
@@ -2425,52 +2504,6 @@ print.py 里的裸字面量 `8.0`，现在提为 `TEXT_MARGIN_MM`。
   拉丁段旋转 90° 后也只是一列的宽度，不额外加宽。
 * 横排：宽度 ≈ 字符数 × 字宽（比例字体的粗估，`LATIN_ADVANCE_RATIO`
   同一套近似口径；误差只体现在右页横向标题的 1~2mm 留白上）。
-
-#### `print_page_size_mm(paper_size: str, orientation: str) -> Tuple[float, float]`
-
-纸张 + 方向 → (页宽, 页高) 毫米。
-
-方向同时接受 fpdf 的 "P"/"L" 与 CLI/GUI 的 "portrait"/"landscape"：
-`functions/print.py` 在 execute() 里把后者映射成了前者再传给排版，
-两条路径都要能对上。
-
-#### `resolve_title_nodes(image_files: Sequence, title_switch_nodes: Sequence) -> List[Tuple[int, Tuple[str, str]]]`
-
-把配置里的 [页名, 标题, side] 解析为「图片下标 → (标题, 侧别)」。
-
-``页名`` 是**原始页码**（如 ``5`` / ``5-r``），不是列表下标——用户填
-「15」想的是原书第 15 页，即使该页被拖到别处，标题切换仍要跟着它。
-
-#### `sides_for_pages(total: int, sorted_nodes: Sequence, page_number_start_page: int) -> List[str]`
-
-逐页给出标题/页码所在侧（left / right）。
-
-从起始标注页（或最近的章节节点）开始按图片序号交替左右。
-
-#### `text_insets(value: Any) -> Optional[List[float]]`
-
-标题/页码的「距页边」设置 → [上, 右, 下, 左]（mm）。
-
-与 `page_margins` 同款 CSS 简写（1/2/3/4 值）。**空值返回 None**，
-表示"沿用由 page_margins 推导的旧行为"——老任务（没有这两个键）
-的输出必须一个像素都不变，所以这里绝不能回落到某个默认数字。
-
-非法输入也返回 None（宽松）：校验归入口层
-（`core.command_spec` / GUI 表单），库层不替调用方做决定。
-
-#### `plan_print_page(image_size_px: Tuple[float, float], args: dict, page_index: int, total: int, sides: Optional[Sequence[str]]=None, sorted_nodes: Optional[Sequence]=None, image_name: Optional[str]=None, image_rect: Optional[Sequence[float]]=None) -> PrintPagePlan`
-
-单页排版几何。
-
-参数:
-    image_size_px: 图片原始像素 (w, h)。
-    args: print 参数（CLI 的 command_args 或 GUI 面板 get_args()）。
-    page_index: **0-based** 图片下标。
-    total: 图片总数（页码结束页缺省时用）。
-    sides: 逐页左右侧（由 `sides_for_pages` 预计算）；不传则临时算。
-    sorted_nodes: 章节节点（`resolve_title_nodes` 结果）；不传则临时算。
-    image_name: 当前图片文件名（stem 即可），用于 ``skip_pages``
-        按页名回查；不传则只能按序号匹配。
 
 ---
 
@@ -2675,46 +2708,13 @@ PDF → 图片的部分在 `utils/pdf_extract.py`。
 
 ---
 
-## `utils.pdf_extract`
+## `utils.pdf_extract.constants`
 
-源码：[`utils/pdf_extract.py`](../../utils/pdf_extract.py)
+源码：[`utils/pdf_extract/constants.py`](../../utils/pdf_extract/constants.py)
 
-源文件页面提取：把 PDF / DjVu 每页渲染成图片并保存。
+源文件页面提取的常量（quick 判定 / 分辨率 / 后缀）。
 
-从 `utils/pdf_utils.py` 拆出（见 docs/dev/refactor-modularity.md §3.B）——
-原文件把「PDF → 图片」与「生成 PDF 的绘制辅助」两种职责混在 759 行里。
-本模块只管前者：
-
-1. **页码解析** (`parse_pages` / `validate_page_range`)
-   支持两种页码选择方式：逗号分隔 + 范围字符串（如 "1,3-5,7"）或 start/end 整数对。
-
-2. **缩放计算** (`calculate_zoom` / `render_zoom`)
-   根据页面宽度限制最大输出尺寸（6000px），避免内存溢出；整页渲染另有
-   DPI 下限（默认 300），避免没有内嵌图的矢量 PDF 在 zoom=1 时只渲染出 72 DPI。
-
-3. **批量渲染** (`process_page_batch` / `render_pages_parallel` / `extract_pdf_optimized`)
-   使用 PyMuPDF (fitz) 渲染页面，支持两种模式：
-   - quick=True：优先取 PDF 内嵌图片（**自适应**，不满足条件自动降级整页渲染）；
-   - quick=False：直接渲染页面为高质量图片。
-
-   quick 的判定见 `_embedded_page_image()`：只有「单张内嵌图 + jpg/png 格式 +
-   像素不低于整页渲染尺寸」才走快路径，否则降级。这样 jp2/jbig2/CCITT 压缩、
-   一页多图、内嵌缩略图这三类情况不会"为了快而变慢或变糊"。
-
-   ⚠️ 并发后端是**多进程**（`ProcessPoolExecutor`），不是线程：PyMuPDF 的
-   `get_pixmap` 期间持有 GIL，线程池对渲染**零加速**（实测 6 线程仅 1.15×，
-   还把 GUI 拖卡）。详见 `render_pages_parallel` 的说明。
-
-4. **目录遍历** (`run_on_input_directory`)
-   支持输入为单个 PDF/DjVu 文件或包含多个 PDF/DjVu 的目录。
-
-5. **DjVu 后端** (`_render_djvu_batch_in_worker`)
-   `.djvu/.djv` 用 djvu-rs（纯 Rust 解码，无需 DjVuLibre）逐页解码。
-   DjVu 是扫描位图，页面自带原生分辨率，因此**不套 PDF 的 DPI 下限**：
-   目标尺寸 = 原生像素 × zoom，仍受 6000px 宽度封顶。
-
-依赖: PyMuPDF (pymupdf)、djvu-rs、Pillow (PIL)。
-绘制辅助（字体注册 / 竖排文字 / 左右页判定）在 `utils/pdf_draw.py`。
+从原 ``utils/pdf_extract.py`` 按职责拆出：常量集中在这里，其余子模块只读不写。
 
 ### 模块常量
 
@@ -2725,89 +2725,38 @@ PDF → 图片的部分在 `utils/pdf_extract.py`。
 | MAX_OUTPUT_WIDTH_PX | `6000` |
 | WIDE_PAGE_PT | `3000` |
 
+---
+
+## `utils.pdf_extract.djvu`
+
+源码：[`utils/pdf_extract/djvu.py`](../../utils/pdf_extract/djvu.py)
+
+DjVu 后端：djvu-rs 逐页解码（页面自带原生分辨率，不套 PDF 的 DPI 下限）。
+
 ### 模块函数
 
 | 函数 | 说明 |
 | --- | --- |
-| `is_djvu_path(path) -> bool` | 这个源文件是不是 DjVu（否则按 PDF 处理）。 |
-| `parse_pages(pages_str: str, total_pages: int) -> List[int]` | 解析页码字符串为 0-based 页码列表。 |
-| `validate_page_range(start: Optional[int], end: Optional[int], total_pages: int) -> List[int]` | 根据 start/end 整数对生成 0-based 页码列表。 |
-| `calculate_zoom(page_width: float, requested_zoom: float=1) -> float` | 计算实际缩放因子，限制最大输出宽度为 6000px。 |
-| `render_zoom(page_width: float, requested_zoom: float=1, dpi: float=DEFAULT_RENDER_DPI) -> float` | 整页渲染实际使用的缩放因子 = max(用户 zoom, DPI 下限)，再受宽度封顶。 |
-| `report_image_size(img_path, width: int, height: int, reporter=None) -> None` | 汇报一页输出图片的尺寸。 |
 | `djvu_page_count(djvu_path) -> int` | DjVu 总页数（打开一次即关，别把句柄留在调用方）。 |
+
+---
+
+## `utils.pdf_extract.extract`
+
+源码：[`utils/pdf_extract/extract.py`](../../utils/pdf_extract/extract.py)
+
+对外入口：批次调度、单页提取与目录遍历（CLI / GUI 共用）。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
 | `document_page_count(path) -> int` | 源文件（PDF / DjVu）总页数。 |
 | `extract_single_page(pdf_path: str, page_idx: int, out_dir: str, zoom: float=1, ext: str='jpg', quick: bool=True, dpi: float=DEFAULT_RENDER_DPI) -> dict` | 提取**单页**落盘，返回结构化结果（GUI「翻到哪页就提取哪页」用）。 |
 | `process_page_batch(pdf_path: str, page_indices: List[int], out_dir: str, zoom: float, ext: str, quick: bool=True, progress: Optional[dict]=None, reporter=None, dpi: float=DEFAULT_RENDER_DPI) -> List[bool]` | 处理一批源文件页面（PDF / DjVu），返回每页的成功状态。 |
 | `render_pages_parallel(pdf_path: str, page_indices: List[int], out_dir: str, zoom: float, ext: str, quick: bool=True, workers: int=4, batch_size: int=4, progress: Optional[dict]=None, reporter=None, dpi: float=DEFAULT_RENDER_DPI) -> List[bool]` | 多**进程**提取指定页（PDF / DjVu），返回每页成功状态。 |
 | `extract_pdf_optimized(pdf_path: str, out_dir: str, zoom: float=1, ext: str='jpg', workers: int=4, quick: bool=True, pages: Optional[str]=None, start: Optional[int]=None, end: Optional[int]=None, batch_size: int=4, clean: bool=False, reporter=None, dpi: float=DEFAULT_RENDER_DPI) -> bool` | 提取 PDF / DjVu 页面为图片，支持多进程批次处理。 |
 | `run_on_input_directory(input_path: str, out_root: str, zoom: float=1, ext: str='jpg', workers: int=4, quick: bool=True, pages: Optional[str]=None, start: Optional[int]=None, end: Optional[int]=None, batch_size: int=4, clean: bool=False, subdir_name: str='images', reporter=None, dpi: float=DEFAULT_RENDER_DPI)` | 处理输入路径（文件或目录），对每个 PDF/DjVu 在 out_root 下创建以其文件名命名的 |
-
-#### `parse_pages(pages_str: str, total_pages: int) -> List[int]`
-
-解析页码字符串为 0-based 页码列表。
-
-支持格式: "1,3-5,7" → [0, 2, 3, 4, 6]
-页码为 1-based，返回值转换为 0-based。
-
-参数:
-    pages_str: 页码字符串（逗号分隔，支持范围）。
-    total_pages: PDF 总页数（用于越界检查）。
-
-返回:
-    排序后的 0-based 页码列表。
-
-异常:
-    ValueError: 页码格式错误或超出范围。
-
-#### `validate_page_range(start: Optional[int], end: Optional[int], total_pages: int) -> List[int]`
-
-根据 start/end 整数对生成 0-based 页码列表。
-
-参数:
-    start: 起始页（1-based），None 表示从第 1 页开始。
-    end: 结束页（1-based），None 表示到最后一页。
-    total_pages: PDF 总页数。
-
-返回:
-    0-based 页码列表。
-
-#### `calculate_zoom(page_width: float, requested_zoom: float=1) -> float`
-
-计算实际缩放因子，限制最大输出宽度为 6000px。
-
-参数:
-    page_width: PDF 页面宽度（pt 单位，1pt ≈ 1/72 inch）。
-    requested_zoom: 用户请求的缩放因子。
-
-返回:
-    实际使用的缩放因子。
-
-#### `render_zoom(page_width: float, requested_zoom: float=1, dpi: float=DEFAULT_RENDER_DPI) -> float`
-
-整页渲染实际使用的缩放因子 = max(用户 zoom, DPI 下限)，再受宽度封顶。
-
-与 `calculate_zoom` 的区别：**只有这一条路径会补 DPI**。内嵌图（quick）
-路径仍旧用 `calculate_zoom` —— 原图字节直拷，既不该被下限放大，也不该
-因为下限变严而被判成"低清"降级（那会把 240 DPI 的扫描件重新渲染成
-放大插值图，反而更糊）。
-
-参数:
-    page_width: PDF 页面宽度（pt）。
-    requested_zoom: 用户请求的缩放因子（>=1）。
-    dpi: 目标 DPI 下限；传 72 即等价于旧行为（zoom 说了算）。
-
-返回:
-    实际渲染缩放因子。
-
-#### `report_image_size(img_path, width: int, height: int, reporter=None) -> None`
-
-汇报一页输出图片的尺寸。
-
-结构化通道 `page_size` 供 GUI 子进程入库（sizes.json 是框坐标的坐标系基准）；
-`[imgsize]` 文本行仅为**兼容保留**。
-
-reporter 缺省为 None —— CLI 不注入，行为与原先「只 print 一行」完全一致。
 
 #### `extract_single_page(pdf_path: str, page_idx: int, out_dir: str, zoom: float=1, ext: str='jpg', quick: bool=True, dpi: float=DEFAULT_RENDER_DPI) -> dict`
 
@@ -2907,6 +2856,108 @@ reporter 为结构化汇报通道（进度 + 页尺寸）；None → 保持纯 p
         透传给 extract_pdf_optimized 的参数。
     subdir_name: 每个源文件子目录下存放图片的子目录名。
     reporter: 结构化汇报通道；None → 只 print（CLI 默认）。
+
+---
+
+## `utils.pdf_extract.pages`
+
+源码：[`utils/pdf_extract/pages.py`](../../utils/pdf_extract/pages.py)
+
+页码解析与缩放计算（纯函数，无 IO）。
+
+- ``parse_pages`` / ``validate_page_range``：把用户给的页码选择变成 0-based 列表；
+- ``calculate_zoom``：quick / 内嵌图路径的缩放（只受 6000px 宽度封顶）；
+- ``render_zoom``：整页渲染路径的缩放（额外兜 DPI 下限）。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `is_djvu_path(path) -> bool` | 这个源文件是不是 DjVu（否则按 PDF 处理）。 |
+| `parse_pages(pages_str: str, total_pages: int) -> List[int]` | 解析页码字符串为 0-based 页码列表。 |
+| `validate_page_range(start: Optional[int], end: Optional[int], total_pages: int) -> List[int]` | 根据 start/end 整数对生成 0-based 页码列表。 |
+| `calculate_zoom(page_width: float, requested_zoom: float=1) -> float` | 计算实际缩放因子，限制最大输出宽度为 6000px。 |
+| `render_zoom(page_width: float, requested_zoom: float=1, dpi: float=DEFAULT_RENDER_DPI) -> float` | 整页渲染实际使用的缩放因子 = max(用户 zoom, DPI 下限)，再受宽度封顶。 |
+
+#### `parse_pages(pages_str: str, total_pages: int) -> List[int]`
+
+解析页码字符串为 0-based 页码列表。
+
+支持格式: "1,3-5,7" → [0, 2, 3, 4, 6]
+页码为 1-based，返回值转换为 0-based。
+
+参数:
+    pages_str: 页码字符串（逗号分隔，支持范围）。
+    total_pages: PDF 总页数（用于越界检查）。
+
+返回:
+    排序后的 0-based 页码列表。
+
+异常:
+    ValueError: 页码格式错误或超出范围。
+
+#### `validate_page_range(start: Optional[int], end: Optional[int], total_pages: int) -> List[int]`
+
+根据 start/end 整数对生成 0-based 页码列表。
+
+参数:
+    start: 起始页（1-based），None 表示从第 1 页开始。
+    end: 结束页（1-based），None 表示到最后一页。
+    total_pages: PDF 总页数。
+
+返回:
+    0-based 页码列表。
+
+#### `calculate_zoom(page_width: float, requested_zoom: float=1) -> float`
+
+计算实际缩放因子，限制最大输出宽度为 6000px。
+
+参数:
+    page_width: PDF 页面宽度（pt 单位，1pt ≈ 1/72 inch）。
+    requested_zoom: 用户请求的缩放因子。
+
+返回:
+    实际使用的缩放因子。
+
+#### `render_zoom(page_width: float, requested_zoom: float=1, dpi: float=DEFAULT_RENDER_DPI) -> float`
+
+整页渲染实际使用的缩放因子 = max(用户 zoom, DPI 下限)，再受宽度封顶。
+
+与 `calculate_zoom` 的区别：**只有这一条路径会补 DPI**。内嵌图（quick）
+路径仍旧用 `calculate_zoom` —— 原图字节直拷，既不该被下限放大，也不该
+因为下限变严而被判成"低清"降级（那会把 240 DPI 的扫描件重新渲染成
+放大插值图，反而更糊）。
+
+参数:
+    page_width: PDF 页面宽度（pt）。
+    requested_zoom: 用户请求的缩放因子（>=1）。
+    dpi: 目标 DPI 下限；传 72 即等价于旧行为（zoom 说了算）。
+
+返回:
+    实际渲染缩放因子。
+
+---
+
+## `utils.pdf_extract.render`
+
+源码：[`utils/pdf_extract/render.py`](../../utils/pdf_extract/render.py)
+
+单页渲染落盘与批量结果上报（父进程侧）。
+
+### 模块函数
+
+| 函数 | 说明 |
+| --- | --- |
+| `report_image_size(img_path, width: int, height: int, reporter=None) -> None` | 汇报一页输出图片的尺寸。 |
+
+#### `report_image_size(img_path, width: int, height: int, reporter=None) -> None`
+
+汇报一页输出图片的尺寸。
+
+结构化通道 `page_size` 供 GUI 子进程入库（sizes.json 是框坐标的坐标系基准）；
+`[imgsize]` 文本行仅为**兼容保留**。
+
+reporter 缺省为 None —— CLI 不注入，行为与原先「只 print 一行」完全一致。
 
 ---
 

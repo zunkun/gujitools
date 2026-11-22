@@ -100,15 +100,15 @@ def run(ctx) -> None:
     wiring = [
         ("components/viewers/image_zoom_dialog/dialog.py",
          "enable_taskbar_button(self)"),
-        ("components/viewers/image_editor/dialog.py",
+        ("components/viewers/image_editor/dialog/assembly.py",
          "enable_taskbar_button(self)"),
         ("pages/taskdetail/preview.py", "enable_taskbar_button(self)"),
-        ("components/imposition/picker.py", "enable_taskbar_button(self)"),
+        ("components/imposition/picker/dialog.py", "enable_taskbar_button(self)"),
     ]
     for rel, call in wiring:
         src = (root / "desktop" / rel).read_text(encoding="utf-8")
         ok(f"接线：{rel} 调用了 enable_taskbar_button", call in src)
-        if rel.endswith("picker.py"):
+        if rel.endswith("imposition/picker/dialog.py"):
             ok("接线：选图窗在恢复最大化样式之后补任务栏位",
                src.index("_restore_maximize_style()") < src.index(call))
         else:

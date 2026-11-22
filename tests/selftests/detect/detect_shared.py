@@ -84,11 +84,16 @@ def run(ctx) -> None:
        "reuse" not in inspect.signature(run_detect_pages).parameters,
        str(inspect.signature(run_detect_pages)))
     for rel in (
-        "desktop/pages/taskdetail/runner.py",
+        "desktop/pages/taskdetail/runner",
         "desktop/modules/detect/page.py",
         "desktop/stages/detect_stage.py",
     ):
-        src = (root / rel).read_text(encoding="utf-8", errors="ignore")
+        path = root / rel
+        if path.is_dir():
+            src = "\n".join(p.read_text(encoding="utf-8", errors="ignore")
+                            for p in sorted(path.rglob("*.py")))
+        else:
+            src = path.read_text(encoding="utf-8", errors="ignore")
         ok(f"{rel} 不再接复用结果", "detect_reuse" not in src and '"reuse"' not in src)
     ok("复用判据模块已删除",
        not (root / "desktop/services/detect_reuse.py").exists())

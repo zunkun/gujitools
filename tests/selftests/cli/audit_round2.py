@@ -162,7 +162,8 @@ def run(ctx) -> None:
     ok("无 EXIF 方向 → 尺寸原样", _exif_swap_dims(buf2.getvalue(), 100, 50) == (100, 50))
 
     # ------------------------------------------------ 9. print 进度分母
-    print_src = (repo / "functions" / "print.py").read_text(encoding="utf-8")
+    print_src = (repo / "functions" / "print" / "execute.py").read_text(
+        encoding="utf-8")
     ok("print 进度分母为实际写入页数（total_written）",
        "total_written = max(0, total - len(skip_indices))" in print_src
        and "processed_count == total_written" in print_src)

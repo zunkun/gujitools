@@ -122,6 +122,8 @@ _SPECS: list[dict] = [
         "main": "ImageViewerWidget",
         "modules": [
             ("core.py", "ImageViewerWidget"),
+            ("listing.py", "ListingMixin"),
+            ("display.py", "DisplayMixin"),
             ("thumbs.py", "ThumbsCacheMixin"),
             ("pdf.py", "PdfSourceMixin"),
             ("boxes.py", "BoxesMixin"),
@@ -129,19 +131,11 @@ _SPECS: list[dict] = [
         "public_api": ["ImageViewerWidget"],
         "module_funcs": [],
         "home": {
-            # core.py -> ImageViewerWidget（28 个）
+            # core.py -> ImageViewerWidget（18 个）
             "__init__": "ImageViewerWidget",
-            "_image_ready": "ImageViewerWidget",
-            "_image_ready_if_current": "ImageViewerWidget",
-            "_load_failed_if_current": "ImageViewerWidget",
-            "_load_thumbs": "ImageViewerWidget",
             "_on_zoom_image_saved": "ImageViewerWidget",
-            "_original_size": "ImageViewerWidget",
-            "_select_image": "ImageViewerWidget",
-            "_thumb_for": "ImageViewerWidget",
             "_zoom_index": "ImageViewerWidget",
             "_zoom_target": "ImageViewerWidget",
-            "apply_edited_image": "ImageViewerWidget",
             "box_edit_rejected": "ImageViewerWidget",
             "box_too_small": "ImageViewerWidget",
             "boxes_edited": "ImageViewerWidget",
@@ -153,12 +147,24 @@ _SPECS: list[dict] = [
             "insert_requested": "ImageViewerWidget",
             "navigate": "ImageViewerWidget",
             "paths": "ImageViewerWidget",
-            "refresh_page": "ImageViewerWidget",
-            "reload_thumb": "ImageViewerWidget",
             "selection_changed": "ImageViewerWidget",
             "set_empty_hint": "ImageViewerWidget",
-            "set_images": "ImageViewerWidget",
             "set_insert_visible": "ImageViewerWidget",
+            # listing.py -> ListingMixin（6 个）
+            "_load_thumbs": "ListingMixin",
+            "_select_image": "ListingMixin",
+            "_thumb_for": "ListingMixin",
+            "release_buffers": "ListingMixin",
+            "restore_buffers": "ListingMixin",
+            "set_images": "ListingMixin",
+            # display.py -> DisplayMixin（7 个）
+            "_image_ready": "DisplayMixin",
+            "_image_ready_if_current": "DisplayMixin",
+            "_load_failed_if_current": "DisplayMixin",
+            "_original_size": "DisplayMixin",
+            "apply_edited_image": "DisplayMixin",
+            "refresh_page": "DisplayMixin",
+            "reload_thumb": "DisplayMixin",
             # thumbs.py -> ThumbsCacheMixin（5 个）
             "_lookup_thumb_path": "ThumbsCacheMixin",
             "_on_thumb_cached": "ThumbsCacheMixin",
@@ -184,7 +190,18 @@ _SPECS: list[dict] = [
         },
         "cross": {
             "ImageViewerWidget": [
-                "_boxes_edited", "_clear_page_source", "_select_pdf_page",
+                "_boxes_edited", "_clear_page_source", "_load_thumbs",
+                "_original_size", "_select_image", "_select_pdf_page",
+                "restore_buffers",
+            ],
+            "ListingMixin": [
+                "_clear_page_source", "_image_ready_if_current",
+                "_load_failed_if_current", "_preview_spec_for",
+                "_select_pdf_page", "current_changed", "set_hint_banner",
+            ],
+            "DisplayMixin": [
+                "_select_image", "_thumb_for", "current_changed",
+                "current_path",
             ],
             "ThumbsCacheMixin": ["set_images"],
             "PdfSourceMixin": ["current_changed"],

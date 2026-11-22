@@ -34,6 +34,7 @@ class ImageViewerHost(QWidget, ThumbsMixin, ZoomPopupMixin):
     """
 
     # ---- 状态 ----
+    _buffers_released: bool
     _empty_hint: Any
     _image_size_provider: Any
     _insert_buttons: tuple[Any, ...]
@@ -164,6 +165,12 @@ class ImageViewerHost(QWidget, ThumbsMixin, ZoomPopupMixin):
         ...
 
     def refresh_current(self) -> None:
+        ...
+
+    def release_buffers(self) -> None:
+        ...
+
+    def restore_buffers(self) -> None:
         ...
 
     def reload_thumb(self, path_text: str) -> None:

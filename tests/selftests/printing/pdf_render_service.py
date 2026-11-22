@@ -120,13 +120,17 @@ def run(ctx) -> None:
 
     # ---- 5. 池不可用 → 进程内兜底仍然出图 ----
     before = svc.stats()["fallbacks"]
-    real_pool = svc._pool_or_none
-    svc._pool_or_none = lambda kind="render": None  # 打桩：假装子进程起不来
+    # ⚠️ 2026-11-22 起服务是子包：打桩必须落在**定义处** ``pool._pool_or_none``
+    #    （``_call`` 在 pool 的 globals 里查这个名字；打包级属性是假绿）。
+    from desktop.workers.pdf_render_service import pool as _svc_pool
+
+    real_pool = _svc_pool._pool_or_none
+    _svc_pool._pool_or_none = lambda kind="render": None  # 打桩：假装子进程起不来
     try:
         fallback = svc.render_jpeg(pdf, 1, 256, 70)
         fell = svc.stats()["fallbacks"]
     finally:
-        svc._pool_or_none = real_pool
+        _svc_pool._pool_or_none = real_pool
     ok("兜底：池不可用时仍能渲出同一张图", fallback == old, f"{len(fallback)}B")
     ok("兜底：记了一次 fallback（可观测）", fell == before + 1, f"{before}→{fell}")
 
@@ -175,7 +179,7 @@ def run(ctx) -> None:
 
     # ---- 8. 源码护栏：GUI 侧不许自己渲染 ----
     hosts = {
-        "缩略图预览 worker": "desktop/workers/preview_worker.py",
+        "缩略图预览 worker": "desktop/workers/preview_worker/worker.py",
         "导入缩略图 worker": "desktop/workers/source_thumbnails_worker.py",
         "提取预览控件": "desktop/components/viewers/extract_viewer.py",
     }
@@ -187,7 +191,9 @@ def run(ctx) -> None:
     ok("护栏：提取预览控件不再直接调 extract_single_page",
        "extract_single_page(" not in extract_text, "应走 pdf_render_service")
 
-    service_text = code_of("desktop/workers/pdf_render_service.py")
+    service_text = code_of(
+        "desktop/workers/pdf_render_service/pool.py"
+    ) + code_of("desktop/workers/pdf_render_service/inproc.py")
     ok("护栏：渲染服务用的是进程池（ProcessPoolExecutor）",
        "ProcessPoolExecutor" in service_text)
     ok("护栏：渲染服务的进程内兜底持单飞锁",
@@ -266,14 +272,16 @@ def run(ctx) -> None:
                                     fast_image.height() // 2)
         ok("JPX 快速通道：画面有内容（不是空白图）",
            mid.value() < 250, f"value={mid.value()}")
-        saved = svc._OPJ_PATH
-        svc._OPJ_PATH = None
+        from desktop.workers.pdf_render_service import jpx as _svc_jpx
+
+        saved = _svc_jpx._OPJ_PATH
+        _svc_jpx._OPJ_PATH = None
         try:
             ok("JPX 快速通道：没有 OpenJPEG 时返回空（回落 MuPDF）",
                svc._child_jpx_thumb(jpx_pdf, 0, 256, 70, "jpg") == b"")
             fallback_pdf = svc._child_render_jpeg(jpx_pdf, 0, 256, 70, "jpg")
         finally:
-            svc._OPJ_PATH = saved
+            _svc_jpx._OPJ_PATH = saved
         ok("JPX 快速通道：回落路径仍能出图",
            bool(fallback_pdf) and not QImage.fromData(fallback_pdf).isNull())
     else:
@@ -338,4 +346,6 @@ def run(ctx) -> None:
     svc.shutdown()
     # ⚠️ 本用例是**唯一**会显式收池的地方：收完必须把"正在关闭"复位，否则
     #    后续用例全都会退回进程内渲染（慢，而且"出进程"的语义被悄悄破坏）。
-    svc._closing = False
+    from desktop.workers.pdf_render_service import pool as _svc_pool
+
+    _svc_pool._closing = False

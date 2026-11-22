@@ -437,7 +437,8 @@ def run(ctx) -> None:
     _submit_src = (_Path(__file__).resolve().parents[3]
                    / "desktop/pages/taskdetail/submit.py").read_text(encoding="utf-8")
     _impo_src = (_Path(__file__).resolve().parents[3]
-                 / "desktop/pages/taskdetail/imposition.py").read_text(encoding="utf-8")
+                 / "desktop/pages/taskdetail/imposition/node_visibility.py"
+                 ).read_text(encoding="utf-8")
     ok("提交按钮红框走 NEW_VERSION 判据（源码护栏）",
        "set_red_frame(self.submit_button, version == NEW_VERSION)" in _submit_src)
     ok("拼版启用开关红框 = 可用+未勾+左侧有拼版页（源码护栏）",
