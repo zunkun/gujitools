@@ -23,6 +23,7 @@ TITLE = "无边框窗口原生最小化样式（左下角残留/任务栏无按�
 
 def run(ctx) -> None:
     import ctypes
+    import os
     import sys as _sys
     from pathlib import Path
     from unittest.mock import patch
@@ -113,6 +114,26 @@ def run(ctx) -> None:
         else:
             ok(f"接线：{rel} 调用点在 setWindowFlags 之后",
                src.rindex("setWindowFlags(") < src.index(call))
+
+    # ---- 3.6 A/B 开关：GUJI_NO_TASKBAR_BUTTON 整层关掉任务栏位 ----
+    # 崩溃排查用（2026-11-22）：关掉后这四个弹窗回到 owned window 形态，
+    # 用来验证「WS_EX_APPWINDOW 扩大 WM_NCHITTEST 暴露面」这个假设。
+    # 关键是置位时必须**连句柄都不碰**（否则只是晚一步设置样式，A/B 无效）。
+    class _Probe:
+        touched = False
+
+        def winId(self):  # noqa: N802 - 模拟 QWidget 接口
+            _Probe.touched = True
+            return 0
+
+    os.environ[nm.TASKBAR_BUTTON_ENV] = "1"
+    try:
+        ok("A/B 开关：置位时直接返回 False，且不碰窗口句柄",
+           nm.enable_taskbar_button(_Probe()) is False and not _Probe.touched)
+    finally:
+        os.environ.pop(nm.TASKBAR_BUTTON_ENV, None)
+    ok("A/B 开关：默认不生效（还原后仍走原路径）",
+       nm.enable_taskbar_button(_Probe()) is False and _Probe.touched)
 
     # ---- 4. 接线守卫：入口必须真的调了修复 ----
     entry = (root / "desktop" / "app.py").read_text(encoding="utf-8")

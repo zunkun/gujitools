@@ -103,10 +103,18 @@ _psapi.GetModuleFileNameExW.argtypes = [
 _psapi.GetModuleFileNameExW.restype = wintypes.DWORD
 
 
-#: x64 ``CONTEXT`` 里我们关心的字段偏移（结构体太大，只按偏移取值）
+#: x64 ``CONTEXT`` 里我们关心的字段偏移（结构体太大，只按偏移取值）。
+#: ⚠️ 一套 x64 固定偏移，别按 Win32 的 CONTEXT 抄：Win64 前面有 P1Home…
+#: P6Home 与 ContextFlags，通用寄存器从 0x78（RAX=120）起。
+_CTX_RAX = 120
 _CTX_RCX = 128
+_CTX_RDX = 136
 _CTX_RSP = 152
 _CTX_RBP = 160
+_CTX_RSI = 168
+_CTX_RDI = 176
+_CTX_R8 = 184
+_CTX_R9 = 192
 _CTX_RIP = 248
 
 _FILTER = ctypes.WINFUNCTYPE(wintypes.LONG, ctypes.c_void_p)
@@ -114,6 +122,38 @@ _FILTER = ctypes.WINFUNCTYPE(wintypes.LONG, ctypes.c_void_p)
 
 def _u64(raw: bytes, offset: int) -> int:
     return struct.unpack_from("<Q", raw, offset)[0]
+
+
+def _ctx_value(raw: bytes, offset: int) -> int:
+    """从 CONTEXT 字节里取一个 64 位字段（读不全就给 0，绝不抛）。"""
+    if len(raw) < offset + 8:
+        return 0
+    return _u64(raw, offset)
+
+
+def _regs_text(raw: bytes) -> str:
+    """把排障最常用的寄存器排成一行。
+
+    为什么是这几个（2026-11-22 定案）：Win64 调用约定下参数在
+    ``rcx/rdx/r8/r9``，被调函数常用的临时寄存器是 ``rax/rsi/rdi``——
+    「写已释放 QEvent」那次野指针正好在 ``rsi`` 里，只记 ``rcx`` 看不出所以然。
+    """
+    fields = (
+        ("rax", _CTX_RAX), ("rcx", _CTX_RCX), ("rdx", _CTX_RDX),
+        ("rsi", _CTX_RSI), ("rdi", _CTX_RDI),
+        ("r8", _CTX_R8), ("r9", _CTX_R9),
+        ("rip", _CTX_RIP), ("rsp", _CTX_RSP), ("rbp", _CTX_RBP),
+    )
+    return " ".join(f"{name}=0x{_ctx_value(raw, off):x}" for name, off in fields)
+
+
+def _access_text(code: int, params: tuple[int, ...]) -> str:
+    """访问违例的「读/写/执行 + 访问地址」（非 AV 给空串）。"""
+    if code != 0xC0000005 or len(params) < 2:
+        return ""
+    kind = {0: "读", 1: "写", 8: "执行"}.get(int(params[0]), "?")
+    return f"访问{kind} 0x{int(params[1]):x}"
+
 
 
 def _read_mem(addr: int, size: int) -> bytes:
@@ -227,15 +267,30 @@ def _write_minidump(path: Path, exc_ptr: int) -> str:
             _dbghelp.MiniDumpWriteDump.restype = wintypes.BOOL
         import msvcrt
 
+        # 绑到局部：闭包里用全局变量时类型检查无法延续上面的 None 收窄
+        dbghelp = _dbghelp
+
         # 先写到临时名，成功再改名：失败时别在目录里留一个 0 字节的假 dump
         temp = path.with_suffix(path.suffix + ".part")
         with open(temp, "wb") as fh:
             handle = msvcrt.get_osfhandle(fh.fileno())
-            ok = _dbghelp.MiniDumpWriteDump(
-                _k32.GetCurrentProcess(), os.getpid(),
-                wintypes.HANDLE(handle),
-                0x00000000 | 0x00001000,  # MiniDumpNormal | MiniDumpWithThreadInfo
-                None, None, None)
+
+            def _call(with_exc: bool) -> bool:
+                # ExceptionParam：带上异常流（解析工具能直接拿到异常码/寄存器）。
+                # 实测（2026-11-22 探针矩阵）：空指针类 AV 时 dbghelp 会去读
+                # 故障地址附近内存 → ERROR_NOACCESS(998) 失败；故障地址有效的
+                # 崩溃（野指针写）则能成功。所以先带参数试，失败回退无参数。
+                return dbghelp.MiniDumpWriteDump(
+                    _k32.GetCurrentProcess(), os.getpid(),
+                    wintypes.HANDLE(handle),
+                    0x00000000 | 0x00001000,  # MiniDumpNormal | MiniDumpWithThreadInfo
+                    ctypes.c_void_p(exc_ptr) if with_exc else None, None, None)
+
+            ok = _call(True)
+            mode = "含异常流"
+            if not ok:
+                ok = _call(False)
+                mode = "无异常流（故障地址不可读，回退）"
             if not ok:
                 err = ctypes.get_last_error()
                 fh.close()
@@ -245,7 +300,7 @@ def _write_minidump(path: Path, exc_ptr: int) -> str:
                     pass
                 return f"MiniDumpWriteDump 失败（err={err}）"
         os.replace(temp, path)
-        return f"已写入 {path.name}（{path.stat().st_size} 字节）"
+        return f"已写入 {path.name}（{path.stat().st_size} 字节，{mode}）"
     except Exception as exc:  # noqa: BLE001 - 转储失败也要把报告写完
         return f"MiniDumpWriteDump 异常：{exc}"
 
@@ -260,11 +315,12 @@ def _on_exception(exc_ptr) -> int:  # noqa: ANN001 - Windows 过滤器签名
         record = pointers.contents.ExceptionRecord.contents
         code = int(record.ExceptionCode)
         fault = int(record.ExceptionAddress or 0)
-        raw_ctx = _read_mem(int(pointers.contents.ContextRecord or 0), 256)
-        rip = _u64(raw_ctx, _CTX_RIP) if len(raw_ctx) >= _CTX_RIP + 8 else 0
-        rsp = _u64(raw_ctx, _CTX_RSP) if len(raw_ctx) >= _CTX_RSP + 8 else 0
-        rbp = _u64(raw_ctx, _CTX_RBP) if len(raw_ctx) >= _CTX_RBP + 8 else 0
-        rcx = _u64(raw_ctx, _CTX_RCX) if len(raw_ctx) >= _CTX_RCX + 8 else 0
+        raw_ctx = _read_mem(int(pointers.contents.ContextRecord or 0),
+                            _CTX_RIP + 8)
+        rip = _ctx_value(raw_ctx, _CTX_RIP)
+        rsp = _ctx_value(raw_ctx, _CTX_RSP)
+        params = tuple(int(x) for x in
+                       record.ExceptionInformation[:record.NumberParameters])
 
         modules = _modules()
         stamp = time.strftime("%Y%m%d_%H%M%S")
@@ -280,11 +336,17 @@ def _on_exception(exc_ptr) -> int:  # noqa: ANN001 - Windows 过滤器签名
             f"进程：pid={os.getpid()}  exe={sys.executable}",
             f"异常：0x{code:08x}（{_explain(code)}）",
             f"出错地址：{_where(modules, fault)}  rip={_where(modules, rip)}",
-            f"寄存器：rsp=0x{rsp:x} rbp=0x{rbp:x} rcx=0x{rcx:x}",
-            "",
+            f"寄存器：{_regs_text(raw_ctx)}",
+        ]
+        access = _access_text(code, params)
+        if access:
+            # 写访问 + 目标地址是判「空指针 vs 野指针」的分水岭：
+            # rcx/rsi 为 0 ⇒ 空指针；非 0 但不可写 ⇒ 已释放/越界。
+            lines.append(f"访问信息：{access}")
+        lines.extend([
             "调用链候选（从栈顶往上扫，只挑落在模块里的值：",
             "第一个通常就是出错函数，往后是它的调用者）：",
-        ]
+        ])
         frames, scanned = _scan_stack(modules, rsp, skip=(rip,))
         lines.append(f"（栈扫了 {scanned} 字节；0 表示栈都读不到，"
                      f"不是「没有调用链」）")
@@ -366,3 +428,4 @@ def install(directory: str | Path) -> bool:
         log(f"崩溃转储挂钩失败：{exc}")
         _filter_ref = None
         return False
+

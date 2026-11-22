@@ -30,6 +30,7 @@ Snap Layout 也能弹出来。
 from __future__ import annotations
 
 import ctypes
+import os
 import sys
 
 #: Win32 常量（winuser.h）；这里手抄而不是 import win32con——省 pywin32
@@ -44,6 +45,11 @@ SWP_NOSIZE = 0x0001
 SWP_NOMOVE = 0x0002
 SWP_NOZORDER = 0x0004
 SWP_FRAMECHANGED = 0x0020
+
+#: ``GUJI_NO_TASKBAR_BUTTON=1`` 整层关掉「子窗口补任务栏按钮」（A/B 排查用）。
+#: 背景（2026-11-22）：崩溃集中在拼版/选图弹窗，怀疑给它们补 ``WS_EX_APPWINDOW``
+#: 后变成独立顶层窗口、扩大了 ``WM_NCHITTEST`` 的暴露面。默认不开，行为不变。
+TASKBAR_BUTTON_ENV = "GUJI_NO_TASKBAR_BUTTON"
 
 
 def _long_style_fns():
@@ -113,6 +119,8 @@ def enable_taskbar_button(window) -> bool:
     ⚠️ 必须在该窗口**最后一次 ``setWindowFlags`` 之后**调用：那会重建原生
     窗口，先打的样式位会丢。返回值语义与 :func:`enable_native_minimize` 一致。
     """
+    if (os.environ.get(TASKBAR_BUTTON_ENV) or "").strip().lower() in ("1", "on", "yes"):
+        return False  # A/B 排查开关：整层跳过，连句柄都不碰
     try:
         hwnd = int(window.winId())
     except Exception:  # noqa: BLE001

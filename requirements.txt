@@ -44,7 +44,7 @@ fpdf2>=2.7.0             # PDF 生成（import fpdf）
 # 2026-11-21 打包版实测）。已由 desktop/components/common/safecomponents.py
 # 的 keep_spin_text_visible 兜底（升级 qfluentwidgets 修复后可删）；上界
 # 暂不收窄到 <6.11，是因为 6.12 是最后支持 Win10 的版本、且兜底已验证有效。
-PySide6>=6.6.0,<6.13              # Qt 绑定
+PySide6>=6.10.0,<6.11              # Qt 绑定；锁在 6.10 线，避开 6.11.2/3 已实测的原生崩溃
 PySide6-Fluent-Widgets>=1.5.0     # import qfluentwidgets（GPLv3，商用另购授权）
 
 # ---- 用户手册：docs/guide/*.md → HTML → 系统浏览器 ----
@@ -52,3 +52,4 @@ PySide6-Fluent-Widgets>=1.5.0     # import qfluentwidgets（GPLv3，商用另购
 # （截图内联）放进产物，运行时只是打开现成的文件，因此 `guji.spec` 的
 # excludes 里把 markdown 排掉了——别因为它不在包里就从这份清单删掉。
 markdown>=3.4            # import markdown（纯 Python，无二进制依赖）
+

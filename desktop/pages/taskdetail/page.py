@@ -28,6 +28,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -303,6 +304,10 @@ class TaskDetailPage(
         task = self.store.get_task(task_id)
         if not task:
             return False
+        # 取证埋点（2026-11-22）：内存优化合入当晚起出现「切任务详情瞬间
+        # use-after-free」，这里记下切任务的起点，崩溃日志末尾能直接对上。
+        from utils.crash_log import breadcrumb
+        breadcrumb(f"切换任务详情：{self.task_id or '-'} → {task_id}")
         # ⚠️ 步骤执行中禁止切换（2026-09-26 第二轮审计）：runner 的收尾
         #    全部按 self.task_id 落盘，切走后事件到达就会写进**新任务**的
         #    runs.json / 输出目录。单页检测是几秒的辅助操作，直接停掉即可。
@@ -1814,6 +1819,13 @@ class TaskDetailPage(
         用户 2026-11-21：「离开拼版页面就释放，其他步骤也一样」。切走之后
         的几十~几百 MB 大图与缩略图没人再看，没必要攥着等内存涨到顶。
 
+        ⚠️ 对照实验开关（2026-11-22）：内存优化（c6e8969）合入当晚起出现
+        use-after-free（切换任务详情瞬间，Qt6Widgets notify_helper 写已释放
+        的 QEvent），时间与场景都指向「离开即释放」。设
+        ``GUJI_NO_RELEASE_BUFFERS=1`` 可整体跳过释放路径，用于隔离变量：
+        关掉后不再崩 ⇒ 释放路径背锅；还崩 ⇒ Qt 6.11.3 自身的 bug。
+        （跳过只是少省内存，功能不受影响——回来各控件自己会重装。）
+
         只释放位图：页面清单、当前页、勾选、未落盘的版面改动全都不动
         （离开前 ``flush_layout_pending`` / ``_flush_param_drafts`` 已补发）。
         回来由各控件的 ``restore_buffers`` 或既有的"进步骤刷新"重建。
@@ -1823,6 +1835,10 @@ class TaskDetailPage(
         那条"禁 getattr"约束针对的是 LazyPanelHost（它的 ``__getattr__``
         会把面板顺带建出来），与此无关。
         """
+        if os.environ.get("GUJI_NO_RELEASE_BUFFERS"):
+            return
+        from utils.crash_log import breadcrumb
+        breadcrumb(f"释放预览位图：stage={stage or '全部'}")
         stages = (
             [stage] if stage
             else ["extract", "detect", "rembg", "print", IMPOSITION_STAGE]

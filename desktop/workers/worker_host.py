@@ -159,6 +159,8 @@ class WorkerHost:
 
     def _forget_worker(self, worker: QObject, thread: QThread) -> None:
         """线程结束（已在主线程）：移出引用表，并**销毁 QThread 对象本身**。"""
+        from utils.crash_log import breadcrumb
+        breadcrumb(f"回收QThread 0x{id(thread):x}")
         for container in (self._workers, self._threads):
             # 两个容器的元素类型不同（QObject / QThread），统一按 QObject 容器操作
             box = cast(list[QObject], container)

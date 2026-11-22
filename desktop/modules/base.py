@@ -208,7 +208,15 @@ class ModulePage(QWidget, WorkerHost):
         ⚠️ 控件属性名按惯例是 ``viewer``（步骤页）或 ``view``（拼版页）——
         这里两个都探，子类不必为了释放改名。这是**能力探测**，不是取业务
         数据，和"禁 getattr 探测 LazyPanelHost"那条纪律无关。
+
+        ⚠️ ``GUJI_NO_RELEASE_BUFFERS=1`` 可跳过（对照实验开关，2026-11-22：
+        隔离「离开即释放」与 use-after-free 的因果关系，见详情页同名开关）。
         """
+        import os
+        if os.environ.get("GUJI_NO_RELEASE_BUFFERS"):
+            return
+        from utils.crash_log import breadcrumb
+        breadcrumb(f"释放模块页位图：{type(self).__name__}")
         self._buffers_released = True
         for attr in ("viewer", "view"):
             widget = getattr(self, attr, None)

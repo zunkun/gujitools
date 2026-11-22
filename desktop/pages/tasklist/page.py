@@ -474,8 +474,11 @@ class TaskListPage(QWidget, WorkerHost):
         thread.finished.connect(thread.deleteLater)
         # 线程收尾就从表里摘掉：留着已删除的 QThread 包装，之后任何访问都会
         # 抛 RuntimeError（删任务前的"等它停"会踩到）。
-        thread.finished.connect(
-            lambda tid=task_id: self._aggregate_jobs.pop(tid, None)
+        connect_queued(
+            self,
+            thread.finished,
+            lambda tid=task_id: self._aggregate_jobs.pop(tid, None),
+            thread,
         )
         self._aggregate_jobs[task_id] = (thread, worker)
         thread.start()

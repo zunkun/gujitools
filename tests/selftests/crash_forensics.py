@@ -64,15 +64,16 @@ def _run(ctx) -> None:
     work.mkdir(parents=True, exist_ok=True)
     log_file = work / "crash.log"
 
-    # ---------------- 1. 装 + 写 + 滚动 ----------------
+    # ---------------- 1. 装 + 写 + 不覆盖归档 ----------------
     log_file.write_bytes(b"x" * (crash_log.MAX_BYTES + 1))  # 先造一份超大旧日志
     os.environ[_ENV] = str(log_file)
     installed = crash_log.install(work)
     ok("日志装得上（返回落点）", installed == log_file, str(installed))
     ok("幂等：重复装不换文件", crash_log.install(work) == log_file)
-    backup = log_file.with_suffix(log_file.suffix + ".1")
-    ok("超大旧日志被滚动成 .1（磁盘占用封顶）", backup.is_file(),
-       str(backup))
+    archives = sorted(work.glob("crash_log_*.log"))
+    ok("超大旧日志按时间戳归档、不覆盖旧现场",
+       len(archives) == 1 and archives[0].stat().st_size == crash_log.MAX_BYTES + 1,
+       str([p.name for p in archives]))
 
     crash_log.breadcrumb("selftest 面包屑")
     crash_log.log("selftest 普通日志")

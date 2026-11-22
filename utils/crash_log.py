@@ -18,7 +18,8 @@
 的 minidump 在 :mod:`utils.crash_dump` 里。
 
 ⚠️ 日志只记**动作与位置**，不记用户内容（页号、数量、文件名按需截断）。整份
-日志超过 ``MAX_BYTES`` 就滚动一份 ``.1``，不会无限长。
+日志超过 ``MAX_BYTES`` 时按时间戳归档旧日志，不覆盖、不删除。
+程序重启追加到 ``crash.log``，不会清掉上一份现场。
 """
 
 from __future__ import annotations
@@ -31,7 +32,7 @@ import time
 import traceback
 from pathlib import Path
 
-#: 单份日志上限（超过就滚动成 ``.1``，只留两份）
+#: 单份日志上限（超过就按时间戳归档，保留所有归档）
 MAX_BYTES = 2 * 1024 * 1024
 
 #: 想改落点（排障/自测）时设它：``GUJI_CRASH_LOG=<文件路径>``
@@ -52,12 +53,18 @@ def _stamp() -> str:
 
 
 def _rotate(path: Path) -> None:
-    """超过上限就先挪成 ``.1``（只留一份历史，磁盘占用封顶 4MB）。"""
+    """超过上限就归档旧日志，绝不覆盖或删除历史日志。"""
     try:
         if path.is_file() and path.stat().st_size > MAX_BYTES:
-            backup = path.with_suffix(path.suffix + ".1")
-            if backup.exists():
-                backup.unlink()
+            stamp = time.strftime("%Y%m%d_%H%M%S")
+            millis = f"{int(time.time() * 1000) % 1000:03d}"
+            stem = f"crash_log_{stamp}_{millis}_pid{os.getpid()}.log"
+            backup = path.with_name(stem)
+            number = 2
+            while backup.exists():
+                stem = f"crash_log_{stamp}_{millis}_pid{os.getpid()}_{number}.log"
+                backup = path.with_name(stem)
+                number += 1
             os.replace(path, backup)
     except OSError:
         pass  # 滚动失败不影响继续写

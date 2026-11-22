@@ -138,7 +138,7 @@ guji/
 ```
 logs/
 ├── crash.log                    常驻日志：面包屑 + faulthandler + excepthook + Qt 消息
-├── crash.log.1                  上一份（超过 2MB 滚动，磁盘占用封顶）
+├── crash_log_<时间>_pid<pid>.log 超过 2MB 时归档旧日志（保留历史、不覆盖）
 ├── crash_<时间>_pid<pid>.txt    崩溃报告：异常码/出错地址/寄存器/调用链候选/日志尾部
 └── crash_<时间>_pid<pid>.dmp    minidump（可用 WinDbg/VS 打开看真栈）
 ```
