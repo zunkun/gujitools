@@ -57,6 +57,10 @@ def _base(stage: str, **overrides) -> dict:
 # 别动它；桌面下拉用本地这张「(显示, 值)」表，取值走 ``currentData()``。
 EXTRACT_EXTS = [("JPG", "jpg"), ("PNG", "png")]
 
+# 输出 DPI 下拉候选（2026-11-22 用户口径：只给 300/400/600，默认 300）。
+# 取值走 ``currentData()``（int）；历史上的其它 dpi 回填时回落到 300。
+EXTRACT_DPI_CHOICES = [(str(v), v) for v in (300, 400, 600)]
+
 # ⚠️ 2026-10-22：area 下拉候选表已随 area 参数整体删除——界面上没有这个控件，
 # 后端也不再有任何 area 分支。留着这张表只会变成第二份"看起来还能用"的界面数据。
 REMBG_TYPES = [(f"{v} ({name})", v) for v, name in zip(_REMBG_TYPES, ("二值", "1bit", "灰度"))]

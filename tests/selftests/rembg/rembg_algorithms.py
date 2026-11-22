@@ -160,8 +160,9 @@ def run(ctx) -> None:
        panel._combo_value(panel.algorithm) == "otsu",
        str(panel._combo_value(panel.algorithm)))
     ok("面板默认窗口 25 / k 0.2",
-       panel.local_window.value() == 25 and abs(panel.k.value() - 0.2) < 1e-9,
-       f"{panel.local_window.value()} / {panel.k.value()}")
+       panel.local_window.value() == 25
+       and abs(panel.get_args()["k"] - 0.2) < 1e-9,
+       f"{panel.local_window.value()} / {panel.get_args()['k']}")
     ok("全局算法时窗口/k 置灰",
        not panel.local_window.isEnabled() and not panel.k.isEnabled())
 
@@ -226,10 +227,10 @@ def run(ctx) -> None:
     ok("历史参数回填算法/窗口/k 且不算用户改动",
        panel._combo_value(panel.algorithm) == "fixed"
        and panel.local_window.value() == 31
-       and abs(panel.k.value() - 0.35) < 1e-9
+       and abs(panel.get_args()["k"] - 0.35) < 1e-9
        and len(edited) == _edited_before_apply
        and len(algorithm_edited) == _algorithm_before_apply,
-       f"{panel._combo_value(panel.algorithm)} / {panel.local_window.value()} / {panel.k.value()}")
+       f"{panel._combo_value(panel.algorithm)} / {panel.local_window.value()} / {panel.get_args()['k']}")
     ok("回填全局算法后窗口/k 再次置灰",
        not panel.local_window.isEnabled() and not panel.k.isEnabled())
     panel.deleteLater()

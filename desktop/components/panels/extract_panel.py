@@ -8,7 +8,11 @@ from qfluentwidgets import LineEdit
 
 from desktop.components.common.safecomponents import SafeSpinBox
 from desktop.components.panels.base import StagePanel, default_for
-from desktop.components.panels.params_spec import DEFAULTS, EXTRACT_EXTS
+from desktop.components.panels.params_spec import (
+    DEFAULTS,
+    EXTRACT_DPI_CHOICES,
+    EXTRACT_EXTS,
+)
 from desktop.ui.widgets import SectionTitle, combo_box
 
 
@@ -29,16 +33,13 @@ class ExtractPanel(StagePanel):
         self.zoom = SafeSpinBox()
         self.zoom.setRange(1, 8)
         self.zoom.setValue(int(d["zoom"]))
-        self.dpi = SafeSpinBox()
-        self.dpi.setRange(72, 1200)
-        self.dpi.setSingleStep(50)
-        self.dpi.setValue(int(d["dpi"]))
+        self.dpi = combo_box(EXTRACT_DPI_CHOICES)
+        self._set_dpi(int(d["dpi"]))
         self.dpi.setToolTip(
             "整页渲染的清晰度下限（单位：每英寸点数），默认 300。\n"
             "不放大直接渲染时，PDF 的 1 点只有 1 像素（约合 72），矢量文档这样\n"
             "提取出来一放大就糊；补到 300 才能保证打印清晰。\n"
-            "取内嵌图时按原图字节落盘，这个值不生效。\n"
-            "想要旧的 72 行为，就把它设成 72。"
+            "取内嵌图时按原图字节落盘，这个值不生效。"
         )
         self.ext = combo_box(EXTRACT_EXTS)
         self._set_ext(str(d["ext"]))
@@ -66,7 +67,7 @@ class ExtractPanel(StagePanel):
         """
         args = {
             "zoom": self.zoom.value(),
-            "dpi": self.dpi.value(),
+            "dpi": int(self.dpi.currentData()),
             "ext": str(self.ext.currentData() or self.ext.currentText()),
         }
         if self.pages_edit.text().strip():
@@ -78,12 +79,21 @@ class ExtractPanel(StagePanel):
         idx = self.ext.findData(value)
         self.ext.setCurrentIndex(idx if idx >= 0 else 0)
 
+    def _set_dpi(self, value: int) -> None:
+        """按参数值回填 DPI 下拉。
+
+        候选只有 300/400/600（用户 2026-11-22），历史配置里的其它值
+        （如 72/1200）在下拉里找不到时回落到默认 300。
+        """
+        idx = self.dpi.findData(value)
+        self.dpi.setCurrentIndex(idx if idx >= 0 else self.dpi.findData(300))
+
     def _apply_args(self, parameters: dict) -> None:
         d = DEFAULTS[self.stage]
         self.zoom.setValue(int(default_for(parameters, d, "zoom")))
         # ⚠️ dpi 的默认值是 300，用 default_for 的「None 也回落」语义：
-        # 历史里存着 dpi: null 时不能把 None 塞进 setValue
-        self.dpi.setValue(int(default_for(parameters, d, "dpi")))
+        # 历史里存着 dpi: null 时不能把 None 塞进下拉查找
+        self._set_dpi(int(default_for(parameters, d, "dpi")))
         # 历史配置里存着 tiff 时下拉里没有它：回落到第一项（jpg）。
         self._set_ext(str(default_for(parameters, d, "ext")))
         self.pages_edit.setText(str(parameters.get("pages") or ""))

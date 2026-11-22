@@ -211,14 +211,17 @@ def plan_print_page(
     # （[x_mm, y_mm, w_mm, h_mm]，页面 mm 坐标系，与 plan.image 同源）。
     # 给定后**直接作为图片框**，不再由 page_margins 推导——即所见即所得。
     # 这是「显式值优先」原则：title/页码位置只取决于 page_margins（与图片框
-    # 无关），故不受影响。坐标需在页面内，否则回落到自动排版。
+    # 无关），故不受影响。
+    # ⚠️ 坐标**允许超出纸面**（负页边距顶出纸边、画布上把图拖出纸面）：
+    #    超出部分由纸张自然裁掉。不能再以"越界"为由回落自动排版——否则
+    #    双击放大预览/生成 PDF 会丢掉用户摆好的位置，图又被自动排版铺满
+    #    整张纸（用户 2026-11-22 实测）。只拦非法/零尺寸。
     if image_rect is not None:
         try:
             rx, ry, rw, rh = (float(v) for v in image_rect[:4])
         except (TypeError, ValueError, IndexError):
             rx, ry, rw, rh = x_img, y_img, new_w, new_h
-        if rw > 0 and rh > 0 and 0 <= rx and 0 <= ry and \
-                rx + rw <= page_w + 1e-6 and ry + rh <= page_h + 1e-6:
+        if rw > 0 and rh > 0:
             x_img, y_img, new_w, new_h = rx, ry, rw, rh
 
     title_insets = text_insets(args.get("title_margins"))

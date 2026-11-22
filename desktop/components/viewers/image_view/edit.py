@@ -7,9 +7,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QPointF, Qt
 from .styles import HANDLE_RADIUS, _HANDLE_CURSORS
-from utils.box_geometry import (
-    MIN_BOX_SIDE_PX, MIN_BOX_SIDE_RATIO, box_too_small, min_box_sides,
-)
+from utils.box_geometry import box_too_small, min_box_sides
 from typing import TYPE_CHECKING
 
 
@@ -17,6 +15,11 @@ if TYPE_CHECKING:
     from ._host import ImageViewHost
 else:
     ImageViewHost = object
+
+
+#: 手绘新框的最小拖动距离（图片像素，单边）：低于它视为「只是点了一下」，
+#: 静默忽略、不提示「画框太小」（用户 2026-11-22）。
+_NEW_BOX_MIN_DRAG_PX = 3
 
 
 class EditMixin(ImageViewHost):
@@ -215,7 +218,16 @@ class EditMixin(ImageViewHost):
                 self.edit_rejected.emit(self._limit_message())
                 self._rerender()
                 return
-            # 太小（误触点一下、或画了个几十像素的小块）→ **不生效**，并即时说出来。
+            # 只是点了一下（没有真正拖出框）→ 静默忽略，不提示"太小"。
+            # 用户 2026-11-22：「在页面点击一下……此时是 0×0 不应该提示，因为没有画框」；
+            # 点击时手抖常留下 1~2px 位移，一并算作没画框。
+            if (
+                box[2] - box[0] < _NEW_BOX_MIN_DRAG_PX
+                or box[3] - box[1] < _NEW_BOX_MIN_DRAG_PX
+            ):
+                self._rerender()
+                return
+            # 太小（画了个几十像素的小块）→ **不生效**，并即时说出来。
             # 用户 2026-11-16：「太小的话不生效、不显示，可以即时消息提示」。
             if box_too_small(box, self._image_size):
                 self.box_too_small.emit(self._too_small_message(box))
@@ -234,21 +246,13 @@ class EditMixin(ImageViewHost):
             return
         super().mouseReleaseEvent(event)
 
-    def _too_small_message(self, box) -> str:
-        """手绘的框太小 → 提示文案：说清"画了多大"与"至少要多大"。
+    def _too_small_message(self, _box) -> str:
+        """手绘的框太小 → 提示文案（一句话说完，用户 2026-11-22：话太多）。
 
-        判据是用户 2026-11-16 定的（宽/高各 ≥ 页宽(高)×20% 且 ≥ 100px），
-        但跟用户说话要落到"本页最少多少像素"，不然他不知道该画多大。
+        标题由宿主给出「画框太小」，这里只补一句「至少多大」。
         """
-        width = int(box[2]) - int(box[0])
-        height = int(box[3]) - int(box[1])
         min_w, min_h = min_box_sides(self._image_size)
-        return (
-            f"这次画的框是 {width}×{height} 像素，太小了没有生效。"
-            f"本页的文本框宽至少 {min_w}、高至少 {min_h} 像素"
-            f"（页宽/页高的 {MIN_BOX_SIDE_RATIO:.0%}，且不小于 "
-            f"{MIN_BOX_SIDE_PX} 像素），请拉大一点再画。"
-        )
+        return f"太小没有生效（本页至少 {min_w}×{min_h} 像素）"
 
     def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802
         """双击 → ``double_clicked``（宿主打开图片预览弹窗）。

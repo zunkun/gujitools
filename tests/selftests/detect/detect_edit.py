@@ -426,15 +426,29 @@ def run(ctx) -> None:  # noqa: ARG001 - 本模块自带夹具，不用共享 ctx
     ok("画 20×20 的框：不提交（boxes_edited 不发，宿主不会存盘）",
        not edits, str(edits))
     min_w, min_h = min_box_sides((W, H))
-    ok("画 20×20 的框：即时提示「太小」并说清至少要多大",
-       bool(tiny and "太小" in tiny[0]
-            and f"宽至少 {min_w}" in tiny[0] and f"高至少 {min_h}" in tiny[0]),
+    ok("画 20×20 的框：即时提示一句「太小」+ 本页最小尺寸（不啰嗦）",
+       bool(tiny and tiny[0] == f"太小没有生效（本页至少 {min_w}×{min_h} 像素）"),
        str(tiny))
     _drag_new(mini, 200, 200, 520, 420)          # 320×220：两条都过线
     ok("画 320×220 的框：生效、被选中、并且提交了",
        mini._boxes == [[200, 200, 520, 420]] and mini.selected_index() == 0
        and len(edits) == 1, f"{mini._boxes} / {len(edits)}")
     ok("生效的那个框不会再报「太小」", len(tiny) == 1, str(tiny))
+
+    # 只点一下（0×0 / 手抖 1~2px）→ 不算画框：静默忽略，不能提示「太小」
+    # （用户 2026-11-22：「在页面点击一下，提示框太小，但是此时是 0x0 不应该提示，
+    #   因为没有画框」）。
+    clicks: list = []
+    mini.box_too_small.connect(clicks.append)
+    _drag_new(mini, 600, 500, 600, 500)
+    ok("点一下（0×0）：不提示「太小」", not clicks, str(clicks))
+    ok("点一下（0×0）：不入库，原框不受影响",
+       mini._boxes == [[200, 200, 520, 420]], str(mini._boxes))
+    _drag_new(mini, 600, 500, 602, 502)
+    ok("手抖 2×2：同样当作没画框", not clicks, str(clicks))
+    _drag_new(mini, 600, 500, 604, 504)
+    ok("拖出 4×4：仍按「太小」提示（真画了框只是太小）",
+       len(clicks) == 1 and mini._boxes == [[200, 200, 520, 420]], str(clicks))
     ok("判据常量没被人动过（20% / 100px）",
        MIN_BOX_SIDE_RATIO == 0.20 and MIN_BOX_SIDE_PX == 100,
        f"{MIN_BOX_SIDE_RATIO} / {MIN_BOX_SIDE_PX}")
@@ -445,7 +459,7 @@ def run(ctx) -> None:  # noqa: ARG001 - 本模块自带夹具，不用共享 ctx
 
     # 宿主收到「太小」→ 标题必须说清是「画框太小」（不能借用"框数已达上限"）
     host.toasts.clear()
-    host._on_box_too_small("这次画的框只有 20×20 像素，太小了没有生效。")
+    host._on_box_too_small("太小没有生效（本页至少 200×160 像素）")
     ok("宿主收到「太小」→ 弹「画框太小」提示（标题不串到框数上限）",
        bool(host.toasts and host.toasts[-1][1] == "画框太小"),
        str(host.toasts))

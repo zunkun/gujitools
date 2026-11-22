@@ -3440,6 +3440,12 @@ print 面板「位置」「文字方向」的固定取值（由 PrintFormMixin �
 由此一并删掉的还有 ``whole_page_only``：那套锁是给旧模型用的，
 现在去底色压根不看框。
 
+### 模块常量
+
+| 名称 | 值 |
+| --- | --- |
+| SEAL_AREA_SLIDER_MAX | `2000` |
+
 ### `class RembgPanel(StagePanel)`
 
 图片去底色阶段面板：算法 / 局部窗口 / type / offset / 印章参数。

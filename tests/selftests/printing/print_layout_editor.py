@@ -141,18 +141,30 @@ def run(ctx) -> None:
        and abs(rect2[2] / rect2[3] - rect1[2] / rect1[3]) < 1e-6,
        f"{rect1} -> {rect2}")
 
-    # ---- 4. 拖出页面会被夹住 ----
+    # ---- 4. 可以拖出纸面（负边距 = 图片顶出纸边，需能挪裁切位置）----
     r = canvas._rect_px()
     cx, cy = r.x() + r.width() / 2, r.y() + r.height() / 2
     _press(cx, cy)
-    _move(cx - 5000, cy - 5000)
-    _release(cx - 5000, cy - 5000)
+    _move(cx - 200 * ppm, cy - 200 * ppm)
+    _release(cx - 200 * ppm, cy - 200 * ppm)
     rect3 = canvas.current_rect()
-    ok("往页面外拖会被夹在页面内（不越界）",
-       rect3[0] >= -0.01 and rect3[1] >= -0.01
-       and rect3[0] + rect3[2] <= canvas._page_w_mm + 0.01
-       and rect3[1] + rect3[3] <= canvas._page_h_mm + 0.01,
-       str(rect3))
+    ok("可以拖到纸面外（不再把框夹回纸内）",
+       rect3[0] < -0.01 and rect3[1] < -0.01, str(rect3))
+
+    # 拖出纸面的框必须原样带进预览/PDF 排版；之前 plan 把"越界"当坏值回落
+    # 自动排版，双击放大预览时图又被铺满整张 A4（用户 2026-11-22）。
+    from utils.page_layout import plan_print_page
+
+    spec_out, _note = widget._print_spec(0, Path(str(png)))
+    plan_out = plan_print_page(
+        (800, 1200), spec_out["args"], 0, 1,
+        image_name="0001", image_rect=spec_out["rect"],
+    )
+    ok("拖出纸面的坐标带进预览/PDF（不被自动排版覆盖）",
+       all(abs(a - b) < 1e-9
+           for a, b in zip(plan_out.image, spec_out["rect"]))
+       and spec_out["rect"][0] < -0.01 and spec_out["rect"][1] < -0.01,
+       f"{spec_out['rect']} -> {plan_out.image}")
 
     # ---- 5. 标题 / 页码必须在版面编辑器里画出来 ----
     # 曾误把「版面编辑」做成只画图片，用户以为标题页码被去掉了。它们是版面
@@ -323,6 +335,62 @@ def run(ctx) -> None:
            "" if cached is None else f"{cached.width()}x{cached.height()}")
         ok("同一张图重复取底图复用缓存（拖框不重采样）",
            ratio_canvas._display_image_for() is cached, "")
+
+        # ---- 8.1 负边距顶出纸边：纸外不显示图片内容 ----
+        # 成品 PDF 把纸外内容交给纸张裁掉（见 print_margin_negative），编辑
+        # 画布也必须只显示纸内那部分，否则"看起来出的纸"与 PDF 对不上。
+        red = QImage(100, 100, QImage.Format.Format_RGB32)
+        red.fill(QColor("#e53935"))
+        ratio_canvas.set_page(100, 100, red, [-10, -10, 120, 120])
+        pump(app, 4)
+        shot = ratio_canvas.grab().toImage()
+        ppm = ratio_canvas._px_per_mm
+        row = round(ratio_canvas._off_y + 50 * ppm)
+        out_px = shot.pixelColor(round(ratio_canvas._off_x - 5 * ppm), row)
+        in_px = shot.pixelColor(round(ratio_canvas._off_x + 3 * ppm), row)
+
+        def _is_red(color) -> bool:
+            return (color.red() > 200 and color.green() < 100
+                    and color.blue() < 100)
+
+        ok("负边距：纸外的图片内容被裁掉（不显示越界部分）",
+           not _is_red(out_px), str(out_px.getRgb()))
+        ok("负边距：纸内的图片内容照常显示",
+           _is_red(in_px), str(in_px.getRgb()))
+        frame_x = round(ratio_canvas._rect_px().left())
+        frame_px = [
+            shot.pixelColor(frame_x + dx, round(ratio_canvas._off_y) - 4)
+            for dx in (0, 1, 2)
+        ]
+        ok("负边距：图片画框也裁到纸内（纸外不画框线）",
+           not any(c.blue() > 150 and c.red() < 120 for c in frame_px),
+           str([c.getRgb() for c in frame_px]))
+        # 纸面缩放只由纸张尺寸决定：图片框再大也不能把 A4 撑大/缩小
+        ppm_before = ratio_canvas._px_per_mm
+        ratio_canvas.set_page(100, 100, red, [-40, -40, 180, 180])
+        pump(app, 4)
+        ok("纸张显示比例与图片框无关（A4 纸不随图缩放）",
+           ratio_canvas._px_per_mm == ppm_before,
+           f"{ppm_before} → {ratio_canvas._px_per_mm}")
+
+        # 定位方块（手柄）落在纸外也不画：用只越界一点点的框，保证手柄
+        # 还在控件可视区内，扫它的方块区域确认没有蓝色描边。
+        ratio_canvas.set_page(100, 100, red, [-10, -2, 120, 104])
+        pump(app, 4)
+        shot2 = ratio_canvas.grab().toImage()
+        hx, hy = ratio_canvas._handle_positions()[0]
+        span = 9
+        blue_px = sum(
+            1
+            for xx in range(max(0, round(hx) - span),
+                            min(shot2.width(), round(hx) + span + 1))
+            for yy in range(max(0, round(hy) - span),
+                            min(shot2.height(), round(hy) + span + 1))
+            if shot2.pixelColor(xx, yy).blue() > 150
+            and shot2.pixelColor(xx, yy).red() < 120
+        )
+        ok("负边距：纸外的定位方块（手柄）不显示",
+           blue_px == 0, f"蓝色像素={blue_px}")
     finally:
         ratio_canvas.deleteLater()
 

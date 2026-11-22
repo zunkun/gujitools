@@ -85,12 +85,10 @@ class MouseMixin(PrintLayoutCanvasHost):
             return
         if self._mode == "move":
             mx, my = self._to_mm(event.position())
-            nx = min(max(mx - self._grab_x, 0.0),
-                      self._page_w_mm - self._rect_mm[2])
-            ny = min(max(my - self._grab_y, 0.0),
-                      self._page_h_mm - self._rect_mm[3])
-            self._rect_mm[0] = nx
-            self._rect_mm[1] = ny
+            # 允许拖出纸面：负页边距下图片本来就可能比纸大（纸外内容由
+            # 画布/成品裁掉），把框夹回纸内会让用户无法挪动裁切位置。
+            self._rect_mm[0] = mx - self._grab_x
+            self._rect_mm[1] = my - self._grab_y
             self._dirty = True
             self.update()
             return

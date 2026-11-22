@@ -6,7 +6,8 @@
 （预览与成品共用），故覆盖逻辑必须落在它身上，且：
 
 - 给定 image_rect（页面 mm，与 plan.image 同源）→ 直接作为图片框，不重算；
-- image_rect 超出页面 / 非法 → 回落到 page_margins 自动排版（不静默用坏值）；
+- image_rect **超出纸面/负坐标 → 仍原样采用**（负页边距、拖出纸边=裁切语义）；
+- 非法（长度不足/零宽高）→ 回落 page_margins 自动排版（不静默用坏值）；
 - 覆盖只影响图片框；标题/页码几何（取决于 page_margins）不受影响。
 """
 
@@ -49,12 +50,19 @@ def run(ctx) -> None:
     ok("覆盖不影响标题生成", plan.title is not None)
     ok("覆盖不影响页码生成", plan.page_number is not None)
 
-    # 3) 越界 → 回落自动排版（不静默用坏值）
+    # 3) 越界（超出纸面）→ 同样原样采用：负页边距/拖出纸边是合法排版，
+    #    超出部分由纸张裁掉。回落自动排版会让图在放大预览/PDF 里"铺满整纸"
+    #    （用户 2026-11-22）。
     oob = [250.0, 0.0, 100.0, 100.0]  # 250+100=350 > 297 越界
     plan_oob = plan_print_page(img, args, 0, 1, image_name="p", image_rect=oob)
-    ok("越界 image_rect 回落自动排版",
-       plan_oob.image != tuple(oob) and plan_oob.image == auto.image,
-       str(plan_oob.image))
+    ok("越界 image_rect 原样采用（超出部分由纸张裁掉）",
+       plan_oob.image == tuple(oob), str(plan_oob.image))
+
+    # 3.1) 负坐标（图片顶出左/上纸边）同样原样采用
+    neg = [-20.0, -15.0, 200.0, 150.0]
+    plan_neg = plan_print_page(img, args, 0, 1, image_name="p", image_rect=neg)
+    ok("负坐标 image_rect 原样采用（不回落自动排版）",
+       plan_neg.image == tuple(neg), str(plan_neg.image))
 
     # 4) 非法（长度不足）→ 回落自动排版
     bad = [5.0]

@@ -69,6 +69,10 @@ class PaintMixin(PrintLayoutCanvasHost):
         if image is not None and not image.isNull():
             r = self._rect_px()
             if r.width() > 0 and r.height() > 0:
+                # 图片本体与画框都裁到纸内：纸面以外的内容成品里不存在，
+                # 画布也不该显示。
+                painter.save()
+                painter.setClipRect(page_rect)
                 # ⚠️ 必须开平滑：Qt 默认关闭 SmoothPixmapTransform 时走最近邻，
                 # 一次大比例缩小会把细笔画/淡墨直接跳采样（版面页看着发虚的
                 # 原因）。底图已先降到 ≤2000px（见 DISPLAY_IMAGE_EDGE），这里
@@ -77,8 +81,12 @@ class PaintMixin(PrintLayoutCanvasHost):
                     QPainter.RenderHint.SmoothPixmapTransform, True
                 )
                 self._draw_image(painter, image, r)
-            painter.setPen(QPen(IMAGE_STROKE, 2))
-            painter.drawRect(r)
+                painter.setPen(QPen(IMAGE_STROKE, 2))
+                painter.drawRect(r)
+                painter.restore()
+            else:
+                painter.setPen(QPen(IMAGE_STROKE, 2))
+                painter.drawRect(r)
         # 标题 / 页码：与成品 PDF 同一份 PrintTextSpec 与同一套绘制函数，
         # 只多一层画布居中偏移。落点只由 page_margins 决定，不随图片框移动。
         if self._plan is not None:
@@ -88,15 +96,19 @@ class PaintMixin(PrintLayoutCanvasHost):
                 if spec is not None:
                     _draw_print_text(painter, spec, self._px_per_mm)
             painter.restore()
-        # 四角缩放手柄 + 框外上方的旋转钮
+        # 四角缩放手柄 + 框外上方的旋转钮。手柄同样只画纸面以内的部分：
+        # 图片顶出纸边时，纸外不该再留定位方块（旋转钮是换角度唯一抓手，保留）。
         if self._image is not None:
             painter.setPen(QPen(HANDLE_STROKE, 1.5))
             painter.setBrush(HANDLE_FILL)
+            painter.save()
+            painter.setClipRect(page_rect)
             for cx, cy in self._handle_positions():
                 painter.drawRect(
                     QRectF(cx - HANDLE_RADIUS, cy - HANDLE_RADIUS,
                            2 * HANDLE_RADIUS, 2 * HANDLE_RADIUS)
                 )
+            painter.restore()
             self._draw_rotate_knob(painter)
         painter.end()
 
