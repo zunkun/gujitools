@@ -1,12 +1,15 @@
 # -*- coding: utf-8 -*-
-"""去底色算法族自测：7 种算法、Otsu 向后兼容、分块计算等价、面板参数。
+"""去底色算法族自测：5 种算法、Otsu 向后兼容、分块计算等价、面板参数。
 
 用户 2026-10-24 口径：去底色要有算法下拉，默认 Otsu；选算法后能实时预览；
 局部算法（Niblack / Sauvola / Bernsen / Wolf-Jolion）要固定一套入口/出口。
+用户 2026-11-23 口径：去掉「固定阈值(fixed)」与「全局均值(mean)」，只留
+Otsu + 四种局部算法。
 
 本模块钉住四件事：
 
-1. **注册表与命令规格同源**：算法 key 集合 == CLI/校验用的 ``REMBG_ALGORITHMS``；
+1. **注册表与命令规格同源**：算法 key 集合 == CLI/校验用的 ``REMBG_ALGORITHMS``，
+   且已下线的 fixed/mean 不再出现在候选里；
 2. **Otsu 与旧实现逐像素一致**（历史任务默认算法，不能悄悄改结果）；
 3. **局部算法分块计算与整页计算等价**（halo/BORDER_REPLICATE 没写错）；
 4. **面板默认值/置灰逻辑/参数收集**（算法下拉、窗口、k）。
@@ -89,6 +92,9 @@ def run(ctx) -> None:
     ok("每种算法都有非空中文文案",
        all(item.label and item.description for item in ALGORITHMS),
        str([item.key for item in ALGORITHMS]))
+    ok("已下线的 fixed/mean 不在候选与注册表里",
+       "fixed" not in ALGORITHM_KEYS and "mean" not in ALGORITHM_KEYS,
+       str(ALGORITHM_KEYS))
 
     gray = _synthetic_page()
     rgb = _rgb(gray)
@@ -124,8 +130,8 @@ def run(ctx) -> None:
     ok("局部算法忽略 offset（逐像素阈值上叠全局常量无意义）",
        np.array_equal(local_with, local_without),
        f"差异={int((local_with != local_without).sum())}")
-    global_with = image_utils.rembg_page(rgb, gray, algorithm="fixed", offset=40)
-    global_without = image_utils.rembg_page(rgb, gray, algorithm="fixed", offset=0)
+    global_with = image_utils.rembg_page(rgb, gray, algorithm="otsu", offset=40)
+    global_without = image_utils.rembg_page(rgb, gray, algorithm="otsu", offset=0)
     ok("全局算法仍然使用 offset",
        not np.array_equal(global_with, global_without),
        f"差异={int((global_with != global_without).sum())}")
@@ -223,9 +229,9 @@ def run(ctx) -> None:
     _edited_before_apply = len(edited)
     _algorithm_before_apply = len(algorithm_edited)
 
-    panel.apply_args({"algorithm": "fixed", "window": 31, "k": 0.35})
+    panel.apply_args({"algorithm": "otsu", "window": 31, "k": 0.35})
     ok("历史参数回填算法/窗口/k 且不算用户改动",
-       panel._combo_value(panel.algorithm) == "fixed"
+       panel._combo_value(panel.algorithm) == "otsu"
        and panel.local_window.value() == 31
        and abs(panel.get_args()["k"] - 0.35) < 1e-9
        and len(edited) == _edited_before_apply
@@ -233,6 +239,14 @@ def run(ctx) -> None:
        f"{panel._combo_value(panel.algorithm)} / {panel.local_window.value()} / {panel.get_args()['k']}")
     ok("回填全局算法后窗口/k 再次置灰",
        not panel.local_window.isEnabled() and not panel.k.isEnabled())
+
+    # 老任务 ui.json 里可能还留着已下线的 fixed/mean：面板回落到第一项（Otsu），
+    # 不能崩，也不能把非法 key 再交出去。
+    panel.apply_args({"algorithm": "fixed", "window": 25, "k": 0.2})
+    ok("历史参数里的已下线算法回落到 Otsu",
+       panel._combo_value(panel.algorithm) == "otsu"
+       and panel.get_args()["algorithm"] == "otsu",
+       str(panel.get_args().get("algorithm")))
     panel.deleteLater()
 
     # ---- 7. 侧车落点只认任务目录 ----

@@ -178,7 +178,7 @@ GUI 的预览控件也要画同样的框。配色与命名必须一致，否则�
 
 ## rembg_algorithms.py — 去底色阈值算法族
 
-**为什么单独一个模块**：去底色从"只有全局 Otsu"变成 7 种算法可选，且要求
+**为什么单独一个模块**：去底色从"只有全局 Otsu"变成 5 种算法可选，且要求
 统一的入口/出口。这里用 `RembgAlgorithm` 抽象基类收口：
 
 ```text
@@ -188,14 +188,13 @@ GUI 的预览控件也要画同样的框。配色与命名必须一致，否则�
 ```
 
 `shared_threshold` 用于同页左右裁图共享：Otsu 把各图非白像素的直方图相加后
-再算一次（不拼大数组），均值按像素数加权，固定阈值与像素无关。单图结果与
-`thresholds` 逐位一致。
+再算一次（不拼大数组）。单图结果与 `thresholds` 逐位一致。（历史上有过
+`fixed`（固定 128）与 `mean`（整页平均值）两种全局算法，2026-11-23 按用户口径
+下线，老任务里残留的 key 由面板/存储层回落到默认 Otsu。）
 
 | key | 类 | 说明 |
 | --- | -- | ---- |
 | `otsu` | `OtsuAlgorithm` | 默认；与旧实现逐像素一致（非白子集 + offset + clamp[30,240]） |
-| `fixed` | `FixedThresholdAlgorithm` | 固定 128 + offset |
-| `mean` | `GlobalMeanAlgorithm` | 整页平均灰度 + offset |
 | `niblack` | `NiblackAlgorithm` | `mean - k×std`（k 取正值） |
 | `sauvola` | `SauvolaAlgorithm` | `mean × (1 + k×(std/R - 1))`，R=128 |
 | `bernsen` | `BernsenAlgorithm` | 局部对比度；`k` 映射为对比度下限（k×75） |

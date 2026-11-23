@@ -4,7 +4,7 @@
 
 图像处理功能模块：GUI 与 CLI 共用同一套算法
 
-覆盖 15 个模块、12 个公开类、49 个公开函数/方法（生成于 2026-11-22）。
+覆盖 15 个模块、12 个公开类、49 个公开函数/方法（生成于 2026-11-23）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -636,7 +636,7 @@ workers（默认 4）。将参数透传给 _generate_pdf，返回其
 源码：[`functions/rembg.py`](../../functions/rembg.py)
 
 File: functions/rembg.py
-去底色功能：对单张图片执行整图阈值去底色（7 种算法，默认 Otsu），
+去底色功能：对单张图片执行整图阈值去底色（5 种算法，默认 Otsu），
 可灰度化/二值化/彩色保留印章。
 
 此功能对应 `guji rembg` 命令，处理流程：
@@ -650,11 +650,11 @@ File: functions/rembg.py
    - 连通域过滤噪声（面积/纵横比/填充率三重判定）。
 
 3. **阈值计算**
-   - 按 `--algorithm` 选全局算法（固定/均值/Otsu）或局部算法（Niblack/
+   - 按 `--algorithm` 选全局算法（Otsu）或局部算法（Niblack/
      Sauvola/Bernsen/Wolf-Jolion），实现见 `utils.rembg_algorithms`；
    - `offset` 只对全局算法生效（叠加后限制在 [30, 240]）；局部算法逐像素
      定阈值，忽略 offset；
-   - 默认 Otsu：非白像素不足 500 时退化为固定阈值 128（与历史产物一致）。
+   - 默认 Otsu：非白像素不足 500 时阈值退化为 128（与历史产物一致）。
 
 4. **去底处理**
    - 算法输出文本掩码后，统一做印章排除、形态学去噪与输出类型转换；

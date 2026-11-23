@@ -4,7 +4,7 @@
 
 通用工具函数：几何、排序、图像 IO、PDF、YOLO
 
-覆盖 43 个模块、25 个公开类、231 个公开函数/方法（生成于 2026-11-22）。
+覆盖 43 个模块、23 个公开类、227 个公开函数/方法（生成于 2026-11-23）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -48,7 +48,7 @@
 | [`utils.pdf_stream`](#utilspdf_stream) | 1 | 2 |
 | [`utils.proc_job`](#utilsproc_job) | 0 | 5 |
 | [`utils.proc_utils`](#utilsproc_utils) | 0 | 1 |
-| [`utils.rembg_algorithms`](#utilsrembg_algorithms) | 10 | 14 |
+| [`utils.rembg_algorithms`](#utilsrembg_algorithms) | 8 | 10 |
 | [`utils.sort_utils`](#utilssort_utils) | 0 | 1 |
 | [`utils.string_utils`](#utilsstring_utils) | 0 | 3 |
 | [`utils.transparent_png`](#utilstransparent_png) | 0 | 2 |
@@ -3131,14 +3131,15 @@ pid 对应的进程是否还活着。
 
 源码：[`utils/rembg_algorithms.py`](../../utils/rembg_algorithms.py)
 
-整页去底色的**阈值算法族**：统一入口/出口 + 7 种实现。
+整页去底色的**阈值算法族**：统一入口/出口 + 5 种实现。
 
 为什么单独一个模块
 ------------------
 去底色原先只有一条「全局 Otsu」路径，阈值计算散在 ``utils/image_utils.py`` 里。
-用户 2026-10-24 要求把固定阈值、全局均值、Otsu、Niblack、Sauvola、Bernsen、
-Wolf-Jolion 都做成可选算法，并把「入口 / 出口」抽象成一套面向对象接口——这样
-加一种算法只需加一个子类，而不是在 ``rembg_page`` 里再长一条 ``if`` 分支。
+用户 2026-10-24 要求把各种阈值算法都做成可选算法，并把「入口 / 出口」抽象成
+一套面向对象接口——这样加一种算法只需加一个子类，而不是在 ``rembg_page`` 里
+再长一条 ``if`` 分支。用户 2026-11-23 又要求去掉不实用的「固定阈值(fixed)」与
+「全局均值(mean)」，只留 Otsu + 四种局部算法。
 
 三条硬约定
 ----------
@@ -3194,30 +3195,8 @@ Wolf-Jolion 都做成可选算法，并把「入口 / 出口」抽象成一套�
 
 **多张图合并**算一个公共阈值（同页左右裁图共享）。
 
-默认返回 ``None``：局部算法逐像素定阈值，不能跨图共享。全局算法
-（fixed/mean/otsu）各自覆盖本方法，把多张图的统计量合在一起算。
-
-### `class FixedThresholdAlgorithm(RembgAlgorithm)`
-
-固定阈值：预设 128（叠加 offset 后夹紧）。
-
-#### 方法
-
-| 方法 | 说明 |
-| --- | --- |
-| `thresholds(gray, *, offset=0, window=REMBG_DEFAULT_WINDOW, k=REMBG_DEFAULT_K)` | — |
-| `shared_threshold(grays, *, offset=0)` | — |
-
-### `class GlobalMeanAlgorithm(RembgAlgorithm)`
-
-全局均值：整页平均灰度作阈值（叠加 offset 后夹紧）。
-
-#### 方法
-
-| 方法 | 说明 |
-| --- | --- |
-| `thresholds(gray, *, offset=0, window=REMBG_DEFAULT_WINDOW, k=REMBG_DEFAULT_K)` | — |
-| `shared_threshold(grays, *, offset=0)` | 多图合并的加权平均（按像素数加权），单图与 :meth:`thresholds` 一致。 |
+默认返回 ``None``：局部算法逐像素定阈值，不能跨图共享。目前只有全局
+算法 Otsu 覆盖本方法，把多张图的直方图合在一起算。
 
 ### `class OtsuAlgorithm(RembgAlgorithm)`
 

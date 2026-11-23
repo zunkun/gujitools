@@ -180,7 +180,7 @@ class CliArgsParser:
             choices=list(REMBG_ALGORITHMS),
             help=(
                 "去底色阈值算法，默认 otsu\n"
-                "otsu/fixed/mean 为全局算法；niblack/sauvola/bernsen/wolf 为局部算法\n"
+                "otsu 为全局算法；niblack/sauvola/bernsen/wolf 为局部算法\n"
                 "可选：" + "/".join(REMBG_ALGORITHMS)
             ),
         )

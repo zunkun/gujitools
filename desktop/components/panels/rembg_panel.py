@@ -41,7 +41,7 @@ SEAL_AREA_SLIDER_MAX = 2000
 class RembgPanel(StagePanel):
     """图片去底色阶段面板：算法 / 局部窗口 / type / offset / 印章参数。
 
-    整图阈值去底（7 种算法可选，可保留印章）；参数经 get_args 收集后传给
+    整图阈值去底（5 种算法可选，可保留印章）；参数经 get_args 收集后传给
     子进程。默认值统一取 ``params_spec.DEFAULTS["rembg"]``。
     """
 
@@ -73,7 +73,7 @@ class RembgPanel(StagePanel):
             "阈值算法；默认 Otsu。任务流程里修改只影响当前这张图，"
             "全量执行时面板上的值作为其余图片的默认算法。"
         )
-        # 局部算法的窗口与灵敏度：全局算法（otsu/fixed/mean）不需要，置灰。
+        # 局部算法的窗口与灵敏度：全局算法（目前只剩 Otsu）不需要，置灰。
         # ⚠️ 不能叫 ``self.window``：QWidget.window() 是方法，同名会把方法影子化
         # （运行期能用，但类型检查会报"给方法赋值"）。
         # 用户 2026-11-22 口径：与「阈值偏移」同款组件——滑块 + 数值输入框。
@@ -116,7 +116,7 @@ class RembgPanel(StagePanel):
         self.offset.setRange(-100, 100)
         self.offset.setValue(int(d["offset"]))
         self.offset.setToolTip(
-            "只对全局算法（固定/均值/Otsu）生效，选局部算法时置灰；"
+            "只对全局算法（Otsu）生效，选局部算法时置灰；"
             "只影响当前这张图片，正数文字更粗更深，负数更细更淡，默认 0"
         )
         # 用**文本框**而不是 SpinBox：控制卡片只有 340~580px 宽，表单 field 列
@@ -322,7 +322,7 @@ class RembgPanel(StagePanel):
         """两组控件按算法类型对称置灰。
 
         - 局部算法（niblack/sauvola/bernsen/wolf）需要窗口与 k；
-        - 全局算法（otsu/fixed/mean）需要阈值偏移 offset——局部算法是逐像素
+        - 全局算法（目前只剩 Otsu）需要阈值偏移 offset——局部算法是逐像素
           阈值，全局常量偏移没有意义（用户 2026-10-24 口径），因此置灰并归零。
         """
         local = str(self._combo_value(self.algorithm)) in LOCAL_ALGORITHM_KEYS

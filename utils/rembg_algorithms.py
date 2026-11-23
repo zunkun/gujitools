@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
-"""整页去底色的**阈值算法族**：统一入口/出口 + 7 种实现。
+"""整页去底色的**阈值算法族**：统一入口/出口 + 5 种实现。
 
 为什么单独一个模块
 ------------------
 去底色原先只有一条「全局 Otsu」路径，阈值计算散在 ``utils/image_utils.py`` 里。
-用户 2026-10-24 要求把固定阈值、全局均值、Otsu、Niblack、Sauvola、Bernsen、
-Wolf-Jolion 都做成可选算法，并把「入口 / 出口」抽象成一套面向对象接口——这样
-加一种算法只需加一个子类，而不是在 ``rembg_page`` 里再长一条 ``if`` 分支。
+用户 2026-10-24 要求把各种阈值算法都做成可选算法，并把「入口 / 出口」抽象成
+一套面向对象接口——这样加一种算法只需加一个子类，而不是在 ``rembg_page`` 里
+再长一条 ``if`` 分支。用户 2026-11-23 又要求去掉不实用的「固定阈值(fixed)」与
+「全局均值(mean)」，只留 Otsu + 四种局部算法。
 
 三条硬约定
 ----------
@@ -49,8 +50,6 @@ class AlgorithmInfo:
 #: 算法候选表（顺序即下拉框顺序）。key 是命令行/JSON 里的值，label 是界面文案。
 ALGORITHMS: tuple[AlgorithmInfo, ...] = (
     AlgorithmInfo("otsu", "Otsu 大津法", "全局类间方差最大，默认算法，适合直方图近似双峰的页"),
-    AlgorithmInfo("fixed", "固定阈值 (Fixed)", "使用预设固定值，极快但完全不适应图像变化"),
-    AlgorithmInfo("mean", "全局均值 (Mean)", "用整页平均灰度作阈值，对前景/背景比例敏感"),
     AlgorithmInfo("niblack", "Niblack", "局部均值与标准差，适应光照变化，平坦区易出噪点"),
     AlgorithmInfo("sauvola", "Sauvola", "Niblack + 动态范围抑制噪声，古籍文档效果最好"),
     AlgorithmInfo("bernsen", "Bernsen", "局部最大/最小对比度，对背景灰度渐变鲁棒"),
@@ -131,54 +130,10 @@ class RembgAlgorithm(ABC):
     ) -> "int | None":
         """**多张图合并**算一个公共阈值（同页左右裁图共享）。
 
-        默认返回 ``None``：局部算法逐像素定阈值，不能跨图共享。全局算法
-        （fixed/mean/otsu）各自覆盖本方法，把多张图的统计量合在一起算。
+        默认返回 ``None``：局部算法逐像素定阈值，不能跨图共享。目前只有全局
+        算法 Otsu 覆盖本方法，把多张图的直方图合在一起算。
         """
         return None
-
-
-class FixedThresholdAlgorithm(RembgAlgorithm):
-    """固定阈值：预设 128（叠加 offset 后夹紧）。"""
-
-    key = "fixed"
-
-    #: 预设固定值。用户要求「固定阈值」保留一个可预期的基准。
-    FIXED_THRESHOLD = 128
-
-    def thresholds(self, gray, *, offset=0, window=REMBG_DEFAULT_WINDOW,
-                   k=REMBG_DEFAULT_K):
-        return clamp_global_threshold(self.FIXED_THRESHOLD + int(offset))
-
-    def shared_threshold(self, grays, *, offset=0):
-        # 固定值与像素无关：合并后仍是同一个值。
-        return clamp_global_threshold(self.FIXED_THRESHOLD + int(offset))
-
-
-class GlobalMeanAlgorithm(RembgAlgorithm):
-    """全局均值：整页平均灰度作阈值（叠加 offset 后夹紧）。"""
-
-    key = "mean"
-
-    def thresholds(self, gray, *, offset=0, window=REMBG_DEFAULT_WINDOW,
-                   k=REMBG_DEFAULT_K):
-        import numpy as np
-
-        return clamp_global_threshold(float(np.mean(gray)) + int(offset))
-
-    def shared_threshold(self, grays, *, offset=0):
-        """多图合并的加权平均（按像素数加权），单图与 :meth:`thresholds` 一致。"""
-        import numpy as np
-
-        images = list(grays)
-        if not images:
-            return None
-        if len(images) == 1:
-            mean = float(np.mean(images[0]))
-        else:
-            total = sum(int(g.size) for g in images)
-            pixel_sum = sum(int(g.sum(dtype=np.int64)) for g in images)
-            mean = pixel_sum / total if total else 0.0
-        return clamp_global_threshold(mean + int(offset))
 
 
 class OtsuAlgorithm(RembgAlgorithm):
@@ -374,8 +329,6 @@ _ALGORITHM_INSTANCES: dict[str, RembgAlgorithm] = {
     algo.key: algo
     for algo in (
         OtsuAlgorithm(),
-        FixedThresholdAlgorithm(),
-        GlobalMeanAlgorithm(),
         NiblackAlgorithm(),
         SauvolaAlgorithm(),
         BernsenAlgorithm(),
@@ -414,8 +367,6 @@ __all__ = [
     "ALGORITHMS",
     "AlgorithmInfo",
     "BernsenAlgorithm",
-    "FixedThresholdAlgorithm",
-    "GlobalMeanAlgorithm",
     "LOCAL_ALGORITHM_KEYS",
     "LocalAlgorithm",
     "NiblackAlgorithm",

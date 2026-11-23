@@ -1,6 +1,6 @@
 # rembg 功能说明
 
-对整张图片执行阈值去底色处理（7 种算法可选，默认 Otsu），输出白底黑字的
+对整张图片执行阈值去底色处理（5 种算法可选，默认 Otsu），输出白底黑字的
 二值图/灰度图，可选保留红色印章原色。
 
 ## 命令
@@ -65,8 +65,6 @@ HSV 色环中红色分布在两端，需要两个区间：
 | 算法 key | 类型 | 核心思想 | 说明 |
 | -------- | ---- | -------- | ---- |
 | `otsu`（默认） | 全局 | 最大化类间方差 | 对整体直方图自适应，快速；要求直方图近似双峰 |
-| `fixed` | 全局 | 预设固定值 128 | 极快，但完全不适应图像变化 |
-| `mean` | 全局 | 整页平均灰度 | 简单快速，对前景/背景比例敏感 |
 | `niblack` | 局部 | 局部均值 − k×标准差 | 适应光照变化，平坦区域易产生噪声 |
 | `sauvola` | 局部 | 局部均值 × (1 + k×(std/R − 1)) | 文档图像效果好，R=128；参数需调试 |
 | `bernsen` | 局部 | 局部对比度（max − min） | 对背景灰度渐变鲁棒，低对比度区易出块状伪影 |
@@ -143,7 +141,7 @@ PNG 格式，300 DPI，optimize=True，compress_level=9。
 | -i/--input    | .        | 输入图片文件或目录                   |
 | -o/--output   | None     | 输出目录名称                         |
 | --clean       | False    | 清空输出目录（显式加 --clean 才清）   |
-| --algorithm   | otsu     | 阈值算法：otsu/fixed/mean/niblack/sauvola/bernsen/wolf |
+| --algorithm   | otsu     | 阈值算法：otsu/niblack/sauvola/bernsen/wolf |
 | --window      | 25       | 局部算法窗口边长（>=3；全局算法忽略） |
 | --k           | 0.2      | 局部算法灵敏度（0~1；全局算法忽略）   |
 | --offset      | 0        | 阈值偏移量（仅全局算法生效；正数文字加粗，负数变细） |
@@ -178,7 +176,7 @@ PNG 格式，300 DPI，optimize=True，compress_level=9。
   │   └─ 连通域过滤（面积/纵横比/填充率）
   │
   ├─ 阈值计算（--algorithm，默认 otsu）
-  │   ├─ 全局（fixed/mean/otsu）→ 单个阈值 + offset，限制 [30, 240]
+  │   ├─ 全局（otsu）→ 单个阈值 + offset，限制 [30, 240]
   │   └─ 局部（niblack/sauvola/bernsen/wolf）→ 逐像素阈值图（忽略 offset）
   │
   ├─ 去底处理
@@ -225,7 +223,7 @@ guji rembg -i ./images -o ./output --algorithm bernsen --window 25 --k 0.2
 - **type=2 输出**：先生成 8bit 灰度二值图，再通过 PIL convert("1") 转为 1bit 单色位图，体积最小。
 - **并发处理**：基于 FunctionBase 的 ThreadPoolExecutor 并发引擎。
 - **算法接口统一**：`utils/rembg_algorithms.py::RembgAlgorithm` 定义
-  「灰度图进、文本掩码出」，7 种算法各自实现 `thresholds()`（全局返回整数，
+  「灰度图进、文本掩码出」，5 种算法各自实现 `thresholds()`（全局返回整数，
   局部返回逐像素阈值图）；印章排除/形态学/输出类型留在公共收尾。
 - **局部算法分块**：按 512 行分块并带 `window/2` halo，峰值内存不随页高线性
   增长，结果与整页计算逐像素一致。

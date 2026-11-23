@@ -233,9 +233,9 @@
 > 「分割图片」时把**每个检测框各自裁成一张图**（半幅页 `-l`/`-r`，
 > 整幅页用页名），本步骤只做整图去底色。
 
-- **阈值算法（algorithm）**：默认 `Otsu 大津法`；还提供 `固定阈值`、
-  `全局均值`、`Niblack`、`Sauvola`、`Bernsen`、`Wolf-Jolion`。低对比度/光照
-  不均的页可试 Sauvola 或 Wolf-Jolion，背景渐变明显的页可试 Bernsen。
+- **阈值算法（algorithm）**：默认 `Otsu 大津法`；还提供 `Niblack`、`Sauvola`、
+  `Bernsen`、`Wolf-Jolion`。低对比度/光照不均的页可试 Sauvola 或 Wolf-Jolion，
+  背景渐变明显的页可试 Bernsen。
 - **阈值偏移（offset）**：紧跟在算法下方，**只对全局算法生效**；正数文字更粗
   更深、负数更细更淡，一般保持 0。选局部算法时该控件自动置灰并归零。
 - **窗口大小（window）/ 灵敏度（k）**：只对局部算法（Niblack / Sauvola /
