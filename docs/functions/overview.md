@@ -36,7 +36,7 @@ guji detect -i ./images --save     # 落地标注图（命令行必须带 --save
 | `extract.py`     | `ExtractFunction`     | `extract`    | `-e`  | 从 PDF 批量提取页面为图片                                                                   |
 | `detect.py`      | `DetectFunction`      | `detect`     | —     | 检测左右文本框坐标（默认不落盘，`--save` 输出标注图；crop/cropremove/GUI 的检测均复用此处） |
 | `crop.py`        | `CropFunction`        | `crop`       | —     | 基于 YOLO 检测裁剪文本框，逐框输出原图像素                                                  |
-| `rembg.py`       | `RembgFunction`       | `rembg`      | `-r`  | 整图阈值去底色（7 种算法，默认 Otsu）/二值化/印章保留                                        |
+| `rembg.py`       | `RembgFunction`       | `rembg`      | `-r`  | 整图阈值去底色（11 种算法，含 6 种试验，默认 Otsu）/二值化/印章保留                          |
 | `crop_remove.py` | `CropRemoveFunction`  | `cropremove` | `-cr` | 复合流程：YOLO 逐框裁剪 + 区域 Otsu 去底色                                                  |
 | `print.py`       | `PrintFunction`       | `print`      | —     | 将图片目录按规则生成为 PDF                                                                  |
 

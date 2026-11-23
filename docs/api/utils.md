@@ -4,7 +4,7 @@
 
 通用工具函数：几何、排序、图像 IO、PDF、YOLO
 
-覆盖 43 个模块、23 个公开类、227 个公开函数/方法（生成于 2026-11-23）。
+覆盖 43 个模块、29 个公开类、229 个公开函数/方法（生成于 2026-11-23）。
 
 > 生成命令：`python tools/gen_api_docs.py`。签名与说明均直接取自源码，表格中标注 _—_ 表示该符号尚未编写 docstring。
 
@@ -48,7 +48,7 @@
 | [`utils.pdf_stream`](#utilspdf_stream) | 1 | 2 |
 | [`utils.proc_job`](#utilsproc_job) | 0 | 5 |
 | [`utils.proc_utils`](#utilsproc_utils) | 0 | 1 |
-| [`utils.rembg_algorithms`](#utilsrembg_algorithms) | 8 | 10 |
+| [`utils.rembg_algorithms`](#utilsrembg_algorithms) | 14 | 12 |
 | [`utils.sort_utils`](#utilssort_utils) | 0 | 1 |
 | [`utils.string_utils`](#utilsstring_utils) | 0 | 3 |
 | [`utils.transparent_png`](#utilstransparent_png) | 0 | 2 |
@@ -3131,7 +3131,7 @@ pid 对应的进程是否还活着。
 
 源码：[`utils/rembg_algorithms.py`](../../utils/rembg_algorithms.py)
 
-整页去底色的**阈值算法族**：统一入口/出口 + 5 种实现。
+整页去底色的**阈值算法族**：统一入口/出口 + 11 种实现（其中 6 种试验算法）。
 
 为什么单独一个模块
 ------------------
@@ -3139,7 +3139,17 @@ pid 对应的进程是否还活着。
 用户 2026-10-24 要求把各种阈值算法都做成可选算法，并把「入口 / 出口」抽象成
 一套面向对象接口——这样加一种算法只需加一个子类，而不是在 ``rembg_page`` 里
 再长一条 ``if`` 分支。用户 2026-11-23 又要求去掉不实用的「固定阈值(fixed)」与
-「全局均值(mean)」，只留 Otsu + 四种局部算法。
+「全局均值(mean)」，只留 Otsu + 四种局部算法；同一天要求补 6 种**试验算法**
+（NICK / Feng / Parker / Gatos / Howe / Su），供同一批页面上横向对比效果。
+
+试验算法的口径
+--------------
+它们是文献里的多阶段方法，这里统一压成「局部阈值图 / 逐块掩码」，以便和既有
+算法共用参数与性能模型；**在界面与文档里一律标注「试验」**。被简化的环节写在
+每个类的 docstring 里（Gatos 不做 Wiener 滤波与背景插值、Howe 省略图割连续性、
+Su 不做笔画宽度自适应窗口、Parker 不做区域生长）。它们不参与默认流程选型，
+结果也不承诺与论文逐位一致——只用于「同一页上肉眼比较」。
+
 
 三条硬约定
 ----------
@@ -3154,10 +3164,11 @@ pid 对应的进程是否还活着。
    延迟导入。桌面面板只取 :data:`ALGORITHMS` 里的 key/label，不会因此把 cv2
    拉进主进程（域内规矩见 ``AGENTS.md``）。
 
-局部算法（Niblack / Sauvola / Bernsen / Wolf-Jolion）按**行分块**计算：一整页
-5000×4400 的 float32 中间数组约 88MB，整页算会乘上并发数；分块后峰值只与
-块宽有关，产物仍与整页计算等价（块上下各留 ``window // 2`` 行 halo，
-边界用 ``BORDER_REPLICATE``，与整页滤波一致）。
+局部算法（Niblack / Sauvola / Bernsen / Wolf-Jolion 与 6 种试验算法）按**行分块**
+计算：一整页 5000×4400 的 float32 中间数组约 88MB，整页算会乘上并发数；分块后
+峰值只与块宽有关，产物仍与整页计算等价（块上下各留 ``window // 2`` 行 halo，
+边界用 ``BORDER_REPLICATE``，与整页滤波一致；背景估计类算法再多留
+:meth:`LocalAlgorithm._block_halo` 行的余量）。
 
 ### 模块常量
 
@@ -3247,6 +3258,69 @@ Bernsen：局部对比度（max - min）。
 
 对比度足够时取 ``(min + max) / 2``；对比度不足的平坦区按局部中值偏黑/偏白
 直接判为文字/背景。``k`` 映射为对比度下限（``k × 75``，默认 0.2 → 15）。
+
+### `class NickAlgorithm(LocalAlgorithm)`
+
+NICK（Khurshid 等 2009）：``T = mean + k·sqrt(E[I²] − mean²)``，k 取负。
+
+⚠️ ``sqrt(E[I²] − mean²)`` 就是局部标准差，所以窗口与 k 相同时 NICK 与
+:class:`NiblackAlgorithm` **逐像素等价**（NICK 本质是「k 固定为 −0.2 的
+Niblack」）。保留独立 key 只为与文献/其它工具的输出对照，并不是多一种效果。
+
+### `class FengAlgorithm(LocalAlgorithm)`
+
+Feng（Niblack 改良）：引入局部对比度与局部最小值。
+
+``T = (1−α1)·m + α2·(s/Rs)·(m − M) + α3·M``，``M`` = 局部最小，
+``α2 = k1·(s/Rs)²``、``α3 = k2·(s/Rs)²``；文献取 α1≈0.15、k1≈0.2、k2≈0.03。
+``k`` 映射为 k1，k2 = 0.15·k1。
+**简化**：Rs 用固定动态范围 128（论文在更大的窗口里估 Rs）。
+
+### `class ParkerAlgorithm(LocalAlgorithm)`
+
+Parker 对比度阈值（Parker 1991 的局部规则，压成灰度阈值图）。
+
+原法：``D = I − max(8 邻域)``（负梯度），对 ``D`` 取局部均值 ``M``、标准差
+``S``，``D < M + k·S`` 判为文字。等价到灰度空间：
+``T = max(8 邻域) + M(D) + k·S(D)``。
+**简化**：省略原法后续的区域生长/像素聚合（那一步是二值图的后处理，不属于
+阈值映射）。
+
+### `class GatosAlgorithm(LocalAlgorithm)`
+
+Gatos（简化）：局部背景估计 + 差值阈值。
+
+原法是多阶段（Wiener 预处理 → Sauvola 粗分割 → 背景插值 → 差值阈值 →
+形态学后处理）。这里保留核心一步：背景 ``B`` 用闭运算 + 3×3 模糊估计，
+``T = B − τ``，``τ`` 取「粗分割为文字处 ``B − I`` 的均值」——整页只估一次
+（下采样副本），因此每块用同一个 τ。
+**省略**：Wiener 滤波、双线性背景插值、上采样与后处理。
+
+### `class SuAlgorithm(LocalAlgorithm)`
+
+Su（简化）：笔画边缘 + 边缘邻域均值/标准差定阈值。
+
+原法：背景估计（行列多项式平滑）→ 用局部最大/最小算对比度 → 对对比度做
+Otsu 取「笔画边缘」像素 → 以边缘邻域灰度的 ``(均值 + 标准差)/2`` 作局部
+阈值。这里背景估计改为闭运算，边缘阈值 ``τc`` 用下采样副本的 Otsu 估一次。
+**简化**：窗口不随笔画宽度自适应，省略背景补偿与后处理。
+
+### `class HoweAlgorithm(RembgAlgorithm)`
+
+Howe（简化）：拉普拉斯谷底判据 + 对比度门限。
+
+原法把「标签与拉普拉斯符号一致」和「不连续性只贴在 Canny 边缘」写成一个
+能量函数，用图割求全局最优。这里只保留单点项：``∇²I > 0``（灰度谷底 =
+墨迹）且局部对比度 ≥ ``k × 75``（压掉平坦纸面的噪声）。
+**省略**：图割的连续性约束与 Canny 边缘项，因此会产生孤立噪点。
+判定不是「灰度 < 阈值」的形式，因此直接产出掩码（不走 ``_block_threshold``）。
+
+#### 方法
+
+| 方法 | 说明 |
+| --- | --- |
+| `thresholds(gray, *, offset=0, window=REMBG_DEFAULT_WINDOW, k=REMBG_DEFAULT_K)` | — |
+| `text_mask(gray, *, offset: int=0, window: int=REMBG_DEFAULT_WINDOW, k: float=REMBG_DEFAULT_K) -> 'np.ndarray'` | — |
 
 ### 模块函数
 

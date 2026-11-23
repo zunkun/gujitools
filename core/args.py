@@ -296,6 +296,23 @@ class CommandArgs:
         return dict(self.args)
 
     # ---------- 内部：取值与标准化 ----------
+    def _apply_rembg_algorithm_defaults(self) -> None:
+        """去底色：窗口/灵敏度没显式给时，按所选算法取推荐值。
+
+        ``guji rembg --algorithm su`` 不写 ``--window/--k`` 就该用 Su 的推荐值
+        （21 / 0.30），而不是阶段默认的 25 / 0.2——桌面面板切算法也会自动带同一
+        组值，两条入口必须一致。数值来源唯一：``utils.rembg_algorithms``。
+
+        只覆盖 ``_defaulted_keys`` 里的键：用户显式 ``--window 31`` 是明确意图，
+        不能被推荐值顶掉；配置文件里写了 window 但没写 k 时，只有 k 会补推荐值。
+        """
+        from utils.rembg_algorithms import recommended_params
+
+        recommended = recommended_params(self.args.get("algorithm"))
+        for key in ("window", "k"):
+            if key in self._defaulted_keys:
+                self.args[key] = recommended[key]
+
     def _get_with_default(self, key: str, default: Any, kwargs: dict) -> Any:
         """安全取值：仅当键不存在或值为 None 时返回默认值。"""
         if key not in kwargs or kwargs[key] is None:
@@ -367,6 +384,11 @@ class CommandArgs:
                 self.args[key] = _coerce_scalar(
                     key, self._get_with_default(key, default, kwargs), default
                 )
+
+        # 去底色的窗口/灵敏度：**没显式给**时按算法取推荐值（每种算法一套）。
+        # 必须在上面那轮默认注入之后做——先有 algorithm 才能查表。
+        if self.command == "rembg":
+            self._apply_rembg_algorithm_defaults()
 
     def validate(self) -> None:
         """按命令规格校验参数；不通过抛 ValueError，不做任何 I/O 写操作。

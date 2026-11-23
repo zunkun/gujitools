@@ -3450,8 +3450,8 @@ print 面板「位置」「文字方向」的固定取值（由 PrintFormMixin �
 
 图片去底色阶段面板：算法 / 局部窗口 / type / offset / 印章参数。
 
-整图阈值去底（5 种算法可选，可保留印章）；参数经 get_args 收集后传给
-子进程。默认值统一取 ``params_spec.DEFAULTS["rembg"]``。
+整图阈值去底（11 种算法可选，末尾 6 种为试验算法，可保留印章）；参数经
+get_args 收集后传给子进程。默认值统一取 ``params_spec.DEFAULTS["rembg"]``。
 
 #### 方法
 

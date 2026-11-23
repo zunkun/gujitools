@@ -636,7 +636,7 @@ workers（默认 4）。将参数透传给 _generate_pdf，返回其
 源码：[`functions/rembg.py`](../../functions/rembg.py)
 
 File: functions/rembg.py
-去底色功能：对单张图片执行整图阈值去底色（5 种算法，默认 Otsu），
+去底色功能：对单张图片执行整图阈值去底色（11 种算法，含 6 种试验算法，默认 Otsu），
 可灰度化/二值化/彩色保留印章。
 
 此功能对应 `guji rembg` 命令，处理流程：

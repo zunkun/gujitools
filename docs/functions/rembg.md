@@ -1,7 +1,7 @@
 # rembg 功能说明
 
-对整张图片执行阈值去底色处理（5 种算法可选，默认 Otsu），输出白底黑字的
-二值图/灰度图，可选保留红色印章原色。
+对整张图片执行阈值去底色处理（11 种算法可选：5 种常用 + 6 种试验，默认 Otsu），
+输出白底黑字的二值图/灰度图，可选保留红色印章原色。
 
 ## 命令
 
@@ -69,6 +69,21 @@ HSV 色环中红色分布在两端，需要两个区间：
 | `sauvola` | 局部 | 局部均值 × (1 + k×(std/R − 1)) | 文档图像效果好，R=128；参数需调试 |
 | `bernsen` | 局部 | 局部对比度（max − min） | 对背景灰度渐变鲁棒，低对比度区易出块状伪影 |
 | `wolf` | 局部 | 局部统计 + 全局最小值归一化 | 低对比度/光照不均优于 Sauvola |
+
+**试验算法**（界面 label 带「（试验）」，只为同一页横向对比，不做默认选型）：
+
+| 算法 key | 类型 | 核心思想 | 简化说明 |
+| -------- | ---- | -------- | -------- |
+| `nick` | 局部 | `m + k·sqrt(E[I²] − m²)`，k 取负 | 与 `niblack` **逐像素等价**（窗口/k 相同时），保留仅为与文献对照 |
+| `feng` | 局部 | `(1−α1)m + α2(s/Rs)(m − M) + α3·M` | Rs 用固定 128（论文在更大窗口估 Rs） |
+| `parker` | 局部 | 8 邻域最亮值求负梯度，`D < M(D) + k·S(D)` | 不做原法的区域生长/像素聚合 |
+| `gatos` | 局部 | 背景面 `B`（闭运算+模糊）→ `T = B − τ` | 省略 Wiener 滤波、背景插值、上采样与后处理 |
+| `howe` | 局部 | 拉普拉斯谷底 `∇²I > 0` + 对比度门限 | 省略图割连续性约束与 Canny 边缘项（会有孤立噪点） |
+| `su` | 局部 | 对比度 Otsu 取笔画边缘，边缘邻域 `(均值+标准差)/2` | 窗口不随笔画宽度自适应，省略背景补偿 |
+
+> 试验算法把这些文献方法压成「局部阈值图 / 逐块掩码」，参数只用面板已有的
+> `window`/`k`。Gatos 的 τ、Su 的边缘阈值都在整页统计里估一个标量（下采样副本），
+> 因此分块执行与整页执行仍然逐像素一致（自测 `rembg_algorithms` 钉住）。
 
 `offset` **只对全局算法生效**（阈值最后统一 `clamp(threshold + offset, 30, 240)`）；
 局部算法逐像素定阈值，叠加全局常量偏移没有意义，因此忽略 `offset`（桌面端选
@@ -141,7 +156,7 @@ PNG 格式，300 DPI，optimize=True，compress_level=9。
 | -i/--input    | .        | 输入图片文件或目录                   |
 | -o/--output   | None     | 输出目录名称                         |
 | --clean       | False    | 清空输出目录（显式加 --clean 才清）   |
-| --algorithm   | otsu     | 阈值算法：otsu/niblack/sauvola/bernsen/wolf |
+| --algorithm   | otsu     | 阈值算法：otsu/niblack/sauvola/bernsen/wolf/nick/feng/parker/gatos/howe/su |
 | --window      | 25       | 局部算法窗口边长（>=3；全局算法忽略） |
 | --k           | 0.2      | 局部算法灵敏度（0~1；全局算法忽略）   |
 | --offset      | 0        | 阈值偏移量（仅全局算法生效；正数文字加粗，负数变细） |
@@ -177,7 +192,7 @@ PNG 格式，300 DPI，optimize=True，compress_level=9。
   │
   ├─ 阈值计算（--algorithm，默认 otsu）
   │   ├─ 全局（otsu）→ 单个阈值 + offset，限制 [30, 240]
-  │   └─ 局部（niblack/sauvola/bernsen/wolf）→ 逐像素阈值图（忽略 offset）
+  │   └─ 局部（niblack/sauvola/bernsen/wolf + 6 种试验）→ 逐像素阈值图（忽略 offset）
   │
   ├─ 去底处理
   │   ├─ 文本掩码 = algorithm_mask & ~red_mask
@@ -223,7 +238,7 @@ guji rembg -i ./images -o ./output --algorithm bernsen --window 25 --k 0.2
 - **type=2 输出**：先生成 8bit 灰度二值图，再通过 PIL convert("1") 转为 1bit 单色位图，体积最小。
 - **并发处理**：基于 FunctionBase 的 ThreadPoolExecutor 并发引擎。
 - **算法接口统一**：`utils/rembg_algorithms.py::RembgAlgorithm` 定义
-  「灰度图进、文本掩码出」，5 种算法各自实现 `thresholds()`（全局返回整数，
+  「灰度图进、文本掩码出」，11 种算法各自实现 `thresholds()`（全局返回整数，
   局部返回逐像素阈值图）；印章排除/形态学/输出类型留在公共收尾。
 - **局部算法分块**：按 512 行分块并带 `window/2` halo，峰值内存不随页高线性
   增长，结果与整页计算逐像素一致。

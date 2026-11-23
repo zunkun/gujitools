@@ -178,8 +178,8 @@ GUI 的预览控件也要画同样的框。配色与命名必须一致，否则�
 
 ## rembg_algorithms.py — 去底色阈值算法族
 
-**为什么单独一个模块**：去底色从"只有全局 Otsu"变成 5 种算法可选，且要求
-统一的入口/出口。这里用 `RembgAlgorithm` 抽象基类收口：
+**为什么单独一个模块**：去底色从"只有全局 Otsu"变成 11 种算法可选（5 种常用 +
+6 种试验），且要求统一的入口/出口。这里用 `RembgAlgorithm` 抽象基类收口：
 
 ```text
 入口: thresholds(gray, offset, window, k) -> int（全局）| uint8[H,W]（局部）
@@ -199,6 +199,22 @@ GUI 的预览控件也要画同样的框。配色与命名必须一致，否则�
 | `sauvola` | `SauvolaAlgorithm` | `mean × (1 + k×(std/R - 1))`，R=128 |
 | `bernsen` | `BernsenAlgorithm` | 局部对比度；`k` 映射为对比度下限（k×75） |
 | `wolf` | `WolfJolionAlgorithm` | `mean - k×(mean - 全局最小值)×(1 - std/R)` |
+| `nick`（试验） | `NickAlgorithm` | 与 `niblack` 数学等价（NICK = k 取负的 Niblack） |
+| `feng`（试验） | `FengAlgorithm` | `(1−α1)m + α2(s/Rs)(m − M) + α3M`，Rs 固定 128 |
+| `parker`（试验） | `ParkerAlgorithm` | 8 邻域负梯度 `D` 的局部统计，映射回灰度阈值 |
+| `gatos`（试验） | `GatosAlgorithm` | 闭运算背景面 `B` ⇒ `T = B − τ`（τ 整页统计） |
+| `howe`（试验） | `HoweAlgorithm` | `∇²I > 0` + 对比度门限；省略图割，直接产掩码 |
+| `su`（试验） | `SuAlgorithm` | 对比度 Otsu 取边缘，边缘邻域 `(均值+标准差)/2` |
+
+试验算法只供同页对比：文献里的多阶段后处理按各类 docstring 的说明简化，
+不承诺逐位复现论文。它们都在 `EXPERIMENTAL_ALGORITHM_KEYS` 里，界面 label
+统一带「（试验）」。
+
+**分块 halo 的分两档**：`LocalAlgorithm.text_mask` 默认留 `window // 2` 行；
+若算法的阈值建立在「先滤波再统计」的两级图上（Parker 的 8 邻域梯度、Gatos 的
+闭运算背景面），必须重写 `_block_halo()` 补足传播距离，否则块缝处会出现阈值
+阶跃——自测按「缩小 `_BLOCK_ROWS` 后逐像素一致」钉住，不需要为每种算法再写一份
+公式。
 
 **两条实现约束**：
 

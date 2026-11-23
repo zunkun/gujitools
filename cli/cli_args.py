@@ -26,6 +26,17 @@ from core.command_spec import REMBG_ALGORITHMS
 from utils.help import process_help_command, _DOC_MAP as _HELP_DOC_MAP
 
 
+def _rembg_algorithm_help() -> str:
+    """``--algorithm`` 的帮助文案：按**分类**列出（与界面下拉同一份分组）。"""
+    from utils.rembg_algorithms import algorithm_groups
+
+    lines = ["去底色阈值算法（按分类），默认 otsu："]
+    for category, items in algorithm_groups():
+        lines.append(f"  {category}：" + "/".join(item.key for item in items))
+    lines.append("可选：" + "/".join(REMBG_ALGORITHMS))
+    return "\n".join(lines)
+
+
 def _closest_flag(name: str, known: set[str]) -> str | None:
     """在已知参数里找与 `name` 最像的那个（用于"是不是拼错了"的提示）。
 
@@ -178,22 +189,22 @@ class CliArgsParser:
         rembg_parser.add_argument(
             "--algorithm",
             choices=list(REMBG_ALGORITHMS),
-            help=(
-                "去底色阈值算法，默认 otsu\n"
-                "otsu 为全局算法；niblack/sauvola/bernsen/wolf 为局部算法\n"
-                "可选：" + "/".join(REMBG_ALGORITHMS)
-            ),
+            help=_rembg_algorithm_help(),
         )
         rembg_parser.add_argument(
             "--window",
             type=int,
-            help="局部算法窗口边长（像素，>=3），默认25；全局算法忽略",
+            help=(
+                "局部算法窗口边长（像素，>=3）；不给则取所选算法的推荐值"
+                "（Otsu/Sauvola/Wolf 25、Niblack/NICK/Parker 41、Su 21）"
+            ),
         )
         rembg_parser.add_argument(
             "--k",
             type=float,
             help=(
-                "局部算法灵敏度（0~1），默认0.2；"
+                "局部算法灵敏度（0~1）；不给则取所选算法的推荐值"
+                "（Niblack/Bernsen 0.40、Howe/Su 0.30、其余 0.20）。"
                 "Niblack 内部取负号，Bernsen 映射为对比度下限"
             ),
         )

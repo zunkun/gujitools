@@ -32,6 +32,7 @@ from core.command_spec import (
 )
 from utils.page_layout import PAGE_NUMBER_FORMATS as _PAGE_NUMBER_FORMAT_VALUES
 from utils.rembg_algorithms import ALGORITHMS as _REMBG_ALGORITHMS
+from utils.rembg_algorithms import algorithm_groups as _ALGORITHM_GROUPS
 
 # 不允许在表单中配置的键（系统管理：由 runner 按任务/阶段拼装）
 EXCLUDED_KEYS = ("input", "output", "workers", "clean", "resume", "_outpath")
@@ -65,7 +66,14 @@ EXTRACT_DPI_CHOICES = [(str(v), v) for v in (300, 400, 600)]
 # 后端也不再有任何 area 分支。留着这张表只会变成第二份"看起来还能用"的界面数据。
 REMBG_TYPES = [(f"{v} ({name})", v) for v, name in zip(_REMBG_TYPES, ("二值", "1bit", "灰度"))]
 # 去底色算法下拉候选（显示文案与 key 都来自 utils.rembg_algorithms，唯一事实来源）
+#: 扁平列表（CLI 帮助/自测/旧调用方用）。
 REMBG_ALGORITHM_CHOICES = [(item.label, item.key) for item in _REMBG_ALGORITHMS]
+#: **分组**列表：``[(分类名, [(文案, key), …]), …]``——面板按它插灰显的组标题，
+#: 顺序与成员都来自 ``ALGORITHMS``（用户 2026-11-24 口径：下拉里算法要分类摆放）。
+REMBG_ALGORITHM_GROUPS = [
+    (category, [(item.label, item.key) for item in items])
+    for category, items in _ALGORITHM_GROUPS()
+]
 
 # print
 PAPER_SIZES = list(_PAPER_SIZES)
