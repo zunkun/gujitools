@@ -380,6 +380,67 @@ def run(ctx) -> None:
        [panel.algorithm.itemText(i) for i in header_indexes]
        == list(ALGORITHM_CATEGORIES),
        str([panel.algorithm.itemText(i) for i in header_indexes]))
+
+    # 标题必须"看起来是分类"，不能只是把字变灰（用户 2026-11-24 反馈：只出深浅
+    # 颜色差别 ⇒ 分不清）。这里钉住实现方式：专用下拉类 + 专用菜单 + 专用 delegate，
+    # 且标记在 exec() 之前打（写在 super()._showComboMenu() 之后等于菜单关了才生效）。
+    from PySide6.QtGui import QAction as _QAction
+
+    from desktop.ui.widgets.combobox import (
+        _HEADER_PROPERTY,
+        GroupedComboBox,
+        _GroupedComboMenu,
+        _GroupedMenuDelegate,
+    )
+
+    ok("算法下拉是分组下拉（不是普通 ComboBox + 禁用项）",
+       isinstance(panel.algorithm, GroupedComboBox)
+       and isinstance(panel.algorithm._createComboMenu(), _GroupedComboMenu))
+    probe = panel.algorithm._createComboMenu()
+    for _i in range(panel.algorithm.count()):
+        _action = _QAction(panel.algorithm.itemText(_i))
+        _action.setEnabled(panel.algorithm.items[_i].isEnabled)
+        probe.addAction(_action)
+    probe._tag_headers()
+    ok("弹窗前标记了组标题行（delegate 据此换画法）",
+       all(probe.actions()[i].property(_HEADER_PROPERTY) for i in header_indexes)
+       and not any(
+           probe.actions()[i].property(_HEADER_PROPERTY)
+           for i in range(len(probe.actions()))
+           if i not in header_indexes
+       ),
+       str([bool(probe.actions()[i].property(_HEADER_PROPERTY))
+            for i in range(len(probe.actions()))]))
+    ok("下拉视图用分组 delegate",
+       isinstance(probe.view.itemDelegate(), _GroupedMenuDelegate))
+    probe.deleteLater()
+
+    # 真实弹窗路径：`ComboBox._showComboMenu` 是「建菜单 → menu.exec()（阻塞）」，
+    # 标记若写在 super() 之后，等于菜单关掉才执行 ⇒ 运行时样式永不生效。这里把
+    # 基类 exec 打桩，抓「弹窗那一瞬间」的标记状态。
+    from qfluentwidgets.components.widgets.menu import RoundMenu as _RoundMenu
+
+    captured: dict = {}
+    original_exec = _RoundMenu.exec
+
+    def _fake_exec(menu_self, *args, **kwargs):
+        captured["flags"] = [
+            bool(action.property(_HEADER_PROPERTY)) for action in menu_self.actions()
+        ]
+        return 0
+
+    _RoundMenu.exec = _fake_exec
+    try:
+        panel.algorithm._showComboMenu()
+    finally:
+        _RoundMenu.exec = original_exec
+        panel.algorithm._closeComboMenu()
+    flags = captured.get("flags", [])
+    ok("真实弹窗路径下标题已标记（exec 之前，不是关菜单之后）",
+       len(flags) == panel.algorithm.count()
+       and all(flags[i] for i in header_indexes)
+       and not any(flags[i] for i in range(len(flags)) if i not in header_indexes),
+       str(flags))
     panel.algorithm.setCurrentIndex(header_indexes[0])  # 强行落到组标题
     ok("落到分组标题时按阶段默认算法取值（组名不会当算法）",
        panel._combo_value(panel.algorithm) == "otsu",

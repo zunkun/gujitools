@@ -15,7 +15,7 @@ from desktop.ui.check_group import CheckBoxGroup
 from desktop.ui.fonts import ui_font
 from desktop.ui.segmented_toggle import SegmentedToggle
 
-from .combobox import combo_box
+from .combobox import GroupedComboBox, combo_box, grouped_combo
 from .constants import CONTROL_HEIGHT, HELP_BUBBLE_WIDTH, HELP_TOOLTIP_WIDTH
 from .cursor import _ButtonCursorFilter, install_button_pointer_cursor
 from .frames import Card, Divider, RedDashFrame, SurfacePanel, set_red_frame
@@ -43,6 +43,8 @@ __all__ = [
     "apply_to",
     "bold_button",
     "combo_box",
+    "grouped_combo",
+    "GroupedComboBox",
     "icon_pixmap",
     "install_button_pointer_cursor",
     "set_red_frame",

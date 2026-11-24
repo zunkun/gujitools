@@ -33,7 +33,7 @@ from desktop.components.panels.rembg_params_memory import (
     remember as remember_params,
 )
 from desktop.ui import theme as T
-from desktop.ui.widgets import SectionTitle, combo_box
+from desktop.ui.widgets import SectionTitle, combo_box, grouped_combo
 from utils.rembg_algorithms import LOCAL_ALGORITHM_KEYS, recommended_params
 
 #: 印章面积阈值的滑块上限。参数本身允许 1~100000，但常用值就在默认 80、
@@ -82,19 +82,20 @@ class RembgPanel(StagePanel):
         form.setVerticalSpacing(T.SPACE_XS)
         # 阈值算法（全局默认；任务流程里改它会记到**当前这张图**上，
         # 与 offset 同一套逐张落盘规则）。值存 itemData，取值走 _combo_value。
-        # 用户 2026-11-24 口径：算法**分类摆放**——每个分类先插一条灰显、不可选
-        # 的组标题（qfluent 的 ComboBox 是自绘的，``setItemEnabled(False)`` 会让
-        # 该项变灰且点不动、也挡掉程序化 setCurrentIndex），再排该组的算法。
+        # 用户 2026-11-24 口径：算法**分类摆放**——每个分类前插一条分组标题。
+        # 标题的样式由 ``GroupedComboBox`` 的 delegate 接管（浅底 + 加粗主色 +
+        # 上方分隔线）：光靠 ``setItemEnabled(False)`` 只是把字变灰，用户分不清
+        # 标题和选项（2026-11-24 反馈）。
         # ⚠️ 组标题的 itemData 是 None ⇒ 绝不能用「第 0 项」当兜底（见 _index_of）。
-        self.algorithm = combo_box()
-        #: 组标题的下标集合（``_index_of`` 回落时跳过它们）。
-        self._group_header_indexes: set[int] = set()
+        self.algorithm = grouped_combo()
         for _category, _items in REMBG_ALGORITHM_GROUPS:
-            self._group_header_indexes.add(self.algorithm.count())
-            self.algorithm.addItem(_category)
-            self.algorithm.setItemEnabled(self.algorithm.count() - 1, False)
+            self.algorithm.add_group(_category)
             for _label, _key in _items:
-                self.algorithm.addItem(_label, userData=_key)
+                self.algorithm.add_option(_label, _key)
+        #: 组标题下标（``_index_of`` 回落时跳过它们）。
+        self._group_header_indexes: set[int] = set(
+            self.algorithm.group_header_indexes()
+        )
         self.algorithm.setCurrentIndex(self._index_of(self.algorithm, d["algorithm"]))
         self.algorithm.setToolTip(
             "阈值算法；默认 Otsu。任务流程里修改只影响当前这张图，"
