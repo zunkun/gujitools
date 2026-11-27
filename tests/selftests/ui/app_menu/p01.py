@@ -110,6 +110,7 @@ def run(st: Any) -> None:
     about_dlg = menu.shell_dialog(
         "关于", menu._AboutPanel(menu.about_rows(st.w)), None,
         size=menu._about_size(st.w), ok_text=menu.BUTTON_OK, show_cancel=False,
+        fit_height=True,
     )
     about_dlg.show()
     pump(st.app, times=3)
@@ -127,6 +128,15 @@ def run(st: Any) -> None:
     ok("「关于」的每个值都放得下（被压成半截就会进这份名单）",
        len(values) == len(menu.about_rows(st.w)) and not clipped,
        f"值={[v.text() for v in values]} 被截={clipped}")
+    # 用户 2026-11-27：Linux 下行高更大，写死的 180 高度把四行挤叠在一起。
+    # 行高被压 = 标签实际高度小于一个字高。
+    squeezed = [
+        label.text() for label in values
+        if label.height() < QFontMetrics(label.font()).height()
+    ]
+    ok("「关于」的行高没被压缩（高度按内容量，不写死；Linux/Windows 都不挤）",
+       not squeezed and about_dlg.height() >= 180,
+       f"被压={squeezed} 弹窗高={about_dlg.height()}")
     about_dlg.close()
     if _store is not None and _real_root is not None:
         _store.root = _real_root

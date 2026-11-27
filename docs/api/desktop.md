@@ -1618,9 +1618,9 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
 
 | 函数 | 说明 |
 | --- | --- |
-| `shell_dialog(title: str, panel: QWidget, parent=None, *, size=(920, 620), ok_text: str='确定', cancel_text: str='取消', on_ok=None, on_cancel=None, show_cancel: bool=True, own_chrome: bool=False, resizable: bool=False, min_size: tuple[int, int] \| None=None) -> QDialog` | 搭一个模态弹窗，返回 ``QDialog``。 |
+| `shell_dialog(title: str, panel: QWidget, parent=None, *, size=(920, 620), ok_text: str='确定', cancel_text: str='取消', on_ok=None, on_cancel=None, show_cancel: bool=True, own_chrome: bool=False, resizable: bool=False, min_size: tuple[int, int] \| None=None, fit_height: bool=False) -> QDialog` | 搭一个模态弹窗，返回 ``QDialog``。 |
 
-#### `shell_dialog(title: str, panel: QWidget, parent=None, *, size=(920, 620), ok_text: str='确定', cancel_text: str='取消', on_ok=None, on_cancel=None, show_cancel: bool=True, own_chrome: bool=False, resizable: bool=False, min_size: tuple[int, int] | None=None) -> QDialog`
+#### `shell_dialog(title: str, panel: QWidget, parent=None, *, size=(920, 620), ok_text: str='确定', cancel_text: str='取消', on_ok=None, on_cancel=None, show_cancel: bool=True, own_chrome: bool=False, resizable: bool=False, min_size: tuple[int, int] | None=None, fit_height: bool=False) -> QDialog`
 
 搭一个模态弹窗，返回 ``QDialog``。
 
@@ -1637,6 +1637,14 @@ BPM 各弹窗共用的**外壳**：标题 + 内容 + 底部按钮。
     最大化按钮，多了反而让人误以为能拉成任意形状。
 :param min_size: 仅 ``resizable`` 时有意义：窗口的**最小**尺寸。默认取
     ``size`` 的 3/4——不锁死成开窗尺寸，小屏上才缩得回屏幕里。
+:param fit_height:
+    ``True`` = 高度**按内容量**（取 ``size[1]`` 与内容所需高度的较大值），
+    不再认死 ``size`` 里那个数。用户 2026-11-27 报的「Linux 下关于弹窗高度
+    被压缩、文字挤在一起」就是写死高度造成的：Windows 字体行高偏小、
+    180px 刚好够四行；Linux（Noto/思源，行高更大）同样四行要 ~230px，
+    而布局最小高度大于窗口高度时 Qt 只能**裁着摆**，行与行就叠上了。
+    ⚠️ 量高度必须在本函数**排完布局之后**：``heightForWidth`` 才带着
+    边距/间距/按钮行，先 resize 再量只会拿到上半截。
 
 ⚠️ 面板自带的按钮**只是外观**，真正决定"确定/取消"的是本外壳：
 面板上的按钮是给自测与"无外壳直接用面板"的场景留的。

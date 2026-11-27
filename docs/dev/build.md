@@ -306,6 +306,10 @@ HTML、安装版里退化成 `<pre>` 包裹的原始 markdown，而 `collect_sub
 
 体积下限由 `torch/lib/torch_cpu.dll`（约 292MB）锁定，不换推理引擎就无法再降。
 
+> 两个平台的包体差异（Windows ~200MB vs Linux ~500MB）、Linux 侧可优化的
+> 44MB 测试文件、OpenCV headless 为何砍不动、以及换推理引擎的收益评估，
+> 全部实测数据见 [package-size-analysis.md](package-size-analysis.md)。
+
 打包后自检：
 
 ```bash

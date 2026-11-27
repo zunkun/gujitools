@@ -109,10 +109,12 @@ def main() -> int:
         if hits:
             problems.append(f"{pattern} 命中 {len(hits)} 个（{hits[0]}…）—— {reason}")
 
-    # 反向守卫：必需模块被瘦掉 → 同样算失败
-    for pattern, reason in REQUIRED_GLOBS:
-        if not any(internal.glob(pattern)):
-            problems.append(f"缺少 {pattern} —— {reason}（被 excludes 误删？）")
+    # 反向守卫：必需模块被瘦掉 → 同样算失败。
+    # pywin32 只存在于 Windows 产物；Linux 构建里核对它必然误报（2026-11-27）。
+    if sys.platform == "win32":
+        for pattern, reason in REQUIRED_GLOBS:
+            if not any(internal.glob(pattern)):
+                problems.append(f"缺少 {pattern} —— {reason}（被 excludes 误删？）")
 
     total, count = dir_size(dist_dir)
     mb = 1024 * 1024

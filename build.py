@@ -29,13 +29,17 @@
     dist/guji/guji-desktop
     dist/guji_<版本>_<时间戳>_linux-x86_64.tar.gz
 
-Linux 侧**没有安装包**（Inno Setup 是 Windows 专属），改用 tar.gz 分发；
-需要 AppImage / .desktop 再另行打包。另外 Linux 目标机往往没有中文字体，
+Linux 侧除 tar.gz 绿色版外，还会用 dpkg-deb 生成 ``.deb`` 安装包
+（装到 ``/opt/gujitools``，并建 CLI/GUI 启动入口与 .desktop 文件）；
+Inno Setup 仍是 Windows 专属。另外 Linux 目标机往往没有中文字体，
 构建结束脚本会打印安装提示（程序运行时也会自行体检并弹安装引导，
 见 ``utils/font_setup.py``）。
 
-注意：GUI 依赖（PySide6 / qfluentwidgets）也在 yolobuild 内安装，
-因为两个 EXE 必须同一次构建产出才能合并 _internal。
+注意：Linux 与 Windows 一样，统一在 ``yolobuild`` 构建环境里安装 **CPU 版**
+PyTorch（见 ``install_build_dependencies``），避免把 CUDA 运行库打进包里；
+GUI 依赖（PySide6 / qfluentwidgets）也在同一环境内安装，因为两个 EXE 必须
+同一次构建产出才能合并 _internal。除非显式设置 ``GUJI_ALLOW_CUDA_TORCH=1``，
+否则检测到 CUDA 版 torch 会直接拒绝打包。
 """
 
 import sys
@@ -67,6 +71,11 @@ PORTABLE_TEMPLATE = (
     if IS_WINDOWS
     else "gujitools_portable_{version}_{platform}.tar.gz"
 )
+
+#: Debian 包：安装到 /opt/gujitools，产物名 `gujitools_<版本>_<deb架构>.deb`。
+DEB_PACKAGE_NAME = "gujitools"
+DEB_TEMPLATE = "gujitools_{version}_{arch}.deb"
+DEB_INSTALL_DIR = "/opt/gujitools"
 
 #: 安装向导右上角小图在各级 DPI 下的**显示尺寸**（Inno 官方表：100%~250% 依次
 #: 为 58/77/97/116/124/143/159）。逐尺寸各给一张原尺寸图，Inno 按当前 DPI 挑
@@ -130,99 +139,86 @@ def install_build_dependencies(conda_exe, project_root):
         return
 
     print("安装 yolobuild 依赖（CPU PyTorch）...")
+    # ⚠️ 本机批量删除保护会在「覆盖已有文件」时掐死 pip（2026-11-27 实测：
+    # pip 升级卸载旧版、PySide6 元包与拆分包互相覆盖同名 .pyi 都中招）。
+    # 因此这里**一次**装齐、全程 --no-deps、不升级/卸载任何东西：
+    #   - CPU torch 取自 download.pytorch.org（+cpu 版本优先于镜像的 CUDA 版）
+    #   - requirements.txt 去掉 PySide6 元包（只装拆分包，实测可正常 import）
+    #   - 传递依赖显式列全，避免 ultralytics 拉 CUDA torch / 完整版 opencv-python
+    req_lines = []
+    for raw in (project_root / "requirements.txt").read_text(encoding="utf-8").splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        name = (
+            line.replace(">=", ">").replace("<=", "<")
+            .split(">", 1)[0].split("<", 1)[0].split("==", 1)[0]
+            .strip().lower()
+        )
+        if name == "pyside6":  # 元包与拆分包文件重叠，只装拆分包
+            continue
+        req_lines.append(line)
+
+    packages = [
+        # CPU PyTorch
+        "torch", "torchvision", "torchaudio",
+        # torch 传递依赖（--no-deps 下需显式列出）
+        "filelock", "typing-extensions", "sympy", "networkx", "jinja2",
+        "fsspec", "mpmath", "MarkupSafe",
+        # requirements.txt 全量（已去掉 PySide6 元包）
+        *req_lines,
+        # ultralytics / pyinstaller / GUI 传递依赖
+        "matplotlib", "pandas", "seaborn", "psutil", "py-cpuinfo",
+        # ⚠️ 只装 ultralytics-thop：它与 thop 提供同一份 thop/ 模块，
+        # 两个都装会让 pip 覆盖同名文件、触发批量删除保护。
+        "ultralytics-thop", "requests", "tqdm", "scipy",
+        "charset-normalizer", "idna", "urllib3", "certifi",
+        # tzdata 由 conda 基础环境提供，pip 再装会覆盖 zoneinfo 文件。
+        "python-dateutil", "pytz",
+        "contourpy", "cycler", "fonttools", "kiwisolver", "pyparsing",
+        "wcwidth", "altgraph", "packaging", "pyinstaller-hooks-contrib",
+        "setuptools", "darkdetect",
+        # qfluentwidgets 的间接依赖，分发名 PySideSix-Frameless-Window
+        # （import 名 qframelesswindow）；漏掉会让 GUI 启动即崩。
+        "PySideSix-Frameless-Window>=0.8.0",
+    ]
     run_conda(
         conda_exe,
         [
-            "run",
-            "-n",
-            BUILD_ENV_NAME,
-            "python",
-            "-m",
-            "pip",
-            "install",
-            "--upgrade",
-            "pip",
-        ],
-    )
-    run_conda(
-        conda_exe,
-        [
-            "run",
-            "-n",
-            BUILD_ENV_NAME,
-            "python",
-            "-m",
-            "pip",
-            "uninstall",
-            "-y",
-            "torch",
-            "torchvision",
-            "torchaudio",
-        ],
-    )
-    run_conda(
-        conda_exe,
-        [
-            "run",
-            "-n",
-            BUILD_ENV_NAME,
-            "python",
-            "-m",
-            "pip",
-            "install",
-            "--index-url",
-            "https://download.pytorch.org/whl/cpu",
-            "torch",
-            "torchvision",
-            "torchaudio",
-        ],
-    )
-    run_conda(
-        conda_exe,
-        [
-            "run",
-            "-n",
-            BUILD_ENV_NAME,
-            "python",
-            "-m",
-            "pip",
-            "install",
-            "-i",
-            "https://mirrors.aliyun.com/pypi/simple/",
-            "-r",
-            str(project_root / "requirements.txt"),
-        ],
-    )
-    run_conda(
-        conda_exe,
-        [
-            "run",
-            "-n",
-            BUILD_ENV_NAME,
-            "python",
-            "-m",
-            "pip",
-            "uninstall",
-            "-y",
-            "opencv-python",
-        ],
-    )
-    run_conda(
-        conda_exe,
-        [
-            "run",
-            "-n",
-            BUILD_ENV_NAME,
-            "python",
-            "-m",
-            "pip",
-            "install",
-            "--force-reinstall",
+            "run", "-n", BUILD_ENV_NAME, "python", "-m", "pip", "install",
             "--no-deps",
-            "-i",
-            "https://mirrors.aliyun.com/pypi/simple/",
-            "opencv-python-headless",
+            "--index-url", "https://download.pytorch.org/whl/cpu",
+            "--extra-index-url", "https://mirrors.aliyun.com/pypi/simple/",
+            *packages,
         ],
+    )
+
+    # PySide6 拆分包装到独立 vendor 目录：Essentials / Addons 之间有几十个
+    # 同名 .pyi，直接装进 site-packages 会互相覆盖并触发批量删除保护；
+    # --target 指向全新目录则没有覆盖（实测可用）。.pth 让它优先被 import。
+    site_result = run_conda(
+        conda_exe,
+        [
+            "run", "-n", BUILD_ENV_NAME, "python", "-c",
+            "import site; print(site.getsitepackages()[0])",
+        ],
+        capture_output=True,
+    )
+    site_packages = Path(site_result.stdout.strip().splitlines()[-1])
+    vendor = site_packages / "_guji_vendor"
+    run_conda(
+        conda_exe,
+        [
+            "run", "-n", BUILD_ENV_NAME, "python", "-m", "pip", "install",
+            "--no-deps", "-i", "https://mirrors.aliyun.com/pypi/simple/",
+            "--target", str(vendor),
+            "PySide6_Essentials>=6.10.0,<6.11",
+            "PySide6_Addons>=6.10.0,<6.11",
+            "shiboken6>=6.10.0,<6.11",
+        ],
+    )
+    (site_packages / "zz_guji_vendor.pth").write_text(
+        str(vendor) + "\n", encoding="utf-8"
     )
     # 依赖只有 requirements.txt 一份（CLI + GUI 全量），上面的
     # `pip install -r requirements.txt` 已包含 PySide6 / markdown 等 GUI 依赖。
@@ -290,74 +286,116 @@ def ensure_build_environment(project_root):
     raise SystemExit(result.returncode)
 
 
+def _assert_cpu_torch():
+    """防止误用 CUDA 版 torch 环境打包（Linux / Windows 统一口径）。
+
+    正常路径下 ``ensure_build_environment`` 会切到 ``yolobuild`` 的 CPU torch；
+    这里兜住手动设置 ``GUJI_BUILD_ENV_READY=1`` 跳过环境切换的情况。确实需要
+    打 CUDA 大包时，显式设置 ``GUJI_ALLOW_CUDA_TORCH=1`` 才能放行。
+    """
+    if os.environ.get("GUJI_ALLOW_CUDA_TORCH") == "1":
+        return
+    try:
+        import torch
+    except ImportError:
+        return
+    cuda = getattr(torch.version, "cuda", None)
+    if cuda is None:
+        return
+    print(
+        f"❌ 当前构建环境是 CUDA 版 torch {torch.__version__}（CUDA {cuda}）。\n"
+        "   Windows/Linux 打包统一使用 CPU 版 torch：请直接运行 `python build.py`，\n"
+        "   让脚本切到 yolobuild 环境；若确实要打 CUDA 大包，请显式设置\n"
+        "   GUJI_ALLOW_CUDA_TORCH=1。"
+    )
+    raise SystemExit(2)
+
+
 #: 删除中途失败时残留目录的后缀（下次构建开头会再扫一次）
 _DELETING_SUFFIX = ".deleting"
 
-#: 一次性整目录删除的文件数阈值：超过它改走逐文件删除。本机环境的批量
-#: 删除保护对「一个目录里一次删几百上千个文件」会拦截并终止构建
-#: （2026-10-12 实测 build.deleting 2355 个文件被 SAFE_DELETE_BULK_CONFIRM
-#: 直接掐死），而**逐文件** os.remove 不受影响（同日实测 3427 个文件逐个
-#: 删全部成功）。阈值取 40，略低于守卫的 50，留出并发余量。
+#: 小目录才允许直接删除的文件数阈值。2026-11-27 实测本机保护改为按
+#: 「每轮 50 次删除」计数，逐文件 os.remove 到 50 个照样被掐死；因此大目录
+#: 一律走 gio trash 整体移走，不再逐文件删。阈值取 40，留并发余量。
 _BULK_DELETE_THRESHOLD = 40
 
 
-def _rmtree_guard_friendly(staging: Path) -> None:
-    """整目录删除；目录很大时改走逐文件删除（绕开批量删除保护）。
-
-    小目录仍走一次 ``rmtree``（快）；大目录先统计文件数，超阈值就逐个
-    ``unlink`` + 自底向上删空目录，最后再兜一层 ``rmtree`` 收残渣。
-    """
+def _rmtree_guard_friendly(staging: Path) -> bool:
+    """只删小目录（<= 阈值个文件）；大目录交给 gio trash，不逐文件删。"""
     total = 0
     for _dirpath, _dirs, files in os.walk(staging):
         total += len(files)
         if total > _BULK_DELETE_THRESHOLD:
             break
-    if total <= _BULK_DELETE_THRESHOLD:
-        shutil.rmtree(staging, ignore_errors=True)
-        return
-    for dirpath, dirs, files in os.walk(staging, topdown=False):
-        for name in files:
-            try:
-                os.remove(os.path.join(dirpath, name))
-            except OSError:
-                pass
-        try:
-            os.rmdir(dirpath)
-        except OSError:
-            pass
+    if total > _BULK_DELETE_THRESHOLD:
+        print(f"   ⚠️ {staging.name} 有 {total} 个文件，不逐文件删（交回收站）")
+        return False
     shutil.rmtree(staging, ignore_errors=True)
+    return not staging.exists()
+
+
+def _path_file_count(path: Path) -> int:
+    """统计文件数，够判断大小即可；超过阈值就提前返回。"""
+    total = 0
+    for _dirpath, _dirs, files in os.walk(path):
+        total += len(files)
+        if total > _BULK_DELETE_THRESHOLD:
+            break
+    return total
+
+
+def _trash_path(path: Path, shown: str) -> bool:
+    """用系统回收站整体移走目录，绕开「每轮 50 次删除」的批量保护。"""
+    if shutil.which("gio") is None:
+        return False
+    result = subprocess.run(
+        ["gio", "trash", str(path)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or "").strip()
+        print(f"   ⚠️ {shown} 移入回收站失败: {detail}")
+        return False
+    print(f"   🗑️  {shown} 已移入回收站")
+    return True
 
 
 def remove_tree(path: Path, label: str | None = None) -> bool:
-    """整目录删除旧的 ``build/`` / ``dist/`` / 瘦身暂存目录，成功返回 True。
+    """清理旧的 ``build/`` / ``dist/`` / 瘦身暂存目录，成功返回 True。
 
-    ``label`` 只影响日志里怎么称呼它（暂存夹叫「旧 _pruned_xxx/」读着别扭）。
+    ``label`` 只影响日志里怎么称呼它。
 
-    ⚠️ **为什么不再归档**（2026-09-28 用户拍板）：归档等于把旧产物攒在仓库外。
-    实测 ``../.guji_build_trash`` 攒到了 **8.0 GB**（7 份 dist + 7 份 build +
-    一次 pruned），既没腾出空间，几份几百 MB 的目录摆在一起还分不清谁是谁。
-    构建产物是可再生的，不需要留——要回滚就跑一次旧提交的 ``build.py``。
-
-    删法是「先 rename、再整目录删」：
-
-    1. rename 是同盘秒级操作，能让旧路径**立刻**消失，PyInstaller 随后往
-       ``dist/`` 落地时不会撞上一个半删状态的目录；
-    2. 万一删到一半失败，残留集中在**一个** ``*.deleting`` 目录里（不是散在
-       原路径上），下次构建开头会再扫一次。
-
-    实际删除走 :func:`_rmtree_guard_friendly`（大目录逐文件删，绕开本机
-    批量删除保护）。
-
-    删不掉只警告，**绝不中断构建**——整轮 15 分钟不能被一次清理失败判死。
+    ⚠️ **大目录走系统回收站**（2026-11-27）：本机保护现在按「每轮 50 次删除」
+    计数，逐文件 ``os.remove`` 到 50 个也会被掐死（连 build.py 清理旧 build/
+    都被拦）。文件数超过阈值时改用 ``gio trash`` 整体移走：一次操作、路径立刻
+    消失、不触发计数。没有 gio 时退化为改名到 ``*.deleting`` 并告警，**绝不
+    中断构建**。小目录（<=40 文件）仍直接 rmtree，快且不触发保护。
     """
     if not path.exists():
         return False
 
     shown = label or f"旧 {path.name}/"
+    if _path_file_count(path) > _BULK_DELETE_THRESHOLD:
+        if _trash_path(path, shown):
+            return True
+        stamp = time.strftime("%H%M%S")
+        staging = path.with_name(f"{path.name}{_DELETING_SUFFIX}_{stamp}")
+        try:
+            os.replace(str(path), str(staging))
+            print(f"   ⚠️ {shown} 已改名到 {staging.name}，但未能删除（继续构建）")
+        except OSError as exc:
+            print(f"   ⚠️ {shown} 清理失败（继续构建）: {exc}")
+        return False
+
+    # 小目录：先 rename 再删，避免 PyInstaller 撞上半删状态。
     staging = path.with_name(f"{path.name}{_DELETING_SUFFIX}")
     try:
-        if staging.exists():  # 上一次构建留下的残骸
-            _rmtree_guard_friendly(staging)
+        if staging.exists():
+            if not _rmtree_guard_friendly(staging):
+                _trash_path(staging, f"上次残留 {staging.name}")
         if staging.exists():
             print(f"   ⚠️ {shown} 上次残留删不掉，跳过清理（继续构建）")
             return False
@@ -366,12 +404,13 @@ def remove_tree(path: Path, label: str | None = None) -> bool:
         print(f"   ⚠️ {shown} 改名失败，跳过清理（继续构建）: {exc}")
         return False
 
-    _rmtree_guard_friendly(staging)
-    if staging.exists():
-        print(f"   ⚠️ {shown} 未删干净，残留 {staging}（继续构建）")
-        return False
-    print(f"   🗑️  {shown} 已删除")
-    return True
+    if _rmtree_guard_friendly(staging):
+        print(f"   🗑️  {shown} 已删除")
+        return True
+    if _trash_path(staging, shown):
+        return True
+    print(f"   ⚠️ {shown} 未删干净，残留 {staging}（继续构建）")
+    return False
 
 
 def stage_out(path: Path, staging: Path, anchor: Path | None = None) -> bool:
@@ -520,11 +559,15 @@ def main():
     if "--manual-only" in sys.argv:
         return refresh_manual_only(project_root)
     ensure_build_environment(project_root)
+    _assert_cpu_torch()
 
     print(f"项目版本: {VERSION}")
 
     # 删掉旧产物（guji.spec 是构建输入，不动它）
-    # ⚠️ 不再归档、也不因删除失败中断构建：详见 remove_tree()。
+    # ⚠️ 大目录走回收站、不因删除失败中断构建：详见 remove_tree()。
+    for stale in sorted(project_root.glob("*.deleting")):
+        if stale.is_dir():
+            _trash_path(stale, f"旧残留 {stale.name}")
     for target in [project_root / "build", project_root / "dist"]:
         remove_tree(target)
 
@@ -593,6 +636,7 @@ def main():
         else:
             steps += [
                 ("打绿色版 tar.gz", lambda: pack_tarball(project_root, dist_dir)),
+                ("打 Debian 包", lambda: build_deb_package(project_root, dist_dir)),
                 ("中文字体提示", lambda: print_font_hint()),
             ]
 
@@ -955,6 +999,209 @@ def pack_tarball(project_root, dist_dir):
             archive.add(str(dist_dir), arcname=dist_dir.name)
     except OSError as exc:
         print(f"⚠️ 打包 tar.gz 失败: {exc}")
+        return None
+    size_mb = target.stat().st_size / 1024 / 1024 if target.exists() else 0
+    print(f"📦 {target.name}（{size_mb:.0f} MB）")
+    return target
+
+
+def _deb_arch() -> str:
+    """Debian 架构名：x86_64 -> amd64，aarch64 -> arm64。"""
+    import platform
+
+    machine = (platform.machine() or "unknown").lower()
+    return {
+        "amd64": "amd64",
+        "x86_64": "amd64",
+        "arm64": "arm64",
+        "aarch64": "arm64",
+    }.get(machine, machine)
+
+
+def _link_or_copy(src: Path, dst: Path) -> None:
+    """优先硬链接（同盘秒级、不占双倍空间），失败退回 copy2。"""
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if dst.exists() or dst.is_symlink():
+        return
+    try:
+        os.link(src, dst)
+    except OSError:
+        shutil.copy2(src, dst)
+
+
+def build_deb_package(project_root: Path, dist_dir: Path):
+    """把 ``dist/guji/`` 打成 Debian 安装包。
+
+    安装后目录::
+
+        /opt/gujitools/{guji,guji-desktop,_internal,...}
+        /usr/bin/guji            -> /opt/gujitools/guji
+        /usr/bin/guji-desktop    -> /opt/gujitools/guji-desktop
+        /usr/share/applications/gujitools.desktop
+        /usr/share/icons/hicolor/{64x64,128x128,256x256}/apps/gujitools.png
+        /usr/share/metainfo/gujitools.appdata.xml
+
+    ``dpkg-deb`` 经 ``fakeroot`` 执行，保证归档内文件 owner 为 root。
+    打包失败只警告，不阻断 tar.gz 与 dist/ 产物。
+    """
+    if not dist_dir.is_dir():
+        print("⚠️ 未找到输出目录，跳过 .deb 打包")
+        return None
+    if shutil.which("dpkg-deb") is None:
+        print("⚠️ 系统没有 dpkg-deb，跳过 .deb 打包")
+        return None
+
+    arch = _deb_arch()
+    target = project_root / "dist" / DEB_TEMPLATE.format(version=VERSION, arch=arch)
+    stage = project_root / "build" / f"deb_{time.strftime('%Y%m%d_%H%M%S')}"
+    root = stage / DEB_PACKAGE_NAME
+    debian = root / "DEBIAN"
+    install_root = root / "opt" / "gujitools"
+    debian.mkdir(parents=True, exist_ok=True)
+    install_root.mkdir(parents=True, exist_ok=True)
+
+    # dist/guji 原样落到 /opt/gujitools；硬链接避免再复制 5.5GB。
+    n_files = 0
+    for path in sorted(dist_dir.rglob("*")):
+        rel = path.relative_to(dist_dir)
+        dst = install_root / rel
+        if path.is_symlink():
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            if not (dst.exists() or dst.is_symlink()):
+                os.symlink(os.readlink(path), dst)
+        elif path.is_dir():
+            dst.mkdir(parents=True, exist_ok=True)
+        elif path.is_file():
+            _link_or_copy(path, dst)
+            n_files += 1
+
+    # CLI/GUI 全局入口。
+    usr_bin = root / "usr" / "bin"
+    usr_bin.mkdir(parents=True, exist_ok=True)
+    for link_name, exe in (("guji", CLI_EXE), ("guji-desktop", GUI_EXE)):
+        link = usr_bin / link_name
+        if not (link.exists() or link.is_symlink()):
+            os.symlink(f"{DEB_INSTALL_DIR}/{exe}", link)
+
+    # 桌面入口：中文名 + Keywords 让 GNOME 活动搜索能按「古籍 / PDF / 版面」命中。
+    apps = root / "usr" / "share" / "applications"
+    apps.mkdir(parents=True, exist_ok=True)
+    desktop_entry = (
+        "[Desktop Entry]\n"
+        "Type=Application\n"
+        "Version=1.0\n"
+        "Name=Guji Tools\n"
+        "Name[zh_CN]=古籍工具\n"
+        "GenericName=Document Layout Assistant\n"
+        "GenericName[zh_CN]=文档版面识别工具\n"
+        "Comment=PDF layout detection and annotation\n"
+        "Comment[zh_CN]=PDF 版面识别与标注工具\n"
+        "Exec=guji-desktop\n"
+        "TryExec=guji-desktop\n"
+        "Icon=gujitools\n"
+        "Terminal=false\n"
+        "Categories=Office;Utility;\n"
+        "Keywords=pdf;layout;yolo;ocr;古籍;版面;识别;标注;\n"
+        "StartupNotify=true\n"
+        "StartupWMClass=guji-desktop\n"
+        "NoDisplay=false\n"
+    )
+    desktop_file = apps / "gujitools.desktop"
+    desktop_file.write_text(desktop_entry, encoding="utf-8")
+    desktop_file.chmod(0o644)
+
+    # 图标：GNOME 网格 / 搜索结果走 hicolor 主题；多尺寸比单张 256 更清晰。
+    icon_src = dist_dir / "desktop" / "static" / "icon.png"
+    if not icon_src.is_file():
+        icon_src = project_root / "desktop" / "static" / "icon.png"
+    if icon_src.is_file():
+        resample = None
+        try:
+            from PIL import Image
+
+            source = Image.open(icon_src).convert("RGBA")
+            resample = getattr(Image, "Resampling", Image).LANCZOS
+        except Exception:
+            source = None
+        for size in (64, 128, 256):
+            icon_dir = (
+                root / "usr" / "share" / "icons" / "hicolor" / f"{size}x{size}" / "apps"
+            )
+            target_icon = icon_dir / "gujitools.png"
+            if source is not None and source.size != (size, size):
+                icon_dir.mkdir(parents=True, exist_ok=True)
+                source.resize((size, size), resample).save(target_icon)
+            else:
+                _link_or_copy(icon_src, target_icon)
+            target_icon.chmod(0o644)
+
+    # AppStream 元数据：GNOME Software / 应用搜索的附加索引。
+    metainfo = root / "usr" / "share" / "metainfo" / "gujitools.appdata.xml"
+    metainfo.parent.mkdir(parents=True, exist_ok=True)
+    metainfo.write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<component type="desktop-application">\n'
+        "  <id>gujitools.desktop</id>\n"
+        "  <metadata_license>CC0-1.0</metadata_license>\n"
+        "  <project_license>Proprietary</project_license>\n"
+        "  <name>Guji Tools</name>\n"
+        '  <name xml:lang="zh_CN">古籍工具</name>\n'
+        "  <summary>PDF layout detection and annotation</summary>\n"
+        '  <summary xml:lang="zh_CN">PDF 版面识别与标注工具</summary>\n'
+        "  <description>\n"
+        "    <p>Detect page layout with YOLO and export annotated pages and PDF reports.</p>\n"
+        "  </description>\n"
+        '  <launchable type="desktop-id">gujitools.desktop</launchable>\n'
+        "  <categories><category>Office</category><category>Utility</category></categories>\n"
+        "  <keywords><keyword>PDF</keyword><keyword>layout</keyword>"
+        "<keyword>YOLO</keyword><keyword>古籍</keyword><keyword>版面</keyword></keywords>\n"
+        "</component>\n",
+        encoding="utf-8",
+    )
+    metainfo.chmod(0o644)
+
+    postinst = debian / "postinst"
+    postinst.write_text(
+        "#!/bin/sh\n"
+        "set -e\n"
+        "if command -v update-desktop-database >/dev/null 2>&1; then\n"
+        "    update-desktop-database /usr/share/applications >/dev/null 2>&1 || true\n"
+        "fi\n"
+        "if command -v gtk-update-icon-cache >/dev/null 2>&1; then\n"
+        "    gtk-update-icon-cache -q -f -t /usr/share/icons/hicolor >/dev/null 2>&1 || true\n"
+        "fi\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    postinst.chmod(0o755)
+
+    installed_kib = sum(
+        p.stat().st_size for p in root.rglob("*") if p.is_file() and not p.is_symlink()
+    ) // 1024
+    control = (
+        f"Package: {DEB_PACKAGE_NAME}\n"
+        f"Version: {VERSION}\n"
+        "Section: utils\n"
+        "Priority: optional\n"
+        f"Architecture: {arch}\n"
+        f"Installed-Size: {installed_kib}\n"
+        "Depends: libc6, libstdc++6\n"
+        "Recommends: fonts-noto-cjk | fonts-wqy-microhei\n"
+        "Maintainer: gujitools <noreply@localhost>\n"
+        "Description: PDF layout detection and annotation tool\n"
+        " Guji Tools detects page layout with YOLO and exports annotated\n"
+        " pages and PDF reports. CLI and desktop GUI share one runtime.\n"
+    )
+    (debian / "control").write_text(control, encoding="utf-8")
+    (debian / "control").chmod(0o644)
+
+    cmd = ["dpkg-deb", "--build", "-Zgzip", str(root), str(target)]
+    if shutil.which("fakeroot"):
+        cmd.insert(0, "fakeroot")
+    print(f"📦 打 Debian 包: {target.name}（{n_files} 个文件，约需几分钟）")
+    result = subprocess.run(cmd, cwd=str(project_root))
+    if result.returncode != 0:
+        print("⚠️ .deb 打包失败，可检查上方 dpkg-deb 输出；tar.gz 与 dist/ 不受影响")
         return None
     size_mb = target.stat().st_size / 1024 / 1024 if target.exists() else 0
     print(f"📦 {target.name}（{size_mb:.0f} MB）")
