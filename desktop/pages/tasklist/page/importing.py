@@ -70,21 +70,59 @@ class TaskListImportMixin:
         self.hash_worker = HashWorker(path)
         self.hash_worker.moveToThread(self.hash_thread)
         self.hash_thread.started.connect(self.hash_worker.run)
-        self.hash_worker.finished.connect(self._hash_ready)
-        self.hash_worker.failed.connect(self._hash_failed)
+        # ⚠⚠ 必须走 ``connect_queued``：``_hash_ready``/``_hash_failed`` 定义在
+        #     mixin（普通 Python 类）上，PySide 认不出"接收者是主线程的 QObject"，
+        #     AutoConnection 就退化成**直连**——回调直接跑在哈希子线程里。
+        #     接着 refresh() → _render() → TaskTable.set_data() 全在子线程，
+        #     Qt 拒绝把单元格控件挂到表格视口，只刷一行
+        #     ``QObject::setParent: Cannot set parent, new parent is in a
+        #     different thread``，控件于是变成一个个独立的顶层小窗——标题是
+        #     ``__main__``、内容是行内的任务名 / 「详情·删除」按钮，每导入一次
+        #     就多一批堆在屏幕上（用户 2026-11-28 截图："感觉是表格的一部分被
+        #     拆开了，而且越来越多"）。顺带表格还会显示不全（行在、格是空的）。
+        #     连到 QObject 的**绑定方法**才安全，而 mixin 方法不是——
+        #     判据见 ``workers/worker_host.py::connect_queued`` 的注释。
+        # ⚠ 这两个中继**刻意不挂 thread**：``_hash_ready`` 里可能开模态查重
+        #   弹窗（``.exec()``）。若中继绑在 ``hash_thread.finished`` 上被
+        #   deleteLater，模态事件循环会把"正在执行 forward 的中继"删掉
+        #   （use-after-free）。改由 ``_hash_thread_done`` 统一销毁——它排在
+        #   同一队列里、一定在 ``_hash_ready`` 返回之后才跑。
+        self._hash_relays = [
+            connect_queued(self, self.hash_worker.finished, self._hash_ready),
+            connect_queued(self, self.hash_worker.failed, self._hash_failed),
+        ]
         self.hash_worker.finished.connect(self.hash_thread.quit)
         self.hash_worker.failed.connect(self.hash_thread.quit)
         self.hash_thread.finished.connect(self.hash_worker.deleteLater)
-        self.hash_thread.finished.connect(self._hash_thread_done)
+        # 同上：_hash_thread_done 要动「创建任务」按钮，不能在子线程里做
+        connect_queued(
+            self, self.hash_thread.finished, self._hash_thread_done, self.hash_thread
+        )
         self.hash_thread.start()
 
     def _hash_thread_done(self) -> None:
         # 按钮由 _init_ui 建好；这里断言只为让类型检查器收窄（可能为 None 的声明）
         assert self._import_button is not None
         self._import_button.setEnabled(True)
+        # 本次导入的两个中继到这里使命已尽：_hash_ready/_hash_failed 都已跑完
+        # （见 _start_import 的说明），显式销毁，别让长会话反复导入攒一堆。
+        for relay in getattr(self, "_hash_relays", ()):
+            try:
+                relay.deleteLater()
+            except RuntimeError:  # C++ 侧已随页面销毁
+                pass
+        self._hash_relays = []
         # ⚠️ 线程对象也要销毁（parent=本页，只覆盖属性不会析构 C++ 对象）：
         #    每次导入一个，长期使用会一批批堆着（2026-11-21「内存越用越大」）。
+        # ⚠⚠ 引用也必须**同步清空**（2026-11-28 用户报"再导入一次就报错"）：
+        #    deleteLater 之后 C++ 对象已销毁，而属性还指着一个"空壳包装器"；
+        #    下一次 ``start_create``/``import_pdf`` 的守卫
+        #    ``if self.hash_thread and self.hash_thread.isRunning()`` 会直接抛
+        #    ``RuntimeError: Internal C++ object (PySide6.QtCore.QThread)
+        #    already deleted`` —— 第一次导入正常、第二次必炸。
         thread = self.hash_thread
+        self.hash_thread = None
+        self.hash_worker = None
         if thread is not None:
             try:
                 thread.deleteLater()
@@ -386,8 +424,14 @@ class TaskListImportMixin:
         thread = QThread(self)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
-        worker.finished.connect(self._on_aggregate_ingest_finished)
-        worker.failed.connect(self._on_aggregate_ingest_failed)
+        # 同 `_start_import`：这两个回调也在 mixin 上 → 直连会跑在子线程，
+        # 里面又要 refresh()、又要 toast，跨线程摸控件同样会炸出游离窗口。
+        connect_queued(
+            self, worker.finished, self._on_aggregate_ingest_finished, thread
+        )
+        connect_queued(
+            self, worker.failed, self._on_aggregate_ingest_failed, thread
+        )
         worker.finished.connect(thread.quit)
         worker.failed.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)

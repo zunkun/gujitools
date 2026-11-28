@@ -219,6 +219,15 @@ class SerialJobQueue(QObject):
 
     def _maybe_start(self) -> None:
         """有空位、已放行且队列非空时，启动下一个 job。"""
+        # ⚠️ 起线程、建 QThread 子对象、connect 中继都必须在**宿主线程**做
+        #    （2026-11-28）：worker 线程误调进来时 Qt 会刷
+        #    ``Cannot create children for a parent that is in a different
+        #    thread`` / ``Timers cannot be started from another thread``，
+        #    X11 下还可能把绘制线程一起拖住。这里先排队回宿主线程再来一遍。
+        host = self.thread()
+        if host is not None and QThread.currentThread() is not host:
+            QTimer.singleShot(0, self, self._maybe_start)
+            return
         if self._thread is not None or self._gated or not self._pending:
             return
         job = self._pending.popleft()
@@ -270,6 +279,11 @@ class SerialJobQueue(QObject):
 
     def _on_job_done(self, thread: QThread, label: str) -> None:
         """一个 job 结束（已在主线程）：释放引用，隔一小段再把下一个放出去。"""
+        # 同 ``_maybe_start``：这里会改队列状态、起下一个 QThread，必须在宿主线程
+        host = self.thread()
+        if host is not None and QThread.currentThread() is not host:
+            QTimer.singleShot(0, self, lambda: self._on_job_done(thread, label))
+            return
         if self._thread is not thread:
             return
         self._thread = None

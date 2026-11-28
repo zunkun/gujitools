@@ -15,6 +15,9 @@ from .constants import (
     POOL_FAILURE_LIMIT,
 )
 
+#: 子进程启动方式：**恒为 spawn**（见 :func:`_mp_context` 的原因）。
+_START_METHOD = "spawn"
+
 _LOCK = threading.Lock()
 _pool: Any = None
 #: 单页提取专用池（见 ``EXTRACT_WORKERS``）：**绝不与缩略图/预览共用**
@@ -40,6 +43,35 @@ def _mode() -> str:
     if (os.environ.get(ENV_MODE) or "").strip().lower() in ("inproc", "0", "off"):
         return "inproc"
     return "proc"
+
+
+def _mp_context():
+    """子进程的启动方式：**显式 spawn**，不能用 Linux 默认的 ``fork``。
+
+    ⚠️ 2026-11-28（用户报：hupper 无法中断 / 不打印重启 / 页面卡死后窗口消失）：
+
+    Linux 上 ``ProcessPoolExecutor`` 默认 ``fork``，子进程会把父进程**整份内存
+    和全部 fd** 抄过去——包括 hupper 传给 GUI worker 的那对 IPC 管道。worker
+    卡死被 hupper 强杀后，这几个池进程成了孤儿，却仍握着管道写端，于是
+    hupper 的读线程永远等不到 EOF，``Connection.close()`` 里 join 读线程就
+    永久阻塞：monitor 停在 futex 上，既收不到 Ctrl+C，也不会重启，更不会打印
+    ``Reloading``——用户看到的就是"页面卡死 → 窗口没了 → 再也回不来"。
+
+    实测（``hupper -m pool_repro``，池预热后 ``kill -9`` worker）：
+
+    - ``fork``（旧默认）：monitor 卡在 futex，**不重启**，留下 3 个孤儿池进程；
+    - ``spawn`` / 进程内：monitor 回到 pipe_read，**立即重启**出新 worker。
+
+    Windows 上 ``multiprocessing`` **只有** spawn（新解释器 + 不继承句柄），
+    所以同一份代码在那边一直没事——这就是"为什么 Windows 没这个毛病"。
+
+    代价：每个 worker 首次要重新 import（含 pymupdf），约 0.3~1.5s；``prewarm()``
+    本来就是为这笔开销准备的。将来若要换 ``forkserver``：它在程序**早期**
+    （还没有 Qt 线程时）才 fork，同样不会抄到后来的 fd，但要注意预加载模块。
+    """
+    import multiprocessing as mp
+
+    return mp.get_context(_START_METHOD)
 
 
 def offloaded() -> bool:
@@ -71,7 +103,11 @@ def _pool_or_none(kind: str = "render"):
             from concurrent.futures import ProcessPoolExecutor
 
             size = _worker_count() if kind == "render" else EXTRACT_WORKERS
-            current = ProcessPoolExecutor(max_workers=size)
+            # ⚠️ 必须显式 spawn（见 ``_mp_context``）：Linux 默认 fork 会让子进程
+            #    继承调用方的 fd，hupper 的 IPC 管道因此永远关不掉，monitor 卡死。
+            current = ProcessPoolExecutor(
+                max_workers=size, mp_context=_mp_context()
+            )
         except Exception as exc:  # noqa: BLE001 - 起不来就降级，绝不抛给界面
             _disabled = True
             print(f"[渲染服务] 子进程池启动失败，退回进程内渲染：{exc}")
@@ -154,7 +190,7 @@ def _fallback_count() -> None:
 
 def stats() -> dict:
     """运行计数（自测断言用）：``renders`` / ``extracts`` / ``page_counts`` /
-    ``fallbacks`` / ``mode`` / ``workers`` / ``pool_failures``。"""
+    ``fallbacks`` / ``mode`` / ``workers`` / ``pool_failures`` / ``start_method``。"""
     return {
         **_stats,
         "mode": _mode(),
@@ -162,6 +198,8 @@ def stats() -> dict:
         "extract_workers": EXTRACT_WORKERS,
         "pool_failures": _pool_failures,
         "offloaded": offloaded(),
+        #: 子进程启动方式（恒为 spawn，见 ``_mp_context``）；自测据此挡回归
+        "start_method": _START_METHOD,
     }
 
 

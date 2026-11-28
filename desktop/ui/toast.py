@@ -49,7 +49,25 @@ def show_toast(
     ⚠️ **同键去重**：同 parent + 同标题 + 同内容的 toast 还没消失时，再次
     调用直接跳过（不再叠一条）。关闭时（``closedSignal``）从去重表摘除，
     之后同样的话可以正常再弹。
+
+    ⚠️ **只能在本宿主线程建 InfoBar**（2026-11-28）：worker 线程直接调过来时，
+    Qt 会刷 ``QObject: Cannot create children for a parent that is in a
+    different thread`` + ``Timers cannot be started from another thread``，
+    在 X11 下还会把 xcb 连接和 Qt 内部锁搅在一起（Windows 的 win32 后端对
+    这类越界宽容得多，所以那边看不出问题）。这里统一排队回宿主线程重放，
+    调用方即使搞错线程也不会把界面弄坏。
     """
+    from PySide6.QtCore import QThread, QTimer
+
+    host = parent.thread()
+    if host is not None and QThread.currentThread() is not host:
+        print(f"[guji] toast 在非宿主线程被调用，已排队回主线程：{title}")
+        # context=parent：宿主销毁后这次回调自动作废，不会碰已删对象
+        QTimer.singleShot(
+            0, parent, lambda: show_toast(parent, kind, title, content)
+        )
+        return
+
     factory = getattr(InfoBar, kind, InfoBar.info)
     key = (id(parent), str(title), str(content))
     old = _LIVE.get(key)

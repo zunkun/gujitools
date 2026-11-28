@@ -214,7 +214,7 @@ def run(ctx) -> None:
     import utils.font_scan as font_scan
 
     original = font_scan.scan_system_fonts
-    font_scan.scan_system_fonts = lambda force=False: ()
+    font_scan.scan_system_fonts = lambda force=False, should_stop=None: ()
     try:
         from PySide6.QtCore import QCoreApplication
 

@@ -16,7 +16,8 @@ from desktop.pages.taskdetail.imposition_layout.compose_sigs import (
 from desktop.pages.taskdetail.imposition_layout.constants import (
     COMPOSED_SIGS_SUFFIX, COMPOSE_DEBOUNCE_MS, COMPOSE_YIELD_MAX_MS,
     COMPOSE_YIELD_MIN_PAGES, COMPOSE_YIELD_TO_THUMBS_MS,
-    EDIT_COMMIT_DEBOUNCE_MS, PRINT_WAIT_POLL_MS, THUMB_REFRESH_DEBOUNCE_MS,
+    EDIT_COMMIT_DEBOUNCE_MS, PRINT_WAIT_POLL_MS, PRINT_WAIT_TIMEOUT_MS,
+    THUMB_REFRESH_DEBOUNCE_MS,
 )
 from desktop.services.imposition import (
     is_product_file, page_product_suffix, product_path,
@@ -474,6 +475,29 @@ class ComposeMixin(ImpositionLayoutHost):
 
         poll.timeout.connect(_settled)
         poll.start()
+        # 兜底：后台那轮合成若因任何原因不返回，这个 loop 会**永远转下去**——
+        # 主线程在转（心跳/探活/定时器都正常），执行权却卡在 run_stage 手里、
+        # 按钮已置灰，用户看到的就是"点什么都没反应，日志一个字没有"。
+        # 到点就放手（见 PRINT_WAIT_TIMEOUT_MS 的说明）。
+        deadline = QTimer(cast(QWidget, self))
+        deadline.setSingleShot(True)
+        timed_out = {"yes": False}
+
+        def _give_up() -> None:
+            timed_out["yes"] = True
+            try:
+                from utils.crash_log import dump_stacks, log
+
+                log(f"[imposition] 等后台合成超过 {PRINT_WAIT_TIMEOUT_MS}ms 仍未收敛"
+                    f"（在飞={self._imposition_composing}"
+                    f", 待合成={self._imposition_dirty}）→ 不再等，按现有成品继续")
+                dump_stacks("[imposition] 等合成超时的线程栈")
+            except Exception:  # noqa: BLE001 - 取证不该影响放行
+                pass
+            loop.quit()
+
+        deadline.timeout.connect(_give_up)
+        deadline.start(PRINT_WAIT_TIMEOUT_MS)
         try:
             # ⚠️ 这一条**整本重合成**（``force_full``）：它要的是"磁盘一定与落盘
             #    版面一致"，而签名记录是内存态的、可能不准（跨会话/写盘失败），
@@ -484,10 +508,18 @@ class ComposeMixin(ImpositionLayoutHost):
             loop.exec()
         finally:
             poll.stop()
+            deadline.stop()
         if self.task_id != owner_task:
             # 等待期间切了任务：内存态已被 _reset_imposition_state 复位，
             # 旧任务的合成自会收尾，这里什么都不补。
             return
         self._imposition_dirty = False
-        if not self._imposition_products_fresh():
+        if timed_out["yes"]:
+            self.log_view.append(
+                f"⚠️ 后台合成等待超时（{max(1, PRINT_WAIT_TIMEOUT_MS // 1000)} 秒）仍未完成，"
+                "不再等：PDF 按现有成品继续（线程栈已写进 logs/crash.log）。"
+            )
+            self._toast("warning", "拼版合成超时",
+                        "已按现有成品继续生成 PDF，详见日志")
+        elif not self._imposition_products_fresh():
             self.log_view.append("⚠️ 拼版合成未完成，PDF 将按现有成品页继续。")

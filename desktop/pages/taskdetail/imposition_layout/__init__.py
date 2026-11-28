@@ -44,6 +44,7 @@ from desktop.pages.taskdetail.imposition_layout.constants import (
     COMPOSE_YIELD_TO_THUMBS_MS,
     EDIT_COMMIT_DEBOUNCE_MS,
     PRINT_WAIT_POLL_MS,
+    PRINT_WAIT_TIMEOUT_MS,
     THUMB_REFRESH_DEBOUNCE_MS,
 )
 from desktop.pages.taskdetail.imposition_layout.mixin import ImpositionLayoutMixin
@@ -57,5 +58,6 @@ __all__ = [
     "EDIT_COMMIT_DEBOUNCE_MS",
     "ImpositionLayoutMixin",
     "PRINT_WAIT_POLL_MS",
+    "PRINT_WAIT_TIMEOUT_MS",
     "THUMB_REFRESH_DEBOUNCE_MS",
 ]

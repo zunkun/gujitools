@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import faulthandler
 import os
+import signal
 import sys
 import threading
 import time
@@ -108,6 +109,20 @@ def install(directory: str | Path | None = None, name: str = "crash.log") -> Pat
             faulthandler.enable(stream, all_threads=True)
         except (OSError, ValueError, RuntimeError) as exc:
             stream.write(f"{_stamp()} [warn] faulthandler 启用失败：{exc}\n")
+
+        # 1b) 手动抓栈：``kill -USR1 <pid>`` 立刻把所有线程的 Python 栈写进日志。
+        #     为什么需要（2026-11-28 用户报"点一下突然卡住、窗口消失"）：
+        #     排查时进程还活着、事件循环也还能应答 socket（10ms 内），但界面
+        #     不动、图案不再重绘——**主线程并不忙**，看门狗自然一条 ``[stall]``
+        #     都不会打。这种"界面死、进程活"只能当场抓栈才分得清是渲染线程、
+        #     合成器还是某个嵌套事件循环在等；事后翻日志永远是零线索。
+        #     faulthandler 的信号栈是**信号安全**的：主线程真卡在 C 里也能抓。
+        if hasattr(signal, "SIGUSR1"):
+            try:
+                faulthandler.register(signal.SIGUSR1, file=stream,
+                                      all_threads=True, chain=False)
+            except (OSError, ValueError, RuntimeError) as exc:
+                stream.write(f"{_stamp()} [warn] SIGUSR1 抓栈注册失败：{exc}\n")
 
         # 2) Python 异常（主线程 + 子线程）
         _prev_excepthook = sys.excepthook
@@ -358,6 +373,11 @@ def uninstall() -> None:
             pass
 
     with _lock:
+        try:
+            if hasattr(signal, "SIGUSR1"):
+                faulthandler.unregister(signal.SIGUSR1)
+        except (OSError, ValueError, RuntimeError):
+            pass
         try:
             faulthandler.disable()
         except Exception:  # noqa: BLE001

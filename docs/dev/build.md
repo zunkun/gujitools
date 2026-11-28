@@ -12,7 +12,8 @@ python -m pip install -r requirements.txt   # 依赖就一份，含 CLI + GUI �
 # 启动桌面端
 python desktop.py
 # 开发热重载（可选）
-hupper -m desktop
+# --shutdown-interval 2：Linux 下 hupper 默认 1 秒就强杀，GUI 收尾来不及
+hupper --shutdown-interval 2 -m desktop
 
 # 命令行（与安装后的 guji 等价）
 python cli.py --help

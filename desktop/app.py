@@ -269,15 +269,82 @@ class MainWindow(FramelessMainWindow, WorkerHost):
 
 
 def _install_sigint_handler(app: QApplication) -> None:
-    """让 Ctrl+C 能退出 GUI。
+    """让 Ctrl+C 真的能停掉 GUI（一次优雅、连按两次硬退）。
+
     Qt 事件循环阻塞在 C 层，Python 的 SIGINT 处理器只有在上层循环被
     周期性唤醒时才有机会执行，因此配一个空转 QTimer。
-    """
-    import signal
-    from PySide6.QtCore import QTimer
 
-    def _handle_sigint(signum, frame) -> None:
-        app.quit()
+    ⚠️ 2026-11-28（用户报「Ctrl+C 停不掉 hupper」）两个真问题：
+
+    1. **``app.quit()`` 打不穿嵌套事件循环**。它只让**主**循环退出；一旦
+       代码正停在 ``QDialog.exec()`` / ``QEventLoop.exec()``（弹窗、合成
+       等待、文件对话框……）里，主循环的退出意图要等那个嵌套循环自己返回
+       才生效——期间进程活着、事件照收、窗口照常显示，用户按 Ctrl+C 就是
+       "毫无反应"。所以这里先把可见的模态一个个 ``reject()`` 掉，让嵌套
+       循环拿到返回值，主循环才真的能退。
+    2. **收尾期间第二次 Ctrl+C 必须能硬退**。``closeEvent`` → 停 worker /
+       停常驻服务那段一旦卡住，用户只能 ``kill -9``；这里记一次时间戳，
+       0.5 秒后（手抖的连击不算）再按一次直接 ``os._exit``。
+
+    另外每次都往 crash.log 记一条 ``[exit]``：这条日志是判断"信号到底有没有
+    送到进程"的唯一依据——终端里按了 Ctrl+C 而日志里没有这一行，就说明
+    信号压根没到（终端 / hupper / 平台问题），不必再怀疑应用代码。
+    """
+    import os
+    import signal
+    import time
+
+    from PySide6.QtCore import QTimer
+    from PySide6.QtWidgets import QDialog
+
+    state = {"first": 0.0}
+
+    def _handle_sigint(signum, frame) -> None:  # noqa: ARG001 - 标准库签名
+        now = time.monotonic()
+        try:
+            from utils.crash_log import log as _log
+        except Exception:  # noqa: BLE001 - 取证不该影响退出
+            _log = None
+        if not state["first"]:
+            state["first"] = now
+            if _log is not None:
+                try:
+                    _log("[exit] 收到 SIGINT")
+                except Exception:  # noqa: BLE001
+                    pass
+            # ⚠️ 先让字体扫描线程收手：它可能正在 fontTools 里逐个读字体
+            #    （首次约 7s），一边攥 GIL 拖慢收尾，一边在解释器退出时被
+            #    回收成 ``QThread: Destroyed while thread is still running``
+            #    → SIGABRT。这里**等它一下**（上限 600ms，扫描循环每个字体
+            #    查一次中止标志，正常几十毫秒就退）：不等的话它会继续攥着
+            #    GIL，closeEvent 里 800ms 的后台线程收尾必然超时，总耗时反而
+            #    超过 hupper 默认的 1s 而被强杀。
+            try:
+                from desktop.services.font_catalog import shutdown_background_scan
+
+                shutdown_background_scan(600)
+            except Exception:  # noqa: BLE001 - 取证/收尾都不该影响退出
+                pass
+            # 先把可见模态逐个关掉：``app.quit()`` 只退主循环，嵌套 ``exec()``
+            # 不退，窗口就会一直留着（用户看到的就是"按了没反应"）。
+            for widget in app.topLevelWidgets():
+                try:
+                    if widget.isVisible() and isinstance(widget, QDialog):
+                        widget.reject()
+                except Exception:  # noqa: BLE001 - 某个窗口关不掉不该拦住退出
+                    pass
+            app.quit()
+            return
+        # 已经按过一次：0.5 秒内的重复按键不算数（手抖别把正常收尾跳掉），
+        # 过了这个点还在 = 优雅退出没成，这才放行硬退。
+        if now - state["first"] < 0.5:
+            return
+        if _log is not None:
+            try:
+                _log("[exit] 再次收到 SIGINT（优雅退出未完成）→ 强制结束进程")
+            except Exception:  # noqa: BLE001
+                pass
+        os._exit(1)  # 收尾卡住时的逃生门：立刻结束，不再等任何线程
 
     try:
         signal.signal(signal.SIGINT, _handle_sigint)
@@ -311,12 +378,16 @@ def _install_crash_forensics(app) -> None:
 
         log_dir = Path(guji_data_dir()) / "logs"
         install_crash_log(log_dir)
-        try:
-            from utils.crash_dump import install as install_crash_dump
+        # 原生 minidump 只支持 Windows（utils.crash_dump 在导入期就要 WinDLL）。
+        # 非 Windows 下 Python 栈日志照常落盘，这里直接跳过，别把"平台不支持"
+        # 当成故障打印出来。
+        if sys.platform == "win32":
+            try:
+                from utils.crash_dump import install as install_crash_dump
 
-            install_crash_dump(log_dir)
-        except Exception as exc:  # noqa: BLE001 - 转储装不上，日志还有
-            print(f"[guji] 原生崩溃转储跳过：{exc}")
+                install_crash_dump(log_dir)
+            except Exception as exc:  # noqa: BLE001 - 转储装不上，日志还有
+                print(f"[guji] 原生崩溃转储跳过：{exc}")
         try:
             from desktop.ui.qt_log import install as install_qt_log
 
@@ -342,6 +413,17 @@ def _install_crash_forensics(app) -> None:
             setattr(app, "_stall_heartbeat", heartbeat)  # 方便排查时取
         except Exception as exc:  # noqa: BLE001 - 看门狗装不上不该拦住界面
             print(f"[guji] 卡顿看门狗跳过：{exc}")
+        # ---- 输入占用监护（用户 2026-11-28「卡顿时 python 没有反应」）----
+        # 看门狗只认「主线程不转」。另一类假死是主线程照常转、输入被模态层
+        # 吞掉：心跳、探活、定时器全正常，Python 侧一个字都没有。这里补上
+        # 「谁攥着输入 / 多久没收到真实输入事件」这条唯一可观测的线索。
+        try:
+            from desktop.ui.input_watch import install as install_input_watch
+
+            watch = install_input_watch(app)
+            setattr(app, "_input_watch", watch)  # 排查时能取到
+        except Exception as exc:  # noqa: BLE001 - 监护装不上不该拦住界面
+            print(f"[guji] 输入监护跳过：{exc}")
     except Exception as exc:  # noqa: BLE001
         print(f"[guji] 崩溃取证跳过：{exc}")
 
@@ -367,14 +449,17 @@ def main() -> int:
     # ⚠️ 必须在**任何子进程被拉起之前**装好（YOLO 预热在 3s 后、渲染服务更晚，
     #    所以放在 main() 开头即可）；装不上（已在不允许嵌套的作业里）只记一行
     #    日志，绝不拦启动。
-    try:
-        from utils.proc_job import kill_children_on_exit
+    # Job Object 是 Windows 专有；POSIX 下子进程由系统回收，
+    # kill_children_on_exit() 必然返回 False，不用当告警刷启动日志。
+    if sys.platform == "win32":
+        try:
+            from utils.proc_job import kill_children_on_exit
 
-        if not kill_children_on_exit():
-            print("[guji] 进程组看护未启用（Job Object 装配失败），"
-                  "崩溃后子进程可能残留")
-    except Exception as exc:  # noqa: BLE001 - 看护装不上不该挡住界面
-        print(f"[guji] 进程组看护跳过：{exc}")
+            if not kill_children_on_exit():
+                print("[guji] 进程组看护未启用（Job Object 装配失败），"
+                      "崩溃后子进程可能残留")
+        except Exception as exc:  # noqa: BLE001 - 看护装不上不该挡住界面
+            print(f"[guji] 进程组看护跳过：{exc}")
     setTheme(Theme.LIGHT)
     apply_app_style(app)  # 统一字体、主题色、底色与滚动条
     from desktop.ui.widgets import install_button_pointer_cursor
@@ -487,6 +572,24 @@ def main() -> int:
     try:
         code = app.exec()
     finally:
+        # 退出留痕（2026-11-28）：终端里按了 Ctrl+C 却什么都没发生时，这一行
+        # 是唯一能区分"信号没到进程"与"到了但收尾卡住"的证据。日志里没有
+        # ``[exit] 主循环退出`` 就说明信号根本没进来，别再怀疑应用代码。
+        try:
+            from utils.crash_log import log as _log
+
+            _log(f"[exit] 主循环退出（code={code}），开始收尾")
+        except Exception:  # noqa: BLE001 - 取证不该影响退出
+            pass
+        # 字体扫描线程可能还在 ``fontTools`` 里（首次约 7s）：必须等它停下来，
+        # 否则解释器退出时 QThread 在运行中被回收 → ``QThread: Destroyed
+        # while thread is still running`` → SIGABRT（hupper 看到退出码 -6）。
+        try:
+            from desktop.services.font_catalog import shutdown_background_scan
+
+            shutdown_background_scan()
+        except Exception:  # noqa: BLE001 - 退出路径尽力而为
+            pass
         # desktop 关闭 → 释放常驻 YOLO 服务（模型 + torch 运行时约 350MB）。
         # ⚠️ 只在 GUI 路径做：worker 子进程不拥有服务，不该替 GUI 去关它。
         # 用户原则：desktop 关闭，YOLO 就释放；关掉之后下次检测重新拉起服务
@@ -494,4 +597,12 @@ def main() -> int:
         from functions.yolo_service import shutdown_service
 
         shutdown_service()
+        # 收尾走到这里 = 干净退出。``[exit]`` 两行之间差了很久，就说明卡在
+        # ``shutdown_service()``（常驻服务不响应/子进程不退），而不是信号没到。
+        try:
+            from utils.crash_log import log as _log
+
+            _log("[exit] 收尾完成，进程结束")
+        except Exception:  # noqa: BLE001
+            pass
     return code

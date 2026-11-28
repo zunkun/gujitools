@@ -109,6 +109,13 @@ def run(ctx) -> None:
     ok("渲染服务：默认走子进程（mode=proc）", stats["mode"] == "proc", str(stats))
     ok("渲染服务：没有静默降级（fallbacks=0）", stats["fallbacks"] == 0, str(stats))
     ok("渲染服务：至少 1 个子进程", stats["workers"] >= 1, str(stats["workers"]))
+    # ⚠️ 2026-11-28（用户：hupper 无法中断 / 不打印重启 / 窗口消失）：Linux 上
+    #    ``ProcessPoolExecutor`` 默认 fork，子进程会连调用方的 fd 一起抄走——
+    #    hupper 的 IPC 管道被这些孤儿池进程攥着，monitor 的读线程永远等不到
+    #    EOF，``close()`` 里 join 死锁（futex），于是 Ctrl+C 没反应、不重启、
+    #    也没日志。必须显式 spawn（详见 ``pool._mp_context``）。
+    ok("渲染服务：子进程用 spawn 启动（Linux 的 fork 会卡死 hupper）",
+       stats.get("start_method") == "spawn", str(stats.get("start_method")))
 
     # ---- 4. 批量：越界页不炸整批 ----
     datas = svc.render_jpegs(pdf, [0, 2, 99], 256, 70)

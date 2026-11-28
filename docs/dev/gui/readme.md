@@ -41,7 +41,11 @@
 
 ```powershell
 # 启动 GUI（开发热重载）
-hupper -m desktop
+# ⚠️ 必须带上 --shutdown-interval：hupper 在 Linux 下默认只给子进程 1 秒
+#    收尾（超过就 "Server did not exit, forcefully killing" 强杀）。GUI
+#    收尾要停后台线程/常驻服务，实测约 1~1.6 秒，1 秒不够；给 2 秒即可
+#    干净退出（Ctrl+C 一次就退，日志里有 [exit] 三行、退出码 0）。
+hupper --shutdown-interval 2 -m desktop
 # 或
 python desktop.py
 

@@ -137,44 +137,49 @@ def _run(ctx) -> None:
         # ---- 4b. 全套取证：日志 + 原生栈 + minidump 一起落盘 ----
         # 这条才是生产上真正跑的路径：过滤器先写报告/dump，再把链交给
         # faulthandler —— 所以三种产物必须同时出现。
-        dump_dir = work / "dump"
-        dump_log = work / "dump.log"
-        src2 = (
-            "import os, sys\n"
-            f"sys.path.insert(0, r'{root}')\n"
-            "os.environ['GUJI_CRASH_LOG'] = r'%s'\n"
-            "import utils.crash_log as cl\n"
-            "assert cl.install()\n"
-            "import utils.crash_dump as cd\n"
-            "assert cd.install(r'%s')\n"
-            "cl.breadcrumb('全套取证探针')\n"
-            "import faulthandler\n"
-            # ⚠ 必须用 _read_null()（真 AV）而不是 _sigsegv()：后者是个纯
-            # raise()，不经过 SEH，SetUnhandledExceptionFilter 根本不会被调
-            # 用 —— 用它测"全套"会得到"报告 0 份"的假失败。
-            "faulthandler._read_null()\n" % (str(dump_log), str(dump_dir))
-        )
-        proc2 = subprocess.run([sys.executable, "-c", src2], timeout=180)
-        reports = sorted(dump_dir.glob("crash_*.txt"))
-        dumps = sorted(dump_dir.glob("crash_*.dmp"))
-        ok("全套：子进程崩掉了", proc2.returncode != 0, str(proc2.returncode))
-        ok("全套：写出了崩溃报告（crash_*.txt）", len(reports) == 1,
-           f"{len(reports)} 份")
-        report_text = _read(reports[0]) if reports else ""
-        ok("全套：报告里识别出访问违例", "访问违例" in report_text)
-        ok("全套：报告里带出错地址（模块+偏移）",
-           "Qt6" in report_text or ".dll+" in report_text
-           or ".exe+" in report_text)
-        ok("全套：报告里带调用链候选段", "调用链候选" in report_text)
-        ok("全套：报告里附了 crash.log 末尾（崩前动作）",
-           "全套取证探针" in report_text)
-        ok("全套：minidump 也落了盘", len(dumps) == 1
-           and dumps[0].stat().st_size > 4096,
-           f"{[d.name for d in dumps]}")
-        # 过滤器只在末尾回调 faulthandler —— 这一条证明"链没被截断"，
-        # 也就是报告和 Python 栈是同一份现场，而不是二选一。
-        ok("全套：faulthandler 仍然拿到现场（链没被截断）",
-           "Windows fatal exception" in _read(dump_log))
+        # ⚠ utils.crash_dump 是 Windows 专有（导入期就要 WinDLL），POSIX 下
+        # 子进程一 import 就 AttributeError，这里跟第 5 节一样直接跳过。
+        if sys.platform != "win32":
+            ok("非 Windows：跳过原生 minidump 实测", True)
+        else:
+            dump_dir = work / "dump"
+            dump_log = work / "dump.log"
+            src2 = (
+                "import os, sys\n"
+                f"sys.path.insert(0, r'{root}')\n"
+                "os.environ['GUJI_CRASH_LOG'] = r'%s'\n"
+                "import utils.crash_log as cl\n"
+                "assert cl.install()\n"
+                "import utils.crash_dump as cd\n"
+                "assert cd.install(r'%s')\n"
+                "cl.breadcrumb('全套取证探针')\n"
+                "import faulthandler\n"
+                # ⚠ 必须用 _read_null()（真 AV）而不是 _sigsegv()：后者是个纯
+                # raise()，不经过 SEH，SetUnhandledExceptionFilter 根本不会被调
+                # 用 —— 用它测"全套"会得到"报告 0 份"的假失败。
+                "faulthandler._read_null()\n" % (str(dump_log), str(dump_dir))
+            )
+            proc2 = subprocess.run([sys.executable, "-c", src2], timeout=180)
+            reports = sorted(dump_dir.glob("crash_*.txt"))
+            dumps = sorted(dump_dir.glob("crash_*.dmp"))
+            ok("全套：子进程崩掉了", proc2.returncode != 0, str(proc2.returncode))
+            ok("全套：写出了崩溃报告（crash_*.txt）", len(reports) == 1,
+               f"{len(reports)} 份")
+            report_text = _read(reports[0]) if reports else ""
+            ok("全套：报告里识别出访问违例", "访问违例" in report_text)
+            ok("全套：报告里带出错地址（模块+偏移）",
+               "Qt6" in report_text or ".dll+" in report_text
+               or ".exe+" in report_text)
+            ok("全套：报告里带调用链候选段", "调用链候选" in report_text)
+            ok("全套：报告里附了 crash.log 末尾（崩前动作）",
+               "全套取证探针" in report_text)
+            ok("全套：minidump 也落了盘", len(dumps) == 1
+               and dumps[0].stat().st_size > 4096,
+               f"{[d.name for d in dumps]}")
+            # 过滤器只在末尾回调 faulthandler —— 这一条证明"链没被截断"，
+            # 也就是报告和 Python 栈是同一份现场，而不是二选一。
+            ok("全套：faulthandler 仍然拿到现场（链没被截断）",
+               "Windows fatal exception" in _read(dump_log))
 
     # ---------------- 5. 转储模块的地址换算 ----------------
     if sys.platform != "win32":

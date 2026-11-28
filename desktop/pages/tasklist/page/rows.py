@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from PySide6.QtCore import QThread
+
 from desktop.components.pagination import Pager
 from desktop.components.task_table import task_row_matches
 from desktop.workers import TaskRowsWorker, connect_queued
@@ -76,7 +78,23 @@ class TaskListRowsMixin:
         """过滤 → 分页 → 填表，并同步空状态、分页条与提示文案。
 
         只依赖缓存的 ``_all_rows``，不读盘，所以搜索时可以逐字符调用。
+
+        ⚠️ **必须在 GUI 线程执行**：``set_data`` 会给每个单元格创建控件
+        （任务名标签 / 状态胶囊 / 详情删除按钮）。跨线程装单元格控件时 Qt 只会
+        刷一行 ``QObject::setParent: Cannot set parent, new parent is in a
+        different thread`` 然后**拒绝设父**——控件于是留在顶层，被 show 出来
+        就会变成一个个独立小窗（标题 ``__main__``，内容是行内的任务名、
+        「详情 / 删除」按钮），每次刷新再多一批，并且表格行在、格子是空的。
+        （用户 2026-11-28 报的就是这个：弹窗越来越多、"感觉是表格的一部分被
+        拆开了"、"显示不全"。）
+
+        根因已在 ``importing.py::_start_import`` 修掉（worker 信号改走
+        ``connect_queued``）。这里再兜一道：真被别的线程调到，就把自己排队
+        回 GUI 线程，绝不带病填表。
         """
+        if QThread.currentThread() is not self.thread():
+            self._render_requested.emit()
+            return
         keyword = self._keyword.strip()
         self._filtered = [r for r in self._all_rows if self._matches(r, keyword)]
 

@@ -56,6 +56,12 @@ class TaskListPage(
     #: 宿主据此刷新详情页——否则用户看到的是"创建了但什么都没有"的空任务。
     aggregate_ready = Signal(str)
 
+    #: **跨线程兜底**：``_render`` 万一被非 GUI 线程调用，就用这条信号把
+    #: 自己排队回 GUI 线程再填表（守卫在 ``page/rows.py::_render`` 开头）。
+    #: 为什么需要它：跨线程给表格装单元格控件时 Qt 会拒绝设父，控件直接变成
+    #: 一堆独立的顶层小窗（详见 ``page/importing.py::_start_import`` 的注释）。
+    _render_requested = Signal()
+
     def __init__(self, store: TaskStore, parent=None):
         """初始化页面：构建 UI、绑定信号并刷新首次列表。
 
@@ -67,6 +73,9 @@ class TaskListPage(
         self.store = store
         self.hash_thread: QThread | None = None
         self.hash_worker: HashWorker | None = None
+        #: 本次导入的中继对象（worker 信号 → 主线程回调）。由 _hash_thread_done
+        #: 销毁；不能挂在 hash_thread.finished 上自动删（见 _start_import）。
+        self._hash_relays: list = []
         #: 正在汇集成员产物的聚合任务：``{任务号: (QThread, worker)}``。
         #: 保留强引用防 GC（线程在跑而 Python 侧对象被回收＝Qt abort）；
         #: 线程结束时摘掉（见 :meth:`_start_aggregate_ingest` 的接线）。
@@ -93,6 +102,8 @@ class TaskListPage(
         self._page = 1
         self._page_size = DEFAULT_PAGE_SIZE
         self._init_ui()
+        # 兜底通道：跨线程调 _render 时先排队回 GUI 线程（见 rows.py::_render）
+        self._render_requested.connect(self._render)
         # ⚠️ 这里**刻意不刷新**。首次列表渲染实测约 74 ms（每行要建名称标签 +
         # 操作按钮，还会读每个任务的 runs.json），它由 `desktop/app.py::main()`
         # 在窗口 `show()` **之后**的下一拍触发——先让空壳窗口出现在屏幕上，再

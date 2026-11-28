@@ -53,7 +53,7 @@ gujitools 命令行入口（CLI entry）。
 
 gujitools 桌面端与 worker 统一入口。
 
-- 启动 GUI：            python desktop.py   （或 hupper -m desktop 热重载开发）
+- 启动 GUI：            python desktop.py   （或 hupper --shutdown-interval 2 -m desktop 热重载开发）
 - 子进程执行单个步骤： python desktop.py --worker --config <json>
 
 ### 模块函数

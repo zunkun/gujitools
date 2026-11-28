@@ -38,9 +38,15 @@ class _ScanThread(QThread):
         try:
             from utils.font_scan import scan_system_fonts
 
-            entries = list(scan_system_fonts())
+            # ⚠️ 必须能被中止：程序退出时这个线程可能正扫到一半（首次约 7s），
+            #    一边攥 GIL 一边被解释器回收 ⇒ Qt abort。
+            entries = list(scan_system_fonts(
+                should_stop=self.isInterruptionRequested
+            ))
         except Exception:
             entries = []
+        if self.isInterruptionRequested():
+            return  # 退出中：不回调界面，也别再碰已经拆掉的下拉框
         self.finished_entries.emit(entries)
 
 
@@ -100,6 +106,41 @@ class FontCatalog(QObject):
         self._thread = None
         self.scan_finished.emit(self.choices())
 
+    def stop_scan(self) -> None:
+        """**只发中止请求**，不等待：给信号处理函数用（那里不能阻塞）。
+
+        扫描循环每处理一个字体文件查一次，通常几十毫秒内就退出。
+        """
+        thread = self._thread
+        if thread is not None:
+            thread.requestInterruption()
+
+    def shutdown(self, timeout_ms: int = 1000) -> None:
+        """退出前收尾扫描线程：先请求中止，等不到才强杀。
+
+        ⚠️ 为什么必须有这一步（2026-11-28 实测）：hupper 下按 Ctrl+C，
+        应用收尾只花一百多毫秒，但字体扫描线程还在 ``fontTools`` 里跑。
+        解释器退出时 ``FontCatalog`` 被回收 → ``QThread`` 在运行中被析构 →
+        ``QThread: Destroyed while thread is still running`` → **SIGABRT**，
+        hupper 看到的就是"退出码 -6 / Server did not exit"。
+        ``terminate()`` 是最后手段（正在解析的字体可能留下坏状态，但进程马上
+        就退了，比 abort 干净）；正常路径靠 ``requestInterruption`` 收手。
+        """
+        thread = self._thread
+        if thread is None:
+            return
+        thread.requestInterruption()
+        if not thread.wait(max(0, timeout_ms)):
+            try:
+                from utils.crash_log import log
+
+                log("[exit] 字体扫描未在限期内停止，强制终止线程")
+            except Exception:  # noqa: BLE001 - 留痕失败不该影响退出
+                pass
+            thread.terminate()
+            thread.wait(500)
+        self._thread = None
+
 
 _CATALOG: FontCatalog | None = None
 
@@ -120,3 +161,21 @@ def start_background_scan() -> None:
         # 没有 Qt 环境（CLI / 自测）时直接放弃：列表退化为静态候选，
         # 不影响生成 PDF
         pass
+
+
+def stop_background_scan() -> None:
+    """请求中止后台扫描（**不阻塞**，信号处理函数里可调）。"""
+    if _CATALOG is not None:
+        try:
+            _CATALOG.stop_scan()
+        except Exception:  # noqa: BLE001 - 退出路径尽力而为
+            pass
+
+
+def shutdown_background_scan(timeout_ms: int = 1000) -> None:
+    """退出前等后台扫描线程收手；没建过目录就直接返回（不无中生有）。"""
+    if _CATALOG is not None:
+        try:
+            _CATALOG.shutdown(timeout_ms)
+        except Exception:  # noqa: BLE001 - 退出路径尽力而为
+            pass

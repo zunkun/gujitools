@@ -186,12 +186,20 @@ def _save_cache(fingerprint: str, entries) -> None:
         pass
 
 
-def scan_system_fonts(force: bool = False) -> tuple[FontEntry, ...]:
+def scan_system_fonts(
+    force: bool = False, should_stop=None
+) -> tuple[FontEntry, ...]:
     """扫描系统里的中文字体，返回按显示名排序的条目。
 
     ⚠️ 首次调用要遍历整个字体目录、逐个读 cmap，**本机约 7 秒**——
     只能在后台线程里调（见 `desktop.services.font_catalog`）。结果会写
     磁盘缓存，之后每次调用毫秒级返回。
+
+    :param should_stop: 可选的「该收手了吗」回调，**每处理一个字体文件查一次**。
+        给 ``QThread.isInterruptionRequested`` 用：程序退出的收尾路径要先让
+        这个线程停下来，否则它一边啃 GIL 一边被解释器回收，Qt 会直接 abort
+        （``QThread: Destroyed while thread is still running``）。
+        中止时返回**已扫到的部分**且**不写缓存**——半份结果不能当成完整缓存。
     """
     files = list(_iter_font_files())
     fingerprint = _directory_fingerprint(files)
@@ -203,6 +211,9 @@ def scan_system_fonts(force: bool = False) -> tuple[FontEntry, ...]:
     entries: list[FontEntry] = []
     seen: set[str] = set()
     for path in files:
+        if should_stop is not None and should_stop():
+            # 退出中：半份列表不落缓存（下次还要重扫），直接交回去
+            return tuple(entries)
         probed = _probe_file(path)
         if probed is None:
             continue
